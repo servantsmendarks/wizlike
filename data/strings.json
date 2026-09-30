@@ -117,5 +117,7 @@
 
   "save.failed": "保存できません。ゲームは続けられますが、進行は残りません。",
   "save.importOld": "古いデータです。進行が巻き戻ります。",
-  "save.importBroken": "このファイルは読み込めません。"
+  "save.importBroken": "このファイルは読み込めません。",
+
+  "debug.fontSample": "あいうえお アイウエオ 迷宮の奥へ ABCxyz 0123「！？」…・"
 }
