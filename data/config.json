@@ -1,0 +1,88 @@
+{
+  "stage": { "width": 240, "height": 400 },
+  "party": { "size": 6, "frontRow": 3 },
+  "inventory": { "slotsPerCharacter": 8 },
+  "creation": { "bonusBase": 7, "bonusDie": 4, "bonusBigChance": 5, "bonusBig": 10 },
+  "growth": { "expBase": 1000, "expGrowth": 1.5, "hpVitPivot": 10, "hpVitDivisor": 2, "hpGainMin": 1 },
+  "learning": { "base": 35, "perLevelDiff": 20, "guaranteeDiff": 4, "statPivot": 10, "statPerPoint": 3 },
+  "combat": {
+    "hitBase": 20, "hitPerLevel": 5, "hitPerAC": 4, "hitMin": 5, "hitMax": 95,
+    "acBase": 10, "acMin": -10,
+    "maxEnemyGroups": 4, "maxPerGroup": 9,
+    "surpriseDiff": 5,
+    "identifyChancePerRound": 15, "identifyKills": 5,
+    "statusLukPerPoint": 2, "sleepWakeChance": 50, "sleepHitBonus": 30,
+    "poisonDamagePerTick": 1,
+    "fleeBase": 50, "fleeAgiMul": 3,
+    "chestChance": 30, "chestTrapChance": 40,
+    "unarmedDice": "1d2",
+    "autoInterrupt": { "hpRatio": 0.3 }
+  },
+  "san": {
+    "max": 100,
+    "floorDescend": 5, "unidentifiedGroup": 2, "allyDeath": 10,
+    "uneasyRatio": 0.5, "confusedRatio": 0.25,
+    "uneasyChance": 10, "confusedChance": 50,
+    "restoreOnTown": true
+  },
+  "wipe": { "reviveHpRatio": 0.5, "clearStatus": true },
+  "economy": {
+    "sellRatio": 0.5, "identifyFee": 100,
+    "templeSuccessBase": 50, "templeSuccessPerVit": 2, "templeSuccessMax": 95,
+    "templeCostPerLevel": 250, "darkCostPerLevel": 1000,
+    "cureCost": { "poison": 50, "paralysis": 150, "stone": 300 },
+    "uncurseCost": 200
+  },
+  "town": {
+    "innRanks": [
+      { "id": "stable", "name": "馬小屋", "cost": 0, "hpRatio": 0.25, "mpRatio": 0.25 },
+      { "id": "cheap", "name": "相部屋", "cost": 30, "hpRatio": 0.5, "mpRatio": 0.5 },
+      { "id": "good", "name": "個室", "cost": 100, "hpRatio": 1.0, "mpRatio": 1.0 }
+    ]
+  },
+  "events": { "impulseThreshold": 8, "stopSanGain": 3 },
+  "save": { "maxGames": 5, "schemaVersion": 1 },
+  "input": { "swipeThresholdPx": 28, "holdRepeatMs": 250, "edgeDeadZonePx": 12 },
+  "ui": { "textSpeedMs": 30, "diceStepMs": 300, "flashMs": 120, "shakeMs": 150, "viewFadeMs": 80 },
+  "prototypeParty": {
+    "startingGold": 300,
+    "members": [
+      {
+        "defaultName": "アルド", "raceId": "human", "classId": "fighter", "isLeader": true,
+        "stats": { "str": 14, "iq": 8, "pie": 6, "vit": 12, "agi": 9, "luk": 9 },
+        "equipment": { "weapon": "long_sword", "armor": "leather_armor", "shield": "wooden_shield" },
+        "inventory": ["herb"], "knownSpells": []
+      },
+      {
+        "defaultName": "ベルク", "raceId": "dwarf", "classId": "fighter", "isLeader": false,
+        "stats": { "str": 15, "iq": 7, "pie": 10, "vit": 14, "agi": 6, "luk": 6 },
+        "equipment": { "weapon": "long_sword", "armor": "chain_mail" },
+        "inventory": [], "knownSpells": []
+      },
+      {
+        "defaultName": "キリ", "raceId": "hobbit", "classId": "thief", "isLeader": false,
+        "stats": { "str": 8, "iq": 9, "pie": 7, "vit": 8, "agi": 15, "luk": 15 },
+        "equipment": { "weapon": "dagger", "armor": "leather_armor", "helm": "leather_cap" },
+        "inventory": ["herb"], "knownSpells": []
+      },
+      {
+        "defaultName": "ドナ", "raceId": "gnome", "classId": "priest", "isLeader": false,
+        "stats": { "str": 8, "iq": 8, "pie": 15, "vit": 10, "agi": 10, "luk": 7 },
+        "equipment": { "weapon": "staff", "armor": "leather_armor" },
+        "inventory": ["antidote_herb"], "knownSpells": ["heal"]
+      },
+      {
+        "defaultName": "エル", "raceId": "elf", "classId": "mage", "isLeader": false,
+        "stats": { "str": 7, "iq": 16, "pie": 10, "vit": 7, "agi": 11, "luk": 8 },
+        "equipment": { "weapon": "staff" },
+        "inventory": ["return_thread"], "knownSpells": ["fire_arrow", "sleep_mist"]
+      },
+      {
+        "defaultName": "フィン", "raceId": "human", "classId": "thief", "isLeader": false,
+        "stats": { "str": 10, "iq": 9, "pie": 6, "vit": 9, "agi": 14, "luk": 11 },
+        "equipment": { "weapon": "short_bow", "armor": "leather_armor" },
+        "inventory": ["herb"], "knownSpells": []
+      }
+    ]
+  }
+}

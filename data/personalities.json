@@ -1,0 +1,38 @@
+[
+  {
+    "id": "cautious", "name": "慎重",
+    "lure": { "treasure": 0, "unknown": 0, "danger": 0, "weak": 1 },
+    "canStop": true,
+    "benefits": { "trapDetect": 30, "ambushAvoid": 20, "initiative": 0, "damage": 0, "chestQuality": 0, "hiddenTreasure": 0 },
+    "san": { "trapLossMul": 0.5, "allyInjuryLossMul": 0.5, "fearLossMul": 1.0, "treasureGain": 0, "disobeyBelowHalf": 0 },
+    "autoBattle": "defendBelowHalf",
+    "description": "罠に気づき、奇襲を避け、仲間の暴走を止める。"
+  },
+  {
+    "id": "reckless", "name": "無鉄砲",
+    "lure": { "treasure": 0, "unknown": 3, "danger": 2, "weak": 0 },
+    "canStop": false,
+    "benefits": { "trapDetect": 0, "ambushAvoid": 0, "initiative": 2, "damage": 1, "chestQuality": 0, "hiddenTreasure": 0 },
+    "san": { "trapLossMul": 1.0, "allyInjuryLossMul": 1.0, "fearLossMul": 0.5, "treasureGain": 0, "disobeyBelowHalf": 0 },
+    "autoBattle": "alwaysAttack",
+    "description": "先に動き、強く殴り、恐怖に強い。未知のものに手を出す。"
+  },
+  {
+    "id": "greedy", "name": "強欲",
+    "lure": { "treasure": 3, "unknown": 1, "danger": 0, "weak": 0 },
+    "canStop": false,
+    "benefits": { "trapDetect": 0, "ambushAvoid": 0, "initiative": 0, "damage": 0, "chestQuality": 1, "hiddenTreasure": 15 },
+    "san": { "trapLossMul": 1.0, "allyInjuryLossMul": 1.0, "fearLossMul": 1.0, "treasureGain": 2, "disobeyBelowHalf": 0 },
+    "autoBattle": "targetRichest",
+    "description": "財宝を見つけ、良い物を引き、金で正気を保つ。宝に手を出す。"
+  },
+  {
+    "id": "normal", "name": "普通",
+    "lure": { "treasure": 0, "unknown": 0, "danger": 0, "weak": 0 },
+    "canStop": false,
+    "benefits": { "trapDetect": 0, "ambushAvoid": 0, "initiative": 0, "damage": 0, "chestQuality": 0, "hiddenTreasure": 0 },
+    "san": { "trapLossMul": 1.0, "allyInjuryLossMul": 1.0, "fearLossMul": 1.0, "treasureGain": 0, "disobeyBelowHalf": 10 },
+    "autoBattle": "none",
+    "description": "リーダーに従う。恩恵も耐性もなく、追い詰められると真っ先に崩れる。"
+  }
+]

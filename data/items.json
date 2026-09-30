@@ -1,0 +1,27 @@
+[
+  { "id": "dagger", "name": "短剣", "type": "weapon", "slot": "weapon", "ranged": false, "damage": "1d4", "classes": [], "price": 15, "stock": 3, "infinite": false, "cursed": false },
+  { "id": "long_sword", "name": "長剣", "type": "weapon", "slot": "weapon", "ranged": false, "damage": "1d8", "classes": ["fighter", "samurai", "lord"], "price": 100, "stock": 2, "infinite": false, "cursed": false },
+  { "id": "short_bow", "name": "短弓", "type": "weapon", "slot": "weapon", "ranged": true, "damage": "1d6", "classes": ["fighter", "thief", "samurai", "lord"], "price": 80, "stock": 2, "infinite": false, "cursed": false },
+  { "id": "staff", "name": "杖", "type": "weapon", "slot": "weapon", "ranged": false, "damage": "1d4", "classes": [], "price": 10, "stock": 3, "infinite": false, "cursed": false },
+  { "id": "sling", "name": "投石紐", "type": "weapon", "slot": "weapon", "ranged": true, "damage": "1d4", "classes": [], "price": 20, "stock": 2, "infinite": false, "cursed": false },
+
+  { "id": "leather_armor", "name": "革鎧", "type": "armor", "slot": "armor", "ac": -2, "classes": [], "price": 50, "stock": 3, "infinite": false, "cursed": false },
+  { "id": "chain_mail", "name": "鎖帷子", "type": "armor", "slot": "armor", "ac": -4, "classes": ["fighter", "priest", "samurai", "lord", "bishop"], "price": 300, "stock": 0, "infinite": false, "cursed": false },
+  { "id": "wooden_shield", "name": "木の盾", "type": "shield", "slot": "shield", "ac": -1, "classes": ["fighter", "priest", "samurai", "lord"], "price": 40, "stock": 2, "infinite": false, "cursed": false },
+  { "id": "leather_cap", "name": "革兜", "type": "helm", "slot": "helm", "ac": -1, "classes": [], "price": 30, "stock": 2, "infinite": false, "cursed": false },
+  { "id": "leather_gloves", "name": "革小手", "type": "gauntlet", "slot": "gauntlet", "ac": -1, "classes": [], "price": 30, "stock": 2, "infinite": false, "cursed": false },
+  { "id": "charm", "name": "護符", "type": "accessory", "slot": "accessory", "ac": 0, "sanResist": 2, "classes": [], "price": 200, "stock": 1, "infinite": false, "cursed": false },
+
+  { "id": "herb", "name": "薬草", "type": "consumable", "price": 10, "stock": 0, "infinite": true, "cursed": false,
+    "usableIn": "both", "effect": { "type": "heal", "dice": "1d8", "target": "ally" } },
+  { "id": "antidote_herb", "name": "解毒草", "type": "consumable", "price": 15, "stock": 0, "infinite": true, "cursed": false,
+    "usableIn": "both", "effect": { "type": "cureStatus", "status": "poison", "target": "ally" } },
+  { "id": "return_thread", "name": "帰還の糸", "type": "consumable", "price": 50, "stock": 0, "infinite": true, "cursed": false,
+    "usableIn": "field", "effect": { "type": "return" } },
+
+  { "id": "tome_lightning", "name": "雷光の魔法書", "type": "book", "price": 1500, "stock": 0, "infinite": false, "cursed": false,
+    "usableIn": "field", "effect": { "type": "learn", "spell": "lightning_tome" } },
+
+  { "id": "cursed_dagger", "name": "血濡れの短剣", "unidentifiedName": "短剣？", "type": "weapon", "slot": "weapon", "ranged": false, "damage": "1d6", "classes": [], "price": 5, "stock": 0, "infinite": false, "cursed": true,
+    "description": "装備すると外せない。攻撃するたびに使い手のSANが1減る。" }
+]

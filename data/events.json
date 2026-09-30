@@ -1,0 +1,55 @@
+[
+  {
+    "id": "glowing_tablet", "name": "光る石板", "kind": "mixed",
+    "lure": { "treasure": 0, "unknown": 3, "danger": 1, "weak": 0 },
+    "stat": "iq",
+    "stopCheck": true,
+    "text": { "intro": "event.glowing_tablet.intro", "impulse": "event.glowing_tablet.impulse" },
+    "impulseOutcomes": [
+      { "weight": 3, "quality": "good", "text": "event.glowing_tablet.good",
+        "effects": [ { "type": "revealFloor" }, { "type": "san", "target": "actor", "value": -2 } ],
+        "requires": "impulse", "impulseBonus": [ { "type": "san", "target": "actor", "value": 4 } ] },
+      { "weight": 3, "quality": "neutral", "text": "event.glowing_tablet.neutral",
+        "effects": [ { "type": "gold", "dice": "2d6" } ] },
+      { "weight": 4, "quality": "bad", "text": "event.glowing_tablet.bad",
+        "effects": [ { "type": "san", "target": "party", "value": -5 }, { "type": "damage", "target": "actor", "dice": "1d6" } ] }
+    ],
+    "choices": [
+      { "id": "examine", "label": "調べる", "text": "event.glowing_tablet.examine", "effects": [ { "type": "nothing" } ] },
+      { "id": "ignore", "label": "無視する", "text": "event.common.ignore", "effects": [ { "type": "nothing" } ] }
+    ]
+  },
+  {
+    "id": "abandoned_sack", "name": "打ち捨てられた宝袋", "kind": "mixed",
+    "lure": { "treasure": 3, "unknown": 0, "danger": 1, "weak": 0 },
+    "stat": "agi",
+    "stopCheck": true,
+    "text": { "intro": "event.abandoned_sack.intro", "impulse": "event.abandoned_sack.impulse" },
+    "impulseOutcomes": [
+      { "weight": 5, "quality": "good", "text": "event.abandoned_sack.good",
+        "effects": [ { "type": "gold", "dice": "5d10" } ],
+        "requires": "impulse", "impulseBonus": [ { "type": "gold", "dice": "2d10" } ] },
+      { "weight": 5, "quality": "bad", "text": "event.abandoned_sack.bad",
+        "effects": [ { "type": "damage", "target": "actor", "dice": "2d6" }, { "type": "san", "target": "actor", "value": -3 } ] }
+    ],
+    "choices": [
+      { "id": "search", "label": "慎重に探る", "text": "event.abandoned_sack.search", "effects": [ { "type": "gold", "dice": "2d10" } ] },
+      { "id": "leave", "label": "放っておく", "text": "event.common.ignore", "effects": [ { "type": "nothing" } ] }
+    ]
+  },
+  {
+    "id": "wounded_adventurer", "name": "傷ついた冒険者", "kind": "mixed",
+    "lure": { "treasure": 0, "unknown": 0, "danger": 0, "weak": 2 },
+    "stat": "pie",
+    "stopCheck": false,
+    "text": { "intro": "event.wounded_adventurer.intro", "impulse": "event.wounded_adventurer.impulse" },
+    "impulseOutcomes": [
+      { "weight": 1, "quality": "good", "text": "event.wounded_adventurer.good",
+        "effects": [ { "type": "consumeItem", "itemId": "herb", "target": "actor", "optional": true }, { "type": "revealStairs" } ] }
+    ],
+    "choices": [
+      { "id": "help", "label": "薬草を渡す", "text": "event.wounded_adventurer.good", "effects": [ { "type": "consumeItem", "itemId": "herb", "target": "party" }, { "type": "revealStairs" } ] },
+      { "id": "abandon", "label": "見捨てる", "text": "event.wounded_adventurer.abandon", "effects": [ { "type": "san", "target": "party", "value": -2 } ] }
+    ]
+  }
+]

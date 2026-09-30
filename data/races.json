@@ -1,0 +1,7 @@
+[
+  { "id": "human",  "name": "人間",   "baseStats": { "str": 8,  "iq": 8,  "pie": 5,  "vit": 8,  "agi": 8,  "luk": 9  }, "description": "偏りのない基礎値。どの職業にも就きやすい。" },
+  { "id": "elf",    "name": "エルフ", "baseStats": { "str": 7,  "iq": 10, "pie": 10, "vit": 6,  "agi": 9,  "luk": 6  }, "description": "知恵と信仰心が高く、体は弱い。術者向き。" },
+  { "id": "dwarf",  "name": "ドワーフ", "baseStats": { "str": 10, "iq": 7,  "pie": 10, "vit": 10, "agi": 5,  "luk": 6  }, "description": "力と生命力が高く、遅い。前衛向き。" },
+  { "id": "gnome",  "name": "ノーム", "baseStats": { "str": 7,  "iq": 7,  "pie": 10, "vit": 8,  "agi": 10, "luk": 7  }, "description": "信仰心と素早さが高い。僧侶向き。" },
+  { "id": "hobbit", "name": "ホビット", "baseStats": { "str": 5,  "iq": 7,  "pie": 7,  "vit": 6,  "agi": 10, "luk": 15 }, "description": "運と素早さが飛び抜けて高く、力は無い。盗賊向き。" }
+]

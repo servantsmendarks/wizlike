@@ -1,0 +1,72 @@
+[
+  {
+    "id": "fire_arrow", "name": "火矢", "school": "mage", "level": 1, "learnLevel": 1,
+    "mp": 2, "target": "enemy", "usableIn": "battle",
+    "effect": { "type": "damage", "dice": "1d8" },
+    "bookOnly": false, "tags": [],
+    "description": "一体に火の矢を放つ。単体相手ならこれが最も安い。"
+  },
+  {
+    "id": "sleep_mist", "name": "眠りの霧", "school": "mage", "level": 1, "learnLevel": 1,
+    "mp": 3, "target": "enemyGroup", "usableIn": "battle",
+    "effect": { "type": "status", "status": "sleep", "chance": 60 },
+    "bookOnly": false, "tags": [],
+    "description": "一群を眠らせる。眠った敵には攻撃が当たりやすい。"
+  },
+  {
+    "id": "flame_burst", "name": "炎裂", "school": "mage", "level": 2, "learnLevel": 3,
+    "mp": 5, "target": "enemyGroup", "usableIn": "battle",
+    "effect": { "type": "damage", "dice": "2d6" },
+    "bookOnly": false, "tags": [],
+    "description": "一群を炎で包む。複数相手で真価を出す。"
+  },
+  {
+    "id": "lightning_tome", "name": "雷光", "school": "mage", "level": 3, "learnLevel": 5,
+    "mp": 9, "target": "allEnemies", "usableIn": "battle",
+    "effect": { "type": "damage", "dice": "3d6" },
+    "bookOnly": true, "tags": [],
+    "description": "敵全体を雷で打つ。魔法書でしか覚えられない。"
+  },
+  {
+    "id": "heal", "name": "治癒", "school": "priest", "level": 1, "learnLevel": 1,
+    "mp": 2, "target": "ally", "usableIn": "both",
+    "effect": { "type": "heal", "dice": "1d8" },
+    "bookOnly": false, "tags": [],
+    "description": "一人のHPを回復する。"
+  },
+  {
+    "id": "blessing", "name": "加護", "school": "priest", "level": 1, "learnLevel": 1,
+    "mp": 3, "target": "party", "usableIn": "battle",
+    "effect": { "type": "acBonus", "value": -2 },
+    "bookOnly": false, "tags": [],
+    "description": "戦闘中、全員のACを2下げる。"
+  },
+  {
+    "id": "cure_poison", "name": "解毒", "school": "priest", "level": 2, "learnLevel": 3,
+    "mp": 3, "target": "ally", "usableIn": "both",
+    "effect": { "type": "cureStatus", "status": "poison" },
+    "bookOnly": false, "tags": [],
+    "description": "毒を治す。"
+  },
+  {
+    "id": "identify", "name": "識別", "school": "priest", "level": 3, "learnLevel": 5,
+    "mp": 4, "target": "allEnemies", "usableIn": "battle",
+    "effect": { "type": "identify" },
+    "bookOnly": false, "tags": [],
+    "description": "敵の正体を暴く。未鑑定の敵によるSAN減少を止める。"
+  },
+  {
+    "id": "return", "name": "帰還", "school": "priest", "level": 3, "learnLevel": 5,
+    "mp": 8, "target": "none", "usableIn": "field",
+    "effect": { "type": "return" },
+    "bookOnly": false, "tags": [],
+    "description": "その場から街へ戻る。帰還の糸と同じ。"
+  },
+  {
+    "id": "resurrect", "name": "蘇生", "school": "priest", "level": 5, "learnLevel": 9,
+    "mp": 15, "target": "ally", "usableIn": "field",
+    "effect": { "type": "resurrect" },
+    "bookOnly": false, "tags": [],
+    "description": "死者を蘇らせる。失敗すると灰になる。"
+  }
+]

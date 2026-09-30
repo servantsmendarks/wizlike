@@ -1,0 +1,13 @@
+{
+  "dice": "2d10",
+  "note": "帯と数値は仮。2d10は三角分布で11が最頻（10%）、2と20は各1%。低い出目ほど重い。潜行台帳の全損は帯に関係なく常に起きる。",
+  "bands": [
+    { "min": 2,  "max": 3,  "name": "大災厄", "goldLossRatio": 0.5,  "itemLoss": 3, "expLossRatio": 0.2,  "text": "wipe.band.catastrophe" },
+    { "min": 4,  "max": 6,  "name": "災難",   "goldLossRatio": 0.3,  "itemLoss": 2, "expLossRatio": 0.15, "text": "wipe.band.disaster" },
+    { "min": 7,  "max": 10, "name": "痛手",   "goldLossRatio": 0.2,  "itemLoss": 1, "expLossRatio": 0.1,  "text": "wipe.band.heavy" },
+    { "min": 11, "max": 14, "name": "損失",   "goldLossRatio": 0.1,  "itemLoss": 1, "expLossRatio": 0.05, "text": "wipe.band.loss" },
+    { "min": 15, "max": 17, "name": "軽傷",   "goldLossRatio": 0.05, "itemLoss": 0, "expLossRatio": 0.03, "text": "wipe.band.light" },
+    { "min": 18, "max": 19, "name": "幸運",   "goldLossRatio": 0.0,  "itemLoss": 0, "expLossRatio": 0.01, "text": "wipe.band.lucky" },
+    { "min": 20, "max": 20, "name": "奇跡",   "goldLossRatio": 0.0,  "itemLoss": 0, "expLossRatio": 0.0,  "text": "wipe.band.miracle" }
+  ]
+}
