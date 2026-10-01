@@ -69,14 +69,21 @@ function setSan(ctx: RuleContext, ch: Character, next: number): SanChange {
   return { from, to, delta, stageBefore, stageAfter, dropped };
 }
 
-/** CH-51/54: 減少。amount は正の数。tags は攻撃の tags や ["allyInjury"]。 */
+/** amount は 0 以上の有限数。負なら増減の向きが逆になり CH-53 の虚脱の増加禁止をすり抜けるので、前提の崩れとして Error。 */
+function assertSanAmount(amount: number): void {
+  if (!Number.isFinite(amount) || amount < 0) throw new Error(`san amount must be non-negative: ${amount}`);
+}
+
+/** CH-51/54: 減少。amount は 0 以上（負や非有限は Error）。tags は攻撃の tags や ["allyInjury"]。 */
 export function loseSan(ctx: RuleContext, ch: Character, amount: number, tags: readonly string[] = []): SanChange {
+  assertSanAmount(amount);
   const p = personalityOf(ctx.data, ch.personality);
   return setSan(ctx, ch, ch.san - sanLossAmount(amount, p, tags));
 }
 
-/** CH-52: 増加。虚脱（0）中は変化しない（CH-53）。 */
+/** CH-52: 増加。amount は 0 以上（負や非有限は Error）。虚脱（0）中は変化しない（CH-53）。 */
 export function gainSan(ctx: RuleContext, ch: Character, amount: number): SanChange {
+  assertSanAmount(amount);
   if (ch.san === 0) return setSan(ctx, ch, 0);
   return setSan(ctx, ch, ch.san + amount);
 }

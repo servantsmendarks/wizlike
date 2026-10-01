@@ -141,6 +141,24 @@ describe("san: 増減とクランプ", () => {
     expect(ctx.events).toEqual([]);
   });
 
+  test("CH-53 loseSan と gainSan は負や非有限の amount で Error を投げ、san もイベントも変えない", () => {
+    const ctx = ctxFor(stateWith(NORMAL, 0));
+    const ch = ctx.state.party[NORMAL]!;
+    // 負の減少で虚脱から増える、という迂回を許さない
+    expect(() => loseSan(ctx, ch, -5)).toThrow(Error);
+    expect(() => loseSan(ctx, ch, Number.NaN)).toThrow(Error);
+    expect(() => loseSan(ctx, ch, Number.POSITIVE_INFINITY)).toThrow(Error);
+    ch.san = 50;
+    // 負の増加で耐性なしに減る、という迂回も許さない
+    expect(() => gainSan(ctx, ch, -5)).toThrow(Error);
+    expect(() => gainSan(ctx, ch, Number.NaN)).toThrow(Error);
+    expect(ch.san).toBe(50);
+    expect(ctx.events).toEqual([]);
+    // 0 は受け付ける（変化なし）
+    expect(loseSan(ctx, ch, 0).delta).toBe(0);
+    expect(gainSan(ctx, ch, 0).delta).toBe(0);
+  });
+
   test("TW-02/CH-52 restoreSan は 0 からでも sanMax に戻す", () => {
     const ctx = ctxFor(stateWith(NORMAL, 0, 80));
     const ch = ctx.state.party[NORMAL]!;

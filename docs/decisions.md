@@ -129,3 +129,4 @@
 - 2026-10-01 tests: core のテストは、出した message の key と dice の label がすべて data/strings.json に実在することを tests/helpers/core.ts の expectKnownStringKeys で確かめる。§3-10 の文言をデータで差し替えられる前提を、キーの打ち間違いで崩さないため。
 - 2026-10-01 docs: 仕様書内の ID 参照の誤り 15 件を直した（CB-02 DG-13→DG-31、CB-51 DG-14→DG-40、CB-04 EV-10→EV-42、CB-31 EV-10→EV-40、DG-01 DG-13→DG-32、DG-03 DG-07→DG-13、DG-21 EV-10→EV-42、MG-40 DG-12→DG-30、CH-41 MG-14→MG-42、CH-63 MG-05→MG-20、CH-52 EV-10→EV-22/EV-23、CH-53 EV-05→EV-14、CH-04 EV-12→EV-60、TW-33 EV-12→EV-60、EV-31 EV-08→EV-41）。ID の振り直しで参照がずれていたため。
 - 2026-10-01 docs: M1 設計の仕様の明確化を仕様書に反映した（MG-01/21/22/23/25、CH-05/41/52/53/54/61/62/63/64/65/71/§9）。CLAUDE.md §5 と milestones.md は変更しない（§5 は骨格として残す）。
+- 2026-10-01 core: san.ts の loseSan と gainSan は、amount が負または非有限なら Error を投げる（0 は受け付けて変化なし）。負の減少で虚脱から増える、負の増加で耐性なしに減る、という CH-53/CH-54 の迂回を呼び出し側の誤りとして止めるためで、前提の崩れは Error にするという規約に揃えた。符号付きの値は従来どおり applySanValue が振り分ける。
