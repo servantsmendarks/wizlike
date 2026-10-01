@@ -188,18 +188,24 @@ describe("engine: execute", () => {
     expect(r.events).toEqual([{ kind: "rejected", command: "game.new", reason: "wrong screen" }]);
   });
 
+  test("TW-02/TW-26 town.enter は街でも迷宮でも internal command（同じ参照）。街に入る処理は帰還と全滅だけが内部で行う", () => {
+    const town = newGame(1);
+    const dungeon = execute(town, { type: "dungeon.enter", dungeonId: "d01" }, data).state;
+    for (const s of [createInitialState(1, data), town, dungeon]) {
+      const r = execute(s, { type: "town.enter" }, data);
+      expect(r.state).toBe(s);
+      expect(r.events).toEqual([{ kind: "rejected", command: "town.enter", reason: "internal command" }]);
+    }
+  });
+
   test.each<Command>([
-    { type: "town.enter" },
-    { type: "town.inn", rank: 0 },
-    { type: "town.temple", memberId: "c1", service: "resurrect" },
     { type: "town.dark", memberId: "c1" },
     { type: "town.shop", action: { kind: "buy", memberId: "c1", itemId: "herb" } },
     { type: "town.bank", amount: 10 },
-    { type: "town.mercy", memberId: "c1" },
     { type: "dungeon.useItem", memberId: "c1", itemId: "i4" },
     { type: "dungeon.cast", memberId: "c4", spellId: "heal" },
     { type: "party.reorder", order: ["c1", "c2", "c3", "c4", "c5", "c6"] },
-  ])("D2 M2 で未実装のコマンドは not implemented: $type", (cmd) => {
+  ])("D2 M4 で未実装のコマンドは not implemented: $type", (cmd) => {
     const s = newGame(1);
     const r = execute(s, cmd, data);
     expect(r.state).toBe(s);

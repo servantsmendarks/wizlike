@@ -34,6 +34,7 @@ import {
 import { startBossEncounter, startRandomEncounter, tickPoisonStep } from "./combat";
 import { canAct } from "./combat-calc";
 import { loseSan } from "./san";
+import { enterBlockReason } from "./town";
 
 /**
  * 潜行中の階の実効の構造。generateDive(...)[floorNo-1] に、その階の
@@ -161,13 +162,9 @@ function aliveMembers(state: GameState): Character[] {
 // ---------------------------------------------------------------------------
 // 入場（DG-03, DG-40, TW-11）
 
-/** dungeon.enter を受け付けない理由。受け付けるなら null */
+/** dungeon.enter を受け付けない理由。受け付けるなら null（実体は town.ts の enterBlockReason。townMenu の canEnter と同じ判定） */
 export function checkEnter(state: GameState, dungeonId: unknown, data: GameData): string | null {
-  if (state.screen !== "town") return "wrong screen";
-  if (state.dive !== null) return "already diving";
-  if (typeof dungeonId !== "string" || !data.dungeons.some((d) => d.id === dungeonId)) return "unknown dungeon";
-  if (!state.progress.unlockedDungeons.includes(dungeonId)) return "not unlocked";
-  return null;
+  return enterBlockReason(state, dungeonId, data);
 }
 
 export function enterDungeon(ctx: RuleContext, dungeonId: string): void {

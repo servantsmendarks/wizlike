@@ -3,19 +3,22 @@
 ## 1. 施設
 
 - TW-01 施設は 8 つ: 酒場、宿屋、店、寺院、闇魔術、訓練所、銀行、迷宮入口。プロトタイプで実装するのは宿屋・寺院・迷宮入口（酒場は GM のメッセージ表示だけ）。
-- TW-02 街に入った時点（`town.enter`）で全員の SAN を `sanMax` に戻す【仮】。
+- TW-02 街に入った時点（`town.enter`）で全員の SAN を `sanMax` に戻す【仮】。街に入る処理は帰還（DG-30）と全滅（TW-26）だけが内部で行い、`town.enter` コマンドは受け付けない（rejected `internal command`）。順は `town.enter` の語り → SAN の回復（life を問わず全員）→ 救済の判定（TW-30）→ 街の画面。
 - TW-03 酒場: パーティの状態確認、並び順変更（CH-03）、GM の語り（進行の案内、救済の提示 TW-30）。
-- TW-04 宿屋: 部屋のランク（`config.town.innRanks`: 料金と HP/MP 回復量）を選んで泊まる。泊まると、必要経験値に達しているメンバーのレベルアップを処理する（CH-61。複数レベルなら順に）。レベルアップごとに呪文習得判定（MG-20〜24）を行い、ダイスを表示する。
+- TW-04 宿屋: 部屋のランク（`config.town.innRanks`: 料金と HP/MP 回復量）を選んで泊まる。泊まると、必要経験値に達しているメンバーのレベルアップを処理する（CH-61。複数レベルなら順に）。レベルアップごとに呪文習得判定（MG-20〜24）を行い、ダイスを表示する。料金は 1 泊につき `cost` を 1 回払う（満タンでも泊まれる）。回復は `alive` の者だけで、HP / MP にそれぞれ `ceil(最大値 × hpRatio / mpRatio)` を足して最大値で止める。レベルアップも `alive` の者だけ（並び順）。状態異常は治さない（寺院の役目）。
 - TW-05 店: 在庫制。`items[].stock` が初期在庫数、`infinite: true` の品は在庫無限。買値は `price`、売値は `price × config.economy.sellRatio`（0.5）。売った品は在庫 +1 になり、買値で買い戻せる。鑑定は `config.economy.identifyFee` で有料【仮】。プロトタイプ外。
 - TW-06 店の在庫は `dungeons[].onClear.shopStock` で追加される（各 1 個。`infinite` の品なら無限として解放）。
 - TW-07 寺院: 
   - 蘇生: `dead` → `alive`（HP 1）。成功率% = `config.economy.templeSuccessBase`（50）+ `vit × config.economy.templeSuccessPerVit`（2）【仮】、上限 95。失敗すると `ash`。費用 = `level × config.economy.templeCostPerLevel`（250）。費用は成否に関わらず支払う。
   - 治療: 毒・麻痺・石化を回復。費用 = `config.economy.cureCost[status]`。
   - 解呪: 呪われた装備を外す（アイテムは失われる【仮】）。費用 = `config.economy.uncurseCost`。
+  - 蘇生の対象は `dead` だけ（`ash` は闇魔術）。判定は d100 ≤ 成功率で、ダイスは表示しない（UI-40 の一覧に寺院は無い）。蘇生しても状態異常・MP・SAN はそのまま。
+  - 治療は対象の毒・麻痺・石化をすべて治し、`cureCost` の合計を払う。対象は `alive` の者だけ。
+  - 解呪は対象が装備している呪われた品をすべて失い、費用は 1 回分。対象の life は問わない。
 - TW-08 闇魔術: `ash` → `alive`（HP 1）。確定。費用 = `level × config.economy.darkCostPerLevel`（1000）【仮】。
 - TW-09 訓練所: ゲーム開始時のキャラクター作成。以降はステータス閲覧のみ（転職は【未定】）。
 - TW-10 銀行: 預入・引出（`town.bank`）。銀行残高 `bank` は全滅ペナルティ（TW-22）の対象外。
-- TW-11 迷宮入口: 開放済みダンジョン（`progress.unlockedDungeons`）を選んで入場（`dungeon.enter`）。入場時に `diveSeed` を発行する（DG-03）。
+- TW-11 迷宮入口: 開放済みダンジョン（`progress.unlockedDungeons`）を選んで入場（`dungeon.enter`）。入場時に `diveSeed` を発行する（DG-03）。行動可能な者（CH-44）がいなければ入れない（rejected `no one can act`）。
 
 ## 2. 全滅処理
 
@@ -33,9 +36,9 @@
 
 ## 3. GM の救済
 
-- TW-30 判定は街に入るたび（TW-02 の直後）。条件: リーダー以外の全員が `dead` または `ash`、かつ `所持金 + 銀行残高 < 全員のうち最も安い蘇生費`（`dead` なら寺院費用、`ash` なら闇魔術費用）。
+- TW-30 判定は街に入るたび（TW-02 の直後）。条件: リーダー以外の全員が `dead` または `ash`、かつ `所持金 + 銀行残高 < 全員のうち最も安い蘇生費`（`dead` なら寺院費用、`ash` なら闇魔術費用）。最も安い蘇生費は `dead` / `ash` の者それぞれの費用の最小。
 - TW-31 条件を満たすと GM が「一人を無償で蘇生する」と申し出る。プレイヤーがメンバーを選ぶ（`town.mercy`）。`dead` なら寺院と同じ処理だが失敗しない（HP 1）。`ash` なら闇魔術と同じ処理。
-- TW-32 条件が続く限り、街に入るたびに再度申し出る（1 回の来訪につき 1 人）。
+- TW-32 条件が続く限り、街に入るたびに再度申し出る（1 回の来訪につき 1 人）。申し出は来訪ごとに 1 回だけ判定し（同じ来訪の中で条件が変わっても判定し直さない）、`town.mercy` を受けるか `dungeon.enter` で下ろす。申し出の間も宿屋・寺院・迷宮入口は使える。`town.mercy` の対象は `dead` / `ash` の誰でもよい（リーダーも含む）。
 - TW-33 客将（EV-60）は【未定】。プロトタイプでは実装しない。
 
 ## 4. データ

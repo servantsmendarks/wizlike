@@ -3,7 +3,7 @@
 ## 1. MP
 
 - MG-01 MP 制。各キャラクターは単一の MP プール（`mp` / `mpMax`）を持つ。レベルごとの増分は `classes[].mpPerLevel + max(0, floor((関連能力値 − config.growth.mpStatPivot) / config.growth.mpStatDivisor))`【仮】（既定 10 と 2）。関連能力値は魔術師系なら知恵、僧侶系なら信仰心、両方持つ職業は高い方、系統を持たない職業は補正 0。開始レベルに関係なく増える。レベル 1 の `mpMax` はこの増分 1 回分。
-- MG-02 MP は宿屋で全回復（TW-04）。迷宮内では回復手段を用意しない【仮】。
+- MG-02 MP は宿屋で全回復（TW-04）。迷宮内では回復手段を用意しない【仮】。【衝突】`config.town.innRanks` の `mpRatio`（0.25 / 0.5 / 1.0）と食い違う。実装は TW-04 とデータどおり `mpRatio` に従う（decisions の「衝突 MG-02」。ユーザーの判断待ち）。
 - MG-03 全滅時の復活で MP は回復しない（TW-23）。
 
 ## 2. 系統とレベル

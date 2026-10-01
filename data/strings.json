@@ -22,6 +22,7 @@
 
   "town.enter": "街に戻った。喧騒が正気を呼び戻す。",
   "town.inn.intro": "宿の主人が鍵を並べる。どの部屋にする？",
+  "town.inn.stay": "{room}に泊まった。（{cost}G）",
   "town.inn.levelUp": "{name}は経験を振り返り、レベル{level}になった。",
   "town.inn.learnRoll": "{name}は{spell}の理を掴もうとしている……",
   "town.inn.learnDice": "呪文の習得",
@@ -31,6 +32,8 @@
   "town.temple.resurrectRoll": "司祭が{name}のために祈る……",
   "town.temple.resurrectOk": "{name}は目を開けた。",
   "town.temple.resurrectFail": "祈りは届かなかった。{name}は灰になった。",
+  "town.temple.cured": "{name}の体から不調が抜けた。",
+  "town.temple.uncursed": "{name}の{item}は呪いとともに崩れ落ちた。",
   "town.dark.intro": "地下の工房で、灰から人を戻す者がいる。高くつくぞ。",
   "town.mercy.offer": "GMが卓を見渡した。「このままでは続けられないな。一人だけ、無償で戻してやる。誰にする？」",
   "town.mercy.done": "{name}が卓に戻ってきた。",
