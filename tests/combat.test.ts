@@ -101,8 +101,8 @@ describe("遭遇（CB-03/04/05/06）", () => {
       expect(ctx.state.rng).toEqual(m);
       expect(ctx.state.screen).toBe("battle");
       const dice = eventsOf(ctx.events, "dice");
-      expect(dice.map((x) => x.label)).toEqual(["battle.initiativeParty", "battle.initiativeEnemy"]);
-      expect(dice.map((x) => x.dice)).toEqual([[rP], [rE]]);
+      expect(dice.map((x) => x.label.key)).toEqual(["dice.initiative"]);
+      expect(dice.flatMap((x) => x.rows.map((row) => row.dice))).toEqual([[rP], [rE]]);
       expect(kindsOf(ctx.events).slice(0, 3)).toEqual(["screen", "encounter", "message:battle.encounter"]);
       seen.add(n);
     }
@@ -130,7 +130,7 @@ describe("遭遇（CB-03/04/05/06）", () => {
     }
   });
 
-  test("CB-04 先手判定の dice は total = floor(平均) + 出目。差が surpriseDiff に届かなければ奇襲なし", () => {
+  test("CB-04/UI-40 先手判定の dice は 1 件 2 行（base = floor(平均)、total = base + 出目）。rule は {diff: tP−tE, need, ambush: need}。差が surpriseDiff に届かなければ互角", () => {
     const d = dataWith({ combat: { surpriseDiff: 1000 } });
     const s0 = dived(3);
     const ctx = runCtx(s0, d, (c) => startBattle(c, { kind: "random", inRoom: false }, [{ monsterId: "giant_rat", count: 2 }]));
@@ -139,13 +139,71 @@ describe("遭遇（CB-03/04/05/06）", () => {
     rollDice(m, "1d6");
     const [rP, rE] = rolls(m, 2);
     expect(eventsOf(ctx.events, "dice")).toEqual([
-      { kind: "dice", label: "battle.initiativeParty", dice: [rP], total: 10 + rP! }, // 65/6 = 10.83
-      { kind: "dice", label: "battle.initiativeEnemy", dice: [rE], total: 9 + rE! },
+      {
+        kind: "dice",
+        label: { key: "dice.initiative" },
+        rows: [
+          { label: { key: "dice.side.party" }, base: 10, dice: [rP], total: 10 + rP! }, // 65/6 = 10.83
+          { label: { key: "dice.side.enemy" }, base: 9, dice: [rE], total: 9 + rE! },
+        ],
+        rule: { key: "dice.initiative.rule", params: { diff: 10 + rP! - (9 + rE!), need: 1000, ambush: 1000 } },
+        result: { key: "dice.initiative.none" },
+      },
     ]);
     expect(ctx.state.battle!.partySurprise).toBe(false);
     expect(kindsOf(ctx.events)).not.toContain("message:battle.surpriseParty");
     expect(kindsOf(ctx.events)).not.toContain("message:battle.surpriseEnemy");
     expect(ctx.state.rng).toEqual(m);
+  });
+
+  test("CB-04 境界: 整数の合計の差で比べる。diff = need で先手、diff = −need で不意打ち、|diff| = need − 1 なら互角（乱数の消費は同じ）", () => {
+    // 味方の agi 平均 65/6 = 10.83 → 10、giant_rat の agi 9 → 9。鏡の rng で diff = (10 + rP) − (9 + rE) を求め、
+    // 正と負の diff（|diff| ≥ 2）が出るシードを探して、そこに surpriseDiff を合わせる
+    const start = (seed: number, need: number) =>
+      runCtx(dived(seed), dataWith({ combat: { surpriseDiff: need } }), (c) =>
+        startBattle(c, { kind: "random", inRoom: false }, [{ monsterId: "giant_rat", count: 2 }]),
+      );
+    const diffOf = (seed: number): number => {
+      const m = cloneRng(dived(seed).rng);
+      rollDice(m, "1d6");
+      rollDice(m, "1d6");
+      const [rP, rE] = rolls(m, 2);
+      return 10 + rP! - (9 + rE!);
+    };
+    const seeds = Array.from({ length: 60 }, (_, i) => i + 1);
+    const pos = seeds.find((x) => diffOf(x) >= 2)!;
+    const neg = seeds.find((x) => diffOf(x) <= -2)!;
+    expect(pos).toBeDefined();
+    expect(neg).toBeDefined();
+    const resultOf = (ctx: ReturnType<typeof start>) => eventsOf(ctx.events, "dice")[0]!.result.key;
+
+    const dp = diffOf(pos);
+    const p1 = start(pos, dp);
+    expect(resultOf(p1)).toBe("dice.initiative.party");
+    expect(eventsOf(p1.events, "dice")[0]!.rule.params).toEqual({ diff: dp, need: dp, ambush: dp });
+    expect(p1.state.battle!.partySurprise).toBe(true);
+    expect(kindsOf(p1.events)).toContain("message:battle.surpriseParty");
+    const p0 = start(pos, dp + 1);
+    expect(resultOf(p0)).toBe("dice.initiative.none");
+    expect(p0.state.battle!.partySurprise).toBe(false);
+    expect(kindsOf(p0.events).filter((k) => k.startsWith("message:battle.surprise"))).toEqual([]);
+
+    // 小数のまま比べると (10.83 + rP) − (9 + rE) = diff + 0.83 > −need なので不意打ちにならなかった境界
+    const dn = diffOf(neg);
+    const n1 = start(neg, -dn);
+    expect(resultOf(n1)).toBe("dice.initiative.enemy");
+    expect(kindsOf(n1.events)).toContain("message:battle.surpriseEnemy");
+    expect(n1.state.battle!.round).toBe(1);
+    const n0 = start(neg, -dn + 1);
+    expect(resultOf(n0)).toBe("dice.initiative.none");
+    expect(n0.state.battle!.round).toBe(0);
+    // 判定までの乱数の消費は need に依らない（互角なら先手判定で止まる）
+    const m = cloneRng(dived(pos).rng);
+    rollDice(m, "1d6");
+    rollDice(m, "1d6");
+    rolls(m, 2);
+    expect(p0.state.rng).toEqual(m);
+    expect(p1.state.rng).toEqual(m);
   });
 
   test("CB-04 味方の奇襲: partySurprise が立ち、次の resolve で敵は行動しない（消費して false に戻る）。逃走に失敗したときは敵が行動する", () => {
@@ -1100,16 +1158,23 @@ describe("オート（CB-40〜43、F2）", () => {
 });
 
 describe("逃走・勝利・全滅（CB-50〜54）", () => {
-  test("CB-50/CB-12 battle.flee: 出目 ≤ 成功率で battleEnd(flee)（出目 = 成功率で成功、−1 で失敗）。EXP は増えず、図鑑の撃破数は残る。dice battle.fleeRoll。入力済みの行動は捨てる", () => {
+  test("CB-50/CB-12 battle.flee: 出目 ≤ 成功率で battleEnd(flee)（出目 = 成功率で成功、−1 で失敗）。EXP は増えず、図鑑の撃破数は残る。UI-40 dice は dice.flee（出目 1 行、rule.params.rate = fleePercent、result ok / ng）。入力済みの行動は捨てる", () => {
     for (let seed = 1; seed <= 6; seed++) {
       const s = setup([{ monsterId: "giant_rat", hps: [50] }], { seed, identified: ["giant_rat"], inputs: { c1: atk(0) } });
       s.bestiary["giant_rat"]!.kills = 3;
       const m = cloneRng(s.rng);
       const roll = randInt(m, 1, 100);
       // fleePercent = floor(fleeBase + 1.8333×3) = fleeBase + 5
+      const fleeDice = (rate: number, res: string) => ({
+        kind: "dice",
+        label: { key: "dice.flee" },
+        rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [roll], total: roll }],
+        rule: { key: "dice.rule.rate", params: { rate } },
+        result: { key: res },
+      });
       const ok = exec(s, FLEE, dataWith({ combat: { fleeBase: roll - 5 } }));
       expect(ok.events.slice(0, 3)).toEqual([
-        { kind: "dice", label: "battle.fleeRoll", dice: [roll], total: roll },
+        fleeDice(roll, "dice.flee.ok"),
         { kind: "battleEnd", result: "flee" },
         { kind: "message", key: "battle.fleeOk" },
       ]);
@@ -1120,7 +1185,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
       expect(ok.state.rng).toEqual(m);
       // 失敗: fleeFail → 敵だけのラウンド（アルドの攻撃は捨てる）
       const ng = exec(s, FLEE, dataWith({ combat: { fleeBase: roll - 6 } }));
-      expect(ng.events[0]).toEqual({ kind: "dice", label: "battle.fleeRoll", dice: [roll], total: roll });
+      expect(ng.events[0]).toEqual(fleeDice(roll - 1, "dice.flee.ng"));
       expect(kindsOf(ng.events).slice(0, 2)).toEqual(["dice", "message:battle.fleeFail"]);
       expect(eventsOf(ng.events, "attack").map((e) => e.actorId)).toEqual(["e0-0"]);
       expect(ng.state.battle!.round).toBe(1);

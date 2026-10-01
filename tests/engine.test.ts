@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { createInitialState, execute } from "../src/core/engine";
 import { createRng } from "../src/core/rng";
 import { cloneState, createItemInstance, destroyItemInstance, dungeonOf, itemDisplayName, memberById, monsterOf } from "../src/core/state";
-import type { Command, GameState } from "../src/core/types";
+import type { Command, GameEvent, GameState } from "../src/core/types";
 import {
   data,
   deepFreeze,
@@ -161,16 +161,27 @@ describe("engine: execute", () => {
     expect(d.townVisit).toBeNull();
   });
 
-  test("UI-40/§3-10 game.new が出す message の key と dice の label はすべて data.strings に実在する", () => {
+  test("UI-40/§3-10 game.new が出す message の key と dice の各 TextRef の key はすべて data.strings に実在する", () => {
     const r = execute(createInitialState(1, data), gameNew(randomMembers()), data);
     expectKnownStringKeys(r.events);
-    // 検査関数自体が未知のキーを検出できること
-    expect(stringKeysOf([{ kind: "message", key: "no.such.key" }, { kind: "dice", label: "town.inn.learnDice", dice: [1], total: 1 }])).toEqual([
+    // 検査関数自体が未知のキーを検出できること（dice は label → rows[].label → rule → result の順に集める）
+    const dice: GameEvent = {
+      kind: "dice",
+      label: { key: "dice.learn", params: { spell: "x" } },
+      rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [1], total: 1 }],
+      rule: { key: "dice.rule.rate", params: { rate: 5 } },
+      result: { key: "dice.learn.ok" },
+    };
+    expect(stringKeysOf([{ kind: "message", key: "no.such.key" }, dice])).toEqual([
       "no.such.key",
-      "town.inn.learnDice",
+      "dice.learn",
+      "dice.row.roll",
+      "dice.rule.rate",
+      "dice.learn.ok",
     ]);
     expect(() => expectKnownStringKeys([{ kind: "message", key: "no.such.key" }])).toThrow();
-    expectKnownStringKeys([{ kind: "dice", label: "town.inn.learnDice", dice: [1], total: 1 }]);
+    expect(() => expectKnownStringKeys([{ ...dice, result: { key: "dice.no.such" } }])).toThrow();
+    expectKnownStringKeys([dice]);
   });
 
   test("D2 party がある state での game.new は、同じ参照（toBe）と [{kind:\"rejected\",command:\"game.new\",reason:\"game already started\"}]", () => {

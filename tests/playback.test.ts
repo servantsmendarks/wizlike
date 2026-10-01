@@ -86,7 +86,7 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
     },
     dice: {
       show(ev, skip, stepMs) {
-        log.push({ m: "dice.show", a: [ev.label, skip, stepMs] });
+        log.push({ m: "dice.show", a: [ev.label.key, skip, stepMs] });
         return Promise.resolve();
       },
       hide: rec("dice.hide"),
@@ -98,6 +98,28 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
 }
 
 const names = (log: Log): string[] => log.map((e) => e.m);
+
+/** UI-40 の dice（出目 1 行）。label と結果のキーだけを変える */
+function rollDiceEv(label: string, dice: number[], total: number, result: string): GameEvent {
+  return {
+    kind: "dice",
+    label: { key: label },
+    rows: [{ label: { key: "dice.row.roll" }, base: null, dice, total }],
+    rule: { key: "dice.rule.rate", params: { rate: 50 } },
+    result: { key: result },
+  };
+}
+/** UI-40 の先手判定（2 行） */
+const INITIATIVE: GameEvent = {
+  kind: "dice",
+  label: { key: "dice.initiative" },
+  rows: [
+    { label: { key: "dice.side.party" }, base: 8, dice: [4], total: 12 },
+    { label: { key: "dice.side.enemy" }, base: 9, dice: [2], total: 11 },
+  ],
+  rule: { key: "dice.initiative.rule", params: { diff: 1, need: 5, ambush: 5 } },
+  result: { key: "dice.initiative.none" },
+};
 
 afterEach(() => {
   vi.useRealTimers();
@@ -252,7 +274,13 @@ describe("UI-41 playback", () => {
       const before = stateWith(diveAt(1, 1, "N"));
       const after = stateWith(null);
       const events: GameEvent[] = [
-        { kind: "dice", label: "wipe.dice", dice: [3, 4], total: 7 },
+        {
+          kind: "dice",
+          label: { key: "dice.wipe" },
+          rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [3, 4], total: 7 }],
+          rule: { key: "dice.wipe.rule", params: { min: 7, max: 10 } },
+          result: { key: "dice.wipe.result", params: { band: "x" } },
+        },
         { kind: "wipe", penalty },
         { kind: "message", key: "town.enter" },
         { kind: "screen", to: "town" },
@@ -364,7 +392,7 @@ describe("UI-41/UI-42/UI-40 戦闘の再生", () => {
       { kind: "attack", actorId: "e1-0", targetId: "c2", hit: true, damage: 2 },
       { kind: "hpChanged", id: "c2", delta: -2, hp: 5 },
       { kind: "lifeChanged", id: "e0-0", life: "dead" },
-      { kind: "dice", label: "battle.fleeRoll", dice: [37], total: 37 },
+      rollDiceEv("dice.flee", [37], 37, "dice.flee.ok"),
       { kind: "message", key: "battle.fleeOk" },
       { kind: "battleEnd", result: "flee" },
       { kind: "screen", to: "dungeon" },
@@ -381,7 +409,7 @@ describe("UI-41/UI-42/UI-40 戦闘の再生", () => {
       { m: "party.setHp", a: ["c2", 5] },
       { m: "party.flash", a: ["c2", ui.flashMs] },
       { m: "battle.removeOne", a: [0, ui.flashMs] },
-      { m: "dice.show", a: ["battle.fleeRoll", false, ui.diceStepMs] },
+      { m: "dice.show", a: ["dice.flee", false, ui.diceStepMs] },
       { m: "message.say", a: [data.strings["battle.fleeOk"], false] },
       { m: "dice.hide", a: [] },
       { m: "screens.show", a: ["dungeon"] },
@@ -397,8 +425,7 @@ describe("UI-41/UI-42/UI-40 戦闘の再生", () => {
     const events: GameEvent[] = [
       { kind: "screen", to: "battle" },
       { kind: "encounter", groups },
-      { kind: "dice", label: "battle.initiativeParty", dice: [4], total: 12 },
-      { kind: "dice", label: "battle.initiativeEnemy", dice: [2], total: 11 },
+      INITIATIVE,
       { kind: "spell", actorId: "c5", spellId: "flame_burst", targets: ["e0-0", "e0-1"] },
       { kind: "hpChanged", id: "e0-0", delta: -4, hp: 0 },
       { kind: "lifeChanged", id: "e0-0", life: "dead" },
@@ -413,22 +440,21 @@ describe("UI-41/UI-42/UI-40 戦闘の再生", () => {
     expect(ms).toEqual([
       ["view.fade", 0],
       ["dice.show", 0],
-      ["dice.show", 0],
       ["view.shake", 0],
       ["battle.flash", 0],
       ["battle.removeOne", 0],
       ["party.flash", 0],
     ]);
     // dice.show の skip は真
-    expect(log.filter((e) => e.m === "dice.show").map((e) => e.a[1])).toEqual([true, true]);
+    expect(log.filter((e) => e.m === "dice.show").map((e) => e.a[1])).toEqual([true]);
   });
 
-  test("UI-40 続けて来たダイスは消さずに積み、message の間も残し、次のイベント（と再生の終わり）で 1 回だけ消す", async () => {
+  test("UI-40 続けて来たダイスは間で消さず（箱の置き換えは views/dice.ts）、message の間も残し、次のイベント（と再生の終わり）で 1 回だけ消す", async () => {
     const { deps, log } = fakeDeps();
     const s = battleState();
     const events: GameEvent[] = [
-      { kind: "dice", label: "battle.initiativeParty", dice: [4], total: 12 },
-      { kind: "dice", label: "battle.initiativeEnemy", dice: [2], total: 11 },
+      INITIATIVE,
+      rollDiceEv("dice.flee", [37], 37, "dice.flee.ng"),
       { kind: "message", key: "battle.surpriseParty" },
     ];
     expectKnownStringKeys(events);

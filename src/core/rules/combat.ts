@@ -174,16 +174,32 @@ export function startBattle(ctx: RuleContext, origin: BattleOrigin, specs: { mon
   const b = requireBattle(state);
   const pAvg = partyAgiAvg(state);
   const eAvg = enemyAgiAvg(state, data);
+  // M4.5: 表示している整数の合計（floor(平均) + 1d10）どうしの差で比べる
+  const bP = Math.floor(pAvg);
+  const bE = Math.floor(eAvg);
   const rP = rollDie(state.rng, 10);
   const rE = rollDie(state.rng, 10);
-  ctx.events.push({ kind: "dice", label: "battle.initiativeParty", dice: [rP], total: Math.floor(pAvg) + rP });
-  ctx.events.push({ kind: "dice", label: "battle.initiativeEnemy", dice: [rE], total: Math.floor(eAvg) + rE });
-  const ambushAvoid = 0; // M5: EV-42 の慎重の恩恵を敵の奇襲判定から引く
-  const diff = pAvg + rP - (eAvg + rE - ambushAvoid);
-  if (diff >= cfg.combat.surpriseDiff) {
+  const tP = bP + rP;
+  const tE = bE + rE;
+  const diff = tP - tE;
+  const need = cfg.combat.surpriseDiff;
+  const ambushAvoid = 0; // M5: EV-42 の慎重の恩恵。敵の奇襲の閾値だけを広げる
+  const ambush = need + ambushAvoid;
+  const outcome = diff >= need ? "party" : diff <= -ambush ? "enemy" : "none";
+  ctx.events.push({
+    kind: "dice",
+    label: { key: "dice.initiative" },
+    rows: [
+      { label: { key: "dice.side.party" }, base: bP, dice: [rP], total: tP },
+      { label: { key: "dice.side.enemy" }, base: bE, dice: [rE], total: tE },
+    ],
+    rule: { key: "dice.initiative.rule", params: { diff, need, ambush } },
+    result: { key: `dice.initiative.${outcome}` },
+  });
+  if (outcome === "party") {
     b.partySurprise = true;
     ctx.events.push({ kind: "message", key: "battle.surpriseParty" });
-  } else if (diff <= -cfg.combat.surpriseDiff) {
+  } else if (outcome === "enemy") {
     ctx.events.push({ kind: "message", key: "battle.surpriseEnemy" });
     const before = snapMembers(state, data);
     if (!runRound(ctx, { allies: false, enemies: true })) roundEnd(ctx, before);
@@ -349,8 +365,15 @@ export function fleeRound(ctx: RuleContext): void {
   b.partySurprise = false; // どの経路でも消費する
   const pct = fleePercent(state, data);
   const d = randInt(state.rng, 1, 100);
-  ctx.events.push({ kind: "dice", label: "battle.fleeRoll", dice: [d], total: d });
-  if (d <= pct) {
+  const ok = d <= pct;
+  ctx.events.push({
+    kind: "dice",
+    label: { key: "dice.flee" },
+    rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [d], total: d }],
+    rule: { key: "dice.rule.rate", params: { rate: pct } },
+    result: { key: ok ? "dice.flee.ok" : "dice.flee.ng" },
+  });
+  if (ok) {
     endBattle(ctx, "flee");
     return;
   }

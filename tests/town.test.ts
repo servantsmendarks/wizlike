@@ -195,7 +195,7 @@ describe("TW-04 宿屋（town.inn）", () => {
     ]);
   });
 
-  test("TW-04/CH-61 回復の後に alive の者を並び順にレベルアップ（複数段）。dead は上がらない。乱数は鏡の rng どおり、習得の dice の label は town.inn.learnDice", () => {
+  test("TW-04/CH-61 回復の後に alive の者を並び順にレベルアップ（複数段）。dead は上がらない。乱数は鏡の rng どおり、習得の dice は dice.learn（UI-40）", () => {
     // expBase 1000 に固定したデータ（CH-64 の調整値から手計算を切り離す）で、戦士・僧侶の閾値は L2 1000 / L3 1500 / L4 2250。
     // c2 ベルク exp 1500 → L3（d10 を 2 回、+2 は vit 14）、c3 キリ dead exp 5000 は上がらない、
     // c4 ドナ exp 1000 → L2（d8、vit 10 で +0。L2 の判定対象は blessing だけで d100 を 1 回。L2 で開く帯は無いので保証なし）
@@ -215,7 +215,13 @@ describe("TW-04 宿屋（town.inn）", () => {
       { kind: "levelUp", id: "c4", level: 2, hpGain: g3, mpGain: 5, hpMax: 12 + g3, mpMax: 10, hp: 12 + g3, mp: 10 },
     ]);
     expect(r.events.filter((e) => e.kind === "dice")).toEqual([
-      { kind: "dice", label: "town.inn.learnDice", dice: [roll], total: roll },
+      {
+        kind: "dice",
+        label: { key: "dice.learn", params: { spell: "加護" } },
+        rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [roll], total: roll }],
+        rule: { key: "dice.rule.rate", params: { rate: 70 } }, // ドナ L2 の blessing: 35 + 20×1 + (15−10)×3 + 0
+        result: { key: roll <= 70 ? "dice.learn.ok" : "dice.learn.ng" },
+      },
     ]);
     expect(member(r.state, "c3").level).toBe(1);
     expect(member(r.state, "c2").level).toBe(3);

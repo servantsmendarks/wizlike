@@ -9,7 +9,7 @@
 // - 戦闘（UI-41 / UI-42 / UI-40）: 被弾のフラッシュは hpChanged（delta < 0）に一本化する（味方はパーティ行、敵はグループの絵）。
 //   敵の id は "e{g}-{u}"（enemyGroupOfId）。敵の HP・状態は見せない（状態は core の message で伝わる）。
 //   全体攻撃の揺れは、spell の呪文が target enemyGroup / allEnemies かつ effect damage のとき（data.spells を表示のためだけに引く）。
-//   ダイスは dice で出し、message と dice 以外のイベントの前と再生の終わりに消す。
+//   ダイスは dice で出し（1 件で 1 つの箱。新しい dice は前の箱を置き換える）、message と dice 以外のイベントの前と再生の終わりに消す。
 //   skip のときは flash / shake / dice / fade に 0ms を渡し、タイマーを使わない。
 // 具体的な views は import しない（純粋な enemyGroupOfId と formatMessage だけ）。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, StatusId, Strings } from "../core/data/index";
@@ -52,7 +52,7 @@ export type PlayerDeps = {
   };
   /** UI-40 のダイス表示（views/dice.ts） */
   dice: {
-    show(ev: { label: string; dice: readonly number[]; total: number }, skip: boolean, stepMs: number): Promise<void>;
+    show(ev: Extract<GameEvent, { kind: "dice" }>, skip: boolean, stepMs: number): Promise<void>;
     hide(): void;
   };
   screens: { show(to: Screen, state: GameState): void; sync(state: GameState): void };

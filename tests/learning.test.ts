@@ -49,7 +49,18 @@ function rngAfter(seed: number, specs: [number, number][]): RngState {
 const D100: [number, number] = [1, 100];
 
 function diceOf(events: readonly GameEvent[]): number[] {
-  return events.flatMap((e) => (e.kind === "dice" ? e.dice : []));
+  return events.flatMap((e) => (e.kind === "dice" ? e.rows.flatMap((r) => r.dice) : []));
+}
+
+/** UI-40: 習得判定の dice（出目 1 行、成功率の基準、習得 / 習得できず） */
+function learnDice(spell: string, roll: number, rate: number, ok: boolean): GameEvent {
+  return {
+    kind: "dice",
+    label: { key: "dice.learn", params: { spell } },
+    rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [roll], total: roll }],
+    rule: { key: "dice.rule.rate", params: { rate } },
+    result: { key: ok ? "dice.learn.ok" : "dice.learn.ng" },
+  };
 }
 
 function learnedOf(events: readonly GameEvent[]): [string, string][] {
@@ -158,24 +169,24 @@ describe("learning: rollSpellLearning", () => {
     expect(ctx.state.rng).toEqual(rngAfter(1, [D100]));
   });
 
-  test("MG-24/UI-40 1 呪文につき message learnRoll → dice{label:town.inn.learnDice（params なし）} → learned か notLearned（seed 7: ドナ L3、d100 = 4, 93、保証 randInt(0,0)）", () => {
+  test("MG-24/MG-21/UI-40 1 呪文につき message learnRoll → dice{dice.learn {spell}、rule の rate = learnRate、result ok / ng} → learned か notLearned（seed 7: ドナ L3、d100 = 4, 93、保証 randInt(0,0)）", () => {
     const { ctx, ch } = setup(7, DONA);
     const name = ch.name;
     expect(rollSpellLearning(ctx, ch, 3)).toEqual(["blessing", "cure_poison"]);
     expect(ctx.events).toEqual([
       { kind: "message", key: "town.inn.learnRoll", params: { name, spell: "加護" } },
-      { kind: "dice", label: "town.inn.learnDice", dice: [4], total: 4 },
+      learnDice("加護", 4, 90, true), // 35 + 20×2 + (15−10)×3 + 0 = 90。4 ≤ 90
       { kind: "spellLearned", id: "c4", spellId: "blessing", via: "roll" },
       { kind: "message", key: "town.inn.learned", params: { name, spell: "加護" } },
       { kind: "message", key: "town.inn.learnRoll", params: { name, spell: "解毒" } },
-      { kind: "dice", label: "town.inn.learnDice", dice: [93], total: 93 },
+      learnDice("解毒", 93, 50, false), // 35 + 20×0 + 15 + 0 = 50。93 > 50
       { kind: "message", key: "town.inn.notLearned", params: { name, spell: "解毒" } },
       { kind: "spellLearned", id: "c4", spellId: "cure_poison", via: "guarantee" },
       { kind: "message", key: "town.inn.learned", params: { name, spell: "解毒" } },
     ]);
     expectKnownStringKeys(ctx.events);
-    // UI-40: dice の label は params なしで出るので、文言に {…} を含まない
-    expect(data.strings["town.inn.learnDice"]).not.toContain("{");
+    // UI-40: 見出しは呪文名を埋め込む
+    expect(data.strings["dice.learn"]).toContain("{spell}");
   });
 
   test("MG-21 seed 8: ドナ L2 の blessing は 87 > 70 で失敗。解放レベル 2 の帯が無いので保証は無く、乱数の消費は 1 回", () => {

@@ -106,20 +106,20 @@ export function withChar(state: GameState, idx: number, patch: Partial<Character
   return s;
 }
 
-/** events に出てくる文字列キー（message の key、dice の label）を、出てきた順に返す。 */
+/** events に出てくる文字列キー（message の key、dice の label → rows[].label → rule → result の key）を、出てきた順に返す。 */
 export function stringKeysOf(events: readonly GameEvent[]): string[] {
   const keys: string[] = [];
   for (const e of events) {
     if (e.kind === "message") keys.push(e.key);
-    else if (e.kind === "dice") keys.push(e.label);
+    else if (e.kind === "dice") keys.push(e.label.key, ...e.rows.map((r) => r.label.key), e.rule.key, e.result.key);
   }
   return keys;
 }
 
-/** events の message の key と dice の label が、すべて data.strings に実在することを確かめる。 */
+/** events の message の key と dice の各 TextRef の key が、すべて data.strings に実在することを確かめる。 */
 export function expectKnownStringKeys(events: readonly GameEvent[], d: GameData = data): void {
   const unknown = stringKeysOf(events).filter((k) => !Object.prototype.hasOwnProperty.call(d.strings, k));
-  expect(unknown, "message key / dice label not found in data/strings.json").toEqual([]);
+  expect(unknown, "message key / dice key not found in data/strings.json").toEqual([]);
 }
 
 /**

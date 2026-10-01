@@ -5,7 +5,7 @@
 - CB-01 ランダム遭遇は歩行 1 歩ごとに判定する（旋回では判定しない）。確率は `dungeons[].encounterRate` のセル種別（`room` / `corridor`）ごとの値。`room` / `corridor` はセルが部屋の中か否か（セルの `roomId`）で決まる。判定は d100 ≤ round(rate×100) で、前進が成立した 1 歩につき 1 回。
 - CB-02 固定遭遇: ボス部屋（DG-31）、イベント由来（EV）。固定遭遇は逃走できない【仮】。
 - CB-03 敵編成は最大 `config.combat.maxEnemyGroups`（4）グループ。各グループは同種の敵 1〜`config.combat.maxPerGroup`（9）体で、体数は `monsters[].groupSize` のダイス。グループ数は `dungeons[].groupCountWeights[階]` の重みづけの抽選で決める（要素 i がグループ数 i+1。重みは【仮】）。ランダム遭遇で出る敵の種類は、いる階の `dungeons[].encounterTable[階]` から `weight` の重みで選ぶ。どの敵がどのダンジョンのどの階に出るかは `dungeons[].encounterTable` のみを正とし、`monsters.json` は出現場所を持たない。
-- CB-04 先手判定: 味方の `agi` 平均 + 1d10 と、敵の `agi` 平均 + 1d10 を比べる。差が 5 以上【仮】なら大きい側の奇襲で、奇襲側だけが 1 ラウンド行動する。慎重の恩恵 `ambushAvoid`（EV-42）は敵の奇襲判定から引く。平均は行動可能な味方と生存個体の `agi` で取り、小数のまま比べる（dice の表示の total は floor(平均)+出目）。敵の奇襲ラウンドは遭遇の直後（同じ処理の中）に解決する。味方の奇襲は次のラウンドで敵が行動しない。ただし逃走に失敗したラウンドでは敵が行動する。ボス戦でも判定する。
+- CB-04 先手判定: 各側の合計 = floor(`agi` 平均) + 1d10（味方 → 敵の順に振る）、差 = 味方の合計 − 敵の合計。差 ≥ `surpriseDiff`（5【仮】）なら味方の奇襲、差 ≤ −(`surpriseDiff` + `ambushAvoid`) なら敵の奇襲で、奇襲側だけが 1 ラウンド行動する。慎重の恩恵 `ambushAvoid`（EV-42。M5 までは 0）は敵の奇襲の閾値だけを広げる。平均は行動可能な味方と生存個体の `agi` で取り、表示している整数の合計どうしで比べる（M4.5。表示と判定を一致させる）。dice は 1 件で、行は 味方 / 敵（base = floor(平均)、total = base + 出目）、基準は `dice.initiative.rule`（params diff / need / ambush）、結果は `dice.initiative.party` / `enemy` / `none`。敵の奇襲ラウンドは遭遇の直後（同じ処理の中）に解決する。味方の奇襲は次のラウンドで敵が行動しない。ただし逃走に失敗したラウンドでは敵が行動する。ボス戦でも判定する。
 - CB-05 未鑑定: 遭遇時、各グループは `monsters[].unidentifiedName` で表示される。鑑定済みになる契機: 識別呪文（MG-41）、各ラウンド終了時に `config.combat.identifyChancePerRound`（15）% + 味方の知恵最大値補正【仮】、同種を通算 `config.combat.identifyKills`（5）体倒した図鑑フラグ【仮】。図鑑フラグはゲーム単位で永続。知恵補正 = max(0, 行動可能な味方の `iq` 最大 − 10) × `config.combat.identifyIqPerPoint`（1）【仮】。図鑑は `GameState.bestiary`（monsterId → {kills, identified}）。通算撃破数による鑑定は撃破の瞬間に行う（勝利したラウンドでも残る。逃げた戦闘の撃破も数える）。ラウンド終了の判定は、生存個体のある未鑑定のグループを添字順に 1 回ずつ行う（同じ種類が先に鑑定されれば以降は判定しない）。
 - CB-06 未鑑定グループとの遭遇で SAN −2/グループ（CH-51）。鑑定済み（図鑑フラグあり）の敵では減らない。
 
@@ -78,8 +78,8 @@
 - `encounter` / `enemyGroups` の各グループの `name` は core が選ぶ表示名（鑑定済みなら `name`、未鑑定なら `unidentifiedName`）。鑑定で表示名が変わったら `enemyGroups` を 1 件出して全グループを出し直す。
 - 敵の個体の id は `e{グループ添字}-{個体添字}`（添字は戦闘中に詰めない）。敵の被弾にも `hpChanged`（id は敵の id）を出し、撃破は `lifeChanged` dead。
 - MP の変化は `mpChanged`。
-- 先手判定の dice のラベルは `battle.initiativeParty` / `battle.initiativeEnemy` の 2 件、逃走の dice のラベルは `battle.fleeRoll`。
+- dice の形は UI-40（`{label, rows, rule, result}`、どれも strings のキーと params）。先手判定の dice は 1 件 2 行（CB-04）。逃走の dice は label `dice.flee`、行は `dice.row.roll`（base null、出目 d100）、基準は `dice.rule.rate`（params rate = 逃走の成功率。クランプしない）、結果は 出目 ≤ 成功率なら `dice.flee.ok`、そうでなければ `dice.flee.ng`。
 - ラウンド終了（決着しなかったラウンドだけ）の順は 毒（CB-33）→ 自然覚醒（CB-32）→ 確率鑑定（CB-05）→ オート解除（CB-43）。
-- 遭遇の順は screen{battle} → encounter → message → （未鑑定の message と sanChanged）→（CB-06 の SAN で CB-53 の全滅になれば、先手判定の dice を出さずに戦闘の終わりの順へ進む）→ 先手判定の dice 2 件 → 奇襲の message →（敵の奇襲ならそのラウンド）。戦闘の終わりの順は battleEnd → 結果の message → 味方の睡眠の解除 → screen{dungeon}（全滅では screen{dungeon} の代わりに全滅処理 TW-20〜26 が続き、最後が screen{town}）。
-- `battle.flee` のイベント順: dice（`battle.fleeRoll`）→ 成功なら戦闘の終わりの順 / 失敗なら message `battle.fleeFail` → 敵だけのラウンド →（決着しなければ）ラウンド終了の順。
+- 遭遇の順は screen{battle} → encounter → message → （未鑑定の message と sanChanged）→（CB-06 の SAN で CB-53 の全滅になれば、先手判定の dice を出さずに戦闘の終わりの順へ進む）→ 先手判定の dice 1 件 → 奇襲の message →（敵の奇襲ならそのラウンド）。戦闘の終わりの順は battleEnd → 結果の message → 味方の睡眠の解除 → screen{dungeon}（全滅では screen{dungeon} の代わりに全滅処理 TW-20〜26 が続き、最後が screen{town}）。
+- `battle.flee` のイベント順: dice（`dice.flee`）→ 成功なら戦闘の終わりの順 / 失敗なら message `battle.fleeFail` → 敵だけのラウンド →（決着しなければ）ラウンド終了の順。
 - `battle.repeat` のイベントの形と順は `battle.resolve` と同じ（違うのは入力を自動で作ることだけ）。

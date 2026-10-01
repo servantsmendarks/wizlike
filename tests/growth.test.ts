@@ -248,7 +248,13 @@ describe("growth: レベルアップ（CH-61、CH-63、CH-65）", () => {
     expect(ch.maxLevelReached).toBe(2);
     expect(kinds(ctx.events)).toEqual(["levelUp", "message", "message", "dice", "spellLearned", "message"]);
     const dice = ctx.events.find((e) => e.kind === "dice");
-    expect(dice).toEqual({ kind: "dice", label: "town.inn.learnDice", dice: [14], total: 14 });
+    expect(dice).toEqual({
+      kind: "dice",
+      label: { key: "dice.learn", params: { spell: "加護" } },
+      rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [14], total: 14 }],
+      rule: { key: "dice.rule.rate", params: { rate: 70 } }, // 35 + 20×1 + (15−10)×3 + 0
+      result: { key: "dice.learn.ok" },
+    });
     expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 8], [1, 100]]));
     expectKnownStringKeys(ctx.events);
   });
@@ -307,7 +313,7 @@ describe("growth: 複数段の上昇と習得判定（CH-61、CH-63、MG-20）",
       "spellLearned",
       "message",
     ]);
-    expect(ctx.events.flatMap((e) => (e.kind === "dice" ? e.dice : []))).toEqual([14, 83]);
+    expect(ctx.events.flatMap((e) => (e.kind === "dice" ? e.rows.flatMap((row) => row.dice) : []))).toEqual([14, 83]);
     expect(
       ctx.events.flatMap((e) => (e.kind === "spellLearned" ? [[e.spellId, e.via]] : [])),
     ).toEqual([

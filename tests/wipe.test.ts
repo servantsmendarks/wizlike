@@ -109,7 +109,7 @@ describe("全滅処理（TW-20〜26）", () => {
     expect(base().party.map((c) => c.level)).toEqual([3, 4, 2, 2, 1, 1]);
   });
 
-  test("TW-22 出目と帯: 2d10 の合計 2〜20 のそれぞれで dice{wipe.dice}（2 個・合計）→ 帯の text の message。bandIndex は帯、message wipe.dice は出ない。乱数は 2d10 と失う品の選択だけ（鏡の rng）", () => {
+  test("TW-22/UI-40 出目と帯: 2d10 の合計 2〜20 のそれぞれで dice{dice.wipe}（出目 1 行に 2 個・合計、rule は帯の min / max、result は帯の name）→ 帯の text の message。bandIndex は帯。乱数は 2d10 と失う品の選択だけ（鏡の rng）", () => {
     for (let t = 2; t <= 20; t++) {
       const s = withTotal(withLedger(base()), t);
       const m = cloneRng(s.rng);
@@ -119,16 +119,23 @@ describe("全滅処理（TW-20〜26）", () => {
       const idx = bandByHand(t);
       const dice = eventsOf(ctx.events, "dice");
       expect(dice).toHaveLength(1);
-      expect(dice[0]!.label).toBe("wipe.dice");
-      expect(dice[0]!.dice).toHaveLength(2);
-      expect(dice[0]!.dice[0]! + dice[0]!.dice[1]!).toBe(t);
-      expect(dice[0]!.total).toBe(t);
-      expect(p.dice).toEqual(dice[0]!.dice);
+      const band = data.penaltyTable.bands[idx]!;
+      expect(dice[0]!.label).toEqual({ key: "dice.wipe" });
+      expect(dice[0]!.rows).toHaveLength(1);
+      const row = dice[0]!.rows[0]!;
+      expect(row.label).toEqual({ key: "dice.row.roll" });
+      expect(row.base).toBeNull();
+      expect(row.dice).toHaveLength(2);
+      expect(row.dice[0]! + row.dice[1]!).toBe(t);
+      expect(row.total).toBe(t);
+      expect(band.min <= t && t <= band.max).toBe(true);
+      expect(dice[0]!.rule).toEqual({ key: "dice.wipe.rule", params: { min: band.min, max: band.max } });
+      expect(dice[0]!.result).toEqual({ key: "dice.wipe.result", params: { band: band.name } });
+      expect(p.dice).toEqual(row.dice);
       expect(p.total).toBe(t);
       expect(p.bandIndex).toBe(idx);
       const di = ctx.events.indexOf(dice[0]!);
       expect(ctx.events[di + 1]).toEqual({ kind: "message", key: data.penaltyTable.bands[idx]!.text });
-      expect(kindsOf(ctx.events)).not.toContain("message:wipe.dice");
       expect(ctx.state.rng).toEqual(m);
       // TW-22 金: 台帳分を引いた後の 300 に比率を掛けて切り捨て。0 なら wipe.goldLost を出さない
       expect(p.ledgerGold).toBe(40);
@@ -381,7 +388,7 @@ describe("全滅の発生（CB-53、CB-06、CH-44）", () => {
     startBattle(ctx, { kind: "random", inRoom: false }, [{ monsterId: "kobold", count: 1 }]);
     expectKnownStringKeys(ctx.events);
     const ks = kindsOf(ctx.events);
-    expect(eventsOf(ctx.events, "dice").map((e) => e.label)).toEqual(["wipe.dice"]);
+    expect(eventsOf(ctx.events, "dice").map((e) => e.label.key)).toEqual(["dice.wipe"]);
     expect(ks.indexOf("message:battle.unidentified")).toBeLessThan(ks.indexOf("battleEnd"));
     expect(ks.slice(ks.indexOf("battleEnd"), ks.indexOf("battleEnd") + 3)).toEqual(["battleEnd", "message:battle.wipe", "message:wipe.intro"]);
     expect(eventsOf(ctx.events, "screen")).toEqual([

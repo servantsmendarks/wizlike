@@ -476,6 +476,15 @@ export type FieldItemMenu = {
   allies: { id: string; name: string; hp: number; hpMax: number }[];
 };
 
+/** strings.json のキーと埋め込み値。表示層は formatMessage(strings[key], params) で出す */
+export type TextRef = { key: string; params?: Record<string, string | number> };
+
+/**
+ * UI-40: 判定の 1 行。表示は「{label} {base}+{dice…}={total}」。base が null なら「{label} {dice…}={total}」。
+ * total は base（null なら 0）+ 出目の和。将来の出目補正スキル（M5 以降）は base に足すか行を足して表し、形は変えない。
+ */
+export type DiceRow = { label: TextRef; base: number | null; dice: number[]; total: number };
+
 export type GameEvent =
   | { kind: "message"; key: string; params?: Record<string, string | number> }
   | { kind: "moved"; pos: Pos; facing: Facing }
@@ -494,8 +503,8 @@ export type GameEvent =
   | { kind: "statusChanged"; id: string; status: StatusId; on: boolean }
   /** id は味方か敵。敵の撃破は life "dead" */
   | { kind: "lifeChanged"; id: string; life: Life }
-  /** label は params の無い strings.json のキー（UI-40 の各判定で使い回す。習得は "town.inn.learnDice"、全滅は "wipe.dice"） */
-  | { kind: "dice"; label: string; dice: number[]; total: number }
+  /** UI-40: 判定 1 件。見出し / 各行（DiceRow）/ 基準 / 結果。どれも strings のキーと埋め込み値 */
+  | { kind: "dice"; label: TextRef; rows: DiceRow[]; rule: TextRef; result: TextRef }
   | { kind: "battleEnd"; result: "win" | "flee" | "wipe" }
   | { kind: "wipe"; penalty: PenaltyResult }
   /** §5 に増分と新しい最大値と変化後の現在値を足した（表示層が state を掘り直さずに済むように） */

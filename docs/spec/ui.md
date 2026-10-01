@@ -50,7 +50,15 @@
 
 ## 5. ダイスと演出
 
-- UI-40 `dice` イベントは専用のダイス表示で見せる: ラベル、ダイスが 1 つずつ止まる演出（1 個 300ms【仮】）、合計。全滅ペナルティ、呪文習得、制止判定、逃走判定、先手判定で使う。先手判定のように続けて来たダイスは積んで見せ（最大 2 行）、続く message の間は残し、message と dice 以外の次のイベント（または再生の終わり）で消す。`skipAnimations` では最終の段（目と合計）だけを即時に出す。ラベル（`dice.label`）は params の無い strings キーに限る（表示層は params なしで出す。習得は `town.inn.learnDice`、全滅は `wipe.dice`）。
+- UI-40 `dice` イベントは `{label, rows[{label, base, dice, total}], rule, result}` で、label / rows[].label / rule / result はどれも strings のキーと params（TextRef）。1 件の判定を 1 つの箱で見せる。箱はビューの x8・幅 224・下端 y146 に置き、高さは 8 + 10 ×（行数 + 3）。中身は上から 見出し（label）/ 各行「{label} {base}`dice.plus`{目…}`dice.total`」（base が null なら「{label} {目…}」で、目が 1 個なら合計を繰り返さない）/ 基準（rule）/ `dice.arrow`{結果}。演出は 行ごとに目を 1 個ずつ止める（1 個 300ms【仮】）→ その行の合計 → 次の行 → 基準 → 結果。新しい dice は前の箱を置き換える（積まない）。続く message の間は残し、message と dice 以外の次のイベント（または再生の終わり）で消す。`skipAnimations` では最終の段だけを即時に出す。total は base（null なら 0）+ 出目の和で、将来の出目補正（M5 以降）は base に足すか行を足して表す。各判定の中身:
+
+  | 判定 | label | 行 | 基準（rule） | 結果（result） |
+  |---|---|---|---|---|
+  | 先手（CB-04） | `dice.initiative` | `dice.side.party` / `dice.side.enemy`（base = floor(agi 平均)、1d10） | `dice.initiative.rule`（diff / need / ambush） | `dice.initiative.party` / `enemy` / `none` |
+  | 逃走（CB-50） | `dice.flee` | `dice.row.roll`（base null、d100） | `dice.rule.rate`（rate = 成功率） | `dice.flee.ok` / `ng` |
+  | 習得（MG-21） | `dice.learn`（spell = 呪文名） | `dice.row.roll`（base null、d100） | `dice.rule.rate`（rate = 成功率） | `dice.learn.ok` / `ng` |
+  | 全滅（TW-22） | `dice.wipe` | `dice.row.roll`（base null、2d10 の 2 個） | `dice.wipe.rule`（帯の min / max） | `dice.wipe.result`（band = 帯の name） |
+  | 制止（EV-20、M5） | `dice.restrain` | `dice.row.roll`（base null） | `dice.rule.rate` | `dice.restrain.ok` / `ng` |
 - UI-41 演出は `GameEvent` の `kind` ごとに `playback.ts` の 1 関数に対応させる。各関数は Promise を返し、`settings.skipAnimations` が真なら即座に解決する。
 - UI-42 被弾: パーティ行のフラッシュ（`opacity` 2 往復、120ms）。敵の被弾: 敵の絵のフラッシュ。全体攻撃: ビュー全体の揺れ（`translate` ±2px、150ms）。すべて WAAPI。被弾のフラッシュは HP の減少（`hpChanged` の delta < 0）を契機にする（味方はパーティ行、敵はグループの絵）。`attack` イベントには演出を付けない。全体攻撃の揺れは、対象が `enemyGroup` / `allEnemies` で effect が damage の呪文のとき。敵の撃破（`lifeChanged` dead）で体数を 1 減らし、0 になったら絵を消して列を隠す。
 - UI-43 メッセージの文字送りは `settings.textSpeed`（1 文字 30ms【仮】、0 で即時）。タップで残りを即表示。M2 では次のメッセージをタップで待たない。1 回目のタップで今の文を即表示し、同じ再生の中で 2 回目のタップがあれば残りをすべて即表示する（playback の rushAll。ビューのフェードも 0 にする）。

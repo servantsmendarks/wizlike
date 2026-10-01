@@ -1,37 +1,92 @@
-// UI-40: ダイス表示の段（src/presenter/views/dice.ts の純粋な部分）。
+// UI-40: 判定の箱（src/presenter/views/dice.ts の純粋な部分）。
 import { describe, expect, test } from "vitest";
-import { DICE_BOX, DICE_BOX_TWO, diceFrames } from "../src/presenter/views/dice";
-import { data } from "./helpers/core";
+import type { GameEvent } from "../src/core/types";
+import { diceBox, diceFrames, formatDiceSummary, type DiceEvent } from "../src/presenter/views/dice";
+import { data, expectKnownStringKeys } from "./helpers/core";
+
+const INITIATIVE: DiceEvent = {
+  kind: "dice",
+  label: { key: "dice.initiative" },
+  rows: [
+    { label: { key: "dice.side.party" }, base: 10, dice: [7], total: 17 },
+    { label: { key: "dice.side.enemy" }, base: 8, dice: [3], total: 11 },
+  ],
+  rule: { key: "dice.initiative.rule", params: { diff: 6, need: 5, ambush: 5 } },
+  result: { key: "dice.initiative.party" },
+};
+
+const FLEE: DiceEvent = {
+  kind: "dice",
+  label: { key: "dice.flee" },
+  rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [42], total: 42 }],
+  rule: { key: "dice.rule.rate", params: { rate: 55 } },
+  result: { key: "dice.flee.ok" },
+};
+
+const WIPE: DiceEvent = {
+  kind: "dice",
+  label: { key: "dice.wipe" },
+  rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [3, 5], total: 8 }],
+  rule: { key: "dice.wipe.rule", params: { min: 7, max: 10 } },
+  result: { key: "dice.wipe.result", params: { band: "痛手" } },
+};
 
 describe("UI-40 diceFrames", () => {
-  test("UI-40 2 個: [?,?] → [3,?] → [3,5] → 合計", () => {
-    expect(diceFrames({ dice: [3, 5], total: 8 }, false)).toEqual([
-      { dice: [null, null], total: null },
-      { dice: [3, null], total: null },
-      { dice: [3, 5], total: null },
-      { dice: [3, 5], total: 8 },
+  test("UI-40 2 行 × 1 個: ? → 目 → 合計 → 次の行（目 → 合計）→ 基準 → 結果", () => {
+    expect(diceFrames(INITIATIVE, false)).toEqual([
+      { rows: [{ dice: [null], total: null }, { dice: [null], total: null }], rule: false, result: false },
+      { rows: [{ dice: [7], total: null }, { dice: [null], total: null }], rule: false, result: false },
+      { rows: [{ dice: [7], total: 17 }, { dice: [null], total: null }], rule: false, result: false },
+      { rows: [{ dice: [7], total: 17 }, { dice: [3], total: null }], rule: false, result: false },
+      { rows: [{ dice: [7], total: 17 }, { dice: [3], total: 11 }], rule: false, result: false },
+      { rows: [{ dice: [7], total: 17 }, { dice: [3], total: 11 }], rule: true, result: false },
+      { rows: [{ dice: [7], total: 17 }, { dice: [3], total: 11 }], rule: true, result: true },
     ]);
   });
 
-  test("UI-40 d100 は 1 個のダイス。total が出目と違ってもそのまま（先手判定の floor(平均)+出目）", () => {
-    expect(diceFrames({ dice: [37], total: 37 }, false)).toEqual([
-      { dice: [null], total: null },
-      { dice: [37], total: null },
-      { dice: [37], total: 37 },
+  test("UI-40 1 行 × 2 個（2d10）: 目を 1 個ずつ → 合計 → 基準 → 結果", () => {
+    expect(diceFrames(WIPE, false)).toEqual([
+      { rows: [{ dice: [null, null], total: null }], rule: false, result: false },
+      { rows: [{ dice: [3, null], total: null }], rule: false, result: false },
+      { rows: [{ dice: [3, 5], total: null }], rule: false, result: false },
+      { rows: [{ dice: [3, 5], total: 8 }], rule: false, result: false },
+      { rows: [{ dice: [3, 5], total: 8 }], rule: true, result: false },
+      { rows: [{ dice: [3, 5], total: 8 }], rule: true, result: true },
     ]);
-    expect(diceFrames({ dice: [4], total: 12 }, false).at(-1)).toEqual({ dice: [4], total: 12 });
   });
 
-  test("§3-9/UI-40 skip は最終の 1 段だけ", () => {
-    expect(diceFrames({ dice: [3, 5], total: 8 }, true)).toEqual([{ dice: [3, 5], total: 8 }]);
-    expect(diceFrames({ dice: [], total: 0 }, true)).toEqual([{ dice: [], total: 0 }]);
+  test("UI-41/UI-40 skip は最終の 1 段だけ", () => {
+    expect(diceFrames(INITIATIVE, true)).toEqual([
+      { rows: [{ dice: [7], total: 17 }, { dice: [3], total: 11 }], rule: true, result: true },
+    ]);
+    expect(diceFrames({ rows: [] }, true)).toEqual([{ rows: [], rule: true, result: true }]);
+  });
+});
+
+describe("UI-40 diceBox", () => {
+  test("UI-40 x8 w224、下端 y146、高さ 8 + 10 ×（3 + 行数）。rows 1 で y98 h48、rows 2 で y88 h58。ビュー（240×150）の内側", () => {
+    expect(diceBox(FLEE)).toEqual({ x: 8, y: 98, w: 224, h: 48 });
+    expect(diceBox(INITIATIVE)).toEqual({ x: 8, y: 88, w: 224, h: 58 });
+    for (const r of [diceBox(FLEE), diceBox(INITIATIVE)]) {
+      expect(r.x >= 0 && r.y >= 0 && r.x + r.w <= 240 && r.y + r.h <= 150).toBe(true);
+    }
+  });
+});
+
+describe("UI-40/UI-46 formatDiceSummary", () => {
+  test("UI-40 先手判定は「先手判定 味方 10+7=17 / 敵 8+3=11 / 差 6（5 以上で先手、-5 以下で不意打ち）→ 先手」", () => {
+    expect(formatDiceSummary(INITIATIVE, data.strings)).toBe("先手判定 味方 10+7=17 / 敵 8+3=11 / 差 6（5 以上で先手、-5 以下で不意打ち）→ 先手");
   });
 
-  test("UI-40 overlay はビュー（240×150）の内側で、2 行は下端を揃えて上へ 20 伸ばす。合計の文言は dice.total", () => {
-    for (const r of [DICE_BOX, DICE_BOX_TWO]) expect(r.x >= 0 && r.y >= 0 && r.x + r.w <= 240 && r.y + r.h <= 150).toBe(true);
-    expect(DICE_BOX).toEqual({ x: 20, y: 106, w: 200, h: 42 });
-    expect(DICE_BOX_TWO.y + DICE_BOX_TWO.h).toBe(DICE_BOX.y + DICE_BOX.h);
-    expect(DICE_BOX_TWO.h - DICE_BOX.h).toBe(20);
+  test("UI-40 base が null で目が 1 個の行は「出目 42」（合計を繰り返さない）。2 個なら「出目 3+5=8」", () => {
+    expect(formatDiceSummary(FLEE, data.strings)).toBe("逃走判定 出目 42 / 成功率 55（出目が 55 以下で成功）→ 逃げ切れる");
+    expect(formatDiceSummary(WIPE, data.strings)).toBe("全滅の代償 出目 3+5=8 / 7〜10 の帯→ 痛手");
+  });
+
+  test("UI-40 使うキーはすべて strings.json にある", () => {
+    const evs: GameEvent[] = [INITIATIVE, FLEE, WIPE];
+    expectKnownStringKeys(evs);
+    for (const k of ["dice.plus", "dice.total", "dice.sep", "dice.arrow"]) expect(data.strings[k]).toBeDefined();
     expect(data.strings["dice.total"]).toContain("{total}");
   });
 });

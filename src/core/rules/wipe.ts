@@ -1,8 +1,8 @@
 // 全滅処理（TW-20〜26、DG-42、CH-41/62、MG-03）と、迷宮の戦闘外の全滅判定、TW-27 の総資産。
 // combat.ts（戦闘の全滅）と engine.ts（受け付けたコマンドの後処理）から呼ぶ。combat.ts と dungeon.ts は import しない。
 // 乱数の消費順: 2d10（penaltyTable.dice を rollDice で 1 回）→ 失う品 1 個ごとに randInt(0, 候補数 − 1) を 1 回（候補 1 個でも引く）。
-// イベントの順: wipe.intro → 台帳（wipe.ledgerLost は台帳が空でも 1 回）→ dice{wipe.dice} → 帯の text → 金 → 品 → EXP とレベルダウン
-//   → 復活 → wipe{penalty} → arriveTown（town.enter → sanChanged → 救済 → screen{town}）。message wipe.dice は出さない（dice の表示がラベルとして出す）。
+// イベントの順: wipe.intro → 台帳（wipe.ledgerLost は台帳が空でも 1 回）→ dice{dice.wipe} → 帯の text → 金 → 品 → EXP とレベルダウン
+//   → 復活 → wipe{penalty} → arriveTown（town.enter → sanChanged → 救済 → screen{town}）。message の語りは出さない（dice の表示がラベルとして出す）。
 import type { GameData } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
 import { randInt, rollDice } from "../rng";
@@ -106,12 +106,17 @@ export function performWipe(ctx: RuleContext): void {
   ctx.events.push({ kind: "message", key: "wipe.ledgerLost" });
 
   // 3) TW-22: 2d10
+  // 4) 帯（乱数を使わないので dice の前に引く。UI-40 の基準と結果に出す）
   const roll = rollDice(state.rng, data.penaltyTable.dice);
-  ctx.events.push({ kind: "dice", label: "wipe.dice", dice: [...roll.dice], total: roll.total });
-
-  // 4) 帯
   const bandIndex = bandIndexFor(data, roll.total);
   const band = data.penaltyTable.bands[bandIndex]!;
+  ctx.events.push({
+    kind: "dice",
+    label: { key: "dice.wipe" },
+    rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [...roll.dice], total: roll.total }],
+    rule: { key: "dice.wipe.rule", params: { min: band.min, max: band.max } },
+    result: { key: "dice.wipe.result", params: { band: band.name } },
+  });
   ctx.events.push({ kind: "message", key: band.text });
 
   // 5) 金（台帳分を引いた後の所持金から）
