@@ -261,8 +261,10 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     syncControls();
     const menu = townMenu(state, data);
     if (menu === null) return;
-    const instant = store.get().skipAnimations;
-    for (const k of townPageIntro(page, menu)) void play.message.say(t(k), instant);
+    // 続けて出す文は、最後の 1 文だけを文字送りにする（say は送り途中の前の文を完了させるため、前の文は即時で出す）
+    const keys = townPageIntro(page, menu);
+    const skip = store.get().skipAnimations;
+    keys.forEach((k, i) => void play.message.say(t(k), skip || i < keys.length - 1));
   };
 
   /** Esc・戻る: 1 つ上のページへ（menu では何もしない） */
