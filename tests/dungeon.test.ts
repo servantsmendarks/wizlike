@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import type { GameData } from "../src/core/data/index";
 import { createInitialState, execute } from "../src/core/engine";
-import { cloneRng, createRng, nextUint32, randInt, rollDice } from "../src/core/rng";
+import { cloneRng, createRng, nextUint32, randInt, rollDice, rollDie, weightedIndex, type RngState } from "../src/core/rng";
 import {
   cellAt,
   edgeOf,
@@ -14,7 +14,8 @@ import {
   step,
 } from "../src/core/rules/dungeon-gen";
 import { floorOf, mapView, visibleCells, visibleCellsOf } from "../src/core/rules/dungeon";
-import { cloneState } from "../src/core/state";
+import { battleMenu } from "../src/core/rules/combat";
+import { cloneState, dungeonOf, monsterOf } from "../src/core/state";
 import type { Cell, Command, Edge, Facing, Floor, GameEvent, GameState, Pos } from "../src/core/types";
 import { data, deepFreeze, expectKnownStringKeys, loadFreshData, newGame } from "./helpers/core";
 
@@ -58,6 +59,45 @@ function dataWithRate(room: number, corridor: number): GameData {
 }
 const DATA0 = dataWithRate(0, 0);
 
+/** 遭遇の編成と先手判定の乱数を鏡の rng で進める（CB-03/04 の消費順。surpriseDiff 1000 の data で奇襲が起きない前提） */
+function mirrorRandomEncounter(m: RngState, d: GameData, dungeonId: string, floor: number): void {
+  const def = dungeonOf(d, dungeonId);
+  const key = String(floor);
+  const table = def.encounterTable[key]!;
+  const n = weightedIndex(m, def.groupCountWeights[key]!) + 1;
+  const specs: { monsterId: string; count: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const e = table[weightedIndex(m, table.map((x) => x.weight))]!;
+    const count = Math.min(d.config.combat.maxPerGroup, Math.max(1, rollDice(m, monsterOf(d, e.monster).groupSize).total));
+    specs.push({ monsterId: e.monster, count });
+  }
+  for (const sp of specs) for (let i = 0; i < sp.count; i++) rollDice(m, monsterOf(d, sp.monsterId).hp);
+  rollDie(m, 10);
+  rollDie(m, 10);
+}
+
+/** encounterRate を書き換え、奇襲が起きないようにした data（遭遇の execute が先手判定の 2 個で止まる） */
+function dataEnc(room: number, corridor: number): GameData {
+  const d = dataWithRate(room, corridor);
+  d.config.combat.surpriseDiff = 1000;
+  return d;
+}
+
+/** 戦闘中ならオートで終わるまで回す（auto が切れたら入れ直す）。出たイベントを events に足す */
+function finishBattle(state: GameState, events: GameEvent[], d: GameData = data): GameState {
+  let s = state;
+  let k = 0;
+  while (s.battle !== null) {
+    if (k++ > 300) throw new Error("battle did not end");
+    const cmd: Command = s.battle.auto ? { type: "battle.resolve" } : { type: "battle.auto", on: true };
+    const r = execute(s, cmd, d);
+    if (r.events[0]?.kind === "rejected") throw new Error(JSON.stringify(r.events[0]));
+    events.push(...r.events);
+    s = r.state;
+  }
+  return s;
+}
+
 type Approach = { pos: Pos; facing: Facing; target: Pos };
 
 /** pred を満たすセルへ、edge が ok な辺を通って 1 歩で入れる立ち位置の一覧 */
@@ -91,6 +131,10 @@ function findSituation(
     if (a !== undefined) return { state: placeAt(s0, a.pos, a.facing, floorNo), a, f, seed };
   }
   throw new Error("findSituation: not found");
+}
+
+function eventsOfKind<K extends GameEvent["kind"]>(events: readonly GameEvent[], kind: K): Extract<GameEvent, { kind: K }>[] {
+  return events.filter((e): e is Extract<GameEvent, { kind: K }> => e.kind === kind);
 }
 
 function kinds(events: readonly GameEvent[]): string[] {
@@ -297,9 +341,9 @@ describe("移動と旋回", () => {
   });
 });
 
-describe("遭遇（CB-01 の仮実装）", () => {
-  test("DG-11/CB-01 遭遇: rate 1 では毎歩 message battle.encounter、0 では出ない。前進が成立した 1 歩で rng は randInt(1,100) 1 回分だけ進む。旋回と blocked では 0 回", () => {
-    const d1 = dataWithRate(1, 1);
+describe("遭遇（CB-01, DG-11）", () => {
+  test("DG-11/CB-01 遭遇: rate 1 では毎歩 [moved, screen battle, encounter, message battle.encounter, …] で state.battle が立つ。0 では [moved] だけ。遭遇しない歩の rng は d100 の 1 回、遭遇した歩は編成の乱数が続く（鏡の rng）。旋回と blocked では 0 回", () => {
+    const d1 = dataEnc(1, 1);
     for (let seed = 1; seed <= 10; seed++) {
       const s0 = enterD01(seed);
       const f = floorOf(s0.dive!, data);
@@ -308,12 +352,19 @@ describe("遭遇（CB-01 の仮実装）", () => {
         const s = placeAt(s0, a.pos, a.facing);
         const mirror = cloneRng(s.rng);
         randInt(mirror, 1, 100);
-        const r1 = run(s, MOVE, d1);
-        expect(kinds(r1.events)).toEqual(["moved", "message:battle.encounter"]);
-        expect(r1.state.rng).toEqual(mirror);
         const r0 = run(s, MOVE, DATA0);
         expect(kinds(r0.events)).toEqual(["moved"]);
         expect(r0.state.rng).toEqual(mirror);
+        expect(r0.state.battle).toBeNull();
+        const r1 = run(s, MOVE, d1);
+        expect(kinds(r1.events).slice(0, 4)).toEqual(["moved", "screen", "encounter", "message:battle.encounter"]);
+        expect(r1.events[1]).toEqual({ kind: "screen", to: "battle" });
+        expect(r1.state.screen).toBe("battle");
+        expect(r1.state.battle!.origin).toEqual({ kind: "random", inRoom: cellAt(f, a.target.x, a.target.y).roomId !== null });
+        mirrorRandomEncounter(mirror, d1, "d01", 1);
+        expect(r1.state.rng).toEqual(mirror);
+        // 戦闘中は dungeon.move を受け付けない
+        expect(execute(r1.state, MOVE, d1).events).toEqual([{ kind: "rejected", command: "dungeon.move", reason: "not in dungeon" }]);
       }
       // 旋回は乱数を使わない
       const rt = run(s0, { type: "dungeon.turn", dir: "around" }, d1);
@@ -332,23 +383,24 @@ describe("遭遇（CB-01 の仮実装）", () => {
       const r = run(s, MOVE);
       const enc = r.events.some((e) => e.kind === "message" && e.key === "battle.encounter");
       expect(enc).toBe(roll <= 5);
+      expect(r.state.battle !== null).toBe(enc);
       if (enc) hits += 1;
     }
     expect(hits).toBeLessThan(30);
   });
 
   test("CB-01 部屋の中（roomId あり。部屋の中の罠・イベントも含む）は encounterRate.room、通路は corridor（room=1, corridor=0 で、部屋のセルでだけ出る）", () => {
-    const dRoom = dataWithRate(1, 0);
-    const dCorr = dataWithRate(0, 1);
+    const dRoom = dataEnc(1, 0);
+    const dCorr = dataEnc(0, 1);
     let roomSteps = 0;
     let corrSteps = 0;
     for (let seed = 1; seed <= 4; seed++) {
       const s0 = enterD01(seed);
       const f = floorOf(s0.dive!, data);
-      for (const a of approaches(f, (c) => c.kind === "corridor" || c.kind === "room" || c.kind === "event" || c.kind === "boss", (e) => e !== "wall")) {
+      for (const a of approaches(f, (c) => c.kind === "corridor" || c.kind === "room" || c.kind === "event", (e) => e !== "wall")) {
         const s = placeAt(s0, a.pos, a.facing);
         const inRoom = cellAt(f, a.target.x, a.target.y).roomId !== null;
-        const enc = (d: GameData) => run(s, MOVE, d).events.some((e) => e.kind === "message" && e.key === "battle.encounter");
+        const enc = (d: GameData) => run(s, MOVE, d).state.battle !== null;
         expect(enc(dRoom)).toBe(inRoom);
         expect(enc(dCorr)).toBe(!inRoom);
         if (inRoom) roomSteps += 1;
@@ -357,11 +409,67 @@ describe("遭遇（CB-01 の仮実装）", () => {
     }
     expect(roomSteps).toBeGreaterThan(0);
     expect(corrSteps).toBeGreaterThan(0);
-    // 部屋の中の罠でも room の率（罠の処理の後に遭遇判定）
+    // 部屋の中の罠でも room の率（罠の処理の後に遭遇判定）。宝箱の判定用に inRoom が立つ
     const { state } = findSituation((c) => c.kind === "trap" && c.roomId !== null && c.trapId === "spinner");
     const r = run(state, MOVE, dRoom);
-    expect(kinds(r.events)).toContain("message:battle.encounter");
-    expect(kinds(r.events).at(-1)).toBe("message:battle.encounter");
+    const ks = kinds(r.events);
+    expect(ks.indexOf("message:dungeon.trap.spinner")).toBeGreaterThan(-1);
+    expect(ks.indexOf("message:dungeon.trap.spinner")).toBeLessThan(ks.indexOf("message:battle.encounter"));
+    expect(r.state.battle!.origin).toEqual({ kind: "random", inRoom: true });
+  });
+
+  test("DG-11 行動可能な者がいなければ遭遇判定をしない（麻痺・睡眠・SAN 0 の混在で、rate 1 でも乱数を消費しない）", () => {
+    const s0 = enterD01(1);
+    const f = floorOf(s0.dive!, data);
+    const a = approaches(f, (c) => c.kind === "corridor" || c.kind === "room")[0]!;
+    const s = placeAt(s0, a.pos, a.facing);
+    s.party.forEach((c, i) => {
+      if (i % 3 === 0) c.status = ["paralysis"];
+      else if (i % 3 === 1) c.status = ["sleep"];
+      else c.san = 0;
+    });
+    const r = run(s, MOVE, dataEnc(1, 1));
+    expect(r.events).toEqual([{ kind: "moved", pos: a.target, facing: a.facing }]);
+    expect(r.state.rng).toEqual(s.rng);
+    expect(r.state.battle).toBeNull();
+    // 1 人でも行動できれば判定する
+    s.party[2]!.san = 50;
+    expect(run(s, MOVE, dataEnc(1, 1)).state.battle).not.toBeNull();
+  });
+});
+
+describe("毒の 1 歩（CH-43）", () => {
+  test("CH-43 毒の者は前進の 1 歩ごとに HP −1（moved の直後・罠の前、hpChanged だけ）。HP 1 で止まり hpChanged を出さない。旋回では減らない", () => {
+    const sit = findSituation((c) => c.kind === "trap" && c.trapId === "pit");
+    const s = cloneState(sit.state);
+    s.party[0]!.status = ["poison"];
+    s.party[0]!.hp = 5;
+    s.party[1]!.status = ["poison"];
+    s.party[1]!.hp = 1;
+    s.party[2]!.status = ["poison"];
+    s.party[2]!.life = "dead";
+    s.party[2]!.hp = 0;
+    const r = run(s, MOVE, DATA0);
+    expect(r.events.slice(0, 3)).toEqual([
+      { kind: "moved", pos: sit.a.target, facing: sit.a.facing },
+      { kind: "hpChanged", id: "c1", delta: -1, hp: 4 },
+      { kind: "message", key: "dungeon.trap.pit" },
+    ]);
+    expect(r.events.slice(0, 3).filter((e) => e.kind === "hpChanged" && e.id === "c2")).toEqual([]);
+    const t = run(s, { type: "dungeon.turn", dir: "left" }, DATA0);
+    expect(t.state.party[0]!.hp).toBe(5);
+    // 通常の通路でも [moved, hpChanged]。HP 1 の者は減らない
+    const s2 = enterD01(1);
+    const f = floorOf(s2.dive!, data);
+    const a = approaches(f, (c) => c.kind === "corridor")[0]!;
+    const p = placeAt(s2, a.pos, a.facing);
+    p.party[3]!.status = ["poison"];
+    p.party[1]!.status = ["poison"];
+    p.party[1]!.hp = 1;
+    expect(run(p, MOVE, DATA0).events).toEqual([
+      { kind: "moved", pos: a.target, facing: a.facing },
+      { kind: "hpChanged", id: "c4", delta: -1, hp: 7 },
+    ]);
   });
 });
 
@@ -969,13 +1077,9 @@ describe("罠（DG-20, DG-21, E4, E5）", () => {
     expect(r.state.rng).toEqual(mirror);
   });
 
-  test("DG-22/DG-31 event セルと boss セルを踏んでも、遭遇判定のほかは何も起きない", () => {
-    for (const [kind, floor] of [
-      ["event", 1],
-      ["event", 2],
-      ["boss", 2],
-    ] as const) {
-      const { state } = findSituation((c) => c.kind === kind, { floor });
+  test("DG-22 event セルを踏んでも、遭遇判定のほかは何も起きない", () => {
+    for (const floor of [1, 2]) {
+      const { state } = findSituation((c) => c.kind === "event", { floor });
       const mirror = cloneRng(state.rng);
       randInt(mirror, 1, 100);
       const r = run(state, MOVE, DATA0);
@@ -984,9 +1088,101 @@ describe("罠（DG-20, DG-21, E4, E5）", () => {
       expect(r.state.pendingChoice).toBeNull();
       expect(r.state.party).toEqual(state.party);
       expect(r.state.dive!.clearedCells).toEqual([]);
-      const r1 = run(state, MOVE, dataWithRate(1, 1));
-      expect(kinds(r1.events)).toEqual(["moved", "message:battle.encounter"]);
+      const r1 = run(state, MOVE, dataEnc(1, 1));
+      expect(kinds(r1.events).slice(0, 4)).toEqual(["moved", "screen", "encounter", "message:battle.encounter"]);
     }
+  });
+});
+
+describe("ボス（DG-31〜33, DG-01）", () => {
+  const D0 = dataEnc(0, 0);
+  const atBoss = (base?: (seed: number) => GameState) => findSituation((c) => c.kind === "boss", { floor: 2, ...(base ? { base } : {}) });
+
+  /** ボス戦の state で、ボスを HP 1 の麻痺にしてアルドが必中で倒す */
+  function defeatBoss(state: GameState): ReturnType<typeof run> {
+    const s = cloneState(state);
+    const u = s.battle!.groups[0]!.units[0]!;
+    u.hp = 1;
+    u.status = ["paralysis"];
+    for (const c of s.party) s.battle!.inputs[c.id] = { type: "defend" };
+    s.battle!.inputs["c1"] = { type: "attack", group: 0 };
+    const d = loadFreshData();
+    d.config.combat.hitMin = 100;
+    d.config.combat.hitMax = 100;
+    return run(s, { type: "battle.resolve" }, d);
+  }
+
+  test("DG-31/CB-02 ボスのセルは rate 0 でも遭遇の d100 を振らずに固定遭遇（門番の甲冑 1 体、origin boss、逃走不可）。鏡の rng", () => {
+    const { state } = atBoss();
+    const mirror = cloneRng(state.rng);
+    const boss = monsterOf(data, dungeonOf(data, "d01").boss.monster);
+    rollDice(mirror, boss.groupSize); // "1" は消費なし
+    rollDice(mirror, boss.hp);
+    rollDie(mirror, 10);
+    rollDie(mirror, 10);
+    const r = run(state, MOVE, D0);
+    expect(kinds(r.events).slice(0, 4)).toEqual(["moved", "screen", "encounter", "message:battle.encounter"]);
+    expect(r.state.rng).toEqual(mirror);
+    expect(r.state.battle!.origin).toEqual({ kind: "boss" });
+    expect(r.state.battle!.groups.map((g) => [g.monsterId, g.units.length])).toEqual([["gatekeeper_armor", 1]]);
+    expect(battleMenu(r.state, D0)!.canFlee).toBe(false);
+    expect(execute(r.state, { type: "battle.input", memberId: "c1", action: { type: "flee" } }, D0).events).toEqual([
+      { kind: "rejected", command: "battle.input", reason: "cannot flee" },
+    ]);
+  });
+
+  test("DG-32/DG-01 ボスを倒すと bossDefeated、clearedDungeons と unlockedDungeons に d02（message 付き）、floorOf のボスのセルが teleporter（踏んでも何も起きない）", () => {
+    const { state, a } = atBoss();
+    const fought = run(state, MOVE, D0).state;
+    const r = defeatBoss(fought);
+    expect(eventsOfKind(r.events, "battleEnd")).toEqual([{ kind: "battleEnd", result: "win" }]);
+    const ks = kinds(r.events);
+    expect(ks).toContain("message:battle.bossDefeated");
+    expect(ks).toContain("message:battle.dungeonCleared");
+    expect(r.events).toContainEqual({ kind: "message", key: "dungeon.unlocked", params: { dungeon: "沈んだ聖堂" } });
+    expect(ks).not.toContain("message:battle.chest");
+    const s = r.state;
+    expect(s.dive!.bossDefeated).toBe(true);
+    expect(s.progress.clearedDungeons).toEqual(["d01"]);
+    expect(s.progress.unlockedDungeons).toEqual(["d01", "d02"]);
+    expect(s.screen).toBe("dungeon");
+    const f = floorOf(s.dive!, data);
+    expect(cellAt(f, a.target.x, a.target.y).kind).toBe("teleporter");
+    expect(f.boss).toEqual(a.target);
+    expect(floorOf(s.dive!, data, 1).cells.some((c) => c.kind === "teleporter")).toBe(false);
+    // 一度離れて戻っても、もう固定遭遇は起きない（rate 0 なら [moved] と d100 の 1 回だけ）
+    const back = placeAt(s, a.pos, a.facing);
+    const mirror = cloneRng(back.rng);
+    randInt(mirror, 1, 100);
+    const again = run(back, MOVE, D0);
+    expect(kinds(again.events)).toEqual(["moved"]);
+    expect(again.state.rng).toEqual(mirror);
+  });
+
+  test("DG-33 新しい潜行ではボスが再出現し、再撃破でも clearedDungeons・unlockedDungeons は重複せず、dungeonCleared・unlocked の message も出ない", () => {
+    const first = defeatBoss(run(atBoss().state, MOVE, D0).state).state;
+    // 帰還は M4 なので、街に戻した state を手で作って入り直す
+    const town = cloneState(first);
+    town.dive = null;
+    town.screen = "town";
+    const base = (seed: number): GameState => {
+      const t = cloneState(town);
+      t.rng = createRng(seed);
+      return execute(t, ENTER_D01, data).state;
+    };
+    const sit = atBoss(base);
+    expect(sit.state.dive!.bossDefeated).toBe(false);
+    expect(cellAt(floorOf(sit.state.dive!, data), sit.a.target.x, sit.a.target.y).kind).toBe("boss");
+    const fought = run(sit.state, MOVE, D0);
+    expect(fought.state.battle!.origin).toEqual({ kind: "boss" });
+    const r = defeatBoss(fought.state);
+    const ks = kinds(r.events);
+    expect(ks).toContain("message:battle.bossDefeated");
+    expect(ks).not.toContain("message:battle.dungeonCleared");
+    expect(ks).not.toContain("message:dungeon.unlocked");
+    expect(r.state.progress.clearedDungeons).toEqual(["d01"]);
+    expect(r.state.progress.unlockedDungeons).toEqual(["d01", "d02"]);
+    expect(r.state.dive!.bossDefeated).toBe(true);
   });
 });
 
@@ -1039,6 +1235,8 @@ describe("決定性と網羅", () => {
         if (r.events[0]?.kind === "rejected") throw new Error(`seed ${seed} step ${i}: ${JSON.stringify(r.events[0])}`);
         events.push(...r.events);
         s = r.state;
+        // 遭遇したらオートで戦闘を終わらせてから歩き続ける（全滅なら迷宮に戻る。M4 までの仮）
+        if (s.screen === "battle") s = finishBattle(s, events);
       }
       expectKnownStringKeys(events);
       for (const e of events) {
@@ -1047,7 +1245,7 @@ describe("決定性と網羅", () => {
       }
     }
     // ウォークが主要な経路を通ったこと
-    for (const k of ["dungeon.blocked", "dungeon.door", "dungeon.stairsDown", "dungeon.descend", "battle.encounter"]) {
+    for (const k of ["dungeon.blocked", "dungeon.door", "dungeon.stairsDown", "dungeon.descend", "battle.encounter", "battle.win"]) {
       expect(keys.has(k), k).toBe(true);
     }
     expect(kindsSeen.has("floorChanged")).toBe(true);

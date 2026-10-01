@@ -1,4 +1,4 @@
-// 潜行中のルール（DG-03, DG-10〜14, DG-20, DG-40, CB-01 の仮実装, CH-45/51/54）と、表示層向けの問い合わせ（visibleCells, mapView）。
+// 潜行中のルール（DG-03, DG-10〜14, DG-20, DG-31〜33, DG-40, CB-01, CH-43/45/51/54）と、表示層向けの問い合わせ（visibleCells, mapView）。
 // 迷宮の構造は state に入れず、dive.diveSeed から毎回作り直す（DG-03）。発動済みの罠は dive の記録を重ねる。扉は通り抜けても扉のまま（DG-10）。
 import type { GameData } from "../data/index";
 import { chance, nextUint32, randInt, rollDice } from "../rng";
@@ -31,11 +31,14 @@ import {
   turnLeft,
   turnRight,
 } from "./dungeon-gen";
+import { startBossEncounter, startRandomEncounter, tickPoisonStep } from "./combat";
+import { canAct } from "./combat-calc";
 import { loseSan } from "./san";
 
 /**
  * 潜行中の階の実効の構造。generateDive(...)[floorNo-1] に、その階の
  * clearedCells（kind を roomId !== null ? "room" : "corridor" に、eventId と trapId を null に）を重ねる。
+ * 最下層でボスを倒していれば（dive.bossDefeated）、ボスのセルを teleporter に重ねる（DG-32。M3 では踏んでも何も起きない）。
  * 辺は生成のまま（扉は通り抜けても door。DG-10）。
  */
 export function floorOf(dive: Dive, data: GameData, floorNo: number = dive.floor): Floor {
@@ -51,6 +54,7 @@ export function floorOf(dive: Dive, data: GameData, floorNo: number = dive.floor
     cell.eventId = null;
     cell.trapId = null;
   }
+  if (floorNo === def.floors && dive.bossDefeated && f.boss !== null) cellAt(f, f.boss.x, f.boss.y).kind = "teleporter";
   return f;
 }
 
@@ -209,7 +213,7 @@ export function turn(ctx: RuleContext, dir: "left" | "right" | "around"): void {
 }
 
 // ---------------------------------------------------------------------------
-// 前進（DG-10, DG-11, DG-13, DG-14, DG-20, CB-01）
+// 前進（DG-10, DG-11, DG-13, DG-14, DG-20, DG-31, CB-01, CH-43）
 
 export function moveForward(ctx: RuleContext): void {
   const { state, data } = ctx;
@@ -228,6 +232,8 @@ export function moveForward(ctx: RuleContext): void {
   ctx.events.push({ kind: "moved", pos: { x: dive.pos.x, y: dive.pos.y }, facing: dive.facing });
   explore(ctx, dive, f);
   const cell = cellAt(f, dive.pos.x, dive.pos.y);
+  // CH-43: 毒の 1 歩ごとのダメージ（HP 1 で止まるので、これで死ぬことはない）
+  tickPoisonStep(ctx);
   // E5: 全滅処理は M4。全員死亡の後は罠・階段・遭遇のどれも起こさない
   if (aliveMembers(state).length === 0) return;
   if (cell.kind === "trap") triggerTrap(ctx, f, dive.pos);
@@ -241,17 +247,22 @@ export function moveForward(ctx: RuleContext): void {
     else ctx.events.push({ kind: "message", key: "dungeon.exitNotYet" });
     return;
   }
+  // DG-11: 行動可能な者がいなければ遭遇しない（遭遇の d100 も振らない）
+  if (!state.party.some(canAct)) return;
+  // DG-31: ボスのセルは遭遇の d100 を振らずに固定遭遇（倒した後は floorOf が teleporter に重ねる）
+  if (cell.kind === "boss" && !dive.bossDefeated) {
+    startBossEncounter(ctx);
+    return;
+  }
   rollEncounter(ctx, cell.roomId !== null);
 }
 
-/** CB-01 の仮実装（E6）。前進が成立した 1 歩につき d100 をちょうど 1 回消費する */
+/** CB-01。前進が成立した 1 歩につき d100 をちょうど 1 回消費し、当たれば CB-03 の編成で戦闘を始める */
 function rollEncounter(ctx: RuleContext, inRoom: boolean): void {
   const dive = requireDive(ctx.state);
   const def = dungeonOf(ctx.data, dive.dungeonId);
   const rate = inRoom ? def.encounterRate.room : def.encounterRate.corridor;
-  if (chance(ctx.state.rng, Math.round(rate * 100))) {
-    ctx.events.push({ kind: "message", key: "battle.encounter" });
-  }
+  if (chance(ctx.state.rng, Math.round(rate * 100))) startRandomEncounter(ctx, inRoom);
 }
 
 // ---------------------------------------------------------------------------
