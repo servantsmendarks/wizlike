@@ -1,5 +1,5 @@
 // UI-32 / UI-53 の操作領域（ui §2 の controls 領域）。十字ボタン（dpad）、メニュー（menu）、リスト（list）、
-// 地図の「閉じる」（mapClose）を切り替えて出す。矩形は layout.ts の dungeonLayout のステージ座標で、region の原点を引いて置く。
+// 地図の「閉じる」（mapClose）、戦闘のコマンド 8 枠（battle）、オート中の「オート解除」（autoStop）を切り替えて出す。矩形は layout.ts の dungeonLayout のステージ座標で、region の原点を引いて置く。
 // 十字ボタンは pointerdown で反応する（click は使わない）。離したら onRelease（前進の長押しの連打を止める。UI-31）。
 // Action から Command への変換と長押しの連打は呼び出し側（app）が持つ。表示層は前進できるかを判定しない（UI-35）。
 // モジュールのトップレベルでは DOM に触れない。
@@ -7,8 +7,9 @@ import type { Strings } from "../../core/data/index";
 import type { DungeonLayout, Rect } from "../layout";
 
 export type DpadAction = "forward" | "left" | "right" | "around";
-export type ControlsMode = "dpad" | "list" | "close" | "none";
-export type ControlItem = { label: string; onSelect(): void };
+export type ControlsMode = "dpad" | "list" | "close" | "battle" | "autoStop" | "none";
+/** disabled なら dim 色で出し、押しても onSelect を呼ばない */
+export type ControlItem = { label: string; onSelect(): void; disabled?: boolean };
 
 export type Controls = {
   el: HTMLElement;
@@ -20,7 +21,14 @@ export type Controls = {
   setMenu(items: ControlItem[]): void;
   /** layout.list の位置に並べる。4 件以上は縦スクロール（UI-11） */
   setList(items: ControlItem[]): void;
-  /** n 番目（0 始まり）を選ぶ。dpad ではメニュー、list ではリスト、close では 0 が「閉じる」。範囲外は何もしない */
+  /** layout.battleMenu の 8 枠に並べる（9 件目以降は捨てる）。UI-54 */
+  setBattleMenu(items: ControlItem[]): void;
+  /** オート中の「オート解除」。pointerdown で onPress を呼ぶ（再生中も受ける。UI-44 の例外は呼び出し側が扱う） */
+  setAutoStop(label: string, onPress: () => void): void;
+  /**
+   * n 番目（0 始まり）を選ぶ。dpad ではメニュー、list ではリスト、battle では 8 枠、close / autoStop では 0 が唯一のボタン。
+   * 範囲外と disabled は何もしない
+   */
   select(n: number): void;
 };
 
@@ -65,7 +73,7 @@ function setShown(el: HTMLElement, on: boolean): void {
  */
 export function createControls(o: {
   region: Rect;
-  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "mapClose">;
+  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "mapClose" | "battleMenu" | "autoStop">;
   strings: Strings;
   onAction(a: DpadAction): void;
   onRelease(): void;
@@ -76,6 +84,7 @@ export function createControls(o: {
   const DPAD = o.layout.dpad;
   const MENU_SLOTS = o.layout.menu;
   const LIST_ROWS = o.layout.list;
+  const BATTLE_SLOTS = o.layout.battleMenu;
 
   const el = document.createElement("div");
   el.className = "controls";
@@ -158,6 +167,24 @@ export function createControls(o: {
   close.addEventListener("click", () => o.onClose());
   el.appendChild(close);
 
+  // ---- 戦闘のコマンド（layout.battleMenu の 8 枠）
+  const battle = document.createElement("div");
+  battle.className = "controls-battle";
+  el.appendChild(battle);
+  let battleItems: ControlItem[] = [];
+
+  // ---- オート中の「オート解除」
+  const autoStop = document.createElement("button");
+  autoStop.type = "button";
+  autoStop.className = "controls-auto-stop";
+  buttonStyle(autoStop, o.layout.autoStop, origin);
+  let autoStopPress: () => void = () => {};
+  autoStop.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    autoStopPress();
+  });
+  el.appendChild(autoStop);
+
   let mode: ControlsMode = "none";
   let dpadVisible = true;
 
@@ -166,6 +193,20 @@ export function createControls(o: {
     setShown(menu, mode === "dpad");
     setShown(list, mode === "list");
     setShown(close, mode === "close");
+    setShown(battle, mode === "battle");
+    setShown(autoStop, mode === "autoStop");
+  };
+
+  /** disabled の見た目（dim 色）。押しても onSelect を呼ばない */
+  const pick = (it: ControlItem): void => {
+    if (it.disabled !== true) it.onSelect();
+  };
+  const dimIf = (b: HTMLElement, it: ControlItem): void => {
+    if (it.disabled === true) {
+      b.style.color = "var(--c-dim)";
+      b.style.borderColor = "var(--c-dim)";
+      b.setAttribute("aria-disabled", "true");
+    }
   };
   apply();
 
@@ -190,7 +231,8 @@ export function createControls(o: {
         b.className = "controls-menu-item";
         b.textContent = it.label;
         buttonStyle(b, r, origin);
-        b.addEventListener("click", () => it.onSelect());
+        dimIf(b, it);
+        b.addEventListener("click", () => pick(it));
         menu.appendChild(b);
       });
     },
@@ -219,14 +261,41 @@ export function createControls(o: {
           overflow: "hidden",
           touchAction: "pan-y",
         });
-        b.addEventListener("click", () => it.onSelect());
+        dimIf(b, it);
+        b.addEventListener("click", () => pick(it));
         list.appendChild(b);
       }
     },
+    setBattleMenu(items: ControlItem[]): void {
+      battleItems = items.slice(0, BATTLE_SLOTS.length);
+      battle.replaceChildren();
+      battleItems.forEach((it, i) => {
+        const r = BATTLE_SLOTS[i];
+        if (r === undefined) return;
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "controls-battle-item";
+        b.textContent = it.label;
+        buttonStyle(b, r, origin);
+        dimIf(b, it);
+        b.addEventListener("click", () => pick(it));
+        battle.appendChild(b);
+      });
+    },
+    setAutoStop(label: string, onPress: () => void): void {
+      autoStop.textContent = label;
+      autoStopPress = onPress;
+    },
     select(n: number): void {
-      if (mode === "dpad") menuItems[n]?.onSelect();
-      else if (mode === "list") listItems[n]?.onSelect();
+      const at = (items: readonly ControlItem[]): void => {
+        const it = items[n];
+        if (it !== undefined) pick(it);
+      };
+      if (mode === "dpad") at(menuItems);
+      else if (mode === "list") at(listItems);
+      else if (mode === "battle") at(battleItems);
       else if (mode === "close" && n === 0) o.onClose();
+      else if (mode === "autoStop" && n === 0) autoStopPress();
     },
   };
 }

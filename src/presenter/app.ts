@@ -94,6 +94,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   for (const w of layoutWarnings(playRegions, playLayout)) console.warn(w);
 
   const play = createDungeonScreen({
+    data,
     strings,
     regions: playRegions,
     layout: playLayout,
@@ -129,10 +130,13 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     view: {
       fade: (ms, apply) => play.view.fade(ms, apply),
       showAt: (st, at) => play.view.show(slotsFor(visibleCells(st, data, at))),
+      shake: (ms) => play.shake(ms),
     },
     header: { showAt: showHeaderAt },
     message: play.message,
     party: play.party,
+    battle: play.battle,
+    dice: play.dice,
     screens: {
       show: (to: Screen) => onScreen(to),
       sync: (st) => sync(st),

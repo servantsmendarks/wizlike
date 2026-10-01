@@ -10,6 +10,7 @@ import {
   randomizePersonalities,
 } from "../src/presenter/views/creation";
 import { townEntries, townEntryLabel } from "../src/presenter/views/town";
+import { formatPartyRow } from "../src/presenter/views/party";
 import { createRunGate } from "../src/presenter/run-gate";
 import type { Command, GameEvent } from "../src/core/types";
 import { data, newGame } from "./helpers/core";
@@ -50,6 +51,20 @@ describe("簡易作成", () => {
     expect(ok.state.screen).toBe("town");
     const bad = execute(s0, { type: "game.new", party: buildPartySetup(["", ...names.slice(1)], defaultPersonalities(ids, 6)) }, data);
     expect(bad.events).toEqual([{ kind: "rejected", command: "game.new", reason: "invalid name at 0" }]);
+  });
+});
+
+describe("パーティ欄", () => {
+  test("UI-54/CH-44 formatPartyRow の状態の列: 生存なら状態異常の短い名前を空白区切り、死亡・灰はそれだけ", () => {
+    const ch = newGame(1).party[0]!;
+    const st = (k: string): string => data.strings[`party.status.${k}`]!;
+    expect(formatPartyRow(ch, data.strings).life).toBe("");
+    expect(formatPartyRow({ ...ch, status: ["poison", "sleep"] }, data.strings).life).toBe(`${st("poison")} ${st("sleep")}`);
+    expect(formatPartyRow({ ...ch, status: ["poison", "sleep"] }, data.strings).life).toBe("毒 眠");
+    expect(formatPartyRow({ ...ch, status: ["stone"] }, data.strings).life).toBe(st("stone"));
+    // 死亡・灰は状態異常を出さない
+    expect(formatPartyRow({ ...ch, life: "dead", hp: 0, status: ["poison"] }, data.strings).life).toBe(data.strings["party.life.dead"]);
+    expect(formatPartyRow({ ...ch, life: "ash", hp: 0, status: ["paralysis"] }, data.strings).life).toBe(data.strings["party.life.ash"]);
   });
 });
 

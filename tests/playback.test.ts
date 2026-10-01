@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { createPlayer, type PlayerDeps } from "../src/presenter/playback";
 import { formatMessage } from "../src/presenter/views/message";
 import type { Settings } from "../src/presenter/settings";
-import type { Dive, GameEvent, GameState, ViewPoint } from "../src/core/types";
-import { data, newGame } from "./helpers/core";
+import type { Dive, EnemyGroupView, GameEvent, GameState, ViewPoint } from "../src/core/types";
+import { data, expectKnownStringKeys, newGame } from "./helpers/core";
 
 function diveAt(x: number, y: number, facing: Dive["facing"], floor = 1): Dive {
   return {
@@ -47,6 +47,10 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
         return Promise.resolve();
       },
       showAt: (_state, at) => rec("view.showAt")(at),
+      shake(ms) {
+        log.push({ m: "view.shake", a: [ms] });
+        return Promise.resolve();
+      },
     },
     header: { showAt: (_state, at) => rec("header.showAt")(at) },
     message: {
@@ -56,7 +60,36 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
       },
       setMore: rec("message.setMore"),
     },
-    party: { setHp: rec("party.setHp"), setSan: rec("party.setSan"), setLife: rec("party.setLife") },
+    party: {
+      setHp: rec("party.setHp"),
+      setSan: rec("party.setSan"),
+      setLife: rec("party.setLife"),
+      setMp: rec("party.setMp"),
+      setStatus: rec("party.setStatus"),
+      flash(id, ms) {
+        log.push({ m: "party.flash", a: [id, ms] });
+        return Promise.resolve();
+      },
+    },
+    battle: {
+      setGroups: rec("battle.setGroups"),
+      removeOne(g, ms) {
+        log.push({ m: "battle.removeOne", a: [g, ms] });
+        return Promise.resolve();
+      },
+      flash(g, ms) {
+        log.push({ m: "battle.flash", a: [g, ms] });
+        return Promise.resolve();
+      },
+      clear: rec("battle.clear"),
+    },
+    dice: {
+      show(ev, skip, stepMs) {
+        log.push({ m: "dice.show", a: [ev.label, skip, stepMs] });
+        return Promise.resolve();
+      },
+      hide: rec("dice.hide"),
+    },
     screens: { show: (to) => rec("screens.show")(to), sync: (st) => log.push({ m: "screens.sync", a: [st] }) },
   };
   return { deps, log };
@@ -89,6 +122,8 @@ describe("UI-41 playback", () => {
     const says = log.filter((e) => e.m === "message.say");
     expect(says).toEqual([{ m: "message.say", a: [data.strings["dungeon.door"], true] }]);
     expect(log.filter((e) => e.m === "party.setHp").map((e) => e.a)).toEqual([["c1", 5]]);
+    // UI-42 の被弾のフラッシュも 0ms
+    expect(log.filter((e) => e.m === "party.flash").map((e) => e.a)).toEqual([["c1", 0]]);
   });
 
   test("UI-41/UI-23 演出ありならフェードは config.ui.viewFadeMs、文字送りは instant=false", async () => {
@@ -132,6 +167,7 @@ describe("UI-41 playback", () => {
       "view.showAt",
       "header.showAt",
       "party.setHp",
+      "party.flash",
       "party.setLife",
       "party.setSan",
       "view.fade",
@@ -166,7 +202,6 @@ describe("UI-41 playback", () => {
     const { deps, log } = fakeDeps();
     const s = stateWith(diveAt(1, 1, "N"));
     const events: GameEvent[] = [
-      { kind: "dice", label: "x", dice: [3, 4], total: 7 },
       { kind: "rejected", command: "dungeon.move", reason: "x" },
       { kind: "levelDown", id: "c1", level: 1, hpMax: 5, mpMax: 0 },
     ];
@@ -243,5 +278,145 @@ describe("UI-41 playback", () => {
     log.length = 0;
     await player.play([{ kind: "message", key: "dungeon.door" }], s, s);
     expect(log.filter((e) => e.m === "message.say").map((e) => e.a[1])).toEqual([false]);
+  });
+});
+
+describe("UI-41/UI-42/UI-40 戦闘の再生", () => {
+  const groups: EnemyGroupView[] = [
+    { index: 0, monsterId: "giant_rat", name: "小さな獣", identified: false, count: 2 },
+    { index: 1, monsterId: "kobold", name: "コボルド", identified: true, count: 1 },
+  ];
+  const battleState = (): GameState => ({ ...stateWith(diveAt(1, 1, "N")), screen: "battle" });
+
+  test("UI-41 遭遇から勝利まで: screen battle → setGroups → 敵の被弾 → 味方の被弾 → 撃破 → ダイス → message → ダイスを消す → screen dungeon → sync", async () => {
+    const { deps, log } = fakeDeps();
+    const before = stateWith(diveAt(1, 1, "N"));
+    const after = stateWith(diveAt(1, 1, "N"));
+    const events: GameEvent[] = [
+      { kind: "screen", to: "battle" },
+      { kind: "encounter", groups },
+      { kind: "attack", actorId: "c1", targetId: "e0-0", hit: true, damage: 3 },
+      { kind: "hpChanged", id: "e0-0", delta: -3, hp: 0 },
+      { kind: "attack", actorId: "e1-0", targetId: "c2", hit: true, damage: 2 },
+      { kind: "hpChanged", id: "c2", delta: -2, hp: 5 },
+      { kind: "lifeChanged", id: "e0-0", life: "dead" },
+      { kind: "dice", label: "battle.fleeRoll", dice: [37], total: 37 },
+      { kind: "message", key: "battle.fleeOk" },
+      { kind: "battleEnd", result: "flee" },
+      { kind: "screen", to: "dungeon" },
+    ];
+    expectKnownStringKeys(events);
+    await createPlayer(deps).play(events, before, after);
+    const ui = data.config.ui;
+    expect(log.filter((e) => !e.m.startsWith("message.setMore") && e.m !== "view.showAt" && e.m !== "header.showAt")).toEqual([
+      { m: "view.fade", a: [ui.viewFadeMs] },
+      { m: "screens.show", a: ["battle"] },
+      { m: "battle.clear", a: [] },
+      { m: "battle.setGroups", a: [groups] },
+      { m: "battle.flash", a: [0, ui.flashMs] },
+      { m: "party.setHp", a: ["c2", 5] },
+      { m: "party.flash", a: ["c2", ui.flashMs] },
+      { m: "battle.removeOne", a: [0, ui.flashMs] },
+      { m: "dice.show", a: ["battle.fleeRoll", false, ui.diceStepMs] },
+      { m: "message.say", a: [data.strings["battle.fleeOk"], false] },
+      { m: "dice.hide", a: [] },
+      { m: "screens.show", a: ["dungeon"] },
+      { m: "view.fade", a: [ui.viewFadeMs] },
+      { m: "screens.sync", a: [JSON.parse(JSON.stringify(after))] },
+    ]);
+  });
+
+  test("§3-9 skipAnimations なら flash / removeOne / shake / dice / fade の ms はすべて 0 で、タイマーを使わない", async () => {
+    vi.useFakeTimers();
+    const { deps, log } = fakeDeps({ skipAnimations: true });
+    const s = battleState();
+    const events: GameEvent[] = [
+      { kind: "screen", to: "battle" },
+      { kind: "encounter", groups },
+      { kind: "dice", label: "battle.initiativeParty", dice: [4], total: 12 },
+      { kind: "dice", label: "battle.initiativeEnemy", dice: [2], total: 11 },
+      { kind: "spell", actorId: "c5", spellId: "flame_burst", targets: ["e0-0", "e0-1"] },
+      { kind: "hpChanged", id: "e0-0", delta: -4, hp: 0 },
+      { kind: "lifeChanged", id: "e0-0", life: "dead" },
+      { kind: "hpChanged", id: "c1", delta: -1, hp: 6 },
+    ];
+    expectKnownStringKeys(events);
+    await createPlayer(deps).play(events, s, s);
+    expect(vi.getTimerCount()).toBe(0);
+    const ms = log
+      .filter((e) => ["view.fade", "view.shake", "battle.flash", "battle.removeOne", "party.flash", "dice.show"].includes(e.m))
+      .map((e) => [e.m, e.a[e.a.length - 1]]);
+    expect(ms).toEqual([
+      ["view.fade", 0],
+      ["dice.show", 0],
+      ["dice.show", 0],
+      ["view.shake", 0],
+      ["battle.flash", 0],
+      ["battle.removeOne", 0],
+      ["party.flash", 0],
+    ]);
+    // dice.show の skip は真
+    expect(log.filter((e) => e.m === "dice.show").map((e) => e.a[1])).toEqual([true, true]);
+  });
+
+  test("UI-40 続けて来たダイスは消さずに積み、message の間も残し、次のイベント（と再生の終わり）で 1 回だけ消す", async () => {
+    const { deps, log } = fakeDeps();
+    const s = battleState();
+    const events: GameEvent[] = [
+      { kind: "dice", label: "battle.initiativeParty", dice: [4], total: 12 },
+      { kind: "dice", label: "battle.initiativeEnemy", dice: [2], total: 11 },
+      { kind: "message", key: "battle.surpriseParty" },
+    ];
+    expectKnownStringKeys(events);
+    await createPlayer(deps).play(events, s, s);
+    expect(names(log).filter((m) => m.startsWith("dice.") || m === "message.say")).toEqual(["dice.show", "dice.show", "message.say", "dice.hide"]);
+    // ダイスが出ていなければ hide は呼ばない
+    const f2 = fakeDeps();
+    await createPlayer(f2.deps).play([{ kind: "message", key: "battle.win" }, { kind: "battleEnd", result: "win" }], s, s);
+    expect(names(f2.log)).not.toContain("dice.hide");
+  });
+
+  test("UI-42 全体攻撃（enemyGroup / allEnemies の damage）だけ揺らす。fire_arrow・sleep_mist・heal・blessing・identify は揺らさない", async () => {
+    const shaken: string[] = [];
+    for (const spellId of ["fire_arrow", "sleep_mist", "flame_burst", "lightning_tome", "heal", "blessing", "identify"]) {
+      const { deps, log } = fakeDeps();
+      const s = battleState();
+      await createPlayer(deps).play([{ kind: "spell", actorId: "c5", spellId, targets: [] }], s, s);
+      if (log.some((e) => e.m === "view.shake")) shaken.push(spellId);
+      expect(log.filter((e) => e.m === "view.shake").map((e) => e.a[0])).toEqual(shaken.at(-1) === spellId ? [data.config.ui.shakeMs] : []);
+    }
+    expect(shaken).toEqual(["flame_burst", "lightning_tome"]);
+  });
+
+  test("UI-42 回復（delta > 0）ではフラッシュしない。敵の hpChanged は party に触れない", async () => {
+    const { deps, log } = fakeDeps();
+    const s = battleState();
+    const events: GameEvent[] = [
+      { kind: "hpChanged", id: "c3", delta: 4, hp: 8 },
+      { kind: "hpChanged", id: "e1-0", delta: 0, hp: 3 },
+    ];
+    await createPlayer(deps).play(events, s, s);
+    expect(names(log)).toEqual(["party.setHp", "message.setMore", "screens.sync"]);
+  });
+
+  test("UI-41 statusChanged は味方だけ setStatus（敵は無視）、mpChanged → setMp、enemyGroups → setGroups、敵の lifeChanged は dead だけ removeOne", async () => {
+    const { deps, log } = fakeDeps();
+    const s = battleState();
+    const events: GameEvent[] = [
+      { kind: "statusChanged", id: "e0-1", status: "sleep", on: true },
+      { kind: "statusChanged", id: "c2", status: "poison", on: true },
+      { kind: "mpChanged", id: "c5", delta: -2, mp: 3 },
+      { kind: "enemyGroups", groups },
+      { kind: "lifeChanged", id: "e1-0", life: "dead" },
+      { kind: "lifeChanged", id: "c4", life: "dead" },
+    ];
+    await createPlayer(deps).play(events, s, s);
+    expect(log.filter((e) => e.m !== "message.setMore" && e.m !== "screens.sync")).toEqual([
+      { m: "party.setStatus", a: ["c2", "poison", true] },
+      { m: "party.setMp", a: ["c5", 3] },
+      { m: "battle.setGroups", a: [groups] },
+      { m: "battle.removeOne", a: [1, data.config.ui.flashMs] },
+      { m: "party.setLife", a: ["c4", "dead"] },
+    ]);
   });
 });
