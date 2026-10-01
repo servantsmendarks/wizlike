@@ -137,5 +137,6 @@ export function startNewGame(ctx: RuleContext, setup: PartySetup): void {
   if (first === undefined) throw new Error("startNewGame: no dungeons");
   state.progress.unlockedDungeons = [first.id]; // DG-01
   state.screen = "town";
+  state.townVisit = { mercyOffered: false }; // TW-30: game.new は town.enter をしない（救済の判定もしない）
   ctx.events.push({ kind: "screen", to: "town" });
 }

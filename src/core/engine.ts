@@ -34,6 +34,7 @@ export function createInitialState(seed: number, _data: GameData): GameState {
     pendingChoice: null,
     battle: null,
     bestiary: {},
+    townVisit: null,
   };
 }
 

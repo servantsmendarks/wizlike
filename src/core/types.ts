@@ -174,10 +174,20 @@ export type Dive = {
 export type ChoiceOption = { id: string; labelKey: string };
 /**
  * 非 null の間は event.choose 以外のコマンドを rejected（"choice pending"）にする。
- * M2 は kind "stairs" だけ。M5 でイベントの選択と罠の察知（DG-21）を kind を足して同じ形で載せる。
- * promptKey は確認文の strings キー（M4 のリロード復帰で再表示に使う）。
+ * M5 でイベントの選択と罠の察知（DG-21）を kind を足して同じ形で載せる。
+ * promptKey は確認文の strings キー（params なし。リロード復帰で表示層が出し直す）。
+ * 不変条件: これを立てる execute は、同じ events の中に key === promptKey（params なし）の message を必ず出す。
+ * option id: "descend" | "ascend" | "stay"（M2）、"exit"（DG-06 の 1 階の上り階段。kind は stairs）、"teleport"（DG-32）
  */
-export type PendingChoice = { kind: "stairs"; promptKey: string; options: ChoiceOption[] };
+export type PendingChoice = { kind: "stairs" | "teleporter"; promptKey: string; options: ChoiceOption[] };
+
+// ===================== 街の来訪（TW-30〜32） =====================
+
+/** 1 回の来訪の状態。arriveTown（帰還・全滅）と game.new で作り、dungeon.enter で null に戻す */
+export type TownVisit = {
+  /** TW-30/31: この来訪で town.mercy を 1 回使える。受け付けたら false */
+  mercyOffered: boolean;
+};
 
 // ===================== 表示層向けの問い合わせの結果（rules/dungeon.ts が返す。state には入れない） =====================
 
@@ -250,8 +260,8 @@ export type BattleState = {
 export type BestiaryEntry = { kills: number; identified: boolean };
 
 // ===================== GameState =====================
-// M1 で確定した欄に、M2 で dive と pendingChoice、M3 で battle と bestiary を足した。townVisit（M4）は
-// M4 で足す（保存が始まる M4 より前なので migrate は要らない）。
+// M1 で確定した欄に、M2 で dive と pendingChoice、M3 で battle と bestiary、M4 で townVisit を足した。
+// M4 のこの形を保存レコードの schemaVersion 1 として確定する（以後の変更は src/save/migrate.ts の移行を伴う）。
 // schemaVersion、turn、updatedAt、gameId は保存レコード側の欄（SV-21）で、ここには入れない。
 
 export type GameState = {
@@ -277,6 +287,8 @@ export type GameState = {
   battle: BattleState | null;
   /** F6: monsterId → 記録。ゲーム単位で永続（戦闘・潜行・全滅をまたぐ） */
   bestiary: Record<string, BestiaryEntry>;
+  /** TW-30〜32。screen === "town" と townVisit !== null は同値（title / dungeon / battle では null） */
+  townVisit: TownVisit | null;
 };
 
 // ===================== コマンド（CLAUDE.md §5） =====================
@@ -303,8 +315,11 @@ export type Command =
   | { type: "dungeon.enter"; dungeonId: string }
   | { type: "dungeon.move" }
   | { type: "dungeon.turn"; dir: "left" | "right" | "around" }
-  /** itemId は §5 の名前のまま。中身は ItemInstance.id（items.json の id ではない） */
-  | { type: "dungeon.useItem"; memberId: string; itemId: string }
+  /**
+   * itemId は §5 の名前のまま。中身は ItemInstance.id（使う本人の inventory のもの。items.json の id ではない）。
+   * targetId は effect.target === "ally" のときだけ必須、他では無視（dungeon.cast と同じ形。types.ts を正とする）
+   */
+  | { type: "dungeon.useItem"; memberId: string; itemId: string; targetId?: string }
   | { type: "dungeon.cast"; memberId: string; spellId: string; targetId?: string }
   | { type: "battle.input"; memberId: string; action: BattleAction }
   | { type: "battle.resolve" }
@@ -367,8 +382,85 @@ export type BattleMenu = {
   allies: { id: string; name: string; hp: number; hpMax: number }[];
 };
 
-/** 【仮置き】M4 で確定する */
-export type PenaltyResult = { dice: number[]; total: number; bandIndex: number };
+// ===================== 全滅の内訳（TW-20〜26。wipe イベントの penalty） =====================
+
+/** TW-22 で失った所持品 1 個 */
+export type PenaltyLostItem = {
+  memberId: string;
+  instanceId: string;
+  itemId: string;
+  /** 失った時点の表示名（CH-72 の鑑定を反映） */
+  name: string;
+  equipped: boolean;
+};
+/** TW-22 / CH-62。パーティ全員を並び順で（life を問わず、lost 0 も入れる） */
+export type PenaltyExpLoss = {
+  id: string;
+  name: string;
+  expBefore: number;
+  lost: number;
+  levelFrom: number;
+  levelTo: number;
+};
+export type PenaltyResult = {
+  /** 2d10 の各目 */
+  dice: number[];
+  total: number;
+  /** data.penaltyTable.bands の添字 */
+  bandIndex: number;
+  /** DG-42/TW-21: 所持金から実際に引いた台帳の金 = min(gold, ledger.gold) */
+  ledgerGold: number;
+  /** DG-42: 台帳から失った品の表示名（台帳の順） */
+  ledgerItems: string[];
+  /** TW-22: 台帳分を引いた後の所持金 g から floor(g × goldLossRatio + 1e-9) */
+  goldLost: number;
+  itemsLost: PenaltyLostItem[];
+  expLost: PenaltyExpLoss[];
+  /** TW-23/24 で復活処理をした者の id（処理順: 全滅時点で alive の者を並び順 → リーダー） */
+  revived: string[];
+  /** TW-24: リーダーが全滅時点で alive でなかった（wipe.leaderRule を出した） */
+  leaderRule: boolean;
+};
+
+// ===================== 表示層向けの問い合わせの結果（rules/town.ts townMenu、rules/items.ts fieldItemMenu。state には入れない） =====================
+
+export type TownMenuInnRank = { rank: number; id: string; name: string; cost: number; affordable: boolean };
+export type TownMenuTempleRow = { memberId: string; name: string; cost: number; affordable: boolean };
+/** rules/town.ts townMenu。screen === "town" のときだけ非 null */
+export type TownMenu = {
+  gold: number;
+  inn: TownMenuInnRank[];
+  temple: {
+    /** life dead の者（並び順）。cost = level × templeCostPerLevel */
+    resurrect: TownMenuTempleRow[];
+    /** life alive で毒・麻痺・石化のどれかを持つ者。cost = 該当状態の cureCost の合計 */
+    cure: TownMenuTempleRow[];
+    /** 呪われた品を装備している者（life を問わない）。cost = uncurseCost */
+    uncurse: TownMenuTempleRow[];
+  };
+  /** TW-31: townVisit.mercyOffered なら dead / ash の全員（並び順）。申し出が無ければ null */
+  mercy: { memberId: string; name: string; life: "dead" | "ash" }[] | null;
+  /** TW-11: progress.unlockedDungeons の順。canEnter = checkEnter(state, id, data) === null */
+  dungeons: { id: string; name: string; canEnter: boolean }[];
+};
+
+/** rules/items.ts fieldItemMenu の道具 1 個 */
+export type FieldItemView = {
+  instanceId: string;
+  itemId: string;
+  name: string;
+  /** "ally" なら対象を選ぶ（targetId 必須）。"none" は対象を選ばない（self / party / return / learn） */
+  target: "ally" | "none";
+  /** checkUseItem(state, data, cmd) === null と同値。ally の品は「alive の味方が 1 人以上」で見る */
+  usable: boolean;
+};
+/** rules/items.ts fieldItemMenu。screen dungeon・dive 非 null・battle null・pendingChoice null のときだけ非 null */
+export type FieldItemMenu = {
+  /** パーティ全員（並び順）。items は inventory の順で consumable / book だけ */
+  members: { id: string; name: string; canAct: boolean; items: FieldItemView[] }[];
+  /** 対象の候補 = life alive（並び順） */
+  allies: { id: string; name: string; hp: number; hpMax: number }[];
+};
 
 export type GameEvent =
   | { kind: "message"; key: string; params?: Record<string, string | number> }
@@ -388,14 +480,24 @@ export type GameEvent =
   | { kind: "statusChanged"; id: string; status: StatusId; on: boolean }
   /** id は味方か敵。敵の撃破は life "dead" */
   | { kind: "lifeChanged"; id: string; life: Life }
-  /** label は strings.json のキー（UI-40 の各判定で使い回す。習得なら "town.inn.learnRoll"） */
+  /** label は params の無い strings.json のキー（UI-40 の各判定で使い回す。習得は "town.inn.learnDice"、全滅は "wipe.dice"） */
   | { kind: "dice"; label: string; dice: number[]; total: number }
   | { kind: "battleEnd"; result: "win" | "flee" | "wipe" }
   | { kind: "wipe"; penalty: PenaltyResult }
-  /** §5 に増分と新しい最大値を足した（表示層が state を掘り直さずに済むように） */
-  | { kind: "levelUp"; id: string; level: number; hpGain: number; mpGain: number; hpMax: number; mpMax: number }
-  /** §5 に追加（CH-62）。1 段下がるごとに 1 件 */
-  | { kind: "levelDown"; id: string; level: number; hpMax: number; mpMax: number }
+  /** §5 に増分と新しい最大値と変化後の現在値を足した（表示層が state を掘り直さずに済むように） */
+  | {
+      kind: "levelUp";
+      id: string;
+      level: number;
+      hpGain: number;
+      mpGain: number;
+      hpMax: number;
+      mpMax: number;
+      hp: number;
+      mp: number;
+    }
+  /** §5 に追加（CH-62）。1 段下がるごとに 1 件。hp / mp は変化後の現在値 */
+  | { kind: "levelDown"; id: string; level: number; hpMax: number; mpMax: number; hp: number; mp: number }
   /** via は §5 に追加（MG-21 の判定 / MG-23 の保証 / MG-25 の魔法書） */
   | { kind: "spellLearned"; id: string; spellId: string; via: "roll" | "guarantee" | "book" }
   | { kind: "eventStarted"; eventId: string; actorId?: string }

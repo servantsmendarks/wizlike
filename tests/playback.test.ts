@@ -203,7 +203,7 @@ describe("UI-41 playback", () => {
     const s = stateWith(diveAt(1, 1, "N"));
     const events: GameEvent[] = [
       { kind: "rejected", command: "dungeon.move", reason: "x" },
-      { kind: "levelDown", id: "c1", level: 1, hpMax: 5, mpMax: 0 },
+      { kind: "levelDown", id: "c1", level: 1, hpMax: 5, mpMax: 0, hp: 5, mp: 0 },
     ];
     await createPlayer(deps).play(events, s, s);
     expect(names(log)).toEqual(["message.setMore", "screens.sync"]);

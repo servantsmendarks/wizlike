@@ -158,22 +158,24 @@ describe("learning: rollSpellLearning", () => {
     expect(ctx.state.rng).toEqual(rngAfter(1, [D100]));
   });
 
-  test("MG-24 1 呪文につき message learnRoll → dice{label:town.inn.learnRoll} → learned か notLearned（seed 7: ドナ L3、d100 = 4, 93、保証 randInt(0,0)）", () => {
+  test("MG-24/UI-40 1 呪文につき message learnRoll → dice{label:town.inn.learnDice（params なし）} → learned か notLearned（seed 7: ドナ L3、d100 = 4, 93、保証 randInt(0,0)）", () => {
     const { ctx, ch } = setup(7, DONA);
     const name = ch.name;
     expect(rollSpellLearning(ctx, ch, 3)).toEqual(["blessing", "cure_poison"]);
     expect(ctx.events).toEqual([
       { kind: "message", key: "town.inn.learnRoll", params: { name, spell: "加護" } },
-      { kind: "dice", label: "town.inn.learnRoll", dice: [4], total: 4 },
+      { kind: "dice", label: "town.inn.learnDice", dice: [4], total: 4 },
       { kind: "spellLearned", id: "c4", spellId: "blessing", via: "roll" },
       { kind: "message", key: "town.inn.learned", params: { name, spell: "加護" } },
       { kind: "message", key: "town.inn.learnRoll", params: { name, spell: "解毒" } },
-      { kind: "dice", label: "town.inn.learnRoll", dice: [93], total: 93 },
+      { kind: "dice", label: "town.inn.learnDice", dice: [93], total: 93 },
       { kind: "message", key: "town.inn.notLearned", params: { name, spell: "解毒" } },
       { kind: "spellLearned", id: "c4", spellId: "cure_poison", via: "guarantee" },
       { kind: "message", key: "town.inn.learned", params: { name, spell: "解毒" } },
     ]);
     expectKnownStringKeys(ctx.events);
+    // UI-40: dice の label は params なしで出るので、文言に {…} を含まない
+    expect(data.strings["town.inn.learnDice"]).not.toContain("{");
   });
 
   test("MG-21 seed 8: ドナ L2 の blessing は 87 > 70 で失敗。解放レベル 2 の帯が無いので保証は無く、乱数の消費は 1 回", () => {

@@ -67,7 +67,7 @@ describe("engine: execute", () => {
     expect(JSON.parse(JSON.stringify(s0))).toEqual(s0);
   });
 
-  test("D3 createInitialState: screen title、party []、rng は createRng(seed) と同じ、gold 0、bank 0、nextItemSeq 1、dive と pendingChoice と battle は null、bestiary は {}", () => {
+  test("D3 createInitialState: screen title、party []、rng は createRng(seed) と同じ、gold 0、bank 0、nextItemSeq 1、dive と pendingChoice と battle は null、bestiary は {}、townVisit は null", () => {
     const s = createInitialState(42, data);
     expect(s).toEqual({
       screen: "title",
@@ -82,6 +82,7 @@ describe("engine: execute", () => {
       pendingChoice: null,
       battle: null,
       bestiary: {},
+      townVisit: null,
     });
     expect(() => createInitialState(1.5, data)).toThrow(RangeError);
   });
@@ -152,16 +153,24 @@ describe("engine: execute", () => {
     expect(r.events).toEqual([{ kind: "screen", to: "town" }]);
   });
 
+  test("TW-30 game.new は townVisit を {mercyOffered:false} にし（town.enter と救済の判定はしない）、dungeon.enter で null に戻す", () => {
+    const s = execute(createInitialState(1, data), gameNew(), data).state;
+    expect(s.townVisit).toEqual({ mercyOffered: false });
+    const d = execute(s, { type: "dungeon.enter", dungeonId: "d01" }, data).state;
+    expect(d.screen).toBe("dungeon");
+    expect(d.townVisit).toBeNull();
+  });
+
   test("UI-40/§3-10 game.new が出す message の key と dice の label はすべて data.strings に実在する", () => {
     const r = execute(createInitialState(1, data), gameNew(randomMembers()), data);
     expectKnownStringKeys(r.events);
     // 検査関数自体が未知のキーを検出できること
-    expect(stringKeysOf([{ kind: "message", key: "no.such.key" }, { kind: "dice", label: "town.inn.learnRoll", dice: [1], total: 1 }])).toEqual([
+    expect(stringKeysOf([{ kind: "message", key: "no.such.key" }, { kind: "dice", label: "town.inn.learnDice", dice: [1], total: 1 }])).toEqual([
       "no.such.key",
-      "town.inn.learnRoll",
+      "town.inn.learnDice",
     ]);
     expect(() => expectKnownStringKeys([{ kind: "message", key: "no.such.key" }])).toThrow();
-    expectKnownStringKeys([{ kind: "dice", label: "town.inn.learnRoll", dice: [1], total: 1 }]);
+    expectKnownStringKeys([{ kind: "dice", label: "town.inn.learnDice", dice: [1], total: 1 }]);
   });
 
   test("D2 party がある state での game.new は、同じ参照（toBe）と [{kind:\"rejected\",command:\"game.new\",reason:\"game already started\"}]", () => {

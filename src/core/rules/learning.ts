@@ -68,7 +68,7 @@ export function rollSpellLearning(ctx: RuleContext, ch: Character, level: number
     const params = { name: ch.name, spell: sp.name };
     events.push({ kind: "message", key: "town.inn.learnRoll", params });
     const roll = randInt(state.rng, 1, 100);
-    events.push({ kind: "dice", label: "town.inn.learnRoll", dice: [roll], total: roll });
+    events.push({ kind: "dice", label: "town.inn.learnDice", dice: [roll], total: roll }); // label は params の無いキー（UI-40）
     if (isLearnSuccess(roll, learnRate(ch, cls, sp, level, cfg))) {
       ch.knownSpells.push(sp.id);
       learned.push(sp.id);

@@ -76,7 +76,7 @@ export function levelUpOnce(ctx: RuleContext, ch: Character): LevelRecord {
   const rec: LevelRecord = { level, hpGain, mpGain };
   ch.levelHistory.push({ ...rec });
 
-  events.push({ kind: "levelUp", id: ch.id, level, hpGain, mpGain, hpMax: ch.hpMax, mpMax: ch.mpMax });
+  events.push({ kind: "levelUp", id: ch.id, level, hpGain, mpGain, hpMax: ch.hpMax, mpMax: ch.mpMax, hp: ch.hp, mp: ch.mp });
   events.push({ kind: "message", key: "town.inn.levelUp", params: { name: ch.name, level } });
 
   if (level > ch.maxLevelReached) {
@@ -111,7 +111,7 @@ export function levelDownWhileBelow(ctx: RuleContext, ch: Character): number {
     ch.level -= 1;
     ch.hp = Math.min(ch.hp, ch.hpMax);
     ch.mp = Math.min(ch.mp, ch.mpMax);
-    events.push({ kind: "levelDown", id: ch.id, level: ch.level, hpMax: ch.hpMax, mpMax: ch.mpMax });
+    events.push({ kind: "levelDown", id: ch.id, level: ch.level, hpMax: ch.hpMax, mpMax: ch.mpMax, hp: ch.hp, mp: ch.mp });
     n += 1;
   }
   return n;

@@ -191,6 +191,7 @@ export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
     ledger: { items: [], gold: 0 },
   };
   state.dive = dive;
+  state.townVisit = null; // TW-32: 来訪の終わり（救済の申し出も下ろす）
   state.screen = "dungeon";
   explore(ctx, dive, f);
   ctx.events.push({ kind: "screen", to: "dungeon" });

@@ -157,13 +157,13 @@ describe("growth: レベルアップ（CH-61、CH-63、CH-65）", () => {
     expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 4]]));
   });
 
-  test("CH-61 levelHistory に {level:2,hpGain,mpGain} を積み、levelUp に増分と新しい最大値を載せ、message town.inn.levelUp が続く（seed 1 ベルク d10 = 9）", () => {
+  test("CH-61 levelHistory に {level:2,hpGain,mpGain} を積み、levelUp に増分と新しい最大値と変化後の現在値を載せ、message town.inn.levelUp が続く（seed 1 ベルク d10 = 9、hp 14 + 11 = 25）", () => {
     const { ctx, ch } = setup(1, BERK, { exp: 1000 });
     levelUpOnce(ctx, ch);
     expect(ch.levelHistory).toEqual([{ level: 2, hpGain: 11, mpGain: 0 }]);
     expect(ch.maxLevelReached).toBe(2);
     expect(ctx.events).toEqual([
-      { kind: "levelUp", id: "c2", level: 2, hpGain: 11, mpGain: 0, hpMax: 25, mpMax: 0 },
+      { kind: "levelUp", id: "c2", level: 2, hpGain: 11, mpGain: 0, hpMax: 25, mpMax: 0, hp: 25, mp: 0 },
       { kind: "message", key: "town.inn.levelUp", params: { name: ch.name, level: 2 } },
     ]);
     expectKnownStringKeys(ctx.events);
@@ -218,7 +218,7 @@ describe("growth: レベルアップ（CH-61、CH-63、CH-65）", () => {
     expect(ch.maxLevelReached).toBe(2);
     expect(kinds(ctx.events)).toEqual(["levelUp", "message", "message", "dice", "spellLearned", "message"]);
     const dice = ctx.events.find((e) => e.kind === "dice");
-    expect(dice).toEqual({ kind: "dice", label: "town.inn.learnRoll", dice: [14], total: 14 });
+    expect(dice).toEqual({ kind: "dice", label: "town.inn.learnDice", dice: [14], total: 14 });
     expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 8], [1, 100]]));
     expectKnownStringKeys(ctx.events);
   });
@@ -320,7 +320,7 @@ describe("growth: レベルダウン（CH-62、MG-26）", () => {
     expect(ch.hp).toBe(15);
     expect(ch.mpMax).toBe(10);
     expect(ch.mp).toBe(3);
-    expect(ctx.events).toEqual([{ kind: "levelDown", id: "c4", level: 2, hpMax: 15, mpMax: 10 }]);
+    expect(ctx.events).toEqual([{ kind: "levelDown", id: "c4", level: 2, hpMax: 15, mpMax: 10, hp: 15, mp: 3 }]);
     expect(ctx.state.rng).toEqual(createRng(1));
   });
 
@@ -332,8 +332,9 @@ describe("growth: レベルダウン（CH-62、MG-26）", () => {
     expect(ch.hpMax).toBe(10); // 19 − 4 − 5 = レベル 1 の値
     expect(ch.mpMax).toBe(5);
     expect(ctx.events).toEqual([
-      { kind: "levelDown", id: "c4", level: 2, hpMax: 15, mpMax: 10 },
-      { kind: "levelDown", id: "c4", level: 1, hpMax: 10, mpMax: 5 },
+      // hp / mp は各段の後の現在値（19 → min(19, 15) = 15 → min(15, 10) = 10、15 → 10 → 5）
+      { kind: "levelDown", id: "c4", level: 2, hpMax: 15, mpMax: 10, hp: 15, mp: 10 },
+      { kind: "levelDown", id: "c4", level: 1, hpMax: 10, mpMax: 5, hp: 10, mp: 5 },
     ]);
     // L1 ではそれ以上下がらない
     expect(levelDownWhileBelow(ctx, ch)).toBe(0);

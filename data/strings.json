@@ -24,6 +24,7 @@
   "town.inn.intro": "宿の主人が鍵を並べる。どの部屋にする？",
   "town.inn.levelUp": "{name}は経験を振り返り、レベル{level}になった。",
   "town.inn.learnRoll": "{name}は{spell}の理を掴もうとしている……",
+  "town.inn.learnDice": "呪文の習得",
   "town.inn.learned": "{name}は{spell}を覚えた。",
   "town.inn.notLearned": "{name}は{spell}を掴みきれなかった。",
   "town.temple.intro": "祭壇の前で司祭が待っている。",
