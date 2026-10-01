@@ -2,7 +2,8 @@
 // DOM は 1 回だけ作り、街（UI-52 の M2 版）でもヘッダー・メッセージ・パーティ・操作をそのまま使う（ビューは枠だけ）。
 // - ビュー: 線画の SVG（240×150）。スワイプはステージ全体で受ける（input/tap.ts。UI-30）。受ける間は画面に class swipe-on を付け、
 //   style.css で touch-action: none にする（ボタンの上で始めたスワイプがブラウザのパンにならないように。UI-37）。
-// - 地図（UI-24）と詳細（UI-58）と全滅の内訳（UI-56）と履歴（UI-46）: ビューとメッセージの領域（既定 y16..235）を覆う overlay。パーティ欄は見えたまま。
+// - 地図（UI-24）と全滅の内訳（UI-56）と履歴（UI-46）: ビューとメッセージの領域（既定 y16..235）を覆う overlay。パーティ欄は見えたまま。
+// - キャンプと酒場のパネル（UI-53 / UI-59。views/camp.ts）: ビュー領域だけを覆う。メッセージ窓とパーティ欄は見えたまま。
 // - 戦闘（UI-54）: ビューの中に敵グループの層（views/battle.ts）を重ね、battle の間は線画・街の枠を隠す。
 //   ダイスの overlay（views/dice.ts、UI-40）はビューの中のいちばん上（モードを問わない）。全体攻撃の揺れ（UI-42）はビュー全体の translate。
 // 各部品の位置と大きさは、config.ui.layout から作った regions と dungeonLayout（layout.ts）から決める。
@@ -10,8 +11,8 @@
 import type { GameData, Strings } from "../../core/data/index";
 import type { DungeonLayout, Regions } from "../layout";
 import { createBattleView, type BattleView } from "./battle";
+import { createCampView, type CampView } from "./camp";
 import { createControls, type Controls, type DpadAction } from "./controls";
-import { createDetailView, type DetailView } from "./detail";
 import { createDiceView, type DiceView } from "./dice";
 import { createDungeonSvg, type DungeonSvg } from "./dungeon-svg";
 import { createHeader, type Header } from "./header";
@@ -35,11 +36,11 @@ export type DungeonScreen = {
   battle: BattleView;
   /** ビューの中のダイスの overlay */
   dice: DiceView;
-  /** UI-58 の詳細の overlay（ビューとメッセージを覆う） */
-  detail: DetailView;
-  /** UI-56 の全滅の内訳の overlay（詳細と同じ範囲） */
+  /** UI-53 / UI-59 キャンプと酒場のパネル（ビュー領域を覆う） */
+  camp: CampView;
+  /** UI-56 の全滅の内訳の overlay（地図と同じ範囲） */
   wipe: WipeView;
-  /** UI-46 の履歴の画面（詳細と同じ範囲） */
+  /** UI-46 の履歴の画面（地図と同じ範囲） */
   history: HistoryView;
   /** town ならビューは枠だけ、dungeon なら線画、battle なら敵グループ */
   setMode(m: PlayMode): void;
@@ -47,8 +48,8 @@ export type DungeonScreen = {
   shake(ms: number): Promise<void>;
   /** 地図の overlay の表示 */
   showMap(on: boolean): void;
-  /** UI-58 の詳細の overlay の表示 */
-  showDetail(on: boolean): void;
+  /** UI-53 キャンプと酒場のパネルの表示 */
+  showCamp(on: boolean): void;
   /** UI-56 の全滅の内訳の overlay の表示 */
   showWipe(on: boolean): void;
   /** UI-46 の履歴の画面の表示 */
@@ -80,8 +81,6 @@ export function createDungeonScreen(o: {
   onClose(): void;
   /** UI-54: 対象の選択中に敵の絵をタップした（グループの添字） */
   onPick?(g: number): void;
-  /** UI-58: パーティの行のタップ */
-  onRowTap?(id: string): void;
 }): DungeonScreen {
   const r = o.regions;
   const lay = o.layout;
@@ -116,7 +115,6 @@ export function createDungeonScreen(o: {
     classes: o.data.classes,
     region: r.party,
     rows: lay.partyRows,
-    onRowTap: (id) => o.onRowTap?.(id),
   });
 
   const controls = createControls({
@@ -132,19 +130,19 @@ export function createDungeonScreen(o: {
   const map = createMapView(lay.map);
   map.el.style.display = "none";
 
-  // 詳細（UI-58）も地図と同じ範囲
-  const detail = createDetailView(lay.detail);
-  detail.el.style.display = "none";
+  // キャンプと酒場のパネル（UI-53）はビュー領域だけ
+  const camp = createCampView(lay.camp);
+  camp.el.style.display = "none";
 
-  // 全滅の内訳（UI-56）も同じ範囲
-  const wipe = createWipeView(lay.detail);
+  // 全滅の内訳（UI-56）は地図と同じ範囲
+  const wipe = createWipeView(lay.wipe);
   wipe.el.style.display = "none";
 
   // 履歴（UI-46）も同じ範囲
   const history = createHistoryView(lay.history);
   history.el.style.display = "none";
 
-  el.append(viewBox, header.el, message.el, party.el, controls.el, map.el, detail.el, wipe.el, history.el);
+  el.append(viewBox, camp.el, header.el, message.el, party.el, controls.el, map.el, wipe.el, history.el);
 
   return {
     el,
@@ -156,7 +154,7 @@ export function createDungeonScreen(o: {
     map,
     battle,
     dice,
-    detail,
+    camp,
     wipe,
     history,
     setMode(m: PlayMode): void {
@@ -185,8 +183,8 @@ export function createDungeonScreen(o: {
     showMap(on: boolean): void {
       map.el.style.display = on ? "" : "none";
     },
-    showDetail(on: boolean): void {
-      detail.el.style.display = on ? "" : "none";
+    showCamp(on: boolean): void {
+      camp.el.style.display = on ? "" : "none";
     },
     showWipe(on: boolean): void {
       wipe.el.style.display = on ? "" : "none";

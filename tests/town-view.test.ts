@@ -107,13 +107,19 @@ describe("UI-52 街のページ", () => {
     expect(townPageIntro("dark", m)).toEqual(["town.dark.intro"]);
   });
 
-  test("UI-52/TW-31 酒場: 申し出が無ければ戻るだけ。申し出の間は dead / ash の者の行（リーダーも）", () => {
-    expect(townEntries("tavern", menuOf(town()), S)).toEqual([back]);
+  test("TW-03/UI-52/TW-31 酒場: 状態を見る・装備を替える・並び順を変える → 救済の行（申し出の間だけ。dead / ash の者、リーダーも）→ 戻る", () => {
+    const camp: TownEntry[] = [
+      { kind: "camp", open: "status", label: "状態を見る" },
+      { kind: "camp", open: "equip", label: "装備を替える" },
+      { kind: "camp", open: "order", label: "並び順を変える" },
+    ];
+    expect(townEntries("tavern", menuOf(town()), S)).toEqual([...camp, back]);
     expect(townPageIntro("tavern", menuOf(town()))).toEqual(["town.tavern.intro"]);
     const s = town({ c1: { life: "dead", hp: 0 }, c3: { life: "ash", hp: 0 } });
     s.townVisit = { mercyOffered: true };
     const m = menuOf(s);
     expect(townEntries("tavern", m, S)).toEqual([
+      ...camp,
       { kind: "mercy", memberId: "c1", label: "アルドを戻してもらう" },
       { kind: "mercy", memberId: "c3", label: "キリを戻してもらう" },
       back,

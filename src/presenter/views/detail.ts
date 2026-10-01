@@ -1,9 +1,9 @@
-// UI-58 詳細（プロトタイプ）: パーティの行のタップで開く overlay。ビューとメッセージの範囲（layout の detail。既定 240×220）を覆う。
-// 表示だけで、操作は無い（閉じるは操作領域の「閉じる」と Esc / Enter / 1。app が扱う）。
+// UI-59 キャンプの「状態」（旧 UI-58 の詳細）: キャンプと酒場のパネル（views/camp.ts。ビュー領域 240×150）に出す 1 人分の表示。
+// 表示だけで、操作は無い（人の切り替えと閉じるはキャンプの枠。app が扱う）。装備の段では、選んでいる枠の行を accent 色にする（focusSlot）。
 // - formatDetail は純粋: 名前、種族、職業の正式名（classes[].name。パーティの行の略称ではない）、レベル、経験値、HP / MP / SAN、
 //   状態、能力値 6 つ、装備 6 枠（名前は呼び出し側が渡す itemName = 鑑定を反映した表示名。空きは detail.equipNone）。
-// - 行は 10px で y = 4 + 10i（rect の内側）。0 名前（accent）、1 種族・職業、2 レベル（x4）と経験値（x120）、3 HP / MP / SAN（x4 / x84 / x164）、
-//   4 状態、6〜7 能力値（3 列 × 2 行。x4 / x84 / x164）、9 「装備」、10〜15 装備の枠名（x4）と名前（x40）。下端は 164。
+// - 行は 10px で y = 4 + 10i（rect の内側）の 14 行。0 名前（accent）、1 種族・職業、2 レベル（x4）と経験値（x120）、3 HP / MP / SAN（x4 / x84 / x164）、
+//   4 状態、5〜6 能力値（3 列 × 2 行。x4 / x84 / x164）、7 「装備」、8〜13 装備の枠名（x4）と名前（x40）。下端は 144（ビュー領域 150 に収まる）。
 // 能力値と枠の並びは表示層の型付き定数（STAT_ORDER / SLOT_ORDER。core/data の値は UI-35 の許可外なので import しない）。
 // モジュールのトップレベルでは DOM に触れない。
 import type { EquipSlot, GameData, StatKey, Strings } from "../../core/data/index";
@@ -35,7 +35,7 @@ export type CharacterDetail = {
   equipment: { slot: string; item: string }[];
 };
 
-/** UI-58 の詳細の文字列（純粋）。itemName は実体の id → 鑑定を反映した表示名 */
+/** UI-59 の状態の文字列（純粋）。itemName は実体の id → 鑑定を反映した表示名 */
 export function formatDetail(ch: Character, data: Pick<GameData, "races" | "classes">, strings: Strings, itemName: (instanceId: string) => string): CharacterDetail {
   const s = (key: string, params?: Record<string, string | number>): string => formatMessage(strings[key] ?? key, params);
   const race = data.races.find((r) => r.id === ch.raceId)?.name ?? ch.raceId;
@@ -73,10 +73,11 @@ const ITEM_X = 40;
 
 export type DetailView = {
   el: HTMLElement;
-  render(d: CharacterDetail): void;
+  /** focusSlot は SLOT_ORDER の添字（その枠の行を accent 色）。null なら無し */
+  render(d: CharacterDetail, focusSlot?: number | null): void;
 };
 
-/** rect はステージ座標の overlay の範囲（layout の detail） */
+/** rect は置き場所の範囲（親の要素からの座標） */
 export function createDetailView(rect: Rect): DetailView {
   const el = document.createElement("div");
   el.className = "detail-view";
@@ -110,7 +111,7 @@ export function createDetailView(rect: Rect): DetailView {
 
   return {
     el,
-    render(d: CharacterDetail): void {
+    render(d: CharacterDetail, focusSlot: number | null = null): void {
       const full = rect.w - 8;
       const name = text(0, 4, full, d.name, "detail-name");
       name.style.color = "var(--c-accent)";
@@ -123,12 +124,13 @@ export function createDetailView(rect: Rect): DetailView {
         text(3, COL3[1], COL3_W, d.mp, "detail-mp"),
         text(3, COL3[2], COL3_W - 8, d.san, "detail-san"),
         text(4, 4, full, d.status, "detail-status"),
-        ...d.stats.map((st, i) => text(6 + Math.floor(i / 3), COL3[i % 3]!, COL3_W - (i % 3 === 2 ? 8 : 0), st.text, "detail-stat")),
-        text(9, 4, full, d.equipmentTitle, "detail-equipment"),
-        ...d.equipment.flatMap((e, i) => [
-          text(10 + i, SLOT_X, SLOT_W, e.slot, "detail-slot"),
-          text(10 + i, ITEM_X, rect.w - ITEM_X - 4, e.item, "detail-item"),
-        ]),
+        ...d.stats.map((st, i) => text(5 + Math.floor(i / 3), COL3[i % 3]!, COL3_W - (i % 3 === 2 ? 8 : 0), st.text, "detail-stat")),
+        text(7, 4, full, d.equipmentTitle, "detail-equipment"),
+        ...d.equipment.flatMap((e, i) => {
+          const row = [text(8 + i, SLOT_X, SLOT_W, e.slot, "detail-slot"), text(8 + i, ITEM_X, rect.w - ITEM_X - 4, e.item, "detail-item")];
+          if (i === focusSlot) for (const r of row) r.style.color = "var(--c-accent)";
+          return row;
+        }),
       ];
       el.replaceChildren(...parts);
     },

@@ -1,5 +1,5 @@
 // UI-32 / UI-53 の操作領域（ui §2 の controls 領域）。十字ボタン（dpad）、メニュー（menu）、リスト（list）、
-// 地図の「閉じる」（mapClose）、戦闘のパーティの選択 4 枠・メンバーの 5 枠（battle）、オート中の「オート解除」（autoStop）を切り替えて出す。矩形は layout.ts の dungeonLayout のステージ座標で、region の原点を引いて置く。
+// 地図の「閉じる」（mapClose）、戦闘のパーティの選択 4 枠・メンバーの 5 枠・街の施設 6 枠・キャンプの 8 枠（battle）、オート中の「オート解除」（autoStop）を切り替えて出す。矩形は layout.ts の dungeonLayout のステージ座標で、region の原点を引いて置く。
 // どのボタンも input/tap.ts の onTap で登録し、「動かずに離した」ときに反応する（UI-36。click は使わない）。
 // 前進ボタンだけは、動かずに hold.ms() 押し続けたら hold.onHoldStart（長押しの連打）、離したら hold.onHoldEnd（UI-31）。
 // 「オート解除」は再生中も反応する（whileBusy。UI-44 の例外）。
@@ -14,8 +14,8 @@ export type ControlsMode = "dpad" | "list" | "close" | "battle" | "autoStop" | "
 /** disabled なら dim 色で出し、押しても onSelect を呼ばない */
 /** onFocus は一覧の行に pointerenter / pointerdown したとき（戦闘の対象の注目。UI-54。押しただけで、選ぶのは離したとき） */
 export type ControlItem = { label: string; onSelect(): void; disabled?: boolean; onFocus?(): void };
-/** 枠の配置（UI-54）。party は戦闘のパーティの選択の 4 枠、member はメンバーの 5 枠、town は街の施設メニューの 6 枠（UI-52） */
-export type BattleSlots = "party" | "member" | "town";
+/** 枠の配置（UI-54）。party は戦闘のパーティの選択の 4 枠、member はメンバーの 5 枠、town は街の施設メニューの 6 枠（UI-52）、camp はキャンプの 8 枠（UI-53） */
+export type BattleSlots = "party" | "member" | "town" | "camp";
 
 export type Controls = {
   el: HTMLElement;
@@ -27,8 +27,11 @@ export type Controls = {
   setMenu(items: ControlItem[]): void;
   /** layout.list の位置に並べる。4 件以上は縦スクロール（UI-11） */
   setList(items: ControlItem[]): void;
-  /** UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠 / townMenu の 6 枠）に並べる。枠数を超える分は捨てる */
-  setBattleMenu(items: ControlItem[], slots: BattleSlots): void;
+  /**
+   * UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠 / townMenu の 6 枠 / campGrid の 8 枠）に並べる。
+   * null は空き枠（何も置かない）。枠数を超える分は捨てる
+   */
+  setBattleMenu(items: (ControlItem | null)[], slots: BattleSlots): void;
   /**
    * UI-54: 一覧の i 行目を注目の見た目（枠線を accent 色。dim の行は dim のまま）にし、見える位置へ動かす。null で解除。
    * 一覧は作り直さない。scroll: false なら見える位置へは動かさない（ポインタで触れた行。タッチの途中で一覧が動かないように）
@@ -85,7 +88,7 @@ function setShown(el: HTMLElement, on: boolean): void {
  */
 export function createControls(o: {
   region: Rect;
-  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "mapClose" | "battleParty" | "battleMember" | "autoStop" | "townMenu">;
+  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "mapClose" | "battleParty" | "battleMember" | "autoStop" | "townMenu" | "campGrid">;
   strings: Strings;
   onAction(a: DpadAction): void;
   hold: { ms(): number; onHoldStart(): void; onHoldEnd(): void };
@@ -100,6 +103,7 @@ export function createControls(o: {
     party: o.layout.battleParty,
     member: o.layout.battleMember,
     town: o.layout.townMenu,
+    camp: o.layout.campGrid,
   };
 
   const el = document.createElement("div");
@@ -178,7 +182,7 @@ export function createControls(o: {
   const battle = document.createElement("div");
   battle.className = "controls-battle";
   el.appendChild(battle);
-  let battleItems: ControlItem[] = [];
+  let battleItems: (ControlItem | null)[] = [];
 
   // ---- オート中の「オート解除」
   const autoStop = document.createElement("button");
@@ -287,13 +291,13 @@ export function createControls(o: {
       if (opts?.scroll === false) return;
       if (b !== undefined && typeof b.scrollIntoView === "function") b.scrollIntoView({ block: "nearest" });
     },
-    setBattleMenu(items: ControlItem[], slots: BattleSlots): void {
+    setBattleMenu(items: (ControlItem | null)[], slots: BattleSlots): void {
       const rects = BATTLE_SLOTS[slots];
       battleItems = items.slice(0, rects.length);
       battle.replaceChildren();
       battleItems.forEach((it, i) => {
         const r = rects[i];
-        if (r === undefined) return;
+        if (r === undefined || it === null) return;
         const b = document.createElement("button");
         b.type = "button";
         b.className = "controls-battle-item";
@@ -312,9 +316,9 @@ export function createControls(o: {
       autoStopPress = onPress;
     },
     select(n: number): void {
-      const at = (items: readonly ControlItem[]): void => {
+      const at = (items: readonly (ControlItem | null)[]): void => {
         const it = items[n];
-        if (it !== undefined) pick(it);
+        if (it !== undefined && it !== null) pick(it);
       };
       if (mode === "dpad") at(menuItems);
       else if (mode === "list") at(listItems);

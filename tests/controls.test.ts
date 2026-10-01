@@ -81,7 +81,7 @@ describe("controls", () => {
 
   test("UI-31 shouldReleaseHold: 迷宮以外・overlay あり・選択の保留ありのどれかなら離したものとする。迷宮で何も出ていなければ離さない", () => {
     const routes: Route[] = ["title", "creation", "town", "dungeon", "battle"];
-    const overlays: Overlay[] = [null, "map", "debug", "detail", "history"];
+    const overlays: Overlay[] = [null, "map", "debug", "camp", "history", "wipe"];
     for (const r of routes) {
       for (const o of overlays) {
         for (const p of [false, true]) {
@@ -94,7 +94,7 @@ describe("controls", () => {
     expect(shouldReleaseHold("town", null, false)).toBe(true);
     expect(shouldReleaseHold("battle", null, false)).toBe(true);
     expect(shouldReleaseHold("dungeon", "map", false)).toBe(true);
-    expect(shouldReleaseHold("dungeon", "detail", false)).toBe(true);
+    expect(shouldReleaseHold("dungeon", "camp", false)).toBe(true);
     expect(shouldReleaseHold("dungeon", "history", false)).toBe(true);
     expect(shouldReleaseHold("dungeon", null, true)).toBe(true);
   });
@@ -125,6 +125,27 @@ describe("controls", () => {
     c.setMode("none");
     c.select(0);
     expect(picked).toEqual(["a", "c", "c"]);
+  });
+
+  test("UI-53 キャンプの枠（camp の配置）: campGrid の 8 枠に置き、null は空き枠（何も置かず、select でも何もしない）", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, hold: HOLD, onClose: () => {} });
+    const picked: number[] = [];
+    const it = (i: number) => ({ label: `s${i}`, onSelect: () => picked.push(i) });
+    c.setBattleMenu([it(0), it(1), it(2), it(3), it(4), null, null, it(7), it(8)], "camp");
+    c.setMode("battle");
+    const items = created.filter((e) => e.className === "controls-battle-item");
+    expect(items.map((e) => e["textContent"])).toEqual(["s0", "s1", "s2", "s3", "s4", "s7"]);
+    const at = (i: number) => ({ left: `${L.campGrid[i]!.x - g.controls.x}px`, top: `${L.campGrid[i]!.y - g.controls.y}px` });
+    expect(items.map((e) => ({ left: e.style["left"], top: e.style["top"] }))).toEqual([0, 1, 2, 3, 4, 7].map(at));
+    c.select(5);
+    c.select(6);
+    c.select(8); // 枠数を超える分は捨てた
+    c.select(7);
+    items[0]!.tap();
+    expect(picked).toEqual([7, 0]);
   });
 
   test("UI-54/UI-52 setBattleMenu の配置: party は battleParty の 4 枠、member は battleMember の 5 枠、town は townMenu の 6 枠に置き、枠数を超える分は捨てる", () => {

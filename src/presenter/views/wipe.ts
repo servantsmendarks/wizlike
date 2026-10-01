@@ -1,4 +1,4 @@
-// UI-56 全滅の内訳。wipe イベント（PenaltyResult）で開く overlay（ビューとメッセージの範囲。layout の detail と同じ矩形）。
+// UI-56 全滅の内訳。wipe イベント（PenaltyResult）で開く overlay（ビューとメッセージの範囲。layout の wipe。地図と同じ矩形）。
 // - formatWipeSummary は純粋: 帯の名前 → 出目 → 台帳で失ったもの → 所持金 → 失った品 → 各人の EXP（と Lv の変化）。
 //   state は引かない（名前は PenaltyResult の中にある）。帯の名前だけ data.penaltyTable を表示のために引く。
 // - 閉じる（「街へ」・Enter / Esc / 1）は app が扱う。行が溢れたら縦スクロール。
@@ -33,7 +33,7 @@ export type WipeView = {
   render(lines: readonly string[]): void;
 };
 
-/** rect はステージ座標の overlay の範囲（layout の detail） */
+/** rect はステージ座標の overlay の範囲（layout の wipe） */
 export function createWipeView(rect: Rect): WipeView {
   const el = document.createElement("div");
   el.className = "wipe-view";

@@ -1,4 +1,4 @@
-// UI-58 詳細（src/presenter/views/detail.ts）。純粋な formatDetail と、document を最小の偽物に差し替えた配置の確認。
+// UI-59 詳細（src/presenter/views/detail.ts）。純粋な formatDetail と、document を最小の偽物に差し替えた配置の確認。
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { EQUIP_SLOTS, STAT_KEYS } from "../src/core/data/index";
 import { createItemInstance, itemDisplayName } from "../src/core/state";
@@ -15,8 +15,8 @@ const t = (k: string, p?: Record<string, string | number>): string => {
 };
 const nameOf = (st: GameState) => (iid: string): string => itemDisplayName(st, data, iid);
 
-describe("UI-58 詳細", () => {
-  test("UI-58 使う文言のキーがすべて strings にある", () => {
+describe("UI-59 詳細", () => {
+  test("UI-59 使う文言のキーがすべて strings にある", () => {
     for (const k of [
       "detail.raceClass",
       "detail.level",
@@ -37,12 +37,12 @@ describe("UI-58 詳細", () => {
     }
   });
 
-  test("UI-58 STAT_ORDER / SLOT_ORDER は core の STAT_KEYS / EQUIP_SLOTS（CH-10 / CH-70）と同じ並び", () => {
+  test("UI-59 STAT_ORDER / SLOT_ORDER は core の STAT_KEYS / EQUIP_SLOTS（CH-10 / CH-70）と同じ並び", () => {
     expect([...STAT_ORDER]).toEqual([...STAT_KEYS]);
     expect([...SLOT_ORDER]).toEqual([...EQUIP_SLOTS]);
   });
 
-  test("UI-58 X3 プロトタイプのアルド: 種族「人間」・職業は正式名「戦士」（略称 WAR ではない）、レベル・経験値・HP/MP/SAN・状態・能力値 6 つ・装備 6 枠", () => {
+  test("UI-59 X3 プロトタイプのアルド: 種族「人間」・職業は正式名「戦士」（略称 WAR ではない）、レベル・経験値・HP/MP/SAN・状態・能力値 6 つ・装備 6 枠", () => {
     const s = newGame(1);
     const ch = s.party[0]!;
     const d = formatDetail(ch, data, S, nameOf(s));
@@ -77,7 +77,7 @@ describe("UI-58 詳細", () => {
     ]);
   });
 
-  test("UI-58/CH-72 装備の名前は鑑定を反映した表示名（未鑑定は unidentifiedName）。状態は死亡・状態異常をパーティの行と同じ短い名前で出す", () => {
+  test("UI-59/CH-72 装備の名前は鑑定を反映した表示名（未鑑定は unidentifiedName）。状態は死亡・状態異常をパーティの行と同じ短い名前で出す", () => {
     const s = structuredClone(newGame(1));
     const iid = createItemInstance(s, "cursed_dagger", false);
     s.party[0]!.equipment.weapon = iid;
@@ -115,10 +115,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("UI-58 詳細の配置", () => {
-  test("UI-58 render の各行は overlay（240×220）の内側に収まり、行の下端は 164 以下。名前は accent 色", () => {
+describe("UI-59 詳細の配置", () => {
+  test("UI-59 render の 14 行はキャンプのパネル（ビュー領域 240×150）の内側に収まり、行の下端は 144。名前は accent 色。focusSlot の枠は accent 色", () => {
     vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
-    const rect = { x: 0, y: 16, w: 240, h: 220 };
+    const rect = { x: 0, y: 16, w: 240, h: 150 };
     const v = createDetailView(rect);
     const s = newGame(1);
     v.render(formatDetail(s.party[0]!, data, S, nameOf(s)));
@@ -136,7 +136,12 @@ describe("UI-58 詳細の配置", () => {
       expect(x >= 0 && y >= 0 && x + w <= rect.w && y + h <= rect.h, `${c.className} ${c.textContent}`).toBe(true);
       bottom = Math.max(bottom, y + h);
     }
-    expect(bottom).toBe(164);
+    expect(bottom).toBe(144);
+    expect(new Set(el.children.map((c) => c.style["top"])).size).toBe(14);
+    // focusSlot（SLOT_ORDER の添字）の行だけ accent 色
+    v.render(formatDetail(s.party[0]!, data, S, nameOf(s)), 2);
+    const items = (v.el as unknown as FakeEl).children.filter((c) => c.className === "detail-item" || c.className === "detail-slot");
+    expect(items.filter((c) => c.style["color"] === "var(--c-accent)").map((c) => c.textContent)).toEqual(["盾", "木の盾"]);
     expect(el.children.find((c) => c.className === "detail-name")!.style["color"]).toBe("var(--c-accent)");
     expect(el.children.find((c) => c.className === "detail-race-class")!.textContent).toBe("人間 戦士");
     expect(el.children.filter((c) => c.className === "detail-item").map((c) => c.textContent)).toEqual([

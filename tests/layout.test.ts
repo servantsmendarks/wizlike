@@ -166,6 +166,17 @@ describe("layout", () => {
     for (const d of Object.values(L.dpad)) for (const m of L.menu) expect(overlaps(d, m)).toBe(false);
   });
 
+  test("UI-10/UI-53 キャンプの枠は 4 列 × 2 段の 56×40 の 8 枠（x 4 / 62 / 120 / 178、y 6 / 54）。操作領域の内側で重ならず、一辺は TOUCH_MIN_LOGICAL 以上", () => {
+    const controls = regions(data.config.ui.layout, W).controls;
+    expect(L.campGrid).toEqual([306, 354].flatMap((y) => [4, 62, 120, 178].map((x) => ({ x, y, w: 56, h: 40 }))));
+    for (const r of L.campGrid) {
+      expect(inside(r, controls)).toBe(true);
+      expect(Math.min(r.w, r.h)).toBeGreaterThanOrEqual(TOUCH_MIN_LOGICAL);
+    }
+    for (const [i, a] of L.campGrid.entries()) for (const b of L.campGrid.slice(i + 1)) expect(overlaps(a, b)).toBe(false);
+    expect(CONTROLS_MIN_HEIGHT).toBe(98);
+  });
+
   test("ui §2 既定の layout（16/150/70/64/100）での迷宮の画面の座標は M2 の定数と同じ", () => {
     expect(L.header).toEqual({ text: { x: 4, y: 0, w: 192, h: 16 }, settings: { x: 200, y: 0, w: 40, h: 16 } });
     expect(L.dpad).toEqual({
@@ -201,8 +212,9 @@ describe("layout", () => {
       title: { x: 0, y: 16, w: 240, h: 12 },
       area: { x: 0, y: 28, w: 240, h: 208 },
     });
-    // UI-58 詳細: 地図と同じ 240×220
-    expect(L.detail).toEqual({ x: 0, y: 16, w: 240, h: 220 });
+    // UI-53 キャンプのパネル: ビュー領域（240×150）だけ。UI-56 全滅の内訳: 地図と同じ 240×220
+    expect(L.camp).toEqual({ x: 0, y: 16, w: 240, h: 150 });
+    expect(L.wipe).toEqual({ x: 0, y: 16, w: 240, h: 220 });
     // UI-46 履歴の画面: 地図と同じ 240×220（y16..235）。題 12、一覧 240×208
     expect(L.history).toEqual({
       overlay: { x: 0, y: 16, w: 240, h: 220 },
@@ -256,8 +268,10 @@ describe("layout", () => {
       expect(d.map.overlay, tag).toEqual({ x: 0, y: g.view.y, w: W, h: l.view + l.message });
       expect(d.map.area.y + d.map.area.h, tag).toBe(g.message.y + g.message.h);
       expect(inside(d.map.area, d.map.overlay) && inside(d.map.title, d.map.overlay), tag).toBe(true);
-      // 詳細（UI-58）は地図の overlay と同じ範囲
-      expect(d.detail, tag).toEqual(d.map.overlay);
+      // 全滅の内訳（UI-56）は地図の overlay と同じ範囲、キャンプ（UI-53）はビュー領域
+      expect(d.wipe, tag).toEqual(d.map.overlay);
+      expect(d.camp, tag).toEqual(g.view);
+      d.campGrid.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.campGrid[i]!, base.controls)));
       // 収まらないのは操作領域が下限より低いときだけで、その分だけ warn の文が出る
       const warns = layoutWarnings(g, d);
       if (fits) expect(warns, tag).toEqual([]);
@@ -270,6 +284,10 @@ describe("layout", () => {
         "ui.layout: townMenu[3] does not fit in the controls region (height 86)",
         "ui.layout: townMenu[4] does not fit in the controls region (height 86)",
         "ui.layout: townMenu[5] does not fit in the controls region (height 86)",
+        "ui.layout: campGrid[4] does not fit in the controls region (height 86)",
+        "ui.layout: campGrid[5] does not fit in the controls region (height 86)",
+        "ui.layout: campGrid[6] does not fit in the controls region (height 86)",
+        "ui.layout: campGrid[7] does not fit in the controls region (height 86)",
       ]);
     }
   });

@@ -118,7 +118,7 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   engine: ["execute", "createInitialState"],
   // decisions の UI-35 の行のとおり。floorOf / visibleCellsOf は Floor（kind・trapId・eventId）に触れるので許さない
   "rules/dungeon": ["visibleCells", "mapView"],
-  // UI-58: 詳細の装備名（鑑定を反映した表示名。CH-72）
+  // UI-59: キャンプの状態の装備名（鑑定を反映した表示名。CH-72）
   state: ["dungeonOf", "itemDisplayName"],
   // M3: 戦闘の入力の段階・オートの連鎖は battleMenu の値だけで決める（行動できるか・使えるか・揃ったかを core が返す）
   "rules/combat": ["battleMenu"],
@@ -126,6 +126,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   "rules/town": ["townMenu"],
   // M4 UI-53: 迷宮の道具の候補・押せるか・対象の要否は fieldItemMenu の値だけで決める
   "rules/items": ["fieldItemMenu"],
+  // M4.5 UI-53 / TW-03: キャンプと酒場の候補・押せるか・対象の要否は campMenu の値だけで決める
+  "rules/camp": ["campMenu"],
 };
 
 /** コメントを除いた本文（文字列の中の // や /* は考えない最小限の除去。presenter に該当する文字列は無い） */

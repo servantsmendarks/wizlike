@@ -4,6 +4,7 @@
 // - 再生中（busy）の入力はすべて捨てる。ステージのどこかのタップ（オート解除を除く）と Enter / Space だけは受け、player.tap() に渡す
 //   （拍のタップ待ちを解く・拍の残りを即時にする・拍の外は 1 回目で今の文、2 回目で残りを即表示。UI-44 / UI-45 / UI-43）。
 // - 再生の外のメッセージ窓のタップは、文字送り中なら即表示、それ以外なら履歴の画面（UI-46）を開く。
+// - 迷宮のキャンプと酒場の状態・装備・並び順（UI-53 / UI-59 / TW-03）は views/camp.ts の段で進め、ビュー領域だけを覆う（overlay 'camp'）。
 // - 状態を変えるコマンドの後、再生を始める前にオートセーブを await する（§3-8。SV-02: 再生中にリロードされても結果は確定している）。
 //   保存の失敗は SV-23 の帯とメッセージ窓で知らせ、state は巻き戻さない。
 // - タイトル（UI-50）は保存先の一覧を読み、続きから（SV-50）は読み込んだ state を resume で直接描く。
@@ -13,6 +14,7 @@ import type { GameData } from "../core/data/index";
 import { execute, createInitialState } from "../core/engine";
 import { battleMenu } from "../core/rules/combat";
 import { mapView, visibleCells } from "../core/rules/dungeon";
+import { campMenu } from "../core/rules/camp";
 import { fieldItemMenu } from "../core/rules/items";
 import { townMenu } from "../core/rules/town";
 import { dungeonOf, itemDisplayName } from "../core/state";
@@ -50,7 +52,22 @@ import type { StageLayout, StageLayoutInput } from "./stage";
 import type { ControlItem, DpadAction } from "./views/controls";
 import { createCreationScreen } from "./views/creation";
 import { createDebugPanel } from "./views/debug-panel";
-import { formatDetail } from "./views/detail";
+import {
+  campEntries,
+  campFirstPage,
+  campHeader,
+  campKeyIndex,
+  campPanel,
+  campRepair,
+  campStep,
+  type CampChoice,
+  type CampEntry,
+  type CampHost,
+  type CampInput,
+  type CampPage,
+  type CampPanelView,
+} from "./views/camp";
+import { formatDetail, SLOT_ORDER } from "./views/detail";
 import { createDungeonScreen } from "./views/dungeon";
 import { slotsFor } from "./views/dungeon-geometry";
 import { headerText } from "./views/header";
@@ -58,11 +75,10 @@ import { formatMessage } from "./views/message";
 import { createSaveBanner } from "./views/save-banner";
 import { createTitleScreen, titleEntries, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
 import { formatWipeSummary } from "./views/wipe";
-import { itemEntries, itemHeader, itemKeyIndex, itemStep, type ItemChoice, type ItemCursor } from "./views/field-items";
 import { townEntries, townHeader, townPageIntro, townParent, type TownEntry, type TownPage } from "./views/town";
 
 export type Route = "title" | "creation" | "town" | "dungeon" | "battle";
-export type Overlay = null | "map" | "debug" | "detail" | "items" | "wipe" | "history";
+export type Overlay = null | "map" | "debug" | "camp" | "wipe" | "history";
 
 export type App = {
   onLayout(layout: StageLayout, input: StageLayoutInput): void;
@@ -115,8 +131,9 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   let chaining = false;
   /** debug パネルの下に残している overlay（全滅の内訳だけ。閉じたら戻す） */
   let underDebug: Overlay = null;
-  /** UI-53: 迷宮の道具の段（overlay が items の間だけ使う） */
-  let itemCursor: ItemCursor = { stage: "member" };
+  /** UI-53 / TW-03: キャンプを開いた場所（迷宮のキャンプか酒場か）と今の段（overlay が camp の間だけ使う） */
+  let campHost: CampHost = "camp";
+  let campPage: CampPage = { kind: "top" };
 
   const scale = (): number => layout?.scale ?? 1;
 
@@ -169,7 +186,6 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     },
     onClose: () => guard(() => closeOverlay()),
     onPick: (g) => guard(() => chooseBattle({ kind: "group", index: g })),
-    onRowTap: (id) => guard(() => openDetail(id)),
   });
 
   const debug = createDebugPanel({
@@ -220,7 +236,12 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   const onScreen = (to: Screen): void => {
     if (to === "title" || to === "town" || to === "dungeon" || to === "battle") {
       if (to === "town") townPage = "menu";
-      if (route !== to && overlay === "history") closeHistory();
+      // 画面が変わったら、キャンプ・地図・履歴を閉じる（帰還の呪文で街へ、など）
+      if (route !== to) {
+        if (overlay === "camp") closeCamp(false);
+        if (overlay === "map") closeMap();
+        if (overlay === "history") closeHistory();
+      }
       if (to === "battle") {
         // 新しい戦闘。入力の段階は再生の最後の sync で battleMenu から作り直す
         cursor = null;
@@ -321,6 +342,10 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
           case "mercy":
             void run({ type: "town.mercy", memberId: e.memberId });
             return;
+          case "camp":
+            // TW-03: 酒場の状態・装備・並び順はキャンプと同じ部品で開く（やめるで酒場の一覧へ戻る）
+            openCamp("tavern", e.open);
+            return;
           case "enter":
             void run({ type: "dungeon.enter", dungeonId: e.dungeonId });
             return;
@@ -360,10 +385,9 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       c.setMode("close");
       return;
     }
-    if (overlay === "detail") {
-      // UI-58: 詳細の間は操作領域に「閉じる」だけ（街・迷宮・戦闘のどれでも）
-      clearFocus();
-      c.setMode("close");
+    if (overlay === "camp") {
+      // UI-53 / TW-03: キャンプと酒場の状態・装備・並び順（街でも迷宮でも同じ）
+      syncCampControls();
       return;
     }
     if (route === "town") {
@@ -392,55 +416,92 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       c.setMode("close");
       return;
     }
-    if (overlay === "items") {
-      syncItemControls();
-      return;
-    }
     const pc = state.pendingChoice;
     if (pc !== null) {
       c.setList(pc.options.map((op) => listItem(t(op.labelKey), () => void run({ type: "event.choose", optionId: op.id }))));
       c.setMode("list");
       return;
     }
-    // UI-53: [道具][地図]（呪文・並びは dungeon.cast / party.reorder と同時に足す）
-    c.setMenu([listItem(t("dungeon.menu.items"), () => openItems()), listItem(t("dungeon.menu.map"), () => openMap())]);
+    // UI-53: [キャンプ][地図]
+    c.setMenu([listItem(t("dungeon.menu.camp"), () => openCamp("camp")), listItem(t("dungeon.menu.map"), () => openMap())]);
     c.setDpadVisible(s.inputMode !== "swipe");
     c.setMode("dpad");
   };
 
-  /** UI-53: 道具の段の見出しと一覧（候補・押せるかは fieldItemMenu の値だけ） */
-  const syncItemControls = (): void => {
-    const c = play.controls;
-    const menu = fieldItemMenu(state, data);
-    if (menu === null) {
-      closeItems();
-      return;
-    }
-    play.header.setText(itemHeader(menu, itemCursor, strings));
-    c.setList(
-      itemEntries(menu, itemCursor, strings).map(
-        (e): ControlItem => ({ label: e.label, disabled: e.disabled, onSelect: () => guard(() => chooseItem(e.choice)) }),
-      ),
-    );
-    c.setMode("list");
+  /** キャンプの値（campMenu と、迷宮なら fieldItemMenu）。キャンプを開けない状態なら null */
+  const campInput = (): CampInput | null => {
+    const menu = campMenu(state, data);
+    if (menu === null) return null;
+    return { menu, items: fieldItemMenu(state, data) };
   };
 
-  /** UI-53: 道具の段で 1 つ選ぶ。送るときは overlay を閉じてから dungeon.useItem を送る（使えるかは core が決める） */
-  const chooseItem = (choice: ItemChoice): void => {
-    if (overlay !== "items") return;
-    const menu = fieldItemMenu(state, data);
-    if (menu === null) {
-      closeItems();
+  /**
+   * UI-53 / UI-59: キャンプの段の問い（ヘッダー）・パネル・操作領域を描く。campMenu を取り直し、成り立たない段は campRepair で直す。
+   * キャンプを開けない状態（戦闘・保留・title）になっていれば閉じる
+   */
+  const syncCampControls = (): void => {
+    const m = campInput();
+    if (m === null) {
+      closeCamp(true);
       return;
     }
-    const r = itemStep(menu, itemCursor, choice);
-    if (r.kind === "cursor") {
-      itemCursor = r.cursor;
+    campPage = campRepair(campHost, campPage, m);
+    play.header.setText(campHeader(campPage, m, strings));
+    play.camp.render(campPanelView(campPage, m));
+    const c = play.controls;
+    const e = campEntries(campHost, campPage, m, strings);
+    const item = (x: CampEntry): ControlItem => ({ label: x.label, disabled: x.disabled, onSelect: () => guard(() => chooseCamp(x.choice)) });
+    if (e.layout === "grid") {
+      c.setBattleMenu(e.slots.map((x) => (x === null ? null : item(x))), "camp");
+      c.setMode("battle");
+    } else {
+      c.setList(e.rows.map(item));
+      c.setMode("list");
+    }
+  };
+
+  /** campPanel の値を描くもの（UI-59 の状態は state の Character から formatDetail で作る） */
+  const campPanelView = (page: CampPage, m: CampInput): CampPanelView => {
+    const p = campPanel(page, m, strings);
+    if (p.kind === "text") return p;
+    if (p.kind === "order") {
+      return {
+        kind: "order",
+        lines: p.rows.map((r) => ({ text: formatMessage(t("camp.order.row"), { n: r.n, name: r.name, row: r.row }), picked: r.picked })),
+      };
+    }
+    const ch = state.party.find((x) => x.id === p.memberId);
+    if (ch === undefined) return { kind: "text", title: "", body: "" };
+    return {
+      kind: "detail",
+      detail: formatDetail(ch, data, strings, (iid) => itemDisplayName(state, data, iid)),
+      focusSlot: p.focusSlot === null ? null : SLOT_ORDER.indexOf(p.focusSlot),
+    };
+  };
+
+  /** UI-53: キャンプの段で 1 つ選ぶ。送るときは閉じずに after の段にしてから送る（使えるかは core が決める。UI-35） */
+  const chooseCamp = (choice: CampChoice): void => {
+    if (overlay !== "camp") return;
+    const m = campInput();
+    if (m === null) {
+      closeCamp(true);
+      return;
+    }
+    const r = campStep(campHost, campPage, m, choice);
+    if (r.kind === "page") {
+      campPage = r.page;
       syncControls();
       return;
     }
-    closeItems();
-    if (r.kind === "send") void run(r.command);
+    if (r.kind === "close") {
+      closeCamp(true);
+      return;
+    }
+    campPage = r.after;
+    void run(r.command).then((res) => {
+      // rejected は再生も sync も無いので、ここで描き直す
+      if (res !== null && res.rejected && !isBusy()) syncControls();
+    });
   };
 
   /**
@@ -775,13 +836,14 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     state = st;
     overlay = null;
     play.showMap(false);
-    play.showDetail(false);
+    play.showCamp(false);
     play.showWipe(false);
     play.showHistory(false);
     // 読み込みを待つ間に F2 で開いた debug パネルも閉じる（overlay を null にするので、残すと閉じられなくなる）
     debug.el.style.display = "none";
     underDebug = null;
-    itemCursor = { stage: "member" };
+    campHost = "camp";
+    campPage = { kind: "top" };
     townPage = "menu";
     cursor = null;
     advanceFrom = null;
@@ -805,9 +867,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
 
   const openDebug = (): void => {
     if (overlay === "debug") return;
-    if (overlay === "items") closeItems();
+    if (overlay === "camp") closeCamp(false);
     if (overlay === "map") closeMap();
-    if (overlay === "detail") closeDetail();
     if (overlay === "history") closeHistory();
     // 全滅の内訳は閉じずに debug パネルの下に残す（閉じたら戻す）
     underDebug = overlay === "wipe" ? "wipe" : null;
@@ -846,24 +907,35 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     syncControls();
   };
 
-  /** UI-53: 迷宮の道具を開く（迷宮で、他の overlay も保留中の選択も無いとき） */
-  const openItems = (): void => {
-    if (route !== "dungeon" || overlay !== null || state.pendingChoice !== null) return;
-    if (fieldItemMenu(state, data) === null) return;
+  /**
+   * UI-53 / TW-03: キャンプを開く。迷宮のキャンプ（host camp）は迷宮で、酒場（host tavern）は街で、
+   * 他の overlay が無く、campMenu が非 null のとき（戦闘・保留中は開かない）。open は酒場の項目（状態・装備・並び順）
+   */
+  const openCamp = (host: CampHost, open?: "status" | "equip" | "order"): void => {
+    if (overlay !== null) return;
+    if (host === "camp" ? route !== "dungeon" : route !== "town") return;
+    const menu = campMenu(state, data);
+    if (menu === null) return;
     repeater.release();
-    overlay = "items";
-    itemCursor = { stage: "member" };
+    overlay = "camp";
+    campHost = host;
+    campPage = campFirstPage(host, open, menu);
+    play.showCamp(true);
     syncControls();
   };
 
-  /** 道具を閉じ、ヘッダーを迷宮の表示に戻す */
-  const closeItems = (): void => {
-    if (overlay !== "items") return;
+  /** キャンプを閉じ、ヘッダーを迷宮か街の表示に戻す（resync が偽なら操作領域は描き直さない） */
+  const closeCamp = (resync: boolean): void => {
+    if (overlay !== "camp") return;
     overlay = null;
-    itemCursor = { stage: "member" };
+    campPage = { kind: "top" };
+    play.showCamp(false);
     const d = state.dive;
-    if (d !== null) showHeaderAt(state, { floor: d.floor, pos: d.pos, facing: d.facing });
-    syncControls();
+    if (route === "town") {
+      const menu = townMenu(state, data);
+      if (menu !== null) play.header.setText(townHeader(menu, strings));
+    } else if (d !== null) showHeaderAt(state, { floor: d.floor, pos: d.pos, facing: d.facing });
+    if (resync) syncControls();
   };
 
   const closeMap = (): void => {
@@ -874,35 +946,13 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   };
 
   /**
-   * UI-58: パーティの行のタップで詳細を開く。街・迷宮・戦闘で、他の overlay が無いとき（詳細が開いていればその人に切り替える）。
-   * 再生中・連鎖の途中は guard で捨てる（UI-44）
-   */
-  const openDetail = (id: string): void => {
-    if (route !== "town" && route !== "dungeon" && route !== "battle") return;
-    if (overlay !== null && overlay !== "detail") return;
-    const ch = state.party.find((m) => m.id === id);
-    if (ch === undefined) return;
-    repeater.release();
-    overlay = "detail";
-    play.detail.render(formatDetail(ch, data, strings, (iid) => itemDisplayName(state, data, iid)));
-    play.showDetail(true);
-    syncControls();
-  };
-
-  const closeDetail = (): void => {
-    if (overlay !== "detail") return;
-    overlay = null;
-    play.showDetail(false);
-    syncControls();
-  };
-
-  /**
    * UI-56: 全滅の内訳を開く（再生の中から。入力は待たない）。後続の街に入る処理は overlay の下で再生し、
    * 再生の最後の sync で操作領域を「街へ」にする
    */
   const openWipe = (p: PenaltyResult): void => {
     if (overlay === "map") closeMap();
-    if (overlay === "detail") closeDetail();
+    if (overlay === "camp") closeCamp(false);
+    if (overlay === "history") closeHistory();
     repeater.release();
     overlay = "wipe";
     play.wipe.render(formatWipeSummary(p, data, strings));
@@ -938,10 +988,9 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     syncControls();
   };
 
-  /** 操作領域の「閉じる」: 地図か詳細か全滅の内訳か履歴を閉じる */
+  /** 操作領域の「閉じる」: 地図か全滅の内訳か履歴を閉じる */
   const closeOverlay = (): void => {
     if (overlay === "map") closeMap();
-    else if (overlay === "detail") closeDetail();
     else if (overlay === "wipe") closeWipe();
     else if (overlay === "history") closeHistory();
   };
@@ -973,10 +1022,6 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       if (a === "back" || a === "map" || a === "confirm" || (typeof a === "object" && a.menu === 0)) closeMap();
       return;
     }
-    if (overlay === "detail") {
-      if (a === "back" || a === "confirm" || (typeof a === "object" && a.menu === 0)) closeDetail();
-      return;
-    }
     if (overlay === "wipe") {
       if (a === "back" || a === "confirm" || (typeof a === "object" && a.menu === 0)) closeWipe();
       return;
@@ -988,11 +1033,11 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       else if (a === "around") play.history.scrollBy(HISTORY_KEY_LINES);
       return;
     }
-    if (overlay === "items") {
-      // UI-33: 数字 n → n 番目、Enter → 先頭の押せる行、Esc → 戻る
-      const menu = fieldItemMenu(state, data);
-      if (menu === null) return;
-      const k = itemKeyIndex(a, itemEntries(menu, itemCursor, strings));
+    if (overlay === "camp") {
+      // UI-33: 数字 n → n 番目の枠・行（空き枠は無視）、Enter → 先頭の押せる項目、Esc → やめる（top では戻る）
+      const m = campInput();
+      if (m === null) return;
+      const k = campKeyIndex(a, campEntries(campHost, campPage, m, strings));
       if (k !== null) play.controls.select(k);
       return;
     }

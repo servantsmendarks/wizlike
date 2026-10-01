@@ -22,6 +22,8 @@ export type TownEntry =
   | { kind: "shopItem"; itemId: string; label: string; disabled: boolean }
   /** TW-05: 持たせるメンバーの行（名前と所持枠の空き。空きが無いか払えなければ disabled）。押すと town.shop の buy */
   | { kind: "buy"; itemId: string; memberId: string; label: string; disabled: boolean }
+  /** TW-03 / UI-52: 酒場の「状態を見る / 装備を替える / 並び順を変える」。押すとキャンプと同じ部品（views/camp.ts）をそのページで開く */
+  | { kind: "camp"; open: "status" | "equip" | "order"; label: string }
   | { kind: "back"; label: string };
 
 const TEMPLE_SERVICES: readonly TempleService[] = ["resurrect", "cure", "uncurse"];
@@ -58,9 +60,14 @@ export function townEntries(page: TownPage, menu: TownMenu, strings: Strings): T
     ];
   }
   if (page === "tavern") {
-    // TW-31: 救済の申し出の間だけ、dead / ash の者の行（押すと town.mercy）
+    // TW-03: 状態・装備・並び順（キャンプと同じ部品）→ TW-31: 救済の申し出の間だけ、dead / ash の者の行（押すと town.mercy）
+    const camp: TownEntry[] = [
+      { kind: "camp", open: "status", label: s(strings, "town.tavern.status") },
+      { kind: "camp", open: "equip", label: s(strings, "town.tavern.equip") },
+      { kind: "camp", open: "order", label: s(strings, "town.tavern.order") },
+    ];
     const rows = (menu.mercy ?? []).map((m): TownEntry => ({ kind: "mercy", memberId: m.memberId, label: s(strings, "town.tavern.mercyRow", { name: m.name }) }));
-    return [...rows, back];
+    return [...camp, ...rows, back];
   }
   if (page === "inn") {
     const rows = menu.inn.map(
