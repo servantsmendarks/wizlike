@@ -368,22 +368,22 @@ describe("遭遇（CB-01 の仮実装）", () => {
 describe("視野（DG-12）", () => {
   test("DG-12 visibleCellsOf（手組みの Floor）: 正面が壁なら depth0 だけ。まっすぐな通路なら depth0..3。扉は front=door で奥を遮る", () => {
     const f = makeFloor(5, 6);
-    expect(visibleCellsOf(f, { x: 2, y: 5 }, "N", 3)).toEqual([{ depth: 0, lane: 0, x: 2, y: 5, front: "wall", left: "wall", right: "wall" }]);
+    expect(visibleCellsOf(f, { x: 2, y: 5 }, "N", 3)).toEqual([{ depth: 0, lane: 0, x: 2, y: 5, front: "wall", left: "wall", right: "wall", stairs: null }]);
     // (2,5)→(2,1) をまっすぐ北へ開ける
     for (let y = 5; y >= 1; y--) setEdge(f, 2, y, "N", "open");
     expect(visibleCellsOf(f, { x: 2, y: 5 }, "N", 3)).toEqual([
-      { depth: 0, lane: 0, x: 2, y: 5, front: "open", left: "wall", right: "wall" },
-      { depth: 1, lane: 0, x: 2, y: 4, front: "open", left: "wall", right: "wall" },
-      { depth: 2, lane: 0, x: 2, y: 3, front: "open", left: "wall", right: "wall" },
-      { depth: 3, lane: 0, x: 2, y: 2, front: "open", left: "wall", right: "wall" },
+      { depth: 0, lane: 0, x: 2, y: 5, front: "open", left: "wall", right: "wall", stairs: null },
+      { depth: 1, lane: 0, x: 2, y: 4, front: "open", left: "wall", right: "wall", stairs: null },
+      { depth: 2, lane: 0, x: 2, y: 3, front: "open", left: "wall", right: "wall", stairs: null },
+      { depth: 3, lane: 0, x: 2, y: 2, front: "open", left: "wall", right: "wall", stairs: null },
     ]);
     // 南を向けば自分のセルだけ（後ろの辺は wall）。front は s、left は e、right は w
-    expect(visibleCellsOf(f, { x: 2, y: 5 }, "S", 3)).toEqual([{ depth: 0, lane: 0, x: 2, y: 5, front: "wall", left: "wall", right: "wall" }]);
+    expect(visibleCellsOf(f, { x: 2, y: 5 }, "S", 3)).toEqual([{ depth: 0, lane: 0, x: 2, y: 5, front: "wall", left: "wall", right: "wall", stairs: null }]);
     // (2,4) の北を扉にすると depth1 で止まる
     setEdge(f, 2, 4, "N", "door");
     expect(visibleCellsOf(f, { x: 2, y: 5 }, "N", 3)).toEqual([
-      { depth: 0, lane: 0, x: 2, y: 5, front: "open", left: "wall", right: "wall" },
-      { depth: 1, lane: 0, x: 2, y: 4, front: "door", left: "wall", right: "wall" },
+      { depth: 0, lane: 0, x: 2, y: 5, front: "open", left: "wall", right: "wall", stairs: null },
+      { depth: 1, lane: 0, x: 2, y: 4, front: "door", left: "wall", right: "wall", stairs: null },
     ]);
   });
 
@@ -398,28 +398,28 @@ describe("視野（DG-12）", () => {
     setEdge(f, 3, 3, "N", "door");
     setEdge(f, 2, 2, "E", "wall");
     expect(visibleCellsOf(f, { x: 2, y: 4 }, "N", 3)).toEqual([
-      { depth: 0, lane: 0, x: 2, y: 4, front: "open", left: "wall", right: "wall" },
-      { depth: 1, lane: -1, x: 1, y: 3, front: "open", left: "wall", right: "open" },
-      { depth: 1, lane: 0, x: 2, y: 3, front: "open", left: "open", right: "open" },
-      { depth: 1, lane: 1, x: 3, y: 3, front: "door", left: "open", right: "wall" },
-      { depth: 2, lane: 0, x: 2, y: 2, front: "wall", left: "wall", right: "wall" },
+      { depth: 0, lane: 0, x: 2, y: 4, front: "open", left: "wall", right: "wall", stairs: null },
+      { depth: 1, lane: -1, x: 1, y: 3, front: "open", left: "wall", right: "open", stairs: null },
+      { depth: 1, lane: 0, x: 2, y: 3, front: "open", left: "open", right: "open", stairs: null },
+      { depth: 1, lane: 1, x: 3, y: 3, front: "door", left: "open", right: "wall", stairs: null },
+      { depth: 2, lane: 0, x: 2, y: 2, front: "wall", left: "wall", right: "wall", stairs: null },
     ]);
     // 同じ場所を東から（(1,3) から東向き）: front は e、left は n、right は s
     expect(visibleCellsOf(f, { x: 1, y: 3 }, "E", 3)).toEqual([
       // (1,3) の北（向きに対する左）が open なので、depth 0 の左の列 (1,2) も見える
-      { depth: 0, lane: -1, x: 1, y: 2, front: "wall", left: "wall", right: "open" },
-      { depth: 0, lane: 0, x: 1, y: 3, front: "open", left: "open", right: "wall" },
-      { depth: 1, lane: -1, x: 2, y: 2, front: "wall", left: "wall", right: "open" },
-      { depth: 1, lane: 0, x: 2, y: 3, front: "open", left: "open", right: "open" },
-      { depth: 1, lane: 1, x: 2, y: 4, front: "wall", left: "open", right: "wall" },
-      { depth: 2, lane: 0, x: 3, y: 3, front: "wall", left: "door", right: "wall" },
+      { depth: 0, lane: -1, x: 1, y: 2, front: "wall", left: "wall", right: "open", stairs: null },
+      { depth: 0, lane: 0, x: 1, y: 3, front: "open", left: "open", right: "wall", stairs: null },
+      { depth: 1, lane: -1, x: 2, y: 2, front: "wall", left: "wall", right: "open", stairs: null },
+      { depth: 1, lane: 0, x: 2, y: 3, front: "open", left: "open", right: "open", stairs: null },
+      { depth: 1, lane: 1, x: 2, y: 4, front: "wall", left: "open", right: "wall", stairs: null },
+      { depth: 2, lane: 0, x: 3, y: 3, front: "wall", left: "door", right: "wall", stairs: null },
     ]);
     // 西向き（(3,3) から）: front は w、left は s、right は n
     expect(visibleCellsOf(f, { x: 3, y: 3 }, "W", 1)).toEqual([
-      { depth: 0, lane: 0, x: 3, y: 3, front: "open", left: "wall", right: "door" },
-      { depth: 1, lane: -1, x: 2, y: 4, front: "wall", left: "wall", right: "open" },
-      { depth: 1, lane: 0, x: 2, y: 3, front: "open", left: "open", right: "open" },
-      { depth: 1, lane: 1, x: 2, y: 2, front: "wall", left: "open", right: "wall" },
+      { depth: 0, lane: 0, x: 3, y: 3, front: "open", left: "wall", right: "door", stairs: null },
+      { depth: 1, lane: -1, x: 2, y: 4, front: "wall", left: "wall", right: "open", stairs: null },
+      { depth: 1, lane: 0, x: 2, y: 3, front: "open", left: "open", right: "open", stairs: null },
+      { depth: 1, lane: 1, x: 2, y: 2, front: "wall", left: "open", right: "wall", stairs: null },
     ]);
     // 南向き（(2,2) から）: front は s、left は e、right は w。depth 0 の左右は wall なので返らない
     expect(visibleCellsOf(f, { x: 2, y: 2 }, "S", 3).map((v) => [v.depth, v.lane, v.x, v.y])).toEqual([
@@ -429,6 +429,62 @@ describe("視野（DG-12）", () => {
       [1, 1, 1, 3],
       [2, 0, 2, 4],
     ]);
+  });
+
+  test("DG-12/UI-20 visibleCellsOf の stairs（手組みの Floor）: 左中右のどのレーンでも、stairsUp は up、stairsDown は down。罠・イベント・ボス・部屋・通路は null", () => {
+    // 3 列 × 4 行を全部 open にした広間を北向きに見る（自分は (2,4)、左の列 x=1、右の列 x=3）
+    const f = makeFloor(5, 6);
+    for (let y = 1; y <= 4; y++) {
+      for (let x = 1; x <= 3; x++) {
+        if (x < 3) setEdge(f, x, y, "E", "open");
+        if (y > 1) setEdge(f, x, y, "N", "open");
+      }
+    }
+    const kindAt: Record<string, Cell["kind"]> = { "1,3": "stairsUp", "3,2": "stairsDown", "2,1": "stairsUp", "1,1": "trap", "3,1": "boss", "2,3": "event", "3,4": "room" };
+    for (const [k, kind] of Object.entries(kindAt)) {
+      const [x, y] = k.split(",").map(Number) as [number, number];
+      cellAt(f, x, y).kind = kind;
+    }
+    const got = visibleCellsOf(f, { x: 2, y: 4 }, "N", 3).map((v) => [v.depth, v.lane, v.stairs]);
+    expect(got).toEqual([
+      [0, -1, null],
+      [0, 0, null],
+      [0, 1, null], // room
+      [1, -1, "up"],
+      [1, 0, null], // event
+      [1, 1, null],
+      [2, -1, null],
+      [2, 0, null],
+      [2, 1, "down"],
+      [3, -1, null], // trap
+      [3, 0, "up"],
+      [3, 1, null], // boss
+    ]);
+  });
+
+  test("DG-12/UI-20 visibleCells の stairs は実データの全視点で、セルの kind が stairsUp なら up、stairsDown なら down、それ以外は null（1 階・2 階とも）", () => {
+    const s0 = enterD01(1);
+    let ups = 0;
+    let downs = 0;
+    for (const floorNo of [1, 2]) {
+      const f = floorOf(s0.dive!, data, floorNo);
+      for (let y = 0; y < f.height; y++) {
+        for (let x = 0; x < f.width; x++) {
+          for (const d of FACINGS) {
+            for (const v of visibleCells(s0, data, { floor: floorNo, pos: { x, y }, facing: d })) {
+              const kind = cellAt(f, v.x, v.y).kind;
+              const want = kind === "stairsUp" ? "up" : kind === "stairsDown" ? "down" : null;
+              expect(v.stairs).toBe(want);
+              if (v.stairs === "up" && v.lane !== 0) ups += 1;
+              if (v.stairs === "down" && v.lane !== 0) downs += 1;
+            }
+          }
+        }
+      }
+    }
+    // 左右のレーンからも見えていること
+    expect(ups).toBeGreaterThan(0);
+    expect(downs).toBeGreaterThan(0);
   });
 
   test("DG-10/DG-12 通り抜けた扉も視線を遮る（往復した後も、扉の手前からは扉の奥が見えない）", () => {

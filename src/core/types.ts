@@ -180,9 +180,19 @@ export type ViewPoint = { floor: number; pos: Pos; facing: Facing };
 /**
  * DG-12。depth 0 は自分のセル。lane は向きに対する相対（-1 左 / 0 正面列 / 1 右）。
  * front / left / right はそのセルの、向きに対する前・左・右の辺（扉は通り抜けた後も door。DG-10）。x, y は絶対座標（テストと explored 用。描画には使わない）。
- * セルの種別は返さない（罠・イベント・ボスを表示層に漏らさない）。
+ * stairs はそのセルが上り階段（stairsUp）なら "up"、下り階段（stairsDown）なら "down"、それ以外は null（UI-20 の階段の記号）。
+ * それ以外のセルの種別は返さない（罠・イベント・ボスを表示層に漏らさない）。
  */
-export type VisibleCell = { depth: number; lane: -1 | 0 | 1; x: number; y: number; front: Edge; left: Edge; right: Edge };
+export type VisibleCell = {
+  depth: number;
+  lane: -1 | 0 | 1;
+  x: number;
+  y: number;
+  front: Edge;
+  left: Edge;
+  right: Edge;
+  stairs: "up" | "down" | null;
+};
 /** UI-24 の記号。罠・イベント・ボス・部屋・通路はすべて plain（地図で明かさない） */
 export type MapCellKind = "plain" | "stairsUp" | "stairsDown";
 /** 辺は絶対方位（扉は通り抜けた後も door。DG-10） */

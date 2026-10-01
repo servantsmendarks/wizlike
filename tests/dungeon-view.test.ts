@@ -9,7 +9,7 @@ import { SLOT_IDS, SLOT_PATHS, slotsFor, type SlotId } from "../src/presenter/vi
 import { createDungeonSvg } from "../src/presenter/views/dungeon-svg";
 
 function cell(depth: number, lane: -1 | 0 | 1, front: Edge, left: Edge = "open", right: Edge = "open"): VisibleCell {
-  return { depth, lane, x: 0, y: 0, front, left, right };
+  return { depth, lane, x: 0, y: 0, front, left, right, stairs: null };
 }
 
 const sorted = (s: Set<SlotId>): SlotId[] => [...s].sort();

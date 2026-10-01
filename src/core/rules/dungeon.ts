@@ -54,14 +54,22 @@ export function floorOf(dive: Dive, data: GameData, floorNo: number = dive.floor
   return f;
 }
 
-function relEdges(f: Floor, x: number, y: number, facing: Facing): { front: Edge; left: Edge; right: Edge } {
+/** 向きに対する前・左・右の辺と、階段の記号（DG-12。罠・イベント・ボスは返さない） */
+function relEdges(
+  f: Floor,
+  x: number,
+  y: number,
+  facing: Facing,
+): { front: Edge; left: Edge; right: Edge; stairs: VisibleCell["stairs"] } {
   const c = cellAt(f, x, y);
-  return { front: edgeOf(c, facing), left: edgeOf(c, turnLeft(facing)), right: edgeOf(c, turnRight(facing)) };
+  const stairs = c.kind === "stairsUp" ? "up" : c.kind === "stairsDown" ? "down" : null;
+  return { front: edgeOf(c, facing), left: edgeOf(c, turnLeft(facing)), right: edgeOf(c, turnRight(facing)), stairs };
 }
 
 /**
  * DG-12。正面の列は前の辺が open のときだけ奥へ進む（扉も遮る）。左右の列は、同じ奥行きの正面のセルの
  * 側の辺が open のときだけ返す。並びは depth の昇順、同じ depth の中は lane -1, 0, 1。
+ * どのレーンのセルでも、階段なら stairs に "up" / "down" を入れる（UI-20）。
  */
 export function visibleCellsOf(f: Floor, pos: Pos, facing: Facing, depth: number): VisibleCell[] {
   const out: VisibleCell[] = [];
