@@ -255,6 +255,13 @@ describe("入力と Command", () => {
     expect(app).toMatch(/const stageInput = attachStageInput\(/);
   });
 
+  test("UI-25 自動歩行の walkStep は beforePlay を run に渡し、finish で endWalk する（止まる手は再生の前に歩行を終える）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const body = /const walker = createHoldRepeater\(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(body).toMatch(/send: \(cmd, beforePlay\) =>\s*run\(cmd, \{ beforePlay \}\)/);
+    expect(body).toMatch(/finish: \(\) => endWalk\(\)/);
+  });
+
   test("UI-44/UI-45 戦闘が終わった後の再生に残るオート解除（battleMenu が null）は、再生中なら拍のタップ（player.tap）にする", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const requestAutoStop = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";

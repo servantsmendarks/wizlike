@@ -24,7 +24,7 @@ import { dungeonOf, itemDisplayName } from "../core/state";
 import type { BattleMenu, Command, GameState, PenaltyResult, Pos, Screen, ViewPoint } from "../core/types";
 import type { GameListEntry, SaveService } from "../save/types";
 import { runChain, type ChainDeps } from "./auto-chain";
-import { createAutosaver, createCommandExec, createSaveBannerState, type CommandResult, type SaveStatus } from "./autosave";
+import { createAutosaver, createCommandExec, createSaveBannerState, type CommandExecOptions, type CommandResult, type SaveStatus } from "./autosave";
 import {
   entries,
   firstCursor,
@@ -614,7 +614,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
    * UI-35 / UI-44: Command を execute に送り、イベントを再生する。再生中なら捨てて null。
    * rejected（イベントがちょうど 1 件の rejected）は再生せず、console.debug に出す。
    */
-  const gate = createRunGate<Command, DispatchResult>({
+  const gate = createRunGate<Command, DispatchResult, CommandExecOptions>({
     onError: (e) => console.error(e),
     // SV-02: execute → state の差し替え → 保存を await → 再生（順は createCommandExec が固定する）
     exec: createCommandExec({
@@ -628,7 +628,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       onRejected: (ev) => console.debug("rejected", ev.command, ev.reason),
     }),
   });
-  const run = (cmd: Command): Promise<DispatchResult | null> => gate.run(cmd);
+  const run = (cmd: Command, opt?: CommandExecOptions): Promise<DispatchResult | null> => gate.run(cmd, opt);
 
   // ---------------------------------------------------------------- 戦闘
   /** 段の間で 1 フレーム譲る（1 回だけの requestAnimationFrame。常駐のループではない） */
@@ -747,13 +747,15 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       const go = await walkStep({
         walk: () => walking,
         ready: () => route === "dungeon" && overlay === null && state.pendingChoice === null,
-        send: (cmd) =>
-          run(cmd).then((r) => {
+        // beforePlay: 止まる手（routeStepOk が偽・最後の手）は再生の前に歩行を終える（walkStep が finish を呼ぶ）
+        send: (cmd, beforePlay) =>
+          run(cmd, { beforePlay }).then((r) => {
             // CB-01 の遭遇。入力が要らない状態なら、そのまま連鎖で進める（長押しの前進と同じ）
             if (r !== null && !r.rejected && route === "battle") kickBattle();
             return r;
           }),
         ok: (s, events) => routeStepOk(s, events, state),
+        finish: () => endWalk(),
       });
       // 止められた（stopWalk 済み）なら何もしない。歩き終えた・止まったなら片付ける
       if (!go && walking === w) endWalk();

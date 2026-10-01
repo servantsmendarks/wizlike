@@ -120,24 +120,35 @@ export type RouteWalk = { steps: readonly RouteStep[]; i: number };
 /**
  * UI-25: 自動歩行の 1 手（createHoldRepeater の fire）。次も続けるなら true。
  * - 今の歩行（walk()）が無いか、ready が偽（迷宮・overlay なし・保留なしでない）なら送らずに false
- * - 送った後に歩行が止められていた（walk() が別物）なら false
- * - 門に捨てられた（null）・rejected・ok（core の routeStepOk）が偽なら false
+ * - send は手の結果が出た時点（execute の直後、再生の前）で beforePlay(events) を呼ぶ。そこで ok（core の routeStepOk）が偽か
+ *   最後の手なら、その手の再生を始める前に finish（歩行を終える）。その再生中の入力は自動歩行の外になり、拍のタップ（UI-45）として受ける
+ * - 送った後に歩行が止められていた（walk() が別物。finish 済みを含む）なら false
+ * - 門に捨てられた（null）・rejected・ok が偽なら false
  * - そうでなければ i を進め、まだ手が残っていれば true（最後の手を送り終えたら false）
+ * ok は 1 手に 1 回だけ呼ぶ（beforePlay が呼ばれなかったときだけ再生の後に呼ぶ）。
  * 続けてよいかの判定は ok（core）に任せ、ここでは event の中身を見ない（§3-4）
  */
 export async function walkStep(o: {
   walk(): RouteWalk | null;
   ready(): boolean;
-  send(cmd: RouteCommand): Promise<{ events: readonly GameEvent[]; rejected: boolean } | null>;
+  send(cmd: RouteCommand, beforePlay: (events: readonly GameEvent[]) => void): Promise<{ events: readonly GameEvent[]; rejected: boolean } | null>;
   ok(step: RouteStep, events: readonly GameEvent[]): boolean;
+  /** 歩行を終える（app の endWalk） */
+  finish(): void;
 }): Promise<boolean> {
   const w = o.walk();
   if (w === null || !o.ready()) return false;
   const s = w.steps[w.i];
   if (s === undefined) return false;
-  const r = await o.send(s.command);
+  let judged: boolean | null = null;
+  const r = await o.send(s.command, (events) => {
+    if (o.walk() !== w) return;
+    judged = o.ok(s, events);
+    if (!judged || w.i + 1 >= w.steps.length) o.finish();
+  });
   if (o.walk() !== w) return false;
-  if (r === null || r.rejected || !o.ok(s, r.events)) return false;
+  if (r === null || r.rejected) return false;
+  if (!(judged ?? o.ok(s, r.events))) return false;
   w.i++;
   return w.i < w.steps.length;
 }

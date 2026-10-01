@@ -175,6 +175,38 @@ describe("オートセーブ（SV-02）", () => {
     expect(recordOf(mem, "g1").state.screen).toBe("dungeon");
   });
 
+  test("UI-25/SV-02 createCommandExec の beforePlay は state を差し替えた直後（保存と再生の前）に events を受けて 1 回呼ぶ。rejected では呼ばない", async () => {
+    const mem = createMemoryBackend();
+    const saves = service(mem);
+    let state: GameState = createInitialState(9, data);
+    const log: string[] = [];
+    const exec = createCommandExec({
+      execute: (st, cmd) => execute(st, cmd, data),
+      getState: () => state,
+      setState: (st) => {
+        log.push("setState");
+        state = st;
+      },
+      autosaver: createAutosaver({ saves, onStatus: (s) => log.push(`status:${s}`) }),
+      play: async () => {
+        log.push("play");
+      },
+    });
+    let seen: readonly GameEvent[] | null = null;
+    const r1 = await exec(NEW_GAME, {
+      beforePlay: (events) => {
+        log.push(`beforePlay:${state.screen}`);
+        seen = events;
+      },
+    });
+    expect(log).toEqual(["setState", "beforePlay:town", "status:ok", "play"]);
+    expect(seen).toBe(r1.events);
+    log.length = 0;
+    const r2 = await exec({ type: "dungeon.turn", dir: "left" }, { beforePlay: () => log.push("beforePlay") });
+    expect(r2.rejected).toBe(true);
+    expect(log).toEqual([]);
+  });
+
   test("SV-02/SV-23 保存に失敗しても state は巻き戻さず再生する。onStatus は failed", async () => {
     const mem = createMemoryBackend({ fail: { put: true } });
     const saves = service(mem);

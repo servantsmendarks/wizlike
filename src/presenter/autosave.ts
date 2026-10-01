@@ -52,10 +52,12 @@ export function createSaveBannerState(available: boolean): SaveBannerState {
 }
 
 export type CommandResult = { events: readonly GameEvent[]; rejected: boolean };
+/** UI-25: beforePlay は rejected でない手の結果が出た時点（state を差し替えた直後、保存と再生の前）に呼ぶ */
+export type CommandExecOptions = { beforePlay?(events: readonly GameEvent[]): void };
 
 /**
  * app の run の門の中身（UI-35 / SV-02）: execute → rejected（ちょうど 1 件の rejected）なら state を変えずに返す →
- * state を差し替える → 保存を await → 再生を await。保存と再生の順をここで固定する。
+ * state を差し替える → opt.beforePlay(events) → 保存を await → 再生を await。保存と再生の順をここで固定する。
  */
 export function createCommandExec(o: {
   execute(state: GameState, cmd: Command): { state: GameState; events: GameEvent[] };
@@ -64,8 +66,8 @@ export function createCommandExec(o: {
   autosaver: Autosaver;
   play(events: readonly GameEvent[], before: GameState, after: GameState): Promise<void>;
   onRejected?(ev: Extract<GameEvent, { kind: "rejected" }>): void;
-}): (cmd: Command) => Promise<CommandResult> {
-  return async (cmd) => {
+}): (cmd: Command, opt?: CommandExecOptions) => Promise<CommandResult> {
+  return async (cmd, opt) => {
     const before = o.getState();
     const r = o.execute(before, cmd);
     const only = r.events.length === 1 ? r.events[0] : undefined;
@@ -74,6 +76,7 @@ export function createCommandExec(o: {
       return { events: r.events, rejected: true };
     }
     o.setState(r.state);
+    opt?.beforePlay?.(r.events);
     await o.autosaver.afterCommand(cmd, before, r.state); // SV-02: 再生を始める前
     await o.play(r.events, before, r.state);
     return { events: r.events, rejected: false };

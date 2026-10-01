@@ -562,6 +562,9 @@ describe("自動歩行（walkStep）", () => {
         checked.push(s);
         return o.ok ?? true;
       },
+      finish: () => {
+        walk = null;
+      },
     };
     return { deps, sent, checked, get: () => walk, set: (w: RouteWalk | null) => (walk = w) };
   }
@@ -608,6 +611,85 @@ describe("自動歩行（walkStep）", () => {
     expect(h.checked).toEqual([]);
   });
 
+  /** send が beforePlay(events) を呼んでから、play() を呼ぶまで再生（resolve）を待たせる偽物 */
+  function playing(o: { ok: boolean; startAt?: number }) {
+    let walk: RouteWalk | null = { steps, i: o.startAt ?? 0 };
+    const log: string[] = [];
+    let endPlay: () => void = () => {};
+    const deps = {
+      walk: () => walk,
+      ready: () => true,
+      send: (cmd: RouteCommand, beforePlay?: (events: readonly GameEvent[]) => void) => {
+        log.push(`send ${cmd.type}`);
+        const events: GameEvent[] = [];
+        beforePlay?.(events);
+        log.push("play");
+        return new Promise<{ events: readonly GameEvent[]; rejected: boolean }>((resolve) => {
+          endPlay = () => {
+            log.push("played");
+            resolve({ events, rejected: false });
+          };
+        });
+      },
+      ok: () => {
+        log.push("ok");
+        return o.ok;
+      },
+      finish: () => {
+        log.push("finish");
+        walk = null;
+      },
+    };
+    return { deps, log, get: () => walk, endPlay: () => endPlay() };
+  }
+
+  test("UI-25 walkStep: routeStepOk が偽の手は、その手の再生を始める前に finish（歩行を終える）。再生の後は false", async () => {
+    const h = playing({ ok: false });
+    const p = walkStep(h.deps);
+    // 再生の途中（play の後、played の前）で、もう歩行は終わっている
+    expect(h.log).toEqual(["send dungeon.move", "ok", "finish", "play"]);
+    expect(h.get()).toBeNull();
+    h.endPlay();
+    expect(await p).toBe(false);
+    // ok は 1 回だけ
+    expect(h.log.filter((x) => x === "ok")).toHaveLength(1);
+  });
+
+  test("UI-25 walkStep: 最後の手も、その手の再生を始める前に finish。再生の後は false", async () => {
+    const h = playing({ ok: true, startAt: 1 });
+    const p = walkStep(h.deps);
+    expect(h.log).toEqual(["send dungeon.turn", "ok", "finish", "play"]);
+    h.endPlay();
+    expect(await p).toBe(false);
+  });
+
+  test("UI-25 walkStep: ok が真で手が残る手では finish を呼ばず、再生の後に i を進めて true（その再生中の入力は今までどおり歩行を止めるだけ）", async () => {
+    const h = playing({ ok: true });
+    const p = walkStep(h.deps);
+    expect(h.log).toEqual(["send dungeon.move", "ok", "play"]);
+    expect(h.get()).not.toBeNull();
+    h.endPlay();
+    expect(await p).toBe(true);
+    expect(h.get()!.i).toBe(1);
+    expect(h.log.filter((x) => x === "ok")).toHaveLength(1);
+  });
+
+  test("UI-25 walkStep: 再生の前に止められていた（walk() が別物）なら、beforePlay では ok も finish も呼ばない", async () => {
+    const h = playing({ ok: false });
+    const deps = {
+      ...h.deps,
+      send: (cmd: RouteCommand, beforePlay?: (events: readonly GameEvent[]) => void) => {
+        h.deps.finish(); // 送っている間に stopWalk された
+        h.log.length = 0;
+        return h.deps.send(cmd, beforePlay);
+      },
+    };
+    const p = walkStep(deps);
+    expect(h.log).toEqual(["send dungeon.move", "play"]);
+    h.endPlay();
+    expect(await p).toBe(false);
+  });
+
   test("UI-25/DG-15 結合: core の execute と routeStepOk で、planRoute の経路を最後まで歩く（遭遇率 0）", async () => {
     const d0 = structuredClone(data);
     for (const def of d0.dungeons) def.encounterRate = { room: 0, corridor: 0 };
@@ -637,6 +719,7 @@ describe("自動歩行（walkStep）", () => {
         return { events: r.events, rejected: r.events[0]?.kind === "rejected" };
       },
       ok: (s: RouteStep, events: readonly GameEvent[]) => routeStepOk(s, events, state),
+      finish: () => {},
     };
     let n = 0;
     while (await walkStep(deps)) n++;

@@ -446,6 +446,29 @@ describe("attachStageInput", () => {
     expect(t.out).toEqual(["tap a 10,10"]);
   });
 
+  test("UI-25/UI-45 自動歩行を（止まる手の再生の前に）終えた後の再生中のタップは、onAnyPress が false なので拍のタップ（onBusyTap）に回る", () => {
+    let walking = true;
+    const t = setup({
+      onAnyPress: () => {
+        if (!walking) return false;
+        walking = false;
+        return true;
+      },
+    });
+    const a = t.button("a");
+    t.setBusy(true);
+    // 歩行が終わっている（止まる手の再生中）: 1 回目のタップから拍のタップ
+    walking = false;
+    t.down(1, 40, 620, a.btn);
+    t.up(1, 40, 620);
+    expect(t.out).toEqual(["busyTap"]);
+    // 歩いている手の再生中: 歩行を止めるだけで捨てる（今までどおり）
+    walking = true;
+    t.down(2, 40, 620, a.btn);
+    t.up(2, 40, 620);
+    expect(t.out).toEqual(["busyTap"]);
+  });
+
   test("UI-37/UI-51 touchend は入力欄の上以外で preventDefault（passive:false）。入力欄の上の押下は追わず、入力欄の外を押したらフォーカスを外す", () => {
     const t = setup();
     const a = t.button("a");
