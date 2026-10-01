@@ -15,7 +15,8 @@ function errorOf(x: { error?: DOMException | null } | null, fallback: string): E
   return x?.error ?? new Error(fallback);
 }
 
-function openDb(factory: IDBFactory): Promise<IDBDatabase> {
+/** 開いた接続が閉じられたとき（onclose / onversionchange）に呼ばれる */
+function openDb(factory: IDBFactory, onLost: () => void = () => {}): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     let req: IDBOpenDBRequest;
     try {
@@ -32,8 +33,13 @@ function openDb(factory: IDBFactory): Promise<IDBDatabase> {
     };
     req.onsuccess = () => {
       const db = req.result;
-      // 別タブが新しい版で開こうとしたら閉じて譲る
-      db.onversionchange = () => db.close();
+      // 別タブが新しい版で開こうとしたら閉じて譲る。次の読み書きで開き直す
+      db.onversionchange = () => {
+        db.close();
+        onLost();
+      };
+      // ブラウザ側が接続を切ったとき（iOS Safari でバックグラウンドから戻った直後など）
+      db.onclose = () => onLost();
       resolve(db);
     };
     req.onerror = () => reject(errorOf(req, "indexedDB open failed"));
@@ -79,14 +85,42 @@ function write(db: IDBDatabase, run: (store: IDBObjectStore) => void): Promise<v
   });
 }
 
-/** IndexedDB を開いて保存先を返す。factory が undefined（IndexedDB の無い環境）や開けないときは reject */
+/** 接続が使えなくなったことを示す失敗か（InvalidStateError は閉じた接続の transaction、UnknownError は接続の喪失） */
+function isConnectionLost(e: unknown): boolean {
+  const name = (e as { name?: unknown } | null)?.name;
+  return name === "InvalidStateError" || name === "UnknownError";
+}
+
+/**
+ * IndexedDB を開いて保存先を返す。factory が undefined（IndexedDB の無い環境）や開けないときは reject。
+ * SV-23: 接続が閉じられたら捨て、次の読み書きで開き直す（自動の再試行はしない。次のコマンドの保存が再試行になる）。
+ * 開き直しに失敗したら、その読み書きは今までどおり reject する。
+ */
 export async function openIdbBackend(factory: IDBFactory | undefined): Promise<GameStoreBackend> {
   if (factory === undefined) throw new Error("indexedDB is not available");
-  const db = await openDb(factory);
+  const f = factory;
+  let held: IDBDatabase | null = null;
+  const open = async (): Promise<IDBDatabase> => {
+    const db = await openDb(f, () => {
+      if (held === db) held = null;
+    });
+    held = db;
+    return db;
+  };
+  await open();
+  const use = async <T>(op: (db: IDBDatabase) => Promise<T>): Promise<T> => {
+    const db = held ?? (await open());
+    try {
+      return await op(db);
+    } catch (e) {
+      if (isConnectionLost(e) && held === db) held = null;
+      throw e;
+    }
+  };
   return {
-    getAll: () => read<unknown[]>(db, (s) => s.getAll()),
-    get: (gameId: string) => read<unknown>(db, (s) => s.get(gameId)),
-    put: (record: GameRecord) => write(db, (s) => void s.put(record)),
-    delete: (gameId: string) => write(db, (s) => void s.delete(gameId)),
+    getAll: () => use((db) => read<unknown[]>(db, (s) => s.getAll())),
+    get: (gameId: string) => use((db) => read<unknown>(db, (s) => s.get(gameId))),
+    put: (record: GameRecord) => use((db) => write(db, (s) => void s.put(record))),
+    delete: (gameId: string) => use((db) => write(db, (s) => void s.delete(gameId))),
   };
 }

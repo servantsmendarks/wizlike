@@ -510,11 +510,20 @@ function fakeIdb(opts: { openThrows?: boolean; openFails?: boolean; existing?: s
       stores.add(name);
     },
     onversionchange: null as null | (() => void),
+    onclose: null as null | (() => void),
+    /** 閉じた接続の transaction は同期に InvalidStateError を投げる（実物と同じ） */
+    closed: false,
     close() {
       log.push("close");
+      db.closed = true;
     },
     transaction(name: string, mode: string) {
       log.push(`tx ${name} ${mode}`);
+      if (db.closed) {
+        const e = new Error("InvalidStateError");
+        e.name = "InvalidStateError";
+        throw e;
+      }
       const tx = {
         oncomplete: null as null | (() => void),
         onerror: null as null | (() => void),
@@ -576,6 +585,7 @@ function fakeIdb(opts: { openThrows?: boolean; openFails?: boolean; existing?: s
           return;
         }
         if (!stores.has(STORE_GAMES) || !stores.has(STORE_SETTINGS)) req.onupgradeneeded?.();
+        db.closed = false;
         req.onsuccess?.();
       });
       return req;
@@ -635,5 +645,48 @@ describe("SV-20 db.ts", () => {
     const thrown = await openIdbBackend(f.factory);
     await expect(thrown.put(record("g1", 1))).rejects.toThrow("DataCloneError");
     expect(f.log.at(-1)).toBe("abort");
+  });
+
+  test("SV-23 ブラウザが接続を切ったら（onclose）、次の読み書きで開き直す", async () => {
+    const f = fakeIdb();
+    const be = await openIdbBackend(f.factory);
+    await be.put(record("g1", 1));
+    f.db.closed = true;
+    f.db.onclose?.();
+    await be.put(record("g1", 2));
+    expect(f.log.filter((l) => l.startsWith("open"))).toHaveLength(2);
+    expect(((await be.get("g1")) as GameRecord).updatedAt).toBe(2);
+  });
+
+  test("SV-23 versionchange で閉じた後も、次の読み書きで開き直す", async () => {
+    const f = fakeIdb();
+    const be = await openIdbBackend(f.factory);
+    f.db.onversionchange?.();
+    await be.put(record("g1", 1));
+    expect(f.log.filter((l) => l.startsWith("open"))).toHaveLength(2);
+  });
+
+  test("SV-23 通知なしに閉じていた接続（InvalidStateError）はその回は reject し、次の読み書きで開き直す", async () => {
+    const f = fakeIdb();
+    const be = await openIdbBackend(f.factory);
+    f.db.closed = true;
+    await expect(be.put(record("g1", 1))).rejects.toThrow("InvalidStateError");
+    await be.put(record("g1", 1));
+    expect(f.log.filter((l) => l.startsWith("open"))).toHaveLength(2);
+    // 自動の再試行はしない（失敗した回の中では開き直さない）
+    expect(f.log.filter((l) => l.startsWith("tx"))).toHaveLength(2);
+  });
+
+  test("SV-23 開き直しに失敗した回は reject し、その次の読み書きでまた開き直す", async () => {
+    const opts: { openFails?: boolean } = {};
+    const f = fakeIdb(opts);
+    const be = await openIdbBackend(f.factory);
+    f.db.close();
+    f.db.onclose?.();
+    opts.openFails = true;
+    await expect(be.put(record("g1", 1))).rejects.toThrow("UnknownError");
+    opts.openFails = false;
+    await be.put(record("g1", 1));
+    expect(f.log.filter((l) => l.startsWith("open"))).toHaveLength(3);
   });
 });
