@@ -1,18 +1,23 @@
 // UI-53 のパーティ欄（ui §2 の party 領域。既定 240×64）。見出し行は置かず、各行に HP / MP / SAN の短いラベルを付ける。
-// 行の矩形は layout.ts の dungeonLayout（partyRows）。既定では行 i は領域内の y2+10i..11+10i。列（x）: 名前 2..49、HP 52..59、値 60..91（右寄せ）、MP 96..103、値 104..127、
-// SAN 132..143、値 144..155（右寄せ）、状態 160..237。
+// 行の矩形は layout.ts の dungeonLayout（partyRows）。既定では行 i は領域内の y2+10i..11+10i。
+// 列（x、閉区間。美咲は半角 4px・全角 8px）は PARTY_COLUMNS: 名前 2..49（全角 6 文字）、職業の略称 52..63（classes[].abbr。ASCII 3 文字）、
+// HP 68..75、値 76..103（右寄せ。「999/999」）、MP 108..115、値 116..143（右寄せ）、SAN 148..159、値 160..171（右寄せ）、状態 176..237。
+// MP は mpMax が 0 のメンバーではラベルごと空欄にする。
 // 状態の列は、life が alive でなければ party.life.*、alive なら status の短い名前（party.status.<id>）を空白区切りで出す。
 // 戦闘の再生用に setMp / setStatus / flash（UI-42 の被弾。opacity 2 往復）/ setActive（入力中の名前を accent 色）を持つ。
 // el は region の位置と大きさに自分で置く。モジュールのトップレベルでは DOM に触れない。
-import type { StatusId, Strings } from "../../core/data/index";
+import type { ClassDef, StatusId, Strings } from "../../core/data/index";
 import type { Character, Life } from "../../core/types";
 import { PARTY_ROW_H, type Rect } from "../layout";
 
-/** life は状態の列（死亡・灰、生存なら状態異常の短い名前。M2 からの欄名を保つ） */
-export type PartyRowText = { name: string; hp: string; mp: string; san: string; life: string };
+/**
+ * abbr は職業の略称（classes[].abbr）。mp と mpLabel は mpMax が 0 なら空。
+ * life は状態の列（死亡・灰、生存なら状態異常の短い名前。M2 からの欄名を保つ）
+ */
+export type PartyRowText = { name: string; abbr: string; hp: string; mp: string; mpLabel: string; san: string; life: string };
 
 /** 状態の列の文字列（純粋）。死亡・灰はそれだけ、生存なら状態異常の短い名前を status の順に空白区切り */
-function conditionText(life: Life, status: readonly StatusId[], strings: Strings): string {
+export function conditionText(life: Life, status: readonly StatusId[], strings: Strings): string {
   if (life !== "alive") {
     const key = `party.life.${life}`;
     return strings[key] ?? key;
@@ -29,16 +34,19 @@ function hpText(hp: number, hpMax: number): string {
   return `${hp}/${hpMax}`;
 }
 
+/** mpMax が 0 なら空欄（呪文を使わない職業） */
 function mpText(mp: number, mpMax: number): string {
-  return `${mp}/${mpMax}`;
+  return mpMax > 0 ? `${mp}/${mpMax}` : "";
 }
 
-/** 1 行分の表示文字列（純粋） */
-export function formatPartyRow(ch: Character, strings: Strings): PartyRowText {
+/** 1 行分の表示文字列（純粋）。略称は classes[].abbr（表示のための参照。知らない職業は空） */
+export function formatPartyRow(ch: Character, strings: Strings, classes: readonly ClassDef[]): PartyRowText {
   return {
     name: ch.name,
+    abbr: classes.find((c) => c.id === ch.classId)?.abbr ?? "",
     hp: hpText(ch.hp, ch.hpMax),
     mp: mpText(ch.mp, ch.mpMax),
+    mpLabel: ch.mpMax > 0 ? (strings["party.mp"] ?? "party.mp") : "",
     san: String(ch.san),
     life: conditionText(ch.life, ch.status, strings),
   };
@@ -46,18 +54,21 @@ export function formatPartyRow(ch: Character, strings: Strings): PartyRowText {
 
 const ROW_H = PARTY_ROW_H;
 
-type Col = { left: number; width: number; right?: boolean };
-const COLS = {
+export type PartyColumn = { left: number; width: number; right?: boolean };
+/** ui §2 のパーティの行の列（行内の x と幅。並びは 名前 / 略称 / HP / MP / SAN / 状態） */
+export const PARTY_COLUMNS = {
   name: { left: 2, width: 48 },
-  hpLabel: { left: 52, width: 8 },
-  hp: { left: 60, width: 32, right: true },
-  mpLabel: { left: 96, width: 8 },
-  mp: { left: 104, width: 24 },
-  sanLabel: { left: 132, width: 12 },
-  san: { left: 144, width: 12, right: true },
-  status: { left: 160, width: 78 },
-} as const satisfies Record<string, Col>;
-type ColKey = keyof typeof COLS;
+  abbr: { left: 52, width: 12 },
+  hpLabel: { left: 68, width: 8 },
+  hp: { left: 76, width: 28, right: true },
+  mpLabel: { left: 108, width: 8 },
+  mp: { left: 116, width: 28, right: true },
+  sanLabel: { left: 148, width: 12 },
+  san: { left: 160, width: 12, right: true },
+  status: { left: 176, width: 62 },
+} as const satisfies Record<string, PartyColumn>;
+type ColKey = keyof typeof PARTY_COLUMNS;
+const COLS: Readonly<Record<ColKey, PartyColumn>> = PARTY_COLUMNS;
 
 type Row = { line: HTMLElement; cells: Record<ColKey, HTMLElement>; hpMax: number; mpMax: number; life: Life; status: StatusId[] };
 
@@ -76,8 +87,9 @@ export type PartyPanel = {
   setActive(id: string | null): void;
 };
 
-/** region は ui §2 の party 領域、rows は行 0..party.size-1 の矩形（どちらもステージ座標） */
-export function createPartyPanel(strings: Strings, region: Rect, rows: readonly Rect[]): PartyPanel {
+/** region は ui §2 の party 領域、rows は行 0..party.size-1 の矩形（どちらもステージ座標）。classes は略称（abbr）の参照 */
+export function createPartyPanel(o: { strings: Strings; classes: readonly ClassDef[]; region: Rect; rows: readonly Rect[] }): PartyPanel {
+  const { strings, classes, region, rows } = o;
   const el = document.createElement("div");
   el.className = "party-panel";
   Object.assign(el.style, {
@@ -110,7 +122,7 @@ export function createPartyPanel(strings: Strings, region: Rect, rows: readonly 
     });
     const cells = {} as Record<ColKey, HTMLElement>;
     for (const k of Object.keys(COLS) as ColKey[]) {
-      const c: Col = COLS[k];
+      const c = COLS[k];
       const span = document.createElement("span");
       Object.assign(span.style, {
         position: "absolute",
@@ -126,7 +138,6 @@ export function createPartyPanel(strings: Strings, region: Rect, rows: readonly 
       cells[k] = span;
     }
     cells.hpLabel.textContent = strings["party.hp"] ?? "party.hp";
-    cells.mpLabel.textContent = strings["party.mp"] ?? "party.mp";
     cells.sanLabel.textContent = strings["party.san"] ?? "party.san";
     cells.status.style.color = "var(--c-danger)";
     el.appendChild(line);
@@ -149,9 +160,11 @@ export function createPartyPanel(strings: Strings, region: Rect, rows: readonly 
       byId.clear();
       party.forEach((ch, i) => {
         const row = makeRow(i);
-        const t = formatPartyRow(ch, strings);
+        const t = formatPartyRow(ch, strings, classes);
         row.cells.name.textContent = t.name;
+        row.cells.abbr.textContent = t.abbr;
         row.cells.hp.textContent = t.hp;
+        row.cells.mpLabel.textContent = t.mpLabel;
         row.cells.mp.textContent = t.mp;
         row.cells.san.textContent = t.san;
         row.cells.status.textContent = t.life;

@@ -96,7 +96,7 @@ export function createDungeonScreen(o: {
 
   const message = createMessageWindow({ speed: o.textSpeed, historyMax: o.historyMax, region: r.message, layout: lay.message });
 
-  const party = createPartyPanel(o.strings, r.party, lay.partyRows);
+  const party = createPartyPanel({ strings: o.strings, classes: o.data.classes, region: r.party, rows: lay.partyRows });
 
   const controls = createControls({
     region: r.controls,

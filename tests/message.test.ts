@@ -57,18 +57,23 @@ describe("header.ts / party.ts（純粋な部分）", () => {
     }
   });
 
-  test("UI-53 formatPartyRow は HP を hp/hpMax、状態を party.life.* で出し、生存は空", () => {
+  test("UI-53/ui §2 formatPartyRow は名前・略称・HP を hp/hpMax・MP を mp/mpMax・SAN、状態を party.life.* で出し、生存は空", () => {
     const s = newGame(1);
-    const ch = s.party[0]!;
-    const row = formatPartyRow(ch, data.strings);
+    // c5 エル（mage、MP 7/7）
+    const ch = s.party[4]!;
+    expect(ch.classId).toBe("mage");
+    const row = formatPartyRow(ch, data.strings, data.classes);
     expect(row).toEqual({
       name: ch.name,
+      abbr: "MAG",
       hp: `${ch.hp}/${ch.hpMax}`,
       mp: `${ch.mp}/${ch.mpMax}`,
+      mpLabel: data.strings["party.mp"],
       san: String(ch.san),
       life: "",
     });
-    expect(formatPartyRow({ ...ch, life: "dead", hp: 0 }, data.strings).life).toBe(data.strings["party.life.dead"]);
-    expect(formatPartyRow({ ...ch, life: "ash", hp: 0 }, data.strings).life).toBe(data.strings["party.life.ash"]);
+    expect(row.mp).toBe("7/7");
+    expect(formatPartyRow({ ...ch, life: "dead", hp: 0 }, data.strings, data.classes).life).toBe(data.strings["party.life.dead"]);
+    expect(formatPartyRow({ ...ch, life: "ash", hp: 0 }, data.strings, data.classes).life).toBe(data.strings["party.life.ash"]);
   });
 });

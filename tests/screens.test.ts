@@ -10,7 +10,7 @@ import {
   randomizePersonalities,
 } from "../src/presenter/views/creation";
 import { townEntries, townEntryLabel } from "../src/presenter/views/town";
-import { formatPartyRow } from "../src/presenter/views/party";
+import { formatPartyRow, PARTY_COLUMNS } from "../src/presenter/views/party";
 import { createRunGate } from "../src/presenter/run-gate";
 import type { Command, GameEvent } from "../src/core/types";
 import { data, newGame } from "./helpers/core";
@@ -58,13 +58,51 @@ describe("パーティ欄", () => {
   test("UI-54/CH-44 formatPartyRow の状態の列: 生存なら状態異常の短い名前を空白区切り、死亡・灰はそれだけ", () => {
     const ch = newGame(1).party[0]!;
     const st = (k: string): string => data.strings[`party.status.${k}`]!;
-    expect(formatPartyRow(ch, data.strings).life).toBe("");
-    expect(formatPartyRow({ ...ch, status: ["poison", "sleep"] }, data.strings).life).toBe(`${st("poison")} ${st("sleep")}`);
-    expect(formatPartyRow({ ...ch, status: ["poison", "sleep"] }, data.strings).life).toBe("毒 眠");
-    expect(formatPartyRow({ ...ch, status: ["stone"] }, data.strings).life).toBe(st("stone"));
+    expect(formatPartyRow(ch, data.strings, data.classes).life).toBe("");
+    expect(formatPartyRow({ ...ch, status: ["poison", "sleep"] }, data.strings, data.classes).life).toBe(`${st("poison")} ${st("sleep")}`);
+    expect(formatPartyRow({ ...ch, status: ["poison", "sleep"] }, data.strings, data.classes).life).toBe("毒 眠");
+    expect(formatPartyRow({ ...ch, status: ["stone"] }, data.strings, data.classes).life).toBe(st("stone"));
     // 死亡・灰は状態異常を出さない
-    expect(formatPartyRow({ ...ch, life: "dead", hp: 0, status: ["poison"] }, data.strings).life).toBe(data.strings["party.life.dead"]);
-    expect(formatPartyRow({ ...ch, life: "ash", hp: 0, status: ["paralysis"] }, data.strings).life).toBe(data.strings["party.life.ash"]);
+    expect(formatPartyRow({ ...ch, life: "dead", hp: 0, status: ["poison"] }, data.strings, data.classes).life).toBe(data.strings["party.life.dead"]);
+    expect(formatPartyRow({ ...ch, life: "ash", hp: 0, status: ["paralysis"] }, data.strings, data.classes).life).toBe(data.strings["party.life.ash"]);
+  });
+
+  test("ui §2 X1/X2 formatPartyRow の略称は classes[].abbr（fighter → WAR …）。知らない職業は空", () => {
+    const party = newGame(1).party;
+    expect(party.map((ch) => formatPartyRow(ch, data.strings, data.classes).abbr)).toEqual(["WAR", "WAR", "THI", "PRI", "MAG", "THI"]);
+    const want: Record<string, string> = { fighter: "WAR", thief: "THI", priest: "PRI", mage: "MAG", samurai: "SAM", lord: "LOR", bishop: "BIS" };
+    for (const c of data.classes) expect(formatPartyRow({ ...party[0]!, classId: c.id }, data.strings, data.classes).abbr, c.id).toBe(want[c.id]);
+    expect(formatPartyRow({ ...party[0]!, classId: "nope" }, data.strings, data.classes).abbr).toBe("");
+  });
+
+  test("ui §2 X2 mpMax が 0 のメンバー（戦士・盗賊）は MP の値とラベルを空欄にする。mpMax が 1 以上なら mp/mpMax とラベル", () => {
+    const party = newGame(1).party;
+    const c1 = formatPartyRow(party[0]!, data.strings, data.classes); // アルド（fighter、MP 0/0）
+    expect(party[0]!.mpMax).toBe(0);
+    expect([c1.mp, c1.mpLabel]).toEqual(["", ""]);
+    const c4 = formatPartyRow(party[3]!, data.strings, data.classes); // ドナ（priest、MP 5/5）
+    expect([c4.mp, c4.mpLabel]).toEqual(["5/5", data.strings["party.mp"]]);
+    // 現在値が 0 でも mpMax があれば空欄にしない
+    expect(formatPartyRow({ ...party[3]!, mp: 0 }, data.strings, data.classes).mp).toBe("0/5");
+  });
+
+  test("ui §2 X2 パーティの行の列は 名前 / 略称 / HP / MP / SAN / 状態 の順で、重ならず、右端は 240 以内。幅は美咲（半角 4px・全角 8px）で中身が入る", () => {
+    const order = ["name", "abbr", "hpLabel", "hp", "mpLabel", "mp", "sanLabel", "san", "status"] as const;
+    expect(Object.keys(PARTY_COLUMNS)).toEqual([...order]);
+    for (let i = 1; i < order.length; i++) {
+      const a = PARTY_COLUMNS[order[i - 1]!];
+      expect(a.left + a.width, order[i]).toBeLessThanOrEqual(PARTY_COLUMNS[order[i]!].left);
+    }
+    const last = PARTY_COLUMNS.status;
+    expect(last.left + last.width).toBeLessThanOrEqual(240);
+    expect(PARTY_COLUMNS.name.width).toBeGreaterThanOrEqual(6 * 8); // 全角 6 文字
+    expect(PARTY_COLUMNS.abbr.width).toBeGreaterThanOrEqual(3 * 4); // ASCII 3 文字
+    expect(PARTY_COLUMNS.hp.width).toBeGreaterThanOrEqual("999/999".length * 4);
+    expect(PARTY_COLUMNS.mp.width).toBeGreaterThanOrEqual("999/999".length * 4);
+    expect(PARTY_COLUMNS.san.width).toBeGreaterThanOrEqual("100".length * 4);
+    // 状態の列: 4 つの状態異常の短い名前を空白区切り（全角 4 + 半角 3）
+    expect(PARTY_COLUMNS.status.width).toBeGreaterThanOrEqual(4 * 8 + 3 * 4);
+    for (const k of ["hp", "mp", "san"] as const) expect(PARTY_COLUMNS[k].right, k).toBe(true);
   });
 });
 
