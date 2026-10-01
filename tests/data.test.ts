@@ -122,6 +122,13 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.dungeon.defaultRooms = [3, 4, 6]), "config.json", `${p}: expected [min, max] (2 elements), got 3 element(s)`);
     expectIssue((r) => delete r.config.dungeon.defaultRooms, "config.json", `${p}: missing required field`);
   });
+  test("data: CH-51 san.trap は 0 以上の整数（必須）", () => {
+    expectIssue((r) => (r.config.san.trap = -1), "config.json", "san.trap: expected integer >= 0, got -1");
+    expectIssue((r) => (r.config.san.trap = 1.5), "config.json", "san.trap: expected integer");
+    expectIssue((r) => (r.config.san.trap = "3"), "config.json", "san.trap: expected integer >= 0, got string");
+    expectIssue((r) => delete r.config.san.trap, "config.json", "san.trap: missing required field");
+    expect(issuesOf((r) => (r.config.san.trap = 0))).toEqual([]);
+  });
   test("data: CH-53 confusedRatio < uneasyRatio", () => {
     expectIssue((r) => (r.config.san.confusedRatio = 0.6), "config.json", "CH-53");
   });

@@ -228,6 +228,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       floorDescend: I(NON_NEG),
       unidentifiedGroup: I(NON_NEG),
       allyDeath: I(NON_NEG),
+      trap: I(NON_NEG),
       uneasyRatio: N(RATIO),
       confusedRatio: N(RATIO),
       uneasyChance: I(PERCENT),

@@ -102,6 +102,8 @@ export type Config = {
     unidentifiedGroup: number;
     /** 減少量（正の数） */
     allyDeath: number;
+    /** 減少量（正の数）。罠の発動時、生存メンバー全員（CH-51） */
+    trap: number;
     uneasyRatio: number;
     confusedRatio: number;
     uneasyChance: number;
