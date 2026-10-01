@@ -20,9 +20,13 @@ export function vitBonus(vit: number, cfg: Config): number {
   return Math.floor((vit - cfg.growth.hpVitPivot) / cfg.growth.hpVitDivisor);
 }
 
-/** CH-65: レベル 1 の hpMax（ダイスの最大値。乱数なし）。 */
+/**
+ * CH-65: レベル 1 の hpMax（乱数なし）。max(ceil(hpDie × initialHpMinDieRatio), hpDie + 生命力補正)。
+ * hpGainMin はレベルアップの増分にだけ使う（ユーザー決定）。
+ */
 export function initialHpMax(cls: ClassDef, stats: StatBlock, cfg: Config): number {
-  return Math.max(cfg.growth.hpGainMin, cls.hpDie + vitBonus(stats.vit, cfg));
+  const floor = Math.ceil(cls.hpDie * cfg.growth.initialHpMinDieRatio - 1e-9);
+  return Math.max(floor, cls.hpDie + vitBonus(stats.vit, cfg));
 }
 
 /** MG-01: 関連能力値。cls.spells の系統の能力値の最大。系統が無ければ null。 */

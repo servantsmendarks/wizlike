@@ -64,6 +64,8 @@ export type Config = {
     hpVitPivot: number;
     hpVitDivisor: number;
     hpGainMin: number;
+    /** CH-65: レベル 1 の hpMax の下限 = ceil(hpDie × これ)【仮】 */
+    initialHpMinDieRatio: number;
     mpStatPivot: number;
     mpStatDivisor: number;
   };

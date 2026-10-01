@@ -133,6 +133,12 @@ describe("data: config.json", () => {
       expect(issuesOf((r) => (r.config.dungeon[k] = [1, 1]))).toEqual([]);
     }
   });
+  test("data: CH-65 growth.initialHpMinDieRatio は 0 より大きく 1 以下", () => {
+    expectIssue((r) => (r.config.growth.initialHpMinDieRatio = 0), "config.json", "growth.initialHpMinDieRatio: expected number in 0..1, got 0");
+    expectIssue((r) => (r.config.growth.initialHpMinDieRatio = 1.5), "config.json", "growth.initialHpMinDieRatio: expected number in 0..1, got 1.5");
+    expectIssue((r) => delete r.config.growth.initialHpMinDieRatio, "config.json", "growth.initialHpMinDieRatio: missing required field");
+    expect(issuesOf((r) => (r.config.growth.initialHpMinDieRatio = 1))).toEqual([]);
+  });
   test("data: DG-05 dungeon.roomAttempts は 1 以上の整数", () => {
     expectIssue((r) => (r.config.dungeon.roomAttempts = 0), "config.json", "dungeon.roomAttempts: expected integer >= 1, got 0");
     expectIssue((r) => delete r.config.dungeon.roomAttempts, "config.json", "dungeon.roomAttempts: missing required field");

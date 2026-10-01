@@ -86,13 +86,26 @@ describe("growth: 必要経験値と増分の式", () => {
     expect([7, 8, 9, 10, 11, 12, 14].map((v) => vitBonus(v, cfg))).toEqual([-2, -1, -1, 0, 0, 1, 2]);
   });
 
-  test("CH-65 レベル 1 の hpMax は max(hpGainMin, hpDie + vitBonus)（アルド 11、ベルク 12、キリ 5、ドナ 8、エル 2、フィン 5）", () => {
+  test("CH-65 レベル 1 の hpMax は max(ceil(hpDie × initialHpMinDieRatio), hpDie + vitBonus)（アルド 11、ベルク 12、キリ 5、ドナ 8、エル 2、フィン 5）", () => {
+    // 手計算（initialHpMinDieRatio 0.5）:
+    //   アルド 戦士 d10・vit 12（+1）: max(5, 11) = 11   ベルク 戦士 d10・vit 14（+2）: max(5, 12) = 12
+    //   キリ 盗賊 d6・vit 8（−1）: max(3, 5) = 5         ドナ 僧侶 d8・vit 10（0）: max(4, 8) = 8
+    //   エル 魔術師 d4・vit 7（−2）: max(2, 2) = 2      フィン 盗賊 d6・vit 9（−1）: max(3, 5) = 5
+    expect(cfg.growth.initialHpMinDieRatio).toBe(0.5);
     const want = [11, 12, 5, 8, 2, 5];
     cfg.prototypeParty.members.forEach((m, i) => {
       expect(initialHpMax(classOf(data, m.classId), m.stats, cfg)).toBe(want[i]);
     });
-    // 合計が下限を下回るとき: d4 + (vit 3 → −4) = 0 → 1
-    expect(initialHpMax(classOf(data, "mage"), { ...cfg.prototypeParty.members[4]!.stats, vit: 3 }, cfg)).toBe(1);
+    // 合計が下限を下回るとき（vit 3 → −4）: 魔術師 d4 は 0 → ceil(4/2) = 2、盗賊 d6 は 2 → ceil(6/2) = 3、戦士 d10 は 6 → 下限 5 を上回るので 6
+    const st = { ...cfg.prototypeParty.members[4]!.stats, vit: 3 };
+    expect(initialHpMax(classOf(data, "mage"), st, cfg)).toBe(2);
+    expect(initialHpMax(classOf(data, "thief"), st, cfg)).toBe(3);
+    expect(initialHpMax(classOf(data, "fighter"), st, cfg)).toBe(6);
+    // hpGainMin は初期値に効かない（大きくしても変わらない）。比率を 1 にすると下限は hpDie そのもの
+    expect(initialHpMax(classOf(data, "mage"), st, { ...cfg, growth: { ...cfg.growth, hpGainMin: 9 } })).toBe(2);
+    expect(initialHpMax(classOf(data, "thief"), st, { ...cfg, growth: { ...cfg.growth, initialHpMinDieRatio: 1 } })).toBe(6);
+    // 奇数のダイスは切り上げ（d5 × 0.5 = 2.5 → 3）
+    expect(initialHpMax({ ...classOf(data, "mage"), hpDie: 5 }, st, cfg)).toBe(3);
   });
 
   test("MG-01 mpGain: ドナ 5、エル 7、戦士 0。司教は iq と pie の高い方。開始レベル前の侍も伸びる。補正は 0 未満にならない", () => {
