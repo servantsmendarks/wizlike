@@ -9,7 +9,7 @@ import {
   dungeonLayout,
   layoutWarnings,
   regions,
-  SAVE_BANNER,
+  saveBannerRect,
   TITLE_BUTTONS,
   TITLE_HEADING_Y,
   TITLE_NOTICE,
@@ -28,6 +28,8 @@ const N = data.config.party.size;
 /** 既定の config.ui.layout（16/150/70/64/100）での迷宮の画面の矩形 */
 const L = dungeonLayout(regions(data.config.ui.layout, W), N);
 const HEADER_SETTINGS = L.header.settings;
+/** 既定の config での SV-23 の帯 */
+const SAVE_BANNER = saveBannerRect(regions(data.config.ui.layout, W), data.config.ui.saveBannerHeight);
 
 /** 画面ごとの押せる矩形（名前 → 矩形） */
 const SCREENS: Record<string, Record<string, Rect>> = {
@@ -253,8 +255,8 @@ describe("layout", () => {
     expect(layoutWarnings(g2, dungeonLayout(g2, N))).toEqual(["ui.layout: message region (height 13) has no text line"]);
   });
 
-  test("UI-50 タイトル: 題字 y24、行 i は y52+34i の 224×32、行の欄は 5 行ちょうど、案内の欄・ボタン 4 枠は行と重ならない", () => {
-    expect(TITLE_HEADING_Y).toBe(24);
+  test("UI-50 タイトル: 題字 y32、行 i は y52+34i の 224×32、行の欄は 5 行ちょうど、案内の欄・ボタン 4 枠は行と重ならない", () => {
+    expect(TITLE_HEADING_Y).toBe(32);
     expect(TITLE_ROWS).toEqual([0, 1, 2, 3, 4].map((i) => ({ x: 8, y: 52 + 34 * i, w: 224, h: 32 })));
     expect(TITLE_ROW_PITCH).toBe(34);
     expect(TITLE_ROW_AREA).toEqual({ x: 8, y: 52, w: 224, h: 168 });
@@ -271,17 +273,22 @@ describe("layout", () => {
     expect(inside(TITLE_NOTICE, STAGE)).toBe(true);
     for (const r of [TITLE_ROW_AREA, ...TITLE_BUTTONS]) expect(overlaps(TITLE_NOTICE, r)).toBe(false);
     for (const b of TITLE_BUTTONS) expect(overlaps(b, TITLE_ROW_AREA)).toBe(false);
-    // SV-23 の帯（y16..27）は題字と重なる位置でも押せないので操作を妨げないが、行とボタンには重ならない
+    // SV-23 の帯（既定 y16..27）は題字（1 行 8px）・行・ボタンに重ならない
+    expect(SAVE_BANNER.y + SAVE_BANNER.h).toBeLessThanOrEqual(TITLE_HEADING_Y);
     for (const r of [TITLE_ROW_AREA, ...TITLE_BUTTONS]) expect(overlaps(SAVE_BANNER, r)).toBe(false);
   });
 
-  test("SV-23 保存できない帯はヘッダー（y0..15）の直下 y16..27 で、ヘッダーの設定ボタンと重ならず、ステージの内側", () => {
+  test("SV-23 保存できない帯はヘッダーの直下で高さ config.ui.saveBannerHeight（既定 12 で y16..27）。ヘッダーの設定ボタンと重ならず、ステージの内側", () => {
     const g = regions(data.config.ui.layout, W);
+    expect(data.config.ui.saveBannerHeight).toBe(12);
     expect(SAVE_BANNER).toEqual({ x: 0, y: 16, w: 240, h: 12 });
     expect(inside(SAVE_BANNER, STAGE)).toBe(true);
     expect(overlaps(SAVE_BANNER, g.header)).toBe(false);
     expect(overlaps(SAVE_BANNER, HEADER_SETTINGS)).toBe(false);
     expect(SAVE_BANNER.y).toBe(g.header.y + g.header.h);
+    // header の高さを変えたら帯も付いてくる
+    const g2 = regions({ header: 20, view: 146, message: 70, party: 64, controls: 100 }, W);
+    expect(saveBannerRect(g2, 10)).toEqual({ x: 0, y: 20, w: 240, h: 10 });
   });
 
   test("UI-10 scale 4/3 で 30 論理 px が 40 CSS px 以上", () => {

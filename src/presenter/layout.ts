@@ -205,15 +205,17 @@ export function layoutWarnings(g: Regions, l: DungeonLayout): string[] {
 }
 
 /**
- * SV-23 の「保存できません」の帯（ステージ座標。押せない）。ヘッダー（y0..15）の直下 y16..27【仮】に置き、
- * ヘッダーの設定ボタンを覆わない
+ * SV-23 の「保存できません」の帯（ステージ座標。押せない）。ヘッダーの直下に、高さ config.ui.saveBannerHeight【仮】で置き、
+ * ヘッダーの設定ボタンを覆わない（既定の header 16・高さ 12 なら y16..27）
  */
-export const SAVE_BANNER: Rect = { x: 0, y: 16, w: 240, h: 12 };
+export function saveBannerRect(g: Regions, height: number): Rect {
+  return { x: 0, y: g.header.y + g.header.h, w: g.header.w, h: height };
+}
 
 // ---- タイトル（UI-50）。題字 → 一覧の行（最大 5 行が見え、それより多ければ縦スクロール）→ 案内の欄 → ボタン 4 枠
 
-/** 題字の上端（論理 px）。中央寄せ */
-export const TITLE_HEADING_Y = 24;
+/** 題字の上端（論理 px）。中央寄せ。既定の SV-23 の帯（y16..27）の下に置く */
+export const TITLE_HEADING_Y = 32;
 
 /** 一覧の行の間隔（行の高さ 32 ＋ 間 2） */
 export const TITLE_ROW_PITCH = 34;

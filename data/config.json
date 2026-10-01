@@ -53,7 +53,8 @@
   "ui": {
     "textSpeedMs": 30, "diceStepMs": 300, "flashMs": 120, "shakeMs": 150, "viewFadeMs": 80,
     "layout": { "header": 16, "view": 150, "message": 70, "party": 64, "controls": 100 },
-    "messageHistory": 50
+    "messageHistory": 50,
+    "saveBannerHeight": 12
   },
   "prototypeParty": {
     "startingGold": 300,

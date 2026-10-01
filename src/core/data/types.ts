@@ -160,6 +160,8 @@ export type Config = {
     layout: { header: number; view: number; message: number; party: number; controls: number };
     /** UI-43 / UI-11: メッセージ履歴に残す件数【仮】 */
     messageHistory: number;
+    /** SV-23: 「保存できません」の帯の高さ（論理 px）【仮】。帯はヘッダーの直下に置く */
+    saveBannerHeight: number;
   };
   prototypeParty: { startingGold: number; members: PrototypeMember[] };
 };

@@ -1,4 +1,4 @@
-// SV-23: 「保存できません」の帯。ステージ直下の最前面に置き、ヘッダーの直下（SAVE_BANNER）を覆う。
+// SV-23: 「保存できません」の帯。ステージ直下の最前面に置き、ヘッダーの直下（layout の saveBannerRect）を覆う。
 // 押せない（pointer-events:none）ので、下の画面の操作を妨げない。タイトルでも見える。
 // モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";

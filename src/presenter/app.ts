@@ -38,7 +38,7 @@ import {
   forwardStep,
   type Action,
 } from "./input/swipe";
-import { dungeonLayout, layoutWarnings, regions, SAVE_BANNER } from "./layout";
+import { dungeonLayout, layoutWarnings, regions, saveBannerRect } from "./layout";
 import { createPlayer } from "./playback";
 import { resumePlan } from "./resume";
 import { createRunGate } from "./run-gate";
@@ -174,7 +174,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   });
 
   // SV-23: 保存できないことを知らせる帯（最前面。押せない）
-  const banner = createSaveBanner({ strings, rect: SAVE_BANNER });
+  const banner = createSaveBanner({ strings, rect: saveBannerRect(playRegions, data.config.ui.saveBannerHeight) });
   const bannerState = createSaveBannerState(o.saves.available);
   banner.setVisible(bannerState.visible());
 

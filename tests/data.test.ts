@@ -222,6 +222,11 @@ describe("data: config.json", () => {
       "config.json: ui.layout: ui §2: sum of heights 410 must equal stage.height 400",
     ]);
   });
+  test("data: SV-23 ui.saveBannerHeight は 1 以上の整数", () => {
+    expectIssue((r) => (r.config.ui.saveBannerHeight = 0), "config.json", "ui.saveBannerHeight: expected integer >= 1, got 0");
+    expectIssue((r) => delete r.config.ui.saveBannerHeight, "config.json", "ui.saveBannerHeight: missing required field");
+  });
+
   test("data: UI-43 ui.messageHistory は 1 以上の整数", () => {
     expectIssue((r) => (r.config.ui.messageHistory = 0), "config.json", "ui.messageHistory: expected integer >= 1, got 0");
     expectIssue((r) => delete r.config.ui.messageHistory, "config.json", "ui.messageHistory: missing required field");
