@@ -194,6 +194,33 @@ describe("controls", () => {
     expect(picked).toEqual(["a", "x", "x"]);
   });
 
+  test("UI-44/UI-56 ゴーストクリック: オート解除の pointerdown の直後に同じ矩形へ出た close（全滅の「街へ」）は、離して GHOST_CLICK_MS までの click で onClose を呼ばない", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    let closed = 0;
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, onRelease: () => {}, onClose: () => closed++ });
+    const root = created.find((e) => e.className === "controls")!;
+    c.setAutoStop("stop", () => {
+      // 全滅のラウンドの再生が指を離す前に終わり、内訳の「街へ」が出る（演出スキップ）
+      c.setCloseLabel(data.strings["wipe.toTown"]!);
+      c.setMode("close");
+    });
+    c.setMode("autoStop");
+    const stop = created.find((e) => e.className === "controls-auto-stop")!;
+    const close = created.find((e) => e.className === "controls-close")!;
+    root.dispatch("pointerdown", { timeStamp: 0 });
+    stop.dispatch("pointerdown", { timeStamp: 0 });
+    root.dispatch("pointerup", { timeStamp: 80 });
+    close.dispatch("click", { timeStamp: 81 });
+    expect(closed).toBe(0);
+    // 新しい pointerdown の後の click は受ける
+    root.dispatch("pointerdown", { timeStamp: 200 });
+    root.dispatch("pointerup", { timeStamp: 260 });
+    close.dispatch("click", { timeStamp: 261 });
+    expect(closed).toBe(1);
+  });
+
   test("UI-54 setBattleMenu の配置: party は battleParty の 4 枠、member は battleMember の 5 枠に置き、枠数を超える分は捨てる", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);

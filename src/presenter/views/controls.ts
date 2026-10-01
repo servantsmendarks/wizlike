@@ -3,7 +3,8 @@
 // 十字ボタンは pointerdown で反応する（click は使わない）。離したら onRelease（前進の長押しの連打を止める。UI-31）。
 // ゴーストクリックの抑止: 十字ボタンと「オート解除」は pointerdown で反応し、演出スキップ中は指を離す前に同じ位置へ
 // 戦闘の枠や一覧（click で反応）が出ることがある。タッチ由来の click は pointerdown の preventDefault では止まらないので、
-// それらの pointerdown から、同じ操作の pointerup / pointercancel の後 GHOST_CLICK_MS までの click を、戦闘の枠と一覧では捨てる。
+// それらの pointerdown から、同じ操作の pointerup / pointercancel の後 GHOST_CLICK_MS までの click を、戦闘の枠と一覧と
+// close のボタン（全滅の内訳の「街へ」は「オート解除」と同じ矩形に出る）では捨てる。
 // 新しい pointerdown（別の操作の始まり）が来たら抑止を解く。時刻は event.timeStamp で比べ、タイマーは使わない。
 // Action から Command への変換と長押しの連打は呼び出し側（app）が持つ。表示層は前進できるかを判定しない（UI-35）。
 // モジュールのトップレベルでは DOM に触れない。
@@ -236,7 +237,9 @@ export function createControls(o: {
   close.className = "controls-close";
   close.textContent = s("common.close");
   buttonStyle(close, o.layout.mapClose, origin);
-  close.addEventListener("click", () => o.onClose());
+  close.addEventListener("click", (e) => {
+    if (!ghost.blocks(stampOf(e))) o.onClose();
+  });
   el.appendChild(close);
 
   // ---- 戦闘の枠（layout.battleParty / battleMember）
