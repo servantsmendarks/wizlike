@@ -118,7 +118,9 @@ function setup(over: Partial<StageInputOptions> = {}, scale = 2) {
     swipeEnabled: () => swipe,
     busy: () => busy,
     onBusyTap: () => out.push("busyTap"),
-    onAnyPress: () => out.push("press"),
+    onAnyPress: () => {
+      out.push("press");
+    },
     onSwipe: (a) => out.push(`swipe ${JSON.stringify(a)}`),
     onSwipeRelease: () => out.push("swipeRelease"),
     onDebugSwipe: (dx, dy, d) => out.push(`debug ${dx},${dy},${d}`),
@@ -335,15 +337,55 @@ describe("attachStageInput", () => {
     const a = t.button("a");
     t.stage.emit("click", { detail: 1, target: a.inner });
     expect(t.out).toEqual([]);
+    // キーボード由来の click も onAnyPress を先に呼ぶ（UI-25: 自動歩行を止める）
     const r = t.stage.emit("click", { detail: 0, target: a.inner });
     expect(r.prevented).toBe(true);
-    expect(t.out).toEqual(["tap a 0,0"]);
+    expect(t.out).toEqual(["press", "tap a 0,0"]);
     t.setBusy(true);
     t.stage.emit("click", { detail: 0, target: a.btn });
-    expect(t.out).toEqual(["tap a 0,0", "busyTap"]);
+    expect(t.out).toEqual(["press", "tap a 0,0", "press", "busyTap"]);
     // 押せないところの click は何もしない
     t.stage.emit("click", { detail: 0, target: t.stage });
-    expect(t.out).toEqual(["tap a 0,0", "busyTap"]);
+    expect(t.out).toEqual(["press", "tap a 0,0", "press", "busyTap", "press"]);
+  });
+
+  test("UI-25 onAnyPress が true を返した押下（自動歩行を止めた押下）は捨てる: タップ・スワイプ・長押し・押下の見た目・再生中のタップのどれにもしない。キーボード由来の click も同じ", () => {
+    let walking = true;
+    const t = setup({
+      onAnyPress: () => {
+        if (!walking) return false;
+        walking = false;
+        return true;
+      },
+    });
+    const a = t.button("a");
+    // タップ（動かずに離す）
+    t.down(1, 40, 620, a.inner);
+    expect(a.btn.classList.contains("is-pressed")).toBe(false);
+    t.up(1, 40, 620);
+    expect(t.out).toEqual([]);
+    // スワイプ（閾値を越える）
+    walking = true;
+    t.down(2, 40, 620, a.btn);
+    t.move(2, 40, 300);
+    t.up(2, 40, 300);
+    expect(t.out).toEqual([]);
+    // 再生中のタップ
+    walking = true;
+    t.setBusy(true);
+    t.down(3, 40, 620, a.btn);
+    t.up(3, 40, 620);
+    expect(t.out).toEqual([]);
+    t.setBusy(false);
+    // キーボード由来の click
+    walking = true;
+    const r = t.stage.emit("click", { detail: 0, target: a.btn });
+    expect(r.prevented).toBe(true);
+    expect(t.out).toEqual([]);
+    // 歩いていなければ、次の押下は普通のタップ
+    t.down(4, 40, 620, a.inner);
+    t.up(4, 40, 620);
+    expect(t.out).toEqual(["tap a 10,10"]);
   });
 
   test("UI-37/UI-51 touchend は入力欄の上以外で preventDefault（passive:false）。入力欄の上の押下は追わず、入力欄の外を押したらフォーカスを外す", () => {

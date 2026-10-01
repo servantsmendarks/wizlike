@@ -5,6 +5,8 @@
 //   （拍のタップ待ちを解く・拍の残りを即時にする・拍の外は 1 回目で今の文、2 回目で残りを即表示。UI-44 / UI-45 / UI-43）。
 // - 再生の外のメッセージ窓のタップは、文字送り中なら即表示、それ以外なら履歴の画面（UI-46）を開く。
 // - 迷宮のキャンプと酒場の状態・装備・並び順（UI-53 / UI-59 / TW-03）は views/camp.ts の段で進め、ビュー領域だけを覆う（overlay 'camp'）。
+// - 地図のセルのタップ（UI-25）は core の planRoute で経路を探し、holdRepeatMs おきに 1 手ずつ送る（自動歩行）。続けるかは core の
+//   routeStepOk が決める。歩いている間に触れる・キーを押すと止まり、その入力は捨てる。
 // - 状態を変えるコマンドの後、再生を始める前にオートセーブを await する（§3-8。SV-02: 再生中にリロードされても結果は確定している）。
 //   保存の失敗は SV-23 の帯とメッセージ窓で知らせ、state は巻き戻さない。
 // - タイトル（UI-50）は保存先の一覧を読み、続きから（SV-50）は読み込んだ state を resume で直接描く。
@@ -15,10 +17,11 @@ import { execute, createInitialState } from "../core/engine";
 import { battleMenu } from "../core/rules/combat";
 import { mapView, visibleCells } from "../core/rules/dungeon";
 import { campMenu } from "../core/rules/camp";
+import { planRoute, routeStepOk } from "../core/rules/pathfind";
 import { fieldItemMenu } from "../core/rules/items";
 import { townMenu } from "../core/rules/town";
 import { dungeonOf, itemDisplayName } from "../core/state";
-import type { BattleMenu, Command, GameState, PenaltyResult, Screen, ViewPoint } from "../core/types";
+import type { BattleMenu, Command, GameState, PenaltyResult, Pos, Screen, ViewPoint } from "../core/types";
 import type { GameListEntry, SaveService } from "../save/types";
 import { runChain, type ChainDeps } from "./auto-chain";
 import { createAutosaver, createCommandExec, createSaveBannerState, type CommandResult, type SaveStatus } from "./autosave";
@@ -40,6 +43,8 @@ import {
   battleKeyChoice,
   createHoldRepeater,
   forwardStep,
+  walkStep,
+  type RouteWalk,
   type Action,
 } from "./input/swipe";
 import { attachStageInput, onTap } from "./input/tap";
@@ -134,6 +139,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   /** UI-53 / TW-03: キャンプを開いた場所（迷宮のキャンプか酒場か）と今の段（overlay が camp の間だけ使う） */
   let campHost: CampHost = "camp";
   let campPage: CampPage = { kind: "top" };
+  /** UI-25: 地図のタップ移動の自動歩行（歩いている間だけ非 null。SV-50 の再開では戻さない） */
+  let walking: RouteWalk | null = null;
 
   const scale = (): number => layout?.scale ?? 1;
 
@@ -186,6 +193,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     },
     onClose: () => guard(() => closeOverlay()),
     onPick: (g) => guard(() => chooseBattle({ kind: "group", index: g })),
+    onMapCell: (p) => guard(() => tapMapCell(p)),
   });
 
   const debug = createDebugPanel({
@@ -360,9 +368,9 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       }),
   });
 
-  /** UI-30: ステージ全体でスワイプを受けるか（迷宮で、overlay も保留も無く、inputMode が buttons でない） */
+  /** UI-30: ステージ全体でスワイプを受けるか（迷宮で、overlay も保留も無く、inputMode が buttons でなく、自動歩行中でない） */
   const swipeEnabled = (): boolean =>
-    route === "dungeon" && overlay === null && state.pendingChoice === null && store.get().inputMode !== "buttons";
+    route === "dungeon" && overlay === null && state.pendingChoice === null && store.get().inputMode !== "buttons" && walking === null;
 
   /** 操作領域とスワイプの可否を、route / overlay / pendingChoice / inputMode から決める */
   const syncControls = (): void => {
@@ -723,9 +731,70 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       }),
   });
 
-  /** 再生中のボタンは何もしない（UI-44） */
+  /**
+   * UI-25: 地図のタップ移動の自動歩行。1 手ごとに再生の終わりを待ち、holdRepeatMs おいて次の手を送る（長押しの連打と同じ仕組み）。
+   * 続けてよいかは core の routeStepOk が決める（遭遇・罠・階段の確認・壁・回転床・rejected で止まる。扉では止まらない）
+   */
+  const walker = createHoldRepeater({
+    ms: () => store.get().holdRepeatMs,
+    fire: async () => {
+      const w = walking;
+      const go = await walkStep({
+        walk: () => walking,
+        ready: () => route === "dungeon" && overlay === null && state.pendingChoice === null,
+        send: (cmd) =>
+          run(cmd).then((r) => {
+            // CB-01 の遭遇。入力が要らない状態なら、そのまま連鎖で進める（長押しの前進と同じ）
+            if (r !== null && !r.rejected && route === "battle") kickBattle();
+            return r;
+          }),
+        ok: (s, events) => routeStepOk(s, events, state),
+      });
+      // 止められた（stopWalk 済み）なら何もしない。歩き終えた・止まったなら片付ける
+      if (!go && walking === w) endWalk();
+      return go;
+    },
+  });
+
+  /** 自動歩行を終える（swipe-on などを戻す） */
+  const endWalk = (): void => {
+    if (walking === null) return;
+    walking = null;
+    walker.release();
+    if (!isBusy() && !chaining) syncControls();
+  };
+
+  /**
+   * UI-25: 歩いている間に触れる・キーを押すと止まる。その入力は捨てる（true を返す）。歩いていなければ false。
+   * 送っている途中の 1 手はそのまま再生し、次の手を送らない
+   */
+  const stopWalk = (): boolean => {
+    if (walking === null) return false;
+    endWalk();
+    return true;
+  };
+
+  /**
+   * UI-25: 地図のセルのタップ。経路（core の planRoute）があれば地図を閉じて歩き始める。
+   * 経路が無ければ地図の題の行を「道が分からない。」にする（地図は開いたまま）。現在位置なら何もしない
+   */
+  const tapMapCell = (p: Pos): void => {
+    if (overlay !== "map" || walking !== null) return;
+    const steps = planRoute(state, data, p);
+    if (steps === null) {
+      play.map.setTitle(t("map.noRoute"));
+      return;
+    }
+    if (steps.length === 0) return;
+    closeMap();
+    walking = { steps, i: 0 };
+    syncControls();
+    walker.press();
+  };
+
+  /** 再生中のボタンは何もしない（UI-44）。自動歩行中も同じ（UI-25） */
   const guard = (fn: () => void): void => {
-    if (isBusy() || chaining) return;
+    if (isBusy() || chaining || walking !== null) return;
     fn();
   };
 
@@ -844,6 +913,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     underDebug = null;
     campHost = "camp";
     campPage = { kind: "top" };
+    walking = null;
+    walker.release();
     townPage = "menu";
     cursor = null;
     advanceFrom = null;
@@ -998,6 +1069,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   // ---------------------------------------------------------------- 入力
   /** Action → Command / 画面の操作。変換は app だけが行う */
   const handleAction = (a: Action): void => {
+    // UI-25: 自動歩行中のキーは歩行を止めるだけ（その入力は捨てる）
+    if (stopWalk()) return;
     // UI-44 の例外: オート中の「オート解除」（Esc / Enter / 1）は再生中も予約として受ける
     if (route === "battle" && overlay === null && battleMenu(state, data)?.auto === true) {
       if (battleKeyChoice(a, "autoStop") === "stop") requestAutoStop();
@@ -1129,6 +1202,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
         swipeEnabled,
         busy: () => isBusy() || chaining,
         onBusyTap: () => player.tap(),
+        // UI-25: 自動歩行中にどこかを押したら止め、その押下は捨てる
+        onAnyPress: () => stopWalk(),
         onSwipe: (a) => handleAction(a),
         onSwipeRelease: () => repeater.release(),
         onDebugSwipe: (dx, dy, d) => debug.setSwipe(dx, dy, d),
@@ -1140,7 +1215,11 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
         },
       });
       // UI-31: ポインタ（十字ボタン・スワイプ）の長押しも、窓のフォーカスが外れた・ページが隠れたら離したものとして扱う
-      attachReleaseOnHide(() => repeater.release());
+      attachReleaseOnHide(() => {
+        repeater.release();
+        // UI-25: 窓のフォーカスが外れた・ページが隠れたら自動歩行も止める
+        stopWalk();
+      });
       store.subscribe(() => {
         debug.refresh();
         if (!isBusy()) syncControls();

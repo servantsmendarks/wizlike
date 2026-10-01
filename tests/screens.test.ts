@@ -128,6 +128,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   "rules/items": ["fieldItemMenu"],
   // M4.5 UI-53 / TW-03: キャンプと酒場の候補・押せるか・対象の要否は campMenu の値だけで決める
   "rules/camp": ["campMenu"],
+  // M4.5 UI-25 / DG-15: 地図のタップ移動の経路と、自動歩行を続けてよいかは core が決める
+  "rules/pathfind": ["planRoute", "routeStepOk"],
 };
 
 /** コメントを除いた本文（文字列の中の // や /* は考えない最小限の除去。presenter に該当する文字列は無い） */

@@ -128,8 +128,11 @@ export type StageInputOptions = {
   busy(): boolean;
   /** 再生中のタップ（player.tap()） */
   onBusyTap(): void;
-  /** どこかを押した瞬間（入力欄の上を除く）。地図のタップ移動の自動歩行を止めるのに使う */
-  onAnyPress?(): void;
+  /**
+   * どこかを押した瞬間（入力欄の上を除く）。地図のタップ移動の自動歩行を止めるのに使う（UI-25）。
+   * true を返したら、その押下は捨てる（タップ・スワイプ・長押し・押下の見た目のどれにもしない）
+   */
+  onAnyPress?(): boolean | void;
   onSwipe(a: Action): void;
   /** スワイプしていた指を離した（長押しの連打を止める） */
   onSwipeRelease(): void;
@@ -193,7 +196,8 @@ export function attachStageInput(stage: HTMLElement, o: StageInputOptions): () =
     if (e.pointerType === "mouse" && e.button !== undefined && e.button !== 0) return;
     if (isTextInput(e.target)) return;
     blurInput();
-    o.onAnyPress?.();
+    // UI-25: 自動歩行を止めた押下は、離しても何もしない（p を作らないので move / up も無視される）
+    if (o.onAnyPress?.() === true) return;
     const target = closestTap(e.target);
     const lx = (e.clientX - stage.getBoundingClientRect().left) / o.scale();
     p = pressDown(e.pointerId, e.clientX, e.clientY, target, lx, o.width, o.deadZone);
@@ -256,6 +260,11 @@ export function attachStageInput(stage: HTMLElement, o: StageInputOptions): () =
   /** キーボードの Enter / Space で起きた click（detail 0）だけを onTap に回す。ポインタの click には反応しない */
   const click = (e: Ev & { detail?: number; preventDefault?: () => void }): void => {
     if (e.detail !== 0) return;
+    // UI-25: 自動歩行中のキーボードの Enter（フォーカス中のボタン）も、歩行を止めるだけにする
+    if (o.onAnyPress?.() === true) {
+      e.preventDefault?.();
+      return;
+    }
     const el = closestTap(e.target);
     const s = tapSpecOf(el);
     if (el === null || s === null) return;

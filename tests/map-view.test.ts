@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { execute } from "../src/core/engine";
 import { floorOf, mapView } from "../src/core/rules/dungeon";
 import { cloneState } from "../src/core/state";
-import { mapLayout, mapPaths, playerTriangle } from "../src/presenter/views/map";
+import { mapCellAt, mapLayout, mapPaths, playerTriangle } from "../src/presenter/views/map";
 import type { Edge, Facing, MapCell, MapView } from "../src/core/types";
 import { dungeonLayout, regions } from "../src/presenter/layout";
 import { data, newGame } from "./helpers/core";
@@ -236,5 +236,34 @@ describe("UI-24/DG-10 通り抜けた扉の地図（core の mapView との結�
       checked++;
     }
     expect(checked).toBe(3);
+  });
+});
+
+describe("UI-25 地図のタップ", () => {
+  test("UI-25 mapCellAt: 20×20（cell 8, ox 39, oy 23）でセル (x, y) は [39+8x, 47+8x) × [23+8y, 31+8y)。右端・下端の共有線は隣のセル、盤の外は null", () => {
+    const lay = mapLayout(20, 20, MAP_AREA);
+    const v = { width: 20, height: 20 };
+    expect(mapCellAt(v, lay, 39, 23)).toEqual({ x: 0, y: 0 });
+    expect(mapCellAt(v, lay, 46.99, 30.99)).toEqual({ x: 0, y: 0 });
+    expect(mapCellAt(v, lay, 47, 31)).toEqual({ x: 1, y: 1 });
+    // (5, 12) の中心: 39 + 40 + 4 = 83、23 + 96 + 4 = 123
+    expect(mapCellAt(v, lay, 83, 123)).toEqual({ x: 5, y: 12 });
+    expect(mapCellAt(v, lay, 198.99, 182.99)).toEqual({ x: 19, y: 19 });
+    // 盤の外（左・上・右・下）
+    expect(mapCellAt(v, lay, 38.99, 50)).toBeNull();
+    expect(mapCellAt(v, lay, 50, 22.99)).toBeNull();
+    expect(mapCellAt(v, lay, 199, 50)).toBeNull();
+    expect(mapCellAt(v, lay, 50, 183)).toBeNull();
+    expect(mapCellAt(v, lay, Number.NaN, 50)).toBeNull();
+  });
+
+  test("UI-25 mapCellAt は mapPaths の床の正方形と同じセルを返す（30×30、cell 6）", () => {
+    const lay = mapLayout(30, 30, MAP_AREA);
+    const v = view([cellOf(7, 11)], { width: 30, height: 30 });
+    // 床は M(px+1) (py+1) から cell-1 の正方形。その内側の点はすべて (7, 11)
+    const [[fx, fy]] = points(mapPaths(v, lay).floor) as [[number, number]];
+    for (let dx = 0; dx < lay.cell - 1; dx++) {
+      for (let dy = 0; dy < lay.cell - 1; dy++) expect(mapCellAt(v, lay, fx + dx + 0.5, fy + dy + 0.5)).toEqual({ x: 7, y: 11 });
+    }
   });
 });

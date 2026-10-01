@@ -1,12 +1,14 @@
 // UI-24: オートマップ。探索済みセル（core の mapView が返す MapView）だけを描く。
 // 罠・イベント・ボスは core が plain で返すので、表示層は区別しない（DG-13）。
-// 純粋な部分（mapLayout / mapPaths）を export し、node 環境のテストから試せるようにする。
+// 純粋な部分（mapLayout / mapPaths / mapCellAt）を export し、node 環境のテストから試せるようにする。
+// 地図本体のタップ（UI-25）はセルの座標に直して onCell に渡すだけで、経路は app が core の planRoute で探す。
 // モジュールのトップレベルでは DOM に触れない。
 //
 // overlay はビューとメッセージの領域を合わせた範囲（layout.ts の dungeonLayout の map。既定 240×220、y16..235）。
 // el はその位置と大きさに自分で置く。内側: 題（map.title。既定 y0..11）、地図本体（map.area。既定 y12..219 に viewBox 0 0 240 208 の SVG）。
 // 座標は画素番号。床の塗りは素の座標、線と記号と現在位置は translate(0.5 0.5) の中で描く（crispEdges）。
-import type { Facing, MapView } from "../../core/types";
+import type { Facing, MapView, Pos } from "../../core/types";
+import { onTap } from "../input/tap";
 import type { DungeonLayout } from "../layout";
 
 const MAX_CELL = 8;
@@ -24,6 +26,19 @@ export function mapLayout(w: number, h: number, area: { w: number; h: number }):
     ox: Math.floor((area.w - (w * cell + 1)) / 2),
     oy: Math.floor((area.h - (h * cell + 1)) / 2),
   };
+}
+
+/**
+ * UI-25: 地図本体の SVG の左上からの論理 px（lx, ly）にあるセル。セル (x, y) は
+ * [ox + x*cell, ox + (x+1)*cell) × [oy + y*cell, oy + (y+1)*cell) を受け持つ（右端・下端の共有線は隣のセル）。
+ * 盤の外なら null。探索済みかどうかは見ない（経路を探す core が決める）
+ */
+export function mapCellAt(v: Pick<MapView, "width" | "height">, lay: MapLayout, lx: number, ly: number): Pos | null {
+  if (!Number.isFinite(lx) || !Number.isFinite(ly)) return null;
+  const x = Math.floor((lx - lay.ox) / lay.cell);
+  const y = Math.floor((ly - lay.oy) / lay.cell);
+  if (x < 0 || y < 0 || x >= v.width || y >= v.height) return null;
+  return { x, y };
 }
 
 /** cell 8 のときの現在位置の三角形（北向き）。セル原点からの相対座標 */
@@ -109,9 +124,15 @@ export function mapPaths(v: MapView, lay: MapLayout): MapPaths {
   return { floor: floor.join(""), walls: walls.join(""), stairs: stairs.join(""), player };
 }
 
-export type MapViewEl = { el: HTMLElement; render(v: MapView, title: string): void };
+export type MapViewEl = {
+  el: HTMLElement;
+  render(v: MapView, title: string): void;
+  /** UI-25: 題の行だけを差し替える（経路が無いときの「道が分からない。」。次の render で戻る） */
+  setTitle(title: string): void;
+};
 
-export function createMapView(lay: DungeonLayout["map"]): MapViewEl {
+/** onCell は地図本体のタップ（UI-25）。盤の外のタップでは呼ばない */
+export function createMapView(lay: DungeonLayout["map"], onCell?: (p: Pos) => void): MapViewEl {
   const SVG_NS = "http://www.w3.org/2000/svg";
   const { overlay, title: tr, area } = lay;
   const el = document.createElement("div");
@@ -165,9 +186,21 @@ export function createMapView(lay: DungeonLayout["map"]): MapViewEl {
   const playerPath = path({ fill: "var(--c-player)", stroke: "none" });
   g.append(wallPath, stairsPath, playerPath);
 
+  // UI-25: 地図本体のタップ。座標は SVG の左上からの論理 px（viewBox は area と同じ寸法）
+  let shown: MapView | null = null;
+  onTap(svg, (pt) => {
+    if (shown === null || onCell === undefined) return;
+    const c = mapCellAt(shown, mapLayout(shown.width, shown.height, area), pt.lx, pt.ly);
+    if (c !== null) onCell(c);
+  });
+
   return {
     el,
+    setTitle(t: string): void {
+      title.textContent = t;
+    },
     render(v: MapView, t: string): void {
+      shown = v;
       title.textContent = t;
       const p = mapPaths(v, mapLayout(v.width, v.height, area));
       floorPath.setAttribute("d", p.floor);

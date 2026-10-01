@@ -157,6 +157,7 @@
   "dir.S": "南",
   "dir.W": "西",
   "map.title": "{dungeon} {floor}F の地図",
+  "map.noRoute": "道が分からない。",
   "history.title": "これまでの語り",
 
   "party.hp": "HP",

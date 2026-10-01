@@ -4,7 +4,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { execute } from "../src/core/engine";
 import { floorOf } from "../src/core/rules/dungeon";
 import { cloneState } from "../src/core/state";
-import type { Command, GameEvent, GameState, PendingChoice } from "../src/core/types";
+import type { Command, GameEvent, GameState, PendingChoice, RouteCommand, RouteStep } from "../src/core/types";
+import { planRoute, routeStepOk } from "../src/core/rules/pathfind";
 import { createRunGate } from "../src/presenter/run-gate";
 import {
   attachKeyboard,
@@ -14,6 +15,8 @@ import {
   classifySwipe,
   createHoldRepeater,
   forwardStep,
+  walkStep,
+  type RouteWalk,
   inDeadZone,
   keyToAction,
   swipeAction,
@@ -531,5 +534,114 @@ describe("長押しと壁（結合）", () => {
     await vi.advanceTimersByTimeAsync(2000);
     expect(w.executes()).toBe(2);
     expect(w.blocked()).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// UI-25: 地図のタップ移動の自動歩行の 1 手（walkStep）
+
+describe("自動歩行（walkStep）", () => {
+  const MOVE: RouteCommand = { type: "dungeon.move" };
+  const LEFT: RouteCommand = { type: "dungeon.turn", dir: "left" };
+  const steps: RouteStep[] = [
+    { command: MOVE, pos: { x: 1, y: 0 }, facing: "N" },
+    { command: LEFT, pos: { x: 1, y: 0 }, facing: "W" },
+  ];
+  function harness(o: { ready?: boolean; result?: { events: GameEvent[]; rejected: boolean } | null; ok?: boolean } = {}) {
+    let walk: RouteWalk | null = { steps, i: 0 };
+    const sent: RouteCommand[] = [];
+    const checked: RouteStep[] = [];
+    const deps = {
+      walk: () => walk,
+      ready: () => o.ready ?? true,
+      send: async (cmd: RouteCommand) => {
+        sent.push(cmd);
+        return o.result === undefined ? { events: [], rejected: false } : o.result;
+      },
+      ok: (s: RouteStep) => {
+        checked.push(s);
+        return o.ok ?? true;
+      },
+    };
+    return { deps, sent, checked, get: () => walk, set: (w: RouteWalk | null) => (walk = w) };
+  }
+
+  test("UI-25 walkStep: i 番目の手を送り、ok（routeStepOk）が真なら i を進める。手が残っていれば true、最後の手を送り終えたら false", async () => {
+    const h = harness();
+    expect(await walkStep(h.deps)).toBe(true);
+    expect(h.get()!.i).toBe(1);
+    expect(await walkStep(h.deps)).toBe(false);
+    expect(h.get()!.i).toBe(2);
+    expect(h.sent).toEqual([MOVE, LEFT]);
+    expect(h.checked).toEqual(steps);
+    // 手が尽きていれば送らない
+    expect(await walkStep(h.deps)).toBe(false);
+    expect(h.sent).toHaveLength(2);
+  });
+
+  test("UI-25 walkStep: ready が偽・歩行なしなら送らずに false。門に捨てられた（null）・rejected・ok が偽なら false で i は進めない", async () => {
+    const notReady = harness({ ready: false });
+    expect(await walkStep(notReady.deps)).toBe(false);
+    expect(notReady.sent).toEqual([]);
+    const none = harness();
+    none.set(null);
+    expect(await walkStep(none.deps)).toBe(false);
+    expect(none.sent).toEqual([]);
+    for (const h of [harness({ result: null }), harness({ result: { events: [], rejected: true } }), harness({ ok: false })]) {
+      expect(await walkStep(h.deps)).toBe(false);
+      expect(h.sent).toEqual([MOVE]);
+      expect(h.get()!.i).toBe(0);
+    }
+  });
+
+  test("UI-25 walkStep: 送っている間に止められた（walk() が別物・null）なら false で、ok は呼ばない", async () => {
+    const h = harness();
+    const deps = {
+      ...h.deps,
+      send: async (cmd: RouteCommand) => {
+        h.sent.push(cmd);
+        h.set(null);
+        return { events: [], rejected: false };
+      },
+    };
+    expect(await walkStep(deps)).toBe(false);
+    expect(h.checked).toEqual([]);
+  });
+
+  test("UI-25/DG-15 結合: core の execute と routeStepOk で、planRoute の経路を最後まで歩く（遭遇率 0）", async () => {
+    const d0 = structuredClone(data);
+    for (const def of d0.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    let state = cloneState(execute(newGame(1), { type: "dungeon.enter", dungeonId: "d01" }, d0).state);
+    const f = floorOf(state.dive!, d0);
+    state.dive!.explored["1"] = f.cells.map((_, i) => i);
+    // 入場位置から通路か部屋だけを前進で踏む、手数が 6 以上の目標を 1 つ選ぶ
+    let target: { x: number; y: number } | null = null;
+    let route: RouteStep[] | null = null;
+    for (let i = 0; i < f.cells.length && target === null; i++) {
+      const p = { x: i % f.width, y: Math.floor(i / f.width) };
+      const r = planRoute(state, d0, p);
+      if (r === null || r.length < 6) continue;
+      if (r.every((s) => s.command.type !== "dungeon.move" || ["corridor", "room"].includes(f.cells[s.pos.y * f.width + s.pos.x]!.kind))) {
+        target = p;
+        route = r;
+      }
+    }
+    expect(target).not.toBeNull();
+    const walk: RouteWalk = { steps: route!, i: 0 };
+    const deps = {
+      walk: () => walk,
+      ready: () => state.screen === "dungeon" && state.pendingChoice === null,
+      send: async (cmd: RouteCommand) => {
+        const r = execute(state, cmd as Command, d0);
+        state = r.state;
+        return { events: r.events, rejected: r.events[0]?.kind === "rejected" };
+      },
+      ok: (s: RouteStep, events: readonly GameEvent[]) => routeStepOk(s, events, state),
+    };
+    let n = 0;
+    while (await walkStep(deps)) n++;
+    expect(n).toBe(route!.length - 1);
+    expect(walk.i).toBe(route!.length);
+    expect(state.dive!.pos).toEqual(target);
   });
 });

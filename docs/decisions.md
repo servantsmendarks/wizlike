@@ -423,3 +423,6 @@
 - 2026-10-02 core(M4.5): planRoute（DG-15）は (x, y, 向き) の幅優先探索で、前進と旋回を合わせた手数を最短にする。同じ手数なら move → left → right → around の順。探索済みのセルと辺だけを使い、扉は通れる。階段・罠・ボスのセルは特別扱いしない（踏めば core のイベントで止まる。ユーザーの「階段の確認で停止」）。戻り値は RouteStep[] | null（[] は現在位置）。
 - 2026-10-02 core(M4.5): 自動歩行を続けてよいかは core の routeStepOk（DG-15）が決める（扉の message を許す必要があり、表示層が message のキーで判断しないため）。扉では止まらない（ユーザーの停止条件に扉が無い）。長押しの前進（UI-31 の canRepeat）は今どおり扉で止まる。
 - 2026-10-02 core(M4.5): pathfind.ts に、Floor を直接取る routeOnFloor(f, explored, pos, facing, target) を planRoute の本体として公開する。floorOf は diveSeed から構造を作り直すので、手で数えた期待値（手組みの Floor）でテストするため。表示層は planRoute だけを使う。
+- 2026-10-02 presenter(M4.5): 地図で経路が無いときは、地図の題の行に「道が分からない。」（map.noRoute）を出す（地図がメッセージ窓を覆っているため）。地図は開いたままで、次に開いたときの render で元の題に戻る。経路があれば地図を閉じて歩き、触れるかキーを押すと止まる。
+- 2026-10-02 presenter(M4.5): 地図の自動歩行は長押しの連打（createHoldRepeater）の 2 つ目の実体で送る（間隔は holdRepeatMs、1 手目はすぐ）。1 手の手順は input/swipe.ts の walkStep（ready → 送る → 止められていないか → routeStepOk）に切り出して node で試す。遭遇で止まったら長押しの前進と同じく kickBattle で戦闘を進める。
+- 2026-10-02 presenter(M4.5): 自動歩行を止めた入力は捨てる。attachStageInput の onAnyPress が true を返したら、その押下を追わない（タップ・スワイプ・長押し・押下の見た目・再生中の拍のタップのどれにもしない）。キーボード由来の click（detail 0）とキー（handleAction の先頭）も同じ。窓のフォーカスが外れた・ページが隠れたとき（attachReleaseOnHide）も止める（裏で歩き続けないため。仕様に無かったので足した）。

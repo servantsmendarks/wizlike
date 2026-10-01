@@ -9,6 +9,7 @@
 // 各部品の位置と大きさは、config.ui.layout から作った regions と dungeonLayout（layout.ts）から決める。
 // 部品の結線（何を描くか、Action を何にするか）は app が行う。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, Strings } from "../../core/data/index";
+import type { Pos } from "../../core/types";
 import type { DungeonLayout, Regions } from "../layout";
 import { createBattleView, type BattleView } from "./battle";
 import { createCampView, type CampView } from "./camp";
@@ -81,6 +82,8 @@ export function createDungeonScreen(o: {
   onClose(): void;
   /** UI-54: 対象の選択中に敵の絵をタップした（グループの添字） */
   onPick?(g: number): void;
+  /** UI-25: 地図本体のセルをタップした（盤内のセルの座標。探索済みかは見ない） */
+  onMapCell?(p: Pos): void;
 }): DungeonScreen {
   const r = o.regions;
   const lay = o.layout;
@@ -127,7 +130,7 @@ export function createDungeonScreen(o: {
   });
 
   // 地図はビューの上端から、メッセージの下端まで（既定 240×220）
-  const map = createMapView(lay.map);
+  const map = createMapView(lay.map, (p) => o.onMapCell?.(p));
   map.el.style.display = "none";
 
   // キャンプと酒場のパネル（UI-53）はビュー領域だけ

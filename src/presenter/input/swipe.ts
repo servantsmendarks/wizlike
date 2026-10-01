@@ -1,8 +1,8 @@
 // UI-30〜34: スワイプの分類、長押しの連打、キーボード。入力を Action に変えるだけで、意味の解釈（前進できるか等）はしない（UI-35）。
 // ポインタの押下・スワイプ・タップはステージ 1 か所で受ける（input/tap.ts の attachStageInput。UI-36）。
-// 純粋な部分（分類・キー表・canRepeat）を export して node 環境で試す。DOM に触れるのは attach* と createHoldRepeater の中だけ。
+// 純粋な部分（分類・キー表・canRepeat・walkStep）を export して node 環境で試す。DOM に触れるのは attach* と createHoldRepeater の中だけ。
 // setTimeout を使うのは長押しの連打（createHoldRepeater）だけ。
-import type { GameEvent, PendingChoice } from "../../core/types";
+import type { GameEvent, PendingChoice, RouteCommand, RouteStep } from "../../core/types";
 
 export type Dir = "up" | "down" | "left" | "right";
 export type Action = "forward" | "left" | "right" | "around" | "map" | "back" | "confirm" | "debug" | { menu: number };
@@ -112,6 +112,34 @@ export async function forwardStep(o: {
   const r = await o.move();
   if (r === null || r.rejected) return false;
   return canRepeat(r.events, o.pending(), o.overlayOpen());
+}
+
+/** UI-25: 地図のタップ移動の自動歩行。steps は core の planRoute の結果、i は次に送る手の添字 */
+export type RouteWalk = { steps: readonly RouteStep[]; i: number };
+
+/**
+ * UI-25: 自動歩行の 1 手（createHoldRepeater の fire）。次も続けるなら true。
+ * - 今の歩行（walk()）が無いか、ready が偽（迷宮・overlay なし・保留なしでない）なら送らずに false
+ * - 送った後に歩行が止められていた（walk() が別物）なら false
+ * - 門に捨てられた（null）・rejected・ok（core の routeStepOk）が偽なら false
+ * - そうでなければ i を進め、まだ手が残っていれば true（最後の手を送り終えたら false）
+ * 続けてよいかの判定は ok（core）に任せ、ここでは event の中身を見ない（§3-4）
+ */
+export async function walkStep(o: {
+  walk(): RouteWalk | null;
+  ready(): boolean;
+  send(cmd: RouteCommand): Promise<{ events: readonly GameEvent[]; rejected: boolean } | null>;
+  ok(step: RouteStep, events: readonly GameEvent[]): boolean;
+}): Promise<boolean> {
+  const w = o.walk();
+  if (w === null || !o.ready()) return false;
+  const s = w.steps[w.i];
+  if (s === undefined) return false;
+  const r = await o.send(s.command);
+  if (o.walk() !== w) return false;
+  if (r === null || r.rejected || !o.ok(s, r.events)) return false;
+  w.i++;
+  return w.i < w.steps.length;
 }
 
 // ---------------------------------------------------------------------------
