@@ -178,15 +178,44 @@ describe("engine: execute", () => {
     { type: "town.mercy", memberId: "c1" },
     { type: "dungeon.useItem", memberId: "c1", itemId: "i4" },
     { type: "dungeon.cast", memberId: "c4", spellId: "heal" },
-    { type: "battle.input", memberId: "c1", action: { type: "defend" } },
-    { type: "battle.resolve" },
-    { type: "battle.auto", on: true },
     { type: "party.reorder", order: ["c1", "c2", "c3", "c4", "c5", "c6"] },
   ])("D2 M2 で未実装のコマンドは not implemented: $type", (cmd) => {
     const s = newGame(1);
     const r = execute(s, cmd, data);
     expect(r.state).toBe(s);
     expect(r.events).toEqual([{ kind: "rejected", command: cmd.type, reason: "not implemented" }]);
+  });
+
+  test.each<Command>([
+    { type: "battle.input", memberId: "c1", action: { type: "defend" } },
+    { type: "battle.resolve" },
+    { type: "battle.auto", on: true },
+  ])("D2/F1 戦闘外（title・town・dungeon、screen が battle でも battle が null）の $type は not in battle で、同じ参照を返し乱数を消費しない", (cmd) => {
+    const town = newGame(1);
+    const dungeon = execute(town, { type: "dungeon.enter", dungeonId: "d01" }, data).state;
+    const broken: GameState = { ...cloneState(dungeon), screen: "battle" };
+    for (const s of [createInitialState(1, data), town, dungeon, broken]) {
+      const r = execute(s, cmd, data);
+      expect(r.state).toBe(s);
+      expect(r.events).toEqual([{ kind: "rejected", command: cmd.type, reason: "not in battle" }]);
+    }
+  });
+
+  test("F2 battle.auto の on が真偽値でなければ bad on、今と同じ値なら no change（同じ参照）", () => {
+    const dungeon = execute(newGame(1), { type: "dungeon.enter", dungeonId: "d01" }, data).state;
+    const s = cloneState(dungeon);
+    s.screen = "battle";
+    s.battle = { origin: { kind: "random", inRoom: false }, round: 0, partySurprise: false, groups: [{ monsterId: "giant_rat", units: [{ hp: 3, hpMax: 3, status: [] }] }], inputs: {}, auto: false, acBonus: {} };
+    for (const [on, reason] of [["true", "bad on"], [1, "bad on"], [undefined, "bad on"], [false, "no change"]] as const) {
+      const r = execute(s, { type: "battle.auto", on } as unknown as Command, data);
+      expect(r.state).toBe(s);
+      expect(r.events).toEqual([{ kind: "rejected", command: "battle.auto", reason }]);
+    }
+    const ok = execute(s, { type: "battle.auto", on: true }, data);
+    expectKnownStringKeys(ok.events);
+    expect(ok.events).toEqual([]);
+    expect(ok.state.battle!.auto).toBe(true);
+    expect(s.battle.auto).toBe(false);
   });
 
   test("D2 未知の type は unknown command。null や type の無い command は command \"unknown\"、malformed command で、例外を投げない", () => {

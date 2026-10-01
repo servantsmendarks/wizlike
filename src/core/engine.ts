@@ -2,10 +2,18 @@
 // 受け付けるかの判定は複製の前に行う。rejected では state を同じ参照のまま返し、乱数も消費しない（D2）。
 import type { GameData } from "./data/index";
 import { createRng } from "./rng";
+import {
+  applyBattleInput,
+  checkBattleAuto,
+  checkBattleInput,
+  checkResolve,
+  resolveRound,
+  setAuto,
+} from "./rules/combat";
 import { startNewGame, validatePartySetup } from "./rules/creation";
 import { checkEnter, chooseOption, enterDungeon, moveForward, turn } from "./rules/dungeon";
 import { cloneState, makeContext } from "./state";
-import type { Command, ExecuteResult, GameState } from "./types";
+import type { BattleAction, Command, ExecuteResult, GameState } from "./types";
 
 /** ゲーム開始前の状態（D3）。整数でない seed は createRng の RangeError をそのまま投げる。 */
 export function createInitialState(seed: number, _data: GameData): GameState {
@@ -81,6 +89,32 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       chooseOption(ctx, optionId);
       return { state: ctx.state, events: ctx.events };
     }
+    case "battle.input": {
+      if (state.screen !== "battle" || state.battle === null) return reject(state, "battle.input", "not in battle");
+      const c = command as { memberId?: unknown; action?: unknown };
+      const r = checkBattleInput(state, data, c.memberId, c.action);
+      if (r !== null) return reject(state, "battle.input", r);
+      const ctx = makeContext(cloneState(state), data);
+      applyBattleInput(ctx, c.memberId as string, c.action as BattleAction);
+      return { state: ctx.state, events: ctx.events };
+    }
+    case "battle.resolve": {
+      if (state.screen !== "battle" || state.battle === null) return reject(state, "battle.resolve", "not in battle");
+      const r = checkResolve(state, data);
+      if (r !== null) return reject(state, "battle.resolve", r);
+      const ctx = makeContext(cloneState(state), data);
+      resolveRound(ctx);
+      return { state: ctx.state, events: ctx.events };
+    }
+    case "battle.auto": {
+      if (state.screen !== "battle" || state.battle === null) return reject(state, "battle.auto", "not in battle");
+      const on = (command as { on?: unknown }).on;
+      const r = checkBattleAuto(state, on);
+      if (r !== null) return reject(state, "battle.auto", r);
+      const ctx = makeContext(cloneState(state), data);
+      setAuto(ctx, on as boolean);
+      return { state: ctx.state, events: ctx.events };
+    }
     case "town.enter":
     case "town.inn":
     case "town.temple":
@@ -90,9 +124,6 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
     case "town.mercy":
     case "dungeon.useItem":
     case "dungeon.cast":
-    case "battle.input":
-    case "battle.resolve":
-    case "battle.auto":
     case "party.reorder":
       return reject(state, command.type, "not implemented");
     default:
