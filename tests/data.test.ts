@@ -300,6 +300,26 @@ describe("data: races.json / classes.json", () => {
     expect(issues).toHaveLength(1);
     expectIssue((r) => (r.classes[2].spells.druid = 1), "classes.json", "[2].spells.druid: unknown field");
   });
+  test("data: classes[].abbr（ui §2 のパーティ欄）は必須・1〜3 文字の ASCII 英大文字", () => {
+    const data = loadGameData(rawData());
+    expect(data.classes.map((c) => [c.id, c.abbr])).toEqual([
+      ["fighter", "WAR"],
+      ["thief", "THI"],
+      ["priest", "PRI"],
+      ["mage", "MAG"],
+      ["samurai", "SAM"],
+      ["lord", "LOR"],
+      ["bishop", "BIS"],
+    ]);
+    expectIssue((r) => delete r.classes[0].abbr, "classes.json", "[0].abbr: missing required field");
+    expectIssue((r) => (r.classes[0].abbr = 3), "classes.json", "[0].abbr: expected string");
+    expectIssue((r) => (r.classes[0].abbr = ""), "classes.json", "[0].abbr: expected non-empty string");
+    for (const bad of ["war", "WARR", "ＷＡＲ", "W1", "W R"]) {
+      const issues = expectIssue((r) => (r.classes[1].abbr = bad), "classes.json", "[1].abbr: expected 1-3 uppercase ASCII letters");
+      expect(issues).toHaveLength(1);
+    }
+    for (const ok of ["W", "WA", "WAR"]) expect(issuesOf((r) => (r.classes[1].abbr = ok))).toEqual([]);
+  });
 });
 
 describe("data: spells.json", () => {

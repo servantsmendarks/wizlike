@@ -51,6 +51,12 @@ type Field = (ctx: Ctx, p: string, v: unknown) => unknown;
 const I = (r: Range = {}): Field => (ctx, p, v) => int(ctx, p, v, r);
 const N = (r: Range = {}): Field => (ctx, p, v) => num(ctx, p, v, r);
 const S: Field = (ctx, p, v) => str(ctx, p, v);
+/** 職業の略称（ui §2）: 1〜3 文字の ASCII 英大文字 */
+const ABBR: Field = (ctx, p, v) => {
+  const s = str(ctx, p, v);
+  if (s !== undefined && !/^[A-Z]{1,3}$/.test(s)) report(ctx, p, "expected 1-3 uppercase ASCII letters");
+  return s;
+};
 const SAnyLen: Field = (ctx, p, v) => str(ctx, p, v, false);
 const B: Field = (ctx, p, v) => bool(ctx, p, v);
 const D: Field = (ctx, p, v) => dice(ctx, p, v);
@@ -411,6 +417,7 @@ function validateClasses(ctx: Ctx, v: unknown): void {
     F({
       id: S,
       name: S,
+      abbr: ABBR,
       tier: E(CLASS_TIERS),
       requirements: F(Object.fromEntries(STAT_KEYS.map((k) => [k, opt(I(STAT_RANGE))]))),
       hpDie: I(POS_INT),

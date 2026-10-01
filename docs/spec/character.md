@@ -84,6 +84,7 @@
 ```
 {
   "id": "fighter", "name": "戦士",
+  "abbr": "WAR",  // 表示用の略称（ui §2 のパーティ欄）。1〜3 文字の ASCII 英大文字
   "requirements": { "str": 11 },          // 満たすべき最小値。無い能力値は制限なし
   "hpDie": 10, "mpPerLevel": 0,
   "spells": {},                            // { "mage": 1 } なら魔術師系をレベル1から

@@ -178,6 +178,8 @@ export type ClassAbility = (typeof CLASS_ABILITIES)[number];
 export type ClassDef = {
   id: string;
   name: string;
+  /** 表示用の略称（ui §2 のパーティ欄）。1〜3 文字の ASCII 英大文字 */
+  abbr: string;
   tier: ClassTier;
   requirements: Partial<Record<StatKey, number>>;
   hpDie: number;

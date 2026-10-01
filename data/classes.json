@@ -1,6 +1,6 @@
 [
   {
-    "id": "fighter", "name": "戦士", "tier": "basic",
+    "id": "fighter", "name": "戦士", "abbr": "WAR", "tier": "basic",
     "requirements": { "str": 11 },
     "hpDie": 10, "mpPerLevel": 0,
     "spells": {}, "learnMod": 0,
@@ -9,7 +9,7 @@
     "description": "前衛の要。武器と防具をほぼ全て使える。"
   },
   {
-    "id": "thief", "name": "盗賊", "tier": "basic",
+    "id": "thief", "name": "盗賊", "abbr": "THI", "tier": "basic",
     "requirements": { "agi": 11 },
     "hpDie": 6, "mpPerLevel": 0,
     "spells": {}, "learnMod": 0,
@@ -18,7 +18,7 @@
     "description": "宝箱の罠を解除できる。弓を使えば後衛からも戦える。"
   },
   {
-    "id": "priest", "name": "僧侶", "tier": "basic",
+    "id": "priest", "name": "僧侶", "abbr": "PRI", "tier": "basic",
     "requirements": { "pie": 11 },
     "hpDie": 8, "mpPerLevel": 3,
     "spells": { "priest": 1 }, "learnMod": 0,
@@ -27,7 +27,7 @@
     "description": "回復と補助の僧侶系呪文を使う。刃物は使えない。"
   },
   {
-    "id": "mage", "name": "魔術師", "tier": "basic",
+    "id": "mage", "name": "魔術師", "abbr": "MAG", "tier": "basic",
     "requirements": { "iq": 11 },
     "hpDie": 4, "mpPerLevel": 4,
     "spells": { "mage": 1 }, "learnMod": 0,
@@ -36,7 +36,7 @@
     "description": "攻撃と状態異常の魔術師系呪文を使う。装備は杖と短剣だけ。"
   },
   {
-    "id": "samurai", "name": "侍", "tier": "advanced",
+    "id": "samurai", "name": "侍", "abbr": "SAM", "tier": "advanced",
     "requirements": { "str": 15, "iq": 11, "pie": 10, "vit": 14, "agi": 10 },
     "hpDie": 8, "mpPerLevel": 2,
     "spells": { "mage": 4 }, "learnMod": -10,
@@ -45,7 +45,7 @@
     "description": "戦士に近い前衛で、レベル4から魔術師系呪文を覚え始める。"
   },
   {
-    "id": "lord", "name": "君主", "tier": "advanced",
+    "id": "lord", "name": "君主", "abbr": "LOR", "tier": "advanced",
     "requirements": { "str": 15, "iq": 12, "pie": 12, "vit": 15, "agi": 14, "luk": 15 },
     "hpDie": 10, "mpPerLevel": 2,
     "spells": { "priest": 4 }, "learnMod": -10,
@@ -54,7 +54,7 @@
     "description": "戦士の体で、レベル4から僧侶系呪文を覚え始める。"
   },
   {
-    "id": "bishop", "name": "司教", "tier": "advanced",
+    "id": "bishop", "name": "司教", "abbr": "BIS", "tier": "advanced",
     "requirements": { "iq": 12, "pie": 12 },
     "hpDie": 6, "mpPerLevel": 3,
     "spells": { "mage": 1, "priest": 1 }, "learnMod": -10,
