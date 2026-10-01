@@ -84,6 +84,17 @@ export function destroyItemInstance(state: GameState, ch: Character, instanceId:
   delete state.items[instanceId];
 }
 
+/**
+ * CH-72: アイテム実体の表示名。鑑定済みなら items[].name、未鑑定なら unidentifiedName（無ければ name）。
+ * 実体が無ければ Error。
+ */
+export function itemDisplayName(state: GameState, data: GameData, instanceId: string): string {
+  const inst = state.items[instanceId];
+  if (inst === undefined) throw new Error(`unknown item instance: ${instanceId}`);
+  const item = itemOf(data, inst.itemId);
+  return inst.identified ? item.name : (item.unidentifiedName ?? item.name);
+}
+
 /** CH-71 の使用枠 = equipment の非 null の数 + inventory.length */
 export function slotsUsed(ch: Character): number {
   let n = 0;

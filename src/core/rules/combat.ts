@@ -15,7 +15,7 @@
 //   免疫・既に同じ状態・対象なしは消費しない。
 import type { GameData, Spell, SpellEffect, SpellTarget, StatusId } from "../data/index";
 import { chance, randInt, rollDice, rollDie, weightedIndex } from "../rng";
-import { classOf, destroyItemInstance, dungeonOf, itemOf, memberById, monsterOf, spellOf } from "../state";
+import { classOf, destroyItemInstance, dungeonOf, itemDisplayName, itemOf, memberById, monsterOf, spellOf } from "../state";
 import type {
   BattleAction,
   BattleMenu,
@@ -486,7 +486,7 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan): void {
       if (inst === undefined) throw new Error(`unknown item instance: ${plan.instanceId}`);
       const item = itemOf(data, inst.itemId);
       if (!battleItemUsable(item)) throw new Error(`item not usable in battle: ${item.id}`);
-      const name = inst.identified ? item.name : (item.unidentifiedName ?? item.name);
+      const name = itemDisplayName(state, data, plan.instanceId);
       destroyItemInstance(state, ch, plan.instanceId); // DG-41
       ctx.events.push({ kind: "message", key: "battle.useItem", params: { actor, item: name } });
       const refs = resolveTargets(state, ch, item.effect.target, plan.target);
@@ -860,7 +860,7 @@ export function battleMenu(state: GameState, data: GameData): BattleMenu | null 
       if (inst === undefined) return [];
       const item = itemOf(data, inst.itemId);
       if (!battleItemUsable(item)) return [];
-      const name = inst.identified ? item.name : (item.unidentifiedName ?? item.name);
+      const name = itemDisplayName(state, data, instanceId);
       return [{ instanceId, itemId: item.id, name, target: item.effect.target }];
     });
     const input = b.inputs[ch.id];

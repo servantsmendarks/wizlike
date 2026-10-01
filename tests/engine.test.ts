@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { createInitialState, execute } from "../src/core/engine";
 import { createRng } from "../src/core/rng";
-import { cloneState, createItemInstance, destroyItemInstance, dungeonOf, memberById, monsterOf } from "../src/core/state";
+import { cloneState, createItemInstance, destroyItemInstance, dungeonOf, itemDisplayName, memberById, monsterOf } from "../src/core/state";
 import type { Command, GameState } from "../src/core/types";
 import {
   data,
@@ -123,6 +123,17 @@ describe("engine: execute", () => {
     destroyItemInstance(s, ch, carried);
     expect(ch.inventory).toEqual([gotB]);
     expect(s.dive!.ledger.items).toEqual([gotB]);
+  });
+
+  test("CH-72 itemDisplayName: 鑑定済みは name、未鑑定は unidentifiedName、unidentifiedName が無ければ name。実体が無ければ Error", () => {
+    const s = cloneState(execute(createInitialState(1, data), gameNew(), data).state);
+    const knownDagger = createItemInstance(s, "cursed_dagger", true);
+    const unknownDagger = createItemInstance(s, "cursed_dagger", false);
+    const unknownHerb = createItemInstance(s, "herb", false); // herb は unidentifiedName を持たない
+    expect(itemDisplayName(s, data, knownDagger)).toBe("血濡れの短剣");
+    expect(itemDisplayName(s, data, unknownDagger)).toBe("短剣？");
+    expect(itemDisplayName(s, data, unknownHerb)).toBe("薬草");
+    expect(() => itemDisplayName(s, data, "i999")).toThrow("unknown item instance: i999");
   });
 
   test("DG-41 destroyItemInstance は潜行していなければ台帳に触れない（dive null のまま）", () => {
