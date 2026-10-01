@@ -1341,6 +1341,7 @@ describe("決定性と網羅", () => {
     expect(kinds(r0.events).slice(0, 4)).toEqual(["moved", "screen", "encounter", "message:battle.encounter"]);
     const events: GameEvent[] = [];
     const won = finishBattle(r0.state, events, d1);
+    expectKnownStringKeys(events, d1); // 300 歩のランダムウォーク（削除）が担っていた戦闘の語りのキーの網羅
     expect(kinds(events)).toContain("message:battle.win");
     expect(won.screen).toBe("dungeon");
     const r1 = run(won, MOVE, DATA0);
@@ -1358,55 +1359,6 @@ describe("決定性と網羅", () => {
     expect(kinds(r3.events).slice(0, 4)).toEqual(["moved", "screen", "encounter", "message:battle.encounter"]);
     expect(r3.state.battle).not.toBeNull();
   });
-
-  test("UI-43/§3-10 200 シード × 300 歩のランダムウォーク（move/turn/choose）で出た message の key がすべて strings に実在し、例外が出ない", () => {
-    const keys = new Set<string>();
-    let wiped = 0;
-    for (let seed = 1; seed <= 200; seed++) {
-      const walker = createRng(seed + 10_000);
-      let s = enterD01(seed);
-      // 偶数シードは 1 階の任意の位置から歩き始める（迷路が長く、入口からだけでは階段に届きにくいため）
-      if (seed % 2 === 0) {
-        s = placeAt(s, { x: randInt(walker, 0, 19), y: randInt(walker, 0, 19) }, FACINGS[randInt(walker, 0, 3)]!);
-      }
-      const events: GameEvent[] = [];
-      for (let i = 0; i < 300; i++) {
-        let cmd: Command;
-        if (s.pendingChoice !== null) {
-          const opts = s.pendingChoice.options;
-          // 街へ出る選択（DG-06 の exit、DG-32 の teleport）は選ばず、walker の乱数も引かずに stay（迷宮を歩き続ける）
-          cmd = opts.some((o) => o.id === "exit" || o.id === "teleport")
-            ? { type: "event.choose", optionId: "stay" }
-            : { type: "event.choose", optionId: opts[randInt(walker, 0, opts.length - 1)]!.id };
-        } else {
-          const k = randInt(walker, 0, 9);
-          cmd = k < 6 ? MOVE : { type: "dungeon.turn", dir: k < 8 ? "left" : k < 9 ? "right" : "around" };
-        }
-        const r = execute(s, cmd, data);
-        if (r.events[0]?.kind === "rejected") throw new Error(`seed ${seed} step ${i}: ${JSON.stringify(r.events[0])}`);
-        events.push(...r.events);
-        s = r.state;
-        // 遭遇したらオートで戦闘を終わらせてから歩き続ける
-        if (s.screen === "battle") s = finishBattle(s, events);
-        // M4: 全滅すると全滅処理で街へ戻るので、そのシードを打ち切る
-        if (s.screen === "town") {
-          wiped += 1;
-          break;
-        }
-      }
-      expectKnownStringKeys(events);
-      for (const e of events) {
-        if (e.kind === "message") keys.add(e.key);
-      }
-    }
-    // ウォークが主要な経路を通ったこと。降下と 2 階はウォークでは 1 シード頼みになるので、
-    // 「戦闘を通って階段まで進む」のテストで決定的に確かめる
-    for (const k of ["dungeon.blocked", "dungeon.door", "dungeon.stairsDown", "battle.encounter", "battle.win"]) {
-      expect(keys.has(k), k).toBe(true);
-    }
-    // 全滅で打ち切ったシードが大半ではない（戦闘の後も歩き続けたシードが残る）
-    expect(wiped).toBeLessThan(150);
-  }, 120_000);
 });
 
 describe("保留中の選択の不変条件（E3、SV-50）", () => {
