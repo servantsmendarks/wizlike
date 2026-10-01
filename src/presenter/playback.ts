@@ -11,13 +11,16 @@
 // - tap(): タップ待ちなら解く。拍の中なら今の拍の残りを即時にする（拍は飛ばさない）。拍の外なら UI-43
 //   （1 回目は今の文の即表示、同じ再生の中の 2 回目で残りをすべて即時）。
 // - 全滅（UI-56）: 拍の中の wipe は、開く前に最後の拍を読ませ（上の待ち）、拍の外に出てから内訳の overlay を開く。
+//   拍の外の wipe（戦闘外の全滅）も、開く前に全滅の 2d10 の箱を出したままタップを 1 回待つ。
+//   全滅の 2d10（label が WIPE_DICE_KEY）の箱は、その後の message 以外のイベント（復活の lifeChanged など）でも消さず、wipe の待ちの後に消す。
 //   開いた後は入力を待たずに続ける（後続の screen town でも待たない）。
+// - battleEnd を受けたら deps.battleEnded() で戦闘の入力の UI（ヘッダーの問い・オート解除・パーティの選択）を下げる。
 // - レベルの変化（levelUp / levelDown）はパーティ欄の最大値と現在値を描き直す。spellLearned は何もしない（message が語る）。
 // - 戦闘（UI-41 / UI-42 / UI-40）: 被弾のフラッシュは hpChanged（delta < 0）に一本化する（味方はパーティ行、敵はグループの絵）。
 //   敵の id は "e{g}-{u}"（enemyGroupOfId）。敵の HP・状態は見せない（状態は core の message で伝わる）。
 //   全体攻撃の揺れは、spell の呪文が target enemyGroup / allEnemies かつ effect damage のとき（data.spells を表示のためだけに引く）。
 //   ダイスは dice で出し（1 件で 1 つの箱。新しい dice は前の箱を置き換える）、message と dice 以外のイベントの前と再生の終わりに消す。
-//   beat はその例外で、拍の待ちの後に消す。dice を受けたら履歴に 1 行の要約（formatDiceSummary）を残す（UI-46）。
+//   beat はその例外で、拍の待ちの後に消す。全滅の 2d10 も例外で、wipe の前の待ちの後に消す（上の全滅）。dice を受けたら履歴に 1 行の要約（formatDiceSummary）を残す（UI-46）。
 //   skip のときは flash / shake / dice / fade に 0ms を渡し、タイマーを使わない。
 // 具体的な views は import しない（純粋な enemyGroupOfId / formatMessage / formatDiceSummary だけ）。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, StatusId, Strings } from "../core/data/index";
@@ -79,7 +82,12 @@ export type PlayerDeps = {
   screens: { show(to: Screen, state: GameState): void; sync(state: GameState): void };
   /** UI-56 の全滅の内訳の overlay を開く（入力は待たない。閉じるのは app） */
   wipe: { show(p: PenaltyResult): void };
+  /** UI-44 / UI-54: battleEnd を再生した（戦闘の入力の UI を下げる。続きの再生の間は出さない） */
+  battleEnded(): void;
 };
+
+/** UI-40 / UI-56: 全滅の 2d10 の dice の label のキー。この箱は wipe（内訳を開く）まで消さない */
+export const WIPE_DICE_KEY = "dice.wipe";
 
 export type Handlers = {
   [K in GameEventKind]?: (ev: Extract<GameEvent, { kind: K }>, cx: PlayCx, finalState: GameState) => Promise<void>;
@@ -153,9 +161,12 @@ export function createPlayer(deps: PlayerDeps): Player {
   const isSkip = (): boolean => deps.settings().skipAnimations || rushed || beatRush;
   /** ダイスの overlay が出ているか（出ていなければ hide を呼ばない） */
   let diceShown = false;
+  /** 出ている箱が全滅の 2d10 か（UI-56。wipe の待ちの後まで消さない） */
+  let wipeDiceShown = false;
   const hideDice = (): void => {
     if (!diceShown) return;
     diceShown = false;
+    wipeDiceShown = false;
     deps.dice.hide();
   };
   const ui = deps.data.config.ui;
@@ -281,6 +292,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     async dice(ev, cx) {
       cx.skip = isSkip();
       diceShown = true;
+      wipeDiceShown = ev.label.key === WIPE_DICE_KEY;
       deps.message.log(formatDiceSummary(ev, deps.strings));
       await deps.dice.show(ev, isSkip, msOf(cx, ui.diceStepMs));
     },
@@ -309,6 +321,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     async battleEnd(_ev, cx) {
       cx.skip = isSkip();
       hideDice();
+      deps.battleEnded();
     },
   };
 
@@ -316,17 +329,22 @@ export function createPlayer(deps: PlayerDeps): Player {
   const waitBeat = async (at: "beat" | "leave" | "end"): Promise<void> => {
     const w = beatWait({ mode, pending, diceShown, at });
     if (w === "tap") {
-      deps.message.setMore(true, !deps.settings().skipAnimations);
-      waitingTap = true;
-      try {
-        await latch.waitTap();
-      } finally {
-        waitingTap = false;
-      }
-      deps.message.setMore(false);
+      await waitTap();
     } else if (w === "timed") {
       await deps.message.waitMs(deps.settings().autoBeatMs);
     }
+  };
+
+  /** UI-45: 続きの三角を点滅させて（演出スキップでは点滅しない）タップを 1 回待つ */
+  const waitTap = async (): Promise<void> => {
+    deps.message.setMore(true, !deps.settings().skipAnimations);
+    waitingTap = true;
+    try {
+      await latch.waitTap();
+    } finally {
+      waitingTap = false;
+    }
+    deps.message.setMore(false);
   };
 
   /** 拍の状態を拍の外に戻す */
@@ -361,12 +379,17 @@ export function createPlayer(deps: PlayerDeps): Player {
             await waitBeat("leave");
             hideDice();
             leaveBeats();
+          } else if (ev.kind === "wipe" && wipeDiceShown) {
+            // UI-56: 拍の外の全滅（戦闘外）も、全滅の 2d10 の箱を出したままタップを 1 回待ってから内訳を開く
+            await waitTap();
+            hideDice();
           }
           if (ev.kind === "message") {
             messagesLeft--;
             if (mode === null) deps.message.setMore(messagesLeft > 0);
-          } else if (ev.kind !== "dice") {
-            // UI-40: ダイスは続く message（と続けて来たダイス）の間だけ残す
+          } else if (ev.kind !== "dice" && !wipeDiceShown) {
+            // UI-40: ダイスは続く message（と続けて来たダイス）の間だけ残す。
+            // UI-56: 全滅の 2d10 は復活の lifeChanged / hpChanged / statusChanged などでは消さず、wipe の待ちの後に消す
             hideDice();
           }
           if (mode !== null && (ev.kind === "message" || ev.kind === "dice")) pending = true;

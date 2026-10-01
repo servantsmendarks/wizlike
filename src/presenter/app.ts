@@ -238,7 +238,22 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       sync: (st) => sync(st),
     },
     wipe: { show: (p) => openWipe(p) },
+    battleEnded: () => onBattleEnded(),
   });
+
+  /**
+   * UI-44 / UI-54: battleEnd の再生の後は、戦闘の入力の UI（ヘッダーの問い・オート解除・パーティの選択）を下げる。
+   * 続きの再生（全滅の内訳を開く前の待ち、勝利・逃走の screen dungeon まで）では出さない。ヘッダーは空にする
+   * （戦闘の外への screen と再生の最後の sync で、場面のヘッダーに描き直す）
+   */
+  const onBattleEnded = (): void => {
+    cursor = null;
+    stopRequested = false;
+    play.party.setActive(null);
+    clearFocus();
+    play.header.setText("");
+    play.controls.setMode("none");
+  };
 
   /** core の screen イベント。M3 の画面は title / town / dungeon / battle */
   const onScreen = (to: Screen): void => {
@@ -688,23 +703,18 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   };
 
   /**
-   * UI-44 の例外: オート中の「オート解除」。連鎖・再生の途中なら予約だけ立てて文言を変える（連鎖の次の段で battle.auto off）。
-   * 連鎖の外なら battle.auto off をそのまま送る。
+   * UI-44 の例外: オート中の「オート解除」。連鎖・再生の途中なら、core の状態に関係なくボタンを予約の表示にする（表示のためだけ）。
+   * 予約（連鎖の次の段で battle.auto off）を立てるのは、今の state がオート中のときだけ（CB-43 で既に解けた・戦闘が終わったなら何も送らない）。
+   * 連鎖の外なら、オート中のときだけ battle.auto off をそのまま送る。
    */
   const requestAutoStop = (): void => {
     const menu = battleMenu(state, data);
-    if (menu === null) {
-      // 戦闘が終わった後の再生（全滅の内訳を開く前の拍の待ちなど）に残っているオート解除は、拍のタップとして扱う（UI-45）
-      if (isBusy()) player.tap();
-      return;
-    }
-    if (!menu.auto) return;
     if (chaining || isBusy()) {
-      if (stopRequested) return;
-      stopRequested = true;
+      if (menu !== null && menu.auto) stopRequested = true;
       play.controls.setAutoStop(t("battle.autoStopping"), () => requestAutoStop());
       return;
     }
+    if (menu === null || !menu.auto) return;
     stopRequested = false;
     void runBattle({ type: "battle.auto", on: false });
   };

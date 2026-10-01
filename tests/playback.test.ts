@@ -103,6 +103,7 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
     },
     screens: { show: (to) => rec("screens.show")(to), sync: (st) => log.push({ m: "screens.sync", a: [st] }) },
     wipe: { show: (p) => rec("wipe.show")(p) },
+    battleEnded: rec("battleEnded"),
     beat: {
       waitTap() {
         log.push({ m: "beat.waitTap", a: [] });
@@ -272,7 +273,7 @@ describe("UI-41 playback", () => {
     }
   });
 
-  test("UI-41/UI-56 wipe は wipe.show を 1 回（PenaltyResult をそのまま）呼び、入力を待たずに後続を再生する（beat の無い列。skip の真偽とも）", async () => {
+  test("UI-41/UI-56 wipe は wipe.show を 1 回（PenaltyResult をそのまま）呼ぶ。拍の外（beat の無い列）でも全滅の 2d10 を出したままタップを 1 回待ってから開き、開いた後は入力を待たずに後続を再生する（skip の真偽とも）", async () => {
     const penalty: PenaltyResult = {
       dice: [3, 4],
       total: 7,
@@ -305,9 +306,12 @@ describe("UI-41 playback", () => {
       await createPlayer(deps).play(events, before, after);
       expect(vi.getTimerCount()).toBe(0);
       expect(log.filter((e) => e.m === "wipe.show")).toEqual([{ m: "wipe.show", a: [penalty] }]);
-      // 内訳を開いた後に街の語りと画面の切り替えが続く（dice は wipe の前で消える）
-      expect(names(log).filter((m) => ["dice.show", "dice.hide", "wipe.show", "message.say", "screens.show", "screens.sync"].includes(m))).toEqual([
+      // 箱を出したまま 1 回待ち、待ちの後に消してから内訳を開く。内訳を開いた後に街の語りと画面の切り替えが続く（待たない）
+      expect(
+        names(log).filter((m) => ["dice.show", "dice.hide", "beat.waitTap", "wipe.show", "message.say", "screens.show", "screens.sync"].includes(m)),
+      ).toEqual([
         "dice.show",
+        "beat.waitTap",
         "dice.hide",
         "wipe.show",
         "message.say",
@@ -339,6 +343,105 @@ describe("UI-41 playback", () => {
       // 内訳の後は待たない（街の画面と最後の同期だけ）
       expect(ms.slice(w + 1), String(auto)).toEqual(["screens.show", "screens.sync"]);
     }
+  });
+
+  /** 全滅の 2d10（dice.wipe）の dice.show から wipe.show までの記録。間で dice.hide が呼ばれていないこと、待ちが箱を出したまま起きることを見る */
+  const wipeSpan = (log: Log): string[] => {
+    const d = log.findIndex((e) => e.m === "dice.show" && e.a[0] === "dice.wipe");
+    const w = log.findIndex((e) => e.m === "wipe.show");
+    expect(d).toBeGreaterThanOrEqual(0);
+    expect(w).toBeGreaterThan(d);
+    return names(log.slice(d, w + 1)).filter((m) => ["dice.show", "dice.hide", "beat.waitTap", "message.waitMs", "party.setLife", "wipe.show"].includes(m));
+  };
+
+  test("UI-40/UI-56/CB-53/TW-24 戦闘の全滅（core の実際の列。全員倒れてリーダーが戻され、dice の後・wipe の前に lifeChanged が出る）: 全滅の 2d10 の箱は復活の更新では消えず、箱を出したままタップを待ち、待ちの後に消してから内訳を開く（手動・オート、演出スキップの真偽とも）", async () => {
+    // wipe.test の CB-53 と同じ形: c1（リーダー）だけ動けて hp 1、ほかは麻痺。敵は必ず当てる → c1 が倒れ、生存者（麻痺）とリーダーを戻す
+    const PARA = { status: ["paralysis" as const] };
+    const s0 = structuredClone(dived(1));
+    for (const c of s0.party) Object.assign(c, c.id === "c1" ? { hp: 1 } : PARA);
+    expect(s0.party.find((c) => c.id === "c1")?.isLeader).toBe(true);
+    const d = dataWith({ combat: ALWAYS_HIT });
+    for (const auto of [false, true]) {
+      const s = withBattle(s0, [{ monsterId: "kobold", hps: [50] }], { identified: ["kobold"], inputs: { c1: { type: "defend" } }, auto });
+      const r = execute(s, { type: "battle.resolve" }, d);
+      // 前提: dice{dice.wipe} の後・wipe の前に、リーダーの lifeChanged（alive）と、message でない更新が出る
+      const di = r.events.findIndex((e) => e.kind === "dice" && e.label.key === "dice.wipe");
+      const wi = r.events.findIndex((e) => e.kind === "wipe");
+      const between = r.events.slice(di + 1, wi);
+      expect(between.some((e) => e.kind === "lifeChanged" && e.id === "c1" && e.life === "alive"), String(auto)).toBe(true);
+      expect(between.some((e) => e.kind === "statusChanged"), String(auto)).toBe(true);
+      for (const skipAnimations of [false, true]) {
+        const { deps, log } = fakeDeps({ skipAnimations });
+        await createPlayer(deps).play(r.events, s, r.state);
+        // パーティ欄の更新はそのまま行い、箱は wipe の待ちの後まで消さない
+        const span = wipeSpan(log);
+        expect(span.slice(-3), `${auto} ${skipAnimations}`).toEqual(["beat.waitTap", "dice.hide", "wipe.show"]);
+        expect(span.filter((m) => m === "dice.hide"), `${auto} ${skipAnimations}`).toEqual(["dice.hide"]);
+        expect(span, `${auto} ${skipAnimations}`).toContain("party.setLife");
+        expect(span.indexOf("party.setLife")).toBeLessThan(span.indexOf("beat.waitTap"));
+      }
+    }
+  });
+
+  test("UI-40/UI-56/TW-23 戦闘の外の全滅（wipeIfNoneCanAct。全員麻痺で dungeon.turn）: 拍が無くても、全滅の 2d10 の箱を出したままタップを 1 回待ってから内訳を開く。復活の更新では箱を消さない（演出スキップの真偽とも）", async () => {
+    const s = structuredClone(dived(1));
+    for (const c of s.party) c.status = ["paralysis"];
+    const r = execute(s, { type: "dungeon.turn", dir: "left" }, data);
+    expect(r.state.screen).toBe("town");
+    expect(r.events.some((e) => e.kind === "beat")).toBe(false);
+    const di = r.events.findIndex((e) => e.kind === "dice" && e.label.key === "dice.wipe");
+    const wi = r.events.findIndex((e) => e.kind === "wipe");
+    expect(r.events.slice(di + 1, wi).some((e) => e.kind === "statusChanged")).toBe(true);
+    for (const skipAnimations of [false, true]) {
+      const { deps, log } = fakeDeps({ skipAnimations });
+      await createPlayer(deps).play(r.events, s, r.state);
+      expect(wipeSpan(log), String(skipAnimations)).toEqual(["dice.show", "beat.waitTap", "dice.hide", "wipe.show"]);
+      // 待ちは 1 回だけ（内訳を開いた後の街の処理では待たない）
+      expect(log.filter((e) => e.m === "beat.waitTap")).toHaveLength(1);
+      // 続きの三角は演出スキップでは点滅しない
+      const w = log.findIndex((e) => e.m === "beat.waitTap");
+      expect(log.slice(0, w).filter((e) => e.m === "message.setMore").at(-1)?.a).toEqual([true, !skipAnimations]);
+    }
+  });
+
+  test("UI-45/UI-56 戦闘の外の全滅のタップ待ちは、Player.tap() で解くまで内訳を開かない（箱は出たまま）", async () => {
+    const s = structuredClone(dived(1));
+    for (const c of s.party) c.status = ["paralysis"];
+    const r = execute(s, { type: "dungeon.turn", dir: "left" }, data);
+    const { deps, log } = fakeDeps({ skipAnimations: true });
+    delete deps.beat; // 既定の掛け金（Player.tap() が解く）
+    const player = createPlayer(deps);
+    let done = false;
+    const p = player.play(r.events, s, r.state).then(() => {
+      done = true;
+    });
+    // タップ待ちに入る（dice.show の後に setMore(true, blink) が呼ばれる）まで進める
+    const waiting = (): boolean => {
+      const d = log.findIndex((e) => e.m === "dice.show");
+      return d >= 0 && log.slice(d).some((e) => e.m === "message.setMore" && e.a.length === 2 && e.a[0] === true);
+    };
+    for (let i = 0; i < 1000 && !waiting(); i++) await Promise.resolve();
+    expect(waiting()).toBe(true);
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(done).toBe(false);
+    expect(names(log)).toContain("dice.show");
+    expect(names(log)).not.toContain("dice.hide");
+    expect(names(log)).not.toContain("wipe.show");
+    player.tap();
+    await p;
+    expect(names(log).filter((m) => m === "dice.hide" || m === "wipe.show")).toEqual(["dice.hide", "wipe.show"]);
+  });
+
+  test("UI-44/UI-54 battleEnd を受けたら battleEnded を 1 回呼ぶ（戦闘の入力の UI を下げる）。戦闘の外への screen と全滅の内訳より前", async () => {
+    const PARA = { status: ["paralysis" as const] };
+    const s0 = structuredClone(dived(1));
+    for (const c of s0.party) Object.assign(c, c.id === "c1" ? { hp: 1 } : PARA);
+    const s = withBattle(s0, [{ monsterId: "kobold", hps: [50] }], { identified: ["kobold"], inputs: { c1: { type: "defend" } } });
+    const r = execute(s, { type: "battle.resolve" }, dataWith({ combat: ALWAYS_HIT }));
+    const { deps, log } = fakeDeps();
+    await createPlayer(deps).play(r.events, s, r.state);
+    const ms = names(log).filter((m) => m === "battleEnded" || m === "wipe.show" || m === "screens.show");
+    expect(ms).toEqual(["battleEnded", "wipe.show", "screens.show"]);
   });
 
   test("UI-41 最後に sync が 1 回、最終の state で呼ばれる", async () => {
@@ -469,6 +572,7 @@ describe("UI-41/UI-42/UI-40 戦闘の再生", () => {
       { m: "dice.show", a: ["dice.flee", false, ui.diceStepMs] },
       { m: "message.say", a: [data.strings["battle.fleeOk"], false] },
       { m: "dice.hide", a: [] },
+      { m: "battleEnded", a: [] },
       { m: "screens.show", a: ["dungeon"] },
       { m: "view.fade", a: [ui.viewFadeMs] },
       { m: "screens.sync", a: [JSON.parse(JSON.stringify(after))] },

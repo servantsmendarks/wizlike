@@ -262,10 +262,26 @@ describe("入力と Command", () => {
     expect(body).toMatch(/finish: \(\) => endWalk\(\)/);
   });
 
-  test("UI-44/UI-45 戦闘が終わった後の再生に残るオート解除（battleMenu が null）は、再生中なら拍のタップ（player.tap）にする", () => {
+  test("UI-44 再生中・連鎖の途中のオート解除は、core の状態に関係なく予約の表示（battle.autoStopping）にし、予約はオート中のときだけ立てる。連鎖の外はオート中のときだけ battle.auto off を送る", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const requestAutoStop = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
-    expect(body).toMatch(/if \(menu === null\) \{\s*if \(isBusy\(\)\) player\.tap\(\);\s*return;\s*\}/);
+    expect(body).toMatch(
+      /if \(chaining \|\| isBusy\(\)\) \{\s*if \(menu !== null && menu\.auto\) stopRequested = true;\s*play\.controls\.setAutoStop\(t\("battle\.autoStopping"\), \(\) => requestAutoStop\(\)\);\s*return;\s*\}/,
+    );
+    expect(body).toMatch(/if \(menu === null \|\| !menu\.auto\) return;/);
+    // 戦闘が終わった後の再生に押せるボタンは残らないので、拍のタップに回す経路は無い
+    expect(body).not.toContain("player.tap()");
+  });
+
+  test("UI-44/UI-54 battleEnd の再生の後（playback の battleEnded）は、戦闘の入力の UI を下げる（操作領域は none、ヘッダーは空、入力中の名前と注目の枠を消す）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toMatch(/battleEnded: \(\) => onBattleEnded\(\)/);
+    const body = /const onBattleEnded = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(body).toContain("cursor = null;");
+    expect(body).toContain("play.party.setActive(null);");
+    expect(body).toContain("clearFocus();");
+    expect(body).toContain('play.header.setText("");');
+    expect(body).toContain('play.controls.setMode("none");');
   });
 });
 
