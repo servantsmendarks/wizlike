@@ -63,6 +63,7 @@ import {
 import type { BattleItem } from "./combat-calc";
 import type { AllyPlan, MemberSnap, TargetRef } from "./combat-plan";
 import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, snapMembers, toPlan } from "./combat-plan";
+import { applyAllyEffect } from "./effects";
 import { loseSan } from "./san";
 
 function requireBattle(state: GameState): BattleState {
@@ -548,7 +549,7 @@ function resolveTargets(state: GameState, actor: Character, kind: SpellTarget, t
   }
 }
 
-/** F9: 呪文と道具で共通の効果。呪文に命中判定はない */
+/** F9: 呪文と道具で共通の効果。呪文に命中判定はない。味方側の heal / cureStatus は effects.ts の applyAllyEffect（戦闘外と共有） */
 function applyEffect(ctx: RuleContext, effect: SpellEffect | BattleItem["effect"], refs: TargetRef[]): void {
   const { state, data } = ctx;
   const b = requireBattle(state);
@@ -592,14 +593,7 @@ function applyEffect(ctx: RuleContext, effect: SpellEffect | BattleItem["effect"
       return;
     }
     case "heal":
-      for (const ch of allyRefs) {
-        const r = Math.max(0, rollDice(state.rng, effect.dice).total);
-        const next = Math.min(ch.hpMax, ch.hp + r);
-        const delta = next - ch.hp;
-        if (delta > 0) ctx.events.push({ kind: "hpChanged", id: ch.id, delta, hp: next });
-        ch.hp = next;
-        ctx.events.push({ kind: "message", key: "battle.heal", params: { target: ch.name, amount: delta } });
-      }
+      applyAllyEffect(ctx, { type: "heal", dice: effect.dice }, allyRefs);
       return;
     case "acBonus":
       for (const ch of allyRefs) {
@@ -608,15 +602,7 @@ function applyEffect(ctx: RuleContext, effect: SpellEffect | BattleItem["effect"
       }
       return;
     case "cureStatus":
-      for (const ch of allyRefs) {
-        if (ch.status.includes(effect.status)) {
-          ch.status = ch.status.filter((x) => x !== effect.status);
-          ctx.events.push({ kind: "statusChanged", id: ch.id, status: effect.status, on: false });
-          ctx.events.push({ kind: "message", key: "battle.cured", params: { target: ch.name } });
-        } else {
-          ctx.events.push({ kind: "message", key: "battle.noEffect", params: { target: ch.name } });
-        }
-      }
+      applyAllyEffect(ctx, { type: "cureStatus", status: effect.status }, allyRefs);
       return;
     case "identify": {
       let any = false;
