@@ -1,5 +1,5 @@
 // エントリポイント。データを読み込んで検証し、不正なら起動を止める（CLAUDE.md §3-5）。
-// M0 ではステージの実機確認画面を出すだけ。
+// 起動順: load → fonts.load → applyPalette → 設定の store → createApp → mountStage → app.start。
 import "./presenter/style.css";
 import config from "../data/config.json";
 import races from "../data/races.json";
@@ -14,7 +14,9 @@ import events from "../data/events.json";
 import strings from "../data/strings.json";
 import { GameDataError, loadGameData, type GameData, type RawGameData } from "./core/data";
 import { mountStage } from "./presenter/stage";
-import { renderStageCheck } from "./presenter/views/stage-check";
+import { createApp } from "./presenter/app";
+import { applyPalette } from "./presenter/palette";
+import { createSettingsStore, loadSettings, saveSettings } from "./presenter/settings";
 import { renderDataError, STARTUP_ERROR_HEADING } from "./presenter/views/data-error";
 
 // style.css の @font-face と同じ名前。
@@ -71,9 +73,12 @@ async function start(): Promise<void> {
     console.warn(e);
   }
 
-  // mountStage は同期で 1 回 onLayout を呼ぶので、確認画面を先に作る。
-  const check = renderStageCheck(stageEl, data.strings);
-  mountStage(stageEl, data.config.stage, (layout, input) => check.update(layout, input));
+  applyPalette(document.documentElement);
+  const settings = createSettingsStore(loadSettings(data.config), saveSettings);
+  // mountStage は同期で 1 回 onLayout を呼ぶので、app を先に作る。
+  const app = createApp({ stage: stageEl, data, settings });
+  mountStage(stageEl, data.config.stage, app.onLayout);
+  app.start();
 }
 
 // load 内の失敗は fail が描画済み（再 throw されてここに来る）なので二重に描かない。
