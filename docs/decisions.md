@@ -92,3 +92,4 @@
 - 2026-10-01 docs: CB-03 に「グループごとの敵の種類はいる階の encounterTable から weight の重みで選ぶ」と書いた。encounterTable の形（monster と weight の組）から読める最も単純な解釈のため。
 - 2026-10-01 docs/data: DG-05 の部屋数 3〜6 は既定値（config.dungeon.defaultRooms【仮】）とし、dungeons[].rooms があればそれを優先する（rooms は任意フィールド）。76 行目（d02.rooms【未定】）を解決し、d02 の [4,7] は rooms 優先により正当とする。defaultRooms は 1 以上の整数の [min, max] で検証し、rooms の検査（0 以上の整数の [min, max]）は従来どおり。ユーザー指示。
 - 2026-10-01 docs: UI-01 の文面を「整数倍は端末ピクセル（CSS px × devicePixelRatio）で数える」に直し（倍率 k は収まる最大の整数、CSS 上の倍率は k / devicePixelRatio、1 倍も収まらなければ小数）、位置は 1/devicePixelRatio 単位に丸め、丸めると safe area をはみ出す場合（内側の境界に寄せても収まらない場合）は safe area 優先と仕様に明記した。56・57 行目の M0 の判断を仕様へ反映したもので、stage.ts と tests/stage.test.ts は既にこの文面どおりのため変更しない。ユーザー指示。
+- 2026-10-01 M0: 実機確認。PC（Chrome）と iPhone で、ステージが整数倍で表示されフォントが出ることをユーザーが確認した。Android（Chrome）は未確認【未定】。次の実機確認（M2）で併せて見る。
