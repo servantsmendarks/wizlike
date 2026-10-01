@@ -480,6 +480,24 @@ describe("TW-30〜32 GM の救済", () => {
     expect(ctx.state.townVisit).toEqual({ mercyOffered: true });
     expect(ctx.events.some((e) => e.kind === "message" && e.key === "town.mercy.offer")).toBe(true);
   });
+
+  test("TW-32 申し出の間も闇魔術（town.dark）は使え、申し出は下りない（mercyOffered は true のまま）", () => {
+    // c2..c6 が ash（L1 で 1000）、所持金 999 → 最安の蘇生費 1000 に届かないので申し出る
+    const ctx = ctxFor(diving({ c2: ASH, c3: ASH, c4: ASH, c5: ASH, c6: ASH }, 999));
+    returnToTown(ctx, "dungeon.exit");
+    expect(ctx.state.townVisit).toEqual({ mercyOffered: true });
+    const s = cloneState(ctx.state);
+    s.gold = 1000;
+    const r = ok(s, { type: "town.dark", memberId: "c2" });
+    expect(r.events).toEqual([
+      { kind: "lifeChanged", id: "c2", life: "alive" },
+      { kind: "hpChanged", id: "c2", delta: 1, hp: 1 },
+      { kind: "message", key: "town.dark.done", params: { name: member(s, "c2").name } },
+    ]);
+    expect(r.state.gold).toBe(0);
+    expect(r.state.townVisit).toEqual({ mercyOffered: true });
+    expect(townMenu(r.state, data)!.mercy!.map((m) => m.memberId)).toEqual(["c3", "c4", "c5", "c6"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
