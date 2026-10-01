@@ -1,7 +1,7 @@
 // 街（TW-02, TW-04, TW-07, TW-08, TW-11, TW-30〜32）。rules/town.ts と engine の town.* の配線。
 // 既定のパーティ（newGame）: c1 アルド 戦士 HP 13（リーダー）、c2 ベルク 戦士 HP 14 vit 14、c3 キリ 盗賊 HP 8、
 // c4 ドナ 僧侶 HP 10 MP 5、c5 エル 魔術師 HP 6 MP 7、c6 フィン 盗賊 HP 8。所持金 300。
-// 宿のランク: 0 馬小屋 0G HP ×0、1 相部屋 30G HP ×0.5、2 個室 100G HP ×1.0（MP はどのランクでも全回復）。寺院: 蘇生 level × 250、
+// 宿のランク: 0 馬小屋 0G HP ×0、1 相部屋 20G HP ×0.5、2 個室 60G HP ×1.0（MP はどのランクでも全回復）。寺院: 蘇生 level × 100、
 // 成功率 min(95, 50 + vit × 2)、治療 毒 50 / 麻痺 150 / 石化 300、解呪 200。闇魔術 level × 1000。
 import { describe, expect, test } from "vitest";
 import { createInitialState, execute } from "../src/core/engine";
@@ -151,15 +151,15 @@ describe("TW-04 宿屋（town.inn）", () => {
     expect(r.state.rng).toEqual(s.rng);
   });
 
-  test("TW-04/MG-02 相部屋（30G、HP ×0.5）と個室（100G、HP ×1.0）: 料金を 1 回払い、HP は ceil(hpMax × hpRatio) 増えて hpMax で止まり、MP は全回復", () => {
+  test("TW-04/MG-02 相部屋（20G、HP ×0.5）と個室（60G、HP ×1.0）: 料金を 1 回払い、HP は ceil(hpMax × hpRatio) 増えて hpMax で止まり、MP は全回復", () => {
     const s = town({ c1: { hp: 1 }, c4: { mp: 0 } });
     const a = ok(s, { type: "town.inn", rank: 1 });
     // c1 +ceil(6.5)=7 → 8、c4 MP 0 → 5（ランクに関わらず mpMax）
-    expect(a.state.gold).toBe(270);
+    expect(a.state.gold).toBe(280);
     expect(member(a.state, "c1").hp).toBe(8);
     expect(member(a.state, "c4").mp).toBe(5);
     const b = ok(s, { type: "town.inn", rank: 2 });
-    expect(b.state.gold).toBe(200);
+    expect(b.state.gold).toBe(240);
     expect(member(b.state, "c1").hp).toBe(13);
     expect(member(b.state, "c4").mp).toBe(5);
   });
@@ -167,18 +167,18 @@ describe("TW-04 宿屋（town.inn）", () => {
   test("TW-04 満タンでも泊まれる（料金を払い、回復のイベントは出ない）", () => {
     const s = town();
     const r = ok(s, { type: "town.inn", rank: 2 });
-    expect(r.events).toEqual([{ kind: "message", key: "town.inn.stay", params: { room: "個室", cost: 100 } }]);
-    expect(r.state.gold).toBe(200);
+    expect(r.events).toEqual([{ kind: "message", key: "town.inn.stay", params: { room: "個室", cost: 60 } }]);
+    expect(r.state.gold).toBe(240);
   });
 
   test("TW-04 rank が範囲外・整数でない・数でない、所持金不足、街の外は rejected（同じ参照・乱数不変）", () => {
-    const s = town({}, 99);
+    const s = town({}, 59);
     expectRejected(s, { type: "town.inn", rank: -1 }, "bad rank");
     expectRejected(s, { type: "town.inn", rank: 3 }, "bad rank");
     expectRejected(s, { type: "town.inn", rank: 1.5 }, "bad rank");
     expectRejected(s, { type: "town.inn", rank: "0" } as unknown as Command, "bad rank");
     expectRejected(s, { type: "town.inn", rank: 2 }, "not enough gold");
-    expect(execute(s, { type: "town.inn", rank: 1 }, data).state.gold).toBe(69);
+    expect(execute(s, { type: "town.inn", rank: 1 }, data).state.gold).toBe(39);
     expectRejected(diving(), { type: "town.inn", rank: 0 }, "wrong screen");
     expectRejected(createInitialState(1, data), { type: "town.inn", rank: 0 }, "wrong screen");
   });
@@ -227,7 +227,7 @@ describe("TW-04 宿屋（town.inn）", () => {
 // ---------------------------------------------------------------------------
 
 describe("TW-07 寺院（town.temple）", () => {
-  test("TW-07 蘇生の成功: level × 250 を払い、d100 ≤ 50 + vit × 2（ベルク vit 14 → 78）で alive・HP 1。dice イベントは出さない", () => {
+  test("TW-07 蘇生の成功: level × 100 を払い、d100 ≤ 50 + vit × 2（ベルク vit 14 → 78）で alive・HP 1。dice イベントは出さない", () => {
     const { seed, roll } = seedWithFirstD100((x) => x <= 78);
     const s = town({ c2: { ...DEAD, level: 2, levelHistory: [{ level: 2, hpGain: 5, mpGain: 0 }], hpMax: 19 } }, 600);
     s.rng = createRng(seed);
@@ -239,7 +239,7 @@ describe("TW-07 寺院（town.temple）", () => {
       { kind: "hpChanged", id: "c2", delta: 1, hp: 1 },
       { kind: "message", key: "town.temple.resurrectOk", params: { name: "ベルク" } },
     ]);
-    expect(r.state.gold).toBe(100);
+    expect(r.state.gold).toBe(400);
     expect(member(r.state, "c2").life).toBe("alive");
     expect(member(r.state, "c2").hp).toBe(1);
     expect(r.state.rng).toEqual(rngAfter(seed, [[1, 100]]));
@@ -255,7 +255,7 @@ describe("TW-07 寺院（town.temple）", () => {
       { kind: "lifeChanged", id: "c2", life: "ash" },
       { kind: "message", key: "town.temple.resurrectFail", params: { name: "ベルク" } },
     ]);
-    expect(r.state.gold).toBe(50);
+    expect(r.state.gold).toBe(200);
     expect(member(r.state, "c2")).toMatchObject({ life: "ash", hp: 0, san: 30, status: ["poison"] });
   });
 
@@ -273,7 +273,7 @@ describe("TW-07 寺院（town.temple）", () => {
   });
 
   test("TW-07 蘇生の rejected: alive・ash は not dead、所持金不足、未知のメンバー、未知のサービス、街の外", () => {
-    const s = town({ c2: DEAD, c3: ASH }, 249);
+    const s = town({ c2: DEAD, c3: ASH }, 99);
     expectRejected(s, { type: "town.temple", memberId: "c1", service: "resurrect" }, "not dead");
     expectRejected(s, { type: "town.temple", memberId: "c3", service: "resurrect" }, "not dead");
     expectRejected(s, { type: "town.temple", memberId: "c2", service: "resurrect" }, "not enough gold");
@@ -397,7 +397,7 @@ describe("TW-11 迷宮入口", () => {
 
 describe("TW-30〜32 GM の救済", () => {
   test("TW-30 リーダー以外が全員 dead / ash で、所持金 + 銀行 < 最安の蘇生費なら申し出る（sanChanged の後、screen town の前）", () => {
-    const s = diving({ c2: DEAD, c3: DEAD, c4: ASH, c5: DEAD, c6: DEAD }, 249);
+    const s = diving({ c2: DEAD, c3: DEAD, c4: ASH, c5: DEAD, c6: DEAD }, 99);
     const ctx = ctxFor(s);
     returnToTown(ctx, "dungeon.return");
     const keys = ctx.events.map((e) => (e.kind === "message" ? e.key : e.kind));
@@ -407,18 +407,18 @@ describe("TW-30〜32 GM の救済", () => {
 
   test("TW-30 所持金 + 銀行が最安の蘇生費以上、または生存者がいれば申し出ない（銀行も数える）", () => {
     const allDead = { c2: DEAD, c3: DEAD, c4: DEAD, c5: DEAD, c6: DEAD };
-    expect(mercyEligible(diving(allDead, 249), data)).toBe(true);
-    expect(mercyEligible(diving(allDead, 250), data)).toBe(false);
-    const banked = diving(allDead, 100);
-    banked.bank = 150;
+    expect(mercyEligible(diving(allDead, 99), data)).toBe(true);
+    expect(mercyEligible(diving(allDead, 100), data)).toBe(false);
+    const banked = diving(allDead, 50);
+    banked.bank = 50;
     expect(mercyEligible(banked, data)).toBe(false);
     expect(mercyEligible(diving({ c2: DEAD, c3: DEAD, c4: DEAD, c5: DEAD }, 0), data)).toBe(false);
   });
 
-  test("TW-30 ash の費用は level × 1000（闇魔術）: 全員 ash の L1 なら所持金 999 で申し出、dead が混じれば 250 が最安", () => {
+  test("TW-30 ash の費用は level × 1000（闇魔術）: 全員 ash の L1 なら所持金 999 で申し出、dead が混じれば 100 が最安", () => {
     const allAsh = { c2: ASH, c3: ASH, c4: ASH, c5: ASH, c6: ASH };
     expect(resurrectCostOf({ ...member(newGame(1), "c2"), ...ASH, level: 3 }, data)).toBe(3000);
-    expect(resurrectCostOf({ ...member(newGame(1), "c2"), ...DEAD, level: 3 }, data)).toBe(750);
+    expect(resurrectCostOf({ ...member(newGame(1), "c2"), ...DEAD, level: 3 }, data)).toBe(300);
     expect(mercyEligible(diving(allAsh, 999), data)).toBe(true);
     expect(mercyEligible(diving(allAsh, 1000), data)).toBe(false);
     expect(mercyEligible(diving({ ...allAsh, c6: DEAD }, 999), data)).toBe(false);
@@ -528,10 +528,10 @@ describe("UI-52/TW-11 townMenu（表示層向けの問い合わせ）", () => {
     expect(m.gold).toBe(200);
     expect(m.inn).toEqual([
       { rank: 0, id: "stable", name: "馬小屋", cost: 0, affordable: true },
-      { rank: 1, id: "cheap", name: "相部屋", cost: 30, affordable: true },
-      { rank: 2, id: "good", name: "個室", cost: 100, affordable: true },
+      { rank: 1, id: "cheap", name: "相部屋", cost: 20, affordable: true },
+      { rank: 2, id: "good", name: "個室", cost: 60, affordable: true },
     ]);
-    expect(m.temple.resurrect).toEqual([{ memberId: "c2", name: "ベルク", cost: 500, affordable: false }]);
+    expect(m.temple.resurrect).toEqual([{ memberId: "c2", name: "ベルク", cost: 200, affordable: true }]);
     expect(m.temple.cure).toEqual([
       { memberId: "c3", name: "キリ", cost: 200, affordable: true },
       { memberId: "c6", name: "フィン", cost: 300, affordable: false },

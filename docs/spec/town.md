@@ -5,11 +5,11 @@
 - TW-01 施設は 8 つ: 酒場、宿屋、店、寺院、闇魔術、訓練所、銀行、迷宮入口。プロトタイプで実装するのは宿屋・寺院・闇魔術・迷宮入口（酒場は GM のメッセージ表示だけ）。
 - TW-02 街に入った時点（`town.enter`）で全員の SAN を `sanMax` に戻す【仮】。街に入る処理は帰還（DG-30）と全滅（TW-26）だけが内部で行い、`town.enter` コマンドは受け付けない（rejected `internal command`）。順は `town.enter` の語り → SAN の回復（life を問わず全員）→ 救済の判定（TW-30）→ 街の画面。
 - TW-03 酒場: パーティの状態確認、並び順変更（CH-03）、GM の語り（進行の案内、救済の提示 TW-30）。
-- TW-04 宿屋: 部屋のランク（`config.town.innRanks`: 料金と HP 回復量）を選んで泊まる。泊まると、必要経験値に達しているメンバーのレベルアップを処理する（CH-61。複数レベルなら順に）。レベルアップごとに呪文習得判定（MG-20〜24）を行い、ダイスを表示する。料金は 1 泊につき `cost` を 1 回払う（満タンでも泊まれる）。回復は `alive` の者だけで、HP は `ceil(hpMax × hpRatio)` を足して `hpMax` で止める（`hpRatio` は馬小屋 0 / 相部屋 0.5 / 個室 1.0【仮】。馬小屋では HP は増えない）。MP はどのランクでも `mpMax` まで全回復する（MG-02）。レベルアップはどのランクでも（0G の馬小屋でも）行い、`alive` の者だけ（並び順）。状態異常は治さない（寺院の役目）。
+- TW-04 宿屋: 部屋のランク（`config.town.innRanks`: 料金と HP 回復量）を選んで泊まる。泊まると、必要経験値に達しているメンバーのレベルアップを処理する（CH-61。複数レベルなら順に）。レベルアップごとに呪文習得判定（MG-20〜24）を行い、ダイスを表示する。料金は 1 泊につき `cost`（馬小屋 0 / 相部屋 20 / 個室 60【仮】）を 1 回払う（満タンでも泊まれる）。回復は `alive` の者だけで、HP は `ceil(hpMax × hpRatio)` を足して `hpMax` で止める（`hpRatio` は馬小屋 0 / 相部屋 0.5 / 個室 1.0【仮】。馬小屋では HP は増えない）。MP はどのランクでも `mpMax` まで全回復する（MG-02）。レベルアップはどのランクでも（0G の馬小屋でも）行い、`alive` の者だけ（並び順）。状態異常は治さない（寺院の役目）。
 - TW-05 店: 在庫制。`items[].stock` が初期在庫数、`infinite: true` の品は在庫無限。買値は `price`、売値は `price × config.economy.sellRatio`（0.5）。売った品は在庫 +1 になり、買値で買い戻せる。鑑定は `config.economy.identifyFee` で有料【仮】。プロトタイプ外。
 - TW-06 店の在庫は `dungeons[].onClear.shopStock` で追加される（各 1 個。`infinite` の品なら無限として解放）。
 - TW-07 寺院: 
-  - 蘇生: `dead` → `alive`（HP 1）。成功率% = `config.economy.templeSuccessBase`（50）+ `vit × config.economy.templeSuccessPerVit`（2）【仮】、上限 95。失敗すると `ash`。費用 = `level × config.economy.templeCostPerLevel`（250）。費用は成否に関わらず支払う。
+  - 蘇生: `dead` → `alive`（HP 1）。成功率% = `config.economy.templeSuccessBase`（50）+ `vit × config.economy.templeSuccessPerVit`（2）【仮】、上限 95。失敗すると `ash`。費用 = `level × config.economy.templeCostPerLevel`（100）【仮】。費用は成否に関わらず支払う。
   - 治療: 毒・麻痺・石化を回復。費用 = `config.economy.cureCost[status]`。
   - 解呪: 呪われた装備を外す（アイテムは失われる【仮】）。費用 = `config.economy.uncurseCost`。
   - 蘇生の対象は `dead` だけ（`ash` は闇魔術）。判定は d100 ≤ 成功率で、ダイスは表示しない（UI-40 の一覧に寺院は無い）。蘇生しても状態異常・MP・SAN はそのまま。

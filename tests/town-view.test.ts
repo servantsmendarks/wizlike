@@ -1,6 +1,6 @@
 // UI-52 街のページ（views/town.ts の純粋な部分）。値は core の townMenu だけから作る（UI-35）。
 // 既定のパーティ（newGame(1)）: c1 アルド（リーダー）、c2 ベルク、c3 キリ、c4 ドナ、c5 エル、c6 フィン。全員レベル 1。所持金 300。
-// 宿: 馬小屋 0G / 相部屋 30G / 個室 100G。寺院: 蘇生 level × 250、治療 毒 50 + 麻痺 150、解呪 200。闇魔術: level × darkCostPerLevel。
+// 宿: 馬小屋 0G / 相部屋 20G / 個室 60G。寺院: 蘇生 level × 100、治療 毒 50 + 麻痺 150、解呪 200。闇魔術: level × darkCostPerLevel。
 import { describe, expect, test } from "vitest";
 import { townMenu } from "../src/core/rules/town";
 import { cloneState, createItemInstance } from "../src/core/state";
@@ -45,12 +45,12 @@ describe("UI-52 街のページ", () => {
   test("UI-52/TW-04 宿屋はランクの行（名前と料金）。払えないランクは disabled。末尾が戻る", () => {
     expect(townEntries("inn", menuOf(town({}, 50)), S)).toEqual([
       { kind: "inn", rank: 0, label: "馬小屋　0G", disabled: false },
-      { kind: "inn", rank: 1, label: "相部屋　30G", disabled: false },
-      { kind: "inn", rank: 2, label: "個室　100G", disabled: true },
+      { kind: "inn", rank: 1, label: "相部屋　20G", disabled: false },
+      { kind: "inn", rank: 2, label: "個室　60G", disabled: true },
       back,
     ]);
     // ちょうど払える額なら押せる
-    expect(townEntries("inn", menuOf(town({}, 100)), S).filter((e) => e.kind === "inn" && e.disabled)).toEqual([]);
+    expect(townEntries("inn", menuOf(town({}, 60)), S).filter((e) => e.kind === "inn" && e.disabled)).toEqual([]);
   });
 
   test("UI-52/TW-07 寺院はサービスの 3 項目と戻る。サービスの対象は行（名前と料金、払えなければ disabled）", () => {
@@ -62,9 +62,9 @@ describe("UI-52 街のページ", () => {
       { kind: "page", to: { temple: "uncurse" }, label: "解呪" },
       back,
     ]);
-    // 蘇生 1 × 250 = 250 > 200 → disabled
+    // 蘇生 1 × 100 = 100 ≤ 200 → 押せる
     expect(townEntries({ temple: "resurrect" }, m, S)).toEqual([
-      { kind: "temple", service: "resurrect", memberId: "c3", label: "キリ　250G", disabled: true },
+      { kind: "temple", service: "resurrect", memberId: "c3", label: "キリ　100G", disabled: false },
       back,
     ]);
     // 治療 毒 50 + 麻痺 150 = 200 ≤ 200 → 押せる
