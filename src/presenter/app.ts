@@ -34,6 +34,15 @@ export type App = {
   start(): void;
 };
 
+/**
+ * UI-31: 十字ボタンを出さない間（迷宮以外・地図などの overlay・選択の保留）は長押しを離したものとするか。
+ * 押したまま十字ボタンが隠れると pointerup が届かず、壁で止まった長押しの続き（createHoldRepeater の stopped）が
+ * 残って次の前進を無視してしまうため。
+ */
+export function shouldReleaseHold(route: Route, overlay: Overlay, hasPendingChoice: boolean): boolean {
+  return route !== "dungeon" || overlay !== null || hasPendingChoice;
+}
+
 /** メッセージ窓のタップとみなす移動の上限（論理 px） */
 const TAP_SLOP_LOGICAL = 4;
 
@@ -179,9 +188,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     const s = store.get();
     play.setSwipeEnabled(s.inputMode !== "buttons");
     const c = play.controls;
-    // UI-31: 十字ボタンを出さない間は長押しを離したものとする。押したまま十字ボタンが隠れると pointerup が届かず、
-    // 壁で止まった長押しの続き（createHoldRepeater の stopped）が残って次の前進を無視してしまうため
-    if (route !== "dungeon" || overlay !== null || state.pendingChoice !== null) repeater.release();
+    // UI-31: 十字ボタンを出さない間は長押しを離したものとする（shouldReleaseHold）
+    if (shouldReleaseHold(route, overlay, state.pendingChoice !== null)) repeater.release();
     if (route === "town") {
       c.setList(townEntries(townPage, state).map(townItem));
       c.setMode("list");
