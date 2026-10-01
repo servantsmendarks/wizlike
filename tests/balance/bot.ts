@@ -1,7 +1,7 @@
 // H9 バランスのボット（ユーザー決定）: 「潜行 → 街（救済 → 寺院 → 闇魔術 → 相部屋 1 泊 → 店で補充）→ 潜行」を繰り返す。
 // 200 シードの計測は tests/balance/campaign.sim.ts（npm run balance）、既定の npm test には tests/balance.test.ts の煙テスト（5 シード）だけを置く。
-// ボットは 2 つ: (a) 4 戦固定ボット（4 戦で帰る）、(b) セオリーボット（戦い続け、この潜行の開始時に alive だった者が dead / ash になった時点か、前衛の HP の合計が半分を切った時点で帰る）。
-// ボットはテストの中だけにあり、core の execute と問い合わせ（floorOf、fieldItemMenu、townMenu）だけを使う。
+// ボットは 2 つ: (a) 4 戦固定ボット（4 戦で帰る）、(b) セオリーボット（戦い続け、この潜行の開始時に alive だった者が dead / ash になった時点か、CB-14 の繰り上げ後の前衛の生存者（life が alive）の「現在 HP の合計 ÷ 最大 HP の合計」が半分を切った時点で帰る。死者は数えない。ユーザー決定）。
+// ボットはテストの中だけにあり、core の execute と問い合わせ（floorOf、fieldItemMenu、townMenu、frontLineIds）だけを使う。
 // 合否は不変条件だけで、数字のしきい値では落とさない（数字は console.log に出し、decisions に転記する）。
 // 店: alive の者が帰還の糸を持っていなければ 1 本、その後パーティ全体の手持ちの薬草が 6 個【仮】になるまで薬草（払える範囲で。ユーザー決定）。
 // 累積の評価は資産 = 所持金 + 手持ちの消耗品（パーティ全員の inventory の consumable）の購入価格の合計で、初期の資産からの差（所持金だけの差も参考に出す）。
@@ -12,6 +12,7 @@ import { createRng, randInt, type RngState } from "../../src/core/rng";
 import { cellAt, edgeOf, FACINGS, isPassable, opposite, step, turnLeft, turnRight } from "../../src/core/rules/dungeon-gen";
 import { floorOf } from "../../src/core/rules/dungeon";
 import { fieldItemMenu } from "../../src/core/rules/items";
+import { frontLineIds } from "../../src/core/rules/combat-calc";
 import { townMenu } from "../../src/core/rules/town";
 import { itemOf } from "../../src/core/state";
 import type { Command, Facing, Floor, GameEvent, GameState, PenaltyResult, Pos } from "../../src/core/types";
@@ -20,7 +21,7 @@ import { data, expectKnownStringKeys, expectStateInvariants, newGame } from "../
 const NEAR = 6; // 上り階段からの BFS 距離
 const STEP_CAP = 3000; // 1 回の潜行の歩数の上限
 const BATTLE_ROUND_CAP = 300;
-const FRONT = 3; // セオリーボットの前衛（並び順の前 3 人）
+const FRONT_ROW = data.config.party.frontRow; // 並び順の前衛の人数（frontDownAtStart の記録用。セオリーボットの帰還条件は CB-14 の frontLineIds を使う）
 const HERB_TARGET = 6; // 【仮】店の後のパーティ全体の手持ちの薬草の数（ユーザー決定）
 const INN_RANK = data.config.town.innRanks.findIndex((r) => r.id === "cheap"); // 相部屋
 const START_GOLD = data.config.prototypeParty.startingGold;
@@ -37,7 +38,12 @@ export const BOTS: BotKind[] = [
     shouldReturn: (c) => {
       const s = c.state;
       if (s.party.some((x) => c.aliveAtStart.includes(x.id) && x.life !== "alive")) return true; // 潜行の開始時に alive だった者が dead / ash になった（ユーザー決定）
-      const front = s.party.slice(0, FRONT);
+      // CB-14 の繰り上げ後の前衛（frontLineIds は state.party と config.party.frontRow だけを見るので、戦闘外の迷宮の state でも同じ規則で働く）。
+      // そのうち life が alive の者（麻痺・石化・睡眠・SAN 0 も含む）だけで、HP の合計 × 2 < 最大 HP の合計なら帰る（ユーザー決定）。
+      // 生存者が 0 人なら HP の規則では帰らない（その状況は上の「開始時に alive だった者が dead / ash」で帰る）。
+      const ids = frontLineIds(s, data);
+      const front = s.party.filter((x) => ids.includes(x.id) && x.life === "alive");
+      if (front.length === 0) return false;
       const hp = front.reduce((a, x) => a + x.hp, 0);
       const max = front.reduce((a, x) => a + x.hpMax, 0);
       return hp * 2 < max;
@@ -336,7 +342,7 @@ export class Campaign {
     this.homeWipe = false;
     this.wiped = null;
     this.aliveAtStart = this.state.party.filter((c) => c.life === "alive").map((c) => c.id);
-    this.frontDownAtStart = this.state.party.slice(0, FRONT).some((c) => c.life !== "alive");
+    this.frontDownAtStart = this.state.party.slice(0, FRONT_ROW).some((c) => c.life !== "alive");
     this.run({ type: "dungeon.enter", dungeonId: "d01" });
     // 1 階の構造はこの潜行の間変わらない（罠の発動は kind だけを変え、辺は変えない）ので、潜行ごとにキャッシュする
     this.floor = floorOf(this.state.dive!, data, 1);
