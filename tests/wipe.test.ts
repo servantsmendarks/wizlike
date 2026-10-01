@@ -10,11 +10,12 @@ import { execute } from "../src/core/engine";
 import { cloneRng, createRng, randInt, rollDice, type RngState } from "../src/core/rng";
 import { startBattle } from "../src/core/rules/combat";
 import { levelUpWhilePossible } from "../src/core/rules/growth";
-import { performWipe, wipeIfNoneCanAct } from "../src/core/rules/wipe";
+import { returnToTown } from "../src/core/rules/town";
+import { assetValue, itemSaleValue, performWipe, wipeIfNoneCanAct } from "../src/core/rules/wipe";
 import { cloneState, createItemInstance, destroyItemInstance, makeContext, memberById } from "../src/core/state";
 import type { Character, GameEvent, GameState, PenaltyResult, RuleContext } from "../src/core/types";
 import { ALWAYS_HIT, dataWith, dived, eventsOf, kindsOf, withBattle } from "./helpers/battle";
-import { data, expectKnownStringKeys, loadFreshData, mirrorWipeRolls, newGame } from "./helpers/core";
+import { data, expectKnownStringKeys, expectStateInvariants, loadFreshData, mirrorWipeRolls, newGame } from "./helpers/core";
 
 const EXPS: Record<string, number> = { c1: 1600, c2: 2400, c3: 1000, c4: 1100, c5: 50, c6: 0 };
 
@@ -429,5 +430,102 @@ describe("全滅の発生（CB-53、CB-06、CH-44）", () => {
     expect(kindsOf(r.events).slice(0, 2)).toEqual(["turned", "message:wipe.intro"]);
     expect(r.state.screen).toBe("town");
     expect(r.state.rng).toEqual(m);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TW-27: 全滅後の総資産は、同じ状態から帰った場合を上回らない。
+// 比べる相手は「糸を消費しない帰還」（returnToTown。徒歩・テレポーターと同じ）。糸で帰ると糸の売値 25 だけ下がり、
+// 台帳が空で損失 0 の帯（奇跡、EXP 100 未満の幸運）では全滅の方が上回る（decisions の衝突 TW-27）。
+
+/** 同じ状態から糸を消費せずに帰った state */
+function returnedOf(s: GameState, d: GameData = data): GameState {
+  const ctx = makeContext(cloneState(s), d);
+  returnToTown(ctx, "dungeon.return");
+  return ctx.state;
+}
+
+/** TW-27 の比較: 総資産と、成分ごと（所持金、所持品の実体の集合、各人の EXP） */
+function expectWipeNotBetter(s: GameState, d: GameData = data): { w: GameState; r: GameState } {
+  const w = wipeOf(s, d).state;
+  const r = returnedOf(s, d);
+  expectStateInvariants(w);
+  expectStateInvariants(r);
+  expect(assetValue(w, d)).toBeLessThanOrEqual(assetValue(r, d));
+  expect(w.gold).toBeLessThanOrEqual(r.gold);
+  for (const id of Object.keys(w.items)) expect(r.items[id]).toBeDefined();
+  w.party.forEach((c, i) => expect(c.exp).toBeLessThanOrEqual(r.party[i]!.exp));
+  return { w, r };
+}
+
+describe("TW-27 全滅の方が得にならない", () => {
+  test("TW-27 assetValue = 所持金 + 銀行 + 全実体の売値 floor(price × 0.5) + 全員の EXP（手計算）", () => {
+    const s = base();
+    // 長剣 100 ×2、革鎧 50 ×4、木の盾 40、鎖帷子 300、短剣 15、杖 10 ×2、革兜 30、短弓 80、薬草 10 ×3、解毒草 15、帰還の糸 50
+    const sale = 50 * 2 + 25 * 4 + 20 + 150 + 7 + 5 * 2 + 15 + 40 + 5 * 3 + 7 + 25;
+    expect(assetValue(s, data)).toBe(300 + sale + 1600 + 2400 + 1000 + 1100 + 50);
+    expect(itemSaleValue(data, "return_thread")).toBe(25);
+  });
+
+  test("TW-27 境界: 台帳に金と品、非装備・装備の品、Lv2〜4 の EXP の一行で、2d10 の合計 2〜20 のどれでも全滅後の総資産 ≤ 帰還後（成分ごとにも ≤）", () => {
+    const s0 = withLedger(base());
+    for (let t = 2; t <= 20; t++) {
+      const { w, r } = expectWipeNotBetter(withTotal(s0, t));
+      // 台帳の全損だけで必ず下回る（短剣の売値 7 と台帳の金 40）
+      expect(assetValue(r, data) - assetValue(w, data)).toBeGreaterThanOrEqual(47);
+    }
+  });
+
+  test("TW-27 損失なし: 全帯の比率と itemLoss を 0 にした data で、台帳が空・糸を持つ一行でも全滅後の総資産は帰還後と等しい（上回らない）", () => {
+    const d = loadFreshData();
+    for (const b of d.penaltyTable.bands) {
+      b.goldLossRatio = 0;
+      b.itemLoss = 0;
+      b.expLossRatio = 0;
+    }
+    const s = base();
+    expect(s.party[4]!.inventory.map((id) => s.items[id]!.itemId)).toEqual(["return_thread"]);
+    for (let t = 2; t <= 20; t++) {
+      const { w, r } = expectWipeNotBetter(withTotal(s, t), d);
+      expect(assetValue(w, d)).toBe(assetValue(r, d));
+    }
+  });
+
+  test("衝突 TW-27 の記録: 糸で帰った場合と比べると、台帳が空で奇跡（損失 0）の全滅は糸の売値 25 だけ上回る（だからテストは糸を消費しない帰還と比べる）", () => {
+    const s = withTotal(base(), 20);
+    const thread = s.party[4]!.inventory[0]!;
+    const byThread = execute(s, { type: "dungeon.useItem", memberId: "c5", itemId: thread }, data);
+    expectKnownStringKeys(byThread.events);
+    expect(byThread.state.screen).toBe("town");
+    const w = wipeOf(s).state;
+    expect(assetValue(w, data) - assetValue(byThread.state, data)).toBe(25);
+  });
+
+  test("TW-27 性質: 200 シード（ボットの rng で台帳の金と品・所持金・追加の品・EXP・生死・状態を作る）で、全滅後の総資産 ≤ 帰還後。両方の state が不変条件を満たす", () => {
+    const itemIds = data.items.map((i) => i.id);
+    for (let k = 1; k <= 200; k++) {
+      const bot = createRng(k + 30_000);
+      const ctx = makeContext(cloneState(dived(k)), data);
+      const s = ctx.state;
+      for (const ch of s.party) {
+        ch.exp = randInt(bot, 0, 4000);
+        levelUpWhilePossible(ctx, ch);
+        const life = randInt(bot, 0, 5);
+        if (life === 0) Object.assign(ch, DEAD);
+        else if (life === 1) Object.assign(ch, ASH);
+        else if (life === 2) ch.status = ["paralysis"];
+      }
+      s.gold = randInt(bot, 0, 3000);
+      s.dive!.ledger.gold = randInt(bot, 0, s.gold);
+      const extra = randInt(bot, 0, 4);
+      for (let i = 0; i < extra; i++) {
+        const id = createItemInstance(s, itemIds[randInt(bot, 0, itemIds.length - 1)]!, randInt(bot, 0, 1) === 1);
+        s.party[randInt(bot, 0, s.party.length - 1)]!.inventory.push(id);
+        if (randInt(bot, 0, 1) === 1) s.dive!.ledger.items.push(id);
+      }
+      s.rng = createRng(k);
+      expectStateInvariants(s);
+      expectWipeNotBetter(s);
+    }
   });
 });

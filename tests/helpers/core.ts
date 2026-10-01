@@ -13,7 +13,7 @@ import penaltyTable from "../../data/penalty-table.json";
 import dungeons from "../../data/dungeons.json";
 import events from "../../data/events.json";
 import strings from "../../data/strings.json";
-import { loadGameData, type GameData, type PersonalityId } from "../../src/core/data";
+import { EQUIP_SLOTS, loadGameData, type GameData, type PersonalityId } from "../../src/core/data";
 import { createInitialState, execute } from "../../src/core/engine";
 import { randInt, rollDice, type RngState } from "../../src/core/rng";
 import { cloneState, makeContext } from "../../src/core/state";
@@ -121,4 +121,33 @@ export function mirrorWipeRolls(m: RngState, unequipped: number, d: GameData = d
   if (unequipped < band.itemLoss) throw new Error("mirrorWipeRolls: not enough unequipped items for this helper");
   for (let k = 0; k < band.itemLoss; k++) randInt(m, 0, unequipped - 1 - k);
   return r.total;
+}
+
+/**
+ * GameState の不変条件（M4）。
+ * - state.items の各実体は、party の equipment / inventory からちょうど 1 回参照され、参照先はすべて実在する
+ * - dive が非 null なら潜行台帳の品は所持品の部分集合
+ * - screen town ⇔ townVisit 非 null、screen battle ⇔ battle 非 null、dive null ⇔ screen が title / town
+ * - gold は 0 以上の整数、各人の levelHistory.length === level − 1
+ * - JSON 往復で変わらない（CLAUDE.md §3-11）
+ */
+export function expectStateInvariants(state: GameState): void {
+  const refs: string[] = [];
+  for (const ch of state.party) {
+    for (const slot of EQUIP_SLOTS) {
+      const id = ch.equipment[slot];
+      if (id !== null) refs.push(id);
+    }
+    refs.push(...ch.inventory);
+  }
+  expect([...refs].sort(), "item references").toEqual(Object.keys(state.items).sort());
+  if (state.dive !== null) {
+    for (const id of state.dive.ledger.items) expect(refs, `ledger item ${id} is owned`).toContain(id);
+  }
+  expect(state.screen === "town", "screen town ⇔ townVisit").toBe(state.townVisit !== null);
+  expect(state.screen === "battle", "screen battle ⇔ battle").toBe(state.battle !== null);
+  expect(state.dive === null, "dive null ⇔ screen title / town").toBe(state.screen === "title" || state.screen === "town");
+  expect(Number.isInteger(state.gold) && state.gold >= 0, `gold ${state.gold}`).toBe(true);
+  for (const ch of state.party) expect(ch.levelHistory, `levelHistory of ${ch.id}`).toHaveLength(ch.level - 1);
+  expect(JSON.parse(JSON.stringify(state))).toStrictEqual(state);
 }
