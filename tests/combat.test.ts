@@ -399,7 +399,7 @@ describe("前衛と後衛・敵の対象（CB-13/14/15/16）", () => {
       expect(r.state.rng).toEqual(m);
       expect(eventsOf(r.events, "attack")).toEqual([{ kind: "attack", actorId: "e0-0", targetId: "c1", hit: true, damage: Math.ceil(dmg / 2) }]);
       expect(r.events).toContainEqual({ kind: "message", key: "battle.backRowCannotAttack", params: { actor: "ドナ" } });
-      expect(member(r.state, "c1").hp).toBe(13 - Math.ceil(dmg / 2)); // アルドの hpMax 13（CH-65）
+      expect(member(r.state, "c1").hp).toBe(15 - Math.ceil(dmg / 2)); // アルドの hpMax 15（CH-65）
     }
   });
 
@@ -681,7 +681,7 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
       const r = exec(s, RESOLVE, d);
       expect(r.state.rng).toEqual(m);
       expect(member(r.state, "c1").status).toEqual(poisoned ? ["poison"] : []);
-      expect(member(r.state, "c1").hp).toBe(13 - dmg - (poisoned ? 1 : 0)); // アルドの hpMax 13（CH-65）
+      expect(member(r.state, "c1").hp).toBe(15 - dmg - (poisoned ? 1 : 0)); // アルドの hpMax 15（CH-65）
       if (poisoned) {
         expect(r.events).toContainEqual({ kind: "statusChanged", id: "c1", status: "poison", on: true });
         expect(r.events).toContainEqual({ kind: "message", key: "battle.status.poison", params: { target: "アルド" } });
@@ -906,10 +906,10 @@ describe("呪文と道具（MG-30、F9）", () => {
   });
 
   test("F9 heal は hpMax を超えない（hpChanged の delta は実際の増分）。cure_poison で毒が外れ、毒の無い対象には battle.noEffect", () => {
-    const s = patchParty(target(), { c1: { hp: 12, status: ["poison"] }, c4: { knownSpells: ["heal", "cure_poison"] } });
+    const s = patchParty(target(), { c1: { hp: 14, status: ["poison"] }, c4: { knownSpells: ["heal", "cure_poison"] } });
     s.battle!.inputs["c4"] = { type: "cast", spellId: "heal", target: { side: "ally", memberId: "c1" } };
     const r = exec(s, RESOLVE);
-    expect(r.events).toContainEqual({ kind: "hpChanged", id: "c1", delta: 1, hp: 13 }); // hpMax 13（CH-65）で止まる
+    expect(r.events).toContainEqual({ kind: "hpChanged", id: "c1", delta: 1, hp: 15 }); // hpMax 15（CH-65）で止まる
     expect(r.events).toContainEqual({ kind: "message", key: "battle.heal", params: { target: "アルド", amount: 1 } });
     const c = cloneState(s);
     c.battle!.inputs["c4"] = { type: "cast", spellId: "cure_poison", target: { side: "ally", memberId: "c1" } };

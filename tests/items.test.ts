@@ -101,12 +101,12 @@ describe("DG-30/DG-41/DG-43 帰還の糸", () => {
 
 describe("F9/H5 戦闘外の heal / cureStatus（applyAllyEffect を戦闘と共有）", () => {
   test("F9 薬草（1d8、ally）: battle.useItem → hpChanged → battle.heal。回復量は鏡の rng（max 止まり）、薬草は消え台帳からも外れる（DG-41）", () => {
-    for (const hp of [3, 13]) {
+    for (const hp of [3, 15]) {
       const s = inDungeon({ c2: { hp } });
       s.dive!.ledger = { items: ["i4"], gold: 0 };
       const mirror = cloneRng(s.rng);
       const roll = rollDice(mirror, "1d8").total;
-      const next = Math.min(14, hp + roll);
+      const next = Math.min(16, hp + roll);
       const r = ok(s, use("c1", "i4", "c2"));
       expect(r.events).toEqual([
         { kind: "message", key: "battle.useItem", params: { actor: "アルド", item: "薬草" } },
@@ -202,7 +202,7 @@ describe("UI-53 fieldItemMenu", () => {
     expect(m.members[3]!.items).toEqual([{ instanceId: "i13", itemId: "antidote_herb", name: "解毒草", target: "ally", usable: true }]);
     expect(m.members[4]!.items).toEqual([{ instanceId: "i15", itemId: "return_thread", name: "帰還の糸", target: "none", usable: true }]);
     expect(m.allies.map((a) => a.id)).toEqual(["c1", "c2", "c3", "c4", "c5"]);
-    expect(m.allies[0]).toEqual({ id: "c1", name: "アルド", hp: 13, hpMax: 13 });
+    expect(m.allies[0]).toEqual({ id: "c1", name: "アルド", hp: 15, hpMax: 15 });
   });
 
   test("戦闘中・保留中の選択・街・タイトルでは null", () => {

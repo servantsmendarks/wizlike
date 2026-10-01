@@ -60,14 +60,14 @@ describe("CB-40/42 autoInput", () => {
     s = withLast(s, 4, { type: "cast", spellId: "sleep_mist", target: { side: "enemy", group: 0 } });
     s = withChar(s, 3, { knownSpells: ["heal"], lastBattleInput: { type: "cast", spellId: "heal", target: { side: "ally", memberId: "c6" } } });
     s = withChar(s, 5, { life: "dead", hp: 0 });
-    s = withChar(s, 1, { hp: 7 }); // 7/14 = 0.5
-    s = withChar(s, 2, { hp: 2 }); // 2/8 = 0.25
+    s = withChar(s, 1, { hp: 8 }); // 8/16 = 0.5
+    s = withChar(s, 2, { hp: 2 }); // 2/10 = 0.2
     expect(autoInput(s, data, ch(s, "c1"))).toEqual({ type: "attack", group: 1 });
     expect(autoInput(s, data, ch(s, "c5"))).toEqual({ type: "cast", spellId: "sleep_mist", target: { side: "enemy", group: 1 } });
     expect(autoInput(s, data, ch(s, "c4"))).toEqual({ type: "cast", spellId: "heal", target: { side: "ally", memberId: "c3" } });
     // 同率は並び順
-    const tie = withChar(s, 2, { hp: 6 }); // 6/8 = 0.75、ベルクとドナ（5/10 は下で作る）
-    const tie2 = withChar(tie, 3, { hp: 5 }); // ドナ 5/10 = 0.5 = ベルク 7/14
+    const tie = withChar(s, 2, { hp: 6 }); // 6/10 = 0.6、ベルクとドナ（6/12 は下で作る）
+    const tie2 = withChar(tie, 3, { hp: 6 }); // ドナ 6/12 = 0.5 = ベルク 8/16
     expect(autoInput(tie2, data, ch(tie2, "c4"))).toEqual({ type: "cast", spellId: "heal", target: { side: "ally", memberId: "c2" } });
   });
 });

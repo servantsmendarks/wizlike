@@ -182,8 +182,8 @@ describe("勝敗", () => {
     s.battle!.groups[1]!.units[1]!.hp = 0;
     expect(isVictory(s.battle!)).toBe(true);
     expect(lowestAliveGroup(s.battle!)).toBeNull();
-    let p = withChar(base(), 1, { hp: 7 }); // ベルク 7/14 = 0.5
-    p = withChar(p, 3, { hp: 5 }); // ドナ 5/10 = 0.5（同率は並び順でベルク）
+    let p = withChar(base(), 1, { hp: 8 }); // ベルク 8/16 = 0.5
+    p = withChar(p, 3, { hp: 6 }); // ドナ 6/12 = 0.5（同率は並び順でベルク）
     expect(lowestHpRatioAlly(p)!.id).toBe("c2");
     p = withChar(p, 1, { life: "dead", hp: 0 }); // 死者は候補にしない
     expect(lowestHpRatioAlly(p)!.id).toBe("c4");

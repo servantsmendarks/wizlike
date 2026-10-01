@@ -1,6 +1,6 @@
 // 街（TW-02, TW-04, TW-07, TW-08, TW-11, TW-30〜32）。rules/town.ts と engine の town.* の配線。
-// 既定のパーティ（newGame）: c1 アルド 戦士 HP 13（リーダー）、c2 ベルク 戦士 HP 14 vit 14、c3 キリ 盗賊 HP 8、
-// c4 ドナ 僧侶 HP 10 MP 5、c5 エル 魔術師 HP 6 MP 7、c6 フィン 盗賊 HP 8。所持金 300。
+// 既定のパーティ（newGame）: c1 アルド 戦士 HP 15（リーダー）、c2 ベルク 戦士 HP 16 vit 14、c3 キリ 盗賊 HP 10、
+// c4 ドナ 僧侶 HP 12 MP 5、c5 エル 魔術師 HP 8 MP 7、c6 フィン 盗賊 HP 10。所持金 300。
 // 宿のランク: 0 馬小屋 0G HP ×0、1 相部屋 20G HP ×0.5、2 個室 60G HP ×1.0（MP はどのランクでも全回復）。寺院: 蘇生 level × 100、
 // 成功率 min(95, 50 + vit × 2)、治療 毒 50 / 麻痺 150 / 石化 300、解呪 200。闇魔術 level × 1000。
 import { describe, expect, test } from "vitest";
@@ -135,7 +135,7 @@ describe("TW-02/TW-26 街に入る処理（arriveTown / returnToTown）", () => 
 
 describe("TW-04 宿屋（town.inn）", () => {
   test("TW-04/MG-02 馬小屋（0G、HP ×0）: HP は増えず、alive の MP は mpMax に戻る（1 人ずつ HP → MP）。dead は不変、状態異常は残る", () => {
-    // c1 HP 1/13 → +ceil(13 × 0)=0 で 1 のまま、c4 MP 0/5 → 5、c5 HP 5/6 は 5 のまま・MP 3/7 → 7、c2 dead は MP 0 のまま
+    // c1 HP 1/15 → +ceil(15 × 0)=0 で 1 のまま、c4 MP 0/5 → 5、c5 HP 5/8 は 5 のまま・MP 3/7 → 7、c2 dead は MP 0 のまま
     const s = town({ c1: { hp: 1, status: ["poison"] }, c2: { ...DEAD, mp: 0 }, c4: { mp: 0 }, c5: { hp: 5, mp: 3 } });
     const r = ok(s, { type: "town.inn", rank: 0 });
     expect(r.events).toEqual([
@@ -154,13 +154,13 @@ describe("TW-04 宿屋（town.inn）", () => {
   test("TW-04/MG-02 相部屋（20G、HP ×0.5）と個室（60G、HP ×1.0）: 料金を 1 回払い、HP は ceil(hpMax × hpRatio) 増えて hpMax で止まり、MP は全回復", () => {
     const s = town({ c1: { hp: 1 }, c4: { mp: 0 } });
     const a = ok(s, { type: "town.inn", rank: 1 });
-    // c1 +ceil(6.5)=7 → 8、c4 MP 0 → 5（ランクに関わらず mpMax）
+    // c1 +ceil(7.5)=8 → 9、c4 MP 0 → 5（ランクに関わらず mpMax）
     expect(a.state.gold).toBe(280);
-    expect(member(a.state, "c1").hp).toBe(8);
+    expect(member(a.state, "c1").hp).toBe(9);
     expect(member(a.state, "c4").mp).toBe(5);
     const b = ok(s, { type: "town.inn", rank: 2 });
     expect(b.state.gold).toBe(240);
-    expect(member(b.state, "c1").hp).toBe(13);
+    expect(member(b.state, "c1").hp).toBe(15);
     expect(member(b.state, "c4").mp).toBe(5);
   });
 
@@ -191,7 +191,7 @@ describe("TW-04 宿屋（town.inn）", () => {
     expect(r.state.rng).toEqual(mirror);
     expect(r.state.gold).toBe(300);
     expect(r.events.filter((e) => e.kind === "levelUp")).toEqual([
-      { kind: "levelUp", id: "c2", level: 2, hpGain: g, mpGain: 0, hpMax: 14 + g, mpMax: 0, hp: 14 + g, mp: 0 },
+      { kind: "levelUp", id: "c2", level: 2, hpGain: g, mpGain: 0, hpMax: 16 + g, mpMax: 0, hp: 16 + g, mp: 0 },
     ]);
   });
 
@@ -210,9 +210,9 @@ describe("TW-04 宿屋（town.inn）", () => {
     const roll = randInt(mirror, 1, 100);
     expect(r.state.rng).toEqual(mirror);
     expect(r.events.filter((e) => e.kind === "levelUp")).toEqual([
-      { kind: "levelUp", id: "c2", level: 2, hpGain: g1, mpGain: 0, hpMax: 14 + g1, mpMax: 0, hp: 14 + g1, mp: 0 },
-      { kind: "levelUp", id: "c2", level: 3, hpGain: g2, mpGain: 0, hpMax: 14 + g1 + g2, mpMax: 0, hp: 14 + g1 + g2, mp: 0 },
-      { kind: "levelUp", id: "c4", level: 2, hpGain: g3, mpGain: 5, hpMax: 10 + g3, mpMax: 10, hp: 10 + g3, mp: 10 },
+      { kind: "levelUp", id: "c2", level: 2, hpGain: g1, mpGain: 0, hpMax: 16 + g1, mpMax: 0, hp: 16 + g1, mp: 0 },
+      { kind: "levelUp", id: "c2", level: 3, hpGain: g2, mpGain: 0, hpMax: 16 + g1 + g2, mpMax: 0, hp: 16 + g1 + g2, mp: 0 },
+      { kind: "levelUp", id: "c4", level: 2, hpGain: g3, mpGain: 5, hpMax: 12 + g3, mpMax: 10, hp: 12 + g3, mp: 10 },
     ]);
     expect(r.events.filter((e) => e.kind === "dice")).toEqual([
       { kind: "dice", label: "town.inn.learnDice", dice: [roll], total: roll },

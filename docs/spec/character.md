@@ -62,7 +62,7 @@
 - CH-62 EXP 減少（TW-22）でレベルダウンが起きる。レベルダウンは `levelHistory` の末尾を取り消す（HP/MP の最大値も戻す。現在値は最大値を超えない範囲に丸める）。覚えた呪文は失わない。EXP が閾値を下回っている間、1 段ずつ繰り返す。レベル 1 の初期値は取り消さない。
 - CH-63 `maxLevelReached` を保持する。呪文習得判定（MG-20）は「初めて到達したレベル」でのみ行う。
 - CH-64 必要経験値 `expFor(L)`: レベル L にいるのに必要な累計経験値。`expFor(1) = 0`。L ≥ 2 は `floor(config.growth.expBase × config.growth.expGrowth^(L−2) × classes[].expMultiplier)`【仮】（既定 `expBase` 50、`expGrowth` 1.5。戦士は L2 50 / L3 75 / L4 112）。`exp ≥ expFor(level+1)` でレベルアップでき、`exp < expFor(level)` でレベルダウンする。
-- CH-65 HP 増分 = `max(config.growth.hpGainMin, 1d(classes[].hpDie) + floor((vit − config.growth.hpVitPivot) / config.growth.hpVitDivisor))`【仮】（職業 HP ダイス + 生命力補正。負も floor。最低は hpGainMin（1））。レベル 1 の hpMax = `hpDie + max(0, 生命力補正) + config.growth.level1Bonus`（2）【仮】（ダイスの最大値に、正の生命力補正だけを足し、さらに level1Bonus を足す。乱数なし。hpGainMin はレベルアップの増分にだけ使う）。レベル 2 以降の増分は上の式のまま。levelHistory には入れない。MP 増分は `classes[].mpPerLevel` + 関連能力値補正【仮】（MG-01）。
+- CH-65 HP 増分 = `max(config.growth.hpGainMin, 1d(classes[].hpDie) + floor((vit − config.growth.hpVitPivot) / config.growth.hpVitDivisor))`【仮】（職業 HP ダイス + 生命力補正。負も floor。最低は hpGainMin（1））。レベル 1 の hpMax = `hpDie + max(0, 生命力補正) + config.growth.level1Bonus`（4）【仮】（ダイスの最大値に、正の生命力補正だけを足し、さらに level1Bonus を足す。乱数なし。hpGainMin はレベルアップの増分にだけ使う）。レベル 2 以降の増分は上の式のまま。levelHistory には入れない。MP 増分は `classes[].mpPerLevel` + 関連能力値補正【仮】（MG-01）。
 
 ## 8. 装備と所持
 

@@ -154,7 +154,7 @@ describe("data: config.json", () => {
     }
   });
   test("data: CH-65 growth.level1Bonus は 0 以上の整数【仮】。initialHpMinDieRatio は無くなった（未知キー）", () => {
-    expect(config.growth.level1Bonus).toBe(2);
+    expect(config.growth.level1Bonus).toBe(4);
     expectIssue((r) => (r.config.growth.level1Bonus = -1), "config.json", "growth.level1Bonus: expected integer >= 0, got -1");
     expectIssue((r) => (r.config.growth.level1Bonus = 1.5), "config.json", "growth.level1Bonus: expected integer");
     expectIssue((r) => delete r.config.growth.level1Bonus, "config.json", "growth.level1Bonus: missing required field");
