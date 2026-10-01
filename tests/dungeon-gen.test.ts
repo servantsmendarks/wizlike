@@ -352,6 +352,19 @@ describe("dungeon-gen: 決定性と境界", () => {
     }
   });
 
+  test("DG-22 置き場所の候補が足りずにイベントを置けない盤（5×5 にイベント 30 個）は Error。罠の不足は置ける分だけ置いて続ける", () => {
+    const events = Array.from({ length: 30 }, (_, i) => `ev${i}`);
+    const crowded: DungeonDef = { ...DEFS[0]!, width: 5, height: 5, rooms: [0, 0], floors: 1, events };
+    expect(() => generateFloor(crowded, CFG, 1, 1, null)).toThrow(/no cell for event/);
+    const manyTraps: DungeonDef = { ...DEFS[0]!, width: 5, height: 5, rooms: [0, 0], floors: 1, events: [], trapsPerFloor: [30, 30] };
+    for (const seed of SEEDS) {
+      const f = generateFloor(manyTraps, CFG, seed, 1, null);
+      const n = f.cells.filter((c) => c.kind === "trap").length;
+      expect(n).toBeGreaterThan(0);
+      expect(n).toBeLessThan(30);
+    }
+  });
+
   test("DG-05 最初の配置で rooms の min に届かなくても、配置をやり直して min を満たす（9×9、一辺 3 の部屋 2 つ）", () => {
     // 内側 7×7 に 3×3 を 2 つ置くには、1 つ目が端の列か行（x か y が 1 か 5）に来る必要がある。
     // 1 つ目が中央寄り（x, y とも 2..4。9/25）だと 2 つ目は置けないので、最初の配置は一定の割合で失敗する

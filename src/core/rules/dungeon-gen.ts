@@ -372,7 +372,8 @@ export function generateFloor(def: DungeonDef, cfg: Config["dungeon"], diveSeed:
   const myEvents = def.events.filter((_, i) => (i % def.floors) + 1 === floor);
   for (const ev of myEvents) {
     const c = cand.shift();
-    if (c === undefined) break;
+    // DG-22 は各イベント 1 回を定めるので、置けなければ Error（実データの 20×20 では起きない）
+    if (c === undefined) throw new Error(`generateFloor: no cell for event ${ev} on floor ${floor}`);
     c.kind = "event";
     c.eventId = ev;
   }
@@ -381,7 +382,7 @@ export function generateFloor(def: DungeonDef, cfg: Config["dungeon"], diveSeed:
     if (def.traps.length === 0) break;
     const t = def.traps[randInt(rng, 0, def.traps.length - 1)]!;
     const c = cand.shift();
-    if (c === undefined) break;
+    if (c === undefined) break; // 候補が尽きた分の罠は置かない（小さな盤。DG-05）
     c.kind = "trap";
     c.trapId = t;
   }

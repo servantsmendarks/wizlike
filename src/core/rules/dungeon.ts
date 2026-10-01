@@ -247,8 +247,10 @@ export function moveForward(ctx: RuleContext): void {
   ctx.events.push({ kind: "moved", pos: { x: dive.pos.x, y: dive.pos.y }, facing: dive.facing });
   explore(ctx, dive, f);
   const cell = cellAt(f, dive.pos.x, dive.pos.y);
+  // E5: 全滅処理は M4。全員死亡の後は罠・階段・遭遇のどれも起こさない
+  if (aliveMembers(state).length === 0) return;
   if (cell.kind === "trap") triggerTrap(ctx, f, dive.pos);
-  if (aliveMembers(state).length === 0) return; // E5: 全滅処理は M4。階段と遭遇は起こさない
+  if (aliveMembers(state).length === 0) return;
   if (cell.kind === "stairsDown") {
     offerStairs(ctx, "down");
     return; // 階段セルでは遭遇判定をしない
@@ -286,7 +288,9 @@ function triggerTrap(ctx: RuleContext, f: Floor, p: Pos): void {
   if (trapId === "pit") {
     const alive0 = aliveMembers(state);
     for (const ch of alive0) {
-      const r = rollDice(state.rng, cfg.dungeon.pitDamage).total;
+      // 負の修正値（"1d6-3" など）で回復しないよう、ダメージは 0 以上にクランプする（rng.ts: クランプは呼び出し側）
+      const r = Math.max(0, rollDice(state.rng, cfg.dungeon.pitDamage).total);
+      if (r === 0) continue; // 0 ダメージでは hpChanged を出さない
       const next = Math.max(0, ch.hp - r);
       ctx.events.push({ kind: "hpChanged", id: ch.id, delta: next - ch.hp, hp: next });
       ch.hp = next;

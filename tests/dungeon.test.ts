@@ -748,6 +748,47 @@ describe("罠（DG-20, DG-21, E4, E5）", () => {
     }
   });
 
+  test("DG-20/E5 全員死亡の後に罠のセルへ入っても、罠は発動しない（message・SAN・spinner の乱数・clearedCells のどれも無い）", () => {
+    for (const trapId of ["pit", "spinner"] as const) {
+      const sit = findSituation((c) => c.kind === "trap" && c.trapId === trapId);
+      const s = cloneState(sit.state);
+      for (const c of s.party) {
+        c.hp = 0;
+        c.life = "dead";
+      }
+      const r = run(s, MOVE, dataWithRate(1, 1));
+      expect(r.events).toEqual([{ kind: "moved", pos: sit.a.target, facing: sit.a.facing }]);
+      expect(r.state.dive!.clearedCells).toEqual([]);
+      expect(r.state.dive!.facing).toBe(sit.a.facing);
+      expect(r.state.rng).toEqual(s.rng); // 罠のダイス・spinner の向き・遭遇の d100 のどれも引かない
+    }
+  });
+
+  test("DG-20 pitDamage に負の修正値があっても回復しない。ダメージは max(0, 出目) で、0 なら hpChanged を出さない", () => {
+    for (const expr of ["1d6-3", "0"]) {
+      const d = loadFreshData();
+      d.config.dungeon.pitDamage = expr;
+      for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+      const { state } = atPit((s) => {
+        for (const c of s.party) c.hp = 20; // hpMax 30
+      });
+      const mirror = cloneRng(state.rng);
+      // 1d6-3 の出目は -2..3。0 以下は 0 ダメージ
+      const dmg = state.party.map(() => Math.max(0, rollDice(mirror, expr).total));
+      const r = run(state, MOVE, d);
+      const hp = r.events.filter((e) => e.kind === "hpChanged");
+      expect(hp).toEqual(
+        state.party.flatMap((c, i) => (dmg[i]! > 0 ? [{ kind: "hpChanged", id: c.id, delta: -dmg[i]!, hp: 20 - dmg[i]! }] : [])),
+      );
+      r.state.party.forEach((c, i) => {
+        expect(c.hp).toBe(20 - dmg[i]!);
+        expect(c.hp).toBeLessThanOrEqual(c.hpMax);
+      });
+      if (expr === "0") expect(hp).toEqual([]);
+      else expect(dmg.some((x) => x === 0)).toBe(true); // 負の出目が実際に起きたことを確かめる
+    }
+  });
+
   test("DG-20 spinner: 向きは FACINGS[randInt(0,3)]（鏡の rng と一致）、turned を出し、罠の SAN、explored の更新", () => {
     const seen = new Set<Facing>();
     for (let seed = 1; seed <= 60; seed++) {

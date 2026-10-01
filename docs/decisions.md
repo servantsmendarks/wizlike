@@ -181,3 +181,7 @@
 - 2026-10-01 presenter(M2): 名前の入力欄は、font-size 16px の 2 倍の大きさ（224×64）で作り、transform: scale(0.5) で 112×32 論理に見せる。iOS Safari は computed font-size が 16px 未満の入力欄で自動ズームし、transform は computed font-size に効かないため。autocomplete / autocapitalize / autocorrect は off、spellcheck は false、maxlength 12、Enter で次の欄へ（最後の欄の enterkeyhint は done）、focusout で scrollTo(0,0) を呼ぶ。viewport の meta は変えない。
 - 2026-10-01 presenter(M2): app.run は、再生中のコマンドを捨てる（UI-44）。結果がちょうど 1 件の rejected だけなら何も起きなかったものとして再生せず、console.debug に出す（game.new の拒否だけは creation.invalid を出す）。選択の保留中は、迷宮の前進・旋回・地図の入力をそもそも送らず、リストの選択だけを受け付ける。入力の意味を表示層で解釈しないため（UI-35）、表示層が core から値で import するのは execute / createInitialState と状態を変えない問い合わせ（visibleCells、mapView、dungeonOf）だけとし、テストで確かめる。
 - 2026-10-01 presenter(M2): 保存は M4 なので、M2 ではリロードするとタイトルに戻る。app の afterCommand を空の差し込み口として置く。createApp は省略可能な seed を受け取る（省略時は crypto.getRandomValues）。結合の試験で再現できるようにするため。
+- 2026-10-01 core(M2): 入場時の向きは、1 階の上り階段のセルで N→E→S→W の順に最初に通れる辺（open か door）の向きとする（乱数を消費しない。通れる辺が無ければ Error）。仕様が沈黙しており、最も単純な決め方のため。
+- 2026-10-01 core(M2): 落とし穴のダメージは max(0, config.dungeon.pitDamage の出目) とし、0 なら hpChanged を出さない（DG-20）。ダイス記法は負の修正値を許し、rng はクランプしないので、【仮】の値を調整したときに罠で回復しないようにするため。
+- 2026-10-01 core(M2): 全員死亡の後は、罠も発動しない（メッセージ・SAN・spinner の乱数・clearedCells のどれも無い）。全員死亡の後は階段と遭遇を起こさないとした行に、罠を足す。全滅処理（M4）までの仮の状態で、死者だけの歩行で罠を消費しないため。
+- 2026-10-01 core(M2): イベントと罠の置き場所の候補が尽きたとき、イベントは生成を Error で止め、罠は置ける分だけ置いて残りを捨てる（DG-05 に追記）。DG-22 はイベントを各 1 回と定めるが、罠の数は【仮】の範囲にすぎないため。小さな盤の安全弁として、部屋数の行と同じく記録する。
