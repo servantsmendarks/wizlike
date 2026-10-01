@@ -91,6 +91,7 @@ export function createControls(o: {
   for (const a of Object.keys(DPAD) as DpadAction[]) {
     const b = document.createElement("button");
     b.type = "button";
+    b.tabIndex = -1; // 矢印キーと重複するのでタブ順から外す。フォーカス中の Enter も confirm のまま（swipe.ts の isButton）
     b.className = `controls-dpad-${a}`;
     b.setAttribute("aria-label", s(`controls.${a}`));
     buttonStyle(b, DPAD[a], origin);

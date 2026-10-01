@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { GameEvent, PendingChoice } from "../src/core/types";
 import {
   attachKeyboard,
+  attachReleaseOnHide,
   attachSwipe,
   canRepeat,
   classifySwipe,
@@ -351,6 +352,19 @@ describe("attachKeyboard", () => {
     expect(out).toEqual(['down "forward"', 'up "forward"']);
   });
 
+  test("UI-33 フォーカス中のボタン（button / role=button）の Enter は変換せず、preventDefault もしない（既定の click に任せる）。ボタン以外の Enter は confirm", () => {
+    const { out, key } = setup();
+    expect(key("keydown", "Enter", false, { tagName: "BUTTON" })).toBe(false);
+    expect(key("keydown", "Enter", false, { tagName: "DIV", getAttribute: (n: string) => (n === "role" ? "button" : null) })).toBe(false);
+    expect(out).toEqual([]);
+    // ボタンの上でも矢印キーは従来どおり
+    expect(key("keydown", "ArrowLeft", false, { tagName: "BUTTON" })).toBe(true);
+    expect(key("keydown", "Enter", false, { tagName: "DIV", getAttribute: () => null })).toBe(true);
+    // タブ順から外したボタン（十字ボタン。tabIndex -1）の上の Enter は confirm のまま
+    expect(key("keydown", "Enter", false, { tagName: "BUTTON", tabIndex: -1 })).toBe(true);
+    expect(out).toEqual(['down "left"', 'down "confirm"', 'down "confirm"']);
+  });
+
   test("UI-31 blur と visibilitychange（hidden）で押したままのキーを離す", () => {
     const { win, doc, out, key, detach } = setup();
     key("keydown", "ArrowUp");
@@ -363,6 +377,32 @@ describe("attachKeyboard", () => {
     // 離した後の keyup は二重に呼ばない
     key("keyup", "ArrowUp");
     expect(out).toHaveLength(4);
+    detach();
+    expect(win.count() + doc.count()).toBe(0);
+  });
+});
+
+describe("attachReleaseOnHide", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("UI-31 ポインタの長押しも、window の blur・pagehide と visibilitychange（hidden）で離す。visible では離さない", () => {
+    const win = new FakeTarget();
+    const doc = Object.assign(new FakeTarget(), { visibilityState: "visible" });
+    vi.stubGlobal("window", win);
+    vi.stubGlobal("document", doc);
+    let n = 0;
+    const detach = attachReleaseOnHide(() => n++);
+    win.emit("blur", {});
+    expect(n).toBe(1);
+    win.emit("pagehide", {});
+    expect(n).toBe(2);
+    doc.emit("visibilitychange", {});
+    expect(n).toBe(2);
+    doc.visibilityState = "hidden";
+    doc.emit("visibilitychange", {});
+    expect(n).toBe(3);
     detach();
     expect(win.count() + doc.count()).toBe(0);
   });

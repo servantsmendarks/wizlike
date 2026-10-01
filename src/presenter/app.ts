@@ -1,7 +1,8 @@
 // 画面遷移の親。state を持ち、入力を Command にして execute へ送り（UI-35）、返ったイベントを playback で再生する。
 // - 判定・計算・分岐（前進できるか、入場できるか、名前が正しいか）は core が行う。ここは結果を描くだけ（§3-4）。
 // - 再生中（busy）の入力はすべて捨てる。メッセージ窓のタップだけは受け、1 回目で今の文、2 回目で残りを即表示する（UI-44 / UI-43）。
-// - 状態を変えるコマンドの後に afterCommand を呼ぶ。M2 では空で、M4 のオートセーブをここに差し込む（§3-8）。
+// - 状態を変えるコマンドの後、再生を始める前に afterCommand を呼ぶ。M2 では空で、M4 のオートセーブをここに差し込む
+//   （§3-8。SV-02: 再生を始める前に保存する。再生中にリロードされても結果は確定している）。
 // - 画面の切り替えは各画面のルート要素の表示と非表示だけで行う。迷宮の DOM は 1 回だけ作る。
 // モジュールのトップレベルでは DOM に触れない。
 import type { GameData } from "../core/data/index";
@@ -9,9 +10,10 @@ import { execute, createInitialState } from "../core/engine";
 import { mapView, visibleCells } from "../core/rules/dungeon";
 import { dungeonOf } from "../core/state";
 import type { Command, GameEvent, GameState, Screen, ViewPoint } from "../core/types";
-import { attachKeyboard, attachSwipe, canRepeat, createHoldRepeater, type Action } from "./input/swipe";
+import { attachKeyboard, attachReleaseOnHide, attachSwipe, canRepeat, createHoldRepeater, type Action } from "./input/swipe";
 import { regions } from "./layout";
 import { createPlayer } from "./playback";
+import { createRunGate } from "./run-gate";
 import { defaultSettings, type SettingsStore } from "./settings";
 import type { StageLayout, StageLayoutInput } from "./stage";
 import type { ControlItem, DpadAction } from "./views/controls";
@@ -47,9 +49,10 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   let state: GameState = createInitialState(seed, data);
   let route: Route = "title";
   let overlay: Overlay = null;
-  let busy = false;
   let layout: StageLayout | null = null;
   let townPage: TownPage = "menu";
+  /** 再生中か（UI-44）。run の門が持つ */
+  const isBusy = (): boolean => gate.busy();
   /** 同じ再生の中のメッセージ窓のタップ回数 */
   let taps = 0;
 
@@ -204,11 +207,12 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
    * UI-35 / UI-44: Command を execute に送り、イベントを再生する。再生中なら捨てて null。
    * rejected（イベントがちょうど 1 件の rejected）は再生せず、console.debug に出す。
    */
-  const run = async (cmd: Command): Promise<DispatchResult | null> => {
-    if (busy) return null;
-    busy = true;
-    taps = 0;
-    try {
+  const gate = createRunGate<Command, DispatchResult>({
+    onStart: () => {
+      taps = 0;
+    },
+    onError: (e) => console.error(e),
+    exec: async (cmd) => {
       const r = execute(state, cmd, data);
       const only = r.events.length === 1 ? r.events[0] : undefined;
       if (only !== undefined && only.kind === "rejected") {
@@ -217,18 +221,14 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       }
       const before = state;
       state = r.state;
+      afterCommand(state, r.events); // SV-02: 再生を始める前
       await player.play(r.events, before, state);
-      afterCommand(state, r.events);
       return { events: r.events, rejected: false };
-    } catch (e) {
-      console.error(e);
-      return null;
-    } finally {
-      busy = false;
-    }
-  };
+    },
+  });
+  const run = (cmd: Command): Promise<DispatchResult | null> => gate.run(cmd);
 
-  /** 状態を変えるコマンドの直後の差し込み口（M4 のオートセーブ。§3-8） */
+  /** 状態を変えるコマンドの直後、再生を始める前の差し込み口（M4 のオートセーブ。§3-8、SV-02） */
   const afterCommand = (_st: GameState, _events: readonly GameEvent[]): void => {};
 
   /** UI-31: 前進の長押し。1 歩ごとに再生の終わりを待ち、ちょうど [moved] だけのときに続ける */
@@ -244,7 +244,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
 
   /** 再生中のボタンは何もしない（UI-44） */
   const guard = (fn: () => void): void => {
-    if (busy) return;
+    if (isBusy()) return;
     fn();
   };
 
@@ -290,7 +290,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   // ---------------------------------------------------------------- 入力
   /** Action → Command / 画面の操作。変換は app だけが行う */
   const handleAction = (a: Action): void => {
-    if (busy) return; // UI-44
+    if (isBusy()) return; // UI-44
     if (a === "debug") {
       if (overlay === "debug") closeDebug();
       else openDebug();
@@ -335,7 +335,10 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     }
   };
 
-  /** UI-44: 再生中のメッセージ窓のタップ。1 回目は今の文、2 回目以降は残りを即表示 */
+  /**
+   * UI-43 / UI-44: メッセージ窓のタップ。再生中は 1 回目で今の文、2 回目以降で残りを即表示する。
+   * 再生の外（街の「迷宮へ」の語りなど、run を通さない文）でも、今の文の即表示だけは効かせる。
+   */
   const attachMessageTap = (): void => {
     let down: { id: number; x: number; y: number } | null = null;
     play.message.el.addEventListener("pointerdown", (e) => {
@@ -344,9 +347,13 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     play.message.el.addEventListener("pointerup", (e) => {
       const d = down;
       down = null;
-      if (d === null || d.id !== e.pointerId || !busy) return;
+      if (d === null || d.id !== e.pointerId) return;
       const slop = TAP_SLOP_LOGICAL * scale();
       if (Math.hypot(e.clientX - d.x, e.clientY - d.y) >= slop) return;
+      if (!isBusy()) {
+        play.message.rush();
+        return;
+      }
       taps++;
       if (taps >= 2) player.rushAll();
       play.message.rush();
@@ -386,9 +393,11 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
         },
       });
       attachMessageTap();
+      // UI-31: ポインタ（十字ボタン・スワイプ）の長押しも、窓のフォーカスが外れた・ページが隠れたら離したものとして扱う
+      attachReleaseOnHide(() => repeater.release());
       store.subscribe(() => {
         debug.refresh();
-        if (!busy) syncControls();
+        if (!isBusy()) syncControls();
       });
     },
   };

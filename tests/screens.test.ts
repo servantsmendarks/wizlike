@@ -10,6 +10,8 @@ import {
   randomizePersonalities,
 } from "../src/presenter/views/creation";
 import { townEntries, townEntryLabel } from "../src/presenter/views/town";
+import { createRunGate } from "../src/presenter/run-gate";
+import type { Command, GameEvent } from "../src/core/types";
 import { data, newGame } from "./helpers/core";
 
 const ids = data.personalities.map((p) => p.id);
@@ -73,28 +75,147 @@ const presenterRaw = import.meta.glob("../src/presenter/**/*.ts", {
 
 const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   engine: ["execute", "createInitialState"],
-  "rules/dungeon": ["visibleCells", "visibleCellsOf", "mapView", "floorOf"],
+  // decisions の UI-35 の行のとおり。floorOf / visibleCellsOf は Floor（kind・trapId・eventId）に触れるので許さない
+  "rules/dungeon": ["visibleCells", "mapView"],
   state: ["dungeonOf"],
 };
 
-describe("入力と Command", () => {
-  test("UI-35 表示層が core から値で import するのは execute と状態を変えない問い合わせだけ", () => {
-    const re = /import\s+(type\s+)?\{([^}]*)\}\s+from\s+"(?:\.\.\/)+core\/([^"]+)"/g;
-    let checked = 0;
-    for (const [file, src] of Object.entries(presenterRaw)) {
-      for (const m of src.matchAll(re)) {
-        if (m[1]) continue; // import type
-        const mod = m[3] ?? "";
-        const names = (m[2] ?? "")
-          .split(",")
-          .map((s) => s.trim())
-          .filter((s) => s !== "" && !s.startsWith("type "));
-        for (const name of names) {
-          checked++;
-          expect(ALLOWED_CORE_VALUES[mod] ?? [], `${file}: ${name} from core/${mod}`).toContain(name);
-        }
-      }
+/** コメントを除いた本文（文字列の中の // や /* は考えない最小限の除去。presenter に該当する文字列は無い） */
+function stripComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
+}
+
+type CoreRef = { file: string; text: string; mod: string; typeOnly: boolean; names: string[] | null };
+
+/**
+ * 表示層のソースから core を参照する import / export 文と動的 import() を形を問わず拾う。
+ * names は名前付き（{ ... }）のときだけ値の名前の一覧、それ以外（名前空間・default・export *・動的）は null。
+ */
+function coreRefs(file: string, src: string): CoreRef[] {
+  const code = stripComments(src);
+  const out: CoreRef[] = [];
+  const coreSpec = /^(?:\.\.?\/)+(?:.*\/)?core\/(.+)$/;
+  const stmt = /^[ \t]*(?:import|export)\b([^;]*?)\bfrom\s*(["'])([^"'\n]+)\2/gm;
+  for (const m of code.matchAll(stmt)) {
+    const core = coreSpec.exec(m[3]!);
+    if (core === null) continue;
+    const clause = m[1]!.trim();
+    const typeOnly = /^type\b/.test(clause);
+    const braces = /^(?:type\s+)?\{([^}]*)\}$/.exec(clause);
+    const names =
+      braces === null
+        ? null
+        : braces[1]!
+            .split(",")
+            .map((x) => x.trim())
+            .filter((x) => x !== "" && !x.startsWith("type "))
+            .map((x) => x.split(/\s+as\s+/)[0]!.trim());
+    out.push({ file, text: m[0].trim(), mod: core[1]!.replace(/\.(?:ts|js)$/, ""), typeOnly, names });
+  }
+  const bare = /^[ \t]*import\s*(["'])([^"'\n]+)\1/gm;
+  for (const m of code.matchAll(bare)) {
+    const core = coreSpec.exec(m[2]!);
+    if (core !== null) out.push({ file, text: m[0].trim(), mod: core[1]!, typeOnly: false, names: null });
+  }
+  for (const m of code.matchAll(/\bimport\s*\(\s*(["'`])([^"'`]*)\1/g)) {
+    if (/core\//.test(m[2]!)) out.push({ file, text: m[0], mod: m[2]!, typeOnly: false, names: null });
+  }
+  return out;
+}
+
+/** coreRefs から出た違反の一覧（空なら合格） */
+function coreViolations(refs: readonly CoreRef[]): string[] {
+  const bad: string[] = [];
+  for (const r of refs) {
+    if (r.typeOnly) continue;
+    if (r.names === null) {
+      bad.push(`${r.file}: ${r.text}（名前付き以外の値の import / export は不可）`);
+      continue;
     }
-    expect(checked).toBeGreaterThan(0);
+    for (const name of r.names) {
+      if (!(ALLOWED_CORE_VALUES[r.mod] ?? []).includes(name)) bad.push(`${r.file}: ${name} from core/${r.mod}`);
+    }
+  }
+  return bad;
+}
+
+describe("入力と Command", () => {
+  test("UI-35 表示層が core から値で import するのは execute と状態を変えない問い合わせだけ（形を問わず拾う）", () => {
+    const refs = Object.entries(presenterRaw).flatMap(([file, src]) => coreRefs(file, src));
+    expect(coreViolations(refs)).toEqual([]);
+    // 実際に値の import を照合している（app.ts の execute など）
+    expect(refs.filter((r) => !r.typeOnly && r.names !== null).flatMap((r) => r.names!)).toContain("execute");
+  });
+
+  test("UI-35 検査は名前空間・default・export from・export *・動的 import()・許可外の名前を違反として拾い、import type は通す", () => {
+    const src = [
+      'import * as d from "../core/rules/dungeon";',
+      'import eng from "../../core/engine";',
+      'export { floorOf } from "../core/rules/dungeon";',
+      'export * from "../core/state";',
+      'const m = await import("../core/rules/dungeon");',
+      'import { floorOf, visibleCells } from "../core/rules/dungeon";',
+      'import { execute as ex } from "../core/engine";',
+      'import type { Floor } from "../core/types";',
+      'import { type Cell } from "../core/types";',
+      '// import { moveForward } from "../core/rules/dungeon";',
+    ].join("\n");
+    const bad = coreViolations(coreRefs("x.ts", src));
+    expect(bad).toHaveLength(6);
+    expect(bad.some((b) => b.includes("import * as d"))).toBe(true);
+    expect(bad.some((b) => b.includes("import eng"))).toBe(true);
+    expect(bad.some((b) => b.includes("floorOf from core/rules/dungeon"))).toBe(true); // export { floorOf } と import { floorOf } の 2 件
+    expect(bad.some((b) => b.includes("export * from"))).toBe(true);
+    expect(bad.some((b) => b.includes("import("))).toBe(true);
+    expect(bad.filter((b) => b.includes("floorOf"))).toHaveLength(2);
+  });
+});
+
+describe("再生中の入力（UI-44）", () => {
+  test("UI-44 再生中に送ったコマンドは捨てられ（null）、execute は 1 回だけ呼ばれる。再生が終われば次を受け付け、例外の後も門は開く", async () => {
+    let state = execute(newGame(3), { type: "dungeon.enter", dungeonId: "d01" }, data).state;
+    let calls = 0;
+    let finishPlay: () => void = () => {};
+    let starts = 0;
+    const gate = createRunGate<Command, readonly GameEvent[]>({
+      onStart: () => starts++,
+      exec: async (cmd) => {
+        calls++;
+        const r = execute(state, cmd, data);
+        state = r.state;
+        // 再生（player.play）の代わり。finishPlay を呼ぶまで終わらない
+        await new Promise<void>((resolve) => {
+          finishPlay = resolve;
+        });
+        return r.events;
+      },
+    });
+    const turn: Command = { type: "dungeon.turn", dir: "right" };
+    const first = gate.run(turn);
+    expect(gate.busy()).toBe(true);
+    expect(await gate.run(turn)).toBeNull();
+    expect(await gate.run({ type: "dungeon.move" })).toBeNull();
+    expect(calls).toBe(1);
+    expect(starts).toBe(1);
+    finishPlay();
+    expect((await first)?.[0]?.kind).toBe("turned");
+    expect(gate.busy()).toBe(false);
+    // 次のコマンドは受け付ける
+    const second = gate.run(turn);
+    expect(calls).toBe(2);
+    finishPlay();
+    expect(await second).not.toBeNull();
+
+    // exec が例外を投げても null を返し、門は閉じたままにならない
+    const errors: unknown[] = [];
+    const failing = createRunGate<number, number>({
+      exec: async () => {
+        throw new Error("boom");
+      },
+      onError: (e) => errors.push(e),
+    });
+    expect(await failing.run(1)).toBeNull();
+    expect(errors).toHaveLength(1);
+    expect(failing.busy()).toBe(false);
   });
 });

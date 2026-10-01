@@ -165,6 +165,17 @@ function isTextInput(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable === true;
 }
 
+/**
+ * Enter を既定の click に任せるボタンか。button か role=button で、タブ順から外していない（tabIndex >= 0）もの。
+ * 十字ボタンは click に意味が無く矢印キーと重複するので tabIndex -1 にしてあり、その上の Enter は従来どおり confirm にする。
+ */
+function isButton(target: EventTarget | null): boolean {
+  if (target === null || typeof (target as { tagName?: unknown }).tagName !== "string") return false;
+  const el = target as HTMLElement;
+  if (typeof el.tabIndex === "number" && el.tabIndex < 0) return false;
+  return el.tagName.toUpperCase() === "BUTTON" || (typeof el.getAttribute === "function" && el.getAttribute("role") === "button");
+}
+
 function sameAction(a: Action, b: Action): boolean {
   if (typeof a === "string" || typeof b === "string") return a === b;
   return a.menu === b.menu;
@@ -186,6 +197,8 @@ export function attachKeyboard(o: KeyboardOptions): () => void {
   };
 
   const keydown = (e: KeyboardEvent): void => {
+    // フォーカス中のボタンの Enter は既定動作（click）に任せる。変換も preventDefault もしない
+    if (e.key === "Enter" && isButton(e.target)) return;
     const onInput = isTextInput(e.target);
     const base = keyToAction(e.key, false, onInput);
     if (base === null) return;
@@ -216,6 +229,25 @@ export function attachKeyboard(o: KeyboardOptions): () => void {
     window.removeEventListener("keydown", keydown);
     window.removeEventListener("keyup", keyup);
     window.removeEventListener("blur", releaseAll);
+    document.removeEventListener("visibilitychange", visibility);
+  };
+}
+
+/**
+ * UI-31: 窓のフォーカスが外れた（window の blur）・ページが隠れた（pagehide、visibilitychange で hidden）ときに
+ * onRelease を呼ぶ。ポインタの長押しは指を置いたままアプリを切り替えると pointercancel が届かないことがあるため。
+ */
+export function attachReleaseOnHide(onRelease: () => void): () => void {
+  const release = (): void => onRelease();
+  const visibility = (): void => {
+    if (document.visibilityState === "hidden") onRelease();
+  };
+  window.addEventListener("blur", release);
+  window.addEventListener("pagehide", release);
+  document.addEventListener("visibilitychange", visibility);
+  return () => {
+    window.removeEventListener("blur", release);
+    window.removeEventListener("pagehide", release);
     document.removeEventListener("visibilitychange", visibility);
   };
 }

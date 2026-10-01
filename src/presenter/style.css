@@ -295,3 +295,15 @@ body {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* 履歴とリストのスクロールバーは描かない（スクロール自体はホイール・ドラッグ・タッチで残る）。
+   PC のクラシックなスクロールバーはステージの scale() で太く描かれ、文字の幅も食うため（UI-11 / UI-43） */
+.message-history,
+.controls-list {
+  scrollbar-width: none;
+}
+
+.message-history::-webkit-scrollbar,
+.controls-list::-webkit-scrollbar {
+  display: none;
+}
