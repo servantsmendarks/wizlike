@@ -32,9 +32,9 @@ export type Controls = {
   setBattleMenu(items: ControlItem[], slots: BattleSlots): void;
   /**
    * UI-54: 一覧の i 行目を注目の見た目（枠線を accent 色。dim の行は dim のまま）にし、見える位置へ動かす。null で解除。
-   * 一覧は作り直さない
+   * 一覧は作り直さない。scroll: false なら見える位置へは動かさない（ポインタで触れた行。タッチの途中で一覧が動かないように）
    */
-  setListFocus(i: number | null): void;
+  setListFocus(i: number | null, opts?: { scroll?: boolean }): void;
   /** オート中の「オート解除」。pointerdown で onPress を呼ぶ（再生中も受ける。UI-44 の例外は呼び出し側が扱う） */
   setAutoStop(label: string, onPress: () => void): void;
   /**
@@ -333,6 +333,8 @@ export function createControls(o: {
         b.addEventListener("click", onGuardedClick(it));
         const focus = it.onFocus;
         if (focus !== undefined) {
+          // 対象の一覧の Enter は、DOM のフォーカスのある行の click ではなく、いつも注目している行を選ぶ（UI-33。swipe.ts の isButton）
+          b.tabIndex = -1;
           b.addEventListener("pointerenter", () => focus());
           b.addEventListener("pointerdown", () => focus());
         }
@@ -340,12 +342,13 @@ export function createControls(o: {
         listButtons.push(b);
       }
     },
-    setListFocus(i: number | null): void {
+    setListFocus(i: number | null, opts?: { scroll?: boolean }): void {
       listButtons.forEach((b, k) => {
         if (listItems[k]?.disabled === true) return;
         b.style.borderColor = k === i ? "var(--c-accent)" : "var(--c-frame)";
       });
       const b = i === null ? undefined : listButtons[i];
+      if (opts?.scroll === false) return;
       if (b !== undefined && typeof b.scrollIntoView === "function") b.scrollIntoView({ block: "nearest" });
     },
     setBattleMenu(items: ControlItem[], slots: BattleSlots): void {

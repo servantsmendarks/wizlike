@@ -266,6 +266,29 @@ describe("controls", () => {
     expect(rows.map((r) => r.style["borderColor"])).toEqual(["var(--c-frame)", "var(--c-frame)", "var(--c-dim)", "var(--c-frame)"]);
   });
 
+  test("UI-54/UI-33 setListFocus の scroll: false は scrollIntoView を呼ばない（枠だけ動かす）。onFocus のある行（対象の一覧）は tabIndex -1 で、Enter が注目の行の選択になる", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, onRelease: () => {}, onClose: () => {} });
+    c.setList([
+      { label: "a", onSelect: () => {}, onFocus: () => {} },
+      { label: "b", onSelect: () => {}, onFocus: () => {} },
+      { label: "back", onSelect: () => {} },
+    ]);
+    c.setMode("list");
+    const rows = created.filter((e) => e.className === "controls-list-item");
+    expect(rows.map((r) => r["tabIndex"])).toEqual([-1, -1, undefined]);
+    let scrolled = 0;
+    for (const r of rows) r["scrollIntoView"] = () => scrolled++;
+    c.setListFocus(1, { scroll: false });
+    expect(rows.map((r) => r.style["borderColor"])).toEqual(["var(--c-frame)", "var(--c-accent)", "var(--c-frame)"]);
+    expect(scrolled).toBe(0);
+    c.setListFocus(0, { scroll: true });
+    c.setListFocus(1);
+    expect(scrolled).toBe(2);
+  });
+
   test("UI-44/UI-54 オート解除: pointerdown と、autoStop モードの select(0) で onPress を呼ぶ。ラベルは setAutoStop で差し替わる", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);

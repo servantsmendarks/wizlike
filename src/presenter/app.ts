@@ -318,7 +318,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
         label: e.label,
         disabled: e.disabled,
         onSelect: () => guard(() => chooseBattle(e.choice)),
-        ...(targeting ? { onFocus: () => guard(() => focusTo(i)) } : {}),
+        ...(targeting ? { onFocus: () => guard(() => focusTo(i, false)) } : {}),
       }),
     );
     if (cur.stage === "party" || cur.stage === "member") {
@@ -352,15 +352,19 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     play.battle.setPickable(false);
   };
 
-  /** UI-54: 対象の一覧の注目を i に移す（一覧は作り直さない。作り直すと click が消える） */
-  const focusTo = (i: number): void => {
+  /**
+   * UI-54: 対象の一覧の注目を i に移す（一覧は作り直さない。作り直すと click が消える）。
+   * scroll はキーで動かしたときだけ真（ポインタで触れた行はタッチの途中で一覧を動かさない）。注目が変わらなければ何もしない
+   */
+  const focusTo = (i: number, scroll: boolean): void => {
     const menu = battleMenu(state, data);
     const cur = cursor;
     if (menu === null || cur === null) return;
     const next = setFocus(menu, cur, i);
     if (next === cur) return;
+    if ((cur.stage === "enemy" || cur.stage === "ally") && next.stage === cur.stage && next.focus === cur.focus) return;
     cursor = next;
-    if (next.stage === "enemy" || next.stage === "ally") play.controls.setListFocus(next.focus);
+    if (next.stage === "enemy" || next.stage === "ally") play.controls.setListFocus(next.focus, { scroll });
     paintFocus();
   };
 
@@ -631,7 +635,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
         if (k === "back") chooseBattle({ kind: "back" });
         else if (k === "up" || k === "down") {
           const next = moveFocus(menu, cur, k === "up" ? -1 : 1);
-          if (next.stage === "enemy" || next.stage === "ally") focusTo(next.focus);
+          if (next.stage === "enemy" || next.stage === "ally") focusTo(next.focus, true);
         } else if (k === "focused") {
           const ch = focusedChoice(menu, cur);
           if (ch !== null) chooseBattle(ch);
