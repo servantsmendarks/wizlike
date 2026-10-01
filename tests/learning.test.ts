@@ -4,13 +4,15 @@
 //   seed 4:  d100 = 39, 26, ...（続く randInt(0,0) は 2 回とも 0）
 //   seed 5:  d100 = 100, 13, 23, ...
 //   seed 7:  d100 = 4, 93, 21, ...（randInt(0,0) は常に 0）
-//   seed 8:  d100 = 87, 32, ...
-//   seed 13: d100 = 85, 84, 44, ... / d100 2 回の後の randInt(0,1) = 1
+//   seed 8:  d100 = 87, 32, ...（d100 1 回の後の randInt(0,0) は 0）
+//   seed 13: d100 = 85, 84, 44, ... / d100 2 回の後の randInt(0,1) = 1 / d100 3 回の後の randInt(0,1) = 1、続く randInt(0,0) = 0
 //   seed 16: d100 = 96, 52, ...     / d100 2 回の後の randInt(0,1) = 0
+//   seed 88: d100 = 92, 88, 97, ... / d100 3 回の後の randInt(0,1) = 1、続く randInt(0,0) = 0
 import { describe, expect, test } from "vitest";
 import type { GameData } from "../src/core/data";
 import { createRng, randInt, type RngState } from "../src/core/rng";
 import {
+  bandUnlockLevel,
   checkLearnFromBook,
   isLearnSuccess,
   learnCandidates,
@@ -63,6 +65,13 @@ const BISHOP: Partial<Character> = {
 const SAMURAI: Partial<Character> = {
   classId: "samurai",
   stats: { str: 15, iq: 9, pie: 10, vit: 14, agi: 10, luk: 6 },
+  knownSpells: [],
+};
+
+/** 君主（priest:4）。pie 10 なので L4 の heal・blessing は 35 + 60 + 0 − 10 = 85、cure_poison は 35 + 20 − 10 = 45。 */
+const LORD: Partial<Character> = {
+  classId: "lord",
+  stats: { str: 15, iq: 12, pie: 10, vit: 15, agi: 14, luk: 15 },
   knownSpells: [],
 };
 
@@ -167,7 +176,7 @@ describe("learning: rollSpellLearning", () => {
     expectKnownStringKeys(ctx.events);
   });
 
-  test("MG-21 seed 8: ドナ L2 の blessing は 87 > 70 で失敗。learnLevel 2 の帯が無いので保証は無く、乱数の消費は 1 回", () => {
+  test("MG-21 seed 8: ドナ L2 の blessing は 87 > 70 で失敗。解放レベル 2 の帯が無いので保証は無く、乱数の消費は 1 回", () => {
     const { ctx, ch } = setup(8, DONA);
     expect(rollSpellLearning(ctx, ch, 2)).toEqual([]);
     expect(diceOf(ctx.events)).toEqual([87]);
@@ -264,7 +273,7 @@ describe("learning: rollSpellLearning", () => {
     expect(ctx.state.rng).toEqual(rngAfter(13, [D100, D100, [0, 1]]));
   });
 
-  test("MG-23 seed 7: mage（knownSpells []）L2 は fire_arrow 4 で習得、sleep_mist 93 > 73 で失敗。learnLevel 2 が無いので保証は無い", () => {
+  test("MG-23 seed 7: mage（knownSpells []）L2 は fire_arrow 4 で習得、sleep_mist 93 > 73 で失敗。解放レベル 2 の帯が無いので保証は無い", () => {
     const { ctx, ch } = setup(7, EL, { knownSpells: [] });
     expect(rollSpellLearning(ctx, ch, 2)).toEqual(["fire_arrow"]);
     expect(diceOf(ctx.events)).toEqual([4, 93]);
@@ -279,21 +288,98 @@ describe("learning: rollSpellLearning", () => {
     expect(ctx.state.rng).toEqual(createRng(1));
   });
 
-  test("MG-23 衝突 D7: 侍（iq 9）L4 は全部失敗しても保証しない（seed 13: 85 > 82、84 > 82、44 > 42）", () => {
+  test("MG-23 侍（iq 9）L4 は全部失敗しても、解放レベル 4 の帯 mage:1 と mage:2 で保証が働く（seed 13: 85 > 82、84 > 82、44 > 42、randInt(0,1) = 1 で sleep_mist、randInt(0,0) で flame_burst）", () => {
     const { ctx, ch } = setup(13, BERK, SAMURAI);
     const sam = classOf(data, "samurai");
     const cfg = data.config;
-    // 35 + 20*3 + (9−10)*3 − 10 = 82、flame_burst は 35 + 20 − 3 − 10 = 42
+    // 35 + 20*3 + (9−10)*3 − 10 = 82、flame_burst は 35 + 20 − 3 − 10 = 42（MG-22 は learnLevel 基準のまま）
     expect(learnRate(ch, sam, spellOf(data, "fire_arrow"), 4, cfg)).toBe(82);
     expect(learnRate(ch, sam, spellOf(data, "sleep_mist"), 4, cfg)).toBe(82);
     expect(learnRate(ch, sam, spellOf(data, "flame_burst"), 4, cfg)).toBe(42);
-    expect(rollSpellLearning(ctx, ch, 4)).toEqual([]);
+    expect(rollSpellLearning(ctx, ch, 4)).toEqual(["sleep_mist", "flame_burst"]);
     expect(diceOf(ctx.events)).toEqual([85, 84, 44]);
-    expect(learnedOf(ctx.events)).toEqual([]);
-    expect(ch.knownSpells).toEqual([]);
-    // 保証の randInt を引いていない（d100 の 3 回だけ）
-    expect(ctx.state.rng).toEqual(rngAfter(13, [D100, D100, D100]));
+    expect(learnedOf(ctx.events)).toEqual([
+      ["sleep_mist", "guarantee"],
+      ["flame_burst", "guarantee"],
+    ]);
+    expect(ch.knownSpells).toEqual(["sleep_mist", "flame_burst"]);
+    // d100 × 3 の後に、帯 mage:1 の randInt(0,1)、帯 mage:2 の randInt(0,0)
+    expect(ctx.state.rng).toEqual(rngAfter(13, [D100, D100, D100, [0, 1], [0, 0]]));
     expectKnownStringKeys(ctx.events);
+  });
+
+  test("MG-23 君主（pie 10）L4 は全部失敗しても、解放レベル 4 の帯 priest:1 と priest:2 で保証が働く（seed 88: 92 > 85、88 > 85、97 > 45、randInt(0,1) = 1 で blessing、randInt(0,0) で cure_poison）", () => {
+    const { ctx, ch } = setup(88, BERK, LORD);
+    const lord = classOf(data, "lord");
+    const cfg = data.config;
+    expect(learnCandidates(ch, lord, 4, data).map((x) => x.id)).toEqual(["heal", "blessing", "cure_poison"]);
+    expect(learnRate(ch, lord, spellOf(data, "heal"), 4, cfg)).toBe(85);
+    expect(learnRate(ch, lord, spellOf(data, "blessing"), 4, cfg)).toBe(85);
+    expect(learnRate(ch, lord, spellOf(data, "cure_poison"), 4, cfg)).toBe(45);
+    expect(rollSpellLearning(ctx, ch, 4)).toEqual(["blessing", "cure_poison"]);
+    expect(diceOf(ctx.events)).toEqual([92, 88, 97]);
+    expect(learnedOf(ctx.events)).toEqual([
+      ["blessing", "guarantee"],
+      ["cure_poison", "guarantee"],
+    ]);
+    expect(ch.knownSpells).toEqual(["blessing", "cure_poison"]);
+    expect(ctx.state.rng).toEqual(rngAfter(88, [D100, D100, D100, [0, 1], [0, 0]]));
+    expectKnownStringKeys(ctx.events);
+  });
+
+  test("MG-23 侍 L4（fire_arrow, sleep_mist は既知）は帯 mage:1 の判定対象が空なので保証なし。帯 mage:2 だけ（seed 13: flame_burst 85 > 42、randInt(0,0)）", () => {
+    const { ctx, ch } = setup(13, BERK, { ...SAMURAI, knownSpells: ["fire_arrow", "sleep_mist"] });
+    expect(learnCandidates(ch, classOf(data, "samurai"), 4, data).map((x) => x.id)).toEqual(["flame_burst"]);
+    expect(rollSpellLearning(ctx, ch, 4)).toEqual(["flame_burst"]);
+    expect(diceOf(ctx.events)).toEqual([85]);
+    expect(learnedOf(ctx.events)).toEqual([["flame_burst", "guarantee"]]);
+    expect(ctx.state.rng).toEqual(rngAfter(13, [D100, [0, 0]]));
+  });
+
+  test("MG-23 侍 L4（mage の呪文をすべて既知）は判定対象が空で、イベントも乱数の消費も無い", () => {
+    const { ctx, ch } = setup(13, BERK, { ...SAMURAI, knownSpells: ["fire_arrow", "sleep_mist", "flame_burst"] });
+    expect(rollSpellLearning(ctx, ch, 4)).toEqual([]);
+    expect(ctx.events).toEqual([]);
+    expect(ctx.state.rng).toEqual(createRng(13));
+  });
+
+  test("MG-23 bandUnlockLevel = max(系統の開始レベル, 帯の bookOnly でない最小 learnLevel)。bookOnly だけの帯と使えない系統は null", () => {
+    const mage = classOf(data, "mage");
+    const sam = classOf(data, "samurai");
+    const lord = classOf(data, "lord");
+    const bishop = classOf(data, "bishop");
+    expect(bandUnlockLevel(mage, "mage", 1, data)).toBe(1);
+    expect(bandUnlockLevel(mage, "mage", 2, data)).toBe(3);
+    // mage:3 は lightning_tome（bookOnly）だけ
+    expect(bandUnlockLevel(mage, "mage", 3, data)).toBeNull();
+    expect(bandUnlockLevel(sam, "mage", 1, data)).toBe(4);
+    expect(bandUnlockLevel(sam, "mage", 2, data)).toBe(4);
+    expect(bandUnlockLevel(sam, "mage", 3, data)).toBeNull();
+    expect(bandUnlockLevel(lord, "priest", 1, data)).toBe(4);
+    expect(bandUnlockLevel(lord, "priest", 2, data)).toBe(4);
+    expect(bandUnlockLevel(lord, "priest", 3, data)).toBe(5);
+    expect(bandUnlockLevel(lord, "priest", 5, data)).toBe(9);
+    expect(bandUnlockLevel(bishop, "priest", 2, data)).toBe(3);
+    // 呪文の無い帯、使えない系統
+    expect(bandUnlockLevel(mage, "mage", 4, data)).toBeNull();
+    expect(bandUnlockLevel(sam, "priest", 1, data)).toBeNull();
+    expect(bandUnlockLevel(classOf(data, "fighter"), "mage", 1, data)).toBeNull();
+  });
+
+  test("MG-23 帯の解放レベルは bookOnly の呪文を数えない（lightning_tome を mage:2・learnLevel 2 に移したデータで、エル L3 は seed 8: flame_burst 87 > 53 で失敗し、保証 randInt(0,0) で習得）", () => {
+    const fresh = loadFreshData();
+    const tome = fresh.spells.find((x) => x.id === "lightning_tome")!;
+    tome.level = 2;
+    tome.learnLevel = 2;
+    // bookOnly を数えれば解放レベルは 2 になり、L3 では保証が働かない
+    expect(bandUnlockLevel(classOf(fresh, "mage"), "mage", 2, fresh)).toBe(3);
+    const { ctx, ch } = setup(8, EL, {}, fresh);
+    expect(learnCandidates(ch, classOf(fresh, "mage"), 3, fresh).map((x) => x.id)).toEqual(["flame_burst"]);
+    expect(learnRate(ch, classOf(fresh, "mage"), spellOf(fresh, "flame_burst"), 3, fresh.config)).toBe(53);
+    expect(rollSpellLearning(ctx, ch, 3)).toEqual(["flame_burst"]);
+    expect(diceOf(ctx.events)).toEqual([87]);
+    expect(learnedOf(ctx.events)).toEqual([["flame_burst", "guarantee"]]);
+    expect(ctx.state.rng).toEqual(rngAfter(8, [D100, [0, 0]]));
   });
 });
 

@@ -18,7 +18,7 @@
 - MG-20 判定の契機は「キャラクターがレベル L に初めて到達したとき」（CH-63）。対象は、系統が使えて開始レベル以上、`learnLevel ≤ L`、未習得、`bookOnly` でない呪文すべて。
 - MG-21 呪文ごとに d100（1〜100）を振る。`roll ≤ 成功率` で習得（成功率が 0 以下なら必ず失敗、100 以上なら必ず成功。どちらの場合もダイスは振る）。判定は `data/spells.json` の並び順で行う。
 - MG-22 成功率 = `config.learning.base + config.learning.perLevelDiff × (L − learnLevel) + statMod + classes[].learnMod`。上限 100。`L − learnLevel ≥ config.learning.guaranteeDiff` なら無条件で 100。`statMod = (関連能力値 − config.learning.statPivot) × config.learning.statPerPoint`。既定は base 35、perLevelDiff 20、guaranteeDiff 4、statPivot 10、statPerPoint 3【仮】。`statMod` の関連能力値は呪文の系統で決める（魔術師系は知恵、僧侶系は信仰心。両系統を持つ職業も呪文ごとに決まる）。下限は設けない。
-- MG-23 保証: このレベルアップで新しく判定対象になった呪文レベル帯（`learnLevel` がちょうど L の呪文がある帯）から 1 つも習得しなかったら、その帯から 1 つをランダムに習得する。保証で選ぶ候補は、その帯で今回判定対象になった呪文（`learnLevel < L` を含む）から等確率で 1 つ。保証による習得ではダイスを表示しない。侍・君主の扱いは decisions.md の衝突を参照。
+- MG-23 保証: 帯は (系統, 呪文レベル `level`) の組。帯の解放レベル = max(そのキャラクターの職業のその系統の開始レベル `classes[].spells[系統]`, 帯に属する `bookOnly` でない呪文の `learnLevel` の最小値)。帯に `bookOnly` でない呪文が 1 つも無ければ、その帯は保証の対象にならない。レベル L に初めて到達したときの判定（MG-20〜22）の後、解放レベルが L に等しい帯ごとに、その帯の今回の判定対象（MG-20 の対象のうちその帯のもの）から 1 つも習得しなかったなら、その帯の今回の判定対象から等確率で 1 つを習得する。その帯の今回の判定対象が空なら保証は無い。保証する帯の順は、判定対象（`data/spells.json` の並び順）に帯が初めて現れた順。乱数は、判定の d100 をすべて振ってから、保証の抽選を帯の順に引く。保証による習得ではダイスを表示しない。MG-22 の成功率は呪文の `learnLevel` 基準のまま変わらない。
 - MG-24 判定のダイスは画面に表示する（`dice` イベント、UI-40）。1 呪文につき 1 回。
 - MG-25 `bookOnly: true` の呪文は魔法書アイテム（`items[].effect.type === "learn"`）を使って習得する。魔法書は消費される。職業がその系統を使えない（`classes[].spells` にその系統が無い。開始レベルは問わない）場合は使えない（アイテムは消費されない）。すでに知っている場合も使えない。
 - MG-26 レベルダウンで呪文を失うことはない（CH-62）。

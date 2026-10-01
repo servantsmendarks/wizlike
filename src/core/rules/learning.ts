@@ -38,6 +38,21 @@ export function learnCandidates(ch: Character, cls: ClassDef, level: number, dat
 }
 
 /**
+ * MG-23: 帯 (school, spellLevel) の解放レベル = max(系統の開始レベル, 帯の bookOnly でない呪文の learnLevel の最小値)。
+ * 職業がその系統を使えないか、帯に bookOnly でない呪文が無ければ null（保証の対象にならない）。
+ */
+export function bandUnlockLevel(cls: ClassDef, school: School, spellLevel: number, data: GameData): number | null {
+  const start = cls.spells[school];
+  if (start === undefined) return null;
+  let min: number | null = null;
+  for (const sp of data.spells) {
+    if (sp.school !== school || sp.level !== spellLevel || sp.bookOnly) continue;
+    if (min === null || sp.learnLevel < min) min = sp.learnLevel;
+  }
+  return min === null ? null : Math.max(start, min);
+}
+
+/**
  * MG-20〜24: レベル L に初めて到達したときの習得判定。新しく覚えた呪文の id を覚えた順に返す。
  * 呼び出し側（growth.levelUpOnce）が CH-63 の条件（L > maxLevelReached）を確かめる。
  */
@@ -64,13 +79,13 @@ export function rollSpellLearning(ctx: RuleContext, ch: Character, level: number
     }
   }
 
-  // MG-23（D7、文面どおり）: learnLevel === L の対象を含む帯だけを、cands に初めて現れた順に見る。
+  // MG-23: 解放レベルが L の帯だけを、cands に初めて現れた順に見る。
   const bandKey = (sp: Spell): string => `${sp.school}:${sp.level}`;
   const bands: string[] = [];
   for (const sp of cands) {
     const k = bandKey(sp);
     if (bands.includes(k)) continue;
-    if (cands.some((x) => bandKey(x) === k && x.learnLevel === level)) bands.push(k);
+    if (bandUnlockLevel(cls, sp.school, sp.level, data) === level) bands.push(k);
   }
   for (const k of bands) {
     const pool = cands.filter((sp) => bandKey(sp) === k);
