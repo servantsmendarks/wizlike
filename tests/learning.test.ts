@@ -1,6 +1,7 @@
 // 呪文の習得（MG-20〜26）。rollSpellLearning を直接呼ぶので、最初の乱数は判定の d100。
 // 固定シードの出目（src/core/rng.ts の randInt で実測）:
 //   seed 1:  d100 = 49, 14, 92, ...
+//   seed 4:  d100 = 39, 26, ...（続く randInt(0,0) は 2 回とも 0）
 //   seed 5:  d100 = 100, 13, 23, ...
 //   seed 7:  d100 = 4, 93, 21, ...（randInt(0,0) は常に 0）
 //   seed 8:  d100 = 87, 32, ...
@@ -52,6 +53,12 @@ function diceOf(events: readonly GameEvent[]): number[] {
 function learnedOf(events: readonly GameEvent[]): [string, string][] {
   return events.flatMap((e) => (e.kind === "spellLearned" ? [[e.spellId, e.via] as [string, string]] : []));
 }
+
+/** 司教（mage:1, priest:1）。iq 8、pie 8 なので、learnLevel = L の呪文の率は 35 + 0 − 6 − 10 = 19。 */
+const BISHOP: Partial<Character> = {
+  classId: "bishop",
+  stats: { str: 8, iq: 8, pie: 8, vit: 10, agi: 10, luk: 8 },
+};
 
 const SAMURAI: Partial<Character> = {
   classId: "samurai",
@@ -226,6 +233,35 @@ describe("learning: rollSpellLearning", () => {
     expect(diceOf(ctx.events)).toEqual([96, 52]);
     expect(learnedOf(ctx.events)).toEqual([["identify", "guarantee"]]);
     expect(ctx.state.rng).toEqual(rngAfter(16, [D100, D100, [0, 1]]));
+  });
+
+  test("MG-23 seed 4: 司教 L3 は mage:2 と priest:2 の 2 帯が保証に回る（flame_burst 39 > 19、cure_poison 26 > 19 で失敗）。帯の順は mage が先", () => {
+    const { ctx, ch } = setup(4, EL, { ...BISHOP, knownSpells: ["fire_arrow", "sleep_mist", "heal", "blessing"] });
+    const bishop = classOf(data, "bishop");
+    expect(learnRate(ch, bishop, spellOf(data, "flame_burst"), 3, data.config)).toBe(19);
+    expect(learnRate(ch, bishop, spellOf(data, "cure_poison"), 3, data.config)).toBe(19);
+    expect(rollSpellLearning(ctx, ch, 3)).toEqual(["flame_burst", "cure_poison"]);
+    expect(diceOf(ctx.events)).toEqual([39, 26]);
+    expect(learnedOf(ctx.events)).toEqual([
+      ["flame_burst", "guarantee"],
+      ["cure_poison", "guarantee"],
+    ]);
+    expect(ch.knownSpells).toEqual(["fire_arrow", "sleep_mist", "heal", "blessing", "flame_burst", "cure_poison"]);
+    // d100 × 2 の後に、帯ごとに randInt(0,0) を 1 回ずつ（幅 1 でも乱数を 1 つ消費する）
+    expect(ctx.state.rng).toEqual(rngAfter(4, [D100, D100, [0, 0], [0, 0]]));
+    expectKnownStringKeys(ctx.events);
+  });
+
+  test("MG-23 seed 13: 司教 L5 は lightning_tome が bookOnly なので帯は priest:3 だけ（identify 85、return 84 で失敗し、randInt(0,1) = 1 で return）", () => {
+    const { ctx, ch } = setup(13, EL, {
+      ...BISHOP,
+      knownSpells: ["fire_arrow", "sleep_mist", "heal", "blessing", "flame_burst", "cure_poison"],
+    });
+    expect(learnCandidates(ch, classOf(data, "bishop"), 5, data).map((x) => x.id)).toEqual(["identify", "return"]);
+    expect(rollSpellLearning(ctx, ch, 5)).toEqual(["return"]);
+    expect(diceOf(ctx.events)).toEqual([85, 84]);
+    expect(learnedOf(ctx.events)).toEqual([["return", "guarantee"]]);
+    expect(ctx.state.rng).toEqual(rngAfter(13, [D100, D100, [0, 1]]));
   });
 
   test("MG-23 seed 7: mage（knownSpells []）L2 は fire_arrow 4 で習得、sleep_mist 93 > 73 で失敗。learnLevel 2 が無いので保証は無い", () => {

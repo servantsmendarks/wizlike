@@ -227,6 +227,75 @@ describe("growth: レベルアップ（CH-61、CH-63、CH-65）", () => {
   });
 });
 
+describe("growth: 複数段の上昇と習得判定（CH-61、CH-63、MG-20）", () => {
+  // seed 1 の列: d8 = 5 → d100 = 14 → d8 = 4 → d100 = 83 → randInt(0,0)。
+  // blessing（L2）の率は 35 + 20 + (15−10)×3 = 70、cure_poison（L3）は 35 + 0 + 15 = 50（ドナ pie 15、priest learnMod 0）。
+  const L1_TO_L3: [number, number][] = [
+    [1, 8],
+    [1, 100],
+    [1, 8],
+    [1, 100],
+    [0, 0],
+  ];
+
+  test("CH-61/MG-20 ドナ exp 1500 で L1→L3: 段ごとに d8 → d100 の順（L2 blessing 14 ≤ 70、L3 cure_poison 83 > 50 で保証）", () => {
+    const { ctx, ch } = setup(1, DONA, { exp: 1500 });
+    expect(levelUpWhilePossible(ctx, ch)).toBe(2);
+    expect(ch.level).toBe(3);
+    expect(ch.maxLevelReached).toBe(3);
+    expect(ch.levelHistory).toEqual([
+      { level: 2, hpGain: 5, mpGain: 5 },
+      { level: 3, hpGain: 4, mpGain: 5 },
+    ]);
+    expect(ch.knownSpells).toEqual(["heal", "blessing", "cure_poison"]);
+    expect(kinds(ctx.events)).toEqual([
+      "levelUp",
+      "message",
+      "message",
+      "dice",
+      "spellLearned",
+      "message",
+      "levelUp",
+      "message",
+      "message",
+      "dice",
+      "message",
+      "spellLearned",
+      "message",
+    ]);
+    expect(ctx.events.flatMap((e) => (e.kind === "dice" ? e.dice : []))).toEqual([14, 83]);
+    expect(
+      ctx.events.flatMap((e) => (e.kind === "spellLearned" ? [[e.spellId, e.via]] : [])),
+    ).toEqual([
+      ["blessing", "roll"],
+      ["cure_poison", "guarantee"],
+    ]);
+    expect(ctx.state.rng).toEqual(rngAfter(1, L1_TO_L3));
+    expectKnownStringKeys(ctx.events);
+  });
+
+  test("CH-63 2 段下げてから maxLevelReached を越えて上げ直すと、新しいレベルだけを判定する", () => {
+    const { ctx, ch } = setup(1, DONA, { exp: 1500 });
+    levelUpWhilePossible(ctx, ch);
+    ch.exp = 0;
+    expect(levelDownWhileBelow(ctx, ch)).toBe(2);
+    expect(ch.level).toBe(1);
+    expect(ch.maxLevelReached).toBe(3);
+    ctx.events.length = 0;
+    // expFor(4) = 2250（priest）。L2、L3 は再到達、L4 だけが初到達。L4 の判定対象は無い（learnLevel 4 の priest 呪文が無い）
+    ch.exp = 2250;
+    expect(levelUpWhilePossible(ctx, ch)).toBe(3);
+    expect(ch.level).toBe(4);
+    expect(ch.maxLevelReached).toBe(4);
+    expect(ch.levelHistory.map((r) => r.level)).toEqual([2, 3, 4]);
+    expect(ctx.events.filter((e) => e.kind === "dice")).toEqual([]);
+    expect(ctx.events.filter((e) => e.kind === "spellLearned")).toEqual([]);
+    expect(ch.knownSpells).toEqual(["heal", "blessing", "cure_poison"]);
+    // 上げ直しで消費するのは HP の d8 を 3 回だけ
+    expect(ctx.state.rng).toEqual(rngAfter(1, [...L1_TO_L3, [1, 8], [1, 8], [1, 8]]));
+  });
+});
+
 describe("growth: レベルダウン（CH-62、MG-26）", () => {
   test("CH-62 末尾を取り消し、hpMax/mpMax を戻し、hp/mp を最大値に丸める（L3 → L2、乱数なし）", () => {
     const { ctx, ch } = setup(1, DONA, { ...DONA_L3, exp: 1000, mp: 3 });
