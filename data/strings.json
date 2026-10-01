@@ -130,7 +130,7 @@
   "camp.equip.blocked": "{name}（{why}）",
   "camp.identifyRow": "{owner}: {name}",
   "camp.identify.none": "鑑定する物がない",
-  "camp.order.row": "{n} {name}　{row}",
+  "camp.order.row": "{n} {name}",
   "camp.order.front": "前衛",
   "camp.order.back": "後衛",
   "dungeon.teleporter": "光の輪が街への道を開いている。",

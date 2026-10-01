@@ -49,9 +49,9 @@ export type CampEntry = { label: string; disabled: boolean; choice: CampChoice }
 export type CampEntries = { layout: "grid"; slots: (CampEntry | null)[] } | { layout: "list"; rows: CampEntry[] };
 /** 段を移る・閉じる・送る（送った後は after の段へ） */
 export type CampStep = { kind: "page"; page: CampPage } | { kind: "close" } | { kind: "send"; command: Command; after: CampPage };
-/** ビュー領域に出すもの。text は見出しと問い、detail は UI-59 の状態（focusSlot はその枠を accent 色）、order は並び順の表 */
+/** ビュー領域に出すもの。text は場所の見出し（キャンプ / 酒場。段の問いはヘッダーにだけ出し、パネルでは繰り返さない）、detail は UI-59 の状態（focusSlot はその枠を accent 色）、order は並び順の表 */
 export type CampPanel =
-  | { kind: "text"; title: string; body: string }
+  | { kind: "text"; title: string }
   | { kind: "detail"; memberId: string; focusSlot: EquipSlot | null }
   | { kind: "order"; rows: { n: number; name: string; row: string; picked: boolean }[] };
 export type CampInput = { menu: CampMenu; items: FieldItemMenu | null };
@@ -331,7 +331,7 @@ export function campHeader(page: CampPage, m: CampInput, strings: Strings): stri
   }
 }
 
-/** ビュー領域に出すもの（状態と装備の枠・品は UI-59 の詳細、並び順は表、それ以外は見出しと問い） */
+/** ビュー領域に出すもの（状態と装備の枠・品は UI-59 の詳細、並び順は表、それ以外は場所の見出しだけ。問いは campHeader でヘッダーに出す） */
 export function campPanel(page: CampPage, m: CampInput, strings: Strings): CampPanel {
   if (page.kind === "status") return { kind: "detail", memberId: page.memberId, focusSlot: null };
   if (page.kind === "equip" && page.stage !== "member") {
@@ -348,7 +348,7 @@ export function campPanel(page: CampPage, m: CampInput, strings: Strings): CampP
       })),
     };
   }
-  return { kind: "text", title: s(strings, m.menu.place === "town" ? "town.menu.tavern" : "dungeon.menu.camp"), body: campHeader(page, m, strings) };
+  return { kind: "text", title: s(strings, m.menu.place === "town" ? "town.menu.tavern" : "dungeon.menu.camp") };
 }
 
 /**
@@ -427,12 +427,21 @@ export function campKeyIndex(a: Action, e: CampEntries): number | null {
 
 const LINE_H = 10;
 const PAD = 4;
+/**
+ * 並び順の表の列（パネル内の x と幅。美咲は半角 4px・全角 8px）。
+ * 番号と名前（camp.order.row「{n} {name}」。半角 1 字 + 空白 + 全角 6 文字 = 56px）の列と、前衛 / 後衛の列。
+ * 前衛 / 後衛の列は名前の長さによらず同じ x に置く（パーティ欄の PARTY_COLUMNS と同じく、名前は全角 6 文字ぶんの幅で切る）
+ */
+export const ORDER_COLUMNS = {
+  name: { left: PAD, width: 56 },
+  row: { left: PAD + 64, width: 16 },
+} as const;
 
-/** 描くもの。detail は app が formatDetail で作った文字列（state の Character から） */
+/** 描くもの。detail は app が formatDetail で作った文字列（state の Character から）。order の label は番号と名前、row は前衛 / 後衛 */
 export type CampPanelView =
-  | { kind: "text"; title: string; body: string }
+  | { kind: "text"; title: string }
   | { kind: "detail"; detail: CharacterDetail; focusSlot: number | null }
-  | { kind: "order"; lines: { text: string; picked: boolean }[] };
+  | { kind: "order"; lines: { label: string; row: string; picked: boolean }[] };
 
 export type CampView = {
   el: HTMLElement;
@@ -454,14 +463,14 @@ export function createCampView(rect: Rect): CampView {
   });
   const detail = createDetailView({ x: 0, y: 0, w: rect.w, h: rect.h });
 
-  const line = (row: number, text: string, cls: string, color?: string): HTMLElement => {
+  const line = (row: number, text: string, cls: string, color?: string, col: { left: number; width: number } = { left: PAD, width: rect.w - 2 * PAD }): HTMLElement => {
     const t = document.createElement("div");
     t.className = cls;
     Object.assign(t.style, {
       position: "absolute",
-      left: `${PAD}px`,
+      left: `${col.left}px`,
       top: `${PAD + LINE_H * row}px`,
-      width: `${rect.w - 2 * PAD}px`,
+      width: `${col.width}px`,
       height: `${LINE_H}px`,
       lineHeight: `${LINE_H}px`,
       whiteSpace: "nowrap",
@@ -481,10 +490,15 @@ export function createCampView(rect: Rect): CampView {
         return;
       }
       if (p.kind === "order") {
-        el.replaceChildren(...p.lines.map((l, i) => line(i, l.text, "camp-order-row", l.picked ? "var(--c-accent)" : undefined)));
+        el.replaceChildren(
+          ...p.lines.flatMap((l, i) => {
+            const color = l.picked ? "var(--c-accent)" : undefined;
+            return [line(i, l.label, "camp-order-name", color, ORDER_COLUMNS.name), line(i, l.row, "camp-order-col", color, ORDER_COLUMNS.row)];
+          }),
+        );
         return;
       }
-      el.replaceChildren(line(0, p.title, "camp-title", "var(--c-accent)"), line(1, p.body, "camp-body"));
+      el.replaceChildren(line(0, p.title, "camp-title", "var(--c-accent)"));
     },
   };
 }

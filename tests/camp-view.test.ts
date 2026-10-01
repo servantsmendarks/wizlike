@@ -2,7 +2,7 @@
 // 値は core の campMenu と fieldItemMenu だけ（UI-35）。送る Command は core が受け付けることも確かめる。
 // 既定のパーティ（dived(1)）: c1 アルド 戦士（inv i4 薬草）、c2 ベルク 戦士、c3 キリ 盗賊（inv i10 薬草）、c4 ドナ 僧侶（inv i13 解毒草、呪文 heal）、
 // c5 エル 魔術師（inv i15 帰還の糸、呪文 fire_arrow / sleep_mist は battle 専用）、c6 フィン 盗賊（inv i18 薬草）。
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { execute } from "../src/core/engine";
 import { campMenu } from "../src/core/rules/camp";
 import { fieldItemMenu } from "../src/core/rules/items";
@@ -18,6 +18,7 @@ import {
   campRepair,
   campRows,
   campStep,
+  createCampView,
   type CampEntries,
   type CampEntry,
   type CampInput,
@@ -352,8 +353,26 @@ describe("TW-03/UI-52 酒場とキャンプの共有", () => {
     expect(campFirstPage("tavern", "status", m.menu)).toEqual({ kind: "status", memberId: "c1" });
     expect(campFirstPage("tavern", "equip", m.menu)).toEqual({ kind: "equip", stage: "member" });
     expect(campFirstPage("tavern", "order", m.menu)).toEqual({ kind: "order", picked: null });
-    expect(campPanel({ kind: "equip", stage: "member" }, m, S)).toEqual({ kind: "text", title: "酒場", body: "誰の装備？" });
-    expect(campPanel({ kind: "top" }, input(inDungeon()), S)).toEqual({ kind: "text", title: "キャンプ", body: "キャンプ　どうする？" });
+    expect(campPanel({ kind: "equip", stage: "member" }, m, S)).toEqual({ kind: "text", title: "酒場" });
+    expect(campPanel({ kind: "top" }, input(inDungeon()), S)).toEqual({ kind: "text", title: "キャンプ" });
+  });
+
+  test("UI-53 段の問いはヘッダーにだけ出す。文字のパネルは場所の見出し（キャンプ / 酒場）だけで、問いを繰り返さない", () => {
+    const pages: CampPage[] = [
+      { kind: "top" },
+      { kind: "spell", stage: "caster" },
+      { kind: "item", stage: "member" },
+      { kind: "equip", stage: "member" },
+      { kind: "identify", stage: "appraiser" },
+    ];
+    for (const [host, s] of [["camp", inDungeon()], ["tavern", inTown()]] as const) {
+      const m = input(s);
+      for (const p of pages) {
+        const panel = campPanel(p, m, S);
+        if (panel.kind !== "text") continue;
+        expect(Object.values(panel), `${host} ${p.kind}`).not.toContain(campHeader(p, m, S));
+      }
+    }
   });
 });
 
@@ -425,5 +444,53 @@ describe("UI-33 campKeyIndex", () => {
       expect(Object.prototype.hasOwnProperty.call(S, k), k).toBe(true);
     }
     expect(Object.prototype.hasOwnProperty.call(S, "dungeon.menu.items")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------- パネルの DOM（偽の document）
+class FakeEl {
+  style: Record<string, string> = {};
+  className = "";
+  textContent = "";
+  children: FakeEl[] = [];
+  appendChild(c: FakeEl): FakeEl {
+    this.children.push(c);
+    return c;
+  }
+  replaceChildren(...c: FakeEl[]): void {
+    this.children = c;
+  }
+}
+
+describe("CH-03/UI-53 並び順の表の列", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("CH-03/UI-53 前衛 / 後衛の列の x は名前の長さによらず同じ（名前の列は全角 6 文字ぶんの幅で切る）", () => {
+    vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
+    const v = createCampView({ x: 0, y: 16, w: 240, h: 150 });
+    v.render({
+      kind: "order",
+      lines: [
+        { label: "1 Alder", row: "前衛", picked: false },
+        { label: "2 ベルク", row: "前衛", picked: true },
+        { label: "3 キリ", row: "前衛", picked: false },
+        { label: "4 ろくもじのな", row: "後衛", picked: false },
+      ],
+    });
+    const el = v.el as unknown as FakeEl;
+    const rowCells = el.children.filter((c) => c.className === "camp-order-col");
+    const nameCells = el.children.filter((c) => c.className === "camp-order-name");
+    expect(rowCells.map((c) => c.textContent)).toEqual(["前衛", "前衛", "前衛", "後衛"]);
+    expect(new Set(rowCells.map((c) => c.style["left"])).size).toBe(1);
+    const px = (s: string | undefined): number => Number((s ?? "").replace("px", ""));
+    // 番号（半角 1 字）+ 空白 + 名前（全角 6 文字 = 48px）が列の手前に収まる
+    for (const n of nameCells) expect(px(n.style["left"]) + px(n.style["width"])).toBeLessThanOrEqual(px(rowCells[0]!.style["left"]));
+    expect(px(nameCells[0]!.style["width"])).toBeGreaterThanOrEqual(4 + 4 + 8 * 6);
+    // 選んだ行は両方の列を accent 色
+    expect(nameCells[1]!.style["color"]).toBe("var(--c-accent)");
+    expect(rowCells[1]!.style["color"]).toBe("var(--c-accent)");
+    expect(rowCells[0]!.style["color"]).toBeUndefined();
   });
 });

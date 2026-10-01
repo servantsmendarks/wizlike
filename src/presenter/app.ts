@@ -475,11 +475,11 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     if (p.kind === "order") {
       return {
         kind: "order",
-        lines: p.rows.map((r) => ({ text: formatMessage(t("camp.order.row"), { n: r.n, name: r.name, row: r.row }), picked: r.picked })),
+        lines: p.rows.map((r) => ({ label: formatMessage(t("camp.order.row"), { n: r.n, name: r.name }), row: r.row, picked: r.picked })),
       };
     }
     const ch = state.party.find((x) => x.id === p.memberId);
-    if (ch === undefined) return { kind: "text", title: "", body: "" };
+    if (ch === undefined) return { kind: "text", title: "" };
     return {
       kind: "detail",
       detail: formatDetail(ch, data, strings, (iid) => itemDisplayName(state, data, iid)),
