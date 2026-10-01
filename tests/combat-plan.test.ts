@@ -1,0 +1,170 @@
+// rules/combat-plan.ts（オート入力・行動計画・行動順・敵の対象・オート解除）のテスト。純粋。
+import { describe, expect, test } from "vitest";
+import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, snapMembers, toPlan } from "../src/core/rules/combat-plan";
+import { memberById } from "../src/core/state";
+import type { BattleAction, Character, GameState } from "../src/core/types";
+import { dived, withBattle } from "./helpers/battle";
+import { data, withChar } from "./helpers/core";
+
+const twoGroups = (): GameState =>
+  withBattle(dived(1), [
+    { monsterId: "giant_rat", hps: [0, 0] },
+    { monsterId: "kobold", hps: [3, 3] },
+    { monsterId: "giant_rat", hps: [2] },
+  ]);
+const ch = (s: GameState, id: string): Character => memberById(s, id)!;
+const withLast = (s: GameState, idx: number, a: BattleAction | null): GameState => withChar(s, idx, { lastBattleInput: a });
+
+/** 前衛 3 人を麻痺させた state（CB-14 で後衛が前衛扱い） */
+function frontParalyzed(s: GameState): GameState {
+  let x = s;
+  for (const i of [0, 1, 2]) x = withChar(x, i, { status: ["paralysis"] });
+  return x;
+}
+
+describe("CB-40/42 autoInput", () => {
+  test("CB-40 lastBattleInput が null: 前衛とフィン（ranged）は最小の生存グループへ攻撃、ドナ・エルは防御", () => {
+    const s = twoGroups();
+    expect(s.party.map((c) => autoInput(s, data, c))).toEqual([
+      { type: "attack", group: 1 },
+      { type: "attack", group: 1 },
+      { type: "attack", group: 1 },
+      { type: "defend" },
+      { type: "defend" },
+      { type: "attack", group: 1 },
+    ]);
+  });
+
+  test("CB-40 前回の入力を繰り返す（攻撃・防御・呪文・道具）。flee と使えないもの・手元に無い道具は既定に落とす", () => {
+    let s = twoGroups();
+    s = withLast(s, 0, { type: "attack", group: 2 });
+    s = withLast(s, 1, { type: "defend" });
+    s = withLast(s, 4, { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 2 } });
+    s = withLast(s, 3, { type: "item", instanceId: "i13", target: { side: "ally", memberId: "c4" } }); // ドナの解毒草
+    s = withLast(s, 2, { type: "flee" });
+    s = withLast(s, 5, { type: "item", instanceId: "i4", target: { side: "ally", memberId: "c1" } }); // アルドの薬草（フィンの手元に無い）
+    expect(autoInput(s, data, ch(s, "c1"))).toEqual({ type: "attack", group: 2 });
+    expect(autoInput(s, data, ch(s, "c2"))).toEqual({ type: "defend" });
+    expect(autoInput(s, data, ch(s, "c3"))).toEqual({ type: "attack", group: 1 });
+    expect(autoInput(s, data, ch(s, "c4"))).toEqual({ type: "item", instanceId: "i13", target: { side: "ally", memberId: "c4" } });
+    expect(autoInput(s, data, ch(s, "c5"))).toEqual({ type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 2 } });
+    expect(autoInput(s, data, ch(s, "c6"))).toEqual({ type: "attack", group: 1 });
+    // 知らない呪文（忘れた）は既定
+    const s2 = withChar(s, 4, { knownSpells: ["sleep_mist"] });
+    expect(autoInput(s2, data, ch(s2, "c5"))).toEqual({ type: "defend" });
+  });
+
+  test("CB-42 対象グループが全滅していれば最小の生存グループへ、味方の対象が死んでいれば HP 割合が最小の生存者（同率は並び順）へ振り替える", () => {
+    let s = twoGroups();
+    s = withLast(s, 0, { type: "attack", group: 0 });
+    s = withLast(s, 4, { type: "cast", spellId: "sleep_mist", target: { side: "enemy", group: 0 } });
+    s = withChar(s, 3, { knownSpells: ["heal"], lastBattleInput: { type: "cast", spellId: "heal", target: { side: "ally", memberId: "c6" } } });
+    s = withChar(s, 5, { life: "dead", hp: 0 });
+    s = withChar(s, 1, { hp: 6 }); // 6/12 = 0.5
+    s = withChar(s, 2, { hp: 2 }); // 2/5 = 0.4
+    expect(autoInput(s, data, ch(s, "c1"))).toEqual({ type: "attack", group: 1 });
+    expect(autoInput(s, data, ch(s, "c5"))).toEqual({ type: "cast", spellId: "sleep_mist", target: { side: "enemy", group: 1 } });
+    expect(autoInput(s, data, ch(s, "c4"))).toEqual({ type: "cast", spellId: "heal", target: { side: "ally", memberId: "c3" } });
+    // 同率は並び順
+    const tie = withChar(s, 2, { hp: 3 }); // 3/5 = 0.6、ベルクとドナ（4/8 は下で作る）
+    const tie2 = withChar(tie, 3, { hp: 4 }); // ドナ 4/8 = 0.5 = ベルク 6/12
+    expect(autoInput(tie2, data, ch(tie2, "c4"))).toEqual({ type: "cast", spellId: "heal", target: { side: "ally", memberId: "c2" } });
+  });
+});
+
+describe("CB-13/41 toPlan", () => {
+  test("CB-13 ドナの attack は防御（backRow）。CB-14 で前衛扱いならドナの attack は攻撃", () => {
+    const s = twoGroups();
+    expect(toPlan(s, data, ch(s, "c4"), { type: "attack", group: 1 })).toEqual({ kind: "defend", memberId: "c4", why: "backRow" });
+    expect(toPlan(s, data, ch(s, "c6"), { type: "attack", group: 1 })).toEqual({ kind: "attack", memberId: "c6", group: 1, noMp: false });
+    expect(toPlan(s, data, ch(s, "c1"), { type: "defend" })).toEqual({ kind: "defend", memberId: "c1", why: "chosen" });
+    const f = frontParalyzed(s);
+    expect(toPlan(f, data, ch(f, "c4"), { type: "attack", group: 1 })).toEqual({ kind: "attack", memberId: "c4", group: 1, noMp: false });
+  });
+
+  test("CB-41 エル MP 1 で fire_arrow: 後衛なら防御（noMp）、前衛扱いなら最小の生存グループへ攻撃（noMp）。MP が足りれば cast のまま", () => {
+    const fire: BattleAction = { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 2 } };
+    const s = withChar(twoGroups(), 4, { mp: 1 });
+    expect(toPlan(s, data, ch(s, "c5"), fire as Exclude<BattleAction, { type: "flee" }>)).toEqual({ kind: "defend", memberId: "c5", why: "noMp" });
+    const f = frontParalyzed(s);
+    expect(toPlan(f, data, ch(f, "c5"), fire as Exclude<BattleAction, { type: "flee" }>)).toEqual({ kind: "attack", memberId: "c5", group: 1, noMp: true });
+    const ok = withChar(s, 4, { mp: 2 });
+    expect(toPlan(ok, data, ch(ok, "c5"), fire as Exclude<BattleAction, { type: "flee" }>)).toEqual({
+      kind: "cast",
+      memberId: "c5",
+      spellId: "fire_arrow",
+      target: { side: "enemy", group: 2 },
+    });
+  });
+});
+
+describe("CB-11 orderActors", () => {
+  test("CB-11 init の降順。同値は入力の並び（味方 → 敵）、味方同士は並び順、敵同士は g→u（安定）", () => {
+    const entries = [
+      { actor: "c1", init: 12 },
+      { actor: "c2", init: 15 },
+      { actor: "c3", init: 12 },
+      { actor: "e0-0", init: 15 },
+      { actor: "e0-1", init: 12 },
+      { actor: "e1-0", init: 20 },
+    ];
+    expect(orderActors(entries).map((e) => e.actor)).toEqual(["e1-0", "c2", "e0-0", "c1", "c3", "e0-1"]);
+    expect(entries[0]!.actor).toBe("c1"); // 入力を変えない
+  });
+});
+
+describe("CB-15 enemyTargetIds", () => {
+  test("CB-15 前衛の行動可能な者だけ（眠った前衛は除く）", () => {
+    const s = withChar(twoGroups(), 1, { status: ["sleep"] });
+    expect(enemyTargetIds(s, data)).toEqual(["c1", "c3"]);
+  });
+
+  test("CB-15【衝突】候補が空なら前衛扱いの生存者、それも空なら生存者全員", () => {
+    // 前衛は死亡と麻痺、後衛は全員睡眠 → 前衛扱いは後衛（CB-14）、行動可能 0 → 前衛扱いの生存者（眠った後衛）
+    let s = twoGroups();
+    s = withChar(s, 0, { life: "dead", hp: 0 });
+    s = withChar(s, 1, { status: ["paralysis"] });
+    s = withChar(s, 2, { life: "dead", hp: 0 });
+    for (const i of [3, 4, 5]) s = withChar(s, i, { status: ["sleep"] });
+    expect(enemyTargetIds(s, data)).toEqual(["c4", "c5", "c6"]);
+    // 後衛が全員死んでいれば前衛扱いの生存者もいない → 生存者全員（麻痺のベルク）
+    let t = s;
+    for (const i of [3, 4, 5]) t = withChar(t, i, { life: "dead", hp: 0, status: [] });
+    expect(enemyTargetIds(t, data)).toEqual(["c2"]);
+    // 誰もいなければ空
+    const u = withChar(t, 1, { life: "dead", hp: 0 });
+    expect(enemyTargetIds(u, data)).toEqual([]);
+  });
+});
+
+describe("CB-43 autoInterruptReason", () => {
+  const ratioCase = (hpBefore: number, hpAfter: number, hpMax = 100) => {
+    const s0 = withChar(twoGroups(), 0, { hp: hpBefore, hpMax });
+    const before = snapMembers(s0, data);
+    return autoInterruptReason(before, withChar(s0, 0, { hp: hpAfter }), data);
+  };
+
+  test("CB-43 HP 割合が 0.3 を下回った遷移で hp。0.31→0.29 は hp、0.30→0.29 も hp、0.25→0.2 は null（遷移でない）、0.31→0.30 は null", () => {
+    expect(ratioCase(31, 29)).toBe("hp");
+    expect(ratioCase(30, 29)).toBe("hp");
+    expect(ratioCase(25, 20)).toBeNull();
+    expect(ratioCase(31, 30)).toBeNull();
+  });
+
+  test("CB-43 毒が付くと status、死亡は dead（hp より優先）、SAN の段階の下降で san、変化なしで null、hp と status が同時なら hp", () => {
+    const s0 = twoGroups();
+    const before = snapMembers(s0, data);
+    expect(autoInterruptReason(before, s0, data)).toBeNull();
+    expect(autoInterruptReason(before, withChar(s0, 2, { status: ["poison"] }), data)).toBe("status");
+    expect(autoInterruptReason(before, withChar(s0, 2, { hp: 0, life: "dead" }), data)).toBe("dead");
+    expect(autoInterruptReason(before, withChar(s0, 2, { san: 49 }), data)).toBe("san"); // 50% 未満で uneasy
+    expect(autoInterruptReason(before, withChar(s0, 2, { san: 50 }), data)).toBeNull();
+    const both = withChar(withChar(s0, 0, { hp: 1 }), 1, { status: ["paralysis"] });
+    expect(autoInterruptReason(before, both, data)).toBe("hp");
+    // 前から持っていた状態は数えない。死者の状態も数えない
+    const poisoned = withChar(s0, 2, { status: ["poison"] });
+    expect(autoInterruptReason(snapMembers(poisoned, data), poisoned, data)).toBeNull();
+    const deadBefore = withChar(s0, 2, { hp: 0, life: "dead" });
+    expect(autoInterruptReason(snapMembers(deadBefore, data), withChar(deadBefore, 2, { status: ["poison"] }), data)).toBeNull();
+  });
+});
