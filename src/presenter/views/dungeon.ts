@@ -1,10 +1,11 @@
 // UI-53 の迷宮の画面。ui §2 の 5 領域（ヘッダー、ビュー、メッセージ、パーティ、操作）を合成する。
 // DOM は 1 回だけ作り、街（UI-52 の M2 版）でもヘッダー・メッセージ・パーティ・操作をそのまま使う（ビューは枠だけ）。
 // - ビュー: 線画の SVG（240×150）の上に、スワイプを受ける透明な div（touch-action:none）を重ねる。
-// - 地図（UI-24）: ビューとメッセージの領域（y16..235）を覆う overlay。パーティ欄は見えたまま。
+// - 地図（UI-24）: ビューとメッセージの領域（既定 y16..235）を覆う overlay。パーティ欄は見えたまま。
+// 各部品の位置と大きさは、config.ui.layout から作った regions と dungeonLayout（layout.ts）から決める。
 // 部品の結線（何を描くか、Action を何にするか）は app が行う。モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
-import type { Regions } from "../layout";
+import type { DungeonLayout, Regions } from "../layout";
 import { createControls, type Controls, type DpadAction } from "./controls";
 import { createDungeonSvg, type DungeonSvg } from "./dungeon-svg";
 import { createHeader, type Header } from "./header";
@@ -41,6 +42,8 @@ function at(el: HTMLElement | SVGElement, x: number, y: number): void {
 export function createDungeonScreen(o: {
   strings: Strings;
   regions: Regions;
+  /** regions から dungeonLayout で作った矩形 */
+  layout: DungeonLayout;
   /** 文字送りの 1 文字あたりの ms（UI-43） */
   textSpeed(): number;
   historyMax: number;
@@ -50,11 +53,11 @@ export function createDungeonScreen(o: {
   onClose(): void;
 }): DungeonScreen {
   const r = o.regions;
+  const lay = o.layout;
   const el = document.createElement("div");
   el.className = "screen screen-play";
 
-  const header = createHeader({ strings: o.strings, onSettings: o.onSettings });
-  at(header.el, r.header.x, r.header.y);
+  const header = createHeader({ strings: o.strings, region: r.header, layout: lay.header, onSettings: o.onSettings });
 
   // ビュー
   const viewBox = document.createElement("div");
@@ -73,23 +76,21 @@ export function createDungeonScreen(o: {
   swipeLayer.className = "play-swipe";
   viewBox.appendChild(swipeLayer);
 
-  const message = createMessageWindow({ speed: o.textSpeed, historyMax: o.historyMax });
-  at(message.el, r.message.x, r.message.y);
+  const message = createMessageWindow({ speed: o.textSpeed, historyMax: o.historyMax, region: r.message, layout: lay.message });
 
-  const party = createPartyPanel(o.strings);
-  at(party.el, r.party.x, r.party.y);
+  const party = createPartyPanel(o.strings, r.party, lay.partyRows);
 
   const controls = createControls({
     region: r.controls,
+    layout: lay,
     strings: o.strings,
     onAction: o.onAction,
     onRelease: o.onRelease,
     onClose: o.onClose,
   });
 
-  // 地図はビューの上端から、メッセージの下端まで（240×220）
-  const map = createMapView();
-  at(map.el, r.view.x, r.view.y);
+  // 地図はビューの上端から、メッセージの下端まで（既定 240×220）
+  const map = createMapView(lay.map);
   map.el.style.display = "none";
 
   el.append(viewBox, header.el, message.el, party.el, controls.el, map.el);

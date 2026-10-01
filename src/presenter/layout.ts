@@ -1,6 +1,9 @@
 // ui.md §2 の縦の区切りと、各画面のボタンの矩形（論理 px）。純粋なデータと関数だけ。
 // 矩形は { x, y, w, h } で、占める画素は x..x+w-1、y..y+h-1（閉区間）。
 // UI-10: 押せるものは一辺 TOUCH_MIN_LOGICAL 以上（scale 4/3 以上で 40 CSS px）。例外は TOUCH_EXCEPTIONS。
+// 迷宮の画面（ヘッダー・ビュー・メッセージ・パーティ・操作）の矩形は、config.ui.layout から regions で作った
+// 各領域の原点からの相対座標で持ち、dungeonLayout がステージ座標に直す（ui §2 の高さは【仮】で、config で動く）。
+// タイトル・作成・debug パネルはステージ全面の画面なので、ステージ座標の定数のまま。
 import type { Config } from "../core/data/index";
 
 export type Rect = { x: number; y: number; w: number; h: number };
@@ -22,33 +25,140 @@ export function regions(l: Config["ui"]["layout"], width: number): Regions {
 /** UI-10 の最小の一辺（論理 px）。CSS px の 40 を scale 4/3 で満たす */
 export const TOUCH_MIN_LOGICAL = 30;
 
-/** ヘッダーの設定ボタン。ヘッダーの高さ 16 が上限なので UI-10 の例外（F2 でも開ける） */
-export const HEADER_SETTINGS: Rect = { x: 200, y: 0, w: 40, h: 16 };
-/** UI-10 の最小寸法を満たさなくてよい矩形の名前 */
-export const TOUCH_EXCEPTIONS: readonly string[] = ["HEADER_SETTINGS"];
+/** UI-10 の最小寸法を満たさなくてよい矩形の名前（dungeonLayout の header.settings） */
+export const TOUCH_EXCEPTIONS: readonly string[] = ["header.settings"];
 
-/** 迷宮の十字ボタン（UI-32） */
-export const DPAD = {
-  forward: { x: 40, y: 300, w: 32, h: 32 },
-  left: { x: 6, y: 333, w: 32, h: 32 },
-  right: { x: 74, y: 333, w: 32, h: 32 },
-  around: { x: 40, y: 366, w: 32, h: 32 },
+// ---- 迷宮の画面（各領域の左上からの相対座標）
+
+/** ヘッダーの設定ボタンの幅。右端に置き、高さはヘッダーの高さ（16 が上限なので UI-10 の例外。F2 でも開ける） */
+const HEADER_SETTINGS_W = 40;
+/** ヘッダーの文字の左右の余白 */
+const HEADER_TEXT_PAD = 4;
+
+/** 迷宮の十字ボタン（UI-32）。操作領域からの相対 */
+const DPAD_REL = {
+  forward: { x: 40, y: 0, w: 32, h: 32 },
+  left: { x: 6, y: 33, w: 32, h: 32 },
+  right: { x: 74, y: 33, w: 32, h: 32 },
+  around: { x: 40, y: 66, w: 32, h: 32 },
 } as const satisfies Record<string, Rect>;
+export type DpadKey = keyof typeof DPAD_REL;
 
-/** 迷宮のメニュー（UI-53）。M2 は [0] に「地図」だけ */
-export const MENU_SLOTS: readonly Rect[] = [
-  { x: 124, y: 300, w: 56, h: 32 },
-  { x: 182, y: 300, w: 56, h: 32 },
-  { x: 124, y: 333, w: 56, h: 32 },
-  { x: 182, y: 333, w: 56, h: 32 },
+/** 迷宮のメニュー（UI-53）。M2 は [0] に「地図」だけ。操作領域からの相対 */
+const MENU_SLOTS_REL: readonly Rect[] = [
+  { x: 124, y: 0, w: 56, h: 32 },
+  { x: 182, y: 0, w: 56, h: 32 },
+  { x: 124, y: 33, w: 56, h: 32 },
+  { x: 182, y: 33, w: 56, h: 32 },
 ];
 
-/** 街のメニューと選択肢の行。4 件以上は縦スクロール（UI-11） */
-export const LIST_ROWS: readonly Rect[] = [
-  { x: 8, y: 302, w: 224, h: 32 },
-  { x: 8, y: 334, w: 224, h: 32 },
-  { x: 8, y: 366, w: 224, h: 32 },
+/** 街のメニューと選択肢の行。4 件以上は縦スクロール（UI-11）。操作領域からの相対 */
+const LIST_ROWS_REL: readonly Rect[] = [
+  { x: 8, y: 2, w: 224, h: 32 },
+  { x: 8, y: 34, w: 224, h: 32 },
+  { x: 8, y: 66, w: 224, h: 32 },
 ];
+
+/** 地図の overlay を閉じるボタン（UI-24）。操作領域からの相対 */
+const MAP_CLOSE_REL: Rect = { x: 60, y: 34, w: 120, h: 32 };
+
+/** 操作領域の中身が収まる最小の高さ（相対矩形の下端の最大）。既定の layout では 98 */
+export const CONTROLS_MIN_HEIGHT = Math.max(
+  ...[...Object.values(DPAD_REL), ...MENU_SLOTS_REL, ...LIST_ROWS_REL, MAP_CLOSE_REL].map((r) => r.y + r.h),
+);
+
+/** メッセージ窓（UI-43）。枠 1px、文字領域は左右 4px・上下 2px の内側、行間 10px。続きの三角は 8×8 で文字領域の右下 */
+export const MESSAGE_LINE_H = 10;
+const MESSAGE_PAD_X = 4;
+const MESSAGE_PAD_Y = 2;
+const MESSAGE_MORE = 8;
+
+/** パーティ欄（ui §2）。1 行 10px、上の余白は 2px（入らなければ詰める） */
+export const PARTY_ROW_H = 10;
+const PARTY_ROW_TOP = 2;
+
+/** 地図の overlay（UI-24）の題の高さ。残りが地図本体 */
+const MAP_TITLE_H = 12;
+
+const shift = (r: Rect, o: Rect): Rect => ({ x: o.x + r.x, y: o.y + r.y, w: r.w, h: r.h });
+
+export type DungeonLayout = {
+  header: { text: Rect; settings: Rect };
+  dpad: Record<DpadKey, Rect>;
+  menu: Rect[];
+  list: Rect[];
+  mapClose: Rect;
+  /** text は文字領域（枠の内側）、lines はそこに入る行数、more は続きの三角 */
+  message: { text: Rect; lines: number; more: Rect };
+  /** パーティ欄の行 0..partySize-1 */
+  partyRows: Rect[];
+  /** overlay はビューとメッセージを合わせた範囲。title は題の行、area は地図本体（mapLayout に渡す寸法） */
+  map: { overlay: Rect; title: Rect; area: Rect };
+};
+
+/** 迷宮の画面の矩形をすべてステージ座標で返す。既定の layout（16/150/70/64/100）では M2 の定数と同じ座標 */
+export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
+  const h = g.header;
+  const settings: Rect = { x: h.x + h.w - HEADER_SETTINGS_W, y: h.y, w: HEADER_SETTINGS_W, h: h.h };
+  const text: Rect = { x: h.x + HEADER_TEXT_PAD, y: h.y, w: settings.x - h.x - 2 * HEADER_TEXT_PAD, h: h.h };
+
+  const c = g.controls;
+  const dpad = Object.fromEntries(Object.entries(DPAD_REL).map(([k, r]) => [k, shift(r, c)])) as Record<DpadKey, Rect>;
+
+  const m = g.message;
+  const mText: Rect = { x: m.x + MESSAGE_PAD_X, y: m.y + MESSAGE_PAD_Y, w: m.w - 2 * MESSAGE_PAD_X, h: m.h - 2 * MESSAGE_PAD_Y };
+  const more: Rect = {
+    x: mText.x + mText.w - MESSAGE_MORE,
+    y: mText.y + mText.h - MESSAGE_MORE,
+    w: MESSAGE_MORE,
+    h: MESSAGE_MORE,
+  };
+
+  const p = g.party;
+  const top = Math.max(0, Math.min(PARTY_ROW_TOP, p.h - partySize * PARTY_ROW_H));
+  const partyRows = Array.from({ length: partySize }, (_, i): Rect => ({ x: p.x, y: p.y + top + PARTY_ROW_H * i, w: p.w, h: PARTY_ROW_H }));
+
+  const v = g.view;
+  const overlay: Rect = { x: v.x, y: v.y, w: v.w, h: v.h + m.h };
+  return {
+    header: { text, settings },
+    dpad,
+    menu: MENU_SLOTS_REL.map((r) => shift(r, c)),
+    list: LIST_ROWS_REL.map((r) => shift(r, c)),
+    mapClose: shift(MAP_CLOSE_REL, c),
+    message: { text: mText, lines: Math.max(0, Math.floor(mText.h / MESSAGE_LINE_H)), more },
+    partyRows,
+    map: {
+      overlay,
+      title: { x: overlay.x, y: overlay.y, w: overlay.w, h: MAP_TITLE_H },
+      area: { x: overlay.x, y: overlay.y + MAP_TITLE_H, w: overlay.w, h: overlay.h - MAP_TITLE_H },
+    },
+  };
+}
+
+function inside(r: Rect, outer: Rect): boolean {
+  return r.x >= outer.x && r.y >= outer.y && r.x + r.w <= outer.x + outer.w && r.y + r.h <= outer.y + outer.h;
+}
+
+/**
+ * 迷宮の画面の矩形が対応する領域からはみ出すものの一覧（英語の診断文）。空なら問題なし。
+ * config.ui.layout は【仮】で core は合計・view・party しか検証しないので、操作領域が CONTROLS_MIN_HEIGHT より低い、
+ * メッセージが 1 行も入らないといった layout は起動を止めず、app が console.warn で知らせる。
+ */
+export function layoutWarnings(g: Regions, l: DungeonLayout): string[] {
+  const out: string[] = [];
+  const check = (name: string, r: Rect, region: keyof Regions): void => {
+    if (!inside(r, g[region])) out.push(`ui.layout: ${name} does not fit in the ${region} region (height ${g[region].h})`);
+  };
+  check("header.settings", l.header.settings, "header");
+  for (const [k, r] of Object.entries(l.dpad)) check(`dpad.${k}`, r, "controls");
+  l.menu.forEach((r, i) => check(`menu[${i}]`, r, "controls"));
+  l.list.forEach((r, i) => check(`list[${i}]`, r, "controls"));
+  check("mapClose", l.mapClose, "controls");
+  if (l.message.lines < 1) out.push(`ui.layout: message region (height ${g.message.h}) has no text line`);
+  l.partyRows.forEach((r, i) => check(`partyRows[${i}]`, r, "party"));
+  return out;
+}
 
 /** タイトル（UI-50 の M2 版） */
 export const TITLE_BUTTONS = {
@@ -91,6 +201,3 @@ export const DEBUG_BUTTONS = {
   reset: { x: 8, y: 362, w: 108, h: 32 },
   close: { x: 124, y: 362, w: 108, h: 32 },
 } as const satisfies Record<string, Rect>;
-
-/** 地図の overlay を閉じるボタン（UI-24） */
-export const MAP_CLOSE: Rect = { x: 60, y: 334, w: 120, h: 32 };

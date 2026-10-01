@@ -156,12 +156,24 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.ui.layout.header = 0), "config.json", "ui.layout.header: expected integer >= 1, got 0");
     expectIssue((r) => delete r.config.ui.layout.party, "config.json", "ui.layout.party: missing required field");
   });
-  test("data: ui §2 ui.layout の各高さは表の固定値（16/150/70/64/100）。合計が合っていても区切りを動かせば検証エラー", () => {
-    expect(config.ui.layout).toEqual({ header: 16, view: 150, message: 70, party: 64, controls: 100 });
-    const issues = issuesOf((r) => ((r.config.ui.layout.view = 140), (r.config.ui.layout.message = 80)));
-    expect(issues).toEqual([
-      "config.json: ui.layout.view: ui §2: view 140 must be 150 (fixed by the presenter layout)",
-      "config.json: ui.layout.message: ui §2: message 80 must be 70 (fixed by the presenter layout)",
+  test("data: ui §2 ui.layout の区切りは【仮】。合計が stage.height で view 150・party が party.size×10 以上なら、表と違う値でも通る", () => {
+    expect(issuesOf((r) => ((r.config.ui.layout.message = 80), (r.config.ui.layout.controls = 90)))).toEqual([]);
+    expect(issuesOf((r) => ((r.config.ui.layout.party = 70), (r.config.ui.layout.message = 64)))).toEqual([]);
+    // party はちょうど party.size × 10 でもよい
+    expect(issuesOf((r) => ((r.config.ui.layout.party = 60), (r.config.ui.layout.controls = 104)))).toEqual([]);
+  });
+  test("data: UI-20 ui.layout.view は 150 でなければ検証エラー（合計が合っていても）", () => {
+    expect(issuesOf((r) => ((r.config.ui.layout.view = 140), (r.config.ui.layout.message = 80)))).toEqual([
+      "config.json: ui.layout.view: UI-20: view 140 must be 150 (svg viewBox 0 0 240 150)",
+    ]);
+  });
+  test("data: ui §2 ui.layout.party が party.size×10 未満なら検証エラー（合計が合っていても）", () => {
+    expect(issuesOf((r) => ((r.config.ui.layout.party = 59), (r.config.ui.layout.controls = 105)))).toEqual([
+      "config.json: ui.layout.party: ui §2: party 59 must be >= party.size 6 x 10",
+    ]);
+    // 合計が違えば、それも出る
+    expect(issuesOf((r) => ((r.config.ui.layout.message = 80), (r.config.ui.layout.controls = 100)))).toEqual([
+      "config.json: ui.layout: ui §2: sum of heights 410 must equal stage.height 400",
     ]);
   });
   test("data: UI-43 ui.messageHistory は 1 以上の整数", () => {

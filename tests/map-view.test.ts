@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { MAP_AREA, mapLayout, mapPaths, playerTriangle } from "../src/presenter/views/map";
+import { mapLayout, mapPaths, playerTriangle } from "../src/presenter/views/map";
 import type { Edge, Facing, MapCell, MapView } from "../src/core/types";
+import { dungeonLayout, regions } from "../src/presenter/layout";
+import { data } from "./helpers/core";
+
+/** 既定の config.ui.layout での地図本体の寸法（240×208） */
+const MAP_AREA = dungeonLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size).map.area;
 
 function cellOf(x: number, y: number, p: Partial<MapCell> = {}): MapCell {
   return { x, y, kind: "plain", n: "wall", e: "wall", s: "wall", w: "wall", ...p };
@@ -33,10 +38,11 @@ function points(d: string): Array<[number, number]> {
 
 describe("UI-24 地図", () => {
   test("UI-24 mapLayout(20,20) = {cell 8, ox 39, oy 23} で、240×208 に収まる。mapLayout(30,30) = {6, 29, 13}", () => {
+    expect(MAP_AREA).toMatchObject({ w: 240, h: 208 });
     // 20×20: cell = min(8, floor(239/20)=11, floor(207/20)=10) = 8。幅 20*8+1 = 161。ox = floor(79/2) = 39、oy = floor(47/2) = 23
-    expect(mapLayout(20, 20)).toEqual({ cell: 8, ox: 39, oy: 23 });
+    expect(mapLayout(20, 20, MAP_AREA)).toEqual({ cell: 8, ox: 39, oy: 23 });
     // 30×30: cell = min(8, 7, 6) = 6。幅 181。ox = floor(59/2) = 29、oy = floor(27/2) = 13
-    expect(mapLayout(30, 30)).toEqual({ cell: 6, ox: 29, oy: 13 });
+    expect(mapLayout(30, 30, MAP_AREA)).toEqual({ cell: 6, ox: 29, oy: 13 });
     for (const [w, h] of [
       [5, 5],
       [20, 20],
@@ -44,7 +50,7 @@ describe("UI-24 地図", () => {
       [40, 25],
       [60, 60],
     ] as const) {
-      const l = mapLayout(w, h);
+      const l = mapLayout(w, h, MAP_AREA);
       expect(l.ox).toBeGreaterThanOrEqual(0);
       expect(l.oy).toBeGreaterThanOrEqual(0);
       // 右端と下端の線の画素番号が領域の内側
@@ -52,6 +58,13 @@ describe("UI-24 地図", () => {
       expect(l.oy + h * l.cell).toBeLessThanOrEqual(MAP_AREA.h - 1);
       expect(l.cell).toBeLessThanOrEqual(8);
     }
+  });
+
+  test("UI-24 mapLayout は渡した領域の寸法に合わせる（ui §2 の区切りで地図本体の高さが変わる）", () => {
+    // 240×218（message 80）: 30×30 は cell = min(8, 7, floor(217/30)=7) = 7。幅 211。ox = floor(29/2) = 14、oy = floor(7/2) = 3
+    expect(mapLayout(30, 30, { w: 240, h: 218 })).toEqual({ cell: 7, ox: 14, oy: 3 });
+    // 240×202（message 64）: 20×20 は cell = min(8, 11, 10) = 8。高さ 161。oy = floor(41/2) = 20
+    expect(mapLayout(20, 20, { w: 240, h: 202 })).toEqual({ cell: 8, ox: 39, oy: 20 });
   });
 
   test("UI-24 wall の辺は全長、door の辺は中央 4px を空け、open は描かない", () => {
@@ -128,7 +141,7 @@ describe("UI-24 地図", () => {
   });
 
   test("UI-24 現在位置と階段の記号はセル原点からの相対で描く", () => {
-    const lay = mapLayout(20, 20);
+    const lay = mapLayout(20, 20, MAP_AREA);
     const v = view([cellOf(2, 3, { kind: "stairsDown" }), cellOf(3, 3, { kind: "stairsUp" })], { pos: { x: 2, y: 3 }, facing: "E" });
     const p = mapPaths(v, lay);
     const px = 39 + 2 * 8;
@@ -138,7 +151,7 @@ describe("UI-24 地図", () => {
   });
 
   test("UI-24 cells に無いセルは描かない", () => {
-    const lay = mapLayout(20, 20);
+    const lay = mapLayout(20, 20, MAP_AREA);
     const v = view([cellOf(5, 7)], { pos: { x: 5, y: 7 } });
     const p = mapPaths(v, lay);
     const x0 = lay.ox + 5 * lay.cell;

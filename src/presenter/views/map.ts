@@ -3,25 +3,26 @@
 // 純粋な部分（mapLayout / mapPaths）を export し、node 環境のテストから試せるようにする。
 // モジュールのトップレベルでは DOM に触れない。
 //
-// overlay の寸法は 240×220（ビューとメッセージの領域 y16..235 を覆う）。el の配置は呼び出し側が決める。
-// 内側: 題 y0..11、地図本体 y12..219 に viewBox 0 0 240 208 の SVG。
+// overlay はビューとメッセージの領域を合わせた範囲（layout.ts の dungeonLayout の map。既定 240×220、y16..235）。
+// el はその位置と大きさに自分で置く。内側: 題（map.title。既定 y0..11）、地図本体（map.area。既定 y12..219 に viewBox 0 0 240 208 の SVG）。
 // 座標は画素番号。床の塗りは素の座標、線と記号と現在位置は translate(0.5 0.5) の中で描く（crispEdges）。
 import type { Facing, MapView } from "../../core/types";
+import type { DungeonLayout } from "../layout";
 
-/** 地図本体の領域（論理 px）。線を隣のセルと共有するので、幅 w のセルは w*cell+1 px を占める */
-export const MAP_AREA = { w: 240, h: 208 } as const;
-const MAP_TITLE_H = 12;
 const MAX_CELL = 8;
 
 export type MapLayout = { cell: number; ox: number; oy: number };
 
-/** cell = min(8, floor(239/w), floor(207/h))。原点は中央寄せ */
-export function mapLayout(w: number, h: number): MapLayout {
-  const cell = Math.max(1, Math.min(MAX_CELL, Math.floor((MAP_AREA.w - 1) / w), Math.floor((MAP_AREA.h - 1) / h)));
+/**
+ * area は地図本体の寸法（論理 px。dungeonLayout の map.area、既定 240×208）。線を隣のセルと共有するので、
+ * 幅 w のセルは w*cell+1 px を占める。cell = min(8, floor((area.w-1)/w), floor((area.h-1)/h))。原点は中央寄せ
+ */
+export function mapLayout(w: number, h: number, area: { w: number; h: number }): MapLayout {
+  const cell = Math.max(1, Math.min(MAX_CELL, Math.floor((area.w - 1) / w), Math.floor((area.h - 1) / h)));
   return {
     cell,
-    ox: Math.floor((MAP_AREA.w - (w * cell + 1)) / 2),
-    oy: Math.floor((MAP_AREA.h - (h * cell + 1)) / 2),
+    ox: Math.floor((area.w - (w * cell + 1)) / 2),
+    oy: Math.floor((area.h - (h * cell + 1)) / 2),
   };
 }
 
@@ -110,14 +111,17 @@ export function mapPaths(v: MapView, lay: MapLayout): MapPaths {
 
 export type MapViewEl = { el: HTMLElement; render(v: MapView, title: string): void };
 
-export function createMapView(): MapViewEl {
+export function createMapView(lay: DungeonLayout["map"]): MapViewEl {
   const SVG_NS = "http://www.w3.org/2000/svg";
+  const { overlay, title: tr, area } = lay;
   const el = document.createElement("div");
   el.className = "map-view";
   Object.assign(el.style, {
     position: "absolute",
-    width: `${MAP_AREA.w}px`,
-    height: `${MAP_TITLE_H + MAP_AREA.h}px`,
+    left: `${overlay.x}px`,
+    top: `${overlay.y}px`,
+    width: `${overlay.w}px`,
+    height: `${overlay.h}px`,
     background: "var(--c-bg)",
     color: "var(--c-text)",
   });
@@ -126,11 +130,11 @@ export function createMapView(): MapViewEl {
   title.className = "map-title";
   Object.assign(title.style, {
     position: "absolute",
-    left: "0px",
-    top: "0px",
-    width: `${MAP_AREA.w}px`,
-    height: `${MAP_TITLE_H}px`,
-    lineHeight: `${MAP_TITLE_H}px`,
+    left: `${tr.x - overlay.x}px`,
+    top: `${tr.y - overlay.y}px`,
+    width: `${tr.w}px`,
+    height: `${tr.h}px`,
+    lineHeight: `${tr.h}px`,
     textAlign: "center",
     whiteSpace: "nowrap",
     overflow: "hidden",
@@ -138,11 +142,11 @@ export function createMapView(): MapViewEl {
   el.appendChild(title);
 
   const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", `0 0 ${MAP_AREA.w} ${MAP_AREA.h}`);
-  svg.setAttribute("width", String(MAP_AREA.w));
-  svg.setAttribute("height", String(MAP_AREA.h));
+  svg.setAttribute("viewBox", `0 0 ${area.w} ${area.h}`);
+  svg.setAttribute("width", String(area.w));
+  svg.setAttribute("height", String(area.h));
   svg.setAttribute("shape-rendering", "crispEdges");
-  Object.assign(svg.style, { position: "absolute", left: "0px", top: `${MAP_TITLE_H}px` });
+  Object.assign(svg.style, { position: "absolute", left: `${area.x - overlay.x}px`, top: `${area.y - overlay.y}px` });
   el.appendChild(svg);
 
   const path = (attrs: Record<string, string>): SVGPathElement => {
@@ -165,7 +169,7 @@ export function createMapView(): MapViewEl {
     el,
     render(v: MapView, t: string): void {
       title.textContent = t;
-      const p = mapPaths(v, mapLayout(v.width, v.height));
+      const p = mapPaths(v, mapLayout(v.width, v.height, area));
       floorPath.setAttribute("d", p.floor);
       wallPath.setAttribute("d", p.walls);
       stairsPath.setAttribute("d", p.stairs);

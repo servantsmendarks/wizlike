@@ -1,9 +1,10 @@
-// UI-53 のパーティ欄（ui §2 の party 領域 240×64）。見出し行は置かず、各行に HP / MP / SAN の短いラベルを付ける。
-// 行 i は領域内の y2+10i..11+10i。列（x）: 名前 2..49、HP 52..59、値 60..91（右寄せ）、MP 96..103、値 104..127、
+// UI-53 のパーティ欄（ui §2 の party 領域。既定 240×64）。見出し行は置かず、各行に HP / MP / SAN の短いラベルを付ける。
+// 行の矩形は layout.ts の dungeonLayout（partyRows）。既定では行 i は領域内の y2+10i..11+10i。列（x）: 名前 2..49、HP 52..59、値 60..91（右寄せ）、MP 96..103、値 104..127、
 // SAN 132..143、値 144..155（右寄せ）、状態 160..237。
-// el の配置（left / top）は呼び出し側が決める。モジュールのトップレベルでは DOM に触れない。
+// el は region の位置と大きさに自分で置く。モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
 import type { Character, Life } from "../../core/types";
+import { PARTY_ROW_H, type Rect } from "../layout";
 
 export type PartyRowText = { name: string; hp: string; mp: string; san: string; life: string };
 
@@ -32,8 +33,7 @@ export function formatPartyRow(ch: Character, strings: Strings): PartyRowText {
   };
 }
 
-const ROW_TOP = 2;
-const ROW_H = 10;
+const ROW_H = PARTY_ROW_H;
 
 type Col = { left: number; width: number; right?: boolean };
 const COLS = {
@@ -58,12 +58,26 @@ export type PartyPanel = {
   setLife(id: string, life: Life): void;
 };
 
-export function createPartyPanel(strings: Strings): PartyPanel {
+/** region は ui §2 の party 領域、rows は行 0..party.size-1 の矩形（どちらもステージ座標） */
+export function createPartyPanel(strings: Strings, region: Rect, rows: readonly Rect[]): PartyPanel {
   const el = document.createElement("div");
   el.className = "party-panel";
-  Object.assign(el.style, { position: "absolute", width: "240px", height: "64px", color: "var(--c-text)" });
+  Object.assign(el.style, {
+    position: "absolute",
+    left: `${region.x}px`,
+    top: `${region.y}px`,
+    width: `${region.w}px`,
+    height: `${region.h}px`,
+    color: "var(--c-text)",
+  });
+  /** 行 i の領域内の top。rows より多い行（CH-01 で起きない）は 10px ずつ下へ */
+  const rowTop = (i: number): number => {
+    const r = rows[i];
+    if (r !== undefined) return r.y - region.y;
+    return (rows[0] === undefined ? 0 : rows[0].y - region.y) + ROW_H * i;
+  };
 
-  const rows = new Map<string, Row>();
+  const byId = new Map<string, Row>();
 
   const makeRow = (i: number): Row => {
     const line = document.createElement("div");
@@ -71,8 +85,8 @@ export function createPartyPanel(strings: Strings): PartyPanel {
     Object.assign(line.style, {
       position: "absolute",
       left: "0px",
-      top: `${ROW_TOP + ROW_H * i}px`,
-      width: "240px",
+      top: `${rowTop(i)}px`,
+      width: `${region.w}px`,
       height: `${ROW_H}px`,
       lineHeight: `${ROW_H}px`,
     });
@@ -105,7 +119,7 @@ export function createPartyPanel(strings: Strings): PartyPanel {
     el,
     render(party: readonly Character[]): void {
       el.replaceChildren();
-      rows.clear();
+      byId.clear();
       party.forEach((ch, i) => {
         const row = makeRow(i);
         const t = formatPartyRow(ch, strings);
@@ -115,19 +129,19 @@ export function createPartyPanel(strings: Strings): PartyPanel {
         row.cells.san.textContent = t.san;
         row.cells.life.textContent = t.life;
         row.hpMax = ch.hpMax;
-        rows.set(ch.id, row);
+        byId.set(ch.id, row);
       });
     },
     setHp(id: string, hp: number): void {
-      const row = rows.get(id);
+      const row = byId.get(id);
       if (row !== undefined) row.cells.hp.textContent = hpText(hp, row.hpMax);
     },
     setSan(id: string, san: number): void {
-      const row = rows.get(id);
+      const row = byId.get(id);
       if (row !== undefined) row.cells.san.textContent = String(san);
     },
     setLife(id: string, life: Life): void {
-      const row = rows.get(id);
+      const row = byId.get(id);
       if (row !== undefined) row.cells.life.textContent = lifeText(life, strings);
     },
   };

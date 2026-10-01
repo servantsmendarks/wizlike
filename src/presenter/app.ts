@@ -11,7 +11,7 @@ import { mapView, visibleCells } from "../core/rules/dungeon";
 import { dungeonOf } from "../core/state";
 import type { Command, GameEvent, GameState, Screen, ViewPoint } from "../core/types";
 import { attachKeyboard, attachReleaseOnHide, attachSwipe, canRepeat, createHoldRepeater, type Action } from "./input/swipe";
-import { regions } from "./layout";
+import { dungeonLayout, layoutWarnings, regions } from "./layout";
 import { createPlayer } from "./playback";
 import { createRunGate } from "./run-gate";
 import { defaultSettings, type SettingsStore } from "./settings";
@@ -79,9 +79,15 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     onBack: () => guard(() => showRoute("title")),
   });
 
+  // ui §2 の区切りは【仮】。操作領域などに中身が収まらない layout は起動を止めず、console.warn で知らせる
+  const playRegions = regions(data.config.ui.layout, data.config.stage.width);
+  const playLayout = dungeonLayout(playRegions, data.config.party.size);
+  for (const w of layoutWarnings(playRegions, playLayout)) console.warn(w);
+
   const play = createDungeonScreen({
     strings,
-    regions: regions(data.config.ui.layout, data.config.stage.width),
+    regions: playRegions,
+    layout: playLayout,
     textSpeed: () => store.get().textSpeed,
     historyMax: data.config.ui.messageHistory,
     onSettings: () => guard(() => openDebug()),

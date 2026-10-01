@@ -2,11 +2,12 @@
 // 純粋な部分（formatMessage / typewriterSteps / trimHistory）を export し、node 環境のテストから試せるようにする。
 // モジュールのトップレベルでは DOM に触れない。
 //
-// 窓の寸法は ui §2 の message 領域（240×70）。el の配置（left / top）は呼び出し側が決める。
-// 内側の座標は窓の左上を原点にした論理 px:
+// 窓は ui §2 の message 領域。el は region の位置と大きさに自分で置く。内側の矩形は layout.ts の dungeonLayout
+// （message.text / message.more）。既定（240×70）では、窓の左上を原点にした論理 px で:
 // - 枠 1px（0..239 × 0..69）
 // - 文字領域 x4..235、y2..67 の 6 行（1 行 10px、全角 29 字）。履歴はこの中で縦スクロール（UI-11）
 // - 続きの三角 x228..235、y60..67
+import type { DungeonLayout, Rect } from "../layout";
 
 /** {k} を params[k] で置き換える。params に無いものは {k} のまま残す */
 export function formatMessage(tpl: string, params?: Record<string, string | number>): string {
@@ -36,9 +37,6 @@ export function trimHistory<T>(items: readonly T[], max: number): T[] {
   return items.length > max ? items.slice(items.length - max) : items.slice();
 }
 
-const WIDTH = 240;
-const HEIGHT = 70;
-
 export type MessageWindow = {
   el: HTMLElement;
   /** 1 文を履歴の末尾に足して表示する。instant か speed() が 0 以下なら即座に全文を出す */
@@ -51,13 +49,26 @@ export type MessageWindow = {
   setMore(on: boolean): void;
 };
 
-export function createMessageWindow(o: { speed(): number; historyMax: number }): MessageWindow {
+export function createMessageWindow(o: {
+  speed(): number;
+  historyMax: number;
+  /** ui §2 の message 領域（ステージ座標） */
+  region: Rect;
+  layout: DungeonLayout["message"];
+}): MessageWindow {
+  const r = o.region;
+  const t = o.layout.text;
+  const mr = o.layout.more;
+  // 子の left / top は枠 1px の内側が原点
+  const BORDER = 1;
   const el = document.createElement("div");
   el.className = "message-window";
   Object.assign(el.style, {
     position: "absolute",
-    width: `${WIDTH}px`,
-    height: `${HEIGHT}px`,
+    left: `${r.x}px`,
+    top: `${r.y}px`,
+    width: `${r.w}px`,
+    height: `${r.h}px`,
     border: "1px solid var(--c-frame)",
     background: "var(--c-bg)",
     color: "var(--c-text)",
@@ -68,10 +79,10 @@ export function createMessageWindow(o: { speed(): number; historyMax: number }):
   history.className = "message-history";
   Object.assign(history.style, {
     position: "absolute",
-    left: "3px", // 枠 1px の内側から数えて x4
-    top: "1px", // y2
-    width: "232px",
-    height: "66px",
+    left: `${t.x - r.x - BORDER}px`, // 既定 3（枠 1px の内側から数えて x4）
+    top: `${t.y - r.y - BORDER}px`, // 既定 1（y2）
+    width: `${t.w}px`,
+    height: `${t.h}px`,
     overflowY: "auto",
     overflowX: "hidden",
     touchAction: "pan-y",
@@ -84,11 +95,16 @@ export function createMessageWindow(o: { speed(): number; historyMax: number }):
 
   const SVG_NS = "http://www.w3.org/2000/svg";
   const more = document.createElementNS(SVG_NS, "svg");
-  more.setAttribute("width", "8");
-  more.setAttribute("height", "8");
+  more.setAttribute("width", String(mr.w));
+  more.setAttribute("height", String(mr.h));
   more.setAttribute("viewBox", "0 0 8 8");
   more.setAttribute("shape-rendering", "crispEdges");
-  Object.assign(more.style, { position: "absolute", left: "227px", top: "59px", visibility: "hidden" });
+  Object.assign(more.style, {
+    position: "absolute",
+    left: `${mr.x - r.x - BORDER}px`, // 既定 227
+    top: `${mr.y - r.y - BORDER}px`, // 既定 59
+    visibility: "hidden",
+  });
   const tri = document.createElementNS(SVG_NS, "path");
   tri.setAttribute("d", "M0 1 H8 L4 7 Z");
   tri.setAttribute("fill", "var(--c-text)");

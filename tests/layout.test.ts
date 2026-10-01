@@ -3,13 +3,11 @@ import {
   CREATION_BUTTONS,
   CREATION_ERROR,
   creationRow,
+  CONTROLS_MIN_HEIGHT,
   DEBUG_BUTTONS,
   debugRow,
-  DPAD,
-  HEADER_SETTINGS,
-  LIST_ROWS,
-  MAP_CLOSE,
-  MENU_SLOTS,
+  dungeonLayout,
+  layoutWarnings,
   regions,
   TITLE_BUTTONS,
   TOUCH_EXCEPTIONS,
@@ -20,6 +18,10 @@ import { data } from "./helpers/core";
 
 const W = data.config.stage.width;
 const H = data.config.stage.height;
+const N = data.config.party.size;
+/** 既定の config.ui.layout（16/150/70/64/100）での迷宮の画面の矩形 */
+const L = dungeonLayout(regions(data.config.ui.layout, W), N);
+const HEADER_SETTINGS = L.header.settings;
 
 /** 画面ごとの押せる矩形（名前 → 矩形） */
 const SCREENS: Record<string, Record<string, Rect>> = {
@@ -35,15 +37,15 @@ const SCREENS: Record<string, Record<string, Rect>> = {
     "CREATION_BUTTONS.start": CREATION_BUTTONS.start,
     "CREATION_BUTTONS.back": CREATION_BUTTONS.back,
   },
-  town: { HEADER_SETTINGS, ...Object.fromEntries(LIST_ROWS.map((r, i) => [`LIST_ROWS[${i}]`, r])) },
+  town: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
   dungeon: {
-    HEADER_SETTINGS,
-    ...Object.fromEntries(Object.entries(DPAD).map(([k, r]) => [`DPAD.${k}`, r])),
-    ...Object.fromEntries(MENU_SLOTS.map((r, i) => [`MENU_SLOTS[${i}]`, r])),
+    "header.settings": HEADER_SETTINGS,
+    ...Object.fromEntries(Object.entries(L.dpad).map(([k, r]) => [`dpad.${k}`, r])),
+    ...Object.fromEntries(L.menu.map((r, i) => [`menu[${i}]`, r])),
   },
-  // 選択肢（階段の確認）は迷宮の上で十字ボタンの代わりに LIST_ROWS を出す
-  choice: { HEADER_SETTINGS, ...Object.fromEntries(LIST_ROWS.map((r, i) => [`LIST_ROWS[${i}]`, r])) },
-  map: { MAP_CLOSE },
+  // 選択肢（階段の確認）は迷宮の上で十字ボタンの代わりに list を出す
+  choice: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
+  map: { mapClose: L.mapClose },
   // debug パネルは [-] [+] の行と toggle の行が別なので、それぞれの組で検査する
   debugStepper: {
     ...Object.fromEntries(
@@ -98,7 +100,7 @@ describe("layout", () => {
           expect(overlaps(entries[i]![1], entries[j]![1]), `${screen} ${entries[i]![0]} / ${entries[j]![0]}`).toBe(false);
     }
     // 例外はヘッダーの設定ボタンだけで、ヘッダーの中に収まる
-    expect(TOUCH_EXCEPTIONS).toEqual(["HEADER_SETTINGS"]);
+    expect(TOUCH_EXCEPTIONS).toEqual(["header.settings"]);
     expect(inside(HEADER_SETTINGS, regions(data.config.ui.layout, W).header)).toBe(true);
     // 押せない欄も画面の内側
     expect(inside(CREATION_ERROR, STAGE)).toBe(true);
@@ -111,11 +113,100 @@ describe("layout", () => {
     for (const r of Object.values(SCREENS.creation!)) expect(overlaps(CREATION_ERROR, r)).toBe(false);
   });
 
-  test("UI-10 DPAD/MENU/LIST が操作領域の内側", () => {
+  test("UI-10 dpad/menu/list/mapClose が操作領域の内側", () => {
     const controls = regions(data.config.ui.layout, W).controls;
-    for (const r of [...Object.values(DPAD), ...MENU_SLOTS, ...LIST_ROWS, MAP_CLOSE]) expect(inside(r, controls)).toBe(true);
+    for (const r of [...Object.values(L.dpad), ...L.menu, ...L.list, L.mapClose]) expect(inside(r, controls)).toBe(true);
     // 十字ボタンとメニューは重ならない
-    for (const d of Object.values(DPAD)) for (const m of MENU_SLOTS) expect(overlaps(d, m)).toBe(false);
+    for (const d of Object.values(L.dpad)) for (const m of L.menu) expect(overlaps(d, m)).toBe(false);
+  });
+
+  test("ui §2 既定の layout（16/150/70/64/100）での迷宮の画面の座標は M2 の定数と同じ", () => {
+    expect(L.header).toEqual({ text: { x: 4, y: 0, w: 192, h: 16 }, settings: { x: 200, y: 0, w: 40, h: 16 } });
+    expect(L.dpad).toEqual({
+      forward: { x: 40, y: 300, w: 32, h: 32 },
+      left: { x: 6, y: 333, w: 32, h: 32 },
+      right: { x: 74, y: 333, w: 32, h: 32 },
+      around: { x: 40, y: 366, w: 32, h: 32 },
+    });
+    expect(L.menu).toEqual([
+      { x: 124, y: 300, w: 56, h: 32 },
+      { x: 182, y: 300, w: 56, h: 32 },
+      { x: 124, y: 333, w: 56, h: 32 },
+      { x: 182, y: 333, w: 56, h: 32 },
+    ]);
+    expect(L.list).toEqual([
+      { x: 8, y: 302, w: 224, h: 32 },
+      { x: 8, y: 334, w: 224, h: 32 },
+      { x: 8, y: 366, w: 224, h: 32 },
+    ]);
+    expect(L.mapClose).toEqual({ x: 60, y: 334, w: 120, h: 32 });
+    // メッセージ窓（y166..235）: 文字領域 x4..235・y168..233 の 6 行、続きの三角 x228..235・y226..233
+    expect(L.message).toEqual({ text: { x: 4, y: 168, w: 232, h: 66 }, lines: 6, more: { x: 228, y: 226, w: 8, h: 8 } });
+    // パーティ欄（y236..299）: 行 i は y238+10i
+    expect(L.partyRows).toEqual([0, 1, 2, 3, 4, 5].map((i) => ({ x: 0, y: 238 + 10 * i, w: 240, h: 10 })));
+    // 地図: ビューとメッセージを合わせた 240×220。題 12、本体 240×208
+    expect(L.map).toEqual({
+      overlay: { x: 0, y: 16, w: 240, h: 220 },
+      title: { x: 0, y: 16, w: 240, h: 12 },
+      area: { x: 0, y: 28, w: 240, h: 208 },
+    });
+    expect(CONTROLS_MIN_HEIGHT).toBe(98);
+    expect(layoutWarnings(regions(data.config.ui.layout, W), L)).toEqual([]);
+  });
+
+  test("ui §2 区切りを変えると、迷宮の画面の矩形は対応する領域の内側に収まり、領域の移動に追従する", () => {
+    const base = regions(data.config.ui.layout, W);
+    const rel = (r: Rect, o: Rect): Rect => ({ x: r.x - o.x, y: r.y - o.y, w: r.w, h: r.h });
+    for (const l of [
+      { header: 16, view: 150, message: 64, party: 70, controls: 100 }, // party 70・message 64
+      { header: 16, view: 150, message: 74, party: 60, controls: 100 }, // party ちょうど 6 行
+      { header: 20, view: 150, message: 80, party: 64, controls: 86 }, // 操作領域が足りない（下で warn を確かめる）
+      { header: 12, view: 150, message: 78, party: 62, controls: 98 }, // 操作領域がちょうど下限
+    ]) {
+      const g = regions(l, W);
+      const d = dungeonLayout(g, N);
+      const tag = JSON.stringify(l);
+      // ヘッダー
+      expect(inside(d.header.settings, g.header), tag).toBe(true);
+      expect(inside(d.header.text, g.header), tag).toBe(true);
+      expect(d.header.settings.h, tag).toBe(l.header);
+      // 操作領域: 原点からの相対は既定と同じ
+      for (const k of Object.keys(L.dpad) as Array<keyof typeof L.dpad>) expect(rel(d.dpad[k], g.controls), tag).toEqual(rel(L.dpad[k], base.controls));
+      d.menu.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.menu[i]!, base.controls)));
+      d.list.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.list[i]!, base.controls)));
+      expect(rel(d.mapClose, g.controls), tag).toEqual(rel(L.mapClose, base.controls));
+      const fits = l.controls >= CONTROLS_MIN_HEIGHT;
+      for (const r of [...Object.values(d.dpad), ...d.menu, ...d.list, d.mapClose]) if (fits) expect(inside(r, g.controls), tag).toBe(true);
+      // メッセージ: 文字領域と三角は窓の内側、行数は (高さ - 4) / 10 の切り捨て
+      expect(inside(d.message.text, g.message), tag).toBe(true);
+      expect(inside(d.message.more, d.message.text), tag).toBe(true);
+      expect(d.message.lines, tag).toBe(Math.floor((l.message - 4) / 10));
+      expect(d.message.more.y + d.message.more.h, tag).toBe(g.message.y + g.message.h - 2);
+      // パーティ: 6 行が領域の内側で、10px 間隔
+      expect(d.partyRows.length, tag).toBe(N);
+      d.partyRows.forEach((r, i) => {
+        expect(inside(r, g.party), tag).toBe(true);
+        expect(r.y - d.partyRows[0]!.y, tag).toBe(10 * i);
+      });
+      // 地図: ビューの上端からメッセージの下端まで
+      expect(d.map.overlay, tag).toEqual({ x: 0, y: g.view.y, w: W, h: l.view + l.message });
+      expect(d.map.area.y + d.map.area.h, tag).toBe(g.message.y + g.message.h);
+      expect(inside(d.map.area, d.map.overlay) && inside(d.map.title, d.map.overlay), tag).toBe(true);
+      // 収まらないのは操作領域が下限より低いときだけで、その分だけ warn の文が出る
+      const warns = layoutWarnings(g, d);
+      if (fits) expect(warns, tag).toEqual([]);
+      else expect(warns, tag).toEqual([
+        "ui.layout: dpad.around does not fit in the controls region (height 86)",
+        "ui.layout: list[2] does not fit in the controls region (height 86)",
+      ]);
+    }
+  });
+
+  test("ui §2 パーティ欄がちょうど party.size × 10 なら上の余白を詰める。メッセージに 1 行も入らなければ warn", () => {
+    const g = regions({ header: 16, view: 150, message: 74, party: 60, controls: 100 }, W);
+    expect(dungeonLayout(g, N).partyRows[0]).toEqual({ x: 0, y: g.party.y, w: W, h: 10 });
+    const g2 = regions({ header: 16, view: 150, message: 13, party: 64, controls: 157 }, W);
+    expect(layoutWarnings(g2, dungeonLayout(g2, N))).toEqual(["ui.layout: message region (height 13) has no text line"]);
   });
 
   test("UI-10 scale 4/3 で 30 論理 px が 40 CSS px 以上", () => {

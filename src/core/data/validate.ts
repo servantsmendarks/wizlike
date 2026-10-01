@@ -94,8 +94,10 @@ const pair = (r: Range = {}): Field => (ctx, p, v) => {
   return a;
 };
 
-/** ui.md §2 の縦の区切り（論理 px）。表示層の寸法と座標の定数がこれを前提にしているので、config はこれと一致させる */
-const UI_LAYOUT_FIXED: Readonly<Record<string, number>> = { header: 16, view: 150, message: 70, party: 64, controls: 100 };
+/** UI-20: ビューの SVG は viewBox 0 0 240 150。ui §2 の view の高さはこれで固定（【仮】ではない） */
+const UI_VIEW_HEIGHT = 150;
+/** ui §2: パーティ欄は 1 行 10px で party.size 行 */
+const UI_PARTY_ROW_H = 10;
 const STAT_RANGE: Range = { min: 1, max: 18 }; // CH-10（上限 18。下限 1 は推測）
 const statBlock: Field = F(Object.fromEntries(STAT_KEYS.map((k) => [k, I(STAT_RANGE)])));
 const lure: Field = F(Object.fromEntries(LURE_TAGS.map((k) => [k, I({ min: 0, max: 3 })]))); // EV-03
@@ -292,17 +294,20 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
   // ui.md §2: 縦の区切りの合計はステージの高さ
   const layout = objOf(get(c, "ui", "layout"));
   const stageH = intOf(get(c, "stage", "height"));
-  if (layout !== undefined && stageH !== undefined) {
+  if (layout !== undefined) {
     const parts = ["header", "view", "message", "party", "controls"].map((k) => intOf(layout[k]));
-    if (parts.every((n) => n !== undefined)) {
+    if (stageH !== undefined && parts.every((n) => n !== undefined)) {
       const sum = parts.reduce<number>((a, n) => a + (n ?? 0), 0);
       if (sum !== stageH) report(ctx, "ui.layout", `ui §2: sum of heights ${sum} must equal stage.height ${stageH}`);
     }
-    // ui.md §2: 区切りは表の固定値。表示層の部品の寸法と座標がこの値を前提にした定数なので、違う値は起動時に止める
-    for (const [k, fixed] of Object.entries(UI_LAYOUT_FIXED)) {
-      const n = intOf(layout[k]);
-      if (n !== undefined && n !== fixed) report(ctx, `ui.layout.${k}`, `ui §2: ${k} ${n} must be ${fixed} (fixed by the presenter layout)`);
-    }
+    // UI-20: ビューの高さは SVG の viewBox の 150 で固定
+    const view = intOf(layout.view);
+    if (view !== undefined && view !== UI_VIEW_HEIGHT)
+      report(ctx, "ui.layout.view", `UI-20: view ${view} must be ${UI_VIEW_HEIGHT} (svg viewBox 0 0 240 150)`);
+    // ui.md §2: パーティ欄は party.size 行 × 10px が入る高さ
+    const party = intOf(layout.party);
+    if (party !== undefined && ix.partySize !== undefined && party < ix.partySize * UI_PARTY_ROW_H)
+      report(ctx, "ui.layout.party", `ui §2: party ${party} must be >= party.size ${ix.partySize} x ${UI_PARTY_ROW_H}`);
   }
 
   uniqueIds(ctx, "town.innRanks", arrOf(get(c, "town", "innRanks")));

@@ -1,10 +1,10 @@
-// UI-32 / UI-53 の操作領域（ui §2 の controls 領域）。十字ボタン、メニュー（MENU_SLOTS）、リスト（LIST_ROWS）、
-// 地図の「閉じる」（MAP_CLOSE）を切り替えて出す。矩形は layout.ts のステージ座標で、region の原点を引いて置く。
+// UI-32 / UI-53 の操作領域（ui §2 の controls 領域）。十字ボタン（dpad）、メニュー（menu）、リスト（list）、
+// 地図の「閉じる」（mapClose）を切り替えて出す。矩形は layout.ts の dungeonLayout のステージ座標で、region の原点を引いて置く。
 // 十字ボタンは pointerdown で反応する（click は使わない）。離したら onRelease（前進の長押しの連打を止める。UI-31）。
 // Action から Command への変換と長押しの連打は呼び出し側（app）が持つ。表示層は前進できるかを判定しない（UI-35）。
 // モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
-import { DPAD, LIST_ROWS, MAP_CLOSE, MENU_SLOTS, type Rect } from "../layout";
+import type { DungeonLayout, Rect } from "../layout";
 
 export type DpadAction = "forward" | "left" | "right" | "around";
 export type ControlsMode = "dpad" | "list" | "close" | "none";
@@ -16,9 +16,9 @@ export type Controls = {
   setMode(m: ControlsMode): void;
   /** inputMode が swipe なら十字ボタンを隠す（メニューは残す） */
   setDpadVisible(on: boolean): void;
-  /** MENU_SLOTS に並べる（5 件目以降は捨てる） */
+  /** layout.menu に並べる（5 件目以降は捨てる） */
   setMenu(items: ControlItem[]): void;
-  /** LIST_ROWS の位置に並べる。4 件以上は縦スクロール（UI-11） */
+  /** layout.list の位置に並べる。4 件以上は縦スクロール（UI-11） */
   setList(items: ControlItem[]): void;
   /** n 番目（0 始まり）を選ぶ。dpad ではメニュー、list ではリスト、close では 0 が「閉じる」。範囲外は何もしない */
   select(n: number): void;
@@ -65,6 +65,7 @@ function setShown(el: HTMLElement, on: boolean): void {
  */
 export function createControls(o: {
   region: Rect;
+  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "mapClose">;
   strings: Strings;
   onAction(a: DpadAction): void;
   onRelease(): void;
@@ -72,6 +73,9 @@ export function createControls(o: {
 }): Controls {
   const s = (key: string): string => o.strings[key] ?? key;
   const origin = o.region;
+  const DPAD = o.layout.dpad;
+  const MENU_SLOTS = o.layout.menu;
+  const LIST_ROWS = o.layout.list;
 
   const el = document.createElement("div");
   el.className = "controls";
@@ -119,13 +123,13 @@ export function createControls(o: {
     dpad.appendChild(b);
   }
 
-  // ---- メニュー（MENU_SLOTS）
+  // ---- メニュー（layout.menu）
   const menu = document.createElement("div");
   menu.className = "controls-menu";
   el.appendChild(menu);
   let menuItems: ControlItem[] = [];
 
-  // ---- リスト（LIST_ROWS。行は連続しているので 1 つのスクロール容器に縦に積む）
+  // ---- リスト（layout.list。行は連続しているので 1 つのスクロール容器に縦に積む）
   const first = LIST_ROWS[0] ?? { x: 8, y: origin.y + 2, w: 224, h: 32 };
   const last = LIST_ROWS[LIST_ROWS.length - 1] ?? first;
   const list = document.createElement("div");
@@ -148,7 +152,7 @@ export function createControls(o: {
   close.type = "button";
   close.className = "controls-close";
   close.textContent = s("common.close");
-  buttonStyle(close, MAP_CLOSE, origin);
+  buttonStyle(close, o.layout.mapClose, origin);
   close.addEventListener("click", () => o.onClose());
   el.appendChild(close);
 
