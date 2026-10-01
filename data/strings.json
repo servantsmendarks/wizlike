@@ -63,7 +63,6 @@
   "dungeon.choice.teleport": "街へ戻る",
   "dungeon.choice.stay": "やめる",
   "dungeon.dead": "{name}は倒れた。",
-  "dungeon.allDead": "一行は全員倒れた……。",
   "dungeon.menu.map": "地図",
 
   "header.dungeon": "{dungeon} {floor}F {dir}",

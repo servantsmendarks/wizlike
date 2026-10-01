@@ -233,10 +233,9 @@ export function moveForward(ctx: RuleContext): void {
   const cell = cellAt(f, dive.pos.x, dive.pos.y);
   // CH-43: 毒の 1 歩ごとのダメージ（HP 1 で止まるので、これで死ぬことはない）
   tickPoisonStep(ctx);
-  // E5: 全滅処理は M4。全員死亡の後は罠・階段・遭遇のどれも起こさない
-  if (aliveMembers(state).length === 0) return;
   if (cell.kind === "trap") triggerTrap(ctx, f, dive.pos);
-  if (aliveMembers(state).length === 0) return;
+  // DG-11 / DG-20: 行動可能な者（CH-44）がいなければ階段・遭遇を起こさずに返る（全滅処理は engine の後処理 wipeIfNoneCanAct）
+  if (!state.party.some(canAct)) return;
   if (cell.kind === "stairsDown") {
     offerStairs(ctx, "down");
     return; // 階段セルでは遭遇判定をしない
@@ -251,8 +250,6 @@ export function moveForward(ctx: RuleContext): void {
     offerTeleporter(ctx);
     return;
   }
-  // DG-11: 行動可能な者がいなければ遭遇しない（遭遇の d100 も振らない）
-  if (!state.party.some(canAct)) return;
   // DG-31: ボスのセルは遭遇の d100 を振らずに固定遭遇（倒した後は floorOf が teleporter に重ねる）
   if (cell.kind === "boss" && !dive.bossDefeated) {
     startBossEncounter(ctx);
@@ -270,7 +267,7 @@ function rollEncounter(ctx: RuleContext, inRoom: boolean): void {
 }
 
 // ---------------------------------------------------------------------------
-// 罠（DG-20, CH-45, CH-51, CH-54, E4, E5）。DG-21 の察知は M5 なので、M2 では常に発動する
+// 罠（DG-20, CH-45, CH-51, CH-54, E4）。DG-21 の察知は M5 なので、M2 では常に発動する
 
 function triggerTrap(ctx: RuleContext, f: Floor, p: Pos): void {
   const { state, data } = ctx;
@@ -299,9 +296,6 @@ function triggerTrap(ctx: RuleContext, f: Floor, p: Pos): void {
     }
     for (let k = 0; k < died.length; k++) {
       for (const o of aliveMembers(state)) loseSan(ctx, o, cfg.san.allyDeath, ["allyInjury"]);
-    }
-    if (died.length > 0 && aliveMembers(state).length === 0) {
-      ctx.events.push({ kind: "message", key: "dungeon.allDead" });
     }
   } else if (trapId === "spinner") {
     dive.facing = FACINGS[randInt(state.rng, 0, 3)]!;

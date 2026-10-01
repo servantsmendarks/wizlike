@@ -1,0 +1,195 @@
+// 全滅処理（TW-20〜26、DG-42、CH-41/62、MG-03）と、迷宮の戦闘外の全滅判定、TW-27 の総資産。
+// combat.ts（戦闘の全滅）と engine.ts（受け付けたコマンドの後処理）から呼ぶ。combat.ts と dungeon.ts は import しない。
+// 乱数の消費順: 2d10（penaltyTable.dice を rollDice で 1 回）→ 失う品 1 個ごとに randInt(0, 候補数 − 1) を 1 回（候補 1 個でも引く）。
+// イベントの順: wipe.intro → 台帳（wipe.ledgerLost は台帳が空でも 1 回）→ dice{wipe.dice} → 帯の text → 金 → 品 → EXP とレベルダウン
+//   → 復活 → wipe{penalty} → arriveTown（town.enter → sanChanged → 救済 → screen{town}）。message wipe.dice は出さない（dice の表示がラベルとして出す）。
+import type { GameData } from "../data/index";
+import { EQUIP_SLOTS } from "../data/index";
+import { randInt, rollDice } from "../rng";
+import { destroyItemInstance, itemDisplayName, itemOf } from "../state";
+import type { Character, GameState, PenaltyExpLoss, PenaltyLostItem, PenaltyResult, RuleContext } from "../types";
+import { canAct } from "./combat-calc";
+import { levelDownWhileBelow } from "./growth";
+import { ceilRatio, floorRatio } from "./ratio";
+import { arriveTown } from "./town";
+
+/** TW-22: 出目 total が入る帯の添字。どの帯にも入らなければ Error（penalty-table.json は起動時に隙間なしを検証済み） */
+export function bandIndexFor(data: GameData, total: number): number {
+  const i = data.penaltyTable.bands.findIndex((b) => b.min <= total && total <= b.max);
+  if (i < 0) throw new Error(`bandIndexFor: no band for ${total}`);
+  return i;
+}
+
+/** TW-05 / TW-27 の売値 = floor(price × sellRatio) */
+export function itemSaleValue(data: GameData, itemId: string): number {
+  return floorRatio(itemOf(data, itemId).price, data.config.economy.sellRatio);
+}
+
+/**
+ * TW-27 の総資産 = 所持金 + 銀行 + 全アイテム実体の売値 + 全員の EXP（素の値）。テスト用（表示層は使わない）。
+ */
+export function assetValue(state: GameState, data: GameData): number {
+  let v = state.gold + state.bank;
+  for (const inst of Object.values(state.items)) v += itemSaleValue(data, inst.itemId);
+  for (const ch of state.party) v += ch.exp;
+  return v;
+}
+
+function ownerOf(state: GameState, instanceId: string): Character {
+  for (const ch of state.party) {
+    if (ch.inventory.includes(instanceId)) return ch;
+    for (const slot of EQUIP_SLOTS) if (ch.equipment[slot] === instanceId) return ch;
+  }
+  throw new Error(`ownerOf: no owner for ${instanceId}`);
+}
+
+type Holding = { ch: Character; instanceId: string; equipped: boolean };
+
+/** TW-22 の失う品の候補。非装備（並び順 × inventory の順）があればそれ、無ければ装備（並び順 × EQUIP_SLOTS の順） */
+function lossPool(state: GameState): Holding[] {
+  const unequipped: Holding[] = [];
+  const equipped: Holding[] = [];
+  for (const ch of state.party) {
+    for (const id of ch.inventory) unequipped.push({ ch, instanceId: id, equipped: false });
+    for (const slot of EQUIP_SLOTS) {
+      const id = ch.equipment[slot];
+      if (id !== null) equipped.push({ ch, instanceId: id, equipped: true });
+    }
+  }
+  return unequipped.length > 0 ? unequipped : equipped;
+}
+
+/** TW-23 / TW-24: alive にして HP を max(1, ceil(hpMax × reviveHpRatio)) に「する」（下がることもある）。clearStatus なら状態を全部外す。MP・SAN は触らない */
+function revive(ctx: RuleContext, ch: Character): void {
+  const cfg = ctx.data.config.wipe;
+  if (ch.life !== "alive") {
+    ch.life = "alive";
+    ctx.events.push({ kind: "lifeChanged", id: ch.id, life: "alive" });
+  }
+  const hp = Math.max(1, ceilRatio(ch.hpMax, cfg.reviveHpRatio));
+  if (hp !== ch.hp) ctx.events.push({ kind: "hpChanged", id: ch.id, delta: hp - ch.hp, hp });
+  ch.hp = hp;
+  if (cfg.clearStatus) {
+    for (const s of [...ch.status]) {
+      ch.status = ch.status.filter((x) => x !== s);
+      ctx.events.push({ kind: "statusChanged", id: ch.id, status: s, on: false });
+    }
+  }
+}
+
+/**
+ * 全滅処理（TW-20〜26）。前提: dive が非 null、battle が null。終わると screen town・dive null・townVisit 非 null。
+ */
+export function performWipe(ctx: RuleContext): void {
+  const { state, data } = ctx;
+  const dive = state.dive;
+  if (dive === null) throw new Error("performWipe: not in dungeon");
+  if (state.battle !== null) throw new Error("performWipe: in battle");
+  const aliveAtWipe = state.party.filter((c) => c.life === "alive").map((c) => c.id);
+  const leader = state.party.find((c) => c.isLeader);
+  if (leader === undefined) throw new Error("performWipe: no leader");
+  state.pendingChoice = null;
+
+  // 1) 語り
+  ctx.events.push({ kind: "message", key: "wipe.intro" });
+
+  // 2) DG-42 / TW-21: 台帳の品と金は全部失う
+  const ledgerItems: string[] = [];
+  for (const id of [...dive.ledger.items]) {
+    const owner = ownerOf(state, id);
+    ledgerItems.push(itemDisplayName(state, data, id));
+    destroyItemInstance(state, owner, id);
+  }
+  const ledgerGold = Math.min(state.gold, dive.ledger.gold);
+  state.gold -= ledgerGold;
+  dive.ledger = { items: [], gold: 0 };
+  ctx.events.push({ kind: "message", key: "wipe.ledgerLost" });
+
+  // 3) TW-22: 2d10
+  const roll = rollDice(state.rng, data.penaltyTable.dice);
+  ctx.events.push({ kind: "dice", label: "wipe.dice", dice: [...roll.dice], total: roll.total });
+
+  // 4) 帯
+  const bandIndex = bandIndexFor(data, roll.total);
+  const band = data.penaltyTable.bands[bandIndex]!;
+  ctx.events.push({ kind: "message", key: band.text });
+
+  // 5) 金（台帳分を引いた後の所持金から）
+  const goldLost = floorRatio(state.gold, band.goldLossRatio);
+  state.gold -= goldLost;
+  if (goldLost > 0) ctx.events.push({ kind: "message", key: "wipe.goldLost", params: { gold: goldLost } });
+
+  // 6) 品（非装備を使い切ってから装備。1 個ごとに候補を作り直して randInt 1 回）
+  const itemsLost: PenaltyLostItem[] = [];
+  for (let k = 0; k < band.itemLoss; k++) {
+    const pool = lossPool(state);
+    if (pool.length === 0) break;
+    const pick = pool[randInt(state.rng, 0, pool.length - 1)]!;
+    const inst = state.items[pick.instanceId];
+    if (inst === undefined) throw new Error(`performWipe: unknown item instance ${pick.instanceId}`);
+    const name = itemDisplayName(state, data, pick.instanceId);
+    destroyItemInstance(state, pick.ch, pick.instanceId);
+    itemsLost.push({ memberId: pick.ch.id, instanceId: pick.instanceId, itemId: inst.itemId, name, equipped: pick.equipped });
+    ctx.events.push({ kind: "message", key: "wipe.itemLost", params: { item: name } });
+  }
+
+  // 7) EXP（全員。dead / ash も）とレベルダウン（CH-62）
+  const losses = state.party.map((ch) => floorRatio(ch.exp, band.expLossRatio));
+  if (losses.some((x) => x > 0)) ctx.events.push({ kind: "message", key: "wipe.expLost" });
+  const expLost: PenaltyExpLoss[] = [];
+  state.party.forEach((ch, i) => {
+    const lost = losses[i]!;
+    const expBefore = ch.exp;
+    const levelFrom = ch.level;
+    ch.exp -= lost;
+    if (levelDownWhileBelow(ctx, ch) > 0) {
+      ctx.events.push({ kind: "message", key: "wipe.levelDown", params: { name: ch.name, level: ch.level } });
+    }
+    expLost.push({ id: ch.id, name: ch.name, expBefore, lost, levelFrom, levelTo: ch.level });
+  });
+
+  // 8) 復活（TW-23: 全滅時点で alive の者 → TW-24: リーダー）
+  const revived: string[] = [];
+  if (aliveAtWipe.length > 0) {
+    ctx.events.push({ kind: "message", key: "wipe.revived" });
+    for (const ch of state.party) {
+      if (!aliveAtWipe.includes(ch.id)) continue;
+      revive(ctx, ch);
+      revived.push(ch.id);
+    }
+  }
+  const leaderRule = !aliveAtWipe.includes(leader.id);
+  if (leaderRule) {
+    ctx.events.push({ kind: "message", key: "wipe.leaderRule" });
+    revive(ctx, leader);
+    revived.push(leader.id);
+  }
+
+  // 9) 迷宮を出て街へ（TW-26）
+  state.dive = null;
+  const penalty: PenaltyResult = {
+    dice: [...roll.dice],
+    total: roll.total,
+    bandIndex,
+    ledgerGold,
+    ledgerItems,
+    goldLost,
+    itemsLost,
+    expLost,
+    revived,
+    leaderRule,
+  };
+  ctx.events.push({ kind: "wipe", penalty });
+  arriveTown(ctx);
+}
+
+/**
+ * 迷宮の戦闘外の全滅（CH-44 の行動可能な者がいない）。engine が受け付けた全コマンドの最後に呼ぶ。
+ * screen dungeon・dive 非 null・battle null で、行動可能な者がいなければ performWipe。それ以外は何もしない。
+ */
+export function wipeIfNoneCanAct(ctx: RuleContext): void {
+  const { state } = ctx;
+  if (state.screen !== "dungeon" || state.dive === null || state.battle !== null) return;
+  if (state.party.some(canAct)) return;
+  performWipe(ctx);
+}

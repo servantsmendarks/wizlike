@@ -313,3 +313,10 @@
 - 2026-10-01 core(M4): 【未定】dungeon.cast（MG-32 のフィールド呪文、MG-40 帰還、MG-42 蘇生）は M4 では作らない（not implemented のまま）。
 - 2026-10-01 core(M4): 【未定】帰還の糸の補充手段（店はプロトタイプ外）。初期の糸は c5 の 1 本だけで、使い切ると徒歩でしか帰れない。
 - 2026-10-01 tests(M4): dungeon.test の 300 歩のランダムウォーク（M4 のバランステストで削除する予定）は、街へ出る選択（exit / teleport）があるときは walker の乱数を引かずに stay を選ぶ（迷宮を歩き続けるため）。他の選択の引き方は変えない。
+- 2026-10-01 core(M4): 全滅処理（rules/wipe.ts performWipe）の順は wipe.intro → 台帳（DG-42。品は全部消え、所持金から min(所持金, 台帳の金) を引く。wipe.ledgerLost は台帳が空でも 1 回）→ dice{wipe.dice} → 帯の text → 金 → 品 → EXP とレベルダウン → 復活 → wipe イベント → arriveTown。message wipe.dice は出さない（ダイスの表示がラベルとして同じ文を出すため）。乱数は 2d10 と、失う品 1 個ごとの randInt(0, 候補数 − 1)（候補 1 個でも引く）だけ。wipe.ts は combat.ts と dungeon.ts を import しない（combat → wipe → town の向き）。
+- 2026-10-01 core(M4): 全滅で失う品は非装備（並び順 × inventory の順）を使い切ってから装備（並び順 × EQUIP_SLOTS の順）。1 個ごとに候補を作り直す。装備を失えば枠が null になるだけ（呪いの品も同じ）。所持品が尽きたら打ち切る。
+- 2026-10-01 core(M4): 全滅の金と EXP の損失は floorRatio（floor(値 × ratio + 1e-9)）、復活の HP は ceilRatio。金は台帳分を引いた後の所持金に掛ける。EXP は全員（dead / ash も）から引き、閾値を割れば levelDownWhileBelow で 1 段ずつ下げ（levelDown イベント）、wipe.levelDown は 1 人 1 回、最終レベルで出す（レベルダウンの語りを全滅処理に任せた以前の判断の宿題を閉じる）。
+- 2026-10-01 core(M4): TW-23 の復活は HP を max(1, ceil(hpMax × reviveHpRatio)) に「する」（今より下がることもある）。全滅時点で alive なら麻痺・石化・SAN 0 でも対象。clearStatus なら状態を status の順にすべて外す。MP と SAN は触らない（SAN は arriveTown が戻す）。wipe.leaderRule はリーダーが全滅時点で alive でなかったときだけ出し、TW-23 と同じに戻す。
+- 2026-10-01 core(M4): 撤回: M2/M3 の「全員死亡の後も迷宮を歩ける」（E5、dungeon.ts の毒の後の early return、dungeon.allDead）と DG-11 の「行動可能な者がいなければ遭遇しない」の拡張。engine が受け付けたコマンドの最後（finish）に wipeIfNoneCanAct を呼び、迷宮の戦闘外で行動可能な者（CH-44）がいなくなったらその execute の中で全滅処理をする（起きうるのは落とし穴の全員死亡、罠の SAN、降下の SAN）。moveForward は罠の後に行動可能な者がいなければ階段・遭遇を起こさずに返る（行動不能でも罠は発動する）。dungeon.allDead は strings から消した（src と tests に参照が無いことを grep で確かめた）。
+- 2026-10-01 core(M4): 戦闘の全滅は battleEnd(wipe) → battle.wipe → 睡眠の解除 → battle=null → 全滅処理で、screen{dungeon} を出さない（CB-53 の M3 の仮を差し替え）。CB-06 の遭遇の SAN で全滅したときも同じで、先手判定の dice は出さない。
+- 2026-10-01 tests(M4): dungeon.test の 300 歩のランダムウォーク（C7 で削除する予定）は、全滅すると街へ戻るので screen が town になったらそのシードを打ち切る（それまでの「全員が alive でなくなったら打ち切る」の置き換え）。

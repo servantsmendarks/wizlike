@@ -15,6 +15,7 @@ import events from "../../data/events.json";
 import strings from "../../data/strings.json";
 import { loadGameData, type GameData, type PersonalityId } from "../../src/core/data";
 import { createInitialState, execute } from "../../src/core/engine";
+import { randInt, rollDice, type RngState } from "../../src/core/rng";
 import { cloneState, makeContext } from "../../src/core/state";
 import type { Character, GameEvent, GameState, PartySetupMember, RuleContext } from "../../src/core/types";
 
@@ -106,4 +107,18 @@ export function stringKeysOf(events: readonly GameEvent[]): string[] {
 export function expectKnownStringKeys(events: readonly GameEvent[], d: GameData = data): void {
   const unknown = stringKeysOf(events).filter((k) => !Object.prototype.hasOwnProperty.call(d.strings, k));
   expect(unknown, "message key / dice label not found in data/strings.json").toEqual([]);
+}
+
+/**
+ * 全滅処理（TW-22）の乱数を鏡の rng で進める: 2d10 → 失う品 1 個ごとに randInt(0, 候補数 − 1)。2d10 の合計を返す。
+ * 前提: 台帳が空で、非装備の所持品が unequipped 個あり、帯の itemLoss 以上（候補は非装備だけで、1 個失うごとに 1 減る）。
+ * 既定の一行（newGame）の非装備は 5 個（薬草 3・解毒草・帰還の糸）で、itemLoss は最大 3。
+ */
+export function mirrorWipeRolls(m: RngState, unequipped: number, d: GameData = data): number {
+  const r = rollDice(m, d.penaltyTable.dice);
+  const band = d.penaltyTable.bands.find((b) => b.min <= r.total && r.total <= b.max);
+  if (band === undefined) throw new Error(`mirrorWipeRolls: no band for ${r.total}`);
+  if (unequipped < band.itemLoss) throw new Error("mirrorWipeRolls: not enough unequipped items for this helper");
+  for (let k = 0; k < band.itemLoss; k++) randInt(m, 0, unequipped - 1 - k);
+  return r.total;
 }

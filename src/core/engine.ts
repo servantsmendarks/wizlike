@@ -19,6 +19,7 @@ import { checkEnter, chooseOption, enterDungeon, moveForward, turn } from "./rul
 import { checkUseItem, useItemInField } from "./rules/items";
 import { checkInn, checkMercy, checkTemple, grantMercy, stayInn, templeService } from "./rules/town";
 import type { TempleService } from "./rules/town";
+import { wipeIfNoneCanAct } from "./rules/wipe";
 import { cloneState, makeContext } from "./state";
 import type { BattleAction, Command, ExecuteResult, GameState, RuleContext } from "./types";
 
@@ -47,9 +48,10 @@ function reject(state: GameState, command: string, reason: string): ExecuteResul
 
 /**
  * 受け付けたコマンドの共通の後処理（受け付けた全コマンドの最後に通す）。
- * C5 で迷宮の戦闘外の全滅判定（wipeIfNoneCanAct）をここに足す（迷宮外・戦闘中は何もしない）。
+ * 迷宮の戦闘外で行動可能な者がいなくなっていれば、その execute の中で全滅処理をする（TW-20、DG-11。迷宮外・戦闘中は何もしない）。
  */
 function finish(ctx: RuleContext): ExecuteResult {
+  wipeIfNoneCanAct(ctx);
   return { state: ctx.state, events: ctx.events };
 }
 

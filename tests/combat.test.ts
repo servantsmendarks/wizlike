@@ -1209,7 +1209,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(kindsOf(rc.events)).not.toContain("message:battle.chest");
   });
 
-  test("CB-53 全滅: 最後の行動可能者が倒れると battleEnd(wipe)・battle.wipe・battle null・screen dungeon。睡眠だけが残るなら続行", () => {
+  test("CB-53/TW-20 全滅: 最後の行動可能者が倒れると battleEnd(wipe) → battle.wipe → 全滅処理（wipe.intro … wipe イベント → town.enter … screen town）。screen dungeon は出さない。睡眠だけが残るなら続行", () => {
     const d = dataWith({ combat: ALWAYS_HIT });
     const s = setup([{ monsterId: "kobold", hps: [50] }], {
       identified: ["kobold"],
@@ -1217,11 +1217,23 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
       inputs: { c1: DEF },
     });
     const r = exec(s, RESOLVE, d);
-    expect(kindsOf(r.events).slice(-3)).toEqual(["battleEnd", "message:battle.wipe", "screen"]);
+    const ks = kindsOf(r.events);
+    const end = ks.indexOf("battleEnd");
+    expect(ks.slice(end, end + 2)).toEqual(["battleEnd", "message:battle.wipe"]);
+    // 睡眠の解除（ここでは眠っている者はいない）の後に全滅処理が続く
+    expect(ks[end + 2]).toBe("message:wipe.intro");
+    expect(ks.indexOf("wipe")).toBeGreaterThan(end);
+    expect(ks.indexOf("message:town.enter")).toBeGreaterThan(ks.indexOf("wipe"));
+    expect(r.events.at(-1)).toEqual({ kind: "screen", to: "town" });
+    expect(eventsOf(r.events, "screen")).toEqual([{ kind: "screen", to: "town" }]);
     expect(eventsOf(r.events, "battleEnd")).toEqual([{ kind: "battleEnd", result: "wipe" }]);
     expect(r.state.battle).toBeNull();
-    expect(r.state.screen).toBe("dungeon");
-    expect(exec(r.state, { type: "dungeon.turn", dir: "left" }, d).events[0]?.kind).toBe("turned");
+    expect(r.state.dive).toBeNull();
+    expect(r.state.screen).toBe("town");
+    expect(r.state.townVisit).not.toBeNull();
+    expect(execute(r.state, { type: "dungeon.turn", dir: "left" }, d).events).toEqual([
+      { kind: "rejected", command: "dungeon.turn", reason: "not in dungeon" },
+    ]);
     // 睡眠だけの者が残れば続く
     const sl = patchParty(s, { c2: { status: ["sleep"] } });
     const rs = exec(sl, RESOLVE, d);

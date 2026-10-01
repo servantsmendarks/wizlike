@@ -67,7 +67,7 @@
   - 成功すると戦闘終了（経験値なし）。失敗すると敵だけが 1 ラウンド行動し、次のラウンドへ進む（CB-04 の味方の奇襲は消費する）。
 - CB-51 勝利: EXP を生存者で等分（CH-60）。金は `monsters[].gold` の合計を所持金へ加え、潜行台帳（DG-40）に記録。宝箱判定は部屋セルでの遭遇のみ、`config.combat.chestChance`（30）%【仮】。金は倒した個体ごとに `monsters[].gold` を振り（負は 0）、所持金と潜行台帳の両方に加える。EXP の等分の対象は、戦闘終了時に life が alive の全員（麻痺・石化・SAN 0 を含む）。
 - CB-52 宝箱: 罠付きの可能性 `config.combat.chestTrapChance`（40）%【仮】。手順は「調べる（慎重の `trapDetect` で罠の有無が分かる）→ 解除（盗賊の `disarm`、失敗で罠発動）→ 開ける」。中身は階のドロップ表から、強欲の `chestQuality` で 1 段階上の表を引く。プロトタイプでは罠は「ダメージ」1 種類【仮】。M3 の仮実装: ランダム遭遇の部屋のセルでの勝利時だけ chestChance% で出て、罠なし、中身は `config.combat.chestGoldDice`（2d10）【仮】の金。ボス戦では判定しない。罠・解除・`chestQuality` は M5。
-- CB-53 全滅 = 味方全員が行動不能（CH-44）。睡眠だけの場合は全滅としない（睡眠は覚める）。全滅時は `battleEnd(wipe)` → 全滅処理（TW-20〜26）。「睡眠だけ」とは、行動可能な者が 0 人でも、alive・SAN>0・睡眠あり・麻痺と石化なしの者が 1 人でもいる状態で、このときは戦闘を続ける。M3 では全滅処理の代わりに戦闘を閉じて迷宮に戻す（M4 で TW-20〜 に置き換える）。
+- CB-53 全滅 = 味方全員が行動不能（CH-44）。睡眠だけの場合は全滅としない（睡眠は覚める）。全滅時は `battleEnd(wipe)` → `battle.wipe` → 味方の睡眠の解除 → 全滅処理（TW-20〜26）で、screen は town になる（screen{dungeon} は出さない）。「睡眠だけ」とは、行動可能な者が 0 人でも、alive・SAN>0・睡眠あり・麻痺と石化なしの者が 1 人でもいる状態で、このときは戦闘を続ける。
 - CB-54 戦闘中の死亡は即座に `dead`。戦闘後も持続する（CH-45）。
 
 ## 7. 表示層への引き渡し
@@ -80,6 +80,6 @@
 - MP の変化は `mpChanged`。
 - 先手判定の dice のラベルは `battle.initiativeParty` / `battle.initiativeEnemy` の 2 件、逃走の dice のラベルは `battle.fleeRoll`。
 - ラウンド終了（決着しなかったラウンドだけ）の順は 毒（CB-33）→ 自然覚醒（CB-32）→ 確率鑑定（CB-05）→ オート解除（CB-43）。
-- 遭遇の順は screen{battle} → encounter → message → （未鑑定の message と sanChanged）→（CB-06 の SAN で CB-53 の全滅になれば、先手判定の dice を出さずに戦闘の終わりの順へ進む）→ 先手判定の dice 2 件 → 奇襲の message →（敵の奇襲ならそのラウンド）。戦闘の終わりの順は battleEnd → 結果の message → 味方の睡眠の解除 → screen{dungeon}。
+- 遭遇の順は screen{battle} → encounter → message → （未鑑定の message と sanChanged）→（CB-06 の SAN で CB-53 の全滅になれば、先手判定の dice を出さずに戦闘の終わりの順へ進む）→ 先手判定の dice 2 件 → 奇襲の message →（敵の奇襲ならそのラウンド）。戦闘の終わりの順は battleEnd → 結果の message → 味方の睡眠の解除 → screen{dungeon}（全滅では screen{dungeon} の代わりに全滅処理 TW-20〜26 が続き、最後が screen{town}）。
 - `battle.flee` のイベント順: dice（`battle.fleeRoll`）→ 成功なら戦闘の終わりの順 / 失敗なら message `battle.fleeFail` → 敵だけのラウンド →（決着しなければ）ラウンド終了の順。
 - `battle.repeat` のイベントの形と順は `battle.resolve` と同じ（違うのは入力を自動で作ることだけ）。

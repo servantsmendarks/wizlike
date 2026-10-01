@@ -66,6 +66,7 @@ import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, snapMember
 import { offerTeleporter } from "./choices";
 import { applyAllyEffect } from "./effects";
 import { loseSan } from "./san";
+import { performWipe } from "./wipe";
 
 function requireBattle(state: GameState): BattleState {
   if (state.battle === null) throw new Error("not in battle");
@@ -812,7 +813,6 @@ function endBattle(ctx: RuleContext, result: "win" | "flee" | "wipe"): void {
   } else if (result === "flee") {
     ctx.events.push({ kind: "message", key: "battle.fleeOk" });
   } else {
-    // M4: ここから wipe.ts の全滅処理（TW-20〜27）を呼ぶ
     ctx.events.push({ kind: "message", key: "battle.wipe" });
   }
   for (const ch of state.party) {
@@ -822,6 +822,11 @@ function endBattle(ctx: RuleContext, result: "win" | "flee" | "wipe"): void {
   }
   state.battle = null;
   state.screen = "dungeon";
+  if (result === "wipe") {
+    // CB-53 / TW-20: 全滅処理で街へ（screen{dungeon} は出さない。performWipe の最後が screen{town}）
+    performWipe(ctx);
+    return;
+  }
   ctx.events.push({ kind: "screen", to: "dungeon" });
   // DG-32: ボスを倒すとその場にテレポーターが出て、一行はその上に立っているので、すぐに街へ戻るかを尋ねる
   if (result === "win" && b.origin.kind === "boss") offerTeleporter(ctx);

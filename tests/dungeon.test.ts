@@ -18,7 +18,7 @@ import { battleMenu } from "../src/core/rules/combat";
 import { offerExit, offerStairs, offerTeleporter } from "../src/core/rules/choices";
 import { cloneState, dungeonOf, makeContext, monsterOf } from "../src/core/state";
 import type { Cell, Command, Edge, Facing, Floor, GameEvent, GameState, Pos } from "../src/core/types";
-import { data, deepFreeze, expectKnownStringKeys, loadFreshData, newGame } from "./helpers/core";
+import { data, deepFreeze, expectKnownStringKeys, loadFreshData, mirrorWipeRolls, newGame } from "./helpers/core";
 
 // ---------------------------------------------------------------------------
 // ヘルパー
@@ -433,7 +433,7 @@ describe("遭遇（CB-01, DG-11）", () => {
     expect(r.state.battle!.origin).toEqual({ kind: "random", inRoom: true });
   });
 
-  test("DG-11 行動可能な者がいなければ遭遇判定をしない（麻痺・睡眠・SAN 0 の混在で、rate 1 でも乱数を消費しない）", () => {
+  test("DG-11/TW-20 行動可能な者がいない一行が前進すると遭遇判定をせず（d100 を振らない）、その execute で全滅処理をする（麻痺・睡眠・SAN 0 の混在、rate 1）", () => {
     const s0 = enterD01(1);
     const f = floorOf(s0.dive!, data);
     const a = approaches(f, (c) => c.kind === "corridor" || c.kind === "room")[0]!;
@@ -443,10 +443,18 @@ describe("遭遇（CB-01, DG-11）", () => {
       else if (i % 3 === 1) c.status = ["sleep"];
       else c.san = 0;
     });
+    const mirror = cloneRng(s.rng);
+    mirrorWipeRolls(mirror, 5); // 遭遇の d100 は引かず、全滅処理の 2d10 と失う品の選択だけ
     const r = run(s, MOVE, dataEnc(1, 1));
-    expect(r.events).toEqual([{ kind: "moved", pos: a.target, facing: a.facing }]);
-    expect(r.state.rng).toEqual(s.rng);
+    expect(r.events.slice(0, 2)).toEqual([
+      { kind: "moved", pos: a.target, facing: a.facing },
+      { kind: "message", key: "wipe.intro" },
+    ]);
+    expect(kinds(r.events)).not.toContain("encounter");
+    expect(r.state.rng).toEqual(mirror);
     expect(r.state.battle).toBeNull();
+    expect(r.state.dive).toBeNull();
+    expect(r.state.screen).toBe("town");
     // 1 人でも行動できれば判定する
     s.party[2]!.san = 50;
     expect(run(s, MOVE, dataEnc(1, 1)).state.battle).not.toBeNull();
@@ -926,7 +934,7 @@ describe("階段（DG-14, E3）", () => {
   });
 });
 
-describe("罠（DG-20, DG-21, E4, E5）", () => {
+describe("罠（DG-20, DG-21, E4）", () => {
   /** HP を 30/30 にそろえた状態で pit の手前に立つ */
   function atPit(mut?: (s: GameState) => void) {
     const sit = findSituation((c) => c.kind === "trap" && c.trapId === "pit");
@@ -987,46 +995,62 @@ describe("罠（DG-20, DG-21, E4, E5）", () => {
     expect(r.state.rng).toEqual(mirror);
   });
 
-  test("DG-20/E5 pit で全員死亡: message dungeon.allDead が 1 回。その歩では階段と遭遇を起こさない。その後も dungeon.move は受け付ける", () => {
+  test("DG-20/CH-44/TW-20 pit で全員死亡: dungeon.allDead は無く、その歩では階段と遭遇を起こさず（d100 を振らない）、同じ execute で全滅処理をして街へ（リーダーは TW-24 で戻る）", () => {
     const { state } = atPit((s) => {
       for (const c of s.party) c.hp = 1;
     });
     const mirror = cloneRng(state.rng);
     for (let i = 0; i < 6; i++) rollDice(mirror, data.config.dungeon.trap.pitDice);
+    mirrorWipeRolls(mirror, 5);
     const r = run(state, MOVE, dataWithRate(1, 1));
     const ks = kinds(r.events);
-    expect(ks.filter((k) => k === "message:dungeon.allDead")).toHaveLength(1);
-    expect(ks.at(-1)).toBe("message:dungeon.allDead");
-    expect(ks.filter((k) => k === "lifeChanged")).toHaveLength(6);
-    expect(ks).not.toContain("sanChanged");
+    expect(ks.filter((k) => k === "lifeChanged")).toHaveLength(7); // 6 人の dead とリーダーの alive
+    expect(ks.filter((k) => k === "message:dungeon.dead")).toHaveLength(6);
+    expect(ks.indexOf("message:wipe.intro")).toBe(ks.lastIndexOf("message:dungeon.dead") + 1);
     expect(ks).not.toContain("message:battle.encounter");
+    expect(ks).toContain("message:wipe.leaderRule");
+    expect(r.events.at(-1)).toEqual({ kind: "screen", to: "town" });
     expect(r.state.rng).toEqual(mirror); // 遭遇の d100 を引いていない
-    expect(r.state.party.every((c) => c.life === "dead")).toBe(true);
-    // その後も前進と旋回は受け付ける。allDead はもう出さず、遭遇もしない
-    let s = r.state;
-    for (let i = 0; i < 20; i++) {
-      const rr = run(s, i % 3 === 0 ? { type: "dungeon.turn", dir: "right" } : MOVE, dataWithRate(1, 1));
-      expect(rr.events[0]?.kind).not.toBe("rejected");
-      expect(kinds(rr.events)).not.toContain("message:dungeon.allDead");
-      expect(kinds(rr.events)).not.toContain("message:battle.encounter");
-      s = rr.state;
-    }
+    expect(r.state.party.map((c) => c.life)).toEqual(["alive", "dead", "dead", "dead", "dead", "dead"]);
+    expect(r.state.screen).toBe("town");
+    expect(r.state.dive).toBeNull();
   });
 
-  test("DG-20/E5 全員死亡の後に罠のセルへ入っても、罠は発動しない（message・SAN・spinner の乱数・clearedCells のどれも無い）", () => {
-    for (const trapId of ["pit", "spinner"] as const) {
-      const sit = findSituation((c) => c.kind === "trap" && c.trapId === trapId);
-      const s = cloneState(sit.state);
-      for (const c of s.party) {
-        c.hp = 0;
-        c.life = "dead";
-      }
-      const r = run(s, MOVE, dataWithRate(1, 1));
-      expect(r.events).toEqual([{ kind: "moved", pos: sit.a.target, facing: sit.a.facing }]);
-      expect(r.state.dive!.clearedCells).toEqual([]);
-      expect(r.state.dive!.facing).toBe(sit.a.facing);
-      expect(r.state.rng).toEqual(s.rng); // 罠のダイス・spinner の向き・遭遇の d100 のどれも引かない
-    }
+  test("DG-20/CH-44/TW-20 罠の SAN で全員が SAN 0 になると、階段・遭遇を起こさずにその execute で全滅処理（spinner、rate 1）", () => {
+    const sit = findSituation((c) => c.kind === "trap" && c.trapId === "spinner");
+    const s = cloneState(sit.state);
+    for (const c of s.party) c.san = 1; // 罠の SAN は慎重でも −1
+    const mirror = cloneRng(s.rng);
+    randInt(mirror, 0, 3); // spinner の向き
+    mirrorWipeRolls(mirror, 5);
+    const r = run(s, MOVE, dataWithRate(1, 1));
+    const ks = kinds(r.events);
+    expect(ks.slice(0, 3)).toEqual(["moved", "message:dungeon.trap.spinner", "turned"]);
+    expect(eventsOfKind(r.events, "sanChanged").slice(0, 6).map((e) => e.san)).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(ks.indexOf("message:wipe.intro")).toBeGreaterThan(ks.indexOf("turned"));
+    expect(ks).not.toContain("message:battle.encounter");
+    expect(r.state.rng).toEqual(mirror);
+    expect(r.state.screen).toBe("town");
+    // TW-02: 街に入ると SAN は sanMax に戻る
+    expect(r.state.party.every((c) => c.san === c.sanMax)).toBe(true);
+  });
+
+  test("DG-14/CH-51/TW-20 降下の SAN（floorDescend）で全員が SAN 0 になると、その event.choose の中で全滅処理", () => {
+    const sit = findSituation((c) => c.kind === "stairsDown");
+    const s = cloneState(sit.state);
+    for (const c of s.party) c.san = data.config.san.floorDescend; // tags なしなので性格の倍率は掛からない
+    const r1 = run(s, MOVE, DATA0);
+    expect(r1.state.pendingChoice).not.toBeNull();
+    const mirror = cloneRng(r1.state.rng);
+    mirrorWipeRolls(mirror, 5);
+    const r2 = run(r1.state, { type: "event.choose", optionId: "descend" }, DATA0);
+    const ks = kinds(r2.events);
+    expect(ks.slice(0, 2)).toEqual(["floorChanged", "message:dungeon.descend"]);
+    expect(eventsOfKind(r2.events, "sanChanged").slice(0, 6).map((e) => e.san)).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(ks).toContain("message:wipe.intro");
+    expect(r2.state.rng).toEqual(mirror);
+    expect(r2.state.screen).toBe("town");
+    expect(r2.state.pendingChoice).toBeNull();
   });
 
   test("DG-20 pitDice に負の修正値があっても回復しない。ダメージは max(0, 出目) で、0 なら hpChanged を出さない", () => {
@@ -1362,10 +1386,10 @@ describe("決定性と網羅", () => {
         if (r.events[0]?.kind === "rejected") throw new Error(`seed ${seed} step ${i}: ${JSON.stringify(r.events[0])}`);
         events.push(...r.events);
         s = r.state;
-        // 遭遇したらオートで戦闘を終わらせてから歩き続ける。全滅したら（迷宮に戻すのは M4 までの仮で、
-        // 全員死亡では罠・階段・遭遇がどれも起きず何も確かめないので）そのシードを打ち切る
+        // 遭遇したらオートで戦闘を終わらせてから歩き続ける
         if (s.screen === "battle") s = finishBattle(s, events);
-        if (s.party.every((c) => c.life !== "alive")) {
+        // M4: 全滅すると全滅処理で街へ戻るので、そのシードを打ち切る
+        if (s.screen === "town") {
           wiped += 1;
           break;
         }
