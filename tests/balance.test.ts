@@ -423,10 +423,10 @@ class Campaign {
     return true;
   }
 
-  /** 店: パーティに帰還の糸が無ければ 1 本、残りで薬草を。支出の合計 ≤ floor(この時点の所持金 / 3) */
+  /** 店: alive の者が帰還の糸を持っていなければ 1 本（死者・灰の糸は使えないので数えない）、残りで薬草を。支出の合計 ≤ floor(この時点の所持金 / 3) */
   shop(rec: DiveRecord): void {
     const budget = Math.floor(this.state.gold / SHOP_SHARE);
-    const hasThread = this.state.party.some((c) => c.inventory.some((id) => this.state.items[id]!.itemId === THREAD));
+    const hasThread = this.state.party.some((c) => c.life === "alive" && c.inventory.some((id) => this.state.items[id]!.itemId === THREAD));
     if (!hasThread && rec.shopCost + THREAD_PRICE <= budget && this.buy(THREAD, rec)) rec.shopThreads += 1;
     while (rec.shopCost + HERB_PRICE <= budget && this.buy(HERB, rec)) rec.shopHerbs += 1;
   }

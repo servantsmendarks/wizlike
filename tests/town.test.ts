@@ -1,4 +1,4 @@
-// 街（TW-02, TW-04, TW-07, TW-08, TW-11, TW-30〜32）。rules/town.ts と engine の town.* の配線。
+// 街（TW-02, TW-04, TW-05 の消耗品の購入, TW-07, TW-08, TW-11, TW-30〜32）。rules/town.ts と engine の town.* の配線。
 // 既定のパーティ（newGame）: c1 アルド 戦士 HP 15（リーダー）、c2 ベルク 戦士 HP 16 vit 14、c3 キリ 盗賊 HP 10、
 // c4 ドナ 僧侶 HP 12 MP 5、c5 エル 魔術師 HP 8 MP 7、c6 フィン 盗賊 HP 10。所持金 300。
 // 宿のランク: 0 馬小屋 0G HP ×0、1 相部屋 20G HP ×0.5、2 個室 60G HP ×1.0（MP はどのランクでも全回復）。寺院: 蘇生 level × 100、
