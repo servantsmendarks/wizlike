@@ -434,14 +434,13 @@ describe("全滅の発生（CB-53、CB-06、CH-44）", () => {
 });
 
 // ---------------------------------------------------------------------------
-// TW-27: 全滅後の総資産は、同じ状態から帰った場合を上回らない。
-// 比べる相手は「糸を消費しない帰還」（returnToTown。徒歩・テレポーターと同じ）。糸で帰ると糸の売値 25 だけ下がり、
-// 台帳が空で損失 0 の帯（奇跡、EXP 100 未満の幸運）では全滅の方が上回る（decisions の衝突 TW-27）。
+// TW-27: 全滅後の総資産は、同じ状態から徒歩で帰還した場合（0G。糸を消費しない）を上回らない（代替案 A で確定）。
+// 徒歩の帰還は returnToTown（テレポーターと同値）。糸で帰ると糸の売値 25 だけ下がるので、糸とは比べない。
 
-/** 同じ状態から糸を消費せずに帰った state */
+/** 同じ状態から徒歩で帰還した state（DG-06。糸を消費しない） */
 function returnedOf(s: GameState, d: GameData = data): GameState {
   const ctx = makeContext(cloneState(s), d);
-  returnToTown(ctx, "dungeon.return");
+  returnToTown(ctx, "dungeon.exit");
   return ctx.state;
 }
 
@@ -467,7 +466,7 @@ describe("TW-27 全滅の方が得にならない", () => {
     expect(itemSaleValue(data, "return_thread")).toBe(25);
   });
 
-  test("TW-27 境界: 台帳に金と品、非装備・装備の品、Lv2〜4 の EXP の一行で、2d10 の合計 2〜20 のどれでも全滅後の総資産 ≤ 帰還後（成分ごとにも ≤）", () => {
+  test("TW-27 境界: 台帳に金と品、非装備・装備の品、Lv2〜4 の EXP の一行で、2d10 の合計 2〜20 のどれでも全滅後の総資産 ≤ 徒歩で帰還した後（成分ごとにも ≤）", () => {
     const s0 = withLedger(base());
     for (let t = 2; t <= 20; t++) {
       const { w, r } = expectWipeNotBetter(withTotal(s0, t));
@@ -476,7 +475,7 @@ describe("TW-27 全滅の方が得にならない", () => {
     }
   });
 
-  test("TW-27 損失なし: 全帯の比率と itemLoss を 0 にした data で、台帳が空・糸を持つ一行でも全滅後の総資産は帰還後と等しい（上回らない）", () => {
+  test("TW-27 損失なし: 全帯の比率と itemLoss を 0 にした data で、台帳が空・糸を持つ一行でも全滅後の総資産は徒歩で帰還した後と等しい（上回らない）", () => {
     const d = loadFreshData();
     for (const b of d.penaltyTable.bands) {
       b.goldLossRatio = 0;
@@ -491,7 +490,7 @@ describe("TW-27 全滅の方が得にならない", () => {
     }
   });
 
-  test("衝突 TW-27 の記録: 糸で帰った場合と比べると、台帳が空で奇跡（損失 0）の全滅は糸の売値 25 だけ上回る（だからテストは糸を消費しない帰還と比べる）", () => {
+  test("TW-27 比較の基準が徒歩の帰還である理由: 糸で帰った場合と比べると、台帳が空で奇跡（損失 0）の全滅は糸の売値 25 だけ上回る", () => {
     const s = withTotal(base(), 20);
     const thread = s.party[4]!.inventory[0]!;
     const byThread = execute(s, { type: "dungeon.useItem", memberId: "c5", itemId: thread }, data);
@@ -501,7 +500,7 @@ describe("TW-27 全滅の方が得にならない", () => {
     expect(assetValue(w, data) - assetValue(byThread.state, data)).toBe(25);
   });
 
-  test("TW-27 性質: 200 シード（ボットの rng で台帳の金と品・所持金・追加の品・EXP・生死・状態を作る）で、全滅後の総資産 ≤ 帰還後。両方の state が不変条件を満たす", () => {
+  test("TW-27 性質: 200 シード（ボットの rng で台帳の金と品・所持金・追加の品・EXP・生死・状態を作る）で、全滅後の総資産 ≤ 徒歩で帰還した後。両方の state が不変条件を満たす", () => {
     const itemIds = data.items.map((i) => i.id);
     for (let k = 1; k <= 200; k++) {
       const bot = createRng(k + 30_000);
