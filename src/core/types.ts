@@ -297,7 +297,10 @@ export type GameState = {
 export type PartySetupMember = { name: string; personality: PersonalityId | "random" | null };
 export type PartySetup = { members: PartySetupMember[] };
 
-/** 【仮置き】TW-05（プロトタイプの範囲外。形だけ） */
+/**
+ * TW-05。プロトタイプで実装するのは buy（itemId は items.json の id。売り物は consumable かつ infinite の品）だけ。
+ * sell / identify は形だけで、rejected "not implemented"
+ */
 export type ShopAction =
   | { kind: "buy"; memberId: string; itemId: string }
   | { kind: "sell"; memberId: string; instanceId: string }
@@ -426,6 +429,8 @@ export type PenaltyResult = {
 
 export type TownMenuInnRank = { rank: number; id: string; name: string; cost: number; affordable: boolean };
 export type TownMenuTempleRow = { memberId: string; name: string; cost: number; affordable: boolean };
+export type TownMenuShopItem = { itemId: string; name: string; price: number; affordable: boolean };
+export type TownMenuShopMember = { memberId: string; name: string; slotsFree: number };
 /** rules/town.ts townMenu。screen === "town" のときだけ非 null */
 export type TownMenu = {
   gold: number;
@@ -440,6 +445,13 @@ export type TownMenu = {
   };
   /** TW-08 闇魔術: life ash の者（並び順）。cost = level × darkCostPerLevel、affordable = gold >= cost */
   dark: TownMenuTempleRow[];
+  /** TW-05 店（消耗品の購入だけ） */
+  shop: {
+    /** 売り物（items.json の順で consumable かつ infinite の品）。affordable = gold >= price */
+    items: TownMenuShopItem[];
+    /** 持たせる候補 = life alive の者（並び順）。slotsFree = slotsPerCharacter − 装備数 − inventory（CH-71。0 なら inventory full） */
+    members: TownMenuShopMember[];
+  };
   /** TW-31: townVisit.mercyOffered なら dead / ash の全員（並び順）。申し出が無ければ null */
   mercy: { memberId: string; name: string; life: "dead" | "ash" }[] | null;
   /** TW-11: progress.unlockedDungeons の順。canEnter = checkEnter(state, id, data) === null */

@@ -567,3 +567,104 @@ describe("UI-52/TW-11 townMenu（表示層向けの問い合わせ）", () => {
     expect(m.inn.map((r) => r.affordable)).toEqual([true, false, false]);
   });
 });
+
+// ---------------------------------------------------------------------------
+
+describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
+  // 既定のパーティの所持枠（CH-71、slotsPerCharacter 8）: c1 装備 3 + 薬草 1 = 4、c2 装備 2、c3 装備 3 + 薬草 1 = 4、
+  // c4 装備 2 + 解毒草 1 = 3、c5 装備 1 + 帰還の糸 1 = 2、c6 装備 2 + 薬草 1 = 3。実体は i1..i18 で、次は i19。
+  const buy = (memberId: unknown, itemId: unknown): Command =>
+    ({ type: "town.shop", action: { kind: "buy", memberId, itemId } }) as unknown as Command;
+
+  test("TW-05 buy: price を払い、鑑定済みの実体を本人の inventory の末尾に入れ、town.shop.bought を語る。乱数なし", () => {
+    const s = town();
+    expect(s.nextItemSeq).toBe(19);
+    const r = ok(s, buy("c3", "herb"));
+    expect(r.events).toEqual([{ kind: "message", key: "town.shop.bought", params: { name: "キリ", item: "薬草", cost: 10 } }]);
+    expect(r.state.gold).toBe(290);
+    expect(member(r.state, "c3").inventory).toEqual([...member(s, "c3").inventory, "i19"]);
+    expect(r.state.items["i19"]).toEqual({ id: "i19", itemId: "herb", identified: true });
+    expect(r.state.nextItemSeq).toBe(20);
+    expect(r.state.rng).toEqual(s.rng);
+    expect(r.state.townVisit).toEqual(s.townVisit);
+    // 解毒草 15G、帰還の糸 50G
+    const a = ok(r.state, buy("c5", "antidote_herb"));
+    expect(a.state.gold).toBe(275);
+    const t = ok(a.state, buy("c5", "return_thread"));
+    expect(t.state.gold).toBe(225);
+    expect(member(t.state, "c5").inventory.slice(-2).map((id) => t.state.items[id]!.itemId)).toEqual(["antidote_herb", "return_thread"]);
+    // 買った品は街を出てもそのまま（台帳に入らない。DG-40）
+    const d = ok(t.state, { type: "dungeon.enter", dungeonId: "d01" });
+    expect(d.state.dive!.ledger).toEqual({ items: [], gold: 0 });
+  });
+
+  test("TW-05 所持金ちょうど（帰還の糸 50G を 50G で）なら買えて 0 になり、49G なら not enough gold", () => {
+    const r = ok(town({}, 50), buy("c1", "return_thread"));
+    expect(r.state.gold).toBe(0);
+    expectRejected(town({}, 49), buy("c1", "return_thread"), "not enough gold");
+  });
+
+  test("TW-05/CH-71 所持枠: 使用 7 なら買えて 8 になり、8 なら inventory full（所持金より先に判定）", () => {
+    const s = town();
+    const c2 = member(s, "c2");
+    for (let i = 0; i < 5; i++) c2.inventory.push(createItemInstance(s, "herb", true)); // 装備 2 + 5 = 7
+    const r = ok(s, buy("c2", "herb"));
+    expect(member(r.state, "c2").inventory).toHaveLength(6);
+    expectRejected(r.state, buy("c2", "herb"), "inventory full");
+    const poor = cloneState(r.state);
+    poor.gold = 0;
+    expectRejected(poor, buy("c2", "herb"), "inventory full");
+  });
+
+  test("TW-05 rejected の理由と順: wrong screen → bad action → not implemented → not for sale → no such member → not alive → inventory full → not enough gold（同じ参照・乱数不変）", () => {
+    const s = town({ c2: DEAD, c3: ASH }, 5);
+    expectRejected(diving(), buy("c1", "herb"), "wrong screen");
+    expectRejected(createInitialState(1, data), buy("c1", "herb"), "wrong screen");
+    expectRejected(s, { type: "town.shop" } as unknown as Command, "bad action");
+    expectRejected(s, { type: "town.shop", action: "buy" } as unknown as Command, "bad action");
+    expectRejected(s, { type: "town.shop", action: { kind: "steal", memberId: "c1", itemId: "herb" } } as unknown as Command, "bad action");
+    expectRejected(s, buy(1, "herb"), "bad action");
+    expectRejected(s, buy("c1", null), "bad action");
+    expectRejected(s, { type: "town.shop", action: { kind: "sell", memberId: "c1", instanceId: "i4" } }, "not implemented");
+    expectRejected(s, { type: "town.shop", action: { kind: "identify", memberId: "c1", instanceId: "i4" } }, "not implemented");
+    // 売り物は consumable かつ infinite の品だけ（装備・魔法書・未知の id は売らない）。メンバーより先に判定
+    for (const itemId of ["long_sword", "tome_lightning", "cursed_dagger", "nope"]) {
+      expectRejected(s, buy("c1", itemId), "not for sale");
+    }
+    expectRejected(s, buy("c9", "long_sword"), "not for sale");
+    expectRejected(s, buy("c9", "herb"), "no such member");
+    expectRejected(s, buy("c2", "herb"), "not alive");
+    expectRejected(s, buy("c3", "herb"), "not alive");
+    expectRejected(s, buy("c1", "herb"), "not enough gold");
+  });
+
+  test("TW-05/TW-32 救済の申し出の間も店は使え、申し出は下りない", () => {
+    const ctx = ctxFor(diving({ c2: DEAD, c3: DEAD, c4: DEAD, c5: DEAD, c6: DEAD }, 99));
+    returnToTown(ctx, "dungeon.exit");
+    expect(ctx.state.townVisit).toEqual({ mercyOffered: true });
+    const r = ok(ctx.state, buy("c1", "herb"));
+    expect(r.state.gold).toBe(89);
+    expect(r.state.townVisit).toEqual({ mercyOffered: true });
+  });
+
+  test("UI-52/TW-05 townMenu.shop: 売り物（items.json の順、affordable = 所持金 ≥ price）と、持たせる候補（alive の者、slotsFree）", () => {
+    expect(townMenu(town(), data)!.shop).toEqual({
+      items: [
+        { itemId: "herb", name: "薬草", price: 10, affordable: true },
+        { itemId: "antidote_herb", name: "解毒草", price: 15, affordable: true },
+        { itemId: "return_thread", name: "帰還の糸", price: 50, affordable: true },
+      ],
+      members: [
+        { memberId: "c1", name: "アルド", slotsFree: 4 },
+        { memberId: "c2", name: "ベルク", slotsFree: 6 },
+        { memberId: "c3", name: "キリ", slotsFree: 4 },
+        { memberId: "c4", name: "ドナ", slotsFree: 5 },
+        { memberId: "c5", name: "エル", slotsFree: 6 },
+        { memberId: "c6", name: "フィン", slotsFree: 5 },
+      ],
+    });
+    const m = townMenu(town({ c2: DEAD, c5: ASH }, 15), data)!.shop;
+    expect(m.items.map((i) => i.affordable)).toEqual([true, true, false]);
+    expect(m.members.map((x) => x.memberId)).toEqual(["c1", "c3", "c4", "c6"]);
+  });
+});

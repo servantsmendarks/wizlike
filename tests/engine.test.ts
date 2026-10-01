@@ -199,7 +199,8 @@ describe("engine: execute", () => {
   });
 
   test.each<Command>([
-    { type: "town.shop", action: { kind: "buy", memberId: "c1", itemId: "herb" } },
+    { type: "town.shop", action: { kind: "sell", memberId: "c1", instanceId: "i4" } },
+    { type: "town.shop", action: { kind: "identify", memberId: "c1", instanceId: "i4" } },
     { type: "town.bank", amount: 10 },
     { type: "dungeon.cast", memberId: "c4", spellId: "heal" },
     { type: "party.reorder", order: ["c1", "c2", "c3", "c4", "c5", "c6"] },

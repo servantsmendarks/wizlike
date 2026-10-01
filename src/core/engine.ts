@@ -17,7 +17,18 @@ import {
 import { startNewGame, validatePartySetup } from "./rules/creation";
 import { checkEnter, chooseOption, enterDungeon, moveForward, turn } from "./rules/dungeon";
 import { checkUseItem, useItemInField } from "./rules/items";
-import { checkDark, checkInn, checkMercy, checkTemple, darkService, grantMercy, stayInn, templeService } from "./rules/town";
+import {
+  buyItem,
+  checkDark,
+  checkInn,
+  checkMercy,
+  checkShop,
+  checkTemple,
+  darkService,
+  grantMercy,
+  stayInn,
+  templeService,
+} from "./rules/town";
 import type { TempleService } from "./rules/town";
 import { wipeIfNoneCanAct } from "./rules/wipe";
 import { cloneState, makeContext } from "./state";
@@ -192,7 +203,15 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       darkService(ctx, memberId as string);
       return finish(ctx);
     }
-    case "town.shop":
+    case "town.shop": {
+      const action = (command as { action?: unknown }).action;
+      const r = checkShop(state, action, data);
+      if (r !== null) return reject(state, "town.shop", r);
+      const a = action as { memberId: string; itemId: string };
+      const ctx = makeContext(cloneState(state), data);
+      buyItem(ctx, a.memberId, a.itemId);
+      return finish(ctx);
+    }
     case "town.bank":
     case "dungeon.cast":
     case "party.reorder":
