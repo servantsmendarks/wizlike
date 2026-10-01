@@ -149,11 +149,14 @@ describe("data: config.json", () => {
     expect(issuesOf((r) => (r.config.dungeon.viewDepth = 1))).toEqual([]);
     expect(issuesOf((r) => (r.config.dungeon.viewDepth = 3))).toEqual([]);
   });
-  test("data: DG-20 dungeon.pitDamage はダイス記法", () => {
-    expectIssue((r) => (r.config.dungeon.pitDamage = "d6"), "config.json", 'dungeon.pitDamage: invalid dice expression "d6"');
-    expectIssue((r) => delete r.config.dungeon.pitDamage, "config.json", "dungeon.pitDamage: missing required field");
-    expect(issuesOf((r) => (r.config.dungeon.pitDamage = "2d4+1"))).toEqual([]);
-    expect(isDiceExpr(config.dungeon.pitDamage)).toBe(true);
+  test("data: DG-20 dungeon.trap.pitDice はダイス記法（既定 1d4【仮】）。旧 pitDamage は未知のキー", () => {
+    expect(config.dungeon.trap.pitDice).toBe("1d4");
+    expectIssue((r) => (r.config.dungeon.trap.pitDice = "d6"), "config.json", 'dungeon.trap.pitDice: invalid dice expression "d6"');
+    expectIssue((r) => delete r.config.dungeon.trap.pitDice, "config.json", "dungeon.trap.pitDice: missing required field");
+    expectIssue((r) => delete r.config.dungeon.trap, "config.json", "dungeon.trap: missing required field");
+    expectIssue((r) => (r.config.dungeon.pitDamage = "1d6"), "config.json", "dungeon.pitDamage: unknown field");
+    expect(issuesOf((r) => (r.config.dungeon.trap.pitDice = "2d4+1"))).toEqual([]);
+    expect(isDiceExpr(config.dungeon.trap.pitDice)).toBe(true);
   });
   test("data: ui §2 ui.layout の合計が stage.height と違えば検証エラー", () => {
     const l = config.ui.layout;

@@ -289,7 +289,7 @@ function triggerTrap(ctx: RuleContext, f: Floor, p: Pos): void {
     const alive0 = aliveMembers(state);
     for (const ch of alive0) {
       // 負の修正値（"1d6-3" など）で回復しないよう、ダメージは 0 以上にクランプする（rng.ts: クランプは呼び出し側）
-      const r = Math.max(0, rollDice(state.rng, cfg.dungeon.pitDamage).total);
+      const r = Math.max(0, rollDice(state.rng, cfg.dungeon.trap.pitDice).total);
       if (r === 0) continue; // 0 ダメージでは hpChanged を出さない
       const next = Math.max(0, ch.hp - r);
       ctx.events.push({ kind: "hpChanged", id: ch.id, delta: next - ch.hp, hp: next });

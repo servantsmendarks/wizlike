@@ -9,7 +9,7 @@
     "defaultRooms": [3, 6],
     "roomSize": [2, 4], "roomAttempts": 50, "doorsPerRoom": [1, 2],
     "viewDepth": 3,
-    "pitDamage": "1d6"
+    "trap": { "pitDice": "1d4" }
   },
   "combat": {
     "hitBase": 20, "hitPerLevel": 5, "hitPerAC": 4, "hitMin": 5, "hitMax": 95,

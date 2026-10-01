@@ -209,7 +209,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       roomAttempts: I(POS_INT), // DG-05【仮】
       doorsPerRoom: pair(POS_INT), // DG-05【仮】（min >= 1 で到達性を保つ）
       viewDepth: I({ min: 1, max: 3 }), // DG-12【仮】（UI-20 の座標表が奥行き 0..3）
-      pitDamage: D, // DG-20【仮】
+      trap: F({ pitDice: D }), // DG-20【仮】
     }),
     combat: F({
       hitBase: I(),

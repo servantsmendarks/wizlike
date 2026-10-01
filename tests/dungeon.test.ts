@@ -674,14 +674,14 @@ describe("罠（DG-20, DG-21, E4, E5）", () => {
     return { ...sit, state: s };
   }
 
-  test("DG-20/CH-51/CH-54 pit: message dungeon.trap.pit。生存者に並び順で 1d6（鏡の rng と一致）、hpChanged の delta と hp。dead のメンバーには振らない。罠の SAN はリーダー・普通 −3、慎重 −1（tags trap）", () => {
+  test("DG-20/CH-51/CH-54 pit: message dungeon.trap.pit。生存者に並び順で config.dungeon.trap.pitDice（1d4。鏡の rng と一致）、hpChanged の delta と hp。dead のメンバーには振らない。罠の SAN はリーダー・普通 −3、慎重 −1（tags trap）", () => {
     const { state, a } = atPit((s) => {
       s.party[5]!.life = "dead";
       s.party[5]!.hp = 0;
     });
     const mirror = cloneRng(state.rng);
     const alive = state.party.filter((c) => c.life === "alive");
-    const rolls = alive.map(() => rollDice(mirror, data.config.dungeon.pitDamage).total);
+    const rolls = alive.map(() => rollDice(mirror, data.config.dungeon.trap.pitDice).total);
     randInt(mirror, 1, 100); // その後の遭遇判定
     const r = run(state, MOVE, DATA0);
     expect(r.events).toEqual([
@@ -699,10 +699,10 @@ describe("罠（DG-20, DG-21, E4, E5）", () => {
 
   test("DG-20/E5/CH-45/CH-51 pit で HP 0: lifeChanged dead、message dungeon.dead {name}、本人以外の生存者に allyDeath −10（慎重は −5）。その後の罠の SAN は死者に掛からない", () => {
     const { state, a } = atPit((s) => {
-      s.party[2]!.hp = 1; // 1d6 は 1 以上なので必ず倒れる
+      s.party[2]!.hp = 1; // 1d4 は 1 以上なので必ず倒れる
     });
     const mirror = cloneRng(state.rng);
-    const rolls = state.party.map(() => rollDice(mirror, "1d6").total);
+    const rolls = state.party.map(() => rollDice(mirror, data.config.dungeon.trap.pitDice).total);
     randInt(mirror, 1, 100);
     const r = run(state, MOVE, DATA0);
     const victim = state.party[2]!;
@@ -727,7 +727,7 @@ describe("罠（DG-20, DG-21, E4, E5）", () => {
       for (const c of s.party) c.hp = 1;
     });
     const mirror = cloneRng(state.rng);
-    for (let i = 0; i < 6; i++) rollDice(mirror, "1d6");
+    for (let i = 0; i < 6; i++) rollDice(mirror, data.config.dungeon.trap.pitDice);
     const r = run(state, MOVE, dataWithRate(1, 1));
     const ks = kinds(r.events);
     expect(ks.filter((k) => k === "message:dungeon.allDead")).toHaveLength(1);
@@ -764,10 +764,10 @@ describe("罠（DG-20, DG-21, E4, E5）", () => {
     }
   });
 
-  test("DG-20 pitDamage に負の修正値があっても回復しない。ダメージは max(0, 出目) で、0 なら hpChanged を出さない", () => {
+  test("DG-20 pitDice に負の修正値があっても回復しない。ダメージは max(0, 出目) で、0 なら hpChanged を出さない", () => {
     for (const expr of ["1d6-3", "0"]) {
       const d = loadFreshData();
-      d.config.dungeon.pitDamage = expr;
+      d.config.dungeon.trap.pitDice = expr;
       for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
       const { state } = atPit((s) => {
         for (const c of s.party) c.hp = 20; // hpMax 30

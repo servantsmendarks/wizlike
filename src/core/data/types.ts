@@ -81,8 +81,8 @@ export type Config = {
     doorsPerRoom: [number, number];
     /** DG-12: 視野の奥行き（1..3。UI-20 の座標表が 0..3）【仮】 */
     viewDepth: number;
-    /** DG-20: 落とし穴のダメージ（ダイス記法）【仮】 */
-    pitDamage: string;
+    /** DG-20: 罠の数値。pitDice は落とし穴のダメージ（ダイス記法）【仮】 */
+    trap: { pitDice: string };
   };
   combat: {
     hitBase: number;
