@@ -144,6 +144,7 @@ export function execute(
 ```
 npm run dev        開発サーバー（LAN 公開して実機で確認する: vite --host）
 npm test           Vitest（watch なし）
+npm run balance    バランスのシミュレーション（200 シード。数分かかる）
 npm run typecheck  tsc --noEmit
 npm run build      本番ビルド（dist/）
 npm run preview    ビルド結果の確認
