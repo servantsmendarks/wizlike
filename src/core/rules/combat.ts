@@ -678,11 +678,12 @@ function identifyMonster(ctx: RuleContext, monsterId: string): void {
   ctx.events.push({ kind: "message", key: "battle.identified", params: { name: monsterOf(ctx.data, monsterId).name } });
 }
 
-/** 決着しなかったラウンドの終わり: 毒（CB-33）→ 確率鑑定（CB-05）→ inputs を空に → オート解除（CB-43） */
+/** 決着しなかったラウンドの終わり: 毒（CB-33）→ 自然覚醒（CB-32）→ 確率鑑定（CB-05）→ inputs を空に → オート解除（CB-43） */
 function roundEnd(ctx: RuleContext, before: MemberSnap[]): void {
   const { state, data } = ctx;
   const b = requireBattle(state);
   tickPoison(ctx);
+  naturalWake(ctx);
   let any = false;
   for (const grp of b.groups) {
     if (!grp.units.some(unitAlive) || isIdentified(state, grp.monsterId)) continue;
@@ -701,6 +702,30 @@ function roundEnd(ctx: RuleContext, before: MemberSnap[]): void {
       ctx.events.push({ kind: "message", key: `battle.autoReason.${r}` });
     }
   }
+}
+
+/**
+ * CB-32: ラウンド終了の自然覚醒。並び順の味方（life alive）→ グループ → 個体（hp > 0）の順に、
+ * 眠っている者ごとに sleepNaturalWake% を 1 回振る。覚めたら statusChanged off と battle.wake
+ */
+function naturalWake(ctx: RuleContext): void {
+  const { state, data } = ctx;
+  const b = requireBattle(state);
+  const pct = data.config.combat.sleepNaturalWake;
+  const wake = (holder: { status: StatusId[] }, id: string, target: string): void => {
+    if (!chance(state.rng, pct)) return;
+    holder.status = holder.status.filter((s) => s !== "sleep");
+    ctx.events.push({ kind: "statusChanged", id, status: "sleep", on: false });
+    ctx.events.push({ kind: "message", key: "battle.wake", params: { target } });
+  };
+  for (const ch of state.party) {
+    if (ch.life === "alive" && ch.status.includes("sleep")) wake(ch, ch.id, ch.name);
+  }
+  b.groups.forEach((grp, g) => {
+    grp.units.forEach((unit, u) => {
+      if (unitAlive(unit) && unit.status.includes("sleep")) wake(unit, enemyId(g, u), groupName(state, data, g));
+    });
+  });
 }
 
 /** CB-33/CH-43: 毒は HP −poisonDamagePerTick、1 で止まる。hpChanged だけを出す */

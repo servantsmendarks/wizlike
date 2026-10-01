@@ -18,7 +18,7 @@
     "maxEnemyGroups": 4, "maxPerGroup": 9,
     "surpriseDiff": 5,
     "identifyChancePerRound": 15, "identifyKills": 5, "identifyIqPerPoint": 1,
-    "statusLukPerPoint": 2, "sleepWakeChance": 50, "sleepHitBonus": 30,
+    "statusLukPerPoint": 2, "sleepWakeChance": 50, "sleepHitBonus": 30, "sleepNaturalWake": 20,
     "poisonDamagePerTick": 1,
     "fleeBase": 50, "fleeAgiMul": 3,
     "chestChance": 30, "chestTrapChance": 40, "chestGoldDice": "2d10",

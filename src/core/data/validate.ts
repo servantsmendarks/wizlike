@@ -244,6 +244,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       statusLukPerPoint: I(),
       sleepWakeChance: I(PERCENT),
       sleepHitBonus: I(),
+      sleepNaturalWake: I(PERCENT), // CB-32【仮】
       poisonDamagePerTick: I(POS_INT),
       fleeBase: I(),
       fleeAgiMul: I(),

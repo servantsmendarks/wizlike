@@ -453,7 +453,8 @@ describe("前衛と後衛・敵の対象（CB-13/14/15/16）", () => {
       const want = ["c1", "c2", "c3"][randInt(m, 0, 2)]!; // 候補は前衛の生存者 3 人（睡眠を含む）
       chance(m, 100); // 必中
       rollDice(m, "1d3");
-      if (want === "c2") chance(m, 100); // 被弾の覚醒判定（sleepWakeChance 100）
+      if (want === "c2") chance(m, 100); // 被弾の覚醒判定（sleepWakeChance 100）で必ず覚める
+      else chance(m, d.config.combat.sleepNaturalWake); // 眠ったままならラウンド終了の自然覚醒（CB-32）
       const r = exec(s, RESOLVE, d);
       expect(r.state.rng).toEqual(m);
       const as = eventsOf(r.events, "attack");
@@ -492,6 +493,7 @@ describe("前衛と後衛・敵の対象（CB-13/14/15/16）", () => {
     });
     const m = cloneRng(s.rng);
     rolls(m, 1); // 大ネズミの initiative だけ（行動可能な味方はいない）
+    chance(m, d.config.combat.sleepNaturalWake); // ラウンド終了の自然覚醒（CB-32）: 眠ったアルド
     const r = exec(s, RESOLVE, d);
     expect(r.state.rng).toEqual(m);
     expect(eventsOf(r.events, "attack")).toEqual([]);
@@ -535,6 +537,8 @@ describe("行動順（CB-11）", () => {
     );
     const m = cloneRng(s.rng);
     rolls(m, 6); // 味方 6 人（全員 defend）。敵 3 体は行動不能なので振らない
+    chance(m, data.config.combat.sleepNaturalWake); // ラウンド終了の自然覚醒（CB-32）: 眠った e0-0
+    chance(m, data.config.combat.sleepNaturalWake); // 同: 眠った e1-0（麻痺だけの e0-1 は振らない）
     const r = exec(s, RESOLVE);
     expect(r.state.rng).toEqual(m);
     expect(eventsOf(r.events, "attack")).toEqual([]);
@@ -720,10 +724,14 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
     rolls(m2, 6);
     const a = randInt(m2, 1, 100) <= 60;
     const b = randInt(m2, 1, 100) <= 60; // 2 体目は既に眠っているので振らない → 3 体目
+    // ラウンド終了の自然覚醒（CB-32）: 眠っている個体ごとに添字順で 1 回
+    const asleep = [...(a ? ["e0-0"] : []), "e0-1", ...(b ? ["e0-2"] : [])];
+    const woke = asleep.filter(() => chance(m2, data.config.combat.sleepNaturalWake));
     const r2 = exec(rats, RESOLVE);
     expect(r2.state.rng).toEqual(m2);
-    const on = eventsOf(r2.events, "statusChanged").map((e) => e.id);
+    const on = eventsOf(r2.events, "statusChanged").filter((e) => e.on).map((e) => e.id);
     expect(on).toEqual([...(a ? ["e0-0"] : []), ...(b ? ["e0-2"] : [])]);
+    expect(eventsOf(r2.events, "statusChanged").filter((e) => !e.on).map((e) => e.id)).toEqual(woke);
     expect(kindsOf(r2.events)).toContain(a || b ? "message:battle.status.sleep" : "message:battle.noEffect");
   });
 
@@ -749,7 +757,7 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
     expect(eventsOf(wake.events, "attack")[0]!.hit).toBe(true);
     expect(wake.events).toContainEqual({ kind: "statusChanged", id: "e0-0", status: "sleep", on: false });
     expect(wake.events).toContainEqual({ kind: "message", key: "battle.wake", params: { target: "大ネズミ" } });
-    const stay = exec(s, RESOLVE, dataWith({ combat: { ...base, sleepWakeChance: 0 } }));
+    const stay = exec(s, RESOLVE, dataWith({ combat: { ...base, sleepWakeChance: 0, sleepNaturalWake: 0 } })); // 自然覚醒（CB-32）も 0 にして眠ったままにする
     expect(stay.state.battle!.groups[0]!.units[0]!.status).toEqual(["sleep"]);
     // 起きていれば当たらない
     const awake = setup([{ monsterId: "giant_rat", hps: [50], status: [["paralysis"]] }], { identified: ["giant_rat"] });
@@ -778,6 +786,94 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
     expect(ks.slice(-2)).toEqual(["statusChanged", "screen"]);
     expect(r.events.at(-2)).toEqual({ kind: "statusChanged", id: "c2", status: "sleep", on: false });
     expect(member(r.state, "c2").status).toEqual(["poison"]);
+  });
+
+  test("CB-32 ラウンド終了の自然覚醒: 並び順の味方 → グループ → 個体の順に、眠っている者ごとに sleepNaturalWake% を 1 回（鏡の rng）。死者と倒れた個体は振らない", () => {
+    const mk = () =>
+      setup(
+        [
+          { monsterId: "giant_rat", hps: [30, 30, 0], status: [["sleep"], ["paralysis"], ["sleep"]] },
+          { monsterId: "kobold", hps: [30], status: [["sleep", "paralysis"]] },
+        ],
+        {
+          identified: ["giant_rat", "kobold"],
+          patches: { c2: { status: ["sleep"] }, c5: { status: ["sleep"] }, c6: { ...DEAD, status: ["sleep"] } },
+          inputs: { c1: DEF, c3: DEF, c4: DEF },
+        },
+      );
+    const s = mk();
+    expect(data.config.combat.sleepNaturalWake).toBe(20);
+    // 100%: 全員覚める。順は c2 → c5 → e0-0 → e1-0（死んだ c6 と hp 0 の e0-2 は対象外）
+    const m = cloneRng(s.rng);
+    rolls(m, 3); // 味方 3 人（c1,c3,c4）。敵は全員行動不能なので振らない
+    for (let i = 0; i < 4; i++) chance(m, 100);
+    const r = exec(s, RESOLVE, dataWith({ combat: { sleepNaturalWake: 100 } }));
+    expect(r.state.rng).toEqual(m);
+    expect(r.events.filter((e) => e.kind === "statusChanged" || (e.kind === "message" && e.key === "battle.wake"))).toEqual([
+      { kind: "statusChanged", id: "c2", status: "sleep", on: false },
+      { kind: "message", key: "battle.wake", params: { target: "ベルク" } },
+      { kind: "statusChanged", id: "c5", status: "sleep", on: false },
+      { kind: "message", key: "battle.wake", params: { target: "エル" } },
+      { kind: "statusChanged", id: "e0-0", status: "sleep", on: false },
+      { kind: "message", key: "battle.wake", params: { target: "大ネズミ" } },
+      { kind: "statusChanged", id: "e1-0", status: "sleep", on: false },
+      { kind: "message", key: "battle.wake", params: { target: "コボルド" } },
+    ]);
+    expect(member(r.state, "c2").status).toEqual([]);
+    expect(member(r.state, "c6").status).toEqual(["sleep"]);
+    expect(r.state.battle!.groups[0]!.units.map((u) => u.status)).toEqual([[], ["paralysis"], ["sleep"]]);
+    expect(r.state.battle!.groups[1]!.units[0]!.status).toEqual(["paralysis"]);
+    // 0%: 同じ回数だけ振って誰も覚めない
+    const r0 = exec(mk(), RESOLVE, dataWith({ combat: { sleepNaturalWake: 0 } }));
+    expect(r0.state.rng).toEqual(m);
+    expect(eventsOf(r0.events, "statusChanged")).toEqual([]);
+    expect(member(r0.state, "c2").status).toEqual(["sleep"]);
+    // 既定の 20%: 出目 ≤ 20 で覚める（鏡の rng で 1 人ずつ）
+    for (let seed = 1; seed <= 10; seed++) {
+      const t = setup([{ monsterId: "giant_rat", hps: [30], status: [["paralysis"]] }], {
+        seed,
+        identified: ["giant_rat"],
+        patches: { c2: { status: ["sleep"] } },
+        inputs: { c1: DEF, c3: DEF, c4: DEF, c5: DEF, c6: DEF },
+      });
+      const mm = cloneRng(t.rng);
+      rolls(mm, 5);
+      const woke = randInt(mm, 1, 100) <= 20;
+      const rt = exec(t, RESOLVE);
+      expect(rt.state.rng).toEqual(mm);
+      expect(member(rt.state, "c2").status).toEqual(woke ? [] : ["sleep"]);
+    }
+  });
+
+  test("CB-32/CB-33/CB-05 ラウンド終了の順は 毒 → 自然覚醒 → 確率鑑定。決着したラウンドでは自然覚醒を振らない", () => {
+    const d = dataWith({ combat: { sleepNaturalWake: 100, identifyChancePerRound: 100 } });
+    const s = setup([{ monsterId: "giant_rat", hps: [30], status: [["paralysis"]] }], {
+      patches: { c1: { status: ["poison"] }, c2: { status: ["sleep"] } },
+      inputs: { c1: DEF, c3: DEF, c4: DEF, c5: DEF, c6: DEF },
+    });
+    const r = exec(s, RESOLVE, d);
+    const ks = kindsOf(r.events);
+    const iPoison = ks.indexOf("hpChanged");
+    const iWake = ks.indexOf("statusChanged");
+    const iIdent = ks.indexOf("message:battle.identified");
+    expect(iPoison).toBeGreaterThanOrEqual(0);
+    expect(iPoison).toBeLessThan(iWake);
+    expect(iWake).toBeLessThan(iIdent);
+    // 勝利したラウンド: 眠ったベルクの自然覚醒は振らない（戦闘の終わりで睡眠が外れる）
+    const win = setup([{ monsterId: "giant_rat", hps: [1], status: [["paralysis"]] }], {
+      identified: ["giant_rat"],
+      patches: { c2: { status: ["sleep"] } },
+      inputs: { c1: atk(0), c3: DEF, c4: DEF, c5: DEF, c6: DEF },
+    });
+    const dw = dataWith({ combat: { ...ALWAYS_HIT, sleepNaturalWake: 100 } });
+    const m = cloneRng(win.rng);
+    rolls(m, 5);
+    chance(m, 100);
+    rollDice(m, "1d8");
+    rollDice(m, "1d4"); // 金
+    const rw = exec(win, RESOLVE, dw);
+    expect(rw.state.rng).toEqual(m);
+    expect(kindsOf(rw.events)).not.toContain("message:battle.wake");
   });
 
   test("CB-33 ラウンド終了で毒 −1（hpChanged だけ、message なし）。HP 1 で止まり hpChanged を出さない", () => {

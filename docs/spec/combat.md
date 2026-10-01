@@ -32,7 +32,7 @@
 
 - CB-30 状態異常の付与判定: 1〜100 を振り、出目 ≤ `chance − (対象の luk − 10) × config.combat.statusLukPerPoint`（2）【仮】で付与。敵は luk を持たないので 10 とみなす。`monsters[].resist` にある状態は付与されない（判定しない）。すでに同じ状態なら何もしない。
 - CB-31 レベルドレインは存在しない。代わりに `sanDrain: n` を持つ攻撃が命中すると、対象の SAN を n 減らす。攻撃の `tags` に `fear` があれば無鉄砲の耐性（EV-40）で半減（切り捨て）。SAN が 0 になったメンバーは行動不能（CH-53）。
-- CB-32 睡眠中の対象は被弾のたびに 50%【仮】で覚醒する。睡眠中は命中率 +30【仮】。
+- CB-32 睡眠中の対象は被弾のたびに 50%【仮】で覚醒する。睡眠中は命中率 +30【仮】。また、決着しなかったラウンドの終了時に、眠っている者（敵味方とも。味方は life が alive、敵は生存個体）は `config.combat.sleepNaturalWake`（20）%【仮】で自然に覚める。判定は並び順の味方 → グループ → 個体の添字順に 1 人 1 回で、覚めたら `statusChanged`（sleep off）と message `battle.wake` を出す。
 - CB-33 毒は各ラウンド終了時に HP −1（CH-43）。
 
 ## 5. オート戦闘
@@ -61,4 +61,5 @@
 - 敵の個体の id は `e{グループ添字}-{個体添字}`（添字は戦闘中に詰めない）。敵の被弾にも `hpChanged`（id は敵の id）を出し、撃破は `lifeChanged` dead。
 - MP の変化は `mpChanged`。
 - 先手判定の dice のラベルは `battle.initiativeParty` / `battle.initiativeEnemy` の 2 件、逃走の dice のラベルは `battle.fleeRoll`。
+- ラウンド終了（決着しなかったラウンドだけ）の順は 毒（CB-33）→ 自然覚醒（CB-32）→ 確率鑑定（CB-05）→ オート解除（CB-43）。
 - 遭遇の順は screen{battle} → encounter → message → （未鑑定の message と sanChanged）→（CB-06 の SAN で CB-53 の全滅になれば、先手判定の dice を出さずに戦闘の終わりの順へ進む）→ 先手判定の dice 2 件 → 奇襲の message →（敵の奇襲ならそのラウンド）。戦闘の終わりの順は battleEnd → 結果の message → 味方の睡眠の解除 → screen{dungeon}。

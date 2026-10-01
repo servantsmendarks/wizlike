@@ -109,6 +109,15 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.combat.hitMin = 96), "config.json", "CB-21");
     expectIssue((r) => (r.config.combat.hitMax = 101), "config.json", "combat.hitMax: expected integer in 0..100, got 101");
   });
+  test("data: CB-32 combat.sleepNaturalWake は 0..100 の整数【仮】", () => {
+    expect(config.combat.sleepNaturalWake).toBe(20);
+    expectIssue((r) => (r.config.combat.sleepNaturalWake = -1), "config.json", "combat.sleepNaturalWake: expected integer in 0..100, got -1");
+    expectIssue((r) => (r.config.combat.sleepNaturalWake = 101), "config.json", "combat.sleepNaturalWake: expected integer in 0..100, got 101");
+    expectIssue((r) => (r.config.combat.sleepNaturalWake = 2.5), "config.json", "combat.sleepNaturalWake: expected integer");
+    expectIssue((r) => delete r.config.combat.sleepNaturalWake, "config.json", "combat.sleepNaturalWake: missing required field");
+    expect(issuesOf((r) => (r.config.combat.sleepNaturalWake = 0))).toEqual([]);
+    expect(issuesOf((r) => (r.config.combat.sleepNaturalWake = 100))).toEqual([]);
+  });
   test("data: CB-05 combat.identifyIqPerPoint は 0 以上の整数【仮】", () => {
     expectIssue((r) => (r.config.combat.identifyIqPerPoint = -1), "config.json", "combat.identifyIqPerPoint: expected integer >= 0, got -1");
     expectIssue((r) => (r.config.combat.identifyIqPerPoint = 0.5), "config.json", "combat.identifyIqPerPoint: expected integer");

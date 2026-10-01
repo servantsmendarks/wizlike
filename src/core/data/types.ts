@@ -106,6 +106,8 @@ export type Config = {
     statusLukPerPoint: number;
     sleepWakeChance: number;
     sleepHitBonus: number;
+    /** CB-32【仮】: ラウンド終了時に眠っている者が自然に覚める確率（%） */
+    sleepNaturalWake: number;
     poisonDamagePerTick: number;
     fleeBase: number;
     fleeAgiMul: number;
