@@ -5,7 +5,7 @@
 //   「無い」は null か空配列・空オブジェクトで表す。
 // - verbatimModuleSyntax が有効なので、型は import type で取る。data の型は定義し直さない。
 // - import 先は "./data/index" と "./rng"（どちらも src/core 内。architecture.test の制約）。
-import type { EquipSlot, GameData, PersonalityId, StatBlock, StatusId } from "./data/index";
+import type { EquipSlot, GameData, PersonalityId, StatBlock, StatusId, TrapId } from "./data/index";
 import type { RngState } from "./rng";
 
 // ===================== 小さな型 =====================
@@ -13,9 +13,8 @@ import type { RngState } from "./rng";
 export type Screen = "title" | "town" | "dungeon" | "battle" | "event";
 /** CH-40 */
 export type Life = "alive" | "dead" | "ash";
-/** dungeon.md §GameState.dive の表記に合わせる（"N"|"E"|"S"|"W"）。M2 で使う。 */
+/** dungeon.md §GameState.dive の表記に合わせる（"N"|"E"|"S"|"W"） */
 export type Facing = "N" | "E" | "S" | "W";
-/** M2 で使う。 */
 export type Pos = { x: number; y: number };
 
 /** CH-61: levelHistory の要素。level は、このレコードで到達したレベル（2 以上）。レベル 1 の初期値は入れない。 */
@@ -97,8 +96,104 @@ export type Progress = {
   clearedDungeons: string[];
 };
 
+// ===================== 迷宮の構造（生成結果。GameState には入れない。DG-03 / E1） =====================
+// 座標は y が南へ増える。N = y-1、E = x+1、S = y+1、W = x-1。添字は y * width + x。
+
+/** DG-04: 辺の種別 */
+export type Edge = "wall" | "door" | "open";
+/** DG-04: セル種別 */
+export type CellKind = "corridor" | "room" | "stairsUp" | "stairsDown" | "boss" | "teleporter" | "event" | "trap";
+/**
+ * 生成結果のセル 1 つ。4 辺は各セルが持ち、隣のセルと同じ値を二重に持つ（DG-04 の文面どおり）。
+ * 辺の書き込みは必ず dungeon-gen.ts の setEdge（両側を同時に書く）を通す。
+ */
+export type Cell = {
+  kind: CellKind;
+  n: Edge;
+  e: Edge;
+  s: Edge;
+  w: Edge;
+  /** 部屋の中なら Floor.rooms の添字、部屋でなければ null。kind が階段・罠・イベントに上書きされても残る（遭遇率 CB-01 はこれで決める） */
+  roomId: number | null;
+  /** kind が event のときだけ events.json の id。それ以外は null（DG-22） */
+  eventId: string | null;
+  /** kind が trap のときだけ罠の id。それ以外は null（DG-20） */
+  trapId: TrapId | null;
+};
+export type Room = { x: number; y: number; w: number; h: number };
+/** 1 階分の生成結果。cells は行優先（添字 = y * width + x） */
+export type Floor = {
+  /** 1 始まり */
+  floor: number;
+  width: number;
+  height: number;
+  cells: Cell[];
+  rooms: Room[];
+  stairsUp: Pos;
+  /** 最下層は null */
+  stairsDown: Pos | null;
+  /** 最下層だけ非 null（DG-05, DG-31） */
+  boss: Pos | null;
+};
+
+// ===================== 潜行（dungeon.md §6） =====================
+
+/** 開けた扉。共有辺を一意にするため dir は N か W に正規化する（S の辺は (x, y+1, "N")、E の辺は (x+1, y, "W")） */
+export type DoorRef = { floor: number; x: number; y: number; dir: "N" | "W" };
+/** 発動済みの罠のセル（E4）。M5 で処理済みのイベントセル（DG-22）もここに入れる */
+export type CellRef = { floor: number; x: number; y: number };
+/** DG-40。items は ItemInstance.id */
+export type Ledger = { items: string[]; gold: number };
+export type Dive = {
+  dungeonId: string;
+  /** 0..2^32-1 の整数。dungeon.enter で nextUint32(state.rng) を 1 回だけ引いて発行する（DG-03） */
+  diveSeed: number;
+  /** 1 始まり */
+  floor: number;
+  pos: Pos;
+  facing: Facing;
+  /** DG-13: キーは階番号の文字列 "1".."floors"。値はセル添字（y*width+x）の昇順・重複なしの配列（Set は使わない。§3-11） */
+  explored: Record<string, number[]>;
+  /** DG-10 */
+  openedDoors: DoorRef[];
+  /** E4 */
+  clearedCells: CellRef[];
+  /** DG-31/32。M2 では常に false */
+  bossDefeated: boolean;
+  /** DG-40 */
+  ledger: Ledger;
+};
+
+// ===================== 保留中の選択（E3） =====================
+
+/** labelKey は strings.json のキー */
+export type ChoiceOption = { id: string; labelKey: string };
+/**
+ * 非 null の間は event.choose 以外のコマンドを rejected（"choice pending"）にする。
+ * M2 は kind "stairs" だけ。M5 でイベントの選択と罠の察知（DG-21）を kind を足して同じ形で載せる。
+ * promptKey は確認文の strings キー（M4 のリロード復帰で再表示に使う）。
+ */
+export type PendingChoice = { kind: "stairs"; promptKey: string; options: ChoiceOption[] };
+
+// ===================== 表示層向けの問い合わせの結果（rules/dungeon.ts が返す。state には入れない） =====================
+
+/** 視点。省略時は state.dive の floor / pos / facing */
+export type ViewPoint = { floor: number; pos: Pos; facing: Facing };
+/**
+ * DG-12。depth 0 は自分のセル。lane は向きに対する相対（-1 左 / 0 正面列 / 1 右）。
+ * front / left / right はそのセルの、向きに対する前・左・右の辺（開けた扉は open）。x, y は絶対座標（テストと explored 用。描画には使わない）。
+ * セルの種別は返さない（罠・イベント・ボスを表示層に漏らさない）。
+ */
+export type VisibleCell = { depth: number; lane: -1 | 0 | 1; x: number; y: number; front: Edge; left: Edge; right: Edge };
+/** UI-24 の記号。罠・イベント・ボス・部屋・通路はすべて plain（地図で明かさない） */
+export type MapCellKind = "plain" | "stairsUp" | "stairsDown";
+/** 辺は絶対方位（開けた扉は open、未開の扉は door） */
+export type MapCell = { x: number; y: number; kind: MapCellKind; n: Edge; e: Edge; s: Edge; w: Edge };
+/** DG-13 / UI-24。cells は探索済みセルだけ（添字の昇順） */
+export type MapView = { dungeonId: string; floor: number; width: number; height: number; pos: Pos; facing: Facing; cells: MapCell[] };
+
 // ===================== GameState =====================
-// M1 で確定する欄だけを持つ。dive（M2）、battle・bestiary（M3）、townVisit（M4）は、
+// M1 で確定した欄に、M2 で dive と pendingChoice を足した。battle・bestiary（M3）、townVisit（M4）は、
 // それぞれのマイルストーンで足す（保存が始まる M4 より前なので migrate は要らない）。
 // schemaVersion、turn、updatedAt、gameId は保存レコード側の欄（SV-21）で、ここには入れない。
 
@@ -117,6 +212,10 @@ export type GameState = {
   /** TW-10。M1 では常に 0 */
   bank: number;
   progress: Progress;
+  /** DG-03 / §6。潜行していなければ null */
+  dive: Dive | null;
+  /** E3。null 以外の間は event.choose 以外を rejected にする */
+  pendingChoice: PendingChoice | null;
 };
 
 // ===================== コマンド（CLAUDE.md §5） =====================
@@ -185,6 +284,8 @@ export type GameEvent =
   /** via は §5 に追加（MG-21 の判定 / MG-23 の保証 / MG-25 の魔法書） */
   | { kind: "spellLearned"; id: string; spellId: string; via: "roll" | "guarantee" | "book" }
   | { kind: "eventStarted"; eventId: string; actorId?: string }
+  /** 階の移動（DG-14 の昇降）。moved は同じ階の前進だけに使う */
+  | { kind: "floorChanged"; floor: number; pos: Pos; facing: Facing }
   | { kind: "screen"; to: Screen }
   /** D2: 受け付けなかったコマンド。command は受け取った type（形が壊れていれば "unknown"）、reason は英語の短い理由 */
   | { kind: "rejected"; command: string; reason: string };
@@ -199,6 +300,8 @@ export type ExecuteResult = { state: GameState; events: GameEvent[] };
  * execute が作った下書きと、起きたことを積む配列。
  * - ルール関数は ctx.state の中のオブジェクトをその場で書き換えてよい。
  * - 乱数は必ず ctx.state.rng から引く（別の rng を引数で受けない）。
+ *   例外: 迷宮の構造の生成（rules/dungeon-gen.ts）は RuleContext を取らない純粋関数で、
+ *   diveSeed と階番号から作る専用の rng だけを使う（DG-03 / E1）。
  * - events には起きた順に push する。
  */
 export type RuleContext = { state: GameState; data: GameData; events: GameEvent[] };

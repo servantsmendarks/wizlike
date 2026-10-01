@@ -17,6 +17,8 @@ export function createInitialState(seed: number, _data: GameData): GameState {
     gold: 0,
     bank: 0,
     progress: { unlockedDungeons: [], clearedDungeons: [] },
+    dive: null,
+    pendingChoice: null,
   };
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { createInitialState, execute } from "../src/core/engine";
 import { createRng } from "../src/core/rng";
+import { cloneState, dungeonOf } from "../src/core/state";
 import type { Command, GameState } from "../src/core/types";
 import {
   data,
@@ -66,7 +67,7 @@ describe("engine: execute", () => {
     expect(JSON.parse(JSON.stringify(s0))).toEqual(s0);
   });
 
-  test("D3 createInitialState: screen title、party []、rng は createRng(seed) と同じ、gold 0、bank 0、nextItemSeq 1", () => {
+  test("D3 createInitialState: screen title、party []、rng は createRng(seed) と同じ、gold 0、bank 0、nextItemSeq 1、dive と pendingChoice は null", () => {
     const s = createInitialState(42, data);
     expect(s).toEqual({
       screen: "title",
@@ -77,8 +78,23 @@ describe("engine: execute", () => {
       gold: 0,
       bank: 0,
       progress: { unlockedDungeons: [], clearedDungeons: [] },
+      dive: null,
+      pendingChoice: null,
     });
     expect(() => createInitialState(1.5, data)).toThrow(RangeError);
+  });
+
+  test("DG-03/E3 game.new の後も dive と pendingChoice は null で、JSON 往復で変わらない", () => {
+    const s = execute(createInitialState(1, data), gameNew(), data).state;
+    expect(s.dive).toBeNull();
+    expect(s.pendingChoice).toBeNull();
+    expect(cloneState(s)).toEqual(s);
+  });
+
+  test("DG-01 dungeonOf は id で dungeons.json の定義を返し、未知の id は Error", () => {
+    expect(dungeonOf(data, "d01")).toBe(data.dungeons[0]);
+    expect(dungeonOf(data, "d02").floors).toBe(3);
+    expect(() => dungeonOf(data, "d99")).toThrow("unknown dungeon id: d99");
   });
 
   test("D3 game.new で screen は town、events は [{kind:\"screen\",to:\"town\"}] だけ", () => {
