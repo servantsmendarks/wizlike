@@ -3,7 +3,7 @@
     "id": "giant_rat", "name": "大ネズミ", "unidentifiedName": "小さな獣",
     "sprite": "giant_rat", "level": 1, "hp": "1d6", "ac": 9, "agi": 9,
     "attacks": [ { "dice": "1d3" } ],
-    "exp": 12, "gold": "1d4", "groupSize": "1d3+1",
+    "exp": 12, "gold": "1d4+1", "groupSize": "1d3+1",
     "special": {}, "resist": {}, "tags": ["beast"],
     "description": "群れで来る。数が多いが脆い。"
   },
@@ -11,7 +11,7 @@
     "id": "kobold", "name": "コボルド", "unidentifiedName": "小柄な人影",
     "sprite": "kobold", "level": 1, "hp": "1d8", "ac": 8, "agi": 8,
     "attacks": [ { "dice": "1d4" } ],
-    "exp": 20, "gold": "2d6", "groupSize": "1d4",
+    "exp": 20, "gold": "3d6", "groupSize": "1d4",
     "special": {}, "resist": {}, "tags": ["humanoid"],
     "description": "武器を持つ小鬼。金を持っている。"
   },
@@ -19,7 +19,7 @@
     "id": "giant_spider", "name": "大蜘蛛", "unidentifiedName": "多脚の影",
     "sprite": "giant_spider", "level": 2, "hp": "2d8", "ac": 6, "agi": 12,
     "attacks": [ { "dice": "1d4", "status": "poison", "chance": 30 } ],
-    "exp": 45, "gold": "1d6", "groupSize": "1d3",
+    "exp": 45, "gold": "1d6+2", "groupSize": "1d3",
     "special": {}, "resist": {}, "tags": ["beast"],
     "description": "噛まれると毒を受ける。"
   },
@@ -45,7 +45,7 @@
     "id": "gatekeeper_armor", "name": "門番の甲冑", "unidentifiedName": "動く甲冑",
     "sprite": "gatekeeper_armor", "level": 4, "hp": "6d8+10", "ac": 2, "agi": 7,
     "attacks": [ { "dice": "2d6" }, { "dice": "1d8" } ],
-    "exp": 400, "gold": "5d10", "groupSize": "1",
+    "exp": 400, "gold": "5d10+14", "groupSize": "1",
     "special": { "boss": true }, "resist": { "sleep": true, "poison": true, "paralysis": true },
     "tags": ["construct", "boss"],
     "description": "最下層を守る。倒すと街への道が開く。"

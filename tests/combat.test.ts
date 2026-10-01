@@ -1163,7 +1163,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     rollDice(m, "1d8");
     chance(m, 100);
     rollDice(m, "1d8");
-    const gold = rollDice(m, "1d4").total + rollDice(m, "1d4").total;
+    const gold = rollDice(m, "1d4+1").total + rollDice(m, "1d4+1").total; // giant_rat の gold【仮】
     const r = exec(s, RESOLVE, d);
     expect(r.state.rng).toEqual(m);
     expect(r.events).toContainEqual({ kind: "message", key: "battle.exp", params: { exp: 4 } }); // 24 / 5
