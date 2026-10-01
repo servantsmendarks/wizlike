@@ -48,7 +48,7 @@
   "unlock": null,                       // 開放条件になるダンジョン id。null なら最初から
   "encounterRate": { "room": 0.12, "corridor": 0.05 },
   "encounterTable": { "1": [ { "monster": "giant_rat", "weight": 5 } ], "2": [ ... ] },  // 階ごとの出現表。出現する敵はこれだけで決まる（CB-03）
-  "groupCountWeights": { "1": [70, 25, 5, 0], "2": [50, 35, 12, 3] },  // グループ数 1〜4 の重み
+  "groupCountWeights": { "1": [80, 20, 0, 0], "2": [50, 35, 12, 3] },  // グループ数 1〜4 の重み【仮】
   "boss": { "monster": "gatekeeper_armor" },
   "events": ["glowing_tablet", "abandoned_sack"],
   "traps": ["pit", "spinner"],

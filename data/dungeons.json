@@ -18,7 +18,7 @@
         { "monster": "whispering_shadow", "weight": 1 }
       ]
     },
-    "groupCountWeights": { "1": [70, 25, 5, 0], "2": [50, 35, 12, 3] },
+    "groupCountWeights": { "1": [80, 20, 0, 0], "2": [50, 35, 12, 3] },
     "boss": { "monster": "gatekeeper_armor" },
     "events": ["glowing_tablet", "abandoned_sack"],
     "traps": ["pit", "spinner"],

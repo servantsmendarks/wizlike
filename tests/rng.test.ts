@@ -269,7 +269,7 @@ describe("rng: weightedIndex（CB-03 の重みづけの抽選）", () => {
     expect(take(a, 5)).toEqual(take(b, 5));
   });
 
-  test("CB-03 weightedIndex: d01 1 階の groupCountWeights [70,25,5,0] は鏡の rng と一致し、4 グループは出ない", () => {
+  test("CB-03 weightedIndex: 重み [70,25,5,0] は鏡の rng と一致し、4 グループは出ない", () => {
     const w = [70, 25, 5, 0];
     const a = createRng(2026);
     const b = createRng(2026);
