@@ -2,7 +2,7 @@
 
 ## 1. ステージ
 
-- UI-01 論理解像度は縦 240×400。`#stage` を `transform: scale(k)` で拡大し、`k` は画面に収まる最大の整数（収まらなければ小数）。中央寄せ、余白は黒。
+- UI-01 論理解像度は縦 240×400。整数倍は端末ピクセル（CSS px × `devicePixelRatio`）で数える。論理 1px を何端末ピクセルで描くかの倍率 `k` は、画面（safe area の内側、UI-02）に収まる最大の整数とし、`#stage` を `transform: scale(k / devicePixelRatio)`（CSS 上の倍率）で拡大する。端末ピクセルで 1 倍も収まらなければ、収まる最大の小数倍にする。中央寄せ、余白は黒。ステージの位置（left/top）は 1/`devicePixelRatio` 単位（端末ピクセル境界）に丸め、丸めると safe area をはみ出す場合（内側の境界に寄せても収まらない場合）は丸めずに safe area を優先する（UI-02）。
 - UI-02 `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">`。`env(safe-area-inset-*)` を余白に足す。ステージは safe area の内側に収める。
 - UI-03 フォントはピクセルフォント 1 種（美咲ゴシック 8×8 または PixelMplus10）【仮】。`@font-face` で同梱。文字サイズは 8px 固定、行間 10px。`image-rendering: pixelated`。
 - UI-04 色は FC 風の固定パレット（`src/presenter/palette.ts`、54 色以内）。線画は黒地に白または淡緑の 1px 線【仮】。テーマ切替は無し。
