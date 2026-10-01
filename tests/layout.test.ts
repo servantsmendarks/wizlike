@@ -166,6 +166,8 @@ describe("layout", () => {
       title: { x: 0, y: 16, w: 240, h: 12 },
       area: { x: 0, y: 28, w: 240, h: 208 },
     });
+    // UI-58 詳細: 地図と同じ 240×220
+    expect(L.detail).toEqual({ x: 0, y: 16, w: 240, h: 220 });
     expect(CONTROLS_MIN_HEIGHT).toBe(98);
     expect(layoutWarnings(regions(data.config.ui.layout, W), L)).toEqual([]);
   });
@@ -212,6 +214,8 @@ describe("layout", () => {
       expect(d.map.overlay, tag).toEqual({ x: 0, y: g.view.y, w: W, h: l.view + l.message });
       expect(d.map.area.y + d.map.area.h, tag).toBe(g.message.y + g.message.h);
       expect(inside(d.map.area, d.map.overlay) && inside(d.map.title, d.map.overlay), tag).toBe(true);
+      // 詳細（UI-58）は地図の overlay と同じ範囲
+      expect(d.detail, tag).toEqual(d.map.overlay);
       // 収まらないのは操作領域が下限より低いときだけで、その分だけ warn の文が出る
       const warns = layoutWarnings(g, d);
       if (fits) expect(warns, tag).toEqual([]);

@@ -79,7 +79,7 @@ describe("controls", () => {
 
   test("UI-31 shouldReleaseHold: 迷宮以外・overlay あり・選択の保留ありのどれかなら離したものとする。迷宮で何も出ていなければ離さない", () => {
     const routes: Route[] = ["title", "creation", "town", "dungeon", "battle"];
-    const overlays: Overlay[] = [null, "map", "debug"];
+    const overlays: Overlay[] = [null, "map", "debug", "detail"];
     for (const r of routes) {
       for (const o of overlays) {
         for (const p of [false, true]) {
@@ -92,6 +92,7 @@ describe("controls", () => {
     expect(shouldReleaseHold("town", null, false)).toBe(true);
     expect(shouldReleaseHold("battle", null, false)).toBe(true);
     expect(shouldReleaseHold("dungeon", "map", false)).toBe(true);
+    expect(shouldReleaseHold("dungeon", "detail", false)).toBe(true);
     expect(shouldReleaseHold("dungeon", null, true)).toBe(true);
   });
 

@@ -1,7 +1,7 @@
 // UI-53 の迷宮の画面。ui §2 の 5 領域（ヘッダー、ビュー、メッセージ、パーティ、操作）を合成する。
 // DOM は 1 回だけ作り、街（UI-52 の M2 版）でもヘッダー・メッセージ・パーティ・操作をそのまま使う（ビューは枠だけ）。
 // - ビュー: 線画の SVG（240×150）の上に、スワイプを受ける透明な div（touch-action:none）を重ねる。
-// - 地図（UI-24）: ビューとメッセージの領域（既定 y16..235）を覆う overlay。パーティ欄は見えたまま。
+// - 地図（UI-24）と詳細（UI-58）: ビューとメッセージの領域（既定 y16..235）を覆う overlay。パーティ欄は見えたまま。
 // - 戦闘（UI-54）: ビューの中に敵グループの層（views/battle.ts）を重ね、battle の間は線画・街の枠・スワイプの div を隠す。
 //   ダイスの overlay（views/dice.ts、UI-40）はビューの中のいちばん上（モードを問わない）。全体攻撃の揺れ（UI-42）はビュー全体の translate。
 // 各部品の位置と大きさは、config.ui.layout から作った regions と dungeonLayout（layout.ts）から決める。
@@ -10,6 +10,7 @@ import type { GameData, Strings } from "../../core/data/index";
 import type { DungeonLayout, Regions } from "../layout";
 import { createBattleView, type BattleView } from "./battle";
 import { createControls, type Controls, type DpadAction } from "./controls";
+import { createDetailView, type DetailView } from "./detail";
 import { createDiceView, type DiceView } from "./dice";
 import { createDungeonSvg, type DungeonSvg } from "./dungeon-svg";
 import { createHeader, type Header } from "./header";
@@ -33,12 +34,16 @@ export type DungeonScreen = {
   battle: BattleView;
   /** ビューの中のダイスの overlay */
   dice: DiceView;
+  /** UI-58 の詳細の overlay（ビューとメッセージを覆う） */
+  detail: DetailView;
   /** town ならビューは枠だけ、dungeon なら線画、battle なら敵グループ */
   setMode(m: PlayMode): void;
   /** UI-42 の全体攻撃: ビュー全体を translateX 0→−2→2→−2→0（ms が 0 以下なら何もせずに解決） */
   shake(ms: number): Promise<void>;
   /** 地図の overlay の表示 */
   showMap(on: boolean): void;
+  /** UI-58 の詳細の overlay の表示 */
+  showDetail(on: boolean): void;
   /** buttons モードではスワイプの div を pointer-events:none にする */
   setSwipeEnabled(on: boolean): void;
 };
@@ -64,6 +69,8 @@ export function createDungeonScreen(o: {
   onClose(): void;
   /** UI-54: 対象の選択中に敵の絵をタップした（グループの添字） */
   onPick?(g: number): void;
+  /** UI-58: パーティの行のタップ */
+  onRowTap?(id: string): void;
 }): DungeonScreen {
   const r = o.regions;
   const lay = o.layout;
@@ -96,7 +103,13 @@ export function createDungeonScreen(o: {
 
   const message = createMessageWindow({ speed: o.textSpeed, historyMax: o.historyMax, region: r.message, layout: lay.message });
 
-  const party = createPartyPanel({ strings: o.strings, classes: o.data.classes, region: r.party, rows: lay.partyRows });
+  const party = createPartyPanel({
+    strings: o.strings,
+    classes: o.data.classes,
+    region: r.party,
+    rows: lay.partyRows,
+    onRowTap: (id) => o.onRowTap?.(id),
+  });
 
   const controls = createControls({
     region: r.controls,
@@ -111,7 +124,11 @@ export function createDungeonScreen(o: {
   const map = createMapView(lay.map);
   map.el.style.display = "none";
 
-  el.append(viewBox, header.el, message.el, party.el, controls.el, map.el);
+  // 詳細（UI-58）も地図と同じ範囲
+  const detail = createDetailView(lay.detail);
+  detail.el.style.display = "none";
+
+  el.append(viewBox, header.el, message.el, party.el, controls.el, map.el, detail.el);
 
   return {
     el,
@@ -124,6 +141,7 @@ export function createDungeonScreen(o: {
     map,
     battle,
     dice,
+    detail,
     setMode(m: PlayMode): void {
       view.el.style.display = m === "dungeon" ? "" : "none";
       townFrame.style.display = m === "town" ? "" : "none";
@@ -150,6 +168,9 @@ export function createDungeonScreen(o: {
     },
     showMap(on: boolean): void {
       map.el.style.display = on ? "" : "none";
+    },
+    showDetail(on: boolean): void {
+      detail.el.style.display = on ? "" : "none";
     },
     setSwipeEnabled(on: boolean): void {
       swipeLayer.style.pointerEvents = on ? "auto" : "none";

@@ -88,7 +88,14 @@ export type PartyPanel = {
 };
 
 /** region は ui §2 の party 領域、rows は行 0..party.size-1 の矩形（どちらもステージ座標）。classes は略称（abbr）の参照 */
-export function createPartyPanel(o: { strings: Strings; classes: readonly ClassDef[]; region: Rect; rows: readonly Rect[] }): PartyPanel {
+export function createPartyPanel(o: {
+  strings: Strings;
+  classes: readonly ClassDef[];
+  region: Rect;
+  rows: readonly Rect[];
+  /** UI-58: 行（240×10 の全体）のタップ。詳細を開く */
+  onRowTap?(id: string): void;
+}): PartyPanel {
   const { strings, classes, region, rows } = o;
   const el = document.createElement("div");
   el.className = "party-panel";
@@ -161,6 +168,8 @@ export function createPartyPanel(o: { strings: Strings; classes: readonly ClassD
       party.forEach((ch, i) => {
         const row = makeRow(i);
         const t = formatPartyRow(ch, strings, classes);
+        const id = ch.id;
+        row.line.addEventListener("click", () => o.onRowTap?.(id));
         row.cells.name.textContent = t.name;
         row.cells.abbr.textContent = t.abbr;
         row.cells.hp.textContent = t.hp;

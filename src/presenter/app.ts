@@ -9,7 +9,7 @@ import type { GameData } from "../core/data/index";
 import { execute, createInitialState } from "../core/engine";
 import { battleMenu } from "../core/rules/combat";
 import { mapView, visibleCells } from "../core/rules/dungeon";
-import { dungeonOf } from "../core/state";
+import { dungeonOf, itemDisplayName } from "../core/state";
 import type { BattleMenu, Command, GameEvent, GameState, Screen, ViewPoint } from "../core/types";
 import { runChain, type ChainDeps } from "./auto-chain";
 import {
@@ -41,6 +41,7 @@ import type { StageLayout, StageLayoutInput } from "./stage";
 import type { ControlItem, DpadAction } from "./views/controls";
 import { createCreationScreen } from "./views/creation";
 import { createDebugPanel } from "./views/debug-panel";
+import { formatDetail } from "./views/detail";
 import { createDungeonScreen } from "./views/dungeon";
 import { slotsFor } from "./views/dungeon-geometry";
 import { headerText } from "./views/header";
@@ -49,7 +50,7 @@ import { createTitleScreen } from "./views/title";
 import { townEntries, townEntryLabel, type TownEntry, type TownPage } from "./views/town";
 
 export type Route = "title" | "creation" | "town" | "dungeon" | "battle";
-export type Overlay = null | "map" | "debug";
+export type Overlay = null | "map" | "debug" | "detail";
 
 export type App = {
   onLayout(layout: StageLayout, input: StageLayoutInput): void;
@@ -133,8 +134,9 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     onSettings: () => guard(() => openDebug()),
     onAction: (a: DpadAction) => handleAction(a),
     onRelease: () => repeater.release(),
-    onClose: () => guard(() => closeMap()),
+    onClose: () => guard(() => closeOverlay()),
     onPick: (g) => guard(() => chooseBattle({ kind: "group", index: g })),
+    onRowTap: (id) => guard(() => openDetail(id)),
   });
 
   const debug = createDebugPanel({
@@ -247,6 +249,12 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     const c = play.controls;
     // UI-31: 十字ボタンを出さない間は長押しを離したものとする（shouldReleaseHold）
     if (shouldReleaseHold(route, overlay, state.pendingChoice !== null)) repeater.release();
+    if (overlay === "detail") {
+      // UI-58: 詳細の間は操作領域に「閉じる」だけ（街・迷宮・戦闘のどれでも）
+      clearFocus();
+      c.setMode("close");
+      return;
+    }
     if (route === "town") {
       c.setList(townEntries(townPage, state).map(townItem));
       c.setMode("list");
@@ -498,6 +506,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
 
   const openDebug = (): void => {
     if (overlay === "map") closeMap();
+    if (overlay === "detail") closeDetail();
     repeater.release();
     overlay = "debug";
     debug.refresh();
@@ -529,6 +538,35 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     syncControls();
   };
 
+  /**
+   * UI-58: パーティの行のタップで詳細を開く。街・迷宮・戦闘で、他の overlay が無いとき（詳細が開いていればその人に切り替える）。
+   * 再生中・連鎖の途中は guard で捨てる（UI-44）
+   */
+  const openDetail = (id: string): void => {
+    if (route !== "town" && route !== "dungeon" && route !== "battle") return;
+    if (overlay !== null && overlay !== "detail") return;
+    const ch = state.party.find((m) => m.id === id);
+    if (ch === undefined) return;
+    repeater.release();
+    overlay = "detail";
+    play.detail.render(formatDetail(ch, data, strings, (iid) => itemDisplayName(state, data, iid)));
+    play.showDetail(true);
+    syncControls();
+  };
+
+  const closeDetail = (): void => {
+    if (overlay !== "detail") return;
+    overlay = null;
+    play.showDetail(false);
+    syncControls();
+  };
+
+  /** 操作領域の「閉じる」: 地図か詳細を閉じる */
+  const closeOverlay = (): void => {
+    if (overlay === "map") closeMap();
+    else if (overlay === "detail") closeDetail();
+  };
+
   // ---------------------------------------------------------------- 入力
   /** Action → Command / 画面の操作。変換は app だけが行う */
   const handleAction = (a: Action): void => {
@@ -549,6 +587,10 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     }
     if (overlay === "map") {
       if (a === "back" || a === "map" || a === "confirm" || (typeof a === "object" && a.menu === 0)) closeMap();
+      return;
+    }
+    if (overlay === "detail") {
+      if (a === "back" || a === "confirm" || (typeof a === "object" && a.menu === 0)) closeDetail();
       return;
     }
     switch (route) {
