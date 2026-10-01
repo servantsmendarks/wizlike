@@ -34,7 +34,7 @@
 
 ## 4. 入力
 
-- UI-30 スワイプはビュー領域で受ける（Pointer Events）。`pointerdown` の座標を起点に、移動量が `settings.swipeThreshold`（論理 28px【仮】、端末 px に換算）を越えた瞬間に、主軸（|dx| と |dy| の大きい方）で方向を確定して 1 回だけ発火し、`pointerup` まで再発火しない。上 = 前進、左右 = 旋回、下 = 反転。
+- UI-30 スワイプはビュー領域で受ける（Pointer Events）。`pointerdown` の座標を起点に、移動量が `settings.swipeThreshold`（論理 28px【仮】、CSS px に換算＝× ステージの CSS 倍率 `layout.scale`）を越えた瞬間に、主軸（|dx| と |dy| の大きい方）で方向を確定して 1 回だけ発火し、`pointerup` まで再発火しない。上 = 前進、左右 = 旋回、下 = 反転。主軸が同値（|dx| = |dy|）なら縦とする。
 - UI-31 前進を確定したまま指を離さなければ `settings.holdRepeatMs`（250ms【仮】）ごとに前進を繰り返す。壁に当たったら止める。戦闘・イベント・メニュー表示中は繰り返さない。
 - UI-32 矢印ボタンも常に表示する。設定 `inputMode` で `swipe` / `buttons` / `both`（既定 both）。
 - UI-33 PC ではキーボード: ↑ 前進、←→ 旋回、↓ 反転、Enter 決定、Esc 戻る、数字でメニュー選択。
