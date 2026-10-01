@@ -358,7 +358,7 @@ describe("遭遇（CB-01, DG-11）", () => {
         expect(r0.state.rng).toEqual(mirror);
         expect(r0.state.battle).toBeNull();
         const r1 = run(s, MOVE, d1);
-        expect(kinds(r1.events).slice(0, 4)).toEqual(["moved", "screen", "encounter", "message:battle.encounter"]);
+        expect(kinds(r1.events).slice(0, 5)).toEqual(["moved", "screen", "beat", "encounter", "message:battle.encounter"]); // CB-55: screen{battle} の直後に system の拍
         expect(r1.events[1]).toEqual({ kind: "screen", to: "battle" });
         expect(r1.state.screen).toBe("battle");
         expect(r1.state.battle!.origin).toEqual({ kind: "random", inRoom: cellAt(f, a.target.x, a.target.y).roomId !== null });
@@ -1162,7 +1162,7 @@ describe("罠（DG-20, DG-21, E4）", () => {
       expect(r.state.party).toEqual(state.party);
       expect(r.state.dive!.clearedCells).toEqual([]);
       const r1 = run(state, MOVE, dataEnc(1, 1));
-      expect(kinds(r1.events).slice(0, 4)).toEqual(["moved", "screen", "encounter", "message:battle.encounter"]);
+      expect(kinds(r1.events).slice(0, 5)).toEqual(["moved", "screen", "beat", "encounter", "message:battle.encounter"]); // CB-55: screen{battle} の直後に system の拍
     }
   });
 });
@@ -1194,7 +1194,7 @@ describe("ボス（DG-31〜33, DG-01）", () => {
     rollDie(mirror, 10);
     rollDie(mirror, 10);
     const r = run(state, MOVE, D0);
-    expect(kinds(r.events).slice(0, 4)).toEqual(["moved", "screen", "encounter", "message:battle.encounter"]);
+    expect(kinds(r.events).slice(0, 5)).toEqual(["moved", "screen", "beat", "encounter", "message:battle.encounter"]); // CB-55: screen{battle} の直後に system の拍
     expect(r.state.rng).toEqual(mirror);
     expect(r.state.battle!.origin).toEqual({ kind: "boss" });
     expect(r.state.battle!.groups.map((g) => [g.monsterId, g.units.length])).toEqual([["gatekeeper_armor", 1]]);
@@ -1338,7 +1338,7 @@ describe("決定性と網羅", () => {
     }
     expect(start).not.toBeNull();
     const r0 = run(start!, MOVE, d1);
-    expect(kinds(r0.events).slice(0, 4)).toEqual(["moved", "screen", "encounter", "message:battle.encounter"]);
+    expect(kinds(r0.events).slice(0, 5)).toEqual(["moved", "screen", "beat", "encounter", "message:battle.encounter"]); // CB-55: screen{battle} の直後に system の拍
     const events: GameEvent[] = [];
     const won = finishBattle(r0.state, events, d1);
     expectKnownStringKeys(events, d1); // 300 歩のランダムウォーク（削除）が担っていた戦闘の語りのキーの網羅
@@ -1356,7 +1356,7 @@ describe("決定性と網羅", () => {
     for (let i = 0; i < 4 && edgeOf(here, t.dive!.facing) !== "open"; i++) t = run(t, { type: "dungeon.turn", dir: "right" }, DATA0).state;
     expect(edgeOf(here, t.dive!.facing)).toBe("open");
     const r3 = run(t, MOVE, d1);
-    expect(kinds(r3.events).slice(0, 4)).toEqual(["moved", "screen", "encounter", "message:battle.encounter"]);
+    expect(kinds(r3.events).slice(0, 5)).toEqual(["moved", "screen", "beat", "encounter", "message:battle.encounter"]); // CB-55: screen{battle} の直後に system の拍
     expect(r3.state.battle).not.toBeNull();
   });
 });

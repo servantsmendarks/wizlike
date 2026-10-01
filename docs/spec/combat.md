@@ -80,6 +80,14 @@
 - MP の変化は `mpChanged`。
 - dice の形は UI-40（`{label, rows, rule, result}`、どれも strings のキーと params）。先手判定の dice は 1 件 2 行（CB-04）。逃走の dice は label `dice.flee`、行は `dice.row.roll`（base null、出目 d100）、基準は `dice.rule.rate`（params rate = 逃走の成功率。クランプしない）、結果は 出目 ≤ 成功率なら `dice.flee.ok`、そうでなければ `dice.flee.ng`。
 - ラウンド終了（決着しなかったラウンドだけ）の順は 毒（CB-33）→ 自然覚醒（CB-32）→ 確率鑑定（CB-05）→ オート解除（CB-43）。
-- 遭遇の順は screen{battle} → encounter → message → （未鑑定の message と sanChanged）→（CB-06 の SAN で CB-53 の全滅になれば、先手判定の dice を出さずに戦闘の終わりの順へ進む）→ 先手判定の dice 1 件 → 奇襲の message →（敵の奇襲ならそのラウンド）。戦闘の終わりの順は battleEnd → 結果の message → 味方の睡眠の解除 → screen{dungeon}（全滅では screen{dungeon} の代わりに全滅処理 TW-20〜26 が続き、最後が screen{town}）。
-- `battle.flee` のイベント順: dice（`dice.flee`）→ 成功なら戦闘の終わりの順 / 失敗なら message `battle.fleeFail` → 敵だけのラウンド →（決着しなければ）ラウンド終了の順。
+- 遭遇の順は screen{battle} → beat{system} → encounter → message → （未鑑定の message と sanChanged）→（CB-06 の SAN で CB-53 の全滅になれば、先手判定の dice を出さずに戦闘の終わりの順へ進む）→ beat{system} → 先手判定の dice 1 件 → 奇襲の message →（敵の奇襲ならそのラウンド）。戦闘の終わりの順は beat{system} → battleEnd → 結果の message → 味方の睡眠の解除 → screen{dungeon}（全滅では screen{dungeon} の代わりに beat{system} → 全滅処理 TW-20〜26 が続き、最後が screen{town}）。
+- `battle.flee` のイベント順: beat{system} → dice（`dice.flee`）→ 成功なら戦闘の終わりの順 / 失敗なら message `battle.fleeFail` → 敵だけのラウンド →（決着しなければ）ラウンド終了の順。
 - `battle.repeat` のイベントの形と順は `battle.resolve` と同じ（違うのは入力を自動で作ることだけ）。
+- 1 行動のイベントの順（拍は CB-55）:
+  - 味方の攻撃: beat{declare} →（`battle.noMp`）→ message `battle.attackDeclare`{actor} → 振りごとに beat{result} →（外れ）attack(hit false) → message `battle.miss`{target: グループ名} /（当たり）hpChanged → attack(hit true) → message `battle.hit`{target, damage} → 当たった振りのその後があれば beat{aftermath} →（撃破）lifeChanged → `battle.dead` →（鑑定）`battle.identified` → enemyGroups、または（覚醒）statusChanged off → `battle.wake`。
+  - 呪文: beat{declare} → mpChanged → `battle.cast` → spell → 効果。damage は個体ごとに beat{result}（hpChanged → `battle.spellDamage`）→ beat{aftermath}（撃破か覚醒）。status はグループごとに beat{result}。heal / acBonus / cureStatus / identify は効果全体で beat{result} 1 つ。
+  - 道具: beat{declare} → `battle.useItem` → 効果（呪文と同じ区切り方）。
+  - 防御・後衛の攻撃不可: beat{declare} だけ。
+  - 敵: beat{declare} → message `battle.attackDeclare`{actor: グループ名}（個体ごとに 1 回）→ 攻撃要素ごとに beat{result}（対象の抽選と命中判定。外れなら attack → `battle.miss`{target: 味方の名前}、当たりなら hpChanged → attack → `battle.hit`{target, damage}）→ beat{aftermath}（死亡: lifeChanged → `battle.dead` → 他の生存者の sanChanged / san.*、または 覚醒 → 状態付与 → SAN 吸収）。
+- ラウンド終了は全体を beat{system} 1 つで包む（何も起きなければ拍は無い）。
+- CB-55 拍（`beat {phase, auto}`）は戦闘の再生の区切りで、出すのは rules/combat.ts だけ。phase は declare（行動の宣言）/ result（命中とダメージ、または効果）/ aftermath（それで起きたこと: 死亡・覚醒・状態異常・SAN・撃破による鑑定）/ system（行動の外: 遭遇、先手判定、逃走判定、ラウンドの終わり、戦闘の終わり、戦闘の中で起きた全滅の処理）。auto は区切りを始めた時点の `state.battle.auto`（battle が null なら false。全滅処理の拍は false になる）で、表示層は手動かオートかを state から推測しない（UI-45）。拍は区切りの中身のイベントの前に置き、中身が空なら出さない。拍は連続せず、列の末尾にも来ない。入れ子にしない。乱数を引かず、拍を取り除いた列・最終の state・乱数は拍が無い場合と同じ。戦闘の外（迷宮の歩行・街・戦闘外の全滅 wipeIfNoneCanAct）では出さない。

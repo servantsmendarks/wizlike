@@ -86,6 +86,11 @@ export function kindsOf(events: readonly GameEvent[]): string[] {
   return events.map((e) => (e.kind === "message" ? `message:${e.key}` : e.kind));
 }
 
+/** CB-55 の拍（beat）を取り除いた列。拍を除けば M4 と同じ並び（文言の分割を除く）であることを比べるのに使う */
+export function withoutBeats(events: readonly GameEvent[]): GameEvent[] {
+  return events.filter((e) => e.kind !== "beat");
+}
+
 /** 指定した kind のイベントだけを取り出す */
 export function eventsOf<K extends GameEvent["kind"]>(events: readonly GameEvent[], kind: K): Extract<GameEvent, { kind: K }>[] {
   return events.filter((e): e is Extract<GameEvent, { kind: K }> => e.kind === kind);

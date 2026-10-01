@@ -8,7 +8,7 @@ import { execute } from "../src/core/engine";
 import { chance, cloneRng, randInt, rollDice, rollDie, weightedIndex, type RngState } from "../src/core/rng";
 import { allyAc, canAct, statusPercent } from "../src/core/rules/combat-calc";
 import { autoInput } from "../src/core/rules/combat-plan";
-import { battleMenu, startBattle, startBossEncounter, startRandomEncounter } from "../src/core/rules/combat";
+import { battleMenu, beatSwitchForTests, startBattle, startBossEncounter, startRandomEncounter } from "../src/core/rules/combat";
 import { cloneState, makeContext, memberById, monsterOf } from "../src/core/state";
 import type { BattleAction, Character, Command, GameEvent, GameState } from "../src/core/types";
 import {
@@ -21,6 +21,7 @@ import {
   expectRejected,
   kindsOf,
   withBattle,
+  withoutBeats,
   type BattleOpts,
   type GroupSpec,
 } from "./helpers/battle";
@@ -103,7 +104,7 @@ describe("遭遇（CB-03/04/05/06）", () => {
       const dice = eventsOf(ctx.events, "dice");
       expect(dice.map((x) => x.label.key)).toEqual(["dice.initiative"]);
       expect(dice.flatMap((x) => x.rows.map((row) => row.dice))).toEqual([[rP], [rE]]);
-      expect(kindsOf(ctx.events).slice(0, 3)).toEqual(["screen", "encounter", "message:battle.encounter"]);
+      expect(kindsOf(ctx.events).slice(0, 4)).toEqual(["screen", "beat", "encounter", "message:battle.encounter"]);
       seen.add(n);
     }
     expect(seen.size).toBeGreaterThan(1);
@@ -314,7 +315,7 @@ describe("遭遇（CB-03/04/05/06）", () => {
     const r = exec(s, RESOLVE, d);
     const ks = kindsOf(r.events);
     const at = ks.indexOf("lifeChanged");
-    expect(ks.slice(at, at + 5)).toEqual(["lifeChanged", "message:battle.dead", "message:battle.identified", "enemyGroups", "battleEnd"]);
+    expect(ks.slice(at, at + 6)).toEqual(["lifeChanged", "message:battle.dead", "message:battle.identified", "enemyGroups", "beat", "battleEnd"]);
     expect(r.state.bestiary["giant_rat"]).toEqual({ kills: 5, identified: true });
   });
 
@@ -646,13 +647,16 @@ describe("命中とダメージ（CB-21〜25）", () => {
       const h = exec(s, RESOLVE, hitData);
       expect(eventsOf(h.events, "attack")).toEqual([{ kind: "attack", actorId: "c1", targetId: "e0-0", hit: true, damage: dmg }]);
       expect(h.events).toContainEqual({ kind: "hpChanged", id: "e0-0", delta: -dmg, hp: 50 - dmg });
-      expect(h.events).toContainEqual({ kind: "message", key: "battle.attackHit", params: { actor: "アルド", target: "大ネズミ", damage: dmg } });
+      // CB-55: 宣言（attackDeclare{actor}）と結果（hit{target, damage}）に分けた文言
+      expect(h.events).toContainEqual({ kind: "message", key: "battle.attackDeclare", params: { actor: "アルド" } });
+      expect(h.events).toContainEqual({ kind: "message", key: "battle.hit", params: { target: "大ネズミ", damage: dmg } });
       expect(h.state.rng).toEqual(afterHit);
       // 命中率 = r − 1
       const missData = dataWith({ combat: { hitMin: 0, hitMax: 100, hitBase: r - 42 } });
       const mi = exec(s, RESOLVE, missData);
       expect(eventsOf(mi.events, "attack")).toEqual([{ kind: "attack", actorId: "c1", targetId: "e0-0", hit: false, damage: 0 }]);
-      expect(mi.events).toContainEqual({ kind: "message", key: "battle.attackMiss", params: { actor: "アルド" } });
+      expect(mi.events).toContainEqual({ kind: "message", key: "battle.attackDeclare", params: { actor: "アルド" } });
+      expect(mi.events).toContainEqual({ kind: "message", key: "battle.miss", params: { target: "大ネズミ" } });
       expect(mi.state.rng).toEqual(m);
     }
   });
@@ -956,10 +960,13 @@ describe("呪文と道具（MG-30、F9）", () => {
     expect(r.state.rng).toEqual(m);
     const ks = kindsOf(r.events);
     const at = ks.indexOf("mpChanged");
-    expect(ks.slice(at, at + 5)).toEqual(["mpChanged", "message:battle.cast", "spell", "hpChanged", "message:battle.spellDamage"]);
+    // CB-55: 宣言（mpChanged → battle.cast → spell）の後に、個体ごとの結果の拍
+    expect(ks.slice(at, at + 6)).toEqual(["mpChanged", "message:battle.cast", "spell", "beat", "hpChanged", "message:battle.spellDamage"]);
+    expect(r.events[at - 1]).toEqual({ kind: "beat", phase: "declare", auto: false });
+    expect(r.events[at + 3]).toEqual({ kind: "beat", phase: "result", auto: false });
     expect(r.events[at]).toEqual({ kind: "mpChanged", id: "c5", delta: -2, mp: 5 });
     expect(r.events[at + 1]).toEqual({ kind: "message", key: "battle.cast", params: { actor: "エル", spell: "火矢" } });
-    expect(r.events[at + 3]).toEqual({ kind: "hpChanged", id: "e0-0", delta: -dmg, hp: 50 - dmg });
+    expect(r.events[at + 4]).toEqual({ kind: "hpChanged", id: "e0-0", delta: -dmg, hp: 50 - dmg });
     expect(member(r.state, "c5").mp).toBe(5);
   });
 
@@ -1173,7 +1180,8 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
         result: { key: res },
       });
       const ok = exec(s, FLEE, dataWith({ combat: { fleeBase: roll - 5 } }));
-      expect(ok.events.slice(0, 3)).toEqual([
+      expect(ok.events[0]).toEqual({ kind: "beat", phase: "system", auto: false });
+      expect(withoutBeats(ok.events).slice(0, 3)).toEqual([
         fleeDice(roll, "dice.flee.ok"),
         { kind: "battleEnd", result: "flee" },
         { kind: "message", key: "battle.fleeOk" },
@@ -1185,8 +1193,8 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
       expect(ok.state.rng).toEqual(m);
       // 失敗: fleeFail → 敵だけのラウンド（アルドの攻撃は捨てる）
       const ng = exec(s, FLEE, dataWith({ combat: { fleeBase: roll - 6 } }));
-      expect(ng.events[0]).toEqual(fleeDice(roll - 1, "dice.flee.ng"));
-      expect(kindsOf(ng.events).slice(0, 2)).toEqual(["dice", "message:battle.fleeFail"]);
+      expect(ng.events[1]).toEqual(fleeDice(roll - 1, "dice.flee.ng"));
+      expect(kindsOf(ng.events).slice(0, 3)).toEqual(["beat", "dice", "message:battle.fleeFail"]);
       expect(eventsOf(ng.events, "attack").map((e) => e.actorId)).toEqual(["e0-0"]);
       expect(ng.state.battle!.round).toBe(1);
       expect(ng.state.battle!.inputs).toEqual({});
@@ -1285,8 +1293,9 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     const ks = kindsOf(r.events);
     const end = ks.indexOf("battleEnd");
     expect(ks.slice(end, end + 2)).toEqual(["battleEnd", "message:battle.wipe"]);
-    // 睡眠の解除（ここでは眠っている者はいない）の後に全滅処理が続く
-    expect(ks[end + 2]).toBe("message:wipe.intro");
+    // 睡眠の解除（ここでは眠っている者はいない）の後に、CB-55 の system の拍を挟んで全滅処理が続く
+    expect(r.events[end + 2]).toEqual({ kind: "beat", phase: "system", auto: false });
+    expect(ks[end + 3]).toBe("message:wipe.intro");
     expect(ks.indexOf("wipe")).toBeGreaterThan(end);
     expect(ks.indexOf("message:town.enter")).toBeGreaterThan(ks.indexOf("wipe"));
     expect(r.events.at(-1)).toEqual({ kind: "screen", to: "town" });
@@ -1422,5 +1431,333 @@ describe("網羅（完了条件「6 種と戦える」、敵の id、battleMenu�
     expect(a).toEqual(b);
     expect(JSON.stringify(s)).toBe(before);
     expect(JSON.parse(JSON.stringify(a.state))).toStrictEqual(a.state);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CB-55: 拍（beat）
+
+type BeatEv = Extract<GameEvent, { kind: "beat" }>;
+/** 拍で区切った列。head は最初の拍より前、segs は各拍とその中身（kindsOf の文字列） */
+function segmentsOf(events: readonly GameEvent[]): { head: string[]; segs: { beat: BeatEv; body: string[] }[] } {
+  const head: string[] = [];
+  const segs: { beat: BeatEv; body: string[] }[] = [];
+  for (const e of events) {
+    if (e.kind === "beat") segs.push({ beat: e, body: [] });
+    else (segs.at(-1)?.body ?? head).push(kindsOf([e])[0]!);
+  }
+  return { head, segs };
+}
+/** [phase, 中身] の列（auto は別に確かめる） */
+const phasesOf = (events: readonly GameEvent[]) => segmentsOf(events).segs.map((s) => [s.beat.phase, s.body] as const);
+
+/** CB-55 (b): 拍は連続せず、末尾にも来ない */
+function expectBeatShape(events: readonly GameEvent[]): void {
+  events.forEach((e, i) => {
+    if (e.kind !== "beat") return;
+    const next = events[i + 1];
+    expect(next, "beat must be followed by an event").toBeDefined();
+    expect(next!.kind).not.toBe("beat");
+  });
+}
+
+/** c1 だけが行動する（他は麻痺。敵の対象にはなる） */
+const ONLY_C1 = { c2: PARA, c3: PARA, c4: PARA, c5: PARA, c6: PARA };
+/** c1 以外は石化（敵の対象にならない） */
+const STONE_BUT_C1 = { c2: STONE, c3: STONE, c4: STONE, c5: STONE, c6: STONE };
+
+describe("拍（CB-55）", () => {
+  test("CB-55 味方の攻撃 1 振りで撃破: declare（attackDeclare）→ result（hpChanged → attack → battle.hit）→ aftermath（lifeChanged → battle.dead）→ system（戦闘の終わり）", () => {
+    const d = dataWith({ combat: ALWAYS_HIT });
+    const s = setup([{ monsterId: "giant_rat", hps: [1], status: [["paralysis"]] }], {
+      patches: ONLY_C1,
+      inputs: { c1: atk(0) },
+      identified: ["giant_rat"],
+    });
+    const r = exec(s, RESOLVE, d);
+    expectBeatShape(r.events);
+    const { head, segs } = segmentsOf(r.events);
+    expect(head).toEqual([]);
+    expect(phasesOf(r.events)).toEqual([
+      ["declare", ["message:battle.attackDeclare"]],
+      ["result", ["hpChanged", "attack", "message:battle.hit"]],
+      ["aftermath", ["lifeChanged", "message:battle.dead"]],
+      ["system", ["battleEnd", "message:battle.win", "message:battle.exp", "message:battle.gold", "screen"]],
+    ]);
+    expect(segs.every((x) => x.beat.auto === false)).toBe(true);
+    const dmg = eventsOf(r.events, "attack")[0]!.damage;
+    expect(r.events).toContainEqual({ kind: "message", key: "battle.attackDeclare", params: { actor: "アルド" } });
+    expect(r.events).toContainEqual({ kind: "message", key: "battle.hit", params: { target: "大ネズミ", damage: dmg } });
+  });
+
+  test("CB-55 外れ: result（attack(false) → battle.miss{target}）だけで aftermath は無い。何も起きないラウンドの終わりには拍が無い", () => {
+    const d = dataWith({ combat: { hitMin: 0, hitMax: 0 } });
+    const s = setup([{ monsterId: "giant_rat", hps: [50], status: [["paralysis"]] }], {
+      patches: ONLY_C1,
+      inputs: { c1: atk(0) },
+      identified: ["giant_rat"],
+    });
+    const r = exec(s, RESOLVE, d);
+    expect(r.events).toEqual([
+      { kind: "beat", phase: "declare", auto: false },
+      { kind: "message", key: "battle.attackDeclare", params: { actor: "アルド" } },
+      { kind: "beat", phase: "result", auto: false },
+      { kind: "attack", actorId: "c1", targetId: "e0-0", hit: false, damage: 0 },
+      { kind: "message", key: "battle.miss", params: { target: "大ネズミ" } },
+    ]);
+  });
+
+  test("CB-55 攻撃回数 2（戦士 Lv5）: declare は 1 回、result は振りごとに 2 回、覚醒した振りにだけ aftermath", () => {
+    const d = dataWith({ combat: { ...ALWAYS_HIT, sleepWakeChance: 100 } });
+    const s = setup([{ monsterId: "giant_rat", hps: [50], status: [["sleep"]] }], {
+      patches: { ...ONLY_C1, c1: { level: 5 } },
+      inputs: { c1: atk(0) },
+      identified: ["giant_rat"],
+    });
+    const r = exec(s, RESOLVE, d);
+    expectBeatShape(r.events);
+    expect(phasesOf(r.events)).toEqual([
+      ["declare", ["message:battle.attackDeclare"]],
+      ["result", ["hpChanged", "attack", "message:battle.hit"]],
+      ["aftermath", ["statusChanged", "message:battle.wake"]],
+      ["result", ["hpChanged", "attack", "message:battle.hit"]],
+    ]);
+  });
+
+  test("CB-55 敵: declare（attackDeclare{グループ名}）→ 攻撃要素ごとに result（hpChanged → attack → battle.hit{味方の名前}）と aftermath（状態付与 / SAN 吸収）。防御は declare だけ", () => {
+    // 大蜘蛛の毒（chance を 1000 にして必ず付与）
+    const d = dataWith({ combat: ALWAYS_HIT }, (x) => (x.monsters.find((m) => m.id === "giant_spider")!.attacks[0]!.chance = 1000));
+    const s = setup([{ monsterId: "giant_spider", hps: [50] }], { patches: STONE_BUT_C1, inputs: { c1: DEF }, identified: ["giant_spider"] });
+    const r = exec(s, RESOLVE, d);
+    expectBeatShape(r.events);
+    const ph = phasesOf(r.events);
+    const at = ph.findIndex(([p, body]) => p === "declare" && body[0] === "message:battle.attackDeclare");
+    expect(ph.slice(at, at + 3)).toEqual([
+      ["declare", ["message:battle.attackDeclare"]],
+      ["result", ["hpChanged", "attack", "message:battle.hit"]],
+      ["aftermath", ["statusChanged", "message:battle.status.poison"]],
+    ]);
+    expect(r.events).toContainEqual({ kind: "message", key: "battle.attackDeclare", params: { actor: "大蜘蛛" } });
+    const dmg = eventsOf(r.events, "attack")[0]!.damage;
+    expect(r.events).toContainEqual({ kind: "message", key: "battle.hit", params: { target: "アルド", damage: dmg } });
+    expect(ph).toContainEqual(["declare", ["message:battle.defend"]]);
+
+    // 囁く影の SAN 吸収は aftermath に入る
+    const s2 = setup([{ monsterId: "whispering_shadow", hps: [50] }], { patches: STONE_BUT_C1, inputs: { c1: DEF }, identified: ["whispering_shadow"] });
+    const ph2 = phasesOf(exec(s2, RESOLVE, dataWith({ combat: ALWAYS_HIT })).events);
+    const at2 = ph2.findIndex(([p, body]) => p === "declare" && body[0] === "message:battle.attackDeclare");
+    expect(ph2.slice(at2, at2 + 3)).toEqual([
+      ["declare", ["message:battle.attackDeclare"]],
+      ["result", ["hpChanged", "attack", "message:battle.hit"]],
+      ["aftermath", ["sanChanged", "message:battle.sanDrain"]],
+    ]);
+  });
+
+  test("CB-55 敵の攻撃で味方が倒れると、死亡と他の生存者の SAN が aftermath の 1 拍に入る。全滅なら system の拍が 2 つ（戦闘の終わり / 全滅処理）続く", () => {
+    const s = setup([{ monsterId: "kobold", hps: [50] }], {
+      patches: { ...STONE_BUT_C1, c1: { hp: 1 } },
+      inputs: { c1: DEF },
+      identified: ["kobold"],
+    });
+    const r = exec(s, RESOLVE, dataWith({ combat: ALWAYS_HIT }));
+    expectBeatShape(r.events);
+    const ph = phasesOf(r.events);
+    const after = ph.find(([p]) => p === "aftermath")!;
+    expect(after[1].slice(0, 2)).toEqual(["lifeChanged", "message:battle.dead"]);
+    expect(after[1].filter((k) => k === "sanChanged")).toHaveLength(5); // 石化の 5 人は alive
+    expect(ph.at(-2)![0]).toBe("system");
+    expect(ph.at(-2)![1].slice(0, 2)).toEqual(["battleEnd", "message:battle.wipe"]);
+    expect(ph.at(-1)![0]).toBe("system");
+    expect(ph.at(-1)![1][0]).toBe("message:wipe.intro");
+    expect(ph.at(-1)![1].at(-1)).toBe("screen");
+    // 全滅処理の拍は battle が null になった後に始まるので auto は false
+    expect(segmentsOf(r.events).segs.at(-1)!.beat.auto).toBe(false);
+  });
+
+  test("CB-55 呪文 damage（flame_burst）は個体ごとに result と aftermath（撃破）。heal / blessing / identify は result が 1 拍だけ。道具は declare が battle.useItem。後衛の攻撃不可は declare だけ", () => {
+    const d = dataWith({ combat: ALWAYS_HIT });
+    const only = (id: string, patch: Partial<Character>) => {
+      const p: Record<string, Partial<Character>> = { c1: PARA, c2: PARA, c3: PARA, c4: PARA, c5: PARA, c6: PARA };
+      p[id] = patch;
+      return p;
+    };
+    const rat = (hps: number[]): GroupSpec => ({ monsterId: "giant_rat", hps, status: hps.map(() => ["paralysis" as const]) });
+    // flame_burst: 1 体目（hp 1）は撃破、2 体目（hp 50）は生き残り、眠っていないので覚醒もしない
+    const sDmg = setup([rat([1, 50])], {
+      patches: only("c5", { knownSpells: ["flame_burst"], mp: 20 }),
+      inputs: { c5: { type: "cast", spellId: "flame_burst", target: { side: "enemy", group: 0 } } },
+      identified: ["giant_rat"],
+    });
+    expect(phasesOf(exec(sDmg, RESOLVE, d).events)).toEqual([
+      ["declare", ["mpChanged", "message:battle.cast", "spell"]],
+      ["result", ["hpChanged", "message:battle.spellDamage"]],
+      ["aftermath", ["lifeChanged", "message:battle.dead"]],
+      ["result", ["hpChanged", "message:battle.spellDamage"]],
+    ]);
+    // heal
+    const sHeal = setup([rat([50])], {
+      patches: { ...only("c4", {}), c1: { ...PARA, hp: 1 } },
+      inputs: { c4: { type: "cast", spellId: "heal", target: { side: "ally", memberId: "c1" } } },
+      identified: ["giant_rat"],
+    });
+    expect(phasesOf(exec(sHeal, RESOLVE, d).events)).toEqual([
+      ["declare", ["mpChanged", "message:battle.cast", "spell"]],
+      ["result", ["hpChanged", "message:battle.heal"]],
+    ]);
+    // blessing（party の acBonus。alive の 6 人に 1 文ずつ、拍は 1 つ）
+    const sBless = setup([rat([50])], {
+      patches: only("c4", { knownSpells: ["heal", "blessing"] }),
+      inputs: { c4: { type: "cast", spellId: "blessing", target: { side: "none" } } },
+      identified: ["giant_rat"],
+    });
+    expect(phasesOf(exec(sBless, RESOLVE, d).events)).toEqual([
+      ["declare", ["mpChanged", "message:battle.cast", "spell"]],
+      ["result", Array(6).fill("message:battle.acBonus")],
+    ]);
+    // identify（未鑑定の 2 グループ）
+    const sId = setup([rat([50]), { monsterId: "kobold", hps: [50], status: [["paralysis"]] }], {
+      patches: only("c5", { knownSpells: ["identify"], mp: 20 }),
+      inputs: { c5: { type: "cast", spellId: "identify", target: { side: "none" } } },
+    });
+    expect(phasesOf(exec(sId, RESOLVE, d).events)).toEqual([
+      ["declare", ["mpChanged", "message:battle.cast", "spell"]],
+      ["result", ["message:battle.identified", "message:battle.identified", "enemyGroups"]],
+    ]);
+    // 道具（アルドの薬草を自分に）
+    const sItem0 = setup([rat([50])], { patches: only("c1", { hp: 1 }), identified: ["giant_rat"] });
+    const herb = member(sItem0, "c1").inventory[0]!;
+    const sItem = setup([rat([50])], {
+      patches: only("c1", { hp: 1 }),
+      inputs: { c1: { type: "item", instanceId: herb, target: { side: "ally", memberId: "c1" } } },
+      identified: ["giant_rat"],
+    });
+    expect(phasesOf(exec(sItem, RESOLVE, d).events)).toEqual([
+      ["declare", ["message:battle.useItem"]],
+      ["result", ["hpChanged", "message:battle.heal"]],
+    ]);
+    // 後衛（ドナ、杖）の攻撃不可。前衛に行動可能な者（防御のアルド）がいないと後衛が前に出るので、アルドも動ける状態にする
+    const sBack = setup([rat([50])], { patches: { ...only("c4", {}), c1: {} }, inputs: { c1: DEF, c4: atk(0) }, identified: ["giant_rat"] });
+    const back = phasesOf(exec(sBack, RESOLVE, d).events);
+    expect(back).toHaveLength(2);
+    expect(back).toContainEqual(["declare", ["message:battle.backRowCannotAttack"]]);
+    expect(back).toContainEqual(["declare", ["message:battle.defend"]]);
+  });
+
+  test("CB-55 遭遇: screen{battle} の直後に system（encounter・語り・未鑑定の SAN）、次に system（先手の dice）。敵の奇襲ではその中に surpriseEnemy、続けて各 declare", () => {
+    const d = dataWith({ combat: { surpriseDiff: 1000 } });
+    const ctx = runCtx(dived(1), d, (c) => startBattle(c, { kind: "random", inRoom: false }, [{ monsterId: "giant_rat", count: 2 }]));
+    expectBeatShape(ctx.events);
+    expect(segmentsOf(ctx.events).head).toEqual(["screen"]);
+    expect(phasesOf(ctx.events)).toEqual([
+      ["system", ["encounter", "message:battle.encounter", "message:battle.unidentified", ...Array(6).fill("sanChanged")]],
+      ["system", ["dice"]],
+    ]);
+    // 敵の奇襲（agi 1000）
+    const da = dataWith({ combat: ALWAYS_HIT }, (x) => (x.monsters.find((m) => m.id === "giant_rat")!.agi = 1000));
+    const amb = runCtx(dived(1), da, (c) => startBattle(c, { kind: "random", inRoom: false }, [{ monsterId: "giant_rat", count: 2 }]));
+    expectBeatShape(amb.events);
+    const ph = phasesOf(amb.events);
+    expect(ph[1]).toEqual(["system", ["dice", "message:battle.surpriseEnemy"]]);
+    expect(ph[2]).toEqual(["declare", ["message:battle.attackDeclare"]]);
+    expect(ph.filter(([p]) => p === "declare")).toHaveLength(2);
+  });
+
+  test("CB-55 ラウンドの終わり: 毒が効けば system の拍が 1 つ（中身は hpChanged）。何も起きなければ拍は無い（外れのテスト）", () => {
+    const s = setup([{ monsterId: "giant_rat", hps: [50], status: [["paralysis"]] }], {
+      patches: { ...ONLY_C1, c1: { status: ["poison"] } },
+      inputs: { c1: DEF },
+      identified: ["giant_rat"],
+    });
+    expect(phasesOf(exec(s, RESOLVE).events)).toEqual([
+      ["declare", ["message:battle.defend"]],
+      ["system", ["hpChanged"]],
+    ]);
+  });
+
+  test("CB-55 逃走: system（dice → [fleeFail]）。成功なら続けて system（戦闘の終わり）", () => {
+    const s = setup([{ monsterId: "giant_rat", hps: [50], status: [["paralysis"]] }], { patches: ONLY_C1, identified: ["giant_rat"] });
+    const ok = exec(s, FLEE, dataWith({ combat: { fleeBase: 1000 } }));
+    expectBeatShape(ok.events);
+    expect(phasesOf(ok.events)).toEqual([
+      ["system", ["dice"]],
+      ["system", ["battleEnd", "message:battle.fleeOk", "screen"]],
+    ]);
+    const ng = exec(s, FLEE, dataWith({ combat: { fleeBase: -1000 } }));
+    expect(phasesOf(ng.events)).toEqual([["system", ["dice", "message:battle.fleeFail"]]]);
+  });
+
+  test("CB-55 auto: battle.auto on の resolve の拍はすべて auto true、battle.repeat は false。ラウンドの終わりでオートが解除されるときは、その system の拍が true", () => {
+    const d = dataWith({ combat: ALWAYS_HIT });
+    const s = setup([{ monsterId: "giant_rat", hps: [50, 50] }], { identified: ["giant_rat"] });
+    const on = exec(exec(s, AUTO_ON, d).state, RESOLVE, d);
+    const beats = eventsOf(on.events, "beat");
+    expect(beats.length).toBeGreaterThan(0);
+    expect(beats.every((b) => b.auto)).toBe(true);
+    const rep = exec(s, REPEAT, d);
+    const rb = eventsOf(rep.events, "beat");
+    expect(rb.length).toBeGreaterThan(0);
+    expect(rb.every((b) => !b.auto)).toBe(true);
+    // 大蜘蛛の毒（必ず付与）でオート解除（status）。解除の message が入る system の拍は auto true
+    const dp = dataWith({ combat: ALWAYS_HIT }, (x) => (x.monsters.find((m) => m.id === "giant_spider")!.attacks[0]!.chance = 1000));
+    const sp = setup([{ monsterId: "giant_spider", hps: [200] }], { patches: STONE_BUT_C1, identified: ["giant_spider"], auto: true, inputs: {} });
+    const r = exec(sp, RESOLVE, dp);
+    expect(r.state.battle!.auto).toBe(false);
+    const last = segmentsOf(r.events).segs.at(-1)!;
+    expect(last.beat).toEqual({ kind: "beat", phase: "system", auto: true });
+    expect(last.body.slice(-2)).toEqual(["message:battle.autoOff", "message:battle.autoReason.status"]);
+  });
+
+  test("CB-55 不変条件: (a) 戦闘の外の迷宮・戦闘外の全滅には拍が無い (b) 拍は連続せず末尾に無い (c) 拍を取り除いた列・最終の state と rng は拍を入れない場合と同じ（30 シード × 遭遇から決着まで）", () => {
+    const run = (enabled: boolean, seed: number) => {
+      beatSwitchForTests.enabled = enabled;
+      try {
+        const out: GameEvent[][] = [];
+        const ctx = makeContext(cloneState(dived(seed)), data);
+        startRandomEncounter(ctx, seed % 3 === 0);
+        out.push(ctx.events);
+        let s = ctx.state;
+        for (let i = 0; i < 80 && s.battle !== null; i++) {
+          let cmd: Command;
+          if (i === 0 && seed % 2 === 0) cmd = FLEE;
+          else if (!s.battle.auto) cmd = AUTO_ON;
+          else cmd = RESOLVE;
+          const r = execute(s, cmd, data);
+          out.push(r.events);
+          s = r.state;
+        }
+        return { out, state: s };
+      } finally {
+        beatSwitchForTests.enabled = true;
+      }
+    };
+    let withBeats = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      const a = run(true, seed);
+      const b = run(false, seed);
+      expect(a.state).toEqual(b.state);
+      expect(a.out.map(withoutBeats)).toEqual(b.out);
+      for (const evs of a.out) {
+        expectBeatShape(evs);
+        expectKnownStringKeys(evs);
+        if (eventsOf(evs, "beat").length > 0) withBeats += 1;
+      }
+    }
+    expect(withBeats).toBeGreaterThan(30);
+
+    // (a) 迷宮の歩行・旋回（遭遇率 0）と、戦闘外の全滅（全員麻痺で旋回）には拍が無い
+    const quiet = dataWith({}, (x) => {
+      for (const dg of x.dungeons) dg.encounterRate = { room: 0, corridor: 0 };
+    });
+    let s = dived(1);
+    const walk: Command[] = [{ type: "dungeon.turn", dir: "left" }, { type: "dungeon.move" }, { type: "dungeon.turn", dir: "around" }, { type: "dungeon.move" }];
+    for (const cmd of walk) {
+      const r = execute(s, cmd, quiet);
+      expect(eventsOf(r.events, "beat")).toEqual([]);
+      s = r.state;
+    }
+    const allPara = patchParty(dived(1), { c1: PARA, c2: PARA, c3: PARA, c4: PARA, c5: PARA, c6: PARA });
+    const w = execute(allPara, { type: "dungeon.turn", dir: "left" }, quiet);
+    expect(kindsOf(w.events)).toContain("message:wipe.intro");
+    expect(eventsOf(w.events, "beat")).toEqual([]);
   });
 });

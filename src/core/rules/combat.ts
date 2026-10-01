@@ -1,6 +1,7 @@
 // 戦闘の手続き（combat.md CB-01〜54、MG-30/41、CH-43〜45/60）と、入力の検査、表示層向けの問い合わせ battleMenu。
 // 判定と式は combat-calc.ts、オート入力・行動計画・行動順・オート解除は combat-plan.ts（どちらも純粋）。
 // dungeon.ts は import しない（dungeon.ts がこのファイルを使う。循環を作らない）。
+// CB-55: 再生の区切り（beat）は section() で中身の前に差し込む（乱数を引かない。中身が空なら出さない）。
 //
 // 乱数の消費順（テストで固定する）:
 //   遭遇: [グループ数] → ([種類] → [体数])×グループ → HP（g→u）→ 味方 1d10 → 敵 1d10 →（敵の奇襲ならそのラウンド）
@@ -22,6 +23,7 @@ import type {
   BattleOrigin,
   BattleState,
   BattleTarget,
+  BeatPhase,
   Character,
   Dive,
   EnemyGroup,
@@ -67,6 +69,23 @@ import { offerTeleporter } from "./choices";
 import { applyAllyEffect } from "./effects";
 import { loseSan } from "./san";
 import { performWipe } from "./wipe";
+
+/**
+ * CB-55 の拍を出すかどうか。テストで「拍を入れない場合」と比べる（不変条件 (c)）ためだけのスイッチで、
+ * ゲームのコードからは変えない（常に true）。
+ */
+export const beatSwitchForTests = { enabled: true };
+
+/**
+ * CB-55: fn が出したイベントの前に beat{phase, auto} を 1 件差し込む。fn が何も出さなければ拍も出さない。
+ * auto は区切りを始めた時点の state.battle.auto（battle が null なら false）。乱数は引かない。入れ子にしない。
+ */
+function section(ctx: RuleContext, phase: BeatPhase, fn: () => void): void {
+  const auto = ctx.state.battle?.auto ?? false;
+  const at = ctx.events.length;
+  fn();
+  if (beatSwitchForTests.enabled && ctx.events.length > at) ctx.events.splice(at, 0, { kind: "beat", phase, auto });
+}
 
 function requireBattle(state: GameState): BattleState {
   if (state.battle === null) throw new Error("not in battle");
@@ -154,17 +173,19 @@ export function startBattle(ctx: RuleContext, origin: BattleOrigin, specs: { mon
   state.battle = { origin, round: 0, partySurprise: false, groups, inputs: {}, auto: false, acBonus: {} };
   state.screen = "battle";
   ctx.events.push({ kind: "screen", to: "battle" });
-  ctx.events.push({ kind: "encounter", groups: groupViews(state, data) });
-  ctx.events.push({ kind: "message", key: "battle.encounter" });
+  section(ctx, "system", () => {
+    ctx.events.push({ kind: "encounter", groups: groupViews(state, data) });
+    ctx.events.push({ kind: "message", key: "battle.encounter" });
 
-  // CB-06: 未鑑定のグループの数 × unidentifiedGroup（耐性なし）
-  const k = groups.filter((g) => !isIdentified(state, g.monsterId)).length;
-  if (k > 0) {
-    ctx.events.push({ kind: "message", key: "battle.unidentified" });
-    for (const ch of state.party) {
-      if (ch.life === "alive") loseSan(ctx, ch, k * cfg.san.unidentifiedGroup, []);
+    // CB-06: 未鑑定のグループの数 × unidentifiedGroup（耐性なし）
+    const k = groups.filter((g) => !isIdentified(state, g.monsterId)).length;
+    if (k > 0) {
+      ctx.events.push({ kind: "message", key: "battle.unidentified" });
+      for (const ch of state.party) {
+        if (ch.life === "alive") loseSan(ctx, ch, k * cfg.san.unidentifiedGroup, []);
+      }
     }
-  }
+  });
   if (isWipe(state)) {
     endBattle(ctx, "wipe");
     return;
@@ -186,21 +207,25 @@ export function startBattle(ctx: RuleContext, origin: BattleOrigin, specs: { mon
   const ambushAvoid = 0; // M5: EV-42 の慎重の恩恵。敵の奇襲の閾値だけを広げる
   const ambush = need + ambushAvoid;
   const outcome = diff >= need ? "party" : diff <= -ambush ? "enemy" : "none";
-  ctx.events.push({
-    kind: "dice",
-    label: { key: "dice.initiative" },
-    rows: [
-      { label: { key: "dice.side.party" }, base: bP, dice: [rP], total: tP },
-      { label: { key: "dice.side.enemy" }, base: bE, dice: [rE], total: tE },
-    ],
-    rule: { key: "dice.initiative.rule", params: { diff, need, ambush } },
-    result: { key: `dice.initiative.${outcome}` },
+  section(ctx, "system", () => {
+    ctx.events.push({
+      kind: "dice",
+      label: { key: "dice.initiative" },
+      rows: [
+        { label: { key: "dice.side.party" }, base: bP, dice: [rP], total: tP },
+        { label: { key: "dice.side.enemy" }, base: bE, dice: [rE], total: tE },
+      ],
+      rule: { key: "dice.initiative.rule", params: { diff, need, ambush } },
+      result: { key: `dice.initiative.${outcome}` },
+    });
+    if (outcome === "party") {
+      b.partySurprise = true;
+      ctx.events.push({ kind: "message", key: "battle.surpriseParty" });
+    } else if (outcome === "enemy") {
+      ctx.events.push({ kind: "message", key: "battle.surpriseEnemy" });
+    }
   });
-  if (outcome === "party") {
-    b.partySurprise = true;
-    ctx.events.push({ kind: "message", key: "battle.surpriseParty" });
-  } else if (outcome === "enemy") {
-    ctx.events.push({ kind: "message", key: "battle.surpriseEnemy" });
+  if (outcome === "enemy") {
     const before = snapMembers(state, data);
     if (!runRound(ctx, { allies: false, enemies: true })) roundEnd(ctx, before);
   }
@@ -366,18 +391,20 @@ export function fleeRound(ctx: RuleContext): void {
   const pct = fleePercent(state, data);
   const d = randInt(state.rng, 1, 100);
   const ok = d <= pct;
-  ctx.events.push({
-    kind: "dice",
-    label: { key: "dice.flee" },
-    rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [d], total: d }],
-    rule: { key: "dice.rule.rate", params: { rate: pct } },
-    result: { key: ok ? "dice.flee.ok" : "dice.flee.ng" },
+  section(ctx, "system", () => {
+    ctx.events.push({
+      kind: "dice",
+      label: { key: "dice.flee" },
+      rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [d], total: d }],
+      rule: { key: "dice.rule.rate", params: { rate: pct } },
+      result: { key: ok ? "dice.flee.ok" : "dice.flee.ng" },
+    });
+    if (!ok) ctx.events.push({ kind: "message", key: "battle.fleeFail" });
   });
   if (ok) {
     endBattle(ctx, "flee");
     return;
   }
-  ctx.events.push({ kind: "message", key: "battle.fleeFail" });
   const ended = runRound(ctx, { allies: false, enemies: true });
   if (!ended) roundEnd(ctx, before);
 }
@@ -460,50 +487,71 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan): void {
   const actor = ch.name;
   switch (plan.kind) {
     case "defend":
-      if (plan.why === "backRow") {
-        ctx.events.push({ kind: "message", key: "battle.backRowCannotAttack", params: { actor } });
-      } else {
-        if (plan.why === "noMp") ctx.events.push({ kind: "message", key: "battle.noMp", params: { actor } });
-        ctx.events.push({ kind: "message", key: "battle.defend", params: { actor } });
-      }
+      // CB-55: 防御と後衛の攻撃不可は宣言の拍だけ
+      section(ctx, "declare", () => {
+        if (plan.why === "backRow") {
+          ctx.events.push({ kind: "message", key: "battle.backRowCannotAttack", params: { actor } });
+        } else {
+          if (plan.why === "noMp") ctx.events.push({ kind: "message", key: "battle.noMp", params: { actor } });
+          ctx.events.push({ kind: "message", key: "battle.defend", params: { actor } });
+        }
+      });
       return;
     case "attack": {
-      if (plan.noMp) ctx.events.push({ kind: "message", key: "battle.noMp", params: { actor } });
-      const g = groupAlive(b, plan.group) ? plan.group : lowestAliveGroup(b); // CB-42
-      if (g === null) return;
-      const grp = groupAt(b, g);
+      // 区切りの中で決めた値（閉包の代入は制御フローの絞り込みに乗らないので as で型を広げておく）
+      let g = null as number | null;
+      section(ctx, "declare", () => {
+        if (plan.noMp) ctx.events.push({ kind: "message", key: "battle.noMp", params: { actor } });
+        g = groupAlive(b, plan.group) ? plan.group : lowestAliveGroup(b); // CB-42
+        if (g === null) return;
+        ctx.events.push({ kind: "message", key: "battle.attackDeclare", params: { actor } });
+      });
+      const ga = g;
+      if (ga === null) return;
+      const grp = groupAt(b, ga);
       const m = monsterOf(data, grp.monsterId);
       const dice = weaponOf(state, data, ch)?.damage ?? data.config.combat.unarmedDice;
       const times = attackCount(classOf(data, ch.classId), ch.level);
       for (let k = 0; k < times; k++) {
         const u = firstAliveUnit(grp);
         if (u === null) break; // 他のグループへは振り替えない
-        const unit = unitAt(b, g, u);
-        const targetId = enemyId(g, u);
-        const hit = chance(state.rng, hitPercent(data.config, ch.level, m.ac, unit.status.includes("sleep")));
-        if (!hit) {
-          ctx.events.push({ kind: "attack", actorId: ch.id, targetId, hit: false, damage: 0 });
-          ctx.events.push({ kind: "message", key: "battle.attackMiss", params: { actor } });
-          continue;
-        }
-        const dmg = Math.max(1, rollDice(state.rng, dice).total + strBonus(ch.stats.str) + 0); // 0 は M5 の damage 恩恵
-        const target = groupName(state, data, g);
-        const next = damageUnit(ctx, g, u, dmg);
-        ctx.events.push({ kind: "attack", actorId: ch.id, targetId, hit: true, damage: dmg });
-        ctx.events.push({ kind: "message", key: "battle.attackHit", params: { actor, target, damage: dmg } });
-        if (next === 0) killUnit(ctx, g, u);
-        else wakeCheck(ctx, unit, targetId, target);
+        const unit = unitAt(b, ga, u);
+        const targetId = enemyId(ga, u);
+        const target = groupName(state, data, ga);
+        let hit = false as boolean;
+        let next = 0 as number;
+        // CB-55: 振りごとに結果の拍
+        section(ctx, "result", () => {
+          hit = chance(state.rng, hitPercent(data.config, ch.level, m.ac, unit.status.includes("sleep")));
+          if (!hit) {
+            ctx.events.push({ kind: "attack", actorId: ch.id, targetId, hit: false, damage: 0 });
+            ctx.events.push({ kind: "message", key: "battle.miss", params: { target } });
+            return;
+          }
+          const dmg = Math.max(1, rollDice(state.rng, dice).total + strBonus(ch.stats.str) + 0); // 0 は M5 の damage 恩恵
+          next = damageUnit(ctx, ga, u, dmg);
+          ctx.events.push({ kind: "attack", actorId: ch.id, targetId, hit: true, damage: dmg });
+          ctx.events.push({ kind: "message", key: "battle.hit", params: { target, damage: dmg } });
+        });
+        if (!hit) continue;
+        // 当たった振りのその後（撃破か覚醒。覚めなければ何も出ず拍も無い）
+        section(ctx, "aftermath", () => {
+          if (next === 0) killUnit(ctx, ga, u);
+          else wakeCheck(ctx, unit, targetId, target);
+        });
       }
       return;
     }
     case "cast": {
       const sp = spellOf(data, plan.spellId);
-      ch.mp -= sp.mp; // MG-30: 行動の時点で引く
-      ctx.events.push({ kind: "mpChanged", id: ch.id, delta: -sp.mp, mp: ch.mp });
-      ctx.events.push({ kind: "message", key: "battle.cast", params: { actor, spell: sp.name } });
       const refs = resolveTargets(state, ch, sp.target, plan.target);
-      const ids = sp.effect.type === "identify" ? [] : refs.map(refId);
-      ctx.events.push({ kind: "spell", actorId: ch.id, spellId: sp.id, targets: ids });
+      section(ctx, "declare", () => {
+        ch.mp -= sp.mp; // MG-30: 行動の時点で引く
+        ctx.events.push({ kind: "mpChanged", id: ch.id, delta: -sp.mp, mp: ch.mp });
+        ctx.events.push({ kind: "message", key: "battle.cast", params: { actor, spell: sp.name } });
+        const ids = sp.effect.type === "identify" ? [] : refs.map(refId);
+        ctx.events.push({ kind: "spell", actorId: ch.id, spellId: sp.id, targets: ids });
+      });
       applyEffect(ctx, sp.effect, refs);
       return;
     }
@@ -514,7 +562,9 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan): void {
       if (!battleItemUsable(item)) throw new Error(`item not usable in battle: ${item.id}`);
       const name = itemDisplayName(state, data, plan.instanceId);
       destroyItemInstance(state, ch, plan.instanceId); // DG-41
-      ctx.events.push({ kind: "message", key: "battle.useItem", params: { actor, item: name } });
+      section(ctx, "declare", () => {
+        ctx.events.push({ kind: "message", key: "battle.useItem", params: { actor, item: name } });
+      });
       const refs = resolveTargets(state, ch, item.effect.target, plan.target);
       applyEffect(ctx, item.effect, refs);
       return;
@@ -582,17 +632,23 @@ function applyEffect(ctx: RuleContext, effect: SpellEffect | BattleItem["effect"
   const allyRefs = refs
     .filter((r): r is Extract<TargetRef, { side: "ally" }> => r.side === "ally")
     .map((r) => requireMember(state, r.id));
+  // CB-55: damage は個体ごとに result と aftermath、status はグループごとに result、味方側の効果と identify は全体で result 1 つ
   switch (effect.type) {
     case "damage":
       for (const r of enemyRefs) {
         const unit = unitAt(b, r.g, r.u);
         if (!unitAlive(unit)) continue;
-        const d = Math.max(1, rollDice(state.rng, effect.dice).total);
         const target = groupName(state, data, r.g);
-        const next = damageUnit(ctx, r.g, r.u, d);
-        ctx.events.push({ kind: "message", key: "battle.spellDamage", params: { target, damage: d } });
-        if (next === 0) killUnit(ctx, r.g, r.u);
-        else wakeCheck(ctx, unit, enemyId(r.g, r.u), target);
+        let next = 0 as number;
+        section(ctx, "result", () => {
+          const d = Math.max(1, rollDice(state.rng, effect.dice).total);
+          next = damageUnit(ctx, r.g, r.u, d);
+          ctx.events.push({ kind: "message", key: "battle.spellDamage", params: { target, damage: d } });
+        });
+        section(ctx, "aftermath", () => {
+          if (next === 0) killUnit(ctx, r.g, r.u);
+          else wakeCheck(ctx, unit, enemyId(r.g, r.u), target);
+        });
       }
       return;
     case "status": {
@@ -601,42 +657,48 @@ function applyEffect(ctx: RuleContext, effect: SpellEffect | BattleItem["effect"
       while (i < enemyRefs.length) {
         const g = enemyRefs[i]!.g;
         const m = monsterOf(data, groupAt(b, g).monsterId);
-        let landed = 0;
-        for (; i < enemyRefs.length && enemyRefs[i]!.g === g; i++) {
-          const r = enemyRefs[i]!;
-          const unit = unitAt(b, r.g, r.u);
-          if (m.resist[s] === true || unit.status.includes(s)) continue; // F8: 判定しない（乱数なし）
-          if (chance(state.rng, statusPercent(data.config, effect.chance, 10))) {
-            unit.status.push(s);
-            ctx.events.push({ kind: "statusChanged", id: enemyId(r.g, r.u), status: s, on: true });
-            landed += 1;
+        section(ctx, "result", () => {
+          let landed = 0;
+          for (; i < enemyRefs.length && enemyRefs[i]!.g === g; i++) {
+            const r = enemyRefs[i]!;
+            const unit = unitAt(b, r.g, r.u);
+            if (m.resist[s] === true || unit.status.includes(s)) continue; // F8: 判定しない（乱数なし）
+            if (chance(state.rng, statusPercent(data.config, effect.chance, 10))) {
+              unit.status.push(s);
+              ctx.events.push({ kind: "statusChanged", id: enemyId(r.g, r.u), status: s, on: true });
+              landed += 1;
+            }
           }
-        }
-        const target = groupName(state, data, g);
-        ctx.events.push({ kind: "message", key: landed > 0 ? `battle.status.${s}` : "battle.noEffect", params: { target } });
+          const target = groupName(state, data, g);
+          ctx.events.push({ kind: "message", key: landed > 0 ? `battle.status.${s}` : "battle.noEffect", params: { target } });
+        });
       }
       return;
     }
     case "heal":
-      applyAllyEffect(ctx, { type: "heal", dice: effect.dice }, allyRefs);
+      section(ctx, "result", () => applyAllyEffect(ctx, { type: "heal", dice: effect.dice }, allyRefs));
       return;
     case "acBonus":
-      for (const ch of allyRefs) {
-        b.acBonus[ch.id] = (b.acBonus[ch.id] ?? 0) + effect.value;
-        ctx.events.push({ kind: "message", key: "battle.acBonus", params: { target: ch.name } });
-      }
+      section(ctx, "result", () => {
+        for (const ch of allyRefs) {
+          b.acBonus[ch.id] = (b.acBonus[ch.id] ?? 0) + effect.value;
+          ctx.events.push({ kind: "message", key: "battle.acBonus", params: { target: ch.name } });
+        }
+      });
       return;
     case "cureStatus":
-      applyAllyEffect(ctx, { type: "cureStatus", status: effect.status }, allyRefs);
+      section(ctx, "result", () => applyAllyEffect(ctx, { type: "cureStatus", status: effect.status }, allyRefs));
       return;
     case "identify": {
-      let any = false;
-      for (const grp of b.groups) {
-        if (isIdentified(state, grp.monsterId)) continue;
-        identifyMonster(ctx, grp.monsterId);
-        any = true;
-      }
-      if (any) ctx.events.push({ kind: "enemyGroups", groups: groupViews(state, data) });
+      section(ctx, "result", () => {
+        let any = false;
+        for (const grp of b.groups) {
+          if (isIdentified(state, grp.monsterId)) continue;
+          identifyMonster(ctx, grp.monsterId);
+          any = true;
+        }
+        if (any) ctx.events.push({ kind: "enemyGroups", groups: groupViews(state, data) });
+      });
       return;
     }
     default:
@@ -650,40 +712,54 @@ function actEnemyUnit(ctx: RuleContext, g: number, u: number, defending: Readonl
   const b = requireBattle(state);
   const m = monsterOf(data, groupAt(b, g).monsterId);
   const actorId = enemyId(g, u);
+  // CB-55: 宣言は個体ごとに 1 回（攻撃要素のループの前）
+  section(ctx, "declare", () => {
+    ctx.events.push({ kind: "message", key: "battle.attackDeclare", params: { actor: groupName(state, data, g) } });
+  });
   for (const atk of m.attacks) {
-    const actor = groupName(state, data, g);
-    const cands = enemyTargetIds(state, data);
-    if (cands.length === 0) continue;
-    const t = requireMember(state, cands[randInt(state.rng, 0, cands.length - 1)]!);
-    const hit = chance(state.rng, hitPercent(data.config, m.level, allyAc(state, data, t), t.status.includes("sleep")));
-    if (!hit) {
-      ctx.events.push({ kind: "attack", actorId, targetId: t.id, hit: false, damage: 0 });
-      ctx.events.push({ kind: "message", key: "battle.attackMiss", params: { actor } });
-      continue;
-    }
-    let d = Math.max(1, rollDice(state.rng, atk.dice).total);
-    if (defending.has(t.id)) d = Math.ceil(d / 2); // CB-12/22
-    const next = Math.max(0, t.hp - d);
-    ctx.events.push({ kind: "hpChanged", id: t.id, delta: next - t.hp, hp: next });
-    t.hp = next;
-    ctx.events.push({ kind: "attack", actorId, targetId: t.id, hit: true, damage: d });
-    ctx.events.push({ kind: "message", key: "battle.enemyAttack", params: { actor, target: t.name, damage: d } });
-    if (t.hp === 0) {
-      allyDies(ctx, t);
-      continue;
-    }
-    wakeCheck(ctx, t, t.id, t.name);
-    if (atk.status !== undefined && !t.status.includes(atk.status)) {
-      if (chance(state.rng, statusPercent(data.config, atk.chance ?? 0, t.stats.luk))) {
-        t.status.push(atk.status);
-        ctx.events.push({ kind: "statusChanged", id: t.id, status: atk.status, on: true });
-        ctx.events.push({ kind: "message", key: `battle.status.${atk.status}`, params: { target: t.name } });
+    let t = null as Character | null;
+    let hit = false as boolean;
+    // 攻撃要素ごとに結果の拍（対象の抽選と命中判定。対象がいなければ何も出ず拍も無い）
+    section(ctx, "result", () => {
+      const cands = enemyTargetIds(state, data);
+      if (cands.length === 0) return;
+      const tt = requireMember(state, cands[randInt(state.rng, 0, cands.length - 1)]!);
+      t = tt;
+      hit = chance(state.rng, hitPercent(data.config, m.level, allyAc(state, data, tt), tt.status.includes("sleep")));
+      if (!hit) {
+        ctx.events.push({ kind: "attack", actorId, targetId: tt.id, hit: false, damage: 0 });
+        ctx.events.push({ kind: "message", key: "battle.miss", params: { target: tt.name } });
+        return;
       }
-    }
-    if (atk.sanDrain !== undefined) {
-      const c = loseSan(ctx, t, atk.sanDrain, atk.tags ?? []); // CB-31: fear 耐性は san.ts が効かせる
-      if (c.delta !== 0) ctx.events.push({ kind: "message", key: "battle.sanDrain", params: { target: t.name } });
-    }
+      let d = Math.max(1, rollDice(state.rng, atk.dice).total);
+      if (defending.has(tt.id)) d = Math.ceil(d / 2); // CB-12/22
+      const next = Math.max(0, tt.hp - d);
+      ctx.events.push({ kind: "hpChanged", id: tt.id, delta: next - tt.hp, hp: next });
+      tt.hp = next;
+      ctx.events.push({ kind: "attack", actorId, targetId: tt.id, hit: true, damage: d });
+      ctx.events.push({ kind: "message", key: "battle.hit", params: { target: tt.name, damage: d } });
+    });
+    const tt = t;
+    if (tt === null || !hit) continue;
+    // その後の拍: 死亡（と他の生存者の SAN）、または 覚醒 → 状態付与 → SAN 吸収
+    section(ctx, "aftermath", () => {
+      if (tt.hp === 0) {
+        allyDies(ctx, tt);
+        return;
+      }
+      wakeCheck(ctx, tt, tt.id, tt.name);
+      if (atk.status !== undefined && !tt.status.includes(atk.status)) {
+        if (chance(state.rng, statusPercent(data.config, atk.chance ?? 0, tt.stats.luk))) {
+          tt.status.push(atk.status);
+          ctx.events.push({ kind: "statusChanged", id: tt.id, status: atk.status, on: true });
+          ctx.events.push({ kind: "message", key: `battle.status.${atk.status}`, params: { target: tt.name } });
+        }
+      }
+      if (atk.sanDrain !== undefined) {
+        const c = loseSan(ctx, tt, atk.sanDrain, atk.tags ?? []); // CB-31: fear 耐性は san.ts が効かせる
+        if (c.delta !== 0) ctx.events.push({ kind: "message", key: "battle.sanDrain", params: { target: tt.name } });
+      }
+    });
   }
 }
 
@@ -724,6 +800,11 @@ function identifyMonster(ctx: RuleContext, monsterId: string): void {
 
 /** 決着しなかったラウンドの終わり: 毒（CB-33）→ 自然覚醒（CB-32）→ 確率鑑定（CB-05）→ inputs を空に → オート解除（CB-43） */
 function roundEnd(ctx: RuleContext, before: MemberSnap[]): void {
+  // CB-55: 全体を 1 つの system の拍にする（何も起きなければ拍は出ない）
+  section(ctx, "system", () => roundEndBody(ctx, before));
+}
+
+function roundEndBody(ctx: RuleContext, before: MemberSnap[]): void {
   const { state, data } = ctx;
   const b = requireBattle(state);
   tickPoison(ctx);
@@ -791,6 +872,12 @@ export function tickPoisonStep(ctx: RuleContext): void {
 
 /** 戦闘の終わり（CB-50/51/53、DG-31〜33） */
 function endBattle(ctx: RuleContext, result: "win" | "flee" | "wipe"): void {
+  // CB-55: 戦闘の終わりを system の拍 1 つで包む。戦闘の中で起きた全滅では、全滅処理（TW-20〜26）をもう 1 つの system の拍で包む
+  section(ctx, "system", () => endBattleBody(ctx, result));
+  if (result === "wipe") section(ctx, "system", () => performWipe(ctx));
+}
+
+function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void {
   const { state, data } = ctx;
   const b = requireBattle(state);
   const cfg = data.config;
@@ -845,11 +932,8 @@ function endBattle(ctx: RuleContext, result: "win" | "flee" | "wipe"): void {
   }
   state.battle = null;
   state.screen = "dungeon";
-  if (result === "wipe") {
-    // CB-53 / TW-20: 全滅処理で街へ（screen{dungeon} は出さない。performWipe の最後が screen{town}）
-    performWipe(ctx);
-    return;
-  }
+  // CB-53 / TW-20: 全滅なら呼び出し側（endBattle）が全滅処理で街へ（screen{dungeon} は出さない。performWipe の最後が screen{town}）
+  if (result === "wipe") return;
   ctx.events.push({ kind: "screen", to: "dungeon" });
   // DG-32: ボスを倒すとその場にテレポーターが出て、一行はその上に立っているので、すぐに街へ戻るかを尋ねる
   if (result === "win" && b.origin.kind === "boss") offerTeleporter(ctx);

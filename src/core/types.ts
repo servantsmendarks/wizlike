@@ -485,6 +485,13 @@ export type TextRef = { key: string; params?: Record<string, string | number> };
  */
 export type DiceRow = { label: TextRef; base: number | null; dice: number[]; total: number };
 
+/**
+ * CB-55: 戦闘の再生の区切り。出すのは rules/combat.ts だけ。
+ * declare = 行動の宣言、result = 命中とダメージ（または効果）、aftermath = それで起きたこと（死亡・覚醒・状態異常・SAN・撃破による鑑定）、
+ * system = 行動の外（遭遇、先手判定、逃走判定、ラウンドの終わり、戦闘の終わり、戦闘の中で起きた全滅の処理）
+ */
+export type BeatPhase = "declare" | "result" | "aftermath" | "system";
+
 export type GameEvent =
   | { kind: "message"; key: string; params?: Record<string, string | number> }
   | { kind: "moved"; pos: Pos; facing: Facing }
@@ -505,6 +512,8 @@ export type GameEvent =
   | { kind: "lifeChanged"; id: string; life: Life }
   /** UI-40: 判定 1 件。見出し / 各行（DiceRow）/ 基準 / 結果。どれも strings のキーと埋め込み値 */
   | { kind: "dice"; label: TextRef; rows: DiceRow[]; rule: TextRef; result: TextRef }
+  /** CB-55: 区切りの始まり。直後は必ず拍以外のイベント。auto はその区切りを始めた時点の state.battle.auto（battle が null なら false） */
+  | { kind: "beat"; phase: BeatPhase; auto: boolean }
   | { kind: "battleEnd"; result: "win" | "flee" | "wipe" }
   | { kind: "wipe"; penalty: PenaltyResult }
   /** §5 に増分と新しい最大値と変化後の現在値を足した（表示層が state を掘り直さずに済むように） */

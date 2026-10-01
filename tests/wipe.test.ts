@@ -390,7 +390,8 @@ describe("全滅の発生（CB-53、CB-06、CH-44）", () => {
     const ks = kindsOf(ctx.events);
     expect(eventsOf(ctx.events, "dice").map((e) => e.label.key)).toEqual(["dice.wipe"]);
     expect(ks.indexOf("message:battle.unidentified")).toBeLessThan(ks.indexOf("battleEnd"));
-    expect(ks.slice(ks.indexOf("battleEnd"), ks.indexOf("battleEnd") + 3)).toEqual(["battleEnd", "message:battle.wipe", "message:wipe.intro"]);
+    // CB-55: battle.wipe の後に system の拍を挟んで全滅処理
+    expect(ks.slice(ks.indexOf("battleEnd"), ks.indexOf("battleEnd") + 4)).toEqual(["battleEnd", "message:battle.wipe", "beat", "message:wipe.intro"]);
     expect(eventsOf(ctx.events, "screen")).toEqual([
       { kind: "screen", to: "battle" },
       { kind: "screen", to: "town" },
@@ -415,7 +416,7 @@ describe("全滅の発生（CB-53、CB-06、CH-44）", () => {
     expectKnownStringKeys(r.events, d);
     const ks = kindsOf(r.events);
     const end = ks.indexOf("battleEnd");
-    expect(ks.slice(end, end + 4)).toEqual(["battleEnd", "message:battle.wipe", "statusChanged", "message:wipe.intro"]);
+    expect(ks.slice(end, end + 5)).toEqual(["battleEnd", "message:battle.wipe", "statusChanged", "beat", "message:wipe.intro"]);
     expect(r.events[end + 2]).toEqual({ kind: "statusChanged", id: "c2", status: "sleep", on: false });
     expect(r.state.screen).toBe("town");
   });
