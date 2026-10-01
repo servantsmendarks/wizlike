@@ -1,8 +1,11 @@
 import { describe, expect, test } from "vitest";
+import { execute } from "../src/core/engine";
+import { floorOf, mapView } from "../src/core/rules/dungeon";
+import { cloneState } from "../src/core/state";
 import { mapLayout, mapPaths, playerTriangle } from "../src/presenter/views/map";
 import type { Edge, Facing, MapCell, MapView } from "../src/core/types";
 import { dungeonLayout, regions } from "../src/presenter/layout";
-import { data } from "./helpers/core";
+import { data, newGame } from "./helpers/core";
 
 /** 既定の config.ui.layout での地図本体の寸法（240×208） */
 const MAP_AREA = dungeonLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size).map.area;
@@ -178,5 +181,52 @@ describe("UI-24 地図", () => {
     expect(empty.floor).toBe("");
     expect(empty.walls).toBe("");
     expect(points(empty.player)).toHaveLength(3);
+  });
+});
+
+describe("UI-24/DG-10 通り抜けた扉の地図（core の mapView との結合）", () => {
+  test("UI-24/DG-10 扉を通り抜けた後も、mapView はその辺を door で返し、地図は両側どちらから見ても中央 4px の隙間で描く（全長の壁にも open にもならない）", () => {
+    const DIRS: Array<{ f: Facing; key: "n" | "e" | "s" | "w"; dx: number; dy: number }> = [
+      { f: "N", key: "n", dx: 0, dy: -1 },
+      { f: "E", key: "e", dx: 1, dy: 0 },
+      { f: "S", key: "s", dx: 0, dy: 1 },
+      { f: "W", key: "w", dx: -1, dy: 0 },
+    ];
+    let checked = 0;
+    for (let seed = 1; seed <= 20 && checked < 3; seed++) {
+      const s0 = execute(newGame(seed), { type: "dungeon.enter", dungeonId: "d01" }, data).state;
+      const f = floorOf(s0.dive!, data);
+      // 扉の手前（扉のある辺を向いて立つ位置）を 1 つ探す
+      let found: { x: number; y: number; d: (typeof DIRS)[number] } | null = null;
+      for (let i = 0; i < f.cells.length && found === null; i++) {
+        const c = f.cells[i]!;
+        for (const d of DIRS) if (c[d.key] === "door") found = { x: i % f.width, y: Math.floor(i / f.width), d };
+      }
+      if (found === null) continue;
+      const placed = cloneState(s0);
+      placed.dive!.pos = { x: found.x, y: found.y };
+      placed.dive!.facing = found.d.f;
+      const r = execute(placed, { type: "dungeon.move" }, data);
+      const to = { x: found.x + found.d.dx, y: found.y + found.d.dy };
+      if (r.state.dive?.pos.x !== to.x || r.state.dive?.pos.y !== to.y) continue; // 遭遇などで止まった場合は別のシード
+      const v = mapView(r.state, data)!;
+      const here = v.cells.find((c) => c.x === to.x && c.y === to.y)!;
+      const back = { N: "s", E: "w", S: "n", W: "e" } as const;
+      expect(here[back[found.d.f]], `seed ${seed}`).toBe("door");
+      const lay = mapLayout(v.width, v.height, MAP_AREA);
+      const segs = segments(mapPaths(v, lay).walls);
+      // 共有辺の位置（扉の向きで横の辺か縦の辺か）
+      const vertical = found.d.f === "E" || found.d.f === "W";
+      const ex = lay.ox + Math.max(found.x, to.x) * lay.cell;
+      const ey = lay.oy + Math.max(found.y, to.y) * lay.cell;
+      const onEdge = vertical
+        ? segs.filter((g) => g.x1 === ex && g.x2 === ex && g.y1 >= lay.oy + to.y * lay.cell && g.y2 <= lay.oy + (to.y + 1) * lay.cell)
+        : segs.filter((g) => g.y1 === ey && g.y2 === ey && g.x1 >= lay.ox + to.x * lay.cell && g.x2 <= lay.ox + (to.x + 1) * lay.cell);
+      expect(onEdge, `seed ${seed}`).toHaveLength(2);
+      const len = (g: Seg): number => Math.abs(g.x2 - g.x1) + Math.abs(g.y2 - g.y1);
+      expect(onEdge.map(len), `seed ${seed}`).toEqual([2, 2]);
+      checked++;
+    }
+    expect(checked).toBe(3);
   });
 });
