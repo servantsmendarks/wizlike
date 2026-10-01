@@ -1,4 +1,4 @@
-// 画面（タイトル以外）の純粋な部分: 簡易作成（UI-51）の性格の巡回と PartySetup、街（UI-52）のリスト。
+// 画面（タイトル以外）の純粋な部分: 簡易作成（UI-51）の性格の巡回と PartySetup、パーティ欄。街（UI-52）は town-view.test.ts。
 import { describe, expect, test } from "vitest";
 import { createInitialState, execute } from "../src/core/engine";
 import { validatePartySetup } from "../src/core/rules/creation";
@@ -9,7 +9,6 @@ import {
   personalityLabel,
   randomizePersonalities,
 } from "../src/presenter/views/creation";
-import { townEntries, townEntryLabel } from "../src/presenter/views/town";
 import { formatPartyRow, PARTY_COLUMNS } from "../src/presenter/views/party";
 import { createRunGate } from "../src/presenter/run-gate";
 import type { Command, GameEvent } from "../src/core/types";
@@ -106,17 +105,6 @@ describe("パーティ欄", () => {
   });
 });
 
-describe("街", () => {
-  test("UI-52 施設メニューは「迷宮へ」だけ。迷宮の入口は unlockedDungeons の順と「戻る」", () => {
-    const s = newGame(1);
-    expect(townEntries("menu", s)).toEqual([{ kind: "gate" }]);
-    expect(townEntries("gate", s)).toEqual([{ kind: "enter", dungeonId: "d01" }, { kind: "back" }]);
-    expect(townEntryLabel({ kind: "gate" }, data, data.strings)).toBe(data.strings["town.menu.dungeon"]);
-    expect(townEntryLabel({ kind: "enter", dungeonId: "d01" }, data, data.strings)).toBe(data.dungeons[0]?.name);
-    expect(townEntryLabel({ kind: "back" }, data, data.strings)).toBe(data.strings["common.back"]);
-  });
-});
-
 // UI-35: 表示層は入力を Command にして execute へ渡すだけ。core のルール関数（moveForward、turn、
 // enterDungeon、chooseOption、markExplored など状態を変えるもの）を直接呼ばない。
 // core から値として import してよいのは、execute / createInitialState と、状態を変えない問い合わせだけ。
@@ -134,7 +122,7 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   state: ["dungeonOf", "itemDisplayName"],
   // M3: 戦闘の入力の段階・オートの連鎖は battleMenu の値だけで決める（行動できるか・使えるか・揃ったかを core が返す）
   "rules/combat": ["battleMenu"],
-  // M4 SV-50: 続きからの救済の申し出（resume.ts の resumePlan）。料金・候補も townMenu の値だけで決める
+  // M4 SV-50 / UI-52: 続きからの救済の申し出（resume.ts）と街のページ。料金・可否・候補は townMenu の値だけで決める
   "rules/town": ["townMenu"],
 };
 

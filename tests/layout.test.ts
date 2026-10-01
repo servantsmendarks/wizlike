@@ -48,6 +48,8 @@ const SCREENS: Record<string, Record<string, Rect>> = {
     "CREATION_BUTTONS.back": CREATION_BUTTONS.back,
   },
   town: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
+  // UI-52 街の施設メニューの 2×2
+  townMenu: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.townMenu.map((r, i) => [`townMenu[${i}]`, r])) },
   dungeon: {
     "header.settings": HEADER_SETTINGS,
     ...Object.fromEntries(Object.entries(L.dpad).map(([k, r]) => [`dpad.${k}`, r])),
@@ -128,13 +130,15 @@ describe("layout", () => {
     for (const r of Object.values(SCREENS.creation!)) expect(overlaps(CREATION_ERROR, r)).toBe(false);
   });
 
-  test("UI-10/UI-54 dpad/menu/list/mapClose/battleParty/battleMember/autoStop が操作領域の内側", () => {
+  test("UI-10/UI-54/UI-52 dpad/menu/list/mapClose/battleParty/battleMember/autoStop/townMenu が操作領域の内側", () => {
     const controls = regions(data.config.ui.layout, W).controls;
-    for (const r of [...Object.values(L.dpad), ...L.menu, ...L.list, L.mapClose, ...L.battleParty, ...L.battleMember, L.autoStop]) {
+    for (const r of [...Object.values(L.dpad), ...L.menu, ...L.list, L.mapClose, ...L.battleParty, ...L.battleMember, L.autoStop, ...L.townMenu]) {
       expect(inside(r, controls)).toBe(true);
     }
     // UI-54 戦闘の枠は TOUCH_MIN_LOGICAL 以上で、下端の最大（94）は CONTROLS_MIN_HEIGHT（98）以内
-    for (const r of [...L.battleParty, ...L.battleMember, L.autoStop]) expect(Math.min(r.w, r.h)).toBeGreaterThanOrEqual(TOUCH_MIN_LOGICAL);
+    for (const r of [...L.battleParty, ...L.battleMember, L.autoStop, ...L.townMenu]) expect(Math.min(r.w, r.h)).toBeGreaterThanOrEqual(TOUCH_MIN_LOGICAL);
+    // UI-52 街の施設メニューは戦闘のパーティの選択と同じ 2×2（CONTROLS_MIN_HEIGHT は変わらない）
+    expect(L.townMenu).toEqual(L.battleParty);
     expect(Math.max(...[...L.battleParty, ...L.battleMember].map((r) => r.y + r.h)) - controls.y).toBe(94);
     expect(L.autoStop.y + L.autoStop.h - controls.y).toBeLessThanOrEqual(CONTROLS_MIN_HEIGHT);
     // 十字ボタンとメニューは重ならない
@@ -206,8 +210,9 @@ describe("layout", () => {
       d.battleParty.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.battleParty[i]!, base.controls)));
       d.battleMember.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.battleMember[i]!, base.controls)));
       expect(rel(d.autoStop, g.controls), tag).toEqual(rel(L.autoStop, base.controls));
+      d.townMenu.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.townMenu[i]!, base.controls)));
       const fits = l.controls >= CONTROLS_MIN_HEIGHT;
-      for (const r of [...Object.values(d.dpad), ...d.menu, ...d.list, d.mapClose, ...d.battleParty, ...d.battleMember, d.autoStop])
+      for (const r of [...Object.values(d.dpad), ...d.menu, ...d.list, d.mapClose, ...d.battleParty, ...d.battleMember, d.autoStop, ...d.townMenu])
         if (fits) expect(inside(r, g.controls), tag).toBe(true);
       // メッセージ: 文字領域と三角は窓の内側、行数は (高さ - 4) / 10 の切り捨て
       expect(inside(d.message.text, g.message), tag).toBe(true);
@@ -235,6 +240,8 @@ describe("layout", () => {
         "ui.layout: battleParty[2] does not fit in the controls region (height 86)",
         "ui.layout: battleParty[3] does not fit in the controls region (height 86)",
         "ui.layout: battleMember[4] does not fit in the controls region (height 86)",
+        "ui.layout: townMenu[2] does not fit in the controls region (height 86)",
+        "ui.layout: townMenu[3] does not fit in the controls region (height 86)",
       ]);
     }
   });

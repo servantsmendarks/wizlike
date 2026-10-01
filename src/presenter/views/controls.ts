@@ -15,8 +15,8 @@ export type ControlsMode = "dpad" | "list" | "close" | "battle" | "autoStop" | "
 /** disabled なら dim 色で出し、押しても onSelect を呼ばない */
 /** onFocus は一覧の行に pointerenter / pointerdown したとき（戦闘の対象の注目。UI-54） */
 export type ControlItem = { label: string; onSelect(): void; disabled?: boolean; onFocus?(): void };
-/** 戦闘の枠の配置（UI-54）。party はパーティの選択の 4 枠、member はメンバーの 5 枠 */
-export type BattleSlots = "party" | "member";
+/** 枠の配置（UI-54）。party は戦闘のパーティの選択の 4 枠、member はメンバーの 5 枠、town は街の施設メニューの 4 枠（UI-52） */
+export type BattleSlots = "party" | "member" | "town";
 
 export type Controls = {
   el: HTMLElement;
@@ -28,7 +28,7 @@ export type Controls = {
   setMenu(items: ControlItem[]): void;
   /** layout.list の位置に並べる。4 件以上は縦スクロール（UI-11） */
   setList(items: ControlItem[]): void;
-  /** UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠）に並べる。枠数を超える分は捨てる */
+  /** UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠 / townMenu の 4 枠）に並べる。枠数を超える分は捨てる */
   setBattleMenu(items: ControlItem[], slots: BattleSlots): void;
   /**
    * UI-54: 一覧の i 行目を注目の見た目（枠線を accent 色。dim の行は dim のまま）にし、見える位置へ動かす。null で解除。
@@ -126,7 +126,7 @@ function setShown(el: HTMLElement, on: boolean): void {
  */
 export function createControls(o: {
   region: Rect;
-  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "mapClose" | "battleParty" | "battleMember" | "autoStop">;
+  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "mapClose" | "battleParty" | "battleMember" | "autoStop" | "townMenu">;
   strings: Strings;
   onAction(a: DpadAction): void;
   onRelease(): void;
@@ -137,7 +137,11 @@ export function createControls(o: {
   const DPAD = o.layout.dpad;
   const MENU_SLOTS = o.layout.menu;
   const LIST_ROWS = o.layout.list;
-  const BATTLE_SLOTS: Readonly<Record<BattleSlots, readonly Rect[]>> = { party: o.layout.battleParty, member: o.layout.battleMember };
+  const BATTLE_SLOTS: Readonly<Record<BattleSlots, readonly Rect[]>> = {
+    party: o.layout.battleParty,
+    member: o.layout.battleMember,
+    town: o.layout.townMenu,
+  };
 
   const el = document.createElement("div");
   el.className = "controls";

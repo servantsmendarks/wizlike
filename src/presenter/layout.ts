@@ -119,6 +119,8 @@ export type DungeonLayout = {
   battleMember: Rect[];
   /** オート中の「オート解除」 */
   autoStop: Rect;
+  /** UI-52 の街の施設メニューの 4 枠（酒場・宿屋 / 寺院・迷宮へ。戦闘のパーティの選択と同じ 2×2） */
+  townMenu: Rect[];
   /** text は文字領域（枠の内側）、lines はそこに入る行数、more は続きの三角 */
   message: { text: Rect; lines: number; more: Rect };
   /** パーティ欄の行 0..partySize-1 */
@@ -162,6 +164,7 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
     battleParty: BATTLE_PARTY_REL.map((r) => shift(r, c)),
     battleMember: BATTLE_MEMBER_REL.map((r) => shift(r, c)),
     autoStop: shift(AUTO_STOP_REL, c),
+    townMenu: BATTLE_PARTY_REL.map((r) => shift(r, c)),
     message: { text: mText, lines: Math.max(0, Math.floor(mText.h / MESSAGE_LINE_H)), more },
     partyRows,
     map: {
@@ -195,6 +198,7 @@ export function layoutWarnings(g: Regions, l: DungeonLayout): string[] {
   l.battleParty.forEach((r, i) => check(`battleParty[${i}]`, r, "controls"));
   l.battleMember.forEach((r, i) => check(`battleMember[${i}]`, r, "controls"));
   check("autoStop", l.autoStop, "controls");
+  l.townMenu.forEach((r, i) => check(`townMenu[${i}]`, r, "controls"));
   if (l.message.lines < 1) out.push(`ui.layout: message region (height ${g.message.h}) has no text line`);
   l.partyRows.forEach((r, i) => check(`partyRows[${i}]`, r, "party"));
   return out;

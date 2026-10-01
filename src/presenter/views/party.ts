@@ -4,7 +4,7 @@
 // HP 68..75、値 76..103（右寄せ。「999/999」）、MP 108..115、値 116..143（右寄せ）、SAN 148..159、値 160..171（右寄せ）、状態 176..237。
 // MP は mpMax が 0 のメンバーではラベルごと空欄にする。
 // 状態の列は、life が alive でなければ party.life.*、alive なら status の短い名前（party.status.<id>）を空白区切りで出す。
-// 戦闘の再生用に setMp / setStatus / flash（UI-42 の被弾。opacity 2 往復）/ setActive（入力中の名前を accent 色）を持つ。
+// 戦闘の再生用に setMp / setMax（レベルの変化）/ setStatus / flash（UI-42 の被弾。opacity 2 往復）/ setActive（入力中の名前を accent 色）を持つ。
 // el は region の位置と大きさに自分で置く。モジュールのトップレベルでは DOM に触れない。
 import type { ClassDef, StatusId, Strings } from "../../core/data/index";
 import type { Character, Life } from "../../core/types";
@@ -70,7 +70,16 @@ export const PARTY_COLUMNS = {
 type ColKey = keyof typeof PARTY_COLUMNS;
 const COLS: Readonly<Record<ColKey, PartyColumn>> = PARTY_COLUMNS;
 
-type Row = { line: HTMLElement; cells: Record<ColKey, HTMLElement>; hpMax: number; mpMax: number; life: Life; status: StatusId[] };
+type Row = {
+  line: HTMLElement;
+  cells: Record<ColKey, HTMLElement>;
+  hp: number;
+  hpMax: number;
+  mp: number;
+  mpMax: number;
+  life: Life;
+  status: StatusId[];
+};
 
 export type PartyPanel = {
   el: HTMLElement;
@@ -79,6 +88,8 @@ export type PartyPanel = {
   setSan(id: string, san: number): void;
   setLife(id: string, life: Life): void;
   setMp(id: string, mp: number): void;
+  /** levelUp / levelDown（CH-61 / CH-62）: 最大値を変えて HP / MP の列を描き直す（MP のラベルも mpMax に合わせる） */
+  setMax(id: string, hpMax: number, mpMax: number): void;
   /** 状態異常を 1 つ付ける（on）か外す。life が alive でない間は列に死亡・灰を出したまま */
   setStatus(id: string, status: StatusId, on: boolean): void;
   /** UI-42 の被弾: その行の opacity を 2 往復（ms が 0 以下なら何もせずに解決） */
@@ -148,7 +159,7 @@ export function createPartyPanel(o: {
     cells.sanLabel.textContent = strings["party.san"] ?? "party.san";
     cells.status.style.color = "var(--c-danger)";
     el.appendChild(line);
-    return { line, cells, hpMax: 0, mpMax: 0, life: "alive", status: [] };
+    return { line, cells, hp: 0, hpMax: 0, mp: 0, mpMax: 0, life: "alive", status: [] };
   };
 
   const showCondition = (row: Row): void => {
@@ -177,7 +188,9 @@ export function createPartyPanel(o: {
         row.cells.mp.textContent = t.mp;
         row.cells.san.textContent = t.san;
         row.cells.status.textContent = t.life;
+        row.hp = ch.hp;
         row.hpMax = ch.hpMax;
+        row.mp = ch.mp;
         row.mpMax = ch.mpMax;
         row.life = ch.life;
         row.status = ch.status.slice();
@@ -187,7 +200,9 @@ export function createPartyPanel(o: {
     },
     setHp(id: string, hp: number): void {
       const row = byId.get(id);
-      if (row !== undefined) row.cells.hp.textContent = hpText(hp, row.hpMax);
+      if (row === undefined) return;
+      row.hp = hp;
+      row.cells.hp.textContent = hpText(hp, row.hpMax);
     },
     setSan(id: string, san: number): void {
       const row = byId.get(id);
@@ -201,7 +216,18 @@ export function createPartyPanel(o: {
     },
     setMp(id: string, mp: number): void {
       const row = byId.get(id);
-      if (row !== undefined) row.cells.mp.textContent = mpText(mp, row.mpMax);
+      if (row === undefined) return;
+      row.mp = mp;
+      row.cells.mp.textContent = mpText(mp, row.mpMax);
+    },
+    setMax(id: string, hpMax: number, mpMax: number): void {
+      const row = byId.get(id);
+      if (row === undefined) return;
+      row.hpMax = hpMax;
+      row.mpMax = mpMax;
+      row.cells.hp.textContent = hpText(row.hp, hpMax);
+      row.cells.mp.textContent = mpText(row.mp, mpMax);
+      row.cells.mpLabel.textContent = mpMax > 0 ? (strings["party.mp"] ?? "party.mp") : "";
     },
     setStatus(id: string, status: StatusId, on: boolean): void {
       const row = byId.get(id);

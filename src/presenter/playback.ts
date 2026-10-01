@@ -4,6 +4,7 @@
 //   ビューは visibleCells(finalState, data, cursor) を描く（具体的なビューは結線側が PlayerDeps に注入する）。
 // - settings().skipAnimations が真なら、フェードは 0ms、文字送りは即時で解決する（§3-9）。
 // - rushAll() は、同じ再生の中の残りをすべて即時にする（UI-43 のタップ 2 回目）。今の文の即時表示は呼び出し側が message.rush() で行う。
+// - レベルの変化（levelUp / levelDown）はパーティ欄の最大値と現在値を描き直す。spellLearned は何もしない（message が語る）。
 // - 戦闘（UI-41 / UI-42 / UI-40）: 被弾のフラッシュは hpChanged（delta < 0）に一本化する（味方はパーティ行、敵はグループの絵）。
 //   敵の id は "e{g}-{u}"（enemyGroupOfId）。敵の HP・状態は見せない（状態は core の message で伝わる）。
 //   全体攻撃の揺れは、spell の呪文が target enemyGroup / allEnemies かつ effect damage のとき（data.spells を表示のためだけに引く）。
@@ -35,6 +36,8 @@ export type PlayerDeps = {
     setSan(id: string, san: number): void;
     setLife(id: string, life: Life): void;
     setMp(id: string, mp: number): void;
+    /** levelUp / levelDown の最大値（続けて setHp / setMp で現在値） */
+    setMax(id: string, hpMax: number, mpMax: number): void;
     setStatus(id: string, status: StatusId, on: boolean): void;
     /** UI-42 の被弾 */
     flash(id: string, ms: number): Promise<void>;
@@ -207,6 +210,22 @@ export function createPlayer(deps: PlayerDeps): Player {
       cx.skip = isSkip();
       diceShown = true;
       await deps.dice.show(ev, cx.skip, msOf(cx, ui.diceStepMs));
+    },
+    async levelUp(ev, cx) {
+      cx.skip = isSkip();
+      deps.party.setMax(ev.id, ev.hpMax, ev.mpMax);
+      deps.party.setHp(ev.id, ev.hp);
+      deps.party.setMp(ev.id, ev.mp);
+    },
+    async levelDown(ev, cx) {
+      cx.skip = isSkip();
+      deps.party.setMax(ev.id, ev.hpMax, ev.mpMax);
+      deps.party.setHp(ev.id, ev.hp);
+      deps.party.setMp(ev.id, ev.mp);
+    },
+    async spellLearned(_ev, cx) {
+      // 何もしない（覚えたことは core の message が語る）
+      cx.skip = isSkip();
     },
     async battleEnd(_ev, cx) {
       cx.skip = isSkip();

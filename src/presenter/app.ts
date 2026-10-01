@@ -10,6 +10,7 @@ import type { GameData } from "../core/data/index";
 import { execute, createInitialState } from "../core/engine";
 import { battleMenu } from "../core/rules/combat";
 import { mapView, visibleCells } from "../core/rules/dungeon";
+import { townMenu } from "../core/rules/town";
 import { dungeonOf, itemDisplayName } from "../core/state";
 import type { BattleMenu, Command, GameState, Screen, ViewPoint } from "../core/types";
 import type { GameListEntry, SaveService } from "../save/types";
@@ -52,7 +53,7 @@ import { headerText } from "./views/header";
 import { formatMessage } from "./views/message";
 import { createSaveBanner } from "./views/save-banner";
 import { createTitleScreen, titleEntries, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
-import { townEntries, townEntryLabel, type TownEntry, type TownPage } from "./views/town";
+import { townEntries, townHeader, townPageIntro, townParent, type TownEntry, type TownPage } from "./views/town";
 
 export type Route = "title" | "creation" | "town" | "dungeon" | "battle";
 export type Overlay = null | "map" | "debug" | "detail";
@@ -230,7 +231,9 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     clearFocus();
     if (route === "town") {
       play.setMode("town");
-      play.header.setText(t("town.title"));
+      // UI-52: ヘッダーに所持金（再生中は前の額のまま。ここで最終の額に描き直す）
+      const menu = townMenu(st, data);
+      if (menu !== null) play.header.setText(townHeader(menu, strings));
     } else {
       play.setMode("dungeon");
       const d = st.dive;
@@ -244,19 +247,56 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
 
   const listItem = (label: string, onSelect: () => void): ControlItem => ({ label, onSelect: () => guard(onSelect) });
 
-  const townItem = (e: TownEntry): ControlItem =>
-    listItem(townEntryLabel(e, data, strings), () => {
-      if (e.kind === "gate") {
-        townPage = "gate";
-        syncControls();
-        void play.message.say(t("town.dungeonGate.intro"), store.get().skipAnimations);
-      } else if (e.kind === "back") {
-        townPage = "menu";
-        syncControls();
-      } else {
-        void run({ type: "dungeon.enter", dungeonId: e.dungeonId });
-      }
-    });
+  /** UI-52: 街のページを移る。入ったページの語り（宿・寺院・迷宮の入口、酒場は救済の申し出も）は再生の外で出す */
+  const goTownPage = (page: TownPage): void => {
+    townPage = page;
+    syncControls();
+    const menu = townMenu(state, data);
+    if (menu === null) return;
+    const instant = store.get().skipAnimations;
+    for (const k of townPageIntro(page, menu)) void play.message.say(t(k), instant);
+  };
+
+  /** Esc・戻る: 1 つ上のページへ（menu では何もしない） */
+  const townBack = (): void => {
+    const up = townParent(townPage);
+    if (up === null) return;
+    townPage = up;
+    syncControls();
+  };
+
+  /** 街の項目 → ページの移動か Command（料金・可否は core が決める。UI-35） */
+  const townItem = (e: TownEntry): ControlItem => ({
+    label: e.label,
+    disabled: "disabled" in e ? e.disabled : false,
+    onSelect: () =>
+      guard(() => {
+        switch (e.kind) {
+          case "page":
+            goTownPage(e.to);
+            return;
+          case "back":
+            townBack();
+            return;
+          case "templeNone":
+            void play.message.say(t("town.temple.none"), store.get().skipAnimations);
+            return;
+          case "inn":
+            // 泊まった後も宿のページにとどまる（再生の最後の sync で townMenu を取り直す）
+            void run({ type: "town.inn", rank: e.rank });
+            return;
+          case "temple":
+            void run({ type: "town.temple", memberId: e.memberId, service: e.service });
+            return;
+          case "mercy":
+            void run({ type: "town.mercy", memberId: e.memberId });
+            return;
+          case "enter":
+            void run({ type: "dungeon.enter", dungeonId: e.dungeonId });
+            return;
+        }
+      }),
+  });
 
   /** 操作領域とスワイプの可否を、route / overlay / pendingChoice / inputMode から決める */
   const syncControls = (): void => {
@@ -272,8 +312,20 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       return;
     }
     if (route === "town") {
-      c.setList(townEntries(townPage, state).map(townItem));
-      c.setMode("list");
+      const menu = townMenu(state, data);
+      if (menu === null) {
+        c.setMode("none");
+        return;
+      }
+      const items = townEntries(townPage, menu, strings).map(townItem);
+      if (townPage === "menu") {
+        // UI-52: 施設メニューは 2×2 の 4 枠
+        c.setBattleMenu(items, "town");
+        c.setMode("battle");
+      } else {
+        c.setList(items);
+        c.setMode("list");
+      }
       return;
     }
     if (route === "battle") {
@@ -749,10 +801,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       case "town":
         if (a === "confirm") play.controls.select(0);
         else if (typeof a === "object") play.controls.select(a.menu);
-        else if (a === "back" && townPage === "gate") {
-          townPage = "menu";
-          syncControls();
-        }
+        else if (a === "back") townBack();
         return;
       case "dungeon": {
         if (state.pendingChoice !== null) {

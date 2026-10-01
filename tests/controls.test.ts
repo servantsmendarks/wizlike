@@ -226,6 +226,15 @@ describe("controls", () => {
     c.select(4);
     c.select(5);
     expect(picked).toEqual([3, 4]);
+    // UI-52 town は townMenu の 4 枠
+    const before2 = created.length;
+    c.setBattleMenu(items, "town");
+    expect(created.slice(before2).filter((e) => e.className === "controls-battle-item").map((e) => [e.style["left"], e.style["top"], e.style["width"], e.style["height"]])).toEqual(
+      L.townMenu.map(rel),
+    );
+    c.select(0);
+    c.select(4);
+    expect(picked).toEqual([3, 4, 0]);
   });
 
   test("UI-54 一覧の onFocus は pointerenter / pointerdown で呼ばれ、一覧を作り直さない。setListFocus は注目の行の枠を accent にする（dim の行は dim のまま）", () => {

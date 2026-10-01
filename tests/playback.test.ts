@@ -65,6 +65,7 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
       setSan: rec("party.setSan"),
       setLife: rec("party.setLife"),
       setMp: rec("party.setMp"),
+      setMax: rec("party.setMax"),
       setStatus: rec("party.setStatus"),
       flash(id, ms) {
         log.push({ m: "party.flash", a: [id, ms] });
@@ -203,10 +204,32 @@ describe("UI-41 playback", () => {
     const s = stateWith(diveAt(1, 1, "N"));
     const events: GameEvent[] = [
       { kind: "rejected", command: "dungeon.move", reason: "x" },
-      { kind: "levelDown", id: "c1", level: 1, hpMax: 5, mpMax: 0, hp: 5, mp: 0 },
+      { kind: "eventStarted", eventId: "x" },
     ];
     await createPlayer(deps).play(events, s, s);
     expect(names(log)).toEqual(["message.setMore", "screens.sync"]);
+  });
+
+  test("UI-41/CH-61/CH-62 levelUp・levelDown は setMax → setHp → setMp（イベントの値で）。spellLearned は何もしない", async () => {
+    for (const skipAnimations of [false, true]) {
+      const { deps, log } = fakeDeps({ skipAnimations });
+      const s = stateWith(null);
+      const events: GameEvent[] = [
+        { kind: "levelUp", id: "c4", level: 3, hpGain: 4, mpGain: 2, hpMax: 20, mpMax: 9, hp: 17, mp: 8 },
+        { kind: "spellLearned", id: "c4", spellId: "p_heal", via: "roll" },
+        { kind: "levelDown", id: "c1", level: 2, hpMax: 15, mpMax: 0, hp: 15, mp: 0 },
+      ];
+      await createPlayer(deps).play(events, s, s);
+      expect(log.filter((e) => e.m.startsWith("party."))).toEqual([
+        { m: "party.setMax", a: ["c4", 20, 9] },
+        { m: "party.setHp", a: ["c4", 17] },
+        { m: "party.setMp", a: ["c4", 8] },
+        { m: "party.setMax", a: ["c1", 15, 0] },
+        { m: "party.setHp", a: ["c1", 15] },
+        { m: "party.setMp", a: ["c1", 0] },
+      ]);
+      expect(names(log).filter((m) => !m.startsWith("party."))).toEqual(["message.setMore", "screens.sync"]);
+    }
   });
 
   test("UI-41 最後に sync が 1 回、最終の state で呼ばれる", async () => {
