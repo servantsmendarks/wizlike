@@ -200,7 +200,6 @@ export type Monster = {
   special: { undead?: boolean; boss?: boolean };
   resist: Partial<Record<StatusId, boolean>>;
   tags: string[];
-  floors: number[];
   description: string;
 };
 

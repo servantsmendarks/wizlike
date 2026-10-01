@@ -214,6 +214,9 @@ describe("data: monsters.json", () => {
   test("data: CB-31 SAN 攻撃の sanDrain は 1 以上", () => {
     expectIssue((r) => (r.monsters[4].attacks[0].sanDrain = 0), "monsters.json", "[4].attacks[0].sanDrain: expected integer >= 1, got 0");
   });
+  test("data: CB-03 出現場所は encounterTable のみが正で、monsters は floors を持たない", () => {
+    expectIssue((r) => (r.monsters[0].floors = [1, 2]), "monsters.json", "[0].floors: unknown field");
+  });
   test("data: attacks は 1 つ以上", () => {
     expectIssue((r) => (r.monsters[0].attacks = []), "monsters.json", "[0].attacks: expected at least 1");
   });

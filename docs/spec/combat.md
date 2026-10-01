@@ -4,7 +4,7 @@
 
 - CB-01 ランダム遭遇は歩行 1 歩ごとに判定する（旋回では判定しない）。確率は `dungeons[].encounterRate` のセル種別（`room` / `corridor`）ごとの値。
 - CB-02 固定遭遇: ボス部屋（DG-13）、イベント由来（EV）。固定遭遇は逃走できない【仮】。
-- CB-03 敵編成は最大 `config.combat.maxEnemyGroups`（4）グループ。各グループは同種の敵 1〜`config.combat.maxPerGroup`（9）体で、体数は `monsters[].groupSize` のダイス。グループ数は `1d4` を階の重みで補正【仮】。
+- CB-03 敵編成は最大 `config.combat.maxEnemyGroups`（4）グループ。各グループは同種の敵 1〜`config.combat.maxPerGroup`（9）体で、体数は `monsters[].groupSize` のダイス。グループ数は `1d4` を階の重みで補正【仮】。ランダム遭遇で出る敵の種類は、いる階の `dungeons[].encounterTable[階]` から `weight` の重みで選ぶ。どの敵がどのダンジョンのどの階に出るかは `dungeons[].encounterTable` のみを正とし、`monsters.json` は出現場所を持たない。
 - CB-04 先手判定: 味方の `agi` 平均 + 1d10 と、敵の `agi` 平均 + 1d10 を比べる。差が 5 以上【仮】なら大きい側の奇襲で、奇襲側だけが 1 ラウンド行動する。慎重の恩恵 `ambushAvoid`（EV-10）は敵の奇襲判定から引く。
 - CB-05 未鑑定: 遭遇時、各グループは `monsters[].unidentifiedName` で表示される。鑑定済みになる契機: 識別呪文（MG-41）、各ラウンド終了時に `config.combat.identifyChancePerRound`（15）% + 味方の知恵最大値補正【仮】、同種を通算 `config.combat.identifyKills`（5）体倒した図鑑フラグ【仮】。図鑑フラグはゲーム単位で永続。
 - CB-06 未鑑定グループとの遭遇で SAN −2/グループ（CH-51）。鑑定済み（図鑑フラグあり）の敵では減らない。

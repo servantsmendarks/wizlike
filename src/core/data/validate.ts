@@ -430,7 +430,6 @@ function validateMonsters(ctx: Ctx, v: unknown, ix: Index): void {
       special: F({ undead: opt(B), boss: opt(B) }),
       resist: F(Object.fromEntries(STATUS_IDS.map((k) => [k, opt(B)]))),
       tags: L(S),
-      floors: L(I(POS_INT)),
       description: S,
     }),
   )(ctx, "", v);
