@@ -114,10 +114,13 @@ class Bot {
     this.near = new Set([...dist].filter(([, d]) => d <= NEAR).map(([k]) => k));
   }
 
-  /** execute して、rejected なら例外。文字列キーを検査し、全滅なら PenaltyResult の内訳 = 差分を確かめる */
+  /** execute して、rejected なら例外。state の不変条件（battle.input・dungeon.turn 以外）と文字列キーを検査し、全滅なら PenaltyResult の内訳 = 差分を確かめる */
   run(cmd: Command, from: GameState = this.state): GameState {
     const r = execute(from, cmd, data);
     if (r.events[0]?.kind === "rejected") throw new Error(`seed ${this.seed}: ${JSON.stringify(cmd)} rejected: ${JSON.stringify(r.events[0])}`);
+    // 潜行中・戦闘中の不変条件（台帳 ⊆ 所持品、screen battle ⇔ battle など）も、実際の execute の結果で確かめる。
+    // 入力を積むだけの battle.input と向きを変えるだけの dungeon.turn は時間の都合で省く（検査なしで約 7 秒、全コマンドで約 17 秒、省いて約 13 秒。2026-10-01 の手元の実測）
+    if (cmd.type !== "battle.input" && cmd.type !== "dungeon.turn") expectStateInvariants(r.state);
     expectKnownStringKeys(r.events);
     for (const e of r.events) if (e.kind === "message") this.keys.add(e.key);
     const w = r.events.find((e): e is Extract<GameEvent, { kind: "wipe" }> => e.kind === "wipe");
