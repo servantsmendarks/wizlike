@@ -15,6 +15,7 @@
 //   全滅の 2d10（label が WIPE_DICE_KEY）の箱は、その後の message 以外のイベント（復活の lifeChanged など）でも消さず、wipe の待ちの後に消す。
 //   開いた後は入力を待たずに続ける（後続の screen town でも待たない）。
 // - battleEnd を受けたら deps.battleEnded() で戦闘の入力の UI（ヘッダーの問い・オート解除・パーティの選択）を下げる。
+//   全滅の 2d10 を受けたら deps.inputClosed() で入力の UI（迷宮のヘッダー・十字ボタンなども）を下げる。
 // - レベルの変化（levelUp / levelDown）はパーティ欄の最大値と現在値を描き直す。spellLearned は何もしない（message が語る）。
 // - 戦闘（UI-41 / UI-42 / UI-40）: 被弾のフラッシュは hpChanged（delta < 0）に一本化する（味方はパーティ行、敵はグループの絵）。
 //   敵の id は "e{g}-{u}"（enemyGroupOfId）。敵の HP・状態は見せない（状態は core の message で伝わる）。
@@ -84,6 +85,8 @@ export type PlayerDeps = {
   wipe: { show(p: PenaltyResult): void };
   /** UI-44 / UI-54: battleEnd を再生した（戦闘の入力の UI を下げる。続きの再生の間は出さない） */
   battleEnded(): void;
+  /** UI-44 / UI-56: 全滅の 2d10 を出した（入力の UI を下げる。戦闘の外の全滅でも、内訳を開くまでの待ちの間は出さない） */
+  inputClosed(): void;
 };
 
 /** UI-40 / UI-56: 全滅の 2d10 の dice の label のキー。この箱は wipe（内訳を開く）まで消さない */
@@ -293,6 +296,8 @@ export function createPlayer(deps: PlayerDeps): Player {
       cx.skip = isSkip();
       diceShown = true;
       wipeDiceShown = ev.label.key === WIPE_DICE_KEY;
+      // UI-44 / UI-56: 全滅の 2d10 を出したら、内訳を開くまでの待ちの間は入力の UI を出さない（戦闘の内と外で同じ）
+      if (wipeDiceShown) deps.inputClosed();
       deps.message.log(formatDiceSummary(ev, deps.strings));
       await deps.dice.show(ev, isSkip, msOf(cx, ui.diceStepMs));
     },

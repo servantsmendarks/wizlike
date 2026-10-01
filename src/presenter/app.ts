@@ -23,7 +23,7 @@ import { townMenu } from "../core/rules/town";
 import { dungeonOf, itemDisplayName } from "../core/state";
 import type { BattleMenu, Command, GameState, PenaltyResult, Pos, Screen, ViewPoint } from "../core/types";
 import type { GameListEntry, SaveService } from "../save/types";
-import { runChain, type ChainDeps } from "./auto-chain";
+import { closesInput, runChain, type ChainDeps } from "./auto-chain";
 import { createAutosaver, createCommandExec, createSaveBannerState, type CommandExecOptions, type CommandResult, type SaveStatus } from "./autosave";
 import {
   entries,
@@ -239,7 +239,20 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     },
     wipe: { show: (p) => openWipe(p) },
     battleEnded: () => onBattleEnded(),
+    inputClosed: () => lowerInput(),
   });
+
+  /**
+   * UI-44: コマンドを送ってから再生が終わるまでは、そのコマンドで閉じた入力の UI を出さない。
+   * ヘッダーを空にし、操作領域のボタン・入力中の名前・注目の枠を下げる。cursor は変えない
+   * （rejected なら runBattle の後の描き直しで戻り、受け付けられたら再生の最後の sync で作り直す）
+   */
+  const lowerInput = (): void => {
+    play.party.setActive(null);
+    clearFocus();
+    play.header.setText("");
+    play.controls.setMode("none");
+  };
 
   /**
    * UI-44 / UI-54: battleEnd の再生の後は、戦闘の入力の UI（ヘッダーの問い・オート解除・パーティの選択）を下げる。
@@ -249,10 +262,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   const onBattleEnded = (): void => {
     cursor = null;
     stopRequested = false;
-    play.party.setActive(null);
-    clearFocus();
-    play.header.setText("");
-    play.controls.setMode("none");
+    lowerInput();
   };
 
   /** core の screen イベント。M3 の画面は title / town / dungeon / battle */
@@ -653,7 +663,11 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     });
 
   const chainDeps: ChainDeps = {
-    run: (cmd) => run(cmd),
+    run: (cmd) => {
+      // UI-44: 逃走・前回と同じ・手動のラウンドの解決は、送ったら再生の間は入力の UI（ヘッダーの問い・選択肢）を下げる
+      if (closesInput(cmd, battleMenu(state, data))) lowerInput();
+      return run(cmd);
+    },
     menu: (): BattleMenu | null => battleMenu(state, data),
     stopRequested: () => stopRequested,
     clearStop: () => {

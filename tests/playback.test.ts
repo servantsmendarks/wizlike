@@ -104,6 +104,7 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
     screens: { show: (to) => rec("screens.show")(to), sync: (st) => log.push({ m: "screens.sync", a: [st] }) },
     wipe: { show: (p) => rec("wipe.show")(p) },
     battleEnded: rec("battleEnded"),
+    inputClosed: rec("inputClosed"),
     beat: {
       waitTap() {
         log.push({ m: "beat.waitTap", a: [] });
@@ -430,6 +431,26 @@ describe("UI-41 playback", () => {
     player.tap();
     await p;
     expect(names(log).filter((m) => m === "dice.hide" || m === "wipe.show")).toEqual(["dice.hide", "wipe.show"]);
+  });
+
+  test("UI-44/UI-56 戦闘の外の全滅（wipeIfNoneCanAct）: 全滅の 2d10 を出したら inputClosed を呼び（迷宮のヘッダー・操作を下げる）、それは内訳を開く前のタップ待ちより前（演出スキップの真偽とも）", async () => {
+    const s = structuredClone(dived(1));
+    for (const c of s.party) c.status = ["paralysis"];
+    const r = execute(s, { type: "dungeon.turn", dir: "left" }, data);
+    for (const skipAnimations of [false, true]) {
+      const { deps, log } = fakeDeps({ skipAnimations });
+      await createPlayer(deps).play(r.events, s, r.state);
+      const ms = names(log).filter((m) => m === "inputClosed" || m === "dice.show" || m === "beat.waitTap" || m === "wipe.show");
+      expect(ms, String(skipAnimations)).toEqual(["inputClosed", "dice.show", "beat.waitTap", "wipe.show"]);
+    }
+  });
+
+  test("UI-44 全滅でないダイス（逃走の判定など）では inputClosed を呼ばない", async () => {
+    const { deps, log } = fakeDeps();
+    const s = stateWith(diveAt(1, 1, "N"));
+    await createPlayer(deps).play([rollDiceEv("dice.flee", [37], 37, "dice.flee.ok"), { kind: "message", key: "battle.fleeOk" }], s, s);
+    expect(names(log)).toContain("dice.show");
+    expect(names(log)).not.toContain("inputClosed");
   });
 
   test("UI-44/UI-54 battleEnd を受けたら battleEnded を 1 回呼ぶ（戦闘の入力の UI を下げる）。戦闘の外への screen と全滅の内訳より前", async () => {

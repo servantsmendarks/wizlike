@@ -1,7 +1,7 @@
 // CB-43 / UI-54: オートの連鎖（src/presenter/auto-chain.ts）。BattleMenu は手組み。
 import { describe, expect, test } from "vitest";
 import type { BattleMenu, Command } from "../src/core/types";
-import { chainDecision, runChain, type ChainStep } from "../src/presenter/auto-chain";
+import { chainDecision, closesInput, runChain, type ChainStep } from "../src/presenter/auto-chain";
 
 function menu(o: Partial<BattleMenu> = {}): BattleMenu {
   return { round: 1, auto: false, canFlee: true, ready: false, pending: [], groups: [], members: [], allies: [], ...o };
@@ -21,6 +21,22 @@ describe("CB-43/UI-54 chainDecision", () => {
       [{ rejected: false, menu: menu({ ready: false }), stopRequested: false }, "stop"],
     ];
     for (const [i, want] of rows) expect(chainDecision(i), JSON.stringify(i)).toBe(want);
+  });
+});
+
+describe("UI-44 closesInput", () => {
+  test("UI-44 送ったら再生の間は入力の UI を下げる: 逃走・前回と同じ・手動の battle.resolve。オート中の resolve・battle.input・battle.auto・戦闘外の resolve は下げない", () => {
+    const rows: [Command, BattleMenu | null, boolean][] = [
+      [{ type: "battle.flee" }, menu(), true],
+      [{ type: "battle.repeat" }, menu(), true],
+      [{ type: "battle.resolve" }, menu({ ready: true }), true],
+      [{ type: "battle.resolve" }, menu({ auto: true }), false],
+      [{ type: "battle.resolve" }, null, false],
+      [{ type: "battle.input", memberId: "c1", action: { type: "defend" } }, menu(), false],
+      [{ type: "battle.auto", on: true }, menu(), false],
+      [{ type: "battle.auto", on: false }, menu({ auto: true }), false],
+    ];
+    for (const [cmd, m, want] of rows) expect(closesInput(cmd, m), JSON.stringify([cmd, m?.auto])).toBe(want);
   });
 });
 

@@ -278,10 +278,23 @@ describe("入力と Command", () => {
     expect(app).toMatch(/battleEnded: \(\) => onBattleEnded\(\)/);
     const body = /const onBattleEnded = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(body).toContain("cursor = null;");
-    expect(body).toContain("play.party.setActive(null);");
-    expect(body).toContain("clearFocus();");
-    expect(body).toContain('play.header.setText("");');
-    expect(body).toContain('play.controls.setMode("none");');
+    expect(body).toContain("lowerInput();");
+    const lower = /const lowerInput = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(lower).toContain("play.party.setActive(null);");
+    expect(lower).toContain("clearFocus();");
+    expect(lower).toContain('play.header.setText("");');
+    expect(lower).toContain('play.controls.setMode("none");');
+  });
+
+  test("UI-44/UI-56 全滅の 2d10 を出したとき（playback の inputClosed。戦闘の外の全滅も）は、battleEnd と同じ下げ方（lowerInput）で迷宮のヘッダーと操作を下げる", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toMatch(/inputClosed: \(\) => lowerInput\(\)/);
+  });
+
+  test("UI-44 連鎖が Command を送る前に、閉じる Command（逃走・前回と同じ・手動の resolve。closesInput）なら入力の UI を下げてから run する", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const body = /const chainDeps: ChainDeps = \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(body).toMatch(/run: \(cmd\) => \{\s*if \(closesInput\(cmd, battleMenu\(state, data\)\)\) lowerInput\(\);\s*return run\(cmd\);\s*\}/);
   });
 });
 
