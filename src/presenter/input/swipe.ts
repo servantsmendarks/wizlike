@@ -90,6 +90,22 @@ export function canRepeat(events: readonly GameEvent[], pending: PendingChoice |
   return events.length === 1 && events[0]?.kind === "moved" && pending === null && !overlayOpen;
 }
 
+/**
+ * UI-31: 長押しの 1 歩（createHoldRepeater の fire）。ready が偽なら送らずに止まる。move は run の門を通した dungeon.move で、
+ * 門に捨てられた（null）・rejected・canRepeat が偽なら false（止まる）を返す。app.ts の結線をここに切り出して node で試す。
+ */
+export async function forwardStep(o: {
+  ready(): boolean;
+  move(): Promise<{ events: readonly GameEvent[]; rejected: boolean } | null>;
+  pending(): PendingChoice | null;
+  overlayOpen(): boolean;
+}): Promise<boolean> {
+  if (!o.ready()) return false;
+  const r = await o.move();
+  if (r === null || r.rejected) return false;
+  return canRepeat(r.events, o.pending(), o.overlayOpen());
+}
+
 // ---------------------------------------------------------------------------
 // DOM（呼ばれたときだけ触れる）
 
@@ -258,10 +274,15 @@ export type HoldRepeater = { press(): void; release(): void };
  * UI-31: 前進の長押し。press で fire を 1 回呼び、その再生が終わって true が返り、まだ押されていれば
  * ms() 待ってから次の fire を呼ぶ（待ちは再生の終わりから数える）。false が返るか release で止まる。
  * fire の途中でもう一度 press されたら、同じ連打を続ける（二重に fire しない）。
+ * fire が false で止まった（壁・扉・遭遇など）ときにまだ押されていれば、release まではその長押しの続きとみなし、
+ * 重ねて届く press（2 本目の指、スワイプと十字ボタンの併用、repeat が偽で届くキーの自動リピートなど）を無視する。
+ * 同じ長押しの中で壁に当たり直して「壁だ。」が何度も出ないようにするため。離して押し直せば新しい長押しとして動く。
  */
 export function createHoldRepeater(o: { ms(): number; fire(): Promise<boolean> }): HoldRepeater {
   let pressed = false;
   let running = false;
+  /** fire が false で止まった後、まだ release されていない（同じ長押しの続き） */
+  let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let wake: (() => void) | null = null;
 
@@ -285,6 +306,7 @@ export function createHoldRepeater(o: { ms(): number; fire(): Promise<boolean> }
         } catch {
           ok = false;
         }
+        if (!ok && pressed) stopped = true;
         if (!ok || !pressed) break;
         await sleep(o.ms());
       }
@@ -296,11 +318,13 @@ export function createHoldRepeater(o: { ms(): number; fire(): Promise<boolean> }
 
   return {
     press(): void {
+      if (stopped) return;
       pressed = true;
       if (!running) void loop();
     },
     release(): void {
       pressed = false;
+      stopped = false;
       if (timer !== null) clearTimeout(timer);
       timer = null;
       const w = wake;

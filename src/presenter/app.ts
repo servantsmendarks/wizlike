@@ -10,7 +10,7 @@ import { execute, createInitialState } from "../core/engine";
 import { mapView, visibleCells } from "../core/rules/dungeon";
 import { dungeonOf } from "../core/state";
 import type { Command, GameEvent, GameState, Screen, ViewPoint } from "../core/types";
-import { attachKeyboard, attachReleaseOnHide, attachSwipe, canRepeat, createHoldRepeater, type Action } from "./input/swipe";
+import { attachKeyboard, attachReleaseOnHide, attachSwipe, createHoldRepeater, forwardStep, type Action } from "./input/swipe";
 import { dungeonLayout, layoutWarnings, regions } from "./layout";
 import { createPlayer } from "./playback";
 import { createRunGate } from "./run-gate";
@@ -179,6 +179,9 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     const s = store.get();
     play.setSwipeEnabled(s.inputMode !== "buttons");
     const c = play.controls;
+    // UI-31: 十字ボタンを出さない間は長押しを離したものとする。押したまま十字ボタンが隠れると pointerup が届かず、
+    // 壁で止まった長押しの続き（createHoldRepeater の stopped）が残って次の前進を無視してしまうため
+    if (route !== "dungeon" || overlay !== null || state.pendingChoice !== null) repeater.release();
     if (route === "town") {
       c.setList(townEntries(townPage, state).map(townItem));
       c.setMode("list");
@@ -240,12 +243,13 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   /** UI-31: 前進の長押し。1 歩ごとに再生の終わりを待ち、ちょうど [moved] だけのときに続ける */
   const repeater = createHoldRepeater({
     ms: () => store.get().holdRepeatMs,
-    fire: async () => {
-      if (route !== "dungeon" || overlay !== null || state.pendingChoice !== null) return false;
-      const r = await run({ type: "dungeon.move" });
-      if (r === null || r.rejected) return false;
-      return canRepeat(r.events, state.pendingChoice, overlay !== null);
-    },
+    fire: () =>
+      forwardStep({
+        ready: () => route === "dungeon" && overlay === null && state.pendingChoice === null,
+        move: () => run({ type: "dungeon.move" }),
+        pending: () => state.pendingChoice,
+        overlayOpen: () => overlay !== null,
+      }),
   });
 
   /** 再生中のボタンは何もしない（UI-44） */

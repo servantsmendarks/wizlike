@@ -1,7 +1,11 @@
 // UI-30〜34: スワイプの分類・tracker・非反応帯・キー表・連打の可否と、長押しの連打（偽のタイマー）、
 // attachSwipe / attachKeyboard（偽の要素と window）。
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { GameEvent, PendingChoice } from "../src/core/types";
+import { execute } from "../src/core/engine";
+import { floorOf } from "../src/core/rules/dungeon";
+import { cloneState } from "../src/core/state";
+import type { Command, GameEvent, GameState, PendingChoice } from "../src/core/types";
+import { createRunGate } from "../src/presenter/run-gate";
 import {
   attachKeyboard,
   attachReleaseOnHide,
@@ -9,6 +13,7 @@ import {
   canRepeat,
   classifySwipe,
   createHoldRepeater,
+  forwardStep,
   inDeadZone,
   keyToAction,
   swipeAction,
@@ -19,7 +24,7 @@ import {
   type Action,
   type Tracker,
 } from "../src/presenter/input/swipe";
-import { data } from "./helpers/core";
+import { data, newGame } from "./helpers/core";
 
 describe("スワイプの分類", () => {
   test("UI-30 thresholdCss(28, 4/3) ≈ 37.33（論理 px × ステージの CSS 倍率）", () => {
@@ -179,7 +184,7 @@ describe("長押しの連打", () => {
     expect(calls).toHaveLength(3);
   });
 
-  test("UI-31 fire が false（壁・扉・遭遇・選択の保留など）なら止まる", async () => {
+  test("UI-31 fire が false（壁・扉・遭遇・選択の保留など）なら止まり、release までの press は同じ長押しの続きとして無視する", async () => {
     vi.useFakeTimers();
     const { rep, calls } = harness();
     rep.press();
@@ -187,7 +192,12 @@ describe("長押しの連打", () => {
     await flush();
     await vi.advanceTimersByTimeAsync(2000);
     expect(calls).toHaveLength(1);
-    // もう一度押せばまた動く
+    // 離さずに届いた press は無視する（同じ長押しの中で壁に当たり直さない）
+    rep.press();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(calls).toHaveLength(1);
+    // 離して押し直せばまた動く
+    rep.release();
     rep.press();
     expect(calls).toHaveLength(2);
   });
@@ -210,6 +220,17 @@ describe("長押しの連打", () => {
     await flush();
     await vi.advanceTimersByTimeAsync(2000);
     expect(b.calls).toHaveLength(1);
+  });
+
+  test("UI-31 再生の途中で離してから壁（false）が返った場合は止まるだけで、次の press は新しい長押しとして動く", async () => {
+    vi.useFakeTimers();
+    const { rep, calls } = harness();
+    rep.press();
+    rep.release();
+    calls[0]!(false);
+    await flush();
+    rep.press();
+    expect(calls).toHaveLength(2);
   });
 
   test("UI-31 再生の途中の二度押しは二重に fire しない", async () => {
@@ -405,5 +426,157 @@ describe("attachReleaseOnHide", () => {
     expect(n).toBe(3);
     detach();
     expect(win.count() + doc.count()).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// UI-31: 長押し中に同じ壁へ連続で当たったとき（core の execute・run の門・forwardStep・createHoldRepeater を app と同じに結線）
+
+describe("長押しと壁（結合）", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  /** d01 に入り、正面が壁のセルに立たせた state（遭遇なし） */
+  function facingWall(): GameState {
+    const s0 = execute(newGame(1), { type: "dungeon.enter", dungeonId: "d01" }, data).state;
+    const f = floorOf(s0.dive!, data);
+    const keys = { N: "n", E: "e", S: "s", W: "w" } as const;
+    for (let i = 0; i < f.cells.length; i++) {
+      const c = f.cells[i]!;
+      for (const d of ["N", "E", "S", "W"] as const) {
+        if (c[keys[d]] !== "wall") continue;
+        const s = cloneState(s0);
+        s.dive!.pos = { x: i % f.width, y: Math.floor(i / f.width) };
+        s.dive!.facing = d;
+        return s;
+      }
+    }
+    throw new Error("no wall");
+  }
+
+  /** app と同じ結線。再生は PLAY_MS かかる（偽のタイマー）。execute の回数と、再生した message のキーを数える */
+  const PLAY_MS = 120;
+  function wire() {
+    let state = facingWall();
+    let executes = 0;
+    const said: string[] = [];
+    const gate = createRunGate<Command, { events: readonly GameEvent[]; rejected: boolean }>({
+      exec: async (cmd) => {
+        executes++;
+        const r = execute(state, cmd, data);
+        state = r.state;
+        for (const e of r.events) if (e.kind === "message") said.push(e.key);
+        await new Promise<void>((res) => setTimeout(res, PLAY_MS));
+        return { events: r.events, rejected: false };
+      },
+    });
+    const rep = createHoldRepeater({
+      ms: () => 250,
+      fire: () =>
+        forwardStep({
+          ready: () => true,
+          move: () => gate.run({ type: "dungeon.move" }),
+          pending: () => state.pendingChoice,
+          overlayOpen: () => false,
+        }),
+    });
+    const blocked = (): number => said.filter((k) => k === "dungeon.blocked").length;
+    return { rep, gate, blocked, executes: () => executes, said };
+  }
+
+  test("UI-31 押し続けて壁に当たったら「壁だ。」は 1 回で、その長押しの間は次の move を送らない", async () => {
+    vi.useFakeTimers();
+    const w = wire();
+    w.rep.press();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(w.executes()).toBe(1);
+    expect(w.blocked()).toBe(1);
+    expect(w.said).toEqual(["dungeon.blocked"]);
+  });
+
+  test("UI-31 同じ長押しの中で press が重ねて届いても（2 本目の指、スワイプと十字ボタン、repeat が偽の自動リピート）、壁で止まった後は release まで送らない", async () => {
+    vi.useFakeTimers();
+    const w = wire();
+    w.rep.press();
+    // 再生中の重複
+    w.rep.press();
+    await vi.advanceTimersByTimeAsync(PLAY_MS + 10);
+    expect(w.executes()).toBe(1);
+    // 止まった後の重複（離していない）
+    for (let i = 0; i < 6; i++) {
+      w.rep.press();
+      await vi.advanceTimersByTimeAsync(300);
+    }
+    expect(w.executes()).toBe(1);
+    expect(w.blocked()).toBe(1);
+    // 離して押し直すのは新しい長押し。そのたびに 1 回出てよい
+    w.rep.release();
+    w.rep.press();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(w.executes()).toBe(2);
+    expect(w.blocked()).toBe(2);
+  });
+
+  test("UI-31/UI-33 キー: 押したままの ArrowUp の keydown が repeat 偽で届き続けても、keyup までは「壁だ。」は 1 回", async () => {
+    vi.useFakeTimers();
+    const win = new FakeTarget();
+    const doc = Object.assign(new FakeTarget(), { visibilityState: "visible" });
+    vi.stubGlobal("window", win);
+    vi.stubGlobal("document", doc);
+    const w = wire();
+    attachKeyboard({
+      onAction: (a) => {
+        if (a === "forward") w.rep.press();
+      },
+      onRelease: (a) => {
+        if (a === "forward") w.rep.release();
+      },
+    });
+    const key = (type: string, repeat: boolean) => win.emit(type, { key: "ArrowUp", repeat, target: null, preventDefault() {} });
+    key("keydown", false);
+    for (let i = 0; i < 20; i++) {
+      await vi.advanceTimersByTimeAsync(50);
+      key("keydown", i % 2 === 0); // 自動リピート（repeat 真と、環境によっては偽）
+    }
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(w.blocked()).toBe(1);
+    expect(w.executes()).toBe(1);
+    key("keyup", false);
+    key("keydown", false);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(w.blocked()).toBe(2);
+  });
+
+  test("UI-31 十字ボタンとスワイプ: 前進を押したままの間に別の前進が届いても、壁で止まったら 1 回。指を離せば次の押下で動く", async () => {
+    vi.useFakeTimers();
+    const w = wire();
+    const el = new FakeView(0);
+    attachSwipe(el as unknown as HTMLElement, {
+      scale: () => 1,
+      threshold: () => 28,
+      deadZone: 12,
+      width: 240,
+      enabled: () => true,
+      onAction: (a) => {
+        if (a === "forward") w.rep.press();
+      },
+      onRelease: () => w.rep.release(),
+    });
+    // 十字ボタンの前進を押したまま（pointerdown → press。離すまで release しない）
+    w.rep.press();
+    await vi.advanceTimersByTimeAsync(PLAY_MS + 300);
+    // もう 1 本の指でビューを上へスワイプして押したまま
+    el.emit("pointerdown", { pointerId: 2, clientX: 100, clientY: 100 });
+    el.emit("pointermove", { pointerId: 2, clientX: 100, clientY: 40 });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(w.executes()).toBe(1);
+    expect(w.blocked()).toBe(1);
+    // スワイプの指を離すと release。次の押下は新しい長押し
+    el.emit("pointerup", { pointerId: 2 });
+    w.rep.press();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(w.blocked()).toBe(2);
   });
 });

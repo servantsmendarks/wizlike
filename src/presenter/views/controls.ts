@@ -61,7 +61,7 @@ function setShown(el: HTMLElement, on: boolean): void {
 
 /**
  * region は ui §2 の controls 領域（ステージ座標）。el はその位置と大きさに自分で置く。
- * onAction は十字ボタンを押した瞬間、onRelease は離したとき（pointerup / pointercancel / pointerleave）に呼ぶ。
+ * onAction は十字ボタンを押した瞬間、onRelease は離したとき（pointerup / pointercancel / pointerleave / lostpointercapture）に呼ぶ。
  */
 export function createControls(o: {
   region: Rect;
@@ -119,6 +119,8 @@ export function createControls(o: {
     b.addEventListener("pointerup", release);
     b.addEventListener("pointercancel", release);
     b.addEventListener("pointerleave", release);
+    // 押したままボタンが隠れたときなど、pointerup の代わりにこれだけが届く場合がある
+    b.addEventListener("lostpointercapture", release);
     // pointerdown の preventDefault で click は来ないことがあるので、click では何もしない
     dpad.appendChild(b);
   }
