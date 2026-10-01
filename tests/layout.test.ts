@@ -139,13 +139,14 @@ describe("layout", () => {
     }
     // UI-54 戦闘の枠は TOUCH_MIN_LOGICAL 以上で、下端の最大（94）は CONTROLS_MIN_HEIGHT（98）以内
     for (const r of [...L.battleParty, ...L.battleMember, L.autoStop, ...L.townMenu]) expect(Math.min(r.w, r.h)).toBeGreaterThanOrEqual(TOUCH_MIN_LOGICAL);
-    // UI-52 街の施設メニューは 3 列 × 2 段の 76×40 の 5 枠（酒場・宿屋・寺院 / 闇魔術・迷宮へ）。段は戦闘のパーティの選択と同じ y 6 / 54
+    // UI-52 街の施設メニューは 3 列 × 2 段の 76×40 の 6 枠（酒場・宿屋・寺院 / 闇魔術・迷宮へ・店）。段は戦闘のパーティの選択と同じ y 6 / 54
     expect(L.townMenu).toEqual([
       { x: 4, y: 306, w: 76, h: 40 },
       { x: 82, y: 306, w: 76, h: 40 },
       { x: 160, y: 306, w: 76, h: 40 },
       { x: 4, y: 354, w: 76, h: 40 },
       { x: 82, y: 354, w: 76, h: 40 },
+      { x: 160, y: 354, w: 76, h: 40 },
     ]);
     for (const [i, a] of L.townMenu.entries()) for (const b of L.townMenu.slice(i + 1)) expect(overlaps(a, b)).toBe(false);
     // 下端の最大は 94 のまま（CONTROLS_MIN_HEIGHT は変わらない）
@@ -252,6 +253,7 @@ describe("layout", () => {
         "ui.layout: battleMember[4] does not fit in the controls region (height 86)",
         "ui.layout: townMenu[3] does not fit in the controls region (height 86)",
         "ui.layout: townMenu[4] does not fit in the controls region (height 86)",
+        "ui.layout: townMenu[5] does not fit in the controls region (height 86)",
       ]);
     }
   });

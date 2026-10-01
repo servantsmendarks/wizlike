@@ -221,7 +221,7 @@ describe("controls", () => {
     expect(closed).toBe(1);
   });
 
-  test("UI-54/UI-52 setBattleMenu の配置: party は battleParty の 4 枠、member は battleMember の 5 枠、town は townMenu の 5 枠に置き、枠数を超える分は捨てる", () => {
+  test("UI-54/UI-52 setBattleMenu の配置: party は battleParty の 4 枠、member は battleMember の 5 枠、town は townMenu の 6 枠に置き、枠数を超える分は捨てる", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);
     const L = dungeonLayout(g, data.config.party.size);
@@ -253,16 +253,16 @@ describe("controls", () => {
     c.select(4);
     c.select(5);
     expect(picked).toEqual([3, 4]);
-    // UI-52 town は townMenu の 5 枠（6 件目は捨てる）
+    // UI-52 town は townMenu の 6 枠（7 件目は捨てる）
     const before2 = created.length;
-    c.setBattleMenu(items, "town");
+    c.setBattleMenu([...items, { label: "x6", onSelect: () => picked.push(6) }], "town");
     expect(created.slice(before2).filter((e) => e.className === "controls-battle-item").map((e) => [e.style["left"], e.style["top"], e.style["width"], e.style["height"]])).toEqual(
       L.townMenu.map(rel),
     );
     c.select(0);
-    c.select(4);
     c.select(5);
-    expect(picked).toEqual([3, 4, 0, 4]);
+    c.select(6);
+    expect(picked).toEqual([3, 4, 0, 5]);
   });
 
   test("UI-54 一覧の onFocus は pointerenter / pointerdown で呼ばれ、一覧を作り直さない。setListFocus は注目の行の枠を accent にする（dim の行は dim のまま）", () => {

@@ -316,6 +316,13 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
           case "enter":
             void run({ type: "dungeon.enter", dungeonId: e.dungeonId });
             return;
+          case "shopItem":
+            goTownPage({ shop: e.itemId });
+            return;
+          case "buy":
+            // TW-05: 買った後も持たせる者の一覧にとどまる（再生の最後の sync で townMenu を取り直す）
+            void run({ type: "town.shop", action: { kind: "buy", memberId: e.memberId, itemId: e.itemId } });
+            return;
         }
       }),
   });
@@ -349,7 +356,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       }
       const items = townEntries(townPage, menu, strings).map(townItem);
       if (townPage === "menu") {
-        // UI-52: 施設メニューは 3 列 × 2 段の 5 枠
+        // UI-52: 施設メニューは 3 列 × 2 段の 6 枠
         c.setBattleMenu(items, "town");
         c.setMode("battle");
       } else {
