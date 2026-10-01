@@ -38,6 +38,8 @@ type DiveRecord = {
   steps: number;
   herbs: number;
   threads: number;
+  homeBattles: number; // n 戦に達した後（または歩数の上限の後）の徒歩の帰り道での戦闘数（battles に含む）
+  homeWipe: boolean; // 徒歩の帰り道で全滅した（method は wipe）
   goldBefore: number; // 潜行の前の所持金
   goldAfter: number; // 宿の後の所持金
   templeTries: number;
@@ -107,7 +109,9 @@ function mean(xs: readonly number[]): number {
   return xs.length === 0 ? NaN : xs.reduce((a, b) => a + b, 0) / xs.length;
 }
 function fmt(x: number): string {
-  return Number.isNaN(x) ? "-" : Number.isInteger(x) ? String(x) : x.toFixed(1);
+  if (Number.isNaN(x)) return "-";
+  const r = Math.round(x * 10) / 10; // 浮動小数の誤差（110/200*100 = 55.00000000000001）で「55.0」にしない
+  return Number.isInteger(r) ? String(r) : r.toFixed(1);
 }
 function pct(n: number, d: number): string {
   return d === 0 ? "-" : `${fmt((n / d) * 100)}%（${n}/${d}）`;
@@ -129,6 +133,8 @@ class Campaign {
   steps = 0;
   herbs = 0;
   threads = 0;
+  homeBattles = 0;
+  homeWipe = false;
   wiped: PenaltyResult | null = null;
 
   constructor(readonly seed: number, readonly shape: Shape) {
@@ -274,6 +280,8 @@ class Campaign {
     this.steps = 0;
     this.herbs = 0;
     this.threads = 0;
+    this.homeBattles = 0;
+    this.homeWipe = false;
     this.wiped = null;
     this.run({ type: "dungeon.enter", dungeonId: "d01" });
     // 1 階の構造はこの潜行の間変わらない（罠の発動は kind だけを変え、辺は変えない）ので、潜行ごとにキャッシュする
@@ -294,7 +302,10 @@ class Campaign {
     if (this.inDungeon) {
       this.healBetweenBattles();
       if (this.inDungeon) {
+        const b0 = this.battles;
         const m = this.goHome();
+        this.homeBattles = this.battles - b0;
+        this.homeWipe = this.wiped !== null;
         if (this.wiped === null) return capped ? "cap" : m;
       }
     }
@@ -345,6 +356,8 @@ class Campaign {
         steps: this.steps,
         herbs: this.herbs,
         threads: this.threads,
+        homeBattles: this.homeBattles,
+        homeWipe: this.homeWipe,
         goldBefore,
         goldAfter: 0,
         templeTries: 0,
@@ -391,7 +404,7 @@ function report(shape: Shape, results: CampaignResult[]): string {
     const wipes = ds.filter((d) => d.method === "wipe").length;
     const m = (x: Method) => ds.filter((d) => d.method === x).length;
     lines.push(
-      `潜行 ${k + 1}: 全滅率 ${pct(wipes, ds.length)} / 帰還 糸 ${m("thread")}・徒歩 ${m("walk")}・上限 ${m("cap")} / 戦闘数 平均 ${fmt(mean(ds.map((d) => d.battles)))} / 薬草 平均 ${fmt(mean(ds.map((d) => d.herbs)))}`,
+      `潜行 ${k + 1}: 全滅率 ${pct(wipes, ds.length)} / 帰還 糸 ${m("thread")}・徒歩 ${m("walk")}・上限 ${m("cap")} / 戦闘数 平均 ${fmt(mean(ds.map((d) => d.battles)))}・最大 ${Math.max(...ds.map((d) => d.battles))} / 徒歩の帰り道で戦闘 ${ds.filter((d) => d.homeBattles > 0).length}・そこで全滅 ${ds.filter((d) => d.homeWipe).length} / 薬草 平均 ${fmt(mean(ds.map((d) => d.herbs)))}`,
     );
     lines.push(`  ${stats("純益（所持金の変化）", ds.map((d) => d.goldAfter - d.goldBefore))}`);
     lines.push(`  ${stats("純益（薬草代も引く）", ds.map((d) => d.goldAfter - d.goldBefore - d.herbs * HERB_PRICE))}`);
@@ -404,6 +417,12 @@ function report(shape: Shape, results: CampaignResult[]): string {
   lines.push(stats("全潜行の純益（所持金の変化）", all.map((d) => d.goldAfter - d.goldBefore)));
   lines.push(stats("全潜行の純益（薬草代も引く）", all.map((d) => d.goldAfter - d.goldBefore - d.herbs * HERB_PRICE)));
   lines.push(stats("帰還した潜行の純益（所持金の変化）", all.filter((d) => d.method !== "wipe").map((d) => d.goldAfter - d.goldBefore)));
+  lines.push(
+    stats(
+      "帰還した潜行の稼ぎ（純益に寺院・闇魔術・宿の費用を足し戻す）",
+      all.filter((d) => d.method !== "wipe").map((d) => d.goldAfter - d.goldBefore + d.templeCost + d.darkCost + d.innCost),
+    ),
+  );
   lines.push(stats("全滅した潜行の純益（所持金の変化）", all.filter((d) => d.method === "wipe").map((d) => d.goldAfter - d.goldBefore)));
   const firstOf = (r: CampaignResult, f: (d: DiveRecord) => boolean) => r.dives.findIndex(f);
   const l2Dist = (f: (d: DiveRecord) => boolean) => {
