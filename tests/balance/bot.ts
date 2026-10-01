@@ -1,9 +1,11 @@
 // H9 バランスのボット（ユーザー決定）: 「潜行 → 街（救済 → 寺院 → 闇魔術 → 相部屋 1 泊 → 店で補充）→ 潜行」を繰り返す。
 // 200 シードの計測は tests/balance/campaign.sim.ts（npm run balance）、既定の npm test には tests/balance.test.ts の煙テスト（5 シード）だけを置く。
-// ボットは 2 つ: (a) 4 戦固定ボット（4 戦で帰る）、(b) セオリーボット（戦い続け、誰かが死んだ時点か前衛の HP の合計が半分を切った時点で帰る）。
+// ボットは 2 つ: (a) 4 戦固定ボット（4 戦で帰る）、(b) セオリーボット（戦い続け、この潜行の開始時に alive だった者が dead / ash になった時点か、前衛の HP の合計が半分を切った時点で帰る）。
 // ボットはテストの中だけにあり、core の execute と問い合わせ（floorOf、fieldItemMenu、townMenu）だけを使う。
 // 合否は不変条件だけで、数字のしきい値では落とさない（数字は console.log に出し、decisions に転記する）。
-// ボットの値（BFS 距離 6、戦闘数、上限 3000 歩、潜行の回数、店の予算 1/3）はテストの定数で、ゲームの調整値ではない。
+// 店: alive の者が帰還の糸を持っていなければ 1 本、その後パーティ全体の手持ちの薬草が 6 個【仮】になるまで薬草（払える範囲で。ユーザー決定）。
+// 累積の評価は資産 = 所持金 + 手持ちの消耗品（パーティ全員の inventory の consumable）の購入価格の合計で、初期の資産からの差（所持金だけの差も参考に出す）。
+// ボットの値（BFS 距離 6、戦闘数、上限 3000 歩、潜行の回数、薬草の目標 6 個）はテストの定数で、ゲームの調整値ではない。
 import { expect } from "vitest";
 import { execute } from "../../src/core/engine";
 import { createRng, randInt, type RngState } from "../../src/core/rng";
@@ -19,7 +21,7 @@ const NEAR = 6; // 上り階段からの BFS 距離
 const STEP_CAP = 3000; // 1 回の潜行の歩数の上限
 const BATTLE_ROUND_CAP = 300;
 const FRONT = 3; // セオリーボットの前衛（並び順の前 3 人）
-const SHOP_SHARE = 3; // 店での支出の合計 ≤ floor(所持金 / 3)
+const HERB_TARGET = 6; // 【仮】店の後のパーティ全体の手持ちの薬草の数（ユーザー決定）
 const INN_RANK = data.config.town.innRanks.findIndex((r) => r.id === "cheap"); // 相部屋
 const START_GOLD = data.config.prototypeParty.startingGold;
 const HERB = "herb";
@@ -34,7 +36,7 @@ export const BOTS: BotKind[] = [
     label: "セオリー",
     shouldReturn: (c) => {
       const s = c.state;
-      if (s.party.filter((x) => x.life !== "alive").length > c.downAtStart) return true; // この潜行で誰かが死んだ（灰を含む）
+      if (s.party.some((x) => c.aliveAtStart.includes(x.id) && x.life !== "alive")) return true; // 潜行の開始時に alive だった者が dead / ash になった（ユーザー決定）
       const front = s.party.slice(0, FRONT);
       const hp = front.reduce((a, x) => a + x.hp, 0);
       const max = front.reduce((a, x) => a + x.hpMax, 0);
@@ -70,11 +72,12 @@ type DiveRecord = {
   shopCost: number;
   goldBefore: number; // 潜行の前の所持金
   goldAfter: number; // 街の手順をすべて終えた後の所持金
+  assetsAfter: number; // 街の手順をすべて終えた後の資産（所持金 + 手持ちの消耗品の購入価格）
   allL2: boolean; // 宿の後に全員が alive かつ L2 以上
   anyL2: boolean; // 宿の後に誰かが L2 以上
 };
 
-export type CampaignResult = { seed: number; dives: DiveRecord[]; aborted: boolean };
+export type CampaignResult = { seed: number; startAssets: number; dives: DiveRecord[]; aborted: boolean };
 
 const key = (p: Pos) => `${p.x},${p.y}`;
 
@@ -142,6 +145,17 @@ function stats(label: string, xs: readonly number[]): string {
   return `${label}（n=${xs.length}）: 平均 ${fmt(mean(xs))} / 中央値 ${fmt(median(xs))} / p10 ${fmt(percentile(xs, 10))} / p90 ${fmt(percentile(xs, 90))}`;
 }
 
+/** 資産 = 所持金 + パーティ全員の手持ち（inventory）の消耗品の購入価格（items.json の price）の合計 */
+function assetsOf(s: GameState): number {
+  let v = s.gold;
+  for (const c of s.party)
+    for (const id of c.inventory) {
+      const it = itemOf(data, s.items[id]!.itemId);
+      if (it.type === "consumable") v += it.price;
+    }
+  return v;
+}
+
 /** 1 シード分のボット（潜行 × dives） */
 export class Campaign {
   state: GameState;
@@ -157,13 +171,15 @@ export class Campaign {
   threads = 0;
   homeBattles = 0;
   homeWipe = false;
-  downAtStart = 0;
+  aliveAtStart: string[] = [];
   frontDownAtStart = false;
   wiped: PenaltyResult | null = null;
+  readonly startAssets: number;
 
   constructor(readonly seed: number, readonly kind: BotKind) {
     this.state = newGame(seed);
     this.bot = createRng(seed + 20_000);
+    this.startAssets = assetsOf(this.state);
   }
 
   /** execute して、rejected なら例外。state の不変条件（battle.input・dungeon.turn 以外）と文字列キーを検査し、全滅なら PenaltyResult の内訳 = 差分を確かめる */
@@ -319,7 +335,7 @@ export class Campaign {
     this.homeBattles = 0;
     this.homeWipe = false;
     this.wiped = null;
-    this.downAtStart = this.state.party.filter((c) => c.life !== "alive").length;
+    this.aliveAtStart = this.state.party.filter((c) => c.life === "alive").map((c) => c.id);
     this.frontDownAtStart = this.state.party.slice(0, FRONT).some((c) => c.life !== "alive");
     this.run({ type: "dungeon.enter", dungeonId: "d01" });
     // 1 階の構造はこの潜行の間変わらない（罠の発動は kind だけを変え、辺は変えない）ので、潜行ごとにキャッシュする
@@ -422,12 +438,16 @@ export class Campaign {
     return true;
   }
 
-  /** 店: alive の者が帰還の糸を持っていなければ 1 本（死者・灰の糸は使えないので数えない）、残りで薬草を。支出の合計 ≤ floor(この時点の所持金 / 3) */
+  /** パーティ全体（死者・灰を含む）の手持ちの薬草の数 */
+  herbsInHand(): number {
+    return sum(this.state.party.map((c) => c.inventory.filter((id) => this.state.items[id]!.itemId === HERB).length));
+  }
+
+  /** 店: alive の者が帰還の糸を持っていなければ 1 本（死者・灰の糸は使えないので数えない）、その後パーティ全体の手持ちの薬草が HERB_TARGET になるまで薬草を（払える範囲で） */
   shop(rec: DiveRecord): void {
-    const budget = Math.floor(this.state.gold / SHOP_SHARE);
     const hasThread = this.state.party.some((c) => c.life === "alive" && c.inventory.some((id) => this.state.items[id]!.itemId === THREAD));
-    if (!hasThread && rec.shopCost + THREAD_PRICE <= budget && this.buy(THREAD, rec)) rec.shopThreads += 1;
-    while (rec.shopCost + HERB_PRICE <= budget && this.buy(HERB, rec)) rec.shopHerbs += 1;
+    if (!hasThread && this.buy(THREAD, rec)) rec.shopThreads += 1;
+    while (this.herbsInHand() < HERB_TARGET && this.buy(HERB, rec)) rec.shopHerbs += 1;
   }
 
   campaign(count: number): CampaignResult {
@@ -435,7 +455,7 @@ export class Campaign {
     for (let k = 0; k < count; k++) {
       const goldBefore = this.state.gold;
       const method = this.dive();
-      if (method === null) return { seed: this.seed, dives, aborted: true };
+      if (method === null) return { seed: this.seed, startAssets: this.startAssets, dives, aborted: true };
       expect(this.state.screen).toBe("town");
       const rec: DiveRecord = {
         method,
@@ -461,6 +481,7 @@ export class Campaign {
         shopCost: 0,
         goldBefore,
         goldAfter: 0,
+        assetsAfter: 0,
         allL2: false,
         anyL2: false,
       };
@@ -471,9 +492,10 @@ export class Campaign {
       rec.anyL2 = this.state.party.some((c) => c.level >= 2);
       this.shop(rec);
       rec.goldAfter = this.state.gold;
+      rec.assetsAfter = assetsOf(this.state);
       dives.push(rec);
     }
-    return { seed: this.seed, dives, aborted: false };
+    return { seed: this.seed, startAssets: this.startAssets, dives, aborted: false };
   }
 }
 
@@ -481,7 +503,7 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
   const lines: string[] = [];
   const all = results.flatMap((r) => r.dives);
   lines.push(
-    `H9 再計測【${kind.label}】（${seeds} シード × 潜行 ${dives} 回。d01 の 1 階の上り階段から BFS 距離 ${NEAR} 以内。街: 救済 → 寺院 → 闇魔術 → 相部屋 1 泊 → 店（糸 ${THREAD_PRICE}G・薬草 ${HERB_PRICE}G、所持金の 1/${SHOP_SHARE} まで）。所持金の初期値 ${START_GOLD}）`,
+    `H9 再計測【${kind.label}】（${seeds} シード × 潜行 ${dives} 回。d01 の 1 階の上り階段から BFS 距離 ${NEAR} 以内。街: 救済 → 寺院 → 闇魔術 → 相部屋 1 泊 → 店（糸が無ければ 1 本 ${THREAD_PRICE}G、薬草 ${HERB_PRICE}G を手持ち ${HERB_TARGET} 個まで）。所持金の初期値 ${START_GOLD}、資産の初期値 ${results[0]?.startAssets ?? "-"}（所持金 + 手持ちの消耗品の購入価格））`,
   );
   lines.push(`打ち切り（行動可能な者がいなくて入れない）: ${results.filter((r) => r.aborted).length} シード`);
   for (let k = 0; k < dives; k++) {
@@ -498,8 +520,10 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
     );
     lines.push(`  ${stats("この潜行の所持金の変化（街の手順の後）", ds.map((d) => d.goldAfter - d.goldBefore))}`);
     // 打ち切られたシードは最後の潜行の後の値で据え置く
+    const cumA = results.map((r) => (r.dives[Math.min(k, r.dives.length - 1)]?.assetsAfter ?? r.startAssets) - r.startAssets);
+    lines.push(`  ${stats(`潜行 1〜${k + 1} の累積（資産。初期の資産からの差）`, cumA)}・黒字 ${cumA.filter((x) => x > 0).length}`);
     const cum = results.map((r) => (r.dives[Math.min(k, r.dives.length - 1)]?.goldAfter ?? START_GOLD) - START_GOLD);
-    lines.push(`  ${stats(`潜行 1〜${k + 1} の累積所持金（初期値 ${START_GOLD} からの差）`, cum)}・黒字 ${cum.filter((x) => x > 0).length}`);
+    lines.push(`  （参考）${stats(`潜行 1〜${k + 1} の累積所持金（初期値 ${START_GOLD} からの差）`, cum)}・黒字 ${cum.filter((x) => x > 0).length}`);
   }
   lines.push(`全潜行の全滅率: ${pct(all.filter((d) => d.method === "wipe").length, all.length)}`);
   const idx = results.map((r) => r.dives.findIndex((d) => d.allL2));
