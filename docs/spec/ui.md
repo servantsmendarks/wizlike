@@ -74,7 +74,7 @@
   | 習得（MG-21） | `dice.learn`（spell = 呪文名） | `dice.row.roll`（base null、d100） | `dice.rule.rate`（rate = 成功率） | `dice.learn.ok` / `ng` |
   | 全滅（TW-22） | `dice.wipe` | `dice.row.roll`（base null、2d10 の 2 個） | `dice.wipe.rule`（帯の min / max） | `dice.wipe.result`（band = 帯の name） |
   | 制止（EV-20、M5） | `dice.restrain` | `dice.row.roll`（base null） | `dice.rule.rate` | `dice.restrain.ok` / `ng` |
-- UI-41 演出は `GameEvent` の `kind` ごとに `playback.ts` の 1 関数に対応させる。各関数は Promise を返し、`settings.skipAnimations` が真なら即座に解決する。`skipAnimations` が省くのは 文字送り・ダイスの動き・点滅・被弾のフラッシュ・揺れ・撃破のフェード・ビューのフェードだけで、戦闘の拍の待ち（UI-45）とタップ待ちは省かない（CLAUDE.md §3-9 との衝突は decisions に記録）。
+- UI-41 演出は `GameEvent` の `kind` ごとに `playback.ts` の 1 関数に対応させる。各関数は Promise を返し、`settings.skipAnimations` が真なら即座に解決する。`skipAnimations` が省くのは 文字送り・ダイスの動き・点滅・被弾のフラッシュ・揺れ・撃破のフェード・ビューのフェードだけで、戦闘の拍の待ち（UI-45）とタップ待ちは省かない（CLAUDE.md §3-9）。
 - UI-42 被弾: パーティ行のフラッシュ（`opacity` 2 往復、120ms）。敵の被弾: 敵の絵のフラッシュ。全体攻撃: ビュー全体の揺れ（`translate` ±2px、150ms）。すべて WAAPI。被弾のフラッシュは HP の減少（`hpChanged` の delta < 0）を契機にする（味方はパーティ行、敵はグループの絵）。`attack` イベントには演出を付けない。全体攻撃の揺れは、対象が `enemyGroup` / `allEnemies` で effect が damage の呪文のとき。敵の撃破（`lifeChanged` dead）で体数を 1 減らし、0 になったら絵を消して列を隠す。
 - UI-43 メッセージの文字送りは `settings.textSpeed`（1 文字 30ms【仮】、0 で即時）。タップで残りを即表示。戦闘の拍（UI-45）を除き、次のメッセージをタップで待たない。拍の外では、1 回目のタップで今の文を即表示し、同じ再生の中で 2 回目のタップがあれば残りをすべて即表示する（playback の `Player.tap()`。ビューのフェードも 0 にする）。拍の中のタップは UI-45。再生中の Enter / Space もタップと同じ。全文の履歴は直近 `config.ui.messageHistory`（200）件【仮】を残す。
   - 窓は指でスクロールしない（overflow hidden・touch-action none）。窓には直近の文だけを出し、いつも末尾を見せる。
