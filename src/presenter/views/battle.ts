@@ -1,8 +1,11 @@
 // UI-54 / UI-60: 戦闘のビューの層（敵グループの列）。ビュー（既定 240×150）の左上を原点にした論理 px で置く。
 // - 列は幅 56・間 4 で中央寄せ。絵の代わりの色付き矩形は 48×48（列内 x+4、y24..71）、1 グループだけなら 64×64（y16..79）。
-// - 名前は y84..93（core が選んだ表示名をそのまま）、体数は y94..103（battle.groupCount）。
+// - 絵の下のラベルは y84..103 の 2 行（battle.groupLabel「{n} {name} ×{count}」。n は対象の一覧と同じ番号 = battle-input の
+//   targetNumber、name は core が選んだ表示名をそのまま）。列の区切り線や列の枠は描かない。
 // - 体数 0 の列は詰めずに visibility hidden（グループの添字は戦闘中に詰めない。CB-42）。
-// - 対象の選択中は highlight で列に枠を付ける。列の左上の番号は対象の一覧と同じ（battle-input の targetNumber）。
+// - 対象の選択中は focus で、注目しているグループの絵の周り（focusFrame）に枠を出し、点滅させる（Element.animate の
+//   iterations: Infinity。常駐のループではなく、解除・切り替え・描き直しで cancel する）。演出スキップでは点滅せず枠だけ。
+// - setPickable の間だけ絵のタップで onPick(グループの添字) を呼ぶ（体数 1 以上のとき）。
 // PNG（public/sprites）は M3 では読まない。演出は Element.animate だけで、ms が 0 以下なら animate を呼ばない。
 // モジュールのトップレベルでは DOM に触れない。
 import type { GameData, Strings } from "../../core/data/index";
@@ -16,9 +19,13 @@ const COL_W = 56;
 const COL_GAP = 4;
 const SPRITE = { x: 4, y: 24, size: 48 } as const;
 const SPRITE_SOLO = { y: 16, size: 64 } as const;
-const NAME_Y = 84;
-const COUNT_Y = 94;
-const TEXT_H = 10;
+const LABEL_Y = 84;
+const LABEL_H = 20;
+const LINE_H = 10;
+/** 注目の枠を絵から広げる幅（論理 px） */
+const FRAME_PAD = 2;
+/** 注目の枠の点滅の 1 周期（ms）。表示層のコード定数（GHOST_CLICK_MS と同じ扱い。config には置かない） */
+export const FOCUS_BLINK_MS = 400;
 
 /** 列 i の矩形（幅 56、高さはビュー全体）。中央寄せで、左右の余白の差は 1 以下 */
 export function groupBoxes(n: number, viewW: number, viewH = 150): Rect[] {
@@ -53,9 +60,14 @@ export function enemyGroupOfId(id: string): number | null {
   return m === null ? null : Number(m[1]);
 }
 
-/** 体数の表示（battle.groupCount） */
-export function groupCountText(view: Pick<EnemyGroupView, "count">, strings: Strings): string {
-  return formatMessage(strings["battle.groupCount"] ?? "battle.groupCount", { count: view.count });
+/** UI-54: 絵の下のラベル（battle.groupLabel）。n は対象の一覧と同じ番号（targetNumber） */
+export function groupLabel(view: Pick<EnemyGroupView, "name" | "count">, n: number, strings: Strings): string {
+  return formatMessage(strings["battle.groupLabel"] ?? "battle.groupLabel", { n, name: view.name, count: view.count });
+}
+
+/** UI-54: 注目の枠の矩形。絵の矩形を上下左右に FRAME_PAD ずつ広げる（48 → 52、64 → 68） */
+export function focusFrame(sprite: Rect): Rect {
+  return { x: sprite.x - FRAME_PAD, y: sprite.y - FRAME_PAD, w: sprite.w + 2 * FRAME_PAD, h: sprite.h + 2 * FRAME_PAD };
 }
 
 export type BattleView = {
@@ -66,12 +78,14 @@ export type BattleView = {
   removeOne(g: number, ms: number): Promise<void>;
   /** UI-42 の敵の被弾: 絵の opacity を 2 往復（ms 0 なら何もしない） */
   flash(g: number, ms: number): Promise<void>;
-  /** 対象の選択中の枠（null で消す） */
-  highlight(g: number | null): void;
+  /** UI-54: 対象の選択中の注目の枠（null で消す）。blink なら点滅（iterations: Infinity）、偽なら枠だけ */
+  focus(g: number | null, blink: boolean): void;
+  /** UI-54: 真の間だけ絵のタップで onPick を呼ぶ */
+  setPickable(on: boolean): void;
   clear(): void;
 };
 
-type Col = { box: HTMLElement; sprite: HTMLElement; num: HTMLElement; count: HTMLElement; view: EnemyGroupView };
+type Col = { box: HTMLElement; sprite: HTMLElement; frame: HTMLElement; label: HTMLElement; view: EnemyGroupView };
 
 function place(el: HTMLElement, r: Rect): void {
   Object.assign(el.style, { position: "absolute", left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
@@ -85,7 +99,13 @@ async function settle(a: Animation): Promise<void> {
   }
 }
 
-export function createBattleView(data: GameData, strings: Strings, viewW = 240, viewH = 150): BattleView {
+export function createBattleView(
+  data: GameData,
+  strings: Strings,
+  viewW = 240,
+  viewH = 150,
+  onPick?: (g: number) => void,
+): BattleView {
   const el = document.createElement("div");
   el.className = "play-battle";
   place(el, { x: 0, y: 0, w: viewW, h: viewH });
@@ -94,22 +114,35 @@ export function createBattleView(data: GameData, strings: Strings, viewW = 240, 
 
   let cols: Col[] = [];
   let groups: EnemyGroupView[] = [];
-  let highlighted: number | null = null;
+  let focused: number | null = null;
+  let blinking: Animation | null = null;
+  let pickable = false;
 
-  const paintNumbers = (): void => {
+  const stopBlink = (): void => {
+    if (blinking !== null) blinking.cancel();
+    blinking = null;
+  };
+
+  /** ラベルは番号が変わる（前のグループの全滅）ので全列を書き直す */
+  const paintLabels = (): void => {
     for (const c of cols) {
       const n = targetNumber(groups, c.view.index);
-      c.num.textContent = highlighted !== null && n !== null ? String(n) : "";
-      c.box.style.outline = highlighted === c.view.index ? "1px solid var(--c-accent)" : "";
+      c.label.textContent = n === null ? "" : groupLabel(c.view, n, strings);
+      c.box.style.visibility = c.view.count > 0 ? "visible" : "hidden";
     }
   };
 
-  const showCount = (c: Col): void => {
-    c.count.textContent = groupCountText(c.view, strings);
-    c.box.style.visibility = c.view.count > 0 ? "visible" : "hidden";
+  const paintPickable = (): void => {
+    for (const c of cols) c.sprite.style.pointerEvents = pickable && c.view.count > 0 ? "auto" : "none";
+  };
+
+  const paintFrames = (): void => {
+    for (const c of cols) c.frame.style.display = focused === c.view.index ? "" : "none";
   };
 
   const setGroups = (gs: readonly EnemyGroupView[]): void => {
+    stopBlink();
+    focused = null;
     groups = gs.map((g) => ({ ...g }));
     el.replaceChildren();
     const boxes = groupBoxes(groups.length, viewW, viewH);
@@ -124,25 +157,27 @@ export function createBattleView(data: GameData, strings: Strings, viewW = 240, 
       sprite.className = "battle-group-sprite";
       place(sprite, { x: sr.x - b.x, y: sr.y, w: sr.w, h: sr.h });
       sprite.style.background = PALETTE[enemyFill(data, g.monsterId, g.identified)];
-      const num = document.createElement("div");
-      num.className = "battle-group-number";
-      place(num, { x: 0, y: 0, w: 16, h: TEXT_H });
-      num.style.color = "var(--c-accent)";
-      const name = document.createElement("div");
-      name.className = "battle-group-name";
-      place(name, { x: 0, y: NAME_Y, w: b.w, h: TEXT_H });
-      const count = document.createElement("div");
-      count.className = "battle-group-count";
-      place(count, { x: 0, y: COUNT_Y, w: b.w, h: TEXT_H });
-      for (const t of [name, count]) Object.assign(t.style, { textAlign: "center", whiteSpace: "nowrap", overflow: "hidden" });
-      name.textContent = g.name;
-      box.append(sprite, num, name, count);
+      const index = g.index;
+      sprite.addEventListener("click", () => {
+        const c = cols.find((x) => x.view.index === index);
+        if (pickable && c !== undefined && c.view.count > 0 && onPick !== undefined) onPick(index);
+      });
+      const fr = focusFrame(sr);
+      const frame = document.createElement("div");
+      frame.className = "battle-group-focus";
+      place(frame, { x: fr.x - b.x, y: fr.y, w: fr.w, h: fr.h });
+      Object.assign(frame.style, { border: "1px solid var(--c-accent)", pointerEvents: "none", display: "none" });
+      const label = document.createElement("div");
+      label.className = "battle-group-label";
+      place(label, { x: 0, y: LABEL_Y, w: b.w, h: LABEL_H });
+      Object.assign(label.style, { textAlign: "center", whiteSpace: "normal", overflow: "hidden", lineHeight: `${LINE_H}px` });
+      box.append(sprite, frame, label);
       el.appendChild(box);
-      const c: Col = { box, sprite, num, count, view: g };
-      showCount(c);
-      return c;
+      return { box, sprite, frame, label, view: g };
     });
-    paintNumbers();
+    paintLabels();
+    paintPickable();
+    paintFrames();
   };
 
   return {
@@ -157,8 +192,8 @@ export function createBattleView(data: GameData, strings: Strings, viewW = 240, 
       if (c.view.count === 0 && ms > 0) {
         await settle(c.sprite.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, easing: "steps(2, end)" }));
       }
-      showCount(c);
-      paintNumbers();
+      paintLabels();
+      paintPickable();
     },
     async flash(g: number, ms: number): Promise<void> {
       const c = cols.find((x) => x.view.index === g);
@@ -170,15 +205,32 @@ export function createBattleView(data: GameData, strings: Strings, viewW = 240, 
         }),
       );
     },
-    highlight(g: number | null): void {
-      highlighted = g;
-      paintNumbers();
+    focus(g: number | null, blink: boolean): void {
+      stopBlink();
+      focused = g;
+      paintFrames();
+      const c = g === null ? undefined : cols.find((x) => x.view.index === g);
+      if (c === undefined || !blink) return;
+      blinking = c.frame.animate(
+        [
+          { opacity: 1, offset: 0 },
+          { opacity: 1, offset: 0.5 },
+          { opacity: 0, offset: 0.5 },
+          { opacity: 0, offset: 1 },
+        ],
+        { duration: FOCUS_BLINK_MS, iterations: Infinity },
+      );
+    },
+    setPickable(on: boolean): void {
+      pickable = on;
+      paintPickable();
     },
     clear(): void {
+      stopBlink();
       el.replaceChildren();
       cols = [];
       groups = [];
-      highlighted = null;
+      focused = null;
     },
   };
 }

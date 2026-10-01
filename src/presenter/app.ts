@@ -134,6 +134,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     onAction: (a: DpadAction) => handleAction(a),
     onRelease: () => repeater.release(),
     onClose: () => guard(() => closeMap()),
+    onPick: (g) => guard(() => chooseBattle({ kind: "group", index: g })),
   });
 
   const debug = createDebugPanel({
@@ -208,7 +209,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       return;
     }
     play.party.setActive(null);
-    play.battle.highlight(null);
+    clearFocus();
     if (route === "town") {
       play.setMode("town");
       play.header.setText(t("town.title"));
@@ -285,7 +286,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     }
     if (menu.auto) {
       play.party.setActive(null);
-      play.battle.highlight(null);
+      clearFocus();
       play.header.setText(t("battle.autoOn"));
       c.setAutoStop(t(stopRequested ? "battle.autoStopping" : "battle.cmd.autoStop"), () => requestAutoStop());
       c.setMode("autoStop");
@@ -295,7 +296,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     if (cur === null) {
       // 入力待ちがいない（揃って resolve を待つ間など）
       play.party.setActive(null);
-      play.battle.highlight(null);
+      clearFocus();
       c.setMode("none");
       return;
     }
@@ -323,11 +324,24 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     paintFocus();
   };
 
-  /** UI-54: 注目している敵グループの絵に枠を付ける（enemy の段だけ） */
+  /**
+   * UI-54: 注目している敵グループの絵に枠を付けて点滅させ（演出スキップでは枠だけ）、enemy の段の間だけ絵のタップを受ける。
+   * 点滅は再生とは関係なく、sync のたびに作り直す
+   */
   const paintFocus = (): void => {
     const menu = battleMenu(state, data);
     const cur = cursor;
-    play.battle.highlight(menu === null || cur === null ? null : focusedGroup(menu, cur));
+    if (menu === null || cur === null) {
+      clearFocus();
+      return;
+    }
+    play.battle.focus(focusedGroup(menu, cur), !store.get().skipAnimations);
+    play.battle.setPickable(cur.stage === "enemy");
+  };
+
+  const clearFocus = (): void => {
+    play.battle.focus(null, false);
+    play.battle.setPickable(false);
   };
 
   /** UI-54: 対象の一覧の注目を i に移す（一覧は作り直さない。作り直すと click が消える） */
@@ -428,6 +442,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       return;
     }
     if (r.send.type === "battle.input") advanceFrom = r.send.memberId;
+    // 再生の間は注目の枠の点滅と絵のタップを止める（rejected なら runBattle の後の描き直しで戻る）
+    clearFocus();
     void runBattle(r.send);
   };
 

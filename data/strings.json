@@ -158,7 +158,7 @@
   "battle.prompt.item": "{name}の道具",
   "battle.prompt.enemy": "どれを狙う？",
   "battle.prompt.ally": "誰に使う？",
-  "battle.groupCount": "{count}体",
+  "battle.groupLabel": "{n} {name} ×{count}",
   "battle.targetGroup": "{n}. {name} {count}体",
   "battle.targetAlly": "{name} {hp}/{hpMax}",
   "battle.spellRow": "{name}  MP{mp}",

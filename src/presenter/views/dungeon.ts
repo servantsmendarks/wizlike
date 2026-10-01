@@ -62,6 +62,8 @@ export function createDungeonScreen(o: {
   onAction(a: DpadAction): void;
   onRelease(): void;
   onClose(): void;
+  /** UI-54: 対象の選択中に敵の絵をタップした（グループの添字） */
+  onPick?(g: number): void;
 }): DungeonScreen {
   const r = o.regions;
   const lay = o.layout;
@@ -83,7 +85,7 @@ export function createDungeonScreen(o: {
   const townFrame = document.createElement("div");
   townFrame.className = "play-view-frame";
   viewBox.appendChild(townFrame);
-  const battle = createBattleView(o.data, o.strings, r.view.w, r.view.h);
+  const battle = createBattleView(o.data, o.strings, r.view.w, r.view.h, (g) => o.onPick?.(g));
   battle.el.style.display = "none";
   viewBox.appendChild(battle.el);
   const swipeLayer = document.createElement("div");
