@@ -6,5 +6,6 @@ export default defineConfig({
     include: ["tests/balance/**/*.sim.ts"],
     environment: "node",
     testTimeout: 600_000,
+    silent: false, // 計測の数字は console.log で出す（既定では通ったテストの出力が隠れる）
   },
 });
