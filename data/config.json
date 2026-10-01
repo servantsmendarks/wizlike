@@ -7,7 +7,8 @@
   "learning": { "base": 35, "perLevelDiff": 20, "guaranteeDiff": 4, "statPivot": 10, "statPerPoint": 3 },
   "dungeon": {
     "defaultRooms": [3, 6],
-    "roomSize": [2, 4], "roomAttempts": 50, "doorsPerRoom": [1, 2],
+    "roomSize": [4, 8], "roomAttempts": 50, "doorsPerRoom": [1, 2],
+    "braidRatio": [0.3, 0.5], "straightBias": 0.3,
     "viewDepth": 3,
     "trap": { "pitDice": "1d4" }
   },

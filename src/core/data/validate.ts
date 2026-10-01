@@ -94,6 +94,20 @@ const pair = (r: Range = {}): Field => (ctx, p, v) => {
   return a;
 };
 
+/** [min, max] の実数の組。min <= max。 */
+const numPair = (r: Range = {}): Field => (ctx, p, v) => {
+  const a = list(ctx, p, v);
+  if (a === undefined) return undefined;
+  if (a.length !== 2) {
+    report(ctx, p, `expected [min, max] (2 elements), got ${a.length} element(s)`);
+    return undefined;
+  }
+  const lo = num(ctx, at(p, 0), a[0], r);
+  const hi = num(ctx, at(p, 1), a[1], r);
+  if (lo !== undefined && hi !== undefined && lo > hi) report(ctx, p, `min ${lo} > max ${hi}`);
+  return a;
+};
+
 /** UI-20: ビューの SVG は viewBox 0 0 240 150。ui §2 の view の高さはこれで固定（【仮】ではない） */
 const UI_VIEW_HEIGHT = 150;
 /** ui §2: パーティ欄は 1 行 10px で party.size 行 */
@@ -208,6 +222,8 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       roomSize: pair(POS_INT), // DG-05【仮】
       roomAttempts: I(POS_INT), // DG-05【仮】
       doorsPerRoom: pair(POS_INT), // DG-05【仮】（min >= 1 で到達性を保つ）
+      braidRatio: numPair(RATIO), // DG-05【仮】
+      straightBias: N(RATIO), // DG-05【仮】
       viewDepth: I({ min: 1, max: 3 }), // DG-12【仮】（UI-20 の座標表が奥行き 0..3）
       trap: F({ pitDice: D }), // DG-20【仮】
     }),

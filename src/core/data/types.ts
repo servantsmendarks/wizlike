@@ -79,6 +79,10 @@ export type Config = {
     roomAttempts: number;
     /** DG-05: 部屋ごとの扉の本数 [min, max]。min >= 1【仮】 */
     doorsPerRoom: [number, number];
+    /** DG-05: ループ化する行き止まりの割合 [min, max]（0..1、min <= max。階ごとに整数パーセントを 1 つ引く）【仮】 */
+    braidRatio: [number, number];
+    /** DG-05: 迷路で直進できるときに直進する確率（0..1）【仮】 */
+    straightBias: number;
     /** DG-12: 視野の奥行き（1..3。UI-20 の座標表が 0..3）【仮】 */
     viewDepth: number;
     /** DG-20: 罠の数値。pitDice は落とし穴のダメージ（ダイス記法）【仮】 */

@@ -5,14 +5,19 @@
 //   (1) 部屋: want = randInt(rmin, rmax) を 1 回。続いて「配置の回」を最大 roomAttempts 回くり返す。
 //       1 回の配置では、部屋ごとに最大 roomAttempts 回、w, h, x, y を randInt で引く（盤に入らない寸法なら x, y は引かずに諦める）。
 //       置けた部屋が rmin 以上になった回で確定する。どの回も rmin に届かなければ、いちばん多く置けた回（同数なら先の回）を使う。
-//   (2) 迷路: 開始セル randInt(0, nonRoom-1) を 1 回、以後、未訪問の隣（候補）が 1 つ以上ある段ごとに randInt(0, cand-1) を 1 回（候補が 1 つでも引く）。
+//   (2) 迷路: 開始セル randInt(0, nonRoom-1) を 1 回。以後、未訪問の隣（候補）が 1 つ以上ある段ごとに:
+//       直進（このセルに入ってきた向き）が候補にあれば nextFloat を 1 回引き、straightBias 未満なら直進（それ以上は引かない）。
+//       直進が候補に無いか、nextFloat が straightBias 以上なら、randInt(0, cand-1) を 1 回（候補が 1 つでも引く。直進も候補に含む）。
 //   (3) 扉: 部屋の順に、本数 randInt(doorsPerRoom) を 1 回、部分 Fisher-Yates で randInt(i, cand-1) を本数分。
-//   (4) 上り階段: 1 階だけ randInt(0, nonRoom-1) を 1 回（2 階以降は前の階の stairsDown の座標で、乱数を使わない）。
-//   (5) 下り階段 / ボス: BFS 距離が最大のセルから randInt(0, far-1) を 1 回。
-//   (6) イベントと罠: 候補の shuffleInPlace（i = len-1..1 で randInt(0, i)）、罠の個数 randInt(trapsPerFloor) を 1 回、
+//   (4) ループ化: 割合 randInt(round(braidRatio[0]*100), round(braidRatio[1]*100)) を 1 回（整数パーセント）。
+//       行き止まり（扉の後の時点。添字の昇順）の shuffleInPlace、続いて先頭から、まだ行き止まりのものごとに
+//       抜く壁 randInt(0, cand-1) を 1 回（cand は隣が盤内の非部屋セルの wall の辺。N→E→S→W の順）。round(行き止まり数 × 割合 / 100) 本抜いたら止める。
+//   (5) 上り階段: 1 階だけ randInt(0, nonRoom-1) を 1 回（2 階以降は前の階の stairsDown の座標で、乱数を使わない）。
+//   (6) 下り階段 / ボス: BFS 距離が最大のセルから randInt(0, far-1) を 1 回。
+//   (7) イベントと罠: 候補の shuffleInPlace（i = len-1..1 で randInt(0, i)）、罠の個数 randInt(trapsPerFloor) を 1 回、
 //       罠ごとに種類 randInt(0, traps-1)（traps が空なら引かない）。
 import type { Config, DungeonDef } from "../data/index";
-import { createRng, randInt, type RngState } from "../rng";
+import { createRng, nextFloat, randInt, type RngState } from "../rng";
 import type { Cell, Edge, Facing, Floor, Pos, Room } from "../types";
 
 /** 時計回り。randInt(0,3) の添字と対応する */
@@ -242,10 +247,15 @@ function placeRooms(f: Floor, rng: RngState, rmin: number, rmax: number, cfg: Co
   });
 }
 
-/** (2) 迷路。再帰的バックトラックを明示スタックで反復する */
-function carveMaze(f: Floor, rng: RngState, nonRoom: number[]): void {
+/**
+ * (2) 迷路。再帰的バックトラックを明示スタックで反復する。
+ * straightBias（0..1）: 入ってきた向きに進める（未訪問の非部屋セルがある）とき、その確率で直進する（DG-05【仮】）
+ */
+function carveMaze(f: Floor, rng: RngState, nonRoom: number[], straightBias: number): void {
   if (nonRoom.length === 0) throw new Error("carveMaze: no corridor cell");
   const visited: boolean[] = new Array<boolean>(f.cells.length).fill(false);
+  /** そのセルに入ってきた向き（開始セルは null） */
+  const inDir: (Facing | null)[] = new Array<Facing | null>(f.cells.length).fill(null);
   const start = nonRoom[randInt(rng, 0, nonRoom.length - 1)]!;
   visited[start] = true;
   let count = 1;
@@ -267,10 +277,12 @@ function carveMaze(f: Floor, rng: RngState, nonRoom: number[]): void {
       stack.pop();
       continue;
     }
-    const d = cand[randInt(rng, 0, cand.length - 1)]!;
+    const straight = inDir[cur] ?? null;
+    const d = straight !== null && cand.includes(straight) && nextFloat(rng) < straightBias ? straight : cand[randInt(rng, 0, cand.length - 1)]!;
     setEdge(f, x, y, d, "open");
     const ni = idx(f, x + DX[d], y + DY[d]);
     visited[ni] = true;
+    inDir[ni] = d;
     count += 1;
     stack.push(ni);
   }
@@ -304,6 +316,40 @@ function placeDoors(f: Floor, rng: RngState, cfg: Config["dungeon"]): void {
   }
 }
 
+/**
+ * (4) ループ化（DG-05【仮】）。行き止まりのうち braidRatio の範囲で引いた割合を、隣の非部屋セルへの壁を抜いてループにする。
+ * 部屋への壁は抜かない（扉の本数 doorsPerRoom を保つ）。抜いた本数を返す。
+ * 行き止まりは非部屋セルなので、盤内の非部屋の隣が 2 つ以上あり（部屋は外周から 1 セル離れ、互いに 8 近傍で接しない）、
+ * 通れる辺は 1 本だけなので、抜ける壁は必ずある。1 本抜くと行き止まりは高々 2 つ減るので、割合が 1/2 以下なら必ず目標の本数に届く。
+ */
+function braid(f: Floor, rng: RngState, cfg: Config["dungeon"]): number {
+  const pct = randInt(rng, Math.round(cfg.braidRatio[0] * 100), Math.round(cfg.braidRatio[1] * 100));
+  const deadEnds: number[] = [];
+  for (let i = 0; i < f.cells.length; i++) {
+    const p = posOf(f, i);
+    if (isDeadEnd(f, p.x, p.y)) deadEnds.push(i);
+  }
+  shuffleInPlace(rng, deadEnds);
+  const want = Math.round((deadEnds.length * pct) / 100);
+  let done = 0;
+  for (const i of deadEnds) {
+    if (done >= want) break;
+    const p = posOf(f, i);
+    if (!isDeadEnd(f, p.x, p.y)) continue; // 先に抜いた壁で行き止まりでなくなった
+    const c = cellAt(f, p.x, p.y);
+    const cand = FACINGS.filter((d) => {
+      const nx = p.x + DX[d];
+      const ny = p.y + DY[d];
+      return edgeOf(c, d) === "wall" && inBounds(f, nx, ny) && cellAt(f, nx, ny).roomId === null;
+    });
+    if (cand.length === 0) continue;
+    const d = cand[randInt(rng, 0, cand.length - 1)]!;
+    setEdge(f, p.x, p.y, d, "open");
+    done += 1;
+  }
+  return done;
+}
+
 function posOf(f: Floor, i: number): Pos {
   const x = i % f.width;
   return { x, y: (i - x) / f.width };
@@ -331,17 +377,20 @@ export function generateFloor(def: DungeonDef, cfg: Config["dungeon"], diveSeed:
   cells.forEach((c, i) => {
     if (c.roomId === null) nonRoom.push(i);
   });
-  carveMaze(f, rng, nonRoom);
+  carveMaze(f, rng, nonRoom, cfg.straightBias);
 
   // (3) 扉
   placeDoors(f, rng, cfg);
 
-  // (4) 上り階段（DG-05, DG-06）
+  // (4) ループ化
+  braid(f, rng, cfg);
+
+  // (5) 上り階段（DG-05, DG-06）
   const up: Pos = upPos === null ? posOf(f, nonRoom[randInt(rng, 0, nonRoom.length - 1)]!) : { x: upPos.x, y: upPos.y };
   cellAt(f, up.x, up.y).kind = "stairsUp";
   f.stairsUp = up;
 
-  // (5) 下り階段 / ボス
+  // (6) 下り階段 / ボス
   const dist = distancesFrom(f, up);
   if (dist.includes(-1)) throw new Error("generateFloor: unreachable cell");
   let maxD = 0;
@@ -359,7 +408,7 @@ export function generateFloor(def: DungeonDef, cfg: Config["dungeon"], diveSeed:
     f.stairsDown = p;
   }
 
-  // (6) イベントと罠（DG-05, DG-20, DG-22）
+  // (7) イベントと罠（DG-05, DG-20, DG-22）
   const cand: Cell[] = [];
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {

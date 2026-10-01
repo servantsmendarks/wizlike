@@ -139,6 +139,21 @@ describe("data: config.json", () => {
     expectIssue((r) => delete r.config.growth.initialHpMinDieRatio, "config.json", "growth.initialHpMinDieRatio: missing required field");
     expect(issuesOf((r) => (r.config.growth.initialHpMinDieRatio = 1))).toEqual([]);
   });
+  test("data: DG-05 dungeon.braidRatio は 0..1 の実数の [min, max]（min <= max）、straightBias は 0..1", () => {
+    const p = "dungeon.braidRatio";
+    expect(config.dungeon.braidRatio).toEqual([0.3, 0.5]);
+    expectIssue((r) => (r.config.dungeon.braidRatio = [0.5, 0.3]), "config.json", `${p}: min 0.5 > max 0.3`);
+    expectIssue((r) => (r.config.dungeon.braidRatio = [-0.1, 0.5]), "config.json", `${p}[0]: expected number in 0..1, got -0.1`);
+    expectIssue((r) => (r.config.dungeon.braidRatio = [0.3, 1.5]), "config.json", `${p}[1]: expected number in 0..1, got 1.5`);
+    expectIssue((r) => (r.config.dungeon.braidRatio = [0.3]), "config.json", `${p}: expected [min, max] (2 elements), got 1 element(s)`);
+    expectIssue((r) => delete r.config.dungeon.braidRatio, "config.json", `${p}: missing required field`);
+    expect(issuesOf((r) => (r.config.dungeon.braidRatio = [0, 0]))).toEqual([]);
+    expect(issuesOf((r) => (r.config.dungeon.braidRatio = [0.4, 0.4]))).toEqual([]);
+    expectIssue((r) => (r.config.dungeon.straightBias = 1.1), "config.json", "dungeon.straightBias: expected number in 0..1, got 1.1");
+    expectIssue((r) => delete r.config.dungeon.straightBias, "config.json", "dungeon.straightBias: missing required field");
+    expect(issuesOf((r) => (r.config.dungeon.straightBias = 0))).toEqual([]);
+    expect(issuesOf((r) => (r.config.dungeon.straightBias = 1))).toEqual([]);
+  });
   test("data: DG-05 dungeon.roomAttempts は 1 以上の整数", () => {
     expectIssue((r) => (r.config.dungeon.roomAttempts = 0), "config.json", "dungeon.roomAttempts: expected integer >= 1, got 0");
     expectIssue((r) => delete r.config.dungeon.roomAttempts, "config.json", "dungeon.roomAttempts: missing required field");

@@ -38,6 +38,38 @@ function* eachFloor(): Generator<{ def: DungeonDef; seed: number; f: Floor; floo
   for (const { def, seed, floors } of ALL) for (const f of floors) yield { def, seed, f, floors };
 }
 
+/** ループ化しない設定（ループ化の前の迷路を見るため） */
+const NO_BRAID: Config["dungeon"] = { ...CFG, braidRatio: [0, 0] };
+
+function median(a: number[]): number {
+  const s = [...a].sort((x, y) => x - y);
+  const n = s.length;
+  return n % 2 === 1 ? s[(n - 1) / 2]! : (s[n / 2 - 1]! + s[n / 2]!) / 2;
+}
+
+/** 非部屋セルの数と、非部屋セルどうしの open / door の辺の本数 */
+function treeCounts(f: Floor): { nonRoom: number; edges: number; doors: number } {
+  let edges = 0;
+  let doors = 0;
+  let nonRoom = 0;
+  for (let y = 0; y < f.height; y++) {
+    for (let x = 0; x < f.width; x++) {
+      const c = cellAt(f, x, y);
+      if (c.roomId !== null) continue;
+      nonRoom += 1;
+      for (const d of ["E", "S"] as const) {
+        const nx = x + DX[d];
+        const ny = y + DY[d];
+        if (!inBounds(f, nx, ny) || cellAt(f, nx, ny).roomId !== null) continue;
+        const e = edgeOf(c, d);
+        if (e === "door") doors += 1;
+        if (e === "open") edges += 1;
+      }
+    }
+  }
+  return { nonRoom, edges, doors };
+}
+
 function cellsOfKind(f: Floor, kind: CellKind): { x: number; y: number }[] {
   const out: { x: number; y: number }[] = [];
   f.cells.forEach((c, i) => {
@@ -197,29 +229,65 @@ describe("dungeon-gen: d01/d02 × 200 シード × 全階", () => {
     expect(bad).toEqual([]);
   });
 
-  test("DG-05 迷路: 非部屋セルどうしの open 辺の本数 = 非部屋セル数 − 1（全域木）。非部屋セルどうしに door は無い", () => {
-    for (const { f } of eachFloor()) {
-      let edges = 0;
-      let doors = 0;
-      let nonRoom = 0;
-      for (let y = 0; y < f.height; y++) {
-        for (let x = 0; x < f.width; x++) {
-          const c = cellAt(f, x, y);
-          if (c.roomId !== null) continue;
-          nonRoom += 1;
-          for (const d of ["E", "S"] as const) {
-            const nx = x + DX[d];
-            const ny = y + DY[d];
-            if (!inBounds(f, nx, ny) || cellAt(f, nx, ny).roomId !== null) continue;
-            const e = edgeOf(c, d);
-            if (e === "door") doors += 1;
-            if (e === "open") edges += 1;
+  test("DG-05 迷路とループ化: braidRatio [0,0] なら非部屋セルどうしの open 辺は非部屋セル数 − 1（全域木）。実際の設定では、ループの本数（余分な辺）= round(行き止まり数 × p / 100) となる整数 p が braidRatio の範囲（30..50）にある。非部屋セルどうしに door は無い", () => {
+    const [pmin, pmax] = CFG.braidRatio.map((r) => Math.round(r * 100)) as [number, number];
+    const bad: string[] = [];
+    let loopsTotal = 0;
+    for (const { def, seed, f } of eachFloor()) {
+      const where = `${def.id} seed ${seed} floor ${f.floor}`;
+      // ループ化の前（部屋・迷路・扉）までは乱数の消費が同じなので、[0,0] で作った階の行き止まりがループ化の直前の行き止まり
+      const f0 = generateFloor(def, NO_BRAID, seed, f.floor, f.floor === 1 ? null : f.stairsUp);
+      const t = treeCounts(f);
+      const t0 = treeCounts(f0);
+      if (t.doors !== 0 || t0.doors !== 0) bad.push(`${where}: door between corridors`);
+      if (t0.edges !== t0.nonRoom - 1) bad.push(`${where}: not a spanning tree without braid (${t0.edges} / ${t0.nonRoom})`);
+      let dead0 = 0;
+      for (let y = 0; y < f0.height; y++) for (let x = 0; x < f0.width; x++) if (isDeadEnd(f0, x, y)) dead0 += 1;
+      const loops = t.edges - (t.nonRoom - 1);
+      loopsTotal += loops;
+      let ok = false;
+      for (let p = pmin; p <= pmax; p++) if (Math.round((dead0 * p) / 100) === loops) ok = true;
+      if (!ok) bad.push(`${where}: ${loops} loops for ${dead0} dead ends`);
+    }
+    expect(bad).toEqual([]);
+    expect(loopsTotal).toBeGreaterThan(0);
+  });
+
+  test("DG-05 統計: d01 の 200 シードで、階ごとの上り階段から下り階段（最下層はボス）までの最短路の中央値が 40〜80 歩（braidRatio [0.3,0.5]・roomSize [4,8] はユーザー決定の範囲）", () => {
+    expect(CFG.braidRatio).toEqual([0.3, 0.5]);
+    expect(CFG.roomSize).toEqual([4, 8]);
+    const d01 = DEFS[0]!;
+    const perFloor: number[][] = Array.from({ length: d01.floors }, () => []);
+    for (const { def, f } of eachFloor()) {
+      if (def !== d01) continue;
+      const goal = (f.floor === def.floors ? f.boss : f.stairsDown)!;
+      perFloor[f.floor - 1]!.push(distancesFrom(f, f.stairsUp)[idx(f, goal.x, goal.y)]!);
+    }
+    for (const list of perFloor) {
+      expect(list).toHaveLength(SEEDS.length);
+      const m = median(list);
+      expect(m).toBeGreaterThanOrEqual(40);
+      expect(m).toBeLessThanOrEqual(80);
+    }
+  });
+
+  test("DG-05 straightBias: 1 にすると 0 より直進の通路（向かい合う 2 辺だけが通れる非部屋セル）が増える", () => {
+    const straightCells = (bias: number): number => {
+      let n = 0;
+      for (const seed of SEEDS.slice(0, 50)) {
+        for (const f of generateDive(DEFS[0]!, { ...NO_BRAID, straightBias: bias }, seed)) {
+          for (const c of f.cells) {
+            if (c.roomId !== null) continue;
+            const open = FACINGS.filter((d) => isPassable(edgeOf(c, d))).join("");
+            if (open === "NS" || open === "EW") n += 1;
           }
         }
       }
-      expect(doors).toBe(0);
-      expect(edges).toBe(nonRoom - 1);
-    }
+      return n;
+    };
+    const s0 = straightCells(0);
+    const s1 = straightCells(1);
+    expect(s1).toBeGreaterThan(s0 * 1.2);
   });
 
   test("DG-05 階段: stairsUp は各階に 1 つ。最下層以外は stairsDown が 1 つで boss なし、最下層は boss が 1 つで stairsDown なし。下り/ボスの BFS 距離はその階の最大値", () => {
@@ -311,13 +379,20 @@ describe("dungeon-gen: 決定性と境界", () => {
   });
 
   test("DG-03 1 階の部屋の数は createRng(floorSeed(diveSeed, 1)) の最初の randInt(rooms) で決まる（state.rng を使わない）", () => {
-    // 消費順の先頭は want = randInt(rmin, rmax)。実データの 20×20 では最初の配置で want 個すべて置けるので、部屋の数は want に一致する
+    // 消費順の先頭は want = randInt(rmin, rmax)。部屋の数は want 以下（置けた分）。
+    // 一辺 2 の部屋なら 20×20 には最初の配置で want 個すべて置けるので、部屋の数は want に一致する
+    const small: Config["dungeon"] = { ...CFG, roomSize: [2, 2] };
     for (const def of DEFS) {
       const [rmin, rmax] = def.rooms!;
+      let equal = 0;
       for (let seed = 1; seed <= 20; seed++) {
         const want = randInt(createRng(floorSeed(seed, 1)), rmin, rmax);
-        expect(generateDive(def, CFG, seed)[0]!.rooms.length).toBe(want);
+        expect(generateDive(def, small, seed)[0]!.rooms.length).toBe(want);
+        const n = generateDive(def, CFG, seed)[0]!.rooms.length;
+        expect(n).toBeLessThanOrEqual(want);
+        if (n === want) equal += 1;
       }
+      expect(equal).toBeGreaterThan(0);
     }
   });
 
@@ -328,12 +403,13 @@ describe("dungeon-gen: 決定性と境界", () => {
       down: fs[0]!.stairsDown,
       rooms: fs[0]!.rooms.length,
       boss: fs[1]!.boss,
-    }).toEqual({ up: { x: 16, y: 5 }, down: { x: 4, y: 10 }, rooms: 3, boss: { x: 15, y: 17 } });
+    }).toEqual({ up: { x: 8, y: 14 }, down: { x: 17, y: 7 }, rooms: 3, boss: { x: 3, y: 14 } });
   });
 
   test("DG-02 width 5・height 5・rooms [0,0] の def でも生成でき、全セルに到達できる。roomSize が盤より大きくても Error にならない", () => {
-    const tiny: DungeonDef = { ...DEFS[0]!, width: 5, height: 5, rooms: [0, 0] };
-    const big: DungeonDef = { ...DEFS[0]!, width: 5, height: 5, rooms: [1, 2] };
+    // イベントは置かない（5×5 ではループ化で行き止まりが無くなり、DG-22 の Error になる盤がある。DG-05）
+    const tiny: DungeonDef = { ...DEFS[0]!, width: 5, height: 5, rooms: [0, 0], events: [] };
+    const big: DungeonDef = { ...DEFS[0]!, width: 5, height: 5, rooms: [1, 2], events: [] };
     const hugeRooms: Config["dungeon"] = { ...CFG, roomSize: [6, 9] };
     for (const seed of SEEDS) {
       for (const [def, cfg] of [
@@ -357,12 +433,15 @@ describe("dungeon-gen: 決定性と境界", () => {
     const crowded: DungeonDef = { ...DEFS[0]!, width: 5, height: 5, rooms: [0, 0], floors: 1, events };
     expect(() => generateFloor(crowded, CFG, 1, 1, null)).toThrow(/no cell for event/);
     const manyTraps: DungeonDef = { ...DEFS[0]!, width: 5, height: 5, rooms: [0, 0], floors: 1, events: [], trapsPerFloor: [30, 30] };
+    let total = 0;
     for (const seed of SEEDS) {
       const f = generateFloor(manyTraps, CFG, seed, 1, null);
       const n = f.cells.filter((c) => c.kind === "trap").length;
-      expect(n).toBeGreaterThan(0);
       expect(n).toBeLessThan(30);
+      total += n;
     }
+    // ループ化で行き止まりが残らない盤では 0 個のこともある（Error にはしない）
+    expect(total).toBeGreaterThan(0);
   });
 
   test("DG-05 最初の配置で rooms の min に届かなくても、配置をやり直して min を満たす（9×9、一辺 3 の部屋 2 つ）", () => {
