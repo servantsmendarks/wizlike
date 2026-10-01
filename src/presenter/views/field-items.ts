@@ -35,7 +35,7 @@ const BACK = (strings: Strings): ItemEntry => ({ label: s(strings, "common.back"
 export function itemEntries(menu: FieldItemMenu, cur: ItemCursor, strings: Strings): ItemEntry[] {
   if (cur.stage === "member") {
     return [
-      ...menu.members.map((m): ItemEntry => ({ label: m.name, disabled: !m.canAct || m.items.length === 0, choice: { kind: "member", memberId: m.id } })),
+      ...menu.members.map((m): ItemEntry => ({ label: m.name, disabled: !m.canAct || !m.items.some((it) => it.usable), choice: { kind: "member", memberId: m.id } })),
       BACK(strings),
     ];
   }

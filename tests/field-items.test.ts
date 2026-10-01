@@ -48,6 +48,18 @@ describe("UI-53 迷宮の道具", () => {
     expect(itemStep(m, { stage: "member" }, { kind: "member", memberId: "c1" })).toEqual({ kind: "cursor", cursor: { stage: "item", memberId: "c1" } });
   });
 
+  test("UI-53 使う人の段: 使えない品（core の usable が偽）だけを持つ者は disabled", () => {
+    const s = inDungeon();
+    const book = createItemInstance(s, "tome_lightning", true);
+    s.party[1]!.inventory.push(book);
+    const m = menuOf(s);
+    const c2 = m.members.find((x) => x.id === "c2")!;
+    expect(c2.items.map((it) => [it.instanceId, it.usable])).toEqual([[book, false]]);
+    const rows = itemEntries(m, { stage: "member" }, S);
+    expect(rows.find((e) => e.choice.kind === "member" && e.choice.memberId === "c2")?.disabled).toBe(true);
+    expect(rows.find((e) => e.choice.kind === "member" && e.choice.memberId === "c1")?.disabled).toBe(false);
+  });
+
   test("UI-53/MG-25 道具の段: その人の消耗品と魔法書（usable 偽は disabled）＋戻る。見出しは {name}の道具", () => {
     const s = inDungeon();
     const book = createItemInstance(s, "tome_lightning", true);
