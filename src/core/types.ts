@@ -323,6 +323,7 @@ export type Command =
    * targetId は effect.target === "ally" のときだけ必須、他では無視（dungeon.cast と同じ形。types.ts を正とする）
    */
   | { type: "dungeon.useItem"; memberId: string; itemId: string; targetId?: string }
+  /** MG-44: 迷宮の戦闘外の呪文。targetId は spell.target が ally のときだけ必要（resurrect では life dead の者） */
   | { type: "dungeon.cast"; memberId: string; spellId: string; targetId?: string }
   | { type: "battle.input"; memberId: string; action: BattleAction }
   | { type: "battle.resolve" }
@@ -332,7 +333,14 @@ export type Command =
   /** CB-12/40: パーティの「前回と同じ」。行動可能な全員の入力をオート入力の規則で作り、1 ラウンドだけ解決する */
   | { type: "battle.repeat" }
   | { type: "event.choose"; optionId: string }
+  /** CH-03: パーティ全員の id を並べ替えたもの（同じ集合で重複なし）。街と、迷宮の戦闘外かつ保留なしのとき */
   | { type: "party.reorder"; order: string[] }
+  /** CH-76: 本人の inventory にある品を装備する。同じスロットの旧品は inventory の同じ位置に入る */
+  | { type: "party.equip"; memberId: string; instanceId: string }
+  /** CH-76: 装備を外して inventory の末尾に入れる */
+  | { type: "party.unequip"; memberId: string; slot: EquipSlot }
+  /** CH-77: memberId は鑑定する者（abilities に identify を持つ職業）。instanceId はパーティの誰かの inventory にある未鑑定品 */
+  | { type: "party.identify"; memberId: string; instanceId: string }
   /** UI-57（開発用）: alive の全員の hp を 1 にする。保留中も受け付ける。乱数は使わない */
   | { type: "debug.hpOne" };
 
@@ -476,6 +484,78 @@ export type FieldItemMenu = {
   members: { id: string; name: string; canAct: boolean; items: FieldItemView[] }[];
   /** 対象の候補 = life alive（並び順） */
   allies: { id: string; name: string; hp: number; hpMax: number }[];
+};
+
+// ===================== キャンプと酒場の問い合わせ（UI-53 / TW-03。rules/camp.ts の campMenu。state には入れない） =====================
+
+export type CampPlace = "town" | "dungeon";
+/** MG-32: 戦闘外で使える既知の呪文。target が dead なら蘇生で、対象は life dead の者 */
+export type CampSpellView = {
+  spellId: string;
+  name: string;
+  mp: number;
+  target: "ally" | "dead" | "none";
+  /** 対象を 1 人仮に当てたうえで checkCast === null かどうか（ally なら allies の先頭、dead なら dead の先頭、none なら対象なし） */
+  usable: boolean;
+};
+/** 装備できない理由。表示層は strings の camp.equipBlock.{block} で出す */
+export type EquipBlock = "cannotAct" | "unidentified" | "class" | "cursedSlot";
+export type CampEquipCandidate = {
+  instanceId: string;
+  /** itemDisplayName。未鑑定なら unidentifiedName（CH-72） */
+  name: string;
+  slot: EquipSlot;
+  /** null なら party.equip を受け付ける（checkEquip === null と同じ） */
+  block: EquipBlock | null;
+};
+export type CampSlotView = {
+  slot: EquipSlot;
+  instanceId: string | null;
+  name: string | null;
+  /** 鑑定済みかつ items[].cursed のとき true（表示用。未鑑定なら false。CH-73 の「見えない」） */
+  cursed: boolean;
+  /** checkUnequip === null と同じ。呪われているかは鑑定と関係なく items[].cursed で決める */
+  canUnequip: boolean;
+};
+export type CampMember = {
+  id: string;
+  name: string;
+  life: Life;
+  canAct: boolean;
+  /** 並び順の添字が config.party.frontRow 未満なら front（表記だけに使う） */
+  row: "front" | "back";
+  /** place が town なら []。dungeon なら knownSpells の順で、戦闘外で使える呪文（fieldSpellOk）だけ */
+  spells: CampSpellView[];
+  /** EQUIP_SLOTS の順に 6 件 */
+  slots: CampSlotView[];
+  /** 本人の inventory の順で、type が EQUIP_SLOTS のどれかに当たる品 */
+  equipCandidates: CampEquipCandidate[];
+};
+export type CampIdentifyItem = {
+  instanceId: string;
+  ownerId: string;
+  ownerName: string;
+  /** unidentifiedName */
+  name: string;
+};
+/**
+ * rules/camp.ts の campMenu(state, data)。非 null になるのは次のときだけ:
+ *   town: screen town・dive null・battle null・pendingChoice null
+ *   dungeon: screen dungeon・dive 非 null・battle null・pendingChoice null
+ * 道具は従来どおり fieldItemMenu を使う（dungeon のときだけ非 null）。
+ */
+export type CampMenu = {
+  place: CampPlace;
+  /** パーティ全員（並び順） */
+  members: CampMember[];
+  /** heal / cure の対象の候補 = life alive の者（並び順） */
+  allies: { id: string; name: string; hp: number; hpMax: number }[];
+  /** 蘇生の対象の候補 = life dead の者（並び順。ash は入れない） */
+  dead: { id: string; name: string }[];
+  /** 鑑定できる者 = abilities に identify を持ち、canAct の者（並び順）。空なら「鑑定」の項目を出さない */
+  identifiers: { id: string; name: string }[];
+  /** パーティ全員の inventory にある未鑑定品（並び順 × inventory の順） */
+  unidentified: CampIdentifyItem[];
 };
 
 /** strings.json のキーと埋め込み値。表示層は formatMessage(strings[key], params) で出す */

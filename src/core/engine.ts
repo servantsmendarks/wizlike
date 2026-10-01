@@ -1,6 +1,6 @@
 // execute(state, command, data) → { state, events }（CLAUDE.md §3-2）。
 // 受け付けるかの判定は複製の前に行う。rejected では state を同じ参照のまま返し、乱数も消費しない（D2）。
-import type { GameData } from "./data/index";
+import type { EquipSlot, GameData } from "./data/index";
 import { createRng } from "./rng";
 import {
   applyBattleInput,
@@ -14,6 +14,18 @@ import {
   resolveRound,
   setAuto,
 } from "./rules/combat";
+import {
+  castInField,
+  checkCast,
+  checkEquip,
+  checkIdentify,
+  checkReorder,
+  checkUnequip,
+  equipItem,
+  identifyItem,
+  reorderParty,
+  unequipItem,
+} from "./rules/camp";
 import { startNewGame, validatePartySetup } from "./rules/creation";
 import { hpOne } from "./rules/debug";
 import { checkEnter, chooseOption, enterDungeon, moveForward, turn } from "./rules/dungeon";
@@ -220,9 +232,47 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       buyItem(ctx, a.memberId, a.itemId);
       return finish(ctx);
     }
+    case "dungeon.cast": {
+      const c = command as { memberId?: unknown; spellId?: unknown; targetId?: unknown };
+      const r = checkCast(state, data, c.memberId, c.spellId, c.targetId);
+      if (r !== null) return reject(state, "dungeon.cast", r);
+      const ctx = makeContext(cloneState(state), data);
+      castInField(ctx, c.memberId as string, c.spellId as string, typeof c.targetId === "string" ? c.targetId : null);
+      return finish(ctx);
+    }
+    case "party.reorder": {
+      const order = (command as { order?: unknown }).order;
+      const r = checkReorder(state, order);
+      if (r !== null) return reject(state, "party.reorder", r);
+      const ctx = makeContext(cloneState(state), data);
+      reorderParty(ctx, order as string[]);
+      return finish(ctx);
+    }
+    case "party.equip": {
+      const c = command as { memberId?: unknown; instanceId?: unknown };
+      const r = checkEquip(state, data, c.memberId, c.instanceId);
+      if (r !== null) return reject(state, "party.equip", r);
+      const ctx = makeContext(cloneState(state), data);
+      equipItem(ctx, c.memberId as string, c.instanceId as string);
+      return finish(ctx);
+    }
+    case "party.unequip": {
+      const c = command as { memberId?: unknown; slot?: unknown };
+      const r = checkUnequip(state, data, c.memberId, c.slot);
+      if (r !== null) return reject(state, "party.unequip", r);
+      const ctx = makeContext(cloneState(state), data);
+      unequipItem(ctx, c.memberId as string, c.slot as EquipSlot);
+      return finish(ctx);
+    }
+    case "party.identify": {
+      const c = command as { memberId?: unknown; instanceId?: unknown };
+      const r = checkIdentify(state, data, c.memberId, c.instanceId);
+      if (r !== null) return reject(state, "party.identify", r);
+      const ctx = makeContext(cloneState(state), data);
+      identifyItem(ctx, c.memberId as string, c.instanceId as string);
+      return finish(ctx);
+    }
     case "town.bank":
-    case "dungeon.cast":
-    case "party.reorder":
       return reject(state, command.type, "not implemented");
     default:
       return reject(state, String((command as unknown as { type?: unknown }).type), "unknown command");

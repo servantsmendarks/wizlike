@@ -6,7 +6,7 @@
 
 - CH-01 パーティは 6 人固定。並び順 1〜3 が前衛、4〜6 が後衛。
 - CH-02 キャラクター作成はゲーム開始時のみ。1 人目に作ったキャラクターがリーダー（主人公）。
-- CH-03 リーダーは変更も除外もできない。並び順の変更は街と迷宮内（非戦闘時）で可能。
+- CH-03 リーダーは変更も除外もできない。並び順の変更は街と迷宮内（非戦闘時）で可能。コマンドは `party.reorder {order}`（全員の id の並べ替え。リーダーの位置も自由）。受け付けは街と、迷宮の戦闘外かつ保留なし（それ以外は rejected `wrong screen`。保留中は choice pending）。配列でない・長さが違う・文字列でない・重複・未知の id は `bad order`、今と同じ並びは `no change`。受け付けたら並べ替えて `camp.reordered`。乱数は使わない（M4.5）。
 - CH-04 メンバーの追加・除外は、将来の客将（EV-60、【未定】）を除いて発生しない。
 - CH-05 プロトタイプの簡易作成では、6 人の名前と性格（リーダー以外）だけを選ぶ。種族・職業・能力値は `data/config.json` の `prototypeParty` で固定。名前は前後の空白を除いて 1〜`config.creation.nameMaxLength`（6）【仮】文字（コードポイント数）。重複は可。性格の「ランダム」は core が乱数で決める。
 
@@ -68,10 +68,15 @@
 
 - CH-70 装備スロットは 6: 武器 `weapon`、防具 `armor`、盾 `shield`、兜 `helm`、小手 `gauntlet`、装飾 `accessory`。
 - CH-71 所持枠は 8（装備中を含む）【仮】。`Character.inventory` は装備中の品を含まない。使用枠 = 装備数 + inventory の数。
-- CH-72 未鑑定アイテムは `unidentifiedName` で表示され、装備できない。鑑定は司教（無料）か店（有料）。
-- CH-73 呪われたアイテムは装備すると外せない。寺院の解呪（TW-07）で外せる。呪いはアイテムの `cursed` で、未鑑定のうちは見えない。
+- CH-72 未鑑定アイテムは `unidentifiedName` で表示され、装備できない（CH-76）。鑑定は司教（無料。CH-77）か店（有料）。
+- CH-73 呪われたアイテムは装備すると外せない。寺院の解呪（TW-07）で外せる。呪いはアイテムの `cursed` で、未鑑定のうちは見えない（表示で呪いと示さないだけで、外せないことは鑑定と関係ない。CH-76）。
 - CH-74 後衛が攻撃できるのは `ranged: true` の武器を装備しているときだけ（CB-13）。
 - CH-75 職業ごとの装備制限は `items[].classes`（空なら全職業可）。
+- CH-76 装備の付け外し（M4.5）: `party.equip {memberId, instanceId}` / `party.unequip {memberId, slot}`。受け付けは街と、迷宮の戦闘外かつ保留なし。本人は行動可能（CH-44）であること。
+  - `party.equip` の判定順: wrong screen → no such member → cannot act → item not in inventory（本人の inventory に無い。装備中の品も含まない）→ not equipment（`items[].type` が装備スロットでない）→ not identified（CH-72）→ class cannot equip（CH-75）→ slot cursed（その枠の今の品が `cursed`）。受け付けたら、inventory の新しい品の位置に旧品を入れ（旧品が無ければ取り除く）、枠に新しい品を入れる → `camp.equipped{name, item}`。新しい品が呪われていれば続けて `camp.cursed{item}`。所持枠（CH-71）と潜行台帳は変わらない。
+  - `party.unequip` の判定順: wrong screen → no such member → cannot act → bad slot → slot empty → cursed（`items[].cursed` の品は鑑定と関係なく外せない）。受け付けたら枠を空にして inventory の末尾に入れる → `camp.unequipped{name, item}`。
+  - どちらも乱数は使わない。
+- CH-77 鑑定（M4.5）: `party.identify {memberId, instanceId}`。鑑定する者は `classes[].abilities` に `identify` を持つ職業（司教）。対象はパーティの誰かの inventory にある未鑑定品（装備中は対象外）。受け付けは街と、迷宮の戦闘外かつ保留なし。判定順: wrong screen → no such member → cannot identify → cannot act → no such item → already identified。成功は確定・無料・乱数なしで、`identified` を真にして `camp.identified{name, old, item}`、呪われていれば続けて `camp.identifiedCursed{item}`。
 
 ## 9. データ
 

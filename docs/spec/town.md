@@ -9,7 +9,7 @@
 - TW-05 店: 在庫制。`items[].stock` が初期在庫数、`infinite: true` の品は在庫無限。買値は `price`、売値は `price × config.economy.sellRatio`（0.5）。売った品は在庫 +1 になり、買値で買い戻せる。鑑定は `config.economy.identifyFee` で有料【仮】。プロトタイプで作るのは消耗品の購入だけ（`town.shop` の `buy`）: 売り物は `items[].type` が `consumable` かつ `infinite: true` の品（薬草 10G・解毒草 15G・帰還の糸 50G【仮】。在庫無限）。所持金から `price` を払い、鑑定済みの品を本人の所持品の末尾に入れる（乱数なし。街で買った品は潜行台帳に入れない）。受け付けは 街（`dive` が null）・`life` が `alive` の者・所持枠に空きがある（CH-71）・所持金 ≥ `price`。売却・在庫・買い戻し・鑑定は後回し【未定】（`sell` / `identify` は rejected `not implemented`）。
 - TW-06 店の在庫は `dungeons[].onClear.shopStock` で追加される（各 1 個。`infinite` の品なら無限として解放）。
 - TW-07 寺院: 
-  - 蘇生: `dead` → `alive`（HP 1）。成功率% = `config.economy.templeSuccessBase`（50）+ `vit × config.economy.templeSuccessPerVit`（2）【仮】、上限 95。失敗すると `ash`。費用 = `level × config.economy.templeCostPerLevel`（100）【仮】。費用は成否に関わらず支払う。
+  - 蘇生: `dead` → `alive`（HP 1）。成功率% = `config.economy.templeSuccessBase`（50）+ `vit × config.economy.templeSuccessPerVit`（2）【仮】、上限 95（`templeSuccessMax`）。式と判定は `rules/town.ts` の `resurrectRate` / `rollResurrect` で、呪文の蘇生（MG-42）と共有する。失敗すると `ash`。費用 = `level × config.economy.templeCostPerLevel`（100）【仮】。費用は成否に関わらず支払う。
   - 治療: 毒・麻痺・石化を回復。費用 = `config.economy.cureCost[status]`。
   - 解呪: 呪われた装備を外す（アイテムは失われる【仮】）。費用 = `config.economy.uncurseCost`。
   - 蘇生の対象は `dead` だけ（`ash` は闇魔術）。判定は d100 ≤ 成功率で、ダイスは表示しない（UI-40 の一覧に寺院は無い）。蘇生しても状態異常・MP・SAN はそのまま。

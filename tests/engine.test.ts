@@ -215,9 +215,7 @@ describe("engine: execute", () => {
     { type: "town.shop", action: { kind: "sell", memberId: "c1", instanceId: "i4" } },
     { type: "town.shop", action: { kind: "identify", memberId: "c1", instanceId: "i4" } },
     { type: "town.bank", amount: 10 },
-    { type: "dungeon.cast", memberId: "c4", spellId: "heal" },
-    { type: "party.reorder", order: ["c1", "c2", "c3", "c4", "c5", "c6"] },
-  ])("D2 M4 で未実装のコマンドは not implemented: $type", (cmd) => {
+  ])("D2 未実装のコマンドは not implemented: $type（dungeon.cast と party.reorder は M4.5 で実装した）", (cmd) => {
     const s = newGame(1);
     const r = execute(s, cmd, data);
     expect(r.state).toBe(s);

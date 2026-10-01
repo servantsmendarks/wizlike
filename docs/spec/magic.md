@@ -27,14 +27,15 @@
 
 - MG-30 呪文の MP コストは `spells[].mp`。高レベルほど高く、範囲が広い。戦闘では MP は行動の時点で消費する。入力時（`battle.input`）は mp ≥ cost の検査だけ行う。
 - MG-31 設計原則: 低レベルの単体呪文は、単体相手なら上位の範囲呪文より確実に MP 効率が良い。上位呪文は「複数相手」「状態異常付き」「フィールド用途」で差別化する。同レベルの呪文は役割（攻撃 / 状態異常 / 回復 / 補助）が重ならないようにする。
-- MG-32 `usableIn`: `battle` / `field` / `both`。フィールド呪文は迷宮内の非戦闘時に `dungeon.cast` で使う。`dungeon.cast` は M4 では未実装【未定】。
+- MG-32 `usableIn`: `battle` / `field` / `both`。フィールド呪文は迷宮内の非戦闘時に `dungeon.cast`（MG-44）で使う。迷宮で使えるのは `usableIn` が `battle` でなく、効果が `heal` / `cureStatus` / `return` / `resurrect` で、対象が `ally` / `self` / `party` / `none` の呪文（M4.5 のデータでは 治癒・解毒・帰還・蘇生）。
 
 ## 5. 特定呪文
 
-- MG-40 帰還 `return`（僧侶系 Lv3【仮】、field）: 迷宮からその場で街へ。帰還の糸（DG-30）と同じ効果。潜行台帳の内容は持ち帰る。`dungeon.cast` は M4 では未実装【未定】。
+- MG-40 帰還 `return`（僧侶系 Lv3【仮】、field）: 迷宮からその場で街へ。帰還の糸（DG-30）と同じ効果。潜行台帳の内容は持ち帰る。`dungeon.cast`（MG-44）で使う。語りは `dungeon.returnSpell`。
 - MG-41 識別 `identify`（僧侶系 Lv3【仮】、battle）: 戦闘中の全敵グループを鑑定済みにする（CB-05）。
-- MG-42 蘇生 `resurrect`（僧侶系 Lv5【仮】、field）: 対象 `dead` → `alive`（HP 1）。成功率は寺院と同式（TW-07）。失敗すると `ash`。`dungeon.cast` は M4 では未実装【未定】。
+- MG-42 蘇生 `resurrect`（僧侶系 Lv5【仮】、field）: 対象 `dead` → `alive`（HP 1）。成功率は寺院と同式（TW-07）。失敗すると `ash`。`dungeon.cast`（MG-44）で使う。成功率は `resurrectRate`（寺院と共有）、判定は d100 を 1 回で、ダイスは表示しない（TW-07 と同じ）。対象は `life` が `dead` の者（`alive` / `ash` は rejected `bad target`）。成否に関わらず MP を消費する。
 - MG-43 睡眠 `sleep_mist`（魔術師系 Lv1【仮】、battle）: 対象グループに睡眠を付与。付与判定は CB-30。
+- MG-44 `dungeon.cast {memberId, spellId, targetId?}`（M4.5）: 迷宮の戦闘外かつ保留なし（キャンプ。UI-53）で受け付ける。判定順は not in dungeon（街・戦闘中・title）→ no such member → cannot act（CH-44）→ unknown spell（data に無い・本人が覚えていない）→ not usable here（MG-32 の条件を満たさない）→ no mp → bad target（`ally` の heal / cureStatus は `alive` の者、蘇生は `dead` の者。`self` / `party` / `none` は targetId を見ない）。保留中は E3 の choice pending。受け付けたら MP を引き（`mpChanged`）→ `battle.cast{actor, spell}` → 効果の順。`spell` イベントは出さない。heal / cureStatus は戦闘と同じ効果（F9。heal は対象ごとに 1 回振る）、帰還は `dungeon.returnSpell` → 街に入る処理（DG-30 と同じで台帳は持ち帰る）、蘇生は `dungeon.cast.resurrectRoll` → 判定 → `lifeChanged`（成功なら続けて `hpChanged`）→ `dungeon.cast.resurrectOk` / `resurrectFail`。
 
 ## 6. データ
 

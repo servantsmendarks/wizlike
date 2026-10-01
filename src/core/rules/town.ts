@@ -22,8 +22,8 @@ import { ceilRatio } from "./ratio";
 import { restoreSan } from "./san";
 
 export type TempleService = "resurrect" | "cure" | "uncurse";
-/** 帰還の語りのキー（DG-30: 帰還の糸 / DG-06: 徒歩 / DG-32: テレポーター） */
-export type ReturnKey = "dungeon.return" | "dungeon.exit" | "dungeon.teleport";
+/** 帰還の語りのキー（DG-30: 帰還の糸 / DG-06: 徒歩 / DG-32: テレポーター / MG-40: 帰還の呪文） */
+export type ReturnKey = "dungeon.return" | "dungeon.exit" | "dungeon.teleport" | "dungeon.returnSpell";
 
 const TEMPLE_SERVICES: readonly TempleService[] = ["resurrect", "cure", "uncurse"];
 
@@ -225,20 +225,11 @@ export function templeService(ctx: RuleContext, memberId: string, service: Templ
   const q = templeQuote(state, data, ch, service);
   if (!q.ok) throw new Error(`templeService: ${q.reason}`);
   state.gold -= q.cost;
-  const e = data.config.economy;
   switch (service) {
     case "resurrect": {
       ctx.events.push({ kind: "message", key: "town.temple.resurrectRoll", params: { name: ch.name } });
-      const roll = randInt(state.rng, 1, 100);
-      const rate = Math.min(e.templeSuccessMax, e.templeSuccessBase + ch.stats.vit * e.templeSuccessPerVit);
-      if (roll <= rate) {
-        reviveAtOne(ctx, ch);
-        ctx.events.push({ kind: "message", key: "town.temple.resurrectOk", params: { name: ch.name } });
-      } else {
-        ch.life = "ash";
-        ctx.events.push({ kind: "lifeChanged", id: ch.id, life: "ash" });
-        ctx.events.push({ kind: "message", key: "town.temple.resurrectFail", params: { name: ch.name } });
-      }
+      const ok = rollResurrect(ctx, ch);
+      ctx.events.push({ kind: "message", key: ok ? "town.temple.resurrectOk" : "town.temple.resurrectFail", params: { name: ch.name } });
       return;
     }
     case "cure": {
@@ -284,6 +275,28 @@ export function darkService(ctx: RuleContext, memberId: string): void {
   state.gold -= resurrectCostOf(ch, data);
   reviveAtOne(ctx, ch);
   ctx.events.push({ kind: "message", key: "town.dark.done", params: { name: ch.name } });
+}
+
+/** TW-07 / MG-42: 蘇生の成功率% = min(templeSuccessMax, templeSuccessBase + vit × templeSuccessPerVit)。寺院と呪文で共有する */
+export function resurrectRate(ch: Character, data: GameData): number {
+  const e = data.config.economy;
+  return Math.min(e.templeSuccessMax, e.templeSuccessBase + ch.stats.vit * e.templeSuccessPerVit);
+}
+
+/**
+ * TW-07 / MG-42: 蘇生の判定。randInt(1, 100) を 1 回引き、resurrectRate 以下なら alive・HP 1（lifeChanged alive → [hpChanged]）、
+ * そうでなければ ash（lifeChanged ash）。message と dice は出さない（呼び出し側が語りを出す）。成功なら true
+ */
+export function rollResurrect(ctx: RuleContext, ch: Character): boolean {
+  if (ch.life !== "dead") throw new Error(`rollResurrect: ${ch.id} is not dead`);
+  const roll = randInt(ctx.state.rng, 1, 100);
+  if (roll <= resurrectRate(ch, ctx.data)) {
+    reviveAtOne(ctx, ch);
+    return true;
+  }
+  ch.life = "ash";
+  ctx.events.push({ kind: "lifeChanged", id: ch.id, life: "ash" });
+  return false;
 }
 
 /** life を alive・HP 1 にする（寺院の蘇生の成功・闇魔術・救済）。lifeChanged の後に、HP が変わったら hpChanged */
