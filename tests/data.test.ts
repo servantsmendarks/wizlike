@@ -159,6 +159,19 @@ describe("data: config.json", () => {
   test("data: CH-71 所持枠を超えない", () => {
     expectIssue((r) => (r.config.prototypeParty.members[0].inventory = Array(6).fill("herb")), "config.json", "CH-71");
   });
+  test("data: MG-01 growth.mpStatPivot は整数、mpStatDivisor は 1 以上の整数", () => {
+    expectIssue((r) => (r.config.growth.mpStatPivot = 10.5), "config.json", "growth.mpStatPivot: expected integer");
+    expectIssue((r) => (r.config.growth.mpStatPivot = "10"), "config.json", "growth.mpStatPivot: expected integer");
+    expectIssue((r) => delete r.config.growth.mpStatPivot, "config.json", "growth.mpStatPivot: missing required field");
+    expectIssue((r) => (r.config.growth.mpStatDivisor = 0), "config.json", "growth.mpStatDivisor: expected integer >= 1, got 0");
+    expectIssue((r) => (r.config.growth.mpStatDivisor = 1.5), "config.json", "growth.mpStatDivisor: expected integer");
+    expectIssue((r) => delete r.config.growth.mpStatDivisor, "config.json", "growth.mpStatDivisor: missing required field");
+  });
+  test("data: CH-05 creation.nameMaxLength は 1 以上の整数", () => {
+    expectIssue((r) => (r.config.creation.nameMaxLength = 0), "config.json", "creation.nameMaxLength: expected integer >= 1, got 0");
+    expectIssue((r) => (r.config.creation.nameMaxLength = "6"), "config.json", "creation.nameMaxLength: expected integer >= 1, got string");
+    expectIssue((r) => delete r.config.creation.nameMaxLength, "config.json", "creation.nameMaxLength: missing required field");
+  });
   test("data: MG-11 使えない系統の呪文を初期呪文に持たない", () => {
     expectIssue((r) => r.config.prototypeParty.members[4].knownSpells.push("heal"), "config.json", "MG-11");
   });

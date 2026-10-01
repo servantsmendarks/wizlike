@@ -181,13 +181,21 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
     stage: F({ width: I({ min: 240, max: 240 }), height: I({ min: 400, max: 400 }) }), // UI-01
     party: F({ size: I({ min: 6, max: 6 }), frontRow: I({ min: 3, max: 3 }) }), // CH-01
     inventory: F({ slotsPerCharacter: I(POS_INT) }),
-    creation: F({ bonusBase: I(), bonusDie: I(POS_INT), bonusBigChance: I(PERCENT), bonusBig: I() }),
+    creation: F({
+      bonusBase: I(),
+      bonusDie: I(POS_INT),
+      bonusBigChance: I(PERCENT),
+      bonusBig: I(),
+      nameMaxLength: I(POS_INT), // CH-05
+    }),
     growth: F({
       expBase: I({ positive: true }),
       expGrowth: N({ positive: true }),
       hpVitPivot: I(),
       hpVitDivisor: I(POS_INT),
       hpGainMin: I(POS_INT),
+      mpStatPivot: I(), // MG-01
+      mpStatDivisor: I(POS_INT), // MG-01（0 除算を防ぐ）
     }),
     learning: F({ base: I(), perLevelDiff: I(), guaranteeDiff: I(), statPivot: I(), statPerPoint: I() }),
     dungeon: F({ defaultRooms: pair(POS_INT) }), // DG-05

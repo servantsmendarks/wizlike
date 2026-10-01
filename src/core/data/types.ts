@@ -55,8 +55,18 @@ export type Config = {
   stage: { width: number; height: number };
   party: { size: number; frontRow: number };
   inventory: { slotsPerCharacter: number };
-  creation: { bonusBase: number; bonusDie: number; bonusBigChance: number; bonusBig: number };
-  growth: { expBase: number; expGrowth: number; hpVitPivot: number; hpVitDivisor: number; hpGainMin: number };
+  /** nameMaxLength: CH-05 名前の上限（trim 後のコードポイント数）【仮】 */
+  creation: { bonusBase: number; bonusDie: number; bonusBigChance: number; bonusBig: number; nameMaxLength: number };
+  /** mpStatPivot / mpStatDivisor: MG-01 の MP 補正【仮】 */
+  growth: {
+    expBase: number;
+    expGrowth: number;
+    hpVitPivot: number;
+    hpVitDivisor: number;
+    hpGainMin: number;
+    mpStatPivot: number;
+    mpStatDivisor: number;
+  };
   learning: { base: number; perLevelDiff: number; guaranteeDiff: number; statPivot: number; statPerPoint: number };
   /** DG-05: dungeons[].rooms を省略したときの部屋数 [min, max] */
   dungeon: { defaultRooms: [number, number] };
