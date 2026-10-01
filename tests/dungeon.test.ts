@@ -722,7 +722,7 @@ describe("罠（DG-20, DG-21, E4, E5）", () => {
     expect(r.state.rng).toEqual(mirror);
   });
 
-  test("E5 pit で全員死亡: message dungeon.allDead が 1 回。その歩では階段と遭遇を起こさない。その後も dungeon.move は受け付ける", () => {
+  test("DG-20/E5 pit で全員死亡: message dungeon.allDead が 1 回。その歩では階段と遭遇を起こさない。その後も dungeon.move は受け付ける", () => {
     const { state } = atPit((s) => {
       for (const c of s.party) c.hp = 1;
     });
@@ -828,7 +828,7 @@ describe("罠（DG-20, DG-21, E4, E5）", () => {
     }
   });
 
-  test("E4 発動した罠は clearedCells に入り、同じセルに戻っても発動しない（mapView でも plain）", () => {
+  test("DG-20/E4 発動した罠は clearedCells に入り、同じセルに戻っても発動しない（mapView でも plain）", () => {
     const { state, a } = atPit();
     const r1 = run(state, MOVE, DATA0);
     expect(r1.state.dive!.clearedCells).toEqual([{ floor: 1, ...a.target }]);
@@ -845,7 +845,7 @@ describe("罠（DG-20, DG-21, E4, E5）", () => {
     expect(mc.kind).toBe("plain");
   });
 
-  test("E4 teleport の罠（d02）は踏んでも何も起きず、clearedCells にも入らない", () => {
+  test("DG-20/E4 teleport の罠（d02）は踏んでも何も起きず、clearedCells にも入らない", () => {
     const base = (seed: number) => {
       const s = cloneState(newGame(seed));
       s.progress.unlockedDungeons.push("d02");
