@@ -20,6 +20,8 @@ export function createInitialState(seed: number, _data: GameData): GameState {
     progress: { unlockedDungeons: [], clearedDungeons: [] },
     dive: null,
     pendingChoice: null,
+    battle: null,
+    bestiary: {},
   };
 }
 

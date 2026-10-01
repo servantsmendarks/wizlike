@@ -1,6 +1,6 @@
 // GameState の複製、data の id 引き、アイテム実体の作成と削除、RuleContext の作成。
 // ルール関数すべてが使う補助。見つからない id は Error（起動時に検証済みなので、来たらバグ）。
-import type { ClassDef, DungeonDef, GameData, Item, Personality, PersonalityId, Spell } from "./data/index";
+import type { ClassDef, DungeonDef, GameData, Item, Monster, Personality, PersonalityId, Spell } from "./data/index";
 import { EQUIP_SLOTS } from "./data/index";
 import type { Character, GameState, RuleContext } from "./types";
 
@@ -30,6 +30,12 @@ export function itemOf(data: GameData, id: string): Item {
   const i = data.items.find((x) => x.id === id);
   if (i === undefined) throw new Error(`unknown item id: ${id}`);
   return i;
+}
+
+export function monsterOf(data: GameData, id: string): Monster {
+  const m = data.monsters.find((x) => x.id === id);
+  if (m === undefined) throw new Error(`unknown monster id: ${id}`);
+  return m;
 }
 
 export function dungeonOf(data: GameData, id: string): DungeonDef {
@@ -62,7 +68,10 @@ export function createItemInstance(state: GameState, itemId: string, identified:
   return id;
 }
 
-/** 持ち主の equipment（該当スロットを null に）と inventory から外し、state.items から消す。 */
+/**
+ * 持ち主の equipment（該当スロットを null に）と inventory から外し、state.items から消す。
+ * 潜行中なら潜行台帳（dive.ledger.items）からも外す（DG-41: 迷宮で使った・壊れた取得物は台帳から消える）。
+ */
 export function destroyItemInstance(state: GameState, ch: Character, instanceId: string): void {
   if (!Object.prototype.hasOwnProperty.call(state.items, instanceId)) {
     throw new Error(`unknown item instance: ${instanceId}`);
@@ -71,7 +80,7 @@ export function destroyItemInstance(state: GameState, ch: Character, instanceId:
     if (ch.equipment[slot] === instanceId) ch.equipment[slot] = null;
   }
   ch.inventory = ch.inventory.filter((x) => x !== instanceId);
-  // TODO(M2, DG-41): dive.ledger.items からも外す。
+  if (state.dive !== null) state.dive.ledger.items = state.dive.ledger.items.filter((x) => x !== instanceId);
   delete state.items[instanceId];
 }
 

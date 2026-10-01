@@ -95,6 +95,28 @@ export function chance(rng: RngState, percent: number): boolean {
   return randInt(rng, 1, 100) <= percent;
 }
 
+/**
+ * 重みづけの抽選（CB-03 のグループ数・敵の種類）。randInt(rng, 1, Σw) を 1 回だけ消費し、
+ * 累積が出目以上になる最初の添字を返す。重み 0 の要素は選ばれない。
+ * 空・負・非整数（安全な整数でない）・合計 0 は RangeError（乱数を消費しない）。
+ */
+export function weightedIndex(rng: RngState, weights: readonly number[]): number {
+  if (weights.length === 0) throw new RangeError("weightedIndex: weights is empty");
+  let sum = 0;
+  for (const w of weights) {
+    if (!Number.isSafeInteger(w) || w < 0) throw new RangeError(`weightedIndex: bad weight: ${w}`);
+    sum += w;
+  }
+  if (sum === 0) throw new RangeError("weightedIndex: total weight is 0");
+  const r = randInt(rng, 1, sum);
+  let acc = 0;
+  for (let i = 0; i < weights.length; i++) {
+    acc += weights[i]!;
+    if (r <= acc) return i;
+  }
+  throw new Error("weightedIndex: unreachable");
+}
+
 /** 独立したコピーを返す。 */
 export function cloneRng(rng: RngState): RngState {
   // >>> 0 で -0 を 0 に正規化する（isRngState を通った値なら、変わるのは -0 だけ）。

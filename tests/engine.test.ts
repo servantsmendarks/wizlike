@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { createInitialState, execute } from "../src/core/engine";
 import { createRng } from "../src/core/rng";
-import { cloneState, dungeonOf } from "../src/core/state";
+import { cloneState, createItemInstance, destroyItemInstance, dungeonOf, memberById, monsterOf } from "../src/core/state";
 import type { Command, GameState } from "../src/core/types";
 import {
   data,
@@ -67,7 +67,7 @@ describe("engine: execute", () => {
     expect(JSON.parse(JSON.stringify(s0))).toEqual(s0);
   });
 
-  test("D3 createInitialState: screen title、party []、rng は createRng(seed) と同じ、gold 0、bank 0、nextItemSeq 1、dive と pendingChoice は null", () => {
+  test("D3 createInitialState: screen title、party []、rng は createRng(seed) と同じ、gold 0、bank 0、nextItemSeq 1、dive と pendingChoice と battle は null、bestiary は {}", () => {
     const s = createInitialState(42, data);
     expect(s).toEqual({
       screen: "title",
@@ -80,6 +80,8 @@ describe("engine: execute", () => {
       progress: { unlockedDungeons: [], clearedDungeons: [] },
       dive: null,
       pendingChoice: null,
+      battle: null,
+      bestiary: {},
     });
     expect(() => createInitialState(1.5, data)).toThrow(RangeError);
   });
@@ -95,6 +97,42 @@ describe("engine: execute", () => {
     expect(dungeonOf(data, "d01")).toBe(data.dungeons[0]);
     expect(dungeonOf(data, "d02").floors).toBe(3);
     expect(() => dungeonOf(data, "d99")).toThrow("unknown dungeon id: d99");
+  });
+
+  test("CB-03 monsterOf は id で monsters.json の定義を返し、未知の id は Error", () => {
+    expect(monsterOf(data, data.monsters[0]!.id)).toBe(data.monsters[0]);
+    expect(() => monsterOf(data, "m99")).toThrow("unknown monster id: m99");
+  });
+
+  test("DG-41 destroyItemInstance は潜行中なら dive.ledger.items からも外す（他の台帳の品と持ち込みの品は残る）", () => {
+    const entered = execute(execute(createInitialState(1, data), gameNew(), data).state, { type: "dungeon.enter", dungeonId: "d01" }, data);
+    expectKnownStringKeys(entered.events);
+    const s = cloneState(entered.state);
+    const ch = memberById(s, "c1")!;
+    const carried = ch.inventory[0]!; // 持ち込みの herb（台帳には無い）
+    const gotA = createItemInstance(s, "herb", true);
+    const gotB = createItemInstance(s, "herb", true);
+    ch.inventory.push(gotA, gotB);
+    s.dive!.ledger.items.push(gotA, gotB);
+
+    destroyItemInstance(s, ch, gotA);
+    expect(ch.inventory).toEqual([carried, gotB]);
+    expect(s.items[gotA]).toBeUndefined();
+    expect(s.dive!.ledger.items).toEqual([gotB]);
+
+    destroyItemInstance(s, ch, carried);
+    expect(ch.inventory).toEqual([gotB]);
+    expect(s.dive!.ledger.items).toEqual([gotB]);
+  });
+
+  test("DG-41 destroyItemInstance は潜行していなければ台帳に触れない（dive null のまま）", () => {
+    const s = cloneState(execute(createInitialState(1, data), gameNew(), data).state);
+    const ch = memberById(s, "c1")!;
+    const carried = ch.inventory[0]!;
+    destroyItemInstance(s, ch, carried);
+    expect(ch.inventory).toEqual([]);
+    expect(s.items[carried]).toBeUndefined();
+    expect(s.dive).toBeNull();
   });
 
   test("D3 game.new で screen は town、events は [{kind:\"screen\",to:\"town\"}] だけ", () => {

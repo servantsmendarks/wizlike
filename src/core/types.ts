@@ -5,7 +5,7 @@
 //   「無い」は null か空配列・空オブジェクトで表す。
 // - verbatimModuleSyntax が有効なので、型は import type で取る。data の型は定義し直さない。
 // - import 先は "./data/index" と "./rng"（どちらも src/core 内。architecture.test の制約）。
-import type { EquipSlot, GameData, PersonalityId, StatBlock, StatusId, TrapId } from "./data/index";
+import type { EquipSlot, GameData, PersonalityId, SpellTarget, StatBlock, StatusId, TrapId } from "./data/index";
 import type { RngState } from "./rng";
 
 // ===================== 小さな型 =====================
@@ -20,13 +20,20 @@ export type Pos = { x: number; y: number };
 /** CH-61: levelHistory の要素。level は、このレコードで到達したレベル（2 以上）。レベル 1 の初期値は入れない。 */
 export type LevelRecord = { level: number; hpGain: number; mpGain: number };
 
-// ===================== 戦闘入力（【仮置き】M3 で確定） =====================
+// ===================== 戦闘の入力（M3 で確定。combat.md CB-10〜16） =====================
 
+/**
+ * battle.input の対象。
+ * - side "enemy": attack の対象、spell.target が enemy / enemyGroup の呪文。group は BattleState.groups の添字
+ * - side "ally": spell.target / items[].effect.target が ally
+ * - side "none": allEnemies / party / self / none（対象を選ばない）
+ */
 export type BattleTarget =
   | { side: "enemy"; group: number }
   | { side: "ally"; memberId: string }
   | { side: "none" };
 
+/** CB-12。attack.group は BattleState.groups の添字。instanceId は使う本人の inventory にある ItemInstance.id */
 export type BattleAction =
   | { type: "attack"; group: number }
   | { type: "cast"; spellId: string; target: BattleTarget }
@@ -200,9 +207,52 @@ export type MapCell = { x: number; y: number; kind: MapCellKind; n: Edge; e: Edg
 /** DG-13 / UI-24。cells は探索済みセルだけ（添字の昇順） */
 export type MapView = { dungeonId: string; floor: number; width: number; height: number; pos: Pos; facing: Facing; cells: MapCell[] };
 
+// ===================== 戦闘の状態（M3。GameState.battle） =====================
+
+/**
+ * CB-25: 敵の 1 個体。hp <= 0 が死亡。死んでも配列から消さない。
+ * id は保存せず、位置から "e{グループ添字}-{個体添字}"（rules/combat-calc.ts の enemyId）で作る。
+ */
+export type EnemyUnit = {
+  hp: number;
+  hpMax: number;
+  /** 重複なし。M3 で付く経路は sleep_mist の sleep だけ */
+  status: StatusId[];
+};
+
+/** CB-03: 同じ種類の敵の集まり。groups の添字は戦闘中に詰めない（CB-42「添字が最小の生存グループ」）。鑑定済みかは bestiary だけが持つ */
+export type EnemyGroup = { monsterId: string; units: EnemyUnit[] };
+
+/** 遭遇の出どころ。逃走の可否は origin から導く（random だけ可。CB-02）。M5 で { kind: "event"; eventId: string } を足す */
+export type BattleOrigin =
+  | { kind: "random"; inRoom: boolean } // CB-01。inRoom は遭遇したセルの roomId !== null（CB-51 の宝箱）
+  | { kind: "boss" }; // DG-31
+
+/**
+ * F1: 戦闘中だけ非 null。state.screen === "battle" と同値。
+ * ラウンドの解決は 1 回の execute で完結するので、防御・initiative・行動計画は state に持たない。
+ */
+export type BattleState = {
+  origin: BattleOrigin;
+  /** 始めたラウンドの数（0 始まり。敵の奇襲・逃走失敗のラウンドも数える） */
+  round: number;
+  /** CB-04: 真なら次の battle.resolve で敵は行動しない。battle.resolve の先頭で必ず false に戻す */
+  partySurprise: boolean;
+  groups: EnemyGroup[];
+  /** CB-10: memberId → 入力。ラウンドの終わり（決着しなかったとき）に {} へ戻す。同じメンバーへの再入力は上書き */
+  inputs: Record<string, BattleAction>;
+  /** F2: パーティ単位のオート。開始時 false */
+  auto: boolean;
+  /** CB-20: 戦闘中だけの AC 補正（blessing の −2 を加算で重ねる）。memberId → 合計。無いキーは 0 */
+  acBonus: Record<string, number>;
+};
+
+/** CB-05 / F6: 図鑑の 1 種類分。初めて遭遇したときにキーを作る */
+export type BestiaryEntry = { kills: number; identified: boolean };
+
 // ===================== GameState =====================
-// M1 で確定した欄に、M2 で dive と pendingChoice を足した。battle・bestiary（M3）、townVisit（M4）は、
-// それぞれのマイルストーンで足す（保存が始まる M4 より前なので migrate は要らない）。
+// M1 で確定した欄に、M2 で dive と pendingChoice、M3 で battle と bestiary を足した。townVisit（M4）は
+// M4 で足す（保存が始まる M4 より前なので migrate は要らない）。
 // schemaVersion、turn、updatedAt、gameId は保存レコード側の欄（SV-21）で、ここには入れない。
 
 export type GameState = {
@@ -224,6 +274,10 @@ export type GameState = {
   dive: Dive | null;
   /** E3。null 以外の間は event.choose 以外を rejected にする */
   pendingChoice: PendingChoice | null;
+  /** F1: 戦闘中だけ非 null（screen === "battle" と同値） */
+  battle: BattleState | null;
+  /** F6: monsterId → 記録。ゲーム単位で永続（戦闘・潜行・全滅をまたぐ） */
+  bestiary: Record<string, BestiaryEntry>;
 };
 
 // ===================== コマンド（CLAUDE.md §5） =====================
@@ -263,8 +317,52 @@ export type CommandType = Command["type"];
 
 // ===================== イベント =====================
 
-/** 【仮置き】M3 で確定する */
-export type EnemyGroupView = { index: number; monsterId: string; count: number; identified: boolean };
+// ===================== 表示層向けの問い合わせの結果（rules/combat.ts の battleMenu が返す。state には入れない） =====================
+
+/**
+ * §7: encounter / enemyGroups と BattleMenu.groups で同じ形。全グループを添字順に返す（体数 0 も残す）。
+ * name は core が選んだ表示名（bestiary[monsterId].identified なら monsters[].name、でなければ unidentifiedName）。
+ */
+export type EnemyGroupView = {
+  index: number;
+  monsterId: string;
+  name: string;
+  identified: boolean;
+  /** 生存個体の数 */
+  count: number;
+};
+
+/** 戦闘で使える既知の呪文。usable = mp >= spells[].mp */
+export type BattleMenuSpell = { spellId: string; name: string; mp: number; target: SpellTarget; usable: boolean };
+/** 本人の inventory のうち戦闘で使える消耗品。name は鑑定を反映した表示名 */
+export type BattleMenuItem = { instanceId: string; itemId: string; name: string; target: SpellTarget };
+export type BattleMenuMember = {
+  id: string;
+  name: string;
+  /** CH-44 の否定 */
+  canAct: boolean;
+  /** このラウンドの入力（未入力なら null） */
+  input: BattleAction | null;
+  /** CB-13/14 の今の判定。偽なら「攻撃」は防御として解決される（入力は受け付ける。表示の注記用） */
+  canStrike: boolean;
+  spells: BattleMenuSpell[];
+  items: BattleMenuItem[];
+};
+export type BattleMenu = {
+  round: number;
+  auto: boolean;
+  /** CB-02: origin が random のときだけ真 */
+  canFlee: boolean;
+  /** battle.resolve を受け付けるか（checkResolve(state, data) === null と同値） */
+  ready: boolean;
+  /** 行動可能で未入力のメンバーの id（並び順）。オート中は [] */
+  pending: string[];
+  groups: EnemyGroupView[];
+  /** パーティ全員（並び順） */
+  members: BattleMenuMember[];
+  /** 味方の対象の候補 = life が alive のメンバー（並び順） */
+  allies: { id: string; name: string; hp: number; hpMax: number }[];
+};
 
 /** 【仮置き】M4 で確定する */
 export type PenaltyResult = { dice: number[]; total: number; bandIndex: number };
@@ -274,12 +372,18 @@ export type GameEvent =
   | { kind: "moved"; pos: Pos; facing: Facing }
   | { kind: "turned"; facing: Facing }
   | { kind: "blocked" }
+  /** 戦闘の開始。screen{battle} の直後に 1 回 */
   | { kind: "encounter"; groups: EnemyGroupView[] }
+  /** actorId / targetId は味方なら "c1".."c6"、敵なら "e{g}-{u}"。1 振り（味方の攻撃 1 回・敵の攻撃要素 1 つ）ごとに 1 件 */
   | { kind: "attack"; actorId: string; targetId: string; hit: boolean; damage: number }
+  /** targets は効果を受けた id（敵は "e{g}-{u}"、味方は memberId）。identify は [] */
   | { kind: "spell"; actorId: string; spellId: string; targets: string[] }
+  /** id は味方か敵（"e{g}-{u}"）。敵の hp は表示層が見せない（被弾のフラッシュの契機にだけ使う） */
   | { kind: "hpChanged"; id: string; delta: number; hp: number }
   | { kind: "sanChanged"; id: string; delta: number; san: number }
+  /** id は味方か敵 */
   | { kind: "statusChanged"; id: string; status: StatusId; on: boolean }
+  /** id は味方か敵。敵の撃破は life "dead" */
   | { kind: "lifeChanged"; id: string; life: Life }
   /** label は strings.json のキー（UI-40 の各判定で使い回す。習得なら "town.inn.learnRoll"） */
   | { kind: "dice"; label: string; dice: number[]; total: number }
@@ -296,7 +400,11 @@ export type GameEvent =
   | { kind: "floorChanged"; floor: number; pos: Pos; facing: Facing }
   | { kind: "screen"; to: Screen }
   /** D2: 受け付けなかったコマンド。command は受け取った type（形が壊れていれば "unknown"）、reason は英語の短い理由 */
-  | { kind: "rejected"; command: string; reason: string };
+  | { kind: "rejected"; command: string; reason: string }
+  /** M3 追加: 鑑定（CB-05 / MG-41）で表示名が変わったときに全グループを出し直す */
+  | { kind: "enemyGroups"; groups: EnemyGroupView[] }
+  /** M3 追加（§5「足りなければ足す」）: MP の変化。delta は負で消費 */
+  | { kind: "mpChanged"; id: string; delta: number; mp: number };
 
 export type GameEventKind = GameEvent["kind"];
 

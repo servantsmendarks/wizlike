@@ -15,6 +15,7 @@ import {
   restoreRng,
   rollDice,
   rollDie,
+  weightedIndex,
   type RngState,
 } from "../src/core/rng";
 
@@ -248,6 +249,63 @@ describe("rng: randInt / rollDie / chance", () => {
     const b = createRng(41);
     for (let i = 0; i < 200; i++) expect(chance(a, 37)).toBe(randInt(b, 1, 100) <= 37);
     expect(() => chance(createRng(1), Number.NaN)).toThrow(RangeError);
+  });
+});
+
+describe("rng: weightedIndex（CB-03 の重みづけの抽選）", () => {
+  test("CB-03 weightedIndex: randInt(1, Σw) を 1 回だけ消費し、累積が出目以上になる最初の添字を返す", () => {
+    // 重み [3, 0, 2]（Σ5）: 出目 1..3 → 0、4..5 → 2。1 は重み 0 なので選ばれない。
+    const table = [0, 0, 0, 0, 2, 2]; // 添字 = 出目
+    const a = createRng(5);
+    const b = createRng(5);
+    const seen = new Set<number>();
+    for (let i = 0; i < 300; i++) {
+      const r = randInt(b, 1, 5);
+      const got = weightedIndex(a, [3, 0, 2]);
+      expect(got).toBe(table[r]);
+      seen.add(got);
+    }
+    expect([...seen].sort()).toEqual([0, 2]);
+    expect(take(a, 5)).toEqual(take(b, 5));
+  });
+
+  test("CB-03 weightedIndex: d01 1 階の groupCountWeights [70,25,5,0] は鏡の rng と一致し、4 グループは出ない", () => {
+    const w = [70, 25, 5, 0];
+    const a = createRng(2026);
+    const b = createRng(2026);
+    const counts = [0, 0, 0, 0];
+    for (let i = 0; i < 2000; i++) {
+      const r = randInt(b, 1, 100);
+      const want = r <= 70 ? 0 : r <= 95 ? 1 : 2;
+      const got = weightedIndex(a, w);
+      expect(got).toBe(want);
+      counts[got]!++;
+    }
+    expect(counts[3]).toBe(0);
+    expect(counts[0]).toBeGreaterThan(1300);
+    expect(counts[0]).toBeLessThan(1500);
+    expect(take(a, 5)).toEqual(take(b, 5));
+  });
+
+  test("CB-03 weightedIndex: [0,0,0,1] は常に 3（Σ1 でも 1 回消費する）", () => {
+    const a = createRng(9);
+    const b = createRng(9);
+    for (let i = 0; i < 50; i++) {
+      expect(weightedIndex(a, [0, 0, 0, 1])).toBe(3);
+      randInt(b, 1, 1);
+    }
+    expect(take(a, 5)).toEqual(take(b, 5));
+  });
+
+  test("CB-03 weightedIndex: 空・負・非整数・合計 0 は RangeError で、乱数を消費しない", () => {
+    const a = createRng(3);
+    const b = createRng(3);
+    expect(() => weightedIndex(a, [])).toThrow(RangeError);
+    expect(() => weightedIndex(a, [1, -1])).toThrow(RangeError);
+    expect(() => weightedIndex(a, [1.5, 2])).toThrow(RangeError);
+    expect(() => weightedIndex(a, [Number.NaN])).toThrow(RangeError);
+    expect(() => weightedIndex(a, [0, 0, 0])).toThrow(RangeError);
+    expect(take(a, 5)).toEqual(take(b, 5));
   });
 });
 
