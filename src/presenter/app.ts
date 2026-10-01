@@ -177,6 +177,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     store,
     defaults: defaultSettings(data.config),
     onClose: () => closeDebug(),
+    onHpOne: () => guard(() => hpOneFromDebug()),
   });
 
   // SV-23: 保存できないことを知らせる帯（最前面。押せない）
@@ -814,6 +815,16 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     overlay = "debug";
     debug.refresh();
     debug.el.style.display = "";
+  };
+
+  /**
+   * UI-57（開発用）: 「全員HP1」。街・迷宮・戦闘のときだけ、パネルを閉じてから debug.hpOne を送る（受け付けるかは core が決める）。
+   * 全滅の流れ（UI-56）を実機で確かめるためのもの
+   */
+  const hpOneFromDebug = (): void => {
+    if (route !== "town" && route !== "dungeon" && route !== "battle") return;
+    closeDebug();
+    void run({ type: "debug.hpOne" });
   };
 
   const closeDebug = (): void => {

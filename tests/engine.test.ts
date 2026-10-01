@@ -11,7 +11,9 @@ import {
   loadFreshData,
   newGame,
   stringKeysOf,
+  withChar,
 } from "./helpers/core";
+import { dataWith, dived, withBattle } from "./helpers/battle";
 
 const gameNew = (members = defaultMembers()): Command => ({ type: "game.new", party: { members } });
 
@@ -286,5 +288,83 @@ describe("engine: execute", () => {
     expect(r.events).toEqual([{ kind: "rejected", command: "game.new", reason: "invalid name at 5" }]);
     expect(r.state).toBe(s);
     expect(r.state.rng).toEqual(createRng(1));
+  });
+});
+
+describe("UI-57 debug.hpOne（開発用）", () => {
+  const HP_ONE: Command = { type: "debug.hpOne" };
+
+  /** 期待する hpChanged（並び順に、alive で hp が 1 でない者だけ）と最後の message */
+  function expected(s: GameState): GameEvent[] {
+    const out: GameEvent[] = [];
+    for (const ch of s.party) if (ch.life === "alive" && ch.hp !== 1) out.push({ kind: "hpChanged", id: ch.id, delta: 1 - ch.hp, hp: 1 });
+    out.push({ kind: "message", key: "debug.hpOne" });
+    return out;
+  }
+
+  test("UI-57 街・迷宮・戦闘中・保留中で受け付け、alive の全員の hp を 1 にする（hpChanged は変わった者だけ、最後に message）。dead / ash は変えない。乱数は動かさない", () => {
+    const town = newGame(1);
+    const dungeon = dived(1);
+    const battle = withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }]);
+    const pending: GameState = {
+      ...dived(1),
+      pendingChoice: { kind: "stairs", promptKey: "dungeon.stairsDown", options: [{ id: "stay", labelKey: "dungeon.choice.stay" }] },
+    };
+    // 2 人目は hp 1 のまま（hpChanged を出さない）、3 人目は死亡、4 人目は灰
+    let mixed = withChar(dived(1), 1, { hp: 1 });
+    mixed = withChar(mixed, 2, { life: "dead", hp: 0 });
+    mixed = withChar(mixed, 3, { life: "ash", hp: 0 });
+    for (const s of [town, dungeon, battle, pending, mixed]) {
+      const before = JSON.stringify(s);
+      const r = execute(s, HP_ONE, data);
+      expect(JSON.stringify(s)).toBe(before);
+      expect(r.events).toEqual(expected(s));
+      expectKnownStringKeys(r.events);
+      for (const [i, ch] of r.state.party.entries()) {
+        const was = s.party[i]!;
+        expect(ch.hp, ch.id).toBe(was.life === "alive" ? 1 : was.hp);
+        expect(ch.life, ch.id).toBe(was.life);
+      }
+      expect(r.state.rng).toEqual(s.rng);
+      // 画面・戦闘・保留はそのまま（hp 1 で行動不能になる者はいないので全滅処理も起きない）
+      expect(r.state.screen).toBe(s.screen);
+      expect(r.state.battle).toEqual(s.battle);
+      expect(r.state.pendingChoice).toEqual(s.pendingChoice);
+      expect(r.state.dive).toEqual(s.dive);
+    }
+    // 手計算: プロトタイプの 6 人の初期 hpMax は 15/16/10/12/8/10（CH-65）。mixed では c1・c5・c6 だけが変わる
+    expect(execute(mixed, HP_ONE, data).events).toEqual([
+      { kind: "hpChanged", id: "c1", delta: -14, hp: 1 },
+      { kind: "hpChanged", id: "c5", delta: -7, hp: 1 },
+      { kind: "hpChanged", id: "c6", delta: -9, hp: 1 },
+      { kind: "message", key: "debug.hpOne" },
+    ]);
+    // もう一度送っても message だけ（変化が無くても出す）
+    const again = execute(execute(town, HP_ONE, data).state, HP_ONE, data);
+    expect(again.events).toEqual([{ kind: "message", key: "debug.hpOne" }]);
+  });
+
+  test("UI-57/D2 title（party が空）では rejected no party（同じ参照）", () => {
+    const s = createInitialState(1, data);
+    const r = execute(s, HP_ONE, data);
+    expect(r.state).toBe(s);
+    expect(r.events).toEqual([{ kind: "rejected", command: "debug.hpOne", reason: "no party" }]);
+  });
+
+  test("UI-57/TW-20 全員 HP1 の後、戦闘で全員が倒れると戦闘の中の全滅処理になる（全滅の流れを実機で確かめる経路）", () => {
+    const d = dataWith({ combat: { hitMin: 100, hitMax: 100 } });
+    const s0 = withBattle(dived(1), [{ monsterId: "kobold", hps: [999] }, { monsterId: "kobold", hps: [999] }, { monsterId: "kobold", hps: [999] }]);
+    let s = execute(s0, HP_ONE, d).state;
+    expect(s.party.every((c) => c.hp === 1)).toBe(true);
+    let wiped = false;
+    // 「前回と同じ」（オート入力の規則で 1 ラウンド解決）を戦闘が終わるまで送る
+    for (let i = 0; i < 30 && s.battle !== null; i++) {
+      const r = execute(s, { type: "battle.repeat" }, d);
+      expect(r.events[0]?.kind).not.toBe("rejected");
+      if (r.events.some((e) => e.kind === "wipe")) wiped = true;
+      s = r.state;
+    }
+    expect(wiped).toBe(true);
+    expect(s.screen).toBe("town");
   });
 });

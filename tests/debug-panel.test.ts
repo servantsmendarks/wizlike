@@ -1,8 +1,10 @@
 // debug パネル（M0 の確認画面と設定の仮 UI）の純粋な部分。DOM の部分は実機で確かめる。
-import { describe, expect, test } from "vitest";
-import { defaultSettings } from "../src/presenter/settings";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { tapSpecOf } from "../src/presenter/input/tap";
+import { DEBUG_BUTTONS, debugRow } from "../src/presenter/layout";
+import { createSettingsStore, defaultSettings } from "../src/presenter/settings";
 import type { StageLayout } from "../src/presenter/stage";
-import { DEBUG_ROW_KEYS, debugRows, formatStageInfo, formatSwipeDebug, type StageInfoInput } from "../src/presenter/views/debug-panel";
+import { createDebugPanel, DEBUG_ROW_KEYS, debugRows, formatStageInfo, formatSwipeDebug, type StageInfoInput } from "../src/presenter/views/debug-panel";
 import { data } from "./helpers/core";
 
 const layout: StageLayout = { scale: 4 / 3, deviceScale: 4, integer: true, left: 0.5, top: 12 };
@@ -64,5 +66,71 @@ describe("debugRows", () => {
 
   test("UI-30 スワイプの確定値の表示は dx,dy,dir（丸めた CSS px）", () => {
     expect(formatSwipeDebug(-3.6, 41.2, "up")).toBe("-4,41,up");
+  });
+});
+
+// ---------------------------------------------------------------- DOM（偽の document）
+class FakeEl {
+  style: Record<string, string> = {};
+  className = "";
+  textContent = "";
+  type = "";
+  children: FakeEl[] = [];
+  setAttribute(): void {}
+  appendChild(c: FakeEl): FakeEl {
+    this.children.push(c);
+    return c;
+  }
+}
+
+describe("createDebugPanel", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("UI-57/UI-36 ボタンの段は 全員HP1・既定に戻す・閉じる（DEBUG_BUTTONS の位置）。全員HP1 は onHpOne、オートの速さの行は 200 → 400 → 600 と巡回する。どれも onTap で登録する", () => {
+    const created: FakeEl[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => {
+        const e = new FakeEl();
+        created.push(e);
+        return e;
+      },
+      createElementNS: () => new FakeEl(),
+    });
+    const persisted: number[] = [];
+    const store = createSettingsStore(defaultSettings(data.config), (s) => persisted.push(s.autoBeatMs));
+    let hpOne = 0;
+    let closed = 0;
+    createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => closed++, onHpOne: () => hpOne++ });
+    const buttons = created.filter((e) => e.className === "ui-button");
+    const byText = (t: string): FakeEl => buttons.find((b) => b.textContent === t)!;
+    const tap = (b: FakeEl): void => tapSpecOf(b)!.onTap({ lx: 0, ly: 0 });
+    const hp = byText(data.strings["debug.hpOneButton"]!);
+    const reset = byText(data.strings["settings.reset"]!);
+    const close = byText(data.strings["common.close"]!);
+    for (const [b, r] of [
+      [hp, DEBUG_BUTTONS.hpOne],
+      [reset, DEBUG_BUTTONS.reset],
+      [close, DEBUG_BUTTONS.close],
+    ] as const) {
+      expect([b.style["left"], b.style["top"], b.style["width"], b.style["height"]]).toEqual([`${r.x}px`, `${r.y}px`, `${r.w}px`, `${r.h}px`]);
+    }
+    tap(hp);
+    expect(hpOne).toBe(1);
+    tap(close);
+    expect(closed).toBe(1);
+    // オートの速さの行（行 4 の toggle）
+    const beat = byText("400ms");
+    expect(beat.style["top"]).toBe(`${debugRow(4).toggle.y}px`);
+    tap(beat);
+    tap(beat);
+    tap(beat);
+    expect(persisted).toEqual([600, 200, 400]);
+    // 既定に戻す
+    tap(beat);
+    tap(reset);
+    expect(store.get().autoBeatMs).toBe(400);
+    expect(buttons.every((b) => tapSpecOf(b) !== null)).toBe(true);
   });
 });

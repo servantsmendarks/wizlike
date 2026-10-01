@@ -287,8 +287,9 @@ export function debugRow(i: number): { label: Rect; minus: Rect; value: Rect; pl
 /** debug パネルの最後に確定したスワイプの表示（押せない 1 行）の上端。設定の行 5 の下 */
 export const DEBUG_SWIPE_Y = 328;
 
-/** debug パネルのボタン（y342 の 72×32 を 3 つ並べる。左端の枠は全員HP1（UI-57）に使う） */
+/** debug パネルのボタン（y342 の 72×32 を 3 つ並べる。全員HP1（UI-57）・既定に戻す・閉じる） */
 export const DEBUG_BUTTONS = {
+  hpOne: { x: 8, y: 342, w: 72, h: 32 },
   reset: { x: 84, y: 342, w: 72, h: 32 },
   close: { x: 160, y: 342, w: 72, h: 32 },
 } as const satisfies Record<string, Rect>;

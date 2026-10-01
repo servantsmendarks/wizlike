@@ -3,7 +3,7 @@
 // - y42..121: 計測値 8 行（formatStageInfo。M0 の書式を引き継ぐ）
 // - debugRow(0..5): スワイプ閾値（CSS px の換算値も出す）、長押し間隔、文字速度、演出スキップ、オートの速さ（UI-45）、入力モード
 // - DEBUG_SWIPE_Y（y328..337）: 最後に確定したスワイプの "dx,dy,dir"（ASCII）
-// - DEBUG_BUTTONS（y342）: 既定に戻す、閉じる
+// - DEBUG_BUTTONS（y342）: 全員HP1（UI-57。debug.hpOne を送るのは app）、既定に戻す、閉じる
 // 値を変えたら、その場で store.set を呼ぶ（保存とすぐの反映は store の購読者が行う）。
 // 計測ラベル（scale, dpr など）は前例どおり ASCII でコードに置く。モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
@@ -138,6 +138,8 @@ export function createDebugPanel(o: {
   /** 「既定に戻す」で入れる値 */
   defaults: Settings;
   onClose(): void;
+  /** UI-57: 「全員HP1」（送れるかは app が決める） */
+  onHpOne(): void;
 }): DebugPanel {
   const t = (k: string): string => o.strings[k] ?? k;
   let scale = 1;
@@ -190,6 +192,7 @@ export function createDebugPanel(o: {
   swipe.textContent = "swipe -";
   el.appendChild(swipe);
 
+  el.appendChild(button(t("debug.hpOneButton"), DEBUG_BUTTONS.hpOne, () => o.onHpOne()));
   el.appendChild(button(t("settings.reset"), DEBUG_BUTTONS.reset, () => o.store.set({ ...o.defaults })));
   el.appendChild(button(t("common.close"), DEBUG_BUTTONS.close, () => o.onClose()));
 

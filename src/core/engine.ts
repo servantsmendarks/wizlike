@@ -15,6 +15,7 @@ import {
   setAuto,
 } from "./rules/combat";
 import { startNewGame, validatePartySetup } from "./rules/creation";
+import { hpOne } from "./rules/debug";
 import { checkEnter, chooseOption, enterDungeon, moveForward, turn } from "./rules/dungeon";
 import { checkUseItem, useItemInField } from "./rules/items";
 import {
@@ -70,6 +71,13 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
   const raw = command as unknown;
   if (typeof raw !== "object" || raw === null || typeof (raw as { type?: unknown }).type !== "string") {
     return reject(state, "unknown", "malformed command");
+  }
+  // UI-57（開発用）: 全員の HP を 1 にする。保留中・戦闘中・街でも受け付ける（title だけ party が空で rejected）
+  if (command.type === "debug.hpOne") {
+    if (state.party.length === 0) return reject(state, "debug.hpOne", "no party");
+    const ctx = makeContext(cloneState(state), data);
+    hpOne(ctx);
+    return finish(ctx);
   }
   // E3: 保留中の選択があれば event.choose 以外は受け付けない
   if (state.pendingChoice !== null && command.type !== "event.choose") {

@@ -312,5 +312,7 @@
   "save.importOld": "古いデータです。進行が巻き戻ります。",
   "save.importBroken": "このファイルは読み込めません。",
 
-  "debug.fontSample": "あいうえお アイウエオ 迷宮の奥へ ABCxyz 0123「！？」…・"
+  "debug.fontSample": "あいうえお アイウエオ 迷宮の奥へ ABCxyz 0123「！？」…・",
+  "debug.hpOne": "（デバッグ）全員の HP を 1 にした。",
+  "debug.hpOneButton": "全員HP1"
 }

@@ -74,11 +74,13 @@ const SCREENS: Record<string, Record<string, Rect>> = {
         [`debugRow(${i}).plus`, debugRow(i).plus],
       ]),
     ),
+    "DEBUG_BUTTONS.hpOne": DEBUG_BUTTONS.hpOne,
     "DEBUG_BUTTONS.reset": DEBUG_BUTTONS.reset,
     "DEBUG_BUTTONS.close": DEBUG_BUTTONS.close,
   },
   debugToggle: {
     ...Object.fromEntries([0, 1, 2, 3, 4, 5].map((i) => [`debugRow(${i}).toggle`, debugRow(i).toggle])),
+    "DEBUG_BUTTONS.hpOne": DEBUG_BUTTONS.hpOne,
     "DEBUG_BUTTONS.reset": DEBUG_BUTTONS.reset,
     "DEBUG_BUTTONS.close": DEBUG_BUTTONS.close,
   },
@@ -133,6 +135,9 @@ describe("layout", () => {
     expect(debugRow(5).toggle.y).toBe(294);
     expect(DEBUG_SWIPE_Y).toBeGreaterThanOrEqual(debugRow(5).toggle.y + debugRow(5).toggle.h);
     for (const b of Object.values(DEBUG_BUTTONS)) expect(b.y).toBeGreaterThanOrEqual(DEBUG_SWIPE_Y + 10);
+    // UI-57: ボタンは y342 の 72×32 を 全員HP1・既定に戻す・閉じる の順に左から 3 つ
+    expect(Object.keys(DEBUG_BUTTONS)).toEqual(["hpOne", "reset", "close"]);
+    expect(Object.values(DEBUG_BUTTONS)).toEqual([8, 84, 160].map((x) => ({ x, y: 342, w: 72, h: 32 })));
     // 作成のエラー欄は行とボタンに重ならない
     for (const r of Object.values(SCREENS.creation!)) expect(overlaps(CREATION_ERROR, r)).toBe(false);
   });

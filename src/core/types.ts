@@ -332,7 +332,9 @@ export type Command =
   /** CB-12/40: パーティの「前回と同じ」。行動可能な全員の入力をオート入力の規則で作り、1 ラウンドだけ解決する */
   | { type: "battle.repeat" }
   | { type: "event.choose"; optionId: string }
-  | { type: "party.reorder"; order: string[] };
+  | { type: "party.reorder"; order: string[] }
+  /** UI-57（開発用）: alive の全員の hp を 1 にする。保留中も受け付ける。乱数は使わない */
+  | { type: "debug.hpOne" };
 
 export type CommandType = Command["type"];
 
