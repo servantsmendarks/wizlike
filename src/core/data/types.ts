@@ -101,6 +101,8 @@ export type Config = {
     surpriseDiff: number;
     identifyChancePerRound: number;
     identifyKills: number;
+    /** CB-05【仮】: 知恵補正 = max(0, 行動可能な味方の iq 最大 − 10) × この値 */
+    identifyIqPerPoint: number;
     statusLukPerPoint: number;
     sleepWakeChance: number;
     sleepHitBonus: number;
@@ -109,6 +111,8 @@ export type Config = {
     fleeAgiMul: number;
     chestChance: number;
     chestTrapChance: number;
+    /** CB-52【仮】: M3 の仮実装の宝箱の金のダイス */
+    chestGoldDice: string;
     unarmedDice: string;
     autoInterrupt: { hpRatio: number };
   };

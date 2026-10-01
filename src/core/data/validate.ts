@@ -240,6 +240,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       surpriseDiff: I(),
       identifyChancePerRound: I(PERCENT),
       identifyKills: I(POS_INT),
+      identifyIqPerPoint: I(NON_NEG), // CB-05【仮】
       statusLukPerPoint: I(),
       sleepWakeChance: I(PERCENT),
       sleepHitBonus: I(),
@@ -248,6 +249,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       fleeAgiMul: I(),
       chestChance: I(PERCENT),
       chestTrapChance: I(PERCENT),
+      chestGoldDice: D, // CB-52【仮】（M3 の仮実装）
       unarmedDice: D,
       autoInterrupt: F({ hpRatio: N(RATIO) }),
     }),
@@ -845,8 +847,11 @@ function validateStrings(ctx: Ctx, v: unknown, ix: Index): void {
     if (s === undefined) continue;
     if (/[{}]/.test(s.replace(PLACEHOLDER_RE, ""))) report(ctx, k, `malformed placeholder in ${JSON.stringify(s)}`);
   }
-  // 状態異常の名前は battle.status.<StatusId> で引く
-  for (const id of STATUS_IDS) strKey(ctx, "", `battle.status.${id}`, ix);
+  // 状態異常の名前は battle.status.<StatusId>（文）と party.status.<StatusId>（パーティ欄の短い名前）で引く
+  for (const id of STATUS_IDS) {
+    strKey(ctx, "", `battle.status.${id}`, ix);
+    strKey(ctx, "", `party.status.${id}`, ix);
+  }
 }
 
 // ---- 全体 ----

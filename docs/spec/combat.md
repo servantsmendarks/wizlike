@@ -4,7 +4,7 @@
 
 - CB-01 ランダム遭遇は歩行 1 歩ごとに判定する（旋回では判定しない）。確率は `dungeons[].encounterRate` のセル種別（`room` / `corridor`）ごとの値。`room` / `corridor` はセルが部屋の中か否か（セルの `roomId`）で決まる。判定は d100 ≤ round(rate×100) で、前進が成立した 1 歩につき 1 回。
 - CB-02 固定遭遇: ボス部屋（DG-31）、イベント由来（EV）。固定遭遇は逃走できない【仮】。
-- CB-03 敵編成は最大 `config.combat.maxEnemyGroups`（4）グループ。各グループは同種の敵 1〜`config.combat.maxPerGroup`（9）体で、体数は `monsters[].groupSize` のダイス。グループ数は `1d4` を階の重みで補正【仮】。ランダム遭遇で出る敵の種類は、いる階の `dungeons[].encounterTable[階]` から `weight` の重みで選ぶ。どの敵がどのダンジョンのどの階に出るかは `dungeons[].encounterTable` のみを正とし、`monsters.json` は出現場所を持たない。
+- CB-03 敵編成は最大 `config.combat.maxEnemyGroups`（4）グループ。各グループは同種の敵 1〜`config.combat.maxPerGroup`（9）体で、体数は `monsters[].groupSize` のダイス。グループ数は `dungeons[].groupCountWeights[階]` の重みづけの抽選で決める（要素 i がグループ数 i+1。重みは【仮】）。ランダム遭遇で出る敵の種類は、いる階の `dungeons[].encounterTable[階]` から `weight` の重みで選ぶ。どの敵がどのダンジョンのどの階に出るかは `dungeons[].encounterTable` のみを正とし、`monsters.json` は出現場所を持たない。
 - CB-04 先手判定: 味方の `agi` 平均 + 1d10 と、敵の `agi` 平均 + 1d10 を比べる。差が 5 以上【仮】なら大きい側の奇襲で、奇襲側だけが 1 ラウンド行動する。慎重の恩恵 `ambushAvoid`（EV-42）は敵の奇襲判定から引く。
 - CB-05 未鑑定: 遭遇時、各グループは `monsters[].unidentifiedName` で表示される。鑑定済みになる契機: 識別呪文（MG-41）、各ラウンド終了時に `config.combat.identifyChancePerRound`（15）% + 味方の知恵最大値補正【仮】、同種を通算 `config.combat.identifyKills`（5）体倒した図鑑フラグ【仮】。図鑑フラグはゲーム単位で永続。
 - CB-06 未鑑定グループとの遭遇で SAN −2/グループ（CH-51）。鑑定済み（図鑑フラグあり）の敵では減らない。
@@ -22,7 +22,7 @@
 ## 3. 命中とダメージ
 
 - CB-20 AC は基礎 10。装備の `ac` を合計して下げる（低いほど良い）。呪文 `acBonus` は戦闘中だけ加算。下限 −10【仮】。
-- CB-21 命中率% = `clamp(hitBase + hitPerLevel × 攻撃側レベル + hitPerAC × 対象AC, hitMin, hitMax)`。`config.combat` の既定は hitBase 20、hitPerLevel 5、hitPerAC 4、hitMin 5、hitMax 95【仮】。敵のレベルは `monsters[].level`。d100 < 命中率 で命中。
+- CB-21 命中率% = `clamp(hitBase + hitPerLevel × 攻撃側レベル + hitPerAC × 対象AC, hitMin, hitMax)`。`config.combat` の既定は hitBase 20、hitPerLevel 5、hitPerAC 4、hitMin 5、hitMax 95【仮】。敵のレベルは `monsters[].level`。1〜100 を振り、出目 ≤ 命中率で命中。睡眠中の対象への +`sleepHitBonus`（CB-32）は clamp の内側に足す。
 - CB-22 味方の攻撃ダメージ = 武器ダイス（素手 `1d2`）+ 力補正（`(str − 10) / 2` 切り捨て）+ 性格恩恵 `damage`。最低 1。防御中の対象には半減（切り上げ）。
 - CB-23 攻撃回数: `classes[].attacksPerLevels` ごとに +1、`maxAttacks` まで【仮】。各回ごとに命中判定。
 - CB-24 敵の攻撃は `monsters[].attacks[]` の各要素につき 1 回。各攻撃は `dice` のダメージと、任意で `status`（`chance`）と `sanDrain`（`tags` 付き）を持つ。
@@ -30,7 +30,7 @@
 
 ## 4. 状態異常と SAN 攻撃
 
-- CB-30 状態異常の付与判定: `d100 < chance − (対象の luk − 10) × 2`【仮】。すでに同じ状態なら何もしない。
+- CB-30 状態異常の付与判定: 1〜100 を振り、出目 ≤ `chance − (対象の luk − 10) × config.combat.statusLukPerPoint`（2）【仮】で付与。敵は luk を持たないので 10 とみなす。`monsters[].resist` にある状態は付与されない（判定しない）。すでに同じ状態なら何もしない。
 - CB-31 レベルドレインは存在しない。代わりに `sanDrain: n` を持つ攻撃が命中すると、対象の SAN を n 減らす。攻撃の `tags` に `fear` があれば無鉄砲の耐性（EV-40）で半減（切り捨て）。SAN が 0 になったメンバーは行動不能（CH-53）。
 - CB-32 睡眠中の対象は被弾のたびに 50%【仮】で覚醒する。睡眠中は命中率 +30【仮】。
 - CB-33 毒は各ラウンド終了時に HP −1（CH-43）。
@@ -46,7 +46,7 @@
 
 ## 6. 逃走・勝利・全滅
 
-- CB-50 逃走成功率% = `config.combat.fleeBase`（50）+ (味方 agi 平均 − 敵 agi 平均) × 3【仮】。成功で戦闘終了（経験値なし）。失敗すると敵だけが 1 ラウンド行動し、次のラウンドへ。
+- CB-50 逃走成功率% = `floor(config.combat.fleeBase（50）+ (味方 agi 平均 − 敵 agi 平均) × config.combat.fleeAgiMul（3）)`【仮】。平均は行動可能な味方と生存個体で取る。1〜100 を振り、出目 ≤ 成功率で成功（成功率はクランプしない）。flee の入力が 1 つでもあれば他の入力は捨てる。成功で戦闘終了（経験値なし）。失敗すると敵だけが 1 ラウンド行動し、次のラウンドへ。
 - CB-51 勝利: EXP を生存者で等分（CH-60）。金は `monsters[].gold` の合計を所持金へ加え、潜行台帳（DG-40）に記録。宝箱判定は部屋セルでの遭遇のみ、`config.combat.chestChance`（30）%【仮】。
 - CB-52 宝箱: 罠付きの可能性 `config.combat.chestTrapChance`（40）%【仮】。手順は「調べる（慎重の `trapDetect` で罠の有無が分かる）→ 解除（盗賊の `disarm`、失敗で罠発動）→ 開ける」。中身は階のドロップ表から、強欲の `chestQuality` で 1 段階上の表を引く。プロトタイプでは罠は「ダメージ」1 種類【仮】。
 - CB-53 全滅 = 味方全員が行動不能（CH-44）。睡眠だけの場合は全滅としない（睡眠は覚める）。全滅時は `battleEnd(wipe)` → 全滅処理（TW-20〜26）。

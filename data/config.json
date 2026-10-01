@@ -17,11 +17,11 @@
     "acBase": 10, "acMin": -10,
     "maxEnemyGroups": 4, "maxPerGroup": 9,
     "surpriseDiff": 5,
-    "identifyChancePerRound": 15, "identifyKills": 5,
+    "identifyChancePerRound": 15, "identifyKills": 5, "identifyIqPerPoint": 1,
     "statusLukPerPoint": 2, "sleepWakeChance": 50, "sleepHitBonus": 30,
     "poisonDamagePerTick": 1,
     "fleeBase": 50, "fleeAgiMul": 3,
-    "chestChance": 30, "chestTrapChance": 40,
+    "chestChance": 30, "chestTrapChance": 40, "chestGoldDice": "2d10",
     "unarmedDice": "1d2",
     "autoInterrupt": { "hpRatio": 0.3 }
   },

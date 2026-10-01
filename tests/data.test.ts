@@ -109,6 +109,17 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.combat.hitMin = 96), "config.json", "CB-21");
     expectIssue((r) => (r.config.combat.hitMax = 101), "config.json", "combat.hitMax: expected integer in 0..100, got 101");
   });
+  test("data: CB-05 combat.identifyIqPerPoint は 0 以上の整数【仮】", () => {
+    expectIssue((r) => (r.config.combat.identifyIqPerPoint = -1), "config.json", "combat.identifyIqPerPoint: expected integer >= 0, got -1");
+    expectIssue((r) => (r.config.combat.identifyIqPerPoint = 0.5), "config.json", "combat.identifyIqPerPoint: expected integer");
+    expectIssue((r) => delete r.config.combat.identifyIqPerPoint, "config.json", "combat.identifyIqPerPoint: missing required field");
+    expect(issuesOf((r) => (r.config.combat.identifyIqPerPoint = 0))).toEqual([]);
+  });
+  test("data: CB-52 combat.chestGoldDice はダイス記法【仮】", () => {
+    expectIssue((r) => (r.config.combat.chestGoldDice = "2d"), "config.json", 'combat.chestGoldDice: invalid dice expression "2d"');
+    expectIssue((r) => delete r.config.combat.chestGoldDice, "config.json", "combat.chestGoldDice: missing required field");
+    expect(issuesOf((r) => (r.config.combat.chestGoldDice = "0"))).toEqual([]);
+  });
   test("data: CB-20 acMin は acBase 以下", () => {
     expectIssue((r) => (r.config.combat.acMin = r.config.combat.acBase + 1), "config.json", "combat.acMin: CB-20");
     expect(issuesOf((r) => (r.config.combat.acMin = r.config.combat.acBase))).toEqual([]);
@@ -510,6 +521,9 @@ describe("data: strings.json", () => {
   });
   test("data: battle.status.<StatusId> がそろう", () => {
     expectIssue((r) => delete r.strings["battle.status.stone"], "strings.json", "battle.status.stone");
+  });
+  test("data: party.status.<StatusId>（パーティ欄の短い名前）がそろう", () => {
+    expectIssue((r) => delete r.strings["party.status.sleep"], "strings.json", "party.status.sleep");
   });
 });
 
