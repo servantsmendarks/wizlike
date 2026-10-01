@@ -1,8 +1,9 @@
 // UI-53 の迷宮の画面。ui §2 の 5 領域（ヘッダー、ビュー、メッセージ、パーティ、操作）を合成する。
 // DOM は 1 回だけ作り、街（UI-52 の M2 版）でもヘッダー・メッセージ・パーティ・操作をそのまま使う（ビューは枠だけ）。
-// - ビュー: 線画の SVG（240×150）の上に、スワイプを受ける透明な div（touch-action:none）を重ねる。
-// - 地図（UI-24）と詳細（UI-58）と全滅の内訳（UI-56）: ビューとメッセージの領域（既定 y16..235）を覆う overlay。パーティ欄は見えたまま。
-// - 戦闘（UI-54）: ビューの中に敵グループの層（views/battle.ts）を重ね、battle の間は線画・街の枠・スワイプの div を隠す。
+// - ビュー: 線画の SVG（240×150）。スワイプはステージ全体で受ける（input/tap.ts。UI-30）。受ける間は画面に class swipe-on を付け、
+//   style.css で touch-action: none にする（ボタンの上で始めたスワイプがブラウザのパンにならないように。UI-37）。
+// - 地図（UI-24）と詳細（UI-58）と全滅の内訳（UI-56）と履歴（UI-46）: ビューとメッセージの領域（既定 y16..235）を覆う overlay。パーティ欄は見えたまま。
+// - 戦闘（UI-54）: ビューの中に敵グループの層（views/battle.ts）を重ね、battle の間は線画・街の枠を隠す。
 //   ダイスの overlay（views/dice.ts、UI-40）はビューの中のいちばん上（モードを問わない）。全体攻撃の揺れ（UI-42）はビュー全体の translate。
 // 各部品の位置と大きさは、config.ui.layout から作った regions と dungeonLayout（layout.ts）から決める。
 // 部品の結線（何を描くか、Action を何にするか）は app が行う。モジュールのトップレベルでは DOM に触れない。
@@ -14,6 +15,7 @@ import { createDetailView, type DetailView } from "./detail";
 import { createDiceView, type DiceView } from "./dice";
 import { createDungeonSvg, type DungeonSvg } from "./dungeon-svg";
 import { createHeader, type Header } from "./header";
+import { createHistoryView, type HistoryView } from "./history";
 import { createMapView, type MapViewEl } from "./map";
 import { createMessageWindow, type MessageWindow } from "./message";
 import { createPartyPanel, type PartyPanel } from "./party";
@@ -25,8 +27,6 @@ export type DungeonScreen = {
   el: HTMLElement;
   header: Header;
   view: DungeonSvg;
-  /** スワイプを受ける透明な div（ビューの上） */
-  swipeLayer: HTMLElement;
   message: MessageWindow;
   party: PartyPanel;
   controls: Controls;
@@ -39,6 +39,8 @@ export type DungeonScreen = {
   detail: DetailView;
   /** UI-56 の全滅の内訳の overlay（詳細と同じ範囲） */
   wipe: WipeView;
+  /** UI-46 の履歴の画面（詳細と同じ範囲） */
+  history: HistoryView;
   /** town ならビューは枠だけ、dungeon なら線画、battle なら敵グループ */
   setMode(m: PlayMode): void;
   /** UI-42 の全体攻撃: ビュー全体を translateX 0→−2→2→−2→0（ms が 0 以下なら何もせずに解決） */
@@ -49,8 +51,10 @@ export type DungeonScreen = {
   showDetail(on: boolean): void;
   /** UI-56 の全滅の内訳の overlay の表示 */
   showWipe(on: boolean): void;
-  /** buttons モードではスワイプの div を pointer-events:none にする */
-  setSwipeEnabled(on: boolean): void;
+  /** UI-46 の履歴の画面の表示 */
+  showHistory(on: boolean): void;
+  /** UI-37: スワイプを受ける間は画面に class swipe-on を付ける（touch-action: none） */
+  setSwipeOn(on: boolean): void;
 };
 
 function at(el: HTMLElement | SVGElement, x: number, y: number): void {
@@ -69,8 +73,10 @@ export function createDungeonScreen(o: {
   textSpeed(): number;
   historyMax: number;
   onSettings(): void;
+  /** 十字ボタンのタップ */
   onAction(a: DpadAction): void;
-  onRelease(): void;
+  /** 前進ボタンの長押し（UI-31） */
+  hold: { ms(): number; onHoldStart(): void; onHoldEnd(): void };
   onClose(): void;
   /** UI-54: 対象の選択中に敵の絵をタップした（グループの添字） */
   onPick?(g: number): void;
@@ -100,9 +106,6 @@ export function createDungeonScreen(o: {
   const battle = createBattleView(o.data, o.strings, r.view.w, r.view.h, (g) => o.onPick?.(g));
   battle.el.style.display = "none";
   viewBox.appendChild(battle.el);
-  const swipeLayer = document.createElement("div");
-  swipeLayer.className = "play-swipe";
-  viewBox.appendChild(swipeLayer);
   const dice = createDiceView(o.strings);
   viewBox.appendChild(dice.el);
 
@@ -121,7 +124,7 @@ export function createDungeonScreen(o: {
     layout: lay,
     strings: o.strings,
     onAction: o.onAction,
-    onRelease: o.onRelease,
+    hold: o.hold,
     onClose: o.onClose,
   });
 
@@ -137,13 +140,16 @@ export function createDungeonScreen(o: {
   const wipe = createWipeView(lay.detail);
   wipe.el.style.display = "none";
 
-  el.append(viewBox, header.el, message.el, party.el, controls.el, map.el, detail.el, wipe.el);
+  // 履歴（UI-46）も同じ範囲
+  const history = createHistoryView(lay.history);
+  history.el.style.display = "none";
+
+  el.append(viewBox, header.el, message.el, party.el, controls.el, map.el, detail.el, wipe.el, history.el);
 
   return {
     el,
     header,
     view,
-    swipeLayer,
     message,
     party,
     controls,
@@ -152,10 +158,10 @@ export function createDungeonScreen(o: {
     dice,
     detail,
     wipe,
+    history,
     setMode(m: PlayMode): void {
       view.el.style.display = m === "dungeon" ? "" : "none";
       townFrame.style.display = m === "town" ? "" : "none";
-      swipeLayer.style.display = m === "dungeon" ? "" : "none";
       battle.el.style.display = m === "battle" ? "" : "none";
     },
     async shake(ms: number): Promise<void> {
@@ -185,8 +191,11 @@ export function createDungeonScreen(o: {
     showWipe(on: boolean): void {
       wipe.el.style.display = on ? "" : "none";
     },
-    setSwipeEnabled(on: boolean): void {
-      swipeLayer.style.pointerEvents = on ? "auto" : "none";
+    showHistory(on: boolean): void {
+      history.el.style.display = on ? "" : "none";
+    },
+    setSwipeOn(on: boolean): void {
+      el.classList.toggle("swipe-on", on);
     },
   };
 }

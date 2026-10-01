@@ -8,6 +8,7 @@ import type { GameListEntry } from "../../save/types";
 import type { Action } from "../input/swipe";
 import { TITLE_BUTTONS, TITLE_HEADING_Y, TITLE_NOTICE, TITLE_ROW_AREA, TITLE_ROW_PITCH, type Rect } from "../layout";
 import { formatMessage } from "./message";
+import { onTap } from "../input/tap";
 
 export type TitlePage =
   | { kind: "list" }
@@ -175,7 +176,8 @@ export function createTitleScreen(o: { strings: Strings; onSelect(index: number)
   const rows = document.createElement("div");
   rows.className = "title-rows";
   place(rows, TITLE_ROW_AREA);
-  Object.assign(rows.style, { overflowY: "auto", overflowX: "hidden", touchAction: "pan-y" });
+  // 縦スクロールの容器（touch-action: pan-y は style.css。UI-37）
+  Object.assign(rows.style, { overflowY: "auto", overflowX: "hidden" });
   el.appendChild(rows);
 
   const notice = document.createElement("div");
@@ -197,7 +199,7 @@ export function createTitleScreen(o: { strings: Strings; onSelect(index: number)
       b.style.borderColor = "var(--c-dim)";
     }
     if (it.disabled) b.setAttribute("aria-disabled", "true");
-    b.addEventListener("click", () => {
+    onTap(b, () => {
       if (!it.disabled) o.onSelect(index);
     });
     return b;

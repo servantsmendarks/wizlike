@@ -1,7 +1,9 @@
 // 画面遷移の親。state を持ち、入力を Command にして execute へ送り（UI-35）、返ったイベントを playback で再生する。
 // - 判定・計算・分岐（前進できるか、入場できるか、名前が正しいか）は core が行う。ここは結果を描くだけ（§3-4）。
-// - 再生中（busy）の入力はすべて捨てる。メッセージ窓のタップと Enter だけは受け、player.tap() に渡す
+// - 入力はステージ 1 か所（input/tap.ts の attachStageInput）で受ける。押せるものは onTap で登録し、動かずに離したときだけ反応する（UI-36）。
+// - 再生中（busy）の入力はすべて捨てる。ステージのどこかのタップ（オート解除を除く）と Enter / Space だけは受け、player.tap() に渡す
 //   （拍のタップ待ちを解く・拍の残りを即時にする・拍の外は 1 回目で今の文、2 回目で残りを即表示。UI-44 / UI-45 / UI-43）。
+// - 再生の外のメッセージ窓のタップは、文字送り中なら即表示、それ以外なら履歴の画面（UI-46）を開く。
 // - 状態を変えるコマンドの後、再生を始める前にオートセーブを await する（§3-8。SV-02: 再生中にリロードされても結果は確定している）。
 //   保存の失敗は SV-23 の帯とメッセージ窓で知らせ、state は巻き戻さない。
 // - タイトル（UI-50）は保存先の一覧を読み、続きから（SV-50）は読み込んだ state を resume で直接描く。
@@ -33,12 +35,12 @@ import {
 import {
   attachKeyboard,
   attachReleaseOnHide,
-  attachSwipe,
   battleKeyChoice,
   createHoldRepeater,
   forwardStep,
   type Action,
 } from "./input/swipe";
+import { attachStageInput, onTap } from "./input/tap";
 import { dungeonLayout, layoutWarnings, regions, saveBannerRect } from "./layout";
 import { createPlayer } from "./playback";
 import { resumePlan } from "./resume";
@@ -60,7 +62,7 @@ import { itemEntries, itemHeader, itemKeyIndex, itemStep, type ItemChoice, type 
 import { townEntries, townHeader, townPageIntro, townParent, type TownEntry, type TownPage } from "./views/town";
 
 export type Route = "title" | "creation" | "town" | "dungeon" | "battle";
-export type Overlay = null | "map" | "debug" | "detail" | "items" | "wipe";
+export type Overlay = null | "map" | "debug" | "detail" | "items" | "wipe" | "history";
 
 export type App = {
   onLayout(layout: StageLayout, input: StageLayoutInput): void;
@@ -76,8 +78,8 @@ export function shouldReleaseHold(route: Route, overlay: Overlay, hasPendingChoi
   return route !== "dungeon" || overlay !== null || hasPendingChoice;
 }
 
-/** メッセージ窓のタップとみなす移動の上限（論理 px） */
-const TAP_SLOP_LOGICAL = 4;
+/** UI-46: 履歴の画面のキーの ↑↓ で動かす行数 */
+const HISTORY_KEY_LINES = 3;
 
 /** SV-50: 続きからの読み込みの失敗理由ごとの文言（決定記録の load の 4 つの理由） */
 const LOAD_FAILED: Readonly<Record<"unavailable" | "missing" | "tooNew" | "broken", string>> = {
@@ -158,8 +160,13 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     textSpeed: () => store.get().textSpeed,
     historyMax: data.config.ui.messageHistory,
     onSettings: () => guard(() => openDebug()),
-    onAction: (a: DpadAction) => handleAction(a),
-    onRelease: () => repeater.release(),
+    onAction: (a: DpadAction) => tapDpad(a),
+    // UI-31: 前進ボタンを動かずに holdRepeatMs 押し続けたら連打を始め、離したら止める
+    hold: {
+      ms: () => store.get().holdRepeatMs,
+      onHoldStart: () => handleAction("forward"),
+      onHoldEnd: () => repeater.release(),
+    },
     onClose: () => guard(() => closeOverlay()),
     onPick: (g) => guard(() => chooseBattle({ kind: "group", index: g })),
     onRowTap: (id) => guard(() => openDetail(id)),
@@ -212,6 +219,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   const onScreen = (to: Screen): void => {
     if (to === "title" || to === "town" || to === "dungeon" || to === "battle") {
       if (to === "town") townPage = "menu";
+      if (route !== to && overlay === "history") closeHistory();
       if (to === "battle") {
         // 新しい戦闘。入力の段階は再生の最後の sync で battleMenu から作り直す
         cursor = null;
@@ -326,10 +334,14 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       }),
   });
 
+  /** UI-30: ステージ全体でスワイプを受けるか（迷宮で、overlay も保留も無く、inputMode が buttons でない） */
+  const swipeEnabled = (): boolean =>
+    route === "dungeon" && overlay === null && state.pendingChoice === null && store.get().inputMode !== "buttons";
+
   /** 操作領域とスワイプの可否を、route / overlay / pendingChoice / inputMode から決める */
   const syncControls = (): void => {
     const s = store.get();
-    play.setSwipeEnabled(s.inputMode !== "buttons");
+    play.setSwipeOn(swipeEnabled());
     const c = play.controls;
     // UI-31: 十字ボタンを出さない間は長押しを離したものとする（shouldReleaseHold）
     if (shouldReleaseHold(route, overlay, state.pendingChoice !== null)) repeater.release();
@@ -341,6 +353,12 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       return;
     }
     c.setCloseLabel(t("common.close"));
+    if (overlay === "history") {
+      // UI-46: 履歴の間は操作領域に「閉じる」だけ（街・迷宮・戦闘のどれでも）
+      clearFocus();
+      c.setMode("close");
+      return;
+    }
     if (overlay === "detail") {
       // UI-58: 詳細の間は操作領域に「閉じる」だけ（街・迷宮・戦闘のどれでも）
       clearFocus();
@@ -758,6 +776,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     play.showMap(false);
     play.showDetail(false);
     play.showWipe(false);
+    play.showHistory(false);
     // 読み込みを待つ間に F2 で開いた debug パネルも閉じる（overlay を null にするので、残すと閉じられなくなる）
     debug.el.style.display = "none";
     underDebug = null;
@@ -788,6 +807,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     if (overlay === "items") closeItems();
     if (overlay === "map") closeMap();
     if (overlay === "detail") closeDetail();
+    if (overlay === "history") closeHistory();
     // 全滅の内訳は閉じずに debug パネルの下に残す（閉じたら戻す）
     underDebug = overlay === "wipe" ? "wipe" : null;
     repeater.release();
@@ -886,11 +906,33 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     syncControls();
   };
 
-  /** 操作領域の「閉じる」: 地図か詳細か全滅の内訳を閉じる */
+  /**
+   * UI-46: 履歴の画面を開く（街・迷宮・戦闘で、他の overlay が無いとき）。全文を古い順に並べ、末尾を見せる。
+   * SV-50 により再開時には開かない
+   */
+  const openHistory = (): void => {
+    if (route !== "town" && route !== "dungeon" && route !== "battle") return;
+    if (overlay !== null) return;
+    repeater.release();
+    overlay = "history";
+    play.history.render(play.message.history(), t("history.title"));
+    play.showHistory(true);
+    syncControls();
+  };
+
+  const closeHistory = (): void => {
+    if (overlay !== "history") return;
+    overlay = null;
+    play.showHistory(false);
+    syncControls();
+  };
+
+  /** 操作領域の「閉じる」: 地図か詳細か全滅の内訳か履歴を閉じる */
   const closeOverlay = (): void => {
     if (overlay === "map") closeMap();
     else if (overlay === "detail") closeDetail();
     else if (overlay === "wipe") closeWipe();
+    else if (overlay === "history") closeHistory();
   };
 
   // ---------------------------------------------------------------- 入力
@@ -926,6 +968,13 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     }
     if (overlay === "wipe") {
       if (a === "back" || a === "confirm" || (typeof a === "object" && a.menu === 0)) closeWipe();
+      return;
+    }
+    if (overlay === "history") {
+      // UI-33: Esc / Enter / 1 で閉じる。↑↓ で 3 行ずつ
+      if (a === "back" || a === "confirm" || (typeof a === "object" && a.menu === 0)) closeHistory();
+      else if (a === "forward") play.history.scrollBy(-HISTORY_KEY_LINES);
+      else if (a === "around") play.history.scrollBy(HISTORY_KEY_LINES);
       return;
     }
     if (overlay === "items") {
@@ -983,31 +1032,23 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     }
   };
 
+  /** UI-31: 十字ボタンのタップ。前進は短く離したら 1 歩（連打は始めない） */
+  const tapDpad = (a: DpadAction): void => {
+    handleAction(a);
+    if (a === "forward") repeater.release();
+  };
+
   /**
-   * UI-43 / UI-44: メッセージ窓のタップ。再生中は 1 回目で今の文、2 回目以降で残りを即表示する。
-   * 再生の外（街の「迷宮へ」の語りなど、run を通さない文）でも、今の文の即表示だけは効かせる。
+   * UI-43 / UI-46: 再生の外のメッセージ窓のタップ（再生中のタップはステージが player.tap() に回す）。
+   * 文字送り中（街の「迷宮へ」の語りなど、run を通さない文）なら即表示、それ以外で overlay が無ければ履歴の画面を開く
    */
-  const attachMessageTap = (): void => {
-    let down: { id: number; x: number; y: number } | null = null;
-    play.message.el.addEventListener("pointerdown", (e) => {
-      down = { id: e.pointerId, x: e.clientX, y: e.clientY };
-    });
-    play.message.el.addEventListener("pointerup", (e) => {
-      const d = down;
-      down = null;
-      if (d === null || d.id !== e.pointerId) return;
-      const slop = TAP_SLOP_LOGICAL * scale();
-      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) >= slop) return;
-      if (!isBusy()) {
-        play.message.rush();
-        return;
-      }
-      // UI-45 / UI-43: タップ待ちを解く・拍の残りを即時にする・2 回目で残りすべて（playback が決める）
-      player.tap();
-    });
-    play.message.el.addEventListener("pointercancel", () => {
-      down = null;
-    });
+  const tapMessage = (): void => {
+    if (isBusy() || chaining) return;
+    if (play.message.typing()) {
+      play.message.rush();
+      return;
+    }
+    if (overlay === null) openHistory();
   };
 
   const blurActive = (): void => {
@@ -1023,15 +1064,18 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     start(): void {
       debug.el.style.display = "none";
       showRoute("title");
-      attachSwipe(play.swipeLayer, {
+      onTap(play.message.el, () => tapMessage());
+      attachStageInput(stage, {
         scale,
         threshold: () => store.get().swipeThreshold,
         deadZone: data.config.input.edgeDeadZonePx,
         width: data.config.stage.width,
-        enabled: () => route === "dungeon" && overlay === null && state.pendingChoice === null && store.get().inputMode !== "buttons",
-        onAction: (a) => handleAction(a),
-        onRelease: () => repeater.release(),
-        onDebug: (dx, dy, d) => debug.setSwipe(dx, dy, d),
+        swipeEnabled,
+        busy: () => isBusy() || chaining,
+        onBusyTap: () => player.tap(),
+        onSwipe: (a) => handleAction(a),
+        onSwipeRelease: () => repeater.release(),
+        onDebugSwipe: (dx, dy, d) => debug.setSwipe(dx, dy, d),
       });
       attachKeyboard({
         onAction: (a) => handleAction(a),
@@ -1039,7 +1083,6 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
           if (a === "forward") repeater.release();
         },
       });
-      attachMessageTap();
       // UI-31: ポインタ（十字ボタン・スワイプ）の長押しも、窓のフォーカスが外れた・ページが隠れたら離したものとして扱う
       attachReleaseOnHide(() => repeater.release());
       store.subscribe(() => {

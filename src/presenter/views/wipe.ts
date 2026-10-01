@@ -50,7 +50,6 @@ export function createWipeView(rect: Rect): WipeView {
     border: "1px solid var(--c-frame)",
     overflowY: "auto",
     overflowX: "hidden",
-    touchAction: "pan-y",
   });
   return {
     el,

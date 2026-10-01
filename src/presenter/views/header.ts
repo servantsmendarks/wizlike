@@ -5,6 +5,7 @@ import type { Strings } from "../../core/data/index";
 import type { Facing } from "../../core/types";
 import type { DungeonLayout, Rect } from "../layout";
 import { formatMessage } from "./message";
+import { onTap } from "../input/tap";
 
 /** header.dungeon と dir.* から見出しの文字列を作る */
 export function headerText(strings: Strings, dungeonName: string, floor: number, facing: Facing): string {
@@ -73,7 +74,7 @@ export function createHeader(o: {
     font: "inherit",
     lineHeight: `${st.h - 2}px`,
   });
-  btn.addEventListener("click", () => o.onSettings());
+  onTap(btn, () => o.onSettings());
   el.appendChild(btn);
 
   return {

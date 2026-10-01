@@ -198,6 +198,12 @@ describe("layout", () => {
     });
     // UI-58 詳細: 地図と同じ 240×220
     expect(L.detail).toEqual({ x: 0, y: 16, w: 240, h: 220 });
+    // UI-46 履歴の画面: 地図と同じ 240×220（y16..235）。題 12、一覧 240×208
+    expect(L.history).toEqual({
+      overlay: { x: 0, y: 16, w: 240, h: 220 },
+      title: { x: 0, y: 16, w: 240, h: 12 },
+      list: { x: 0, y: 28, w: 240, h: 208 },
+    });
     expect(CONTROLS_MIN_HEIGHT).toBe(98);
     expect(layoutWarnings(regions(data.config.ui.layout, W), L)).toEqual([]);
   });

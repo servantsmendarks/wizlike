@@ -9,6 +9,7 @@
 import type { ClassDef, StatusId, Strings } from "../../core/data/index";
 import type { Character, Life } from "../../core/types";
 import { PARTY_ROW_H, type Rect } from "../layout";
+import { onTap } from "../input/tap";
 
 /**
  * abbr は職業の略称（classes[].abbr）。mp と mpLabel は mpMax が 0 なら空。
@@ -180,7 +181,7 @@ export function createPartyPanel(o: {
         const row = makeRow(i);
         const t = formatPartyRow(ch, strings, classes);
         const id = ch.id;
-        row.line.addEventListener("click", () => o.onRowTap?.(id));
+        onTap(row.line, () => o.onRowTap?.(id));
         row.cells.name.textContent = t.name;
         row.cells.abbr.textContent = t.abbr;
         row.cells.hp.textContent = t.hp;

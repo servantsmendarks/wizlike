@@ -138,6 +138,8 @@ export type DungeonLayout = {
   map: { overlay: Rect; title: Rect; area: Rect };
   /** UI-58 の詳細の overlay。地図と同じくビューとメッセージを合わせた範囲 */
   detail: Rect;
+  /** UI-46 の履歴の画面。地図と同じ範囲で、title は題の行、list は縦スクロールの一覧 */
+  history: { overlay: Rect; title: Rect; list: Rect };
 };
 
 /** 迷宮の画面の矩形をすべてステージ座標で返す。既定の layout（16/150/70/64/100）では M2 の定数と同じ座標 */
@@ -182,6 +184,11 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
       area: { x: overlay.x, y: overlay.y + MAP_TITLE_H, w: overlay.w, h: overlay.h - MAP_TITLE_H },
     },
     detail: { ...overlay },
+    history: {
+      overlay: { ...overlay },
+      title: { x: overlay.x, y: overlay.y, w: overlay.w, h: MAP_TITLE_H },
+      list: { x: overlay.x, y: overlay.y + MAP_TITLE_H, w: overlay.w, h: overlay.h - MAP_TITLE_H },
+    },
   };
 }
 

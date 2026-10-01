@@ -1,11 +1,12 @@
-// UI-43 / UI-11: メッセージ窓。文字送り（setTimeout は文字送りにだけ使う）と履歴。
+// UI-43 / UI-46: メッセージ窓。文字送り（setTimeout は文字送りにだけ使う）と全文の履歴。
 // 純粋な部分（formatMessage / typewriterSteps / trimHistory）を export し、node 環境のテストから試せるようにする。
 // モジュールのトップレベルでは DOM に触れない。
 //
 // 窓は ui §2 の message 領域。el は region の位置と大きさに自分で置く。内側の矩形は layout.ts の dungeonLayout
 // （message.text / message.more）。既定（240×70）では、窓の左上を原点にした論理 px で:
 // - 枠 1px（0..239 × 0..69）
-// - 文字領域 x4..235、y2..67 の 6 行（1 行 10px、全角 29 字）。履歴はこの中で縦スクロール（UI-11）
+// - 文字領域 x4..235、y2..67 の 6 行（1 行 10px、全角 29 字）。指ではスクロールしない（overflow hidden・touch-action none）。
+//   DOM には直近の lines × 2 文だけを残し、いつも末尾を見せる。全文は配列に持ち、履歴の画面（UI-46）で見せる
 // - 続きの三角 x228..235、y60..67
 import type { DungeonLayout, Rect } from "../layout";
 
@@ -88,7 +89,7 @@ export function createMessageWindow(o: {
     color: "var(--c-text)",
   });
 
-  // 履歴（スクロール容器）。この div 自身がスクロールするので body の touch-action:none の影響を受けない
+  // 直近の文（指ではスクロールしない。末尾を見せる）
   const history = document.createElement("div");
   history.className = "message-history";
   Object.assign(history.style, {
@@ -97,9 +98,8 @@ export function createMessageWindow(o: {
     top: `${t.y - r.y - BORDER}px`, // 既定 1（y2）
     width: `${t.w}px`,
     height: `${t.h}px`,
-    overflowY: "auto",
-    overflowX: "hidden",
-    touchAction: "pan-y",
+    overflow: "hidden",
+    touchAction: "none",
     wordBreak: "break-all",
     lineBreak: "anywhere",
     whiteSpace: "pre-wrap",
@@ -145,8 +145,10 @@ export function createMessageWindow(o: {
     history.scrollTop = history.scrollHeight;
   };
 
+  /** 窓の DOM に残す文の数（文字領域の行数の 2 倍。1 文が 2 行以上に折り返しても窓が埋まる） */
+  const domMax = Math.max(1, o.layout.lines * 2);
   const trimDom = (): void => {
-    const excess = history.childElementCount - Math.max(0, o.historyMax);
+    const excess = history.childElementCount - domMax;
     for (let i = 0; i < excess; i++) history.firstElementChild?.remove();
   };
 

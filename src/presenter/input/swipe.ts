@@ -1,5 +1,6 @@
-// UI-30〜34: スワイプ、長押しの連打、キーボード。入力を Action に変えるだけで、意味の解釈（前進できるか等）はしない（UI-35）。
-// 純粋な部分（分類・tracker・キー表・canRepeat）を export して node 環境で試す。DOM に触れるのは attach* と createHoldRepeater の中だけ。
+// UI-30〜34: スワイプの分類、長押しの連打、キーボード。入力を Action に変えるだけで、意味の解釈（前進できるか等）はしない（UI-35）。
+// ポインタの押下・スワイプ・タップはステージ 1 か所で受ける（input/tap.ts の attachStageInput。UI-36）。
+// 純粋な部分（分類・キー表・canRepeat）を export して node 環境で試す。DOM に触れるのは attach* と createHoldRepeater の中だけ。
 // setTimeout を使うのは長押しの連打（createHoldRepeater）だけ。
 import type { GameEvent, PendingChoice } from "../../core/types";
 
@@ -37,30 +38,9 @@ export function swipeAction(d: Dir): Action {
   }
 }
 
-/** UI-34: ビューの左右の端から dead 論理 px は非反応帯（境界ちょうどは反応する） */
+/** UI-34: ステージの左右の端から dead 論理 px は非反応帯（境界ちょうどは反応する。スワイプの起点だけに効く） */
 export function inDeadZone(lx: number, width: number, dead: number): boolean {
   return lx < dead || lx > width - dead;
-}
-
-/** 追っているポインタ 1 本。fired は確定した方向（pointerup まで再発火しない） */
-export type Tracker = { id: number; sx: number; sy: number; fired: Dir | null } | null;
-
-/** 追っていなければ、accept のときだけ追い始める。2 本目以降のポインタは無視する */
-export function trackerDown(t: Tracker, id: number, x: number, y: number, accept: boolean): Tracker {
-  if (t !== null || !accept) return t;
-  return { id, sx: x, sy: y, fired: null };
-}
-
-/** 追っているポインタが閾値を越えた瞬間に 1 回だけ fire を返す */
-export function trackerMove(t: Tracker, id: number, x: number, y: number, thr: number): { next: Tracker; fire: Dir | null } {
-  if (t === null || t.id !== id || t.fired !== null) return { next: t, fire: null };
-  const d = classifySwipe(x - t.sx, y - t.sy, thr);
-  if (d === null) return { next: t, fire: null };
-  return { next: { ...t, fired: d }, fire: d };
-}
-
-export function trackerUp(t: Tracker, id: number): Tracker {
-  return t !== null && t.id === id ? null : t;
 }
 
 const KEY_TABLE: Readonly<Record<string, Action>> = {
@@ -69,6 +49,7 @@ const KEY_TABLE: Readonly<Record<string, Action>> = {
   ArrowRight: "right",
   ArrowDown: "around",
   Enter: "confirm",
+  " ": "confirm",
   Escape: "back",
   m: "map",
   M: "map",
@@ -135,71 +116,6 @@ export async function forwardStep(o: {
 
 // ---------------------------------------------------------------------------
 // DOM（呼ばれたときだけ触れる）
-
-export type SwipeOptions = {
-  /** ステージの CSS 倍率（論理 1px あたりの CSS px） */
-  scale(): number;
-  /** 閾値（論理 px。settings.swipeThreshold） */
-  threshold(): number;
-  /** 非反応帯（論理 px。config.input.edgeDeadZonePx） */
-  deadZone: number;
-  /** el の論理幅 */
-  width: number;
-  /** 偽の間は pointerdown を受け付けない（inputMode が buttons のときなど） */
-  enabled(): boolean;
-  onAction(a: Action): void;
-  /** 追っていたポインタが離れた（長押しの連打を止める） */
-  onRelease(): void;
-  /** debug パネル用。確定したときの CSS px の移動量と方向 */
-  onDebug?(dx: number, dy: number, d: Dir): void;
-};
-
-/** UI-30 / UI-34: el で Pointer Events を受ける。戻り値で外す */
-export function attachSwipe(el: HTMLElement, o: SwipeOptions): () => void {
-  let t: Tracker = null;
-
-  const down = (e: PointerEvent): void => {
-    if (t !== null || !o.enabled()) return;
-    const scale = o.scale();
-    const lx = (e.clientX - el.getBoundingClientRect().left) / scale;
-    const accept = !inDeadZone(lx, o.width, o.deadZone);
-    t = trackerDown(t, e.pointerId, e.clientX, e.clientY, accept);
-    if (t === null) return;
-    try {
-      el.setPointerCapture(e.pointerId);
-    } catch {
-      // 取れなくても move は el の上にある間は届く
-    }
-  };
-
-  const move = (e: PointerEvent): void => {
-    const before = t;
-    const r = trackerMove(t, e.pointerId, e.clientX, e.clientY, thresholdCss(o.threshold(), o.scale()));
-    t = r.next;
-    if (r.fire === null || before === null) return;
-    o.onDebug?.(e.clientX - before.sx, e.clientY - before.sy, r.fire);
-    o.onAction(swipeAction(r.fire));
-  };
-
-  const up = (e: PointerEvent): void => {
-    if (t === null || t.id !== e.pointerId) return;
-    t = trackerUp(t, e.pointerId);
-    o.onRelease();
-  };
-
-  el.addEventListener("pointerdown", down);
-  el.addEventListener("pointermove", move);
-  el.addEventListener("pointerup", up);
-  el.addEventListener("pointercancel", up);
-  el.addEventListener("lostpointercapture", up);
-  return () => {
-    el.removeEventListener("pointerdown", down);
-    el.removeEventListener("pointermove", move);
-    el.removeEventListener("pointerup", up);
-    el.removeEventListener("pointercancel", up);
-    el.removeEventListener("lostpointercapture", up);
-  };
-}
 
 function isTextInput(target: EventTarget | null): boolean {
   if (target === null || typeof (target as { tagName?: unknown }).tagName !== "string") return false;

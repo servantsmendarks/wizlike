@@ -1,20 +1,18 @@
 // UI-32 / UI-53 の操作領域（ui §2 の controls 領域）。十字ボタン（dpad）、メニュー（menu）、リスト（list）、
 // 地図の「閉じる」（mapClose）、戦闘のパーティの選択 4 枠・メンバーの 5 枠（battle）、オート中の「オート解除」（autoStop）を切り替えて出す。矩形は layout.ts の dungeonLayout のステージ座標で、region の原点を引いて置く。
-// 十字ボタンは pointerdown で反応する（click は使わない）。離したら onRelease（前進の長押しの連打を止める。UI-31）。
-// ゴーストクリックの抑止: 十字ボタンと「オート解除」は pointerdown で反応し、演出スキップ中は指を離す前に同じ位置へ
-// 戦闘の枠や一覧（click で反応）が出ることがある。タッチ由来の click は pointerdown の preventDefault では止まらないので、
-// それらの pointerdown から、同じ操作の pointerup / pointercancel の後 GHOST_CLICK_MS までの click を、戦闘の枠と一覧と
-// close のボタン（全滅の内訳の「街へ」は「オート解除」と同じ矩形に出る）では捨てる。
-// 新しい pointerdown（別の操作の始まり）が来たら抑止を解く。時刻は event.timeStamp で比べ、タイマーは使わない。
+// どのボタンも input/tap.ts の onTap で登録し、「動かずに離した」ときに反応する（UI-36。click は使わない）。
+// 前進ボタンだけは、動かずに hold.ms() 押し続けたら hold.onHoldStart（長押しの連打）、離したら hold.onHoldEnd（UI-31）。
+// 「オート解除」は再生中も反応する（whileBusy。UI-44 の例外）。
 // Action から Command への変換と長押しの連打は呼び出し側（app）が持つ。表示層は前進できるかを判定しない（UI-35）。
 // モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
+import { onTap } from "../input/tap";
 import type { DungeonLayout, Rect } from "../layout";
 
 export type DpadAction = "forward" | "left" | "right" | "around";
 export type ControlsMode = "dpad" | "list" | "close" | "battle" | "autoStop" | "none";
 /** disabled なら dim 色で出し、押しても onSelect を呼ばない */
-/** onFocus は一覧の行に pointerenter / pointerdown したとき（戦闘の対象の注目。UI-54） */
+/** onFocus は一覧の行に pointerenter / pointerdown したとき（戦闘の対象の注目。UI-54。押しただけで、選ぶのは離したとき） */
 export type ControlItem = { label: string; onSelect(): void; disabled?: boolean; onFocus?(): void };
 /** 枠の配置（UI-54）。party は戦闘のパーティの選択の 4 枠、member はメンバーの 5 枠、town は街の施設メニューの 6 枠（UI-52） */
 export type BattleSlots = "party" | "member" | "town";
@@ -38,7 +36,7 @@ export type Controls = {
   setListFocus(i: number | null, opts?: { scroll?: boolean }): void;
   /** close モードの唯一のボタンの文言（既定は common.close。全滅の内訳では wipe.toTown） */
   setCloseLabel(label: string): void;
-  /** オート中の「オート解除」。pointerdown で onPress を呼ぶ（再生中も受ける。UI-44 の例外は呼び出し側が扱う） */
+  /** オート中の「オート解除」。タップで onPress を呼ぶ（再生中も受ける。UI-44 の例外は呼び出し側が扱う） */
   setAutoStop(label: string, onPress: () => void): void;
   /**
    * n 番目（0 始まり）を選ぶ。dpad ではメニュー、list ではリスト、battle では戦闘の枠、close / autoStop では 0 が唯一のボタン。
@@ -48,47 +46,6 @@ export type Controls = {
 };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-
-/** pointerdown で反応したボタンを離してから、戦闘の枠と一覧の click を捨てる時間（ms） */
-export const GHOST_CLICK_MS = 400;
-
-/**
- * 純粋なゴーストクリックの抑止の状態機械（DOM に触れない）。arm は pointerdown で反応したボタン、
- * down は任意の pointerdown（arm より先に呼ぶ）、up は pointerup / pointercancel、blocks は click を捨てるか
- */
-export function createGhostClickGuard(windowMs = GHOST_CLICK_MS): {
-  down(): void;
-  arm(): void;
-  up(timeStamp: number): void;
-  blocks(timeStamp: number): boolean;
-} {
-  let armed = false;
-  let releasedAt = Number.NEGATIVE_INFINITY;
-  return {
-    down(): void {
-      armed = false;
-      releasedAt = Number.NEGATIVE_INFINITY;
-    },
-    arm(): void {
-      armed = true;
-      releasedAt = Number.NEGATIVE_INFINITY;
-    },
-    up(timeStamp: number): void {
-      if (!armed) return;
-      armed = false;
-      releasedAt = timeStamp;
-    },
-    blocks(timeStamp: number): boolean {
-      if (armed) return true;
-      return timeStamp - releasedAt < windowMs;
-    },
-  };
-}
-
-/** event.timeStamp（無ければ 0） */
-function stampOf(e: Event): number {
-  return typeof e.timeStamp === "number" ? e.timeStamp : 0;
-}
 
 /** 32×32 の中の三角形（向き別） */
 const ARROWS: Readonly<Record<DpadAction, string>> = {
@@ -115,7 +72,6 @@ function buttonStyle(b: HTMLElement, r: Rect, origin: Rect): void {
     textAlign: "center",
     whiteSpace: "nowrap",
     overflow: "hidden",
-    touchAction: "manipulation",
   });
 }
 
@@ -125,14 +81,14 @@ function setShown(el: HTMLElement, on: boolean): void {
 
 /**
  * region は ui §2 の controls 領域（ステージ座標）。el はその位置と大きさに自分で置く。
- * onAction は十字ボタンを押した瞬間、onRelease は離したとき（pointerup / pointercancel / pointerleave / lostpointercapture）に呼ぶ。
+ * onAction は十字ボタンのタップ（動かずに離した）。hold は前進ボタンの長押し（UI-31）。
  */
 export function createControls(o: {
   region: Rect;
   layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "mapClose" | "battleParty" | "battleMember" | "autoStop" | "townMenu">;
   strings: Strings;
   onAction(a: DpadAction): void;
-  onRelease(): void;
+  hold: { ms(): number; onHoldStart(): void; onHoldEnd(): void };
   onClose(): void;
 }): Controls {
   const s = (key: string): string => o.strings[key] ?? key;
@@ -157,17 +113,6 @@ export function createControls(o: {
     color: "var(--c-text)",
   });
 
-  // ---- ゴーストクリックの抑止（キャプチャ段で、ボタンの pointerdown の arm より先に down を呼ぶ）
-  const ghost = createGhostClickGuard();
-  el.addEventListener("pointerdown", () => ghost.down(), true);
-  el.addEventListener("pointerup", (e) => ghost.up(stampOf(e)), true);
-  el.addEventListener("pointercancel", (e) => ghost.up(stampOf(e)), true);
-  /** 戦闘の枠と一覧の click。抑止中なら捨てる */
-  const onGuardedClick = (it: ControlItem) => (e: Event): void => {
-    if (ghost.blocks(stampOf(e))) return;
-    pick(it);
-  };
-
   // ---- 十字ボタン
   const dpad = document.createElement("div");
   dpad.className = "controls-dpad";
@@ -191,18 +136,8 @@ export function createControls(o: {
     p.setAttribute("fill", "var(--c-line)");
     svg.appendChild(p);
     b.appendChild(svg);
-    b.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      ghost.arm();
-      o.onAction(a);
-    });
-    const release = (): void => o.onRelease();
-    b.addEventListener("pointerup", release);
-    b.addEventListener("pointercancel", release);
-    b.addEventListener("pointerleave", release);
-    // 押したままボタンが隠れたときなど、pointerup の代わりにこれだけが届く場合がある
-    b.addEventListener("lostpointercapture", release);
-    // pointerdown の preventDefault で click は来ないことがあるので、click では何もしない
+    // UI-31: 前進だけ長押しで連打する（短く離せば 1 歩）
+    onTap(b, a === "forward" ? { onTap: () => o.onAction(a), hold: o.hold } : () => o.onAction(a));
     dpad.appendChild(b);
   }
 
@@ -225,7 +160,6 @@ export function createControls(o: {
     height: `${last.y + last.h - first.y}px`,
     overflowY: "auto",
     overflowX: "hidden",
-    touchAction: "pan-y",
   });
   el.appendChild(list);
   let listItems: ControlItem[] = [];
@@ -237,9 +171,7 @@ export function createControls(o: {
   close.className = "controls-close";
   close.textContent = s("common.close");
   buttonStyle(close, o.layout.mapClose, origin);
-  close.addEventListener("click", (e) => {
-    if (!ghost.blocks(stampOf(e))) o.onClose();
-  });
+  onTap(close, () => o.onClose());
   el.appendChild(close);
 
   // ---- 戦闘の枠（layout.battleParty / battleMember）
@@ -254,11 +186,7 @@ export function createControls(o: {
   autoStop.className = "controls-auto-stop";
   buttonStyle(autoStop, o.layout.autoStop, origin);
   let autoStopPress: () => void = () => {};
-  autoStop.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    ghost.arm();
-    autoStopPress();
-  });
+  onTap(autoStop, { onTap: () => autoStopPress(), whileBusy: true });
   el.appendChild(autoStop);
 
   let mode: ControlsMode = "none";
@@ -308,7 +236,7 @@ export function createControls(o: {
         b.textContent = it.label;
         buttonStyle(b, r, origin);
         dimIf(b, it);
-        b.addEventListener("click", () => pick(it));
+        onTap(b, () => pick(it));
         menu.appendChild(b);
       });
     },
@@ -336,10 +264,9 @@ export function createControls(o: {
           textAlign: "left",
           whiteSpace: "nowrap",
           overflow: "hidden",
-          touchAction: "pan-y",
         });
         dimIf(b, it);
-        b.addEventListener("click", onGuardedClick(it));
+        onTap(b, () => pick(it));
         const focus = it.onFocus;
         if (focus !== undefined) {
           // 対象の一覧の Enter は、DOM のフォーカスのある行の click ではなく、いつも注目している行を選ぶ（UI-33。swipe.ts の isButton）
@@ -373,7 +300,7 @@ export function createControls(o: {
         b.textContent = it.label;
         buttonStyle(b, r, origin);
         dimIf(b, it);
-        b.addEventListener("click", onGuardedClick(it));
+        onTap(b, () => pick(it));
         battle.appendChild(b);
       });
     },

@@ -51,6 +51,37 @@ body {
   box-sizing: border-box;
 }
 
+/* UI-37: ダブルタップの拡大を止める。ステージ以下は manipulation（パンとピンチだけ。body の none は UI-05 のまま残す） */
+#stage,
+#stage * {
+  touch-action: manipulation;
+}
+
+/* UI-37 / UI-30: 迷宮でスワイプを受ける間は、ボタンの上で始めたスワイプがブラウザのパン（pointercancel）にならないよう none */
+#stage .screen-play.swipe-on,
+#stage .screen-play.swipe-on * {
+  touch-action: none;
+}
+
+/* UI-37 / UI-11: 縦スクロールの容器（操作領域の一覧・履歴の画面・全滅の内訳・タイトルの一覧）は pan-y。
+   上の 2 つの規則より詳細度を上げる */
+#stage .screen .controls-list,
+#stage .screen .controls-list *,
+#stage .screen .history-list,
+#stage .screen .history-list *,
+#stage .screen .wipe-view,
+#stage .screen .wipe-view *,
+#stage .screen .title-rows,
+#stage .screen .title-rows * {
+  touch-action: pan-y;
+}
+
+/* UI-36: 押している間の見た目（touchend の preventDefault で :active が付かない端末があるため class で付ける） */
+#stage button.is-pressed {
+  color: var(--c-bg) !important;
+  background: var(--c-text) !important;
+}
+
 /* UI-02: safe area 計測用の不可視プローブ。padding を getComputedStyle で読む */
 .stage-safe-area-probe {
   position: fixed;
@@ -185,16 +216,6 @@ body {
   pointer-events: none;
 }
 
-/* スワイプを受ける透明な層（UI-30） */
-.play-swipe {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  touch-action: none;
-}
-
 /* debug パネル（M0 の確認画面と設定の仮 UI）。ステージ全面を覆う */
 .debug-panel {
   position: absolute;
@@ -299,11 +320,13 @@ body {
 /* 履歴とリストのスクロールバーは描かない（スクロール自体はホイール・ドラッグ・タッチで残る）。
    PC のクラシックなスクロールバーはステージの scale() で太く描かれ、文字の幅も食うため（UI-11 / UI-43） */
 .message-history,
-.controls-list {
+.controls-list,
+.history-list {
   scrollbar-width: none;
 }
 
 .message-history::-webkit-scrollbar,
-.controls-list::-webkit-scrollbar {
+.controls-list::-webkit-scrollbar,
+.history-list::-webkit-scrollbar {
   display: none;
 }

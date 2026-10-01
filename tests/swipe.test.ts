@@ -1,5 +1,5 @@
-// UI-30〜34: スワイプの分類・tracker・非反応帯・キー表・連打の可否と、長押しの連打（偽のタイマー）、
-// attachSwipe / attachKeyboard（偽の要素と window）。
+// UI-30〜34: スワイプの分類・非反応帯・キー表・連打の可否と、長押しの連打（偽のタイマー）、
+// attachKeyboard（偽の window）。ステージの押下・スワイプ・タップ（attachStageInput）は tap.test.ts。
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { execute } from "../src/core/engine";
 import { floorOf } from "../src/core/rules/dungeon";
@@ -9,7 +9,6 @@ import { createRunGate } from "../src/presenter/run-gate";
 import {
   attachKeyboard,
   attachReleaseOnHide,
-  attachSwipe,
   battleKeyChoice,
   canRepeat,
   classifySwipe,
@@ -19,12 +18,10 @@ import {
   keyToAction,
   swipeAction,
   thresholdCss,
-  trackerDown,
-  trackerMove,
-  trackerUp,
   type Action,
-  type Tracker,
 } from "../src/presenter/input/swipe";
+import { attachStageInput, onTap } from "../src/presenter/input/tap";
+import { FakeNode, FakeStage } from "./helpers/dom";
 import { data, newGame } from "./helpers/core";
 
 describe("スワイプの分類", () => {
@@ -55,38 +52,6 @@ describe("スワイプの分類", () => {
     expect(swipeAction("down")).toBe("around");
     expect(swipeAction("left")).toBe("left");
     expect(swipeAction("right")).toBe("right");
-  });
-
-  test("UI-30 tracker は 1 回だけ発火し、up まで再発火しない。別の pointerId は無視", () => {
-    let t: Tracker = trackerDown(null, 1, 100, 100, true);
-    expect(t).toEqual({ id: 1, sx: 100, sy: 100, fired: null });
-    // 2 本目は無視
-    expect(trackerDown(t, 2, 0, 0, true)).toBe(t);
-    // 別の pointerId の move は無視
-    let r = trackerMove(t, 2, 100, 0, 28);
-    expect(r).toEqual({ next: t, fire: null });
-    r = trackerMove(t, 1, 100, 80, 28);
-    expect(r.fire).toBeNull();
-    t = r.next;
-    r = trackerMove(t, 1, 100, 72, 28);
-    expect(r.fire).toBe("up");
-    t = r.next;
-    // 確定後は、どれだけ動かしても（向きを変えても）発火しない
-    expect(trackerMove(t, 1, 100, 0, 28).fire).toBeNull();
-    expect(trackerMove(t, 1, 0, 72, 28).fire).toBeNull();
-    // 別の id の up では外れない
-    expect(trackerUp(t, 2)).toBe(t);
-    t = trackerUp(t, 1);
-    expect(t).toBeNull();
-    // 次のジェスチャーは新しく発火する
-    t = trackerDown(t, 3, 50, 50, true);
-    expect(trackerMove(t, 3, 50, 90, 28).fire).toBe("down");
-  });
-
-  test("UI-34 非反応帯で始まったジェスチャーは追わない", () => {
-    const t = trackerDown(null, 1, 5, 100, false);
-    expect(t).toBeNull();
-    expect(trackerMove(t, 1, 5, 0, 28)).toEqual({ next: null, fire: null });
   });
 
   test("UI-34 inDeadZone の境界（11.9 は真、12 と 228 は偽、228.1 は真）", () => {
@@ -169,13 +134,14 @@ describe("連打の可否とキーボード", () => {
     }
   });
 
-  test("UI-33 keyToAction の表どおり。repeat と input 上は null", () => {
+  test("UI-33 keyToAction の表どおり（Space は confirm）。repeat と input 上は null", () => {
     const table: [string, Action][] = [
       ["ArrowUp", "forward"],
       ["ArrowLeft", "left"],
       ["ArrowRight", "right"],
       ["ArrowDown", "around"],
       ["Enter", "confirm"],
+      [" ", "confirm"],
       ["Escape", "back"],
       ["m", "map"],
       ["M", "map"],
@@ -189,7 +155,7 @@ describe("連打の可否とキーボード", () => {
       expect(keyToAction(k, true, false), `${k} repeat`).toBeNull();
       expect(keyToAction(k, false, true), `${k} on input`).toBeNull();
     }
-    for (const k of ["0", "a", "x", " ", "Tab", "F1", "10", "toString", "constructor", ""]) {
+    for (const k of ["0", "a", "x", "Spacebar", "Tab", "F1", "10", "toString", "constructor", ""]) {
       expect(keyToAction(k, false, false), k).toBeNull();
     }
   });
@@ -296,7 +262,7 @@ describe("長押しの連打", () => {
 });
 
 // ---------------------------------------------------------------------------
-// attachSwipe / attachKeyboard（偽の DOM）
+// attachKeyboard（偽の DOM）
 
 type Listener = (e: never) => void;
 class FakeTarget {
@@ -314,81 +280,6 @@ class FakeTarget {
     return Object.values(this.listeners).reduce((n, l) => n + l.length, 0);
   }
 }
-class FakeView extends FakeTarget {
-  captured: number[] = [];
-  constructor(private readonly left: number) {
-    super();
-  }
-  getBoundingClientRect(): { left: number } {
-    return { left: this.left };
-  }
-  setPointerCapture(id: number): void {
-    this.captured.push(id);
-  }
-}
-
-describe("attachSwipe", () => {
-  function setup(scale = 2, enabled = true) {
-    const el = new FakeView(10);
-    const out: string[] = [];
-    const detach = attachSwipe(el as unknown as HTMLElement, {
-      scale: () => scale,
-      threshold: () => 28,
-      deadZone: 12,
-      width: 240,
-      enabled: () => enabled,
-      onAction: (a) => out.push(`action ${JSON.stringify(a)}`),
-      onRelease: () => out.push("release"),
-      onDebug: (dx, dy, d) => out.push(`debug ${dx},${dy},${d}`),
-    });
-    return { el, out, detach };
-  }
-
-  test("UI-30 CSS px の閾値（28 × scale）を越えた瞬間に 1 回だけ発火し、up で release", () => {
-    const { el, out } = setup(2);
-    // 論理 x = (210 - 10) / 2 = 100
-    el.emit("pointerdown", { pointerId: 7, clientX: 210, clientY: 300 });
-    expect(el.captured).toEqual([7]);
-    el.emit("pointermove", { pointerId: 7, clientX: 210, clientY: 245 }); // dy -55 < 56
-    expect(out).toEqual([]);
-    el.emit("pointermove", { pointerId: 7, clientX: 212, clientY: 244 }); // dy -56
-    el.emit("pointermove", { pointerId: 7, clientX: 212, clientY: 100 });
-    expect(out).toEqual(['debug 2,-56,up', 'action "forward"']);
-    el.emit("pointerup", { pointerId: 8 });
-    el.emit("pointerup", { pointerId: 7 });
-    el.emit("lostpointercapture", { pointerId: 7 });
-    expect(out).toEqual(['debug 2,-56,up', 'action "forward"', "release"]);
-  });
-
-  test("UI-34 非反応帯（論理 x < 12 か > 228）で始まったジェスチャーは丸ごと無視", () => {
-    const { el, out } = setup(2);
-    // 論理 x = (33 - 10) / 2 = 11.5
-    el.emit("pointerdown", { pointerId: 1, clientX: 33, clientY: 300 });
-    el.emit("pointermove", { pointerId: 1, clientX: 200, clientY: 300 });
-    el.emit("pointerup", { pointerId: 1 });
-    // 論理 x = (467 - 10) / 2 = 228.5
-    el.emit("pointerdown", { pointerId: 2, clientX: 467, clientY: 300 });
-    el.emit("pointermove", { pointerId: 2, clientX: 300, clientY: 300 });
-    expect(out).toEqual([]);
-    expect(el.captured).toEqual([]);
-    // 論理 x = 12 ちょうどは受ける
-    el.emit("pointerdown", { pointerId: 3, clientX: 34, clientY: 300 });
-    el.emit("pointermove", { pointerId: 3, clientX: 90, clientY: 300 });
-    expect(out).toEqual(["debug 56,0,right", 'action "right"']);
-  });
-
-  test("UI-32 enabled が偽なら受けない。detach で外れる", () => {
-    const off = setup(1, false);
-    off.el.emit("pointerdown", { pointerId: 1, clientX: 100, clientY: 100 });
-    off.el.emit("pointermove", { pointerId: 1, clientX: 100, clientY: 0 });
-    expect(off.out).toEqual([]);
-    const on = setup(1);
-    expect(on.el.count()).toBe(5);
-    on.detach();
-    expect(on.el.count()).toBe(0);
-  });
-});
-
 describe("attachKeyboard", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -598,34 +489,47 @@ describe("長押しと壁（結合）", () => {
     expect(w.blocked()).toBe(2);
   });
 
-  test("UI-31 十字ボタンとスワイプ: 前進を押したままの間に別の前進が届いても、壁で止まったら 1 回。指を離せば次の押下で動く", async () => {
+  test("UI-31/UI-36 前進ボタンの長押しと 2 本目の指のスワイプ: 長押しで壁に当たったら 1 回。2 本目の指は無視し、離して押し直せば動く", async () => {
     vi.useFakeTimers();
     const w = wire();
-    const el = new FakeView(0);
-    attachSwipe(el as unknown as HTMLElement, {
+    const stage = new FakeStage(0);
+    const fwd = new FakeNode("BUTTON", stage);
+    onTap(fwd as unknown as Element, {
+      onTap: () => {
+        w.rep.press();
+        w.rep.release();
+      },
+      hold: { ms: () => 250, onHoldStart: () => w.rep.press(), onHoldEnd: () => w.rep.release() },
+    });
+    attachStageInput(stage as unknown as HTMLElement, {
       scale: () => 1,
       threshold: () => 28,
       deadZone: 12,
       width: 240,
-      enabled: () => true,
-      onAction: (a) => {
+      swipeEnabled: () => true,
+      busy: () => w.gate.busy(),
+      onBusyTap: () => {},
+      onSwipe: (a) => {
         if (a === "forward") w.rep.press();
       },
-      onRelease: () => w.rep.release(),
+      onSwipeRelease: () => w.rep.release(),
     });
-    // 十字ボタンの前進を押したまま（pointerdown → press。離すまで release しない）
-    w.rep.press();
-    await vi.advanceTimersByTimeAsync(PLAY_MS + 300);
-    // もう 1 本の指でビューを上へスワイプして押したまま
-    el.emit("pointerdown", { pointerId: 2, clientX: 100, clientY: 100 });
-    el.emit("pointermove", { pointerId: 2, clientX: 100, clientY: 40 });
-    await vi.advanceTimersByTimeAsync(2000);
+    // 前進ボタンを押したまま 250ms で連打が始まり、壁に当たって止まる
+    stage.emit("pointerdown", { pointerId: 1, clientX: 50, clientY: 330, target: fwd, pointerType: "touch" });
+    await vi.advanceTimersByTimeAsync(250 + PLAY_MS + 300);
     expect(w.executes()).toBe(1);
     expect(w.blocked()).toBe(1);
-    // スワイプの指を離すと release。次の押下は新しい長押し
-    el.emit("pointerup", { pointerId: 2 });
-    w.rep.press();
+    // 2 本目の指でビューを上へスワイプしても無視（追う押下は 1 本だけ）
+    stage.emit("pointerdown", { pointerId: 2, clientX: 100, clientY: 100, target: stage, pointerType: "touch", isPrimary: false });
+    stage.emit("pointermove", { pointerId: 2, clientX: 100, clientY: 40, target: stage });
     await vi.advanceTimersByTimeAsync(2000);
+    expect(w.executes()).toBe(1);
+    // 離して、もう一度スワイプで前進すれば新しい長押しとして動く
+    stage.emit("pointerup", { pointerId: 1, clientX: 50, clientY: 330, target: fwd });
+    stage.emit("pointerdown", { pointerId: 3, clientX: 100, clientY: 100, target: stage, pointerType: "touch" });
+    stage.emit("pointermove", { pointerId: 3, clientX: 100, clientY: 40, target: stage });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(w.executes()).toBe(2);
     expect(w.blocked()).toBe(2);
   });
 });

@@ -14,6 +14,7 @@ import { targetNumber } from "../battle-input";
 import type { Rect } from "../layout";
 import { ENEMY_FILLS, PALETTE, type PaletteName } from "../palette";
 import { formatMessage } from "./message";
+import { onTap } from "../input/tap";
 
 const COL_W = 56;
 const COL_GAP = 4;
@@ -158,7 +159,7 @@ export function createBattleView(
       place(sprite, { x: sr.x - b.x, y: sr.y, w: sr.w, h: sr.h });
       sprite.style.background = PALETTE[enemyFill(data, g.monsterId, g.identified)];
       const index = g.index;
-      sprite.addEventListener("click", () => {
+      onTap(sprite, () => {
         const c = cols.find((x) => x.view.index === index);
         if (pickable && c !== undefined && c.view.count > 0 && onPick !== undefined) onPick(index);
       });

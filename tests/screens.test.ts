@@ -188,6 +188,23 @@ function coreViolations(refs: readonly CoreRef[]): string[] {
 }
 
 describe("入力と Command", () => {
+  test("UI-36 表示層で click のリスナーを付けるのは input/tap.ts だけ（押せるものは onTap で登録する）。ゴーストクリックの抑止と .play-swipe の層は無い", () => {
+    const files = Object.keys(presenterRaw);
+    expect(files.length).toBeGreaterThan(10);
+    const withClick = Object.entries(presenterRaw)
+      .filter(([, src]) => /addEventListener\(\s*["'`]click["'`]/.test(stripComments(src)))
+      .map(([file]) => file);
+    expect(withClick).toEqual(["../src/presenter/input/tap.ts"]);
+    for (const [file, src] of Object.entries(presenterRaw)) {
+      const code = stripComments(src);
+      expect(code, file).not.toMatch(/createGhostClickGuard|GHOST_CLICK_MS|play-swipe|setSwipeEnabled/);
+      // 押せるものを pointerdown で直接反応させない（ステージ 1 か所で受ける）。一覧の注目（onFocus）だけは例外
+      if (file !== "../src/presenter/input/tap.ts" && file !== "../src/presenter/views/controls.ts") {
+        expect(code, file).not.toMatch(/addEventListener\(\s*["'`]pointer(?:down|up)["'`]/);
+      }
+    }
+  });
+
   test("UI-35 表示層が core から値で import するのは execute と状態を変えない問い合わせだけ（形を問わず拾う）", () => {
     const refs = Object.entries(presenterRaw).flatMap(([file, src]) => coreRefs(file, src));
     expect(coreViolations(refs)).toEqual([]);

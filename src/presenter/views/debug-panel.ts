@@ -12,6 +12,7 @@ import { DEBUG_BUTTONS, DEBUG_SWIPE_Y, debugRow, type Rect } from "../layout";
 import type { Insets, StageLayout, StageLayoutInput } from "../stage";
 import { nextAutoBeat, nextInputMode, stepSetting, type NumericSettingKey, type Settings, type SettingsStore } from "../settings";
 import { formatMessage } from "./message";
+import { onTap } from "../input/tap";
 
 /** formatStageInfo の入力。insets は無いことがある（無ければ n/a） */
 export type StageInfoInput = Omit<StageLayoutInput, "insets"> & { insets?: Insets };
@@ -127,7 +128,7 @@ function button(text: string, r: Rect, onClick: () => void): HTMLButtonElement {
   b.className = "ui-button";
   b.textContent = text;
   place(b, r);
-  b.addEventListener("click", onClick);
+  onTap(b, () => onClick());
   return b;
 }
 

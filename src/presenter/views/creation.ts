@@ -9,6 +9,7 @@ import type { GameData, PersonalityId, Strings } from "../../core/data/index";
 import type { PartySetup } from "../../core/types";
 import { formatMessage } from "./message";
 import { CREATION_BUTTONS, CREATION_ERROR, creationRow, type Rect } from "../layout";
+import { onTap } from "../input/tap";
 
 export type PersonalityChoice = PersonalityId | "random" | null;
 
@@ -64,7 +65,7 @@ function button(text: string, r: Rect, onClick: () => void): HTMLButtonElement {
   b.className = "ui-button";
   b.textContent = text;
   place(b, r);
-  b.addEventListener("click", onClick);
+  onTap(b, () => onClick());
   return b;
 }
 

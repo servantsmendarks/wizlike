@@ -1,5 +1,6 @@
-import { describe, expect, test } from "vitest";
-import { formatMessage, trimHistory, typewriterSteps } from "../src/presenter/views/message";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { dungeonLayout, regions } from "../src/presenter/layout";
+import { createMessageWindow, formatMessage, trimHistory, typewriterSteps } from "../src/presenter/views/message";
 import { headerText } from "../src/presenter/views/header";
 import { formatPartyRow } from "../src/presenter/views/party";
 import { data, newGame } from "./helpers/core";
@@ -80,5 +81,89 @@ describe("header.ts / party.ts（純粋な部分）", () => {
     expect(row.mp).toBe("7/7");
     expect(formatPartyRow({ ...ch, life: "dead", hp: 0 }, data.strings, data.classes).life).toBe(data.strings["party.life.dead"]);
     expect(formatPartyRow({ ...ch, life: "ash", hp: 0 }, data.strings, data.classes).life).toBe(data.strings["party.life.ash"]);
+  });
+});
+
+// ---------------------------------------------------------------- MessageWindow（偽の document）
+class FakeEl {
+  style: Record<string, string> = {};
+  className = "";
+  textContent = "";
+  children: FakeEl[] = [];
+  parent: FakeEl | null = null;
+  scrollTop = 0;
+  scrollHeight = 0;
+  setAttribute(): void {}
+  appendChild(c: FakeEl): FakeEl {
+    c.parent = this;
+    this.children.push(c);
+    return c;
+  }
+  replaceChildren(...c: FakeEl[]): void {
+    this.children = c;
+  }
+  get childElementCount(): number {
+    return this.children.length;
+  }
+  get firstElementChild(): FakeEl | null {
+    return this.children[0] ?? null;
+  }
+  remove(): void {
+    if (this.parent !== null) this.parent.children = this.parent.children.filter((x) => x !== this);
+  }
+  animate(): { finished: Promise<void>; cancel(): void } {
+    return { finished: Promise.resolve(), cancel() {} };
+  }
+}
+
+describe("MessageWindow", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("UI-43/UI-46 窓の DOM には直近の lines × 2 文だけを残し、全文は history() に messageHistory 件まで古い順に持つ。log は窓に出さず履歴にだけ足す", async () => {
+    const created: FakeEl[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => {
+        const e = new FakeEl();
+        created.push(e);
+        return e;
+      },
+      createElementNS: () => new FakeEl(),
+    });
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    expect(L.message.lines).toBe(6);
+    const w = createMessageWindow({ speed: () => 0, historyMax: 15, region: g.message, layout: L.message });
+    const box = created.find((e) => e.className === "message-history")!;
+    // 指ではスクロールしない
+    expect(box.style["overflow"]).toBe("hidden");
+    expect(box.style["touchAction"]).toBe("none");
+    for (let i = 0; i < 20; i++) await w.say(`s${i}`, true);
+    w.log("dice");
+    expect(box.children.map((c) => c.textContent)).toEqual(Array.from({ length: 12 }, (_, i) => `s${i + 8}`));
+    expect(w.history()).toEqual([...Array.from({ length: 14 }, (_, i) => `s${i + 6}`), "dice"]);
+    expect(w.typing()).toBe(false);
+    // waitMs は 0 以下なら即座に解決する（animate も呼ばない）。正なら finished を待つ
+    await w.waitMs(0);
+    await w.waitMs(400);
+    w.clear();
+    expect(w.history()).toEqual([]);
+    expect(box.children).toEqual([]);
+  });
+
+  test("UI-43 文字送りの途中は typing() が真で、rush で即座に全文になる", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("document", { createElement: () => new FakeEl(), createElementNS: () => new FakeEl() });
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const w = createMessageWindow({ speed: () => 30, historyMax: 200, region: g.message, layout: L.message });
+    const p = w.say("abc", false);
+    expect(w.typing()).toBe(true);
+    w.rush();
+    await p;
+    expect(w.typing()).toBe(false);
+    expect(w.history()).toEqual(["abc"]);
+    vi.useRealTimers();
   });
 });

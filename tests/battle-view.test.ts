@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { EnemyGroupView } from "../src/core/types";
 import { targetNumber } from "../src/presenter/battle-input";
+import { tapSpecOf } from "../src/presenter/input/tap";
 import { ENEMY_FILLS, PALETTE } from "../src/presenter/palette";
 import {
   createBattleView,
@@ -127,8 +128,13 @@ class FakeEl {
   addEventListener(type: string, f: (e: unknown) => void): void {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), f]);
   }
+  setAttribute(): void {}
   dispatch(type: string): void {
     for (const f of this.listeners.get(type) ?? []) f({ type });
+  }
+  /** onTap で登録した spec の onTap を呼ぶ（UI-36 の動かずに離した） */
+  tap(): void {
+    tapSpecOf(this)?.onTap({ lx: 0, ly: 0 });
   }
   animate(_keyframes: unknown, options: Record<string, unknown>): FakeAnim {
     const a: FakeAnim = {
@@ -240,21 +246,21 @@ describe("UI-54 戦闘のビュー（DOM）", () => {
     expect(frames.flatMap((f) => f.anims)).toEqual([]);
   });
 
-  test("UI-54 setPickable の間だけ、体数 1 以上の絵のタップで onPick(グループの添字) を呼ぶ", () => {
+  test("UI-54/UI-36 setPickable の間だけ、体数 1 以上の絵のタップ（onTap）で onPick(グループの添字) を呼ぶ", () => {
     const picked: number[] = [];
     const { v, byClass } = setup((g) => picked.push(g));
     const sprites = byClass("battle-group-sprite");
-    sprites[1]!.dispatch("click");
+    sprites[1]!.tap();
     expect(picked).toEqual([]);
     expect(sprites.map((s) => s.style["pointerEvents"])).toEqual(["none", "none", "none"]);
     v.setPickable(true);
     expect(sprites.map((s) => s.style["pointerEvents"])).toEqual(["auto", "auto", "none"]);
-    sprites[1]!.dispatch("click");
-    sprites[0]!.dispatch("click");
-    sprites[2]!.dispatch("click"); // 体数 0
+    sprites[1]!.tap();
+    sprites[0]!.tap();
+    sprites[2]!.tap(); // 体数 0
     expect(picked).toEqual([1, 0]);
     v.setPickable(false);
-    sprites[1]!.dispatch("click");
+    sprites[1]!.tap();
     expect(picked).toEqual([1, 0]);
     expect(sprites.map((s) => s.style["pointerEvents"])).toEqual(["none", "none", "none"]);
   });
