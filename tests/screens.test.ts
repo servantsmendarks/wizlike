@@ -93,6 +93,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   // decisions の UI-35 の行のとおり。floorOf / visibleCellsOf は Floor（kind・trapId・eventId）に触れるので許さない
   "rules/dungeon": ["visibleCells", "mapView"],
   state: ["dungeonOf"],
+  // M3: 戦闘の入力の段階・オートの連鎖は battleMenu の値だけで決める（行動できるか・使えるか・揃ったかを core が返す）
+  "rules/combat": ["battleMenu"],
 };
 
 /** コメントを除いた本文（文字列の中の // や /* は考えない最小限の除去。presenter に該当する文字列は無い） */

@@ -78,7 +78,7 @@ describe("controls", () => {
   });
 
   test("UI-31 shouldReleaseHold: 迷宮以外・overlay あり・選択の保留ありのどれかなら離したものとする。迷宮で何も出ていなければ離さない", () => {
-    const routes: Route[] = ["title", "creation", "town", "dungeon"];
+    const routes: Route[] = ["title", "creation", "town", "dungeon", "battle"];
     const overlays: Overlay[] = [null, "map", "debug"];
     for (const r of routes) {
       for (const o of overlays) {
@@ -90,7 +90,56 @@ describe("controls", () => {
     }
     expect(shouldReleaseHold("dungeon", null, false)).toBe(false);
     expect(shouldReleaseHold("town", null, false)).toBe(true);
+    expect(shouldReleaseHold("battle", null, false)).toBe(true);
     expect(shouldReleaseHold("dungeon", "map", false)).toBe(true);
     expect(shouldReleaseHold("dungeon", null, true)).toBe(true);
+  });
+
+  test("UI-54 戦闘のコマンド枠: disabled は dim 色で、click でも select でも onSelect を呼ばない。select は battle モードの枠を選ぶ", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, onRelease: () => {}, onClose: () => {} });
+    const picked: string[] = [];
+    c.setBattleMenu([
+      { label: "a", onSelect: () => picked.push("a") },
+      { label: "b", onSelect: () => picked.push("b"), disabled: true },
+      { label: "c", onSelect: () => picked.push("c") },
+    ]);
+    c.setMode("battle");
+    const items = created.filter((e) => e.className === "controls-battle-item");
+    expect(items.map((e) => e["textContent"])).toEqual(["a", "b", "c"]);
+    expect(items[1]!.style["color"]).toBe("var(--c-dim)");
+    expect(items[0]!.style["color"]).not.toBe("var(--c-dim)");
+    for (const b of items) b.dispatch("click");
+    expect(picked).toEqual(["a", "c"]);
+    c.select(1);
+    c.select(2);
+    c.select(7); // 範囲外は何もしない
+    expect(picked).toEqual(["a", "c", "c"]);
+    // battle 以外のモードでは戦闘の枠を選ばない
+    c.setMode("none");
+    c.select(0);
+    expect(picked).toEqual(["a", "c", "c"]);
+  });
+
+  test("UI-44/UI-54 オート解除: pointerdown と、autoStop モードの select(0) で onPress を呼ぶ。ラベルは setAutoStop で差し替わる", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, onRelease: () => {}, onClose: () => {} });
+    let pressed = 0;
+    c.setAutoStop(data.strings["battle.cmd.autoStop"]!, () => pressed++);
+    c.setMode("autoStop");
+    const btn = created.find((e) => e.className === "controls-auto-stop")!;
+    expect(btn["textContent"]).toBe(data.strings["battle.cmd.autoStop"]);
+    btn.dispatch("pointerdown");
+    expect(pressed).toBe(1);
+    c.select(0);
+    expect(pressed).toBe(2);
+    c.select(1);
+    expect(pressed).toBe(2);
+    c.setAutoStop(data.strings["battle.autoStopping"]!, () => pressed++);
+    expect(btn["textContent"]).toBe(data.strings["battle.autoStopping"]);
   });
 });

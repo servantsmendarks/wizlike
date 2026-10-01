@@ -7,10 +7,21 @@
 // モジュールのトップレベルでは DOM に触れない。
 import type { GameData } from "../core/data/index";
 import { execute, createInitialState } from "../core/engine";
+import { battleMenu } from "../core/rules/combat";
 import { mapView, visibleCells } from "../core/rules/dungeon";
 import { dungeonOf } from "../core/state";
-import type { Command, GameEvent, GameState, Screen, ViewPoint } from "../core/types";
-import { attachKeyboard, attachReleaseOnHide, attachSwipe, createHoldRepeater, forwardStep, type Action } from "./input/swipe";
+import type { BattleMenu, Command, GameEvent, GameState, Screen, ViewPoint } from "../core/types";
+import { runChain, type ChainDeps } from "./auto-chain";
+import { entries, firstCursor, nextCursor, step, type Choice, type InputCursor } from "./battle-input";
+import {
+  attachKeyboard,
+  attachReleaseOnHide,
+  attachSwipe,
+  battleKeyChoice,
+  createHoldRepeater,
+  forwardStep,
+  type Action,
+} from "./input/swipe";
 import { dungeonLayout, layoutWarnings, regions } from "./layout";
 import { createPlayer } from "./playback";
 import { createRunGate } from "./run-gate";
@@ -26,7 +37,7 @@ import { formatMessage } from "./views/message";
 import { createTitleScreen } from "./views/title";
 import { townEntries, townEntryLabel, type TownEntry, type TownPage } from "./views/town";
 
-export type Route = "title" | "creation" | "town" | "dungeon";
+export type Route = "title" | "creation" | "town" | "dungeon" | "battle";
 export type Overlay = null | "map" | "debug";
 
 export type App = {
@@ -64,6 +75,14 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   const isBusy = (): boolean => gate.busy();
   /** 同じ再生の中のメッセージ窓のタップ回数 */
   let taps = 0;
+  /** UI-54: 戦闘の入力の段階（手動で入力待ちのメンバーがいるときだけ非 null） */
+  let cursor: InputCursor | null = null;
+  /** 受け付けを待っている battle.input のメンバー。次の sync で nextCursor の起点にする */
+  let advanceFrom: string | null = null;
+  /** UI-44 の例外: オート中の「オート解除」の予約。連鎖の次の段で battle.auto off を送る */
+  let stopRequested = false;
+  /** オートの連鎖（runChain）の途中か。段の間（1 フレーム譲る間）は門が空くので別に持つ */
+  let chaining = false;
 
   const scale = (): number => layout?.scale ?? 1;
 
@@ -143,10 +162,16 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     },
   });
 
-  /** core の screen イベント。M2 の画面は title / town / dungeon だけ */
+  /** core の screen イベント。M3 の画面は title / town / dungeon / battle */
   const onScreen = (to: Screen): void => {
-    if (to === "title" || to === "town" || to === "dungeon") {
+    if (to === "title" || to === "town" || to === "dungeon" || to === "battle") {
       if (to === "town") townPage = "menu";
+      if (to === "battle") {
+        // 新しい戦闘。入力の段階は再生の最後の sync で battleMenu から作り直す
+        cursor = null;
+        advanceFrom = null;
+        stopRequested = false;
+      }
       showRoute(to);
       // 操作は再生の最後の sync で出し直す
       if (to !== "title") play.controls.setMode("none");
@@ -155,8 +180,24 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
 
   /** state を描く（再生の最後に 1 回） */
   const sync = (st: GameState): void => {
-    if (route !== "town" && route !== "dungeon") return;
+    if (route !== "town" && route !== "dungeon" && route !== "battle") return;
     play.party.render(st.party);
+    if (route === "battle") {
+      play.setMode("battle");
+      const menu = battleMenu(st, data);
+      if (menu !== null) {
+        play.battle.setGroups(menu.groups);
+        // 受け付けた直後は並び順で次の入力待ちへ、それ以外（新しいラウンド・オートの段）は先頭の入力待ちから
+        cursor = advanceFrom !== null ? nextCursor(menu, advanceFrom) : firstCursor(menu);
+      } else {
+        cursor = null;
+      }
+      advanceFrom = null;
+      syncControls();
+      return;
+    }
+    play.party.setActive(null);
+    play.battle.highlight(null);
     if (route === "town") {
       play.setMode("town");
       play.header.setText(t("town.title"));
@@ -199,6 +240,10 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       c.setMode("list");
       return;
     }
+    if (route === "battle") {
+      syncBattleControls();
+      return;
+    }
     if (route !== "dungeon") return;
     if (overlay === "map") {
       c.setMode("close");
@@ -215,12 +260,65 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     c.setMode("dpad");
   };
 
+  /**
+   * UI-54: 戦闘の header・操作領域・入力中の名前・対象の枠を、battleMenu と cursor から描く。
+   * オート中は「オート解除」だけ（予約後は文言を変える）。手動は入力の段階の選択肢（command は 8 枠、それ以外は一覧）。
+   */
+  const syncBattleControls = (): void => {
+    const c = play.controls;
+    const menu = battleMenu(state, data);
+    if (menu === null) {
+      c.setMode("none");
+      return;
+    }
+    if (menu.auto) {
+      play.party.setActive(null);
+      play.battle.highlight(null);
+      play.header.setText(t("battle.autoOn"));
+      c.setAutoStop(t(stopRequested ? "battle.autoStopping" : "battle.cmd.autoStop"), () => requestAutoStop());
+      c.setMode("autoStop");
+      return;
+    }
+    const cur = cursor;
+    if (cur === null) {
+      // 入力待ちがいない（揃って resolve を待つ間など）
+      play.party.setActive(null);
+      play.battle.highlight(null);
+      c.setMode("none");
+      return;
+    }
+    const member = menu.members.find((m) => m.id === cur.memberId);
+    play.header.setText(formatMessage(t(`battle.prompt.${cur.stage}`), { name: member?.name ?? "" }));
+    play.party.setActive(cur.memberId);
+    const list = entries(menu, cur, strings);
+    let target: number | null = null;
+    if (cur.stage === "enemy") {
+      for (const e of list) {
+        if (e.choice.kind === "group") {
+          target = e.choice.index;
+          break;
+        }
+      }
+    }
+    play.battle.highlight(target);
+    const items = list.map(
+      (e): ControlItem => ({ label: e.label, disabled: e.disabled, onSelect: () => guard(() => chooseBattle(e.choice)) }),
+    );
+    if (cur.stage === "command") {
+      c.setBattleMenu(items);
+      c.setMode("battle");
+    } else {
+      c.setList(items);
+      c.setMode("list");
+    }
+  };
+
   const showRoute = (r: Route): void => {
     route = r;
     title.el.style.display = r === "title" ? "" : "none";
     creation.el.style.display = r === "creation" ? "" : "none";
-    play.el.style.display = r === "town" || r === "dungeon" ? "" : "none";
-    if (r === "town" || r === "dungeon") play.setMode(r);
+    play.el.style.display = r === "town" || r === "dungeon" || r === "battle" ? "" : "none";
+    if (r === "town" || r === "dungeon" || r === "battle") play.setMode(r);
   };
 
   // ---------------------------------------------------------------- コマンド
@@ -249,16 +347,93 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   });
   const run = (cmd: Command): Promise<DispatchResult | null> => gate.run(cmd);
 
+  // ---------------------------------------------------------------- 戦闘
+  /** 段の間で 1 フレーム譲る（1 回だけの requestAnimationFrame。常駐のループではない） */
+  const nextFrame = (): Promise<void> =>
+    new Promise((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+
+  const chainDeps: ChainDeps = {
+    run: (cmd) => run(cmd),
+    menu: (): BattleMenu | null => battleMenu(state, data),
+    stopRequested: () => stopRequested,
+    clearStop: () => {
+      stopRequested = false;
+    },
+    yieldFrame: nextFrame,
+  };
+
+  /** UI-54 / CB-43: first を送り、chainDecision が stop を返すまで battle.resolve / battle.auto off を送り続ける */
+  const runBattle = async (first: Command): Promise<void> => {
+    if (chaining) return;
+    chaining = true;
+    try {
+      await runChain(first, chainDeps);
+    } finally {
+      chaining = false;
+      // rejected のときは再生も sync も無いので cursor のまま描き直す（受け付けられたときは sync 済みで、描き直しても同じ）
+      advanceFrom = null;
+      if (!isBusy()) syncControls();
+    }
+  };
+
+  /** 遭遇の直後など、入力を待たずに進める状態（オート中・入力が揃っている）なら連鎖を始める */
+  const kickBattle = (): void => {
+    if (chaining || isBusy()) return;
+    const menu = battleMenu(state, data);
+    if (menu === null) return;
+    if (menu.auto) void runBattle(stopRequested ? { type: "battle.auto", on: false } : { type: "battle.resolve" });
+    else if (menu.ready) void runBattle({ type: "battle.resolve" });
+  };
+
+  /** 入力の段階で 1 つ選ぶ。送る Command があれば連鎖で送る（UI-35。使えるか・揃ったかは core が決める） */
+  const chooseBattle = (choice: Choice): void => {
+    const menu = battleMenu(state, data);
+    const cur = cursor;
+    if (menu === null || cur === null || menu.auto) return;
+    const r = step(menu, cur, choice);
+    if (r.send === null) {
+      cursor = r.cursor;
+      syncBattleControls();
+      return;
+    }
+    if (r.send.type === "battle.input") advanceFrom = cur.memberId;
+    void runBattle(r.send);
+  };
+
+  /**
+   * UI-44 の例外: オート中の「オート解除」。連鎖・再生の途中なら予約だけ立てて文言を変える（連鎖の次の段で battle.auto off）。
+   * 連鎖の外なら battle.auto off をそのまま送る。
+   */
+  const requestAutoStop = (): void => {
+    const menu = battleMenu(state, data);
+    if (menu === null || !menu.auto) return;
+    if (chaining || isBusy()) {
+      if (stopRequested) return;
+      stopRequested = true;
+      play.controls.setAutoStop(t("battle.autoStopping"), () => requestAutoStop());
+      return;
+    }
+    stopRequested = false;
+    void runBattle({ type: "battle.auto", on: false });
+  };
+
   /** 状態を変えるコマンドの直後、再生を始める前の差し込み口（M4 のオートセーブ。§3-8、SV-02） */
   const afterCommand = (_st: GameState, _events: readonly GameEvent[]): void => {};
 
-  /** UI-31: 前進の長押し。1 歩ごとに再生の終わりを待ち、ちょうど [moved] だけのときに続ける */
+  /** UI-31: 前進の長押し。1 歩ごとに再生の終わりを待ち、[moved] の後が hpChanged だけのときに続ける（canRepeat） */
   const repeater = createHoldRepeater({
     ms: () => store.get().holdRepeatMs,
     fire: () =>
       forwardStep({
         ready: () => route === "dungeon" && overlay === null && state.pendingChoice === null,
-        move: () => run({ type: "dungeon.move" }),
+        move: () =>
+          run({ type: "dungeon.move" }).then((r) => {
+            // CB-01 の遭遇。敵の奇襲の後などで入力が要らない状態なら、そのまま連鎖で進める
+            if (r !== null && !r.rejected && route === "battle") kickBattle();
+            return r;
+          }),
         pending: () => state.pendingChoice,
         overlayOpen: () => overlay !== null,
       }),
@@ -266,7 +441,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
 
   /** 再生中のボタンは何もしない（UI-44） */
   const guard = (fn: () => void): void => {
-    if (isBusy()) return;
+    if (isBusy() || chaining) return;
     fn();
   };
 
@@ -312,7 +487,12 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   // ---------------------------------------------------------------- 入力
   /** Action → Command / 画面の操作。変換は app だけが行う */
   const handleAction = (a: Action): void => {
-    if (isBusy()) return; // UI-44
+    // UI-44 の例外: オート中の「オート解除」（Esc / Enter / 1）は再生中も予約として受ける
+    if (route === "battle" && overlay === null && battleMenu(state, data)?.auto === true) {
+      if (battleKeyChoice(a, "autoStop") === "stop") requestAutoStop();
+      if (a !== "debug") return;
+    }
+    if (isBusy() || chaining) return; // UI-44
     if (a === "debug") {
       if (overlay === "debug") closeDebug();
       else openDebug();
@@ -352,6 +532,14 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
         else if (a === "left" || a === "right" || a === "around") void run({ type: "dungeon.turn", dir: a });
         else if (a === "map") openMap();
         else if (typeof a === "object") play.controls.select(a.menu);
+        return;
+      }
+      case "battle": {
+        const cur = cursor;
+        if (cur === null) return;
+        const k = battleKeyChoice(a, cur.stage === "command" ? "grid" : "list");
+        if (k === "back") chooseBattle({ kind: "back" });
+        else if (typeof k === "number") play.controls.select(k);
         return;
       }
     }

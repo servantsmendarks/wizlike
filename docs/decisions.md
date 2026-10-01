@@ -252,3 +252,6 @@
 - 2026-10-01 presenter(M3): UI-40 のダイスは、続けて来たもの（先手判定の 2 件）を消さずに積み（最大 2 行、上へ伸ばす）、続く message の間は残す。message と dice 以外の次のイベントの前、または再生の終わりに消す（出ているときだけ hide を呼ぶ）。skip では animate を呼ばずに最終の段だけを描く。
 - 2026-10-01 presenter(M3): 迷宮から戦闘への切り替えは、view.fade（viewFadeMs）の中間で screens.show と battle.clear を行う（線画がフェードアウトして敵の層が出る）。前の戦闘の列を消すため PlayerDeps.battle に clear を足す。
 - 2026-10-01 presenter(M3): 押せない選択肢（呪文なしの「呪文」、ボス戦の「逃げる」、MP 不足の呪文など）は ControlItem.disabled で dim 色と aria-disabled にし、押しても select でも onSelect を呼ばない。battle-input の step も disabled の選択では送らない（cursor 不変）。最終的な可否は core の rejected が決める。パーティ欄の状態の列は、死亡・灰ならそれだけ、生存なら party.status.<id> を空白区切りで出す（欄名は既存テストに合わせて life のまま）。
+- 2026-10-01 presenter(M3): app.ts の戦闘の結線。Route に battle を足し、入力の段階は battleMenu と battle-input の cursor だけで決める。battle.input が受け付けられた直後の sync では nextCursor、それ以外では firstCursor にする（受け付けたかどうかは、再生の最後の sync が呼ばれたかで知る。rejected のときは sync が無いので cursor を変えない）。対象の選択中は、一覧の先頭の対象グループを highlight の枠で示し、列の番号は全列に出す。
+- 2026-10-01 presenter(M3): 遭遇した dungeon.move の後、オート中または menu.ready なら、入力を待たずに連鎖（battle.resolve）を始める（kickBattle）。敵の奇襲の後に誰も入力できない状態で止まらないようにするため。
+- 2026-10-01 presenter(M3): UI-44 に例外を 1 つ足す。オート中の「オート解除」（ボタンは pointerdown、キーは Esc / Enter / 1）は、連鎖・再生の途中なら予約だけ立て、連鎖の次の段で battle.auto off を送る。連鎖・再生の外で押したら予約にせず battle.auto off をすぐ送る（予約が使われずに残るのを防ぐため）。連鎖の途中は段の間の 1 フレームで門が空くので chaining フラグで判定し、その間の通常の入力は捨てる。
