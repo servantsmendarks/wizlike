@@ -138,8 +138,6 @@ export type Floor = {
 
 // ===================== 潜行（dungeon.md §6） =====================
 
-/** 開けた扉。共有辺を一意にするため dir は N か W に正規化する（S の辺は (x, y+1, "N")、E の辺は (x+1, y, "W")） */
-export type DoorRef = { floor: number; x: number; y: number; dir: "N" | "W" };
 /** 発動済みの罠のセル（E4）。M5 で処理済みのイベントセル（DG-22）もここに入れる */
 export type CellRef = { floor: number; x: number; y: number };
 /** DG-40。items は ItemInstance.id */
@@ -156,8 +154,6 @@ export type Dive = {
   facing: Facing;
   /** DG-13: キーは階番号の文字列 "1".."floors"。値はセル添字（y*width+x）の昇順・重複なしの配列（Set は使わない。§3-11） */
   explored: Record<string, number[]>;
-  /** DG-10 */
-  openedDoors: DoorRef[];
   /** E4 */
   clearedCells: CellRef[];
   /** DG-31/32。M2 では常に false */
@@ -183,13 +179,13 @@ export type PendingChoice = { kind: "stairs"; promptKey: string; options: Choice
 export type ViewPoint = { floor: number; pos: Pos; facing: Facing };
 /**
  * DG-12。depth 0 は自分のセル。lane は向きに対する相対（-1 左 / 0 正面列 / 1 右）。
- * front / left / right はそのセルの、向きに対する前・左・右の辺（開けた扉は open）。x, y は絶対座標（テストと explored 用。描画には使わない）。
+ * front / left / right はそのセルの、向きに対する前・左・右の辺（扉は通り抜けた後も door。DG-10）。x, y は絶対座標（テストと explored 用。描画には使わない）。
  * セルの種別は返さない（罠・イベント・ボスを表示層に漏らさない）。
  */
 export type VisibleCell = { depth: number; lane: -1 | 0 | 1; x: number; y: number; front: Edge; left: Edge; right: Edge };
 /** UI-24 の記号。罠・イベント・ボス・部屋・通路はすべて plain（地図で明かさない） */
 export type MapCellKind = "plain" | "stairsUp" | "stairsDown";
-/** 辺は絶対方位（開けた扉は open、未開の扉は door） */
+/** 辺は絶対方位（扉は通り抜けた後も door。DG-10） */
 export type MapCell = { x: number; y: number; kind: MapCellKind; n: Edge; e: Edge; s: Edge; w: Edge };
 /** DG-13 / UI-24。cells は探索済みセルだけ（添字の昇順） */
 export type MapView = { dungeonId: string; floor: number; width: number; height: number; pos: Pos; facing: Facing; cells: MapCell[] };

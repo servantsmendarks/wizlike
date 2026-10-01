@@ -140,7 +140,6 @@ describe("dungeon.enter", () => {
       pos: f1.stairsUp,
       facing,
       explored: dive.explored,
-      openedDoors: [],
       clearedCells: [],
       bossDefeated: false,
       ledger: { items: [], gold: 0 },
@@ -224,7 +223,7 @@ describe("移動と旋回", () => {
     expect(rw.state.dive!.explored).toEqual(w.dive!.explored);
   });
 
-  test("DG-10 扉: [message dungeon.door, moved, …] の順。openedDoors に N/W に正規化した 1 件が入り、以後その辺は両側から open。戻って再び通っても、メッセージも追加も無い", () => {
+  test("DG-10 扉: [message dungeon.door, moved, …] の順。扉は通り抜けても door のまま（両側から）で、戻って通っても同じ向きで通っても毎回 message dungeon.door。dive に扉の記録は無い", () => {
     const seen = new Set<Facing>();
     for (let seed = 1; seed <= 40 && seen.size < 4; seed++) {
       const s0 = enterD01(seed);
@@ -235,29 +234,25 @@ describe("移動と旋回", () => {
         const s = placeAt(s0, a.pos, a.facing);
         const r = run(s, MOVE, DATA0);
         expect(kinds(r.events).slice(0, 2)).toEqual(["message:dungeon.door", "moved"]);
-        const norm =
-          a.facing === "N" ? { x: a.pos.x, y: a.pos.y, dir: "N" }
-          : a.facing === "W" ? { x: a.pos.x, y: a.pos.y, dir: "W" }
-          : a.facing === "S" ? { x: a.pos.x, y: a.pos.y + 1, dir: "N" }
-          : { x: a.pos.x + 1, y: a.pos.y, dir: "W" };
-        expect(r.state.dive!.openedDoors).toEqual([{ floor: 1, ...norm }]);
+        expect(r.state.dive!.pos).toEqual(a.target);
+        expect(Object.keys(r.state.dive!).sort()).toEqual(Object.keys(s.dive!).sort());
+        expect("openedDoors" in r.state.dive!).toBe(false);
         const f2 = floorOf(r.state.dive!, data);
-        expect(edgeOf(cellAt(f2, a.pos.x, a.pos.y), a.facing)).toBe("open");
-        expect(edgeOf(cellAt(f2, a.target.x, a.target.y), opposite(a.facing))).toBe("open");
-        // 元の位置から見ると、その辺は open として見える（visibleCells は floorOf の後の値）
+        expect(edgeOf(cellAt(f2, a.pos.x, a.pos.y), a.facing)).toBe("door");
+        expect(edgeOf(cellAt(f2, a.target.x, a.target.y), opposite(a.facing))).toBe("door");
+        // 元の位置から見ても、その辺は door のまま見え、奥を遮る（DG-12）
         const back = placeAt(r.state, a.pos, a.facing);
         const vis = visibleCells(back, data);
-        expect(vis.find((v) => v.depth === 0 && v.lane === 0)!.front).toBe("open");
-        expect(vis.some((v) => v.depth === 1 && v.lane === 0)).toBe(true);
-        // 反対側から戻って通っても、メッセージも追加も無い
+        expect(vis.find((v) => v.depth === 0 && v.lane === 0)!.front).toBe("door");
+        expect(vis.some((v) => v.depth === 1 && v.lane === 0)).toBe(false);
+        // 反対側から戻って通っても、毎回 message dungeon.door
         const rev = placeAt(r.state, a.target, opposite(a.facing));
         const r2 = run(rev, MOVE, DATA0);
-        expect(kinds(r2.events)).toEqual(["moved"]);
-        expect(r2.state.dive!.openedDoors).toEqual(r.state.dive!.openedDoors);
+        expect(kinds(r2.events).slice(0, 2)).toEqual(["message:dungeon.door", "moved"]);
+        expect(r2.state.dive!.pos).toEqual(a.pos);
         // 同じ向きで再び通っても同じ
         const r3 = run(back, MOVE, DATA0);
-        expect(kinds(r3.events)[0]).toBe("moved");
-        expect(r3.state.dive!.openedDoors).toHaveLength(1);
+        expect(kinds(r3.events).slice(0, 2)).toEqual(["message:dungeon.door", "moved"]);
       }
     }
     expect([...seen].sort()).toEqual(["E", "N", "S", "W"]);
@@ -436,18 +431,15 @@ describe("視野（DG-12）", () => {
     ]);
   });
 
-  test("DG-12 開けた扉（floorOf の後）は通す", () => {
+  test("DG-10/DG-12 通り抜けた扉も視線を遮る（往復した後も、扉の手前からは扉の奥が見えない）", () => {
     const { state, a } = findSituation((c) => c.kind === "corridor" || c.kind === "room", { ok: (e) => e === "door" });
     const before = visibleCells(state, data);
     expect(before.find((v) => v.depth === 0 && v.lane === 0)!.front).toBe("door");
-    const s = cloneState(state);
-    const dir = a.facing;
-    s.dive!.openedDoors.push(
-      dir === "N" || dir === "W" ? { floor: 1, x: a.pos.x, y: a.pos.y, dir } : dir === "S" ? { floor: 1, x: a.pos.x, y: a.pos.y + 1, dir: "N" } : { floor: 1, x: a.pos.x + 1, y: a.pos.y, dir: "W" },
-    );
-    const after = visibleCells(s, data);
-    expect(after.find((v) => v.depth === 0 && v.lane === 0)!.front).toBe("open");
-    expect(after.some((v) => v.depth === 1 && v.x === a.target.x && v.y === a.target.y)).toBe(true);
+    expect(before.some((v) => v.x === a.target.x && v.y === a.target.y)).toBe(false);
+    const through = run(state, MOVE, DATA0).state;
+    const back = run(placeAt(through, a.target, opposite(a.facing)), MOVE, DATA0).state;
+    const again = placeAt(back, a.pos, a.facing);
+    expect(visibleCells(again, data)).toEqual(before);
   });
 
   test("DG-12 viewDepth は config.dungeon.viewDepth を使う（2 にすると depth3 が返らない）。visibleCells の at を渡すと、その視点で返る。dive が null なら []", () => {
@@ -509,7 +501,7 @@ describe("オートマップ（DG-13）", () => {
     expect(Object.keys(s.dive!.explored)).toEqual(["1"]);
   });
 
-  test("DG-13/UI-24 mapView: 探索済みセルだけ、辺は実効の値（開けた扉は open）、trap/event/boss/room は plain、stairsUp/stairsDown は記号。dive が null なら null", () => {
+  test("DG-13/UI-24 mapView: 探索済みセルだけ、辺は生成のまま（通った扉も door）、trap/event/boss/room は plain、stairsUp/stairsDown は記号。dive が null なら null", () => {
     expect(mapView(newGame(1), data)).toBeNull();
     const s0 = enterD01(1);
     const mv0 = mapView(s0, data)!;
@@ -536,14 +528,14 @@ describe("オートマップ（DG-13）", () => {
       expect(seenKinds.has("trap")).toBe(true);
       expect(seenKinds.has(floorNo === 1 ? "stairsDown" : "boss")).toBe(true);
     }
-    // 開けた扉は open
+    // 通り抜けた扉も door のまま描く（UI-24）
     const { state, a } = findSituation((c) => c.kind === "corridor" || c.kind === "room", { ok: (e) => e === "door" });
     const r = run(state, MOVE, DATA0);
     const mv = mapView(r.state, data)!;
     const here = mv.cells.find((c) => c.x === a.target.x && c.y === a.target.y)!;
     const back = opposite(a.facing);
     const edge = back === "N" ? here.n : back === "E" ? here.e : back === "S" ? here.s : here.w;
-    expect(edge).toBe("open");
+    expect(edge).toBe("door");
   });
 });
 

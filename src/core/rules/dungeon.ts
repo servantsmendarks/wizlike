@@ -1,5 +1,5 @@
 // 潜行中のルール（DG-03, DG-10〜14, DG-20, DG-40, CB-01 の仮実装, CH-45/51/54）と、表示層向けの問い合わせ（visibleCells, mapView）。
-// 迷宮の構造は state に入れず、dive.diveSeed から毎回作り直す（DG-03）。開けた扉と発動済みの罠は dive の記録を重ねる。
+// 迷宮の構造は state に入れず、dive.diveSeed から毎回作り直す（DG-03）。発動済みの罠は dive の記録を重ねる。扉は通り抜けても扉のまま（DG-10）。
 import type { GameData } from "../data/index";
 import { chance, nextUint32, randInt, rollDice } from "../rng";
 import { dungeonOf } from "../state";
@@ -27,7 +27,6 @@ import {
   inBounds,
   isPassable,
   opposite,
-  setEdge,
   step,
   turnLeft,
   turnRight,
@@ -35,8 +34,9 @@ import {
 import { loseSan } from "./san";
 
 /**
- * 潜行中の階の実効の構造。generateDive(...)[floorNo-1] に、その階の openedDoors（open にする）と
+ * 潜行中の階の実効の構造。generateDive(...)[floorNo-1] に、その階の
  * clearedCells（kind を roomId !== null ? "room" : "corridor" に、eventId と trapId を null に）を重ねる。
+ * 辺は生成のまま（扉は通り抜けても door。DG-10）。
  */
 export function floorOf(dive: Dive, data: GameData, floorNo: number = dive.floor): Floor {
   const def = dungeonOf(data, dive.dungeonId);
@@ -44,9 +44,6 @@ export function floorOf(dive: Dive, data: GameData, floorNo: number = dive.floor
   // generateDive(...)[floorNo-1] と同じ。下の階は上の階に依存しない（DG-06 は上の階の stairsDown だけ）ので、floorNo までで止める
   let f = generateFloor(def, data.config.dungeon, dive.diveSeed, 1, null);
   for (let n = 2; n <= floorNo; n++) f = generateFloor(def, data.config.dungeon, dive.diveSeed, n, f.stairsDown);
-  for (const d of dive.openedDoors) {
-    if (d.floor === floorNo) setEdge(f, d.x, d.y, d.dir, "open");
-  }
   for (const c of dive.clearedCells) {
     if (c.floor !== floorNo) continue;
     const cell = cellAt(f, c.x, c.y);
@@ -177,7 +174,6 @@ export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
     pos: { x: f.stairsUp.x, y: f.stairsUp.y },
     facing,
     explored: {},
-    openedDoors: [],
     clearedCells: [],
     bossDefeated: false,
     ledger: { items: [], gold: 0 },
@@ -207,27 +203,6 @@ export function turn(ctx: RuleContext, dir: "left" | "right" | "around"): void {
 // ---------------------------------------------------------------------------
 // 前進（DG-10, DG-11, DG-13, DG-14, DG-20, CB-01）
 
-/** 共有辺を N / W に正規化して記録する（重複は足さない） */
-function addOpenedDoor(dive: Dive, pos: Pos, facing: Facing): void {
-  let ref: { floor: number; x: number; y: number; dir: "N" | "W" };
-  switch (facing) {
-    case "N":
-      ref = { floor: dive.floor, x: pos.x, y: pos.y, dir: "N" };
-      break;
-    case "W":
-      ref = { floor: dive.floor, x: pos.x, y: pos.y, dir: "W" };
-      break;
-    case "S":
-      ref = { floor: dive.floor, x: pos.x, y: pos.y + 1, dir: "N" };
-      break;
-    case "E":
-      ref = { floor: dive.floor, x: pos.x + 1, y: pos.y, dir: "W" };
-      break;
-  }
-  const dup = dive.openedDoors.some((d) => d.floor === ref.floor && d.x === ref.x && d.y === ref.y && d.dir === ref.dir);
-  if (!dup) dive.openedDoors.push(ref);
-}
-
 export function moveForward(ctx: RuleContext): void {
   const { state, data } = ctx;
   const dive = requireDive(state);
@@ -239,11 +214,8 @@ export function moveForward(ctx: RuleContext): void {
     ctx.events.push({ kind: "message", key: "dungeon.blocked" });
     return;
   }
-  if (e === "door") {
-    ctx.events.push({ kind: "message", key: "dungeon.door" });
-    addOpenedDoor(dive, dive.pos, dive.facing);
-    setEdge(f, dive.pos.x, dive.pos.y, dive.facing, "open");
-  }
+  // DG-10: 扉は通り抜けるたびに語る。辺は door のまま（開けた記録を持たない。ユーザー決定）
+  if (e === "door") ctx.events.push({ kind: "message", key: "dungeon.door" });
   dive.pos = step(dive.pos, dive.facing);
   ctx.events.push({ kind: "moved", pos: { x: dive.pos.x, y: dive.pos.y }, facing: dive.facing });
   explore(ctx, dive, f);
