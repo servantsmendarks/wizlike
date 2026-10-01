@@ -1,7 +1,8 @@
 // CLAUDE.md §3 のうち、ソースを読めば機械的に確かめられるものを検査する。
 // - §3-1: core は DOM / Web API / タイマー / Math.random / Date を使わず、core 内と data/ の型しか import しない。
 //   （DOM の型そのものは tsconfig.core.json の lib ES2022 で typecheck が弾く。ここでは名前で検出する。）
-// - §3-10: presenter と表示層の入口 src/main.ts の文字列リテラルに日本語を書かない（文言は data/strings.json）。
+// - §3-10: presenter と表示層の入口 src/main.ts、src/save の文字列リテラルに日本語を書かない（文言は data/strings.json）。
+// - src/save は core を import type だけで読み、src/save と src/core の外を import しない（M4 のセーブの設計）。
 import { describe, expect, test } from "vitest";
 
 const coreSources = import.meta.glob("../src/core/**/*.ts", {
@@ -10,7 +11,7 @@ const coreSources = import.meta.glob("../src/core/**/*.ts", {
   eager: true,
 }) as Record<string, string>;
 
-const presenterSources = import.meta.glob(["../src/presenter/**/*.ts", "../src/main.ts"], {
+const presenterSources = import.meta.glob(["../src/presenter/**/*.ts", "../src/main.ts", "../src/save/**/*.ts"], {
   query: "?raw",
   import: "default",
   eager: true,
@@ -289,6 +290,29 @@ function importViolations(file: string, src: string, coreFiles: ReadonlySet<stri
   return out;
 }
 
+/** src/save の import の検査: src/save 内は可、src/core は import type だけ、それ以外（npm・presenter・data）は不可。 */
+function saveImportViolations(file: string, src: string): string[] {
+  const out: string[] = [];
+  for (const ref of importsOf(src)) {
+    if (ref.dynamic) {
+      out.push(`${ref.spec}: dynamic import / require is not allowed in src/save`);
+      continue;
+    }
+    const target = resolveRelative(file, ref.spec);
+    if (target === null) {
+      out.push(`"${ref.spec}": src/save may only import relative paths inside src/save or src/core types`);
+      continue;
+    }
+    if (target.startsWith("src/save/")) continue;
+    if (target.startsWith("src/core/")) {
+      if (!ref.typeOnly) out.push(`"${ref.spec}": src/save may import src/core with "import type" only`);
+      continue;
+    }
+    out.push(`"${ref.spec}": resolves outside src/save and src/core (${target})`);
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // §3-10 の日本語検出（ひらがな、カタカナ、CJK 統合漢字と拡張 A、CJK 記号、全角形）。
 
@@ -328,17 +352,46 @@ describe("CLAUDE.md §3-1 core の純粋性", () => {
   });
 });
 
-describe("CLAUDE.md §3-10 presenter と main.ts に日本語の文字列リテラルが無い", () => {
-  test("CLAUDE.md §3-10 presenter と main.ts のソースを読めている", () => {
+describe("CLAUDE.md §3-10 presenter と main.ts と src/save に日本語の文字列リテラルが無い", () => {
+  test("CLAUDE.md §3-10 presenter と main.ts と src/save のソースを読めている", () => {
     expect(Object.keys(presenterSources).length).toBeGreaterThan(1);
     expect(Object.keys(presenterSources).map(repoPath)).toContain("src/main.ts");
+    expect(Object.keys(presenterSources).map(repoPath)).toContain("src/save/saves.ts");
   });
 
-  test("CLAUDE.md §3-10 presenter と main.ts の文字列リテラルに日本語が無い（コメントは除く）", () => {
+  test("CLAUDE.md §3-10 presenter と main.ts と src/save の文字列リテラルに日本語が無い（コメントは除く）", () => {
     const problems = Object.entries(presenterSources).flatMap(([file, src]) =>
       japaneseLiterals(src).map((s) => `${repoPath(file)}: ${JSON.stringify(s)}`),
     );
     expect(problems).toEqual([]);
+  });
+});
+
+describe("src/save の import", () => {
+  const saveEntries = Object.entries(presenterSources)
+    .map(([k, v]) => [repoPath(k), v] as const)
+    .filter(([k]) => k.startsWith("src/save/"));
+
+  test("SV-20 src/save のソースを読めている", () => {
+    expect(saveEntries.map(([k]) => k)).toContain("src/save/saves.ts");
+  });
+
+  test("SV-20 src/save は core を import type だけで読み、src/save と src/core の外を import しない", () => {
+    const problems = saveEntries.flatMap(([file, src]) => saveImportViolations(file, src).map((p) => `${file}: ${p}`));
+    expect(problems).toEqual([]);
+  });
+
+  test("SV-20 検査器: core の値の import・presenter・npm・動的 import を検出する", () => {
+    const ok = ['import type { GameState } from "../core/types";', 'import { summarize } from "./record";'].join("\n");
+    expect(saveImportViolations("src/save/x.ts", ok)).toEqual([]);
+    const bad = [
+      'import { execute } from "../core/engine";',
+      'import { createApp } from "../presenter/app";',
+      'import { openDB } from "idb";',
+      'const m = await import("./record");',
+      'import config from "../../data/config.json";',
+    ].join("\n");
+    expect(saveImportViolations("src/save/x.ts", bad)).toHaveLength(5);
   });
 });
 
