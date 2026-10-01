@@ -90,3 +90,4 @@
 - 2026-10-01 tests: tests/data.test.ts に検証の網羅性の恒久テストを置く。実データの全ての値（葉と配列・オブジェクト自身）を別の JSON 型に差し替えるとそのファイルの issue になること、strings.json のトップレベルを除く全てのオブジェクトに未知のキーを足すと検出されることを確かめ、検出されなかったパスを全件まとめて報告する。型を変えても正当な値の除外リスト（TYPE_SWAP_EXEMPT）は、現時点で該当が無いので空。フィールドの追加時に検証の書き漏れを機械的に見つけるため。
 - 2026-10-01 data: monsters.json の floors を削除し、出現場所は dungeons[].encounterTable のみを正とした（CB-03 に明記し、検証と型からも除いたので floors があれば未知キーのエラーになる）。66 行目（floors の形だけを検証）と 75 行目（monsters[].floors【未定】）を撤回し、解決とする。ユーザー指示。
 - 2026-10-01 docs: CB-03 に「グループごとの敵の種類はいる階の encounterTable から weight の重みで選ぶ」と書いた。encounterTable の形（monster と weight の組）から読める最も単純な解釈のため。
+- 2026-10-01 docs/data: DG-05 の部屋数 3〜6 は既定値（config.dungeon.defaultRooms【仮】）とし、dungeons[].rooms があればそれを優先する（rooms は任意フィールド）。76 行目（d02.rooms【未定】）を解決し、d02 の [4,7] は rooms 優先により正当とする。defaultRooms は 1 以上の整数の [min, max] で検証し、rooms の検査（0 以上の整数の [min, max]）は従来どおり。ユーザー指示。

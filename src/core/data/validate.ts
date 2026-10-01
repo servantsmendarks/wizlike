@@ -190,6 +190,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       hpGainMin: I(POS_INT),
     }),
     learning: F({ base: I(), perLevelDiff: I(), guaranteeDiff: I(), statPivot: I(), statPerPoint: I() }),
+    dungeon: F({ defaultRooms: pair(POS_INT) }), // DG-05
     combat: F({
       hitBase: I(),
       hitPerLevel: I(),
@@ -614,7 +615,7 @@ function validateDungeons(ctx: Ctx, v: unknown, ix: Index): void {
       floors: I(POS_INT),
       width: I(POS_INT),
       height: I(POS_INT),
-      rooms: pair(NON_NEG),
+      rooms: opt(pair(NON_NEG)), // DG-05: 省略時は config.dungeon.defaultRooms
       unlock: nullable(refField(ix.dungeons, "dungeon")),
       encounterRate: F({ room: N(RATIO), corridor: N(RATIO) }), // CB-01
       encounterTable: (c, p, x) => obj(c, p, x, null),

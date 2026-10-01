@@ -58,6 +58,8 @@ export type Config = {
   creation: { bonusBase: number; bonusDie: number; bonusBigChance: number; bonusBig: number };
   growth: { expBase: number; expGrowth: number; hpVitPivot: number; hpVitDivisor: number; hpGainMin: number };
   learning: { base: number; perLevelDiff: number; guaranteeDiff: number; statPivot: number; statPerPoint: number };
+  /** DG-05: dungeons[].rooms を省略したときの部屋数 [min, max] */
+  dungeon: { defaultRooms: [number, number] };
   combat: {
     hitBase: number;
     hitPerLevel: number;
@@ -312,7 +314,8 @@ export type DungeonDef = {
   floors: number;
   width: number;
   height: number;
-  rooms: [number, number];
+  /** DG-05: 部屋数 [min, max]。省略時は config.dungeon.defaultRooms */
+  rooms?: [number, number];
   unlock: string | null;
   encounterRate: { room: number; corridor: number };
   /** キーは階番号の文字列 "1".."floors" */

@@ -113,6 +113,15 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.combat.acMin = r.config.combat.acBase + 1), "config.json", "combat.acMin: CB-20");
     expect(issuesOf((r) => (r.config.combat.acMin = r.config.combat.acBase))).toEqual([]);
   });
+  test("data: DG-05 dungeon.defaultRooms は 1 以上の整数の [min, max]", () => {
+    const p = "dungeon.defaultRooms";
+    expectIssue((r) => (r.config.dungeon.defaultRooms = [6, 3]), "config.json", `${p}: min 6 > max 3`);
+    expectIssue((r) => (r.config.dungeon.defaultRooms = [0, 6]), "config.json", `${p}[0]: expected integer >= 1, got 0`);
+    expectIssue((r) => (r.config.dungeon.defaultRooms = [3, 6.5]), "config.json", `${p}[1]: expected integer`);
+    expectIssue((r) => (r.config.dungeon.defaultRooms = [3]), "config.json", `${p}: expected [min, max] (2 elements), got 1 element(s)`);
+    expectIssue((r) => (r.config.dungeon.defaultRooms = [3, 4, 6]), "config.json", `${p}: expected [min, max] (2 elements), got 3 element(s)`);
+    expectIssue((r) => delete r.config.dungeon.defaultRooms, "config.json", `${p}: missing required field`);
+  });
   test("data: CH-53 confusedRatio < uneasyRatio", () => {
     expectIssue((r) => (r.config.san.confusedRatio = 0.6), "config.json", "CH-53");
   });
@@ -329,6 +338,10 @@ describe("data: dungeons.json", () => {
   });
   test("data: DG-05 rooms は [min, max]", () => {
     expectIssue((r) => (r.dungeons[0].rooms = [6, 3]), "dungeons.json", "[0].rooms: min 6 > max 3");
+  });
+  test("data: DG-05 rooms は省略でき、既定値（config.dungeon.defaultRooms）を超える rooms も通る", () => {
+    expect(issuesOf((r) => delete r.dungeons[0].rooms)).toEqual([]);
+    expect(issuesOf((r) => (r.dungeons[0].rooms = [4, 7]))).toEqual([]);
   });
 });
 
