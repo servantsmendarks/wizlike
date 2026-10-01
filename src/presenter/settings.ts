@@ -7,7 +7,10 @@ export type InputMode = "swipe" | "buttons" | "both";
 export const INPUT_MODES: readonly InputMode[] = ["swipe", "buttons", "both"];
 
 export type Settings = {
-  /** §3-9 / UI-41 */
+  /**
+   * UI-41: 省くのは文字送り・ダイスの動き・点滅・被弾のフラッシュ・揺れ・撃破のフェード・ビューのフェードだけ。
+   * 戦闘の拍の待ち（UI-45）とタップ待ちは省かない（decisions の「衝突(M4.5)」）
+   */
   skipAnimations: boolean;
   /** UI-43: 1 文字あたりの ms。0 で即時 */
   textSpeed: number;
@@ -17,6 +20,8 @@ export type Settings = {
   swipeThreshold: number;
   /** UI-31: ms */
   holdRepeatMs: number;
+  /** UI-45: オートの拍の待ち（ms）。AUTO_BEAT_CHOICES のどれか */
+  autoBeatMs: number;
 };
 
 export const SETTINGS_KEY = "wizlike.settings";
@@ -29,6 +34,27 @@ export const SETTING_RANGES = {
 } as const;
 
 export type NumericSettingKey = keyof typeof SETTING_RANGES;
+
+/** UI-45: オートの拍の待ちの選択肢（ms）。debug パネルの toggle で巡回する（入力欄の選択肢なのでコードの定数） */
+export const AUTO_BEAT_CHOICES = [200, 400, 600] as const;
+
+/** 200 → 400 → 600 → 200。選択肢に無い値は最も近い選択肢の次 */
+export function nextAutoBeat(ms: number): number {
+  const i = AUTO_BEAT_CHOICES.indexOf(snapAutoBeat(ms) as (typeof AUTO_BEAT_CHOICES)[number]);
+  return AUTO_BEAT_CHOICES[(i + 1) % AUTO_BEAT_CHOICES.length] ?? AUTO_BEAT_CHOICES[0];
+}
+
+/** 最も近い選択肢に寄せる（距離が同じなら小さい方）。有限の数でなければ先頭 */
+export function snapAutoBeat(ms: number): number {
+  let best: number = AUTO_BEAT_CHOICES[0];
+  if (!Number.isFinite(ms)) return best;
+  for (const c of AUTO_BEAT_CHOICES) if (Math.abs(c - ms) < Math.abs(best - ms)) best = c;
+  return best;
+}
+
+function isAutoBeat(v: unknown): v is number {
+  return typeof v === "number" && (AUTO_BEAT_CHOICES as readonly number[]).includes(v);
+}
 
 function clampTo(key: NumericSettingKey, v: number): number {
   const r = SETTING_RANGES[key];
@@ -52,10 +78,11 @@ function normalize(src: Record<string, unknown>, fallback: Settings): Settings {
     inputMode: typeof mode === "string" && (INPUT_MODES as readonly string[]).includes(mode) ? (mode as InputMode) : fallback.inputMode,
     swipeThreshold: num("swipeThreshold"),
     holdRepeatMs: num("holdRepeatMs"),
+    autoBeatMs: isAutoBeat(src.autoBeatMs) ? src.autoBeatMs : fallback.autoBeatMs,
   };
 }
 
-/** config の値を範囲に丸めたもの。inputMode は both、skipAnimations は false */
+/** config の値を範囲に丸めたもの。inputMode は both、skipAnimations は false、autoBeatMs は config.ui.autoBeatMs を選択肢に寄せたもの */
 export function defaultSettings(config: Config): Settings {
   return {
     skipAnimations: false,
@@ -63,6 +90,7 @@ export function defaultSettings(config: Config): Settings {
     inputMode: "both",
     swipeThreshold: clampTo("swipeThreshold", config.input.swipeThresholdPx),
     holdRepeatMs: clampTo("holdRepeatMs", config.input.holdRepeatMs),
+    autoBeatMs: snapAutoBeat(config.ui.autoBeatMs),
   };
 }
 
@@ -85,6 +113,7 @@ export function serializeSettings(s: Settings): string {
     skipAnimations: s.skipAnimations,
     textSpeed: s.textSpeed,
     inputMode: s.inputMode,
+    autoBeatMs: s.autoBeatMs,
     swipeThreshold: s.swipeThreshold,
     holdRepeatMs: s.holdRepeatMs,
   });

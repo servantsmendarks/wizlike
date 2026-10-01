@@ -265,7 +265,7 @@ export const CREATION_BUTTONS = {
 /** 作成の入力エラーの表示欄（押せない） */
 export const CREATION_ERROR: Rect = { x: 4, y: 240, w: 232, h: 50 };
 
-/** debug パネルの設定の行 i（0..4）。[-] 値 [+] か、toggle のどちらかを使う */
+/** debug パネルの設定の行 i（0..5。y = 124 + 34i、最後の行は y294..325）。[-] 値 [+] か、toggle のどちらかを使う */
 export function debugRow(i: number): { label: Rect; minus: Rect; value: Rect; plus: Rect; toggle: Rect } {
   const y = 124 + 34 * i;
   return {
@@ -277,7 +277,11 @@ export function debugRow(i: number): { label: Rect; minus: Rect; value: Rect; pl
   };
 }
 
+/** debug パネルの最後に確定したスワイプの表示（押せない 1 行）の上端。設定の行 5 の下 */
+export const DEBUG_SWIPE_Y = 328;
+
+/** debug パネルのボタン（y342 の 72×32 を 3 つ並べる。左端の枠は全員HP1（UI-57）に使う） */
 export const DEBUG_BUTTONS = {
-  reset: { x: 8, y: 362, w: 108, h: 32 },
-  close: { x: 124, y: 362, w: 108, h: 32 },
+  reset: { x: 84, y: 342, w: 72, h: 32 },
+  close: { x: 160, y: 342, w: 72, h: 32 },
 } as const satisfies Record<string, Rect>;

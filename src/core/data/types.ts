@@ -160,6 +160,8 @@ export type Config = {
     layout: { header: number; view: number; message: number; party: number; controls: number };
     /** UI-43 / UI-11: メッセージ履歴に残す件数【仮】 */
     messageHistory: number;
+    /** UI-45: オートの戦闘の拍の待ち（ms）の既定値【仮】。表示層が選択肢（settings.ts の AUTO_BEAT_CHOICES）の最も近い値に寄せる */
+    autoBeatMs: number;
     /** SV-23: 「保存できません」の帯の高さ（論理 px）【仮】。帯はヘッダーの直下に置く */
     saveBannerHeight: number;
   };

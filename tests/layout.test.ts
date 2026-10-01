@@ -5,6 +5,7 @@ import {
   creationRow,
   CONTROLS_MIN_HEIGHT,
   DEBUG_BUTTONS,
+  DEBUG_SWIPE_Y,
   debugRow,
   dungeonLayout,
   layoutWarnings,
@@ -68,7 +69,7 @@ const SCREENS: Record<string, Record<string, Rect>> = {
   // debug パネルは [-] [+] の行と toggle の行が別なので、それぞれの組で検査する
   debugStepper: {
     ...Object.fromEntries(
-      [0, 1, 2, 3, 4].flatMap((i) => [
+      [0, 1, 2, 3, 4, 5].flatMap((i) => [
         [`debugRow(${i}).minus`, debugRow(i).minus],
         [`debugRow(${i}).plus`, debugRow(i).plus],
       ]),
@@ -77,7 +78,7 @@ const SCREENS: Record<string, Record<string, Rect>> = {
     "DEBUG_BUTTONS.close": DEBUG_BUTTONS.close,
   },
   debugToggle: {
-    ...Object.fromEntries([0, 1, 2, 3, 4].map((i) => [`debugRow(${i}).toggle`, debugRow(i).toggle])),
+    ...Object.fromEntries([0, 1, 2, 3, 4, 5].map((i) => [`debugRow(${i}).toggle`, debugRow(i).toggle])),
     "DEBUG_BUTTONS.reset": DEBUG_BUTTONS.reset,
     "DEBUG_BUTTONS.close": DEBUG_BUTTONS.close,
   },
@@ -124,10 +125,14 @@ describe("layout", () => {
     // 押せない欄も画面の内側
     expect(inside(CREATION_ERROR, STAGE)).toBe(true);
     for (let i = 0; i < 6; i++) expect(inside(creationRow(i).label, STAGE)).toBe(true);
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 6; i++) {
       expect(inside(debugRow(i).label, STAGE)).toBe(true);
       expect(inside(debugRow(i).value, STAGE)).toBe(true);
     }
+    // UI-57: 行 5 の下端（y325）の下にスワイプの表示（10px）、その下にボタンの段（y342）
+    expect(debugRow(5).toggle.y).toBe(294);
+    expect(DEBUG_SWIPE_Y).toBeGreaterThanOrEqual(debugRow(5).toggle.y + debugRow(5).toggle.h);
+    for (const b of Object.values(DEBUG_BUTTONS)) expect(b.y).toBeGreaterThanOrEqual(DEBUG_SWIPE_Y + 10);
     // 作成のエラー欄は行とボタンに重ならない
     for (const r of Object.values(SCREENS.creation!)) expect(overlaps(CREATION_ERROR, r)).toBe(false);
   });

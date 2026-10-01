@@ -250,10 +250,10 @@ body {
   text-align: center;
 }
 
+/* top は debug-panel.ts が layout.ts の DEBUG_SWIPE_Y で置く */
 .debug-swipe {
   position: absolute;
   left: 4px;
-  top: 294px;
   width: 232px;
   height: 10px;
   white-space: pre;

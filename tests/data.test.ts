@@ -236,6 +236,12 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.ui.messageHistory = 0), "config.json", "ui.messageHistory: expected integer >= 1, got 0");
     expectIssue((r) => delete r.config.ui.messageHistory, "config.json", "ui.messageHistory: missing required field");
   });
+  test("data: UI-45 ui.autoBeatMs は 1 以上の整数（必須）", () => {
+    expect(config.ui.autoBeatMs).toBe(400);
+    expectIssue((r) => (r.config.ui.autoBeatMs = 0), "config.json", "ui.autoBeatMs: expected integer >= 1, got 0");
+    expectIssue((r) => (r.config.ui.autoBeatMs = 2.5), "config.json", "ui.autoBeatMs: expected integer");
+    expectIssue((r) => delete r.config.ui.autoBeatMs, "config.json", "ui.autoBeatMs: missing required field");
+  });
   test("data: CH-51 san.trap は 0 以上の整数（必須）", () => {
     expectIssue((r) => (r.config.san.trap = -1), "config.json", "san.trap: expected integer >= 0, got -1");
     expectIssue((r) => (r.config.san.trap = 1.5), "config.json", "san.trap: expected integer");

@@ -1,16 +1,17 @@
 // debug パネル（M0 の確認画面 stage-check を置き換える全面 overlay）。ユーザー決定の「デバッグ表示の隣に設定の仮 UI」。
 // - y0..39: M0 の 1px 模様（Android の実機確認に使う）
 // - y42..121: 計測値 8 行（formatStageInfo。M0 の書式を引き継ぐ）
-// - debugRow(0..4): スワイプ閾値（CSS px の換算値も出す）、長押し間隔、文字速度、演出スキップ、入力モード
-// - y294..303: 最後に確定したスワイプの "dx,dy,dir"（ASCII）
-// - DEBUG_BUTTONS: 既定に戻す、閉じる
+// - debugRow(0..5): スワイプ閾値（CSS px の換算値も出す）、長押し間隔、文字速度、演出スキップ、オートの速さ（UI-45）、入力モード
+// - DEBUG_SWIPE_Y（y328..337）: 最後に確定したスワイプの "dx,dy,dir"（ASCII）
+// - DEBUG_BUTTONS（y342）: 既定に戻す、閉じる
 // 値を変えたら、その場で store.set を呼ぶ（保存とすぐの反映は store の購読者が行う）。
 // 計測ラベル（scale, dpr など）は前例どおり ASCII でコードに置く。モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
 import { thresholdCss } from "../input/swipe";
-import { DEBUG_BUTTONS, debugRow, type Rect } from "../layout";
+import { DEBUG_BUTTONS, DEBUG_SWIPE_Y, debugRow, type Rect } from "../layout";
 import type { Insets, StageLayout, StageLayoutInput } from "../stage";
-import { nextInputMode, stepSetting, type NumericSettingKey, type Settings, type SettingsStore } from "../settings";
+import { nextAutoBeat, nextInputMode, stepSetting, type NumericSettingKey, type Settings, type SettingsStore } from "../settings";
+import { formatMessage } from "./message";
 
 /** formatStageInfo の入力。insets は無いことがある（無ければ n/a） */
 export type StageInfoInput = Omit<StageLayoutInput, "insets"> & { insets?: Insets };
@@ -37,8 +38,8 @@ export function formatStageInfo(layout: StageLayout, input: StageInfoInput | nul
 export type DebugRowKind = "number" | "toggle";
 export type DebugRowView = { key: keyof Settings; kind: DebugRowKind; label: string; value: string };
 
-/** debugRow(0..4) の並び（固定） */
-export const DEBUG_ROW_KEYS = ["swipeThreshold", "holdRepeatMs", "textSpeed", "skipAnimations", "inputMode"] as const;
+/** debugRow(0..5) の並び（固定） */
+export const DEBUG_ROW_KEYS = ["swipeThreshold", "holdRepeatMs", "textSpeed", "skipAnimations", "autoBeatMs", "inputMode"] as const;
 
 /** 各行のラベルと値の文字列（純粋）。スワイプ閾値のラベルの後ろに、scale で換算した CSS px を "(NNcss)" で付ける */
 export function debugRows(s: Settings, strings: Strings, scale: number): DebugRowView[] {
@@ -49,6 +50,7 @@ export function debugRows(s: Settings, strings: Strings, scale: number): DebugRo
     { key: "holdRepeatMs", kind: "number", label: t("settings.holdRepeatMs"), value: String(s.holdRepeatMs) },
     { key: "textSpeed", kind: "number", label: t("settings.textSpeed"), value: String(s.textSpeed) },
     { key: "skipAnimations", kind: "toggle", label: t("settings.skipAnimations"), value: t(s.skipAnimations ? "settings.on" : "settings.off") },
+    { key: "autoBeatMs", kind: "toggle", label: t("settings.autoBeatMs"), value: formatMessage(t("settings.ms"), { ms: s.autoBeatMs }) },
     { key: "inputMode", kind: "toggle", label: t("settings.inputMode"), value: t(`settings.inputMode.${s.inputMode}`) },
   ];
 }
@@ -160,10 +162,11 @@ export function createDebugPanel(o: {
     label.className = "debug-label";
     place(label, r.label);
     el.appendChild(label);
-    if (key === "skipAnimations" || key === "inputMode") {
+    if (key === "skipAnimations" || key === "autoBeatMs" || key === "inputMode") {
       const toggle = button("", r.toggle, () => {
         const s = o.store.get();
         if (key === "skipAnimations") o.store.set({ skipAnimations: !s.skipAnimations });
+        else if (key === "autoBeatMs") o.store.set({ autoBeatMs: nextAutoBeat(s.autoBeatMs) });
         else o.store.set({ inputMode: nextInputMode(s.inputMode) });
       });
       el.appendChild(toggle);
@@ -182,6 +185,7 @@ export function createDebugPanel(o: {
 
   const swipe = document.createElement("div");
   swipe.className = "debug-swipe";
+  swipe.style.top = `${DEBUG_SWIPE_Y}px`;
   swipe.textContent = "swipe -";
   el.appendChild(swipe);
 

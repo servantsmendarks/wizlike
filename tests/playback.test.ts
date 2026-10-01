@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createPlayer, type PlayerDeps } from "../src/presenter/playback";
+import { beatWait, createPlayer, createTapLatch, type PlayerDeps } from "../src/presenter/playback";
+import { formatDiceSummary, type DiceEvent } from "../src/presenter/views/dice";
 import { formatMessage } from "../src/presenter/views/message";
 import type { Settings } from "../src/presenter/settings";
 import type { Dive, EnemyGroupView, GameEvent, GameState, PenaltyResult, ViewPoint } from "../src/core/types";
@@ -29,13 +30,14 @@ type Log = Array<{ m: string; a: unknown[] }>;
 
 /** すべての呼び出しを順に記録する偽物の deps。fade は apply を同期で呼んで即座に解決する */
 function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Log } {
+  // beat.waitTap は記録してすぐに解決する（タップを待つ試験は beat を外して player.tap() で解く）
   const log: Log = [];
   const rec =
     (m: string) =>
     (...a: unknown[]): void => {
       log.push({ m, a: JSON.parse(JSON.stringify(a)) as unknown[] });
     };
-  const s: Settings = { skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, ...settings };
+  const s: Settings = { skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400, ...settings };
   const deps: PlayerDeps = {
     data,
     strings: data.strings,
@@ -59,6 +61,12 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
         return Promise.resolve();
       },
       setMore: rec("message.setMore"),
+      rush: rec("message.rush"),
+      log: rec("message.log"),
+      waitMs(ms) {
+        log.push({ m: "message.waitMs", a: [ms] });
+        return Promise.resolve();
+      },
     },
     party: {
       setHp: rec("party.setHp"),
@@ -86,13 +94,20 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
     },
     dice: {
       show(ev, skip, stepMs) {
-        log.push({ m: "dice.show", a: [ev.label.key, skip, stepMs] });
+        log.push({ m: "dice.show", a: [ev.label.key, skip(), stepMs] });
         return Promise.resolve();
       },
       hide: rec("dice.hide"),
     },
     screens: { show: (to) => rec("screens.show")(to), sync: (st) => log.push({ m: "screens.sync", a: [st] }) },
     wipe: { show: (p) => rec("wipe.show")(p) },
+    beat: {
+      waitTap() {
+        log.push({ m: "beat.waitTap", a: [] });
+        return Promise.resolve();
+      },
+      release: rec("beat.release"),
+    },
   };
   return { deps, log };
 }
@@ -346,16 +361,17 @@ describe("UI-41 playback", () => {
     expect(log.filter((e) => e.m === "view.showAt").map((e) => e.a[0])).toEqual([{ floor: 2, pos: { x: 5, y: 5 }, facing: "W" }]);
   });
 
-  test("UI-43 rushAll の後は、同じ再生の残りの文を即時にし、次の再生では戻す", async () => {
+  test("UI-43 拍の外の tap(): 1 回目は今の文の即表示（rush）だけ、同じ再生の中の 2 回目で残りをすべて即時にし、次の再生では戻す", async () => {
     const { deps, log } = fakeDeps();
     const s = stateWith(diveAt(1, 1, "N"));
     const player = createPlayer(deps);
-    let first = true;
+    let n = 0;
     const say = deps.message.say;
     deps.message.say = (text, instant) => {
-      if (first) {
-        first = false;
-        player.rushAll(); // 1 文目の送り中に 2 回目のタップ
+      n++;
+      if (n === 1) {
+        player.tap(); // 1 文目の送り中に 1 回目のタップ
+        player.tap(); // 2 回目のタップ
       }
       return say(text, instant);
     };
@@ -365,11 +381,26 @@ describe("UI-41 playback", () => {
       { kind: "message", key: "battle.encounter" },
     ];
     await player.play(events, s, s);
+    expect(log.filter((e) => e.m === "message.rush")).toHaveLength(2);
     expect(log.filter((e) => e.m === "message.say").map((e) => e.a[1])).toEqual([false, true]);
     expect(log.filter((e) => e.m === "view.fade").map((e) => e.a[0])).toEqual([0]);
+    // 1 回だけなら残りは即時にしない
     log.length = 0;
-    await player.play([{ kind: "message", key: "dungeon.door" }], s, s);
-    expect(log.filter((e) => e.m === "message.say").map((e) => e.a[1])).toEqual([false]);
+    n = 10;
+    let once = true;
+    deps.message.say = (text, instant) => {
+      if (once) {
+        once = false;
+        player.tap();
+      }
+      return say(text, instant);
+    };
+    await player.play(events, s, s);
+    expect(log.filter((e) => e.m === "message.say").map((e) => e.a[1])).toEqual([false, false]);
+    expect(log.filter((e) => e.m === "view.fade").map((e) => e.a[0])).toEqual([data.config.ui.viewFadeMs]);
+    // 拍の外では待たない
+    expect(names(log)).not.toContain("beat.waitTap");
+    expect(names(log)).not.toContain("message.waitMs");
   });
 });
 
@@ -409,6 +440,7 @@ describe("UI-41/UI-42/UI-40 戦闘の再生", () => {
       { m: "party.setHp", a: ["c2", 5] },
       { m: "party.flash", a: ["c2", ui.flashMs] },
       { m: "battle.removeOne", a: [0, ui.flashMs] },
+      { m: "message.log", a: [formatDiceSummary(events[7] as DiceEvent, data.strings)] },
       { m: "dice.show", a: ["dice.flee", false, ui.diceStepMs] },
       { m: "message.say", a: [data.strings["battle.fleeOk"], false] },
       { m: "dice.hide", a: [] },
@@ -418,7 +450,7 @@ describe("UI-41/UI-42/UI-40 戦闘の再生", () => {
     ]);
   });
 
-  test("§3-9 skipAnimations なら flash / removeOne / shake / dice / fade の ms はすべて 0 で、タイマーを使わない", async () => {
+  test("UI-41 skipAnimations なら flash / removeOne / shake / dice / fade の ms はすべて 0 で、タイマーを使わない", async () => {
     vi.useFakeTimers();
     const { deps, log } = fakeDeps({ skipAnimations: true });
     const s = battleState();
@@ -508,5 +540,196 @@ describe("UI-41/UI-42/UI-40 戦闘の再生", () => {
       { m: "battle.removeOne", a: [1, data.config.ui.flashMs] },
       { m: "party.setLife", a: ["c4", "dead"] },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------- UI-45 拍の再生
+const beat = (phase: "declare" | "result" | "aftermath" | "system", auto: boolean): GameEvent => ({ kind: "beat", phase, auto });
+const msg = (key: string, params?: Record<string, string | number>): GameEvent => (params === undefined ? { kind: "message", key } : { kind: "message", key, params });
+
+describe("UI-45 拍の再生", () => {
+  const battleState = (): GameState => ({ ...stateWith(diveAt(1, 1, "N")), screen: "battle" });
+  /** 待ち（タップ・時間）と、その前後の目印になる呼び出しだけを抜き出す */
+  const waits = (log: Log): string[] =>
+    log
+      .filter((e) => ["beat.waitTap", "message.waitMs", "message.say", "dice.show", "dice.hide", "screens.show", "screens.sync"].includes(e.m))
+      .map((e) => (e.m === "message.waitMs" ? `waitMs ${String(e.a[0])}` : e.m === "message.say" ? `say ${String(e.a[0])}` : e.m));
+  const say = (key: string, p?: Record<string, string | number>): string => `say ${formatMessage(data.strings[key]!, p)}`;
+
+  test("UI-45 beatWait: 拍の中で文かダイスが出ていれば待つ。再生の終わりの手動はダイスが出ているときだけ。拍の外と、何も出ていない拍では待たない", () => {
+    for (const at of ["beat", "leave", "end"] as const) {
+      for (const diceShown of [false, true]) {
+        expect(beatWait({ mode: null, pending: true, diceShown, at })).toBeNull();
+        expect(beatWait({ mode: "tap", pending: false, diceShown, at })).toBeNull();
+        expect(beatWait({ mode: "timed", pending: false, diceShown, at })).toBeNull();
+        expect(beatWait({ mode: "timed", pending: true, diceShown, at })).toBe("timed");
+      }
+      expect(beatWait({ mode: "tap", pending: true, diceShown: true, at })).toBe("tap");
+    }
+    expect(beatWait({ mode: "tap", pending: true, diceShown: false, at: "beat" })).toBe("tap");
+    expect(beatWait({ mode: "tap", pending: true, diceShown: false, at: "leave" })).toBe("tap");
+    expect(beatWait({ mode: "tap", pending: true, diceShown: false, at: "end" })).toBeNull();
+  });
+
+  test("UI-45/UI-41 手動の拍（auto 偽）の後に文があれば次の拍の前でタップを 1 回待ち、オート（auto 真）は waitMs(autoBeatMs)。演出スキップでも待つ（フラッシュは 0）", async () => {
+    const events: GameEvent[] = [
+      beat("declare", false),
+      msg("battle.attackDeclare", { actor: "A" }),
+      beat("result", false),
+      { kind: "hpChanged", id: "c1", delta: -2, hp: 5 },
+      msg("battle.hit", { target: "A", damage: 2 }),
+      beat("declare", true),
+      msg("battle.attackDeclare", { actor: "B" }),
+      beat("result", true),
+      msg("battle.miss", { target: "B" }),
+    ];
+    expectKnownStringKeys(events);
+    for (const skipAnimations of [false, true]) {
+      vi.useFakeTimers();
+      const { deps, log } = fakeDeps({ skipAnimations, autoBeatMs: 200 });
+      const s = battleState();
+      await createPlayer(deps).play(events, s, s);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(waits(log)).toEqual([
+        say("battle.attackDeclare", { actor: "A" }),
+        "beat.waitTap",
+        say("battle.hit", { target: "A", damage: 2 }),
+        "beat.waitTap",
+        say("battle.attackDeclare", { actor: "B" }),
+        "waitMs 200",
+        say("battle.miss", { target: "B" }),
+        // 再生の終わり: オートは待つ
+        "waitMs 200",
+        "screens.sync",
+      ]);
+      // タップ待ちの間だけ続きの三角を出す（演出スキップでは点滅しない）。拍の中の文では三角を出さない
+      expect(log.filter((e) => e.m === "message.setMore").map((e) => e.a)).toEqual([[true, !skipAnimations], [false], [true, !skipAnimations], [false], [false]]);
+      expect(log.filter((e) => e.m === "party.flash").map((e) => e.a)).toEqual([["c1", skipAnimations ? 0 : data.config.ui.flashMs]]);
+      vi.useRealTimers();
+    }
+  });
+
+  test("UI-45 中身に文もダイスも無い拍の後は待たない。拍の外の再生（迷宮の歩行）では待たない", async () => {
+    const { deps, log } = fakeDeps();
+    const s = battleState();
+    await createPlayer(deps).play([beat("result", false), { kind: "hpChanged", id: "c1", delta: -1, hp: 6 }, beat("aftermath", false), msg("battle.win")], s, s);
+    expect(names(log)).not.toContain("beat.waitTap");
+    const f2 = fakeDeps();
+    const d = stateWith(diveAt(1, 1, "N"));
+    await createPlayer(f2.deps).play([msg("dungeon.door"), { kind: "moved", pos: { x: 1, y: 0 }, facing: "N" }, msg("dungeon.blocked")], d, d);
+    expect(names(f2.log)).not.toContain("beat.waitTap");
+    expect(names(f2.log)).not.toContain("message.waitMs");
+  });
+
+  test("UI-45 戦闘の外への screen（dungeon / town）の前で待ってから切り替え、その後は拍の外として流す", async () => {
+    const { deps, log } = fakeDeps();
+    const s = battleState();
+    const after = stateWith(diveAt(1, 1, "N"));
+    const events: GameEvent[] = [
+      beat("system", false),
+      rollDiceEv("dice.flee", [12], 12, "dice.flee.ok"),
+      msg("battle.fleeOk"),
+      { kind: "battleEnd", result: "flee" },
+      { kind: "screen", to: "dungeon" },
+      msg("dungeon.door"),
+    ];
+    expectKnownStringKeys(events);
+    await createPlayer(deps).play(events, s, after);
+    // battleEnd（message でも dice でもない）の前でダイスは消える。screen の前でタップを待つ
+    expect(waits(log)).toEqual(["dice.show", say("battle.fleeOk"), "dice.hide", "beat.waitTap", "screens.show", say("dungeon.door"), "screens.sync"]);
+    // 全滅（town）・オート（timed）でも同じ位置で待つ
+    const f2 = fakeDeps();
+    await createPlayer(f2.deps).play([beat("system", true), msg("battle.win"), { kind: "screen", to: "town" }], s, stateWith(null));
+    expect(waits(f2.log)).toEqual([say("battle.win"), "waitMs 400", "screens.show", "screens.sync"]);
+  });
+
+  test("UI-45/UI-40 再生の終わり: 手動はダイスが出ているときだけ待つ（遭遇の先手判定）。拍の待ちの後で dice.hide を呼ぶ", async () => {
+    const { deps, log } = fakeDeps();
+    const s = battleState();
+    const events: GameEvent[] = [
+      { kind: "screen", to: "battle" },
+      beat("system", false),
+      { kind: "encounter", groups: [] },
+      msg("battle.encounter"),
+      beat("system", false),
+      INITIATIVE,
+    ];
+    expectKnownStringKeys(events);
+    await createPlayer(deps).play(events, s, s);
+    expect(waits(log)).toEqual(["screens.show", say("battle.encounter"), "beat.waitTap", "dice.show", "beat.waitTap", "dice.hide", "screens.sync"]);
+    // 手動の拍の文で終われば待たない
+    const f2 = fakeDeps();
+    await createPlayer(f2.deps).play([beat("declare", false), msg("battle.attackDeclare", { actor: "A" })], s, s);
+    expect(names(f2.log)).not.toContain("beat.waitTap");
+    // 拍の中でダイスに続いて文が来ても、ダイスは次の拍の待ちの後に消す
+    const f3 = fakeDeps();
+    await createPlayer(f3.deps).play([beat("system", false), INITIATIVE, msg("battle.surpriseParty"), beat("declare", false), msg("battle.attackDeclare", { actor: "A" })], s, s);
+    expect(waits(f3.log)).toEqual(["dice.show", say("battle.surpriseParty"), "beat.waitTap", "dice.hide", say("battle.attackDeclare", { actor: "A" }), "screens.sync"]);
+  });
+
+  test("UI-46 dice を受けたら履歴に要約を 1 回だけ残す（message.log）", async () => {
+    const { deps, log } = fakeDeps();
+    const s = battleState();
+    await createPlayer(deps).play([beat("system", false), INITIATIVE, msg("battle.surpriseParty")], s, s);
+    expect(log.filter((e) => e.m === "message.log").map((e) => e.a)).toEqual([[formatDiceSummary(INITIATIVE as DiceEvent, data.strings)]]);
+  });
+
+  test("UI-45 tap(): タップ待ちを解く。解くまでは再生が先へ進まない", async () => {
+    const { deps, log } = fakeDeps();
+    delete deps.beat; // 既定の掛け金（Player.tap() が解く）
+    const s = battleState();
+    const player = createPlayer(deps);
+    let done = false;
+    const p = player.play([beat("declare", false), msg("battle.attackDeclare", { actor: "A" }), beat("result", false), msg("battle.miss", { target: "B" })], s, s).then(() => {
+      done = true;
+    });
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(done).toBe(false);
+    expect(log.filter((e) => e.m === "message.say")).toHaveLength(1);
+    expect(log.filter((e) => e.m === "message.setMore").map((e) => e.a)).toEqual([[true, true]]);
+    player.tap();
+    await p;
+    expect(done).toBe(true);
+    expect(log.filter((e) => e.m === "message.say")).toHaveLength(2);
+    // 待っている間のタップは rush を呼ばない（待ちを解くだけ）
+    expect(names(log)).not.toContain("message.rush");
+  });
+
+  test("UI-45 拍の中の tap(): 今の拍の残りを即時にする（rush）が、拍は飛ばさない。次の拍では戻す", async () => {
+    const { deps, log } = fakeDeps();
+    const s = battleState();
+    const player = createPlayer(deps);
+    let first = true;
+    const sayFn = deps.message.say;
+    deps.message.say = (text, instant) => {
+      if (first) {
+        first = false;
+        player.tap();
+      }
+      return sayFn(text, instant);
+    };
+    await player.play(
+      [beat("declare", false), msg("battle.attackDeclare", { actor: "A" }), msg("battle.miss", { target: "B" }), beat("result", false), msg("battle.miss", { target: "C" })],
+      s,
+      s,
+    );
+    expect(log.filter((e) => e.m === "message.rush")).toHaveLength(1);
+    expect(log.filter((e) => e.m === "message.say").map((e) => e.a[1])).toEqual([false, true, false]);
+    // 拍は飛ばさない（タップ待ちは 1 回ある）
+    expect(log.filter((e) => e.m === "beat.waitTap")).toHaveLength(1);
+  });
+
+  test("UI-45 createTapLatch: release で待ちを解く。待っていない間の release は次の待ちを解かない", async () => {
+    const l = createTapLatch();
+    l.release();
+    let done = false;
+    const p = l.waitTap().then(() => {
+      done = true;
+    });
+    await Promise.resolve();
+    expect(done).toBe(false);
+    l.release();
+    await p;
+    expect(done).toBe(true);
   });
 });

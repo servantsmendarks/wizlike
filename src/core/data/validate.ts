@@ -297,7 +297,8 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       shakeMs: I(NON_NEG),
       viewFadeMs: I(NON_NEG),
       layout: F({ header: I(POS_INT), view: I(POS_INT), message: I(POS_INT), party: I(POS_INT), controls: I(POS_INT) }), // ui.md §2【仮】
-      messageHistory: I(POS_INT), // UI-43 / UI-11【仮】
+      messageHistory: I(POS_INT), // UI-43 / UI-46【仮】
+      autoBeatMs: I(POS_INT), // UI-45【仮】
       saveBannerHeight: I(POS_INT), // SV-23【仮】
     }),
     prototypeParty: F({ startingGold: I(NON_NEG), members: L(member) }),

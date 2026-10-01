@@ -43,20 +43,23 @@ describe("formatStageInfo", () => {
 });
 
 describe("debugRows", () => {
-  test("UI-30/UI-31/SV-24 設定の仮 UI は 5 行で、スワイプ閾値に CSS px の換算値（28 × 4/3 = 37.33 → 37css）を付ける", () => {
+  test("UI-30/UI-31/UI-45/UI-57/SV-24 設定の仮 UI は 6 行（オートの速さは 5 行目）で、スワイプ閾値に CSS px の換算値（28 × 4/3 = 37.33 → 37css）を付ける", () => {
     const s = defaultSettings(data.config);
     const rows = debugRows(s, data.strings, 4 / 3);
     expect(rows.map((r) => r.key)).toEqual([...DEBUG_ROW_KEYS]);
-    expect(rows.map((r) => r.kind)).toEqual(["number", "number", "number", "toggle", "toggle"]);
+    expect([...DEBUG_ROW_KEYS]).toEqual(["swipeThreshold", "holdRepeatMs", "textSpeed", "skipAnimations", "autoBeatMs", "inputMode"]);
+    expect(rows.map((r) => r.kind)).toEqual(["number", "number", "number", "toggle", "toggle", "toggle"]);
     expect(rows[0]).toEqual({ key: "swipeThreshold", kind: "number", label: `${data.strings["settings.swipeThreshold"]} (37css)`, value: "28" });
     expect(rows[1]?.value).toBe("250");
     expect(rows[2]?.value).toBe(String(data.config.ui.textSpeedMs));
     expect(rows[3]?.value).toBe(data.strings["settings.off"]);
-    expect(rows[4]?.value).toBe(data.strings["settings.inputMode.both"]);
-    const on = debugRows({ ...s, skipAnimations: true, inputMode: "swipe" }, data.strings, 2);
+    expect(rows[4]).toEqual({ key: "autoBeatMs", kind: "toggle", label: data.strings["settings.autoBeatMs"], value: "400ms" });
+    expect(rows[5]?.value).toBe(data.strings["settings.inputMode.both"]);
+    const on = debugRows({ ...s, skipAnimations: true, inputMode: "swipe", autoBeatMs: 200 }, data.strings, 2);
     expect(on[0]?.label.endsWith("(56css)")).toBe(true);
     expect(on[3]?.value).toBe(data.strings["settings.on"]);
-    expect(on[4]?.value).toBe(data.strings["settings.inputMode.swipe"]);
+    expect(on[4]?.value).toBe("200ms");
+    expect(on[5]?.value).toBe(data.strings["settings.inputMode.swipe"]);
   });
 
   test("UI-30 スワイプの確定値の表示は dx,dy,dir（丸めた CSS px）", () => {

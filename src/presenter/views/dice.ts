@@ -81,7 +81,8 @@ export function formatDiceSummary(ev: DiceEvent, strings: Strings): string {
 
 export type DiceView = {
   el: HTMLElement;
-  show(ev: DiceEvent, skip: boolean, stepMs: number): Promise<void>;
+  /** skip は段ごとに読み直す。途中で真になったら最終の段を描いて終える（UI-45 の拍の中のタップ） */
+  show(ev: DiceEvent, skip: () => boolean, stepMs: number): Promise<void>;
   hide(): void;
 };
 
@@ -180,11 +181,12 @@ export function createDiceView(strings: Strings): DiceView {
         result.textContent = f.result ? resultText : "";
       };
 
-      const fast = skip || !(stepMs > 0);
+      const fast = skip() || !(stepMs > 0);
       const frames = diceFrames(ev, fast);
       const first = frames[0];
       if (first !== undefined) draw(first);
       if (fast) return;
+      const last = frames[frames.length - 1];
       // 段 i（1 以降）で変わった要素を 1 つ動かす（diceFrames の順と同じ並び）
       const moves: (() => Promise<void>)[] = [];
       rowEls.forEach((re) => {
@@ -194,6 +196,10 @@ export function createDiceView(strings: Strings): DiceView {
       moves.push(() => blink(rule, stepMs), () => blink(result, stepMs));
       for (let i = 1; i < frames.length; i++) {
         if (my !== gen) return;
+        if (skip()) {
+          if (last !== undefined) draw(last);
+          return;
+        }
         const f = frames[i];
         if (f !== undefined) draw(f);
         const m = moves[i - 1];

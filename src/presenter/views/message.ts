@@ -37,16 +37,30 @@ export function trimHistory<T>(items: readonly T[], max: number): T[] {
   return items.length > max ? items.slice(items.length - max) : items.slice();
 }
 
+/** UI-45: タップ待ちの続きの三角の点滅の 1 周期（ms。表示層のコード定数。battle.ts の FOCUS_BLINK_MS と同じ扱い） */
+const MORE_BLINK_MS = 600;
+
 export type MessageWindow = {
   el: HTMLElement;
   /** 1 文を履歴の末尾に足して表示する。instant か speed() が 0 以下なら即座に全文を出す */
   say(text: string, instant: boolean): Promise<void>;
   /** 文字送り中の文を即座に完了させる（UI-43 のタップ） */
   rush(): void;
+  /** 文字送りの途中か */
+  typing(): boolean;
+  /** UI-46: 窓には出さず、全文の履歴にだけ 1 行足す（ダイスの要約） */
+  log(text: string): void;
+  /** UI-46: 全文の履歴（古い順。historyMax 件で切る） */
+  history(): readonly string[];
+  /**
+   * UI-45: ms 待つ（オートの拍の待ち）。窓の中の不可視の 1×1 の要素の animate(opacity 1→1).finished で測り、
+   * setTimeout は使わない。ms が 0 以下なら即座に解決する。cancel されても先へ進む
+   */
+  waitMs(ms: number): Promise<void>;
   /** 履歴をすべて消す。文字送り中なら完了扱いで解決する */
   clear(): void;
-  /** 続きの三角の表示 */
-  setMore(on: boolean): void;
+  /** 続きの三角の表示。blink なら点滅させる（UI-45 のタップ待ち。演出スキップでは点滅しない） */
+  setMore(on: boolean, blink?: boolean): void;
 };
 
 export function createMessageWindow(o: {
@@ -111,8 +125,21 @@ export function createMessageWindow(o: {
   more.appendChild(tri);
   el.appendChild(more);
 
+  // UI-45 の待ちを測る不可視の要素
+  const clock = document.createElement("div");
+  Object.assign(clock.style, { position: "absolute", left: "0px", top: "0px", width: "1px", height: "1px", opacity: "0", pointerEvents: "none" });
+  el.appendChild(clock);
+
   /** 進行中の文字送り。rush / clear で即座に完了させる */
   let current: { finish(): void } | null = null;
+  /** UI-46: 全文の履歴 */
+  let all: string[] = [];
+  const remember = (text: string): void => {
+    all.push(text);
+    if (all.length > o.historyMax) all = trimHistory(all, o.historyMax);
+  };
+  /** 続きの三角の点滅 */
+  let moreBlink: Animation | null = null;
 
   const scrollToEnd = (): void => {
     history.scrollTop = history.scrollHeight;
@@ -126,6 +153,7 @@ export function createMessageWindow(o: {
   const say = (text: string, instant: boolean): Promise<void> => {
     // 前の文が送り途中なら完了させてから次へ
     current?.finish();
+    remember(text);
     const line = document.createElement("div");
     line.className = "message-line";
     history.appendChild(line);
@@ -173,12 +201,43 @@ export function createMessageWindow(o: {
     rush(): void {
       current?.finish();
     },
+    typing(): boolean {
+      return current !== null;
+    },
+    log(text: string): void {
+      remember(text);
+    },
+    history(): readonly string[] {
+      return all.slice();
+    },
+    async waitMs(ms: number): Promise<void> {
+      if (!(ms > 0)) return;
+      try {
+        await clock.animate([{ opacity: 0 }, { opacity: 0 }], { duration: ms }).finished;
+      } catch {
+        // cancel。そのまま先へ進む
+      }
+    },
     clear(): void {
       current?.finish();
       history.replaceChildren();
+      all = [];
     },
-    setMore(on: boolean): void {
+    setMore(on: boolean, blink = false): void {
       more.style.visibility = on ? "visible" : "hidden";
+      moreBlink?.cancel();
+      moreBlink = null;
+      if (on && blink) {
+        moreBlink = more.animate(
+          [
+            { opacity: 1, offset: 0 },
+            { opacity: 1, offset: 0.5 },
+            { opacity: 0, offset: 0.5 },
+            { opacity: 0, offset: 1 },
+          ],
+          { duration: MORE_BLINK_MS, iterations: Infinity },
+        );
+      }
     },
   };
 }

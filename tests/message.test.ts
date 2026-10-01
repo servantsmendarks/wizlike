@@ -33,7 +33,7 @@ describe("message.ts（純粋な部分）", () => {
     for (const st of steps) expect(st).not.toMatch(/[\uD800-\uDBFF]$/);
   });
 
-  test("UI-11 trimHistory は末尾の max 件を残し、元の配列を変えない", () => {
+  test("UI-46 trimHistory は末尾の max 件を残し、元の配列を変えない（既定の messageHistory は 200）", () => {
     const xs = [1, 2, 3, 4, 5];
     expect(trimHistory(xs, 3)).toEqual([3, 4, 5]);
     expect(trimHistory(xs, 5)).toEqual([1, 2, 3, 4, 5]);
@@ -41,7 +41,12 @@ describe("message.ts（純粋な部分）", () => {
     expect(trimHistory(xs, 0)).toEqual([]);
     expect(trimHistory(xs, 3)).not.toBe(xs);
     expect(xs).toEqual([1, 2, 3, 4, 5]);
-    expect(trimHistory(Array.from({ length: 60 }, (_, i) => i), data.config.ui.messageHistory)).toHaveLength(50);
+    expect(data.config.ui.messageHistory).toBe(200);
+    const kept = trimHistory(Array.from({ length: 260 }, (_, i) => i), data.config.ui.messageHistory);
+    expect(kept).toHaveLength(200);
+    // 古い順に残す（先頭は 60 番目）
+    expect(kept[0]).toBe(60);
+    expect(kept[199]).toBe(259);
   });
 });
 

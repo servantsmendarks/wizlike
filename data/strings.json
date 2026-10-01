@@ -156,6 +156,8 @@
   "settings.holdRepeatMs": "長押し間隔",
   "settings.textSpeed": "文字速度",
   "settings.skipAnimations": "演出スキップ",
+  "settings.autoBeatMs": "オートの速さ",
+  "settings.ms": "{ms}ms",
   "settings.inputMode": "入力",
   "settings.inputMode.swipe": "スワイプ",
   "settings.inputMode.buttons": "ボタン",

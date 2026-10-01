@@ -1,6 +1,7 @@
 // 画面遷移の親。state を持ち、入力を Command にして execute へ送り（UI-35）、返ったイベントを playback で再生する。
 // - 判定・計算・分岐（前進できるか、入場できるか、名前が正しいか）は core が行う。ここは結果を描くだけ（§3-4）。
-// - 再生中（busy）の入力はすべて捨てる。メッセージ窓のタップだけは受け、1 回目で今の文、2 回目で残りを即表示する（UI-44 / UI-43）。
+// - 再生中（busy）の入力はすべて捨てる。メッセージ窓のタップと Enter だけは受け、player.tap() に渡す
+//   （拍のタップ待ちを解く・拍の残りを即時にする・拍の外は 1 回目で今の文、2 回目で残りを即表示。UI-44 / UI-45 / UI-43）。
 // - 状態を変えるコマンドの後、再生を始める前にオートセーブを await する（§3-8。SV-02: 再生中にリロードされても結果は確定している）。
 //   保存の失敗は SV-23 の帯とメッセージ窓で知らせ、state は巻き戻さない。
 // - タイトル（UI-50）は保存先の一覧を読み、続きから（SV-50）は読み込んだ state を resume で直接描く。
@@ -102,8 +103,6 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   let townPage: TownPage = "menu";
   /** 再生中か（UI-44）。run の門が持つ */
   const isBusy = (): boolean => gate.busy();
-  /** 同じ再生の中のメッセージ窓のタップ回数 */
-  let taps = 0;
   /** UI-54: 戦闘の入力の段階（手動で入力待ちのメンバーがいるときだけ非 null） */
   let cursor: InputCursor | null = null;
   /** 受け付けを待っている battle.input のメンバー。次の sync で nextCursor の起点にする */
@@ -528,9 +527,6 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
    * rejected（イベントがちょうど 1 件の rejected）は再生せず、console.debug に出す。
    */
   const gate = createRunGate<Command, DispatchResult>({
-    onStart: () => {
-      taps = 0;
-    },
     onError: (e) => console.error(e),
     // SV-02: execute → state の差し替え → 保存を await → 再生（順は createCommandExec が固定する）
     exec: createCommandExec({
@@ -905,6 +901,11 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       if (battleKeyChoice(a, "autoStop") === "stop") requestAutoStop();
       if (a !== "debug") return;
     }
+    // UI-45: 再生中の Enter は拍のタップと同じ（タップ待ちを解く。拍の外では UI-43 の即表示）
+    if (isBusy() && a === "confirm") {
+      player.tap();
+      return;
+    }
     if (isBusy() || chaining) return; // UI-44
     if (a === "debug") {
       if (overlay === "debug") closeDebug();
@@ -1001,9 +1002,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
         play.message.rush();
         return;
       }
-      taps++;
-      if (taps >= 2) player.rushAll();
-      play.message.rush();
+      // UI-45 / UI-43: タップ待ちを解く・拍の残りを即時にする・2 回目で残りすべて（playback が決める）
+      player.tap();
     });
     play.message.el.addEventListener("pointercancel", () => {
       down = null;

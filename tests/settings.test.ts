@@ -1,14 +1,17 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
+  AUTO_BEAT_CHOICES,
   createSettingsStore,
   defaultSettings,
   loadSettings,
+  nextAutoBeat,
   nextInputMode,
   parseSettings,
   saveSettings,
   serializeSettings,
   SETTING_RANGES,
   SETTINGS_KEY,
+  snapAutoBeat,
   stepSetting,
   type Settings,
 } from "../src/presenter/settings";
@@ -22,8 +25,8 @@ afterEach(() => {
 });
 
 describe("settings", () => {
-  test("SV-24 defaultSettings は config から取る（28/250/30/both/false）", () => {
-    expect(D).toEqual({ skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250 });
+  test("SV-24 defaultSettings は config から取る（28/250/30/both/false/400）", () => {
+    expect(D).toEqual({ skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400 });
     expect(D.swipeThreshold).toBe(data.config.input.swipeThresholdPx);
     expect(D.holdRepeatMs).toBe(data.config.input.holdRepeatMs);
     expect(D.textSpeed).toBe(data.config.ui.textSpeedMs);
@@ -56,9 +59,9 @@ describe("settings", () => {
     });
     // 未知のキーは捨てる
     const p = parseSettings(JSON.stringify({ ...D, volume: 3, extra: true }), D);
-    expect(Object.keys(p).sort()).toEqual(["holdRepeatMs", "inputMode", "skipAnimations", "swipeThreshold", "textSpeed"]);
+    expect(Object.keys(p).sort()).toEqual(["autoBeatMs", "holdRepeatMs", "inputMode", "skipAnimations", "swipeThreshold", "textSpeed"]);
     // 往復
-    const s: Settings = { skipAnimations: true, textSpeed: 0, inputMode: "swipe", swipeThreshold: 40, holdRepeatMs: 500 };
+    const s: Settings = { skipAnimations: true, textSpeed: 0, inputMode: "swipe", swipeThreshold: 40, holdRepeatMs: 500, autoBeatMs: 600 };
     expect(parseSettings(serializeSettings(s), D)).toEqual(s);
     // 返り値は defaults と別のオブジェクト
     expect(parseSettings(null, D)).not.toBe(D);
@@ -145,5 +148,53 @@ describe("settings", () => {
     const g = st.get();
     g.textSpeed = 0;
     expect(st.get().textSpeed).toBe(30);
+  });
+});
+
+describe("UI-45 オートの拍の速さ", () => {
+  test("SV-24/UI-45 snapAutoBeat は最も近い選択肢（同じ距離なら小さい方）、nextAutoBeat は 200 → 400 → 600 → 200", () => {
+    expect([...AUTO_BEAT_CHOICES]).toEqual([200, 400, 600]);
+    expect(snapAutoBeat(500)).toBe(400);
+    expect(snapAutoBeat(501)).toBe(600);
+    expect(snapAutoBeat(700)).toBe(600);
+    expect(snapAutoBeat(1)).toBe(200);
+    expect(snapAutoBeat(300)).toBe(200);
+    expect(snapAutoBeat(400)).toBe(400);
+    expect(snapAutoBeat(Number.NaN)).toBe(200);
+    expect(nextAutoBeat(200)).toBe(400);
+    expect(nextAutoBeat(400)).toBe(600);
+    expect(nextAutoBeat(600)).toBe(200);
+    // 選択肢に無い値は寄せてから次へ
+    expect(nextAutoBeat(450)).toBe(600);
+  });
+
+  test("SV-24 autoBeatMs: 既定値は config.ui.autoBeatMs を選択肢に寄せた値。無い・選択肢に無い・文字列なら既定値。serialize では inputMode の直後に置く", () => {
+    expect(D.autoBeatMs).toBe(400);
+    const cfg = structuredClone(data.config);
+    cfg.ui.autoBeatMs = 700;
+    expect(defaultSettings(cfg).autoBeatMs).toBe(600);
+    cfg.ui.autoBeatMs = 250;
+    expect(defaultSettings(cfg).autoBeatMs).toBe(200);
+    // M4 までの保存（autoBeatMs が無い）
+    const { autoBeatMs: _omit, ...old } = { ...D, holdRepeatMs: 300 };
+    expect(parseSettings(JSON.stringify(old), D)).toEqual({ ...D, holdRepeatMs: 300 });
+    for (const bad of [500, 0, -200, "200", null, 400.5]) {
+      expect(parseSettings(JSON.stringify({ ...D, autoBeatMs: bad }), D).autoBeatMs, String(bad)).toBe(400);
+    }
+    expect(parseSettings(JSON.stringify({ ...D, autoBeatMs: 200 }), D).autoBeatMs).toBe(200);
+    expect(Object.keys(JSON.parse(serializeSettings(D)) as object)).toEqual([
+      "skipAnimations",
+      "textSpeed",
+      "inputMode",
+      "autoBeatMs",
+      "swipeThreshold",
+      "holdRepeatMs",
+    ]);
+    // store の set でも選択肢に無い値は今の値のまま
+    const st = createSettingsStore(D, () => {});
+    st.set({ autoBeatMs: 450 });
+    expect(st.get().autoBeatMs).toBe(400);
+    st.set({ autoBeatMs: nextAutoBeat(st.get().autoBeatMs) });
+    expect(st.get().autoBeatMs).toBe(600);
   });
 });
