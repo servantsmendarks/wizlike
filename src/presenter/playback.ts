@@ -4,6 +4,7 @@
 //   ビューは visibleCells(finalState, data, cursor) を描く（具体的なビューは結線側が PlayerDeps に注入する）。
 // - settings().skipAnimations が真なら、フェードは 0ms、文字送りは即時で解決する（§3-9）。
 // - rushAll() は、同じ再生の中の残りをすべて即時にする（UI-43 のタップ 2 回目）。今の文の即時表示は呼び出し側が message.rush() で行う。
+// - 全滅（UI-56）: wipe で内訳の overlay を開き、入力を待たずに続ける。
 // - レベルの変化（levelUp / levelDown）はパーティ欄の最大値と現在値を描き直す。spellLearned は何もしない（message が語る）。
 // - 戦闘（UI-41 / UI-42 / UI-40）: 被弾のフラッシュは hpChanged（delta < 0）に一本化する（味方はパーティ行、敵はグループの絵）。
 //   敵の id は "e{g}-{u}"（enemyGroupOfId）。敵の HP・状態は見せない（状態は core の message で伝わる）。
@@ -12,7 +13,7 @@
 //   skip のときは flash / shake / dice / fade に 0ms を渡し、タイマーを使わない。
 // 具体的な views は import しない（純粋な enemyGroupOfId と formatMessage だけ）。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, StatusId, Strings } from "../core/data/index";
-import type { EnemyGroupView, GameEvent, GameEventKind, GameState, Life, Screen, ViewPoint } from "../core/types";
+import type { EnemyGroupView, GameEvent, GameEventKind, GameState, Life, PenaltyResult, Screen, ViewPoint } from "../core/types";
 import type { Settings } from "./settings";
 import { enemyGroupOfId } from "./views/battle";
 import { formatMessage } from "./views/message";
@@ -55,6 +56,8 @@ export type PlayerDeps = {
     hide(): void;
   };
   screens: { show(to: Screen, state: GameState): void; sync(state: GameState): void };
+  /** UI-56 の全滅の内訳の overlay を開く（入力は待たない。閉じるのは app） */
+  wipe: { show(p: PenaltyResult): void };
 };
 
 export type Handlers = {
@@ -226,6 +229,11 @@ export function createPlayer(deps: PlayerDeps): Player {
     async spellLearned(_ev, cx) {
       // 何もしない（覚えたことは core の message が語る）
       cx.skip = isSkip();
+    },
+    async wipe(ev, cx) {
+      // UI-56: 内訳の overlay を開き、待たずに先へ（後続の街に入る処理は overlay の下で再生する）
+      cx.skip = isSkip();
+      deps.wipe.show(ev.penalty);
     },
     async battleEnd(_ev, cx) {
       cx.skip = isSkip();

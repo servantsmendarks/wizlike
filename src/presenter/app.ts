@@ -12,7 +12,7 @@ import { battleMenu } from "../core/rules/combat";
 import { mapView, visibleCells } from "../core/rules/dungeon";
 import { townMenu } from "../core/rules/town";
 import { dungeonOf, itemDisplayName } from "../core/state";
-import type { BattleMenu, Command, GameState, Screen, ViewPoint } from "../core/types";
+import type { BattleMenu, Command, GameState, PenaltyResult, Screen, ViewPoint } from "../core/types";
 import type { GameListEntry, SaveService } from "../save/types";
 import { runChain, type ChainDeps } from "./auto-chain";
 import { createAutosaver, createCommandExec, createSaveBannerState, type CommandResult, type SaveStatus } from "./autosave";
@@ -53,10 +53,11 @@ import { headerText } from "./views/header";
 import { formatMessage } from "./views/message";
 import { createSaveBanner } from "./views/save-banner";
 import { createTitleScreen, titleEntries, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
+import { formatWipeSummary } from "./views/wipe";
 import { townEntries, townHeader, townPageIntro, townParent, type TownEntry, type TownPage } from "./views/town";
 
 export type Route = "title" | "creation" | "town" | "dungeon" | "battle";
-export type Overlay = null | "map" | "debug" | "detail";
+export type Overlay = null | "map" | "debug" | "detail" | "wipe";
 
 export type App = {
   onLayout(layout: StageLayout, input: StageLayoutInput): void;
@@ -101,6 +102,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   let stopRequested = false;
   /** オートの連鎖（runChain）の途中か。段の間（1 フレーム譲る間）は門が空くので別に持つ */
   let chaining = false;
+  /** debug パネルの下に残している overlay（全滅の内訳だけ。閉じたら戻す） */
+  let underDebug: Overlay = null;
 
   const scale = (): number => layout?.scale ?? 1;
 
@@ -191,6 +194,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       show: (to: Screen) => onScreen(to),
       sync: (st) => sync(st),
     },
+    wipe: { show: (p) => openWipe(p) },
   });
 
   /** core の screen イベント。M3 の画面は title / town / dungeon / battle */
@@ -305,6 +309,14 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     const c = play.controls;
     // UI-31: 十字ボタンを出さない間は長押しを離したものとする（shouldReleaseHold）
     if (shouldReleaseHold(route, overlay, state.pendingChoice !== null)) repeater.release();
+    if (overlay === "wipe") {
+      // UI-56: 全滅の内訳の間は操作領域に「街へ」だけ（route の判定より先に見る）
+      clearFocus();
+      c.setCloseLabel(t("wipe.toTown"));
+      c.setMode("close");
+      return;
+    }
+    c.setCloseLabel(t("common.close"));
     if (overlay === "detail") {
       // UI-58: 詳細の間は操作領域に「閉じる」だけ（街・迷宮・戦闘のどれでも）
       clearFocus();
@@ -678,6 +690,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     overlay = null;
     play.showMap(false);
     play.showDetail(false);
+    play.showWipe(false);
+    underDebug = null;
     townPage = "menu";
     cursor = null;
     advanceFrom = null;
@@ -700,8 +714,11 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   };
 
   const openDebug = (): void => {
+    if (overlay === "debug") return;
     if (overlay === "map") closeMap();
     if (overlay === "detail") closeDetail();
+    // 全滅の内訳は閉じずに debug パネルの下に残す（閉じたら戻す）
+    underDebug = overlay === "wipe" ? "wipe" : null;
     repeater.release();
     overlay = "debug";
     debug.refresh();
@@ -710,7 +727,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
 
   const closeDebug = (): void => {
     if (overlay !== "debug") return;
-    overlay = null;
+    overlay = underDebug;
+    underDebug = null;
     debug.el.style.display = "none";
     syncControls();
   };
@@ -756,10 +774,32 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     syncControls();
   };
 
-  /** 操作領域の「閉じる」: 地図か詳細を閉じる */
+  /**
+   * UI-56: 全滅の内訳を開く（再生の中から。入力は待たない）。後続の街に入る処理は overlay の下で再生し、
+   * 再生の最後の sync で操作領域を「街へ」にする
+   */
+  const openWipe = (p: PenaltyResult): void => {
+    if (overlay === "map") closeMap();
+    if (overlay === "detail") closeDetail();
+    repeater.release();
+    overlay = "wipe";
+    play.wipe.render(formatWipeSummary(p, data, strings));
+    play.showWipe(true);
+  };
+
+  /** 「街へ」: 内訳を閉じて街のメニューを出す */
+  const closeWipe = (): void => {
+    if (overlay !== "wipe") return;
+    overlay = null;
+    play.showWipe(false);
+    syncControls();
+  };
+
+  /** 操作領域の「閉じる」: 地図か詳細か全滅の内訳を閉じる */
   const closeOverlay = (): void => {
     if (overlay === "map") closeMap();
     else if (overlay === "detail") closeDetail();
+    else if (overlay === "wipe") closeWipe();
   };
 
   // ---------------------------------------------------------------- 入力
@@ -786,6 +826,10 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     }
     if (overlay === "detail") {
       if (a === "back" || a === "confirm" || (typeof a === "object" && a.menu === 0)) closeDetail();
+      return;
+    }
+    if (overlay === "wipe") {
+      if (a === "back" || a === "confirm" || (typeof a === "object" && a.menu === 0)) closeWipe();
       return;
     }
     switch (route) {

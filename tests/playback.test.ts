@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { createPlayer, type PlayerDeps } from "../src/presenter/playback";
 import { formatMessage } from "../src/presenter/views/message";
 import type { Settings } from "../src/presenter/settings";
-import type { Dive, EnemyGroupView, GameEvent, GameState, ViewPoint } from "../src/core/types";
+import type { Dive, EnemyGroupView, GameEvent, GameState, PenaltyResult, ViewPoint } from "../src/core/types";
 import { data, expectKnownStringKeys, newGame } from "./helpers/core";
 
 function diveAt(x: number, y: number, facing: Dive["facing"], floor = 1): Dive {
@@ -92,6 +92,7 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
       hide: rec("dice.hide"),
     },
     screens: { show: (to) => rec("screens.show")(to), sync: (st) => log.push({ m: "screens.sync", a: [st] }) },
+    wipe: { show: (p) => rec("wipe.show")(p) },
   };
   return { deps, log };
 }
@@ -229,6 +230,46 @@ describe("UI-41 playback", () => {
         { m: "party.setMp", a: ["c1", 0] },
       ]);
       expect(names(log).filter((m) => !m.startsWith("party."))).toEqual(["message.setMore", "screens.sync"]);
+    }
+  });
+
+  test("UI-41/UI-56 wipe は wipe.show を 1 回（PenaltyResult をそのまま）呼び、入力を待たずに後続を再生する（skip の真偽とも）", async () => {
+    const penalty: PenaltyResult = {
+      dice: [3, 4],
+      total: 7,
+      bandIndex: 2,
+      ledgerGold: 0,
+      ledgerItems: [],
+      goldLost: 60,
+      itemsLost: [],
+      expLost: [],
+      revived: [],
+      leaderRule: true,
+    };
+    for (const skipAnimations of [false, true]) {
+      vi.useFakeTimers();
+      const { deps, log } = fakeDeps({ skipAnimations });
+      const before = stateWith(diveAt(1, 1, "N"));
+      const after = stateWith(null);
+      const events: GameEvent[] = [
+        { kind: "dice", label: "wipe.dice", dice: [3, 4], total: 7 },
+        { kind: "wipe", penalty },
+        { kind: "message", key: "town.enter" },
+        { kind: "screen", to: "town" },
+      ];
+      await createPlayer(deps).play(events, before, after);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(log.filter((e) => e.m === "wipe.show")).toEqual([{ m: "wipe.show", a: [penalty] }]);
+      // 内訳を開いた後に街の語りと画面の切り替えが続く（dice は wipe の前で消える）
+      expect(names(log).filter((m) => ["dice.show", "dice.hide", "wipe.show", "message.say", "screens.show", "screens.sync"].includes(m))).toEqual([
+        "dice.show",
+        "dice.hide",
+        "wipe.show",
+        "message.say",
+        "screens.show",
+        "screens.sync",
+      ]);
+      vi.useRealTimers();
     }
   });
 

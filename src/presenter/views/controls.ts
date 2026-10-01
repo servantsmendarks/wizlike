@@ -35,6 +35,8 @@ export type Controls = {
    * 一覧は作り直さない。scroll: false なら見える位置へは動かさない（ポインタで触れた行。タッチの途中で一覧が動かないように）
    */
   setListFocus(i: number | null, opts?: { scroll?: boolean }): void;
+  /** close モードの唯一のボタンの文言（既定は common.close。全滅の内訳では wipe.toTown） */
+  setCloseLabel(label: string): void;
   /** オート中の「オート解除」。pointerdown で onPress を呼ぶ（再生中も受ける。UI-44 の例外は呼び出し側が扱う） */
   setAutoStop(label: string, onPress: () => void): void;
   /**
@@ -371,6 +373,9 @@ export function createControls(o: {
         b.addEventListener("click", onGuardedClick(it));
         battle.appendChild(b);
       });
+    },
+    setCloseLabel(label: string): void {
+      if (close.textContent !== label) close.textContent = label;
     },
     setAutoStop(label: string, onPress: () => void): void {
       autoStop.textContent = label;
