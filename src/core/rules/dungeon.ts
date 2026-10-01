@@ -33,13 +33,14 @@ import {
 } from "./dungeon-gen";
 import { startBossEncounter, startRandomEncounter, tickPoisonStep } from "./combat";
 import { canAct } from "./combat-calc";
+import { offerExit, offerStairs, offerTeleporter } from "./choices";
 import { loseSan } from "./san";
-import { enterBlockReason } from "./town";
+import { enterBlockReason, returnToTown } from "./town";
 
 /**
  * 潜行中の階の実効の構造。generateDive(...)[floorNo-1] に、その階の
  * clearedCells（kind を roomId !== null ? "room" : "corridor" に、eventId と trapId を null に）を重ねる。
- * 最下層でボスを倒していれば（dive.bossDefeated）、ボスのセルを teleporter に重ねる（DG-32。M3 では踏んでも何も起きない）。
+ * 最下層でボスを倒していれば（dive.bossDefeated）、ボスのセルを teleporter に重ねる（DG-32。前進で入ると街へ戻るかを尋ねる）。
  * 辺は生成のまま（扉は通り抜けても door。DG-10）。
  */
 export function floorOf(dive: Dive, data: GameData, floorNo: number = dive.floor): Floor {
@@ -242,7 +243,12 @@ export function moveForward(ctx: RuleContext): void {
   }
   if (cell.kind === "stairsUp") {
     if (dive.floor >= 2) offerStairs(ctx, "up");
-    else ctx.events.push({ kind: "message", key: "dungeon.exitNotYet" });
+    else offerExit(ctx); // DG-06: 1 階の上り階段は街への出口
+    return;
+  }
+  // DG-32: ボス撃破後のテレポーター（floorOf が重ねる）。遭遇の d100 は振らない
+  if (cell.kind === "teleporter") {
+    offerTeleporter(ctx);
     return;
   }
   // DG-11: 行動可能な者がいなければ遭遇しない（遭遇の d100 も振らない）
@@ -306,35 +312,26 @@ function triggerTrap(ctx: RuleContext, f: Floor, p: Pos): void {
 }
 
 // ---------------------------------------------------------------------------
-// 階段（DG-14, E3）
+// 階段・出口・テレポーター（DG-06, DG-14, DG-32, E3）。確認を立てるのは choices.ts
 
-function offerStairs(ctx: RuleContext, dir: "down" | "up"): void {
-  const key = dir === "down" ? "dungeon.stairsDown" : "dungeon.stairsUpFloor";
-  ctx.state.pendingChoice = {
-    kind: "stairs",
-    promptKey: key,
-    options:
-      dir === "down"
-        ? [
-            { id: "descend", labelKey: "dungeon.choice.descend" },
-            { id: "stay", labelKey: "dungeon.choice.stay" },
-          ]
-        : [
-            { id: "ascend", labelKey: "dungeon.choice.ascend" },
-            { id: "stay", labelKey: "dungeon.choice.stay" },
-          ],
-  };
-  ctx.events.push({ kind: "message", key });
-}
-
-/** event.choose。optionId は pendingChoice.options にあることを呼び出し側で確かめ済み */
+/**
+ * event.choose。optionId は pendingChoice.options にあることを呼び出し側で確かめ済み。
+ * stay は何もしない。exit（DG-06 徒歩）と teleport（DG-32）は returnToTown で街へ（DG-43 で台帳を確定）。
+ */
 export function chooseOption(ctx: RuleContext, optionId: string): void {
   const { state, data } = ctx;
   const pc = state.pendingChoice;
   if (pc === null) throw new Error("chooseOption: no pending choice");
   state.pendingChoice = null;
-  // M2 は kind "stairs" だけ
   if (optionId === "stay") return;
+  if (optionId === "exit") {
+    returnToTown(ctx, "dungeon.exit");
+    return;
+  }
+  if (optionId === "teleport") {
+    returnToTown(ctx, "dungeon.teleport");
+    return;
+  }
   const dive = requireDive(state);
   if (optionId === "descend") {
     dive.floor += 1;

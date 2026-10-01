@@ -63,6 +63,7 @@ import {
 import type { BattleItem } from "./combat-calc";
 import type { AllyPlan, MemberSnap, TargetRef } from "./combat-plan";
 import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, snapMembers, toPlan } from "./combat-plan";
+import { offerTeleporter } from "./choices";
 import { applyAllyEffect } from "./effects";
 import { loseSan } from "./san";
 
@@ -822,6 +823,8 @@ function endBattle(ctx: RuleContext, result: "win" | "flee" | "wipe"): void {
   state.battle = null;
   state.screen = "dungeon";
   ctx.events.push({ kind: "screen", to: "dungeon" });
+  // DG-32: ボスを倒すとその場にテレポーターが出て、一行はその上に立っているので、すぐに街へ戻るかを尋ねる
+  if (result === "win" && b.origin.kind === "boss") offerTeleporter(ctx);
 }
 
 function addGold(state: GameState, gold: number): void {

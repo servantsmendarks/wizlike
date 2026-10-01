@@ -202,7 +202,6 @@ describe("engine: execute", () => {
     { type: "town.dark", memberId: "c1" },
     { type: "town.shop", action: { kind: "buy", memberId: "c1", itemId: "herb" } },
     { type: "town.bank", amount: 10 },
-    { type: "dungeon.useItem", memberId: "c1", itemId: "i4" },
     { type: "dungeon.cast", memberId: "c4", spellId: "heal" },
     { type: "party.reorder", order: ["c1", "c2", "c3", "c4", "c5", "c6"] },
   ])("D2 M4 で未実装のコマンドは not implemented: $type", (cmd) => {

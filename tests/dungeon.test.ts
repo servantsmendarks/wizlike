@@ -15,7 +15,8 @@ import {
 } from "../src/core/rules/dungeon-gen";
 import { floorOf, mapView, visibleCells, visibleCellsOf } from "../src/core/rules/dungeon";
 import { battleMenu } from "../src/core/rules/combat";
-import { cloneState, dungeonOf, monsterOf } from "../src/core/state";
+import { offerExit, offerStairs, offerTeleporter } from "../src/core/rules/choices";
+import { cloneState, dungeonOf, makeContext, monsterOf } from "../src/core/state";
 import type { Cell, Command, Edge, Facing, Floor, GameEvent, GameState, Pos } from "../src/core/types";
 import { data, deepFreeze, expectKnownStringKeys, loadFreshData, newGame } from "./helpers/core";
 
@@ -879,15 +880,49 @@ describe("階段（DG-14, E3）", () => {
     expect(kinds(rt2.events)).toEqual(["turned"]);
   });
 
-  test("DG-06/E3 1 階の上り階段に入ると message dungeon.exitNotYet だけで、pendingChoice は null。遭遇判定もしない", () => {
+  test("DG-06/E3 1 階の上り階段に入ると pendingChoice {kind stairs, promptKey dungeon.stairsUp, exit / stay} と同じ key の message。遭遇判定もしない", () => {
     const { state, a } = findSituation((c) => c.kind === "stairsUp");
     const r = run(state, MOVE, dataWithRate(1, 1));
     expect(r.events).toEqual([
       { kind: "moved", pos: a.target, facing: a.facing },
-      { kind: "message", key: "dungeon.exitNotYet" },
+      { kind: "message", key: "dungeon.stairsUp" },
     ]);
-    expect(r.state.pendingChoice).toBeNull();
+    expect(r.state.pendingChoice).toEqual({
+      kind: "stairs",
+      promptKey: "dungeon.stairsUp",
+      options: [
+        { id: "exit", labelKey: "dungeon.choice.exit" },
+        { id: "stay", labelKey: "dungeon.choice.stay" },
+      ],
+    });
     expect(r.state.rng).toEqual(state.rng);
+    // stay は何もしない（迷宮のまま）
+    const st = run(r.state, { type: "event.choose", optionId: "stay" });
+    expect(st.events).toEqual([]);
+    expect(st.state.screen).toBe("dungeon");
+    expect(st.state.pendingChoice).toBeNull();
+  });
+
+  test("DG-06/DG-43 exit で徒歩帰還: dungeon.exit → town.enter → screen town。dive は消え、台帳の品と金は所持に残る。乱数なし", () => {
+    const { state } = findSituation((c) => c.kind === "stairsUp");
+    const s = cloneState(state);
+    s.gold = 380;
+    s.dive!.ledger = { items: ["i4"], gold: 80 };
+    const at = run(s, MOVE, dataWithRate(1, 1)).state;
+    const r = run(at, { type: "event.choose", optionId: "exit" });
+    expect(r.events).toEqual([
+      { kind: "message", key: "dungeon.exit" },
+      { kind: "message", key: "town.enter" },
+      { kind: "screen", to: "town" },
+    ]);
+    expect(r.state.screen).toBe("town");
+    expect(r.state.dive).toBeNull();
+    expect(r.state.pendingChoice).toBeNull();
+    expect(r.state.townVisit).toEqual({ mercyOffered: false });
+    expect(r.state.gold).toBe(380);
+    expect(r.state.items["i4"]).toEqual(s.items["i4"]);
+    expect(r.state.party[0]!.inventory).toEqual(["i4"]);
+    expect(r.state.rng).toEqual(at.rng);
   });
 });
 
@@ -1145,7 +1180,7 @@ describe("ボス（DG-31〜33, DG-01）", () => {
     ]);
   });
 
-  test("DG-32/DG-01 ボスを倒すと bossDefeated、clearedDungeons と unlockedDungeons に d02（message 付き）、floorOf のボスのセルが teleporter（踏んでも何も起きない）", () => {
+  test("DG-32/DG-01 ボスを倒すと bossDefeated、clearedDungeons と unlockedDungeons に d02（message 付き）、floorOf のボスのセルが teleporter。撃破の直後（screen dungeon の後）にテレポーターの確認", () => {
     const { state, a } = atBoss();
     const fought = run(state, MOVE, D0).state;
     const r = defeatBoss(fought);
@@ -1164,21 +1199,46 @@ describe("ボス（DG-31〜33, DG-01）", () => {
     expect(cellAt(f, a.target.x, a.target.y).kind).toBe("teleporter");
     expect(f.boss).toEqual(a.target);
     expect(floorOf(s.dive!, data, 1).cells.some((c) => c.kind === "teleporter")).toBe(false);
-    // 一度離れて戻っても、もう固定遭遇は起きない（rate 0 なら [moved] と d100 の 1 回だけ）
-    const back = placeAt(s, a.pos, a.facing);
-    const mirror = cloneRng(back.rng);
-    randInt(mirror, 1, 100);
-    const again = run(back, MOVE, D0);
-    expect(kinds(again.events)).toEqual(["moved"]);
-    expect(again.state.rng).toEqual(mirror);
+    // 撃破の直後: screen dungeon の後に message dungeon.teleporter が最後に出て、pendingChoice が立つ
+    expect(kinds(r.events).slice(-2)).toEqual(["screen", "message:dungeon.teleporter"]);
+    expect(s.pendingChoice).toEqual({
+      kind: "teleporter",
+      promptKey: "dungeon.teleporter",
+      options: [
+        { id: "teleport", labelKey: "dungeon.choice.teleport" },
+        { id: "stay", labelKey: "dungeon.choice.stay" },
+      ],
+    });
+    // stay の後、一度離れて戻ると再び申し出る。固定遭遇も遭遇の d100 も起きない（rng 不変）
+    const stayed = run(s, { type: "event.choose", optionId: "stay" }, D0).state;
+    expect(stayed.pendingChoice).toBeNull();
+    const back = placeAt(stayed, a.pos, a.facing);
+    const again = run(back, MOVE, dataEnc(1, 1));
+    expect(again.events).toEqual([
+      { kind: "moved", pos: a.target, facing: a.facing },
+      { kind: "message", key: "dungeon.teleporter" },
+    ]);
+    expect(again.state.rng).toEqual(back.rng);
+    expect(again.state.pendingChoice?.kind).toBe("teleporter");
+    // teleport で街へ。clearedDungeons と unlockedDungeons は増えない
+    const t = run(again.state, { type: "event.choose", optionId: "teleport" }, D0);
+    expect(t.events).toEqual([
+      { kind: "message", key: "dungeon.teleport" },
+      { kind: "message", key: "town.enter" },
+      ...t.events.filter((e) => e.kind === "sanChanged"),
+      { kind: "screen", to: "town" },
+    ]);
+    expect(t.state.screen).toBe("town");
+    expect(t.state.dive).toBeNull();
+    expect(t.state.progress).toEqual(s.progress);
+    expect(t.state.rng).toEqual(again.state.rng);
   });
 
   test("DG-33 新しい潜行ではボスが再出現し、再撃破でも clearedDungeons・unlockedDungeons は重複せず、dungeonCleared・unlocked の message も出ない", () => {
-    const first = defeatBoss(run(atBoss().state, MOVE, D0).state).state;
-    // 帰還は M4 なので、街に戻した state を手で作って入り直す
-    const town = cloneState(first);
-    town.dive = null;
-    town.screen = "town";
+    const won = defeatBoss(run(atBoss().state, MOVE, D0).state).state;
+    // テレポーターで街へ戻ってから入り直す
+    const town = run(won, { type: "event.choose", optionId: "teleport" }, D0).state;
+    expect(town.screen).toBe("town");
     const base = (seed: number): GameState => {
       const t = cloneState(town);
       t.rng = createRng(seed);
@@ -1290,7 +1350,10 @@ describe("決定性と網羅", () => {
         let cmd: Command;
         if (s.pendingChoice !== null) {
           const opts = s.pendingChoice.options;
-          cmd = { type: "event.choose", optionId: opts[randInt(walker, 0, opts.length - 1)]!.id };
+          // 街へ出る選択（DG-06 の exit、DG-32 の teleport）は選ばず、walker の乱数も引かずに stay（迷宮を歩き続ける）
+          cmd = opts.some((o) => o.id === "exit" || o.id === "teleport")
+            ? { type: "event.choose", optionId: "stay" }
+            : { type: "event.choose", optionId: opts[randInt(walker, 0, opts.length - 1)]!.id };
         } else {
           const k = randInt(walker, 0, 9);
           cmd = k < 6 ? MOVE : { type: "dungeon.turn", dir: k < 8 ? "left" : k < 9 ? "right" : "around" };
@@ -1321,3 +1384,28 @@ describe("決定性と網羅", () => {
     expect(wiped).toBeLessThan(150);
   }, 120_000);
 });
+
+describe("保留中の選択の不変条件（E3、SV-50）", () => {
+  test("DG-06/DG-14/DG-32 offer* は pendingChoice を立て、同じ events に key === promptKey（params なし）の message を出す。promptKey とラベルの文言に {…} が無い", () => {
+    const cases: [string, (ctx: ReturnType<typeof ctxOf>) => void][] = [
+      ["down", (c) => offerStairs(c, "down")],
+      ["up", (c) => offerStairs(c, "up")],
+      ["exit", (c) => offerExit(c)],
+      ["teleporter", (c) => offerTeleporter(c)],
+    ];
+    for (const [name, f] of cases) {
+      const ctx = ctxOf(enterD01(1));
+      f(ctx);
+      const pc = ctx.state.pendingChoice;
+      expect(pc, name).not.toBeNull();
+      expect(ctx.events).toEqual([{ kind: "message", key: pc!.promptKey }]);
+      expectKnownStringKeys(ctx.events);
+      expect(data.strings[pc!.promptKey], name).not.toContain("{");
+      for (const o of pc!.options) expect(data.strings[o.labelKey], o.labelKey).not.toContain("{");
+    }
+  });
+});
+
+function ctxOf(s: GameState) {
+  return makeContext(cloneState(s), data);
+}

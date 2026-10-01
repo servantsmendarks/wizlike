@@ -16,6 +16,7 @@ import {
 } from "./rules/combat";
 import { startNewGame, validatePartySetup } from "./rules/creation";
 import { checkEnter, chooseOption, enterDungeon, moveForward, turn } from "./rules/dungeon";
+import { checkUseItem, useItemInField } from "./rules/items";
 import { checkInn, checkMercy, checkTemple, grantMercy, stayInn, templeService } from "./rules/town";
 import type { TempleService } from "./rules/town";
 import { cloneState, makeContext } from "./state";
@@ -91,6 +92,14 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       if (dir !== "left" && dir !== "right" && dir !== "around") return reject(state, "dungeon.turn", "bad dir");
       const ctx = makeContext(cloneState(state), data);
       turn(ctx, dir);
+      return finish(ctx);
+    }
+    case "dungeon.useItem": {
+      const c = command as { memberId?: unknown; itemId?: unknown; targetId?: unknown };
+      const r = checkUseItem(state, data, c.memberId, c.itemId, c.targetId);
+      if (r !== null) return reject(state, "dungeon.useItem", r);
+      const ctx = makeContext(cloneState(state), data);
+      useItemInField(ctx, c.memberId as string, c.itemId as string, typeof c.targetId === "string" ? c.targetId : null);
       return finish(ctx);
     }
     case "event.choose": {
@@ -176,7 +185,6 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
     case "town.dark":
     case "town.shop":
     case "town.bank":
-    case "dungeon.useItem":
     case "dungeon.cast":
     case "party.reorder":
       return reject(state, command.type, "not implemented");
