@@ -151,7 +151,7 @@ describe("CB-43 autoInterruptReason", () => {
     expect(ratioCase(31, 30)).toBeNull();
   });
 
-  test("CB-43 毒が付くと status、死亡は dead（hp より優先）、SAN の段階の下降で san、変化なしで null、hp と status が同時なら hp", () => {
+  test("CB-43 毒が付くと status、死亡は dead、SAN の段階の下降で san、変化なしで null、hp と status が同時なら hp", () => {
     const s0 = twoGroups();
     const before = snapMembers(s0, data);
     expect(autoInterruptReason(before, s0, data)).toBeNull();
@@ -166,5 +166,19 @@ describe("CB-43 autoInterruptReason", () => {
     expect(autoInterruptReason(snapMembers(poisoned, data), poisoned, data)).toBeNull();
     const deadBefore = withChar(s0, 2, { hp: 0, life: "dead" });
     expect(autoInterruptReason(snapMembers(deadBefore, data), withChar(deadBefore, 2, { status: ["poison"] }), data)).toBeNull();
+  });
+
+  test("CB-43 優先順 dead > hp > status > san: 同じラウンドで別のメンバーに条件が重なったときに効く（死亡だけでは hp は立たない）", () => {
+    const s0 = withChar(twoGroups(), 0, { hp: 31, hpMax: 100 });
+    const before = snapMembers(s0, data);
+    const c3dead = (s: GameState) => withChar(s, 2, { hp: 0, life: "dead" });
+    // 死亡だけ: hp は前後とも alive のときだけなので立たない
+    expect(autoInterruptReason(before, c3dead(s0), data)).toBe("dead");
+    // c1 の HP 0.31→0.29 と c3 の死亡が同時 → dead（hp より優先）
+    expect(autoInterruptReason(before, withChar(c3dead(s0), 0, { hp: 29 }), data)).toBe("dead");
+    // c3 の死亡と c2 の毒が同時 → dead（status より優先）
+    expect(autoInterruptReason(before, withChar(c3dead(s0), 1, { status: ["poison"] }), data)).toBe("dead");
+    // c1 の毒と c3 の SAN の段階の悪化（49 で uneasy）が同時 → status（san より優先）
+    expect(autoInterruptReason(before, withChar(withChar(s0, 0, { status: ["poison"] }), 2, { san: 49 }), data)).toBe("status");
   });
 });

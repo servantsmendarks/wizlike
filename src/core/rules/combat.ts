@@ -5,7 +5,7 @@
 // 乱数の消費順（テストで固定する）:
 //   遭遇: [グループ数] → ([種類] → [体数])×グループ → HP（g→u）→ 味方 1d10 → 敵 1d10 →（敵の奇襲ならそのラウンド）
 //   ボス: groupSize（定数 "1" は消費なし）→ HP → 先手 2 個
-//   ラウンド: [逃走 d100] → initiative（味方の計画の順 → g → u）→ 行動順に各行動
+//   ラウンド: [逃走 d100] → initiative（味方の計画の順 → ラウンド開始時に行動可能な敵の個体の g → u）→ 行動順に各行動
 //     味方の攻撃 1 振り: 命中 → [ダメージ] → [覚醒]
 //     敵の攻撃要素: 対象 → 命中 → [ダメージ] → [覚醒] → [付与]
 //     呪文・道具: 個体ごとのダメージ（→ 覚醒）・付与、回復のダイス
@@ -239,7 +239,7 @@ export function checkBattleInput(state: GameState, data: GameData, memberId: unk
 
 /** 検査済みの入力から、余計な欄を落としたプレーンな値を作る（state に保存するため） */
 function cleanTarget(t: BattleTarget): BattleTarget {
-  if (t.side === "enemy") return { side: "enemy", group: t.group };
+  if (t.side === "enemy") return { side: "enemy", group: t.group + 0 }; // + 0 で -0 を 0 にする（JSON の往復で同値にするため）
   if (t.side === "ally") return { side: "ally", memberId: t.memberId };
   return { side: "none" };
 }
@@ -247,7 +247,7 @@ function cleanTarget(t: BattleTarget): BattleTarget {
 function cleanAction(a: BattleAction): BattleAction {
   switch (a.type) {
     case "attack":
-      return { type: "attack", group: a.group };
+      return { type: "attack", group: a.group + 0 }; // + 0 で -0 を 0 にする
     case "defend":
       return { type: "defend" };
     case "flee":

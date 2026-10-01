@@ -12,7 +12,7 @@
 ## 2. ラウンド
 
 - CB-10 ラウンド = 入力フェーズ → 解決フェーズ。入力は行動可能な味方全員分（オート ON のメンバーは自動入力）。全員分が揃ったら `battle.resolve`。
-- CB-11 解決順は各行動者の `initiative = agi + 1d10 + 性格恩恵` の降順。敵は `monsters[].agi`。同値は味方優先。敵は生存個体ごとに 1 行動者（initiative = `monsters[].agi` + 1d10）。同値の順は味方 → 敵、味方同士は並び順、敵同士はグループ → 個体の添字順。
+- CB-11 解決順は各行動者の `initiative = agi + 1d10 + 性格恩恵` の降順。敵は `monsters[].agi`。同値は味方優先。敵は、ラウンド開始時に行動可能な生存個体（麻痺・睡眠・石化を除く）ごとに 1 行動者（initiative = `monsters[].agi` + 1d10）。行動不能な個体は initiative を振らず、そのラウンドの途中で覚めても行動しない（味方の入力対象が行動可能者だけなのと対称）。同値の順は味方 → 敵、味方同士は並び順、敵同士はグループ → 個体の添字順。
 - CB-12 コマンド: 攻撃 `attack`（対象グループ）、呪文 `cast`（呪文と対象）、防御 `defend`（そのラウンド被ダメージ半減）、道具 `item`、逃走 `flee`（パーティ行動。誰か 1 人が選べば全員の入力を打ち切って逃走判定）。オートの ON/OFF は `battle.auto` で入力フェーズ中に切り替える。入力は同じメンバーへの再入力で上書きできる。防御（CB-13 の後衛の攻撃と CB-41 の MP 不足の置き換えを含む）はラウンド開始時に決まり、そのラウンド全体に効く。
 - CB-13 前衛（並び 1〜3）は近接攻撃可。後衛（4〜6）は装備武器が `ranged: true` のときだけ攻撃可。`ranged` でない武器（または素手）で「攻撃」を選んだ後衛は、防御として解決する。呪文と道具は位置に関係なく使える。
 - CB-14 前衛 3 人全員が行動不能（CH-44）のとき、後衛を前衛として扱う。近接攻撃可、敵の通常攻撃の対象になる。前衛が 1 人でも回復すれば元に戻る。
@@ -62,4 +62,4 @@
 - 敵の個体の id は `e{グループ添字}-{個体添字}`（添字は戦闘中に詰めない）。敵の被弾にも `hpChanged`（id は敵の id）を出し、撃破は `lifeChanged` dead。
 - MP の変化は `mpChanged`。
 - 先手判定の dice のラベルは `battle.initiativeParty` / `battle.initiativeEnemy` の 2 件、逃走の dice のラベルは `battle.fleeRoll`。
-- 遭遇の順は screen{battle} → encounter → message → （未鑑定の message と sanChanged）→ 先手判定の dice 2 件 → 奇襲の message →（敵の奇襲ならそのラウンド）。戦闘の終わりの順は battleEnd → 結果の message → 味方の睡眠の解除 → screen{dungeon}。
+- 遭遇の順は screen{battle} → encounter → message → （未鑑定の message と sanChanged）→（CB-06 の SAN で CB-53 の全滅になれば、先手判定の dice を出さずに戦闘の終わりの順へ進む）→ 先手判定の dice 2 件 → 奇襲の message →（敵の奇襲ならそのラウンド）。戦闘の終わりの順は battleEnd → 結果の message → 味方の睡眠の解除 → screen{dungeon}。

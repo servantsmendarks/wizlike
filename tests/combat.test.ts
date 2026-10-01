@@ -355,6 +355,19 @@ describe("入力（CB-10/12、F2）", () => {
     expect(a.state.party.map((c) => c.lastBattleInput)).toEqual(base().party.map((c) => c.lastBattleInput));
   });
 
+  test("CB-12 group に -0 を渡しても inputs と lastBattleInput には 0 で保存する（JSON の往復で同値。-0 を state に入れない）", () => {
+    let s = exec(base(), input("c1", { type: "attack", group: -0 })).state;
+    s = exec(s, input("c5", { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: -0 } })).state;
+    const b = s.battle!;
+    const a1 = b.inputs["c1"]!;
+    const a5 = b.inputs["c5"]!;
+    expect(a1.type === "attack" && Object.is(a1.group, 0)).toBe(true);
+    expect(a5.type === "cast" && a5.target.side === "enemy" && Object.is(a5.target.group, 0)).toBe(true);
+    const l1 = member(s, "c1").lastBattleInput!;
+    expect(l1.type === "attack" && Object.is(l1.group, 0)).toBe(true);
+    expect(JSON.parse(JSON.stringify(s))).toStrictEqual(s);
+  });
+
   test("F2 battle.auto: bad on / no change は rejected、受け付けてもイベントは出さず inputs は触らない", () => {
     const s = exec(base(), input("c1", DEF)).state;
     expectRejected(s, { type: "battle.auto", on: "yes" } as unknown as Command, "bad on");
@@ -482,6 +495,44 @@ describe("前衛と後衛・敵の対象（CB-13/14/15/16）", () => {
     s2.battle!.inputs["c1"] = atk(0);
     const r2 = exec(s2, RESOLVE, slow);
     expect(eventsOf(r2.events, "attack").map((e) => e.actorId)).toEqual(["c1", "e1-0"]);
+  });
+});
+
+describe("行動順（CB-11）", () => {
+  test("CB-11 ラウンド開始時に眠っている（麻痺の）敵の個体は initiative の 1d10 を振らない（鏡の rng: 味方 6 人分だけ）", () => {
+    const s = setup(
+      [
+        { monsterId: "kobold", hps: [80, 80], status: [["sleep"], ["paralysis"]] },
+        { monsterId: "giant_rat", hps: [80], status: [["sleep"]] },
+      ],
+      { identified: ["kobold", "giant_rat"] },
+    );
+    const m = cloneRng(s.rng);
+    rolls(m, 6); // 味方 6 人（全員 defend）。敵 3 体は行動不能なので振らない
+    const r = exec(s, RESOLVE);
+    expect(r.state.rng).toEqual(m);
+    expect(eventsOf(r.events, "attack")).toEqual([]);
+  });
+
+  test("CB-11/CB-32 眠った敵は、同じラウンドの中で被弾して覚めても、そのラウンドは行動しない", () => {
+    const d = dataWith({ combat: { ...ALWAYS_HIT, sleepWakeChance: 100 } }, (x) => (x.monsters.find((m) => m.id === "kobold")!.agi = -1000));
+    const s = setup([{ monsterId: "kobold", hps: [80], status: [["sleep"]] }], {
+      identified: ["kobold"],
+      patches: { c2: PARA, c3: PARA },
+      inputs: { c1: atk(0), c4: DEF, c5: DEF, c6: DEF },
+    });
+    const r = exec(s, RESOLVE, d);
+    expect(r.events).toContainEqual({ kind: "statusChanged", id: "e0-0", status: "sleep", on: false });
+    expect(r.state.battle!.groups[0]!.units[0]!.status).toEqual([]);
+    const actors = eventsOf(r.events, "attack").map((e) => e.actorId);
+    expect(actors.length).toBeGreaterThan(0);
+    expect(actors.every((a) => a === "c1")).toBe(true);
+    // 次のラウンドでは行動する（agi −1000 なので最後）
+    const next = exec(r.state, { type: "battle.input", memberId: "c1", action: DEF }, d).state;
+    let n = next;
+    for (const id of ["c4", "c5", "c6"]) n = exec(n, { type: "battle.input", memberId: id, action: DEF }, d).state;
+    const r2 = exec(n, RESOLVE, d);
+    expect(eventsOf(r2.events, "attack").map((e) => e.actorId)).toEqual(["e0-0"]);
   });
 });
 
@@ -1056,6 +1107,6 @@ describe("網羅（完了条件「6 種と戦える」、敵の id、battleMenu�
     expect(a.events[0]?.kind).not.toBe("rejected");
     expect(a).toEqual(b);
     expect(JSON.stringify(s)).toBe(before);
-    expect(JSON.parse(JSON.stringify(a.state))).toEqual(a.state);
+    expect(JSON.parse(JSON.stringify(a.state))).toStrictEqual(a.state);
   });
 });

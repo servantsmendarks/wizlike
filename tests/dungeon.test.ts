@@ -372,6 +372,20 @@ describe("遭遇（CB-01, DG-11）", () => {
     }
   });
 
+  test.each<[string, Command]>([
+    ["dungeon.turn", { type: "dungeon.turn", dir: "left" }],
+    ["event.choose", { type: "event.choose", optionId: "stay" }],
+    ["dungeon.enter", ENTER_D01],
+  ])("DG-10/CB-01 戦闘中は %s も rejected（同じ参照）", (_name, cmd) => {
+    const { state } = findSituation((c) => c.kind === "corridor" || c.kind === "room");
+    const inBattle = run(state, MOVE, dataEnc(1, 1)).state;
+    expect(inBattle.screen).toBe("battle");
+    const r = execute(inBattle, cmd, data);
+    expect(r.state).toBe(inBattle);
+    expect(r.events).toHaveLength(1);
+    expect(r.events[0]?.kind).toBe("rejected");
+  });
+
   test("DG-11/CB-01 判定は d100 ≤ round(rate×100)（d01 corridor 0.05 → 5）。鏡の rng と一致する", () => {
     let hits = 0;
     for (let seed = 1; seed <= 30; seed++) {
@@ -1187,33 +1201,83 @@ describe("ボス（DG-31〜33, DG-01）", () => {
 });
 
 describe("決定性と網羅", () => {
-  test("§3-2 決定性: 同じ state と command で execute を 2 回呼ぶと deep-equal。引数の state を書き換えない。返る state（dive・pendingChoice を含む）は JSON 往復で toEqual", () => {
+  test("§3-2 決定性: 同じ state と command で execute を 2 回呼ぶと deep-equal。引数の state と data を書き換えない。返る state（dive・pendingChoice・battle を含む）は JSON 往復で toStrictEqual（undefined の欄も検出する）", () => {
     const frozenData = deepFreeze(loadFreshData());
     const pit = findSituation((c) => c.kind === "trap" && c.trapId === "pit").state;
     const stairs = run(findSituation((c) => c.kind === "stairsDown").state, MOVE).state;
-    const cases: [GameState, Command][] = [
-      [newGame(5), ENTER_D01],
-      [enterD01(5), MOVE],
-      [enterD01(5), { type: "dungeon.turn", dir: "around" }],
-      [pit, MOVE],
-      [stairs, { type: "event.choose", optionId: "descend" }],
-      [stairs, { type: "event.choose", optionId: "stay" }],
+    const corridor = findSituation((c) => c.kind === "corridor" || c.kind === "room").state;
+    // 遭遇する前進（rate 1。奇襲なし）と、敵の奇襲ラウンドを同じ execute の中で解決する前進（敵の agi を極端に上げる）
+    const encData = deepFreeze(dataEnc(1, 1));
+    const ambushData = dataWithRate(1, 1);
+    for (const m of ambushData.monsters) m.agi = 1000;
+    deepFreeze(ambushData);
+    const cases: [GameState, Command, GameData, string?][] = [
+      [newGame(5), ENTER_D01, frozenData],
+      [enterD01(5), MOVE, frozenData],
+      [enterD01(5), { type: "dungeon.turn", dir: "around" }, frozenData],
+      [pit, MOVE, frozenData],
+      [stairs, { type: "event.choose", optionId: "descend" }, frozenData],
+      [stairs, { type: "event.choose", optionId: "stay" }, frozenData],
+      [corridor, MOVE, encData, "battle.encounter"],
+      [corridor, MOVE, ambushData, "battle.surpriseEnemy"],
     ];
-    for (const [s, cmd] of cases) {
+    for (const [s, cmd, d, wantKey] of cases) {
       const frozen = deepFreeze(cloneState(s));
       const before = JSON.stringify(frozen);
-      const a = execute(frozen, cmd, frozenData);
-      const b = execute(frozen, cmd, frozenData);
+      const dataBefore = JSON.stringify(d);
+      const a = execute(frozen, cmd, d);
+      const b = execute(frozen, cmd, d);
       expect(a.events[0]?.kind).not.toBe("rejected");
+      if (wantKey !== undefined) expect(kinds(a.events)).toContain("message:" + wantKey);
       expect(a).toEqual(b);
       expect(JSON.stringify(frozen)).toBe(before);
-      expect(JSON.parse(JSON.stringify(a.state))).toEqual(a.state);
+      expect(JSON.stringify(d)).toBe(dataBefore);
+      expect(JSON.parse(JSON.stringify(a.state))).toStrictEqual(a.state);
     }
+  });
+
+  test("DG-14/CB-01/CB-51 戦闘を通って階段まで進む: 下り階段の 2 歩手前から前進して遭遇 → オートで勝利 → 前進で dungeon.stairsDown → descend で floorChanged と dungeon.descend → 2 階の 1 歩目で遭遇", () => {
+    const d1 = dataEnc(1, 1);
+    let start: GameState | null = null;
+    for (let seed = 1; seed <= 300 && start === null; seed++) {
+      const s0 = enterD01(seed);
+      const f = floorOf(s0.dive!, data);
+      for (const a of approaches(f, (c) => c.kind === "stairsDown")) {
+        const mid = cellAt(f, a.pos.x, a.pos.y);
+        const back = opposite(a.facing);
+        const behind = step(a.pos, back);
+        if ((mid.kind === "corridor" || mid.kind === "room") && edgeOf(mid, back) === "open" && inBounds(f, behind.x, behind.y)) {
+          start = placeAt(s0, behind, a.facing);
+          break;
+        }
+      }
+    }
+    expect(start).not.toBeNull();
+    const r0 = run(start!, MOVE, d1);
+    expect(kinds(r0.events).slice(0, 4)).toEqual(["moved", "screen", "encounter", "message:battle.encounter"]);
+    const events: GameEvent[] = [];
+    const won = finishBattle(r0.state, events, d1);
+    expect(kinds(events)).toContain("message:battle.win");
+    expect(won.screen).toBe("dungeon");
+    const r1 = run(won, MOVE, DATA0);
+    expect(kinds(r1.events)).toEqual(["moved", "message:dungeon.stairsDown"]);
+    const r2 = run(r1.state, { type: "event.choose", optionId: "descend" }, DATA0);
+    expect(kinds(r2.events).slice(0, 2)).toEqual(["floorChanged", "message:dungeon.descend"]);
+    expect(r2.state.dive!.floor).toBe(2);
+    // 2 階の上り階段から、開いた辺のある向きへ向き直って 1 歩
+    let t = r2.state;
+    const f2 = floorOf(t.dive!, data);
+    const here = cellAt(f2, t.dive!.pos.x, t.dive!.pos.y);
+    for (let i = 0; i < 4 && edgeOf(here, t.dive!.facing) !== "open"; i++) t = run(t, { type: "dungeon.turn", dir: "right" }, DATA0).state;
+    expect(edgeOf(here, t.dive!.facing)).toBe("open");
+    const r3 = run(t, MOVE, d1);
+    expect(kinds(r3.events).slice(0, 4)).toEqual(["moved", "screen", "encounter", "message:battle.encounter"]);
+    expect(r3.state.battle).not.toBeNull();
   });
 
   test("UI-43/§3-10 200 シード × 300 歩のランダムウォーク（move/turn/choose）で出た message の key がすべて strings に実在し、例外が出ない", () => {
     const keys = new Set<string>();
-    const kindsSeen = new Set<string>();
+    let wiped = 0;
     for (let seed = 1; seed <= 200; seed++) {
       const walker = createRng(seed + 10_000);
       let s = enterD01(seed);
@@ -1235,19 +1299,25 @@ describe("決定性と網羅", () => {
         if (r.events[0]?.kind === "rejected") throw new Error(`seed ${seed} step ${i}: ${JSON.stringify(r.events[0])}`);
         events.push(...r.events);
         s = r.state;
-        // 遭遇したらオートで戦闘を終わらせてから歩き続ける（全滅なら迷宮に戻る。M4 までの仮）
+        // 遭遇したらオートで戦闘を終わらせてから歩き続ける。全滅したら（迷宮に戻すのは M4 までの仮で、
+        // 全員死亡では罠・階段・遭遇がどれも起きず何も確かめないので）そのシードを打ち切る
         if (s.screen === "battle") s = finishBattle(s, events);
+        if (s.party.every((c) => c.life !== "alive")) {
+          wiped += 1;
+          break;
+        }
       }
       expectKnownStringKeys(events);
       for (const e of events) {
-        kindsSeen.add(e.kind);
         if (e.kind === "message") keys.add(e.key);
       }
     }
-    // ウォークが主要な経路を通ったこと
-    for (const k of ["dungeon.blocked", "dungeon.door", "dungeon.stairsDown", "dungeon.descend", "battle.encounter", "battle.win"]) {
+    // ウォークが主要な経路を通ったこと。降下と 2 階はウォークでは 1 シード頼みになるので、
+    // 「戦闘を通って階段まで進む」のテストで決定的に確かめる
+    for (const k of ["dungeon.blocked", "dungeon.door", "dungeon.stairsDown", "battle.encounter", "battle.win"]) {
       expect(keys.has(k), k).toBe(true);
     }
-    expect(kindsSeen.has("floorChanged")).toBe(true);
+    // 全滅で打ち切ったシードが大半ではない（戦闘の後も歩き続けたシードが残る）
+    expect(wiped).toBeLessThan(150);
   }, 120_000);
 });
