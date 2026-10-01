@@ -38,8 +38,7 @@ export type BattleAction =
   | { type: "attack"; group: number }
   | { type: "cast"; spellId: string; target: BattleTarget }
   | { type: "defend" }
-  | { type: "item"; instanceId: string; target: BattleTarget }
-  | { type: "flee" };
+  | { type: "item"; instanceId: string; target: BattleTarget };
 
 // ===================== アイテム実体（CH-70〜73、DG-40） =====================
 
@@ -310,6 +309,10 @@ export type Command =
   | { type: "battle.input"; memberId: string; action: BattleAction }
   | { type: "battle.resolve" }
   | { type: "battle.auto"; on: boolean }
+  /** CB-12/50: パーティの「逃げる」。入力済みの行動を捨てて、すぐに逃走判定をする */
+  | { type: "battle.flee" }
+  /** CB-12/40: パーティの「前回と同じ」。行動可能な全員の入力をオート入力の規則で作り、1 ラウンドだけ解決する */
+  | { type: "battle.repeat" }
   | { type: "event.choose"; optionId: string }
   | { type: "party.reorder"; order: string[] };
 

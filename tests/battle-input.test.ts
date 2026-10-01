@@ -103,7 +103,7 @@ describe("UI-54 入力の段階", () => {
     expect(nextCursor(menu({ auto: true }), "c1")).toBeNull();
   });
 
-  test("UI-54/CB-12 ready（flee の入力で揃った）なら pending が残っていても firstCursor / nextCursor は null（解決の再生中に次のメンバーの枠を出さない）", () => {
+  test("UI-54/CB-12 ready なら pending が残っていても firstCursor / nextCursor は null（解決の再生中に次のメンバーの枠を出さない）", () => {
     const m = menu({ ready: true, pending: ["c2", "c4", "c5", "c6"] });
     expect(firstCursor(m)).toBeNull();
     expect(nextCursor(m, "c1")).toBeNull();
@@ -221,10 +221,10 @@ describe("UI-54 入力の段階", () => {
     });
   });
 
-  test("UI-54/F2 防御・逃走は即 send、オートは battle.auto on。disabled（呪文なしの呪文、道具なしの道具、逃走不可の逃走）は送らない", () => {
+  test("UI-54/F2/CB-12 防御・逃走は即 send（逃走は battle.flee）、オートは battle.auto on。disabled（呪文なしの呪文、道具なしの道具、逃走不可の逃走）は送らない", () => {
     const m = menu();
     expect(step(m, cur("c2"), cmd("defend"))).toEqual({ cursor: cur("c2"), send: { type: "battle.input", memberId: "c2", action: { type: "defend" } } });
-    expect(step(m, cur("c2"), cmd("flee")).send).toEqual({ type: "battle.input", memberId: "c2", action: { type: "flee" } });
+    expect(step(m, cur("c2"), cmd("flee")).send).toEqual({ type: "battle.flee" });
     expect(step(m, cur("c2"), cmd("auto")).send).toEqual({ type: "battle.auto", on: true });
     expect(step(m, cur("c2"), cmd("spell"))).toEqual({ cursor: cur("c2"), send: null });
     expect(step(m, cur("c2"), cmd("item"))).toEqual({ cursor: cur("c2"), send: null });

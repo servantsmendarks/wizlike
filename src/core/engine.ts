@@ -6,7 +6,11 @@ import {
   applyBattleInput,
   checkBattleAuto,
   checkBattleInput,
+  checkFlee,
+  checkRepeat,
   checkResolve,
+  fleeRound,
+  repeatRound,
   resolveRound,
   setAuto,
 } from "./rules/combat";
@@ -113,6 +117,22 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       if (r !== null) return reject(state, "battle.auto", r);
       const ctx = makeContext(cloneState(state), data);
       setAuto(ctx, on as boolean);
+      return { state: ctx.state, events: ctx.events };
+    }
+    case "battle.flee": {
+      if (state.screen !== "battle" || state.battle === null) return reject(state, "battle.flee", "not in battle");
+      const r = checkFlee(state);
+      if (r !== null) return reject(state, "battle.flee", r);
+      const ctx = makeContext(cloneState(state), data);
+      fleeRound(ctx);
+      return { state: ctx.state, events: ctx.events };
+    }
+    case "battle.repeat": {
+      if (state.screen !== "battle" || state.battle === null) return reject(state, "battle.repeat", "not in battle");
+      const r = checkRepeat(state);
+      if (r !== null) return reject(state, "battle.repeat", r);
+      const ctx = makeContext(cloneState(state), data);
+      repeatRound(ctx);
       return { state: ctx.state, events: ctx.events };
     }
     case "town.enter":

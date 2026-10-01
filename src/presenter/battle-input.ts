@@ -22,7 +22,7 @@ export type Choice =
 export type MenuEntry = { label: string; disabled: boolean; choice: Choice };
 
 /**
- * オート中・入力が揃った（ready。flee が 1 件あれば pending が残っていても真）・入力待ちが無ければ null。
+ * オート中・入力が揃った（ready）・入力待ちが無ければ null。
  * それ以外は pending の先頭の command
  */
 export function firstCursor(menu: BattleMenu): InputCursor | null {
@@ -184,7 +184,7 @@ export function step(menu: BattleMenu, cursor: InputCursor, choice: Choice): { c
         case "defend":
           return { cursor, send: input(id, { type: "defend" }) };
         case "flee":
-          return { cursor, send: input(id, { type: "flee" }) };
+          return { cursor, send: { type: "battle.flee" } }; // CB-12/50: パーティの行動
         case "auto":
           return { cursor, send: { type: "battle.auto", on: true } };
         case "back":

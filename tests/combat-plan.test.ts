@@ -35,13 +35,13 @@ describe("CB-40/42 autoInput", () => {
     ]);
   });
 
-  test("CB-40 前回の入力を繰り返す（攻撃・防御・呪文・道具）。flee と使えないもの・手元に無い道具は既定に落とす", () => {
+  test("CB-40 前回の入力を繰り返す（攻撃・防御・呪文・道具）。無い（null）・使えないもの・手元に無い道具は既定に落とす", () => {
     let s = twoGroups();
     s = withLast(s, 0, { type: "attack", group: 2 });
     s = withLast(s, 1, { type: "defend" });
     s = withLast(s, 4, { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 2 } });
     s = withLast(s, 3, { type: "item", instanceId: "i13", target: { side: "ally", memberId: "c4" } }); // ドナの解毒草
-    s = withLast(s, 2, { type: "flee" });
+    expect(ch(s, "c3").lastBattleInput).toBeNull();
     s = withLast(s, 5, { type: "item", instanceId: "i4", target: { side: "ally", memberId: "c1" } }); // アルドの薬草（フィンの手元に無い）
     expect(autoInput(s, data, ch(s, "c1"))).toEqual({ type: "attack", group: 2 });
     expect(autoInput(s, data, ch(s, "c2"))).toEqual({ type: "defend" });
@@ -85,11 +85,11 @@ describe("CB-13/41 toPlan", () => {
   test("CB-41 エル MP 1 で fire_arrow: 後衛なら防御（noMp）、前衛扱いなら最小の生存グループへ攻撃（noMp）。MP が足りれば cast のまま", () => {
     const fire: BattleAction = { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 2 } };
     const s = withChar(twoGroups(), 4, { mp: 1 });
-    expect(toPlan(s, data, ch(s, "c5"), fire as Exclude<BattleAction, { type: "flee" }>)).toEqual({ kind: "defend", memberId: "c5", why: "noMp" });
+    expect(toPlan(s, data, ch(s, "c5"), fire)).toEqual({ kind: "defend", memberId: "c5", why: "noMp" });
     const f = frontParalyzed(s);
-    expect(toPlan(f, data, ch(f, "c5"), fire as Exclude<BattleAction, { type: "flee" }>)).toEqual({ kind: "attack", memberId: "c5", group: 1, noMp: true });
+    expect(toPlan(f, data, ch(f, "c5"), fire)).toEqual({ kind: "attack", memberId: "c5", group: 1, noMp: true });
     const ok = withChar(s, 4, { mp: 2 });
-    expect(toPlan(ok, data, ch(ok, "c5"), fire as Exclude<BattleAction, { type: "flee" }>)).toEqual({
+    expect(toPlan(ok, data, ch(ok, "c5"), fire)).toEqual({
       kind: "cast",
       memberId: "c5",
       spellId: "fire_arrow",

@@ -1140,8 +1140,8 @@ describe("ボス（DG-31〜33, DG-01）", () => {
     expect(r.state.battle!.origin).toEqual({ kind: "boss" });
     expect(r.state.battle!.groups.map((g) => [g.monsterId, g.units.length])).toEqual([["gatekeeper_armor", 1]]);
     expect(battleMenu(r.state, D0)!.canFlee).toBe(false);
-    expect(execute(r.state, { type: "battle.input", memberId: "c1", action: { type: "flee" } }, D0).events).toEqual([
-      { kind: "rejected", command: "battle.input", reason: "cannot flee" },
+    expect(execute(r.state, { type: "battle.flee" }, D0).events).toEqual([
+      { kind: "rejected", command: "battle.flee", reason: "cannot flee" },
     ]);
   });
 

@@ -1,6 +1,6 @@
 // UI-54 / CB-43: オート戦闘の連鎖。常駐のループではなく、run の後に「次に何を送るか」を決めて 1 段ずつ進める async の連鎖。
 // - chainDecision は純粋: rejected・戦闘外なら止まる。オート中は解除の予約があれば battle.auto off、無ければ battle.resolve。
-//   手動では入力が揃った（menu.ready）ときだけ battle.resolve を送る（全員入力済み・flee あり・行動可能 0 人の睡眠だけ）。
+//   手動では入力が揃った（menu.ready）ときだけ battle.resolve を送る（全員入力済み・行動可能 0 人の睡眠だけ）。
 // - runChain は連鎖の本体。段の間で yieldFrame（app では 1 回だけの requestAnimationFrame）を待ち、描画と入力に 1 フレーム譲る。
 // DOM・タイマーには触れない（yieldFrame は呼び出し側が注入する）。
 import type { BattleMenu, Command } from "../core/types";

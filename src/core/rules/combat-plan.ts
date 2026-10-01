@@ -54,13 +54,13 @@ function retarget(state: GameState, t: BattleTarget): BattleTarget | null {
 }
 
 /**
- * CB-40/42: オートの入力。lastBattleInput を繰り返し、無い・flee・使えない呪文や道具なら既定
+ * CB-40/42: オートの入力（battle.repeat も使う）。lastBattleInput を繰り返し、無い・使えない呪文や道具なら既定
  * （canStrike なら最小の生存グループへの攻撃、でなければ防御）。対象は CB-42 で振り替える。
- * MP 不足はここでは見ない（toPlan の CB-41）。flee は返さない。
+ * MP 不足はここでは見ない（toPlan の CB-41）。
  */
 export function autoInput(state: GameState, data: GameData, ch: Character): BattleAction {
   const a = ch.lastBattleInput;
-  if (a === null || a.type === "flee") return defaultAction(state, data, ch);
+  if (a === null) return defaultAction(state, data, ch);
   switch (a.type) {
     case "defend":
       return { type: "defend" };
@@ -93,12 +93,7 @@ export function autoInput(state: GameState, data: GameData, ch: Character): Batt
  * CB-13/41: 入力を行動計画にする（ラウンド開始時に全員分を一括で作る）。
  * 後衛の攻撃は防御（backRow）、MP 不足の呪文は canStrike なら攻撃（noMp）、でなければ防御（noMp）。
  */
-export function toPlan(
-  state: GameState,
-  data: GameData,
-  ch: Character,
-  action: Exclude<BattleAction, { type: "flee" }>,
-): AllyPlan {
+export function toPlan(state: GameState, data: GameData, ch: Character, action: BattleAction): AllyPlan {
   const memberId = ch.id;
   switch (action.type) {
     case "defend":

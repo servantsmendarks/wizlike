@@ -5,7 +5,9 @@
 // 乱数の消費順（テストで固定する）:
 //   遭遇: [グループ数] → ([種類] → [体数])×グループ → HP（g→u）→ 味方 1d10 → 敵 1d10 →（敵の奇襲ならそのラウンド）
 //   ボス: groupSize（定数 "1" は消費なし）→ HP → 先手 2 個
-//   ラウンド: [逃走 d100] → initiative（味方の計画の順 → ラウンド開始時に行動可能な敵の個体の g → u）→ 行動順に各行動
+//   ラウンド（battle.resolve / battle.repeat）: initiative（味方の計画の順 → ラウンド開始時に行動可能な敵の個体の g → u）
+//     → 行動順に各行動
+//   逃走（battle.flee）: d100 →（失敗なら）initiative（敵だけ）→ 敵の行動 → ラウンド終了
 //     味方の攻撃 1 振り: 命中 → [ダメージ] → [覚醒]
 //     敵の攻撃要素: 対象 → 命中 → [ダメージ] → [覚醒] → [付与]
 //     呪文・道具: 個体ごとのダメージ（→ 覚醒）・付与、回復のダイス
@@ -210,8 +212,6 @@ export function checkBattleInput(state: GameState, data: GameData, memberId: unk
     }
     case "defend":
       return null;
-    case "flee":
-      return canFleeOf(b) ? null : "cannot flee";
     case "cast": {
       const spellId = action["spellId"];
       if (typeof spellId !== "string" || !isObj(action["target"])) return "bad action";
@@ -250,8 +250,6 @@ function cleanAction(a: BattleAction): BattleAction {
       return { type: "attack", group: a.group + 0 }; // + 0 で -0 を 0 にする
     case "defend":
       return { type: "defend" };
-    case "flee":
-      return { type: "flee" };
     case "cast":
       return { type: "cast", spellId: a.spellId, target: cleanTarget(a.target) };
     case "item":
@@ -259,12 +257,12 @@ function cleanAction(a: BattleAction): BattleAction {
   }
 }
 
-/** CB-10/12/40: 入力を記録する（上書き）。flee 以外の手入力だけ lastBattleInput に保存する。イベントは出さない */
+/** CB-10/12/40: 入力を記録する（上書き）。手入力は lastBattleInput にも保存する。イベントは出さない */
 export function applyBattleInput(ctx: RuleContext, memberId: string, action: BattleAction): void {
   const b = requireBattle(ctx.state);
   const ch = requireMember(ctx.state, memberId);
   b.inputs[memberId] = cleanAction(action);
-  if (action.type !== "flee") ch.lastBattleInput = cleanAction(action);
+  ch.lastBattleInput = cleanAction(action);
 }
 
 /** battle.resolve を受け付けない理由。受け付けるなら null（state.battle が非 null の前提） */
@@ -272,7 +270,6 @@ export function checkResolve(state: GameState, _data: GameData): string | null {
   const b = requireBattle(state);
   if (b.auto) return null;
   const actors = state.party.filter(canAct);
-  if (actors.some((c) => b.inputs[c.id]?.type === "flee")) return null;
   if (actors.every((c) => b.inputs[c.id] !== undefined)) return null;
   return "inputs incomplete";
 }
@@ -290,6 +287,22 @@ export function setAuto(ctx: RuleContext, on: boolean): void {
   requireBattle(ctx.state).auto = on;
 }
 
+/** battle.flee を受け付けない理由（CB-12/50。state.battle が非 null の前提） */
+export function checkFlee(state: GameState): string | null {
+  const b = requireBattle(state);
+  if (b.auto) return "auto on";
+  if (!canFleeOf(b)) return "cannot flee";
+  if (!state.party.some(canAct)) return "no actor";
+  return null;
+}
+
+/** battle.repeat を受け付けない理由（CB-12/40。state.battle が非 null の前提） */
+export function checkRepeat(state: GameState): string | null {
+  const b = requireBattle(state);
+  if (b.auto) return "auto on";
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // ラウンドの解決
 
@@ -300,26 +313,46 @@ export function resolveRound(ctx: RuleContext): void {
   const before = snapMembers(state, data);
   const surprised = b.partySurprise;
   b.partySurprise = false; // どの経路でも消費する
-  if (b.auto) {
-    for (const ch of state.party) {
-      if (canAct(ch)) b.inputs[ch.id] = autoInput(state, data, ch);
-    }
+  if (b.auto) fillAutoInputs(state, data, b);
+  const ended = runRound(ctx, { allies: true, enemies: !surprised });
+  if (!ended) roundEnd(ctx, before);
+}
+
+/** CB-40〜42: 行動可能な全員の入力をオート入力で上書きする（lastBattleInput は変えない） */
+function fillAutoInputs(state: GameState, data: GameData, b: BattleState): void {
+  for (const ch of state.party) {
+    if (canAct(ch)) b.inputs[ch.id] = autoInput(state, data, ch);
   }
-  const fleeing = state.party.some((c) => canAct(c) && b.inputs[c.id]?.type === "flee");
-  let ended: boolean;
-  if (fleeing) {
-    const pct = fleePercent(state, data);
-    const d = randInt(state.rng, 1, 100);
-    ctx.events.push({ kind: "dice", label: "battle.fleeRoll", dice: [d], total: d });
-    if (d <= pct) {
-      endBattle(ctx, "flee");
-      return;
-    }
-    ctx.events.push({ kind: "message", key: "battle.fleeFail" });
-    ended = runRound(ctx, { allies: false, enemies: true });
-  } else {
-    ended = runRound(ctx, { allies: true, enemies: !surprised });
+}
+
+/**
+ * battle.repeat の本体（CB-12/40。checkRepeat が null を返した前提）。
+ * オートの規則で入力を作って battle.resolve と同じ手順で 1 ラウンドを解決する。auto は OFF のままなので CB-43 は効かない
+ */
+export function repeatRound(ctx: RuleContext): void {
+  const { state, data } = ctx;
+  fillAutoInputs(state, data, requireBattle(state));
+  resolveRound(ctx);
+}
+
+/**
+ * battle.flee の本体（CB-12/50。checkFlee が null を返した前提）。入力済みの行動は捨てる。
+ * 成功で戦闘終了。失敗で敵だけが 1 ラウンド行動する（CB-04 の味方の奇襲は消費する）
+ */
+export function fleeRound(ctx: RuleContext): void {
+  const { state, data } = ctx;
+  const b = requireBattle(state);
+  const before = snapMembers(state, data);
+  b.partySurprise = false; // どの経路でも消費する
+  const pct = fleePercent(state, data);
+  const d = randInt(state.rng, 1, 100);
+  ctx.events.push({ kind: "dice", label: "battle.fleeRoll", dice: [d], total: d });
+  if (d <= pct) {
+    endBattle(ctx, "flee");
+    return;
   }
+  ctx.events.push({ kind: "message", key: "battle.fleeFail" });
+  const ended = runRound(ctx, { allies: false, enemies: true });
   if (!ended) roundEnd(ctx, before);
 }
 
@@ -335,7 +368,7 @@ function runRound(ctx: RuleContext, who: { allies: boolean; enemies: boolean }):
     for (const ch of state.party) {
       if (!canAct(ch)) continue;
       const a = b.inputs[ch.id];
-      const action = a === undefined || a.type === "flee" ? ({ type: "defend" } as const) : a;
+      const action = a === undefined ? ({ type: "defend" } as const) : a;
       plans.push(toPlan(state, data, ch, action));
     }
   }

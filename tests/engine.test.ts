@@ -190,6 +190,8 @@ describe("engine: execute", () => {
     { type: "battle.input", memberId: "c1", action: { type: "defend" } },
     { type: "battle.resolve" },
     { type: "battle.auto", on: true },
+    { type: "battle.flee" },
+    { type: "battle.repeat" },
   ])("D2/F1 戦闘外（title・town・dungeon、screen が battle でも battle が null）の $type は not in battle で、同じ参照を返し乱数を消費しない", (cmd) => {
     const town = newGame(1);
     const dungeon = execute(town, { type: "dungeon.enter", dungeonId: "d01" }, data).state;

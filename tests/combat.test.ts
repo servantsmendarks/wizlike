@@ -7,6 +7,7 @@ import type { GameData } from "../src/core/data";
 import { execute } from "../src/core/engine";
 import { chance, cloneRng, randInt, rollDice, rollDie, weightedIndex, type RngState } from "../src/core/rng";
 import { allyAc, canAct, statusPercent } from "../src/core/rules/combat-calc";
+import { autoInput } from "../src/core/rules/combat-plan";
 import { battleMenu, startBattle, startBossEncounter, startRandomEncounter } from "../src/core/rules/combat";
 import { cloneState, makeContext, memberById, monsterOf } from "../src/core/state";
 import type { BattleAction, Character, Command, GameEvent, GameState } from "../src/core/types";
@@ -28,6 +29,8 @@ import { data, expectKnownStringKeys } from "./helpers/core";
 const RESOLVE: Command = { type: "battle.resolve" };
 const DEF: BattleAction = { type: "defend" };
 const AUTO_ON: Command = { type: "battle.auto", on: true };
+const FLEE: Command = { type: "battle.flee" };
+const REPEAT: Command = { type: "battle.repeat" };
 const atk = (group: number): BattleAction => ({ type: "attack", group });
 const input = (memberId: string, action: BattleAction): Command => ({ type: "battle.input", memberId, action });
 
@@ -162,7 +165,7 @@ describe("遭遇（CB-03/04/05/06）", () => {
     const r2 = exec(s2, RESOLVE, d);
     expect(eventsOf(r2.events, "attack").filter((e) => e.actorId.startsWith("e"))).toHaveLength(2);
     // 逃走の失敗では、味方の奇襲でも敵が行動する
-    const rf = exec(exec(s, input("c1", { type: "flee" }), d).state, RESOLVE, d);
+    const rf = exec(s, FLEE, d);
     expect(kindsOf(rf.events)).toContain("message:battle.fleeFail");
     expect(eventsOf(rf.events, "attack").filter((e) => e.actorId.startsWith("e"))).toHaveLength(2);
     expect(rf.state.battle!.partySurprise).toBe(false);
@@ -240,7 +243,7 @@ describe("遭遇（CB-03/04/05/06）", () => {
     ]);
     expect(eventsOf(r.events, "mpChanged")).toEqual([{ kind: "mpChanged", id: "c4", delta: -4, mp: 1 }]);
     // 逃げた後も図鑑は残る
-    const out = exec(exec(r.state, input("c1", { type: "flee" }), d).state, RESOLVE, d);
+    const out = exec(r.state, FLEE, d);
     expect(out.state.battle).toBeNull();
     expect(out.state.bestiary).toEqual({ giant_rat: { kills: 0, identified: true }, kobold: { kills: 0, identified: true } });
   });
@@ -289,13 +292,11 @@ describe("遭遇（CB-03/04/05/06）", () => {
 describe("入力（CB-10/12、F2）", () => {
   const base = () => setup([{ monsterId: "giant_rat", hps: [5, 5] }, { monsterId: "kobold", hps: [0] }], { inputs: {} });
 
-  test("CB-10 未入力が残ると battle.resolve は inputs incomplete（同じ参照・乱数なし）。flee が 1 件あれば受け付ける", () => {
+  test("CB-10 未入力が残ると battle.resolve は inputs incomplete（同じ参照・乱数なし）", () => {
     let s = base();
     expectRejected(s, RESOLVE, "inputs incomplete");
     for (const id of ["c1", "c2", "c3", "c4", "c5"]) s = exec(s, input(id, DEF)).state;
     expectRejected(s, RESOLVE, "inputs incomplete");
-    const fled = exec(base(), input("c3", { type: "flee" })).state;
-    expect(exec(fled, RESOLVE).events.some((e) => e.kind === "dice" && e.label === "battle.fleeRoll")).toBe(true);
     // 行動不能の者の入力は要らない
     let p = patchParty(base(), { c6: PARA });
     for (const id of ["c1", "c2", "c3", "c4", "c5"]) p = exec(p, input(id, DEF)).state;
@@ -309,7 +310,7 @@ describe("入力（CB-10/12、F2）", () => {
     expect(r.state.battle!.round).toBe(1);
   });
 
-  test("CB-12 battle.input の rejected: 知らない呪文、MP 不足、field の呪文、他人の道具、全滅したグループ、死んだ味方への heal、行動不能、ボス戦の flee、オート中、不正な形", () => {
+  test("CB-12 battle.input の rejected: 知らない呪文、MP 不足、field の呪文、他人の道具、全滅したグループ、死んだ味方への heal、行動不能、オート中、不正な形（flee は BattleAction に無い）", () => {
     const s = patchParty(base(), { c5: { mp: 1 }, c4: { knownSpells: ["heal", "return"] }, c6: DEAD, c2: PARA });
     const cases: [Command, string][] = [
       [input("c1", { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 0 } }), "unknown spell"],
@@ -329,15 +330,14 @@ describe("入力（CB-10/12、F2）", () => {
       [input("c1", null as unknown as BattleAction), "bad action"],
       [input("c1", { type: "attack", group: "0" } as unknown as BattleAction), "bad action"],
       [input("c1", { type: "cast", spellId: "heal" } as unknown as BattleAction), "bad action"],
+      [input("c1", { type: "flee" } as unknown as BattleAction), "bad action"], // CB-12: 逃走は battle.flee
     ];
     for (const [cmd, reason] of cases) expectRejected(s, cmd, reason);
-    const boss = setup([{ monsterId: "gatekeeper_armor", hps: [50] }], { origin: { kind: "boss" }, inputs: {} });
-    expectRejected(boss, input("c1", { type: "flee" }), "cannot flee");
     const auto = setup([{ monsterId: "giant_rat", hps: [5] }], { auto: true, inputs: {} });
     expectRejected(auto, input("c1", DEF), "auto on");
   });
 
-  test("CB-12/40 再入力は上書き。lastBattleInput は手入力だけ保存し、flee は保存しない。イベントは出さない", () => {
+  test("CB-12/40 再入力は上書き。lastBattleInput は手入力だけ保存する。イベントは出さない", () => {
     let s = base();
     const r1 = exec(s, input("c1", atk(0)));
     expect(r1.events).toEqual([]);
@@ -345,9 +345,6 @@ describe("入力（CB-10/12、F2）", () => {
     expect(member(s, "c1").lastBattleInput).toEqual(atk(0));
     s = exec(s, input("c1", DEF)).state;
     expect(s.battle!.inputs["c1"]).toEqual(DEF);
-    expect(member(s, "c1").lastBattleInput).toEqual(DEF);
-    s = exec(s, input("c1", { type: "flee" })).state;
-    expect(s.battle!.inputs["c1"]).toEqual({ type: "flee" });
     expect(member(s, "c1").lastBattleInput).toEqual(DEF);
     // 余計な欄は保存しない
     s = exec(s, input("c5", { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 0, x: 1 } } as unknown as BattleAction)).state;
@@ -1009,17 +1006,90 @@ describe("オート（CB-40〜43、F2）", () => {
     expect(kindsOf(r.events)).not.toContain("message:battle.autoOff");
     expect(exec(r.state, RESOLVE).events[0]?.kind).not.toBe("rejected");
   });
+
+  test("CB-12/CB-40/CB-41/CB-42 battle.repeat は、行動可能な各メンバーに autoInput を入れて battle.resolve したのと同じ（手入力は上書き、lastBattleInput は変えない）", () => {
+    // グループ 0 は全滅、1 が生存。c3 は麻痺（入力を作らない）
+    const heal: BattleAction = { type: "cast", spellId: "heal", target: { side: "ally", memberId: "c2" } };
+    const fire0: BattleAction = { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 0 } };
+    const s = setup(
+      [
+        { monsterId: "giant_rat", hps: [0] },
+        { monsterId: "kobold", hps: [60, 60] },
+      ],
+      {
+        identified: ["giant_rat", "kobold"],
+        inputs: { c1: DEF, c2: DEF, c4: DEF }, // lastBattleInput と違う手入力（上書きされる）
+        patches: {
+          c1: { lastBattleInput: atk(0) }, // CB-42: 全滅したグループ 0 → 1 へ振り替え
+          c2: { lastBattleInput: null }, // CB-40: 前衛の既定は最小の生存グループへの攻撃
+          c3: { ...PARA, lastBattleInput: DEF },
+          c4: { lastBattleInput: heal }, // ally の対象はそのまま
+          c5: { mp: 1, lastBattleInput: fire0 }, // CB-41: MP 不足（2 必要）の後衛は防御（noMp）
+          c6: { lastBattleInput: DEF },
+        },
+      },
+    );
+    // autoInput が作る入力（CB-40〜42 を手で当てた期待値）
+    const expected: Record<string, BattleAction> = {
+      c1: atk(1),
+      c2: atk(1),
+      c4: heal,
+      c5: { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 1 } },
+      c6: DEF,
+    };
+    const manual = cloneState(s);
+    for (const c of manual.party) if (canAct(c)) manual.battle!.inputs[c.id] = autoInput(manual, data, c);
+    expect(manual.battle!.inputs).toEqual(expected);
+    const want = exec(manual, RESOLVE);
+    const got = exec(s, REPEAT);
+    expect(got.events).toEqual(want.events);
+    expect(got.state.rng).toEqual(want.state.rng);
+    expect(got.state.battle).toEqual(want.state.battle);
+    expect(got.state.party).toEqual(want.state.party);
+    expect(got.state.party.map((c) => c.lastBattleInput)).toEqual(s.party.map((c) => c.lastBattleInput));
+    expect(got.events).toContainEqual({ kind: "message", key: "battle.noMp", params: { actor: "エル" } });
+    expect(got.state.battle!.auto).toBe(false);
+    expect(got.state.battle!.round).toBe(1);
+    expect(got.state.battle!.inputs).toEqual({});
+  });
+
+  test("CB-12/CB-43 battle.repeat はオートにしない: HP が hpRatio を割っても auto は false のまま battle.autoOff は出ない。lastBattleInput も変えない。オート中は auto on で rejected", () => {
+    const d = dataWith({ combat: ALWAYS_HIT });
+    const s = setup([{ monsterId: "giant_rat", hps: [200] }], {
+      identified: ["giant_rat"],
+      inputs: {},
+      patches: { c1: { hp: 30, hpMax: 100 }, c2: STONE, c3: STONE },
+    });
+    const r = exec(s, REPEAT, d);
+    expect(member(r.state, "c1").hp).toBeLessThan(30); // CB-43 の hp 条件の遷移は起きている
+    expect(r.state.battle!.auto).toBe(false);
+    expect(kindsOf(r.events)).not.toContain("message:battle.autoOff");
+    expect(r.state.party.map((c) => c.lastBattleInput)).toEqual(s.party.map((c) => c.lastBattleInput));
+    expectRejected(r.state, RESOLVE, "inputs incomplete", d); // 次のラウンドは手入力（パーティの選択）に戻る
+    const auto = setup([{ monsterId: "giant_rat", hps: [5] }], { auto: true, inputs: {} });
+    expectRejected(auto, REPEAT, "auto on");
+  });
+
+  test("CB-04/CB-12 battle.repeat でも味方の奇襲のラウンドでは敵が行動しない（消費して false に戻る）", () => {
+    const d = dataWith({ combat: { surpriseDiff: -1000, ...ALWAYS_HIT } });
+    const ctx = runCtx(dived(1), d, (c) => startBattle(c, { kind: "random", inRoom: false }, [{ monsterId: "kobold", count: 2 }]));
+    expect(ctx.state.battle!.partySurprise).toBe(true);
+    const r = exec(ctx.state, REPEAT, d);
+    expect(eventsOf(r.events, "attack").filter((e) => e.actorId.startsWith("e"))).toEqual([]);
+    expect(eventsOf(r.events, "attack").some((e) => e.actorId.startsWith("c"))).toBe(true);
+    expect(r.state.battle?.partySurprise ?? false).toBe(false);
+  });
 });
 
 describe("逃走・勝利・全滅（CB-50〜54）", () => {
-  test("CB-50 逃走: 出目 ≤ 成功率で battleEnd(flee)（出目 = 成功率で成功、−1 で失敗）。EXP は増えず、図鑑の撃破数は残る。dice battle.fleeRoll", () => {
+  test("CB-50/CB-12 battle.flee: 出目 ≤ 成功率で battleEnd(flee)（出目 = 成功率で成功、−1 で失敗）。EXP は増えず、図鑑の撃破数は残る。dice battle.fleeRoll。入力済みの行動は捨てる", () => {
     for (let seed = 1; seed <= 6; seed++) {
-      const s = setup([{ monsterId: "giant_rat", hps: [50] }], { seed, identified: ["giant_rat"], inputs: { c2: { type: "flee" }, c1: atk(0) } });
+      const s = setup([{ monsterId: "giant_rat", hps: [50] }], { seed, identified: ["giant_rat"], inputs: { c1: atk(0) } });
       s.bestiary["giant_rat"]!.kills = 3;
       const m = cloneRng(s.rng);
       const roll = randInt(m, 1, 100);
       // fleePercent = floor(fleeBase + 1.8333×3) = fleeBase + 5
-      const ok = exec(s, RESOLVE, dataWith({ combat: { fleeBase: roll - 5 } }));
+      const ok = exec(s, FLEE, dataWith({ combat: { fleeBase: roll - 5 } }));
       expect(ok.events.slice(0, 3)).toEqual([
         { kind: "dice", label: "battle.fleeRoll", dice: [roll], total: roll },
         { kind: "battleEnd", result: "flee" },
@@ -1031,12 +1101,35 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
       expect(ok.state.bestiary["giant_rat"]!.kills).toBe(3);
       expect(ok.state.rng).toEqual(m);
       // 失敗: fleeFail → 敵だけのラウンド（アルドの攻撃は捨てる）
-      const ng = exec(s, RESOLVE, dataWith({ combat: { fleeBase: roll - 6 } }));
+      const ng = exec(s, FLEE, dataWith({ combat: { fleeBase: roll - 6 } }));
+      expect(ng.events[0]).toEqual({ kind: "dice", label: "battle.fleeRoll", dice: [roll], total: roll });
       expect(kindsOf(ng.events).slice(0, 2)).toEqual(["dice", "message:battle.fleeFail"]);
       expect(eventsOf(ng.events, "attack").map((e) => e.actorId)).toEqual(["e0-0"]);
       expect(ng.state.battle!.round).toBe(1);
       expect(ng.state.battle!.inputs).toEqual({});
+      expect(ng.state.battle!.auto).toBe(false);
     }
+  });
+
+  test("CB-12/CB-50 battle.flee の rejected: 逃走できない戦闘（ボス）は cannot flee、オート中は auto on、行動可能な味方が 0 人（麻痺と睡眠だけ）は no actor。同じ参照で乱数も消費しない", () => {
+    const boss = setup([{ monsterId: "gatekeeper_armor", hps: [50] }], { origin: { kind: "boss" }, inputs: {} });
+    expectRejected(boss, FLEE, "cannot flee");
+    const auto = setup([{ monsterId: "giant_rat", hps: [5] }], { auto: true, inputs: {} });
+    expectRejected(auto, FLEE, "auto on");
+    // 判定順: auto on → cannot flee → no actor
+    const bossAuto = setup([{ monsterId: "gatekeeper_armor", hps: [50] }], { origin: { kind: "boss" }, auto: true, inputs: {} });
+    expectRejected(bossAuto, FLEE, "auto on");
+    const asleep = patchParty(setup([{ monsterId: "giant_rat", hps: [5] }], { inputs: {} }), {
+      c1: { status: ["sleep"] },
+      c2: PARA,
+      c3: PARA,
+      c4: PARA,
+      c5: PARA,
+      c6: PARA,
+    });
+    expectRejected(asleep, FLEE, "no actor");
+    const bossAsleep = patchParty(boss, { c1: PARA, c2: PARA, c3: PARA, c4: PARA, c5: PARA, c6: PARA });
+    expectRejected(bossAsleep, FLEE, "cannot flee");
   });
 
   test("CB-51/DG-40/CH-60 勝利: EXP は生存者で等分（死者は受け取らない、端数切り捨て）、金は個体ごとに振って state.gold と ledger.gold の両方へ（鏡の rng）", () => {
@@ -1138,7 +1231,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
       { kind: "sanChanged", id: "c6", delta: -5, san: 95 },
     ]);
     // 逃げた後も dead
-    const out = exec(exec(r.state, input("c4", { type: "flee" }), d).state, RESOLVE, dataWith({ combat: { fleeBase: 1000 } }));
+    const out = exec(r.state, FLEE, dataWith({ combat: { fleeBase: 1000 } }));
     expect(out.state.battle).toBeNull();
     expect(member(out.state, "c1").life).toBe("dead");
   });
@@ -1220,11 +1313,15 @@ describe("網羅（完了条件「6 種と戦える」、敵の id、battleMenu�
     expect(battleMenu(dived(1), data)).toBeNull();
   });
 
-  test("§3-2 決定性: battle.resolve を同じ state で 2 回呼ぶと deep-equal、引数の state を書き換えない、JSON 往復で変わらない", () => {
-    const s = setup([{ monsterId: "giant_rat", hps: [5, 5] }, { monsterId: "kobold", hps: [4] }], { inputs: {}, auto: true });
+  test.each([
+    ["battle.resolve（オート）", RESOLVE, true],
+    ["battle.repeat", REPEAT, false],
+    ["battle.flee", FLEE, false],
+  ] as const)("§3-2 決定性: %s を同じ state で 2 回呼ぶと deep-equal、引数の state を書き換えない、JSON 往復で変わらない", (_name, cmd, auto) => {
+    const s = setup([{ monsterId: "giant_rat", hps: [5, 5] }, { monsterId: "kobold", hps: [4] }], { inputs: {}, auto });
     const before = JSON.stringify(s);
-    const a = execute(s, RESOLVE, data);
-    const b = execute(s, RESOLVE, data);
+    const a = execute(s, cmd, data);
+    const b = execute(s, cmd, data);
     expectKnownStringKeys(a.events);
     expect(a.events[0]?.kind).not.toBe("rejected");
     expect(a).toEqual(b);
