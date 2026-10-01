@@ -78,6 +78,14 @@ export function shouldReleaseHold(route: Route, overlay: Overlay, hasPendingChoi
 /** メッセージ窓のタップとみなす移動の上限（論理 px） */
 const TAP_SLOP_LOGICAL = 4;
 
+/** SV-50: 続きからの読み込みの失敗理由ごとの文言（決定記録の load の 4 つの理由） */
+const LOAD_FAILED: Readonly<Record<"unavailable" | "missing" | "tooNew" | "broken", string>> = {
+  unavailable: "title.loadUnavailable",
+  missing: "title.loadMissing",
+  tooNew: "title.loadTooNew",
+  broken: "title.loadBroken",
+};
+
 type DispatchResult = CommandResult;
 
 export function createApp(o: { stage: HTMLElement; data: GameData; settings: SettingsStore; saves: SaveService; seed?: number }): App {
@@ -706,7 +714,13 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
           const r = await o.saves.load(st.gameId);
           if (route !== "title") return;
           if (!r.ok) {
-            titleMessage = t(r.reason === "tooNew" ? "title.loadTooNew" : "title.loadBroken");
+            // 一時的な読み取りの失敗や別タブでの削除を「壊れている」と言わない（無事な記録を消させない）
+            if (r.reason === "missing") {
+              titlePage = { kind: "list" };
+              await refreshTitle();
+              if (route !== "title") return;
+            }
+            titleMessage = t(LOAD_FAILED[r.reason]);
             renderTitle();
             return;
           }
@@ -737,6 +751,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     play.showMap(false);
     play.showDetail(false);
     play.showWipe(false);
+    // 読み込みを待つ間に F2 で開いた debug パネルも閉じる（overlay を null にするので、残すと閉じられなくなる）
+    debug.el.style.display = "none";
     underDebug = null;
     itemCursor = { stage: "member" };
     townPage = "menu";

@@ -188,6 +188,8 @@ describe("タイトルのキー（UI-33）", () => {
       "title.deleteFailed",
       "title.loadBroken",
       "title.loadTooNew",
+      "title.loadUnavailable",
+      "title.loadMissing",
       "title.maxGames",
     ]) {
       expect(S[k], k).toBeTypeOf("string");

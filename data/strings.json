@@ -22,6 +22,8 @@
   "title.deleteFailed": "削除できなかった。",
   "title.loadBroken": "この記録は壊れていて読み込めない。",
   "title.loadTooNew": "この記録は新しい版で作られている。読み込めない。",
+  "title.loadUnavailable": "記録を読み込めなかった。もう一度試す。",
+  "title.loadMissing": "この記録はもう無い。",
 
   "creation.intro": "卓に六人が着いた。名前と、どんな人間かを決めてくれ。",
   "creation.leader": "リーダー（性格なし）",
