@@ -1,38 +1,59 @@
-// H9 バランス: 「1 階の階段付近で 6〜8 戦して帰還の糸で帰る」× 200 シード（ユーザー決定）。
-// ボットはこのテストの中だけにあり、core の execute と問い合わせ（floorOf、fieldItemMenu）だけを使う。
+// H9 バランス（Z6 / Z7、ユーザー決定）: 「潜行（4 戦 / 6〜8 戦）→ 街（死者は寺院で蘇生、灰は闇魔術、払える限り）→ 相部屋に 1 泊 → 潜行」
+// を 5 回繰り返す × 200 シード。2 つの形（1 回の潜行で 4 戦 / 6〜8 戦）をそれぞれ回す。
+// ボットはこのテストの中だけにあり、core の execute と問い合わせ（floorOf、fieldItemMenu、townMenu）だけを使う。
 // 合否は不変条件だけで、数字のしきい値では落とさない（数字は console.log に出し、decisions に転記する）。
-// ボットの値（BFS 距離 6、6〜8 戦、上限 3000 歩、100 泊）はテストの定数で、ゲームの調整値ではない。
+// ボットの値（BFS 距離 6、戦闘数、上限 3000 歩、5 回）はテストの定数で、ゲームの調整値ではない。
 import { describe, expect, test } from "vitest";
 import { execute } from "../src/core/engine";
 import { createRng, randInt, type RngState } from "../src/core/rng";
 import { cellAt, edgeOf, FACINGS, isPassable, opposite, step, turnLeft, turnRight } from "../src/core/rules/dungeon-gen";
 import { floorOf } from "../src/core/rules/dungeon";
 import { fieldItemMenu } from "../src/core/rules/items";
+import { townMenu } from "../src/core/rules/town";
 import { itemOf } from "../src/core/state";
 import type { Command, Facing, Floor, GameEvent, GameState, PenaltyResult, Pos } from "../src/core/types";
 import { data, expectKnownStringKeys, expectStateInvariants, newGame } from "./helpers/core";
 
 const SEEDS = 200;
+const DIVES = 5;
 const NEAR = 6; // 上り階段からの BFS 距離
-const STEP_CAP = 3000;
+const STEP_CAP = 3000; // 1 回の潜行の歩数の上限
 const BATTLE_ROUND_CAP = 300;
-const INN_NIGHTS_CAP = 100;
+const INN_RANK = data.config.town.innRanks.findIndex((r) => r.id === "cheap"); // 相部屋
 const START_GOLD = data.config.prototypeParty.startingGold;
+const HERB_PRICE = itemOf(data, "herb").price;
+
+type Shape = { label: string; battles: (bot: RngState) => number };
+const SHAPES: Shape[] = [
+  { label: "4 戦", battles: () => 4 },
+  { label: "6〜8 戦", battles: (bot) => 6 + randInt(bot, 0, 2) },
+];
 
 type Method = "thread" | "walk" | "cap" | "wipe";
 
-type SeedResult = {
-  seed: number;
+/** 潜行 1 回分（潜行 → 街の寺院・闇魔術 → 宿）の記録 */
+type DiveRecord = {
   method: Method;
   battles: number;
   steps: number;
   herbs: number;
   threads: number;
-  deaths: number;
-  goldAfter: number;
-  innMin: number;
-  innPrivate: number;
+  goldBefore: number; // 潜行の前の所持金
+  goldAfter: number; // 宿の後の所持金
+  templeTries: number;
+  templeOk: number;
+  templeCost: number;
+  darkCount: number;
+  darkCost: number;
+  innCost: number;
+  innFallback: boolean; // 相部屋が払えず馬小屋に泊まった
+  mercyOffered: boolean;
+  unrevived: number; // 宿の後に alive でない人数
+  anyL2: boolean; // 宿の後に誰かが L2 以上
+  allL2: boolean; // 宿の後に alive の全員が L2 以上
 };
+
+type CampaignResult = { seed: number; dives: DiveRecord[]; aborted: boolean; goldTrail: number[] };
 
 const key = (p: Pos) => `${p.x},${p.y}`;
 
@@ -88,38 +109,39 @@ function mean(xs: readonly number[]): number {
 function fmt(x: number): string {
   return Number.isNaN(x) ? "-" : Number.isInteger(x) ? String(x) : x.toFixed(1);
 }
+function pct(n: number, d: number): string {
+  return d === 0 ? "-" : `${fmt((n / d) * 100)}%（${n}/${d}）`;
+}
 function stats(label: string, xs: readonly number[]): string {
   return `${label}（n=${xs.length}）: 平均 ${fmt(mean(xs))} / 中央値 ${fmt(median(xs))} / p10 ${fmt(percentile(xs, 10))} / p90 ${fmt(percentile(xs, 90))}`;
 }
 
-/** 1 シード分のボット */
-class Bot {
+/** 1 シード分のボット（潜行 × DIVES） */
+class Campaign {
   state: GameState;
   readonly bot: RngState;
-  readonly floor: Floor;
-  readonly near: Set<string>;
   readonly keys = new Set<string>();
+  // 潜行ごとにリセットする
+  floor: Floor | null = null;
+  near = new Set<string>();
+  homeDist = new Map<string, number>();
   battles = 0;
   steps = 0;
   herbs = 0;
   threads = 0;
   wiped: PenaltyResult | null = null;
 
-  constructor(readonly seed: number) {
-    this.state = this.run({ type: "dungeon.enter", dungeonId: "d01" }, newGame(seed));
+  constructor(readonly seed: number, readonly shape: Shape) {
+    this.state = newGame(seed);
     this.bot = createRng(seed + 20_000);
-    // 1 階の構造はこの潜行の間変わらない（罠の発動は kind だけを変え、辺は変えない）ので、ボットの側でキャッシュする
-    this.floor = floorOf(this.state.dive!, data, 1);
-    const dist = distancesFrom(this.floor, this.floor.stairsUp);
-    this.near = new Set([...dist].filter(([, d]) => d <= NEAR).map(([k]) => k));
   }
 
   /** execute して、rejected なら例外。state の不変条件（battle.input・dungeon.turn 以外）と文字列キーを検査し、全滅なら PenaltyResult の内訳 = 差分を確かめる */
-  run(cmd: Command, from: GameState = this.state): GameState {
+  run(cmd: Command): GameState {
+    const from = this.state;
     const r = execute(from, cmd, data);
     if (r.events[0]?.kind === "rejected") throw new Error(`seed ${this.seed}: ${JSON.stringify(cmd)} rejected: ${JSON.stringify(r.events[0])}`);
-    // 潜行中・戦闘中の不変条件（台帳 ⊆ 所持品、screen battle ⇔ battle など）も、実際の execute の結果で確かめる。
-    // 入力を積むだけの battle.input と向きを変えるだけの dungeon.turn は時間の都合で省く（検査なしで約 7 秒、全コマンドで約 17 秒、省いて約 13 秒。2026-10-01 の手元の実測）
+    // 入力を積むだけの battle.input と向きを変えるだけの dungeon.turn は時間の都合で省く（decisions の H9 の行）
     if (cmd.type !== "battle.input" && cmd.type !== "dungeon.turn") expectStateInvariants(r.state);
     expectKnownStringKeys(r.events);
     for (const e of r.events) if (e.kind === "message") this.keys.add(e.key);
@@ -155,7 +177,7 @@ class Bot {
     }
   }
 
-  /** 前進 1 歩（向きを変えてから）。保留中の選択は stay（帰り道の exit は呼び出し側）、遭遇したら戦う */
+  /** 前進 1 歩（向きを変えてから）。遭遇したら戦う */
   moveTo(dir: Facing): void {
     const t = turnFor(this.state.dive!.facing, dir);
     if (t !== null) this.run({ type: "dungeon.turn", dir: t });
@@ -193,14 +215,14 @@ class Bot {
   /** 階段付近の歩行: 今のセルから、近傍（near）のセルへ通れる方向を bot で選ぶ */
   wanderStep(): void {
     const dive = this.state.dive!;
-    const c = cellAt(this.floor, dive.pos.x, dive.pos.y);
+    const c = cellAt(this.floor!, dive.pos.x, dive.pos.y);
     const dirs = FACINGS.filter((d) => isPassable(edgeOf(c, d)) && this.near.has(key(step(dive.pos, d))));
     if (dirs.length === 0) throw new Error(`seed ${this.seed}: no way from ${key(dive.pos)}`);
     this.moveTo(dirs[randInt(this.bot, 0, dirs.length - 1)]!);
     if (this.state.pendingChoice !== null) this.run({ type: "event.choose", optionId: "stay" });
   }
 
-  /** 帰還: 行動可能な者が帰還の品を持っていれば使う。無ければ BFS の最短で上り階段へ歩いて exit */
+  /** 帰還: 行動可能な者が帰還の品を持っていれば使う。無ければ BFS の最短で上り階段へ歩いて exit（途中の遭遇も戦う） */
   goHome(): "thread" | "walk" {
     const menu = fieldItemMenu(this.state, data);
     if (menu !== null) {
@@ -225,9 +247,13 @@ class Bot {
         if (exit) expect(this.state.gold).toBe(goldBefore); // DG-43
         continue;
       }
+      if (this.state.screen === "battle") {
+        this.fight();
+        continue;
+      }
       const dive = this.state.dive!;
-      const dist = distancesFrom(this.floor, this.floor.stairsUp);
-      const c = cellAt(this.floor, dive.pos.x, dive.pos.y);
+      const dist = this.homeDist;
+      const c = cellAt(this.floor!, dive.pos.x, dive.pos.y);
       const here = dist.get(key(dive.pos));
       let best: Facing | null = null;
       for (const d of FACINGS) {
@@ -241,8 +267,20 @@ class Bot {
     return "walk";
   }
 
-  play(): Method {
-    const n = 6 + randInt(this.bot, 0, 2);
+  /** 1 回の潜行（入場から街に戻るまで）。入れなければ null */
+  dive(): Method | null {
+    if (townMenu(this.state, data)!.dungeons.find((d) => d.id === "d01")?.canEnter !== true) return null;
+    this.battles = 0;
+    this.steps = 0;
+    this.herbs = 0;
+    this.threads = 0;
+    this.wiped = null;
+    this.run({ type: "dungeon.enter", dungeonId: "d01" });
+    // 1 階の構造はこの潜行の間変わらない（罠の発動は kind だけを変え、辺は変えない）ので、潜行ごとにキャッシュする
+    this.floor = floorOf(this.state.dive!, data, 1);
+    this.homeDist = distancesFrom(this.floor, this.floor.stairsUp);
+    this.near = new Set([...this.homeDist].filter(([, d]) => d <= NEAR).map(([k]) => k));
+    const n = this.shape.battles(this.bot);
     let capped = false;
     while (this.inDungeon && this.battles < n) {
       if (this.steps >= STEP_CAP) {
@@ -263,88 +301,143 @@ class Bot {
     if (this.wiped !== null) return "wipe";
     throw new Error(`seed ${this.seed}: left the dungeon without returning or wiping`);
   }
+
+  /** Z7: 並び順に、dead は寺院で蘇生（払えるなら）、失敗して灰、または元から灰なら闇魔術（払えるなら） */
+  revive(rec: DiveRecord): void {
+    for (const id of this.state.party.map((c) => c.id)) {
+      const life = () => this.state.party.find((c) => c.id === id)!.life;
+      if (life() === "dead") {
+        const row = townMenu(this.state, data)!.temple.resurrect.find((r) => r.memberId === id)!;
+        if (row.affordable) {
+          const g = this.state.gold;
+          this.run({ type: "town.temple", memberId: id, service: "resurrect" });
+          expect(g - this.state.gold).toBe(row.cost);
+          rec.templeTries += 1;
+          rec.templeCost += row.cost;
+          if (life() === "alive") rec.templeOk += 1;
+        }
+      }
+      if (life() === "ash") {
+        const row = townMenu(this.state, data)!.dark.find((r) => r.memberId === id)!;
+        if (row.affordable) {
+          const g = this.state.gold;
+          this.run({ type: "town.dark", memberId: id });
+          expect(g - this.state.gold).toBe(row.cost);
+          expect(life()).toBe("alive");
+          rec.darkCount += 1;
+          rec.darkCost += row.cost;
+        }
+      }
+    }
+  }
+
+  campaign(): CampaignResult {
+    const dives: DiveRecord[] = [];
+    const goldTrail = [this.state.gold];
+    for (let k = 0; k < DIVES; k++) {
+      const goldBefore = this.state.gold;
+      const method = this.dive();
+      if (method === null) return { seed: this.seed, dives, aborted: true, goldTrail };
+      expect(this.state.screen).toBe("town");
+      const rec: DiveRecord = {
+        method,
+        battles: this.battles,
+        steps: this.steps,
+        herbs: this.herbs,
+        threads: this.threads,
+        goldBefore,
+        goldAfter: 0,
+        templeTries: 0,
+        templeOk: 0,
+        templeCost: 0,
+        darkCount: 0,
+        darkCost: 0,
+        innCost: 0,
+        innFallback: false,
+        mercyOffered: this.state.townVisit!.mercyOffered,
+        unrevived: 0,
+        anyL2: false,
+        allL2: false,
+      };
+      this.revive(rec);
+      const inn = townMenu(this.state, data)!.inn;
+      const rank = inn[INN_RANK]!.affordable ? INN_RANK : inn.findIndex((r) => r.cost === 0);
+      rec.innFallback = rank !== INN_RANK;
+      const g = this.state.gold;
+      this.run({ type: "town.inn", rank });
+      rec.innCost = g - this.state.gold;
+      expect(rec.innCost).toBe(inn[rank]!.cost);
+      const alive = this.state.party.filter((c) => c.life === "alive");
+      rec.unrevived = this.state.party.length - alive.length;
+      rec.anyL2 = this.state.party.some((c) => c.level >= 2);
+      rec.allL2 = alive.length > 0 && alive.every((c) => c.level >= 2);
+      rec.goldAfter = this.state.gold;
+      goldTrail.push(this.state.gold);
+      dives.push(rec);
+    }
+    return { seed: this.seed, dives, aborted: false, goldTrail };
+  }
 }
 
-/** 宿代: 各ランクを単独で「alive 全員の HP / MP が満タン」まで繰り返した費用の最小（払えないランクは除外） */
-function innCosts(s0: GameState): { min: number; private: number } {
-  const ranks = data.config.town.innRanks;
-  let best = Infinity;
-  ranks.forEach((r, rank) => {
-    let s = s0;
-    let cost = 0;
-    for (let n = 0; n <= INN_NIGHTS_CAP; n++) {
-      const full = s.party.every((c) => c.life !== "alive" || (c.hp === c.hpMax && c.mp === c.mpMax));
-      if (full) {
-        best = Math.min(best, cost);
-        return;
-      }
-      if (n === INN_NIGHTS_CAP || s.gold < r.cost) return;
-      const res = execute(s, { type: "town.inn", rank }, data);
-      if (res.events[0]?.kind === "rejected") throw new Error(`inn rejected: ${JSON.stringify(res.events[0])}`);
-      expectKnownStringKeys(res.events);
-      s = res.state;
-      cost += r.cost;
-    }
-  });
-  return { min: best === Infinity ? NaN : best, private: Math.max(...ranks.map((r) => r.cost)) };
+function report(shape: Shape, results: CampaignResult[]): string {
+  const lines: string[] = [];
+  const all = results.flatMap((r) => r.dives);
+  lines.push(
+    `H9 バランス【${shape.label}】（${SEEDS} シード × 潜行 ${DIVES} 回。d01 の 1 階の上り階段から BFS 距離 ${NEAR} 以内。潜行 → 寺院・闇魔術 → 相部屋 1 泊。所持金の初期値 ${START_GOLD}、薬草 ${HERB_PRICE}G）`,
+  );
+  lines.push(`打ち切り（行動可能な者がいなくて入れない）: ${results.filter((r) => r.aborted).length} シード`);
+  for (let k = 0; k < DIVES; k++) {
+    const ds = results.flatMap((r) => (r.dives[k] === undefined ? [] : [r.dives[k]!]));
+    const wipes = ds.filter((d) => d.method === "wipe").length;
+    const m = (x: Method) => ds.filter((d) => d.method === x).length;
+    lines.push(
+      `潜行 ${k + 1}: 全滅率 ${pct(wipes, ds.length)} / 帰還 糸 ${m("thread")}・徒歩 ${m("walk")}・上限 ${m("cap")} / 戦闘数 平均 ${fmt(mean(ds.map((d) => d.battles)))} / 薬草 平均 ${fmt(mean(ds.map((d) => d.herbs)))}`,
+    );
+    lines.push(`  ${stats("純益（所持金の変化）", ds.map((d) => d.goldAfter - d.goldBefore))}`);
+    lines.push(`  ${stats("純益（薬草代も引く）", ds.map((d) => d.goldAfter - d.goldBefore - d.herbs * HERB_PRICE))}`);
+    lines.push(
+      `  蘇生: 寺院 ${ds.reduce((a, d) => a + d.templeTries, 0)} 回（成功 ${ds.reduce((a, d) => a + d.templeOk, 0)}、費用計 ${ds.reduce((a, d) => a + d.templeCost, 0)}）/ 闇魔術 ${ds.reduce((a, d) => a + d.darkCount, 0)} 回（費用計 ${ds.reduce((a, d) => a + d.darkCost, 0)}）/ 宿の後に alive でない者がいる ${ds.filter((d) => d.unrevived > 0).length}（計 ${ds.reduce((a, d) => a + d.unrevived, 0)} 人）/ 救済の申し出 ${ds.filter((d) => d.mercyOffered).length}（使わない）/ 相部屋が払えず馬小屋 ${ds.filter((d) => d.innFallback).length}`,
+    );
+  }
+  const totalWipes = all.filter((d) => d.method === "wipe").length;
+  lines.push(`全潜行の全滅率: ${pct(totalWipes, all.length)}`);
+  lines.push(stats("全潜行の純益（所持金の変化）", all.map((d) => d.goldAfter - d.goldBefore)));
+  lines.push(stats("全潜行の純益（薬草代も引く）", all.map((d) => d.goldAfter - d.goldBefore - d.herbs * HERB_PRICE)));
+  lines.push(stats("帰還した潜行の純益（所持金の変化）", all.filter((d) => d.method !== "wipe").map((d) => d.goldAfter - d.goldBefore)));
+  lines.push(stats("全滅した潜行の純益（所持金の変化）", all.filter((d) => d.method === "wipe").map((d) => d.goldAfter - d.goldBefore)));
+  const firstOf = (r: CampaignResult, f: (d: DiveRecord) => boolean) => r.dives.findIndex(f);
+  const l2Dist = (f: (d: DiveRecord) => boolean) => {
+    const idx = results.map((r) => firstOf(r, f));
+    const parts = Array.from({ length: DIVES }, (_, k) => `${k + 1} 回目 ${idx.filter((i) => i === k).length}`);
+    parts.push(`未到達 ${idx.filter((i) => i < 0).length}`);
+    return parts.join(" / ");
+  };
+  lines.push(`レベル 2 到達（誰か 1 人、宿の後で判定）: ${l2Dist((d) => d.anyL2)}`);
+  lines.push(`レベル 2 到達（生存者全員、宿の後で判定）: ${l2Dist((d) => d.allL2)}`);
+  for (let k = 0; k <= DIVES; k++) {
+    const g = results.flatMap((r) => (r.goldTrail[k] === undefined ? [] : [r.goldTrail[k]!]));
+    lines.push(stats(k === 0 ? "所持金（開始時）" : `所持金（潜行 ${k} の宿の後）`, g));
+  }
+  const cum = results.filter((r) => !r.aborted).map((r) => r.goldTrail[DIVES]! - START_GOLD);
+  lines.push(stats(`5 回を通した所持金の増減（打ち切りを除く）`, cum));
+  return lines.join("\n");
 }
 
 describe("バランス（H9）", () => {
-  test("H9 バランス: 1 階の階段付近で 6〜8 戦して帰還の糸で帰る × 200 シード（数字は出力するだけで、合否は不変条件）", () => {
-    const results: SeedResult[] = [];
-    const keys = new Set<string>();
-    const herbPrice = itemOf(data, "herb").price;
-    for (let seed = 1; seed <= SEEDS; seed++) {
-      const b = new Bot(seed);
-      const method = b.play();
-      const s = b.state;
-      expect(s.screen).toBe("town");
-      expectStateInvariants(s);
-      for (const k of b.keys) keys.add(k);
-      const inn = innCosts(s);
-      results.push({
-        seed,
-        method,
-        battles: b.battles,
-        steps: b.steps,
-        herbs: b.herbs,
-        threads: b.threads,
-        deaths: s.party.filter((c) => c.life !== "alive").length,
-        goldAfter: s.gold,
-        innMin: inn.min,
-        innPrivate: inn.private,
-      });
-    }
-    for (const k of ["battle.encounter", "battle.win", "dungeon.return", "town.enter"]) expect(keys.has(k), k).toBe(true);
-
-    const net = (r: SeedResult, inn: number) => r.goldAfter - START_GOLD - r.herbs * herbPrice - inn;
-    const groups: [string, SeedResult[]][] = [
-      ["全体", results],
-      ["帰還だけ", results.filter((r) => r.method !== "wipe")],
-      ["全滅だけ", results.filter((r) => r.method === "wipe")],
-    ];
-    const count = (m: Method) => results.filter((r) => r.method === m).length;
-    const deathsDist = [0, 1, 2, 3, 4, 5, 6].map((d) => `${d}人 ${results.filter((r) => r.deaths === d).length}`).join(" / ");
-    const battlesDist = [...new Set(results.map((r) => r.battles))]
-      .sort((a, b) => a - b)
-      .map((n) => `${n}戦 ${results.filter((r) => r.battles === n).length}`)
-      .join(" / ");
-    const lines = [
-      `H9 バランス（${SEEDS} シード、d01 の 1 階の上り階段から BFS 距離 ${NEAR} 以内、6〜8 戦して帰る。所持金の初期値 ${START_GOLD}）`,
-      `全滅率: ${fmt((count("wipe") / SEEDS) * 100)}%（${count("wipe")}/${SEEDS}）`,
-      `帰還の方法: 糸 ${count("thread")} / 徒歩 ${count("walk")} / 上限 ${count("cap")} / 全滅 ${count("wipe")}`,
-      `糸の消費: ${results.reduce((a, r) => a + r.threads, 0)} 本`,
-      `死者数（街に戻った時点で alive でない人数）: ${deathsDist}`,
-      ...groups.flatMap(([label, rs]) => [
-        stats(`純益・宿代最小（${label}）`, rs.map((r) => net(r, r.innMin))),
-        stats(`純益・個室 1 泊（${label}）`, rs.map((r) => net(r, r.innPrivate))),
-      ]),
-      stats("宿代の最小", results.map((r) => r.innMin)),
-      stats("戦闘数", results.map((r) => r.battles)),
-      `戦闘数の分布: ${battlesDist}`,
-      stats("薬草の使用数", results.map((r) => r.herbs)),
-      stats("歩数", results.map((r) => r.steps)),
-    ];
-    console.log(lines.join("\n"));
-  }, 180_000);
+  for (const shape of SHAPES) {
+    test(`H9 バランス: 潜行（${shape.label}）→ 寺院・闇魔術 → 相部屋 を ${DIVES} 回 × ${SEEDS} シード（数字は出力するだけで、合否は不変条件）`, () => {
+      const results: CampaignResult[] = [];
+      const keys = new Set<string>();
+      for (let seed = 1; seed <= SEEDS; seed++) {
+        const c = new Campaign(seed, shape);
+        const r = c.campaign();
+        expect(c.state.screen).toBe("town");
+        expectStateInvariants(c.state);
+        for (const k of c.keys) keys.add(k);
+        results.push(r);
+      }
+      for (const k of ["battle.encounter", "battle.win", "town.enter", "town.inn.stay"]) expect(keys.has(k), k).toBe(true);
+      console.log(report(shape, results));
+    }, 180_000);
+  }
 });
