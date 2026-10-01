@@ -11,7 +11,7 @@
 
 ## 2. レイアウト（縦持ち）
 
-上から順に。数値は論理 px【仮】。高さは `config.ui.layout`（header / view / message / party / controls）に置き、合計が `config.stage.height`（400）と一致することを読み込み時に検証する。
+上から順に。数値は論理 px。高さは `config.ui.layout`（header / view / message / party / controls）に置き、合計が `config.stage.height`（400）と一致すること、各高さが下の表の値と一致することを読み込み時に検証する。表示層の部品の寸法と座標（ボタンの矩形など）がこの区切りを前提にした定数なので、区切りは固定値とする（変えるときは表・config・表示層の定数と検証を同時に直す）。
 
 | 領域 | 高さ | 内容 |
 |---|---|---|

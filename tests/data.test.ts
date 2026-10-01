@@ -155,8 +155,14 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.ui.layout.view = 151), "config.json", "ui.layout: ui §2: sum of heights 401 must equal stage.height 400");
     expectIssue((r) => (r.config.ui.layout.header = 0), "config.json", "ui.layout.header: expected integer >= 1, got 0");
     expectIssue((r) => delete r.config.ui.layout.party, "config.json", "ui.layout.party: missing required field");
-    // 区切りを動かしても合計が合っていれば通る
-    expect(issuesOf((r) => ((r.config.ui.layout.view = 140), (r.config.ui.layout.message = 80)))).toEqual([]);
+  });
+  test("data: ui §2 ui.layout の各高さは表の固定値（16/150/70/64/100）。合計が合っていても区切りを動かせば検証エラー", () => {
+    expect(config.ui.layout).toEqual({ header: 16, view: 150, message: 70, party: 64, controls: 100 });
+    const issues = issuesOf((r) => ((r.config.ui.layout.view = 140), (r.config.ui.layout.message = 80)));
+    expect(issues).toEqual([
+      "config.json: ui.layout.view: ui §2: view 140 must be 150 (fixed by the presenter layout)",
+      "config.json: ui.layout.message: ui §2: message 80 must be 70 (fixed by the presenter layout)",
+    ]);
   });
   test("data: UI-43 ui.messageHistory は 1 以上の整数", () => {
     expectIssue((r) => (r.config.ui.messageHistory = 0), "config.json", "ui.messageHistory: expected integer >= 1, got 0");

@@ -94,6 +94,8 @@ const pair = (r: Range = {}): Field => (ctx, p, v) => {
   return a;
 };
 
+/** ui.md §2 の縦の区切り（論理 px）。表示層の寸法と座標の定数がこれを前提にしているので、config はこれと一致させる */
+const UI_LAYOUT_FIXED: Readonly<Record<string, number>> = { header: 16, view: 150, message: 70, party: 64, controls: 100 };
 const STAT_RANGE: Range = { min: 1, max: 18 }; // CH-10（上限 18。下限 1 は推測）
 const statBlock: Field = F(Object.fromEntries(STAT_KEYS.map((k) => [k, I(STAT_RANGE)])));
 const lure: Field = F(Object.fromEntries(LURE_TAGS.map((k) => [k, I({ min: 0, max: 3 })]))); // EV-03
@@ -295,6 +297,11 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
     if (parts.every((n) => n !== undefined)) {
       const sum = parts.reduce<number>((a, n) => a + (n ?? 0), 0);
       if (sum !== stageH) report(ctx, "ui.layout", `ui §2: sum of heights ${sum} must equal stage.height ${stageH}`);
+    }
+    // ui.md §2: 区切りは表の固定値。表示層の部品の寸法と座標がこの値を前提にした定数なので、違う値は起動時に止める
+    for (const [k, fixed] of Object.entries(UI_LAYOUT_FIXED)) {
+      const n = intOf(layout[k]);
+      if (n !== undefined && n !== fixed) report(ctx, `ui.layout.${k}`, `ui §2: ${k} ${n} must be ${fixed} (fixed by the presenter layout)`);
     }
   }
 
