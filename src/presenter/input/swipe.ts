@@ -83,11 +83,29 @@ export function keyToAction(key: string, repeat: boolean, onInput: boolean): Act
 }
 
 /**
- * UI-31: 連打を続けてよいか。直前の前進のイベントがちょうど [moved] 1 件で、選択の保留も overlay も無いときだけ。
- * 壁（blocked）、扉・階段・罠の message、遭遇などはすべて余計なイベントを伴うので止まる。
+ * UI-31: 連打を続けてよいか。直前の前進のイベントが moved で始まり、その後ろが hpChanged だけ（迷宮の毒の 1 歩。CH-43）で、
+ * 選択の保留も overlay も無いときだけ。壁（blocked）、扉・階段・罠の message、遭遇（screen など）は余計なイベントを伴うので止まる。
  */
 export function canRepeat(events: readonly GameEvent[], pending: PendingChoice | null, overlayOpen: boolean): boolean {
-  return events.length === 1 && events[0]?.kind === "moved" && pending === null && !overlayOpen;
+  return (
+    events[0]?.kind === "moved" && events.slice(1).every((e) => e.kind === "hpChanged") && pending === null && !overlayOpen
+  );
+}
+
+/**
+ * UI-33 / UI-54: 戦闘中のキー（Action）→ 選ぶもの。grid はコマンドの 8 枠、list は呪文・道具・対象の一覧、
+ * autoStop はオート中の「オート解除」だけの画面。数字 n は n−1 番目、Enter は 0 番目、Esc は戻る。
+ * autoStop では Esc / Enter / 1 が "stop"。矢印・地図・debug などは null（呼び出し側が別に扱う）
+ */
+export function battleKeyChoice(a: Action, mode: "grid" | "list" | "autoStop"): number | "back" | "stop" | null {
+  if (mode === "autoStop") {
+    if (a === "back" || a === "confirm" || (typeof a === "object" && a.menu === 0)) return "stop";
+    return null;
+  }
+  if (typeof a === "object") return a.menu;
+  if (a === "confirm") return 0;
+  if (a === "back") return "back";
+  return null;
 }
 
 /**

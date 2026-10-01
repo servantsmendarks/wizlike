@@ -10,6 +10,7 @@ import {
   attachKeyboard,
   attachReleaseOnHide,
   attachSwipe,
+  battleKeyChoice,
   canRepeat,
   classifySwipe,
   createHoldRepeater,
@@ -118,6 +119,39 @@ describe("連打の可否とキーボード", () => {
     expect(canRepeat([moved], null, true)).toBe(false);
     expect(canRepeat([], null, false)).toBe(false);
     expect(canRepeat([{ kind: "turned", facing: "E" }], null, false)).toBe(false);
+  });
+
+  test("UI-31/CH-43 canRepeat は moved の後が hpChanged だけ（迷宮の毒の 1 歩）なら真。message・screen・lifeChanged が混じれば偽", () => {
+    const hp: GameEvent = { kind: "hpChanged", id: "c1", delta: -1, hp: 5 };
+    const hp2: GameEvent = { kind: "hpChanged", id: "c2", delta: -1, hp: 3 };
+    expect(canRepeat([moved, hp], null, false)).toBe(true);
+    expect(canRepeat([moved, hp, hp2], null, false)).toBe(true);
+    expect(canRepeat([moved, hp, { kind: "message", key: "dungeon.door" }], null, false)).toBe(false);
+    expect(canRepeat([moved, { kind: "message", key: "battle.encounter" }], null, false)).toBe(false);
+    expect(canRepeat([moved, hp, { kind: "screen", to: "battle" }], null, false)).toBe(false);
+    expect(canRepeat([moved, { kind: "lifeChanged", id: "c1", life: "dead" }], null, false)).toBe(false);
+    expect(canRepeat([hp, moved], null, false)).toBe(false);
+    expect(canRepeat([moved, hp], pending, false)).toBe(false);
+    expect(canRepeat([moved, hp], null, true)).toBe(false);
+  });
+
+  test("UI-33/UI-54 battleKeyChoice: 数字 n → n−1、Enter → 0、Esc → back。autoStop では Esc / Enter / 1 → stop。矢印・地図は null", () => {
+    for (const mode of ["grid", "list"] as const) {
+      expect(battleKeyChoice({ menu: 0 }, mode), mode).toBe(0);
+      expect(battleKeyChoice({ menu: 6 }, mode), mode).toBe(6);
+      expect(battleKeyChoice("confirm", mode), mode).toBe(0);
+      expect(battleKeyChoice("back", mode), mode).toBe("back");
+      for (const a of ["forward", "left", "right", "around", "map", "debug"] as const) expect(battleKeyChoice(a, mode), `${mode} ${a}`).toBeNull();
+    }
+    expect(battleKeyChoice("back", "autoStop")).toBe("stop");
+    expect(battleKeyChoice("confirm", "autoStop")).toBe("stop");
+    expect(battleKeyChoice({ menu: 0 }, "autoStop")).toBe("stop");
+    expect(battleKeyChoice({ menu: 1 }, "autoStop")).toBeNull();
+    expect(battleKeyChoice("forward", "autoStop")).toBeNull();
+    // keyToAction と合わせた表（UI-33）
+    expect(battleKeyChoice(keyToAction("3", false, false)!, "grid")).toBe(2);
+    expect(battleKeyChoice(keyToAction("Escape", false, false)!, "list")).toBe("back");
+    expect(battleKeyChoice(keyToAction("Enter", false, false)!, "autoStop")).toBe("stop");
   });
 
   test("UI-33 keyToAction の表どおり。repeat と input 上は null", () => {
