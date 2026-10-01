@@ -1070,6 +1070,24 @@ describe("オート（CB-40〜43、F2）", () => {
     expectRejected(auto, REPEAT, "auto on");
   });
 
+  test("CB-12/CB-40 battle.repeat は行動可能な味方 0 人（麻痺と睡眠だけ）でも受け付け、battle.resolve と同じ events・rng・battle になる", () => {
+    // battle.flee（no actor で rejected）と違い、repeat は auto だけを拒否する（decisions の Y1）
+    const s = setup([{ monsterId: "giant_rat", hps: [50] }], {
+      identified: ["giant_rat"],
+      inputs: {},
+      patches: { c1: { status: ["sleep"] }, c2: PARA, c3: PARA, c4: PARA, c5: PARA, c6: PARA },
+    });
+    const got = exec(s, REPEAT);
+    expect(got.events[0]?.kind).not.toBe("rejected");
+    const want = exec(cloneState(s), RESOLVE);
+    expect(want.events[0]?.kind).not.toBe("rejected");
+    expect(got.events).toEqual(want.events);
+    expect(got.state.rng).toEqual(want.state.rng);
+    expect(got.state.battle).toEqual(want.state.battle);
+    // 味方は誰も行動しない（敵だけのラウンド）
+    expect(eventsOf(got.events, "attack").every((e) => e.actorId.startsWith("e"))).toBe(true);
+  });
+
   test("CB-04/CB-12 battle.repeat でも味方の奇襲のラウンドでは敵が行動しない（消費して false に戻る）", () => {
     const d = dataWith({ combat: { surpriseDiff: -1000, ...ALWAYS_HIT } });
     const ctx = runCtx(dived(1), d, (c) => startBattle(c, { kind: "random", inRoom: false }, [{ monsterId: "kobold", count: 2 }]));
