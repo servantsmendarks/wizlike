@@ -38,7 +38,7 @@ export type CurableStatusId = (typeof CURABLE_STATUS_IDS)[number];
 
 // ---- config.json ----
 
-export type InnRank = { id: string; name: string; cost: number; hpRatio: number; mpRatio: number };
+export type InnRank = { id: string; name: string; cost: number; hpRatio: number };
 
 export type PrototypeMember = {
   defaultName: string;

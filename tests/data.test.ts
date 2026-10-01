@@ -176,6 +176,11 @@ describe("data: config.json", () => {
     expect(issuesOf((r) => (r.config.dungeon.straightBias = 0))).toEqual([]);
     expect(issuesOf((r) => (r.config.dungeon.straightBias = 1))).toEqual([]);
   });
+  test("data: TW-04/MG-02 town.innRanks は hpRatio だけを持つ（馬小屋 0 / 相部屋 0.5 / 個室 1.0【仮】）。mpRatio は廃止（未知キー）", () => {
+    expect(config.town.innRanks.map((r) => r.hpRatio)).toEqual([0, 0.5, 1.0]);
+    expectIssue((r) => (r.config.town.innRanks[0].mpRatio = 0.25), "config.json", "town.innRanks[0].mpRatio: unknown field");
+    expectIssue((r) => (r.config.town.innRanks[1].hpRatio = 1.5), "config.json", "town.innRanks[1].hpRatio: expected number in 0..1, got 1.5");
+  });
   test("data: DG-05 dungeon.roomAttempts は 1 以上の整数", () => {
     expectIssue((r) => (r.config.dungeon.roomAttempts = 0), "config.json", "dungeon.roomAttempts: expected integer >= 1, got 0");
     expectIssue((r) => delete r.config.dungeon.roomAttempts, "config.json", "dungeon.roomAttempts: missing required field");

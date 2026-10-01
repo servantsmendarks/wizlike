@@ -5,7 +5,7 @@
 - TW-01 施設は 8 つ: 酒場、宿屋、店、寺院、闇魔術、訓練所、銀行、迷宮入口。プロトタイプで実装するのは宿屋・寺院・迷宮入口（酒場は GM のメッセージ表示だけ）。
 - TW-02 街に入った時点（`town.enter`）で全員の SAN を `sanMax` に戻す【仮】。街に入る処理は帰還（DG-30）と全滅（TW-26）だけが内部で行い、`town.enter` コマンドは受け付けない（rejected `internal command`）。順は `town.enter` の語り → SAN の回復（life を問わず全員）→ 救済の判定（TW-30）→ 街の画面。
 - TW-03 酒場: パーティの状態確認、並び順変更（CH-03）、GM の語り（進行の案内、救済の提示 TW-30）。
-- TW-04 宿屋: 部屋のランク（`config.town.innRanks`: 料金と HP/MP 回復量）を選んで泊まる。泊まると、必要経験値に達しているメンバーのレベルアップを処理する（CH-61。複数レベルなら順に）。レベルアップごとに呪文習得判定（MG-20〜24）を行い、ダイスを表示する。料金は 1 泊につき `cost` を 1 回払う（満タンでも泊まれる）。回復は `alive` の者だけで、HP / MP にそれぞれ `ceil(最大値 × hpRatio / mpRatio)` を足して最大値で止める。レベルアップも `alive` の者だけ（並び順）。状態異常は治さない（寺院の役目）。
+- TW-04 宿屋: 部屋のランク（`config.town.innRanks`: 料金と HP 回復量）を選んで泊まる。泊まると、必要経験値に達しているメンバーのレベルアップを処理する（CH-61。複数レベルなら順に）。レベルアップごとに呪文習得判定（MG-20〜24）を行い、ダイスを表示する。料金は 1 泊につき `cost` を 1 回払う（満タンでも泊まれる）。回復は `alive` の者だけで、HP は `ceil(hpMax × hpRatio)` を足して `hpMax` で止める（`hpRatio` は馬小屋 0 / 相部屋 0.5 / 個室 1.0【仮】。馬小屋では HP は増えない）。MP はどのランクでも `mpMax` まで全回復する（MG-02）。レベルアップはどのランクでも（0G の馬小屋でも）行い、`alive` の者だけ（並び順）。状態異常は治さない（寺院の役目）。
 - TW-05 店: 在庫制。`items[].stock` が初期在庫数、`infinite: true` の品は在庫無限。買値は `price`、売値は `price × config.economy.sellRatio`（0.5）。売った品は在庫 +1 になり、買値で買い戻せる。鑑定は `config.economy.identifyFee` で有料【仮】。プロトタイプ外。
 - TW-06 店の在庫は `dungeons[].onClear.shopStock` で追加される（各 1 個。`infinite` の品なら無限として解放）。
 - TW-07 寺院: 
@@ -43,4 +43,4 @@
 
 ## 4. データ
 
-`config.json` の `town` と `economy` 節を参照。`config.town.innRanks` は `[{ "name": "馬小屋", "cost": 0, "hpRatio": 0.25, "mpRatio": 0.25 }, ...]` の形。
+`config.json` の `town` と `economy` 節を参照。`config.town.innRanks` は `[{ "id": "stable", "name": "馬小屋", "cost": 0, "hpRatio": 0 }, ...]` の形（`mpRatio` は無い。MP は全ランクで全回復）。

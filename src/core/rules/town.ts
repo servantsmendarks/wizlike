@@ -140,8 +140,9 @@ export function checkInn(state: GameState, rank: unknown, data: GameData): strin
 }
 
 /**
- * TW-04: 料金を 1 回払う → message town.inn.stay → alive の者を並び順に HP、MP の順で ceil(max × ratio) 回復（max で止める）
- * → alive の者を並び順に levelUpWhilePossible。状態異常は治さない。満タンでも泊まれる。
+ * TW-04 / MG-02: 料金を 1 回払う → message town.inn.stay → alive の者を並び順に、HP に ceil(hpMax × hpRatio) を足して hpMax で止め
+ * （hpRatio 0 なら増えない）、MP は全ランクで mpMax に戻す → alive の者を並び順に levelUpWhilePossible（どのランクでも）。
+ * 状態異常は治さない。満タンでも泊まれる。
  */
 export function stayInn(ctx: RuleContext, rank: number): void {
   const { state, data } = ctx;
@@ -154,7 +155,7 @@ export function stayInn(ctx: RuleContext, rank: number): void {
     const hp = Math.min(ch.hpMax, ch.hp + ceilRatio(ch.hpMax, r.hpRatio));
     if (hp > ch.hp) ctx.events.push({ kind: "hpChanged", id: ch.id, delta: hp - ch.hp, hp });
     ch.hp = hp;
-    const mp = Math.min(ch.mpMax, ch.mp + ceilRatio(ch.mpMax, r.mpRatio));
+    const mp = ch.mpMax;
     if (mp > ch.mp) ctx.events.push({ kind: "mpChanged", id: ch.id, delta: mp - ch.mp, mp });
     ch.mp = mp;
   }

@@ -285,7 +285,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       uncurseCost: I(NON_NEG),
     }),
     town: F({
-      innRanks: L(F({ id: S, name: S, cost: I(NON_NEG), hpRatio: N(RATIO), mpRatio: N(RATIO) }), 1),
+      innRanks: L(F({ id: S, name: S, cost: I(NON_NEG), hpRatio: N(RATIO) }), 1), // TW-04【仮】。MP は全ランクで全回復（MG-02）
     }),
     events: F({ impulseThreshold: I(), stopSanGain: I(NON_NEG) }),
     save: F({ maxGames: I(POS_INT), schemaVersion: I(POS_INT) }),

@@ -42,9 +42,9 @@
   },
   "town": {
     "innRanks": [
-      { "id": "stable", "name": "馬小屋", "cost": 0, "hpRatio": 0.25, "mpRatio": 0.25 },
-      { "id": "cheap", "name": "相部屋", "cost": 30, "hpRatio": 0.5, "mpRatio": 0.5 },
-      { "id": "good", "name": "個室", "cost": 100, "hpRatio": 1.0, "mpRatio": 1.0 }
+      { "id": "stable", "name": "馬小屋", "cost": 0, "hpRatio": 0 },
+      { "id": "cheap", "name": "相部屋", "cost": 30, "hpRatio": 0.5 },
+      { "id": "good", "name": "個室", "cost": 100, "hpRatio": 1.0 }
     ]
   },
   "events": { "impulseThreshold": 8, "stopSanGain": 3 },

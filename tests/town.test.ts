@@ -1,7 +1,7 @@
 // 街（TW-02, TW-04, TW-07, TW-11, TW-30〜32）。rules/town.ts と engine の town.* の配線。
 // 既定のパーティ（newGame）: c1 アルド 戦士 HP 13（リーダー）、c2 ベルク 戦士 HP 14 vit 14、c3 キリ 盗賊 HP 8、
 // c4 ドナ 僧侶 HP 10 MP 5、c5 エル 魔術師 HP 6 MP 7、c6 フィン 盗賊 HP 8。所持金 300。
-// 宿のランク: 0 馬小屋 0G ×0.25、1 相部屋 30G ×0.5、2 個室 100G ×1.0。寺院: 蘇生 level × 250、
+// 宿のランク: 0 馬小屋 0G HP ×0、1 相部屋 30G HP ×0.5、2 個室 100G HP ×1.0（MP はどのランクでも全回復）。寺院: 蘇生 level × 250、
 // 成功率 min(95, 50 + vit × 2)、治療 毒 50 / 麻痺 150 / 石化 300、解呪 200。闇魔術 level × 1000。
 import { describe, expect, test } from "vitest";
 import { createInitialState, execute } from "../src/core/engine";
@@ -134,29 +134,30 @@ describe("TW-02/TW-26 街に入る処理（arriveTown / returnToTown）", () => 
 // ---------------------------------------------------------------------------
 
 describe("TW-04 宿屋（town.inn）", () => {
-  test("TW-04 馬小屋（0G ×0.25）: alive の HP / MP が ceil(max × 0.25) 増える（1 人ずつ HP → MP）。dead は不変、状態異常は残る", () => {
-    // c1 HP 1/13 → +ceil(3.25)=4 → 5、c4 MP 0/5 → +ceil(1.25)=2 → 2、c5 HP 5/6 → +ceil(1.5)=2 → 6（max 止まり）
-    const s = town({ c1: { hp: 1, status: ["poison"] }, c2: DEAD, c4: { mp: 0 }, c5: { hp: 5 } });
+  test("TW-04/MG-02 馬小屋（0G、HP ×0）: HP は増えず、alive の MP は mpMax に戻る（1 人ずつ HP → MP）。dead は不変、状態異常は残る", () => {
+    // c1 HP 1/13 → +ceil(13 × 0)=0 で 1 のまま、c4 MP 0/5 → 5、c5 HP 5/6 は 5 のまま・MP 3/7 → 7、c2 dead は MP 0 のまま
+    const s = town({ c1: { hp: 1, status: ["poison"] }, c2: { ...DEAD, mp: 0 }, c4: { mp: 0 }, c5: { hp: 5, mp: 3 } });
     const r = ok(s, { type: "town.inn", rank: 0 });
     expect(r.events).toEqual([
       { kind: "message", key: "town.inn.stay", params: { room: "馬小屋", cost: 0 } },
-      { kind: "hpChanged", id: "c1", delta: 4, hp: 5 },
-      { kind: "mpChanged", id: "c4", delta: 2, mp: 2 },
-      { kind: "hpChanged", id: "c5", delta: 1, hp: 6 },
+      { kind: "mpChanged", id: "c4", delta: 5, mp: 5 },
+      { kind: "mpChanged", id: "c5", delta: 4, mp: 7 },
     ]);
+    expect(member(r.state, "c1").hp).toBe(1);
+    expect(member(r.state, "c5").hp).toBe(5);
     expect(r.state.gold).toBe(300);
     expect(member(r.state, "c1").status).toEqual(["poison"]);
     expect(member(r.state, "c2")).toEqual(member(s, "c2"));
     expect(r.state.rng).toEqual(s.rng);
   });
 
-  test("TW-04 相部屋（30G ×0.5）と個室（100G ×1.0）: 料金を 1 回払い、ceil(max × ratio) 増えて max で止まる", () => {
+  test("TW-04/MG-02 相部屋（30G、HP ×0.5）と個室（100G、HP ×1.0）: 料金を 1 回払い、HP は ceil(hpMax × hpRatio) 増えて hpMax で止まり、MP は全回復", () => {
     const s = town({ c1: { hp: 1 }, c4: { mp: 0 } });
     const a = ok(s, { type: "town.inn", rank: 1 });
-    // c1 +ceil(6.5)=7 → 8、c4 +ceil(2.5)=3 → 3
+    // c1 +ceil(6.5)=7 → 8、c4 MP 0 → 5（ランクに関わらず mpMax）
     expect(a.state.gold).toBe(270);
     expect(member(a.state, "c1").hp).toBe(8);
-    expect(member(a.state, "c4").mp).toBe(3);
+    expect(member(a.state, "c4").mp).toBe(5);
     const b = ok(s, { type: "town.inn", rank: 2 });
     expect(b.state.gold).toBe(200);
     expect(member(b.state, "c1").hp).toBe(13);
