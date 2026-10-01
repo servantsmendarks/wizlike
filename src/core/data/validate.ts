@@ -198,7 +198,14 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       mpStatDivisor: I(POS_INT), // MG-01（0 除算を防ぐ）
     }),
     learning: F({ base: I(), perLevelDiff: I(), guaranteeDiff: I(), statPivot: I(), statPerPoint: I() }),
-    dungeon: F({ defaultRooms: pair(POS_INT) }), // DG-05
+    dungeon: F({
+      defaultRooms: pair(POS_INT), // DG-05
+      roomSize: pair(POS_INT), // DG-05【仮】
+      roomAttempts: I(POS_INT), // DG-05【仮】
+      doorsPerRoom: pair(POS_INT), // DG-05【仮】（min >= 1 で到達性を保つ）
+      viewDepth: I({ min: 1, max: 3 }), // DG-12【仮】（UI-20 の座標表が奥行き 0..3）
+      pitDamage: D, // DG-20【仮】
+    }),
     combat: F({
       hitBase: I(),
       hitPerLevel: I(),
@@ -259,6 +266,8 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       flashMs: I(NON_NEG),
       shakeMs: I(NON_NEG),
       viewFadeMs: I(NON_NEG),
+      layout: F({ header: I(POS_INT), view: I(POS_INT), message: I(POS_INT), party: I(POS_INT), controls: I(POS_INT) }), // ui.md §2【仮】
+      messageHistory: I(POS_INT), // UI-43 / UI-11【仮】
     }),
     prototypeParty: F({ startingGold: I(NON_NEG), members: L(member) }),
   });
@@ -277,6 +286,17 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
   const confused = numOf(get(c, "san", "confusedRatio"));
   if (uneasy !== undefined && confused !== undefined && !(confused < uneasy))
     report(ctx, "san.confusedRatio", `CH-53: confusedRatio ${confused} must be < uneasyRatio ${uneasy}`);
+
+  // ui.md §2: 縦の区切りの合計はステージの高さ
+  const layout = objOf(get(c, "ui", "layout"));
+  const stageH = intOf(get(c, "stage", "height"));
+  if (layout !== undefined && stageH !== undefined) {
+    const parts = ["header", "view", "message", "party", "controls"].map((k) => intOf(layout[k]));
+    if (parts.every((n) => n !== undefined)) {
+      const sum = parts.reduce<number>((a, n) => a + (n ?? 0), 0);
+      if (sum !== stageH) report(ctx, "ui.layout", `ui §2: sum of heights ${sum} must equal stage.height ${stageH}`);
+    }
+  }
 
   uniqueIds(ctx, "town.innRanks", arrOf(get(c, "town", "innRanks")));
 
@@ -622,8 +642,8 @@ function validateDungeons(ctx: Ctx, v: unknown, ix: Index): void {
       id: S,
       name: S,
       floors: I(POS_INT),
-      width: I(POS_INT),
-      height: I(POS_INT),
+      width: I({ min: 5 }), // DG-02: 生成の前提（部屋が置ける寸法）
+      height: I({ min: 5 }), // DG-02
       rooms: opt(pair(NON_NEG)), // DG-05: 省略時は config.dungeon.defaultRooms
       unlock: nullable(refField(ix.dungeons, "dungeon")),
       encounterRate: F({ room: N(RATIO), corridor: N(RATIO) }), // CB-01

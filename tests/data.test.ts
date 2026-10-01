@@ -122,6 +122,46 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.dungeon.defaultRooms = [3, 4, 6]), "config.json", `${p}: expected [min, max] (2 elements), got 3 element(s)`);
     expectIssue((r) => delete r.config.dungeon.defaultRooms, "config.json", `${p}: missing required field`);
   });
+  test("data: DG-05 dungeon.roomSize / doorsPerRoom は 1 以上の整数の [min, max]", () => {
+    for (const k of ["roomSize", "doorsPerRoom"]) {
+      const p = `dungeon.${k}`;
+      expectIssue((r) => (r.config.dungeon[k] = [3, 2]), "config.json", `${p}: min 3 > max 2`);
+      expectIssue((r) => (r.config.dungeon[k] = [0, 2]), "config.json", `${p}[0]: expected integer >= 1, got 0`);
+      expectIssue((r) => (r.config.dungeon[k] = [1, 2.5]), "config.json", `${p}[1]: expected integer`);
+      expectIssue((r) => (r.config.dungeon[k] = [2]), "config.json", `${p}: expected [min, max] (2 elements), got 1 element(s)`);
+      expectIssue((r) => delete r.config.dungeon[k], "config.json", `${p}: missing required field`);
+      expect(issuesOf((r) => (r.config.dungeon[k] = [1, 1]))).toEqual([]);
+    }
+  });
+  test("data: DG-05 dungeon.roomAttempts は 1 以上の整数", () => {
+    expectIssue((r) => (r.config.dungeon.roomAttempts = 0), "config.json", "dungeon.roomAttempts: expected integer >= 1, got 0");
+    expectIssue((r) => delete r.config.dungeon.roomAttempts, "config.json", "dungeon.roomAttempts: missing required field");
+  });
+  test("data: DG-12 dungeon.viewDepth は 1..3", () => {
+    expectIssue((r) => (r.config.dungeon.viewDepth = 0), "config.json", "dungeon.viewDepth: expected integer in 1..3, got 0");
+    expectIssue((r) => (r.config.dungeon.viewDepth = 4), "config.json", "dungeon.viewDepth: expected integer in 1..3, got 4");
+    expect(issuesOf((r) => (r.config.dungeon.viewDepth = 1))).toEqual([]);
+    expect(issuesOf((r) => (r.config.dungeon.viewDepth = 3))).toEqual([]);
+  });
+  test("data: DG-20 dungeon.pitDamage はダイス記法", () => {
+    expectIssue((r) => (r.config.dungeon.pitDamage = "d6"), "config.json", 'dungeon.pitDamage: invalid dice expression "d6"');
+    expectIssue((r) => delete r.config.dungeon.pitDamage, "config.json", "dungeon.pitDamage: missing required field");
+    expect(issuesOf((r) => (r.config.dungeon.pitDamage = "2d4+1"))).toEqual([]);
+    expect(isDiceExpr(config.dungeon.pitDamage)).toBe(true);
+  });
+  test("data: ui §2 ui.layout の合計が stage.height と違えば検証エラー", () => {
+    const l = config.ui.layout;
+    expect(l.header + l.view + l.message + l.party + l.controls).toBe(config.stage.height);
+    expectIssue((r) => (r.config.ui.layout.view = 151), "config.json", "ui.layout: ui §2: sum of heights 401 must equal stage.height 400");
+    expectIssue((r) => (r.config.ui.layout.header = 0), "config.json", "ui.layout.header: expected integer >= 1, got 0");
+    expectIssue((r) => delete r.config.ui.layout.party, "config.json", "ui.layout.party: missing required field");
+    // 区切りを動かしても合計が合っていれば通る
+    expect(issuesOf((r) => ((r.config.ui.layout.view = 140), (r.config.ui.layout.message = 80)))).toEqual([]);
+  });
+  test("data: UI-43 ui.messageHistory は 1 以上の整数", () => {
+    expectIssue((r) => (r.config.ui.messageHistory = 0), "config.json", "ui.messageHistory: expected integer >= 1, got 0");
+    expectIssue((r) => delete r.config.ui.messageHistory, "config.json", "ui.messageHistory: missing required field");
+  });
   test("data: CH-51 san.trap は 0 以上の整数（必須）", () => {
     expectIssue((r) => (r.config.san.trap = -1), "config.json", "san.trap: expected integer >= 0, got -1");
     expectIssue((r) => (r.config.san.trap = 1.5), "config.json", "san.trap: expected integer");
@@ -355,6 +395,11 @@ describe("data: dungeons.json", () => {
   });
   test("data: DG-20 罠の種類", () => {
     expectIssue((r) => r.dungeons[0].traps.push("arrow"), "dungeons.json", "[0].traps[2]: expected one of pit|spinner|teleport");
+  });
+  test("data: DG-02 dungeons の width/height が 5 未満なら検証エラー", () => {
+    expectIssue((r) => (r.dungeons[0].width = 4), "dungeons.json", "[0].width: expected integer >= 5, got 4");
+    expectIssue((r) => (r.dungeons[1].height = 1), "dungeons.json", "[1].height: expected integer >= 5, got 1");
+    expect(issuesOf((r) => ((r.dungeons[0].width = 5), (r.dungeons[0].height = 5)))).toEqual([]);
   });
   test("data: DG-05 rooms は [min, max]", () => {
     expectIssue((r) => (r.dungeons[0].rooms = [6, 3]), "dungeons.json", "[0].rooms: min 6 > max 3");

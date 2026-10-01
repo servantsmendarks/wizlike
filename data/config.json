@@ -5,7 +5,12 @@
   "creation": { "bonusBase": 7, "bonusDie": 4, "bonusBigChance": 5, "bonusBig": 10, "nameMaxLength": 6 },
   "growth": { "expBase": 1000, "expGrowth": 1.5, "hpVitPivot": 10, "hpVitDivisor": 2, "hpGainMin": 1, "mpStatPivot": 10, "mpStatDivisor": 2 },
   "learning": { "base": 35, "perLevelDiff": 20, "guaranteeDiff": 4, "statPivot": 10, "statPerPoint": 3 },
-  "dungeon": { "defaultRooms": [3, 6] },
+  "dungeon": {
+    "defaultRooms": [3, 6],
+    "roomSize": [2, 4], "roomAttempts": 50, "doorsPerRoom": [1, 2],
+    "viewDepth": 3,
+    "pitDamage": "1d6"
+  },
   "combat": {
     "hitBase": 20, "hitPerLevel": 5, "hitPerAC": 4, "hitMin": 5, "hitMax": 95,
     "acBase": 10, "acMin": -10,
@@ -44,7 +49,11 @@
   "events": { "impulseThreshold": 8, "stopSanGain": 3 },
   "save": { "maxGames": 5, "schemaVersion": 1 },
   "input": { "swipeThresholdPx": 28, "holdRepeatMs": 250, "edgeDeadZonePx": 12 },
-  "ui": { "textSpeedMs": 30, "diceStepMs": 300, "flashMs": 120, "shakeMs": 150, "viewFadeMs": 80 },
+  "ui": {
+    "textSpeedMs": 30, "diceStepMs": 300, "flashMs": 120, "shakeMs": 150, "viewFadeMs": 80,
+    "layout": { "header": 16, "view": 150, "message": 70, "party": 64, "controls": 100 },
+    "messageHistory": 50
+  },
   "prototypeParty": {
     "startingGold": 300,
     "members": [

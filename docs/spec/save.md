@@ -21,7 +21,7 @@
 - SV-21 `games` のレコード: `{ gameId, schemaVersion, turn, updatedAt, summary: { leaderName, clearedCount, aliveCount }, state }`。`turn` は保存のたびに +1 する単調増加の番号。`summary` は一覧表示用で、`state` から作る。
 - SV-22 書き込みは `readwrite` トランザクションで 1 レコード丸ごと置き換える。部分更新はしない。
 - SV-23 IndexedDB が使えない、または書き込みに失敗した場合は、画面上部に「保存できません」の帯を出し続ける。ゲームは続行できるが、その旨を明示する。
-- SV-24 設定（`settings`）は `localStorage` に置いてもよい: `skipAnimations`、`textSpeed`、`inputMode`（swipe / buttons / both）、`volume`、`swipeThreshold`。
+- SV-24 設定（`settings`）は `localStorage` に置いてもよい: `skipAnimations`、`textSpeed`、`inputMode`（swipe / buttons / both）、`volume`、`swipeThreshold`、`holdRepeatMs`（UI-31）。キーは `wizlike.settings` で、値はこれらの欄を持つ JSON。既定値は config（`ui.textSpeedMs`、`input.swipeThresholdPx`、`input.holdRepeatMs`）から取り、壊れた欄は既定値に戻す。`volume` は音を入れる M6 で足す。
 
 ## 4. 書き出しと読み込み
 

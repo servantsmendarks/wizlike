@@ -68,8 +68,20 @@ export type Config = {
     mpStatDivisor: number;
   };
   learning: { base: number; perLevelDiff: number; guaranteeDiff: number; statPivot: number; statPerPoint: number };
-  /** DG-05: dungeons[].rooms を省略したときの部屋数 [min, max] */
-  dungeon: { defaultRooms: [number, number] };
+  dungeon: {
+    /** DG-05: dungeons[].rooms を省略したときの部屋数 [min, max] */
+    defaultRooms: [number, number];
+    /** DG-05: 部屋の一辺 [min, max]【仮】 */
+    roomSize: [number, number];
+    /** DG-05: 1 部屋あたりの配置の試行回数【仮】 */
+    roomAttempts: number;
+    /** DG-05: 部屋ごとの扉の本数 [min, max]。min >= 1【仮】 */
+    doorsPerRoom: [number, number];
+    /** DG-12: 視野の奥行き（1..3。UI-20 の座標表が 0..3）【仮】 */
+    viewDepth: number;
+    /** DG-20: 落とし穴のダメージ（ダイス記法）【仮】 */
+    pitDamage: string;
+  };
   combat: {
     hitBase: number;
     hitPerLevel: number;
@@ -126,7 +138,17 @@ export type Config = {
   events: { impulseThreshold: number; stopSanGain: number };
   save: { maxGames: number; schemaVersion: number };
   input: { swipeThresholdPx: number; holdRepeatMs: number; edgeDeadZonePx: number };
-  ui: { textSpeedMs: number; diceStepMs: number; flashMs: number; shakeMs: number; viewFadeMs: number };
+  ui: {
+    textSpeedMs: number;
+    diceStepMs: number;
+    flashMs: number;
+    shakeMs: number;
+    viewFadeMs: number;
+    /** ui.md §2 の縦の区切り（論理 px）【仮】。合計は stage.height */
+    layout: { header: number; view: number; message: number; party: number; controls: number };
+    /** UI-43 / UI-11: メッセージ履歴に残す件数【仮】 */
+    messageHistory: number;
+  };
   prototypeParty: { startingGold: number; members: PrototypeMember[] };
 };
 
