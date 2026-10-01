@@ -21,16 +21,19 @@ export type Choice =
   | { kind: "back" };
 export type MenuEntry = { label: string; disabled: boolean; choice: Choice };
 
-/** オート中・入力待ちが無ければ null。それ以外は pending の先頭の command */
+/**
+ * オート中・入力が揃った（ready。flee が 1 件あれば pending が残っていても真）・入力待ちが無ければ null。
+ * それ以外は pending の先頭の command
+ */
 export function firstCursor(menu: BattleMenu): InputCursor | null {
-  if (menu.auto) return null;
+  if (menu.auto || menu.ready) return null;
   const id = menu.pending[0];
   return id === undefined ? null : { memberId: id, stage: "command", pick: null };
 }
 
-/** 並び順で prev の後ろにいる入力待ちのメンバー、無ければ pending の先頭、それも無ければ null（オート中も null） */
+/** 並び順で prev の後ろにいる入力待ちのメンバー、無ければ pending の先頭、それも無ければ null（オート中・ready も null） */
 export function nextCursor(menu: BattleMenu, prevMemberId: string): InputCursor | null {
-  if (menu.auto) return null;
+  if (menu.auto || menu.ready) return null;
   const order = menu.members.map((m) => m.id);
   const pi = order.indexOf(prevMemberId);
   const id = menu.pending.find((p) => order.indexOf(p) > pi) ?? menu.pending[0];

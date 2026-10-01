@@ -1,6 +1,10 @@
 // UI-32 / UI-53 の操作領域（ui §2 の controls 領域）。十字ボタン（dpad）、メニュー（menu）、リスト（list）、
 // 地図の「閉じる」（mapClose）、戦闘のコマンド 8 枠（battle）、オート中の「オート解除」（autoStop）を切り替えて出す。矩形は layout.ts の dungeonLayout のステージ座標で、region の原点を引いて置く。
 // 十字ボタンは pointerdown で反応する（click は使わない）。離したら onRelease（前進の長押しの連打を止める。UI-31）。
+// ゴーストクリックの抑止: 十字ボタンと「オート解除」は pointerdown で反応し、演出スキップ中は指を離す前に同じ位置へ
+// 戦闘の 8 枠や一覧（click で反応）が出ることがある。タッチ由来の click は pointerdown の preventDefault では止まらないので、
+// それらの pointerdown から、同じ操作の pointerup / pointercancel の後 GHOST_CLICK_MS までの click を、戦闘の 8 枠と一覧では捨てる。
+// 新しい pointerdown（別の操作の始まり）が来たら抑止を解く。時刻は event.timeStamp で比べ、タイマーは使わない。
 // Action から Command への変換と長押しの連打は呼び出し側（app）が持つ。表示層は前進できるかを判定しない（UI-35）。
 // モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
@@ -33,6 +37,47 @@ export type Controls = {
 };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** pointerdown で反応したボタンを離してから、戦闘の 8 枠と一覧の click を捨てる時間（ms） */
+export const GHOST_CLICK_MS = 400;
+
+/**
+ * 純粋なゴーストクリックの抑止の状態機械（DOM に触れない）。arm は pointerdown で反応したボタン、
+ * down は任意の pointerdown（arm より先に呼ぶ）、up は pointerup / pointercancel、blocks は click を捨てるか
+ */
+export function createGhostClickGuard(windowMs = GHOST_CLICK_MS): {
+  down(): void;
+  arm(): void;
+  up(timeStamp: number): void;
+  blocks(timeStamp: number): boolean;
+} {
+  let armed = false;
+  let releasedAt = Number.NEGATIVE_INFINITY;
+  return {
+    down(): void {
+      armed = false;
+      releasedAt = Number.NEGATIVE_INFINITY;
+    },
+    arm(): void {
+      armed = true;
+      releasedAt = Number.NEGATIVE_INFINITY;
+    },
+    up(timeStamp: number): void {
+      if (!armed) return;
+      armed = false;
+      releasedAt = timeStamp;
+    },
+    blocks(timeStamp: number): boolean {
+      if (armed) return true;
+      return timeStamp - releasedAt < windowMs;
+    },
+  };
+}
+
+/** event.timeStamp（無ければ 0） */
+function stampOf(e: Event): number {
+  return typeof e.timeStamp === "number" ? e.timeStamp : 0;
+}
 
 /** 32×32 の中の三角形（向き別） */
 const ARROWS: Readonly<Record<DpadAction, string>> = {
@@ -97,6 +142,17 @@ export function createControls(o: {
     color: "var(--c-text)",
   });
 
+  // ---- ゴーストクリックの抑止（キャプチャ段で、ボタンの pointerdown の arm より先に down を呼ぶ）
+  const ghost = createGhostClickGuard();
+  el.addEventListener("pointerdown", () => ghost.down(), true);
+  el.addEventListener("pointerup", (e) => ghost.up(stampOf(e)), true);
+  el.addEventListener("pointercancel", (e) => ghost.up(stampOf(e)), true);
+  /** 戦闘の 8 枠と一覧の click。抑止中なら捨てる */
+  const onGuardedClick = (it: ControlItem) => (e: Event): void => {
+    if (ghost.blocks(stampOf(e))) return;
+    pick(it);
+  };
+
   // ---- 十字ボタン
   const dpad = document.createElement("div");
   dpad.className = "controls-dpad";
@@ -122,6 +178,7 @@ export function createControls(o: {
     b.appendChild(svg);
     b.addEventListener("pointerdown", (e) => {
       e.preventDefault();
+      ghost.arm();
       o.onAction(a);
     });
     const release = (): void => o.onRelease();
@@ -181,6 +238,7 @@ export function createControls(o: {
   let autoStopPress: () => void = () => {};
   autoStop.addEventListener("pointerdown", (e) => {
     e.preventDefault();
+    ghost.arm();
     autoStopPress();
   });
   el.appendChild(autoStop);
@@ -262,7 +320,7 @@ export function createControls(o: {
           touchAction: "pan-y",
         });
         dimIf(b, it);
-        b.addEventListener("click", () => pick(it));
+        b.addEventListener("click", onGuardedClick(it));
         list.appendChild(b);
       }
     },
@@ -278,7 +336,7 @@ export function createControls(o: {
         b.textContent = it.label;
         buttonStyle(b, r, origin);
         dimIf(b, it);
-        b.addEventListener("click", () => pick(it));
+        b.addEventListener("click", onGuardedClick(it));
         battle.appendChild(b);
       });
     },

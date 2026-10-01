@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { shouldReleaseHold, type Overlay, type Route } from "../src/presenter/app";
 import { dungeonLayout, regions } from "../src/presenter/layout";
-import { createControls } from "../src/presenter/views/controls";
+import { createControls, createGhostClickGuard, GHOST_CLICK_MS } from "../src/presenter/views/controls";
 import { data } from "./helpers/core";
 
 class FakeEl {
@@ -24,8 +24,8 @@ class FakeEl {
   addEventListener(type: string, f: (e: unknown) => void): void {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), f]);
   }
-  dispatch(type: string): void {
-    for (const f of this.listeners.get(type) ?? []) f({ type, preventDefault() {} });
+  dispatch(type: string, extra: Record<string, unknown> = {}): void {
+    for (const f of this.listeners.get(type) ?? []) f({ type, preventDefault() {}, ...extra });
   }
 }
 
@@ -121,6 +121,76 @@ describe("controls", () => {
     c.setMode("none");
     c.select(0);
     expect(picked).toEqual(["a", "c", "c"]);
+  });
+
+  test("UI-44/UI-54 createGhostClickGuard: arm から離して GHOST_CLICK_MS 未満の click は捨てる。新しい pointerdown で解く。arm していなければ捨てない", () => {
+    const g = createGhostClickGuard();
+    expect(g.blocks(0)).toBe(false);
+    g.down();
+    g.arm();
+    expect(g.blocks(10)).toBe(true); // 押している間
+    g.up(100);
+    expect(g.blocks(100)).toBe(true);
+    expect(g.blocks(100 + GHOST_CLICK_MS - 1)).toBe(true);
+    expect(g.blocks(100 + GHOST_CLICK_MS)).toBe(false);
+    // 離したあとに新しい操作が始まれば、その click は捨てない
+    g.arm();
+    g.up(1000);
+    g.down();
+    expect(g.blocks(1050)).toBe(false);
+    // arm していない操作の up は窓を作らない
+    g.down();
+    g.up(2000);
+    expect(g.blocks(2010)).toBe(false);
+  });
+
+  test("UI-44/UI-54 ゴーストクリック: オート解除・十字ボタンの pointerdown の直後に出た戦闘の 8 枠と一覧は、離して GHOST_CLICK_MS までの click で onSelect を呼ばない", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, onRelease: () => {}, onClose: () => {} });
+    const root = created.find((e) => e.className === "controls")!;
+    const picked: string[] = [];
+    let pressed = 0;
+    c.setAutoStop("stop", () => {
+      pressed++;
+      // 押した瞬間に解除が通って 8 枠が出る（演出スキップ）
+      c.setBattleMenu([{ label: "a", onSelect: () => picked.push("a") }]);
+      c.setMode("battle");
+    });
+    c.setMode("autoStop");
+    const stop = created.find((e) => e.className === "controls-auto-stop")!;
+    root.dispatch("pointerdown", { timeStamp: 0 });
+    stop.dispatch("pointerdown", { timeStamp: 0 });
+    expect(pressed).toBe(1);
+    const item = () => created.filter((e) => e.className === "controls-battle-item").at(-1)!;
+    item().dispatch("click", { timeStamp: 5 });
+    root.dispatch("pointerup", { timeStamp: 100 });
+    item().dispatch("click", { timeStamp: 101 });
+    expect(picked).toEqual([]);
+    // 窓を過ぎた click と、新しい操作の click は受ける
+    item().dispatch("click", { timeStamp: 100 + GHOST_CLICK_MS });
+    expect(picked).toEqual(["a"]);
+    // 十字ボタンでも同じ。一覧も対象
+    const fwd = created.find((e) => e.className === "controls-dpad-forward")!;
+    c.setMode("dpad");
+    root.dispatch("pointerdown", { timeStamp: 1000 });
+    fwd.dispatch("pointerdown", { timeStamp: 1000 });
+    c.setList([{ label: "x", onSelect: () => picked.push("x") }]);
+    c.setMode("list");
+    const row = () => created.filter((e) => e.className === "controls-list-item").at(-1)!;
+    root.dispatch("pointercancel", { timeStamp: 1010 });
+    row().dispatch("click", { timeStamp: 1020 });
+    expect(picked).toEqual(["a"]);
+    root.dispatch("pointerdown", { timeStamp: 1030 });
+    root.dispatch("pointerup", { timeStamp: 1040 });
+    row().dispatch("click", { timeStamp: 1041 });
+    expect(picked).toEqual(["a", "x"]);
+    // select（キー）は抑止しない
+    root.dispatch("pointerdown", { timeStamp: 2000 });
+    fwd.dispatch("pointerdown", { timeStamp: 2000 });
+    c.select(0);
+    expect(picked).toEqual(["a", "x", "x"]);
   });
 
   test("UI-44/UI-54 オート解除: pointerdown と、autoStop モードの select(0) で onPress を呼ぶ。ラベルは setAutoStop で差し替わる", () => {

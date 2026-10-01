@@ -103,6 +103,13 @@ describe("UI-54 入力の段階", () => {
     expect(nextCursor(menu({ auto: true }), "c1")).toBeNull();
   });
 
+  test("UI-54/CB-12 ready（flee の入力で揃った）なら pending が残っていても firstCursor / nextCursor は null（解決の再生中に次のメンバーの枠を出さない）", () => {
+    const m = menu({ ready: true, pending: ["c2", "c4", "c5", "c6"] });
+    expect(firstCursor(m)).toBeNull();
+    expect(nextCursor(m, "c1")).toBeNull();
+    expect(nextCursor(m, "c6")).toBeNull();
+  });
+
   test("UI-54 command の 7 枠: 攻撃・呪文・防御・道具・逃走・オート・戻る。disabled は spells 空・items 空・canFlee 偽・先頭", () => {
     const m = menu();
     const e1 = entries(m, cur("c1"), S);
