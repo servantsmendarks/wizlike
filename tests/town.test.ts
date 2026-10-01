@@ -10,7 +10,7 @@ import { checkEnter } from "../src/core/rules/dungeon";
 import { arriveTown, mercyEligible, resurrectCostOf, returnToTown, townMenu } from "../src/core/rules/town";
 import { cloneState, createItemInstance, makeContext } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState } from "../src/core/types";
-import { ctxFor, data, expectKnownStringKeys, loadFreshData, loadRuleData, newGame } from "./helpers/core";
+import { ctxFor, data, expectKnownStringKeys, loadFreshData, loadRuleData, newGame, seedWithFirstD100 } from "./helpers/core";
 
 /** newGame(1) の複製に、id → patch を浅くマージしたもの */
 function town(patches: Record<string, Partial<Character>> = {}, gold = 300): GameState {
@@ -56,15 +56,6 @@ function member(s: GameState, id: string): Character {
   const c = s.party.find((x) => x.id === id);
   if (c === undefined) throw new Error(`no member ${id}`);
   return c;
-}
-
-/** 最初の randInt(1, 100) が pred を満たす最小のシード（鏡の rng で探す） */
-function seedWithFirstD100(pred: (roll: number) => boolean): { seed: number; roll: number } {
-  for (let k = 1; k < 100000; k++) {
-    const roll = randInt(createRng(k), 1, 100);
-    if (pred(roll)) return { seed: k, roll };
-  }
-  throw new Error("no seed");
 }
 
 function rngAfter(seed: number, specs: [number, number][]): RngState {

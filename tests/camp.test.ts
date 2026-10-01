@@ -5,7 +5,7 @@
 import { describe, expect, test } from "vitest";
 import type { GameData } from "../src/core/data";
 import { execute } from "../src/core/engine";
-import { cloneRng, randInt, rollDice } from "../src/core/rng";
+import { cloneRng, createRng, randInt, rollDice } from "../src/core/rng";
 import { campMenu, checkCast, checkEquip, checkUnequip } from "../src/core/rules/camp";
 import { frontLineIds } from "../src/core/rules/combat-calc";
 import { resurrectRate } from "../src/core/rules/town";
@@ -13,7 +13,7 @@ import { cloneState, createItemInstance } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState } from "../src/core/types";
 import { dived, withBattle } from "./helpers/battle";
 import { createInitialState } from "../src/core/engine";
-import { data, expectKnownStringKeys, expectStateInvariants, loadFreshData, newGame } from "./helpers/core";
+import { data, expectKnownStringKeys, expectStateInvariants, loadFreshData, newGame, seedWithFirstD100 } from "./helpers/core";
 
 function member(s: GameState, id: string): Character {
   const c = s.party.find((x) => x.id === id);
@@ -68,7 +68,7 @@ function battleOf(s: GameState): GameState {
 // ---------------------------------------------------------------------------
 
 describe("MG-44 dungeon.cast の受け付け", () => {
-  test("MG-44 理由の順: not in dungeon（街・戦闘中・title）→ no such member → cannot act → unknown spell → not usable here → no mp → bad target。同じ参照で乱数も変えない", () => {
+  test("MG-32/MG-44 理由の順: not in dungeon（街・戦闘中・title）→ no such member → cannot act → unknown spell → not usable here → no mp → bad target。同じ参照で乱数も変えない", () => {
     expectRejected(newGame(1), cast("c4", "heal", "c1"), "not in dungeon");
     expectRejected(battleOf(inDungeon()), cast("c4", "heal", "c1"), "not in dungeon");
     expectRejected(createInitialState(1, data), cast("c4", "heal", "c1"), "not in dungeon");
@@ -148,32 +148,39 @@ describe("MG-44 dungeon.cast の効果", () => {
   });
 
   test("MG-42 resurrect: d100 ≤ resurrectRate（寺院と同じ式）なら alive・HP 1、外れたら ash。どちらも MP を消費し、randInt(1,100) を 1 回だけ引く", () => {
-    const s = inDungeon({ c4: PRIEST_ALL, c1: { life: "dead", hp: 0 } });
-    const m = cloneRng(s.rng);
-    const roll = randInt(m, 1, 100);
-    const rate = resurrectRate(member(s, "c1"), data);
-    expect(rate).toBe(Math.min(95, 50 + 12 * 2)); // c1 の vit 12
-    const r = ok(s, cast("c4", "resurrect", "c1"));
-    expect(r.state.rng).toEqual(m);
     const head: GameEvent[] = [
       { kind: "mpChanged", id: "c4", delta: -15, mp: 15 },
       { kind: "message", key: "battle.cast", params: { actor: "ドナ", spell: "蘇生" } },
       { kind: "message", key: "dungeon.cast.resurrectRoll", params: { name: "アルド" } },
     ];
-    if (roll <= rate) {
-      expect(r.events).toEqual([
-        ...head,
-        { kind: "lifeChanged", id: "c1", life: "alive" },
-        { kind: "hpChanged", id: "c1", delta: 1, hp: 1 },
-        { kind: "message", key: "dungeon.cast.resurrectOk", params: { name: "アルド" } },
-      ]);
-    } else {
-      expect(r.events).toEqual([
-        ...head,
-        { kind: "lifeChanged", id: "c1", life: "ash" },
-        { kind: "message", key: "dungeon.cast.resurrectFail", params: { name: "アルド" } },
-      ]);
-    }
+    // 成功: dived(1) の最初の d100 は 14 ≤ 74
+    const s = inDungeon({ c4: PRIEST_ALL, c1: { life: "dead", hp: 0 } });
+    const rate = resurrectRate(member(s, "c1"), data);
+    expect(rate).toBe(Math.min(95, 50 + 12 * 2)); // c1 の vit 12 → 74
+    const m = cloneRng(s.rng);
+    expect(randInt(m, 1, 100)).toBe(14);
+    const r = ok(s, cast("c4", "resurrect", "c1"));
+    expect(r.state.rng).toEqual(m);
+    expect(r.events).toEqual([
+      ...head,
+      { kind: "lifeChanged", id: "c1", life: "alive" },
+      { kind: "hpChanged", id: "c1", delta: 1, hp: 1 },
+      { kind: "message", key: "dungeon.cast.resurrectOk", params: { name: "アルド" } },
+    ]);
+    // 失敗: 最初の d100 が 74 を超えるシードに差し替える
+    const { seed, roll } = seedWithFirstD100((x) => x > 74);
+    expect(roll).toBeGreaterThan(74);
+    const f = inDungeon({ c4: PRIEST_ALL, c1: { life: "dead", hp: 0 } });
+    f.rng = createRng(seed);
+    const fm = createRng(seed);
+    randInt(fm, 1, 100);
+    const rf = ok(f, cast("c4", "resurrect", "c1"));
+    expect(rf.state.rng).toEqual(fm);
+    expect(rf.events).toEqual([
+      ...head,
+      { kind: "lifeChanged", id: "c1", life: "ash" },
+      { kind: "message", key: "dungeon.cast.resurrectFail", params: { name: "アルド" } },
+    ]);
   });
 
   test("MG-42 resurrect の両方の分岐（templeSuccessBase を上書き）: 成功は alive・HP 1、失敗は ash。成否に関わらず MP 15 を消費", () => {
@@ -195,25 +202,33 @@ describe("MG-44 dungeon.cast の効果", () => {
   });
 
   test("TW-07 寺院の蘇生は resurrectRate / rollResurrect に切り出した後も、イベント順と乱数が同じ（d100 を 1 回）", () => {
+    // 成功: newGame(1) の最初の d100 は 49 ≤ 74（c1 の vit 12）
     const s = inTown({ c1: { life: "dead", hp: 0 } });
     s.gold = 10000;
+    expect(resurrectRate(member(s, "c1"), data)).toBe(74);
     const m = cloneRng(s.rng);
-    const roll = randInt(m, 1, 100);
+    expect(randInt(m, 1, 100)).toBe(49);
     const r = ok(s, { type: "town.temple", memberId: "c1", service: "resurrect" });
     expect(r.state.rng).toEqual(m);
-    const ok1 = roll <= resurrectRate(member(s, "c1"), data);
     expect(r.events).toEqual([
       { kind: "message", key: "town.temple.resurrectRoll", params: { name: "アルド" } },
-      ...(ok1
-        ? [
-            { kind: "lifeChanged", id: "c1", life: "alive" },
-            { kind: "hpChanged", id: "c1", delta: 1, hp: 1 },
-            { kind: "message", key: "town.temple.resurrectOk", params: { name: "アルド" } },
-          ]
-        : [
-            { kind: "lifeChanged", id: "c1", life: "ash" },
-            { kind: "message", key: "town.temple.resurrectFail", params: { name: "アルド" } },
-          ]),
+      { kind: "lifeChanged", id: "c1", life: "alive" },
+      { kind: "hpChanged", id: "c1", delta: 1, hp: 1 },
+      { kind: "message", key: "town.temple.resurrectOk", params: { name: "アルド" } },
+    ]);
+    // 失敗: 最初の d100 が 74 を超えるシードに差し替える
+    const { seed } = seedWithFirstD100((x) => x > 74);
+    const f = inTown({ c1: { life: "dead", hp: 0 } });
+    f.gold = 10000;
+    f.rng = createRng(seed);
+    const fm = createRng(seed);
+    randInt(fm, 1, 100);
+    const rf = ok(f, { type: "town.temple", memberId: "c1", service: "resurrect" });
+    expect(rf.state.rng).toEqual(fm);
+    expect(rf.events).toEqual([
+      { kind: "message", key: "town.temple.resurrectRoll", params: { name: "アルド" } },
+      { kind: "lifeChanged", id: "c1", life: "ash" },
+      { kind: "message", key: "town.temple.resurrectFail", params: { name: "アルド" } },
     ]);
   });
 });

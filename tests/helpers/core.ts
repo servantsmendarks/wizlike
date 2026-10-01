@@ -15,7 +15,7 @@ import events from "../../data/events.json";
 import strings from "../../data/strings.json";
 import { EQUIP_SLOTS, loadGameData, type GameData, type PersonalityId } from "../../src/core/data";
 import { createInitialState, execute } from "../../src/core/engine";
-import { randInt, rollDice, type RngState } from "../../src/core/rng";
+import { createRng, randInt, rollDice, type RngState } from "../../src/core/rng";
 import { cloneState, makeContext } from "../../src/core/state";
 import type { Character, GameEvent, GameState, PartySetupMember, RuleContext } from "../../src/core/types";
 
@@ -163,4 +163,13 @@ export function expectStateInvariants(state: GameState): void {
   expect(Number.isInteger(state.gold) && state.gold >= 0, `gold ${state.gold}`).toBe(true);
   for (const ch of state.party) expect(ch.levelHistory, `levelHistory of ${ch.id}`).toHaveLength(ch.level - 1);
   expect(JSON.parse(JSON.stringify(state))).toStrictEqual(state);
+}
+
+/** 最初の randInt(1, 100) が pred を満たす最小のシード（鏡の rng で探す） */
+export function seedWithFirstD100(pred: (roll: number) => boolean): { seed: number; roll: number } {
+  for (let k = 1; k < 100000; k++) {
+    const roll = randInt(createRng(k), 1, 100);
+    if (pred(roll)) return { seed: k, roll };
+  }
+  throw new Error("no seed");
 }
