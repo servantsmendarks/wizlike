@@ -17,7 +17,7 @@
 
 ## 3. 保存先
 
-- SV-20 IndexedDB。データベース名 `wizlike`、オブジェクトストア `games`（キー `gameId`）と `settings`（キー `"settings"`）。
+- SV-20 IndexedDB。データベース名 `wizlike`、オブジェクトストア `games`（キー `gameId`）と `settings`（キー `"settings"`）。IndexedDB のバージョンは 1 で固定（`schemaVersion` とは別）し、ストアは `onupgradeneeded` で作る。`settings` ストアは作るが、SV-24 のとおり設定は `localStorage` に置く。
 - SV-21 `games` のレコード: `{ gameId, schemaVersion, turn, updatedAt, summary: { leaderName, clearedCount, aliveCount }, state }`。`turn` は保存のたびに +1 する単調増加の番号。`summary` は一覧表示用で、`state` から作る。`turn` は game.new 直後の最初の保存で 1 にし、保存が成功するたびに +1（失敗では進めず、次の保存で同じ番号を試す）。`updatedAt` は保存時点の epoch ミリ秒。`leaderName` は `isLeader` の者の名前、`clearedCount` は `progress.clearedDungeons` の数、`aliveCount` は `life` が alive の人数。`gameId` と `turn` はセーブ側のメモリが持ち、`GameState` には入れない。
 - SV-22 書き込みは `readwrite` トランザクションで 1 レコード丸ごと置き換える。部分更新はしない。
 - SV-23 IndexedDB が使えない、または書き込みに失敗した場合は、画面上部に「保存できません」の帯を出し続ける。ゲームは続行できるが、その旨を明示する。

@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { createInitialState, execute } from "../src/core/engine";
 import { cloneState } from "../src/core/state";
 import type { BattleAction, Command, GameState } from "../src/core/types";
+import { DB_NAME, DB_VERSION, openIdbBackend, STORE_GAMES, STORE_SETTINGS } from "../src/save/db";
 import { newGameId } from "../src/save/id";
 import { isGameStateShape, migrateState, MIGRATIONS } from "../src/save/migrate";
 import { buildRecord, checkStoredRecord, summarize } from "../src/save/record";
@@ -488,5 +489,151 @@ describe("SV-23 保存できないとき", () => {
     });
     expect(await sv.begin(createInitialState(1, data))).toEqual({ ok: false });
     expect(sv.current()).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SV-20 db.ts（実 IndexedDB は node に無いので、定数と、最小限の偽の IDBFactory で手順だけを確かめる）
+
+type Outcome = "complete" | "abort" | "throw";
+
+/** open の結果と、書き込みのトランザクションの終わり方を選べる偽の IDBFactory */
+function fakeIdb(opts: { openThrows?: boolean; openFails?: boolean; existing?: string[]; write?: Outcome } = {}) {
+  const log: string[] = [];
+  const stores = new Set(opts.existing ?? []);
+  const data = new Map<string, unknown>();
+  const later = (f: () => void) => void Promise.resolve().then(f);
+  const db = {
+    objectStoreNames: { contains: (n: string) => stores.has(n) },
+    createObjectStore(name: string, o?: { keyPath?: string }) {
+      log.push(`create ${name} ${o?.keyPath ?? "-"}`);
+      stores.add(name);
+    },
+    onversionchange: null as null | (() => void),
+    close() {
+      log.push("close");
+    },
+    transaction(name: string, mode: string) {
+      log.push(`tx ${name} ${mode}`);
+      const tx = {
+        oncomplete: null as null | (() => void),
+        onerror: null as null | (() => void),
+        onabort: null as null | (() => void),
+        error: null as Error | null,
+        abort() {
+          log.push("abort");
+        },
+        objectStore: () => store,
+      };
+      const finish = () =>
+        later(() => {
+          const how = opts.write ?? "complete";
+          if (how === "complete") tx.oncomplete?.();
+          else {
+            tx.error = new Error("QuotaExceededError");
+            tx.onerror?.();
+            tx.onabort?.();
+          }
+        });
+      const request = (result: unknown) => {
+        const req = { result, error: null, onsuccess: null as null | (() => void), onerror: null as null | (() => void) };
+        later(() => req.onsuccess?.());
+        return req;
+      };
+      const store = {
+        put(rec: { gameId: string }) {
+          if (opts.write === "throw") throw new Error("DataCloneError");
+          data.set(rec.gameId, rec);
+          finish();
+          return request(rec.gameId);
+        },
+        delete(id: string) {
+          data.delete(id);
+          finish();
+          return request(undefined);
+        },
+        get: (id: string) => request(data.get(id)),
+        getAll: () => request([...data.values()]),
+      };
+      return tx;
+    },
+  };
+  const factory = {
+    open(name: string, version: number) {
+      log.push(`open ${name} ${version}`);
+      if (opts.openThrows === true) throw new Error("SecurityError");
+      const req = {
+        result: db,
+        error: null as Error | null,
+        onupgradeneeded: null as null | (() => void),
+        onsuccess: null as null | (() => void),
+        onerror: null as null | (() => void),
+      };
+      later(() => {
+        if (opts.openFails === true) {
+          req.error = new Error("UnknownError");
+          req.onerror?.();
+          return;
+        }
+        if (!stores.has(STORE_GAMES) || !stores.has(STORE_SETTINGS)) req.onupgradeneeded?.();
+        req.onsuccess?.();
+      });
+      return req;
+    },
+  };
+  return { factory: factory as unknown as IDBFactory, log, db };
+}
+
+describe("SV-20 db.ts", () => {
+  test("SV-20 定数: データベース wizlike、版 1（schemaVersion とは別）、ストア games と settings", () => {
+    expect(DB_NAME).toBe("wizlike");
+    expect(DB_VERSION).toBe(1);
+    expect(STORE_GAMES).toBe("games");
+    expect(STORE_SETTINGS).toBe("settings");
+  });
+
+  test("SV-20 SV-23 openIdbBackend: factory が undefined、open の同期例外、open の失敗は reject", async () => {
+    await expect(openIdbBackend(undefined)).rejects.toThrow();
+    await expect(openIdbBackend(fakeIdb({ openThrows: true }).factory)).rejects.toThrow("SecurityError");
+    await expect(openIdbBackend(fakeIdb({ openFails: true }).factory)).rejects.toThrow("UnknownError");
+  });
+
+  test("SV-20 初回は games（keyPath gameId）と settings を作る。既にあれば作らない。versionchange で閉じる", async () => {
+    const first = fakeIdb();
+    await openIdbBackend(first.factory);
+    expect(first.log).toEqual(["open wizlike 1", "create games gameId", "create settings -"]);
+    first.db.onversionchange?.();
+    expect(first.log.at(-1)).toBe("close");
+
+    const half = fakeIdb({ existing: ["games"] });
+    await openIdbBackend(half.factory);
+    expect(half.log).toEqual(["open wizlike 1", "create settings -"]);
+  });
+
+  test("SV-22 put / delete は readwrite の complete で解決し、get / getAll は readonly", async () => {
+    const f = fakeIdb();
+    const be = await openIdbBackend(f.factory);
+    const rec = record("g1", 1);
+    await be.put(rec);
+    expect(await be.get("g1")).toBe(rec);
+    expect(await be.getAll()).toEqual([rec]);
+    await be.delete("g1");
+    expect(await be.get("g1")).toBeUndefined();
+    expect(f.log.filter((l) => l.startsWith("tx"))).toEqual([
+      "tx games readwrite",
+      "tx games readonly",
+      "tx games readonly",
+      "tx games readwrite",
+      "tx games readonly",
+    ]);
+  });
+
+  test("SV-23 put はトランザクションの abort（QuotaExceeded など）と同期例外（DataCloneError など）で reject", async () => {
+    const aborted = await openIdbBackend(fakeIdb({ write: "abort" }).factory);
+    await expect(aborted.put(record("g1", 1))).rejects.toThrow("QuotaExceededError");
+    const f = fakeIdb({ write: "throw" });
+    const thrown = await openIdbBackend(f.factory);
+    await expect(thrown.put(record("g1", 1))).rejects.toThrow("DataCloneError");
+    expect(f.log.at(-1)).toBe("abort");
   });
 });
