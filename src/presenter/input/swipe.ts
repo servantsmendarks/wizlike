@@ -93,16 +93,25 @@ export function canRepeat(events: readonly GameEvent[], pending: PendingChoice |
 }
 
 /**
- * UI-33 / UI-54: 戦闘中のキー（Action）→ 選ぶもの。grid はコマンドの 8 枠、list は呪文・道具・対象の一覧、
- * autoStop はオート中の「オート解除」だけの画面。数字 n は n−1 番目、Enter は 0 番目、Esc は戻る。
- * autoStop では Esc / Enter / 1 が "stop"。矢印・地図・debug などは null（呼び出し側が別に扱う）
+ * UI-33 / UI-54: 戦闘中のキー（Action）→ 選ぶもの。grid はパーティの選択・メンバーの枠、list は呪文・道具の一覧、
+ * target は対象の一覧、autoStop はオート中の「オート解除」だけの画面。数字 n は n−1 番目、Enter は 0 番目、Esc は戻る。
+ * target では ↑ が "up"、↓ が "down"（注目を動かす）、Enter が "focused"（注目している項目を選ぶ）。
+ * autoStop では Esc / Enter / 1 が "stop"。それ以外の矢印・地図・debug などは null（呼び出し側が別に扱う）
  */
-export function battleKeyChoice(a: Action, mode: "grid" | "list" | "autoStop"): number | "back" | "stop" | null {
+export function battleKeyChoice(
+  a: Action,
+  mode: "grid" | "list" | "target" | "autoStop",
+): number | "back" | "stop" | "up" | "down" | "focused" | null {
   if (mode === "autoStop") {
     if (a === "back" || a === "confirm" || (typeof a === "object" && a.menu === 0)) return "stop";
     return null;
   }
   if (typeof a === "object") return a.menu;
+  if (mode === "target") {
+    if (a === "forward") return "up";
+    if (a === "around") return "down";
+    if (a === "confirm") return "focused";
+  }
   if (a === "confirm") return 0;
   if (a === "back") return "back";
   return null;

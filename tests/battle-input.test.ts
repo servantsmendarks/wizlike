@@ -1,7 +1,23 @@
 // UI-54 / CB-10〜12: 戦闘の入力の段階（src/presenter/battle-input.ts）。BattleMenu は手組み（core の battleMenu の戻り値の形）。
 import { describe, expect, test } from "vitest";
-import type { BattleMenu, BattleMenuMember } from "../src/core/types";
-import { back, entries, firstCursor, nextCursor, step, targetNumber, type Choice, type InputCursor } from "../src/presenter/battle-input";
+import type { BattleAction, BattleMenu, BattleMenuMember } from "../src/core/types";
+import {
+  back,
+  entries,
+  firstCursor,
+  focusedChoice,
+  focusedGroup,
+  moveFocus,
+  nextCursor,
+  setFocus,
+  step,
+  targetNumber,
+  type Choice,
+  type InputCursor,
+  type MemberCmd,
+  type PartyCmd,
+  type Pick,
+} from "../src/presenter/battle-input";
 import { formatMessage } from "../src/presenter/views/message";
 import { data } from "./helpers/core";
 
@@ -62,19 +78,29 @@ function menu(o: Partial<BattleMenu> = {}): BattleMenu {
   };
 }
 
-const cur = (memberId: string, stage: InputCursor["stage"] = "command", pick: InputCursor["pick"] = null): InputCursor => ({
-  memberId,
-  stage,
-  pick,
-});
-const cmd = (c: Extract<Choice, { kind: "cmd" }>["cmd"]): Choice => ({ kind: "cmd", cmd: c });
+/** members のうち id の入力だけを差し替えた menu */
+function withInput(m: BattleMenu, inputs: Record<string, BattleAction>): BattleMenu {
+  return { ...m, members: m.members.map((x) => (inputs[x.id] === undefined ? x : { ...x, input: inputs[x.id]! })) };
+}
 
+/** グループ 1 だけが生存（W5 の 1 グループ） */
+const ONE_GROUP: BattleMenu["groups"] = [
+  { index: 0, monsterId: "giant_rat", name: "小さな獣", identified: false, count: 0 },
+  { index: 1, monsterId: "kobold", name: "コボルド", identified: true, count: 2 },
+];
+
+const PARTY: InputCursor = { stage: "party" };
+const mem = (memberId: string): InputCursor => ({ stage: "member", memberId });
+const list = (stage: "spell" | "item", memberId: string): InputCursor => ({ stage, memberId });
+const tgt = (stage: "enemy" | "ally", memberId: string, pick: Pick, focus = 0): InputCursor => ({ stage, memberId, pick, focus });
+const pc = (cmd: PartyCmd): Choice => ({ kind: "party", cmd });
+const mc = (cmd: MemberCmd): Choice => ({ kind: "member", cmd });
 
 describe("UI-54 入力の段階", () => {
-  test("UI-54 入力の段階で使う文言のキーがすべて strings にある", () => {
+  test("UI-54/CB-12 入力の段階で使う文言のキーがすべて strings にある", () => {
     for (const k of [
-      ...["attack", "spell", "defend", "item", "flee", "auto", "autoStop"].map((c) => `battle.cmd.${c}`),
-      ...["command", "spell", "item", "enemy", "ally"].map((p) => `battle.prompt.${p}`),
+      ...["fight", "repeat", "flee", "auto", "attack", "spell", "defend", "item", "autoStop"].map((c) => `battle.cmd.${c}`),
+      ...["party", "member", "spell", "item", "enemy", "ally"].map((p) => `battle.prompt.${p}`),
       "battle.targetGroup",
       "battle.targetAlly",
       "battle.spellRow",
@@ -84,21 +110,24 @@ describe("UI-54 入力の段階", () => {
     ]) {
       expect(Object.prototype.hasOwnProperty.call(S, k), k).toBe(true);
     }
+    // 旧 7 枠の見出しは削除済み
+    expect(Object.prototype.hasOwnProperty.call(S, "battle.prompt.command")).toBe(false);
   });
 
-  test("UI-54 firstCursor は pending の先頭の command、オート中・pending 空は null", () => {
-    expect(firstCursor(menu())).toEqual(cur("c1"));
+  test("UI-54 firstCursor はパーティの選択。オート中・ready・pending 空は null", () => {
+    expect(firstCursor(menu())).toEqual(PARTY);
     expect(firstCursor(menu({ auto: true }))).toBeNull();
     expect(firstCursor(menu({ pending: [] }))).toBeNull();
+    expect(firstCursor(menu({ ready: true }))).toBeNull();
   });
 
-  test("UI-54 nextCursor は並び順で prev の後ろの pending、無ければ pending の先頭、それも無ければ null", () => {
+  test("UI-54 nextCursor は並び順で prev の後ろの pending の member、無ければ pending の先頭、それも無ければ null", () => {
     const m = menu({ pending: ["c2", "c5"] });
-    expect(nextCursor(m, "c1")).toEqual(cur("c2"));
-    expect(nextCursor(m, "c2")).toEqual(cur("c5"));
-    expect(nextCursor(m, "c4")).toEqual(cur("c5"));
+    expect(nextCursor(m, "c1")).toEqual(mem("c2"));
+    expect(nextCursor(m, "c2")).toEqual(mem("c5"));
+    expect(nextCursor(m, "c4")).toEqual(mem("c5"));
     // 末尾の後ろは先頭に戻る（取りこぼしの入力）
-    expect(nextCursor(m, "c6")).toEqual(cur("c2"));
+    expect(nextCursor(m, "c6")).toEqual(mem("c2"));
     expect(nextCursor(menu({ pending: [] }), "c1")).toBeNull();
     expect(nextCursor(menu({ auto: true }), "c1")).toBeNull();
   });
@@ -110,38 +139,67 @@ describe("UI-54 入力の段階", () => {
     expect(nextCursor(m, "c6")).toBeNull();
   });
 
-  test("UI-54 command の 7 枠: 攻撃・呪文・防御・道具・逃走・オート・戻る。disabled は spells 空・items 空・canFlee 偽・先頭", () => {
+  test("UI-54/CB-12 パーティの選択の 4 件: 戦う・前回と同じ・逃げる・オート。逃げられない戦闘（canFlee 偽）では逃げるが dim", () => {
+    expect(entries(menu(), PARTY, S).map((e) => e.label)).toEqual([
+      t("battle.cmd.fight"),
+      t("battle.cmd.repeat"),
+      t("battle.cmd.flee"),
+      t("battle.cmd.auto"),
+    ]);
+    expect(entries(menu(), PARTY, S).map((e) => e.disabled)).toEqual([false, false, false, false]);
+    expect(entries(menu({ canFlee: false }), PARTY, S).map((e) => e.disabled)).toEqual([false, false, true, false]);
+    expect(entries(menu(), PARTY, S).map((e) => e.choice)).toEqual([pc("fight"), pc("repeat"), pc("flee"), pc("auto")]);
+  });
+
+  test("UI-54/CB-12/CB-50 戦う → 先頭の行動可能なメンバーの member。前回と同じ → battle.repeat、逃げる → battle.flee、オート → battle.auto on", () => {
     const m = menu();
-    const e1 = entries(m, cur("c1"), S);
+    expect(step(m, PARTY, pc("fight"))).toEqual({ cursor: mem("c1"), send: null });
+    // 先頭が行動不能なら次の行動可能な者
+    const m2 = { ...m, members: m.members.map((x) => (x.id === "c1" ? { ...x, canAct: false } : x)) };
+    expect(step(m2, PARTY, pc("fight"))).toEqual({ cursor: mem("c2"), send: null });
+    // 行動可能な者が居なければそのまま
+    expect(step({ ...m, members: m.members.map((x) => ({ ...x, canAct: false })) }, PARTY, pc("fight"))).toEqual({ cursor: PARTY, send: null });
+    expect(step(m, PARTY, pc("repeat"))).toEqual({ cursor: PARTY, send: { type: "battle.repeat" } });
+    expect(step(m, PARTY, pc("flee"))).toEqual({ cursor: PARTY, send: { type: "battle.flee" } });
+    expect(step(m, PARTY, pc("auto"))).toEqual({ cursor: PARTY, send: { type: "battle.auto", on: true } });
+    // 逃げられない戦闘の逃げるは送らない
+    expect(step(menu({ canFlee: false }), PARTY, pc("flee"))).toEqual({ cursor: PARTY, send: null });
+    // パーティの選択の戻る・段階に合わない選択は何もしない
+    expect(step(m, PARTY, { kind: "back" })).toEqual({ cursor: PARTY, send: null });
+    expect(back(m, PARTY)).toEqual(PARTY);
+    expect(step(m, PARTY, mc("attack"))).toEqual({ cursor: PARTY, send: null });
+    expect(step(m, PARTY, { kind: "group", index: 1 })).toEqual({ cursor: PARTY, send: null });
+  });
+
+  test("UI-54/CB-12 メンバーの 5 枠: 攻撃・呪文・防御・道具・戻る。dim は spells 空・items 空で、戻るは常に押せる", () => {
+    const m = menu();
+    const e1 = entries(m, mem("c1"), S);
     expect(e1.map((e) => e.label)).toEqual([
       t("battle.cmd.attack"),
       t("battle.cmd.spell"),
       t("battle.cmd.defend"),
       t("battle.cmd.item"),
-      t("battle.cmd.flee"),
-      t("battle.cmd.auto"),
       t("common.back"),
     ]);
-    expect(e1.map((e) => e.disabled)).toEqual([false, true, false, true, false, false, true]);
-    // c5 は呪文あり・道具なし、先頭ではない
-    expect(entries(m, cur("c5"), S).map((e) => e.disabled)).toEqual([false, false, false, true, false, false, false]);
-    // c6 は道具あり。ボス戦（canFlee 偽）では逃走が押せない
-    expect(entries(menu({ canFlee: false }), cur("c6"), S).map((e) => e.disabled)).toEqual([false, true, false, false, true, false, false]);
+    expect(e1.map((e) => e.disabled)).toEqual([false, true, false, true, false]);
+    expect(entries(m, mem("c5"), S).map((e) => e.disabled)).toEqual([false, false, false, true, false]);
+    expect(entries(m, mem("c6"), S).map((e) => e.disabled)).toEqual([false, true, false, false, false]);
     // 知らないメンバーは []
-    expect(entries(m, cur("c9"), S)).toEqual([]);
+    expect(entries(m, mem("c9"), S)).toEqual([]);
+    expect(step(m, mem("c9"), mc("attack"))).toEqual({ cursor: mem("c9"), send: null });
   });
 
   test("UI-54/CB-12 攻撃 → 敵の一覧（体数 0 は出さない、番号は生存グループの順）→ battle.input attack", () => {
     const m = menu();
-    const a = step(m, cur("c1"), cmd("attack"));
-    expect(a).toEqual({ cursor: cur("c1", "enemy", { kind: "attack" }), send: null });
-    const list = entries(m, a.cursor, S);
-    expect(list.map((e) => e.label)).toEqual([
+    const a = step(m, mem("c1"), mc("attack"));
+    expect(a).toEqual({ cursor: tgt("enemy", "c1", { kind: "attack" }), send: null });
+    const rows = entries(m, a.cursor, S);
+    expect(rows.map((e) => e.label)).toEqual([
       t("battle.targetGroup", { n: 1, name: "コボルド", count: 3 }),
       t("battle.targetGroup", { n: 2, name: "多脚の影", count: 1 }),
       t("common.back"),
     ]);
-    expect(list.map((e) => e.choice)).toEqual([{ kind: "group", index: 1 }, { kind: "group", index: 2 }, { kind: "back" }]);
+    expect(rows.map((e) => e.choice)).toEqual([{ kind: "group", index: 1 }, { kind: "group", index: 2 }, { kind: "back" }]);
     const r = step(m, a.cursor, { kind: "group", index: 2 });
     expect(r.send).toEqual({ type: "battle.input", memberId: "c1", action: { type: "attack", group: 2 } });
     // 送るときの cursor は元のまま（rejected なら描き直すだけ）
@@ -155,8 +213,8 @@ describe("UI-54 入力の段階", () => {
 
   test("UI-54/CB-12 呪文: fire_arrow（enemy）→ 敵、heal（ally）→ 味方、blessing・identify（対象なし）は即 send。usable 偽は送らない", () => {
     const m = menu();
-    const sp = step(m, cur("c5"), cmd("spell"));
-    expect(sp.cursor).toEqual(cur("c5", "spell"));
+    const sp = step(m, mem("c5"), mc("spell"));
+    expect(sp.cursor).toEqual(list("spell", "c5"));
     const rows = entries(m, sp.cursor, S);
     expect(rows.map((e) => e.label)).toEqual([
       t("battle.spellRow", { name: "火矢", mp: 2 }),
@@ -169,7 +227,7 @@ describe("UI-54 入力の段階", () => {
     expect(rows.map((e) => e.disabled)).toEqual([false, true, false, false, false, false]);
 
     const fa = step(m, sp.cursor, { kind: "spell", spellId: "fire_arrow" });
-    expect(fa).toEqual({ cursor: cur("c5", "enemy", { kind: "cast", spellId: "fire_arrow" }), send: null });
+    expect(fa).toEqual({ cursor: tgt("enemy", "c5", { kind: "cast", spellId: "fire_arrow" }), send: null });
     expect(step(m, fa.cursor, { kind: "group", index: 1 }).send).toEqual({
       type: "battle.input",
       memberId: "c5",
@@ -177,7 +235,7 @@ describe("UI-54 入力の段階", () => {
     });
 
     const he = step(m, sp.cursor, { kind: "spell", spellId: "heal" });
-    expect(he).toEqual({ cursor: cur("c5", "ally", { kind: "cast", spellId: "heal" }), send: null });
+    expect(he).toEqual({ cursor: tgt("ally", "c5", { kind: "cast", spellId: "heal" }), send: null });
     expect(entries(m, he.cursor, S).map((e) => e.label)).toEqual([
       t("battle.targetAlly", { name: "Nc1", hp: 7, hpMax: 9 }),
       t("battle.targetAlly", { name: "Nc2", hp: 4, hpMax: 8 }),
@@ -204,11 +262,11 @@ describe("UI-54 入力の段階", () => {
 
   test("UI-54/CB-12 道具: ally の道具 → 味方 → send、対象を選ばない道具は即 send", () => {
     const m = menu();
-    const it = step(m, cur("c6"), cmd("item"));
-    expect(it.cursor).toEqual(cur("c6", "item"));
+    const it = step(m, mem("c6"), mc("item"));
+    expect(it.cursor).toEqual(list("item", "c6"));
     expect(entries(m, it.cursor, S).map((e) => e.label)).toEqual(["薬草", "煙玉", t("common.back")]);
     const herb = step(m, it.cursor, { kind: "item", instanceId: "i1" });
-    expect(herb.cursor).toEqual(cur("c6", "ally", { kind: "item", instanceId: "i1" }));
+    expect(herb.cursor).toEqual(tgt("ally", "c6", { kind: "item", instanceId: "i1" }));
     expect(step(m, herb.cursor, { kind: "ally", id: "c1" }).send).toEqual({
       type: "battle.input",
       memberId: "c6",
@@ -221,34 +279,129 @@ describe("UI-54 入力の段階", () => {
     });
   });
 
-  test("UI-54/F2/CB-12 防御・逃走は即 send（逃走は battle.flee）、オートは battle.auto on。disabled（呪文なしの呪文、道具なしの道具、逃走不可の逃走）は送らない", () => {
+  test("UI-54/CB-12 防御は即 send。disabled（呪文なしの呪文、道具なしの道具）と段階に合わない選択は送らない", () => {
     const m = menu();
-    expect(step(m, cur("c2"), cmd("defend"))).toEqual({ cursor: cur("c2"), send: { type: "battle.input", memberId: "c2", action: { type: "defend" } } });
-    expect(step(m, cur("c2"), cmd("flee")).send).toEqual({ type: "battle.flee" });
-    expect(step(m, cur("c2"), cmd("auto")).send).toEqual({ type: "battle.auto", on: true });
-    expect(step(m, cur("c2"), cmd("spell"))).toEqual({ cursor: cur("c2"), send: null });
-    expect(step(m, cur("c2"), cmd("item"))).toEqual({ cursor: cur("c2"), send: null });
-    expect(step(menu({ canFlee: false }), cur("c2"), cmd("flee"))).toEqual({ cursor: cur("c2"), send: null });
-    // 段階に合わない選択は無視
-    expect(step(m, cur("c2"), { kind: "group", index: 1 })).toEqual({ cursor: cur("c2"), send: null });
-    expect(step(m, cur("c2", "enemy", { kind: "attack" }), cmd("defend"))).toEqual({ cursor: cur("c2", "enemy", { kind: "attack" }), send: null });
+    expect(step(m, mem("c2"), mc("defend"))).toEqual({ cursor: mem("c2"), send: { type: "battle.input", memberId: "c2", action: { type: "defend" } } });
+    expect(step(m, mem("c2"), mc("spell"))).toEqual({ cursor: mem("c2"), send: null });
+    expect(step(m, mem("c2"), mc("item"))).toEqual({ cursor: mem("c2"), send: null });
+    expect(step(m, mem("c2"), { kind: "group", index: 1 })).toEqual({ cursor: mem("c2"), send: null });
+    expect(step(m, mem("c2"), pc("flee"))).toEqual({ cursor: mem("c2"), send: null });
+    const e = tgt("enemy", "c2", { kind: "attack" });
+    expect(step(m, e, mc("defend"))).toEqual({ cursor: e, send: null });
+    // 対象の段で member の「戻る」は受けない（一覧の戻るは { kind: "back" }）
+    expect(step(m, e, mc("back"))).toEqual({ cursor: e, send: null });
   });
 
-  test("UI-54 戻る: 対象 → 親（攻撃は command、呪文は spell、道具は item）、spell/item → command、command → 前の行動可能なメンバー（先頭は不変）", () => {
+  test("UI-54 W2 戻る: member → 並び順で前の行動可能なメンバー（c4 → c2、麻痺の c3 を飛ばす。入力済みでも戻れる）、先頭（c1）→ パーティの選択", () => {
     const m = menu();
-    expect(back(m, cur("c1", "enemy", { kind: "attack" }))).toEqual(cur("c1"));
-    expect(back(m, cur("c5", "enemy", { kind: "cast", spellId: "fire_arrow" }))).toEqual(cur("c5", "spell"));
-    expect(back(m, cur("c5", "ally", { kind: "cast", spellId: "heal" }))).toEqual(cur("c5", "spell"));
-    expect(back(m, cur("c6", "ally", { kind: "item", instanceId: "i1" }))).toEqual(cur("c6", "item"));
-    expect(back(m, cur("c5", "spell"))).toEqual(cur("c5"));
-    expect(back(m, cur("c6", "item"))).toEqual(cur("c6"));
-    // c4 の前は c3（麻痺）を飛ばして c2。入力済みでも戻れる
-    const m2 = menu({ members: m.members.map((x) => (x.id === "c2" ? { ...x, input: { type: "defend" } } : x)) });
-    expect(back(m2, cur("c4"))).toEqual(cur("c2"));
-    expect(back(m, cur("c1"))).toEqual(cur("c1"));
-    // step 経由でも同じ（一覧の末尾の「戻る」、command の「戻る」）
-    expect(step(m, cur("c5", "spell"), { kind: "back" })).toEqual({ cursor: cur("c5"), send: null });
-    expect(step(m, cur("c4"), cmd("back"))).toEqual({ cursor: cur("c2"), send: null });
-    expect(step(m, cur("c1"), cmd("back"))).toEqual({ cursor: cur("c1"), send: null });
+    expect(back(m, mem("c4"))).toEqual(mem("c2"));
+    const m2 = withInput(m, { c2: { type: "defend" } });
+    expect(back(m2, mem("c4"))).toEqual(mem("c2"));
+    expect(back(m, mem("c2"))).toEqual(mem("c1"));
+    expect(back(m, mem("c1"))).toEqual(PARTY);
+    // 先頭が行動不能なら、最初の行動可能な者が先頭扱い
+    const m3 = { ...m, members: m.members.map((x) => (x.id === "c1" ? { ...x, canAct: false } : x)) };
+    expect(back(m3, mem("c2"))).toEqual(PARTY);
+    // step 経由（メンバーの枠の「戻る」と Esc の { kind: "back" }）でも同じ
+    expect(step(m, mem("c4"), mc("back"))).toEqual({ cursor: mem("c2"), send: null });
+    expect(step(m, mem("c1"), mc("back"))).toEqual({ cursor: PARTY, send: null });
+    expect(step(m, mem("c1"), { kind: "back" })).toEqual({ cursor: PARTY, send: null });
+  });
+
+  test("UI-54 戻る: 対象 → 親（攻撃は member、呪文は spell、道具は item）、spell / item → member", () => {
+    const m = menu();
+    expect(back(m, tgt("enemy", "c1", { kind: "attack" }, 1))).toEqual(mem("c1"));
+    expect(back(m, tgt("enemy", "c5", { kind: "cast", spellId: "fire_arrow" }))).toEqual(list("spell", "c5"));
+    expect(back(m, tgt("ally", "c5", { kind: "cast", spellId: "heal" }))).toEqual(list("spell", "c5"));
+    expect(back(m, tgt("ally", "c6", { kind: "item", instanceId: "i1" }))).toEqual(list("item", "c6"));
+    expect(back(m, list("spell", "c5"))).toEqual(mem("c5"));
+    expect(back(m, list("item", "c6"))).toEqual(mem("c6"));
+    expect(step(m, list("spell", "c5"), { kind: "back" })).toEqual({ cursor: mem("c5"), send: null });
+    expect(step(m, tgt("enemy", "c1", { kind: "attack" }), { kind: "back" })).toEqual({ cursor: mem("c1"), send: null });
+  });
+
+  test("UI-54 W5 体数 1 以上の敵グループが 1 つだけなら、攻撃と敵の呪文は対象の一覧を飛ばしてすぐ送る。味方の対象は飛ばさない", () => {
+    const m = menu({ groups: ONE_GROUP });
+    expect(step(m, mem("c1"), mc("attack"))).toEqual({
+      cursor: mem("c1"),
+      send: { type: "battle.input", memberId: "c1", action: { type: "attack", group: 1 } },
+    });
+    const sp = list("spell", "c5");
+    expect(step(m, sp, { kind: "spell", spellId: "fire_arrow" })).toEqual({
+      cursor: sp,
+      send: { type: "battle.input", memberId: "c5", action: { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 1 } } },
+    });
+    expect(step(m, sp, { kind: "spell", spellId: "heal" })).toEqual({
+      cursor: tgt("ally", "c5", { kind: "cast", spellId: "heal" }),
+      send: null,
+    });
+    // 2 グループなら飛ばさない
+    expect(step(menu(), mem("c1"), mc("attack")).send).toBeNull();
+  });
+
+  test("UI-54 W5 対象の一覧の初期の注目は、1 つ前の行動可能なメンバーの入力の対象（今も選べるとき）。無ければ 0", () => {
+    const m = menu();
+    const atk: Pick = { kind: "attack" };
+    // c1 が attack(2) → c2 の敵の一覧はグループ 2（一覧の添字 1）
+    expect(step(withInput(m, { c1: { type: "attack", group: 2 } }), mem("c2"), mc("attack")).cursor).toEqual(tgt("enemy", "c2", atk, 1));
+    expect(step(withInput(m, { c1: { type: "attack", group: 1 } }), mem("c2"), mc("attack")).cursor).toEqual(tgt("enemy", "c2", atk, 0));
+    // 対象のグループが全滅していれば 0
+    const dead = { ...m, groups: m.groups.map((g) => (g.index === 2 ? { ...g, count: 0 } : g)), pending: m.pending };
+    const deadPlus = { ...dead, groups: [...dead.groups, { index: 3, monsterId: "kobold", name: "K", identified: true, count: 2 }] };
+    expect(step(withInput(deadPlus, { c1: { type: "attack", group: 2 } }), mem("c2"), mc("attack")).cursor).toEqual(tgt("enemy", "c2", atk, 0));
+    // 前が防御・未入力なら 0
+    expect(step(withInput(m, { c1: { type: "defend" } }), mem("c2"), mc("attack")).cursor).toEqual(tgt("enemy", "c2", atk, 0));
+    expect(step(m, mem("c2"), mc("attack")).cursor).toEqual(tgt("enemy", "c2", atk, 0));
+    // c4 の前は麻痺の c3 を飛ばして c2
+    expect(step(withInput(m, { c2: { type: "attack", group: 2 } }), mem("c4"), mc("attack")).cursor).toEqual(tgt("enemy", "c4", atk, 1));
+    // 呪文の敵の対象も同じ（c5 の前は c4。cast の target の group）
+    const m5 = withInput(m, { c4: { type: "cast", spellId: "x", target: { side: "enemy", group: 2 } } });
+    expect(step(m5, list("spell", "c5"), { kind: "spell", spellId: "fire_arrow" }).cursor).toEqual(
+      tgt("enemy", "c5", { kind: "cast", spellId: "fire_arrow" }, 1),
+    );
+    // 味方: c6 の前は c5。heal を c2 に → c6 の薬草の味方の一覧は c2（添字 1）
+    const herb: Pick = { kind: "item", instanceId: "i1" };
+    const m6 = withInput(m, { c5: { type: "cast", spellId: "heal", target: { side: "ally", memberId: "c2" } } });
+    expect(step(m6, list("item", "c6"), { kind: "item", instanceId: "i1" }).cursor).toEqual(tgt("ally", "c6", herb, 1));
+    // 味方の対象が allies に居なければ 0
+    const m6b = { ...m6, allies: m6.allies.filter((a) => a.id !== "c2") };
+    expect(step(m6b, list("item", "c6"), { kind: "item", instanceId: "i1" }).cursor).toEqual(tgt("ally", "c6", herb, 0));
+    // 側が違えば 0（前が敵を狙っていても味方の一覧は 0）
+    const m6c = withInput(m, { c5: { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 2 } } });
+    expect(step(m6c, list("item", "c6"), { kind: "item", instanceId: "i1" }).cursor).toEqual(tgt("ally", "c6", herb, 0));
+  });
+
+  test("UI-54/UI-33 moveFocus は 0..末尾（戻る）でクランプ。focusedChoice は注目の選択肢、focusedGroup は enemy の段のグループだけ", () => {
+    const m = menu();
+    const c0 = tgt("enemy", "c1", { kind: "attack" }, 0);
+    expect(moveFocus(m, c0, -1)).toEqual(c0);
+    const c1 = moveFocus(m, c0, 1);
+    expect(c1).toEqual(tgt("enemy", "c1", { kind: "attack" }, 1));
+    const c2 = moveFocus(m, c1, 1);
+    expect(c2).toEqual(tgt("enemy", "c1", { kind: "attack" }, 2));
+    expect(moveFocus(m, c2, 1)).toEqual(c2);
+    expect(focusedChoice(m, c0)).toEqual({ kind: "group", index: 1 });
+    expect(focusedChoice(m, c1)).toEqual({ kind: "group", index: 2 });
+    expect(focusedChoice(m, c2)).toEqual({ kind: "back" });
+    expect(focusedGroup(m, c0)).toBe(1);
+    expect(focusedGroup(m, c1)).toBe(2);
+    expect(focusedGroup(m, c2)).toBeNull();
+    expect(setFocus(m, c0, 9)).toEqual(c2);
+    expect(setFocus(m, c2, -3)).toEqual(c0);
+    // 味方の一覧（2 人 + 戻る）
+    const a = tgt("ally", "c5", { kind: "cast", spellId: "heal" }, 1);
+    expect(focusedChoice(m, a)).toEqual({ kind: "ally", id: "c2" });
+    expect(focusedGroup(m, a)).toBeNull();
+    expect(moveFocus(m, a, 1)).toEqual({ ...a, focus: 2 });
+    // 対象以外の段は不変・null
+    for (const c of [PARTY, mem("c1"), list("spell", "c5")]) {
+      expect(moveFocus(m, c, 1)).toEqual(c);
+      expect(setFocus(m, c, 1)).toEqual(c);
+      expect(focusedChoice(m, c)).toBeNull();
+      expect(focusedGroup(m, c)).toBeNull();
+    }
+    // 注目の選択肢を step に渡すと、その対象で送る（Enter = 注目を選ぶ）
+    expect(step(m, c1, focusedChoice(m, c1)!).send).toEqual({ type: "battle.input", memberId: "c1", action: { type: "attack", group: 2 } });
+    expect(step(m, c2, focusedChoice(m, c2)!).cursor).toEqual(mem("c1"));
   });
 });

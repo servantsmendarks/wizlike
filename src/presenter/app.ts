@@ -12,7 +12,18 @@ import { mapView, visibleCells } from "../core/rules/dungeon";
 import { dungeonOf } from "../core/state";
 import type { BattleMenu, Command, GameEvent, GameState, Screen, ViewPoint } from "../core/types";
 import { runChain, type ChainDeps } from "./auto-chain";
-import { entries, firstCursor, nextCursor, step, type Choice, type InputCursor } from "./battle-input";
+import {
+  entries,
+  firstCursor,
+  focusedChoice,
+  focusedGroup,
+  moveFocus,
+  nextCursor,
+  setFocus,
+  step,
+  type Choice,
+  type InputCursor,
+} from "./battle-input";
 import {
   attachKeyboard,
   attachReleaseOnHide,
@@ -262,7 +273,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
 
   /**
    * UI-54: 戦闘の header・操作領域・入力中の名前・対象の枠を、battleMenu と cursor から描く。
-   * オート中は「オート解除」だけ（予約後は文言を変える）。手動は入力の段階の選択肢（command は 8 枠、それ以外は一覧）。
+   * オート中は「オート解除」だけ（予約後は文言を変える）。手動は入力の段階の選択肢（party は 4 枠、member は 5 枠、
+   * それ以外は一覧。enemy / ally の一覧は注目の行に枠を付け、触れた行に注目を移す）。
    */
   const syncBattleControls = (): void => {
     const c = play.controls;
@@ -287,30 +299,47 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       c.setMode("none");
       return;
     }
-    const member = menu.members.find((m) => m.id === cur.memberId);
+    const memberId = cur.stage === "party" ? null : cur.memberId;
+    const member = memberId === null ? undefined : menu.members.find((m) => m.id === memberId);
     play.header.setText(formatMessage(t(`battle.prompt.${cur.stage}`), { name: member?.name ?? "" }));
-    play.party.setActive(cur.memberId);
-    const list = entries(menu, cur, strings);
-    let target: number | null = null;
-    if (cur.stage === "enemy") {
-      for (const e of list) {
-        if (e.choice.kind === "group") {
-          target = e.choice.index;
-          break;
-        }
-      }
-    }
-    play.battle.highlight(target);
-    const items = list.map(
-      (e): ControlItem => ({ label: e.label, disabled: e.disabled, onSelect: () => guard(() => chooseBattle(e.choice)) }),
+    play.party.setActive(memberId);
+    const targeting = cur.stage === "enemy" || cur.stage === "ally";
+    const items = entries(menu, cur, strings).map(
+      (e, i): ControlItem => ({
+        label: e.label,
+        disabled: e.disabled,
+        onSelect: () => guard(() => chooseBattle(e.choice)),
+        ...(targeting ? { onFocus: () => guard(() => focusTo(i)) } : {}),
+      }),
     );
-    if (cur.stage === "command") {
-      c.setBattleMenu(items);
+    if (cur.stage === "party" || cur.stage === "member") {
+      c.setBattleMenu(items, cur.stage);
       c.setMode("battle");
     } else {
       c.setList(items);
       c.setMode("list");
+      c.setListFocus(targeting ? cur.focus : null);
     }
+    paintFocus();
+  };
+
+  /** UI-54: 注目している敵グループの絵に枠を付ける（enemy の段だけ） */
+  const paintFocus = (): void => {
+    const menu = battleMenu(state, data);
+    const cur = cursor;
+    play.battle.highlight(menu === null || cur === null ? null : focusedGroup(menu, cur));
+  };
+
+  /** UI-54: 対象の一覧の注目を i に移す（一覧は作り直さない。作り直すと click が消える） */
+  const focusTo = (i: number): void => {
+    const menu = battleMenu(state, data);
+    const cur = cursor;
+    if (menu === null || cur === null) return;
+    const next = setFocus(menu, cur, i);
+    if (next === cur) return;
+    cursor = next;
+    if (next.stage === "enemy" || next.stage === "ally") play.controls.setListFocus(next.focus);
+    paintFocus();
   };
 
   const showRoute = (r: Route): void => {
@@ -398,7 +427,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       syncBattleControls();
       return;
     }
-    if (r.send.type === "battle.input") advanceFrom = cur.memberId;
+    if (r.send.type === "battle.input") advanceFrom = r.send.memberId;
     void runBattle(r.send);
   };
 
@@ -536,10 +565,19 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       }
       case "battle": {
         const cur = cursor;
-        if (cur === null) return;
-        const k = battleKeyChoice(a, cur.stage === "command" ? "grid" : "list");
+        const menu = battleMenu(state, data);
+        if (cur === null || menu === null) return;
+        const mode =
+          cur.stage === "party" || cur.stage === "member" ? "grid" : cur.stage === "enemy" || cur.stage === "ally" ? "target" : "list";
+        const k = battleKeyChoice(a, mode);
         if (k === "back") chooseBattle({ kind: "back" });
-        else if (typeof k === "number") play.controls.select(k);
+        else if (k === "up" || k === "down") {
+          const next = moveFocus(menu, cur, k === "up" ? -1 : 1);
+          if (next.stage === "enemy" || next.stage === "ally") focusTo(next.focus);
+        } else if (k === "focused") {
+          const ch = focusedChoice(menu, cur);
+          if (ch !== null) chooseBattle(ch);
+        } else if (typeof k === "number") play.controls.select(k);
         return;
       }
     }

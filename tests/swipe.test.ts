@@ -154,6 +154,21 @@ describe("連打の可否とキーボード", () => {
     expect(battleKeyChoice(keyToAction("Enter", false, false)!, "autoStop")).toBe("stop");
   });
 
+  test("UI-33/UI-54 battleKeyChoice の target（対象の一覧）: ↑ → up、↓ → down、Enter → focused、数字 n → n−1、Esc → back。←→・地図は null", () => {
+    expect(battleKeyChoice(keyToAction("ArrowUp", false, false)!, "target")).toBe("up");
+    expect(battleKeyChoice(keyToAction("ArrowDown", false, false)!, "target")).toBe("down");
+    expect(battleKeyChoice(keyToAction("Enter", false, false)!, "target")).toBe("focused");
+    expect(battleKeyChoice(keyToAction("2", false, false)!, "target")).toBe(1);
+    expect(battleKeyChoice(keyToAction("Escape", false, false)!, "target")).toBe("back");
+    for (const a of ["left", "right", "map", "debug"] as const) expect(battleKeyChoice(a, "target"), a).toBeNull();
+    // grid / list では ↑↓ は null のまま、Enter は 0
+    for (const mode of ["grid", "list"] as const) {
+      expect(battleKeyChoice("forward", mode)).toBeNull();
+      expect(battleKeyChoice("around", mode)).toBeNull();
+      expect(battleKeyChoice("confirm", mode)).toBe(0);
+    }
+  });
+
   test("UI-33 keyToAction の表どおり。repeat と input 上は null", () => {
     const table: [string, Action][] = [
       ["ArrowUp", "forward"],

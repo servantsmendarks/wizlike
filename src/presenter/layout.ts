@@ -63,17 +63,31 @@ const LIST_ROWS_REL: readonly Rect[] = [
 const MAP_CLOSE_REL: Rect = { x: 60, y: 34, w: 120, h: 32 };
 
 /**
- * 戦闘のコマンド（UI-54）。4 列 × 2 段の 56×40。上段は 攻撃・呪文・防御・道具、下段は 逃走・オート・戻る・空。
- * 対象・呪文・道具の一覧は LIST_ROWS_REL を使う。操作領域からの相対（コードの定数で、config には置かない）
+ * 戦闘のパーティの選択（UI-54）。2 列 × 2 段の 114×40（戦う・前回と同じ / 逃げる・オート）。
+ * 操作領域からの相対（コードの定数で、config には置かない）
  */
-const BATTLE_MENU_REL: readonly Rect[] = [6, 54].flatMap((y) => [4, 62, 120, 178].map((x): Rect => ({ x, y, w: 56, h: 40 })));
+const BATTLE_PARTY_REL: readonly Rect[] = [
+  { x: 4, y: 6, w: 114, h: 40 },
+  { x: 122, y: 6, w: 114, h: 40 },
+  { x: 4, y: 54, w: 114, h: 40 },
+  { x: 122, y: 54, w: 114, h: 40 },
+];
+
+/**
+ * 戦闘のメンバーの枠（UI-54）。56×40 の上段 4 つ（攻撃・呪文・防御・道具）と、下段の右端の戻る。
+ * 呪文・道具・対象の一覧は LIST_ROWS_REL を使う。操作領域からの相対
+ */
+const BATTLE_MEMBER_REL: readonly Rect[] = [
+  ...[4, 62, 120, 178].map((x): Rect => ({ x, y: 6, w: 56, h: 40 })),
+  { x: 178, y: 54, w: 56, h: 40 },
+];
 
 /** オート中の「オート解除」ボタン（UI-54）。操作領域からの相対 */
 const AUTO_STOP_REL: Rect = { x: 60, y: 34, w: 120, h: 32 };
 
 /** 操作領域の中身が収まる最小の高さ（相対矩形の下端の最大）。既定の layout では 98 */
 export const CONTROLS_MIN_HEIGHT = Math.max(
-  ...[...Object.values(DPAD_REL), ...MENU_SLOTS_REL, ...LIST_ROWS_REL, MAP_CLOSE_REL, ...BATTLE_MENU_REL, AUTO_STOP_REL].map(
+  ...[...Object.values(DPAD_REL), ...MENU_SLOTS_REL, ...LIST_ROWS_REL, MAP_CLOSE_REL, ...BATTLE_PARTY_REL, ...BATTLE_MEMBER_REL, AUTO_STOP_REL].map(
     (r) => r.y + r.h,
   ),
 );
@@ -99,8 +113,10 @@ export type DungeonLayout = {
   menu: Rect[];
   list: Rect[];
   mapClose: Rect;
-  /** 戦闘のコマンドの 8 枠（上段 0..3、下段 4..7） */
-  battleMenu: Rect[];
+  /** 戦闘のパーティの選択の 4 枠（上段 0..1、下段 2..3） */
+  battleParty: Rect[];
+  /** 戦闘のメンバーの 5 枠（上段 0..3、下段の右端 4） */
+  battleMember: Rect[];
   /** オート中の「オート解除」 */
   autoStop: Rect;
   /** text は文字領域（枠の内側）、lines はそこに入る行数、more は続きの三角 */
@@ -141,7 +157,8 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
     menu: MENU_SLOTS_REL.map((r) => shift(r, c)),
     list: LIST_ROWS_REL.map((r) => shift(r, c)),
     mapClose: shift(MAP_CLOSE_REL, c),
-    battleMenu: BATTLE_MENU_REL.map((r) => shift(r, c)),
+    battleParty: BATTLE_PARTY_REL.map((r) => shift(r, c)),
+    battleMember: BATTLE_MEMBER_REL.map((r) => shift(r, c)),
     autoStop: shift(AUTO_STOP_REL, c),
     message: { text: mText, lines: Math.max(0, Math.floor(mText.h / MESSAGE_LINE_H)), more },
     partyRows,
@@ -172,7 +189,8 @@ export function layoutWarnings(g: Regions, l: DungeonLayout): string[] {
   l.menu.forEach((r, i) => check(`menu[${i}]`, r, "controls"));
   l.list.forEach((r, i) => check(`list[${i}]`, r, "controls"));
   check("mapClose", l.mapClose, "controls");
-  l.battleMenu.forEach((r, i) => check(`battleMenu[${i}]`, r, "controls"));
+  l.battleParty.forEach((r, i) => check(`battleParty[${i}]`, r, "controls"));
+  l.battleMember.forEach((r, i) => check(`battleMember[${i}]`, r, "controls"));
   check("autoStop", l.autoStop, "controls");
   if (l.message.lines < 1) out.push(`ui.layout: message region (height ${g.message.h}) has no text line`);
   l.partyRows.forEach((r, i) => check(`partyRows[${i}]`, r, "party"));

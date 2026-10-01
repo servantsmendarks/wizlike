@@ -141,6 +141,8 @@
   "battle.wipe": "一行は全員動けなくなった……。",
   "dungeon.unlocked": "{dungeon}への道が開いた。",
 
+  "battle.cmd.fight": "戦う",
+  "battle.cmd.repeat": "前回と同じ",
   "battle.cmd.attack": "攻撃",
   "battle.cmd.spell": "呪文",
   "battle.cmd.defend": "防御",
@@ -150,7 +152,8 @@
   "battle.cmd.autoStop": "オート解除",
   "battle.autoStopping": "解除します……",
   "battle.autoOn": "オート戦闘中",
-  "battle.prompt.command": "{name}はどうする？",
+  "battle.prompt.party": "どうする？",
+  "battle.prompt.member": "{name}はどうする？",
   "battle.prompt.spell": "{name}の呪文",
   "battle.prompt.item": "{name}の道具",
   "battle.prompt.enemy": "どれを狙う？",

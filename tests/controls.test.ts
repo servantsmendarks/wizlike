@@ -95,7 +95,7 @@ describe("controls", () => {
     expect(shouldReleaseHold("dungeon", null, true)).toBe(true);
   });
 
-  test("UI-54 戦闘のコマンド枠: disabled は dim 色で、click でも select でも onSelect を呼ばない。select は battle モードの枠を選ぶ", () => {
+  test("UI-54 戦闘の枠（member の配置）: disabled は dim 色で、click でも select でも onSelect を呼ばない。select は battle モードの枠を選ぶ", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);
     const L = dungeonLayout(g, data.config.party.size);
@@ -105,7 +105,7 @@ describe("controls", () => {
       { label: "a", onSelect: () => picked.push("a") },
       { label: "b", onSelect: () => picked.push("b"), disabled: true },
       { label: "c", onSelect: () => picked.push("c") },
-    ]);
+    ], "member");
     c.setMode("battle");
     const items = created.filter((e) => e.className === "controls-battle-item");
     expect(items.map((e) => e["textContent"])).toEqual(["a", "b", "c"]);
@@ -155,7 +155,7 @@ describe("controls", () => {
     c.setAutoStop("stop", () => {
       pressed++;
       // 押した瞬間に解除が通って 8 枠が出る（演出スキップ）
-      c.setBattleMenu([{ label: "a", onSelect: () => picked.push("a") }]);
+      c.setBattleMenu([{ label: "a", onSelect: () => picked.push("a") }], "party");
       c.setMode("battle");
     });
     c.setMode("autoStop");
@@ -191,6 +191,78 @@ describe("controls", () => {
     fwd.dispatch("pointerdown", { timeStamp: 2000 });
     c.select(0);
     expect(picked).toEqual(["a", "x", "x"]);
+  });
+
+  test("UI-54 setBattleMenu の配置: party は battleParty の 4 枠、member は battleMember の 5 枠に置き、枠数を超える分は捨てる", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, onRelease: () => {}, onClose: () => {} });
+    const picked: number[] = [];
+    const items = Array.from({ length: 6 }, (_, i) => ({ label: `x${i}`, onSelect: () => picked.push(i) }));
+    const pos = (): Array<[string, string, string, string]> =>
+      created
+        .filter((e) => e.className === "controls-battle-item")
+        .slice(-100)
+        .map((e) => [e.style["left"]!, e.style["top"]!, e.style["width"]!, e.style["height"]!]);
+    const rel = (r: { x: number; y: number; w: number; h: number }): [string, string, string, string] => [
+      `${r.x - g.controls.x}px`,
+      `${r.y - g.controls.y}px`,
+      `${r.w}px`,
+      `${r.h}px`,
+    ];
+    c.setBattleMenu(items, "party");
+    c.setMode("battle");
+    expect(pos()).toEqual(L.battleParty.map(rel));
+    c.select(3);
+    c.select(4); // 5 件目は捨てた
+    expect(picked).toEqual([3]);
+    const before = created.length;
+    c.setBattleMenu(items, "member");
+    expect(created.slice(before).filter((e) => e.className === "controls-battle-item").map((e) => [e.style["left"], e.style["top"], e.style["width"], e.style["height"]])).toEqual(
+      L.battleMember.map(rel),
+    );
+    c.select(4);
+    c.select(5);
+    expect(picked).toEqual([3, 4]);
+  });
+
+  test("UI-54 一覧の onFocus は pointerenter / pointerdown で呼ばれ、一覧を作り直さない。setListFocus は注目の行の枠を accent にする（dim の行は dim のまま）", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, onRelease: () => {}, onClose: () => {} });
+    const focused: number[] = [];
+    const picked: number[] = [];
+    c.setList([
+      { label: "a", onSelect: () => picked.push(0), onFocus: () => focused.push(0) },
+      { label: "b", onSelect: () => picked.push(1), onFocus: () => focused.push(1) },
+      { label: "c", onSelect: () => picked.push(2), disabled: true },
+      { label: "d", onSelect: () => picked.push(3) },
+    ]);
+    c.setMode("list");
+    const rows = created.filter((e) => e.className === "controls-list-item");
+    expect(rows).toHaveLength(4);
+    rows[1]!.dispatch("pointerenter");
+    rows[0]!.dispatch("pointerdown");
+    rows[3]!.dispatch("pointerenter"); // onFocus なしの行は何もしない
+    expect(focused).toEqual([1, 0]);
+    // 作り直していない（同じ要素の click が効く）
+    expect(created.filter((e) => e.className === "controls-list-item")).toHaveLength(4);
+    rows[1]!.dispatch("click", { timeStamp: 10_000 });
+    expect(picked).toEqual([1]);
+    let scrolled: unknown = null;
+    rows[1]!["scrollIntoView"] = (o: unknown) => {
+      scrolled = o;
+    };
+    c.setListFocus(1);
+    expect(rows.map((r) => r.style["borderColor"])).toEqual(["var(--c-frame)", "var(--c-accent)", "var(--c-dim)", "var(--c-frame)"]);
+    expect(scrolled).toEqual({ block: "nearest" });
+    c.setListFocus(2);
+    expect(rows[2]!.style["borderColor"]).toBe("var(--c-dim)");
+    expect(rows[1]!.style["borderColor"]).toBe("var(--c-frame)");
+    c.setListFocus(null);
+    expect(rows.map((r) => r.style["borderColor"])).toEqual(["var(--c-frame)", "var(--c-frame)", "var(--c-dim)", "var(--c-frame)"]);
   });
 
   test("UI-44/UI-54 オート解除: pointerdown と、autoStop モードの select(0) で onPress を呼ぶ。ラベルは setAutoStop で差し替わる", () => {

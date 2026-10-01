@@ -1,9 +1,9 @@
 // UI-32 / UI-53 の操作領域（ui §2 の controls 領域）。十字ボタン（dpad）、メニュー（menu）、リスト（list）、
-// 地図の「閉じる」（mapClose）、戦闘のコマンド 8 枠（battle）、オート中の「オート解除」（autoStop）を切り替えて出す。矩形は layout.ts の dungeonLayout のステージ座標で、region の原点を引いて置く。
+// 地図の「閉じる」（mapClose）、戦闘のパーティの選択 4 枠・メンバーの 5 枠（battle）、オート中の「オート解除」（autoStop）を切り替えて出す。矩形は layout.ts の dungeonLayout のステージ座標で、region の原点を引いて置く。
 // 十字ボタンは pointerdown で反応する（click は使わない）。離したら onRelease（前進の長押しの連打を止める。UI-31）。
 // ゴーストクリックの抑止: 十字ボタンと「オート解除」は pointerdown で反応し、演出スキップ中は指を離す前に同じ位置へ
-// 戦闘の 8 枠や一覧（click で反応）が出ることがある。タッチ由来の click は pointerdown の preventDefault では止まらないので、
-// それらの pointerdown から、同じ操作の pointerup / pointercancel の後 GHOST_CLICK_MS までの click を、戦闘の 8 枠と一覧では捨てる。
+// 戦闘の枠や一覧（click で反応）が出ることがある。タッチ由来の click は pointerdown の preventDefault では止まらないので、
+// それらの pointerdown から、同じ操作の pointerup / pointercancel の後 GHOST_CLICK_MS までの click を、戦闘の枠と一覧では捨てる。
 // 新しい pointerdown（別の操作の始まり）が来たら抑止を解く。時刻は event.timeStamp で比べ、タイマーは使わない。
 // Action から Command への変換と長押しの連打は呼び出し側（app）が持つ。表示層は前進できるかを判定しない（UI-35）。
 // モジュールのトップレベルでは DOM に触れない。
@@ -13,7 +13,10 @@ import type { DungeonLayout, Rect } from "../layout";
 export type DpadAction = "forward" | "left" | "right" | "around";
 export type ControlsMode = "dpad" | "list" | "close" | "battle" | "autoStop" | "none";
 /** disabled なら dim 色で出し、押しても onSelect を呼ばない */
-export type ControlItem = { label: string; onSelect(): void; disabled?: boolean };
+/** onFocus は一覧の行に pointerenter / pointerdown したとき（戦闘の対象の注目。UI-54） */
+export type ControlItem = { label: string; onSelect(): void; disabled?: boolean; onFocus?(): void };
+/** 戦闘の枠の配置（UI-54）。party はパーティの選択の 4 枠、member はメンバーの 5 枠 */
+export type BattleSlots = "party" | "member";
 
 export type Controls = {
   el: HTMLElement;
@@ -25,12 +28,17 @@ export type Controls = {
   setMenu(items: ControlItem[]): void;
   /** layout.list の位置に並べる。4 件以上は縦スクロール（UI-11） */
   setList(items: ControlItem[]): void;
-  /** layout.battleMenu の 8 枠に並べる（9 件目以降は捨てる）。UI-54 */
-  setBattleMenu(items: ControlItem[]): void;
+  /** UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠）に並べる。枠数を超える分は捨てる */
+  setBattleMenu(items: ControlItem[], slots: BattleSlots): void;
+  /**
+   * UI-54: 一覧の i 行目を注目の見た目（枠線を accent 色。dim の行は dim のまま）にし、見える位置へ動かす。null で解除。
+   * 一覧は作り直さない
+   */
+  setListFocus(i: number | null): void;
   /** オート中の「オート解除」。pointerdown で onPress を呼ぶ（再生中も受ける。UI-44 の例外は呼び出し側が扱う） */
   setAutoStop(label: string, onPress: () => void): void;
   /**
-   * n 番目（0 始まり）を選ぶ。dpad ではメニュー、list ではリスト、battle では 8 枠、close / autoStop では 0 が唯一のボタン。
+   * n 番目（0 始まり）を選ぶ。dpad ではメニュー、list ではリスト、battle では戦闘の枠、close / autoStop では 0 が唯一のボタン。
    * 範囲外と disabled は何もしない
    */
   select(n: number): void;
@@ -38,7 +46,7 @@ export type Controls = {
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-/** pointerdown で反応したボタンを離してから、戦闘の 8 枠と一覧の click を捨てる時間（ms） */
+/** pointerdown で反応したボタンを離してから、戦闘の枠と一覧の click を捨てる時間（ms） */
 export const GHOST_CLICK_MS = 400;
 
 /**
@@ -118,7 +126,7 @@ function setShown(el: HTMLElement, on: boolean): void {
  */
 export function createControls(o: {
   region: Rect;
-  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "mapClose" | "battleMenu" | "autoStop">;
+  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "mapClose" | "battleParty" | "battleMember" | "autoStop">;
   strings: Strings;
   onAction(a: DpadAction): void;
   onRelease(): void;
@@ -129,7 +137,7 @@ export function createControls(o: {
   const DPAD = o.layout.dpad;
   const MENU_SLOTS = o.layout.menu;
   const LIST_ROWS = o.layout.list;
-  const BATTLE_SLOTS = o.layout.battleMenu;
+  const BATTLE_SLOTS: Readonly<Record<BattleSlots, readonly Rect[]>> = { party: o.layout.battleParty, member: o.layout.battleMember };
 
   const el = document.createElement("div");
   el.className = "controls";
@@ -147,7 +155,7 @@ export function createControls(o: {
   el.addEventListener("pointerdown", () => ghost.down(), true);
   el.addEventListener("pointerup", (e) => ghost.up(stampOf(e)), true);
   el.addEventListener("pointercancel", (e) => ghost.up(stampOf(e)), true);
-  /** 戦闘の 8 枠と一覧の click。抑止中なら捨てる */
+  /** 戦闘の枠と一覧の click。抑止中なら捨てる */
   const onGuardedClick = (it: ControlItem) => (e: Event): void => {
     if (ghost.blocks(stampOf(e))) return;
     pick(it);
@@ -214,6 +222,7 @@ export function createControls(o: {
   });
   el.appendChild(list);
   let listItems: ControlItem[] = [];
+  let listButtons: HTMLElement[] = [];
 
   // ---- 地図の「閉じる」
   const close = document.createElement("button");
@@ -224,7 +233,7 @@ export function createControls(o: {
   close.addEventListener("click", () => o.onClose());
   el.appendChild(close);
 
-  // ---- 戦闘のコマンド（layout.battleMenu の 8 枠）
+  // ---- 戦闘の枠（layout.battleParty / battleMember）
   const battle = document.createElement("div");
   battle.className = "controls-battle";
   el.appendChild(battle);
@@ -296,6 +305,7 @@ export function createControls(o: {
     },
     setList(items: ControlItem[]): void {
       listItems = items.slice();
+      listButtons = [];
       list.replaceChildren();
       list.scrollTop = 0;
       for (const it of listItems) {
@@ -321,14 +331,29 @@ export function createControls(o: {
         });
         dimIf(b, it);
         b.addEventListener("click", onGuardedClick(it));
+        const focus = it.onFocus;
+        if (focus !== undefined) {
+          b.addEventListener("pointerenter", () => focus());
+          b.addEventListener("pointerdown", () => focus());
+        }
         list.appendChild(b);
+        listButtons.push(b);
       }
     },
-    setBattleMenu(items: ControlItem[]): void {
-      battleItems = items.slice(0, BATTLE_SLOTS.length);
+    setListFocus(i: number | null): void {
+      listButtons.forEach((b, k) => {
+        if (listItems[k]?.disabled === true) return;
+        b.style.borderColor = k === i ? "var(--c-accent)" : "var(--c-frame)";
+      });
+      const b = i === null ? undefined : listButtons[i];
+      if (b !== undefined && typeof b.scrollIntoView === "function") b.scrollIntoView({ block: "nearest" });
+    },
+    setBattleMenu(items: ControlItem[], slots: BattleSlots): void {
+      const rects = BATTLE_SLOTS[slots];
+      battleItems = items.slice(0, rects.length);
       battle.replaceChildren();
       battleItems.forEach((it, i) => {
-        const r = BATTLE_SLOTS[i];
+        const r = rects[i];
         if (r === undefined) return;
         const b = document.createElement("button");
         b.type = "button";
