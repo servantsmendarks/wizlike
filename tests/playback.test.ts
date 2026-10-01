@@ -10,6 +10,7 @@ function diveAt(x: number, y: number, facing: Dive["facing"], floor = 1): Dive {
     dungeonId: data.dungeons[0]!.id,
     diveSeed: 1,
     floor,
+    deepestFloor: floor,
     pos: { x, y },
     facing,
     explored: {},

@@ -150,6 +150,8 @@ export type Dive = {
   diveSeed: number;
   /** 1 始まり */
   floor: number;
+  /** DG-14 / CH-51: この潜行で到達した最深の階（入場時 1。常に floor 以上）。これより深い階に降りたときだけ SAN が減る */
+  deepestFloor: number;
   pos: Pos;
   facing: Facing;
   /** DG-13: キーは階番号の文字列 "1".."floors"。値はセル添字（y*width+x）の昇順・重複なしの配列（Set は使わない。§3-11） */

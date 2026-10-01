@@ -15,7 +15,7 @@
 - DG-11 遭遇判定は前進が成立した歩ごとに行う（CB-01）。旋回、`blocked`、階段の昇降では行わない。階段セルへの前進と昇降では遭遇判定をしない。全員が死亡しているときもしない。
 - DG-12 視野: 自分のセルから前方に奥行き 0〜`config.dungeon.viewDepth`（3）【仮】、左中右の 3 列。`viewDepth` は 1..3（UI-20 の座標表が奥行き 0..3 のため）を検証する。壁と扉で遮られる。core は「見えているセルとその辺の種別」を返す関数 `visibleCells(state, data, at?)` を提供し（`at` は再生中の視点 {floor, pos, facing}。省略時は現在の dive）、表示層はそれだけで線画を描く（UI-20）。遮りの規則: 正面の列は、手前のセルの前の辺が `open` のときだけ奥へ進む。左右の列のセルは、同じ奥行きの正面の列のセルの側の辺が `open` のときだけ見える。扉は閉じた壁と同じく遮る。返す値はセルの座標と辺（front / left / right）だけで、セルの種別（罠・イベント・ボス）は返さない。
 - DG-13 オートマップ: 見えたセル（現在位置と視野内のセル）をその階の `explored` に記録する。階ごとに保持し、潜行終了で破棄する。マップ画面は探索済みのセルの壁・扉・階段・現在位置と向きを描く。地図（`mapView`）は探索済みセルの 4 辺を実効の値（開けた扉は `open`）で描き、罠・イベント・ボスは描かない（記号は上り・下り階段だけ）。
-- DG-14 階段の昇降はコマンドではなく、階段セルに入ったときに確認メッセージを出して選ばせる（`event.choose`）。降りたときに SAN −5（CH-51。`config.san.floorDescend`）。確認は前進で階段セルに入ったときだけ出す（入場直後、昇降直後、やめた後は出さない）。選択肢は「降りる」/「上る」と「やめる」。選択の保留中（`GameState.pendingChoice`）は `event.choose` 以外のコマンドを受け付けない。昇降では座標と向きを保つ。降りるたびに生存者全員が SAN を減らす（耐性なし）。上ったときは減らない。昇降では遭遇判定をしない。1 階の上り階段は、徒歩帰還（M4）までは「まだ戻れない」の語りだけを出す。
+- DG-14 階段の昇降はコマンドではなく、階段セルに入ったときに確認メッセージを出して選ばせる（`event.choose`）。降りたときに SAN −5（CH-51。`config.san.floorDescend`）。確認は前進で階段セルに入ったときだけ出す（入場直後、昇降直後、やめた後は出さない）。選択肢は「降りる」/「上る」と「やめる」。選択の保留中（`GameState.pendingChoice`）は `event.choose` 以外のコマンドを受け付けない。昇降では座標と向きを保つ。その潜行で初めて到達した階に降りたときだけ、生存者全員が SAN を減らす（耐性なし）。到達した最深の階を `dive.deepestFloor`（入場時 1）に持ち、`floor > deepestFloor` になる降下でだけ減らして更新する。上ったときは減らず、上ってから同じ階へ降り直しても減らない。再入場（DG-03）で数え直す。昇降では遭遇判定をしない。1 階の上り階段は、徒歩帰還（M4）までは「まだ戻れない」の語りだけを出す。
 
 ## 3. 罠とイベント
 
@@ -59,8 +59,9 @@
 ```
 
 `GameState.dive`（潜行中のみ存在）:
-`dungeonId, diveSeed, floor, pos {x,y}, facing ("N"|"E"|"S"|"W"), explored { [floor]: Set 相当の配列 }, openedDoors [], clearedCells [], bossDefeated, ledger`
+`dungeonId, diveSeed, floor, deepestFloor, pos {x,y}, facing ("N"|"E"|"S"|"W"), explored { [floor]: Set 相当の配列 }, openedDoors [], clearedCells [], bossDefeated, ledger`
 
+- `deepestFloor`: この潜行で到達した最深の階（入場時 1、常に `floor` 以上。DG-14）。
 - `explored`: 階番号の文字列 → その階の探索済みセルの添字（`y*width+x`）の昇順・重複なしの配列。
 - `openedDoors`: `{floor, x, y, dir}` の配列。`dir` は `"N"` か `"W"` に正規化する（同じ扉を 1 通りで表す）。
 - `clearedCells`: `{floor, x, y}` の配列（発動済みの罠など。通常のセルとして扱う）。

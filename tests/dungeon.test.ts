@@ -43,7 +43,10 @@ function placeAt(state: GameState, pos: Pos, facing: Facing, floor?: number): Ga
   const dive = s.dive!;
   dive.pos = { x: pos.x, y: pos.y };
   dive.facing = facing;
-  if (floor !== undefined) dive.floor = floor;
+  if (floor !== undefined) {
+    dive.floor = floor;
+    dive.deepestFloor = Math.max(dive.deepestFloor, floor); // その階にいるなら、そこまでは到達済み
+  }
   return s;
 }
 
@@ -133,6 +136,7 @@ describe("dungeon.enter", () => {
       dungeonId: "d01",
       diveSeed: dive.diveSeed,
       floor: 1,
+      deepestFloor: 1,
       pos: f1.stairsUp,
       facing,
       explored: dive.explored,
@@ -593,6 +597,7 @@ describe("階段（DG-14, E3）", () => {
     const dive = r.state.dive!;
     const floors = generateDive(data.dungeons[0]!, data.config.dungeon, dive.diveSeed);
     expect(dive.floor).toBe(2);
+    expect(dive.deepestFloor).toBe(2);
     expect(dive.pos).toEqual(s1.dive!.pos);
     expect(dive.facing).toBe(s1.dive!.facing);
     expect(dive.pos).toEqual(floors[1]!.stairsUp);
@@ -607,6 +612,61 @@ describe("階段（DG-14, E3）", () => {
     expect(r.state.rng).toEqual(s1.rng);
     expect(Object.keys(dive.explored).sort()).toEqual(["1", "2"]);
     expectExploredCovers(r.state);
+  });
+
+  test("DG-14/CH-51 その潜行で初めて到達した階に降りたときだけ SAN が減る。2 階へ降り→上る→また降りると、2 回目は [floorChanged, message dungeon.descend] だけで SAN は変わらない", () => {
+    const { state } = atStairsDown();
+    expect(state.dive!.deepestFloor).toBe(1);
+    const d1 = run(run(state, MOVE, DATA0).state, { type: "event.choose", optionId: "descend" }, DATA0);
+    expect(kinds(d1.events).filter((k) => k === "sanChanged")).toHaveLength(6);
+    expect(d1.state.dive!.deepestFloor).toBe(2);
+    // 2 階の上り階段（降りた直後のセル）から一歩出て戻り、上る
+    const dive = d1.state.dive!;
+    const f2 = floorOf(dive, data);
+    const out = FACINGS.find((d) => edgeOf(cellAt(f2, dive.pos.x, dive.pos.y), d) === "open")!;
+    const away = run(placeAt(d1.state, dive.pos, out), MOVE, DATA0).state;
+    const backTurn = run(away, { type: "dungeon.turn", dir: "around" }, DATA0).state;
+    const atUp = run(backTurn, MOVE, DATA0);
+    expect(atUp.state.pendingChoice?.promptKey).toBe("dungeon.stairsUpFloor");
+    const up = run(atUp.state, { type: "event.choose", optionId: "ascend" }, DATA0);
+    expect(up.state.dive!.floor).toBe(1);
+    expect(up.state.dive!.deepestFloor).toBe(2);
+    // 1 階の下り階段（上った直後のセル）から一歩出て戻り、降り直す
+    const dive1 = up.state.dive!;
+    const f1 = floorOf(dive1, data);
+    const out1 = FACINGS.find((d) => edgeOf(cellAt(f1, dive1.pos.x, dive1.pos.y), d) === "open")!;
+    const away1 = run(placeAt(up.state, dive1.pos, out1), MOVE, DATA0).state;
+    const atDown = run(run(away1, { type: "dungeon.turn", dir: "around" }, DATA0).state, MOVE, DATA0);
+    expect(atDown.state.pendingChoice?.promptKey).toBe("dungeon.stairsDown");
+    const d2 = run(atDown.state, { type: "event.choose", optionId: "descend" }, DATA0);
+    expect(d2.events).toEqual([
+      { kind: "floorChanged", floor: 2, pos: d2.state.dive!.pos, facing: d2.state.dive!.facing },
+      { kind: "message", key: "dungeon.descend" },
+    ]);
+    expect(d2.state.party.map((c) => c.san)).toEqual(atDown.state.party.map((c) => c.san));
+    expect(d2.state.dive!.deepestFloor).toBe(2);
+    expect(d2.state.rng).toEqual(atDown.state.rng);
+  });
+
+  test("DG-14/CH-51 再入場では deepestFloor が 1 に戻り、2 階へ降りるとまた SAN が減る", () => {
+    const { state } = atStairsDown();
+    const d1 = run(run(state, MOVE, DATA0).state, { type: "event.choose", optionId: "descend" }, DATA0);
+    expect(d1.state.dive!.deepestFloor).toBe(2);
+    // 帰還（M4）の代わりに、潜行を終えて街にいる状態を作る
+    const town = cloneState(d1.state);
+    town.dive = null;
+    town.screen = "town";
+    const again = run(town, ENTER_D01, DATA0).state;
+    expect(again.dive!.deepestFloor).toBe(1);
+    const f1 = floorOf(again.dive!, data);
+    const a = approaches(f1, (c) => c.kind === "stairsDown")[0]!;
+    const atDown = run(placeAt(again, a.pos, a.facing), MOVE, DATA0);
+    const d2 = run(atDown.state, { type: "event.choose", optionId: "descend" }, DATA0);
+    const n = data.config.san.floorDescend;
+    expect(d2.events.filter((e) => e.kind === "sanChanged")).toEqual(
+      atDown.state.party.map((c) => ({ kind: "sanChanged", id: c.id, delta: -n, san: c.san - n })),
+    );
+    expect(d2.state.dive!.deepestFloor).toBe(2);
   });
 
   test("DG-14 ascend（2 階の上り階段）: floor 1、pos は 1 階の stairsDown、SAN は変わらない。stay: pendingChoice null、events []。昇降の直後・stay の直後に、同じセルで確認は出ない", () => {

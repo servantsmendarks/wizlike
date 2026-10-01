@@ -173,6 +173,7 @@ export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
     dungeonId,
     diveSeed,
     floor: 1,
+    deepestFloor: 1,
     pos: { x: f.stairsUp.x, y: f.stairsUp.y },
     facing,
     explored: {},
@@ -351,7 +352,11 @@ export function chooseOption(ctx: RuleContext, optionId: string): void {
     explore(ctx, dive, floorOf(dive, data));
     ctx.events.push({ kind: "floorChanged", floor: dive.floor, pos: { x: dive.pos.x, y: dive.pos.y }, facing: dive.facing });
     ctx.events.push({ kind: "message", key: "dungeon.descend" });
-    for (const ch of aliveMembers(state)) loseSan(ctx, ch, data.config.san.floorDescend, []);
+    // DG-14 / CH-51: この潜行で初めて到達した階に降りたときだけ減る（上って降り直しても減らない。ユーザー決定）
+    if (dive.floor > dive.deepestFloor) {
+      dive.deepestFloor = dive.floor;
+      for (const ch of aliveMembers(state)) loseSan(ctx, ch, data.config.san.floorDescend, []);
+    }
     return;
   }
   if (optionId === "ascend") {
