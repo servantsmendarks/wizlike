@@ -26,7 +26,7 @@
 ## 4. 結果
 
 - EV-30 衝動の結果は `impulseOutcomes[]` から重み付きで 1 つ引く。各結果は `quality`（`good` / `bad` / `neutral`）と効果の列 `effects[]` を持つ。
-- EV-31 選択型の選択肢は `choices[]`。各選択肢は効果の列を持つ。`requires: "impulse"` の結果は衝動でしか出ない（「良い結果は衝動でしか取れない」分岐。EV-08 の方針）。
+- EV-31 選択型の選択肢は `choices[]`。各選択肢は効果の列を持つ。`requires: "impulse"` の結果は衝動でしか出ない（「良い結果は衝動でしか取れない」分岐。EV-41 の方針）。
 - EV-32 効果の種類 `effects[].type`【仮】: `gold`（`dice`）、`item`（`itemId` または `table`）、`damage`（`dice`、対象 `actor` / `party`）、`san`（`value`、対象 `actor` / `party` / `others`）、`revealFloor`（この階のマップを全て探索済みにする）、`revealStairs`（この階の下り階段だけを探索済みにする）、`consumeItem`（`itemId`、対象 `actor` / `party`。`optional: true` なら持っていなくても続行、無ければ以降の効果は起きない）、`encounter`（`monster`, `count`）、`status`（`status`, 対象）、`message`（`key`）、`nothing`。
 - EV-33 イベントの処理中は `screen: event`。結果の適用後、セルは通常セルになる（DG-22）。
 - EV-34 GM の語りはイベント定義の `text` キーで `strings.json` から引く。`{actor}` `{stopper}` を差し込む。

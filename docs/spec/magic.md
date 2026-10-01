@@ -2,7 +2,7 @@
 
 ## 1. MP
 
-- MG-01 MP 制。各キャラクターは単一の MP プール（`mp` / `mpMax`）を持つ。レベルごとの増分は `classes[].mpPerLevel + max(0, (関連能力値 − 10) / 2)`【仮】。関連能力値は魔術師系なら知恵、僧侶系なら信仰心、両方持つ職業は高い方。
+- MG-01 MP 制。各キャラクターは単一の MP プール（`mp` / `mpMax`）を持つ。レベルごとの増分は `classes[].mpPerLevel + max(0, floor((関連能力値 − config.growth.mpStatPivot) / config.growth.mpStatDivisor))`【仮】（既定 10 と 2）。関連能力値は魔術師系なら知恵、僧侶系なら信仰心、両方持つ職業は高い方、系統を持たない職業は補正 0。開始レベルに関係なく増える。レベル 1 の `mpMax` はこの増分 1 回分。
 - MG-02 MP は宿屋で全回復（TW-04）。迷宮内では回復手段を用意しない【仮】。
 - MG-03 全滅時の復活で MP は回復しない（TW-23）。
 
@@ -16,11 +16,11 @@
 ## 3. 習得判定
 
 - MG-20 判定の契機は「キャラクターがレベル L に初めて到達したとき」（CH-63）。対象は、系統が使えて開始レベル以上、`learnLevel ≤ L`、未習得、`bookOnly` でない呪文すべて。
-- MG-21 呪文ごとに d100 を振る。`roll < 成功率` で習得。
-- MG-22 成功率 = `config.learning.base + config.learning.perLevelDiff × (L − learnLevel) + statMod + classes[].learnMod`。上限 100。`L − learnLevel ≥ config.learning.guaranteeDiff` なら無条件で 100。`statMod = (関連能力値 − config.learning.statPivot) × config.learning.statPerPoint`。既定は base 35、perLevelDiff 20、guaranteeDiff 4、statPivot 10、statPerPoint 3【仮】。
-- MG-23 保証: このレベルアップで新しく判定対象になった呪文レベル帯（`learnLevel` がちょうど L の呪文がある帯）から 1 つも習得しなかったら、その帯から 1 つをランダムに習得する。
+- MG-21 呪文ごとに d100（1〜100）を振る。`roll ≤ 成功率` で習得（成功率が 0 以下なら必ず失敗、100 以上なら必ず成功。どちらの場合もダイスは振る）。判定は `data/spells.json` の並び順で行う。
+- MG-22 成功率 = `config.learning.base + config.learning.perLevelDiff × (L − learnLevel) + statMod + classes[].learnMod`。上限 100。`L − learnLevel ≥ config.learning.guaranteeDiff` なら無条件で 100。`statMod = (関連能力値 − config.learning.statPivot) × config.learning.statPerPoint`。既定は base 35、perLevelDiff 20、guaranteeDiff 4、statPivot 10、statPerPoint 3【仮】。`statMod` の関連能力値は呪文の系統で決める（魔術師系は知恵、僧侶系は信仰心。両系統を持つ職業も呪文ごとに決まる）。下限は設けない。
+- MG-23 保証: このレベルアップで新しく判定対象になった呪文レベル帯（`learnLevel` がちょうど L の呪文がある帯）から 1 つも習得しなかったら、その帯から 1 つをランダムに習得する。保証で選ぶ候補は、その帯で今回判定対象になった呪文（`learnLevel < L` を含む）から等確率で 1 つ。保証による習得ではダイスを表示しない。侍・君主の扱いは decisions.md の衝突を参照。
 - MG-24 判定のダイスは画面に表示する（`dice` イベント、UI-40）。1 呪文につき 1 回。
-- MG-25 `bookOnly: true` の呪文は魔法書アイテム（`items[].effect.type === "learn"`）を使って習得する。魔法書は消費される。職業がその系統を使えない場合は使えない（アイテムは消費されない）。すでに知っている場合も使えない。
+- MG-25 `bookOnly: true` の呪文は魔法書アイテム（`items[].effect.type === "learn"`）を使って習得する。魔法書は消費される。職業がその系統を使えない（`classes[].spells` にその系統が無い。開始レベルは問わない）場合は使えない（アイテムは消費されない）。すでに知っている場合も使えない。
 - MG-26 レベルダウンで呪文を失うことはない（CH-62）。
 
 ## 4. コストと役割
@@ -31,7 +31,7 @@
 
 ## 5. 特定呪文
 
-- MG-40 帰還 `return`（僧侶系 Lv3【仮】、field）: 迷宮からその場で街へ。帰還の糸（DG-12）と同じ効果。潜行台帳の内容は持ち帰る。
+- MG-40 帰還 `return`（僧侶系 Lv3【仮】、field）: 迷宮からその場で街へ。帰還の糸（DG-30）と同じ効果。潜行台帳の内容は持ち帰る。
 - MG-41 識別 `identify`（僧侶系 Lv3【仮】、battle）: 戦闘中の全敵グループを鑑定済みにする（CB-05）。
 - MG-42 蘇生 `resurrect`（僧侶系 Lv5【仮】、field）: 対象 `dead` → `alive`（HP 1）。成功率は寺院と同式（TW-07）。失敗すると `ash`。
 - MG-43 睡眠 `sleep_mist`（魔術師系 Lv1【仮】、battle）: 対象グループに睡眠を付与。付与判定は CB-30。
