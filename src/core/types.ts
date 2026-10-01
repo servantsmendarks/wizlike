@@ -216,6 +216,11 @@ export type MapCell = { x: number; y: number; kind: MapCellKind; n: Edge; e: Edg
 /** DG-13 / UI-24。cells は探索済みセルだけ（添字の昇順） */
 export type MapView = { dungeonId: string; floor: number; width: number; height: number; pos: Pos; facing: Facing; cells: MapCell[] };
 
+// ---- 経路探索（DG-15。rules/pathfind.ts。state には入れない） ----
+export type RouteCommand = Extract<Command, { type: "dungeon.move" } | { type: "dungeon.turn" }>;
+/** 経路の 1 手。pos / facing は、この手を送って受け付けられた後に居るはずの位置と向き */
+export type RouteStep = { command: RouteCommand; pos: Pos; facing: Facing };
+
 // ===================== 戦闘の状態（M3。GameState.battle） =====================
 
 /**
