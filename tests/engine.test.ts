@@ -138,17 +138,13 @@ describe("engine: execute", () => {
     { type: "town.shop", action: { kind: "buy", memberId: "c1", itemId: "herb" } },
     { type: "town.bank", amount: 10 },
     { type: "town.mercy", memberId: "c1" },
-    { type: "dungeon.enter", dungeonId: "d01" },
-    { type: "dungeon.move" },
-    { type: "dungeon.turn", dir: "left" },
     { type: "dungeon.useItem", memberId: "c1", itemId: "i4" },
     { type: "dungeon.cast", memberId: "c4", spellId: "heal" },
     { type: "battle.input", memberId: "c1", action: { type: "defend" } },
     { type: "battle.resolve" },
     { type: "battle.auto", on: true },
-    { type: "event.choose", optionId: "x" },
     { type: "party.reorder", order: ["c1", "c2", "c3", "c4", "c5", "c6"] },
-  ])("D2 M1 で未実装のコマンドは not implemented: $type", (cmd) => {
+  ])("D2 M2 で未実装のコマンドは not implemented: $type", (cmd) => {
     const s = newGame(1);
     const r = execute(s, cmd, data);
     expect(r.state).toBe(s);
