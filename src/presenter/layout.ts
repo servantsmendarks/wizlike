@@ -44,7 +44,7 @@ const DPAD_REL = {
 } as const satisfies Record<string, Rect>;
 export type DpadKey = keyof typeof DPAD_REL;
 
-/** 迷宮のメニュー（UI-53）。M2 は [0] に「地図」だけ。操作領域からの相対 */
+/** 迷宮のメニュー（UI-53）。M4 は [0] 道具・[1] 地図。操作領域からの相対 */
 const MENU_SLOTS_REL: readonly Rect[] = [
   { x: 124, y: 0, w: 56, h: 32 },
   { x: 182, y: 0, w: 56, h: 32 },

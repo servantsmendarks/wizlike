@@ -124,6 +124,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   "rules/combat": ["battleMenu"],
   // M4 SV-50 / UI-52: 続きからの救済の申し出（resume.ts）と街のページ。料金・可否・候補は townMenu の値だけで決める
   "rules/town": ["townMenu"],
+  // M4 UI-53: 迷宮の道具の候補・押せるか・対象の要否は fieldItemMenu の値だけで決める
+  "rules/items": ["fieldItemMenu"],
 };
 
 /** コメントを除いた本文（文字列の中の // や /* は考えない最小限の除去。presenter に該当する文字列は無い） */

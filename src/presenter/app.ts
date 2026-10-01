@@ -10,6 +10,7 @@ import type { GameData } from "../core/data/index";
 import { execute, createInitialState } from "../core/engine";
 import { battleMenu } from "../core/rules/combat";
 import { mapView, visibleCells } from "../core/rules/dungeon";
+import { fieldItemMenu } from "../core/rules/items";
 import { townMenu } from "../core/rules/town";
 import { dungeonOf, itemDisplayName } from "../core/state";
 import type { BattleMenu, Command, GameState, PenaltyResult, Screen, ViewPoint } from "../core/types";
@@ -54,10 +55,11 @@ import { formatMessage } from "./views/message";
 import { createSaveBanner } from "./views/save-banner";
 import { createTitleScreen, titleEntries, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
 import { formatWipeSummary } from "./views/wipe";
+import { itemEntries, itemHeader, itemKeyIndex, itemStep, type ItemChoice, type ItemCursor } from "./views/field-items";
 import { townEntries, townHeader, townPageIntro, townParent, type TownEntry, type TownPage } from "./views/town";
 
 export type Route = "title" | "creation" | "town" | "dungeon" | "battle";
-export type Overlay = null | "map" | "debug" | "detail" | "wipe";
+export type Overlay = null | "map" | "debug" | "detail" | "items" | "wipe";
 
 export type App = {
   onLayout(layout: StageLayout, input: StageLayoutInput): void;
@@ -104,6 +106,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   let chaining = false;
   /** debug パネルの下に残している overlay（全滅の内訳だけ。閉じたら戻す） */
   let underDebug: Overlay = null;
+  /** UI-53: 迷宮の道具の段（overlay が items の間だけ使う） */
+  let itemCursor: ItemCursor = { stage: "member" };
 
   const scale = (): number => layout?.scale ?? 1;
 
@@ -349,15 +353,55 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       c.setMode("close");
       return;
     }
+    if (overlay === "items") {
+      syncItemControls();
+      return;
+    }
     const pc = state.pendingChoice;
     if (pc !== null) {
       c.setList(pc.options.map((op) => listItem(t(op.labelKey), () => void run({ type: "event.choose", optionId: op.id }))));
       c.setMode("list");
       return;
     }
-    c.setMenu([listItem(t("dungeon.menu.map"), () => openMap())]);
+    // UI-53: [道具][地図]（呪文・並びは dungeon.cast / party.reorder と同時に足す）
+    c.setMenu([listItem(t("dungeon.menu.items"), () => openItems()), listItem(t("dungeon.menu.map"), () => openMap())]);
     c.setDpadVisible(s.inputMode !== "swipe");
     c.setMode("dpad");
+  };
+
+  /** UI-53: 道具の段の見出しと一覧（候補・押せるかは fieldItemMenu の値だけ） */
+  const syncItemControls = (): void => {
+    const c = play.controls;
+    const menu = fieldItemMenu(state, data);
+    if (menu === null) {
+      closeItems();
+      return;
+    }
+    play.header.setText(itemHeader(menu, itemCursor, strings));
+    c.setList(
+      itemEntries(menu, itemCursor, strings).map(
+        (e): ControlItem => ({ label: e.label, disabled: e.disabled, onSelect: () => guard(() => chooseItem(e.choice)) }),
+      ),
+    );
+    c.setMode("list");
+  };
+
+  /** UI-53: 道具の段で 1 つ選ぶ。送るときは overlay を閉じてから dungeon.useItem を送る（使えるかは core が決める） */
+  const chooseItem = (choice: ItemChoice): void => {
+    if (overlay !== "items") return;
+    const menu = fieldItemMenu(state, data);
+    if (menu === null) {
+      closeItems();
+      return;
+    }
+    const r = itemStep(menu, itemCursor, choice);
+    if (r.kind === "cursor") {
+      itemCursor = r.cursor;
+      syncControls();
+      return;
+    }
+    closeItems();
+    if (r.kind === "send") void run(r.command);
   };
 
   /**
@@ -692,6 +736,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     play.showDetail(false);
     play.showWipe(false);
     underDebug = null;
+    itemCursor = { stage: "member" };
     townPage = "menu";
     cursor = null;
     advanceFrom = null;
@@ -715,6 +760,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
 
   const openDebug = (): void => {
     if (overlay === "debug") return;
+    if (overlay === "items") closeItems();
     if (overlay === "map") closeMap();
     if (overlay === "detail") closeDetail();
     // 全滅の内訳は閉じずに debug パネルの下に残す（閉じたら戻す）
@@ -741,6 +787,26 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     overlay = "map";
     play.map.render(v, formatMessage(t("map.title"), { dungeon: dungeonName(state), floor: v.floor }));
     play.showMap(true);
+    syncControls();
+  };
+
+  /** UI-53: 迷宮の道具を開く（迷宮で、他の overlay も保留中の選択も無いとき） */
+  const openItems = (): void => {
+    if (route !== "dungeon" || overlay !== null || state.pendingChoice !== null) return;
+    if (fieldItemMenu(state, data) === null) return;
+    repeater.release();
+    overlay = "items";
+    itemCursor = { stage: "member" };
+    syncControls();
+  };
+
+  /** 道具を閉じ、ヘッダーを迷宮の表示に戻す */
+  const closeItems = (): void => {
+    if (overlay !== "items") return;
+    overlay = null;
+    itemCursor = { stage: "member" };
+    const d = state.dive;
+    if (d !== null) showHeaderAt(state, { floor: d.floor, pos: d.pos, facing: d.facing });
     syncControls();
   };
 
@@ -830,6 +896,14 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     }
     if (overlay === "wipe") {
       if (a === "back" || a === "confirm" || (typeof a === "object" && a.menu === 0)) closeWipe();
+      return;
+    }
+    if (overlay === "items") {
+      // UI-33: 数字 n → n 番目、Enter → 先頭の押せる行、Esc → 戻る
+      const menu = fieldItemMenu(state, data);
+      if (menu === null) return;
+      const k = itemKeyIndex(a, itemEntries(menu, itemCursor, strings));
+      if (k !== null) play.controls.select(k);
       return;
     }
     switch (route) {

@@ -89,6 +89,11 @@
   "dungeon.choice.stay": "やめる",
   "dungeon.dead": "{name}は倒れた。",
   "dungeon.menu.map": "地図",
+  "dungeon.menu.items": "道具",
+  "dungeon.items.who": "誰が使う？",
+  "dungeon.items.which": "{name}の道具",
+  "dungeon.items.target": "誰に使う？",
+  "dungeon.items.allyRow": "{name}　{hp}/{hpMax}",
 
   "header.dungeon": "{dungeon} {floor}F {dir}",
   "dir.N": "北",
