@@ -3,14 +3,14 @@
     "id": "giant_rat", "name": "大ネズミ", "unidentifiedName": "小さな獣",
     "sprite": "giant_rat", "level": 1, "hp": "1d6", "ac": 9, "agi": 9,
     "attacks": [ { "dice": "1d3" } ],
-    "exp": 12, "gold": "1d4", "groupSize": "2d3",
+    "exp": 12, "gold": "1d4", "groupSize": "1d3+1",
     "special": {}, "resist": {}, "tags": ["beast"],
     "description": "群れで来る。数が多いが脆い。"
   },
   {
     "id": "kobold", "name": "コボルド", "unidentifiedName": "小柄な人影",
     "sprite": "kobold", "level": 1, "hp": "1d8", "ac": 8, "agi": 8,
-    "attacks": [ { "dice": "1d6" } ],
+    "attacks": [ { "dice": "1d4" } ],
     "exp": 20, "gold": "2d6", "groupSize": "1d4",
     "special": {}, "resist": {}, "tags": ["humanoid"],
     "description": "武器を持つ小鬼。金を持っている。"

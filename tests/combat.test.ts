@@ -394,7 +394,7 @@ describe("前衛と後衛・敵の対象（CB-13/14/15/16）", () => {
       rolls(m, 5); // 味方 4 人（c1,c4,c5,c6）+ コボルド 1 体
       randInt(m, 0, 0); // 対象（候補は c1 だけ）
       chance(m, 100);
-      const dmg = Math.max(1, rollDice(m, "1d6").total);
+      const dmg = Math.max(1, rollDice(m, "1d4").total); // コボルドの攻撃 1d4【仮】
       const r = exec(s, RESOLVE, d);
       expect(r.state.rng).toEqual(m);
       expect(eventsOf(r.events, "attack")).toEqual([{ kind: "attack", actorId: "e0-0", targetId: "c1", hit: true, damage: Math.ceil(dmg / 2) }]);
