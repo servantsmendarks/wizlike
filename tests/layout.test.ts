@@ -11,6 +11,11 @@ import {
   regions,
   SAVE_BANNER,
   TITLE_BUTTONS,
+  TITLE_HEADING_Y,
+  TITLE_NOTICE,
+  TITLE_ROW_AREA,
+  TITLE_ROW_PITCH,
+  TITLE_ROWS,
   TOUCH_EXCEPTIONS,
   TOUCH_MIN_LOGICAL,
   type Rect,
@@ -26,7 +31,11 @@ const HEADER_SETTINGS = L.header.settings;
 
 /** 画面ごとの押せる矩形（名前 → 矩形） */
 const SCREENS: Record<string, Record<string, Rect>> = {
-  title: { "TITLE_BUTTONS.newGame": TITLE_BUTTONS.newGame, "TITLE_BUTTONS.settings": TITLE_BUTTONS.settings },
+  // UI-50: 一覧の行 5 つとボタンの 4 枠（ページによって使う枠は違うが、同時に置いても重ならない）
+  title: {
+    ...Object.fromEntries(TITLE_ROWS.map((r, i) => [`TITLE_ROWS[${i}]`, r])),
+    ...Object.fromEntries(TITLE_BUTTONS.map((r, i) => [`TITLE_BUTTONS[${i}]`, r])),
+  },
   creation: {
     ...Object.fromEntries(
       [0, 1, 2, 3, 4, 5].flatMap((i) => [
@@ -235,6 +244,28 @@ describe("layout", () => {
     expect(dungeonLayout(g, N).partyRows[0]).toEqual({ x: 0, y: g.party.y, w: W, h: 10 });
     const g2 = regions({ header: 16, view: 150, message: 13, party: 64, controls: 157 }, W);
     expect(layoutWarnings(g2, dungeonLayout(g2, N))).toEqual(["ui.layout: message region (height 13) has no text line"]);
+  });
+
+  test("UI-50 タイトル: 題字 y24、行 i は y52+34i の 224×32、行の欄は 5 行ちょうど、案内の欄・ボタン 4 枠は行と重ならない", () => {
+    expect(TITLE_HEADING_Y).toBe(24);
+    expect(TITLE_ROWS).toEqual([0, 1, 2, 3, 4].map((i) => ({ x: 8, y: 52 + 34 * i, w: 224, h: 32 })));
+    expect(TITLE_ROW_PITCH).toBe(34);
+    expect(TITLE_ROW_AREA).toEqual({ x: 8, y: 52, w: 224, h: 168 });
+    for (const r of TITLE_ROWS) expect(inside(r, TITLE_ROW_AREA)).toBe(true);
+    expect(TITLE_NOTICE).toEqual({ x: 8, y: 226, w: 224, h: 22 });
+    expect(TITLE_BUTTONS).toEqual([
+      { x: 8, y: 256, w: 108, h: 32 },
+      { x: 124, y: 256, w: 108, h: 32 },
+      { x: 8, y: 296, w: 108, h: 32 },
+      { x: 124, y: 296, w: 108, h: 32 },
+    ]);
+    // 題字（1 行 8px）は行の欄より上
+    expect(TITLE_HEADING_Y + 8).toBeLessThanOrEqual(TITLE_ROW_AREA.y);
+    expect(inside(TITLE_NOTICE, STAGE)).toBe(true);
+    for (const r of [TITLE_ROW_AREA, ...TITLE_BUTTONS]) expect(overlaps(TITLE_NOTICE, r)).toBe(false);
+    for (const b of TITLE_BUTTONS) expect(overlaps(b, TITLE_ROW_AREA)).toBe(false);
+    // SV-23 の帯（y16..27）は題字と重なる位置でも押せないので操作を妨げないが、行とボタンには重ならない
+    for (const r of [TITLE_ROW_AREA, ...TITLE_BUTTONS]) expect(overlaps(SAVE_BANNER, r)).toBe(false);
   });
 
   test("SV-23 保存できない帯はヘッダー（y0..15）の直下 y16..27 で、ヘッダーの設定ボタンと重ならず、ステージの内側", () => {

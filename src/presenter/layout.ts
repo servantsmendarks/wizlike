@@ -206,11 +206,30 @@ export function layoutWarnings(g: Regions, l: DungeonLayout): string[] {
  */
 export const SAVE_BANNER: Rect = { x: 0, y: 16, w: 240, h: 12 };
 
-/** タイトル（UI-50 の M2 版） */
-export const TITLE_BUTTONS = {
-  newGame: { x: 60, y: 240, w: 120, h: 32 },
-  settings: { x: 60, y: 280, w: 120, h: 32 },
-} as const satisfies Record<string, Rect>;
+// ---- タイトル（UI-50）。題字 → 一覧の行（最大 5 行が見え、それより多ければ縦スクロール）→ 案内の欄 → ボタン 4 枠
+
+/** 題字の上端（論理 px）。中央寄せ */
+export const TITLE_HEADING_Y = 24;
+
+/** 一覧の行の間隔（行の高さ 32 ＋ 間 2） */
+export const TITLE_ROW_PITCH = 34;
+
+/** 一覧の行 i（0..4）。y = 52 + 34i */
+export const TITLE_ROWS: readonly Rect[] = [0, 1, 2, 3, 4].map((i): Rect => ({ x: 8, y: 52 + TITLE_ROW_PITCH * i, w: 224, h: 32 }));
+
+/** 一覧の行を並べるスクロールの欄（TITLE_ROWS の 5 行がちょうど入る） */
+export const TITLE_ROW_AREA: Rect = { x: 8, y: 52, w: 224, h: TITLE_ROW_PITCH * 4 + 32 };
+
+/** 案内の欄（押せない）。一覧が空・行の要約・削除の確認・上限や読み込み失敗の知らせ */
+export const TITLE_NOTICE: Rect = { x: 8, y: 226, w: 224, h: 22 };
+
+/** ボタンの 4 枠（a 左上・b 右上・c 左下・d 右下）。一覧の行以外の項目をこの順に置く */
+export const TITLE_BUTTONS: readonly Rect[] = [
+  { x: 8, y: 256, w: 108, h: 32 },
+  { x: 124, y: 256, w: 108, h: 32 },
+  { x: 8, y: 296, w: 108, h: 32 },
+  { x: 124, y: 296, w: 108, h: 32 },
+];
 
 /** 簡易作成（UI-51）の行 i（0..5）。番号のラベル、名前の入力欄、性格のボタン */
 export function creationRow(i: number): { name: Rect; personality: Rect; label: Rect } {

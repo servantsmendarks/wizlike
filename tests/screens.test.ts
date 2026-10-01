@@ -134,6 +134,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   state: ["dungeonOf", "itemDisplayName"],
   // M3: 戦闘の入力の段階・オートの連鎖は battleMenu の値だけで決める（行動できるか・使えるか・揃ったかを core が返す）
   "rules/combat": ["battleMenu"],
+  // M4 SV-50: 続きからの救済の申し出（resume.ts の resumePlan）。料金・候補も townMenu の値だけで決める
+  "rules/town": ["townMenu"],
 };
 
 /** コメントを除いた本文（文字列の中の // や /* は考えない最小限の除去。presenter に該当する文字列は無い） */

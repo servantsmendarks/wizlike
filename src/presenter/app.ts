@@ -3,6 +3,7 @@
 // - 再生中（busy）の入力はすべて捨てる。メッセージ窓のタップだけは受け、1 回目で今の文、2 回目で残りを即表示する（UI-44 / UI-43）。
 // - 状態を変えるコマンドの後、再生を始める前にオートセーブを await する（§3-8。SV-02: 再生中にリロードされても結果は確定している）。
 //   保存の失敗は SV-23 の帯とメッセージ窓で知らせ、state は巻き戻さない。
+// - タイトル（UI-50）は保存先の一覧を読み、続きから（SV-50）は読み込んだ state を resume で直接描く。
 // - 画面の切り替えは各画面のルート要素の表示と非表示だけで行う。迷宮の DOM は 1 回だけ作る。
 // モジュールのトップレベルでは DOM に触れない。
 import type { GameData } from "../core/data/index";
@@ -11,7 +12,7 @@ import { battleMenu } from "../core/rules/combat";
 import { mapView, visibleCells } from "../core/rules/dungeon";
 import { dungeonOf, itemDisplayName } from "../core/state";
 import type { BattleMenu, Command, GameState, Screen, ViewPoint } from "../core/types";
-import type { SaveService } from "../save/types";
+import type { GameListEntry, SaveService } from "../save/types";
 import { runChain, type ChainDeps } from "./auto-chain";
 import { createAutosaver, createCommandExec, createSaveBannerState, type CommandResult, type SaveStatus } from "./autosave";
 import {
@@ -37,6 +38,7 @@ import {
 } from "./input/swipe";
 import { dungeonLayout, layoutWarnings, regions, SAVE_BANNER } from "./layout";
 import { createPlayer } from "./playback";
+import { resumePlan } from "./resume";
 import { createRunGate } from "./run-gate";
 import { defaultSettings, type SettingsStore } from "./settings";
 import type { StageLayout, StageLayoutInput } from "./stage";
@@ -49,7 +51,7 @@ import { slotsFor } from "./views/dungeon-geometry";
 import { headerText } from "./views/header";
 import { formatMessage } from "./views/message";
 import { createSaveBanner } from "./views/save-banner";
-import { createTitleScreen } from "./views/title";
+import { createTitleScreen, titleEntries, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
 import { townEntries, townEntryLabel, type TownEntry, type TownPage } from "./views/town";
 
 export type Route = "title" | "creation" | "town" | "dungeon" | "battle";
@@ -102,11 +104,17 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   const scale = (): number => layout?.scale ?? 1;
 
   // ---------------------------------------------------------------- 画面
-  const title = createTitleScreen({
-    strings,
-    onNewGame: () => guard(() => goCreation()),
-    onSettings: () => guard(() => openDebug()),
-  });
+  const title = createTitleScreen({ strings, onSelect: (i) => guard(() => selectTitle(i)) });
+  /** UI-50: タイトルのページ */
+  let titlePage: TitlePage = { kind: "list" };
+  /** 保存先の一覧。読み終えるまで null（行を出さない） */
+  let titleList: GameListEntry[] | null = null;
+  /** 案内の欄の上書き（上限・読み込みの失敗・削除の結果）。null ならページの既定の文 */
+  let titleMessage: string | null = null;
+  /** 保存先の読み書きを待っている間（二重の操作を捨てる） */
+  let titleBusy = false;
+  /** 古い一覧の読み込みの結果を捨てるための番号 */
+  let titleSeq = 0;
 
   const creation = createCreationScreen({
     data,
@@ -378,6 +386,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
 
   const showRoute = (r: Route): void => {
     route = r;
+    if (r === "title") enterTitle();
     title.el.style.display = r === "title" ? "" : "none";
     creation.el.style.display = r === "creation" ? "" : "none";
     play.el.style.display = r === "town" || r === "dungeon" || r === "battle" ? "" : "none";
@@ -515,6 +524,123 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     fn();
   };
 
+  // ---------------------------------------------------------------- タイトル（UI-50）と続きから（SV-50）
+  const renderTitle = (): void => {
+    const size = data.config.party.size;
+    if (titleList === null) {
+      title.render([], titleMessage ?? "");
+      return;
+    }
+    title.render(titleItems(titlePage, titleList, size, strings), titleMessage ?? titleNotice(titlePage, titleList, size, strings));
+  };
+
+  /** 保存先の一覧を読み直して描く（SV-12）。読めなければ空の一覧 */
+  const refreshTitle = async (): Promise<void> => {
+    const seq = ++titleSeq;
+    const r = await o.saves.list();
+    if (seq !== titleSeq) return;
+    titleList = r.ok ? r.entries : [];
+    renderTitle();
+  };
+
+  /** タイトルに入るたびに一覧のページへ戻し、一覧を読み直す */
+  const enterTitle = (): void => {
+    titlePage = { kind: "list" };
+    titleMessage = null;
+    titleList = null;
+    renderTitle();
+    void refreshTitle();
+  };
+
+  /** 保存先を待つ操作。待っている間の操作は捨てる */
+  const titleTask = (job: () => Promise<void>): void => {
+    if (titleBusy) return;
+    titleBusy = true;
+    void job()
+      .catch((e: unknown) => console.error(e))
+      .finally(() => {
+        titleBusy = false;
+      });
+  };
+
+  /** タイトルの i 番目の項目を選ぶ（何が起きるかは titleStep が決める） */
+  const selectTitle = (i: number): void => {
+    if (route !== "title" || titleBusy || titleList === null) return;
+    const e = titleEntries(titlePage, titleList)[i];
+    if (e === undefined) return;
+    const st = titleStep(titlePage, e);
+    switch (st.kind) {
+      case "none":
+        return;
+      case "page":
+        titlePage = st.page;
+        titleMessage = null;
+        renderTitle();
+        return;
+      case "settings":
+        openDebug();
+        return;
+      case "newGame":
+        // SV-11: 上限は押した時点の件数（読めない記録も数える）。保存先を使えないときは作成を許す
+        titleTask(async () => {
+          const c = await o.saves.canCreate();
+          if (route !== "title") return;
+          if (c === "full") {
+            titleMessage = t("title.maxGames");
+            renderTitle();
+          } else goCreation();
+        });
+        return;
+      case "continue":
+        titleTask(async () => {
+          const r = await o.saves.load(st.gameId);
+          if (route !== "title") return;
+          if (!r.ok) {
+            titleMessage = t(r.reason === "tooNew" ? "title.loadTooNew" : "title.loadBroken");
+            renderTitle();
+            return;
+          }
+          resume(r.state);
+        });
+        return;
+      case "remove":
+        // SV-14: 確認 2 段階の後だけ消す
+        titleTask(async () => {
+          const ok = await o.saves.remove(st.gameId);
+          titlePage = { kind: "list" };
+          await refreshTitle();
+          titleMessage = t(ok ? "title.deleted" : "title.deleteFailed");
+          renderTitle();
+        });
+        return;
+    }
+  };
+
+  /**
+   * SV-50: 読み込んだ state から再開する。表示層だけの状態（overlay、街のページ、メッセージ履歴、入力の段階）は作り直し、
+   * 保存した screen へ直接描く。保留中の選択の問いと救済の申し出は再生の外で出し直し、戦闘はオート中・ready なら連鎖を再開する
+   */
+  const resume = (st: GameState): void => {
+    const plan = resumePlan(st, data);
+    state = st;
+    overlay = null;
+    play.showMap(false);
+    play.showDetail(false);
+    townPage = "menu";
+    cursor = null;
+    advanceFrom = null;
+    stopRequested = false;
+    chaining = false;
+    play.message.clear();
+    play.battle.clear();
+    play.dice.hide();
+    showRoute(plan.route);
+    sync(state);
+    const instant = true;
+    for (const k of plan.prompts) void play.message.say(t(k), instant);
+    if (plan.route === "battle") kickBattle();
+  };
+
   // ---------------------------------------------------------------- overlay
   const goCreation = (): void => {
     creation.reset();
@@ -611,10 +737,12 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       return;
     }
     switch (route) {
-      case "title":
-        if (a === "confirm" || (typeof a === "object" && a.menu === 0)) goCreation();
-        else if (typeof a === "object" && a.menu === 1) openDebug();
+      case "title": {
+        if (titleList === null) return;
+        const k = titleKeyIndex(a, titleEntries(titlePage, titleList));
+        if (k !== null) selectTitle(k);
         return;
+      }
       case "creation":
         if (a === "back") showRoute("title");
         return;
