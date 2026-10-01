@@ -9,7 +9,7 @@ export const INPUT_MODES: readonly InputMode[] = ["swipe", "buttons", "both"];
 export type Settings = {
   /**
    * UI-41: 省くのは文字送り・ダイスの動き・点滅・被弾のフラッシュ・揺れ・撃破のフェード・ビューのフェードだけ。
-   * 戦闘の拍の待ち（UI-45）とタップ待ちは省かない（decisions の「衝突(M4.5)」）
+   * 戦闘の拍の待ち（UI-45）とタップ待ちは省かない（CLAUDE.md §3-9）
    */
   skipAnimations: boolean;
   /** UI-43: 1 文字あたりの ms。0 で即時 */

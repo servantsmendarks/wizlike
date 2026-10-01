@@ -3,7 +3,7 @@
 // - 再生中の視点（cursor）は再生前の state.dive から作り、moved / turned / floorChanged の値で進める。
 //   ビューは visibleCells(finalState, data, cursor) を描く（具体的なビューは結線側が PlayerDeps に注入する）。
 // - settings().skipAnimations が真なら、フェード・フラッシュ・揺れ・ダイスの動きは 0ms、文字送りは即時で解決する（UI-41）。
-//   ただし戦闘の拍の待ち（UI-45）は省かない（CLAUDE.md §3-9 との衝突は decisions の「衝突(M4.5)」）。
+//   ただし戦闘の拍の待ち（UI-45）は省かない（CLAUDE.md §3-9）。
 // - 拍（UI-45 / CB-55）: beat を受けたら、直前の拍の後に message か dice が出ていれば待ってから次の拍に入る。
 //   手動（beat.auto 偽）はタップ待ち（beat.waitTap、続きの三角を点滅）、オートは message.waitMs(settings().autoBeatMs)。
 //   戦闘の外への screen と全滅の wipe の前でも同じ待ちをする。再生の終わりは、オートなら待ち、手動ならダイスが出ているときだけ待つ（beatWait）。
