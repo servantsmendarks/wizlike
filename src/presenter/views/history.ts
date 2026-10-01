@@ -11,7 +11,7 @@ const PAD = 4;
 
 export type HistoryView = {
   el: HTMLElement;
-  /** 全文（古い順）と題を描き、末尾を見せる */
+  /** 全文（古い順）と題を描き、末尾を見せる。el を表示してから呼ぶ（display:none の間は scrollTop が効かない） */
   render(lines: readonly string[], title: string): void;
   /** 一覧を lines 行ぶん動かす（負で上へ） */
   scrollBy(lines: number): void;

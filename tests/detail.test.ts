@@ -127,16 +127,21 @@ describe("UI-59 詳細の配置", () => {
     expect(el.style["top"]).toBe("16px");
     const px = (v: string | undefined): number => Number((v ?? "").replace("px", ""));
     expect(el.children.length).toBeGreaterThan(0);
+    expect(el.style["border"]).toBe("1px solid var(--c-frame)");
+    // 子の absolute は枠 1px の内側が原点（#stage * は border-box）。外形の座標に直して確かめる
     let bottom = 0;
     for (const c of el.children) {
-      const x = px(c.style["left"]);
-      const y = px(c.style["top"]);
+      const x = px(c.style["left"]) + 1;
+      const y = px(c.style["top"]) + 1;
       const w = px(c.style["width"]);
       const h = px(c.style["height"]);
       expect(x >= 0 && y >= 0 && x + w <= rect.w && y + h <= rect.h, `${c.className} ${c.textContent}`).toBe(true);
       bottom = Math.max(bottom, y + h);
     }
     expect(bottom).toBe(144);
+    // 名前の行は外形の (4, 4)
+    const nameEl = el.children.find((c) => c.className === "detail-name")!;
+    expect([px(nameEl.style["left"]) + 1, px(nameEl.style["top"]) + 1]).toEqual([4, 4]);
     expect(new Set(el.children.map((c) => c.style["top"])).size).toBe(14);
     // focusSlot（SLOT_ORDER の添字）の行だけ accent 色
     v.render(formatDetail(s.party[0]!, data, S, nameOf(s)), 2);

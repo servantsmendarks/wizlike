@@ -64,7 +64,8 @@ body {
 }
 
 /* UI-37 / UI-11: 縦スクロールの容器（操作領域の一覧・履歴の画面・全滅の内訳・タイトルの一覧）は pan-y。
-   上の 2 つの規則より詳細度を上げる */
+   #stage * より詳細度が高い。swipe-on の規則とは同じ詳細度 (1,2,0) で、後に書いた方が勝つので、
+   この規則は必ず swipe-on の規則の後に置く */
 #stage .screen .controls-list,
 #stage .screen .controls-list *,
 #stage .screen .history-list,

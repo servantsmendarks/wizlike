@@ -150,8 +150,14 @@ type Ev = {
   isPrimary?: boolean;
 };
 
-/** UI-36: stage で Pointer Events・click（キーボード由来だけ）・touchend を受ける。戻り値で外す */
-export function attachStageInput(stage: HTMLElement, o: StageInputOptions): () => void {
+/** attachStageInput の戻り値。呼ぶと外す。reset は追っている押下を「離した」として片付ける（タップにはしない） */
+export type StageInput = (() => void) & { reset(): void };
+
+/**
+ * UI-36: stage で Pointer Events・click（キーボード由来だけ）・touchend を受ける。戻り値で外す。
+ * 戻り値の reset() は、ページが隠れた・窓のフォーカスが外れたときに呼ぶ（pointerup / pointercancel が届かないことがある）
+ */
+export function attachStageInput(stage: HTMLElement, o: StageInputOptions): StageInput {
   let p: PressState = null;
   let spec: TapSpec | null = null;
   let holdTimer: ReturnType<typeof setTimeout> | null = null;
@@ -190,8 +196,29 @@ export function attachStageInput(stage: HTMLElement, o: StageInputOptions): () =
     s.onTap({ lx: (pressed.sx - r.left) / sc, ly: (pressed.sy - r.top) / sc });
   };
 
+  /**
+   * 追っている押下を「離した」として片付ける（長押しのタイマーも消す）。長押し中なら onHoldEnd、スワイプ中なら onSwipeRelease。
+   * タップにはしない
+   */
+  const reset = (): void => {
+    if (p === null) {
+      clearHold();
+      return;
+    }
+    const s = spec;
+    const r = pressUp(p, p.id);
+    end();
+    if (r.holdEnd) s?.hold?.onHoldEnd();
+    if (r.swipeEnd) o.onSwipeRelease();
+  };
+
   const down = (e: Ev): void => {
-    if (p !== null) return; // 2 本目以降の指
+    if (p !== null) {
+      // 2 本目以降の指（isPrimary が偽）は追わない。isPrimary が真の押下が来たら、ほかに触れている指は無いので、
+      // 前の押下は pointerup / pointercancel が届かなかった古いものとみなして片付け、新しい押下を受ける
+      if (e.isPrimary !== true) return;
+      reset();
+    }
     if (e.isPrimary === false) return;
     if (e.pointerType === "mouse" && e.button !== undefined && e.button !== 0) return;
     if (isTextInput(e.target)) return;
@@ -290,7 +317,7 @@ export function attachStageInput(stage: HTMLElement, o: StageInputOptions): () =
   stage.addEventListener("lostpointercapture", on(cancel));
   stage.addEventListener("click", on(click));
   stage.addEventListener("touchend", on(touchend), passiveFalse);
-  return () => {
+  const detach = (): void => {
     end();
     stage.removeEventListener("pointerdown", on(down));
     stage.removeEventListener("pointermove", on(move));
@@ -300,4 +327,5 @@ export function attachStageInput(stage: HTMLElement, o: StageInputOptions): () =
     stage.removeEventListener("click", on(click));
     stage.removeEventListener("touchend", on(touchend), passiveFalse);
   };
+  return Object.assign(detach, { reset });
 }

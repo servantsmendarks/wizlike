@@ -6,11 +6,12 @@
 //   ただし戦闘の拍の待ち（UI-45）は省かない（CLAUDE.md §3-9 との衝突は decisions の「衝突(M4.5)」）。
 // - 拍（UI-45 / CB-55）: beat を受けたら、直前の拍の後に message か dice が出ていれば待ってから次の拍に入る。
 //   手動（beat.auto 偽）はタップ待ち（beat.waitTap、続きの三角を点滅）、オートは message.waitMs(settings().autoBeatMs)。
-//   戦闘の外への screen の前でも同じ待ちをする。再生の終わりは、オートなら待ち、手動ならダイスが出ているときだけ待つ（beatWait）。
+//   戦闘の外への screen と全滅の wipe の前でも同じ待ちをする。再生の終わりは、オートなら待ち、手動ならダイスが出ているときだけ待つ（beatWait）。
 //   手動かオートかは beat.auto だけで決める（state から推測しない）。拍の外（迷宮・街）は待たない。
 // - tap(): タップ待ちなら解く。拍の中なら今の拍の残りを即時にする（拍は飛ばさない）。拍の外なら UI-43
 //   （1 回目は今の文の即表示、同じ再生の中の 2 回目で残りをすべて即時）。
-// - 全滅（UI-56）: wipe で内訳の overlay を開き、入力を待たずに続ける。
+// - 全滅（UI-56）: 拍の中の wipe は、開く前に最後の拍を読ませ（上の待ち）、拍の外に出てから内訳の overlay を開く。
+//   開いた後は入力を待たずに続ける（後続の screen town でも待たない）。
 // - レベルの変化（levelUp / levelDown）はパーティ欄の最大値と現在値を描き直す。spellLearned は何もしない（message が語る）。
 // - 戦闘（UI-41 / UI-42 / UI-40）: 被弾のフラッシュは hpChanged（delta < 0）に一本化する（味方はパーティ行、敵はグループの絵）。
 //   敵の id は "e{g}-{u}"（enemyGroupOfId）。敵の HP・状態は見せない（状態は core の message で伝わる）。
@@ -300,7 +301,8 @@ export function createPlayer(deps: PlayerDeps): Player {
       cx.skip = isSkip();
     },
     async wipe(ev, cx) {
-      // UI-56: 内訳の overlay を開き、待たずに先へ（後続の街に入る処理は overlay の下で再生する）
+      // UI-56: 内訳の overlay を開き、待たずに先へ（後続の街に入る処理は overlay の下で再生する）。
+      // 拍の中で受けたときの待ちと拍の外への切り替えは play のループ（screen の leave と同じ所）でする
       cx.skip = isSkip();
       deps.wipe.show(ev.penalty);
     },
@@ -353,8 +355,9 @@ export function createPlayer(deps: PlayerDeps): Player {
             beatRush = false;
             continue;
           }
-          if (ev.kind === "screen" && ev.to !== "battle" && mode !== null) {
-            // 戦闘の外へ出る（勝ち・逃走は dungeon、全滅は town）前に、最後の拍を読ませる
+          if (((ev.kind === "screen" && ev.to !== "battle") || ev.kind === "wipe") && mode !== null) {
+            // 戦闘の外へ出る（勝ち・逃走は dungeon、全滅は town）前に、最後の拍を読ませる。
+            // UI-56: 全滅は内訳（wipe）を開く前に待ち（窓とダイスが内訳に覆われる前）、開いた後は拍の外なので待たない
             await waitBeat("leave");
             hideDice();
             leaveBeats();

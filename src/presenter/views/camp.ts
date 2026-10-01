@@ -397,7 +397,7 @@ export function campRepair(host: CampHost, page: CampPage, m: CampInput): CampPa
   }
 }
 
-/** 全項目（grid は空き枠を除く）。キーとテストで使う */
+/** 全項目（grid は空き枠を null のまま含む。添字は枠の位置）。キーとテストで使う */
 export function campRows(e: CampEntries): (CampEntry | null)[] {
   return e.layout === "grid" ? e.slots : e.rows;
 }

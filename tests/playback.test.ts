@@ -5,6 +5,8 @@ import { formatMessage } from "../src/presenter/views/message";
 import type { Settings } from "../src/presenter/settings";
 import type { Dive, EnemyGroupView, GameEvent, GameState, PenaltyResult, ViewPoint } from "../src/core/types";
 import { data, expectKnownStringKeys, newGame } from "./helpers/core";
+import { execute } from "../src/core/engine";
+import { ALWAYS_HIT, dataWith, dived, withBattle } from "./helpers/battle";
 
 function diveAt(x: number, y: number, facing: Dive["facing"], floor = 1): Dive {
   return {
@@ -270,7 +272,7 @@ describe("UI-41 playback", () => {
     }
   });
 
-  test("UI-41/UI-56 wipe は wipe.show を 1 回（PenaltyResult をそのまま）呼び、入力を待たずに後続を再生する（skip の真偽とも）", async () => {
+  test("UI-41/UI-56 wipe は wipe.show を 1 回（PenaltyResult をそのまま）呼び、入力を待たずに後続を再生する（beat の無い列。skip の真偽とも）", async () => {
     const penalty: PenaltyResult = {
       dice: [3, 4],
       total: 7,
@@ -313,6 +315,29 @@ describe("UI-41 playback", () => {
         "screens.sync",
       ]);
       vi.useRealTimers();
+    }
+  });
+
+  test("UI-45/UI-56 戦闘の全滅（core の実際の列。system の拍を含む）: 内訳を開く前に 1 回だけ待ち（手動・オートとも system の拍は auto 偽でタップ待ち）、開いた後は街の画面まで待たない", async () => {
+    // wipe.test の CB-53 と同じ全滅: c1 だけ動けて hp 1、ほかは麻痺。敵は必ず当てる
+    const PARA = { status: ["paralysis" as const] };
+    const s0 = structuredClone(dived(1));
+    for (const c of s0.party) Object.assign(c, c.id === "c1" ? { hp: 1 } : PARA);
+    const d = dataWith({ combat: ALWAYS_HIT });
+    for (const auto of [false, true]) {
+      const s = withBattle(s0, [{ monsterId: "kobold", hps: [50] }], { identified: ["kobold"], inputs: { c1: { type: "defend" } }, auto });
+      const r = execute(s, { type: "battle.resolve" }, d);
+      expect(r.state.screen).toBe("town");
+      expect(r.events.some((e) => e.kind === "wipe")).toBe(true);
+      const { deps, log } = fakeDeps();
+      await createPlayer(deps).play(r.events, s, r.state);
+      const ms = names(log).filter((m) => ["beat.waitTap", "message.waitMs", "dice.show", "wipe.show", "screens.show", "screens.sync"].includes(m));
+      const w = ms.indexOf("wipe.show");
+      expect(w, String(auto)).toBeGreaterThan(0);
+      // 全滅の 2d10 を見せ、待ってから内訳を開く
+      expect(ms.slice(w - 2, w + 1), String(auto)).toEqual(["dice.show", "beat.waitTap", "wipe.show"]);
+      // 内訳の後は待たない（街の画面と最後の同期だけ）
+      expect(ms.slice(w + 1), String(auto)).toEqual(["screens.show", "screens.sync"]);
     }
   });
 

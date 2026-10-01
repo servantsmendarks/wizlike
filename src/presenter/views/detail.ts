@@ -2,7 +2,7 @@
 // 表示だけで、操作は無い（人の切り替えと閉じるはキャンプの枠。app が扱う）。装備の段では、選んでいる枠の行を accent 色にする（focusSlot）。
 // - formatDetail は純粋: 名前、種族、職業の正式名（classes[].name。パーティの行の略称ではない）、レベル、経験値、HP / MP / SAN、
 //   状態、能力値 6 つ、装備 6 枠（名前は呼び出し側が渡す itemName = 鑑定を反映した表示名。空きは detail.equipNone）。
-// - 行は 10px で y = 4 + 10i（rect の内側）の 14 行。0 名前（accent）、1 種族・職業、2 レベル（x4）と経験値（x120）、3 HP / MP / SAN（x4 / x84 / x164）、
+// - 行は 10px で y = 4 + 10i（rect の外形の左上から。子の absolute は枠 1px の内側が原点なので、置くときに 1 引く）の 14 行。0 名前（accent）、1 種族・職業、2 レベル（x4）と経験値（x120）、3 HP / MP / SAN（x4 / x84 / x164）、
 //   4 状態、5〜6 能力値（3 列 × 2 行。x4 / x84 / x164）、7 「装備」、8〜13 装備の枠名（x4）と名前（x40）。下端は 144（ビュー領域 150 に収まる）。
 // 能力値と枠の並びは表示層の型付き定数（STAT_ORDER / SLOT_ORDER。core/data の値は UI-35 の許可外なので import しない）。
 // モジュールのトップレベルでは DOM に触れない。
@@ -65,6 +65,8 @@ export function formatDetail(ch: Character, data: Pick<GameData, "races" | "clas
 
 const LINE_H = 10;
 const TOP = 4;
+/** 外枠の太さ（border 1px） */
+const BORDER = 1;
 const COL3 = [4, 84, 164] as const;
 const COL3_W = 76;
 const SLOT_X = 4;
@@ -92,13 +94,14 @@ export function createDetailView(rect: Rect): DetailView {
     border: "1px solid var(--c-frame)",
   });
 
+  /** x と行の y は外形の左上から。子の absolute は枠（1px）の内側が原点なので 1 引く（dice.ts の PAD - 1 と同じ） */
   const text = (row: number, x: number, w: number, value: string, cls: string): HTMLElement => {
     const t = document.createElement("div");
     t.className = cls;
     Object.assign(t.style, {
       position: "absolute",
-      left: `${x}px`,
-      top: `${TOP + LINE_H * row}px`,
+      left: `${x - BORDER}px`,
+      top: `${TOP - BORDER + LINE_H * row}px`,
       width: `${w}px`,
       height: `${LINE_H}px`,
       lineHeight: `${LINE_H}px`,

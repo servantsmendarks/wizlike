@@ -107,7 +107,7 @@ describe("UI-52 街のページ", () => {
     expect(townPageIntro("dark", m)).toEqual(["town.dark.intro"]);
   });
 
-  test("TW-03/UI-52/TW-31 酒場: 状態を見る・装備を替える・並び順を変える → 救済の行（申し出の間だけ。dead / ash の者、リーダーも）→ 戻る", () => {
+  test("TW-01/TW-03/UI-52/TW-31 酒場: 状態を見る・装備を替える・並び順を変える → 救済の行（申し出の間だけ。dead / ash の者、リーダーも）→ 戻る", () => {
     const camp: TownEntry[] = [
       { kind: "camp", open: "status", label: "状態を見る" },
       { kind: "camp", open: "equip", label: "装備を替える" },

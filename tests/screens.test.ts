@@ -238,6 +238,28 @@ describe("入力と Command", () => {
     expect(bad.some((b) => b.includes("import("))).toBe(true);
     expect(bad.filter((b) => b.includes("floorOf"))).toHaveLength(2);
   });
+
+  test("UI-46 履歴の画面は表示してから描く（display:none の間は scrollHeight が 0 で、末尾へ送れない）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const body = /const openHistory = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    const show = body.indexOf("play.showHistory(true)");
+    const render = body.indexOf("play.history.render(");
+    expect(show).toBeGreaterThanOrEqual(0);
+    expect(render).toBeGreaterThan(show);
+  });
+
+  test("UI-31/UI-36 ページが隠れたら（attachReleaseOnHide）ステージの押下も片付ける（stageInput.reset）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const body = /attachReleaseOnHide\(\(\) => \{([\s\S]*?)\n {6}\}\);/.exec(app)?.[1] ?? "";
+    expect(body).toContain("stageInput.reset()");
+    expect(app).toMatch(/const stageInput = attachStageInput\(/);
+  });
+
+  test("UI-44/UI-45 戦闘が終わった後の再生に残るオート解除（battleMenu が null）は、再生中なら拍のタップ（player.tap）にする", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const body = /const requestAutoStop = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(body).toMatch(/if \(menu === null\) \{\s*if \(isBusy\(\)\) player\.tap\(\);\s*return;\s*\}/);
+  });
 });
 
 describe("再生中の入力（UI-44）", () => {

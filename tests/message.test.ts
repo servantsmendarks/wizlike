@@ -121,7 +121,7 @@ describe("MessageWindow", () => {
     vi.unstubAllGlobals();
   });
 
-  test("UI-43/UI-46 窓の DOM には直近の lines × 2 文だけを残し、全文は history() に messageHistory 件まで古い順に持つ。log は窓に出さず履歴にだけ足す", async () => {
+  test("UI-11/UI-43/UI-46 窓は指でスクロールしない（overflow hidden）。窓の DOM には直近の lines × 2 文だけを残し、全文は history() に messageHistory 件まで古い順に持つ。log は窓に出さず履歴にだけ足す", async () => {
     const created: FakeEl[] = [];
     vi.stubGlobal("document", {
       createElement: () => {

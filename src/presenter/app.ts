@@ -693,7 +693,12 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
    */
   const requestAutoStop = (): void => {
     const menu = battleMenu(state, data);
-    if (menu === null || !menu.auto) return;
+    if (menu === null) {
+      // 戦闘が終わった後の再生（全滅の内訳を開く前の拍の待ちなど）に残っているオート解除は、拍のタップとして扱う（UI-45）
+      if (isBusy()) player.tap();
+      return;
+    }
+    if (!menu.auto) return;
     if (chaining || isBusy()) {
       if (stopRequested) return;
       stopRequested = true;
@@ -1047,8 +1052,9 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     if (overlay !== null) return;
     repeater.release();
     overlay = "history";
-    play.history.render(play.message.history(), t("history.title"));
+    // 先に表示する。display:none の間は scrollHeight が 0 で、render の末尾へ送る scrollTop が効かない
     play.showHistory(true);
+    play.history.render(play.message.history(), t("history.title"));
     syncControls();
   };
 
@@ -1194,7 +1200,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       debug.el.style.display = "none";
       showRoute("title");
       onTap(play.message.el, () => tapMessage());
-      attachStageInput(stage, {
+      const stageInput = attachStageInput(stage, {
         scale,
         threshold: () => store.get().swipeThreshold,
         deadZone: data.config.input.edgeDeadZonePx,
@@ -1216,6 +1222,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       });
       // UI-31: ポインタ（十字ボタン・スワイプ）の長押しも、窓のフォーカスが外れた・ページが隠れたら離したものとして扱う
       attachReleaseOnHide(() => {
+        // 追っている押下と長押しのタイマーも片付ける（隠れた後に長押しが始まって裏で前進しないように）
+        stageInput.reset();
         repeater.release();
         // UI-25: 窓のフォーカスが外れた・ページが隠れたら自動歩行も止める
         stopWalk();

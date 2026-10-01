@@ -303,6 +303,64 @@ describe("attachStageInput", () => {
     expect(t.out).toEqual(["press", "debug 0,-100,up", 'swipe "forward"', "swipeRelease"]);
   });
 
+  test("UI-36 pointerup / pointercancel が届かなかった押下は、次の isPrimary の押下で古いものとして片付ける（2 本目の指 isPrimary:false は従来どおり無視）", () => {
+    const t = setup();
+    const a = t.button("a");
+    t.down(1, 40, 620, a.btn, { isPrimary: true });
+    expect(a.btn.classList.contains("is-pressed")).toBe(true);
+    // id 1 の up は来ないまま、別の指の押下が続く
+    t.down(2, 40, 620, a.btn, { isPrimary: false });
+    t.up(2, 40, 620);
+    expect(t.out).toEqual(["press"]);
+    for (const id of [3, 4]) {
+      t.down(id, 40, 620, a.btn, { isPrimary: true });
+      t.up(id, 40, 620);
+    }
+    expect(t.out).toEqual(["press", "press", "tap a 10,10", "press", "tap a 10,10"]);
+    expect(a.btn.classList.contains("is-pressed")).toBe(false);
+    // 古い押下の up が後から来ても何もしない
+    t.up(1, 40, 620);
+    expect(t.out).toHaveLength(5);
+  });
+
+  test("UI-31/UI-36 reset(): 長押しの前ならタイマーを消して onHoldStart を呼ばない。長押し中なら onHoldEnd、スワイプ中なら onSwipeRelease。タップにはしない", () => {
+    vi.useFakeTimers();
+    const t = setup();
+    const fwd = t.button("fwd", {
+      onTap: () => t.out.push("tap"),
+      hold: { ms: () => 250, onHoldStart: () => t.out.push("holdStart"), onHoldEnd: () => t.out.push("holdEnd") },
+    });
+    // 押して 100ms でページが隠れた
+    t.down(1, 40, 620, fwd.btn);
+    vi.advanceTimersByTime(100);
+    t.detach.reset();
+    vi.advanceTimersByTime(1000);
+    t.up(1, 40, 620);
+    expect(t.out).toEqual(["press"]);
+    expect(fwd.btn.classList.contains("is-pressed")).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    // 長押し中
+    t.out.length = 0;
+    t.down(2, 40, 620, fwd.btn);
+    vi.advanceTimersByTime(300);
+    t.detach.reset();
+    t.up(2, 40, 620);
+    expect(t.out).toEqual(["press", "holdStart", "holdEnd"]);
+    // スワイプ中
+    t.out.length = 0;
+    t.down(3, 100, 300, t.stage);
+    t.move(3, 100, 200);
+    t.detach.reset();
+    t.up(3, 100, 200);
+    expect(t.out).toEqual(["press", "debug 0,-100,up", 'swipe "forward"', "swipeRelease"]);
+    // 押下が無ければ何もしない。その後の押下は普通に受ける
+    t.out.length = 0;
+    t.detach.reset();
+    t.down(4, 40, 620, fwd.btn);
+    t.up(4, 40, 620);
+    expect(t.out).toEqual(["press", "tap"]);
+  });
+
   test("UI-36 2 本目の指・主ボタン以外のマウスは追わない。ポインタの捕捉はマウスのときだけ取る", () => {
     const t = setup();
     const a = t.button("a");
@@ -443,7 +501,7 @@ describe("UI-37 style.css の touch-action", () => {
   }
   const touch = (sel: string): string | null => /touch-action:\s*([a-z-]+)/.exec(rules.get(sel) ?? "")?.[1] ?? null;
 
-  test("UI-37 #stage 以下は manipulation、迷宮でスワイプを受ける間（.screen-play.swipe-on）は none、スクロールの容器は pan-y。body の none（UI-05）は残す", () => {
+  test("UI-11/UI-37 #stage 以下は manipulation、迷宮でスワイプを受ける間（.screen-play.swipe-on）は none、スクロールの容器は pan-y。body の none（UI-05）は残す", () => {
     expect(touch("body")).toBe("none");
     expect(touch("#stage")).toBe("manipulation");
     expect(touch("#stage *")).toBe("manipulation");
