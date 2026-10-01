@@ -5,7 +5,7 @@
 import type { Rect } from "../layout";
 
 /** 1 行の高さ（論理 px。UI-03 の行間） */
-const LINE_H = 10;
+export const HISTORY_LINE_H = 10;
 /** 題と一覧の左右の余白 */
 const PAD = 4;
 
@@ -46,14 +46,18 @@ export function createHistoryView(r: { overlay: Rect; title: Rect; list: Rect })
     color: "var(--c-accent)",
   });
 
+  // 見える高さを行の高さの整数倍にし、余りは上（題との間）の余白にする。末尾まで送ったときに最上段の行が途中で切れない
+  // （既定: 一覧の領域 208 から枠の 2 を引いた 206 のうち、下詰めの 200 = 20 行を見せ、上に 6 の余白）
+  const listSpace = r.list.h - 2;
+  const listH = Math.max(0, Math.floor(listSpace / HISTORY_LINE_H) * HISTORY_LINE_H);
   const list = document.createElement("div");
   list.className = "history-list";
   Object.assign(list.style, {
     position: "absolute",
     left: `${r.list.x - o.x + PAD - 1}px`,
-    top: `${r.list.y - o.y}px`,
+    top: `${r.list.y - o.y + (listSpace - listH)}px`,
     width: `${r.list.w - 2 * PAD}px`,
-    height: `${r.list.h - 2}px`,
+    height: `${listH}px`,
     overflowY: "auto",
     overflowX: "hidden",
     wordBreak: "break-all",
@@ -70,7 +74,7 @@ export function createHistoryView(r: { overlay: Rect; title: Rect; list: Rect })
         ...lines.map((s) => {
           const d = document.createElement("div");
           d.className = "history-line";
-          d.style.lineHeight = `${LINE_H}px`;
+          d.style.lineHeight = `${HISTORY_LINE_H}px`;
           d.textContent = s;
           return d;
         }),
@@ -78,7 +82,7 @@ export function createHistoryView(r: { overlay: Rect; title: Rect; list: Rect })
       list.scrollTop = list.scrollHeight;
     },
     scrollBy(n: number): void {
-      list.scrollTop += n * LINE_H;
+      list.scrollTop += n * HISTORY_LINE_H;
     },
   };
 }

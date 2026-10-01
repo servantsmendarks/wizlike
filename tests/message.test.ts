@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { dungeonLayout, MESSAGE_LINE_H, regions } from "../src/presenter/layout";
 import { createMessageWindow, formatMessage, trimHistory, typewriterSteps } from "../src/presenter/views/message";
+import { createHistoryView, HISTORY_LINE_H } from "../src/presenter/views/history";
 import { headerText } from "../src/presenter/views/header";
 import { formatPartyRow } from "../src/presenter/views/party";
 import { data, newGame } from "./helpers/core";
@@ -99,6 +100,9 @@ class FakeEl {
     this.children.push(c);
     return c;
   }
+  append(...c: FakeEl[]): void {
+    for (const x of c) this.appendChild(x);
+  }
   replaceChildren(...c: FakeEl[]): void {
     this.children = c;
   }
@@ -173,6 +177,32 @@ describe("MessageWindow", () => {
     expect(top + height).toBe(L.message.text.y - g.message.y - 1 + L.message.text.h);
     // 既定（70px の窓、文字領域 66px）では 6 行 60px、上の余白 6px
     expect({ top, height }).toEqual({ top: 7, height: 60 });
+  });
+
+  test("UI-46/UI-11 履歴の画面の一覧（history-list）の見える高さは行の高さの整数倍で、余りは上（題との間）の余白にする（末尾まで送ったときに最上段の行が切れない）", () => {
+    const created: FakeEl[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => {
+        const e = new FakeEl();
+        created.push(e);
+        return e;
+      },
+      createElementNS: () => new FakeEl(),
+    });
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    createHistoryView(L.history);
+    const list = created.find((e) => e.className === "history-list")!;
+    const top = Number.parseFloat(list.style["top"]!);
+    const height = Number.parseFloat(list.style["height"]!);
+    expect(height % HISTORY_LINE_H).toBe(0);
+    // 下端は従来の一覧の下端のまま（一覧の領域から枠の 2 を引いた高さ）、余りは行の高さ未満
+    const space = L.history.list.h - 2;
+    expect(top + height).toBe(L.history.list.y - L.history.overlay.y + space);
+    expect(space - height).toBeGreaterThanOrEqual(0);
+    expect(space - height).toBeLessThan(HISTORY_LINE_H);
+    // 既定（一覧の領域 240×208）では 20 行 200px、題（12px）の下に 6px の余白
+    expect({ top, height }).toEqual({ top: 18, height: 200 });
   });
 
   test("UI-43 文字送りの途中は typing() が真で、rush で即座に全文になる", async () => {
