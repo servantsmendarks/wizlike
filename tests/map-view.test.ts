@@ -209,10 +209,18 @@ describe("UI-24/DG-10 通り抜けた扉の地図（core の mapView との結�
       const r = execute(placed, { type: "dungeon.move" }, data);
       const to = { x: found.x + found.d.dx, y: found.y + found.d.dy };
       if (r.state.dive?.pos.x !== to.x || r.state.dive?.pos.y !== to.y) continue; // 遭遇などで止まった場合は別のシード
-      const v = mapView(r.state, data)!;
-      const here = v.cells.find((c) => c.x === to.x && c.y === to.y)!;
+      // 反転して扉を通って戻る。これで扉の両側のセルが探索済みになり、地図は両側のセルの値から描かれうる
+      const turned = execute(r.state, { type: "dungeon.turn", dir: "around" }, data);
+      const r2 = execute(turned.state, { type: "dungeon.move" }, data);
+      if (r2.state.dive?.pos.x !== found.x || r2.state.dive?.pos.y !== found.y) continue; // 遭遇などで止まった場合は別のシード
+      const v = mapView(r2.state, data)!;
+      const here = v.cells.find((c) => c.x === to.x && c.y === to.y);
+      const there = v.cells.find((c) => c.x === found.x && c.y === found.y);
+      expect(here, `seed ${seed} 行き先のセルが探索済み`).toBeDefined();
+      expect(there, `seed ${seed} 元のセルが探索済み`).toBeDefined();
       const back = { N: "s", E: "w", S: "n", W: "e" } as const;
-      expect(here[back[found.d.f]], `seed ${seed}`).toBe("door");
+      expect(here![back[found.d.f]], `seed ${seed} 行き先の側`).toBe("door");
+      expect(there![found.d.key], `seed ${seed} 元の側`).toBe("door");
       const lay = mapLayout(v.width, v.height, MAP_AREA);
       const segs = segments(mapPaths(v, lay).walls);
       // 共有辺の位置（扉の向きで横の辺か縦の辺か）
