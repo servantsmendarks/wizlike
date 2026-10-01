@@ -254,7 +254,7 @@ describe("dungeon-geometry", () => {
   const STAIRS_W = [0.75, 0.5, 0.25] as const;
   const sid = (s: string): SlotId => s as SlotId;
 
-  test("UI-20 階段の記号: 床の横線 3 本。y は床の奥の縁から f=1/4,1/2,3/4、幅は床の幅の 3/4,1/2,1/4（中央の列はその y の床、左端を丸めて右端 239−左端。左の列は f=3/4 の y の帯 P_d.L..L(y) の中央）", () => {
+  test("UI-20 階段の記号: 床の横線 3 本。y は床の奥の縁から f=1/4,1/2,3/4、幅は床の幅の 3/4,1/2,1/4（中央の列はその y の床、左端を丸めて右端 239−左端。左の列は f=3/4 の y の帯 P_d.L..L(y) の中央で、左端は P_d.L+1 以上）", () => {
     for (const d of SLOT_DEPTHS) {
       const a = P(d);
       const b = P(d + 1);
@@ -269,7 +269,7 @@ describe("dungeon-geometry", () => {
         const left = ys.map((y, k): [number, number, number] => {
           const c = (a.L + Lr) / 2;
           const hw = ((Lr - a.L) * STAIRS_W[k]!) / 2;
-          return [round(c - hw), round(c + hw), y];
+          return [Math.max(round(c - hw), a.L + 1), round(c + hw), y];
         });
         expect(hLines(path(sid(`cS${dir}${d}`))), `cS${dir}${d}`).toEqual(center);
         expect(hLines(path(sid(`lS${dir}${d}`))), `lS${dir}${d}`).toEqual(left);
@@ -277,7 +277,7 @@ describe("dungeon-geometry", () => {
     }
   });
 
-  test("UI-20 階段の記号は床の範囲内（y は P_{d+1}.B と P_d.B の間で両端を含まない、x はその y の床の幅（列は見えている帯）に丸めの 0.5px まで）、線の長さは 1 以上", () => {
+  test("UI-20 階段の記号は床の範囲内（y は P_{d+1}.B と P_d.B の間で両端を含まない、x はその y の床の幅（列は見えている帯で、帯の縁には付かない）に丸めの 0.5px まで）、線の長さは 1 以上", () => {
     for (const d of SLOT_DEPTHS) {
       const a = P(d);
       const b = P(d + 1);
@@ -291,6 +291,9 @@ describe("dungeon-geometry", () => {
           const L = floorL(d, y);
           const [xl, xr] = part[0] === "c" ? [L, 239 - L] : part[0] === "l" ? [a.L, L] : [239 - L, 239 - a.L];
           expect(lo >= xl - 0.5 && hi <= xr + 0.5, `${tag} ${lo}..${hi} in ${xl}..${xr}`).toBe(true);
+          // 列の記号は帯の縁（cL/lF、cR/rF の縦線）に付かない（開区間）
+          if (part[0] === "l") expect(lo > a.L, `${tag} lo=${lo} > ${a.L}`).toBe(true);
+          if (part[0] === "r") expect(hi < 239 - a.L, `${tag} hi=${hi} < ${239 - a.L}`).toBe(true);
         }
       }
     }
