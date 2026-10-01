@@ -17,7 +17,7 @@ import {
 import { startNewGame, validatePartySetup } from "./rules/creation";
 import { checkEnter, chooseOption, enterDungeon, moveForward, turn } from "./rules/dungeon";
 import { checkUseItem, useItemInField } from "./rules/items";
-import { checkInn, checkMercy, checkTemple, grantMercy, stayInn, templeService } from "./rules/town";
+import { checkDark, checkInn, checkMercy, checkTemple, darkService, grantMercy, stayInn, templeService } from "./rules/town";
 import type { TempleService } from "./rules/town";
 import { wipeIfNoneCanAct } from "./rules/wipe";
 import { cloneState, makeContext } from "./state";
@@ -184,7 +184,14 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       grantMercy(ctx, memberId as string);
       return finish(ctx);
     }
-    case "town.dark":
+    case "town.dark": {
+      const memberId = (command as { memberId?: unknown }).memberId;
+      const r = checkDark(state, memberId, data);
+      if (r !== null) return reject(state, "town.dark", r);
+      const ctx = makeContext(cloneState(state), data);
+      darkService(ctx, memberId as string);
+      return finish(ctx);
+    }
     case "town.shop":
     case "town.bank":
     case "dungeon.cast":

@@ -438,6 +438,8 @@ export type TownMenu = {
     /** 呪われた品を装備している者（life を問わない）。cost = uncurseCost */
     uncurse: TownMenuTempleRow[];
   };
+  /** TW-08 闇魔術: life ash の者（並び順）。cost = level × darkCostPerLevel、affordable = gold >= cost */
+  dark: TownMenuTempleRow[];
   /** TW-31: townVisit.mercyOffered なら dead / ash の全員（並び順）。申し出が無ければ null */
   mercy: { memberId: string; name: string; life: "dead" | "ash" }[] | null;
   /** TW-11: progress.unlockedDungeons の順。canEnter = checkEnter(state, id, data) === null */

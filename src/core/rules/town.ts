@@ -1,5 +1,5 @@
-// 街（TW-02, TW-04, TW-07, TW-11, TW-30〜32、DG-30/43 の帰還）と、表示層向けの問い合わせ townMenu。
-// 料金の式（宿のランク・寺院の 3 サービス・救済の蘇生費）は core のここだけに置く（表示層は townMenu の値を描く）。
+// 街（TW-02, TW-04, TW-07, TW-08, TW-11, TW-30〜32、DG-30/43 の帰還）と、表示層向けの問い合わせ townMenu。
+// 料金の式（宿のランク・寺院の 3 サービス・闇魔術・救済の蘇生費）は core のここだけに置く（表示層は townMenu の値を描く）。
 // dungeon.ts は import しない（dungeon → combat → … → town の向きだけにして循環を作らない）。
 // 迷宮入口の可否（TW-11）は enterBlockReason が持ち、dungeon.checkEnter がそれを呼ぶ。
 // 乱数を使うのは寺院の蘇生の d100（randInt(1, 100) を 1 回）と、宿屋のレベルアップ（growth の既存の順）だけ。
@@ -252,7 +252,33 @@ export function templeService(ctx: RuleContext, memberId: string, service: Templ
   }
 }
 
-/** life を alive・HP 1 にする（寺院の蘇生の成功・救済）。lifeChanged の後に、HP が変わったら hpChanged */
+// ---------------------------------------------------------------------------
+// 闇魔術（TW-08）
+
+/** town.dark を受け付けない理由。対象は life ash の者だけ。費用は level × darkCostPerLevel（resurrectCostOf） */
+export function checkDark(state: GameState, memberId: unknown, data: GameData): string | null {
+  if (!inTown(state)) return "wrong screen";
+  const ch = typeof memberId === "string" ? memberById(state, memberId) : null;
+  if (ch === null) return "no such member";
+  if (ch.life !== "ash") return "not ash";
+  if (state.gold < resurrectCostOf(ch, data)) return "not enough gold";
+  return null;
+}
+
+/**
+ * TW-08。checkDark が null を返した前提。乱数は使わない（確定）。
+ * 払う → alive・HP 1（lifeChanged, hpChanged）→ message town.dark.done。status・MP・SAN はそのまま（寺院の蘇生と同じ）
+ */
+export function darkService(ctx: RuleContext, memberId: string): void {
+  const { state, data } = ctx;
+  const ch = memberById(state, memberId);
+  if (ch === null || ch.life !== "ash") throw new Error(`darkService: ${memberId} is not ash`);
+  state.gold -= resurrectCostOf(ch, data);
+  reviveAtOne(ctx, ch);
+  ctx.events.push({ kind: "message", key: "town.dark.done", params: { name: ch.name } });
+}
+
+/** life を alive・HP 1 にする（寺院の蘇生の成功・闇魔術・救済）。lifeChanged の後に、HP が変わったら hpChanged */
 function reviveAtOne(ctx: RuleContext, ch: Character): void {
   ch.life = "alive";
   ctx.events.push({ kind: "lifeChanged", id: ch.id, life: "alive" });
@@ -306,6 +332,11 @@ export function townMenu(state: GameState, data: GameData): TownMenu | null {
       affordable: gold >= r.cost,
     })),
     temple: { resurrect: rows("resurrect"), cure: rows("cure"), uncurse: rows("uncurse") },
+    dark: state.party.flatMap((ch) => {
+      if (ch.life !== "ash") return [];
+      const cost = resurrectCostOf(ch, data);
+      return [{ memberId: ch.id, name: ch.name, cost, affordable: gold >= cost }];
+    }),
     mercy: offered
       ? state.party.flatMap((ch) => (ch.life === "alive" ? [] : [{ memberId: ch.id, name: ch.name, life: ch.life }]))
       : null,

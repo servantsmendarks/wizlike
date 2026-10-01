@@ -50,6 +50,7 @@
   "town.temple.cured": "{name}の体から不調が抜けた。",
   "town.temple.uncursed": "{name}の{item}は呪いとともに崩れ落ちた。",
   "town.dark.intro": "地下の工房で、灰から人を戻す者がいる。高くつくぞ。",
+  "town.dark.done": "灰の中から{name}が身を起こした。",
   "town.mercy.offer": "GMが卓を見渡した。「このままでは続けられないな。一人だけ、無償で戻してやる。誰にする？」",
   "town.mercy.done": "{name}が卓に戻ってきた。",
   "town.dungeonGate.intro": "迷宮の入口。どこへ潜る？",

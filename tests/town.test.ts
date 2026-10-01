@@ -1,4 +1,4 @@
-// 街（TW-02, TW-04, TW-07, TW-11, TW-30〜32）。rules/town.ts と engine の town.* の配線。
+// 街（TW-02, TW-04, TW-07, TW-08, TW-11, TW-30〜32）。rules/town.ts と engine の town.* の配線。
 // 既定のパーティ（newGame）: c1 アルド 戦士 HP 13（リーダー）、c2 ベルク 戦士 HP 14 vit 14、c3 キリ 盗賊 HP 8、
 // c4 ドナ 僧侶 HP 10 MP 5、c5 エル 魔術師 HP 6 MP 7、c6 フィン 盗賊 HP 8。所持金 300。
 // 宿のランク: 0 馬小屋 0G HP ×0、1 相部屋 30G HP ×0.5、2 個室 100G HP ×1.0（MP はどのランクでも全回復）。寺院: 蘇生 level × 250、
@@ -317,8 +317,50 @@ describe("TW-07 寺院（town.temple）", () => {
     expectRejected(withCursed(town({}, 199)).s, { type: "town.temple", memberId: "c2", service: "uncurse" }, "not enough gold");
   });
 
-  test("TW-08 town.dark は not implemented のまま", () => {
-    expectRejected(town({ c2: ASH }, 5000), { type: "town.dark", memberId: "c2" }, "not implemented");
+});
+
+// ---------------------------------------------------------------------------
+
+describe("TW-08 闇魔術（town.dark）", () => {
+  test("TW-08 ash の者が level × 1000 を払って alive・HP 1 に戻る（確定。乱数なし）。status・MP・SAN はそのまま", () => {
+    // ベルク L2 → 2 × 1000 = 2000。所持金 2500 → 500
+    const s = town(
+      { c2: { ...ASH, level: 2, levelHistory: [{ level: 2, hpGain: 5, mpGain: 0 }], hpMax: 19, mp: 0, san: 30, status: ["poison"] } },
+      2500,
+    );
+    const r = ok(s, { type: "town.dark", memberId: "c2" });
+    expect(r.events).toEqual([
+      { kind: "lifeChanged", id: "c2", life: "alive" },
+      { kind: "hpChanged", id: "c2", delta: 1, hp: 1 },
+      { kind: "message", key: "town.dark.done", params: { name: "ベルク" } },
+    ]);
+    expect(r.state.gold).toBe(500);
+    expect(member(r.state, "c2")).toMatchObject({ life: "alive", hp: 1, hpMax: 19, mp: 0, san: 30, status: ["poison"], level: 2 });
+    expect(r.state.rng).toEqual(s.rng);
+    expect(r.state.townVisit).toEqual(s.townVisit);
+  });
+
+  test("TW-08 所持金ちょうど（L1 で 1000）なら払えて 0 になる", () => {
+    const r = ok(town({ c3: ASH }, 1000), { type: "town.dark", memberId: "c3" });
+    expect(r.state.gold).toBe(0);
+    expect(member(r.state, "c3").life).toBe("alive");
+  });
+
+  test("TW-08 rejected: alive・dead は not ash、所持金不足（L1 で 999）、未知のメンバー・文字列でない id、街の外（同じ参照・乱数不変）", () => {
+    const s = town({ c2: DEAD, c3: ASH }, 999);
+    expectRejected(s, { type: "town.dark", memberId: "c1" }, "not ash");
+    expectRejected(s, { type: "town.dark", memberId: "c2" }, "not ash");
+    expectRejected(s, { type: "town.dark", memberId: "c3" }, "not enough gold");
+    expectRejected(s, { type: "town.dark", memberId: "c9" }, "no such member");
+    expectRejected(s, { type: "town.dark", memberId: 3 } as unknown as Command, "no such member");
+    expectRejected(diving({ c3: ASH }, 5000), { type: "town.dark", memberId: "c3" }, "wrong screen");
+    expectRejected(createInitialState(1, data), { type: "town.dark", memberId: "c3" }, "wrong screen");
+  });
+
+  test("TW-08 銀行の残高は使わない（所持金だけで払う）", () => {
+    const s = town({ c3: ASH }, 500);
+    s.bank = 5000;
+    expectRejected(s, { type: "town.dark", memberId: "c3" }, "not enough gold");
   });
 });
 
@@ -462,8 +504,19 @@ describe("UI-52/TW-11 townMenu（表示層向けの問い合わせ）", () => {
       { memberId: "c6", name: "フィン", cost: 300, affordable: false },
     ]);
     expect(m.temple.uncurse).toEqual([{ memberId: "c4", name: "ドナ", cost: 200, affordable: true }]);
+    // TW-08: ash の c5 エル（L1）だけ。1 × 1000 > 200
+    expect(m.dark).toEqual([{ memberId: "c5", name: "エル", cost: 1000, affordable: false }]);
     expect(m.mercy).toBeNull();
     expect(m.dungeons).toEqual([{ id: "d01", name: data.dungeons[0]!.name, canEnter: true }]);
+  });
+
+  test("TW-08 dark は ash の者を並び順に、cost = level × 1000、affordable = 所持金 ≥ cost（dead は入らない）", () => {
+    const s = town({ c2: { ...ASH, level: 3 }, c4: DEAD, c6: ASH }, 1500);
+    expect(townMenu(s, data)!.dark).toEqual([
+      { memberId: "c2", name: "ベルク", cost: 3000, affordable: false },
+      { memberId: "c6", name: "フィン", cost: 1000, affordable: true },
+    ]);
+    expect(townMenu(town(), data)!.dark).toEqual([]);
   });
 
   test("TW-31 申し出があれば mercy に dead / ash の全員（並び順）。TW-11 行動可能な者がいなければ canEnter は偽", () => {
