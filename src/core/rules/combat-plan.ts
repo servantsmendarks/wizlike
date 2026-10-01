@@ -6,7 +6,6 @@ import type { BattleAction, BattleTarget, Character, GameState, Life } from "../
 import {
   battleItemUsable,
   battleSpellUsable,
-  canAct,
   canStrike,
   frontLineIds,
   groupAlive,
@@ -136,17 +135,14 @@ export function orderActors<T>(entries: { actor: T; init: number }[]): { actor: 
 }
 
 /**
- * CB-15: 敵の通常攻撃の対象の候補（並び順）。(1) 前衛扱い（CB-14）の行動可能な者、
- * 空なら (2) 前衛扱いの life alive の者、それも空なら (3) life alive の全員【仮・衝突】。
+ * CB-15: 敵の通常攻撃の対象の候補（並び順）。前衛扱い（CB-14）のうち生存者（life alive で石化していない者）。
+ * 睡眠・麻痺の者も含む（行動可能かどうかは問わない。ユーザー決定）。空なら呼び出し側は何もしない。
  */
 export function enemyTargetIds(state: GameState, data: GameData): string[] {
   const front = frontLineIds(state, data);
-  const inFront = state.party.filter((c) => front.includes(c.id));
-  const a = inFront.filter(canAct);
-  if (a.length > 0) return a.map((c) => c.id);
-  const b = inFront.filter((c) => c.life === "alive");
-  if (b.length > 0) return b.map((c) => c.id);
-  return state.party.filter((c) => c.life === "alive").map((c) => c.id);
+  return state.party
+    .filter((c) => front.includes(c.id) && c.life === "alive" && !c.status.includes("stone"))
+    .map((c) => c.id);
 }
 
 export function snapMembers(state: GameState, data: GameData): MemberSnap[] {

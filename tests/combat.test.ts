@@ -51,6 +51,8 @@ function setup(
 const member = (s: GameState, id: string): Character => memberById(s, id)!;
 const rolls = (m: RngState, n: number): number[] => Array.from({ length: n }, () => rollDie(m, 10));
 const PARA = { status: ["paralysis" as const] };
+/** 生存しているが敵の対象にならない（CB-15: 石化は除く）。対象を 1 人に絞るのに使う */
+const STONE = { status: ["stone" as const] };
 const DEAD = { life: "dead" as const, hp: 0 };
 
 /** startBattle / startRandomEncounter を ctx で呼んだ結果 */
@@ -388,7 +390,7 @@ describe("前衛と後衛・敵の対象（CB-13/14/15/16）", () => {
       const s = setup([{ monsterId: "kobold", hps: [50] }], {
         seed,
         identified: ["kobold"],
-        patches: { c2: PARA, c3: PARA },
+        patches: { c2: STONE, c3: STONE },
         inputs: { c1: DEF, c4: atk(0), c5: DEF, c6: DEF },
       });
       const m = cloneRng(s.rng);
@@ -411,14 +413,14 @@ describe("前衛と後衛・敵の対象（CB-13/14/15/16）", () => {
     expect(eventsOf(r.events, "attack").map((e) => e.actorId)).toEqual(["c6"]);
   });
 
-  test("CB-14 前衛 3 人が麻痺なら敵の対象は後衛の行動可能者だけで、ドナの attack は攻撃として解決する。前衛 1 人の麻痺を外すと戻る", () => {
+  test("CB-14 前衛 3 人が行動不能（石化 2・麻痺 1）なら敵の対象は後衛だけで、ドナの attack は攻撃として解決する。前衛 1 人の麻痺を外すと戻る", () => {
     const d = dataWith({ combat: ALWAYS_HIT });
     const targets = new Set<string>();
     for (let seed = 1; seed <= 12; seed++) {
       const s = setup([{ monsterId: "kobold", hps: [80] }], {
         seed,
         identified: ["kobold"],
-        patches: { c1: PARA, c2: PARA, c3: PARA, c4: { hp: 50, hpMax: 50 }, c5: { hp: 50, hpMax: 50 }, c6: { hp: 50, hpMax: 50 } },
+        patches: { c1: STONE, c2: PARA, c3: STONE, c4: { hp: 50, hpMax: 50 }, c5: { hp: 50, hpMax: 50 }, c6: { hp: 50, hpMax: 50 } },
         inputs: { c4: atk(0), c5: DEF, c6: DEF },
       });
       const r = exec(s, RESOLVE, d);
@@ -426,7 +428,7 @@ describe("前衛と後衛・敵の対象（CB-13/14/15/16）", () => {
       expect(as.filter((a) => a.actorId === "c4")).toHaveLength(1);
       for (const a of as.filter((x) => x.actorId === "e0-0")) targets.add(a.targetId);
       expect(kindsOf(r.events)).not.toContain("message:battle.backRowCannotAttack");
-      // 前衛 1 人（ベルク）の麻痺を外すと元に戻る
+      // 前衛 1 人（ベルク）の麻痺を外すと元に戻る（石化のアルドとキリは CB-15 で除くので対象はベルクだけ）
       const back = patchParty(s, { c2: { status: [] } });
       back.battle!.inputs["c2"] = DEF;
       const rb = exec(back, RESOLVE, d);
@@ -436,7 +438,7 @@ describe("前衛と後衛・敵の対象（CB-13/14/15/16）", () => {
     expect([...targets].sort()).toEqual(["c4", "c5", "c6"]);
   });
 
-  test("CB-15 眠った前衛は狙われない。前衛扱いの全員が睡眠なら【衝突】のフォールバックで狙われ、被弾で覚醒判定（CB-32 の味方側）", () => {
+  test("CB-15 眠った前衛も狙われる（前衛の生存者から randInt。鏡の rng）。前衛扱いの全員が睡眠でも狙われ、被弾で覚醒判定（CB-32 の味方側）", () => {
     const d = dataWith({ combat: { ...ALWAYS_HIT, sleepWakeChance: 100 } });
     const seen = new Set<string>();
     for (let seed = 1; seed <= 12; seed++) {
@@ -446,10 +448,19 @@ describe("前衛と後衛・敵の対象（CB-13/14/15/16）", () => {
         patches: { c2: { status: ["sleep"], hp: 50, hpMax: 50 }, c1: { hp: 50, hpMax: 50 }, c3: { hp: 50, hpMax: 50 } },
         inputs: { c1: DEF, c3: DEF, c4: DEF, c5: DEF, c6: DEF },
       });
+      const m = cloneRng(s.rng);
+      rolls(m, 6); // 味方 5 人（眠ったベルクは振らない）+ 大ネズミ 1 体
+      const want = ["c1", "c2", "c3"][randInt(m, 0, 2)]!; // 候補は前衛の生存者 3 人（睡眠を含む）
+      chance(m, 100); // 必中
+      rollDice(m, "1d3");
+      if (want === "c2") chance(m, 100); // 被弾の覚醒判定（sleepWakeChance 100）
       const r = exec(s, RESOLVE, d);
-      for (const a of eventsOf(r.events, "attack")) seen.add(a.targetId);
+      expect(r.state.rng).toEqual(m);
+      const as = eventsOf(r.events, "attack");
+      expect(as.map((x) => x.targetId)).toEqual([want]);
+      seen.add(want);
     }
-    expect([...seen].sort()).toEqual(["c1", "c3"]);
+    expect([...seen].sort()).toEqual(["c1", "c2", "c3"]);
     // 前衛は死亡・麻痺、後衛は全員睡眠 → 行動可能 0（全滅ではない）。敵は眠った後衛を狙い、当たると起こす
     const s = setup([{ monsterId: "giant_rat", hps: [80] }], {
       identified: ["giant_rat"],
@@ -472,12 +483,27 @@ describe("前衛と後衛・敵の対象（CB-13/14/15/16）", () => {
     expect(r.state.battle).not.toBeNull();
   });
 
+  test("CB-15 対象の候補が空なら敵は何もしない（対象の乱数も消費しない）。眠った前衛だけが生き残り、前衛扱いが後衛（全員死亡）に移った場合", () => {
+    const d = dataWith({ combat: ALWAYS_HIT });
+    const s = setup([{ monsterId: "giant_rat", hps: [80] }], {
+      identified: ["giant_rat"],
+      patches: { c1: { status: ["sleep"] }, c2: DEAD, c3: DEAD, c4: DEAD, c5: DEAD, c6: DEAD },
+      inputs: {},
+    });
+    const m = cloneRng(s.rng);
+    rolls(m, 1); // 大ネズミの initiative だけ（行動可能な味方はいない）
+    const r = exec(s, RESOLVE, d);
+    expect(r.state.rng).toEqual(m);
+    expect(eventsOf(r.events, "attack")).toEqual([]);
+    expect(r.state.battle).not.toBeNull(); // 睡眠だけなので全滅ではない（CB-53）
+  });
+
   test("CB-16 行動の時点で行動不能（先に死んだ）なら飛ばす。倒された敵の個体も行動しない", () => {
     const fast = dataWith({ combat: ALWAYS_HIT }, (x) => (x.monsters.find((m) => m.id === "kobold")!.agi = 1000));
     // コボルドが先に動いてアルド（HP 1、唯一の前衛の行動可能者）を倒す → アルドの攻撃は出ない
     const s = setup([{ monsterId: "kobold", hps: [80] }], {
       identified: ["kobold"],
-      patches: { c1: { hp: 1 }, c2: PARA, c3: PARA },
+      patches: { c1: { hp: 1 }, c2: STONE, c3: STONE },
       inputs: { c1: atk(0), c4: DEF, c5: DEF, c6: DEF },
     });
     const r = exec(s, RESOLVE, fast);
@@ -635,7 +661,7 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
     setup([{ monsterId: "giant_spider", hps: [80] }], {
       seed,
       identified: ["giant_spider"],
-      patches: { c1, c2: PARA, c3: PARA },
+      patches: { c1, c2: STONE, c3: STONE },
       inputs: { c1: DEF, c4: DEF, c5: DEF, c6: DEF },
     });
 
@@ -705,10 +731,10 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
     const d = dataWith({ combat: ALWAYS_HIT });
     const shadow = (patches: Record<string, Partial<Character>>, inputs: Record<string, BattleAction>) =>
       setup([{ monsterId: "whispering_shadow", hps: [50] }], { identified: ["whispering_shadow"], patches, inputs });
-    const lead = exec(shadow({ c2: PARA, c3: PARA }, { c1: DEF, c4: DEF, c5: DEF, c6: DEF }), RESOLVE, d);
+    const lead = exec(shadow({ c2: STONE, c3: STONE }, { c1: DEF, c4: DEF, c5: DEF, c6: DEF }), RESOLVE, d);
     expect(eventsOf(lead.events, "sanChanged")).toEqual([{ kind: "sanChanged", id: "c1", delta: -4, san: 96 }]);
     expect(lead.events).toContainEqual({ kind: "message", key: "battle.sanDrain", params: { target: "アルド" } });
-    const reck = exec(shadow({ c1: PARA, c2: PARA, c3: { san: 2 } }, { c3: DEF, c4: DEF, c5: DEF, c6: DEF }), RESOLVE, d);
+    const reck = exec(shadow({ c1: STONE, c2: STONE, c3: { san: 2 } }, { c3: DEF, c4: DEF, c5: DEF, c6: DEF }), RESOLVE, d);
     expect(eventsOf(reck.events, "sanChanged")[0]).toEqual({ kind: "sanChanged", id: "c3", delta: -2, san: 0 });
     expect(canAct(member(reck.state, "c3"))).toBe(false);
     expect(battleMenu(reck.state, d)!.members[2]!.canAct).toBe(false);
@@ -863,10 +889,10 @@ describe("オート（CB-40〜43、F2）", () => {
     setup(groups, { identified: groups.map((g) => g.monsterId), auto: true, inputs: {}, patches });
 
   test.each([
-    ["hp", "giant_rat", { c1: { hp: 30, hpMax: 100 }, c2: PARA, c3: PARA }],
-    ["status", "giant_spider", { c1: { hp: 100, hpMax: 100 }, c2: PARA, c3: PARA }],
-    ["dead", "giant_rat", { c1: { hp: 1 }, c2: PARA, c3: PARA }],
-    ["san", "whispering_shadow", { c1: { hp: 100, hpMax: 100, san: 52 }, c2: PARA, c3: PARA }],
+    ["hp", "giant_rat", { c1: { hp: 30, hpMax: 100 }, c2: STONE, c3: STONE }],
+    ["status", "giant_spider", { c1: { hp: 100, hpMax: 100 }, c2: STONE, c3: STONE }],
+    ["dead", "giant_rat", { c1: { hp: 1 }, c2: STONE, c3: STONE }],
+    ["san", "whispering_shadow", { c1: { hp: 100, hpMax: 100, san: 52 }, c2: STONE, c3: STONE }],
   ] as const)("CB-43（完了条件）理由 %s: その execute の中で auto=false、battle.autoOff と battle.autoReason.<r>、inputs {}、次の resolve は inputs incomplete", (reason, monsterId, patches) => {
     const d = dataWith({ combat: ALWAYS_HIT }, (x) => {
       x.monsters.find((m) => m.id === "giant_spider")!.attacks[0]!.chance = 100;
@@ -980,7 +1006,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     const d = dataWith({ combat: ALWAYS_HIT });
     const s = setup([{ monsterId: "kobold", hps: [50] }], {
       identified: ["kobold"],
-      patches: { c1: { hp: 1 }, c2: PARA, c3: PARA, c4: PARA, c5: PARA, c6: PARA },
+      patches: { c1: { hp: 1 }, c2: STONE, c3: STONE, c4: PARA, c5: PARA, c6: PARA },
       inputs: { c1: DEF },
     });
     const r = exec(s, RESOLVE, d);
@@ -1000,7 +1026,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     const d = dataWith({ combat: ALWAYS_HIT });
     const s = setup([{ monsterId: "kobold", hps: [1], status: [["paralysis"]] }], {
       identified: ["kobold"],
-      patches: { c1: { hp: 1 }, c2: PARA, c3: PARA },
+      patches: { c1: { hp: 1 }, c2: STONE, c3: STONE },
       inputs: { c1: DEF, c4: DEF, c5: DEF, c6: DEF },
     });
     s.battle!.groups[0]!.units[0]!.status = [];

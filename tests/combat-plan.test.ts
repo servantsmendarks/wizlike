@@ -114,26 +114,34 @@ describe("CB-11 orderActors", () => {
 });
 
 describe("CB-15 enemyTargetIds", () => {
-  test("CB-15 前衛の行動可能な者だけ（眠った前衛は除く）", () => {
-    const s = withChar(twoGroups(), 1, { status: ["sleep"] });
-    expect(enemyTargetIds(s, data)).toEqual(["c1", "c3"]);
+  test("CB-15 前衛の生存者すべて（眠った前衛・麻痺の前衛も含む。行動可能かどうかは問わない）", () => {
+    expect(enemyTargetIds(withChar(twoGroups(), 1, { status: ["sleep"] }), data)).toEqual(["c1", "c2", "c3"]);
+    expect(enemyTargetIds(withChar(twoGroups(), 2, { status: ["paralysis"] }), data)).toEqual(["c1", "c2", "c3"]);
   });
 
-  test("CB-15【衝突】候補が空なら前衛扱いの生存者、それも空なら生存者全員", () => {
-    // 前衛は死亡と麻痺、後衛は全員睡眠 → 前衛扱いは後衛（CB-14）、行動可能 0 → 前衛扱いの生存者（眠った後衛）
+  test("CB-15 dead・ash・stone の前衛は除く", () => {
+    let s = withChar(twoGroups(), 0, { status: ["stone"] });
+    s = withChar(s, 2, { status: ["sleep"] });
+    expect(enemyTargetIds(s, data)).toEqual(["c2", "c3"]);
+    let t = withChar(twoGroups(), 0, { life: "dead", hp: 0 });
+    t = withChar(t, 2, { life: "ash", hp: 0 });
+    expect(enemyTargetIds(t, data)).toEqual(["c2"]);
+  });
+
+  test("CB-15/CB-14 前衛扱いが後衛に移ったら後衛の生存者（全員睡眠でも）。それも空なら空（前衛の麻痺の者へは戻らない）", () => {
+    // 前衛は死亡と麻痺 → 行動可能な前衛 0 → 前衛扱いは後衛（CB-14）。後衛は全員睡眠でも対象
     let s = twoGroups();
     s = withChar(s, 0, { life: "dead", hp: 0 });
     s = withChar(s, 1, { status: ["paralysis"] });
     s = withChar(s, 2, { life: "dead", hp: 0 });
     for (const i of [3, 4, 5]) s = withChar(s, i, { status: ["sleep"] });
     expect(enemyTargetIds(s, data)).toEqual(["c4", "c5", "c6"]);
-    // 後衛が全員死んでいれば前衛扱いの生存者もいない → 生存者全員（麻痺のベルク）
+    // 後衛の 1 人が石化なら除く
+    expect(enemyTargetIds(withChar(s, 4, { status: ["stone"] }), data)).toEqual(["c4", "c6"]);
+    // 後衛が全員死んでいれば候補は空（麻痺のベルクは前衛扱いではないので選ばない）
     let t = s;
     for (const i of [3, 4, 5]) t = withChar(t, i, { life: "dead", hp: 0, status: [] });
-    expect(enemyTargetIds(t, data)).toEqual(["c2"]);
-    // 誰もいなければ空
-    const u = withChar(t, 1, { life: "dead", hp: 0 });
-    expect(enemyTargetIds(u, data)).toEqual([]);
+    expect(enemyTargetIds(t, data)).toEqual([]);
   });
 });
 
