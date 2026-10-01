@@ -1,8 +1,8 @@
 // 画面遷移の親。state を持ち、入力を Command にして execute へ送り（UI-35）、返ったイベントを playback で再生する。
 // - 判定・計算・分岐（前進できるか、入場できるか、名前が正しいか）は core が行う。ここは結果を描くだけ（§3-4）。
 // - 再生中（busy）の入力はすべて捨てる。メッセージ窓のタップだけは受け、1 回目で今の文、2 回目で残りを即表示する（UI-44 / UI-43）。
-// - 状態を変えるコマンドの後、再生を始める前に afterCommand を呼ぶ。M2 では空で、M4 のオートセーブをここに差し込む
-//   （§3-8。SV-02: 再生を始める前に保存する。再生中にリロードされても結果は確定している）。
+// - 状態を変えるコマンドの後、再生を始める前にオートセーブを await する（§3-8。SV-02: 再生中にリロードされても結果は確定している）。
+//   保存の失敗は SV-23 の帯とメッセージ窓で知らせ、state は巻き戻さない。
 // - 画面の切り替えは各画面のルート要素の表示と非表示だけで行う。迷宮の DOM は 1 回だけ作る。
 // モジュールのトップレベルでは DOM に触れない。
 import type { GameData } from "../core/data/index";
@@ -10,8 +10,10 @@ import { execute, createInitialState } from "../core/engine";
 import { battleMenu } from "../core/rules/combat";
 import { mapView, visibleCells } from "../core/rules/dungeon";
 import { dungeonOf, itemDisplayName } from "../core/state";
-import type { BattleMenu, Command, GameEvent, GameState, Screen, ViewPoint } from "../core/types";
+import type { BattleMenu, Command, GameState, Screen, ViewPoint } from "../core/types";
+import type { SaveService } from "../save/types";
 import { runChain, type ChainDeps } from "./auto-chain";
+import { createAutosaver, createCommandExec, createSaveBannerState, type CommandResult, type SaveStatus } from "./autosave";
 import {
   entries,
   firstCursor,
@@ -33,7 +35,7 @@ import {
   forwardStep,
   type Action,
 } from "./input/swipe";
-import { dungeonLayout, layoutWarnings, regions } from "./layout";
+import { dungeonLayout, layoutWarnings, regions, SAVE_BANNER } from "./layout";
 import { createPlayer } from "./playback";
 import { createRunGate } from "./run-gate";
 import { defaultSettings, type SettingsStore } from "./settings";
@@ -46,6 +48,7 @@ import { createDungeonScreen } from "./views/dungeon";
 import { slotsFor } from "./views/dungeon-geometry";
 import { headerText } from "./views/header";
 import { formatMessage } from "./views/message";
+import { createSaveBanner } from "./views/save-banner";
 import { createTitleScreen } from "./views/title";
 import { townEntries, townEntryLabel, type TownEntry, type TownPage } from "./views/town";
 
@@ -69,9 +72,9 @@ export function shouldReleaseHold(route: Route, overlay: Overlay, hasPendingChoi
 /** メッセージ窓のタップとみなす移動の上限（論理 px） */
 const TAP_SLOP_LOGICAL = 4;
 
-type DispatchResult = { events: readonly GameEvent[]; rejected: boolean };
+type DispatchResult = CommandResult;
 
-export function createApp(o: { stage: HTMLElement; data: GameData; settings: SettingsStore; seed?: number }): App {
+export function createApp(o: { stage: HTMLElement; data: GameData; settings: SettingsStore; saves: SaveService; seed?: number }): App {
   const { data, stage } = o;
   const strings = data.strings;
   const store = o.settings;
@@ -146,7 +149,12 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     onClose: () => closeDebug(),
   });
 
-  stage.replaceChildren(title.el, creation.el, play.el, debug.el);
+  // SV-23: 保存できないことを知らせる帯（最前面。押せない）
+  const banner = createSaveBanner({ strings, rect: SAVE_BANNER });
+  const bannerState = createSaveBannerState(o.saves.available);
+  banner.setVisible(bannerState.visible());
+
+  stage.replaceChildren(title.el, creation.el, play.el, debug.el, banner.el);
 
   // ---------------------------------------------------------------- 再生
   const dungeonName = (st: GameState): string => (st.dive === null ? "" : dungeonOf(data, st.dive.dungeonId).name);
@@ -386,19 +394,17 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       taps = 0;
     },
     onError: (e) => console.error(e),
-    exec: async (cmd) => {
-      const r = execute(state, cmd, data);
-      const only = r.events.length === 1 ? r.events[0] : undefined;
-      if (only !== undefined && only.kind === "rejected") {
-        console.debug("rejected", only.command, only.reason);
-        return { events: r.events, rejected: true };
-      }
-      const before = state;
-      state = r.state;
-      afterCommand(state, r.events); // SV-02: 再生を始める前
-      await player.play(r.events, before, state);
-      return { events: r.events, rejected: false };
-    },
+    // SV-02: execute → state の差し替え → 保存を await → 再生（順は createCommandExec が固定する）
+    exec: createCommandExec({
+      execute: (st, cmd) => execute(st, cmd, data),
+      getState: () => state,
+      setState: (st) => {
+        state = st;
+      },
+      autosaver: createAutosaver({ saves: o.saves, onStatus: (s) => onSaveStatus(s) }),
+      play: (events, before, after) => player.play(events, before, after),
+      onRejected: (ev) => console.debug("rejected", ev.command, ev.reason),
+    }),
   });
   const run = (cmd: Command): Promise<DispatchResult | null> => gate.run(cmd);
 
@@ -476,8 +482,15 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     void runBattle({ type: "battle.auto", on: false });
   };
 
-  /** 状態を変えるコマンドの直後、再生を始める前の差し込み口（M4 のオートセーブ。§3-8、SV-02） */
-  const afterCommand = (_st: GameState, _events: readonly GameEvent[]): void => {};
+  /**
+   * SV-23: 保存の結果で帯を出し入れする。失敗に変わった最初の 1 回だけ、メッセージ窓に save.failed を出す
+   * （再生の外。続く再生の文より前に即時で出す）
+   */
+  const onSaveStatus = (s: SaveStatus): void => {
+    const r = bannerState.update(s);
+    banner.setVisible(r.visible);
+    if (r.announce) void play.message.say(t("save.failed"), true);
+  };
 
   /** UI-31: 前進の長押し。1 歩ごとに再生の終わりを待ち、[moved] の後が hpChanged だけのときに続ける（canRepeat） */
   const repeater = createHoldRepeater({

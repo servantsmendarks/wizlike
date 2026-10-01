@@ -9,6 +9,7 @@ import {
   dungeonLayout,
   layoutWarnings,
   regions,
+  SAVE_BANNER,
   TITLE_BUTTONS,
   TOUCH_EXCEPTIONS,
   TOUCH_MIN_LOGICAL,
@@ -234,6 +235,15 @@ describe("layout", () => {
     expect(dungeonLayout(g, N).partyRows[0]).toEqual({ x: 0, y: g.party.y, w: W, h: 10 });
     const g2 = regions({ header: 16, view: 150, message: 13, party: 64, controls: 157 }, W);
     expect(layoutWarnings(g2, dungeonLayout(g2, N))).toEqual(["ui.layout: message region (height 13) has no text line"]);
+  });
+
+  test("SV-23 保存できない帯はヘッダー（y0..15）の直下 y16..27 で、ヘッダーの設定ボタンと重ならず、ステージの内側", () => {
+    const g = regions(data.config.ui.layout, W);
+    expect(SAVE_BANNER).toEqual({ x: 0, y: 16, w: 240, h: 12 });
+    expect(inside(SAVE_BANNER, STAGE)).toBe(true);
+    expect(overlaps(SAVE_BANNER, g.header)).toBe(false);
+    expect(overlaps(SAVE_BANNER, HEADER_SETTINGS)).toBe(false);
+    expect(SAVE_BANNER.y).toBe(g.header.y + g.header.h);
   });
 
   test("UI-10 scale 4/3 で 30 論理 px が 40 CSS px 以上", () => {

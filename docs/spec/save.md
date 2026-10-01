@@ -3,7 +3,7 @@
 ## 1. 原則
 
 - SV-01 オートセーブのみ。手動セーブ、手動ロード、複製、スロット間コピーの UI は存在しない。
-- SV-02 保存の契機は「状態を変えるコマンドの直後」。`execute` が返した新しい `state` を、表示層がイベント再生を始める前に保存する（再生中にリロードされても結果は確定している）。
+- SV-02 保存の契機は「状態を変えるコマンドの直後」。`execute` が返した新しい `state` を、表示層がイベント再生を始める前に保存する（再生中にリロードされても結果は確定している）。表示層は保存を await してから再生を始める。保存に失敗しても `state` は巻き戻さない。`game.new` は新しいゲームの記録を作り、それ以外は今のゲームの記録へ上書きする。rejected（状態が変わらない）なら保存しない。
 - SV-03 `GameState` はそのまま JSON にできる（CLAUDE.md §3-11）。乱数の状態（`state.rng`）も含めて保存する。リロード後に同じコマンドを打てば同じ結果になる。
 - SV-04 読み込み時に `schemaVersion` を見て移行する（`src/save/migrate.ts`）。移行関数は版ごとに 1 つ、順に適用する。移行関数の列の長さは `schemaVersion − 1`。新しすぎる版は読み込まない。移行後に `GameState` の形を最小限で検査し（`screen` が town / dungeon / battle、`party` が 1 件以上、`screen` と `battle` / `townVisit` の対応など）、通らなければ読み込まない。移行したレコードは書き戻さず、次のオートセーブで上書きする。
 
@@ -20,7 +20,7 @@
 - SV-20 IndexedDB。データベース名 `wizlike`、オブジェクトストア `games`（キー `gameId`）と `settings`（キー `"settings"`）。IndexedDB のバージョンは 1 で固定（`schemaVersion` とは別）し、ストアは `onupgradeneeded` で作る。`settings` ストアは作るが、SV-24 のとおり設定は `localStorage` に置く。
 - SV-21 `games` のレコード: `{ gameId, schemaVersion, turn, updatedAt, summary: { leaderName, clearedCount, aliveCount }, state }`。`turn` は保存のたびに +1 する単調増加の番号。`summary` は一覧表示用で、`state` から作る。`turn` は game.new 直後の最初の保存で 1 にし、保存が成功するたびに +1（失敗では進めず、次の保存で同じ番号を試す）。`updatedAt` は保存時点の epoch ミリ秒。`leaderName` は `isLeader` の者の名前、`clearedCount` は `progress.clearedDungeons` の数、`aliveCount` は `life` が alive の人数。`gameId` と `turn` はセーブ側のメモリが持ち、`GameState` には入れない。
 - SV-22 書き込みは `readwrite` トランザクションで 1 レコード丸ごと置き換える。部分更新はしない。
-- SV-23 IndexedDB が使えない、または書き込みに失敗した場合は、画面上部に「保存できません」の帯を出し続ける。ゲームは続行できるが、その旨を明示する。
+- SV-23 IndexedDB が使えない、または書き込みに失敗した場合は、画面上部に「保存できません」の帯を出し続ける。ゲームは続行できるが、その旨を明示する。帯はヘッダーの直下（y16..27【仮】）に最前面で出し、押せない（下の操作を妨げない）。IndexedDB を開けなかったときは起動からずっと、書き込みに失敗したときは次の保存が成功するまで出す。帯の文言は短く（`save.failedBanner`）、全文（`save.failed`）は失敗に変わった最初の 1 回だけメッセージ窓に出す。
 - SV-24 設定（`settings`）は `localStorage` に置いてもよい: `skipAnimations`、`textSpeed`、`inputMode`（swipe / buttons / both）、`volume`、`swipeThreshold`、`holdRepeatMs`（UI-31）。キーは `wizlike.settings` で、値はこれらの欄を持つ JSON。既定値は config（`ui.textSpeedMs`、`input.swipeThresholdPx`、`input.holdRepeatMs`）から取り、壊れた欄は既定値に戻す。`volume` は音を入れる M6 で足す。
 
 ## 4. 書き出しと読み込み

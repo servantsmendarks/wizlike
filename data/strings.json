@@ -238,6 +238,7 @@
   "san.broken": "{name}は動けなくなった。",
 
   "save.failed": "保存できません。ゲームは続けられますが、進行は残りません。",
+  "save.failedBanner": "保存できません（進行は残りません）",
   "save.importOld": "古いデータです。進行が巻き戻ります。",
   "save.importBroken": "このファイルは読み込めません。",
 

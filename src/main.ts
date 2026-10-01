@@ -1,5 +1,6 @@
 // エントリポイント。データを読み込んで検証し、不正なら起動を止める（CLAUDE.md §3-5）。
-// 起動順: load → fonts.load → applyPalette → 設定の store → createApp → mountStage → app.start。
+// 起動順: load → fonts.load → applyPalette → 設定の store → IndexedDB を開く → セーブのサービス → createApp → mountStage → app.start。
+// IndexedDB を開けなくても起動は続ける（SV-23: 保存できない旨の帯を出し続ける）。
 import "./presenter/style.css";
 import config from "../data/config.json";
 import races from "../data/races.json";
@@ -18,6 +19,9 @@ import { createApp } from "./presenter/app";
 import { applyPalette } from "./presenter/palette";
 import { createSettingsStore, loadSettings, saveSettings } from "./presenter/settings";
 import { renderDataError, STARTUP_ERROR_HEADING } from "./presenter/views/data-error";
+import { openIdbBackend } from "./save/db";
+import { newGameId } from "./save/id";
+import { createSaveService } from "./save/saves";
 
 // style.css の @font-face と同じ名前。
 const FONT_FAMILY = "Misaki";
@@ -75,8 +79,20 @@ async function start(): Promise<void> {
 
   applyPalette(document.documentElement);
   const settings = createSettingsStore(loadSettings(data.config), saveSettings);
+  // SV-20 / SV-23: プライベートブラウズなどで開けなければ backend なし（全操作が失敗を返す）で続ける。
+  const backend = await openIdbBackend(globalThis.indexedDB).catch((e: unknown) => {
+    console.warn(e);
+    return null;
+  });
+  const saves = createSaveService({
+    backend,
+    now: () => Date.now(),
+    newId: () => newGameId(globalThis.crypto),
+    schemaVersion: data.config.save.schemaVersion,
+    maxGames: data.config.save.maxGames,
+  });
   // mountStage は同期で 1 回 onLayout を呼ぶので、app を先に作る。
-  const app = createApp({ stage: stageEl, data, settings });
+  const app = createApp({ stage: stageEl, data, settings, saves });
   mountStage(stageEl, data.config.stage, app.onLayout);
   app.start();
 }

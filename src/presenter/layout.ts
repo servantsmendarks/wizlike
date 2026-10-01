@@ -200,6 +200,12 @@ export function layoutWarnings(g: Regions, l: DungeonLayout): string[] {
   return out;
 }
 
+/**
+ * SV-23 の「保存できません」の帯（ステージ座標。押せない）。ヘッダー（y0..15）の直下 y16..27【仮】に置き、
+ * ヘッダーの設定ボタンを覆わない
+ */
+export const SAVE_BANNER: Rect = { x: 0, y: 16, w: 240, h: 12 };
+
 /** タイトル（UI-50 の M2 版） */
 export const TITLE_BUTTONS = {
   newGame: { x: 60, y: 240, w: 120, h: 32 },
