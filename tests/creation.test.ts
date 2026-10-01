@@ -148,15 +148,16 @@ describe("creation: game.new", () => {
     }
   });
 
-  test("CH-65/MG-01 レベル 1 の hpMax/mpMax（アルド 11/0、ベルク 12/0、キリ 5/0、ドナ 8/5、エル 2/7、フィン 5/0）、hp と mp は満タン", () => {
+  test("CH-65/MG-01 レベル 1 の hpMax/mpMax（アルド 13/0、ベルク 14/0、キリ 8/0、ドナ 10/5、エル 6/7、フィン 8/0）、hp と mp は満タン", () => {
+    // hpMax = hpDie + max(0, 生命力補正) + level1Bonus 2（手計算は growth.test.ts の CH-65）
     const party = newGame(1).party;
     expect(party.map((c) => [c.hpMax, c.mpMax])).toEqual([
-      [11, 0],
-      [12, 0],
-      [5, 0],
-      [8, 5],
-      [2, 7],
-      [5, 0],
+      [13, 0],
+      [14, 0],
+      [8, 0],
+      [10, 5],
+      [6, 7],
+      [8, 0],
     ]);
     for (const c of party) {
       expect(c.hp).toBe(c.hpMax);

@@ -153,11 +153,13 @@ describe("data: config.json", () => {
       expect(issuesOf((r) => (r.config.dungeon[k] = [1, 1]))).toEqual([]);
     }
   });
-  test("data: CH-65 growth.initialHpMinDieRatio は 0 より大きく 1 以下", () => {
-    expectIssue((r) => (r.config.growth.initialHpMinDieRatio = 0), "config.json", "growth.initialHpMinDieRatio: expected number in 0..1, got 0");
-    expectIssue((r) => (r.config.growth.initialHpMinDieRatio = 1.5), "config.json", "growth.initialHpMinDieRatio: expected number in 0..1, got 1.5");
-    expectIssue((r) => delete r.config.growth.initialHpMinDieRatio, "config.json", "growth.initialHpMinDieRatio: missing required field");
-    expect(issuesOf((r) => (r.config.growth.initialHpMinDieRatio = 1))).toEqual([]);
+  test("data: CH-65 growth.level1Bonus は 0 以上の整数【仮】。initialHpMinDieRatio は無くなった（未知キー）", () => {
+    expect(config.growth.level1Bonus).toBe(2);
+    expectIssue((r) => (r.config.growth.level1Bonus = -1), "config.json", "growth.level1Bonus: expected integer >= 0, got -1");
+    expectIssue((r) => (r.config.growth.level1Bonus = 1.5), "config.json", "growth.level1Bonus: expected integer");
+    expectIssue((r) => delete r.config.growth.level1Bonus, "config.json", "growth.level1Bonus: missing required field");
+    expect(issuesOf((r) => (r.config.growth.level1Bonus = 0))).toEqual([]);
+    expectIssue((r) => (r.config.growth.initialHpMinDieRatio = 0.5), "config.json", "growth.initialHpMinDieRatio: unknown field");
   });
   test("data: DG-05 dungeon.braidRatio は 0..1 の実数の [min, max]（min <= max）、straightBias は 0..1", () => {
     const p = "dungeon.braidRatio";

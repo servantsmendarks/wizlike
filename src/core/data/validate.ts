@@ -212,7 +212,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       hpVitPivot: I(),
       hpVitDivisor: I(POS_INT),
       hpGainMin: I(POS_INT),
-      initialHpMinDieRatio: N({ ...RATIO, positive: true }), // CH-65【仮】（0 だと下限が消えて hpMax が 0 以下になりうる）
+      level1Bonus: I(NON_NEG), // CH-65【仮】
       mpStatPivot: I(), // MG-01
       mpStatDivisor: I(POS_INT), // MG-01（0 除算を防ぐ）
     }),

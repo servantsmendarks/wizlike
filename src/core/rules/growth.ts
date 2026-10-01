@@ -21,14 +21,11 @@ export function vitBonus(vit: number, cfg: Config): number {
 }
 
 /**
- * CH-65: レベル 1 の hpMax（乱数なし）。max(ceil(hpDie × initialHpMinDieRatio), hpDie + 生命力補正)。
- * hpGainMin はレベルアップの増分にだけ使う（ユーザー決定）。
- * ceil の前の −1e-9 は浮動小数の誤差（例 10 × 0.3 = 3.0000000000000004）で ceil が 1 上がるのを
- * 防ぐため（expFor の +1e-9 と同じ考え方）。
+ * CH-65: レベル 1 の hpMax（乱数なし）。hpDie + max(0, 生命力補正) + level1Bonus（ユーザー決定）。
+ * hpGainMin はレベルアップの増分にだけ使う。
  */
 export function initialHpMax(cls: ClassDef, stats: StatBlock, cfg: Config): number {
-  const floor = Math.ceil(cls.hpDie * cfg.growth.initialHpMinDieRatio - 1e-9);
-  return Math.max(floor, cls.hpDie + vitBonus(stats.vit, cfg));
+  return cls.hpDie + Math.max(0, vitBonus(stats.vit, cfg)) + cfg.growth.level1Bonus;
 }
 
 /** MG-01: 関連能力値。cls.spells の系統の能力値の最大。系統が無ければ null。 */

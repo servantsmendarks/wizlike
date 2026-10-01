@@ -482,7 +482,7 @@ describe("毒の 1 歩（CH-43）", () => {
     p.party[1]!.hp = 1;
     expect(run(p, MOVE, DATA0).events).toEqual([
       { kind: "moved", pos: a.target, facing: a.facing },
-      { kind: "hpChanged", id: "c4", delta: -1, hp: 7 },
+      { kind: "hpChanged", id: "c4", delta: -1, hp: 9 }, // ドナ hpMax 10（CH-65）− 1
     ]);
   });
 });
