@@ -1,4 +1,5 @@
 // 成長（CH-61〜65、MG-01）。levelUpOnce は HP のダイスを先に振り、その後に習得の d100 を振る。
+// ルールのテストは expBase を RULE_EXP_BASE（1000）に固定したデータ（loadRuleData）で書く。実データの expBase（50【仮】）は表のテストだけで見る。
 // 固定シードの出目（src/core/rng.ts の randInt で実測）:
 //   seed 1: d10 = 9, 4, 2 / d4 = 1 / d8 = 5 → 続く d100 = 14 → 続く d8 = 4
 import { describe, expect, test } from "vitest";
@@ -15,9 +16,12 @@ import {
   rollHpGain,
   vitBonus,
 } from "../src/core/rules/growth";
-import { classOf } from "../src/core/state";
+import { classOf, cloneState, makeContext } from "../src/core/state";
 import type { Character, GameEvent } from "../src/core/types";
-import { ctxFor, data, expectKnownStringKeys, newGame, withChar } from "./helpers/core";
+import { data as realData, expectKnownStringKeys, loadRuleData, newGame, withChar } from "./helpers/core";
+
+/** expBase 1000 に固定したデータ（CH-64 の調整値から手計算を切り離す） */
+const data = loadRuleData();
 
 const BERK = 1; // fighter, vit 14
 const DONA = 3; // priest, vit 10, pie 15
@@ -26,7 +30,7 @@ const EL = 4; // mage, vit 7, iq 16
 const cfg = data.config;
 
 function setup(seed: number, idx: number, patch: Partial<Character> = {}) {
-  const ctx = ctxFor(withChar(newGame(seed), idx, patch));
+  const ctx = makeContext(cloneState(withChar(newGame(seed), idx, patch)), data);
   return { ctx, ch: ctx.state.party[idx]! };
 }
 
@@ -57,7 +61,33 @@ const DONA_L3: Partial<Character> = {
 };
 
 describe("growth: 必要経験値と増分の式", () => {
-  test("CH-64 expFor(1)=0、職業ごとの L2..L8 の表（lord L8 = 15946）", () => {
+  test("CH-64 実データ（expBase 50【仮】、expGrowth 1.5）の表: floor(50 × 1.5^(L−2) × expMultiplier)（fighter L2 = 50、lord L8 = 797）", () => {
+    // 手計算: 50 × 1.5^0..6 = 50, 75, 112.5, 168.75, 253.125, 379.6875, 569.53125 に
+    // fighter 1.0 / thief 0.9 / samurai 1.3 / lord 1.4 / bishop 1.2 を掛けて切り捨て
+    expect(realData.config.growth.expBase).toBe(50);
+    const table: Record<string, number[]> = {
+      fighter: [50, 75, 112, 168, 253, 379, 569],
+      thief: [45, 67, 101, 151, 227, 341, 512],
+      samurai: [65, 97, 146, 219, 329, 493, 740],
+      lord: [70, 105, 157, 236, 354, 531, 797],
+      bishop: [60, 90, 135, 202, 303, 455, 683],
+    };
+    for (const [id, want] of Object.entries(table)) {
+      const cls = classOf(realData, id);
+      expect(expFor(1, cls, realData.config)).toBe(0);
+      expect([2, 3, 4, 5, 6, 7, 8].map((L) => expFor(L, cls, realData.config)), id).toEqual(want);
+    }
+  });
+
+  test("CH-64 実データの canLevelUp の境界（fighter: exp 49 は偽、50 は真。L2 から 74 は偽、75 は真）", () => {
+    const berk = newGame(1).party[BERK]!;
+    expect(canLevelUp({ ...berk, exp: 49 }, realData)).toBe(false);
+    expect(canLevelUp({ ...berk, exp: 50 }, realData)).toBe(true);
+    expect(canLevelUp({ ...berk, level: 2, exp: 74 }, realData)).toBe(false);
+    expect(canLevelUp({ ...berk, level: 2, exp: 75 }, realData)).toBe(true);
+  });
+
+  test("CH-64 式: expBase 1000 のデータで expFor(1)=0、職業ごとの L2..L8 の表（lord L8 = 15946）", () => {
     const table: Record<string, number[]> = {
       fighter: [1000, 1500, 2250, 3375, 5062, 7593, 11390],
       thief: [900, 1350, 2025, 3037, 4556, 6834, 10251],
@@ -73,7 +103,7 @@ describe("growth: 必要経験値と増分の式", () => {
     expect(expFor(0, classOf(data, "fighter"), cfg)).toBe(0);
   });
 
-  test("CH-64 canLevelUp の境界（fighter: exp 999 は偽、1000 は真）", () => {
+  test("CH-64 式: expBase 1000 のデータで canLevelUp の境界（fighter: exp 999 は偽、1000 は真）", () => {
     const s = newGame(1);
     const berk = s.party[BERK]!;
     expect(canLevelUp({ ...berk, exp: 999 }, data)).toBe(false);

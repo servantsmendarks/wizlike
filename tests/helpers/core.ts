@@ -41,6 +41,19 @@ export function loadFreshData(): GameData {
 /** 共有の実データ。書き換えないこと。 */
 export const data: GameData = loadFreshData();
 
+/**
+ * CH-64 のルールのテスト（レベルの上げ下げの手計算・鏡の rng）で使う expBase。実データの config.growth.expBase は調整値【仮】なので、
+ * ルールのテストはこの値に固定したデータ（loadRuleData）で書き、調整のたびに期待値を作り直さないようにする。
+ */
+export const RULE_EXP_BASE = 1000;
+
+/** loadFreshData に config.growth.expBase = RULE_EXP_BASE を当てたもの（独立したコピー） */
+export function loadRuleData(): GameData {
+  const d = loadFreshData();
+  d.config.growth.expBase = RULE_EXP_BASE;
+  return d;
+}
+
 /** newGame の既定の性格（添字順。リーダーは null。乱数を使わないように "random" は含めない）。 */
 export const DEFAULT_PERSONALITIES: readonly (PersonalityId | null)[] = [
   null,

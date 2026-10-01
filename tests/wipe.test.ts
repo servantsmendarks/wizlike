@@ -2,6 +2,7 @@
 // 乱数は「鏡の rng」: 2d10 → 失う品 1 個ごとに randInt(0, 候補数 − 1)。期待の金・EXP・レベルは手計算の値を書く。
 // 基準の一行（base）: 経験値 c1 1600（戦士 Lv3）、c2 2400（戦士 Lv4）、c3 1000（盗賊 Lv2）、c4 1100（僧侶 Lv2）、c5 50、c6 0（Lv1）。
 // 戦士・僧侶の閾値 Lv2 1000 / Lv3 1500 / Lv4 2250、盗賊 900 / 1350 / 2025。所持金 300。
+// 閾値は expBase を 1000 に固定したデータ（loadRuleData）のもの。実データの expBase（50【仮】）は調整値なので、このファイルでは使わない。
 // 非装備の所持品は 5 個（c1 薬草、c3 薬草、c4 解毒草、c5 帰還の糸、c6 薬草）。
 import { describe, expect, test } from "vitest";
 import type { GameData } from "../src/core/data";
@@ -15,7 +16,10 @@ import { assetValue, itemSaleValue, performWipe, wipeIfNoneCanAct } from "../src
 import { cloneState, createItemInstance, destroyItemInstance, makeContext, memberById } from "../src/core/state";
 import type { Character, GameEvent, GameState, PenaltyResult, RuleContext } from "../src/core/types";
 import { ALWAYS_HIT, dataWith, dived, eventsOf, kindsOf, withBattle } from "./helpers/battle";
-import { data, expectKnownStringKeys, expectStateInvariants, loadFreshData, mirrorWipeRolls, newGame } from "./helpers/core";
+import { expectKnownStringKeys, expectStateInvariants, loadRuleData, mirrorWipeRolls, newGame } from "./helpers/core";
+
+/** expBase 1000 に固定したデータ（CH-64 の調整値から手計算を切り離す） */
+const data = loadRuleData();
 
 const EXPS: Record<string, number> = { c1: 1600, c2: 2400, c3: 1000, c4: 1100, c5: 50, c6: 0 };
 
@@ -273,7 +277,7 @@ describe("全滅処理（TW-20〜26）", () => {
   });
 
   test("CH-62 EXP の損失で複数段下がるときは levelDown が 1 段ずつ、wipe.levelDown は最終レベルで 1 回（expLossRatio 0.6 の data）", () => {
-    const d = loadFreshData();
+    const d = loadRuleData();
     d.penaltyTable.bands[0]!.expLossRatio = 0.6;
     const s = withTotal(base(), 2);
     const ctx = wipeOf(s, d);
@@ -476,7 +480,7 @@ describe("TW-27 全滅の方が得にならない", () => {
   });
 
   test("TW-27 損失なし: 全帯の比率と itemLoss を 0 にした data で、台帳が空・糸を持つ一行でも全滅後の総資産は徒歩で帰還した後と等しい（上回らない）", () => {
-    const d = loadFreshData();
+    const d = loadRuleData();
     for (const b of d.penaltyTable.bands) {
       b.goldLossRatio = 0;
       b.itemLoss = 0;

@@ -10,7 +10,7 @@ import { checkEnter } from "../src/core/rules/dungeon";
 import { arriveTown, mercyEligible, resurrectCostOf, returnToTown, townMenu } from "../src/core/rules/town";
 import { cloneState, createItemInstance, makeContext } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState } from "../src/core/types";
-import { ctxFor, data, expectKnownStringKeys, loadFreshData, newGame } from "./helpers/core";
+import { ctxFor, data, expectKnownStringKeys, loadFreshData, loadRuleData, newGame } from "./helpers/core";
 
 /** newGame(1) の複製に、id → patch を浅くマージしたもの */
 function town(patches: Record<string, Partial<Character>> = {}, gold = 300): GameState {
@@ -183,11 +183,26 @@ describe("TW-04 宿屋（town.inn）", () => {
     expectRejected(createInitialState(1, data), { type: "town.inn", rank: 0 }, "wrong screen");
   });
 
+  test("TW-04/CH-64 実データ（expBase 50【仮】）: 0G の馬小屋でもレベルアップする（ベルク exp 50 → L2、d10 を 1 回。戦士なので習得判定なし）", () => {
+    const s = town({ c2: { exp: 50 } });
+    const r = ok(s, { type: "town.inn", rank: 0 });
+    const mirror = createRng(1);
+    const g = Math.max(1, randInt(mirror, 1, 10) + 2);
+    expect(r.state.rng).toEqual(mirror);
+    expect(r.state.gold).toBe(300);
+    expect(r.events.filter((e) => e.kind === "levelUp")).toEqual([
+      { kind: "levelUp", id: "c2", level: 2, hpGain: g, mpGain: 0, hpMax: 14 + g, mpMax: 0, hp: 14 + g, mp: 0 },
+    ]);
+  });
+
   test("TW-04/CH-61 回復の後に alive の者を並び順にレベルアップ（複数段）。dead は上がらない。乱数は鏡の rng どおり、習得の dice の label は town.inn.learnDice", () => {
+    // expBase 1000 に固定したデータ（CH-64 の調整値から手計算を切り離す）で、戦士・僧侶の閾値は L2 1000 / L3 1500 / L4 2250。
     // c2 ベルク exp 1500 → L3（d10 を 2 回、+2 は vit 14）、c3 キリ dead exp 5000 は上がらない、
     // c4 ドナ exp 1000 → L2（d8、vit 10 で +0。L2 の判定対象は blessing だけで d100 を 1 回。L2 で開く帯は無いので保証なし）
+    const d = loadRuleData();
     const s = town({ c2: { exp: 1500 }, c3: { ...DEAD, exp: 5000 }, c4: { exp: 1000 } });
-    const r = ok(s, { type: "town.inn", rank: 0 });
+    const r = execute(s, { type: "town.inn", rank: 0 }, d);
+    expectKnownStringKeys(r.events);
     const mirror = createRng(1);
     const g1 = Math.max(1, randInt(mirror, 1, 10) + 2);
     const g2 = Math.max(1, randInt(mirror, 1, 10) + 2);
