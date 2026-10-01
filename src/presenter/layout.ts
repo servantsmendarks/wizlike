@@ -97,8 +97,12 @@ const TOWN_MENU_REL: readonly Rect[] = [
  */
 const CAMP_GRID_REL: readonly Rect[] = [6, 54].flatMap((y) => [4, 62, 120, 178].map((x): Rect => ({ x, y, w: 56, h: 40 })));
 
-/** オート中の「オート解除」ボタン（UI-54）。操作領域からの相対 */
-const AUTO_STOP_REL: Rect = { x: 60, y: 34, w: 120, h: 32 };
+/**
+ * オート中の「オート解除」ボタン（UI-54）。操作領域からの相対。
+ * パーティの選択の「戦う」（BATTLE_PARTY_REL[0]）と同じ矩形に置く。CB-43 でオートが解けると同じ場所にパーティの選択が出るので、
+ * 解除のつもりの押し直しが コマンドを送る枠（前回と同じ・逃げる・オート）に当たらないようにする（戦うは段を移るだけで「戻る」で戻れる）
+ */
+const AUTO_STOP_REL: Rect = { ...BATTLE_PARTY_REL[0]! };
 
 /** 操作領域の中身が収まる最小の高さ（相対矩形の下端の最大）。既定の layout では 98 */
 export const CONTROLS_MIN_HEIGHT = Math.max(

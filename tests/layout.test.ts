@@ -166,6 +166,15 @@ describe("layout", () => {
     for (const d of Object.values(L.dpad)) for (const m of L.menu) expect(overlaps(d, m)).toBe(false);
   });
 
+  test("UI-54 オート解除の矩形は、オートが解けた後に出るパーティの選択のうちコマンドを送る枠（前回と同じ・逃げる・オート = battleParty[1..3]）と重ならず、戦う（battleParty[0]）と同じ矩形", () => {
+    for (const r of L.battleParty.slice(1)) expect(overlaps(L.autoStop, r)).toBe(false);
+    expect(L.autoStop).toEqual(L.battleParty[0]);
+    // 区切りを変えても同じ（操作領域の原点に付いてくる）
+    const g2 = regions({ ...data.config.ui.layout, view: 150, message: 60, party: 74, controls: 100 }, W);
+    const L2 = dungeonLayout(g2, N);
+    for (const r of L2.battleParty.slice(1)) expect(overlaps(L2.autoStop, r)).toBe(false);
+  });
+
   test("UI-10/UI-53 キャンプの枠は 4 列 × 2 段の 56×40 の 8 枠（x 4 / 62 / 120 / 178、y 6 / 54）。操作領域の内側で重ならず、一辺は TOUCH_MIN_LOGICAL 以上", () => {
     const controls = regions(data.config.ui.layout, W).controls;
     expect(L.campGrid).toEqual([306, 354].flatMap((y) => [4, 62, 120, 178].map((x) => ({ x, y, w: 56, h: 40 }))));
@@ -201,7 +210,8 @@ describe("layout", () => {
     // （x 4/62/120/178、y 306）と下段の右端の戻る（x 178、y 354）、オート解除
     expect(L.battleParty).toEqual([306, 354].flatMap((y) => [4, 122].map((x) => ({ x, y, w: 114, h: 40 }))));
     expect(L.battleMember).toEqual([...[4, 62, 120, 178].map((x) => ({ x, y: 306, w: 56, h: 40 })), { x: 178, y: 354, w: 56, h: 40 }]);
-    expect(L.autoStop).toEqual({ x: 60, y: 334, w: 120, h: 32 });
+    // オート解除はパーティの選択の「戦う」と同じ矩形（送る枠に重ねない）
+    expect(L.autoStop).toEqual({ x: 4, y: 306, w: 114, h: 40 });
     // メッセージ窓（y166..235）: 文字領域 x4..235・y168..233 の 6 行、続きの三角 x228..235・y226..233
     expect(L.message).toEqual({ text: { x: 4, y: 168, w: 232, h: 66 }, lines: 6, more: { x: 228, y: 226, w: 8, h: 8 } });
     // パーティ欄（y236..299）: 行 i は y238+10i
