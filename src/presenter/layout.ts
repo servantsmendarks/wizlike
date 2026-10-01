@@ -82,12 +82,21 @@ const BATTLE_MEMBER_REL: readonly Rect[] = [
   { x: 178, y: 54, w: 56, h: 40 },
 ];
 
+/**
+ * 街の施設メニュー（UI-52）。3 列 × 2 段の 76×40 の 5 枠（酒場・宿屋・寺院 / 闇魔術・迷宮へ。下段の右端は空き）。
+ * 段の位置と高さは戦闘のパーティの選択と同じ（y 6 / 54、高さ 40）。操作領域からの相対
+ */
+const TOWN_MENU_REL: readonly Rect[] = [
+  ...[4, 82, 160].map((x): Rect => ({ x, y: 6, w: 76, h: 40 })),
+  ...[4, 82].map((x): Rect => ({ x, y: 54, w: 76, h: 40 })),
+];
+
 /** オート中の「オート解除」ボタン（UI-54）。操作領域からの相対 */
 const AUTO_STOP_REL: Rect = { x: 60, y: 34, w: 120, h: 32 };
 
 /** 操作領域の中身が収まる最小の高さ（相対矩形の下端の最大）。既定の layout では 98 */
 export const CONTROLS_MIN_HEIGHT = Math.max(
-  ...[...Object.values(DPAD_REL), ...MENU_SLOTS_REL, ...LIST_ROWS_REL, MAP_CLOSE_REL, ...BATTLE_PARTY_REL, ...BATTLE_MEMBER_REL, AUTO_STOP_REL].map(
+  ...[...Object.values(DPAD_REL), ...MENU_SLOTS_REL, ...LIST_ROWS_REL, MAP_CLOSE_REL, ...BATTLE_PARTY_REL, ...BATTLE_MEMBER_REL, ...TOWN_MENU_REL, AUTO_STOP_REL].map(
     (r) => r.y + r.h,
   ),
 );
@@ -119,7 +128,7 @@ export type DungeonLayout = {
   battleMember: Rect[];
   /** オート中の「オート解除」 */
   autoStop: Rect;
-  /** UI-52 の街の施設メニューの 4 枠（酒場・宿屋 / 寺院・迷宮へ。戦闘のパーティの選択と同じ 2×2） */
+  /** UI-52 の街の施設メニューの 5 枠（上段 0..2 酒場・宿屋・寺院、下段 3..4 闇魔術・迷宮へ） */
   townMenu: Rect[];
   /** text は文字領域（枠の内側）、lines はそこに入る行数、more は続きの三角 */
   message: { text: Rect; lines: number; more: Rect };
@@ -164,7 +173,7 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
     battleParty: BATTLE_PARTY_REL.map((r) => shift(r, c)),
     battleMember: BATTLE_MEMBER_REL.map((r) => shift(r, c)),
     autoStop: shift(AUTO_STOP_REL, c),
-    townMenu: BATTLE_PARTY_REL.map((r) => shift(r, c)),
+    townMenu: TOWN_MENU_REL.map((r) => shift(r, c)),
     message: { text: mText, lines: Math.max(0, Math.floor(mText.h / MESSAGE_LINE_H)), more },
     partyRows,
     map: {

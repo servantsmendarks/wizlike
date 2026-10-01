@@ -1,18 +1,20 @@
-// UI-52 の街。施設メニューは 酒場・宿屋・寺院・迷宮へ の 2×2（操作領域の layout.townMenu）。各施設はリスト選択。
+// UI-52 の街。施設メニューは 酒場・宿屋・寺院 / 闇魔術・迷宮へ の 3 列 × 2 段の 5 枠（操作領域の layout.townMenu）。各施設はリスト選択。
 // 街の画面は迷宮の画面（views/dungeon.ts）の 5 領域をそのまま使う（ビューは枠だけ）。ここはページの中身を決める純粋な部分。
-// 料金・押せるか・候補（宿のランク、寺院の対象、救済の候補、入れる迷宮）は core の townMenu の値だけで決める（UI-35）。
-// 表示層は式を持たない。どの項目で何を送るか（town.inn / town.temple / town.mercy / dungeon.enter）は app が決める。
+// 料金・押せるか・候補（宿のランク、寺院・闇魔術の対象、救済の候補、入れる迷宮）は core の townMenu の値だけで決める（UI-35）。
+// 表示層は式を持たない。どの項目で何を送るか（town.inn / town.temple / town.dark / town.mercy / dungeon.enter）は app が決める。
 import type { Strings } from "../../core/data/index";
 import type { TownMenu } from "../../core/types";
 import { formatMessage } from "./message";
 
 export type TempleService = "resurrect" | "cure" | "uncurse";
 /** 街のページ。{ temple: s } は寺院のサービス s の対象の一覧 */
-export type TownPage = "menu" | "tavern" | "inn" | "temple" | "gate" | { temple: TempleService };
+export type TownPage = "menu" | "tavern" | "inn" | "temple" | "dark" | "gate" | { temple: TempleService };
 export type TownEntry =
   | { kind: "page"; to: TownPage; label: string }
   | { kind: "inn"; rank: number; label: string; disabled: boolean }
   | { kind: "temple"; service: TempleService; memberId: string; label: string; disabled: boolean }
+  | { kind: "dark"; memberId: string; label: string; disabled: boolean }
+  /** 寺院のサービス・闇魔術の対象がいない（「その必要がある者はいない」。押すと同じ文を語る） */
   | { kind: "templeNone"; label: string }
   | { kind: "mercy"; memberId: string; label: string }
   | { kind: "enter"; dungeonId: string; label: string; disabled: boolean }
@@ -37,7 +39,7 @@ export function townParent(page: TownPage): TownPage | null {
   return "menu";
 }
 
-/** そのページのリストの項目（menu は 2×2 の 4 枠。それ以外は一覧で末尾が戻る） */
+/** そのページのリストの項目（menu は 3 列 × 2 段の 5 枠。それ以外は一覧で末尾が戻る） */
 export function townEntries(page: TownPage, menu: TownMenu, strings: Strings): TownEntry[] {
   const back: TownEntry = { kind: "back", label: s(strings, "common.back") };
   if (page === "menu") {
@@ -45,6 +47,7 @@ export function townEntries(page: TownPage, menu: TownMenu, strings: Strings): T
       { kind: "page", to: "tavern", label: s(strings, "town.menu.tavern") },
       { kind: "page", to: "inn", label: s(strings, "town.menu.inn") },
       { kind: "page", to: "temple", label: s(strings, "town.menu.temple") },
+      { kind: "page", to: "dark", label: s(strings, "town.menu.dark") },
       { kind: "page", to: "gate", label: s(strings, "town.menu.dungeon") },
     ];
   }
@@ -61,6 +64,14 @@ export function townEntries(page: TownPage, menu: TownMenu, strings: Strings): T
   }
   if (page === "temple") {
     return [...TEMPLE_SERVICES.map((sv): TownEntry => ({ kind: "page", to: { temple: sv }, label: s(strings, `town.temple.${sv}`) })), back];
+  }
+  if (page === "dark") {
+    // TW-08: ash の者の行（名前と料金。払えなければ disabled）。押すと town.dark
+    const rows = menu.dark.map(
+      (r): TownEntry => ({ kind: "dark", memberId: r.memberId, label: s(strings, "town.dark.row", { name: r.name, cost: r.cost }), disabled: !r.affordable }),
+    );
+    if (rows.length === 0) return [{ kind: "templeNone", label: s(strings, "town.temple.none") }, back];
+    return [...rows, back];
   }
   if (page === "gate") {
     const rows = menu.dungeons.map((d): TownEntry => ({ kind: "enter", dungeonId: d.id, label: d.name, disabled: !d.canEnter }));
@@ -88,6 +99,7 @@ export function townPageIntro(page: TownPage, menu: TownMenu): string[] {
   if (page === "tavern") return menu.mercy !== null ? ["town.tavern.intro", "town.mercy.offer"] : ["town.tavern.intro"];
   if (page === "inn") return ["town.inn.intro"];
   if (page === "temple") return ["town.temple.intro"];
+  if (page === "dark") return ["town.dark.intro"];
   if (page === "gate") return ["town.dungeonGate.intro"];
   return [];
 }

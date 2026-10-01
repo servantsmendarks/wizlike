@@ -1,6 +1,6 @@
 // UI-52 街のページ（views/town.ts の純粋な部分）。値は core の townMenu だけから作る（UI-35）。
 // 既定のパーティ（newGame(1)）: c1 アルド（リーダー）、c2 ベルク、c3 キリ、c4 ドナ、c5 エル、c6 フィン。全員レベル 1。所持金 300。
-// 宿: 馬小屋 0G / 相部屋 30G / 個室 100G。寺院: 蘇生 level × 250、治療 毒 50 + 麻痺 150、解呪 200。
+// 宿: 馬小屋 0G / 相部屋 30G / 個室 100G。寺院: 蘇生 level × 250、治療 毒 50 + 麻痺 150、解呪 200。闇魔術: level × darkCostPerLevel。
 import { describe, expect, test } from "vitest";
 import { townMenu } from "../src/core/rules/town";
 import { cloneState, createItemInstance } from "../src/core/state";
@@ -29,12 +29,13 @@ function menuOf(s: GameState): TownMenu {
 const back: TownEntry = { kind: "back", label: S["common.back"]! };
 
 describe("UI-52 街のページ", () => {
-  test("UI-52 施設メニューは 酒場・宿屋・寺院・迷宮へ の 4 枠。ヘッダーは所持金", () => {
+  test("UI-52/TW-08 施設メニューは 酒場・宿屋・寺院・闇魔術・迷宮へ の 5 枠。ヘッダーは所持金", () => {
     const m = menuOf(town());
     expect(townEntries("menu", m, S)).toEqual([
       { kind: "page", to: "tavern", label: "酒場" },
       { kind: "page", to: "inn", label: "宿屋" },
       { kind: "page", to: "temple", label: "寺院" },
+      { kind: "page", to: "dark", label: "闇魔術" },
       { kind: "page", to: "gate", label: "迷宮へ" },
     ]);
     expect(townHeader(m, S)).toBe("街　300G");
@@ -84,6 +85,26 @@ describe("UI-52 街のページ", () => {
     ]);
   });
 
+  test("UI-52/TW-08 闇魔術は ash の者の行（名前と料金、払えなければ disabled）。対象がいなければ「その必要がある者はいない」", () => {
+    const per = data.config.economy.darkCostPerLevel;
+    // dead の者は対象外（寺院の蘇生）。ash の c2（レベル 3）と c5（レベル 1）が並び順で出る
+    const s = town({ c5: { life: "ash", hp: 0 }, c2: { life: "ash", hp: 0, level: 3 }, c3: { life: "dead", hp: 0 } }, per * 2);
+    const m = menuOf(s);
+    expect(townEntries("dark", m, S)).toEqual([
+      { kind: "dark", memberId: "c2", label: `ベルク　${per * 3}G`, disabled: true },
+      { kind: "dark", memberId: "c5", label: `エル　${per}G`, disabled: false },
+      back,
+    ]);
+    // ちょうど払える額なら押せる
+    expect(townEntries("dark", menuOf(town({ c2: { life: "ash", hp: 0, level: 3 } }, per * 3)), S)).toEqual([
+      { kind: "dark", memberId: "c2", label: `ベルク　${per * 3}G`, disabled: false },
+      back,
+    ]);
+    expect(townEntries("dark", menuOf(town({ c3: { life: "dead", hp: 0 } })), S)).toEqual([{ kind: "templeNone", label: S["town.temple.none"] }, back]);
+    expect(townParent("dark")).toBe("menu");
+    expect(townPageIntro("dark", m)).toEqual(["town.dark.intro"]);
+  });
+
   test("UI-52/TW-31 酒場: 申し出が無ければ戻るだけ。申し出の間は dead / ash の者の行（リーダーも）", () => {
     expect(townEntries("tavern", menuOf(town()), S)).toEqual([back]);
     expect(townPageIntro("tavern", menuOf(town()))).toEqual(["town.tavern.intro"]);
@@ -107,7 +128,7 @@ describe("UI-52 街のページ", () => {
 
   test("UI-52/UI-33 戻る（Esc）は 1 つ上のページ。寺院のサービスは寺院へ、他はメニューへ、メニューは null", () => {
     expect(townParent("menu")).toBeNull();
-    for (const p of ["tavern", "inn", "temple", "gate"] as const) expect(townParent(p)).toBe("menu");
+    for (const p of ["tavern", "inn", "temple", "dark", "gate"] as const) expect(townParent(p)).toBe("menu");
     expect(townParent({ temple: "cure" })).toBe("temple");
     expect(samePage({ temple: "cure" }, { temple: "cure" })).toBe(true);
     expect(samePage({ temple: "cure" }, { temple: "uncurse" })).toBe(false);
@@ -115,14 +136,14 @@ describe("UI-52 街のページ", () => {
     expect(samePage("inn", "inn")).toBe(true);
   });
 
-  test("UI-52 ページの語りは params の無い strings キー（宿・寺院・迷宮の入口）。メニューとサービスの一覧は語らない", () => {
+  test("UI-52 ページの語りは params の無い strings キー（宿・寺院・闇魔術・迷宮の入口）。メニューとサービスの一覧は語らない", () => {
     const m = menuOf(town());
     expect(townPageIntro("inn", m)).toEqual(["town.inn.intro"]);
     expect(townPageIntro("temple", m)).toEqual(["town.temple.intro"]);
     expect(townPageIntro("gate", m)).toEqual(["town.dungeonGate.intro"]);
     expect(townPageIntro("menu", m)).toEqual([]);
     expect(townPageIntro({ temple: "resurrect" }, m)).toEqual([]);
-    for (const k of ["town.tavern.intro", "town.mercy.offer", "town.inn.intro", "town.temple.intro", "town.dungeonGate.intro", "town.temple.none"]) {
+    for (const k of ["town.tavern.intro", "town.mercy.offer", "town.inn.intro", "town.temple.intro", "town.dungeonGate.intro", "town.dark.intro", "town.temple.none"]) {
       expect(S[k], k).toBeDefined();
       expect(S[k], k).not.toContain("{");
     }

@@ -263,7 +263,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
 
   const listItem = (label: string, onSelect: () => void): ControlItem => ({ label, onSelect: () => guard(onSelect) });
 
-  /** UI-52: 街のページを移る。入ったページの語り（宿・寺院・迷宮の入口、酒場は救済の申し出も）は再生の外で出す */
+  /** UI-52: 街のページを移る。入ったページの語り（宿・寺院・闇魔術・迷宮の入口、酒場は救済の申し出も）は再生の外で出す */
   const goTownPage = (page: TownPage): void => {
     townPage = page;
     syncControls();
@@ -306,6 +306,10 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
           case "temple":
             void run({ type: "town.temple", memberId: e.memberId, service: e.service });
             return;
+          case "dark":
+            // TW-08: 戻した後も闇魔術のページにとどまる（再生の最後の sync で townMenu を取り直す）
+            void run({ type: "town.dark", memberId: e.memberId });
+            return;
           case "mercy":
             void run({ type: "town.mercy", memberId: e.memberId });
             return;
@@ -345,7 +349,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       }
       const items = townEntries(townPage, menu, strings).map(townItem);
       if (townPage === "menu") {
-        // UI-52: 施設メニューは 2×2 の 4 枠
+        // UI-52: 施設メニューは 3 列 × 2 段の 5 枠
         c.setBattleMenu(items, "town");
         c.setMode("battle");
       } else {
