@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { dungeonLayout, regions } from "../src/presenter/layout";
+import { dungeonLayout, MESSAGE_LINE_H, regions } from "../src/presenter/layout";
 import { createMessageWindow, formatMessage, trimHistory, typewriterSteps } from "../src/presenter/views/message";
 import { headerText } from "../src/presenter/views/header";
 import { formatPartyRow } from "../src/presenter/views/party";
@@ -150,6 +150,29 @@ describe("MessageWindow", () => {
     w.clear();
     expect(w.history()).toEqual([]);
     expect(box.children).toEqual([]);
+  });
+
+  test("UI-11/UI-43 文字領域の見える高さは行の高さの整数倍（lines × MESSAGE_LINE_H）で、余りは上の余白にする（末尾を見せたときに最上段が切れない）", () => {
+    const created: FakeEl[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => {
+        const e = new FakeEl();
+        created.push(e);
+        return e;
+      },
+      createElementNS: () => new FakeEl(),
+    });
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    createMessageWindow({ speed: () => 0, historyMax: 15, region: g.message, layout: L.message });
+    const box = created.find((e) => e.className === "message-history")!;
+    const top = Number.parseFloat(box.style["top"]!);
+    const height = Number.parseFloat(box.style["height"]!);
+    expect(height).toBe(L.message.lines * MESSAGE_LINE_H);
+    // 下端は文字領域の下端のまま（枠 1px の内側が原点）
+    expect(top + height).toBe(L.message.text.y - g.message.y - 1 + L.message.text.h);
+    // 既定（70px の窓、文字領域 66px）では 6 行 60px、上の余白 6px
+    expect({ top, height }).toEqual({ top: 7, height: 60 });
   });
 
   test("UI-43 文字送りの途中は typing() が真で、rush で即座に全文になる", async () => {

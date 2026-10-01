@@ -5,10 +5,11 @@
 // 窓は ui §2 の message 領域。el は region の位置と大きさに自分で置く。内側の矩形は layout.ts の dungeonLayout
 // （message.text / message.more）。既定（240×70）では、窓の左上を原点にした論理 px で:
 // - 枠 1px（0..239 × 0..69）
-// - 文字領域 x4..235、y2..67 の 6 行（1 行 10px、全角 29 字）。指ではスクロールしない（overflow hidden・touch-action none）。
+// - 文字領域 x4..235、y2..67。そのうち下詰めの y8..67 に 6 行（1 行 10px、全角 29 字）を見せ、余りの 6px は上の余白にする
+//   （見える高さを行の高さの整数倍にし、末尾を見せたときに最上段が途中で切れないようにする）。指ではスクロールしない（overflow hidden・touch-action none）。
 //   DOM には直近の lines × 2 文だけを残し、いつも末尾を見せる。全文は配列に持ち、履歴の画面（UI-46）で見せる
 // - 続きの三角 x228..235、y60..67
-import type { DungeonLayout, Rect } from "../layout";
+import { MESSAGE_LINE_H, type DungeonLayout, type Rect } from "../layout";
 
 /** {k} を params[k] で置き換える。params に無いものは {k} のまま残す */
 export function formatMessage(tpl: string, params?: Record<string, string | number>): string {
@@ -89,15 +90,17 @@ export function createMessageWindow(o: {
     color: "var(--c-text)",
   });
 
-  // 直近の文（指ではスクロールしない。末尾を見せる）
+  // 直近の文（指ではスクロールしない。末尾を見せる）。
+  // 見える高さを行の高さの整数倍（lines 行）にし、余りは上の余白にする。末尾まで送ったときに最上段の行が途中で切れない
+  const textH = Math.min(t.h, o.layout.lines * MESSAGE_LINE_H);
   const history = document.createElement("div");
   history.className = "message-history";
   Object.assign(history.style, {
     position: "absolute",
     left: `${t.x - r.x - BORDER}px`, // 既定 3（枠 1px の内側から数えて x4）
-    top: `${t.y - r.y - BORDER}px`, // 既定 1（y2）
+    top: `${t.y - r.y - BORDER + (t.h - textH)}px`, // 既定 7（y8。文字領域 y2..67 の余り 6px を上に置く）
     width: `${t.w}px`,
-    height: `${t.h}px`,
+    height: `${textH}px`, // 既定 60（6 行）
     overflow: "hidden",
     touchAction: "none",
     wordBreak: "break-all",
