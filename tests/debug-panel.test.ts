@@ -1,7 +1,7 @@
 // debug パネル（M0 の確認画面と設定の仮 UI、UI-57 のポインタの記録）。純粋な部分と、偽の document の DOM の部分。
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { tapSpecOf } from "../src/presenter/input/tap";
-import { DEBUG_BUTTONS, DEBUG_POINTER, debugRow } from "../src/presenter/layout";
+import { DEBUG_BUTTONS, DEBUG_BUTTONS_M5, DEBUG_POINTER, debugRow } from "../src/presenter/layout";
 import { createSettingsStore, defaultSettings } from "../src/presenter/settings";
 import type { StageLayout } from "../src/presenter/stage";
 import { createDebugPanel, DEBUG_ROW_KEYS, debugRows, formatStageInfo, formatSwipeDebug, pointerRowsText, type StageInfoInput } from "../src/presenter/views/debug-panel";
@@ -100,6 +100,50 @@ describe("createDebugPanel", () => {
     vi.unstubAllGlobals();
   });
 
+  test("UI-57 1 ページ目の 2 段目（y376 の 56×22 ×4。M5）: SAN段↓・イベント・罠の前・階段前。押すと onSanDown / onWarp(event|trap|stairsDown)。1 ページ目の子なので 2 ページ目では見えない", () => {
+    const created: FakeEl[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => {
+        const e = new FakeEl();
+        created.push(e);
+        return e;
+      },
+      createElementNS: () => new FakeEl(),
+    });
+    const store = createSettingsStore(defaultSettings(data.config), () => {});
+    const calls: string[] = [];
+    const panel = createDebugPanel({
+      strings: data.strings,
+      store,
+      defaults: defaultSettings(data.config),
+      onClose: () => calls.push("close"),
+      onHpOne: () => calls.push("hpOne"),
+      onSanDown: () => calls.push("sanDown"),
+      onWarp: (to) => calls.push(`warp:${to}`),
+      pointers: () => [],
+    });
+    const root = panel.el as unknown as FakeEl;
+    const [page1] = root.children.filter((c) => c.className === "debug-page") as [FakeEl];
+    const tap = (b: FakeEl): void => tapSpecOf(b)!.onTap({ lx: 0, ly: 0 });
+    const want = [
+      ["debug.sanDownButton", DEBUG_BUTTONS_M5.sanDown, "sanDown"],
+      ["debug.warpEventButton", DEBUG_BUTTONS_M5.warpEvent, "warp:event"],
+      ["debug.warpTrapButton", DEBUG_BUTTONS_M5.warpTrap, "warp:trap"],
+      ["debug.warpStairsButton", DEBUG_BUTTONS_M5.warpStairs, "warp:stairsDown"],
+    ] as const;
+    expect(want.map(([k]) => data.strings[k])).toEqual(["SAN段↓", "イベント", "罠の前", "階段前"]);
+    for (const [key, r, call] of want) {
+      const b = page1.children.find((c) => c.className === "ui-button" && c.textContent === data.strings[key]);
+      expect(b, key).toBeDefined();
+      expect([b!.style["left"], b!.style["top"], b!.style["width"], b!.style["height"]]).toEqual([`${r.x}px`, `${r.y}px`, `${r.w}px`, `${r.h}px`]);
+      calls.length = 0;
+      tap(b!);
+      expect(calls, key).toEqual([call]);
+      // パネルの直下（2 ページ目でも見えるもの）には置かない
+      expect(root.children.includes(b!), key).toBe(false);
+    }
+  });
+
   test("UI-57/UI-36 ボタンの段は 全員HP1・既定に戻す・ポインタ・閉じる（DEBUG_BUTTONS の位置）。全員HP1 は onHpOne、オートの速さの行は 200 → 400 → 600 と巡回する。どれも onTap で登録する", () => {
     const created: FakeEl[] = [];
     vi.stubGlobal("document", {
@@ -114,7 +158,7 @@ describe("createDebugPanel", () => {
     const store = createSettingsStore(defaultSettings(data.config), (s) => persisted.push(s.autoBeatMs));
     let hpOne = 0;
     let closed = 0;
-    createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => closed++, onHpOne: () => hpOne++, pointers: () => [] });
+    createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => closed++, onHpOne: () => hpOne++, onSanDown: () => {}, onWarp: () => {}, pointers: () => [] });
     const buttons = created.filter((e) => e.className === "ui-button");
     const byText = (t: string): FakeEl => buttons.find((b) => b.textContent === t)!;
     const tap = (b: FakeEl): void => tapSpecOf(b)!.onTap({ lx: 0, ly: 0 });
@@ -160,7 +204,7 @@ describe("createDebugPanel", () => {
     });
     const store = createSettingsStore(defaultSettings(data.config), () => {});
     let entries: PointerEntry[] = [];
-    const panel = createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => {}, onHpOne: () => {}, pointers: () => entries });
+    const panel = createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => {}, onHpOne: () => {}, onSanDown: () => {}, onWarp: () => {}, pointers: () => entries });
     const root = panel.el as unknown as FakeEl;
     const pages = root.children.filter((c) => c.className === "debug-page");
     expect(pages).toHaveLength(2);

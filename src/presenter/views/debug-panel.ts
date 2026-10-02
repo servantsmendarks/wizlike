@@ -4,6 +4,7 @@
 // - debugRow(0..5): スワイプ閾値（CSS px の換算値も出す）、長押し間隔、文字速度、演出スキップ、オートの速さ（UI-45）、入力モード
 // - DEBUG_SWIPE_Y（y328..337）: 最後に確定したスワイプの "dx,dy,dir"（ASCII）
 // - DEBUG_BUTTONS（y342）: 全員HP1（UI-57。debug.hpOne を送るのは app）、既定に戻す、ポインタ、閉じる
+// - DEBUG_BUTTONS_M5（y376。1 ページ目だけ）: SAN段↓・イベント・罠の前・階段前（M5。debug.sanDown / debug.warp を送るのは app）
 // - 「ポインタ」で 2 ページ目（UI-57。直近 20 件のポインタイベント。input/pointer-log の記録を DEBUG_POINTER の 20 行に古い順）。
 //   2 ページ目ではボタンが「設定」に変わり、全員HP1・既定に戻すは出さない。開くたびに app が showSettings で 1 ページ目に戻す
 // 値を変えたら、その場で store.set を呼ぶ（保存とすぐの反映は store の購読者が行う）。
@@ -11,7 +12,7 @@
 import type { Strings } from "../../core/data/index";
 import { thresholdCss } from "../input/swipe";
 import { formatPointerRow, POINTER_LOG_MAX, type PointerEntry } from "../input/pointer-log";
-import { DEBUG_BUTTONS, DEBUG_POINTER, DEBUG_SWIPE_Y, debugRow, type Rect } from "../layout";
+import { DEBUG_BUTTONS, DEBUG_BUTTONS_M5, DEBUG_POINTER, DEBUG_SWIPE_Y, debugRow, type Rect } from "../layout";
 import type { Insets, StageLayout, StageLayoutInput } from "../stage";
 import { nextAutoBeat, nextInputMode, stepSetting, type NumericSettingKey, type Settings, type SettingsStore } from "../settings";
 import { formatMessage } from "./message";
@@ -151,6 +152,10 @@ export function createDebugPanel(o: {
   onClose(): void;
   /** UI-57: 「全員HP1」（送れるかは app が決める） */
   onHpOne(): void;
+  /** UI-57（M5）: 「SAN段↓」（debug.sanDown。送れるかは app が決める） */
+  onSanDown(): void;
+  /** UI-57（M5）: 「イベント」「罠の前」「階段前」（debug.warp。送れるかは app が決める） */
+  onWarp(to: "event" | "trap" | "stairsDown"): void;
   /** UI-57: 2 ページ目に出すポインタの記録（古い順。input/pointer-log の entries） */
   pointers(): readonly PointerEntry[];
 }): DebugPanel {
@@ -212,6 +217,11 @@ export function createDebugPanel(o: {
 
   page1.appendChild(button(t("debug.hpOneButton"), DEBUG_BUTTONS.hpOne, () => o.onHpOne()));
   page1.appendChild(button(t("settings.reset"), DEBUG_BUTTONS.reset, () => o.store.set({ ...o.defaults })));
+  // M5: 2 段目（1 ページ目だけ）
+  page1.appendChild(button(t("debug.sanDownButton"), DEBUG_BUTTONS_M5.sanDown, () => o.onSanDown()));
+  page1.appendChild(button(t("debug.warpEventButton"), DEBUG_BUTTONS_M5.warpEvent, () => o.onWarp("event")));
+  page1.appendChild(button(t("debug.warpTrapButton"), DEBUG_BUTTONS_M5.warpTrap, () => o.onWarp("trap")));
+  page1.appendChild(button(t("debug.warpStairsButton"), DEBUG_BUTTONS_M5.warpStairs, () => o.onWarp("stairsDown")));
 
   // 2 ページ目（UI-57 のポインタの記録）: 題と 20 行（古い順）。描くのはページを切り替えたときだけ
   const page2 = document.createElement("div");

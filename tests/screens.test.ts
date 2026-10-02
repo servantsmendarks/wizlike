@@ -287,6 +287,35 @@ describe("入力と Command", () => {
     expect(app).toMatch(/const stageInput = attachStageInput\(/);
   });
 
+  test("UI-55 onScreen は routeOfScreen を通し、swipeEnabled / repeater / walker / openMap / handleAction / 長押しの解除は fieldFree（screen dungeon かつ保留なし）を見る（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toMatch(/const fieldFree = \(\): boolean => state\.screen === "dungeon" && state\.pendingChoice === null;/);
+    const onScreen = /const onScreen = \(to: Screen\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(onScreen).toMatch(/const r = to === "title" \? "title" : routeOfScreen\(to\);/);
+    expect(onScreen).toMatch(/showRoute\(r\)/);
+    expect(onScreen).not.toMatch(/showRoute\(to\)/);
+    const swipe = /const swipeEnabled = \(\): boolean =>([\s\S]*?);\n/.exec(app)?.[1] ?? "";
+    expect(swipe).toMatch(/fieldFree\(\)/);
+    const repeater = /const repeater = createHoldRepeater\(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(repeater).toMatch(/ready: \(\) => route === "dungeon" && overlay === null && fieldFree\(\)/);
+    const walker = /const walker = createHoldRepeater\(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(walker).toMatch(/ready: \(\) => route === "dungeon" && overlay === null && fieldFree\(\)/);
+    const openMap = /const openMap = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(openMap).toMatch(/if \(route !== "dungeon" \|\| overlay !== null \|\| !fieldFree\(\)\) return;/);
+    expect(app).toMatch(/case "dungeon": \{\s*if \(!fieldFree\(\)\) \{/);
+    expect(app).toMatch(/shouldReleaseHold\(route, overlay, !fieldFree\(\)\)/);
+    // 保留の有無だけで迷宮の入力を決める古い条件が残っていない
+    expect(app).not.toMatch(/route === "dungeon" && overlay === null && state\.pendingChoice === null/);
+  });
+
+  test("UI-57 debug パネルの SAN段↓・イベント・罠の前・階段前は、迷宮のときだけパネルを閉じてから debug.sanDown / debug.warp を送る（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toMatch(/onSanDown: \(\) => guard\(\(\) => debugCommand\(\{ type: "debug\.sanDown" \}\)\)/);
+    expect(app).toMatch(/onWarp: \(to\) => guard\(\(\) => debugCommand\(\{ type: "debug\.warp", to \}\)\)/);
+    const body = /const debugCommand = \(cmd: Command\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(body).toMatch(/if \(route !== "dungeon"\) return;\s*closeDebug\(\);\s*void run\(cmd\);/);
+  });
+
   test("UI-25 自動歩行の walkStep は beforePlay を run に渡し、finish で endWalk する（止まる手は再生の前に歩行を終える）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const walker = createHoldRepeater\(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";

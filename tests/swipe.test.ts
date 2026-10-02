@@ -89,6 +89,32 @@ describe("連打の可否とキーボード", () => {
     expect(canRepeat([{ kind: "turned", facing: "E" }], null, false)).toBe(false);
   });
 
+  test("UI-31/UI-55 canRepeat はイベントと罠の察知の手で偽: [moved, eventStarted, message]、[moved, message, message]（察知の語りと問い）と pendingChoice あり（trap / event）", () => {
+    const trap: PendingChoice = {
+      kind: "trap",
+      promptKey: "dungeon.trap.prompt",
+      options: [
+        { id: "retreat", labelKey: "dungeon.choice.retreat" },
+        { id: "proceed", labelKey: "dungeon.choice.proceed" },
+      ],
+    };
+    const ev: PendingChoice = {
+      kind: "event",
+      promptKey: "event.glowing_tablet.intro",
+      options: [{ id: "examine", labelKey: "event.glowing_tablet.choice.examine" }],
+      eventId: "glowing_tablet",
+    };
+    const started: GameEvent = { kind: "eventStarted", eventId: "glowing_tablet", actorId: "c3" };
+    expect(canRepeat([moved, started, { kind: "message", key: "event.glowing_tablet.intro" }], null, false)).toBe(false);
+    expect(canRepeat([moved, started, { kind: "message", key: "event.glowing_tablet.intro" }, { kind: "screen", to: "event" }], ev, false)).toBe(false);
+    const detected: GameEvent[] = [moved, { kind: "message", key: "dungeon.trap.detected", params: { name: "ベルク" } }, { kind: "message", key: "dungeon.trap.prompt" }];
+    expect(canRepeat(detected, trap, false)).toBe(false);
+    expect(canRepeat(detected, null, false)).toBe(false);
+    // 保留だけでも止まる
+    expect(canRepeat([moved], trap, false)).toBe(false);
+    expect(canRepeat([moved], ev, false)).toBe(false);
+  });
+
   test("UI-31/CH-43 canRepeat は moved の後が hpChanged だけ（迷宮の毒の 1 歩）なら真。message・screen・lifeChanged が混じれば偽", () => {
     const hp: GameEvent = { kind: "hpChanged", id: "c1", delta: -1, hp: 5 };
     const hp2: GameEvent = { kind: "hpChanged", id: "c2", delta: -1, hp: 3 };

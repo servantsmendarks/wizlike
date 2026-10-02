@@ -5,6 +5,7 @@ import {
   creationRow,
   CONTROLS_MIN_HEIGHT,
   DEBUG_BUTTONS,
+  DEBUG_BUTTONS_M5,
   DEBUG_SWIPE_Y,
   debugRow,
   dungeonLayout,
@@ -148,6 +149,26 @@ describe("layout", () => {
     for (const b of Object.values(DEBUG_BUTTONS)) expect(inside(b, STAGE)).toBe(true);
     // 作成のエラー欄は行とボタンに重ならない
     for (const r of Object.values(SCREENS.creation!)) expect(overlaps(CREATION_ERROR, r)).toBe(false);
+  });
+
+  test("UI-57/UI-10 debug パネルの 2 段目（M5）: y376 の 56×22 を x 4 / 62 / 120 / 178 に 4 つ。1 段目・設定の行・スワイプの表示と重ならず、下端 398 ≤ 400。開発用の例外として TOUCH_MIN_LOGICAL ではなく UI-10 の 12 論理 px 以上", () => {
+    expect(Object.keys(DEBUG_BUTTONS_M5)).toEqual(["sanDown", "warpEvent", "warpTrap", "warpStairs"]);
+    expect(Object.values(DEBUG_BUTTONS_M5)).toEqual([4, 62, 120, 178].map((x) => ({ x, y: 376, w: 56, h: 22 })));
+    const others: Rect[] = [
+      ...Object.values(DEBUG_BUTTONS),
+      ...[0, 1, 2, 3, 4, 5].flatMap((i) => Object.values(debugRow(i))),
+      { x: 0, y: DEBUG_SWIPE_Y, w: W, h: 10 },
+    ];
+    const m5 = Object.values(DEBUG_BUTTONS_M5);
+    for (const [i, b] of m5.entries()) {
+      expect(inside(b, STAGE)).toBe(true);
+      expect(b.y + b.h).toBeLessThanOrEqual(H);
+      expect(Math.min(b.w, b.h)).toBeGreaterThanOrEqual(12);
+      for (const o of others) expect(overlaps(b, o)).toBe(false);
+      for (const c of m5.slice(i + 1)) expect(overlaps(b, c)).toBe(false);
+    }
+    // 1 段目の下端（374）の下
+    for (const b of m5) for (const a of Object.values(DEBUG_BUTTONS)) expect(b.y).toBeGreaterThanOrEqual(a.y + a.h);
   });
 
   test("UI-10/UI-54/UI-52 dpad/menu/list/mapClose/battleParty/battleMember/autoStop/townMenu が操作領域の内側", () => {

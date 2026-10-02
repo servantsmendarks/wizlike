@@ -214,6 +214,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     defaults: defaultSettings(data.config),
     onClose: () => closeDebug(),
     onHpOne: () => guard(() => hpOneFromDebug()),
+    onSanDown: () => guard(() => debugCommand({ type: "debug.sanDown" })),
+    onWarp: (to) => guard(() => debugCommand({ type: "debug.warp", to })),
     pointers: () => pointerLog.entries(),
   });
 
@@ -1042,6 +1044,16 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     if (route !== "town" && route !== "dungeon" && route !== "battle") return;
     closeDebug();
     void run({ type: "debug.hpOne" });
+  };
+
+  /**
+   * UI-57（開発用、M5）: 「SAN段↓」「イベント」「罠の前」「階段前」。迷宮のときだけ、パネルを閉じてから送る
+   * （受け付けるかは core が決める。選択を待つ間の debug.warp は rejected になり、何も起きない）
+   */
+  const debugCommand = (cmd: Command): void => {
+    if (route !== "dungeon") return;
+    closeDebug();
+    void run(cmd);
   };
 
   const closeDebug = (): void => {
