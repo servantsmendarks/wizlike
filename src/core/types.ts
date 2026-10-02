@@ -174,12 +174,16 @@ export type Dive = {
 export type ChoiceOption = { id: string; labelKey: string };
 /**
  * 非 null の間は event.choose 以外のコマンドを rejected（"choice pending"）にする。
- * M5 でイベントの選択と罠の察知（DG-21）を kind を足して同じ形で載せる。
+ * 階段・出口・テレポーター・罠の察知（DG-21）を kind で区別して同じ形で載せる。kind ごとに option id の意味が違う（id が重なってもよい）。
  * promptKey は確認文の strings キー（params なし。リロード復帰で表示層が出し直す）。
  * 不変条件: これを立てる execute は、同じ events の中に key === promptKey（params なし）の message を必ず出す。
- * option id: "descend" | "ascend" | "stay"（M2）、"exit"（DG-06 の 1 階の上り階段。kind は stairs）、"teleport"（DG-32）
+ * option id: kind stairs は "descend" | "ascend" | "stay"（M2）と "exit"（DG-06 の 1 階の上り階段）、kind teleporter は "teleport" | "stay"（DG-32）、
+ * kind trap は "retreat" | "proceed"（DG-21）
  */
-export type PendingChoice = { kind: "stairs" | "teleporter"; promptKey: string; options: ChoiceOption[] };
+export type PendingChoice =
+  | { kind: "stairs" | "teleporter"; promptKey: string; options: ChoiceOption[] }
+  /** DG-21: 罠の察知。options は retreat / proceed。戻り先は step(pos, opposite(facing)) で導くので欄は持たない */
+  | { kind: "trap"; promptKey: string; options: ChoiceOption[] };
 
 // ===================== 街の来訪（TW-30〜32） =====================
 

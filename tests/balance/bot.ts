@@ -271,7 +271,23 @@ export class Campaign {
     const dirs = FACINGS.filter((d) => isPassable(edgeOf(c, d)) && this.near.has(key(step(dive.pos, d))));
     if (dirs.length === 0) throw new Error(`seed ${this.seed}: no way from ${key(dive.pos)}`);
     this.moveTo(dirs[randInt(this.bot, 0, dirs.length - 1)]!);
-    if (this.state.pendingChoice !== null) this.run({ type: "event.choose", optionId: "stay" });
+    this.resolvePending(false);
+  }
+
+  /**
+   * 保留中の選択を 1 か所で解決する（無ければ何もしない）。kind stairs / teleporter は exit があり goExit なら exit、それ以外は stay。
+   * kind trap（DG-21 の察知）は proceed（罠を踏んで進む）。選んだ結果で遭遇したら戦う。
+   */
+  resolvePending(goExit: boolean): void {
+    const pc = this.state.pendingChoice;
+    if (pc === null) return;
+    let optionId: string;
+    if (pc.kind === "trap") optionId = "proceed";
+    else optionId = goExit && pc.options.some((o) => o.id === "exit") ? "exit" : "stay";
+    const goldBefore = this.state.gold;
+    this.run({ type: "event.choose", optionId });
+    if (optionId === "exit") expect(this.state.gold).toBe(goldBefore); // DG-43
+    if (this.state.battle !== null) this.fight();
   }
 
   /** 行動可能な者が持つ、使える帰還の品（無ければ null） */
@@ -302,10 +318,7 @@ export class Campaign {
     while (this.inDungeon) {
       if (guard++ > 1000) throw new Error(`seed ${this.seed}: walk home did not finish`);
       if (this.state.pendingChoice !== null) {
-        const exit = this.state.pendingChoice.options.some((o) => o.id === "exit");
-        const goldBefore = this.state.gold;
-        this.run({ type: "event.choose", optionId: exit ? "exit" : "stay" });
-        if (exit) expect(this.state.gold).toBe(goldBefore); // DG-43
+        this.resolvePending(true);
         continue;
       }
       if (this.state.screen === "battle") {

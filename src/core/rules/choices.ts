@@ -1,9 +1,9 @@
 // 保留中の選択（E3）を立てる関数。types だけに依存する（dungeon.ts と combat.ts の両方から使う）。
 // 不変条件: pendingChoice を立てたら、同じ events に key === promptKey（params なし）の message を必ず出す
 // （リロード復帰では表示層が promptKey を出し直す。SV-50）。
-import type { ChoiceOption, PendingChoice, RuleContext } from "../types";
+import type { ChoiceOption, RuleContext } from "../types";
 
-function offer(ctx: RuleContext, kind: PendingChoice["kind"], promptKey: string, options: ChoiceOption[]): void {
+function offer(ctx: RuleContext, kind: "stairs" | "teleporter" | "trap", promptKey: string, options: ChoiceOption[]): void {
   ctx.state.pendingChoice = { kind, promptKey, options };
   ctx.events.push({ kind: "message", key: promptKey });
 }
@@ -27,4 +27,12 @@ export function offerExit(ctx: RuleContext): void {
 /** DG-32: ボス撃破後のテレポーター（teleport / stay） */
 export function offerTeleporter(ctx: RuleContext): void {
   offer(ctx, "teleporter", "dungeon.teleporter", [{ id: "teleport", labelKey: "dungeon.choice.teleport" }, { ...STAY }]);
+}
+
+/** DG-21 / A6: 罠の察知（retreat / proceed）。先頭が安全な方（引き返す） */
+export function offerTrap(ctx: RuleContext): void {
+  offer(ctx, "trap", "dungeon.trap.prompt", [
+    { id: "retreat", labelKey: "dungeon.choice.retreat" },
+    { id: "proceed", labelKey: "dungeon.choice.proceed" },
+  ]);
 }

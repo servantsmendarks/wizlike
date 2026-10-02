@@ -15,50 +15,23 @@ import {
 } from "../src/core/rules/dungeon-gen";
 import { floorOf, mapView, visibleCells, visibleCellsOf } from "../src/core/rules/dungeon";
 import { battleMenu } from "../src/core/rules/combat";
-import { offerExit, offerStairs, offerTeleporter } from "../src/core/rules/choices";
+import { offerExit, offerStairs, offerTeleporter, offerTrap } from "../src/core/rules/choices";
 import { cloneState, dungeonOf, makeContext, monsterOf } from "../src/core/state";
-import type { Cell, Command, Edge, Facing, Floor, GameEvent, GameState, Pos } from "../src/core/types";
-import { data, deepFreeze, expectKnownStringKeys, loadFreshData, mirrorWipeRolls, newGame, noAmbushAvoid } from "./helpers/core";
+import type { Cell, Command, Facing, Floor, GameEvent, GameState } from "../src/core/types";
+import { data, deepFreeze, expectKnownStringKeys, loadFreshData, mirrorWipeRolls, newGame, noAmbushAvoid, noTrapDetect } from "./helpers/core";
+import { approaches, dataWithRate, ENTER_D01, enterD01, findSituation, MOVE, placeAt, run, withRng } from "./helpers/dungeon";
 
 // ---------------------------------------------------------------------------
 // ヘルパー
 
-const MOVE: Command = { type: "dungeon.move" };
-const ENTER_D01: Command = { type: "dungeon.enter", dungeonId: "d01" };
+/** 遭遇率 0 で、罠の察知（DG-21）を外した data（罠の発動そのものを見るテストで、慎重の d100 を引かせない） */
+const DATA0 = noTrap(dataWithRate(0, 0));
 
-function run(state: GameState, cmd: Command, d: GameData = data) {
-  const r = execute(state, cmd, d);
-  expectKnownStringKeys(r.events, d);
-  return r;
-}
-
-/** newGame(seed) に dungeon.enter d01 を実行したもの */
-function enterD01(seed: number): GameState {
-  const r = execute(newGame(seed), ENTER_D01, data);
-  if (r.events[0]?.kind === "rejected") throw new Error(JSON.stringify(r.events));
-  return r.state;
-}
-
-/** cloneState して dive の位置・向き（と階）を書き換えたもの */
-function placeAt(state: GameState, pos: Pos, facing: Facing, floor?: number): GameState {
-  const s = cloneState(state);
-  const dive = s.dive!;
-  dive.pos = { x: pos.x, y: pos.y };
-  dive.facing = facing;
-  if (floor !== undefined) {
-    dive.floor = floor;
-    dive.deepestFloor = Math.max(dive.deepestFloor, floor); // その階にいるなら、そこまでは到達済み
-  }
-  return s;
-}
-
-/** encounterRate を書き換えた data（構造の生成には影響しない） */
-function dataWithRate(room: number, corridor: number): GameData {
-  const d = loadFreshData();
-  for (const def of d.dungeons) def.encounterRate = { room, corridor };
+/** DG-21 の察知を外す（noTrapDetect を当てて同じ data を返す） */
+function noTrap(d: GameData): GameData {
+  noTrapDetect(d);
   return d;
 }
-const DATA0 = dataWithRate(0, 0);
 
 /** 遭遇の編成と先手判定の乱数を鏡の rng で進める（CB-03/04 の消費順。surpriseDiff 1000 の data で奇襲が起きない前提） */
 function mirrorRandomEncounter(m: RngState, d: GameData, dungeonId: string, floor: number): void {
@@ -79,7 +52,7 @@ function mirrorRandomEncounter(m: RngState, d: GameData, dungeonId: string, floo
 
 /** encounterRate を書き換え、奇襲が起きないようにした data（遭遇の execute が先手判定の 2 個で止まる） */
 function dataEnc(room: number, corridor: number): GameData {
-  const d = dataWithRate(room, corridor);
+  const d = noTrap(dataWithRate(room, corridor)); // 部屋の中の罠を踏む歩でも察知の d100 を引かない
   d.config.combat.surpriseDiff = 1000;
   return d;
 }
@@ -97,41 +70,6 @@ function finishBattle(state: GameState, events: GameEvent[], d: GameData = data)
     s = r.state;
   }
   return s;
-}
-
-type Approach = { pos: Pos; facing: Facing; target: Pos };
-
-/** pred を満たすセルへ、edge が ok な辺を通って 1 歩で入れる立ち位置の一覧 */
-function approaches(f: Floor, pred: (c: Cell, x: number, y: number) => boolean, ok: (e: Edge) => boolean = (e) => e === "open"): Approach[] {
-  const out: Approach[] = [];
-  for (let y = 0; y < f.height; y++) {
-    for (let x = 0; x < f.width; x++) {
-      const c = cellAt(f, x, y);
-      if (!pred(c, x, y)) continue;
-      for (const d of FACINGS) {
-        const from = step({ x, y }, d);
-        if (!inBounds(f, from.x, from.y) || !ok(edgeOf(c, d))) continue;
-        out.push({ pos: from, facing: opposite(d), target: { x, y } });
-      }
-    }
-  }
-  return out;
-}
-
-/** シード 1 から順に enterD01 し、floorNo 階で pred を満たす立ち位置が最初に見つかったもの */
-function findSituation(
-  pred: (c: Cell, x: number, y: number) => boolean,
-  opts: { floor?: number; ok?: (e: Edge) => boolean; base?: (seed: number) => GameState } = {},
-): { state: GameState; a: Approach; f: Floor; seed: number } {
-  const floorNo = opts.floor ?? 1;
-  for (let seed = 1; seed <= 300; seed++) {
-    const s0 = (opts.base ?? enterD01)(seed);
-    const f = floorOf(s0.dive!, data, floorNo);
-    const list = approaches(f, pred, opts.ok);
-    const a = list[0];
-    if (a !== undefined) return { state: placeAt(s0, a.pos, a.facing, floorNo), a, f, seed };
-  }
-  throw new Error("findSituation: not found");
 }
 
 function eventsOfKind<K extends GameEvent["kind"]>(events: readonly GameEvent[], kind: K): Extract<GameEvent, { kind: K }>[] {
@@ -1002,7 +940,7 @@ describe("罠（DG-20, DG-21, E4）", () => {
     const mirror = cloneRng(state.rng);
     for (let i = 0; i < 6; i++) rollDice(mirror, data.config.dungeon.trap.pitDice);
     mirrorWipeRolls(mirror, 5);
-    const r = run(state, MOVE, dataWithRate(1, 1));
+    const r = run(state, MOVE, noTrap(dataWithRate(1, 1)));
     const ks = kinds(r.events);
     expect(ks.filter((k) => k === "lifeChanged")).toHaveLength(7); // 6 人の dead とリーダーの alive
     expect(ks.filter((k) => k === "message:dungeon.dead")).toHaveLength(6);
@@ -1023,7 +961,7 @@ describe("罠（DG-20, DG-21, E4）", () => {
     const mirror = cloneRng(s.rng);
     randInt(mirror, 0, 3); // spinner の向き
     mirrorWipeRolls(mirror, 5);
-    const r = run(s, MOVE, dataWithRate(1, 1));
+    const r = run(s, MOVE, noTrap(dataWithRate(1, 1)));
     const ks = kinds(r.events);
     expect(ks.slice(0, 3)).toEqual(["moved", "message:dungeon.trap.spinner", "turned"]);
     expect(eventsOfKind(r.events, "sanChanged").slice(0, 6).map((e) => e.san)).toEqual([0, 0, 0, 0, 0, 0]);
@@ -1057,6 +995,7 @@ describe("罠（DG-20, DG-21, E4）", () => {
     for (const expr of ["1d6-3", "0"]) {
       const d = loadFreshData();
       d.config.dungeon.trap.pitDice = expr;
+      noTrapDetect(d);
       for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
       const { state } = atPit((s) => {
         for (const c of s.party) c.hp = 20; // hpMax 30
@@ -1104,16 +1043,175 @@ describe("罠（DG-20, DG-21, E4）", () => {
     expect(seen.size).toBeGreaterThanOrEqual(2);
   });
 
-  test("DG-21 M2 では察知が無く、罠は常に発動する（慎重が何人いても）", () => {
-    const sit = findSituation((c) => c.kind === "trap" && c.trapId === "spinner");
-    const s = cloneState(sit.state);
-    for (const c of s.party) if (!c.isLeader) c.personality = "cautious";
-    for (let k = 0; k < 20; k++) {
-      const st = cloneState(s);
-      st.rng = createRng(k);
-      const r = run(st, MOVE, DATA0);
-      expect(kinds(r.events)).toContain("message:dungeon.trap.spinner");
-      expect(kinds(r.events)).not.toContain("message:dungeon.trap.detected");
+  /** 察知を外さない data（遭遇率は room / corridor） */
+  const detectData = (room = 0, corridor = 0) => dataWithRate(room, corridor);
+  const TRAP_PROMPT = {
+    kind: "trap",
+    promptKey: "dungeon.trap.prompt",
+    options: [
+      { id: "retreat", labelKey: "dungeon.choice.retreat" },
+      { id: "proceed", labelKey: "dungeon.choice.proceed" },
+    ],
+  };
+  /** pit の手前の state で、rng を createRng(k) に替えたとき、ベルク（c2）→ フィン（c6）の d100 ≤ 30 で誰が察知するか（鏡の rng） */
+  function detectorOf(state: GameState): { who: "c2" | "c6" | null; mirror: RngState } {
+    const m = cloneRng(state.rng);
+    if (randInt(m, 1, 100) <= 30) return { who: "c2", mirror: m };
+    if (randInt(m, 1, 100) <= 30) return { who: "c6", mirror: m };
+    return { who: null, mirror: m };
+  }
+  /** pit の手前で、察知者が who になる rng の state（k = 1.. を回して探す） */
+  function atPitDetectedBy(who: "c2" | "c6" | null): { state: GameState; a: ReturnType<typeof atPit>["a"]; mirror: RngState } {
+    const { state, a } = atPit();
+    for (let k = 1; k < 1000; k++) {
+      const s = withRng(state, k);
+      const d = detectorOf(s);
+      if (d.who === who) return { state: s, a, mirror: d.mirror };
+    }
+    throw new Error("atPitDetectedBy: not found");
+  }
+
+  test("DG-21/A6 察知: 行動可能な慎重を並び順に d100 ≤ 30、最初の成功者で止める。失敗は何も出さない（3 通り: ベルク成功 / フィン成功 / どちらも失敗）", () => {
+    expect(data.personalities.find((p) => p.id === "cautious")!.benefits.trapDetect).toBe(30);
+    for (const who of ["c2", "c6"] as const) {
+      const { state, a, mirror } = atPitDetectedBy(who);
+      const name = state.party.find((c) => c.id === who)!.name;
+      const r = run(state, MOVE, detectData(1, 1)); // 遭遇率 1 でも、察知した歩では遭遇判定をしない
+      expect(r.events).toEqual([
+        { kind: "moved", pos: a.target, facing: a.facing },
+        { kind: "message", key: "dungeon.trap.detected", params: { name } },
+        { kind: "message", key: "dungeon.trap.prompt" },
+      ]);
+      expect(r.state.pendingChoice).toEqual(TRAP_PROMPT);
+      expect(r.state.rng).toEqual(mirror); // ベルクで成功なら d100 は 1 回、フィンなら 2 回
+      expect(r.state.party).toEqual(state.party); // 発動していない（HP も SAN も変わらない）
+      expect(r.state.dive!.clearedCells).toEqual([]);
+      expect(r.state.dive!.pos).toEqual(a.target);
+    }
+    // どちらも失敗: d100 を 2 回引いた後に、罠が今までどおり発動する（察知の語りは無い）
+    const { state, a, mirror } = atPitDetectedBy(null);
+    const rolls = state.party.map(() => rollDice(mirror, data.config.dungeon.trap.pitDice).total);
+    randInt(mirror, 1, 100); // その後の遭遇判定
+    const r = run(state, MOVE, detectData());
+    expect(r.events.slice(0, 2)).toEqual([
+      { kind: "moved", pos: a.target, facing: a.facing },
+      { kind: "message", key: "dungeon.trap.pit" },
+    ]);
+    expect(eventsOfKind(r.events, "hpChanged").map((e) => -e.delta)).toEqual(rolls);
+    expect(kinds(r.events)).not.toContain("message:dungeon.trap.detected");
+    expect(r.state.pendingChoice).toBeNull();
+    expect(r.state.rng).toEqual(mirror);
+  });
+
+  test("DG-21 retreat: 1 歩前・同じ向き、遭遇なし・SAN 不変・罠は残り、再び入るとまた判定", () => {
+    const { state, a } = atPitDetectedBy("c2");
+    const d1 = detectData(1, 1);
+    const r1 = run(state, MOVE, d1);
+    const r2 = run(r1.state, { type: "event.choose", optionId: "retreat" }, d1);
+    expect(r2.events).toEqual([
+      { kind: "moved", pos: a.pos, facing: a.facing },
+      { kind: "message", key: "dungeon.trap.retreat" },
+    ]);
+    expect(r2.state.rng).toEqual(r1.state.rng); // 乱数なし（遭遇の d100 も振らない）
+    expect(r2.state.party).toEqual(state.party);
+    expect(r2.state.pendingChoice).toBeNull();
+    expect(r2.state.dive!.clearedCells).toEqual([]);
+    expect(r2.state.dive!.pos).toEqual(a.pos);
+    expect(r2.state.dive!.facing).toBe(a.facing);
+    expect(r2.state.screen).toBe("dungeon");
+    // 罠は残っていて、もう一度入るとまた察知の判定をする（d100 から）
+    const cell = cellAt(floorOf(r2.state.dive!, data), a.target.x, a.target.y);
+    expect(cell.kind).toBe("trap");
+    const again = detectorOf(r2.state);
+    const r3 = run(r2.state, MOVE, detectData());
+    if (again.who !== null) {
+      expect(kinds(r3.events)).toEqual(["moved", "message:dungeon.trap.detected", "message:dungeon.trap.prompt"]);
+      expect(r3.state.rng).toEqual(again.mirror);
+    } else {
+      expect(kinds(r3.events).slice(0, 2)).toEqual(["moved", "message:dungeon.trap.pit"]);
+    }
+  });
+
+  test("DG-21/CH-51 proceed: 罠が発動し SAN も減り、その後に遭遇判定", () => {
+    const { state, a } = atPitDetectedBy("c6");
+    const r1 = run(state, MOVE, detectData());
+    const mirror = cloneRng(r1.state.rng);
+    const rolls = state.party.map(() => rollDice(mirror, data.config.dungeon.trap.pitDice).total);
+    randInt(mirror, 1, 100); // その後の遭遇判定
+    const r2 = run(r1.state, { type: "event.choose", optionId: "proceed" }, detectData());
+    expect(r2.events).toEqual([
+      { kind: "message", key: "dungeon.trap.pit" },
+      ...state.party.map((c, i) => ({ kind: "hpChanged", id: c.id, delta: -rolls[i]!, hp: 30 - rolls[i]! })),
+      ...state.party.map((c) => ({ kind: "sanChanged", id: c.id, delta: -trapLoss(state, c.id), san: c.san - trapLoss(state, c.id) })),
+    ]);
+    expect(r2.state.rng).toEqual(mirror);
+    expect(r2.state.pendingChoice).toBeNull();
+    expect(r2.state.dive!.clearedCells).toEqual([{ floor: 1, ...a.target }]);
+    expect(r2.state.dive!.pos).toEqual(a.target);
+    // 遭遇率 1 なら、罠の後に遭遇する（CB-01）
+    const r3 = run(r1.state, { type: "event.choose", optionId: "proceed" }, dataEnc(1, 1));
+    const ks = kinds(r3.events);
+    const n = state.party.length;
+    expect(ks.slice(0, 1 + 2 * n + 1)).toEqual([
+      "message:dungeon.trap.pit",
+      ...Array<string>(n).fill("hpChanged"),
+      ...Array<string>(n).fill("sanChanged"),
+      "screen", // 罠の SAN の後に遭遇（screen{battle}）
+    ]);
+    expect(ks).toContain("message:battle.encounter");
+    expect(r3.state.battle).not.toBeNull();
+  });
+
+  test("DG-21 リーダー・trapDetect 0・行動不能の慎重は振らない。teleport の罠は判定しない", () => {
+    const { state } = atPit();
+    /** 察知の d100 を引かないときの鏡: pit の出目（生存者）→ 遭遇の d100 */
+    const plain = (s: GameState) => {
+      const m = cloneRng(s.rng);
+      for (const c of s.party) if (c.life === "alive") rollDice(m, data.config.dungeon.trap.pitDice);
+      randInt(m, 1, 100);
+      return m;
+    };
+    const cases: [string, (s: GameState) => void][] = [
+      ["慎重がいない（リーダーは性格なし）", (s) => {
+        for (const c of s.party) if (!c.isLeader) c.personality = "normal";
+      }],
+      ["慎重が麻痺と SAN 0", (s) => {
+        s.party[1]!.status = ["paralysis"];
+        s.party[5]!.san = 0;
+      }],
+      ["慎重が死亡と睡眠", (s) => {
+        s.party[1]!.life = "dead";
+        s.party[1]!.hp = 0;
+        s.party[5]!.status = ["sleep"];
+      }],
+    ];
+    for (const [name, mut] of cases) {
+      for (let k = 1; k <= 10; k++) {
+        const s = withRng(state, k);
+        mut(s);
+        const r = run(s, MOVE, detectData());
+        expect(kinds(r.events), name).not.toContain("message:dungeon.trap.detected");
+        expect(kinds(r.events)[1], name).toBe("message:dungeon.trap.pit");
+        expect(r.state.rng, name).toEqual(plain(s));
+      }
+    }
+    // trapDetect 0 の data でも振らない
+    const s0 = withRng(state, 1);
+    expect(run(s0, MOVE, DATA0).state.rng).toEqual(plain(s0));
+    // teleport の罠（d02）は判定しない: 遭遇の d100 だけ
+    const base = (seed: number) => {
+      const s = cloneState(newGame(seed));
+      s.progress.unlockedDungeons.push("d02");
+      return execute(s, { type: "dungeon.enter", dungeonId: "d02" }, data).state;
+    };
+    const tp = findSituation((c) => c.kind === "trap" && c.trapId === "teleport", { base }).state;
+    for (let k = 1; k <= 10; k++) {
+      const s = withRng(tp, k);
+      const m = cloneRng(s.rng);
+      randInt(m, 1, 100);
+      const r = run(s, MOVE, detectData());
+      expect(kinds(r.events)).toEqual(["moved"]);
+      expect(r.state.rng).toEqual(m);
     }
   });
 
@@ -1285,7 +1383,7 @@ describe("ボス（DG-31〜33, DG-01）", () => {
 });
 
 describe("決定性と網羅", () => {
-  test("§3-2 決定性: 同じ state と command で execute を 2 回呼ぶと deep-equal。引数の state と data を書き換えない。返る state（dive・pendingChoice・battle を含む）は JSON 往復で toStrictEqual（undefined の欄も検出する）", () => {
+  test("§3-2/DG-21 決定性: 同じ state と command で execute を 2 回呼ぶと deep-equal（罠の察知・retreat・proceed を含む）。引数の state と data を書き換えない。返る state（dive・pendingChoice・battle を含む）は JSON 往復で toStrictEqual（undefined の欄も検出する）", () => {
     const frozenData = deepFreeze(loadFreshData());
     const pit = findSituation((c) => c.kind === "trap" && c.trapId === "pit").state;
     const stairs = run(findSituation((c) => c.kind === "stairsDown").state, MOVE).state;
@@ -1306,6 +1404,16 @@ describe("決定性と網羅", () => {
       [corridor, MOVE, encData, "battle.encounter"],
       [corridor, MOVE, ambushData, "battle.surpriseEnemy"],
     ];
+    // DG-21: 罠を察知する前進と、その確認の retreat / proceed
+    const pitAt = (k: number) => run(withRng(pit, k), MOVE, frozenData);
+    let k = 1;
+    while (pitAt(k).state.pendingChoice?.kind !== "trap") k++;
+    const detected = pitAt(k).state;
+    cases.push(
+      [withRng(pit, k), MOVE, frozenData, "dungeon.trap.detected"],
+      [detected, { type: "event.choose", optionId: "retreat" }, frozenData, "dungeon.trap.retreat"],
+      [detected, { type: "event.choose", optionId: "proceed" }, frozenData, "dungeon.trap.pit"],
+    );
     for (const [s, cmd, d, wantKey] of cases) {
       const frozen = deepFreeze(cloneState(s));
       const before = JSON.stringify(frozen);
@@ -1363,12 +1471,13 @@ describe("決定性と網羅", () => {
 });
 
 describe("保留中の選択の不変条件（E3、SV-50）", () => {
-  test("DG-06/DG-14/DG-32 offer* は pendingChoice を立て、同じ events に key === promptKey（params なし）の message を出す。promptKey とラベルの文言に {…} が無い", () => {
+  test("DG-06/DG-14/DG-32/DG-21 offer* は pendingChoice を立て、同じ events に key === promptKey（params なし）の message を出す。promptKey とラベルの文言に {…} が無い", () => {
     const cases: [string, (ctx: ReturnType<typeof ctxOf>) => void][] = [
       ["down", (c) => offerStairs(c, "down")],
       ["up", (c) => offerStairs(c, "up")],
       ["exit", (c) => offerExit(c)],
       ["teleporter", (c) => offerTeleporter(c)],
+      ["trap", (c) => offerTrap(c)],
     ];
     for (const [name, f] of cases) {
       const ctx = ctxOf(enterD01(1));

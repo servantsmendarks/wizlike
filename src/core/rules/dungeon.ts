@@ -1,9 +1,10 @@
-// 潜行中のルール（DG-03, DG-10〜14, DG-20, DG-31〜33, DG-40, CB-01, CH-43/45/51/54）と、表示層向けの問い合わせ（visibleCells, mapView）。
+// 潜行中のルール（DG-03, DG-10〜14, DG-20, DG-21, DG-31〜33, DG-40, CB-01, CH-43/45/51/54）と、表示層向けの問い合わせ（visibleCells, mapView）。
 // 迷宮の構造は state に入れず、dive.diveSeed から毎回作り直す（DG-03）。発動済みの罠は dive の記録を重ねる。扉は通り抜けても扉のまま（DG-10）。
 import type { GameData } from "../data/index";
 import { chance, nextUint32, randInt } from "../rng";
-import { dungeonOf } from "../state";
+import { dungeonOf, personalityOf } from "../state";
 import type {
+  Cell,
   Dive,
   Edge,
   Facing,
@@ -32,7 +33,7 @@ import {
 } from "./dungeon-gen";
 import { startBossEncounter, startRandomEncounter, tickPoisonStep } from "./combat";
 import { canAct } from "./combat-calc";
-import { offerExit, offerStairs, offerTeleporter } from "./choices";
+import { offerExit, offerStairs, offerTeleporter, offerTrap } from "./choices";
 import { addExplored, aliveMembers, damageMembers } from "./field";
 import { loseSan } from "./san";
 import { enterBlockReason, returnToTown } from "./town";
@@ -219,7 +220,20 @@ export function moveForward(ctx: RuleContext): void {
   const cell = cellAt(f, dive.pos.x, dive.pos.y);
   // CH-43: 毒の 1 歩ごとのダメージ（HP 1 で止まるので、これで死ぬことはない）
   tickPoisonStep(ctx);
-  if (cell.kind === "trap") triggerTrap(ctx, f, dive.pos);
+  if (cell.kind === "trap") {
+    if (detectTrap(ctx, cell)) return; // DG-21: 察知したら確認を立てて終わる（階段・遭遇なし）
+    triggerTrap(ctx, f, dive.pos);
+  }
+  continueStep(ctx, cell);
+}
+
+/**
+ * 前進の 1 歩の続き（罠の後）。罠の察知で「進む」を選んだときもここから続ける。
+ * 行動可能な者がいなければ何もしない → 階段・出口・テレポーター・ボス → 遭遇判定。
+ */
+function continueStep(ctx: RuleContext, cell: Cell): void {
+  const { state } = ctx;
+  const dive = requireDive(state);
   // DG-11 / DG-20: 行動可能な者（CH-44）がいなければ階段・遭遇を起こさずに返る（全滅処理は engine の後処理 wipeIfNoneCanAct）
   if (!state.party.some(canAct)) return;
   if (cell.kind === "stairsDown") {
@@ -253,7 +267,51 @@ function rollEncounter(ctx: RuleContext, inRoom: boolean): void {
 }
 
 // ---------------------------------------------------------------------------
-// 罠（DG-20, CH-45, CH-51, CH-54, E4）。DG-21 の察知は M5 なので、M2 では常に発動する
+// 罠（DG-20, DG-21, CH-45, CH-51, CH-54, E4）。踏んだときに察知（DG-21）を判定し、察知しなければ発動する
+
+/**
+ * DG-21 / A6: 罠の察知。teleport（未実装の罠）は対象外。行動可能で benefits.trapDetect > 0 の者を並び順に
+ * d100 ≤ trapDetect で振り、最初の成功者で止める（dungeon.trap.detected{name} と確認 kind trap）。dice は出さない。
+ * 誰も成功しなければ何も出さずに false（罠は通常どおり発動する）。
+ */
+function detectTrap(ctx: RuleContext, cell: Cell): boolean {
+  const { state, data } = ctx;
+  if (cell.trapId === null || cell.trapId === "teleport") return false;
+  for (const ch of state.party) {
+    const v = personalityOf(data, ch.personality)?.benefits.trapDetect ?? 0;
+    if (!canAct(ch) || v <= 0) continue;
+    if (chance(state.rng, v)) {
+      ctx.events.push({ kind: "message", key: "dungeon.trap.detected", params: { name: ch.name } });
+      offerTrap(ctx);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * DG-21 / A6: 察知の確認の選択。retreat は 1 歩前のセルへ戻る（向きはそのまま。遭遇・毒・SAN なし、罠は残る）。
+ * proceed はその場で罠が通常どおり発動し、その後は普段の歩の続き（行動可能チェック・遭遇判定）。
+ */
+function chooseTrapOption(ctx: RuleContext, optionId: string): void {
+  const { state, data } = ctx;
+  const dive = requireDive(state);
+  if (optionId === "retreat") {
+    dive.pos = step(dive.pos, opposite(dive.facing));
+    ctx.events.push({ kind: "moved", pos: { x: dive.pos.x, y: dive.pos.y }, facing: dive.facing });
+    explore(ctx, dive, floorOf(dive, data));
+    ctx.events.push({ kind: "message", key: "dungeon.trap.retreat" });
+    return;
+  }
+  if (optionId === "proceed") {
+    const f = floorOf(dive, data);
+    const cell = cellAt(f, dive.pos.x, dive.pos.y); // clearedCells にまだ無いので kind trap のまま
+    triggerTrap(ctx, f, dive.pos);
+    continueStep(ctx, cell);
+    return;
+  }
+  throw new Error(`chooseTrapOption: unknown option ${optionId}`);
+}
 
 function triggerTrap(ctx: RuleContext, f: Floor, p: Pos): void {
   const { state, data } = ctx;
@@ -279,6 +337,7 @@ function triggerTrap(ctx: RuleContext, f: Floor, p: Pos): void {
 
 /**
  * event.choose。optionId は pendingChoice.options にあることを呼び出し側で確かめ済み。
+ * kind trap は chooseTrapOption（DG-21）。以下は階段・出口・テレポーター:
  * stay は何もしない。exit（DG-06 徒歩）と teleport（DG-32）は returnToTown で街へ（DG-43 で台帳を確定）。
  */
 export function chooseOption(ctx: RuleContext, optionId: string): void {
@@ -286,6 +345,10 @@ export function chooseOption(ctx: RuleContext, optionId: string): void {
   const pc = state.pendingChoice;
   if (pc === null) throw new Error("chooseOption: no pending choice");
   state.pendingChoice = null;
+  if (pc.kind === "trap") {
+    chooseTrapOption(ctx, optionId);
+    return;
+  }
   if (optionId === "stay") return;
   if (optionId === "exit") {
     returnToTown(ctx, "dungeon.exit");

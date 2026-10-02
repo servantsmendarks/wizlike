@@ -193,3 +193,8 @@ export function noSanOverride(d: GameData): void {
   d.config.san.confusedChance = 0;
   for (const p of d.personalities) p.san.disobeyBelowHalf = 0;
 }
+
+/** M5 の mut: 全性格の benefits.trapDetect を 0 にする（DG-21 の罠の察知で d100 を引かない） */
+export function noTrapDetect(d: GameData): void {
+  for (const p of d.personalities) p.benefits.trapDetect = 0;
+}

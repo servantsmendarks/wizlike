@@ -10,6 +10,7 @@ import { cloneState } from "../src/core/state";
 import type { Cell, Command, Facing, Floor, GameEvent, GameState, Pos, RouteStep } from "../src/core/types";
 import { dived, withBattle } from "./helpers/battle";
 import { data, expectKnownStringKeys, loadFreshData, newGame } from "./helpers/core";
+import { findSituation, withRng } from "./helpers/dungeon";
 
 // 手組みの Floor（全セル corridor、全辺 wall）
 function makeFloor(w: number, h: number): Floor {
@@ -329,5 +330,22 @@ describe("DG-15 routeStepOk", () => {
       return;
     }
     throw new Error("no seed found");
+  });
+
+  test("DG-15/DG-21 察知の手では routeStepOk が偽（moved の後に察知の語りと確認が続き、pendingChoice が立つ）", () => {
+    const { state, a } = findSituation((c) => c.kind === "trap" && c.trapId === "pit");
+    const d0 = loadFreshData();
+    for (const def of d0.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    const stepToTrap = st(MOVE, a.target.x, a.target.y, a.facing);
+    let checked = 0;
+    for (let k = 1; k <= 20; k++) {
+      const r = execute(withRng(state, k), MOVE, d0);
+      expectKnownStringKeys(r.events, d0);
+      if (r.state.pendingChoice?.kind !== "trap") continue;
+      expect(r.events[0]).toEqual({ kind: "moved", pos: a.target, facing: a.facing });
+      expect(routeStepOk(stepToTrap, r.events, r.state)).toBe(false);
+      checked += 1;
+    }
+    expect(checked).toBeGreaterThan(0);
   });
 });
