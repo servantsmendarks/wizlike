@@ -332,6 +332,46 @@ describe("controls", () => {
     expect(list["scrollTop"]).toBe(30);
   });
 
+  test("UI-25 map モードは「閉じる」と「移動」（mapGo）。setMapGo(false) の間は移動を押しても select(1) でも onMapGo を呼ばず dim。select(0) は閉じる", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    let closed = 0;
+    let went = 0;
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, hold: HOLD, onClose: () => closed++, onMapGo: () => went++ });
+    const close = created.find((e) => e.className === "controls-close")!;
+    const go = created.find((e) => e.className === "controls-map-go")!;
+    expect(go["textContent"]).toBe(data.strings["map.go"]);
+    // 置き場所は mapGo（操作領域からの相対 {60,66,120,32}）
+    expect(go.style).toMatchObject({ left: `${L.mapGo.x - g.controls.x}px`, top: `${L.mapGo.y - g.controls.y}px`, width: "120px", height: "32px" });
+    expect(L.mapGo.y - g.controls.y).toBe(66);
+    c.setMode("map");
+    expect(close.style["display"]).toBe("");
+    expect(go.style["display"]).toBe("");
+    // 選んでいない（既定）: dim で押しても呼ばない
+    expect(go.style["color"]).toBe("var(--c-dim)");
+    go.tap();
+    c.select(1);
+    expect(went).toBe(0);
+    c.setMapGo(true);
+    expect(go.style["color"]).toBe("var(--c-text)");
+    go.tap();
+    c.select(1);
+    expect(went).toBe(2);
+    c.setMapGo(false);
+    go.tap();
+    expect(went).toBe(2);
+    c.select(0);
+    expect(closed).toBe(1);
+    // close モード（履歴・全滅）では移動を出さず、select(1) も何もしない
+    c.setMapGo(true);
+    c.setMode("close");
+    expect(go.style["display"]).toBe("none");
+    expect(close.style["display"]).toBe("");
+    c.select(1);
+    expect(went).toBe(2);
+  });
+
   test("UI-44/UI-54 オート解除: タップ（再生中も反応する whileBusy）と、autoStop モードの select(0) で onPress を呼ぶ。ラベルは setAutoStop で差し替わる。close は onClose", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);

@@ -82,8 +82,10 @@ export function createDungeonScreen(o: {
   onClose(): void;
   /** UI-54: 対象の選択中に敵の絵をタップした（グループの添字） */
   onPick?(g: number): void;
-  /** UI-25: 地図本体のセルをタップした（盤内のセルの座標。探索済みかは見ない） */
+  /** UI-25: 地図本体のタップを探索済みのセルに吸着させた（config.ui.mapSnapPx 以内。範囲外のタップでは呼ばない） */
   onMapCell?(p: Pos): void;
+  /** UI-25: 操作領域の地図の「移動」（選んでいるときだけ呼ぶ） */
+  onMapGo?(): void;
 }): DungeonScreen {
   const r = o.regions;
   const lay = o.layout;
@@ -127,10 +129,11 @@ export function createDungeonScreen(o: {
     onAction: o.onAction,
     hold: o.hold,
     onClose: o.onClose,
+    onMapGo: () => o.onMapGo?.(),
   });
 
   // 地図はビューの上端から、メッセージの下端まで（既定 240×220）
-  const map = createMapView(lay.map, (p) => o.onMapCell?.(p));
+  const map = createMapView(lay.map, (p) => o.onMapCell?.(p), o.data.config.ui.mapSnapPx);
   map.el.style.display = "none";
 
   // キャンプと酒場のパネル（UI-53）はビュー領域だけ

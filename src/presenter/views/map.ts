@@ -1,7 +1,9 @@
 // UI-24: オートマップ。探索済みセル（core の mapView が返す MapView）だけを描く。
 // 罠・イベント・ボスは core が plain で返すので、表示層は区別しない（DG-13）。
-// 純粋な部分（mapLayout / mapPaths / mapCellAt）を export し、node 環境のテストから試せるようにする。
-// 地図本体のタップ（UI-25）はセルの座標に直して onCell に渡すだけで、経路は app が core の planRoute で探す。
+// 純粋な部分（mapLayout / mapPaths / mapSnapCell / mapPickPath）を export し、node 環境のテストから試せるようにする。
+// 地図本体のタップ（UI-25）は探索済みのセルに吸着させて（mapSnapCell。表示のための座標の計算）onCell に渡すだけで、
+// 経路は app が core の planRoute で探す。選んだセルの枠（setPick）は Element.animate の iterations Infinity で点滅させ、
+// 解除・切り替え・render のたびに cancel する（常駐のループは持たない）。
 // モジュールのトップレベルでは DOM に触れない。
 //
 // overlay はビューとメッセージの領域を合わせた範囲（layout.ts の dungeonLayout の map。既定 240×220、y16..235）。
@@ -29,17 +31,51 @@ export function mapLayout(w: number, h: number, area: { w: number; h: number }):
 }
 
 /**
- * UI-25: 地図本体の SVG の左上からの論理 px（lx, ly）にあるセル。セル (x, y) は
- * [ox + x*cell, ox + (x+1)*cell) × [oy + y*cell, oy + (y+1)*cell) を受け持つ（右端・下端の共有線は隣のセル）。
- * 盤の外なら null。探索済みかどうかは見ない（経路を探す core が決める）
+ * UI-25: タップの吸着。地図本体の SVG の左上からの論理 px（lx, ly）から、探索済みのセル（v.cells）のうち
+ * 中心 (ox + x*cell + cell/2, oy + y*cell + cell/2) までの距離が maxPx 以下で一番近いもの。
+ * 同じ距離なら y の小さい方、次に x の小さい方。無ければ null
  */
-export function mapCellAt(v: Pick<MapView, "width" | "height">, lay: MapLayout, lx: number, ly: number): Pos | null {
+export function mapSnapCell(v: Pick<MapView, "cells">, lay: MapLayout, lx: number, ly: number, maxPx: number): Pos | null {
   if (!Number.isFinite(lx) || !Number.isFinite(ly)) return null;
-  const x = Math.floor((lx - lay.ox) / lay.cell);
-  const y = Math.floor((ly - lay.oy) / lay.cell);
-  if (x < 0 || y < 0 || x >= v.width || y >= v.height) return null;
-  return { x, y };
+  const lim = maxPx * maxPx;
+  let best: Pos | null = null;
+  let bestD = Infinity;
+  for (const c of v.cells) {
+    const dx = lx - (lay.ox + c.x * lay.cell + lay.cell / 2);
+    const dy = ly - (lay.oy + c.y * lay.cell + lay.cell / 2);
+    const d = dx * dx + dy * dy;
+    if (d > lim) continue;
+    if (best === null || d < bestD || (d === bestD && (c.y < best.y || (c.y === best.y && c.x < best.x)))) {
+      best = { x: c.x, y: c.y };
+      bestD = d;
+    }
+  }
+  return best;
 }
+
+/** UI-25: 選んだセルの外形（translate(0.5 0.5) の中で描く 1px の線。壁の線と同じ位置） */
+export function mapPickPath(p: Pos, lay: MapLayout): string {
+  const px = lay.ox + p.x * lay.cell;
+  const py = lay.oy + p.y * lay.cell;
+  return `M${px} ${py}h${lay.cell}v${lay.cell}h${-lay.cell}Z`;
+}
+
+/**
+ * UI-25: 吸着したセル p のタップをどう扱うか（app の分岐。経路の有無は core の planRoute の結果 route をそのまま渡す）。
+ * - go: 選んでいるセル（pick）と同じ → 歩き出す（route は見ない。歩き出すときに引き直す）
+ * - noRoute: 経路が無い → 題を「道が分からない。」にして選択を解く
+ * - none: 現在位置（route が []）→ 何もしない（選択も変えない）
+ * - pick: それ以外 → そのセルを選ぶ
+ */
+export function mapTapAction(pick: Pos | null, p: Pos, route: readonly unknown[] | null): "go" | "noRoute" | "none" | "pick" {
+  if (pick !== null && pick.x === p.x && pick.y === p.y) return "go";
+  if (route === null) return "noRoute";
+  if (route.length === 0) return "none";
+  return "pick";
+}
+
+/** UI-25: 選んだセルの枠の点滅の周期（ms。戦闘の対象の注目 FOCUS_BLINK_MS と同じ矩形波） */
+export const MAP_PICK_BLINK_MS = 400;
 
 /** cell 8 のときの現在位置の三角形（北向き）。セル原点からの相対座標 */
 const PLAYER_N_8: ReadonlyArray<readonly [number, number]> = [
@@ -129,10 +165,15 @@ export type MapViewEl = {
   render(v: MapView, title: string): void;
   /** UI-25: 題の行だけを差し替える（経路が無いときの「道が分からない。」。次の render で戻る） */
   setTitle(title: string): void;
+  /** UI-25: 選んだセルの枠（null で消す）。blink なら点滅、偽なら静的な枠だけ（演出スキップ） */
+  setPick(p: Pos | null, blink: boolean): void;
 };
 
-/** onCell は地図本体のタップ（UI-25）。盤の外のタップでは呼ばない */
-export function createMapView(lay: DungeonLayout["map"], onCell?: (p: Pos) => void): MapViewEl {
+/**
+ * onCell は地図本体のタップ（UI-25）。探索済みのセルの中心から snapPx 以内のタップだけを、一番近いセルに吸着させて呼ぶ
+ * （範囲外のタップでは呼ばない）
+ */
+export function createMapView(lay: DungeonLayout["map"], onCell?: (p: Pos) => void, snapPx = 12): MapViewEl {
   const SVG_NS = "http://www.w3.org/2000/svg";
   const { overlay, title: tr, area } = lay;
   const el = document.createElement("div");
@@ -184,13 +225,20 @@ export function createMapView(lay: DungeonLayout["map"], onCell?: (p: Pos) => vo
   const stairsPath = path({ fill: "none", stroke: "var(--c-stairs)", "stroke-width": "1" });
   // 現在位置は階段より後に描く
   const playerPath = path({ fill: "var(--c-player)", stroke: "none" });
-  g.append(wallPath, stairsPath, playerPath);
+  // UI-25: 選んだセルの枠（壁と現在位置の上に描く）
+  const pickPath = path({ fill: "none", stroke: "var(--c-accent)", "stroke-width": "1", d: "" });
+  g.append(wallPath, stairsPath, playerPath, pickPath);
+  let blinking: Animation | null = null;
+  const stopBlink = (): void => {
+    if (blinking !== null) blinking.cancel();
+    blinking = null;
+  };
 
   // UI-25: 地図本体のタップ。座標は SVG の左上からの論理 px（viewBox は area と同じ寸法）
   let shown: MapView | null = null;
   onTap(svg, (pt) => {
     if (shown === null || onCell === undefined) return;
-    const c = mapCellAt(shown, mapLayout(shown.width, shown.height, area), pt.lx, pt.ly);
+    const c = mapSnapCell(shown, mapLayout(shown.width, shown.height, area), pt.lx, pt.ly, snapPx);
     if (c !== null) onCell(c);
   });
 
@@ -199,7 +247,28 @@ export function createMapView(lay: DungeonLayout["map"], onCell?: (p: Pos) => vo
     setTitle(t: string): void {
       title.textContent = t;
     },
+    setPick(p: Pos | null, blink: boolean): void {
+      stopBlink();
+      if (p === null || shown === null) {
+        pickPath.setAttribute("d", "");
+        return;
+      }
+      pickPath.setAttribute("d", mapPickPath(p, mapLayout(shown.width, shown.height, area)));
+      if (!blink) return;
+      blinking = pickPath.animate(
+        [
+          { opacity: 1, offset: 0 },
+          { opacity: 1, offset: 0.5 },
+          { opacity: 0, offset: 0.5 },
+          { opacity: 0, offset: 1 },
+        ],
+        { duration: MAP_PICK_BLINK_MS, iterations: Infinity },
+      );
+    },
     render(v: MapView, t: string): void {
+      // 描き直すと選択は消える（app は地図を開くたびに選択を解く）
+      stopBlink();
+      pickPath.setAttribute("d", "");
       shown = v;
       title.textContent = t;
       const p = mapPaths(v, mapLayout(v.width, v.height, area));

@@ -1,8 +1,9 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { execute } from "../src/core/engine";
 import { floorOf, mapView } from "../src/core/rules/dungeon";
 import { cloneState } from "../src/core/state";
-import { mapCellAt, mapLayout, mapPaths, playerTriangle } from "../src/presenter/views/map";
+import { tapSpecOf } from "../src/presenter/input/tap";
+import { createMapView, MAP_PICK_BLINK_MS, mapLayout, mapPaths, mapPickPath, mapSnapCell, mapTapAction, playerTriangle } from "../src/presenter/views/map";
 import type { Edge, Facing, MapCell, MapView } from "../src/core/types";
 import { dungeonLayout, regions } from "../src/presenter/layout";
 import { data, newGame } from "./helpers/core";
@@ -239,31 +240,175 @@ describe("UI-24/DG-10 通り抜けた扉の地図（core の mapView との結�
   });
 });
 
-describe("UI-25 地図のタップ", () => {
-  test("UI-25 mapCellAt: 20×20（cell 8, ox 39, oy 23）でセル (x, y) は [39+8x, 47+8x) × [23+8y, 31+8y)。右端・下端の共有線は隣のセル、盤の外は null", () => {
+describe("UI-25 地図のタップ（吸着）", () => {
+  // 20×20 は cell 8・ox 39・oy 23。セル (x, y) の中心は (43+8x, 27+8y)
+  test("UI-25 mapSnapCell: 中心まで maxPx 以内の探索済みのセルのうち一番近いもの。同じ距離なら y、次に x の小さい方。境界ちょうどは含む", () => {
     const lay = mapLayout(20, 20, MAP_AREA);
-    const v = { width: 20, height: 20 };
-    expect(mapCellAt(v, lay, 39, 23)).toEqual({ x: 0, y: 0 });
-    expect(mapCellAt(v, lay, 46.99, 30.99)).toEqual({ x: 0, y: 0 });
-    expect(mapCellAt(v, lay, 47, 31)).toEqual({ x: 1, y: 1 });
-    // (5, 12) の中心: 39 + 40 + 4 = 83、23 + 96 + 4 = 123
-    expect(mapCellAt(v, lay, 83, 123)).toEqual({ x: 5, y: 12 });
-    expect(mapCellAt(v, lay, 198.99, 182.99)).toEqual({ x: 19, y: 19 });
-    // 盤の外（左・上・右・下）
-    expect(mapCellAt(v, lay, 38.99, 50)).toBeNull();
-    expect(mapCellAt(v, lay, 50, 22.99)).toBeNull();
-    expect(mapCellAt(v, lay, 199, 50)).toBeNull();
-    expect(mapCellAt(v, lay, 50, 183)).toBeNull();
-    expect(mapCellAt(v, lay, Number.NaN, 50)).toBeNull();
+    expect(lay).toEqual({ cell: 8, ox: 39, oy: 23 });
+    const two = view([cellOf(0, 0), cellOf(1, 0)]);
+    // (55,27): (1,0) の中心 (51,27) まで 4、(0,0) の中心 (43,27) まで 12 → (1,0)
+    expect(mapSnapCell(two, lay, 55, 27, 12)).toEqual({ x: 1, y: 0 });
+    // (47,27): どちらも距離 4 → x の小さい (0,0)
+    expect(mapSnapCell(two, lay, 47, 27, 12)).toEqual({ x: 0, y: 0 });
+    const one = view([cellOf(0, 0)]);
+    // (55,27) は (0,0) の中心から 12 ちょうど → 吸着する。(56,27) は 13 → null
+    expect(mapSnapCell(one, lay, 55, 27, 12)).toEqual({ x: 0, y: 0 });
+    expect(mapSnapCell(one, lay, 56, 27, 12)).toBeNull();
+    // 斜め: (43+8, 27+9) は sqrt(64+81) ≈ 12.04 > 12 → null。(43+8, 27+8) は ≈ 11.31 → 吸着
+    expect(mapSnapCell(one, lay, 51, 36, 12)).toBeNull();
+    expect(mapSnapCell(one, lay, 51, 35, 12)).toEqual({ x: 0, y: 0 });
+    // 縦の同距離: (0,0) と (0,1) の中心 (43,27)・(43,35) から等距離の (43,31) → y の小さい (0,0)
+    const col = view([cellOf(0, 1), cellOf(0, 0)]);
+    expect(mapSnapCell(col, lay, 43, 31, 12)).toEqual({ x: 0, y: 0 });
+    // 盤の外（地図本体の左上の余白）でも、12 以内に探索済みのセルがあれば吸着する
+    expect(mapSnapCell(one, lay, 35, 20, 12)).toEqual({ x: 0, y: 0 });
+    expect(mapSnapCell(one, lay, Number.NaN, 27, 12)).toBeNull();
   });
 
-  test("UI-25 mapCellAt は mapPaths の床の正方形と同じセルを返す（30×30、cell 6）", () => {
+  test("UI-25 mapSnapCell は探索済みでないセルには吸着しない（すぐ上のセルが未探索なら、離れた探索済みのセルか null）", () => {
+    const lay = mapLayout(20, 20, MAP_AREA);
+    // (5,5) の中心 (83,67) の真上をタップ。探索済みは (5,6)（中心 (83,75)、距離 8）だけ
+    expect(mapSnapCell(view([cellOf(5, 6)]), lay, 83, 67, 12)).toEqual({ x: 5, y: 6 });
+    // 探索済みが (5,7)（中心 (83,83)、距離 16）だけなら null
+    expect(mapSnapCell(view([cellOf(5, 7)]), lay, 83, 67, 12)).toBeNull();
+    expect(mapSnapCell(view([]), lay, 83, 67, 12)).toBeNull();
+  });
+
+  test("UI-25 mapSnapCell は mapPaths の床の正方形の内側の点を、すべての探索済みのセルの中からそのセルに吸着させる（30×30、cell 6）", () => {
     const lay = mapLayout(30, 30, MAP_AREA);
-    const v = view([cellOf(7, 11)], { width: 30, height: 30 });
-    // 床は M(px+1) (py+1) から cell-1 の正方形。その内側の点はすべて (7, 11)
-    const [[fx, fy]] = points(mapPaths(v, lay).floor) as [[number, number]];
+    const cells: MapCell[] = [];
+    for (let y = 10; y <= 12; y++) for (let x = 6; x <= 8; x++) cells.push(cellOf(x, y));
+    const v = view(cells, { width: 30, height: 30 });
+    const target = view([cellOf(7, 11)], { width: 30, height: 30 });
+    const [[fx, fy]] = points(mapPaths(target, lay).floor) as [[number, number]];
     for (let dx = 0; dx < lay.cell - 1; dx++) {
-      for (let dy = 0; dy < lay.cell - 1; dy++) expect(mapCellAt(v, lay, fx + dx + 0.5, fy + dy + 0.5)).toEqual({ x: 7, y: 11 });
+      for (let dy = 0; dy < lay.cell - 1; dy++) expect(mapSnapCell(v, lay, fx + dx + 0.5, fy + dy + 0.5, 12)).toEqual({ x: 7, y: 11 });
     }
+  });
+
+  test("UI-25 mapTapAction: 選んでいるセルの再タップは go、経路 null は noRoute、[]（現在位置）は none、それ以外は pick", () => {
+    const a = { x: 3, y: 4 };
+    const b = { x: 5, y: 4 };
+    const route = [{ type: "dungeon.move" }];
+    expect(mapTapAction(null, a, route)).toBe("pick");
+    expect(mapTapAction(a, { x: 3, y: 4 }, route)).toBe("go");
+    // 同じセルなら経路を見ない（歩き出すときに引き直す）
+    expect(mapTapAction(a, { x: 3, y: 4 }, null)).toBe("go");
+    expect(mapTapAction(a, b, route)).toBe("pick");
+    expect(mapTapAction(a, b, null)).toBe("noRoute");
+    expect(mapTapAction(null, b, null)).toBe("noRoute");
+    expect(mapTapAction(a, b, [])).toBe("none");
+    expect(mapTapAction(null, b, [])).toBe("none");
+  });
+
+  test("UI-25 mapPickPath は選んだセルの外形（壁の線と同じ位置の cell 角の正方形）", () => {
+    const lay = mapLayout(20, 20, MAP_AREA);
+    // (5,12): px = 39+40 = 79、py = 23+96 = 119
+    expect(mapPickPath({ x: 5, y: 12 }, lay)).toBe("M79 119h8v8h-8Z");
+  });
+});
+
+// ---------------------------------------------------------------- DOM（偽の document）
+type FakeAnim = { options: Record<string, unknown>; cancelled: boolean; cancel(): void };
+
+class FakeEl {
+  style: Record<string, string> = {};
+  className = "";
+  textContent = "";
+  children: FakeEl[] = [];
+  attrs: Record<string, string> = {};
+  anims: FakeAnim[] = [];
+  appendChild(c: FakeEl): FakeEl {
+    this.children.push(c);
+    return c;
+  }
+  append(...c: FakeEl[]): void {
+    this.children.push(...c);
+  }
+  setAttribute(k: string, v: string): void {
+    this.attrs[k] = v;
+  }
+  addEventListener(): void {}
+  animate(_k: unknown, options: Record<string, unknown>): FakeAnim {
+    const a: FakeAnim = {
+      options,
+      cancelled: false,
+      cancel() {
+        a.cancelled = true;
+      },
+    };
+    this.anims.push(a);
+    return a;
+  }
+}
+
+function fakeDocument(): { svgs: FakeEl[]; paths: FakeEl[] } {
+  const svgs: FakeEl[] = [];
+  const paths: FakeEl[] = [];
+  vi.stubGlobal("document", {
+    createElement: (): FakeEl => new FakeEl(),
+    createElementNS: (_ns: string, tag: string): FakeEl => {
+      const e = new FakeEl();
+      if (tag === "svg") svgs.push(e);
+      if (tag === "path") paths.push(e);
+      return e;
+    },
+  });
+  return { svgs, paths };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("UI-25 地図のビュー（偽の DOM）", () => {
+  const L = dungeonLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size);
+  /** 選んだセルの枠の path（stroke が accent） */
+  const pickOf = (paths: FakeEl[]): FakeEl => paths.find((p) => p.attrs["stroke"] === "var(--c-accent)")!;
+
+  test("UI-25 地図本体のタップは config.ui.mapSnapPx 以内の探索済みのセルに吸着したときだけ onCell を呼ぶ（範囲外は呼ばない）", () => {
+    const { svgs } = fakeDocument();
+    const got: unknown[] = [];
+    const m = createMapView(L.map, (p) => got.push(p), data.config.ui.mapSnapPx);
+    m.render(view([cellOf(0, 0), cellOf(1, 0)]), "t");
+    const tap = tapSpecOf(svgs[0]!)!;
+    tap.onTap({ lx: 55, ly: 27 }); // (1,0) に距離 4
+    tap.onTap({ lx: 47, ly: 40 }); // (0,0) の中心 (43,27) から sqrt(16+169) ≈ 13.6、(1,0) からも同じ → 範囲外
+    tap.onTap({ lx: 63, ly: 27 }); // (1,0) の中心 (51,27) から 12 ちょうど
+    tap.onTap({ lx: 64, ly: 27 }); // 13 → 範囲外
+    expect(got).toEqual([
+      { x: 1, y: 0 },
+      { x: 1, y: 0 },
+    ]);
+  });
+
+  test("UI-25 setPick: blink なら枠を点滅（iterations Infinity・周期 MAP_PICK_BLINK_MS）。切り替え・null・render で cancel。blink 偽では animate を呼ばず枠だけ", () => {
+    const { paths } = fakeDocument();
+    const m = createMapView(L.map, () => {}, 12);
+    m.render(view([cellOf(0, 0), cellOf(5, 12)]), "t");
+    const pick = pickOf(paths);
+    expect(pick.attrs["d"]).toBe("");
+    m.setPick({ x: 5, y: 12 }, true);
+    expect(pick.attrs["d"]).toBe("M79 119h8v8h-8Z");
+    expect(pick.anims).toHaveLength(1);
+    expect(pick.anims[0]!.options).toEqual({ duration: MAP_PICK_BLINK_MS, iterations: Infinity });
+    // 切り替え: 前の点滅を止めて新しい点滅
+    m.setPick({ x: 0, y: 0 }, true);
+    expect(pick.anims[0]!.cancelled).toBe(true);
+    expect(pick.anims).toHaveLength(2);
+    expect(pick.attrs["d"]).toBe("M39 23h8v8h-8Z");
+    // null: 止めて消す
+    m.setPick(null, true);
+    expect(pick.anims[1]!.cancelled).toBe(true);
+    expect(pick.attrs["d"]).toBe("");
+    // render: 止めて消す
+    m.setPick({ x: 0, y: 0 }, true);
+    m.render(view([cellOf(0, 0)]), "t");
+    expect(pick.anims[2]!.cancelled).toBe(true);
+    expect(pick.attrs["d"]).toBe("");
+    // 演出スキップ（blink 偽）: 枠だけで animate を呼ばない
+    m.setPick({ x: 0, y: 0 }, false);
+    expect(pick.attrs["d"]).toBe("M39 23h8v8h-8Z");
+    expect(pick.anims).toHaveLength(3);
   });
 });

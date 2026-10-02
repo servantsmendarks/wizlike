@@ -5,7 +5,8 @@
 //   （拍のタップ待ちを解く・拍の残りを即時にする・拍の外は 1 回目で今の文、2 回目で残りを即表示。UI-44 / UI-45 / UI-43）。
 // - 再生の外のメッセージ窓のタップは、文字送り中なら即表示、それ以外なら履歴の画面（UI-46）を開く。
 // - 迷宮のキャンプと酒場の状態・装備・並び順（UI-53 / UI-59 / TW-03）は views/camp.ts の段で進め、ビュー領域だけを覆う（overlay 'camp'）。
-// - 地図のセルのタップ（UI-25）は core の planRoute で経路を探し、holdRepeatMs おきに 1 手ずつ送る（自動歩行）。続けるかは core の
+// - 地図のタップ（UI-25）は 2 段階。探索済みのセルに吸着したら core の planRoute で経路を確かめてそのセルを選び（点滅）、同じセルの
+//   再タップか「移動」で、holdRepeatMs おきに 1 手ずつ送る（自動歩行）。続けるかは core の
 //   routeStepOk が決める。歩いている間に触れる・キーを押すと止まり、その入力は捨てる。
 // - 状態を変えるコマンドの後、再生を始める前にオートセーブを await する（§3-8。SV-02: 再生中にリロードされても結果は確定している）。
 //   保存の失敗は SV-23 の帯とメッセージ窓で知らせ、state は巻き戻さない。
@@ -75,6 +76,7 @@ import {
 } from "./views/camp";
 import { formatDetail, SLOT_ORDER } from "./views/detail";
 import { createDungeonScreen } from "./views/dungeon";
+import { mapTapAction } from "./views/map";
 import { slotsFor } from "./views/dungeon-geometry";
 import { headerText } from "./views/header";
 import { formatMessage } from "./views/message";
@@ -142,6 +144,10 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   let campPage: CampPage = { kind: "top" };
   /** UI-25: 地図のタップ移動の自動歩行（歩いている間だけ非 null。SV-50 の再開では戻さない） */
   let walking: RouteWalk | null = null;
+  /** UI-25: 地図で選んだセル（地図を開いている間だけ。表示層だけの値で保存しない） */
+  let mapPick: Pos | null = null;
+  /** UI-25: 地図の題（経路が無いときの「道が分からない。」から戻すため） */
+  let mapTitle = "";
 
   const scale = (): number => layout?.scale ?? 1;
 
@@ -195,6 +201,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     onClose: () => guard(() => closeOverlay()),
     onPick: (g) => guard(() => chooseBattle({ kind: "group", index: g })),
     onMapCell: (p) => guard(() => tapMapCell(p)),
+    onMapGo: () => guard(() => goMapPick()),
   });
 
   // UI-57: debug パネルの「ポインタ」に出す直近 20 件のポインタイベント（表示層だけ。保存しない）
@@ -452,7 +459,9 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     }
     if (route !== "dungeon") return;
     if (overlay === "map") {
-      c.setMode("close");
+      // UI-25: 閉じると移動（選んでいないときの移動は dim）
+      c.setMapGo(mapPick !== null);
+      c.setMode("map");
       return;
     }
     const pc = state.pendingChoice;
@@ -814,18 +823,39 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     return true;
   };
 
+  /** UI-25: 地図の選択を変え、枠（演出スキップでは点滅しない）と「移動」の押せる・押せないを合わせる */
+  const setMapPick = (p: Pos | null): void => {
+    mapPick = p;
+    play.map.setPick(p, !store.get().skipAnimations);
+    if (overlay === "map") syncControls();
+  };
+
   /**
-   * UI-25: 地図のセルのタップ。経路（core の planRoute）があれば地図を閉じて歩き始める。
-   * 経路が無ければ地図の題の行を「道が分からない。」にする（地図は開いたまま）。現在位置なら何もしない
+   * UI-25: 地図のタップ（探索済みのセルに吸着済み。範囲外のタップでは呼ばれない）。
+   * - 選んでいるセルと同じなら歩き出す（goMapPick）。
+   * - 経路（core の planRoute）が null なら題の行を「道が分からない。」にして選択を解く（地図は開いたまま）。
+   * - [] （現在位置）なら何もしない（選択も変えない）。
+   * - それ以外はそのセルを選んで点滅させ、題を元に戻す。
    */
   const tapMapCell = (p: Pos): void => {
     if (overlay !== "map" || walking !== null) return;
-    const steps = planRoute(state, data, p);
-    if (steps === null) {
+    const same = mapPick !== null && mapPick.x === p.x && mapPick.y === p.y;
+    const act = mapTapAction(mapPick, p, same ? [] : planRoute(state, data, p));
+    if (act === "go") goMapPick();
+    else if (act === "noRoute") {
       play.map.setTitle(t("map.noRoute"));
-      return;
+      setMapPick(null);
+    } else if (act === "pick") {
+      play.map.setTitle(mapTitle);
+      setMapPick({ x: p.x, y: p.y });
     }
-    if (steps.length === 0) return;
+  };
+
+  /** UI-25: 選んだセルへ歩き出す（地図の「移動」・同じセルの再タップ・キー）。経路は引き直す。選んでいなければ何もしない */
+  const goMapPick = (): void => {
+    if (overlay !== "map" || walking !== null || mapPick === null) return;
+    const steps = planRoute(state, data, mapPick);
+    if (steps === null || steps.length === 0) return;
     closeMap();
     walking = { steps, i: 0 };
     syncControls();
@@ -955,6 +985,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     campPage = { kind: "top" };
     walking = null;
     walker.release();
+    mapPick = null;
+    play.map.setPick(null, false);
     townPage = "menu";
     cursor = null;
     advanceFrom = null;
@@ -1014,7 +1046,9 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     if (v === null) return;
     repeater.release();
     overlay = "map";
-    play.map.render(v, formatMessage(t("map.title"), { dungeon: dungeonName(state), floor: v.floor }));
+    mapPick = null;
+    mapTitle = formatMessage(t("map.title"), { dungeon: dungeonName(state), floor: v.floor });
+    play.map.render(v, mapTitle);
     play.showMap(true);
     syncControls();
   };
@@ -1053,6 +1087,9 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   const closeMap = (): void => {
     if (overlay !== "map") return;
     overlay = null;
+    // UI-25: 閉じると選択は消える
+    mapPick = null;
+    play.map.setPick(null, false);
     play.showMap(false);
     syncControls();
   };
@@ -1134,7 +1171,12 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       return;
     }
     if (overlay === "map") {
-      if (a === "back" || a === "map" || a === "confirm" || (typeof a === "object" && a.menu === 0)) closeMap();
+      // UI-33: Esc / m / 1 で閉じる、2 で移動、Enter は選んでいれば移動・いなければ閉じる
+      if (a === "confirm") {
+        if (mapPick !== null) goMapPick();
+        else closeMap();
+      } else if (typeof a === "object" && a.menu === 1) goMapPick();
+      else if (a === "back" || a === "map" || (typeof a === "object" && a.menu === 0)) closeMap();
       return;
     }
     if (overlay === "wipe") {

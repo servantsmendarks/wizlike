@@ -1,5 +1,5 @@
 // UI-32 / UI-53 の操作領域（ui §2 の controls 領域）。十字ボタン（dpad）、メニュー（menu）、リスト（list）、
-// 地図の「閉じる」（mapClose）、戦闘のパーティの選択 4 枠・メンバーの 5 枠・街の施設 6 枠・キャンプの 8 枠（battle）、オート中の「オート解除」（autoStop）を切り替えて出す。矩形は layout.ts の dungeonLayout のステージ座標で、region の原点を引いて置く。
+// 地図の「閉じる」（mapClose）と「移動」（mapGo。map モード）、戦闘のパーティの選択 4 枠・メンバーの 5 枠・街の施設 6 枠・キャンプの 8 枠（battle）、オート中の「オート解除」（autoStop）を切り替えて出す。矩形は layout.ts の dungeonLayout のステージ座標で、region の原点を引いて置く。
 // どのボタンも input/tap.ts の onTap で登録し、「動かずに離した」ときに反応する（UI-36。click は使わない）。
 // 前進ボタンだけは、動かずに hold.ms() 押し続けたら hold.onHoldStart（長押しの連打）、離したら hold.onHoldEnd（UI-31）。
 // 「オート解除」は再生中も反応する（whileBusy。UI-44 の例外）。
@@ -11,7 +11,7 @@ import { onTap } from "../input/tap";
 import type { DungeonLayout, Rect } from "../layout";
 
 export type DpadAction = "forward" | "left" | "right" | "around";
-export type ControlsMode = "dpad" | "list" | "close" | "battle" | "autoStop" | "none";
+export type ControlsMode = "dpad" | "list" | "close" | "map" | "battle" | "autoStop" | "none";
 /** disabled なら dim 色で出し、押しても onSelect を呼ばない */
 /** onFocus は一覧の行に pointerenter / pointerdown したとき（戦闘の対象の注目。UI-54。押しただけで、選ぶのは離したとき） */
 export type ControlItem = { label: string; onSelect(): void; disabled?: boolean; onFocus?(): void };
@@ -20,7 +20,7 @@ export type BattleSlots = "party" | "member" | "town" | "camp";
 
 export type Controls = {
   el: HTMLElement;
-  /** dpad = 十字ボタンとメニュー、list = リスト、close = 地図の「閉じる」だけ、none = 何も出さない */
+  /** dpad = 十字ボタンとメニュー、list = リスト、close = 「閉じる」だけ、map = 地図の「閉じる」と「移動」（UI-25）、none = 何も出さない */
   setMode(m: ControlsMode): void;
   /** inputMode が swipe なら十字ボタンを隠す（メニューは残す） */
   setDpadVisible(on: boolean): void;
@@ -42,12 +42,15 @@ export type Controls = {
    * 一覧は作り直さない。scroll: false なら見える位置へは動かさない（ポインタで触れた行。タッチの途中で一覧が動かないように）
    */
   setListFocus(i: number | null, opts?: { scroll?: boolean }): void;
+  /** UI-25: map モードの「移動」を押せるか（偽なら dim 色で、押しても onMapGo を呼ばない） */
+  setMapGo(enabled: boolean): void;
   /** close モードの唯一のボタンの文言（既定は common.close。全滅の内訳では wipe.toTown） */
   setCloseLabel(label: string): void;
   /** オート中の「オート解除」。タップで onPress を呼ぶ（再生中も受ける。UI-44 の例外は呼び出し側が扱う） */
   setAutoStop(label: string, onPress: () => void): void;
   /**
-   * n 番目（0 始まり）を選ぶ。dpad ではメニュー、list ではリスト、battle では戦闘の枠、close / autoStop では 0 が唯一のボタン。
+   * n 番目（0 始まり）を選ぶ。dpad ではメニュー、list ではリスト、battle では戦闘の枠、close / autoStop では 0 が唯一のボタン、
+   * map では 0 が閉じる・1 が移動。
    * 範囲外と disabled は何もしない
    */
   select(n: number): void;
@@ -93,11 +96,13 @@ function setShown(el: HTMLElement, on: boolean): void {
  */
 export function createControls(o: {
   region: Rect;
-  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "listNarrow" | "listBack" | "mapClose" | "battleParty" | "battleMember" | "autoStop" | "townMenu" | "campGrid">;
+  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "listNarrow" | "listBack" | "mapClose" | "mapGo" | "battleParty" | "battleMember" | "autoStop" | "townMenu" | "campGrid">;
   strings: Strings;
   onAction(a: DpadAction): void;
   hold: { ms(): number; onHoldStart(): void; onHoldEnd(): void };
   onClose(): void;
+  /** UI-25: 地図の「移動」（押せるときだけ呼ぶ） */
+  onMapGo?(): void;
 }): Controls {
   const s = (key: string): string => o.strings[key] ?? key;
   const origin = o.region;
@@ -191,6 +196,25 @@ export function createControls(o: {
   onTap(close, () => o.onClose());
   el.appendChild(close);
 
+  // ---- 地図の「移動」（UI-25。map モードで閉じるの真下）
+  const mapGo = document.createElement("button");
+  mapGo.type = "button";
+  mapGo.className = "controls-map-go";
+  mapGo.textContent = s("map.go");
+  buttonStyle(mapGo, o.layout.mapGo, origin);
+  let mapGoOn = false;
+  const paintMapGo = (): void => {
+    mapGo.style.color = mapGoOn ? "var(--c-text)" : "var(--c-dim)";
+    mapGo.style.borderColor = mapGoOn ? "var(--c-frame)" : "var(--c-dim)";
+    mapGo.setAttribute("aria-disabled", mapGoOn ? "false" : "true");
+  };
+  paintMapGo();
+  const pressMapGo = (): void => {
+    if (mapGoOn) o.onMapGo?.();
+  };
+  onTap(mapGo, () => pressMapGo());
+  el.appendChild(mapGo);
+
   // ---- 戦闘の枠（layout.battleParty / battleMember）
   const battle = document.createElement("div");
   battle.className = "controls-battle";
@@ -214,7 +238,8 @@ export function createControls(o: {
     setShown(menu, mode === "dpad");
     setShown(list, mode === "list");
     setShown(listBack, mode === "list" && listBackOn);
-    setShown(close, mode === "close");
+    setShown(close, mode === "close" || mode === "map");
+    setShown(mapGo, mode === "map");
     setShown(battle, mode === "battle");
     setShown(autoStop, mode === "autoStop");
   };
@@ -335,6 +360,10 @@ export function createControls(o: {
         battle.appendChild(b);
       });
     },
+    setMapGo(enabled: boolean): void {
+      mapGoOn = enabled;
+      paintMapGo();
+    },
     setCloseLabel(label: string): void {
       if (close.textContent !== label) close.textContent = label;
     },
@@ -350,7 +379,8 @@ export function createControls(o: {
       if (mode === "dpad") at(menuItems);
       else if (mode === "list") at(listItems);
       else if (mode === "battle") at(battleItems);
-      else if (mode === "close" && n === 0) o.onClose();
+      else if ((mode === "close" || mode === "map") && n === 0) o.onClose();
+      else if (mode === "map" && n === 1) pressMapGo();
       else if (mode === "autoStop" && n === 0) autoStopPress();
     },
   };

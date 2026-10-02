@@ -300,6 +300,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       messageHistory: I(POS_INT), // UI-43 / UI-46【仮】
       autoBeatMs: I(POS_INT), // UI-45【仮】
       saveBannerHeight: I(POS_INT), // SV-23【仮】
+      mapSnapPx: I(POS_INT), // UI-25（ユーザーが決めた値。【仮】ではない）
     }),
     prototypeParty: F({ startingGold: I(NON_NEG), members: L(member) }),
   });

@@ -164,6 +164,8 @@ export type Config = {
     autoBeatMs: number;
     /** SV-23: 「保存できません」の帯の高さ（論理 px）【仮】。帯はヘッダーの直下に置く */
     saveBannerHeight: number;
+    /** UI-25: 地図のタップを探索済みのセルの中心に吸着させる距離（論理 px）。ユーザーが決めた値（【仮】ではない） */
+    mapSnapPx: number;
   };
   prototypeParty: { startingGold: number; members: PrototypeMember[] };
 };

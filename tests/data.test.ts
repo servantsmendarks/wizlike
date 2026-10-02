@@ -232,6 +232,12 @@ describe("data: config.json", () => {
     expectIssue((r) => delete r.config.ui.saveBannerHeight, "config.json", "ui.saveBannerHeight: missing required field");
   });
 
+  test("data: UI-25 ui.mapSnapPx は 1 以上の整数（必須。既定 12）", () => {
+    expect(config.ui.mapSnapPx).toBe(12);
+    expectIssue((r) => (r.config.ui.mapSnapPx = 0), "config.json", "ui.mapSnapPx: expected integer >= 1, got 0");
+    expectIssue((r) => delete r.config.ui.mapSnapPx, "config.json", "ui.mapSnapPx: missing required field");
+  });
+
   test("data: UI-43 ui.messageHistory は 1 以上の整数", () => {
     expectIssue((r) => (r.config.ui.messageHistory = 0), "config.json", "ui.messageHistory: expected integer >= 1, got 0");
     expectIssue((r) => delete r.config.ui.messageHistory, "config.json", "ui.messageHistory: missing required field");

@@ -66,7 +66,8 @@ const SCREENS: Record<string, Record<string, Rect>> = {
   },
   // 選択肢（階段の確認）は迷宮の上で十字ボタンの代わりに list を出す
   choice: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
-  map: { mapClose: L.mapClose },
+  // UI-25 地図: 閉じると移動
+  map: { mapClose: L.mapClose, mapGo: L.mapGo },
   // UI-54 戦闘: パーティの選択の 4 枠、メンバーの 5 枠（対象などの一覧は list と同じ）、オート中は「オート解除」だけ
   battleParty: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.battleParty.map((r, i) => [`battleParty[${i}]`, r])) },
   battleMember: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.battleMember.map((r, i) => [`battleMember[${i}]`, r])) },
@@ -213,6 +214,9 @@ describe("layout", () => {
       { x: 8, y: 366, w: 224, h: 32 },
     ]);
     expect(L.mapClose).toEqual({ x: 60, y: 334, w: 120, h: 32 });
+    // UI-25 地図の「移動」は閉じるの真下で同じ幅（下端 397 は操作領域の内側）
+    expect(L.mapGo).toEqual({ x: 60, y: 366, w: 120, h: 32 });
+    expect(inside(L.mapGo, regions(data.config.ui.layout, W).controls)).toBe(true);
     // UI-11 一覧の外の戻るは戦闘のメンバーの戻る（battleMember[4]）・キャンプの [7] と同じ 56×40（x178..233・y354..393）。
     // 行は list と同じ 3 行で幅 168（x8..175。戻るとの間 2）
     expect(L.listBack).toEqual({ x: 178, y: 354, w: 56, h: 40 });
@@ -272,12 +276,13 @@ describe("layout", () => {
       d.listNarrow.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.listNarrow[i]!, base.controls)));
       expect(rel(d.listBack, g.controls), tag).toEqual(rel(L.listBack, base.controls));
       expect(rel(d.mapClose, g.controls), tag).toEqual(rel(L.mapClose, base.controls));
+      expect(rel(d.mapGo, g.controls), tag).toEqual(rel(L.mapGo, base.controls));
       d.battleParty.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.battleParty[i]!, base.controls)));
       d.battleMember.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.battleMember[i]!, base.controls)));
       expect(rel(d.autoStop, g.controls), tag).toEqual(rel(L.autoStop, base.controls));
       d.townMenu.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.townMenu[i]!, base.controls)));
       const fits = l.controls >= CONTROLS_MIN_HEIGHT;
-      for (const r of [...Object.values(d.dpad), ...d.menu, ...d.list, d.mapClose, ...d.battleParty, ...d.battleMember, d.autoStop, ...d.townMenu])
+      for (const r of [...Object.values(d.dpad), ...d.menu, ...d.list, d.mapClose, d.mapGo, ...d.battleParty, ...d.battleMember, d.autoStop, ...d.townMenu])
         if (fits) expect(inside(r, g.controls), tag).toBe(true);
       // メッセージ: 文字領域と三角は窓の内側、行数は (高さ - 4) / 10 の切り捨て
       expect(inside(d.message.text, g.message), tag).toBe(true);
@@ -306,6 +311,7 @@ describe("layout", () => {
         "ui.layout: list[2] does not fit in the controls region (height 86)",
         "ui.layout: listNarrow[2] does not fit in the controls region (height 86)",
         "ui.layout: listBack does not fit in the controls region (height 86)",
+        "ui.layout: mapGo does not fit in the controls region (height 86)",
         "ui.layout: battleParty[2] does not fit in the controls region (height 86)",
         "ui.layout: battleParty[3] does not fit in the controls region (height 86)",
         "ui.layout: battleMember[4] does not fit in the controls region (height 86)",
