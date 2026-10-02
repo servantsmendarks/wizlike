@@ -282,6 +282,30 @@ body {
   color: var(--c-dim);
 }
 
+/* debug パネルのページ（1 ページ目は設定、2 ページ目はポインタの記録。UI-57）。パネルと同じ原点で全面に重ねる */
+.debug-page {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 240px;
+  height: 400px;
+}
+
+/* top は debug-panel.ts が layout.ts の DEBUG_POINTER で置く */
+.debug-pointer-title,
+.debug-pointer-row {
+  position: absolute;
+  left: 4px;
+  width: 232px;
+  height: 10px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.debug-pointer-title {
+  color: var(--c-accent);
+}
+
 /* 起動を止めるエラー画面（views/data-error.ts）。ステージには載せない。 */
 .data-error {
   position: fixed;

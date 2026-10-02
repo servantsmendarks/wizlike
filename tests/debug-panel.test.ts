@@ -1,10 +1,22 @@
-// debug パネル（M0 の確認画面と設定の仮 UI）の純粋な部分。DOM の部分は実機で確かめる。
+// debug パネル（M0 の確認画面と設定の仮 UI、UI-57 のポインタの記録）。純粋な部分と、偽の document の DOM の部分。
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { tapSpecOf } from "../src/presenter/input/tap";
-import { DEBUG_BUTTONS, debugRow } from "../src/presenter/layout";
+import { DEBUG_BUTTONS, DEBUG_POINTER, debugRow } from "../src/presenter/layout";
 import { createSettingsStore, defaultSettings } from "../src/presenter/settings";
 import type { StageLayout } from "../src/presenter/stage";
-import { createDebugPanel, DEBUG_ROW_KEYS, debugRows, formatStageInfo, formatSwipeDebug, type StageInfoInput } from "../src/presenter/views/debug-panel";
+import { createDebugPanel, DEBUG_ROW_KEYS, debugRows, formatStageInfo, formatSwipeDebug, pointerRowsText, type StageInfoInput } from "../src/presenter/views/debug-panel";
+import {
+  attachPointerLog,
+  createPointerLog,
+  describeTarget,
+  formatPointerRow,
+  POINTER_KINDS,
+  POINTER_LOG_MAX,
+  POINTER_TARGET_MAX,
+  type PointerEntry,
+  type TargetLike,
+} from "../src/presenter/input/pointer-log";
+import { FakeNode, FakeStage } from "./helpers/dom";
 import { data } from "./helpers/core";
 
 const layout: StageLayout = { scale: 4 / 3, deviceScale: 4, integer: true, left: 0.5, top: 12 };
@@ -88,7 +100,7 @@ describe("createDebugPanel", () => {
     vi.unstubAllGlobals();
   });
 
-  test("UI-57/UI-36 ボタンの段は 全員HP1・既定に戻す・閉じる（DEBUG_BUTTONS の位置）。全員HP1 は onHpOne、オートの速さの行は 200 → 400 → 600 と巡回する。どれも onTap で登録する", () => {
+  test("UI-57/UI-36 ボタンの段は 全員HP1・既定に戻す・ポインタ・閉じる（DEBUG_BUTTONS の位置）。全員HP1 は onHpOne、オートの速さの行は 200 → 400 → 600 と巡回する。どれも onTap で登録する", () => {
     const created: FakeEl[] = [];
     vi.stubGlobal("document", {
       createElement: () => {
@@ -102,16 +114,18 @@ describe("createDebugPanel", () => {
     const store = createSettingsStore(defaultSettings(data.config), (s) => persisted.push(s.autoBeatMs));
     let hpOne = 0;
     let closed = 0;
-    createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => closed++, onHpOne: () => hpOne++ });
+    createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => closed++, onHpOne: () => hpOne++, pointers: () => [] });
     const buttons = created.filter((e) => e.className === "ui-button");
     const byText = (t: string): FakeEl => buttons.find((b) => b.textContent === t)!;
     const tap = (b: FakeEl): void => tapSpecOf(b)!.onTap({ lx: 0, ly: 0 });
     const hp = byText(data.strings["debug.hpOneButton"]!);
     const reset = byText(data.strings["settings.reset"]!);
     const close = byText(data.strings["common.close"]!);
+    const pointers = byText(data.strings["debug.pointersButton"]!);
     for (const [b, r] of [
       [hp, DEBUG_BUTTONS.hpOne],
       [reset, DEBUG_BUTTONS.reset],
+      [pointers, DEBUG_BUTTONS.pointers],
       [close, DEBUG_BUTTONS.close],
     ] as const) {
       expect([b.style["left"], b.style["top"], b.style["width"], b.style["height"]]).toEqual([`${r.x}px`, `${r.y}px`, `${r.w}px`, `${r.h}px`]);
@@ -132,5 +146,130 @@ describe("createDebugPanel", () => {
     tap(reset);
     expect(store.get().autoBeatMs).toBe(400);
     expect(buttons.every((b) => tapSpecOf(b) !== null)).toBe(true);
+  });
+
+  test("UI-57 「ポインタ」で 2 ページ目（題と 20 行、古い順）に切り替え、ボタンは「設定」になり 1 ページ目（全員HP1・既定に戻す を含む）を隠す。showSettings で 1 ページ目に戻る", () => {
+    const created: FakeEl[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => {
+        const e = new FakeEl();
+        created.push(e);
+        return e;
+      },
+      createElementNS: () => new FakeEl(),
+    });
+    const store = createSettingsStore(defaultSettings(data.config), () => {});
+    let entries: PointerEntry[] = [];
+    const panel = createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => {}, onHpOne: () => {}, pointers: () => entries });
+    const root = panel.el as unknown as FakeEl;
+    const pages = root.children.filter((c) => c.className === "debug-page");
+    expect(pages).toHaveLength(2);
+    const [page1, page2] = pages as [FakeEl, FakeEl];
+    // 全員HP1・既定に戻す は 1 ページ目の中、ポインタ・閉じる はパネルの直下（どちらのページでも出る）
+    expect(page1.children.map((c) => c.textContent)).toEqual(expect.arrayContaining([data.strings["debug.hpOneButton"], data.strings["settings.reset"]]));
+    const toggle = root.children.find((c) => c.textContent === data.strings["debug.pointersButton"])!;
+    expect(root.children.some((c) => c.textContent === data.strings["common.close"])).toBe(true);
+    expect([page1.style["display"] ?? "", page2.style["display"]]).toEqual(["", "none"]);
+    const rows = page2.children.filter((c) => c.className === "debug-pointer-row");
+    expect(rows).toHaveLength(20);
+    expect(rows.map((r) => r.style["top"])).toEqual(Array.from({ length: 20 }, (_, i) => `${DEBUG_POINTER.rowY + 10 * i}px`));
+    expect(DEBUG_POINTER.rowY + 10 * 19 + 10).toBeLessThanOrEqual(DEBUG_BUTTONS.pointers.y);
+    expect(page2.children.find((c) => c.className === "debug-pointer-title")!.textContent).toBe(data.strings["debug.pointer.title"]);
+    entries = [
+      { type: "pointerdown", x: 10, y: 20, t: 100, target: "button 前進" },
+      { type: "pointerup", x: 10, y: 21, t: 900, target: "button 前進" },
+    ];
+    const tap = (b: FakeEl): void => tapSpecOf(b)!.onTap({ lx: 0, ly: 0 });
+    tap(toggle);
+    expect([page1.style["display"], page2.style["display"]]).toEqual(["none", ""]);
+    expect(toggle.textContent).toBe(data.strings["debug.settingsButton"]);
+    expect(rows.slice(0, 3).map((r) => r.textContent)).toEqual(["100 down 10,20 button 前進", "900 up 10,21 button 前進", ""]);
+    tap(toggle);
+    expect([page1.style["display"], page2.style["display"]]).toEqual(["", "none"]);
+    expect(toggle.textContent).toBe(data.strings["debug.pointersButton"]);
+    tap(toggle);
+    panel.showSettings();
+    expect([page1.style["display"], page2.style["display"]]).toEqual(["", "none"]);
+  });
+});
+
+// ---------------------------------------------------------------- UI-57 ポインタの記録（input/pointer-log.ts）
+class TextNode extends FakeNode {
+  textContent: string | null = null;
+}
+const node = (tag: string, o: { parent?: FakeNode | null; attrs?: Record<string, string>; text?: string } = {}): TextNode => {
+  const n = new TextNode(tag, o.parent ?? null);
+  for (const [k, v] of Object.entries(o.attrs ?? {})) n.setAttribute(k, v);
+  n.textContent = o.text ?? null;
+  return n;
+};
+const entry = (i: number): PointerEntry => ({ type: "pointerdown", x: i, y: i, t: i, target: "div" });
+
+describe("UI-57 ポインタの記録", () => {
+  test("UI-57 pointer-log は 20 件の輪: 25 件 push すると 6..25 件目が古い順に残る。clear で空", () => {
+    expect(POINTER_LOG_MAX).toBe(20);
+    const log = createPointerLog();
+    for (let i = 1; i <= 25; i++) log.push(entry(i));
+    expect(log.entries().map((e) => e.t)).toEqual(Array.from({ length: 20 }, (_, i) => i + 6));
+    log.clear();
+    expect(log.entries()).toEqual([]);
+  });
+
+  test("UI-57 describeTarget: data-tap の祖先を優先し、aria-label > 文字 > tag.class の先頭。SVG（class 属性）も読む。16 文字で切る", () => {
+    const btn = node("BUTTON", { attrs: { "data-tap": "", class: "ui-button is-pressed" }, text: "  前へ\n進む " });
+    const inner = node("SPAN", { parent: btn, text: "x" });
+    expect(describeTarget(inner as unknown as TargetLike)).toBe("button 前へ 進む");
+    const dpad = node("BUTTON", { attrs: { "data-tap": "", "aria-label": "前進" }, text: "" });
+    expect(describeTarget(dpad as unknown as TargetLike)).toBe("button 前進");
+    const path = node("path", { attrs: { class: "map-cell wall" } });
+    expect(describeTarget(path as unknown as TargetLike)).toBe("path.map-cell");
+    expect(describeTarget(node("DIV") as unknown as TargetLike)).toBe("div");
+    const long = node("DIV", { text: "abcdefghijklmnopqrstuvwxyz" });
+    expect(describeTarget(long as unknown as TargetLike)).toBe("div abcdefghijkl");
+    expect([...describeTarget(node("DIV", { text: "あいうえおかきくけこさしすせそ" }) as unknown as TargetLike)]).toHaveLength(POINTER_TARGET_MAX);
+    expect(describeTarget(null)).toBe("-");
+  });
+
+  test("UI-57 attachPointerLog は capture で 4 種類を受け、pointermove は受けない。座標は (client - rect)/scale の四捨五入、時刻は整数。enabled が偽の間に始まった押下は up / lost も記録しない", () => {
+    const stage = new FakeStage(10);
+    stage.top = 20;
+    const log = createPointerLog();
+    let enabled = true;
+    let now = 1234.6;
+    const detach = attachPointerLog(stage as unknown as HTMLElement, { log, scale: () => 2, now: () => now, enabled: () => enabled });
+    expect(Object.keys(stage.listeners).sort()).toEqual(["lostpointercapture", "pointercancel", "pointerdown", "pointerup"]);
+    for (const l of Object.values(stage.listeners)) expect(l.map((x) => x.opt)).toEqual([{ capture: true }]);
+    const btn = node("BUTTON", { attrs: { "data-tap": "" }, text: "設定" });
+    const ev = (id: number, x: number, y: number) => ({ pointerId: id, clientX: x, clientY: y, target: btn });
+    stage.emit("pointerdown", { type: "pointerdown", ...ev(1, 55, 41) });
+    stage.emit("pointermove", { type: "pointermove", ...ev(1, 56, 41) });
+    now = 1300.2;
+    stage.emit("pointerup", { type: "pointerup", ...ev(1, 55, 41) });
+    // ここで debug パネルが開いた: 開いたタップの lost、パネルの中の押下と、閉じたタップの後の lost は記録しない
+    enabled = false;
+    stage.emit("lostpointercapture", { type: "lostpointercapture", ...ev(1, 55, 41) });
+    stage.emit("pointerdown", { type: "pointerdown", ...ev(2, 100, 100) });
+    stage.emit("pointerup", { type: "pointerup", ...ev(2, 100, 100) });
+    enabled = true;
+    stage.emit("lostpointercapture", { type: "lostpointercapture", ...ev(2, 100, 100) });
+    // 次の押下からはまた記録する（同じ pointerId でも）
+    stage.emit("pointerdown", { type: "pointerdown", ...ev(2, 12, 22) });
+    stage.emit("pointercancel", { type: "pointercancel", ...ev(2, 12, 22) });
+    // x = (55 - 10) / 2 = 22.5 → 23、y = (41 - 20) / 2 = 10.5 → 11
+    expect(log.entries()).toEqual([
+      { type: "pointerdown", x: 23, y: 11, t: 1235, target: "button 設定" },
+      { type: "pointerup", x: 23, y: 11, t: 1300, target: "button 設定" },
+      { type: "pointerdown", x: 1, y: 1, t: 1300, target: "button 設定" },
+      { type: "pointercancel", x: 1, y: 1, t: 1300, target: "button 設定" },
+    ]);
+    detach();
+    expect(stage.count()).toBe(0);
+  });
+
+  test("UI-57 formatPointerRow「{t} {type} {x},{y} {target}」（type は短い名前）。pointerRowsText は空なら「記録なし」の 1 行", () => {
+    expect(formatPointerRow({ type: "lostpointercapture", x: 3, y: 390, t: 123456, target: "button 前進" }, data.strings)).toBe("123456 lost 3,390 button 前進");
+    expect(POINTER_KINDS.map((k) => data.strings[`debug.pointer.${k}`])).toEqual(["down", "up", "cancel", "lost"]);
+    expect(pointerRowsText([], data.strings)).toEqual([data.strings["debug.pointer.empty"]]);
+    expect(pointerRowsText([entry(1), entry(2)], data.strings)).toEqual(["1 down 1,1 div", "2 down 2,2 div"]);
   });
 });

@@ -3,12 +3,15 @@
 // - y42..121: 計測値 8 行（formatStageInfo。M0 の書式を引き継ぐ）
 // - debugRow(0..5): スワイプ閾値（CSS px の換算値も出す）、長押し間隔、文字速度、演出スキップ、オートの速さ（UI-45）、入力モード
 // - DEBUG_SWIPE_Y（y328..337）: 最後に確定したスワイプの "dx,dy,dir"（ASCII）
-// - DEBUG_BUTTONS（y342）: 全員HP1（UI-57。debug.hpOne を送るのは app）、既定に戻す、閉じる
+// - DEBUG_BUTTONS（y342）: 全員HP1（UI-57。debug.hpOne を送るのは app）、既定に戻す、ポインタ、閉じる
+// - 「ポインタ」で 2 ページ目（UI-57。直近 20 件のポインタイベント。input/pointer-log の記録を DEBUG_POINTER の 20 行に古い順）。
+//   2 ページ目ではボタンが「設定」に変わり、全員HP1・既定に戻すは出さない。開くたびに app が showSettings で 1 ページ目に戻す
 // 値を変えたら、その場で store.set を呼ぶ（保存とすぐの反映は store の購読者が行う）。
 // 計測ラベル（scale, dpr など）は前例どおり ASCII でコードに置く。モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
 import { thresholdCss } from "../input/swipe";
-import { DEBUG_BUTTONS, DEBUG_SWIPE_Y, debugRow, type Rect } from "../layout";
+import { formatPointerRow, POINTER_LOG_MAX, type PointerEntry } from "../input/pointer-log";
+import { DEBUG_BUTTONS, DEBUG_POINTER, DEBUG_SWIPE_Y, debugRow, type Rect } from "../layout";
 import type { Insets, StageLayout, StageLayoutInput } from "../stage";
 import { nextAutoBeat, nextInputMode, stepSetting, type NumericSettingKey, type Settings, type SettingsStore } from "../settings";
 import { formatMessage } from "./message";
@@ -61,8 +64,16 @@ export function formatSwipeDebug(dx: number, dy: number, dir: string): string {
   return `${Math.round(dx)},${Math.round(dy)},${dir}`;
 }
 
+/** UI-57: 2 ページ目の行（古い順。空なら debug.pointer.empty の 1 行） */
+export function pointerRowsText(entries: readonly PointerEntry[], strings: Strings): string[] {
+  if (entries.length === 0) return [strings["debug.pointer.empty"] ?? "debug.pointer.empty"];
+  return entries.map((e) => formatPointerRow(e, strings));
+}
+
 export type DebugPanel = {
   el: HTMLElement;
+  /** 1 ページ目（設定）に戻す。開くたびに app が呼ぶ */
+  showSettings(): void;
   /** mountStage の onLayout から呼ぶ */
   update(layout: StageLayout, input: StageInfoInput | null): void;
   /** スワイプが確定したときに呼ぶ */
@@ -140,6 +151,8 @@ export function createDebugPanel(o: {
   onClose(): void;
   /** UI-57: 「全員HP1」（送れるかは app が決める） */
   onHpOne(): void;
+  /** UI-57: 2 ページ目に出すポインタの記録（古い順。input/pointer-log の entries） */
+  pointers(): readonly PointerEntry[];
 }): DebugPanel {
   const t = (k: string): string => o.strings[k] ?? k;
   let scale = 1;
@@ -151,11 +164,16 @@ export function createDebugPanel(o: {
   const frame = document.createElement("div");
   frame.className = "debug-frame";
   el.appendChild(frame);
-  el.appendChild(buildPatterns());
+
+  // 1 ページ目（設定）。2 ページ目（ポインタの記録）と同じ原点で全面に重ね、display で切り替える
+  const page1 = document.createElement("div");
+  page1.className = "debug-page";
+  el.appendChild(page1);
+  page1.appendChild(buildPatterns());
 
   const info = document.createElement("pre");
   info.className = "debug-info";
-  el.appendChild(info);
+  page1.appendChild(info);
 
   // 設定の行
   const rowEls: Array<{ label: HTMLElement; value: HTMLElement; toggle: HTMLButtonElement | null }> = [];
@@ -164,7 +182,7 @@ export function createDebugPanel(o: {
     const label = document.createElement("div");
     label.className = "debug-label";
     place(label, r.label);
-    el.appendChild(label);
+    page1.appendChild(label);
     if (key === "skipAnimations" || key === "autoBeatMs" || key === "inputMode") {
       const toggle = button("", r.toggle, () => {
         const s = o.store.get();
@@ -172,16 +190,16 @@ export function createDebugPanel(o: {
         else if (key === "autoBeatMs") o.store.set({ autoBeatMs: nextAutoBeat(s.autoBeatMs) });
         else o.store.set({ inputMode: nextInputMode(s.inputMode) });
       });
-      el.appendChild(toggle);
+      page1.appendChild(toggle);
       rowEls.push({ label, value: toggle, toggle });
     } else {
       const k: NumericSettingKey = key;
-      el.appendChild(button("-", r.minus, () => o.store.set(stepSetting(o.store.get(), k, -1))));
+      page1.appendChild(button("-", r.minus, () => o.store.set(stepSetting(o.store.get(), k, -1))));
       const value = document.createElement("div");
       value.className = "debug-value";
       place(value, r.value);
-      el.appendChild(value);
-      el.appendChild(button("+", r.plus, () => o.store.set(stepSetting(o.store.get(), k, 1))));
+      page1.appendChild(value);
+      page1.appendChild(button("+", r.plus, () => o.store.set(stepSetting(o.store.get(), k, 1))));
       rowEls.push({ label, value, toggle: null });
     }
   });
@@ -190,10 +208,44 @@ export function createDebugPanel(o: {
   swipe.className = "debug-swipe";
   swipe.style.top = `${DEBUG_SWIPE_Y}px`;
   swipe.textContent = "swipe -";
-  el.appendChild(swipe);
+  page1.appendChild(swipe);
 
-  el.appendChild(button(t("debug.hpOneButton"), DEBUG_BUTTONS.hpOne, () => o.onHpOne()));
-  el.appendChild(button(t("settings.reset"), DEBUG_BUTTONS.reset, () => o.store.set({ ...o.defaults })));
+  page1.appendChild(button(t("debug.hpOneButton"), DEBUG_BUTTONS.hpOne, () => o.onHpOne()));
+  page1.appendChild(button(t("settings.reset"), DEBUG_BUTTONS.reset, () => o.store.set({ ...o.defaults })));
+
+  // 2 ページ目（UI-57 のポインタの記録）: 題と 20 行（古い順）。描くのはページを切り替えたときだけ
+  const page2 = document.createElement("div");
+  page2.className = "debug-page";
+  page2.style.display = "none";
+  el.appendChild(page2);
+  const pointerTitle = document.createElement("div");
+  pointerTitle.className = "debug-pointer-title";
+  pointerTitle.style.top = `${DEBUG_POINTER.titleY}px`;
+  pointerTitle.textContent = t("debug.pointer.title");
+  page2.appendChild(pointerTitle);
+  const pointerRows = Array.from({ length: POINTER_LOG_MAX }, (_, i): HTMLElement => {
+    const r = document.createElement("div");
+    r.className = "debug-pointer-row";
+    r.style.top = `${DEBUG_POINTER.rowY + DEBUG_POINTER.rowH * i}px`;
+    page2.appendChild(r);
+    return r;
+  });
+
+  let page: 1 | 2 = 1;
+  const showPage = (p: 1 | 2): void => {
+    page = p;
+    page1.style.display = p === 1 ? "" : "none";
+    page2.style.display = p === 2 ? "" : "none";
+    pagesButton.textContent = t(p === 1 ? "debug.pointersButton" : "debug.settingsButton");
+    if (p === 2) {
+      const rows = pointerRowsText(o.pointers(), o.strings);
+      pointerRows.forEach((r, i) => {
+        r.textContent = rows[i] ?? "";
+      });
+    }
+  };
+  const pagesButton = button(t("debug.pointersButton"), DEBUG_BUTTONS.pointers, () => showPage(page === 1 ? 2 : 1));
+  el.appendChild(pagesButton);
   el.appendChild(button(t("common.close"), DEBUG_BUTTONS.close, () => o.onClose()));
 
   const refresh = (): void => {
@@ -209,6 +261,7 @@ export function createDebugPanel(o: {
 
   return {
     el,
+    showSettings: () => showPage(1),
     update(layout: StageLayout, input: StageInfoInput | null): void {
       scale = layout.scale;
       info.textContent = formatStageInfo(layout, input).join("\n");

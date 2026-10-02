@@ -135,9 +135,10 @@ describe("layout", () => {
     expect(debugRow(5).toggle.y).toBe(294);
     expect(DEBUG_SWIPE_Y).toBeGreaterThanOrEqual(debugRow(5).toggle.y + debugRow(5).toggle.h);
     for (const b of Object.values(DEBUG_BUTTONS)) expect(b.y).toBeGreaterThanOrEqual(DEBUG_SWIPE_Y + 10);
-    // UI-57: ボタンは y342 の 72×32 を 全員HP1・既定に戻す・閉じる の順に左から 3 つ
-    expect(Object.keys(DEBUG_BUTTONS)).toEqual(["hpOne", "reset", "close"]);
-    expect(Object.values(DEBUG_BUTTONS)).toEqual([8, 84, 160].map((x) => ({ x, y: 342, w: 72, h: 32 })));
+    // UI-57: ボタンは y342 の 56×32 を 全員HP1・既定に戻す・ポインタ・閉じる の順に左から 4 つ（間 2。UI-10 の一辺 30 以上）
+    expect(Object.keys(DEBUG_BUTTONS)).toEqual(["hpOne", "reset", "pointers", "close"]);
+    expect(Object.values(DEBUG_BUTTONS)).toEqual([4, 62, 120, 178].map((x) => ({ x, y: 342, w: 56, h: 32 })));
+    for (const b of Object.values(DEBUG_BUTTONS)) expect(inside(b, STAGE)).toBe(true);
     // 作成のエラー欄は行とボタンに重ならない
     for (const r of Object.values(SCREENS.creation!)) expect(overlaps(CREATION_ERROR, r)).toBe(false);
   });

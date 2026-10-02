@@ -365,5 +365,14 @@
 
   "debug.fontSample": "あいうえお アイウエオ 迷宮の奥へ ABCxyz 0123「！？」…・",
   "debug.hpOne": "（デバッグ）全員の HP を 1 にした。",
-  "debug.hpOneButton": "全員HP1"
+  "debug.hpOneButton": "全員HP1",
+  "debug.pointersButton": "ポインタ",
+  "debug.settingsButton": "設定",
+  "debug.pointer.title": "ポインタの記録（古い順・20件）",
+  "debug.pointer.empty": "記録なし",
+  "debug.pointer.row": "{t} {type} {x},{y} {target}",
+  "debug.pointer.pointerdown": "down",
+  "debug.pointer.pointerup": "up",
+  "debug.pointer.pointercancel": "cancel",
+  "debug.pointer.lostpointercapture": "lost"
 }

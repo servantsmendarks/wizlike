@@ -304,9 +304,13 @@ export function debugRow(i: number): { label: Rect; minus: Rect; value: Rect; pl
 /** debug パネルの最後に確定したスワイプの表示（押せない 1 行）の上端。設定の行 5 の下 */
 export const DEBUG_SWIPE_Y = 328;
 
-/** debug パネルのボタン（y342 の 72×32 を 3 つ並べる。全員HP1（UI-57）・既定に戻す・閉じる） */
+/** debug パネルのボタン（y342 の 56×32 を 4 つ並べる。全員HP1（UI-57）・既定に戻す・ポインタ（2 ページ目との切り替え）・閉じる） */
 export const DEBUG_BUTTONS = {
-  hpOne: { x: 8, y: 342, w: 72, h: 32 },
-  reset: { x: 84, y: 342, w: 72, h: 32 },
-  close: { x: 160, y: 342, w: 72, h: 32 },
+  hpOne: { x: 4, y: 342, w: 56, h: 32 },
+  reset: { x: 62, y: 342, w: 56, h: 32 },
+  pointers: { x: 120, y: 342, w: 56, h: 32 },
+  close: { x: 178, y: 342, w: 56, h: 32 },
 } as const satisfies Record<string, Rect>;
+
+/** debug パネルの 2 ページ目（UI-57 のポインタの記録）: 題 y4、行 i は y16+10i（i=0..19、最後の行は y206..215）、x4・幅 232 */
+export const DEBUG_POINTER = { x: 4, w: 232, titleY: 4, rowY: 16, rowH: 10 } as const;

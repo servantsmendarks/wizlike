@@ -47,6 +47,7 @@ import {
   type RouteWalk,
   type Action,
 } from "./input/swipe";
+import { attachPointerLog, createPointerLog } from "./input/pointer-log";
 import { attachStageInput, onTap } from "./input/tap";
 import { dungeonLayout, layoutWarnings, regions, saveBannerRect } from "./layout";
 import { createPlayer } from "./playback";
@@ -196,12 +197,15 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     onMapCell: (p) => guard(() => tapMapCell(p)),
   });
 
+  // UI-57: debug パネルの「ポインタ」に出す直近 20 件のポインタイベント（表示層だけ。保存しない）
+  const pointerLog = createPointerLog();
   const debug = createDebugPanel({
     strings,
     store,
     defaults: defaultSettings(data.config),
     onClose: () => closeDebug(),
     onHpOne: () => guard(() => hpOneFromDebug()),
+    pointers: () => pointerLog.entries(),
   });
 
   // SV-23: 保存できないことを知らせる帯（最前面。押せない）
@@ -976,6 +980,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     underDebug = overlay === "wipe" ? "wipe" : null;
     repeater.release();
     overlay = "debug";
+    debug.showSettings();
     debug.refresh();
     debug.el.style.display = "";
   };
@@ -1226,6 +1231,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       debug.el.style.display = "none";
       showRoute("title");
       onTap(play.message.el, () => tapMessage());
+      // UI-57: ポインタの記録（capture なので attachStageInput の処理より先に走る）。debug パネルを開いている間は記録しない
+      attachPointerLog(stage, { log: pointerLog, scale, now: () => performance.now(), enabled: () => overlay !== "debug" });
       const stageInput = attachStageInput(stage, {
         scale,
         threshold: () => store.get().swipeThreshold,
