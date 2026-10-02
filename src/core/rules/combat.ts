@@ -985,7 +985,7 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
     }
     if (gold > 0) gainGold(ctx, gold, { key: "battle.gold", params: { gold } }); // CH-52: 強欲の treasureGain もここ
     if (b.origin.kind === "random" && b.origin.inRoom) {
-      // CB-52 の仮実装。罠・chestQuality は M5（openChest の差し込み口）
+      // CB-52 の仮実装。罠・chestQuality はプロトタイプ後（A7）
       if (chance(state.rng, cfg.combat.chestChance)) {
         const cg = Math.max(0, rollDice(state.rng, cfg.combat.chestGoldDice).total);
         gainGold(ctx, cg, { key: "battle.chest", params: { gold: cg } }); // cg が 0 でも message は出す
