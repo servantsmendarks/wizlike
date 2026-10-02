@@ -419,6 +419,56 @@ describe("attachKeyboard", () => {
     expect(out).toEqual(['down "forward"', 'up "forward"', 'down "right"', 'up "right"', 'down "left"', 'up "left"']);
   });
 
+  test("UI-33 Ctrl・Meta・Alt との組み合わせは操作にしない（Action を送らず preventDefault もしない）。Shift は許す", () => {
+    const { win, out } = setup();
+    const modKey = (type: string, k: string, mods: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; shiftKey?: boolean } = {}, code = "") => {
+      const ev = { key: k, code, repeat: false, target: null, ...mods, prevented: false, preventDefault() { this.prevented = true; } };
+      win.emit(type, ev);
+      return ev.prevented;
+    };
+    expect(modKey("keydown", "s", { ctrlKey: true }, "KeyS")).toBe(false);
+    expect(modKey("keyup", "s", { ctrlKey: true }, "KeyS")).toBe(false);
+    expect(modKey("keydown", "d", { ctrlKey: true }, "KeyD")).toBe(false);
+    expect(modKey("keyup", "d", { ctrlKey: true }, "KeyD")).toBe(false);
+    expect(modKey("keydown", "w", { metaKey: true }, "KeyW")).toBe(false);
+    expect(modKey("keyup", "w", { metaKey: true }, "KeyW")).toBe(false);
+    expect(modKey("keydown", "a", { altKey: true }, "KeyA")).toBe(false);
+    expect(modKey("keyup", "a", { altKey: true }, "KeyA")).toBe(false);
+    expect(modKey("keydown", "1", { ctrlKey: true }, "Digit1")).toBe(false);
+    expect(modKey("keyup", "1", { ctrlKey: true }, "Digit1")).toBe(false);
+    expect(modKey("keydown", "ArrowUp", { altKey: true })).toBe(false);
+    expect(modKey("keydown", "F2", { ctrlKey: true })).toBe(false);
+    // IME で key が Process でも、修飾キー付きなら code で拾わない
+    expect(modKey("keydown", "Process", { ctrlKey: true }, "KeyW")).toBe(false);
+    expect(out).toEqual([]);
+    // Shift は許す（大文字の W は前進）
+    expect(modKey("keydown", "W", { shiftKey: true }, "KeyW")).toBe(true);
+    modKey("keyup", "W", { shiftKey: true }, "KeyW");
+    expect(out).toEqual(['down "forward"', 'up "forward"']);
+  });
+
+  test("UI-33 修飾キー無しで押したキーは、Ctrl を押しながら離しても離しを送る（押しっぱなしを残さない）。修飾キー付きの押下はその離しも送らない", () => {
+    const { win, out } = setup();
+    const modKey = (type: string, k: string, mods: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean } = {}) => {
+      const ev = { key: k, code: "", repeat: false, target: null, ...mods, prevented: false, preventDefault() { this.prevented = true; } };
+      win.emit(type, ev);
+      return ev.prevented;
+    };
+    expect(modKey("keydown", "w")).toBe(true);
+    modKey("keyup", "w", { ctrlKey: true });
+    expect(out).toEqual(['down "forward"', 'up "forward"']);
+    // 離した後に Ctrl+W を押して離しても何も送らない
+    modKey("keydown", "w", { ctrlKey: true });
+    modKey("keyup", "w", { ctrlKey: true });
+    modKey("keyup", "w");
+    expect(out).toEqual(['down "forward"', 'up "forward"']);
+    // ArrowUp を押したまま Meta を押しながら離しても、離しは届く
+    modKey("keydown", "ArrowUp");
+    modKey("keydown", "ArrowUp", { metaKey: true });
+    modKey("keyup", "ArrowUp", { metaKey: true });
+    expect(out).toEqual(['down "forward"', 'up "forward"', 'down "forward"', 'up "forward"']);
+  });
+
   test("UI-33 フォーカス中のボタン（button / role=button）の Enter は変換せず、preventDefault もしない（既定の click に任せる）。ボタン以外の Enter は confirm", () => {
     const { out, key } = setup();
     expect(key("keydown", "Enter", false, { tagName: "BUTTON" })).toBe(false);

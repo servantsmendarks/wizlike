@@ -210,7 +210,12 @@ export type KeyboardOptions = {
   onRelease(a: Action): void;
 };
 
-/** UI-33: window の keydown / keyup。処理したキーは preventDefault する（自動リピートも既定動作だけ止める） */
+/**
+ * UI-33: window の keydown / keyup。処理したキーは preventDefault する（自動リピートも既定動作だけ止める）。
+ * Ctrl・Meta・Alt を押しながらの keydown は操作にせず、preventDefault もしない（Ctrl+S などブラウザの既定動作に任せる）。Shift は許す。
+ * keyup は修飾キーを見ない: 押したまま（held）のものだけを離すので、修飾キー付きの押下（held に入らない）の離しは何もせず、
+ * 修飾キー無しで押したキーは Ctrl などを押しながら離しても離しを送る（押しっぱなしを残さない）
+ */
 export function attachKeyboard(o: KeyboardOptions): () => void {
   const held: Action[] = [];
 
@@ -222,6 +227,8 @@ export function attachKeyboard(o: KeyboardOptions): () => void {
   const keydown = (e: KeyboardEvent): void => {
     // フォーカス中のボタンの Enter は既定動作（click）に任せる。変換も preventDefault もしない
     if (e.key === "Enter" && isButton(e.target)) return;
+    // Ctrl・Meta・Alt との組み合わせはブラウザの既定動作に任せる
+    if (e.ctrlKey === true || e.metaKey === true || e.altKey === true) return;
     const onInput = isTextInput(e.target);
     const base = keyToAction(e.key, false, onInput, e.code);
     if (base === null) return;
