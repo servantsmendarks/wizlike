@@ -1284,6 +1284,27 @@ describe("オート（CB-40〜43、F2）", () => {
     expectRejected(auto, REPEAT, "auto on");
   });
 
+  test("CB-44/CB-12 battle.repeat にも傾向が効く: 前回が防御の無鉄砲（キリ）は攻撃し、HP が半分未満の慎重（ベルク）は前回の攻撃でも防御。lastBattleInput は変えない", () => {
+    const d = dataWith({ combat: ALWAYS_HIT });
+    const s = setup([{ monsterId: "giant_rat", hps: [200], status: [["paralysis"]] }], {
+      identified: ["giant_rat"],
+      inputs: {},
+      patches: {
+        c1: PARA,
+        c2: { hp: 4, hpMax: 10, lastBattleInput: atk(0) },
+        c3: { lastBattleInput: DEF },
+        c4: PARA,
+        c5: PARA,
+        c6: PARA,
+      },
+    });
+    const r = exec(s, REPEAT, d);
+    expect(eventsOf(r.events, "attack").map((e) => e.actorId)).toEqual(["c3"]);
+    expect(r.events).toContainEqual({ kind: "message", key: "battle.defend", params: { actor: "ベルク" } });
+    expect(member(r.state, "c3").lastBattleInput).toEqual(DEF);
+    expect(member(r.state, "c2").lastBattleInput).toEqual(atk(0));
+  });
+
   test("CB-12/CB-40 battle.repeat は行動可能な味方 0 人（麻痺と睡眠だけ）でも受け付け、battle.resolve と同じ events・rng・battle になる", () => {
     // battle.flee（no actor で rejected）と違い、repeat は auto だけを拒否する（decisions の Y1）
     const s = setup([{ monsterId: "giant_rat", hps: [50] }], {

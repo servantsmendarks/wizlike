@@ -259,6 +259,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       chestGoldDice: D, // CB-52【仮】（M3 の仮実装）
       unarmedDice: D,
       autoInterrupt: F({ hpRatio: N(RATIO) }),
+      autoDefendHpRatio: N(RATIO), // CB-44【仮】
     }),
     san: F({
       max: I(POS_INT),

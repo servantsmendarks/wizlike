@@ -1,8 +1,9 @@
-// オート入力・行動計画への置き換え・対象の振り替え・行動順・オート解除（CB-11/13/15/40〜43）。
+// オート入力（性格傾向を含む）・行動計画への置き換え・対象の振り替え・行動順・オート解除（CB-11/13/15/40〜44）。
 // すべて純粋関数。乱数は使わない。
 import type { GameData, StatusId } from "../data/index";
-import { itemOf, spellOf } from "../state";
-import type { BattleAction, BattleTarget, Character, GameState, Life } from "../types";
+import { parseDice } from "../rng";
+import { itemOf, monsterOf, personalityOf, spellOf } from "../state";
+import type { BattleAction, BattleState, BattleTarget, Character, GameState, Life } from "../types";
 import {
   battleItemUsable,
   battleSpellUsable,
@@ -11,6 +12,7 @@ import {
   groupAlive,
   lowestAliveGroup,
   lowestHpRatioAlly,
+  unitAlive,
 } from "./combat-calc";
 import { sanStage, stageRank } from "./san";
 
@@ -54,11 +56,18 @@ function retarget(state: GameState, t: BattleTarget): BattleTarget | null {
 }
 
 /**
- * CB-40/42: オートの入力（battle.repeat も使う）。lastBattleInput を繰り返し、無い・使えない呪文や道具なら既定
- * （canStrike なら最小の生存グループへの攻撃、でなければ防御）。対象は CB-42 で振り替える。
+ * CB-40/42/44: オートの入力（battle.repeat も使う）。基本の入力（baseAutoInput）に性格傾向（CB-44）を掛ける。
  * MP 不足はここでは見ない（toPlan の CB-41）。
  */
 export function autoInput(state: GameState, data: GameData, ch: Character): BattleAction {
+  return applyAutoTendency(state, data, ch, baseAutoInput(state, data, ch));
+}
+
+/**
+ * CB-40/42: 基本のオート入力。lastBattleInput を繰り返し、無い・使えない呪文や道具なら既定
+ * （canStrike なら最小の生存グループへの攻撃、でなければ防御）。対象は CB-42 で振り替える。
+ */
+function baseAutoInput(state: GameState, data: GameData, ch: Character): BattleAction {
   const a = ch.lastBattleInput;
   if (a === null) return defaultAction(state, data, ch);
   switch (a.type) {
@@ -86,7 +95,56 @@ export function autoInput(state: GameState, data: GameData, ch: Character): Batt
       return t === null ? defaultAction(state, data, ch) : { type: "item", instanceId: a.instanceId, target: t };
     }
   }
-  // M5: CB-44 の autoTendency をこの直後に挟む
+}
+
+/**
+ * CB-44: 生存個体のあるグループのうち、gold の期待値 × 生存個体数が最大のグループの添字（同値は添字の小さい方）。
+ * 比べる値は期待値の 2 倍の整数 (count × (sides + 1) + 2 × modifier) × 生存個体数。生存グループが無ければ null
+ */
+export function richestGroup(b: BattleState, data: GameData): number | null {
+  let best: number | null = null;
+  let bestV = 0;
+  for (let g = 0; g < b.groups.length; g++) {
+    const grp = b.groups[g]!;
+    const alive = grp.units.filter(unitAlive).length;
+    if (alive === 0) continue;
+    const d = parseDice(monsterOf(data, grp.monsterId).gold);
+    const v = (d.count * (d.sides + 1) + 2 * d.modifier) * alive;
+    if (best === null || v > bestV) {
+      best = g;
+      bestV = v;
+    }
+  }
+  return best;
+}
+
+/**
+ * CB-44【仮】: オート入力に性格傾向を掛ける（乱数なし）。
+ * - defendBelowHalf（慎重）: hp < hpMax × combat.autoDefendHpRatio なら防御
+ * - alwaysAttack（無鉄砲）: 基本の入力が防御のときだけ攻撃に置き換える（前回の攻撃の対象グループが生きていればそれ、
+ *   無ければ最小の生存グループ。生存グループが無ければ防御のまま）。呪文・道具・攻撃はそのまま。後衛は toPlan で防御（CB-13）
+ * - targetRichest（強欲）: 攻撃の対象を richestGroup に変える（呪文・道具は変えない）
+ * - none（普通）・リーダー: そのまま
+ */
+function applyAutoTendency(state: GameState, data: GameData, ch: Character, a: BattleAction): BattleAction {
+  const b = state.battle;
+  if (b === null) return a;
+  switch (personalityOf(data, ch.personality)?.autoBattle ?? "none") {
+    case "defendBelowHalf":
+      return ch.hp < ch.hpMax * data.config.combat.autoDefendHpRatio ? { type: "defend" } : a;
+    case "alwaysAttack": {
+      if (a.type !== "defend") return a;
+      const last = ch.lastBattleInput;
+      const g = last !== null && last.type === "attack" && groupAlive(b, last.group) ? last.group : lowestAliveGroup(b);
+      return g === null ? a : { type: "attack", group: g };
+    }
+    case "targetRichest": {
+      if (a.type !== "attack") return a;
+      return { type: "attack", group: richestGroup(b, data) ?? a.group };
+    }
+    case "none":
+      return a;
+  }
 }
 
 /**
@@ -115,7 +173,6 @@ export function toPlan(state: GameState, data: GameData, ch: Character, action: 
     case "item":
       return { kind: "item", memberId, instanceId: action.instanceId, target: action.target };
   }
-  // M5: CB-45（SAN の閾値効果）の段をここに足す
 }
 
 /**

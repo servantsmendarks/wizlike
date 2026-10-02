@@ -117,6 +117,8 @@ export type Config = {
     chestGoldDice: string;
     unarmedDice: string;
     autoInterrupt: { hpRatio: number };
+    /** CB-44【仮】: 慎重（defendBelowHalf）のオートは hp < hpMax × この値で防御 */
+    autoDefendHpRatio: number;
   };
   san: {
     max: number;

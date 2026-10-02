@@ -1,6 +1,6 @@
 // rules/combat-plan.ts（オート入力・行動計画・行動順・敵の対象・オート解除）のテスト。純粋。
 import { describe, expect, test } from "vitest";
-import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, snapMembers, toPlan } from "../src/core/rules/combat-plan";
+import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, richestGroup, snapMembers, toPlan } from "../src/core/rules/combat-plan";
 import { memberById } from "../src/core/state";
 import type { BattleAction, Character, GameState } from "../src/core/types";
 import { dived, withBattle } from "./helpers/battle";
@@ -142,6 +142,89 @@ describe("CB-15 enemyTargetIds", () => {
     let t = s;
     for (const i of [3, 4, 5]) t = withChar(t, i, { life: "dead", hp: 0, status: [] });
     expect(enemyTargetIds(t, data)).toEqual([]);
+  });
+});
+
+describe("CB-44 オートの性格傾向", () => {
+  // 既定の一行: c1 アルド（リーダー）/ c2 ベルク（慎重）/ c3 キリ（無鉄砲）/ c4 ドナ（強欲）/ c5 エル（普通）/ c6 フィン（慎重）
+  test("CB-44 defendBelowHalf（慎重）: hp < hpMax × 0.5【仮】で防御、ちょうど 0.5 は元のまま", () => {
+    const s = twoGroups(); // 生存グループは 1（kobold ×2）と 2（rat ×1）
+    expect(data.config.combat.autoDefendHpRatio).toBe(0.5);
+    const below = withChar(s, 1, { hp: 9, hpMax: 20 });
+    expect(autoInput(below, data, ch(below, "c2"))).toEqual({ type: "defend" });
+    const half = withChar(s, 1, { hp: 10, hpMax: 20 });
+    expect(autoInput(half, data, ch(half, "c2"))).toEqual({ type: "attack", group: 1 }); // 基本の入力（最小の生存グループ）
+    // 呪文の前回でも、HP が半分未満なら防御
+    const caster = withLast(withChar(s, 1, { hp: 9, hpMax: 20, knownSpells: ["fire_arrow"], mp: 10 }), 1, {
+      type: "cast",
+      spellId: "fire_arrow",
+      target: { side: "enemy", group: 2 },
+    });
+    expect(autoInput(caster, data, ch(caster, "c2"))).toEqual({ type: "defend" });
+  });
+
+  test("CB-44 alwaysAttack（無鉄砲）: 基本の入力が防御なら攻撃（最小の生存グループ）に置き換える。呪文・攻撃はそのまま。生存グループが無ければ防御のまま", () => {
+    const s = twoGroups();
+    const def = withLast(s, 2, { type: "defend" });
+    expect(autoInput(def, data, ch(def, "c3"))).toEqual({ type: "attack", group: 1 });
+    // HP が低くても攻撃（慎重のような防御はしない）
+    const low = withChar(def, 2, { hp: 1 });
+    expect(autoInput(low, data, ch(low, "c3"))).toEqual({ type: "attack", group: 1 });
+    // 攻撃の前回はそのまま（対象は CB-42 の振り替え）
+    const atk2 = withLast(s, 2, { type: "attack", group: 2 });
+    expect(autoInput(atk2, data, ch(atk2, "c3"))).toEqual({ type: "attack", group: 2 });
+    // 呪文の前回はそのまま（オーケストレーターの決定: 防御のときだけ置き換える）
+    const cast = withLast(withChar(s, 2, { knownSpells: ["fire_arrow"] }), 2, {
+      type: "cast",
+      spellId: "fire_arrow",
+      target: { side: "enemy", group: 2 },
+    });
+    expect(autoInput(cast, data, ch(cast, "c3"))).toEqual({ type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 2 } });
+    // 後衛の無鉄砲（エルを無鉄砲に）: 既定の防御 → 攻撃。toPlan で後衛の防御（backRow。CB-13）
+    const back = withChar(s, 4, { personality: "reckless" });
+    const a = autoInput(back, data, ch(back, "c5"));
+    expect(a).toEqual({ type: "attack", group: 1 });
+    expect(toPlan(back, data, ch(back, "c5"), a)).toEqual({ kind: "defend", memberId: "c5", why: "backRow" });
+    // 生存グループが無い: 防御のまま
+    const empty = withBattle(withLast(dived(1), 2, { type: "defend" }), [{ monsterId: "giant_rat", hps: [0] }]);
+    expect(autoInput(empty, data, ch(empty, "c3"))).toEqual({ type: "defend" });
+  });
+
+  test("CB-44 targetRichest（強欲）: 攻撃の対象は gold の期待値×生存数の最大、同値は添字の小さい方。呪文・防御は変えない", () => {
+    // 期待値の 2 倍: giant_rat 1d4+1 → 1×5+2 = 7、kobold 3d6 → 3×7 = 21、rotting_corpse "0" → 0
+    const b = (groups: { monsterId: string; hps: number[] }[]) => withBattle(dived(1), groups).battle!;
+    expect(richestGroup(b([{ monsterId: "giant_rat", hps: [1, 1] }, { monsterId: "kobold", hps: [1] }]), data)).toBe(1); // 14 < 21
+    expect(richestGroup(b([{ monsterId: "giant_rat", hps: [1, 1, 1] }, { monsterId: "kobold", hps: [1] }]), data)).toBe(0); // 21 = 21 は添字の小さい方
+    expect(richestGroup(b([{ monsterId: "giant_rat", hps: [1, 1, 1, 1] }, { monsterId: "kobold", hps: [0, 1] }]), data)).toBe(0); // 28 > 21（死んだ個体は数えない）
+    expect(richestGroup(b([{ monsterId: "kobold", hps: [0] }, { monsterId: "rotting_corpse", hps: [1] }]), data)).toBe(1); // 生存は腐った死体だけ（gold "0" で 0）
+    expect(richestGroup(b([{ monsterId: "kobold", hps: [0] }]), data)).toBeNull();
+
+    const s = withBattle(dived(1), [
+      { monsterId: "giant_rat", hps: [1] },
+      { monsterId: "kobold", hps: [1, 1] },
+    ]);
+    // ドナ（後衛・杖）の前回の攻撃 group 0 → 攻撃のまま対象だけ 1 へ
+    const atk0 = withLast(s, 3, { type: "attack", group: 0 });
+    expect(autoInput(atk0, data, ch(atk0, "c4"))).toEqual({ type: "attack", group: 1 });
+    // 呪文の対象は変えない
+    const cast = withLast(withChar(s, 3, { knownSpells: ["fire_arrow"] }), 3, {
+      type: "cast",
+      spellId: "fire_arrow",
+      target: { side: "enemy", group: 0 },
+    });
+    expect(autoInput(cast, data, ch(cast, "c4"))).toEqual({ type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 0 } });
+    // 防御（既定）は変えない
+    expect(autoInput(s, data, ch(s, "c4"))).toEqual({ type: "defend" });
+  });
+
+  test("CB-44 none（普通）とリーダーは傾向なし（HP が低くても・防御の前回でもそのまま）", () => {
+    let s = twoGroups();
+    s = withLast(withChar(s, 0, { hp: 1 }), 0, { type: "defend" });
+    s = withLast(withChar(s, 4, { hp: 1 }), 4, { type: "defend" });
+    expect(autoInput(s, data, ch(s, "c1"))).toEqual({ type: "defend" });
+    expect(autoInput(s, data, ch(s, "c5"))).toEqual({ type: "defend" });
+    const a = withLast(withChar(twoGroups(), 0, { hp: 1 }), 0, { type: "attack", group: 2 });
+    expect(autoInput(a, data, ch(a, "c1"))).toEqual({ type: "attack", group: 2 });
   });
 });
 

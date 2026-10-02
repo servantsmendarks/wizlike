@@ -118,6 +118,14 @@ describe("data: config.json", () => {
     expect(issuesOf((r) => (r.config.combat.sleepNaturalWake = 0))).toEqual([]);
     expect(issuesOf((r) => (r.config.combat.sleepNaturalWake = 100))).toEqual([]);
   });
+  test("data: CB-44 combat.autoDefendHpRatio は 0..1 の数【仮】", () => {
+    expect(config.combat.autoDefendHpRatio).toBe(0.5);
+    expectIssue((r) => (r.config.combat.autoDefendHpRatio = 1.5), "config.json", "combat.autoDefendHpRatio: expected number in 0..1, got 1.5");
+    expectIssue((r) => (r.config.combat.autoDefendHpRatio = -0.1), "config.json", "combat.autoDefendHpRatio: expected number in 0..1, got -0.1");
+    expectIssue((r) => delete r.config.combat.autoDefendHpRatio, "config.json", "combat.autoDefendHpRatio: missing required field");
+    expect(issuesOf((r) => (r.config.combat.autoDefendHpRatio = 0))).toEqual([]);
+    expect(issuesOf((r) => (r.config.combat.autoDefendHpRatio = 1))).toEqual([]);
+  });
   test("data: CB-05 combat.identifyIqPerPoint は 0 以上の整数【仮】", () => {
     expectIssue((r) => (r.config.combat.identifyIqPerPoint = -1), "config.json", "combat.identifyIqPerPoint: expected integer >= 0, got -1");
     expectIssue((r) => (r.config.combat.identifyIqPerPoint = 0.5), "config.json", "combat.identifyIqPerPoint: expected integer");

@@ -23,7 +23,8 @@
     "fleeBase": 50, "fleeAgiMul": 3,
     "chestChance": 30, "chestTrapChance": 40, "chestGoldDice": "2d10",
     "unarmedDice": "1d2",
-    "autoInterrupt": { "hpRatio": 0.3 }
+    "autoInterrupt": { "hpRatio": 0.3 },
+    "autoDefendHpRatio": 0.5
   },
   "san": {
     "max": 100,
