@@ -316,6 +316,7 @@
   "wipe.band.lucky": "「ほとんど無傷か。」",
   "wipe.band.miracle": "「……奇跡だな。」",
   "wipe.ledgerLost": "持ち帰るはずだったものは全て失われた。",
+  "wipe.ledgerNone": "持ち帰るはずのものは何も無かった。",
   "wipe.goldLost": "{gold}の金を失った。",
   "wipe.itemLost": "{item}を失った。",
   "wipe.expLost": "経験が削られた。",

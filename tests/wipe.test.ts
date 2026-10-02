@@ -159,7 +159,7 @@ describe("全滅処理（TW-20〜26）", () => {
     }
   });
 
-  test("TW-21/DG-42 台帳: 品は全部消え（名前は ledgerItems）、所持金は min(所持金, 台帳の金) 減る。台帳が空でも wipe.ledgerLost を 1 回出す", () => {
+  test("TW-21/DG-42 台帳: 品は全部消え（名前は ledgerItems）、所持金は min(所持金, 台帳の金) 減る。台帳が空でないとき wipe.ledgerLost を 1 回出す", () => {
     const s = withTotal(withLedger(base()), 20);
     const daggerId = s.dive!.ledger.items[0]!;
     const ctx = wipeOf(s);
@@ -176,12 +176,22 @@ describe("全滅処理（TW-20〜26）", () => {
     const pc = wipeOf(poor);
     expect(penaltyOf(pc.events).ledgerGold).toBe(25);
     expect(pc.state.gold).toBe(0);
-    // 台帳が空
+  });
+
+  test("TW-21 台帳が空（失った金 0・品 0）の全滅は、wipe.ledgerLost の代わりに wipe.ledgerNone を 1 回出す（内訳の wipe.summary.ledgerNone と言い回しを合わせる）", () => {
     const empty = wipeOf(withTotal(base(), 20));
     const pe = penaltyOf(empty.events);
     expect(pe.ledgerGold).toBe(0);
     expect(pe.ledgerItems).toEqual([]);
-    expect(kindsOf(empty.events).filter((k) => k === "message:wipe.ledgerLost")).toHaveLength(1);
+    expect(kindsOf(empty.events).slice(0, 3)).toEqual(["message:wipe.intro", "message:wipe.ledgerNone", "dice"]);
+    expect(kindsOf(empty.events).filter((k) => k === "message:wipe.ledgerLost")).toHaveLength(0);
+    expect(data.strings["wipe.ledgerNone"]).toBe("持ち帰るはずのものは何も無かった。");
+    // 台帳に金だけ（品 0）でも空ではない
+    const goldOnly = cloneState(withLedger(base()));
+    goldOnly.dive!.ledger.items = [];
+    const g = wipeOf(withTotal(goldOnly, 20));
+    expect(penaltyOf(g.events).ledgerGold).toBeGreaterThan(0);
+    expect(kindsOf(g.events).slice(0, 3)).toEqual(["message:wipe.intro", "message:wipe.ledgerLost", "dice"]);
   });
 
   test("TW-22 品: 非装備が itemLoss 以上なら非装備（並び順 × inventory の順）から選び、装備は残る。1 個ごとに候補を作り直して randInt(0, 候補数 − 1)（鏡の rng）", () => {

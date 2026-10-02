@@ -1,7 +1,7 @@
 // 全滅処理（TW-20〜26、DG-42、CH-41/62、MG-03）と、迷宮の戦闘外の全滅判定、TW-27 の総資産。
 // combat.ts（戦闘の全滅）と engine.ts（受け付けたコマンドの後処理）から呼ぶ。combat.ts と dungeon.ts は import しない。
 // 乱数の消費順: 2d10（penaltyTable.dice を rollDice で 1 回）→ 失う品 1 個ごとに randInt(0, 候補数 − 1) を 1 回（候補 1 個でも引く）。
-// イベントの順: wipe.intro → 台帳（wipe.ledgerLost は台帳が空でも 1 回）→ dice{dice.wipe} → 帯の text → 金 → 品 → EXP とレベルダウン
+// イベントの順: wipe.intro → 台帳（wipe.ledgerLost を 1 回。失った金 0・品 0 なら代わりに wipe.ledgerNone）→ dice{dice.wipe} → 帯の text → 金 → 品 → EXP とレベルダウン
 //   → 復活 → wipe{penalty} → arriveTown（town.enter → sanChanged → 救済 → screen{town}）。message の語りは出さない（dice の表示がラベルとして出す）。
 import type { GameData } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
@@ -103,7 +103,9 @@ export function performWipe(ctx: RuleContext): void {
   const ledgerGold = Math.min(state.gold, dive.ledger.gold);
   state.gold -= ledgerGold;
   dive.ledger = { items: [], gold: 0 };
-  ctx.events.push({ kind: "message", key: "wipe.ledgerLost" });
+  // TW-21: 失った金も品も無ければ、内訳（wipe.summary.ledgerNone）と言い回しを合わせて wipe.ledgerNone
+  const ledgerEmpty = ledgerGold === 0 && ledgerItems.length === 0;
+  ctx.events.push({ kind: "message", key: ledgerEmpty ? "wipe.ledgerNone" : "wipe.ledgerLost" });
 
   // 3) TW-22: 2d10
   // 4) 帯（乱数を使わないので dice の前に引く。UI-40 の基準と結果に出す）
