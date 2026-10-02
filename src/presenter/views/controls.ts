@@ -3,6 +3,7 @@
 // どのボタンも input/tap.ts の onTap で登録し、「動かずに離した」ときに反応する（UI-36。click は使わない）。
 // 前進ボタンだけは、動かずに hold.ms() 押し続けたら hold.onHoldStart（長押しの連打）、離したら hold.onHoldEnd（UI-31）。
 // 「オート解除」は再生中も反応する（whileBusy。UI-44 の例外）。
+// 末尾が戻る / やめるの一覧は、その項目を一覧の外（layout.listBack）に固定し、一覧だけを縦にスクロールする（UI-11）。
 // Action から Command への変換と長押しの連打は呼び出し側（app）が持つ。表示層は前進できるかを判定しない（UI-35）。
 // モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
@@ -25,8 +26,12 @@ export type Controls = {
   setDpadVisible(on: boolean): void;
   /** layout.menu に並べる（5 件目以降は捨てる） */
   setMenu(items: ControlItem[]): void;
-  /** layout.list の位置に並べる。4 件以上は縦スクロール（UI-11） */
-  setList(items: ControlItem[]): void;
+  /**
+   * layout.list の位置に並べる。4 件以上は縦スクロール（UI-11）。
+   * fixedLast なら末尾の項目（戻る / やめる）を一覧の外の layout.listBack に固定し、残りを幅の狭い layout.listNarrow の一覧に置く。
+   * 添字（select・setListFocus・数字キー）は fixedLast によらず items の順（末尾が戻る / やめる）
+   */
+  setList(items: ControlItem[], opts?: { fixedLast?: boolean }): void;
   /**
    * UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠 / townMenu の 6 枠 / campGrid の 8 枠）に並べる。
    * null は空き枠（何も置かない）。枠数を超える分は捨てる
@@ -88,7 +93,7 @@ function setShown(el: HTMLElement, on: boolean): void {
  */
 export function createControls(o: {
   region: Rect;
-  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "mapClose" | "battleParty" | "battleMember" | "autoStop" | "townMenu" | "campGrid">;
+  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "listNarrow" | "listBack" | "mapClose" | "battleParty" | "battleMember" | "autoStop" | "townMenu" | "campGrid">;
   strings: Strings;
   onAction(a: DpadAction): void;
   hold: { ms(): number; onHoldStart(): void; onHoldEnd(): void };
@@ -167,7 +172,15 @@ export function createControls(o: {
   });
   el.appendChild(list);
   let listItems: ControlItem[] = [];
+  /** 行の要素（fixedLast なら末尾は listBack のボタン）。添字は listItems と同じ */
   let listButtons: HTMLElement[] = [];
+  const narrow = o.layout.listNarrow[0] ?? first;
+  /** UI-11: 一覧の外に固定する戻る / やめる（setList の fixedLast のときだけ出す） */
+  const listBackRect = o.layout.listBack;
+  let listBackOn = false;
+  const listBack = document.createElement("div");
+  listBack.className = "controls-list-back";
+  el.appendChild(listBack);
 
   // ---- 地図の「閉じる」
   const close = document.createElement("button");
@@ -200,6 +213,7 @@ export function createControls(o: {
     setShown(dpad, mode === "dpad" && dpadVisible);
     setShown(menu, mode === "dpad");
     setShown(list, mode === "list");
+    setShown(listBack, mode === "list" && listBackOn);
     setShown(close, mode === "close");
     setShown(battle, mode === "battle");
     setShown(autoStop, mode === "autoStop");
@@ -223,6 +237,8 @@ export function createControls(o: {
     setMode(m: ControlsMode): void {
       mode = m;
       apply();
+      // UI-11: 一覧は出すたびに先頭から見せる（display:none の間の代入が効かないことがあるので、表示した後にも 0 にする）
+      if (m === "list") list.scrollTop = 0;
     },
     setDpadVisible(on: boolean): void {
       dpadVisible = on;
@@ -244,31 +260,39 @@ export function createControls(o: {
         menu.appendChild(b);
       });
     },
-    setList(items: ControlItem[]): void {
+    setList(items: ControlItem[], opts?: { fixedLast?: boolean }): void {
       listItems = items.slice();
       listButtons = [];
       list.replaceChildren();
+      listBack.replaceChildren();
       list.scrollTop = 0;
-      for (const it of listItems) {
+      const fixed = opts?.fixedLast === true && listItems.length > 0;
+      listBackOn = fixed;
+      const rowW = fixed ? narrow.w : first.w;
+      list.style.width = `${rowW}px`;
+      listItems.forEach((it, k) => {
+        const isBack = fixed && k === listItems.length - 1;
         const b = document.createElement("button");
         b.type = "button";
-        b.className = "controls-list-item";
+        b.className = isBack ? "controls-list-back-item" : "controls-list-item";
         b.textContent = it.label;
-        Object.assign(b.style, {
-          display: "block",
-          width: `${first.w}px`,
-          height: `${first.h}px`,
-          margin: "0",
-          padding: "0 4px",
-          border: "1px solid var(--c-frame)",
-          background: "var(--c-bg)",
-          color: "var(--c-text)",
-          font: "inherit",
-          lineHeight: `${first.h - 2}px`,
-          textAlign: "left",
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-        });
+        if (isBack) buttonStyle(b, listBackRect, origin);
+        else
+          Object.assign(b.style, {
+            display: "block",
+            width: `${rowW}px`,
+            height: `${first.h}px`,
+            margin: "0",
+            padding: "0 4px",
+            border: "1px solid var(--c-frame)",
+            background: "var(--c-bg)",
+            color: "var(--c-text)",
+            font: "inherit",
+            lineHeight: `${first.h - 2}px`,
+            textAlign: "left",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+          });
         dimIf(b, it);
         onTap(b, () => pick(it));
         const focus = it.onFocus;
@@ -278,9 +302,10 @@ export function createControls(o: {
           b.addEventListener("pointerenter", () => focus());
           b.addEventListener("pointerdown", () => focus());
         }
-        list.appendChild(b);
+        (isBack ? listBack : list).appendChild(b);
         listButtons.push(b);
-      }
+      });
+      apply();
     },
     setListFocus(i: number | null, opts?: { scroll?: boolean }): void {
       listButtons.forEach((b, k) => {
@@ -289,6 +314,8 @@ export function createControls(o: {
       });
       const b = i === null ? undefined : listButtons[i];
       if (opts?.scroll === false) return;
+      // 固定の戻る / やめるは一覧の外なので動かさない（overflow hidden の祖先をスクロールさせない）
+      if (listBackOn && i === listButtons.length - 1) return;
       if (b !== undefined && typeof b.scrollIntoView === "function") b.scrollIntoView({ block: "nearest" });
     },
     setBattleMenu(items: (ControlItem | null)[], slots: BattleSlots): void {

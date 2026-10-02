@@ -255,6 +255,83 @@ describe("controls", () => {
     expect(scrolled).toBe(2);
   });
 
+  test("UI-11 setList(fixedLast) は末尾を一覧の外の controls-list-back（layout.listBack）に置き、残りを幅 168 の一覧に置く。select(n) と setListFocus(末尾) は戻るを指す", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, hold: HOLD, onClose: () => {} });
+    const picked: number[] = [];
+    const it = (i: number) => ({ label: `r${i}`, onSelect: () => picked.push(i), onFocus: () => {} });
+    c.setList([it(0), it(1), it(2), it(3), { label: "back", onSelect: () => picked.push(4) }], { fixedLast: true });
+    c.setMode("list");
+    const list = created.find((e) => e.className === "controls-list")!;
+    const holder = created.find((e) => e.className === "controls-list-back")!;
+    // 行は一覧の中に 4 つ（幅 168）、戻るは一覧の外
+    expect(list.children.map((e) => e["textContent"])).toEqual(["r0", "r1", "r2", "r3"]);
+    expect(list.style["width"]).toBe("168px");
+    expect(list.children.map((e) => e.style["width"])).toEqual(["168px", "168px", "168px", "168px"]);
+    expect(holder.children.map((e) => e["textContent"])).toEqual(["back"]);
+    expect(holder.style["display"]).toBe("");
+    const back = holder.children[0]!;
+    const rel = L.listBack;
+    expect([back.style["left"], back.style["top"], back.style["width"], back.style["height"]]).toEqual([
+      `${rel.x - g.controls.x}px`,
+      `${rel.y - g.controls.y}px`,
+      "56px",
+      "40px",
+    ]);
+    // 添字は変わらない: select(4) は戻る、select(0) は先頭の行
+    c.select(4);
+    c.select(0);
+    back.tap();
+    expect(picked).toEqual([4, 0, 4]);
+    // setListFocus(末尾) は戻るの枠を accent にし、一覧の外なので scrollIntoView は呼ばない
+    let scrolled = 0;
+    for (const e of [...list.children, back]) e["scrollIntoView"] = () => scrolled++;
+    c.setListFocus(4);
+    expect(back.style["borderColor"]).toBe("var(--c-accent)");
+    expect(scrolled).toBe(0);
+    c.setListFocus(1);
+    expect(back.style["borderColor"]).toBe("var(--c-frame)");
+    expect(scrolled).toBe(1);
+    // list 以外のモードでは戻るも隠す
+    c.setMode("none");
+    expect(holder.style["display"]).toBe("none");
+  });
+
+  test("UI-11 fixedLast なしは今どおり幅 224 の一覧に末尾まで置き、固定の戻るは出さない", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, hold: HOLD, onClose: () => {} });
+    c.setList([{ label: "a", onSelect: () => {} }, { label: "back", onSelect: () => {} }], { fixedLast: true });
+    c.setList([{ label: "x", onSelect: () => {} }, { label: "y", onSelect: () => {} }]);
+    c.setMode("list");
+    const list = created.find((e) => e.className === "controls-list")!;
+    const holder = created.find((e) => e.className === "controls-list-back")!;
+    expect(list.children.map((e) => e["textContent"])).toEqual(["x", "y"]);
+    expect(list.style["width"]).toBe("224px");
+    expect(list.children.map((e) => e.style["width"])).toEqual(["224px", "224px"]);
+    expect(holder.children).toEqual([]);
+    expect(holder.style["display"]).toBe("none");
+  });
+
+  test("UI-11 一覧は出すたびに先頭から: setMode(\"list\") で一覧の scrollTop を 0 にする（表示した後にも戻す）", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, hold: HOLD, onClose: () => {} });
+    const list = created.find((e) => e.className === "controls-list")!;
+    c.setList([{ label: "a", onSelect: () => {} }]);
+    // display:none の間の代入が効かず、前の位置が残った場合を模す
+    list["scrollTop"] = 50;
+    c.setMode("list");
+    expect(list["scrollTop"]).toBe(0);
+    list["scrollTop"] = 30;
+    c.setMode("battle");
+    expect(list["scrollTop"]).toBe(30);
+  });
+
   test("UI-44/UI-54 オート解除: タップ（再生中も反応する whileBusy）と、autoStop モードの select(0) で onPress を呼ぶ。ラベルは setAutoStop で差し替わる。close は onClose", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);

@@ -51,6 +51,12 @@ const SCREENS: Record<string, Record<string, Rect>> = {
     "CREATION_BUTTONS.back": CREATION_BUTTONS.back,
   },
   town: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
+  // UI-11 末尾が戻る / やめるの一覧（街の各施設・キャンプと酒場の一覧の段・戦闘の呪文・道具・対象）: 幅 168 の行と、一覧の外の戻る
+  listFixed: {
+    "header.settings": HEADER_SETTINGS,
+    ...Object.fromEntries(L.listNarrow.map((r, i) => [`listNarrow[${i}]`, r])),
+    listBack: L.listBack,
+  },
   // UI-52 街の施設メニューの 3 列 × 2 段の 5 枠
   townMenu: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.townMenu.map((r, i) => [`townMenu[${i}]`, r])) },
   dungeon: {
@@ -207,6 +213,13 @@ describe("layout", () => {
       { x: 8, y: 366, w: 224, h: 32 },
     ]);
     expect(L.mapClose).toEqual({ x: 60, y: 334, w: 120, h: 32 });
+    // UI-11 一覧の外の戻るは戦闘のメンバーの戻る（battleMember[4]）・キャンプの [7] と同じ 56×40（x178..233・y354..393）。
+    // 行は list と同じ 3 行で幅 168（x8..175。戻るとの間 2）
+    expect(L.listBack).toEqual({ x: 178, y: 354, w: 56, h: 40 });
+    expect(L.listBack).toEqual(L.battleMember[4]);
+    expect(L.listBack).toEqual(L.campGrid[7]);
+    expect(L.listNarrow).toEqual(L.list.map((r) => ({ ...r, w: 168 })));
+    for (const r of [...L.listNarrow, L.listBack]) expect(inside(r, regions(data.config.ui.layout, W).controls)).toBe(true);
     // UI-54 戦闘: パーティの選択は 2 列 × 2 段の 114×40（x 4/122、y 306/354）、メンバーは上段 4 つの 56×40
     // （x 4/62/120/178、y 306）と下段の右端の戻る（x 178、y 354）、オート解除
     expect(L.battleParty).toEqual([306, 354].flatMap((y) => [4, 122].map((x) => ({ x, y, w: 114, h: 40 }))));
@@ -256,6 +269,8 @@ describe("layout", () => {
       for (const k of Object.keys(L.dpad) as Array<keyof typeof L.dpad>) expect(rel(d.dpad[k], g.controls), tag).toEqual(rel(L.dpad[k], base.controls));
       d.menu.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.menu[i]!, base.controls)));
       d.list.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.list[i]!, base.controls)));
+      d.listNarrow.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.listNarrow[i]!, base.controls)));
+      expect(rel(d.listBack, g.controls), tag).toEqual(rel(L.listBack, base.controls));
       expect(rel(d.mapClose, g.controls), tag).toEqual(rel(L.mapClose, base.controls));
       d.battleParty.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.battleParty[i]!, base.controls)));
       d.battleMember.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.battleMember[i]!, base.controls)));
@@ -289,6 +304,8 @@ describe("layout", () => {
       else expect(warns, tag).toEqual([
         "ui.layout: dpad.around does not fit in the controls region (height 86)",
         "ui.layout: list[2] does not fit in the controls region (height 86)",
+        "ui.layout: listNarrow[2] does not fit in the controls region (height 86)",
+        "ui.layout: listBack does not fit in the controls region (height 86)",
         "ui.layout: battleParty[2] does not fit in the controls region (height 86)",
         "ui.layout: battleParty[3] does not fit in the controls region (height 86)",
         "ui.layout: battleMember[4] does not fit in the controls region (height 86)",

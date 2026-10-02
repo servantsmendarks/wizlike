@@ -59,6 +59,15 @@ const LIST_ROWS_REL: readonly Rect[] = [
   { x: 8, y: 66, w: 224, h: 32 },
 ];
 
+/**
+ * UI-11: 末尾が戻る / やめるの一覧（街の各施設のページ・キャンプと酒場の一覧の段・戦闘の呪文・道具・対象）の行。
+ * LIST_ROWS_REL と同じ 3 行で、幅を 168 に詰めて右下の LIST_BACK_REL と並べる（間 2）。操作領域からの相対
+ */
+const LIST_NARROW_REL: readonly Rect[] = LIST_ROWS_REL.map((r): Rect => ({ ...r, w: 168 }));
+
+/** UI-11: 一覧の外に固定する戻る / やめる。戦闘のメンバーの戻る（BATTLE_MEMBER_REL[4]）・キャンプの [7] と同じ 56×40。操作領域からの相対 */
+const LIST_BACK_REL: Rect = { x: 178, y: 54, w: 56, h: 40 };
+
 /** 地図の overlay を閉じるボタン（UI-24）。操作領域からの相対 */
 const MAP_CLOSE_REL: Rect = { x: 60, y: 34, w: 120, h: 32 };
 
@@ -75,7 +84,7 @@ const BATTLE_PARTY_REL: readonly Rect[] = [
 
 /**
  * 戦闘のメンバーの枠（UI-54）。56×40 の上段 4 つ（攻撃・呪文・防御・道具）と、下段の右端の戻る。
- * 呪文・道具・対象の一覧は LIST_ROWS_REL を使う。操作領域からの相対
+ * 呪文・道具・対象の一覧は LIST_NARROW_REL と LIST_BACK_REL（UI-11）を使う。操作領域からの相対
  */
 const BATTLE_MEMBER_REL: readonly Rect[] = [
   ...[4, 62, 120, 178].map((x): Rect => ({ x, y: 6, w: 56, h: 40 })),
@@ -106,7 +115,7 @@ const AUTO_STOP_REL: Rect = { ...BATTLE_PARTY_REL[0]! };
 
 /** 操作領域の中身が収まる最小の高さ（相対矩形の下端の最大）。既定の layout では 98 */
 export const CONTROLS_MIN_HEIGHT = Math.max(
-  ...[...Object.values(DPAD_REL), ...MENU_SLOTS_REL, ...LIST_ROWS_REL, MAP_CLOSE_REL, ...BATTLE_PARTY_REL, ...BATTLE_MEMBER_REL, ...TOWN_MENU_REL, ...CAMP_GRID_REL, AUTO_STOP_REL].map(
+  ...[...Object.values(DPAD_REL), ...MENU_SLOTS_REL, ...LIST_ROWS_REL, ...LIST_NARROW_REL, LIST_BACK_REL, MAP_CLOSE_REL, ...BATTLE_PARTY_REL, ...BATTLE_MEMBER_REL, ...TOWN_MENU_REL, ...CAMP_GRID_REL, AUTO_STOP_REL].map(
     (r) => r.y + r.h,
   ),
 );
@@ -131,6 +140,10 @@ export type DungeonLayout = {
   dpad: Record<DpadKey, Rect>;
   menu: Rect[];
   list: Rect[];
+  /** UI-11 末尾が戻る / やめるの一覧の行（list と同じ 3 行で幅 168）。末尾の項目は listBack に固定する */
+  listNarrow: Rect[];
+  /** UI-11 一覧の外に固定する戻る / やめる（battleMember[4] と同じ矩形） */
+  listBack: Rect;
   mapClose: Rect;
   /** 戦闘のパーティの選択の 4 枠（上段 0..1、下段 2..3） */
   battleParty: Rect[];
@@ -185,6 +198,8 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
     dpad,
     menu: MENU_SLOTS_REL.map((r) => shift(r, c)),
     list: LIST_ROWS_REL.map((r) => shift(r, c)),
+    listNarrow: LIST_NARROW_REL.map((r) => shift(r, c)),
+    listBack: shift(LIST_BACK_REL, c),
     mapClose: shift(MAP_CLOSE_REL, c),
     battleParty: BATTLE_PARTY_REL.map((r) => shift(r, c)),
     battleMember: BATTLE_MEMBER_REL.map((r) => shift(r, c)),
@@ -226,6 +241,8 @@ export function layoutWarnings(g: Regions, l: DungeonLayout): string[] {
   for (const [k, r] of Object.entries(l.dpad)) check(`dpad.${k}`, r, "controls");
   l.menu.forEach((r, i) => check(`menu[${i}]`, r, "controls"));
   l.list.forEach((r, i) => check(`list[${i}]`, r, "controls"));
+  l.listNarrow.forEach((r, i) => check(`listNarrow[${i}]`, r, "controls"));
+  check("listBack", l.listBack, "controls");
   check("mapClose", l.mapClose, "controls");
   l.battleParty.forEach((r, i) => check(`battleParty[${i}]`, r, "controls"));
   l.battleMember.forEach((r, i) => check(`battleMember[${i}]`, r, "controls"));

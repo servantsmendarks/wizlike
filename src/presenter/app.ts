@@ -433,13 +433,15 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
         c.setMode("none");
         return;
       }
-      const items = townEntries(townPage, menu, strings).map(townItem);
+      const ents = townEntries(townPage, menu, strings);
+      const items = ents.map(townItem);
       if (townPage === "menu") {
         // UI-52: 施設メニューは 3 列 × 2 段の 6 枠
         c.setBattleMenu(items, "town");
         c.setMode("battle");
       } else {
-        c.setList(items);
+        // UI-11: 末尾の戻るは一覧の外に固定する
+        c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back" });
         c.setMode("list");
       }
       return;
@@ -492,7 +494,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       c.setBattleMenu(e.slots.map((x) => (x === null ? null : item(x))), "camp");
       c.setMode("battle");
     } else {
-      c.setList(e.rows.map(item));
+      // UI-11: 末尾のやめるは一覧の外に固定する
+      c.setList(e.rows.map(item), { fixedLast: e.rows[e.rows.length - 1]?.choice.kind === "cancel" });
       c.setMode("list");
     }
   };
@@ -574,7 +577,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     play.header.setText(formatMessage(t(`battle.prompt.${cur.stage}`), { name: member?.name ?? "" }));
     play.party.setActive(memberId);
     const targeting = cur.stage === "enemy" || cur.stage === "ally";
-    const items = entries(menu, cur, strings).map(
+    const ents = entries(menu, cur, strings);
+    const items = ents.map(
       (e, i): ControlItem => ({
         label: e.label,
         disabled: e.disabled,
@@ -586,7 +590,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       c.setBattleMenu(items, cur.stage);
       c.setMode("battle");
     } else {
-      c.setList(items);
+      // UI-11: 末尾の戻るは一覧の外に固定する（添字は変わらないので focus の末尾は戻る）
+      c.setList(items, { fixedLast: ents[ents.length - 1]?.choice.kind === "back" });
       c.setMode("list");
       c.setListFocus(targeting ? cur.focus : null);
     }
