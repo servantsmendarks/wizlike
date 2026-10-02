@@ -354,7 +354,11 @@ export type Command =
   /** CH-77: memberId は鑑定する者（abilities に identify を持つ職業）。instanceId はパーティの誰かの inventory にある未鑑定品 */
   | { type: "party.identify"; memberId: string; instanceId: string }
   /** UI-57（開発用）: alive の全員の hp を 1 にする。保留中も受け付ける。乱数は使わない */
-  | { type: "debug.hpOne" };
+  | { type: "debug.hpOne" }
+  /** UI-57（開発用、M5）: リーダー以外の alive の SAN を 1 段下げる（境の 1 つ下、錯乱の次は 0）。保留中も受け付ける。乱数は使わない */
+  | { type: "debug.sanDown" }
+  /** UI-57（開発用、M5）: その階のイベント・罠・下り階段のセルの手前へ移り、そちらを向く。行き先が無ければ message だけ。乱数は使わない */
+  | { type: "debug.warp"; to: "event" | "trap" | "stairsDown" };
 
 export type CommandType = Command["type"];
 

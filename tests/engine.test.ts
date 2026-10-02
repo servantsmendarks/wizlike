@@ -2,18 +2,23 @@ import { describe, expect, test } from "vitest";
 import { createInitialState, execute } from "../src/core/engine";
 import { createRng } from "../src/core/rng";
 import { cloneState, createItemInstance, destroyItemInstance, dungeonOf, itemDisplayName, memberById, monsterOf } from "../src/core/state";
-import type { Command, GameEvent, GameState } from "../src/core/types";
+import { floorOf, visibleCellsOf, warpTarget } from "../src/core/rules/dungeon";
+import { cellAt, idx, isPassable, step } from "../src/core/rules/dungeon-gen";
+import { sanJustBelow, sanStage } from "../src/core/rules/san";
+import type { Cell, Command, Floor, GameEvent, GameState } from "../src/core/types";
 import {
   data,
   deepFreeze,
   defaultMembers,
   expectKnownStringKeys,
+  expectStateInvariants,
   loadFreshData,
   newGame,
   stringKeysOf,
   withChar,
 } from "./helpers/core";
 import { dataWith, dived, withBattle } from "./helpers/battle";
+import { approaches, findSituation, placeAt } from "./helpers/dungeon";
 
 const gameNew = (members = defaultMembers()): Command => ({ type: "game.new", party: { members } });
 
@@ -364,5 +369,217 @@ describe("UI-57 debug.hpOne（開発用）", () => {
     }
     expect(wiped).toBe(true);
     expect(s.screen).toBe("town");
+  });
+});
+
+describe("UI-57 debug.sanDown / debug.warp（開発用、M5）", () => {
+  const SAN_DOWN: Command = { type: "debug.sanDown" };
+  const eventPending = (s: GameState): GameState => ({
+    ...s,
+    screen: "event",
+    pendingChoice: {
+      kind: "event",
+      promptKey: "event.glowing_tablet.intro",
+      options: [{ id: "examine", labelKey: "event.glowing_tablet.choice.examine" }],
+      eventId: "glowing_tablet",
+    },
+  });
+
+  test("UI-57/CH-53 debug.sanDown: リーダー以外の alive の SAN を 1 段ずつ（100 → 49 → 24 → 0）、段の message、最後に debug.sanDown。乱数なし", () => {
+    let s = dived(1);
+    s = withChar(s, 4, { life: "dead", hp: 0 }); // c5 は死亡（変えない）
+    const names = s.party.map((c) => c.name);
+    const live = [1, 2, 3, 5]; // c2・c3・c4・c6（リーダー c1 と死亡の c5 は対象外）
+    // 手計算: sanMax 100、uneasyRatio 0.5 → ceil(50)−1 = 49、confusedRatio 0.25 → ceil(25)−1 = 24、その次は 0
+    const steps: [number, number, "uneasy" | "confused" | "broken"][] = [
+      [-51, 49, "uneasy"],
+      [-25, 24, "confused"],
+      [-24, 0, "broken"],
+    ];
+    for (const [delta, san, stage] of steps) {
+      const before = JSON.stringify(s);
+      const r = execute(s, SAN_DOWN, data);
+      expect(JSON.stringify(s)).toBe(before);
+      const want: GameEvent[] = [];
+      for (const i of live) {
+        want.push({ kind: "sanChanged", id: `c${i + 1}`, delta, san });
+        want.push({ kind: "message", key: `san.${stage}`, params: { name: names[i]! } });
+      }
+      want.push({ kind: "message", key: "debug.sanDown" });
+      expect(r.events).toEqual(want);
+      expectKnownStringKeys(r.events);
+      expect(r.state.rng).toEqual(s.rng);
+      expect(r.state.party[0]!.san).toBe(100);
+      expect(r.state.party[4]!.san).toBe(s.party[4]!.san);
+      // リーダーが行動可能なので全滅しない（SAN 0 の者は行動不能のまま迷宮にいる）
+      expect(r.state.screen).toBe("dungeon");
+      expectStateInvariants(r.state);
+      s = r.state;
+    }
+    // 虚脱の後は変化が無く message だけ
+    expect(execute(s, SAN_DOWN, data).events).toEqual([{ kind: "message", key: "debug.sanDown" }]);
+  });
+
+  test("UI-57/CH-53 sanJustBelow は段の境の 1 つ下（sanMax 100 で 49 / 24 / 0、sanMax 7 で ceil(3.5)−1 = 3 / ceil(1.75)−1 = 1）", () => {
+    const cfg = data.config;
+    expect([sanJustBelow("uneasy", 100, cfg), sanJustBelow("confused", 100, cfg), sanJustBelow("broken", 100, cfg)]).toEqual([49, 24, 0]);
+    expect([sanJustBelow("uneasy", 7, cfg), sanJustBelow("confused", 7, cfg)]).toEqual([3, 1]);
+    expect(sanStage(3, 7, cfg)).toBe("uneasy");
+    expect(sanStage(4, 7, cfg)).toBe("normal");
+    expect(sanStage(1, 7, cfg)).toBe("confused");
+    expect(sanStage(2, 7, cfg)).toBe("uneasy");
+  });
+
+  test("UI-57/E3 debug.sanDown は選択を待つ間（stairs・screen event）も受け付け、保留はそのまま", () => {
+    const stairs: GameState = {
+      ...dived(1),
+      pendingChoice: { kind: "stairs", promptKey: "dungeon.stairsDown", options: [{ id: "stay", labelKey: "dungeon.choice.stay" }] },
+    };
+    for (const s of [stairs, eventPending(dived(1))]) {
+      const r = execute(s, SAN_DOWN, data);
+      expect(r.events[0]?.kind).toBe("sanChanged");
+      expect(r.events.at(-1)).toEqual({ kind: "message", key: "debug.sanDown" });
+      expect(r.state.pendingChoice).toEqual(s.pendingChoice);
+      expect(r.state.screen).toBe(s.screen);
+      expectStateInvariants(r.state);
+    }
+  });
+
+  test("UI-57/TW-20/A4 リーダーが行動不能なら、3 回目の sanDown で行動可能な者がいなくなり全滅処理（screen event でも pendingChoice を下ろして街へ）", () => {
+    const base = eventPending(withChar(dived(1), 0, { life: "dead", hp: 0 }));
+    let s = execute(base, SAN_DOWN, data).state;
+    s = execute(s, SAN_DOWN, data).state;
+    expect(s.screen).toBe("event");
+    const r = execute(s, SAN_DOWN, data);
+    expect(r.events.some((e) => e.kind === "wipe")).toBe(true);
+    expect(r.state.screen).toBe("town");
+    expect(r.state.pendingChoice).toBeNull();
+    expect(r.state.dive).toBeNull();
+    expectStateInvariants(r.state);
+  });
+
+  test("UI-57/D2 debug.sanDown は迷宮の外（title・街）と戦闘中は rejected not in dungeon（同じ参照）", () => {
+    const title = createInitialState(1, data);
+    const town = newGame(1);
+    const battle = withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }]);
+    for (const s of [title, town, battle]) {
+      const r = execute(s, SAN_DOWN, data);
+      expect(r.state).toBe(s);
+      expect(r.events).toEqual([{ kind: "rejected", command: "debug.sanDown", reason: "not in dungeon" }]);
+    }
+  });
+
+  const TARGETS = ["event", "trap", "stairsDown"] as const;
+  type To = (typeof TARGETS)[number];
+  const isTarget =
+    (f: Floor, to: To) =>
+    (c: Cell, x: number, y: number): boolean =>
+      to === "event"
+        ? c.kind === "event" && c.eventId !== null
+        : to === "trap"
+          ? c.kind === "trap" && (c.trapId === "pit" || c.trapId === "spinner")
+          : f.stairsDown !== null && f.stairsDown.x === x && f.stairsDown.y === y;
+  /** 期待の行き先: approaches（目標の添字順 → FACINGS の順に隣から入る立ち位置）のうち、立ち位置が corridor / room の最初のもの */
+  const expectedWarp = (f: Floor, to: To) =>
+    approaches(f, isTarget(f, to), isPassable).find((a) => {
+      const k = cellAt(f, a.pos.x, a.pos.y).kind;
+      return k === "corridor" || k === "room";
+    }) ?? null;
+
+  test("UI-57 debug.warp: event / trap / stairsDown の手前（corridor / room の隣、目標を向く）へ移り、視野を explored に足して moved と debug.warp.<to>。乱数なし", () => {
+    const found = new Set<To>();
+    for (let seed = 1; seed <= 20; seed++) {
+      const d0 = dived(seed);
+      for (const floorNo of [1, 2]) {
+        const s = placeAt(d0, d0.dive!.pos, d0.dive!.facing, floorNo);
+        const f = floorOf(s.dive!, data);
+        for (const to of TARGETS) {
+          const want = expectedWarp(f, to);
+          expect(warpTarget(s, data, to)).toEqual(want === null ? null : { pos: want.pos, facing: want.facing });
+          const before = JSON.stringify(s);
+          const r = execute(s, { type: "debug.warp", to }, data);
+          expect(JSON.stringify(s)).toBe(before);
+          expectKnownStringKeys(r.events);
+          expect(r.state.rng).toEqual(s.rng);
+          if (want === null) {
+            expect(r.events).toEqual([{ kind: "message", key: "debug.warp.none" }]);
+            expect(r.state).toEqual(s);
+            continue;
+          }
+          found.add(to);
+          expect(r.events).toEqual([
+            { kind: "moved", pos: want.pos, facing: want.facing },
+            { kind: "message", key: `debug.warp.${to}` },
+          ]);
+          const d = r.state.dive!;
+          expect(d.pos).toEqual(want.pos);
+          expect(d.facing).toBe(want.facing);
+          expect(step(d.pos, d.facing)).toEqual(want.target); // 1 歩先が目標のセル
+          const seen = visibleCellsOf(f, d.pos, d.facing, data.config.dungeon.viewDepth).map((v) => idx(f, v.x, v.y));
+          for (const i of seen) expect(d.explored[floorNo], `explored ${i}`).toContain(i);
+          expect(r.state.screen).toBe("dungeon");
+          expect(r.state.pendingChoice).toBeNull();
+          expectStateInvariants(r.state);
+        }
+      }
+    }
+    // d01 の 20 シード × 2 階で、3 つの行き先のどれも少なくとも 1 回は見つかる（テストが空回りしていないこと）
+    expect([...found].sort()).toEqual(["event", "stairsDown", "trap"]);
+  });
+
+  test("UI-57 debug.warp: 処理済みのイベント・最下層の下り階段は行き先が無く debug.warp.none（state 不変）", () => {
+    const s0 = findSituation((c) => c.kind === "event" && c.eventId !== null).state;
+    const f = floorOf(s0.dive!, data);
+    const cleared = cloneState(s0);
+    for (let y = 0; y < f.height; y++) {
+      for (let x = 0; x < f.width; x++) {
+        if (cellAt(f, x, y).kind === "event") cleared.dive!.clearedCells.push({ floor: cleared.dive!.floor, x, y });
+      }
+    }
+    const r = execute(cleared, { type: "debug.warp", to: "event" }, data);
+    expect(r.events).toEqual([{ kind: "message", key: "debug.warp.none" }]);
+    expect(r.state).toEqual(cleared);
+    // d01 は 2 階が最下層（stairsDown null）
+    const last = placeAt(s0, s0.dive!.pos, s0.dive!.facing, 2);
+    expect(floorOf(last.dive!, data).stairsDown).toBeNull();
+    const r2 = execute(last, { type: "debug.warp", to: "stairsDown" }, data);
+    expect(r2.events).toEqual([{ kind: "message", key: "debug.warp.none" }]);
+    expect(r2.state).toEqual(last);
+  });
+
+  test("UI-57/E3/D2 debug.warp: 保留中は choice pending、迷宮の外・戦闘中は not in dungeon、知らない行き先は bad target（同じ参照）", () => {
+    const pending = eventPending(dived(1));
+    const r0 = execute(pending, { type: "debug.warp", to: "event" }, data);
+    expect(r0.state).toBe(pending);
+    expect(r0.events).toEqual([{ kind: "rejected", command: "debug.warp", reason: "choice pending" }]);
+    for (const s of [createInitialState(1, data), newGame(1), withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }])]) {
+      const r = execute(s, { type: "debug.warp", to: "trap" }, data);
+      expect(r.state).toBe(s);
+      expect(r.events).toEqual([{ kind: "rejected", command: "debug.warp", reason: "not in dungeon" }]);
+    }
+    const s = dived(1);
+    const bad = execute(s, { type: "debug.warp", to: "boss" } as unknown as Command, data);
+    expect(bad.state).toBe(s);
+    expect(bad.events).toEqual([{ kind: "rejected", command: "debug.warp", reason: "bad target" }]);
+  });
+
+  test("§3-2 debug.sanDown / debug.warp は決定的で引数を書き換えない（JSON 往復で等しい）", () => {
+    const frozen = deepFreeze(loadFreshData());
+    const s = dived(1);
+    const cases: [GameState, Command][] = [
+      [s, SAN_DOWN],
+      [eventPending(s), SAN_DOWN],
+      ...TARGETS.map((to): [GameState, Command] => [s, { type: "debug.warp", to }]),
+    ];
+    for (const [st, cmd] of cases) {
+      const fz = deepFreeze(cloneState(st));
+      const before = JSON.stringify(fz);
+      const a = execute(fz, cmd, frozen);
+      const b = execute(fz, cmd, frozen);
+      expect(a.events[0]?.kind).not.toBe("rejected");
+      expect(a).toEqual(b);
+      expect(JSON.stringify(fz)).toBe(before);
+      expect(JSON.parse(JSON.stringify(a.state))).toStrictEqual(a.state);
+    }
   });
 });

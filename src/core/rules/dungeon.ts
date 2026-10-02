@@ -144,6 +144,44 @@ export function markExplored(dive: Dive, f: Floor, depth: number): void {
   );
 }
 
+/**
+ * UI-57（開発用、M5）: debug.warp の行き先。dive.floor の実効の構造（floorOf。処理済みのイベント・発動済みの罠は消えている）で、
+ * 目標のセルを添字順に、各セルについて FACINGS（N,E,S,W）の順に隣 n = step(セル, d) を見て、盤内・n の kind が corridor か room・
+ * セルの辺 d が通れるものを探し、最初の { pos: n, facing: opposite(d) } を返す。無ければ null。
+ * 目標: event は kind event かつ eventId 非 null、trap は kind trap かつ trapId が pit / spinner、stairsDown は f.stairsDown のセル
+ */
+export function warpTarget(
+  state: GameState,
+  data: GameData,
+  to: "event" | "trap" | "stairsDown",
+): { pos: Pos; facing: Facing } | null {
+  const f = floorOf(requireDive(state), data);
+  const isTarget = (c: Cell, x: number, y: number): boolean => {
+    switch (to) {
+      case "event":
+        return c.kind === "event" && c.eventId !== null;
+      case "trap":
+        return c.kind === "trap" && (c.trapId === "pit" || c.trapId === "spinner");
+      case "stairsDown":
+        return f.stairsDown !== null && f.stairsDown.x === x && f.stairsDown.y === y;
+    }
+  };
+  for (let y = 0; y < f.height; y++) {
+    for (let x = 0; x < f.width; x++) {
+      const c = cellAt(f, x, y);
+      if (!isTarget(c, x, y)) continue;
+      for (const d of FACINGS) {
+        const n = step({ x, y }, d);
+        if (!inBounds(f, n.x, n.y) || !isPassable(edgeOf(c, d))) continue;
+        const k = cellAt(f, n.x, n.y).kind;
+        if (k !== "corridor" && k !== "room") continue;
+        return { pos: n, facing: opposite(d) };
+      }
+    }
+  }
+  return null;
+}
+
 function explore(ctx: RuleContext, dive: Dive, f: Floor): void {
   markExplored(dive, f, ctx.data.config.dungeon.viewDepth);
 }

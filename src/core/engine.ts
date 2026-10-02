@@ -27,7 +27,7 @@ import {
   unequipItem,
 } from "./rules/camp";
 import { startNewGame, validatePartySetup } from "./rules/creation";
-import { hpOne } from "./rules/debug";
+import { hpOne, sanDown, warp } from "./rules/debug";
 import { checkEnter, chooseOption, enterDungeon, moveForward, turn } from "./rules/dungeon";
 import { checkUseItem, useItemInField } from "./rules/items";
 import {
@@ -89,6 +89,13 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
     if (state.party.length === 0) return reject(state, "debug.hpOne", "no party");
     const ctx = makeContext(cloneState(state), data);
     hpOne(ctx);
+    return finish(ctx);
+  }
+  // UI-57（開発用、M5）: リーダー以外の SAN を 1 段下げる。迷宮の戦闘外なら保留中（screen event を含む）も受け付ける
+  if (command.type === "debug.sanDown") {
+    if (state.dive === null || state.battle !== null) return reject(state, "debug.sanDown", "not in dungeon");
+    const ctx = makeContext(cloneState(state), data);
+    sanDown(ctx);
     return finish(ctx);
   }
   // E3: 保留中の選択があれば event.choose 以外は受け付けない
@@ -270,6 +277,17 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       if (r !== null) return reject(state, "party.identify", r);
       const ctx = makeContext(cloneState(state), data);
       identifyItem(ctx, c.memberId as string, c.instanceId as string);
+      return finish(ctx);
+    }
+    case "debug.warp": {
+      // UI-57（開発用、M5）: 迷宮の戦闘外・保留なし（E3 の後）だけ
+      if (state.screen !== "dungeon" || state.dive === null || state.battle !== null) {
+        return reject(state, "debug.warp", "not in dungeon");
+      }
+      const to = (command as { to?: unknown }).to;
+      if (to !== "event" && to !== "trap" && to !== "stairsDown") return reject(state, "debug.warp", "bad target");
+      const ctx = makeContext(cloneState(state), data);
+      warp(ctx, to);
       return finish(ctx);
     }
     case "town.bank":

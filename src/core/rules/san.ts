@@ -23,6 +23,16 @@ export function sanStage(san: number, sanMax: number, cfg: Config): SanStage {
   return "normal";
 }
 
+/**
+ * CH-53: 段 s の上限の境の 1 つ下の SAN（uneasy → ceil(sanMax×uneasyRatio)−1、confused → ceil(sanMax×confusedRatio)−1、
+ * broken → 0）。0 未満にはしない。debug.sanDown（UI-57）が使う
+ */
+export function sanJustBelow(stage: "uneasy" | "confused" | "broken", sanMax: number, cfg: Config): number {
+  if (stage === "broken") return 0;
+  const ratio = stage === "uneasy" ? cfg.san.uneasyRatio : cfg.san.confusedRatio;
+  return Math.max(0, Math.ceil(sanMax * ratio) - 1);
+}
+
 export function stageRank(s: SanStage): number {
   switch (s) {
     case "normal":

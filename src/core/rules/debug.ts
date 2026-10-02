@@ -1,6 +1,8 @@
-// UI-57（開発用）: debug パネルのコマンド。全滅の流れを実機で確かめるためのもの（M4 の実機の結果、ユーザー指示）。
-// 乱数は使わない。
+// UI-57（開発用）: debug パネルのコマンド。全滅の流れ（M4 の実機の結果、ユーザー指示）と、
+// M5 の性格・イベント・SAN を実機で確かめるためのもの。乱数は使わない。
 import type { RuleContext } from "../types";
+import { floorOf, markExplored, warpTarget } from "./dungeon";
+import { loseSan, sanJustBelow, sanStage } from "./san";
 
 /**
  * debug.hpOne: 並び順に、life alive で hp が 1 でない者の hp を 1 にして hpChanged を出す（dead / ash は変えない）。
@@ -15,4 +17,43 @@ export function hpOne(ctx: RuleContext): void {
     ctx.events.push({ kind: "hpChanged", id: ch.id, delta, hp: 1 });
   }
   ctx.events.push({ kind: "message", key: "debug.hpOne" });
+}
+
+/**
+ * debug.sanDown（M5）: 並び順に、リーダー以外で life alive の者の SAN を今の段の次の段へ下げる
+ * （normal → 不安の境の 1 つ下、uneasy → 錯乱の境の 1 つ下、confused → 0、broken はそのまま）。
+ * loseSan（耐性のタグなし）を通すので sanChanged と段の message は通常どおり。最後に message debug.sanDown（変化が無くても出す）。
+ * リーダーを外すのは、リーダーが行動可能なら全滅せずに「SAN 0 で行動不能」を実機で見られるため
+ */
+export function sanDown(ctx: RuleContext): void {
+  const cfg = ctx.data.config;
+  for (const ch of ctx.state.party) {
+    if (ch.isLeader || ch.life !== "alive") continue;
+    const stage = sanStage(ch.san, ch.sanMax, cfg);
+    if (stage === "broken") continue;
+    const next = stage === "normal" ? "uneasy" : stage === "uneasy" ? "confused" : "broken";
+    const target = sanJustBelow(next, ch.sanMax, cfg);
+    loseSan(ctx, ch, Math.max(0, ch.san - target), []);
+  }
+  ctx.events.push({ kind: "message", key: "debug.sanDown" });
+}
+
+/**
+ * debug.warp（M5）: warpTarget の位置へ移り、目標を向く。行き先が無ければ message debug.warp.none だけ（state は変えない）。
+ * あれば pos / facing を書き換え → 視野を explored に足す → moved → message debug.warp.<to>。遭遇・毒・罠は起こさない
+ */
+export function warp(ctx: RuleContext, to: "event" | "trap" | "stairsDown"): void {
+  const { state, data } = ctx;
+  const dive = state.dive;
+  if (dive === null) throw new Error("warp: not in dungeon");
+  const t = warpTarget(state, data, to);
+  if (t === null) {
+    ctx.events.push({ kind: "message", key: "debug.warp.none" });
+    return;
+  }
+  dive.pos = { x: t.pos.x, y: t.pos.y };
+  dive.facing = t.facing;
+  markExplored(dive, floorOf(dive, data), data.config.dungeon.viewDepth);
+  ctx.events.push({ kind: "moved", pos: { x: dive.pos.x, y: dive.pos.y }, facing: dive.facing });
+  ctx.events.push({ kind: "message", key: `debug.warp.${to}` });
 }
