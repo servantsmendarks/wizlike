@@ -22,6 +22,20 @@ export function benefitOf(data: GameData, ch: Character, key: "initiative" | "da
   return personalityOf(data, ch.personality)?.benefits[key] ?? 0;
 }
 
+/**
+ * CB-04 / EV-42 / A1: 行動可能な味方のうち性格の benefits.ambushAvoid が最大（> 0）の者とその値。
+ * 同値は並び順が前の者。いなければ null（合計しない）
+ */
+export function ambushAvoider(state: GameState, data: GameData): { ch: Character; value: number } | null {
+  let best: { ch: Character; value: number } | null = null;
+  for (const ch of state.party) {
+    if (!canAct(ch)) continue;
+    const v = personalityOf(data, ch.personality)?.benefits.ambushAvoid ?? 0;
+    if (v > 0 && (best === null || v > best.value)) best = { ch, value: v };
+  }
+  return best;
+}
+
 /** CB-53: 「睡眠だけ」で止まっている（alive・SAN>0・睡眠あり・麻痺と石化なし） */
 export function isSleepOnly(ch: Character): boolean {
   return (

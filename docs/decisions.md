@@ -518,3 +518,4 @@
 - 2026-10-02 docs(M4.5): 5 回目の【未定】「台帳が空の全滅で内訳とメッセージの言い回しが食い違う」は e285410 で直した（実機では未確認）。
 - 2026-10-02 docs(M4.5): 5 回目の【未定】「距離がちょうど同じ点で吸着先が同順位の規則どおりにならないことがある」は 269a1ac で直した（実機では未確認。「地図のタップが 1 回だけ選ばれなかった」の【未定】は原因が未確定のまま残す）。
 - 2026-10-02 core(M5): A8 強欲の treasureGain は、迷宮で金を得た 1 回（field.ts の gainGold で amount > 0 の 1 回。戦闘の金・宝箱の金・イベントの gold）ごとに、life alive かつ SAN > 0 の強欲へ +treasureGain（金のメッセージの直後）。宝箱の金が 0 のときは message だけで増えない。金の加算（所持金と台帳）・戦闘外のダメージ（落とし穴とイベントの damage の共通）・explored の追加は field.ts に寄せた。dungeon.ts と combat.ts と M5 の events.ts で同じ処理を共有するため。
+- 2026-10-02 core(M5): A1 ambushAvoid は確率（ユーザー決定）。敵の奇襲が成立したとき、行動可能な味方の benefits.ambushAvoid の最大（合計しない。同値は並び順が前）が正なら d100 ≤ その値で取り消して互角にする。取り消しの dice は先手の dice の後の別の system の拍（UI-40「新しい dice は前の箱を置き換える」で先手の箱を読む前に消さないため）。先手の拍の battle.surpriseEnemy は残し、取り消せたら取り消しの拍に battle.ambushAvoided を足す（先手の箱が「不意打ち」なのに語りが無いと手動のタップ待ちで読む文が無くなるため）。dice.initiative.rule の ambush は need に戻した（「ambush = need + ambushAvoid」の判断は置き換え）。

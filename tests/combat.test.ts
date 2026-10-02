@@ -25,7 +25,7 @@ import {
   type BattleOpts,
   type GroupSpec,
 } from "./helpers/battle";
-import { data, expectKnownStringKeys, noBenefits } from "./helpers/core";
+import { data, expectKnownStringKeys, noAmbushAvoid, noBenefits } from "./helpers/core";
 
 const RESOLVE: Command = { type: "battle.resolve" };
 const DEF: BattleAction = { type: "defend" };
@@ -161,7 +161,8 @@ describe("遭遇（CB-03/04/05/06）", () => {
     // 味方の agi 平均 65/6 = 10.83 → 10、giant_rat の agi 9 → 9。鏡の rng で diff = (10 + rP) − (9 + rE) を求め、
     // 正と負の diff（|diff| ≥ 2）が出るシードを探して、そこに surpriseDiff を合わせる
     const start = (seed: number, need: number) =>
-      runCtx(dived(seed), dataWith({ combat: { surpriseDiff: need } }), (c) =>
+      // noAmbushAvoid: 敵の奇襲の境界を見るので、慎重の取り消し（A1）の d100 を引かない
+      runCtx(dived(seed), dataWith({ combat: { surpriseDiff: need } }, noAmbushAvoid), (c) =>
         startBattle(c, { kind: "random", inRoom: false }, [{ monsterId: "giant_rat", count: 2 }]),
       );
     const diffOf = (seed: number): number => {
@@ -231,7 +232,11 @@ describe("遭遇（CB-03/04/05/06）", () => {
   });
 
   test("CB-04 敵の奇襲: 遭遇の execute の中で敵だけのラウンドを解決する（round 1、味方の attack なし、inputs は {}）", () => {
-    const d = dataWith({ combat: ALWAYS_HIT }, (x) => (x.monsters.find((m) => m.id === "giant_rat")!.agi = 1000));
+    // noAmbushAvoid: 慎重の取り消し（A1）を外して敵の奇襲ラウンドを見る（取り消しは CB-04/EV-42 のテスト）
+    const d = dataWith({ combat: ALWAYS_HIT }, (x) => {
+      x.monsters.find((m) => m.id === "giant_rat")!.agi = 1000;
+      noAmbushAvoid(x);
+    });
     const ctx = runCtx(dived(1), d, (c) => startBattle(c, { kind: "random", inRoom: false }, [{ monsterId: "giant_rat", count: 2 }]));
     const ks = kindsOf(ctx.events);
     const at = ks.indexOf("message:battle.surpriseEnemy");
@@ -242,6 +247,100 @@ describe("遭遇（CB-03/04/05/06）", () => {
     expect(ctx.state.battle!.round).toBe(1);
     expect(ctx.state.battle!.inputs).toEqual({});
     expect(ctx.state.battle!.partySurprise).toBe(false);
+  });
+
+  /** 敵の奇襲が必ず成立する data（大ネズミ agi 1000、必中）。mut でさらに書き換える */
+  const ambushD = (mut?: (x: GameData) => void) =>
+    dataWith({ combat: ALWAYS_HIT }, (x) => {
+      x.monsters.find((m) => m.id === "giant_rat")!.agi = 1000;
+      mut?.(x);
+    });
+  const ambushStart = (s0: GameState, d: GameData) =>
+    runCtx(s0, d, (c) => startBattle(c, { kind: "random", inRoom: false }, [{ monsterId: "giant_rat", count: 2 }]));
+  /** 鏡: 大ネズミ 2 体の HP（1d6×2）→ 先手の 1d10×2 まで進めた rng */
+  const afterInitiative = (s0: GameState): RngState => {
+    const m = cloneRng(s0.rng);
+    rollDice(m, "1d6");
+    rollDice(m, "1d6");
+    rolls(m, 2);
+    return m;
+  };
+
+  test("CB-04/EV-42 敵の奇襲が成立し慎重が行動可能なら d100 を 1 回、≤ 20 で取り消し（dice.ambushAvoid{ベルク}・battle.ambushAvoided・round 0）、> 20 なら敵だけのラウンド（鏡の rng）", () => {
+    const d = ambushD();
+    const d100Of = (seed: number) => randInt(afterInitiative(dived(seed)), 1, 100);
+    const seeds = Array.from({ length: 200 }, (_, i) => i + 1);
+    const okSeed = seeds.find((x) => d100Of(x) <= 20)!;
+    const ngSeed = seeds.find((x) => d100Of(x) > 20)!;
+    expect(okSeed).toBeDefined();
+    expect(ngSeed).toBeDefined();
+    const diceOf = (roll: number, ok: boolean) => ({
+      kind: "dice",
+      label: { key: "dice.ambushAvoid", params: { name: "ベルク" } },
+      rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [roll], total: roll }],
+      rule: { key: "dice.rule.rate", params: { rate: 20 } },
+      result: { key: ok ? "dice.ambushAvoid.ok" : "dice.ambushAvoid.ng" },
+    });
+
+    // 取り消し: 先手の dice は不意打ちのまま、続けて取り消しの dice と battle.ambushAvoided。敵は行動せず round 0
+    const s1 = dived(okSeed);
+    const m1 = afterInitiative(s1);
+    const r1 = randInt(m1, 1, 100);
+    const ok = ambushStart(s1, d);
+    expect(ok.state.rng).toEqual(m1);
+    const dice1 = eventsOf(ok.events, "dice");
+    expect(dice1.map((x) => x.result.key)).toEqual(["dice.initiative.enemy", "dice.ambushAvoid.ok"]);
+    expect(dice1[1]).toEqual(diceOf(r1, true));
+    expect(dice1[0]!.rule.params).toMatchObject({ ambush: data.config.combat.surpriseDiff }); // A1: ambush = need
+    expect(ok.events.at(-1)).toEqual({ kind: "message", key: "battle.ambushAvoided", params: { name: "ベルク" } });
+    expect(kindsOf(ok.events)).toContain("message:battle.surpriseEnemy");
+    expect(ok.state.battle!.round).toBe(0);
+    expect(ok.state.battle!.partySurprise).toBe(false);
+    expect(eventsOf(ok.events, "attack")).toEqual([]);
+
+    // 失敗: 取り消しの dice（ng）だけで、その後に敵だけのラウンド
+    const s2 = dived(ngSeed);
+    const m2 = afterInitiative(s2);
+    const r2 = randInt(m2, 1, 100);
+    const ng = ambushStart(s2, d);
+    expect(eventsOf(ng.events, "dice")[1]).toEqual(diceOf(r2, false));
+    expect(kindsOf(ng.events)).not.toContain("message:battle.ambushAvoided");
+    expect(ng.state.battle!.round).toBe(1);
+    expect(eventsOf(ng.events, "attack").map((a) => a.actorId).sort()).toEqual(["e0-0", "e0-1"]); // 順は敵の initiative 次第
+    // 取り消しの d100 は先手の 2 個の直後、敵の initiative より前（noAmbushAvoid の列と比べて 1 個だけ多い）
+    const plain = ambushStart(s2, ambushD(noAmbushAvoid));
+    expect(eventsOf(plain.events, "dice")).toHaveLength(1);
+    expect(eventsOf(plain.events, "attack").length).toBeGreaterThan(0);
+  });
+
+  test("CB-04 ambushAvoid は行動可能な者の最大（合計しない）、名前は並び順の先。慎重が行動不能・先手・互角では振らない", () => {
+    const s0 = dived(1);
+    const avoidDice = (ctx: ReturnType<typeof ambushStart>) => eventsOf(ctx.events, "dice").filter((x) => x.label.key === "dice.ambushAvoid");
+    const greedy = (v: number) => (x: GameData) => (x.personalities.find((p) => p.id === "greedy")!.benefits.ambushAvoid = v);
+    // 強欲 30・慎重 20 ×2 → 最大の 30（合計の 70 ではない）、名前はドナ
+    const g30 = avoidDice(ambushStart(s0, ambushD(greedy(30))));
+    expect(g30).toHaveLength(1);
+    expect(g30[0]!.label.params).toEqual({ name: "ドナ" });
+    expect(g30[0]!.rule.params).toEqual({ rate: 30 });
+    // 同値（強欲 20・慎重 20）は並び順が前のベルク（c2）
+    expect(avoidDice(ambushStart(s0, ambushD(greedy(20))))[0]!.label.params).toEqual({ name: "ベルク" });
+    // ベルクが行動不能ならフィン（c6）
+    const bergPara = patchParty(s0, { c2: PARA });
+    expect(avoidDice(ambushStart(bergPara, ambushD()))[0]!.label.params).toEqual({ name: "フィン" });
+    // 慎重が 2 人とも行動不能: 振らない（d100 を引かず、そのまま敵の奇襲ラウンド）
+    const bothPara = patchParty(s0, { c2: PARA, c6: PARA });
+    const none = ambushStart(bothPara, ambushD());
+    expect(avoidDice(none)).toEqual([]);
+    expect(none.state.rng).toEqual(ambushStart(bothPara, ambushD(noAmbushAvoid)).state.rng);
+    expect(none.state.battle!.round).toBe(1);
+    // 先手・互角では振らない（rng は先手の 2 個まで）
+    for (const surpriseDiff of [-1000, 1000]) {
+      const ctx = runCtx(s0, dataWith({ combat: { surpriseDiff } }), (c) =>
+        startBattle(c, { kind: "random", inRoom: false }, [{ monsterId: "giant_rat", count: 2 }]),
+      );
+      expect(avoidDice(ctx)).toEqual([]);
+      expect(ctx.state.rng).toEqual(afterInitiative(s0));
+    }
   });
 
   test("CB-05/CB-06 未鑑定 2 グループで生存者全員の SAN −4（無鉄砲・慎重でも −4、死者は減らない）。encounter の name は unidentifiedName", () => {
@@ -1734,14 +1833,43 @@ describe("拍（CB-55）", () => {
       ["system", ["encounter", "message:battle.encounter", "message:battle.unidentified", ...Array(6).fill("sanChanged")]],
       ["system", ["dice"]],
     ]);
-    // 敵の奇襲（agi 1000）
-    const da = dataWith({ combat: ALWAYS_HIT }, (x) => (x.monsters.find((m) => m.id === "giant_rat")!.agi = 1000));
+    // 敵の奇襲（agi 1000）。noAmbushAvoid: 取り消し（A1）の拍は CB-55/CB-04 のテストで見る
+    const da = dataWith({ combat: ALWAYS_HIT }, (x) => {
+      x.monsters.find((m) => m.id === "giant_rat")!.agi = 1000;
+      noAmbushAvoid(x);
+    });
     const amb = runCtx(dived(1), da, (c) => startBattle(c, { kind: "random", inRoom: false }, [{ monsterId: "giant_rat", count: 2 }]));
     expectBeatShape(amb.events);
     const ph = phasesOf(amb.events);
     expect(ph[1]).toEqual(["system", ["dice", "message:battle.surpriseEnemy"]]);
     expect(ph[2]).toEqual(["declare", ["message:battle.attackDeclare"]]);
     expect(ph.filter(([p]) => p === "declare")).toHaveLength(2);
+  });
+
+  test("CB-55/CB-04 取り消しの dice は先手の dice と別の system の拍（成功なら battle.ambushAvoided も同じ拍、失敗なら dice だけで続けて敵の declare）", () => {
+    const d = dataWith({ combat: ALWAYS_HIT }, (x) => (x.monsters.find((m) => m.id === "giant_rat")!.agi = 1000));
+    const d100Of = (seed: number) => {
+      const m = cloneRng(dived(seed).rng);
+      rollDice(m, "1d6");
+      rollDice(m, "1d6");
+      rolls(m, 2);
+      return randInt(m, 1, 100);
+    };
+    const seeds = Array.from({ length: 200 }, (_, i) => i + 1);
+    const start = (seed: number) =>
+      runCtx(dived(seed), d, (c) => startBattle(c, { kind: "random", inRoom: false }, [{ monsterId: "giant_rat", count: 2 }]));
+    const ok = start(seeds.find((x) => d100Of(x) <= 20)!);
+    expectBeatShape(ok.events);
+    expect(phasesOf(ok.events).slice(1)).toEqual([
+      ["system", ["dice", "message:battle.surpriseEnemy"]],
+      ["system", ["dice", "message:battle.ambushAvoided"]],
+    ]);
+    const ng = start(seeds.find((x) => d100Of(x) > 20)!);
+    expectBeatShape(ng.events);
+    const ph = phasesOf(ng.events);
+    expect(ph[1]).toEqual(["system", ["dice", "message:battle.surpriseEnemy"]]);
+    expect(ph[2]).toEqual(["system", ["dice"]]);
+    expect(ph[3]).toEqual(["declare", ["message:battle.attackDeclare"]]);
   });
 
   test("CB-55 ラウンドの終わり: 毒が効けば system の拍が 1 つ（中身は hpChanged）。何も起きなければ拍は無い（外れのテスト）", () => {

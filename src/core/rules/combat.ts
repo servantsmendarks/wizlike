@@ -4,8 +4,9 @@
 // CB-55: 再生の区切り（beat）は section() で中身の前に差し込む（乱数を引かない。中身が空なら出さない）。
 //
 // 乱数の消費順（テストで固定する）:
-//   遭遇: [グループ数] → ([種類] → [体数])×グループ → HP（g→u）→ 味方 1d10 → 敵 1d10 →（敵の奇襲ならそのラウンド）
-//   ボス: groupSize（定数 "1" は消費なし）→ HP → 先手 2 個
+//   遭遇: [グループ数] → ([種類] → [体数])×グループ → HP（g→u）→ 味方 1d10 → 敵 1d10
+//     →（敵の奇襲が成立し、行動可能な味方の ambushAvoid の最大が正なら d100。CB-04）→（敵の奇襲ならそのラウンド）
+//   ボス: groupSize（定数 "1" は消費なし）→ HP → 先手 2 個 →（同じく d100）
 //   ラウンド（battle.resolve / battle.repeat）: initiative（味方の計画の順 → ラウンド開始時に行動可能な敵の個体の g → u）
 //     → 行動順に各行動
 //   逃走（battle.flee）: d100 →（失敗なら）initiative（敵だけ）→ 敵の行動 → ラウンド終了
@@ -33,6 +34,7 @@ import type {
 } from "../types";
 import {
   allyAc,
+  ambushAvoider,
   attackCount,
   battleItemUsable,
   battleSpellUsable,
@@ -206,9 +208,10 @@ export function startBattle(ctx: RuleContext, origin: BattleOrigin, specs: { mon
   const tE = bE + rE;
   const diff = tP - tE;
   const need = cfg.combat.surpriseDiff;
-  const ambushAvoid = 0; // M5: EV-42 の慎重の恩恵。敵の奇襲の閾値だけを広げる
-  const ambush = need + ambushAvoid;
-  const outcome = diff >= need ? "party" : diff <= -ambush ? "enemy" : "none";
+  const ambush = need; // A1: ambushAvoid は閾値を広げず、成立した敵の奇襲を確率で取り消す（下）
+  let outcome: "party" | "enemy" | "none" = diff >= need ? "party" : diff <= -ambush ? "enemy" : "none";
+  // CB-04 / EV-42: 敵の奇襲が成立したときだけ、行動可能な味方の ambushAvoid の最大で d100 を 1 回
+  const av = outcome === "enemy" ? ambushAvoider(state, data) : null;
   section(ctx, "system", () => {
     ctx.events.push({
       kind: "dice",
@@ -227,6 +230,22 @@ export function startBattle(ctx: RuleContext, origin: BattleOrigin, specs: { mon
       ctx.events.push({ kind: "message", key: "battle.surpriseEnemy" });
     }
   });
+  if (av !== null) {
+    const d = randInt(state.rng, 1, 100);
+    const ok = d <= av.value;
+    // 先手の箱を読む前に置き換えないよう、別の system の拍にする（UI-40）
+    section(ctx, "system", () => {
+      ctx.events.push({
+        kind: "dice",
+        label: { key: "dice.ambushAvoid", params: { name: av.ch.name } },
+        rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [d], total: d }],
+        rule: { key: "dice.rule.rate", params: { rate: av.value } },
+        result: { key: ok ? "dice.ambushAvoid.ok" : "dice.ambushAvoid.ng" },
+      });
+      if (ok) ctx.events.push({ kind: "message", key: "battle.ambushAvoided", params: { name: av.ch.name } });
+    });
+    if (ok) outcome = "none";
+  }
   if (outcome === "enemy") {
     const before = snapMembers(state, data);
     if (!runRound(ctx, { allies: false, enemies: true })) roundEnd(ctx, before);

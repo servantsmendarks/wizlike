@@ -18,7 +18,7 @@ import { battleMenu } from "../src/core/rules/combat";
 import { offerExit, offerStairs, offerTeleporter } from "../src/core/rules/choices";
 import { cloneState, dungeonOf, makeContext, monsterOf } from "../src/core/state";
 import type { Cell, Command, Edge, Facing, Floor, GameEvent, GameState, Pos } from "../src/core/types";
-import { data, deepFreeze, expectKnownStringKeys, loadFreshData, mirrorWipeRolls, newGame } from "./helpers/core";
+import { data, deepFreeze, expectKnownStringKeys, loadFreshData, mirrorWipeRolls, newGame, noAmbushAvoid } from "./helpers/core";
 
 // ---------------------------------------------------------------------------
 // ヘルパー
@@ -1294,6 +1294,7 @@ describe("決定性と網羅", () => {
     const encData = deepFreeze(dataEnc(1, 1));
     const ambushData = dataWithRate(1, 1);
     for (const m of ambushData.monsters) m.agi = 1000;
+    noAmbushAvoid(ambushData); // 慎重の取り消し（CB-04 / A1）を外して奇襲ラウンドまで解決させる
     deepFreeze(ambushData);
     const cases: [GameState, Command, GameData, string?][] = [
       [newGame(5), ENTER_D01, frozenData],

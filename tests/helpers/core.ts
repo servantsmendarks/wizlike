@@ -181,3 +181,8 @@ export function noBenefits(d: GameData): void {
     p.benefits.damage = 0;
   }
 }
+
+/** M5 の mut: 全性格の benefits.ambushAvoid を 0 にする（CB-04 の敵の奇襲の取り消しで d100 を引かない） */
+export function noAmbushAvoid(d: GameData): void {
+  for (const p of d.personalities) p.benefits.ambushAvoid = 0;
+}

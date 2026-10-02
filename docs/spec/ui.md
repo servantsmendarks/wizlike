@@ -74,7 +74,8 @@
 
   | 判定 | label | 行 | 基準（rule） | 結果（result） |
   |---|---|---|---|---|
-  | 先手（CB-04） | `dice.initiative` | `dice.side.party` / `dice.side.enemy`（base = floor(agi 平均)、1d10） | `dice.initiative.rule`（diff / need / ambush） | `dice.initiative.party` / `enemy` / `none` |
+  | 先手（CB-04） | `dice.initiative` | `dice.side.party` / `dice.side.enemy`（base = floor(agi 平均)、1d10） | `dice.initiative.rule`（diff / need / ambush。ambush = need） | `dice.initiative.party` / `enemy` / `none` |
+  | 不意打ちの察知（CB-04 / EV-42、M5） | `dice.ambushAvoid`（{name}） | `dice.row.roll`（base null、d100） | `dice.rule.rate`（rate = ambushAvoid の最大） | `dice.ambushAvoid.ok` / `ng` |
   | 逃走（CB-50） | `dice.flee` | `dice.row.roll`（base null、d100） | `dice.rule.rate`（rate = 成功率） | `dice.flee.ok` / `ng` |
   | 習得（MG-21） | `dice.learn`（spell = 呪文名） | `dice.row.roll`（base null、d100） | `dice.rule.rate`（rate = 成功率） | `dice.learn.ok` / `ng` |
   | 全滅（TW-22） | `dice.wipe` | `dice.row.roll`（base null、2d10 の 2 個） | `dice.wipe.rule`（帯の min / max） | `dice.wipe.result`（band = 帯の name） |
