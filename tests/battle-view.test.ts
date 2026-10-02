@@ -13,7 +13,9 @@ import {
   groupBoxes,
   groupColumns,
   groupLabel,
+  groupLabelRects,
 } from "../src/presenter/views/battle";
+import { diceBox } from "../src/presenter/views/dice";
 import { formatMessage } from "../src/presenter/views/message";
 import type { Rect } from "../src/presenter/layout";
 import { data } from "./helpers/core";
@@ -22,7 +24,7 @@ const VIEW_W = 240;
 const overlaps = (a: Rect, b: Rect): boolean => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 describe("UI-54 敵グループの列", () => {
-  test("UI-54 groupColumns(n=1..4) は重ならず、ビュー（240×150）の内側で、左右の余白の差は 1 以下。n=1 は 64×64（y16..79）、他は 48×48（y24..71）", () => {
+  test("UI-54 groupColumns(n=1..4) は重ならず、ビュー（240×150）の内側で、左右の余白の差は 1 以下。n=1 は 64×64（y2..65）、他は 48×48（y8..55。判定の箱を避けてラベルごと上に寄せた）", () => {
     for (let n = 1; n <= 4; n++) {
       const rs = groupColumns(n, VIEW_W);
       expect(rs).toHaveLength(n);
@@ -30,14 +32,14 @@ describe("UI-54 敵グループの列", () => {
         expect(r.x >= 0 && r.y >= 0 && r.x + r.w <= VIEW_W && r.y + r.h <= 150, `${n} ${JSON.stringify(r)}`).toBe(true);
         expect(r.w, `${n}`).toBe(n === 1 ? 64 : 48);
         expect(r.h, `${n}`).toBe(r.w);
-        expect(r.y, `${n}`).toBe(n === 1 ? 16 : 24);
+        expect(r.y, `${n}`).toBe(n === 1 ? 2 : 8);
       }
       for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) expect(overlaps(rs[i]!, rs[j]!), `${n} ${i}/${j}`).toBe(false);
       const left = rs[0]!.x;
       const right = VIEW_W - (rs[n - 1]!.x + rs[n - 1]!.w);
       expect(Math.abs(left - right), `${n}`).toBeLessThanOrEqual(1);
     }
-    expect(groupColumns(1, VIEW_W)).toEqual([{ x: 88, y: 16, w: 64, h: 64 }]);
+    expect(groupColumns(1, VIEW_W)).toEqual([{ x: 88, y: 2, w: 64, h: 64 }]);
   });
 
   test("UI-54 列の箱は幅 56・間 4 で中央寄せ。絵は箱の x+4", () => {
@@ -88,7 +90,7 @@ describe("UI-54 敵グループの列", () => {
     }
   });
 
-  test("UI-54 focusFrame は絵を 2px ずつ広げ（48 → 52、64 → 68）、ビューの内側でラベル（y84〜）より上。2 列以上では列の箱の内側で互いに重ならない", () => {
+  test("UI-54 focusFrame は絵を 2px ずつ広げ（48 → 52、64 → 68）、ビューの内側でラベルより上。2 列以上では列の箱の内側で互いに重ならない", () => {
     expect(focusFrame({ x: 66, y: 24, w: 48, h: 48 })).toEqual({ x: 64, y: 22, w: 52, h: 52 });
     expect(focusFrame({ x: 88, y: 16, w: 64, h: 64 })).toEqual({ x: 86, y: 14, w: 68, h: 68 });
     const inside = (r: Rect, o: Rect): boolean => r.x >= o.x && r.y >= o.y && r.x + r.w <= o.x + o.w && r.y + r.h <= o.y + o.h;
@@ -98,9 +100,36 @@ describe("UI-54 敵グループの列", () => {
       frames.forEach((f, i) => {
         expect(inside(f, { x: 0, y: 0, w: VIEW_W, h: 150 }), `${n} ${i}`).toBe(true);
         if (n >= 2) expect(inside(f, boxes[i]!), `${n} ${i}`).toBe(true);
-        expect(f.y + f.h, `${n} ${i}`).toBeLessThanOrEqual(84);
+        expect(f.y + f.h, `${n} ${i}`).toBeLessThanOrEqual(groupLabelRects(n, VIEW_W)[i]!.y);
       });
       for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) expect(overlaps(frames[i]!, frames[j]!), `${n} ${i}/${j}`).toBe(false);
+    }
+  });
+
+  test("UI-54/UI-40 n=1..4 のラベル（2 行・高さ 20）は、戦闘で出る判定の箱（先手 rows 2 の y88..145、逃走・全滅 rows 1 の y98..145）とも注目の枠とも重ならない", () => {
+    const row = { label: { key: "dice.row.roll" }, base: null, dice: [1], total: 1 };
+    const boxes = [diceBox({ rows: [row, row] }), diceBox({ rows: [row] })];
+    expect(boxes.map((b) => [b.y, b.y + b.h])).toEqual([
+      [88, 146],
+      [98, 146],
+    ]);
+    // 期待値は 注目の枠の下端（絵の y + 大きさ + 2）からの 20px: 2 列以上は 8+48+2=58、1 列は 2+64+2=68
+    expect(groupLabelRects(1, VIEW_W)).toEqual([{ x: 92, y: 68, w: 56, h: 20 }]);
+    expect(groupLabelRects(4, VIEW_W).map((r) => [r.x, r.y, r.w, r.h])).toEqual([
+      [2, 58, 56, 20],
+      [62, 58, 56, 20],
+      [122, 58, 56, 20],
+      [182, 58, 56, 20],
+    ]);
+    for (let n = 1; n <= data.config.combat.maxEnemyGroups; n++) {
+      const labels = groupLabelRects(n, VIEW_W);
+      const frames = groupColumns(n, VIEW_W).map(focusFrame);
+      expect(labels).toHaveLength(n);
+      labels.forEach((l, i) => {
+        expect(l.h, `${n} ${i}`).toBe(20);
+        for (const b of boxes) expect(overlaps(l, b), `${n} ${i} dice ${b.y}`).toBe(false);
+        for (const f of frames) expect(overlaps(l, f), `${n} ${i} frame`).toBe(false);
+      });
     }
   });
 });
@@ -196,6 +225,24 @@ describe("UI-54 戦闘のビュー（DOM）", () => {
     expect(boxes.map((b) => b.style["visibility"])).toEqual(["visible", "visible", "hidden"]);
     v.focus(1, true);
     for (const b of boxes) expect(b.style["outline"] ?? "").toBe("");
+  });
+
+  test("UI-54 ラベルは 2 行（高さ 20・行間 10）まで折り返し、3 行目以降は -webkit-line-clamp 2 で省く。位置は groupLabelRects（列の箱の左上からの相対）", () => {
+    const { byClass } = setup();
+    const labels = byClass("battle-group-label");
+    const rects = groupLabelRects(GROUPS.length, VIEW_W);
+    const boxes = groupBoxes(GROUPS.length, VIEW_W);
+    labels.forEach((l, i) => {
+      expect(l.style["display"]).toBe("-webkit-box");
+      expect(l.style["webkitLineClamp"]).toBe("2");
+      expect(l.style["webkitBoxOrient"]).toBe("vertical");
+      expect(l.style["overflow"]).toBe("hidden");
+      expect(l.style["lineHeight"]).toBe("10px");
+      expect(l.style["height"]).toBe("20px");
+      expect(l.style["top"]).toBe(`${rects[i]!.y}px`);
+      expect(l.style["left"]).toBe(`${rects[i]!.x - boxes[i]!.x}px`);
+    });
+    expect(labels[0]!.style["top"]).toBe("58px");
   });
 
   test("UI-54 removeOne で体数 0 になったグループの後ろの番号が詰まる（ラベルを作り直す）", async () => {

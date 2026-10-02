@@ -1,7 +1,8 @@
 // UI-54 / UI-60: 戦闘のビューの層（敵グループの列）。ビュー（既定 240×150）の左上を原点にした論理 px で置く。
-// - 列は幅 56・間 4 で中央寄せ。絵の代わりの色付き矩形は 48×48（列内 x+4、y24..71）、1 グループだけなら 64×64（y16..79）。
-// - 絵の下のラベルは y84..103 の 2 行（battle.groupLabel「{n} {name} ×{count}」。n は対象の一覧と同じ番号 = battle-input の
-//   targetNumber、name は core が選んだ表示名をそのまま）。列の区切り線や列の枠は描かない。
+// - 列は幅 56・間 4 で中央寄せ。絵の代わりの色付き矩形は 48×48（列内 x+4、y8..55）、1 グループだけなら 64×64（y2..65）。
+// - 絵の下のラベルは注目の枠のすぐ下の 2 行（y58..77、1 グループなら y68..87。3 行目以降は line-clamp で「…」）。
+//   戦闘で出る判定の箱（UI-40。上端 y88 以下にはならない）と重ならない位置（battle.groupLabel「{n} {name} ×{count}」。
+//   n は対象の一覧と同じ番号 = battle-input の targetNumber、name は core が選んだ表示名をそのまま）。列の区切り線や列の枠は描かない。
 // - 体数 0 の列は詰めずに visibility hidden（グループの添字は戦闘中に詰めない。CB-42）。
 // - 対象の選択中は focus で、注目しているグループの絵の周り（focusFrame）に枠を出し、点滅させる（Element.animate の
 //   iterations: Infinity。常駐のループではなく、解除・切り替え・描き直しで cancel する）。演出スキップでは点滅せず枠だけ。
@@ -18,9 +19,8 @@ import { onTap } from "../input/tap";
 
 const COL_W = 56;
 const COL_GAP = 4;
-const SPRITE = { x: 4, y: 24, size: 48 } as const;
-const SPRITE_SOLO = { y: 16, size: 64 } as const;
-const LABEL_Y = 84;
+const SPRITE = { x: 4, y: 8, size: 48 } as const;
+const SPRITE_SOLO = { y: 2, size: 64 } as const;
 const LABEL_H = 20;
 const LINE_H = 10;
 /** 注目の枠を絵から広げる幅（論理 px） */
@@ -36,13 +36,25 @@ export function groupBoxes(n: number, viewW: number, viewH = 150): Rect[] {
   return Array.from({ length: n }, (_, i): Rect => ({ x: left + i * (COL_W + COL_GAP), y: 0, w: COL_W, h: viewH }));
 }
 
-/** 列 i の絵の矩形。n=1 だけ 64×64（y16..79）、それ以外は 48×48（列内 x+4、y24..71） */
+/** 列 i の絵の矩形。n=1 だけ 64×64（y2..65）、それ以外は 48×48（列内 x+4、y8..55） */
 export function groupColumns(n: number, viewW: number): Rect[] {
   if (n === 1) {
     const x = Math.floor((viewW - SPRITE_SOLO.size) / 2);
     return [{ x, y: SPRITE_SOLO.y, w: SPRITE_SOLO.size, h: SPRITE_SOLO.size }];
   }
   return groupBoxes(n, viewW).map((b) => ({ x: b.x + SPRITE.x, y: SPRITE.y, w: SPRITE.size, h: SPRITE.size }));
+}
+
+/**
+ * UI-54: 列 i のラベルの矩形（ビュー座標）。列の箱の幅 56、高さ 20（2 行）、y は注目の枠の下端（絵の下端 + FRAME_PAD）。
+ * n=1 は y68..87、それ以外は y58..77。戦闘で出る判定の箱（UI-40。rows 1〜2 で上端 y98 / y88）と重ならない
+ */
+export function groupLabelRects(n: number, viewW: number): Rect[] {
+  const sprites = groupColumns(n, viewW);
+  return groupBoxes(n, viewW).map((b, i): Rect => {
+    const sr = sprites[i] ?? { y: SPRITE.y, h: SPRITE.size };
+    return { x: b.x, y: sr.y + sr.h + FRAME_PAD, w: b.w, h: LABEL_H };
+  });
 }
 
 /** UI-60: 色付き矩形の塗り。鑑定済みは monsters の添字で ENEMY_FILLS を巡回、未鑑定（と未知の id）は dim */
@@ -148,6 +160,7 @@ export function createBattleView(
     el.replaceChildren();
     const boxes = groupBoxes(groups.length, viewW, viewH);
     const sprites = groupColumns(groups.length, viewW);
+    const labels = groupLabelRects(groups.length, viewW);
     cols = groups.map((g, i): Col => {
       const b = boxes[i] ?? { x: 0, y: 0, w: COL_W, h: viewH };
       const sr = sprites[i] ?? { x: b.x + SPRITE.x, y: SPRITE.y, w: SPRITE.size, h: SPRITE.size };
@@ -170,8 +183,19 @@ export function createBattleView(
       Object.assign(frame.style, { border: "1px solid var(--c-accent)", pointerEvents: "none", display: "none" });
       const label = document.createElement("div");
       label.className = "battle-group-label";
-      place(label, { x: 0, y: LABEL_Y, w: b.w, h: LABEL_H });
-      Object.assign(label.style, { textAlign: "center", whiteSpace: "normal", overflow: "hidden", lineHeight: `${LINE_H}px` });
+      const lr = labels[i] ?? { x: b.x, y: sr.y + sr.h + FRAME_PAD, w: b.w, h: LABEL_H };
+      place(label, { x: lr.x - b.x, y: lr.y, w: lr.w, h: lr.h });
+      // 2 行まで折り返し、3 行目以降は「…」で省く（-webkit-line-clamp。iOS Safari / Android Chrome で使える）
+      Object.assign(label.style, {
+        textAlign: "center",
+        whiteSpace: "normal",
+        overflow: "hidden",
+        overflowWrap: "anywhere",
+        lineHeight: `${LINE_H}px`,
+        display: "-webkit-box",
+        webkitLineClamp: "2",
+        webkitBoxOrient: "vertical",
+      });
       box.append(sprite, frame, label);
       el.appendChild(box);
       return { box, sprite, frame, label, view: g };
