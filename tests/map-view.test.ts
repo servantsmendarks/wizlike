@@ -265,6 +265,19 @@ describe("UI-25 地図のタップ（吸着）", () => {
     expect(mapSnapCell(one, lay, Number.NaN, 27, 12)).toBeNull();
   });
 
+  test("UI-25 mapSnapCell: 座標の換算の誤差（1e-9 程度）で片方がわずかに近くなっても、ほぼ同じ距離は同順位として y、次に x の小さい方を選ぶ。はっきり近い方（0.01px）は近い方", () => {
+    const lay = mapLayout(20, 20, MAP_AREA);
+    // (11,5) と (11,6) の中心は (131,67)・(131,75)。実機の (131.5, 71) 相当に、(11,6) 寄りの誤差を足す
+    const col = view([cellOf(11, 6), cellOf(11, 5)]);
+    expect(mapSnapCell(col, lay, 131.5, 71 + 1e-9, 12)).toEqual({ x: 11, y: 5 });
+    expect(mapSnapCell(col, lay, 131.5, 71 - 1e-9, 12)).toEqual({ x: 11, y: 5 });
+    expect(mapSnapCell(col, lay, 131.5, 71.01, 12)).toEqual({ x: 11, y: 6 });
+    // 横: (3,2) と (4,2) の中心 (67,43)・(75,43) の中ほど。(4,2) 寄りの誤差でも x の小さい (3,2)
+    const row = view([cellOf(4, 2), cellOf(3, 2)]);
+    expect(mapSnapCell(row, lay, 71 + 3e-10, 44, 12)).toEqual({ x: 3, y: 2 });
+    expect(mapSnapCell(row, lay, 71.01, 44, 12)).toEqual({ x: 4, y: 2 });
+  });
+
   test("UI-25 mapSnapCell は探索済みでないセルには吸着しない（すぐ上のセルが未探索なら、離れた探索済みのセルか null）", () => {
     const lay = mapLayout(20, 20, MAP_AREA);
     // (5,5) の中心 (83,67) の真上をタップ。探索済みは (5,6)（中心 (83,75)、距離 8）だけ

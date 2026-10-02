@@ -33,8 +33,16 @@ export function mapLayout(w: number, h: number, area: { w: number; h: number }):
 /**
  * UI-25: タップの吸着。地図本体の SVG の左上からの論理 px（lx, ly）から、探索済みのセル（v.cells）のうち
  * 中心 (ox + x*cell + cell/2, oy + y*cell + cell/2) までの距離が maxPx 以下で一番近いもの。
- * 同じ距離なら y の小さい方、次に x の小さい方。無ければ null
+ * 同じ距離なら y の小さい方、次に x の小さい方。無ければ null。
+ * 二乗距離の差が SNAP_TIE_EPS 以下なら同じ距離として扱う（端末の座標から論理座標への換算の誤差で同順位の規則が崩れないように）
  */
+/**
+ * UI-25: 吸着の同順位とみなす二乗距離の差（論理 px²）。換算（client px − 原点）/ scale の浮動小数の誤差は、
+ * 二乗距離（144 程度まで）で 1e-12 程度にとどまる。一方、指の位置が実際に違えば最小でも 1 デバイス px
+ * （論理で 0.2px 前後）ずれ、二乗距離の差は 1e-2 のけたになる。その間の 1e-6 を取る
+ */
+export const SNAP_TIE_EPS = 1e-6;
+
 export function mapSnapCell(v: Pick<MapView, "cells">, lay: MapLayout, lx: number, ly: number, maxPx: number): Pos | null {
   if (!Number.isFinite(lx) || !Number.isFinite(ly)) return null;
   const lim = maxPx * maxPx;
@@ -45,7 +53,8 @@ export function mapSnapCell(v: Pick<MapView, "cells">, lay: MapLayout, lx: numbe
     const dy = ly - (lay.oy + c.y * lay.cell + lay.cell / 2);
     const d = dx * dx + dy * dy;
     if (d > lim) continue;
-    if (best === null || d < bestD || (d === bestD && (c.y < best.y || (c.y === best.y && c.x < best.x)))) {
+    const tie = Math.abs(d - bestD) <= SNAP_TIE_EPS;
+    if (best === null || (!tie && d < bestD) || (tie && (c.y < best.y || (c.y === best.y && c.x < best.x)))) {
       best = { x: c.x, y: c.y };
       bestD = d;
     }
