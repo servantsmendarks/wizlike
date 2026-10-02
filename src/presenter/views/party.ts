@@ -5,6 +5,7 @@
 // MP は mpMax が 0 のメンバーではラベルごと空欄にする。
 // 状態の列は、life が alive でなければ party.life.*、alive なら status の短い名前（party.status.<id>）を空白区切りで出す。
 // 戦闘の再生用に setMp / setMax（レベルの変化）/ setStatus / flash（UI-42 の被弾。opacity 2 往復）/ setActive（入力中の名前を accent 色）を持つ。
+// UI-55: markActor（衝動の行動者の名前を accent 色、行を点滅。render で消える）。
 // el は region の位置と大きさに自分で置く。モジュールのトップレベルでは DOM に触れない。
 import type { ClassDef, StatusId, Strings } from "../../core/data/index";
 import type { Character, Life } from "../../core/types";
@@ -96,7 +97,15 @@ export type PartyPanel = {
   flash(id: string, ms: number): Promise<void>;
   /** 入力中のメンバーの名前を accent 色にする（null で解除） */
   setActive(id: string | null): void;
+  /**
+   * UI-55: 衝動の行動者の名前を accent 色にし、blink なら行を点滅させる（ACTOR_BLINK_MS の矩形波、iterations Infinity）。
+   * null で点滅を止めて色を戻す。setActive と共存する（どちらかに当たれば accent）
+   */
+  markActor(id: string | null, blink: boolean): void;
 };
+
+/** UI-55: 衝動の行動者の行の点滅の周期（ms） */
+export const ACTOR_BLINK_MS = 400;
 
 /** region は ui §2 の party 領域、rows は行 0..party.size-1 の矩形（どちらもステージ座標）。classes は略称（abbr）の参照 */
 export function createPartyPanel(o: {
@@ -165,13 +174,23 @@ export function createPartyPanel(o: {
   };
 
   let active: string | null = null;
+  /** UI-55: 衝動の行動者（null なら無し）と、その行の点滅 */
+  let marked: string | null = null;
+  let blinkAnim: Animation | null = null;
+  const stopBlink = (): void => {
+    if (blinkAnim !== null) blinkAnim.cancel();
+    blinkAnim = null;
+  };
   const paintActive = (): void => {
-    for (const [id, row] of byId) row.cells.name.style.color = id === active ? "var(--c-accent)" : "";
+    for (const [id, row] of byId) row.cells.name.style.color = id === active || id === marked ? "var(--c-accent)" : "";
   };
 
   return {
     el,
     render(party: readonly Character[]): void {
+      // 行を作り直すので、行動者の印と点滅も消す
+      stopBlink();
+      marked = null;
       el.replaceChildren();
       byId.clear();
       party.forEach((ch, i) => {
@@ -249,6 +268,22 @@ export function createPartyPanel(o: {
     setActive(id: string | null): void {
       active = id;
       paintActive();
+    },
+    markActor(id: string | null, blink: boolean): void {
+      stopBlink();
+      marked = id;
+      paintActive();
+      const row = id === null ? undefined : byId.get(id);
+      if (row === undefined || !blink) return;
+      blinkAnim = row.line.animate(
+        [
+          { opacity: 1, offset: 0 },
+          { opacity: 1, offset: 0.5 },
+          { opacity: 0, offset: 0.5 },
+          { opacity: 0, offset: 1 },
+        ],
+        { duration: ACTOR_BLINK_MS, iterations: Infinity },
+      );
     },
   };
 }

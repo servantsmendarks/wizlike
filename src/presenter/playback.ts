@@ -23,6 +23,9 @@
 //   ダイスは dice で出し（1 件で 1 つの箱。新しい dice は前の箱を置き換える）、message と dice 以外のイベントの前と再生の終わりに消す。
 //   beat はその例外で、拍の待ちの後に消す。全滅の 2d10 も例外で、wipe の前の待ちの後に消す（上の全滅）。dice を受けたら履歴に 1 行の要約（formatDiceSummary）を残す（UI-46）。
 //   skip のときは flash / shake / dice / fade に 0ms を渡し、タイマーを使わない。
+// - イベント（UI-55、M5）: screen{event} と、イベントから戻る screen{dungeon} ではビューをフェードしない（迷宮の画面の上の状態）。
+//   eventStarted を受けたら deps.eventStarted() で迷宮の操作を下げ、actorId があれば party.markActor（演出スキップでは点滅なし）。
+//   印は再生の終わり（sync の前）に外す。
 // 具体的な views は import しない（純粋な enemyGroupOfId / formatMessage / formatDiceSummary だけ）。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, StatusId, Strings } from "../core/data/index";
 import type { EnemyGroupView, GameEvent, GameEventKind, GameState, Life, PenaltyResult, Screen, ViewPoint } from "../core/types";
@@ -31,7 +34,8 @@ import { enemyGroupOfId } from "./views/battle";
 import { formatDiceSummary, type DiceEvent } from "./views/dice";
 import { formatMessage } from "./views/message";
 
-export type PlayCx = { cursor: ViewPoint | null; skip: boolean };
+/** screen は再生中の core の画面（before.screen から、screen イベントの値で進める。UI-55 のフェードの有無に使う） */
+export type PlayCx = { cursor: ViewPoint | null; skip: boolean; screen: Screen };
 
 export type PlayerDeps = {
   data: GameData;
@@ -65,6 +69,8 @@ export type PlayerDeps = {
     setStatus(id: string, status: StatusId, on: boolean): void;
     /** UI-42 の被弾 */
     flash(id: string, ms: number): Promise<void>;
+    /** UI-55: 衝動の行動者の印（名前の accent 色、blink なら行の点滅）。null で外す */
+    markActor(id: string | null, blink: boolean): void;
   };
   /** ビューの敵グループの層（views/battle.ts） */
   battle: {
@@ -87,6 +93,8 @@ export type PlayerDeps = {
   battleEnded(): void;
   /** UI-44 / UI-56: 全滅の 2d10 を出した（入力の UI を下げる。戦闘の外の全滅でも、内訳を開くまでの待ちの間は出さない） */
   inputClosed(): void;
+  /** UI-55: eventStarted を再生した（十字ボタンなど迷宮の操作を下げる。続きの再生の間は出さない） */
+  eventStarted(): void;
 };
 
 /** UI-40 / UI-56: 全滅の 2d10 の dice の label のキー。この箱は wipe（内訳を開く）まで消さない */
@@ -160,6 +168,8 @@ export function createPlayer(deps: PlayerDeps): Player {
   let beatRush = false;
   /** タップ待ちの最中か */
   let waitingTap = false;
+  /** UI-55: この再生で衝動の行動者に印を付けたか（再生の終わりで外す） */
+  let marked = false;
 
   const isSkip = (): boolean => deps.settings().skipAnimations || rushed || beatRush;
   /** ダイスの overlay が出ているか（出ていなければ hide を呼ばない） */
@@ -227,9 +237,24 @@ export function createPlayer(deps: PlayerDeps): Player {
           deps.screens.show(ev.to, finalState);
           deps.battle.clear();
         });
+        cx.screen = ev.to;
+        return;
+      }
+      if (ev.to === "event") {
+        // UI-55: イベントは迷宮の画面の上の状態。線画は同じなのでフェードしない
+        deps.screens.show(ev.to, finalState);
+        cx.screen = ev.to;
+        return;
+      }
+      if (ev.to === "dungeon" && cx.screen === "event") {
+        // UI-55: イベントから迷宮へ戻る。同じ線画なので描き直さず、視点だけ最終の dive に合わせる
+        deps.screens.show(ev.to, finalState);
+        cx.cursor = cursorOfDive(finalState);
+        cx.screen = ev.to;
         return;
       }
       deps.screens.show(ev.to, finalState);
+      cx.screen = ev.to;
       if (ev.to === "dungeon") {
         const c = cursorOfDive(finalState);
         if (c === null) return;
@@ -328,6 +353,15 @@ export function createPlayer(deps: PlayerDeps): Player {
       hideDice();
       deps.battleEnded();
     },
+    async eventStarted(ev, cx) {
+      // UI-55: 迷宮の操作を下げ、衝動の行動者がいれば印を付ける（演出スキップでは点滅せず色だけ）。印は再生の終わりで外す
+      cx.skip = isSkip();
+      deps.eventStarted();
+      if (ev.actorId !== undefined) {
+        deps.party.markActor(ev.actorId, !cx.skip);
+        marked = true;
+      }
+    },
   };
 
   /** UI-45: at の位置で待つ（beatWait が null なら待たない）。手動は続きの三角を点滅させてタップを待つ */
@@ -363,8 +397,9 @@ export function createPlayer(deps: PlayerDeps): Player {
     async play(events: readonly GameEvent[], before: GameState, finalState: GameState): Promise<void> {
       rushed = false;
       taps = 0;
+      marked = false;
       leaveBeats();
-      const cx: PlayCx = { cursor: cursorOfDive(before), skip: isSkip() };
+      const cx: PlayCx = { cursor: cursorOfDive(before), skip: isSkip(), screen: before.screen };
       // 後ろに message が残っているか（続きの三角。拍の外はタップを待たずに先へ進む）
       let messagesLeft = events.filter((e) => e.kind === "message").length;
       try {
@@ -407,6 +442,10 @@ export function createPlayer(deps: PlayerDeps): Player {
       }
       hideDice();
       deps.message.setMore(false);
+      if (marked) {
+        deps.party.markActor(null, false);
+        marked = false;
+      }
       deps.screens.sync(finalState);
     },
     tap(): void {

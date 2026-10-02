@@ -7,6 +7,7 @@ import type { Dive, EnemyGroupView, GameEvent, GameState, PenaltyResult, ViewPoi
 import { data, expectKnownStringKeys, newGame } from "./helpers/core";
 import { execute } from "../src/core/engine";
 import { ALWAYS_HIT, dataWith, dived, withBattle } from "./helpers/battle";
+import { atEvent, dataEvents } from "./helpers/events";
 
 function diveAt(x: number, y: number, facing: Dive["facing"], floor = 1): Dive {
   return {
@@ -81,6 +82,7 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
         log.push({ m: "party.flash", a: [id, ms] });
         return Promise.resolve();
       },
+      markActor: rec("party.markActor"),
     },
     battle: {
       setGroups: rec("battle.setGroups"),
@@ -105,6 +107,7 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
     wipe: { show: (p) => rec("wipe.show")(p) },
     battleEnded: rec("battleEnded"),
     inputClosed: rec("inputClosed"),
+    eventStarted: rec("eventStarted"),
     beat: {
       waitTap() {
         log.push({ m: "beat.waitTap", a: [] });
@@ -244,10 +247,8 @@ describe("UI-41 playback", () => {
   test("UI-41 未登録の kind は何もしない", async () => {
     const { deps, log } = fakeDeps();
     const s = stateWith(diveAt(1, 1, "N"));
-    const events: GameEvent[] = [
-      { kind: "rejected", command: "dungeon.move", reason: "x" },
-      { kind: "eventStarted", eventId: "x" },
-    ];
+    // M5 で eventStarted は UI-55 のハンドラを持つようになったので、この列から外した（UI-55 の describe で見る）
+    const events: GameEvent[] = [{ kind: "rejected", command: "dungeon.move", reason: "x" }];
     await createPlayer(deps).play(events, s, s);
     expect(names(log)).toEqual(["message.setMore", "screens.sync"]);
   });
@@ -881,5 +882,114 @@ describe("UI-45 拍の再生", () => {
     l.release();
     await p;
     expect(done).toBe(true);
+  });
+});
+
+describe("UI-55 イベントの再生（M5）", () => {
+  const dungeonState = (): GameState => stateWith(diveAt(1, 1, "N"));
+  const eventState = (): GameState => ({
+    ...dungeonState(),
+    screen: "event",
+    pendingChoice: {
+      kind: "event",
+      promptKey: "event.glowing_tablet.intro",
+      options: [{ id: "examine", labelKey: "event.glowing_tablet.choice.examine" }],
+      eventId: "glowing_tablet",
+    },
+  });
+
+  test("UI-55 eventStarted に actorId があれば markActor(id, true)、演出スキップでは (id, false)。actorId が無ければ呼ばない。再生の終わり（sync の前）に markActor(null, false)", async () => {
+    for (const skipAnimations of [false, true]) {
+      const { deps, log } = fakeDeps({ skipAnimations });
+      const s = dungeonState();
+      await createPlayer(deps).play(
+        [{ kind: "eventStarted", eventId: "glowing_tablet", actorId: "c3" }, msg("event.glowing_tablet.intro"), msg("event.impulse.actor", { actor: "キリ" })],
+        s,
+        s,
+      );
+      const marks = log.filter((e) => e.m === "party.markActor").map((e) => e.a);
+      expect(marks, String(skipAnimations)).toEqual([
+        ["c3", !skipAnimations],
+        [null, false],
+      ]);
+      // 外すのは文を出し終えた後、sync の直前
+      const ms = names(log);
+      expect(ms.slice(-2)).toEqual(["party.markActor", "screens.sync"]);
+      expect(ms.indexOf("party.markActor")).toBeLessThan(ms.indexOf("message.say"));
+    }
+    const { deps, log } = fakeDeps();
+    const s = dungeonState();
+    await createPlayer(deps).play([{ kind: "eventStarted", eventId: "glowing_tablet" }, msg("event.glowing_tablet.intro")], s, s);
+    expect(names(log)).not.toContain("party.markActor");
+  });
+
+  test("UI-55 eventStarted で deps.eventStarted を 1 回（迷宮の操作を下げる。actorId の有無とも）", async () => {
+    for (const ev of [
+      { kind: "eventStarted", eventId: "glowing_tablet" },
+      { kind: "eventStarted", eventId: "glowing_tablet", actorId: "c3" },
+    ] as GameEvent[]) {
+      const { deps, log } = fakeDeps();
+      const s = dungeonState();
+      await createPlayer(deps).play([{ kind: "moved", pos: { x: 1, y: 0 }, facing: "N" }, ev], s, s);
+      expect(names(log).filter((m) => m === "eventStarted")).toHaveLength(1);
+      // 次の再生では印を引き継がない
+      const f2 = fakeDeps();
+      await createPlayer(f2.deps).play([msg("dungeon.door")], s, s);
+      expect(names(f2.log)).not.toContain("party.markActor");
+    }
+  });
+
+  test("UI-55 screen{event} は screens.show('event') でフェードしない。event → dungeon もフェード・描き直しをしない。dungeon → dungeon は今どおりフェード", async () => {
+    const ui = data.config.ui;
+    // 迷宮 → イベント（選択を待つ）
+    {
+      const { deps, log } = fakeDeps();
+      const before = dungeonState();
+      await createPlayer(deps).play([{ kind: "eventStarted", eventId: "glowing_tablet" }, msg("event.glowing_tablet.intro"), { kind: "screen", to: "event" }], before, eventState());
+      expect(log.filter((e) => e.m === "screens.show").map((e) => e.a)).toEqual([["event"]]);
+      expect(names(log)).not.toContain("view.fade");
+      expect(names(log)).not.toContain("view.showAt");
+    }
+    // イベント → 迷宮（選択の後）。その後の moved は最終の dive の視点から進める
+    {
+      const { deps, log } = fakeDeps();
+      const after = stateWith(diveAt(1, 1, "N"));
+      await createPlayer(deps).play(
+        [{ kind: "screen", to: "dungeon" }, msg("event.glowing_tablet.examine"), { kind: "moved", pos: { x: 1, y: 0 }, facing: "N" }],
+        eventState(),
+        after,
+      );
+      expect(log.filter((e) => e.m === "screens.show").map((e) => e.a)).toEqual([["dungeon"]]);
+      // フェードは moved の 1 回だけ（screen dungeon では描き直さない）
+      expect(log.filter((e) => e.m === "view.fade").map((e) => e.a)).toEqual([[ui.viewFadeMs]]);
+      expect(log.filter((e) => e.m === "view.showAt").map((e) => e.a[0])).toEqual([{ floor: 1, pos: { x: 1, y: 0 }, facing: "N" }]);
+    }
+    // 迷宮 → 迷宮（入場など）は今どおりフェードして描き直す
+    {
+      const { deps, log } = fakeDeps();
+      const s = dungeonState();
+      await createPlayer(deps).play([{ kind: "screen", to: "dungeon" }], s, s);
+      expect(log.filter((e) => e.m === "view.fade").map((e) => e.a)).toEqual([[ui.viewFadeMs]]);
+    }
+  });
+
+  test("UI-55/EV-23 core の実際の列（光る石板の衝動。シード固定）: eventStarted の後に行動者 c3 の印、再生の終わりで外す", async () => {
+    const d = dataEvents();
+    const s = atEvent("glowing_tablet").state;
+    const r = execute(s, { type: "dungeon.move" }, d);
+    const st = r.events.find((e) => e.kind === "eventStarted");
+    expect(st).toEqual({ kind: "eventStarted", eventId: "glowing_tablet", actorId: "c3" });
+    for (const skipAnimations of [false, true]) {
+      const { deps, log } = fakeDeps({ skipAnimations });
+      await createPlayer(deps).play(r.events, s, r.state);
+      const ms = names(log);
+      expect(ms.indexOf("eventStarted")).toBeLessThan(ms.indexOf("party.markActor"));
+      expect(log.filter((e) => e.m === "party.markActor").map((e) => e.a)).toEqual([
+        ["c3", !skipAnimations],
+        [null, false],
+      ]);
+      expect(ms.at(-1)).toBe("screens.sync");
+      expect(ms.at(-2)).toBe("party.markActor");
+    }
   });
 });

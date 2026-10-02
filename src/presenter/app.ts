@@ -251,6 +251,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     wipe: { show: (p) => openWipe(p) },
     battleEnded: () => onBattleEnded(),
     inputClosed: () => lowerInput(),
+    // UI-55: イベントの再生の間は十字ボタン（迷宮の操作）を下げる。再生の最後の sync で出し直す
+    eventStarted: () => play.controls.setMode("none"),
   });
 
   /**
