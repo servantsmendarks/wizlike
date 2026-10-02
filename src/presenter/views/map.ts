@@ -173,7 +173,7 @@ export type MapViewEl = {
  * onCell は地図本体のタップ（UI-25）。探索済みのセルの中心から snapPx 以内のタップだけを、一番近いセルに吸着させて呼ぶ
  * （範囲外のタップでは呼ばない）
  */
-export function createMapView(lay: DungeonLayout["map"], onCell?: (p: Pos) => void, snapPx = 12): MapViewEl {
+export function createMapView(lay: DungeonLayout["map"], onCell: ((p: Pos) => void) | undefined, snapPx: number): MapViewEl {
   const SVG_NS = "http://www.w3.org/2000/svg";
   const { overlay, title: tr, area } = lay;
   const el = document.createElement("div");

@@ -384,7 +384,7 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
 
   test("UI-25 setPick: blink なら枠を点滅（iterations Infinity・周期 MAP_PICK_BLINK_MS）。切り替え・null・render で cancel。blink 偽では animate を呼ばず枠だけ", () => {
     const { paths } = fakeDocument();
-    const m = createMapView(L.map, () => {}, 12);
+    const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx);
     m.render(view([cellOf(0, 0), cellOf(5, 12)]), "t");
     const pick = pickOf(paths);
     expect(pick.attrs["d"]).toBe("");
