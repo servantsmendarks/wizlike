@@ -95,6 +95,18 @@ export function applySanValue(ctx: RuleContext, ch: Character, value: number): S
   return setSan(ctx, ch, ch.san);
 }
 
+/**
+ * CH-52 / A8: 財宝入手（迷宮で金を得た 1 回）。並び順に、life alive かつ san > 0 で
+ * personality.san.treasureGain > 0 の者へ gainSan(treasureGain)。乱数なし。
+ */
+export function gainTreasureSan(ctx: RuleContext): void {
+  for (const ch of ctx.state.party) {
+    if (ch.life !== "alive" || ch.san <= 0) continue;
+    const g = personalityOf(ctx.data, ch.personality)?.san.treasureGain ?? 0;
+    if (g > 0) gainSan(ctx, ch, g);
+  }
+}
+
 /** TW-02: 虚脱からでも sanMax に戻す。 */
 export function restoreSan(ctx: RuleContext, ch: Character): SanChange {
   return setSan(ctx, ch, ch.sanMax);

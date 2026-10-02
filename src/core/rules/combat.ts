@@ -67,6 +67,7 @@ import type { AllyPlan, MemberSnap, TargetRef } from "./combat-plan";
 import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, snapMembers, toPlan } from "./combat-plan";
 import { offerTeleporter } from "./choices";
 import { applyAllyEffect } from "./effects";
+import { gainGold } from "./field";
 import { loseSan } from "./san";
 import { performWipe } from "./wipe";
 
@@ -895,14 +896,12 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
       const m = monsterOf(data, grp.monsterId);
       for (let i = 0; i < grp.units.length; i++) gold += Math.max(0, rollDice(state.rng, m.gold).total);
     }
-    if (gold > 0) addGold(state, gold);
-    if (gold > 0) ctx.events.push({ kind: "message", key: "battle.gold", params: { gold } });
+    if (gold > 0) gainGold(ctx, gold, { key: "battle.gold", params: { gold } }); // CH-52: 強欲の treasureGain もここ
     if (b.origin.kind === "random" && b.origin.inRoom) {
       // CB-52 の仮実装。罠・chestQuality は M5（openChest の差し込み口）
       if (chance(state.rng, cfg.combat.chestChance)) {
         const cg = Math.max(0, rollDice(state.rng, cfg.combat.chestGoldDice).total);
-        addGold(state, cg);
-        ctx.events.push({ kind: "message", key: "battle.chest", params: { gold: cg } });
+        gainGold(ctx, cg, { key: "battle.chest", params: { gold: cg } }); // cg が 0 でも message は出す
       }
     }
     if (b.origin.kind === "boss") {
@@ -937,11 +936,6 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
   ctx.events.push({ kind: "screen", to: "dungeon" });
   // DG-32: ボスを倒すとその場にテレポーターが出て、一行はその上に立っているので、すぐに街へ戻るかを尋ねる
   if (result === "win" && b.origin.kind === "boss") offerTeleporter(ctx);
-}
-
-function addGold(state: GameState, gold: number): void {
-  state.gold += gold;
-  if (state.dive !== null) state.dive.ledger.gold += gold; // DG-40
 }
 
 // ---------------------------------------------------------------------------

@@ -1282,6 +1282,38 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(kindsOf(rc.events)).not.toContain("message:battle.chest");
   });
 
+  test("CH-52/A8 強欲の treasureGain: 戦闘の金・宝箱の金ごとに、金のメッセージの直後で強欲（ドナ c4）の SAN +2。死者・虚脱・金 0 では増えない", () => {
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100 } });
+    const mk = (patches: Record<string, Partial<Character>>, monsterId = "giant_rat") => {
+      const s = setup([{ monsterId, hps: [1], status: [["paralysis"]] }], {
+        identified: [monsterId],
+        origin: { kind: "random", inRoom: true },
+        patches,
+      });
+      s.battle!.inputs["c1"] = atk(0);
+      return s;
+    };
+    // ドナ SAN 50: battle.gold（giant_rat の 1d4+1 > 0）→ +2、battle.chest（2d10 > 0）→ +2 の 2 回
+    const r = exec(mk({ c4: { san: 50 } }), RESOLVE, d);
+    const ks = kindsOf(r.events);
+    const iGold = ks.indexOf("message:battle.gold");
+    const iChest = ks.indexOf("message:battle.chest");
+    expect(r.events[iGold + 1]).toEqual({ kind: "sanChanged", id: "c4", delta: 2, san: 52 });
+    expect(r.events[iChest + 1]).toEqual({ kind: "sanChanged", id: "c4", delta: 2, san: 54 });
+    expect(eventsOf(r.events, "sanChanged")).toHaveLength(2); // 強欲以外（treasureGain 0）は増えない
+    expect(member(r.state, "c4").san).toBe(54);
+    // SAN 100（上限）なら sanChanged は出ない（delta 0）
+    expect(eventsOf(exec(mk({}), RESOLVE, d).events, "sanChanged")).toEqual([]);
+    // 死んだ強欲・虚脱（SAN 0）の強欲は増えない
+    expect(member(exec(mk({ c4: { ...DEAD, san: 50 } }), RESOLVE, d).state, "c4").san).toBe(50);
+    expect(member(exec(mk({ c4: { san: 0 } }), RESOLVE, d).state, "c4").san).toBe(0);
+    // gold "0" の敵（battle.gold なし）で宝箱の金が 0 なら 1 回も増えない（宝箱の message は出る）
+    const d0 = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100, chestGoldDice: "0" } });
+    const r0 = exec(mk({ c4: { san: 50 } }, "rotting_corpse"), RESOLVE, d0);
+    expect(r0.events).toContainEqual({ kind: "message", key: "battle.chest", params: { gold: 0 } });
+    expect(eventsOf(r0.events, "sanChanged")).toEqual([]);
+  });
+
   test("CB-53/TW-20 全滅: 最後の行動可能者が倒れると battleEnd(wipe) → battle.wipe → 全滅処理（wipe.intro … wipe イベント → town.enter … screen town）。screen dungeon は出さない。睡眠だけが残るなら続行", () => {
     const d = dataWith({ combat: ALWAYS_HIT });
     const s = setup([{ monsterId: "kobold", hps: [50] }], {

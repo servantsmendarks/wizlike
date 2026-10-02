@@ -1,10 +1,9 @@
 // 潜行中のルール（DG-03, DG-10〜14, DG-20, DG-31〜33, DG-40, CB-01, CH-43/45/51/54）と、表示層向けの問い合わせ（visibleCells, mapView）。
 // 迷宮の構造は state に入れず、dive.diveSeed から毎回作り直す（DG-03）。発動済みの罠は dive の記録を重ねる。扉は通り抜けても扉のまま（DG-10）。
 import type { GameData } from "../data/index";
-import { chance, nextUint32, randInt, rollDice } from "../rng";
+import { chance, nextUint32, randInt } from "../rng";
 import { dungeonOf } from "../state";
 import type {
-  Character,
   Dive,
   Edge,
   Facing,
@@ -34,6 +33,7 @@ import {
 import { startBossEncounter, startRandomEncounter, tickPoisonStep } from "./combat";
 import { canAct } from "./combat-calc";
 import { offerExit, offerStairs, offerTeleporter } from "./choices";
+import { addExplored, aliveMembers, damageMembers } from "./field";
 import { loseSan } from "./san";
 import { enterBlockReason, returnToTown } from "./town";
 
@@ -135,29 +135,15 @@ export function mapView(state: GameState, data: GameData): MapView | null {
 
 /** DG-13: 視野のセルの添字を explored[階] に昇順・重複なしで足す。f は dive.floor の実効の構造 */
 export function markExplored(dive: Dive, f: Floor, depth: number): void {
-  const key = String(dive.floor);
-  const list = dive.explored[key] ?? [];
-  for (const v of visibleCellsOf(f, dive.pos, dive.facing, depth)) {
-    const i = idx(f, v.x, v.y);
-    // 昇順の位置に挿入する（重複は足さない）
-    let lo = 0;
-    let hi = list.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >>> 1;
-      if (list[mid]! < i) lo = mid + 1;
-      else hi = mid;
-    }
-    if (list[lo] !== i) list.splice(lo, 0, i);
-  }
-  dive.explored[key] = list;
+  addExplored(
+    dive,
+    dive.floor,
+    visibleCellsOf(f, dive.pos, dive.facing, depth).map((v) => idx(f, v.x, v.y)),
+  );
 }
 
 function explore(ctx: RuleContext, dive: Dive, f: Floor): void {
   markExplored(dive, f, ctx.data.config.dungeon.viewDepth);
-}
-
-function aliveMembers(state: GameState): Character[] {
-  return state.party.filter((c) => c.life === "alive");
 }
 
 // ---------------------------------------------------------------------------
@@ -279,24 +265,7 @@ function triggerTrap(ctx: RuleContext, f: Floor, p: Pos): void {
   ctx.events.push({ kind: "message", key: `dungeon.trap.${trapId}` });
   const cfg = data.config;
   if (trapId === "pit") {
-    const alive0 = aliveMembers(state);
-    for (const ch of alive0) {
-      // 負の修正値（"1d6-3" など）で回復しないよう、ダメージは 0 以上にクランプする（rng.ts: クランプは呼び出し側）
-      const r = Math.max(0, rollDice(state.rng, cfg.dungeon.trap.pitDice).total);
-      if (r === 0) continue; // 0 ダメージでは hpChanged を出さない
-      const next = Math.max(0, ch.hp - r);
-      ctx.events.push({ kind: "hpChanged", id: ch.id, delta: next - ch.hp, hp: next });
-      ch.hp = next;
-    }
-    const died = alive0.filter((ch) => ch.hp === 0);
-    for (const ch of died) {
-      ch.life = "dead";
-      ctx.events.push({ kind: "lifeChanged", id: ch.id, life: "dead" });
-      ctx.events.push({ kind: "message", key: "dungeon.dead", params: { name: ch.name } });
-    }
-    for (let k = 0; k < died.length; k++) {
-      for (const o of aliveMembers(state)) loseSan(ctx, o, cfg.san.allyDeath, ["allyInjury"]);
-    }
+    damageMembers(ctx, aliveMembers(state), cfg.dungeon.trap.pitDice);
   } else if (trapId === "spinner") {
     dive.facing = FACINGS[randInt(state.rng, 0, 3)]!;
     ctx.events.push({ kind: "turned", facing: dive.facing });
