@@ -100,7 +100,7 @@ describe("createDebugPanel", () => {
     vi.unstubAllGlobals();
   });
 
-  test("UI-57 1 ページ目の 2 段目（y376 の 56×22 ×4。M5）: SAN段↓・イベント・罠の前・階段前。押すと onSanDown / onWarp(event|trap|stairsDown)。1 ページ目の子なので 2 ページ目では見えない", () => {
+  test("UI-57 1 ページ目の 2 段目（y376 の 56×22 ×4。M5）: SAN段↓・イベント・罠の前・階段前。押すと onSanDown / onWarp(event|trap|stairsDown)。1 ページ目の子なので 2 ページ目では見えない。line-height は内側の高さ（h−2）", () => {
     const created: FakeEl[] = [];
     vi.stubGlobal("document", {
       createElement: () => {
@@ -136,6 +136,10 @@ describe("createDebugPanel", () => {
       const b = page1.children.find((c) => c.className === "ui-button" && c.textContent === data.strings[key]);
       expect(b, key).toBeDefined();
       expect([b!.style["left"], b!.style["top"], b!.style["width"], b!.style["height"]]).toEqual([`${r.x}px`, `${r.y}px`, `${r.w}px`, `${r.h}px`]);
+      // 高さ 22 では .ui-button の line-height 30px を内側の高さ 20（上下の枠 1px を除く）で上書きし、文字を縦の中央に置く
+      // （実機(M5) で約 4.6px 下に寄っていた）
+      expect(b!.style["lineHeight"], key).toBe(`${r.h - 2}px`);
+      expect(b!.style["lineHeight"], key).toBe("20px");
       calls.length = 0;
       tap(b!);
       expect(calls, key).toEqual([call]);

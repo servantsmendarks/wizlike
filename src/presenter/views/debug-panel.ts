@@ -218,10 +218,17 @@ export function createDebugPanel(o: {
   page1.appendChild(button(t("debug.hpOneButton"), DEBUG_BUTTONS.hpOne, () => o.onHpOne()));
   page1.appendChild(button(t("settings.reset"), DEBUG_BUTTONS.reset, () => o.store.set({ ...o.defaults })));
   // M5: 2 段目（1 ページ目だけ）
-  page1.appendChild(button(t("debug.sanDownButton"), DEBUG_BUTTONS_M5.sanDown, () => o.onSanDown()));
-  page1.appendChild(button(t("debug.warpEventButton"), DEBUG_BUTTONS_M5.warpEvent, () => o.onWarp("event")));
-  page1.appendChild(button(t("debug.warpTrapButton"), DEBUG_BUTTONS_M5.warpTrap, () => o.onWarp("trap")));
-  page1.appendChild(button(t("debug.warpStairsButton"), DEBUG_BUTTONS_M5.warpStairs, () => o.onWarp("stairsDown")));
+  // 高さ 22 のボタンは .ui-button の line-height 30px のままだと文字が下に寄るので、内側の高さ（border-box の上下の枠 1px を除く。
+  // controls / header と同じ h - 2）に合わせて縦の中央に置く（他のボタンは変えない）
+  const shortButton = (text: string, r: Rect, onClick: () => void): HTMLButtonElement => {
+    const b = button(text, r, onClick);
+    b.style.lineHeight = `${r.h - 2}px`;
+    return b;
+  };
+  page1.appendChild(shortButton(t("debug.sanDownButton"), DEBUG_BUTTONS_M5.sanDown, () => o.onSanDown()));
+  page1.appendChild(shortButton(t("debug.warpEventButton"), DEBUG_BUTTONS_M5.warpEvent, () => o.onWarp("event")));
+  page1.appendChild(shortButton(t("debug.warpTrapButton"), DEBUG_BUTTONS_M5.warpTrap, () => o.onWarp("trap")));
+  page1.appendChild(shortButton(t("debug.warpStairsButton"), DEBUG_BUTTONS_M5.warpStairs, () => o.onWarp("stairsDown")));
 
   // 2 ページ目（UI-57 のポインタの記録）: 題と 20 行（古い順）。描くのはページを切り替えたときだけ
   const page2 = document.createElement("div");
