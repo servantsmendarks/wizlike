@@ -4,7 +4,7 @@
 // c5 エル 魔術師（inv i15 帰還の糸、呪文 fire_arrow / sleep_mist は battle 専用）、c6 フィン 盗賊（inv i18 薬草）。
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { execute } from "../src/core/engine";
-import { campMenu } from "../src/core/rules/camp";
+import { campMenu, campSummary } from "../src/core/rules/camp";
 import { fieldItemMenu } from "../src/core/rules/items";
 import { cloneState, createItemInstance } from "../src/core/state";
 import type { Character, Command, GameState } from "../src/core/types";
@@ -43,7 +43,7 @@ const inTown = (patches: Record<string, Partial<Character>> = {}) => patched(new
 function input(s: GameState): CampInput {
   const menu = campMenu(s, data);
   if (menu === null) throw new Error("no camp menu");
-  return { menu, items: fieldItemMenu(s, data) };
+  return { menu, items: fieldItemMenu(s, data), summary: campSummary(s, data) };
 }
 
 /** 送った Command を core が受け付けること */
@@ -354,7 +354,23 @@ describe("TW-03/UI-52 酒場とキャンプの共有", () => {
     expect(campFirstPage("tavern", "equip", m.menu)).toEqual({ kind: "equip", stage: "member" });
     expect(campFirstPage("tavern", "order", m.menu)).toEqual({ kind: "order", picked: null });
     expect(campPanel({ kind: "equip", stage: "member" }, m, S)).toEqual({ kind: "text", title: "酒場" });
-    expect(campPanel({ kind: "top" }, input(inDungeon()), S)).toEqual({ kind: "text", title: "キャンプ" });
+  });
+
+  test("UI-53 迷宮のキャンプの top だけ、見出しの下に campSummary の 4 行（迷宮名と階・所持金・今回の収穫・帰還の糸）。他の段と酒場には出さない", () => {
+    const s = inDungeon();
+    s.gold = 230;
+    s.dive!.floor = 2;
+    s.dive!.ledger = { items: ["i15"], gold: 30 };
+    // 帰還の糸は c5 の i15 の 1 本だけ
+    expect(campPanel({ kind: "top" }, input(s), S)).toEqual({
+      kind: "text",
+      title: "キャンプ",
+      lines: ["試しの坑道　2F", "所持金　230G", "今回の収穫　30G・1品", "帰還の糸　1本"],
+    });
+    expect(campPanel({ kind: "spell", stage: "caster" }, input(s), S)).toEqual({ kind: "text", title: "キャンプ" });
+    const town = input(inTown());
+    expect(town.summary).toBeNull();
+    expect(campPanel({ kind: "top" }, town, S)).toEqual({ kind: "text", title: "酒場" });
   });
 
   test("UI-53 段の問いはヘッダーにだけ出す。文字のパネルは場所の見出し（キャンプ / 酒場）だけで、問いを繰り返さない", () => {
@@ -492,5 +508,17 @@ describe("CH-03/UI-53 並び順の表の列", () => {
     expect(nameCells[1]!.style["color"]).toBe("var(--c-accent)");
     expect(rowCells[1]!.style["color"]).toBe("var(--c-accent)");
     expect(rowCells[0]!.style["color"]).toBeUndefined();
+  });
+
+  test("UI-53 文字のパネルの lines は見出しの下の行 1.. に通常色で描く", () => {
+    vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
+    const v = createCampView({ x: 0, y: 16, w: 240, h: 150 });
+    v.render({ kind: "text", title: "キャンプ", lines: ["a", "b"] });
+    const el = v.el as unknown as FakeEl;
+    expect(el.children.map((c) => [c.className, c.textContent, c.style["top"], c.style["color"]])).toEqual([
+      ["camp-title", "キャンプ", "4px", "var(--c-accent)"],
+      ["camp-summary", "a", "14px", undefined],
+      ["camp-summary", "b", "24px", undefined],
+    ]);
   });
 });

@@ -126,8 +126,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   "rules/town": ["townMenu"],
   // M4 UI-53: 迷宮の道具の候補・押せるか・対象の要否は fieldItemMenu の値だけで決める
   "rules/items": ["fieldItemMenu"],
-  // M4.5 UI-53 / TW-03: キャンプと酒場の候補・押せるか・対象の要否は campMenu の値だけで決める
-  "rules/camp": ["campMenu"],
+  // M4.5 UI-53 / TW-03: キャンプと酒場の候補・押せるか・対象の要否は campMenu の値だけで決める。キャンプの top の要約は campSummary
+  "rules/camp": ["campMenu", "campSummary"],
   // M4.5 UI-25 / DG-15: 地図のタップ移動の経路と、自動歩行を続けてよいかは core が決める
   "rules/pathfind": ["planRoute", "routeStepOk"],
 };

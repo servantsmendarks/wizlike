@@ -8,7 +8,7 @@
 // - 名前の枠（状態・呪文・道具・装備の人・並び順）はパーティ全員の 6 枠と [7] やめる。呪文・道具・装備の品・対象・鑑定の品は一覧（末尾がやめる）。
 // DOM はパネル（createCampView）だけで、モジュールのトップレベルでは DOM に触れない。結線は app が行う。
 import type { EquipSlot, Strings } from "../../core/data/index";
-import type { CampMenu, Command, FieldItemMenu } from "../../core/types";
+import type { CampMenu, CampSummary, Command, FieldItemMenu } from "../../core/types";
 import type { Action } from "../input/swipe";
 import type { Rect } from "../layout";
 import { createDetailView, SLOT_ORDER, type CharacterDetail } from "./detail";
@@ -49,12 +49,13 @@ export type CampEntry = { label: string; disabled: boolean; choice: CampChoice }
 export type CampEntries = { layout: "grid"; slots: (CampEntry | null)[] } | { layout: "list"; rows: CampEntry[] };
 /** 段を移る・閉じる・送る（送った後は after の段へ） */
 export type CampStep = { kind: "page"; page: CampPage } | { kind: "close" } | { kind: "send"; command: Command; after: CampPage };
-/** ビュー領域に出すもの。text は場所の見出し（キャンプ / 酒場。段の問いはヘッダーにだけ出し、パネルでは繰り返さない）、detail は UI-59 の状態（focusSlot はその枠を accent 色）、order は並び順の表 */
+/** ビュー領域に出すもの。text は場所の見出し（キャンプ / 酒場。段の問いはヘッダーにだけ出し、パネルでは繰り返さない。迷宮のキャンプの top だけ、見出しの下に campSummary の 4 行を lines で出す）、detail は UI-59 の状態（focusSlot はその枠を accent 色）、order は並び順の表 */
 export type CampPanel =
-  | { kind: "text"; title: string }
+  | { kind: "text"; title: string; lines?: string[] }
   | { kind: "detail"; memberId: string; focusSlot: EquipSlot | null }
   | { kind: "order"; rows: { n: number; name: string; row: string; picked: boolean }[] };
-export type CampInput = { menu: CampMenu; items: FieldItemMenu | null };
+/** summary は core の campSummary（迷宮のキャンプだけ非 null。UI-53） */
+export type CampInput = { menu: CampMenu; items: FieldItemMenu | null; summary: CampSummary | null };
 
 /** campGrid の枠の数（4 列 × 2 段）。[7] がやめる / 戻る */
 export const CAMP_GRID_SLOTS = 8;
@@ -348,7 +349,19 @@ export function campPanel(page: CampPage, m: CampInput, strings: Strings): CampP
       })),
     };
   }
-  return { kind: "text", title: s(strings, m.menu.place === "town" ? "town.menu.tavern" : "dungeon.menu.camp") };
+  const title = s(strings, m.menu.place === "town" ? "town.menu.tavern" : "dungeon.menu.camp");
+  const sum = m.summary;
+  if (page.kind !== "top" || sum === null) return { kind: "text", title };
+  return {
+    kind: "text",
+    title,
+    lines: [
+      s(strings, "camp.summary.place", { dungeon: sum.dungeonName, floor: sum.floor }),
+      s(strings, "camp.summary.gold", { gold: sum.gold }),
+      s(strings, "camp.summary.ledger", { gold: sum.ledgerGold, items: sum.ledgerItems }),
+      s(strings, "camp.summary.return", { count: sum.returnItems }),
+    ],
+  };
 }
 
 /**
@@ -439,7 +452,7 @@ export const ORDER_COLUMNS = {
 
 /** 描くもの。detail は app が formatDetail で作った文字列（state の Character から）。order の label は番号と名前、row は前衛 / 後衛 */
 export type CampPanelView =
-  | { kind: "text"; title: string }
+  | { kind: "text"; title: string; lines?: string[] }
   | { kind: "detail"; detail: CharacterDetail; focusSlot: number | null }
   | { kind: "order"; lines: { label: string; row: string; picked: boolean }[] };
 
@@ -498,7 +511,7 @@ export function createCampView(rect: Rect): CampView {
         );
         return;
       }
-      el.replaceChildren(line(0, p.title, "camp-title", "var(--c-accent)"));
+      el.replaceChildren(line(0, p.title, "camp-title", "var(--c-accent)"), ...(p.lines ?? []).map((x, i) => line(i + 1, x, "camp-summary")));
     },
   };
 }

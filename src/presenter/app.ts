@@ -16,7 +16,7 @@ import type { GameData } from "../core/data/index";
 import { execute, createInitialState } from "../core/engine";
 import { battleMenu } from "../core/rules/combat";
 import { mapView, visibleCells } from "../core/rules/dungeon";
-import { campMenu } from "../core/rules/camp";
+import { campMenu, campSummary } from "../core/rules/camp";
 import { planRoute, routeStepOk } from "../core/rules/pathfind";
 import { fieldItemMenu } from "../core/rules/items";
 import { townMenu } from "../core/rules/town";
@@ -461,11 +461,11 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     c.setMode("dpad");
   };
 
-  /** キャンプの値（campMenu と、迷宮なら fieldItemMenu）。キャンプを開けない状態なら null */
+  /** キャンプの値（campMenu と、迷宮なら fieldItemMenu・campSummary）。キャンプを開けない状態なら null */
   const campInput = (): CampInput | null => {
     const menu = campMenu(state, data);
     if (menu === null) return null;
-    return { menu, items: fieldItemMenu(state, data) };
+    return { menu, items: fieldItemMenu(state, data), summary: campSummary(state, data) };
   };
 
   /**
