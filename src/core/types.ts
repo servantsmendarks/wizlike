@@ -563,6 +563,20 @@ export type CampMenu = {
   unidentified: CampIdentifyItem[];
 };
 
+/**
+ * UI-53: キャンプの top のパネルの要約。rules/camp.ts の campSummary(state, data)。迷宮のキャンプ（campPlace dungeon）のときだけ非 null。
+ * gold は state.gold（台帳の金を含む）。ledgerItems / ledgerGold は潜行台帳（DG-40）。
+ * returnItems は life を問わずパーティ全員の inventory にある、効果 return の消耗品の個数（装備は数えない）。
+ */
+export type CampSummary = {
+  dungeonName: string;
+  floor: number;
+  gold: number;
+  ledgerItems: number;
+  ledgerGold: number;
+  returnItems: number;
+};
+
 /** strings.json のキーと埋め込み値。表示層は formatMessage(strings[key], params) で出す */
 export type TextRef = { key: string; params?: Record<string, string | number> };
 

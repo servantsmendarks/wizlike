@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest";
 import type { GameData } from "../src/core/data";
 import { execute } from "../src/core/engine";
 import { cloneRng, createRng, randInt, rollDice } from "../src/core/rng";
-import { campMenu, checkCast, checkEquip, checkUnequip } from "../src/core/rules/camp";
+import { campMenu, campSummary, checkCast, checkEquip, checkUnequip } from "../src/core/rules/camp";
 import { frontLineIds } from "../src/core/rules/combat-calc";
 import { resurrectRate } from "../src/core/rules/town";
 import { cloneState, createItemInstance } from "../src/core/state";
@@ -486,5 +486,30 @@ describe("D2 キャンプのコマンドの形", () => {
     { type: "party.reorder", order: ["c2", "c1", "c3", "c4", "c5", "c6"] },
   ])("D2 title では wrong screen: $type", (cmd) => {
     expectRejected(createInitialState(1, data), cmd, "wrong screen");
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("UI-53/DG-40 campSummary", () => {
+  test("UI-53/DG-40 迷宮名と階・所持金・台帳の件数と金額・帰還の糸のパーティ全体の数（死者の分も数え、他の消耗品は数えない）", () => {
+    const base = inDungeon();
+    const a = give(base, "c1", "return_thread");
+    const b = give(a.s, "c1", "herb");
+    const s = b.s;
+    s.gold = 123;
+    s.dive!.floor = 2;
+    s.dive!.ledger = { items: [a.id, b.id], gold: 45 };
+    member(s, "c1").life = "dead";
+    member(s, "c1").hp = 0;
+    // 帰還の糸: c5 の初期の 1 本（config の初期装備）+ c1 に足した 1 本 = 2
+    expect(campSummary(s, data)).toEqual({ dungeonName: "試しの坑道", floor: 2, gold: 123, ledgerItems: 2, ledgerGold: 45, returnItems: 2 });
+  });
+
+  test("UI-53 街・戦闘中・保留中・title では null", () => {
+    expect(campSummary(inTown(), data)).toBeNull();
+    expect(campSummary(battleOf(inDungeon()), data)).toBeNull();
+    expect(campSummary(pending(inDungeon()), data)).toBeNull();
+    expect(campSummary(createInitialState(1, data), data)).toBeNull();
   });
 });

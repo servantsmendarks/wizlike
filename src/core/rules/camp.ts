@@ -1,14 +1,15 @@
 // キャンプと酒場のコマンド（MG-44 dungeon.cast、CH-03 party.reorder、CH-76 party.equip / party.unequip、CH-77 party.identify）と、
-// 表示層向けの問い合わせ campMenu（UI-53 / TW-03）。
+// 表示層向けの問い合わせ campMenu（UI-53 / TW-03）・campSummary（UI-53）。
 // 受け付ける場所は campPlace が決める（街、または迷宮の戦闘外かつ保留なし。dungeon.cast だけは迷宮のみ）。
 // 乱数を使うのは dungeon.cast の heal（対象ごとに effect.dice を 1 回）と resurrect（randInt(1, 100) を 1 回）だけ。
 // town.ts からはこのファイルを import しない（循環を作らない）。
 import type { EquipItem, EquipSlot, GameData, Item, Spell } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
-import { classOf, itemDisplayName, itemOf, memberById, spellOf } from "../state";
+import { classOf, dungeonOf, itemDisplayName, itemOf, memberById, spellOf } from "../state";
 import type {
   CampEquipCandidate,
   CampMenu,
+  CampSummary,
   CampPlace,
   CampSpellView,
   Character,
@@ -368,5 +369,32 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
         return [{ instanceId: id, ownerId: c.id, ownerName: c.name, name: itemDisplayName(state, data, id) }];
       }),
     ),
+  };
+}
+
+/**
+ * UI-53: キャンプの top のパネルの要約。迷宮のキャンプ（campPlace dungeon）のときだけ非 null。
+ * 帰還の品は life を問わずパーティ全員の inventory の、効果 return の消耗品の個数（未鑑定も数える。装備は数えない）。
+ */
+export function campSummary(state: GameState, data: GameData): CampSummary | null {
+  if (campPlace(state) !== "dungeon") return null;
+  const dive = state.dive;
+  if (dive === null) return null;
+  let returnItems = 0;
+  for (const ch of state.party) {
+    for (const id of ch.inventory) {
+      const inst = state.items[id];
+      if (inst === undefined) continue;
+      const item = itemOf(data, inst.itemId);
+      if (item.type === "consumable" && item.effect.type === "return") returnItems++;
+    }
+  }
+  return {
+    dungeonName: dungeonOf(data, dive.dungeonId).name,
+    floor: dive.floor,
+    gold: state.gold,
+    ledgerItems: dive.ledger.items.length,
+    ledgerGold: dive.ledger.gold,
+    returnItems,
   };
 }
