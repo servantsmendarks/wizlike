@@ -48,6 +48,15 @@ const KEY_TABLE: Readonly<Record<string, Action>> = {
   ArrowLeft: "left",
   ArrowRight: "right",
   ArrowDown: "around",
+  // WASD は矢印キーの別名（W 前進・A 左・D 右・S 反転）。大文字（CapsLock・Shift）でも効く
+  w: "forward",
+  W: "forward",
+  a: "left",
+  A: "left",
+  d: "right",
+  D: "right",
+  s: "around",
+  S: "around",
   Enter: "confirm",
   " ": "confirm",
   Escape: "back",
@@ -56,11 +65,27 @@ const KEY_TABLE: Readonly<Record<string, Action>> = {
   F2: "debug",
 };
 
-/** UI-33: キー → Action。押しっぱなしの自動リピートと、入力欄の上のキーは null */
-export function keyToAction(key: string, repeat: boolean, onInput: boolean): Action | null {
+/** UI-33: key で決まらないときに見る KeyboardEvent.code（日本語 IME がオンだと key が "Process" やかなになるため）。WASD だけ */
+const CODE_TABLE: Readonly<Record<string, Action>> = {
+  KeyW: "forward",
+  KeyA: "left",
+  KeyD: "right",
+  KeyS: "around",
+};
+
+const has = (t: Readonly<Record<string, Action>>, k: string): boolean => Object.prototype.hasOwnProperty.call(t, k);
+
+/**
+ * UI-33: キー → Action。押しっぱなしの自動リピートと、入力欄の上のキーは null。
+ * key が表に無く、印字できる ASCII 1 文字でもない（"Process"・"Unidentified"・かななど）ときだけ code を見る。
+ * ASCII の文字は key で決める（配列の違うキーボードで別の文字のキーが WASD の位置にあっても、その文字として扱う）
+ */
+export function keyToAction(key: string, repeat: boolean, onInput: boolean, code = ""): Action | null {
   if (repeat || onInput) return null;
   if (/^[1-9]$/.test(key)) return { menu: Number(key) - 1 };
-  return Object.prototype.hasOwnProperty.call(KEY_TABLE, key) ? (KEY_TABLE[key] ?? null) : null;
+  if (has(KEY_TABLE, key)) return KEY_TABLE[key] ?? null;
+  if (/^[\x20-\x7e]$/.test(key)) return null;
+  return has(CODE_TABLE, code) ? (CODE_TABLE[code] ?? null) : null;
 }
 
 /**
@@ -76,7 +101,7 @@ export function canRepeat(events: readonly GameEvent[], pending: PendingChoice |
 /**
  * UI-33 / UI-54: 戦闘中のキー（Action）→ 選ぶもの。grid はパーティの選択・メンバーの枠、list は呪文・道具の一覧、
  * target は対象の一覧、autoStop はオート中の「オート解除」だけの画面。数字 n は n−1 番目、Enter は 0 番目、Esc は戻る。
- * target では ↑ が "up"、↓ が "down"（注目を動かす）、Enter が "focused"（注目している項目を選ぶ）。
+ * target では ↑（W）が "up"、↓（S）が "down"（注目を動かす）、Enter が "focused"（注目している項目を選ぶ）。
  * autoStop では Esc / Enter / 1 が "stop"。それ以外の矢印・地図・debug などは null（呼び出し側が別に扱う）
  */
 export function battleKeyChoice(
@@ -198,16 +223,16 @@ export function attachKeyboard(o: KeyboardOptions): () => void {
     // フォーカス中のボタンの Enter は既定動作（click）に任せる。変換も preventDefault もしない
     if (e.key === "Enter" && isButton(e.target)) return;
     const onInput = isTextInput(e.target);
-    const base = keyToAction(e.key, false, onInput);
+    const base = keyToAction(e.key, false, onInput, e.code);
     if (base === null) return;
     e.preventDefault();
-    if (keyToAction(e.key, e.repeat, onInput) === null) return;
+    if (keyToAction(e.key, e.repeat, onInput, e.code) === null) return;
     if (!held.some((h) => sameAction(h, base))) held.push(base);
     o.onAction(base);
   };
 
   const keyup = (e: KeyboardEvent): void => {
-    const a = keyToAction(e.key, false, false);
+    const a = keyToAction(e.key, false, false, e.code);
     if (a === null) return;
     const i = held.findIndex((h) => sameAction(h, a));
     if (i < 0) return;

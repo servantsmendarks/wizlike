@@ -184,9 +184,66 @@ describe("連打の可否とキーボード", () => {
       expect(keyToAction(k, true, false), `${k} repeat`).toBeNull();
       expect(keyToAction(k, false, true), `${k} on input`).toBeNull();
     }
-    for (const k of ["0", "a", "x", "Spacebar", "Tab", "F1", "10", "toString", "constructor", ""]) {
+    for (const k of ["0", "q", "x", "Spacebar", "Tab", "F1", "10", "toString", "constructor", ""]) {
       expect(keyToAction(k, false, false), k).toBeNull();
     }
+  });
+
+  test("UI-33 WASD は矢印キーの別名（W 前進・A 左・D 右・S 反転）。大文字でも効き、repeat と input 上は null", () => {
+    const table: [string, Action, string][] = [
+      ["w", "forward", "ArrowUp"],
+      ["W", "forward", "ArrowUp"],
+      ["a", "left", "ArrowLeft"],
+      ["A", "left", "ArrowLeft"],
+      ["d", "right", "ArrowRight"],
+      ["D", "right", "ArrowRight"],
+      ["s", "around", "ArrowDown"],
+      ["S", "around", "ArrowDown"],
+    ];
+    for (const [k, a, arrow] of table) {
+      expect(keyToAction(k, false, false), k).toEqual(a);
+      expect(keyToAction(k, false, false), `${k} = ${arrow}`).toEqual(keyToAction(arrow, false, false));
+      expect(keyToAction(k, true, false), `${k} repeat`).toBeNull();
+      expect(keyToAction(k, false, true), `${k} on input`).toBeNull();
+    }
+  });
+
+  test("UI-33 key で決まらない（IME の Process・Unidentified・かな）ときは code の KeyW/KeyA/KeyS/KeyD で決める", () => {
+    const table: [string, Action][] = [
+      ["KeyW", "forward"],
+      ["KeyA", "left"],
+      ["KeyD", "right"],
+      ["KeyS", "around"],
+    ];
+    for (const [code, a] of table) {
+      for (const key of ["Process", "Unidentified", "て"]) {
+        expect(keyToAction(key, false, false, code), `${key} ${code}`).toEqual(a);
+        expect(keyToAction(key, true, false, code), `${key} ${code} repeat`).toBeNull();
+        expect(keyToAction(key, false, true, code), `${key} ${code} on input`).toBeNull();
+      }
+    }
+    // WASD 以外の code は見ない。既存のキーは key で決まる（code に引きずられない）
+    expect(keyToAction("Process", false, false, "KeyM")).toBeNull();
+    expect(keyToAction("Process", false, false, "Digit1")).toBeNull();
+    expect(keyToAction("Process", false, false, "")).toBeNull();
+    expect(keyToAction("Process", false, false)).toBeNull();
+    expect(keyToAction("1", false, false, "KeyW")).toEqual({ menu: 0 });
+    expect(keyToAction("Enter", false, false, "KeyS")).toBe("confirm");
+    expect(keyToAction("m", false, false, "KeyW")).toBe("map");
+    // ASCII の文字は key で決める（別配列で WASD の位置にある別の文字は WASD にしない）
+    expect(keyToAction("z", false, false, "KeyW")).toBeNull();
+    expect(keyToAction("q", false, false, "KeyA")).toBeNull();
+  });
+
+  test("UI-33/UI-54 戦闘の対象の一覧では W が up、S が down（矢印キーと同じ）。A・D は null", () => {
+    expect(battleKeyChoice(keyToAction("w", false, false)!, "target")).toBe("up");
+    expect(battleKeyChoice(keyToAction("W", false, false)!, "target")).toBe("up");
+    expect(battleKeyChoice(keyToAction("s", false, false)!, "target")).toBe("down");
+    expect(battleKeyChoice(keyToAction("S", false, false)!, "target")).toBe("down");
+    expect(battleKeyChoice(keyToAction("Process", false, false, "KeyW")!, "target")).toBe("up");
+    expect(battleKeyChoice(keyToAction("Process", false, false, "KeyS")!, "target")).toBe("down");
+    expect(battleKeyChoice(keyToAction("a", false, false)!, "target")).toBeNull();
+    expect(battleKeyChoice(keyToAction("d", false, false)!, "target")).toBeNull();
   });
 });
 
@@ -336,10 +393,30 @@ describe("attachKeyboard", () => {
     const { out, key } = setup();
     expect(key("keydown", "ArrowUp")).toBe(true);
     expect(key("keydown", "ArrowUp", true)).toBe(true);
-    expect(key("keydown", "a")).toBe(false);
+    expect(key("keydown", "q")).toBe(false);
     expect(key("keydown", "1", false, { tagName: "input" })).toBe(false);
     key("keyup", "ArrowUp");
     expect(out).toEqual(['down "forward"', 'up "forward"']);
+  });
+
+  test("UI-33 WASD は矢印キーと同じに押下・離しを送る。IME で key が Process のときは code で決まり、入力欄の上と自動リピートは発火しない", () => {
+    const { win, out, key } = setup();
+    const codeKey = (type: string, k: string, code: string, repeat = false, target: object | null = null) => {
+      const ev = { key: k, code, repeat, target, prevented: false, preventDefault() { this.prevented = true; } };
+      win.emit(type, ev);
+      return ev.prevented;
+    };
+    expect(key("keydown", "w")).toBe(true);
+    expect(key("keydown", "w", true)).toBe(true);
+    key("keyup", "w");
+    expect(key("keydown", "D")).toBe(true);
+    key("keyup", "D");
+    expect(codeKey("keydown", "Process", "KeyA")).toBe(true);
+    expect(codeKey("keydown", "Process", "KeyA", true)).toBe(true);
+    codeKey("keyup", "a", "KeyA");
+    expect(codeKey("keydown", "Process", "KeyS", false, { tagName: "INPUT" })).toBe(false);
+    expect(key("keydown", "s", false, { tagName: "INPUT" })).toBe(false);
+    expect(out).toEqual(['down "forward"', 'up "forward"', 'down "right"', 'up "right"', 'down "left"', 'up "left"']);
   });
 
   test("UI-33 フォーカス中のボタン（button / role=button）の Enter は変換せず、preventDefault もしない（既定の click に任せる）。ボタン以外の Enter は confirm", () => {
