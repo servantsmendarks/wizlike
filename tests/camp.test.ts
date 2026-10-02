@@ -506,6 +506,12 @@ describe("UI-53/DG-40 campSummary", () => {
     expect(campSummary(s, data)).toEqual({ dungeonName: "試しの坑道", floor: 2, gold: 123, ledgerItems: 2, ledgerGold: 45, returnItems: 2 });
   });
 
+  test("UI-53/DG-40 未鑑定の帰還の糸も数える", () => {
+    // c5 の初期の 1 本（鑑定済み）+ c2 に足した未鑑定の 1 本 = 2
+    const u = give(inDungeon(), "c2", "return_thread", false);
+    expect(campSummary(u.s, data)!.returnItems).toBe(2);
+  });
+
   test("UI-53 街・戦闘中・保留中・title では null", () => {
     expect(campSummary(inTown(), data)).toBeNull();
     expect(campSummary(battleOf(inDungeon()), data)).toBeNull();
