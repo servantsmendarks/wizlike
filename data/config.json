@@ -48,7 +48,7 @@
       { "id": "good", "name": "個室", "cost": 60, "hpRatio": 1.0 }
     ]
   },
-  "events": { "impulseThreshold": 8, "stopSanGain": 3 },
+  "events": { "impulseThreshold": 8, "stopSanGain": 3, "confusedLureWeight": 2 },
   "save": { "maxGames": 5, "schemaVersion": 1 },
   "input": { "swipeThresholdPx": 28, "holdRepeatMs": 250, "edgeDeadZonePx": 12 },
   "ui": {

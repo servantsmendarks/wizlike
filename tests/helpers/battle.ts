@@ -49,14 +49,15 @@ export function withBattle(state: GameState, groups: GroupSpec[], opts: BattleOp
   return s;
 }
 
-/** loadFreshData の複製に config.combat / config.san の上書きを当て、mut でさらに書き換えたもの */
+/** loadFreshData の複製に config.combat / config.san / config.events の上書きを当て、mut でさらに書き換えたもの */
 export function dataWith(
-  patch: { combat?: Partial<Config["combat"]>; san?: Partial<Config["san"]> } = {},
+  patch: { combat?: Partial<Config["combat"]>; san?: Partial<Config["san"]>; events?: Partial<Config["events"]> } = {},
   mut?: (d: GameData) => void,
 ): GameData {
   const d = loadFreshData();
   Object.assign(d.config.combat, patch.combat ?? {});
   Object.assign(d.config.san, patch.san ?? {});
+  Object.assign(d.config.events, patch.events ?? {});
   mut?.(d);
   return d;
 }

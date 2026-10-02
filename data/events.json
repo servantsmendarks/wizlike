@@ -15,8 +15,8 @@
         "effects": [ { "type": "san", "target": "party", "value": -5 }, { "type": "damage", "target": "actor", "dice": "1d6" } ] }
     ],
     "choices": [
-      { "id": "examine", "label": "調べる", "text": "event.glowing_tablet.examine", "effects": [ { "type": "nothing" } ] },
-      { "id": "ignore", "label": "無視する", "text": "event.common.ignore", "effects": [ { "type": "nothing" } ] }
+      { "id": "examine", "label": "調べる", "labelKey": "event.glowing_tablet.choice.examine", "text": "event.glowing_tablet.examine", "effects": [ { "type": "nothing" } ] },
+      { "id": "ignore", "label": "無視する", "labelKey": "event.glowing_tablet.choice.ignore", "text": "event.common.ignore", "effects": [ { "type": "nothing" } ] }
     ]
   },
   {
@@ -33,8 +33,8 @@
         "effects": [ { "type": "damage", "target": "actor", "dice": "2d6" }, { "type": "san", "target": "actor", "value": -3 } ] }
     ],
     "choices": [
-      { "id": "search", "label": "慎重に探る", "text": "event.abandoned_sack.search", "effects": [ { "type": "gold", "dice": "2d10" } ] },
-      { "id": "leave", "label": "放っておく", "text": "event.common.ignore", "effects": [ { "type": "nothing" } ] }
+      { "id": "search", "label": "慎重に探る", "labelKey": "event.abandoned_sack.choice.search", "text": "event.abandoned_sack.search", "effects": [ { "type": "gold", "dice": "2d10" } ] },
+      { "id": "leave", "label": "放っておく", "labelKey": "event.abandoned_sack.choice.leave", "text": "event.common.ignore", "effects": [ { "type": "nothing" } ] }
     ]
   },
   {
@@ -48,8 +48,12 @@
         "effects": [ { "type": "consumeItem", "itemId": "herb", "target": "actor", "optional": true }, { "type": "revealStairs" } ] }
     ],
     "choices": [
-      { "id": "help", "label": "薬草を渡す", "text": "event.wounded_adventurer.good", "effects": [ { "type": "consumeItem", "itemId": "herb", "target": "party" }, { "type": "revealStairs" } ] },
-      { "id": "abandon", "label": "見捨てる", "text": "event.wounded_adventurer.abandon", "effects": [ { "type": "san", "target": "party", "value": -2 } ] }
+      { "id": "help", "label": "薬草を渡す", "labelKey": "event.wounded_adventurer.choice.help",
+        "text": "event.wounded_adventurer.help",
+        "effects": [ { "type": "consumeItem", "itemId": "herb", "target": "party" },
+                     { "type": "message", "key": "event.wounded_adventurer.good" },
+                     { "type": "revealStairs" } ] },
+      { "id": "abandon", "label": "見捨てる", "labelKey": "event.wounded_adventurer.choice.abandon", "text": "event.wounded_adventurer.abandon", "effects": [ { "type": "san", "target": "party", "value": -2 } ] }
     ]
   }
 ]

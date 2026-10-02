@@ -141,6 +141,7 @@ export function mirrorWipeRolls(m: RngState, unequipped: number, d: GameData = d
  * - state.items の各実体は、party の equipment / inventory からちょうど 1 回参照され、参照先はすべて実在する
  * - dive が非 null なら潜行台帳の品は所持品の部分集合
  * - screen town ⇔ townVisit 非 null、screen battle ⇔ battle 非 null、dive null ⇔ screen が title / town
+ * - screen event ⇔ pendingChoice の kind が event（M5。A4）
  * - gold は 0 以上の整数、各人の levelHistory.length === level − 1
  * - JSON 往復で変わらない（CLAUDE.md §3-11）
  */
@@ -159,6 +160,7 @@ export function expectStateInvariants(state: GameState): void {
   }
   expect(state.screen === "town", "screen town ⇔ townVisit").toBe(state.townVisit !== null);
   expect(state.screen === "battle", "screen battle ⇔ battle").toBe(state.battle !== null);
+  expect(state.screen === "event", "screen event ⇔ pendingChoice kind event").toBe(state.pendingChoice?.kind === "event");
   expect(state.dive === null, "dive null ⇔ screen title / town").toBe(state.screen === "title" || state.screen === "town");
   expect(Number.isInteger(state.gold) && state.gold >= 0, `gold ${state.gold}`).toBe(true);
   for (const ch of state.party) expect(ch.levelHistory, `levelHistory of ${ch.id}`).toHaveLength(ch.level - 1);

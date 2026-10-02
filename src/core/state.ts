@@ -1,6 +1,6 @@
 // GameState の複製、data の id 引き、アイテム実体の作成と削除、RuleContext の作成。
 // ルール関数すべてが使う補助。見つからない id は Error（起動時に検証済みなので、来たらバグ）。
-import type { ClassDef, DungeonDef, GameData, Item, Monster, Personality, PersonalityId, Spell } from "./data/index";
+import type { ClassDef, DungeonDef, EventDef, GameData, Item, Monster, Personality, PersonalityId, Spell } from "./data/index";
 import { EQUIP_SLOTS } from "./data/index";
 import type { Character, GameState, RuleContext } from "./types";
 
@@ -42,6 +42,12 @@ export function dungeonOf(data: GameData, id: string): DungeonDef {
   const d = data.dungeons.find((x) => x.id === id);
   if (d === undefined) throw new Error(`unknown dungeon id: ${id}`);
   return d;
+}
+
+export function eventOf(data: GameData, id: string): EventDef {
+  const e = data.events.find((x) => x.id === id);
+  if (e === undefined) throw new Error(`unknown event id: ${id}`);
+  return e;
 }
 
 /** null（リーダー）→ null。未知の id → Error。 */

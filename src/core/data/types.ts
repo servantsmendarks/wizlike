@@ -151,7 +151,7 @@ export type Config = {
     uncurseCost: number;
   };
   town: { innRanks: InnRank[] };
-  events: { impulseThreshold: number; stopSanGain: number };
+  events: { impulseThreshold: number; stopSanGain: number; confusedLureWeight: number };
   save: { maxGames: number; schemaVersion: number };
   input: { swipeThresholdPx: number; holdRepeatMs: number; edgeDeadZonePx: number };
   ui: {
@@ -424,7 +424,10 @@ export type ImpulseOutcome = {
 
 export type EventChoice = {
   id: string;
+  /** データの説明（表示には使わない。A9） */
   label: string;
+  /** strings.json のキー。PendingChoice の labelKey に入れる。規約 event.<eventId>.choice.<choiceId>（A9） */
+  labelKey: string;
   /** strings.json のキー */
   text: string;
   effects: EventEffect[];

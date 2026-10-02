@@ -9,27 +9,31 @@
 ## 2. 行動者の決定（衝動判定）
 
 - EV-10 対象はリーダーを除く、行動可能（CH-44 の逆）なメンバー。
-- EV-11 各メンバーの `score = Σ_tag personality.lure[tag] × event.lure[tag] + (stats[event.stat] − 10) + 1d6`。`event.stat` はイベントが指定する能力値（先に触るなら `agi`、気づくなら `iq`）。
+- EV-11 各メンバーの `score = Σ_tag personality.lure[tag] × event.lure[tag] + (stats[event.stat] − 10) + 1d6`。`event.stat` はイベントが指定する能力値（先に触るなら `agi`、気づくなら `iq`）。誘いの積 Σ_tag personality.lure[tag] × event.lure[tag] が 0 の者は衝動判定に乗らない（1d6 も振らない。A2、ユーザー決定）。1d6 は対象者を並び順に 1 人 1 回振る（M5）。
 - EV-12 `score ≥ config.events.impulseThreshold`（8）【仮】のメンバーのうち最大の者が行動者。同点は `agi` が高い方、それも同じなら並び順が前の方。
 - EV-13 誰も閾値に達しなければ「衝動なし」。`impulse` なら「何も起きない」の結果、`mixed` なら選択型として続行。
-- EV-14 普通 `normal` は `lure` がすべて 0 で、衝動しない。ただし SAN が「錯乱」（CH-53、25% 未満）のメンバーは、性格に関わらずランダムな 1 タグに重み 2 を持つものとして計算する（普通も暴走する）。
+- EV-14 普通 `normal` は `lure` がすべて 0 で、衝動しない。ただし SAN が「錯乱」（CH-53、25% 未満）のメンバーは、性格に関わらずランダムな 1 タグに重み `config.events.confusedLureWeight`（2）【仮】を持つものとして計算する（普通も暴走する）。この重みは性格の `lure` を置き換える（加算しない）。タグはその者の 1d6 の前に randInt(0, 3) で `LURE_TAGS`（宝・未知・危険・弱者）の順から選び、積が 0 なら 1d6 は振らない（M5）。
 - EV-15 判定のダイス（1d6）は表示しない。制止判定（EV-20）の 1d10 は表示する【仮】。
 
 ## 3. 制止判定
 
-- EV-20 行動者が決まり、行動者以外に `canStop: true`（慎重）の行動可能なメンバーがいて、イベントが `stopCheck: true` なら制止判定を行う。制止者は該当者のうち `iq` が最も高い者。
-- EV-21 `制止者の iq + 1d10 ≥ 行動者の agi + 1d10` なら制止成功。
-- EV-22 成功: 衝動は不発。制止者と行動者の SAN +`config.events.stopSanGain`（3）【仮】。`mixed` なら選択型として続行、`impulse` なら「何も起きない」。
-- EV-23 失敗: 衝動を実行する。結果が `good` なら行動者に `impulseBonus`（イベント定義。金額増や SAN 回復）を加える。結果が `bad` なら制止者の SAN +3（「言わんこっちゃない」）。
-- EV-24 制止者がいない場合はそのまま衝動を実行する（ボーナスや慰めはない）。
+- EV-20 行動者が決まり、行動者以外に `canStop: true`（慎重）の行動可能なメンバーがいて、イベントが `stopCheck: true` なら制止判定を行う。制止者は該当者のうち `iq` が最も高い者（同値なら並び順が前の者。M5）。
+- EV-21 `制止者の iq + 1d10 ≥ 行動者の agi + 1d10` なら制止成功（等しいときも成功）。1d10 は制止者 → 行動者の順に振り、判定の箱（UI-40）を 1 件 2 行（制止者の iq / 行動者の agi、基準は差）で出す（A3。M5）。
+- EV-22 成功: 衝動は不発。制止者と行動者の SAN +`config.events.stopSanGain`（3）【仮】（制止者 → 行動者の順）。`mixed` なら選択型として続行、`impulse` なら「何も起きない」。
+- EV-23 失敗: 衝動を実行する。結果が `good` なら行動者に `impulseBonus`（イベント定義。金額増や SAN 回復）を加える。結果が `bad` なら、制止者が生きていれば（life alive）、効果の後に「言わんこっちゃない」（`event.stop.told`）と制止者の SAN +`config.events.stopSanGain`（3。同じ値を使う。M5）。`neutral` はどちらも無い。
+- EV-24 制止者がいない場合（`stopCheck` が偽の場合も）はそのまま衝動を実行する（ボーナスや慰めはない）。`impulseBonus` と EV-23 の慰めは、制止者がいて失敗したときだけ（M5）。
 
 ## 4. 結果
 
 - EV-30 衝動の結果は `impulseOutcomes[]` から重み付きで 1 つ引く。各結果は `quality`（`good` / `bad` / `neutral`）と効果の列 `effects[]` を持つ。
-- EV-31 選択型の選択肢は `choices[]`。各選択肢は効果の列を持つ。`requires: "impulse"` の結果は衝動でしか出ない（「良い結果は衝動でしか取れない」分岐。EV-41 の方針）。
+- EV-31 選択型の選択肢は `choices[]`。各選択肢は効果の列と、表示のラベルの strings キー `labelKey`（規約 `event.<eventId>.choice.<choiceId>`。`label` はデータの説明として残し、表示には使わない。A9、M5）を持つ。選択肢の語り `text` を出してから効果を適用する。`requires: "impulse"` の結果は衝動でしか出ない（「良い結果は衝動でしか取れない」分岐。EV-41 の方針）。衝動の結果は常に衝動から出るので、処理では見ない印として扱う（M5）。
 - EV-32 効果の種類 `effects[].type`【仮】: `gold`（`dice`）、`item`（`itemId` または `table`）、`damage`（`dice`、対象 `actor` / `party`）、`san`（`value`、対象 `actor` / `party` / `others`）、`revealFloor`（この階のマップを全て探索済みにする）、`revealStairs`（この階の下り階段だけを探索済みにする）、`consumeItem`（`itemId`、対象 `actor` / `party`。`optional: true` なら持っていなくても続行、無ければ以降の効果は起きない）、`encounter`（`monster`, `count`）、`status`（`status`, 対象）、`message`（`key`）、`nothing`。
+  - プロトタイプ（M5）で実装するのは `gold` / `damage` / `san` / `revealFloor` / `revealStairs` / `consumeItem` / `message` / `nothing`。`item` / `encounter` / `status` はデータにあれば読み込み時の検証で起動を止める。
+  - 対象（効果ごとに、その時点で解決）: `actor` は行動者（生きていなければ対象なし）、`party` は生存者（life alive）全員、`others` は生存者から行動者を除いた者。選択肢の効果の行動者はリーダー。
+  - `gold`: 出目の合計（0 未満は 0）が正なら所持金と潜行台帳（DG-40）に足し、`event.gold`{gold}（強欲の財宝入手 CH-52）。0 なら何も出さない。`damage`: 対象を並び順に 1 回ずつ振り、落とし穴と同じ順（CH-45）。`san`: 符号付きの値、耐性なし（CH-54）。`revealFloor` / `revealStairs` は GameEvent を出さない（語りは結果の text）。`revealStairs` は下り階段が無い階（最下層）ではボスのセルを明かす（B9）。
+  - `consumeItem`: 対象の持ち物（`party` なら生存者の並び順）から最初の実体（鑑定を問わない）を消し（潜行台帳からも外れる）、`event.consume`{name, item}。見つからなければ、`optional` なら語らずに続け、そうでなければ `event.noItem`{item} を出して以降の効果を飛ばす。
 - EV-33 イベントの処理中は `screen: event`。結果の適用後、セルは通常セルになる（DG-22）。
-- EV-34 GM の語りはイベント定義の `text` キーで `strings.json` から引く。`{actor}` `{stopper}` を差し込む。
+- EV-34 GM の語りはイベント定義の `text` キーで `strings.json` から引く。`{actor}` `{stopper}` を差し込む。問い（`text.intro`）・選択肢の `labelKey` と `text` は差し込みを持たず（保留中の選択の問いとして params なしで出し直すため。E3）、`text.impulse` と衝動の結果の `text` は `{actor}` だけを差し込む（読み込み時に検証する。M5）。
 
 ## 5. 性格の恩恵と SAN 耐性
 

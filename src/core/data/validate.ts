@@ -149,6 +149,8 @@ type Index = {
   events: Map<string, Obj>;
   dungeons: Map<string, Obj>;
   strings: Set<string>;
+  /** strings.json の値（EV-34 / E3 の差し込みの検査に使う） */
+  stringText: Map<string, string>;
   partySize: number | undefined;
   slotsPerCharacter: number | undefined;
   maxEnemyGroups: number | undefined;
@@ -165,8 +167,13 @@ function byId(v: unknown): Map<string, Obj> {
 
 function buildIndex(raw: RawGameData): Index {
   const strings = new Set<string>();
+  const stringText = new Map<string, string>();
   if (isObj(raw.strings)) {
-    for (const [k, v] of Object.entries(raw.strings)) if (typeof v === "string") strings.add(k);
+    for (const [k, v] of Object.entries(raw.strings)) {
+      if (typeof v !== "string") continue;
+      strings.add(k);
+      stringText.set(k, v);
+    }
   }
   return {
     races: byId(raw.races),
@@ -177,6 +184,7 @@ function buildIndex(raw: RawGameData): Index {
     events: byId(raw.events),
     dungeons: byId(raw.dungeons),
     strings,
+    stringText,
     partySize: intOf(get(raw.config, "party", "size")),
     slotsPerCharacter: intOf(get(raw.config, "inventory", "slotsPerCharacter")),
     maxEnemyGroups: intOf(get(raw.config, "combat", "maxEnemyGroups")),
@@ -289,7 +297,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
     town: F({
       innRanks: L(F({ id: S, name: S, cost: I(NON_NEG), hpRatio: N(RATIO) }), 1), // TW-04【仮】。MP は全ランクで全回復（MG-02）
     }),
-    events: F({ impulseThreshold: I(), stopSanGain: I(NON_NEG) }),
+    events: F({ impulseThreshold: I(), stopSanGain: I(NON_NEG), confusedLureWeight: I({ min: 0, max: 3 }) }), // EV-14 の仮の重み【仮】
     save: F({ maxGames: I(POS_INT), schemaVersion: I(POS_INT) }),
     input: F({ swipeThresholdPx: I(POS_INT), holdRepeatMs: I(POS_INT), edgeDeadZonePx: I(NON_NEG) }),
     ui: F({
@@ -772,6 +780,9 @@ function validateDungeons(ctx: Ctx, v: unknown, ix: Index): void {
 
 // ---- events.json ----
 
+/** EV-32: プロトタイプで実装しない効果の種類（データにあれば検証で止める） */
+const EFFECTS_NOT_IMPLEMENTED: readonly string[] = ["item", "encounter", "status"];
+
 function validateEvents(ctx: Ctx, v: unknown, ix: Index): void {
   const itemRef: Field = (c, p, x) => {
     const s = str(c, p, x);
@@ -782,6 +793,16 @@ function validateEvents(ctx: Ctx, v: unknown, ix: Index): void {
     const s = str(c, p, x);
     strKey(c, p, s, ix);
     return s;
+  };
+  const placeholdersOf = (key: unknown): string[] =>
+    typeof key === "string" ? [...(ix.stringText.get(key) ?? "").matchAll(PLACEHOLDER_RE)].map((m) => m[0]) : [];
+  const noPlaceholder = (p: string, key: unknown): void => {
+    const ph = placeholdersOf(key);
+    if (ph.length > 0) report(ctx, p, `EV-34/E3: strings ${JSON.stringify(key)} must not have placeholders (found ${ph.join(" ")})`);
+  };
+  const actorOnly = (p: string, key: unknown): void => {
+    const bad = placeholdersOf(key).filter((x) => x !== "{actor}");
+    if (bad.length > 0) report(ctx, p, `EV-34: strings ${JSON.stringify(key)} may only use {actor} (found ${bad.join(" ")})`);
   };
   const count: Field = (c, p, x) => (typeof x === "number" ? int(c, p, x, POS_INT) : dice(c, p, x));
   const effectU = U({
@@ -808,6 +829,9 @@ function validateEvents(ctx: Ctx, v: unknown, ix: Index): void {
     const o = effectU(c, p, x);
     if (isObj(o) && o.type === "item" && (o.itemId === undefined) === (o.table === undefined))
       report(c, p, "EV-32: item effect needs exactly one of itemId or table");
+    // EV-32: プロトタイプ（M5）で実装しない効果はデータにあれば起動を止める（型と検査の定義は残す）
+    if (isObj(o) && typeof o.type === "string" && EFFECTS_NOT_IMPLEMENTED.includes(o.type))
+      report(c, p, `EV-32: effect type ${JSON.stringify(o.type)} is not implemented in the prototype (M5)`);
     return o;
   };
   const outcome = F({
@@ -818,7 +842,7 @@ function validateEvents(ctx: Ctx, v: unknown, ix: Index): void {
     requires: opt(E(["impulse"])), // EV-31
     impulseBonus: opt(L(effect)), // EV-23
   });
-  const choice = F({ id: S, label: S, text: strRef, effects: L(effect) });
+  const choice = F({ id: S, label: S, labelKey: strRef, text: strRef, effects: L(effect) }); // A9: labelKey は表示のキー、label は説明
   const a = L(
     F({
       id: S,
@@ -842,6 +866,15 @@ function validateEvents(ctx: Ctx, v: unknown, ix: Index): void {
       if ((e.kind === "choice" || e.kind === "mixed") && e.choices.length === 0)
         report(ctx, at(at("", i), "choices"), `EV-01: kind ${JSON.stringify(e.kind)} needs at least 1 choice`);
     }
+    // EV-34 / E3: 問い（intro）・選択肢のラベルと語りは params なしで出すので差し込みを持たない。衝動の語りは {actor} だけを差し込む
+    const ei = at("", i);
+    noPlaceholder(at(at(ei, "text"), "intro"), get(e, "text", "intro"));
+    actorOnly(at(at(ei, "text"), "impulse"), get(e, "text", "impulse"));
+    arrOf(e.choices).forEach((c, j) => {
+      noPlaceholder(at(at(at(ei, "choices"), j), "labelKey"), get(c, "labelKey"));
+      noPlaceholder(at(at(at(ei, "choices"), j), "text"), get(c, "text"));
+    });
+    arrOf(e.impulseOutcomes).forEach((o, j) => actorOnly(at(at(at(ei, "impulseOutcomes"), j), "text"), get(o, "text")));
     // EV-01: 衝動型・混合型は衝動判定をするので、衝動の結果が要る（選択型は空でよい）
     if ((e.kind === "impulse" || e.kind === "mixed") && Array.isArray(e.impulseOutcomes) && e.impulseOutcomes.length === 0)
       report(ctx, at(at("", i), "impulseOutcomes"), `EV-01: kind ${JSON.stringify(e.kind)} needs at least 1 impulse outcome`);

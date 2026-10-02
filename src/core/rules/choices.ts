@@ -1,6 +1,7 @@
-// 保留中の選択（E3）を立てる関数。types だけに依存する（dungeon.ts と combat.ts の両方から使う）。
+// 保留中の選択（E3）を立てる関数。types と data の型だけに依存する（dungeon.ts・combat.ts・events.ts から使う）。
 // 不変条件: pendingChoice を立てたら、同じ events に key === promptKey（params なし）の message を必ず出す
-// （リロード復帰では表示層が promptKey を出し直す。SV-50）。
+// （リロード復帰では表示層が promptKey を出し直す。SV-50）。イベントの選択（offerEventChoice）は intro を startEvent が先に出す。
+import type { EventDef } from "../data/index";
 import type { ChoiceOption, RuleContext } from "../types";
 
 function offer(ctx: RuleContext, kind: "stairs" | "teleporter" | "trap", promptKey: string, options: ChoiceOption[]): void {
@@ -35,4 +36,19 @@ export function offerTrap(ctx: RuleContext): void {
     { id: "retreat", labelKey: "dungeon.choice.retreat" },
     { id: "proceed", labelKey: "dungeon.choice.proceed" },
   ]);
+}
+
+/**
+ * EV-33 / A4: イベントの選択を待つ。screen を event にし、screen{event} を出してから pendingChoice{kind:"event"} を立てる。
+ * message は出さない（問いの intro は同じ execute の先頭で startEvent が出し済み。E3 の不変条件はそれで満たす）。
+ */
+export function offerEventChoice(ctx: RuleContext, def: EventDef): void {
+  ctx.state.screen = "event";
+  ctx.events.push({ kind: "screen", to: "event" });
+  ctx.state.pendingChoice = {
+    kind: "event",
+    promptKey: def.text.intro,
+    options: def.choices.map((c) => ({ id: c.id, labelKey: c.labelKey })),
+    eventId: def.id,
+  };
 }

@@ -174,16 +174,18 @@ export type Dive = {
 export type ChoiceOption = { id: string; labelKey: string };
 /**
  * 非 null の間は event.choose 以外のコマンドを rejected（"choice pending"）にする。
- * 階段・出口・テレポーター・罠の察知（DG-21）を kind で区別して同じ形で載せる。kind ごとに option id の意味が違う（id が重なってもよい）。
+ * 階段・出口・テレポーター・罠の察知（DG-21）・イベントの選択（EV-31）を kind で区別して同じ形で載せる。kind ごとに option id の意味が違う（id が重なってもよい）。
  * promptKey は確認文の strings キー（params なし。リロード復帰で表示層が出し直す）。
  * 不変条件: これを立てる execute は、同じ events の中に key === promptKey（params なし）の message を必ず出す。
  * option id: kind stairs は "descend" | "ascend" | "stay"（M2）と "exit"（DG-06 の 1 階の上り階段）、kind teleporter は "teleport" | "stay"（DG-32）、
- * kind trap は "retreat" | "proceed"（DG-21）
+ * kind trap は "retreat" | "proceed"（DG-21）、kind event は events[].choices[].id（EV-31）
  */
 export type PendingChoice =
   | { kind: "stairs" | "teleporter"; promptKey: string; options: ChoiceOption[] }
   /** DG-21: 罠の察知。options は retreat / proceed。戻り先は step(pos, opposite(facing)) で導くので欄は持たない */
-  | { kind: "trap"; promptKey: string; options: ChoiceOption[] };
+  | { kind: "trap"; promptKey: string; options: ChoiceOption[] }
+  /** EV-31/33: イベントの選択。screen === "event" と同値。promptKey は events[].text.intro。options の id は choices[].id */
+  | { kind: "event"; promptKey: string; options: ChoiceOption[]; eventId: string };
 
 // ===================== 街の来訪（TW-30〜32） =====================
 
@@ -241,7 +243,7 @@ export type EnemyUnit = {
 /** CB-03: 同じ種類の敵の集まり。groups の添字は戦闘中に詰めない（CB-42「添字が最小の生存グループ」）。鑑定済みかは bestiary だけが持つ */
 export type EnemyGroup = { monsterId: string; units: EnemyUnit[] };
 
-/** 遭遇の出どころ。逃走の可否は origin から導く（random だけ可。CB-02）。M5 で { kind: "event"; eventId: string } を足す */
+/** 遭遇の出どころ。逃走の可否は origin から導く（random だけ可。CB-02）。イベントの encounter 効果（EV-32）を実装するときに { kind: "event"; eventId: string } を足す */
 export type BattleOrigin =
   | { kind: "random"; inRoom: boolean } // CB-01。inRoom は遭遇したセルの roomId !== null（CB-51 の宝箱）
   | { kind: "boss" }; // DG-31

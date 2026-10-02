@@ -135,6 +135,15 @@ describe("data: config.json", () => {
     expect(issuesOf((r) => (r.config.san.randomDefendChance = 0))).toEqual([]);
     expect(issuesOf((r) => (r.config.san.randomDefendChance = 100))).toEqual([]);
   });
+  test("data: EV-14 events.confusedLureWeight は 0..3 の整数【仮】", () => {
+    expect(config.events.confusedLureWeight).toBe(2);
+    expectIssue((r) => (r.config.events.confusedLureWeight = 4), "config.json", "events.confusedLureWeight: expected integer in 0..3, got 4");
+    expectIssue((r) => (r.config.events.confusedLureWeight = -1), "config.json", "events.confusedLureWeight: expected integer in 0..3, got -1");
+    expectIssue((r) => (r.config.events.confusedLureWeight = 1.5), "config.json", "events.confusedLureWeight: expected integer");
+    expectIssue((r) => delete r.config.events.confusedLureWeight, "config.json", "events.confusedLureWeight: missing required field");
+    expect(issuesOf((r) => (r.config.events.confusedLureWeight = 0))).toEqual([]);
+    expect(issuesOf((r) => (r.config.events.confusedLureWeight = 3))).toEqual([]);
+  });
   test("data: CB-05 combat.identifyIqPerPoint は 0 以上の整数【仮】", () => {
     expectIssue((r) => (r.config.combat.identifyIqPerPoint = -1), "config.json", "combat.identifyIqPerPoint: expected integer >= 0, got -1");
     expectIssue((r) => (r.config.combat.identifyIqPerPoint = 0.5), "config.json", "combat.identifyIqPerPoint: expected integer");
@@ -547,8 +556,29 @@ describe("data: events.json", () => {
     const msg = "[0].choices[0].effects[0]: EV-32: item effect needs exactly one of itemId or table";
     expectIssue((r) => (r.events[0].choices[0].effects[0] = { type: "item", itemId: "herb", table: "t1" }), "events.json", msg);
     expectIssue((r) => (r.events[0].choices[0].effects[0] = { type: "item" }), "events.json", msg);
-    expect(issuesOf((r) => (r.events[0].choices[0].effects[0] = { type: "item", itemId: "herb" }))).toEqual([]);
-    expect(issuesOf((r) => (r.events[0].choices[0].effects[0] = { type: "item", table: "t1" }))).toEqual([]);
+    // 形が正しい item 効果でも、プロトタイプでは実装しないので「not implemented」の 1 件だけになる（EV-32 / M5）
+    const notImpl = `events.json: [0].choices[0].effects[0]: EV-32: effect type "item" is not implemented in the prototype (M5)`;
+    expect(issuesOf((r) => (r.events[0].choices[0].effects[0] = { type: "item", itemId: "herb" }))).toEqual([notImpl]);
+    expect(issuesOf((r) => (r.events[0].choices[0].effects[0] = { type: "item", table: "t1" }))).toEqual([notImpl]);
+  });
+  test("data: EV-32 item / encounter / status の効果は検証で止める（効果・impulseBonus・選択肢のどこでも）", () => {
+    const msg = (t: string) => `EV-32: effect type "${t}" is not implemented in the prototype (M5)`;
+    expectIssue((r) => (r.events[0].choices[0].effects[0] = { type: "encounter", monster: r.monsters[0].id, count: 1 }), "events.json", "[0].choices[0].effects[0]: " + msg("encounter"));
+    expectIssue((r) => (r.events[0].impulseOutcomes[0].effects[0] = { type: "status", status: "poison", target: "actor" }), "events.json", "[0].impulseOutcomes[0].effects[0]: " + msg("status"));
+    expectIssue((r) => (r.events[0].impulseOutcomes[0].impulseBonus[0] = { type: "item", itemId: "herb" }), "events.json", "[0].impulseOutcomes[0].impulseBonus[0]: " + msg("item"));
+  });
+  test("data: EV-31/A9 choices[].labelKey は必須で strings に実在（規約 event.<eventId>.choice.<choiceId>）", () => {
+    for (const e of events) for (const c of e.choices) expect(c.labelKey).toBe(`event.${e.id}.choice.${c.id}`);
+    expectIssue((r) => (r.events[0].choices[0].labelKey = "event.nope"), "events.json", `[0].choices[0].labelKey: unknown strings.json key "event.nope"`);
+    expectIssue((r) => delete r.events[1].choices[1].labelKey, "events.json", "[1].choices[1].labelKey: missing required field");
+  });
+  test("data: EV-34/E3 intro・labelKey・choice text に {…} が無い、impulse / outcome text は {actor} だけ", () => {
+    expectIssue((r) => (r.strings["event.glowing_tablet.intro"] = "{actor}が見た"), "events.json", "[0].text.intro: EV-34/E3");
+    expectIssue((r) => (r.strings["event.glowing_tablet.choice.examine"] = "{name}が調べる"), "events.json", "[0].choices[0].labelKey: EV-34/E3");
+    expectIssue((r) => (r.strings["event.glowing_tablet.examine"] = "{actor}は眺めた"), "events.json", "[0].choices[0].text: EV-34/E3");
+    expectIssue((r) => (r.strings["event.glowing_tablet.impulse"] = "{stopper}が見た"), "events.json", "[0].text.impulse: EV-34: strings");
+    expectIssue((r) => (r.strings["event.glowing_tablet.bad"] = "{actor}と{gold}"), "events.json", "[0].impulseOutcomes[2].text: EV-34: strings");
+    expect(issuesOf((r) => (r.strings["event.glowing_tablet.good"] = "{actor}の頭に流れ込んだ"))).toEqual([]);
   });
   test("data: EV-30 EV-31 衝動の結果", () => {
     expectIssue((r) => (r.events[0].impulseOutcomes[0].weight = 0), "events.json", "[0].impulseOutcomes[0].weight: expected integer >= 1");
