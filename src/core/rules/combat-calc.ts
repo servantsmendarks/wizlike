@@ -2,7 +2,7 @@
 // すべて純粋関数。乱数も RuleContext も使わない（乱数を使う手続きは rules/combat.ts）。
 import type { ClassDef, Config, ConsumableItem, GameData, Item, ItemEffect, Spell, SpellTarget, StatusId, WeaponItem } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
-import { itemOf, monsterOf } from "../state";
+import { itemOf, monsterOf, personalityOf } from "../state";
 import type { BattleState, Character, EnemyGroup, EnemyGroupView, EnemyUnit, GameState } from "../types";
 
 /** CH-44: 行動不能にする状態異常（毒は含まない） */
@@ -15,6 +15,11 @@ export function isIncapacitated(ch: Character): boolean {
 
 export function canAct(ch: Character): boolean {
   return !isIncapacitated(ch);
+}
+
+/** CB-11 / CB-22 / EV-42: 行動者本人の性格の恩恵（initiative / damage）。リーダー（personality null）は 0 */
+export function benefitOf(data: GameData, ch: Character, key: "initiative" | "damage"): number {
+  return personalityOf(data, ch.personality)?.benefits[key] ?? 0;
 }
 
 /** CB-53: 「睡眠だけ」で止まっている（alive・SAN>0・睡眠あり・麻痺と石化なし） */

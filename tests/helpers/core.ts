@@ -173,3 +173,11 @@ export function seedWithFirstD100(pred: (roll: number) => boolean): { seed: numb
   }
   throw new Error("no seed");
 }
+
+/** M5 の mut: 全性格の benefits.initiative / damage を 0 にする（CB-11 / CB-22 の恩恵を外して鏡や行動順を見る） */
+export function noBenefits(d: GameData): void {
+  for (const p of d.personalities) {
+    p.benefits.initiative = 0;
+    p.benefits.damage = 0;
+  }
+}

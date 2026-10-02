@@ -36,6 +36,7 @@ import {
   attackCount,
   battleItemUsable,
   battleSpellUsable,
+  benefitOf,
   canAct,
   canFleeOf,
   canStrike,
@@ -431,7 +432,7 @@ function runRound(ctx: RuleContext, who: { allies: boolean; enemies: boolean }):
   const entries: { actor: Actor; init: number }[] = [];
   for (const plan of plans) {
     const ch = requireMember(state, plan.memberId);
-    entries.push({ actor: { side: "ally", plan }, init: ch.stats.agi + rollDie(state.rng, 10) + 0 }); // 0 は M5 の initiative 恩恵
+    entries.push({ actor: { side: "ally", plan }, init: ch.stats.agi + rollDie(state.rng, 10) + benefitOf(data, ch, "initiative") }); // CB-11
   }
   if (who.enemies) {
     b.groups.forEach((grp, g) => {
@@ -529,7 +530,7 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan): void {
             ctx.events.push({ kind: "message", key: "battle.miss", params: { target } });
             return;
           }
-          const dmg = Math.max(1, rollDice(state.rng, dice).total + strBonus(ch.stats.str) + 0); // 0 は M5 の damage 恩恵
+          const dmg = Math.max(1, rollDice(state.rng, dice).total + strBonus(ch.stats.str) + benefitOf(data, ch, "damage")); // CB-22
           next = damageUnit(ctx, ga, u, dmg);
           ctx.events.push({ kind: "attack", actorId: ch.id, targetId, hit: true, damage: dmg });
           ctx.events.push({ kind: "message", key: "battle.hit", params: { target, damage: dmg } });

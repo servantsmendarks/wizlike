@@ -25,7 +25,7 @@ import {
   type BattleOpts,
   type GroupSpec,
 } from "./helpers/battle";
-import { data, expectKnownStringKeys } from "./helpers/core";
+import { data, expectKnownStringKeys, noBenefits } from "./helpers/core";
 
 const RESOLVE: Command = { type: "battle.resolve" };
 const DEF: BattleAction = { type: "defend" };
@@ -620,6 +620,33 @@ describe("行動順（CB-11）", () => {
     const r2 = exec(n, RESOLVE, d);
     expect(eventsOf(r2.events, "attack").map((e) => e.actorId)).toEqual(["e0-0"]);
   });
+
+  test("CB-11/EV-42 無鉄砲（キリ c3）の initiative は agi + 1d10 + 2。敵の init がキリの恩恵なしの値 +1 なら、恩恵ありはキリが先、noBenefits では敵が先", () => {
+    for (let seed = 1; seed <= 6; seed++) {
+      const s = setup([{ monsterId: "kobold", hps: [80] }], {
+        seed,
+        identified: ["kobold"],
+        patches: { c1: PARA, c2: PARA, c4: PARA, c5: PARA, c6: PARA },
+        inputs: { c3: atk(0) },
+      });
+      const m = cloneRng(s.rng);
+      const rK = rollDie(m, 10); // キリ
+      const rE = rollDie(m, 10); // コボルド
+      // 敵の init = agi + rE = (15 + rK) + 1（キリの恩恵なしの init より 1 大きく、恩恵込み 15 + rK + 2 より 1 小さい）
+      const enemyAgi = 15 + rK + 1 - rE;
+      const setAgi = (x: GameData) => (x.monsters.find((mm) => mm.id === "kobold")!.agi = enemyAgi);
+      const first = (d: GameData) => eventsOf(exec(s, RESOLVE, d).events, "attack")[0]!.actorId;
+      expect(first(dataWith({ combat: ALWAYS_HIT }, setAgi))).toBe("c3");
+      expect(
+        first(
+          dataWith({ combat: ALWAYS_HIT }, (x) => {
+            setAgi(x);
+            noBenefits(x);
+          }),
+        ),
+      ).toBe("e0-0");
+    }
+  });
 });
 
 describe("命中とダメージ（CB-21〜25）", () => {
@@ -659,6 +686,29 @@ describe("命中とダメージ（CB-21〜25）", () => {
       expect(mi.events).toContainEqual({ kind: "message", key: "battle.miss", params: { target: "大ネズミ" } });
       expect(mi.state.rng).toEqual(m);
     }
+  });
+
+  test("CB-22/EV-42 無鉄砲（キリ c3、短剣 1d4、力 8 で補正 −1）のダメージは 1d4 − 1 + 1、最低 1。noBenefits では 1d4 − 1（最低 1）。リーダーは +0（CB-21/22 のアルドの式のまま）", () => {
+    const seen = new Set<number>();
+    for (let seed = 1; seed <= 12; seed++) {
+      const s = setup([{ monsterId: "giant_rat", hps: [50], status: [["paralysis"]] }], {
+        seed,
+        identified: ["giant_rat"],
+        patches: { c1: PARA, c2: PARA, c4: PARA, c5: PARA, c6: PARA },
+        inputs: { c3: atk(0) },
+      });
+      const m = cloneRng(s.rng);
+      rolls(m, 1); // キリだけ（麻痺のネズミは振らない）
+      chance(m, 100);
+      const raw = rollDice(m, "1d4").total;
+      seen.add(raw);
+      const r = exec(s, RESOLVE, dataWith({ combat: ALWAYS_HIT }));
+      expect(r.state.rng).toEqual(m);
+      expect(eventsOf(r.events, "attack")).toEqual([{ kind: "attack", actorId: "c3", targetId: "e0-0", hit: true, damage: Math.max(1, raw - 1 + 1) }]);
+      const n = exec(s, RESOLVE, dataWith({ combat: ALWAYS_HIT }, noBenefits));
+      expect(eventsOf(n.events, "attack")[0]!.damage).toBe(Math.max(1, raw - 1));
+    }
+    expect(seen.has(1)).toBe(true); // 出目 1 で恩恵なしは最低 1 に切り上がる場合を含む
   });
 
   test("CB-23/25 戦士 Lv5 は 2 振り。1 振り目で先頭の個体を倒すと 2 振り目は次の個体、グループが全滅したら打ち切る（他のグループへ移らない）", () => {
