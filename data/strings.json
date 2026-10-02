@@ -373,6 +373,7 @@
   "debug.pointer.title": "ポインタの記録（古い順・20件）",
   "debug.pointer.empty": "記録なし",
   "debug.pointer.row": "{t} {type} {x},{y} {target}",
+  "debug.pointer.rowNoPos": "{t} {type} - {target}",
   "debug.pointer.pointerdown": "down",
   "debug.pointer.pointerup": "up",
   "debug.pointer.pointercancel": "cancel",

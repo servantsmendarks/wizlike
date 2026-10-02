@@ -5,13 +5,16 @@
 // - enabled() が偽（debug パネルを開いている間）に始まった押下は、その後の up / cancel / lost も記録しない
 //   （パネルを閉じるタップの pointerup の後に届く lostpointercapture が、閉じた後に 1 件だけ残らないように）。
 // - 各件は type、ステージの論理座標（整数に丸める）、now() の ms（整数）、対象の短い表し（describeTarget）。
+//   cancel / lost で clientX と clientY が両方 0 のときは座標を null にする（Chrome は cancel / lost に座標を渡さず 0,0 になり、
+//   換算すると -15,-32 のような意味の無い値になるため。行では debug.pointer.rowNoPos で「-」と出す）。
 // モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
 import { formatMessage } from "../views/message";
 
 export const POINTER_KINDS = ["pointerdown", "pointerup", "pointercancel", "lostpointercapture"] as const;
 export type PointerKind = (typeof POINTER_KINDS)[number];
-export type PointerEntry = { type: PointerKind; x: number; y: number; t: number; target: string };
+/** x / y は論理座標。cancel / lost で座標が渡されなかった（clientX と clientY が両方 0）ときは null */
+export type PointerEntry = { type: PointerKind; x: number | null; y: number | null; t: number; target: string };
 
 /** 記録の件数（ユーザー指示） */
 export const POINTER_LOG_MAX = 20;
@@ -62,9 +65,15 @@ export function describeTarget(t: TargetLike | null): string {
   return [...s].slice(0, POINTER_TARGET_MAX).join("");
 }
 
-/** パネルの 1 行（strings debug.pointer.row「{t} {type} {x},{y} {target}」。type は debug.pointer.{type} の短い名前） */
+/**
+ * パネルの 1 行（strings debug.pointer.row「{t} {type} {x},{y} {target}」。type は debug.pointer.{type} の短い名前）。
+ * 座標が null なら debug.pointer.rowNoPos「{t} {type} - {target}」
+ */
 export function formatPointerRow(e: PointerEntry, strings: Strings): string {
   const type = strings[`debug.pointer.${e.type}`] ?? e.type;
+  if (e.x === null || e.y === null) {
+    return formatMessage(strings["debug.pointer.rowNoPos"] ?? "debug.pointer.rowNoPos", { t: e.t, type, target: e.target });
+  }
   return formatMessage(strings["debug.pointer.row"] ?? "debug.pointer.row", { t: e.t, type, x: e.x, y: e.y, target: e.target });
 }
 
@@ -86,10 +95,11 @@ export function attachPointerLog(
     if (!o.enabled() || skipped === e.pointerId) return;
     const rect = stage.getBoundingClientRect();
     const sc = o.scale();
+    const noPos = (type === "pointercancel" || type === "lostpointercapture") && e.clientX === 0 && e.clientY === 0;
     o.log.push({
       type,
-      x: Math.round((e.clientX - rect.left) / sc),
-      y: Math.round((e.clientY - rect.top) / sc),
+      x: noPos ? null : Math.round((e.clientX - rect.left) / sc),
+      y: noPos ? null : Math.round((e.clientY - rect.top) / sc),
       t: Math.round(o.now()),
       target: describeTarget(e.target as unknown as TargetLike | null),
     });

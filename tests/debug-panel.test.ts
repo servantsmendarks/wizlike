@@ -266,6 +266,35 @@ describe("UI-57 ポインタの記録", () => {
     expect(stage.count()).toBe(0);
   });
 
+  test("UI-57 cancel / lost で clientX と clientY が両方 0（Chrome が座標を渡さない）なら座標は null で、行は「{t} {type} - {target}」。down / up の 0,0 と、片方だけ 0 の cancel は換算する", () => {
+    const stage = new FakeStage(10);
+    stage.top = 20;
+    const log = createPointerLog();
+    attachPointerLog(stage as unknown as HTMLElement, { log, scale: () => 2, now: () => 5, enabled: () => true });
+    const btn = node("BUTTON", { attrs: { "data-tap": "" }, text: "前進" });
+    const ev = (x: number, y: number) => ({ pointerId: 1, clientX: x, clientY: y, target: btn });
+    stage.emit("pointerdown", { type: "pointerdown", ...ev(0, 0) });
+    stage.emit("pointerup", { type: "pointerup", ...ev(0, 0) });
+    stage.emit("pointercancel", { type: "pointercancel", ...ev(0, 0) });
+    stage.emit("lostpointercapture", { type: "lostpointercapture", ...ev(0, 0) });
+    stage.emit("pointercancel", { type: "pointercancel", ...ev(0, 40) });
+    expect(log.entries().map((e) => [e.type, e.x, e.y])).toEqual([
+      ["pointerdown", -5, -10],
+      ["pointerup", -5, -10],
+      ["pointercancel", null, null],
+      ["lostpointercapture", null, null],
+      ["pointercancel", -5, 10],
+    ]);
+    expect(data.strings["debug.pointer.rowNoPos"]).toBe("{t} {type} - {target}");
+    expect(pointerRowsText(log.entries(), data.strings)).toEqual([
+      "5 down -5,-10 button 前進",
+      "5 up -5,-10 button 前進",
+      "5 cancel - button 前進",
+      "5 lost - button 前進",
+      "5 cancel -5,10 button 前進",
+    ]);
+  });
+
   test("UI-57 formatPointerRow「{t} {type} {x},{y} {target}」（type は短い名前）。pointerRowsText は空なら「記録なし」の 1 行", () => {
     expect(formatPointerRow({ type: "lostpointercapture", x: 3, y: 390, t: 123456, target: "button 前進" }, data.strings)).toBe("123456 lost 3,390 button 前進");
     expect(POINTER_KINDS.map((k) => data.strings[`debug.pointer.${k}`])).toEqual(["down", "up", "cancel", "lost"]);
