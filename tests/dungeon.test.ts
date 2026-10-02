@@ -342,7 +342,7 @@ describe("遭遇（CB-01, DG-11）", () => {
     expect(hits).toBeLessThan(30);
   });
 
-  test("CB-01 部屋の中（roomId あり。部屋の中の罠・イベントも含む）は encounterRate.room、通路は corridor（room=1, corridor=0 で、部屋のセルでだけ出る）", () => {
+  test("CB-01 部屋の中（roomId あり。部屋の中の罠も含む）は encounterRate.room、通路は corridor（room=1, corridor=0 で、部屋のセルでだけ出る）", () => {
     const dRoom = dataEnc(1, 0);
     const dCorr = dataEnc(0, 1);
     let roomSteps = 0;
@@ -350,7 +350,7 @@ describe("遭遇（CB-01, DG-11）", () => {
     for (let seed = 1; seed <= 4; seed++) {
       const s0 = enterD01(seed);
       const f = floorOf(s0.dive!, data);
-      for (const a of approaches(f, (c) => c.kind === "corridor" || c.kind === "room" || c.kind === "event", (e) => e !== "wall")) {
+      for (const a of approaches(f, (c) => c.kind === "corridor" || c.kind === "room", (e) => e !== "wall")) {
         const s = placeAt(s0, a.pos, a.facing);
         const inRoom = cellAt(f, a.target.x, a.target.y).roomId !== null;
         const enc = (d: GameData) => run(s, MOVE, d).state.battle !== null;
@@ -1246,22 +1246,6 @@ describe("罠（DG-20, DG-21, E4）", () => {
     expect(r.state.dive!.clearedCells).toEqual([]);
     expect(r.state.party).toEqual(state.party);
     expect(r.state.rng).toEqual(mirror);
-  });
-
-  test("DG-22 event セルを踏んでも、遭遇判定のほかは何も起きない", () => {
-    for (const floor of [1, 2]) {
-      const { state } = findSituation((c) => c.kind === "event", { floor });
-      const mirror = cloneRng(state.rng);
-      randInt(mirror, 1, 100);
-      const r = run(state, MOVE, DATA0);
-      expect(kinds(r.events)).toEqual(["moved"]);
-      expect(r.state.rng).toEqual(mirror);
-      expect(r.state.pendingChoice).toBeNull();
-      expect(r.state.party).toEqual(state.party);
-      expect(r.state.dive!.clearedCells).toEqual([]);
-      const r1 = run(state, MOVE, dataEnc(1, 1));
-      expect(kinds(r1.events).slice(0, 5)).toEqual(["moved", "screen", "beat", "encounter", "message:battle.encounter"]); // CB-55: screen{battle} の直後に system の拍
-    }
   });
 });
 

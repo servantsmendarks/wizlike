@@ -52,7 +52,7 @@ import { attachPointerLog, createPointerLog } from "./input/pointer-log";
 import { attachStageInput, onTap } from "./input/tap";
 import { dungeonLayout, layoutWarnings, regions, saveBannerRect } from "./layout";
 import { createPlayer } from "./playback";
-import { resumePlan } from "./resume";
+import { resumePlan, routeOfScreen } from "./resume";
 import { createRunGate } from "./run-gate";
 import { defaultSettings, type SettingsStore } from "./settings";
 import type { StageLayout, StageLayoutInput } from "./stage";
@@ -276,26 +276,26 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     lowerInput();
   };
 
-  /** core の screen イベント。M3 の画面は title / town / dungeon / battle */
+  /** core の screen イベント。route は routeOfScreen で決める（event は迷宮の画面の上の状態。UI-55） */
   const onScreen = (to: Screen): void => {
-    if (to === "title" || to === "town" || to === "dungeon" || to === "battle") {
-      if (to === "town") townPage = "menu";
-      // 画面が変わったら、キャンプ・地図・履歴を閉じる（帰還の呪文で街へ、など）
-      if (route !== to) {
-        if (overlay === "camp") closeCamp(false);
-        if (overlay === "map") closeMap();
-        if (overlay === "history") closeHistory();
-      }
-      if (to === "battle") {
-        // 新しい戦闘。入力の段階は再生の最後の sync で battleMenu から作り直す
-        cursor = null;
-        advanceFrom = null;
-        stopRequested = false;
-      }
-      showRoute(to);
-      // 操作は再生の最後の sync で出し直す
-      if (to !== "title") play.controls.setMode("none");
+    const r = to === "title" ? "title" : routeOfScreen(to);
+    if (r === null) return;
+    if (r === "town") townPage = "menu";
+    // 画面が変わったら、キャンプ・地図・履歴を閉じる（帰還の呪文で街へ、など）
+    if (route !== r) {
+      if (overlay === "camp") closeCamp(false);
+      if (overlay === "map") closeMap();
+      if (overlay === "history") closeHistory();
     }
+    if (r === "battle") {
+      // 新しい戦闘。入力の段階は再生の最後の sync で battleMenu から作り直す
+      cursor = null;
+      advanceFrom = null;
+      stopRequested = false;
+    }
+    showRoute(r);
+    // 操作は再生の最後の sync で出し直す
+    if (r !== "title") play.controls.setMode("none");
   };
 
   /** state を描く（再生の最後に 1 回） */
@@ -404,9 +404,12 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       }),
   });
 
+  /** UI-55: 迷宮を歩ける状態か（core の screen が dungeon で、保留中の選択が無い。イベントの選択を待つ間・罠の察知・階段の確認では偽） */
+  const fieldFree = (): boolean => state.screen === "dungeon" && state.pendingChoice === null;
+
   /** UI-30: ステージ全体でスワイプを受けるか（迷宮で、overlay も保留も無く、inputMode が buttons でなく、自動歩行中でない） */
   const swipeEnabled = (): boolean =>
-    route === "dungeon" && overlay === null && state.pendingChoice === null && store.get().inputMode !== "buttons" && walking === null;
+    route === "dungeon" && overlay === null && fieldFree() && store.get().inputMode !== "buttons" && walking === null;
 
   /** 操作領域とスワイプの可否を、route / overlay / pendingChoice / inputMode から決める */
   const syncControls = (): void => {
@@ -414,7 +417,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     play.setSwipeOn(swipeEnabled());
     const c = play.controls;
     // UI-31: 十字ボタンを出さない間は長押しを離したものとする（shouldReleaseHold）
-    if (shouldReleaseHold(route, overlay, state.pendingChoice !== null)) repeater.release();
+    if (shouldReleaseHold(route, overlay, !fieldFree())) repeater.release();
     if (overlay === "wipe") {
       // UI-56: 全滅の内訳の間は操作領域に「街へ」だけ（route の判定より先に見る）
       clearFocus();
@@ -468,6 +471,11 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     if (pc !== null) {
       c.setList(pc.options.map((op) => listItem(t(op.labelKey), () => void run({ type: "event.choose", optionId: op.id }))));
       c.setMode("list");
+      return;
+    }
+    // 壊れた state（screen event で保留が無い、など）でも十字ボタンを出さない守り
+    if (state.screen !== "dungeon") {
+      c.setMode("none");
       return;
     }
     // UI-53: [キャンプ][地図]
@@ -766,7 +774,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     ms: () => store.get().holdRepeatMs,
     fire: () =>
       forwardStep({
-        ready: () => route === "dungeon" && overlay === null && state.pendingChoice === null,
+        ready: () => route === "dungeon" && overlay === null && fieldFree(),
         move: () =>
           run({ type: "dungeon.move" }).then((r) => {
             // CB-01 の遭遇。敵の奇襲の後などで入力が要らない状態なら、そのまま連鎖で進める
@@ -788,7 +796,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       const w = walking;
       const go = await walkStep({
         walk: () => walking,
-        ready: () => route === "dungeon" && overlay === null && state.pendingChoice === null,
+        ready: () => route === "dungeon" && overlay === null && fieldFree(),
         // beforePlay: 止まる手（routeStepOk が偽・最後の手）は再生の前に歩行を終える（walkStep が finish を呼ぶ）
         send: (cmd, beforePlay) =>
           run(cmd, { beforePlay }).then((r) => {
@@ -1041,7 +1049,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   };
 
   const openMap = (): void => {
-    if (route !== "dungeon" || overlay !== null || state.pendingChoice !== null) return;
+    if (route !== "dungeon" || overlay !== null || !fieldFree()) return;
     const v = mapView(state, data);
     if (v === null) return;
     repeater.release();
@@ -1214,7 +1222,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
         else if (a === "back") townBack();
         return;
       case "dungeon": {
-        if (state.pendingChoice !== null) {
+        if (!fieldFree()) {
           if (a === "confirm") play.controls.select(0);
           else if (typeof a === "object") play.controls.select(a.menu);
           return;

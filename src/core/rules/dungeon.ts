@@ -1,4 +1,4 @@
-// 潜行中のルール（DG-03, DG-10〜14, DG-20, DG-21, DG-31〜33, DG-40, CB-01, CH-43/45/51/54）と、表示層向けの問い合わせ（visibleCells, mapView）。
+// 潜行中のルール（DG-03, DG-10〜14, DG-20〜22, DG-31〜33, DG-40, CB-01, CH-43/45/51/54）と、表示層向けの問い合わせ（visibleCells, mapView）。
 // 迷宮の構造は state に入れず、dive.diveSeed から毎回作り直す（DG-03）。発動済みの罠は dive の記録を重ねる。扉は通り抜けても扉のまま（DG-10）。
 import type { GameData } from "../data/index";
 import { chance, nextUint32, randInt } from "../rng";
@@ -34,6 +34,7 @@ import {
 import { startBossEncounter, startRandomEncounter, tickPoisonStep } from "./combat";
 import { canAct } from "./combat-calc";
 import { offerExit, offerStairs, offerTeleporter, offerTrap } from "./choices";
+import { chooseEventOption, startEvent } from "./events";
 import { addExplored, aliveMembers, damageMembers } from "./field";
 import { loseSan } from "./san";
 import { enterBlockReason, returnToTown } from "./town";
@@ -224,14 +225,14 @@ export function moveForward(ctx: RuleContext): void {
     if (detectTrap(ctx, cell)) return; // DG-21: 察知したら確認を立てて終わる（階段・遭遇なし）
     triggerTrap(ctx, f, dive.pos);
   }
-  continueStep(ctx, cell);
+  continueStep(ctx, f, cell);
 }
 
 /**
- * 前進の 1 歩の続き（罠の後）。罠の察知で「進む」を選んだときもここから続ける。
- * 行動可能な者がいなければ何もしない → 階段・出口・テレポーター・ボス → 遭遇判定。
+ * 前進の 1 歩の続き（罠の後）。罠の察知で「進む」を選んだときもここから続ける。f は dive.floor の実効の構造。
+ * 行動可能な者がいなければ何もしない → 階段・出口・テレポーター・ボス → イベント（DG-22）→ 遭遇判定。
  */
-function continueStep(ctx: RuleContext, cell: Cell): void {
+function continueStep(ctx: RuleContext, f: Floor, cell: Cell): void {
   const { state } = ctx;
   const dive = requireDive(state);
   // DG-11 / DG-20: 行動可能な者（CH-44）がいなければ階段・遭遇を起こさずに返る（全滅処理は engine の後処理 wipeIfNoneCanAct）
@@ -253,6 +254,11 @@ function continueStep(ctx: RuleContext, cell: Cell): void {
   // DG-31: ボスのセルは遭遇の d100 を振らずに固定遭遇（倒した後は floorOf が teleporter に重ねる）
   if (cell.kind === "boss" && !dive.bossDefeated) {
     startBossEncounter(ctx);
+    return;
+  }
+  // DG-22 / B11: イベントのセルは events.ts の手順で処理し、遭遇の d100 は振らない（処理後は floorOf が通常のセルに戻す）
+  if (cell.kind === "event" && cell.eventId !== null) {
+    startEvent(ctx, f, cell.eventId);
     return;
   }
   rollEncounter(ctx, cell.roomId !== null);
@@ -307,7 +313,7 @@ function chooseTrapOption(ctx: RuleContext, optionId: string): void {
     const f = floorOf(dive, data);
     const cell = cellAt(f, dive.pos.x, dive.pos.y); // clearedCells にまだ無いので kind trap のまま
     triggerTrap(ctx, f, dive.pos);
-    continueStep(ctx, cell);
+    continueStep(ctx, f, cell);
     return;
   }
   throw new Error(`chooseTrapOption: unknown option ${optionId}`);
@@ -337,7 +343,7 @@ function triggerTrap(ctx: RuleContext, f: Floor, p: Pos): void {
 
 /**
  * event.choose。optionId は pendingChoice.options にあることを呼び出し側で確かめ済み。
- * kind trap は chooseTrapOption（DG-21）。以下は階段・出口・テレポーター:
+ * kind event は chooseEventOption（EV-31/33）、kind trap は chooseTrapOption（DG-21）。以下は階段・出口・テレポーター:
  * stay は何もしない。exit（DG-06 徒歩）と teleport（DG-32）は returnToTown で街へ（DG-43 で台帳を確定）。
  */
 export function chooseOption(ctx: RuleContext, optionId: string): void {
@@ -345,6 +351,10 @@ export function chooseOption(ctx: RuleContext, optionId: string): void {
   const pc = state.pendingChoice;
   if (pc === null) throw new Error("chooseOption: no pending choice");
   state.pendingChoice = null;
+  if (pc.kind === "event") {
+    chooseEventOption(ctx, floorOf(requireDive(state), data), pc, optionId); // EV-31 / EV-33
+    return;
+  }
   if (pc.kind === "trap") {
     chooseTrapOption(ctx, optionId);
     return;

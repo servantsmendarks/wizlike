@@ -2,15 +2,16 @@
 import { describe, expect, test } from "vitest";
 import { execute } from "../src/core/engine";
 import { battleMenu } from "../src/core/rules/combat";
-import { offerExit, offerStairs, offerTeleporter } from "../src/core/rules/choices";
+import { offerExit, offerStairs, offerTeleporter, offerTrap } from "../src/core/rules/choices";
 import { returnToTown } from "../src/core/rules/town";
 import { cloneState } from "../src/core/state";
 import type { GameState } from "../src/core/types";
 import { firstCursor } from "../src/presenter/battle-input";
-import { resumePlan } from "../src/presenter/resume";
+import { resumePlan, routeOfScreen } from "../src/presenter/resume";
 import { createSaveService } from "../src/save/saves";
 import { dived, withBattle } from "./helpers/battle";
-import { ctxFor, data, newGame } from "./helpers/core";
+import { ctxFor, data, loadFreshData, newGame } from "./helpers/core";
+import { atEvent } from "./helpers/events";
 import { createMemoryBackend } from "./helpers/save";
 
 /** 保存先（メモリ）へ begin で書き、別のサービス（リロード後に相当）で load した state */
@@ -70,6 +71,32 @@ describe("続きから（SV-50）", () => {
     expect(r.state.townVisit).toEqual({ mercyOffered: false });
     expect(resumePlan(r.state, data)).toEqual({ route: "town", prompts: [] });
     expect(data.strings["town.mercy.offer"]).toBeTypeOf("string");
+  });
+
+  test("UI-55 routeOfScreen: event → dungeon、town / dungeon / battle はそのまま、title → null", () => {
+    expect(routeOfScreen("event")).toBe("dungeon");
+    expect(routeOfScreen("town")).toBe("town");
+    expect(routeOfScreen("dungeon")).toBe("dungeon");
+    expect(routeOfScreen("battle")).toBe("battle");
+    expect(routeOfScreen("title")).toBeNull();
+  });
+
+  test("SV-50/UI-55 screen event は route dungeon、prompts は [intro]（保存と読み込みの往復でも）", async () => {
+    const d = loadFreshData();
+    d.config.events.impulseThreshold = 1000; // 衝動を起こさず選択を待たせる
+    for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    const ev = execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state;
+    expect(ev.screen).toBe("event");
+    expect(resumePlan(ev, data)).toEqual({ route: "dungeon", prompts: ["event.glowing_tablet.intro"] });
+    const back = await roundTrip(ev);
+    expect(back).toEqual(JSON.parse(JSON.stringify(ev)));
+    expect(resumePlan(back, data)).toEqual({ route: "dungeon", prompts: ["event.glowing_tablet.intro"] });
+  });
+
+  test("SV-50/DG-21 察知の保留は route dungeon、prompts は [dungeon.trap.prompt]（往復でも）", async () => {
+    const s = pending(offerTrap);
+    expect(resumePlan(s, data)).toEqual({ route: "dungeon", prompts: ["dungeon.trap.prompt"] });
+    expect(resumePlan(await roundTrip(s), data)).toEqual({ route: "dungeon", prompts: ["dungeon.trap.prompt"] });
   });
 
   test("SV-50 title など復帰できない screen は例外（読み込みの形の検査で弾かれている前提）", () => {

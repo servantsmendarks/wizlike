@@ -32,7 +32,7 @@
   - 対象（効果ごとに、その時点で解決）: `actor` は行動者（生きていなければ対象なし）、`party` は生存者（life alive）全員、`others` は生存者から行動者を除いた者。選択肢の効果の行動者はリーダー。
   - `gold`: 出目の合計（0 未満は 0）が正なら所持金と潜行台帳（DG-40）に足し、`event.gold`{gold}（強欲の財宝入手 CH-52）。0 なら何も出さない。`damage`: 対象を並び順に 1 回ずつ振り、落とし穴と同じ順（CH-45）。`san`: 符号付きの値、耐性なし（CH-54）。`revealFloor` / `revealStairs` は GameEvent を出さない（語りは結果の text）。`revealStairs` は下り階段が無い階（最下層）ではボスのセルを明かす（B9）。
   - `consumeItem`: 対象の持ち物（`party` なら生存者の並び順）から最初の実体（鑑定を問わない）を消し（潜行台帳からも外れる）、`event.consume`{name, item}。見つからなければ、`optional` なら語らずに続け、そうでなければ `event.noItem`{item} を出して以降の効果を飛ばす。
-- EV-33 イベントの処理中は `screen: event`。結果の適用後、セルは通常セルになる（DG-22）。
+- EV-33 イベントの処理中は `screen: event`。結果の適用後、セルは通常セルになる（DG-22）。M5 の読み: `screen: event` を立てるのは選択を待つ間（保留中の選択 kind `event`、問いは `text.intro`）だけで、両者は同値。衝動だけで決着する場合は立てない（迷宮の screen のまま。A4）。選択を待つ間も全滅の判定（TW-20）は行い、全滅なら選択を下ろして街へ。イベントの再生は `eventStarted`{eventId, actorId?}（行動者が決まっていれば actorId）→ `text.intro` の順に始まる。
 - EV-34 GM の語りはイベント定義の `text` キーで `strings.json` から引く。`{actor}` `{stopper}` を差し込む。問い（`text.intro`）・選択肢の `labelKey` と `text` は差し込みを持たず（保留中の選択の問いとして params なしで出し直すため。E3）、`text.impulse` と衝動の結果の `text` は `{actor}` だけを差し込む（読み込み時に検証する。M5）。
 
 ## 5. 性格の恩恵と SAN 耐性

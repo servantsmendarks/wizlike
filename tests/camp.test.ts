@@ -14,6 +14,7 @@ import type { Character, Command, GameEvent, GameState } from "../src/core/types
 import { dived, withBattle } from "./helpers/battle";
 import { createInitialState } from "../src/core/engine";
 import { data, expectKnownStringKeys, expectStateInvariants, loadFreshData, newGame, seedWithFirstD100 } from "./helpers/core";
+import { atEvent } from "./helpers/events";
 
 function member(s: GameState, id: string): Character {
   const c = s.party.find((x) => x.id === id);
@@ -394,6 +395,15 @@ describe("UI-53/TW-03 campMenu", () => {
     expect(campMenu(battleOf(inDungeon()), data)).toBeNull();
     expect(campMenu(pending(inDungeon()), data)).toBeNull();
     expect(campMenu(createInitialState(1, data), data)).toBeNull();
+  });
+
+  test("UI-53/UI-55 screen event（イベントの選択を待つ間）では campMenu が null", () => {
+    const d = loadFreshData();
+    d.config.events.impulseThreshold = 1000; // 衝動を起こさず選択を待たせる
+    for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    const r = execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d);
+    expect(r.state.screen).toBe("event");
+    expect(campMenu(r.state, data)).toBeNull();
   });
 
   test("UI-53 spells: 街では []。迷宮では heal / cure_poison / return / resurrect だけで、usable は checkCast と一致する", () => {

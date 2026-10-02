@@ -332,7 +332,7 @@ describe("DG-15 routeStepOk", () => {
     throw new Error("no seed found");
   });
 
-  test("DG-15/DG-21 察知の手では routeStepOk が偽（moved の後に察知の語りと確認が続き、pendingChoice が立つ）", () => {
+  test("DG-15/DG-21/DG-22 察知・イベントの手では routeStepOk が偽（moved の後に語りと確認・eventStarted が続く）", () => {
     const { state, a } = findSituation((c) => c.kind === "trap" && c.trapId === "pit");
     const d0 = loadFreshData();
     for (const def of d0.dungeons) def.encounterRate = { room: 0, corridor: 0 };
@@ -347,5 +347,14 @@ describe("DG-15 routeStepOk", () => {
       checked += 1;
     }
     expect(checked).toBeGreaterThan(0);
+    // DG-22: イベントのセルへの手（衝動で決着しても、選択を待っても偽）
+    const ev = findSituation((c) => c.kind === "event");
+    const stepToEvent = st(MOVE, ev.a.target.x, ev.a.target.y, ev.a.facing);
+    for (let k = 1; k <= 10; k++) {
+      const r = execute(withRng(ev.state, k), MOVE, d0);
+      expectKnownStringKeys(r.events, d0);
+      expect(r.events[1]?.kind).toBe("eventStarted");
+      expect(routeStepOk(stepToEvent, r.events, r.state)).toBe(false);
+    }
   });
 });

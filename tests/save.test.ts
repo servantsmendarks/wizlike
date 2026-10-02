@@ -10,7 +10,8 @@ import { buildRecord, checkStoredRecord, summarize } from "../src/save/record";
 import { createSaveService } from "../src/save/saves";
 import type { GameRecord, GameStoreBackend, Migration, SaveDeps } from "../src/save/types";
 import { dived, exec, withBattle } from "./helpers/battle";
-import { data, expectKnownStringKeys, newGame, withChar } from "./helpers/core";
+import { data, expectKnownStringKeys, loadFreshData, newGame, withChar } from "./helpers/core";
+import { atEvent } from "./helpers/events";
 import { createMemoryBackend } from "./helpers/save";
 
 const SCHEMA = data.config.save.schemaVersion;
@@ -157,6 +158,34 @@ describe("SV-04 migrate", () => {
       ["town without townVisit", { ...town, townVisit: null }],
       ["dungeon with townVisit", { ...dungeon, townVisit: { mercyOffered: false } }],
       ["townVisit missing", { ...dungeon, townVisit: undefined }],
+    ];
+    for (const [name, s] of broken) {
+      expect(isGameStateShape(s), name).toBe(false);
+      expect(migrateState(s, SCHEMA, SCHEMA), name).toEqual({ ok: false, reason: "broken" });
+    }
+  });
+
+  test("SV-04 形の検査: screen event（pendingChoice kind event・dive あり・battle null）は通り、pendingChoice が null・別の kind・screen dungeon で kind event なら broken", () => {
+    const d = loadFreshData();
+    d.config.events.impulseThreshold = 1000; // 衝動を起こさず選択を待たせる
+    for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    const ev = json(execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state);
+    expect(ev.screen).toBe("event");
+    expect(isGameStateShape(ev)).toBe(true);
+    expect(migrateState(ev, SCHEMA, SCHEMA)).toEqual({ ok: true, state: ev, fromVersion: SCHEMA });
+    // 罠の察知の保留（kind trap）は screen dungeon のまま通る
+    const dungeon = json(dived(1));
+    const trapPc = { kind: "trap", promptKey: "dungeon.trap.prompt", options: [{ id: "retreat", labelKey: "dungeon.choice.retreat" }] };
+    expect(isGameStateShape({ ...dungeon, pendingChoice: trapPc })).toBe(true);
+    const battle = json(withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }]));
+    const broken: Array<[string, unknown]> = [
+      ["screen event without pendingChoice", { ...ev, pendingChoice: null }],
+      ["screen event with kind stairs", { ...ev, pendingChoice: { ...ev.pendingChoice!, kind: "stairs" } }],
+      ["screen event with kind trap", { ...ev, pendingChoice: trapPc }],
+      ["kind event with screen dungeon", { ...ev, screen: "dungeon" }],
+      ["screen event without eventId", { ...ev, pendingChoice: { ...ev.pendingChoice!, eventId: undefined } }],
+      ["screen event without dive", { ...ev, dive: null }],
+      ["screen event with battle", { ...ev, battle: battle.battle }],
     ];
     for (const [name, s] of broken) {
       expect(isGameStateShape(s), name).toBe(false);

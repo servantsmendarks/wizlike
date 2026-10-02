@@ -8,14 +8,15 @@ import type { GameData } from "../src/core/data/index";
 import { LURE_TAGS } from "../src/core/data/index";
 import { cloneRng, randInt, rollDice, rollDie, weightedIndex, type RngState } from "../src/core/rng";
 import { floorOf } from "../src/core/rules/dungeon";
-import { idx } from "../src/core/rules/dungeon-gen";
+import { cellAt, idx } from "../src/core/rules/dungeon-gen";
 import { applyEffects, decideImpulse, lureProduct, pickStopper, startEvent } from "../src/core/rules/events";
+import { wipeIfNoneCanAct } from "../src/core/rules/wipe";
 import { cloneState, eventOf, makeContext } from "../src/core/state";
-import type { Character, GameEvent, GameState, RuleContext } from "../src/core/types";
+import type { Character, Command, GameEvent, GameState, RuleContext } from "../src/core/types";
 import { execute } from "../src/core/engine";
-import { data, expectKnownStringKeys, expectStateInvariants, newGame } from "./helpers/core";
-import { placeAt, withRng } from "./helpers/dungeon";
-import { dataEvents, onEvent, outcomeOnly } from "./helpers/events";
+import { data, deepFreeze, expectKnownStringKeys, expectStateInvariants, newGame } from "./helpers/core";
+import { dataWithRate, findSituation, MOVE, placeAt, run, withRng } from "./helpers/dungeon";
+import { atEvent, dataEvents, onEvent, outcomeOnly } from "./helpers/events";
 
 const TABLET = "glowing_tablet";
 const SACK = "abandoned_sack";
@@ -619,5 +620,248 @@ describe("効果（EV-32）", () => {
     applyEffects(ctx, f, [{ type: "message", key: "event.common.ignore" }, { type: "nothing" }], actor(0));
     expect(ctx.events).toEqual([{ kind: "message", key: "event.common.ignore" }]);
     expect(() => applyEffects(ctx, f, [{ type: "status", status: "poison", target: "actor" }], actor(0))).toThrow("EV-32: not implemented: status");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 迷宮から（execute 経由）。DG-22 / EV-13 / EV-33 / A4
+
+describe("イベントのセル（DG-22, EV-13, EV-33）", () => {
+  /** 衝動が起きない data（閾値 1000）。遭遇率は room / corridor とも rate */
+  const calm = (rate = 0) =>
+    dataEvents((x) => {
+      x.config.events.impulseThreshold = 1000;
+      for (const def of x.dungeons) def.encounterRate = { room: rate, corridor: rate };
+    });
+  const choiceOf = (id: string) => ({
+    kind: "event",
+    promptKey: `event.${id}.intro`,
+    options: eventOf(data, id).choices.map((c) => ({ id: c.id, labelKey: `event.${id}.choice.${c.id}` })),
+    eventId: id,
+  });
+
+  test("EV-13 衝動なしの mixed は選択型: screen{event}、pendingChoice kind event（promptKey = intro、labelKey = event.<id>.choice.<id>、eventId）、遭遇の d100 を振らない", () => {
+    for (const id of [TABLET, SACK]) {
+      const { state, a } = atEvent(id);
+      const m = cloneRng(state.rng);
+      rollDie(m, 6); // キリ
+      rollDie(m, 6); // ドナ（遭遇の d100 は振らない）
+      const r = run(state, MOVE, calm(1)); // 遭遇率 1 でも戦闘にならない
+      expect(r.events).toEqual([
+        { kind: "moved", pos: a.target, facing: a.facing },
+        { kind: "eventStarted", eventId: id },
+        { kind: "message", key: `event.${id}.intro` },
+        { kind: "screen", to: "event" },
+      ]);
+      expect(r.state.rng).toEqual(m);
+      expect(r.state.screen).toBe("event");
+      expect(r.state.battle).toBeNull();
+      expect(r.state.pendingChoice).toEqual(choiceOf(id));
+      expect(r.state.dive!.clearedCells).toEqual([]);
+      expectStateInvariants(r.state);
+    }
+  });
+
+  test("EV-33 event.choose: screen{dungeon} が先頭、選択の text、効果、clearedCells。保留中は move / turn / useItem が choice pending", () => {
+    const { state, a } = atEvent(TABLET);
+    const r1 = run(state, MOVE, calm());
+    const rejects: Command[] = [
+      MOVE,
+      { type: "dungeon.turn", dir: "left" },
+      { type: "dungeon.useItem", memberId: "c1", itemId: r1.state.party[0]!.inventory[0]! },
+    ];
+    for (const cmd of rejects) {
+      const rj = execute(r1.state, cmd, data);
+      expect(rj.events).toEqual([{ kind: "rejected", command: cmd.type, reason: "choice pending" }]);
+      expect(rj.state).toBe(r1.state);
+    }
+    expect(execute(r1.state, { type: "event.choose", optionId: "descend" }, data).events[0]).toEqual({
+      kind: "rejected",
+      command: "event.choose",
+      reason: "unknown option",
+    });
+    const r2 = run(r1.state, { type: "event.choose", optionId: "examine" }, calm());
+    expect(r2.events).toEqual([
+      { kind: "screen", to: "dungeon" },
+      { kind: "message", key: "event.glowing_tablet.examine" },
+    ]);
+    expect(r2.state.rng).toEqual(r1.state.rng); // 乱数なし
+    expect(r2.state.screen).toBe("dungeon");
+    expect(r2.state.pendingChoice).toBeNull();
+    expect(r2.state.dive!.clearedCells).toEqual([{ floor: 1, ...a.target }]);
+    expectStateInvariants(r2.state);
+    const ig = run(r1.state, { type: "event.choose", optionId: "ignore" }, calm());
+    expect(kinds(ig.events)).toEqual(["screen", "message:event.common.ignore"]);
+    // 宝袋の search: 2d10 の金と強欲の +2（ドナの SAN を 50 にしてから）
+    const sk = atEvent(SACK);
+    const s1 = run(patch(sk.state, 3, { san: 50 }), MOVE, calm()).state;
+    const m = cloneRng(s1.rng);
+    const g = rollDice(m, "2d10").total;
+    const r3 = run(s1, { type: "event.choose", optionId: "search" }, calm());
+    expect(r3.events).toEqual([
+      { kind: "screen", to: "dungeon" },
+      { kind: "message", key: "event.abandoned_sack.search" },
+      { kind: "message", key: "event.gold", params: { gold: g } },
+      { kind: "sanChanged", id: "c4", delta: 2, san: 52 },
+    ]);
+    expect(r3.state.rng).toEqual(m);
+    expect(r3.state.gold).toBe(s1.gold + g);
+    expect(r3.state.dive!.ledger.gold).toBe(s1.dive!.ledger.gold + g);
+    expect(r3.state.dive!.clearedCells).toEqual([{ floor: 2, ...sk.a.target }]);
+  });
+
+  test("EV-33/DG-22 処理後はセルが通常（floorOf・clearedCells）。保留中はまだ入らない。もう一度入ると遭遇判定だけ", () => {
+    const { state, a } = atEvent(TABLET);
+    const r1 = run(state, MOVE, calm());
+    expect(cellAt(floorOf(r1.state.dive!, data), a.target.x, a.target.y).kind).toBe("event"); // 保留中はまだイベント
+    const r2 = run(r1.state, { type: "event.choose", optionId: "ignore" }, calm());
+    const cell = cellAt(floorOf(r2.state.dive!, data), a.target.x, a.target.y);
+    expect(cell.kind).toBe(cell.roomId !== null ? "room" : "corridor");
+    expect(cell.eventId).toBeNull();
+    // 戻ってもう一度入ると、遭遇の d100 だけ（イベントは起きない）
+    const again = placeAt(r2.state, a.pos, a.facing);
+    const m = cloneRng(again.rng);
+    randInt(m, 1, 100);
+    const r3 = run(again, MOVE, calm());
+    expect(r3.events).toEqual([{ kind: "moved", pos: a.target, facing: a.facing }]);
+    expect(r3.state.rng).toEqual(m);
+    // 衝動で決着した場合も同じ（制止なし・good）
+    const imp = dataEvents((x) => {
+      eventOf(x, TABLET).stopCheck = false;
+      outcomeOnly(x, TABLET, "good");
+    });
+    const r4 = run(state, MOVE, imp);
+    expect(r4.state.screen).toBe("dungeon"); // A4: 衝動だけで決着したら screen event を立てない
+    expect(kinds(r4.events)).not.toContain("screen");
+    expect(r4.state.dive!.clearedCells).toEqual([{ floor: 1, ...a.target }]);
+    expectStateInvariants(r4.state);
+  });
+
+  test("DG-22/CB-01 イベントセルでは遭遇の d100 を振らない（rate 1 でも戦闘にならない。衝動で決着する歩も）", () => {
+    const { state } = atEvent(TABLET);
+    const d1 = dataEvents((x) => {
+      for (const def of x.dungeons) def.encounterRate = { room: 1, corridor: 1 };
+      eventOf(x, TABLET).stopCheck = false;
+      outcomeOnly(x, TABLET, "good");
+    });
+    const m = cloneRng(state.rng);
+    rollDie(m, 6);
+    rollDie(m, 6);
+    weightedIndex(m, [3, 0, 0]);
+    const r = run(state, MOVE, d1);
+    expect(r.state.battle).toBeNull();
+    expect(r.state.rng).toEqual(m);
+  });
+
+  test("TW-20/EV-32 イベントのダメージ・SAN で全員行動不能なら同じ execute で全滅処理（screen town）", () => {
+    const { state } = atEvent(TABLET);
+    const s = sanAll(state, 5);
+    for (const c of s.party) c.hp = 1;
+    const d = dataEvents((x) => {
+      x.config.san.confusedRatio = 0.01; // SAN 5 を不安（錯乱でない）にして、衝動の乱数を既定の 2 人の 1d6 に保つ
+      eventOf(x, TABLET).stopCheck = false;
+      outcomeOnly(x, TABLET, "bad");
+    });
+    const r = run(s, MOVE, d);
+    const ks = kinds(r.events);
+    expect(ks.slice(0, 6)).toEqual([
+      "moved",
+      "eventStarted",
+      "message:event.glowing_tablet.intro",
+      "message:event.impulse.actor",
+      "message:event.glowing_tablet.impulse",
+      "message:event.glowing_tablet.bad",
+    ]);
+    expect(ks).toContain("wipe");
+    expect(ks.indexOf("message:wipe.intro")).toBeGreaterThan(ks.indexOf("message:event.glowing_tablet.bad"));
+    expect(ks).not.toContain("message:battle.encounter");
+    expect(r.events.at(-1)).toEqual({ kind: "screen", to: "town" });
+    expect(r.state.screen).toBe("town");
+    expect(r.state.dive).toBeNull();
+    expect(r.state.pendingChoice).toBeNull();
+    expectStateInvariants(r.state);
+  });
+
+  test("TW-20/A4 wipeIfNoneCanAct は screen event でも全滅処理（pendingChoice を下ろし screen town）", () => {
+    const { state } = atEvent(TABLET);
+    const r1 = run(state, MOVE, calm());
+    expect(r1.state.screen).toBe("event");
+    const ctx = ctxWith(r1.state, data);
+    for (const c of ctx.state.party) c.san = 0;
+    wipeIfNoneCanAct(ctx);
+    expect(kinds(ctx.events)).toContain("wipe");
+    expect(ctx.events.filter((e) => e.kind === "screen")).toEqual([{ kind: "screen", to: "town" }]); // screen{dungeon} は出さない
+    expect(ctx.state.screen).toBe("town");
+    expect(ctx.state.pendingChoice).toBeNull();
+    expect(ctx.state.dive).toBeNull();
+    expectStateInvariants(ctx.state);
+    // 行動可能な者がいれば何もしない
+    const ok = ctxWith(r1.state, data);
+    wipeIfNoneCanAct(ok);
+    expect(ok.events).toEqual([]);
+    expect(ok.state.screen).toBe("event");
+  });
+
+  test("CH-52/A8 イベントの金ごとに強欲 +2（宝袋の search）。ドナが死亡・虚脱なら増えない", () => {
+    const sk = atEvent(SACK);
+    const cases: [string, Partial<Character>, GameEvent[]][] = [
+      ["SAN 50", { san: 50 }, [{ kind: "sanChanged", id: "c4", delta: 2, san: 52 }]],
+      ["死亡", { san: 50, life: "dead", hp: 0 }, []],
+      ["虚脱", { san: 0 }, []],
+    ];
+    for (const [name, p, want] of cases) {
+      const s1 = run(patch(sk.state, 3, p), MOVE, calm()).state;
+      const r = run(s1, { type: "event.choose", optionId: "search" }, calm());
+      expect(r.events.filter((e) => e.kind === "sanChanged"), name).toEqual(want);
+    }
+  });
+
+  test("E3/SV-50 イベント・察知の保留は同じ events に key === promptKey（params なし）の message", () => {
+    const check = (r: { events: GameEvent[]; state: GameState }) => {
+      const pc = r.state.pendingChoice!;
+      expect(r.events.filter((e) => e.kind === "message" && e.key === pc.promptKey && e.params === undefined)).toHaveLength(1);
+      expect(data.strings[pc.promptKey]).not.toContain("{");
+      for (const o of pc.options) expect(data.strings[o.labelKey], o.labelKey).not.toContain("{");
+    };
+    // 衝動なし
+    check(run(atEvent(TABLET).state, MOVE, calm()));
+    check(run(atEvent(SACK).state, MOVE, calm()));
+    // 制止成功から選択へ
+    const st = atEvent(TABLET).state;
+    const s = patch(st, 5, { stats: { ...st.party[5]!.stats, iq: 100 } });
+    const r = run(s, MOVE, dataEvents());
+    expect(r.state.pendingChoice?.kind).toBe("event");
+    check(r);
+    // 罠の察知
+    const pit = findSituation((c) => c.kind === "trap" && c.trapId === "pit").state;
+    let k = 1;
+    let rt = run(withRng(pit, k), MOVE, dataWithRate(0, 0));
+    while (rt.state.pendingChoice === null) rt = run(withRng(pit, ++k), MOVE, dataWithRate(0, 0));
+    expect(rt.state.pendingChoice.kind).toBe("trap");
+    check(rt);
+  });
+
+  test("§3-2 イベントの execute は決定的で引数を書き換えない（JSON 往復で等しい）", () => {
+    const frozen = deepFreeze(dataEvents());
+    const calmFrozen = deepFreeze(calm());
+    const t = atEvent(TABLET).state;
+    const offered = run(t, MOVE, calmFrozen).state;
+    const cases: [GameState, Command, GameData][] = [
+      [t, MOVE, frozen],
+      [t, MOVE, calmFrozen],
+      [offered, { type: "event.choose", optionId: "examine" }, calmFrozen],
+      [run(atEvent(SACK).state, MOVE, calmFrozen).state, { type: "event.choose", optionId: "search" }, calmFrozen],
+    ];
+    for (const [s, cmd, d] of cases) {
+      const fz = deepFreeze(cloneState(s));
+      const before = JSON.stringify(fz);
+      const a = execute(fz, cmd, d);
+      const b = execute(fz, cmd, d);
+      expect(a.events[0]?.kind).not.toBe("rejected");
+      expect(a).toEqual(b);
+      expect(JSON.stringify(fz)).toBe(before);
+      expect(JSON.parse(JSON.stringify(a.state))).toStrictEqual(a.state);
+      expectStateInvariants(a.state);
+    }
   });
 });

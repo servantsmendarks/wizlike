@@ -216,7 +216,7 @@ export class Campaign {
   }
 
   get inDungeon(): boolean {
-    return this.state.screen === "dungeon" || this.state.screen === "battle";
+    return this.state.screen === "dungeon" || this.state.screen === "battle" || this.state.screen === "event";
   }
 
   /** 戦闘をオートで終わらせる（CB-43 でオートが切れたら入れ直す） */
@@ -276,13 +276,14 @@ export class Campaign {
 
   /**
    * 保留中の選択を 1 か所で解決する（無ければ何もしない）。kind stairs / teleporter は exit があり goExit なら exit、それ以外は stay。
-   * kind trap（DG-21 の察知）は proceed（罠を踏んで進む）。選んだ結果で遭遇したら戦う。
+   * kind trap（DG-21 の察知）は proceed（罠を踏んで進む）、kind event（EV-31 の選択）は先頭の選択肢。選んだ結果で遭遇したら戦う。
    */
   resolvePending(goExit: boolean): void {
     const pc = this.state.pendingChoice;
     if (pc === null) return;
     let optionId: string;
     if (pc.kind === "trap") optionId = "proceed";
+    else if (pc.kind === "event") optionId = pc.options[0]!.id;
     else optionId = goExit && pc.options.some((o) => o.id === "exit") ? "exit" : "stay";
     const goldBefore = this.state.gold;
     this.run({ type: "event.choose", optionId });

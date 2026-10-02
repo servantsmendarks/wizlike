@@ -192,11 +192,16 @@ export function performWipe(ctx: RuleContext): void {
 
 /**
  * 迷宮の戦闘外の全滅（CH-44 の行動可能な者がいない）。engine が受け付けた全コマンドの最後に呼ぶ。
- * screen dungeon・dive 非 null・battle null で、行動可能な者がいなければ performWipe。それ以外は何もしない。
+ * screen dungeon か event（A4。イベントの選択を待つ間）・dive 非 null・battle null で、行動可能な者がいなければ performWipe。それ以外は何もしない。
+ * screen event なら保留中の選択を下ろして dungeon に戻してから（screen イベントは出さない。performWipe が screen{town} を出す）。
  */
 export function wipeIfNoneCanAct(ctx: RuleContext): void {
   const { state } = ctx;
-  if (state.screen !== "dungeon" || state.dive === null || state.battle !== null) return;
+  if ((state.screen !== "dungeon" && state.screen !== "event") || state.dive === null || state.battle !== null) return;
   if (state.party.some(canAct)) return;
+  if (state.screen === "event") {
+    state.pendingChoice = null;
+    state.screen = "dungeon";
+  }
   performWipe(ctx);
 }

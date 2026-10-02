@@ -6,7 +6,7 @@ import type { MigrateResult, Migration } from "./types";
 
 export const MIGRATIONS: readonly Migration[] = [];
 
-const RESUMABLE_SCREENS: readonly unknown[] = ["town", "dungeon", "battle"];
+const RESUMABLE_SCREENS: readonly unknown[] = ["town", "dungeon", "battle", "event"];
 
 function isObjectOrNull(x: unknown): boolean {
   return x === null || isPlainObject(x);
@@ -14,8 +14,10 @@ function isObjectOrNull(x: unknown): boolean {
 
 /**
  * GameState の最小限の形の検査（深い検証はしない）。
- * screen は town / dungeon / battle、party は 1 件以上の配列、rng / items はオブジェクト、gold は数、
+ * screen は town / dungeon / battle / event、party は 1 件以上の配列、rng / items はオブジェクト、gold は数、
  * dive / pendingChoice / battle / townVisit はオブジェクトか null、screen battle ⇔ battle 非 null、screen town ⇔ townVisit 非 null。
+ * screen event（M5。イベントの選択を待つ間）⇒ dive がオブジェクト・battle が null・pendingChoice の kind が event で eventId が文字列、
+ * pendingChoice の kind が event ⇒ screen event。M5 は欄を足さず値の種類を増やしただけなので schemaVersion 1 のまま（v1 の保存はそのまま正しい）。
  */
 export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(x)) return false;
@@ -29,6 +31,13 @@ export function isGameStateShape(x: unknown): x is GameState {
   }
   if ((x["screen"] === "battle") !== (x["battle"] !== null)) return false;
   if ((x["screen"] === "town") !== (x["townVisit"] !== null)) return false;
+  const pc = x["pendingChoice"];
+  const eventChoice = isPlainObject(pc) && pc["kind"] === "event";
+  if ((x["screen"] === "event") !== eventChoice) return false;
+  if (eventChoice) {
+    if (!isPlainObject(x["dive"]) || x["battle"] !== null) return false;
+    if (typeof (pc as Record<string, unknown>)["eventId"] !== "string") return false;
+  }
   return true;
 }
 

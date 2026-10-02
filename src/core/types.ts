@@ -160,7 +160,7 @@ export type Dive = {
   facing: Facing;
   /** DG-13: キーは階番号の文字列 "1".."floors"。値はセル添字（y*width+x）の昇順・重複なしの配列（Set は使わない。§3-11） */
   explored: Record<string, number[]>;
-  /** E4 */
+  /** E4: 発動した罠と、処理済みのイベントのセル（EV-33。選択の保留中はまだ入らない） */
   clearedCells: CellRef[];
   /** DG-31/32。M2 では常に false */
   bossDefeated: boolean;
@@ -276,6 +276,7 @@ export type BestiaryEntry = { kills: number; identified: boolean };
 // schemaVersion、turn、updatedAt、gameId は保存レコード側の欄（SV-21）で、ここには入れない。
 
 export type GameState = {
+  /** event は pendingChoice.kind === "event" と同値（イベントの選択を待つ間だけ。M5 / A4） */
   screen: Screen;
   /** §3-2 / SV-03: 乱数の状態も state に含める */
   rng: RngState;
