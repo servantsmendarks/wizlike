@@ -15,7 +15,7 @@ import { fieldItemMenu } from "../../src/core/rules/items";
 import { frontLineIds } from "../../src/core/rules/combat-calc";
 import { townMenu } from "../../src/core/rules/town";
 import { itemOf } from "../../src/core/state";
-import type { Command, Facing, Floor, GameEvent, GameState, PenaltyResult, Pos } from "../../src/core/types";
+import type { Command, Facing, Floor, GameEvent, GameState, PartySetupMember, PenaltyResult, Pos } from "../../src/core/types";
 import { data, expectKnownStringKeys, expectStateInvariants, newGame } from "../helpers/core";
 
 const NEAR = 6; // 上り階段からの BFS 距離
@@ -182,8 +182,8 @@ export class Campaign {
   wiped: PenaltyResult | null = null;
   readonly startAssets: number;
 
-  constructor(readonly seed: number, readonly kind: BotKind) {
-    this.state = newGame(seed);
+  constructor(readonly seed: number, readonly kind: BotKind, members?: PartySetupMember[]) {
+    this.state = newGame(seed, members);
     this.bot = createRng(seed + 20_000);
     this.startAssets = assetsOf(this.state);
   }
@@ -557,12 +557,20 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
   return lines.join("\n");
 }
 
-/** seeds 個のシード（1 から）で kind のボットを count 回ずつ潜らせ、各シードの最後の state の不変条件を確かめる。出たメッセージのキーの和集合も返す */
-export function runCampaigns(kind: BotKind, seeds: number, count: number): { results: CampaignResult[]; keys: Set<string> } {
+/**
+ * seeds 個のシード（1 から）で kind のボットを count 回ずつ潜らせ、各シードの最後の state の不変条件を確かめる。出たメッセージのキーの和集合も返す。
+ * members を省くと newGame の既定の編成（defaultMembers()）。
+ */
+export function runCampaigns(
+  kind: BotKind,
+  seeds: number,
+  count: number,
+  members?: PartySetupMember[],
+): { results: CampaignResult[]; keys: Set<string> } {
   const results: CampaignResult[] = [];
   const keys = new Set<string>();
   for (let seed = 1; seed <= seeds; seed++) {
-    const c = new Campaign(seed, kind);
+    const c = new Campaign(seed, kind, members);
     const r = c.campaign(count);
     expect(c.state.screen).toBe("town");
     expectStateInvariants(c.state);
