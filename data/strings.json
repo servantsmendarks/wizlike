@@ -384,8 +384,8 @@
   "event.wounded_adventurer.choice.help": "薬草を渡す",
   "event.wounded_adventurer.choice.abandon": "見捨てる",
 
-  "san.uneasy": "{name}は落ち着きを失っている。",
-  "san.confused": "{name}は錯乱している。",
+  "san.uneasy": "{name}は落ち着きを失った。",
+  "san.confused": "{name}は錯乱した。",
   "san.broken": "{name}は動けなくなった。",
 
   "save.failed": "保存できません。ゲームは続けられますが、進行は残りません。",
