@@ -4,7 +4,11 @@ import { createMessageWindow, formatMessage, trimHistory, typewriterSteps } from
 import { createHistoryView, HISTORY_LINE_H } from "../src/presenter/views/history";
 import { headerText } from "../src/presenter/views/header";
 import { formatPartyRow } from "../src/presenter/views/party";
+import { sanStage } from "../src/core/rules/san";
 import { data, newGame } from "./helpers/core";
+
+/** UI-12: app と同じく core の sanStage で段を決める */
+const stageOf = (san: number, sanMax: number) => sanStage(san, sanMax, data.config);
 
 describe("message.ts（純粋な部分）", () => {
   test("UI-43 formatMessage の置き換えと、params に無いものの残し方", () => {
@@ -69,7 +73,7 @@ describe("header.ts / party.ts（純粋な部分）", () => {
     // c5 エル（mage、MP 7/7）
     const ch = s.party[4]!;
     expect(ch.classId).toBe("mage");
-    const row = formatPartyRow(ch, data.strings, data.classes);
+    const row = formatPartyRow(ch, data.strings, data.classes, stageOf);
     expect(row).toEqual({
       name: ch.name,
       abbr: "MAG",
@@ -80,8 +84,8 @@ describe("header.ts / party.ts（純粋な部分）", () => {
       life: "",
     });
     expect(row.mp).toBe("7/7");
-    expect(formatPartyRow({ ...ch, life: "dead", hp: 0 }, data.strings, data.classes).life).toBe(data.strings["party.life.dead"]);
-    expect(formatPartyRow({ ...ch, life: "ash", hp: 0 }, data.strings, data.classes).life).toBe(data.strings["party.life.ash"]);
+    expect(formatPartyRow({ ...ch, life: "dead", hp: 0 }, data.strings, data.classes, stageOf).life).toBe(data.strings["party.life.dead"]);
+    expect(formatPartyRow({ ...ch, life: "ash", hp: 0 }, data.strings, data.classes, stageOf).life).toBe(data.strings["party.life.ash"]);
   });
 });
 

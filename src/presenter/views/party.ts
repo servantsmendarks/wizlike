@@ -3,11 +3,13 @@
 // 列（x、閉区間。美咲は半角 4px・全角 8px）は PARTY_COLUMNS: 名前 2..49（全角 6 文字）、職業の略称 52..63（classes[].abbr。ASCII 3 文字）、
 // HP 68..75、値 76..103（右寄せ。「999/999」）、MP 108..115、値 116..143（右寄せ）、SAN 148..159、値 160..171（右寄せ）、状態 176..237。
 // MP は mpMax が 0 のメンバーではラベルごと空欄にする。
-// 状態の列は、life が alive でなければ party.life.*、alive なら status の短い名前（party.status.<id>）を空白区切りで出す。
+// 状態の列は、life が alive でなければ party.life.*、alive なら status の短い名前（party.status.<id>）を空白区切りで出し、
+// その後ろに SAN の段の短い名前（UI-12。party.san.<stage>、normal は出さない。段は引数の stageOf = core の sanStage）。
 // 戦闘の再生用に setMp / setMax（レベルの変化）/ setStatus / flash（UI-42 の被弾。opacity 2 往復）/ setActive（入力中の名前を accent 色）を持つ。
 // UI-55: markActor（衝動の行動者の名前を accent 色、行を点滅。render で消える）。
 // el は region の位置と大きさに自分で置く。モジュールのトップレベルでは DOM に触れない。
 import type { ClassDef, StatusId, Strings } from "../../core/data/index";
+import type { SanStage } from "../../core/rules/san";
 import type { Character, Life } from "../../core/types";
 import { PARTY_ROW_H, type Rect } from "../layout";
 
@@ -17,18 +19,27 @@ import { PARTY_ROW_H, type Rect } from "../layout";
  */
 export type PartyRowText = { name: string; abbr: string; hp: string; mp: string; mpLabel: string; san: string; life: string };
 
-/** 状態の列の文字列（純粋）。死亡・灰はそれだけ、生存なら状態異常の短い名前を status の順に空白区切り */
-export function conditionText(life: Life, status: readonly StatusId[], strings: Strings): string {
+/** UI-12: SAN の段を決める関数（app が core の sanStage を渡す。表示層は段の境を計算しない） */
+export type StageOf = (san: number, sanMax: number) => SanStage;
+
+/**
+ * 状態の列の文字列（純粋）。死亡・灰はそれだけ、生存なら状態異常の短い名前を status の順に空白区切りし、
+ * その後ろに SAN の段の短い名前（UI-12。party.san.<stage>、normal は出さない）。stage の省略は normal（UI-59 の状態は段を出さない）
+ */
+export function conditionText(life: Life, status: readonly StatusId[], strings: Strings, stage: SanStage = "normal"): string {
   if (life !== "alive") {
     const key = `party.life.${life}`;
     return strings[key] ?? key;
   }
-  return status
-    .map((st) => {
-      const key = `party.status.${st}`;
-      return strings[key] ?? key;
-    })
-    .join(" ");
+  const parts = status.map((st) => {
+    const key = `party.status.${st}`;
+    return strings[key] ?? key;
+  });
+  if (stage !== "normal") {
+    const key = `party.san.${stage}`;
+    parts.push(strings[key] ?? key);
+  }
+  return parts.join(" ");
 }
 
 function hpText(hp: number, hpMax: number): string {
@@ -40,8 +51,8 @@ function mpText(mp: number, mpMax: number): string {
   return mpMax > 0 ? `${mp}/${mpMax}` : "";
 }
 
-/** 1 行分の表示文字列（純粋）。略称は classes[].abbr（表示のための参照。知らない職業は空） */
-export function formatPartyRow(ch: Character, strings: Strings, classes: readonly ClassDef[]): PartyRowText {
+/** 1 行分の表示文字列（純粋）。略称は classes[].abbr（表示のための参照。知らない職業は空）。段は stageOf（UI-12） */
+export function formatPartyRow(ch: Character, strings: Strings, classes: readonly ClassDef[], stageOf: StageOf): PartyRowText {
   return {
     name: ch.name,
     abbr: classes.find((c) => c.id === ch.classId)?.abbr ?? "",
@@ -49,7 +60,7 @@ export function formatPartyRow(ch: Character, strings: Strings, classes: readonl
     mp: mpText(ch.mp, ch.mpMax),
     mpLabel: ch.mpMax > 0 ? (strings["party.mp"] ?? "party.mp") : "",
     san: String(ch.san),
-    life: conditionText(ch.life, ch.status, strings),
+    life: conditionText(ch.life, ch.status, strings, stageOf(ch.san, ch.sanMax)),
   };
 }
 
@@ -80,6 +91,8 @@ type Row = {
   mpMax: number;
   life: Life;
   status: StatusId[];
+  san: number;
+  sanMax: number;
 };
 
 export type PartyPanel = {
@@ -113,8 +126,10 @@ export function createPartyPanel(o: {
   classes: readonly ClassDef[];
   region: Rect;
   rows: readonly Rect[];
+  /** UI-12: SAN の段（app が core の sanStage を渡す） */
+  stageOf: StageOf;
 }): PartyPanel {
-  const { strings, classes, region, rows } = o;
+  const { strings, classes, region, rows, stageOf } = o;
   const el = document.createElement("div");
   el.className = "party-panel";
   Object.assign(el.style, {
@@ -166,11 +181,11 @@ export function createPartyPanel(o: {
     cells.sanLabel.textContent = strings["party.san"] ?? "party.san";
     cells.status.style.color = "var(--c-danger)";
     el.appendChild(line);
-    return { line, cells, hp: 0, hpMax: 0, mp: 0, mpMax: 0, life: "alive", status: [] };
+    return { line, cells, hp: 0, hpMax: 0, mp: 0, mpMax: 0, life: "alive", status: [], san: 0, sanMax: 0 };
   };
 
   const showCondition = (row: Row): void => {
-    row.cells.status.textContent = conditionText(row.life, row.status, strings);
+    row.cells.status.textContent = conditionText(row.life, row.status, strings, stageOf(row.san, row.sanMax));
   };
 
   let active: string | null = null;
@@ -195,7 +210,7 @@ export function createPartyPanel(o: {
       byId.clear();
       party.forEach((ch, i) => {
         const row = makeRow(i);
-        const t = formatPartyRow(ch, strings, classes);
+        const t = formatPartyRow(ch, strings, classes, stageOf);
         row.cells.name.textContent = t.name;
         row.cells.abbr.textContent = t.abbr;
         row.cells.hp.textContent = t.hp;
@@ -209,6 +224,8 @@ export function createPartyPanel(o: {
         row.mpMax = ch.mpMax;
         row.life = ch.life;
         row.status = ch.status.slice();
+        row.san = ch.san;
+        row.sanMax = ch.sanMax;
         byId.set(ch.id, row);
       });
       paintActive();
@@ -221,7 +238,11 @@ export function createPartyPanel(o: {
     },
     setSan(id: string, san: number): void {
       const row = byId.get(id);
-      if (row !== undefined) row.cells.san.textContent = String(san);
+      if (row === undefined) return;
+      row.san = san;
+      row.cells.san.textContent = String(san);
+      // UI-12: 段が変わりうるので状態の列も描き直す
+      showCondition(row);
     },
     setLife(id: string, life: Life): void {
       const row = byId.get(id);

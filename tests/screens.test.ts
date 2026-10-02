@@ -10,11 +10,14 @@ import {
   randomizePersonalities,
 } from "../src/presenter/views/creation";
 import { formatPartyRow, PARTY_COLUMNS } from "../src/presenter/views/party";
+import { sanStage } from "../src/core/rules/san";
 import { createRunGate } from "../src/presenter/run-gate";
 import type { Command, GameEvent } from "../src/core/types";
 import { data, newGame } from "./helpers/core";
 
 const ids = data.personalities.map((p) => p.id);
+/** UI-12: app と同じく core の sanStage で段を決める */
+const stageOf = (san: number, sanMax: number) => sanStage(san, sanMax, data.config);
 
 describe("簡易作成", () => {
   test("UI-51 既定の性格: リーダー（行 0）は null、残りは personalities の配列順に巡回", () => {
@@ -57,32 +60,59 @@ describe("パーティ欄", () => {
   test("UI-54/CH-44 formatPartyRow の状態の列: 生存なら状態異常の短い名前を空白区切り、死亡・灰はそれだけ", () => {
     const ch = newGame(1).party[0]!;
     const st = (k: string): string => data.strings[`party.status.${k}`]!;
-    expect(formatPartyRow(ch, data.strings, data.classes).life).toBe("");
-    expect(formatPartyRow({ ...ch, status: ["poison", "sleep"] }, data.strings, data.classes).life).toBe(`${st("poison")} ${st("sleep")}`);
-    expect(formatPartyRow({ ...ch, status: ["poison", "sleep"] }, data.strings, data.classes).life).toBe("毒 眠");
-    expect(formatPartyRow({ ...ch, status: ["stone"] }, data.strings, data.classes).life).toBe(st("stone"));
+    expect(formatPartyRow(ch, data.strings, data.classes, stageOf).life).toBe("");
+    expect(formatPartyRow({ ...ch, status: ["poison", "sleep"] }, data.strings, data.classes, stageOf).life).toBe(`${st("poison")} ${st("sleep")}`);
+    expect(formatPartyRow({ ...ch, status: ["poison", "sleep"] }, data.strings, data.classes, stageOf).life).toBe("毒 眠");
+    expect(formatPartyRow({ ...ch, status: ["stone"] }, data.strings, data.classes, stageOf).life).toBe(st("stone"));
     // 死亡・灰は状態異常を出さない
-    expect(formatPartyRow({ ...ch, life: "dead", hp: 0, status: ["poison"] }, data.strings, data.classes).life).toBe(data.strings["party.life.dead"]);
-    expect(formatPartyRow({ ...ch, life: "ash", hp: 0, status: ["paralysis"] }, data.strings, data.classes).life).toBe(data.strings["party.life.ash"]);
+    expect(formatPartyRow({ ...ch, life: "dead", hp: 0, status: ["poison"] }, data.strings, data.classes, stageOf).life).toBe(data.strings["party.life.dead"]);
+    expect(formatPartyRow({ ...ch, life: "ash", hp: 0, status: ["paralysis"] }, data.strings, data.classes, stageOf).life).toBe(data.strings["party.life.ash"]);
+  });
+
+  test("UI-12/CH-53 formatPartyRow の状態の列に SAN の段（sanMax 100 で 50 / 49 / 25 / 24 / 0 の境界）。normal・死亡・灰は段を出さない", () => {
+    const ch = { ...newGame(1).party[1]!, sanMax: 100 };
+    const sanOf = (k: string): string => data.strings[`party.san.${k}`]!;
+    const life = (patch: Partial<typeof ch>): string => formatPartyRow({ ...ch, ...patch }, data.strings, data.classes, stageOf).life;
+    // 手計算: uneasyRatio 0.5 → 50 未満で不安、confusedRatio 0.25 → 25 未満で錯乱、0 で虚脱（CH-53）
+    expect(life({ san: 100 })).toBe("");
+    expect(life({ san: 50 })).toBe("");
+    expect(life({ san: 49 })).toBe(sanOf("uneasy"));
+    expect(life({ san: 25 })).toBe(sanOf("uneasy"));
+    expect(life({ san: 24 })).toBe(sanOf("confused"));
+    expect(life({ san: 0 })).toBe(sanOf("broken"));
+    expect([sanOf("uneasy"), sanOf("confused"), sanOf("broken")]).toEqual(["不安", "錯乱", "虚脱"]);
+    // 状態異常の後ろに空白区切りで足す
+    expect(life({ san: 24, status: ["poison"] })).toBe(`${data.strings["party.status.poison"]} ${sanOf("confused")}`);
+    // 死亡・灰はそれだけ
+    expect(life({ san: 0, life: "dead", hp: 0 })).toBe(data.strings["party.life.dead"]);
+    expect(life({ san: 10, life: "ash", hp: 0 })).toBe(data.strings["party.life.ash"]);
+  });
+
+  test("UI-12 パーティ欄の段は core の sanStage を app から渡す（表示層で境を計算しない）。setSan は状態の列も描き直す（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toMatch(/stageOf: \(san, sanMax\) => sanStage\(san, sanMax, data\.config\)/);
+    const party = stripComments(presenterRaw["../src/presenter/views/party.ts"]!);
+    expect(party).not.toMatch(/uneasyRatio|confusedRatio/);
+    expect(party).toMatch(/setSan\(id: string, san: number\): void \{[\s\S]*?showCondition\(row\);[\s\S]*?\},/);
   });
 
   test("ui §2 X1/X2 formatPartyRow の略称は classes[].abbr（fighter → WAR …）。知らない職業は空", () => {
     const party = newGame(1).party;
-    expect(party.map((ch) => formatPartyRow(ch, data.strings, data.classes).abbr)).toEqual(["WAR", "WAR", "THI", "PRI", "MAG", "THI"]);
+    expect(party.map((ch) => formatPartyRow(ch, data.strings, data.classes, stageOf).abbr)).toEqual(["WAR", "WAR", "THI", "PRI", "MAG", "THI"]);
     const want: Record<string, string> = { fighter: "WAR", thief: "THI", priest: "PRI", mage: "MAG", samurai: "SAM", lord: "LOR", bishop: "BIS" };
-    for (const c of data.classes) expect(formatPartyRow({ ...party[0]!, classId: c.id }, data.strings, data.classes).abbr, c.id).toBe(want[c.id]);
-    expect(formatPartyRow({ ...party[0]!, classId: "nope" }, data.strings, data.classes).abbr).toBe("");
+    for (const c of data.classes) expect(formatPartyRow({ ...party[0]!, classId: c.id }, data.strings, data.classes, stageOf).abbr, c.id).toBe(want[c.id]);
+    expect(formatPartyRow({ ...party[0]!, classId: "nope" }, data.strings, data.classes, stageOf).abbr).toBe("");
   });
 
   test("ui §2 X2 mpMax が 0 のメンバー（戦士・盗賊）は MP の値とラベルを空欄にする。mpMax が 1 以上なら mp/mpMax とラベル", () => {
     const party = newGame(1).party;
-    const c1 = formatPartyRow(party[0]!, data.strings, data.classes); // アルド（fighter、MP 0/0）
+    const c1 = formatPartyRow(party[0]!, data.strings, data.classes, stageOf); // アルド（fighter、MP 0/0）
     expect(party[0]!.mpMax).toBe(0);
     expect([c1.mp, c1.mpLabel]).toEqual(["", ""]);
-    const c4 = formatPartyRow(party[3]!, data.strings, data.classes); // ドナ（priest、MP 5/5）
+    const c4 = formatPartyRow(party[3]!, data.strings, data.classes, stageOf); // ドナ（priest、MP 5/5）
     expect([c4.mp, c4.mpLabel]).toEqual(["5/5", data.strings["party.mp"]]);
     // 現在値が 0 でも mpMax があれば空欄にしない
-    expect(formatPartyRow({ ...party[3]!, mp: 0 }, data.strings, data.classes).mp).toBe("0/5");
+    expect(formatPartyRow({ ...party[3]!, mp: 0 }, data.strings, data.classes, stageOf).mp).toBe("0/5");
   });
 
   test("ui §2 X2 パーティの行の列は 名前 / 略称 / HP / MP / SAN / 状態 の順で、重ならず、右端は 240 以内。幅は美咲（半角 4px・全角 8px）で中身が入る", () => {
@@ -130,6 +160,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   "rules/camp": ["campMenu", "campSummary"],
   // M4.5 UI-25 / DG-15: 地図のタップ移動の経路と、自動歩行を続けてよいかは core が決める
   "rules/pathfind": ["planRoute", "routeStepOk"],
+  // M5 UI-12: パーティ欄の SAN の段は core の sanStage で決める（境の比率を表示層で持たない）
+  "rules/san": ["sanStage"],
 };
 
 /** コメントを除いた本文（文字列の中の // や /* は考えない最小限の除去。presenter に該当する文字列は無い） */

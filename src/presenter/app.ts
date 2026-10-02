@@ -19,6 +19,7 @@ import { battleMenu } from "../core/rules/combat";
 import { mapView, visibleCells } from "../core/rules/dungeon";
 import { campMenu, campSummary } from "../core/rules/camp";
 import { planRoute, routeStepOk } from "../core/rules/pathfind";
+import { sanStage } from "../core/rules/san";
 import { fieldItemMenu } from "../core/rules/items";
 import { townMenu } from "../core/rules/town";
 import { dungeonOf, itemDisplayName } from "../core/state";
@@ -190,6 +191,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     layout: playLayout,
     textSpeed: () => store.get().textSpeed,
     historyMax: data.config.ui.messageHistory,
+    stageOf: (san, sanMax) => sanStage(san, sanMax, data.config),
     onSettings: () => guard(() => openDebug()),
     onAction: (a: DpadAction) => tapDpad(a),
     // UI-31: 前進ボタンを動かずに holdRepeatMs 押し続けたら連打を始め、離したら止める

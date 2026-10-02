@@ -178,6 +178,9 @@
   "party.status.paralysis": "痺",
   "party.status.sleep": "眠",
   "party.status.stone": "石",
+  "party.san.uneasy": "不安",
+  "party.san.confused": "錯乱",
+  "party.san.broken": "虚脱",
 
   "detail.raceClass": "{race} {class}",
   "detail.level": "レベル {level}",

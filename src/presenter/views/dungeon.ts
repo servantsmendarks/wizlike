@@ -20,7 +20,7 @@ import { createHeader, type Header } from "./header";
 import { createHistoryView, type HistoryView } from "./history";
 import { createMapView, type MapViewEl } from "./map";
 import { createMessageWindow, type MessageWindow } from "./message";
-import { createPartyPanel, type PartyPanel } from "./party";
+import { createPartyPanel, type PartyPanel, type StageOf } from "./party";
 import { createWipeView, type WipeView } from "./wipe";
 
 export type PlayMode = "town" | "dungeon" | "battle";
@@ -74,6 +74,8 @@ export function createDungeonScreen(o: {
   /** 文字送りの 1 文字あたりの ms（UI-43） */
   textSpeed(): number;
   historyMax: number;
+  /** UI-12: パーティ欄の SAN の段（core の sanStage） */
+  stageOf: StageOf;
   onSettings(): void;
   /** 十字ボタンのタップ */
   onAction(a: DpadAction): void;
@@ -120,6 +122,7 @@ export function createDungeonScreen(o: {
     classes: o.data.classes,
     region: r.party,
     rows: lay.partyRows,
+    stageOf: o.stageOf,
   });
 
   const controls = createControls({
