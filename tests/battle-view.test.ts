@@ -78,16 +78,56 @@ describe("UI-54 敵グループの列", () => {
     expect(Object.prototype.hasOwnProperty.call(data.strings, "battle.groupCount")).toBe(false);
   });
 
-  test("UI-54 ラベルは列の幅 56 の 2 行に収まる: 全モンスターの名前・未鑑定名で、1 行目「{n} {name}」と 2 行目「×{count}」が 56px 以内（美咲: 半角 4px、他 8px）", () => {
+  test("UI-54 ラベルはラベルの幅（1 列 56、2 列以上 52）の 2 行に収まる: 全モンスターの名前・未鑑定名で、空白と仮名・漢字の間で折り返して 2 行以内（美咲: 半角 4px、他 8px）", () => {
     const px = (s: string): number => [...s].reduce((a, c) => a + (c.charCodeAt(0) < 0x80 ? 4 : 8), 0);
-    for (const m of data.monsters) {
-      for (const name of [m.name, m.unidentifiedName]) {
-        const label = groupLabel({ name, count: data.config.combat.maxPerGroup }, data.config.combat.maxEnemyGroups, data.strings);
-        const cut = label.lastIndexOf(" ");
-        expect(px(label.slice(0, cut)), name).toBeLessThanOrEqual(56);
-        expect(px(label.slice(cut + 1)), name).toBeLessThanOrEqual(56);
+    // 折り返しの単位: 空白で区切った語。仮名・漢字を含む語は 1 字ずつ（その間で折り返せる）、それ以外（「×9」など）は語のまま
+    const units = (label: string): string[][] =>
+      label.split(" ").map((w) => (/[぀-ヿ一-鿿]/.test(w) ? [...w] : [w]));
+    const lines = (label: string, width: number): number => {
+      let n = 1;
+      let x = 0;
+      for (const word of units(label)) {
+        if (x > 0) x += px(" ");
+        for (const u of word) {
+          const w = px(u);
+          if (x > 0 && x + w > width) {
+            n++;
+            x = 0;
+          }
+          x += w;
+        }
+      }
+      return n;
+    };
+    expect(lines("1 コボルド ×2", 56)).toBe(1);
+    expect(lines("1 コボルド ×2", 52)).toBe(2);
+    for (let n = 1; n <= data.config.combat.maxEnemyGroups; n++) {
+      const width = groupLabelRects(n, VIEW_W)[0]!.w;
+      for (const m of data.monsters) {
+        for (const name of [m.name, m.unidentifiedName]) {
+          const label = groupLabel({ name, count: data.config.combat.maxPerGroup }, data.config.combat.maxEnemyGroups, data.strings);
+          expect(lines(label, width), `${n} ${label}`).toBeLessThanOrEqual(2);
+        }
       }
     }
+  });
+
+  test("UI-54 2 列以上のラベルは注目の枠と同じ x と幅（52）で、隣のラベルとは 8px 以上離れる（3・4 グループで 1 行につながって見えない）", () => {
+    for (let n = 2; n <= data.config.combat.maxEnemyGroups; n++) {
+      const labels = groupLabelRects(n, VIEW_W);
+      const frames = groupColumns(n, VIEW_W).map(focusFrame);
+      labels.forEach((l, i) => {
+        expect([l.x, l.w], `${n} ${i}`).toEqual([frames[i]!.x, frames[i]!.w]);
+        expect(l.x >= 0 && l.x + l.w <= VIEW_W, `${n} ${i}`).toBe(true);
+        const next = labels[i + 1];
+        if (next !== undefined) expect(next.x - (l.x + l.w), `${n} ${i}`).toBeGreaterThanOrEqual(8);
+      });
+    }
+    expect(groupLabelRects(3, VIEW_W).map((r) => [r.x, r.w])).toEqual([
+      [34, 52],
+      [94, 52],
+      [154, 52],
+    ]);
   });
 
   test("UI-54 focusFrame は絵を 2px ずつ広げ（48 → 52、64 → 68）、ビューの内側でラベルより上。2 列以上では列の箱の内側で互いに重ならない", () => {
@@ -116,10 +156,10 @@ describe("UI-54 敵グループの列", () => {
     // 期待値は 注目の枠の下端（絵の y + 大きさ + 2）からの 20px: 2 列以上は 8+48+2=58、1 列は 2+64+2=68
     expect(groupLabelRects(1, VIEW_W)).toEqual([{ x: 92, y: 68, w: 56, h: 20 }]);
     expect(groupLabelRects(4, VIEW_W).map((r) => [r.x, r.y, r.w, r.h])).toEqual([
-      [2, 58, 56, 20],
-      [62, 58, 56, 20],
-      [122, 58, 56, 20],
-      [182, 58, 56, 20],
+      [4, 58, 52, 20],
+      [64, 58, 52, 20],
+      [124, 58, 52, 20],
+      [184, 58, 52, 20],
     ]);
     for (let n = 1; n <= data.config.combat.maxEnemyGroups; n++) {
       const labels = groupLabelRects(n, VIEW_W);

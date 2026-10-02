@@ -1,6 +1,7 @@
 // UI-54 / UI-60: 戦闘のビューの層（敵グループの列）。ビュー（既定 240×150）の左上を原点にした論理 px で置く。
 // - 列は幅 56・間 4 で中央寄せ。絵の代わりの色付き矩形は 48×48（列内 x+4、y8..55）、1 グループだけなら 64×64（y2..65）。
 // - 絵の下のラベルは注目の枠のすぐ下の 2 行（y58..77、1 グループなら y68..87。3 行目以降は line-clamp で「…」）。
+//   幅は 2 グループ以上なら注目の枠と同じ 52（隣と 8px 空ける）、1 グループなら列の箱の 56。
 //   戦闘で出る判定の箱（UI-40。上端 y88 以下にはならない）と重ならない位置（battle.groupLabel「{n} {name} ×{count}」。
 //   n は対象の一覧と同じ番号 = battle-input の targetNumber、name は core が選んだ表示名をそのまま）。列の区切り線や列の枠は描かない。
 // - 体数 0 の列は詰めずに visibility hidden（グループの添字は戦闘中に詰めない。CB-42）。
@@ -46,14 +47,18 @@ export function groupColumns(n: number, viewW: number): Rect[] {
 }
 
 /**
- * UI-54: 列 i のラベルの矩形（ビュー座標）。列の箱の幅 56、高さ 20（2 行）、y は注目の枠の下端（絵の下端 + FRAME_PAD）。
- * n=1 は y68..87、それ以外は y58..77。戦闘で出る判定の箱（UI-40。rows 1〜2 で上端 y98 / y88）と重ならない
+ * UI-54: 列 i のラベルの矩形（ビュー座標）。高さ 20（2 行）、y は注目の枠の下端（絵の下端 + FRAME_PAD）。
+ * n=1 は列の箱の幅 56 で y68..87、それ以外は注目の枠と同じ x と幅 52 で y58..77（隣のラベルと 8px 空け、
+ * 3〜4 グループで 1 行につながって見えないようにする）。戦闘で出る判定の箱（UI-40。rows 1〜2 で上端 y98 / y88）と重ならない
  */
 export function groupLabelRects(n: number, viewW: number): Rect[] {
   const sprites = groupColumns(n, viewW);
   return groupBoxes(n, viewW).map((b, i): Rect => {
-    const sr = sprites[i] ?? { y: SPRITE.y, h: SPRITE.size };
-    return { x: b.x, y: sr.y + sr.h + FRAME_PAD, w: b.w, h: LABEL_H };
+    const sr = sprites[i] ?? { x: b.x + SPRITE.x, y: SPRITE.y, w: SPRITE.size, h: SPRITE.size };
+    const y = sr.y + sr.h + FRAME_PAD;
+    if (n === 1) return { x: b.x, y, w: b.w, h: LABEL_H };
+    const f = focusFrame(sr);
+    return { x: f.x, y, w: f.w, h: LABEL_H };
   });
 }
 
