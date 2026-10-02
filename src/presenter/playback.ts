@@ -26,6 +26,9 @@
 // - イベント（UI-55、M5）: screen{event} と、イベントから戻る screen{dungeon} ではビューをフェードしない（迷宮の画面の上の状態）。
 //   eventStarted を受けたら deps.eventStarted() で迷宮の操作を下げ、actorId があれば party.markActor（演出スキップでは点滅なし）。
 //   印は再生の終わり（sync の前）に外す。
+//   制止の判定の箱（label が RESTRAIN_DICE_KEY、拍の外）は、続く message を 1 件（成否の語り）出した後でタップを 1 回待ってから消す
+//   （先に message・dice 以外のイベントか再生の終わりが来たらそこで待つ）。演出スキップでも待つ（§3-9。手動のタップ待ち）。
+//   他の拍の外の箱（dice.learn など）は待たない。
 // 具体的な views は import しない（純粋な enemyGroupOfId / formatMessage / formatDiceSummary だけ）。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, StatusId, Strings } from "../core/data/index";
 import type { EnemyGroupView, GameEvent, GameEventKind, GameState, Life, PenaltyResult, Screen, ViewPoint } from "../core/types";
@@ -99,6 +102,8 @@ export type PlayerDeps = {
 
 /** UI-40 / UI-56: 全滅の 2d10 の dice の label のキー。この箱は wipe（内訳を開く）まで消さない */
 export const WIPE_DICE_KEY = "dice.wipe";
+/** UI-40 / UI-55: 制止の判定の dice の label のキー。拍の外で出たら、続く message を 1 件出した後でタップを 1 回待ってから消す */
+export const RESTRAIN_DICE_KEY = "dice.restrain";
 
 export type Handlers = {
   [K in GameEventKind]?: (ev: Extract<GameEvent, { kind: K }>, cx: PlayCx, finalState: GameState) => Promise<void>;
@@ -402,8 +407,19 @@ export function createPlayer(deps: PlayerDeps): Player {
       const cx: PlayCx = { cursor: cursorOfDive(before), skip: isSkip(), screen: before.screen };
       // 後ろに message が残っているか（続きの三角。拍の外はタップを待たずに先へ進む）
       let messagesLeft = events.filter((e) => e.kind === "message").length;
+      /**
+       * UI-55 / UI-40: 拍の外の制止の箱のタップ待ち。awaitMessage = 箱を出して成否の語りを待つ、
+       * afterMessage = 語りを 1 件出した（次のイベントの前で待つ）
+       */
+      let hold: null | "awaitMessage" | "afterMessage" = null;
       try {
         for (const ev of events) {
+          if (hold === "afterMessage" || (hold === "awaitMessage" && ev.kind !== "message" && ev.kind !== "dice")) {
+            // 制止の箱を出したまま、続く message を 1 件出した後（先に別のイベントが来たらその前）でタップを 1 回待ち、待ちの後に消す
+            await waitTap();
+            hideDice();
+            hold = null;
+          }
           if (ev.kind === "beat") {
             // UI-45: 次の拍の前で待ち、待った後にダイスを消してから拍に入る
             await waitBeat("beat");
@@ -435,6 +451,14 @@ export function createPlayer(deps: PlayerDeps): Player {
           if (mode !== null && (ev.kind === "message" || ev.kind === "dice")) pending = true;
           const h = handlers[ev.kind] as ((e: GameEvent, cx: PlayCx, s: GameState) => Promise<void>) | undefined;
           if (h !== undefined) await h(ev, cx, finalState);
+          if (ev.kind === "dice") hold = mode === null && ev.label.key === RESTRAIN_DICE_KEY ? "awaitMessage" : null;
+          else if (ev.kind === "message" && hold === "awaitMessage") hold = "afterMessage";
+        }
+        if (hold !== null) {
+          // 制止の箱で列が終わる（または成否の語りが最後の文）なら、再生の終わりで待つ
+          await waitTap();
+          hideDice();
+          hold = null;
         }
         await waitBeat("end");
       } finally {

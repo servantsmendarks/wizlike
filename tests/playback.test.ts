@@ -4,7 +4,9 @@ import { formatDiceSummary, type DiceEvent } from "../src/presenter/views/dice";
 import { formatMessage } from "../src/presenter/views/message";
 import type { Settings } from "../src/presenter/settings";
 import type { Dive, EnemyGroupView, GameEvent, GameState, PenaltyResult, ViewPoint } from "../src/core/types";
-import { data, expectKnownStringKeys, newGame } from "./helpers/core";
+import { data, expectKnownStringKeys, newGame, withChar } from "./helpers/core";
+import { cloneState, makeContext } from "../src/core/state";
+import { startBattle } from "../src/core/rules/combat";
 import { execute } from "../src/core/engine";
 import { ALWAYS_HIT, dataWith, dived, withBattle } from "./helpers/battle";
 import { atEvent, dataEvents } from "./helpers/events";
@@ -991,5 +993,149 @@ describe("UI-55 イベントの再生（M5）", () => {
       expect(ms.at(-1)).toBe("screens.sync");
       expect(ms.at(-2)).toBe("party.markActor");
     }
+  });
+});
+
+describe("UI-55/UI-40 制止の箱のタップ待ち（M5）", () => {
+  const s = (): GameState => stateWith(diveAt(1, 1, "N"));
+  /** 制止の dice（1 件 2 行。値は表示の確認用） */
+  const restrain = (ok: boolean): GameEvent => ({
+    kind: "dice",
+    label: { key: "dice.restrain" },
+    rows: [
+      { label: { key: "dice.restrain.stopper", params: { name: "フィン" } }, base: 9, dice: [7], total: 16 },
+      { label: { key: "dice.restrain.actor", params: { name: "キリ" } }, base: 15, dice: [3], total: 18 },
+    ],
+    rule: { key: "dice.restrain.rule", params: { diff: -2 } },
+    result: { key: ok ? "dice.restrain.ok" : "dice.restrain.ng" },
+  });
+  const learn: GameEvent = {
+    kind: "dice",
+    label: { key: "dice.learn", params: { spell: "x" } },
+    rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [12], total: 12 }],
+    rule: { key: "dice.rule.rate", params: { rate: 50 } },
+    result: { key: "dice.learn.ok" },
+  };
+  /** 箱・語り・待ち・消す・画面の切り替えの順だけを見る */
+  const span = (log: Log): string[] =>
+    log
+      .filter((e) => ["dice.show", "dice.hide", "beat.waitTap", "message.say", "screens.show", "party.setSan"].includes(e.m))
+      .map((e) => (e.m === "message.say" ? `say:${String(e.a[0])}` : e.m === "screens.show" ? `screens.show:${String(e.a[0])}` : e.m));
+  const say = (key: string, params?: Record<string, string | number>): string => `say:${formatMessage(data.strings[key]!, params)}`;
+
+  test("UI-55/UI-40 拍の外の制止の箱: 続く message を 1 件出した後でタップを待ち、待ちの後に消す（演出スキップの真偽とも）", async () => {
+    for (const skipAnimations of [false, true]) {
+      const { deps, log } = fakeDeps({ skipAnimations });
+      const events: GameEvent[] = [
+        msg("event.stop.roll", { stopper: "フィン" }),
+        restrain(false),
+        msg("event.stop.fail", { stopper: "フィン" }),
+        msg("event.glowing_tablet.impulse", { actor: "キリ" }),
+      ];
+      expectKnownStringKeys(events);
+      await createPlayer(deps).play(events, s(), s());
+      expect(span(log), String(skipAnimations)).toEqual([
+        say("event.stop.roll", { stopper: "フィン" }),
+        "dice.show",
+        say("event.stop.fail", { stopper: "フィン" }),
+        "beat.waitTap",
+        "dice.hide",
+        say("event.glowing_tablet.impulse", { actor: "キリ" }),
+      ]);
+      // 続きの三角は演出スキップでは点滅しない
+      const w = log.findIndex((e) => e.m === "beat.waitTap");
+      expect(log.slice(0, w).filter((e) => e.m === "message.setMore").at(-1)?.a).toEqual([true, !skipAnimations]);
+    }
+  });
+
+  test("UI-55 制止の箱のタップ待ちは Player.tap() で解くまで先へ進まない（箱は出たまま）", async () => {
+    const { deps, log } = fakeDeps();
+    delete deps.beat; // 既定の掛け金（Player.tap() が解く）
+    const player = createPlayer(deps);
+    let done = false;
+    const p = player.play([restrain(true), msg("event.stop.success", { stopper: "フィン", actor: "キリ" }), msg("event.nothing")], s(), s()).then(() => {
+      done = true;
+    });
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(done).toBe(false);
+    expect(log.filter((e) => e.m === "message.say")).toHaveLength(1);
+    expect(names(log)).not.toContain("dice.hide");
+    player.tap();
+    await p;
+    expect(done).toBe(true);
+    expect(log.filter((e) => e.m === "message.say")).toHaveLength(2);
+    expect(names(log).filter((m) => m === "dice.hide")).toHaveLength(1);
+    expect(names(log)).not.toContain("message.rush"); // 待ちを解くだけ
+  });
+
+  test("UI-55 制止の箱の後に message が無く sanChanged / screen が来たらその前で待つ。箱で列が終わるなら終わりで待つ。成否の語りが最後の文なら終わりで待つ", async () => {
+    {
+      const { deps, log } = fakeDeps();
+      await createPlayer(deps).play([restrain(true), { kind: "sanChanged", id: "c6", delta: 3, san: 53 }, { kind: "screen", to: "event" }], s(), s());
+      expect(span(log)).toEqual(["dice.show", "beat.waitTap", "dice.hide", "party.setSan", "screens.show:event"]);
+    }
+    {
+      const { deps, log } = fakeDeps();
+      await createPlayer(deps).play([restrain(true)], s(), s());
+      expect(span(log)).toEqual(["dice.show", "beat.waitTap", "dice.hide"]);
+    }
+    {
+      const { deps, log } = fakeDeps();
+      await createPlayer(deps).play([restrain(false), msg("event.stop.fail", { stopper: "フィン" })], s(), s());
+      expect(span(log)).toEqual(["dice.show", say("event.stop.fail", { stopper: "フィン" }), "beat.waitTap", "dice.hide"]);
+      expect(log.filter((e) => e.m === "beat.waitTap")).toHaveLength(1);
+    }
+  });
+
+  test("UI-40 拍の外の dice.learn は待たない（続く message の間だけ残し、次のイベントで消す）", async () => {
+    const { deps, log } = fakeDeps();
+    await createPlayer(deps).play([learn, msg("event.nothing"), { kind: "sanChanged", id: "c2", delta: -1, san: 99 }], s(), s());
+    expect(span(log)).toEqual(["dice.show", say("event.nothing"), "dice.hide", "party.setSan"]);
+    expect(names(log)).not.toContain("beat.waitTap");
+  });
+
+  test("UI-55/EV-22 core の実際の列（光る石板。フィンの iq 100 で制止成功 → 選択。シード固定）: 箱 → 成否 → 待ち → 消す → screen{event}", async () => {
+    const d = dataEvents();
+    const base = atEvent("glowing_tablet").state;
+    const fin = base.party[5]!;
+    const st = withChar(base, 5, { stats: { ...fin.stats, iq: 100 } });
+    const r = execute(st, { type: "dungeon.move" }, d);
+    expect(r.state.screen).toBe("event");
+    const ks = r.events.filter((e) => e.kind === "dice" || e.kind === "message" || e.kind === "screen").map((e) => (e.kind === "message" ? e.key : e.kind));
+    expect(ks.slice(-4)).toEqual(["event.stop.roll", "dice", "event.stop.success", "screen"]);
+    for (const skipAnimations of [false, true]) {
+      const { deps, log } = fakeDeps({ skipAnimations });
+      await createPlayer(deps).play(r.events, st, r.state);
+      const sp = span(log);
+      const at = sp.indexOf("dice.show");
+      expect(sp.slice(at), String(skipAnimations)).toEqual([
+        "dice.show",
+        say("event.stop.success", { stopper: fin.name, actor: st.party[2]!.name }),
+        "beat.waitTap",
+        "dice.hide",
+        "screens.show:event",
+      ]);
+      expect(log.filter((e) => e.m === "beat.waitTap")).toHaveLength(1);
+    }
+  });
+
+  test("CB-04/UI-45 不意打ちの察知の箱は別の拍。手動では先手の箱の後でタップを待ってから替わる（core の実際の列）", async () => {
+    const d = dataWith({ combat: ALWAYS_HIT }, (x) => (x.monsters.find((m) => m.id === "giant_rat")!.agi = 1000));
+    let found: { before: GameState; events: GameEvent[]; after: GameState } | null = null;
+    for (let seed = 1; seed <= 200 && found === null; seed++) {
+      const before = dived(seed);
+      const ctx = makeContext(cloneState(before), d);
+      startBattle(ctx, { kind: "random", inRoom: false }, [{ monsterId: "giant_rat", count: 2 }]);
+      if (ctx.events.some((e) => e.kind === "dice" && e.result.key === "dice.ambushAvoid.ok")) found = { before, events: ctx.events, after: ctx.state };
+    }
+    expect(found).not.toBeNull();
+    const { deps, log } = fakeDeps();
+    await createPlayer(deps).play(found!.events, found!.before, found!.after);
+    const sp = log
+      .filter((e) => ["dice.show", "dice.hide", "beat.waitTap", "message.say"].includes(e.m))
+      .map((e) => (e.m === "dice.show" ? `show:${String(e.a[0])}` : e.m === "message.say" ? "say" : e.m));
+    const i = sp.indexOf("show:dice.initiative");
+    // 先手の箱 → 不意を突かれた → タップ待ち → 箱を消す → 察知の箱 → 免れた → 再生の終わりの待ち（手動・ダイスあり）→ 消す
+    expect(sp.slice(i)).toEqual(["show:dice.initiative", "say", "beat.waitTap", "dice.hide", "show:dice.ambushAvoid", "say", "beat.waitTap", "dice.hide"]);
   });
 });

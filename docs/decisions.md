@@ -535,3 +535,4 @@
 - 2026-10-02 core(M5): B11 イベントのセルに入った歩では遭遇の d100 を振らない（階段と同じ）。B10 イベントの処理の後（選択・衝動の結果・制止成功の impulse 型・無視する）に clearedCells へ入れ、選択の保留中は入れない（リロード後も同じ問いが出る）。
 - 2026-10-02 presenter(M5): screen event は route dungeon の上の状態として描く（resume.ts の routeOfScreen。app の onScreen と resumePlan が使う）。迷宮の入力（スワイプ・長押し・自動歩行・地図・十字ボタンのキー）の条件は fieldFree（screen dungeon かつ保留なし）にした。screen event の保存をリロードしたときに描けない期間を作らないよう、core の screen event と同じコミットに入れた。
 - 2026-10-02 presenter(M5): UI-55 衝動の行動者（eventStarted の actorId）は、その再生の間だけ名前を accent 色にし行を点滅させる（400ms の矩形波。演出スキップでは点滅せず色だけ）。再生の終わり（sync の前）に外す。screen{event} とイベントから戻る screen{dungeon} はフェードしない（同じ線画のため）。eventStarted を受けたら十字ボタンを下げる（再生の最後の sync で出し直す）。
+- 2026-10-02 presenter(M5): UI-55/UI-40 制止の箱（拍の外の dice.restrain）は、続く message を 1 件（成否の語り）出した後でタップを 1 回待ってから消す（先に message・dice 以外のイベントか再生の終わりが来たらそこで待つ）。既存の「続く message の間だけ残す」では演出スキップ ON で出目が読めず、完了条件「出目が表示される」を満たせないため。手動のタップ待ちなので演出スキップでも省かない（§3-9）。他の拍の外の箱（dice.learn）は待たない。
