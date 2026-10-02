@@ -25,7 +25,7 @@ import {
   type BattleOpts,
   type GroupSpec,
 } from "./helpers/battle";
-import { data, expectKnownStringKeys, noAmbushAvoid, noBenefits } from "./helpers/core";
+import { data, expectKnownStringKeys, noAmbushAvoid, noBenefits, noSanOverride } from "./helpers/core";
 
 const RESOLVE: Command = { type: "battle.resolve" };
 const DEF: BattleAction = { type: "defend" };
@@ -944,7 +944,8 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
   });
 
   test("CB-31 囁く影の sanDrain 4（battle.sanDrain）、無鉄砲は fear 耐性で 2。SAN 0 で行動不能", () => {
-    const d = dataWith({ combat: ALWAYS_HIT });
+    // noSanOverride: SAN 2（錯乱）のキリの防御が CB-45 で置き換わらないようにする（耐性の量だけを見る）
+    const d = dataWith({ combat: ALWAYS_HIT }, noSanOverride);
     const shadow = (patches: Record<string, Partial<Character>>, inputs: Record<string, BattleAction>) =>
       setup([{ monsterId: "whispering_shadow", hps: [50] }], { identified: ["whispering_shadow"], patches, inputs });
     const lead = exec(shadow({ c2: STONE, c3: STONE }, { c1: DEF, c4: DEF, c5: DEF, c6: DEF }), RESOLVE, d);
@@ -1636,6 +1637,139 @@ describe("網羅（完了条件「6 種と戦える」、敵の id、battleMenu�
   });
 });
 
+describe("SAN の閾値効果（CB-45、CH-53）", () => {
+  // 麻痺の大ネズミ（行動しない）。only に書いた者以外は麻痺
+  const san = (
+    only: Record<string, Partial<Character>>,
+    inputs: Record<string, BattleAction>,
+    groups: GroupSpec[] = [{ monsterId: "giant_rat", hps: [50], status: [["paralysis"]] }],
+    seed = 1,
+  ) =>
+    setup(groups, {
+      seed,
+      identified: groups.map((g) => g.monsterId),
+      inputs,
+      patches: { c1: PARA, c2: PARA, c3: PARA, c4: PARA, c5: PARA, c6: PARA, ...only },
+    });
+  const declareOf = (events: readonly GameEvent[]) =>
+    phasesOf(events)
+      .filter(([p]) => p === "declare")
+      .map(([, body]) => body);
+
+  test("CB-45/CH-53 SAN 50% 以上の者は置き換えの乱数を引かない（50 / 100 は initiative の 1d10 だけ。49 は chance が 1 つ増える）", () => {
+    for (const v of [50, 100]) {
+      const s = san({ c1: { san: v } }, { c1: DEF });
+      const m = cloneRng(s.rng);
+      rolls(m, 1);
+      expect(exec(s, RESOLVE).state.rng).toEqual(m);
+    }
+    // 49（不安）: 置き換えないとき（uneasyChance 0 と比べ）rng が 1 つ進む。uneasyChance 100 で必ず置き換える
+    const s49 = san({ c1: { san: 49 } }, { c1: DEF });
+    const m = cloneRng(s49.rng);
+    expect(chance(m, 1)).toBe(false); // シード 1 の最初の d100 は 1 より大きい（置き換えない）
+    rolls(m, 1);
+    const r1 = exec(s49, RESOLVE, dataWith({ san: { uneasyChance: 1 } }));
+    expect(r1.state.rng).toEqual(m);
+    expect(kindsOf(r1.events)).not.toContain("message:battle.disobey");
+    expect(kindsOf(exec(s49, RESOLVE, dataWith({ san: { uneasyChance: 100, randomDefendChance: 100 } })).events)).toContain("message:battle.disobey");
+  });
+
+  test("CB-45/A5 不安: 確率は disobeyBelowHalf（普通）か uneasyChance、成功で性格傾向 + declare の先頭に battle.disobey。lastBattleInput は変えない", () => {
+    // 慎重（ベルク SAN 40、攻撃の入力）: uneasyChance 100 → 傾向（防御）。語りは declare の先頭
+    const always = dataWith({ san: { uneasyChance: 100 } });
+    const berg = san({ c2: { san: 40, lastBattleInput: atk(0) } }, { c2: atk(0) });
+    const m = cloneRng(berg.rng);
+    expect(chance(m, 100)).toBe(true);
+    rolls(m, 1);
+    const r = exec(berg, RESOLVE, always);
+    expect(r.state.rng).toEqual(m); // 傾向の防御は乱数を引かない
+    expect(declareOf(r.events)).toEqual([["message:battle.disobey", "message:battle.defend"]]);
+    expect(r.events).toContainEqual({ kind: "message", key: "battle.disobey", params: { actor: "ベルク" } });
+    expect(eventsOf(r.events, "attack")).toEqual([]);
+    expect(member(r.state, "c2").lastBattleInput).toEqual(atk(0));
+    // 置き換え後が元と同じ（防御 → 防御）でも語りは出す
+    const bergDef = san({ c2: { san: 40 } }, { c2: DEF });
+    expect(declareOf(exec(bergDef, RESOLVE, always).events)).toEqual([["message:battle.disobey", "message:battle.defend"]]);
+    // 慎重は disobeyBelowHalf 0 なので uneasyChance を使う: 0 なら乱数を引かず置き換えない
+    const r0 = exec(berg, RESOLVE, dataWith({ san: { uneasyChance: 0 } }));
+    expect(kindsOf(r0.events)).not.toContain("message:battle.disobey");
+    expect(eventsOf(r0.events, "attack").map((e) => e.actorId)).toEqual(["c2"]);
+    // 普通（エル SAN 40）は disobeyBelowHalf が正ならその値を使う: uneasyChance 0 でも disobeyBelowHalf 100 で置き換わる
+    const own = dataWith({ san: { uneasyChance: 0 } }, (x) => (x.personalities.find((p) => p.id === "normal")!.san.disobeyBelowHalf = 100));
+    const el = san({ c1: {}, c5: { san: 40 } }, { c1: DEF, c5: DEF });
+    expect(exec(el, RESOLVE, own).events).toContainEqual({ kind: "message", key: "battle.disobey", params: { actor: "エル" } });
+    // 無鉄砲（キリ SAN 40、防御の入力）: 最小の生存グループへの攻撃
+    const kiri = san({ c3: { san: 40 } }, { c3: DEF }, [
+      { monsterId: "giant_rat", hps: [0] },
+      { monsterId: "giant_rat", hps: [50], status: [["paralysis"]] },
+    ]);
+    const rk = exec(kiri, RESOLVE, dataWith({ combat: ALWAYS_HIT, san: { uneasyChance: 100 } }));
+    expect(declareOf(rk.events)[0]).toEqual(["message:battle.disobey", "message:battle.attackDeclare"]);
+    expect(eventsOf(rk.events, "attack").map((e) => e.targetId)).toEqual(["e1-0"]);
+    // 強欲（ドナ SAN 40。前衛 3 人が麻痺なので前衛扱い）: gold の期待値 × 生存数が最大のグループ（kobold 21 > rat 7）
+    const dona = san({ c4: { san: 40 } }, { c4: DEF }, [
+      { monsterId: "giant_rat", hps: [50], status: [["paralysis"]] },
+      { monsterId: "kobold", hps: [50], status: [["paralysis"]] },
+    ]);
+    const rd = exec(dona, RESOLVE, dataWith({ combat: ALWAYS_HIT, san: { uneasyChance: 100 } }));
+    expect(eventsOf(rd.events, "attack").map((e) => e.targetId)).toEqual(["e1-0"]);
+  });
+
+  test("CB-45 錯乱: confusedChance でランダム行動（randomDefendChance で防御、でなければ randInt の生存グループ）+ declare の先頭に battle.confused", () => {
+    const groups: GroupSpec[] = [
+      { monsterId: "giant_rat", hps: [50], status: [["paralysis"]] },
+      { monsterId: "giant_rat", hps: [0] },
+      { monsterId: "giant_rat", hps: [50], status: [["paralysis"]] },
+    ];
+    // 防御（randomDefendChance 100）: 攻撃の入力でも防御
+    const s = san({ c1: { san: 20 } }, { c1: atk(0) }, groups);
+    const md = cloneRng(s.rng);
+    chance(md, 100); // 錯乱の置き換え
+    chance(md, 100); // 防御
+    rolls(md, 1);
+    const rDef = exec(s, RESOLVE, dataWith({ san: { confusedChance: 100, randomDefendChance: 100 } }));
+    expect(rDef.state.rng).toEqual(md);
+    expect(declareOf(rDef.events)).toEqual([["message:battle.confused", "message:battle.defend"]]);
+    expect(rDef.events).toContainEqual({ kind: "message", key: "battle.confused", params: { actor: "アルド" } });
+    // 攻撃（randomDefendChance 0）: 生存グループ [0, 2] から randInt(0, 1)。防御の入力でも攻撃
+    const toAtk = dataWith({ combat: ALWAYS_HIT, san: { confusedChance: 100, randomDefendChance: 0 } });
+    const seen = new Set<number>();
+    for (let seed = 1; seed <= 10; seed++) {
+      const s2 = san({ c1: { san: 20 } }, { c1: DEF }, groups, seed);
+      const m = cloneRng(s2.rng);
+      chance(m, 100);
+      chance(m, 0);
+      const g = [0, 2][randInt(m, 0, 1)]!;
+      seen.add(g);
+      rolls(m, 1);
+      chance(m, 100);
+      rollDice(m, "1d8");
+      const r = exec(s2, RESOLVE, toAtk);
+      expect(r.state.rng).toEqual(m);
+      expect(eventsOf(r.events, "attack").map((e) => e.targetId)).toEqual([`e${g}-0`]);
+      expect(declareOf(r.events)[0]).toEqual(["message:battle.confused", "message:battle.attackDeclare"]);
+    }
+    expect(seen.size).toBe(2);
+  });
+
+  test("CB-45 確率 0 なら乱数を引かない（錯乱の confusedChance 0、不安の uneasyChance 0 と disobeyBelowHalf 0）", () => {
+    const s = san({ c1: { san: 20 }, c2: { san: 40 }, c5: { san: 40 } }, { c1: DEF, c2: DEF, c5: DEF });
+    const m = cloneRng(s.rng);
+    rolls(m, 3);
+    const r = exec(s, RESOLVE, dataWith({}, noSanOverride));
+    expect(r.state.rng).toEqual(m);
+    expect(kindsOf(r.events).filter((k) => k === "message:battle.disobey" || k === "message:battle.confused")).toEqual([]);
+  });
+
+  test("CB-45/CB-13 後衛の置き換えの攻撃は防御（disobey → backRowCannotAttack）", () => {
+    // ドナ（強欲・後衛・杖、SAN 40）: 傾向は最も金のあるグループへの攻撃だが、前衛のアルドが行動可能なので後衛の防御（backRow）
+    const s = san({ c1: {}, c4: { san: 40 } }, { c1: DEF, c4: DEF });
+    const r = exec(s, RESOLVE, dataWith({ san: { uneasyChance: 100 } }));
+    expect(declareOf(r.events)).toContainEqual(["message:battle.disobey", "message:battle.backRowCannotAttack"]);
+    expect(r.events).toContainEqual({ kind: "message", key: "battle.backRowCannotAttack", params: { actor: "ドナ" } });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // CB-55: 拍（beat）
 
@@ -1939,11 +2073,13 @@ describe("拍（CB-55）", () => {
   });
 
   test("CB-55 不変条件: (a) 戦闘の外の迷宮・戦闘外の全滅には拍が無い (b) 拍は連続せず末尾に無い (c) 拍を取り除いた列・最終の state と rng は拍を入れない場合と同じ（30 シード × 遭遇から決着まで）", () => {
-    const run = (enabled: boolean, seed: number) => {
+    const LOW_SAN = { c1: { san: 20 }, c2: { san: 20 }, c3: { san: 20 }, c4: { san: 20 }, c5: { san: 20 }, c6: { san: 20 } };
+    const run = (enabled: boolean, seed: number, low = false) => {
       beatSwitchForTests.enabled = enabled;
       try {
         const out: GameEvent[][] = [];
-        const ctx = makeContext(cloneState(dived(seed)), data);
+        // low: 全員 SAN 20（錯乱）で CB-45 の置き換えを起こす
+        const ctx = makeContext(cloneState(low ? patchParty(dived(seed), LOW_SAN) : dived(seed)), data);
         startRandomEncounter(ctx, seed % 3 === 0);
         out.push(ctx.events);
         let s = ctx.state;
@@ -1974,6 +2110,20 @@ describe("拍（CB-55）", () => {
       }
     }
     expect(withBeats).toBeGreaterThan(30);
+    // 低 SAN（20）の一行: CB-45 の置き換えと語り（declare の拍の先頭）でも (b)(c) が成り立つ
+    let confused = 0;
+    for (let seed = 1; seed <= 10; seed++) {
+      const a = run(true, seed, true);
+      const b = run(false, seed, true);
+      expect(a.state).toEqual(b.state);
+      expect(a.out.map(withoutBeats)).toEqual(b.out);
+      for (const evs of a.out) {
+        expectBeatShape(evs);
+        expectKnownStringKeys(evs);
+        confused += kindsOf(evs).filter((k) => k === "message:battle.confused").length;
+      }
+    }
+    expect(confused).toBeGreaterThan(0);
 
     // (a) 迷宮の歩行・旋回（遭遇率 0）と、戦闘外の全滅（全員麻痺で旋回）には拍が無い
     const quiet = dataWith({}, (x) => {

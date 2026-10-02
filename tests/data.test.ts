@@ -126,6 +126,15 @@ describe("data: config.json", () => {
     expect(issuesOf((r) => (r.config.combat.autoDefendHpRatio = 0))).toEqual([]);
     expect(issuesOf((r) => (r.config.combat.autoDefendHpRatio = 1))).toEqual([]);
   });
+  test("data: CB-45/CH-53 san.randomDefendChance は 0..100 の整数【仮】", () => {
+    expect(config.san.randomDefendChance).toBe(50);
+    expectIssue((r) => (r.config.san.randomDefendChance = 101), "config.json", "san.randomDefendChance: expected integer in 0..100, got 101");
+    expectIssue((r) => (r.config.san.randomDefendChance = -1), "config.json", "san.randomDefendChance: expected integer in 0..100, got -1");
+    expectIssue((r) => (r.config.san.randomDefendChance = 2.5), "config.json", "san.randomDefendChance: expected integer");
+    expectIssue((r) => delete r.config.san.randomDefendChance, "config.json", "san.randomDefendChance: missing required field");
+    expect(issuesOf((r) => (r.config.san.randomDefendChance = 0))).toEqual([]);
+    expect(issuesOf((r) => (r.config.san.randomDefendChance = 100))).toEqual([]);
+  });
   test("data: CB-05 combat.identifyIqPerPoint は 0 以上の整数【仮】", () => {
     expectIssue((r) => (r.config.combat.identifyIqPerPoint = -1), "config.json", "combat.identifyIqPerPoint: expected integer >= 0, got -1");
     expectIssue((r) => (r.config.combat.identifyIqPerPoint = 0.5), "config.json", "combat.identifyIqPerPoint: expected integer");

@@ -134,6 +134,8 @@ export type Config = {
     confusedRatio: number;
     uneasyChance: number;
     confusedChance: number;
+    /** CH-53 / CB-45【仮】: 「防御または対象ランダムの攻撃」で防御を選ぶ確率（%） */
+    randomDefendChance: number;
     restoreOnTown: boolean;
   };
   wipe: { reviveHpRatio: number; clearStatus: boolean };

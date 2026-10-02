@@ -186,3 +186,10 @@ export function noBenefits(d: GameData): void {
 export function noAmbushAvoid(d: GameData): void {
   for (const p of d.personalities) p.benefits.ambushAvoid = 0;
 }
+
+/** M5 の mut: CB-45 の置き換えを止める（uneasyChance / confusedChance と全性格の disobeyBelowHalf を 0。確率 0 なら乱数も引かない） */
+export function noSanOverride(d: GameData): void {
+  d.config.san.uneasyChance = 0;
+  d.config.san.confusedChance = 0;
+  for (const p of d.personalities) p.san.disobeyBelowHalf = 0;
+}

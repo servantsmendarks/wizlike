@@ -7,7 +7,8 @@
 //   遭遇: [グループ数] → ([種類] → [体数])×グループ → HP（g→u）→ 味方 1d10 → 敵 1d10
 //     →（敵の奇襲が成立し、行動可能な味方の ambushAvoid の最大が正なら d100。CB-04）→（敵の奇襲ならそのラウンド）
 //   ボス: groupSize（定数 "1" は消費なし）→ HP → 先手 2 個 →（同じく d100）
-//   ラウンド（battle.resolve / battle.repeat）: initiative（味方の計画の順 → ラウンド開始時に行動可能な敵の個体の g → u）
+//   ラウンド（battle.resolve / battle.repeat）: [CB-45 の置き換え（並び順に、不安・錯乱の者だけ chance →（成功なら）
+//     randomDefendChance → randInt）] → initiative（味方の計画の順 → ラウンド開始時に行動可能な敵の個体の g → u）
 //     → 行動順に各行動
 //   逃走（battle.flee）: d100 →（失敗なら）initiative（敵だけ）→ 敵の行動 → ラウンド終了
 //     味方の攻撃 1 振り: 命中 → [ダメージ] → [覚醒]
@@ -17,7 +18,7 @@
 //   免疫・既に同じ状態・対象なしは消費しない。
 import type { GameData, Spell, SpellEffect, SpellTarget, StatusId } from "../data/index";
 import { chance, randInt, rollDice, rollDie, weightedIndex } from "../rng";
-import { classOf, destroyItemInstance, dungeonOf, itemDisplayName, itemOf, memberById, monsterOf, spellOf } from "../state";
+import { classOf, destroyItemInstance, dungeonOf, itemDisplayName, itemOf, memberById, monsterOf, personalityOf, spellOf } from "../state";
 import type {
   BattleAction,
   BattleMenu,
@@ -67,11 +68,11 @@ import {
 } from "./combat-calc";
 import type { BattleItem } from "./combat-calc";
 import type { AllyPlan, MemberSnap, TargetRef } from "./combat-plan";
-import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, snapMembers, toPlan } from "./combat-plan";
+import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, richestGroup, snapMembers, toPlan } from "./combat-plan";
 import { offerTeleporter } from "./choices";
 import { applyAllyEffect } from "./effects";
 import { gainGold } from "./field";
-import { loseSan } from "./san";
+import { loseSan, sanStage } from "./san";
 import { performWipe } from "./wipe";
 
 /**
@@ -438,12 +439,16 @@ function runRound(ctx: RuleContext, who: { allies: boolean; enemies: boolean }):
   const b = requireBattle(state);
   b.round += 1;
   const plans: AllyPlan[] = [];
+  // CB-45: SAN の閾値効果で置き換えた者の語りのキー（このラウンドだけ。state には入れない）
+  const sanMsg: Record<string, SanOverrideKey> = {};
   if (who.allies) {
     for (const ch of state.party) {
       if (!canAct(ch)) continue;
       const a = b.inputs[ch.id];
-      const action = a === undefined ? ({ type: "defend" } as const) : a;
-      plans.push(toPlan(state, data, ch, action));
+      const a0: BattleAction = a === undefined ? { type: "defend" } : a;
+      const r = sanOverride(ctx, ch, a0); // 乱数はここ（initiative の 1d10 より前）
+      if (r.key !== null) sanMsg[ch.id] = r.key;
+      plans.push(toPlan(state, data, ch, r.action));
     }
   }
   // CB-12: 防御（置き換えを含む）はラウンド全体に効く
@@ -465,7 +470,7 @@ function runRound(ctx: RuleContext, who: { allies: boolean; enemies: boolean }):
     if (actor.side === "ally") {
       const ch = requireMember(state, actor.plan.memberId);
       if (!canAct(ch)) continue; // CB-16
-      applyAllyPlan(ctx, ch, actor.plan);
+      applyAllyPlan(ctx, ch, actor.plan, sanMsg[ch.id] ?? null);
     } else {
       if (!unitCanAct(unitAt(b, actor.g, actor.u))) continue; // CB-16
       actEnemyUnit(ctx, actor.g, actor.u, defending);
@@ -480,6 +485,62 @@ function runRound(ctx: RuleContext, who: { allies: boolean; enemies: boolean }):
     }
   }
   return false;
+}
+
+type SanOverrideKey = "battle.disobey" | "battle.confused";
+
+/**
+ * CB-45 / CH-53【仮】: SAN の閾値効果で、ラウンドの頭に味方の行動を置き換える（オートの有無に関わらず）。
+ * 不安: 確率 = 性格の san.disobeyBelowHalf が正ならその値、でなければ san.uneasyChance（A5）。成功で性格傾向の行動。
+ * 錯乱: 確率 = san.confusedChance。成功でランダムな行動。normal / broken（行動不能で来ない）は置き換えない。
+ * 確率が 0 以下なら chance を引かない（chance は 0% でも 1 回消費するため）。置き換えた行動は inputs にも lastBattleInput にも書かない
+ */
+function sanOverride(ctx: RuleContext, ch: Character, a0: BattleAction): { action: BattleAction; key: SanOverrideKey | null } {
+  const { state, data } = ctx;
+  const cfg = data.config;
+  const p = personalityOf(data, ch.personality);
+  const stage = sanStage(ch.san, ch.sanMax, cfg);
+  if (stage === "uneasy") {
+    const own = p?.san.disobeyBelowHalf ?? 0;
+    const pct = own > 0 ? own : cfg.san.uneasyChance;
+    if (pct <= 0 || !chance(state.rng, pct)) return { action: a0, key: null };
+    return { action: sanTendencyAction(ctx, ch), key: "battle.disobey" };
+  }
+  if (stage === "confused") {
+    const pct = cfg.san.confusedChance;
+    if (pct <= 0 || !chance(state.rng, pct)) return { action: a0, key: null };
+    return { action: sanRandomAction(ctx), key: "battle.confused" };
+  }
+  return { action: a0, key: null };
+}
+
+/** CB-45 / CH-53: 不安の「性格傾向の行動」。普通とリーダーは sanRandomAction（防御または対象ランダムの攻撃） */
+function sanTendencyAction(ctx: RuleContext, ch: Character): BattleAction {
+  const b = requireBattle(ctx.state);
+  switch (personalityOf(ctx.data, ch.personality)?.autoBattle ?? "none") {
+    case "defendBelowHalf":
+      return { type: "defend" };
+    case "alwaysAttack": {
+      const g = lowestAliveGroup(b);
+      return g === null ? { type: "defend" } : { type: "attack", group: g };
+    }
+    case "targetRichest": {
+      const g = richestGroup(b, ctx.data);
+      return g === null ? { type: "defend" } : { type: "attack", group: g };
+    }
+    case "none":
+      return sanRandomAction(ctx);
+  }
+}
+
+/** CB-45 / CH-53: ランダムな行動。san.randomDefendChance% で防御、でなければ生存グループ（添字の昇順）から randInt で 1 つを攻撃。生存グループが無ければ防御（乱数なし） */
+function sanRandomAction(ctx: RuleContext): BattleAction {
+  const { state, data } = ctx;
+  const b = requireBattle(state);
+  const alive = b.groups.map((_, g) => g).filter((g) => groupAlive(b, g));
+  if (alive.length === 0) return { type: "defend" };
+  if (chance(state.rng, data.config.san.randomDefendChance)) return { type: "defend" };
+  return { type: "attack", group: alive[randInt(state.rng, 0, alive.length - 1)]! };
 }
 
 /** 覚醒の判定（CB-32）。眠っていれば sleepWakeChance で外す */
@@ -502,14 +563,19 @@ function damageUnit(ctx: RuleContext, g: number, u: number, dmg: number): number
   return next;
 }
 
-function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan): void {
+/** sanKey は CB-45 で置き換えた者の語り（battle.disobey / battle.confused）。declare の拍の先頭で出す */
+function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan, sanKey: SanOverrideKey | null): void {
   const { state, data } = ctx;
   const b = requireBattle(state);
   const actor = ch.name;
+  const sanLine = (): void => {
+    if (sanKey !== null) ctx.events.push({ kind: "message", key: sanKey, params: { actor } });
+  };
   switch (plan.kind) {
     case "defend":
       // CB-55: 防御と後衛の攻撃不可は宣言の拍だけ
       section(ctx, "declare", () => {
+        sanLine();
         if (plan.why === "backRow") {
           ctx.events.push({ kind: "message", key: "battle.backRowCannotAttack", params: { actor } });
         } else {
@@ -522,6 +588,7 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan): void {
       // 区切りの中で決めた値（閉包の代入は制御フローの絞り込みに乗らないので as で型を広げておく）
       let g = null as number | null;
       section(ctx, "declare", () => {
+        sanLine();
         if (plan.noMp) ctx.events.push({ kind: "message", key: "battle.noMp", params: { actor } });
         g = groupAlive(b, plan.group) ? plan.group : lowestAliveGroup(b); // CB-42
         if (g === null) return;

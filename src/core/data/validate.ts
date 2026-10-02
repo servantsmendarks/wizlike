@@ -271,6 +271,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       confusedRatio: N(RATIO),
       uneasyChance: I(PERCENT),
       confusedChance: I(PERCENT),
+      randomDefendChance: I(PERCENT), // CH-53 / CB-45【仮】
       restoreOnTown: B,
     }),
     wipe: F({ reviveHpRatio: N(RATIO), clearStatus: B }),
