@@ -199,3 +199,4 @@ npm run preview    ビルド結果の確認
 | docs/spec/events.md | 衝動判定、制止判定、性格の恩恵と SAN 耐性 | EV |
 | docs/spec/save.md | オートセーブ、ゲーム一覧、書き出し・読み込み、移行 | SV |
 | docs/spec/ui.md | レイアウト、線画、入力、メッセージ、ダイス、演出、設定 | UI |
+| docs/spec/items.md | アイテムの分類・レベル・希少度・オプション・固有スキル・ドロップ・店・倉庫・強化 | IT |
