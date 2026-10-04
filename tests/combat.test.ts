@@ -1542,6 +1542,21 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(out.state.battle).toBeNull();
     expect(member(out.state, "c1").life).toBe("dead");
   });
+
+  test("CB-54/CH-45/TW-07 死亡しても状態異常（毒）は外さない（statusChanged off を出さない。蘇生・闇魔術で戻っても残る仕様の前提）。睡眠だけは戦闘の終わりに外れる（CH-43）", () => {
+    const d = dataWith({ combat: ALWAYS_HIT });
+    const s = setup([{ monsterId: "kobold", hps: [80] }], {
+      identified: ["kobold"],
+      patches: { c1: { hp: 1, status: ["poison"] }, c2: STONE, c3: STONE },
+      inputs: { c1: DEF, c4: DEF, c5: DEF, c6: DEF },
+    });
+    const r = exec(s, RESOLVE, d);
+    expect(member(r.state, "c1").life).toBe("dead");
+    expect(member(r.state, "c1").status).toEqual(["poison"]);
+    expect(r.events.some((e) => e.kind === "statusChanged" && e.id === "c1")).toBe(false);
+    const out = exec(r.state, FLEE, dataWith({ combat: { fleeBase: 1000 } }));
+    expect(member(out.state, "c1").status).toEqual(["poison"]);
+  });
 });
 
 describe("網羅（完了条件「6 種と戦える」、敵の id、battleMenu）", () => {
