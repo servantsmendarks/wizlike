@@ -7,7 +7,7 @@
 - UI-03 フォントはピクセルフォント 1 種（美咲ゴシック 8×8 または PixelMplus10）【仮】。`@font-face` で同梱。文字サイズは 8px 固定、行間 10px。`image-rendering: pixelated`。
 - UI-04 色は FC 風の固定パレット（`src/presenter/palette.ts`、54 色以内）。線画は黒地に白または淡緑の 1px 線【仮】。テーマ切替は無し。
 - UI-05 body に `touch-action: none; overscroll-behavior: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;`。
-- UI-06 音は Web Audio。最初のタップで `AudioContext.resume()`。プロトタイプでは SE/BGM は任意（M6）。
+- UI-06 音は Web Audio。最初のタップで `AudioContext.resume()`。プロトタイプでは SE/BGM は任意（M6）。M6 では入れない（decisions 2026-10-04）。
 
 ## 2. レイアウト（縦持ち）
 
