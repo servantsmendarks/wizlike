@@ -13,6 +13,8 @@ import {
   SETTINGS_KEY,
   snapAutoBeat,
   stepSetting,
+  TEXT_SPEED_CHOICES,
+  nextTextSpeed,
   type Settings,
 } from "../src/presenter/settings";
 import { data } from "./helpers/core";
@@ -196,5 +198,27 @@ describe("UI-45 オートの拍の速さ", () => {
     expect(st.get().autoBeatMs).toBe(400);
     st.set({ autoBeatMs: nextAutoBeat(st.get().autoBeatMs) });
     expect(st.get().autoBeatMs).toBe(600);
+  });
+});
+
+describe("UI-57 設定画面の文字速度の選択肢", () => {
+  test("UI-57 nextTextSpeed: 0 → 15 → 30 → 60 → 0。選択肢に無い 50 は 60、100 は 0（ms より大きい最小の選択肢、無ければ先頭）", () => {
+    expect([...TEXT_SPEED_CHOICES]).toEqual([0, 15, 30, 60]);
+    expect(nextTextSpeed(0)).toBe(15);
+    expect(nextTextSpeed(15)).toBe(30);
+    expect(nextTextSpeed(30)).toBe(60);
+    expect(nextTextSpeed(60)).toBe(0);
+    expect(nextTextSpeed(50)).toBe(60);
+    expect(nextTextSpeed(10)).toBe(15);
+    expect(nextTextSpeed(100)).toBe(0);
+    expect(nextTextSpeed(Number.NaN)).toBe(0);
+    // どの選択肢も SETTING_RANGES.textSpeed（store の丸め）の中にある
+    for (const c of TEXT_SPEED_CHOICES) {
+      expect(c).toBeGreaterThanOrEqual(SETTING_RANGES.textSpeed.min);
+      expect(c).toBeLessThanOrEqual(SETTING_RANGES.textSpeed.max);
+    }
+    const st = createSettingsStore({ ...D, textSpeed: 30 }, () => {});
+    st.set({ textSpeed: nextTextSpeed(st.get().textSpeed) });
+    expect(st.get().textSpeed).toBe(60);
   });
 });

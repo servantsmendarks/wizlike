@@ -52,6 +52,15 @@ export function snapAutoBeat(ms: number): number {
   return best;
 }
 
+/** UI-57: 設定画面の文字速度の選択肢（ms/字。0 = 即時。入力欄の選択肢なのでコードの定数。debug パネルの -/+ は SETTING_RANGES のまま） */
+export const TEXT_SPEED_CHOICES = [0, 15, 30, 60] as const;
+
+/** UI-57: ms より大きい最小の選択肢、無ければ先頭（0）。0 → 15 → 30 → 60 → 0 */
+export function nextTextSpeed(ms: number): number {
+  for (const c of TEXT_SPEED_CHOICES) if (c > ms) return c;
+  return TEXT_SPEED_CHOICES[0];
+}
+
 function isAutoBeat(v: unknown): v is number {
   return typeof v === "number" && (AUTO_BEAT_CHOICES as readonly number[]).includes(v);
 }
