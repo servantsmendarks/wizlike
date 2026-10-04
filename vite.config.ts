@@ -38,11 +38,19 @@ function serviceWorker(): Plugin {
   };
 }
 
-export default defineConfig({
-  base: "./",
+/**
+ * SV-42: 本番ビルドの base。配布 URL https://servantsmendarks.github.io/wizlike/ のパスで固定する（docs/decisions.md）。
+ * Service Worker の登録の scope もこれ（main.ts が import.meta.env.BASE_URL で受け取る）
+ */
+export const PAGES_BASE = "/wizlike/";
+
+// 本番ビルド（vite build）とビルド結果の確認（vite preview。command は "serve" で isPreview が真）では PAGES_BASE、
+// 開発サーバー（と vitest）では "/"
+export default defineConfig(({ command, isPreview }) => ({
+  base: command === "build" || isPreview === true ? PAGES_BASE : "/",
   plugins: [serviceWorker()],
   test: {
     include: ["tests/**/*.test.ts"],
     environment: "node",
   },
-});
+}));

@@ -2,6 +2,7 @@
 import { describe, expect, test, vi } from "vitest";
 import manifestText from "../public/manifest.webmanifest?raw";
 import indexHtml from "../index.html?raw";
+import mainSrc from "../src/main.ts?raw";
 import { PALETTE } from "../src/presenter/palette";
 import { NAVIGATION_TIMEOUT_MS, precacheUrls, renderServiceWorker } from "../src/pwa/sw-template";
 import { setupServiceWorker, watchServiceWorkerUpdate, type UpdateContainer, type UpdateRegistration } from "../src/pwa/register";
@@ -444,8 +445,8 @@ describe("SV-42 setupServiceWorker", () => {
   const container = (o: { regs?: number; failRegister?: boolean } = {}) => {
     const log: string[] = [];
     const c = {
-      register: async (url: string | URL) => {
-        log.push(`register ${String(url)}`);
+      register: async (url: string | URL, opt?: RegistrationOptions) => {
+        log.push(`register ${String(url)} scope ${String(opt?.scope)}`);
         if (o.failRegister) throw new Error("nope");
         return {} as ServiceWorkerRegistration;
       },
@@ -466,27 +467,27 @@ describe("SV-42 setupServiceWorker", () => {
     return { c, log };
   };
 
-  test("SV-42 setupServiceWorker: prod なら ./sw.js を register、container が無ければ skipped", async () => {
+  test("SV-42 setupServiceWorker: prod なら {base}sw.js を scope {base}（本番は /wizlike/）で register、container が無ければ skipped", async () => {
     const { c, log } = container();
-    expect(await setupServiceWorker({ prod: true, container: c })).toBe("registered");
-    expect(log).toEqual(["register ./sw.js"]);
-    expect(await setupServiceWorker({ prod: true, container: undefined })).toBe("skipped");
-    expect(await setupServiceWorker({ prod: false, container: undefined })).toBe("skipped");
+    expect(await setupServiceWorker({ prod: true, base: "/wizlike/", container: c })).toBe("registered");
+    expect(log).toEqual(["register /wizlike/sw.js scope /wizlike/"]);
+    expect(await setupServiceWorker({ prod: true, base: "/wizlike/", container: undefined })).toBe("skipped");
+    expect(await setupServiceWorker({ prod: false, base: "/", container: undefined })).toBe("skipped");
   });
 
   test("SV-42 setupServiceWorker: register の reject は failed（reject しない）", async () => {
     const { c } = container({ failRegister: true });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(await setupServiceWorker({ prod: true, container: c })).toBe("failed");
+    expect(await setupServiceWorker({ prod: true, base: "/wizlike/", container: c })).toBe("failed");
     warn.mockRestore();
   });
 
   test("SV-42 setupServiceWorker: prod でなければ登録せず、残っている登録を全部 unregister（無ければ skipped）", async () => {
     const a = container({ regs: 2 });
-    expect(await setupServiceWorker({ prod: false, container: a.c })).toBe("unregistered");
+    expect(await setupServiceWorker({ prod: false, base: "/", container: a.c })).toBe("unregistered");
     expect(a.log).toEqual(["unregister 0", "unregister 1"]);
     const b = container({ regs: 0 });
-    expect(await setupServiceWorker({ prod: false, container: b.c })).toBe("skipped");
+    expect(await setupServiceWorker({ prod: false, base: "/", container: b.c })).toBe("skipped");
     expect(b.log).toEqual([]);
   });
 });
@@ -507,10 +508,12 @@ const NODE_FS = "node:fs";
 const NODE_OS = "node:os";
 const nfs = (await import(/* @vite-ignore */ NODE_FS)) as NodeFs;
 const nos = (await import(/* @vite-ignore */ NODE_OS)) as { tmpdir(): string };
-const viteConfig = (await import(/* @vite-ignore */ new URL("../vite.config.ts", import.meta.url).href)).default as {
-  base?: string;
-  plugins: SwPlugin[];
+type ViteConfig = { base?: string; plugins: SwPlugin[] };
+const viteModule = (await import(/* @vite-ignore */ new URL("../vite.config.ts", import.meta.url).href)) as {
+  default: (env: { command: "build" | "serve"; mode: string; isPreview?: boolean }) => ViteConfig;
+  PAGES_BASE: string;
 };
+const viteConfig = viteModule.default({ command: "build", mode: "production" });
 
 describe("SV-42 ビルドの sw.js", () => {
   /** 一時の root に dist を作り、プラグインの closeBundle で sw.js を書いて、VERSION と URLS を読む */
@@ -566,8 +569,18 @@ describe("SV-42 ビルドの sw.js", () => {
     expect(build({ ...FILES, "fonts/f.ttf": "font2" }).version).not.toBe(a.version);
   });
 
-  test("SV-42 相対パス: Vite の base は ./（サブパスの配信で動くように。public の / から始まるパスはビルドで相対に書き換わる）", () => {
-    expect(viteConfig.base).toBe("./");
+  test("SV-42 base: 本番ビルドと vite preview は配布 URL のパス /wizlike/（PAGES_BASE）、開発サーバーは /。配布 URL を固定したので相対の ./ をやめ、Service Worker の scope もこの base から作る", () => {
+    expect(viteModule.PAGES_BASE).toBe("/wizlike/");
+    expect(viteConfig.base).toBe("/wizlike/");
+    expect(viteModule.default({ command: "serve", mode: "development" }).base).toBe("/");
+    expect(viteModule.default({ command: "serve", mode: "development", isPreview: false }).base).toBe("/");
+    // vite preview は command "serve" で isPreview が真。ビルド結果を /wizlike/ で確かめる
+    expect(viteModule.default({ command: "serve", mode: "production", isPreview: true }).base).toBe("/wizlike/");
+  });
+
+  test("SV-42 base: main.ts は Service Worker の登録に import.meta.env.BASE_URL を渡す（scope の文字列を散らさない）", () => {
+    expect(mainSrc).toMatch(/setupServiceWorker\(\{\s*prod: import\.meta\.env\.PROD,\s*base: import\.meta\.env\.BASE_URL,/);
+    expect(mainSrc).not.toContain("/wizlike/");
   });
 });
 
@@ -705,7 +718,7 @@ describe("SV-42 更新の案内", () => {
       controller: {} as ServiceWorker,
       addEventListener: () => {},
     };
-    expect(await setupServiceWorker({ prod: true, container: c, onUpdate: () => notices++, reload: () => {} })).toBe("registered");
+    expect(await setupServiceWorker({ prod: true, base: "/wizlike/", container: c, onUpdate: () => notices++, reload: () => {} })).toBe("registered");
     expect(notices).toBe(1);
   });
 

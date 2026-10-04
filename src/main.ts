@@ -102,6 +102,7 @@ async function start(): Promise<void> {
   // 新しい版が待機に入ったら案内を出し、「読み込み直す」で有効にして読み込み直す。
   void setupServiceWorker({
     prod: import.meta.env.PROD,
+    base: import.meta.env.BASE_URL,
     container: navigator.serviceWorker,
     onUpdate: (apply) => app.showUpdate(apply),
     reload: () => location.reload(),

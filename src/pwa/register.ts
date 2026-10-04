@@ -65,13 +65,15 @@ export function watchServiceWorkerUpdate(o: {
 }
 
 /**
- * SV-42: 本番ビルド（prod）でだけ ./sw.js を登録する。container が無い（http の LAN など secure context でない）なら何もしない。
+ * SV-42: 本番ビルド（prod）でだけ {base}sw.js を scope {base} で登録する（base は import.meta.env.BASE_URL。本番は /wizlike/）。container が無い（http の LAN など secure context でない）なら何もしない。
  * 登録できたら watchServiceWorkerUpdate で更新を見張る（onUpdate があるとき）。
  * 開発（prod が偽）では、以前に preview などで登録された Service Worker が同じオリジンに残っていれば解除する
  * （キャッシュで実機確認が混乱しないように）。reject しない
  */
 export async function setupServiceWorker(o: {
   prod: boolean;
+  /** ビルドの base（"/" で終わる）。sw.js の置き場所と登録の scope */
+  base: string;
   container: (Pick<ServiceWorkerContainer, "register" | "getRegistrations"> & UpdateContainer) | undefined;
   onUpdate?: (apply: () => void) => void;
   reload?: () => void;
@@ -80,7 +82,7 @@ export async function setupServiceWorker(o: {
   if (!c) return "skipped";
   try {
     if (o.prod) {
-      const registration = await c.register("./sw.js");
+      const registration = await c.register(`${o.base}sw.js`, { scope: o.base });
       const onUpdate = o.onUpdate;
       if (onUpdate) watchServiceWorkerUpdate({ registration, container: c, onUpdate, reload: o.reload ?? (() => {}) });
       return "registered";
