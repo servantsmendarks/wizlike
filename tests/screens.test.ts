@@ -317,6 +317,14 @@ describe("入力と Command", () => {
     expect(body).toMatch(/if \(route !== "dungeon"\) return;\s*closeDebug\(\);\s*void run\(cmd\);/);
   });
 
+  test("UI-57 debug パネルのターン+（M5.5）は、街・迷宮・戦闘のときだけパネルを閉じてから debug.addTurns を送る。ラベルの n は config.town.tavernEventTurns（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toMatch(/onAddTurns: \(\) => guard\(\(\) => addTurnsFromDebug\(\)\)/);
+    expect(app).toContain("addTurns: data.config.town.tavernEventTurns,");
+    const body = /const addTurnsFromDebug = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(body).toMatch(/if \(route !== "town" && route !== "dungeon" && route !== "battle"\) return;\s*closeDebug\(\);\s*void run\(\{ type: "debug\.addTurns" \}\);/);
+  });
+
   test("UI-25 自動歩行の walkStep は beforePlay を run に渡し、finish で endWalk する（止まる手は再生の前に歩行を終える）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const walker = createHoldRepeater\(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";

@@ -343,15 +343,17 @@ export const DEBUG_BUTTONS = {
 } as const satisfies Record<string, Rect>;
 
 /**
- * debug パネルの 1 ページ目の 2 段目（M5。開発用、UI-57）: y376 の 56×22 を SAN段↓・イベント・罠の前・階段前 の順に 4 つ（下端 398）。
+ * debug パネルの 1 ページ目の 2 段目（M5。開発用、UI-57）: y376 の 44×22 を SAN段↓・イベント・罠の前・階段前・ターン+ の順に 5 つ
+ * （間 2 で x 4 / 50 / 96 / 142 / 188、右端 231、下端 397。M5.5 でターン+ を足して幅 56 の 4 つから詰めた）。
  * 1 段目（DEBUG_BUTTONS）の下に収めるため高さは 22 で、UI-10 の 12 論理 px 以上（Pixel 3a で 32 CSS px・88 端末 px）。
  * TOUCH_MIN_LOGICAL（30）は満たさない（開発用のボタンだけの例外。decisions）
  */
 export const DEBUG_BUTTONS_M5 = {
-  sanDown: { x: 4, y: 376, w: 56, h: 22 },
-  warpEvent: { x: 62, y: 376, w: 56, h: 22 },
-  warpTrap: { x: 120, y: 376, w: 56, h: 22 },
-  warpStairs: { x: 178, y: 376, w: 56, h: 22 },
+  sanDown: { x: 4, y: 376, w: 44, h: 22 },
+  warpEvent: { x: 50, y: 376, w: 44, h: 22 },
+  warpTrap: { x: 96, y: 376, w: 44, h: 22 },
+  warpStairs: { x: 142, y: 376, w: 44, h: 22 },
+  addTurns: { x: 188, y: 376, w: 44, h: 22 },
 } as const satisfies Record<string, Rect>;
 
 /** debug パネルの 2 ページ目（UI-57 のポインタの記録）: 題 y4、行 i は y16+10i（i=0..19、最後の行は y206..215）、x4・幅 232 */

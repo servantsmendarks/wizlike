@@ -153,9 +153,11 @@ describe("layout", () => {
     for (const r of Object.values(SCREENS.creation!)) expect(overlaps(CREATION_ERROR, r)).toBe(false);
   });
 
-  test("UI-57/UI-10 debug パネルの 2 段目（M5）: y376 の 56×22 を x 4 / 62 / 120 / 178 に 4 つ。1 段目・設定の行・スワイプの表示と重ならず、下端 398 ≤ 400。開発用の例外として TOUCH_MIN_LOGICAL ではなく UI-10 の 12 論理 px 以上", () => {
-    expect(Object.keys(DEBUG_BUTTONS_M5)).toEqual(["sanDown", "warpEvent", "warpTrap", "warpStairs"]);
-    expect(Object.values(DEBUG_BUTTONS_M5)).toEqual([4, 62, 120, 178].map((x) => ({ x, y: 376, w: 56, h: 22 })));
+  // M5.5 でターン+ を足し、幅 56 の 4 つ（x 4 / 62 / 120 / 178）から幅 44 の 5 つに詰めた
+  test("UI-57/UI-10 debug パネルの 2 段目（M5・M5.5）: y376 の 44×22 を x 4 / 50 / 96 / 142 / 188 に 5 つ（SAN段↓・イベント・罠の前・階段前・ターン+）。1 段目・設定の行・スワイプの表示と重ならず、パネル（240×400）に収まる。開発用の例外として TOUCH_MIN_LOGICAL ではなく UI-10 の 12 論理 px 以上", () => {
+    expect(Object.keys(DEBUG_BUTTONS_M5)).toEqual(["sanDown", "warpEvent", "warpTrap", "warpStairs", "addTurns"]);
+    expect(Object.values(DEBUG_BUTTONS_M5)).toEqual([4, 50, 96, 142, 188].map((x) => ({ x, y: 376, w: 44, h: 22 })));
+    expect(DEBUG_BUTTONS_M5.addTurns.x + DEBUG_BUTTONS_M5.addTurns.w).toBeLessThanOrEqual(W);
     const others: Rect[] = [
       ...Object.values(DEBUG_BUTTONS),
       ...[0, 1, 2, 3, 4, 5].flatMap((i) => Object.values(debugRow(i))),

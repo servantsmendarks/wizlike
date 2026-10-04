@@ -217,6 +217,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     onHpOne: () => guard(() => hpOneFromDebug()),
     onSanDown: () => guard(() => debugCommand({ type: "debug.sanDown" })),
     onWarp: (to) => guard(() => debugCommand({ type: "debug.warp", to })),
+    onAddTurns: () => guard(() => addTurnsFromDebug()),
+    addTurns: data.config.town.tavernEventTurns,
     pointers: () => pointerLog.entries(),
   });
 
@@ -1060,6 +1062,16 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     if (route !== "town" && route !== "dungeon" && route !== "battle") return;
     closeDebug();
     void run({ type: "debug.hpOne" });
+  };
+
+  /**
+   * UI-57（開発用、M5.5）: 「ターン+」。街・迷宮・戦闘のときだけ、パネルを閉じてから debug.addTurns を送る（受け付けるかは core が決める）。
+   * 酒場のイベント（TW-14）を実機で確かめるためのもの
+   */
+  const addTurnsFromDebug = (): void => {
+    if (route !== "town" && route !== "dungeon" && route !== "battle") return;
+    closeDebug();
+    void run({ type: "debug.addTurns" });
   };
 
   /**

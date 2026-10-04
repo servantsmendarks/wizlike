@@ -5,6 +5,7 @@ import { DEBUG_BUTTONS, DEBUG_BUTTONS_M5, DEBUG_POINTER, debugRow } from "../src
 import { createSettingsStore, defaultSettings } from "../src/presenter/settings";
 import type { StageLayout } from "../src/presenter/stage";
 import { createDebugPanel, DEBUG_ROW_KEYS, debugRows, formatStageInfo, formatSwipeDebug, pointerRowsText, type StageInfoInput } from "../src/presenter/views/debug-panel";
+import { formatMessage } from "../src/presenter/views/message";
 import {
   attachPointerLog,
   createPointerLog,
@@ -100,7 +101,7 @@ describe("createDebugPanel", () => {
     vi.unstubAllGlobals();
   });
 
-  test("UI-57 1 ページ目の 2 段目（y376 の 56×22 ×4。M5）: SAN段↓・イベント・罠の前・階段前。押すと onSanDown / onWarp(event|trap|stairsDown)。1 ページ目の子なので 2 ページ目では見えない。line-height は内側の高さ（h−2）", () => {
+  test("UI-57 1 ページ目の 2 段目（y376 の 44×22 ×5。M5・M5.5）: SAN段↓・イベント・罠の前・階段前・ターン+{n}。押すと onSanDown / onWarp(event|trap|stairsDown) / onAddTurns。1 ページ目の子なので 2 ページ目では見えない。line-height は内側の高さ（h−2）", () => {
     const created: FakeEl[] = [];
     vi.stubGlobal("document", {
       createElement: () => {
@@ -120,6 +121,8 @@ describe("createDebugPanel", () => {
       onHpOne: () => calls.push("hpOne"),
       onSanDown: () => calls.push("sanDown"),
       onWarp: (to) => calls.push(`warp:${to}`),
+      onAddTurns: () => calls.push("addTurns"),
+      addTurns: data.config.town.tavernEventTurns,
       pointers: () => [],
     });
     const root = panel.el as unknown as FakeEl;
@@ -130,10 +133,13 @@ describe("createDebugPanel", () => {
       ["debug.warpEventButton", DEBUG_BUTTONS_M5.warpEvent, "warp:event"],
       ["debug.warpTrapButton", DEBUG_BUTTONS_M5.warpTrap, "warp:trap"],
       ["debug.warpStairsButton", DEBUG_BUTTONS_M5.warpStairs, "warp:stairsDown"],
+      ["debug.addTurnsButton", DEBUG_BUTTONS_M5.addTurns, "addTurns"],
     ] as const;
-    expect(want.map(([k]) => data.strings[k])).toEqual(["SAN段↓", "イベント", "罠の前", "階段前"]);
+    // ターン+ のラベルは debug.addTurnsButton「ターン+{n}」に config.town.tavernEventTurns（200）を入れたもの（美咲で 40px。内側の幅 42 に入る）
+    const label = (k: string): string => (k === "debug.addTurnsButton" ? formatMessage(data.strings[k]!, { n: data.config.town.tavernEventTurns }) : data.strings[k]!);
+    expect(want.map(([k]) => label(k))).toEqual(["SAN段↓", "イベント", "罠の前", "階段前", `ターン+${data.config.town.tavernEventTurns}`]);
     for (const [key, r, call] of want) {
-      const b = page1.children.find((c) => c.className === "ui-button" && c.textContent === data.strings[key]);
+      const b = page1.children.find((c) => c.className === "ui-button" && c.textContent === label(key));
       expect(b, key).toBeDefined();
       expect([b!.style["left"], b!.style["top"], b!.style["width"], b!.style["height"]]).toEqual([`${r.x}px`, `${r.y}px`, `${r.w}px`, `${r.h}px`]);
       // 高さ 22 では .ui-button の line-height 30px を内側の高さ 20（上下の枠 1px を除く）で上書きし、文字を縦の中央に置く
@@ -162,7 +168,7 @@ describe("createDebugPanel", () => {
     const store = createSettingsStore(defaultSettings(data.config), (s) => persisted.push(s.autoBeatMs));
     let hpOne = 0;
     let closed = 0;
-    createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => closed++, onHpOne: () => hpOne++, onSanDown: () => {}, onWarp: () => {}, pointers: () => [] });
+    createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => closed++, onHpOne: () => hpOne++, onSanDown: () => {}, onWarp: () => {}, onAddTurns: () => {}, addTurns: 200, pointers: () => [] });
     const buttons = created.filter((e) => e.className === "ui-button");
     const byText = (t: string): FakeEl => buttons.find((b) => b.textContent === t)!;
     const tap = (b: FakeEl): void => tapSpecOf(b)!.onTap({ lx: 0, ly: 0 });
@@ -208,7 +214,7 @@ describe("createDebugPanel", () => {
     });
     const store = createSettingsStore(defaultSettings(data.config), () => {});
     let entries: PointerEntry[] = [];
-    const panel = createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => {}, onHpOne: () => {}, onSanDown: () => {}, onWarp: () => {}, pointers: () => entries });
+    const panel = createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => {}, onHpOne: () => {}, onSanDown: () => {}, onWarp: () => {}, onAddTurns: () => {}, addTurns: 200, pointers: () => entries });
     const root = panel.el as unknown as FakeEl;
     const pages = root.children.filter((c) => c.className === "debug-page");
     expect(pages).toHaveLength(2);

@@ -4,7 +4,8 @@
 // - debugRow(0..5): スワイプ閾値（CSS px の換算値も出す）、長押し間隔、文字速度、演出スキップ、オートの速さ（UI-45）、入力モード
 // - DEBUG_SWIPE_Y（y328..337）: 最後に確定したスワイプの "dx,dy,dir"（ASCII）
 // - DEBUG_BUTTONS（y342）: 全員HP1（UI-57。debug.hpOne を送るのは app）、既定に戻す、ポインタ、閉じる
-// - DEBUG_BUTTONS_M5（y376。1 ページ目だけ）: SAN段↓・イベント・罠の前・階段前（M5。debug.sanDown / debug.warp を送るのは app）
+// - DEBUG_BUTTONS_M5（y376。1 ページ目だけ）: SAN段↓・イベント・罠の前・階段前（M5。debug.sanDown / debug.warp を送るのは app）・
+//   ターン+（M5.5。ラベルは debug.addTurnsButton{n}、debug.addTurns を送るのは app）
 // - 「ポインタ」で 2 ページ目（UI-57。直近 20 件のポインタイベント。input/pointer-log の記録を DEBUG_POINTER の 20 行に古い順）。
 //   2 ページ目ではボタンが「設定」に変わり、全員HP1・既定に戻すは出さない。開くたびに app が showSettings で 1 ページ目に戻す
 // 値を変えたら、その場で store.set を呼ぶ（保存とすぐの反映は store の購読者が行う）。
@@ -156,6 +157,10 @@ export function createDebugPanel(o: {
   onSanDown(): void;
   /** UI-57（M5）: 「イベント」「罠の前」「階段前」（debug.warp。送れるかは app が決める） */
   onWarp(to: "event" | "trap" | "stairsDown"): void;
+  /** UI-57（M5.5）: 「ターン+」（debug.addTurns。送れるかは app が決める） */
+  onAddTurns(): void;
+  /** UI-57（M5.5）: ターン+ のラベルの n（config.town.tavernEventTurns。core が足す量と同じ値を表示のためだけに受ける） */
+  addTurns: number;
   /** UI-57: 2 ページ目に出すポインタの記録（古い順。input/pointer-log の entries） */
   pointers(): readonly PointerEntry[];
 }): DebugPanel {
@@ -229,6 +234,7 @@ export function createDebugPanel(o: {
   page1.appendChild(shortButton(t("debug.warpEventButton"), DEBUG_BUTTONS_M5.warpEvent, () => o.onWarp("event")));
   page1.appendChild(shortButton(t("debug.warpTrapButton"), DEBUG_BUTTONS_M5.warpTrap, () => o.onWarp("trap")));
   page1.appendChild(shortButton(t("debug.warpStairsButton"), DEBUG_BUTTONS_M5.warpStairs, () => o.onWarp("stairsDown")));
+  page1.appendChild(shortButton(formatMessage(t("debug.addTurnsButton"), { n: o.addTurns }), DEBUG_BUTTONS_M5.addTurns, () => o.onAddTurns()));
 
   // 2 ページ目（UI-57 のポインタの記録）: 題と 20 行（古い順）。描くのはページを切り替えたときだけ
   const page2 = document.createElement("div");
