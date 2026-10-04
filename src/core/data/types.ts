@@ -38,7 +38,21 @@ export type CurableStatusId = (typeof CURABLE_STATUS_IDS)[number];
 
 // ---- config.json ----
 
-export type InnRank = { id: string; name: string; cost: number; hpRatio: number };
+/**
+ * TW-04 / TW-15（M7）。sanOver / goodWeight / judgeBonus / gossip のどれかが 0 / false でないランクに泊まると士気が立つ
+ * （rules/town.ts raisesMorale）。sanOver は SAN の超過回復の量、goodWeight は衝動の結果（EV-30）の good の重みの加算、
+ * judgeBonus は制止判定（EV-21）の制止者の側の加算、gossip は宿の主人の噂話（次の dungeon.enter で図鑑の 1 種を鑑定済みにする）
+ */
+export type InnRank = {
+  id: string;
+  name: string;
+  cost: number;
+  hpRatio: number;
+  sanOver: number;
+  goodWeight: number;
+  judgeBonus: number;
+  gossip: boolean;
+};
 
 export type PrototypeMember = {
   defaultName: string;

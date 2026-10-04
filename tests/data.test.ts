@@ -216,10 +216,27 @@ describe("data: config.json", () => {
     expect(issuesOf((r) => (r.config.dungeon.straightBias = 0))).toEqual([]);
     expect(issuesOf((r) => (r.config.dungeon.straightBias = 1))).toEqual([]);
   });
-  test("data: TW-04/MG-02 town.innRanks は hpRatio だけを持つ（馬小屋 0 / 相部屋 0.5 / 個室 1.0【仮】）。mpRatio は廃止（未知キー）", () => {
-    expect(config.town.innRanks.map((r) => r.hpRatio)).toEqual([0, 0.5, 1.0]);
+  test("data: TW-04/MG-02 town.innRanks の HP は hpRatio（馬小屋 0 / 相部屋 1.0 / 個室 1.0【仮】。M7 で相部屋 0.5 → 1.0）。mpRatio は廃止（未知キー）", () => {
+    expect(config.town.innRanks.map((r) => r.hpRatio)).toEqual([0, 1.0, 1.0]);
     expectIssue((r) => (r.config.town.innRanks[0].mpRatio = 0.25), "config.json", "town.innRanks[0].mpRatio: unknown field");
     expectIssue((r) => (r.config.town.innRanks[1].hpRatio = 1.5), "config.json", "town.innRanks[1].hpRatio: expected number in 0..1, got 1.5");
+  });
+  test("data: TW-04/TW-15 town.innRanks の sanOver / goodWeight / judgeBonus は 0 以上の整数、gossip は真偽値（馬小屋・相部屋 0/0/0/false、個室 10/1/1/true【仮】）", () => {
+    expect(config.town.innRanks.map((r) => [r.id, r.sanOver, r.goodWeight, r.judgeBonus, r.gossip])).toEqual([
+      ["stable", 0, 0, 0, false],
+      ["cheap", 0, 0, 0, false],
+      ["good", 10, 1, 1, true],
+    ]);
+    const p = "town.innRanks[2]";
+    expectIssue((r) => (r.config.town.innRanks[2].sanOver = -1), "config.json", `${p}.sanOver: expected integer >= 0, got -1`);
+    expectIssue((r) => (r.config.town.innRanks[2].sanOver = 2.5), "config.json", `${p}.sanOver: expected integer >= 0, got number`);
+    expectIssue((r) => (r.config.town.innRanks[2].goodWeight = -1), "config.json", `${p}.goodWeight: expected integer >= 0, got -1`);
+    expectIssue((r) => (r.config.town.innRanks[2].judgeBonus = "1"), "config.json", `${p}.judgeBonus: expected integer >= 0, got string`);
+    expectIssue((r) => (r.config.town.innRanks[2].gossip = 1), "config.json", `${p}.gossip: expected boolean, got integer`);
+    expectIssue((r) => delete r.config.town.innRanks[2].gossip, "config.json", `${p}.gossip: missing required field`);
+    expectIssue((r) => delete r.config.town.innRanks[0].sanOver, "config.json", "town.innRanks[0].sanOver: missing required field");
+    expectIssue((r) => (r.config.town.innRanks[2].morale = true), "config.json", `${p}.morale: unknown field`);
+    expect(issuesOf((r) => (r.config.town.innRanks[0].judgeBonus = 3))).toEqual([]);
   });
   test("data: DG-05 dungeon.roomAttempts は 1 以上の整数", () => {
     expectIssue((r) => (r.config.dungeon.roomAttempts = 0), "config.json", "dungeon.roomAttempts: expected integer >= 1, got 0");

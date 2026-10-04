@@ -1,7 +1,7 @@
 // 街（TW-02, TW-04, TW-05 の消耗品の購入, TW-07, TW-08, TW-11, TW-30〜32）。rules/town.ts と engine の town.* の配線。
 // 既定のパーティ（newGame）: c1 アルド 戦士 HP 15（リーダー）、c2 ベルク 戦士 HP 16 vit 14、c3 キリ 盗賊 HP 10、
 // c4 ドナ 僧侶 HP 12 MP 5、c5 エル 魔術師 HP 8 MP 7、c6 フィン 盗賊 HP 10。所持金 300。
-// 宿のランク: 0 馬小屋 0G HP ×0、1 相部屋 20G HP ×0.5、2 個室 60G HP ×1.0（MP はどのランクでも全回復）。寺院: 蘇生 level × 100、
+// 宿のランク: 0 馬小屋 0G HP ×0、1 相部屋 20G HP ×1.0、2 個室 60G HP ×1.0 と士気（MP はどのランクでも全回復）。寺院: 蘇生 level × 100、
 // 成功率 min(95, 50 + vit × 2)、治療 毒 50 / 麻痺 150 / 石化 300、解呪 200。闇魔術 level × 1000。
 import { describe, expect, test } from "vitest";
 import { createInitialState, execute } from "../src/core/engine";
@@ -142,12 +142,12 @@ describe("TW-04 宿屋（town.inn）", () => {
     expect(r.state.rng).toEqual(s.rng);
   });
 
-  test("TW-04/MG-02 相部屋（20G、HP ×0.5）と個室（60G、HP ×1.0）: 料金を 1 回払い、HP は ceil(hpMax × hpRatio) 増えて hpMax で止まり、MP は全回復", () => {
+  test("TW-04/MG-02 相部屋（20G、HP ×1.0。M7 で 0.5 から）と個室（60G、HP ×1.0）: 料金を 1 回払い、HP は ceil(hpMax × hpRatio) 増えて hpMax で止まり、MP は全回復", () => {
     const s = town({ c1: { hp: 1 }, c4: { mp: 0 } });
     const a = ok(s, { type: "town.inn", rank: 1 });
-    // c1 +ceil(7.5)=8 → 9、c4 MP 0 → 5（ランクに関わらず mpMax）
+    // c1 +ceil(15 × 1.0)=15 → min(15, 16) = 15（全回復）、c4 MP 0 → 5（ランクに関わらず mpMax）
     expect(a.state.gold).toBe(280);
-    expect(member(a.state, "c1").hp).toBe(9);
+    expect(member(a.state, "c1").hp).toBe(15);
     expect(member(a.state, "c4").mp).toBe(5);
     const b = ok(s, { type: "town.inn", rank: 2 });
     expect(b.state.gold).toBe(240);

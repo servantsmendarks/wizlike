@@ -43,9 +43,9 @@
   },
   "town": {
     "innRanks": [
-      { "id": "stable", "name": "馬小屋", "cost": 0, "hpRatio": 0 },
-      { "id": "cheap", "name": "相部屋", "cost": 20, "hpRatio": 0.5 },
-      { "id": "good", "name": "個室", "cost": 60, "hpRatio": 1.0 }
+      { "id": "stable", "name": "馬小屋", "cost": 0, "hpRatio": 0, "sanOver": 0, "goodWeight": 0, "judgeBonus": 0, "gossip": false },
+      { "id": "cheap", "name": "相部屋", "cost": 20, "hpRatio": 1.0, "sanOver": 0, "goodWeight": 0, "judgeBonus": 0, "gossip": false },
+      { "id": "good", "name": "個室", "cost": 60, "hpRatio": 1.0, "sanOver": 10, "goodWeight": 1, "judgeBonus": 1, "gossip": true }
     ],
     "tavernEventTurns": 200,
     "tavernEventChance": 30

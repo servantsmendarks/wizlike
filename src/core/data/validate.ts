@@ -295,7 +295,19 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       uncurseCost: I(NON_NEG),
     }),
     town: F({
-      innRanks: L(F({ id: S, name: S, cost: I(NON_NEG), hpRatio: N(RATIO) }), 1), // TW-04【仮】。MP は全ランクで全回復（MG-02）
+      innRanks: L(
+        F({
+          id: S,
+          name: S,
+          cost: I(NON_NEG),
+          hpRatio: N(RATIO),
+          sanOver: I(NON_NEG),
+          goodWeight: I(NON_NEG),
+          judgeBonus: I(NON_NEG),
+          gossip: B,
+        }),
+        1,
+      ), // TW-04 / TW-15【仮】。MP は全ランクで全回復（MG-02）
       tavernEventTurns: I(POS_INT), // TW-14【仮】
       tavernEventChance: I(PERCENT), // TW-14【仮】
     }),
