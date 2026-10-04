@@ -5,7 +5,7 @@
 // town.ts からはこのファイルを import しない（循環を作らない）。
 import type { EquipmentBase, EquipSlot, GameData, Spell } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
-import { classOf, dungeonOf, findBase, findItem, itemDisplayName, memberById, moraleOf, spellOf } from "../state";
+import { classOf, dungeonOf, findBase, findItem, identifyInstance, itemDisplayName, memberById, moraleOf, spellOf } from "../state";
 import type {
   CampEquipCandidate,
   CampMenu,
@@ -293,7 +293,7 @@ export function checkIdentify(state: GameState, data: GameData, memberId: unknow
 
 /**
  * CH-77。checkIdentify が null を返した前提。確定・無料・乱数なし。
- * identified = true → message camp.identified{name, old, item} → 呪われていれば message camp.identifiedCursed{item}
+ * identified = true（ユニークなら図鑑に記録。IT-66）→ message camp.identified{name, old, item} → 呪われていれば message camp.identifiedCursed{item}
  */
 export function identifyItem(ctx: RuleContext, memberId: string, instanceId: string): void {
   const { state, data } = ctx;
@@ -301,7 +301,7 @@ export function identifyItem(ctx: RuleContext, memberId: string, instanceId: str
   const inst = state.items[instanceId];
   if (ch === null || inst === undefined) throw new Error(`identifyItem: bad ${memberId} / ${instanceId}`);
   const old = itemDisplayName(state, data, instanceId);
-  inst.identified = true;
+  identifyInstance(state, instanceId); // IT-66: ユニークなら図鑑に記録
   const item = itemDisplayName(state, data, instanceId);
   ctx.events.push({ kind: "message", key: "camp.identified", params: { name: ch.name, old, item } });
   if (inst.cursed) ctx.events.push({ kind: "message", key: "camp.identifiedCursed", params: { item } });

@@ -180,17 +180,46 @@ export function destroyItemInstance(state: GameState, ch: Character, instanceId:
 }
 
 /**
- * CH-72: アイテム実体の表示名。装備は鑑定済みならベースの name、未鑑定ならベースの unidentifiedName（IT-12）。
- * 消耗品・魔法書は鑑定済みなら items[].name、未鑑定なら unidentifiedName（無ければ name）。実体が無ければ Error。
- * 希少度・Lv・ユニークの名前を組むのは IT-11 の実装（M7 の B6）で足す。
+ * CH-72 / IT-11 / IT-12: アイテム実体の表示名。実体が無ければ Error。
+ * - 装備の未鑑定: ベースの unidentifiedName だけ（希少度・Lv・ユニークかどうかを見せない。IT-12）。
+ * - 装備の鑑定済み: 希少度の接頭辞（strings の item.rarity.<rarity>。通常は無し）+ 名前（ユニークならユニークの名前、それ以外はベースの名前）
+ *   + Lv（汎用で 1 以上のときだけ strings の item.plus の {n}）。例「上質な長剣 +5」。
+ * - 消耗品・魔法書: 鑑定済みなら items[].name、未鑑定なら unidentifiedName（無ければ name）。
+ * core が strings の値を読むのは、message の params に入れる表示名を組むここだけ（items.md §11 の Q11 の既定の案。キーは検証で必須）。
  */
 export function itemDisplayName(state: GameState, data: GameData, instanceId: string): string {
   const inst = state.items[instanceId];
   if (inst === undefined) throw new Error(`unknown item instance: ${instanceId}`);
   const base = findBase(data, inst.itemId);
-  if (base !== null) return inst.identified ? base.name : base.unidentifiedName;
+  if (base !== null) {
+    if (!inst.identified) return base.unidentifiedName;
+    const prefix = inst.rarity === "normal" ? "" : (data.strings[`item.rarity.${inst.rarity}`] ?? "");
+    if (inst.uniqueId !== null) return prefix + uniqueOf(data, inst.uniqueId).name;
+    const plus = inst.level >= 1 ? (data.strings["item.plus"] ?? "").replace("{n}", String(inst.level)) : "";
+    return prefix + base.name + plus;
+  }
   const item = itemOf(data, inst.itemId);
   return inst.identified ? item.name : (item.unidentifiedName ?? item.name);
+}
+
+/** IT-30 の希少度の順（後ろほど良い。IT-66 の bestRarity の比較に使う） */
+export const RARITY_ORDER: readonly Rarity[] = ["normal", "fine", "rare", "legendary"];
+
+/**
+ * CH-77 / IT-65 / IT-66: 実体を鑑定済みにし、ユニークなら図鑑に記録する。図鑑に無ければ { foundIn: 実体の foundIn, bestRarity: 実体の rarity }、
+ * あれば bestRarity だけを良い方に更新する（foundIn は最初の記録のまま）。乱数は使わない。実体が無ければ Error
+ */
+export function identifyInstance(state: GameState, instanceId: string): void {
+  const inst = state.items[instanceId];
+  if (inst === undefined) throw new Error(`unknown item instance: ${instanceId}`);
+  inst.identified = true;
+  if (inst.uniqueId === null) return;
+  const prev = state.uniqueBook[inst.uniqueId];
+  if (prev === undefined) {
+    state.uniqueBook[inst.uniqueId] = { foundIn: inst.foundIn, bestRarity: inst.rarity };
+  } else if (RARITY_ORDER.indexOf(inst.rarity) > RARITY_ORDER.indexOf(prev.bestRarity)) {
+    prev.bestRarity = inst.rarity;
+  }
 }
 
 /** CH-71 の使用枠 = equipment の非 null の数 + inventory.length */

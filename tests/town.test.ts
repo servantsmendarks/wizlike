@@ -730,7 +730,6 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
     expectRejected(s, buy(1, "herb"), "bad action");
     expectRejected(s, buy("c1", null), "bad action");
     expectRejected(s, { type: "town.shop", action: { kind: "sell", memberId: "c1", instanceId: "i4" } }, "not implemented");
-    expectRejected(s, { type: "town.shop", action: { kind: "identify", memberId: "c1", instanceId: "i4" } }, "not implemented");
     // 売り物は consumable かつ infinite の品だけ（装備・魔法書・未知の id は売らない）。メンバーより先に判定
     for (const itemId of ["long_sword", "tome_lightning", "dagger", "nope"]) {
       expectRejected(s, buy("c1", itemId), "not for sale");
@@ -770,5 +769,59 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
     const m = townMenu(town({ c2: DEAD, c5: ASH }, 15), data)!.shop;
     expect(m.items.map((i) => i.affordable)).toEqual([true, true, false]);
     expect(m.members.map((x) => x.memberId)).toEqual(["c1", "c3", "c4", "c6"]);
+  });
+});
+
+describe("IT-65/IT-66 店の鑑定（town.shop identify。M7）", () => {
+  const identify = (memberId: unknown, instanceId: unknown): Command =>
+    ({ type: "town.shop", action: { kind: "identify", memberId, instanceId } }) as unknown as Command;
+  /** memberId の inventory に未鑑定の品を足した state と、その実体 id */
+  function withUnidentified(base: GameState, memberId: string, spec: Partial<Parameters<typeof createItemInstance>[1]> = {}) {
+    const s = cloneState(base);
+    const id = createItemInstance(s, { itemId: "long_sword", identified: false, level: 3, rarity: "rare", foundIn: "d01", ...spec });
+    member(s, memberId).inventory.push(id);
+    return { s, id };
+  }
+
+  test("IT-65 identifyFee（100G）を払って本人の未鑑定の品を鑑定: town.shop.identified{name, old, item, cost}。乱数なし。呪われていれば camp.identifiedCursed が続く", () => {
+    const { s, id } = withUnidentified(town({}, 300), "c2");
+    const r = ok(s, identify("c2", id));
+    expect(r.state.gold).toBe(200);
+    expect(r.state.items[id]!.identified).toBe(true);
+    expect(r.events).toEqual([
+      { kind: "message", key: "town.shop.identified", params: { name: "ベルク", old: "剣？", item: "希少な長剣 +3", cost: 100 } },
+    ]);
+    expect(r.state.rng).toEqual(s.rng);
+    expect(r.state.uniqueBook).toEqual({});
+    const c = withUnidentified(town({}, 300), "c2", { cursed: true, options: [{ optionId: "str", tier: 1, value: -1 }], rarity: "normal", level: 0 });
+    const rc = ok(c.s, identify("c2", c.id));
+    expect(rc.events).toEqual([
+      { kind: "message", key: "town.shop.identified", params: { name: "ベルク", old: "剣？", item: "長剣", cost: 100 } },
+      { kind: "message", key: "camp.identifiedCursed", params: { item: "長剣" } },
+    ]);
+  });
+
+  test("IT-65/IT-66 ユニークを店で鑑定しても図鑑に記録する。死亡している者の品も鑑定できる（life を問わない）", () => {
+    const { s, id } = withUnidentified(town({ c3: DEAD }, 300), "c3", { itemId: "leather_cap", uniqueId: "alarm_bell_helm", level: 0, rarity: "legendary", foundIn: "d02" });
+    const r = ok(s, identify("c3", id));
+    expect(r.events[0]).toEqual({ kind: "message", key: "town.shop.identified", params: { name: "キリ", old: data.equipmentBases.find((b) => b.id === "leather_cap")!.unidentifiedName, item: "伝説の早鐘の兜", cost: 100 } });
+    expect(r.state.uniqueBook).toEqual({ alarm_bell_helm: { foundIn: "d02", bestRarity: "legendary" } });
+  });
+
+  test("IT-65/TW-05 理由と順: wrong screen → bad action → no such member → item not in inventory → already identified → not enough gold。所持金ちょうどなら 0 になる", () => {
+    const { s, id } = withUnidentified(town({}, 99), "c1");
+    const diveState = withUnidentified(diving({}, 300), "c1");
+    expectRejected(diveState.s, identify("c1", diveState.id), "wrong screen");
+    expectRejected(s, identify(1, id), "bad action");
+    expectRejected(s, identify("c1", undefined), "bad action");
+    expectRejected(s, identify("c9", id), "no such member");
+    expectRejected(s, identify("c2", id), "item not in inventory"); // 他人の品
+    expectRejected(s, identify("c1", "i1"), "item not in inventory"); // 装備中
+    expectRejected(s, identify("c1", "i999"), "item not in inventory");
+    expectRejected(s, identify("c1", "i4"), "already identified"); // 薬草（鑑定済み）
+    expectRejected(s, identify("c1", id), "not enough gold");
+    const rich = cloneState(s);
+    rich.gold = 100;
+    expect(ok(rich, identify("c1", id)).state.gold).toBe(0);
   });
 });

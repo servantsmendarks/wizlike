@@ -11,6 +11,7 @@ import {
   createItemInstance,
   destroyItemInstance,
   dungeonOf,
+  identifyInstance,
   itemDisplayName,
   memberById,
   moraleOf,
@@ -343,16 +344,27 @@ function slotsFreeOf(ch: Character, data: GameData): number {
 
 /**
  * town.shop を受け付けない理由。順: wrong screen → bad action（オブジェクトでない・kind が buy / sell / identify でない・
- * buy の memberId / itemId が文字列でない）→ not implemented（sell / identify）→ not for sale → no such member → not alive →
- * inventory full → not enough gold
+ * buy の memberId / itemId、identify の memberId / instanceId が文字列でない）→ not implemented（sell）→
+ * buy: not for sale → no such member → not alive → inventory full → not enough gold /
+ * identify（IT-65。TW-05 の M7 の順）: no such member → item not in inventory → already identified → not enough gold（life は問わない）
  */
 export function checkShop(state: GameState, action: unknown, data: GameData): string | null {
   if (!inTown(state)) return "wrong screen";
   if (typeof action !== "object" || action === null) return "bad action";
-  const a = action as { kind?: unknown; memberId?: unknown; itemId?: unknown };
+  const a = action as { kind?: unknown; memberId?: unknown; itemId?: unknown; instanceId?: unknown };
   if (a.kind !== "buy" && a.kind !== "sell" && a.kind !== "identify") return "bad action";
   if (a.kind === "buy" && (typeof a.memberId !== "string" || typeof a.itemId !== "string")) return "bad action";
-  if (a.kind !== "buy") return "not implemented";
+  if (a.kind === "identify" && (typeof a.memberId !== "string" || typeof a.instanceId !== "string")) return "bad action";
+  if (a.kind === "sell") return "not implemented";
+  if (a.kind === "identify") {
+    const owner = memberById(state, a.memberId as string);
+    if (owner === null) return "no such member";
+    const iid = a.instanceId as string;
+    if (!owner.inventory.includes(iid) || state.items[iid] === undefined) return "item not in inventory";
+    if (state.items[iid]!.identified) return "already identified";
+    if (state.gold < data.config.economy.identifyFee) return "not enough gold";
+    return null;
+  }
   const item = shopItems(data).find((it) => it.id === a.itemId);
   if (item === undefined) return "not for sale";
   const ch = memberById(state, a.memberId as string);
@@ -376,6 +388,24 @@ export function buyItem(ctx: RuleContext, memberId: string, itemId: string): voi
   state.gold -= item.price;
   ch.inventory.push(createItemInstance(state, { itemId, identified: true }));
   ctx.events.push({ kind: "message", key: "town.shop.bought", params: { name: ch.name, item: item.name, cost: item.price } });
+}
+
+/**
+ * IT-65 店の鑑定。checkShop が null を返した前提。乱数は使わない（結果は CH-77 と同じ）。
+ * identifyFee を払う → 鑑定済みにし、ユニークなら図鑑に記録（IT-66）→ message town.shop.identified{name, old, item, cost}
+ * → 呪われていれば message camp.identifiedCursed{item}
+ */
+export function identifyAtShop(ctx: RuleContext, memberId: string, instanceId: string): void {
+  const { state, data } = ctx;
+  const ch = memberById(state, memberId);
+  if (ch === null || state.items[instanceId] === undefined) throw new Error(`identifyAtShop: bad ${memberId} / ${instanceId}`);
+  const cost = data.config.economy.identifyFee;
+  state.gold -= cost;
+  const old = itemDisplayName(state, data, instanceId);
+  identifyInstance(state, instanceId);
+  const item = itemDisplayName(state, data, instanceId);
+  ctx.events.push({ kind: "message", key: "town.shop.identified", params: { name: ch.name, old, item, cost } });
+  if (state.items[instanceId]!.cursed) ctx.events.push({ kind: "message", key: "camp.identifiedCursed", params: { item } });
 }
 
 // ---------------------------------------------------------------------------

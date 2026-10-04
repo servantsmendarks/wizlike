@@ -9,7 +9,7 @@ import { cloneRng, createRng, randInt, rollDice } from "../src/core/rng";
 import { campMenu, campSummary, checkCast, checkEquip, checkUnequip } from "../src/core/rules/camp";
 import { frontLineIds } from "../src/core/rules/combat-calc";
 import { resurrectRate, townMenu } from "../src/core/rules/town";
-import { cloneState, createItemInstance } from "../src/core/state";
+import { cloneState, createItemInstance, itemDisplayName } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState } from "../src/core/types";
 import { dived, withBattle } from "./helpers/battle";
 import { createInitialState } from "../src/core/engine";
@@ -438,6 +438,68 @@ describe("CH-77 party.identify", () => {
     expectRejected(s, { type: "party.identify", memberId: "c5", instanceId: "i1" }, "no such item"); // 装備中は対象外
     expectRejected(s, { type: "party.identify", memberId: "c5", instanceId: "i999" }, "no such item");
     expectRejected(s, { type: "party.identify", memberId: "c5", instanceId: "i4" }, "already identified");
+  });
+
+  test("CH-77/IT-66 ユニークを鑑定すると図鑑に記録（foundIn・bestRarity）。2 本目以降は bestRarity だけ良い方に更新し、foundIn は最初のまま。汎用では記録しない", () => {
+    const base = withBishop(inTown());
+    const s = cloneState(base);
+    const add = (spec: Parameters<typeof createItemInstance>[1]) => {
+      const id = createItemInstance(s, spec);
+      member(s, "c1").inventory.push(id);
+      return id;
+    };
+    const a = add({ itemId: "long_sword", uniqueId: "shadowfolk_sword", rarity: "fine", identified: false, foundIn: "d01" });
+    const b = add({ itemId: "long_sword", uniqueId: "shadowfolk_sword", rarity: "rare", identified: false, foundIn: "d02" });
+    const c = add({ itemId: "long_sword", uniqueId: "shadowfolk_sword", rarity: "normal", identified: false, foundIn: "d02" });
+    const g = add({ itemId: "long_sword", level: 2, rarity: "legendary", identified: false, foundIn: "d01" });
+    expect(s.uniqueBook).toEqual({});
+    const r1 = ok(s, { type: "party.identify", memberId: "c5", instanceId: a });
+    // IT-11 / IT-12: 鑑定前は「剣？」、鑑定後は「上質な影法師の剣」（ユニークは Lv を出さない）
+    expect(r1.events).toEqual([{ kind: "message", key: "camp.identified", params: { name: "エル", old: "剣？", item: "上質な影法師の剣" } }]);
+    expect(r1.state.uniqueBook).toEqual({ shadowfolk_sword: { foundIn: "d01", bestRarity: "fine" } });
+    const r2 = ok(r1.state, { type: "party.identify", memberId: "c5", instanceId: b });
+    expect(r2.state.uniqueBook).toEqual({ shadowfolk_sword: { foundIn: "d01", bestRarity: "rare" } });
+    const r3 = ok(r2.state, { type: "party.identify", memberId: "c5", instanceId: c });
+    expect(r3.state.uniqueBook).toEqual({ shadowfolk_sword: { foundIn: "d01", bestRarity: "rare" } });
+    const r4 = ok(r3.state, { type: "party.identify", memberId: "c5", instanceId: g });
+    expect(r4.state.uniqueBook).toEqual(r3.state.uniqueBook);
+    expect(r4.events[0]).toEqual({ kind: "message", key: "camp.identified", params: { name: "エル", old: "剣？", item: "伝説の長剣 +2" } });
+  });
+});
+
+describe("IT-11/IT-12 itemDisplayName（表示名）", () => {
+  const nameOf = (spec: Parameters<typeof createItemInstance>[1], d: GameData = data): string => {
+    const s = cloneState(newGame(1));
+    const id = createItemInstance(s, spec);
+    return itemDisplayName(s, d, id);
+  };
+
+  test("IT-11 汎用の鑑定済み: 希少度の接頭辞（通常は無し）+ ベースの名前 + Lv（1 以上のときだけ「 +N」）", () => {
+    expect(nameOf({ itemId: "long_sword", identified: true })).toBe("長剣");
+    expect(nameOf({ itemId: "long_sword", identified: true, level: 1 })).toBe("長剣 +1");
+    expect(nameOf({ itemId: "long_sword", identified: true, level: 5, rarity: "fine" })).toBe("上質な長剣 +5");
+    expect(nameOf({ itemId: "leather_armor", identified: true, level: 0, rarity: "rare" })).toBe("希少な革鎧");
+    expect(nameOf({ itemId: "charm", identified: true, level: 12, rarity: "legendary" })).toBe("伝説の護符 +12");
+    // オプション・呪いは名前に出さない（詳細の画面）
+    expect(nameOf({ itemId: "dagger", identified: true, level: 3, cursed: true, options: [{ optionId: "str", tier: 1, value: -1 }] })).toBe("短剣 +3");
+  });
+
+  test("IT-11 ユニークの鑑定済み: 接頭辞 + ユニークの名前（Lv は出さない）", () => {
+    expect(nameOf({ itemId: "dagger", uniqueId: "twin_tongue_dagger", identified: true })).toBe("二枚舌の短剣");
+    expect(nameOf({ itemId: "dagger", uniqueId: "twin_tongue_dagger", identified: true, rarity: "legendary" })).toBe("伝説の二枚舌の短剣");
+  });
+
+  test("IT-12 未鑑定は希少度・Lv・ユニークかどうかに関わらずベースの unidentifiedName だけ。消耗品は今どおり", () => {
+    expect(nameOf({ itemId: "long_sword", identified: false, level: 5, rarity: "legendary" })).toBe("剣？");
+    expect(nameOf({ itemId: "long_sword", identified: false, uniqueId: "shadowfolk_sword", rarity: "fine" })).toBe("剣？");
+    expect(nameOf({ itemId: "herb", identified: true })).toBe("薬草");
+  });
+
+  test("IT-11 接頭辞と Lv の書式は strings.json から引く（差し替えればその文言になる）", () => {
+    const d = loadFreshData();
+    d.strings["item.rarity.fine"] = "良い";
+    d.strings["item.plus"] = "＋{n}";
+    expect(nameOf({ itemId: "long_sword", identified: true, level: 4, rarity: "fine" }, d)).toBe("良い長剣＋4");
   });
 });
 

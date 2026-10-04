@@ -39,6 +39,7 @@ import {
   checkTemple,
   darkService,
   grantMercy,
+  identifyAtShop,
   stayInn,
   templeService,
 } from "./rules/town";
@@ -46,7 +47,7 @@ import type { TempleService } from "./rules/town";
 import { checkLookAround, lookAround } from "./rules/tavern";
 import { wipeIfNoneCanAct } from "./rules/wipe";
 import { cloneState, makeContext } from "./state";
-import type { BattleAction, Command, ExecuteResult, GameState, RuleContext } from "./types";
+import type { BattleAction, Command, ExecuteResult, GameState, RuleContext, ShopAction } from "./types";
 
 /** ゲーム開始前の状態（D3）。整数でない seed は createRng の RangeError をそのまま投げる。 */
 export function createInitialState(seed: number, _data: GameData): GameState {
@@ -255,9 +256,11 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       const action = (command as { action?: unknown }).action;
       const r = checkShop(state, action, data);
       if (r !== null) return reject(state, "town.shop", r);
-      const a = action as { memberId: string; itemId: string };
+      const a = action as ShopAction;
       const ctx = makeContext(cloneState(state), data);
-      buyItem(ctx, a.memberId, a.itemId);
+      if (a.kind === "identify") identifyAtShop(ctx, a.memberId, a.instanceId);
+      else if (a.kind === "buy") buyItem(ctx, a.memberId, a.itemId);
+      else throw new Error(`town.shop: unhandled kind ${a.kind}`);
       return finish(ctx);
     }
     case "dungeon.cast": {

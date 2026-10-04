@@ -22,7 +22,7 @@ M7 の実装が済むまでは、今のコード（items.json の装備・`confi
   - `identified`: 鑑定済みか（CH-72）。`cursed`: 呪われているか（IT-32）。呪いは実体ごとに持つ（今の `items[].cursed` は M7 で廃止）。
   - `foundIn`: ドロップしたダンジョンの id。店で買った品・初期装備は null（IT-66 の入手ダンジョン）。
   - GameState に入れる値なので省略可能な欄は持たない（無いは null か空配列）。
-- IT-11 表示名（誰が組むかは未決。§11 の Q11。既定は core の `itemDisplayName` が strings の接頭辞を引いて組む【仮】）: 鑑定済みなら「希少度の接頭辞 + 名前 + Lv」。接頭辞は 通常 なし / 上質「上質な」/ 希少「希少な」/ 伝説「伝説の」（strings の `item.rarity.<rarity>`）。名前はユニークならユニークの名前、それ以外はベースの名前。Lv は汎用装備で 1 以上のときだけ「 +N」（例「上質な長剣 +5」）。オプション・呪い・固有スキルは名前に出さず、詳細の画面（UI-59 の装備の行から開く）に出す。
+- IT-11 表示名（§11 の Q11 は既定の案で確定: core の `itemDisplayName` が strings の `item.rarity.<rarity>` と `item.plus`（{n} を 1 つだけ持つ。どちらも読み込み時の検証で必須）を引いて組む）: 鑑定済みなら「希少度の接頭辞 + 名前 + Lv」。接頭辞は 通常 なし / 上質「上質な」/ 希少「希少な」/ 伝説「伝説の」（strings の `item.rarity.<rarity>`）。名前はユニークならユニークの名前、それ以外はベースの名前。Lv は汎用装備で 1 以上のときだけ「 +N」（例「上質な長剣 +5」）。オプション・呪い・固有スキルは名前に出さず、詳細の画面（UI-59 の装備の行から開く）に出す。
 - IT-12 未鑑定（CH-72）の実体は、ベースの `unidentifiedName`（例「剣？」）だけを出す（希少度・Lv・ユニークかどうか・オプション・呪いは見せない）。未鑑定の品は装備できない（CH-72 / CH-76 のまま。§11 の Q2【衝突】があるので【仮】）。鑑定すると希少度・Lv・オプション・呪い・ユニークの名前と固有スキルが分かる。鑑定は司教（CH-77。無料）か店（IT-65。有料）。
 - IT-13 ドロップ（IT-50）の品は未鑑定で生まれる。店で買った品・買い戻した品・初期装備は鑑定済み。
 
@@ -84,7 +84,7 @@ M7 の実装が済むまでは、今のコード（items.json の装備・`confi
 - IT-62 店の流通レベル `progress.shopLevel`: game.new で 0。ダンジョンの初回クリア（DG-32）で max(今の値, `dungeons[].onClear.shopLevel`)（d01 2 / d02 4【仮】）にする。店は `equipment-bases.json` のうち `shopMinLevel ≤ shopLevel` のベースを、Lv = shopLevel・通常・鑑定済み・オプションなしで無限に売る（TW-05）。`onClear.shopStock`（TW-06 の在庫の追加）は M7 で廃止する。
 - IT-63 ユニークの買い戻し: ユニークを売ると、その実体を店の買い戻しのストック `buyback`（実体の id の配列。売った順）に入れる。ストックの品は `uniques[].price` で買い戻せ（その実体をそのまま返す。希少度・オプション・呪いもそのまま）、ストックから外れる。汎用・消耗品・魔法書は売ると実体を消す（ストックに入らない）。ストックは全滅（TW-22）の対象外。
 - IT-64 倉庫（TW-16）: 銀行に併設。品の実体の id の配列 `warehouse`。容量は `config.items.warehouseSlots`（40）【仮】。全滅（TW-21 / 22）の対象外。
-- IT-65 店の鑑定: `town.shop {kind: "identify"}` で `config.economy.identifyFee`（100）【仮】を払い、本人の inventory の未鑑定の品を鑑定する（結果は CH-77 と同じ。乱数なし）。
+- IT-65 店の鑑定: `town.shop {kind: "identify"}` で `config.economy.identifyFee`（100）【仮】を払い、本人の inventory の未鑑定の品を鑑定する（結果は CH-77 と同じ。乱数なし）。本人の life は問わない（TW-05 の M7 の順）。語りは `town.shop.identified`{name, old, item, cost}（料金を見せるため CH-77 の `camp.identified` とは別のキー）、呪われていれば続けて `camp.identifiedCursed`{item}。
 - IT-66 図鑑（ユニーク）`uniqueBook`: uniqueId → `{ foundIn, bestRarity }`。ユニークを鑑定した時点（司教・店）で記録し（指示は「入手は図鑑に記録」。§11 の Q12 で【仮】）、既にあれば bestRarity だけを良い方に更新する（foundIn は最初の記録のまま。foundIn が null の実体なら null）。ゲーム単位で永続（全滅・売却でも消えない）。名前は uniques.json から出す。
 
 ## 8. 強化

@@ -920,6 +920,12 @@ describe("data: strings.json", () => {
   test("data: party.status.<StatusId>（パーティ欄の短い名前）がそろう", () => {
     expectIssue((r) => delete r.strings["party.status.sleep"], "strings.json", "party.status.sleep");
   });
+  test("data: IT-11 表示名の部品 item.rarity.fine / rare / legendary と item.plus（{n} を 1 つだけ）がそろう", () => {
+    expectIssue((r) => delete r.strings["item.rarity.rare"], "strings.json", "item.rarity.rare");
+    expectIssue((r) => delete r.strings["item.plus"], "strings.json", "item.plus");
+    expectIssue((r) => (r.strings["item.plus"] = " +{level}"), "strings.json", "item.plus: IT-11: must have exactly one placeholder {n} (found {level})");
+    expectIssue((r) => (r.strings["item.plus"] = "+"), "strings.json", "item.plus: IT-11: must have exactly one placeholder {n} (found none)");
+  });
 });
 
 describe("data: エラー報告", () => {

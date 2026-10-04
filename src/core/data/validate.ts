@@ -1199,6 +1199,14 @@ function validateStrings(ctx: Ctx, v: unknown, ix: Index): void {
     strKey(ctx, "", `battle.status.${id}`, ix);
     strKey(ctx, "", `party.status.${id}`, ix);
   }
+  // IT-11: core の itemDisplayName が希少度の接頭辞と Lv の書式を引く（通常は接頭辞なし）。item.plus は {n} だけを差し込む
+  for (const r of RARITY_IDS) if (r !== "normal") strKey(ctx, "", `item.rarity.${r}`, ix);
+  strKey(ctx, "", "item.plus", ix);
+  const plus = ix.stringText.get("item.plus");
+  if (plus !== undefined) {
+    const ph = [...plus.matchAll(PLACEHOLDER_RE)].map((m) => m[0]);
+    if (ph.length !== 1 || ph[0] !== "{n}") report(ctx, "item.plus", `IT-11: must have exactly one placeholder {n} (found ${ph.join(" ") || "none"})`);
+  }
 }
 
 // ---- 全体 ----
