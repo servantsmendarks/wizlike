@@ -11,7 +11,7 @@ import { floorOf } from "../src/core/rules/dungeon";
 import { cellAt, idx } from "../src/core/rules/dungeon-gen";
 import { applyEffects, decideImpulse, lureProduct, pickStopper, startEvent } from "../src/core/rules/events";
 import { wipeIfNoneCanAct } from "../src/core/rules/wipe";
-import { cloneState, eventOf, makeContext } from "../src/core/state";
+import { cloneState, createItemInstance, eventOf, itemDisplayName, makeContext } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState, RuleContext } from "../src/core/types";
 import { execute } from "../src/core/engine";
 import { data, deepFreeze, expectKnownStringKeys, expectStateInvariants, newGame } from "./helpers/core";
@@ -330,6 +330,49 @@ describe("制止判定（EV-15, EV-20〜22）", () => {
     const dice1 = start(zero, d0, TABLET).events.find((e) => e.kind === "dice")!;
     expect(dice1.kind === "dice" && dice1.rows.length).toBe(2);
     expect(dice1.kind === "dice" && dice1.rule.params).toEqual({ diff: -1 });
+  });
+
+  test("EV-21/IT-40 固有スキル judgeBonus（賽の目の盾 +1）は士気（+1）と足し合わせる（Q6）: 行は [制止者, 士気 +1, 盾 +1, 行動者] の 4 行で、差 −2 だった出目が差 0 で制止に変わる。乱数の消費は変わらない", () => {
+    const { state } = tablet();
+    const s0 = cloneState(patch(state, 1, { personality: "normal" })); // 制止者をフィンに固定する
+    s0.morale = { rankId: "good" };
+    const fin = s0.party[5]!;
+    const shield = createItemInstance(s0, { itemId: "wooden_shield", uniqueId: "dice_eye_shield", identified: true });
+    fin.equipment.shield = shield;
+    const item = itemDisplayName(s0, data, shield);
+    const m = cloneRng(s0.rng);
+    rollDie(m, 6);
+    rollDie(m, 6);
+    const rS = rollDie(m, 10);
+    const rA = rollDie(m, 10);
+    const iq = 15 + rA - rS - 2; // 補正なしなら差 −2
+    for (const [v, ok, diff] of [
+      [iq, true, 0],
+      [iq - 1, false, -1],
+    ] as const) {
+      const s = patch(s0, 5, { stats: { ...fin.stats, iq: v } });
+      const ctx = start(s, dataEvents(), TABLET);
+      const dice = ctx.events.find((e) => e.kind === "dice")!;
+      expect(dice).toEqual({
+        kind: "dice",
+        label: { key: "dice.restrain" },
+        rows: [
+          { label: { key: "dice.restrain.stopper", params: { name: "フィン" } }, base: v, dice: [rS], total: v + rS },
+          { label: { key: "dice.bonus.morale", params: { value: 1 } }, base: 1, dice: [], total: 1 },
+          { label: { key: "dice.bonus.skill", params: { item, value: 1 } }, base: 1, dice: [], total: 1 },
+          { label: { key: "dice.restrain.actor", params: { name: "キリ" } }, base: 15, dice: [rA], total: 15 + rA },
+        ],
+        rule: { key: "dice.restrain.rule", params: { diff } },
+        result: { key: ok ? "dice.restrain.ok" : "dice.restrain.ng" },
+      });
+      if (ok) expect(ctx.state.rng).toEqual(m); // 1d6 × 2 と 1d10 × 2 だけ（補正の行は乱数を使わない。制止できたので結果の抽選も無い）
+    }
+    // 士気なしで盾だけなら 3 行（盾の行だけ）で差 −1
+    const noMorale = patch(s0, 5, { stats: { ...fin.stats, iq } });
+    noMorale.morale = null;
+    const d1 = start(noMorale, dataEvents(), TABLET).events.find((e) => e.kind === "dice")!;
+    expect(d1.kind === "dice" && d1.rows.map((r) => r.label.key)).toEqual(["dice.restrain.stopper", "dice.bonus.skill", "dice.restrain.actor"]);
+    expect(d1.kind === "dice" && d1.rule.params).toEqual({ diff: -1 });
   });
 
   test("EV-22 制止成功: 不発、制止者 → 行動者の順に SAN +stopSanGain、mixed は選択型へ（screen{event} は SAN の後）", () => {

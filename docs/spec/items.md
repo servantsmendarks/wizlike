@@ -59,14 +59,14 @@ M7 の実装が済むまでは、今のコード（items.json の装備・`confi
 ## 5. 固有スキル
 
 - IT-40 ユニークだけが持つ。閉じた集合から始めて後で増やす。`uniques[].skill` は `{ type, value }`【仮】（value を使わない `reachFromBack` / `fearImmune` / `autoIdentify` は 0）。装備中だけ効く。
-  - `mpCostDown`: その者の呪文の MP 消費 −value（最低 1。MG-30）。
+  - `mpCostDown`: その者の呪文の MP 消費 −value（最低 1。MG-30。複数の品なら合計）。
   - `extraAttack`: CB-23 の攻撃回数 +value（`maxAttacks` を超えてよい）。
   - `reachFromBack`: 後衛からでも近接攻撃できる（CB-13 の `ranged` と同じ扱い）。
   - `initiativeUp`: CB-04 の先手判定で味方側の合計に +value（パーティに 1 人でも行動可能な装備者がいれば。複数でも最大の 1 つ）。
   - `fearImmune`: その者の fear タグの SAN 減少を 0 にする（CB-31）。
-  - `lifeSteal`: その者の攻撃が当たるたびに、与えたダメージの value % を切り捨てで HP に戻す（hpMax で止まる。0 なら何もしない）。
-  - `autoIdentify`: 遭遇の時点で装備者が行動可能なら、全グループを鑑定済みにする（MG-41 と同じ。CB-06 の SAN 減少より前）。
-  - `walkRegen`: 迷宮の前進が成立した歩で、`adventureTurns` が value の倍数になったとき、装備者（life alive）の HP +1（毒の後。CH-43）。
+  - `lifeSteal`: その者の攻撃が当たるたびに、与えたダメージ（attack の damage の値。残り HP で頭打ちにしない）の value % を切り捨てで HP に戻す（実効の hpMax で止まる。0 なら何もしない）。語りは battle.hit の後に `battle.lifeSteal`{name, hp}。
+  - `autoIdentify`: 遭遇の時点で装備者が行動可能なら、全グループを鑑定済みにする（MG-41 と同じ語り `battle.identified` と `enemyGroups` を `battle.encounter` の後に出す。CB-06 の SAN 減少より前）。
+  - `walkRegen`: 迷宮の前進が成立した歩で、`adventureTurns` が value の倍数になったとき、装備者（life alive）の HP +1（毒の後。CH-43。品ごとに判定し、hpChanged だけを出す）。
   - `judgeBonus`: 装備者が制止者のとき、EV-21 の制止者の側に +value（宿の士気 TW-15 の judgeBonus と足し合わせる。判定の箱には士気の行の後に内訳の行 `dice.bonus.skill`{item, value} を出す。§11 の Q6）。
 
 ## 6. 入手（ドロップ）

@@ -14,7 +14,7 @@ import {
   lowestHpRatioAlly,
   unitAlive,
 } from "./combat-calc";
-import { hpMaxOf } from "./equip-stats";
+import { hpMaxOf, spellCost } from "./equip-stats";
 import { sanCapOf, sanStage, stageRank } from "./san";
 
 /** CB-43 のオート解除の理由。strings: battle.autoReason.<r>。reinforce は M3 では発生源が無い */
@@ -163,7 +163,7 @@ export function toPlan(state: GameState, data: GameData, ch: Character, action: 
         : { kind: "defend", memberId, why: "backRow" };
     case "cast": {
       const sp = spellOf(data, action.spellId);
-      if (ch.mp < sp.mp) {
+      if (ch.mp < spellCost(state, data, ch, sp)) { // MG-30 / IT-40
         const b = state.battle;
         const g = b === null ? null : lowestAliveGroup(b);
         if (g !== null && canStrike(state, data, ch)) return { kind: "attack", memberId, group: g, noMp: true };

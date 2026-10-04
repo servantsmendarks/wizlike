@@ -325,6 +325,7 @@ export function moveForward(ctx: RuleContext): void {
   const cell = cellAt(f, dive.pos.x, dive.pos.y);
   // CH-43: 毒の 1 歩ごとのダメージ（HP 1 で止まるので、これで死ぬことはない）
   tickPoisonStep(ctx);
+  walkRegen(ctx); // IT-40: 毒の後
   if (cell.kind === "trap") {
     // DG-21（M6）: 印のある罠（knownTraps）は察知を振らずに必ず確認を立てる（階段・遭遇なし）
     if ((dive.knownTraps[String(dive.floor)] ?? []).includes(idx(f, dive.pos.x, dive.pos.y))) {
@@ -335,6 +336,24 @@ export function moveForward(ctx: RuleContext): void {
     triggerTrap(ctx, f, dive.pos);
   }
   continueStep(ctx, f, cell);
+}
+
+/**
+ * IT-40 walkRegen: 前進が成立した歩（毒の後）で、life alive の者の装備中の walkRegen の品ごとに、adventureTurns が value の倍数なら
+ * HP +1（実効の hpMax で止める）。増えたら hpChanged だけを出す（毒と同じく message なし）。乱数なし
+ */
+function walkRegen(ctx: RuleContext): void {
+  const { state, data } = ctx;
+  for (const ch of state.party) {
+    if (ch.life !== "alive") continue;
+    const es = equipStats(state, data, ch);
+    const n = es.skills.filter((x) => x.type === "walkRegen" && x.value > 0 && state.adventureTurns % x.value === 0).length;
+    if (n === 0) continue;
+    const hp = Math.min(es.hpMax, ch.hp + n);
+    if (hp <= ch.hp) continue;
+    ctx.events.push({ kind: "hpChanged", id: ch.id, delta: hp - ch.hp, hp });
+    ch.hp = hp;
+  }
 }
 
 /**

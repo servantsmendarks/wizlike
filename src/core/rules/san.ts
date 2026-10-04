@@ -4,7 +4,7 @@
 import type { Config, GameData, Personality } from "../data/index";
 import { personalityOf } from "../state";
 import type { Character, GameState, RuleContext } from "../types";
-import { equipStats } from "./equip-stats";
+import { equipStats, hasSkill } from "./equip-stats";
 
 export type SanStage = "normal" | "uneasy" | "confused" | "broken";
 export type SanLossTag = "fear" | "allyInjury" | "trap";
@@ -99,12 +99,16 @@ function assertSanAmount(amount: number): void {
   if (!Number.isFinite(amount) || amount < 0) throw new Error(`san amount must be non-negative: ${amount}`);
 }
 
-/** CH-51/54: 減少。amount は 0 以上（負や非有限は Error）。tags は攻撃の tags や ["allyInjury"]。 */
+/**
+ * CH-51/54: 減少。amount は 0 以上（負や非有限は Error）。tags は攻撃の tags や ["allyInjury"]。
+ * M7: fear のタグの減少には装備者のオプション fearLoss（IT-34）を掛け、固有スキル fearImmune（IT-40）の装備者は 0 にする（CB-31）
+ */
 export function loseSan(ctx: RuleContext, ch: Character, amount: number, tags: readonly string[] = []): SanChange {
   assertSanAmount(amount);
   const p = personalityOf(ctx.data, ch.personality);
-  const fearLossPct = equipStats(ctx.state, ctx.data, ch).fearLossPct; // CB-31 / IT-34
-  return setSan(ctx, ch, ch.san - sanLossAmount(amount, p, tags, fearLossPct), Math.max(sanCapOf(ctx.state, ctx.data, ch), ch.san));
+  const es = equipStats(ctx.state, ctx.data, ch);
+  const loss = tags.includes("fear") && hasSkill(es, "fearImmune") ? 0 : sanLossAmount(amount, p, tags, es.fearLossPct);
+  return setSan(ctx, ch, ch.san - loss, Math.max(sanCapOf(ctx.state, ctx.data, ch), ch.san));
 }
 
 /**

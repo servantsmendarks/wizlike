@@ -14,7 +14,9 @@ import {
   partyGoldLuck,
   withGoldLuck,
 } from "../src/core/rules/combat-calc";
-import { equipStats } from "../src/core/rules/equip-stats";
+import { equipStats, spellCost } from "../src/core/rules/equip-stats";
+import { battleMenu, startBattle } from "../src/core/rules/combat";
+import { campMenu } from "../src/core/rules/camp";
 import { pickStopper } from "../src/core/rules/events";
 import { levelUpOnce, rollHpGain, vitBonus } from "../src/core/rules/growth";
 import { learnRate } from "../src/core/rules/learning";
@@ -23,7 +25,8 @@ import { resurrectRate, rollResurrect } from "../src/core/rules/town";
 import { classOf, cloneState, createItemInstance, makeContext, memberById, spellOf, type ItemInstanceSpec } from "../src/core/state";
 import type { BattleAction, Character, Command, GameEvent, GameState, ItemOptionRoll } from "../src/core/types";
 import { ALWAYS_HIT, allInputs, dataWith, dived, eventsOf, exec, withBattle, type GroupSpec } from "./helpers/battle";
-import { data, expectStateInvariants, newGame } from "./helpers/core";
+import { data, expectStateInvariants, loadFreshData, newGame } from "./helpers/core";
+import { dataWithRate, findSituation } from "./helpers/dungeon";
 
 const cfg = data.config;
 const RESOLVE: Command = { type: "battle.resolve" };
@@ -520,5 +523,185 @@ describe("CH-13 能力値を読むほかのルール（成長・習得・寺院�
     expect(pickStopper(s, data, def, actor)!.id).toBe("c6");
     equipNew(s, "c2", "accessory", { itemId: "charm", identified: true, options: [opt("iq", 3)] });
     expect(pickStopper(s, data, def, actor)!.id).toBe("c2");
+  });
+});
+
+describe("IT-40 固有スキル", () => {
+  test("MG-30/IT-40 mpCostDown: 夜明けの火打ち杖（−1）で火の矢 2 → 1。入力の検査（mp 1 で受け付け、0 で no mp）・battleMenu の mp と usable も同じ値。最低 1", () => {
+    const s0 = dived(1);
+    equipNew(s0, "c5", "weapon", { itemId: "staff", uniqueId: "dawn_flint_staff", identified: true });
+    member(s0, "c5").mp = 1;
+    const s = withBattle(s0, [{ monsterId: "giant_rat", hps: [50], status: [["paralysis"]] }], { identified: ["giant_rat"], inputs: allInputs(s0, DEF) });
+    const castCmd: Command = { type: "battle.input", memberId: "c5", action: { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 0 } } };
+    const menuSpell = (st: GameState) => battleMenu(st, data)!.members.find((x) => x.id === "c5")!.spells.find((x) => x.spellId === "fire_arrow")!;
+    expect([menuSpell(s).mp, menuSpell(s).usable]).toEqual([1, true]);
+    const r1 = exec(s, castCmd);
+    const r2 = exec(r1.state, RESOLVE);
+    expect(r2.events).toContainEqual({ kind: "mpChanged", id: "c5", delta: -1, mp: 0 });
+    // mp 0 では no mp
+    const empty = cloneState(s);
+    member(empty, "c5").mp = 0;
+    expect(execute(empty, castCmd, data).events).toEqual([{ kind: "rejected", command: "battle.input", reason: "no mp" }]);
+    expect(menuSpell(empty).usable).toBe(false);
+    // 杖が無ければ 2（mp 1 では no mp）
+    const plain = cloneState(s);
+    equipNew(plain, "c5", "weapon", { itemId: "staff", identified: true });
+    expect(execute(plain, castCmd, data).events).toEqual([{ kind: "rejected", command: "battle.input", reason: "no mp" }]);
+    // 値が消費を超えても 1
+    const d = loadFreshData();
+    d.uniques.find((u) => u.id === "dawn_flint_staff")!.skill.value = 5;
+    expect(spellCost(s, d, member(s, "c5"), spellOf(d, "fire_arrow"))).toBe(1);
+  });
+
+  test("MG-30/IT-40 mpCostDown は dungeon.cast（戦闘外の heal）と campMenu の mp にも効く", () => {
+    const s = newGame(1);
+    equipNew(s, "c4", "weapon", { itemId: "staff", uniqueId: "dawn_flint_staff", identified: true });
+    member(s, "c1").hp = 1;
+    expect(campMenu(s, data)!.members.find((x) => x.id === "c4")!.spells.find((x) => x.spellId === "heal")!.mp).toBe(1);
+    const mp = member(s, "c4").mp;
+    const r = exec(s, { type: "dungeon.cast", memberId: "c4", spellId: "heal", targetId: "c1" });
+    expect(r.events[0]).toEqual({ kind: "mpChanged", id: "c4", delta: -1, mp: mp - 1 });
+    member(s, "c4").mp = 1;
+    expect(execute(s, { type: "dungeon.cast", memberId: "c4", spellId: "heal", targetId: "c1" }, data).events[0]!.kind).toBe("mpChanged");
+  });
+
+  test("CB-23/IT-40 extraAttack: 二枚舌の短剣（+1）でアルド Lv1 は 2 振り（1d4 + 力補正 2 を 2 回。鏡の rng）", () => {
+    const d = dataWith({ combat: ALWAYS_HIT });
+    const s = solo(4, [50], (x) => equipNew(x, "c1", "weapon", { itemId: "dagger", uniqueId: "twin_tongue_dagger", identified: true }));
+    const m = cloneRng(s.rng);
+    rolls(m, 6);
+    chance(m, 100);
+    const d1 = rollDice(m, "1d4").total + 2;
+    chance(m, 100);
+    const d2 = rollDice(m, "1d4").total + 2;
+    const r = exec(s, RESOLVE, d);
+    expect(eventsOf(r.events, "attack").map((e) => e.damage)).toEqual([d1, d2]);
+    expect(r.state.rng).toEqual(m);
+  });
+
+  test("CB-13/IT-40 reachFromBack: 後衛（ドナ c4）でも影法師の剣なら近接攻撃できる", () => {
+    const s = withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }]);
+    expect(canStrike(s, data, member(s, "c4"))).toBe(false);
+    equipNew(s, "c4", "weapon", { itemId: "long_sword", uniqueId: "shadowfolk_sword", identified: true });
+    expect(canStrike(s, data, member(s, "c4"))).toBe(true);
+    expect(equipStats(s, data, member(s, "c4")).ranged).toBe(true);
+  });
+
+  test("CB-04/IT-40 initiativeUp: 行動可能な装備者がいれば先手判定の味方の行の base に +2（2 人いても最大の 2）。装備者が麻痺なら足さない。乱数は同じ", () => {
+    const d = dataWith({ combat: { surpriseDiff: 1000 } }); // 奇襲なし（先手判定の 2 個で止まる）
+    const base = (s0: GameState) => {
+      const ctx = makeContext(cloneState(s0), d);
+      startBattle(ctx, { kind: "random", inRoom: false }, [{ monsterId: "giant_rat", count: 1 }]);
+      const box = eventsOf(ctx.events, "dice").find((e) => e.label.key === "dice.initiative")!;
+      return { party: box.rows[0]!.base, rng: ctx.state.rng };
+    };
+    const s0 = dived(1);
+    const plain = base(s0);
+    const one = cloneState(s0);
+    equipNew(one, "c3", "helm", { itemId: "leather_cap", uniqueId: "alarm_bell_helm", identified: true });
+    expect(base(one).party).toBe(plain.party! + 2);
+    expect(base(one).rng).toEqual(plain.rng);
+    const two = cloneState(one);
+    equipNew(two, "c1", "helm", { itemId: "leather_cap", uniqueId: "alarm_bell_helm", identified: true });
+    expect(base(two).party).toBe(plain.party! + 2);
+    const para = cloneState(one);
+    member(para, "c3").status = ["paralysis"];
+    const paraPlain = cloneState(s0);
+    member(paraPlain, "c3").status = ["paralysis"];
+    expect(base(para).party).toBe(base(paraPlain).party);
+  });
+
+  test("CB-31/IT-40 fearImmune: 凪の護符の装備者は fear のタグの SAN 減少が 0（fear 以外は今どおり）", () => {
+    const s = newGame(1);
+    equipNew(s, "c1", "accessory", { itemId: "charm", uniqueId: "calm_sea_charm", identified: true });
+    const ctx = makeContext(s, data);
+    expect(loseSan(ctx, member(s, "c1"), 4, ["fear"]).delta).toBe(0);
+    expect(loseSan(ctx, member(s, "c1"), 10, ["allyInjury"]).delta).toBe(-10);
+    expect(loseSan(ctx, member(s, "c2"), 4, ["fear"]).delta).toBe(-4);
+    expect(ctx.events).toEqual([
+      { kind: "sanChanged", id: "c1", delta: -10, san: 90 },
+      { kind: "sanChanged", id: "c2", delta: -4, san: 96 },
+    ]);
+  });
+
+  test("CB-22/IT-40 lifeSteal: 血吸いの小手（25%）で当たるたびに floor(ダメージ × 25 ÷ 100) を戻す（hpChanged → battle.lifeSteal。0 なら何も出さない。実効の hpMax で止める）", () => {
+    const d = dataWith({ combat: ALWAYS_HIT });
+    const seen = new Set<boolean>();
+    for (let seed = 1; seed <= 16; seed++) {
+      const s = solo(seed, [50], (x) => {
+        equipNew(x, "c1", "gauntlet", { itemId: "leather_gloves", uniqueId: "bloodsucker_gloves", identified: true });
+        member(x, "c1").hp = 5;
+      });
+      const m = cloneRng(s.rng);
+      rolls(m, 6);
+      chance(m, 100);
+      const dmg = rollDice(m, "1d8").total + 2;
+      const gain = Math.floor((dmg * 25) / 100);
+      const r = exec(s, RESOLVE, d);
+      const at = r.events.findIndex((e) => e.kind === "message" && e.key === "battle.hit");
+      const after = r.events.slice(at + 1, at + 3);
+      if (gain > 0) {
+        expect(after).toEqual([
+          { kind: "hpChanged", id: "c1", delta: gain, hp: 5 + gain },
+          { kind: "message", key: "battle.lifeSteal", params: { name: "アルド", hp: gain } },
+        ]);
+      } else {
+        expect(r.events.some((e) => e.kind === "message" && e.key === "battle.lifeSteal")).toBe(false);
+      }
+      expect(member(r.state, "c1").hp).toBe(5 + gain);
+      expect(r.state.rng).toEqual(m);
+      seen.add(gain > 0);
+    }
+    expect(seen).toEqual(new Set([true, false]));
+    // 満タン（15/15）なら何も出さない
+    const full = solo(1, [50], (x) => equipNew(x, "c1", "gauntlet", { itemId: "leather_gloves", uniqueId: "bloodsucker_gloves", identified: true }));
+    expect(exec(full, RESOLVE, d).events.some((e) => e.kind === "message" && e.key === "battle.lifeSteal")).toBe(false);
+  });
+
+  test("CB-05/IT-40 autoIdentify: 行動可能な装備者がいれば遭遇の時点で全グループを鑑定（battle.identified → enemyGroups。CB-06 の SAN は減らない）。装備者が麻痺なら今どおり", () => {
+    const d = dataWith({ combat: { surpriseDiff: 1000 } });
+    const run1 = (s0: GameState) => {
+      const ctx = makeContext(cloneState(s0), d);
+      startBattle(ctx, { kind: "random", inRoom: false }, [
+        { monsterId: "giant_rat", count: 2 },
+        { monsterId: "kobold", count: 1 },
+      ]);
+      return ctx;
+    };
+    const s0 = dived(1);
+    equipNew(s0, "c2", "accessory", { itemId: "charm", uniqueId: "farsight_monocle", identified: true });
+    const ctx = run1(s0);
+    const keys = ctx.events.flatMap((e) => (e.kind === "message" ? [e.key] : e.kind === "beat" ? [] : [e.kind]));
+    expect(keys.slice(0, 6)).toEqual(["screen", "encounter", "battle.encounter", "battle.identified", "battle.identified", "enemyGroups"]);
+    expect(ctx.events.some((e) => e.kind === "sanChanged")).toBe(false);
+    expect(ctx.state.bestiary["giant_rat"]!.identified && ctx.state.bestiary["kobold"]!.identified).toBe(true);
+    const para = cloneState(s0);
+    member(para, "c2").status = ["paralysis"];
+    const p = run1(para);
+    expect(p.events).toContainEqual({ kind: "message", key: "battle.unidentified" });
+    expect(p.state.bestiary["giant_rat"]!.identified).toBe(false);
+  });
+
+  test("CH-43/IT-40 walkRegen: 前進が成立した歩で adventureTurns が value（3）の倍数なら装備者の HP +1（毒の後。hpChanged だけ）。倍数でない歩・満タンでは何も出さない", () => {
+    const d = dataWithRate(0, 0);
+    d.uniques.find((u) => u.id === "bloodsucker_gloves")!.skill = { type: "walkRegen", value: 3 };
+    const { state } = findSituation((c) => c.kind === "corridor");
+    const at = (turns: number, hp: number, poison: boolean) => {
+      const s = cloneState(state);
+      equipNew(s, "c1", "gauntlet", { itemId: "leather_gloves", uniqueId: "bloodsucker_gloves", identified: true });
+      s.adventureTurns = turns;
+      Object.assign(member(s, "c1"), { hp, status: poison ? ["poison"] : [] });
+      return execute(s, { type: "dungeon.move" }, d);
+    };
+    const r = at(2, 5, false); // 前進で 3
+    expect(r.events[0]!.kind).toBe("moved");
+    expect(eventsOf(r.events, "hpChanged")).toEqual([{ kind: "hpChanged", id: "c1", delta: 1, hp: 6 }]);
+    expect(at(3, 5, false).events.some((e) => e.kind === "hpChanged")).toBe(false); // 4 は倍数でない
+    expect(at(2, 15, false).events.some((e) => e.kind === "hpChanged")).toBe(false); // 満タン
+    // 毒（−1）の後に +1
+    expect(eventsOf(at(5, 5, true).events, "hpChanged")).toEqual([
+      { kind: "hpChanged", id: "c1", delta: -1, hp: 4 },
+      { kind: "hpChanged", id: "c1", delta: 1, hp: 5 },
+    ]);
   });
 });

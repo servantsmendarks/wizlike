@@ -10,7 +10,7 @@ import { canAct } from "./combat-calc";
 import { offerEventChoice } from "./choices";
 import { idx } from "./dungeon-gen";
 import { addExplored, aliveMembers, damageMembers, gainGold } from "./field";
-import { effectiveStats } from "./equip-stats";
+import { effectiveStats, equipStats } from "./equip-stats";
 import { applySanValue, gainSan, sanCapOf, sanStage } from "./san";
 
 // ---------------------------------------------------------------------------
@@ -73,13 +73,18 @@ export function pickStopper(state: GameState, data: GameData, def: EventDef, act
 
 /**
  * EV-21（M7）: 制止者の側の補正の内訳の行（base = 値、dice 空、total = 値）。0 の補正は行を出さない。
- * 宿の士気の judgeBonus（TW-15。dice.bonus.morale）と、制止者の固有スキル judgeBonus（IT-40。B で dice.bonus.skill を足す）は
- * 足し合わせる（items.md §11 の Q6。士気 → スキルの順に行を並べる）。補正の合計はこの行の total の和
+ * 宿の士気の judgeBonus（TW-15。dice.bonus.morale）と、制止者の固有スキル judgeBonus（IT-40。品ごとに dice.bonus.skill{item, value}。
+ * item は品の表示名）は足し合わせる（items.md §11 の Q6。士気 → スキルの順に行を並べる）。補正の合計はこの行の total の和
  */
-export function restrainBonusRows(state: GameState, data: GameData, _stopper: Character): DiceRow[] {
+export function restrainBonusRows(state: GameState, data: GameData, stopper: Character): DiceRow[] {
   const rows: DiceRow[] = [];
   const morale = moraleOf(state, data)?.judgeBonus ?? 0;
   if (morale > 0) rows.push({ label: { key: "dice.bonus.morale", params: { value: morale } }, base: morale, dice: [], total: morale });
+  for (const sk of equipStats(state, data, stopper).skills) {
+    if (sk.type !== "judgeBonus" || sk.value <= 0) continue;
+    const item = itemDisplayName(state, data, sk.instanceId);
+    rows.push({ label: { key: "dice.bonus.skill", params: { item, value: sk.value } }, base: sk.value, dice: [], total: sk.value });
+  }
   return rows;
 }
 

@@ -1,10 +1,13 @@
 // 実効の値（IT-34 / IT-35、CH-13 / CH-14、IT-20〜23、MG-33、CB-20〜22）。純粋。乱数も RuleContext も使わない。
 // 能力値・最大値・AC・武器・魔法攻撃力・オプションの加算を計算するのはこのファイルだけ。ルールはここから読む（表示層は計算しない。UI-35）。
 // 装備中の品は、鑑定の有無に関係なく効く（IT-34）。state.items に無い id（表示層が古い写しの Character を渡した場合など）は飛ばす。
-import type { GameData, StatBlock, StatusId } from "../data/index";
+import type { GameData, SkillType, Spell, StatBlock, StatusId } from "../data/index";
 import { EQUIP_SLOTS, STAT_KEYS, STATUS_IDS } from "../data/index";
 import { findBase, moraleOf, optionOf, uniqueOf } from "../state";
 import type { Character, GameState, RuleContext } from "../types";
+
+/** IT-40: 装備中のユニークの固有スキル 1 つ */
+export type EquipSkill = { type: SkillType; value: number; instanceId: string };
 
 export type EquipStats = {
   /** CH-13: 素 + オプション stat。下限 1、上限なし */
@@ -37,8 +40,10 @@ export type EquipStats = {
   goldLuck: number;
   /** CB-30: 状態ごとのオプション statusResist の合計（%。付与の確率から引く） */
   statusResist: Record<StatusId, number>;
-  /** CB-13: 武器の ranged */
+  /** CB-13: 武器の ranged、または固有スキル reachFromBack（IT-40）の品を装備している */
   ranged: boolean;
+  /** IT-40: 装備中のユニークの固有スキル（EQUIP_SLOTS の順。instanceId はその品の実体） */
+  skills: EquipSkill[];
 };
 
 /** IT-35: ch の実効の値。装備は EQUIP_SLOTS の順に見る（武器は weapon の枠だけ） */
@@ -60,6 +65,7 @@ export function equipStats(state: GameState, data: GameData, ch: Character): Equ
   let identifyRate = 0;
   let goldLuck = 0;
   let ranged = false;
+  const skills: EquipSkill[] = [];
   for (const slot of EQUIP_SLOTS) {
     const id = ch.equipment[slot];
     if (id === null) continue;
@@ -78,6 +84,7 @@ export function equipStats(state: GameState, data: GameData, ch: Character): Equ
       acEquip += uniq?.ac ?? base.ac;
       if (uniq === null && base.slot !== "accessory") acEquip -= Math.floor(inst.level / ic.armorLvPerAc); // IT-21 / IT-23
     }
+    if (uniq !== null) skills.push({ type: uniq.skill.type, value: uniq.skill.value, instanceId: id }); // IT-40
     for (const roll of inst.options) {
       const e = optionOf(data, roll.optionId).effect;
       const v = roll.value;
@@ -141,8 +148,28 @@ export function equipStats(state: GameState, data: GameData, ch: Character): Equ
     identifyRate,
     goldLuck,
     statusResist,
-    ranged,
+    ranged: ranged || skills.some((x) => x.type === "reachFromBack"), // CB-13 / IT-40
+    skills,
   };
+}
+
+/** IT-40: 装備中のその種類の固有スキルの value の合計（無ければ 0） */
+export function skillTotal(es: EquipStats, type: SkillType): number {
+  return es.skills.reduce((a, x) => (x.type === type ? a + x.value : a), 0);
+}
+
+/** IT-40: その種類の固有スキルの品を装備しているか（value を使わない reachFromBack / fearImmune / autoIdentify） */
+export function hasSkill(es: EquipStats, type: SkillType): boolean {
+  return es.skills.some((x) => x.type === type);
+}
+
+/**
+ * MG-30 / IT-40: ch が spell を唱えるときの MP の消費。固有スキル mpCostDown を装備していれば max(1, spells[].mp − 値)、
+ * そうでなければ spells[].mp（戦闘・dungeon.cast・入力の検査・問い合わせで同じ値を使う）
+ */
+export function spellCost(state: GameState, data: GameData, ch: Character, spell: Spell): number {
+  const down = skillTotal(equipStats(state, data, ch), "mpCostDown");
+  return down > 0 ? Math.max(1, spell.mp - down) : spell.mp;
 }
 
 /** CH-13: 実効の能力値（equipStats の stats） */

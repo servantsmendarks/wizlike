@@ -19,7 +19,7 @@ import type {
 } from "../types";
 import { canAct } from "./combat-calc";
 import { applyAllyEffect } from "./effects";
-import { clampToMax, equipStats, hpMaxOf } from "./equip-stats";
+import { clampToMax, equipStats, hpMaxOf, spellCost } from "./equip-stats";
 import { returnToTown, rollResurrect } from "./town";
 
 /** キャンプのコマンドを受け付ける場所。街（dive null）か迷宮の戦闘外。どちらも保留なしのときだけ。それ以外は null */
@@ -83,7 +83,7 @@ export function checkCast(
   const sp = spellOf(data, spellId);
   if (!fieldSpellOk(sp)) return "not usable here";
   if (place === "town" && sp.effect.type === "return") return "not usable here"; // MG-32（M5.5）: 帰還は迷宮だけ
-  if (ch.mp < sp.mp) return "no mp";
+  if (ch.mp < spellCost(state, data, ch, sp)) return "no mp"; // MG-30 / IT-40: mpCostDown の後の消費
   const kind = spellTargetKind(sp);
   if (kind !== "none") {
     const t = typeof targetId === "string" ? memberById(state, targetId) : null;
@@ -104,8 +104,9 @@ export function castInField(ctx: RuleContext, memberId: string, spellId: string,
   const ch = memberById(state, memberId);
   if (ch === null) throw new Error(`castInField: unknown member ${memberId}`);
   const sp = spellOf(data, spellId);
-  ch.mp -= sp.mp;
-  ctx.events.push({ kind: "mpChanged", id: ch.id, delta: -sp.mp, mp: ch.mp });
+  const cost = spellCost(state, data, ch, sp); // MG-30 / IT-40
+  ch.mp -= cost;
+  ctx.events.push({ kind: "mpChanged", id: ch.id, delta: -cost, mp: ch.mp });
   ctx.events.push({ kind: "message", key: "battle.cast", params: { actor: ch.name, spell: sp.name } });
   const e = sp.effect;
   switch (e.type) {
@@ -337,7 +338,7 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
         if (sp === undefined || !fieldSpellOk(sp)) continue;
         const target = spellTargetKind(sp);
         const probe = target === "ally" ? (alive[0]?.id ?? null) : target === "dead" ? (dead[0]?.id ?? null) : null;
-        spells.push({ spellId: sp.id, name: sp.name, mp: sp.mp, target, usable: checkCast(state, data, ch.id, sp.id, probe) === null });
+        spells.push({ spellId: sp.id, name: sp.name, mp: spellCost(state, data, ch, sp), target, usable: checkCast(state, data, ch.id, sp.id, probe) === null });
       }
       const equipCandidates: CampEquipCandidate[] = [];
       for (const id of ch.inventory) {

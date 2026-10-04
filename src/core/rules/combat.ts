@@ -73,7 +73,7 @@ import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, richestGro
 import { offerTeleporter } from "./choices";
 import { applyAllyEffect } from "./effects";
 import { gainGold } from "./field";
-import { equipStats, hpMaxOf } from "./equip-stats";
+import { equipStats, hasSkill, hpMaxOf, skillTotal, spellCost } from "./equip-stats";
 import { loseSan, sanCapOf, sanStage } from "./san";
 import { performWipe } from "./wipe";
 
@@ -184,6 +184,17 @@ export function startBattle(ctx: RuleContext, origin: BattleOrigin, specs: { mon
     ctx.events.push({ kind: "encounter", groups: groupViews(state, data) });
     ctx.events.push({ kind: "message", key: "battle.encounter" });
 
+    // CB-05 / IT-40 autoIdentify: 行動可能な装備者がいれば全グループを鑑定済みにする（MG-41 と同じ語り。CB-06 より前。乱数なし）
+    if (state.party.some((c) => canAct(c) && hasSkill(equipStats(state, data, c), "autoIdentify"))) {
+      let any = false;
+      for (const g of groups) {
+        if (isIdentified(state, g.monsterId)) continue;
+        identifyMonster(ctx, g.monsterId);
+        any = true;
+      }
+      if (any) ctx.events.push({ kind: "enemyGroups", groups: groupViews(state, data) });
+    }
+
     // CB-06: 未鑑定のグループの数 × unidentifiedGroup（耐性なし）
     const k = groups.filter((g) => !isIdentified(state, g.monsterId)).length;
     if (k > 0) {
@@ -203,7 +214,9 @@ export function startBattle(ctx: RuleContext, origin: BattleOrigin, specs: { mon
   const pAvg = partyAgiAvg(state, data);
   const eAvg = enemyAgiAvg(state, data);
   // M4.5: 表示している整数の合計（floor(平均) + 1d10）どうしの差で比べる
-  const bP = Math.floor(pAvg);
+  // IT-40 initiativeUp: 行動可能な装備者の値の最大（合計しない）を味方の行の base に足す（乱数は変えない）
+  const up = Math.max(0, ...state.party.filter(canAct).map((c) => skillTotal(equipStats(state, data, c), "initiativeUp")));
+  const bP = Math.floor(pAvg) + up;
   const bE = Math.floor(eAvg);
   const rP = rollDie(state.rng, 10);
   const rE = rollDie(state.rng, 10);
@@ -286,7 +299,7 @@ export function checkBattleInput(state: GameState, data: GameData, memberId: unk
       if (!ch.knownSpells.includes(spellId) || !data.spells.some((s) => s.id === spellId)) return "unknown spell";
       const sp = spellOf(data, spellId);
       if (!battleSpellUsable(sp)) return "not usable";
-      if (ch.mp < sp.mp) return "no mp";
+      if (ch.mp < spellCost(state, data, ch, sp)) return "no mp"; // MG-30 / IT-40: 入力時の検査も同じ消費
       if (!targetMatches(state, data, sp.target, action["target"])) return "bad target";
       return null;
     }
@@ -605,7 +618,9 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan, sanKey: 
       const m = monsterOf(data, grp.monsterId);
       const es = equipStats(state, data, ch); // CB-21 / CB-22 / IT-20 / IT-34
       const dice = es.weaponDice;
-      const times = attackCount(classOf(data, ch.classId), ch.level);
+      // CB-23 / IT-40: 固有スキル extraAttack は maxAttacks の後に足す（超えてよい）
+      const times = attackCount(classOf(data, ch.classId), ch.level) + skillTotal(es, "extraAttack");
+      const steal = skillTotal(es, "lifeSteal"); // IT-40
       for (let k = 0; k < times; k++) {
         const u = firstAliveUnit(grp);
         if (u === null) break; // 他のグループへは振り替えない
@@ -627,6 +642,16 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan, sanKey: 
           next = damageUnit(ctx, ga, u, dmg);
           ctx.events.push({ kind: "attack", actorId: ch.id, targetId, hit: true, damage: dmg });
           ctx.events.push({ kind: "message", key: "battle.hit", params: { target, damage: dmg } });
+          // IT-40 lifeSteal: 与えたダメージ（attack の damage）の value % を切り捨てで戻す。実効の hpMax で止め、増えなければ何も出さない
+          if (steal > 0) {
+            const hp = Math.min(es.hpMax, ch.hp + Math.floor((dmg * steal) / 100));
+            if (hp > ch.hp) {
+              const gain = hp - ch.hp;
+              ctx.events.push({ kind: "hpChanged", id: ch.id, delta: gain, hp });
+              ch.hp = hp;
+              ctx.events.push({ kind: "message", key: "battle.lifeSteal", params: { name: actor, hp: gain } });
+            }
+          }
         });
         if (!hit) continue;
         // 当たった振りのその後（撃破か覚醒。覚めなければ何も出ず拍も無い）
@@ -641,8 +666,9 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan, sanKey: 
       const sp = spellOf(data, plan.spellId);
       const refs = resolveTargets(state, data, ch, sp.target, plan.target);
       section(ctx, "declare", () => {
-        ch.mp -= sp.mp; // MG-30: 行動の時点で引く
-        ctx.events.push({ kind: "mpChanged", id: ch.id, delta: -sp.mp, mp: ch.mp });
+        const cost = spellCost(state, data, ch, sp); // MG-30 / IT-40: mpCostDown の後の消費
+        ch.mp -= cost; // MG-30: 行動の時点で引く
+        ctx.events.push({ kind: "mpChanged", id: ch.id, delta: -cost, mp: ch.mp });
         ctx.events.push({ kind: "message", key: "battle.cast", params: { actor, spell: sp.name } });
         const ids = sp.effect.type === "identify" ? [] : refs.map(refId);
         ctx.events.push({ kind: "spell", actorId: ch.id, spellId: sp.id, targets: ids });
@@ -1051,7 +1077,10 @@ export function battleMenu(state: GameState, data: GameData): BattleMenu | null 
     const spells = ch.knownSpells
       .map((id) => data.spells.find((s) => s.id === id))
       .filter((s): s is Spell => s !== undefined && battleSpellUsable(s))
-      .map((s) => ({ spellId: s.id, name: s.name, mp: s.mp, target: s.target, usable: ch.mp >= s.mp }));
+      .map((s) => {
+        const mp = spellCost(state, data, ch, s); // MG-30 / IT-40
+        return { spellId: s.id, name: s.name, mp, target: s.target, usable: ch.mp >= mp };
+      });
     const items = ch.inventory.flatMap((instanceId) => {
       const inst = state.items[instanceId];
       if (inst === undefined) return [];
