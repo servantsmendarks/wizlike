@@ -6,7 +6,8 @@ import { PALETTE } from "../src/presenter/palette";
 import { NAVIGATION_TIMEOUT_MS, precacheUrls, renderServiceWorker } from "../src/pwa/sw-template";
 import { setupServiceWorker, watchServiceWorkerUpdate, type UpdateContainer, type UpdateRegistration } from "../src/pwa/register";
 import strings from "../data/strings.json";
-import { UPDATE_NOTICE_KEYS } from "../src/presenter/views/update-notice";
+import { createUpdateNotice, UPDATE_NOTICE_KEYS, UPDATE_NOTICE_SCRIM_OPACITY } from "../src/presenter/views/update-notice";
+import { tapSpecOf } from "../src/presenter/input/tap";
 
 const iconUrls = import.meta.glob("../public/icons/*.png", {
   query: "?inline",
@@ -706,6 +707,59 @@ describe("SV-42 更新の案内", () => {
     };
     expect(await setupServiceWorker({ prod: true, container: c, onUpdate: () => notices++, reload: () => {} })).toBe("registered");
     expect(notices).toBe(1);
+  });
+
+  test("SV-42 案内の表示: 出ている間はステージ全面を暗い幕で覆い、幕のタップは何もしない（下の要素にも、再生中の拍のタップにも回さない）。閉じるで隠れ、読み込み直すで onReload", () => {
+    type El = { className: string; style: Record<string, string>; children: El[]; textContent: string; type: string; append(...c: El[]): void; setAttribute(): void };
+    const created: El[] = [];
+    vi.stubGlobal("document", {
+      createElement(): El {
+        const e: El = {
+          className: "",
+          style: {},
+          children: [],
+          textContent: "",
+          type: "",
+          append(...c: El[]) {
+            this.children.push(...c);
+          },
+          setAttribute() {},
+        };
+        created.push(e);
+        return e;
+      },
+    });
+    try {
+      const n = createUpdateNotice({ strings: strings as Record<string, string> });
+      const el = n.el as unknown as El;
+      const byClass = (c: string): El => created.find((e) => e.className === c)!;
+      const scrim = byClass("update-notice-scrim");
+      const box = byClass("update-notice-box");
+      expect(el.children).toEqual([scrim, box]);
+      expect(el.style).toMatchObject({ left: "0px", top: "0px", width: "100%", height: "100%", zIndex: "101", display: "none" });
+      expect(scrim.style).toMatchObject({ left: "0px", top: "0px", width: "100%", height: "100%", background: "var(--c-bg)" });
+      expect(Number(scrim.style["opacity"])).toBe(UPDATE_NOTICE_SCRIM_OPACITY);
+      expect(UPDATE_NOTICE_SCRIM_OPACITY).toBeGreaterThan(0);
+      expect(UPDATE_NOTICE_SCRIM_OPACITY).toBeLessThan(1);
+      const scrimSpec = tapSpecOf(scrim);
+      expect(scrimSpec?.whileBusy).toBe(true);
+      expect(n.isOpen()).toBe(false);
+      let reloads = 0;
+      n.show(() => reloads++);
+      expect(n.isOpen()).toBe(true);
+      scrimSpec!.onTap({ lx: 0, ly: 0 });
+      expect(n.isOpen()).toBe(true);
+      expect(reloads).toBe(0);
+      const buttons = box.children.filter((c) => c.className === "ui-button");
+      expect(buttons.map((b) => b.textContent)).toEqual([strings["common.close"], strings["pwa.update.reload"]]);
+      tapSpecOf(buttons[1]!)!.onTap({ lx: 0, ly: 0 });
+      expect(reloads).toBe(1);
+      tapSpecOf(buttons[0]!)!.onTap({ lx: 0, ly: 0 });
+      expect(n.isOpen()).toBe(false);
+      for (const b of buttons) expect(tapSpecOf(b)?.whileBusy).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   test("SV-42 案内の文言は strings にある（pwa.update.message・pwa.update.reload・common.close）", () => {

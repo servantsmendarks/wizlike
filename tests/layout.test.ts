@@ -446,4 +446,10 @@ describe("SV-42 更新の案内の配置", () => {
     expect(overlaps(box, HEADER_SETTINGS)).toBe(false);
     expect(overlaps(box, SAVE_BANNER)).toBe(false);
   });
+
+  test("SV-42 更新の案内: 「閉じる」が左、「読み込み直す」が右（隠れた一覧の行の左寄りのタップが読み込み直しにならない）", () => {
+    const { reload, close } = UPDATE_NOTICE;
+    expect(close.x + close.w).toBeLessThanOrEqual(reload.x);
+    expect(close.y).toBe(reload.y);
+  });
 });

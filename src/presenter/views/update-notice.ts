@@ -1,11 +1,17 @@
 // SV-42: 新しい版があることの案内（Service Worker の更新が待機に入ったとき）。ステージの最前面に置く。
 // 「読み込み直す」で onReload（待機中の Service Worker を有効にして読み込み直す）、「閉じる」で隠す（そのまま遊べる）。
 // 再生中でも押せる（whileBusy）。モジュールのトップレベルでは DOM に触れない。
+// 出ている間はステージ全面を暗い幕（scrim）で覆い、下の要素を押せなくする（幕のタップは何もしない。再生中の拍のタップにもしない。
+// スワイプは app の swipeEnabled が isOpen を見て止める）。案内の箱で隠れた行のつもりのタップが「読み込み直す」に入らないよう、
+// 下が押せないことを見せ、「閉じる」を左・「読み込み直す」を右に置く。
 import type { Strings } from "../../core/data/index";
 import { onTap } from "../input/tap";
 import { UPDATE_NOTICE, type Rect } from "../layout";
 
-export type UpdateNotice = { el: HTMLElement; show(onReload: () => void): void; hide(): void };
+export type UpdateNotice = { el: HTMLElement; show(onReload: () => void): void; hide(): void; isOpen(): boolean };
+
+/** 幕の不透明度（下の画面が透けて見え、押せないことが分かる程度） */
+export const UPDATE_NOTICE_SCRIM_OPACITY = 0.75;
 
 /** 案内の文言の key（tests/pwa.test.ts で strings にあることを確かめる） */
 export const UPDATE_NOTICE_KEYS = ["pwa.update.message", "pwa.update.reload", "common.close"] as const;
@@ -26,14 +32,30 @@ export function createUpdateNotice(o: { strings: Strings }): UpdateNotice {
   const el = document.createElement("div");
   el.className = "update-notice";
   el.setAttribute("role", "alert");
-  place(el, L.box, { x: 0, y: 0, w: 0, h: 0 });
-  Object.assign(el.style, {
+  Object.assign(el.style, { position: "absolute", left: "0px", top: "0px", width: "100%", height: "100%", zIndex: "101", display: "none" });
+
+  const scrim = document.createElement("div");
+  scrim.className = "update-notice-scrim";
+  Object.assign(scrim.style, {
+    position: "absolute",
+    left: "0px",
+    top: "0px",
+    width: "100%",
+    height: "100%",
+    background: "var(--c-bg)",
+    opacity: String(UPDATE_NOTICE_SCRIM_OPACITY),
+  });
+  // 押せるものとして登録して、下の要素へも再生中の拍のタップへも回さない
+  onTap(scrim, { onTap: () => {}, whileBusy: true });
+
+  const box = document.createElement("div");
+  box.className = "update-notice-box";
+  place(box, L.box, { x: 0, y: 0, w: 0, h: 0 });
+  Object.assign(box.style, {
     boxSizing: "border-box",
     border: "1px solid var(--c-frame)",
     background: "var(--c-bg)",
     color: "var(--c-text)",
-    zIndex: "101",
-    display: "none",
   });
 
   const text = document.createElement("div");
@@ -55,11 +77,12 @@ export function createUpdateNotice(o: { strings: Strings }): UpdateNotice {
   const hide = (): void => {
     el.style.display = "none";
   };
-  el.append(
+  box.append(
     text,
-    button(t("pwa.update.reload"), L.reload, () => reload?.()),
     button(t("common.close"), L.close, hide),
+    button(t("pwa.update.reload"), L.reload, () => reload?.()),
   );
+  el.append(scrim, box);
 
   return {
     el,
@@ -68,5 +91,6 @@ export function createUpdateNotice(o: { strings: Strings }): UpdateNotice {
       el.style.display = "";
     },
     hide,
+    isOpen: () => el.style.display !== "none",
   };
 }

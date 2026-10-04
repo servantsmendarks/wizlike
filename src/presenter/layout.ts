@@ -446,11 +446,12 @@ export function settingsLayout(g: Regions): SettingsLayout {
 // ---- SV-42 更新の案内（新しい版の Service Worker が待機に入ったとき。全画面の最前面）
 
 /**
- * 案内の枠・文言の欄・「読み込み直す」・「閉じる」。既定の SV-23 の帯（y16..27）の下、ヘッダー（設定ボタン）にかからない位置【仮】
+ * 案内の枠・文言の欄・「閉じる」（左）・「読み込み直す」（右）。既定の SV-23 の帯（y16..27）の下、ヘッダー（設定ボタン）にかからない位置【仮】。
+ * 案内の間はステージ全面を幕で覆い、下の要素は押せない（views/update-notice.ts）
  */
 export const UPDATE_NOTICE = {
   box: { x: 4, y: 30, w: 232, h: 76 },
   text: { x: 8, y: 34, w: 224, h: 28 },
-  reload: { x: 8, y: 68, w: 136, h: 32 },
-  close: { x: 152, y: 68, w: 80, h: 32 },
+  close: { x: 8, y: 68, w: 80, h: 32 },
+  reload: { x: 96, y: 68, w: 136, h: 32 },
 } as const satisfies Record<string, Rect>;

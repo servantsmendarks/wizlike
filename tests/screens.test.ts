@@ -329,6 +329,12 @@ describe("入力と Command", () => {
     expect(app).not.toMatch(/route === "dungeon" && overlay === null && state\.pendingChoice === null/);
   });
 
+  test("SV-42 更新の案内が出ている間はスワイプを受けない（swipeEnabled が updateNotice.isOpen を見る。ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const swipe = /const swipeEnabled = \(\): boolean =>([\s\S]*?);\n/.exec(app)?.[1] ?? "";
+    expect(swipe).toMatch(/&&\s*!updateNotice\.isOpen\(\)/);
+  });
+
   test("UI-57 debug パネルの SAN段↓・イベント・罠の前・階段前は、迷宮のときだけパネルを閉じてから debug.sanDown / debug.warp を送る（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     expect(app).toMatch(/onSanDown: \(\) => guard\(\(\) => debugCommand\(\{ type: "debug\.sanDown" \}\)\)/);

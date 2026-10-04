@@ -495,9 +495,17 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   /** UI-55: 迷宮を歩ける状態か（core の screen が dungeon で、保留中の選択が無い。イベントの選択を待つ間・罠の察知・階段の確認では偽） */
   const fieldFree = (): boolean => state.screen === "dungeon" && state.pendingChoice === null;
 
-  /** UI-30: ステージ全体でスワイプを受けるか（迷宮で、overlay も保留も無く、inputMode が buttons でなく、自動歩行中でない） */
+  /**
+   * UI-30: ステージ全体でスワイプを受けるか（迷宮で、overlay も保留も無く、inputMode が buttons でなく、自動歩行中でなく、
+   * SV-42 の更新の案内が出ていない）
+   */
   const swipeEnabled = (): boolean =>
-    route === "dungeon" && overlay === null && fieldFree() && store.get().inputMode !== "buttons" && walking === null;
+    route === "dungeon" &&
+    overlay === null &&
+    fieldFree() &&
+    store.get().inputMode !== "buttons" &&
+    walking === null &&
+    !updateNotice.isOpen();
 
   /** 操作領域とスワイプの可否を、route / overlay / pendingChoice / inputMode から決める */
   const syncControls = (): void => {
