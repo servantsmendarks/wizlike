@@ -611,3 +611,43 @@ describe("UI-57 debug.sanDown / debug.warp（開発用、M5）", () => {
     }
   });
 });
+
+describe("UI-57 debug.addTurns（開発用、M5.5）", () => {
+  const ADD: Command = { type: "debug.addTurns" };
+
+  test("UI-57 debug.addTurns は adventureTurns を tavernEventTurns 増やし message debug.addTurns{n, total}。title は rejected no party。保留中・戦闘中も受け付け、乱数は変えない", () => {
+    expect(data.config.town.tavernEventTurns).toBe(200);
+    const town = cloneState(newGame(1));
+    town.adventureTurns = 15;
+    const dungeon = dived(1);
+    const battle = withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }]);
+    const pending: GameState = {
+      ...dived(1),
+      pendingChoice: { kind: "stairs", promptKey: "dungeon.stairsDown", options: [{ id: "stay", labelKey: "dungeon.choice.stay" }] },
+    };
+    for (const s of [town, dungeon, battle, pending]) {
+      const before = JSON.stringify(s);
+      const r = execute(s, ADD, data);
+      expect(JSON.stringify(s)).toBe(before);
+      const total = s.adventureTurns + 200;
+      expect(r.events).toEqual([{ kind: "message", key: "debug.addTurns", params: { n: 200, total } }]);
+      expectKnownStringKeys(r.events);
+      expect(r.state.adventureTurns).toBe(total);
+      expect(r.state.tavernEventMark).toBe(s.tavernEventMark);
+      expect(r.state.rng).toEqual(s.rng);
+      expect(r.state.screen).toBe(s.screen);
+      expect(r.state.pendingChoice).toEqual(s.pendingChoice);
+      expect(r.state.battle).toEqual(s.battle);
+    }
+    expect(execute(town, ADD, data).events).toEqual([{ kind: "message", key: "debug.addTurns", params: { n: 200, total: 215 } }]);
+    // title（party が空）は rejected（同じ参照）
+    const t = createInitialState(1, data);
+    const r = execute(t, ADD, data);
+    expect(r.state).toBe(t);
+    expect(r.events).toEqual([{ kind: "rejected", command: "debug.addTurns", reason: "no party" }]);
+    // config の値を足す
+    const d = loadFreshData();
+    d.config.town.tavernEventTurns = 7;
+    expect(execute(town, ADD, d).state.adventureTurns).toBe(22);
+  });
+});

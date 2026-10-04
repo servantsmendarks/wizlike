@@ -27,7 +27,7 @@ import {
   unequipItem,
 } from "./rules/camp";
 import { startNewGame, validatePartySetup } from "./rules/creation";
-import { hpOne, sanDown, warp } from "./rules/debug";
+import { addTurns, hpOne, sanDown, warp } from "./rules/debug";
 import { checkEnter, chooseOption, enterDungeon, moveForward, turn } from "./rules/dungeon";
 import { checkUseItem, useItemInField } from "./rules/items";
 import {
@@ -92,6 +92,13 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
     if (state.party.length === 0) return reject(state, "debug.hpOne", "no party");
     const ctx = makeContext(cloneState(state), data);
     hpOne(ctx);
+    return finish(ctx);
+  }
+  // UI-57（開発用、M5.5）: 冒険のターン数を tavernEventTurns 進める。保留中・戦闘中・街でも受け付ける（title だけ party が空で rejected）
+  if (command.type === "debug.addTurns") {
+    if (state.party.length === 0) return reject(state, "debug.addTurns", "no party");
+    const ctx = makeContext(cloneState(state), data);
+    addTurns(ctx);
     return finish(ctx);
   }
   // UI-57（開発用、M5）: リーダー以外の SAN を 1 段下げる。迷宮の戦闘外なら保留中（screen event を含む）も受け付ける

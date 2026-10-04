@@ -57,3 +57,13 @@ export function warp(ctx: RuleContext, to: "event" | "trap" | "stairsDown"): voi
   ctx.events.push({ kind: "moved", pos: { x: dive.pos.x, y: dive.pos.y }, facing: dive.facing });
   ctx.events.push({ kind: "message", key: `debug.warp.${to}` });
 }
+
+/**
+ * debug.addTurns（M5.5）: adventureTurns に config.town.tavernEventTurns を足し、message debug.addTurns{n, total} を出す。
+ * 酒場のイベント（TW-14）を実機で確かめるため。乱数は使わない
+ */
+export function addTurns(ctx: RuleContext): void {
+  const n = ctx.data.config.town.tavernEventTurns;
+  ctx.state.adventureTurns += n;
+  ctx.events.push({ kind: "message", key: "debug.addTurns", params: { n, total: ctx.state.adventureTurns } });
+}
