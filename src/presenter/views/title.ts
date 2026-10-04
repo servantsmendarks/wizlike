@@ -1,6 +1,7 @@
-// UI-50 / SV-11 / SV-12 / SV-14 のタイトル。ゲーム一覧の行 → 新しく始める → 設定 の 1 本のリスト。
+// UI-50 / SV-11 / SV-12 / SV-14 / SV-30〜33 のタイトル。ゲーム一覧の行 → 新しく始める → 設定 → 読み込み の 1 本のリスト。
 // 新しく始める → おすすめで始める / 自分で作る / やめる（M5.5）。
-// 行を選ぶと 続きから / 削除 / やめる。削除は確認 2 段階で、先頭（Enter・1）は「やめる」。
+// 行を選ぶと 続きから / 書き出し / 削除 / やめる。削除は確認 2 段階で、先頭（Enter・1）は「やめる」。
+// 古いファイルの読み込み（SV-32）は確認のページ importConfirm（先頭は「やめる」）。
 // 純粋な部分（titleEntries / titleStep / titleKeyIndex / titleItems / titleNotice / titleRowLabels / formatUpdatedAt）は
 // DOM に触れないので node でテストできる。保存先の読み書きは app が SaveService で行う（ここは描くだけ）。
 // モジュールのトップレベルでは DOM に触れない。
@@ -10,6 +11,7 @@ import type { Action } from "../input/swipe";
 import { TITLE_BUTTONS, TITLE_HEADING_Y, TITLE_NOTICE, TITLE_ROW_AREA, TITLE_ROW_PITCH, type Rect } from "../layout";
 import { formatMessage } from "./message";
 import { onTap } from "../input/tap";
+import { createFileButton, type FileButton } from "../file-io";
 
 export type TitlePage =
   | { kind: "list" }
@@ -17,7 +19,9 @@ export type TitlePage =
   | { kind: "newMode" }
   | { kind: "game"; gameId: string }
   | { kind: "confirm1"; gameId: string }
-  | { kind: "confirm2"; gameId: string };
+  | { kind: "confirm2"; gameId: string }
+  /** SV-32: 古いファイルの読み込みの確認。計画（state を含む）は app が持つ */
+  | { kind: "importConfirm"; gameId: string; leader: string; turn: number; existingTurn: number };
 
 export type TitleEntry =
   | { kind: "game"; entry: GameListEntry }
@@ -28,7 +32,13 @@ export type TitleEntry =
   | { kind: "continue"; gameId: string; disabled: boolean }
   | { kind: "delete"; gameId: string }
   | { kind: "deleteYes"; gameId: string }
-  | { kind: "cancel" };
+  | { kind: "cancel" }
+  /** SV-31: 読み込み（タップは透明の input が直接受ける。ここに来るのはキーボードのとき） */
+  | { kind: "import" }
+  /** SV-30: 書き出し（読めない記録は disabled） */
+  | { kind: "export"; gameId: string; disabled: boolean }
+  /** SV-32: 古いファイルでも読み込む */
+  | { kind: "importYes" };
 
 /**
  * 1 つ選んだ結果。page は表示だけの遷移、それ以外は app が保存先や画面を操作する。
@@ -42,6 +52,9 @@ export type TitleStep =
   | { kind: "settings" }
   | { kind: "continue"; gameId: string }
   | { kind: "remove"; gameId: string }
+  | { kind: "import" }
+  | { kind: "export"; gameId: string }
+  | { kind: "applyImport" }
   | { kind: "none" };
 
 /** 描く 1 項目。lines は 1 行（ボタン）か 2 行（一覧の行）。dim は見た目だけ、disabled は押しても何もしない */
@@ -49,15 +62,25 @@ export type TitleItem = { entry: TitleEntry; lines: string[]; dim: boolean; disa
 
 const find = (list: readonly GameListEntry[], id: string): GameListEntry | undefined => list.find((e) => e.gameId === id);
 
-/** UI-50: ページごとの項目の並び。list は一覧（与えられた順 = updatedAt の降順）→ 新しく始める → 設定 */
+/** UI-50: ページごとの項目の並び。list は一覧（与えられた順 = updatedAt の降順）→ 新しく始める → 設定 → 読み込み */
 export function titleEntries(page: TitlePage, list: readonly GameListEntry[]): TitleEntry[] {
-  if (page.kind === "list") return [...list.map((entry): TitleEntry => ({ kind: "game", entry })), { kind: "newGame" }, { kind: "settings" }];
+  if (page.kind === "list") {
+    return [...list.map((entry): TitleEntry => ({ kind: "game", entry })), { kind: "newGame" }, { kind: "settings" }, { kind: "import" }];
+  }
   if (page.kind === "newMode") return [{ kind: "quick" }, { kind: "custom" }, { kind: "cancel" }];
+  // SV-32: 確認の先頭は「やめる」（Enter・1 で書かないように）。計画は app が持つので一覧に無くてもよい
+  if (page.kind === "importConfirm") return [{ kind: "cancel" }, { kind: "importYes" }];
   const e = find(list, page.gameId);
   if (e === undefined) return [{ kind: "cancel" }];
   if (page.kind === "game") {
-    // SV-12: 読めない記録（壊れた・新しすぎる版）は続きからできないが、削除はできる
-    return [{ kind: "continue", gameId: e.gameId, disabled: e.status !== "ok" }, { kind: "delete", gameId: e.gameId }, { kind: "cancel" }];
+    // SV-12: 読めない記録（壊れた・新しすぎる版）は続きから・書き出しできないが、削除はできる
+    const unreadable = e.status !== "ok";
+    return [
+      { kind: "continue", gameId: e.gameId, disabled: unreadable },
+      { kind: "export", gameId: e.gameId, disabled: unreadable },
+      { kind: "delete", gameId: e.gameId },
+      { kind: "cancel" },
+    ];
   }
   // SV-14: 確認の先頭は「やめる」（Enter・1 で消えないように）
   return [{ kind: "cancel" }, { kind: "deleteYes", gameId: e.gameId }];
@@ -87,6 +110,12 @@ export function titleStep(page: TitlePage, e: TitleEntry): TitleStep {
     case "cancel":
       if (page.kind === "confirm1" || page.kind === "confirm2") return { kind: "page", page: { kind: "game", gameId: page.gameId } };
       return { kind: "page", page: { kind: "list" } };
+    case "import":
+      return { kind: "import" };
+    case "export":
+      return e.disabled ? { kind: "none" } : { kind: "export", gameId: e.gameId };
+    case "importYes":
+      return page.kind === "importConfirm" ? { kind: "applyImport" } : { kind: "none" };
   }
 }
 
@@ -151,14 +180,24 @@ export function titleItems(page: TitlePage, list: readonly GameListEntry[], size
         return { entry: e, lines: [tr(strings, "title.deleteYes")], dim: false, disabled: false };
       case "cancel":
         return { entry: e, lines: [tr(strings, "title.cancel")], dim: false, disabled: false };
+      case "import":
+        return { entry: e, lines: [tr(strings, "title.import")], dim: false, disabled: false };
+      case "export":
+        return { entry: e, lines: [tr(strings, "title.export")], dim: e.disabled, disabled: e.disabled };
+      case "importYes":
+        return { entry: e, lines: [tr(strings, "title.importYes")], dim: false, disabled: false };
     }
   });
 }
 
-/** 案内の欄の文。list は一覧が空なら title.empty、game は行の 1 行目、confirm1 / confirm2 は削除の確認 */
+/** 案内の欄の文。list は一覧が空なら title.empty、game は行の 1 行目、confirm1 / confirm2 は削除の確認、importConfirm は古いファイルの警告（2 行） */
 export function titleNotice(page: TitlePage, list: readonly GameListEntry[], size: number, strings: Strings): string {
   if (page.kind === "list") return list.length === 0 ? tr(strings, "title.empty") : "";
   if (page.kind === "newMode") return tr(strings, "title.mode.notice");
+  if (page.kind === "importConfirm") {
+    const detail = formatMessage(tr(strings, "title.importOldDetail"), { leader: page.leader, turn: page.turn, existing: page.existingTurn });
+    return `${tr(strings, "save.importOld")}\n${detail}`;
+  }
   const e = find(list, page.gameId);
   if (e === undefined) return "";
   const line1 = titleRowLabels(e, size, strings)[0];
@@ -176,13 +215,15 @@ export type TitleScreen = {
   el: HTMLElement;
   /** 項目を描き直す。一覧の行（kind game）は行の欄へ、それ以外は TITLE_BUTTONS の順に置く。notice は案内の欄 */
   render(items: readonly TitleItem[], notice: string): void;
+  /** SV-31: 今出ている「読み込み」のファイル選択を開く（キーボード用。無ければ何もしない） */
+  openFilePicker(): void;
 };
 
 function place(el: HTMLElement, r: Rect): void {
   Object.assign(el.style, { position: "absolute", left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
 }
 
-export function createTitleScreen(o: { strings: Strings; onSelect(index: number): void }): TitleScreen {
+export function createTitleScreen(o: { strings: Strings; onSelect(index: number): void; onFile(f: File): void }): TitleScreen {
   const el = document.createElement("div");
   el.className = "screen screen-title";
 
@@ -225,12 +266,26 @@ export function createTitleScreen(o: { strings: Strings; onSelect(index: number)
     return b;
   };
 
+  /** 今出ている「読み込み」のボタン（描き直すたびに作り直す） */
+  let fileButton: FileButton | null = null;
+
   return {
     el,
     render(items, text) {
       const rowEls: HTMLElement[] = [];
       const buttonEls: HTMLElement[] = [];
+      fileButton = null;
       items.forEach((it, i) => {
+        if (it.entry.kind === "import") {
+          // SV-31: 透明の input[type=file] を重ねたボタン（onTap を付けない。タップでブラウザのファイル選択が開く）
+          const r = TITLE_BUTTONS[buttonEls.length];
+          if (r === undefined) return;
+          const fb = createFileButton({ label: it.lines.join("\n"), rect: r, onFile: (f) => o.onFile(f) });
+          fb.setDisabled(it.disabled);
+          fileButton = fb;
+          buttonEls.push(fb.el);
+          return;
+        }
         const b = makeButton(it, i);
         if (it.entry.kind === "game") {
           const k = rowEls.length;
@@ -247,6 +302,9 @@ export function createTitleScreen(o: { strings: Strings; onSelect(index: number)
       rows.replaceChildren(...rowEls);
       buttons.replaceChildren(...buttonEls);
       notice.textContent = text;
+    },
+    openFilePicker() {
+      fileButton?.open();
     },
   };
 }

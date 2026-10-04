@@ -25,7 +25,8 @@ import { fieldItemMenu } from "../core/rules/items";
 import { townMenu } from "../core/rules/town";
 import { dungeonOf, itemDisplayName } from "../core/state";
 import type { BattleMenu, Command, GameState, PenaltyResult, Pos, Screen, ViewPoint } from "../core/types";
-import type { GameListEntry, SaveService } from "../save/types";
+import type { GameListEntry, ImportPlan, SaveService } from "../save/types";
+import { downloadText, exportFileName } from "./file-io";
 import { closesInput, runChain, type ChainDeps } from "./auto-chain";
 import { createAutosaver, createCommandExec, createSaveBannerState, type CommandExecOptions, type CommandResult, type SaveStatus } from "./autosave";
 import {
@@ -126,6 +127,17 @@ const LOAD_FAILED: Readonly<Record<"unavailable" | "missing" | "tooNew" | "broke
   broken: "title.loadBroken",
 };
 
+/** SV-31〜33: 読み込みの失敗理由ごとの文言 */
+const IMPORT_FAILED: Readonly<Record<"format" | "broken" | "tooNew" | "checksum" | "unavailable" | "full" | "failed", string>> = {
+  format: "title.importFormat",
+  broken: "title.importBroken",
+  tooNew: "title.importTooNew",
+  checksum: "title.importChecksum",
+  unavailable: "title.importUnavailable",
+  full: "title.importFull",
+  failed: "title.importFailed",
+};
+
 type DispatchResult = CommandResult;
 
 export function createApp(o: { stage: HTMLElement; data: GameData; settings: SettingsStore; saves: SaveService; seed?: number }): App {
@@ -165,7 +177,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   const scale = (): number => layout?.scale ?? 1;
 
   // ---------------------------------------------------------------- 画面
-  const title = createTitleScreen({ strings, onSelect: (i) => guard(() => selectTitle(i)) });
+  // SV-31: 読み込みのファイルはタップで透明の input が直接受ける（guard を通らないので importFromFile が route と titleBusy を見る）
+  const title = createTitleScreen({ strings, onSelect: (i) => guard(() => selectTitle(i)), onFile: (f) => importFromFile(f) });
   /** UI-50: タイトルのページ */
   let titlePage: TitlePage = { kind: "list" };
   /** 保存先の一覧。読み終えるまで null（行を出さない） */
@@ -176,6 +189,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   let titleBusy = false;
   /** 古い一覧の読み込みの結果を捨てるための番号 */
   let titleSeq = 0;
+  /** SV-32: 古いファイルの読み込みの確認を待っている計画（importConfirm のページの間だけ） */
+  let pendingImport: ImportPlan | null = null;
 
   const creation = createCreationScreen({
     data,
@@ -942,6 +957,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
 
   /** タイトルに入るたびに一覧のページへ戻し、一覧を読み直す */
   const enterTitle = (): void => {
+    pendingImport = null;
     titlePage = { kind: "list" };
     titleMessage = null;
     titleList = null;
@@ -960,6 +976,65 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       });
   };
 
+  /** SV-30: gameId のレコードを書き出す（ファイルを保存させる）。結果を返すだけ（文はそれぞれの画面が出す） */
+  const exportGameFile = async (gameId: string): Promise<boolean> => {
+    const r = await o.saves.exportGame(gameId);
+    if (!r.ok) {
+      console.debug("export failed", r.reason);
+      return false;
+    }
+    downloadText(exportFileName(r.gameId, r.exportedAt), r.text);
+    return true;
+  };
+
+  /** SV-31: 計画を書いて結果を案内の欄に出し、一覧を読み直す */
+  const applyImportPlan = async (plan: ImportPlan): Promise<void> => {
+    pendingImport = null;
+    const r = await o.saves.applyImport(plan);
+    if (route !== "title") return;
+    titlePage = { kind: "list" };
+    await refreshTitle();
+    if (route !== "title") return;
+    const leader = plan.summary.leaderName;
+    titleMessage = r.ok
+      ? formatMessage(t(r.kind === "restore" ? "title.importRestored" : "title.importDone"), { leader })
+      : t(IMPORT_FAILED[r.reason]);
+    renderTitle();
+  };
+
+  /** SV-31〜33: 選んだファイルを読み込む。タイトルのときだけ（titleTask で二重の操作を捨てる） */
+  const importFromFile = (file: File): void => {
+    if (route !== "title" || titleBusy) return;
+    titleTask(async () => {
+      let text: string;
+      try {
+        text = await file.text();
+      } catch {
+        if (route !== "title") return;
+        titleMessage = t("title.importReadFailed");
+        renderTitle();
+        return;
+      }
+      const c = await o.saves.prepareImport(text);
+      if (route !== "title") return;
+      if (!c.ok) {
+        titleMessage = t(IMPORT_FAILED[c.reason]);
+        renderTitle();
+        return;
+      }
+      const plan = c.plan;
+      if (plan.kind === "older" && plan.existingTurn !== null) {
+        // SV-32: 既存より古いファイルは確認のページへ（先頭は「やめる」）
+        pendingImport = plan;
+        titlePage = { kind: "importConfirm", gameId: plan.gameId, leader: plan.summary.leaderName, turn: plan.turn, existingTurn: plan.existingTurn };
+        titleMessage = null;
+        renderTitle();
+        return;
+      }
+      await applyImportPlan(plan);
+    });
+  };
+
   /** タイトルの i 番目の項目を選ぶ（何が起きるかは titleStep が決める） */
   const selectTitle = (i: number): void => {
     if (route !== "title" || titleBusy || titleList === null) return;
@@ -970,6 +1045,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       case "none":
         return;
       case "page":
+        // SV-32: 確認のページから離れたら待っている計画を捨てる（page の遷移で importConfirm へは行かない）
+        pendingImport = null;
         titlePage = st.page;
         titleMessage = null;
         renderTitle();
@@ -1016,6 +1093,28 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
           resume(r.state);
         });
         return;
+      case "import":
+        // SV-31: キーボードの数字キーのときだけここに来る（タップは透明の input が直接受ける）
+        title.openFilePicker();
+        return;
+      case "export":
+        titleTask(async () => {
+          const ok = await exportGameFile(st.gameId);
+          if (route !== "title") return;
+          titleMessage = t(ok ? "title.exportDone" : "title.exportFailed");
+          renderTitle();
+        });
+        return;
+      case "applyImport": {
+        const plan = pendingImport;
+        if (plan === null) {
+          titlePage = { kind: "list" };
+          renderTitle();
+          return;
+        }
+        titleTask(() => applyImportPlan(plan));
+        return;
+      }
       case "remove":
         // SV-14: 確認 2 段階の後だけ消す
         titleTask(async () => {
