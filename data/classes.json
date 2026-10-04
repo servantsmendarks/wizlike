@@ -6,7 +6,8 @@
     "spells": {}, "learnMod": 0,
     "attacksPerLevels": 5, "maxAttacks": 3,
     "abilities": [], "expMultiplier": 1.0,
-    "description": "前衛の要。武器と防具をほぼ全て使える。"
+    "description": "前衛の要。武器と防具をほぼ全て使える。",
+    "start": { "equipment": { "weapon": "long_sword", "armor": "leather_armor", "shield": "wooden_shield" }, "inventory": ["herb"], "knownSpells": [], "gold": 50 }
   },
   {
     "id": "thief", "name": "盗賊", "abbr": "THI", "tier": "basic",
@@ -15,7 +16,8 @@
     "spells": {}, "learnMod": 0,
     "attacksPerLevels": 0, "maxAttacks": 1,
     "abilities": ["disarm"], "expMultiplier": 0.9,
-    "description": "宝箱の罠を解除できる。弓を使えば後衛からも戦える。"
+    "description": "宝箱の罠を解除できる。弓を使えば後衛からも戦える。",
+    "start": { "equipment": { "weapon": "short_bow", "armor": "leather_armor", "helm": "leather_cap" }, "inventory": ["herb"], "knownSpells": [], "gold": 50 }
   },
   {
     "id": "priest", "name": "僧侶", "abbr": "PRI", "tier": "basic",
@@ -24,7 +26,8 @@
     "spells": { "priest": 1 }, "learnMod": 0,
     "attacksPerLevels": 0, "maxAttacks": 1,
     "abilities": [], "expMultiplier": 1.0,
-    "description": "回復と補助の僧侶系呪文を使う。刃物は使えない。"
+    "description": "回復と補助の僧侶系呪文を使う。刃物は使えない。",
+    "start": { "equipment": { "weapon": "staff", "armor": "leather_armor", "shield": "wooden_shield" }, "inventory": ["antidote_herb"], "knownSpells": ["heal"], "gold": 50 }
   },
   {
     "id": "mage", "name": "魔術師", "abbr": "MAG", "tier": "basic",
@@ -33,7 +36,8 @@
     "spells": { "mage": 1 }, "learnMod": 0,
     "attacksPerLevels": 0, "maxAttacks": 1,
     "abilities": [], "expMultiplier": 1.0,
-    "description": "攻撃と状態異常の魔術師系呪文を使う。装備は杖と短剣だけ。"
+    "description": "攻撃と状態異常の魔術師系呪文を使う。装備は杖と短剣だけ。",
+    "start": { "equipment": { "weapon": "staff" }, "inventory": ["return_thread"], "knownSpells": ["fire_arrow", "sleep_mist"], "gold": 50 }
   },
   {
     "id": "samurai", "name": "侍", "abbr": "SAM", "tier": "advanced",
@@ -42,7 +46,8 @@
     "spells": { "mage": 4 }, "learnMod": -10,
     "attacksPerLevels": 5, "maxAttacks": 3,
     "abilities": [], "expMultiplier": 1.3,
-    "description": "戦士に近い前衛で、レベル4から魔術師系呪文を覚え始める。"
+    "description": "戦士に近い前衛で、レベル4から魔術師系呪文を覚え始める。",
+    "start": { "equipment": { "weapon": "long_sword", "armor": "leather_armor" }, "inventory": ["herb"], "knownSpells": [], "gold": 50 }
   },
   {
     "id": "lord", "name": "君主", "abbr": "LOR", "tier": "advanced",
@@ -51,7 +56,8 @@
     "spells": { "priest": 4 }, "learnMod": -10,
     "attacksPerLevels": 5, "maxAttacks": 3,
     "abilities": [], "expMultiplier": 1.4,
-    "description": "戦士の体で、レベル4から僧侶系呪文を覚え始める。"
+    "description": "戦士の体で、レベル4から僧侶系呪文を覚え始める。",
+    "start": { "equipment": { "weapon": "long_sword", "armor": "leather_armor", "shield": "wooden_shield" }, "inventory": ["herb"], "knownSpells": [], "gold": 50 }
   },
   {
     "id": "bishop", "name": "司教", "abbr": "BIS", "tier": "advanced",
@@ -60,6 +66,7 @@
     "spells": { "mage": 1, "priest": 1 }, "learnMod": -10,
     "attacksPerLevels": 0, "maxAttacks": 1,
     "abilities": ["identify"], "expMultiplier": 1.2,
-    "description": "両系統の呪文を覚えるが習得は遅い。アイテムを鑑定できる。"
+    "description": "両系統の呪文を覚えるが習得は遅い。アイテムを鑑定できる。",
+    "start": { "equipment": { "weapon": "staff", "armor": "leather_armor" }, "inventory": ["antidote_herb"], "knownSpells": ["heal", "fire_arrow"], "gold": 50 }
   }
 ]

@@ -314,7 +314,19 @@ export type GameState = {
 
 /** D4: members[0] がリーダーで personality は null。それ以外は null 不可。"random" は core が rng で決める（CH-30） */
 export type PartySetupMember = { name: string; personality: PersonalityId | "random" | null };
-export type PartySetup = { members: PartySetupMember[] };
+/** CH-06（M5.5）: 自分で作った 1 人。stats は種族の基礎値にボーナスを配分した値（CH-11）。職業は requirements を満たすこと（CH-21） */
+export type CustomMember = {
+  name: string;
+  personality: PersonalityId | "random" | null;
+  raceId: string;
+  classId: string;
+  stats: StatBlock;
+};
+/** CH-05: おすすめ（簡易作成）。種族・職業・能力値・装備は prototypeParty */
+export type QuickPartySetup = { members: PartySetupMember[] };
+/** CH-06（M5.5）: 自分で作る。装備・所持品・呪文・所持金は classes[].start（CH-24） */
+export type CustomPartySetup = { kind: "custom"; members: CustomMember[] };
+export type PartySetup = QuickPartySetup | CustomPartySetup;
 
 /**
  * TW-05。プロトタイプで実装するのは buy（itemId は items.json の id。売り物は consumable かつ infinite の品）だけ。

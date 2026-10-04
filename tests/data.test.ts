@@ -373,6 +373,30 @@ describe("data: races.json / classes.json", () => {
     }
     for (const ok of ["W", "WA", "WAR"]) expect(issuesOf((r) => (r.classes[1].abbr = ok))).toEqual([]);
   });
+  test("data: CH-24 classes[].start（開始の装備・所持品・呪文・所持金）の検証", () => {
+    const data = loadGameData(rawData());
+    expect(data.classes.map((c) => c.start.gold)).toEqual([50, 50, 50, 50, 50, 50, 50]);
+    expectIssue((r) => delete r.classes[0].start, "classes.json", "[0].start: missing required field");
+    expectIssue((r) => (r.classes[0].start.gold = -1), "classes.json", "[0].start.gold: expected integer >= 0");
+    expectIssue((r) => (r.classes[0].start.gold = 1.5), "classes.json", "[0].start.gold: expected integer");
+    expectIssue((r) => (r.classes[0].start.equipment.ring = "charm"), "classes.json", "[0].start.equipment.ring: unknown field");
+    // 装備枠と slot の不一致
+    expectIssue((r) => (r.classes[0].start.equipment.helm = "leather_armor"), "classes.json", "[0].start.equipment.helm: CH-70");
+    // 職業が装備できない品（魔術師に長剣）
+    expectIssue((r) => (r.classes[3].start.equipment.weapon = "long_sword"), "classes.json", "[3].start.equipment.weapon: CH-75");
+    expectIssue((r) => (r.classes[0].start.equipment.weapon = "sword_x"), "classes.json", '[0].start.equipment.weapon: unknown item id "sword_x"');
+    expectIssue((r) => (r.classes[0].start.inventory = ["herbb"]), "classes.json", '[0].start.inventory[0]: unknown item id "herbb"');
+    // 所持枠（装備 3 + 6 = 9 > 8）
+    expectIssue((r) => (r.classes[0].start.inventory = Array(6).fill("herb")), "classes.json", "[0].start: CH-71");
+    // 系統の無い呪文（戦士に治癒）、開始レベル 4 の系統（侍に火矢）
+    expectIssue((r) => r.classes[0].start.knownSpells.push("heal"), "classes.json", "[0].start.knownSpells[0]: MG-11");
+    expectIssue((r) => r.classes[4].start.knownSpells.push("fire_arrow"), "classes.json", "[4].start.knownSpells[0]: MG-11");
+    // 重複・魔法書専用・learnLevel 2 以上
+    expectIssue((r) => r.classes[2].start.knownSpells.push("heal"), "classes.json", '[2].start.knownSpells[1]: CH-24: duplicate spell "heal"');
+    expectIssue((r) => r.classes[3].start.knownSpells.push("lightning_tome"), "classes.json", '[3].start.knownSpells[2]: CH-24: spell "lightning_tome" is bookOnly');
+    expectIssue((r) => r.classes[3].start.knownSpells.push("flame_burst"), "classes.json", '[3].start.knownSpells[2]: CH-24: spell "flame_burst" has learnLevel 3, not 1');
+    expectIssue((r) => r.classes[3].start.knownSpells.push("nope"), "classes.json", '[3].start.knownSpells[2]: unknown spell id "nope"');
+  });
 });
 
 describe("data: spells.json", () => {

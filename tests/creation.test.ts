@@ -1,10 +1,22 @@
 import { describe, expect, test } from "vitest";
 import { EQUIP_SLOTS } from "../src/core/data";
 import { createInitialState, execute } from "../src/core/engine";
-import { createRng, randInt } from "../src/core/rng";
-import { nameLength, normalizeName, validatePartySetup } from "../src/core/rules/creation";
+import type { StatBlock } from "../src/core/data";
+import { chance, cloneRng, createRng, randInt, rollDie } from "../src/core/rng";
+import {
+  adjustStat,
+  classOptions,
+  nameLength,
+  normalizeName,
+  rollBonus,
+  STAT_MAX,
+  statAllocation,
+  validCreationName,
+  validatePartySetup,
+} from "../src/core/rules/creation";
+import { initialHpMax, mpGainFor } from "../src/core/rules/growth";
 import { slotsUsed } from "../src/core/state";
-import type { Command, PartySetupMember } from "../src/core/types";
+import type { Command, CustomMember, PartySetupMember } from "../src/core/types";
 import { data, defaultMembers, newGame } from "./helpers/core";
 
 const protos = data.config.prototypeParty.members;
@@ -218,5 +230,216 @@ describe("creation: game.new", () => {
       ...p.inventory,
     ]);
     expect(refs.map((id) => s.items[id]!.itemId)).toEqual(protoItems);
+  });
+});
+
+// ---------------------------------------------------------------- CH-06 / CH-11 / CH-21 / CH-24 自分で作る（M5.5）
+
+/** 有効な 6 人。配分は手で数えた値（種族の基礎値は races.json、職業の条件は classes.json） */
+function customMembers(): CustomMember[] {
+  return [
+    // 人間 {8,8,5,8,8,9} に str+6・vit+4（計 10）→ 戦士（str 11）
+    { name: "アキ", personality: null, raceId: "human", classId: "fighter", stats: { str: 14, iq: 8, pie: 5, vit: 12, agi: 8, luk: 9 } },
+    // ドワーフ {10,7,10,10,5,6} に pie+5 → 僧侶（pie 11）
+    { name: "イサ", personality: "cautious", raceId: "dwarf", classId: "priest", stats: { str: 10, iq: 7, pie: 15, vit: 10, agi: 5, luk: 6 } },
+    // ホビット {5,7,7,6,10,15} に agi+4 → 盗賊（agi 11）
+    { name: "ウル", personality: "reckless", raceId: "hobbit", classId: "thief", stats: { str: 5, iq: 7, pie: 7, vit: 6, agi: 14, luk: 15 } },
+    // エルフ {7,10,10,6,9,6} に iq+6 → 魔術師（iq 11）
+    { name: "エマ", personality: "greedy", raceId: "elf", classId: "mage", stats: { str: 7, iq: 16, pie: 10, vit: 6, agi: 9, luk: 6 } },
+    // ノーム {7,7,10,8,10,7} に iq+5・pie+2（計 7）→ 司教（iq 12・pie 12 ちょうど）
+    { name: "オト", personality: "normal", raceId: "gnome", classId: "bishop", stats: { str: 7, iq: 12, pie: 12, vit: 8, agi: 10, luk: 7 } },
+    // ドワーフ {10,7,10,10,5,6} に str+5・iq+4・vit+4・agi+5（計 18）→ 侍（str 15・iq 11・pie 10・vit 14・agi 10 ちょうど）
+    { name: "カイ", personality: "cautious", raceId: "dwarf", classId: "samurai", stats: { str: 15, iq: 11, pie: 10, vit: 14, agi: 10, luk: 6 } },
+  ];
+}
+
+function customReason(members: unknown): string | null {
+  const s = createInitialState(1, data);
+  const r = execute(s, { type: "game.new", party: { kind: "custom", members } } as Command, data);
+  const e = r.events[0];
+  return e?.kind === "rejected" ? e.reason : null;
+}
+
+function withCustom(i: number, patch: Partial<CustomMember>): CustomMember[] {
+  const ms = customMembers();
+  ms[i] = { ...ms[i]!, ...patch };
+  return ms;
+}
+
+describe("creation: 自分で作る（CH-06 / CH-11 / CH-21 / CH-24）", () => {
+  test("CH-11 rollBonus は rollDie(bonusDie) → chance(bonusBigChance) の順で bonusBase + 出目 (+ bonusBig)（鏡の rng。bonusBigChance 0 / 100）", () => {
+    for (const pct of [0, 100]) {
+      const cfg = { ...data.config.creation, bonusBigChance: pct };
+      for (const seed of [1, 2, 3, 4, 5]) {
+        const rng = createRng(seed);
+        const mirror = cloneRng(rng);
+        const die = rollDie(mirror, cfg.bonusDie);
+        const big = chance(mirror, pct);
+        expect(big).toBe(pct === 100);
+        const v = rollBonus(rng, cfg);
+        expect(v).toBe(7 + die + (pct === 100 ? 10 : 0));
+        expect(rng).toEqual(mirror); // randInt を 2 回だけ消費する
+        expect(v).toBeGreaterThanOrEqual(pct === 100 ? 18 : 8);
+        expect(v).toBeLessThanOrEqual(pct === 100 ? 21 : 11);
+      }
+    }
+  });
+
+  test("CH-11 rollBonus は実データ（7 + 1d4、5% で +10）の範囲 8..11 / 18..21 だけを出す（seed 1..400）", () => {
+    const seen = new Set<number>();
+    for (let seed = 1; seed <= 400; seed++) seen.add(rollBonus(createRng(seed), data.config.creation));
+    for (const v of seen) expect([8, 9, 10, 11, 18, 19, 20, 21]).toContain(v);
+    for (const v of [8, 9, 10, 11]) expect(seen.has(v)).toBe(true);
+  });
+
+  test("CH-11 statAllocation / adjustStat: 基礎値未満・18 超・残り 0 で増やす操作は同じ参照。complete は残り 0 のときだけ", () => {
+    const base = data.races.find((r) => r.id === "human")!.baseStats; // {8,8,5,8,8,9}
+    let st = { ...base };
+    let a = statAllocation("human", st, 2, data);
+    expect(a.remaining).toBe(2);
+    expect(a.complete).toBe(false);
+    expect(a.rows.map((r) => r.key)).toEqual(["str", "iq", "pie", "vit", "agi", "luk"]);
+    expect(a.rows.map((r) => r.base)).toEqual([8, 8, 5, 8, 8, 9]);
+    expect(a.rows.every((r) => r.canInc && !r.canDec)).toBe(true);
+    // 基礎値未満には下げられない（同じ参照）
+    expect(adjustStat("human", st, 2, "str", -1, data)).toBe(st);
+    st = adjustStat("human", st, 2, "str", 1, data);
+    st = adjustStat("human", st, 2, "str", 1, data);
+    expect(st.str).toBe(10);
+    a = statAllocation("human", st, 2, data);
+    expect(a.remaining).toBe(0);
+    expect(a.complete).toBe(true);
+    expect(a.rows.every((r) => !r.canInc)).toBe(true);
+    expect(a.rows.find((r) => r.key === "str")!.canDec).toBe(true);
+    // 残り 0 では増やせない（同じ参照）
+    expect(adjustStat("human", st, 2, "iq", 1, data)).toBe(st);
+    // 減らすと残りが戻る
+    const back = adjustStat("human", st, 2, "str", -1, data);
+    expect(back.str).toBe(9);
+    expect(statAllocation("human", back, 2, data).remaining).toBe(1);
+    // 18 を超えない（ホビットの luk 15 に 3 足して 18、もう 1 は同じ参照）
+    let h = { ...data.races.find((r) => r.id === "hobbit")!.baseStats };
+    for (let k = 0; k < 3; k++) h = adjustStat("hobbit", h, 10, "luk", 1, data);
+    expect(h.luk).toBe(STAT_MAX);
+    expect(STAT_MAX).toBe(18);
+    expect(statAllocation("hobbit", h, 10, data).rows.find((r) => r.key === "luk")!.canInc).toBe(false);
+    expect(adjustStat("hobbit", h, 10, "luk", 1, data)).toBe(h);
+  });
+
+  test("CH-21 classOptions は requirements をすべて満たす職業だけ ok（境界: ちょうど満たす / 1 足りない）", () => {
+    const ids = data.classes.map((c) => c.id);
+    const okOf = (stats: StatBlock) => classOptions(stats, data).filter((o) => o.ok).map((o) => o.classId);
+    expect(classOptions(customMembers()[0]!.stats, data).map((o) => o.classId)).toEqual(ids);
+    // 司教ちょうど（iq 12・pie 12）
+    const gnome = customMembers()[4]!.stats;
+    expect(okOf(gnome)).toEqual(["priest", "mage", "bishop"]);
+    // pie が 1 足りないと司教は不可（僧侶 pie 11 は可）
+    expect(okOf({ ...gnome, pie: 11 })).toEqual(["priest", "mage"]);
+    // 侍ちょうど（str15 iq11 pie10 vit14 agi10）と、agi が 1 足りないとき
+    const sam = customMembers()[5]!.stats;
+    expect(okOf(sam)).toContain("samurai");
+    expect(okOf({ ...sam, agi: 9 })).not.toContain("samurai");
+    const opt = classOptions(sam, data).find((o) => o.classId === "samurai")!;
+    expect(opt.name).toBe("侍");
+    expect(opt.requirements).toEqual({ str: 15, iq: 11, pie: 10, vit: 14, agi: 10 });
+  });
+
+  test("CH-05/CH-06 validCreationName は trim 後 1..6 文字（コードポイント）", () => {
+    expect(validCreationName("  ab ", data)).toBe(true);
+    expect(validCreationName("あいうえおか", data)).toBe(true);
+    expect(validCreationName("あいうえおかき", data)).toBe(false);
+    expect(validCreationName("   ", data)).toBe(false);
+    expect(validCreationName("😀😀😀😀😀😀", data)).toBe(true);
+  });
+
+  test("CH-06/CH-24 game.new custom: 装備・所持品・呪文は classes[].start、所持金は Σ start.gold（300）。HP / MP は initialHpMax / mpGainFor。リーダーは c1・personality null", () => {
+    const ms = customMembers();
+    ms[2] = { ...ms[2]!, name: " ウル　" };
+    const s0 = createInitialState(1, data);
+    const r = execute(s0, { type: "game.new", party: { kind: "custom", members: ms } }, data);
+    const s = r.state;
+    expect(r.events).toEqual([{ kind: "screen", to: "town" }]);
+    expect(s.screen).toBe("town");
+    expect(s.gold).toBe(300);
+    expect(s.rng).toEqual(createRng(1)); // random が無ければ乱数を使わない
+    expect(s.party.map((c) => c.id)).toEqual(["c1", "c2", "c3", "c4", "c5", "c6"]);
+    expect(s.party.map((c) => c.name)).toEqual(["アキ", "イサ", "ウル", "エマ", "オト", "カイ"]);
+    expect(s.party.map((c) => c.isLeader)).toEqual([true, false, false, false, false, false]);
+    expect(s.party.map((c) => c.personality)).toEqual([null, "cautious", "reckless", "greedy", "normal", "cautious"]);
+    expect(s.party.map((c) => [c.raceId, c.classId])).toEqual([
+      ["human", "fighter"],
+      ["dwarf", "priest"],
+      ["hobbit", "thief"],
+      ["elf", "mage"],
+      ["gnome", "bishop"],
+      ["dwarf", "samurai"],
+    ]);
+    s.party.forEach((c, i) => {
+      const m = customMembers()[i]!;
+      const cls = data.classes.find((x) => x.id === m.classId)!;
+      expect(c.stats).toEqual(m.stats);
+      expect(c.hpMax).toBe(initialHpMax(cls, m.stats, data.config));
+      expect(c.mpMax).toBe(mpGainFor(cls, m.stats, data.config));
+      expect(c.hp).toBe(c.hpMax);
+      expect(c.mp).toBe(c.mpMax);
+      expect(c.knownSpells).toEqual(cls.start.knownSpells);
+      expect(c.level).toBe(1);
+      expect(c.life).toBe("alive");
+      const eq = EQUIP_SLOTS.flatMap((slot) => (c.equipment[slot] === null ? [] : [[slot, s.items[c.equipment[slot]!]!.itemId]]));
+      expect(Object.fromEntries(eq)).toEqual(cls.start.equipment);
+      expect(c.inventory.map((id) => s.items[id]!.itemId)).toEqual(cls.start.inventory);
+    });
+    // 手で数えた値: 戦士 アキは long_sword・leather_armor・wooden_shield と herb（i1..i4）
+    expect(s.party[0]!.equipment).toEqual({ weapon: "i1", armor: "i2", shield: "i3", helm: null, gauntlet: null, accessory: null });
+    expect(s.party[0]!.inventory).toEqual(["i4"]);
+    expect(s.party[3]!.knownSpells).toEqual(["fire_arrow", "sleep_mist"]);
+    expect(s.party[4]!.knownSpells).toEqual(["heal", "fire_arrow"]);
+    expect(Object.values(s.items).every((it) => it.identified)).toBe(true);
+    // 余分なキーは写さない（GameState は JSON 安全なプレーンなオブジェクト）
+    const extra = customMembers();
+    (extra[0]!.stats as Record<string, number>)["xyz"] = 3;
+    const s2 = execute(createInitialState(1, data), { type: "game.new", party: { kind: "custom", members: extra } }, data).state;
+    expect(Object.keys(s2.party[0]!.stats)).toEqual(["str", "iq", "pie", "vit", "agi", "luk"]);
+    expect(JSON.parse(JSON.stringify(s))).toEqual(s);
+  });
+
+  test("CH-06/CH-30 game.new custom の性格の random はおすすめと同じく添字の順に state.rng で決める（seed 1 で 0,1,3,2,2）", () => {
+    const ms = customMembers().map((m, i) => (i === 0 ? m : { ...m, personality: "random" as const }));
+    const s = execute(createInitialState(1, data), { type: "game.new", party: { kind: "custom", members: ms } }, data).state;
+    const rng = createRng(1);
+    expect([0, 1, 2, 3, 4].map(() => randInt(rng, 0, 3))).toEqual([0, 1, 3, 2, 2]);
+    expect(s.party.map((c) => c.personality)).toEqual([null, "cautious", "reckless", "normal", "greedy", "greedy"]);
+    expect(s.rng).toEqual(rng);
+  });
+
+  test("CH-06 game.new custom の検証: 未知の種族・職業、基礎値未満・18 超・小数、配分の合計 > 21、職業の条件を満たさない、名前・性格の誤り、6 人でない、未知の kind → rejected", () => {
+    expect(customReason(customMembers())).toBeNull();
+    expect(validatePartySetup({ kind: "custom", members: customMembers() }, data)).toBeNull();
+    expect(validatePartySetup({ kind: "quick", members: defaultMembers() }, data)).toBe("invalid party setup");
+    expect(customReason(customMembers().slice(0, 5))).toBe("party size must be 6");
+    expect(customReason(withCustom(3, { name: "あいうえおかき" }))).toBe("invalid name at 3");
+    expect(customReason(withCustom(0, { personality: "normal" }))).toBe("leader must have no personality");
+    expect(customReason(withCustom(2, { personality: null }))).toBe("personality required at 2");
+    expect(customReason(withCustom(1, { raceId: "orc" }))).toBe("unknown race at 1");
+    expect(customReason(withCustom(1, { classId: "ninja" }))).toBe("unknown class at 1");
+    const st = customMembers()[0]!.stats;
+    // 人間の pie の基礎値は 5
+    expect(customReason(withCustom(0, { stats: { ...st, pie: 4 } }))).toBe("bad stats at 0");
+    expect(customReason(withCustom(0, { stats: { ...st, str: 19 } }))).toBe("bad stats at 0");
+    expect(customReason(withCustom(0, { stats: { ...st, str: 13.5 } }))).toBe("bad stats at 0");
+    expect(customReason(withCustom(0, { stats: { ...st, luk: "9" as unknown as number } }))).toBe("bad stats at 0");
+    const noLuk: Record<string, number> = { ...st };
+    delete noLuk["luk"];
+    expect(customReason(withCustom(0, { stats: noLuk as StatBlock }))).toBe("bad stats at 0");
+    expect(customReason(withCustom(0, { stats: null as unknown as StatBlock }))).toBe("bad stats at 0");
+    // 配分の上限 7 + 4 + 10 = 21。人間 {8,8,5,8,8,9} に 21 は通り、22 は止まる
+    const h21 = { str: 18, iq: 12, pie: 5, vit: 12, agi: 11, luk: 9 }; // 10 + 4 + 4 + 3 = 21
+    expect(customReason(withCustom(0, { stats: h21 }))).toBeNull();
+    expect(customReason(withCustom(0, { stats: { ...h21, agi: 12 } }))).toBe("too many bonus points at 0");
+    // 職業の条件（戦士 str 11）
+    expect(customReason(withCustom(0, { stats: { ...st, str: 10 } }))).toBe("class requirements not met at 0");
+    expect(customReason(withCustom(0, { stats: { ...st, str: 11 } }))).toBeNull();
+    // 簡易作成の形は今のまま（kind が無い）
+    expect(validatePartySetup({ members: defaultMembers() }, data)).toBeNull();
   });
 });

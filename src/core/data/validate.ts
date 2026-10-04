@@ -383,40 +383,48 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       }
     }
 
-    // CH-70 / CH-75 装備
-    const eq = objOf(m.equipment);
-    let equipped = 0;
-    if (eq) {
-      for (const [slot, itemId] of Object.entries(eq)) {
-        const ep = at(at(p, "equipment"), slot);
-        equipped++;
-        ref(ctx, ep, itemId, ix.items, "item");
-        const item = typeof itemId === "string" ? ix.items.get(itemId) : undefined;
-        if (!item) continue;
-        if (item.slot !== slot)
-          report(ctx, ep, `CH-70: item ${JSON.stringify(itemId)} has slot ${JSON.stringify(item.slot)}, not ${JSON.stringify(slot)}`);
-        const allowed = arrOf(item.classes);
-        if (classId !== undefined && allowed.length > 0 && !allowed.includes(classId))
-          report(ctx, ep, `CH-75: class ${JSON.stringify(classId)} cannot equip ${JSON.stringify(itemId)}`);
-      }
-    }
-    const inv = arrOf(m.inventory);
-    inv.forEach((it, j) => ref(ctx, at(at(p, "inventory"), j), it, ix.items, "item"));
-    // CH-71 所持枠（装備中を含む）
-    if (ix.slotsPerCharacter !== undefined && equipped + inv.length > ix.slotsPerCharacter)
-      report(ctx, p, `CH-71: ${equipped + inv.length} items exceed inventory.slotsPerCharacter ${ix.slotsPerCharacter}`);
+    validateKit(ctx, p, m, classId, cls, ix);
+  });
+}
 
-    // MG-11 初期呪文の系統
-    arrOf(m.knownSpells).forEach((sp, j) => {
-      const sp_p = at(at(p, "knownSpells"), j);
-      ref(ctx, sp_p, sp, ix.spells, "spell");
-      const spell = typeof sp === "string" ? ix.spells.get(sp) : undefined;
-      const school = strOf(spell?.school);
-      if (!cls || school === undefined) return;
-      const start = numOf(get(cls, "spells", school));
-      if (start === undefined) report(ctx, sp_p, `MG-11: class ${JSON.stringify(classId)} cannot learn ${school} spells`);
-      else if (start > 1) report(ctx, sp_p, `MG-11: class ${JSON.stringify(classId)} starts ${school} spells at level ${start}, not 1`);
-    });
+/**
+ * 開始の持ち物（prototypeParty の 1 人と classes[].start。CH-24）の参照・装備枠・職業・所持枠・初期呪文の系統。
+ * kit は equipment / inventory / knownSpells を持つオブジェクト（形の検査は呼び出し側）
+ */
+function validateKit(ctx: Ctx, p: string, m: Obj, classId: string | undefined, cls: Obj | undefined, ix: Index): void {
+  // CH-70 / CH-75 装備
+  const eq = objOf(m.equipment);
+  let equipped = 0;
+  if (eq) {
+    for (const [slot, itemId] of Object.entries(eq)) {
+      const ep = at(at(p, "equipment"), slot);
+      equipped++;
+      ref(ctx, ep, itemId, ix.items, "item");
+      const item = typeof itemId === "string" ? ix.items.get(itemId) : undefined;
+      if (!item) continue;
+      if (item.slot !== slot)
+        report(ctx, ep, `CH-70: item ${JSON.stringify(itemId)} has slot ${JSON.stringify(item.slot)}, not ${JSON.stringify(slot)}`);
+      const allowed = arrOf(item.classes);
+      if (classId !== undefined && allowed.length > 0 && !allowed.includes(classId))
+        report(ctx, ep, `CH-75: class ${JSON.stringify(classId)} cannot equip ${JSON.stringify(itemId)}`);
+    }
+  }
+  const inv = arrOf(m.inventory);
+  inv.forEach((it, j) => ref(ctx, at(at(p, "inventory"), j), it, ix.items, "item"));
+  // CH-71 所持枠（装備中を含む）
+  if (ix.slotsPerCharacter !== undefined && equipped + inv.length > ix.slotsPerCharacter)
+    report(ctx, p, `CH-71: ${equipped + inv.length} items exceed inventory.slotsPerCharacter ${ix.slotsPerCharacter}`);
+
+  // MG-11 初期呪文の系統
+  arrOf(m.knownSpells).forEach((sp, j) => {
+    const sp_p = at(at(p, "knownSpells"), j);
+    ref(ctx, sp_p, sp, ix.spells, "spell");
+    const spell = typeof sp === "string" ? ix.spells.get(sp) : undefined;
+    const school = strOf(spell?.school);
+    if (!cls || school === undefined) return;
+    const start = numOf(get(cls, "spells", school));
+    if (start === undefined) report(ctx, sp_p, `MG-11: class ${JSON.stringify(classId)} cannot learn ${school} spells`);
+    else if (start > 1) report(ctx, sp_p, `MG-11: class ${JSON.stringify(classId)} starts ${school} spells at level ${start}, not 1`);
   });
 }
 
@@ -427,7 +435,7 @@ function validateRaces(ctx: Ctx, v: unknown): void {
   if (Array.isArray(a)) uniqueIds(ctx, "", a);
 }
 
-function validateClasses(ctx: Ctx, v: unknown): void {
+function validateClasses(ctx: Ctx, v: unknown, ix: Index): void {
   const a = L(
     F({
       id: S,
@@ -444,9 +452,38 @@ function validateClasses(ctx: Ctx, v: unknown): void {
       abilities: L(E(CLASS_ABILITIES)),
       expMultiplier: N({ positive: true }),
       description: S,
+      // CH-24（M5.5）【仮】
+      start: F({
+        equipment: F(Object.fromEntries(EQUIP_SLOTS.map((k) => [k, opt(S)]))),
+        inventory: L(S),
+        knownSpells: L(S),
+        gold: I(NON_NEG),
+      }),
     }),
   )(ctx, "", v);
-  if (Array.isArray(a)) uniqueIds(ctx, "", a);
+  if (!Array.isArray(a)) return;
+  uniqueIds(ctx, "", a);
+  // CH-24: 開始の持ち物は prototypeParty と同じ規則（CH-70 / CH-75 / CH-71 / MG-11）に加え、
+  // 呪文は重複なし・魔法書専用でない・learnLevel 1（作成時に覚えていてよいもの）
+  a.forEach((c, i) => {
+    if (!isObj(c)) return;
+    const start = objOf(c.start);
+    if (!start) return;
+    const p = at(at("", i), "start");
+    validateKit(ctx, p, start, strOf(c.id), c, ix);
+    const seen = new Set<string>();
+    arrOf(start.knownSpells).forEach((sp, j) => {
+      if (typeof sp !== "string") return;
+      const sp_p = at(at(p, "knownSpells"), j);
+      if (seen.has(sp)) report(ctx, sp_p, `CH-24: duplicate spell ${JSON.stringify(sp)}`);
+      seen.add(sp);
+      const spell = ix.spells.get(sp);
+      if (!spell) return;
+      if (spell.bookOnly === true) report(ctx, sp_p, `CH-24: spell ${JSON.stringify(sp)} is bookOnly`);
+      const ll = numOf(spell.learnLevel);
+      if (ll !== undefined && ll > 1) report(ctx, sp_p, `CH-24: spell ${JSON.stringify(sp)} has learnLevel ${ll}, not 1`);
+    });
+  });
 }
 
 // ---- spells.json ----
@@ -953,7 +990,7 @@ export function validateGameData(raw: RawGameData): string[] {
   const ix = buildIndex(raw);
   validateConfig(ctxOf("config"), raw.config, ix);
   validateRaces(ctxOf("races"), raw.races);
-  validateClasses(ctxOf("classes"), raw.classes);
+  validateClasses(ctxOf("classes"), raw.classes, ix);
   validateSpells(ctxOf("spells"), raw.spells);
   validateMonsters(ctxOf("monsters"), raw.monsters, ix);
   validateItems(ctxOf("items"), raw.items, ix);

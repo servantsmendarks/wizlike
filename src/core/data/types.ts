@@ -203,6 +203,16 @@ export type ClassDef = {
   abilities: ClassAbility[];
   expMultiplier: number;
   description: string;
+  /** CH-24（M5.5）: 自分で作ったキャラクター（CH-06）の開始の装備・所持品・呪文と、パーティの所持金への寄与【仮】 */
+  start: ClassStart;
+};
+
+/** CH-24: 職業ごとの開始の持ち物。簡易作成（CH-05）は prototypeParty を使い、これは使わない */
+export type ClassStart = {
+  equipment: Partial<Record<EquipSlot, string>>;
+  inventory: string[];
+  knownSpells: string[];
+  gold: number;
 };
 
 // ---- spells.json ----

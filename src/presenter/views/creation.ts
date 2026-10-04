@@ -6,7 +6,7 @@
 // - 入力欄は iOS の自動ズームを避けるため、font-size 16px の 2 倍の大きさで作り、scale(0.5) で 112×32 に見せる。
 // 純粋な部分（性格の巡回、PartySetup の組み立て）を export する。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, PersonalityId, Strings } from "../../core/data/index";
-import type { PartySetup } from "../../core/types";
+import type { QuickPartySetup } from "../../core/types";
 import { formatMessage } from "./message";
 import { CREATION_BUTTONS, CREATION_ERROR, creationRow, type Rect } from "../layout";
 import { onTap } from "../input/tap";
@@ -41,7 +41,7 @@ export function personalityLabel(choice: PersonalityChoice, data: GameData, stri
 }
 
 /** game.new に渡す PartySetup。名前の検査は core が行うので、そのまま詰める */
-export function buildPartySetup(names: readonly string[], personalities: readonly PersonalityChoice[]): PartySetup {
+export function buildPartySetup(names: readonly string[], personalities: readonly PersonalityChoice[]): QuickPartySetup {
   return { members: names.map((name, i) => ({ name, personality: i === 0 ? null : (personalities[i] ?? "random") })) };
 }
 
@@ -50,7 +50,7 @@ export type CreationScreen = {
   /** 既定の名前と性格に戻し、エラー表示を消す */
   reset(): void;
   /** 今の入力から PartySetup を作る */
-  setup(): PartySetup;
+  setup(): QuickPartySetup;
   /** creation.invalid の表示 */
   showError(on: boolean): void;
 };
@@ -72,7 +72,7 @@ function button(text: string, r: Rect, onClick: () => void): HTMLButtonElement {
 export function createCreationScreen(o: {
   data: GameData;
   strings: Strings;
-  onStart(setup: PartySetup): void;
+  onStart(setup: QuickPartySetup): void;
   onBack(): void;
 }): CreationScreen {
   const t = (k: string): string => o.strings[k] ?? k;
@@ -153,7 +153,7 @@ export function createCreationScreen(o: {
     });
   };
 
-  const setup = (): PartySetup => buildPartySetup(inputs.map((x) => x.value), choices);
+  const setup = (): QuickPartySetup => buildPartySetup(inputs.map((x) => x.value), choices);
 
   el.appendChild(
     button(t("creation.random"), CREATION_BUTTONS.random, () => {
