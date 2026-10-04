@@ -54,6 +54,33 @@ export type InnRank = {
   gossip: boolean;
 };
 
+/** IT-30: 希少度の行。id は normal / fine / rare / legendary の順で 4 件（検証する） */
+export type RarityDef = { id: "normal" | "fine" | "rare" | "legendary"; weight: number; options: number };
+
+/** config.items（items.md §10。M7）【仮】 */
+export type ItemsConfig = {
+  /** IT-30 */
+  rarities: RarityDef[];
+  /** IT-32: 呪われる確率（%） */
+  curseChance: number;
+  /** IT-33: 汎用のオプションの段階 = min(3, 1 + floor(Lv ÷ これ)) */
+  optionTierStep: number;
+  /** IT-53: ドロップの Lv の振れ幅 */
+  dropLevelSpread: number;
+  /** IT-20: 武器のダメージ +floor(Lv ÷ これ) */
+  weaponLvPerDamage: number;
+  /** IT-21: 防具・盾・兜・小手の AC −floor(Lv ÷ これ) */
+  armorLvPerAc: number;
+  /** IT-22: 術者用武器の魔法攻撃力 +floor(Lv ÷ これ) */
+  casterLvPerPower: number;
+  /** IT-60 / IT-61 */
+  levelPriceRatio: number;
+  /** IT-61: 正のオプションの段階 1〜3 ごとの売値の加算 */
+  optionSellValue: [number, number, number];
+  /** IT-64: 倉庫の容量 */
+  warehouseSlots: number;
+};
+
 export type PrototypeMember = {
   defaultName: string;
   raceId: string;
@@ -108,8 +135,8 @@ export type Config = {
     hitPerAC: number;
     hitMin: number;
     hitMax: number;
+    /** CB-20。M7 で下限 acMin は撤廃した（IT-24。命中率の hitMin〜hitMax のクランプに任せる） */
     acBase: number;
-    acMin: number;
     maxEnemyGroups: number;
     maxPerGroup: number;
     surpriseDiff: number;
@@ -164,6 +191,8 @@ export type Config = {
     cureCost: Record<CurableStatusId, number>;
     uncurseCost: number;
   };
+  /** items.md §10（M7）の数値【仮】 */
+  items: ItemsConfig;
   /** TW-04 / TW-14（M5.5）: tavernEventTurns は酒場のイベントが起きうるまでの冒険のターン数【仮】、tavernEventChance は見回すごとの確率%【仮】 */
   town: { innRanks: InnRank[]; tavernEventTurns: number; tavernEventChance: number };
   events: { impulseThreshold: number; stopSanGain: number; confusedLureWeight: number };

@@ -10,6 +10,7 @@ import { randInt, rollDice } from "../rng";
 import { destroyItemInstance, findBase, itemDisplayName, itemOf } from "../state";
 import type { Character, GameState, PenaltyExpLoss, PenaltyLostItem, PenaltyResult, RuleContext, TextRef } from "../types";
 import { canAct } from "./combat-calc";
+import { clampToMax, hpMaxOf } from "./equip-stats";
 import { levelDownWhileBelow } from "./growth";
 import { ceilRatio, floorRatio } from "./ratio";
 import { arriveTown } from "./town";
@@ -86,7 +87,7 @@ function revive(ctx: RuleContext, ch: Character): void {
     ch.life = "alive";
     ctx.events.push({ kind: "lifeChanged", id: ch.id, life: "alive" });
   }
-  const hp = Math.max(1, ceilRatio(ch.hpMax, cfg.reviveHpRatio));
+  const hp = Math.max(1, ceilRatio(hpMaxOf(ctx.state, ctx.data, ch), cfg.reviveHpRatio)); // CH-14: 実効の hpMax
   if (hp !== ch.hp) ctx.events.push({ kind: "hpChanged", id: ch.id, delta: hp - ch.hp, hp });
   ch.hp = hp;
   if (cfg.clearStatus) {
@@ -179,6 +180,9 @@ export function performWipe(ctx: RuleContext): void {
     }
     expLost.push({ id: ch.id, name: ch.name, expBefore, lost, levelFrom, levelTo: ch.level });
   });
+
+  // CH-14: 装備中の品を失って実効の最大値が下がった者の現在値を止める（変わらなければ何も出ない）
+  for (const ch of state.party) clampToMax(ctx, ch);
 
   // 8) 復活（TW-23: 全滅時点で alive の者 → TW-24: リーダー）
   const revived: string[] = [];

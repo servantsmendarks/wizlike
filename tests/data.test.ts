@@ -182,9 +182,51 @@ describe("data: config.json", () => {
     expectIssue((r) => delete r.config.combat.chestGoldDice, "config.json", "combat.chestGoldDice: missing required field");
     expect(issuesOf((r) => (r.config.combat.chestGoldDice = "0"))).toEqual([]);
   });
-  test("data: CB-20 acMin は acBase 以下", () => {
-    expectIssue((r) => (r.config.combat.acMin = r.config.combat.acBase + 1), "config.json", "combat.acMin: CB-20");
-    expect(issuesOf((r) => (r.config.combat.acMin = r.config.combat.acBase))).toEqual([]);
+  test("data: IT-24 combat.acMin は撤廃した（M7。旧 CB-20 の下限 −10。残っていれば未知の欄で止める）", () => {
+    expect(config.combat).not.toHaveProperty("acMin");
+    expectIssue((r) => (r.config.combat.acMin = -10), "config.json", "combat.acMin: unknown field");
+  });
+  test("data: IT-30 config.items.rarities は normal / fine / rare / legendary の順で 4 件（75 / 18 / 6 / 1、個数 0〜3【仮】）", () => {
+    expect(config.items.rarities.map((r) => [r.id, r.weight, r.options])).toEqual([
+      ["normal", 75, 0],
+      ["fine", 18, 1],
+      ["rare", 6, 2],
+      ["legendary", 1, 3],
+    ]);
+    expectIssue((r) => r.config.items.rarities.pop(), "config.json", "items.rarities: IT-30: expected 4 rarities");
+    expectIssue((r) => (r.config.items.rarities[0].id = "fine"), "config.json", "items.rarities[0].id: IT-30");
+    expectIssue((r) => r.config.items.rarities.forEach((x: { weight: number }) => (x.weight = 0)), "config.json", "items.rarities: IT-30: sum of weights");
+    expectIssue((r) => (r.config.items.rarities[3].options = 4), "config.json", "items.rarities[3].options");
+    expectIssue((r) => (r.config.items.rarities[1].weight = -1), "config.json", "items.rarities[1].weight");
+    expect(issuesOf((r) => (r.config.items.rarities[0].weight = 0))).toEqual([]);
+  });
+  test("data: IT-20〜22・IT-32・IT-33・IT-53・IT-60〜64 config.items の数値【仮】と型", () => {
+    const it = config.items;
+    expect([it.curseChance, it.optionTierStep, it.dropLevelSpread, it.weaponLvPerDamage, it.armorLvPerAc, it.casterLvPerPower]).toEqual([8, 4, 1, 2, 3, 2]);
+    expect([it.levelPriceRatio, it.optionSellValue, it.warehouseSlots]).toEqual([0.5, [20, 40, 80], 40]);
+    expectIssue((r) => delete r.config.items, "config.json", "items: missing required field");
+    expectIssue((r) => (r.config.items.weaponLvPerDamage = 0), "config.json", "items.weaponLvPerDamage");
+    expectIssue((r) => (r.config.items.armorLvPerAc = 0), "config.json", "items.armorLvPerAc");
+    expectIssue((r) => (r.config.items.casterLvPerPower = 0), "config.json", "items.casterLvPerPower");
+    expectIssue((r) => (r.config.items.optionTierStep = 0), "config.json", "items.optionTierStep");
+    expectIssue((r) => (r.config.items.curseChance = 101), "config.json", "items.curseChance");
+    expectIssue((r) => (r.config.items.dropLevelSpread = -1), "config.json", "items.dropLevelSpread");
+    expectIssue((r) => (r.config.items.levelPriceRatio = -0.5), "config.json", "items.levelPriceRatio");
+    expectIssue((r) => (r.config.items.optionSellValue = [20, 40]), "config.json", "items.optionSellValue: IT-61: expected 3 values");
+    expectIssue((r) => (r.config.items.optionSellValue = [20, -1, 80]), "config.json", "items.optionSellValue[1]");
+    expectIssue((r) => (r.config.items.warehouseSlots = 0), "config.json", "items.warehouseSlots");
+    expectIssue((r) => (r.config.items.extra = 1), "config.json", "items.extra: unknown field");
+  });
+  test("data: IT-30/IT-32 item-options の件数は rarities の個数の最大 + 1（呪いの余分）以上", () => {
+    expectIssue((r) => (r.itemOptions.options = r.itemOptions.options.slice(0, 3)), "item-options.json", "options: IT-30/IT-32: expected at least 4 options");
+    expect(issuesOf((r) => (r.itemOptions.options = r.itemOptions.options.slice(0, 4)))).toEqual([]);
+    // 個数の最大を 2 にすれば 3 件で足りる
+    expect(
+      issuesOf((r) => {
+        r.config.items.rarities[3].options = 2;
+        r.itemOptions.options = r.itemOptions.options.slice(0, 3);
+      }),
+    ).toEqual([]);
   });
   test("data: DG-05 dungeon.defaultRooms は 1 以上の整数の [min, max]", () => {
     const p = "dungeon.defaultRooms";

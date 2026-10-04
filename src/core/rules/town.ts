@@ -3,7 +3,7 @@
 // dungeon.ts は import しない（dungeon → combat → … → town の向きだけにして循環を作らない）。
 // 迷宮入口の可否（TW-11）は enterBlockReason が持ち、dungeon.checkEnter がそれを呼ぶ。
 // 乱数を使うのは寺院の蘇生の d100（randInt(1, 100) を 1 回）と、宿屋のレベルアップ（growth の既存の順）だけ。
-import type { ConsumableItem, CurableStatusId, GameData, StatusId } from "../data/index";
+import type { ConsumableItem, CurableStatusId, GameData, StatBlock, StatusId } from "../data/index";
 import { CURABLE_STATUS_IDS, EQUIP_SLOTS } from "../data/index";
 import { randInt } from "../rng";
 import {
@@ -19,6 +19,7 @@ import {
 } from "../state";
 import type { Character, GameState, RuleContext, TownMenu } from "../types";
 import { canAct } from "./combat-calc";
+import { clampToMax, effectiveStats, equipStats } from "./equip-stats";
 import { levelUpWhilePossible } from "./growth";
 import { ceilRatio } from "./ratio";
 import { capSan, overSan, restoreSan } from "./san";
@@ -166,10 +167,11 @@ export function stayInn(ctx: RuleContext, rank: number): void {
   ctx.events.push({ kind: "message", key: "town.inn.stay", params: { room: r.name, cost: r.cost } });
   for (const ch of state.party) {
     if (ch.life !== "alive") continue;
-    const hp = Math.min(ch.hpMax, ch.hp + ceilRatio(ch.hpMax, r.hpRatio));
+    const es = equipStats(state, data, ch); // CH-14: 実効の最大値
+    const hp = Math.min(es.hpMax, ch.hp + ceilRatio(es.hpMax, r.hpRatio));
     if (hp > ch.hp) ctx.events.push({ kind: "hpChanged", id: ch.id, delta: hp - ch.hp, hp });
     ch.hp = hp;
-    const mp = ch.mpMax;
+    const mp = es.mpMax;
     if (mp > ch.mp) ctx.events.push({ kind: "mpChanged", id: ch.id, delta: mp - ch.mp, mp });
     ch.mp = mp;
   }
@@ -261,6 +263,7 @@ export function templeService(ctx: RuleContext, memberId: string, service: Templ
         destroyItemInstance(state, ch, id);
         ctx.events.push({ kind: "message", key: "town.temple.uncursed", params: { name: ch.name, item } });
       }
+      clampToMax(ctx, ch); // CH-14: 品を失って実効の最大値が下がったら現在値を止める
       return;
     }
   }
@@ -292,10 +295,13 @@ export function darkService(ctx: RuleContext, memberId: string): void {
   ctx.events.push({ kind: "message", key: "town.dark.done", params: { name: ch.name } });
 }
 
-/** TW-07 / MG-42: 蘇生の成功率% = min(templeSuccessMax, templeSuccessBase + vit × templeSuccessPerVit)。寺院と呪文で共有する */
-export function resurrectRate(ch: Character, data: GameData): number {
+/**
+ * TW-07 / MG-42: 蘇生の成功率% = min(templeSuccessMax, templeSuccessBase + vit × templeSuccessPerVit)。寺院と呪文で共有する。
+ * vit は対象の実効の能力値（CH-13。rollResurrect が渡す。省略は素の値）
+ */
+export function resurrectRate(ch: Character, data: GameData, stats: StatBlock = ch.stats): number {
   const e = data.config.economy;
-  return Math.min(e.templeSuccessMax, e.templeSuccessBase + ch.stats.vit * e.templeSuccessPerVit);
+  return Math.min(e.templeSuccessMax, e.templeSuccessBase + stats.vit * e.templeSuccessPerVit);
 }
 
 /**
@@ -305,7 +311,7 @@ export function resurrectRate(ch: Character, data: GameData): number {
 export function rollResurrect(ctx: RuleContext, ch: Character): boolean {
   if (ch.life !== "dead") throw new Error(`rollResurrect: ${ch.id} is not dead`);
   const roll = randInt(ctx.state.rng, 1, 100);
-  if (roll <= resurrectRate(ch, ctx.data)) {
+  if (roll <= resurrectRate(ch, ctx.data, effectiveStats(ctx.state, ctx.data, ch))) {
     reviveAtOne(ctx, ch);
     return true;
   }

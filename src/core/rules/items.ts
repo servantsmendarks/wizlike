@@ -6,6 +6,7 @@ import { destroyItemInstance, findItem, itemDisplayName, itemOf, memberById } fr
 import type { Character, FieldItemMenu, FieldItemView, GameState, RuleContext } from "../types";
 import { canAct } from "./combat-calc";
 import { applyAllyEffect } from "./effects";
+import { hpMaxOf } from "./equip-stats";
 import { campPlace } from "./camp";
 import { checkLearnFromBook, learnFromBook } from "./learning";
 import { returnToTown } from "./town";
@@ -135,6 +136,6 @@ export function fieldItemMenu(state: GameState, data: GameData): FieldItemMenu |
       }
       return { id: ch.id, name: ch.name, canAct: canAct(ch), items };
     }),
-    allies: alive.map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: c.hpMax })),
+    allies: alive.map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: hpMaxOf(state, data, c) })),
   };
 }

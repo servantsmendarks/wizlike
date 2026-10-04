@@ -126,7 +126,7 @@ M7 の実装が済むまでは、今のコード（items.json の装備・`confi
   "boss":  { "d01": "d01_boss" } }
 ```
 
-`config.items`（M7 の実装で足す。今の検証は未知の節で起動を止めるので、雛形は docs だけ）【仮】:
+`config.items`（M7 の B3 で config.json に入れた。検証は rarities の順と件数・重みの合計 > 0・個数 0〜3、optionSellValue 3 件、*LvPer* と optionTierStep は正の整数）【仮】:
 `rarities`（`[{ id, weight, options }]` 通常 75/0・上質 18/1・希少 6/2・伝説 1/3）、`curseChance` 8、`optionTierStep` 4、`dropLevelSpread` 1、`weaponLvPerDamage` 2、`armorLvPerAc` 3、`casterLvPerPower` 2、`levelPriceRatio` 0.5、`optionSellValue` [20, 40, 80]、`warehouseSlots` 40。`config.economy` に `upgradeBase` 50・`upgradeRateBase` 10・`upgradeRatePerCatalyst` 30・`upgradeDecay` 0.66・`upgradeMaxCatalysts` 3（TW-17）。`config.combat.acMin` は削除（IT-24）。`dungeons[].onClear` は `shopStock` を `shopLevel` に置き換える。
 
 ## 11. 未決（ユーザーに確認すること。2026-10-05）

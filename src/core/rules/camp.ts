@@ -19,6 +19,7 @@ import type {
 } from "../types";
 import { canAct } from "./combat-calc";
 import { applyAllyEffect } from "./effects";
+import { clampToMax, equipStats, hpMaxOf } from "./equip-stats";
 import { returnToTown, rollResurrect } from "./town";
 
 /** キャンプのコマンドを受け付ける場所。街（dive null）か迷宮の戦闘外。どちらも保留なしのときだけ。それ以外は null */
@@ -111,7 +112,8 @@ export function castInField(ctx: RuleContext, memberId: string, spellId: string,
     case "heal":
     case "cureStatus": {
       const targets = castTargets(state, ch, sp, targetId);
-      applyAllyEffect(ctx, e.type === "heal" ? { type: "heal", dice: e.dice } : { type: "cureStatus", status: e.status }, targets);
+      const power = e.type === "heal" ? equipStats(state, data, ch).magicPower : 0; // MG-33
+      applyAllyEffect(ctx, e.type === "heal" ? { type: "heal", dice: e.dice } : { type: "cureStatus", status: e.status }, targets, power);
       return;
     }
     case "return":
@@ -227,6 +229,7 @@ export function equipItem(ctx: RuleContext, memberId: string, instanceId: string
   const item = itemDisplayName(state, data, instanceId);
   ctx.events.push({ kind: "message", key: "camp.equipped", params: { name: ch.name, item } });
   if (isCursed(state, instanceId)) ctx.events.push({ kind: "message", key: "camp.cursed", params: { item } });
+  clampToMax(ctx, ch); // CH-14: 実効の最大値が下がったら現在値を止める
 }
 
 /**
@@ -255,6 +258,7 @@ export function unequipItem(ctx: RuleContext, memberId: string, slot: EquipSlot)
   ch.equipment[slot] = null;
   ch.inventory.push(id);
   ctx.events.push({ kind: "message", key: "camp.unequipped", params: { name: ch.name, item: itemDisplayName(state, data, id) } });
+  clampToMax(ctx, ch); // CH-14
 }
 
 // ---------------------------------------------------------------------------
@@ -363,7 +367,7 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
         equipCandidates,
       };
     }),
-    allies: alive.map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: c.hpMax })),
+    allies: alive.map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: hpMaxOf(state, data, c) })),
     dead: dead.map((c) => ({ id: c.id, name: c.name })),
     identifiers: state.party.filter((c) => canIdentify(c, data) && canAct(c)).map((c) => ({ id: c.id, name: c.name })),
     unidentified: state.party.flatMap((c) =>

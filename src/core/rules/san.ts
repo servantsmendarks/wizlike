@@ -1,9 +1,10 @@
 // SAN の増減と閾値（CH-50〜54、TW-02 の回復、TW-15 の士気の超過回復）。乱数は使わない。
 // 上限: ふだんは sanCapOf（実効の sanMax）。士気の超過（overSan）の間だけ sanMax を超えてよく、減少は超過分から引き、
 // 増加は sanCapOf で止まり、sanCapOf 以上なら増えない（CH-50 / CH-52 / TW-15）。
-import type { Config, Personality } from "../data/index";
+import type { Config, GameData, Personality } from "../data/index";
 import { personalityOf } from "../state";
-import type { Character, RuleContext } from "../types";
+import type { Character, GameState, RuleContext } from "../types";
+import { equipStats } from "./equip-stats";
 
 export type SanStage = "normal" | "uneasy" | "confused" | "broken";
 export type SanLossTag = "fear" | "allyInjury" | "trap";
@@ -58,25 +59,31 @@ export function sanLossMultiplier(p: Personality | null, tags: readonly string[]
   return mul;
 }
 
-/** CH-54: 掛け合わせた後に 1 回だけ切り捨てる。 */
-export function sanLossAmount(amount: number, p: Personality | null, tags: readonly string[]): number {
-  return Math.floor(amount * sanLossMultiplier(p, tags) + 1e-9);
+/**
+ * CH-54: 掛け合わせた後に 1 回だけ切り捨てる。
+ * M7（CB-31 / IT-34）: fear のタグがあれば、オプション fearLoss の合計 fearLossPct（%）の倍率 (1 − fearLossPct ÷ 100) も掛ける
+ * （負の値は減少が増える。倍率は 0 未満にしない）
+ */
+export function sanLossAmount(amount: number, p: Personality | null, tags: readonly string[], fearLossPct = 0): number {
+  const fear = tags.includes("fear") ? Math.max(0, 1 - fearLossPct / 100) : 1;
+  return Math.floor(amount * sanLossMultiplier(p, tags) * fear + 1e-9);
 }
 
-/** CH-50 / CH-14: 実効の sanMax（M7 の A の時点では素の sanMax。B で装備の最大 SAN を足す）。超過回復の基準と、増加・丸めの上限 */
-export function sanCapOf(ch: Character): number {
-  return ch.sanMax;
+/** CH-50 / CH-14: 実効の sanMax（equipStats の sanMax。装備の最大 SAN を足した値）。超過回復の基準と、増加・丸めの上限 */
+export function sanCapOf(state: GameState, data: GameData, ch: Character): number {
+  return equipStats(state, data, ch).sanMax;
 }
 
 /** next を 0..cap に収めて書く。cap は呼び出し側が決める（ふだんは sanCapOf、減少と変化なしは超過を残すため max(sanCapOf, 今の値)） */
 function setSan(ctx: RuleContext, ch: Character, next: number, cap: number): SanChange {
   const cfg = ctx.data.config;
+  const max = sanCapOf(ctx.state, ctx.data, ch); // CH-53: 段は実効の sanMax 比
   const from = ch.san;
-  const stageBefore = sanStage(from, ch.sanMax, cfg);
+  const stageBefore = sanStage(from, max, cfg);
   const to = Math.min(cap, Math.max(0, next));
   ch.san = to;
   const delta = to - from;
-  const stageAfter = sanStage(to, ch.sanMax, cfg);
+  const stageAfter = sanStage(to, max, cfg);
   const dropped = stageRank(stageAfter) > stageRank(stageBefore);
   if (delta !== 0) {
     ctx.events.push({ kind: "sanChanged", id: ch.id, delta, san: to });
@@ -96,7 +103,8 @@ function assertSanAmount(amount: number): void {
 export function loseSan(ctx: RuleContext, ch: Character, amount: number, tags: readonly string[] = []): SanChange {
   assertSanAmount(amount);
   const p = personalityOf(ctx.data, ch.personality);
-  return setSan(ctx, ch, ch.san - sanLossAmount(amount, p, tags), Math.max(sanCapOf(ch), ch.san));
+  const fearLossPct = equipStats(ctx.state, ctx.data, ch).fearLossPct; // CB-31 / IT-34
+  return setSan(ctx, ch, ch.san - sanLossAmount(amount, p, tags, fearLossPct), Math.max(sanCapOf(ctx.state, ctx.data, ch), ch.san));
 }
 
 /**
@@ -105,13 +113,13 @@ export function loseSan(ctx: RuleContext, ch: Character, amount: number, tags: r
  */
 export function gainSan(ctx: RuleContext, ch: Character, amount: number): SanChange {
   assertSanAmount(amount);
-  if (ch.san === 0 || ch.san >= sanCapOf(ch)) return unchanged(ctx, ch);
-  return setSan(ctx, ch, ch.san + amount, sanCapOf(ch));
+  if (ch.san === 0 || ch.san >= sanCapOf(ctx.state, ctx.data, ch)) return unchanged(ctx, ch);
+  return setSan(ctx, ch, ch.san + amount, sanCapOf(ctx.state, ctx.data, ch));
 }
 
 /** 変化なし（イベントは出ない。超過中でも丸めない） */
 function unchanged(ctx: RuleContext, ch: Character): SanChange {
-  return setSan(ctx, ch, ch.san, Math.max(sanCapOf(ch), ch.san));
+  return setSan(ctx, ch, ch.san, Math.max(sanCapOf(ctx.state, ctx.data, ch), ch.san));
 }
 
 /** events.json の符号付きの value。負なら耐性なしで減少、正なら増加、0 なら変化なし。 */
@@ -135,14 +143,14 @@ export function gainTreasureSan(ctx: RuleContext): void {
 
 /** TW-02: 虚脱からでも sanMax（sanCapOf）に戻す。士気の超過分（TW-15）もここで sanMax に丸める */
 export function restoreSan(ctx: RuleContext, ch: Character): SanChange {
-  return setSan(ctx, ch, sanCapOf(ch), sanCapOf(ch));
+  return setSan(ctx, ch, sanCapOf(ctx.state, ctx.data, ch), sanCapOf(ctx.state, ctx.data, ch));
 }
 
 /**
  * TW-02（restoreOnTown が偽のとき）: 士気の超過分だけを sanMax（sanCapOf）に丸める。sanMax 以下なら変化しない
  */
 export function capSan(ctx: RuleContext, ch: Character): SanChange {
-  return setSan(ctx, ch, ch.san, sanCapOf(ch));
+  return setSan(ctx, ch, ch.san, sanCapOf(ctx.state, ctx.data, ch));
 }
 
 /**
@@ -151,7 +159,7 @@ export function capSan(ctx: RuleContext, ch: Character): SanChange {
  */
 export function overSan(ctx: RuleContext, ch: Character, over: number): SanChange {
   assertSanAmount(over);
-  const target = sanCapOf(ch) + over;
+  const target = sanCapOf(ctx.state, ctx.data, ch) + over;
   if (ch.san >= target) return unchanged(ctx, ch);
   return setSan(ctx, ch, target, target);
 }

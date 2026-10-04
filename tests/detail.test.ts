@@ -122,11 +122,11 @@ describe("UI-59/UI-12 士気の SAN の超過（TW-15。M7）", () => {
   test("UI-59/TW-15 formatDetail: SAN は「SAN 110/100」（最大は sanCap = core の sanCapOf）で sanOver が真。100/100 は偽。sanCap の省略は sanMax", () => {
     const s = newGame(1);
     const over = { ...s.party[0]!, san: 110 };
-    const d = formatDetail(over, data, S, nameOf(s), sanCapOf(over));
+    const d = formatDetail(over, data, S, nameOf(s), sanCapOf(s, data, over));
     expect(d.san).toBe("SAN 110/100");
     expect(d.sanOver).toBe(true);
     expect(formatDetail(over, data, S, nameOf(s)).san).toBe("SAN 110/100");
-    const normal = formatDetail(s.party[0]!, data, S, nameOf(s), sanCapOf(s.party[0]!));
+    const normal = formatDetail(s.party[0]!, data, S, nameOf(s), sanCapOf(s, data, s.party[0]!));
     expect([normal.san, normal.sanOver]).toEqual(["SAN 100/100", false]);
   });
 
@@ -150,7 +150,7 @@ describe("UI-59/UI-12 士気の SAN の超過（TW-15。M7）", () => {
       region: { x: 0, y: 0, w: 240, h: 64 },
       rows: [],
       stageOf: (san, sanMax) => sanStage(san, sanMax, data.config),
-      sanCapOf,
+      sanCapOf: (ch) => sanCapOf(s, data, ch), // CH-14: core の sanCapOf は state と data を取る（M7 の B で実効の sanMax）
     });
     const s = newGame(1);
     const party = s.party.map((c, i) => ({ ...c, san: i === 0 ? 110 : 100 }));

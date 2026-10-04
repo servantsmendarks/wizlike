@@ -14,7 +14,7 @@
   },
   "combat": {
     "hitBase": 20, "hitPerLevel": 5, "hitPerAC": 4, "hitMin": 5, "hitMax": 95,
-    "acBase": 10, "acMin": -10,
+    "acBase": 10,
     "maxEnemyGroups": 4, "maxPerGroup": 9,
     "surpriseDiff": 5,
     "identifyChancePerRound": 15, "identifyKills": 5, "identifyIqPerPoint": 1,
@@ -40,6 +40,17 @@
     "templeCostPerLevel": 100, "darkCostPerLevel": 1000,
     "cureCost": { "poison": 50, "paralysis": 150, "stone": 300 },
     "uncurseCost": 200
+  },
+  "items": {
+    "rarities": [
+      { "id": "normal", "weight": 75, "options": 0 },
+      { "id": "fine", "weight": 18, "options": 1 },
+      { "id": "rare", "weight": 6, "options": 2 },
+      { "id": "legendary", "weight": 1, "options": 3 }
+    ],
+    "curseChance": 8, "optionTierStep": 4, "dropLevelSpread": 1,
+    "weaponLvPerDamage": 2, "armorLvPerAc": 3, "casterLvPerPower": 2,
+    "levelPriceRatio": 0.5, "optionSellValue": [20, 40, 80], "warehouseSlots": 40
   },
   "town": {
     "innRanks": [

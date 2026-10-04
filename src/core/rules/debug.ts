@@ -2,7 +2,7 @@
 // M5 の性格・イベント・SAN を実機で確かめるためのもの。乱数は使わない。
 import type { RuleContext } from "../types";
 import { floorOf, markExplored, warpTarget } from "./dungeon";
-import { loseSan, sanJustBelow, sanStage } from "./san";
+import { loseSan, sanCapOf, sanJustBelow, sanStage } from "./san";
 
 /**
  * debug.hpOne: 並び順に、life alive で hp が 1 でない者の hp を 1 にして hpChanged を出す（dead / ash は変えない）。
@@ -29,10 +29,11 @@ export function sanDown(ctx: RuleContext): void {
   const cfg = ctx.data.config;
   for (const ch of ctx.state.party) {
     if (ch.isLeader || ch.life !== "alive") continue;
-    const stage = sanStage(ch.san, ch.sanMax, cfg);
+    const max = sanCapOf(ctx.state, ctx.data, ch); // CH-53: 段は実効の sanMax 比
+    const stage = sanStage(ch.san, max, cfg);
     if (stage === "broken") continue;
     const next = stage === "normal" ? "uneasy" : stage === "uneasy" ? "confused" : "broken";
-    const target = sanJustBelow(next, ch.sanMax, cfg);
+    const target = sanJustBelow(next, max, cfg);
     loseSan(ctx, ch, Math.max(0, ch.san - target), []);
   }
   ctx.events.push({ kind: "message", key: "debug.sanDown" });

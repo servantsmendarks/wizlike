@@ -6,6 +6,7 @@ import { SCHOOLS } from "../data/index";
 import { rollDie } from "../rng";
 import { classOf } from "../state";
 import type { Character, LevelRecord, RuleContext } from "../types";
+import { effectiveStats, equipStats } from "./equip-stats";
 import { relatedStatKey, rollSpellLearning } from "./learning";
 
 /** CH-64（D6）: レベル L にいるのに必要な累計 EXP。expFor(1) = 0。 */
@@ -46,12 +47,12 @@ export function mpGainFor(cls: ClassDef, stats: StatBlock, cfg: Config): number 
   return cls.mpPerLevel + bonus;
 }
 
-/** CH-65: max(hpGainMin, 1d(hpDie) + 生命力補正)。rng をちょうど 1 回使う。 */
+/** CH-65: max(hpGainMin, 1d(hpDie) + 生命力補正)。生命力は実効の値（CH-13）。rng をちょうど 1 回使う。 */
 export function rollHpGain(ctx: RuleContext, ch: Character): number {
   const cfg = ctx.data.config;
   const cls = classOf(ctx.data, ch.classId);
   const die = rollDie(ctx.state.rng, cls.hpDie);
-  return Math.max(cfg.growth.hpGainMin, die + vitBonus(ch.stats.vit, cfg));
+  return Math.max(cfg.growth.hpGainMin, die + vitBonus(effectiveStats(ctx.state, ctx.data, ch).vit, cfg));
 }
 
 /** CH-64: exp ≥ expFor(level + 1)。 */
@@ -66,7 +67,7 @@ export function levelUpOnce(ctx: RuleContext, ch: Character): LevelRecord {
   const cls = classOf(data, ch.classId);
   const level = ch.level + 1;
   const hpGain = rollHpGain(ctx, ch);
-  const mpGain = mpGainFor(cls, ch.stats, cfg);
+  const mpGain = mpGainFor(cls, effectiveStats(ctx.state, data, ch), cfg); // CH-13
 
   ch.level = level;
   ch.hpMax += hpGain;
@@ -76,7 +77,9 @@ export function levelUpOnce(ctx: RuleContext, ch: Character): LevelRecord {
   const rec: LevelRecord = { level, hpGain, mpGain };
   ch.levelHistory.push({ ...rec });
 
-  events.push({ kind: "levelUp", id: ch.id, level, hpGain, mpGain, hpMax: ch.hpMax, mpMax: ch.mpMax, hp: ch.hp, mp: ch.mp });
+  // CH-14: イベントの最大値は実効の値（表示層がそのまま描く。保存するのは素の値）
+  const es = equipStats(ctx.state, data, ch);
+  events.push({ kind: "levelUp", id: ch.id, level, hpGain, mpGain, hpMax: es.hpMax, mpMax: es.mpMax, hp: ch.hp, mp: ch.mp });
   events.push({ kind: "message", key: "town.inn.levelUp", params: { name: ch.name, level } });
 
   if (level > ch.maxLevelReached) {
@@ -109,9 +112,10 @@ export function levelDownWhileBelow(ctx: RuleContext, ch: Character): number {
     ch.hpMax -= rec.hpGain;
     ch.mpMax -= rec.mpGain;
     ch.level -= 1;
-    ch.hp = Math.min(ch.hp, ch.hpMax);
-    ch.mp = Math.min(ch.mp, ch.mpMax);
-    events.push({ kind: "levelDown", id: ch.id, level: ch.level, hpMax: ch.hpMax, mpMax: ch.mpMax, hp: ch.hp, mp: ch.mp });
+    const es = equipStats(ctx.state, data, ch); // CH-14: 実効の最大値で止める
+    ch.hp = Math.min(ch.hp, es.hpMax);
+    ch.mp = Math.min(ch.mp, es.mpMax);
+    events.push({ kind: "levelDown", id: ch.id, level: ch.level, hpMax: es.hpMax, mpMax: es.mpMax, hp: ch.hp, mp: ch.mp });
     n += 1;
   }
   return n;

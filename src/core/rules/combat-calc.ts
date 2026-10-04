@@ -1,9 +1,9 @@
 // 戦闘の判定と式（combat.md CB-04/05/13/14/20〜23/30/42/50/53、CH-44/60）。
 // すべて純粋関数。乱数も RuleContext も使わない（乱数を使う手続きは rules/combat.ts）。
-import type { ClassDef, Config, ConsumableItem, GameData, Item, ItemEffect, Spell, SpellTarget, StatusId, WeaponBase } from "../data/index";
-import { EQUIP_SLOTS } from "../data/index";
-import { findBase, monsterOf, personalityOf } from "../state";
+import type { ClassDef, Config, ConsumableItem, GameData, Item, ItemEffect, Spell, SpellTarget, StatusId } from "../data/index";
+import { monsterOf, personalityOf } from "../state";
 import type { BattleState, Character, EnemyGroup, EnemyGroupView, EnemyUnit, GameState } from "../types";
+import { equipStats } from "./equip-stats";
 
 /** CH-44: 行動不能にする状態異常（毒は含まない） */
 export const INCAPACITATING: readonly StatusId[] = ["paralysis", "sleep", "stone"];
@@ -77,45 +77,27 @@ export function frontLineIds(state: GameState, data: GameData): string[] {
   return state.party.slice(n).map((c) => c.id);
 }
 
-/** 装備している武器のベース（無ければ null。IT-02） */
-export function weaponOf(state: GameState, data: GameData, ch: Character): WeaponBase | null {
-  const id = ch.equipment.weapon;
-  if (id === null) return null;
-  const inst = state.items[id];
-  if (inst === undefined) return null;
-  const base = findBase(data, inst.itemId);
-  return base !== null && base.slot === "weapon" ? base : null;
-}
-
-/** CB-13/14: 前衛扱いなら近接攻撃可、後衛は ranged の武器のときだけ */
+/** CB-13/14: 前衛扱いなら近接攻撃可、後衛は ranged の武器（equipStats の ranged）のときだけ */
 export function canStrike(state: GameState, data: GameData, ch: Character): boolean {
-  return frontLineIds(state, data).includes(ch.id) || weaponOf(state, data, ch)?.ranged === true;
+  return frontLineIds(state, data).includes(ch.id) || equipStats(state, data, ch).ranged;
 }
 
-/** CB-20: max(acMin, acBase + 装備 6 スロットの ac の合計 + 戦闘中の補正) */
+/**
+ * CB-20 / IT-24: acBase + 装備の AC（equipStats の acEquip。レベルの効果とオプション ac を含む）+ 戦闘中の補正。
+ * M7 で下限（acMin）は撤廃した（命中率の hitMin〜hitMax のクランプに任せる）
+ */
 export function allyAc(state: GameState, data: GameData, ch: Character): number {
-  const cfg = data.config.combat;
-  let ac = cfg.acBase;
-  for (const slot of EQUIP_SLOTS) {
-    const id = ch.equipment[slot];
-    if (id === null) continue;
-    const inst = state.items[id];
-    if (inst === undefined) continue;
-    const base = findBase(data, inst.itemId);
-    if (base !== null && base.slot !== "weapon") ac += base.ac;
-  }
-  ac += state.battle?.acBonus[ch.id] ?? 0;
-  return Math.max(cfg.acMin, ac);
+  return data.config.combat.acBase + equipStats(state, data, ch).acEquip + (state.battle?.acBonus[ch.id] ?? 0);
 }
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
 }
 
-/** CB-21/32: 命中率%。睡眠中の対象への補正は clamp の内側 */
-export function hitPercent(cfg: Config, level: number, targetAc: number, targetAsleep: boolean): number {
+/** CB-21/32: 命中率%。睡眠中の対象への補正と、攻撃側のオプション hit（IT-34。bonus）は clamp の内側 */
+export function hitPercent(cfg: Config, level: number, targetAc: number, targetAsleep: boolean, bonus = 0): number {
   const c = cfg.combat;
-  const raw = c.hitBase + c.hitPerLevel * level + c.hitPerAC * targetAc + (targetAsleep ? c.sleepHitBonus : 0);
+  const raw = c.hitBase + c.hitPerLevel * level + c.hitPerAC * targetAc + (targetAsleep ? c.sleepHitBonus : 0) + bonus;
   return clamp(raw, c.hitMin, c.hitMax);
 }
 
@@ -135,11 +117,11 @@ export function statusPercent(cfg: Config, chancePct: number, luk: number): numb
   return chancePct - (luk - 10) * cfg.combat.statusLukPerPoint;
 }
 
-/** CB-04/50: 行動可能な味方の agi 平均（小数のまま。0 人なら 0） */
-export function partyAgiAvg(state: GameState): number {
+/** CB-04/50: 行動可能な味方の agi（実効の能力値。CH-13）の平均（小数のまま。0 人なら 0） */
+export function partyAgiAvg(state: GameState, data: GameData): number {
   const list = state.party.filter(canAct);
   if (list.length === 0) return 0;
-  return list.reduce((a, c) => a + c.stats.agi, 0) / list.length;
+  return list.reduce((a, c) => a + equipStats(state, data, c).stats.agi, 0) / list.length;
 }
 
 /** CB-04/50: 生存個体の agi 平均（0 体なら 0） */
@@ -162,15 +144,28 @@ export function enemyAgiAvg(state: GameState, data: GameData): number {
 /** CB-50: floor(fleeBase + (味方平均 − 敵平均) × fleeAgiMul)。クランプしない */
 export function fleePercent(state: GameState, data: GameData): number {
   const c = data.config.combat;
-  return Math.floor(c.fleeBase + (partyAgiAvg(state) - enemyAgiAvg(state, data)) * c.fleeAgiMul);
+  return Math.floor(c.fleeBase + (partyAgiAvg(state, data) - enemyAgiAvg(state, data)) * c.fleeAgiMul);
 }
 
-/** CB-05: identifyChancePerRound + max(0, 行動可能な味方の iq 最大 − 10) × identifyIqPerPoint */
+/**
+ * CB-05: identifyChancePerRound + max(0, 行動可能な味方の iq（実効）最大 − 10) × identifyIqPerPoint
+ * + 行動可能な味方のオプション identifyRate（IT-34）の合計
+ */
 export function identifyPercent(state: GameState, data: GameData): number {
   const c = data.config.combat;
-  const list = state.party.filter(canAct);
-  const bonus = list.length === 0 ? 0 : Math.max(0, Math.max(...list.map((x) => x.stats.iq)) - 10) * c.identifyIqPerPoint;
-  return c.identifyChancePerRound + bonus;
+  const list = state.party.filter(canAct).map((x) => equipStats(state, data, x));
+  const bonus = list.length === 0 ? 0 : Math.max(0, Math.max(...list.map((es) => es.stats.iq)) - 10) * c.identifyIqPerPoint;
+  return c.identifyChancePerRound + bonus + list.reduce((a, es) => a + es.identifyRate, 0);
+}
+
+/** CB-51 / CB-52: 行動可能な味方のオプション goldLuck（IT-34）の合計（%） */
+export function partyGoldLuck(state: GameState, data: GameData): number {
+  return state.party.filter(canAct).reduce((a, c) => a + equipStats(state, data, c).goldLuck, 0);
+}
+
+/** CB-51 / CB-52 / IT-34: floor(金 × (100 + 金運の合計) ÷ 100)。0 未満にはしない */
+export function withGoldLuck(gold: number, luckPct: number): number {
+  return Math.max(0, Math.floor((gold * (100 + luckPct)) / 100));
 }
 
 /** CH-60: floor(total / alive)。alive 0 なら 0 */
@@ -207,13 +202,14 @@ export function groupAlive(b: BattleState, g: number): boolean {
   return grp !== undefined && grp.units.some(unitAlive);
 }
 
-/** CB-42: life alive のうち hp/hpMax が最小（同値は並び順で先） */
-export function lowestHpRatioAlly(state: GameState): Character | null {
+/** CB-42: life alive のうち hp/hpMax（実効の最大値。CH-14）が最小（同値は並び順で先） */
+export function lowestHpRatioAlly(state: GameState, data: GameData): Character | null {
   let best: Character | null = null;
   let bestRatio = Infinity;
   for (const c of state.party) {
     if (c.life !== "alive") continue;
-    const r = c.hpMax > 0 ? c.hp / c.hpMax : 0;
+    const max = equipStats(state, data, c).hpMax;
+    const r = max > 0 ? c.hp / max : 0;
     if (r < bestRatio) {
       best = c;
       bestRatio = r;

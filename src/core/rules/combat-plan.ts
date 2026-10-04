@@ -14,7 +14,8 @@ import {
   lowestHpRatioAlly,
   unitAlive,
 } from "./combat-calc";
-import { sanStage, stageRank } from "./san";
+import { hpMaxOf } from "./equip-stats";
+import { sanCapOf, sanStage, stageRank } from "./san";
 
 /** CB-43 のオート解除の理由。strings: battle.autoReason.<r>。reinforce は M3 では発生源が無い */
 export type AutoOffReason = "dead" | "hp" | "status" | "reinforce" | "san";
@@ -40,7 +41,7 @@ function defaultAction(state: GameState, data: GameData, ch: Character): BattleA
 }
 
 /** CB-42: 対象の振り替え。振り替え先が無ければ null */
-function retarget(state: GameState, t: BattleTarget): BattleTarget | null {
+function retarget(state: GameState, data: GameData, t: BattleTarget): BattleTarget | null {
   const b = state.battle;
   if (t.side === "enemy") {
     if (b !== null && groupAlive(b, t.group)) return { side: "enemy", group: t.group };
@@ -49,7 +50,7 @@ function retarget(state: GameState, t: BattleTarget): BattleTarget | null {
   }
   if (t.side === "ally") {
     if (state.party.some((c) => c.id === t.memberId && c.life === "alive")) return { side: "ally", memberId: t.memberId };
-    const c = lowestHpRatioAlly(state);
+    const c = lowestHpRatioAlly(state, data);
     return c === null ? null : { side: "ally", memberId: c.id };
   }
   return { side: "none" };
@@ -83,7 +84,7 @@ function baseAutoInput(state: GameState, data: GameData, ch: Character): BattleA
       if (!ch.knownSpells.includes(a.spellId) || !battleSpellUsable(spellOf(data, a.spellId))) {
         return defaultAction(state, data, ch);
       }
-      const t = retarget(state, a.target);
+      const t = retarget(state, data, a.target);
       return t === null ? defaultAction(state, data, ch) : { type: "cast", spellId: a.spellId, target: t };
     }
     case "item": {
@@ -91,7 +92,7 @@ function baseAutoInput(state: GameState, data: GameData, ch: Character): BattleA
       if (!ch.inventory.includes(a.instanceId) || inst === undefined || !battleItemUsable(findItem(data, inst.itemId))) {
         return defaultAction(state, data, ch);
       }
-      const t = retarget(state, a.target);
+      const t = retarget(state, data, a.target);
       return t === null ? defaultAction(state, data, ch) : { type: "item", instanceId: a.instanceId, target: t };
     }
   }
@@ -131,7 +132,7 @@ function applyAutoTendency(state: GameState, data: GameData, ch: Character, a: B
   if (b === null) return a;
   switch (personalityOf(data, ch.personality)?.autoBattle ?? "none") {
     case "defendBelowHalf":
-      return ch.hp < ch.hpMax * data.config.combat.autoDefendHpRatio ? { type: "defend" } : a;
+      return ch.hp < hpMaxOf(state, data, ch) * data.config.combat.autoDefendHpRatio ? { type: "defend" } : a;
     case "alwaysAttack": {
       if (a.type !== "defend") return a;
       const last = ch.lastBattleInput;
@@ -202,9 +203,9 @@ export function snapMembers(state: GameState, data: GameData): MemberSnap[] {
     id: c.id,
     life: c.life,
     hp: c.hp,
-    hpMax: c.hpMax,
+    hpMax: hpMaxOf(state, data, c),
     status: [...c.status],
-    sanRank: stageRank(sanStage(c.san, c.sanMax, data.config)),
+    sanRank: stageRank(sanStage(c.san, sanCapOf(state, data, c), data.config)),
   }));
 }
 
@@ -223,9 +224,9 @@ export function autoInterruptReason(before: MemberSnap[], state: GameState, data
     const c = state.party.find((x) => x.id === prev.id);
     if (c === undefined) continue;
     if (prev.life === "alive" && c.life !== "alive") dead = true;
-    if (prev.life === "alive" && c.life === "alive" && prev.hp / prev.hpMax >= ratio && c.hp / c.hpMax < ratio) hp = true;
+    if (prev.life === "alive" && c.life === "alive" && prev.hp / prev.hpMax >= ratio && c.hp / hpMaxOf(state, data, c) < ratio) hp = true;
     if (c.life === "alive" && c.status.some((s) => !prev.status.includes(s))) status = true;
-    if (stageRank(sanStage(c.san, c.sanMax, data.config)) > prev.sanRank) san = true;
+    if (stageRank(sanStage(c.san, sanCapOf(state, data, c), data.config)) > prev.sanRank) san = true;
   }
   if (dead) return "dead";
   if (hp) return "hp";

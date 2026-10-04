@@ -17,7 +17,7 @@ import { floorOf, gossipCandidates, mapView, visibleCells, visibleCellsOf, visib
 import { addIndex, removeIndex } from "../src/core/rules/field";
 import { battleMenu } from "../src/core/rules/combat";
 import { offerExit, offerStairs, offerTeleporter, offerTrap } from "../src/core/rules/choices";
-import { cloneState, dungeonOf, makeContext, monsterOf } from "../src/core/state";
+import { cloneState, createItemInstance, dungeonOf, makeContext, monsterOf } from "../src/core/state";
 import type { Cell, Command, Facing, Floor, GameEvent, GameState } from "../src/core/types";
 import { data, deepFreeze, expectKnownStringKeys, loadFreshData, mirrorWipeRolls, newGame, noAmbushAvoid, noTrapDetect } from "./helpers/core";
 import { approaches, dataWithRate, ENTER_D01, enterD01, findSituation, MOVE, placeAt, run, withRng } from "./helpers/dungeon";
@@ -1307,6 +1307,37 @@ describe("罠（DG-20, DG-21, E4）", () => {
       expect(kinds(r.events)).toEqual(["moved"]);
       expect(r.state.rng).toEqual(m);
     }
+  });
+
+  test("DG-21/IT-34 察知の確率は 性格の trapDetect + オプション trapDetect。性格なしのリーダーもオプションで正なら先頭で振る（100% なら必ず察知。d100 は 1 回）", () => {
+    const { state, a } = atPit();
+    for (let k = 1; k <= 5; k++) {
+      const s = withRng(state, k);
+      const c1 = s.party[0]!;
+      expect(c1.personality).toBeNull();
+      const charm = createItemInstance(s, { itemId: "charm", identified: true, options: [{ optionId: "trap_detect", tier: 3, value: 100 }] });
+      c1.equipment.accessory = charm;
+      const m = cloneRng(s.rng);
+      randInt(m, 1, 100); // アルドの d100（≤ 100 で成功。ベルク・フィンは振らない）
+      const r = run(s, MOVE, detectData(1, 1));
+      expect(r.events).toEqual([
+        { kind: "moved", pos: a.target, facing: a.facing },
+        { kind: "message", key: "dungeon.trap.detected", params: { name: c1.name } },
+        { kind: "message", key: "dungeon.trap.prompt" },
+      ]);
+      expect(r.state.rng).toEqual(m);
+    }
+    // 慎重（30）に −30 のオプションを付けると 0 になり振らない（ベルクの分の d100 が消え、フィンだけが振る）
+    let k = 1;
+    while (randInt(cloneRng(withRng(state, k).rng), 1, 100) > 30) k++;
+    const s = withRng(state, k); // 最初の d100 ≤ 30（今はフィンの出目。オプションが無ければベルクが察知する出目）
+    const berg = s.party[1]!;
+    berg.equipment.accessory = createItemInstance(s, { itemId: "charm", identified: true, options: [{ optionId: "trap_detect", tier: 3, value: -30 }] });
+    const m = cloneRng(s.rng);
+    randInt(m, 1, 100);
+    const r = run(s, MOVE, detectData());
+    expect(r.events[1]).toEqual({ kind: "message", key: "dungeon.trap.detected", params: { name: s.party[5]!.name } });
+    expect(r.state.rng).toEqual(m);
   });
 
   test("DG-20/E4 発動した罠は clearedCells に入り、同じセルに戻っても発動しない（mapView でも plain）", () => {

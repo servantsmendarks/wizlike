@@ -68,13 +68,14 @@ describe("CH-44 行動不能", () => {
 });
 
 describe("命中とダメージ", () => {
-  test("CB-20 allyAc: prototypeParty は 7/6/7/8/10/8。acBonus −2 で 5、acMin で止まる", () => {
+  test("CB-20/IT-24 allyAc: prototypeParty は 7/6/7/8/10/8。acBonus −2 で 5。M7 で下限（旧 acMin −10）は撤廃し、−100 なら 7 − 100 = −93", () => {
     const s = base();
     expect(s.party.map((c) => allyAc(s, data, c))).toEqual([7, 6, 7, 8, 10, 8]);
     s.battle!.acBonus["c1"] = -2;
     expect(allyAc(s, data, ch(s, "c1"))).toBe(5);
+    // 旧: acMin（−10）で止まっていた。IT-24 で下限を外したので、そのまま足した値になる
     s.battle!.acBonus["c1"] = -100;
-    expect(allyAc(s, data, ch(s, "c1"))).toBe(cfg.combat.acMin);
+    expect(allyAc(s, data, ch(s, "c1"))).toBe(-93);
     // 戦闘外では補正なし
     const out = dived(1);
     expect(allyAc(out, data, ch(out, "c1"))).toBe(7);
@@ -184,9 +185,9 @@ describe("勝敗", () => {
     expect(lowestAliveGroup(s.battle!)).toBeNull();
     let p = withChar(base(), 1, { hp: 8 }); // ベルク 8/16 = 0.5
     p = withChar(p, 3, { hp: 6 }); // ドナ 6/12 = 0.5（同率は並び順でベルク）
-    expect(lowestHpRatioAlly(p)!.id).toBe("c2");
+    expect(lowestHpRatioAlly(p, data)!.id).toBe("c2");
     p = withChar(p, 1, { life: "dead", hp: 0 }); // 死者は候補にしない
-    expect(lowestHpRatioAlly(p)!.id).toBe("c4");
+    expect(lowestHpRatioAlly(p, data)!.id).toBe("c4");
   });
 
   test("§7 groupViews と enemyId: 表示名は鑑定で切り替わり、体数は生存個体の数（0 も残す）", () => {

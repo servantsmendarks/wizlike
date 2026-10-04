@@ -34,6 +34,7 @@ import {
 import { startBossEncounter, startRandomEncounter, tickPoisonStep } from "./combat";
 import { canAct } from "./combat-calc";
 import { offerExit, offerStairs, offerTeleporter, offerTrap } from "./choices";
+import { equipStats } from "./equip-stats";
 import { chooseEventOption, startEvent } from "./events";
 import { addExplored, addIndex, aliveMembers, damageMembers, removeIndex } from "./field";
 import { loseSan } from "./san";
@@ -384,7 +385,7 @@ function rollEncounter(ctx: RuleContext, inRoom: boolean): void {
 // 罠（DG-20, DG-21, CH-45, CH-51, CH-54, E4）。踏んだときに察知（DG-21）を判定し、察知しなければ発動する
 
 /**
- * DG-21 / A6: 罠の察知。teleport（未実装の罠）は対象外。行動可能で benefits.trapDetect > 0 の者を並び順に
+ * DG-21 / A6: 罠の察知。teleport（未実装の罠）は対象外。行動可能で benefits.trapDetect + オプション trapDetect（M7）> 0 の者を並び順に
  * d100 ≤ trapDetect で振り、最初の成功者で止める（dungeon.trap.detected{name} と確認 kind trap）。dice は出さない。
  * 誰も成功しなければ何も出さずに false（罠は通常どおり発動する）。
  * 成功したら、そのセルの添字を dive.knownTraps[階] に昇順・重複なしで足す（M5.5。乱数は使わない）。f は dive.floor の実効の構造。
@@ -394,8 +395,10 @@ function detectTrap(ctx: RuleContext, f: Floor, cell: Cell): boolean {
   const dive = requireDive(state);
   if (cell.trapId === null || cell.trapId === "teleport") return false;
   for (const ch of state.party) {
-    const v = personalityOf(data, ch.personality)?.benefits.trapDetect ?? 0;
-    if (!canAct(ch) || v <= 0) continue;
+    if (!canAct(ch)) continue;
+    // M7（IT-34）: 性格の trapDetect + オプション trapDetect の合計。正ならリーダーも振る
+    const v = (personalityOf(data, ch.personality)?.benefits.trapDetect ?? 0) + equipStats(state, data, ch).trapDetect;
+    if (v <= 0) continue;
     if (chance(state.rng, v)) {
       addIndex(dive.knownTraps, dive.floor, [idx(f, dive.pos.x, dive.pos.y)]); // DG-21（M5.5）: 察知した罠を覚える
       ctx.events.push({ kind: "message", key: "dungeon.trap.detected", params: { name: ch.name } });

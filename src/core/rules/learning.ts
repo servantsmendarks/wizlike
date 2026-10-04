@@ -1,21 +1,22 @@
 // 呪文の習得（MG-20〜26）。レベルアップ時の判定（growth.levelUpOnce から呼ぶ）と、魔法書による習得。
 // 乱数を引く順: 判定の d100 を spells.json の順にすべて振ってから、保証の randInt を帯の順に引く。
-import type { ClassDef, Config, GameData, School, Spell, StatKey } from "../data/index";
+import type { ClassDef, Config, GameData, School, Spell, StatBlock, StatKey } from "../data/index";
 import { randInt } from "../rng";
 import { classOf, destroyItemInstance, findItem, itemOf, memberById, spellOf } from "../state";
 import type { Character, GameState, RuleContext } from "../types";
+import { equipStats } from "./equip-stats";
 
 /** MG-22: 呪文の系統で関連能力値を決める（mage → 知恵、priest → 信仰心）。 */
 export function relatedStatKey(school: School): StatKey {
   return school === "mage" ? "iq" : "pie";
 }
 
-/** MG-22: 成功率。上限 100、下限なし。L − learnLevel ≥ guaranteeDiff なら 100。 */
-export function learnRate(ch: Character, cls: ClassDef, spell: Spell, level: number, cfg: Config): number {
+/** MG-22: 成功率。上限 100、下限なし。L − learnLevel ≥ guaranteeDiff なら 100。stats は能力値（ルールは実効の値 CH-13 を渡す。省略は素の値） */
+export function learnRate(ch: Character, cls: ClassDef, spell: Spell, level: number, cfg: Config, stats: StatBlock = ch.stats): number {
   const lc = cfg.learning;
   const diff = level - spell.learnLevel;
   if (diff >= lc.guaranteeDiff) return 100;
-  const statMod = (ch.stats[relatedStatKey(spell.school)] - lc.statPivot) * lc.statPerPoint;
+  const statMod = (stats[relatedStatKey(spell.school)] - lc.statPivot) * lc.statPerPoint;
   return Math.min(100, lc.base + lc.perLevelDiff * diff + statMod + cls.learnMod);
 }
 
@@ -67,7 +68,7 @@ export function rollSpellLearning(ctx: RuleContext, ch: Character, level: number
   for (const sp of cands) {
     const params = { name: ch.name, spell: sp.name };
     events.push({ kind: "message", key: "town.inn.learnRoll", params });
-    const rate = learnRate(ch, cls, sp, level, cfg);
+    const rate = learnRate(ch, cls, sp, level, cfg, equipStats(state, data, ch).stats); // CH-13: 実効の能力値
     const roll = randInt(state.rng, 1, 100);
     const ok = isLearnSuccess(roll, rate);
     events.push({

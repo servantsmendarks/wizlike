@@ -59,12 +59,13 @@ import {
   lowestAliveGroup,
   lowestHpRatioAlly,
   partyAgiAvg,
+  partyGoldLuck,
   statusPercent,
   strBonus,
   targetMatches,
   unitAlive,
   unitCanAct,
-  weaponOf,
+  withGoldLuck,
 } from "./combat-calc";
 import type { BattleItem } from "./combat-calc";
 import type { AllyPlan, MemberSnap, TargetRef } from "./combat-plan";
@@ -72,7 +73,8 @@ import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, richestGro
 import { offerTeleporter } from "./choices";
 import { applyAllyEffect } from "./effects";
 import { gainGold } from "./field";
-import { loseSan, sanStage } from "./san";
+import { equipStats, hpMaxOf } from "./equip-stats";
+import { loseSan, sanCapOf, sanStage } from "./san";
 import { performWipe } from "./wipe";
 
 /**
@@ -198,7 +200,7 @@ export function startBattle(ctx: RuleContext, origin: BattleOrigin, specs: { mon
 
   // CB-04: 先手判定（ボス戦でも行う）
   const b = requireBattle(state);
-  const pAvg = partyAgiAvg(state);
+  const pAvg = partyAgiAvg(state, data);
   const eAvg = enemyAgiAvg(state, data);
   // M4.5: 表示している整数の合計（floor(平均) + 1d10）どうしの差で比べる
   const bP = Math.floor(pAvg);
@@ -457,7 +459,9 @@ function runRound(ctx: RuleContext, who: { allies: boolean; enemies: boolean }):
   const entries: { actor: Actor; init: number }[] = [];
   for (const plan of plans) {
     const ch = requireMember(state, plan.memberId);
-    entries.push({ actor: { side: "ally", plan }, init: ch.stats.agi + rollDie(state.rng, 10) + benefitOf(data, ch, "initiative") }); // CB-11
+    const es = equipStats(state, data, ch);
+    // CB-11: agi は実効の値（CH-13）、オプション initiative（IT-34）も足す
+    entries.push({ actor: { side: "ally", plan }, init: es.stats.agi + rollDie(state.rng, 10) + benefitOf(data, ch, "initiative") + es.initiative });
   }
   if (who.enemies) {
     b.groups.forEach((grp, g) => {
@@ -500,7 +504,7 @@ function sanOverride(ctx: RuleContext, ch: Character, a0: BattleAction): { actio
   const { state, data } = ctx;
   const cfg = data.config;
   const p = personalityOf(data, ch.personality);
-  const stage = sanStage(ch.san, ch.sanMax, cfg);
+  const stage = sanStage(ch.san, sanCapOf(state, data, ch), cfg);
   if (stage === "uneasy") {
     const own = p?.san.disobeyBelowHalf ?? 0;
     const pct = own > 0 ? own : cfg.san.uneasyChance;
@@ -599,7 +603,8 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan, sanKey: 
       if (ga === null) return;
       const grp = groupAt(b, ga);
       const m = monsterOf(data, grp.monsterId);
-      const dice = weaponOf(state, data, ch)?.damage ?? data.config.combat.unarmedDice;
+      const es = equipStats(state, data, ch); // CB-21 / CB-22 / IT-20 / IT-34
+      const dice = es.weaponDice;
       const times = attackCount(classOf(data, ch.classId), ch.level);
       for (let k = 0; k < times; k++) {
         const u = firstAliveUnit(grp);
@@ -611,13 +616,14 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan, sanKey: 
         let next = 0 as number;
         // CB-55: 振りごとに結果の拍
         section(ctx, "result", () => {
-          hit = chance(state.rng, hitPercent(data.config, ch.level, m.ac, unit.status.includes("sleep")));
+          hit = chance(state.rng, hitPercent(data.config, ch.level, m.ac, unit.status.includes("sleep"), es.hit));
           if (!hit) {
             ctx.events.push({ kind: "attack", actorId: ch.id, targetId, hit: false, damage: 0 });
             ctx.events.push({ kind: "message", key: "battle.miss", params: { target } });
             return;
           }
-          const dmg = Math.max(1, rollDice(state.rng, dice).total + strBonus(ch.stats.str) + benefitOf(data, ch, "damage")); // CB-22
+          // CB-22: str は実効の値、レベルの効果とオプション damage（damageBonus）も足して最低 1
+          const dmg = Math.max(1, rollDice(state.rng, dice).total + strBonus(es.stats.str) + benefitOf(data, ch, "damage") + es.damageBonus);
           next = damageUnit(ctx, ga, u, dmg);
           ctx.events.push({ kind: "attack", actorId: ch.id, targetId, hit: true, damage: dmg });
           ctx.events.push({ kind: "message", key: "battle.hit", params: { target, damage: dmg } });
@@ -633,7 +639,7 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan, sanKey: 
     }
     case "cast": {
       const sp = spellOf(data, plan.spellId);
-      const refs = resolveTargets(state, ch, sp.target, plan.target);
+      const refs = resolveTargets(state, data, ch, sp.target, plan.target);
       section(ctx, "declare", () => {
         ch.mp -= sp.mp; // MG-30: 行動の時点で引く
         ctx.events.push({ kind: "mpChanged", id: ch.id, delta: -sp.mp, mp: ch.mp });
@@ -641,7 +647,7 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan, sanKey: 
         const ids = sp.effect.type === "identify" ? [] : refs.map(refId);
         ctx.events.push({ kind: "spell", actorId: ch.id, spellId: sp.id, targets: ids });
       });
-      applyEffect(ctx, sp.effect, refs);
+      applyEffect(ctx, sp.effect, refs, equipStats(state, data, ch).magicPower); // MG-33
       return;
     }
     case "item": {
@@ -654,8 +660,8 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan, sanKey: 
       section(ctx, "declare", () => {
         ctx.events.push({ kind: "message", key: "battle.useItem", params: { actor, item: name } });
       });
-      const refs = resolveTargets(state, ch, item.effect.target, plan.target);
-      applyEffect(ctx, item.effect, refs);
+      const refs = resolveTargets(state, data, ch, item.effect.target, plan.target);
+      applyEffect(ctx, item.effect, refs, 0); // MG-33: 道具には魔法攻撃力を足さない
       return;
     }
   }
@@ -666,7 +672,7 @@ function refId(r: TargetRef): string {
 }
 
 /** 効果の対象（CB-42 の振り替え込み） */
-function resolveTargets(state: GameState, actor: Character, kind: SpellTarget, t: BattleTarget): TargetRef[] {
+function resolveTargets(state: GameState, data: GameData, actor: Character, kind: SpellTarget, t: BattleTarget): TargetRef[] {
   const b = requireBattle(state);
   const pickGroup = (): number | null => {
     if (t.side === "enemy" && groupAlive(b, t.group)) return t.group;
@@ -701,7 +707,7 @@ function resolveTargets(state: GameState, actor: Character, kind: SpellTarget, t
       if (t.side === "ally" && state.party.some((c) => c.id === t.memberId && c.life === "alive")) {
         return [{ side: "ally", id: t.memberId }];
       }
-      const c = lowestHpRatioAlly(state);
+      const c = lowestHpRatioAlly(state, data);
       return c === null ? [] : [{ side: "ally", id: c.id }];
     }
     case "party":
@@ -713,8 +719,11 @@ function resolveTargets(state: GameState, actor: Character, kind: SpellTarget, t
   }
 }
 
-/** F9: 呪文と道具で共通の効果。呪文に命中判定はない。味方側の heal / cureStatus は effects.ts の applyAllyEffect（戦闘外と共有） */
-function applyEffect(ctx: RuleContext, effect: SpellEffect | BattleItem["effect"], refs: TargetRef[]): void {
+/**
+ * F9: 呪文と道具で共通の効果。呪文に命中判定はない。味方側の heal / cureStatus は effects.ts の applyAllyEffect（戦闘外と共有）。
+ * power は唱えた者の魔法攻撃力（MG-33。道具は 0）で、damage と heal の出目に対象ごとに足す
+ */
+function applyEffect(ctx: RuleContext, effect: SpellEffect | BattleItem["effect"], refs: TargetRef[], power: number): void {
   const { state, data } = ctx;
   const b = requireBattle(state);
   const enemyRefs = refs.filter((r): r is Extract<TargetRef, { side: "enemy" }> => r.side === "enemy");
@@ -730,7 +739,7 @@ function applyEffect(ctx: RuleContext, effect: SpellEffect | BattleItem["effect"
         const target = groupName(state, data, r.g);
         let next = 0 as number;
         section(ctx, "result", () => {
-          const d = Math.max(1, rollDice(state.rng, effect.dice).total);
+          const d = Math.max(1, rollDice(state.rng, effect.dice).total + power); // MG-33: 足した後に最低 1
           next = damageUnit(ctx, r.g, r.u, d);
           ctx.events.push({ kind: "message", key: "battle.spellDamage", params: { target, damage: d } });
         });
@@ -765,7 +774,7 @@ function applyEffect(ctx: RuleContext, effect: SpellEffect | BattleItem["effect"
       return;
     }
     case "heal":
-      section(ctx, "result", () => applyAllyEffect(ctx, { type: "heal", dice: effect.dice }, allyRefs));
+      section(ctx, "result", () => applyAllyEffect(ctx, { type: "heal", dice: effect.dice }, allyRefs, power));
       return;
     case "acBonus":
       section(ctx, "result", () => {
@@ -838,7 +847,9 @@ function actEnemyUnit(ctx: RuleContext, g: number, u: number, defending: Readonl
       }
       wakeCheck(ctx, tt, tt.id, tt.name);
       if (atk.status !== undefined && !tt.status.includes(atk.status)) {
-        if (chance(state.rng, statusPercent(data.config, atk.chance ?? 0, tt.stats.luk))) {
+        // CB-30: luk は実効の値（CH-13）、その状態のオプション statusResist（IT-34）を引く
+        const tes = equipStats(state, data, tt);
+        if (chance(state.rng, statusPercent(data.config, atk.chance ?? 0, tes.stats.luk) - tes.statusResist[atk.status])) {
           tt.status.push(atk.status);
           ctx.events.push({ kind: "statusChanged", id: tt.id, status: atk.status, on: true });
           ctx.events.push({ kind: "message", key: `battle.status.${atk.status}`, params: { target: tt.name } });
@@ -979,16 +990,19 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
     const share = expShare(total, alive.length);
     for (const ch of alive) ch.exp += share;
     ctx.events.push({ kind: "message", key: "battle.exp", params: { exp: share } });
-    let gold = 0;
+    let rolled = 0;
     for (const grp of b.groups) {
       const m = monsterOf(data, grp.monsterId);
-      for (let i = 0; i < grp.units.length; i++) gold += Math.max(0, rollDice(state.rng, m.gold).total);
+      for (let i = 0; i < grp.units.length; i++) rolled += Math.max(0, rollDice(state.rng, m.gold).total);
     }
+    // CB-51 / IT-34: 行動可能な味方の金運の合計 % を掛ける（乱数なし。合計は勝利の時点で 1 回だけ数える）
+    const luck = partyGoldLuck(state, data);
+    const gold = withGoldLuck(rolled, luck);
     if (gold > 0) gainGold(ctx, gold, { key: "battle.gold", params: { gold } }); // CH-52: 強欲の treasureGain もここ
     if (b.origin.kind === "random" && b.origin.inRoom) {
       // CB-52 の仮実装。罠・chestQuality はプロトタイプ後（A7）
       if (chance(state.rng, cfg.combat.chestChance)) {
-        const cg = Math.max(0, rollDice(state.rng, cfg.combat.chestGoldDice).total);
+        const cg = withGoldLuck(Math.max(0, rollDice(state.rng, cfg.combat.chestGoldDice).total), luck); // CB-52 / IT-34
         gainGold(ctx, cg, { key: "battle.chest", params: { gold: cg } }); // cg が 0 でも message は出す
       }
     }
@@ -1065,6 +1079,6 @@ export function battleMenu(state: GameState, data: GameData): BattleMenu | null 
     pending: b.auto ? [] : members.filter((m) => m.canAct && m.input === null).map((m) => m.id),
     groups: groupViews(state, data),
     members,
-    allies: state.party.filter((c) => c.life === "alive").map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: c.hpMax })),
+    allies: state.party.filter((c) => c.life === "alive").map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: hpMaxOf(state, data, c) })),
   };
 }

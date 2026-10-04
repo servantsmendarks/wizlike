@@ -163,7 +163,12 @@ type Index = {
   slotsPerCharacter: number | undefined;
   maxEnemyGroups: number | undefined;
   maxPerGroup: number | undefined;
+  /** config.items.rarities[].options の最大（IT-30。オプション表の件数の検査に使う） */
+  maxRarityOptions: number | undefined;
 };
+
+/** IT-30: config.items.rarities の id の順 */
+const RARITY_IDS = ["normal", "fine", "rare", "legendary"] as const;
 
 function byId(v: unknown): Map<string, Obj> {
   const m = new Map<string, Obj>();
@@ -199,6 +204,13 @@ function buildIndex(raw: RawGameData): Index {
     slotsPerCharacter: intOf(get(raw.config, "inventory", "slotsPerCharacter")),
     maxEnemyGroups: intOf(get(raw.config, "combat", "maxEnemyGroups")),
     maxPerGroup: intOf(get(raw.config, "combat", "maxPerGroup")),
+    maxRarityOptions: (() => {
+      const ns = arrOf(get(raw.config, "items", "rarities")).flatMap((r) => {
+        const n = isObj(r) ? intOf(r.options) : undefined;
+        return n === undefined ? [] : [n];
+      });
+      return ns.length === 0 ? undefined : Math.max(...ns);
+    })(),
   };
 }
 
@@ -257,8 +269,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       hitPerAC: I(),
       hitMin: I(PERCENT),
       hitMax: I(PERCENT),
-      acBase: I(),
-      acMin: I(),
+      acBase: I(), // CB-20（M7 で下限 acMin は撤廃。IT-24）
       maxEnemyGroups: I(POS_INT),
       maxPerGroup: I(POS_INT),
       surpriseDiff: I(),
@@ -304,6 +315,26 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       cureCost: F(Object.fromEntries(CURABLE_STATUS_IDS.map((k) => [k, I(NON_NEG)]))),
       uncurseCost: I(NON_NEG),
     }),
+    // items.md §10（M7）【仮】
+    items: F({
+      rarities: L(F({ id: S, weight: I(NON_NEG), options: I({ min: 0, max: 3 }) }), 1), // IT-30（順と件数は下で検査）
+      curseChance: I(PERCENT), // IT-32
+      optionTierStep: I(POS_INT), // IT-33
+      dropLevelSpread: I(NON_NEG), // IT-53
+      weaponLvPerDamage: I(POS_INT), // IT-20
+      armorLvPerAc: I(POS_INT), // IT-21
+      casterLvPerPower: I(POS_INT), // IT-22
+      levelPriceRatio: N({ min: 0 }), // IT-60 / IT-61
+      optionSellValue: (c2, p, x) => {
+        // IT-61: 段階 1〜3 の 3 件の 0 以上の整数
+        const a = list(c2, p, x);
+        if (a === undefined) return undefined;
+        if (a.length !== 3) report(c2, p, `IT-61: expected 3 values (tiers 1..3), got ${a.length}`);
+        a.forEach((e, i) => int(c2, at(p, i), e, NON_NEG));
+        return a;
+      },
+      warehouseSlots: I(POS_INT), // IT-64
+    }),
     town: F({
       innRanks: L(
         F({
@@ -340,15 +371,25 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
   });
   if (c === undefined) return;
 
-  // CB-21 / CB-20 / CH-53
+  // CB-21 / CH-53
   const hitMin = numOf(get(c, "combat", "hitMin"));
   const hitMax = numOf(get(c, "combat", "hitMax"));
   if (hitMin !== undefined && hitMax !== undefined && hitMin > hitMax)
     report(ctx, "combat.hitMin", `CB-21: hitMin ${hitMin} > hitMax ${hitMax}`);
-  const acMin = numOf(get(c, "combat", "acMin"));
-  const acBase = numOf(get(c, "combat", "acBase"));
-  if (acMin !== undefined && acBase !== undefined && acMin > acBase)
-    report(ctx, "combat.acMin", `CB-20: acMin ${acMin} > acBase ${acBase}`);
+
+  // IT-30: 希少度は normal / fine / rare / legendary の順で 4 件。重みの合計は正、個数は 0..3
+  const rarities = arrOf(get(c, "items", "rarities"));
+  if (rarities.length > 0) {
+    if (rarities.length !== RARITY_IDS.length)
+      report(ctx, "items.rarities", `IT-30: expected ${RARITY_IDS.length} rarities (${RARITY_IDS.join(" / ")}), got ${rarities.length}`);
+    rarities.forEach((r, i) => {
+      const want = RARITY_IDS[i];
+      if (want !== undefined && isObj(r) && r.id !== want)
+        report(ctx, at(at("items.rarities", i), "id"), `IT-30: expected ${JSON.stringify(want)}, got ${JSON.stringify(r.id)}`);
+    });
+    const total = rarities.reduce<number>((a, r) => a + (isObj(r) ? (intOf(r.weight) ?? 0) : 0), 0);
+    if (total <= 0) report(ctx, "items.rarities", "IT-30: sum of weights must be > 0");
+  }
   const uneasy = numOf(get(c, "san", "uneasyRatio"));
   const confused = numOf(get(c, "san", "confusedRatio"));
   if (uneasy !== undefined && confused !== undefined && !(confused < uneasy))
@@ -661,7 +702,7 @@ function validateEquipmentBases(ctx: Ctx, v: unknown, ix: Index): void {
 
 // ---- item-options.json（IT-33 / IT-34。M7） ----
 
-function validateItemOptions(ctx: Ctx, v: unknown): void {
+function validateItemOptions(ctx: Ctx, v: unknown, ix: Index): void {
   // IT-33: 段階 1〜3 の値。正の整数で単調非減少
   const values: Field = (c, p, x) => {
     const a = list(c, p, x);
@@ -681,7 +722,13 @@ function validateItemOptions(ctx: Ctx, v: unknown): void {
   const t = fields(ctx, "", v, {
     options: L(F({ id: S, name: S, effect: U(effectSpecs), unit: E(OPTION_UNITS), values, weight: I(POS_INT) }), 1),
   });
-  if (t !== undefined && Array.isArray(t.options)) uniqueIds(ctx, "options", t.options);
+  if (t !== undefined && Array.isArray(t.options)) {
+    uniqueIds(ctx, "options", t.options);
+    // IT-30 / IT-32: 同じ実体の中で重複なしに引くので、希少度の個数の最大 + 呪いの余分 1 個ぶんの件数が要る
+    const need = ix.maxRarityOptions === undefined ? undefined : ix.maxRarityOptions + 1;
+    if (need !== undefined && t.options.length < need)
+      report(ctx, "options", `IT-30/IT-32: expected at least ${need} options (max rarities[].options + 1 for a curse), got ${t.options.length}`);
+  }
 }
 
 // ---- uniques.json（IT-03 / IT-40。M7） ----
@@ -1168,7 +1215,7 @@ export function validateGameData(raw: RawGameData): string[] {
   validateMonsters(ctxOf("monsters"), raw.monsters, ix);
   validateItems(ctxOf("items"), raw.items, ix);
   validateEquipmentBases(ctxOf("equipmentBases"), raw.equipmentBases, ix);
-  validateItemOptions(ctxOf("itemOptions"), raw.itemOptions);
+  validateItemOptions(ctxOf("itemOptions"), raw.itemOptions, ix);
   validateUniques(ctxOf("uniques"), raw.uniques, ix);
   validateDrops(ctxOf("drops"), raw.drops, ix);
   validatePersonalities(ctxOf("personalities"), raw.personalities);

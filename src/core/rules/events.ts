@@ -10,7 +10,8 @@ import { canAct } from "./combat-calc";
 import { offerEventChoice } from "./choices";
 import { idx } from "./dungeon-gen";
 import { addExplored, aliveMembers, damageMembers, gainGold } from "./field";
-import { applySanValue, gainSan, sanStage } from "./san";
+import { effectiveStats } from "./equip-stats";
+import { applySanValue, gainSan, sanCapOf, sanStage } from "./san";
 
 // ---------------------------------------------------------------------------
 // 衝動判定（EV-10〜14、A2、B2）
@@ -31,22 +32,23 @@ export function lureProduct(lure: LureWeights, ev: LureWeights): number {
 export function decideImpulse(ctx: RuleContext, def: EventDef): Character | null {
   const { state, data } = ctx;
   const cfg = data.config;
-  let best: { ch: Character; score: number } | null = null;
+  let best: { ch: Character; score: number; agi: number } | null = null;
   for (const ch of state.party) {
     if (ch.isLeader || !canAct(ch)) continue; // EV-10
     const p = personalityOf(data, ch.personality);
     if (p === null) continue; // リーダー以外は性格を持つ（来ない）
     let lure: LureWeights = p.lure;
-    if (sanStage(ch.san, ch.sanMax, cfg) === "confused") {
+    if (sanStage(ch.san, sanCapOf(state, data, ch), cfg) === "confused") {
       // EV-14: 錯乱の者はランダムな 1 タグに仮の重み（性格の lure を置き換える）
       const tag = LURE_TAGS[randInt(state.rng, 0, LURE_TAGS.length - 1)]!;
       lure = { treasure: 0, unknown: 0, danger: 0, weak: 0, [tag]: cfg.events.confusedLureWeight };
     }
     const prod = lureProduct(lure, def.lure);
     if (prod <= 0) continue; // A2: 誘いの積 0 の者は衝動判定に乗らない
-    const score = prod + (ch.stats[def.stat] - 10) + rollDie(state.rng, 6);
+    const stats = effectiveStats(state, data, ch); // CH-13
+    const score = prod + (stats[def.stat] - 10) + rollDie(state.rng, 6);
     if (score < cfg.events.impulseThreshold) continue; // EV-12
-    if (best === null || score > best.score || (score === best.score && ch.stats.agi > best.ch.stats.agi)) best = { ch, score };
+    if (best === null || score > best.score || (score === best.score && stats.agi > best.agi)) best = { ch, score, agi: stats.agi };
   }
   return best?.ch ?? null;
 }
@@ -64,7 +66,7 @@ export function pickStopper(state: GameState, data: GameData, def: EventDef, act
   for (const ch of state.party) {
     if (ch.id === actor.id || !canAct(ch)) continue;
     if (personalityOf(data, ch.personality)?.canStop !== true) continue;
-    if (best === null || ch.stats.iq > best.stats.iq) best = ch;
+    if (best === null || effectiveStats(state, data, ch).iq > effectiveStats(state, data, best).iq) best = ch; // CH-13
   }
   return best;
 }
@@ -90,8 +92,10 @@ function rollRestrain(ctx: RuleContext, stopper: Character, actor: Character): b
   const rng = ctx.state.rng;
   const rS = rollDie(rng, 10);
   const rA = rollDie(rng, 10);
-  const tS = stopper.stats.iq + rS;
-  const tA = actor.stats.agi + rA;
+  const sIq = effectiveStats(ctx.state, ctx.data, stopper).iq; // CH-13
+  const aAgi = effectiveStats(ctx.state, ctx.data, actor).agi;
+  const tS = sIq + rS;
+  const tA = aAgi + rA;
   const bonusRows = restrainBonusRows(ctx.state, ctx.data, stopper);
   const bonus = bonusRows.reduce((a, r) => a + r.total, 0);
   const diff = tS + bonus - tA;
@@ -100,9 +104,9 @@ function rollRestrain(ctx: RuleContext, stopper: Character, actor: Character): b
     kind: "dice",
     label: { key: "dice.restrain" },
     rows: [
-      { label: { key: "dice.restrain.stopper", params: { name: stopper.name } }, base: stopper.stats.iq, dice: [rS], total: tS },
+      { label: { key: "dice.restrain.stopper", params: { name: stopper.name } }, base: sIq, dice: [rS], total: tS },
       ...bonusRows,
-      { label: { key: "dice.restrain.actor", params: { name: actor.name } }, base: actor.stats.agi, dice: [rA], total: tA },
+      { label: { key: "dice.restrain.actor", params: { name: actor.name } }, base: aAgi, dice: [rA], total: tA },
     ],
     rule: { key: "dice.restrain.rule", params: { diff } },
     result: { key: ok ? "dice.restrain.ok" : "dice.restrain.ng" },
