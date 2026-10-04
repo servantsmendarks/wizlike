@@ -25,10 +25,10 @@
 
 ## 4. 書き出しと読み込み
 
-- SV-30 書き出しはゲーム 1 つを JSON ファイルにする: `{ format: "wizlike-save", gameId, schemaVersion, turn, exportedAt, state, checksum }`。`checksum` は `state` の JSON 文字列の SHA-256（改ざん検出ではなく破損検出）。
+- SV-30 書き出しはゲーム 1 つを JSON ファイルにする: `{ format: "wizlike-save", gameId, schemaVersion, turn, exportedAt, state, checksum }`。`checksum` は `state` の JSON 文字列の SHA-256（改ざん検出ではなく破損検出）。（M6）書き出す中身は保存先のレコードで、古い版は移行してから今の schemaVersion で書き出す。壊れた・新しすぎるレコードは書き出さない。遊んでいる途中は SV-41 の保存を待ってから読む。`checksum` は `JSON.stringify(state)` の UTF-8 の SHA-256 を小文字 16 進 64 字にしたもの（src/save の純粋な実装。crypto.subtle は secure context でない http で使えないため）。ファイルは字下げ無しの JSON（欄の順はこのとおり）、名前は `wizlike-{gameId の先頭 8 字}-{YYYYMMDD}-{HHmm}.json`（端末のローカル時刻）で、Blob と `a[download]` で保存させる。
 - SV-31 読み込みは同じ `gameId` のレコードへの上書きだけを行う。新しいゲームとしては作れない。`gameId` が一覧に無い場合は「このゲームの保存が無いため復元します」と表示して、その `gameId` で作成する（消してしまった保存の復元用）。上限 5 はこの場合も守る。
 - SV-32 読み込むファイルの `turn` が既存レコードの `turn` より小さい場合は「古いデータです。進行が巻き戻ります」と警告し、明示的な確認を求める。
-- SV-33 `checksum` が合わない、`format` が違う、`schemaVersion` が新しすぎる場合は読み込まない。
+- SV-33 `checksum` が合わない、`format` が違う、`schemaVersion` が新しすぎる場合は読み込まない。検査の順は format（JSON でない・オブジェクトでない・format が違う）→ 欄の型 → schemaVersion が新しすぎる → checksum → 移行と形の検査（SV-04）。理由ごとに案内を出し分ける。checksum は読んだ state を JSON にし直して比べる（整形しただけのファイルは通る）。
 - SV-34 ブラウザである以上、開発者ツールでの複製までは防げない。この仕様は「正直に遊ぶ人が迷わない」ためのもので、対策ではない（決定の記録参照）。
 
 ## 5. 実機で守ること
