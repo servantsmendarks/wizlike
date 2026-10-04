@@ -13,7 +13,7 @@ import {
   setEdge,
   step,
 } from "../src/core/rules/dungeon-gen";
-import { floorOf, mapView, visibleCells, visibleCellsOf, visibleKnownTraps } from "../src/core/rules/dungeon";
+import { floorOf, gossipCandidates, mapView, visibleCells, visibleCellsOf, visibleKnownTraps } from "../src/core/rules/dungeon";
 import { addIndex, removeIndex } from "../src/core/rules/field";
 import { battleMenu } from "../src/core/rules/combat";
 import { offerExit, offerStairs, offerTeleporter, offerTrap } from "../src/core/rules/choices";
@@ -174,6 +174,98 @@ describe("dungeon.enter", () => {
     const r2 = run(s2, { type: "dungeon.enter", dungeonId: "d02" });
     expect(r2.state.dive!.dungeonId).toBe("d02");
     expect(r2.events[1]).toEqual({ kind: "message", key: "dungeon.enter", params: { dungeon: "沈んだ聖堂" } });
+  });
+});
+
+describe("TW-15 宿の主人の噂話（M7）", () => {
+  // d01 の出現表は 1 階 [大ネズミ, コボルド, 大蜘蛛]、2 階 [大ネズミ, コボルド, 大蜘蛛, 腐った死体, 囁く影]（ボス 門番の甲冑は表に無い）。
+  // d02 は 1〜3 階で [コボルド, 大蜘蛛, 腐った死体, 囁く影]。monsters.json の順は 大ネズミ・コボルド・大蜘蛛・腐った死体・囁く影・門番の甲冑
+  const D01_ALL = ["giant_rat", "kobold", "giant_spider", "rotting_corpse", "whispering_shadow"];
+  /** 個室に泊まった街の state（morale good）。bestiary を差し替える */
+  function withMorale(seed: number, bestiary: GameState["bestiary"] = {}): GameState {
+    const s = cloneState(execute(newGame(seed), { type: "town.inn", rank: 2 }, data).state);
+    expect(s.morale).toEqual({ rankId: "good" });
+    s.bestiary = structuredClone(bestiary);
+    return s;
+  }
+
+  test("TW-15 gossipCandidates: 全階の出現表の敵を重複なく monsters.json の順に並べ、図鑑で鑑定済みの種類とボスを除く", () => {
+    const s = newGame(1);
+    expect(gossipCandidates(s, data, "d01")).toEqual(D01_ALL);
+    expect(gossipCandidates(s, data, "d02")).toEqual(["kobold", "giant_spider", "rotting_corpse", "whispering_shadow"]);
+    const known = cloneState(s);
+    known.bestiary = { kobold: { kills: 2, identified: true }, rotting_corpse: { kills: 0, identified: false } };
+    expect(gossipCandidates(known, data, "d01")).toEqual(["giant_rat", "giant_spider", "rotting_corpse", "whispering_shadow"]);
+    // 表の順ではなく monsters.json の順。ボスは表にあっても除く
+    const d = loadFreshData();
+    dungeonOf(d, "d01").encounterTable = {
+      "1": [
+        { monster: "whispering_shadow", weight: 1 },
+        { monster: "gatekeeper_armor", weight: 1 },
+        { monster: "giant_rat", weight: 1 },
+      ],
+      "2": [
+        { monster: "kobold", weight: 1 },
+        { monster: "whispering_shadow", weight: 2 },
+      ],
+    };
+    expect(gossipCandidates(s, d, "d01")).toEqual(["giant_rat", "kobold", "whispering_shadow"]);
+  });
+
+  test("TW-15 士気（gossip）ありの入場: nextUint32 → randInt(0, 候補数 − 1) を 1 回、その種類を図鑑で鑑定済みにし（kills 0 で作る）、dungeon.enter の後に dungeon.gossip{monster}", () => {
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const s = withMorale(seed);
+      const mirror = cloneRng(s.rng);
+      const diveSeed = nextUint32(mirror);
+      const id = D01_ALL[randInt(mirror, 0, D01_ALL.length - 1)]!;
+      const r = run(s, ENTER_D01);
+      expect(r.state.dive!.diveSeed, String(seed)).toBe(diveSeed);
+      expect(r.state.rng, String(seed)).toEqual(mirror);
+      expect(r.state.bestiary, String(seed)).toEqual({ [id]: { kills: 0, identified: true } });
+      expect(r.events, String(seed)).toEqual([
+        { kind: "screen", to: "dungeon" },
+        { kind: "message", key: "dungeon.enter", params: { dungeon: "試しの坑道" } },
+        { kind: "message", key: "dungeon.gossip", params: { monster: monsterOf(data, id).name } },
+      ]);
+      expect(r.state.morale).toEqual({ rankId: "good" }); // 迷宮の中でも士気は残る（使った印は持たない）
+    }
+  });
+
+  test("TW-15 候補が 1 種なら randInt(0, 0)、図鑑の kills は残す。候補が無ければ乱数を引かず語らない", () => {
+    const four = Object.fromEntries(D01_ALL.filter((m) => m !== "kobold").map((m) => [m, { kills: 1, identified: true }]));
+    const s = withMorale(1, { ...four, kobold: { kills: 3, identified: false } });
+    const mirror = cloneRng(s.rng);
+    nextUint32(mirror);
+    randInt(mirror, 0, 0);
+    const r = run(s, ENTER_D01);
+    expect(r.state.rng).toEqual(mirror);
+    expect(r.state.bestiary["kobold"]).toEqual({ kills: 3, identified: true });
+    expect(r.events.at(-1)).toEqual({ kind: "message", key: "dungeon.gossip", params: { monster: "コボルド" } });
+    // 全種が鑑定済み: nextUint32 だけ
+    const all = withMorale(1, { ...four, kobold: { kills: 3, identified: true } });
+    const m2 = cloneRng(all.rng);
+    nextUint32(m2);
+    const r2 = run(all, ENTER_D01);
+    expect(r2.state.rng).toEqual(m2);
+    expect(r2.events.map((e) => e.kind)).toEqual(["screen", "message"]);
+    expect(r2.state.bestiary).toEqual(all.bestiary);
+  });
+
+  test("TW-15 士気が無い、または士気のランクの gossip が偽なら噂話はしない（nextUint32 だけ）", () => {
+    const none = newGame(1);
+    const m = cloneRng(none.rng);
+    nextUint32(m);
+    const r = run(none, ENTER_D01);
+    expect(r.state.rng).toEqual(m);
+    expect(r.state.bestiary).toEqual({});
+    const d = loadFreshData();
+    d.config.town.innRanks.find((x) => x.id === "good")!.gossip = false;
+    const s = withMorale(1);
+    const m2 = cloneRng(s.rng);
+    nextUint32(m2);
+    const r2 = run(s, ENTER_D01, d);
+    expect(r2.state.rng).toEqual(m2);
+    expect(r2.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["screen", "dungeon.enter"]);
   });
 });
 

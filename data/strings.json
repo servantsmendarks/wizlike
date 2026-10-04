@@ -124,6 +124,7 @@
   "town.temple.none": "その必要がある者はいない。",
 
   "dungeon.enter": "{dungeon}へ潜る。地図は白紙だ。",
+  "dungeon.gossip": "宿の主人の噂話を思い出した。この先には{monster}が出るらしい。",
   "dungeon.blocked": "壁だ。",
   "dungeon.door": "扉を押し開けた。",
   "dungeon.stairsDown": "下りの階段がある。降りるか？",

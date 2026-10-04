@@ -2,7 +2,7 @@
 // 迷宮の構造は state に入れず、dive.diveSeed から毎回作り直す（DG-03）。発動済みの罠は dive の記録を重ねる。扉は通り抜けても扉のまま（DG-10）。
 import type { GameData } from "../data/index";
 import { chance, nextUint32, randInt } from "../rng";
-import { dungeonOf, personalityOf } from "../state";
+import { dungeonOf, moraleOf, personalityOf } from "../state";
 import type {
   Cell,
   Dive,
@@ -225,10 +225,41 @@ export function checkEnter(state: GameState, dungeonId: unknown, data: GameData)
   return enterBlockReason(state, dungeonId, data);
 }
 
+/**
+ * TW-15: 宿の主人の噂話の候補。dungeonId の encounterTable の全階に出る敵（ボス boss.monster は表にあっても除く）から、
+ * 図鑑で鑑定済みの種類を除き、重複なく monsters.json の順に並べた monsterId の列
+ */
+export function gossipCandidates(state: GameState, data: GameData, dungeonId: string): string[] {
+  const def = dungeonOf(data, dungeonId);
+  const inTable = new Set<string>();
+  for (const entries of Object.values(def.encounterTable)) for (const e of entries) inTable.add(e.monster);
+  inTable.delete(def.boss.monster);
+  return data.monsters.filter((m) => inTable.has(m.id) && state.bestiary[m.id]?.identified !== true).map((m) => m.id);
+}
+
+/**
+ * TW-15: 士気の gossip が真なら、gossipCandidates から randInt(0, n − 1) で 1 種を選んで図鑑で鑑定済みにし
+ * （図鑑に無ければ kills 0 で作る）、message dungeon.gossip{monster: 鑑定済みの名前}。士気が無い・gossip が偽・候補が空なら何もしない（乱数も引かない）
+ */
+function gossip(ctx: RuleContext, dungeonId: string): void {
+  const { state, data } = ctx;
+  if (moraleOf(state, data)?.gossip !== true) return;
+  const candidates = gossipCandidates(state, data, dungeonId);
+  if (candidates.length === 0) return;
+  const id = candidates[randInt(state.rng, 0, candidates.length - 1)]!;
+  state.bestiary[id] = { kills: state.bestiary[id]?.kills ?? 0, identified: true };
+  const name = data.monsters.find((m) => m.id === id)!.name;
+  ctx.events.push({ kind: "message", key: "dungeon.gossip", params: { monster: name } });
+}
+
+/**
+ * DG-03: 入場。乱数は diveSeed の nextUint32 → （TW-15 の噂話。士気の gossip が真で候補があるときだけ）randInt の順。
+ * イベントは screen{dungeon} → dungeon.enter →（噂話）dungeon.gossip
+ */
 export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
   const { state, data } = ctx;
   const def = dungeonOf(data, dungeonId);
-  const diveSeed = nextUint32(state.rng); // 乱数の消費はこの 1 回だけ（DG-03）
+  const diveSeed = nextUint32(state.rng); // 迷宮の構造に使う乱数はこの 1 回だけ（DG-03）
   const f = generateFloor(def, data.config.dungeon, diveSeed, 1, null);
   const upCell = cellAt(f, f.stairsUp.x, f.stairsUp.y);
   const facing = FACINGS.find((d) => isPassable(edgeOf(upCell, d)));
@@ -252,6 +283,7 @@ export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
   explore(ctx, dive, f);
   ctx.events.push({ kind: "screen", to: "dungeon" });
   ctx.events.push({ kind: "message", key: "dungeon.enter", params: { dungeon: def.name } });
+  gossip(ctx, dungeonId);
 }
 
 function requireDive(state: GameState): Dive {
