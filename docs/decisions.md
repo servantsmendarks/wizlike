@@ -568,3 +568,4 @@
 - 2026-10-04 save(M5.5): schemaVersion を 2 にし、最初の移行（v1 → v2）で adventureTurns 0・tavernEventMark 0・dive.knownTraps {} を入れる。
 - 2026-10-04 data(M5.5): 酒場の語りとイベントは data/tavern.json に置く（events.json の EventDef と形が違い、trigger を足すと迷宮のイベントの検証が複雑になるため）。効果は gold / san（party）/ message / nothing だけ。message のキーも語り・lookTexts と同じく差し込みを持たないことを検証する（applyEffects の message は params なしで出すため）。
 - 2026-10-04 core(M5.5): 街でも dungeon.cast / dungeon.useItem を受け付ける（§5 の骨格の名前のまま）。帰還は街では not usable here。受け付けない場所の理由は not in dungeon を wrong screen に改めた。fieldItemMenu も街で非 null にし、FieldItemView.isReturn（帰還の糸の確認の段のため）と TownMenu.canIdentify（酒場の鑑定の行のため。town.ts は camp.ts を import しないので同じ条件を数える）を足した。
+- 2026-10-04 core(M5.5): 全滅の出目の表は penaltyTable イベント（2d10 の前に hit null、後に hit = bandIndex）。行の文と割合（×100 の四捨五入）は core が作る。帯は 8 以下を検証する（表の箱が 2d10 の箱と重ならないため）。表示層の再生（表を出してタップ待ち・当たった行の強調）は P2 で足す（このコミットの時点では playback は penaltyTable を無視し、2d10 の箱の出し入れも今のまま）。

@@ -644,6 +644,9 @@ function validatePersonalities(ctx: Ctx, v: unknown): void {
 
 // ---- penalty-table.json ----
 
+/** UI-56（M5.5）: 全滅の出目の表に並べられる帯の数の上限（表示の都合。【仮】ではない） */
+const PENALTY_TABLE_MAX_BANDS = 8;
+
 function validatePenaltyTable(ctx: Ctx, v: unknown, ix: Index): void {
   const band: Field = (c, p, x) => {
     const o = fields(c, p, x, {
@@ -664,6 +667,8 @@ function validatePenaltyTable(ctx: Ctx, v: unknown, ix: Index): void {
   };
   const t = fields(ctx, "", v, { dice: D, note: SAnyLen, bands: L(band, 1) });
   if (!t) return;
+  // UI-56（M5.5）: 出目の表の箱（高さ 8 + 10 ×（1 + 帯の数））が 2d10 の箱（上端 y98）に届かないよう、帯は 8 以下
+  if (Array.isArray(t.bands) && t.bands.length > PENALTY_TABLE_MAX_BANDS) report(ctx, "bands", `UI-56: too many bands (max ${PENALTY_TABLE_MAX_BANDS})`);
   if (typeof t.dice === "string" && t.dice !== "2d10") report(ctx, "dice", `TW-22: expected "2d10", got ${JSON.stringify(t.dice)}`);
   // TW-22: 帯は出目の範囲を隙間なく重複なく覆う
   const range = typeof t.dice === "string" && isDiceExpr(t.dice) ? diceRange(parseDice(t.dice)) : undefined;

@@ -1,13 +1,14 @@
 // 全滅処理（TW-20〜26、DG-42、CH-41/62、MG-03）と、迷宮の戦闘外の全滅判定、TW-27 の総資産。
 // combat.ts（戦闘の全滅）と engine.ts（受け付けたコマンドの後処理）から呼ぶ。combat.ts と dungeon.ts は import しない。
 // 乱数の消費順: 2d10（penaltyTable.dice を rollDice で 1 回）→ 失う品 1 個ごとに randInt(0, 候補数 − 1) を 1 回（候補 1 個でも引く）。
-// イベントの順: wipe.intro → 台帳（wipe.ledgerLost を 1 回。失った金 0・品 0 なら代わりに wipe.ledgerNone）→ dice{dice.wipe} → 帯の text → 金 → 品 → EXP とレベルダウン
+// イベントの順: wipe.intro → 台帳（wipe.ledgerLost を 1 回。失った金 0・品 0 なら代わりに wipe.ledgerNone）→ penaltyTable{hit null} → dice{dice.wipe}
+//   → penaltyTable{hit 帯}（UI-56。M5.5）→ 帯の text → 金 → 品 → EXP とレベルダウン
 //   → 復活 → wipe{penalty} → arriveTown（town.enter → sanChanged → 救済 → screen{town}）。message の語りは出さない（dice の表示がラベルとして出す）。
 import type { GameData } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
 import { randInt, rollDice } from "../rng";
 import { destroyItemInstance, itemDisplayName, itemOf } from "../state";
-import type { Character, GameState, PenaltyExpLoss, PenaltyLostItem, PenaltyResult, RuleContext } from "../types";
+import type { Character, GameState, PenaltyExpLoss, PenaltyLostItem, PenaltyResult, RuleContext, TextRef } from "../types";
 import { canAct } from "./combat-calc";
 import { levelDownWhileBelow } from "./growth";
 import { ceilRatio, floorRatio } from "./ratio";
@@ -18,6 +19,24 @@ export function bandIndexFor(data: GameData, total: number): number {
   const i = data.penaltyTable.bands.findIndex((b) => b.min <= total && total <= b.max);
   if (i < 0) throw new Error(`bandIndexFor: no band for ${total}`);
   return i;
+}
+
+/**
+ * UI-56 / TW-22（M5.5）: 全滅の出目の表の見出しと行（純粋）。見出しは wipe.table.title{dice}。行は帯の順に、min === max の帯は
+ * wipe.table.rowOne{roll}、それ以外は wipe.table.row{min, max}。共通の params: name（帯の name）、gold = round(goldLossRatio × 100)、
+ * items = itemLoss、exp = round(expLossRatio × 100)
+ */
+export function penaltyTableView(data: GameData): { title: TextRef; rows: TextRef[] } {
+  const t = data.penaltyTable;
+  return {
+    title: { key: "wipe.table.title", params: { dice: t.dice } },
+    rows: t.bands.map((b) => {
+      const common = { name: b.name, gold: Math.round(b.goldLossRatio * 100), items: b.itemLoss, exp: Math.round(b.expLossRatio * 100) };
+      return b.min === b.max
+        ? { key: "wipe.table.rowOne", params: { roll: b.min, ...common } }
+        : { key: "wipe.table.row", params: { min: b.min, max: b.max, ...common } };
+    }),
+  };
 }
 
 /** TW-05 / TW-27 の売値 = floor(price × sellRatio) */
@@ -109,6 +128,9 @@ export function performWipe(ctx: RuleContext): void {
 
   // 3) TW-22: 2d10
   // 4) 帯（乱数を使わないので dice の前に引く。UI-40 の基準と結果に出す）
+  // UI-56（M5.5）: 振る前に出目の表を見せる（乱数は使わない）
+  const table = penaltyTableView(data);
+  ctx.events.push({ kind: "penaltyTable", title: table.title, rows: table.rows, hit: null });
   const roll = rollDice(state.rng, data.penaltyTable.dice);
   const bandIndex = bandIndexFor(data, roll.total);
   const band = data.penaltyTable.bands[bandIndex]!;
@@ -119,6 +141,8 @@ export function performWipe(ctx: RuleContext): void {
     rule: { key: "dice.wipe.rule", params: { min: band.min, max: band.max } },
     result: { key: "dice.wipe.result", params: { band: band.name } },
   });
+  // UI-56（M5.5）: 振った後に当たった帯を示す
+  ctx.events.push({ kind: "penaltyTable", title: table.title, rows: table.rows, hit: bandIndex });
   ctx.events.push({ kind: "message", key: band.text });
 
   // 5) 金（台帳分を引いた後の所持金から）

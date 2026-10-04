@@ -547,6 +547,18 @@ describe("data: dungeons.json", () => {
   });
 });
 
+describe("data: penalty-table.json の帯の数（UI-56。M5.5）", () => {
+  /** 2..20 を n 帯に分ける（先頭の n−1 帯は 1 つずつ、最後が残り全部） */
+  const bandsOf = (r: Mutable, n: number) => {
+    const b0 = r.penaltyTable.bands[0];
+    return Array.from({ length: n }, (_, i) => ({ ...b0, min: 2 + i, max: i === n - 1 ? 20 : 2 + i }));
+  };
+  test("UI-56 penalty-table の帯が 9 以上なら検証で止める（8 までは通る）", () => {
+    expectIssue((r) => (r.penaltyTable.bands = bandsOf(r, 9)), "penalty-table.json", "bands: UI-56: too many bands (max 8)");
+    expect(issuesOf((r) => (r.penaltyTable.bands = bandsOf(r, 8)))).toEqual([]);
+  });
+});
+
 describe("data: tavern.json（TW-13 / TW-14。M5.5）", () => {
   test("data: TW-14 tavern.json の検証: damage / revealFloor 等の効果、san の target が party 以外、差し込みのある text / lookTexts、未知の strings キー、weight 0、空の events / lookTexts、id の重複は起動を止める", () => {
     const F = "tavern.json";

@@ -27,7 +27,7 @@
 
 - TW-20 発生は CB-53。パーティは街に戻る。GM の語り（`strings.wipe.*`）で始める。
 - TW-21 潜行台帳（DG-40）の取得アイテムと取得金は出目に関係なく全損（DG-42）。語りは `wipe.ledgerLost`。失った金も品も無い（台帳が空）ときは代わりに `wipe.ledgerNone` を出し、内訳の「持ち帰るはずのものは無かった」（`wipe.summary.ledgerNone`）と食い違わないようにする（M4.5）。
-- TW-22 2d10 を振り、画面に表示する（UI-40）。`data/penalty-table.json` の帯で次を決める。
+- TW-22 2d10 を振り、画面に表示する（UI-40）。`data/penalty-table.json` の帯で次を決める。2d10 を振る前に、出目ごとの帯の表（`penaltyTable` イベント。見出し `wipe.table.title`{dice} と、帯の順に各帯の出目の範囲・名前・金・品・経験の損失（`wipe.table.row`{min, max, name, gold, items, exp}。min = max の帯は `wipe.table.rowOne`{roll, …}。gold / exp は割合 × 100 の四捨五入）。行の文は core が作る）を hit null で出し、振った後に当たった帯の添字を hit に入れてもう一度出す（UI-56。M5.5）。帯は 8 以下（表の箱が 2d10 の箱と重ならないため。検証で止める）。乱数の消費は変えない。
   - `goldLossRatio`: 所持金（台帳分を引いた後）から失う割合。切り捨て（floor(所持金 × ratio + 1e-9)。浮動小数の誤差で 1 ずれないように）。
   - `itemLoss`: 失う所持アイテムの個数。対象は台帳分を除いた所持品。非装備品から先にランダムに選び、足りなければ装備品から。`infinite` 消耗品も対象。1 個ずつ、候補（非装備が残っていれば 並び順 × inventory の順の非装備、尽きたら 並び順 × 装備枠の順の装備）を作り直して randInt(0, 候補数 − 1) を 1 回引く（候補が 1 個でも引く）。所持品が尽きたら打ち切る。
   - `expLossRatio`: 全メンバー（死亡・灰を含む）の現在 EXP から失う割合。切り捨て（floor(EXP × ratio + 1e-9)）。EXP がレベル閾値を下回ったらレベルダウン（CH-62。1 段ずつ）。語り `wipe.levelDown` は 1 人 1 回、最終レベルで出す。

@@ -12,7 +12,7 @@ import { cloneRng, createRng, randInt, rollDice, type RngState } from "../src/co
 import { startBattle } from "../src/core/rules/combat";
 import { levelUpWhilePossible } from "../src/core/rules/growth";
 import { returnToTown } from "../src/core/rules/town";
-import { assetValue, itemSaleValue, performWipe, wipeIfNoneCanAct } from "../src/core/rules/wipe";
+import { assetValue, itemSaleValue, penaltyTableView, performWipe, wipeIfNoneCanAct } from "../src/core/rules/wipe";
 import { cloneState, createItemInstance, destroyItemInstance, makeContext, memberById } from "../src/core/state";
 import type { Character, GameEvent, GameState, PenaltyResult, RuleContext } from "../src/core/types";
 import { ALWAYS_HIT, dataWith, dived, eventsOf, kindsOf, withBattle } from "./helpers/battle";
@@ -135,7 +135,9 @@ describe("全滅処理（TW-20〜26）", () => {
       expect(p.total).toBe(t);
       expect(p.bandIndex).toBe(idx);
       const di = ctx.events.indexOf(dice[0]!);
-      expect(ctx.events[di + 1]).toEqual({ kind: "message", key: data.penaltyTable.bands[idx]!.text });
+      // M5.5: dice と帯の text の間に penaltyTable{hit}（UI-56）が入ったので、帯の text は di + 2
+      expect(ctx.events[di + 1]).toMatchObject({ kind: "penaltyTable", hit: idx });
+      expect(ctx.events[di + 2]).toEqual({ kind: "message", key: data.penaltyTable.bands[idx]!.text });
       expect(ctx.state.rng).toEqual(m);
       // TW-22 金: 台帳分を引いた後の 300 に比率を掛けて切り捨て。0 なら wipe.goldLost を出さない
       expect(p.ledgerGold).toBe(40);
@@ -168,7 +170,7 @@ describe("全滅処理（TW-20〜26）", () => {
     expect(p.ledgerGold).toBe(40);
     expect(ctx.state.items[daggerId]).toBeUndefined();
     expect(ctx.state.party[1]!.inventory).not.toContain(daggerId);
-    expect(kindsOf(ctx.events).slice(0, 3)).toEqual(["message:wipe.intro", "message:wipe.ledgerLost", "dice"]);
+    expect(kindsOf(ctx.events).slice(0, 4)).toEqual(["message:wipe.intro", "message:wipe.ledgerLost", "penaltyTable", "dice"]); // M5.5: 2d10 の前に出目の表（UI-56）
     expect(ctx.state.gold).toBe(300);
     // 所持金が台帳の金より少なければ 0 で止まる
     const poor = cloneState(s);
@@ -183,7 +185,7 @@ describe("全滅処理（TW-20〜26）", () => {
     const pe = penaltyOf(empty.events);
     expect(pe.ledgerGold).toBe(0);
     expect(pe.ledgerItems).toEqual([]);
-    expect(kindsOf(empty.events).slice(0, 3)).toEqual(["message:wipe.intro", "message:wipe.ledgerNone", "dice"]);
+    expect(kindsOf(empty.events).slice(0, 4)).toEqual(["message:wipe.intro", "message:wipe.ledgerNone", "penaltyTable", "dice"]); // M5.5: 2d10 の前に出目の表（UI-56）
     expect(kindsOf(empty.events).filter((k) => k === "message:wipe.ledgerLost")).toHaveLength(0);
     expect(data.strings["wipe.ledgerNone"]).toBe("持ち帰るはずのものは何も無かった。");
     // 台帳に金だけ（品 0）でも空ではない
@@ -191,7 +193,7 @@ describe("全滅処理（TW-20〜26）", () => {
     goldOnly.dive!.ledger.items = [];
     const g = wipeOf(withTotal(goldOnly, 20));
     expect(penaltyOf(g.events).ledgerGold).toBeGreaterThan(0);
-    expect(kindsOf(g.events).slice(0, 3)).toEqual(["message:wipe.intro", "message:wipe.ledgerLost", "dice"]);
+    expect(kindsOf(g.events).slice(0, 4)).toEqual(["message:wipe.intro", "message:wipe.ledgerLost", "penaltyTable", "dice"]);
   });
 
   test("TW-22 品: 非装備が itemLoss 以上なら非装備（並び順 × inventory の順）から選び、装備は残る。1 個ごとに候補を作り直して randInt(0, 候補数 − 1)（鏡の rng）", () => {
@@ -388,6 +390,72 @@ describe("全滅処理（TW-20〜26）", () => {
     expect(kindsOf(r.events)).not.toContain("message:town.mercy.offer");
     expect(r.events.at(-1)).toEqual({ kind: "screen", to: "town" });
     expect(r.state.townVisit).toEqual({ mercyOffered: false });
+  });
+});
+
+describe("全滅の出目の表（TW-22 / UI-56。M5.5）", () => {
+  test("TW-22/UI-56 penaltyTableView: 実データの 7 帯の params を手で書いた期待値（2〜3 大災厄 50/3/20 … 20 奇跡 rowOne 0/0/0）と一致", () => {
+    const row = (min: number, max: number, name: string, gold: number, items: number, exp: number) => ({
+      key: "wipe.table.row",
+      params: { min, max, name, gold, items, exp },
+    });
+    expect(penaltyTableView(data)).toEqual({
+      title: { key: "wipe.table.title", params: { dice: "2d10" } },
+      rows: [
+        row(2, 3, "大災厄", 50, 3, 20),
+        row(4, 6, "災難", 30, 2, 15),
+        row(7, 10, "痛手", 20, 1, 10),
+        row(11, 14, "損失", 10, 1, 5),
+        row(15, 17, "軽傷", 5, 0, 3),
+        row(18, 19, "幸運", 0, 0, 1),
+        { key: "wipe.table.rowOne", params: { roll: 20, name: "奇跡", gold: 0, items: 0, exp: 0 } },
+      ],
+    });
+    // 文言（strings）: 行は 1 行に収まる短い形
+    expect(data.strings["wipe.table.row"]).toBe("{min}〜{max} {name} 金−{gold}% 品−{items} 経験−{exp}%");
+    expect(data.strings["wipe.table.rowOne"]).toBe("{roll} {name} 金−{gold}% 品−{items} 経験−{exp}%");
+    for (const k of ["wipe.table.title", "wipe.table.mark", "wipe.table.pad"]) expect(data.strings[k], k).toBeTypeOf("string");
+  });
+
+  test("TW-22/UI-56 全滅の出目の表: wipe.intro → 台帳の語り → penaltyTable{hit null} → dice{dice.wipe} → penaltyTable{hit = bandIndex} → 帯の text。2d10 の合計 2〜20 のどれでも hit は penalty.bandIndex。乱数の消費は変わらない（鏡の rng）", () => {
+    const view = penaltyTableView(data);
+    for (let t = 2; t <= 20; t++) {
+      const s = withTotal(withLedger(base()), t);
+      const m = cloneRng(s.rng);
+      mirrorWipeRolls(m, 5);
+      const ctx = wipeOf(s);
+      const p = penaltyOf(ctx.events);
+      expect(p.bandIndex).toBe(bandByHand(t));
+      expect(kindsOf(ctx.events).slice(0, 6)).toEqual([
+        "message:wipe.intro",
+        "message:wipe.ledgerLost",
+        "penaltyTable",
+        "dice",
+        "penaltyTable",
+        `message:${data.penaltyTable.bands[p.bandIndex]!.text}`,
+      ]);
+      expect(ctx.events[2]).toEqual({ kind: "penaltyTable", title: view.title, rows: view.rows, hit: null });
+      expect(ctx.events[4]).toEqual({ kind: "penaltyTable", title: view.title, rows: view.rows, hit: p.bandIndex });
+      expect(eventsOf(ctx.events, "penaltyTable")).toHaveLength(2);
+      expect(ctx.state.rng).toEqual(m);
+    }
+  });
+
+  test("CB-53/UI-56 戦闘の中の全滅でも、system の拍の中で同じ順に penaltyTable が 2 回出る（間に拍を挟まない）", () => {
+    const s0 = patch(dived(1), { c1: { hp: 1 }, c2: PARA, c3: PARA, c4: PARA, c5: PARA, c6: PARA });
+    const d = dataWith({ combat: ALWAYS_HIT });
+    const s = withBattle(s0, [{ monsterId: "kobold", hps: [50] }], { identified: ["kobold"], inputs: { c1: { type: "defend" } } });
+    const r = execute(s, { type: "battle.resolve" }, d);
+    expectKnownStringKeys(r.events, d);
+    const ks = kindsOf(r.events);
+    const intro = ks.indexOf("message:wipe.intro");
+    expect(ks[intro - 1]).toBe("beat");
+    expect(r.events[intro - 1]).toEqual({ kind: "beat", phase: "system", auto: false });
+    expect(ks.slice(intro, intro + 5)).toEqual(["message:wipe.intro", "message:wipe.ledgerNone", "penaltyTable", "dice", "penaltyTable"]);
+    const tables = eventsOf(r.events, "penaltyTable");
+    expect(tables.map((e) => e.hit)).toEqual([null, penaltyOf(r.events).bandIndex]);
+    expect(ks.slice(intro, ks.indexOf("wipe"))).not.toContain("beat");
+    expect(r.state.screen).toBe("town");
   });
 });
 

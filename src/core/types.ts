@@ -643,6 +643,11 @@ export type GameEvent =
   | { kind: "beat"; phase: BeatPhase; auto: boolean }
   | { kind: "battleEnd"; result: "win" | "flee" | "wipe" }
   | { kind: "wipe"; penalty: PenaltyResult }
+  /**
+   * TW-22 / UI-56（M5.5）: 全滅の出目の表。title は見出し、rows は penalty-table.json の帯の順に 1 行ずつ（strings のキーと埋め込み値。core が作る）。
+   * 2d10 の dice の直前に hit null で 1 回、dice の直後に hit = 当たった帯の添字（PenaltyResult.bandIndex と同じ）で 1 回出す
+   */
+  | { kind: "penaltyTable"; title: TextRef; rows: TextRef[]; hit: number | null }
   /** §5 に増分と新しい最大値と変化後の現在値を足した（表示層が state を掘り直さずに済むように） */
   | {
       kind: "levelUp";
