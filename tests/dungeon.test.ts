@@ -1105,7 +1105,7 @@ describe("罠（DG-20, DG-21, E4）", () => {
     expect(r.state.rng).toEqual(mirror);
   });
 
-  test("DG-21 retreat: 1 歩前・同じ向き、遭遇なし・SAN 不変・罠は残り、再び入るとまた判定", () => {
+  test("DG-21 retreat: 1 歩前・同じ向き、遭遇なし・SAN 不変・罠は残り、再び入ると察知を振らずに必ず確認（M6）", () => {
     const { state, a } = atPitDetectedBy("c2");
     const d1 = detectData(1, 1);
     const r1 = run(state, MOVE, d1);
@@ -1121,17 +1121,17 @@ describe("罠（DG-20, DG-21, E4）", () => {
     expect(r2.state.dive!.pos).toEqual(a.pos);
     expect(r2.state.dive!.facing).toBe(a.facing);
     expect(r2.state.screen).toBe("dungeon");
-    // 罠は残っていて、もう一度入るとまた察知の判定をする（d100 から）
+    // 罠は残っていて印もあるので、もう一度入ると察知の d100 を振らずに必ず確認を出す（DG-21 M6。遭遇率 1 でも遭遇判定なし）
     const cell = cellAt(floorOf(r2.state.dive!, data), a.target.x, a.target.y);
     expect(cell.kind).toBe("trap");
-    const again = detectorOf(r2.state);
-    const r3 = run(r2.state, MOVE, detectData());
-    if (again.who !== null) {
-      expect(kinds(r3.events)).toEqual(["moved", "message:dungeon.trap.detected", "message:dungeon.trap.prompt"]);
-      expect(r3.state.rng).toEqual(again.mirror);
-    } else {
-      expect(kinds(r3.events).slice(0, 2)).toEqual(["moved", "message:dungeon.trap.pit"]);
-    }
+    const r3 = run(r2.state, MOVE, d1);
+    expect(r3.events).toEqual([
+      { kind: "moved", pos: a.target, facing: a.facing },
+      { kind: "message", key: "dungeon.trap.knownPrompt" },
+    ]);
+    expect(r3.state.pendingChoice).toEqual({ ...TRAP_PROMPT, promptKey: "dungeon.trap.knownPrompt" });
+    expect(r3.state.rng).toEqual(r2.state.rng); // 乱数なし
+    expect(r3.state.party).toEqual(state.party);
   });
 
   test("DG-21/CH-51 proceed: 罠が発動し SAN も減り、その後に遭遇判定", () => {
@@ -1543,12 +1543,62 @@ describe("察知した罠（DG-21 knownTraps、DG-12、DG-13。M5.5）", () => {
     const r3 = run(state, MOVE, detectAll(0));
     expect(kinds(r3.events)[1]).toBe("message:dungeon.trap.pit");
     expect(r3.state.dive!.knownTraps).toEqual({});
-    // 前に察知して覚えていた罠に入り、察知に失敗して発動したときも印は外れる
+    // 前に察知して覚えていた罠に入ると（察知できる者がいなくても）確認が出て、進むで発動すると印は外れる（M6）
     const known = cloneState(state);
     known.dive!.knownTraps = { "1": [i] };
     const r4 = run(known, MOVE, detectAll(0));
-    expect(kinds(r4.events)[1]).toBe("message:dungeon.trap.pit");
-    expect(r4.state.dive!.knownTraps).toEqual({ "1": [] });
+    expect(kinds(r4.events)).toEqual(["moved", "message:dungeon.trap.knownPrompt"]);
+    const r5 = run(r4.state, { type: "event.choose", optionId: "proceed" }, detectAll(0));
+    expect(kinds(r5.events)[0]).toBe("message:dungeon.trap.pit");
+    expect(r5.state.dive!.knownTraps).toEqual({ "1": [] });
+    expect(r5.state.dive!.clearedCells).toEqual([{ floor: 1, ...a.target }]);
+  });
+
+  test("DG-21 印のある罠（knownTraps）に入ると、察知の d100 を振らずに必ず確認（dungeon.trap.knownPrompt）を出す。慎重がいない・行動不能でも同じ。印の無い罠・発動済みのセルには出ない（M6）", () => {
+    const { state, a, f } = atPitM55();
+    const i = idx(f, a.target.x, a.target.y);
+    const cases: [string, (s: GameState) => void][] = [
+      ["慎重がいない", (s) => {
+        for (const c of s.party) if (!c.isLeader) c.personality = "normal";
+      }],
+      ["慎重が麻痺と睡眠", (s) => {
+        s.party[1]!.status = ["paralysis"];
+        s.party[5]!.status = ["sleep"];
+      }],
+      ["そのまま", () => {}],
+    ];
+    for (const [name, mut] of cases) {
+      const s = cloneState(state);
+      s.dive!.knownTraps = { "1": [i] };
+      mut(s);
+      const r = run(s, MOVE, dataWithRate(1, 1));
+      expect(r.events, name).toEqual([
+        { kind: "moved", pos: a.target, facing: a.facing },
+        { kind: "message", key: "dungeon.trap.knownPrompt" },
+      ]);
+      expect(r.state.pendingChoice, name).toEqual({
+        kind: "trap",
+        promptKey: "dungeon.trap.knownPrompt",
+        options: [
+          { id: "retreat", labelKey: "dungeon.choice.retreat" },
+          { id: "proceed", labelKey: "dungeon.choice.proceed" },
+        ],
+      });
+      expect(r.state.rng, name).toEqual(s.rng);
+      expect(r.state.party, name).toEqual(s.party);
+    }
+    // 別の階の印や、ほかのセルの印では出ない（察知できる者がいなければ通常どおり発動）
+    const other = cloneState(state);
+    other.dive!.knownTraps = { "1": [i + 1], "2": [i] };
+    expect(kinds(run(other, MOVE, detectAll(0)).events)[1]).toBe("message:dungeon.trap.pit");
+    // 発動済み（clearedCells）のセルは、印が残っていてもただの床（確認も発動も無い）
+    const cleared = cloneState(state);
+    cleared.dive!.knownTraps = { "1": [i] };
+    cleared.dive!.clearedCells = [{ floor: 1, ...a.target }];
+    const rc = run(cleared, MOVE, detectAll(0));
+    expect(rc.state.pendingChoice).toBeNull();
+    expect(kinds(rc.events)).not.toContain("message:dungeon.trap.knownPrompt");
+    expect(kinds(rc.events)).not.toContain("message:dungeon.trap.pit");
   });
 
   test("DG-13 mapView は knownTraps のセルを kind trap、未察知の罠と発動済みのセルは plain で返す", () => {
@@ -1564,7 +1614,8 @@ describe("察知した罠（DG-21 knownTraps、DG-12、DG-13。M5.5）", () => {
     unknown.dive!.knownTraps = {};
     expect(at(unknown)!.kind).toBe("plain");
     // 発動済み（clearedCells）のセルは、knownTraps に添字が残っていても plain（実効の kind が trap でない）
-    const fired = run(back, MOVE, detectAll(0)).state;
+    // 印のある罠は入ると必ず確認が出るので（DG-21 M6）、進むで発動させる
+    const fired = run(run(back, MOVE, detectAll(0)).state, { type: "event.choose", optionId: "proceed" }, detectAll(0)).state;
     expect(fired.dive!.clearedCells).toEqual([{ floor: 1, ...a.target }]);
     expect(at(fired)!.kind).toBe("plain");
     const stale = cloneState(fired);

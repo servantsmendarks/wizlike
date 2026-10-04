@@ -30,9 +30,12 @@ export function offerTeleporter(ctx: RuleContext): void {
   offer(ctx, "teleporter", "dungeon.teleporter", [{ id: "teleport", labelKey: "dungeon.choice.teleport" }, { ...STAY }]);
 }
 
-/** DG-21 / A6: 罠の察知（retreat / proceed）。先頭が安全な方（引き返す） */
-export function offerTrap(ctx: RuleContext): void {
-  offer(ctx, "trap", "dungeon.trap.prompt", [
+/**
+ * DG-21 / A6: 罠の察知（retreat / proceed）。先頭が安全な方（引き返す）。
+ * 問いは察知したときが dungeon.trap.prompt、印のある罠（knownTraps）に入ったときが dungeon.trap.knownPrompt（M6）
+ */
+export function offerTrap(ctx: RuleContext, promptKey: "dungeon.trap.prompt" | "dungeon.trap.knownPrompt" = "dungeon.trap.prompt"): void {
+  offer(ctx, "trap", promptKey, [
     { id: "retreat", labelKey: "dungeon.choice.retreat" },
     { id: "proceed", labelKey: "dungeon.choice.proceed" },
   ]);

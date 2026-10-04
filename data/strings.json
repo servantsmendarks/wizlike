@@ -132,6 +132,7 @@
   "dungeon.trap.teleport": "視界が歪み、別の場所に立っていた。",
   "dungeon.trap.detected": "{name}が足を止めた。「待て、ここは何かある」",
   "dungeon.trap.prompt": "罠がありそうだ。どうする？",
+  "dungeon.trap.knownPrompt": "印を付けた罠の場所だ。どうする？",
   "dungeon.trap.retreat": "一行は来た道を引き返した。",
   "dungeon.return": "糸を辿って街へ戻る。",
   "dungeon.returnSpell": "呪文の光に包まれ、街へ戻る。",

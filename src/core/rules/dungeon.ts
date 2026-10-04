@@ -293,6 +293,11 @@ export function moveForward(ctx: RuleContext): void {
   // CH-43: 毒の 1 歩ごとのダメージ（HP 1 で止まるので、これで死ぬことはない）
   tickPoisonStep(ctx);
   if (cell.kind === "trap") {
+    // DG-21（M6）: 印のある罠（knownTraps）は察知を振らずに必ず確認を立てる（階段・遭遇なし）
+    if ((dive.knownTraps[String(dive.floor)] ?? []).includes(idx(f, dive.pos.x, dive.pos.y))) {
+      offerTrap(ctx, "dungeon.trap.knownPrompt");
+      return;
+    }
     if (detectTrap(ctx, f, cell)) return; // DG-21: 察知したら確認を立てて終わる（階段・遭遇なし）
     triggerTrap(ctx, f, dive.pos);
   }
