@@ -1430,7 +1430,11 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
       s.battle!.inputs["c1"] = atk(0);
       return s;
     };
-    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100 } });
+    // M7（IT-50 / IT-52）: 宝箱の金の後に品の chance(itemChance) を 1 回引く。ここでは金だけを見るので表の itemChance を 0 にする
+    // （品の生成は tests/loot.test.ts）
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100 } }, (x) => {
+      for (const t of x.drops.tables) t.itemChance = 0;
+    });
     const room = mk({ kind: "random", inRoom: true });
     const m = cloneRng(room.rng);
     rolls(m, 6);
@@ -1438,6 +1442,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     rollDice(m, "1d8");
     chance(m, 100);
     const cg = rollDice(m, "2d10").total;
+    chance(m, 0); // d01 1 階の表（rolls 1）の品の chance。外れ
     const r = exec(room, RESOLVE, d);
     expect(r.state.rng).toEqual(m);
     expect(r.events).toContainEqual({ kind: "message", key: "battle.chest", params: { gold: cg } });

@@ -14,7 +14,8 @@
 //     味方の攻撃 1 振り: 命中 → [ダメージ] → [覚醒]
 //     敵の攻撃要素: 対象 → 命中 → [ダメージ] → [覚醒] → [付与]
 //     呪文・道具: 個体ごとのダメージ（→ 覚醒）・付与、回復のダイス
-//   → ラウンド終了の鑑定（g 順）→（勝利なら）金（g→u）→ 宝箱 d100 → 宝箱の金
+//   → ラウンド終了の鑑定（g 順）→（勝利なら）金（g→u）→ 宝箱 d100 → 宝箱の金 → 宝箱の品（loot.ts。IT-52）
+//     →（ボスなら）ボスの戦利品（loot.ts。IT-52）
 //   免疫・既に同じ状態・対象なしは消費しない。
 import type { GameData, Spell, SpellEffect, SpellTarget, StatusId } from "../data/index";
 import { chance, randInt, rollDice, rollDie, weightedIndex } from "../rng";
@@ -73,6 +74,7 @@ import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, richestGro
 import { offerTeleporter } from "./choices";
 import { applyAllyEffect } from "./effects";
 import { gainGold } from "./field";
+import { rollBossItems, rollChestItems } from "./loot";
 import { equipStats, hasSkill, hpMaxOf, skillTotal, spellCost } from "./equip-stats";
 import { loseSan, sanCapOf, sanStage } from "./san";
 import { performWipe } from "./wipe";
@@ -1026,10 +1028,14 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
     const gold = withGoldLuck(rolled, luck);
     if (gold > 0) gainGold(ctx, gold, { key: "battle.gold", params: { gold } }); // CH-52: 強欲の treasureGain もここ
     if (b.origin.kind === "random" && b.origin.inRoom) {
-      // CB-52 の仮実装。罠・chestQuality はプロトタイプ後（A7）
+      // CB-52。罠・調べる・解除はプロトタイプ後（A7 / items.md §11 の Q7）。chestQuality は品の希少度（IT-31）
       if (chance(state.rng, cfg.combat.chestChance)) {
         const cg = withGoldLuck(Math.max(0, rollDice(state.rng, cfg.combat.chestGoldDice).total), luck); // CB-52 / IT-34
         gainGold(ctx, cg, { key: "battle.chest", params: { gold: cg } }); // cg が 0 でも message は出す
+        // IT-50 / IT-53: 金の後に品。Lv はこの戦闘で倒した種類の level の最大
+        const dive = requireDive(state);
+        const lv = Math.max(...b.groups.map((g) => monsterOf(data, g.monsterId).level));
+        rollChestItems(ctx, dive.dungeonId, dive.floor, lv);
       }
     }
     if (b.origin.kind === "boss") {
@@ -1046,6 +1052,8 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
         state.progress.unlockedDungeons.push(next);
         ctx.events.push({ kind: "message", key: "dungeon.unlocked", params: { dungeon: dungeonOf(data, next).name } });
       }
+      // DG-31 / IT-50: ボスの戦利品（勝つたび。再撃破でも）。ボスの語りの後、テレポーターの申し出の前
+      rollBossItems(ctx, def.id, monsterOf(data, def.boss.monster).level);
     }
   } else if (result === "flee") {
     ctx.events.push({ kind: "message", key: "battle.fleeOk" });

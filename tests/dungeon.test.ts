@@ -19,7 +19,7 @@ import { battleMenu } from "../src/core/rules/combat";
 import { offerExit, offerStairs, offerTeleporter, offerTrap } from "../src/core/rules/choices";
 import { cloneState, createItemInstance, dungeonOf, makeContext, monsterOf } from "../src/core/state";
 import type { Cell, Command, Facing, Floor, GameEvent, GameState } from "../src/core/types";
-import { data, deepFreeze, expectKnownStringKeys, loadFreshData, mirrorWipeRolls, newGame, noAmbushAvoid, noTrapDetect } from "./helpers/core";
+import { data, deepFreeze, expectKnownStringKeys, expectStateInvariants, loadFreshData, mirrorWipeRolls, newGame, noAmbushAvoid, noTrapDetect } from "./helpers/core";
 import { approaches, dataWithRate, ENTER_D01, enterD01, findSituation, MOVE, placeAt, run, withRng } from "./helpers/dungeon";
 
 // ---------------------------------------------------------------------------
@@ -1488,6 +1488,29 @@ describe("ボス（DG-31〜33, DG-01）", () => {
     expect(r.state.progress.clearedDungeons).toEqual(["d01"]);
     expect(r.state.progress.unlockedDungeons).toEqual(["d01", "d02"]);
     expect(r.state.dive!.bossDefeated).toBe(true);
+    // DG-31 / IT-50: 再撃破でも戦利品を引く（d01_boss は 100% × 1 回）
+    expect(ks.filter((k) => k === "message:item.found")).toHaveLength(1);
+  });
+
+  test("DG-31/IT-50 ボスの戦利品: 勝つと drops.boss の表（d01_boss。100% × 1 回）から 1 品。未鑑定・foundIn d01・台帳。ボスの語り（解放）の後、screen dungeon とテレポーターの申し出の前。Lv はボスの level 4 ± 1（ユニークなら 0）", () => {
+    const r = defeatBoss(run(atBoss().state, MOVE, D0).state);
+    const ks = kinds(r.events);
+    const iFound = ks.indexOf("message:item.found");
+    expect(ks.filter((k) => k === "message:item.found")).toHaveLength(1);
+    expect(iFound).toBeGreaterThan(ks.indexOf("message:dungeon.unlocked"));
+    expect(iFound).toBeLessThan(ks.lastIndexOf("screen"));
+    const id = r.state.dive!.ledger.items.at(-1)!;
+    const inst = r.state.items[id]!;
+    expect(inst).toMatchObject({ identified: false, foundIn: "d01" });
+    const table = data.drops.tables.find((t) => t.id === data.drops.boss["d01"])!;
+    if (inst.uniqueId === null) {
+      expect(table.entries.some((e) => "base" in e && e.base === inst.itemId)).toBe(true);
+      expect([3, 4, 5]).toContain(inst.level);
+    } else {
+      expect(table.entries.some((e) => "unique" in e && e.unique === inst.uniqueId)).toBe(true);
+      expect(inst.level).toBe(0);
+    }
+    expectStateInvariants(r.state);
   });
 });
 

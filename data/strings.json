@@ -333,6 +333,8 @@
   "battle.wake": "{target}は目を覚ました。",
   "battle.useItem": "{actor}は{item}を使った。",
   "battle.chest": "宝箱があった。中に{gold}の金。",
+  "item.found": "{name}は{item}を拾った。",
+  "item.leftBehind": "持ちきれず、{item}を置いていった。",
   "battle.bossDefeated": "門番は崩れ落ちた。",
   "battle.dungeonCleared": "この迷宮を踏破した。",
   "battle.wipe": "一行は全員動けなくなった……。",

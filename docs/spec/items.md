@@ -71,11 +71,11 @@ M7 の実装が済むまでは、今のコード（items.json の装備・`confi
 
 ## 6. 入手（ドロップ）
 
-- IT-50 ドロップ元は 宝箱（CB-52。ランダム遭遇の部屋のセルでの勝利時）と ボスの戦利品（DG-31。ボスに勝つたび。再撃破でも）の 2 つ。どちらも `data/drops.json`（ドロップ表）を引く。宝箱の金（`config.combat.chestGoldDice`）は今のまま出し、品はその後に引く。
+- IT-50 ドロップ元は 宝箱（CB-52。ランダム遭遇の部屋のセルでの勝利時）と ボスの戦利品（DG-31。ボスに勝つたび。再撃破でも）の 2 つ。どちらも `data/drops.json`（ドロップ表）を引く。宝箱の金（`config.combat.chestGoldDice`）は今のまま出し、品はその後に引く。ボスの戦利品はボスの語り（`battle.bossDefeated`・初回の `battle.dungeonCleared`・`dungeon.unlocked`）の後、`screen`{dungeon} とテレポーターの申し出（DG-32）の前に引く。
 - IT-51 ドロップ表 `drops.json` は `tables`（表の配列）・`chest`（ダンジョン id → 階番号の文字列 → 表の id）・`boss`（ダンジョン id → 表の id）を持つ。表は `{ id, itemChance, rolls, entries }` で、`entries` の各要素は `{ base, weight }` か `{ unique, weight }`。`rolls` 回だけ、`itemChance` % で 1 品を引く（rolls 回とも独立）。
 - IT-52 1 品の生成と乱数の順: chance(itemChance) → weightedIndex(entries) →（汎用なら）Lv の randInt(−`config.items.dropLevelSpread`（1）, +spread) → weightedIndex(rarities) → chance(curseChance) → オプションの個数（IT-30 / IT-32）だけ weightedIndex（オプション表から既に引いたものを除いた残り）。宝箱の chestQuality（IT-31）は希少度を引いた直後に足す（乱数なし）。
 - IT-53 ドロップの Lv = 落とした敵の Lv（`monsters[].level`）± spread、最低 1【仮】。宝箱の「落とした敵」はその戦闘で倒した敵のうち `level` が最大の種類。ボスはボスの `level`。
-- IT-54 生成した品は未鑑定（IT-13）で、並び順に最初に所持枠（CH-71）が空いている者（life を問わない）の inventory の末尾に入れ、潜行台帳（DG-40）に入れる。誰も空いていなければ置いていく（`item.leftBehind`{item}。品は作らない）。語りは `item.found`{name, item}（item は未鑑定の表示名）。
+- IT-54 生成した品は未鑑定（IT-13）で、並び順に最初に所持枠（CH-71）が空いている者（life を問わない）の inventory の末尾に入れ、潜行台帳（DG-40）に入れる。誰も空いていなければ置いていく（`item.leftBehind`{item}。品は作らないので item はベースの `unidentifiedName`。乱数は引いた分を消費したまま）。語りは `item.found`{name, item}（item は未鑑定の表示名）。
 
 ## 7. 経済と施設
 
