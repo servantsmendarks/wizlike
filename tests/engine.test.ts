@@ -31,6 +31,7 @@ import {
 } from "./helpers/core";
 import { dataWith, dived, withBattle } from "./helpers/battle";
 import { approaches, findSituation, placeAt } from "./helpers/dungeon";
+import { cursedDagger } from "./helpers/items";
 
 const gameNew = (members = defaultMembers()): Command => ({ type: "game.new", party: { members } });
 
@@ -86,7 +87,7 @@ describe("engine: execute", () => {
     expect(JSON.parse(JSON.stringify(s0))).toEqual(s0);
   });
 
-  test("D3 createInitialState: screen title、party []、rng は createRng(seed) と同じ、gold 0、bank 0、nextItemSeq 1、dive と pendingChoice と battle は null、bestiary は {}、townVisit は null、adventureTurns・tavernEventMark は 0（TW-12）、morale は null（TW-15）", () => {
+  test("D3 createInitialState: screen title、party []、rng は createRng(seed) と同じ、gold 0、bank 0、nextItemSeq 1、dive と pendingChoice と battle は null、bestiary は {}、townVisit は null、adventureTurns・tavernEventMark は 0（TW-12）、morale は null（TW-15）、IT-10 warehouse / buyback は []・uniqueBook は {}・progress.shopLevel は 0（M7）", () => {
     const s = createInitialState(42, data);
     expect(s).toEqual({
       screen: "title",
@@ -96,7 +97,7 @@ describe("engine: execute", () => {
       nextItemSeq: 1,
       gold: 0,
       bank: 0,
-      progress: { unlockedDungeons: [], clearedDungeons: [] },
+      progress: { unlockedDungeons: [], clearedDungeons: [], shopLevel: 0 }, // IT-62（M7）
       dive: null,
       pendingChoice: null,
       battle: null,
@@ -105,6 +106,9 @@ describe("engine: execute", () => {
       adventureTurns: 0,
       tavernEventMark: 0,
       morale: null,
+      warehouse: [], // TW-16 / IT-64（M7）
+      buyback: [], // IT-63（M7）
+      uniqueBook: {}, // IT-66（M7）
     });
     expect(() => createInitialState(1.5, data)).toThrow(RangeError);
   });
@@ -170,8 +174,8 @@ describe("engine: execute", () => {
     const s = cloneState(entered.state);
     const ch = memberById(s, "c1")!;
     const carried = ch.inventory[0]!; // 持ち込みの herb（台帳には無い）
-    const gotA = createItemInstance(s, "herb", true);
-    const gotB = createItemInstance(s, "herb", true);
+    const gotA = createItemInstance(s, { itemId: "herb", identified: true });
+    const gotB = createItemInstance(s, { itemId: "herb", identified: true });
     ch.inventory.push(gotA, gotB);
     s.dive!.ledger.items.push(gotA, gotB);
 
@@ -185,13 +189,79 @@ describe("engine: execute", () => {
     expect(s.dive!.ledger.items).toEqual([gotB]);
   });
 
+  test("IT-10 createItemInstance(state, spec): 既定は Lv0・通常・オプションなし・ユニークでない・呪いなし・foundIn null。指定した欄はそのまま入り、options は複製する（M7）", () => {
+    const s = cloneState(execute(createInitialState(1, data), gameNew(), data).state);
+    const seq = s.nextItemSeq;
+    const a = createItemInstance(s, { itemId: "herb", identified: false });
+    expect(a).toBe(`i${seq}`);
+    expect(s.items[a]).toEqual({
+      id: a,
+      itemId: "herb",
+      level: 0,
+      rarity: "normal",
+      options: [],
+      uniqueId: null,
+      identified: false,
+      cursed: false,
+      foundIn: null,
+    });
+    const options = [{ optionId: "hit", tier: 2 as const, value: 10 }];
+    const b = createItemInstance(s, {
+      itemId: "dagger",
+      identified: true,
+      level: 5,
+      rarity: "fine",
+      options,
+      uniqueId: "twin_tongue_dagger",
+      cursed: true,
+      foundIn: "d01",
+    });
+    expect(b).toBe(`i${seq + 1}`);
+    expect(s.nextItemSeq).toBe(seq + 2);
+    expect(s.items[b]).toEqual({
+      id: b,
+      itemId: "dagger",
+      level: 5,
+      rarity: "fine",
+      options: [{ optionId: "hit", tier: 2, value: 10 }],
+      uniqueId: "twin_tongue_dagger",
+      identified: true,
+      cursed: true,
+      foundIn: "d01",
+    });
+    expect(s.items[b]!.options).not.toBe(options);
+    expect(s.items[b]!.options[0]).not.toBe(options[0]);
+    expect(JSON.parse(JSON.stringify(s))).toStrictEqual(s); // §3-11
+  });
+
+  test("IT-10/IT-63 expectStateInvariants（M7）: 倉庫・買い戻しの実体も参照に数える。どこからも参照されない実体・二重参照・ユニークでない買い戻しは落ちる", () => {
+    const s = cloneState(execute(createInitialState(1, data), gameNew(), data).state);
+    const w = createItemInstance(s, { itemId: "dagger", identified: true });
+    s.warehouse.push(w);
+    const u = createItemInstance(s, { itemId: "dagger", identified: true, uniqueId: "twin_tongue_dagger" });
+    s.buyback.push(u);
+    expectStateInvariants(s);
+    const orphan = cloneState(s);
+    createItemInstance(orphan, { itemId: "herb", identified: true });
+    expect(() => expectStateInvariants(orphan)).toThrow();
+    const twice = cloneState(s);
+    twice.buyback.push(w);
+    expect(() => expectStateInvariants(twice)).toThrow();
+    const notUnique = cloneState(s);
+    notUnique.items[u]!.uniqueId = null;
+    expect(() => expectStateInvariants(notUnique)).toThrow();
+    const unidentified = cloneState(s);
+    unidentified.items[u]!.identified = false;
+    expect(() => expectStateInvariants(unidentified)).toThrow();
+  });
+
   test("CH-72 itemDisplayName: 鑑定済みは name、未鑑定は unidentifiedName、unidentifiedName が無ければ name。実体が無ければ Error", () => {
     const s = cloneState(execute(createInitialState(1, data), gameNew(), data).state);
-    const knownDagger = createItemInstance(s, "cursed_dagger", true);
-    const unknownDagger = createItemInstance(s, "cursed_dagger", false);
-    const unknownHerb = createItemInstance(s, "herb", false); // herb は unidentifiedName を持たない
-    expect(itemDisplayName(s, data, knownDagger)).toBe("血濡れの短剣");
-    expect(itemDisplayName(s, data, unknownDagger)).toBe("短剣？");
+    const knownDagger = cursedDagger(s, true);
+    const unknownDagger = cursedDagger(s, false);
+    const unknownHerb = createItemInstance(s, { itemId: "herb", identified: false }); // herb は unidentifiedName を持たない
+    expect(itemDisplayName(s, data, knownDagger)).toBe("短剣");
+    expect(itemDisplayName(s, data, unknownDagger)).toBe("短い刃？");
     expect(itemDisplayName(s, data, unknownHerb)).toBe("薬草");
     expect(() => itemDisplayName(s, data, "i999")).toThrow("unknown item instance: i999");
   });

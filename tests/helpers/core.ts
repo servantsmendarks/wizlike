@@ -147,8 +147,9 @@ export function mirrorWipeRolls(m: RngState, unequipped: number, d: GameData = d
 }
 
 /**
- * GameState の不変条件（M4）。
- * - state.items の各実体は、party の equipment / inventory からちょうど 1 回参照され、参照先はすべて実在する
+ * GameState の不変条件（M4。M7 で倉庫と買い戻しを足した）。
+ * - state.items の各実体は、party の equipment / inventory・warehouse・buyback のどこか 1 か所からちょうど 1 回参照され、参照先はすべて実在する
+ * - buyback の実体はユニーク（uniqueId が非 null）で鑑定済み（IT-63）
  * - dive が非 null なら潜行台帳の品は所持品の部分集合
  * - screen town ⇔ townVisit 非 null、screen battle ⇔ battle 非 null、dive null ⇔ screen が title / town
  * - screen event ⇔ pendingChoice の kind が event（M5。A4）
@@ -164,7 +165,12 @@ export function expectStateInvariants(state: GameState): void {
     }
     refs.push(...ch.inventory);
   }
+  refs.push(...state.warehouse, ...state.buyback);
   expect([...refs].sort(), "item references").toEqual(Object.keys(state.items).sort());
+  for (const id of state.buyback) {
+    const inst = state.items[id];
+    expect(inst !== undefined && inst.uniqueId !== null && inst.identified, `buyback ${id} is an identified unique (IT-63)`).toBe(true);
+  }
   if (state.dive !== null) {
     for (const id of state.dive.ledger.items) expect(refs, `ledger item ${id} is owned`).toContain(id);
   }

@@ -7,7 +7,7 @@
 import type { GameData } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
 import { randInt, rollDice } from "../rng";
-import { destroyItemInstance, itemDisplayName, itemOf } from "../state";
+import { destroyItemInstance, findBase, itemDisplayName, itemOf } from "../state";
 import type { Character, GameState, PenaltyExpLoss, PenaltyLostItem, PenaltyResult, RuleContext, TextRef } from "../types";
 import { canAct } from "./combat-calc";
 import { levelDownWhileBelow } from "./growth";
@@ -39,9 +39,10 @@ export function penaltyTableView(data: GameData): { title: TextRef; rows: TextRe
   };
 }
 
-/** TW-05 / TW-27 の売値 = floor(price × sellRatio) */
+/** TW-05 / TW-27 の売値 = floor(price × sellRatio)。price は装備ならベースの price（M7 の B2。IT-61 の売値は B7 で置き換える） */
 export function itemSaleValue(data: GameData, itemId: string): number {
-  return floorRatio(itemOf(data, itemId).price, data.config.economy.sellRatio);
+  const price = findBase(data, itemId)?.price ?? itemOf(data, itemId).price;
+  return floorRatio(price, data.config.economy.sellRatio);
 }
 
 /**

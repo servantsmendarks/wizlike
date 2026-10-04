@@ -1,13 +1,14 @@
 // UI-59 詳細（src/presenter/views/detail.ts）。純粋な formatDetail と、document を最小の偽物に差し替えた配置の確認。
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { EQUIP_SLOTS, STAT_KEYS } from "../src/core/data/index";
-import { createItemInstance, itemDisplayName } from "../src/core/state";
+import { itemDisplayName } from "../src/core/state";
 import type { GameState } from "../src/core/types";
 import { createDetailView, formatDetail, SLOT_ORDER, STAT_ORDER } from "../src/presenter/views/detail";
 import { formatMessage } from "../src/presenter/views/message";
 import { createPartyPanel } from "../src/presenter/views/party";
 import { sanCapOf, sanStage } from "../src/core/rules/san";
 import { data, newGame } from "./helpers/core";
+import { cursedDagger } from "./helpers/items";
 
 const S = data.strings;
 const t = (k: string, p?: Record<string, string | number>): string => {
@@ -81,12 +82,12 @@ describe("UI-59 詳細", () => {
 
   test("UI-59/CH-72 装備の名前は鑑定を反映した表示名（未鑑定は unidentifiedName）。状態は死亡・状態異常をパーティの行と同じ短い名前で出す", () => {
     const s = structuredClone(newGame(1));
-    const iid = createItemInstance(s, "cursed_dagger", false);
+    const iid = cursedDagger(s, false);
     s.party[0]!.equipment.weapon = iid;
     const d = formatDetail(s.party[0]!, data, S, nameOf(s));
-    expect(d.equipment[0]).toEqual({ slot: "武器", item: "短剣？" });
+    expect(d.equipment[0]).toEqual({ slot: "武器", item: "短い刃？" });
     s.items[iid]!.identified = true;
-    expect(formatDetail(s.party[0]!, data, S, nameOf(s)).equipment[0]!.item).toBe("血濡れの短剣");
+    expect(formatDetail(s.party[0]!, data, S, nameOf(s)).equipment[0]!.item).toBe("短剣");
     const dead = formatDetail({ ...s.party[0]!, life: "dead", hp: 0, status: ["poison"] }, data, S, nameOf(s));
     expect(dead.status).toBe(t("detail.status", { status: t("party.life.dead") }));
     const poisoned = formatDetail({ ...s.party[0]!, status: ["poison", "sleep"] }, data, S, nameOf(s));

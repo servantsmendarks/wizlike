@@ -14,7 +14,7 @@ import { floorOf } from "../../src/core/rules/dungeon";
 import { fieldItemMenu } from "../../src/core/rules/items";
 import { frontLineIds } from "../../src/core/rules/combat-calc";
 import { townMenu } from "../../src/core/rules/town";
-import { itemOf } from "../../src/core/state";
+import { findItem, itemOf } from "../../src/core/state";
 import type { Command, Facing, Floor, GameEvent, GameState, PartySetupMember, PenaltyResult, Pos } from "../../src/core/types";
 import { data, expectKnownStringKeys, expectStateInvariants, newGame } from "../helpers/core";
 
@@ -87,10 +87,9 @@ export type CampaignResult = { seed: number; startAssets: number; dives: DiveRec
 
 const key = (p: Pos) => `${p.x},${p.y}`;
 
-/** 消耗品・魔法書の effect.type（武器・防具は null） */
+/** 消耗品・魔法書の effect.type（武器・防具は null。M7 の B2 から装備は items.json に無い） */
 function effectType(itemId: string): string | null {
-  const it = itemOf(data, itemId);
-  return "effect" in it ? it.effect.type : null;
+  return findItem(data, itemId)?.effect.type ?? null;
 }
 
 /** 上り階段からの BFS 距離（open / door の辺を通る。下り階段のセルは通らない） */
@@ -156,8 +155,8 @@ function assetsOf(s: GameState): number {
   let v = s.gold;
   for (const c of s.party)
     for (const id of c.inventory) {
-      const it = itemOf(data, s.items[id]!.itemId);
-      if (it.type === "consumable") v += it.price;
+      const it = findItem(data, s.items[id]!.itemId);
+      if (it !== null && it.type === "consumable") v += it.price;
     }
   return v;
 }

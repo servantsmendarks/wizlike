@@ -5,7 +5,7 @@ import { cloneState } from "../src/core/state";
 import type { BattleAction, Command, GameState } from "../src/core/types";
 import { DB_NAME, DB_VERSION, openIdbBackend, STORE_GAMES, STORE_SETTINGS } from "../src/save/db";
 import { newGameId } from "../src/save/id";
-import { isGameStateShape, migrateState, MIGRATIONS } from "../src/save/migrate";
+import { createMigrations, isGameStateShape, migrateState, MIGRATIONS } from "../src/save/migrate";
 import { buildRecord, checkStoredRecord, summarize } from "../src/save/record";
 import { createSaveService } from "../src/save/saves";
 import { buildExportFile, parseExportFile, serializeExportFile } from "../src/save/transfer";
@@ -13,7 +13,7 @@ import type { GameRecord, GameStoreBackend, ImportPlan, Migration, SaveDeps } fr
 import { dived, exec, withBattle } from "./helpers/battle";
 import { data, expectKnownStringKeys, loadFreshData, newGame, withChar } from "./helpers/core";
 import { atEvent } from "./helpers/events";
-import { createMemoryBackend } from "./helpers/save";
+import { createMemoryBackend, toV3 } from "./helpers/save";
 
 const SCHEMA = data.config.save.schemaVersion;
 const MAX = data.config.save.maxGames;
@@ -198,7 +198,7 @@ describe("SV-04 migrate", () => {
 describe("SV-04 v1 → v2 の移行（M5.5）", () => {
   /** 今の state から M5.5 の欄（adventureTurns・tavernEventMark・dive.knownTraps）と M7 の morale を消した v1 の形 */
   function toV1(s: GameState): Record<string, unknown> {
-    const v1 = json(s) as unknown as Record<string, unknown>;
+    const v1 = toV3(s); // M7 の B（v4）の欄も消す
     delete v1["morale"];
     delete v1["adventureTurns"];
     delete v1["tavernEventMark"];
@@ -214,7 +214,7 @@ describe("SV-04 v1 → v2 の移行（M5.5）", () => {
   }
 
   test("SV-04 v1 の保存（adventureTurns・tavernEventMark・knownTraps が無い）は v2 へ移行して 0 / 0 / {} が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(3);
+    expect(SCHEMA).toBe(4); // IT-80（M7 の B）
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -288,7 +288,7 @@ describe("SV-04 v1 → v2 の移行（M5.5）", () => {
 describe("SV-04 v2 → v3 の移行（M7 の A）", () => {
   /** 今の state から M7 の morale を消した v2 の形 */
   function toV2(s: GameState): Record<string, unknown> {
-    const v2 = json(s) as unknown as Record<string, unknown>;
+    const v2 = toV3(s); // M7 の B（v4）の欄も消す
     delete v2["morale"];
     return v2;
   }
@@ -300,7 +300,7 @@ describe("SV-04 v2 → v3 の移行（M7 の A）", () => {
   }
 
   test("SV-04/TW-15 v2 の保存（morale が無い）は v3 へ移行して morale null が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(3);
+    expect(SCHEMA).toBe(4); // IT-80（M7 の B）
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -357,6 +357,143 @@ describe("SV-04 v2 → v3 の移行（M7 の A）", () => {
     if (!r.ok) return;
     expect(r.state.screen).toBe("town");
     expect(r.state.morale).toBeNull();
+  });
+});
+
+describe("SV-04 v3 → v4 の移行（M7 の B。IT-80）", () => {
+  function eventState(): GameState {
+    const d = loadFreshData();
+    d.config.events.impulseThreshold = 1000;
+    for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    return execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state;
+  }
+  /** clearedDungeons を差し替えた state（unlockedDungeons も合わせる） */
+  function cleared(s: GameState, ids: string[]): GameState {
+    const c = cloneState(s);
+    c.progress.clearedDungeons = [...ids];
+    c.progress.unlockedDungeons = ["d01", "d02"];
+    return c;
+  }
+  const MIG = createMigrations(data.dungeons);
+
+  test("SV-04/IT-80 v3 の保存は v4 へ移行し、各実体に Lv0・通常・オプションなし・ユニークでない・呪いなし・foundIn null、warehouse []・buyback []・uniqueBook {} が入る。街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
+    expect(SCHEMA).toBe(4);
+    expect(MIGRATIONS).toHaveLength(3);
+    const cases: Array<[string, GameState]> = [
+      ["town", newGame(1)],
+      ["dungeon", dived(1)],
+      ["battle", withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }])],
+      ["event", eventState()],
+    ];
+    for (const [name, s] of cases) {
+      const v3 = toV3(s);
+      const before = json(v3);
+      expect(isGameStateShape(v3), name).toBe(false); // v3 のままでは v4 の形の検査を通らない
+      const r = migrateState(v3, 3, SCHEMA, MIG);
+      expect(r.ok, name).toBe(true);
+      if (!r.ok) continue;
+      expect(r.fromVersion).toBe(3);
+      // newGame / dived の実体はすべて初期装備・持ち物（既定の欄のまま）、clearedDungeons は空なので shopLevel 0
+      expect(r.state, name).toEqual(json(s));
+      expect(v3, name).toEqual(before); // 引数は書き換えない
+    }
+    // 未鑑定の実体も identified は今の値のまま
+    const s = cloneState(newGame(1));
+    s.items["i1"]!.identified = false;
+    const r = migrateState(toV3(s), 3, SCHEMA, MIG);
+    expect(r.ok && r.state.items["i1"]).toEqual({
+      id: "i1",
+      itemId: "long_sword",
+      level: 0,
+      rarity: "normal",
+      options: [],
+      uniqueId: null,
+      identified: false,
+      cursed: false,
+      foundIn: null,
+    });
+    // MIGRATIONS[2] 単体: オブジェクトでなければそのまま
+    expect(MIGRATIONS[2]!("x")).toBe("x");
+    expect(MIGRATIONS[2]!(null)).toBe(null);
+  });
+
+  test("SV-04/IT-80/IT-62 v3 → v4 の progress.shopLevel は clearedDungeons の各 onClear.shopLevel の最大（d01 2・d02 4【仮】、無ければ 0）", () => {
+    expect(data.dungeons.map((d) => d.onClear.shopLevel)).toEqual([2, 4]);
+    const level = (ids: string[], mig = MIG): number => {
+      const r = migrateState(toV3(cleared(newGame(1), ids)), 3, SCHEMA, mig);
+      if (!r.ok) throw new Error("migrate failed");
+      return r.state.progress.shopLevel;
+    };
+    expect(level([])).toBe(0);
+    expect(level(["d01"])).toBe(2);
+    expect(level(["d02"])).toBe(4);
+    expect(level(["d02", "d01"])).toBe(4);
+    // データに無い id（と Object の既定のキー）は 0 として数える
+    expect(level(["d99", "constructor"])).toBe(0);
+    // 既定の MIGRATIONS は表が空（アプリは main.ts で createMigrations(data.dungeons) を渡す）
+    expect(level(["d01"], MIGRATIONS)).toBe(0);
+    // v2（M6 までの保存）も v2 → v3 → v4 の順に移行して同じ値になる
+    const v2 = toV3(cleared(newGame(1), ["d01"]));
+    delete v2["morale"];
+    const r2 = migrateState(v2, 2, SCHEMA, MIG);
+    expect(r2.ok && [r2.state.morale, r2.state.progress.shopLevel]).toEqual([null, 2]);
+  });
+
+  test("SV-04/IT-80 形の検査: 実体の欄・warehouse・buyback・uniqueBook・progress.shopLevel の型が違う v4 は broken", () => {
+    const town = json(newGame(1));
+    const inst = town.items["i1"]!;
+    const withInst = (patch: Record<string, unknown>): unknown => ({ ...town, items: { ...town.items, i1: { ...inst, ...patch } } });
+    const broken: Array<[string, unknown]> = [
+      ["level missing", withInst({ level: undefined })],
+      ["level negative", withInst({ level: -1 })],
+      ["level fraction", withInst({ level: 1.5 })],
+      ["rarity unknown", withInst({ rarity: "epic" })],
+      ["options not array", withInst({ options: {} })],
+      ["option tier 4", withInst({ options: [{ optionId: "str", tier: 4, value: 1 }] })],
+      ["option value fraction", withInst({ options: [{ optionId: "str", tier: 1, value: 0.5 }] })],
+      ["option id number", withInst({ options: [{ optionId: 1, tier: 1, value: 1 }] })],
+      ["uniqueId number", withInst({ uniqueId: 3 })],
+      ["identified string", withInst({ identified: "yes" })],
+      ["cursed missing", withInst({ cursed: undefined })],
+      ["foundIn number", withInst({ foundIn: 1 })],
+      ["instance not object", { ...town, items: { ...town.items, i1: "x" } }],
+      ["warehouse missing", { ...town, warehouse: undefined }],
+      ["warehouse numbers", { ...town, warehouse: [1] }],
+      ["buyback object", { ...town, buyback: {} }],
+      ["uniqueBook array", { ...town, uniqueBook: [] }],
+      ["uniqueBook bad entry", { ...town, uniqueBook: { twin_tongue_dagger: { foundIn: "d01", bestRarity: "epic" } } }],
+      ["shopLevel missing", { ...town, progress: { ...town.progress, shopLevel: undefined } }],
+      ["shopLevel negative", { ...town, progress: { ...town.progress, shopLevel: -1 } }],
+      ["progress null", { ...town, progress: null }],
+    ];
+    for (const [name, s] of broken) {
+      expect(isGameStateShape(s), name).toBe(false);
+      expect(migrateState(s, SCHEMA, SCHEMA), name).toEqual({ ok: false, reason: "broken" });
+    }
+    // 正しい形の値は通る（呪われた上質の短剣・ユニークの記録・倉庫と買い戻しの id・流通レベル 4）
+    const ok = {
+      ...(withInst({ rarity: "fine", options: [{ optionId: "str", tier: 1, value: -1 }], cursed: true, uniqueId: "twin_tongue_dagger", foundIn: "d01", level: 3 }) as object),
+      warehouse: ["i99"],
+      buyback: ["i98"],
+      uniqueBook: { twin_tongue_dagger: { foundIn: null, bestRarity: "legendary" } },
+      progress: { ...town.progress, shopLevel: 4 },
+    };
+    expect(isGameStateShape(ok)).toBe(true);
+  });
+
+  test("SV-04/SV-50 v3 のレコードを保存先（メモリ）に置くと、一覧で ok、続きからで読めて、createMigrations(data.dungeons) の移行で shopLevel が入る", async () => {
+    const mem = createMemoryBackend();
+    const s = cleared(newGame(1), ["d01"]);
+    mem.raw("g1", { ...buildRecord("g1", 4, 999, 3, s), state: toV3(s) });
+    const svc = service(mem, { migrations: MIG });
+    const list = await svc.list();
+    expect(list.ok && list.entries.map((e) => [e.gameId, e.status])).toEqual([["g1", "ok"]]);
+    const r = await svc.load("g1");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.screen).toBe("town");
+    expect(r.state.progress.shopLevel).toBe(2);
+    expect([r.state.warehouse, r.state.buyback, r.state.uniqueBook]).toEqual([[], [], {}]);
   });
 });
 
@@ -889,7 +1026,7 @@ describe("SV-20 db.ts", () => {
 describe("SV-30〜33 書き出しと読み込み（SaveService）", () => {
   /** 今の state から M5.5 の欄と M7 の morale を消した v1 の形 */
   function toV1(s: GameState): Record<string, unknown> {
-    const v1 = json(s) as unknown as Record<string, unknown>;
+    const v1 = toV3(s); // M7 の B（v4）の欄も消す
     delete v1["morale"];
     delete v1["adventureTurns"];
     delete v1["tavernEventMark"];

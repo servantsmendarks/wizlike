@@ -5,6 +5,7 @@ import { sha256Hex } from "../src/save/sha256";
 import { buildExportFile, EXPORT_FORMAT, parseExportFile, serializeExportFile, stateChecksum } from "../src/save/transfer";
 import { dived } from "./helpers/battle";
 import { data, newGame } from "./helpers/core";
+import { toV3 } from "./helpers/save";
 
 const SCHEMA = data.config.save.schemaVersion;
 
@@ -28,7 +29,7 @@ function fileText(over: Record<string, unknown> = {}, state: unknown = json(newG
 
 /** 今の state から M5.5 の欄と M7 の morale を消した v1 の形（save.test.ts の toV1 と同じ） */
 function toV1(s: GameState): Record<string, unknown> {
-  const v1 = json(s) as unknown as Record<string, unknown>;
+  const v1 = toV3(s); // M7 の B（v4）の欄も消す
   delete v1["morale"]; // M7（v3）の欄
   delete v1["adventureTurns"];
   delete v1["tavernEventMark"];
@@ -132,8 +133,8 @@ describe("SV-33 parseExportFile", () => {
     expect(parseExportFile(fileText({ checksum: sum }, s), SCHEMA).ok).toBe(true);
   });
 
-  test("SV-33/SV-04 parseExportFile: v1 の state（adventureTurns 無し）のファイルは v3 へ移行して通り、形の検査に落ちる state（party 空）は broken", () => {
-    expect(SCHEMA).toBe(3);
+  test("SV-33/SV-04 parseExportFile: v1 の state（adventureTurns 無し）のファイルは今の版（v4）へ移行して通り、形の検査に落ちる state（party 空）は broken", () => {
+    expect(SCHEMA).toBe(4); // IT-80（M7 の B）
     const v1 = toV1(newGame(1));
     const r = parseExportFile(fileText({ schemaVersion: 1 }, v1), SCHEMA);
     expect(r.ok).toBe(true);

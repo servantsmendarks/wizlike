@@ -1,8 +1,8 @@
 // 戦闘の判定と式（combat.md CB-04/05/13/14/20〜23/30/42/50/53、CH-44/60）。
 // すべて純粋関数。乱数も RuleContext も使わない（乱数を使う手続きは rules/combat.ts）。
-import type { ClassDef, Config, ConsumableItem, GameData, Item, ItemEffect, Spell, SpellTarget, StatusId, WeaponItem } from "../data/index";
+import type { ClassDef, Config, ConsumableItem, GameData, Item, ItemEffect, Spell, SpellTarget, StatusId, WeaponBase } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
-import { itemOf, monsterOf, personalityOf } from "../state";
+import { findBase, monsterOf, personalityOf } from "../state";
 import type { BattleState, Character, EnemyGroup, EnemyGroupView, EnemyUnit, GameState } from "../types";
 
 /** CH-44: 行動不能にする状態異常（毒は含まない） */
@@ -77,14 +77,14 @@ export function frontLineIds(state: GameState, data: GameData): string[] {
   return state.party.slice(n).map((c) => c.id);
 }
 
-/** 装備している武器（無ければ null） */
-export function weaponOf(state: GameState, data: GameData, ch: Character): WeaponItem | null {
+/** 装備している武器のベース（無ければ null。IT-02） */
+export function weaponOf(state: GameState, data: GameData, ch: Character): WeaponBase | null {
   const id = ch.equipment.weapon;
   if (id === null) return null;
   const inst = state.items[id];
   if (inst === undefined) return null;
-  const item = itemOf(data, inst.itemId);
-  return item.type === "weapon" ? item : null;
+  const base = findBase(data, inst.itemId);
+  return base !== null && base.slot === "weapon" ? base : null;
 }
 
 /** CB-13/14: 前衛扱いなら近接攻撃可、後衛は ranged の武器のときだけ */
@@ -101,8 +101,8 @@ export function allyAc(state: GameState, data: GameData, ch: Character): number 
     if (id === null) continue;
     const inst = state.items[id];
     if (inst === undefined) continue;
-    const item = itemOf(data, inst.itemId);
-    if ("ac" in item) ac += item.ac;
+    const base = findBase(data, inst.itemId);
+    if (base !== null && base.slot !== "weapon") ac += base.ac;
   }
   ac += state.battle?.acBonus[ch.id] ?? 0;
   return Math.max(cfg.acMin, ac);
@@ -275,9 +275,9 @@ export function battleSpellUsable(spell: Spell): boolean {
 /** 戦闘で使える消耗品（効果が heal / cureStatus） */
 export type BattleItem = ConsumableItem & { effect: Extract<ItemEffect, { type: "heal" | "cureStatus" }> };
 
-/** F9: 戦闘で使える消耗品か（heal / cureStatus で、対象が味方側） */
-export function battleItemUsable(item: Item): item is BattleItem {
-  if (item.type !== "consumable" || item.usableIn === "field") return false;
+/** F9: 戦闘で使える消耗品か（heal / cureStatus で、対象が味方側）。null（装備。M7 の B2 から items.json に無い）は false */
+export function battleItemUsable(item: Item | null): item is BattleItem {
+  if (item === null || item.type !== "consumable" || item.usableIn === "field") return false;
   const e = item.effect;
   if (e.type !== "heal" && e.type !== "cureStatus") return false;
   return ALLY_SIDE.includes(e.target);

@@ -2,7 +2,7 @@
 // すべて純粋関数。乱数は使わない。
 import type { GameData, StatusId } from "../data/index";
 import { parseDice } from "../rng";
-import { itemOf, monsterOf, personalityOf, spellOf } from "../state";
+import { findItem, monsterOf, personalityOf, spellOf } from "../state";
 import type { BattleAction, BattleState, BattleTarget, Character, GameState, Life } from "../types";
 import {
   battleItemUsable,
@@ -88,7 +88,7 @@ function baseAutoInput(state: GameState, data: GameData, ch: Character): BattleA
     }
     case "item": {
       const inst = state.items[a.instanceId];
-      if (!ch.inventory.includes(a.instanceId) || inst === undefined || !battleItemUsable(itemOf(data, inst.itemId))) {
+      if (!ch.inventory.includes(a.instanceId) || inst === undefined || !battleItemUsable(findItem(data, inst.itemId))) {
         return defaultAction(state, data, ch);
       }
       const t = retarget(state, a.target);

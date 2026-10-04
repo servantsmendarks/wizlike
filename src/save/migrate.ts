@@ -1,5 +1,6 @@
 // SV-04: schemaVersion の移行（純粋）。MIGRATIONS[i] は版 i+1 → i+2。
 // 長さは config.save.schemaVersion − 1（テストで固定）。移行したレコードは書き戻さず、次のオートセーブで上書きする。
+import type { DungeonDef } from "../core/data";
 import type { GameState } from "../core/types";
 import { isPlainObject } from "./record";
 import type { MigrateResult, Migration } from "./types";
@@ -25,7 +26,52 @@ export function migrateV2toV3(x: unknown): unknown {
   return { ...x, morale: null };
 }
 
-export const MIGRATIONS: readonly Migration[] = [migrateV1toV2, migrateV2toV3];
+/** IT-80: ダンジョン id → 初回クリアで上がる流通レベル（dungeons[].onClear.shopLevel）。v3 → v4 の progress.shopLevel の計算に使う */
+export type ShopLevelTable = Readonly<Record<string, number>>;
+
+const V4_ITEM_DEFAULTS = { level: 0, rarity: "normal", options: [], uniqueId: null, cursed: false, foundIn: null } as const;
+
+/**
+ * SV-04 v3 → v4（M7 の B。IT-80）: 各アイテム実体に level 0・rarity normal・options []・uniqueId null・cursed false・foundIn null を足し
+ * （identified は今の値のまま。v3 までの遊びに呪われた品を手に入れる経路は無い）、warehouse []・buyback []・uniqueBook {} を足し、
+ * progress.shopLevel を clearedDungeons の各 shopLevels の最大（無ければ 0。表に無い id は 0）にする。
+ * 引数は書き換えない（浅い複製。items の各実体と progress も複製する）。オブジェクトでなければそのまま返す（形の検査で broken）
+ */
+export function migrateV3toV4(x: unknown, shopLevels: ShopLevelTable = {}): unknown {
+  if (!isPlainObject(x)) return x;
+  const out: Record<string, unknown> = { ...x, warehouse: [], buyback: [], uniqueBook: {} };
+  const items = x["items"];
+  if (isPlainObject(items)) {
+    out["items"] = Object.fromEntries(
+      Object.entries(items).map(([k, inst]) => [k, isPlainObject(inst) ? { ...inst, ...V4_ITEM_DEFAULTS, options: [] } : inst]),
+    );
+  }
+  const progress = x["progress"];
+  if (isPlainObject(progress)) {
+    const cleared = progress["clearedDungeons"];
+    let shopLevel = 0;
+    if (Array.isArray(cleared)) {
+      for (const id of cleared) {
+        if (typeof id !== "string" || !Object.prototype.hasOwnProperty.call(shopLevels, id)) continue;
+        shopLevel = Math.max(shopLevel, shopLevels[id] ?? 0);
+      }
+    }
+    out["progress"] = { ...progress, shopLevel };
+  }
+  return out;
+}
+
+/**
+ * 移行関数の列（MIGRATIONS[i] は版 i+1 → i+2）。v3 → v4 の流通レベルは dungeons の onClear.shopLevel から計算する（IT-80）。
+ * アプリ（main.ts）は検証済みの data.dungeons を渡して SaveDeps.migrations にする
+ */
+export function createMigrations(dungeons: readonly Pick<DungeonDef, "id" | "onClear">[]): readonly Migration[] {
+  const table: ShopLevelTable = Object.fromEntries(dungeons.map((d) => [d.id, d.onClear.shopLevel]));
+  return [migrateV1toV2, migrateV2toV3, (x) => migrateV3toV4(x, table)];
+}
+
+/** 既定の移行関数の列（流通レベルの表が空なので v3 → v4 の shopLevel は 0）。アプリは createMigrations(data.dungeons) を使う */
+export const MIGRATIONS: readonly Migration[] = createMigrations([]);
 
 const RESUMABLE_SCREENS: readonly unknown[] = ["town", "dungeon", "battle", "event"];
 
@@ -41,6 +87,49 @@ function isTurnCount(x: unknown): boolean {
   return typeof x === "number" && Number.isSafeInteger(x) && x >= 0;
 }
 
+const RARITIES: readonly unknown[] = ["normal", "fine", "rare", "legendary"];
+
+function isStringOrNull(x: unknown): boolean {
+  return x === null || typeof x === "string";
+}
+
+function isStringArray(x: unknown): boolean {
+  return Array.isArray(x) && x.every((e) => typeof e === "string");
+}
+
+/** IT-33: { optionId: 文字列, tier: 1..3, value: 整数（符号付き） } */
+function isOptionRollShape(x: unknown): boolean {
+  return (
+    isPlainObject(x) &&
+    typeof x["optionId"] === "string" &&
+    (x["tier"] === 1 || x["tier"] === 2 || x["tier"] === 3) &&
+    typeof x["value"] === "number" &&
+    Number.isSafeInteger(x["value"])
+  );
+}
+
+/** IT-10（schemaVersion 4）: アイテム実体の欄の型 */
+function isItemInstanceShape(x: unknown): boolean {
+  return (
+    isPlainObject(x) &&
+    typeof x["id"] === "string" &&
+    typeof x["itemId"] === "string" &&
+    isTurnCount(x["level"]) &&
+    RARITIES.includes(x["rarity"]) &&
+    Array.isArray(x["options"]) &&
+    x["options"].every(isOptionRollShape) &&
+    isStringOrNull(x["uniqueId"]) &&
+    typeof x["identified"] === "boolean" &&
+    typeof x["cursed"] === "boolean" &&
+    isStringOrNull(x["foundIn"])
+  );
+}
+
+/** IT-66（schemaVersion 4）: uniqueBook の 1 件 { foundIn: 文字列か null, bestRarity: 希少度 } */
+function isUniqueBookEntryShape(x: unknown): boolean {
+  return isPlainObject(x) && isStringOrNull(x["foundIn"]) && RARITIES.includes(x["bestRarity"]);
+}
+
 /**
  * GameState の最小限の形の検査（深い検証はしない）。
  * screen は town / dungeon / battle / event、party は 1 件以上の配列、rng / items はオブジェクト、gold は数、
@@ -49,6 +138,8 @@ function isTurnCount(x: unknown): boolean {
  * pendingChoice の kind が event ⇒ screen event（M5 は欄を足さず値の種類を増やしただけなので schemaVersion 1 のままだった）。
  * schemaVersion 2（M5.5）: adventureTurns と tavernEventMark が 0 以上の安全な整数、dive がオブジェクトなら knownTraps がプレーンなオブジェクト。
  * schemaVersion 3（M7 の A）: morale は null か、rankId が文字列のプレーンなオブジェクト。
+ * schemaVersion 4（M7 の B。IT-80）: items の各実体の欄の型（isItemInstanceShape）、warehouse / buyback は文字列の配列、
+ * uniqueBook は各値が { foundIn, bestRarity } のプレーンなオブジェクト、progress はプレーンなオブジェクトで shopLevel が 0 以上の安全な整数。
  */
 export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(x)) return false;
@@ -64,6 +155,12 @@ export function isGameStateShape(x: unknown): x is GameState {
   const dive = x["dive"];
   if (isPlainObject(dive) && !isPlainObject(dive["knownTraps"])) return false;
   if (!isMoraleShape(x["morale"])) return false;
+  if (!Object.values(x["items"] as Record<string, unknown>).every(isItemInstanceShape)) return false;
+  if (!isStringArray(x["warehouse"]) || !isStringArray(x["buyback"])) return false;
+  const book = x["uniqueBook"];
+  if (!isPlainObject(book) || !Object.values(book).every(isUniqueBookEntryShape)) return false;
+  const progress = x["progress"];
+  if (!isPlainObject(progress) || !isTurnCount(progress["shopLevel"])) return false;
   if ((x["screen"] === "battle") !== (x["battle"] !== null)) return false;
   if ((x["screen"] === "town") !== (x["townVisit"] !== null)) return false;
   const pc = x["pendingChoice"];

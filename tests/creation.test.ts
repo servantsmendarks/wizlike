@@ -72,11 +72,12 @@ describe("creation: game.new", () => {
     expect(s.party[3]!.knownSpells).toEqual(["heal"]);
   });
 
-  test("CH-05 所持金は 300、bank は 0。DG-01 unlockedDungeons は [dungeons[0].id]", () => {
+  test("CH-05 所持金は 300、bank は 0。DG-01 unlockedDungeons は [dungeons[0].id]。IT-62 shopLevel は 0、IT-64/63/66 倉庫・買い戻し・図鑑は空（M7）", () => {
     const s = newGame(1);
     expect(s.gold).toBe(300);
     expect(s.bank).toBe(0);
-    expect(s.progress).toEqual({ unlockedDungeons: ["d01"], clearedDungeons: [] });
+    expect(s.progress).toEqual({ unlockedDungeons: ["d01"], clearedDungeons: [], shopLevel: 0 });
+    expect([s.warehouse, s.buyback, s.uniqueBook]).toEqual([[], [], {}]);
   });
 
   test("CH-05 名前は trim して保存する。空と 7 文字は rejected、6 文字は通る、絵文字 1 つは 1 文字", () => {
@@ -189,7 +190,21 @@ describe("creation: game.new", () => {
       gauntlet: null,
       accessory: null,
     });
-    expect(s.items["i1"]).toEqual({ id: "i1", itemId: "long_sword", identified: true });
+    // IT-04（M7）: 初期装備は汎用 Lv0・通常・オプションなし・鑑定済み・呪いなし（foundIn null）
+    expect(s.items["i1"]).toEqual({
+      id: "i1",
+      itemId: "long_sword",
+      level: 0,
+      rarity: "normal",
+      options: [],
+      uniqueId: null,
+      identified: true,
+      cursed: false,
+      foundIn: null,
+    });
+    for (const inst of Object.values(s.items)) {
+      expect([inst.level, inst.rarity, inst.options, inst.uniqueId, inst.cursed, inst.foundIn], inst.id).toEqual([0, "normal", [], null, false, null]);
+    }
     expect(s.items["i2"]!.itemId).toBe("leather_armor");
     expect(s.items["i3"]!.itemId).toBe("wooden_shield");
   });

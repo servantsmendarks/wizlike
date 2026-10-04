@@ -26,6 +26,7 @@ import {
 } from "../src/presenter/views/camp";
 import { dived } from "./helpers/battle";
 import { data, expectKnownStringKeys, newGame } from "./helpers/core";
+import { cursedDagger } from "./helpers/items";
 
 const S = data.strings;
 
@@ -198,7 +199,7 @@ describe("UI-53 道具（M4 の field-items から移した）", () => {
 
   test("UI-53/MG-25 道具の段: 消耗品と魔法書（usable 偽は dim）とやめる。見出しは {name}の道具", () => {
     const s = inDungeon();
-    const book = createItemInstance(s, "tome_lightning", true);
+    const book = createItemInstance(s, { itemId: "tome_lightning", identified: true });
     s.party[0]!.inventory.push(book);
     const m = input(s);
     expect(rows(campEntries("camp", { kind: "item", stage: "item", memberId: "c1" }, m, S))).toEqual([
@@ -303,8 +304,8 @@ describe("UI-53 道具（M4 の field-items から移した）", () => {
 describe("CH-76/UI-53 装備", () => {
   test("CH-76/UI-53 誰（行動できない者は dim）→ 枠（6 枠。パネルは詳細）→ 品（外す・候補・やめる。パネルはその枠を focus）", () => {
     const s = inDungeon({ c2: { status: ["sleep"] } });
-    const cap = createItemInstance(s, "leather_cap", true);
-    const sword = createItemInstance(s, "long_sword", true);
+    const cap = createItemInstance(s, { itemId: "leather_cap", identified: true });
+    const sword = createItemInstance(s, { itemId: "long_sword", identified: true });
     s.party[4]!.inventory.push(cap, sword); // c5 エル（魔術師）
     const m = input(s);
     const who = grid(campEntries("camp", { kind: "equip", stage: "member" }, m, S));
@@ -344,7 +345,7 @@ describe("CH-76/UI-53 装備", () => {
 
   test("CH-73/UI-53 呪われた品を装備していると「外す」は dim、候補は「呪いで外せない」で dim", () => {
     let s = inDungeon();
-    const cursed = createItemInstance(s, "cursed_dagger", true);
+    const cursed = cursedDagger(s, true);
     s.party[2]!.inventory.push(cursed);
     s = accepted(s, { type: "party.equip", memberId: "c3", instanceId: cursed });
     const m = input(s);
@@ -391,11 +392,11 @@ describe("CH-77/UI-53 鑑定", () => {
     const s = inDungeon({ c5: { classId: "bishop" } });
     const p: CampPage = { kind: "identify", stage: "item", appraiserId: "c5" };
     expect(rows(campEntries("camp", p, input(s), S))).toEqual([{ label: "鑑定する物がない", disabled: true, choice: { kind: "none" } }, cancel]);
-    const id = createItemInstance(s, "cursed_dagger", false);
+    const id = cursedDagger(s, false);
     s.party[0]!.inventory.push(id);
     const m = input(s);
     expect(campHeader(p, m, S)).toBe("何を鑑定する？");
-    expect(rows(campEntries("camp", p, m, S))).toEqual([{ label: "アルド: 短剣？", disabled: false, choice: { kind: "identifyItem", instanceId: id } }, cancel]);
+    expect(rows(campEntries("camp", p, m, S))).toEqual([{ label: "アルド: 短い刃？", disabled: false, choice: { kind: "identifyItem", instanceId: id } }, cancel]);
     const r = campStep("camp", p, m, { kind: "identifyItem", instanceId: id });
     expect(r).toEqual({ kind: "send", command: { type: "party.identify", memberId: "c5", instanceId: id }, after: p });
     if (r.kind !== "send") throw new Error("not send");

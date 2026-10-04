@@ -2,7 +2,7 @@
 // 乱数を引く順: 判定の d100 を spells.json の順にすべて振ってから、保証の randInt を帯の順に引く。
 import type { ClassDef, Config, GameData, School, Spell, StatKey } from "../data/index";
 import { randInt } from "../rng";
-import { classOf, destroyItemInstance, itemOf, memberById, spellOf } from "../state";
+import { classOf, destroyItemInstance, findItem, itemOf, memberById, spellOf } from "../state";
 import type { Character, GameState, RuleContext } from "../types";
 
 /** MG-22: 呪文の系統で関連能力値を決める（mage → 知恵、priest → 信仰心）。 */
@@ -119,8 +119,8 @@ export function checkLearnFromBook(
   if (ch === null) return "no such member";
   const inst = state.items[instanceId];
   if (!ch.inventory.includes(instanceId) || inst === undefined) return "item not in inventory";
-  const item = itemOf(data, inst.itemId);
-  if (item.type !== "book") return "not a book";
+  const item = findItem(data, inst.itemId); // 装備は null
+  if (item === null || item.type !== "book") return "not a book";
   const spell = spellOf(data, item.effect.spell);
   const cls = classOf(data, ch.classId);
   if (cls.spells[spell.school] === undefined) return "class cannot learn this school";

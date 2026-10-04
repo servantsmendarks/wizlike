@@ -36,7 +36,7 @@ function base(): GameState {
 /** 台帳に c2 の短剣 1 個と 40G を足す（所持金にも入っている: DG-40） */
 function withLedger(s0: GameState): GameState {
   const s = cloneState(s0);
-  const id = createItemInstance(s, "dagger", true);
+  const id = createItemInstance(s, { itemId: "dagger", identified: true });
   s.party[1]!.inventory.push(id);
   s.dive!.ledger.items.push(id);
   s.dive!.ledger.gold += 40;
@@ -608,7 +608,7 @@ describe("TW-27 全滅の方が得にならない", () => {
       s.dive!.ledger.gold = randInt(bot, 0, s.gold);
       const extra = randInt(bot, 0, 4);
       for (let i = 0; i < extra; i++) {
-        const id = createItemInstance(s, itemIds[randInt(bot, 0, itemIds.length - 1)]!, randInt(bot, 0, 1) === 1);
+        const id = createItemInstance(s, { itemId: itemIds[randInt(bot, 0, itemIds.length - 1)]!, identified: randInt(bot, 0, 1) === 1 });
         s.party[randInt(bot, 0, s.party.length - 1)]!.inventory.push(id);
         if (randInt(bot, 0, 1) === 1) s.dive!.ledger.items.push(id);
       }

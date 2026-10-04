@@ -58,7 +58,7 @@ export function createInitialState(seed: number, _data: GameData): GameState {
     nextItemSeq: 1,
     gold: 0,
     bank: 0,
-    progress: { unlockedDungeons: [], clearedDungeons: [] },
+    progress: { unlockedDungeons: [], clearedDungeons: [], shopLevel: 0 },
     dive: null,
     pendingChoice: null,
     battle: null,
@@ -67,6 +67,9 @@ export function createInitialState(seed: number, _data: GameData): GameState {
     adventureTurns: 0,
     tavernEventMark: 0,
     morale: null,
+    warehouse: [],
+    buyback: [],
+    uniqueBook: {},
   };
 }
 

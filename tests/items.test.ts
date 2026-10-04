@@ -155,7 +155,7 @@ describe("F9/H5 戦闘外の heal / cureStatus（applyAllyEffect を戦闘と共
 describe("MG-25 魔法書（dungeon.useItem）", () => {
   function withBook(id: string): { s: GameState; book: string } {
     const s = inDungeon();
-    const book = createItemInstance(s, "tome_lightning", true);
+    const book = createItemInstance(s, { itemId: "tome_lightning", identified: true });
     member(s, id).inventory.push(book);
     return { s, book };
   }
@@ -184,7 +184,7 @@ describe("MG-25 魔法書（dungeon.useItem）", () => {
 describe("UI-53 fieldItemMenu", () => {
   test("迷宮の戦闘外: 全員（並び順）、items は inventory の順の consumable / book、target は ally / none、usable は checkUseItem と同値", () => {
     const s = inDungeon({ c3: { status: ["paralysis"] }, c6: { life: "dead", hp: 0 } });
-    const book = createItemInstance(s, "tome_lightning", true);
+    const book = createItemInstance(s, { itemId: "tome_lightning", identified: true });
     member(s, "c1").inventory.push(book);
     const m = fieldItemMenu(s, data)!;
     expect(m.members.map((x) => [x.id, x.canAct])).toEqual([
@@ -255,7 +255,7 @@ describe("DG-30/MG-25 街での道具（M5.5）", () => {
     expect(rp.state.items["i13"]).toBeUndefined();
     // 魔法書: 覚えて本が消える
     const b = cloneState(newGame(1));
-    const book = createItemInstance(b, "tome_lightning", true);
+    const book = createItemInstance(b, { itemId: "tome_lightning", identified: true });
     member(b, "c5").inventory.push(book);
     const rb = ok(b, use("c5", book));
     expect(rb.events[0]).toEqual({ kind: "spellLearned", id: "c5", spellId: "lightning_tome", via: "book" });

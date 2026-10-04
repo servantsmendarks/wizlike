@@ -12,7 +12,6 @@ import {
   destroyItemInstance,
   dungeonOf,
   itemDisplayName,
-  itemOf,
   memberById,
   moraleOf,
   raisesMorale,
@@ -53,15 +52,15 @@ function cureOf(ch: Character, data: GameData): { statuses: CurableStatusId[]; c
   return { statuses, cost };
 }
 
-/** TW-07 解呪: EQUIP_SLOTS の順で、装備中の呪われた品（items[].cursed）の実体 id */
-function cursedEquipped(state: GameState, data: GameData, ch: Character): string[] {
+/** TW-07 解呪: EQUIP_SLOTS の順で、装備中の呪われた品（実体の cursed。IT-32）の実体 id */
+function cursedEquipped(state: GameState, ch: Character): string[] {
   const out: string[] = [];
   for (const slot of EQUIP_SLOTS) {
     const id = ch.equipment[slot];
     if (id === null) continue;
     const inst = state.items[id];
     if (inst === undefined) throw new Error(`cursedEquipped: unknown item instance ${id}`);
-    if (itemOf(data, inst.itemId).cursed) out.push(id);
+    if (inst.cursed) out.push(id);
   }
   return out;
 }
@@ -210,7 +209,7 @@ function templeQuote(
       return { ok: true, cost: c.cost };
     }
     case "uncurse":
-      if (cursedEquipped(state, data, ch).length === 0) return { ok: false, reason: "nothing cursed" };
+      if (cursedEquipped(state, ch).length === 0) return { ok: false, reason: "nothing cursed" };
       return { ok: true, cost: e.uncurseCost };
   }
 }
@@ -257,7 +256,7 @@ export function templeService(ctx: RuleContext, memberId: string, service: Templ
       return;
     }
     case "uncurse": {
-      for (const id of cursedEquipped(state, data, ch)) {
+      for (const id of cursedEquipped(state, ch)) {
         const item = itemDisplayName(state, data, id);
         destroyItemInstance(state, ch, id);
         ctx.events.push({ kind: "message", key: "town.temple.uncursed", params: { name: ch.name, item } });
@@ -369,7 +368,7 @@ export function buyItem(ctx: RuleContext, memberId: string, itemId: string): voi
   const item = shopItems(data).find((it) => it.id === itemId);
   if (ch === null || item === undefined) throw new Error(`buyItem: bad ${memberId} / ${itemId}`);
   state.gold -= item.price;
-  ch.inventory.push(createItemInstance(state, itemId, true));
+  ch.inventory.push(createItemInstance(state, { itemId, identified: true }));
   ctx.events.push({ kind: "message", key: "town.shop.bought", params: { name: ch.name, item: item.name, cost: item.price } });
 }
 

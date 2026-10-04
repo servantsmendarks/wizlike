@@ -17,7 +17,7 @@ import type {
   UniqueDef,
 } from "./data/index";
 import { EQUIP_SLOTS } from "./data/index";
-import type { Character, GameState, RuleContext } from "./types";
+import type { Character, GameState, ItemOptionRoll, Rarity, RuleContext } from "./types";
 
 /** JSON 往復で複製する（D1。GameState は JSON 安全が前提: CLAUDE.md §3-11）。 */
 export function cloneState(s: GameState): GameState {
@@ -41,10 +41,21 @@ export function spellOf(data: GameData, id: string): Spell {
   return s;
 }
 
+/** items.json の消耗品・魔法書（M7 の B2 から装備は返さない。装備は baseOf） */
 export function itemOf(data: GameData, id: string): Item {
   const i = data.items.find((x) => x.id === id);
   if (i === undefined) throw new Error(`unknown item id: ${id}`);
   return i;
+}
+
+/** items.json の消耗品・魔法書。無ければ（装備のベースの id なら）null */
+export function findItem(data: GameData, id: string): Item | null {
+  return data.items.find((x) => x.id === id) ?? null;
+}
+
+/** equipment-bases.json のベース。無ければ（消耗品・魔法書の id なら）null */
+export function findBase(data: GameData, id: string): EquipmentBase | null {
+  return data.equipmentBases.find((x) => x.id === id) ?? null;
 }
 
 /** IT-02: equipment-bases.json のベース */
@@ -117,14 +128,37 @@ export function memberById(state: GameState, id: string): Character | null {
   return state.party.find((c) => c.id === id) ?? null;
 }
 
+/** createItemInstance の指定。省略した欄の既定は Lv0・normal・オプションなし・ユニークでない・呪いなし・foundIn null（IT-10） */
+export type ItemInstanceSpec = {
+  itemId: string;
+  identified: boolean;
+  level?: number;
+  rarity?: Rarity;
+  options?: ItemOptionRoll[];
+  uniqueId?: string | null;
+  cursed?: boolean;
+  foundIn?: string | null;
+};
+
 /**
  * 実体を作って state.items に登録し、id を返す。id は "i" + nextItemSeq で、作った後に nextItemSeq += 1。
- * 持ち主への登録は呼び出し側が行う。itemId は items.json の id（data での存在確認は呼び出し側）。
+ * 持ち主への登録は呼び出し側が行う。itemId は equipment-bases.json か items.json の id（data での存在確認は呼び出し側）。
+ * options は複製して持つ（呼び出し側の配列を共有しない）。
  */
-export function createItemInstance(state: GameState, itemId: string, identified: boolean): string {
+export function createItemInstance(state: GameState, spec: ItemInstanceSpec): string {
   const id = `i${state.nextItemSeq}`;
   if (Object.prototype.hasOwnProperty.call(state.items, id)) throw new Error(`item instance id already used: ${id}`);
-  state.items[id] = { id, itemId, identified };
+  state.items[id] = {
+    id,
+    itemId: spec.itemId,
+    level: spec.level ?? 0,
+    rarity: spec.rarity ?? "normal",
+    options: (spec.options ?? []).map((o) => ({ ...o })),
+    uniqueId: spec.uniqueId ?? null,
+    identified: spec.identified,
+    cursed: spec.cursed ?? false,
+    foundIn: spec.foundIn ?? null,
+  };
   state.nextItemSeq += 1;
   return id;
 }
@@ -146,12 +180,15 @@ export function destroyItemInstance(state: GameState, ch: Character, instanceId:
 }
 
 /**
- * CH-72: アイテム実体の表示名。鑑定済みなら items[].name、未鑑定なら unidentifiedName（無ければ name）。
- * 実体が無ければ Error。
+ * CH-72: アイテム実体の表示名。装備は鑑定済みならベースの name、未鑑定ならベースの unidentifiedName（IT-12）。
+ * 消耗品・魔法書は鑑定済みなら items[].name、未鑑定なら unidentifiedName（無ければ name）。実体が無ければ Error。
+ * 希少度・Lv・ユニークの名前を組むのは IT-11 の実装（M7 の B6）で足す。
  */
 export function itemDisplayName(state: GameState, data: GameData, instanceId: string): string {
   const inst = state.items[instanceId];
   if (inst === undefined) throw new Error(`unknown item instance: ${instanceId}`);
+  const base = findBase(data, inst.itemId);
+  if (base !== null) return inst.identified ? base.name : base.unidentifiedName;
   const item = itemOf(data, inst.itemId);
   return inst.identified ? item.name : (item.unidentifiedName ?? item.name);
 }

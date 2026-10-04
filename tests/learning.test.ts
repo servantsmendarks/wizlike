@@ -400,7 +400,7 @@ describe("learning: 魔法書（MG-25）", () => {
   /** party[idx] の inventory に tome_lightning の実体を足した ctx。 */
   function withTome(idx: number, patch: Partial<Character> = {}) {
     const { ctx, ch } = setup(1, idx, patch);
-    const inst = createItemInstance(ctx.state, "tome_lightning", true);
+    const inst = createItemInstance(ctx.state, { itemId: "tome_lightning", identified: true });
     ch.inventory.push(inst);
     return { ctx, ch, inst };
   }

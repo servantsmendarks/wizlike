@@ -11,6 +11,7 @@ import { arriveTown, mercyEligible, resurrectCostOf, returnToTown, townMenu } fr
 import { cloneState, createItemInstance, makeContext } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState } from "../src/core/types";
 import { ctxFor, data, expectKnownStringKeys, loadFreshData, loadRuleData, newGame, seedWithFirstD100 } from "./helpers/core";
+import { cursedDagger } from "./helpers/items";
 
 /** newGame(1) の複製に、id → patch を浅くマージしたもの */
 function town(patches: Record<string, Partial<Character>> = {}, gold = 300): GameState {
@@ -382,7 +383,7 @@ describe("TW-07 寺院（town.temple）", () => {
 
   /** c2 に呪いの短剣を装備させる（元の長剣は inventory へ） */
   function withCursed(s: GameState, id = "c2"): { s: GameState; inst: string } {
-    const inst = createItemInstance(s, "cursed_dagger", true);
+    const inst = cursedDagger(s, true);
     const ch = member(s, id);
     if (ch.equipment.weapon !== null) ch.inventory.push(ch.equipment.weapon);
     ch.equipment.weapon = inst;
@@ -394,7 +395,7 @@ describe("TW-07 寺院（town.temple）", () => {
       const { s, inst } = withCursed(town({ c2: patch }));
       const r = ok(s, { type: "town.temple", memberId: "c2", service: "uncurse" });
       expect(r.events).toEqual([
-        { kind: "message", key: "town.temple.uncursed", params: { name: "ベルク", item: "血濡れの短剣" } },
+        { kind: "message", key: "town.temple.uncursed", params: { name: "ベルク", item: "短剣" } },
       ]);
       expect(r.state.gold).toBe(100);
       expect(r.state.items[inst]).toBeUndefined();
@@ -403,10 +404,22 @@ describe("TW-07 寺院（town.temple）", () => {
     }
   });
 
+  test("TW-07/IT-32 解呪の対象は実体の cursed で決まる（M7。同じ短剣のベースでも呪われていない実体は対象外）", () => {
+    const s = town();
+    const dagger = createItemInstance(s, { itemId: "dagger", identified: true });
+    const c2 = member(s, "c2");
+    c2.inventory.push(c2.equipment.weapon!);
+    c2.equipment.weapon = dagger;
+    expectRejected(s, { type: "town.temple", memberId: "c2", service: "uncurse" }, "nothing cursed");
+    s.items[dagger]!.cursed = true;
+    const r = ok(s, { type: "town.temple", memberId: "c2", service: "uncurse" });
+    expect(r.state.items[dagger]).toBeUndefined();
+  });
+
   test("TW-07 解呪の rejected: 呪われた品を装備していない（inventory にあるだけでも）、所持金不足", () => {
     expectRejected(town(), { type: "town.temple", memberId: "c2", service: "uncurse" }, "nothing cursed");
     const s = town();
-    member(s, "c2").inventory.push(createItemInstance(s, "cursed_dagger", true));
+    member(s, "c2").inventory.push(cursedDagger(s, true));
     expectRejected(s, { type: "town.temple", memberId: "c2", service: "uncurse" }, "nothing cursed");
     expectRejected(withCursed(town({}, 199)).s, { type: "town.temple", memberId: "c2", service: "uncurse" }, "not enough gold");
   });
@@ -598,7 +611,7 @@ describe("UI-52/TW-11 townMenu（表示層向けの問い合わせ）", () => {
         },
         200,
       );
-      const inst = createItemInstance(base, "cursed_dagger", true);
+      const inst = cursedDagger(base, true);
       member(base, "c4").inventory.push(member(base, "c4").equipment.weapon!);
       member(base, "c4").equipment.weapon = inst;
       return { s: base };
@@ -663,7 +676,18 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
     expect(r.events).toEqual([{ kind: "message", key: "town.shop.bought", params: { name: "キリ", item: "薬草", cost: 10 } }]);
     expect(r.state.gold).toBe(290);
     expect(member(r.state, "c3").inventory).toEqual([...member(s, "c3").inventory, "i19"]);
-    expect(r.state.items["i19"]).toEqual({ id: "i19", itemId: "herb", identified: true });
+    // IT-10（M7）: 実体の欄は Lv0・通常・オプションなし・ユニークでない・呪いなし・foundIn null（店で買った品）
+    expect(r.state.items["i19"]).toEqual({
+      id: "i19",
+      itemId: "herb",
+      level: 0,
+      rarity: "normal",
+      options: [],
+      uniqueId: null,
+      identified: true,
+      cursed: false,
+      foundIn: null,
+    });
     expect(r.state.nextItemSeq).toBe(20);
     expect(r.state.rng).toEqual(s.rng);
     expect(r.state.townVisit).toEqual(s.townVisit);
@@ -687,7 +711,7 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
   test("TW-05/CH-71 所持枠: 使用 7 なら買えて 8 になり、8 なら inventory full（所持金より先に判定）", () => {
     const s = town();
     const c2 = member(s, "c2");
-    for (let i = 0; i < 5; i++) c2.inventory.push(createItemInstance(s, "herb", true)); // 装備 2 + 5 = 7
+    for (let i = 0; i < 5; i++) c2.inventory.push(createItemInstance(s, { itemId: "herb", identified: true })); // 装備 2 + 5 = 7
     const r = ok(s, buy("c2", "herb"));
     expect(member(r.state, "c2").inventory).toHaveLength(6);
     expectRejected(r.state, buy("c2", "herb"), "inventory full");
@@ -708,7 +732,7 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
     expectRejected(s, { type: "town.shop", action: { kind: "sell", memberId: "c1", instanceId: "i4" } }, "not implemented");
     expectRejected(s, { type: "town.shop", action: { kind: "identify", memberId: "c1", instanceId: "i4" } }, "not implemented");
     // 売り物は consumable かつ infinite の品だけ（装備・魔法書・未知の id は売らない）。メンバーより先に判定
-    for (const itemId of ["long_sword", "tome_lightning", "cursed_dagger", "nope"]) {
+    for (const itemId of ["long_sword", "tome_lightning", "dagger", "nope"]) {
       expectRejected(s, buy("c1", itemId), "not for sale");
     }
     expectRejected(s, buy("c9", "long_sword"), "not for sale");

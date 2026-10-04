@@ -2,6 +2,7 @@
 // - put は JSON 往復した複製を Map に置く（構造化複製の代わり。呼び出し側の参照を共有しない）。
 // - raw(key, value) は検査を通さずに任意の値を置く（壊れたレコードを作る）。
 // - setFail で操作ごとに失敗（reject）させる。
+import type { GameState } from "../../src/core/types";
 import type { GameRecord, GameStoreBackend } from "../../src/save/types";
 
 export type FailSpec = { getAll?: boolean; get?: boolean; put?: boolean; delete?: boolean };
@@ -52,4 +53,20 @@ export function createMemoryBackend(opts: { fail?: FailSpec } = {}): MemoryBacke
       return putCount;
     },
   };
+}
+
+/**
+ * 今の state（schemaVersion 4）から M7 の B の欄（IT-80: 各実体の level / rarity / options / uniqueId / cursed / foundIn、
+ * warehouse、buyback、uniqueBook、progress.shopLevel）を消した v3 の形（JSON の複製。引数は書き換えない）
+ */
+export function toV3(s: GameState): Record<string, unknown> {
+  const v3 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+  delete v3["warehouse"];
+  delete v3["buyback"];
+  delete v3["uniqueBook"];
+  delete (v3["progress"] as Record<string, unknown>)["shopLevel"];
+  for (const inst of Object.values(v3["items"] as Record<string, Record<string, unknown>>)) {
+    for (const k of ["level", "rarity", "options", "uniqueId", "cursed", "foundIn"]) delete inst[k];
+  }
+  return v3;
 }

@@ -288,9 +288,9 @@ export type Monster = {
   description: string;
 };
 
-// ---- items.json ----
+// ---- items.json（M7 の B2 から消耗品と魔法書だけ。装備は equipment-bases.json。IT-01） ----
 
-export const ITEM_TYPES = [...EQUIP_SLOTS, "consumable", "book"] as const;
+export const ITEM_TYPES = ["consumable", "book"] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
 
 type ItemBase = {
@@ -299,29 +299,9 @@ type ItemBase = {
   price: number;
   stock: number;
   infinite: boolean;
-  cursed: boolean;
   unidentifiedName?: string;
   description?: string;
 };
-
-export type WeaponItem = ItemBase & {
-  type: "weapon";
-  slot: EquipSlot;
-  classes: string[];
-  ranged: boolean;
-  damage: string;
-};
-
-export type ArmorLikeItem = ItemBase & {
-  type: "armor" | "shield" | "helm" | "gauntlet" | "accessory";
-  slot: EquipSlot;
-  classes: string[];
-  ac: number;
-  /** accessory だけ。仕様に定義なし。 */
-  sanResist?: number;
-};
-
-export type EquipItem = WeaponItem | ArmorLikeItem;
 
 export type ItemEffect =
   | { type: "heal"; dice: string; target: SpellTarget }
@@ -341,7 +321,7 @@ export type BookItem = ItemBase & {
   effect: Extract<ItemEffect, { type: "learn" }>;
 };
 
-export type Item = WeaponItem | ArmorLikeItem | ConsumableItem | BookItem;
+export type Item = ConsumableItem | BookItem;
 
 // ---- equipment-bases.json（IT-02。M7） ----
 
@@ -524,7 +504,8 @@ export type DungeonDef = {
   traps: TrapId[];
   trapsPerFloor: [number, number];
   teleporterFloors: number[];
-  onClear: { unlockDungeon: string | null; shopStock: string[] };
+  /** shopLevel: IT-62 の流通レベル（初回クリアで progress.shopLevel をこれ以上にする。M7。v3 → v4 の移行でも使う）【仮】 */
+  onClear: { unlockDungeon: string | null; shopStock: string[]; shopLevel: number };
   description: string;
 };
 

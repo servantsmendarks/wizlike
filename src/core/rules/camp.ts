@@ -3,9 +3,9 @@
 // 受け付ける場所は campPlace が決める（街、または迷宮の戦闘外かつ保留なし。M5.5 から dungeon.cast も街で受け付ける。帰還は迷宮だけ）。
 // 乱数を使うのは dungeon.cast の heal（対象ごとに effect.dice を 1 回）と resurrect（randInt(1, 100) を 1 回）だけ。
 // town.ts からはこのファイルを import しない（循環を作らない）。
-import type { EquipItem, EquipSlot, GameData, Item, Spell } from "../data/index";
+import type { EquipmentBase, EquipSlot, GameData, Spell } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
-import { classOf, dungeonOf, itemDisplayName, itemOf, memberById, moraleOf, spellOf } from "../state";
+import { classOf, dungeonOf, findBase, findItem, itemDisplayName, memberById, moraleOf, spellOf } from "../state";
 import type {
   CampEquipCandidate,
   CampMenu,
@@ -33,14 +33,14 @@ function isEquipSlot(x: unknown): x is EquipSlot {
   return typeof x === "string" && (EQUIP_SLOTS as readonly string[]).includes(x);
 }
 
-/** 装備品（items[].type が EQUIP_SLOTS のどれか）ならその品、そうでなければ null */
-function asEquip(item: Item): EquipItem | null {
-  return item.type === "consumable" || item.type === "book" ? null : item;
+/** 装備品（itemId が equipment-bases.json のベース。IT-02）ならそのベース、そうでなければ null */
+function asEquip(data: GameData, itemId: string): EquipmentBase | null {
+  return findBase(data, itemId);
 }
 
-/** 装備品なら装備先のスロット（items[].slot）。装備品でなければ null */
-function equipSlotOf(item: Item): EquipSlot | null {
-  return asEquip(item)?.slot ?? null;
+/** 装備品なら装備先のスロット（ベースの slot）。装備品でなければ null */
+function equipSlotOf(data: GameData, itemId: string): EquipSlot | null {
+  return asEquip(data, itemId)?.slot ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -176,11 +176,11 @@ export function reorderParty(ctx: RuleContext, order: string[]): void {
 // ---------------------------------------------------------------------------
 // CH-76 party.equip / party.unequip
 
-/** 呪われた品か（鑑定と関係なく items[].cursed。CH-73） */
-function isCursed(state: GameState, data: GameData, instanceId: string): boolean {
+/** 呪われた品か（鑑定と関係なく実体の cursed。CH-73 / IT-32） */
+function isCursed(state: GameState, instanceId: string): boolean {
   const inst = state.items[instanceId];
   if (inst === undefined) throw new Error(`isCursed: unknown item instance ${instanceId}`);
-  return itemOf(data, inst.itemId).cursed;
+  return inst.cursed;
 }
 
 /**
@@ -195,13 +195,13 @@ export function checkEquip(state: GameState, data: GameData, memberId: unknown, 
   if (typeof instanceId !== "string" || !ch.inventory.includes(instanceId)) return "item not in inventory";
   const inst = state.items[instanceId];
   if (inst === undefined) return "item not in inventory";
-  const item = asEquip(itemOf(data, inst.itemId));
+  const item = asEquip(data, inst.itemId);
   if (item === null) return "not equipment";
   const slot = item.slot;
   if (!inst.identified) return "not identified";
   if (item.classes.length > 0 && !item.classes.includes(ch.classId)) return "class cannot equip";
   const old = ch.equipment[slot];
-  if (old !== null && isCursed(state, data, old)) return "slot cursed";
+  if (old !== null && isCursed(state, old)) return "slot cursed";
   return null;
 }
 
@@ -216,7 +216,7 @@ export function equipItem(ctx: RuleContext, memberId: string, instanceId: string
   if (ch === null) throw new Error(`equipItem: unknown member ${memberId}`);
   const inst = state.items[instanceId];
   if (inst === undefined) throw new Error(`equipItem: unknown item instance ${instanceId}`);
-  const slot = equipSlotOf(itemOf(data, inst.itemId));
+  const slot = equipSlotOf(data, inst.itemId);
   if (slot === null) throw new Error(`equipItem: not equipment ${inst.itemId}`);
   const i = ch.inventory.indexOf(instanceId);
   if (i < 0) throw new Error(`equipItem: ${instanceId} not in inventory`);
@@ -226,11 +226,14 @@ export function equipItem(ctx: RuleContext, memberId: string, instanceId: string
   ch.equipment[slot] = instanceId;
   const item = itemDisplayName(state, data, instanceId);
   ctx.events.push({ kind: "message", key: "camp.equipped", params: { name: ch.name, item } });
-  if (isCursed(state, data, instanceId)) ctx.events.push({ kind: "message", key: "camp.cursed", params: { item } });
+  if (isCursed(state, instanceId)) ctx.events.push({ kind: "message", key: "camp.cursed", params: { item } });
 }
 
-/** party.unequip を受け付けない理由。順: wrong screen → no such member → cannot act → bad slot → slot empty → cursed */
-export function checkUnequip(state: GameState, data: GameData, memberId: unknown, slot: unknown): string | null {
+/**
+ * party.unequip を受け付けない理由。順: wrong screen → no such member → cannot act → bad slot → slot empty → cursed。
+ * 呪いは実体の cursed（M7）で見るので data は読まない（引数は呼び出し側との形を保つために残す）
+ */
+export function checkUnequip(state: GameState, _data: GameData, memberId: unknown, slot: unknown): string | null {
   if (campPlace(state) === null) return "wrong screen";
   const ch = typeof memberId === "string" ? memberById(state, memberId) : null;
   if (ch === null) return "no such member";
@@ -238,7 +241,7 @@ export function checkUnequip(state: GameState, data: GameData, memberId: unknown
   if (!isEquipSlot(slot)) return "bad slot";
   const id = ch.equipment[slot];
   if (id === null) return "slot empty";
-  if (isCursed(state, data, id)) return "cursed";
+  if (isCursed(state, id)) return "cursed";
   return null;
 }
 
@@ -294,9 +297,9 @@ export function identifyItem(ctx: RuleContext, memberId: string, instanceId: str
   if (ch === null || inst === undefined) throw new Error(`identifyItem: bad ${memberId} / ${instanceId}`);
   const old = itemDisplayName(state, data, instanceId);
   inst.identified = true;
-  const item = itemOf(data, inst.itemId);
-  ctx.events.push({ kind: "message", key: "camp.identified", params: { name: ch.name, old, item: item.name } });
-  if (item.cursed) ctx.events.push({ kind: "message", key: "camp.identifiedCursed", params: { item: item.name } });
+  const item = itemDisplayName(state, data, instanceId);
+  ctx.events.push({ kind: "message", key: "camp.identified", params: { name: ch.name, old, item } });
+  if (inst.cursed) ctx.events.push({ kind: "message", key: "camp.identifiedCursed", params: { item } });
 }
 
 // ---------------------------------------------------------------------------
@@ -336,7 +339,7 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
       for (const id of ch.inventory) {
         const inst = state.items[id];
         if (inst === undefined) continue;
-        const slot = equipSlotOf(itemOf(data, inst.itemId));
+        const slot = equipSlotOf(data, inst.itemId);
         if (slot === null) continue;
         const r = checkEquip(state, data, ch.id, id);
         const block = r === null ? null : (BLOCK_OF[r] ?? null);
@@ -354,7 +357,7 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
           const id = ch.equipment[slot];
           if (id === null) return { slot, instanceId: null, name: null, cursed: false, canUnequip: false };
           const inst = state.items[id];
-          const cursed = inst !== undefined && inst.identified && isCursed(state, data, id);
+          const cursed = inst !== undefined && inst.identified && isCursed(state, id);
           return { slot, instanceId: id, name: itemDisplayName(state, data, id), cursed, canUnequip: checkUnequip(state, data, ch.id, slot) === null };
         }),
         equipCandidates,
@@ -387,8 +390,8 @@ export function campSummary(state: GameState, data: GameData): CampSummary | nul
     for (const id of ch.inventory) {
       const inst = state.items[id];
       if (inst === undefined) continue;
-      const item = itemOf(data, inst.itemId);
-      if (item.type === "consumable" && item.effect.type === "return") returnItems++;
+      const item = findItem(data, inst.itemId);
+      if (item !== null && item.type === "consumable" && item.effect.type === "return") returnItems++;
     }
   }
   return {

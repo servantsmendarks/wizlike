@@ -2,7 +2,7 @@
 // 表示層向けの問い合わせ fieldItemMenu。battle には依存しない（効果は effects.ts の applyAllyEffect を戦闘と共有）。
 // 乱数: heal のダイスだけ（applyAllyEffect の順）。
 import type { GameData, Item } from "../data/index";
-import { destroyItemInstance, itemDisplayName, itemOf, memberById } from "../state";
+import { destroyItemInstance, findItem, itemDisplayName, itemOf, memberById } from "../state";
 import type { Character, FieldItemMenu, FieldItemView, GameState, RuleContext } from "../types";
 import { canAct } from "./combat-calc";
 import { applyAllyEffect } from "./effects";
@@ -35,8 +35,8 @@ export function checkUseItem(
   if (typeof itemId !== "string" || !ch.inventory.includes(itemId)) return "item not in inventory";
   const inst = state.items[itemId];
   if (inst === undefined) return "item not in inventory";
-  const item = itemOf(data, inst.itemId);
-  if (!fieldUsable(item)) return "not usable here";
+  const item = findItem(data, inst.itemId); // 装備（M7 の B2 から equipment-bases.json）は null
+  if (item === null || !fieldUsable(item)) return "not usable here";
   if (item.type === "book") return checkLearnFromBook(state, ch.id, itemId, data);
   if (item.type !== "consumable") return "not usable here";
   const e = item.effect;
@@ -72,7 +72,6 @@ export function useItemInField(ctx: RuleContext, memberId: string, instanceId: s
     learnFromBook(ctx, ch, instanceId);
     return;
   }
-  if (item.type !== "consumable") throw new Error(`useItemInField: not usable: ${item.id}`);
   const name = itemDisplayName(state, data, instanceId);
   destroyItemInstance(state, ch, instanceId); // DG-41: 台帳からも外れる
   ctx.events.push({ kind: "message", key: "battle.useItem", params: { actor: ch.name, item: name } });
@@ -121,8 +120,8 @@ export function fieldItemMenu(state: GameState, data: GameData): FieldItemMenu |
       for (const id of ch.inventory) {
         const inst = state.items[id];
         if (inst === undefined) continue;
-        const item = itemOf(data, inst.itemId);
-        if (item.type !== "consumable" && item.type !== "book") continue;
+        const item = findItem(data, inst.itemId); // 装備は null（一覧に出さない）
+        if (item === null) continue;
         const target: FieldItemView["target"] =
           item.type === "consumable" && item.effect.type !== "return" && item.effect.target === "ally" ? "ally" : "none";
         items.push({

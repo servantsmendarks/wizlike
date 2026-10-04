@@ -24,7 +24,7 @@ import {
   strBonus,
   targetMatches,
 } from "../src/core/rules/combat-calc";
-import { classOf, itemOf, memberById, spellOf } from "../src/core/state";
+import { classOf, findItem, itemOf, memberById, spellOf } from "../src/core/state";
 import type { Character, GameState } from "../src/core/types";
 import { dived, withBattle } from "./helpers/battle";
 import { data, withChar } from "./helpers/core";
@@ -215,8 +215,9 @@ describe("F9 戦闘で使える呪文と道具", () => {
   test("F9 battleItemUsable: herb・antidote_herb は真、return_thread・tome・武器は偽", () => {
     expect(battleItemUsable(itemOf(data, "herb"))).toBe(true);
     expect(battleItemUsable(itemOf(data, "antidote_herb"))).toBe(true);
+    // M7 の B2: 武器・防具は items.json に無い（findItem が null）ので偽
     for (const id of ["return_thread", "tome_lightning", "long_sword", "leather_armor"]) {
-      expect(battleItemUsable(itemOf(data, id)), id).toBe(false);
+      expect(battleItemUsable(findItem(data, id)), id).toBe(false);
     }
   });
 

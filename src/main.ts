@@ -26,6 +26,7 @@ import { createSettingsStore, loadSettings, saveSettings } from "./presenter/set
 import { renderDataError, STARTUP_ERROR_HEADING } from "./presenter/views/data-error";
 import { openIdbBackend } from "./save/db";
 import { newGameId } from "./save/id";
+import { createMigrations } from "./save/migrate";
 import { createSaveService } from "./save/saves";
 import { setupServiceWorker } from "./pwa/register";
 
@@ -101,6 +102,8 @@ async function start(): Promise<void> {
     newId: () => newGameId(globalThis.crypto),
     schemaVersion: data.config.save.schemaVersion,
     maxGames: data.config.save.maxGames,
+    // SV-04 / IT-80: v3 → v4 の移行で progress.shopLevel を dungeons[].onClear.shopLevel から計算する
+    migrations: createMigrations(data.dungeons),
   });
   // mountStage は同期で 1 回 onLayout を呼ぶので、app を先に作る。
   const app = createApp({ stage: stageEl, data, settings, saves });

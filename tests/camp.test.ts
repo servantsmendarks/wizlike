@@ -15,6 +15,7 @@ import { dived, withBattle } from "./helpers/battle";
 import { createInitialState } from "../src/core/engine";
 import { data, expectKnownStringKeys, expectStateInvariants, loadFreshData, newGame, seedWithFirstD100 } from "./helpers/core";
 import { atEvent } from "./helpers/events";
+import { cursedDagger } from "./helpers/items";
 
 function member(s: GameState, id: string): Character {
   const c = s.party.find((x) => x.id === id);
@@ -308,10 +309,18 @@ describe("CH-03 party.reorder", () => {
 
 // ---------------------------------------------------------------------------
 
-/** c5（魔術師）の inventory に itemId の実体を作って足した state と、その実体 id */
+/** memberId の inventory に itemId の実体を作って足した state と、その実体 id */
 function give(base: GameState, memberId: string, itemId: string, identified = true): { s: GameState; id: string } {
   const s = cloneState(base);
-  const id = createItemInstance(s, itemId, identified);
+  const id = createItemInstance(s, { itemId, identified });
+  member(s, memberId).inventory.push(id);
+  return { s, id };
+}
+
+/** memberId の inventory に呪われた短剣（tests/helpers/items.ts。M7 で cursed_dagger を廃止した代わり）を足した state と、その実体 id */
+function giveCursed(base: GameState, memberId: string, identified = true): { s: GameState; id: string } {
+  const s = cloneState(base);
+  const id = cursedDagger(s, identified);
   member(s, memberId).inventory.push(id);
   return { s, id };
 }
@@ -339,17 +348,30 @@ describe("CH-76 party.equip / party.unequip", () => {
   });
 
   test("CH-73/76 呪われた品を装備すると camp.cursed が続き、外せなくなる（未鑑定のままでも cursed）", () => {
-    const { s, id } = give(inDungeon(), "c3", "cursed_dagger");
+    const { s, id } = giveCursed(inDungeon(), "c3");
     const r = ok(s, { type: "party.equip", memberId: "c3", instanceId: id });
     expect(r.events).toEqual([
-      { kind: "message", key: "camp.equipped", params: { name: "キリ", item: "血濡れの短剣" } },
-      { kind: "message", key: "camp.cursed", params: { item: "血濡れの短剣" } },
+      { kind: "message", key: "camp.equipped", params: { name: "キリ", item: "短剣" } },
+      { kind: "message", key: "camp.cursed", params: { item: "短剣" } },
     ]);
     expectRejected(r.state, { type: "party.unequip", memberId: "c3", slot: "weapon" }, "cursed");
     // 未鑑定のまま装備している（鑑定前に装備させた状態を直接作る）
     const u = cloneState(r.state);
     u.items[id]!.identified = false;
     expectRejected(u, { type: "party.unequip", memberId: "c3", slot: "weapon" }, "cursed");
+  });
+
+  test("CH-73/IT-32 呪いは実体ごと（M7）: 同じ短剣のベースでも cursed の実体だけが camp.cursed を語り外せない。呪われていない短剣は外せる", () => {
+    const plain = give(inDungeon(), "c3", "dagger");
+    const r1 = ok(plain.s, { type: "party.equip", memberId: "c3", instanceId: plain.id });
+    expect(r1.events).toEqual([{ kind: "message", key: "camp.equipped", params: { name: "キリ", item: "短剣" } }]);
+    ok(r1.state, { type: "party.unequip", memberId: "c3", slot: "weapon" });
+    // 同じ itemId の実体に cursed を立てると呪いが効く（items.json の cursed は廃止。Q10）
+    const s2 = cloneState(plain.s);
+    s2.items[plain.id]!.cursed = true;
+    const r2 = ok(s2, { type: "party.equip", memberId: "c3", instanceId: plain.id });
+    expect(r2.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["camp.equipped", "camp.cursed"]);
+    expectRejected(r2.state, { type: "party.unequip", memberId: "c3", slot: "weapon" }, "cursed");
   });
 
   test("CH-76 party.equip の理由の順: wrong screen → no such member → cannot act → item not in inventory → not equipment → not identified → class cannot equip → slot cursed", () => {
@@ -363,7 +385,7 @@ describe("CH-76 party.equip / party.unequip", () => {
     const un = give(inDungeon(), "c5", "dagger", false);
     expectRejected(un.s, { type: "party.equip", memberId: "c5", instanceId: un.id }, "not identified");
     expectRejected(s, { type: "party.equip", memberId: "c5", instanceId: id }, "class cannot equip"); // 長剣を魔術師
-    const cur = give(inDungeon(), "c3", "cursed_dagger");
+    const cur = giveCursed(inDungeon(), "c3");
     const equipped = ok(cur.s, { type: "party.equip", memberId: "c3", instanceId: cur.id }).state;
     const d2 = give(equipped, "c3", "dagger");
     expectRejected(d2.s, { type: "party.equip", memberId: "c3", instanceId: d2.id }, "slot cursed");
@@ -393,17 +415,17 @@ describe("CH-77 party.identify", () => {
   test("CH-77 司教が他人の未鑑定品を鑑定する: identified true、message camp.identified{name, old, item}。乱数は変わらない", () => {
     const { s, id } = give(withBishop(inDungeon()), "c1", "dagger", false);
     const r = ok(s, { type: "party.identify", memberId: "c5", instanceId: id });
-    expect(r.events).toEqual([{ kind: "message", key: "camp.identified", params: { name: "エル", old: "短剣", item: "短剣" } }]);
+    expect(r.events).toEqual([{ kind: "message", key: "camp.identified", params: { name: "エル", old: "短い刃？", item: "短剣" } }]);
     expect(r.state.items[id]!.identified).toBe(true);
     expect(r.state.rng).toEqual(s.rng);
   });
 
   test("CH-73/77 呪われた品を鑑定すると camp.identifiedCursed が続く（街でも受け付ける）", () => {
-    const { s, id } = give(withBishop(inTown()), "c3", "cursed_dagger", false);
+    const { s, id } = giveCursed(withBishop(inTown()), "c3", false);
     const r = ok(s, { type: "party.identify", memberId: "c5", instanceId: id });
     expect(r.events).toEqual([
-      { kind: "message", key: "camp.identified", params: { name: "エル", old: "短剣？", item: "血濡れの短剣" } },
-      { kind: "message", key: "camp.identifiedCursed", params: { item: "血濡れの短剣" } },
+      { kind: "message", key: "camp.identified", params: { name: "エル", old: "短い刃？", item: "短剣" } },
+      { kind: "message", key: "camp.identifiedCursed", params: { item: "短剣" } },
     ]);
   });
 
@@ -475,7 +497,7 @@ describe("UI-53/TW-03 campMenu", () => {
     let s = give(inDungeon(), "c5", "long_sword").s; // class
     s = give(s, "c5", "dagger", false).s; // unidentified
     s = give(s, "c5", "leather_cap").s; // ok
-    s = give(s, "c3", "cursed_dagger").s;
+    s = giveCursed(s, "c3").s;
     s = ok(s, { type: "party.equip", memberId: "c3", instanceId: "i22" }).state;
     s = patched(s, { c2: { status: ["sleep"] } });
     s = give(s, "c2", "leather_cap").s; // cannotAct（i23）
@@ -483,7 +505,7 @@ describe("UI-53/TW-03 campMenu", () => {
     expect(m.members.map((x) => x.row)).toEqual(["front", "front", "front", "back", "back", "back"]);
     expect(m.members.find((x) => x.id === "c5")!.equipCandidates).toEqual([
       { instanceId: "i19", name: "長剣", slot: "weapon", block: "class" },
-      { instanceId: "i20", name: "短剣", slot: "weapon", block: "unidentified" },
+      { instanceId: "i20", name: "短い刃？", slot: "weapon", block: "unidentified" },
       { instanceId: "i21", name: "革兜", slot: "helm", block: null },
     ]);
     // 呪いの短剣を装備した c3 の inventory は [i10 薬草, i7 短剣（入れ替えた旧品）]
@@ -495,7 +517,7 @@ describe("UI-53/TW-03 campMenu", () => {
     ]);
     const c3 = m.members.find((x) => x.id === "c3")!;
     expect(c3.slots.map((x) => x.slot)).toEqual(["weapon", "armor", "shield", "helm", "gauntlet", "accessory"]);
-    expect(c3.slots[0]).toEqual({ slot: "weapon", instanceId: "i22", name: "血濡れの短剣", cursed: true, canUnequip: false });
+    expect(c3.slots[0]).toEqual({ slot: "weapon", instanceId: "i22", name: "短剣", cursed: true, canUnequip: false });
     expect(c3.slots[2]).toEqual({ slot: "shield", instanceId: null, name: null, cursed: false, canUnequip: false });
     for (const mem of m.members) {
       for (const sl of mem.slots) {
@@ -506,24 +528,24 @@ describe("UI-53/TW-03 campMenu", () => {
   });
 
   test("UI-53/CH-73 未鑑定の呪われた品を装備していると、slots の cursed は false（見えない）だが外せない", () => {
-    const g = give(inDungeon(), "c3", "cursed_dagger");
+    const g = giveCursed(inDungeon(), "c3");
     const s = ok(g.s, { type: "party.equip", memberId: "c3", instanceId: g.id }).state;
     const u = cloneState(s);
     u.items[g.id]!.identified = false;
     const w = campMenu(u, data)!.members.find((x) => x.id === "c3")!.slots[0]!;
-    expect(w).toEqual({ slot: "weapon", instanceId: g.id, name: "短剣？", cursed: false, canUnequip: false });
+    expect(w).toEqual({ slot: "weapon", instanceId: g.id, name: "短い刃？", cursed: false, canUnequip: false });
   });
 
   test("UI-53/CH-77 identifiers は司教が alive・canAct のときだけ。unidentified は並び順 × inventory の順", () => {
     expect(campMenu(inDungeon(), data)!.identifiers).toEqual([]);
     let s = withBishop(inDungeon());
     s = give(s, "c3", "dagger", false).s; // i19
-    s = give(s, "c1", "cursed_dagger", false).s; // i20
+    s = giveCursed(s, "c1", false).s; // i20
     const m = campMenu(s, data)!;
     expect(m.identifiers).toEqual([{ id: "c5", name: "エル" }]);
     expect(m.unidentified).toEqual([
-      { instanceId: "i20", ownerId: "c1", ownerName: "アルド", name: "短剣？" },
-      { instanceId: "i19", ownerId: "c3", ownerName: "キリ", name: "短剣" },
+      { instanceId: "i20", ownerId: "c1", ownerName: "アルド", name: "短い刃？" },
+      { instanceId: "i19", ownerId: "c3", ownerName: "キリ", name: "短い刃？" },
     ]);
     expect(campMenu(patched(s, { c5: { status: ["sleep"] } }), data)!.identifiers).toEqual([]);
   });

@@ -8,6 +8,7 @@ import { cloneState, createItemInstance } from "../src/core/state";
 import type { Character, GameState, TownMenu } from "../src/core/types";
 import { samePage, townEntries, townHeader, townPageIntro, townParent, type TownEntry } from "../src/presenter/views/town";
 import { data, newGame } from "./helpers/core";
+import { cursedDagger } from "./helpers/items";
 
 const S = data.strings;
 
@@ -88,7 +89,7 @@ describe("UI-52 街のページ", () => {
 
   test("UI-52/TW-07 解呪の行は呪われた品を装備している者（料金 200）", () => {
     const s = town();
-    s.party[0]!.equipment.weapon = createItemInstance(s, "cursed_dagger", true);
+    s.party[0]!.equipment.weapon = cursedDagger(s, true);
     expect(townEntries({ temple: "uncurse" }, menuOf(s), S)).toEqual([
       { kind: "temple", service: "uncurse", memberId: "c1", label: "アルド　200G", disabled: false },
       back,
@@ -176,7 +177,7 @@ describe("UI-52 街のページ", () => {
   test("UI-52/TW-05/CH-71 品を選ぶと持たせる者の行（生きている者の名前と所持枠の空き）。空きが無い者・払えないときは disabled", () => {
     // c3 は dead（候補に出ない）。c6 は所持枠を埋める（初期の空き 5 → 品を 5 つ持たせて 0）
     const s = town({ c3: { life: "dead", hp: 0 } }, 10);
-    for (let i = 0; i < 5; i++) s.party[5]!.inventory.push(createItemInstance(s, "herb", true));
+    for (let i = 0; i < 5; i++) s.party[5]!.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
     const m = menuOf(s);
     expect(townEntries({ shop: "herb" }, m, S)).toEqual([
       { kind: "buy", itemId: "herb", memberId: "c1", label: "アルド　空き4", disabled: false },

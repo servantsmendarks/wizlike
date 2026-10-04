@@ -42,17 +42,37 @@ export type BattleAction =
 
 // ===================== アイテム実体（CH-70〜73、DG-40） =====================
 
+/** IT-30: 希少度（オプションの個数 通常 0 / 上質 1 / 希少 2 / 伝説 3）。消耗品・魔法書は normal */
+export type Rarity = "normal" | "fine" | "rare" | "legendary";
+
+/** IT-33: 実体が持つオプション 1 つ。value は符号付き（呪いの負のオプションは負。IT-32）で、生成時に決めた値のまま */
+export type ItemOptionRoll = { optionId: string; tier: 1 | 2 | 3; value: number };
+
 /**
- * 所持品 1 個分の実体。持ち主は Character の equipment または inventory からの参照で決まり、ここには書かない。
- * 呪い（CH-73）は items.json の cursed を見る。鑑定済みかどうか（CH-72）は実体ごとに持つ。
+ * 所持品 1 個分の実体（IT-10。M7 で level 以下を足した）。持ち主は Character の equipment / inventory、GameState の warehouse / buyback
+ * からの参照で決まり、ここには書かない。鑑定済みかどうか（CH-72）と呪い（CH-73 / IT-32）は実体ごとに持つ。
+ * GameState に入れる値なので省略可能な欄は持たない（無いは null か空配列）。
  */
 export type ItemInstance = {
   /** "i1", "i2", ...（GameState.nextItemSeq で振る。再利用しない） */
   id: string;
-  /** items.json の id */
+  /** 装備は equipment-bases.json の id（ユニークならそのベース）、消耗品・魔法書は items.json の id */
   itemId: string;
+  /** IT-20〜23: 汎用装備の Lv（0 以上）。ユニーク・消耗品・魔法書は 0 */
+  level: number;
+  rarity: Rarity;
+  options: ItemOptionRoll[];
+  /** IT-03: ユニークなら uniques.json の id、そうでなければ null */
+  uniqueId: string | null;
   identified: boolean;
+  /** IT-32 / CH-73: 呪われているか（鑑定と関係なく効く） */
+  cursed: boolean;
+  /** IT-66: ドロップしたダンジョンの id。店で買った品・初期装備は null */
+  foundIn: string | null;
 };
+
+/** IT-66: 図鑑（ユニーク）の 1 種類分。鑑定した時点で記録する */
+export type UniqueBookEntry = { foundIn: string | null; bestRarity: Rarity };
 
 // ===================== キャラクター（character.md §9 の最低限のフィールドをすべて持つ） =====================
 
@@ -100,6 +120,8 @@ export type Progress = {
   unlockedDungeons: string[];
   /** DG-32。SV-21 の summary.clearedCount はこの長さ */
   clearedDungeons: string[];
+  /** IT-62（M7）: 店の流通レベル。game.new で 0 */
+  shopLevel: number;
 };
 
 // ===================== 迷宮の構造（生成結果。GameState には入れない。DG-03 / E1） =====================
@@ -283,6 +305,7 @@ export type Morale = { rankId: string };
 // M4 のこの形を保存レコードの schemaVersion 1 として確定する（以後の変更は src/save/migrate.ts の移行を伴う）。
 // M5.5 で adventureTurns・tavernEventMark・dive.knownTraps を足して schemaVersion 2 にした（migrateV1toV2）。
 // M7 の A で morale を足して schemaVersion 3 にした（migrateV2toV3）。
+// M7 の B で ItemInstance の欄・warehouse・buyback・uniqueBook・progress.shopLevel を足して schemaVersion 4 にした（migrateV3toV4）。
 // schemaVersion、turn、updatedAt、gameId は保存レコード側の欄（SV-21）で、ここには入れない。
 
 export type GameState = {
@@ -317,6 +340,12 @@ export type GameState = {
   tavernEventMark: number;
   /** TW-15（M7）: 宿の士気。title では null。街に入る（arriveTown）と null に戻す */
   morale: Morale | null;
+  /** TW-16 / IT-64（M7）: 倉庫の ItemInstance.id。全滅の対象外 */
+  warehouse: string[];
+  /** IT-63（M7）: 店の買い戻しのストック。売ったユニークの ItemInstance.id（売った順）。全滅の対象外 */
+  buyback: string[];
+  /** IT-66（M7）: 図鑑（ユニーク）。uniqueId → 記録。ゲーム単位で永続 */
+  uniqueBook: Record<string, UniqueBookEntry>;
 };
 
 // ===================== コマンド（CLAUDE.md §5） =====================
@@ -567,9 +596,9 @@ export type CampSlotView = {
   slot: EquipSlot;
   instanceId: string | null;
   name: string | null;
-  /** 鑑定済みかつ items[].cursed のとき true（表示用。未鑑定なら false。CH-73 の「見えない」） */
+  /** 鑑定済みかつ実体の cursed（IT-32）のとき true（表示用。未鑑定なら false。CH-73 の「見えない」） */
   cursed: boolean;
-  /** checkUnequip === null と同じ。呪われているかは鑑定と関係なく items[].cursed で決める */
+  /** checkUnequip === null と同じ。呪われているかは鑑定と関係なく実体の cursed で決める */
   canUnequip: boolean;
 };
 export type CampMember = {

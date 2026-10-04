@@ -18,7 +18,7 @@
 //   免疫・既に同じ状態・対象なしは消費しない。
 import type { GameData, Spell, SpellEffect, SpellTarget, StatusId } from "../data/index";
 import { chance, randInt, rollDice, rollDie, weightedIndex } from "../rng";
-import { classOf, destroyItemInstance, dungeonOf, itemDisplayName, itemOf, memberById, monsterOf, personalityOf, spellOf } from "../state";
+import { classOf, destroyItemInstance, dungeonOf, findItem, itemDisplayName, itemOf, memberById, monsterOf, personalityOf, spellOf } from "../state";
 import type {
   BattleAction,
   BattleMenu,
@@ -293,7 +293,7 @@ export function checkBattleInput(state: GameState, data: GameData, memberId: unk
       if (typeof instanceId !== "string" || !isObj(action["target"])) return "bad action";
       const inst = state.items[instanceId];
       if (!ch.inventory.includes(instanceId) || inst === undefined) return "no item";
-      const item = itemOf(data, inst.itemId);
+      const item = findItem(data, inst.itemId); // 装備は null（not usable）
       if (!battleItemUsable(item)) return "not usable";
       if (!targetMatches(state, data, item.effect.target, action["target"])) return "bad target";
       return null;
@@ -1041,7 +1041,7 @@ export function battleMenu(state: GameState, data: GameData): BattleMenu | null 
     const items = ch.inventory.flatMap((instanceId) => {
       const inst = state.items[instanceId];
       if (inst === undefined) return [];
-      const item = itemOf(data, inst.itemId);
+      const item = findItem(data, inst.itemId); // 装備は null（一覧に出さない）
       if (!battleItemUsable(item)) return [];
       const name = itemDisplayName(state, data, instanceId);
       return [{ instanceId, itemId: item.id, name, target: item.effect.target }];

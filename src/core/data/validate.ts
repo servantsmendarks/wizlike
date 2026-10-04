@@ -593,13 +593,6 @@ function validateMonsters(ctx: Ctx, v: unknown, ix: Index): void {
 // ---- items.json ----
 
 function validateItems(ctx: Ctx, v: unknown, ix: Index): void {
-  const classes = L((c, p, x) => {
-    const s = str(c, p, x);
-    ref(c, p, s, ix.classes, "class");
-    return s;
-  });
-  const equip = { slot: E(EQUIP_SLOTS), classes };
-  const armorLike = { ...equip, ac: I() }; // CB-20（正の ac も可。呪いの装備などで AC が悪化しうる）
   const learnSpell: Field = (c, p, x) => {
     const s = str(c, p, x);
     if (s === undefined) return undefined;
@@ -614,18 +607,12 @@ function validateItems(ctx: Ctx, v: unknown, ix: Index): void {
     price: I(NON_NEG), // TW-05
     stock: I(NON_NEG),
     infinite: B,
-    cursed: B,
     unidentifiedName: opt(S),
     description: opt(S),
   };
+  // IT-01（M7）: 消耗品と魔法書だけ。装備は equipment-bases.json（type に装備の部位を書くと expected one of で止まる）
   const item = U(
     {
-      weapon: { ...equip, ranged: B, damage: D },
-      armor: armorLike,
-      shield: armorLike,
-      helm: armorLike,
-      gauntlet: armorLike,
-      accessory: { ...armorLike, sanResist: opt(I()) },
       consumable: {
         usableIn: E(USABLE_IN),
         effect: U({
@@ -638,23 +625,11 @@ function validateItems(ctx: Ctx, v: unknown, ix: Index): void {
     } satisfies Record<(typeof ITEM_TYPES)[number], Record<string, Field>>,
     common,
   );
-  const a = L((c, p, x) => {
-    const o = item(c, p, x);
-    // 装備品の slot は type と同じ（type 自体がスロット名）
-    if (isObj(o) && typeof o.slot === "string" && o.slot !== o.type)
-      report(c, at(p, "slot"), `CH-70: slot ${JSON.stringify(o.slot)} does not match type ${JSON.stringify(o.type)}`);
-    return o;
-  })(ctx, "", v);
+  const a = L(item)(ctx, "", v);
   if (Array.isArray(a)) uniqueIds(ctx, "", a);
 }
 
 // ---- equipment-bases.json（IT-02 / IT-20〜22。M7） ----
-
-/**
- * M7 の B1 の間だけの検査: items.json の装備の行と同じ id のベースは、これらの値も一致する
- * （実体の itemId が両方を指すため。B2 で items.json の装備の行を消し、代わりに「id が重ならない」を検査する）
- */
-const BASE_ITEM_SAME_KEYS = ["slot", "damage", "ranged", "ac", "classes", "price"] as const;
 
 function validateEquipmentBases(ctx: Ctx, v: unknown, ix: Index): void {
   const classes = L((c, p, x) => {
@@ -677,14 +652,10 @@ function validateEquipmentBases(ctx: Ctx, v: unknown, ix: Index): void {
   const a = L(base)(ctx, "", v);
   if (!Array.isArray(a)) return;
   uniqueIds(ctx, "", a);
+  // IT-10: 実体の itemId はベース表と items.json の両方を指すので、id は重ならない
   a.forEach((b, i) => {
-    if (!isObj(b) || typeof b.id !== "string") return;
-    const item = ix.items.get(b.id);
-    if (item === undefined || !(EQUIP_SLOTS as readonly unknown[]).includes(item.type)) return;
-    for (const k of BASE_ITEM_SAME_KEYS) {
-      if (JSON.stringify(b[k]) !== JSON.stringify(item[k]))
-        report(ctx, at(at("", i), k), `IT-02: ${k} differs from items.json ${JSON.stringify(b.id)} (${JSON.stringify(b[k])} vs ${JSON.stringify(item[k])})`);
-    }
+    const id = strOf(get(b, "id"));
+    if (id !== undefined && ix.items.has(id)) report(ctx, at(at("", i), "id"), `IT-10: base id ${JSON.stringify(id)} overlaps an items.json id`);
   });
 }
 
@@ -956,7 +927,9 @@ function validateDungeons(ctx: Ctx, v: unknown, ix: Index): void {
       teleporterFloors: L(I(POS_INT)),
       onClear: F({
         unlockDungeon: nullable(refField(ix.dungeons, "dungeon")),
-        shopStock: L(refField(ix.items, "item")),
+        // TW-06: 消耗品・魔法書か汎用ベース（M7 の B2 で装備の行を equipment-bases.json に移した。在庫制は B7 で流通レベルに置き換える）
+        shopStock: L(refField(new Map([...ix.items, ...ix.bases]), "item")),
+        shopLevel: I(NON_NEG), // IT-62【仮】
       }),
       description: S,
     }),

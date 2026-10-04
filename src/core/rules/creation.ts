@@ -220,9 +220,10 @@ function buildCharacter(
   };
   for (const slot of EQUIP_SLOTS) {
     const itemId = o.kit.equipment[slot];
-    if (itemId !== undefined) equipment[slot] = createItemInstance(state, itemId, true);
+    // IT-04: 初期装備は汎用 Lv0・通常・オプションなし・鑑定済み・呪いなし（createItemInstance の既定）
+    if (itemId !== undefined) equipment[slot] = createItemInstance(state, { itemId, identified: true });
   }
-  const inventory = o.kit.inventory.map((itemId) => createItemInstance(state, itemId, true));
+  const inventory = o.kit.inventory.map((itemId) => createItemInstance(state, { itemId, identified: true }));
 
   return {
     id: `c${o.index + 1}`,
