@@ -209,11 +209,14 @@ describe("UI-53 道具（M4 の field-items から移した）", () => {
     expect(campHeader({ kind: "item", stage: "item", memberId: "c1" }, m, S)).toBe("アルドの道具");
   });
 
-  test("UI-53/DG-30 帰還の糸（対象なし）は道具の段で送る。薬草は対象の段から targetId 付きで送る。送った後は同じ人の道具の段", () => {
+  // M5.5: 帰還の糸は道具の段ですぐ送らず、確認の段（DG-30/UI-53）を挟むように改めた（旧: 道具の段で送る）
+  test("UI-53/DG-30 帰還の糸（対象なし）は確認の段の「戻る」で送る。薬草は対象の段から targetId 付きで送る。送った後は同じ人の道具の段", () => {
     const s = inDungeon({ c2: { hp: 5 } });
     const m = input(s);
     const itemPage: CampPage = { kind: "item", stage: "item", memberId: "c5" };
-    const r = campStep("camp", itemPage, m, { kind: "item", instanceId: "i15" });
+    const confirm: CampPage = { kind: "item", stage: "confirmReturn", memberId: "c5", instanceId: "i15" };
+    expect(campStep("camp", itemPage, m, { kind: "item", instanceId: "i15" })).toEqual({ kind: "page", page: confirm });
+    const r = campStep("camp", confirm, m, { kind: "confirm" });
     expect(r).toEqual({ kind: "send", command: { type: "dungeon.useItem", memberId: "c5", itemId: "i15" }, after: itemPage });
     if (r.kind !== "send") throw new Error("not send");
     expect(accepted(s, r.command).screen).toBe("town");
@@ -225,6 +228,61 @@ describe("UI-53 道具（M4 の field-items から移した）", () => {
     expect(r2).toEqual({ kind: "send", command: { type: "dungeon.useItem", memberId: "c1", itemId: "i4", targetId: "c2" }, after: c1 });
     if (r2.kind !== "send") throw new Error("not send");
     accepted(s, r2.command);
+  });
+
+  test("DG-30/UI-53 道具の段で帰還の糸（isReturn）を選ぶと確認の段になり、送らない。戻るで dungeon.useItem、やめるで同じ者の道具の段へ（酒場でも閉じない）", () => {
+    const s = inDungeon();
+    const m = input(s);
+    const el = m.items!.members.find((x) => x.id === "c5")!.items.find((x) => x.instanceId === "i15")!;
+    expect(el.isReturn).toBe(true);
+    const itemPage: CampPage = { kind: "item", stage: "item", memberId: "c5" };
+    const confirm: CampPage = { kind: "item", stage: "confirmReturn", memberId: "c5", instanceId: "i15" };
+    for (const host of ["camp", "tavern"] as const) {
+      expect(campStep(host, itemPage, m, { kind: "item", instanceId: "i15" }), host).toEqual({ kind: "page", page: confirm });
+      expect(campStep(host, confirm, m, { kind: "cancel" }), host).toEqual({ kind: "page", page: itemPage });
+      // 段に合わない選択は同じ段のまま
+      expect(campStep(host, confirm, m, { kind: "item", instanceId: "i15" }), host).toEqual({ kind: "page", page: confirm });
+    }
+    // 一覧は 戻る / やめる（末尾のやめるは UI-11 の固定）。問いは品の表示名。パネルは場所の見出しだけ
+    expect(rows(campEntries("camp", confirm, m, S))).toEqual([{ label: "戻る", disabled: false, choice: { kind: "confirm" } }, cancel]);
+    expect(campHeader(confirm, m, S)).toBe("帰還の糸で街へ戻る？");
+    expect(campPanel(confirm, m, S)).toEqual({ kind: "text", title: "キャンプ" });
+    // core の状態は確認まで変えない（確認の段は表示層だけの値）。campRepair は成り立つ間そのまま
+    expect(campRepair("camp", confirm, m)).toBe(confirm);
+  });
+
+  test("UI-33 帰還の糸の確認の段で Enter は戻る、Esc はやめる", () => {
+    const m = input(inDungeon());
+    const e = campEntries("camp", { kind: "item", stage: "confirmReturn", memberId: "c5", instanceId: "i15" }, m, S);
+    expect(campKeyIndex("confirm", e)).toBe(0);
+    expect(campRows(e)[0]!.choice).toEqual({ kind: "confirm" });
+    expect(campKeyIndex("back", e)).toBe(1);
+    expect(campRows(e)[1]!.choice).toEqual({ kind: "cancel" });
+  });
+
+  test("UI-53 帰還の糸でない対象なしの品は今どおり道具の段ですぐ送る", () => {
+    const m = input(inDungeon());
+    // c1 の薬草を「対象なし・帰還でない」に書き換えた入力（魔法書・自分に効く品と同じ扱い）
+    const items = structuredClone(m.items!);
+    const it = items.members.find((x) => x.id === "c1")!.items.find((x) => x.instanceId === "i4")!;
+    Object.assign(it, { target: "none", isReturn: false, usable: true });
+    const p: CampPage = { kind: "item", stage: "item", memberId: "c1" };
+    expect(campStep("camp", p, { ...m, items }, { kind: "item", instanceId: "i4" })).toEqual({
+      kind: "send",
+      command: { type: "dungeon.useItem", memberId: "c1", itemId: "i4" },
+      after: p,
+    });
+  });
+
+  test("UI-53 帰還の糸の確認の段: 品が消えた・使えなくなったら同じ者の道具の段、使う者が行動できなければ最初のページ", () => {
+    const confirm: CampPage = { kind: "item", stage: "confirmReturn", memberId: "c5", instanceId: "i15" };
+    const gone = inDungeon();
+    gone.party[4]!.inventory = gone.party[4]!.inventory.filter((x) => x !== "i15");
+    expect(campRepair("camp", confirm, input(gone))).toEqual({ kind: "item", stage: "item", memberId: "c5" });
+    // 街では帰還の糸は usable false
+    expect(campRepair("tavern", confirm, input(inTown()))).toEqual({ kind: "item", stage: "item", memberId: "c5" });
+    expect(campRepair("camp", confirm, input(inDungeon({ c5: { status: ["sleep"] } })))).toEqual({ kind: "top" });
+    expect(campRepair("tavern", confirm, input(inTown({ c5: { status: ["sleep"] } })))).toEqual({ kind: "item", stage: "member" });
   });
 
   test("UI-53 段に合わない選択と none は同じ段のまま", () => {
@@ -517,6 +575,8 @@ describe("UI-33 campKeyIndex", () => {
       "camp.equip.blocked",
       "camp.identifyRow",
       "camp.identify.none",
+      "camp.returnConfirm.prompt",
+      "camp.returnConfirm.yes",
       "camp.order.row",
       "camp.order.front",
       "camp.order.back",

@@ -5,6 +5,8 @@
 // - 迷宮の top は [状態][呪文][道具][装備] / [並び順][鑑定（identifiers が空なら空き枠）][空き][戻る] の 4×2 の枠（layout.campGrid）。
 //   top の「戻る」で閉じる。ほかの段の末尾は「やめる」（common.cancel）で、host の最初のページへ戻る（camp は top、酒場は閉じて酒場の一覧へ）。
 // - 送った後も閉じずに、同じ者の段へ戻る（CampStep の after）。sync で campMenu を取り直し、campRepair で成り立たない段を直す。
+// - 帰還の糸（FieldItemView.isReturn）は送る前に確認の段（confirmReturn。戻る / やめる）を挟む。やめるは酒場でも同じ者の道具の段へ（M5.5）。
+//   確認の段は表示層だけの値で、core の状態は確認まで変えない（保存しない）。
 // - 名前の枠（状態・呪文・道具・装備の人・並び順）はパーティ全員の 6 枠と [7] やめる。呪文・道具・装備の品・対象・鑑定の品は一覧（末尾がやめる）。
 // DOM はパネル（createCampView）だけで、モジュールのトップレベルでは DOM に触れない。結線は app が行う。
 import type { EquipSlot, Strings } from "../../core/data/index";
@@ -26,6 +28,8 @@ export type CampPage =
   | { kind: "item"; stage: "member" }
   | { kind: "item"; stage: "item"; memberId: string }
   | { kind: "item"; stage: "target"; memberId: string; instanceId: string }
+  /** DG-30 / UI-53（M5.5）: 帰還の糸を使う前の確認 */
+  | { kind: "item"; stage: "confirmReturn"; memberId: string; instanceId: string }
   | { kind: "equip"; stage: "member" }
   | { kind: "equip"; stage: "slot"; memberId: string }
   | { kind: "equip"; stage: "item"; memberId: string; slot: EquipSlot }
@@ -42,6 +46,8 @@ export type CampChoice =
   | { kind: "equip"; instanceId: string }
   | { kind: "unequip" }
   | { kind: "identifyItem"; instanceId: string }
+  /** 確認の段の「戻る」（帰還の糸を使う。M5.5） */
+  | { kind: "confirm" }
   /** 押しても何もしない行（「装備できる物がない」など） */
   | { kind: "none" }
   /** やめる（top では戻る = 閉じる） */
@@ -175,6 +181,10 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
         const x = items?.members.find((y) => y.id === page.memberId);
         return list((x?.items ?? []).map((it) => ({ label: it.name, disabled: !it.usable, choice: { kind: "item", instanceId: it.instanceId } })));
       }
+      if (page.stage === "confirmReturn") {
+        // 戻る（先頭。Enter）/ やめる（末尾。UI-11 の固定の位置。Esc）
+        return list([{ label: s(strings, "camp.returnConfirm.yes"), disabled: false, choice: { kind: "confirm" } }]);
+      }
       return list(
         (items?.allies ?? []).map((a) => ({
           label: s(strings, "dungeon.items.allyRow", { name: a.name, hp: a.hp, hpMax: a.hpMax }),
@@ -237,6 +247,16 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
 /** 1 つ選ぶ。段に合わない選択と none は同じ段のまま */
 export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: CampChoice): CampStep {
   const stay: CampStep = { kind: "page", page };
+  // 帰還の糸の確認のやめるは、酒場でも閉じずに同じ者の道具の段へ（cancelStep より先に見る）
+  if (page.kind === "item" && page.stage === "confirmReturn") {
+    if (choice.kind === "cancel") return { kind: "page", page: { kind: "item", stage: "item", memberId: page.memberId } };
+    if (choice.kind !== "confirm") return stay;
+    return {
+      kind: "send",
+      command: { type: "dungeon.useItem", memberId: page.memberId, itemId: page.instanceId },
+      after: { kind: "item", stage: "item", memberId: page.memberId },
+    };
+  }
   if (choice.kind === "cancel") return cancelStep(host, page);
   const menu = m.menu;
   switch (page.kind) {
@@ -278,6 +298,8 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
         const it = m.items?.members.find((x) => x.id === page.memberId)?.items.find((x) => x.instanceId === choice.instanceId);
         if (it === undefined) return stay;
         if (it.target === "ally") return { kind: "page", page: { kind: "item", stage: "target", memberId: page.memberId, instanceId: it.instanceId } };
+        // DG-30 / UI-53（M5.5）: 帰還の糸は送らずに確認の段へ（使えるかは core の usable。dim の品は操作領域が押させない）
+        if (it.isReturn) return { kind: "page", page: { kind: "item", stage: "confirmReturn", memberId: page.memberId, instanceId: it.instanceId } };
         return { kind: "send", command: { type: "dungeon.useItem", memberId: page.memberId, itemId: it.instanceId }, after: back };
       }
       if (choice.kind !== "target") return stay;
@@ -338,6 +360,10 @@ export function campHeader(page: CampPage, m: CampInput, strings: Strings): stri
     case "item":
       if (page.stage === "member") return s(strings, "dungeon.items.who");
       if (page.stage === "item") return s(strings, "dungeon.items.which", { name: nameOf(m, page.memberId) });
+      if (page.stage === "confirmReturn") {
+        const it = m.items?.members.find((x) => x.id === page.memberId)?.items.find((x) => x.instanceId === page.instanceId);
+        return s(strings, "camp.returnConfirm.prompt", { item: it?.name ?? "" });
+      }
       return s(strings, "dungeon.items.target");
     case "equip":
       if (page.stage === "member") return s(strings, "camp.prompt.equipWho");
@@ -413,6 +439,7 @@ export function campRepair(host: CampHost, page: CampPage, m: CampInput): CampPa
       const x = m.items.members.find((y) => y.id === page.memberId);
       if (x === undefined || !x.canAct) return reset();
       if (page.stage === "item") return page;
+      // 対象の段・確認の段: 品が消えた・使えなくなったら同じ者の道具の段へ
       return x.items.some((it) => it.instanceId === page.instanceId && it.usable) ? page : { kind: "item", stage: "item", memberId: page.memberId };
     }
     case "equip":

@@ -118,6 +118,8 @@
   "camp.equip": "装備",
   "camp.order": "並び順",
   "camp.identify": "鑑定",
+  "camp.returnConfirm.prompt": "{item}で街へ戻る？",
+  "camp.returnConfirm.yes": "戻る",
   "camp.prompt.top": "キャンプ　どうする？",
   "camp.summary.place": "{dungeon}　{floor}F",
   "camp.summary.gold": "所持金　{gold}G",
