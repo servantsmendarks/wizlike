@@ -597,3 +597,4 @@
 - 2026-10-04 save(M6): SV-30 の checksum の SHA-256 は src/save/sha256.ts に純粋な TS で実装する。crypto.subtle は secure context でしか無く、vite --host の http の LAN で書き出し・読み込みが使えなくなるため。依存パッケージは足さない。
 - 2026-10-04 save(M6): 書き出しの中身は保存先のレコード（メモリの state ではない）で、古い版は移行して今の schemaVersion で書き出す。壊れた・新しすぎるレコードは書き出さない。遊んでいる途中は SV-41 の flush を待ってから読む。SV-30 は「ゲーム 1 つ」としか言っておらず、記録と同じものを渡すのがいちばん単純なため。
 - 2026-10-04 save(M6): 読み込みで書くレコードの turn はファイルの値、updatedAt は読み込んだ時刻。既存が壊れて読めないときは turn を比べず上書き、復元は書く直前に件数を数え直す（数え直しの時点で同じ gameId が既にあれば上書きなので上限を見ない）。SV-31 が沈黙している細部で、いちばん単純な解釈。
+- 2026-10-04 presenter(M6): SV-41 は Autosaver の flush / markSaved で行う。最後に保存に成功した state の参照と比べて同じなら書かず、進行中の保存を待ってから比べる（visibilitychange と pagehide が続けて来ても 1 回）。街・迷宮・戦闘の間だけ。flush の結果（ok / skipped / failed）は console.debug に出す（実機のリモートデバッグで確かめるため）。

@@ -305,3 +305,145 @@ describe("保存できない帯（SV-23）", () => {
     expect(data.strings["save.failed"]).toBeTypeOf("string");
   });
 });
+
+describe("ページが隠れたときの保存（SV-41）", () => {
+  /** begin / save を数え、結果を差し替えられる偽の saves（save は手で解決もできる） */
+  function fakeSaves() {
+    const calls: string[] = [];
+    let result: "ok" | "fail" | "throw" = "ok";
+    let hold: Array<() => void> | null = null;
+    const answer = async (kind: string): Promise<{ ok: true; turn: number } | { ok: false }> => {
+      calls.push(kind);
+      if (hold !== null) await new Promise<void>((r) => hold!.push(r));
+      if (result === "throw") throw new Error("boom");
+      return result === "ok" ? { ok: true, turn: calls.length } : { ok: false };
+    };
+    return {
+      calls,
+      saves: { begin: () => answer("begin"), save: () => answer("save") } as Pick<SaveService, "begin" | "save">,
+      setResult(r: "ok" | "fail" | "throw") {
+        result = r;
+      },
+      holdOn() {
+        hold = [];
+      },
+      releaseAll() {
+        const h = hold ?? [];
+        hold = null;
+        for (const f of h) f();
+      },
+    };
+  }
+
+  test("SV-41 flush: 直前の afterCommand で保存に成功した同じ state なら書かない（save の呼び出し 0 回）", async () => {
+    const f = fakeSaves();
+    const statuses: SaveStatus[] = [];
+    const a = createAutosaver({ saves: f.saves, onStatus: (s) => statuses.push(s) });
+    const s0 = createInitialState(1, data);
+    const s1 = execute(s0, NEW_GAME, data).state;
+    await a.afterCommand(NEW_GAME, s0, s1);
+    expect(f.calls).toEqual(["begin"]);
+    expect(await a.flush(s1)).toBe("skipped");
+    expect(f.calls).toEqual(["begin"]);
+    expect(statuses).toEqual(["ok"]);
+    // 別の state（参照が違う）なら save する
+    const s2 = execute(s1, ENTER, data).state;
+    expect(await a.flush(s2)).toBe("ok");
+    expect(f.calls).toEqual(["begin", "save"]);
+    expect(statuses).toEqual(["ok", "ok"]);
+  });
+
+  test("SV-41 flush: afterCommand の保存が進行中なら待ってから比べ、同じ state なら書かない（save は 1 回だけ）", async () => {
+    const f = fakeSaves();
+    const a = createAutosaver({ saves: f.saves, onStatus: () => {} });
+    const s0 = execute(createInitialState(1, data), NEW_GAME, data).state;
+    const s1 = execute(s0, ENTER, data).state;
+    expect(s1).not.toBe(s0);
+    f.holdOn();
+    const pCmd = a.afterCommand(ENTER, s0, s1);
+    let flushed: string | null = null;
+    const pFlush = a.flush(s1).then((r) => {
+      flushed = r;
+    });
+    await flush();
+    expect(f.calls).toEqual(["save"]);
+    expect(flushed).toBeNull(); // 進行中の保存を待っている
+    f.releaseAll();
+    await pCmd;
+    await pFlush;
+    expect(flushed).toBe("skipped");
+    expect(f.calls).toEqual(["save"]);
+  });
+
+  test("SV-41 flush: 直前の保存が失敗していれば同じ state を save し直し、onStatus は ok", async () => {
+    const f = fakeSaves();
+    const statuses: SaveStatus[] = [];
+    const a = createAutosaver({ saves: f.saves, onStatus: (s) => statuses.push(s) });
+    const s0 = execute(createInitialState(1, data), NEW_GAME, data).state;
+    const s1 = execute(s0, ENTER, data).state;
+    expect(s1).not.toBe(s0);
+    f.setResult("fail");
+    await a.afterCommand(ENTER, s0, s1);
+    f.setResult("ok");
+    expect(await a.flush(s1)).toBe("ok");
+    expect(f.calls).toEqual(["save", "save"]);
+    expect(statuses).toEqual(["failed", "ok"]);
+    // 保存し直した後は同じ state を書かない
+    expect(await a.flush(s1)).toBe("skipped");
+    expect(f.calls).toHaveLength(2);
+  });
+
+  test("SV-41 flush: markSaved した state は書かず、別の state なら書く", async () => {
+    const f = fakeSaves();
+    const a = createAutosaver({ saves: f.saves, onStatus: () => {} });
+    const loaded = createInitialState(1, data);
+    a.markSaved(loaded);
+    expect(await a.flush(loaded)).toBe("skipped");
+    expect(f.calls).toEqual([]);
+    expect(await a.flush(createInitialState(2, data))).toBe("ok");
+    expect(f.calls).toEqual(["save"]);
+  });
+
+  test("SV-41 flush を続けて 2 回（visibilitychange と pagehide）呼ぶと save は 1 回", async () => {
+    const f = fakeSaves();
+    const a = createAutosaver({ saves: f.saves, onStatus: () => {} });
+    const st = createInitialState(1, data);
+    f.holdOn();
+    const p1 = a.flush(st);
+    const p2 = a.flush(st);
+    await flush();
+    expect(f.calls).toEqual(["save"]);
+    f.releaseAll();
+    expect(await p1).toBe("ok");
+    expect(await p2).toBe("skipped");
+    expect(f.calls).toEqual(["save"]);
+  });
+
+  test("SV-41 flush の save が reject しても例外を出さず failed", async () => {
+    const f = fakeSaves();
+    const statuses: SaveStatus[] = [];
+    const a = createAutosaver({ saves: f.saves, onStatus: (s) => statuses.push(s) });
+    f.setResult("throw");
+    const st = createInitialState(1, data);
+    await expect(a.flush(st)).resolves.toBe("failed");
+    expect(statuses).toEqual(["failed"]);
+    // 失敗した state は保存済みにならない（次の flush でまた書く）
+    f.setResult("ok");
+    expect(await a.flush(st)).toBe("ok");
+  });
+
+  test("SV-41/SV-23 flush は本物の SaveService でも turn を 1 つ進めて最新の state を書く（メモリの保存先）", async () => {
+    const mem = createMemoryBackend();
+    const saves = service(mem);
+    const a = createAutosaver({ saves, onStatus: () => {} });
+    const s0 = createInitialState(3, data);
+    const s1 = execute(s0, NEW_GAME, data).state;
+    await a.afterCommand(NEW_GAME, s0, s1);
+    expect(await a.flush(s1)).toBe("skipped");
+    expect(mem.putCount).toBe(1);
+    const s2 = execute(s1, ENTER, data).state;
+    expect(await a.flush(s2)).toBe("ok");
+    expect(recordOf(mem, "g1").turn).toBe(2);
+    expect(recordOf(mem, "g1").state.screen).toBe("dungeon");
+  });
+});

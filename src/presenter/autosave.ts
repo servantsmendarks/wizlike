@@ -3,28 +3,75 @@
 // - game.new は新しいゲームの記録を作り（begin）、それ以外は今のゲームの記録へ上書きする（save）。
 // - 結果は onStatus に "ok" / "failed" で渡す。帯（SV-23）を出すかどうかは createSaveBannerState が決める。
 // - 保存にタイムアウトは置かない（put が終わらなければ門が閉じたままになる。実機で起きたら見直す）。
+// - SV-41: ページが隠れたときの flush は、進行中の保存を待ってから、最後に保存に成功した state と同じ参照なら書かない。
 import type { Command, GameEvent, GameState } from "../core/types";
 import type { SaveService } from "../save/types";
 
 export type SaveStatus = "ok" | "failed";
 
+/** SV-41: flush の結果。skipped = 保存済みの state なので書かなかった */
+export type FlushResult = "ok" | "failed" | "skipped";
+
 export type Autosaver = {
   /** before と after が同じ参照なら何もしない。保存が終わる（成功・失敗）まで解決しない。reject しない */
   afterCommand(cmd: Command, before: GameState, after: GameState): Promise<void>;
+  /**
+   * SV-41: 進行中の保存（afterCommand・flush）を待ってから、最後に保存に成功した state と同じ参照なら何もしない（skipped）。
+   * 違えば save して onStatus に渡す。reject しない
+   */
+  flush(state: GameState): Promise<FlushResult>;
+  /** SV-41 / SV-50: 読み込んだ state を「保存済み」とする（続きからの直後の flush で書かない） */
+  markSaved(state: GameState): void;
 };
 
 export function createAutosaver(o: { saves: Pick<SaveService, "begin" | "save">; onStatus(s: SaveStatus): void }): Autosaver {
+  /** 最後に保存に成功した（または読み込んだ）state の参照 */
+  let saved: GameState | null = null;
+  /** 進行中の保存（afterCommand・flush）。同期部分で差し替えるので、続けて呼ばれても順に待つ */
+  let inflight: Promise<unknown> = Promise.resolve();
+
+  const track = <T>(p: Promise<T>): Promise<T> => {
+    inflight = p;
+    return p;
+  };
+
   return {
-    async afterCommand(cmd, before, after) {
-      if (after === before) return;
-      let ok = false;
-      try {
-        const r = cmd.type === "game.new" ? await o.saves.begin(after) : await o.saves.save(after);
-        ok = r.ok;
-      } catch {
-        ok = false;
-      }
-      o.onStatus(ok ? "ok" : "failed");
+    afterCommand(cmd, before, after) {
+      if (after === before) return Promise.resolve();
+      return track(
+        (async () => {
+          let ok = false;
+          try {
+            const r = cmd.type === "game.new" ? await o.saves.begin(after) : await o.saves.save(after);
+            ok = r.ok;
+          } catch {
+            ok = false;
+          }
+          if (ok) saved = after;
+          o.onStatus(ok ? "ok" : "failed");
+        })(),
+      );
+    },
+    flush(state) {
+      const prev = inflight;
+      return track(
+        (async (): Promise<FlushResult> => {
+          await prev.catch(() => undefined);
+          if (state === saved) return "skipped";
+          let ok = false;
+          try {
+            ok = (await o.saves.save(state)).ok;
+          } catch {
+            ok = false;
+          }
+          if (ok) saved = state;
+          o.onStatus(ok ? "ok" : "failed");
+          return ok ? "ok" : "failed";
+        })(),
+      );
+    },
+    markSaved(state) {
+      saved = state;
     },
   };
 }

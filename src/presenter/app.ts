@@ -51,6 +51,7 @@ import {
   type Action,
 } from "./input/swipe";
 import { attachPointerLog, createPointerLog } from "./input/pointer-log";
+import { attachSaveOnHide } from "./lifecycle";
 import { attachStageInput, onTap } from "./input/tap";
 import { dungeonLayout, layoutWarnings, regions, saveBannerRect } from "./layout";
 import { createPlayer } from "./playback";
@@ -707,6 +708,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
    * UI-35 / UI-44: Command を execute に送り、イベントを再生する。再生中なら捨てて null。
    * rejected（イベントがちょうど 1 件の rejected）は再生せず、console.debug に出す。
    */
+  /** SV-02 / SV-41: オートセーブ（コマンドの直後と、ページが隠れたときの flush） */
+  const autosaver = createAutosaver({ saves: o.saves, onStatus: (s) => onSaveStatus(s) });
   const gate = createRunGate<Command, DispatchResult, CommandExecOptions>({
     onError: (e) => console.error(e),
     // SV-02: execute → state の差し替え → 保存を await → 再生（順は createCommandExec が固定する）
@@ -716,7 +719,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       setState: (st) => {
         state = st;
       },
-      autosaver: createAutosaver({ saves: o.saves, onStatus: (s) => onSaveStatus(s) }),
+      autosaver,
       play: (events, before, after) => player.play(events, before, after),
       onRejected: (ev) => console.debug("rejected", ev.command, ev.reason),
     }),
@@ -1033,6 +1036,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   const resume = (st: GameState): void => {
     const plan = resumePlan(st, data);
     state = st;
+    // SV-41: 読み込んだ state は保存済み（続きからの直後にページが隠れても書かない）
+    autosaver.markSaved(st);
     overlay = null;
     play.showMap(false);
     play.showCamp(false);
@@ -1442,6 +1447,11 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
         repeater.release();
         // UI-25: 窓のフォーカスが外れた・ページが隠れたら自動歩行も止める
         stopWalk();
+      });
+      // SV-41: ページが隠れたら、進行中の保存を待ってから最新の state を保存し直す（保存済みなら書かない）。遊んでいる間だけ
+      attachSaveOnHide(document, window, () => {
+        if (route !== "town" && route !== "dungeon" && route !== "battle") return;
+        void autosaver.flush(state).then((r) => console.debug("autosave: flush", r));
       });
       store.subscribe(() => {
         debug.refresh();
