@@ -79,7 +79,7 @@ import { formatDetail, SLOT_ORDER } from "./views/detail";
 import { createDungeonScreen } from "./views/dungeon";
 import { mapTapAction } from "./views/map";
 import { slotsFor } from "./views/dungeon-geometry";
-import { headerText } from "./views/header";
+import { battleTurnText, headerText } from "./views/header";
 import { formatMessage } from "./views/message";
 import { createSaveBanner } from "./views/save-banner";
 import { createTitleScreen, titleEntries, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
@@ -280,6 +280,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     cursor = null;
     stopRequested = false;
     lowerInput();
+    // UI-54: battleEnd の後はターン表示を出さない
+    play.header.setTurn(null);
   };
 
   /** core の screen イベント。route は routeOfScreen で決める（event は迷宮の画面の上の状態。UI-55） */
@@ -298,6 +300,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       cursor = null;
       advanceFrom = null;
       stopRequested = false;
+      // UI-54: 遭遇の再生の間は 第1ターン（round は 0 から始まり、遭遇の直後のラウンドが 1 番目）
+      play.header.setTurn(battleTurnText(strings, 1));
     }
     showRoute(r);
     // 操作は再生の最後の sync で出し直す
@@ -311,6 +315,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     if (route === "battle") {
       play.setMode("battle");
       const menu = battleMenu(st, data);
+      // UI-54: 次に入力・解決するラウンド（battleMenu.round + 1）。オートの再生の間はこの値のまま = 再生中のラウンド
+      play.header.setTurn(menu === null ? null : battleTurnText(strings, menu.round + 1));
       if (menu !== null) {
         play.battle.setGroups(menu.groups);
         // 受け付けた直後は並び順で次の入力待ちへ、それ以外（新しいラウンド・オートの段）は先頭の入力待ちから
@@ -324,6 +330,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     }
     play.party.setActive(null);
     clearFocus();
+    // UI-54: 迷宮・街ではターン表示を出さない
+    play.header.setTurn(null);
     if (route === "town") {
       play.setMode("town");
       // UI-52: ヘッダーに所持金（再生中は前の額のまま。ここで最終の額に描き直す）

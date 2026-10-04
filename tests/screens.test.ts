@@ -347,6 +347,21 @@ describe("入力と Command", () => {
     expect(lower).toContain('play.controls.setMode("none");');
   });
 
+  test("UI-54 戦闘中はヘッダーに 第{round+1}ターン を出す。遭遇の再生（onScreen battle）は 1、sync の戦闘は battleMenu.round + 1、battleEnd の後と迷宮・街の sync では隠す。lowerInput はターンを消さない（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const onScreen = /const onScreen = \(to: Screen\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(onScreen).toMatch(/if \(r === "battle"\) \{[^}]*play\.header\.setTurn\(battleTurnText\(strings, 1\)\);/);
+    const sync = /const sync = \(st: GameState\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(sync).toContain("play.header.setTurn(menu === null ? null : battleTurnText(strings, menu.round + 1));");
+    // 戦闘の分岐（return まで）の後の迷宮・街は null
+    const afterBattle = sync.slice(sync.indexOf("syncControls();\n      return;"));
+    expect(afterBattle).toContain("play.header.setTurn(null);");
+    const ended = /const onBattleEnded = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(ended).toContain("play.header.setTurn(null);");
+    const lower = /const lowerInput = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(lower).not.toContain("setTurn");
+  });
+
   test("UI-44/UI-56 全滅の 2d10 を出したとき（playback の inputClosed。戦闘の外の全滅も）は、battleEnd と同じ下げ方（lowerInput）で迷宮のヘッダーと操作を下げる", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     expect(app).toMatch(/inputClosed: \(\) => lowerInput\(\)/);

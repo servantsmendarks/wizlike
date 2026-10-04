@@ -34,6 +34,10 @@ export const TOUCH_EXCEPTIONS: readonly string[] = ["header.settings"];
 const HEADER_SETTINGS_W = 40;
 /** ヘッダーの文字の左右の余白 */
 const HEADER_TEXT_PAD = 4;
+/** UI-54（M5.5）: 戦闘のターン表示の幅。ヘッダーの文字領域の右端に右寄せで置く */
+export const HEADER_TURN_W = 56;
+/** UI-54（M5.5）: ターン表示を出している間、問いの文字領域をターン表示の幅とこの間だけ縮める */
+export const HEADER_TURN_GAP = 4;
 
 /** 迷宮の十字ボタン（UI-32）。操作領域からの相対 */
 const DPAD_REL = {
@@ -139,7 +143,8 @@ const MAP_TITLE_H = 12;
 const shift = (r: Rect, o: Rect): Rect => ({ x: o.x + r.x, y: o.y + r.y, w: r.w, h: r.h });
 
 export type DungeonLayout = {
-  header: { text: Rect; settings: Rect };
+  /** text は問い・現在地の文字領域、turn は戦闘のターン表示（UI-54。text の右端に右寄せ、設定ボタンと重ならない） */
+  header: { text: Rect; settings: Rect; turn: Rect };
   dpad: Record<DpadKey, Rect>;
   menu: Rect[];
   list: Rect[];
@@ -179,6 +184,7 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
   const h = g.header;
   const settings: Rect = { x: h.x + h.w - HEADER_SETTINGS_W, y: h.y, w: HEADER_SETTINGS_W, h: h.h };
   const text: Rect = { x: h.x + HEADER_TEXT_PAD, y: h.y, w: settings.x - h.x - 2 * HEADER_TEXT_PAD, h: h.h };
+  const turn: Rect = { x: text.x + text.w - HEADER_TURN_W, y: text.y, w: HEADER_TURN_W, h: text.h };
 
   const c = g.controls;
   const dpad = Object.fromEntries(Object.entries(DPAD_REL).map(([k, r]) => [k, shift(r, c)])) as Record<DpadKey, Rect>;
@@ -199,7 +205,7 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
   const v = g.view;
   const overlay: Rect = { x: v.x, y: v.y, w: v.w, h: v.h + m.h };
   return {
-    header: { text, settings },
+    header: { text, settings, turn },
     dpad,
     menu: MENU_SLOTS_REL.map((r) => shift(r, c)),
     list: LIST_ROWS_REL.map((r) => shift(r, c)),

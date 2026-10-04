@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { dungeonLayout, MESSAGE_LINE_H, regions } from "../src/presenter/layout";
 import { createMessageWindow, formatMessage, trimHistory, typewriterSteps } from "../src/presenter/views/message";
 import { createHistoryView, HISTORY_LINE_H } from "../src/presenter/views/history";
-import { headerText } from "../src/presenter/views/header";
+import { battleTurnText, headerText } from "../src/presenter/views/header";
 import { formatPartyRow } from "../src/presenter/views/party";
 import { sanStage } from "../src/core/rules/san";
 import { data, newGame } from "./helpers/core";
@@ -66,6 +66,14 @@ describe("header.ts / party.ts（純粋な部分）", () => {
       expect(headerText(data.strings, "D", 1, f)).toContain(data.strings[`dir.${f}`]!);
       expect(headerText(data.strings, "D", 1, f)).not.toMatch(/\{/);
     }
+  });
+
+  test("UI-54 battleTurnText は battle.turn（第{n}ターン）に n を入れる", () => {
+    expect(data.strings["battle.turn"]).toBe("第{n}ターン");
+    expect(battleTurnText(data.strings, 1)).toBe("第1ターン");
+    expect(battleTurnText(data.strings, 12)).toBe("第12ターン");
+    // strings に無ければキーのまま（他の文言と同じ扱い）
+    expect(battleTurnText({}, 3)).toBe("battle.turn");
   });
 
   test("UI-53/ui §2 formatPartyRow は名前・略称・HP を hp/hpMax・MP を mp/mpMax・SAN、状態を party.life.* で出し、生存は空", () => {

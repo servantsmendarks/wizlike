@@ -9,6 +9,8 @@ import {
   DEBUG_SWIPE_Y,
   debugRow,
   dungeonLayout,
+  HEADER_TURN_GAP,
+  HEADER_TURN_W,
   layoutWarnings,
   regions,
   saveBannerRect,
@@ -215,8 +217,32 @@ describe("layout", () => {
     expect(CONTROLS_MIN_HEIGHT).toBe(98);
   });
 
+  test("UI-54 header.turn は header の文字領域の右端（幅 HEADER_TURN_W）で、設定ボタンと重ならない。縮めた問いの領域とも重ならない", () => {
+    for (const lay of [data.config.ui.layout, { header: 20, view: 150, message: 66, party: 64, controls: 100 }]) {
+      const g = regions(lay, W);
+      const d = dungeonLayout(g, N);
+      const tu = d.header.turn;
+      expect(tu.w).toBe(HEADER_TURN_W);
+      expect(inside(tu, g.header)).toBe(true);
+      expect(inside(tu, d.header.text)).toBe(true);
+      expect(tu.x + tu.w).toBe(d.header.text.x + d.header.text.w);
+      expect(overlaps(tu, d.header.settings)).toBe(false);
+      // ターン表示の間の問いの領域（text.w − HEADER_TURN_W − HEADER_TURN_GAP）は turn の左に HEADER_TURN_GAP 空く
+      const shrunk = { ...d.header.text, w: d.header.text.w - HEADER_TURN_W - HEADER_TURN_GAP };
+      expect(overlaps(shrunk, tu)).toBe(false);
+      expect(tu.x - (shrunk.x + shrunk.w)).toBe(HEADER_TURN_GAP);
+    }
+    // 既定の問いの最長（「{name}はどうする？」の 6 文字の名前で 12 字 = 96px）は縮めた 132px に収まる
+    expect(L.header.text.w - HEADER_TURN_W - HEADER_TURN_GAP).toBeGreaterThanOrEqual(96);
+  });
+
   test("ui §2 既定の layout（16/150/70/64/100）での迷宮の画面の座標は M2 の定数と同じ", () => {
-    expect(L.header).toEqual({ text: { x: 4, y: 0, w: 192, h: 16 }, settings: { x: 200, y: 0, w: 40, h: 16 } });
+    // turn は M5.5（UI-54）で足した（text の右端 x140..195 に右寄せ）
+    expect(L.header).toEqual({
+      text: { x: 4, y: 0, w: 192, h: 16 },
+      settings: { x: 200, y: 0, w: 40, h: 16 },
+      turn: { x: 140, y: 0, w: 56, h: 16 },
+    });
     expect(L.dpad).toEqual({
       forward: { x: 40, y: 300, w: 32, h: 32 },
       left: { x: 6, y: 333, w: 32, h: 32 },
