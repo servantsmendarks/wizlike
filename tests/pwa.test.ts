@@ -617,4 +617,12 @@ describe("SV-42 更新の案内", () => {
     const S = strings as Record<string, string>;
     for (const k of UPDATE_NOTICE_KEYS) expect(S[k], k).toBeTruthy();
   });
+
+  test("SV-42 案内の文言は常体で、読み込み直すと更新を終える（切り替える）ことを語る（新しい版で動いているページでも合う語り）", () => {
+    const S = strings as Record<string, string>;
+    const m = S["pwa.update.message"]!;
+    expect(m).not.toMatch(/です|ます/);
+    expect(m).not.toContain("新しい版になる");
+    expect(m).toContain("更新");
+  });
 });

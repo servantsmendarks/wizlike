@@ -284,7 +284,7 @@
   "settings.install.android": "Android（Chrome）：メニュー → ホーム画面に追加（アプリをインストール）",
   "settings.install.move": "Safari のタブとホーム画面のアプリでは保存が別になる。移すときは書き出して読み込む。",
   "settings.install.done": "ホーム画面から起動している。",
-  "pwa.update.message": "新しい版があります。読み込み直すと新しい版になる。",
+  "pwa.update.message": "新しい版がある。読み込み直すと更新を終える。",
   "pwa.update.reload": "読み込み直す",
 
   "battle.encounter": "何かが現れた！",
