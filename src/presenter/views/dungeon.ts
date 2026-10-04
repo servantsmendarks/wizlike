@@ -15,6 +15,7 @@ import { createBattleView, type BattleView } from "./battle";
 import { createCampView, type CampView } from "./camp";
 import { createControls, type Controls, type DpadAction } from "./controls";
 import { createDiceView, type DiceView } from "./dice";
+import { createPenaltyTableView, type PenaltyTableView } from "./penalty-table";
 import { createDungeonSvg, type DungeonSvg } from "./dungeon-svg";
 import { createHeader, type Header } from "./header";
 import { createHistoryView, type HistoryView } from "./history";
@@ -37,6 +38,8 @@ export type DungeonScreen = {
   battle: BattleView;
   /** ビューの中のダイスの overlay */
   dice: DiceView;
+  /** UI-56（M5.5）: ビューの中の全滅の出目の表（ダイスと同じ層） */
+  penaltyTable: PenaltyTableView;
   /** UI-53 / UI-59 キャンプと酒場のパネル（ビュー領域を覆う） */
   camp: CampView;
   /** UI-56 の全滅の内訳の overlay（地図と同じ範囲） */
@@ -114,6 +117,8 @@ export function createDungeonScreen(o: {
   viewBox.appendChild(battle.el);
   const dice = createDiceView(o.strings);
   viewBox.appendChild(dice.el);
+  const penaltyTable = createPenaltyTableView();
+  viewBox.appendChild(penaltyTable.el);
 
   const message = createMessageWindow({ speed: o.textSpeed, historyMax: o.historyMax, region: r.message, layout: lay.message });
 
@@ -163,6 +168,7 @@ export function createDungeonScreen(o: {
     map,
     battle,
     dice,
+    penaltyTable,
     camp,
     wipe,
     history,

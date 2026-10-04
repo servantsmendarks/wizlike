@@ -14,6 +14,9 @@
 //   拍の外の wipe（戦闘外の全滅）も、開く前に全滅の 2d10 の箱を出したままタップを 1 回待つ。
 //   全滅の 2d10（label が WIPE_DICE_KEY）の箱は、その後の message 以外のイベント（復活の lifeChanged など）でも消さず、wipe の待ちの後に消す。
 //   開いた後は入力を待たずに続ける（後続の screen town でも待たない）。
+//   出目の表（penaltyTable、M5.5）: 2d10 の前の hit null で表を出し、入力の UI を下げてからタップを 1 回待つ（演出スキップでも待つ。§3-9）。
+//   2d10 の後の hit で当たった行を強調して描き直す（待たない）。表は 2d10 の箱と同じく wipe の前の待ちの後（と再生の終わり）に消す。
+//   表の事件は message でも dice でもないが、1 回目は 2d10 の箱がまだ無く、2 回目は wipeDiceShown なので、2d10 の箱は消さない。
 // - battleEnd を受けたら deps.battleEnded() で戦闘の入力の UI（ヘッダーの問い・オート解除・パーティの選択）を下げる。
 //   全滅の 2d10 を受けたら deps.inputClosed() で入力の UI（迷宮のヘッダー・十字ボタンなども）を下げる。
 // - レベルの変化（levelUp / levelDown）はパーティ欄の最大値と現在値を描き直す。spellLearned は何もしない（message が語る）。
@@ -36,6 +39,7 @@ import type { Settings } from "./settings";
 import { enemyGroupOfId } from "./views/battle";
 import { formatDiceSummary, type DiceEvent } from "./views/dice";
 import { formatMessage } from "./views/message";
+import { formatPenaltyTable, type PenaltyTableText } from "./views/penalty-table";
 
 /** screen は再生中の core の画面（before.screen から、screen イベントの値で進める。UI-55 のフェードの有無に使う） */
 export type PlayCx = { cursor: ViewPoint | null; skip: boolean; screen: Screen };
@@ -92,6 +96,8 @@ export type PlayerDeps = {
   screens: { show(to: Screen, state: GameState): void; sync(state: GameState): void };
   /** UI-56 の全滅の内訳の overlay を開く（入力は待たない。閉じるのは app） */
   wipe: { show(p: PenaltyResult): void };
+  /** UI-56（M5.5）の全滅の出目の表（views/penalty-table.ts）。show は描き直しも兼ねる */
+  penaltyTable: { show(v: PenaltyTableText): void; hide(): void };
   /** UI-44 / UI-54: battleEnd を再生した（戦闘の入力の UI を下げる。続きの再生の間は出さない） */
   battleEnded(): void;
   /** UI-44 / UI-56: 全滅の 2d10 を出した（入力の UI を下げる。戦闘の外の全滅でも、内訳を開くまでの待ちの間は出さない） */
@@ -186,6 +192,13 @@ export function createPlayer(deps: PlayerDeps): Player {
     diceShown = false;
     wipeDiceShown = false;
     deps.dice.hide();
+  };
+  /** UI-56: 出目の表が出ているか（wipe の前の待ちの後と再生の終わりに消す） */
+  let tableShown = false;
+  const hideTable = (): void => {
+    if (!tableShown) return;
+    tableShown = false;
+    deps.penaltyTable.hide();
   };
   const ui = deps.data.config.ui;
   const msOf = (cx: PlayCx, ms: number): number => (cx.skip ? 0 : ms);
@@ -331,6 +344,15 @@ export function createPlayer(deps: PlayerDeps): Player {
       deps.message.log(formatDiceSummary(ev, deps.strings));
       await deps.dice.show(ev, isSkip, msOf(cx, ui.diceStepMs));
     },
+    async penaltyTable(ev, cx) {
+      // UI-56: 1 回目（hit null）は表を出して入力の UI を下げ、タップを 1 回待つ（演出スキップでも待つ）。2 回目（hit）は当たった行の強調だけ
+      cx.skip = isSkip();
+      deps.penaltyTable.show(formatPenaltyTable(ev, deps.strings));
+      tableShown = true;
+      if (ev.hit !== null) return;
+      deps.inputClosed();
+      await waitTap();
+    },
     async levelUp(ev, cx) {
       cx.skip = isSkip();
       deps.party.setMax(ev.id, ev.hpMax, ev.mpMax);
@@ -434,11 +456,13 @@ export function createPlayer(deps: PlayerDeps): Player {
             // UI-56: 全滅は内訳（wipe）を開く前に待ち（窓とダイスが内訳に覆われる前）、開いた後は拍の外なので待たない
             await waitBeat("leave");
             hideDice();
+            hideTable();
             leaveBeats();
-          } else if (ev.kind === "wipe" && wipeDiceShown) {
-            // UI-56: 拍の外の全滅（戦闘外）も、全滅の 2d10 の箱を出したままタップを 1 回待ってから内訳を開く
+          } else if (ev.kind === "wipe" && (wipeDiceShown || tableShown)) {
+            // UI-56: 拍の外の全滅（戦闘外）も、全滅の 2d10 の箱（と出目の表）を出したままタップを 1 回待ってから内訳を開く
             await waitTap();
             hideDice();
+            hideTable();
           }
           if (ev.kind === "message") {
             messagesLeft--;
@@ -465,6 +489,7 @@ export function createPlayer(deps: PlayerDeps): Player {
         leaveBeats();
       }
       hideDice();
+      hideTable();
       deps.message.setMore(false);
       if (marked) {
         deps.party.markActor(null, false);

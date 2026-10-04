@@ -255,6 +255,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       sync: (st) => sync(st),
     },
     wipe: { show: (p) => openWipe(p) },
+    penaltyTable: play.penaltyTable,
     battleEnded: () => onBattleEnded(),
     inputClosed: () => lowerInput(),
     // UI-55: イベントの再生の間は十字ボタン（迷宮の操作）を下げる。再生の最後の sync で出し直す
@@ -1023,6 +1024,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     play.message.clear();
     play.battle.clear();
     play.dice.hide();
+    play.penaltyTable.hide();
     showRoute(plan.route);
     sync(state);
     const instant = true;

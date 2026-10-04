@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { beatWait, createPlayer, createTapLatch, type PlayerDeps } from "../src/presenter/playback";
 import { formatDiceSummary, type DiceEvent } from "../src/presenter/views/dice";
 import { formatMessage } from "../src/presenter/views/message";
+import type { PenaltyTableText } from "../src/presenter/views/penalty-table";
 import type { Settings } from "../src/presenter/settings";
 import type { Dive, EnemyGroupView, GameEvent, GameState, PenaltyResult, ViewPoint } from "../src/core/types";
 import { data, expectKnownStringKeys, newGame, withChar } from "./helpers/core";
@@ -108,6 +109,7 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
     },
     screens: { show: (to) => rec("screens.show")(to), sync: (st) => log.push({ m: "screens.sync", a: [st] }) },
     wipe: { show: (p) => rec("wipe.show")(p) },
+    penaltyTable: { show: (v) => rec("penaltyTable.show")(v), hide: rec("penaltyTable.hide") },
     battleEnded: rec("battleEnded"),
     inputClosed: rec("inputClosed"),
     eventStarted: rec("eventStarted"),
@@ -401,8 +403,8 @@ describe("UI-41 playback", () => {
       const { deps, log } = fakeDeps({ skipAnimations });
       await createPlayer(deps).play(r.events, s, r.state);
       expect(wipeSpan(log), String(skipAnimations)).toEqual(["dice.show", "beat.waitTap", "dice.hide", "wipe.show"]);
-      // 待ちは 1 回だけ（内訳を開いた後の街の処理では待たない）
-      expect(log.filter((e) => e.m === "beat.waitTap")).toHaveLength(1);
+      // 待ちは 2 回だけ（M5.5: 出目の表の後の 1 回と 2d10 の後の 1 回。旧は 2d10 の後の 1 回。内訳を開いた後の街の処理では待たない）
+      expect(log.filter((e) => e.m === "beat.waitTap")).toHaveLength(2);
       // 続きの三角は演出スキップでは点滅しない
       const w = log.findIndex((e) => e.m === "beat.waitTap");
       expect(log.slice(0, w).filter((e) => e.m === "message.setMore").at(-1)?.a).toEqual([true, !skipAnimations]);
@@ -420,6 +422,15 @@ describe("UI-41 playback", () => {
     const p = player.play(r.events, s, r.state).then(() => {
       done = true;
     });
+    // M5.5: 2d10 の前に出目の表のタップ待ちがある。表が出て待ちに入ったら 1 回解く
+    const tableWaiting = (): boolean => {
+      const t = log.findIndex((e) => e.m === "penaltyTable.show");
+      return t >= 0 && log.slice(t).some((e) => e.m === "message.setMore" && e.a.length === 2 && e.a[0] === true);
+    };
+    for (let i = 0; i < 1000 && !tableWaiting(); i++) await Promise.resolve();
+    expect(tableWaiting()).toBe(true);
+    expect(names(log)).not.toContain("dice.show");
+    player.tap();
     // タップ待ちに入る（dice.show の後に setMore(true, blink) が呼ばれる）まで進める
     const waiting = (): boolean => {
       const d = log.findIndex((e) => e.m === "dice.show");
@@ -445,8 +456,103 @@ describe("UI-41 playback", () => {
       const { deps, log } = fakeDeps({ skipAnimations });
       await createPlayer(deps).play(r.events, s, r.state);
       const ms = names(log).filter((m) => m === "inputClosed" || m === "dice.show" || m === "beat.waitTap" || m === "wipe.show");
-      expect(ms, String(skipAnimations)).toEqual(["inputClosed", "dice.show", "beat.waitTap", "wipe.show"]);
+      // M5.5: 2d10 の前の出目の表でも inputClosed → タップ待ち（旧は ["inputClosed", "dice.show", "beat.waitTap", "wipe.show"]）
+      expect(ms, String(skipAnimations)).toEqual(["inputClosed", "beat.waitTap", "inputClosed", "dice.show", "beat.waitTap", "wipe.show"]);
     }
+  });
+
+  /** 出目の表の記録（penaltyTable.show の引数） */
+  const tableShows = (log: Log): PenaltyTableText[] => log.filter((e) => e.m === "penaltyTable.show").map((e) => e.a[0] as PenaltyTableText);
+
+  test("UI-56 penaltyTable{hit null} で表を出し、入力の UI を下げてタップを 1 回待ってから 2d10 へ進む。演出スキップでも待つ。penaltyTable{hit} は当たった行を強調し、待たない（戦闘の外の全滅。core の実際の列）", async () => {
+    const s = structuredClone(dived(1));
+    for (const c of s.party) c.status = ["paralysis"];
+    const r = execute(s, { type: "dungeon.turn", dir: "left" }, data);
+    const tables = r.events.filter((e) => e.kind === "penaltyTable");
+    expect(tables.map((e) => e.hit)).toEqual([null, r.events.find((e) => e.kind === "wipe")!.penalty.bandIndex]);
+    for (const skipAnimations of [false, true]) {
+      const { deps, log } = fakeDeps({ skipAnimations });
+      await createPlayer(deps).play(r.events, s, r.state);
+      const ms = names(log).filter((m) => ["penaltyTable.show", "penaltyTable.hide", "inputClosed", "beat.waitTap", "dice.show", "dice.hide", "wipe.show"].includes(m));
+      expect(ms, String(skipAnimations)).toEqual([
+        "penaltyTable.show",
+        "inputClosed",
+        "beat.waitTap",
+        "inputClosed",
+        "dice.show",
+        "penaltyTable.show",
+        "beat.waitTap",
+        "dice.hide",
+        "penaltyTable.hide",
+        "wipe.show",
+      ]);
+      const [first, second] = tableShows(log);
+      // 1 回目は全行 pad、2 回目は当たった帯の行だけ mark で強調
+      expect(first!.lines.every((l) => !l.hit && l.text.startsWith(data.strings["wipe.table.pad"]!))).toBe(true);
+      const hit = (tables[1] as Extract<GameEvent, { kind: "penaltyTable" }>).hit!;
+      expect(second!.lines.map((l) => l.hit)).toEqual(data.penaltyTable.bands.map((_, i) => i === hit));
+      expect(second!.lines[hit]!.text.startsWith(data.strings["wipe.table.mark"]!)).toBe(true);
+      // 表のタップ待ちの続きの三角は演出スキップでは点滅しない
+      const w = log.findIndex((e) => e.m === "beat.waitTap");
+      expect(log.slice(0, w).filter((e) => e.m === "message.setMore").at(-1)?.a).toEqual([true, !skipAnimations]);
+    }
+  });
+
+  test("UI-56 出目の表のタップ待ちは Player.tap() で解くまで 2d10 を出さない（演出スキップでも）", async () => {
+    const s = structuredClone(dived(1));
+    for (const c of s.party) c.status = ["paralysis"];
+    const r = execute(s, { type: "dungeon.turn", dir: "left" }, data);
+    const { deps, log } = fakeDeps({ skipAnimations: true });
+    delete deps.beat;
+    const player = createPlayer(deps);
+    const p = player.play(r.events, s, r.state);
+    for (let i = 0; i < 200; i++) await Promise.resolve();
+    expect(names(log)).toContain("penaltyTable.show");
+    expect(names(log)).not.toContain("dice.show");
+    player.tap();
+    // 2d10 の後の待ち（dice.show の後の setMore(true, blink)）に入るまで進めてから、もう 1 回解く
+    const diceWaiting = (): boolean => {
+      const d = log.findIndex((e) => e.m === "dice.show");
+      return d >= 0 && log.slice(d).some((e) => e.m === "message.setMore" && e.a.length === 2 && e.a[0] === true);
+    };
+    for (let i = 0; i < 1000 && !diceWaiting(); i++) await Promise.resolve();
+    expect(diceWaiting()).toBe(true);
+    player.tap();
+    await p;
+    expect(names(log).at(-1)).toBe("screens.sync");
+  });
+
+  test("UI-56/CB-53 戦闘の中の全滅（system の拍の中）でも、表 → タップ → 2d10 → 強調 → 最後の拍の待ち → 表と 2d10 を消して内訳（手動・オート、演出スキップの真偽とも）。2 回目の表で 2d10 の箱は消えない", async () => {
+    const PARA = { status: ["paralysis" as const] };
+    const s0 = structuredClone(dived(1));
+    for (const c of s0.party) Object.assign(c, c.id === "c1" ? { hp: 1 } : PARA);
+    const d = dataWith({ combat: ALWAYS_HIT });
+    for (const auto of [false, true]) {
+      const s = withBattle(s0, [{ monsterId: "kobold", hps: [50] }], { identified: ["kobold"], inputs: { c1: { type: "defend" } }, auto });
+      const r = execute(s, { type: "battle.resolve" }, d);
+      expect(r.events.filter((e) => e.kind === "penaltyTable")).toHaveLength(2);
+      for (const skipAnimations of [false, true]) {
+        const { deps, log } = fakeDeps({ skipAnimations });
+        await createPlayer(deps).play(r.events, s, r.state);
+        const t0 = log.findIndex((e) => e.m === "penaltyTable.show");
+        const w = log.findIndex((e) => e.m === "wipe.show");
+        const ms = names(log.slice(t0, w + 1)).filter((m) =>
+          ["penaltyTable.show", "penaltyTable.hide", "beat.waitTap", "message.waitMs", "dice.show", "dice.hide", "wipe.show"].includes(m),
+        );
+        const tag = `${auto} ${skipAnimations}`;
+        expect(ms, tag).toEqual(["penaltyTable.show", "beat.waitTap", "dice.show", "penaltyTable.show", "beat.waitTap", "dice.hide", "penaltyTable.hide", "wipe.show"]);
+      }
+    }
+  });
+
+  test("UI-56 表と 2d10 は再生の終わりにも消す（wipe の無い列でも残さない）", async () => {
+    const { deps, log } = fakeDeps();
+    const s = stateWith(diveAt(1, 1, "N"));
+    const ev: GameEvent = { kind: "penaltyTable", title: { key: "wipe.table.title", params: { dice: "2d10" } }, rows: [{ key: "wipe.table.rowOne", params: { roll: 20, name: "x", gold: 0, items: 0, exp: 0 } }], hit: 0 };
+    await createPlayer(deps).play([ev], s, s);
+    expect(names(log).filter((m) => m.startsWith("penaltyTable"))).toEqual(["penaltyTable.show", "penaltyTable.hide"]);
+    // hit があれば待たない
+    expect(names(log)).not.toContain("beat.waitTap");
   });
 
   test("UI-44 全滅でないダイス（逃走の判定など）では inputClosed を呼ばない", async () => {

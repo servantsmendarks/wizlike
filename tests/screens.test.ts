@@ -372,6 +372,16 @@ describe("入力と Command", () => {
     expect(lower).not.toContain("setTurn");
   });
 
+  test("UI-56 出目の表は迷宮の画面のビューの中の層（play.penaltyTable）を playback に渡し、続きからの再開では消す（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toContain("penaltyTable: play.penaltyTable,");
+    const resume = /const resume = \(st: GameState\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(resume).toContain("play.dice.hide();");
+    expect(resume).toContain("play.penaltyTable.hide();");
+    const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
+    expect(dungeon).toContain("viewBox.appendChild(penaltyTable.el);");
+  });
+
   test("UI-44/UI-56 全滅の 2d10 を出したとき（playback の inputClosed。戦闘の外の全滅も）は、battleEnd と同じ下げ方（lowerInput）で迷宮のヘッダーと操作を下げる", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     expect(app).toMatch(/inputClosed: \(\) => lowerInput\(\)/);
