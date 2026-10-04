@@ -2,7 +2,7 @@
 // 側壁の扉は台形の横 1/4〜3/4。四捨五入で .5 は切り上げ）と階段の記号の比率（横線 3 本、f = 1/4, 1/2, 3/4、幅 3/4, 1/2, 1/4）から
 // 計算し直して突き合わせる。
 import { describe, expect, test } from "vitest";
-import { isStairsSlot, PLANES, SLOT_DEPTHS, SLOT_IDS, SLOT_PATHS, type SlotId } from "../src/presenter/views/dungeon-geometry";
+import { isStairsSlot, isTrapSlot, PLANES, SLOT_DEPTHS, SLOT_IDS, SLOT_PATHS, type SlotId } from "../src/presenter/views/dungeon-geometry";
 
 type Pt = [number, number];
 type Cmd = { c: "M" | "L" | "H" | "V" | "Z"; n: number[] };
@@ -83,14 +83,15 @@ describe("dungeon-geometry", () => {
     }
   });
 
-  test("UI-20 64 個（壁・扉 40 と階段の記号 24）の SlotId に空でない path があり、重複が無い", () => {
-    expect(SLOT_IDS).toHaveLength(64);
-    expect(new Set(SLOT_IDS).size).toBe(64);
+  test("UI-20 76 個（壁・扉 40 と階段の記号 24 と罠の印 12。M5.5 で 64 から増やした）の SlotId に空でない path があり、重複が無い", () => {
+    expect(SLOT_IDS).toHaveLength(76);
+    expect(new Set(SLOT_IDS).size).toBe(76);
     expect(SLOT_IDS.filter(isStairsSlot)).toHaveLength(24);
+    expect(SLOT_IDS.filter(isTrapSlot)).toHaveLength(12);
     expect(Object.keys(SLOT_PATHS).sort()).toEqual([...SLOT_IDS].sort());
     const ds = SLOT_IDS.map((id) => SLOT_PATHS[id]);
     for (const d of ds) expect(d.trim().length).toBeGreaterThan(0);
-    expect(new Set(ds).size).toBe(64);
+    expect(new Set(ds).size).toBe(76);
   });
 
   test("UI-22 全座標が 0..239 × 0..149 の整数", () => {
@@ -136,6 +137,7 @@ describe("dungeon-geometry", () => {
       ["rD", "lD"],
       ["rSU", "lSU"],
       ["rSD", "lSD"],
+      ["rT", "lT"],
     ];
     for (const [r, l] of pairs) {
       for (const d of SLOT_DEPTHS) {
@@ -144,7 +146,7 @@ describe("dungeon-geometry", () => {
     }
     // 正面の壁と扉は自分自身と左右対称
     for (const d of SLOT_DEPTHS) {
-      for (const part of ["cF", "cD"]) {
+      for (const part of ["cF", "cD", "cT"]) {
         const b = bbox(path(`${part}${d}` as SlotId));
         expect(b.x0 + b.x1, `${part}${d}`).toBe(239);
       }
@@ -318,6 +320,71 @@ describe("dungeon-geometry", () => {
         expect(path(sid(`${lane}SU${d}`))).not.toBe(path(sid(`${lane}SD${d}`)));
       }
     }
+  });
+
+  /** × の path（M x y L x y M x y L x y）を 2 本の線分 [x0, y0, x1, y1] にする */
+  const crossLines = (d: string): Array<[number, number, number, number]> => {
+    const cmds = parse(d);
+    expect(cmds.map((c) => c.c).join("")).toBe("MLML");
+    return [0, 2].map((i): [number, number, number, number] => [cmds[i]!.n[0]!, cmds[i]!.n[1]!, cmds[i + 1]!.n[0]!, cmds[i + 1]!.n[1]!]);
+  };
+
+  test("UI-20 罠の印（M5.5）: 床の ×。上下の端は床の奥の縁から f=1/4・3/4 の y、幅は f=3/4 の y で測った幅の 1/2（中央の列は床、左端を丸めて右端 239−左端。左の列は帯 P_d.L..L(y) の中央で左端は P_d.L+1 以上）", () => {
+    for (const d of SLOT_DEPTHS) {
+      const a = P(d);
+      const b = P(d + 1);
+      const y0 = round(b.B + 0.25 * (a.B - b.B));
+      const y1 = round(b.B + 0.75 * (a.B - b.B));
+      const L = floorL(d, y1);
+      const cx0 = round(119.5 - (239 - 2 * L) * 0.5 * 0.5);
+      const cx1 = 239 - cx0;
+      expect(crossLines(path(sid(`cT${d}`))), `cT${d}`).toEqual([
+        [cx0, y0, cx1, y1],
+        [cx1, y0, cx0, y1],
+      ]);
+      const c = (a.L + L) / 2;
+      const hw = ((L - a.L) * 0.5) / 2;
+      const lx0 = Math.max(round(c - hw), a.L + 1);
+      const lx1 = round(c + hw);
+      expect(crossLines(path(sid(`lT${d}`))), `lT${d}`).toEqual([
+        [lx0, y0, lx1, y1],
+        [lx1, y0, lx0, y1],
+      ]);
+    }
+  });
+
+  test("UI-20 罠の印の線の端は床の台形（中央の列）・見えている帯（左右の列）の内側に収まり、帯の縁に付かない。× の幅と高さは 1 以上", () => {
+    for (const d of SLOT_DEPTHS) {
+      const a = P(d);
+      const b = P(d + 1);
+      for (const part of ["cT", "lT", "rT"]) {
+        const tag = `${part}${d}`;
+        const ls = crossLines(path(sid(tag)));
+        for (const [x0, y0, x1, y1] of ls) {
+          expect(Math.abs(x1 - x0), tag).toBeGreaterThanOrEqual(1);
+          expect(Math.abs(y1 - y0), tag).toBeGreaterThanOrEqual(1);
+          for (const [x, y] of [
+            [x0, y0],
+            [x1, y1],
+          ] as const) {
+            expect(y > b.B && y < a.B, `${tag} y=${y}`).toBe(true);
+            const L = floorL(d, y);
+            const [xl, xr] = part[0] === "c" ? [L, 239 - L] : part[0] === "l" ? [a.L, L] : [239 - L, 239 - a.L];
+            expect(x >= xl - 0.5 && x <= xr + 0.5, `${tag} (${x},${y}) in ${xl}..${xr}`).toBe(true);
+            if (part[0] === "l") expect(x > a.L, `${tag} x=${x}`).toBe(true);
+            if (part[0] === "r") expect(x < 239 - a.L, `${tag} x=${x}`).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  test("UI-20 isTrapSlot は罠の印のスロットだけ真（階段・壁は偽）", () => {
+    expect(isTrapSlot("cT0")).toBe(true);
+    expect(isTrapSlot("rT3")).toBe(true);
+    expect(isTrapSlot("cSU0")).toBe(false);
+    expect(isTrapSlot("cF0")).toBe(false);
+    expect(isStairsSlot("lT1")).toBe(false);
   });
 
   test("UI-20 isStairsSlot は階段の記号のスロットだけ真", () => {

@@ -147,7 +147,8 @@ const presenterRaw = import.meta.glob("../src/presenter/**/*.ts", {
 const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   engine: ["execute", "createInitialState"],
   // decisions の UI-35 の行のとおり。floorOf / visibleCellsOf は Floor（kind・trapId・eventId）に触れるので許さない
-  "rules/dungeon": ["visibleCells", "mapView"],
+  // M5.5 UI-20: 察知した罠の印は visibleKnownTraps（視野の中の knownTraps の {depth, lane}）
+  "rules/dungeon": ["visibleCells", "mapView", "visibleKnownTraps"],
   // UI-59: キャンプの状態の装備名（鑑定を反映した表示名。CH-72）
   state: ["dungeonOf", "itemDisplayName"],
   // M3: 戦闘の入力の段階・オートの連鎖は battleMenu の値だけで決める（行動できるか・使えるか・揃ったかを core が返す）

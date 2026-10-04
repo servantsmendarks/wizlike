@@ -16,7 +16,7 @@
 import type { GameData } from "../core/data/index";
 import { execute, createInitialState } from "../core/engine";
 import { battleMenu } from "../core/rules/combat";
-import { mapView, visibleCells } from "../core/rules/dungeon";
+import { mapView, visibleCells, visibleKnownTraps } from "../core/rules/dungeon";
 import { campMenu, campSummary } from "../core/rules/camp";
 import { planRoute, routeStepOk } from "../core/rules/pathfind";
 import { sanStage } from "../core/rules/san";
@@ -240,7 +240,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     settings: () => store.get(),
     view: {
       fade: (ms, apply) => play.view.fade(ms, apply),
-      showAt: (st, at) => play.view.show(slotsFor(visibleCells(st, data, at))),
+      // UI-20: 察知した罠（visibleKnownTraps）は床の印。壁・階段と同じ視点で描く
+      showAt: (st, at) => play.view.show(slotsFor(visibleCells(st, data, at), visibleKnownTraps(st, data, at))),
       shake: (ms) => play.shake(ms),
     },
     header: { showAt: showHeaderAt },
@@ -342,7 +343,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       const d = st.dive;
       if (d !== null) {
         showHeaderAt(st, { floor: d.floor, pos: d.pos, facing: d.facing });
-        play.view.show(slotsFor(visibleCells(st, data)));
+        play.view.show(slotsFor(visibleCells(st, data), visibleKnownTraps(st, data)));
       }
     }
     syncControls();

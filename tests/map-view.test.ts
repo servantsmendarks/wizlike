@@ -154,6 +154,23 @@ describe("UI-24 地図", () => {
     expect(p.stairs).toBe(`M${px + 2} ${py + 3}L${px + 4} ${py + 5}L${px + 6} ${py + 3}` + `M${px + 8 + 2} ${py + 5}L${px + 8 + 4} ${py + 3}L${px + 8 + 6} ${py + 5}`);
   });
 
+  test("UI-24 kind trap のセル（察知した罠）は traps に × の 2 本（cell 8 で M2 2L6 6M6 2L2 6 を原点に足したもの）を出し、stairs には出さない。plain・階段のセルは traps に出さない", () => {
+    const lay = mapLayout(20, 20, MAP_AREA);
+    const v = view([cellOf(2, 3, { kind: "trap" }), cellOf(3, 3, { kind: "stairsDown" }), cellOf(4, 3)], { pos: { x: 4, y: 3 } });
+    const p = mapPaths(v, lay);
+    const px = 39 + 2 * 8;
+    const py = 23 + 3 * 8;
+    expect(p.traps).toBe(`M${px + 2} ${py + 2}L${px + 6} ${py + 6}M${px + 6} ${py + 2}L${px + 2} ${py + 6}`);
+    // 階段の V は (3,3) の 1 つだけ
+    expect(p.stairs).toBe(`M${px + 8 + 2} ${py + 3}L${px + 8 + 4} ${py + 5}L${px + 8 + 6} ${py + 3}`);
+    expect(mapPaths(view([cellOf(2, 3), cellOf(3, 3, { kind: "stairsUp" })]), lay).traps).toBe("");
+    // cell 6（30×30）でも 8 基準の相対座標を丸めて使う（sc(2)=2・sc(6)=5）
+    const lay6 = mapLayout(30, 30, MAP_AREA);
+    const p6 = mapPaths(view([cellOf(0, 0, { kind: "trap" })], { width: 30, height: 30 }), lay6);
+    const o = { x: lay6.ox, y: lay6.oy };
+    expect(p6.traps).toBe(`M${o.x + 2} ${o.y + 2}L${o.x + 5} ${o.y + 5}M${o.x + 5} ${o.y + 2}L${o.x + 2} ${o.y + 5}`);
+  });
+
   test("UI-24 cells に無いセルは描かない", () => {
     const lay = mapLayout(20, 20, MAP_AREA);
     const v = view([cellOf(5, 7)], { pos: { x: 5, y: 7 } });
