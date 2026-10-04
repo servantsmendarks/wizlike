@@ -23,6 +23,7 @@ import {
   TITLE_ROWS,
   TOUCH_EXCEPTIONS,
   TOUCH_MIN_LOGICAL,
+  UPDATE_NOTICE,
   type Rect,
 } from "../src/presenter/layout";
 import { data } from "./helpers/core";
@@ -77,6 +78,8 @@ const SCREENS: Record<string, Record<string, Rect>> = {
   battleMember: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.battleMember.map((r, i) => [`battleMember[${i}]`, r])) },
   battleList: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
   autoStop: { "header.settings": HEADER_SETTINGS, autoStop: L.autoStop },
+  // SV-42 更新の案内（どの画面の上にも出る）
+  updateNotice: { "UPDATE_NOTICE.reload": UPDATE_NOTICE.reload, "UPDATE_NOTICE.close": UPDATE_NOTICE.close },
   // debug パネルは [-] [+] の行と toggle の行が別なので、それぞれの組で検査する
   debugStepper: {
     ...Object.fromEntries(
@@ -431,5 +434,16 @@ describe("layout", () => {
     expect(TOUCH_MIN_LOGICAL * (4 / 3)).toBeGreaterThanOrEqual(40);
     // scale 1（320 CSS px 幅）では満たさない（decisions に記録した既知の制約）
     expect(TOUCH_MIN_LOGICAL * 1).toBeLessThan(40);
+  });
+});
+
+describe("SV-42 更新の案内の配置", () => {
+  test("SV-42 更新の案内: 文言の欄とボタン 2 つは枠の中で重ならず、枠はヘッダー（設定ボタン）と既定の SV-23 の帯にかからない", () => {
+    const { box, text, reload, close } = UPDATE_NOTICE;
+    for (const r of [text, reload, close]) expect(inside(r, box)).toBe(true);
+    expect(inside(box, STAGE)).toBe(true);
+    expect(overlaps(text, reload) || overlaps(text, close) || overlaps(reload, close)).toBe(false);
+    expect(overlaps(box, HEADER_SETTINGS)).toBe(false);
+    expect(overlaps(box, SAVE_BANNER)).toBe(false);
   });
 });

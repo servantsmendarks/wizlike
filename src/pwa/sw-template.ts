@@ -2,6 +2,8 @@
 // vite.config.ts のプラグインがビルドの最後に dist の一覧と版を渡して sw.js を書く（依存パッケージを使わない）。
 // sw.js の本文が使う自由な識別子は self・caches・fetch・Request・URL だけ（テストで差し替えて評価するため）。
 // 本文は文字列なので日本語を書かない（tests/architecture.test.ts の §3-10 の検査の対象）。
+// 振る舞い: install で全部を wizlike-{版} に入れて待機（skipWaiting はページの message でだけ）、
+// ナビゲーションはネットワーク優先（失敗したらキャッシュの index.html）、それ以外はキャッシュ優先。
 
 /** SV-42: プリキャッシュに入れない名前（sw.js 自身、*.map、"." で始まる名前の段を含むもの） */
 function excluded(path: string): boolean {
@@ -33,8 +35,11 @@ self.addEventListener("install", (e) => {
     const cache = await caches.open(CACHE);
     // bypass the HTTP cache so that stale files never enter the new cache
     await cache.addAll(URLS.map((u) => new Request(abs(u), { cache: "reload" })));
-    await self.skipWaiting();
+    // no skipWaiting here: an update waits until the page asks (message "skipWaiting") or every tab is closed
   })());
+});
+self.addEventListener("message", (e) => {
+  if (e.data && e.data.type === "skipWaiting") e.waitUntil(self.skipWaiting());
 });
 self.addEventListener("activate", (e) => {
   e.waitUntil((async () => {
@@ -49,8 +54,20 @@ self.addEventListener("fetch", (e) => {
   if (url.origin !== self.location.origin) return;
   e.respondWith((async () => {
     const cache = await caches.open(CACHE);
-    const hit = req.mode === "navigate" ? await cache.match(abs(INDEX)) : await cache.match(req);
-    return hit || fetch(req);
+    if (req.mode === "navigate") {
+      // index.html: network first, the cached copy when offline or the server fails (never written back to the cache)
+      try {
+        const res = await fetch(req);
+        if (res.ok) return res;
+        return (await cache.match(abs(INDEX))) || res;
+      } catch (err) {
+        const hit = await cache.match(abs(INDEX));
+        if (hit) return hit;
+        throw err;
+      }
+    }
+    // hashed assets (assets/) and the other precached files: cache first, the network when missing
+    return (await cache.match(req)) || fetch(req);
   })());
 });
 `;

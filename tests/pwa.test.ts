@@ -4,7 +4,9 @@ import manifestText from "../public/manifest.webmanifest?raw";
 import indexHtml from "../index.html?raw";
 import { PALETTE } from "../src/presenter/palette";
 import { precacheUrls, renderServiceWorker } from "../src/pwa/sw-template";
-import { setupServiceWorker } from "../src/pwa/register";
+import { setupServiceWorker, watchServiceWorkerUpdate, type UpdateContainer, type UpdateRegistration } from "../src/pwa/register";
+import strings from "../data/strings.json";
+import { UPDATE_NOTICE_KEYS } from "../src/presenter/views/update-notice";
 
 const iconUrls = import.meta.glob("../public/icons/*.png", {
   query: "?inline",
@@ -92,10 +94,16 @@ describe("SV-42 アイコン", () => {
 
 describe("SV-42 index.html", () => {
   test("SV-42 index.html: manifest・apple-touch-icon・apple-mobile-web-app-capable・status-bar-style の link / meta がある", () => {
-    expect(indexHtml).toContain('<link rel="manifest" href="/manifest.webmanifest">');
-    expect(indexHtml).toContain('<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">');
+    expect(indexHtml).toContain('<link rel="manifest" href="./manifest.webmanifest">');
+    expect(indexHtml).toContain('<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">');
     expect(indexHtml).toContain('<meta name="apple-mobile-web-app-capable" content="yes">');
     expect(indexHtml).toMatch(/<meta name="apple-mobile-web-app-status-bar-style" content="[a-z-]+">/);
+  });
+
+  test("SV-42 相対パス: index.html の href / src に / から始まるパスが無い（サブパスの配信で動くように）", () => {
+    const paths = [...indexHtml.matchAll(/\b(?:href|src)="([^"]*)"/g)].map((m) => m[1]!);
+    expect(paths.length).toBeGreaterThanOrEqual(4);
+    for (const p of paths) expect(p, p).toMatch(/^\.\//);
   });
 });
 
@@ -103,8 +111,11 @@ describe("SV-42 index.html", () => {
 // Service Worker のテンプレートと登録
 
 type FakeReq = { url: string; method: string; mode: string; init?: { cache?: string } };
+/** 偽の Response。body は出どころ（net: = install で入れた、fetched: = ネットワーク）と URL */
+type FakeRes = { ok: boolean; body: string };
 type FakeEvent = {
   request: FakeReq | undefined;
+  data: unknown;
   waitUntil(p: Promise<unknown>): void;
   respondWith(p: Promise<unknown>): void;
 };
@@ -112,15 +123,23 @@ type Listener = (e: FakeEvent) => void;
 
 const ORIGIN = "https://x.test";
 
-/** sw.js の本文を、差し替えた self・caches・fetch・Request・URL で評価する */
-function runServiceWorker(code: string, initialCaches: Record<string, string[]> = {}) {
+/**
+ * sw.js の本文を、差し替えた self・caches・fetch・Request・URL で評価する。
+ * network(url) はネットワークの応答（"offline" なら fetch が reject する）。既定は 200。scope は登録の scope
+ */
+function runServiceWorker(
+  code: string,
+  initialCaches: Record<string, string[]> = {},
+  network: (url: string) => FakeRes | "offline" = (url) => ({ ok: true, body: `fetched:${url}` }),
+  scope = `${ORIGIN}/`,
+) {
   const listeners: Record<string, Listener[]> = {};
   const calls = { skipWaiting: 0, claim: 0, fetched: [] as string[], reloadInits: 0 };
-  const store = new Map<string, Map<string, string>>(
-    Object.entries(initialCaches).map(([k, urls]) => [k, new Map(urls.map((u) => [u, `cached:${u}`]))]),
+  const store = new Map<string, Map<string, FakeRes>>(
+    Object.entries(initialCaches).map(([k, urls]) => [k, new Map(urls.map((u) => [u, { ok: true, body: `cached:${u}` }]))]),
   );
   const self = {
-    registration: { scope: `${ORIGIN}/` },
+    registration: { scope },
     location: { origin: ORIGIN },
     addEventListener: (t: string, f: Listener) => {
       (listeners[t] ??= []).push(f);
@@ -145,7 +164,7 @@ function runServiceWorker(code: string, initialCaches: Record<string, string[]> 
       addAll: async (reqs: FakeReq[]) => {
         for (const r of reqs) {
           if (r.init?.cache === "reload") calls.reloadInits++;
-          cache.set(r.url, `net:${r.url}`);
+          cache.set(r.url, { ok: true, body: `net:${r.url}` });
         }
       },
       match: async (r: FakeReq | string) => cache.get(typeof r === "string" ? r : r.url),
@@ -168,16 +187,19 @@ function runServiceWorker(code: string, initialCaches: Record<string, string[]> 
   }
   const fetchFn = async (r: FakeReq) => {
     calls.fetched.push(r.url);
-    return `fetched:${r.url}`;
+    const res = network(r.url);
+    if (res === "offline") throw new TypeError("Failed to fetch");
+    return res;
   };
   new Function("self", "caches", "fetch", "Request", "URL", code)(self, caches, fetchFn, FakeRequest, URL);
 
-  const dispatch = async (type: string, request?: FakeReq) => {
+  const dispatch = async (type: string, request?: FakeReq, data?: unknown) => {
     const waits: Promise<unknown>[] = [];
     let response: Promise<unknown> | undefined;
     for (const f of listeners[type] ?? []) {
       f({
         request,
+        data,
         waitUntil: (p) => {
           waits.push(p);
         },
@@ -191,6 +213,9 @@ function runServiceWorker(code: string, initialCaches: Record<string, string[]> 
   };
   return { store, calls, dispatch };
 }
+
+const get = (url: string, mode = "cors"): FakeReq => ({ url, method: "GET", mode });
+const ok = (body: string): FakeRes => ({ ok: true, body });
 
 describe("SV-42 Service Worker", () => {
   test("SV-42 precacheUrls: sw.js・*.map・. で始まる名前を除き、./ を付けて昇順（重複なし）。index.html が無ければ例外", () => {
@@ -217,11 +242,22 @@ describe("SV-42 Service Worker", () => {
     expect(code).toContain('const URLS = ["./index.html","./a.js"];');
   });
 
-  test("SV-42 sw.js install: 一覧をすべて cache: reload の Request で wizlike-{版} に addAll し、skipWaiting する", async () => {
+  test("SV-42 sw.js install（条件 1・2）: 埋め込んだ一覧をすべて cache: reload の Request で wizlike-{版} に addAll する。skipWaiting はしない（更新は待機する）", async () => {
     const sw = runServiceWorker(renderServiceWorker({ version: "v2", urls: ["./index.html", "./assets/a.js"] }));
     await sw.dispatch("install");
+    expect([...sw.store.keys()]).toEqual(["wizlike-v2"]);
     expect([...(sw.store.get("wizlike-v2")?.keys() ?? [])]).toEqual([`${ORIGIN}/index.html`, `${ORIGIN}/assets/a.js`]);
     expect(sw.calls.reloadInits).toBe(2);
+    expect(sw.calls.skipWaiting).toBe(0);
+    expect(sw.calls.fetched).toEqual([]);
+  });
+
+  test("SV-42 sw.js message（条件 5）: ページからの { type: skipWaiting } でだけ skipWaiting する（ほかの message は無視）", async () => {
+    const sw = runServiceWorker(renderServiceWorker({ version: "v2", urls: ["./index.html"] }));
+    await sw.dispatch("message", undefined, { type: "other" });
+    await sw.dispatch("message", undefined, null);
+    expect(sw.calls.skipWaiting).toBe(0);
+    await sw.dispatch("message", undefined, { type: "skipWaiting" });
     expect(sw.calls.skipWaiting).toBe(1);
   });
 
@@ -236,32 +272,75 @@ describe("SV-42 Service Worker", () => {
     expect(sw.calls.claim).toBe(1);
   });
 
-  test("SV-42 sw.js fetch: 一覧にある GET はキャッシュから、無ければ fetch、ナビゲーションは index.html、別オリジンと POST は respondWith しない", async () => {
-    const sw = runServiceWorker(renderServiceWorker({ version: "v2", urls: ["./index.html", "./assets/a.js"] }));
+  test("SV-42 sw.js fetch（条件 4）: ハッシュ付き資産（assets/）などキャッシュにある GET はネットワークに出ずキャッシュから、無ければ fetch。別オリジンと POST は respondWith しない", async () => {
+    const sw = runServiceWorker(renderServiceWorker({ version: "v2", urls: ["./index.html", "./assets/a-1234abcd.js"] }));
     await sw.dispatch("install");
-    const get = (url: string, mode = "cors"): FakeReq => ({ url, method: "GET", mode });
 
-    expect(await sw.dispatch("fetch", get(`${ORIGIN}/assets/a.js`))).toEqual({
+    expect(await sw.dispatch("fetch", get(`${ORIGIN}/assets/a-1234abcd.js`))).toEqual({
       responded: true,
-      response: `net:${ORIGIN}/assets/a.js`,
+      response: ok(`net:${ORIGIN}/assets/a-1234abcd.js`),
     });
     expect(await sw.dispatch("fetch", get(`${ORIGIN}/other.txt`))).toEqual({
       responded: true,
-      response: `fetched:${ORIGIN}/other.txt`,
-    });
-    expect(await sw.dispatch("fetch", get(`${ORIGIN}/some/page?x=1`, "navigate"))).toEqual({
-      responded: true,
-      response: `net:${ORIGIN}/index.html`,
+      response: ok(`fetched:${ORIGIN}/other.txt`),
     });
     expect(await sw.dispatch("fetch", get("https://elsewhere.test/a.js"))).toEqual({
       responded: false,
       response: undefined,
     });
-    expect(await sw.dispatch("fetch", { url: `${ORIGIN}/assets/a.js`, method: "POST", mode: "cors" })).toEqual({
+    expect(await sw.dispatch("fetch", { url: `${ORIGIN}/assets/a-1234abcd.js`, method: "POST", mode: "cors" })).toEqual({
       responded: false,
       response: undefined,
     });
     expect(sw.calls.fetched).toEqual([`${ORIGIN}/other.txt`]);
+  });
+
+  test("SV-42 sw.js fetch（条件 3）: ナビゲーションはネットワーク優先（200 ならその応答。キャッシュには書き戻さない）", async () => {
+    const sw = runServiceWorker(renderServiceWorker({ version: "v2", urls: ["./index.html"] }));
+    await sw.dispatch("install");
+    expect(await sw.dispatch("fetch", get(`${ORIGIN}/`, "navigate"))).toEqual({
+      responded: true,
+      response: ok(`fetched:${ORIGIN}/`),
+    });
+    expect(sw.calls.fetched).toEqual([`${ORIGIN}/`]);
+    expect(sw.store.get("wizlike-v2")?.get(`${ORIGIN}/index.html`)).toEqual(ok(`net:${ORIGIN}/index.html`));
+    expect(sw.store.get("wizlike-v2")?.has(`${ORIGIN}/`)).toBe(false);
+  });
+
+  test("SV-42 sw.js fetch（条件 3）: ナビゲーションはオフライン（fetch が reject）やサーバーの誤り（ok でない）ならキャッシュの index.html。キャッシュにも無ければ reject・その応答", async () => {
+    const offline = runServiceWorker(renderServiceWorker({ version: "v2", urls: ["./index.html"] }), {}, () => "offline");
+    await offline.dispatch("install");
+    expect(await offline.dispatch("fetch", get(`${ORIGIN}/some/page?x=1`, "navigate"))).toEqual({
+      responded: true,
+      response: ok(`net:${ORIGIN}/index.html`),
+    });
+
+    const notFound = runServiceWorker(renderServiceWorker({ version: "v2", urls: ["./index.html"] }), {}, () => ({ ok: false, body: "404" }));
+    await notFound.dispatch("install");
+    expect(await notFound.dispatch("fetch", get(`${ORIGIN}/`, "navigate"))).toEqual({
+      responded: true,
+      response: ok(`net:${ORIGIN}/index.html`),
+    });
+
+    // install 前（キャッシュが空）
+    const empty404 = runServiceWorker(renderServiceWorker({ version: "v2", urls: ["./index.html"] }), {}, () => ({ ok: false, body: "404" }));
+    expect(await empty404.dispatch("fetch", get(`${ORIGIN}/`, "navigate"))).toEqual({
+      responded: true,
+      response: { ok: false, body: "404" },
+    });
+    const emptyOffline = runServiceWorker(renderServiceWorker({ version: "v2", urls: ["./index.html"] }), {}, () => "offline");
+    await expect(emptyOffline.dispatch("fetch", get(`${ORIGIN}/`, "navigate"))).rejects.toThrow("Failed to fetch");
+  });
+
+  test("SV-42 sw.js（条件 2）: サブパスの scope（/wizlike/）では一覧とキャッシュの index.html を scope からの相対で解決する", async () => {
+    const code = renderServiceWorker({ version: "v3", urls: ["./index.html", "./assets/a.js"] });
+    const sw = runServiceWorker(code, {}, () => "offline", `${ORIGIN}/wizlike/`);
+    await sw.dispatch("install");
+    expect([...(sw.store.get("wizlike-v3")?.keys() ?? [])]).toEqual([`${ORIGIN}/wizlike/index.html`, `${ORIGIN}/wizlike/assets/a.js`]);
+    expect(await sw.dispatch("fetch", get(`${ORIGIN}/wizlike/`, "navigate"))).toEqual({
+      responded: true,
+      response: ok(`net:${ORIGIN}/wizlike/index.html`),
+    });
   });
 });
 
@@ -285,6 +364,8 @@ describe("SV-42 setupServiceWorker", () => {
               },
             }) as unknown as ServiceWorkerRegistration,
         ),
+      controller: null,
+      addEventListener: () => {},
     };
     return { c, log };
   };
@@ -311,5 +392,229 @@ describe("SV-42 setupServiceWorker", () => {
     const b = container({ regs: 0 });
     expect(await setupServiceWorker({ prod: false, container: b.c })).toBe("skipped");
     expect(b.log).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ビルドのプラグイン（vite.config.ts）と相対パス。@types/node は入れていないので node の型は手で書き、
+// vite.config.ts は tsconfig の外なので文字列の動的 import で読む（tap.test.ts の node:fs と同じ）。
+
+type NodeFs = {
+  mkdtempSync(prefix: string): string;
+  mkdirSync(p: string, o: { recursive: true }): void;
+  writeFileSync(p: string, s: string): void;
+  readFileSync(p: string, enc: "utf8"): string;
+  rmSync(p: string, o: { recursive: true; force: true }): void;
+};
+type SwPlugin = { name: string; configResolved(c: { root: string; build: { outDir: string } }): void; closeBundle(): void };
+const NODE_FS = "node:fs";
+const NODE_OS = "node:os";
+const nfs = (await import(/* @vite-ignore */ NODE_FS)) as NodeFs;
+const nos = (await import(/* @vite-ignore */ NODE_OS)) as { tmpdir(): string };
+const viteConfig = (await import(/* @vite-ignore */ new URL("../vite.config.ts", import.meta.url).href)).default as {
+  base?: string;
+  plugins: SwPlugin[];
+};
+
+describe("SV-42 ビルドの sw.js", () => {
+  /** 一時の root に dist を作り、プラグインの closeBundle で sw.js を書いて、VERSION と URLS を読む */
+  function build(files: Record<string, string>): { version: string; urls: string[] } {
+    const root = nfs.mkdtempSync(`${nos.tmpdir()}/wizlike-sw-`);
+    try {
+      for (const [p, body] of Object.entries(files)) {
+        const full = `${root}/dist/${p}`;
+        nfs.mkdirSync(full.slice(0, full.lastIndexOf("/")), { recursive: true });
+        nfs.writeFileSync(full, body);
+      }
+      const plugin = viteConfig.plugins.find((x) => x.name === "wizlike-sw");
+      if (!plugin) throw new Error("wizlike-sw not found");
+      plugin.configResolved({ root, build: { outDir: "dist" } });
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      plugin.closeBundle();
+      log.mockRestore();
+      const sw = nfs.readFileSync(`${root}/dist/sw.js`, "utf8");
+      const version = /const VERSION = "([^"]*)";/.exec(sw)?.[1] ?? "";
+      const urls = JSON.parse(/const URLS = (\[[^\n]*\]);/.exec(sw)?.[1] ?? "null") as string[];
+      expect(sw).toContain('const CACHE = "wizlike-" + VERSION;');
+      return { version, urls };
+    } finally {
+      nfs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  const FILES = {
+    "index.html": "<html></html>",
+    "assets/index-AAAA.js": "console.log(1)",
+    "assets/index-AAAA.js.map": "{}",
+    "assets/index-BBBB.css": "body{}",
+    "fonts/f.ttf": "font",
+    "manifest.webmanifest": "{}",
+    "sw.js": "old",
+  };
+
+  test("SV-42 ビルド（条件 1）: dist のファイル一覧（sw.js と *.map を除く）を昇順で sw.js に埋め込む", () => {
+    expect(build(FILES).urls).toEqual([
+      "./assets/index-AAAA.js",
+      "./assets/index-BBBB.css",
+      "./fonts/f.ttf",
+      "./index.html",
+      "./manifest.webmanifest",
+    ]);
+  });
+
+  test("SV-42 ビルド（条件 2）: キャッシュ名の版は中身の sha256 の 16 字で、同じ中身なら同じ、1 ファイルでも中身が変われば変わる（*.map と古い sw.js は版に入らない）", () => {
+    const a = build(FILES);
+    expect(a.version).toMatch(/^[0-9a-f]{16}$/);
+    expect(build({ ...FILES, "sw.js": "older", "assets/index-AAAA.js.map": "[]" }).version).toBe(a.version);
+    expect(build({ ...FILES, "index.html": "<html>2</html>" }).version).not.toBe(a.version);
+    expect(build({ ...FILES, "fonts/f.ttf": "font2" }).version).not.toBe(a.version);
+  });
+
+  test("SV-42 相対パス: Vite の base は ./（サブパスの配信で動くように。public の / から始まるパスはビルドで相対に書き換わる）", () => {
+    expect(viteConfig.base).toBe("./");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 更新の検知と案内（条件 5）
+
+type FakeWorker = { state: string; posted: unknown[]; listeners: (() => void)[] };
+
+/** 偽の registration と container。controlled は読み込み時に controller があったか */
+function updateFakes(o: { controlled: boolean; waiting?: boolean; installing?: boolean }) {
+  const worker = (state: string): FakeWorker => ({ state, posted: [], listeners: [] });
+  const regListeners: (() => void)[] = [];
+  const containerListeners: (() => void)[] = [];
+  const state = {
+    waiting: o.waiting ? worker("installed") : null as FakeWorker | null,
+    installing: o.installing ? worker("installing") : null as FakeWorker | null,
+  };
+  const registration: UpdateRegistration = {
+    get waiting() {
+      return state.waiting === null ? null : { postMessage: (m: unknown) => void state.waiting!.posted.push(m) };
+    },
+    get installing() {
+      const w = state.installing;
+      if (w === null) return null;
+      return {
+        get state() {
+          return w.state;
+        },
+        addEventListener: (_t: "statechange", f: () => void) => void w.listeners.push(f),
+      };
+    },
+    addEventListener: (_t: "updatefound", f: () => void) => void regListeners.push(f),
+  };
+  const container: UpdateContainer = {
+    controller: o.controlled ? {} : null,
+    addEventListener: (_t: "controllerchange", f: () => void) => void containerListeners.push(f),
+  };
+  const log: string[] = [];
+  const applies: (() => void)[] = [];
+  const run = (): void =>
+    watchServiceWorkerUpdate({
+      registration,
+      container,
+      onUpdate: (apply) => {
+        log.push("notice");
+        applies.push(apply);
+      },
+      reload: () => log.push("reload"),
+    });
+  /** 新しい Service Worker のインストールが始まり（updatefound）、installed になる */
+  const installNew = (): FakeWorker => {
+    const w = worker("installing");
+    state.installing = w;
+    for (const f of regListeners) f();
+    w.state = "installed";
+    state.installing = null;
+    state.waiting = w;
+    for (const f of w.listeners) f();
+    return w;
+  };
+  const controllerChange = (): void => {
+    for (const f of containerListeners) f();
+  };
+  return { state, log, applies, run, installNew, controllerChange };
+}
+
+describe("SV-42 更新の案内", () => {
+  test("SV-42 更新の検知（条件 5）: 制御下のページで新しい Service Worker が installed になったら案内を 1 回だけ出す。読み込み時に待機中があればすぐ出す", () => {
+    const a = updateFakes({ controlled: true });
+    a.run();
+    expect(a.log).toEqual([]);
+    a.installNew();
+    expect(a.log).toEqual(["notice"]);
+    a.installNew();
+    expect(a.log).toEqual(["notice"]);
+
+    const b = updateFakes({ controlled: true, waiting: true });
+    b.run();
+    expect(b.log).toEqual(["notice"]);
+  });
+
+  test("SV-42 更新の検知（条件 5）: 登録の解決の時点でインストール中だったものも、installed になれば案内を出す", () => {
+    const f = updateFakes({ controlled: true, installing: true });
+    f.run();
+    const w = f.state.installing!;
+    w.state = "installed";
+    f.state.waiting = w;
+    f.state.installing = null;
+    for (const l of w.listeners) l();
+    expect(f.log).toEqual(["notice"]);
+  });
+
+  test("SV-42 更新の検知: 初回のインストール（読み込み時に controller が無い）は更新ではないので案内を出さず、clients.claim の controllerchange でも読み込み直さない", () => {
+    const f = updateFakes({ controlled: false, installing: true });
+    f.run();
+    f.installNew();
+    f.controllerChange();
+    expect(f.log).toEqual([]);
+  });
+
+  test("SV-42 読み込み直す（条件 5）: 待機中の Service Worker に { type: skipWaiting } を送り、controllerchange で 1 回だけ reload する（待機中が無ければすぐ reload）", () => {
+    const f = updateFakes({ controlled: true });
+    f.run();
+    const w = f.installNew();
+    f.applies[0]!();
+    expect(w.posted).toEqual([{ type: "skipWaiting" }]);
+    expect(f.log).toEqual(["notice"]);
+    f.controllerChange();
+    f.controllerChange();
+    expect(f.log).toEqual(["notice", "reload"]);
+
+    const g = updateFakes({ controlled: true, waiting: true });
+    g.run();
+    g.state.waiting = null;
+    g.applies[0]!();
+    expect(g.log).toEqual(["notice", "reload"]);
+  });
+
+  test("SV-42 読み込み直す: 制御下で読み込んだページは、ほかのタブで有効にされた（controllerchange）ときも読み込み直す（古い版のページを新しい版の下で動かさない）", () => {
+    const f = updateFakes({ controlled: true });
+    f.run();
+    f.controllerChange();
+    expect(f.log).toEqual(["reload"]);
+  });
+
+  test("SV-42 setupServiceWorker: onUpdate を渡すと登録した registration の更新を見張る", async () => {
+    let notices = 0;
+    const c = {
+      register: async () => ({
+        waiting: { postMessage: () => {} },
+        installing: null,
+        addEventListener: () => {},
+      }) as unknown as ServiceWorkerRegistration,
+      getRegistrations: async () => [],
+      controller: {} as ServiceWorker,
+      addEventListener: () => {},
+    };
+    expect(await setupServiceWorker({ prod: true, container: c, onUpdate: () => notices++, reload: () => {} })).toBe("registered");
+    expect(notices).toBe(1);
+  });
+
+  test("SV-42 案内の文言は strings にある（pwa.update.message・pwa.update.reload・common.close）", () => {
+    const S = strings as Record<string, string>;
+    for (const k of UPDATE_NOTICE_KEYS) expect(S[k], k).toBeTruthy();
   });
 });

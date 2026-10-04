@@ -362,8 +362,8 @@ describe("入力と Command", () => {
     expect(hpOne).toMatch(/closeDebugForCommand\(\);\s*void run\(\{ type: "debug\.hpOne" \}\);/);
     // 設定画面のキー（UI-33）は debug の判定の後
     expect(app).toMatch(/if \(overlay === "settings"\) \{\s*const k = settingsKeyIndex\(a, settingsItems\(settingsCtx\(\)\)\);\s*if \(k !== null\) settingsView\.select\(k\);\s*return;/);
-    // 設定画面は debug パネルの下、帯は最前面
-    expect(app).toMatch(/stage\.replaceChildren\(title\.el, creation\.el, custom\.el, play\.el, settingsView\.el, debug\.el, banner\.el\)/);
+    // 設定画面は debug パネルの下、帯はその上、最前面は SV-42 の更新の案内
+    expect(app).toMatch(/stage\.replaceChildren\(title\.el, creation\.el, custom\.el, play\.el, settingsView\.el, debug\.el, banner\.el, updateNotice\.el\)/);
     // 遊んでいる途中の書き出しは flush を待ってから
     const exp = /const exportFromSettings = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(exp).toMatch(/await autosaver\.flush\(state\);\s*ok = await exportGameFile\(cur\.gameId\);/);

@@ -39,6 +39,7 @@ function serviceWorker(): Plugin {
 }
 
 export default defineConfig({
+  base: "./",
   plugins: [serviceWorker()],
   test: {
     include: ["tests/**/*.test.ts"],

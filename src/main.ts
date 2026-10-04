@@ -99,9 +99,13 @@ async function start(): Promise<void> {
   mountStage(stageEl, data.config.stage, app.onLayout);
   app.start();
   // SV-42: 本番ビルドでだけ Service Worker を登録する（開発では残っている登録を解除する）。失敗しても起動は止めない。
-  void setupServiceWorker({ prod: import.meta.env.PROD, container: navigator.serviceWorker }).then((r) =>
-    console.debug("sw:", r),
-  );
+  // 新しい版が待機に入ったら案内を出し、「読み込み直す」で有効にして読み込み直す。
+  void setupServiceWorker({
+    prod: import.meta.env.PROD,
+    container: navigator.serviceWorker,
+    onUpdate: (apply) => app.showUpdate(apply),
+    reload: () => location.reload(),
+  }).then((r) => console.debug("sw:", r));
 }
 
 // load 内の失敗は fail が描画済み（再 throw されてここに来る）なので二重に描かない。

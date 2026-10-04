@@ -97,6 +97,7 @@ import { slotsFor } from "./views/dungeon-geometry";
 import { battleTurnText, headerText } from "./views/header";
 import { formatMessage } from "./views/message";
 import { createSaveBanner } from "./views/save-banner";
+import { createUpdateNotice } from "./views/update-notice";
 import { createTitleScreen, titleEntries, titleHint, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
 import { formatWipeSummary } from "./views/wipe";
 import { townEntries, townHeader, townPageIntro, townParent, type TownEntry, type TownPage } from "./views/town";
@@ -107,6 +108,8 @@ export type Overlay = null | "map" | "debug" | "camp" | "wipe" | "history" | "se
 export type App = {
   onLayout(layout: StageLayout, input: StageLayoutInput): void;
   start(): void;
+  /** SV-42: 新しい版の案内を出す。「読み込み直す」で apply を呼ぶ */
+  showUpdate(apply: () => void): void;
 };
 
 /**
@@ -286,7 +289,10 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     onClose: () => guard(() => closeSettings()),
   });
 
-  stage.replaceChildren(title.el, creation.el, custom.el, play.el, settingsView.el, debug.el, banner.el);
+  // SV-42: 新しい版の案内（最前面。閉じても遊べる）
+  const updateNotice = createUpdateNotice({ strings });
+
+  stage.replaceChildren(title.el, creation.el, custom.el, play.el, settingsView.el, debug.el, banner.el, updateNotice.el);
 
   // ---------------------------------------------------------------- 再生
   const dungeonName = (st: GameState): string => (st.dive === null ? "" : dungeonOf(data, st.dive.dungeonId).name);
@@ -1668,6 +1674,9 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
         settingsView.refresh();
         if (!isBusy()) syncControls();
       });
+    },
+    showUpdate(apply: () => void): void {
+      updateNotice.show(apply);
     },
   };
 }
