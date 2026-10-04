@@ -1,5 +1,5 @@
 // エントリポイント。データを読み込んで検証し、不正なら起動を止める（CLAUDE.md §3-5）。
-// 起動順: load → fonts.load → applyPalette → 設定の store → IndexedDB を開く → セーブのサービス → createApp → mountStage → app.start。
+// 起動順: load → fonts.load → applyPalette → 設定の store → IndexedDB を開く → セーブのサービス → createApp → mountStage → app.start → Service Worker（SV-42）。
 // IndexedDB を開けなくても起動は続ける（SV-23: 保存できない旨の帯を出し続ける）。
 import "./presenter/style.css";
 import config from "../data/config.json";
@@ -23,6 +23,7 @@ import { renderDataError, STARTUP_ERROR_HEADING } from "./presenter/views/data-e
 import { openIdbBackend } from "./save/db";
 import { newGameId } from "./save/id";
 import { createSaveService } from "./save/saves";
+import { setupServiceWorker } from "./pwa/register";
 
 // style.css の @font-face と同じ名前。
 const FONT_FAMILY = "Misaki";
@@ -97,6 +98,10 @@ async function start(): Promise<void> {
   const app = createApp({ stage: stageEl, data, settings, saves });
   mountStage(stageEl, data.config.stage, app.onLayout);
   app.start();
+  // SV-42: 本番ビルドでだけ Service Worker を登録する（開発では残っている登録を解除する）。失敗しても起動は止めない。
+  void setupServiceWorker({ prod: import.meta.env.PROD, container: navigator.serviceWorker }).then((r) =>
+    console.debug("sw:", r),
+  );
 }
 
 // load 内の失敗は fail が描画済み（再 throw されてここに来る）なので二重に描かない。

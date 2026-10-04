@@ -35,7 +35,7 @@
 
 - SV-40 iOS Safari のタブ表示では、長期間使わないサイトのストレージが消されることがある。タイトル画面に「ホーム画面に追加すると消えにくい」旨と書き出しの案内を出す。（M6）standalone（`(display-mode: standalone)` か iOS の `navigator.standalone`）でないときだけ、タイトルの下に 2 行（`title.storageHint`）、設定画面（UI-57）に詳しい案内（理由 = 消えにくい・iPhone の端のスワイプの「戻る」が無くなる、iPhone と Android の手順、Safari のタブとホーム画面のアプリで保存が別になる旨）を出す。standalone なら設定画面には「ホーム画面から起動している。」の 1 行だけ。端末の判定はせず両方の手順を出す。beforeinstallprompt は使わない。
 - SV-41 保存は `visibilitychange`（`hidden`）でも念のため行う（直前のコマンドで保存済みなら何もしない）。（M6）pagehide でも同じ。進行中の保存を待ってから、最後に保存に成功した state と同じなら書かない（続きからで読み込んだ state も保存済みとする）。行うのは街・迷宮・戦闘の間だけ。IndexedDB の接続が切れていれば SV-23 のとおり開き直す。
-- SV-42 PWA（M6）。`public/manifest.webmanifest`（display standalone、orientation portrait、start_url と scope は "./"、theme / background は黒）と `public/icons/`（192・512・maskable 512・apple-touch-icon 180。`scripts/make-icons.mjs` で生成）。index.html に manifest・アイコン・apple-mobile-web-app-capable・status-bar-style（black）の link / meta を置く。
+- SV-42 PWA（M6）。`public/manifest.webmanifest`（display standalone、orientation portrait、start_url と scope は "./"、theme / background は黒）と `public/icons/`（192・512・maskable 512・apple-touch-icon 180。`scripts/make-icons.mjs` で生成）。index.html に manifest・アイコン・apple-mobile-web-app-capable・status-bar-style（black）の link / meta を置く。Service Worker は手書きで（src/pwa/sw-template.ts）、本番ビルドのときに vite.config.ts のプラグインが dist の全ファイル（sw.js と *.map と "." で始まる名前を除く）の一覧と中身から作った版を埋め込んだ `sw.js` を出す。install で版つきのキャッシュ `wizlike-{版}` に全部入れて skipWaiting、activate で古い `wizlike-*` を消して clients.claim。fetch は同じオリジンの GET だけを、ナビゲーションはキャッシュの index.html、それ以外はキャッシュにあればそれ・無ければネットワークで返す（実行時のキャッシュはしない）。登録は本番ビルドだけ（開発サーバーでは登録せず、残っている登録を解除する）。オフラインで遊べ、更新は次の起動から新しい版になる。登録は secure context（https か localhost）でしかできない。
 
 ## 6. 続きから
 

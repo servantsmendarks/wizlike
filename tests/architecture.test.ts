@@ -1,7 +1,7 @@
 // CLAUDE.md §3 のうち、ソースを読めば機械的に確かめられるものを検査する。
 // - §3-1: core は DOM / Web API / タイマー / Math.random / Date を使わず、core 内と data/ の型しか import しない。
 //   （DOM の型そのものは tsconfig.core.json の lib ES2022 で typecheck が弾く。ここでは名前で検出する。）
-// - §3-10: presenter と表示層の入口 src/main.ts、src/save の文字列リテラルに日本語を書かない（文言は data/strings.json）。
+// - §3-10: presenter と表示層の入口 src/main.ts、src/save・src/pwa の文字列リテラルに日本語を書かない（文言は data/strings.json）。
 // - src/save は core を import type だけで読み、src/save と src/core の外を import しない（M4 のセーブの設計）。
 import { describe, expect, test } from "vitest";
 
@@ -11,11 +11,14 @@ const coreSources = import.meta.glob("../src/core/**/*.ts", {
   eager: true,
 }) as Record<string, string>;
 
-const presenterSources = import.meta.glob(["../src/presenter/**/*.ts", "../src/main.ts", "../src/save/**/*.ts"], {
-  query: "?raw",
-  import: "default",
-  eager: true,
-}) as Record<string, string>;
+const presenterSources = import.meta.glob(
+  ["../src/presenter/**/*.ts", "../src/main.ts", "../src/save/**/*.ts", "../src/pwa/**/*.ts"],
+  {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  },
+) as Record<string, string>;
 
 // ---------------------------------------------------------------------------
 // 字句解析（最小限）: コメントと文字列リテラルを見分ける。
@@ -357,6 +360,7 @@ describe("CLAUDE.md §3-10 presenter と main.ts と src/save に日本語の文
     expect(Object.keys(presenterSources).length).toBeGreaterThan(1);
     expect(Object.keys(presenterSources).map(repoPath)).toContain("src/main.ts");
     expect(Object.keys(presenterSources).map(repoPath)).toContain("src/save/saves.ts");
+    expect(Object.keys(presenterSources).map(repoPath)).toContain("src/pwa/sw-template.ts");
   });
 
   test("CLAUDE.md §3-10 presenter と main.ts と src/save の文字列リテラルに日本語が無い（コメントは除く）", () => {
