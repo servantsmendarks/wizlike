@@ -2142,3 +2142,57 @@ describe("拍（CB-55）", () => {
     expect(eventsOf(w.events, "beat")).toEqual([]);
   });
 });
+
+describe("冒険のターン数（TW-12。M5.5）", () => {
+  test("TW-12 battle.resolve・battle.repeat・逃走の失敗・敵の奇襲のラウンドでは battle.round と同じだけ増え、逃走の成功では増えない", () => {
+    const base = (): GameState => {
+      const s = setup([{ monsterId: "giant_rat", hps: [500] }], { identified: ["giant_rat"] });
+      s.adventureTurns = 10;
+      return s;
+    };
+    // resolve: ラウンド 1 つで +1（round 0 → 1）
+    const r1 = exec(base(), RESOLVE);
+    expect(r1.state.battle!.round).toBe(1);
+    expect(r1.state.adventureTurns).toBe(11);
+    // 続けて repeat: もう 1 つ
+    const r2 = exec(r1.state, REPEAT);
+    expect(r2.state.battle!.round).toBe(2);
+    expect(r2.state.adventureTurns).toBe(12);
+    // 逃走の失敗: 敵だけのラウンドで +1
+    const ng = exec(base(), FLEE, dataWith({ combat: { fleeBase: -1000 } }));
+    expect(kindsOf(ng.events)).toContain("message:battle.fleeFail");
+    expect(ng.state.battle!.round).toBe(1);
+    expect(ng.state.adventureTurns).toBe(11);
+    // 逃走の成功: ラウンドを解決しないので増えない
+    const ok = exec(base(), FLEE, dataWith({ combat: { fleeBase: 1000 } }));
+    expect(ok.state.battle).toBeNull();
+    expect(ok.state.adventureTurns).toBe(10);
+    // 敵の奇襲（遭遇の execute の中の敵だけのラウンド）で +1
+    const d = dataWith({ combat: ALWAYS_HIT }, (x) => {
+      x.monsters.find((m) => m.id === "giant_rat")!.agi = 1000;
+      noAmbushAvoid(x);
+    });
+    const s0 = cloneState(dived(1));
+    s0.adventureTurns = 5;
+    const ctx = runCtx(s0, d, (c) => startBattle(c, { kind: "random", inRoom: false }, [{ monsterId: "giant_rat", count: 2 }]));
+    expect(ctx.state.battle!.round).toBe(1);
+    expect(ctx.state.adventureTurns).toBe(6);
+  });
+
+  test("TW-12 オートで決着まで回すと、増えた数は解決したラウンドの数（battle.round の最後の値）と同じ。乱数の消費は変えない", () => {
+    const s = setup([{ monsterId: "giant_rat", hps: [3, 3] }], { identified: ["giant_rat"], inputs: {} });
+    const on = exec(s, AUTO_ON).state;
+    let cur = on;
+    let rounds = 0;
+    for (let k = 0; k < 50 && cur.battle !== null; k++) {
+      cur = exec(cur, RESOLVE).state;
+      rounds += 1;
+    }
+    expect(cur.battle).toBeNull();
+    expect(cur.adventureTurns).toBe(rounds);
+    // 乱数: adventureTurns を変えても同じ resolve の rng は同じ
+    const t = cloneState(on);
+    t.adventureTurns = 999;
+    expect(exec(t, RESOLVE).state.rng).toEqual(exec(on, RESOLVE).state.rng);
+  });
+});

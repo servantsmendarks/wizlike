@@ -162,6 +162,8 @@ export type Dive = {
   explored: Record<string, number[]>;
   /** E4: 発動した罠と、処理済みのイベントのセル（EV-33。選択の保留中はまだ入らない） */
   clearedCells: CellRef[];
+  /** DG-21（M5.5）: 察知した罠のセル。キーは階番号の文字列、値はセル添字（y*width+x）の昇順・重複なし（explored と同じ形）。発動して clearedCells に入ったら外す。入場時 {} */
+  knownTraps: Record<string, number[]>;
   /** DG-31/32。M2 では常に false */
   bossDefeated: boolean;
   /** DG-40 */
@@ -215,8 +217,8 @@ export type VisibleCell = {
   right: Edge;
   stairs: "up" | "down" | null;
 };
-/** UI-24 の記号。罠・イベント・ボス・部屋・通路はすべて plain（地図で明かさない） */
-export type MapCellKind = "plain" | "stairsUp" | "stairsDown";
+/** UI-24 の記号。察知した罠（dive.knownTraps。M5.5）は trap。察知していない罠・イベント・ボス・部屋・通路はすべて plain（地図で明かさない） */
+export type MapCellKind = "plain" | "stairsUp" | "stairsDown" | "trap";
 /** 辺は絶対方位（扉は通り抜けた後も door。DG-10） */
 export type MapCell = { x: number; y: number; kind: MapCellKind; n: Edge; e: Edge; s: Edge; w: Edge };
 /** DG-13 / UI-24。cells は探索済みセルだけ（添字の昇順） */
@@ -273,6 +275,7 @@ export type BestiaryEntry = { kills: number; identified: boolean };
 // ===================== GameState =====================
 // M1 で確定した欄に、M2 で dive と pendingChoice、M3 で battle と bestiary、M4 で townVisit を足した。
 // M4 のこの形を保存レコードの schemaVersion 1 として確定する（以後の変更は src/save/migrate.ts の移行を伴う）。
+// M5.5 で adventureTurns・tavernEventMark・dive.knownTraps を足して schemaVersion 2 にした（migrateV1toV2）。
 // schemaVersion、turn、updatedAt、gameId は保存レコード側の欄（SV-21）で、ここには入れない。
 
 export type GameState = {
@@ -301,6 +304,10 @@ export type GameState = {
   bestiary: Record<string, BestiaryEntry>;
   /** TW-30〜32。screen === "town" と townVisit !== null は同値（title / dungeon / battle では null） */
   townVisit: TownVisit | null;
+  /** TW-12（M5.5）: 冒険のターン数。dungeon.move の前進が成立した 1 歩ごとに +1、戦闘のラウンドを 1 つ解決するごと（runRound。battle.round と同時）に +1。game.new で 0。全滅・帰還で戻さない（ゲーム単位で永続） */
+  adventureTurns: number;
+  /** TW-14（M5.5）: 前に酒場のイベントが起きた時点の adventureTurns。game.new で 0 */
+  tavernEventMark: number;
 };
 
 // ===================== コマンド（CLAUDE.md §5） =====================

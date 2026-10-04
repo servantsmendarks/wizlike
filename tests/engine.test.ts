@@ -74,7 +74,7 @@ describe("engine: execute", () => {
     expect(JSON.parse(JSON.stringify(s0))).toEqual(s0);
   });
 
-  test("D3 createInitialState: screen title、party []、rng は createRng(seed) と同じ、gold 0、bank 0、nextItemSeq 1、dive と pendingChoice と battle は null、bestiary は {}、townVisit は null", () => {
+  test("D3 createInitialState: screen title、party []、rng は createRng(seed) と同じ、gold 0、bank 0、nextItemSeq 1、dive と pendingChoice と battle は null、bestiary は {}、townVisit は null、adventureTurns・tavernEventMark は 0（TW-12）", () => {
     const s = createInitialState(42, data);
     expect(s).toEqual({
       screen: "title",
@@ -90,6 +90,8 @@ describe("engine: execute", () => {
       battle: null,
       bestiary: {},
       townVisit: null,
+      adventureTurns: 0,
+      tavernEventMark: 0,
     });
     expect(() => createInitialState(1.5, data)).toThrow(RangeError);
   });
@@ -99,6 +101,32 @@ describe("engine: execute", () => {
     expect(s.dive).toBeNull();
     expect(s.pendingChoice).toBeNull();
     expect(cloneState(s)).toEqual(s);
+  });
+
+  test("TW-12 createInitialState と game.new で adventureTurns 0・tavernEventMark 0。全滅・帰還（徒歩の出口）で変わらない", () => {
+    const init = createInitialState(1, data);
+    expect([init.adventureTurns, init.tavernEventMark]).toEqual([0, 0]);
+    const s = execute(init, gameNew(), data).state;
+    expect([s.adventureTurns, s.tavernEventMark]).toEqual([0, 0]);
+    // 帰還: 1 階の上り階段の確認で exit
+    const d = cloneState(dived(1));
+    d.adventureTurns = 37;
+    d.tavernEventMark = 12;
+    d.pendingChoice = { kind: "stairs", promptKey: "dungeon.stairsUp", options: [{ id: "exit", labelKey: "dungeon.choice.exit" }] };
+    const back = execute(d, { type: "event.choose", optionId: "exit" }, data).state;
+    expect(back.screen).toBe("town");
+    expect([back.adventureTurns, back.tavernEventMark]).toEqual([37, 12]);
+    // 全滅: 迷宮で行動可能な者がいなくなった旋回の後処理（TW-20）
+    const w = cloneState(d);
+    w.pendingChoice = null;
+    for (const c of w.party) {
+      c.life = "dead";
+      c.hp = 0;
+    }
+    const wiped = execute(w, { type: "dungeon.turn", dir: "left" }, data);
+    expect(wiped.events.some((e) => e.kind === "wipe")).toBe(true);
+    expect(wiped.state.screen).toBe("town");
+    expect([wiped.state.adventureTurns, wiped.state.tavernEventMark]).toEqual([37, 12]);
   });
 
   test("DG-01 dungeonOf は id で dungeons.json の定義を返し、未知の id は Error", () => {

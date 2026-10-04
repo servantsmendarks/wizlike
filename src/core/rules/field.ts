@@ -50,20 +50,39 @@ export function gainGold(ctx: RuleContext, amount: number, msg: TextRef): void {
   if (amount > 0) gainTreasureSan(ctx);
 }
 
-/** DG-13: explored[floorNo] に添字を昇順・重複なしで足す */
-export function addExplored(dive: Dive, floorNo: number, indices: readonly number[]): void {
+/** 昇順の配列で i 以上の最初の位置（二分探索） */
+function lowerBound(list: readonly number[], i: number): number {
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (list[mid]! < i) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** DG-13 / DG-21: 階ごとの添字の表（explored・knownTraps）の map[floorNo] に添字を昇順・重複なしで足す */
+export function addIndex(map: Record<string, number[]>, floorNo: number, indices: readonly number[]): void {
   const key = String(floorNo);
-  const list = dive.explored[key] ?? [];
+  const list = map[key] ?? [];
   for (const i of indices) {
     // 昇順の位置に挿入する（重複は足さない）
-    let lo = 0;
-    let hi = list.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >>> 1;
-      if (list[mid]! < i) lo = mid + 1;
-      else hi = mid;
-    }
+    const lo = lowerBound(list, i);
     if (list[lo] !== i) list.splice(lo, 0, i);
   }
-  dive.explored[key] = list;
+  map[key] = list;
+}
+
+/** DG-21: map[floorNo] から添字 index を外す（無ければ何もしない。空になってもキーは残す） */
+export function removeIndex(map: Record<string, number[]>, floorNo: number, index: number): void {
+  const list = map[String(floorNo)];
+  if (list === undefined) return;
+  const lo = lowerBound(list, index);
+  if (list[lo] === index) list.splice(lo, 1);
+}
+
+/** DG-13: explored[floorNo] に添字を昇順・重複なしで足す */
+export function addExplored(dive: Dive, floorNo: number, indices: readonly number[]): void {
+  addIndex(dive.explored, floorNo, indices);
 }

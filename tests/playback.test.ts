@@ -21,6 +21,7 @@ function diveAt(x: number, y: number, facing: Dive["facing"], floor = 1): Dive {
     facing,
     explored: {},
     clearedCells: [],
+    knownTraps: {},
     bossDefeated: false,
     ledger: { items: [], gold: 0 },
   };

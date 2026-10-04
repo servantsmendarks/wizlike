@@ -194,6 +194,95 @@ describe("SV-04 migrate", () => {
   });
 });
 
+describe("SV-04 v1 → v2 の移行（M5.5）", () => {
+  /** v2 の state から M5.5 の欄（adventureTurns・tavernEventMark・dive.knownTraps）を消した v1 の形 */
+  function toV1(s: GameState): Record<string, unknown> {
+    const v1 = json(s) as unknown as Record<string, unknown>;
+    delete v1["adventureTurns"];
+    delete v1["tavernEventMark"];
+    const dive = v1["dive"] as Record<string, unknown> | null;
+    if (dive !== null) delete dive["knownTraps"];
+    return v1;
+  }
+  function eventState(): GameState {
+    const d = loadFreshData();
+    d.config.events.impulseThreshold = 1000;
+    for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    return execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state;
+  }
+
+  test("SV-04 v1 の保存（adventureTurns・tavernEventMark・knownTraps が無い）は v2 へ移行して 0 / 0 / {} が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
+    expect(SCHEMA).toBe(2);
+    const cases: Array<[string, GameState]> = [
+      ["town", newGame(1)],
+      ["dungeon", dived(1)],
+      ["battle", withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }])],
+      ["event", eventState()],
+    ];
+    for (const [name, s] of cases) {
+      const v1 = toV1(s);
+      const before = json(v1);
+      expect(isGameStateShape(v1), name).toBe(false); // v1 のままでは v2 の形の検査を通らない
+      const r = migrateState(v1, 1, SCHEMA);
+      expect(r.ok, name).toBe(true);
+      if (!r.ok) continue;
+      expect(r.fromVersion).toBe(1);
+      const want = json(s);
+      want.adventureTurns = 0;
+      want.tavernEventMark = 0;
+      if (want.dive !== null) want.dive.knownTraps = {};
+      expect(r.state, name).toEqual(want);
+      expect(v1, name).toEqual(before); // 引数は書き換えない
+    }
+    // MIGRATIONS[0] 単体: オブジェクトでなければそのまま
+    expect(MIGRATIONS[0]!("x")).toBe("x");
+    expect(MIGRATIONS[0]!(null)).toBe(null);
+  });
+
+  test("SV-04 形の検査: adventureTurns / tavernEventMark が無い・負・小数・文字列、dive に knownTraps が無い・配列・null の v2 は broken", () => {
+    const town = json(newGame(1));
+    const dungeon = json(dived(1));
+    const broken: Array<[string, unknown]> = [
+      ["adventureTurns missing", { ...town, adventureTurns: undefined }],
+      ["adventureTurns negative", { ...town, adventureTurns: -1 }],
+      ["adventureTurns fraction", { ...town, adventureTurns: 1.5 }],
+      ["adventureTurns string", { ...town, adventureTurns: "0" }],
+      ["tavernEventMark missing", { ...town, tavernEventMark: undefined }],
+      ["tavernEventMark negative", { ...town, tavernEventMark: -3 }],
+      ["knownTraps missing", { ...dungeon, dive: { ...dungeon.dive!, knownTraps: undefined } }],
+      ["knownTraps array", { ...dungeon, dive: { ...dungeon.dive!, knownTraps: [] } }],
+      ["knownTraps null", { ...dungeon, dive: { ...dungeon.dive!, knownTraps: null } }],
+    ];
+    for (const [name, s] of broken) {
+      expect(isGameStateShape(s), name).toBe(false);
+      expect(migrateState(s, SCHEMA, SCHEMA), name).toEqual({ ok: false, reason: "broken" });
+    }
+    expect(isGameStateShape({ ...town, adventureTurns: 250, tavernEventMark: 200 })).toBe(true);
+    expect(isGameStateShape({ ...dungeon, dive: { ...dungeon.dive!, knownTraps: { "1": [3, 7] } } })).toBe(true);
+  });
+
+  test("SV-04/SV-50 v1 のレコードを保存先（メモリ）に置くと、一覧で ok、続きからで読めて街から再開できる", async () => {
+    const mem = createMemoryBackend();
+    const s = newGame(1);
+    mem.raw("g1", { ...buildRecord("g1", 4, 999, 1, s), state: toV1(s) });
+    const svc = service(mem);
+    const list = await svc.list();
+    expect(list.ok && list.entries.map((e) => [e.gameId, e.status])).toEqual([["g1", "ok"]]);
+    const r = await svc.load("g1");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.screen).toBe("town");
+    expect(r.state.adventureTurns).toBe(0);
+    expect(r.state.tavernEventMark).toBe(0);
+    // 迷宮の v1 でも同じ（knownTraps {}）
+    const mem2 = createMemoryBackend();
+    const dv = dived(1);
+    mem2.raw("g2", { ...buildRecord("g2", 2, 999, 1, dv), state: toV1(dv) });
+    const r2 = await service(mem2).load("g2");
+    expect(r2.ok && r2.state.dive!.knownTraps).toEqual({});
+  });
+});
+
 describe("SV-10 newGameId", () => {
   const V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 

@@ -49,7 +49,7 @@
     ]
   },
   "events": { "impulseThreshold": 8, "stopSanGain": 3, "confusedLureWeight": 2 },
-  "save": { "maxGames": 5, "schemaVersion": 1 },
+  "save": { "maxGames": 5, "schemaVersion": 2 },
   "input": { "swipeThresholdPx": 28, "holdRepeatMs": 250, "edgeDeadZonePx": 12 },
   "ui": {
     "textSpeedMs": 30, "diceStepMs": 300, "flashMs": 120, "shakeMs": 150, "viewFadeMs": 80,

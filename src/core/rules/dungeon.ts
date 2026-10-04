@@ -35,7 +35,7 @@ import { startBossEncounter, startRandomEncounter, tickPoisonStep } from "./comb
 import { canAct } from "./combat-calc";
 import { offerExit, offerStairs, offerTeleporter, offerTrap } from "./choices";
 import { chooseEventOption, startEvent } from "./events";
-import { addExplored, aliveMembers, damageMembers } from "./field";
+import { addExplored, addIndex, aliveMembers, damageMembers, removeIndex } from "./field";
 import { loseSan } from "./san";
 import { enterBlockReason, returnToTown } from "./town";
 
@@ -111,17 +111,48 @@ export function visibleCells(state: GameState, data: GameData, at?: ViewPoint): 
   return visibleCellsOf(f, vp.pos, vp.facing, data.config.dungeon.viewDepth);
 }
 
-/** DG-13 / UI-24。探索済みセルだけを、実効の 4 辺で返す。記号は上り・下り階段だけ。dive が null なら null */
+/**
+ * DG-12 / UI-20（M5.5）: 視野（visibleCells と同じ視点・奥行き）のうち、dive.knownTraps[その階] にあるセルの {depth, lane}（visibleCells の順）。
+ * dive が null なら []。visibleCells は今どおり罠を返さない（察知した罠だけをこの別の問い合わせで返す）
+ */
+export function visibleKnownTraps(
+  state: GameState,
+  data: GameData,
+  at?: ViewPoint,
+): { depth: number; lane: -1 | 0 | 1 }[] {
+  const dive = state.dive;
+  if (dive === null) return [];
+  const vp: ViewPoint = at ?? { floor: dive.floor, pos: dive.pos, facing: dive.facing };
+  const known = dive.knownTraps[String(vp.floor)] ?? [];
+  if (known.length === 0) return [];
+  const f = floorOf(dive, data, vp.floor);
+  return visibleCellsOf(f, vp.pos, vp.facing, data.config.dungeon.viewDepth)
+    .filter((v) => known.includes(idx(f, v.x, v.y)))
+    .map((v) => ({ depth: v.depth, lane: v.lane }));
+}
+
+/**
+ * DG-13 / UI-24。探索済みセルだけを、実効の 4 辺で返す。記号は上り・下り階段と、察知した罠（knownTraps にあり、
+ * 実効のセルの kind が trap のもの。M5.5）。dive が null なら null
+ */
 export function mapView(state: GameState, data: GameData): MapView | null {
   const dive = state.dive;
   if (dive === null) return null;
   const f = floorOf(dive, data);
+  const known = dive.knownTraps[String(dive.floor)] ?? [];
   const cells: MapCell[] = [];
   for (const i of dive.explored[String(dive.floor)] ?? []) {
     const x = i % f.width;
     const y = (i - x) / f.width;
     const c = cellAt(f, x, y);
-    const kind: MapCellKind = c.kind === "stairsUp" ? "stairsUp" : c.kind === "stairsDown" ? "stairsDown" : "plain";
+    const kind: MapCellKind =
+      c.kind === "stairsUp"
+        ? "stairsUp"
+        : c.kind === "stairsDown"
+          ? "stairsDown"
+          : c.kind === "trap" && known.includes(i)
+            ? "trap"
+            : "plain";
     cells.push({ x, y, kind, n: c.n, e: c.e, s: c.s, w: c.w });
   }
   return {
@@ -211,6 +242,7 @@ export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
     facing,
     explored: {},
     clearedCells: [],
+    knownTraps: {},
     bossDefeated: false,
     ledger: { items: [], gold: 0 },
   };
@@ -255,12 +287,13 @@ export function moveForward(ctx: RuleContext): void {
   if (e === "door") ctx.events.push({ kind: "message", key: "dungeon.door" });
   dive.pos = step(dive.pos, dive.facing);
   ctx.events.push({ kind: "moved", pos: { x: dive.pos.x, y: dive.pos.y }, facing: dive.facing });
+  state.adventureTurns += 1; // TW-12: 前進が成立した 1 歩（壁の blocked では来ない）
   explore(ctx, dive, f);
   const cell = cellAt(f, dive.pos.x, dive.pos.y);
   // CH-43: 毒の 1 歩ごとのダメージ（HP 1 で止まるので、これで死ぬことはない）
   tickPoisonStep(ctx);
   if (cell.kind === "trap") {
-    if (detectTrap(ctx, cell)) return; // DG-21: 察知したら確認を立てて終わる（階段・遭遇なし）
+    if (detectTrap(ctx, f, cell)) return; // DG-21: 察知したら確認を立てて終わる（階段・遭遇なし）
     triggerTrap(ctx, f, dive.pos);
   }
   continueStep(ctx, f, cell);
@@ -317,14 +350,17 @@ function rollEncounter(ctx: RuleContext, inRoom: boolean): void {
  * DG-21 / A6: 罠の察知。teleport（未実装の罠）は対象外。行動可能で benefits.trapDetect > 0 の者を並び順に
  * d100 ≤ trapDetect で振り、最初の成功者で止める（dungeon.trap.detected{name} と確認 kind trap）。dice は出さない。
  * 誰も成功しなければ何も出さずに false（罠は通常どおり発動する）。
+ * 成功したら、そのセルの添字を dive.knownTraps[階] に昇順・重複なしで足す（M5.5。乱数は使わない）。f は dive.floor の実効の構造。
  */
-function detectTrap(ctx: RuleContext, cell: Cell): boolean {
+function detectTrap(ctx: RuleContext, f: Floor, cell: Cell): boolean {
   const { state, data } = ctx;
+  const dive = requireDive(state);
   if (cell.trapId === null || cell.trapId === "teleport") return false;
   for (const ch of state.party) {
     const v = personalityOf(data, ch.personality)?.benefits.trapDetect ?? 0;
     if (!canAct(ch) || v <= 0) continue;
     if (chance(state.rng, v)) {
+      addIndex(dive.knownTraps, dive.floor, [idx(f, dive.pos.x, dive.pos.y)]); // DG-21（M5.5）: 察知した罠を覚える
       ctx.events.push({ kind: "message", key: "dungeon.trap.detected", params: { name: ch.name } });
       offerTrap(ctx);
       return true;
@@ -364,6 +400,7 @@ function triggerTrap(ctx: RuleContext, f: Floor, p: Pos): void {
   const trapId = cell.trapId;
   if (trapId === null || trapId === "teleport") return; // teleport は M2 では何もしない（clearedCells にも入れない）
   dive.clearedCells.push({ floor: dive.floor, x: p.x, y: p.y });
+  removeIndex(dive.knownTraps, dive.floor, idx(f, p.x, p.y)); // DG-21（M5.5）: 発動したら察知の印を外す
   ctx.events.push({ kind: "message", key: `dungeon.trap.${trapId}` });
   const cfg = data.config;
   if (trapId === "pit") {

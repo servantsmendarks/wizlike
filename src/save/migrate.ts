@@ -4,7 +4,19 @@ import type { GameState } from "../core/types";
 import { isPlainObject } from "./record";
 import type { MigrateResult, Migration } from "./types";
 
-export const MIGRATIONS: readonly Migration[] = [];
+/**
+ * SV-04 v1 → v2（M5.5）: adventureTurns 0・tavernEventMark 0 を足し、dive がオブジェクトなら knownTraps {} を足す。
+ * 引数は書き換えない（浅い複製。dive も複製する）。オブジェクトでなければそのまま返す（形の検査で broken）
+ */
+export function migrateV1toV2(x: unknown): unknown {
+  if (!isPlainObject(x)) return x;
+  const out: Record<string, unknown> = { ...x, adventureTurns: 0, tavernEventMark: 0 };
+  const dive = x["dive"];
+  if (isPlainObject(dive)) out["dive"] = { ...dive, knownTraps: {} };
+  return out;
+}
+
+export const MIGRATIONS: readonly Migration[] = [migrateV1toV2];
 
 const RESUMABLE_SCREENS: readonly unknown[] = ["town", "dungeon", "battle", "event"];
 
@@ -12,12 +24,17 @@ function isObjectOrNull(x: unknown): boolean {
   return x === null || isPlainObject(x);
 }
 
+function isTurnCount(x: unknown): boolean {
+  return typeof x === "number" && Number.isSafeInteger(x) && x >= 0;
+}
+
 /**
  * GameState の最小限の形の検査（深い検証はしない）。
  * screen は town / dungeon / battle / event、party は 1 件以上の配列、rng / items はオブジェクト、gold は数、
  * dive / pendingChoice / battle / townVisit はオブジェクトか null、screen battle ⇔ battle 非 null、screen town ⇔ townVisit 非 null。
  * screen event（M5。イベントの選択を待つ間）⇒ dive がオブジェクト・battle が null・pendingChoice の kind が event で eventId が文字列、
- * pendingChoice の kind が event ⇒ screen event。M5 は欄を足さず値の種類を増やしただけなので schemaVersion 1 のまま（v1 の保存はそのまま正しい）。
+ * pendingChoice の kind が event ⇒ screen event（M5 は欄を足さず値の種類を増やしただけなので schemaVersion 1 のままだった）。
+ * schemaVersion 2（M5.5）: adventureTurns と tavernEventMark が 0 以上の安全な整数、dive がオブジェクトなら knownTraps がプレーンなオブジェクト。
  */
 export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(x)) return false;
@@ -29,6 +46,9 @@ export function isGameStateShape(x: unknown): x is GameState {
   for (const k of ["dive", "pendingChoice", "battle", "townVisit"]) {
     if (!isObjectOrNull(x[k])) return false;
   }
+  if (!isTurnCount(x["adventureTurns"]) || !isTurnCount(x["tavernEventMark"])) return false;
+  const dive = x["dive"];
+  if (isPlainObject(dive) && !isPlainObject(dive["knownTraps"])) return false;
   if ((x["screen"] === "battle") !== (x["battle"] !== null)) return false;
   if ((x["screen"] === "town") !== (x["townVisit"] !== null)) return false;
   const pc = x["pendingChoice"];

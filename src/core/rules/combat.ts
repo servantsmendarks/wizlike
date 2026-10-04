@@ -438,6 +438,7 @@ function runRound(ctx: RuleContext, who: { allies: boolean; enemies: boolean }):
   const { state, data } = ctx;
   const b = requireBattle(state);
   b.round += 1;
+  state.adventureTurns += 1; // TW-12（M5.5）: ラウンドを 1 つ解決するごとに冒険のターン数も 1 進める
   const plans: AllyPlan[] = [];
   // CB-45: SAN の閾値効果で置き換えた者の語りのキー（このラウンドだけ。state には入れない）
   const sanMsg: Record<string, SanOverrideKey> = {};

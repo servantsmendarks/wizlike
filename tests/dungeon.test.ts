@@ -13,7 +13,8 @@ import {
   setEdge,
   step,
 } from "../src/core/rules/dungeon-gen";
-import { floorOf, mapView, visibleCells, visibleCellsOf } from "../src/core/rules/dungeon";
+import { floorOf, mapView, visibleCells, visibleCellsOf, visibleKnownTraps } from "../src/core/rules/dungeon";
+import { addIndex, removeIndex } from "../src/core/rules/field";
 import { battleMenu } from "../src/core/rules/combat";
 import { offerExit, offerStairs, offerTeleporter, offerTrap } from "../src/core/rules/choices";
 import { cloneState, dungeonOf, makeContext, monsterOf } from "../src/core/state";
@@ -124,6 +125,7 @@ describe("dungeon.enter", () => {
       facing,
       explored: dive.explored,
       clearedCells: [],
+      knownTraps: {},
       bossDefeated: false,
       ledger: { items: [], gold: 0 },
     });
@@ -1479,3 +1481,182 @@ describe("保留中の選択の不変条件（E3、SV-50）", () => {
 function ctxOf(s: GameState) {
   return makeContext(cloneState(s), data);
 }
+
+describe("察知した罠（DG-21 knownTraps、DG-12、DG-13。M5.5）", () => {
+  /** 慎重の trapDetect を v にした data（遭遇率 0） */
+  function detectAll(v: number): GameData {
+    const d = dataWithRate(0, 0);
+    for (const p of d.personalities) if (p.benefits.trapDetect > 0) p.benefits.trapDetect = v;
+    return d;
+  }
+  const D100 = detectAll(100);
+  /** pit の手前（HP 30/30） */
+  function atPitM55() {
+    const sit = findSituation((c) => c.kind === "trap" && c.trapId === "pit");
+    const s = cloneState(sit.state);
+    for (const c of s.party) {
+      c.hp = 30;
+      c.hpMax = 30;
+    }
+    return { ...sit, state: s };
+  }
+
+  test("DG-21 addIndex / removeIndex: 昇順・重複なしで足し、外す（無い添字・無い階は何もしない）", () => {
+    const m: Record<string, number[]> = {};
+    addIndex(m, 1, [5, 2, 9, 2]);
+    expect(m).toEqual({ "1": [2, 5, 9] });
+    addIndex(m, 1, [5, 7]);
+    expect(m).toEqual({ "1": [2, 5, 7, 9] });
+    removeIndex(m, 1, 5);
+    removeIndex(m, 1, 4);
+    removeIndex(m, 2, 1);
+    expect(m).toEqual({ "1": [2, 7, 9] });
+  });
+
+  test("DG-21 察知に成功すると、そのセルの添字が dive.knownTraps[階] に入る（昇順・重複なし）。引き返しても残り、もう一度入って察知しても重複しない", () => {
+    const { state, a, f } = atPitM55();
+    expect(state.dive!.knownTraps).toEqual({});
+    const i = idx(f, a.target.x, a.target.y);
+    const r1 = run(state, MOVE, D100);
+    expect(r1.state.pendingChoice?.kind).toBe("trap");
+    expect(r1.state.dive!.knownTraps).toEqual({ "1": [i] });
+    const r2 = run(r1.state, { type: "event.choose", optionId: "retreat" }, D100);
+    expect(r2.state.dive!.knownTraps).toEqual({ "1": [i] });
+    const r3 = run(r2.state, MOVE, D100);
+    expect(r3.state.pendingChoice?.kind).toBe("trap");
+    expect(r3.state.dive!.knownTraps).toEqual({ "1": [i] });
+    // ほかの添字が先にあっても昇順に入る
+    const pre = cloneState(state);
+    pre.dive!.knownTraps = { "1": [i - 1, i + 1], "2": [0] };
+    expect(run(pre, MOVE, D100).state.dive!.knownTraps).toEqual({ "1": [i - 1, i, i + 1], "2": [0] });
+  });
+
+  test("DG-21 進む（proceed）で発動すると knownTraps から外れ clearedCells に入る。察知していない罠の発動では knownTraps は変わらない（{} のまま）", () => {
+    const { state, a, f } = atPitM55();
+    const i = idx(f, a.target.x, a.target.y);
+    const r1 = run(state, MOVE, D100);
+    expect(r1.state.dive!.knownTraps).toEqual({ "1": [i] });
+    const r2 = run(r1.state, { type: "event.choose", optionId: "proceed" }, D100);
+    expect(r2.state.dive!.knownTraps).toEqual({ "1": [] });
+    expect(r2.state.dive!.clearedCells).toEqual([{ floor: 1, ...a.target }]);
+    // 察知しない（trapDetect 0）と発動し、knownTraps は {} のまま
+    const r3 = run(state, MOVE, detectAll(0));
+    expect(kinds(r3.events)[1]).toBe("message:dungeon.trap.pit");
+    expect(r3.state.dive!.knownTraps).toEqual({});
+    // 前に察知して覚えていた罠に入り、察知に失敗して発動したときも印は外れる
+    const known = cloneState(state);
+    known.dive!.knownTraps = { "1": [i] };
+    const r4 = run(known, MOVE, detectAll(0));
+    expect(kinds(r4.events)[1]).toBe("message:dungeon.trap.pit");
+    expect(r4.state.dive!.knownTraps).toEqual({ "1": [] });
+  });
+
+  test("DG-13 mapView は knownTraps のセルを kind trap、未察知の罠と発動済みのセルは plain で返す", () => {
+    const { state, a, f } = atPitM55();
+    const i = idx(f, a.target.x, a.target.y);
+    const at = (s: GameState) => mapView(s, data)!.cells.find((c) => c.x === a.target.x && c.y === a.target.y);
+    // 引き返した後は罠のセルも探索済みで、察知したので trap
+    const back = run(run(state, MOVE, D100).state, { type: "event.choose", optionId: "retreat" }, D100).state;
+    expect(at(back)!.kind).toBe("trap");
+    expect(mapView(back, data)!.cells.filter((c) => c.kind === "trap")).toHaveLength(1);
+    // 同じ state で knownTraps を空にすると plain（未察知の罠は明かさない）
+    const unknown = cloneState(back);
+    unknown.dive!.knownTraps = {};
+    expect(at(unknown)!.kind).toBe("plain");
+    // 発動済み（clearedCells）のセルは、knownTraps に添字が残っていても plain（実効の kind が trap でない）
+    const fired = run(back, MOVE, detectAll(0)).state;
+    expect(fired.dive!.clearedCells).toEqual([{ floor: 1, ...a.target }]);
+    expect(at(fired)!.kind).toBe("plain");
+    const stale = cloneState(fired);
+    stale.dive!.knownTraps = { "1": [i] };
+    expect(at(stale)!.kind).toBe("plain");
+  });
+
+  test("DG-12 visibleKnownTraps は視野の中の knownTraps のセルだけを {depth, lane} で返す（引き返した直後は depth 1・lane 0）。visibleCells の値は knownTraps に関係なく同じ", () => {
+    const { state, a } = atPitM55();
+    const back = run(run(state, MOVE, D100).state, { type: "event.choose", optionId: "retreat" }, D100).state;
+    expect(back.dive!.pos).toEqual(a.pos);
+    expect(visibleKnownTraps(back, data)).toEqual([{ depth: 1, lane: 0 }]);
+    const unknown = cloneState(back);
+    unknown.dive!.knownTraps = {};
+    expect(visibleKnownTraps(unknown, data)).toEqual([]);
+    expect(visibleCells(back, data)).toEqual(visibleCells(unknown, data));
+    // 背を向けると見えない。at で視点を渡せば、その視点で返す
+    expect(visibleKnownTraps(back, data, { floor: 1, pos: a.pos, facing: opposite(a.facing) })).toEqual([]);
+    expect(visibleKnownTraps(back, data, { floor: 1, pos: a.pos, facing: a.facing })).toEqual([{ depth: 1, lane: 0 }]);
+    // 罠の上に立てば depth 0
+    expect(visibleKnownTraps(back, data, { floor: 1, pos: a.target, facing: a.facing })[0]).toEqual({ depth: 0, lane: 0 });
+    // 別の階の印は返さない。dive が null なら []
+    const other = cloneState(back);
+    other.dive!.knownTraps = { "2": other.dive!.knownTraps["1"]! };
+    expect(visibleKnownTraps(other, data)).toEqual([]);
+    expect(visibleKnownTraps(newGame(1), data)).toEqual([]);
+  });
+
+  test("DG-21 察知・発動で乱数の消費は変わらない（鏡の rng）", () => {
+    const { state } = atPitM55();
+    // 察知（trapDetect 100）: 並び順で最初の慎重（ベルク c2）の d100 を 1 回だけ
+    const m1 = cloneRng(state.rng);
+    randInt(m1, 1, 100);
+    const r1 = run(state, MOVE, D100);
+    expect(r1.state.rng).toEqual(m1);
+    // 進む: pit の出目（全員）→ 遭遇の d100
+    const m2 = cloneRng(r1.state.rng);
+    for (let k = 0; k < state.party.length; k++) rollDice(m2, data.config.dungeon.trap.pitDice);
+    randInt(m2, 1, 100);
+    expect(run(r1.state, { type: "event.choose", optionId: "proceed" }, D100).state.rng).toEqual(m2);
+  });
+});
+
+describe("冒険のターン数（TW-12。M5.5）", () => {
+  test("TW-12 dungeon.move が成立した歩で adventureTurns が 1 増える。blocked・dungeon.turn・階段の昇降・罠の引き返し（retreat）・debug.warp では増えない", () => {
+    const D = dataWithRate(0, 0);
+    const s0 = enterD01(1);
+    expect(s0.adventureTurns).toBe(0);
+    const here = cellAt(floorOf(s0.dive!, D), s0.dive!.pos.x, s0.dive!.pos.y);
+    // 成立した歩
+    const open = FACINGS.find((d) => edgeOf(here, d) !== "wall")!;
+    const walk = run(placeAt(s0, s0.dive!.pos, open), MOVE, D);
+    expect(kinds(walk.events)[0]).toBe("moved");
+    expect(walk.state.adventureTurns).toBe(1);
+    // blocked
+    const wall = FACINGS.find((d) => edgeOf(here, d) === "wall")!;
+    const bl = run(placeAt(s0, s0.dive!.pos, wall), MOVE, D);
+    expect(kinds(bl.events)[0]).toBe("blocked");
+    expect(bl.state.adventureTurns).toBe(0);
+    // 旋回
+    for (const dir of ["left", "right", "around"] as const) {
+      expect(run(s0, { type: "dungeon.turn", dir }, D).state.adventureTurns).toBe(0);
+    }
+    // 階段: 入る歩は 1、descend は 0
+    const atDown = run(findSituation((c) => c.kind === "stairsDown").state, MOVE, D).state;
+    expect(atDown.adventureTurns).toBe(1);
+    const down = run(atDown, { type: "event.choose", optionId: "descend" }, D);
+    expect(kinds(down.events)).toContain("floorChanged");
+    expect(down.state.adventureTurns).toBe(1);
+    // 罠の引き返し: 入る歩は 1、retreat の moved は数えない
+    const d100 = dataWithRate(0, 0);
+    for (const p of d100.personalities) if (p.benefits.trapDetect > 0) p.benefits.trapDetect = 100;
+    const trap = run(findSituation((c) => c.kind === "trap" && c.trapId === "pit").state, MOVE, d100).state;
+    expect(trap.pendingChoice?.kind).toBe("trap");
+    expect(trap.adventureTurns).toBe(1);
+    const ret = run(trap, { type: "event.choose", optionId: "retreat" }, d100);
+    expect(kinds(ret.events)[0]).toBe("moved");
+    expect(ret.state.adventureTurns).toBe(1);
+    // debug.warp
+    const w = run(s0, { type: "debug.warp", to: "stairsDown" }, D);
+    expect(w.state.dive!.pos).not.toEqual(s0.dive!.pos);
+    expect(w.state.adventureTurns).toBe(0);
+  });
+
+  test("TW-12 遭遇した歩も 1（戦闘のラウンドはまだ数えない）。値は前の値に足す", () => {
+    const s = cloneState(enterD01(1));
+    s.adventureTurns = 41;
+    const here = cellAt(floorOf(s.dive!, data), s.dive!.pos.x, s.dive!.pos.y);
+    const open = FACINGS.find((d) => edgeOf(here, d) !== "wall")!;
+    const r = run(placeAt(s, s.dive!.pos, open), MOVE, dataEnc(1, 1));
+    expect(r.state.screen).toBe("battle");
+    expect(r.state.battle!.round).toBe(0);
+    expect(r.state.adventureTurns).toBe(42);
+  });
+});
