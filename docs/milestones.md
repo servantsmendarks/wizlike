@@ -112,10 +112,10 @@ M2〜M5 の実機確認の結果（`docs/decisions.md` の 2026-10-04 の行）�
 
 ## M7 装備・ドロップ・強化・宿の士気
 
-ユーザーの指示（2026-10-04）。仕様は `docs/spec/items.md`（IT。新設）と town.md（TW-04 / 05 / 06 / 10 / 15〜17）・events.md（EV-21 / 30 / 42）・character.md（CH-13 / 14 / 50 / 52 / 70〜77）・combat.md（CB-04 / 05 / 11 / 13 / 20〜23 / 30 / 31 / 51 / 52）・magic.md（MG-30 / 33）・dungeon.md（DG-21 / 31 / 32 / 41）・save.md（SV-04）。数値はすべて【仮】で config か data に置く。items.md §11 の未決（Q1〜Q10）はユーザーの判断を待ち、既定の案で進める。順番は A → B → C。A は先に単独で片付け、B は設計の提示を待ってから、C は B の実体化の上に乗せる。
+ユーザーの指示（2026-10-04）。仕様は `docs/spec/items.md`（IT。新設）と town.md（TW-04 / 05 / 06 / 10 / 15〜17）・events.md（EV-21 / 30 / 42）・character.md（CH-13 / 14 / 50 / 52 / 70〜77）・combat.md（CB-04 / 05 / 11 / 13 / 20〜23 / 30 / 31 / 51 / 52）・magic.md（MG-30 / 33）・dungeon.md（DG-21 / 31 / 32 / 41）・save.md（SV-04）。数値はすべて【仮】で config か data に置く。items.md §11 の未決（Q1〜Q14）はユーザーの判断を待ち、既定の案で進める。順番は A → B → C。A は先に単独で片付け、B は設計の提示を待ってから、C は B の実体化の上に乗せる。
 
 - A 宿屋の有料部屋（TW-04 / TW-15、EV-21 / EV-30、CH-50 / 52）: `innRanks` の拡張（sanOver / goodWeight / judgeBonus / gossip、相部屋の HP 全回復）、`GameState.morale`、SAN の超過回復と丸め、衝動の good の重み、制止判定の +1 と判定の箱の内訳、宿の主人の噂話（図鑑）。保存は schemaVersion 3（v2 → v3 で `morale` null を足す）。A は単独で公開され得る（master への push で Pages に出る）ので、B の実体の欄は次の schemaVersion 4 で足す（IT-80）。
-- B 装備とドロップ（IT-01〜66、IT-80）: 汎用ベース表・オプション表・ユニーク表・ドロップ表の読み込みと検証、アイテムの実体化（schemaVersion 3）、表示名、レベルとオプションと固有スキルの効果（実効の能力値・最大値、魔法攻撃力、AC の下限の撤廃）、宝箱とボスのドロップ（chestQuality）、店（流通レベルの購入・売却・ユニークの買い戻し・鑑定）、倉庫、図鑑（ユニーク）、キャンプ・酒場の装備と詳細と鑑定の画面。
+- B 装備とドロップ（IT-01〜66、IT-80）: 汎用ベース表・オプション表・ユニーク表・ドロップ表の読み込みと検証、アイテムの実体化（schemaVersion 4。IT-80）、表示名、レベルとオプションと固有スキルの効果（実効の能力値・最大値、魔法攻撃力、AC の下限の撤廃）、宝箱とボスのドロップ（chestQuality）、店（流通レベルの購入・売却・ユニークの買い戻し・鑑定）、倉庫、図鑑（ユニーク）、キャンプ・酒場の装備と詳細と鑑定の画面。
 - C 汎用装備の強化（TW-17）: 闇魔術の施設の強化（触媒・成功率・d100・大成功・料金）、成功率の表示と判定の箱。
 - 完了条件（実機。Android は adb の exec-out screencap -p / shell input tap・swipe と、URL を `adb shell am start -a android.intent.action.VIEW -d <URL> com.android.chrome` で開いて確かめる（Chrome の UI をタップしない）。iOS はユーザーが確かめる。結果は `docs/decisions.md` に記録する）:
   - 宿屋の 3 部屋の効果（馬小屋で HP が増えない・相部屋で HP 全回復・個室で SAN 110/100 の色と、迷宮での超過分の目減り、街に戻ると 100）。個室の後の潜行で噂話が語られ、その敵が鑑定済みで出る。制止判定の箱に「士気 +1」が出る。

@@ -33,7 +33,7 @@
 - TW-16 倉庫（M7。IT-64）: `town.storage {action: "deposit" | "withdraw", memberId, instanceId}`。街（`dive` が null）でだけ受け付ける。deposit は本人の inventory の品（装備中は外してから。未鑑定・呪われた品も可）を `warehouse` の末尾へ、withdraw は `warehouse` の品を本人の inventory の末尾へ移す。本人の life は問わない。判定順は wrong screen → bad action → no such member → item not in inventory（deposit）/ not in warehouse（withdraw）→ warehouse full（`config.items.warehouseSlots`）/ inventory full（CH-71）。語りは `town.storage.deposited`{name, item} / `town.storage.withdrawn`{name, item}。乱数は使わない。倉庫の品は全滅（TW-21 / TW-22）の対象外。
 - TW-17 汎用装備の強化（M7。闇魔術の施設。IT-70）: `town.upgrade {memberId, slot, catalysts}`。街（`dive` が null）でだけ受け付ける。
   - 対象: 本人の `equipment[slot]` の汎用装備（`uniqueId` が null）1 つ。ユニークは rejected `unique`。呪われていても可。本人の life は問わない。
-  - 触媒: 本人の inventory の汎用装備（装備品のベースで `uniqueId` が null）を 0〜`config.economy.upgradeMaxCatalysts`（3）個、重複なし、鑑定済み（未鑑定は Lv が分からないので不可）。呪われた品も可。成否に関わらず実体を消す。オプション・希少度は引き継がない。
+  - 触媒: 本人の inventory の汎用装備（装備品のベースで `uniqueId` が null）を 0〜`config.economy.upgradeMaxCatalysts`（3）個、重複なし、鑑定済み（未鑑定は Lv が分からないので不可。指示は「所持品の汎用装備」なので items.md §11 の Q13 で【仮】）。呪われた品も可。成否に関わらず実体を消す。オプション・希少度は引き継がない。
   - 成功率 p = min(100, floor(`upgradeRateBase`（10）+ Σ 触媒ごとに `upgradeRatePerCatalyst`（30）× `upgradeDecay`（0.66）^max(0, 対象Lv − 触媒Lv)))【仮】（floor は `floorRatio` と同じく +1e-9）。大成功の率 q = max(1, floor(p ÷ 10))。
   - 判定は d100（randInt(1, 100)）を 1 回。出目 r ≤ q なら大成功で Lv +2、r ≤ p なら成功で Lv +1、それ以外は失敗で Lv −1（0 で止まる）。オプション・希少度・呪いはそのまま。
   - 料金 = `config.economy.upgradeBase`（50）× (対象Lv + 1)【仮】。触媒なしでも取る。所持金から払う（銀行は使わない）。
