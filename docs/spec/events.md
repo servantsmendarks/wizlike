@@ -18,14 +18,14 @@
 ## 3. 制止判定
 
 - EV-20 行動者が決まり、行動者以外に `canStop: true`（慎重）の行動可能なメンバーがいて、イベントが `stopCheck: true` なら制止判定を行う。制止者は該当者のうち `iq` が最も高い者（同値なら並び順が前の者。M5）。
-- EV-21 `制止者の iq + 1d10 ≥ 行動者の agi + 1d10` なら制止成功（等しいときも成功）。1d10 は制止者 → 行動者の順に振り、判定の箱（UI-40）を 1 件 2 行（制止者の iq / 行動者の agi、基準は差）で出す（A3。M5）。
+- EV-21 `制止者の iq + 1d10 ≥ 行動者の agi + 1d10` なら制止成功（等しいときも成功）。1d10 は制止者 → 行動者の順に振り、判定の箱（UI-40）を 1 件 2 行（制止者の iq / 行動者の agi、基準は差）で出す（A3。M5）。M7: 制止者の側に、宿の士気の `judgeBonus`（TW-15）と制止者の固有スキル `judgeBonus`（IT-40）の大きい方を足す（同じ枠で重ねない。items.md §11 の Q6）。足すときは制止者の行の直後に内訳の行（`dice.bonus.morale`{value} または `dice.bonus.skill`{item, value}。base は値、dice は空、total は値）を置き、差は「制止者の合計 + 補正 − 行動者の合計」で比べる。衝動の点数（EV-11）には足さない（items.md §11 の Q5）。乱数の消費は変えない。
 - EV-22 成功: 衝動は不発。制止者と行動者の SAN +`config.events.stopSanGain`（3）【仮】（制止者 → 行動者の順）。`mixed` なら選択型として続行、`impulse` なら「何も起きない」。
 - EV-23 失敗: 衝動を実行する。結果が `good` なら行動者に `impulseBonus`（イベント定義。金額増や SAN 回復）を加える。結果が `bad` なら、制止者が生きていれば（life alive）、効果の後に「言わんこっちゃない」（`event.stop.told`）と制止者の SAN +`config.events.stopSanGain`（3。同じ値を使う。M5）。`neutral` はどちらも無い。
 - EV-24 制止者がいない場合（`stopCheck` が偽の場合も）はそのまま衝動を実行する（ボーナスや慰めはない）。`impulseBonus` と EV-23 の慰めは、制止者がいて失敗したときだけ（M5）。
 
 ## 4. 結果
 
-- EV-30 衝動の結果は `impulseOutcomes[]` から重み付きで 1 つ引く。各結果は `quality`（`good` / `bad` / `neutral`）と効果の列 `effects[]` を持つ。
+- EV-30 衝動の結果は `impulseOutcomes[]` から重み付きで 1 つ引く。M7: 宿の士気（TW-15）があれば、quality が `good` の各結果の重みに `goodWeight` を足してから引く（weightedIndex の 1 回は変わらない）。各結果は `quality`（`good` / `bad` / `neutral`）と効果の列 `effects[]` を持つ。
 - EV-31 選択型の選択肢は `choices[]`。各選択肢は効果の列と、表示のラベルの strings キー `labelKey`（規約 `event.<eventId>.choice.<choiceId>`。`label` はデータの説明として残し、表示には使わない。A9、M5）を持つ。選択肢の語り `text` を出してから効果を適用する。`requires: "impulse"` の結果は衝動でしか出ない（「良い結果は衝動でしか取れない」分岐。EV-41 の方針）。衝動の結果は常に衝動から出るので、処理では見ない印として扱う（M5）。
 - EV-32 効果の種類 `effects[].type`【仮】: `gold`（`dice`）、`item`（`itemId` または `table`）、`damage`（`dice`、対象 `actor` / `party`）、`san`（`value`、対象 `actor` / `party` / `others`）、`revealFloor`（この階のマップを全て探索済みにする）、`revealStairs`（この階の下り階段だけを探索済みにする）、`consumeItem`（`itemId`、対象 `actor` / `party`。`optional: true` なら持っていなくても続行、無ければ以降の効果は起きない）、`encounter`（`monster`, `count`）、`status`（`status`, 対象）、`message`（`key`）、`nothing`。`applyEffects` は迷宮の階が無い場面（酒場。TW-14）でも使い、そのとき `revealFloor` / `revealStairs` は使えない（データの検証で止める。M5.5）。
   - プロトタイプ（M5）で実装するのは `gold` / `damage` / `san` / `revealFloor` / `revealStairs` / `consumeItem` / `message` / `nothing`。`item` / `encounter` / `status` はデータにあれば読み込み時の検証で起動を止める。
@@ -47,7 +47,7 @@
 | 普通 normal | 0/0/0/0 | なし | なし。SAN 50% 未満で指示無視 10% | 傾向なし |
 
 - EV-41 「普通」が最強にならないことを守る原則: 普通には恩恵も耐性も付けない。イベントには「衝動でしか良い結果が出ない」分岐を一定数入れる。普通は追い詰められる（SAN 低下）と真っ先に崩れる。
-- EV-42 慎重の `trapDetect` は DG-21 と CB-52、`ambushAvoid` は CB-04、無鉄砲の `initiative` と `damage` は CB-11 と CB-22、強欲の `chestQuality` は CB-52、`hiddenTreasure` は【未定】（隠し財宝セルは未設計）。
+- EV-42 慎重の `trapDetect` は DG-21 と CB-52、`ambushAvoid` は CB-04、無鉄砲の `initiative` と `damage` は CB-11 と CB-22、強欲の `chestQuality` は CB-52（M7 で宝箱の品の希少度を上げる段数として効かせる。IT-31。行動可能な者の最大）、`hiddenTreasure` は【未定】（隠し財宝セルは未設計）。M7 のオプション `trapDetect`（IT-34）は性格の `trapDetect` に足す。
 - EV-43 仲間の死亡による SAN 減少（CH-51）は「仲間の負傷」の耐性の対象に含める。
 
 ## 6. プロトタイプのイベント

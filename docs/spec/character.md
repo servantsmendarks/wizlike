@@ -16,6 +16,8 @@
 - CH-10 能力値は 力 `str`、知恵 `iq`、信仰心 `pie`、生命力 `vit`、素早さ `agi`、運 `luk` の 6 つ。上限 18。
 - CH-11 作成時は種族基礎値（`data/races.json`）に、ボーナスポイント（`7 + 1d4`、5% で `+10`【仮】）を任意に配分する。振り直しは何度でも可。ボーナスは rollDie(`bonusDie`) → chance(`bonusBigChance`) の順で `bonusBase + 出目（当たれば + bonusBig）`。配分は 1 点ずつで、各能力値は基礎値以上 18 以下。残りが 0 になるまで職業へ進めない。振り直すと能力値は基礎値に戻る（M5.5）。
 - CH-12 善悪（アライメント）は存在しない。
+- CH-13 実効の能力値（M7）: 装備中の品のオプションの能力値（IT-34）を足した値。戦闘・判定・成長・寺院など、能力値を読むルールはすべて実効の値を使う。上限 18 は作成（CH-11）と職業の条件（CH-21）の素の能力値にだけ掛け、実効の値は 18 を超えてよく、1 未満にはしない。作成・職業の条件・`stats` の保存は素の値。計算は IT-35 の 1 か所。
+- CH-14 実効の最大値（M7）: `hpMax` / `mpMax` / `sanMax` に装備中のオプション（IT-34 の hpMax / mpMax / sanMax）を足した値（1 未満にはしない。sanMax は 0 以上）。保存するのは素の値で、ルールと表示は実効の値を使う。装備の付け外しで実効の最大値が下がったら、現在値をその値で止める（増えたときは現在値を変えない）。
 
 ## 3. 種族と職業
 
@@ -47,9 +49,9 @@
 
 ## 6. SAN 値
 
-- CH-50 各キャラクターは `san`（現在値）と `sanMax`（100【仮】）を持つ。
+- CH-50 各キャラクターは `san`（現在値）と `sanMax`（100【仮】）を持つ。SAN は 0..sanMax に収める。M7: 宿の士気（TW-15）の `sanOver` の間だけ、sanMax を超えてよい（上限は実効の sanMax（CH-14）+ sanOver。街に入ると sanMax に丸める）。
 - CH-51 減少の契機と量（`config.san`）【仮】: 階を降りる −5（その潜行で初めて到達した階に降りたときだけ。上って降り直しても減らず、再入場で数え直す。DG-14）、未鑑定の敵グループとの遭遇 −2/グループ、仲間の死亡 −10（本人以外の生存者全員）、敵の SAN 攻撃（CB-31）、イベント。罠の発動時は、生存メンバー（`life` が `alive`）全員の SAN が `config.san.trap`（3）【仮】減る。慎重の `trapLossMul`（CH-54）が効く。罠を察知して回避した場合（DG-21 で「引き返す」を選んだ場合）は減らない。察知しても「進む」を選べば罠は発動し、SAN も減る。
-- CH-52 回復: 街に戻ると全回復【仮】（TW-02）。迷宮内では性格の恩恵（EV-22、EV-23、強欲の treasureGain）とイベントだけ。強欲の treasureGain の「財宝入手」は迷宮で金を得た 1 回（戦闘の金 > 0、宝箱の金 > 0、イベントの gold 効果 > 0。M5）で、そのたびに life が alive かつ SAN > 0 の強欲の各人が +treasureGain。金のメッセージの直後に増える。
+- CH-52 回復: 街に戻ると全回復【仮】（TW-02）。迷宮内では性格の恩恵（EV-22、EV-23、強欲の treasureGain）とイベントだけ。強欲の treasureGain の「財宝入手」は迷宮で金を得た 1 回（戦闘の金 > 0、宝箱の金 > 0、イベントの gold 効果 > 0。M5）で、そのたびに life が alive かつ SAN > 0 の強欲の各人が +treasureGain。金のメッセージの直後に増える。M7: どの回復も sanMax で止まり、SAN が sanMax 以上（士気の超過中）なら増えない（超過分は回復で戻らない。TW-15）。
 - CH-53 閾値（割合は `sanMax` 比）【仮】:
   - 50% 未満「不安」（`san < sanMax × config.san.uneasyRatio`）: 戦闘の各行動が 10% の確率で性格傾向の行動に置き換わる（普通は「防御」または対象ランダムの攻撃）。確率は性格の `san.disobeyBelowHalf` が正ならその値（普通 10）、でなければ `config.san.uneasyChance`（10）【仮】。「防御」または対象ランダムの攻撃で防御を選ぶ確率は `config.san.randomDefendChance`（50）【仮】。中身は CB-45。
   - 25% 未満「錯乱」（`san < sanMax × config.san.confusedRatio`）: 戦闘の各行動が 50% の確率でランダム（防御または対象ランダムの攻撃。CB-45）になる。普通も衝動判定に乗る（EV-14）。
@@ -68,17 +70,19 @@
 
 ## 8. 装備と所持
 
+M7 で、装備品の分類（汎用 / ユニーク）・実体の形・レベル・希少度・オプション・呪い・ドロップ・売買は `docs/spec/items.md`（IT）を正にする。この節の CH-72〜77 は、実体の欄（IT-10）と表示名（IT-11 / 12）を読み替えて今の手順のまま使う。
+
 - CH-70 装備スロットは 6: 武器 `weapon`、防具 `armor`、盾 `shield`、兜 `helm`、小手 `gauntlet`、装飾 `accessory`。
 - CH-71 所持枠は 8（装備中を含む）【仮】。`Character.inventory` は装備中の品を含まない。使用枠 = 装備数 + inventory の数。
-- CH-72 未鑑定アイテムは `unidentifiedName` で表示され、装備できない（CH-76）。鑑定は司教（無料。CH-77）か店（有料）。
-- CH-73 呪われたアイテムは装備すると外せない。寺院の解呪（TW-07）で外せる。呪いはアイテムの `cursed` で、未鑑定のうちは見えない（表示で呪いと示さないだけで、外せないことは鑑定と関係ない。CH-76）。
-- CH-74 後衛が攻撃できるのは `ranged: true` の武器を装備しているときだけ（CB-13）。
-- CH-75 職業ごとの装備制限は `items[].classes`（空なら全職業可）。
+- CH-72 未鑑定アイテムは `unidentifiedName` で表示され、装備できない（CH-76）。鑑定は司教（無料。CH-77）か店（有料）。M7: 表示は IT-12、店の鑑定は IT-65。「装備できない」は items.md §11 の Q2【衝突】で代替案（未鑑定のまま装備できる）を諮っている。
+- CH-73 呪われたアイテムは装備すると外せない。寺院の解呪（TW-07）で外せる。呪いはアイテムの `cursed` で、未鑑定のうちは見えない（表示で呪いと示さないだけで、外せないことは鑑定と関係ない。CH-76）。M7: 呪いは実体の `cursed`（IT-10 / IT-32。ドロップの判定で付き、負のオプションを 1 つ持つ）で、`items[].cursed` は廃止する。
+- CH-74 後衛が攻撃できるのは `ranged: true` の武器を装備しているときだけ（CB-13）。M7: 固有スキル `reachFromBack`（IT-40）の品も同じ扱い。
+- CH-75 職業ごとの装備制限は `items[].classes`（空なら全職業可）。M7: 装備のベース `equipment-bases.json` の `classes`（ユニークはベースのものを引き継ぐ。IT-03）。
 - CH-76 装備の付け外し（M4.5）: `party.equip {memberId, instanceId}` / `party.unequip {memberId, slot}`。受け付けは街と、迷宮の戦闘外かつ保留なし。本人は行動可能（CH-44）であること。
   - `party.equip` の判定順: wrong screen → no such member → cannot act → item not in inventory（本人の inventory に無い。装備中の品も含まない）→ not equipment（`items[].type` が装備スロットでない）→ not identified（CH-72）→ class cannot equip（CH-75）→ slot cursed（その枠の今の品が `cursed`）。受け付けたら、inventory の新しい品の位置に旧品を入れ（旧品が無ければ取り除く）、枠に新しい品を入れる → `camp.equipped{name, item}`。新しい品が呪われていれば続けて `camp.cursed{item}`。所持枠（CH-71）と潜行台帳は変わらない。
   - `party.unequip` の判定順: wrong screen → no such member → cannot act → bad slot → slot empty → cursed（`items[].cursed` の品は鑑定と関係なく外せない）。受け付けたら枠を空にして inventory の末尾に入れる → `camp.unequipped{name, item}`。
   - どちらも乱数は使わない。
-- CH-77 鑑定（M4.5）: `party.identify {memberId, instanceId}`。鑑定する者は `classes[].abilities` に `identify` を持つ職業（司教）。対象はパーティの誰かの inventory にある未鑑定品（装備中は対象外）。受け付けは街と、迷宮の戦闘外かつ保留なし。判定順: wrong screen → no such member → cannot identify → cannot act → no such item → already identified。成功は確定・無料・乱数なしで、`identified` を真にして `camp.identified{name, old, item}`、呪われていれば続けて `camp.identifiedCursed{item}`。
+- CH-77 鑑定（M4.5）: `party.identify {memberId, instanceId}`。鑑定する者は `classes[].abilities` に `identify` を持つ職業（司教）。対象はパーティの誰かの inventory にある未鑑定品（装備中は対象外）。受け付けは街と、迷宮の戦闘外かつ保留なし。判定順: wrong screen → no such member → cannot identify → cannot act → no such item → already identified。成功は確定・無料・乱数なしで、`identified` を真にして `camp.identified{name, old, item}`、呪われていれば続けて `camp.identifiedCursed{item}`。M7: ユニークなら図鑑（IT-66）に記録する。`item` は IT-11 の表示名。
 
 ## 9. データ
 
