@@ -275,7 +275,7 @@ describe("書き出し・読み込み（SV-30〜33）", () => {
     }
     // importConfirm 以外のページの importYes は何もしない
     expect(titleStep(LIST, { kind: "importYes" })).toEqual({ kind: "none" });
-    expect(titleNotice(page, list, SIZE, S)).toBe(`古いデータです。進行が巻き戻ります。\n${LEADER}：2回目の記録（今は3回目）`);
+    expect(titleNotice(page, list, SIZE, S)).toBe(`古いデータだ。進行が巻き戻る。\n${LEADER}：2回目の記録（今は3回目）`);
   });
 
   test("SV-30 exportFileName: wizlike-{先頭 8 字}-{YYYYMMDD}-{HHmm}.json（ローカル時刻、0 詰め）", () => {

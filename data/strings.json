@@ -341,7 +341,7 @@
   "battle.cmd.flee": "逃げる",
   "battle.cmd.auto": "オート",
   "battle.cmd.autoStop": "オート解除",
-  "battle.autoStopping": "解除します……",
+  "battle.autoStopping": "解除する……",
   "battle.autoOn": "オート戦闘中",
   "battle.turn": "第{n}ターン",
   "battle.prompt.party": "どうする？",
@@ -455,10 +455,10 @@
   "san.confused": "{name}は錯乱した。",
   "san.broken": "{name}は動けなくなった。",
 
-  "save.failed": "保存できません。ゲームは続けられますが、進行は残りません。",
-  "save.failedBanner": "保存できません（進行は残りません）",
-  "save.importOld": "古いデータです。進行が巻き戻ります。",
-  "save.importBroken": "このファイルは読み込めません。",
+  "save.failed": "保存できない。ゲームは続けられるが、進行は残らない。",
+  "save.failedBanner": "保存できない（進行は残らない）",
+  "save.importOld": "古いデータだ。進行が巻き戻る。",
+  "save.importBroken": "このファイルは読み込めない。",
 
   "debug.fontSample": "あいうえお アイウエオ 迷宮の奥へ ABCxyz 0123「！？」…・",
   "debug.hpOne": "（デバッグ）全員の HP を 1 にした。",

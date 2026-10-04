@@ -98,6 +98,15 @@ describe("data: 実データ", () => {
     expect(rollDice(createRng(1), "0").total).toBe(0);
     expect(rollDice(createRng(1), "1").total).toBe(1);
   });
+
+  test("data: strings.json の地の文は常体（です・ます・ません・ました・でした・ください が無い。「」の中の台詞は除く。§3-10 の GM の語り口）", () => {
+    // ます・ません・ました は漢字の直後を除く（「目を覚ました」の 覚ます は常体）
+    const polite = /です|でした|ください|(?<![一-鿿])(?:ます|ません|ました)/;
+    const bad = Object.entries(strings as Record<string, string>)
+      .filter(([, v]) => polite.test(v.replace(/「[^」]*」/g, "")))
+      .map(([k]) => k);
+    expect(bad).toEqual([]);
+  });
 });
 
 describe("data: config.json", () => {
