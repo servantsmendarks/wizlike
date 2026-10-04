@@ -100,7 +100,7 @@ import { createSaveBanner } from "./views/save-banner";
 import { createUpdateNotice } from "./views/update-notice";
 import { createTitleScreen, titleEntries, titleHint, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
 import { formatWipeSummary } from "./views/wipe";
-import { townEntries, townHeader, townPageIntro, townParent, type TownEntry, type TownPage } from "./views/town";
+import { townEntries, townHeader, townPageIntro, townParent, townRepair, type TownEntry, type TownPage } from "./views/town";
 
 export type Route = "title" | "creation" | "custom" | "town" | "dungeon" | "battle";
 export type Overlay = null | "map" | "debug" | "camp" | "wipe" | "history" | "settings";
@@ -489,6 +489,27 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
             // TW-05: 買った後も持たせる者の一覧にとどまる（再生の最後の sync で townMenu を取り直す）
             void run({ type: "town.shop", action: { kind: "buy", memberId: e.memberId, itemId: e.itemId } });
             return;
+          case "pick":
+            goTownPage(e.to);
+            return;
+          case "empty":
+            return;
+          // M7: 売る・買い戻す・鑑定・預ける・引き出すの後も同じページにとどまる（品が消えたページは sync の townRepair で 1 つ上へ）
+          case "sell":
+            void run({ type: "town.shop", action: { kind: "sell", memberId: e.memberId, instanceId: e.instanceId } });
+            return;
+          case "buyback":
+            void run({ type: "town.shop", action: { kind: "buyback", memberId: e.memberId, instanceId: e.instanceId } });
+            return;
+          case "identify":
+            void run({ type: "town.shop", action: { kind: "identify", memberId: e.memberId, instanceId: e.instanceId } });
+            return;
+          case "deposit":
+            void run({ type: "town.storage", action: "deposit", memberId: e.memberId, instanceId: e.instanceId });
+            return;
+          case "withdraw":
+            void run({ type: "town.storage", action: "withdraw", memberId: e.memberId, instanceId: e.instanceId });
+            return;
         }
       }),
   });
@@ -540,6 +561,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
         c.setMode("none");
         return;
       }
+      townPage = townRepair(townPage, menu);
       const ents = townEntries(townPage, menu, strings);
       const items = ents.map(townItem);
       if (townPage === "menu") {

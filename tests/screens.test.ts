@@ -419,6 +419,23 @@ describe("入力と Command", () => {
     expect(app).toMatch(/const openCamp = \(host: CampHost, open\?: CampOpen\): void =>/);
   });
 
+  test("UI-52/TW-05/TW-16（M7）店の売る・買い戻す・鑑定と倉庫の行は town.shop / town.storage を送り、ページを変えない。sync は townRepair で消えたページを 1 つ上へ直す（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const body = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(body).toMatch(/case "pick":\s*goTownPage\(e\.to\);\s*return;/);
+    for (const kind of ["sell", "buyback", "identify"]) {
+      expect(body).toMatch(
+        new RegExp(`case "${kind}":\\s*void run\\(\\{ type: "town\\.shop", action: \\{ kind: "${kind}", memberId: e\\.memberId, instanceId: e\\.instanceId \\} \\}\\);\\s*return;`),
+      );
+    }
+    for (const action of ["deposit", "withdraw"]) {
+      expect(body).toMatch(
+        new RegExp(`case "${action}":\\s*void run\\(\\{ type: "town\\.storage", action: "${action}", memberId: e\\.memberId, instanceId: e\\.instanceId \\}\\);\\s*return;`),
+      );
+    }
+    expect(app).toMatch(/townPage = townRepair\(townPage, menu\);\s*const ents = townEntries\(townPage, menu, strings\);/);
+  });
+
   test("UI-54 戦闘中はヘッダーに 第{round+1}ターン を出す。遭遇の再生（onScreen battle）は 1、sync の戦闘は battleMenu.round + 1、battleEnd の後と迷宮・街の sync では隠す。lowerInput はターンを消さない（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const onScreen = /const onScreen = \(to: Screen\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
