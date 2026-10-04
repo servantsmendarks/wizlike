@@ -59,6 +59,15 @@ describe("SV-42 manifest", () => {
     expect(m.short_name.length).toBeGreaterThan(0);
   });
 
+  test("SV-42 アプリ名: manifest の name・short_name、index.html の title と apple-mobile-web-app-title、タイトルの題字（title.heading）がどれも「卓上迷宮」", () => {
+    const name = "卓上迷宮";
+    expect(m.name).toBe(name);
+    expect(m.short_name).toBe(name);
+    expect(indexHtml).toContain(`<title>${name}</title>`);
+    expect(indexHtml).toContain(`<meta name="apple-mobile-web-app-title" content="${name}">`);
+    expect((strings as Record<string, string>)["title.heading"]).toBe(name);
+  });
+
   test("SV-42 manifest: icons は 192・512（any）と 512（maskable）で、src のファイルが public にある", () => {
     expect(m.icons.map((i) => [i.sizes, i.purpose, i.type])).toEqual([
       ["192x192", "any", "image/png"],

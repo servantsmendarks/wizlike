@@ -7,7 +7,7 @@
   "title.import": "読み込み",
   "title.maxGames": "これ以上は始められない。どれかを削除する。",
   "title.storageHint": "ホーム画面に追加すると保存が消えにくい（方法は設定）。心配なら記録を書き出しておく。",
-  "title.heading": "卓上の迷宮（仮題）",
+  "title.heading": "卓上迷宮",
   "title.settings": "設定",
   "title.row": "{leader}　生存{alive}/{size}　踏破{cleared}",
   "title.rowDate": "{y}/{mo}/{d} {hh}:{mm}",

@@ -1,7 +1,7 @@
 {
   "id": "./",
-  "name": "卓上の迷宮（仮題）",
-  "short_name": "卓上の迷宮",
+  "name": "卓上迷宮",
+  "short_name": "卓上迷宮",
   "lang": "ja",
   "start_url": "./",
   "scope": "./",
