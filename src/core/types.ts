@@ -272,10 +272,17 @@ export type BattleState = {
 /** CB-05 / F6: 図鑑の 1 種類分。初めて遭遇したときにキーを作る */
 export type BestiaryEntry = { kills: number; identified: boolean };
 
+/**
+ * TW-15（M7）: 宿の士気。士気の立つランク（sanOver / goodWeight / judgeBonus / gossip のどれかが 0 / false でない）に泊まると立ち、
+ * 次に街に入る（arriveTown）まで有効。効果はいつも config.town.innRanks の rankId の行から読む（state.ts moraleOf）
+ */
+export type Morale = { rankId: string };
+
 // ===================== GameState =====================
 // M1 で確定した欄に、M2 で dive と pendingChoice、M3 で battle と bestiary、M4 で townVisit を足した。
 // M4 のこの形を保存レコードの schemaVersion 1 として確定する（以後の変更は src/save/migrate.ts の移行を伴う）。
 // M5.5 で adventureTurns・tavernEventMark・dive.knownTraps を足して schemaVersion 2 にした（migrateV1toV2）。
+// M7 の A で morale を足して schemaVersion 3 にした（migrateV2toV3）。
 // schemaVersion、turn、updatedAt、gameId は保存レコード側の欄（SV-21）で、ここには入れない。
 
 export type GameState = {
@@ -308,6 +315,8 @@ export type GameState = {
   adventureTurns: number;
   /** TW-14（M5.5）: 前に酒場のイベントが起きた時点の adventureTurns。game.new で 0 */
   tavernEventMark: number;
+  /** TW-15（M7）: 宿の士気。title では null。街に入る（arriveTown）と null に戻す */
+  morale: Morale | null;
 };
 
 // ===================== コマンド（CLAUDE.md §5） =====================
@@ -476,7 +485,8 @@ export type PenaltyResult = {
 
 // ===================== 表示層向けの問い合わせの結果（rules/town.ts townMenu、rules/items.ts fieldItemMenu。state には入れない） =====================
 
-export type TownMenuInnRank = { rank: number; id: string; name: string; cost: number; affordable: boolean };
+/** morale はそのランクに泊まると士気が立つか（TW-15。宿の一覧の印） */
+export type TownMenuInnRank = { rank: number; id: string; name: string; cost: number; affordable: boolean; morale: boolean };
 export type TownMenuTempleRow = { memberId: string; name: string; cost: number; affordable: boolean };
 export type TownMenuShopItem = { itemId: string; name: string; price: number; affordable: boolean };
 export type TownMenuShopMember = { memberId: string; name: string; slotsFree: number };
@@ -484,6 +494,8 @@ export type TownMenuShopMember = { memberId: string; name: string; slotsFree: nu
 export type TownMenu = {
   gold: number;
   inn: TownMenuInnRank[];
+  /** TW-15（M7）: 今の士気（立てたランクの id と名前）。無ければ null。rankId がデータに無ければ null */
+  morale: { rankId: string; name: string } | null;
   temple: {
     /** life dead の者（並び順）。cost = level × templeCostPerLevel */
     resurrect: TownMenuTempleRow[];

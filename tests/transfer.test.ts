@@ -26,9 +26,10 @@ function fileText(over: Record<string, unknown> = {}, state: unknown = json(newG
   return JSON.stringify({ ...base, ...over });
 }
 
-/** v2 の state から M5.5 の欄を消した v1 の形（save.test.ts の toV1 と同じ） */
+/** 今の state から M5.5 の欄と M7 の morale を消した v1 の形（save.test.ts の toV1 と同じ） */
 function toV1(s: GameState): Record<string, unknown> {
   const v1 = json(s) as unknown as Record<string, unknown>;
+  delete v1["morale"]; // M7（v3）の欄
   delete v1["adventureTurns"];
   delete v1["tavernEventMark"];
   const dive = v1["dive"] as Record<string, unknown> | null;
@@ -131,8 +132,8 @@ describe("SV-33 parseExportFile", () => {
     expect(parseExportFile(fileText({ checksum: sum }, s), SCHEMA).ok).toBe(true);
   });
 
-  test("SV-33/SV-04 parseExportFile: v1 の state（adventureTurns 無し）のファイルは v2 へ移行して通り、形の検査に落ちる state（party 空）は broken", () => {
-    expect(SCHEMA).toBe(2);
+  test("SV-33/SV-04 parseExportFile: v1 の state（adventureTurns 無し）のファイルは v3 へ移行して通り、形の検査に落ちる state（party 空）は broken", () => {
+    expect(SCHEMA).toBe(3);
     const v1 = toV1(newGame(1));
     const r = parseExportFile(fileText({ schemaVersion: 1 }, v1), SCHEMA);
     expect(r.ok).toBe(true);
@@ -140,6 +141,7 @@ describe("SV-33 parseExportFile", () => {
     expect(r.fromVersion).toBe(1);
     expect(r.state.adventureTurns).toBe(0);
     expect(r.state.tavernEventMark).toBe(0);
+    expect(r.state.morale).toBeNull();
     const bad = { ...json(newGame(1)), party: [] };
     expect(parseExportFile(fileText({}, bad), SCHEMA)).toEqual({ ok: false, reason: "broken" });
     // v1 として出しても v2 の欄が無いだけでは broken にならないが、party 空は v1 でも broken

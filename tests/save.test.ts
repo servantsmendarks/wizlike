@@ -196,9 +196,10 @@ describe("SV-04 migrate", () => {
 });
 
 describe("SV-04 v1 → v2 の移行（M5.5）", () => {
-  /** v2 の state から M5.5 の欄（adventureTurns・tavernEventMark・dive.knownTraps）を消した v1 の形 */
+  /** 今の state から M5.5 の欄（adventureTurns・tavernEventMark・dive.knownTraps）と M7 の morale を消した v1 の形 */
   function toV1(s: GameState): Record<string, unknown> {
     const v1 = json(s) as unknown as Record<string, unknown>;
+    delete v1["morale"];
     delete v1["adventureTurns"];
     delete v1["tavernEventMark"];
     const dive = v1["dive"] as Record<string, unknown> | null;
@@ -213,7 +214,7 @@ describe("SV-04 v1 → v2 の移行（M5.5）", () => {
   }
 
   test("SV-04 v1 の保存（adventureTurns・tavernEventMark・knownTraps が無い）は v2 へ移行して 0 / 0 / {} が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(2);
+    expect(SCHEMA).toBe(3);
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -281,6 +282,81 @@ describe("SV-04 v1 → v2 の移行（M5.5）", () => {
     mem2.raw("g2", { ...buildRecord("g2", 2, 999, 1, dv), state: toV1(dv) });
     const r2 = await service(mem2).load("g2");
     expect(r2.ok && r2.state.dive!.knownTraps).toEqual({});
+  });
+});
+
+describe("SV-04 v2 → v3 の移行（M7 の A）", () => {
+  /** 今の state から M7 の morale を消した v2 の形 */
+  function toV2(s: GameState): Record<string, unknown> {
+    const v2 = json(s) as unknown as Record<string, unknown>;
+    delete v2["morale"];
+    return v2;
+  }
+  function eventState(): GameState {
+    const d = loadFreshData();
+    d.config.events.impulseThreshold = 1000;
+    for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    return execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state;
+  }
+
+  test("SV-04/TW-15 v2 の保存（morale が無い）は v3 へ移行して morale null が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
+    expect(SCHEMA).toBe(3);
+    const cases: Array<[string, GameState]> = [
+      ["town", newGame(1)],
+      ["dungeon", dived(1)],
+      ["battle", withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }])],
+      ["event", eventState()],
+    ];
+    for (const [name, s] of cases) {
+      const v2 = toV2(s);
+      const before = json(v2);
+      expect(isGameStateShape(v2), name).toBe(false); // v2 のままでは v3 の形の検査を通らない
+      const r = migrateState(v2, 2, SCHEMA);
+      expect(r.ok, name).toBe(true);
+      if (!r.ok) continue;
+      expect(r.fromVersion).toBe(2);
+      expect(r.state, name).toEqual({ ...json(s), morale: null });
+      expect(v2, name).toEqual(before); // 引数は書き換えない
+    }
+    // MIGRATIONS[1] 単体: オブジェクトでなければそのまま
+    expect(MIGRATIONS[1]!("x")).toBe("x");
+    expect(MIGRATIONS[1]!(null)).toBe(null);
+  });
+
+  test("SV-04/TW-15 形の検査: morale が無い・文字列・数・配列・rankId の無いオブジェクト・rankId が文字列でない v3 は broken。null と { rankId: 文字列 } は通る", () => {
+    const town = json(newGame(1));
+    const broken: Array<[string, unknown]> = [
+      ["morale missing", { ...town, morale: undefined }],
+      ["morale string", { ...town, morale: "good" }],
+      ["morale number", { ...town, morale: 1 }],
+      ["morale array", { ...town, morale: [] }],
+      ["morale no rankId", { ...town, morale: {} }],
+      ["morale rankId number", { ...town, morale: { rankId: 2 } }],
+    ];
+    for (const [name, s] of broken) {
+      expect(isGameStateShape(s), name).toBe(false);
+      expect(migrateState(s, SCHEMA, SCHEMA), name).toEqual({ ok: false, reason: "broken" });
+    }
+    expect(isGameStateShape({ ...town, morale: null })).toBe(true);
+    expect(isGameStateShape({ ...town, morale: { rankId: "good" } })).toBe(true);
+    // 個室に泊まった state（morale あり）はそのまま通る
+    const stayed = execute(newGame(1), { type: "town.inn", rank: 2 }, data).state;
+    expect(stayed.morale).toEqual({ rankId: "good" });
+    expect(migrateState(json(stayed), SCHEMA, SCHEMA)).toEqual({ ok: true, state: json(stayed), fromVersion: SCHEMA });
+  });
+
+  test("SV-04/SV-50 v2 のレコードを保存先（メモリ）に置くと、一覧で ok、続きからで読めて morale null で再開できる", async () => {
+    const mem = createMemoryBackend();
+    const s = newGame(1);
+    mem.raw("g1", { ...buildRecord("g1", 4, 999, 2, s), state: toV2(s) });
+    const svc = service(mem);
+    const list = await svc.list();
+    expect(list.ok && list.entries.map((e) => [e.gameId, e.status])).toEqual([["g1", "ok"]]);
+    const r = await svc.load("g1");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.screen).toBe("town");
+    expect(r.state.morale).toBeNull();
   });
 });
 
@@ -811,9 +887,10 @@ describe("SV-20 db.ts", () => {
 });
 
 describe("SV-30〜33 書き出しと読み込み（SaveService）", () => {
-  /** v2 の state から M5.5 の欄を消した v1 の形 */
+  /** 今の state から M5.5 の欄と M7 の morale を消した v1 の形 */
   function toV1(s: GameState): Record<string, unknown> {
     const v1 = json(s) as unknown as Record<string, unknown>;
+    delete v1["morale"];
     delete v1["adventureTurns"];
     delete v1["tavernEventMark"];
     const dive = v1["dive"] as Record<string, unknown> | null;

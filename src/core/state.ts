@@ -1,6 +1,17 @@
 // GameState の複製、data の id 引き、アイテム実体の作成と削除、RuleContext の作成。
 // ルール関数すべてが使う補助。見つからない id は Error（起動時に検証済みなので、来たらバグ）。
-import type { ClassDef, DungeonDef, EventDef, GameData, Item, Monster, Personality, PersonalityId, Spell } from "./data/index";
+import type {
+  ClassDef,
+  DungeonDef,
+  EventDef,
+  GameData,
+  InnRank,
+  Item,
+  Monster,
+  Personality,
+  PersonalityId,
+  Spell,
+} from "./data/index";
 import { EQUIP_SLOTS } from "./data/index";
 import type { Character, GameState, RuleContext } from "./types";
 
@@ -56,6 +67,18 @@ export function personalityOf(data: GameData, id: PersonalityId | null): Persona
   const p = data.personalities.find((x) => x.id === id);
   if (p === undefined) throw new Error(`unknown personality id: ${id}`);
   return p;
+}
+
+/** TW-15: そのランクに泊まると士気が立つか（sanOver / goodWeight / judgeBonus / gossip のどれかが 0 / false でない） */
+export function raisesMorale(r: InnRank): boolean {
+  return r.sanOver > 0 || r.goodWeight > 0 || r.judgeBonus > 0 || r.gossip;
+}
+
+/** TW-15: 今の士気のランクの行。士気が無い、または rankId がデータに無ければ null（効果なし。検証はしない） */
+export function moraleOf(state: GameState, data: GameData): InnRank | null {
+  if (state.morale === null) return null;
+  const id = state.morale.rankId;
+  return data.config.town.innRanks.find((r) => r.id === id) ?? null;
 }
 
 export function memberById(state: GameState, id: string): Character | null {

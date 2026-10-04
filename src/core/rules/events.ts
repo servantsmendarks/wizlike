@@ -4,8 +4,8 @@
 import type { EventDef, EventEffect, GameData, LureWeights } from "../data/index";
 import { LURE_TAGS } from "../data/index";
 import { randInt, rollDice, rollDie, weightedIndex } from "../rng";
-import { destroyItemInstance, eventOf, itemDisplayName, itemOf, personalityOf } from "../state";
-import type { Character, Floor, GameState, PendingChoice, RuleContext } from "../types";
+import { destroyItemInstance, eventOf, itemDisplayName, itemOf, moraleOf, personalityOf } from "../state";
+import type { Character, DiceRow, Floor, GameState, PendingChoice, RuleContext } from "../types";
 import { canAct } from "./combat-calc";
 import { offerEventChoice } from "./choices";
 import { idx } from "./dungeon-gen";
@@ -70,8 +70,21 @@ export function pickStopper(state: GameState, data: GameData, def: EventDef, act
 }
 
 /**
- * EV-21 / A3: 制止者の iq + 1d10 ≥ 行動者の agi + 1d10 で成功（等しいとき成功）。乱数は制止者 → 行動者の順。
- * 判定の箱（UI-40）を 1 件 2 行で出す。拍は出さない（CB-55 は戦闘だけ）
+ * EV-21（M7）: 制止者の側の補正の内訳の行（base = 値、dice 空、total = 値）。0 の補正は行を出さない。
+ * 宿の士気の judgeBonus（TW-15。dice.bonus.morale）と、制止者の固有スキル judgeBonus（IT-40。B で dice.bonus.skill を足す）は
+ * 足し合わせる（items.md §11 の Q6。士気 → スキルの順に行を並べる）。補正の合計はこの行の total の和
+ */
+export function restrainBonusRows(state: GameState, data: GameData, _stopper: Character): DiceRow[] {
+  const rows: DiceRow[] = [];
+  const morale = moraleOf(state, data)?.judgeBonus ?? 0;
+  if (morale > 0) rows.push({ label: { key: "dice.bonus.morale", params: { value: morale } }, base: morale, dice: [], total: morale });
+  return rows;
+}
+
+/**
+ * EV-21 / A3: 制止者の iq + 1d10（+ 補正）≥ 行動者の agi + 1d10 で成功（等しいとき成功）。乱数は制止者 → 行動者の順。
+ * 判定の箱（UI-40）を 1 件出す。行は [制止者, 補正の内訳（restrainBonusRows。無ければ無し）, 行動者]。差 = 制止者の合計 + 補正 − 行動者の合計。
+ * 拍は出さない（CB-55 は戦闘だけ）
  */
 function rollRestrain(ctx: RuleContext, stopper: Character, actor: Character): boolean {
   const rng = ctx.state.rng;
@@ -79,15 +92,19 @@ function rollRestrain(ctx: RuleContext, stopper: Character, actor: Character): b
   const rA = rollDie(rng, 10);
   const tS = stopper.stats.iq + rS;
   const tA = actor.stats.agi + rA;
-  const ok = tS >= tA;
+  const bonusRows = restrainBonusRows(ctx.state, ctx.data, stopper);
+  const bonus = bonusRows.reduce((a, r) => a + r.total, 0);
+  const diff = tS + bonus - tA;
+  const ok = diff >= 0;
   ctx.events.push({
     kind: "dice",
     label: { key: "dice.restrain" },
     rows: [
       { label: { key: "dice.restrain.stopper", params: { name: stopper.name } }, base: stopper.stats.iq, dice: [rS], total: tS },
+      ...bonusRows,
       { label: { key: "dice.restrain.actor", params: { name: actor.name } }, base: actor.stats.agi, dice: [rA], total: tA },
     ],
-    rule: { key: "dice.restrain.rule", params: { diff: tS - tA } },
+    rule: { key: "dice.restrain.rule", params: { diff } },
     result: { key: ok ? "dice.restrain.ok" : "dice.restrain.ng" },
   });
   return ok;
@@ -229,7 +246,8 @@ export function startEvent(ctx: RuleContext, f: Floor, eventId: string): void {
   // EV-23 / EV-24 / EV-30: 衝動の実行
   ctx.events.push({ kind: "message", key: def.text.impulse, params: { actor: actor.name } });
   const outcomes = def.impulseOutcomes;
-  const o = outcomes[weightedIndex(state.rng, outcomes.map((x) => x.weight))]!;
+  const goodWeight = moraleOf(state, data)?.goodWeight ?? 0; // EV-30 / TW-15: 士気があれば good の各結果に足す（引くのは 1 回のまま）
+  const o = outcomes[weightedIndex(state.rng, outcomes.map((x) => x.weight + (x.quality === "good" ? goodWeight : 0)))]!;
   ctx.events.push({ kind: "message", key: o.text, params: { actor: actor.name } });
   applyEffects(ctx, f, o.effects, actor);
   if (stopper !== null) {

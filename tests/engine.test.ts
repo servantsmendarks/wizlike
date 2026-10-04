@@ -74,7 +74,7 @@ describe("engine: execute", () => {
     expect(JSON.parse(JSON.stringify(s0))).toEqual(s0);
   });
 
-  test("D3 createInitialState: screen title、party []、rng は createRng(seed) と同じ、gold 0、bank 0、nextItemSeq 1、dive と pendingChoice と battle は null、bestiary は {}、townVisit は null、adventureTurns・tavernEventMark は 0（TW-12）", () => {
+  test("D3 createInitialState: screen title、party []、rng は createRng(seed) と同じ、gold 0、bank 0、nextItemSeq 1、dive と pendingChoice と battle は null、bestiary は {}、townVisit は null、adventureTurns・tavernEventMark は 0（TW-12）、morale は null（TW-15）", () => {
     const s = createInitialState(42, data);
     expect(s).toEqual({
       screen: "title",
@@ -92,6 +92,7 @@ describe("engine: execute", () => {
       townVisit: null,
       adventureTurns: 0,
       tavernEventMark: 0,
+      morale: null,
     });
     expect(() => createInitialState(1.5, data)).toThrow(RangeError);
   });

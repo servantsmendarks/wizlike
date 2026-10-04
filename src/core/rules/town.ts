@@ -14,13 +14,15 @@ import {
   itemDisplayName,
   itemOf,
   memberById,
+  moraleOf,
+  raisesMorale,
   slotsUsed,
 } from "../state";
 import type { Character, GameState, RuleContext, TownMenu } from "../types";
 import { canAct } from "./combat-calc";
 import { levelUpWhilePossible } from "./growth";
 import { ceilRatio } from "./ratio";
-import { restoreSan } from "./san";
+import { capSan, overSan, restoreSan } from "./san";
 
 export type TempleService = "resurrect" | "cure" | "uncurse";
 /** 帰還の語りのキー（DG-30: 帰還の糸 / DG-06: 徒歩 / DG-32: テレポーター / MG-40: 帰還の呪文） */
@@ -94,9 +96,12 @@ export function arriveTown(ctx: RuleContext): void {
   }
   state.screen = "town";
   state.townVisit = { mercyOffered: false };
+  state.morale = null; // TW-15: 士気は次に街に入るまで
   ctx.events.push({ kind: "message", key: "town.enter" });
   if (data.config.san.restoreOnTown) {
     for (const ch of state.party) restoreSan(ctx, ch);
+  } else {
+    for (const ch of state.party) capSan(ctx, ch); // TW-02 / TW-15: 回復しない設定でも士気の超過分は丸める
   }
   if (mercyEligible(state, data)) {
     state.townVisit.mercyOffered = true;
@@ -150,8 +155,9 @@ export function checkInn(state: GameState, rank: unknown, data: GameData): strin
 
 /**
  * TW-04 / MG-02: 料金を 1 回払う → message town.inn.stay → alive の者を並び順に、HP に ceil(hpMax × hpRatio) を足して hpMax で止め
- * （hpRatio 0 なら増えない）、MP は全ランクで mpMax に戻す → alive の者を並び順に levelUpWhilePossible（どのランクでも）。
- * 状態異常は治さない。満タンでも泊まれる。
+ * （hpRatio 0 なら増えない）、MP は全ランクで mpMax に戻す →（TW-15。士気の立つランクなら）morale = { rankId } →
+ * sanOver > 0 なら alive の者を並び順に overSan → message town.inn.morale → alive の者を並び順に levelUpWhilePossible（どのランクでも）。
+ * 士気の立たないランクでは morale を変えない（消さない）。状態異常は治さない。満タンでも泊まれる。
  */
 export function stayInn(ctx: RuleContext, rank: number): void {
   const { state, data } = ctx;
@@ -167,6 +173,15 @@ export function stayInn(ctx: RuleContext, rank: number): void {
     const mp = ch.mpMax;
     if (mp > ch.mp) ctx.events.push({ kind: "mpChanged", id: ch.id, delta: mp - ch.mp, mp });
     ch.mp = mp;
+  }
+  if (raisesMorale(r)) {
+    state.morale = { rankId: r.id };
+    if (r.sanOver > 0) {
+      for (const ch of state.party) {
+        if (ch.life === "alive") overSan(ctx, ch, r.sanOver);
+      }
+    }
+    ctx.events.push({ kind: "message", key: "town.inn.morale" });
   }
   for (const ch of state.party) {
     if (ch.life === "alive") levelUpWhilePossible(ctx, ch);
@@ -402,7 +417,12 @@ export function townMenu(state: GameState, data: GameData): TownMenu | null {
       name: r.name,
       cost: r.cost,
       affordable: gold >= r.cost,
+      morale: raisesMorale(r),
     })),
+    morale: (() => {
+      const m = moraleOf(state, data);
+      return m === null ? null : { rankId: m.id, name: m.name };
+    })(),
     temple: { resurrect: rows("resurrect"), cure: rows("cure"), uncurse: rows("uncurse") },
     dark: state.party.flatMap((ch) => {
       if (ch.life !== "ash") return [];

@@ -66,6 +66,7 @@ export function createInitialState(seed: number, _data: GameData): GameState {
     townVisit: null,
     adventureTurns: 0,
     tavernEventMark: 0,
+    morale: null,
   };
 }
 

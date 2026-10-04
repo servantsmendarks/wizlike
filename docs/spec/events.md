@@ -18,7 +18,7 @@
 ## 3. 制止判定
 
 - EV-20 行動者が決まり、行動者以外に `canStop: true`（慎重）の行動可能なメンバーがいて、イベントが `stopCheck: true` なら制止判定を行う。制止者は該当者のうち `iq` が最も高い者（同値なら並び順が前の者。M5）。
-- EV-21 `制止者の iq + 1d10 ≥ 行動者の agi + 1d10` なら制止成功（等しいときも成功）。1d10 は制止者 → 行動者の順に振り、判定の箱（UI-40）を 1 件 2 行（制止者の iq / 行動者の agi、基準は差）で出す（A3。M5）。M7: 制止者の側に、宿の士気の `judgeBonus`（TW-15）と制止者の固有スキル `judgeBonus`（IT-40）の大きい方を足す（同じ枠で重ねない。items.md §11 の Q6）。足すときは制止者の行の直後に内訳の行（`dice.bonus.morale`{value} または `dice.bonus.skill`{item, value}。base は値、dice は空、total は値）を置き、差は「制止者の合計 + 補正 − 行動者の合計」で比べる。衝動の点数（EV-11）には足さない（items.md §11 の Q5）。乱数の消費は変えない。
+- EV-21 `制止者の iq + 1d10 ≥ 行動者の agi + 1d10` なら制止成功（等しいときも成功）。1d10 は制止者 → 行動者の順に振り、判定の箱（UI-40）を 1 件 2 行（制止者の iq / 行動者の agi、基準は差）で出す（A3。M5）。M7: 制止者の側に、宿の士気の `judgeBonus`（TW-15）と制止者の固有スキル `judgeBonus`（IT-40）を足し合わせて足す（items.md §11 の Q6）。0 でない補正ごとに、制止者の行の直後に内訳の行（士気 → 固有スキルの順。`dice.bonus.morale`{value} / `dice.bonus.skill`{item, value}。base は値、dice は空、total は値）を置き、差は「制止者の合計 + 補正の合計 − 行動者の合計」で比べる（行は最大 4 行）。衝動の点数（EV-11）には足さない（items.md §11 の Q5）。乱数の消費は変えない。
 - EV-22 成功: 衝動は不発。制止者と行動者の SAN +`config.events.stopSanGain`（3）【仮】（制止者 → 行動者の順）。`mixed` なら選択型として続行、`impulse` なら「何も起きない」。
 - EV-23 失敗: 衝動を実行する。結果が `good` なら行動者に `impulseBonus`（イベント定義。金額増や SAN 回復）を加える。結果が `bad` なら、制止者が生きていれば（life alive）、効果の後に「言わんこっちゃない」（`event.stop.told`）と制止者の SAN +`config.events.stopSanGain`（3。同じ値を使う。M5）。`neutral` はどちらも無い。
 - EV-24 制止者がいない場合（`stopCheck` が偽の場合も）はそのまま衝動を実行する（ボーナスや慰めはない）。`impulseBonus` と EV-23 の慰めは、制止者がいて失敗したときだけ（M5）。

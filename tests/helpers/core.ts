@@ -165,6 +165,7 @@ export function expectStateInvariants(state: GameState): void {
   expect(state.screen === "event", "screen event ⇔ pendingChoice kind event").toBe(state.pendingChoice?.kind === "event");
   expect(state.dive === null, "dive null ⇔ screen title / town").toBe(state.screen === "title" || state.screen === "town");
   expect(Number.isInteger(state.gold) && state.gold >= 0, `gold ${state.gold}`).toBe(true);
+  if (state.screen === "title") expect(state.morale, "morale is null on title (TW-15)").toBeNull();
   for (const ch of state.party) expect(ch.levelHistory, `levelHistory of ${ch.id}`).toHaveLength(ch.level - 1);
   expect(JSON.parse(JSON.stringify(state))).toStrictEqual(state);
 }

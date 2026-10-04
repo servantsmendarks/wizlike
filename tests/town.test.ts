@@ -124,6 +124,87 @@ describe("TW-02/TW-26 街に入る処理（arriveTown / returnToTown）", () => 
 
 // ---------------------------------------------------------------------------
 
+describe("TW-15 士気（宿の個室。M7）", () => {
+  test("TW-15/TW-04 個室: 払う → stay → HP・MP → alive の者を並び順に SAN を sanMax + 10 = 110 へ（dead は変えない）→ town.inn.morale。morale = { rankId: good }、乱数なし", () => {
+    // c1 HP 1/15 → 15（+14）、c2 dead（SAN 100 のまま）、c3 SAN 40 → 110（+70）、ほかは 100 → 110（+10）
+    const s = town({ c1: { hp: 1 }, c2: { ...DEAD }, c3: { san: 40 } });
+    const r = ok(s, { type: "town.inn", rank: 2 });
+    expect(r.events).toEqual([
+      { kind: "message", key: "town.inn.stay", params: { room: "個室", cost: 60 } },
+      { kind: "hpChanged", id: "c1", delta: 14, hp: 15 },
+      { kind: "sanChanged", id: "c1", delta: 10, san: 110 },
+      { kind: "sanChanged", id: "c3", delta: 70, san: 110 },
+      { kind: "sanChanged", id: "c4", delta: 10, san: 110 },
+      { kind: "sanChanged", id: "c5", delta: 10, san: 110 },
+      { kind: "sanChanged", id: "c6", delta: 10, san: 110 },
+      { kind: "message", key: "town.inn.morale" },
+    ]);
+    expect(r.state.morale).toEqual({ rankId: "good" });
+    expect(r.state.gold).toBe(240);
+    expect(r.state.party.map((c) => c.san)).toEqual([110, 100, 110, 110, 110, 110]);
+    expect(r.state.rng).toEqual(s.rng);
+    expect(s.morale).toBeNull(); // 引数は書き換えない
+  });
+
+  test("TW-15 士気の立たないランク（馬小屋・相部屋）に泊まり直しても morale は残り SAN 110 も変わらない。個室に泊まり直すと上書き（同じ値）し town.inn.morale を語る", () => {
+    const a = ok(town(), { type: "town.inn", rank: 2 }).state;
+    const b = ok(a, { type: "town.inn", rank: 0 });
+    expect(b.state.morale).toEqual({ rankId: "good" });
+    expect(b.events).toEqual([{ kind: "message", key: "town.inn.stay", params: { room: "馬小屋", cost: 0 } }]);
+    const c = ok(b.state, { type: "town.inn", rank: 1 });
+    expect(c.state.morale).toEqual({ rankId: "good" });
+    expect(c.state.party.map((x) => x.san)).toEqual([110, 110, 110, 110, 110, 110]);
+    const d = ok(c.state, { type: "town.inn", rank: 2 });
+    expect(d.events).toEqual([
+      { kind: "message", key: "town.inn.stay", params: { room: "個室", cost: 60 } },
+      { kind: "message", key: "town.inn.morale" },
+    ]);
+    expect(d.state.morale).toEqual({ rankId: "good" });
+  });
+
+  test("TW-15 士気の後にレベルアップ（stay → SAN → town.inn.morale → levelUp の順）", () => {
+    const r = ok(town({ c2: { exp: 50 } }), { type: "town.inn", rank: 2 });
+    const kinds = r.events.map((e) => (e.kind === "message" ? e.key : e.kind));
+    const moraleAt = kinds.indexOf("town.inn.morale");
+    expect(moraleAt).toBeGreaterThan(kinds.lastIndexOf("sanChanged"));
+    expect(kinds.indexOf("levelUp")).toBeGreaterThan(moraleAt);
+  });
+
+  test("TW-15/TW-02 街に入ると morale が null に戻り、超過分（110）は sanMax（100）に丸める（restoreOnTown が偽でも丸めだけはする）", () => {
+    const stayed = ok(town(), { type: "town.inn", rank: 2 }).state;
+    const dv = ok(stayed, { type: "dungeon.enter", dungeonId: "d01" }).state;
+    expect(dv.morale).toEqual({ rankId: "good" }); // 迷宮の中では残る
+    const s = cloneState(dv);
+    s.party[2]!.san = 104;
+    s.party[3]!.san = 60;
+    const ctx = ctxFor(s);
+    returnToTown(ctx, "dungeon.return");
+    expect(ctx.state.morale).toBeNull();
+    expect(ctx.state.party.map((c) => c.san)).toEqual([100, 100, 100, 100, 100, 100]);
+    const d = loadFreshData();
+    d.config.san.restoreOnTown = false;
+    const ctx2 = makeContext(cloneState(s), d);
+    returnToTown(ctx2, "dungeon.return");
+    expect(ctx2.state.morale).toBeNull();
+    expect(ctx2.state.party.map((c) => c.san)).toEqual([100, 100, 100, 60, 100, 100]);
+    expect(ctx2.events.filter((e) => e.kind === "sanChanged")).toEqual([
+      { kind: "sanChanged", id: "c1", delta: -10, san: 100 },
+      { kind: "sanChanged", id: "c2", delta: -10, san: 100 },
+      { kind: "sanChanged", id: "c3", delta: -4, san: 100 },
+      { kind: "sanChanged", id: "c5", delta: -10, san: 100 },
+      { kind: "sanChanged", id: "c6", delta: -10, san: 100 },
+    ]);
+  });
+
+  test("TW-15 townMenu.morale は今の士気のランク（id と名前）。rankId がデータに無ければ null（効果なし）", () => {
+    const stayed = ok(town(), { type: "town.inn", rank: 2 }).state;
+    expect(townMenu(stayed, data)!.morale).toEqual({ rankId: "good", name: "個室" });
+    const unknown = cloneState(stayed);
+    unknown.morale = { rankId: "suite" };
+    expect(townMenu(unknown, data)!.morale).toBeNull();
+  });
+});
+
 describe("TW-04 宿屋（town.inn）", () => {
   test("TW-04/MG-02 馬小屋（0G、HP ×0）: HP は増えず、alive の MP は mpMax に戻る（1 人ずつ HP → MP）。dead は不変、状態異常は残る", () => {
     // c1 HP 1/15 → +ceil(15 × 0)=0 で 1 のまま、c4 MP 0/5 → 5、c5 HP 5/8 は 5 のまま・MP 3/7 → 7、c2 dead は MP 0 のまま
@@ -155,11 +236,12 @@ describe("TW-04 宿屋（town.inn）", () => {
     expect(member(b.state, "c4").mp).toBe(5);
   });
 
-  test("TW-04 満タンでも泊まれる（料金を払い、回復のイベントは出ない）", () => {
+  test("TW-04 満タンでも泊まれる（料金を払い、回復のイベントは出ない。相部屋は士気が立たない）", () => {
     const s = town();
-    const r = ok(s, { type: "town.inn", rank: 2 });
-    expect(r.events).toEqual([{ kind: "message", key: "town.inn.stay", params: { room: "個室", cost: 60 } }]);
-    expect(r.state.gold).toBe(240);
+    const r = ok(s, { type: "town.inn", rank: 1 });
+    expect(r.events).toEqual([{ kind: "message", key: "town.inn.stay", params: { room: "相部屋", cost: 20 } }]);
+    expect(r.state.gold).toBe(280);
+    expect(r.state.morale).toBeNull();
   });
 
   test("TW-04 rank が範囲外・整数でない・数でない、所持金不足、街の外は rejected（同じ参照・乱数不変）", () => {
@@ -524,10 +606,11 @@ describe("UI-52/TW-11 townMenu（表示層向けの問い合わせ）", () => {
     const m = townMenu(s, data)!;
     expect(m.gold).toBe(200);
     expect(m.inn).toEqual([
-      { rank: 0, id: "stable", name: "馬小屋", cost: 0, affordable: true },
-      { rank: 1, id: "cheap", name: "相部屋", cost: 20, affordable: true },
-      { rank: 2, id: "good", name: "個室", cost: 60, affordable: true },
+      { rank: 0, id: "stable", name: "馬小屋", cost: 0, affordable: true, morale: false },
+      { rank: 1, id: "cheap", name: "相部屋", cost: 20, affordable: true, morale: false },
+      { rank: 2, id: "good", name: "個室", cost: 60, affordable: true, morale: true },
     ]);
+    expect(m.morale).toBeNull();
     expect(m.temple.resurrect).toEqual([{ memberId: "c2", name: "ベルク", cost: 200, affordable: true }]);
     expect(m.temple.cure).toEqual([
       { memberId: "c3", name: "キリ", cost: 200, affordable: true },

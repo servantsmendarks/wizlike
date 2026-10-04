@@ -289,6 +289,49 @@ describe("制止判定（EV-15, EV-20〜22）", () => {
     }
   });
 
+  test("EV-21/TW-15 士気（個室、judgeBonus 1）: 制止者の側に +1。判定の箱は [制止者, 士気 +1, 行動者] の 3 行で、差 −1 だった出目が差 0 で制止に変わる。乱数の消費は変わらない", () => {
+    const { state } = tablet();
+    const s0 = cloneState(patch(state, 1, { personality: "normal" })); // 制止者をフィンに固定する
+    s0.morale = { rankId: "good" };
+    const m = cloneRng(s0.rng);
+    rollDie(m, 6);
+    rollDie(m, 6);
+    const rS = rollDie(m, 10);
+    const rA = rollDie(m, 10);
+    const iq = 15 + rA - rS - 1; // 士気なしなら フィンの iq + rS = キリの 15 + rA − 1（差 −1 で失敗）
+    for (const [v, ok, diff] of [
+      [iq, true, 0],
+      [iq - 1, false, -1],
+    ] as const) {
+      const s = patch(s0, 5, { stats: { ...s0.party[5]!.stats, iq: v } });
+      const ctx = start(s, dataEvents(), TABLET);
+      const dice = ctx.events.find((e) => e.kind === "dice")!;
+      expect(dice).toEqual({
+        kind: "dice",
+        label: { key: "dice.restrain" },
+        rows: [
+          { label: { key: "dice.restrain.stopper", params: { name: "フィン" } }, base: v, dice: [rS], total: v + rS },
+          { label: { key: "dice.bonus.morale", params: { value: 1 } }, base: 1, dice: [], total: 1 },
+          { label: { key: "dice.restrain.actor", params: { name: "キリ" } }, base: 15, dice: [rA], total: 15 + rA },
+        ],
+        rule: { key: "dice.restrain.rule", params: { diff } },
+        result: { key: ok ? "dice.restrain.ok" : "dice.restrain.ng" },
+      });
+    }
+    // 同じ出目で士気なしなら差 −1 で失敗（2 行のまま）
+    const noMorale = patch(s0, 5, { stats: { ...s0.party[5]!.stats, iq } });
+    noMorale.morale = null;
+    const dice0 = start(noMorale, dataEvents(), TABLET).events.find((e) => e.kind === "dice")!;
+    expect(dice0.kind === "dice" && dice0.rows.length).toBe(2);
+    expect(dice0.kind === "dice" && dice0.rule.params).toEqual({ diff: -1 });
+    // 士気のランクの judgeBonus が 0 なら補正の行は出さない（2 行・差 −1）
+    const zero = patch(s0, 5, { stats: { ...s0.party[5]!.stats, iq } });
+    const d0 = dataEvents((x) => (x.config.town.innRanks.find((r) => r.id === "good")!.judgeBonus = 0));
+    const dice1 = start(zero, d0, TABLET).events.find((e) => e.kind === "dice")!;
+    expect(dice1.kind === "dice" && dice1.rows.length).toBe(2);
+    expect(dice1.kind === "dice" && dice1.rule.params).toEqual({ diff: -1 });
+  });
+
   test("EV-22 制止成功: 不発、制止者 → 行動者の順に SAN +stopSanGain、mixed は選択型へ（screen{event} は SAN の後）", () => {
     const { state } = tablet();
     let s = patch(state, 5, { stats: { ...state.party[5]!.stats, iq: 100 }, san: 50 }); // フィンは必ず止める
@@ -472,6 +515,34 @@ describe("衝動の実行（EV-23, EV-24, EV-30）", () => {
       const ctx = start(s, dataEvents(), TABLET);
       expect(kinds(ctx.events)).toContain(`message:${o.text}`);
       expect(ctx.state.rng).toEqual(m);
+      seen.add(o.quality);
+    }
+    expect([...seen].sort()).toEqual(["bad", "good", "neutral"]);
+  });
+
+  test("EV-30/TW-15 士気（個室、goodWeight 1）があれば good の結果の重みに +1（光る石板 [3, 3, 4] → [4, 3, 4]）。weightedIndex は 1 回（鏡の rng と一致）", () => {
+    const { state } = tablet();
+    let s0 = patch(patch(state, 1, { personality: "normal" }), 5, { personality: "normal" }); // 制止なし
+    s0 = patch(sanAll(s0, 80), 2, { hp: 30, hpMax: 30 });
+    s0.morale = { rankId: "good" };
+    const def = eventOf(data, TABLET);
+    expect(def.impulseOutcomes.map((o) => [o.quality, o.weight])).toEqual([
+      ["good", 3],
+      ["neutral", 3],
+      ["bad", 4],
+    ]);
+    const seen = new Set<string>();
+    for (let k = 1; k <= 40; k++) {
+      const s = withRng(s0, k);
+      const m = cloneRng(s.rng);
+      rollDie(m, 6);
+      rollDie(m, 6);
+      const o = def.impulseOutcomes[weightedIndex(m, [4, 3, 4])]!;
+      if (o.quality === "neutral") rollDice(m, "2d6");
+      if (o.quality === "bad") rollDice(m, "1d6");
+      const ctx = start(s, dataEvents(), TABLET);
+      expect(kinds(ctx.events), String(k)).toContain(`message:${o.text}`);
+      expect(ctx.state.rng, String(k)).toEqual(m);
       seen.add(o.quality);
     }
     expect([...seen].sort()).toEqual(["bad", "good", "neutral"]);

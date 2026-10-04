@@ -16,12 +16,25 @@ export function migrateV1toV2(x: unknown): unknown {
   return out;
 }
 
-export const MIGRATIONS: readonly Migration[] = [migrateV1toV2];
+/**
+ * SV-04 v2 → v3（M7 の A）: morale null を足す（TW-15。士気の無い状態）。引数は書き換えない（浅い複製）。
+ * オブジェクトでなければそのまま返す（形の検査で broken）
+ */
+export function migrateV2toV3(x: unknown): unknown {
+  if (!isPlainObject(x)) return x;
+  return { ...x, morale: null };
+}
+
+export const MIGRATIONS: readonly Migration[] = [migrateV1toV2, migrateV2toV3];
 
 const RESUMABLE_SCREENS: readonly unknown[] = ["town", "dungeon", "battle", "event"];
 
 function isObjectOrNull(x: unknown): boolean {
   return x === null || isPlainObject(x);
+}
+
+function isMoraleShape(x: unknown): boolean {
+  return x === null || (isPlainObject(x) && typeof x["rankId"] === "string");
 }
 
 function isTurnCount(x: unknown): boolean {
@@ -35,6 +48,7 @@ function isTurnCount(x: unknown): boolean {
  * screen event（M5。イベントの選択を待つ間）⇒ dive がオブジェクト・battle が null・pendingChoice の kind が event で eventId が文字列、
  * pendingChoice の kind が event ⇒ screen event（M5 は欄を足さず値の種類を増やしただけなので schemaVersion 1 のままだった）。
  * schemaVersion 2（M5.5）: adventureTurns と tavernEventMark が 0 以上の安全な整数、dive がオブジェクトなら knownTraps がプレーンなオブジェクト。
+ * schemaVersion 3（M7 の A）: morale は null か、rankId が文字列のプレーンなオブジェクト。
  */
 export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(x)) return false;
@@ -49,6 +63,7 @@ export function isGameStateShape(x: unknown): x is GameState {
   if (!isTurnCount(x["adventureTurns"]) || !isTurnCount(x["tavernEventMark"])) return false;
   const dive = x["dive"];
   if (isPlainObject(dive) && !isPlainObject(dive["knownTraps"])) return false;
+  if (!isMoraleShape(x["morale"])) return false;
   if ((x["screen"] === "battle") !== (x["battle"] !== null)) return false;
   if ((x["screen"] === "town") !== (x["townVisit"] !== null)) return false;
   const pc = x["pendingChoice"];

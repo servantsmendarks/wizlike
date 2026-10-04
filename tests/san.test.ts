@@ -1,8 +1,10 @@
 import { describe, expect, test } from "vitest";
 import {
   applySanValue,
+  capSan,
   gainSan,
   loseSan,
+  overSan,
   restoreSan,
   sanLossAmount,
   sanLossMultiplier,
@@ -223,5 +225,64 @@ describe("san: 増減とクランプ", () => {
     applySanValue(ctx, ch, 2);
     restoreSan(ctx, ch);
     expect(JSON.stringify(ctx.state.rng)).toBe(rng0);
+  });
+});
+
+describe("san: 士気の超過（TW-15 / CH-50 / CH-52、M7）", () => {
+  test("TW-15/CH-50 overSan: sanMax + over にする（100 → 110、40 → 110）。今の方が高ければ変えない（下げない）。負の over は Error", () => {
+    const ctx = ctxFor(withChar(stateWith(NORMAL, 100), CAUTIOUS, { san: 40 }));
+    const a = ctx.state.party[NORMAL]!;
+    const b = ctx.state.party[CAUTIOUS]!;
+    expect(overSan(ctx, a, 10)).toMatchObject({ from: 100, to: 110, delta: 10, stageBefore: "normal", stageAfter: "normal", dropped: false });
+    expect(overSan(ctx, b, 10)).toMatchObject({ from: 40, to: 110, delta: 70, stageBefore: "uneasy", stageAfter: "normal" });
+    // 115 の者に over 10（目標 110）は下げない。110 の者に同じ over は変化 0
+    a.san = 115;
+    expect(overSan(ctx, a, 10)).toMatchObject({ from: 115, to: 115, delta: 0 });
+    expect(overSan(ctx, b, 10)).toMatchObject({ from: 110, to: 110, delta: 0 });
+    expect(ctx.events).toEqual([
+      { kind: "sanChanged", id: a.id, delta: 10, san: 110 },
+      { kind: "sanChanged", id: b.id, delta: 70, san: 110 },
+    ]);
+    expect(() => overSan(ctx, a, -1)).toThrow(Error);
+    expect(a.san).toBe(115);
+  });
+
+  test("CH-52/TW-15 超過中（sanMax 以上）は gainSan / applySanValue(+) で増えない。sanMax 未満からの増加は sanMax で止まる", () => {
+    const ctx = ctxFor(stateWith(NORMAL, 110));
+    const ch = ctx.state.party[NORMAL]!;
+    expect(gainSan(ctx, ch, 3)).toMatchObject({ from: 110, to: 110, delta: 0 });
+    expect(applySanValue(ctx, ch, 5)).toMatchObject({ from: 110, to: 110, delta: 0 });
+    expect(applySanValue(ctx, ch, 0)).toMatchObject({ from: 110, to: 110, delta: 0 }); // 0 は丸めない
+    ch.san = 100;
+    expect(gainSan(ctx, ch, 3)).toMatchObject({ from: 100, to: 100, delta: 0 });
+    ch.san = 95;
+    expect(gainSan(ctx, ch, 10)).toMatchObject({ from: 95, to: 100, delta: 5 });
+    expect(ctx.events).toEqual([{ kind: "sanChanged", id: ch.id, delta: 5, san: 100 }]);
+  });
+
+  test("CH-52/TW-15 減少は超過分から引く（110 − 4 = 106、106 − 10 = 96）。CH-53 の段は sanMax 比のまま（110 は normal）", () => {
+    const ctx = ctxFor(stateWith(NORMAL, 110));
+    const ch = ctx.state.party[NORMAL]!;
+    expect(sanStage(110, 100, cfg)).toBe("normal");
+    expect(loseSan(ctx, ch, 4)).toMatchObject({ from: 110, to: 106, delta: -4, stageAfter: "normal" });
+    expect(applySanValue(ctx, ch, -10)).toMatchObject({ from: 106, to: 96, delta: -10, stageAfter: "normal" });
+    expect(ctx.events).toEqual([
+      { kind: "sanChanged", id: ch.id, delta: -4, san: 106 },
+      { kind: "sanChanged", id: ch.id, delta: -10, san: 96 },
+    ]);
+  });
+
+  test("TW-02/TW-15 restoreSan は超過（110）を sanMax（100）に丸める。capSan は超過だけを丸め、sanMax 以下は変えない", () => {
+    const ctx = ctxFor(withChar(stateWith(NORMAL, 110), CAUTIOUS, { san: 40 }));
+    const ch = ctx.state.party[NORMAL]!;
+    const low = ctx.state.party[CAUTIOUS]!;
+    expect(restoreSan(ctx, ch)).toMatchObject({ from: 110, to: 100, delta: -10, dropped: false });
+    ch.san = 107;
+    expect(capSan(ctx, ch)).toMatchObject({ from: 107, to: 100, delta: -7 });
+    expect(capSan(ctx, low)).toMatchObject({ from: 40, to: 40, delta: 0 });
+    expect(ctx.events).toEqual([
+      { kind: "sanChanged", id: ch.id, delta: -10, san: 100 },
+      { kind: "sanChanged", id: ch.id, delta: -7, san: 100 },
+    ]);
   });
 });
