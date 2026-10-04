@@ -221,7 +221,7 @@ describe("creation: game.new", () => {
     }
   });
 
-  test("CH-72 初期の実体はすべて identified true", () => {
+  test("CH-72/IT-13 初期の実体はすべて identified true", () => {
     const s = newGame(1);
     expect(Object.values(s.items).every((it) => it.identified)).toBe(true);
   });

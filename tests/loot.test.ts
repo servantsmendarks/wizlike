@@ -285,7 +285,7 @@ describe("CB-52 宝箱の品（IT-50 / IT-31 / IT-53）", () => {
       }
     });
 
-  test("CB-52 宝箱の金の後に、その階の表から品（未鑑定・foundIn 迷宮・台帳）。Lv は倒した種類の level の最大。強欲が行動可能なら希少度 +1", () => {
+  test("CB-52/IT-13 宝箱の金の後に、その階の表から品（未鑑定・foundIn 迷宮・台帳）。Lv は倒した種類の level の最大。強欲が行動可能なら希少度 +1", () => {
     // 腐乱死体 level 2・大鼠 level 1 → Lv 2（振れ幅 0）。強欲のドナ（c4）が行動可能 → 通常 + 1 = 上質
     const s = roomWin([{ monsterId: "giant_rat" }, { monsterId: "rotting_corpse" }]);
     const r = exec(s, RESOLVE, chestData("normal"));

@@ -880,7 +880,7 @@ describe("IT-60〜63 店の装備の購入・売却・買い戻し（town.shop�
     expect(["herb", "return_thread", "tome_lightning"].map((itemId) => v({ itemId, identified: true }))).toEqual([5, 25, 750]);
   });
 
-  test("IT-62 shopLevel 2 で長剣を買うと Lv2・通常・鑑定済み・オプションなし・foundIn null の実体が本人の inventory の末尾に入り、200G を払う。語りの item は表示名「長剣 +2」", () => {
+  test("IT-62/IT-13 shopLevel 2 で長剣を買うと Lv2・通常・鑑定済み・オプションなし・foundIn null の実体が本人の inventory の末尾に入り、200G を払う。語りの item は表示名「長剣 +2」", () => {
     const s = town({}, 1000);
     s.progress.shopLevel = 2;
     const r = ok(s, buy("c2", "long_sword"));
@@ -936,7 +936,7 @@ describe("IT-60〜63 店の装備の購入・売却・買い戻し（town.shop�
     expect(ok(c, sell("c1", cd)).state.gold).toBe(307);
   });
 
-  test("IT-63 ユニークを売ると同じ実体が buyback の末尾へ（売った順）。uniques[].price で買い戻すと同じ実体（希少度・オプション・foundIn もそのまま）が本人の inventory の末尾へ戻り、ストックから外れる", () => {
+  test("IT-63/IT-13 ユニークを売ると同じ実体が buyback の末尾へ（売った順）。uniques[].price で買い戻すと同じ実体（希少度・オプション・foundIn もそのまま）が本人の inventory の末尾へ戻り、ストックから外れる", () => {
     const s = town({}, 300);
     const sword = give(s, "c2", {
       itemId: "long_sword",
@@ -963,6 +963,7 @@ describe("IT-60〜63 店の装備の購入・売却・買い戻し（town.shop�
     expect(r3.state.gold).toBe(0);
     expect(member(r3.state, "c1").inventory).toEqual([...member(r2.state, "c1").inventory, sword]);
     expect(r3.state.items[sword]).toEqual(original);
+    expect(r3.state.items[sword]!.identified).toBe(true); // IT-13 買い戻した品は鑑定済み
     expect(r3.state.buyback).toEqual([helm]);
     expect(r3.state.nextItemSeq).toBe(s.nextItemSeq);
     expect(r3.state.rng).toEqual(s.rng);

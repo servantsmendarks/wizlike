@@ -14,6 +14,7 @@ import { dived, exec, withBattle } from "./helpers/battle";
 import { data, expectKnownStringKeys, loadFreshData, newGame, withChar } from "./helpers/core";
 import { atEvent } from "./helpers/events";
 import { createMemoryBackend, toV3 } from "./helpers/save";
+import mainSrc from "../src/main.ts?raw";
 
 const SCHEMA = data.config.save.schemaVersion;
 const MAX = data.config.save.maxGames;
@@ -437,6 +438,15 @@ describe("SV-04 v3 → v4 の移行（M7 の B。IT-80）", () => {
     delete v2["morale"];
     const r2 = migrateState(v2, 2, SCHEMA, MIG);
     expect(r2.ok && [r2.state.morale, r2.state.progress.shopLevel]).toEqual([null, 2]);
+  });
+
+  test("SV-50/IT-80 main.ts は createSaveService の SaveDeps に migrations: createMigrations(data.dungeons) を渡す（既定の MIGRATIONS は shopLevel 0 になるため、結線をソースで確かめる）", () => {
+    // コメントを除いたソースで、createSaveService({ ... }) の引数の中に、行頭の migrations: createMigrations(data.dungeons) があること
+    const src = mainSrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const call = /createSaveService\(\{([\s\S]*?)\}\);/.exec(src);
+    expect(call).not.toBeNull();
+    expect(call![1]).toMatch(/^\s*migrations:\s*createMigrations\(data\.dungeons\),?\s*$/m);
+    expect(src).toMatch(/^import \{[^}]*\bcreateMigrations\b[^}]*\} from "\.\/save\/migrate";$/m);
   });
 
   test("SV-04/IT-80 形の検査: 実体の欄・warehouse・buyback・uniqueBook・progress.shopLevel の型が違う v4 は broken", () => {
