@@ -41,7 +41,7 @@ export type FileButton = {
  * SV-31: 「読み込み」のボタン。ボタンの見た目の div（class ui-button）の上に、透明の <input type="file" accept="application/json,.json">
  * を全面に重ねる（tap.ts は INPUT の上の押下を追わず touchend も止めないので、タップでブラウザ本来のファイル選択が開く）。
  * この要素と祖先に onTap（data-tap）を付けない。open() はキーボード（数字キー）用で input.click() を呼ぶ。
- * change でファイルを 1 つ onFile に渡し、input.value を "" に戻す（同じファイルを選び直せるように）。disabled なら input を disabled にし、見た目を dim にする
+ * change と cancel でフォーカスを外し（UI-33 のキーが効くように）、change でファイルを 1 つ onFile に渡し、input.value を "" に戻す（同じファイルを選び直せるように）。disabled なら input を disabled にし、見た目を dim にする
  */
 export function createFileButton(o: { label: string; rect: Rect; onFile(f: File): void }): FileButton {
   const el = document.createElement("div");
@@ -67,7 +67,11 @@ export function createFileButton(o: { label: string; rect: Rect; onFile(f: File)
     fontSize: "16px",
     cursor: "pointer",
   });
+  // UI-33: フォーカスが input に残ると、キー（Esc / Enter / 数字 / F2）が入力欄の上として捨てられる。
+  // 選んだとき・取り消したとき（change）と cancel（Chrome 113+ / Safari 16.4+）でフォーカスを外す
+  input.addEventListener("cancel", () => input.blur());
   input.addEventListener("change", () => {
+    input.blur();
     const f = input.files?.[0];
     input.value = "";
     if (f !== undefined) o.onFile(f);

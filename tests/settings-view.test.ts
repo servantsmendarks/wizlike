@@ -190,6 +190,7 @@ class FakeEl {
   click(): void {
     this.clicks++;
   }
+  blur(): void {}
 }
 
 describe("createSettingsScreen（UI-57 / UI-36）", () => {

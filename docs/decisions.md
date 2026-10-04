@@ -614,3 +614,4 @@
 - 2026-10-04 build(M6): sw.js は install で skipWaiting、activate で clients.claim と古い wizlike-* のキャッシュの削除をする。遅延読み込みのチャンクが無く、今動いているページは読み込み済みの JS で動き続けるので壊れず、次の起動から新しい版になる（待機させると iOS のホーム画面のアプリでは古い版が長く残るため）。ナビゲーションはキャッシュの index.html を返す。将来チャンクを分けるならこの方針を見直す。
 - 2026-10-04 build(M6): Service Worker は本番ビルド（import.meta.env.PROD）でだけ登録し、開発サーバーでは登録せず、同じオリジンに残っている登録を解除する（キャッシュで実機確認が混乱しないように）。登録の結果は console.debug（"sw:"）に出す。登録は secure context（https か localhost）でしかできないので、http の LAN の実機ではオフラインの確認ができない。Android は adb reverse で localhost を使う。
 - 2026-10-04 save(M6): 読み込み先に同じ gameId の新しすぎる版（tooNew）の記録があれば、turn に関係なく読み込まない（理由 existingTooNew、文言 title.importExistingTooNew）。新しい版の記録を古い版の内容で黙って置き換えないため。壊れた記録の上書き（修復）とは違い、tooNew の記録は壊れていない。
+- 2026-10-04 presenter(M6): 読み込みの透明な input[type=file] は change（選んだ・取り消し）と cancel で blur する（フォーカスが残ると isTextInput で UI-33 のキーが捨てられるため）。isTextInput から type=file を除く案は、tap.ts がその押下を追って setPointerCapture し、ファイル選択を妨げるおそれがあるので採らない。

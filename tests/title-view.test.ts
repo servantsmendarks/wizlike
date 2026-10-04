@@ -328,6 +328,7 @@ class FakeEl {
   rel = "";
   files: unknown[] | null = null;
   clicks = 0;
+  blurs = 0;
   removed = false;
   readonly attrs = new Map<string, string>();
   readonly listeners = new Map<string, Array<() => void>>();
@@ -354,6 +355,9 @@ class FakeEl {
   }
   click(): void {
     this.clicks++;
+  }
+  blur(): void {
+    this.blurs++;
   }
   remove(): void {
     this.removed = true;
@@ -423,6 +427,20 @@ describe("file-io の DOM（SV-30 / SV-31）", () => {
     fb.setDisabled(false);
     expect(input.disabled).toBe(false);
     expect(el.attrs.has("aria-disabled")).toBe(false);
+  });
+
+  test("SV-31/UI-33 createFileButton: change（選んだ・取り消し）と cancel のあとで input のフォーカスを外す（キーの Esc / Enter が効くように）", () => {
+    stubDocument();
+    const fb = createFileButton({ label: "L", rect: { x: 0, y: 0, w: 10, h: 10 }, onFile: () => undefined });
+    const input = (fb.el as unknown as FakeEl).children.find((c) => c.tagName === "INPUT")!;
+    input.files = [{ name: "x.json" }];
+    input.emit("change");
+    expect(input.blurs).toBe(1);
+    input.files = [];
+    input.emit("change");
+    expect(input.blurs).toBe(2);
+    input.emit("cancel");
+    expect(input.blurs).toBe(3);
   });
 
   test("SV-30 downloadText: a の download と href（createObjectURL の値）を付けて click し、2 回目で 1 回目の URL を revoke", () => {
