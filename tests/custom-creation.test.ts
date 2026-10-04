@@ -290,6 +290,19 @@ describe("自分で作る（UI-62 / CH-06）", () => {
     expect(customKeyChoice("confirm", customView(all, data, S), "confirm", "")).toEqual({ kind: "start" });
   });
 
+  test("UI-62 性格の段の行は各行が 27 字以内（行の中身 224 − 枠 2 − 左余白 4 = 218px ÷ 全角 8px）。2 行目は personalities.json の shortDescription", () => {
+    const rng = createRng(4);
+    let p = makeOne(initialDraft(data), rng, "アキ");
+    p = step(p, { kind: "race", raceId: "human" }, rng);
+    p = spendAll(p, rng);
+    p = step(p, { kind: "next" }, rng);
+    p = step(p, { kind: "class", classId: "fighter" }, rng);
+    expect(p.step).toBe("personality");
+    const v = customView(p, data, S);
+    expect(v.rows.slice(0, data.personalities.length).map((r) => r.lines[1])).toEqual(data.personalities.map((x) => x.shortDescription));
+    for (const r of v.rows) for (const line of r.lines) expect([...line].length, line).toBeLessThanOrEqual(27);
+  });
+
   test("UI-62 buildCustomSetup は決まっていない人がいれば null", () => {
     expect(buildCustomSetup(initialDraft(data))).toBeNull();
   });

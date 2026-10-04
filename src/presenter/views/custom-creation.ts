@@ -287,7 +287,7 @@ export function customView(d: CustomDraft, data: GameData, strings: Strings): Cu
       view.rows = [
         ...data.personalities.map(
           (p): CustomRowView => ({
-            lines: [p.name, p.description],
+            lines: [p.name, p.shortDescription],
             choice: { kind: "personality", value: p.id },
             dim: false,
             selected: m.personality === p.id,

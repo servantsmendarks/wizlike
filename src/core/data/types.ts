@@ -356,6 +356,8 @@ export type Personality = {
   };
   autoBattle: AutoBattleStyle;
   description: string;
+  /** UI-62: 自分で作るの性格の行の 2 行目（27 字以内） */
+  shortDescription: string;
 };
 
 // ---- penalty-table.json ----

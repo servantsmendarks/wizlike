@@ -497,6 +497,11 @@ describe("data: personalities.json", () => {
     expectIssue((r) => (r.personalities[3].benefits.damage = 1), "personalities.json", "EV-41");
     expectIssue((r) => (r.personalities[3].san.fearLossMul = 0.5), "personalities.json", "EV-41");
   });
+  test("data: UI-62 性格の短い説明 shortDescription は 1〜27 字（自分で作るの行の 2 行目。中身 218px ÷ 全角 8px）", () => {
+    expectIssue((r) => (r.personalities[0].shortDescription = "あ".repeat(28)), "personalities.json", "[0].shortDescription: UI-62: too long (28 > 27)");
+    expectIssue((r) => (r.personalities[0].shortDescription = ""), "personalities.json", "[0].shortDescription");
+    expect(issuesOf((r) => (r.personalities[0].shortDescription = "あ".repeat(27)))).toEqual([]);
+  });
 });
 
 describe("data: penalty-table.json", () => {

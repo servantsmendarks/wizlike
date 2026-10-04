@@ -628,6 +628,16 @@ function validateItems(ctx: Ctx, v: unknown, ix: Index): void {
 
 // ---- personalities.json ----
 
+/** UI-62（M5.5）: 性格の短い説明の字数の上限。自分で作るの行の中身 218px ÷ 全角 8px（表示の都合。【仮】ではない） */
+const PERSONALITY_SHORT_DESCRIPTION_MAX = 27;
+
+/** UI-62: 1〜PERSONALITY_SHORT_DESCRIPTION_MAX 字の文字列 */
+const SHORT_DESC: Field = (ctx, p, v) => {
+  const s = str(ctx, p, v);
+  const n = s === undefined ? 0 : [...s].length;
+  if (n > PERSONALITY_SHORT_DESCRIPTION_MAX) report(ctx, p, `UI-62: too long (${n} > ${PERSONALITY_SHORT_DESCRIPTION_MAX})`);
+};
+
 function validatePersonalities(ctx: Ctx, v: unknown): void {
   const a = L(
     F({
@@ -652,6 +662,7 @@ function validatePersonalities(ctx: Ctx, v: unknown): void {
       }),
       autoBattle: E(AUTO_BATTLE_STYLES),
       description: S,
+      shortDescription: SHORT_DESC,
     }),
   )(ctx, "", v);
   if (!Array.isArray(a)) return;
