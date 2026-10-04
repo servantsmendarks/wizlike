@@ -5,6 +5,10 @@ import classes from "../data/classes.json";
 import spells from "../data/spells.json";
 import monsters from "../data/monsters.json";
 import items from "../data/items.json";
+import equipmentBases from "../data/equipment-bases.json";
+import itemOptions from "../data/item-options.json";
+import uniques from "../data/uniques.json";
+import drops from "../data/drops.json";
 import personalities from "../data/personalities.json";
 import penaltyTable from "../data/penalty-table.json";
 import dungeons from "../data/dungeons.json";
@@ -30,6 +34,10 @@ function rawData(): Mutable {
     spells,
     monsters,
     items,
+    equipmentBases,
+    itemOptions,
+    uniques,
+    drops,
     personalities,
     penaltyTable,
     dungeons,
@@ -82,7 +90,12 @@ describe("data: 実データ", () => {
     expect(DATA_FILES.penaltyTable).toBe("penalty-table.json");
     expect(DATA_FILES.config).toBe("config.json");
     expect(DATA_FILES.tavern).toBe("tavern.json");
-    expect(Object.keys(DATA_FILES)).toHaveLength(12);
+    // M7: IT の 4 ファイル
+    expect(DATA_FILES.equipmentBases).toBe("equipment-bases.json");
+    expect(DATA_FILES.itemOptions).toBe("item-options.json");
+    expect(DATA_FILES.uniques).toBe("uniques.json");
+    expect(DATA_FILES.drops).toBe("drops.json");
+    expect(Object.keys(DATA_FILES)).toHaveLength(16);
   });
 
   test("data: 実データの定数形ダイス（gold \"0\"、groupSize \"1\"）が通る", () => {
@@ -410,7 +423,7 @@ describe("data: races.json / classes.json", () => {
     expectIssue((r) => (r.classes[0].start.equipment.helm = "leather_armor"), "classes.json", "[0].start.equipment.helm: CH-70");
     // 職業が装備できない品（魔術師に長剣）
     expectIssue((r) => (r.classes[3].start.equipment.weapon = "long_sword"), "classes.json", "[3].start.equipment.weapon: CH-75");
-    expectIssue((r) => (r.classes[0].start.equipment.weapon = "sword_x"), "classes.json", '[0].start.equipment.weapon: unknown item id "sword_x"');
+    expectIssue((r) => (r.classes[0].start.equipment.weapon = "sword_x"), "classes.json", '[0].start.equipment.weapon: unknown equipment base id "sword_x"'); // IT-04（M7）: 開始の装備は汎用ベース表の id
     expectIssue((r) => (r.classes[0].start.inventory = ["herbb"]), "classes.json", '[0].start.inventory[0]: unknown item id "herbb"');
     // 所持枠（装備 3 + 6 = 9 > 8）
     expectIssue((r) => (r.classes[0].start.inventory = Array(6).fill("herb")), "classes.json", "[0].start: CH-71");
@@ -487,9 +500,11 @@ describe("data: items.json", () => {
     );
   });
   test("data: CB-20 防具の ac は整数（正の ac も可。呪いの装備など）", () => {
+    // M7 の B1: items.json の装備の行と同じ id の汎用ベースは値が一致しなければならないので、両方を変える（IT-02）
     expect(issuesOf((r) => {
       r.items[5].cursed = true;
       r.items[5].ac = 2;
+      r.equipmentBases.find((b: { id: string }) => b.id === r.items[5].id).ac = 2;
     })).toEqual([]);
     expectIssue((r) => (r.items[5].ac = 1.5), "items.json", "[5].ac: expected integer, got number");
   });
@@ -502,6 +517,137 @@ describe("data: items.json", () => {
   });
   test("data: CH-70 装備の slot は type と一致", () => {
     expectIssue((r) => (r.items[5].slot = "helm"), "items.json", "[5].slot: CH-70");
+  });
+});
+
+describe("data: equipment-bases.json（IT-02。M7）", () => {
+  test("data: IT-02 実データの汎用ベース 14 種（武器 6・防具 2・盾 1・兜 2・小手 2・装飾 1）", () => {
+    const d = loadGameData(rawData());
+    expect(d.equipmentBases).toHaveLength(14);
+    expect(d.equipmentBases.map((b) => b.slot).filter((s) => s === "weapon")).toHaveLength(6);
+  });
+  test("data: IT-02 武器は damage / ranged / caster を持ち ac を持たない、それ以外は ac を持ち damage / ranged / caster を持たない", () => {
+    expectIssue((r) => delete r.equipmentBases[1].damage, "equipment-bases.json", "[1].damage: missing required field");
+    expectIssue((r) => delete r.equipmentBases[1].caster, "equipment-bases.json", "[1].caster: missing required field");
+    expectIssue((r) => (r.equipmentBases[1].ac = 0), "equipment-bases.json", "[1].ac: unknown field");
+    expectIssue((r) => delete r.equipmentBases[6].ac, "equipment-bases.json", "[6].ac: missing required field");
+    expectIssue((r) => (r.equipmentBases[6].damage = "1d4"), "equipment-bases.json", "[6].damage: unknown field");
+    expectIssue((r) => (r.equipmentBases[6].ranged = false), "equipment-bases.json", "[6].ranged: unknown field");
+    expectIssue((r) => (r.equipmentBases[6].ac = 1.5), "equipment-bases.json", "[6].ac: expected integer");
+    expectIssue((r) => (r.equipmentBases[0].slot = "ring"), "equipment-bases.json", "[0].slot: expected one of");
+    expectIssue((r) => (r.equipmentBases[0].damage = "1x4"), "equipment-bases.json", "[0].damage: invalid dice expression");
+  });
+  test("data: IT-22 術者用武器（caster）は ranged と両立しない", () => {
+    expectIssue((r) => (r.equipmentBases[5].ranged = true), "equipment-bases.json", "[5].caster: IT-22");
+  });
+  test("data: IT-02 classes は実在の職業、price / shopMinLevel は 0 以上の整数、unidentifiedName は空でない、id は一意", () => {
+    expectIssue((r) => r.equipmentBases[2].classes.push("ninja"), "equipment-bases.json", '[2].classes[5]: unknown class id "ninja"');
+    expectIssue((r) => (r.equipmentBases[2].price = -1), "equipment-bases.json", "[2].price: expected integer >= 0");
+    expectIssue((r) => (r.equipmentBases[2].shopMinLevel = -1), "equipment-bases.json", "[2].shopMinLevel: expected integer >= 0");
+    expectIssue((r) => (r.equipmentBases[2].unidentifiedName = ""), "equipment-bases.json", "[2].unidentifiedName: expected non-empty string");
+    expectIssue((r) => (r.equipmentBases[2].id = "dagger"), "equipment-bases.json", '[2].id: duplicate id "dagger"');
+  });
+  test("data: IT-02（M7 の B1）items.json の装備の行と同じ id のベースは slot / damage / ranged / ac / classes / price が一致する", () => {
+    expectIssue((r) => (r.equipmentBases[1].price = 101), "equipment-bases.json", '[1].price: IT-02: price differs from items.json "long_sword"');
+    expectIssue((r) => (r.equipmentBases[1].damage = "1d6"), "equipment-bases.json", "[1].damage: IT-02");
+    expectIssue((r) => r.equipmentBases[1].classes.pop(), "equipment-bases.json", "[1].classes: IT-02");
+    expectIssue((r) => (r.equipmentBases[6].ac = -3), "equipment-bases.json", "[6].ac: IT-02");
+    // items.json に無いベース（鎚矛）は比べない
+    expect(issuesOf((r) => (r.equipmentBases[2].price = 61))).toEqual([]);
+  });
+  test("data: IT-04 開始の装備（prototypeParty / classes[].start）は汎用ベース表の id（items.json に無い鎚矛も可）", () => {
+    // ベルク（fighter）に鎚矛。items.json には無く、ベース表にだけある
+    expect(issuesOf((r) => (r.config.prototypeParty.members[1].equipment.weapon = "mace"))).toEqual([]);
+    expect(issuesOf((r) => (r.classes[0].start.equipment.weapon = "mace"))).toEqual([]);
+    expectIssue((r) => (r.config.prototypeParty.members[1].equipment.weapon = "herb"), "config.json", 'members[1].equipment.weapon: unknown equipment base id "herb"');
+    // 魔術師（members[4]）は鎚矛を装備できない（CH-75 をベースの classes で見る）
+    expectIssue((r) => (r.config.prototypeParty.members[4].equipment.weapon = "mace"), "config.json", "members[4].equipment.weapon: CH-75");
+  });
+});
+
+describe("data: item-options.json（IT-33 / IT-34。M7）", () => {
+  test("data: IT-33 実データのオプション 21 種", () => {
+    expect(loadGameData(rawData()).itemOptions.options).toHaveLength(21);
+  });
+  test("data: IT-34 effect.type は列挙、stat は能力値、status は状態異常、それ以外は追加の欄を持たない", () => {
+    expectIssue((r) => (r.itemOptions.options[0].effect.type = "luck"), "item-options.json", "options[0].effect.type: expected one of");
+    expectIssue((r) => (r.itemOptions.options[0].effect.stat = "cha"), "item-options.json", "options[0].effect.stat: expected one of");
+    expectIssue((r) => delete r.itemOptions.options[0].effect.stat, "item-options.json", "options[0].effect.stat: missing required field");
+    expectIssue((r) => (r.itemOptions.options[14].effect.status = "curse"), "item-options.json", "options[14].effect.status: expected one of");
+    expectIssue((r) => (r.itemOptions.options[6].effect.stat = "str"), "item-options.json", "options[6].effect.stat: unknown field");
+  });
+  test("data: IT-33 values は 3 件の正の整数で単調非減少、weight は正の整数、unit は \"\" か \"%\"、id は一意", () => {
+    expectIssue((r) => r.itemOptions.options[0].values.pop(), "item-options.json", "options[0].values: IT-33: expected 3 values");
+    expectIssue((r) => (r.itemOptions.options[0].values = [3, 2, 3]), "item-options.json", "options[0].values[1]: IT-33: values must be non-decreasing");
+    expectIssue((r) => (r.itemOptions.options[0].values[0] = 0), "item-options.json", "options[0].values[0]: expected integer >= 1");
+    // AC は 1 / 1 / 1（同じ値は可）
+    expect(issuesOf((r) => (r.itemOptions.options[0].values = [2, 2, 2]))).toEqual([]);
+    expectIssue((r) => (r.itemOptions.options[0].weight = 0), "item-options.json", "options[0].weight: expected integer >= 1");
+    expectIssue((r) => (r.itemOptions.options[0].unit = "pt"), "item-options.json", "options[0].unit: expected one of");
+    expectIssue((r) => (r.itemOptions.options[1].id = "str"), "item-options.json", 'options[1].id: duplicate id "str"');
+    expectIssue((r) => (r.itemOptions.options = []), "item-options.json", "options: expected at least 1 element(s)");
+  });
+});
+
+describe("data: uniques.json（IT-03 / IT-40。M7）", () => {
+  test("data: IT-03 実データのユニーク 8 種", () => {
+    expect(loadGameData(rawData()).uniques).toHaveLength(8);
+  });
+  test("data: IT-03 base は実在のベース。武器なら damage（caster なら magicPower も）、それ以外は ac", () => {
+    expectIssue((r) => (r.uniques[1].base = "katana"), "uniques.json", '[1].base: unknown equipment base id "katana"');
+    expectIssue((r) => delete r.uniques[1].damage, "uniques.json", "[1].damage: missing required field");
+    expectIssue((r) => (r.uniques[1].ac = -1), "uniques.json", "[1].ac: unknown field");
+    expectIssue((r) => (r.uniques[1].magicPower = 1), "uniques.json", "[1].magicPower: unknown field"); // 短剣は caster でない
+    expectIssue((r) => delete r.uniques[0].magicPower, "uniques.json", "[0].magicPower: missing required field"); // 杖は caster
+    expectIssue((r) => (r.uniques[0].magicPower = -1), "uniques.json", "[0].magicPower: expected integer >= 0");
+    expectIssue((r) => delete r.uniques[3].ac, "uniques.json", "[3].ac: missing required field");
+    expectIssue((r) => (r.uniques[3].damage = "1d4"), "uniques.json", "[3].damage: unknown field");
+  });
+  test("data: IT-40 skill.type は 9 種の列挙、value は整数（walkRegen ≥ 1、lifeSteal 0..100、value を使わない種類は 0）", () => {
+    expectIssue((r) => (r.uniques[0].skill.type = "fly"), "uniques.json", "[0].skill.type: expected one of");
+    expectIssue((r) => (r.uniques[0].skill.value = 1.5), "uniques.json", "[0].skill.value: expected integer");
+    expectIssue((r) => (r.uniques[0].skill = { type: "walkRegen", value: 0 }), "uniques.json", "[0].skill.value: IT-40: walkRegen");
+    expect(issuesOf((r) => (r.uniques[0].skill = { type: "walkRegen", value: 1 }))).toEqual([]);
+    expectIssue((r) => (r.uniques[5].skill.value = 101), "uniques.json", "[5].skill.value: IT-40: lifeSteal");
+    expect(issuesOf((r) => (r.uniques[5].skill.value = 100))).toEqual([]);
+    expectIssue((r) => (r.uniques[2].skill.value = 1), "uniques.json", "[2].skill.value: IT-40: reachFromBack value must be 0");
+  });
+  test("data: IT-33 optionTier は 1..3、price は 0 以上、id は一意で汎用ベースの id と重ならない", () => {
+    expectIssue((r) => (r.uniques[0].optionTier = 0), "uniques.json", "[0].optionTier: expected integer in 1..3");
+    expectIssue((r) => (r.uniques[0].optionTier = 4), "uniques.json", "[0].optionTier: expected integer in 1..3");
+    expectIssue((r) => (r.uniques[0].price = -1), "uniques.json", "[0].price: expected integer >= 0");
+    expectIssue((r) => (r.uniques[1].id = "dawn_flint_staff"), "uniques.json", '[1].id: duplicate id "dawn_flint_staff"');
+    expectIssue((r) => (r.uniques[1].id = "dagger"), "uniques.json", '[1].id: IT-03: unique id "dagger" overlaps');
+  });
+});
+
+describe("data: drops.json（IT-50〜53。M7）", () => {
+  test("data: IT-51 実データの表 7 つ。8 種のユニークはどれかの表に入る", () => {
+    const d = loadGameData(rawData());
+    expect(d.drops.tables.map((t) => t.id)).toEqual(["d01_f1", "d01_f2", "d01_boss", "d02_f1", "d02_f2", "d02_f3", "d02_boss"]);
+    const inTables = new Set(d.drops.tables.flatMap((t) => t.entries.flatMap((e) => ("unique" in e ? [e.unique] : []))));
+    expect([...inTables].sort()).toEqual(d.uniques.map((u) => u.id).sort());
+  });
+  test("data: IT-51 表は itemChance 0..100、rolls ≥ 1、entries ≥ 1 で base / unique のどちらか一方（実在）と正の weight、id は一意", () => {
+    expectIssue((r) => (r.drops.tables[0].itemChance = 101), "drops.json", "tables[0].itemChance: expected integer in 0..100");
+    expectIssue((r) => (r.drops.tables[0].rolls = 0), "drops.json", "tables[0].rolls: expected integer >= 1");
+    expectIssue((r) => (r.drops.tables[0].entries = []), "drops.json", "tables[0].entries: expected at least 1 element(s)");
+    expectIssue((r) => (r.drops.tables[0].entries[0].unique = "twin_tongue_dagger"), "drops.json", "tables[0].entries[0]: IT-51: entry needs exactly one");
+    expectIssue((r) => delete r.drops.tables[0].entries[0].base, "drops.json", "tables[0].entries[0]: IT-51: entry needs exactly one");
+    expectIssue((r) => (r.drops.tables[0].entries[0].base = "katana"), "drops.json", 'tables[0].entries[0].base: unknown equipment base id "katana"');
+    expectIssue((r) => (r.drops.tables[0].entries[9].unique = "excalibur"), "drops.json", 'tables[0].entries[9].unique: unknown unique id "excalibur"');
+    expectIssue((r) => (r.drops.tables[0].entries[0].weight = 0), "drops.json", "tables[0].entries[0].weight: expected integer >= 1");
+    expectIssue((r) => (r.drops.tables[1].id = "d01_f1"), "drops.json", 'tables[1].id: duplicate id "d01_f1"');
+  });
+  test("data: IT-51 chest は全ダンジョンの全階（1..floors）に実在の表、boss は全ダンジョンに実在の表", () => {
+    expectIssue((r) => delete r.drops.chest.d02, "drops.json", "chest.d02: missing required field");
+    expectIssue((r) => delete r.drops.chest.d01["2"], "drops.json", "chest.d01.2: missing required field");
+    expectIssue((r) => (r.drops.chest.d01["3"] = "d01_f2"), "drops.json", "chest.d01.3: IT-51: floor key must be 1..2");
+    expectIssue((r) => (r.drops.chest.d03 = { "1": "d01_f1" }), "drops.json", 'chest.d03: unknown dungeon id "d03"');
+    expectIssue((r) => (r.drops.chest.d01["1"] = "d09_f1"), "drops.json", 'chest.d01.1: unknown drop table id "d09_f1"');
+    expectIssue((r) => delete r.drops.boss.d02, "drops.json", "boss.d02: missing required field");
+    expectIssue((r) => (r.drops.boss.d01 = "nope"), "drops.json", 'boss.d01: unknown drop table id "nope"');
+    expectIssue((r) => (r.drops.boss.d03 = "d01_boss"), "drops.json", 'boss.d03: unknown dungeon id "d03"');
   });
 });
 

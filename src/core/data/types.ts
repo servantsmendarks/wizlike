@@ -343,6 +343,118 @@ export type BookItem = ItemBase & {
 
 export type Item = WeaponItem | ArmorLikeItem | ConsumableItem | BookItem;
 
+// ---- equipment-bases.json（IT-02。M7） ----
+
+type EquipmentBaseCommon = {
+  id: string;
+  name: string;
+  /** IT-12: 未鑑定の実体の表示名 */
+  unidentifiedName: string;
+  /** 装備できる職業。空なら全職業（CH-75） */
+  classes: string[];
+  /** IT-60 の基本額 */
+  price: number;
+  /** IT-62: 店に並ぶ流通レベルの下限 */
+  shopMinLevel: number;
+};
+
+/** 武器のベース。caster（術者用武器。IT-22）は ranged と両立しない */
+export type WeaponBase = EquipmentBaseCommon & { slot: "weapon"; damage: string; ranged: boolean; caster: boolean };
+
+/** 防具・盾・兜・小手・装飾のベース（CB-20 の ac） */
+export type ArmorLikeBase = EquipmentBaseCommon & { slot: Exclude<EquipSlot, "weapon">; ac: number };
+
+export type EquipmentBase = WeaponBase | ArmorLikeBase;
+
+// ---- item-options.json（IT-33 / IT-34。M7） ----
+
+export const OPTION_EFFECT_TYPES = [
+  "stat",
+  "hpMax",
+  "mpMax",
+  "hit",
+  "damage",
+  "ac",
+  "initiative",
+  "sanMax",
+  "fearLoss",
+  "statusResist",
+  "trapDetect",
+  "identifyRate",
+  "goldLuck",
+] as const;
+export type OptionEffectType = (typeof OPTION_EFFECT_TYPES)[number];
+
+export type OptionEffect =
+  | { type: "stat"; stat: StatKey }
+  | { type: "statusResist"; status: StatusId }
+  | { type: Exclude<OptionEffectType, "stat" | "statusResist"> };
+
+export const OPTION_UNITS = ["", "%"] as const;
+export type OptionUnit = (typeof OPTION_UNITS)[number];
+
+export type ItemOption = {
+  id: string;
+  name: string;
+  effect: OptionEffect;
+  unit: OptionUnit;
+  /** 段階 1〜3 の値（正の整数で単調非減少。IT-33） */
+  values: [number, number, number];
+  weight: number;
+};
+
+export type ItemOptions = { options: ItemOption[] };
+
+// ---- uniques.json（IT-03 / IT-40。M7） ----
+
+export const SKILL_TYPES = [
+  "mpCostDown",
+  "extraAttack",
+  "reachFromBack",
+  "initiativeUp",
+  "fearImmune",
+  "lifeSteal",
+  "autoIdentify",
+  "walkRegen",
+  "judgeBonus",
+] as const;
+export type SkillType = (typeof SKILL_TYPES)[number];
+
+/** IT-40: value を使わない種類（value は 0） */
+export const VALUELESS_SKILL_TYPES: readonly SkillType[] = ["reachFromBack", "fearImmune", "autoIdentify"];
+
+export type UniqueDef = {
+  id: string;
+  name: string;
+  /** equipment-bases.json の id（部位・職業・ranged・caster を引き継ぐ） */
+  base: string;
+  /** ベースが武器のときだけ */
+  damage?: string;
+  /** ベースが術者用武器（caster）のときだけ（MG-33） */
+  magicPower?: number;
+  /** ベースが武器以外のときだけ */
+  ac?: number;
+  skill: { type: SkillType; value: number };
+  /** IT-33: オプションの段階の固定値 1..3 */
+  optionTier: 1 | 2 | 3;
+  price: number;
+  description: string;
+};
+
+// ---- drops.json（IT-50〜53。M7） ----
+
+export type DropEntry = { base: string; weight: number } | { unique: string; weight: number };
+
+export type DropTable = { id: string; itemChance: number; rolls: number; entries: DropEntry[] };
+
+export type Drops = {
+  tables: DropTable[];
+  /** ダンジョン id → 階番号の文字列 "1".."floors" → 表の id（全ダンジョンの全階） */
+  chest: Record<string, Record<string, string>>;
+  /** ダンジョン id → 表の id（全ダンジョン） */
+  boss: Record<string, string>;
+};
+
 // ---- personalities.json ----
 
 export const AUTO_BATTLE_STYLES = ["none", "defendBelowHalf", "alwaysAttack", "targetRichest"] as const;
@@ -511,6 +623,10 @@ export type GameData = {
   spells: Spell[];
   monsters: Monster[];
   items: Item[];
+  equipmentBases: EquipmentBase[];
+  itemOptions: ItemOptions;
+  uniques: UniqueDef[];
+  drops: Drops;
   personalities: Personality[];
   penaltyTable: PenaltyTable;
   dungeons: DungeonDef[];
@@ -530,6 +646,10 @@ export const DATA_FILES: { readonly [K in keyof RawGameData]: string } = {
   spells: "spells.json",
   monsters: "monsters.json",
   items: "items.json",
+  equipmentBases: "equipment-bases.json",
+  itemOptions: "item-options.json",
+  uniques: "uniques.json",
+  drops: "drops.json",
   personalities: "personalities.json",
   penaltyTable: "penalty-table.json",
   dungeons: "dungeons.json",

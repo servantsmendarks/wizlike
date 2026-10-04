@@ -8,6 +8,10 @@ import classes from "../../data/classes.json";
 import spells from "../../data/spells.json";
 import monsters from "../../data/monsters.json";
 import items from "../../data/items.json";
+import equipmentBases from "../../data/equipment-bases.json";
+import itemOptions from "../../data/item-options.json";
+import uniques from "../../data/uniques.json";
+import drops from "../../data/drops.json";
 import personalities from "../../data/personalities.json";
 import penaltyTable from "../../data/penalty-table.json";
 import dungeons from "../../data/dungeons.json";
@@ -30,6 +34,10 @@ export function loadFreshData(): GameData {
       spells,
       monsters,
       items,
+      equipmentBases,
+      itemOptions,
+      uniques,
+      drops,
       personalities,
       penaltyTable,
       dungeons,

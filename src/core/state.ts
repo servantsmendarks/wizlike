@@ -2,15 +2,19 @@
 // ルール関数すべてが使う補助。見つからない id は Error（起動時に検証済みなので、来たらバグ）。
 import type {
   ClassDef,
+  DropTable,
   DungeonDef,
+  EquipmentBase,
   EventDef,
   GameData,
   InnRank,
   Item,
+  ItemOption,
   Monster,
   Personality,
   PersonalityId,
   Spell,
+  UniqueDef,
 } from "./data/index";
 import { EQUIP_SLOTS } from "./data/index";
 import type { Character, GameState, RuleContext } from "./types";
@@ -41,6 +45,34 @@ export function itemOf(data: GameData, id: string): Item {
   const i = data.items.find((x) => x.id === id);
   if (i === undefined) throw new Error(`unknown item id: ${id}`);
   return i;
+}
+
+/** IT-02: equipment-bases.json のベース */
+export function baseOf(data: GameData, id: string): EquipmentBase {
+  const b = data.equipmentBases.find((x) => x.id === id);
+  if (b === undefined) throw new Error(`unknown equipment base id: ${id}`);
+  return b;
+}
+
+/** IT-03: uniques.json のユニーク */
+export function uniqueOf(data: GameData, id: string): UniqueDef {
+  const u = data.uniques.find((x) => x.id === id);
+  if (u === undefined) throw new Error(`unknown unique id: ${id}`);
+  return u;
+}
+
+/** IT-33: item-options.json のオプション */
+export function optionOf(data: GameData, id: string): ItemOption {
+  const o = data.itemOptions.options.find((x) => x.id === id);
+  if (o === undefined) throw new Error(`unknown item option id: ${id}`);
+  return o;
+}
+
+/** IT-51: drops.json の表 */
+export function dropTableOf(data: GameData, id: string): DropTable {
+  const t = data.drops.tables.find((x) => x.id === id);
+  if (t === undefined) throw new Error(`unknown drop table id: ${id}`);
+  return t;
 }
 
 export function monsterOf(data: GameData, id: string): Monster {

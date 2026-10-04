@@ -33,14 +33,18 @@ import {
   EVENT_KINDS,
   ITEM_TYPES,
   LURE_TAGS,
+  OPTION_EFFECT_TYPES,
+  OPTION_UNITS,
   OUTCOME_QUALITIES,
   PERSONALITY_IDS,
+  SKILL_TYPES,
   SCHOOLS,
   SPELL_TARGETS,
   STAT_KEYS,
   STATUS_IDS,
   TRAP_IDS,
   USABLE_IN,
+  VALUELESS_SKILL_TYPES,
   type RawGameData,
 } from "./types";
 
@@ -146,6 +150,10 @@ type Index = {
   spells: Map<string, Obj>;
   monsters: Map<string, Obj>;
   items: Map<string, Obj>;
+  /** equipment-bases.json（IT-02。M7） */
+  bases: Map<string, Obj>;
+  /** uniques.json（IT-03。M7） */
+  uniques: Map<string, Obj>;
   events: Map<string, Obj>;
   dungeons: Map<string, Obj>;
   strings: Set<string>;
@@ -181,6 +189,8 @@ function buildIndex(raw: RawGameData): Index {
     spells: byId(raw.spells),
     monsters: byId(raw.monsters),
     items: byId(raw.items),
+    bases: byId(raw.equipmentBases),
+    uniques: byId(raw.uniques),
     events: byId(raw.events),
     dungeons: byId(raw.dungeons),
     strings,
@@ -404,15 +414,15 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
  * kit は equipment / inventory / knownSpells を持つオブジェクト（形の検査は呼び出し側）
  */
 function validateKit(ctx: Ctx, p: string, m: Obj, classId: string | undefined, cls: Obj | undefined, ix: Index): void {
-  // CH-70 / CH-75 装備
+  // CH-70 / CH-75 装備（IT-04: 汎用ベース表の id）
   const eq = objOf(m.equipment);
   let equipped = 0;
   if (eq) {
     for (const [slot, itemId] of Object.entries(eq)) {
       const ep = at(at(p, "equipment"), slot);
       equipped++;
-      ref(ctx, ep, itemId, ix.items, "item");
-      const item = typeof itemId === "string" ? ix.items.get(itemId) : undefined;
+      ref(ctx, ep, itemId, ix.bases, "equipment base");
+      const item = typeof itemId === "string" ? ix.bases.get(itemId) : undefined;
       if (!item) continue;
       if (item.slot !== slot)
         report(ctx, ep, `CH-70: item ${JSON.stringify(itemId)} has slot ${JSON.stringify(item.slot)}, not ${JSON.stringify(slot)}`);
@@ -636,6 +646,173 @@ function validateItems(ctx: Ctx, v: unknown, ix: Index): void {
     return o;
   })(ctx, "", v);
   if (Array.isArray(a)) uniqueIds(ctx, "", a);
+}
+
+// ---- equipment-bases.json（IT-02 / IT-20〜22。M7） ----
+
+/**
+ * M7 の B1 の間だけの検査: items.json の装備の行と同じ id のベースは、これらの値も一致する
+ * （実体の itemId が両方を指すため。B2 で items.json の装備の行を消し、代わりに「id が重ならない」を検査する）
+ */
+const BASE_ITEM_SAME_KEYS = ["slot", "damage", "ranged", "ac", "classes", "price"] as const;
+
+function validateEquipmentBases(ctx: Ctx, v: unknown, ix: Index): void {
+  const classes = L((c, p, x) => {
+    const s = str(c, p, x);
+    ref(c, p, s, ix.classes, "class");
+    return s;
+  });
+  const common = { id: S, name: S, unidentifiedName: S, slot: E(EQUIP_SLOTS), classes, price: I(NON_NEG), shopMinLevel: I(NON_NEG) };
+  const base: Field = (c, p, x) => {
+    const o = obj(c, p, x, null);
+    if (o === undefined) return undefined;
+    const slot = oneOf(c, at(p, "slot"), o.slot, EQUIP_SLOTS);
+    if (slot === undefined) return undefined;
+    // 武器は damage / ranged / caster を持ち ac を持たない。それ以外は ac を持ち damage / ranged / caster を持たない（CB-20 / CB-22）
+    const spec = slot === "weapon" ? { ...common, damage: D, ranged: B, caster: B } : { ...common, ac: I() };
+    const f = fields(c, p, o, spec);
+    if (f !== undefined && f.caster === true && f.ranged === true) report(c, at(p, "caster"), "IT-22: a caster weapon cannot be ranged");
+    return f;
+  };
+  const a = L(base)(ctx, "", v);
+  if (!Array.isArray(a)) return;
+  uniqueIds(ctx, "", a);
+  a.forEach((b, i) => {
+    if (!isObj(b) || typeof b.id !== "string") return;
+    const item = ix.items.get(b.id);
+    if (item === undefined || !(EQUIP_SLOTS as readonly unknown[]).includes(item.type)) return;
+    for (const k of BASE_ITEM_SAME_KEYS) {
+      if (JSON.stringify(b[k]) !== JSON.stringify(item[k]))
+        report(ctx, at(at("", i), k), `IT-02: ${k} differs from items.json ${JSON.stringify(b.id)} (${JSON.stringify(b[k])} vs ${JSON.stringify(item[k])})`);
+    }
+  });
+}
+
+// ---- item-options.json（IT-33 / IT-34。M7） ----
+
+function validateItemOptions(ctx: Ctx, v: unknown): void {
+  // IT-33: 段階 1〜3 の値。正の整数で単調非減少
+  const values: Field = (c, p, x) => {
+    const a = list(c, p, x);
+    if (a === undefined) return undefined;
+    if (a.length !== 3) report(c, p, `IT-33: expected 3 values (tiers 1..3), got ${a.length}`);
+    const ns = a.map((e, i) => int(c, at(p, i), e, POS_INT));
+    for (let i = 1; i < ns.length; i++) {
+      const prev = ns[i - 1];
+      const cur = ns[i];
+      if (prev !== undefined && cur !== undefined && cur < prev) report(c, at(p, i), `IT-33: values must be non-decreasing (${prev} > ${cur})`);
+    }
+    return a;
+  };
+  const effectSpecs: Record<string, Record<string, Field>> = Object.fromEntries(OPTION_EFFECT_TYPES.map((t) => [t, {}]));
+  effectSpecs.stat = { stat: E(STAT_KEYS) };
+  effectSpecs.statusResist = { status: E(STATUS_IDS) };
+  const t = fields(ctx, "", v, {
+    options: L(F({ id: S, name: S, effect: U(effectSpecs), unit: E(OPTION_UNITS), values, weight: I(POS_INT) }), 1),
+  });
+  if (t !== undefined && Array.isArray(t.options)) uniqueIds(ctx, "options", t.options);
+}
+
+// ---- uniques.json（IT-03 / IT-40。M7） ----
+
+function validateUniques(ctx: Ctx, v: unknown, ix: Index): void {
+  const skill: Field = (c, p, x) => {
+    const o = fields(c, p, x, { type: E(SKILL_TYPES), value: I() });
+    if (o === undefined) return undefined;
+    const value = intOf(o.value);
+    const type = strOf(o.type);
+    if (value === undefined || type === undefined) return o;
+    const vp = at(p, "value");
+    if (type === "walkRegen" && value < 1) report(c, vp, `IT-40: walkRegen value must be >= 1, got ${value}`);
+    if (type === "lifeSteal" && (value < 0 || value > 100)) report(c, vp, `IT-40: lifeSteal value must be in 0..100, got ${value}`);
+    if ((VALUELESS_SKILL_TYPES as readonly string[]).includes(type) && value !== 0) report(c, vp, `IT-40: ${type} value must be 0, got ${value}`);
+    return o;
+  };
+  const baseRef: Field = (c, p, x) => {
+    const s = str(c, p, x);
+    ref(c, p, s, ix.bases, "equipment base");
+    return s;
+  };
+  const common = { id: S, name: S, base: baseRef, skill, optionTier: I({ min: 1, max: 3 }), price: I(NON_NEG), description: S };
+  const unique: Field = (c, p, x) => {
+    const o = obj(c, p, x, null);
+    if (o === undefined) return undefined;
+    const baseId = strOf(o.base);
+    const b = baseId === undefined ? undefined : ix.bases.get(baseId);
+    const slot = strOf(b?.slot);
+    // ベースが武器なら damage（caster なら magicPower も）、それ以外は ac。ベースが分からなければ型だけ見る
+    const spec =
+      slot === "weapon"
+        ? b?.caster === true
+          ? { ...common, damage: D, magicPower: I(NON_NEG) }
+          : { ...common, damage: D }
+        : slot !== undefined && (EQUIP_SLOTS as readonly string[]).includes(slot)
+          ? { ...common, ac: I() }
+          : { ...common, damage: opt(D), magicPower: opt(I(NON_NEG)), ac: opt(I()) };
+    return fields(c, p, o, spec);
+  };
+  const a = L(unique)(ctx, "", v);
+  if (!Array.isArray(a)) return;
+  uniqueIds(ctx, "", a);
+  a.forEach((u, i) => {
+    const id = strOf(get(u, "id"));
+    if (id !== undefined && ix.bases.has(id)) report(ctx, at(at("", i), "id"), `IT-03: unique id ${JSON.stringify(id)} overlaps an equipment base id`);
+  });
+}
+
+// ---- drops.json（IT-50〜53。M7） ----
+
+function validateDrops(ctx: Ctx, v: unknown, ix: Index): void {
+  const refTo = (ids: ReadonlyMap<string, unknown>, what: string): Field => (c, p, x) => {
+    const s = str(c, p, x);
+    ref(c, p, s, ids, what);
+    return s;
+  };
+  const entry: Field = (c, p, x) => {
+    const o = fields(c, p, x, { base: opt(refTo(ix.bases, "equipment base")), unique: opt(refTo(ix.uniques, "unique")), weight: I(POS_INT) });
+    if (o !== undefined && (o.base === undefined) === (o.unique === undefined)) report(c, p, "IT-51: entry needs exactly one of base or unique");
+    return o;
+  };
+  const t = fields(ctx, "", v, {
+    tables: L(F({ id: S, itemChance: I(PERCENT), rolls: I(POS_INT), entries: L(entry, 1) }), 1),
+    chest: (c, p, x) => obj(c, p, x, null),
+    boss: (c, p, x) => obj(c, p, x, null),
+  });
+  if (t === undefined) return;
+  const tables = arrOf(t.tables);
+  uniqueIds(ctx, "tables", tables);
+  const tableRef = refTo(byId(tables), "drop table");
+  const has = (o: Obj, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
+
+  // IT-51: chest は全ダンジョンの全階（"1".."floors"）に表を持つ
+  const chest = objOf(t.chest);
+  if (chest !== undefined) {
+    for (const [dId, x] of Object.entries(chest)) {
+      const dp = at("chest", dId);
+      const d = ix.dungeons.get(dId);
+      if (d === undefined) report(ctx, dp, `unknown dungeon id ${JSON.stringify(dId)}`);
+      const fo = obj(ctx, dp, x, null);
+      if (fo === undefined) continue;
+      const floors = intOf(d?.floors);
+      const keys = floors !== undefined && floors >= 1 ? Array.from({ length: floors }, (_, k) => String(k + 1)) : undefined;
+      for (const [k, tid] of Object.entries(fo)) {
+        if (keys !== undefined && !keys.includes(k)) report(ctx, at(dp, k), `IT-51: floor key must be 1..${floors}`);
+        tableRef(ctx, at(dp, k), tid);
+      }
+      if (keys !== undefined) for (const k of keys) if (!has(fo, k)) report(ctx, at(dp, k), "missing required field");
+    }
+    for (const dId of ix.dungeons.keys()) if (!has(chest, dId)) report(ctx, at("chest", dId), "missing required field");
+  }
+  // IT-51: boss は全ダンジョンに表を持つ
+  const boss = objOf(t.boss);
+  if (boss !== undefined) {
+    for (const [dId, tid] of Object.entries(boss)) {
+      const dp = at("boss", dId);
+      if (!ix.dungeons.has(dId)) report(ctx, dp, `unknown dungeon id ${JSON.stringify(dId)}`);
+      tableRef(ctx, dp, tid);
+    }
+    for (const dId of ix.dungeons.keys()) if (!has(boss, dId)) report(ctx, at("boss", dId), "missing required field");
+  }
 }
 
 // ---- personalities.json ----
@@ -1017,6 +1194,10 @@ export function validateGameData(raw: RawGameData): string[] {
   validateSpells(ctxOf("spells"), raw.spells);
   validateMonsters(ctxOf("monsters"), raw.monsters, ix);
   validateItems(ctxOf("items"), raw.items, ix);
+  validateEquipmentBases(ctxOf("equipmentBases"), raw.equipmentBases, ix);
+  validateItemOptions(ctxOf("itemOptions"), raw.itemOptions);
+  validateUniques(ctxOf("uniques"), raw.uniques, ix);
+  validateDrops(ctxOf("drops"), raw.drops, ix);
   validatePersonalities(ctxOf("personalities"), raw.personalities);
   validatePenaltyTable(ctxOf("penaltyTable"), raw.penaltyTable, ix);
   validateDungeons(ctxOf("dungeons"), raw.dungeons, ix);

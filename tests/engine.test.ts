@@ -1,7 +1,19 @@
 import { describe, expect, test } from "vitest";
 import { createInitialState, execute } from "../src/core/engine";
 import { createRng } from "../src/core/rng";
-import { cloneState, createItemInstance, destroyItemInstance, dungeonOf, itemDisplayName, memberById, monsterOf } from "../src/core/state";
+import {
+  baseOf,
+  cloneState,
+  createItemInstance,
+  destroyItemInstance,
+  dropTableOf,
+  dungeonOf,
+  itemDisplayName,
+  memberById,
+  monsterOf,
+  optionOf,
+  uniqueOf,
+} from "../src/core/state";
 import { floorOf, visibleCellsOf, warpTarget } from "../src/core/rules/dungeon";
 import { cellAt, idx, isPassable, step } from "../src/core/rules/dungeon-gen";
 import { sanJustBelow, sanStage } from "../src/core/rules/san";
@@ -139,6 +151,17 @@ describe("engine: execute", () => {
   test("CB-03 monsterOf は id で monsters.json の定義を返し、未知の id は Error", () => {
     expect(monsterOf(data, data.monsters[0]!.id)).toBe(data.monsters[0]);
     expect(() => monsterOf(data, "m99")).toThrow("unknown monster id: m99");
+  });
+
+  test("IT-02/IT-03/IT-33/IT-51 baseOf・uniqueOf・optionOf・dropTableOf は id で定義を返し、未知の id は Error（M7）", () => {
+    expect(baseOf(data, "mace")).toBe(data.equipmentBases[2]);
+    expect(uniqueOf(data, "twin_tongue_dagger").base).toBe("dagger");
+    expect(optionOf(data, "hp_max").values).toEqual([3, 6, 10]);
+    expect(dropTableOf(data, "d02_boss").rolls).toBe(2);
+    expect(() => baseOf(data, "herb")).toThrow("unknown equipment base id: herb");
+    expect(() => uniqueOf(data, "dagger")).toThrow("unknown unique id: dagger");
+    expect(() => optionOf(data, "x")).toThrow("unknown item option id: x");
+    expect(() => dropTableOf(data, "x")).toThrow("unknown drop table id: x");
   });
 
   test("DG-41 destroyItemInstance は潜行中なら dive.ledger.items からも外す（他の台帳の品と持ち込みの品は残る）", () => {
