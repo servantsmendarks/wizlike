@@ -567,3 +567,4 @@
 - 2026-10-04 core(M5.5): DG-21 察知した罠は dive.knownTraps（階ごとの添字）に入れ、発動で外す。既知の罠に入っても察知は判定し直す（規則は変えない）。visibleCells は変えず、別の問い合わせ visibleKnownTraps で返す。
 - 2026-10-04 save(M5.5): schemaVersion を 2 にし、最初の移行（v1 → v2）で adventureTurns 0・tavernEventMark 0・dive.knownTraps {} を入れる。
 - 2026-10-04 data(M5.5): 酒場の語りとイベントは data/tavern.json に置く（events.json の EventDef と形が違い、trigger を足すと迷宮のイベントの検証が複雑になるため）。効果は gold / san（party）/ message / nothing だけ。message のキーも語り・lookTexts と同じく差し込みを持たないことを検証する（applyEffects の message は params なしで出すため）。
+- 2026-10-04 core(M5.5): 街でも dungeon.cast / dungeon.useItem を受け付ける（§5 の骨格の名前のまま）。帰還は街では not usable here。受け付けない場所の理由は not in dungeon を wrong screen に改めた。fieldItemMenu も街で非 null にし、FieldItemView.isReturn（帰還の糸の確認の段のため）と TownMenu.canIdentify（酒場の鑑定の行のため。town.ts は camp.ts を import しないので同じ条件を数える）を足した。

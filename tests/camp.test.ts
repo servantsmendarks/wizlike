@@ -8,7 +8,7 @@ import { execute } from "../src/core/engine";
 import { cloneRng, createRng, randInt, rollDice } from "../src/core/rng";
 import { campMenu, campSummary, checkCast, checkEquip, checkUnequip } from "../src/core/rules/camp";
 import { frontLineIds } from "../src/core/rules/combat-calc";
-import { resurrectRate } from "../src/core/rules/town";
+import { resurrectRate, townMenu } from "../src/core/rules/town";
 import { cloneState, createItemInstance } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState } from "../src/core/types";
 import { dived, withBattle } from "./helpers/battle";
@@ -69,10 +69,10 @@ function battleOf(s: GameState): GameState {
 // ---------------------------------------------------------------------------
 
 describe("MG-44 dungeon.cast の受け付け", () => {
-  test("MG-32/MG-44 理由の順: not in dungeon（街・戦闘中・title）→ no such member → cannot act → unknown spell → not usable here → no mp → bad target。同じ参照で乱数も変えない", () => {
-    expectRejected(newGame(1), cast("c4", "heal", "c1"), "not in dungeon");
-    expectRejected(battleOf(inDungeon()), cast("c4", "heal", "c1"), "not in dungeon");
-    expectRejected(createInitialState(1, data), cast("c4", "heal", "c1"), "not in dungeon");
+  // M5.5: 街でも受け付けるようにしたので、先頭の理由は not in dungeon（街・戦闘中・title）から wrong screen（戦闘中・title）に変えた
+  test("MG-32/MG-44 理由の順: wrong screen（戦闘中・title）→ no such member → cannot act → unknown spell → not usable here → no mp → bad target。同じ参照で乱数も変えない", () => {
+    expectRejected(battleOf(inDungeon()), cast("c4", "heal", "c1"), "wrong screen");
+    expectRejected(createInitialState(1, data), cast("c4", "heal", "c1"), "wrong screen");
     expectRejected(inDungeon(), cast("c9", "heal", "c1"), "no such member");
     for (const p of [{ status: ["sleep"] }, { san: 0 }, { life: "dead", hp: 0 }] as Partial<Character>[]) {
       expectRejected(inDungeon({ c4: p }), cast("c4", "heal", "c1"), "cannot act");
@@ -90,6 +90,39 @@ describe("MG-44 dungeon.cast の受け付け", () => {
 
   test("MG-44 保留中の選択があれば choice pending", () => {
     expectRejected(pending(inDungeon()), cast("c4", "heal", "c1"), "choice pending");
+  });
+
+  test("MG-44 街でも dungeon.cast の治癒を受け付ける（mpChanged → battle.cast → hpChanged → battle.heal。鏡の rng）。帰還は街では not usable here（MP は減らない）", () => {
+    const s = inTown({ c1: { hp: 1 } });
+    const m = cloneRng(s.rng);
+    const roll = rollDice(m, "1d8").total;
+    const c4 = member(s, "c4");
+    const next = Math.min(member(s, "c1").hpMax, 1 + roll);
+    const r = ok(s, cast("c4", "heal", "c1"));
+    expect(r.events).toEqual([
+      { kind: "mpChanged", id: "c4", delta: -2, mp: c4.mp - 2 },
+      { kind: "message", key: "battle.cast", params: { actor: "ドナ", spell: "治癒" } },
+      { kind: "hpChanged", id: "c1", delta: next - 1, hp: next },
+      { kind: "message", key: "battle.heal", params: { target: "アルド", amount: next - 1 } },
+    ]);
+    expect(r.state.rng).toEqual(m);
+    expect(r.state.screen).toBe("town");
+    expect(r.state.dive).toBeNull();
+    // 帰還は街では使えない（MP は減らず、同じ参照）。迷宮では受け付ける
+    expectRejected(inTown({ c4: PRIEST_ALL }), cast("c4", "return"), "not usable here");
+    expect(checkCast(inDungeon({ c4: PRIEST_ALL }), data, "c4", "return", undefined)).toBeNull();
+    // 街でも順は同じ: cannot act → unknown spell → not usable here（battle 専用）→ no mp → bad target
+    expectRejected(inTown({ c4: { status: ["sleep"] } }), cast("c4", "heal", "c1"), "cannot act");
+    expectRejected(inTown(), cast("c5", "fire_arrow"), "not usable here");
+    expectRejected(inTown({ c4: { mp: 1 } }), cast("c4", "heal", "c1"), "no mp");
+    expectRejected(inTown(), cast("c4", "heal"), "bad target");
+    // 街の蘇生（MG-42）も受け付ける: randInt(1, 100) を 1 回
+    const d = inTown({ c4: PRIEST_ALL, c2: { life: "dead", hp: 0 } });
+    const m2 = cloneRng(d.rng);
+    randInt(m2, 1, 100);
+    const rr = ok(d, cast("c4", "resurrect", "c2"));
+    expect(rr.events[2]).toEqual({ kind: "message", key: "dungeon.cast.resurrectRoll", params: { name: "ベルク" } });
+    expect(rr.state.rng).toEqual(m2);
   });
 });
 
@@ -406,8 +439,16 @@ describe("UI-53/TW-03 campMenu", () => {
     expect(campMenu(r.state, data)).toBeNull();
   });
 
-  test("UI-53 spells: 街では []。迷宮では heal / cure_poison / return / resurrect だけで、usable は checkCast と一致する", () => {
-    expect(campMenu(inTown({ c4: PRIEST_ALL }), data)!.members.every((m) => m.spells.length === 0)).toBe(true);
+  // M5.5: 街でも spells を返すようにした（旧: 街では []）
+  test("UI-53/TW-03 spells: 迷宮では heal / cure_poison / return / resurrect だけで、usable は checkCast と一致する。campMenu の place town でも spells を返し、帰還は usable false", () => {
+    const tm = campMenu(inTown({ c4: PRIEST_ALL }), data)!;
+    expect(tm.place).toBe("town");
+    expect(tm.members.find((x) => x.id === "c4")!.spells).toEqual([
+      { spellId: "heal", name: "治癒", mp: 2, target: "ally", usable: true },
+      { spellId: "cure_poison", name: "解毒", mp: 3, target: "ally", usable: true },
+      { spellId: "return", name: "帰還", mp: 8, target: "none", usable: false }, // 街では帰還できない
+      { spellId: "resurrect", name: "蘇生", mp: 15, target: "dead", usable: false }, // 死者なし
+    ]);
     const s = inDungeon({ c4: { ...PRIEST_ALL, knownSpells: ["heal", "blessing", "cure_poison", "identify", "return", "resurrect"], mp: 8 } });
     const m = campMenu(s, data)!;
     const c4 = m.members.find((x) => x.id === "c4")!;
@@ -527,5 +568,21 @@ describe("UI-53/DG-40 campSummary", () => {
     expect(campSummary(battleOf(inDungeon()), data)).toBeNull();
     expect(campSummary(pending(inDungeon()), data)).toBeNull();
     expect(campSummary(createInitialState(1, data), data)).toBeNull();
+  });
+});
+
+describe("TW-03 townMenu.canIdentify（M5.5）", () => {
+  test("TW-03 townMenu.canIdentify は campMenu.identifiers.length > 0 と同値（司教がいる / いない / 司教が行動不能）", () => {
+    const cases: Array<[string, GameState, boolean]> = [
+      ["司教なし", inTown(), false],
+      ["司教あり", inTown({ c5: { classId: "bishop" } }), true],
+      ["司教が睡眠", inTown({ c5: { classId: "bishop", status: ["sleep"] } }), false],
+      ["司教が死亡", inTown({ c5: { classId: "bishop", life: "dead", hp: 0 } }), false],
+      ["司教が 2 人で 1 人は行動不能", inTown({ c5: { classId: "bishop", san: 0 }, c4: { classId: "bishop" } }), true],
+    ];
+    for (const [name, s, want] of cases) {
+      expect(townMenu(s, data)!.canIdentify, name).toBe(want);
+      expect(campMenu(s, data)!.identifiers.length > 0, name).toBe(want);
+    }
   });
 });

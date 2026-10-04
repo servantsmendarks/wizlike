@@ -26,7 +26,7 @@
 
 ## 4. 脱出とボス
 
-- DG-30 脱出手段: 帰還の糸（アイテム `effect.type === "return"`、非戦闘時いつでも、消費）、帰還呪文（MG-40）、徒歩（1 階の上り階段）、テレポーター（DG-32）。いずれも街へ戻り、潜行台帳の内容を持ち帰る。帰還の糸は `dungeon.useItem` で使う（使う者は行動可能（CH-44）で、品は本人の所持品（装備中でないもの）。戦闘中・選択の保留中は使えない）。
+- DG-30 脱出手段: 帰還の糸（アイテム `effect.type === "return"`、非戦闘時いつでも、消費）、帰還呪文（MG-40）、徒歩（1 階の上り階段）、テレポーター（DG-32）。いずれも街へ戻り、潜行台帳の内容を持ち帰る。帰還の糸は `dungeon.useItem` で使う（使う者は行動可能（CH-44）で、品は本人の所持品（装備中でないもの）。戦闘中・選択の保留中は使えない（rejected `wrong screen` / `choice pending`）。街では `dungeon.useItem` の薬草などは使えるが、帰還の糸は rejected `not usable here`（M5.5。TW-03））。
 - DG-31 最下層の `boss` セルには固定遭遇（`dungeons[].boss`）がある。逃走不可（CB-02）。ボスが未撃破なら、そのセルへの前進では遭遇の d100 を振らずに固定遭遇にする。
 - DG-32 ボス撃破で、その場に街へのテレポーターが出現し（セルを `teleporter` に書き換える）、`progress.clearedDungeons` にそのダンジョンを加える（永続）。`onClear` で次のダンジョンの開放と店の在庫追加（TW-06）を行う。実装ではセルを書き換えず、`bossDefeated` が真なら floorOf がボスのセルを `teleporter` に重ねる。ボス撃破の直後（一行はテレポーターの上に立っている）と、前進でテレポーターのセルに入ったときに確認（`pendingChoice`。kind `teleporter`、promptKey `dungeon.teleporter`、選択肢は「街へ戻る」`teleport` /「やめる」`stay`）を出し、`teleport` で街へ戻る（DG-43）。テレポーターのセルでは遭遇判定をしない。`clearedDungeons` への追加と `onClear` の開放は初回の撃破だけ。
 - DG-33 クリア済みのダンジョンにも再入場できる（ファーミング用）。ボスは再入場ごとに再出現する【仮】。再撃破でも `onClear` は再度は起きない。

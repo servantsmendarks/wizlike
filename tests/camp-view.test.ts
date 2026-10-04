@@ -346,10 +346,12 @@ describe("CH-77/UI-53 鑑定", () => {
 });
 
 describe("TW-03/UI-52 酒場とキャンプの共有", () => {
-  test("TW-03 酒場の最初のページ: 状態は先頭の者、装備は人の段、並び順は未選択。街の campMenu には呪文が無い", () => {
+  // M5.5: core が街でも道具と呪文を返すようにした（旧: 街の道具は null、呪文は無い）。酒場の呪文・道具の段は P2 の酒場の一覧で開く
+  test("TW-03 酒場の最初のページ: 状態は先頭の者、装備は人の段、並び順は未選択。街でも道具（fieldItemMenu）と呪文（campMenu）がある", () => {
     const s = inTown();
     const m = input(s);
-    expect(m.items).toBeNull();
+    expect(m.items).not.toBeNull();
+    expect(m.menu.members.find((x) => x.id === "c4")!.spells.map((x) => x.spellId)).toEqual(["heal"]);
     expect(campFirstPage("tavern", "status", m.menu)).toEqual({ kind: "status", memberId: "c1" });
     expect(campFirstPage("tavern", "equip", m.menu)).toEqual({ kind: "equip", stage: "member" });
     expect(campFirstPage("tavern", "order", m.menu)).toEqual({ kind: "order", picked: null });
@@ -405,9 +407,9 @@ describe("UI-53 campRepair", () => {
     expect(campRepair("camp", { kind: "spell", stage: "target", casterId: "c4", spellId: "heal" }, nomp)).toEqual(ok);
     // 鑑定する者がいない
     expect(campRepair("camp", { kind: "identify", stage: "item", appraiserId: "c5" }, m)).toEqual({ kind: "top" });
-    // 酒場（街）では道具・呪文の段は成り立たない。酒場の装備の段で行動できない者は人の段へ
+    // 街でも道具の段は成り立つ（M5.5。core の fieldItemMenu が街でも非 null）。酒場の装備の段で行動できない者は人の段へ
     const town = input(inTown({ c2: { status: ["sleep"] } }));
-    expect(campRepair("camp", { kind: "item", stage: "member" }, town)).toEqual({ kind: "top" });
+    expect(campRepair("camp", { kind: "item", stage: "member" }, town)).toEqual({ kind: "item", stage: "member" });
     expect(campRepair("tavern", { kind: "equip", stage: "slot", memberId: "c2" }, town)).toEqual({ kind: "equip", stage: "member" });
     expect(campRepair("tavern", { kind: "order", picked: "c9" }, town)).toEqual({ kind: "order", picked: null });
   });

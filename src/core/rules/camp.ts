@@ -1,6 +1,6 @@
 // キャンプと酒場のコマンド（MG-44 dungeon.cast、CH-03 party.reorder、CH-76 party.equip / party.unequip、CH-77 party.identify）と、
 // 表示層向けの問い合わせ campMenu（UI-53 / TW-03）・campSummary（UI-53）。
-// 受け付ける場所は campPlace が決める（街、または迷宮の戦闘外かつ保留なし。dungeon.cast だけは迷宮のみ）。
+// 受け付ける場所は campPlace が決める（街、または迷宮の戦闘外かつ保留なし。M5.5 から dungeon.cast も街で受け付ける。帰還は迷宮だけ）。
 // 乱数を使うのは dungeon.cast の heal（対象ごとに effect.dice を 1 回）と resurrect（randInt(1, 100) を 1 回）だけ。
 // town.ts からはこのファイルを import しない（循環を作らない）。
 import type { EquipItem, EquipSlot, GameData, Item, Spell } from "../data/index";
@@ -62,7 +62,7 @@ function spellTargetKind(sp: Spell): CampSpellView["target"] {
 
 /**
  * dungeon.cast を受け付けない理由（英語）。受け付けるなら null。
- * 順: not in dungeon → no such member → cannot act → unknown spell → not usable here → no mp → bad target
+ * 順: wrong screen → no such member → cannot act → unknown spell → not usable here（戦闘外で使えない呪文と、街の帰還。M5.5）→ no mp → bad target
  */
 export function checkCast(
   state: GameState,
@@ -71,7 +71,8 @@ export function checkCast(
   spellId: unknown,
   targetId: unknown,
 ): string | null {
-  if (campPlace(state) !== "dungeon") return "not in dungeon";
+  const place = campPlace(state);
+  if (place === null) return "wrong screen";
   const ch = typeof memberId === "string" ? memberById(state, memberId) : null;
   if (ch === null) return "no such member";
   if (!canAct(ch)) return "cannot act";
@@ -80,6 +81,7 @@ export function checkCast(
   }
   const sp = spellOf(data, spellId);
   if (!fieldSpellOk(sp)) return "not usable here";
+  if (place === "town" && sp.effect.type === "return") return "not usable here"; // MG-32（M5.5）: 帰還は迷宮だけ
   if (ch.mp < sp.mp) return "no mp";
   const kind = spellTargetKind(sp);
   if (kind !== "none") {
@@ -322,14 +324,13 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
     place,
     members: state.party.map((ch, i) => {
       const spells: CampSpellView[] = [];
-      if (place === "dungeon") {
-        for (const id of ch.knownSpells) {
-          const sp = data.spells.find((s) => s.id === id);
-          if (sp === undefined || !fieldSpellOk(sp)) continue;
-          const target = spellTargetKind(sp);
-          const probe = target === "ally" ? (alive[0]?.id ?? null) : target === "dead" ? (dead[0]?.id ?? null) : null;
-          spells.push({ spellId: sp.id, name: sp.name, mp: sp.mp, target, usable: checkCast(state, data, ch.id, sp.id, probe) === null });
-        }
+      // M5.5: 街（酒場）でも作る。街の帰還は usable false（一覧には出す）
+      for (const id of ch.knownSpells) {
+        const sp = data.spells.find((s) => s.id === id);
+        if (sp === undefined || !fieldSpellOk(sp)) continue;
+        const target = spellTargetKind(sp);
+        const probe = target === "ally" ? (alive[0]?.id ?? null) : target === "dead" ? (dead[0]?.id ?? null) : null;
+        spells.push({ spellId: sp.id, name: sp.name, mp: sp.mp, target, usable: checkCast(state, data, ch.id, sp.id, probe) === null });
       }
       const equipCandidates: CampEquipCandidate[] = [];
       for (const id of ch.inventory) {

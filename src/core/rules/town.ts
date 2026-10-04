@@ -7,6 +7,7 @@ import type { ConsumableItem, CurableStatusId, GameData, StatusId } from "../dat
 import { CURABLE_STATUS_IDS, EQUIP_SLOTS } from "../data/index";
 import { randInt } from "../rng";
 import {
+  classOf,
   createItemInstance,
   destroyItemInstance,
   dungeonOf,
@@ -422,5 +423,7 @@ export function townMenu(state: GameState, data: GameData): TownMenu | null {
       name: dungeonOf(data, id).name,
       canEnter: enterBlockReason(state, id, data) === null,
     })),
+    // TW-03（M5.5）: camp.ts を import しない（循環を作らない）ので、campMenu の identifiers と同じ条件をここで数える
+    canIdentify: state.party.some((c) => canAct(c) && classOf(data, c.classId).abilities.includes("identify")),
   };
 }

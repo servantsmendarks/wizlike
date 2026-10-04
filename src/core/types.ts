@@ -344,7 +344,7 @@ export type Command =
    * targetId は effect.target === "ally" のときだけ必須、他では無視（dungeon.cast と同じ形。types.ts を正とする）
    */
   | { type: "dungeon.useItem"; memberId: string; itemId: string; targetId?: string }
-  /** MG-44: 迷宮の戦闘外の呪文。targetId は spell.target が ally のときだけ必要（resurrect では life dead の者） */
+  /** MG-44: 戦闘外の呪文（迷宮の戦闘外と、M5.5 から街。帰還は迷宮だけ）。targetId は spell.target が ally のときだけ必要（resurrect では life dead の者） */
   | { type: "dungeon.cast"; memberId: string; spellId: string; targetId?: string }
   | { type: "battle.input"; memberId: string; action: BattleAction }
   | { type: "battle.resolve" }
@@ -493,6 +493,8 @@ export type TownMenu = {
   mercy: { memberId: string; name: string; life: "dead" | "ash" }[] | null;
   /** TW-11: progress.unlockedDungeons の順。canEnter = checkEnter(state, id, data) === null */
   dungeons: { id: string; name: string; canEnter: boolean }[];
+  /** TW-03（M5.5）: 酒場の一覧に「鑑定」を出すか。abilities に identify を持ち canAct の者が 1 人以上（campMenu の identifiers.length > 0 と同値） */
+  canIdentify: boolean;
 };
 
 /** rules/items.ts fieldItemMenu の道具 1 個 */
@@ -504,8 +506,10 @@ export type FieldItemView = {
   target: "ally" | "none";
   /** checkUseItem(state, data, cmd) === null と同値。ally の品は「alive の味方が 1 人以上」で見る */
   usable: boolean;
+  /** DG-30 / UI-53（M5.5）: consumable で effect.type が return（帰還の糸）。表示層が使う前の確認の段を挟む */
+  isReturn: boolean;
 };
-/** rules/items.ts fieldItemMenu。screen dungeon・dive 非 null・battle null・pendingChoice null のときだけ非 null */
+/** rules/items.ts fieldItemMenu。街（screen town・dive null）と、迷宮（screen dungeon・dive 非 null）で battle null・pendingChoice null のときだけ非 null（M5.5 から街でも） */
 export type FieldItemMenu = {
   /** パーティ全員（並び順）。items は inventory の順で consumable / book だけ */
   members: { id: string; name: string; canAct: boolean; items: FieldItemView[] }[];
@@ -551,7 +555,7 @@ export type CampMember = {
   canAct: boolean;
   /** 並び順の添字が config.party.frontRow 未満なら front（表記だけに使う） */
   row: "front" | "back";
-  /** place が town なら []。dungeon なら knownSpells の順で、戦闘外で使える呪文（fieldSpellOk）だけ */
+  /** knownSpells の順で、戦闘外で使える呪文（fieldSpellOk）だけ。M5.5 から town でも作る（街の帰還は usable false） */
   spells: CampSpellView[];
   /** EQUIP_SLOTS の順に 6 件 */
   slots: CampSlotView[];
@@ -569,7 +573,7 @@ export type CampIdentifyItem = {
  * rules/camp.ts の campMenu(state, data)。非 null になるのは次のときだけ:
  *   town: screen town・dive null・battle null・pendingChoice null
  *   dungeon: screen dungeon・dive 非 null・battle null・pendingChoice null
- * 道具は従来どおり fieldItemMenu を使う（dungeon のときだけ非 null）。
+ * 道具は fieldItemMenu を使う（M5.5 から town でも非 null）。
  */
 export type CampMenu = {
   place: CampPlace;

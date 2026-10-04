@@ -2,7 +2,7 @@
 // 既定のパーティの所持品: c1 アルド i4 薬草、c3 キリ i10 薬草、c4 ドナ i13 解毒草、c5 エル i15 帰還の糸、c6 フィン i18 薬草。
 // 装備: c1 は i1 長剣 / i2 革鎧 / i3 木の盾。
 import { describe, expect, test } from "vitest";
-import { execute } from "../src/core/engine";
+import { createInitialState, execute } from "../src/core/engine";
 import { cloneRng, rollDice } from "../src/core/rng";
 import { fieldItemMenu } from "../src/core/rules/items";
 import { cloneState, createItemInstance } from "../src/core/state";
@@ -69,13 +69,15 @@ describe("DG-30/DG-41/DG-43 帰還の糸", () => {
     expect(r.state.rng).toEqual(s.rng);
   });
 
-  test("DG-30 戦闘中・保留中の選択・街では使えない。行動不能・装備中・他人の品・未知のメンバーも rejected（同じ参照、state 不変）", () => {
+  // M5.5: 街でも dungeon.useItem を受け付けるようにしたので、戦闘中の理由を not in dungeon から wrong screen に、街の帰還の糸を not usable here に変えた
+  test("DG-30 戦闘中・保留中の選択・街では使えない（街は not usable here）。行動不能・装備中・他人の品・未知のメンバーも rejected（同じ参照、state 不変）", () => {
     const base = inDungeon();
-    expectRejected(withBattle(base, [{ monsterId: data.monsters[0]!.id, hps: [3] }]), use("c5", "i15"), "not in dungeon");
+    expectRejected(withBattle(base, [{ monsterId: data.monsters[0]!.id, hps: [3] }]), use("c5", "i15"), "wrong screen");
     const pending = cloneState(base);
     pending.pendingChoice = { kind: "stairs", promptKey: "dungeon.stairsUp", options: [{ id: "stay", labelKey: "dungeon.choice.stay" }] };
     expectRejected(pending, use("c5", "i15"), "choice pending");
-    expectRejected(newGame(1), use("c5", "i15"), "not in dungeon");
+    expectRejected(newGame(1), use("c5", "i15"), "not usable here");
+    expectRejected(createInitialState(1, data), use("c5", "i15"), "wrong screen");
     for (const patch of [{ status: ["paralysis"] }, { san: 0 }, { life: "dead", hp: 0 }] as Partial<Character>[]) {
       expectRejected(inDungeon({ c5: patch }), use("c5", "i15"), "cannot act");
     }
@@ -194,23 +196,73 @@ describe("UI-53 fieldItemMenu", () => {
       ["c6", false],
     ]);
     expect(m.members[0]!.items).toEqual([
-      { instanceId: "i4", itemId: "herb", name: "薬草", target: "ally", usable: true },
-      { instanceId: book, itemId: "tome_lightning", name: "雷光の魔法書", target: "none", usable: false },
+      { instanceId: "i4", itemId: "herb", name: "薬草", target: "ally", usable: true, isReturn: false },
+      { instanceId: book, itemId: "tome_lightning", name: "雷光の魔法書", target: "none", usable: false, isReturn: false },
     ]);
     expect(m.members[1]!.items).toEqual([]);
-    expect(m.members[2]!.items).toEqual([{ instanceId: "i10", itemId: "herb", name: "薬草", target: "ally", usable: false }]);
-    expect(m.members[3]!.items).toEqual([{ instanceId: "i13", itemId: "antidote_herb", name: "解毒草", target: "ally", usable: true }]);
-    expect(m.members[4]!.items).toEqual([{ instanceId: "i15", itemId: "return_thread", name: "帰還の糸", target: "none", usable: true }]);
+    expect(m.members[2]!.items).toEqual([{ instanceId: "i10", itemId: "herb", name: "薬草", target: "ally", usable: false, isReturn: false }]);
+    expect(m.members[3]!.items).toEqual([{ instanceId: "i13", itemId: "antidote_herb", name: "解毒草", target: "ally", usable: true, isReturn: false }]);
+    expect(m.members[4]!.items).toEqual([{ instanceId: "i15", itemId: "return_thread", name: "帰還の糸", target: "none", usable: true, isReturn: true }]);
     expect(m.allies.map((a) => a.id)).toEqual(["c1", "c2", "c3", "c4", "c5"]);
     expect(m.allies[0]).toEqual({ id: "c1", name: "アルド", hp: 15, hpMax: 15 });
   });
 
-  test("戦闘中・保留中の選択・街・タイトルでは null", () => {
+  // M5.5: 街（酒場）でも道具を使えるようにしたので、街では非 null に変えた（旧: 街でも null）
+  test("戦闘中・保留中の選択・タイトルでは null（街は非 null）", () => {
     const base = inDungeon();
     expect(fieldItemMenu(withBattle(base, [{ monsterId: data.monsters[0]!.id, hps: [3] }]), data)).toBeNull();
     const pending = cloneState(base);
     pending.pendingChoice = { kind: "stairs", promptKey: "dungeon.stairsUp", options: [] };
     expect(fieldItemMenu(pending, data)).toBeNull();
-    expect(fieldItemMenu(newGame(1), data)).toBeNull();
+    expect(fieldItemMenu(createInitialState(1, data), data)).toBeNull();
+    expect(fieldItemMenu(newGame(1), data)).not.toBeNull();
+  });
+
+  test("UI-53/TW-03 fieldItemMenu は街でも非 null で、帰還の糸は usable false・isReturn true（迷宮では usable true・isReturn true）。薬草・解毒草は街でも usable", () => {
+    const t = fieldItemMenu(newGame(1), data)!;
+    expect(t.members[4]!.items).toEqual([{ instanceId: "i15", itemId: "return_thread", name: "帰還の糸", target: "none", usable: false, isReturn: true }]);
+    expect(t.members[0]!.items).toEqual([{ instanceId: "i4", itemId: "herb", name: "薬草", target: "ally", usable: true, isReturn: false }]);
+    expect(t.members[3]!.items).toEqual([{ instanceId: "i13", itemId: "antidote_herb", name: "解毒草", target: "ally", usable: true, isReturn: false }]);
+    const d = fieldItemMenu(inDungeon(), data)!;
+    expect(d.members[4]!.items[0]).toMatchObject({ instanceId: "i15", usable: true, isReturn: true });
+  });
+});
+
+describe("DG-30/MG-25 街での道具（M5.5）", () => {
+  test("DG-30/MG-25 街でも dungeon.useItem の薬草・解毒草・魔法書を受け付ける。帰還の糸は街では not usable here（品は消えない）", () => {
+    // 薬草: battle.useItem → hpChanged → battle.heal（鏡の rng）
+    const s = cloneState(newGame(1));
+    member(s, "c2").hp = 1;
+    const m = cloneRng(s.rng);
+    const herb = data.items.find((x) => x.id === "herb")!;
+    if (herb.type !== "consumable" || herb.effect.type !== "heal") throw new Error("herb is not a heal item");
+    const roll = rollDice(m, herb.effect.dice).total;
+    const next = Math.min(member(s, "c2").hpMax, 1 + roll);
+    const r = ok(s, use("c1", "i4", "c2"));
+    expect(r.events).toEqual([
+      { kind: "message", key: "battle.useItem", params: { actor: "アルド", item: "薬草" } },
+      { kind: "hpChanged", id: "c2", delta: next - 1, hp: next },
+      { kind: "message", key: "battle.heal", params: { target: "ベルク", amount: next - 1 } },
+    ]);
+    expect(r.state.rng).toEqual(m);
+    expect(r.state.items["i4"]).toBeUndefined();
+    expect(r.state.screen).toBe("town");
+    // 解毒草: 毒が消える
+    const p = cloneState(newGame(1));
+    member(p, "c1").status = ["poison"];
+    const rp = ok(p, use("c4", "i13", "c1"));
+    expect(member(rp.state, "c1").status).toEqual([]);
+    expect(rp.state.items["i13"]).toBeUndefined();
+    // 魔法書: 覚えて本が消える
+    const b = cloneState(newGame(1));
+    const book = createItemInstance(b, "tome_lightning", true);
+    member(b, "c5").inventory.push(book);
+    const rb = ok(b, use("c5", book));
+    expect(rb.events[0]).toEqual({ kind: "spellLearned", id: "c5", spellId: "lightning_tome", via: "book" });
+    expect(rb.state.items[book]).toBeUndefined();
+    // 帰還の糸は街では使えない（品は残る。同じ参照）
+    const t = newGame(1);
+    expectRejected(t, use("c5", "i15"), "not usable here");
+    expect(t.items["i15"]).toBeDefined();
   });
 });

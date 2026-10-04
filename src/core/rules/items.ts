@@ -1,4 +1,4 @@
-// 迷宮の戦闘外での道具（dungeon.useItem。DG-30 帰還の糸、DG-41、MG-25 魔法書、F9 の heal / cureStatus）と、
+// 迷宮の戦闘外と街での道具（dungeon.useItem。M5.5 から街でも受け付ける。帰還の糸は迷宮だけ。DG-30 帰還の糸、DG-41、MG-25 魔法書、F9 の heal / cureStatus）と、
 // 表示層向けの問い合わせ fieldItemMenu。battle には依存しない（効果は effects.ts の applyAllyEffect を戦闘と共有）。
 // 乱数: heal のダイスだけ（applyAllyEffect の順）。
 import type { GameData, Item } from "../data/index";
@@ -6,10 +6,11 @@ import { destroyItemInstance, itemDisplayName, itemOf, memberById } from "../sta
 import type { Character, FieldItemMenu, FieldItemView, GameState, RuleContext } from "../types";
 import { canAct } from "./combat-calc";
 import { applyAllyEffect } from "./effects";
+import { campPlace } from "./camp";
 import { checkLearnFromBook, learnFromBook } from "./learning";
 import { returnToTown } from "./town";
 
-/** 迷宮の戦闘外で使える品の種類（consumable / book で、usableIn が battle でない） */
+/** 戦闘外（迷宮・街）で使える品の種類（consumable / book で、usableIn が battle でない） */
 function fieldUsable(item: Item): boolean {
   return (item.type === "consumable" || item.type === "book") && item.usableIn !== "battle";
 }
@@ -17,7 +18,7 @@ function fieldUsable(item: Item): boolean {
 /**
  * dungeon.useItem を受け付けない理由（英語）。受け付けるなら null。
  * itemId は ItemInstance.id（使う本人の inventory のもの。装備中は不可）。targetId は effect.target が ally のときだけ見る。
- * 判定順: not in dungeon → no such member → cannot act → item not in inventory → not usable here → 効果ごと（bad target / 魔法書の理由）
+ * 判定順: wrong screen（戦闘中・保留中・title）→ no such member → cannot act → item not in inventory → not usable here → 効果ごと（街の帰還は not usable here、bad target / 魔法書の理由）
  */
 export function checkUseItem(
   state: GameState,
@@ -26,7 +27,8 @@ export function checkUseItem(
   itemId: unknown,
   targetId: unknown,
 ): string | null {
-  if (state.screen !== "dungeon" || state.dive === null || state.battle !== null) return "not in dungeon";
+  const place = campPlace(state);
+  if (place === null) return "wrong screen";
   const ch = typeof memberId === "string" ? memberById(state, memberId) : null;
   if (ch === null) return "no such member";
   if (!canAct(ch)) return "cannot act";
@@ -40,7 +42,7 @@ export function checkUseItem(
   const e = item.effect;
   switch (e.type) {
     case "return":
-      return null;
+      return place === "town" ? "not usable here" : null; // DG-30（M5.5）: 帰還の糸は迷宮だけ
     case "heal":
     case "cureStatus":
       switch (e.target) {
@@ -105,12 +107,12 @@ function fieldTargets(state: GameState, actor: Character, target: string, target
 }
 
 /**
- * UI-53 の迷宮の道具の一覧。screen dungeon・dive 非 null・battle null・pendingChoice null のときだけ非 null。
+ * UI-53 / TW-03 の道具の一覧。campPlace が非 null（街、または迷宮の戦闘外かつ保留なし）のときだけ非 null（M5.5 から街でも）。
  * members はパーティ全員（並び順）で、items は inventory の順の consumable / book。usable は checkUseItem と同値
- * （ally の品は先頭の alive の味方を仮の対象にして見る）。
+ * （ally の品は先頭の alive の味方を仮の対象にして見る）。isReturn は consumable で effect が return の品（帰還の糸。表示層の確認の段）。
  */
 export function fieldItemMenu(state: GameState, data: GameData): FieldItemMenu | null {
-  if (state.screen !== "dungeon" || state.dive === null || state.battle !== null || state.pendingChoice !== null) return null;
+  if (campPlace(state) === null) return null;
   const alive = state.party.filter((c) => c.life === "alive");
   const probe = alive[0]?.id ?? null;
   return {
@@ -128,6 +130,7 @@ export function fieldItemMenu(state: GameState, data: GameData): FieldItemMenu |
           itemId: inst.itemId,
           name: itemDisplayName(state, data, id),
           target,
+          isReturn: item.type === "consumable" && item.effect.type === "return",
           usable: checkUseItem(state, data, ch.id, id, target === "ally" ? probe : null) === null,
         });
       }
