@@ -130,7 +130,7 @@ const LOAD_FAILED: Readonly<Record<"unavailable" | "missing" | "tooNew" | "broke
 };
 
 /** SV-31〜33: 読み込みの失敗理由ごとの文言 */
-const IMPORT_FAILED: Readonly<Record<"format" | "broken" | "tooNew" | "checksum" | "unavailable" | "full" | "failed", string>> = {
+const IMPORT_FAILED: Readonly<Record<"format" | "broken" | "tooNew" | "checksum" | "unavailable" | "full" | "failed" | "existingTooNew", string>> = {
   format: "title.importFormat",
   broken: "title.importBroken",
   tooNew: "title.importTooNew",
@@ -138,6 +138,7 @@ const IMPORT_FAILED: Readonly<Record<"format" | "broken" | "tooNew" | "checksum"
   unavailable: "title.importUnavailable",
   full: "title.importFull",
   failed: "title.importFailed",
+  existingTooNew: "title.importExistingTooNew",
 };
 
 type DispatchResult = CommandResult;

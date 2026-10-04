@@ -931,6 +931,17 @@ describe("SV-30〜33 書き出しと読み込み（SaveService）", () => {
     expect(await planOf(sv, fileOf("g", 1))).toMatchObject({ kind: "overwrite", turn: 1, existingTurn: null });
   });
 
+  test("SV-31 prepareImport: 同じ gameId の既存が新しすぎる版なら turn に関係なく existingTooNew で拒否し、保存先に書かない", async () => {
+    const be = createMemoryBackend();
+    be.raw("g", json(record("g", 1, { turn: 5, schemaVersion: SCHEMA + 1 })));
+    const sv = service(be);
+    expect(await sv.prepareImport(fileOf("g", 7))).toEqual({ ok: false, reason: "existingTooNew" });
+    expect(await sv.prepareImport(fileOf("g", 5))).toEqual({ ok: false, reason: "existingTooNew" });
+    expect(await sv.prepareImport(fileOf("g", 3))).toEqual({ ok: false, reason: "existingTooNew" });
+    expect(be.putCount).toBe(0);
+    expect((be.dump().get("g") as GameRecord).schemaVersion).toBe(SCHEMA + 1);
+  });
+
   test("SV-33 prepareImport: format / broken / tooNew / checksum をそのまま返し、保存先に触れない（putCount 0）。backend null と get の失敗は unavailable", async () => {
     const be = createMemoryBackend();
     const sv = service(be);

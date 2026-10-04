@@ -174,6 +174,8 @@ export function createSaveService(deps: SaveDeps): SaveService {
       const rec = checkStoredRecord(raw);
       // 既存が壊れて読めないときは turn を比べず上書き（壊れた記録の修復に使える）
       if (rec === null) return { ok: true, plan: { kind: "overwrite", existingTurn: null, ...base } };
+      // SV-31: 既存が新しすぎる版なら読み込まない（新しい版の記録を古い版の内容で黙って置き換えない）
+      if (rec.schemaVersion > deps.schemaVersion) return { ok: false, reason: "existingTooNew" };
       // SV-32: 既存より古いファイルは確認が要る
       return { ok: true, plan: { kind: f.turn < rec.turn ? "older" : "overwrite", existingTurn: rec.turn, ...base } };
     },

@@ -297,6 +297,7 @@ describe("書き出し・読み込み（SV-30〜33）", () => {
       "title.importFormat",
       "title.importBroken",
       "title.importTooNew",
+      "title.importExistingTooNew",
       "title.importChecksum",
       "title.importUnavailable",
       "title.importFailed",
@@ -307,7 +308,7 @@ describe("書き出し・読み込み（SV-30〜33）", () => {
       expect(S[k], k).toBeTypeOf("string");
     }
     // 案内の欄は 2 行（全角 28 字 × 2）。差し込みのない文は 56 字以内
-    for (const k of ["title.importFull", "title.importFormat", "title.importBroken", "title.importTooNew", "title.importChecksum", "title.importUnavailable", "title.exportDone"]) {
+    for (const k of ["title.importFull", "title.importFormat", "title.importBroken", "title.importTooNew", "title.importExistingTooNew", "title.importChecksum", "title.importUnavailable", "title.exportDone"]) {
       expect([...S[k]!].length, k).toBeLessThanOrEqual(56);
     }
   });

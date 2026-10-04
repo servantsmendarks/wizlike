@@ -59,7 +59,7 @@ export type ImportPlan = {
 };
 export type ImportCheck =
   | { ok: true; plan: ImportPlan }
-  | { ok: false; reason: "format" | "broken" | "tooNew" | "checksum" | "unavailable" | "full" };
+  | { ok: false; reason: "format" | "broken" | "tooNew" | "checksum" | "unavailable" | "full" | "existingTooNew" };
 export type ImportResult = { ok: true; kind: ImportPlan["kind"] } | { ok: false; reason: "unavailable" | "full" | "failed" };
 
 export type SaveDeps = {
