@@ -58,7 +58,7 @@ M7 の実装が済むまでは、今のコード（items.json の装備・`confi
 
 ## 5. 固有スキル
 
-- IT-40 ユニークだけが持つ。閉じた集合から始めて後で増やす。`uniques[].skill` は `{ type, value }`【仮】。装備中だけ効く。
+- IT-40 ユニークだけが持つ。閉じた集合から始めて後で増やす。`uniques[].skill` は `{ type, value }`【仮】（value を使わない `reachFromBack` / `fearImmune` / `autoIdentify` は 0）。装備中だけ効く。
   - `mpCostDown`: その者の呪文の MP 消費 −value（最低 1。MG-30）。
   - `extraAttack`: CB-23 の攻撃回数 +value（`maxAttacks` を超えてよい）。
   - `reachFromBack`: 後衛からでも近接攻撃できる（CB-13 の `ranged` と同じ扱い）。
@@ -121,7 +121,7 @@ M7 の実装が済むまでは、今のコード（items.json の装備・`confi
 `data/drops.json`（ドロップ表）
 ```
 { "tables": [ { "id": "d01_f1", "itemChance": 40, "rolls": 1,
-                "entries": [ { "base": "dagger", "weight": 4 }, { "unique": "twin_fang_dagger", "weight": 1 } ] } ],
+                "entries": [ { "base": "dagger", "weight": 4 }, { "unique": "twin_tongue_dagger", "weight": 1 } ] } ],
   "chest": { "d01": { "1": "d01_f1", "2": "d01_f2" } },
   "boss":  { "d01": "d01_boss" } }
 ```

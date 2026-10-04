@@ -1,0 +1,50 @@
+[
+  {
+    "id": "dawn_flint_staff", "name": "夜明けの火打ち杖", "base": "staff",
+    "damage": "1d6", "magicPower": 2,
+    "skill": { "type": "mpCostDown", "value": 1 }, "optionTier": 2, "price": 900,
+    "description": "先に火打ち石を埋めた杖。呪文の火種を少しの力で熾す。"
+  },
+  {
+    "id": "twin_tongue_dagger", "name": "二枚舌の短剣", "base": "dagger",
+    "damage": "1d4",
+    "skill": { "type": "extraAttack", "value": 1 }, "optionTier": 1, "price": 700,
+    "description": "一度の踏み込みで二度刺す。持ち主の口も軽くなるという。"
+  },
+  {
+    "id": "shadowfolk_sword", "name": "影法師の剣", "base": "long_sword",
+    "damage": "1d8",
+    "skill": { "type": "reachFromBack", "value": 0 }, "optionTier": 2, "price": 1200,
+    "description": "振るうと刃の影だけが伸び、後ろの列からでも敵に届く。"
+  },
+  {
+    "id": "alarm_bell_helm", "name": "早鐘の兜", "base": "leather_cap",
+    "ac": -2,
+    "skill": { "type": "initiativeUp", "value": 2 }, "optionTier": 1, "price": 600,
+    "description": "危険が近づくと内側で小さく鳴る。一行は先に身構えられる。"
+  },
+  {
+    "id": "calm_sea_charm", "name": "凪の護符", "base": "charm",
+    "ac": 0,
+    "skill": { "type": "fearImmune", "value": 0 }, "optionTier": 2, "price": 1000,
+    "description": "波の無い海を刻んだ護符。どんな囁きも胸の内を揺らさない。"
+  },
+  {
+    "id": "bloodsucker_gloves", "name": "血吸いの小手", "base": "leather_gloves",
+    "ac": -1,
+    "skill": { "type": "lifeSteal", "value": 25 }, "optionTier": 2, "price": 800,
+    "description": "打ち据えた相手の血をわずかに吸い、持ち主の傷を塞ぐ。"
+  },
+  {
+    "id": "farsight_monocle", "name": "見通しの片眼鏡", "base": "charm",
+    "ac": 0,
+    "skill": { "type": "autoIdentify", "value": 0 }, "optionTier": 1, "price": 700,
+    "description": "覗けば闇の向こうの正体が分かる。初めて見る相手でも怯まない。"
+  },
+  {
+    "id": "dice_eye_shield", "name": "賽の目の盾", "base": "wooden_shield",
+    "ac": -2,
+    "skill": { "type": "judgeBonus", "value": 1 }, "optionTier": 1, "price": 500,
+    "description": "表に賽の目を描いた盾。持ち主の判断を一目ぶん後押しする。"
+  }
+]

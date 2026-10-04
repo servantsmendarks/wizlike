@@ -1,0 +1,25 @@
+{
+  "options": [
+    { "id": "str", "name": "力", "effect": { "type": "stat", "stat": "str" }, "unit": "", "values": [1, 2, 3], "weight": 4 },
+    { "id": "iq", "name": "知恵", "effect": { "type": "stat", "stat": "iq" }, "unit": "", "values": [1, 2, 3], "weight": 4 },
+    { "id": "pie", "name": "信仰心", "effect": { "type": "stat", "stat": "pie" }, "unit": "", "values": [1, 2, 3], "weight": 4 },
+    { "id": "vit", "name": "生命力", "effect": { "type": "stat", "stat": "vit" }, "unit": "", "values": [1, 2, 3], "weight": 4 },
+    { "id": "agi", "name": "素早さ", "effect": { "type": "stat", "stat": "agi" }, "unit": "", "values": [1, 2, 3], "weight": 4 },
+    { "id": "luk", "name": "運", "effect": { "type": "stat", "stat": "luk" }, "unit": "", "values": [1, 2, 3], "weight": 4 },
+    { "id": "hp_max", "name": "最大HP", "effect": { "type": "hpMax" }, "unit": "", "values": [3, 6, 10], "weight": 5 },
+    { "id": "mp_max", "name": "最大MP", "effect": { "type": "mpMax" }, "unit": "", "values": [2, 4, 6], "weight": 4 },
+    { "id": "hit", "name": "命中", "effect": { "type": "hit" }, "unit": "%", "values": [5, 10, 15], "weight": 5 },
+    { "id": "damage", "name": "ダメージ", "effect": { "type": "damage" }, "unit": "", "values": [1, 2, 3], "weight": 4 },
+    { "id": "ac", "name": "AC", "effect": { "type": "ac" }, "unit": "", "values": [1, 1, 1], "weight": 4 },
+    { "id": "initiative", "name": "行動順", "effect": { "type": "initiative" }, "unit": "", "values": [1, 2, 3], "weight": 4 },
+    { "id": "san_max", "name": "最大SAN", "effect": { "type": "sanMax" }, "unit": "", "values": [5, 10, 15], "weight": 3 },
+    { "id": "fear_loss", "name": "恐怖への耐性", "effect": { "type": "fearLoss" }, "unit": "%", "values": [10, 20, 30], "weight": 3 },
+    { "id": "resist_poison", "name": "毒への耐性", "effect": { "type": "statusResist", "status": "poison" }, "unit": "%", "values": [10, 20, 30], "weight": 2 },
+    { "id": "resist_paralysis", "name": "麻痺への耐性", "effect": { "type": "statusResist", "status": "paralysis" }, "unit": "%", "values": [10, 20, 30], "weight": 2 },
+    { "id": "resist_sleep", "name": "睡眠への耐性", "effect": { "type": "statusResist", "status": "sleep" }, "unit": "%", "values": [10, 20, 30], "weight": 2 },
+    { "id": "resist_stone", "name": "石化への耐性", "effect": { "type": "statusResist", "status": "stone" }, "unit": "%", "values": [10, 20, 30], "weight": 2 },
+    { "id": "trap_detect", "name": "罠察知", "effect": { "type": "trapDetect" }, "unit": "%", "values": [5, 10, 15], "weight": 3 },
+    { "id": "identify_rate", "name": "鑑定率", "effect": { "type": "identifyRate" }, "unit": "%", "values": [5, 10, 15], "weight": 3 },
+    { "id": "gold_luck", "name": "金運", "effect": { "type": "goldLuck" }, "unit": "%", "values": [2, 4, 6], "weight": 2 }
+  ]
+}

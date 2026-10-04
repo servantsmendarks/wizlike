@@ -1,0 +1,17 @@
+[
+  { "id": "dagger", "name": "短剣", "unidentifiedName": "短い刃？", "slot": "weapon", "damage": "1d4", "ranged": false, "caster": false, "classes": [], "price": 15, "shopMinLevel": 0 },
+  { "id": "long_sword", "name": "長剣", "unidentifiedName": "剣？", "slot": "weapon", "damage": "1d8", "ranged": false, "caster": false, "classes": ["fighter", "samurai", "lord"], "price": 100, "shopMinLevel": 0 },
+  { "id": "mace", "name": "鎚矛", "unidentifiedName": "鈍器？", "slot": "weapon", "damage": "1d6", "ranged": false, "caster": false, "classes": ["fighter", "priest", "samurai", "lord", "bishop"], "price": 60, "shopMinLevel": 2 },
+  { "id": "short_bow", "name": "短弓", "unidentifiedName": "弓？", "slot": "weapon", "damage": "1d6", "ranged": true, "caster": false, "classes": ["fighter", "thief", "samurai", "lord"], "price": 80, "shopMinLevel": 0 },
+  { "id": "sling", "name": "投石紐", "unidentifiedName": "紐？", "slot": "weapon", "damage": "1d4", "ranged": true, "caster": false, "classes": [], "price": 20, "shopMinLevel": 0 },
+  { "id": "staff", "name": "杖", "unidentifiedName": "棒？", "slot": "weapon", "damage": "1d4", "ranged": false, "caster": true, "classes": [], "price": 10, "shopMinLevel": 0 },
+
+  { "id": "leather_armor", "name": "革鎧", "unidentifiedName": "鎧？", "slot": "armor", "ac": -2, "classes": [], "price": 50, "shopMinLevel": 0 },
+  { "id": "chain_mail", "name": "鎖帷子", "unidentifiedName": "重い鎧？", "slot": "armor", "ac": -4, "classes": ["fighter", "priest", "samurai", "lord", "bishop"], "price": 300, "shopMinLevel": 2 },
+  { "id": "wooden_shield", "name": "木の盾", "unidentifiedName": "盾？", "slot": "shield", "ac": -1, "classes": ["fighter", "priest", "samurai", "lord"], "price": 40, "shopMinLevel": 0 },
+  { "id": "leather_cap", "name": "革兜", "unidentifiedName": "兜？", "slot": "helm", "ac": -1, "classes": [], "price": 30, "shopMinLevel": 0 },
+  { "id": "iron_helm", "name": "鉄兜", "unidentifiedName": "重い兜？", "slot": "helm", "ac": -2, "classes": ["fighter", "priest", "samurai", "lord", "bishop"], "price": 120, "shopMinLevel": 2 },
+  { "id": "leather_gloves", "name": "革小手", "unidentifiedName": "小手？", "slot": "gauntlet", "ac": -1, "classes": [], "price": 30, "shopMinLevel": 0 },
+  { "id": "iron_gloves", "name": "鉄の小手", "unidentifiedName": "重い小手？", "slot": "gauntlet", "ac": -2, "classes": ["fighter", "samurai", "lord"], "price": 120, "shopMinLevel": 4 },
+  { "id": "charm", "name": "護符", "unidentifiedName": "飾り？", "slot": "accessory", "ac": 0, "classes": [], "price": 200, "shopMinLevel": 2 }
+]
