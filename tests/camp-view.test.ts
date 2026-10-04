@@ -433,6 +433,14 @@ describe("TW-03/UI-52 酒場とキャンプの共有", () => {
     expect(campPanel({ kind: "top" }, town, S)).toEqual({ kind: "text", title: "酒場" });
   });
 
+  test("UI-53/TW-15 宿の士気がある間は、迷宮のキャンプの top の要約に 5 行目「宿の士気　あり」を足す", () => {
+    const s = inDungeon();
+    s.morale = { rankId: "good" };
+    const p = campPanel({ kind: "top" }, input(s), S);
+    expect(p.kind === "text" && p.lines).toHaveLength(5);
+    expect(p.kind === "text" && p.lines?.[4]).toBe("宿の士気　あり");
+  });
+
   test("UI-53 段の問いはヘッダーにだけ出す。文字のパネルは場所の見出し（キャンプ / 酒場）だけで、問いを繰り返さない", () => {
     const pages: CampPage[] = [
       { kind: "top" },

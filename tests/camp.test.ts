@@ -554,7 +554,15 @@ describe("UI-53/DG-40 campSummary", () => {
     member(s, "c1").life = "dead";
     member(s, "c1").hp = 0;
     // 帰還の糸: c5 の初期の 1 本（config の初期装備）+ c1 に足した 1 本 = 2
-    expect(campSummary(s, data)).toEqual({ dungeonName: "試しの坑道", floor: 2, gold: 123, ledgerItems: 2, ledgerGold: 45, returnItems: 2 });
+    expect(campSummary(s, data)).toEqual({ dungeonName: "試しの坑道", floor: 2, gold: 123, ledgerItems: 2, ledgerGold: 45, returnItems: 2, morale: false });
+  });
+
+  test("UI-53/TW-15 宿の士気があれば morale が真（rankId がデータに無ければ偽）", () => {
+    const s = inDungeon();
+    s.morale = { rankId: "good" };
+    expect(campSummary(s, data)!.morale).toBe(true);
+    s.morale = { rankId: "suite" };
+    expect(campSummary(s, data)!.morale).toBe(false);
   });
 
   test("UI-53/DG-40 未鑑定の帰還の糸も数える", () => {

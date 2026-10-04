@@ -404,6 +404,7 @@ export function campPanel(page: CampPage, m: CampInput, strings: Strings): CampP
       s(strings, "camp.summary.gold", { gold: sum.gold }),
       s(strings, "camp.summary.ledger", { gold: sum.ledgerGold, items: sum.ledgerItems }),
       s(strings, "camp.summary.return", { count: sum.returnItems }),
+      ...(sum.morale ? [s(strings, "camp.summary.morale")] : []), // TW-15: 士気がある間だけ 5 行目
     ],
   };
 }

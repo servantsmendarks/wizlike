@@ -1,5 +1,6 @@
 // UI-40: 判定の箱。ビューの下部に重ねる overlay（ビューの左上が原点で x8..231、下端 y146）。
 // 中身は上から 見出し（label）/ 各行「{label} {base}{dice.plus}{目…}{dice.total}」/ 基準（rule）/ {dice.arrow}{結果}。
+// 補正の行（base が値で目が無い。EV-21 の士気 +1 など。M7）は「{label}」だけを出す（値は label の中にある）。
 // 高さは 8 + 10 ×（rows + 3）。新しい dice が来たら前の箱を置き換える（積まない）。
 // 演出: 行ごとに目を 1 個ずつ（translateY 0→−2→0、duration stepMs の finished で確定）→ その行の合計 → 次の行 → 基準 → 結果
 // （合計・基準・結果は opacity の 1 往復）。skip か stepMs が 0 以下なら animate を呼ばずに最終の段だけを描く。
@@ -56,18 +57,25 @@ function text(strings: Strings, ref: TextRef): string {
   return formatMessage(strings[ref.key] ?? ref.key, ref.params);
 }
 
-/** 行の合計を出すか（base が null で目が 1 個なら、合計は目と同じなので出さない） */
+/** 補正の行か（UI-40 の M7: base が値で目が無い。label だけを出す） */
+function isBonusRow(row: Pick<DiceRow, "base" | "dice">): boolean {
+  return row.base !== null && row.dice.length === 0;
+}
+
+/** 行の合計を出すか（base が null で目が 1 個なら、合計は目と同じなので出さない。補正の行も出さない） */
 function showsTotal(row: Pick<DiceRow, "base" | "dice">): boolean {
+  if (isBonusRow(row)) return false;
   return row.base !== null || row.dice.length !== 1;
 }
 
-/** 行の頭（「{label} {base}{plus}」。base が null なら「{label} 」） */
+/** 行の頭（「{label} {base}{plus}」。base が null なら「{label} 」、補正の行は「{label}」） */
 function rowHead(strings: Strings, row: DiceRow): string {
+  if (isBonusRow(row)) return text(strings, row.label);
   const plus = strings["dice.plus"] ?? "+";
   return `${text(strings, row.label)} ${row.base === null ? "" : `${row.base}${plus}`}`;
 }
 
-/** 純粋: 履歴に残す 1 行。「{label} {row1}{sep}{row2}{sep}{rule}{arrow}{result}」。base が null で目が 1 個の行は「出目 42」 */
+/** 純粋: 履歴に残す 1 行。「{label} {row1}{sep}{row2}{sep}{rule}{arrow}{result}」。base が null で目が 1 個の行は「出目 42」、補正の行は「士気 +1」 */
 export function formatDiceSummary(ev: DiceEvent, strings: Strings): string {
   const plus = strings["dice.plus"] ?? "+";
   const sep = strings["dice.sep"] ?? " / ";

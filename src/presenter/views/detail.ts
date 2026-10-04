@@ -26,6 +26,8 @@ export type CharacterDetail = {
   hp: string;
   mp: string;
   san: string;
+  /** TW-15（M7）: SAN が上限（sanCap）を超えている（士気の超過中）。真なら SAN の行を accent 色（UI-59 / UI-12） */
+  sanOver: boolean;
   status: string;
   /** 能力値 6 つ（STAT_ORDER の順）。text は detail.stat「{label} {value}」 */
   stats: { label: string; value: number; text: string }[];
@@ -35,8 +37,17 @@ export type CharacterDetail = {
   equipment: { slot: string; item: string }[];
 };
 
-/** UI-59 の状態の文字列（純粋）。itemName は実体の id → 鑑定を反映した表示名 */
-export function formatDetail(ch: Character, data: Pick<GameData, "races" | "classes">, strings: Strings, itemName: (instanceId: string) => string): CharacterDetail {
+/**
+ * UI-59 の状態の文字列（純粋）。itemName は実体の id → 鑑定を反映した表示名。
+ * sanCap は SAN の最大として出す値（app が core の sanCapOf を渡す。省略は ch.sanMax）。SAN が sanCap を超えていれば sanOver
+ */
+export function formatDetail(
+  ch: Character,
+  data: Pick<GameData, "races" | "classes">,
+  strings: Strings,
+  itemName: (instanceId: string) => string,
+  sanCap: number = ch.sanMax,
+): CharacterDetail {
   const s = (key: string, params?: Record<string, string | number>): string => formatMessage(strings[key] ?? key, params);
   const race = data.races.find((r) => r.id === ch.raceId)?.name ?? ch.raceId;
   const cls = data.classes.find((c) => c.id === ch.classId)?.name ?? ch.classId;
@@ -48,7 +59,8 @@ export function formatDetail(ch: Character, data: Pick<GameData, "races" | "clas
     exp: s("detail.exp", { exp: ch.exp }),
     hp: s("detail.hp", { hp: ch.hp, hpMax: ch.hpMax }),
     mp: s("detail.mp", { mp: ch.mp, mpMax: ch.mpMax }),
-    san: s("detail.san", { san: ch.san, sanMax: ch.sanMax }),
+    san: s("detail.san", { san: ch.san, sanMax: sanCap }),
+    sanOver: ch.san > sanCap,
     status: s("detail.status", { status: cond === "" ? s("detail.statusOk") : cond }),
     stats: STAT_ORDER.map((k) => {
       const label = s(`stat.${k}`);
@@ -118,6 +130,8 @@ export function createDetailView(rect: Rect): DetailView {
       const full = rect.w - 8;
       const name = text(0, 4, full, d.name, "detail-name");
       name.style.color = "var(--c-accent)";
+      const san = text(3, COL3[2], COL3_W - 8, d.san, "detail-san");
+      if (d.sanOver) san.style.color = "var(--c-accent)"; // TW-15: 士気の超過中（UI-12 と同じ色）
       const parts: HTMLElement[] = [
         name,
         text(1, 4, full, d.raceClass, "detail-race-class"),
@@ -125,7 +139,7 @@ export function createDetailView(rect: Rect): DetailView {
         text(2, 120, rect.w - 124, d.exp, "detail-exp"),
         text(3, COL3[0], COL3_W, d.hp, "detail-hp"),
         text(3, COL3[1], COL3_W, d.mp, "detail-mp"),
-        text(3, COL3[2], COL3_W - 8, d.san, "detail-san"),
+        san,
         text(4, 4, full, d.status, "detail-status"),
         ...d.stats.map((st, i) => text(5 + Math.floor(i / 3), COL3[i % 3]!, COL3_W - (i % 3 === 2 ? 8 : 0), st.text, "detail-stat")),
         text(7, 4, full, d.equipmentTitle, "detail-equipment"),

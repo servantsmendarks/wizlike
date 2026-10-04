@@ -5,6 +5,8 @@ import { createItemInstance, itemDisplayName } from "../src/core/state";
 import type { GameState } from "../src/core/types";
 import { createDetailView, formatDetail, SLOT_ORDER, STAT_ORDER } from "../src/presenter/views/detail";
 import { formatMessage } from "../src/presenter/views/message";
+import { createPartyPanel } from "../src/presenter/views/party";
+import { sanCapOf, sanStage } from "../src/core/rules/san";
 import { data, newGame } from "./helpers/core";
 
 const S = data.strings;
@@ -113,6 +115,57 @@ class FakeEl {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("UI-59/UI-12 士気の SAN の超過（TW-15。M7）", () => {
+  test("UI-59/TW-15 formatDetail: SAN は「SAN 110/100」（最大は sanCap = core の sanCapOf）で sanOver が真。100/100 は偽。sanCap の省略は sanMax", () => {
+    const s = newGame(1);
+    const over = { ...s.party[0]!, san: 110 };
+    const d = formatDetail(over, data, S, nameOf(s), sanCapOf(over));
+    expect(d.san).toBe("SAN 110/100");
+    expect(d.sanOver).toBe(true);
+    expect(formatDetail(over, data, S, nameOf(s)).san).toBe("SAN 110/100");
+    const normal = formatDetail(s.party[0]!, data, S, nameOf(s), sanCapOf(s.party[0]!));
+    expect([normal.san, normal.sanOver]).toEqual(["SAN 100/100", false]);
+  });
+
+  test("UI-59/TW-15 render: sanOver なら SAN の行を accent 色、そうでなければ色を付けない", () => {
+    vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
+    const v = createDetailView({ x: 0, y: 16, w: 240, h: 150 });
+    const s = newGame(1);
+    const sanEl = (): FakeEl => (v.el as unknown as FakeEl).children.find((c) => c.className === "detail-san")!;
+    v.render(formatDetail({ ...s.party[0]!, san: 110 }, data, S, nameOf(s)));
+    expect(sanEl().textContent).toBe("SAN 110/100");
+    expect(sanEl().style["color"]).toBe("var(--c-accent)");
+    v.render(formatDetail(s.party[0]!, data, S, nameOf(s)));
+    expect(sanEl().style["color"]).toBeUndefined();
+  });
+
+  test("UI-12/TW-15 パーティ欄: SAN が上限（sanCapOf）を超えている行は SAN の値が accent 色。setSan で上限以下に戻ると色を外す", () => {
+    vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
+    const panel = createPartyPanel({
+      strings: S,
+      classes: data.classes,
+      region: { x: 0, y: 0, w: 240, h: 64 },
+      rows: [],
+      stageOf: (san, sanMax) => sanStage(san, sanMax, data.config),
+      sanCapOf,
+    });
+    const s = newGame(1);
+    const party = s.party.map((c, i) => ({ ...c, san: i === 0 ? 110 : 100 }));
+    panel.render(party);
+    // 行の子は 名前 / 略称 / HP ラベル / HP / MP ラベル / MP / SAN ラベル / SAN / 状態 の順（PARTY_COLUMNS）。SAN の値は textContent で探す
+    const sanCell = (i: number): FakeEl => {
+      const line = (panel.el as unknown as FakeEl).children[i]!;
+      return line.children.find((c) => c.textContent === String(party[i]!.san) || c.textContent === "99")!;
+    };
+    expect(sanCell(0).style["color"]).toBe("var(--c-accent)");
+    expect(sanCell(1).style["color"]).toBe("");
+    panel.setSan("c1", 99);
+    const line0 = (panel.el as unknown as FakeEl).children[0]!;
+    const cell = line0.children.find((c) => c.textContent === "99")!;
+    expect(cell.style["color"]).toBe("");
+  });
 });
 
 describe("UI-59 詳細の配置", () => {

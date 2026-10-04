@@ -625,6 +625,8 @@ export type CampSummary = {
   ledgerItems: number;
   ledgerGold: number;
   returnItems: number;
+  /** TW-15（M7）: 宿の士気がある（moraleOf が null でない） */
+  morale: boolean;
 };
 
 /** strings.json のキーと埋め込み値。表示層は formatMessage(strings[key], params) で出す */

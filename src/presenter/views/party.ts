@@ -7,6 +7,7 @@
 // その後ろに SAN の段の短い名前（UI-12。party.san.<stage>、normal は出さない。段は引数の stageOf = core の sanStage）。
 // 戦闘の再生用に setMp / setMax（レベルの変化）/ setStatus / flash（UI-42 の被弾。opacity 2 往復）/ setActive（入力中の名前を accent 色）を持つ。
 // UI-55: markActor（衝動の行動者の名前を accent 色、行を点滅。render で消える）。
+// UI-12（M7）: SAN が上限（sanCapOf。app が core の値を渡す）を超えている間（士気の超過。TW-15）は SAN の値を accent 色。
 // el は region の位置と大きさに自分で置く。モジュールのトップレベルでは DOM に触れない。
 import type { ClassDef, StatusId, Strings } from "../../core/data/index";
 import type { SanStage } from "../../core/rules/san";
@@ -21,6 +22,8 @@ export type PartyRowText = { name: string; abbr: string; hp: string; mp: string;
 
 /** UI-12: SAN の段を決める関数（app が core の sanStage を渡す。表示層は段の境を計算しない） */
 export type StageOf = (san: number, sanMax: number) => SanStage;
+/** UI-12 / TW-15: SAN の上限（app が core の sanCapOf を渡す）。超えている間は SAN の値を accent 色 */
+export type SanCapOf = (ch: Character) => number;
 
 /**
  * 状態の列の文字列（純粋）。死亡・灰はそれだけ、生存なら状態異常の短い名前を status の順に空白区切りし、
@@ -93,6 +96,8 @@ type Row = {
   status: StatusId[];
   san: number;
   sanMax: number;
+  /** SAN の上限（sanCapOf。render の時点の値） */
+  sanCap: number;
 };
 
 export type PartyPanel = {
@@ -128,8 +133,11 @@ export function createPartyPanel(o: {
   rows: readonly Rect[];
   /** UI-12: SAN の段（app が core の sanStage を渡す） */
   stageOf: StageOf;
+  /** UI-12 / TW-15: SAN の上限（app が core の sanCapOf を渡す。省略は ch.sanMax） */
+  sanCapOf?: SanCapOf;
 }): PartyPanel {
   const { strings, classes, region, rows, stageOf } = o;
+  const sanCapOf: SanCapOf = o.sanCapOf ?? ((ch) => ch.sanMax);
   const el = document.createElement("div");
   el.className = "party-panel";
   Object.assign(el.style, {
@@ -181,7 +189,13 @@ export function createPartyPanel(o: {
     cells.sanLabel.textContent = strings["party.san"] ?? "party.san";
     cells.status.style.color = "var(--c-danger)";
     el.appendChild(line);
-    return { line, cells, hp: 0, hpMax: 0, mp: 0, mpMax: 0, life: "alive", status: [], san: 0, sanMax: 0 };
+    return { line, cells, hp: 0, hpMax: 0, mp: 0, mpMax: 0, life: "alive", status: [], san: 0, sanMax: 0, sanCap: 0 };
+  };
+
+  /** UI-12 / TW-15: SAN の値を描き、上限を超えていれば accent 色 */
+  const showSan = (row: Row): void => {
+    row.cells.san.textContent = String(row.san);
+    row.cells.san.style.color = row.san > row.sanCap ? "var(--c-accent)" : "";
   };
 
   const showCondition = (row: Row): void => {
@@ -216,7 +230,6 @@ export function createPartyPanel(o: {
         row.cells.hp.textContent = t.hp;
         row.cells.mpLabel.textContent = t.mpLabel;
         row.cells.mp.textContent = t.mp;
-        row.cells.san.textContent = t.san;
         row.cells.status.textContent = t.life;
         row.hp = ch.hp;
         row.hpMax = ch.hpMax;
@@ -226,6 +239,8 @@ export function createPartyPanel(o: {
         row.status = ch.status.slice();
         row.san = ch.san;
         row.sanMax = ch.sanMax;
+        row.sanCap = sanCapOf(ch);
+        showSan(row);
         byId.set(ch.id, row);
       });
       paintActive();
@@ -240,7 +255,7 @@ export function createPartyPanel(o: {
       const row = byId.get(id);
       if (row === undefined) return;
       row.san = san;
-      row.cells.san.textContent = String(san);
+      showSan(row);
       // UI-12: 段が変わりうるので状態の列も描き直す
       showCondition(row);
     },

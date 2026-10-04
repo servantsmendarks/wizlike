@@ -20,7 +20,7 @@ import { battleMenu } from "../core/rules/combat";
 import { mapView, visibleCells, visibleKnownTraps } from "../core/rules/dungeon";
 import { campMenu, campSummary } from "../core/rules/camp";
 import { planRoute, routeStepOk } from "../core/rules/pathfind";
-import { sanStage } from "../core/rules/san";
+import { sanCapOf, sanStage } from "../core/rules/san";
 import { fieldItemMenu } from "../core/rules/items";
 import { townMenu } from "../core/rules/town";
 import { dungeonOf, itemDisplayName } from "../core/state";
@@ -239,6 +239,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     textSpeed: () => store.get().textSpeed,
     historyMax: data.config.ui.messageHistory,
     stageOf: (san, sanMax) => sanStage(san, sanMax, data.config),
+    sanCapOf,
     onSettings: () => guard(() => openSettings()),
     onAction: (a: DpadAction) => tapDpad(a),
     // UI-31: 前進ボタンを動かずに holdRepeatMs 押し続けたら連打を始め、離したら止める
@@ -627,7 +628,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     if (ch === undefined) return { kind: "text", title: "" };
     return {
       kind: "detail",
-      detail: formatDetail(ch, data, strings, (iid) => itemDisplayName(state, data, iid)),
+      detail: formatDetail(ch, data, strings, (iid) => itemDisplayName(state, data, iid), sanCapOf(ch)),
       focusSlot: p.focusSlot === null ? null : SLOT_ORDER.indexOf(p.focusSlot),
     };
   };

@@ -162,7 +162,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   // M4.5 UI-25 / DG-15: 地図のタップ移動の経路と、自動歩行を続けてよいかは core が決める
   "rules/pathfind": ["planRoute", "routeStepOk"],
   // M5 UI-12: パーティ欄の SAN の段は core の sanStage で決める（境の比率を表示層で持たない）
-  "rules/san": ["sanStage"],
+  // M7 UI-12 / UI-59 / TW-15: SAN の最大として描く値と、士気の超過の色の基準は core の sanCapOf（B で実効の sanMax になる）
+  "rules/san": ["sanStage", "sanCapOf"],
   // M5.5 UI-62 / CH-06: 自分で作るの配分の可否・残り・職業の条件・名前の長さは core の関数の値だけで決める。
   // 作成中はまだ GameState が無いので、ボーナスの振り（rollBonus）は表示層が持つ RngState（createRng。種は crypto）で引く（決定 5 の例外）
   "rules/creation": ["rollBonus", "statAllocation", "adjustStat", "classOptions", "validCreationName"],

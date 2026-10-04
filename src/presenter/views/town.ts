@@ -74,9 +74,11 @@ export function townEntries(page: TownPage, menu: TownMenu, strings: Strings): T
     return [...camp, ...rows, back];
   }
   if (page === "inn") {
-    const rows = menu.inn.map(
-      (r): TownEntry => ({ kind: "inn", rank: r.rank, label: s(strings, "town.inn.rank", { name: r.name, cost: r.cost }), disabled: !r.affordable }),
-    );
+    // TW-15（M7）: 士気の立つランク（core の townMenu の morale）は行の末尾に印（town.inn.moraleMark）
+    const rows = menu.inn.map((r): TownEntry => {
+      const row = s(strings, "town.inn.rank", { name: r.name, cost: r.cost });
+      return { kind: "inn", rank: r.rank, label: r.morale ? s(strings, "town.inn.moraleMark", { row }) : row, disabled: !r.affordable };
+    });
     return [...rows, back];
   }
   if (page === "temple") {
@@ -136,7 +138,7 @@ export function townEntries(page: TownPage, menu: TownMenu, strings: Strings): T
  */
 export function townPageIntro(page: TownPage, menu: TownMenu): string[] {
   if (page === "tavern") return menu.mercy !== null ? ["town.tavern.intro", "town.mercy.offer"] : ["town.tavern.intro"];
-  if (page === "inn") return ["town.inn.intro"];
+  if (page === "inn") return menu.morale !== null ? ["town.inn.intro", "town.inn.moraleNow"] : ["town.inn.intro"]; // TW-15: 士気がある間は続けて語る
   if (page === "temple") return ["town.temple.intro"];
   if (page === "dark") return ["town.dark.intro"];
   if (page === "gate") return ["town.dungeonGate.intro"];

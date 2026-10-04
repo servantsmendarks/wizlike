@@ -44,15 +44,23 @@ describe("UI-52 街のページ", () => {
     expect(townHeader(menuOf(town({}, 0)), S)).toBe("街　0G");
   });
 
-  test("UI-52/TW-04 宿屋はランクの行（名前と料金）。払えないランクは disabled。末尾が戻る", () => {
+  test("UI-52/TW-04/TW-15 宿屋はランクの行（名前と料金。士気の立つ個室は末尾に「＋士気」）。払えないランクは disabled。末尾が戻る", () => {
     expect(townEntries("inn", menuOf(town({}, 50)), S)).toEqual([
       { kind: "inn", rank: 0, label: "馬小屋　0G", disabled: false },
       { kind: "inn", rank: 1, label: "相部屋　20G", disabled: false },
-      { kind: "inn", rank: 2, label: "個室　60G", disabled: true },
+      { kind: "inn", rank: 2, label: "個室　60G　＋士気", disabled: true },
       back,
     ]);
     // ちょうど払える額なら押せる
     expect(townEntries("inn", menuOf(town({}, 60)), S).filter((e) => e.kind === "inn" && e.disabled)).toEqual([]);
+  });
+
+  test("UI-52/TW-15 宿屋の語りは、士気がある間だけ town.inn.moraleNow を続けて出す", () => {
+    expect(townPageIntro("inn", menuOf(town()))).toEqual(["town.inn.intro"]);
+    const stayed = cloneState(town());
+    stayed.morale = { rankId: "good" };
+    expect(townPageIntro("inn", menuOf(stayed))).toEqual(["town.inn.intro", "town.inn.moraleNow"]);
+    for (const k of ["town.inn.intro", "town.inn.moraleNow", "town.inn.moraleMark"]) expect(S[k], k).toBeDefined();
   });
 
   test("UI-52/TW-07 寺院はサービスの 3 項目と戻る。サービスの対象は行（名前と料金、払えなければ disabled）", () => {

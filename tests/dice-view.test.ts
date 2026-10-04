@@ -31,6 +31,19 @@ const WIPE: DiceEvent = {
   result: { key: "dice.wipe.result", params: { band: "痛手" } },
 };
 
+/** EV-21 / TW-15（M7）: 士気 +1 の補正の行を挟んだ制止判定（base = 値、dice 空） */
+const RESTRAIN_MORALE: DiceEvent = {
+  kind: "dice",
+  label: { key: "dice.restrain" },
+  rows: [
+    { label: { key: "dice.restrain.stopper", params: { name: "フィン" } }, base: 9, dice: [6], total: 15 },
+    { label: { key: "dice.bonus.morale", params: { value: 1 } }, base: 1, dice: [], total: 1 },
+    { label: { key: "dice.restrain.actor", params: { name: "キリ" } }, base: 15, dice: [1], total: 16 },
+  ],
+  rule: { key: "dice.restrain.rule", params: { diff: 0 } },
+  result: { key: "dice.restrain.ok" },
+};
+
 describe("UI-40 diceFrames", () => {
   test("UI-40 2 行 × 1 個: ? → 目 → 合計 → 次の行（目 → 合計）→ 基準 → 結果", () => {
     expect(diceFrames(INITIATIVE, false)).toEqual([
@@ -83,8 +96,16 @@ describe("UI-40/UI-46 formatDiceSummary", () => {
     expect(formatDiceSummary(WIPE, data.strings)).toBe("全滅の代償 出目 3+5=8 / 7〜10 の帯→ 痛手");
   });
 
+  test("UI-40/EV-21/TW-15 補正の行（base が値で目が無い）は「士気 +1」だけ（base・目・合計を出さない）", () => {
+    expect(formatDiceSummary(RESTRAIN_MORALE, data.strings)).toBe(
+      "制止判定 フィンの知恵 9+6=15 / 士気 +1 / キリの素早さ 15+1=16 / 差 0（0 以上で制止）→ 制止",
+    );
+    // 3 行の箱は高さ 8 + 10 × 6 = 68、上端 146 − 68 = 78（ビューの内側）
+    expect(diceBox(RESTRAIN_MORALE)).toEqual({ x: 8, y: 78, w: 224, h: 68 });
+  });
+
   test("UI-40 使うキーはすべて strings.json にある", () => {
-    const evs: GameEvent[] = [INITIATIVE, FLEE, WIPE];
+    const evs: GameEvent[] = [INITIATIVE, FLEE, WIPE, RESTRAIN_MORALE];
     expectKnownStringKeys(evs);
     for (const k of ["dice.plus", "dice.total", "dice.sep", "dice.arrow"]) expect(data.strings[k]).toBeDefined();
     expect(data.strings["dice.total"]).toContain("{total}");

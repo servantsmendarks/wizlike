@@ -5,7 +5,7 @@
 // town.ts からはこのファイルを import しない（循環を作らない）。
 import type { EquipItem, EquipSlot, GameData, Item, Spell } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
-import { classOf, dungeonOf, itemDisplayName, itemOf, memberById, spellOf } from "../state";
+import { classOf, dungeonOf, itemDisplayName, itemOf, memberById, moraleOf, spellOf } from "../state";
 import type {
   CampEquipCandidate,
   CampMenu,
@@ -376,6 +376,7 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
 /**
  * UI-53: キャンプの top のパネルの要約。迷宮のキャンプ（campPlace dungeon）のときだけ非 null。
  * 帰還の品は life を問わずパーティ全員の inventory の、効果 return の消耗品の個数（未鑑定も数える。装備は数えない）。
+ * morale は宿の士気がある（TW-15。moraleOf が null でない）か。
  */
 export function campSummary(state: GameState, data: GameData): CampSummary | null {
   if (campPlace(state) !== "dungeon") return null;
@@ -397,5 +398,6 @@ export function campSummary(state: GameState, data: GameData): CampSummary | nul
     ledgerItems: dive.ledger.items.length,
     ledgerGold: dive.ledger.gold,
     returnItems,
+    morale: moraleOf(state, data) !== null,
   };
 }
