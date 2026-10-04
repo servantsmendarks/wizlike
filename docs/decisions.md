@@ -607,3 +607,5 @@
 - 2026-10-04 presenter(M6): 設定画面の配置（settingsLayout）は見出し y4、4 行 y20+34i、書き出し・読み込み y158、案内 y194（2 行）、ホーム画面の案内 y218〜349、下の段 開発用（x4・幅 80）と閉じる（UI-11 の固定の位置 x178・y354 の 56×40）【仮】。
 - 2026-10-04 presenter(M6): 設定画面の上から開いた debug パネルのコマンド（全員HP1・SAN段↓・ワープ・ターン+）は、debug パネルと設定画面の両方を閉じてから送る。設計書は沈黙していたが、設定画面に戻すと結果の再生が全面の画面の下で見えなくなるため。debug パネルの「閉じる」・Esc では設定画面へ戻る。
 - 2026-10-04 presenter(M6): 遊んでいる途中の設定画面の書き出しは、Autosaver.flush を待ってから current の gameId のレコードを書き出し、結果（settings.exportDone / exportFailed）を設定画面の案内の欄に出す。書き出せるのは保存先が使え current があるときだけ（無ければ dim）。
+- 2026-10-04 presenter(M6): SV-40 の standalone の判定は (display-mode: standalone) の matchMedia と iOS の navigator.standalone（表示のための判定なので表示層の pwa-env.ts）。端末は判定せず iPhone と Android の手順を両方出す。beforeinstallprompt は使わない（Chrome だけの仕組みで、出す時機の管理が要り、単純さを優先）。
+- 2026-10-04 presenter(M6): SV-40 の案内はタイトルのボタンの下（TITLE_HINT y336 の 224×20、dim の 2 行）と設定画面のホーム画面の案内の欄に出す。iPhone の端のスワイプの「戻る」が無くなる理由（ユーザー決定 2026-10-04）と、Safari のタブとホーム画面のアプリで保存が別になる旨は設定画面の案内に入れ、タイトルの 2 行は「方法は設定」で設定画面へ導く（2 行に収めるため）。

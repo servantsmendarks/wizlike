@@ -97,7 +97,7 @@ import { slotsFor } from "./views/dungeon-geometry";
 import { battleTurnText, headerText } from "./views/header";
 import { formatMessage } from "./views/message";
 import { createSaveBanner } from "./views/save-banner";
-import { createTitleScreen, titleEntries, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
+import { createTitleScreen, titleEntries, titleHint, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
 import { formatWipeSummary } from "./views/wipe";
 import { townEntries, townHeader, townPageIntro, townParent, type TownEntry, type TownPage } from "./views/town";
 
@@ -963,11 +963,13 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   // ---------------------------------------------------------------- タイトル（UI-50）と続きから（SV-50）
   const renderTitle = (): void => {
     const size = data.config.party.size;
+    // SV-40: ホーム画面から起動していなければ下に案内（表示のための判定）
+    const hint = titleHint(isStandalone(globalThis as StandaloneEnv), strings);
     if (titleList === null) {
-      title.render([], titleMessage ?? "");
+      title.render([], titleMessage ?? "", hint);
       return;
     }
-    title.render(titleItems(titlePage, titleList, size, strings), titleMessage ?? titleNotice(titlePage, titleList, size, strings));
+    title.render(titleItems(titlePage, titleList, size, strings), titleMessage ?? titleNotice(titlePage, titleList, size, strings), hint);
   };
 
   /** 保存先の一覧を読み直して描く（SV-12）。読めなければ空の一覧 */

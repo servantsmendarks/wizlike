@@ -1,4 +1,4 @@
-// UI-57 の設定画面（M6）。タイトルの「設定」とヘッダーの設定ボタンから開くステージ全面の overlay（app の overlay "settings"）。
+// UI-57 の設定画面（M6）とホーム画面への追加の案内（SV-40）。タイトルの「設定」とヘッダーの設定ボタンから開くステージ全面の overlay（app の overlay "settings"）。
 // 上から 見出し → 4 行（演出スキップ・文字速度・オートの速さ・入力。押すたびに巡回し、その場で store.set）→ 書き出し・読み込み
 // （SV-30〜33。遊んでいる途中は書き出しだけ、タイトルでは読み込みだけ）→ 案内の欄（2 行）→ ホーム画面への追加の案内（SV-40）→
 // 下の段に「開発用」（debug パネルを開く）と「閉じる」（UI-11 の固定の位置）。
@@ -99,6 +99,15 @@ export function settingsKeyIndex(a: Action, items: readonly SettingsItem[]): num
 /** 案内の欄の既定の文: title → settings.fileHintTitle、play → settings.fileHintPlay、none → settings.fileHintNone */
 export function settingsFileHint(ctx: SettingsContext, strings: Strings): string {
   return tr(strings, ctx.where === "title" ? "settings.fileHintTitle" : ctx.where === "play" ? "settings.fileHintPlay" : "settings.fileHintNone");
+}
+
+/**
+ * SV-40: ホーム画面への追加の案内の行。standalone なら settings.install.done の 1 行。そうでなければ
+ * 見出し・理由（消えにくい・iPhone の端のスワイプの「戻る」が無くなる）・iPhone の手順・Android の手順・保存が別になる旨（端末は判定せず両方）
+ */
+export function installGuideLines(standalone: boolean, strings: Strings): string[] {
+  if (standalone) return [tr(strings, "settings.install.done")];
+  return ["heading", "why", "ios", "android", "move"].map((k) => tr(strings, `settings.install.${k}`));
 }
 
 // ---------------------------------------------------------------- DOM
@@ -214,6 +223,15 @@ export function createSettingsScreen(o: {
       setDim(exportButton, !c.canExport);
       fileButton.setDisabled(!c.canImport);
       notice.textContent = text ?? settingsFileHint(c, o.strings);
+      // SV-40: 項目ごとに 1 つの塊（折り返しは欄の幅で）。standalone でないときの先頭（見出し）は accent
+      install.replaceChildren(
+        ...installGuideLines(c.standalone, o.strings).map((line, i) => {
+          const d = document.createElement("div");
+          d.textContent = line;
+          if (i === 0 && !c.standalone) d.style.color = "var(--c-accent)";
+          return d;
+        }),
+      );
       refresh();
     },
     refresh,

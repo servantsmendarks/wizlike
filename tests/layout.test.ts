@@ -16,6 +16,7 @@ import {
   saveBannerRect,
   TITLE_BUTTONS,
   TITLE_HEADING_Y,
+  TITLE_HINT,
   TITLE_NOTICE,
   TITLE_ROW_AREA,
   TITLE_ROW_PITCH,
@@ -403,6 +404,13 @@ describe("layout", () => {
     // SV-23 の帯（既定 y16..27）は題字（1 行 8px）・行・ボタンに重ならない
     expect(SAVE_BANNER.y + SAVE_BANNER.h).toBeLessThanOrEqual(TITLE_HEADING_Y);
     for (const r of [TITLE_ROW_AREA, ...TITLE_BUTTONS]) expect(overlaps(SAVE_BANNER, r)).toBe(false);
+  });
+
+  test("SV-40 TITLE_HINT は TITLE_BUTTONS の下でステージに収まる（2 行 = 高さ 20。押せない）", () => {
+    expect(TITLE_HINT).toEqual({ x: 8, y: 336, w: 224, h: 20 });
+    expect(inside(TITLE_HINT, STAGE)).toBe(true);
+    for (const b of TITLE_BUTTONS) expect(TITLE_HINT.y).toBeGreaterThanOrEqual(b.y + b.h);
+    for (const r of [TITLE_ROW_AREA, TITLE_NOTICE, ...TITLE_BUTTONS, SAVE_BANNER]) expect(overlaps(TITLE_HINT, r)).toBe(false);
   });
 
   test("SV-23 保存できない帯はヘッダーの直下で高さ config.ui.saveBannerHeight（既定 12 で y16..27）。ヘッダーの設定ボタンと重ならず、ステージの内側", () => {

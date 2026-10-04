@@ -300,6 +300,9 @@ export const TITLE_BUTTONS: readonly Rect[] = [
   { x: 124, y: 296, w: 108, h: 32 },
 ];
 
+/** SV-40: タイトルの下の案内（押せない。dim の 2 行）。TITLE_BUTTONS の下。standalone なら空 */
+export const TITLE_HINT: Rect = { x: 8, y: 336, w: 224, h: 20 };
+
 /** 簡易作成（UI-51）の行 i（0..5）。番号のラベル、名前の入力欄、性格のボタン */
 export function creationRow(i: number): { name: Rect; personality: Rect; label: Rect } {
   const y = 34 + 34 * i;

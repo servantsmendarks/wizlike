@@ -3,11 +3,14 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createFileButton, downloadText, exportFileName } from "../src/presenter/file-io";
 import { tapSpecOf } from "../src/presenter/input/tap";
+import { TITLE_HINT } from "../src/presenter/layout";
 import { buildRecord } from "../src/save/record";
 import { createSaveService } from "../src/save/saves";
 import type { GameListEntry } from "../src/save/types";
 import {
+  createTitleScreen,
   formatUpdatedAt,
+  titleHint,
   titleEntries,
   titleItems,
   titleKeyIndex,
@@ -335,6 +338,9 @@ class FakeEl {
   removeAttribute(k: string): void {
     this.attrs.delete(k);
   }
+  replaceChildren(...cs: FakeEl[]): void {
+    this.children = [...cs];
+  }
   appendChild(c: FakeEl): FakeEl {
     this.children.push(c);
     return c;
@@ -441,5 +447,34 @@ describe("file-io の DOM（SV-30 / SV-31）", () => {
     const a2 = created.filter((e) => e.tagName === "A")[1]!;
     expect([a2.href, a2.download, a2.clicks]).toEqual(["blob:2", "b.json", 1]);
     expect(revoked).toEqual(["blob:1"]);
+  });
+});
+
+describe("タイトルの SV-40 の案内（DOM）", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("SV-40 タイトルの案内: standalone でなければ TITLE_HINT に title.storageHint、standalone なら空（render の第 3 引数）", () => {
+    stubDocument();
+    const screen = createTitleScreen({ strings: S, onSelect: () => {}, onFile: () => {} });
+    const root = screen.el as unknown as FakeEl;
+    const hint = root.children.find((c) => c.className === "title-hint")!;
+    expect(hint).toBeDefined();
+    expect([hint.style["left"], hint.style["top"], hint.style["width"], hint.style["height"]]).toEqual([
+      `${TITLE_HINT.x}px`,
+      `${TITLE_HINT.y}px`,
+      `${TITLE_HINT.w}px`,
+      `${TITLE_HINT.h}px`,
+    ]);
+    // 押せない（onTap を付けない）
+    expect(tapSpecOf(hint)).toBeNull();
+    const items = titleItems(LIST, [], SIZE, S);
+    screen.render(items, titleNotice(LIST, [], SIZE, S), titleHint(false, S));
+    expect(hint.textContent).toBe(S["title.storageHint"]);
+    screen.render(items, "", titleHint(true, S));
+    expect(hint.textContent).toBe("");
+    // 案内は 2 行（全角 28 字 × 2 = 56 字）に収まる
+    expect([...S["title.storageHint"]!].length).toBeLessThanOrEqual(56);
   });
 });

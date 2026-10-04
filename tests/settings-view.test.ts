@@ -5,6 +5,7 @@ import { regions, settingsLayout, TOUCH_MIN_LOGICAL, type Rect } from "../src/pr
 import { createSettingsStore, defaultSettings, type Settings } from "../src/presenter/settings";
 import {
   createSettingsScreen,
+  installGuideLines,
   SETTINGS_ROW_KEYS,
   settingsFileHint,
   settingsItems,
@@ -173,6 +174,9 @@ class FakeEl {
   removeAttribute(k: string): void {
     this.attrs.delete(k);
   }
+  replaceChildren(...cs: FakeEl[]): void {
+    this.children = [...cs];
+  }
   appendChild(c: FakeEl): FakeEl {
     this.children.push(c);
     return c;
@@ -301,5 +305,70 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
     view.select(5); // 読み込み（play では dim）
     expect(calls).toEqual(["debug", "close", "export"]);
     expect(input.clicks).toBe(1);
+  });
+});
+
+describe("ホーム画面への追加の案内（SV-40）", () => {
+  /** 全角 1 字 = 8px（1 単位）、半角（ASCII）= 4px（0.5 単位）で、幅 w 単位で字単位に折り返した行数（break-all と同じ） */
+  const wrappedLines = (text: string, w: number): number => {
+    let lines = 1;
+    let cur = 0;
+    for (const ch of text) {
+      const cw = (ch.codePointAt(0) ?? 0) < 0x80 ? 0.5 : 1;
+      if (cur + cw > w) {
+        lines++;
+        cur = 0;
+      }
+      cur += cw;
+    }
+    return lines;
+  };
+
+  test("SV-40 installGuideLines: standalone なら done の 1 行、そうでなければ 見出し・理由・iPhone・Android・保存が別 の 5 項目", () => {
+    expect(installGuideLines(true, S)).toEqual([S["settings.install.done"]]);
+    expect(installGuideLines(false, S)).toEqual([
+      S["settings.install.heading"],
+      S["settings.install.why"],
+      S["settings.install.ios"],
+      S["settings.install.android"],
+      S["settings.install.move"],
+    ]);
+    for (const k of ["settings.install.heading", "settings.install.why", "settings.install.ios", "settings.install.android", "settings.install.move", "settings.install.done"]) {
+      expect(S[k], k).toBeTypeOf("string");
+    }
+    // 理由には iPhone の端のスワイプの「戻る」が無くなる旨を含める（ユーザー決定 2026-10-04）
+    expect(S["settings.install.why"]).toContain("スワイプ");
+  });
+
+  test("SV-40 installGuideLines を 29 字で折り返した行数が settingsLayout の install の高さ / 10 以下", () => {
+    const L = settingsLayout(regions(data.config.ui.layout, W));
+    const cols = L.install.w / 8;
+    expect(cols).toBe(29);
+    const total = installGuideLines(false, S).reduce((n, l) => n + wrappedLines(l, cols), 0);
+    expect(total).toBeLessThanOrEqual(L.install.h / 10);
+    expect(installGuideLines(true, S).reduce((n, l) => n + wrappedLines(l, cols), 0)).toBeLessThanOrEqual(L.install.h / 10);
+  });
+
+  test("SV-40 createSettingsScreen: standalone でなければ install の欄に 5 項目（見出しは accent）、standalone なら done の 1 行", () => {
+    vi.stubGlobal("document", { createElement: (tag: string) => new FakeEl(tag.toUpperCase()) });
+    const L = settingsLayout(regions(data.config.ui.layout, W));
+    const view = createSettingsScreen({
+      strings: S,
+      store: createSettingsStore(D, () => {}),
+      layout: L,
+      onExport: () => {},
+      onImportFile: () => {},
+      onDebug: () => {},
+      onClose: () => {},
+    });
+    const root = view.el as unknown as FakeEl;
+    const install = root.children.find((c) => c.className === "settings-install")!;
+    expect([install.style["left"], install.style["top"], install.style["width"], install.style["height"]]).toEqual(["4px", "218px", "232px", "132px"]);
+    view.render(TITLE, null);
+    expect(install.children.map((c) => c.textContent)).toEqual(installGuideLines(false, S));
+    expect(install.children[0]!.style["color"]).toBe("var(--c-accent)");
+    expect(tapSpecOf(install)).toBeNull();
+    view.render({ ...TITLE, standalone: true }, null);
+    expect(install.children.map((c) => c.textContent)).toEqual([S["settings.install.done"]]);
   });
 });

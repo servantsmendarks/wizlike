@@ -1,4 +1,4 @@
-// UI-50 / SV-11 / SV-12 / SV-14 / SV-30〜33 のタイトル。ゲーム一覧の行 → 新しく始める → 設定 → 読み込み の 1 本のリスト。
+// UI-50 / SV-11 / SV-12 / SV-14 / SV-30〜33 / SV-40 のタイトル。ゲーム一覧の行 → 新しく始める → 設定 → 読み込み の 1 本のリスト。
 // 新しく始める → おすすめで始める / 自分で作る / やめる（M5.5）。
 // 行を選ぶと 続きから / 書き出し / 削除 / やめる。削除は確認 2 段階で、先頭（Enter・1）は「やめる」。
 // 古いファイルの読み込み（SV-32）は確認のページ importConfirm（先頭は「やめる」）。
@@ -8,7 +8,7 @@
 import type { Strings } from "../../core/data/index";
 import type { GameListEntry } from "../../save/types";
 import type { Action } from "../input/swipe";
-import { TITLE_BUTTONS, TITLE_HEADING_Y, TITLE_NOTICE, TITLE_ROW_AREA, TITLE_ROW_PITCH, type Rect } from "../layout";
+import { TITLE_BUTTONS, TITLE_HEADING_Y, TITLE_HINT, TITLE_NOTICE, TITLE_ROW_AREA, TITLE_ROW_PITCH, type Rect } from "../layout";
 import { formatMessage } from "./message";
 import { onTap } from "../input/tap";
 import { createFileButton, type FileButton } from "../file-io";
@@ -209,12 +209,20 @@ export function titleNotice(page: TitlePage, list: readonly GameListEntry[], siz
   return tr(strings, "title.deleteConfirm2");
 }
 
+/** SV-40: タイトルの下の案内。ホーム画面から起動していれば出さない（空）、そうでなければ title.storageHint */
+export function titleHint(standalone: boolean, strings: Strings): string {
+  return standalone ? "" : tr(strings, "title.storageHint");
+}
+
 // ---------------------------------------------------------------- DOM
 
 export type TitleScreen = {
   el: HTMLElement;
-  /** 項目を描き直す。一覧の行（kind game）は行の欄へ、それ以外は TITLE_BUTTONS の順に置く。notice は案内の欄 */
-  render(items: readonly TitleItem[], notice: string): void;
+  /**
+   * 項目を描き直す。一覧の行（kind game）は行の欄へ、それ以外は TITLE_BUTTONS の順に置く。notice は案内の欄、
+   * hint は SV-40 の下の案内（titleHint。空なら何も出さない）
+   */
+  render(items: readonly TitleItem[], notice: string, hint: string): void;
   /** SV-31: 今出ている「読み込み」のファイル選択を開く（キーボード用。無ければ何もしない） */
   openFilePicker(): void;
 };
@@ -247,6 +255,13 @@ export function createTitleScreen(o: { strings: Strings; onSelect(index: number)
   Object.assign(notice.style, { whiteSpace: "pre-wrap", wordBreak: "break-all", lineBreak: "anywhere", overflow: "hidden" });
   el.appendChild(notice);
 
+  // SV-40: ホーム画面への追加の案内（押せない。dim の 2 行）
+  const hintEl = document.createElement("div");
+  hintEl.className = "title-hint";
+  place(hintEl, TITLE_HINT);
+  Object.assign(hintEl.style, { whiteSpace: "pre-wrap", wordBreak: "break-all", lineBreak: "anywhere", overflow: "hidden", color: "var(--c-dim)" });
+  el.appendChild(hintEl);
+
   const buttons = document.createElement("div");
   el.appendChild(buttons);
 
@@ -271,7 +286,8 @@ export function createTitleScreen(o: { strings: Strings; onSelect(index: number)
 
   return {
     el,
-    render(items, text) {
+    render(items, text, hint) {
+      hintEl.textContent = hint;
       const rowEls: HTMLElement[] = [];
       const buttonEls: HTMLElement[] = [];
       fileButton = null;
