@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import manifestText from "../public/manifest.webmanifest?raw";
 import indexHtml from "../index.html?raw";
 import { PALETTE } from "../src/presenter/palette";
-import { precacheUrls, renderServiceWorker } from "../src/pwa/sw-template";
+import { NAVIGATION_TIMEOUT_MS, precacheUrls, renderServiceWorker } from "../src/pwa/sw-template";
 import { setupServiceWorker, watchServiceWorkerUpdate, type UpdateContainer, type UpdateRegistration } from "../src/pwa/register";
 import strings from "../data/strings.json";
 import { UPDATE_NOTICE_KEYS } from "../src/presenter/views/update-notice";
@@ -110,7 +110,8 @@ describe("SV-42 index.html", () => {
 // ---------------------------------------------------------------------------
 // Service Worker のテンプレートと登録
 
-type FakeReq = { url: string; method: string; mode: string; init?: { cache?: string } };
+/** origin は Origin ヘッダー（crossorigin の script / link は送り、事前キャッシュの Request は送らない） */
+type FakeReq = { url: string; method: string; mode: string; init?: { cache?: string }; origin?: string };
 /** 偽の Response。body は出どころ（net: = install で入れた、fetched: = ネットワーク）と URL */
 type FakeRes = { ok: boolean; body: string };
 type FakeEvent = {
@@ -125,22 +126,46 @@ const ORIGIN = "https://x.test";
 
 /**
  * sw.js の本文を、差し替えた self・caches・fetch・Request・URL で評価する。
- * network(url) はネットワークの応答（"offline" なら fetch が reject する）。既定は 200。scope は登録の scope
+ * network(url) はネットワークの応答（"offline" なら fetch が reject する。Promise ならその解決を待つ）。既定は 200。scope は登録の scope。
+ * varyOrigin が真なら、install で入れた応答はサーバーが Vary: Origin を付けたものとして持ち、Origin の違う要求には
+ * ignoreVary が無いと当たらない（Cache API の Vary の照合）。タイマーは timers.fire() で進める
  */
 function runServiceWorker(
   code: string,
   initialCaches: Record<string, string[]> = {},
-  network: (url: string) => FakeRes | "offline" = (url) => ({ ok: true, body: `fetched:${url}` }),
+  network: (url: string) => FakeRes | "offline" | Promise<FakeRes | "offline"> = (url) => ({ ok: true, body: `fetched:${url}` }),
   scope = `${ORIGIN}/`,
+  o: { varyOrigin?: boolean } = {},
 ) {
   const listeners: Record<string, Listener[]> = {};
   const calls = { skipWaiting: 0, claim: 0, fetched: [] as string[], reloadInits: 0 };
-  const store = new Map<string, Map<string, FakeRes>>(
+  type Entry = FakeRes & { vary?: { origin: string | undefined } };
+  const store = new Map<string, Map<string, Entry>>(
     Object.entries(initialCaches).map(([k, urls]) => [k, new Map(urls.map((u) => [u, { ok: true, body: `cached:${u}` }]))]),
   );
+  /** self.setTimeout の偽物。fire() で待っているものを全部呼ぶ。delays は渡された ms */
+  const timers = {
+    pending: new Map<number, () => void>(),
+    delays: [] as number[],
+    next: 1,
+    fire(): void {
+      const fs = [...this.pending.values()];
+      this.pending.clear();
+      for (const t of fs) t();
+    },
+  };
   const self = {
     registration: { scope },
     location: { origin: ORIGIN },
+    setTimeout: (f: () => void, ms: number) => {
+      const id = timers.next++;
+      timers.pending.set(id, f);
+      timers.delays.push(ms);
+      return id;
+    },
+    clearTimeout: (id: number) => {
+      timers.pending.delete(id);
+    },
     addEventListener: (t: string, f: Listener) => {
       (listeners[t] ??= []).push(f);
     },
@@ -164,10 +189,18 @@ function runServiceWorker(
       addAll: async (reqs: FakeReq[]) => {
         for (const r of reqs) {
           if (r.init?.cache === "reload") calls.reloadInits++;
-          cache.set(r.url, { ok: true, body: `net:${r.url}` });
+          const e: Entry = { ok: true, body: `net:${r.url}` };
+          if (o.varyOrigin) Object.defineProperty(e, "vary", { value: { origin: r.origin }, enumerable: false });
+          cache.set(r.url, e);
         }
       },
-      match: async (r: FakeReq | string) => cache.get(typeof r === "string" ? r : r.url),
+      match: async (r: FakeReq | string, opt?: { ignoreVary?: boolean }) => {
+        const e = cache.get(typeof r === "string" ? r : r.url);
+        if (e === undefined) return undefined;
+        const origin = typeof r === "string" ? undefined : r.origin;
+        if (e.vary !== undefined && opt?.ignoreVary !== true && e.vary.origin !== origin) return undefined;
+        return e;
+      },
     };
   };
   const caches = {
@@ -187,7 +220,7 @@ function runServiceWorker(
   }
   const fetchFn = async (r: FakeReq) => {
     calls.fetched.push(r.url);
-    const res = network(r.url);
+    const res = await network(r.url);
     if (res === "offline") throw new TypeError("Failed to fetch");
     return res;
   };
@@ -211,7 +244,7 @@ function runServiceWorker(
     await Promise.all(waits);
     return { responded: response !== undefined, response: response === undefined ? undefined : await response };
   };
-  return { store, calls, dispatch };
+  return { store, calls, dispatch, timers };
 }
 
 const get = (url: string, mode = "cors"): FakeReq => ({ url, method: "GET", mode });
@@ -330,6 +363,68 @@ describe("SV-42 Service Worker", () => {
     });
     const emptyOffline = runServiceWorker(renderServiceWorker({ version: "v2", urls: ["./index.html"] }), {}, () => "offline");
     await expect(emptyOffline.dispatch("fetch", get(`${ORIGIN}/`, "navigate"))).rejects.toThrow("Failed to fetch");
+  });
+
+  test("SV-42 sw.js fetch（Vary）: サーバーが Vary: Origin を付けた事前キャッシュにも、Origin を送る crossorigin の要求（script type=module・link rel=stylesheet）がネットワークに出ずに当たる（オフラインで起動する）", async () => {
+    const sw = runServiceWorker(
+      renderServiceWorker({ version: "v2", urls: ["./index.html", "./assets/index-1234abcd.js", "./assets/index-5678ef.css"] }),
+      {},
+      () => "offline",
+      `${ORIGIN}/`,
+      { varyOrigin: true },
+    );
+    await sw.dispatch("install");
+    for (const f of ["assets/index-1234abcd.js", "assets/index-5678ef.css"]) {
+      expect(await sw.dispatch("fetch", { ...get(`${ORIGIN}/${f}`), origin: ORIGIN }), f).toEqual({
+        responded: true,
+        response: ok(`net:${ORIGIN}/${f}`),
+      });
+    }
+    expect(await sw.dispatch("fetch", get(`${ORIGIN}/`, "navigate"))).toEqual({
+      responded: true,
+      response: ok(`net:${ORIGIN}/index.html`),
+    });
+    expect(sw.calls.fetched).toEqual([`${ORIGIN}/`]);
+  });
+
+  const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+  test("SV-42 sw.js fetch（条件 3・時間制限）: ナビゲーションのネットワークが NAVIGATION_TIMEOUT_MS 以内に応答しなければキャッシュの index.html を返し、後から来た応答は使わない", async () => {
+    expect(NAVIGATION_TIMEOUT_MS).toBe(3000);
+    let answer: (r: FakeRes) => void = () => {};
+    const slow = new Promise<FakeRes>((r) => {
+      answer = r;
+    });
+    const sw = runServiceWorker(renderServiceWorker({ version: "v2", urls: ["./index.html"] }), {}, (url) =>
+      url.endsWith("/index.html") ? ok(`fetched:${url}`) : slow,
+    );
+    await sw.dispatch("install");
+    const pending = sw.dispatch("fetch", get(`${ORIGIN}/`, "navigate"));
+    await tick();
+    expect(sw.timers.delays).toEqual([NAVIGATION_TIMEOUT_MS]);
+    sw.timers.fire();
+    expect(await pending).toEqual({ responded: true, response: ok(`net:${ORIGIN}/index.html`) });
+    answer(ok("late"));
+    await tick();
+    // 応答が時間内に来れば、その応答（タイマーは片付ける）
+    const fast = runServiceWorker(renderServiceWorker({ version: "v2", urls: ["./index.html"] }));
+    await fast.dispatch("install");
+    expect(await fast.dispatch("fetch", get(`${ORIGIN}/`, "navigate"))).toEqual({ responded: true, response: ok(`fetched:${ORIGIN}/`) });
+    expect(fast.timers.pending.size).toBe(0);
+  });
+
+  test("SV-42 sw.js fetch（条件 3・時間制限）: 時間切れでもキャッシュに index.html が無ければネットワークの応答を待つ", async () => {
+    let answer: (r: FakeRes) => void = () => {};
+    const slow = new Promise<FakeRes>((r) => {
+      answer = r;
+    });
+    const sw = runServiceWorker(renderServiceWorker({ version: "v2", urls: ["./index.html"] }), {}, () => slow);
+    const pending = sw.dispatch("fetch", get(`${ORIGIN}/`, "navigate"));
+    await tick();
+    sw.timers.fire();
+    await tick();
+    answer(ok("late"));
+    expect(await pending).toEqual({ responded: true, response: ok("late") });
   });
 
   test("SV-42 sw.js（条件 2）: サブパスの scope（/wizlike/）では一覧とキャッシュの index.html を scope からの相対で解決する", async () => {

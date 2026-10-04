@@ -648,3 +648,5 @@
 - 2026-10-04 実機(M6):【未定】【低】文言の文体が混在している。strings の save.importOld（「古いデータです。進行が巻き戻ります。」）、save.failed、battle.autoStopping が です・ます 調で、ほかは常体。
 - 2026-10-04 実機(M6):【未定】【観察】迷宮に入った後もメッセージ窓に「迷宮の入口。どこへ潜る？」が残る。
 - 2026-10-04 実機(M6):【未定】【観察・横向きのみ】名前の段でキーボードが出ると、誤りの行と次へ・戻るの下半分が隠れる（実機(M5.5) の C2 の行と同じ。縦向きは未確認）。
+- 2026-10-04 build(M6): SV-42 の Service Worker はキャッシュを `cache.match(req, { ignoreVary: true })` で引く。vite preview などが Vary: Origin を付けると、Origin を送る crossorigin の script / link が Origin の無い事前キャッシュの要求と食い違って外れ、オフラインで起動しなかったため（実機(M6) の【未定】【中】を解消）。URL で引く案より変更が小さく、install の Request とキャッシュの鍵を変えずに済む。
+- 2026-10-04 build(M6): SV-42 のナビゲーションのネットワーク優先に時間制限 NAVIGATION_TIMEOUT_MS = 3000ms【仮】を置き、超えたらキャッシュの index.html を返す（後から来た応答は使わない。キャッシュに無ければネットワークを待つ）。接続の失敗がすぐ返らない経路でオフライン起動に約 6 秒かかったため（実機(M6) の【未定】【低】を解消）。sw.js は data を読めないので config.json ではなく src/pwa/sw-template.ts の定数に置く。

@@ -1,9 +1,14 @@
 // SV-42: Service Worker（sw.js）の手書きのテンプレート。DOM に触れない純粋な関数だけ。
 // vite.config.ts のプラグインがビルドの最後に dist の一覧と版を渡して sw.js を書く（依存パッケージを使わない）。
-// sw.js の本文が使う自由な識別子は self・caches・fetch・Request・URL だけ（テストで差し替えて評価するため）。
+// sw.js の本文が使う自由な識別子は self・caches・fetch・Request・URL・Promise だけ（テストで差し替えて評価するため。
+// タイマーは self.setTimeout / self.clearTimeout）。
 // 本文は文字列なので日本語を書かない（tests/architecture.test.ts の §3-10 の検査の対象）。
 // 振る舞い: install で全部を wizlike-{版} に入れて待機（skipWaiting はページの message でだけ）、
-// ナビゲーションはネットワーク優先（失敗したらキャッシュの index.html）、それ以外はキャッシュ優先。
+// ナビゲーションはネットワーク優先（失敗・NAVIGATION_TIMEOUT_MS 以内に応答なしならキャッシュの index.html）、それ以外はキャッシュ優先。
+// キャッシュは Vary を無視して引く（ignoreVary）。
+
+/** SV-42: ナビゲーションのネットワークを待つ上限（ms）【仮】。超えたらキャッシュの index.html を返す。sw.js は data を読めないのでここに置く */
+export const NAVIGATION_TIMEOUT_MS = 3000;
 
 /** SV-42: プリキャッシュに入れない名前（sw.js 自身、*.map、"." で始まる名前の段を含むもの） */
 function excluded(path: string): boolean {
@@ -29,7 +34,11 @@ const VERSION = ${JSON.stringify(o.version)};
 const CACHE = "wizlike-" + VERSION;
 const URLS = ${JSON.stringify(o.urls)};
 const INDEX = "./index.html";
+const NAV_TIMEOUT_MS = ${NAVIGATION_TIMEOUT_MS};
 const abs = (u) => new URL(u, self.registration.scope).href;
+// ignoreVary: a server that adds "Vary: Origin" (vite preview) would otherwise miss for crossorigin requests,
+// which send Origin while the precache requests did not
+const lookup = (cache, r) => cache.match(r, { ignoreVary: true });
 self.addEventListener("install", (e) => {
   e.waitUntil((async () => {
     const cache = await caches.open(CACHE);
@@ -55,19 +64,24 @@ self.addEventListener("fetch", (e) => {
   e.respondWith((async () => {
     const cache = await caches.open(CACHE);
     if (req.mode === "navigate") {
-      // index.html: network first, the cached copy when offline or the server fails (never written back to the cache)
-      try {
-        const res = await fetch(req);
-        if (res.ok) return res;
-        return (await cache.match(abs(INDEX))) || res;
-      } catch (err) {
-        const hit = await cache.match(abs(INDEX));
-        if (hit) return hit;
-        throw err;
-      }
+      // index.html: network first, the cached copy when offline, the server fails or no answer within NAV_TIMEOUT_MS
+      // (a late network answer is not used; the network copy is never written back to the cache)
+      const net = fetch(req).then((res) => ({ res }), (err) => ({ err }));
+      let timer;
+      const late = new Promise((resolve) => {
+        timer = self.setTimeout(() => resolve(null), NAV_TIMEOUT_MS);
+      });
+      const first = await Promise.race([net, late]);
+      self.clearTimeout(timer);
+      if (first !== null && first.res && first.res.ok) return first.res;
+      const hit = await lookup(cache, abs(INDEX));
+      if (hit) return hit;
+      const r = first !== null ? first : await net;
+      if (r.res) return r.res;
+      throw r.err;
     }
     // hashed assets (assets/) and the other precached files: cache first, the network when missing
-    return (await cache.match(req)) || fetch(req);
+    return (await lookup(cache, req)) || fetch(req);
   })());
 });
 `;
