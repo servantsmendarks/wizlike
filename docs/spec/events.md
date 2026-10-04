@@ -3,7 +3,7 @@
 ## 1. 種別
 
 - EV-01 イベントの種別 `kind`: 選択型 `choice`（リーダーが選択肢を選ぶ）、衝動型 `impulse`（性格で行動者が決まり、勝手に動く）、混合型 `mixed`（衝動判定を先に行い、衝動が無ければ選択型として続く）。
-- EV-02 イベント定義は `data/events.json`。発生の契機は、イベントセルを踏む（DG-22）が基本。将来は戦闘後・宝箱・街でも使う。
+- EV-02 イベント定義は `data/events.json`。発生の契機は、イベントセルを踏む（DG-22）が基本。酒場（TW-14）でも語りと効果だけの簡単なイベントが起きる（`data/tavern.json`。M5.5）。将来は戦闘後・宝箱でも使う。
 - EV-03 誘いタグ `lure`: 宝 `treasure`、未知 `unknown`、危険 `danger`、弱者 `weak`。イベントはタグごとに重み 0〜3 を持つ。性格も同じタグごとに重み 0〜3 を持つ（`personalities[].lure`）。
 
 ## 2. 行動者の決定（衝動判定）
@@ -27,7 +27,7 @@
 
 - EV-30 衝動の結果は `impulseOutcomes[]` から重み付きで 1 つ引く。各結果は `quality`（`good` / `bad` / `neutral`）と効果の列 `effects[]` を持つ。
 - EV-31 選択型の選択肢は `choices[]`。各選択肢は効果の列と、表示のラベルの strings キー `labelKey`（規約 `event.<eventId>.choice.<choiceId>`。`label` はデータの説明として残し、表示には使わない。A9、M5）を持つ。選択肢の語り `text` を出してから効果を適用する。`requires: "impulse"` の結果は衝動でしか出ない（「良い結果は衝動でしか取れない」分岐。EV-41 の方針）。衝動の結果は常に衝動から出るので、処理では見ない印として扱う（M5）。
-- EV-32 効果の種類 `effects[].type`【仮】: `gold`（`dice`）、`item`（`itemId` または `table`）、`damage`（`dice`、対象 `actor` / `party`）、`san`（`value`、対象 `actor` / `party` / `others`）、`revealFloor`（この階のマップを全て探索済みにする）、`revealStairs`（この階の下り階段だけを探索済みにする）、`consumeItem`（`itemId`、対象 `actor` / `party`。`optional: true` なら持っていなくても続行、無ければ以降の効果は起きない）、`encounter`（`monster`, `count`）、`status`（`status`, 対象）、`message`（`key`）、`nothing`。
+- EV-32 効果の種類 `effects[].type`【仮】: `gold`（`dice`）、`item`（`itemId` または `table`）、`damage`（`dice`、対象 `actor` / `party`）、`san`（`value`、対象 `actor` / `party` / `others`）、`revealFloor`（この階のマップを全て探索済みにする）、`revealStairs`（この階の下り階段だけを探索済みにする）、`consumeItem`（`itemId`、対象 `actor` / `party`。`optional: true` なら持っていなくても続行、無ければ以降の効果は起きない）、`encounter`（`monster`, `count`）、`status`（`status`, 対象）、`message`（`key`）、`nothing`。`applyEffects` は迷宮の階が無い場面（酒場。TW-14）でも使い、そのとき `revealFloor` / `revealStairs` は使えない（データの検証で止める。M5.5）。
   - プロトタイプ（M5）で実装するのは `gold` / `damage` / `san` / `revealFloor` / `revealStairs` / `consumeItem` / `message` / `nothing`。`item` / `encounter` / `status` はデータにあれば読み込み時の検証で起動を止める。
   - 対象（効果ごとに、その時点で解決）: `actor` は行動者（生きていなければ対象なし）、`party` は生存者（life alive）全員、`others` は生存者から行動者を除いた者。選択肢の効果の行動者はリーダー。
   - `gold`: 出目の合計（0 未満は 0）が正なら所持金と潜行台帳（DG-40）に足し、`event.gold`{gold}（強欲の財宝入手 CH-52）。0 なら何も出さない。`damage`: 対象を並び順に 1 回ずつ振り、落とし穴と同じ順（CH-45）。`san`: 符号付きの値、耐性なし（CH-54）。`revealFloor` / `revealStairs` は GameEvent を出さない（語りは結果の text）。`revealStairs` は下り階段が無い階（最下層）ではボスのセルを明かす（B9）。

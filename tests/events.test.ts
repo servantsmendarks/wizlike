@@ -570,6 +570,25 @@ describe("効果（EV-32）", () => {
     expect(c3.state.dive!.explored["3"]).toEqual([idx(f3, f3.boss!.x, f3.boss!.y)]);
   });
 
+  test("EV-32/TW-14 applyEffects は f が null（酒場）のとき revealFloor / revealStairs で Error。gold / san / message / nothing は f が null でも使え、dive が無ければ台帳には入れない", () => {
+    const { ctx, actor } = fx();
+    expect(() => applyEffects(ctx, null, [{ type: "revealFloor" }], actor(0))).toThrow("EV-32: no floor");
+    expect(() => applyEffects(ctx, null, [{ type: "revealStairs" }], actor(0))).toThrow("EV-32: no floor");
+    // 街（dive null）
+    const t = ctxWith(cloneState(newGame(1)), data);
+    const m = cloneRng(t.state.rng);
+    const g = rollDice(m, "1d4").total;
+    const gold0 = t.state.gold;
+    applyEffects(t, null, [{ type: "gold", dice: "1d4" }, { type: "message", key: "tavern.old_rumor.more" }, { type: "nothing" }], t.state.party[0]!);
+    expect(t.events).toEqual([
+      { kind: "message", key: "event.gold", params: { gold: g } },
+      { kind: "message", key: "tavern.old_rumor.more" },
+    ]);
+    expect(t.state.gold).toBe(gold0 + g);
+    expect(t.state.dive).toBeNull();
+    expect(t.state.rng).toEqual(m);
+  });
+
   test("EV-32 consumeItem: 実体を消し台帳からも外し event.consume。無ければ optional なら語らず続行、そうでなければ event.noItem で以降を飛ばす", () => {
     const wounded = eventOf(data, "wounded_adventurer");
     const help = wounded.choices.find((c) => c.id === "help")!.effects;

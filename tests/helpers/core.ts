@@ -12,6 +12,7 @@ import personalities from "../../data/personalities.json";
 import penaltyTable from "../../data/penalty-table.json";
 import dungeons from "../../data/dungeons.json";
 import events from "../../data/events.json";
+import tavern from "../../data/tavern.json";
 import strings from "../../data/strings.json";
 import { EQUIP_SLOTS, loadGameData, type GameData, type PersonalityId } from "../../src/core/data";
 import { createInitialState, execute } from "../../src/core/engine";
@@ -33,6 +34,7 @@ export function loadFreshData(): GameData {
       penaltyTable,
       dungeons,
       events,
+      tavern,
       strings,
     }),
   );

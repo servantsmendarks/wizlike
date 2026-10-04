@@ -296,6 +296,8 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
     }),
     town: F({
       innRanks: L(F({ id: S, name: S, cost: I(NON_NEG), hpRatio: N(RATIO) }), 1), // TW-04【仮】。MP は全ランクで全回復（MG-02）
+      tavernEventTurns: I(POS_INT), // TW-14【仮】
+      tavernEventChance: I(PERCENT), // TW-14【仮】
     }),
     events: F({ impulseThreshold: I(), stopSanGain: I(NON_NEG), confusedLureWeight: I({ min: 0, max: 3 }) }), // EV-14 の仮の重み【仮】
     save: F({ maxGames: I(POS_INT), schemaVersion: I(POS_INT) }),
@@ -881,6 +883,43 @@ function validateEvents(ctx: Ctx, v: unknown, ix: Index): void {
   });
 }
 
+// ---- tavern.json（TW-13 / TW-14。M5.5） ----
+
+/** TW-14: 酒場のイベントで使える効果（EV-32 の部分集合） */
+const TAVERN_EFFECTS = ["gold", "san", "message", "nothing"] as const;
+
+function validateTavern(ctx: Ctx, v: unknown, ix: Index): void {
+  const strRef: Field = (c, p, x) => {
+    const s = str(c, p, x);
+    strKey(c, p, s, ix);
+    if (s !== undefined) {
+      const ph = [...(ix.stringText.get(s) ?? "").matchAll(PLACEHOLDER_RE)].map((m) => m[0]);
+      if (ph.length > 0) report(c, p, `TW-13/TW-14: strings ${JSON.stringify(s)} must not have placeholders (found ${ph.join(" ")})`);
+    }
+    return s;
+  };
+  const effectU = U({
+    gold: { dice: D },
+    san: { value: I(), target: E(["party"]) },
+    message: { key: strRef },
+    nothing: {},
+  });
+  const effect: Field = (c, p, x) => {
+    const t = get(x, "type");
+    if (typeof t === "string" && !(TAVERN_EFFECTS as readonly string[]).includes(t)) {
+      report(c, p, `TW-14: tavern effect type ${JSON.stringify(t)} is not allowed`);
+      return undefined;
+    }
+    return effectU(c, p, x);
+  };
+  const t = fields(ctx, "", v, {
+    lookTexts: L(strRef, 1),
+    events: L(F({ id: S, name: S, weight: I(POS_INT), text: strRef, effects: L(effect) }), 1),
+  });
+  if (!t) return;
+  if (Array.isArray(t.events)) uniqueIds(ctx, "events", t.events);
+}
+
 // ---- strings.json ----
 
 const PLACEHOLDER_RE = /\{[A-Za-z_][A-Za-z0-9_]*\}/g;
@@ -917,6 +956,7 @@ export function validateGameData(raw: RawGameData): string[] {
   validatePenaltyTable(ctxOf("penaltyTable"), raw.penaltyTable, ix);
   validateDungeons(ctxOf("dungeons"), raw.dungeons, ix);
   validateEvents(ctxOf("events"), raw.events, ix);
+  validateTavern(ctxOf("tavern"), raw.tavern, ix);
   validateStrings(ctxOf("strings"), raw.strings, ix);
   return issues;
 }

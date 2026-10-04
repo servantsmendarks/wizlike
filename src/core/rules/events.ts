@@ -110,10 +110,11 @@ function requireDiveOf(state: GameState) {
 
 /**
  * EV-32: effects を順に適用する。actor は衝動の行動者、選択肢ではリーダー（B6）。f は dive.floor の実効の構造。
+ * 酒場のイベント（TW-14。M5.5）では f は null で、そのとき revealFloor / revealStairs は Error（tavern.json の検証で来ない）。
  * consumeItem で品が見つからず optional でなければ event.noItem を出して以降の効果を飛ばす。
  * item / encounter / status はプロトタイプで実装しない（データにあれば検証で起動を止めている）
  */
-export function applyEffects(ctx: RuleContext, f: Floor, effects: readonly EventEffect[], actor: Character): void {
+export function applyEffects(ctx: RuleContext, f: Floor | null, effects: readonly EventEffect[], actor: Character): void {
   const { state, data } = ctx;
   for (const e of effects) {
     switch (e.type) {
@@ -129,12 +130,14 @@ export function applyEffects(ctx: RuleContext, f: Floor, effects: readonly Event
         for (const ch of targetsOf(state, e.target, actor)) applySanValue(ctx, ch, e.value); // CH-54: 耐性なし
         break;
       case "revealFloor": {
+        if (f === null) throw new Error("EV-32: no floor");
         const dive = requireDiveOf(state);
         addExplored(dive, dive.floor, Array.from({ length: f.width * f.height }, (_, i) => i)); // 語りは結果の text
         break;
       }
       case "revealStairs": {
         // B9: 下り階段が無い階（最下層）ではボスのセルを明かす。どちらも無ければ何もしない
+        if (f === null) throw new Error("EV-32: no floor");
         const dive = requireDiveOf(state);
         const at = f.stairsDown ?? f.boss;
         if (at !== null) addExplored(dive, dive.floor, [idx(f, at.x, at.y)]);

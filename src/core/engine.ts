@@ -43,6 +43,7 @@ import {
   templeService,
 } from "./rules/town";
 import type { TempleService } from "./rules/town";
+import { checkLookAround, lookAround } from "./rules/tavern";
 import { wipeIfNoneCanAct } from "./rules/wipe";
 import { cloneState, makeContext } from "./state";
 import type { BattleAction, Command, ExecuteResult, GameState, RuleContext } from "./types";
@@ -222,6 +223,13 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       if (r !== null) return reject(state, "town.mercy", r);
       const ctx = makeContext(cloneState(state), data);
       grantMercy(ctx, memberId as string);
+      return finish(ctx);
+    }
+    case "town.lookAround": {
+      const r = checkLookAround(state);
+      if (r !== null) return reject(state, "town.lookAround", r);
+      const ctx = makeContext(cloneState(state), data);
+      lookAround(ctx);
       return finish(ctx);
     }
     case "town.dark": {

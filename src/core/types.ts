@@ -334,6 +334,8 @@ export type Command =
   | { type: "town.shop"; action: ShopAction }
   | { type: "town.bank"; amount: number } // 正で預け入れ、負で引き出し
   | { type: "town.mercy"; memberId: string }
+  /** TW-13（M5.5）: 酒場で見回す。街（screen town・dive null）だけ。乱数を使う */
+  | { type: "town.lookAround" }
   | { type: "dungeon.enter"; dungeonId: string }
   | { type: "dungeon.move" }
   | { type: "dungeon.turn"; dir: "left" | "right" | "around" }

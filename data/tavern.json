@@ -1,0 +1,19 @@
+{
+  "lookTexts": ["town.look.crowd", "town.look.quiet", "town.look.gm", "town.look.board"],
+  "events": [
+    {
+      "id": "dropped_coin",
+      "name": "床の銀貨",
+      "weight": 2,
+      "text": "tavern.dropped_coin.text",
+      "effects": [{ "type": "gold", "dice": "2d6" }]
+    },
+    {
+      "id": "old_rumor",
+      "name": "古い噂",
+      "weight": 1,
+      "text": "tavern.old_rumor.text",
+      "effects": [{ "type": "message", "key": "tavern.old_rumor.more" }]
+    }
+  ]
+}

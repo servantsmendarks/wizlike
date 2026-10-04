@@ -12,6 +12,7 @@ import personalities from "../data/personalities.json";
 import penaltyTable from "../data/penalty-table.json";
 import dungeons from "../data/dungeons.json";
 import events from "../data/events.json";
+import tavern from "../data/tavern.json";
 import strings from "../data/strings.json";
 import { GameDataError, loadGameData, type GameData, type RawGameData } from "./core/data";
 import { mountStage } from "./presenter/stage";
@@ -37,6 +38,7 @@ const raw: RawGameData = {
   penaltyTable,
   dungeons,
   events,
+  tavern,
   strings,
 };
 

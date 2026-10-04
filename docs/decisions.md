@@ -566,3 +566,4 @@
 - 2026-10-04 core(M5.5): TW-12 冒険のターン数は dungeon.move の前進が成立した歩と runRound（battle.round と同時）で数える。引き返し・昇降・逃走の成功・debug.warp は数えない。
 - 2026-10-04 core(M5.5): DG-21 察知した罠は dive.knownTraps（階ごとの添字）に入れ、発動で外す。既知の罠に入っても察知は判定し直す（規則は変えない）。visibleCells は変えず、別の問い合わせ visibleKnownTraps で返す。
 - 2026-10-04 save(M5.5): schemaVersion を 2 にし、最初の移行（v1 → v2）で adventureTurns 0・tavernEventMark 0・dive.knownTraps {} を入れる。
+- 2026-10-04 data(M5.5): 酒場の語りとイベントは data/tavern.json に置く（events.json の EventDef と形が違い、trigger を足すと迷宮のイベントの検証が複雑になるため）。効果は gold / san（party）/ message / nothing だけ。message のキーも語り・lookTexts と同じく差し込みを持たないことを検証する（applyEffects の message は params なしで出すため）。

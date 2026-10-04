@@ -20,6 +20,8 @@
 - TW-10 銀行: 預入・引出（`town.bank`）。銀行残高 `bank` は全滅ペナルティ（TW-22）の対象外。
 - TW-11 迷宮入口: 開放済みダンジョン（`progress.unlockedDungeons`）を選んで入場（`dungeon.enter`）。入場時に `diveSeed` を発行する（DG-03）。行動可能な者（CH-44）がいなければ入れない（rejected `no one can act`）。
 - TW-12 冒険のターン数 `adventureTurns`: `dungeon.move` の前進が成立した 1 歩ごとに +1、戦闘のラウンド（CB-10。敵の奇襲・逃走失敗のラウンドを含む）を 1 つ解決するごとに +1。旋回・壁・階段の昇降・罠の引き返し・逃走の成功・debug の移動では増えない。game.new で 0、全滅・帰還で戻さない（M5.5）。
+- TW-13 見回す（`town.lookAround`）: 街でだけ受け付ける（それ以外は rejected `wrong screen`。選択の保留中は `choice pending`）。`data/tavern.json` の `lookTexts` から randInt で 1 つを語る。続けて TW-14 の判定をする（M5.5）。
+- TW-14 酒場のイベント: `adventureTurns − tavernEventMark ≥ config.town.tavernEventTurns`（200）【仮】のとき、見回すたびに `config.town.tavernEventChance`（30）【仮】% で、`data/tavern.json` の `events` から weight の重みで 1 つを起こし、`tavernEventMark` を今の `adventureTurns` にする。イベントは語り（`text`）と効果（EV-32 のうち `gold` / `san`（対象 `party`）/ `message` / `nothing`。行動者はリーダー）だけで、選択肢・衝動・制止は無い。gold は所持金に足す（台帳は無い）。乱数は 見回すの randInt → chance（条件を満たすときだけ）→ weightedIndex（当たったときだけ）→ 効果の順。`tavernEventMark` の初期値は 0（game.new）。語り・効果の文言は差し込みを持たない（M5.5）。
 
 ## 2. 全滅処理
 
@@ -44,4 +46,8 @@
 
 ## 4. データ
 
-`config.json` の `town` と `economy` 節を参照。`config.town.innRanks` は `[{ "id": "stable", "name": "馬小屋", "cost": 0, "hpRatio": 0 }, ...]` の形（`mpRatio` は無い。MP は全ランクで全回復）。
+`config.json` の `town` と `economy` 節を参照。`config.town.tavernEventTurns` / `tavernEventChance` は TW-14【仮】。
+
+`data/tavern.json`（TW-13 / TW-14。M5.5）: `lookTexts`（strings のキー。差し込みなし。1 件以上）と `events`（`id` / `name` / `weight`（正の整数）/ `text`（strings のキー。差し込みなし）/ `effects`（`gold` / `san`（`target` は `party`）/ `message` / `nothing` だけ））。events は 1 件以上で id は一意。
+
+`config.town.innRanks` は `[{ "id": "stable", "name": "馬小屋", "cost": 0, "hpRatio": 0 }, ...]` の形（`mpRatio` は無い。MP は全ランクで全回復）。

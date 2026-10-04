@@ -150,7 +150,8 @@ export type Config = {
     cureCost: Record<CurableStatusId, number>;
     uncurseCost: number;
   };
-  town: { innRanks: InnRank[] };
+  /** TW-04 / TW-14（M5.5）: tavernEventTurns は酒場のイベントが起きうるまでの冒険のターン数【仮】、tavernEventChance は見回すごとの確率%【仮】 */
+  town: { innRanks: InnRank[]; tavernEventTurns: number; tavernEventChance: number };
   events: { impulseThreshold: number; stopSanGain: number; confusedLureWeight: number };
   save: { maxGames: number; schemaVersion: number };
   input: { swipeThresholdPx: number; holdRepeatMs: number; edgeDeadZonePx: number };
@@ -445,6 +446,32 @@ export type EventDef = {
   choices: EventChoice[];
 };
 
+// ---- tavern.json（TW-13 / TW-14。M5.5） ----
+
+/** TW-14: 酒場のイベントの効果（EV-32 の部分集合。san の対象は party だけ）。EventEffect に代入できる形 */
+export type TavernEffect =
+  | { type: "gold"; dice: string }
+  | { type: "san"; value: number; target: "party" }
+  | { type: "message"; key: string }
+  | { type: "nothing" };
+
+export type TavernEventDef = {
+  id: string;
+  /** データの説明（表示には使わない） */
+  name: string;
+  /** weightedIndex の重み（正の整数） */
+  weight: number;
+  /** strings.json のキー（差し込みなし） */
+  text: string;
+  effects: TavernEffect[];
+};
+
+export type TavernData = {
+  /** TW-13: 見回すの語り（strings.json のキー。差し込みなし）。randInt で 1 つ */
+  lookTexts: string[];
+  events: TavernEventDef[];
+};
+
 // ---- strings.json ----
 
 export type Strings = Record<string, string>;
@@ -462,6 +489,7 @@ export type GameData = {
   penaltyTable: PenaltyTable;
   dungeons: DungeonDef[];
   events: EventDef[];
+  tavern: TavernData;
   strings: Strings;
 };
 
@@ -480,5 +508,6 @@ export const DATA_FILES: { readonly [K in keyof RawGameData]: string } = {
   penaltyTable: "penalty-table.json",
   dungeons: "dungeons.json",
   events: "events.json",
+  tavern: "tavern.json",
   strings: "strings.json",
 };

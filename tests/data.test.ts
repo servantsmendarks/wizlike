@@ -9,6 +9,7 @@ import personalities from "../data/personalities.json";
 import penaltyTable from "../data/penalty-table.json";
 import dungeons from "../data/dungeons.json";
 import events from "../data/events.json";
+import tavern from "../data/tavern.json";
 import strings from "../data/strings.json";
 import {
   DATA_FILES,
@@ -33,6 +34,7 @@ function rawData(): Mutable {
     penaltyTable,
     dungeons,
     events,
+    tavern,
     strings,
   }) as Mutable;
 }
@@ -69,6 +71,8 @@ describe("data: 実データ", () => {
     expect(data.penaltyTable.bands).toHaveLength(7);
     expect(data.dungeons.map((d) => d.id)).toEqual(["d01", "d02"]);
     expect(data.events).toHaveLength(3);
+    expect(data.tavern.events.map((e) => e.id)).toEqual(["dropped_coin", "old_rumor"]);
+    expect(data.tavern.lookTexts).toHaveLength(4);
     expect(data.config.prototypeParty.members).toHaveLength(6);
     expect(data.config.prototypeParty.members[0]?.isLeader).toBe(true);
     expect(data.strings["dungeon.trap.pit"]).toBeTypeOf("string");
@@ -77,7 +81,8 @@ describe("data: 実データ", () => {
   test("data: DATA_FILES がファイル名と対応する", () => {
     expect(DATA_FILES.penaltyTable).toBe("penalty-table.json");
     expect(DATA_FILES.config).toBe("config.json");
-    expect(Object.keys(DATA_FILES)).toHaveLength(11);
+    expect(DATA_FILES.tavern).toBe("tavern.json");
+    expect(Object.keys(DATA_FILES)).toHaveLength(12);
   });
 
   test("data: 実データの定数形ダイス（gold \"0\"、groupSize \"1\"）が通る", () => {
@@ -539,6 +544,45 @@ describe("data: dungeons.json", () => {
   test("data: DG-05 rooms は省略でき、既定値（config.dungeon.defaultRooms）を超える rooms も通る", () => {
     expect(issuesOf((r) => delete r.dungeons[0].rooms)).toEqual([]);
     expect(issuesOf((r) => (r.dungeons[0].rooms = [4, 7]))).toEqual([]);
+  });
+});
+
+describe("data: tavern.json（TW-13 / TW-14。M5.5）", () => {
+  test("data: TW-14 tavern.json の検証: damage / revealFloor 等の効果、san の target が party 以外、差し込みのある text / lookTexts、未知の strings キー、weight 0、空の events / lookTexts、id の重複は起動を止める", () => {
+    const F = "tavern.json";
+    expectIssue((r) => (r.tavern.events[0].effects[0] = { type: "damage", dice: "1d4", target: "party" }), F, 'events[0].effects[0]: TW-14: tavern effect type "damage" is not allowed');
+    expectIssue((r) => (r.tavern.events[0].effects[0] = { type: "revealFloor" }), F, 'TW-14: tavern effect type "revealFloor" is not allowed');
+    expectIssue((r) => (r.tavern.events[0].effects[0] = { type: "revealStairs" }), F, 'TW-14: tavern effect type "revealStairs" is not allowed');
+    expectIssue((r) => (r.tavern.events[0].effects[0] = { type: "consumeItem", itemId: "herb", target: "party" }), F, "TW-14: tavern effect type");
+    expectIssue((r) => (r.tavern.events[0].effects[0] = { type: "san", value: -3, target: "actor" }), F, "events[0].effects[0].target: expected one of party");
+    expectIssue((r) => (r.tavern.events[0].effects[0] = { type: "gold", dice: "2x6" }), F, "events[0].effects[0].dice");
+    expectIssue((r) => (r.strings["tavern.dropped_coin.text"] = "{name}が拾った"), F, "events[0].text: TW-13/TW-14: strings");
+    expectIssue((r) => (r.strings["town.look.quiet"] = "{gold}の音"), F, "lookTexts[1]: TW-13/TW-14: strings");
+    expectIssue((r) => (r.tavern.lookTexts[0] = "town.look.nope"), F, 'lookTexts[0]: unknown strings.json key "town.look.nope"');
+    expectIssue((r) => (r.tavern.events[1].effects[0].key = "tavern.nope"), F, 'events[1].effects[0].key: unknown strings.json key "tavern.nope"');
+    expectIssue((r) => (r.tavern.events[0].weight = 0), F, "events[0].weight: expected integer >= 1");
+    expectIssue((r) => (r.tavern.events = []), F, "events");
+    expectIssue((r) => (r.tavern.lookTexts = []), F, "lookTexts");
+    expectIssue((r) => (r.tavern.events[1].id = "dropped_coin"), F, 'duplicate id "dropped_coin"');
+    // 許される効果（gold / san party / message / nothing）だけなら通る
+    expect(
+      issuesOf((r) => {
+        r.tavern.events[0].effects = [
+          { type: "gold", dice: "1d6" },
+          { type: "san", value: 2, target: "party" },
+          { type: "message", key: "tavern.old_rumor.more" },
+          { type: "nothing" },
+        ];
+      }),
+    ).toEqual([]);
+  });
+
+  test("data: TW-14 config.town.tavernEventTurns は正の整数、tavernEventChance は 0..100 の整数", () => {
+    expectIssue((r) => (r.config.town.tavernEventTurns = 0), "config.json", "town.tavernEventTurns");
+    expectIssue((r) => (r.config.town.tavernEventTurns = 1.5), "config.json", "town.tavernEventTurns");
+    expectIssue((r) => (r.config.town.tavernEventChance = 101), "config.json", "town.tavernEventChance");
+    expectIssue((r) => (r.config.town.tavernEventChance = -1), "config.json", "town.tavernEventChance");
+    expect(issuesOf((r) => (r.config.town.tavernEventChance = 0))).toEqual([]);
   });
 });
 
