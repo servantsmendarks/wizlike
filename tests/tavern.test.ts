@@ -7,7 +7,7 @@ import { tavernEventReady } from "../src/core/rules/tavern";
 import { cloneState } from "../src/core/state";
 import type { Command, GameEvent, GameState } from "../src/core/types";
 import { dived, withBattle } from "./helpers/battle";
-import { data, expectKnownStringKeys, loadFreshData, newGame } from "./helpers/core";
+import { data, deepFreeze, expectKnownStringKeys, loadFreshData, newGame } from "./helpers/core";
 
 const LOOK: Command = { type: "town.lookAround" };
 
@@ -158,5 +158,28 @@ describe("酒場の見回す（TW-13）", () => {
     expect(sc.map((e) => (e as { id: string }).id)).toEqual(s.party.filter((c) => c.life === "alive").map((c) => c.id));
     for (const e of sc) expect((e as { delta: number }).delta).toBe(-4);
     expect(r.state.tavernEventMark).toBe(200);
+  });
+});
+
+describe("酒場の見回すの §3-2", () => {
+  test("§3-2/TW-13/TW-14 town.lookAround は決定的で引数を書き換えず、返る state は JSON 往復で等しい（語りだけ・イベントが当たるの両方）", () => {
+    const cases: Array<[string, GameData]> = [
+      ["語りだけ（chance 0）", deepFreeze(dataChance(0))],
+      ["当たり（chance 100）", deepFreeze(dataChance(100))],
+    ];
+    for (const [name, d] of cases) {
+      for (let seed = 1; seed <= 10; seed++) {
+        const s = deepFreeze(town(1000, 0, seed)); // 差 1000 ≥ tavernEventTurns
+        const before = JSON.stringify(s);
+        const r1 = execute(s, LOOK, d);
+        const r2 = execute(s, LOOK, d);
+        expect(JSON.stringify(s), `${name} seed ${seed}`).toBe(before);
+        expect(r2.state, `${name} seed ${seed}`).toEqual(r1.state);
+        expect(r2.events, `${name} seed ${seed}`).toEqual(r1.events);
+        expect(JSON.parse(JSON.stringify(r1.state)), `${name} seed ${seed}`).toStrictEqual(r1.state);
+        // 当たりの data では tavernEventMark が進む（受理経路を通っていることの確認）
+        expect(r1.state.tavernEventMark, `${name} seed ${seed}`).toBe(name.startsWith("当たり") ? 1000 : 0);
+      }
+    }
   });
 });
