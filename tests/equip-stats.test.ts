@@ -566,6 +566,14 @@ describe("IT-40 固有スキル", () => {
     expect(spellCost(s, d, member(s, "c5"), spellOf(d, "fire_arrow"))).toBe(1);
   });
 
+  test("MG-30/IT-40 mpCostDown は消費を元の値より増やさない（mp 0 の呪文は杖（−1）を装備しても 0。最低 1 は元が 1 以上のときだけ）", () => {
+    const s = newGame(1);
+    equipNew(s, "c5", "weapon", { itemId: "staff", uniqueId: "dawn_flint_staff", identified: true });
+    const free = { ...spellOf(data, "fire_arrow"), mp: 0 }; // 検証は mp 0 を許す（NON_NEG）
+    expect(spellCost(s, data, member(s, "c5"), free)).toBe(0);
+    expect(spellCost(s, data, member(s, "c5"), { ...free, mp: 1 })).toBe(1);
+  });
+
   test("MG-30/IT-40 mpCostDown は dungeon.cast（戦闘外の heal）と campMenu の mp にも効く", () => {
     const s = newGame(1);
     equipNew(s, "c4", "weapon", { itemId: "staff", uniqueId: "dawn_flint_staff", identified: true });
@@ -622,6 +630,26 @@ describe("IT-40 固有スキル", () => {
     const paraPlain = cloneState(s0);
     member(paraPlain, "c3").status = ["paralysis"];
     expect(base(para).party).toBe(base(paraPlain).party);
+  });
+
+  test("CB-04/IT-40 initiativeUp は 1 人が 2 つ装備しても合計せず最大の 1 つ（早鐘の兜 +2 と、data で initiativeUp +1 にした凪の護符 → +2）", () => {
+    const d = dataWith({ combat: { surpriseDiff: 1000 } }, (x) => {
+      x.uniques.find((u) => u.id === "calm_sea_charm")!.skill = { type: "initiativeUp", value: 1 };
+    });
+    const base = (s0: GameState) => {
+      const ctx = makeContext(cloneState(s0), d);
+      startBattle(ctx, { kind: "random", inRoom: false }, [{ monsterId: "giant_rat", count: 1 }]);
+      return eventsOf(ctx.events, "dice").find((e) => e.label.key === "dice.initiative")!.rows[0]!.base!;
+    };
+    const s0 = dived(1);
+    const plain = base(s0);
+    const both = cloneState(s0);
+    equipNew(both, "c3", "helm", { itemId: "leather_cap", uniqueId: "alarm_bell_helm", identified: true });
+    equipNew(both, "c3", "accessory", { itemId: "charm", uniqueId: "calm_sea_charm", identified: true });
+    expect(base(both)).toBe(plain + 2);
+    const charmOnly = cloneState(s0);
+    equipNew(charmOnly, "c3", "accessory", { itemId: "charm", uniqueId: "calm_sea_charm", identified: true });
+    expect(base(charmOnly)).toBe(plain + 1);
   });
 
   test("CB-31/IT-40 fearImmune: 凪の護符の装備者は fear のタグの SAN 減少が 0（fear 以外は今どおり）", () => {

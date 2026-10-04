@@ -217,8 +217,13 @@ export function startBattle(ctx: RuleContext, origin: BattleOrigin, specs: { mon
   const pAvg = partyAgiAvg(state, data);
   const eAvg = enemyAgiAvg(state, data);
   // M4.5: 表示している整数の合計（floor(平均) + 1d10）どうしの差で比べる
-  // IT-40 initiativeUp: 行動可能な装備者の値の最大（合計しない）を味方の行の base に足す（乱数は変えない）
-  const up = Math.max(0, ...state.party.filter(canAct).map((c) => skillTotal(equipStats(state, data, c), "initiativeUp")));
+  // IT-40 initiativeUp: 行動可能な装備者の品の値の最大（1 人の中でも人の間でも合計しない）を味方の行の base に足す（乱数は変えない）
+  const up = Math.max(
+    0,
+    ...state.party
+      .filter(canAct)
+      .flatMap((c) => equipStats(state, data, c).skills.filter((x) => x.type === "initiativeUp").map((x) => x.value)),
+  );
   const bP = Math.floor(pAvg) + up;
   const bE = Math.floor(eAvg);
   const rP = rollDie(state.rng, 10);

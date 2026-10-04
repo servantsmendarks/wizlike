@@ -193,12 +193,12 @@ export function hasSkill(es: EquipStats, type: SkillType): boolean {
 }
 
 /**
- * MG-30 / IT-40: ch が spell を唱えるときの MP の消費。固有スキル mpCostDown を装備していれば max(1, spells[].mp − 値)、
+ * MG-30 / IT-40: ch が spell を唱えるときの MP の消費。固有スキル mpCostDown を装備していれば min(spells[].mp, max(1, spells[].mp − 値))、
  * そうでなければ spells[].mp（戦闘・dungeon.cast・入力の検査・問い合わせで同じ値を使う）
  */
 export function spellCost(state: GameState, data: GameData, ch: Character, spell: Spell): number {
   const down = skillTotal(equipStats(state, data, ch), "mpCostDown");
-  return down > 0 ? Math.max(1, spell.mp - down) : spell.mp;
+  return down > 0 ? Math.min(spell.mp, Math.max(1, spell.mp - down)) : spell.mp; // 元の消費より増やさない（mp 0 の呪文は 0）
 }
 
 /** CH-13: 実効の能力値（equipStats の stats） */
