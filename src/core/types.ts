@@ -385,6 +385,8 @@ export type Command =
   | { type: "town.shop"; action: ShopAction }
   | { type: "town.bank"; amount: number } // 正で預け入れ、負で引き出し
   | { type: "town.mercy"; memberId: string }
+  /** TW-16 / IT-64（M7）: 倉庫。deposit は本人の inventory の実体を warehouse へ、withdraw は warehouse の実体を本人の inventory へ。乱数は使わない */
+  | { type: "town.storage"; action: "deposit" | "withdraw"; memberId: string; instanceId: string }
   /** TW-13（M5.5）: 酒場で見回す。街（screen town・dive null）だけ。乱数を使う */
   | { type: "town.lookAround" }
   | { type: "dungeon.enter"; dungeonId: string }
@@ -528,6 +530,8 @@ export type TownMenuShopSellRow = { instanceId: string; name: string; price: num
 export type TownMenuShopBuybackRow = { instanceId: string; name: string; price: number; affordable: boolean };
 /** IT-65: 店で鑑定できる品 1 個（本人の inventory の未鑑定の品）。name は未鑑定の表示名 */
 export type TownMenuShopIdentifyRow = { memberId: string; memberName: string; instanceId: string; name: string };
+/** TW-16: 倉庫・所持品の 1 個 */
+export type TownMenuStorageRow = { instanceId: string; name: string };
 /** rules/town.ts townMenu。screen === "town" のときだけ非 null */
 export type TownMenu = {
   gold: number;
@@ -558,6 +562,17 @@ export type TownMenu = {
     buyback: TownMenuShopBuybackRow[];
     /** IT-65: 鑑定料（identifyFee）、affordable = gold >= fee、全員（並び順。life を問わない）の inventory の未鑑定の品 */
     identify: { fee: number; affordable: boolean; items: TownMenuShopIdentifyRow[] };
+  };
+  /** TW-16 / IT-64 倉庫（rules/storage.ts storageMenu） */
+  storage: {
+    /** config.items.warehouseSlots */
+    capacity: number;
+    /** capacity − warehouse の数（0 なら warehouse full） */
+    slotsFree: number;
+    /** warehouse の品（預けた順）。name は itemDisplayName（未鑑定なら未鑑定の名前） */
+    items: TownMenuStorageRow[];
+    /** 全員（並び順。life を問わない）の inventory の品と、所持枠の空き（0 なら引き出しは inventory full） */
+    members: { memberId: string; name: string; slotsFree: number; items: TownMenuStorageRow[] }[];
   };
   /** TW-31: townVisit.mercyOffered なら dead / ash の全員（並び順）。申し出が無ければ null */
   mercy: { memberId: string; name: string; life: "dead" | "ash" }[] | null;

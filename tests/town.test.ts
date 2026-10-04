@@ -1047,3 +1047,95 @@ describe("IT-65/IT-66 店の鑑定（town.shop identify。M7）", () => {
     expect(ok(rich, identify("c1", id)).state.gold).toBe(0);
   });
 });
+
+describe("TW-16/IT-64 倉庫（town.storage。M7）", () => {
+  const storage = (action: unknown, memberId: unknown, instanceId: unknown): Command =>
+    ({ type: "town.storage", action, memberId, instanceId }) as unknown as Command;
+
+  test("TW-16 deposit: 本人の inventory の品を warehouse の末尾へ移し town.storage.deposited{name, item}。実体はそのまま・乱数なし。死んでいる者の品・未鑑定の呪われた品も預けられる", () => {
+    const s = town({ c2: DEAD });
+    const cd = cursedDagger(s, false); // i19
+    member(s, "c2").inventory.push(cd);
+    const r1 = ok(s, storage("deposit", "c1", "i4"));
+    expect(r1.events).toEqual([{ kind: "message", key: "town.storage.deposited", params: { name: "アルド", item: "薬草" } }]);
+    expect(r1.state.warehouse).toEqual(["i4"]);
+    expect(member(r1.state, "c1").inventory).toEqual([]);
+    expect(r1.state.items).toEqual(s.items);
+    expect(r1.state.rng).toEqual(s.rng);
+    expect(r1.state.nextItemSeq).toBe(s.nextItemSeq);
+    const r2 = ok(r1.state, storage("deposit", "c2", cd));
+    expect(r2.events).toEqual([{ kind: "message", key: "town.storage.deposited", params: { name: "ベルク", item: "短い刃？" } }]);
+    expect(r2.state.warehouse).toEqual(["i4", cd]);
+    expect(r2.state.items[cd]).toEqual(s.items[cd]); // 未鑑定・呪いのまま
+    expectStateInvariants(r2.state);
+  });
+
+  test("TW-16 withdraw: warehouse の品を本人の inventory の末尾へ移し town.storage.withdrawn{name, item}。預けた品は潜行・帰還をまたいで残る", () => {
+    const s = ok(town(), storage("deposit", "c1", "i4")).state;
+    const d = ok(s, { type: "dungeon.enter", dungeonId: "d01" }).state;
+    expect(d.warehouse).toEqual(["i4"]);
+    const ctx = ctxFor(d);
+    returnToTown(ctx, "dungeon.exit");
+    const back = ctx.state;
+    expect(back.warehouse).toEqual(["i4"]);
+    const r = ok(back, storage("withdraw", "c3", "i4"));
+    expect(r.events).toEqual([{ kind: "message", key: "town.storage.withdrawn", params: { name: "キリ", item: "薬草" } }]);
+    expect(r.state.warehouse).toEqual([]);
+    expect(member(r.state, "c3").inventory).toEqual(["i10", "i4"]);
+    expect(r.state.rng).toEqual(back.rng);
+    expectStateInvariants(r.state);
+  });
+
+  test("TW-16 理由と順: wrong screen → bad action → no such member → item not in inventory / not in warehouse → warehouse full（40 個【仮】）/ inventory full（同じ参照・乱数不変）", () => {
+    const s = ok(town(), storage("deposit", "c1", "i4")).state; // warehouse [i4]
+    expectRejected(diving(), storage("deposit", "c1", "i4"), "wrong screen");
+    expectRejected(createInitialState(1, data), storage("deposit", "c1", "i4"), "wrong screen");
+    expectRejected(s, storage("lend", "c1", "i10"), "bad action");
+    expectRejected(s, storage("deposit", 1, "i10"), "bad action");
+    expectRejected(s, storage("withdraw", "c1", undefined), "bad action");
+    expectRejected(s, storage("deposit", "c9", "i10"), "no such member");
+    expectRejected(s, storage("deposit", "c1", "i10"), "item not in inventory"); // 他人の品
+    expectRejected(s, storage("deposit", "c1", "i1"), "item not in inventory"); // 装備中
+    expectRejected(s, storage("deposit", "c1", "i4"), "item not in inventory"); // 倉庫の品
+    expectRejected(s, storage("deposit", "c1", "i999"), "item not in inventory");
+    expectRejected(s, storage("withdraw", "c3", "i10"), "not in warehouse"); // 所持品
+    expectRejected(s, storage("withdraw", "c3", "i999"), "not in warehouse");
+    // 容量 40: 39 個なら預けられて 40 個になり、40 個なら warehouse full
+    expect(data.config.items.warehouseSlots).toBe(40);
+    const near = cloneState(s);
+    for (let i = 0; i < 38; i++) near.warehouse.push(createItemInstance(near, { itemId: "herb", identified: true }));
+    expect(near.warehouse).toHaveLength(39);
+    const fullW = ok(near, storage("deposit", "c3", "i10")).state;
+    expect(fullW.warehouse).toHaveLength(40);
+    expectRejected(fullW, storage("deposit", "c4", "i13"), "warehouse full");
+    // 所持枠: c1 は装備 3 + 5 = 8 で inventory full
+    const fullI = cloneState(s);
+    for (let i = 0; i < 5; i++) member(fullI, "c1").inventory.push(createItemInstance(fullI, { itemId: "herb", identified: true }));
+    expectRejected(fullI, storage("withdraw", "c1", "i4"), "inventory full");
+  });
+
+  test("UI-52/TW-16 townMenu.storage: 容量・空き・倉庫の品（預けた順、表示名）・全員（life を問わない）の inventory と所持枠の空き", () => {
+    const s = town({ c5: ASH });
+    const unid = createItemInstance(s, { itemId: "long_sword", identified: false, level: 2 }); // i19
+    s.warehouse.push("i19");
+    member(s, "c1").inventory = member(s, "c1").inventory.filter((x) => x !== "i4");
+    s.warehouse.push("i4");
+    expect(unid).toBe("i19");
+    expect(townMenu(s, data)!.storage).toEqual({
+      capacity: 40,
+      slotsFree: 38,
+      items: [
+        { instanceId: "i19", name: "剣？" },
+        { instanceId: "i4", name: "薬草" },
+      ],
+      members: [
+        { memberId: "c1", name: "アルド", slotsFree: 5, items: [] },
+        { memberId: "c2", name: "ベルク", slotsFree: 6, items: [] },
+        { memberId: "c3", name: "キリ", slotsFree: 4, items: [{ instanceId: "i10", name: "薬草" }] },
+        { memberId: "c4", name: "ドナ", slotsFree: 5, items: [{ instanceId: "i13", name: "解毒草" }] },
+        { memberId: "c5", name: "エル", slotsFree: 6, items: [{ instanceId: "i15", name: "帰還の糸" }] },
+        { memberId: "c6", name: "フィン", slotsFree: 5, items: [{ instanceId: "i18", name: "薬草" }] },
+      ],
+    });
+  });
+});

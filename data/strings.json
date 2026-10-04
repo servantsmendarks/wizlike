@@ -91,6 +91,8 @@
   "town.shop.identified": "{name}は{old}を鑑定してもらった。{item}だった。（{cost}G）",
   "town.shop.sold": "{name}は{item}を売った。（{gold}G）",
   "town.shop.boughtBack": "{name}は{item}を買い戻した。（{cost}G）",
+  "town.storage.deposited": "{name}は{item}を倉庫に預けた。",
+  "town.storage.withdrawn": "{name}は{item}を倉庫から出した。",
   "town.shop.intro": "棚に薬と道具が並んでいる。何を買う？",
   "town.shop.whom": "誰に持たせる？",
   "town.shop.row": "{name}　{cost}G",

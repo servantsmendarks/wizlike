@@ -31,6 +31,8 @@ import { addTurns, hpOne, sanDown, warp } from "./rules/debug";
 import { checkEnter, chooseOption, enterDungeon, moveForward, turn } from "./rules/dungeon";
 import { checkUseItem, useItemInField } from "./rules/items";
 import { checkShop, doShop } from "./rules/shop";
+import { checkStorage, doStorage } from "./rules/storage";
+import type { StorageAction } from "./rules/storage";
 import { checkDark, checkInn, checkMercy, checkTemple, darkService, grantMercy, stayInn, templeService } from "./rules/town";
 import type { TempleService } from "./rules/town";
 import { checkLookAround, lookAround } from "./rules/tavern";
@@ -248,6 +250,14 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       const a = action as ShopAction;
       const ctx = makeContext(cloneState(state), data);
       doShop(ctx, a);
+      return finish(ctx);
+    }
+    case "town.storage": {
+      const c = command as { action?: unknown; memberId?: unknown; instanceId?: unknown };
+      const r = checkStorage(state, c.action, c.memberId, c.instanceId, data);
+      if (r !== null) return reject(state, "town.storage", r);
+      const ctx = makeContext(cloneState(state), data);
+      doStorage(ctx, c.action as StorageAction, c.memberId as string, c.instanceId as string);
       return finish(ctx);
     }
     case "dungeon.cast": {

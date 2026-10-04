@@ -256,6 +256,29 @@ describe("全滅処理（TW-20〜26）", () => {
     expect(ctx.state.rng).toEqual(m);
   });
 
+  test("TW-22/TW-16/IT-63 倉庫と買い戻しのストックの品は失う品の候補に入らない（所持品が尽きたら打ち切り、倉庫・ストックの品は残る）。TW-27 の総資産では両方の側で数える", () => {
+    const s = withTotal(base(), 2); // 大災厄: 3 個
+    for (const ch of s.party) for (const id of [...ch.inventory, ...equippedIds({ ...s, party: [ch] })]) destroyItemInstance(s, ch, id);
+    const w1 = createItemInstance(s, { itemId: "long_sword", identified: true, level: 2 }); // 売値 100
+    const w2 = createItemInstance(s, { itemId: "herb", identified: false }); // 売値 5
+    s.warehouse.push(w1, w2);
+    const u = createItemInstance(s, { itemId: "leather_cap", uniqueId: "alarm_bell_helm", identified: true }); // 売値 300
+    s.buyback.push(u);
+    expectStateInvariants(s);
+    const m = cloneRng(s.rng);
+    rollDice(m, "2d10");
+    const ctx = wipeOf(s);
+    expect(penaltyOf(ctx.events).itemsLost).toEqual([]);
+    expect(ctx.state.rng).toEqual(m);
+    expect(ctx.state.warehouse).toEqual([w1, w2]);
+    expect(ctx.state.buyback).toEqual([u]);
+    for (const id of [w1, w2, u]) expect(ctx.state.items[id]).toEqual(s.items[id]);
+    expectStateInvariants(ctx.state);
+    // 所持金 300 の大災厄（金 50%）: 全滅後の総資産 = 150 + 品 405 + EXP（全員 floor(exp × 0.8)）
+    const exp = Object.values(EXPS).reduce((a, e) => a + e - Math.floor(e * 0.2), 0);
+    expect(assetValue(ctx.state, data)).toBe(150 + 100 + 5 + 300 + exp);
+  });
+
   test("TW-22/CH-62 EXP: 全員（dead / ash も）が floor(exp × 0.2) 減り、閾値を割ればレベルダウン（levelDown に hp / mp）。wipe.levelDown は 1 人 1 回で最終レベル。レベル 1 は下がらない", () => {
     const s = withTotal(patch(base(), { c4: DEAD, c5: ASH }), 2);
     const ctx = wipeOf(s);
