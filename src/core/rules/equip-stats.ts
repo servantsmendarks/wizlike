@@ -1,10 +1,10 @@
 // 実効の値（IT-34 / IT-35、CH-13 / CH-14、IT-20〜23、MG-33、CB-20〜22）。純粋。乱数も RuleContext も使わない。
 // 能力値・最大値・AC・武器・魔法攻撃力・オプションの加算を計算するのはこのファイルだけ。ルールはここから読む（表示層は計算しない。UI-35）。
 // 装備中の品は、鑑定の有無に関係なく効く（IT-34）。state.items に無い id（表示層が古い写しの Character を渡した場合など）は飛ばす。
-import type { GameData, SkillType, Spell, StatBlock, StatusId } from "../data/index";
+import type { EquipmentBase, GameData, SkillType, Spell, StatBlock, StatusId } from "../data/index";
 import { EQUIP_SLOTS, STAT_KEYS, STATUS_IDS } from "../data/index";
 import { findBase, moraleOf, optionOf, uniqueOf } from "../state";
-import type { Character, GameState, RuleContext } from "../types";
+import type { Character, GameState, ItemInstance, RuleContext } from "../types";
 
 /** IT-40: 装備中のユニークの固有スキル 1 つ */
 export type EquipSkill = { type: SkillType; value: number; instanceId: string };
@@ -46,9 +46,37 @@ export type EquipStats = {
   skills: EquipSkill[];
 };
 
+/**
+ * IT-03 / IT-20〜23: 装備 1 つの性能（オプションを除く）。equipStats と品の詳細（rules/item-view.ts）が同じ式を使う。
+ * - weapon: dice（ユニークはユニークの damage）、damageBonus（汎用の術者用でない武器の floor(Lv ÷ weaponLvPerDamage)。IT-20）、
+ *   magicPower（汎用の術者用武器の floor(Lv ÷ casterLvPerPower)、ユニークはユニークの magicPower。IT-22）、ranged / caster はベースの値
+ * - それ以外: ac（ユニークはユニークの ac、汎用はベースの ac − 装飾以外の floor(Lv ÷ armorLvPerAc)。IT-21 / IT-23）
+ * ユニークはレベルの効果を持たない（IT-03）
+ */
+export type ItemPower =
+  | { kind: "weapon"; dice: string; damageBonus: number; magicPower: number; ranged: boolean; caster: boolean }
+  | { kind: "armor"; ac: number };
+
+export function itemPower(data: GameData, inst: ItemInstance, base: EquipmentBase): ItemPower {
+  const ic = data.config.items;
+  const uniq = inst.uniqueId === null ? null : uniqueOf(data, inst.uniqueId);
+  if (base.slot === "weapon") {
+    const generic = uniq === null;
+    return {
+      kind: "weapon",
+      dice: uniq?.damage ?? base.damage,
+      damageBonus: generic && !base.caster ? Math.floor(inst.level / ic.weaponLvPerDamage) : 0,
+      magicPower: uniq !== null ? (uniq.magicPower ?? 0) : base.caster ? Math.floor(inst.level / ic.casterLvPerPower) : 0,
+      ranged: base.ranged,
+      caster: base.caster,
+    };
+  }
+  const lv = uniq === null && base.slot !== "accessory" ? Math.floor(inst.level / ic.armorLvPerAc) : 0;
+  return { kind: "armor", ac: (uniq?.ac ?? base.ac) - lv };
+}
+
 /** IT-35: ch の実効の値。装備は EQUIP_SLOTS の順に見る（武器は weapon の枠だけ） */
 export function equipStats(state: GameState, data: GameData, ch: Character): EquipStats {
-  const ic = data.config.items;
   const statAdd = Object.fromEntries(STAT_KEYS.map((k) => [k, 0])) as StatBlock;
   const statusResist = Object.fromEntries(STATUS_IDS.map((s) => [s, 0])) as Record<StatusId, number>;
   let hpAdd = 0;
@@ -73,18 +101,19 @@ export function equipStats(state: GameState, data: GameData, ch: Character): Equ
     if (inst === undefined) continue;
     const base = findBase(data, inst.itemId);
     if (base === null) continue;
-    const uniq = inst.uniqueId === null ? null : uniqueOf(data, inst.uniqueId);
-    if (base.slot === "weapon") {
-      weaponDice = uniq?.damage ?? base.damage;
-      ranged = base.ranged;
-      if (uniq !== null) magicPower += uniq.magicPower ?? 0; // IT-03: ユニークはレベルの効果を持たない
-      else if (base.caster) magicPower += Math.floor(inst.level / ic.casterLvPerPower); // IT-22
-      else damageBonus += Math.floor(inst.level / ic.weaponLvPerDamage); // IT-20
+    const perf = itemPower(data, inst, base);
+    if (perf.kind === "weapon") {
+      weaponDice = perf.dice;
+      ranged = perf.ranged;
+      magicPower += perf.magicPower;
+      damageBonus += perf.damageBonus;
     } else {
-      acEquip += uniq?.ac ?? base.ac;
-      if (uniq === null && base.slot !== "accessory") acEquip -= Math.floor(inst.level / ic.armorLvPerAc); // IT-21 / IT-23
+      acEquip += perf.ac;
     }
-    if (uniq !== null) skills.push({ type: uniq.skill.type, value: uniq.skill.value, instanceId: id }); // IT-40
+    if (inst.uniqueId !== null) {
+      const uniq = uniqueOf(data, inst.uniqueId);
+      skills.push({ type: uniq.skill.type, value: uniq.skill.value, instanceId: id }); // IT-40
+    }
     for (const roll of inst.options) {
       const e = optionOf(data, roll.optionId).effect;
       const v = roll.value;
