@@ -110,6 +110,18 @@ function setPressed(el: Element | null, on: boolean): void {
   else cl.remove("is-pressed");
 }
 
+/**
+ * UI-37（M6）: 押した要素そのものに、次の touchend を 1 回だけ preventDefault するリスナーを付ける。
+ * タップは pointerup で反応し、その場で画面を描き直すと押した要素が DOM から外れる。外れた要素の touchend はステージまで
+ * 伝わらないので、ステージの touchend では止められず、合成の click とフォーカス移動が同じ位置に新しく出た要素
+ * （名前の入力欄など）に入る。要素に直接付けたリスナーは、外れた後でも届く。
+ */
+function preventTouchEndOn(target: EventTarget | null): void {
+  const t = target as { addEventListener?: (type: string, f: (e: Event) => void, opt?: AddEventListenerOptions) => void } | null;
+  if (t === null || typeof t !== "object" || typeof t.addEventListener !== "function") return;
+  t.addEventListener("touchend", (ev) => ev.preventDefault(), { once: true, passive: false });
+}
+
 // ---------------------------------------------------------------------------
 // ステージ
 
@@ -222,6 +234,7 @@ export function attachStageInput(stage: HTMLElement, o: StageInputOptions): Stag
     if (e.isPrimary === false) return;
     if (e.pointerType === "mouse" && e.button !== undefined && e.button !== 0) return;
     if (isTextInput(e.target)) return;
+    if (e.pointerType === "touch") preventTouchEndOn(e.target);
     blurInput();
     // UI-25: 自動歩行を止めた押下は、離しても何もしない（p を作らないので move / up も無視される）
     if (o.onAnyPress?.() === true) return;

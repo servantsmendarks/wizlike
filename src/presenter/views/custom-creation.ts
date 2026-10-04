@@ -18,6 +18,8 @@ import {
   CUSTOM_ERROR,
   CUSTOM_HEADING,
   CUSTOM_NAME,
+  CUSTOM_NAME_BUTTONS,
+  CUSTOM_NAME_ERROR,
   CUSTOM_REMAINING,
   CUSTOM_SUMMARY,
   customRow,
@@ -210,6 +212,8 @@ export type CustomView = {
   name: string | null;
   /** 確認の段の 6 行（それ以外は []） */
   confirm: string[];
+  /** 案内の 1 行（職業の段で選べる職業が 1 つも無いとき custom.noClass。それ以外は null。誤りの欄に出す） */
+  notice: string | null;
   /** 下のボタン a（左上）・b（右上）・c（左下 = 戻る）。無い枠は null */
   buttons: { a: CustomButton | null; b: CustomButton | null; c: CustomButton };
 };
@@ -242,6 +246,7 @@ export function customView(d: CustomDraft, data: GameData, strings: Strings): Cu
     stats: null,
     name: null,
     confirm: [],
+    notice: null,
     buttons: { a: null, b: null, c: back },
   };
   if (m === undefined) return view;
@@ -282,6 +287,8 @@ export function customView(d: CustomDraft, data: GameData, strings: Strings): Cu
           selected: o.classId === m.classId,
         };
       });
+      // 全行が dim（core の classOptions の ok がどれも偽）なら理由を案内する
+      if (view.rows.length > 0 && view.rows.every((r) => r.dim)) view.notice = tr(strings, "custom.noClass");
       break;
     case "personality": {
       view.rows = [
@@ -337,6 +344,12 @@ export function customKeyChoice(a: Action, view: CustomView, step: CustomStepId,
   if (view.rows.length > 0) return view.rows.find((r) => !r.dim)?.choice ?? null;
   if (view.buttons.b !== null) return view.buttons.b.dim ? null : view.buttons.b.choice;
   return null;
+}
+
+/** 下のボタン a・b・c と誤りの欄の矩形。名前の段（nameStep）は b・c と誤りの欄を入力欄のすぐ下に置く（a は使わない） */
+export function customButtonRects(nameStep: boolean): { a: Rect; b: Rect; c: Rect; error: Rect } {
+  if (nameStep) return { a: CUSTOM_BUTTONS.a, b: CUSTOM_NAME_BUTTONS.b, c: CUSTOM_NAME_BUTTONS.c, error: CUSTOM_NAME_ERROR };
+  return { a: CUSTOM_BUTTONS.a, b: CUSTOM_BUTTONS.b, c: CUSTOM_BUTTONS.c, error: CUSTOM_ERROR };
 }
 
 // ---------------------------------------------------------------- DOM
@@ -484,21 +497,25 @@ export function createCustomCreationScreen(o: { onChoice(c: CustomChoice): void 
       }
       lastStepHadName = view.name !== null;
 
+      // 名前の段は 次へ・戻る と誤りの欄を入力欄のすぐ下に置く（ソフトキーボードで隠れないように。M6）
+      const rects = customButtonRects(view.name !== null);
       const bs: HTMLElement[] = [];
       const { a, b, c } = view.buttons;
-      if (a !== null) bs.push(button(a.label, CUSTOM_BUTTONS.a, a.dim, () => o.onChoice(a.choice)));
+      if (a !== null) bs.push(button(a.label, rects.a, a.dim, () => o.onChoice(a.choice)));
       if (b !== null)
         bs.push(
-          button(b.label, CUSTOM_BUTTONS.b, b.dim, () =>
+          button(b.label, rects.b, b.dim, () =>
             // 名前の段の 次へ は入力欄の値で進む
             o.onChoice(view.name !== null ? { kind: "name", name: input.value } : b.choice),
           ),
         );
-      bs.push(button(c.label, CUSTOM_BUTTONS.c, c.dim, () => o.onChoice(c.choice)));
+      bs.push(button(c.label, rects.c, c.dim, () => o.onChoice(c.choice)));
       buttons.replaceChildren(...bs);
 
-      error.textContent = err ?? "";
-      error.style.visibility = err === null ? "hidden" : "visible";
+      place(error, rects.error);
+      const text = err ?? view.notice;
+      error.textContent = text ?? "";
+      error.style.visibility = text === null ? "hidden" : "visible";
     },
   };
 }

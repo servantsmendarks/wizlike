@@ -64,6 +64,7 @@
   "custom.next": "次へ",
   "custom.start": "始める",
   "custom.reqNone": "条件なし",
+  "custom.noClass": "能力値が足りず、選べる職業が無い。戻って配分し直そう。",
   "custom.confirmRow": "{n} {name} {race} {class} {personality}",
   "custom.leader": "リーダー",
   "custom.rejected": "作成できなかった。最初からやり直してくれ。",

@@ -357,6 +357,15 @@ export const CUSTOM_BUTTONS = {
   b: { x: 124, y: 300, w: 108, h: 32 },
   c: { x: 8, y: 340, w: 108, h: 32 },
 } as const satisfies Record<string, Rect>;
+/**
+ * 名前の段のボタン b（次へ）・c（戻る）と誤りの欄。ソフトキーボードが出ても隠れないように、入力欄（y34..66）のすぐ下に置く
+ * （ステージの上 1/3 に収める。M6）
+ */
+export const CUSTOM_NAME_BUTTONS = {
+  b: { x: 124, y: 72, w: 108, h: 32 },
+  c: { x: 8, y: 72, w: 108, h: 32 },
+} as const satisfies Record<string, Rect>;
+export const CUSTOM_NAME_ERROR: Rect = { x: 4, y: 108, w: 232, h: 20 };
 
 /** debug パネルの設定の行 i（0..5。y = 124 + 34i、最後の行は y294..325）。[-] 値 [+] か、toggle のどちらかを使う */
 export function debugRow(i: number): { label: Rect; minus: Rect; value: Rect; plus: Rect; toggle: Rect } {

@@ -495,6 +495,35 @@ describe("attachStageInput", () => {
     expect(other.blurred).toBe(0);
   });
 
+  test("UI-37 タッチの押下では押した要素そのものに 1 回だけの touchend（passive:false）を付けて preventDefault する（離したときの描き直しで要素が外れ、touchend がステージに届かなくても合成の click・フォーカス移動を止めるため。M6）。マウス・入力欄の上では付けない", () => {
+    const t = setup();
+    // 押した要素（ステージの子のボタン）。リスナーを受けられる偽の要素にする
+    const el = new FakeStage(0);
+    el.tagName = "BUTTON";
+    el.parent = t.stage;
+    el.top = 600;
+    onTap(el as unknown as Element, () => t.out.push("tap el"));
+    t.down(1, 40, 620, el);
+    expect(el.listeners["touchend"]?.map((x) => x.opt)).toEqual([{ once: true, passive: false }]);
+    // 離して反応した（ここで描き直されて外れたとする）後に、要素に届く touchend を止める
+    t.up(1, 40, 620);
+    expect(t.out).toEqual(["press", "tap el"]);
+    el.isConnected = false;
+    expect(el.emit("touchend", { target: el }).prevented).toBe(true);
+    // マウスの押下では付けない
+    const m = new FakeStage(0);
+    m.parent = t.stage;
+    t.down(2, 40, 620, m, { pointerType: "mouse", button: 0 });
+    t.up(2, 40, 620);
+    expect(m.listeners["touchend"]).toBeUndefined();
+    // 入力欄の上の押下は今どおり追わず、touchend も止めない
+    const input = new FakeStage(0);
+    input.tagName = "INPUT";
+    input.parent = t.stage;
+    t.down(3, 40, 620, input);
+    expect(input.listeners["touchend"]).toBeUndefined();
+  });
+
   test("UI-36 onTap は data-tap を付けて spec を登録し、関数だけでも登録できる。detach で全リスナーが外れる", () => {
     const el = new FakeNode("DIV");
     const f = (): void => {};

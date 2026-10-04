@@ -71,7 +71,7 @@
   - `click` には反応しない。例外は、キーボードの Enter で起きた click（`detail` が 0）を同じタップとして扱うことだけ。
   - 再生中（UI-44）のタップは、オート解除を除いてどこを押しても拍のタップ（UI-45 / UI-43）になる。
   - 名前の入力欄（UI-51 / UI-62）は例外で、上の押下を追わず、touchend も止めない。入力欄の外を押したら入力欄のフォーカスを外す。
-- UI-37 ダブルタップの拡大の抑止。`#stage` 以下に `touch-action: manipulation`、迷宮でスワイプを受ける間（UI-30）は画面に `swipe-on` を付けて `touch-action: none`（ボタンの上で始めたスワイプがブラウザのパンにならないように）、縦スクロールの容器（UI-11）は `pan-y`。`#stage` の `touchend` を `passive: false` で受け、入力欄の上でなければ `preventDefault` する。body の `none`（UI-05）は残す。viewport の `user-scalable` には頼らない。
+- UI-37 ダブルタップの拡大の抑止。`#stage` 以下に `touch-action: manipulation`、迷宮でスワイプを受ける間（UI-30）は画面に `swipe-on` を付けて `touch-action: none`（ボタンの上で始めたスワイプがブラウザのパンにならないように）、縦スクロールの容器（UI-11）は `pan-y`。`#stage` の `touchend` を `passive: false` で受け、入力欄の上でなければ `preventDefault` する。加えて、タッチの押下（入力欄の上を除く）では押した要素そのものに 1 回だけの `touchend`（`passive: false`）を付けて `preventDefault` する（タップは離した瞬間に反応して画面を描き直すので、押した要素が DOM から外れると `touchend` が `#stage` まで届かず、合成の click とフォーカス移動が同じ位置に新しく出た要素、たとえば名前の入力欄に入ってキーボードが開くため。M6）。body の `none`（UI-05）は残す。viewport の `user-scalable` には頼らない。
 
 ## 5. ダイスと演出
 
@@ -108,9 +108,9 @@
 - UI-62 自分で作る（CH-06。M5.5）: 6 人を 1 人ずつ、種族 → 能力値 → 職業 → 性格（リーダーは飛ばす）→ 名前 の段で決め、6 人そろったら確認の段（`custom.step.confirm`）で 始める。見出し（y4。`custom.heading` / リーダーは `custom.headingLeader`）と要約（y18。決まった種族・職業・性格）、一覧の行（x8・幅 224・高さ 32、y = 34 + 34i。2 行の行）、下のボタン a（8,300）・b（124,300）・c（8,340。各 108×32）。数値は【仮】（`layout.ts` の CUSTOM_*）。性格の段の行の 2 行目は `personalities.json` の `shortDescription`（行の中身 218px に収まる全角 27 字以内。読み込み時に検証する）。
   - 種族: races の順に 1 行目 名前、2 行目 基礎値（`custom.statPair` を空白でつなぐ）。選んだ行は accent。種族を選ぶとボーナスを振り（CH-11。`rollBonus`）、能力値を基礎値に戻して能力値の段へ。今と同じ種族を選び直したときは配分と職業を残して能力値の段へ（乱数を引かない）。
   - 能力値: 6 行の [-] 値 [+]（y = 34 + 34i）と y240 の「残り」（`custom.remaining`）。押せるかは core の `statAllocation`（canInc / canDec）の値で、押せないボタンは dim。a 振り直す（ボーナスを引き直し、基礎値に戻す）、b 次へ（残りが 0 でなければ dim）、c 戻る。
-  - 職業: classes の順に 1 行目 名前、2 行目 条件（無ければ `custom.reqNone`）。条件を満たさない職業（core の `classOptions` の ok が偽）は dim で押せない。能力値を変えて条件を外れた職業は 次へ で選び直しになる。
+  - 職業: classes の順に 1 行目 名前、2 行目 条件（無ければ `custom.reqNone`）。条件を満たさない職業（core の `classOptions` の ok が偽）は dim で押せない。能力値を変えて条件を外れた職業は 次へ で選び直しになる。全行が dim なら誤りの欄（y276）に案内 `custom.noClass`（戻って配分し直す旨）を出す（M6）。
   - 性格: personalities の順（1 行目 名前、2 行目 説明）とおまかせ（`creation.personality.random`）。
-  - 名前: 入力欄（x8 y34・224×32。UI-51 と同じ 2 倍の大きさ・scale(0.5)）と b 次へ。1〜6 文字（core の `validCreationName`）でなければ誤りの欄（y276）に `creation.invalid`。
+  - 名前: 入力欄（x8 y34・224×32。UI-51 と同じ 2 倍の大きさ・scale(0.5)）と b 次へ。1〜6 文字（core の `validCreationName`）でなければ誤りの欄に `creation.invalid`。名前の段だけは、ソフトキーボードが出ても隠れないように、b 次へ（124,72）・c 戻る（8,72。各 108×32）と誤りの欄（4,108・232×20）を入力欄のすぐ下に置く（`CUSTOM_NAME_BUTTONS` / `CUSTOM_NAME_ERROR`。M6）【仮】。
   - 確認: 6 行（`custom.confirmRow`。リーダーの性格の欄は `custom.leader`）と b 始める。`game.new {party: {kind: "custom"}}` が rejected なら誤りの欄に `custom.rejected`。
   - 戻る（c と Esc）は 1 つ前の段へ。1 人目の種族では作り方の選択（UI-50）へ、k 人目の種族では k−1 人目の名前へ、名前ではリーダーなら職業・それ以外は性格へ、確認では 6 人目の名前へ。職業から能力値へ戻っても配分は残す。
   - 判定（配分の可否・残り・職業の条件・名前の長さ）は core の関数の値だけで決める（UI-35）。作成中の乱数は表示層が `crypto.getRandomValues` の種で作った RngState で、自分で作るに入るたびに作り直す。下書きと乱数は保存しない（リロードするとタイトルから。SV-50）。

@@ -5,8 +5,10 @@ import { STAT_KEYS, type StatKey } from "../src/core/data";
 import { execute, createInitialState } from "../src/core/engine";
 import { cloneRng, createRng, type RngState } from "../src/core/rng";
 import { rollBonus, statAllocation } from "../src/core/rules/creation";
+import { CUSTOM_BUTTONS, CUSTOM_ERROR, CUSTOM_NAME, TOUCH_MIN_LOGICAL, type Rect } from "../src/presenter/layout";
 import {
   buildCustomSetup,
+  customButtonRects,
   customKeyChoice,
   customStep,
   customView,
@@ -303,6 +305,44 @@ describe("自分で作る（UI-62 / CH-06）", () => {
     for (const r of v.rows) for (const line of r.lines) expect([...line].length, line).toBeLessThanOrEqual(27);
   });
 
+  test("UI-62 職業の段で条件を満たす職業が 1 つも無いと案内（custom.noClass）を出す。1 つでも選べれば出さない。ほかの段は null（M6）", () => {
+    const rng = createRng(3);
+    const d0 = initialDraft(data);
+    expect(customView(d0, data, S).notice).toBeNull();
+    let d = step(d0, { kind: "race", raceId: "human" }, rng);
+    // ボーナスを 10 にして生命力だけに振る（人間の基礎値は 力8 知恵8 信仰心5 素早さ8 で、どの職業の条件にも届かない）
+    d = { ...d, members: d.members.map((m, i) => (i === 0 ? { ...m, bonus: 10 } : m)) };
+    d = spendAll(d, rng, ["vit"]);
+    d = step(d, { kind: "next" }, rng);
+    expect(d.step).toBe("class");
+    const none = customView(d, data, S);
+    expect(none.rows.length).toBe(data.classes.length);
+    expect(none.rows.every((r) => r.dim)).toBe(true);
+    expect(none.notice).toBe(S["custom.noClass"]);
+    expect(none.notice).toBe("能力値が足りず、選べる職業が無い。戻って配分し直そう。");
+    // 戻って力に振り直せば戦士が選べ、案内は出ない
+    let back = step(d, { kind: "back" }, rng);
+    while (back.members[0]!.stats!.vit > 8) back = step(back, { kind: "dec", key: "vit" }, rng);
+    back = spendAll(back, rng, ["str"]);
+    const ok = customView(step(back, { kind: "next" }, rng), data, S);
+    expect(ok.rows.some((r) => !r.dim)).toBe(true);
+    expect(ok.notice).toBeNull();
+  });
+
+  test("UI-62 名前の段の 次へ・戻る と誤りの欄は入力欄（y34..66）のすぐ下で、ステージの上 1/3 に収まる（ソフトキーボードで隠れない）。重ならず一辺 30 以上。ほかの段は下のボタン（M6）", () => {
+    const n = customButtonRects(true);
+    const ov = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    for (const r of [n.b, n.c, n.error]) {
+      expect(r.y).toBeGreaterThanOrEqual(CUSTOM_NAME.y + CUSTOM_NAME.h);
+      expect(r.y + r.h).toBeLessThanOrEqual(Math.floor(data.config.stage.height / 3));
+      expect(ov(r, CUSTOM_NAME)).toBe(false);
+    }
+    for (const r of [n.b, n.c]) expect(Math.min(r.w, r.h)).toBeGreaterThanOrEqual(TOUCH_MIN_LOGICAL);
+    expect(ov(n.b, n.c)).toBe(false);
+    expect(ov(n.b, n.error) || ov(n.c, n.error)).toBe(false);
+    expect(customButtonRects(false)).toEqual({ a: CUSTOM_BUTTONS.a, b: CUSTOM_BUTTONS.b, c: CUSTOM_BUTTONS.c, error: CUSTOM_ERROR });
+  });
+
   test("UI-62 buildCustomSetup は決まっていない人がいれば null", () => {
     expect(buildCustomSetup(initialDraft(data))).toBeNull();
   });
@@ -323,6 +363,7 @@ describe("自分で作る（UI-62 / CH-06）", () => {
       "custom.next",
       "custom.start",
       "custom.reqNone",
+      "custom.noClass",
       "custom.confirmRow",
       "custom.leader",
       "custom.rejected",
