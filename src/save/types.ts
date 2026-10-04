@@ -42,6 +42,26 @@ export type LoadResult =
 export type Migration = (state: unknown) => unknown;
 export type MigrateResult = { ok: true; state: GameState; fromVersion: number } | { ok: false; reason: "tooNew" | "broken" };
 
+export type ExportResult =
+  | { ok: true; gameId: string; turn: number; exportedAt: number; text: string }
+  | { ok: false; reason: "unavailable" | "missing" | "tooNew" | "broken" };
+
+export type ImportPlan = {
+  /** restore = 記録が無い（SV-31 の復元）、overwrite = 既存の turn 以上か既存が読めない、older = 既存より turn が小さい（SV-32 の確認が要る） */
+  kind: "restore" | "overwrite" | "older";
+  gameId: string;
+  turn: number;
+  /** 既存のレコードの turn。無い・読めないときは null */
+  existingTurn: number | null;
+  summary: SaveSummary;
+  /** 今の版に移行した state */
+  state: GameState;
+};
+export type ImportCheck =
+  | { ok: true; plan: ImportPlan }
+  | { ok: false; reason: "format" | "broken" | "tooNew" | "checksum" | "unavailable" | "full" };
+export type ImportResult = { ok: true; kind: ImportPlan["kind"] } | { ok: false; reason: "unavailable" | "full" | "failed" };
+
 export type SaveDeps = {
   /** null = IndexedDB を開けなかった。全操作が失敗を返す */
   backend: GameStoreBackend | null;
@@ -64,4 +84,10 @@ export type SaveService = {
   load(gameId: string): Promise<LoadResult>;
   remove(gameId: string): Promise<boolean>;
   current(): { gameId: string; turn: number } | null;
+  /** SV-30: 保存先のレコードを書き出しの JSON にする。書き込みの鎖に並べる（保存中の書き込みが終わってから読む） */
+  exportGame(gameId: string): Promise<ExportResult>;
+  /** SV-31〜33: ファイルの文字列を検査し、既存のレコードと比べた計画を返す（書かない） */
+  prepareImport(text: string): Promise<ImportCheck>;
+  /** SV-31: 計画どおりに書く。restore は書く直前に件数を数え直す（maxGames 以上なら full）。書き込みの鎖に並べる */
+  applyImport(plan: ImportPlan): Promise<ImportResult>;
 };

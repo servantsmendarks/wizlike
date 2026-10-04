@@ -8,7 +8,8 @@ import { newGameId } from "../src/save/id";
 import { isGameStateShape, migrateState, MIGRATIONS } from "../src/save/migrate";
 import { buildRecord, checkStoredRecord, summarize } from "../src/save/record";
 import { createSaveService } from "../src/save/saves";
-import type { GameRecord, GameStoreBackend, Migration, SaveDeps } from "../src/save/types";
+import { buildExportFile, parseExportFile, serializeExportFile } from "../src/save/transfer";
+import type { GameRecord, GameStoreBackend, ImportPlan, Migration, SaveDeps } from "../src/save/types";
 import { dived, exec, withBattle } from "./helpers/battle";
 import { data, expectKnownStringKeys, loadFreshData, newGame, withChar } from "./helpers/core";
 import { atEvent } from "./helpers/events";
@@ -806,5 +807,203 @@ describe("SV-20 db.ts", () => {
     opts.openFails = false;
     await be.put(record("g1", 1));
     expect(f.log.filter((l) => l.startsWith("open"))).toHaveLength(3);
+  });
+});
+
+describe("SV-30〜33 書き出しと読み込み（SaveService）", () => {
+  /** v2 の state から M5.5 の欄を消した v1 の形 */
+  function toV1(s: GameState): Record<string, unknown> {
+    const v1 = json(s) as unknown as Record<string, unknown>;
+    delete v1["adventureTurns"];
+    delete v1["tavernEventMark"];
+    const dive = v1["dive"] as Record<string, unknown> | null;
+    if (dive !== null) delete dive["knownTraps"];
+    return v1;
+  }
+  /** 今の版の書き出しファイルの文字列 */
+  function fileOf(gameId: string, turn: number, state: GameState = newGame(1)): string {
+    return serializeExportFile(buildExportFile({ gameId, schemaVersion: SCHEMA, turn, state }, 42));
+  }
+  async function planOf(sv: ReturnType<typeof service>, text: string): Promise<ImportPlan> {
+    const r = await sv.prepareImport(text);
+    if (!r.ok) throw new Error(`prepareImport failed: ${r.reason}`);
+    return r.plan;
+  }
+
+  test("SV-30 exportGame: 保存先のレコード（turn 3）を書き出し、exportedAt は now()、parseExportFile で読める", async () => {
+    const be = createMemoryBackend();
+    const sv = service(be);
+    const s = dived(1);
+    await sv.begin(s);
+    await sv.save(s);
+    await sv.save(s); // turn 3、now は 1000〜1002
+    const r = await sv.exportGame("g1");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect([r.gameId, r.turn, r.exportedAt]).toEqual(["g1", 3, 1003]);
+    const p = parseExportFile(r.text, SCHEMA);
+    expect(p).toEqual({ ok: true, gameId: "g1", turn: 3, exportedAt: 1003, state: json(s), fromVersion: SCHEMA });
+    expect(JSON.parse(r.text)).toMatchObject({ format: "wizlike-save", schemaVersion: SCHEMA });
+  });
+
+  test("SV-30 exportGame: 無い id は missing、壊れたレコードは broken、新しすぎる版は tooNew、backend null と get の失敗は unavailable", async () => {
+    const be = createMemoryBackend();
+    const sv = service(be);
+    expect(await sv.exportGame("nope")).toEqual({ ok: false, reason: "missing" });
+    be.raw("bad", { gameId: "bad", schemaVersion: "x" });
+    expect(await sv.exportGame("bad")).toEqual({ ok: false, reason: "broken" });
+    // 別の gameId を持つレコード・state が形の検査に落ちるレコードも broken
+    be.raw("other", json(record("zzz", 1)));
+    expect(await sv.exportGame("other")).toEqual({ ok: false, reason: "broken" });
+    be.raw("shape", { ...json(record("shape", 1)), state: { screen: "town" } });
+    expect(await sv.exportGame("shape")).toEqual({ ok: false, reason: "broken" });
+    be.raw("new", json(record("new", 1, { schemaVersion: SCHEMA + 1 })));
+    expect(await sv.exportGame("new")).toEqual({ ok: false, reason: "tooNew" });
+    expect(await service(null).exportGame("g1")).toEqual({ ok: false, reason: "unavailable" });
+    be.raw("ok", json(record("ok", 1)));
+    be.setFail({ get: true });
+    expect(await sv.exportGame("ok")).toEqual({ ok: false, reason: "unavailable" });
+  });
+
+  test("SV-30/SV-04 exportGame: v1 のレコードは今の schemaVersion で書き出し、保存先は書き換えない（putCount 0）", async () => {
+    const be = createMemoryBackend();
+    const s = newGame(1);
+    be.raw("v1", { ...json(buildRecord("v1", 4, 999, 1, s)), state: toV1(s) });
+    const sv = service(be);
+    const r = await sv.exportGame("v1");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const f = JSON.parse(r.text) as { schemaVersion: number; turn: number; state: GameState };
+    expect(f.schemaVersion).toBe(SCHEMA);
+    expect(f.turn).toBe(4);
+    expect(f.state.adventureTurns).toBe(0);
+    expect(parseExportFile(r.text, SCHEMA).ok).toBe(true);
+    expect(be.putCount).toBe(0);
+    expect((be.dump().get("v1") as GameRecord).schemaVersion).toBe(1);
+  });
+
+  test("SV-30 exportGame は書き込みの鎖に並ぶ: await しない save の直後に呼ぶと、その save の後の turn を書き出す", async () => {
+    const be = createMemoryBackend();
+    const sv = service(be);
+    const s = newGame(1);
+    await sv.begin(s);
+    const moved = { ...s, gold: s.gold + 5 };
+    const pSave = sv.save(moved);
+    const pExport = sv.exportGame("g1");
+    const r = await pExport;
+    expect(await pSave).toEqual({ ok: true, turn: 2 });
+    expect(r.ok && r.turn).toBe(2);
+    expect(r.ok && (JSON.parse(r.text) as { state: GameState }).state.gold).toBe(s.gold + 5);
+  });
+
+  test("SV-31 prepareImport: 記録が無ければ restore（existingTurn null）。件数が maxGames なら full（broken / tooNew も数える）", async () => {
+    const be = createMemoryBackend();
+    const sv = service(be);
+    const s = newGame(1);
+    const plan = await planOf(sv, fileOf("lost", 6, s));
+    expect(plan).toEqual({ kind: "restore", gameId: "lost", turn: 6, existingTurn: null, summary: summarize(s), state: json(s) });
+    expect(MAX).toBe(5);
+    be.raw("b1", { gameId: "b1", schemaVersion: "x" });
+    be.raw("n1", json(record("n1", 1, { schemaVersion: SCHEMA + 1 })));
+    for (const id of ["a1", "a2", "a3"]) be.raw(id, json(record(id, 1)));
+    expect(await sv.prepareImport(fileOf("lost", 6))).toEqual({ ok: false, reason: "full" });
+    // 既存の gameId への上書きは上限に関係しない
+    expect((await planOf(sv, fileOf("a1", 2))).kind).toBe("overwrite");
+    // 一覧が読めなければ unavailable
+    be.setFail({ getAll: true });
+    expect(await sv.prepareImport(fileOf("lost", 6))).toEqual({ ok: false, reason: "unavailable" });
+  });
+
+  test("SV-31/SV-32 prepareImport: 既存 turn 5 に turn 7 は overwrite、turn 5 は overwrite、turn 3 は older（existingTurn 5）", async () => {
+    const be = createMemoryBackend();
+    be.raw("g", json(record("g", 1, { turn: 5 })));
+    const sv = service(be);
+    expect(await planOf(sv, fileOf("g", 7))).toMatchObject({ kind: "overwrite", turn: 7, existingTurn: 5 });
+    expect(await planOf(sv, fileOf("g", 5))).toMatchObject({ kind: "overwrite", turn: 5, existingTurn: 5 });
+    expect(await planOf(sv, fileOf("g", 3))).toMatchObject({ kind: "older", turn: 3, existingTurn: 5 });
+    expect(be.putCount).toBe(0);
+  });
+
+  test("SV-31 prepareImport: 既存が壊れていれば turn を比べず overwrite（existingTurn null）", async () => {
+    const be = createMemoryBackend();
+    be.raw("g", { gameId: "g", turn: 99, schemaVersion: "x" });
+    const sv = service(be);
+    expect(await planOf(sv, fileOf("g", 1))).toMatchObject({ kind: "overwrite", turn: 1, existingTurn: null });
+  });
+
+  test("SV-33 prepareImport: format / broken / tooNew / checksum をそのまま返し、保存先に触れない（putCount 0）。backend null と get の失敗は unavailable", async () => {
+    const be = createMemoryBackend();
+    const sv = service(be);
+    const good = JSON.parse(fileOf("g", 2)) as Record<string, unknown>;
+    expect(await sv.prepareImport("nope")).toEqual({ ok: false, reason: "format" });
+    expect(await sv.prepareImport(JSON.stringify({ ...good, turn: 0 }))).toEqual({ ok: false, reason: "broken" });
+    expect(await sv.prepareImport(JSON.stringify({ ...good, schemaVersion: SCHEMA + 1 }))).toEqual({ ok: false, reason: "tooNew" });
+    expect(await sv.prepareImport(JSON.stringify({ ...good, checksum: "0".repeat(64) }))).toEqual({ ok: false, reason: "checksum" });
+    expect(be.putCount).toBe(0);
+    expect(be.dump().size).toBe(0);
+    expect(await service(null).prepareImport(fileOf("g", 2))).toEqual({ ok: false, reason: "unavailable" });
+    be.setFail({ get: true });
+    expect(await sv.prepareImport(fileOf("g", 2))).toEqual({ ok: false, reason: "unavailable" });
+  });
+
+  test("SV-31 applyImport: レコードを turn = ファイルの turn、updatedAt = now()、schemaVersion = 今の版で書き、一覧に出る。summary は state から作る", async () => {
+    const be = createMemoryBackend();
+    const sv = service(be);
+    const s = withChar(newGame(2), 1, { life: "dead", hp: 0 });
+    const plan = await planOf(sv, fileOf("lost", 8, s));
+    expect(await sv.applyImport(plan)).toEqual({ ok: true, kind: "restore" });
+    const rec = be.dump().get("lost") as GameRecord;
+    expect(rec).toMatchObject({ gameId: "lost", turn: 8, updatedAt: 1000, schemaVersion: SCHEMA, summary: summarize(s) });
+    expect(rec.state).toEqual(json(s));
+    const l = await sv.list();
+    expect(l.ok && l.entries.map((e) => [e.gameId, e.turn, e.status])).toEqual([["lost", 8, "ok"]]);
+    // older も確認の後なら同じく書く（巻き戻す）
+    const older = await planOf(sv, fileOf("lost", 2, s));
+    expect(older.kind).toBe("older");
+    expect(await sv.applyImport(older)).toEqual({ ok: true, kind: "older" });
+    expect((be.dump().get("lost") as GameRecord).turn).toBe(2);
+  });
+
+  test("SV-31 applyImport: restore の直前に件数が maxGames に達していたら full で書かない", async () => {
+    const be = createMemoryBackend();
+    const sv = service(be);
+    const plan = await planOf(sv, fileOf("lost", 3));
+    for (let i = 0; i < MAX; i++) be.raw(`x${i}`, json(record(`x${i}`, 1)));
+    expect(await sv.applyImport(plan)).toEqual({ ok: false, reason: "full" });
+    expect(be.dump().has("lost")).toBe(false);
+    expect(be.putCount).toBe(0);
+    // 計画の後に同じ gameId が作られていたら（上書きになるので）上限を見ずに書く
+    be.raw("lost", json(record("lost", 1)));
+    expect(await sv.applyImport(plan)).toEqual({ ok: true, kind: "restore" });
+  });
+
+  test("SV-31 applyImport: put の失敗は failed、restore の数え直しの失敗と backend null は unavailable", async () => {
+    const be = createMemoryBackend();
+    const sv = service(be);
+    const plan = await planOf(sv, fileOf("lost", 3));
+    be.setFail({ put: true });
+    expect(await sv.applyImport(plan)).toEqual({ ok: false, reason: "failed" });
+    be.setFail({ get: true });
+    expect(await sv.applyImport(plan)).toEqual({ ok: false, reason: "unavailable" });
+    be.setFail({ getAll: true });
+    expect(await sv.applyImport(plan)).toEqual({ ok: false, reason: "unavailable" });
+    expect(await service(null).applyImport(plan)).toEqual({ ok: false, reason: "unavailable" });
+    expect(be.putCount).toBe(0);
+  });
+
+  test("SV-31 applyImport: current と同じ gameId に書いたら current.turn がファイルの turn になり、次の save は turn + 1", async () => {
+    const be = createMemoryBackend();
+    const sv = service(be);
+    const s = newGame(1);
+    await sv.begin(s);
+    await sv.save(s);
+    expect(sv.current()).toEqual({ gameId: "g1", turn: 2 });
+    const plan = await planOf(sv, fileOf("g1", 10, s));
+    expect(await sv.applyImport(plan)).toEqual({ ok: true, kind: "overwrite" });
+    expect(sv.current()).toEqual({ gameId: "g1", turn: 10 });
+    expect(await sv.save(s)).toEqual({ ok: true, turn: 11 });
+    // 別の gameId に書いても current は変わらない
+    await sv.applyImport(await planOf(sv, fileOf("other", 4, s)));
+    expect(sv.current()).toEqual({ gameId: "g1", turn: 11 });
   });
 });
