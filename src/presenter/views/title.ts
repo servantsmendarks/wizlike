@@ -1,4 +1,5 @@
 // UI-50 / SV-11 / SV-12 / SV-14 のタイトル。ゲーム一覧の行 → 新しく始める → 設定 の 1 本のリスト。
+// 新しく始める → おすすめで始める / 自分で作る / やめる（M5.5）。
 // 行を選ぶと 続きから / 削除 / やめる。削除は確認 2 段階で、先頭（Enter・1）は「やめる」。
 // 純粋な部分（titleEntries / titleStep / titleKeyIndex / titleItems / titleNotice / titleRowLabels / formatUpdatedAt）は
 // DOM に触れないので node でテストできる。保存先の読み書きは app が SaveService で行う（ここは描くだけ）。
@@ -12,6 +13,8 @@ import { onTap } from "../input/tap";
 
 export type TitlePage =
   | { kind: "list" }
+  /** UI-50（M5.5）: 新しく始める → おすすめで始める / 自分で作る / やめる */
+  | { kind: "newMode" }
   | { kind: "game"; gameId: string }
   | { kind: "confirm1"; gameId: string }
   | { kind: "confirm2"; gameId: string };
@@ -19,16 +22,23 @@ export type TitlePage =
 export type TitleEntry =
   | { kind: "game"; entry: GameListEntry }
   | { kind: "newGame" }
+  | { kind: "quick" }
+  | { kind: "custom" }
   | { kind: "settings" }
   | { kind: "continue"; gameId: string; disabled: boolean }
   | { kind: "delete"; gameId: string }
   | { kind: "deleteYes"; gameId: string }
   | { kind: "cancel" };
 
-/** 1 つ選んだ結果。page は表示だけの遷移、それ以外は app が保存先や画面を操作する */
+/**
+ * 1 つ選んだ結果。page は表示だけの遷移、それ以外は app が保存先や画面を操作する。
+ * newGame は app が上限（SV-11）を見てから newMode のページへ、quick は簡易作成（UI-51）、custom は自分で作る（UI-62）へ
+ */
 export type TitleStep =
   | { kind: "page"; page: TitlePage }
   | { kind: "newGame" }
+  | { kind: "quick" }
+  | { kind: "custom" }
   | { kind: "settings" }
   | { kind: "continue"; gameId: string }
   | { kind: "remove"; gameId: string }
@@ -42,6 +52,7 @@ const find = (list: readonly GameListEntry[], id: string): GameListEntry | undef
 /** UI-50: ページごとの項目の並び。list は一覧（与えられた順 = updatedAt の降順）→ 新しく始める → 設定 */
 export function titleEntries(page: TitlePage, list: readonly GameListEntry[]): TitleEntry[] {
   if (page.kind === "list") return [...list.map((entry): TitleEntry => ({ kind: "game", entry })), { kind: "newGame" }, { kind: "settings" }];
+  if (page.kind === "newMode") return [{ kind: "quick" }, { kind: "custom" }, { kind: "cancel" }];
   const e = find(list, page.gameId);
   if (e === undefined) return [{ kind: "cancel" }];
   if (page.kind === "game") {
@@ -59,6 +70,10 @@ export function titleStep(page: TitlePage, e: TitleEntry): TitleStep {
       return { kind: "page", page: { kind: "game", gameId: e.entry.gameId } };
     case "newGame":
       return { kind: "newGame" };
+    case "quick":
+      return { kind: "quick" };
+    case "custom":
+      return { kind: "custom" };
     case "settings":
       return { kind: "settings" };
     case "continue":
@@ -122,6 +137,10 @@ export function titleItems(page: TitlePage, list: readonly GameListEntry[], size
         return { entry: e, lines: titleRowLabels(e.entry, size, strings), dim: e.entry.status !== "ok", disabled: false };
       case "newGame":
         return { entry: e, lines: [tr(strings, "title.newGame")], dim: false, disabled: false };
+      case "quick":
+        return { entry: e, lines: [tr(strings, "title.mode.quick")], dim: false, disabled: false };
+      case "custom":
+        return { entry: e, lines: [tr(strings, "title.mode.custom")], dim: false, disabled: false };
       case "settings":
         return { entry: e, lines: [tr(strings, "title.settings")], dim: false, disabled: false };
       case "continue":
@@ -139,6 +158,7 @@ export function titleItems(page: TitlePage, list: readonly GameListEntry[], size
 /** 案内の欄の文。list は一覧が空なら title.empty、game は行の 1 行目、confirm1 / confirm2 は削除の確認 */
 export function titleNotice(page: TitlePage, list: readonly GameListEntry[], size: number, strings: Strings): string {
   if (page.kind === "list") return list.length === 0 ? tr(strings, "title.empty") : "";
+  if (page.kind === "newMode") return tr(strings, "title.mode.notice");
   const e = find(list, page.gameId);
   if (e === undefined) return "";
   const line1 = titleRowLabels(e, size, strings)[0];

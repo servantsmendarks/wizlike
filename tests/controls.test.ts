@@ -80,7 +80,7 @@ describe("controls", () => {
   });
 
   test("UI-31 shouldReleaseHold: 迷宮以外・overlay あり・選択の保留ありのどれかなら離したものとする。迷宮で何も出ていなければ離さない", () => {
-    const routes: Route[] = ["title", "creation", "town", "dungeon", "battle"];
+    const routes: Route[] = ["title", "creation", "custom", "town", "dungeon", "battle"];
     const overlays: Overlay[] = [null, "map", "debug", "camp", "history", "wipe"];
     for (const r of routes) {
       for (const o of overlays) {

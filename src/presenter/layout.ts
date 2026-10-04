@@ -319,6 +319,42 @@ export const CREATION_BUTTONS = {
 /** 作成の入力エラーの表示欄（押せない） */
 export const CREATION_ERROR: Rect = { x: 4, y: 240, w: 232, h: 50 };
 
+// ---- 自分で作る（UI-62。M5.5）。数値は【仮】。見出し → 要約 → 一覧の行（最大 7 行）か能力値の 6 行 → 残り → 誤り → ボタン 3 枠
+
+/** 見出し（{n}人目　{段}） */
+export const CUSTOM_HEADING: Rect = { x: 4, y: 4, w: 232, h: 12 };
+/** 要約（決まった種族・職業・性格） */
+export const CUSTOM_SUMMARY: Rect = { x: 4, y: 18, w: 232, h: 10 };
+
+/** 一覧の行 i（0..6。2 行の行。y = 34 + 34i、7 行目は y238..269）。確認の段の 6 行もここ */
+export function customRow(i: number): Rect {
+  return { x: 8, y: 34 + 34 * i, w: 224, h: 32 };
+}
+
+/** 能力値の行 i（0..5。y = 34 + 34i）。名前 [-] 値 [+]（debugRow と同じ横の割り付け） */
+export function customStatRow(i: number): { label: Rect; minus: Rect; value: Rect; plus: Rect } {
+  const y = 34 + 34 * i;
+  return {
+    label: { x: 8, y, w: 124, h: 32 },
+    minus: { x: 136, y, w: 32, h: 32 },
+    value: { x: 170, y, w: 32, h: 32 },
+    plus: { x: 204, y, w: 32, h: 32 },
+  };
+}
+
+/** 能力値の段の「残り」の行（押せない） */
+export const CUSTOM_REMAINING: Rect = { x: 8, y: 240, w: 224, h: 32 };
+/** 名前の入力欄（見た目の大きさ。DOM は 2 倍で作って scale(0.5)） */
+export const CUSTOM_NAME: Rect = { x: 8, y: 34, w: 224, h: 32 };
+/** 誤りの欄（押せない） */
+export const CUSTOM_ERROR: Rect = { x: 4, y: 276, w: 232, h: 20 };
+/** 下のボタン a（左上）・b（右上）・c（左下 = 戻る） */
+export const CUSTOM_BUTTONS = {
+  a: { x: 8, y: 300, w: 108, h: 32 },
+  b: { x: 124, y: 300, w: 108, h: 32 },
+  c: { x: 8, y: 340, w: 108, h: 32 },
+} as const satisfies Record<string, Rect>;
+
 /** debug パネルの設定の行 i（0..5。y = 124 + 34i、最後の行は y294..325）。[-] 値 [+] か、toggle のどちらかを使う */
 export function debugRow(i: number): { label: Rect; minus: Rect; value: Rect; plus: Rect; toggle: Rect } {
   const y = 124 + 34 * i;

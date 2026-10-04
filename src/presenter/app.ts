@@ -15,6 +15,7 @@
 // モジュールのトップレベルでは DOM に触れない。
 import type { GameData } from "../core/data/index";
 import { execute, createInitialState } from "../core/engine";
+import { createRng, type RngState } from "../core/rng";
 import { battleMenu } from "../core/rules/combat";
 import { mapView, visibleCells, visibleKnownTraps } from "../core/rules/dungeon";
 import { campMenu, campSummary } from "../core/rules/camp";
@@ -59,6 +60,15 @@ import { defaultSettings, type SettingsStore } from "./settings";
 import type { StageLayout, StageLayoutInput } from "./stage";
 import type { ControlItem, DpadAction } from "./views/controls";
 import { createCreationScreen } from "./views/creation";
+import {
+  createCustomCreationScreen,
+  customKeyChoice,
+  customStep,
+  customView,
+  initialDraft,
+  type CustomChoice,
+  type CustomDraft,
+} from "./views/custom-creation";
 import { createDebugPanel } from "./views/debug-panel";
 import {
   campEntries,
@@ -87,7 +97,7 @@ import { createTitleScreen, titleEntries, titleItems, titleKeyIndex, titleNotice
 import { formatWipeSummary } from "./views/wipe";
 import { townEntries, townHeader, townPageIntro, townParent, type TownEntry, type TownPage } from "./views/town";
 
-export type Route = "title" | "creation" | "town" | "dungeon" | "battle";
+export type Route = "title" | "creation" | "custom" | "town" | "dungeon" | "battle";
 export type Overlay = null | "map" | "debug" | "camp" | "wipe" | "history";
 
 export type App = {
@@ -180,6 +190,14 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     onBack: () => guard(() => showRoute("title")),
   });
 
+  // UI-62（M5.5）: 自分で作る。下書きと作成中の乱数は表示層だけの値で保存しない（SV-50。リロードするとタイトルから）
+  const custom = createCustomCreationScreen({ onChoice: (c) => guard(() => chooseCustom(c)) });
+  let customDraft: CustomDraft = initialDraft(data);
+  /** CH-06: 作成中の乱数（CH-11 のボーナス）。goCustom のたびに crypto.getRandomValues の種で作り直す */
+  let customRng: RngState = createRng(1);
+  /** 誤りの欄の文（null なら隠す） */
+  let customError: string | null = null;
+
   // ui §2 の区切りは【仮】。操作領域などに中身が収まらない layout は起動を止めず、console.warn で知らせる
   const playRegions = regions(data.config.ui.layout, data.config.stage.width);
   const playLayout = dungeonLayout(playRegions, data.config.party.size);
@@ -227,7 +245,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   const bannerState = createSaveBannerState(o.saves.available);
   banner.setVisible(bannerState.visible());
 
-  stage.replaceChildren(title.el, creation.el, play.el, debug.el, banner.el);
+  stage.replaceChildren(title.el, creation.el, custom.el, play.el, debug.el, banner.el);
 
   // ---------------------------------------------------------------- 再生
   const dungeonName = (st: GameState): string => (st.dive === null ? "" : dungeonOf(data, st.dive.dungeonId).name);
@@ -679,6 +697,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     if (r === "title") enterTitle();
     title.el.style.display = r === "title" ? "" : "none";
     creation.el.style.display = r === "creation" ? "" : "none";
+    custom.el.style.display = r === "custom" ? "" : "none";
     play.el.style.display = r === "town" || r === "dungeon" || r === "battle" ? "" : "none";
     if (r === "town" || r === "dungeon" || r === "battle") play.setMode(r);
   };
@@ -962,9 +981,19 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
           if (route !== "title") return;
           if (c === "full") {
             titleMessage = t("title.maxGames");
-            renderTitle();
-          } else goCreation();
+          } else {
+            // UI-50（M5.5）: おすすめで始める / 自分で作る / やめる
+            titlePage = { kind: "newMode" };
+            titleMessage = null;
+          }
+          renderTitle();
         });
+        return;
+      case "quick":
+        goCreation();
+        return;
+      case "custom":
+        goCustom();
         return;
       case "continue":
         titleTask(async () => {
@@ -1038,6 +1067,54 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   const goCreation = (): void => {
     creation.reset();
     showRoute("creation");
+  };
+
+  const renderCustom = (): void => {
+    custom.render(customView(customDraft, data, strings), customError);
+  };
+
+  /** UI-62: 自分で作るを最初から始める（作成中の乱数の種は crypto.getRandomValues） */
+  const goCustom = (): void => {
+    customRng = createRng(crypto.getRandomValues(new Uint32Array(1))[0] ?? 1);
+    customDraft = initialDraft(data);
+    customError = null;
+    renderCustom();
+    showRoute("custom");
+  };
+
+  /** UI-62: 1 つ選ぶ（何が起きるかは customStep が決める） */
+  const chooseCustom = (c: CustomChoice): void => {
+    if (route !== "custom") return;
+    const r = customStep(customDraft, c, data, customRng);
+    switch (r.kind) {
+      case "draft":
+        customDraft = r.draft;
+        customError = null;
+        renderCustom();
+        return;
+      case "invalidName":
+        customDraft = r.draft;
+        customError = formatMessage(t("creation.invalid"), { max: data.config.creation.nameMaxLength });
+        renderCustom();
+        return;
+      case "exit":
+        // タイトルの作り方の選択へ戻る
+        showRoute("title");
+        titlePage = { kind: "newMode" };
+        renderTitle();
+        return;
+      case "start":
+        blurActive();
+        customError = null;
+        renderCustom();
+        void run({ type: "game.new", party: r.setup }).then((res) => {
+          if (res !== null && res.rejected) {
+            customError = t("custom.rejected");
+            renderCustom();
+          }
+        });
+        return;
+    }
   };
 
   const openDebug = (): void => {
@@ -1260,6 +1337,12 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       case "creation":
         if (a === "back") showRoute("title");
         return;
+      case "custom": {
+        // UI-33 / UI-62: 数字 n → n 番目の行、Enter → 先頭の選べる行（能力値は 次へ、名前は今の入力で次へ、確認は 始める）、Esc → 戻る
+        const ch = customKeyChoice(a, customView(customDraft, data, strings), customDraft.step, custom.nameValue());
+        if (ch !== null) chooseCustom(ch);
+        return;
+      }
       case "town":
         if (a === "confirm") play.controls.select(0);
         else if (typeof a === "object") play.controls.select(a.menu);

@@ -202,6 +202,33 @@ body {
   visibility: hidden;
 }
 
+/* 自分で作る（UI-62） */
+.custom-heading {
+  color: var(--c-accent);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.custom-summary,
+.custom-stat-label,
+.custom-stat-value,
+.custom-remaining,
+.custom-confirm-row {
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.custom-stat-label,
+.custom-stat-value,
+.custom-remaining,
+.custom-confirm-row {
+  line-height: 32px;
+}
+
+.custom-stat-value {
+  text-align: center;
+}
+
 /* 迷宮と街（UI-53 / UI-52） */
 .play-view {
   overflow: hidden;

@@ -173,8 +173,32 @@ describe("タイトルのキー（UI-33）", () => {
     expect(titleKeyIndex("back", titleEntries({ kind: "confirm1", gameId: "a" }, list))).toBe(0);
   });
 
+  test("UI-50 新しく始める → おすすめで始める / 自分で作る / やめる（M5.5）。Enter はおすすめ、Esc はやめるで一覧へ", async () => {
+    const list = await sampleList();
+    // 一覧の 新しく始める は newGame（上限を見てから newMode のページへ進むのは app）
+    const top = titleEntries(LIST, list);
+    expect(titleStep(LIST, top.find((e) => e.kind === "newGame")!)).toEqual({ kind: "newGame" });
+    const mode: TitlePage = { kind: "newMode" };
+    const entries = titleEntries(mode, list);
+    expect(entries.map((e) => e.kind)).toEqual(["quick", "custom", "cancel"]);
+    expect(titleItems(mode, list, SIZE, S).map((it) => it.lines)).toEqual([["おすすめで始める"], ["自分で作る"], ["やめる"]]);
+    expect(titleItems(mode, list, SIZE, S).every((it) => !it.dim && !it.disabled)).toBe(true);
+    expect(titleStep(mode, entries[0]!)).toEqual({ kind: "quick" });
+    expect(titleStep(mode, entries[1]!)).toEqual({ kind: "custom" });
+    expect(titleStep(mode, entries[2]!)).toEqual({ kind: "page", page: { kind: "list" } });
+    expect(titleKeyIndex("confirm", entries)).toBe(0);
+    expect(titleKeyIndex("back", entries)).toBe(2);
+    expect(titleKeyIndex({ menu: 1 }, entries)).toBe(1);
+    expect(titleNotice(mode, list, SIZE, S)).toBe(S["title.mode.notice"]);
+    // 一覧が空でも同じ
+    expect(titleEntries(mode, []).map((e) => e.kind)).toEqual(["quick", "custom", "cancel"]);
+  });
+
   test("UI-50 タイトルの文言が strings にある", () => {
     for (const k of [
+      "title.mode.quick",
+      "title.mode.custom",
+      "title.mode.notice",
       "title.row",
       "title.rowDate",
       "title.rowBroken",

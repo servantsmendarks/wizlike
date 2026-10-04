@@ -163,6 +163,12 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   "rules/pathfind": ["planRoute", "routeStepOk"],
   // M5 UI-12: パーティ欄の SAN の段は core の sanStage で決める（境の比率を表示層で持たない）
   "rules/san": ["sanStage"],
+  // M5.5 UI-62 / CH-06: 自分で作るの配分の可否・残り・職業の条件・名前の長さは core の関数の値だけで決める。
+  // 作成中はまだ GameState が無いので、ボーナスの振り（rollBonus）は表示層が持つ RngState（createRng。種は crypto）で引く（決定 5 の例外）
+  "rules/creation": ["rollBonus", "statAllocation", "adjustStat", "classOptions", "validCreationName"],
+  rng: ["createRng"],
+  // 能力値の並び（CH-10）。列挙の定数
+  "data/index": ["STAT_KEYS"],
 };
 
 /** コメントを除いた本文（文字列の中の // や /* は考えない最小限の除去。presenter に該当する文字列は無い） */
@@ -270,6 +276,20 @@ describe("入力と Command", () => {
     expect(bad.some((b) => b.includes("export * from"))).toBe(true);
     expect(bad.some((b) => b.includes("import("))).toBe(true);
     expect(bad.filter((b) => b.includes("floorOf"))).toHaveLength(2);
+  });
+
+  test("UI-50/UI-62/SV-50 新しく始めるは上限を見てから作り方の選択へ。自分で作るは goCustom のたびに crypto の種で乱数を作り直し、下書きは保存しない（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const goCustom = /const goCustom = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(goCustom).toMatch(/customRng = createRng\(crypto\.getRandomValues\(new Uint32Array\(1\)\)\[0\] \?\? 1\);/);
+    expect(goCustom).toMatch(/customDraft = initialDraft\(data\);/);
+    expect(goCustom).toMatch(/showRoute\("custom"\)/);
+    expect(app).toMatch(/titlePage = \{ kind: "newMode" \};/);
+    expect(app).toMatch(/custom\.el\.style\.display = r === "custom" \? "" : "none";/);
+    // 自分で作るの値は game.new の setup で渡すだけで、run 以外で保存先に触れない
+    const choose = /const chooseCustom = \(c: CustomChoice\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(choose).toMatch(/run\(\{ type: "game\.new", party: r\.setup \}\)/);
+    expect(choose).not.toMatch(/saves\./);
   });
 
   test("UI-46 履歴の画面は表示してから描く（display:none の間は scrollHeight が 0 で、末尾へ送れない）", () => {
