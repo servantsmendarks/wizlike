@@ -23,7 +23,7 @@
 - CH-21 職業は `data/classes.json` の 7 つ【仮】: 基本 4（戦士、盗賊、僧侶、魔術師）、上級 3（侍、君主、司教）。`requirements` の能力値を満たすと選べる。
 - CH-22 転職は無し【未定】。プロトタイプでは実装しない。
 - CH-23 職業は HP ダイス、MP の伸び、呪文系統と習得開始レベル、攻撃回数の伸び、特殊能力（盗賊: 罠解除、司教: アイテム鑑定）を持つ。すべて `classes.json`。
-- CH-24 自分で作ったキャラクター（CH-06）の開始の装備・所持品・呪文と所持金への寄与は `classes[].start`（`equipment` / `inventory` / `knownSpells` / `gold`）【仮】。所持金はメンバーの `start.gold` の合計（M5.5）。データの検証は prototypeParty と同じ（CH-70 / CH-75 / CH-71 / MG-11）に加えて、呪文は重複なし・魔法書専用（`bookOnly`）でない・`learnLevel` 1。簡易作成（CH-05）は `prototypeParty` のまま。
+- CH-24 自分で作ったキャラクター（CH-06）の開始の装備・所持品・呪文と所持金への寄与は `classes[].start`（`equipment` / `inventory` / `knownSpells` / `gold`）。装備・所持品・呪文の品目は職業ごとの汎用装備で【仮】。所持金への寄与は全職業 1 人 50G（ユーザー決定 2026-10-04。確定）。所持金はメンバーの `start.gold` の合計（M5.5。6 人で 300G）。データの検証は prototypeParty と同じ（CH-70 / CH-75 / CH-71 / MG-11）に加えて、呪文は重複なし・魔法書専用（`bookOnly`）でない・`learnLevel` 1。簡易作成（CH-05）は `prototypeParty` のまま。
 
 ## 4. 性格
 
@@ -99,7 +99,7 @@
   "attacksPerLevels": 5, "maxAttacks": 3,  // レベル5ごとに攻撃回数+1、最大3。0なら常に1回
   "abilities": [],                         // "disarm" | "identify"
   "expMultiplier": 1.0,
-  "start": {                               // CH-24 自分で作ったときの開始の持ち物【仮】
+  "start": {                               // CH-24 自分で作ったときの開始の持ち物（品目は【仮】、gold 50 は確定）
     "equipment": { "weapon": "long_sword", "armor": "leather_armor", "shield": "wooden_shield" },
     "inventory": ["herb"], "knownSpells": [], "gold": 50
   }

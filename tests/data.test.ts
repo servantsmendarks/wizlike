@@ -373,7 +373,7 @@ describe("data: races.json / classes.json", () => {
     }
     for (const ok of ["W", "WA", "WAR"]) expect(issuesOf((r) => (r.classes[1].abbr = ok))).toEqual([]);
   });
-  test("data: CH-24 classes[].start（開始の装備・所持品・呪文・所持金）の検証", () => {
+  test("data: CH-24 classes[].start（開始の装備・所持品・呪文・所持金）の検証。所持金は全職業 1 人 50G（ユーザー決定 2026-10-04）", () => {
     const data = loadGameData(rawData());
     expect(data.classes.map((c) => c.start.gold)).toEqual([50, 50, 50, 50, 50, 50, 50]);
     expectIssue((r) => delete r.classes[0].start, "classes.json", "[0].start: missing required field");
