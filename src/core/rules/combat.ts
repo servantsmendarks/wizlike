@@ -77,6 +77,7 @@ import { gainGold } from "./field";
 import { rollBossItems, rollChestItems } from "./loot";
 import { equipStats, hasSkill, hpMaxOf, skillTotal, spellCost } from "./equip-stats";
 import { loseSan, sanCapOf, sanStage } from "./san";
+import { raiseShopLevel } from "./shop";
 import { performWipe } from "./wipe";
 
 /**
@@ -1043,7 +1044,8 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
       dive.bossDefeated = true;
       ctx.events.push({ kind: "message", key: "battle.bossDefeated" });
       const def = dungeonOf(data, dive.dungeonId);
-      if (!state.progress.clearedDungeons.includes(def.id)) {
+      const firstClear = !state.progress.clearedDungeons.includes(def.id);
+      if (firstClear) {
         state.progress.clearedDungeons.push(def.id);
         ctx.events.push({ kind: "message", key: "battle.dungeonCleared" });
       }
@@ -1054,6 +1056,8 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
       }
       // DG-31 / IT-50: ボスの戦利品（勝つたび。再撃破でも）。ボスの語りの後、テレポーターの申し出の前
       rollBossItems(ctx, def.id, monsterOf(data, def.boss.monster).level);
+      // IT-62: 初回クリアで店の流通レベルを上げる（上がったときだけ dungeon.shopLevel）。品の語りの後
+      if (firstClear) raiseShopLevel(ctx, def.onClear.shopLevel);
     }
   } else if (result === "flee") {
     ctx.events.push({ kind: "message", key: "battle.fleeOk" });

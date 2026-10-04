@@ -55,7 +55,7 @@
   "traps": ["pit", "spinner"],
   "trapsPerFloor": [1, 3],
   "teleporterFloors": [],
-  "onClear": { "unlockDungeon": "d02", "shopStock": ["chain_mail"] }
+  "onClear": { "unlockDungeon": "d02", "shopLevel": 2 }  // M7: shopStock は廃止し、流通レベル shopLevel（IT-62）【仮】
 }
 ```
 

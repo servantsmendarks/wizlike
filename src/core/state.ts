@@ -193,13 +193,21 @@ export function itemDisplayName(state: GameState, data: GameData, instanceId: st
   const base = findBase(data, inst.itemId);
   if (base !== null) {
     if (!inst.identified) return base.unidentifiedName;
-    const prefix = inst.rarity === "normal" ? "" : (data.strings[`item.rarity.${inst.rarity}`] ?? "");
-    if (inst.uniqueId !== null) return prefix + uniqueOf(data, inst.uniqueId).name;
-    const plus = inst.level >= 1 ? (data.strings["item.plus"] ?? "").replace("{n}", String(inst.level)) : "";
-    return prefix + base.name + plus;
+    return equipmentDisplayName(data, base, inst.level, inst.rarity, inst.uniqueId);
   }
   const item = itemOf(data, inst.itemId);
   return inst.identified ? item.name : (item.unidentifiedName ?? item.name);
+}
+
+/**
+ * IT-11: 鑑定済みの装備の表示名（itemDisplayName の装備の部分）。実体を作る前の品（店の売り物。IT-62）の名前にも使う。
+ * 希少度の接頭辞 + 名前（ユニークならユニークの名前）+ Lv（汎用で 1 以上のときだけ item.plus）
+ */
+export function equipmentDisplayName(data: GameData, base: EquipmentBase, level: number, rarity: Rarity, uniqueId: string | null): string {
+  const prefix = rarity === "normal" ? "" : (data.strings[`item.rarity.${rarity}`] ?? "");
+  if (uniqueId !== null) return prefix + uniqueOf(data, uniqueId).name;
+  const plus = level >= 1 ? (data.strings["item.plus"] ?? "").replace("{n}", String(level)) : "";
+  return prefix + base.name + plus;
 }
 
 /** IT-30 の希少度の順（後ろほど良い。IT-66 の bestRarity の比較に使う） */

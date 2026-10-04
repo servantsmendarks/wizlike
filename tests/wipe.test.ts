@@ -12,7 +12,8 @@ import { cloneRng, createRng, randInt, rollDice, type RngState } from "../src/co
 import { startBattle } from "../src/core/rules/combat";
 import { levelUpWhilePossible } from "../src/core/rules/growth";
 import { returnToTown } from "../src/core/rules/town";
-import { assetValue, itemSaleValue, penaltyTableView, performWipe, wipeIfNoneCanAct } from "../src/core/rules/wipe";
+import { sellPrice } from "../src/core/rules/shop";
+import { assetValue, penaltyTableView, performWipe, wipeIfNoneCanAct } from "../src/core/rules/wipe";
 import { cloneState, createItemInstance, destroyItemInstance, makeContext, memberById } from "../src/core/state";
 import type { Character, GameEvent, GameState, PenaltyResult, RuleContext } from "../src/core/types";
 import { ALWAYS_HIT, dataWith, dived, eventsOf, kindsOf, withBattle } from "./helpers/battle";
@@ -553,7 +554,7 @@ describe("TW-27 全滅の方が得にならない", () => {
     // 長剣 100 ×2、革鎧 50 ×4、木の盾 40、鎖帷子 300、短剣 15、杖 10 ×2、革兜 30、短弓 80、薬草 10 ×3、解毒草 15、帰還の糸 50
     const sale = 50 * 2 + 25 * 4 + 20 + 150 + 7 + 5 * 2 + 15 + 40 + 5 * 3 + 7 + 25;
     expect(assetValue(s, data)).toBe(300 + sale + 1600 + 2400 + 1000 + 1100 + 50);
-    expect(itemSaleValue(data, "return_thread")).toBe(25);
+    expect(sellPrice(s.items[s.party[4]!.inventory[0]!]!, data)).toBe(25); // 帰還の糸（IT-61 の消耗品は floor(price × sellRatio)）
   });
 
   test("TW-27 境界: 台帳に金と品、非装備・装備の品、Lv2〜4 の EXP の一行で、2d10 の合計 2〜20 のどれでも全滅後の総資産 ≤ 徒歩で帰還した後（成分ごとにも ≤）", () => {

@@ -1,29 +1,20 @@
-// 街（TW-02, TW-04, TW-05 の消耗品の購入, TW-07, TW-08, TW-11, TW-30〜32、DG-30/43 の帰還）と、表示層向けの問い合わせ townMenu。
-// 料金の式（宿のランク・店の売り物・寺院の 3 サービス・闇魔術・救済の蘇生費）は core のここだけに置く（表示層は townMenu の値を描く）。
+// 街（TW-02, TW-04, TW-07, TW-08, TW-11, TW-30〜32、DG-30/43 の帰還）と、表示層向けの問い合わせ townMenu。
+// 料金の式（宿のランク・寺院の 3 サービス・闇魔術・救済の蘇生費）は core のここだけに置く（表示層は townMenu の値を描く）。
+// 店（TW-05 / IT-60〜65）は rules/shop.ts（M7 の B7 で切り出した。townMenu.shop は shopMenu の値）。
 // dungeon.ts は import しない（dungeon → combat → … → town の向きだけにして循環を作らない）。
 // 迷宮入口の可否（TW-11）は enterBlockReason が持ち、dungeon.checkEnter がそれを呼ぶ。
 // 乱数を使うのは寺院の蘇生の d100（randInt(1, 100) を 1 回）と、宿屋のレベルアップ（growth の既存の順）だけ。
-import type { ConsumableItem, CurableStatusId, GameData, StatBlock, StatusId } from "../data/index";
+import type { CurableStatusId, GameData, StatBlock, StatusId } from "../data/index";
 import { CURABLE_STATUS_IDS, EQUIP_SLOTS } from "../data/index";
 import { randInt } from "../rng";
-import {
-  classOf,
-  createItemInstance,
-  destroyItemInstance,
-  dungeonOf,
-  identifyInstance,
-  itemDisplayName,
-  memberById,
-  moraleOf,
-  raisesMorale,
-  slotsUsed,
-} from "../state";
+import { classOf, destroyItemInstance, dungeonOf, itemDisplayName, memberById, moraleOf, raisesMorale } from "../state";
 import type { Character, GameState, RuleContext, TownMenu } from "../types";
 import { canAct } from "./combat-calc";
 import { clampToMax, effectiveStats, equipStats } from "./equip-stats";
 import { levelUpWhilePossible } from "./growth";
 import { ceilRatio } from "./ratio";
 import { capSan, overSan, restoreSan } from "./san";
+import { shopMenu } from "./shop";
 
 export type TempleService = "resurrect" | "cure" | "uncurse";
 /** 帰還の語りのキー（DG-30: 帰還の糸 / DG-06: 徒歩 / DG-32: テレポーター / MG-40: 帰還の呪文） */
@@ -330,85 +321,6 @@ function reviveAtOne(ctx: RuleContext, ch: Character): void {
 }
 
 // ---------------------------------------------------------------------------
-// 店（TW-05。プロトタイプは消耗品の購入だけ）
-
-/** TW-05 の売り物: items.json の順で、type consumable かつ infinite の品（在庫無限なので在庫は持たない） */
-function shopItems(data: GameData): ConsumableItem[] {
-  return data.items.filter((it): it is ConsumableItem => it.type === "consumable" && it.infinite);
-}
-
-/** CH-71: 空いている所持枠（slotsPerCharacter − 装備数 − inventory。負にはしない） */
-function slotsFreeOf(ch: Character, data: GameData): number {
-  return Math.max(0, data.config.inventory.slotsPerCharacter - slotsUsed(ch));
-}
-
-/**
- * town.shop を受け付けない理由。順: wrong screen → bad action（オブジェクトでない・kind が buy / sell / identify でない・
- * buy の memberId / itemId、identify の memberId / instanceId が文字列でない）→ not implemented（sell）→
- * buy: not for sale → no such member → not alive → inventory full → not enough gold /
- * identify（IT-65。TW-05 の M7 の順）: no such member → item not in inventory → already identified → not enough gold（life は問わない）
- */
-export function checkShop(state: GameState, action: unknown, data: GameData): string | null {
-  if (!inTown(state)) return "wrong screen";
-  if (typeof action !== "object" || action === null) return "bad action";
-  const a = action as { kind?: unknown; memberId?: unknown; itemId?: unknown; instanceId?: unknown };
-  if (a.kind !== "buy" && a.kind !== "sell" && a.kind !== "identify") return "bad action";
-  if (a.kind === "buy" && (typeof a.memberId !== "string" || typeof a.itemId !== "string")) return "bad action";
-  if (a.kind === "identify" && (typeof a.memberId !== "string" || typeof a.instanceId !== "string")) return "bad action";
-  if (a.kind === "sell") return "not implemented";
-  if (a.kind === "identify") {
-    const owner = memberById(state, a.memberId as string);
-    if (owner === null) return "no such member";
-    const iid = a.instanceId as string;
-    if (!owner.inventory.includes(iid) || state.items[iid] === undefined) return "item not in inventory";
-    if (state.items[iid]!.identified) return "already identified";
-    if (state.gold < data.config.economy.identifyFee) return "not enough gold";
-    return null;
-  }
-  const item = shopItems(data).find((it) => it.id === a.itemId);
-  if (item === undefined) return "not for sale";
-  const ch = memberById(state, a.memberId as string);
-  if (ch === null) return "no such member";
-  if (ch.life !== "alive") return "not alive";
-  if (slotsFreeOf(ch, data) === 0) return "inventory full";
-  if (state.gold < item.price) return "not enough gold";
-  return null;
-}
-
-/**
- * TW-05 の購入。checkShop が null を返した前提。乱数は使わない。
- * 払う → 鑑定済みの実体を作って本人の inventory の末尾へ → message town.shop.bought{name, item, cost}。
- * 潜行台帳（DG-40）には入れない（街で買った品は正式な所持品。街では dive が null）
- */
-export function buyItem(ctx: RuleContext, memberId: string, itemId: string): void {
-  const { state, data } = ctx;
-  const ch = memberById(state, memberId);
-  const item = shopItems(data).find((it) => it.id === itemId);
-  if (ch === null || item === undefined) throw new Error(`buyItem: bad ${memberId} / ${itemId}`);
-  state.gold -= item.price;
-  ch.inventory.push(createItemInstance(state, { itemId, identified: true }));
-  ctx.events.push({ kind: "message", key: "town.shop.bought", params: { name: ch.name, item: item.name, cost: item.price } });
-}
-
-/**
- * IT-65 店の鑑定。checkShop が null を返した前提。乱数は使わない（結果は CH-77 と同じ）。
- * identifyFee を払う → 鑑定済みにし、ユニークなら図鑑に記録（IT-66）→ message town.shop.identified{name, old, item, cost}
- * → 呪われていれば message camp.identifiedCursed{item}
- */
-export function identifyAtShop(ctx: RuleContext, memberId: string, instanceId: string): void {
-  const { state, data } = ctx;
-  const ch = memberById(state, memberId);
-  if (ch === null || state.items[instanceId] === undefined) throw new Error(`identifyAtShop: bad ${memberId} / ${instanceId}`);
-  const cost = data.config.economy.identifyFee;
-  state.gold -= cost;
-  const old = itemDisplayName(state, data, instanceId);
-  identifyInstance(state, instanceId);
-  const item = itemDisplayName(state, data, instanceId);
-  ctx.events.push({ kind: "message", key: "town.shop.identified", params: { name: ch.name, old, item, cost } });
-  if (state.items[instanceId]!.cursed) ctx.events.push({ kind: "message", key: "camp.identifiedCursed", params: { item } });
-}
-
-// ---------------------------------------------------------------------------
 // GM の救済（TW-31, TW-32）
 
 /** town.mercy を受け付けない理由。対象は dead / ash の誰でもよい（リーダーも選べる） */
@@ -464,12 +376,7 @@ export function townMenu(state: GameState, data: GameData): TownMenu | null {
       const cost = resurrectCostOf(ch, data);
       return [{ memberId: ch.id, name: ch.name, cost, affordable: gold >= cost }];
     }),
-    shop: {
-      items: shopItems(data).map((it) => ({ itemId: it.id, name: it.name, price: it.price, affordable: gold >= it.price })),
-      members: state.party.flatMap((ch) =>
-        ch.life === "alive" ? [{ memberId: ch.id, name: ch.name, slotsFree: slotsFreeOf(ch, data) }] : [],
-      ),
-    },
+    shop: shopMenu(state, data), // TW-05 / IT-60〜65（rules/shop.ts）
     mercy: offered
       ? state.party.flatMap((ch) => (ch.life === "alive" ? [] : [{ memberId: ch.id, name: ch.name, life: ch.life }]))
       : null,

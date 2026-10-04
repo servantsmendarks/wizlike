@@ -30,19 +30,8 @@ import { startNewGame, validatePartySetup } from "./rules/creation";
 import { addTurns, hpOne, sanDown, warp } from "./rules/debug";
 import { checkEnter, chooseOption, enterDungeon, moveForward, turn } from "./rules/dungeon";
 import { checkUseItem, useItemInField } from "./rules/items";
-import {
-  buyItem,
-  checkDark,
-  checkInn,
-  checkMercy,
-  checkShop,
-  checkTemple,
-  darkService,
-  grantMercy,
-  identifyAtShop,
-  stayInn,
-  templeService,
-} from "./rules/town";
+import { checkShop, doShop } from "./rules/shop";
+import { checkDark, checkInn, checkMercy, checkTemple, darkService, grantMercy, stayInn, templeService } from "./rules/town";
 import type { TempleService } from "./rules/town";
 import { checkLookAround, lookAround } from "./rules/tavern";
 import { wipeIfNoneCanAct } from "./rules/wipe";
@@ -258,9 +247,7 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       if (r !== null) return reject(state, "town.shop", r);
       const a = action as ShopAction;
       const ctx = makeContext(cloneState(state), data);
-      if (a.kind === "identify") identifyAtShop(ctx, a.memberId, a.instanceId);
-      else if (a.kind === "buy") buyItem(ctx, a.memberId, a.itemId);
-      else throw new Error(`town.shop: unhandled kind ${a.kind}`);
+      doShop(ctx, a);
       return finish(ctx);
     }
     case "dungeon.cast": {

@@ -1,11 +1,11 @@
 [
-  { "id": "herb", "name": "薬草", "type": "consumable", "price": 10, "stock": 0, "infinite": true,
+  { "id": "herb", "name": "薬草", "type": "consumable", "price": 10, "infinite": true,
     "usableIn": "both", "effect": { "type": "heal", "dice": "1d8", "target": "ally" } },
-  { "id": "antidote_herb", "name": "解毒草", "type": "consumable", "price": 15, "stock": 0, "infinite": true,
+  { "id": "antidote_herb", "name": "解毒草", "type": "consumable", "price": 15, "infinite": true,
     "usableIn": "both", "effect": { "type": "cureStatus", "status": "poison", "target": "ally" } },
-  { "id": "return_thread", "name": "帰還の糸", "type": "consumable", "price": 50, "stock": 0, "infinite": true,
+  { "id": "return_thread", "name": "帰還の糸", "type": "consumable", "price": 50, "infinite": true,
     "usableIn": "field", "effect": { "type": "return" } },
 
-  { "id": "tome_lightning", "name": "雷光の魔法書", "type": "book", "price": 1500, "stock": 0, "infinite": false,
+  { "id": "tome_lightning", "name": "雷光の魔法書", "type": "book", "price": 1500, "infinite": false,
     "usableIn": "field", "effect": { "type": "learn", "spell": "lightning_tome" } }
 ]

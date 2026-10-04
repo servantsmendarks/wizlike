@@ -326,7 +326,6 @@ type ItemBase = {
   id: string;
   name: string;
   price: number;
-  stock: number;
   infinite: boolean;
   unidentifiedName?: string;
   description?: string;
@@ -534,7 +533,7 @@ export type DungeonDef = {
   trapsPerFloor: [number, number];
   teleporterFloors: number[];
   /** shopLevel: IT-62 の流通レベル（初回クリアで progress.shopLevel をこれ以上にする。M7。v3 → v4 の移行でも使う）【仮】 */
-  onClear: { unlockDungeon: string | null; shopStock: string[]; shopLevel: number };
+  onClear: { unlockDungeon: string | null; shopLevel: number };
   description: string;
 };
 

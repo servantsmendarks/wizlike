@@ -367,12 +367,13 @@ export type CustomPartySetup = { kind: "custom"; members: CustomMember[] };
 export type PartySetup = QuickPartySetup | CustomPartySetup;
 
 /**
- * TW-05。プロトタイプで実装するのは buy（itemId は items.json の id。売り物は consumable かつ infinite の品）だけ。
- * sell / identify は形だけで、rejected "not implemented"
+ * TW-05（M7 で在庫制を置き換えた。IT-60〜65）。buy の itemId は items.json の消耗品（infinite）か、流通レベルの汎用ベースの id（IT-62）。
+ * sell / buyback / identify の instanceId は ItemInstance.id（sell / identify は本人の inventory、buyback は GameState.buyback のもの）
  */
 export type ShopAction =
   | { kind: "buy"; memberId: string; itemId: string }
   | { kind: "sell"; memberId: string; instanceId: string }
+  | { kind: "buyback"; memberId: string; instanceId: string }
   | { kind: "identify"; memberId: string; instanceId: string };
 
 export type Command =
@@ -518,7 +519,15 @@ export type PenaltyResult = {
 export type TownMenuInnRank = { rank: number; id: string; name: string; cost: number; affordable: boolean; morale: boolean };
 export type TownMenuTempleRow = { memberId: string; name: string; cost: number; affordable: boolean };
 export type TownMenuShopItem = { itemId: string; name: string; price: number; affordable: boolean };
+/** IT-62: 流通レベルの汎用装備の売り物。name は表示名（「長剣 +2」）、level は progress.shopLevel、price は IT-60 の買値 */
+export type TownMenuShopEquipment = { itemId: string; name: string; level: number; price: number; affordable: boolean };
 export type TownMenuShopMember = { memberId: string; name: string; slotsFree: number };
+/** IT-61: 売れる品 1 個（本人の inventory の鑑定済みの品）。price は売値 */
+export type TownMenuShopSellRow = { instanceId: string; name: string; price: number };
+/** IT-63: 買い戻しのストックの品 1 個。price は uniques[].price、affordable = gold >= price */
+export type TownMenuShopBuybackRow = { instanceId: string; name: string; price: number; affordable: boolean };
+/** IT-65: 店で鑑定できる品 1 個（本人の inventory の未鑑定の品）。name は未鑑定の表示名 */
+export type TownMenuShopIdentifyRow = { memberId: string; memberName: string; instanceId: string; name: string };
 /** rules/town.ts townMenu。screen === "town" のときだけ非 null */
 export type TownMenu = {
   gold: number;
@@ -535,12 +544,20 @@ export type TownMenu = {
   };
   /** TW-08 闇魔術: life ash の者（並び順）。cost = level × darkCostPerLevel、affordable = gold >= cost */
   dark: TownMenuTempleRow[];
-  /** TW-05 店（消耗品の購入だけ） */
+  /** TW-05 店（rules/shop.ts shopMenu。M7 で売却・買い戻し・鑑定・流通レベルの装備を足した） */
   shop: {
-    /** 売り物（items.json の順で consumable かつ infinite の品）。affordable = gold >= price */
+    /** 売り物の消耗品（items.json の順で consumable かつ infinite の品）。affordable = gold >= price */
     items: TownMenuShopItem[];
-    /** 持たせる候補 = life alive の者（並び順）。slotsFree = slotsPerCharacter − 装備数 − inventory（CH-71。0 なら inventory full） */
+    /** IT-62: 流通レベルの汎用装備（equipment-bases.json の順で shopMinLevel ≤ shopLevel のベース） */
+    equipment: TownMenuShopEquipment[];
+    /** 持たせる候補（buy / buyback）= life alive の者（並び順）。slotsFree = slotsPerCharacter − 装備数 − inventory（CH-71。0 なら inventory full） */
     members: TownMenuShopMember[];
+    /** IT-61: 全員（並び順。life を問わない）の、inventory の鑑定済みの品（inventory の順） */
+    sellable: { memberId: string; name: string; items: TownMenuShopSellRow[] }[];
+    /** IT-63: 買い戻しのストック（売った順） */
+    buyback: TownMenuShopBuybackRow[];
+    /** IT-65: 鑑定料（identifyFee）、affordable = gold >= fee、全員（並び順。life を問わない）の inventory の未鑑定の品 */
+    identify: { fee: number; affordable: boolean; items: TownMenuShopIdentifyRow[] };
   };
   /** TW-31: townVisit.mercyOffered なら dead / ash の全員（並び順）。申し出が無ければ null */
   mercy: { memberId: string; name: string; life: "dead" | "ash" }[] | null;

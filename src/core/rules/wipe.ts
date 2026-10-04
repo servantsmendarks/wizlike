@@ -7,12 +7,13 @@
 import type { GameData } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
 import { randInt, rollDice } from "../rng";
-import { destroyItemInstance, findBase, itemDisplayName, itemOf } from "../state";
+import { destroyItemInstance, itemDisplayName } from "../state";
 import type { Character, GameState, PenaltyExpLoss, PenaltyLostItem, PenaltyResult, RuleContext, TextRef } from "../types";
 import { canAct } from "./combat-calc";
 import { clampToMax, hpMaxOf } from "./equip-stats";
 import { levelDownWhileBelow } from "./growth";
 import { ceilRatio, floorRatio } from "./ratio";
+import { sellPrice } from "./shop";
 import { arriveTown } from "./town";
 
 /** TW-22: 出目 total が入る帯の添字。どの帯にも入らなければ Error（penalty-table.json は起動時に隙間なしを検証済み） */
@@ -40,18 +41,13 @@ export function penaltyTableView(data: GameData): { title: TextRef; rows: TextRe
   };
 }
 
-/** TW-05 / TW-27 の売値 = floor(price × sellRatio)。price は装備ならベースの price（M7 の B2。IT-61 の売値は B7 で置き換える） */
-export function itemSaleValue(data: GameData, itemId: string): number {
-  const price = findBase(data, itemId)?.price ?? itemOf(data, itemId).price;
-  return floorRatio(price, data.config.economy.sellRatio);
-}
-
 /**
- * TW-27 の総資産 = 所持金 + 銀行 + 全アイテム実体の売値 + 全員の EXP（素の値）。テスト用（表示層は使わない）。
+ * TW-27 の総資産 = 所持金 + 銀行 + 全アイテム実体の売値（IT-61 の sellPrice。倉庫・買い戻しのストックの品も含む）+ 全員の EXP（素の値）。
+ * テスト用（表示層は使わない）。
  */
 export function assetValue(state: GameState, data: GameData): number {
   let v = state.gold + state.bank;
-  for (const inst of Object.values(state.items)) v += itemSaleValue(data, inst.itemId);
+  for (const inst of Object.values(state.items)) v += sellPrice(inst, data);
   for (const ch of state.party) v += ch.exp;
   return v;
 }

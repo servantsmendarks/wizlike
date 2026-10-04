@@ -7,10 +7,11 @@ import { describe, expect, test } from "vitest";
 import { createInitialState, execute } from "../src/core/engine";
 import { createRng, randInt, type RngState } from "../src/core/rng";
 import { checkEnter } from "../src/core/rules/dungeon";
+import { sellPrice, shopPrice } from "../src/core/rules/shop";
 import { arriveTown, mercyEligible, resurrectCostOf, returnToTown, townMenu } from "../src/core/rules/town";
 import { cloneState, createItemInstance, makeContext } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState } from "../src/core/types";
-import { ctxFor, data, expectKnownStringKeys, loadFreshData, loadRuleData, newGame, seedWithFirstD100 } from "./helpers/core";
+import { ctxFor, data, expectKnownStringKeys, expectStateInvariants, loadFreshData, loadRuleData, newGame, seedWithFirstD100 } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
 
 /** newGame(1) の複製に、id → patch を浅くマージしたもの */
@@ -720,7 +721,7 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
     expectRejected(poor, buy("c2", "herb"), "inventory full");
   });
 
-  test("TW-05 rejected の理由と順: wrong screen → bad action → not implemented → not for sale → no such member → not alive → inventory full → not enough gold（同じ参照・乱数不変）", () => {
+  test("TW-05 rejected の理由と順（M7 の順）: wrong screen → bad action → no such member → not alive → not for sale → inventory full → not enough gold（同じ参照・乱数不変）", () => {
     const s = town({ c2: DEAD, c3: ASH }, 5);
     expectRejected(diving(), buy("c1", "herb"), "wrong screen");
     expectRejected(createInitialState(1, data), buy("c1", "herb"), "wrong screen");
@@ -729,16 +730,19 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
     expectRejected(s, { type: "town.shop", action: { kind: "steal", memberId: "c1", itemId: "herb" } } as unknown as Command, "bad action");
     expectRejected(s, buy(1, "herb"), "bad action");
     expectRejected(s, buy("c1", null), "bad action");
-    expectRejected(s, { type: "town.shop", action: { kind: "sell", memberId: "c1", instanceId: "i4" } }, "not implemented");
-    // 売り物は consumable かつ infinite の品だけ（装備・魔法書・未知の id は売らない）。メンバーより先に判定
-    for (const itemId of ["long_sword", "tome_lightning", "dagger", "nope"]) {
+    expectRejected(s, { type: "town.shop", action: { kind: "sell", memberId: "c1", instanceId: 4 } } as unknown as Command, "bad action");
+    expectRejected(s, { type: "town.shop", action: { kind: "buyback", memberId: "c1", itemId: "i4" } } as unknown as Command, "bad action");
+    // TW-05 の M7 の順: メンバーと生死を売り物より先に見る（M6 までは not for sale が先だった）
+    expectRejected(s, buy("c9", "nope"), "no such member");
+    expectRejected(s, buy("c2", "nope"), "not alive");
+    expectRejected(s, buy("c3", "herb"), "not alive");
+    // 売り物は consumable かつ infinite の品と、shopMinLevel ≤ shopLevel（0）の汎用ベース（IT-62）だけ。
+    // 魔法書（infinite でない）・shopMinLevel 2 の鎚矛・ユニークの id・未知の id は売らない
+    for (const itemId of ["tome_lightning", "mace", "shadowfolk_sword", "nope"]) {
       expectRejected(s, buy("c1", itemId), "not for sale");
     }
-    expectRejected(s, buy("c9", "long_sword"), "not for sale");
-    expectRejected(s, buy("c9", "herb"), "no such member");
-    expectRejected(s, buy("c2", "herb"), "not alive");
-    expectRejected(s, buy("c3", "herb"), "not alive");
     expectRejected(s, buy("c1", "herb"), "not enough gold");
+    expectRejected(s, buy("c1", "dagger"), "not enough gold"); // 短剣 Lv0 は 15G（IT-60）
   });
 
   test("TW-05/TW-32 救済の申し出の間も店は使え、申し出は下りない", () => {
@@ -750,12 +754,25 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
     expect(r.state.townVisit).toEqual({ mercyOffered: true });
   });
 
-  test("UI-52/TW-05 townMenu.shop: 売り物（items.json の順、affordable = 所持金 ≥ price）と、持たせる候補（alive の者、slotsFree）", () => {
+  test("UI-52/TW-05/IT-60〜65 townMenu.shop: 消耗品（items.json の順）・流通レベルの装備・持たせる候補（alive の者、slotsFree）・売れる品・買い戻し・鑑定", () => {
+    // 初期の実体: c1 i1〜i3 装備・i4 薬草、c2 i5 / i6 装備、c3 i7〜i9 装備・i10 薬草、c4 i11 / i12 装備・i13 解毒草、c5 i14 装備・i15 帰還の糸、c6 i16 / i17 装備・i18 薬草
     expect(townMenu(town(), data)!.shop).toEqual({
       items: [
         { itemId: "herb", name: "薬草", price: 10, affordable: true },
         { itemId: "antidote_herb", name: "解毒草", price: 15, affordable: true },
         { itemId: "return_thread", name: "帰還の糸", price: 50, affordable: true },
+      ],
+      // shopLevel 0: shopMinLevel 0 のベース（equipment-bases.json の順）を Lv0 の基本額で
+      equipment: [
+        { itemId: "dagger", name: "短剣", level: 0, price: 15, affordable: true },
+        { itemId: "long_sword", name: "長剣", level: 0, price: 100, affordable: true },
+        { itemId: "short_bow", name: "短弓", level: 0, price: 80, affordable: true },
+        { itemId: "sling", name: "投石紐", level: 0, price: 20, affordable: true },
+        { itemId: "staff", name: "杖", level: 0, price: 10, affordable: true },
+        { itemId: "leather_armor", name: "革鎧", level: 0, price: 50, affordable: true },
+        { itemId: "wooden_shield", name: "木の盾", level: 0, price: 40, affordable: true },
+        { itemId: "leather_cap", name: "革兜", level: 0, price: 30, affordable: true },
+        { itemId: "leather_gloves", name: "革小手", level: 0, price: 30, affordable: true },
       ],
       members: [
         { memberId: "c1", name: "アルド", slotsFree: 4 },
@@ -765,10 +782,215 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
         { memberId: "c5", name: "エル", slotsFree: 6 },
         { memberId: "c6", name: "フィン", slotsFree: 5 },
       ],
+      // IT-61: 消耗品は floor(price × 0.5)（薬草 5・解毒草 7・帰還の糸 25）。装備中の品は inventory に無いので出ない
+      sellable: [
+        { memberId: "c1", name: "アルド", items: [{ instanceId: "i4", name: "薬草", price: 5 }] },
+        { memberId: "c2", name: "ベルク", items: [] },
+        { memberId: "c3", name: "キリ", items: [{ instanceId: "i10", name: "薬草", price: 5 }] },
+        { memberId: "c4", name: "ドナ", items: [{ instanceId: "i13", name: "解毒草", price: 7 }] },
+        { memberId: "c5", name: "エル", items: [{ instanceId: "i15", name: "帰還の糸", price: 25 }] },
+        { memberId: "c6", name: "フィン", items: [{ instanceId: "i18", name: "薬草", price: 5 }] },
+      ],
+      buyback: [],
+      identify: { fee: 100, affordable: true, items: [] },
     });
     const m = townMenu(town({ c2: DEAD, c5: ASH }, 15), data)!.shop;
     expect(m.items.map((i) => i.affordable)).toEqual([true, true, false]);
     expect(m.members.map((x) => x.memberId)).toEqual(["c1", "c3", "c4", "c6"]);
+    expect(m.sellable.map((x) => x.memberId)).toEqual(["c1", "c2", "c3", "c4", "c5", "c6"]); // 売るのは life を問わない
+    expect(m.identify.affordable).toBe(false);
+  });
+
+  test("IT-62/IT-63/IT-65 townMenu.shop: shopLevel 2 の売り物（Lv2・買値 ×2・表示名 +2）、未鑑定の品は鑑定の一覧にだけ、ユニークの買い戻しの行", () => {
+    const s = town({}, 150);
+    s.progress.shopLevel = 2;
+    const unid = createItemInstance(s, { itemId: "long_sword", identified: false, level: 3 });
+    member(s, "c2").inventory.push(unid);
+    const u = createItemInstance(s, { itemId: "long_sword", uniqueId: "shadowfolk_sword", rarity: "fine", identified: true });
+    s.buyback.push(u);
+    const m = townMenu(s, data)!.shop;
+    // shopMinLevel ≤ 2 で鉄の小手（4）だけ並ばない。買値 = floor(price × (1 + 0.5 × 2)) = price × 2
+    expect(m.equipment.map((e) => [e.itemId, e.name, e.level, e.price, e.affordable])).toEqual([
+      ["dagger", "短剣 +2", 2, 30, true],
+      ["long_sword", "長剣 +2", 2, 200, false],
+      ["mace", "鎚矛 +2", 2, 120, true],
+      ["short_bow", "短弓 +2", 2, 160, false],
+      ["sling", "投石紐 +2", 2, 40, true],
+      ["staff", "杖 +2", 2, 20, true],
+      ["leather_armor", "革鎧 +2", 2, 100, true],
+      ["chain_mail", "鎖帷子 +2", 2, 600, false],
+      ["wooden_shield", "木の盾 +2", 2, 80, true],
+      ["leather_cap", "革兜 +2", 2, 60, true],
+      ["iron_helm", "鉄兜 +2", 2, 240, false],
+      ["leather_gloves", "革小手 +2", 2, 60, true],
+      ["charm", "護符 +2", 2, 400, false],
+    ]);
+    expect(m.sellable.find((x) => x.memberId === "c2")!.items).toEqual([]); // 未鑑定は売れない
+    expect(m.identify).toEqual({ fee: 100, affordable: true, items: [{ memberId: "c2", memberName: "ベルク", instanceId: unid, name: "剣？" }] });
+    expect(m.buyback).toEqual([{ instanceId: u, name: "上質な影法師の剣", price: 1200, affordable: false }]);
+  });
+});
+
+describe("IT-60〜63 店の装備の購入・売却・買い戻し（town.shop。M7）", () => {
+  const buy = (memberId: unknown, itemId: unknown): Command =>
+    ({ type: "town.shop", action: { kind: "buy", memberId, itemId } }) as unknown as Command;
+  const sell = (memberId: unknown, instanceId: unknown): Command =>
+    ({ type: "town.shop", action: { kind: "sell", memberId, instanceId } }) as unknown as Command;
+  const buyback = (memberId: unknown, instanceId: unknown): Command =>
+    ({ type: "town.shop", action: { kind: "buyback", memberId, instanceId } }) as unknown as Command;
+  /** memberId の inventory の末尾に実体を足して id を返す（s を書き換える） */
+  function give(s: GameState, memberId: string, spec: Parameters<typeof createItemInstance>[1]): string {
+    const id = createItemInstance(s, spec);
+    member(s, memberId).inventory.push(id);
+    return id;
+  }
+
+  test("IT-60 汎用装備の買値 = floor(price × (1 + 0.5 × Lv)): 長剣 Lv0 100・Lv1 150・Lv2 200・Lv5 350、短剣 Lv1 floor(22.5) = 22", () => {
+    const sword = data.equipmentBases.find((b) => b.id === "long_sword")!;
+    const dagger = data.equipmentBases.find((b) => b.id === "dagger")!;
+    expect([0, 1, 2, 5].map((lv) => shopPrice(sword, lv, data))).toEqual([100, 150, 200, 350]);
+    expect(shopPrice(dagger, 1, data)).toBe(22);
+  });
+
+  test("IT-61 売値: 汎用 floor(price × 0.5 × (1 + 0.5 × Lv)) + 正のオプションの段階ごと 20 / 40 / 80（負は 0）、ユニークは floor(price × 0.5) 固定、消耗品・魔法書は floor(price × 0.5)", () => {
+    const s = town();
+    const v = (spec: Parameters<typeof createItemInstance>[1]) => sellPrice(s.items[createItemInstance(s, spec)]!, data);
+    // 長剣 100: Lv0 50、Lv1 75、Lv5 175。短剣 15 の Lv1 は floor(11.25) = 11
+    expect([0, 1, 5].map((level) => v({ itemId: "long_sword", identified: true, level }))).toEqual([50, 75, 175]);
+    expect(v({ itemId: "dagger", identified: true, level: 1 })).toBe(11);
+    // オプション: 上質（段階 1 の +1）50 + 20、希少（段階 2 と 3）50 + 40 + 80、呪いの負は 0（通常の呪い 50、上質の呪い 50 + 20）
+    expect(v({ itemId: "long_sword", identified: true, rarity: "fine", options: [{ optionId: "str", tier: 1, value: 1 }] })).toBe(70);
+    expect(
+      v({ itemId: "long_sword", identified: true, rarity: "rare", options: [{ optionId: "str", tier: 2, value: 2 }, { optionId: "hit", tier: 3, value: 15 }] }),
+    ).toBe(170);
+    expect(v({ itemId: "long_sword", identified: true, cursed: true, options: [{ optionId: "str", tier: 1, value: -1 }] })).toBe(50);
+    expect(
+      v({
+        itemId: "long_sword",
+        identified: true,
+        rarity: "fine",
+        cursed: true,
+        options: [{ optionId: "str", tier: 1, value: 1 }, { optionId: "iq", tier: 1, value: -1 }],
+      }),
+    ).toBe(70);
+    // ユニーク: 影法師の剣 1200 → 600。希少度・オプションに関わらない
+    const opts = [{ optionId: "str", tier: 2 as const, value: 2 }, { optionId: "hit", tier: 2 as const, value: 10 }, { optionId: "agi", tier: 2 as const, value: 2 }];
+    expect(v({ itemId: "long_sword", uniqueId: "shadowfolk_sword", identified: true, rarity: "legendary", options: opts })).toBe(600);
+    // 消耗品・魔法書: 薬草 10 → 5、帰還の糸 50 → 25、雷光の魔法書 1500 → 750
+    expect(["herb", "return_thread", "tome_lightning"].map((itemId) => v({ itemId, identified: true }))).toEqual([5, 25, 750]);
+  });
+
+  test("IT-62 shopLevel 2 で長剣を買うと Lv2・通常・鑑定済み・オプションなし・foundIn null の実体が本人の inventory の末尾に入り、200G を払う。語りの item は表示名「長剣 +2」", () => {
+    const s = town({}, 1000);
+    s.progress.shopLevel = 2;
+    const r = ok(s, buy("c2", "long_sword"));
+    expect(r.events).toEqual([{ kind: "message", key: "town.shop.bought", params: { name: "ベルク", item: "長剣 +2", cost: 200 } }]);
+    expect(r.state.gold).toBe(800);
+    expect(member(r.state, "c2").inventory).toEqual(["i19"]);
+    expect(r.state.items["i19"]).toEqual({
+      id: "i19",
+      itemId: "long_sword",
+      level: 2,
+      rarity: "normal",
+      options: [],
+      uniqueId: null,
+      identified: true,
+      cursed: false,
+      foundIn: null,
+    });
+    expect(r.state.rng).toEqual(s.rng);
+    expectStateInvariants(r.state);
+    // shopMinLevel 2 の鎚矛は買え、4 の鉄の小手は not for sale。所持金ちょうど（鎚矛 Lv2 は 120G）なら 0 になる
+    const exact = cloneState(s);
+    exact.gold = 120;
+    expect(ok(exact, buy("c1", "mace")).state.gold).toBe(0);
+    expectRejected(s, buy("c1", "iron_gloves"), "not for sale");
+    // shopLevel 0 では Lv0 で基本額
+    const r0 = ok(town({}, 300), buy("c2", "long_sword"));
+    expect(r0.state.items["i19"]!.level).toBe(0);
+    expect(r0.events).toEqual([{ kind: "message", key: "town.shop.bought", params: { name: "ベルク", item: "長剣", cost: 100 } }]);
+  });
+
+  test("IT-61 sell: 本人の inventory の鑑定済みの汎用品を売ると実体が消え、売値を受け取って town.shop.sold{name, item, gold}。乱数なし・実体の番号は進まない。死んでいる者の品も売れる", () => {
+    const s = town({ c2: DEAD }, 300);
+    const id = give(s, "c2", { itemId: "long_sword", identified: true, level: 2 }); // i19。売値 floor(100 × 0.5 × 2) = 100
+    const r = ok(s, sell("c2", id));
+    expect(r.events).toEqual([{ kind: "message", key: "town.shop.sold", params: { name: "ベルク", item: "長剣 +2", gold: 100 } }]);
+    expect(r.state.gold).toBe(400);
+    expect(r.state.items[id]).toBeUndefined();
+    expect(member(r.state, "c2").inventory).toEqual([]);
+    expect(r.state.buyback).toEqual([]); // 汎用は買い戻しのストックに入らない（IT-63）
+    expect(r.state.nextItemSeq).toBe(s.nextItemSeq);
+    expect(r.state.rng).toEqual(s.rng);
+    expectStateInvariants(r.state);
+    // 消耗品（c1 の i4 薬草）は 5G。所持金 0 でも売れる
+    const poor = cloneState(s);
+    poor.gold = 0;
+    const h = ok(poor, sell("c1", "i4"));
+    expect(h.state.gold).toBe(5);
+    expect(h.events).toEqual([{ kind: "message", key: "town.shop.sold", params: { name: "アルド", item: "薬草", gold: 5 } }]);
+    // 鑑定済みの呪われた品（inventory にあれば）も売れる（負のオプションは 0 なので短剣 15 → 7）
+    const c = cloneState(s);
+    const cd = cursedDagger(c, true);
+    member(c, "c1").inventory.push(cd);
+    expect(ok(c, sell("c1", cd)).state.gold).toBe(307);
+  });
+
+  test("IT-63 ユニークを売ると同じ実体が buyback の末尾へ（売った順）。uniques[].price で買い戻すと同じ実体（希少度・オプション・foundIn もそのまま）が本人の inventory の末尾へ戻り、ストックから外れる", () => {
+    const s = town({}, 300);
+    const sword = give(s, "c2", {
+      itemId: "long_sword",
+      uniqueId: "shadowfolk_sword",
+      identified: true,
+      rarity: "rare",
+      options: [{ optionId: "str", tier: 2, value: 2 }, { optionId: "hit", tier: 2, value: 10 }],
+      foundIn: "d01",
+    });
+    const helm = give(s, "c3", { itemId: "leather_cap", uniqueId: "alarm_bell_helm", identified: true });
+    const original = structuredClone(s.items[sword]!);
+    const r1 = ok(s, sell("c2", sword)); // 1200 × 0.5 = 600
+    expect(r1.events).toEqual([{ kind: "message", key: "town.shop.sold", params: { name: "ベルク", item: "希少な影法師の剣", gold: 600 } }]);
+    expect(r1.state.gold).toBe(900);
+    expect(r1.state.items[sword]).toEqual(original);
+    expect(member(r1.state, "c2").inventory).toEqual([]);
+    const r2 = ok(r1.state, sell("c3", helm)); // 600 × 0.5 = 300
+    expect(r2.state.gold).toBe(1200);
+    expect(r2.state.buyback).toEqual([sword, helm]);
+    expectStateInvariants(r2.state);
+    // 買い戻し: 影法師の剣は 1200G。所持金ちょうどで 0 になる
+    const r3 = ok(r2.state, buyback("c1", sword));
+    expect(r3.events).toEqual([{ kind: "message", key: "town.shop.boughtBack", params: { name: "アルド", item: "希少な影法師の剣", cost: 1200 } }]);
+    expect(r3.state.gold).toBe(0);
+    expect(member(r3.state, "c1").inventory).toEqual([...member(r2.state, "c1").inventory, sword]);
+    expect(r3.state.items[sword]).toEqual(original);
+    expect(r3.state.buyback).toEqual([helm]);
+    expect(r3.state.nextItemSeq).toBe(s.nextItemSeq);
+    expect(r3.state.rng).toEqual(s.rng);
+    expectStateInvariants(r3.state);
+  });
+
+  test("IT-61/IT-63/TW-05 sell と buyback の理由と順: no such member → not alive（buyback だけ）→ item not in inventory / not in stock → not identified（sell）→ inventory full → not enough gold（buyback）", () => {
+    const s = town({ c3: DEAD }, 599);
+    const unid = give(s, "c1", { itemId: "long_sword", identified: false });
+    const u = createItemInstance(s, { itemId: "leather_cap", uniqueId: "alarm_bell_helm", identified: true }); // 買い戻し 600G
+    s.buyback.push(u);
+    // sell
+    expectRejected(s, sell("c9", "i4"), "no such member");
+    expectRejected(s, sell("c2", "i4"), "item not in inventory"); // 他人の品
+    expectRejected(s, sell("c1", "i1"), "item not in inventory"); // 装備中
+    expectRejected(s, sell("c1", u), "item not in inventory"); // ストックの品
+    expectRejected(s, sell("c1", "i999"), "item not in inventory");
+    expectRejected(s, sell("c1", unid), "not identified");
+    // buyback
+    expectRejected(s, buyback("c9", u), "no such member");
+    expectRejected(s, buyback("c3", u), "not alive");
+    expectRejected(s, buyback("c1", "i4"), "not in stock");
+    expectRejected(s, buyback("c1", "i999"), "not in stock");
+    const full = cloneState(s);
+    for (let i = 0; i < 3; i++) member(full, "c1").inventory.push(createItemInstance(full, { itemId: "herb", identified: true })); // 装備 3 + 5 = 8
+    full.gold = 0;
+    expectRejected(full, buyback("c1", u), "inventory full");
+    expectRejected(s, buyback("c1", u), "not enough gold");
   });
 });
 

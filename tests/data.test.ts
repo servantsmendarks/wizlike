@@ -551,6 +551,10 @@ describe("data: items.json", () => {
     expectIssue((r) => (r.items[0].slot = "weapon"), "items.json", "[0].slot: unknown field");
     expectIssue((r) => delete r.items[0].effect, "items.json", "[0].effect: missing required field");
   });
+  test("data: IT-62/TW-05（M7 の B7）在庫制の items[].stock は廃止したので未知の欄として止める", () => {
+    expect(loadGameData(rawData()).items.some((i) => "stock" in i)).toBe(false);
+    expectIssue((r) => (r.items[0].stock = 0), "items.json", "[0].stock: unknown field");
+  });
 });
 
 describe("data: equipment-bases.json（IT-02。M7）", () => {
@@ -728,24 +732,23 @@ describe("data: dungeons.json", () => {
   test("data: ぶら下がり参照（敵・アイテム・イベント）", () => {
     const issues = issuesOf((r) => {
       r.dungeons[0].encounterTable["1"][0].monster = "dragon";
-      r.dungeons[0].onClear.shopStock.push("excalibur");
       r.dungeons[1].events.push("no_such_event");
       r.dungeons[0].boss.monster = "boss_x";
     });
     expect(issues).toEqual(
       expect.arrayContaining([
         'dungeons.json: [0].encounterTable.1[0].monster: unknown monster id "dragon"',
-        'dungeons.json: [0].onClear.shopStock[2]: unknown item id "excalibur"',
         'dungeons.json: [1].events[3]: unknown event id "no_such_event"',
         'dungeons.json: [0].boss.monster: unknown monster id "boss_x"',
       ]),
     );
   });
-  test("data: IT-62 onClear.shopLevel は 0 以上の整数（d01 2 / d02 4【仮】）。TW-06 shopStock は消耗品・魔法書か汎用ベースの id（M7 の B2）", () => {
+  test("data: IT-62 onClear.shopLevel は 0 以上の整数（d01 2 / d02 4【仮】）。TW-06 の onClear.shopStock は廃止したので未知の欄として止める（M7 の B7）", () => {
     expect(loadGameData(rawData()).dungeons.map((d) => d.onClear.shopLevel)).toEqual([2, 4]);
     expectIssue((r) => delete r.dungeons[0].onClear.shopLevel, "dungeons.json", "[0].onClear.shopLevel: missing required field");
     expectIssue((r) => (r.dungeons[0].onClear.shopLevel = -1), "dungeons.json", "[0].onClear.shopLevel: expected integer >= 0");
-    expect(issuesOf((r) => (r.dungeons[1].onClear.shopStock = ["mace", "herb"]))).toEqual([]);
+    expect(loadGameData(rawData()).dungeons.some((d) => "shopStock" in d.onClear)).toBe(false);
+    expectIssue((r) => (r.dungeons[1].onClear.shopStock = ["mace"]), "dungeons.json", "[1].onClear.shopStock: unknown field");
   });
   test("data: DG-02 階ごとの表のキーは 1..floors", () => {
     expectIssue((r) => (r.dungeons[0].encounterTable["3"] = [{ monster: "kobold", weight: 1 }]), "dungeons.json", "[0].encounterTable.3: DG-02");

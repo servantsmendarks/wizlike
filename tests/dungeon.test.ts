@@ -1512,6 +1512,35 @@ describe("ボス（DG-31〜33, DG-01）", () => {
     }
     expectStateInvariants(r.state);
   });
+
+  test("IT-62/DG-32 初回クリアで progress.shopLevel を max(今の値, onClear.shopLevel（d01 は 2）) にし、上がったら dungeon.shopLevel を品の語り（item.found）の後・screen dungeon の前に語る。再撃破・すでに高いときは変えず語らない。乱数は使わない", () => {
+    const fought = run(atBoss().state, MOVE, D0).state;
+    expect(fought.progress.shopLevel).toBe(0);
+    const r = defeatBoss(fought);
+    expect(r.state.progress.shopLevel).toBe(2);
+    const ks = kinds(r.events);
+    expect(ks.filter((k) => k === "message:dungeon.shopLevel")).toHaveLength(1);
+    expect(r.events).toContainEqual({ kind: "message", key: "dungeon.shopLevel" });
+    expect(ks.indexOf("message:dungeon.shopLevel")).toBeGreaterThan(ks.lastIndexOf("message:item.found"));
+    expect(ks.indexOf("message:dungeon.shopLevel")).toBeLessThan(ks.lastIndexOf("screen"));
+    // 鏡: shopLevel を最初から 2 にした同じ戦闘と rng が一致する（流通レベルの更新は乱数を引かない）。語りは出ない
+    const pre = cloneState(fought);
+    pre.progress.shopLevel = 2;
+    const r2 = defeatBoss(pre);
+    expect(r2.state.rng).toEqual(r.state.rng);
+    expect(kinds(r2.events)).not.toContain("message:dungeon.shopLevel");
+    expect(r2.state.progress.shopLevel).toBe(2);
+    // すでに高い（5）なら下げない
+    const high = cloneState(fought);
+    high.progress.shopLevel = 5;
+    expect(defeatBoss(high).state.progress.shopLevel).toBe(5);
+    // 再撃破（クリア済み）では、shopLevel が低くても上げない（初回だけ）
+    const again = cloneState(fought);
+    again.progress.clearedDungeons = ["d01"];
+    const r3 = defeatBoss(again);
+    expect(r3.state.progress.shopLevel).toBe(0);
+    expect(kinds(r3.events)).not.toContain("message:dungeon.shopLevel");
+  });
 });
 
 describe("決定性と網羅", () => {

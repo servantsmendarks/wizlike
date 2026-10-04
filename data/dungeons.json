@@ -24,7 +24,7 @@
     "traps": ["pit", "spinner"],
     "trapsPerFloor": [1, 3],
     "teleporterFloors": [],
-    "onClear": { "unlockDungeon": "d02", "shopStock": ["chain_mail", "charm"], "shopLevel": 2 },
+    "onClear": { "unlockDungeon": "d02", "shopLevel": 2 },
     "description": "冒険者の腕試しに使われる浅い坑道。最下層に門番がいる。"
   },
   {
@@ -43,7 +43,7 @@
     "traps": ["pit", "spinner", "teleport"],
     "trapsPerFloor": [2, 4],
     "teleporterFloors": [],
-    "onClear": { "unlockDungeon": null, "shopStock": [], "shopLevel": 4 },
+    "onClear": { "unlockDungeon": null, "shopLevel": 4 },
     "description": "雛形。プロトタイプでは入場できるが内容は d01 の使い回し。敵とボスは後で差し替える。"
   }
 ]

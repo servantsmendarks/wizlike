@@ -646,7 +646,6 @@ function validateItems(ctx: Ctx, v: unknown, ix: Index): void {
     id: S,
     name: S,
     price: I(NON_NEG), // TW-05
-    stock: I(NON_NEG),
     infinite: B,
     unidentifiedName: opt(S),
     description: opt(S),
@@ -974,8 +973,6 @@ function validateDungeons(ctx: Ctx, v: unknown, ix: Index): void {
       teleporterFloors: L(I(POS_INT)),
       onClear: F({
         unlockDungeon: nullable(refField(ix.dungeons, "dungeon")),
-        // TW-06: 消耗品・魔法書か汎用ベース（M7 の B2 で装備の行を equipment-bases.json に移した。在庫制は B7 で流通レベルに置き換える）
-        shopStock: L(refField(new Map([...ix.items, ...ix.bases]), "item")),
         shopLevel: I(NON_NEG), // IT-62【仮】
       }),
       description: S,

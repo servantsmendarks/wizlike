@@ -89,6 +89,8 @@
   "town.temple.uncursed": "{name}の{item}は呪いとともに崩れ落ちた。",
   "town.shop.bought": "{name}は{item}を買った。（{cost}G）",
   "town.shop.identified": "{name}は{old}を鑑定してもらった。{item}だった。（{cost}G）",
+  "town.shop.sold": "{name}は{item}を売った。（{gold}G）",
+  "town.shop.boughtBack": "{name}は{item}を買い戻した。（{cost}G）",
   "town.shop.intro": "棚に薬と道具が並んでいる。何を買う？",
   "town.shop.whom": "誰に持たせる？",
   "town.shop.row": "{name}　{cost}G",
@@ -344,6 +346,7 @@
   "battle.dungeonCleared": "この迷宮を踏破した。",
   "battle.wipe": "一行は全員動けなくなった……。",
   "dungeon.unlocked": "{dungeon}への道が開いた。",
+  "dungeon.shopLevel": "街の店に新しい品が並ぶらしい。",
 
   "battle.cmd.fight": "戦う",
   "battle.cmd.repeat": "前回と同じ",
