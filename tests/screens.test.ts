@@ -334,7 +334,8 @@ describe("入力と Command", () => {
     expect(app).toMatch(/onSanDown: \(\) => guard\(\(\) => debugCommand\(\{ type: "debug\.sanDown" \}\)\)/);
     expect(app).toMatch(/onWarp: \(to\) => guard\(\(\) => debugCommand\(\{ type: "debug\.warp", to \}\)\)/);
     const body = /const debugCommand = \(cmd: Command\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
-    expect(body).toMatch(/if \(route !== "dungeon"\) return;\s*closeDebug\(\);\s*void run\(cmd\);/);
+    // M6: 設定画面の上から開いた debug パネルなら、設定画面も閉じてから送る（closeDebugForCommand。UI-57）
+    expect(body).toMatch(/if \(route !== "dungeon"\) return;\s*closeDebugForCommand\(\);\s*void run\(cmd\);/);
   });
 
   test("UI-57 debug パネルのターン+（M5.5）は、街・迷宮・戦闘のときだけパネルを閉じてから debug.addTurns を送る。ラベルの n は config.town.tavernEventTurns（ソースの検査）", () => {
@@ -342,7 +343,33 @@ describe("入力と Command", () => {
     expect(app).toMatch(/onAddTurns: \(\) => guard\(\(\) => addTurnsFromDebug\(\)\)/);
     expect(app).toContain("addTurns: data.config.town.tavernEventTurns,");
     const body = /const addTurnsFromDebug = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
-    expect(body).toMatch(/if \(route !== "town" && route !== "dungeon" && route !== "battle"\) return;\s*closeDebug\(\);\s*void run\(\{ type: "debug\.addTurns" \}\);/);
+    expect(body).toMatch(/if \(route !== "town" && route !== "dungeon" && route !== "battle"\) return;\s*closeDebugForCommand\(\);\s*void run\(\{ type: "debug\.addTurns" \}\);/);
+  });
+
+  test("UI-57（M6）設定画面の導線: タイトルの「設定」とヘッダーの設定ボタンは openSettings、F2 は debug パネルのトグル、debug パネルは設定画面を下に残し、debug のコマンドは両方を閉じてから送る（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toMatch(/onSettings: \(\) => guard\(\(\) => openSettings\(\)\)/);
+    expect(app).toMatch(/case "settings":\s*openSettings\(\);\s*return;/);
+    expect(app).not.toMatch(/onSettings: \(\) => guard\(\(\) => openDebug\(\)\)/);
+    expect(app).toMatch(/if \(a === "debug"\) \{\s*if \(overlay === "debug"\) closeDebug\(\);\s*else openDebug\(\);/);
+    const openDebug = /const openDebug = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(openDebug).toMatch(/underDebug = overlay === "wipe" \|\| overlay === "settings" \? overlay : null;/);
+    const closeDebug = /const closeDebug = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(closeDebug).toMatch(/overlay = underDebug;/);
+    const forCmd = /const closeDebugForCommand = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(forCmd).toMatch(/closeDebug\(\);\s*closeSettings\(\);/);
+    const hpOne = /const hpOneFromDebug = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(hpOne).toMatch(/closeDebugForCommand\(\);\s*void run\(\{ type: "debug\.hpOne" \}\);/);
+    // 設定画面のキー（UI-33）は debug の判定の後
+    expect(app).toMatch(/if \(overlay === "settings"\) \{\s*const k = settingsKeyIndex\(a, settingsItems\(settingsCtx\(\)\)\);\s*if \(k !== null\) settingsView\.select\(k\);\s*return;/);
+    // 設定画面は debug パネルの下、帯は最前面
+    expect(app).toMatch(/stage\.replaceChildren\(title\.el, creation\.el, custom\.el, play\.el, settingsView\.el, debug\.el, banner\.el\)/);
+    // 遊んでいる途中の書き出しは flush を待ってから
+    const exp = /const exportFromSettings = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(exp).toMatch(/await autosaver\.flush\(state\);\s*ok = await exportGameFile\(cur\.gameId\);/);
+    // 続きから（resume）は設定画面も隠す
+    const resume = /const resume = \(st: GameState\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(resume).toMatch(/settingsView\.el\.style\.display = "none";\s*underSettings = null;/);
   });
 
   test("UI-25 自動歩行の walkStep は beforePlay を run に渡し、finish で endWalk する（止まる手は再生の前に歩行を終える）", () => {

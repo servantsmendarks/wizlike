@@ -394,3 +394,39 @@ export const DEBUG_BUTTONS_M5 = {
 
 /** debug パネルの 2 ページ目（UI-57 のポインタの記録）: 題 y4、行 i は y16+10i（i=0..19、最後の行は y206..215）、x4・幅 232 */
 export const DEBUG_POINTER = { x: 4, w: 232, titleY: 4, rowY: 16, rowH: 10 } as const;
+
+// ---- 設定画面（UI-57。M6）。ステージ全面の画面。数値は【仮】（decisions 2026-10-04 の settingsLayout の行）
+
+/** UI-57: 設定画面の矩形。閉じるだけは UI-11 の固定の位置（操作領域の x178・y54 の 56×40）で、操作領域からの相対で決める */
+export type SettingsLayout = {
+  /** 見出し（押せない） */
+  heading: Rect;
+  /** i=0..3（演出スキップ・文字速度・オートの速さ・入力）。label は押せない、toggle は押せる */
+  rows: readonly { label: Rect; toggle: Rect }[];
+  exportButton: Rect;
+  importButton: Rect;
+  /** 書き出し・読み込みの案内の欄（2 行。押せない） */
+  notice: Rect;
+  /** ホーム画面への追加の案内（SV-40。押せない）。下端は閉じるの 4 上 */
+  install: Rect;
+  /** 開発用（debug パネルを開く） */
+  debug: Rect;
+  /** UI-11 の固定の閉じる */
+  close: Rect;
+};
+
+/** UI-57: 設定画面の配置。既定の regions では 閉じる 178,354（56×40）、開発用 4,354（80×40）、ホーム画面の案内 y218..349 */
+export function settingsLayout(g: Regions): SettingsLayout {
+  const close: Rect = { x: g.controls.x + LIST_BACK_REL.x, y: g.controls.y + LIST_BACK_REL.y, w: LIST_BACK_REL.w, h: LIST_BACK_REL.h };
+  const installY = 218;
+  return {
+    heading: { x: 4, y: 4, w: 232, h: 12 },
+    rows: [0, 1, 2, 3].map((i) => ({ label: { x: 4, y: 20 + 34 * i, w: 128, h: 32 }, toggle: { x: 136, y: 20 + 34 * i, w: 100, h: 32 } })),
+    exportButton: { x: 8, y: 158, w: 108, h: 32 },
+    importButton: { x: 124, y: 158, w: 108, h: 32 },
+    notice: { x: 4, y: 194, w: 232, h: 20 },
+    install: { x: 4, y: installY, w: 232, h: close.y - 4 - installY },
+    debug: { x: 4, y: close.y, w: 80, h: close.h },
+    close,
+  };
+}

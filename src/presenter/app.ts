@@ -54,7 +54,7 @@ import {
 import { attachPointerLog, createPointerLog } from "./input/pointer-log";
 import { attachSaveOnHide } from "./lifecycle";
 import { attachStageInput, onTap } from "./input/tap";
-import { dungeonLayout, layoutWarnings, regions, saveBannerRect } from "./layout";
+import { dungeonLayout, layoutWarnings, regions, saveBannerRect, settingsLayout } from "./layout";
 import { createPlayer } from "./playback";
 import { resumePlan, routeOfScreen } from "./resume";
 import { createRunGate } from "./run-gate";
@@ -72,6 +72,8 @@ import {
   type CustomDraft,
 } from "./views/custom-creation";
 import { createDebugPanel } from "./views/debug-panel";
+import { createSettingsScreen, settingsItems, settingsKeyIndex, type SettingsContext } from "./views/settings";
+import { isStandalone, type StandaloneEnv } from "./pwa-env";
 import {
   campEntries,
   campFirstPage,
@@ -100,7 +102,7 @@ import { formatWipeSummary } from "./views/wipe";
 import { townEntries, townHeader, townPageIntro, townParent, type TownEntry, type TownPage } from "./views/town";
 
 export type Route = "title" | "creation" | "custom" | "town" | "dungeon" | "battle";
-export type Overlay = null | "map" | "debug" | "camp" | "wipe" | "history";
+export type Overlay = null | "map" | "debug" | "camp" | "wipe" | "history" | "settings";
 
 export type App = {
   onLayout(layout: StageLayout, input: StageLayoutInput): void;
@@ -162,8 +164,14 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   let stopRequested = false;
   /** オートの連鎖（runChain）の途中か。段の間（1 フレーム譲る間）は門が空くので別に持つ */
   let chaining = false;
-  /** debug パネルの下に残している overlay（全滅の内訳だけ。閉じたら戻す） */
+  /** debug パネルの下に残している overlay（全滅の内訳か設定画面。閉じたら戻す） */
   let underDebug: Overlay = null;
+  /** UI-57: 設定画面の下に残している overlay（全滅の内訳だけ。閉じたら戻す） */
+  let underSettings: Overlay = null;
+  /** UI-57: 設定画面の案内の欄の上書き（書き出しの結果）。null なら settingsFileHint */
+  let settingsNotice: string | null = null;
+  /** UI-57: 設定画面の書き出しを待っている間（二重押しを捨てる） */
+  let settingsBusy = false;
   /** UI-53 / TW-03: キャンプを開いた場所（迷宮のキャンプか酒場か）と今の段（overlay が camp の間だけ使う） */
   let campHost: CampHost = "camp";
   let campPage: CampPage = { kind: "top" };
@@ -227,7 +235,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     textSpeed: () => store.get().textSpeed,
     historyMax: data.config.ui.messageHistory,
     stageOf: (san, sanMax) => sanStage(san, sanMax, data.config),
-    onSettings: () => guard(() => openDebug()),
+    onSettings: () => guard(() => openSettings()),
     onAction: (a: DpadAction) => tapDpad(a),
     // UI-31: 前進ボタンを動かずに holdRepeatMs 押し続けたら連打を始め、離したら止める
     hold: {
@@ -261,7 +269,23 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
   const bannerState = createSaveBannerState(o.saves.available);
   banner.setVisible(bannerState.visible());
 
-  stage.replaceChildren(title.el, creation.el, custom.el, play.el, debug.el, banner.el);
+  // UI-57: 設定画面（debug パネルの下。「開発用」で debug パネルを上に開き、閉じると設定画面へ戻る）
+  const settingsView = createSettingsScreen({
+    strings,
+    store,
+    layout: settingsLayout(playRegions),
+    onExport: () => guard(() => exportFromSettings()),
+    // SV-31: タップは透明の input が直接受ける（guard を通らない）。読み込めるのはタイトルだけ（importFromFile が route と titleBusy を見る）
+    onImportFile: (f) => {
+      if (overlay !== "settings" || route !== "title") return;
+      closeSettings();
+      importFromFile(f);
+    },
+    onDebug: () => guard(() => openDebug()),
+    onClose: () => guard(() => closeSettings()),
+  });
+
+  stage.replaceChildren(title.el, creation.el, custom.el, play.el, settingsView.el, debug.el, banner.el);
 
   // ---------------------------------------------------------------- 再生
   const dungeonName = (st: GameState): string => (st.dive === null ? "" : dungeonOf(data, st.dive.dungeonId).name);
@@ -1052,7 +1076,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
         renderTitle();
         return;
       case "settings":
-        openDebug();
+        openSettings();
         return;
       case "newGame":
         // SV-11: 上限は押した時点の件数（読めない記録も数える）。保存先を使えないときは作成を許す
@@ -1145,6 +1169,10 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     // 読み込みを待つ間に F2 で開いた debug パネルも閉じる（overlay を null にするので、残すと閉じられなくなる）
     debug.el.style.display = "none";
     underDebug = null;
+    // 設定画面も同じ（タイトルから開いたまま続きからに進んだときなど）
+    settingsView.el.style.display = "none";
+    underSettings = null;
+    settingsNotice = null;
     campHost = "camp";
     campPage = { kind: "top" };
     walking = null;
@@ -1226,13 +1254,86 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     if (overlay === "camp") closeCamp(false);
     if (overlay === "map") closeMap();
     if (overlay === "history") closeHistory();
-    // 全滅の内訳は閉じずに debug パネルの下に残す（閉じたら戻す）
-    underDebug = overlay === "wipe" ? "wipe" : null;
+    // 全滅の内訳と設定画面は閉じずに debug パネルの下に残す（閉じたら戻す。UI-57 の「開発用」）
+    underDebug = overlay === "wipe" || overlay === "settings" ? overlay : null;
     repeater.release();
     overlay = "debug";
     debug.showSettings();
     debug.refresh();
     debug.el.style.display = "";
+  };
+
+  /** UI-57: 設定画面の書き出し・読み込みの可否（表示のための判定。読み込みはタイトルだけ。SV-31） */
+  const settingsCtx = (): SettingsContext => {
+    const where: SettingsContext["where"] = !o.saves.available ? "none" : route === "title" ? "title" : route === "town" || route === "dungeon" || route === "battle" ? "play" : "none";
+    return {
+      canExport: where === "play" && o.saves.current() !== null,
+      canImport: where === "title",
+      where,
+      standalone: isStandalone(globalThis as StandaloneEnv),
+    };
+  };
+
+  const renderSettings = (): void => {
+    settingsView.render(settingsCtx(), settingsNotice);
+  };
+
+  /**
+   * UI-57: 設定画面を開く（タイトルの「設定」とヘッダーの設定ボタン）。キャンプ・地図・履歴は閉じ、全滅の内訳は下に残す（閉じたら戻す）
+   */
+  const openSettings = (): void => {
+    if (overlay === "settings" || overlay === "debug") return;
+    if (overlay === "camp") closeCamp(false);
+    if (overlay === "map") closeMap();
+    if (overlay === "history") closeHistory();
+    underSettings = overlay === "wipe" ? "wipe" : null;
+    repeater.release();
+    overlay = "settings";
+    settingsNotice = null;
+    renderSettings();
+    settingsView.el.style.display = "";
+  };
+
+  const closeSettings = (): void => {
+    if (overlay !== "settings") return;
+    overlay = underSettings;
+    underSettings = null;
+    settingsNotice = null;
+    settingsView.el.style.display = "none";
+    syncControls();
+  };
+
+  /**
+   * UI-57 / SV-30: 遊んでいる途中の書き出し。SV-41 の flush（進行中の保存を待ち、最新の state を保存し直す）を待ってから、
+   * 保存先のレコードを書き出す。結果は設定画面の案内の欄に出す
+   */
+  const exportFromSettings = (): void => {
+    if (overlay !== "settings" || settingsBusy) return;
+    const ctx = settingsCtx();
+    if (!ctx.canExport) return;
+    const cur = o.saves.current();
+    if (cur === null) return;
+    settingsBusy = true;
+    void (async () => {
+      let ok = false;
+      try {
+        await autosaver.flush(state);
+        ok = await exportGameFile(cur.gameId);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        settingsBusy = false;
+      }
+      if (overlay !== "settings") return;
+      settingsNotice = t(ok ? "settings.exportDone" : "settings.exportFailed");
+      renderSettings();
+    })();
+  };
+
+  /** UI-57（開発用）: debug のコマンドを送る前に、debug パネルと、その下の設定画面を閉じる（結果の再生を見えるようにする） */
+  const closeDebugForCommand = (): void => {
+    closeDebug();
+    closeSettings();
   };
 
   /**
@@ -1241,7 +1342,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
    */
   const hpOneFromDebug = (): void => {
     if (route !== "town" && route !== "dungeon" && route !== "battle") return;
-    closeDebug();
+    closeDebugForCommand();
     void run({ type: "debug.hpOne" });
   };
 
@@ -1251,7 +1352,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
    */
   const addTurnsFromDebug = (): void => {
     if (route !== "town" && route !== "dungeon" && route !== "battle") return;
-    closeDebug();
+    closeDebugForCommand();
     void run({ type: "debug.addTurns" });
   };
 
@@ -1261,7 +1362,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
    */
   const debugCommand = (cmd: Command): void => {
     if (route !== "dungeon") return;
-    closeDebug();
+    closeDebugForCommand();
     void run(cmd);
   };
 
@@ -1403,6 +1504,12 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       if (a === "back") closeDebug();
       return;
     }
+    if (overlay === "settings") {
+      // UI-33: 数字 n → n 番目の項目（dim は無視）、Esc / Enter → 閉じる。F2 は上の debug のトグル
+      const k = settingsKeyIndex(a, settingsItems(settingsCtx()));
+      if (k !== null) settingsView.select(k);
+      return;
+    }
     if (overlay === "map") {
       // UI-33: Esc / m / 1 で閉じる、2 で移動、Enter は選んでいれば移動・いなければ閉じる
       if (a === "confirm") {
@@ -1515,6 +1622,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     },
     start(): void {
       debug.el.style.display = "none";
+      settingsView.el.style.display = "none";
       showRoute("title");
       onTap(play.message.el, () => tapMessage());
       // UI-57: ポインタの記録（capture なので attachStageInput の処理より先に走る）。debug パネルを開いている間は記録しない
@@ -1554,6 +1662,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       });
       store.subscribe(() => {
         debug.refresh();
+        settingsView.refresh();
         if (!isBusy()) syncControls();
       });
     },

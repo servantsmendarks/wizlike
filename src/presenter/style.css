@@ -382,3 +382,35 @@ body {
 .history-list::-webkit-scrollbar {
   display: none;
 }
+
+/* 設定画面（UI-57。M6）。ステージ全面を覆う。位置と大きさは views/settings.ts が layout.ts の settingsLayout で置く */
+.settings-screen {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 240px;
+  height: 400px;
+  overflow: hidden;
+  background: var(--c-bg);
+  color: var(--c-text);
+}
+
+.settings-heading {
+  white-space: nowrap;
+  overflow: hidden;
+  color: var(--c-accent);
+}
+
+.settings-label {
+  line-height: 32px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.settings-notice,
+.settings-install {
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-break: anywhere;
+  overflow: hidden;
+}
