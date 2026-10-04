@@ -570,3 +570,4 @@
 - 2026-10-04 core(M5.5): 街でも dungeon.cast / dungeon.useItem を受け付ける（§5 の骨格の名前のまま）。帰還は街では not usable here。受け付けない場所の理由は not in dungeon を wrong screen に改めた。fieldItemMenu も街で非 null にし、FieldItemView.isReturn（帰還の糸の確認の段のため）と TownMenu.canIdentify（酒場の鑑定の行のため。town.ts は camp.ts を import しないので同じ条件を数える）を足した。
 - 2026-10-04 core(M5.5): 全滅の出目の表は penaltyTable イベント（2d10 の前に hit null、後に hit = bandIndex）。行の文と割合（×100 の四捨五入）は core が作る。帯は 8 以下を検証する（表の箱が 2d10 の箱と重ならないため）。表示層の再生（表を出してタップ待ち・当たった行の強調）は P2 で足す（このコミットの時点では playback は penaltyTable を無視し、2d10 の箱の出し入れも今のまま）。
 - 2026-10-04 presenter(M5.5): 戦闘のターン表示は battleMenu.round + 1（遭遇の再生の間は 1）。ヘッダーの右（幅 56）に置き、問いを消しても残す（オートの再生の間は前の同期の値＝再生中のラウンドのまま）。表示層の DOM のテスト環境が無いので、純粋な文字列の関数・レイアウトの矩形・app の結線のソースの検査で確かめる。
+- 2026-10-04 presenter(M5.5): TW-03 酒場の一覧の項目はキャンプの top と同じラベル（camp.*）にし、旧 town.tavern.status / equip / order は消した。項目は disabled にせず（キャンプの top と同じ）、鑑定の行だけ townMenu.canIdentify で出し分ける。酒場の段が成り立たなくなったときの戻り先は campFirstPage（開いた項目の最初の段）に一本化した。

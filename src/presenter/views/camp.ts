@@ -1,4 +1,4 @@
-// UI-53 迷宮のキャンプと、TW-03 / UI-52 酒場の「状態を見る / 装備を替える / 並び順を変える」（UI-59 の状態を含む）。
+// UI-53 迷宮のキャンプと、TW-03 / UI-52 酒場のキャンプと同じ項目（状態・呪文・道具・装備・並び順・鑑定。UI-59 の状態を含む。M5.5）。
 // ページ（CampPage）を段にした純粋な状態機械（M4 の field-items.ts の道具の 3 段を吸収した）と、ビュー領域を覆うパネルの DOM。
 // - 候補・押せるか・対象の要否は core の campMenu と fieldItemMenu の値だけで決める（UI-35）。送る Command は
 //   dungeon.cast / dungeon.useItem / party.equip / party.unequip / party.reorder / party.identify。
@@ -15,6 +15,8 @@ import { createDetailView, SLOT_ORDER, type CharacterDetail } from "./detail";
 import { formatMessage } from "./message";
 
 export type CampHost = "camp" | "tavern";
+/** TW-03（M5.5）: 酒場の一覧から開く項目（キャンプの top の項目と同じ） */
+export type CampOpen = "status" | "spell" | "item" | "equip" | "order" | "identify";
 export type CampPage =
   | { kind: "top" }
   | { kind: "status"; memberId: string }
@@ -64,12 +66,28 @@ function s(strings: Strings, key: string, params?: Record<string, string | numbe
   return formatMessage(strings[key] ?? key, params);
 }
 
-/** host の最初のページ。camp は top。酒場は開いた項目（状態は先頭の者、装備は人の段、並び順は未選択） */
-export function campFirstPage(host: CampHost, open?: "status" | "equip" | "order", menu?: CampMenu): CampPage {
+/**
+ * host の最初のページ。camp は top。酒場は開いた項目（状態は先頭の者、呪文は唱える者の段、道具は使う人の段、装備は人の段、
+ * 並び順は未選択、鑑定は鑑定する者の段。鑑定する者が 1 人なら品の段。キャンプの top から開くときと同じ）
+ */
+export function campFirstPage(host: CampHost, open?: CampOpen, menu?: CampMenu): CampPage {
   if (host === "camp" || open === undefined) return { kind: "top" };
-  if (open === "status") return { kind: "status", memberId: menu?.members[0]?.id ?? "" };
-  if (open === "equip") return { kind: "equip", stage: "member" };
-  return { kind: "order", picked: null };
+  switch (open) {
+    case "status":
+      return { kind: "status", memberId: menu?.members[0]?.id ?? "" };
+    case "spell":
+      return { kind: "spell", stage: "caster" };
+    case "item":
+      return { kind: "item", stage: "member" };
+    case "equip":
+      return { kind: "equip", stage: "member" };
+    case "order":
+      return { kind: "order", picked: null };
+    case "identify": {
+      const ids = menu?.identifiers ?? [];
+      return ids.length === 1 ? { kind: "identify", stage: "item", appraiserId: ids[0]!.id } : { kind: "identify", stage: "appraiser" };
+    }
+  }
 }
 
 /** 酒場で「やめる」の後に戻る先が無い（閉じる）か。camp は top のときだけ閉じる */
@@ -373,9 +391,8 @@ export function campRepair(host: CampHost, page: CampPage, m: CampInput): CampPa
   const member = (id: string) => menu.members.find((x) => x.id === id);
   const reset = (): CampPage => {
     if (host === "camp") return { kind: "top" };
-    if (page.kind === "status") return campFirstPage("tavern", "status", menu);
-    if (page.kind === "equip") return { kind: "equip", stage: "member" };
-    return { kind: "order", picked: null };
+    // 酒場は開いた項目の最初の段（酒場は top を開かないので、top は並び順の未選択に倒す。M4.5 のまま）
+    return campFirstPage("tavern", page.kind === "top" ? "order" : page.kind, menu);
   };
   switch (page.kind) {
     case "top":
@@ -383,7 +400,7 @@ export function campRepair(host: CampHost, page: CampPage, m: CampInput): CampPa
     case "status":
       return member(page.memberId) === undefined ? (host === "camp" ? reset() : campFirstPage("tavern", "status", menu)) : page;
     case "spell": {
-      if (menu.place !== "dungeon") return reset();
+      // M5.5: 街（酒場）でも呪文の段は成り立つ（core の campMenu が街でも呪文を返す。帰還は usable false）
       if (page.stage === "caster") return page;
       const c = member(page.casterId);
       if (c === undefined || !c.canAct) return reset();

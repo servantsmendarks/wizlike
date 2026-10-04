@@ -394,6 +394,76 @@ describe("TW-03/UI-52 酒場とキャンプの共有", () => {
   });
 });
 
+describe("TW-03/UI-53 酒場の呪文・道具・鑑定（M5.5）", () => {
+  test("UI-53/TW-03 酒場の呪文・道具・鑑定は campFirstPage でその段から開き、やめるで閉じる（酒場の一覧へ）。鑑定する者が 1 人なら品の段から", () => {
+    const m = input(inTown());
+    expect(campFirstPage("tavern", "spell", m.menu)).toEqual({ kind: "spell", stage: "caster" });
+    expect(campFirstPage("tavern", "item", m.menu)).toEqual({ kind: "item", stage: "member" });
+    // 鑑定する者がいない（一覧に行は出ない）なら鑑定する者の段
+    expect(campFirstPage("tavern", "identify", m.menu)).toEqual({ kind: "identify", stage: "appraiser" });
+    const one = input(inTown({ c5: { classId: "bishop" } }));
+    expect(campFirstPage("tavern", "identify", one.menu)).toEqual({ kind: "identify", stage: "item", appraiserId: "c5" });
+    const two = input(inTown({ c5: { classId: "bishop" }, c4: { classId: "bishop" } }));
+    expect(campFirstPage("tavern", "identify", two.menu)).toEqual({ kind: "identify", stage: "appraiser" });
+    for (const p of [
+      { kind: "spell", stage: "caster" },
+      { kind: "spell", stage: "spell", casterId: "c4" },
+      { kind: "item", stage: "member" },
+      { kind: "item", stage: "item", memberId: "c1" },
+      { kind: "identify", stage: "item", appraiserId: "c5" },
+    ] satisfies CampPage[]) {
+      expect(campStep("tavern", p, one, { kind: "cancel" }), JSON.stringify(p)).toEqual({ kind: "close" });
+    }
+    // 酒場のパネルは見出し「酒場」だけ
+    expect(campPanel({ kind: "spell", stage: "caster" }, m, S)).toEqual({ kind: "text", title: "酒場" });
+  });
+
+  test("UI-53/MG-44 酒場の呪文の段で治癒を選ぶと対象の段 → dungeon.cast を送り（core が街で受け付ける）、同じ者の呪文の段へ戻る。帰還は dim", () => {
+    const s = inTown({ c4: { knownSpells: ["heal", "return"], mp: 30 }, c1: { hp: 3 } });
+    const m = input(s);
+    const sp: CampPage = { kind: "spell", stage: "spell", casterId: "c4" };
+    const list = rows(campEntries("tavern", sp, m, S));
+    const heal = list.find((x) => x.choice.kind === "spell" && x.choice.spellId === "heal")!;
+    const ret = list.find((x) => x.choice.kind === "spell" && x.choice.spellId === "return")!;
+    expect(heal.disabled).toBe(false);
+    expect(ret.disabled).toBe(true);
+    const r1 = campStep("tavern", sp, m, heal.choice);
+    expect(r1).toEqual({ kind: "page", page: { kind: "spell", stage: "target", casterId: "c4", spellId: "heal" } });
+    if (r1.kind !== "page") throw new Error("not page");
+    const r2 = campStep("tavern", r1.page, m, { kind: "target", targetId: "c1" });
+    expect(r2).toEqual({ kind: "send", command: { type: "dungeon.cast", memberId: "c4", spellId: "heal", targetId: "c1" }, after: sp });
+    if (r2.kind !== "send") throw new Error("not send");
+    const after = accepted(s, r2.command);
+    expect(after.screen).toBe("town");
+    // 送った後の段は酒場でも成り立つ（旧: 街の呪文の段は campRepair で戻していた）
+    expect(campRepair("tavern", sp, input(after))).toBe(sp);
+    expect(campRepair("tavern", { kind: "spell", stage: "caster" }, input(after))).toEqual({ kind: "spell", stage: "caster" });
+  });
+
+  test("UI-53/DG-30 酒場の道具の段: 薬草は対象の段から送れて core が受け付ける。帰還の糸は dim（街では usable false）", () => {
+    const s = inTown({ c2: { hp: 2 } });
+    const m = input(s);
+    const elItems = rows(campEntries("tavern", { kind: "item", stage: "item", memberId: "c5" }, m, S));
+    expect(elItems.find((x) => x.choice.kind === "item" && x.choice.instanceId === "i15")!.disabled).toBe(true);
+    const p: CampPage = { kind: "item", stage: "item", memberId: "c1" };
+    const r1 = campStep("tavern", p, m, { kind: "item", instanceId: "i4" });
+    expect(r1).toEqual({ kind: "page", page: { kind: "item", stage: "target", memberId: "c1", instanceId: "i4" } });
+    if (r1.kind !== "page") throw new Error("not page");
+    const r2 = campStep("tavern", r1.page, m, { kind: "target", targetId: "c2" });
+    expect(r2).toEqual({ kind: "send", command: { type: "dungeon.useItem", memberId: "c1", itemId: "i4", targetId: "c2" }, after: p });
+    if (r2.kind !== "send") throw new Error("not send");
+    accepted(s, r2.command);
+  });
+
+  test("UI-53 酒場の段が成り立たなくなったら、開いた項目の最初の段へ（呪文は唱える者、道具は使う人、鑑定は campFirstPage）", () => {
+    const asleep = input(inTown({ c4: { status: ["sleep"] }, c1: { status: ["sleep"] } }));
+    expect(campRepair("tavern", { kind: "spell", stage: "spell", casterId: "c4" }, asleep)).toEqual({ kind: "spell", stage: "caster" });
+    expect(campRepair("tavern", { kind: "item", stage: "item", memberId: "c1" }, asleep)).toEqual({ kind: "item", stage: "member" });
+    const one = input(inTown({ c5: { classId: "bishop" } }));
+    expect(campRepair("tavern", { kind: "identify", stage: "item", appraiserId: "c9" }, one)).toEqual({ kind: "identify", stage: "item", appraiserId: "c5" });
+  });
+});
+
 describe("UI-53 campRepair", () => {
   test("UI-53 成り立たなくなった段は最初のページへ（camp は top、酒場は開いた項目の最初）。成り立てばそのまま", () => {
     const m = input(inDungeon());
@@ -451,9 +521,7 @@ describe("UI-33 campKeyIndex", () => {
       "camp.order.front",
       "camp.order.back",
       ...["cannotAct", "unidentified", "class", "cursedSlot"].map((x) => `camp.equipBlock.${x}`),
-      "town.tavern.status",
-      "town.tavern.equip",
-      "town.tavern.order",
+      "town.tavern.look",
       "dungeon.items.who",
       "dungeon.items.which",
       "dungeon.items.target",

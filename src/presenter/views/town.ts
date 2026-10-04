@@ -4,6 +4,7 @@
 // 表示層は式を持たない。どの項目で何を送るか（town.inn / town.temple / town.dark / town.mercy / town.shop / dungeon.enter）は app が決める。
 import type { Strings } from "../../core/data/index";
 import type { TownMenu } from "../../core/types";
+import type { CampOpen } from "./camp";
 import { formatMessage } from "./message";
 
 export type TempleService = "resurrect" | "cure" | "uncurse";
@@ -22,8 +23,10 @@ export type TownEntry =
   | { kind: "shopItem"; itemId: string; label: string; disabled: boolean }
   /** TW-05: 持たせるメンバーの行（名前と所持枠の空き。空きが無いか払えなければ disabled）。押すと town.shop の buy */
   | { kind: "buy"; itemId: string; memberId: string; label: string; disabled: boolean }
-  /** TW-03 / UI-52: 酒場の「状態を見る / 装備を替える / 並び順を変える」。押すとキャンプと同じ部品（views/camp.ts）をそのページで開く */
-  | { kind: "camp"; open: "status" | "equip" | "order"; label: string }
+  /** TW-13 / UI-52（M5.5）: 酒場の「見回す」。押すと town.lookAround（酒場の一覧にとどまる） */
+  | { kind: "look"; label: string }
+  /** TW-03 / UI-52: 酒場のキャンプと同じ項目（状態・呪文・道具・装備・並び順・鑑定）。押すとキャンプと同じ部品（views/camp.ts）をその段で開く */
+  | { kind: "camp"; open: CampOpen; label: string }
   | { kind: "back"; label: string };
 
 const TEMPLE_SERVICES: readonly TempleService[] = ["resurrect", "cure", "uncurse"];
@@ -60,11 +63,12 @@ export function townEntries(page: TownPage, menu: TownMenu, strings: Strings): T
     ];
   }
   if (page === "tavern") {
-    // TW-03: 状態・装備・並び順（キャンプと同じ部品）→ TW-31: 救済の申し出の間だけ、dead / ash の者の行（押すと town.mercy）
+    // TW-13: 見回す → TW-03: キャンプと同じ項目（状態・呪文・道具・装備・並び順・鑑定（canIdentify のときだけ））。どれも disabled にしない（可否は各段で dim）
+    // → TW-31: 救済の申し出の間だけ、dead / ash の者の行（押すと town.mercy）→ 戻る（UI-11 の固定の位置）
+    const opens: readonly CampOpen[] = menu.canIdentify ? ["status", "spell", "item", "equip", "order", "identify"] : ["status", "spell", "item", "equip", "order"];
     const camp: TownEntry[] = [
-      { kind: "camp", open: "status", label: s(strings, "town.tavern.status") },
-      { kind: "camp", open: "equip", label: s(strings, "town.tavern.equip") },
-      { kind: "camp", open: "order", label: s(strings, "town.tavern.order") },
+      { kind: "look", label: s(strings, "town.tavern.look") },
+      ...opens.map((open): TownEntry => ({ kind: "camp", open, label: s(strings, `camp.${open}`) })),
     ];
     const rows = (menu.mercy ?? []).map((m): TownEntry => ({ kind: "mercy", memberId: m.memberId, label: s(strings, "town.tavern.mercyRow", { name: m.name }) }));
     return [...camp, ...rows, back];

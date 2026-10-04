@@ -107,11 +107,15 @@ describe("UI-52 街のページ", () => {
     expect(townPageIntro("dark", m)).toEqual(["town.dark.intro"]);
   });
 
-  test("TW-01/TW-03/UI-52/TW-31 酒場: 状態を見る・装備を替える・並び順を変える → 救済の行（申し出の間だけ。dead / ash の者、リーダーも）→ 戻る", () => {
+  // M5.5 で一覧を「見回す ＋ キャンプと同じ項目」に改めた（旧: 状態を見る・装備を替える・並び順を変える）
+  test("TW-01/TW-03/TW-13/UI-52/TW-31 酒場: 見回す → 状態・呪文・道具・装備・並び順 → 救済の行（申し出の間だけ。dead / ash の者、リーダーも）→ 戻る", () => {
     const camp: TownEntry[] = [
-      { kind: "camp", open: "status", label: "状態を見る" },
-      { kind: "camp", open: "equip", label: "装備を替える" },
-      { kind: "camp", open: "order", label: "並び順を変える" },
+      { kind: "look", label: "見回す" },
+      { kind: "camp", open: "status", label: "状態" },
+      { kind: "camp", open: "spell", label: "呪文" },
+      { kind: "camp", open: "item", label: "道具" },
+      { kind: "camp", open: "equip", label: "装備" },
+      { kind: "camp", open: "order", label: "並び順" },
     ];
     expect(townEntries("tavern", menuOf(town()), S)).toEqual([...camp, back]);
     expect(townPageIntro("tavern", menuOf(town()))).toEqual(["town.tavern.intro"]);
@@ -125,6 +129,20 @@ describe("UI-52 街のページ", () => {
       back,
     ]);
     expect(townPageIntro("tavern", m)).toEqual(["town.tavern.intro", "town.mercy.offer"]);
+  });
+
+  test("TW-03/UI-52 酒場の鑑定の行は townMenu.canIdentify のときだけ（並び順の後、救済の行の前）。どの行も disabled を持たない", () => {
+    expect(menuOf(town()).canIdentify).toBe(false);
+    const s = town({ c5: { classId: "bishop" }, c2: { life: "dead", hp: 0 } });
+    s.townVisit = { mercyOffered: true };
+    const m = menuOf(s);
+    expect(m.canIdentify).toBe(true);
+    const e = townEntries("tavern", m, S);
+    expect(e.map((x) => x.kind)).toEqual(["look", "camp", "camp", "camp", "camp", "camp", "camp", "mercy", "back"]);
+    expect(e[6]).toEqual({ kind: "camp", open: "identify", label: "鑑定" });
+    for (const x of e) expect("disabled" in x, x.label).toBe(false);
+    // 司教が行動できなければ鑑定の行は出さない
+    expect(townEntries("tavern", menuOf(town({ c5: { classId: "bishop", status: ["sleep"] } })), S).some((x) => x.kind === "camp" && x.open === "identify")).toBe(false);
   });
 
   test("UI-52/TW-11 迷宮の入口は開放済みの迷宮の行。行動可能な者がいなければ disabled", () => {

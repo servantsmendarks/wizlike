@@ -348,6 +348,15 @@ describe("入力と Command", () => {
     expect(lower).toContain('play.controls.setMode("none");');
   });
 
+  test("TW-13 酒場の見回すは town.lookAround を送り、ページを変えない（screen イベントは来ないので townPage は tavern のまま、再生の最後の sync で一覧を描き直す。ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const body = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(body).toMatch(/case "look":\s*void run\(\{ type: "town\.lookAround" \}\);\s*return;/);
+    // 酒場の項目はキャンプと同じ部品をその段で開く
+    expect(body).toMatch(/case "camp":\s*openCamp\("tavern", e\.open\);/);
+    expect(app).toMatch(/const openCamp = \(host: CampHost, open\?: CampOpen\): void =>/);
+  });
+
   test("UI-54 戦闘中はヘッダーに 第{round+1}ターン を出す。遭遇の再生（onScreen battle）は 1、sync の戦闘は battleMenu.round + 1、battleEnd の後と迷宮・街の sync では隠す。lowerInput はターンを消さない（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const onScreen = /const onScreen = \(to: Screen\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";

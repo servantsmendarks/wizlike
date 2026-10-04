@@ -69,6 +69,7 @@ import {
   campRepair,
   campStep,
   type CampChoice,
+  type CampOpen,
   type CampEntry,
   type CampHost,
   type CampInput,
@@ -401,8 +402,12 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
           case "mercy":
             void run({ type: "town.mercy", memberId: e.memberId });
             return;
+          case "look":
+            // TW-13: 見回す。screen イベントは来ないので酒場のページのまま（再生の最後の sync で一覧を描き直す）
+            void run({ type: "town.lookAround" });
+            return;
           case "camp":
-            // TW-03: 酒場の状態・装備・並び順はキャンプと同じ部品で開く（やめるで酒場の一覧へ戻る）
+            // TW-03: 酒場の状態・呪文・道具・装備・並び順・鑑定はキャンプと同じ部品で開く（やめるで酒場の一覧へ戻る）
             openCamp("tavern", e.open);
             return;
           case "enter":
@@ -1088,9 +1093,9 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
 
   /**
    * UI-53 / TW-03: キャンプを開く。迷宮のキャンプ（host camp）は迷宮で、酒場（host tavern）は街で、
-   * 他の overlay が無く、campMenu が非 null のとき（戦闘・保留中は開かない）。open は酒場の項目（状態・装備・並び順）
+   * 他の overlay が無く、campMenu が非 null のとき（戦闘・保留中は開かない）。open は酒場の項目（状態・呪文・道具・装備・並び順・鑑定）
    */
-  const openCamp = (host: CampHost, open?: "status" | "equip" | "order"): void => {
+  const openCamp = (host: CampHost, open?: CampOpen): void => {
     if (overlay !== null) return;
     if (host === "camp" ? route !== "dungeon" : route !== "town") return;
     const menu = campMenu(state, data);
