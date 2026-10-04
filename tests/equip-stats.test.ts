@@ -146,7 +146,9 @@ describe("IT-34 オプションと CH-13 / CH-14 の実効の値", () => {
     const c1 = member(s, "c1");
     const es = equipStats(s, data, c1);
     expect(es.stats).toEqual({ str: 14 + 3, iq: 8, pie: 6, vit: 12, agi: 9 + 3, luk: 9 });
-    expect([es.hpMax, es.mpMax, es.sanMax]).toEqual([c1.hpMax + 6, c1.mpMax + 2, c1.sanMax + 10]);
+    // CH-14: c1 は戦士で素の mpMax が 0 なので、mp_max +2 は足さず 0 のまま（足し合わせは下の CH-14 のテストの魔術師で見る）
+    expect(c1.mpMax).toBe(0);
+    expect([es.hpMax, es.mpMax, es.sanMax]).toEqual([c1.hpMax + 6, 0, c1.sanMax + 10]);
     expect(es.acEquip).toBe(-2 - 1); // 革鎧 −2、オプション ac 1（AC を下げる量）
     expect([es.hit, es.damageBonus, es.initiative, es.fearLossPct, es.trapDetect, es.identifyRate, es.goldLuck]).toEqual([5, 1, 2, 20, 15, 10, 4]);
     expect(es.statusResist).toEqual({ poison: 30, paralysis: 0, sleep: 30, stone: 0 });
@@ -172,6 +174,17 @@ describe("IT-34 オプションと CH-13 / CH-14 の実効の値", () => {
     expect([a.stats.str, a.hpMax, a.mpMax, a.sanMax, a.hit, a.goldLuck]).toEqual([1, 1, 0, 0, -15, -6]);
     expect(member(s, "c5").mpMax).toBeGreaterThan(0); // 魔術師
     expect(equipStats(s, data, member(s, "c5")).mpMax).toBe(1);
+  });
+
+  test("CH-14 素の mpMax が 0（戦士 c1）なら、mp_max の正のオプション（+6）でも実効の mpMax は 0。素が 1 以上（魔術師 c5）なら +6 が足される", () => {
+    const s = newGame(1);
+    equipNew(s, "c1", "accessory", { itemId: "charm", identified: true, options: [opt("mp_max", 6, 3)] });
+    equipNew(s, "c5", "accessory", { itemId: "charm", identified: true, options: [opt("mp_max", 6, 3)] });
+    expect(member(s, "c1").mpMax).toBe(0); // 戦士
+    expect(equipStats(s, data, member(s, "c1")).mpMax).toBe(0);
+    const base5 = member(s, "c5").mpMax;
+    expect(base5).toBeGreaterThan(0); // 魔術師
+    expect(equipStats(s, data, member(s, "c5")).mpMax).toBe(base5 + 6);
   });
 
   test("CH-14 / TW-15 sanCapOf は実効の sanMax。TW-02 restoreSan はそこまで戻す", () => {

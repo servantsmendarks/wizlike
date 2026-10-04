@@ -164,7 +164,7 @@ export function equipStats(state: GameState, data: GameData, ch: Character): Equ
   return {
     stats,
     hpMax: Math.max(1, ch.hpMax + hpAdd),
-    mpMax: Math.max(Math.min(1, ch.mpMax), ch.mpMax + mpAdd),
+    mpMax: ch.mpMax === 0 ? 0 : Math.max(1, ch.mpMax + mpAdd), // CH-14: 素が 0 なら正のオプションでも 0
     sanMax: Math.max(0, ch.sanMax + sanAdd),
     acEquip,
     weaponDice,
