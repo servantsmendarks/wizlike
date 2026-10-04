@@ -3,10 +3,11 @@
 // - formatDetail は純粋: 名前、種族、職業の正式名（classes[].name。パーティの行の略称ではない）、レベル、経験値、HP / MP / SAN、
 //   状態、能力値 6 つ、装備 6 枠（名前は呼び出し側が渡す itemName = 鑑定を反映した表示名。空きは detail.equipNone）。
 // - 行は 10px で y = 4 + 10i（rect の外形の左上から。子の absolute は枠 1px の内側が原点なので、置くときに 1 引く）の 14 行。0 名前（accent）、1 種族・職業、2 レベル（x4）と経験値（x120）、3 HP / MP / SAN（x4 / x84 / x164）、
-//   4 状態、5〜6 能力値（3 列 × 2 行。x4 / x84 / x164）、7 「装備」、8〜13 装備の枠名（x4）と名前（x40）。下端は 144（ビュー領域 150 に収まる）。
+//   4 状態、5〜6 能力値（3 列 × 2 行。x4 / x84 / x164）、7 「装備」（x4）と M7 の AC（x84）・魔法攻撃力（x164）、8〜13 装備の枠名（x4）と名前（x40）。下端は 144（ビュー領域 150 に収まる）。
 // 能力値と枠の並びは表示層の型付き定数（STAT_ORDER / SLOT_ORDER。core/data の値は UI-35 の許可外なので import しない）。
 // モジュールのトップレベルでは DOM に触れない。
 import type { EquipSlot, GameData, StatKey, Strings } from "../../core/data/index";
+import type { MemberSheet } from "../../core/rules/item-view";
 import type { Character } from "../../core/types";
 import type { Rect } from "../layout";
 import { formatMessage } from "./message";
@@ -33,41 +34,50 @@ export type CharacterDetail = {
   stats: { label: string; value: number; text: string }[];
   /** 装備の見出し（detail.equipment） */
   equipmentTitle: string;
+  /** M7 / CB-20: AC（detail.ac。core の memberSheet の ac）。sheet が無ければ空 */
+  ac: string;
+  /** M7 / MG-33: 魔法攻撃力（detail.magicPower。core の memberSheet の magicPower）。sheet が無ければ空 */
+  magicPower: string;
   /** 装備 6 枠（SLOT_ORDER の順）。item は表示名、空きは detail.equipNone */
   equipment: { slot: string; item: string }[];
 };
 
 /**
  * UI-59 の状態の文字列（純粋）。itemName は実体の id → 鑑定を反映した表示名。
- * sanCap は SAN の最大として出す値（app が core の sanCapOf を渡す。省略は ch.sanMax）。SAN が sanCap を超えていれば sanOver
+ * sheet は core の memberSheet（M7。CH-13 / CH-14 / IT-35 の実効の能力値・最大値・AC・魔法攻撃力）。能力値と HP / MP / SAN の最大はその値を出し、
+ * SAN が sheet.sanMax を超えていれば sanOver（TW-15）。省略すると素の値で、AC と魔法攻撃力は空
  */
 export function formatDetail(
   ch: Character,
   data: Pick<GameData, "races" | "classes">,
   strings: Strings,
   itemName: (instanceId: string) => string,
-  sanCap: number = ch.sanMax,
+  sheet?: MemberSheet,
 ): CharacterDetail {
   const s = (key: string, params?: Record<string, string | number>): string => formatMessage(strings[key] ?? key, params);
   const race = data.races.find((r) => r.id === ch.raceId)?.name ?? ch.raceId;
   const cls = data.classes.find((c) => c.id === ch.classId)?.name ?? ch.classId;
   const cond = conditionText(ch.life, ch.status, strings);
+  const stats = sheet?.stats ?? ch.stats;
+  const sanCap = sheet?.sanMax ?? ch.sanMax;
   return {
     name: ch.name,
     raceClass: s("detail.raceClass", { race, class: cls }),
     level: s("detail.level", { level: ch.level }),
     exp: s("detail.exp", { exp: ch.exp }),
-    hp: s("detail.hp", { hp: ch.hp, hpMax: ch.hpMax }),
-    mp: s("detail.mp", { mp: ch.mp, mpMax: ch.mpMax }),
+    hp: s("detail.hp", { hp: ch.hp, hpMax: sheet?.hpMax ?? ch.hpMax }),
+    mp: s("detail.mp", { mp: ch.mp, mpMax: sheet?.mpMax ?? ch.mpMax }),
     san: s("detail.san", { san: ch.san, sanMax: sanCap }),
     sanOver: ch.san > sanCap,
     status: s("detail.status", { status: cond === "" ? s("detail.statusOk") : cond }),
     stats: STAT_ORDER.map((k) => {
       const label = s(`stat.${k}`);
-      const value = ch.stats[k];
+      const value = stats[k];
       return { label, value, text: s("detail.stat", { label, value }) };
     }),
     equipmentTitle: s("detail.equipment"),
+    ac: sheet === undefined ? "" : s("detail.ac", { ac: sheet.ac }),
+    magicPower: sheet === undefined ? "" : s("detail.magicPower", { value: sheet.magicPower }),
     equipment: SLOT_ORDER.map((slot) => {
       const id = ch.equipment[slot];
       return { slot: s(`detail.slot.${slot}`), item: id === null ? s("detail.equipNone") : itemName(id) };
@@ -142,7 +152,10 @@ export function createDetailView(rect: Rect): DetailView {
         san,
         text(4, 4, full, d.status, "detail-status"),
         ...d.stats.map((st, i) => text(5 + Math.floor(i / 3), COL3[i % 3]!, COL3_W - (i % 3 === 2 ? 8 : 0), st.text, "detail-stat")),
-        text(7, 4, full, d.equipmentTitle, "detail-equipment"),
+        // 7 行目: 「装備」の見出しと、M7 の AC・魔法攻撃力（能力値の 3 列の 2・3 列目にそろえる。14 行のまま）
+        text(7, COL3[0], COL3_W, d.equipmentTitle, "detail-equipment"),
+        text(7, COL3[1], COL3_W, d.ac, "detail-ac"),
+        text(7, COL3[2], COL3_W - 8, d.magicPower, "detail-magic-power"),
         ...d.equipment.flatMap((e, i) => {
           const row = [text(8 + i, SLOT_X, SLOT_W, e.slot, "detail-slot"), text(8 + i, ITEM_X, rect.w - ITEM_X - 4, e.item, "detail-item")];
           if (i === focusSlot) for (const r of row) r.style.color = "var(--c-accent)";

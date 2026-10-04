@@ -7,7 +7,7 @@
 // その後ろに SAN の段の短い名前（UI-12。party.san.<stage>、normal は出さない。段は引数の stageOf = core の sanStage）。
 // 戦闘の再生用に setMp / setMax（レベルの変化）/ setStatus / flash（UI-42 の被弾。opacity 2 往復）/ setActive（入力中の名前を accent 色）を持つ。
 // UI-55: markActor（衝動の行動者の名前を accent 色、行を点滅。render で消える）。
-// UI-12（M7）: SAN が上限（sanCapOf。app が core の値を渡す）を超えている間（士気の超過。TW-15）は SAN の値を accent 色。
+// UI-12（M7）: HP / MP / SAN の最大は maxOf（app が core の memberSheet の実効の値を渡す。CH-14）。SAN が最大を超えている間（士気の超過。TW-15）は SAN の値を accent 色。
 // el は region の位置と大きさに自分で置く。モジュールのトップレベルでは DOM に触れない。
 import type { ClassDef, StatusId, Strings } from "../../core/data/index";
 import type { SanStage } from "../../core/rules/san";
@@ -22,8 +22,11 @@ export type PartyRowText = { name: string; abbr: string; hp: string; mp: string;
 
 /** UI-12: SAN の段を決める関数（app が core の sanStage を渡す。表示層は段の境を計算しない） */
 export type StageOf = (san: number, sanMax: number) => SanStage;
-/** UI-12 / TW-15: SAN の上限（app が core の sanCapOf を渡す）。超えている間は SAN の値を accent 色 */
-export type SanCapOf = (ch: Character) => number;
+/**
+ * UI-12 / TW-15 / CH-14（M7）: HP / MP / SAN の最大（app が core の memberSheet の実効の値を渡す）。SAN が sanMax を超えている間は SAN の値を accent 色、
+ * SAN の段は sanMax 比（core の CH-53 と同じ基準）
+ */
+export type MaxOf = (ch: Character) => { hpMax: number; mpMax: number; sanMax: number };
 
 /**
  * 状態の列の文字列（純粋）。死亡・灰はそれだけ、生存なら状態異常の短い名前を status の順に空白区切りし、
@@ -54,16 +57,25 @@ function mpText(mp: number, mpMax: number): string {
   return mpMax > 0 ? `${mp}/${mpMax}` : "";
 }
 
-/** 1 行分の表示文字列（純粋）。略称は classes[].abbr（表示のための参照。知らない職業は空）。段は stageOf（UI-12） */
-export function formatPartyRow(ch: Character, strings: Strings, classes: readonly ClassDef[], stageOf: StageOf): PartyRowText {
+/**
+ * 1 行分の表示文字列（純粋）。略称は classes[].abbr（表示のための参照。知らない職業は空）。段は stageOf（UI-12）。
+ * max は最大値（M7: app が core の実効の値を渡す。省略は素の値）
+ */
+export function formatPartyRow(
+  ch: Character,
+  strings: Strings,
+  classes: readonly ClassDef[],
+  stageOf: StageOf,
+  max: { hpMax: number; mpMax: number; sanMax: number } = ch,
+): PartyRowText {
   return {
     name: ch.name,
     abbr: classes.find((c) => c.id === ch.classId)?.abbr ?? "",
-    hp: hpText(ch.hp, ch.hpMax),
-    mp: mpText(ch.mp, ch.mpMax),
-    mpLabel: ch.mpMax > 0 ? (strings["party.mp"] ?? "party.mp") : "",
+    hp: hpText(ch.hp, max.hpMax),
+    mp: mpText(ch.mp, max.mpMax),
+    mpLabel: max.mpMax > 0 ? (strings["party.mp"] ?? "party.mp") : "",
     san: String(ch.san),
-    life: conditionText(ch.life, ch.status, strings, stageOf(ch.san, ch.sanMax)),
+    life: conditionText(ch.life, ch.status, strings, stageOf(ch.san, max.sanMax)),
   };
 }
 
@@ -95,9 +107,8 @@ type Row = {
   life: Life;
   status: StatusId[];
   san: number;
+  /** SAN の最大（maxOf。render の時点の実効の値。超過の色と段の基準） */
   sanMax: number;
-  /** SAN の上限（sanCapOf。render の時点の値） */
-  sanCap: number;
 };
 
 export type PartyPanel = {
@@ -133,11 +144,11 @@ export function createPartyPanel(o: {
   rows: readonly Rect[];
   /** UI-12: SAN の段（app が core の sanStage を渡す） */
   stageOf: StageOf;
-  /** UI-12 / TW-15: SAN の上限（app が core の sanCapOf を渡す。省略は ch.sanMax） */
-  sanCapOf?: SanCapOf;
+  /** UI-12 / TW-15 / CH-14: HP / MP / SAN の最大（app が core の memberSheet を渡す。省略は素の値） */
+  maxOf?: MaxOf;
 }): PartyPanel {
   const { strings, classes, region, rows, stageOf } = o;
-  const sanCapOf: SanCapOf = o.sanCapOf ?? ((ch) => ch.sanMax);
+  const maxOf: MaxOf = o.maxOf ?? ((ch) => ch);
   const el = document.createElement("div");
   el.className = "party-panel";
   Object.assign(el.style, {
@@ -189,13 +200,13 @@ export function createPartyPanel(o: {
     cells.sanLabel.textContent = strings["party.san"] ?? "party.san";
     cells.status.style.color = "var(--c-danger)";
     el.appendChild(line);
-    return { line, cells, hp: 0, hpMax: 0, mp: 0, mpMax: 0, life: "alive", status: [], san: 0, sanMax: 0, sanCap: 0 };
+    return { line, cells, hp: 0, hpMax: 0, mp: 0, mpMax: 0, life: "alive", status: [], san: 0, sanMax: 0 };
   };
 
   /** UI-12 / TW-15: SAN の値を描き、上限を超えていれば accent 色 */
   const showSan = (row: Row): void => {
     row.cells.san.textContent = String(row.san);
-    row.cells.san.style.color = row.san > row.sanCap ? "var(--c-accent)" : "";
+    row.cells.san.style.color = row.san > row.sanMax ? "var(--c-accent)" : "";
   };
 
   const showCondition = (row: Row): void => {
@@ -224,7 +235,8 @@ export function createPartyPanel(o: {
       byId.clear();
       party.forEach((ch, i) => {
         const row = makeRow(i);
-        const t = formatPartyRow(ch, strings, classes, stageOf);
+        const max = maxOf(ch);
+        const t = formatPartyRow(ch, strings, classes, stageOf, max);
         row.cells.name.textContent = t.name;
         row.cells.abbr.textContent = t.abbr;
         row.cells.hp.textContent = t.hp;
@@ -232,14 +244,13 @@ export function createPartyPanel(o: {
         row.cells.mp.textContent = t.mp;
         row.cells.status.textContent = t.life;
         row.hp = ch.hp;
-        row.hpMax = ch.hpMax;
+        row.hpMax = max.hpMax;
         row.mp = ch.mp;
-        row.mpMax = ch.mpMax;
+        row.mpMax = max.mpMax;
         row.life = ch.life;
         row.status = ch.status.slice();
         row.san = ch.san;
-        row.sanMax = ch.sanMax;
-        row.sanCap = sanCapOf(ch);
+        row.sanMax = max.sanMax;
         showSan(row);
         byId.set(ch.id, row);
       });

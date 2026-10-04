@@ -20,7 +20,8 @@ import { battleMenu } from "../core/rules/combat";
 import { mapView, visibleCells, visibleKnownTraps } from "../core/rules/dungeon";
 import { campMenu, campSummary } from "../core/rules/camp";
 import { planRoute, routeStepOk } from "../core/rules/pathfind";
-import { sanCapOf, sanStage } from "../core/rules/san";
+import { itemDetail, memberSheet, uniqueBookView } from "../core/rules/item-view";
+import { sanStage } from "../core/rules/san";
 import { fieldItemMenu } from "../core/rules/items";
 import { townMenu } from "../core/rules/town";
 import { dungeonOf, itemDisplayName } from "../core/state";
@@ -91,6 +92,7 @@ import {
   type CampPanelView,
 } from "./views/camp";
 import { formatDetail, SLOT_ORDER } from "./views/detail";
+import { formatBook, formatItemDetail } from "./views/item-detail";
 import { createDungeonScreen } from "./views/dungeon";
 import { mapTapAction } from "./views/map";
 import { slotsFor } from "./views/dungeon-geometry";
@@ -239,7 +241,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     textSpeed: () => store.get().textSpeed,
     historyMax: data.config.ui.messageHistory,
     stageOf: (san, sanMax) => sanStage(san, sanMax, data.config),
-    sanCapOf: (ch) => sanCapOf(state, data, ch), // CH-14: 実効の sanMax（core の equipStats）
+    maxOf: (ch) => memberSheet(state, data, ch), // CH-14 / UI-12（M7）: 実効の hpMax / mpMax / sanMax（core の memberSheet）
     onSettings: () => guard(() => openSettings()),
     onAction: (a: DpadAction) => tapDpad(a),
     // UI-31: 前進ボタンを動かずに holdRepeatMs 押し続けたら連打を始め、離したら止める
@@ -646,11 +648,17 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
         lines: p.rows.map((r) => ({ label: formatMessage(t("camp.order.row"), { n: r.n, name: r.name }), row: r.row, picked: r.picked })),
       };
     }
+    if (p.kind === "item") {
+      // UI-59（M7）: 品の詳細は core の itemDetail の値を描く（実体が消えていれば見出しだけ。sync の campRepair で段を直す）
+      const d = itemDetail(state, data, p.instanceId);
+      return d === null ? { kind: "text", title: "" } : { kind: "lines", ...formatItemDetail(d, strings) };
+    }
+    if (p.kind === "book") return { kind: "lines", ...formatBook(uniqueBookView(state, data), strings) }; // IT-66
     const ch = state.party.find((x) => x.id === p.memberId);
     if (ch === undefined) return { kind: "text", title: "" };
     return {
       kind: "detail",
-      detail: formatDetail(ch, data, strings, (iid) => itemDisplayName(state, data, iid), sanCapOf(state, data, ch)),
+      detail: formatDetail(ch, data, strings, (iid) => itemDisplayName(state, data, iid), memberSheet(state, data, ch)),
       focusSlot: p.focusSlot === null ? null : SLOT_ORDER.indexOf(p.focusSlot),
     };
   };

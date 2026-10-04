@@ -14,11 +14,12 @@ import type { CampMenu, CampSummary, Command, FieldItemMenu } from "../../core/t
 import type { Action } from "../input/swipe";
 import type { Rect } from "../layout";
 import { createDetailView, SLOT_ORDER, type CharacterDetail } from "./detail";
+import type { PanelLine } from "./item-detail";
 import { formatMessage } from "./message";
 
 export type CampHost = "camp" | "tavern";
 /** TW-03（M5.5）: 酒場の一覧から開く項目（キャンプの top の項目と同じ） */
-export type CampOpen = "status" | "spell" | "item" | "equip" | "order" | "identify";
+export type CampOpen = "status" | "spell" | "item" | "equip" | "order" | "identify" | "book";
 export type CampPage =
   | { kind: "top" }
   | { kind: "status"; memberId: string }
@@ -33,9 +34,13 @@ export type CampPage =
   | { kind: "equip"; stage: "member" }
   | { kind: "equip"; stage: "slot"; memberId: string }
   | { kind: "equip"; stage: "item"; memberId: string; slot: EquipSlot }
+  /** UI-59（M7）: 品の詳細（装備中の品なら 外す、候補なら 装備する / やめる） */
+  | { kind: "equip"; stage: "detail"; memberId: string; slot: EquipSlot; instanceId: string }
   | { kind: "order"; picked: string | null }
   | { kind: "identify"; stage: "appraiser" }
-  | { kind: "identify"; stage: "item"; appraiserId: string };
+  | { kind: "identify"; stage: "item"; appraiserId: string }
+  /** IT-66（M7）: 図鑑（酒場の一覧から開く。操作はやめるだけ） */
+  | { kind: "book" };
 export type CampChoice =
   | { kind: "open"; page: CampPage }
   | { kind: "member"; memberId: string }
@@ -45,6 +50,8 @@ export type CampChoice =
   | { kind: "slot"; slot: EquipSlot }
   | { kind: "equip"; instanceId: string }
   | { kind: "unequip" }
+  /** UI-59（M7）: 装備の段の品の行。押すと品の詳細の段へ */
+  | { kind: "detail"; instanceId: string }
   | { kind: "identifyItem"; instanceId: string }
   /** 確認の段の「戻る」（帰還の糸を使う。M5.5） */
   | { kind: "confirm" }
@@ -61,7 +68,11 @@ export type CampStep = { kind: "page"; page: CampPage } | { kind: "close" } | { 
 export type CampPanel =
   | { kind: "text"; title: string; lines?: string[] }
   | { kind: "detail"; memberId: string; focusSlot: EquipSlot | null }
-  | { kind: "order"; rows: { n: number; name: string; row: string; picked: boolean }[] };
+  | { kind: "order"; rows: { n: number; name: string; row: string; picked: boolean }[] }
+  /** UI-59（M7）: 品の詳細（app が core の itemDetail から formatItemDetail で行を作る） */
+  | { kind: "item"; instanceId: string }
+  /** IT-66（M7）: 図鑑（app が core の uniqueBookView から formatBook で行を作る） */
+  | { kind: "book" };
 /** summary は core の campSummary（迷宮のキャンプだけ非 null。UI-53） */
 export type CampInput = { menu: CampMenu; items: FieldItemMenu | null; summary: CampSummary | null };
 
@@ -93,6 +104,8 @@ export function campFirstPage(host: CampHost, open?: CampOpen, menu?: CampMenu):
       const ids = menu?.identifiers ?? [];
       return ids.length === 1 ? { kind: "identify", stage: "item", appraiserId: ids[0]!.id } : { kind: "identify", stage: "appraiser" };
     }
+    case "book":
+      return { kind: "book" };
   }
 }
 
@@ -206,17 +219,35 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
         slots[CAMP_GRID_SLOTS - 1] = cancel;
         return { layout: "grid", slots };
       }
-      const rows: CampEntry[] = [];
       const cur = x?.slots.find((sl) => sl.slot === page.slot);
+      const cands = (x?.equipCandidates ?? []).filter((c) => c.slot === page.slot);
+      if (page.stage === "detail") {
+        // UI-59（M7）: 装備中の品なら 外す（外せなければ dim）、候補なら 装備する（装備できなければ理由を付けて dim）→ やめる
+        if (cur !== undefined && cur.instanceId === page.instanceId) {
+          return list([{ label: s(strings, "camp.equip.unequip"), disabled: !cur.canUnequip, choice: { kind: "unequip" } }]);
+        }
+        const c = cands.find((y) => y.instanceId === page.instanceId);
+        if (c === undefined) return list([]);
+        const label = s(strings, "camp.equip.do");
+        return list([
+          {
+            label: c.block === null ? label : s(strings, "camp.equip.blocked", { name: label, why: s(strings, `camp.equipBlock.${c.block}`) }),
+            disabled: c.block !== null,
+            choice: { kind: "equip", instanceId: c.instanceId },
+          },
+        ]);
+      }
+      // 外す → 装備中の品（M7: 押すと詳細）→ 候補（M7: 押すと詳細。装備できない品も詳細は見られるので dim にしない）
+      const rows: CampEntry[] = [];
       if (cur !== undefined && cur.instanceId !== null) {
         rows.push({ label: s(strings, "camp.equip.unequip"), disabled: !cur.canUnequip, choice: { kind: "unequip" } });
+        rows.push({ label: s(strings, "camp.equip.current", { name: cur.name ?? "" }), disabled: false, choice: { kind: "detail", instanceId: cur.instanceId } });
       }
-      const cands = (x?.equipCandidates ?? []).filter((c) => c.slot === page.slot);
       for (const c of cands) {
         rows.push({
           label: c.block === null ? c.name : s(strings, "camp.equip.blocked", { name: c.name, why: s(strings, `camp.equipBlock.${c.block}`) }),
-          disabled: c.block !== null,
-          choice: { kind: "equip", instanceId: c.instanceId },
+          disabled: false,
+          choice: { kind: "detail", instanceId: c.instanceId },
         });
       }
       if (cands.length === 0) rows.push({ label: s(strings, "camp.equip.none"), disabled: true, choice: { kind: "none" } });
@@ -241,6 +272,9 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
       if (rows.length === 0) rows.push({ label: s(strings, "camp.identify.none"), disabled: true, choice: { kind: "none" } });
       return list(rows);
     }
+    case "book":
+      // IT-66: 図鑑はパネルに出すだけで、操作はやめるだけ
+      return list([]);
   }
 }
 
@@ -256,6 +290,15 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
       command: { type: "dungeon.useItem", memberId: page.memberId, itemId: page.instanceId },
       after: { kind: "item", stage: "item", memberId: page.memberId },
     };
+  }
+  // UI-59（M7）: 品の詳細のやめるは、酒場でも閉じずに同じ枠の品の段へ（cancelStep より先に見る）。送った後は枠の段へ
+  if (page.kind === "equip" && page.stage === "detail") {
+    const itemStage: CampPage = { kind: "equip", stage: "item", memberId: page.memberId, slot: page.slot };
+    const slotStage: CampPage = { kind: "equip", stage: "slot", memberId: page.memberId };
+    if (choice.kind === "cancel") return { kind: "page", page: itemStage };
+    if (choice.kind === "unequip") return { kind: "send", command: { type: "party.unequip", memberId: page.memberId, slot: page.slot }, after: slotStage };
+    if (choice.kind === "equip") return { kind: "send", command: { type: "party.equip", memberId: page.memberId, instanceId: choice.instanceId }, after: slotStage };
+    return stay;
   }
   if (choice.kind === "cancel") return cancelStep(host, page);
   const menu = m.menu;
@@ -319,6 +362,9 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
       const back: CampPage = { kind: "equip", stage: "slot", memberId: page.memberId };
       if (choice.kind === "unequip") return { kind: "send", command: { type: "party.unequip", memberId: page.memberId, slot: page.slot }, after: back };
       if (choice.kind === "equip") return { kind: "send", command: { type: "party.equip", memberId: page.memberId, instanceId: choice.instanceId }, after: back };
+      if (choice.kind === "detail" && page.stage === "item") {
+        return { kind: "page", page: { kind: "equip", stage: "detail", memberId: page.memberId, slot: page.slot, instanceId: choice.instanceId } };
+      }
       return stay;
     }
     case "order": {
@@ -341,6 +387,8 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
       if (choice.kind !== "identifyItem") return stay;
       return { kind: "send", command: { type: "party.identify", memberId: page.appraiserId, instanceId: choice.instanceId }, after: page };
     }
+    case "book":
+      return stay;
   }
 }
 
@@ -373,12 +421,16 @@ export function campHeader(page: CampPage, m: CampInput, strings: Strings): stri
       return page.picked === null ? s(strings, "camp.prompt.order") : s(strings, "camp.prompt.orderSecond", { name: nameOf(m, page.picked) });
     case "identify":
       return s(strings, page.stage === "appraiser" ? "camp.prompt.identifyWho" : "camp.prompt.identifyWhich");
+    case "book":
+      return s(strings, "camp.prompt.book");
   }
 }
 
 /** ビュー領域に出すもの（状態と装備の枠・品は UI-59 の詳細、並び順は表、それ以外は場所の見出しだけ。問いは campHeader でヘッダーに出す） */
 export function campPanel(page: CampPage, m: CampInput, strings: Strings): CampPanel {
   if (page.kind === "status") return { kind: "detail", memberId: page.memberId, focusSlot: null };
+  if (page.kind === "equip" && page.stage === "detail") return { kind: "item", instanceId: page.instanceId };
+  if (page.kind === "book") return { kind: "book" };
   if (page.kind === "equip" && page.stage !== "member") {
     return { kind: "detail", memberId: page.memberId, focusSlot: page.stage === "item" ? page.slot : null };
   }
@@ -443,15 +495,24 @@ export function campRepair(host: CampHost, page: CampPage, m: CampInput): CampPa
       // 対象の段・確認の段: 品が消えた・使えなくなったら同じ者の道具の段へ
       return x.items.some((it) => it.instanceId === page.instanceId && it.usable) ? page : { kind: "item", stage: "item", memberId: page.memberId };
     }
-    case "equip":
+    case "equip": {
       if (page.stage === "member") return page;
-      return member(page.memberId)?.canAct === true ? page : reset();
+      const x = member(page.memberId);
+      if (x?.canAct !== true) return reset();
+      if (page.stage !== "detail") return page;
+      // UI-59（M7）: 詳細の品が、その枠の装備中の品でも候補でもなくなったら（付け外しの後など）同じ枠の品の段へ
+      const id = page.instanceId;
+      const here = x.slots.some((sl) => sl.slot === page.slot && sl.instanceId === id) || x.equipCandidates.some((c) => c.slot === page.slot && c.instanceId === id);
+      return here ? page : { kind: "equip", stage: "item", memberId: page.memberId, slot: page.slot };
+    }
     case "order":
       return page.picked === null || member(page.picked) !== undefined ? page : { kind: "order", picked: null };
     case "identify":
       if (menu.identifiers.length === 0) return reset();
       if (page.stage === "appraiser") return page;
       return menu.identifiers.some((x) => x.id === page.appraiserId) ? page : reset();
+    case "book":
+      return page;
   }
 }
 
@@ -499,7 +560,9 @@ export const ORDER_COLUMNS = {
 export type CampPanelView =
   | { kind: "text"; title: string; lines?: string[] }
   | { kind: "detail"; detail: CharacterDetail; focusSlot: number | null }
-  | { kind: "order"; lines: { label: string; row: string; picked: boolean }[] };
+  | { kind: "order"; lines: { label: string; row: string; picked: boolean }[] }
+  /** UI-59 の品の詳細・IT-66 の図鑑（M7）。見出しは accent、行は tone の色（danger / dim） */
+  | { kind: "lines"; title: string; lines: PanelLine[] };
 
 export type CampView = {
   el: HTMLElement;
@@ -554,6 +617,11 @@ export function createCampView(rect: Rect): CampView {
             return [line(i, l.label, "camp-order-name", color, ORDER_COLUMNS.name), line(i, l.row, "camp-order-col", color, ORDER_COLUMNS.row)];
           }),
         );
+        return;
+      }
+      if (p.kind === "lines") {
+        const color = (tone: PanelLine["tone"]): string | undefined => (tone === "danger" ? "var(--c-danger)" : tone === "dim" ? "var(--c-dim)" : undefined);
+        el.replaceChildren(line(0, p.title, "camp-title", "var(--c-accent)"), ...p.lines.map((x, i) => line(i + 1, x.text, "camp-line", color(x.tone))));
         return;
       }
       el.replaceChildren(line(0, p.title, "camp-title", "var(--c-accent)"), ...(p.lines ?? []).map((x, i) => line(i + 1, x, "camp-summary")));

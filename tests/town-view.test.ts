@@ -117,7 +117,7 @@ describe("UI-52 街のページ", () => {
   });
 
   // M5.5 で一覧を「見回す ＋ キャンプと同じ項目」に改めた（旧: 状態を見る・装備を替える・並び順を変える）
-  test("TW-01/TW-03/TW-13/UI-52/TW-31 酒場: 見回す → 状態・呪文・道具・装備・並び順 → 救済の行（申し出の間だけ。dead / ash の者、リーダーも）→ 戻る", () => {
+  test("TW-01/TW-03/TW-13/UI-52/TW-31/IT-66 酒場: 見回す → 状態・呪文・道具・装備・並び順 → 図鑑 → 救済の行（申し出の間だけ。dead / ash の者、リーダーも）→ 戻る", () => {
     const camp: TownEntry[] = [
       { kind: "look", label: "見回す" },
       { kind: "camp", open: "status", label: "状態" },
@@ -125,6 +125,7 @@ describe("UI-52 街のページ", () => {
       { kind: "camp", open: "item", label: "道具" },
       { kind: "camp", open: "equip", label: "装備" },
       { kind: "camp", open: "order", label: "並び順" },
+      { kind: "camp", open: "book", label: "図鑑" }, // IT-66（M7）: 図鑑は酒場の一覧（並び順・鑑定の後）
     ];
     expect(townEntries("tavern", menuOf(town()), S)).toEqual([...camp, back]);
     expect(townPageIntro("tavern", menuOf(town()))).toEqual(["town.tavern.intro"]);
@@ -147,8 +148,10 @@ describe("UI-52 街のページ", () => {
     const m = menuOf(s);
     expect(m.canIdentify).toBe(true);
     const e = townEntries("tavern", m, S);
-    expect(e.map((x) => x.kind)).toEqual(["look", "camp", "camp", "camp", "camp", "camp", "camp", "mercy", "back"]);
+    // IT-66（M7）: 鑑定の後に図鑑
+    expect(e.map((x) => x.kind)).toEqual(["look", "camp", "camp", "camp", "camp", "camp", "camp", "camp", "mercy", "back"]);
     expect(e[6]).toEqual({ kind: "camp", open: "identify", label: "鑑定" });
+    expect(e[7]).toEqual({ kind: "camp", open: "book", label: "図鑑" });
     for (const x of e) expect("disabled" in x, x.label).toBe(false);
     // 司教が行動できなければ鑑定の行は出さない
     expect(townEntries("tavern", menuOf(town({ c5: { classId: "bishop", status: ["sleep"] } })), S).some((x) => x.kind === "camp" && x.open === "identify")).toBe(false);

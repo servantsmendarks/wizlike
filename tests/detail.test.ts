@@ -1,12 +1,13 @@
 // UI-59 詳細（src/presenter/views/detail.ts）。純粋な formatDetail と、document を最小の偽物に差し替えた配置の確認。
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { EQUIP_SLOTS, STAT_KEYS } from "../src/core/data/index";
-import { itemDisplayName } from "../src/core/state";
+import { createItemInstance, itemDisplayName } from "../src/core/state";
 import type { GameState } from "../src/core/types";
 import { createDetailView, formatDetail, SLOT_ORDER, STAT_ORDER } from "../src/presenter/views/detail";
 import { formatMessage } from "../src/presenter/views/message";
 import { createPartyPanel } from "../src/presenter/views/party";
-import { sanCapOf, sanStage } from "../src/core/rules/san";
+import { memberSheet } from "../src/core/rules/item-view";
+import { sanStage } from "../src/core/rules/san";
 import { data, newGame } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
 
@@ -32,6 +33,8 @@ describe("UI-59 詳細", () => {
       "detail.stat",
       "detail.equipment",
       "detail.equipNone",
+      "detail.ac",
+      "detail.magicPower",
       ...SLOT_ORDER.map((s) => `detail.slot.${s}`),
       ...STAT_ORDER.map((s) => `stat.${s}`),
       "common.close",
@@ -119,14 +122,15 @@ afterEach(() => {
 });
 
 describe("UI-59/UI-12 士気の SAN の超過（TW-15。M7）", () => {
-  test("UI-59/TW-15 formatDetail: SAN は「SAN 110/100」（最大は sanCap = core の sanCapOf）で sanOver が真。100/100 は偽。sanCap の省略は sanMax", () => {
+  // M7 の B10 で 5 番目の引数を sanCap（core の sanCapOf）から sheet（core の memberSheet。sanMax は sanCapOf と同じ値）に替えた
+  test("UI-59/TW-15 formatDetail: SAN は「SAN 110/100」（最大は core の memberSheet の sanMax）で sanOver が真。100/100 は偽。sheet の省略は sanMax", () => {
     const s = newGame(1);
     const over = { ...s.party[0]!, san: 110 };
-    const d = formatDetail(over, data, S, nameOf(s), sanCapOf(s, data, over));
+    const d = formatDetail(over, data, S, nameOf(s), memberSheet(s, data, over));
     expect(d.san).toBe("SAN 110/100");
     expect(d.sanOver).toBe(true);
     expect(formatDetail(over, data, S, nameOf(s)).san).toBe("SAN 110/100");
-    const normal = formatDetail(s.party[0]!, data, S, nameOf(s), sanCapOf(s, data, s.party[0]!));
+    const normal = formatDetail(s.party[0]!, data, S, nameOf(s), memberSheet(s, data, s.party[0]!));
     expect([normal.san, normal.sanOver]).toEqual(["SAN 100/100", false]);
   });
 
@@ -142,7 +146,7 @@ describe("UI-59/UI-12 士気の SAN の超過（TW-15。M7）", () => {
     expect(sanEl().style["color"]).toBeUndefined();
   });
 
-  test("UI-12/TW-15 パーティ欄: SAN が上限（sanCapOf）を超えている行は SAN の値が accent 色。setSan で上限以下に戻ると色を外す", () => {
+  test("UI-12/TW-15 パーティ欄: SAN が上限（maxOf の sanMax）を超えている行は SAN の値が accent 色。setSan で上限以下に戻ると色を外す", () => {
     vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
     const panel = createPartyPanel({
       strings: S,
@@ -150,7 +154,7 @@ describe("UI-59/UI-12 士気の SAN の超過（TW-15。M7）", () => {
       region: { x: 0, y: 0, w: 240, h: 64 },
       rows: [],
       stageOf: (san, sanMax) => sanStage(san, sanMax, data.config),
-      sanCapOf: (ch) => sanCapOf(s, data, ch), // CH-14: core の sanCapOf は state と data を取る（M7 の B で実効の sanMax）
+      maxOf: (ch) => memberSheet(s, data, ch), // CH-14: core の memberSheet（M7 の B10 で sanCapOf から替えた。sanMax は同じ値）
     });
     const s = newGame(1);
     const party = s.party.map((c, i) => ({ ...c, san: i === 0 ? 110 : 100 }));
@@ -166,6 +170,84 @@ describe("UI-59/UI-12 士気の SAN の超過（TW-15。M7）", () => {
     const line0 = (panel.el as unknown as FakeEl).children[0]!;
     const cell = line0.children.find((c) => c.textContent === "99")!;
     expect(cell.style["color"]).toBe("");
+  });
+});
+
+/** アルド（力 14・hpMax 15・sanMax 100）に、杖 Lv5（魔法攻撃力 floor(5/2) = 2）・革鎧 Lv3（−2 − 1）・早鐘の兜（−2）・護符（力 +2・最大HP +6・最大SAN +10・AC 1）を付けた状態 */
+function equippedAld(): GameState {
+  const s = structuredClone(newGame(1));
+  const c1 = s.party[0]!;
+  c1.equipment = { weapon: null, armor: null, shield: null, helm: null, gauntlet: null, accessory: null };
+  c1.equipment.weapon = createItemInstance(s, { itemId: "staff", level: 5, identified: true });
+  c1.equipment.armor = createItemInstance(s, { itemId: "leather_armor", level: 3, identified: true });
+  c1.equipment.helm = createItemInstance(s, { itemId: "leather_cap", uniqueId: "alarm_bell_helm", identified: true });
+  c1.equipment.accessory = createItemInstance(s, {
+    itemId: "charm",
+    options: [
+      { optionId: "str", tier: 2, value: 2 },
+      { optionId: "hp_max", tier: 2, value: 6 },
+      { optionId: "san_max", tier: 2, value: 10 },
+      { optionId: "ac", tier: 1, value: 1 },
+    ],
+    identified: true,
+  });
+  return s;
+}
+
+describe("UI-59/CH-13/CH-14/CB-20/MG-33 状態の実効の値（M7）", () => {
+  test("UI-59/CH-13/CH-14/CB-20/MG-33 formatDetail は core の memberSheet の値を出す: 能力値（力 16）・HP の最大 21・SAN の最大 110・AC 4・魔法攻撃力 2。sheet が無ければ素の値で AC と魔法攻撃力は空", () => {
+    const s = equippedAld();
+    const ch = s.party[0]!;
+    const d = formatDetail(ch, data, S, nameOf(s), memberSheet(s, data, ch));
+    expect(d.stats[0]).toEqual({ label: "力", value: 16, text: "力 16" });
+    expect(d.hp).toBe(`HP ${ch.hp}/21`);
+    expect(d.san).toBe(`SAN ${ch.san}/110`);
+    // AC = acBase 10 − 3 − 2 − 1 = 4
+    expect(d.ac).toBe("AC 4");
+    expect(d.magicPower).toBe("魔法攻撃力 2");
+    const raw = formatDetail(ch, data, S, nameOf(s));
+    expect([raw.stats[0]!.value, raw.hp, raw.ac, raw.magicPower]).toEqual([14, `HP ${ch.hp}/15`, "", ""]);
+    // 装備名は IT-11 の表示名（ユニークはユニークの名前、汎用は +Lv）
+    expect(d.equipment.map((e) => e.item)).toEqual(["杖 +5", "革鎧 +3", t("detail.equipNone"), "早鐘の兜", t("detail.equipNone"), "護符"]);
+  });
+
+  test("UI-59 render: AC は 7 行目の x84、魔法攻撃力は x164（「装備」の見出しと同じ行。14 行のまま）", () => {
+    vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
+    const v = createDetailView({ x: 0, y: 16, w: 240, h: 150 });
+    const s = equippedAld();
+    v.render(formatDetail(s.party[0]!, data, S, nameOf(s), memberSheet(s, data, s.party[0]!)));
+    const el = v.el as unknown as FakeEl;
+    const px = (x: string | undefined): number => Number((x ?? "").replace("px", ""));
+    const at = (cls: string): [number, number, string] => {
+      const c = el.children.find((x) => x.className === cls)!;
+      return [px(c.style["left"]) + 1, px(c.style["top"]) + 1, c.textContent];
+    };
+    expect(at("detail-equipment")).toEqual([4, 74, "装備"]);
+    expect(at("detail-ac")).toEqual([84, 74, "AC 4"]);
+    expect(at("detail-magic-power")).toEqual([164, 74, "魔法攻撃力 2"]);
+    expect(new Set(el.children.map((c) => c.style["top"])).size).toBe(14);
+  });
+
+  test("UI-12/CH-14/CH-53 パーティ欄: HP / MP / SAN の最大と SAN の段は maxOf（core の memberSheet）の値。最大SAN +10 で SAN 54 は 110 の半分未満なので不安", () => {
+    vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
+    const s = equippedAld();
+    s.party[0]!.san = 54; // 素の sanMax 100 なら 54 ≥ 50 で正常、実効の 110 なら 54 < 55 で不安
+    const panel = createPartyPanel({
+      strings: S,
+      classes: data.classes,
+      region: { x: 0, y: 0, w: 240, h: 64 },
+      rows: [],
+      stageOf: (san, sanMax) => sanStage(san, sanMax, data.config),
+      maxOf: (ch) => memberSheet(s, data, ch),
+    });
+    panel.render(s.party);
+    const line0 = (panel.el as unknown as FakeEl).children[0]!;
+    const texts = line0.children.map((c) => c.textContent);
+    expect(texts).toContain(`${s.party[0]!.hp}/21`);
+    expect(texts).toContain(S["party.san.uneasy"]);
+    // 現在値を描き直しても最大は実効の値のまま
+    panel.setHp("c1", 20);
+    expect(line0.children.map((c) => c.textContent)).toContain("20/21");
   });
 });
 

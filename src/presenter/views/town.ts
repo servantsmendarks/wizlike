@@ -142,8 +142,10 @@ export function townEntries(page: TownPage, menu: TownMenu, strings: Strings): T
   }
   if (page === "tavern") {
     // TW-13: 見回す → TW-03: キャンプと同じ項目（状態・呪文・道具・装備・並び順・鑑定（canIdentify のときだけ））。どれも disabled にしない（可否は各段で dim）
-    // → TW-31: 救済の申し出の間だけ、dead / ash の者の行（押すと town.mercy）→ 戻る（UI-11 の固定の位置）
-    const opens: readonly CampOpen[] = menu.canIdentify ? ["status", "spell", "item", "equip", "order", "identify"] : ["status", "spell", "item", "equip", "order"];
+    // → IT-66（M7）: 図鑑 → TW-31: 救済の申し出の間だけ、dead / ash の者の行（押すと town.mercy）→ 戻る（UI-11 の固定の位置）
+    const opens: readonly CampOpen[] = menu.canIdentify
+      ? ["status", "spell", "item", "equip", "order", "identify", "book"]
+      : ["status", "spell", "item", "equip", "order", "book"];
     const camp: TownEntry[] = [
       { kind: "look", label: s(strings, "town.tavern.look") },
       ...opens.map((open): TownEntry => ({ kind: "camp", open, label: s(strings, `camp.${open}`) })),

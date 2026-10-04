@@ -315,27 +315,49 @@ describe("CH-76/UI-53 装備", () => {
     expect(labels(grid(campEntries("camp", slotPage, m, S)))).toEqual(["武器", "防具", "盾", "兜", "小手", "装飾", null, "やめる"]);
     expect(campHeader(slotPage, m, S)).toBe("エルのどこを？");
     expect(campPanel(slotPage, m, S)).toEqual({ kind: "detail", memberId: "c5", focusSlot: null });
-    // 武器: 装備中の杖を外せる。長剣は職業で装備できない（dim、理由付き）
+    // 武器: 装備中の杖を外せる。M7（UI-59）: 装備中の品と候補の行は押すと詳細へ（長剣は職業で装備できないが、詳細は見られるので dim にしない）
     const weapon: CampPage = { kind: "equip", stage: "item", memberId: "c5", slot: "weapon" };
+    const staff = m.menu.members.find((x) => x.id === "c5")!.slots.find((x) => x.slot === "weapon")!.instanceId!;
     expect(campStep("camp", slotPage, m, { kind: "slot", slot: "weapon" })).toEqual({ kind: "page", page: weapon });
     expect(campHeader(weapon, m, S)).toBe("エルの武器");
     expect(campPanel(weapon, m, S)).toEqual({ kind: "detail", memberId: "c5", focusSlot: "weapon" });
     expect(rows(campEntries("camp", weapon, m, S))).toEqual([
       { label: "外す", disabled: false, choice: { kind: "unequip" } },
-      { label: "長剣（装備できない）", disabled: true, choice: { kind: "equip", instanceId: sword } },
+      { label: "杖（装備中）", disabled: false, choice: { kind: "detail", instanceId: staff } },
+      { label: "長剣（装備できない）", disabled: false, choice: { kind: "detail", instanceId: sword } },
       cancel,
     ]);
     const un = campStep("camp", weapon, m, { kind: "unequip" });
     expect(un).toEqual({ kind: "send", command: { type: "party.unequip", memberId: "c5", slot: "weapon" }, after: slotPage });
     if (un.kind !== "send") throw new Error("not send");
+    // 長剣の詳細: 装備する（装備できない理由付きで dim）/ やめる。パネルは品の詳細、やめるは同じ枠の品の段へ
+    const swordDetail: CampPage = { kind: "equip", stage: "detail", memberId: "c5", slot: "weapon", instanceId: sword };
+    expect(campStep("camp", weapon, m, { kind: "detail", instanceId: sword })).toEqual({ kind: "page", page: swordDetail });
+    expect(rows(campEntries("camp", swordDetail, m, S))).toEqual([
+      { label: "装備する（装備できない）", disabled: true, choice: { kind: "equip", instanceId: sword } },
+      cancel,
+    ]);
+    expect(campPanel(swordDetail, m, S)).toEqual({ kind: "item", instanceId: sword });
+    expect(campHeader(swordDetail, m, S)).toBe("エルの武器");
+    expect(campStep("camp", swordDetail, m, { kind: "cancel" })).toEqual({ kind: "page", page: weapon });
+    expect(campStep("tavern", swordDetail, m, { kind: "cancel" })).toEqual({ kind: "page", page: weapon }); // 酒場でも閉じない
+    // 杖（装備中）の詳細: 外す / やめる。外すと枠の段へ
+    const staffDetail: CampPage = { kind: "equip", stage: "detail", memberId: "c5", slot: "weapon", instanceId: staff };
+    expect(rows(campEntries("camp", staffDetail, m, S))).toEqual([{ label: "外す", disabled: false, choice: { kind: "unequip" } }, cancel]);
+    expect(campStep("camp", staffDetail, m, { kind: "unequip" })).toEqual(un);
     accepted(s, un.command);
-    // 兜: 空き枠なので「外す」は無く、革兜を装備できる
+    // 兜: 空き枠なので「外す」は無く、革兜の行 → 詳細 → 装備する
     const helm: CampPage = { kind: "equip", stage: "item", memberId: "c5", slot: "helm" };
-    expect(rows(campEntries("camp", helm, m, S))).toEqual([{ label: "革兜", disabled: false, choice: { kind: "equip", instanceId: cap } }, cancel]);
-    const eq = campStep("camp", helm, m, { kind: "equip", instanceId: cap });
+    expect(rows(campEntries("camp", helm, m, S))).toEqual([{ label: "革兜", disabled: false, choice: { kind: "detail", instanceId: cap } }, cancel]);
+    const capDetail: CampPage = { kind: "equip", stage: "detail", memberId: "c5", slot: "helm", instanceId: cap };
+    expect(rows(campEntries("camp", capDetail, m, S))).toEqual([{ label: "装備する", disabled: false, choice: { kind: "equip", instanceId: cap } }, cancel]);
+    const eq = campStep("camp", capDetail, m, { kind: "equip", instanceId: cap });
     expect(eq).toEqual({ kind: "send", command: { type: "party.equip", memberId: "c5", instanceId: cap }, after: slotPage });
     if (eq.kind !== "send") throw new Error("not send");
-    accepted(s, eq.command);
+    const after = accepted(s, eq.command);
+    // 装備した後も革兜は兜の枠の装備中の品なので詳細の段は成り立つ。その枠に無い品の詳細は同じ枠の品の段へ直す
+    expect(campRepair("camp", capDetail, input(after))).toEqual(capDetail);
+    expect(campRepair("camp", { ...capDetail, instanceId: sword }, input(after))).toEqual(helm);
     // 盾: 候補が無く、空き → 「装備できる物がない」（dim）
     expect(rows(campEntries("camp", { kind: "equip", stage: "item", memberId: "c5", slot: "shield" }, m, S))).toEqual([
       { label: "装備できる物がない", disabled: true, choice: { kind: "none" } },
@@ -343,7 +365,8 @@ describe("CH-76/UI-53 装備", () => {
     ]);
   });
 
-  test("CH-73/UI-53 呪われた品を装備していると「外す」は dim、候補は「呪いで外せない」で dim", () => {
+  // M7（UI-59）: 候補の行は押すと詳細へ（dim にしない）。「呪いで外せない」の dim は詳細の「装備する」に移した
+  test("CH-73/UI-53 呪われた品を装備していると「外す」は dim、候補は「呪いで外せない」で、その詳細の「装備する」が dim", () => {
     let s = inDungeon();
     const cursed = cursedDagger(s, true);
     s.party[2]!.inventory.push(cursed);
@@ -351,7 +374,16 @@ describe("CH-76/UI-53 装備", () => {
     const m = input(s);
     expect(rows(campEntries("camp", { kind: "equip", stage: "item", memberId: "c3", slot: "weapon" }, m, S))).toEqual([
       { label: "外す", disabled: true, choice: { kind: "unequip" } },
-      { label: "短剣（呪いで外せない）", disabled: true, choice: { kind: "equip", instanceId: "i7" } },
+      { label: "短剣（装備中）", disabled: false, choice: { kind: "detail", instanceId: cursed } },
+      { label: "短剣（呪いで外せない）", disabled: false, choice: { kind: "detail", instanceId: "i7" } },
+      cancel,
+    ]);
+    expect(rows(campEntries("camp", { kind: "equip", stage: "detail", memberId: "c3", slot: "weapon", instanceId: "i7" }, m, S))).toEqual([
+      { label: "装備する（呪いで外せない）", disabled: true, choice: { kind: "equip", instanceId: "i7" } },
+      cancel,
+    ]);
+    expect(rows(campEntries("camp", { kind: "equip", stage: "detail", memberId: "c3", slot: "weapon", instanceId: cursed }, m, S))).toEqual([
+      { label: "外す", disabled: true, choice: { kind: "unequip" } },
       cancel,
     ]);
   });
