@@ -48,10 +48,18 @@ docs/
   decisions.md          決定の記録（追記のみ。消さない）
   milestones.md         作業の順番と完了条件
   spec/
-    character.md  magic.md  combat.md  dungeon.md  town.md  events.md  save.md  ui.md
+    character.md  magic.md  combat.md  dungeon.md  town.md  events.md  save.md  ui.md  items.md
+  audio/                工房（make-assets）の取り決めの複製。工房の版が正
+    CONVENTIONS.md  proposal-to-game.md
 data/
   config.json  races.json  classes.json  spells.json  monsters.json  items.json
   personalities.json  penalty-table.json  dungeons.json  events.json  strings.json
+  tavern.json           酒場の語りと酒場のイベント
+  unknown-kinds.json    未鑑定の系統（名前・絵・代わりの色）
+  equipment-bases.json  item-options.json  uniques.json  drops.json   装備のベース・オプション・ユニーク・ドロップ表
+  audio.json  wavetables.json   曲と効果音の対応、波形（工房の複製）
+assets/                 工房の export が置く素材（ビルド時に検証して取り込む。無ければ無音）
+  music/<song>.mid  sfx/<name>.json
 src/
   core/
     types.ts            GameState / Character / Command / GameEvent
@@ -69,19 +77,24 @@ src/
       town.ts           施設、蘇生、店の在庫
       wipe.ts           全滅処理、潜行台帳、ペナルティ表
       events.ts         衝動判定、制止判定
+      （ほかに camp・shop・storage・upgrade・loot・equip-stats・pathfind・tavern など）
   presenter/
     app.ts              画面遷移の親
     playback.ts         GameEvent[] を順に再生する
     stage.ts            240×400 のスケーリング、safe area
-    input/swipe.ts      スワイプと長押し、キーボード
-    views/              dungeon-svg.ts  battle.ts  town.ts  party.ts  message.ts  dice.ts  title.ts
-    audio.ts            Web Audio（プロトタイプでは任意）
+    input/              swipe.ts（スワイプと長押し、キーボード）・tap.ts・pointer-log.ts
+    views/              dungeon-svg.ts  battle.ts  town.ts  party.ts  message.ts  dice.ts  title.ts  ほか
+    audio.ts            Web Audio の再生機（曲の合成は audio-synth.ts、出来事と音の対応は sound-cues.ts）
+    sprites.ts          敵の絵（public/sprites の実在の一覧にあるものだけ読む）
   save/
     db.ts               IndexedDB（games ストア）、書き出し・読み込み
     migrate.ts          schemaVersion の移行
+  pwa/                  Service Worker のテンプレートと登録
+  build/                ビルド時だけ使う: SMF の読み込み、曲・効果音・絵の検証と取り込み
+  vendor/               同梱する第三者のコード（zzfx-1.3.2。出典は decisions）
   main.ts
-tests/                  Vitest。ファイル名は対象ルールの領域名（combat.test.ts 等）
-public/                 manifest、アイコン、フォント
+tests/                  Vitest。ファイル名は対象ルールの領域名（combat.test.ts 等）。balance/ はバランスのシミュレーション
+public/                 manifest、アイコン、フォント、ライセンス、sprites/（工房の export が置く敵の絵）
 ```
 
 ## 5. コアの型（骨格）
