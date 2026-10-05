@@ -73,7 +73,7 @@ import type { AllyPlan, MemberSnap, TargetRef } from "./combat-plan";
 import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, richestGroup, snapMembers, toPlan } from "./combat-plan";
 import { offerTeleporter } from "./choices";
 import { applyAllyEffect } from "./effects";
-import { gainGold } from "./field";
+import { clearAllStatus, gainGold } from "./field";
 import { rollBossItems, rollChestItems } from "./loot";
 import { equipStats, hasSkill, hpMaxOf, skillTotal, spellCost } from "./equip-stats";
 import { loseSan, sanCapOf, sanStage } from "./san";
@@ -897,10 +897,11 @@ function actEnemyUnit(ctx: RuleContext, g: number, u: number, defending: Readonl
   }
 }
 
-/** CB-54/CH-45: 戦闘中の死亡。本人以外の生存者の SAN が減る。status は消さない */
+/** CB-54/CH-45: 戦闘中の死亡。状態異常をすべて外す。本人以外の生存者の SAN が減る */
 function allyDies(ctx: RuleContext, ch: Character): void {
   ch.life = "dead";
   ctx.events.push({ kind: "lifeChanged", id: ch.id, life: "dead" });
+  clearAllStatus(ctx, ch);
   ctx.events.push({ kind: "message", key: "battle.dead", params: { target: ch.name } });
   for (const o of ctx.state.party) {
     if (o.life === "alive") loseSan(ctx, o, ctx.data.config.san.allyDeath, ["allyInjury"]);

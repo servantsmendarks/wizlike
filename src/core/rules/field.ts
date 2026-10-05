@@ -10,6 +10,17 @@ export function aliveMembers(state: GameState): Character[] {
 }
 
 /**
+ * CH-45 / TW-07 / TW-08 / TW-23 / TW-31: 状態異常をすべて外す。status の順に 1 つずつ statusChanged off を出す（無ければ何も出さない）。
+ * 死亡・灰になったとき（lifeChanged の直後）と、生き返るとき（lifeChanged alive の直後）に使う
+ */
+export function clearAllStatus(ctx: RuleContext, ch: Character): void {
+  for (const s of [...ch.status]) {
+    ch.status = ch.status.filter((x) => x !== s);
+    ctx.events.push({ kind: "statusChanged", id: ch.id, status: s, on: false });
+  }
+}
+
+/**
  * 戦闘外のダメージ（DG-20 pit と EV-32 damage の共通。CH-45）。targets を並び順に dice を 1 回ずつ振り、max(0, total) を引く
  * （0 なら hpChanged なし）。全員分の後に HP 0 の者を dead → lifeChanged → message dungeon.dead{name}、
  * 死者 1 人ごとに、その時点の生存者全員へ loseSan(allyDeath, ["allyInjury"])。
@@ -28,6 +39,7 @@ export function damageMembers(ctx: RuleContext, targets: readonly Character[], d
   for (const ch of died) {
     ch.life = "dead";
     ctx.events.push({ kind: "lifeChanged", id: ch.id, life: "dead" });
+    clearAllStatus(ctx, ch); // CH-45
     ctx.events.push({ kind: "message", key: "dungeon.dead", params: { name: ch.name } });
   }
   for (let k = 0; k < died.length; k++) {

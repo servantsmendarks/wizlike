@@ -326,7 +326,8 @@ describe("TW-07 寺院（town.temple）", () => {
     expect(r.state.rng).toEqual(rngAfter(seed, [[1, 100]]));
   });
 
-  test("TW-07 蘇生の失敗: 成否に関わらず払い、d100 > 78 で ash", () => {
+  test("TW-07/CH-45 蘇生の失敗: 成否に関わらず払い、d100 > 78 で ash。灰は状態異常を持たない（古い保存の死者に毒が残っていても外す）", () => {
+    // 2026-10-05 ユーザー決定（CH-45）で期待値を変えた: 旧は ash でも status ["poison"] が残り statusChanged を出さなかった
     const { seed } = seedWithFirstD100((x) => x > 78);
     const s = town({ c2: { ...DEAD, mp: 0, san: 30, status: ["poison"] } });
     s.rng = createRng(seed);
@@ -334,10 +335,27 @@ describe("TW-07 寺院（town.temple）", () => {
     expect(r.events).toEqual([
       { kind: "message", key: "town.temple.resurrectRoll", params: { name: "ベルク" } },
       { kind: "lifeChanged", id: "c2", life: "ash" },
+      { kind: "statusChanged", id: "c2", status: "poison", on: false },
       { kind: "message", key: "town.temple.resurrectFail", params: { name: "ベルク" } },
     ]);
     expect(r.state.gold).toBe(200);
-    expect(member(r.state, "c2")).toMatchObject({ life: "ash", hp: 0, san: 30, status: ["poison"] });
+    expect(member(r.state, "c2")).toMatchObject({ life: "ash", hp: 0, san: 30, status: [] });
+  });
+
+  test("TW-07/CH-45 蘇生の成功は常に状態異常なしで戻る: 古い保存の死者に毒・麻痺が残っていても lifeChanged → hpChanged → statusChanged off（status の順）。MP・SAN はそのまま", () => {
+    const { seed } = seedWithFirstD100((x) => x <= 78);
+    const s = town({ c2: { ...DEAD, mp: 0, san: 30, status: ["poison", "paralysis"] } });
+    s.rng = createRng(seed);
+    const r = ok(s, { type: "town.temple", memberId: "c2", service: "resurrect" });
+    expect(r.events).toEqual([
+      { kind: "message", key: "town.temple.resurrectRoll", params: { name: "ベルク" } },
+      { kind: "lifeChanged", id: "c2", life: "alive" },
+      { kind: "hpChanged", id: "c2", delta: 1, hp: 1 },
+      { kind: "statusChanged", id: "c2", status: "poison", on: false },
+      { kind: "statusChanged", id: "c2", status: "paralysis", on: false },
+      { kind: "message", key: "town.temple.resurrectOk", params: { name: "ベルク" } },
+    ]);
+    expect(member(r.state, "c2")).toMatchObject({ life: "alive", hp: 1, mp: 0, san: 30, status: [] });
   });
 
   test("TW-07 成功率の上限は 95: vit 30（50 + 60 = 110）でも d100 = 96 は失敗、95 は成功", () => {
@@ -430,7 +448,8 @@ describe("TW-07 寺院（town.temple）", () => {
 // ---------------------------------------------------------------------------
 
 describe("TW-08 闇魔術（town.dark）", () => {
-  test("TW-08 ash の者が level × 1000 を払って alive・HP 1 に戻る（確定。乱数なし）。status・MP・SAN はそのまま", () => {
+  test("TW-08/CH-45 ash の者が level × 1000 を払って alive・HP 1 に戻る（確定。乱数なし）。状態異常はすべて外し、MP・SAN はそのまま", () => {
+    // 2026-10-05 ユーザー決定（CH-45）で期待値を変えた: 旧は status ["poison"] が残った
     // ベルク L2 → 2 × 1000 = 2000。所持金 2500 → 500
     const s = town(
       { c2: { ...ASH, level: 2, levelHistory: [{ level: 2, hpGain: 5, mpGain: 0 }], hpMax: 19, mp: 0, san: 30, status: ["poison"] } },
@@ -440,10 +459,11 @@ describe("TW-08 闇魔術（town.dark）", () => {
     expect(r.events).toEqual([
       { kind: "lifeChanged", id: "c2", life: "alive" },
       { kind: "hpChanged", id: "c2", delta: 1, hp: 1 },
+      { kind: "statusChanged", id: "c2", status: "poison", on: false },
       { kind: "message", key: "town.dark.done", params: { name: "ベルク" } },
     ]);
     expect(r.state.gold).toBe(500);
-    expect(member(r.state, "c2")).toMatchObject({ life: "alive", hp: 1, hpMax: 19, mp: 0, san: 30, status: ["poison"], level: 2 });
+    expect(member(r.state, "c2")).toMatchObject({ life: "alive", hp: 1, hpMax: 19, mp: 0, san: 30, status: [], level: 2 });
     expect(r.state.rng).toEqual(s.rng);
     expect(r.state.townVisit).toEqual(s.townVisit);
   });
@@ -538,6 +558,23 @@ describe("TW-30〜32 GM の救済", () => {
       expect(member(r.state, id)).toMatchObject({ life: "alive", hp: 1 });
       expect(r.state.townVisit).toEqual({ mercyOffered: false });
       expect(r.state.rng).toEqual(s.rng);
+    }
+  });
+
+  test("TW-31/CH-45 救済で戻る者は常に状態異常なし（古い保存の死者・灰に毒・石化が残っていても hpChanged の後に statusChanged off）", () => {
+    for (const id of ["c2", "c3"]) {
+      const s = offered();
+      member(s, id).status = ["poison", "stone"];
+      const r = ok(s, { type: "town.mercy", memberId: id });
+      const name = member(s, id).name;
+      expect(r.events).toEqual([
+        { kind: "lifeChanged", id, life: "alive" },
+        { kind: "hpChanged", id, delta: 1, hp: 1 },
+        { kind: "statusChanged", id, status: "poison", on: false },
+        { kind: "statusChanged", id, status: "stone", on: false },
+        { kind: "message", key: "town.mercy.done", params: { name } },
+      ]);
+      expect(member(r.state, id).status).toEqual([]);
     }
   });
 

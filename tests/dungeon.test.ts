@@ -1027,6 +1027,23 @@ describe("罠（DG-20, DG-21, E4）", () => {
     expect(r.state.rng).toEqual(mirror);
   });
 
+  test("DG-20/CH-45 戦闘外の死亡でも状態異常をすべて外す: lifeChanged dead の直後に statusChanged off（status の順）、その後に dungeon.dead", () => {
+    const { state } = atPit((s) => {
+      s.party[2]!.hp = 1; // 1d4 は 1 以上なので必ず倒れる
+      s.party[2]!.status = ["paralysis", "stone"]; // 毒は 1 歩の減りで HP が変わるので、歩で変化しない状態異常を使う
+    });
+    const victim = state.party[2]!;
+    const r = run(state, MOVE, DATA0);
+    const i = r.events.findIndex((e) => e.kind === "lifeChanged");
+    expect(r.events.slice(i, i + 4)).toEqual([
+      { kind: "lifeChanged", id: victim.id, life: "dead" },
+      { kind: "statusChanged", id: victim.id, status: "paralysis", on: false },
+      { kind: "statusChanged", id: victim.id, status: "stone", on: false },
+      { kind: "message", key: "dungeon.dead", params: { name: victim.name } },
+    ]);
+    expect(r.state.party[2]!.status).toEqual([]);
+  });
+
   test("DG-20/CH-44/TW-20 pit で全員死亡: dungeon.allDead は無く、その歩では階段と遭遇を起こさず（d100 を振らない）、同じ execute で全滅処理をして街へ（リーダーは TW-24 で戻る）", () => {
     const { state } = atPit((s) => {
       for (const c of s.party) c.hp = 1;

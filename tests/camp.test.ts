@@ -218,6 +218,19 @@ describe("MG-44 dungeon.cast の効果", () => {
     ]);
   });
 
+  test("MG-42/CH-45 呪文の蘇生で戻る者も常に状態異常なし（古い保存の死者に毒が残っていても hpChanged の後に statusChanged off）", () => {
+    // dived(1) の最初の d100 は 14 ≤ 74（上のテストと同じ）で成功
+    const s = inDungeon({ c4: PRIEST_ALL, c1: { life: "dead", hp: 0, status: ["poison"] } });
+    const r = ok(s, cast("c4", "resurrect", "c1"));
+    expect(r.events.slice(3)).toEqual([
+      { kind: "lifeChanged", id: "c1", life: "alive" },
+      { kind: "hpChanged", id: "c1", delta: 1, hp: 1 },
+      { kind: "statusChanged", id: "c1", status: "poison", on: false },
+      { kind: "message", key: "dungeon.cast.resurrectOk", params: { name: "アルド" } },
+    ]);
+    expect(member(r.state, "c1").status).toEqual([]);
+  });
+
   test("MG-42 resurrect の両方の分岐（templeSuccessBase を上書き）: 成功は alive・HP 1、失敗は ash。成否に関わらず MP 15 を消費", () => {
     const always = loadFreshData();
     always.config.economy.templeSuccessBase = 100;

@@ -1548,19 +1548,27 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(member(out.state, "c1").life).toBe("dead");
   });
 
-  test("CB-54/CH-45/TW-07 死亡しても状態異常（毒）は外さない（statusChanged off を出さない。蘇生・闇魔術で戻っても残る仕様の前提）。睡眠だけは戦闘の終わりに外れる（CH-43）", () => {
+  test("CB-54/CH-45 死亡した時点で状態異常をすべて外す: lifeChanged dead の直後に status の順で statusChanged off、その後に battle.dead。逃げた後も status は空", () => {
+    // 2026-10-05 ユーザー決定で 95f5fef の「死亡しても状態異常は外さない」を撤回し、このテストを書き直した
+    // （旧: 死者に poison が残り statusChanged を出さないことを固定していた）
     const d = dataWith({ combat: ALWAYS_HIT });
     const s = setup([{ monsterId: "kobold", hps: [80] }], {
       identified: ["kobold"],
+      // 配置は旧テストと同じ（c2・c3 は石化、必中のコボルドが HP 1 の c1 を倒す）
       patches: { c1: { hp: 1, status: ["poison"] }, c2: STONE, c3: STONE },
       inputs: { c1: DEF, c4: DEF, c5: DEF, c6: DEF },
     });
     const r = exec(s, RESOLVE, d);
     expect(member(r.state, "c1").life).toBe("dead");
-    expect(member(r.state, "c1").status).toEqual(["poison"]);
-    expect(r.events.some((e) => e.kind === "statusChanged" && e.id === "c1")).toBe(false);
+    expect(member(r.state, "c1").status).toEqual([]);
+    const i = r.events.findIndex((e) => e.kind === "lifeChanged" && e.id === "c1");
+    expect(r.events.slice(i, i + 3)).toEqual([
+      { kind: "lifeChanged", id: "c1", life: "dead" },
+      { kind: "statusChanged", id: "c1", status: "poison", on: false },
+      { kind: "message", key: "battle.dead", params: { target: "アルド" } },
+    ]);
     const out = exec(r.state, FLEE, dataWith({ combat: { fleeBase: 1000 } }));
-    expect(member(out.state, "c1").status).toEqual(["poison"]);
+    expect(member(out.state, "c1").status).toEqual([]);
   });
 });
 

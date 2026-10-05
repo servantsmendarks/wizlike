@@ -389,6 +389,23 @@ describe("全滅処理（TW-20〜26）", () => {
     expect(penaltyOf(para.events).leaderRule).toBe(false);
   });
 
+  test("TW-24/CH-45 死亡・灰から復活するリーダーは clearStatus が false でも状態異常なしで戻る（全滅時点で alive の者は clearStatus に従う）", () => {
+    const d: GameData = structuredClone(data);
+    d.config.wipe.clearStatus = false;
+    // 古い保存の死者に毒が残っている形。c2 は全滅時点で alive の麻痺
+    const s = withTotal(patch(base(), { c1: { ...DEAD, hpMax: 21, status: ["poison"] }, c2: PARA, c3: DEAD, c4: DEAD, c5: DEAD, c6: DEAD }), 20);
+    const ctx = wipeOf(s, d);
+    const ks = kindsOf(ctx.events);
+    const i = ks.indexOf("message:wipe.leaderRule");
+    expect(ctx.events.slice(i + 1, i + 4)).toEqual([
+      { kind: "lifeChanged", id: "c1", life: "alive" },
+      { kind: "hpChanged", id: "c1", delta: 11, hp: 11 }, // ceil(21 × 0.5) = 11
+      { kind: "statusChanged", id: "c1", status: "poison", on: false },
+    ]);
+    expect(memberById(ctx.state, "c1")!.status).toEqual([]);
+    expect(memberById(ctx.state, "c2")!.status).toEqual(["paralysis"]);
+  });
+
   test("TW-26 wipe イベントの後に town.enter → sanChanged（SAN 0 の者も、life を問わず sanMax へ）→ 条件なら town.mercy.offer → screen town が最後。dive・battle・pendingChoice は null、townVisit は非 null", () => {
     const s0 = patch(base(), { c1: { ...DEAD, san: 0 }, c2: { ...DEAD, san: 40 }, c3: DEAD, c4: DEAD, c5: DEAD, c6: DEAD });
     s0.gold = 0;

@@ -11,6 +11,7 @@ import { destroyItemInstance, itemDisplayName } from "../state";
 import type { Character, GameState, PenaltyExpLoss, PenaltyLostItem, PenaltyResult, RuleContext, TextRef } from "../types";
 import { canAct } from "./combat-calc";
 import { clampToMax, hpMaxOf } from "./equip-stats";
+import { clearAllStatus } from "./field";
 import { levelDownWhileBelow } from "./growth";
 import { ceilRatio, floorRatio } from "./ratio";
 import { sellPrice } from "./shop";
@@ -76,22 +77,21 @@ function lossPool(state: GameState): Holding[] {
   return unequipped.length > 0 ? unequipped : equipped;
 }
 
-/** TW-23 / TW-24: alive にして HP を max(1, ceil(hpMax × reviveHpRatio)) に「する」（下がることもある）。clearStatus なら状態を全部外す。MP・SAN は触らない */
+/**
+ * TW-23 / TW-24: alive にして HP を max(1, ceil(hpMax × reviveHpRatio)) に「する」（下がることもある）。
+ * 死亡・灰から生き返る者（TW-24 のリーダー）は常に、全滅時点で alive の者は clearStatus なら状態を全部外す（CH-45）。MP・SAN は触らない
+ */
 function revive(ctx: RuleContext, ch: Character): void {
   const cfg = ctx.data.config.wipe;
-  if (ch.life !== "alive") {
+  const wasDead = ch.life !== "alive";
+  if (wasDead) {
     ch.life = "alive";
     ctx.events.push({ kind: "lifeChanged", id: ch.id, life: "alive" });
   }
   const hp = Math.max(1, ceilRatio(hpMaxOf(ctx.state, ctx.data, ch), cfg.reviveHpRatio)); // CH-14: 実効の hpMax
   if (hp !== ch.hp) ctx.events.push({ kind: "hpChanged", id: ch.id, delta: hp - ch.hp, hp });
   ch.hp = hp;
-  if (cfg.clearStatus) {
-    for (const s of [...ch.status]) {
-      ch.status = ch.status.filter((x) => x !== s);
-      ctx.events.push({ kind: "statusChanged", id: ch.id, status: s, on: false });
-    }
-  }
+  if (wasDead || cfg.clearStatus) clearAllStatus(ctx, ch);
 }
 
 /**

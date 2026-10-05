@@ -34,7 +34,7 @@
 
 - MG-40 帰還 `return`（僧侶系 Lv3【仮】、field）: 迷宮からその場で街へ。帰還の糸（DG-30）と同じ効果。潜行台帳の内容は持ち帰る。`dungeon.cast`（MG-44）で使う。語りは `dungeon.returnSpell`。
 - MG-41 識別 `identify`（僧侶系 Lv3【仮】、battle）: 戦闘中の全敵グループを鑑定済みにする（CB-05）。
-- MG-42 蘇生 `resurrect`（僧侶系 Lv5【仮】、field）: 対象 `dead` → `alive`（HP 1）。成功率は寺院と同式（TW-07）。失敗すると `ash`。`dungeon.cast`（MG-44）で使う。成功率は `resurrectRate`（寺院と共有）、判定は d100 を 1 回で、ダイスは表示しない（TW-07 と同じ）。対象は `life` が `dead` の者（`alive` / `ash` は rejected `bad target`）。成否に関わらず MP を消費する。
+- MG-42 蘇生 `resurrect`（僧侶系 Lv5【仮】、field）: 対象 `dead` → `alive`（HP 1）。成功率は寺院と同式（TW-07）。失敗すると `ash`。`dungeon.cast`（MG-44）で使う。成功率は `resurrectRate`（寺院と共有）、判定は d100 を 1 回で、ダイスは表示しない（TW-07 と同じ）。対象は `life` が `dead` の者（`alive` / `ash` は rejected `bad target`）。成否に関わらず MP を消費する。戻る者は状態異常なし（CH-45）。
 - MG-43 睡眠 `sleep_mist`（魔術師系 Lv1【仮】、battle）: 対象グループに睡眠を付与。付与判定は CB-30。
 - MG-44 `dungeon.cast {memberId, spellId, targetId?}`（M4.5）: 街と、迷宮の戦闘外かつ保留なし（キャンプと酒場。UI-53。街は M5.5 から）で受け付ける。判定順は wrong screen（戦闘中・title。M5.5 で not in dungeon から改めた）→ no such member → cannot act（CH-44）→ unknown spell（data に無い・本人が覚えていない）→ not usable here（MG-32 の条件を満たさない。街の帰還も。M5.5）→ no mp → bad target（`ally` の heal / cureStatus は `alive` の者、蘇生は `dead` の者。`self` / `party` / `none` は targetId を見ない）。保留中は E3 の choice pending。受け付けたら MP を引き（`mpChanged`）→ `battle.cast{actor, spell}` → 効果の順。`spell` イベントは出さない。heal / cureStatus は戦闘と同じ効果（F9。heal は対象ごとに 1 回振る）、帰還は `dungeon.returnSpell` → 街に入る処理（DG-30 と同じで台帳は持ち帰る）、蘇生は `dungeon.cast.resurrectRoll` → 判定 → `lifeChanged`（成功なら続けて `hpChanged`）→ `dungeon.cast.resurrectOk` / `resurrectFail`。
 

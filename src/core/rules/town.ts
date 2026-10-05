@@ -13,6 +13,7 @@ import { canAct } from "./combat-calc";
 import { clampToMax, effectiveStats, equipStats } from "./equip-stats";
 import { levelUpWhilePossible } from "./growth";
 import { ceilRatio } from "./ratio";
+import { clearAllStatus } from "./field";
 import { capSan, overSan, restoreSan } from "./san";
 import { shopMenu } from "./shop";
 import { storageMenu } from "./storage";
@@ -224,7 +225,7 @@ export function checkTemple(state: GameState, memberId: unknown, service: unknow
 /**
  * TW-07。checkTemple が null を返した前提。
  * - resurrect: 払う → message resurrectRoll → d100（dice イベントなし）≤ min(templeSuccessMax, base + vit × perVit) なら
- *   alive・HP 1（lifeChanged, hpChanged）と resurrectOk、でなければ ash（lifeChanged）と resurrectFail。status・MP・SAN はそのまま
+ *   alive・HP 1（lifeChanged, hpChanged）と resurrectOk、でなければ ash（lifeChanged）と resurrectFail。status はすべて外す（CH-45。statusChanged off）、MP・SAN はそのまま
  * - cure: 払う → 毒・麻痺・石化を status の順に外す（statusChanged off）→ message town.temple.cured
  * - uncurse: uncurseCost を 1 回払う → 装備中の呪われた品を EQUIP_SLOTS の順に 1 個ずつ失う（message town.temple.uncursed）
  */
@@ -277,7 +278,7 @@ export function checkDark(state: GameState, memberId: unknown, data: GameData): 
 
 /**
  * TW-08。checkDark が null を返した前提。乱数は使わない（確定）。
- * 払う → alive・HP 1（lifeChanged, hpChanged）→ message town.dark.done。status・MP・SAN はそのまま（寺院の蘇生と同じ）
+ * 払う → alive・HP 1（lifeChanged, hpChanged）→ message town.dark.done。status はすべて外し、MP・SAN はそのまま（寺院の蘇生と同じ）
  */
 export function darkService(ctx: RuleContext, memberId: string): void {
   const { state, data } = ctx;
@@ -310,15 +311,17 @@ export function rollResurrect(ctx: RuleContext, ch: Character): boolean {
   }
   ch.life = "ash";
   ctx.events.push({ kind: "lifeChanged", id: ch.id, life: "ash" });
+  clearAllStatus(ctx, ch); // CH-45（死亡で外れているはずだが、古い保存の死者に残っていても灰では持たない）
   return false;
 }
 
-/** life を alive・HP 1 にする（寺院の蘇生の成功・闇魔術・救済）。lifeChanged の後に、HP が変わったら hpChanged */
+/** life を alive・HP 1 にする（寺院の蘇生の成功・闇魔術・救済）。lifeChanged の後に、HP が変わったら hpChanged、状態異常をすべて外す（statusChanged off） */
 function reviveAtOne(ctx: RuleContext, ch: Character): void {
   ch.life = "alive";
   ctx.events.push({ kind: "lifeChanged", id: ch.id, life: "alive" });
   if (ch.hp !== 1) ctx.events.push({ kind: "hpChanged", id: ch.id, delta: 1 - ch.hp, hp: 1 });
   ch.hp = 1;
+  clearAllStatus(ctx, ch); // TW-07 / TW-08 / TW-31: 生き返る者は常に状態異常なし（全滅の復活 TW-23 と同じく hpChanged の後）
 }
 
 // ---------------------------------------------------------------------------
