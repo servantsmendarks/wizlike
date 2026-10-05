@@ -8,7 +8,6 @@ import {
   createBattleView,
   enemyFill,
   enemyGroupOfId,
-  enemySprite,
   focusFrame,
   FOCUS_BLINK_MS,
   groupBoxes,
@@ -72,17 +71,55 @@ describe("UI-54 敵グループの列", () => {
     expect(ENEMY_FILLS).not.toContain("black");
   });
 
-  test("UI-60 enemySprite / spriteUrl: 鑑定済みは素材が揃うまで読まない（null）、未鑑定は系統の unknown_<kind>（<id>_silhouette は使わない）。URL は {base}sprites/<名前>.png", () => {
-    for (const m of data.monsters) expect(enemySprite(data, m.id, true), m.id).toBeNull();
-    expect(enemySprite(data, "kobold", false)).toBe("unknown_humanoid");
-    expect(enemySprite(data, "rotting_corpse", false)).toBe("unknown_humanoid");
-    expect(enemySprite(data, "giant_spider", false)).toBe("unknown_beast");
-    expect(enemySprite(data, "whispering_shadow", false)).toBe("unknown_spirit");
-    expect(enemySprite(data, "gatekeeper_armor", false)).toBe("unknown_construct");
-    expect(enemySprite(data, "no_such_monster", false)).toBeNull();
-    for (const m of data.monsters) expect(enemySprite(data, m.id, false), m.id).not.toMatch(/silhouette/);
+  test("UI-60 spriteUrl: URL は {base}sprites/<名前>.png（絵の選び方は sprites.test.ts の chooseSprite）", () => {
     expect(spriteUrl("unknown_beast", "/wizlike/")).toBe("/wizlike/sprites/unknown_beast.png");
     expect(spriteUrl("kobold", "/")).toBe("/sprites/kobold.png");
+  });
+
+  test("UI-54/UI-60 1 グループのボス（bossSolo）は絵の枠 96×96 を 72,2 に置き、ラベルは絵の右 174,2,62,20。ラベルは判定の箱（rows 1〜2）とも注目の枠とも重ならず、ビューの内側", () => {
+    expect(groupColumns(1, VIEW_W, true)).toEqual([{ x: 72, y: 2, w: 96, h: 96 }]);
+    expect(groupLabelRects(1, VIEW_W, true)).toEqual([{ x: 174, y: 2, w: 62, h: 20 }]);
+    const row = { label: { key: "dice.row.roll" }, base: null, dice: [1], total: 1 };
+    const boxes = [diceBox({ rows: [row, row] }), diceBox({ rows: [row] })];
+    const label = groupLabelRects(1, VIEW_W, true)[0]!;
+    const frame = focusFrame(groupColumns(1, VIEW_W, true)[0]!);
+    expect(frame).toEqual({ x: 70, y: 0, w: 100, h: 100 });
+    for (const b of boxes) expect(overlaps(label, b), `dice ${b.y}`).toBe(false);
+    expect(overlaps(label, frame)).toBe(false);
+    const view = { x: 0, y: 0, w: VIEW_W, h: 150 };
+    for (const r of [label, frame]) expect(r.x >= view.x && r.y >= view.y && r.x + r.w <= view.w && r.y + r.h <= view.h, JSON.stringify(r)).toBe(true);
+    // ボスの名前・未鑑定名のラベルは幅 62 の 2 行に収まる（美咲: 半角 4px、他 8px。空白と仮名・漢字の間で折り返す）
+    const px = (s: string): number => [...s].reduce((a, c) => a + (c.charCodeAt(0) < 0x80 ? 4 : 8), 0);
+    const lines = (text: string, width: number): number => {
+      let n = 1;
+      let x = 0;
+      for (const word of text.split(" ").map((w) => (/[぀-ヿ一-鿿]/.test(w) ? [...w] : [w]))) {
+        if (x > 0) x += px(" ");
+        for (const u of word) {
+          if (x > 0 && x + px(u) > width) {
+            n++;
+            x = 0;
+          }
+          x += px(u);
+        }
+      }
+      return n;
+    };
+    for (const m of data.monsters.filter((x) => x.special.boss === true)) {
+      for (const name of [m.name, data.unknownKinds.find((k) => k.id === m.unknownKind)!.name]) {
+        const text = groupLabel({ name, count: data.config.combat.maxPerGroup }, 1, data.strings);
+        expect(lines(text, label.w), text).toBeLessThanOrEqual(2);
+      }
+    }
+  });
+
+  test("UI-54 bossSolo は 1 グループのときだけ効く（2〜4 グループの矩形・ボスでない 1 グループの矩形は今のまま）", () => {
+    for (let n = 2; n <= 4; n++) {
+      expect(groupColumns(n, VIEW_W, true), `${n}`).toEqual(groupColumns(n, VIEW_W));
+      expect(groupLabelRects(n, VIEW_W, true), `${n}`).toEqual(groupLabelRects(n, VIEW_W));
+    }
+    expect(groupColumns(1, VIEW_W, false)).toEqual([{ x: 88, y: 2, w: 64, h: 64 }]);
+    expect(groupLabelRects(1, VIEW_W, false)).toEqual([{ x: 92, y: 68, w: 56, h: 20 }]);
   });
 
   test("UI-41 enemyGroupOfId は core の敵の id e{g}-{u} のグループ添字。味方の id などは null", () => {
@@ -262,9 +299,12 @@ const GROUPS: EnemyGroupView[] = [
   { index: 2, monsterId: "giant_spider", name: "何かの獣", identified: false, count: 0 },
 ];
 
-function setup(onPick?: (g: number) => void) {
+/** UI-60: public/sprites に実在する絵の一覧（テスト用。鑑定済みのコボルドと未鑑定の beast だけ） */
+const SPRITES = { kobold: { w: 48, h: 48 }, unknown_beast: { w: 48, h: 48 } };
+
+function setup(onPick?: (g: number) => void, sprites: Record<string, { w: number; h: number }> = SPRITES) {
   const created = fakeDocument();
-  const v = createBattleView(data, data.strings, VIEW_W, 150, onPick);
+  const v = createBattleView(data, data.strings, VIEW_W, 150, onPick, sprites);
   v.setGroups(GROUPS);
   const byClass = (c: string): FakeEl[] => created.filter((e) => e.className === c);
   return { v, byClass };
@@ -301,30 +341,75 @@ describe("UI-54 戦闘のビュー（DOM）", () => {
     ]);
   });
 
-  test("UI-60 絵: 未鑑定の列の矩形の中に <img>（{base}sprites/unknown_<kind>.png）。鑑定済みは <img> を作らない。塗りは未鑑定なら系統の色。読めたら塗りを消して絵を出し、読めなければ矩形のまま、その URL は次の描き直しで読まない", () => {
+  test("UI-60 一覧が空（素材が無い今）なら <img> を作らない（404 や SPA の HTML を取りに行かない）。矩形の塗りのまま", () => {
+    const { byClass } = setup(undefined, {});
+    expect(byClass("battle-group-img")).toEqual([]);
+    expect(byClass("battle-group-sprite").map((s) => s.children.length)).toEqual([0, 0, 0]);
+  });
+
+  test("UI-60 <img> は一覧にある絵だけ: 幅・高さは w × scale、位置は枠の中央、image-rendering pixelated。1 グループの非ボスは枠 64 に 48 を 1 倍で 8px 寄せ、1 グループのボス（未鑑定）は枠 96 に unknown_construct を 2 倍", () => {
+    const created = fakeDocument();
+    const v = createBattleView(data, data.strings, VIEW_W, 150, undefined, { kobold: { w: 48, h: 48 }, unknown_construct: { w: 48, h: 48 } });
+    v.setGroups([{ index: 0, monsterId: "kobold", name: "コボルド", identified: true, count: 1 }]);
+    const img0 = created.filter((e) => e.className === "battle-group-img")[0]!;
+    expect((img0 as unknown as { src: string }).src).toBe("/sprites/kobold.png");
+    expect([img0.style["left"], img0.style["top"], img0.style["width"], img0.style["height"]]).toEqual(["8px", "8px", "48px", "48px"]);
+    expect(img0.style["position"]).toBe("absolute");
+    expect(img0.style["imageRendering"]).toBe("pixelated");
+    v.setGroups([{ index: 0, monsterId: "gatekeeper_armor", name: "動く何か", identified: false, count: 1 }]);
+    const sprite = created.filter((e) => e.className === "battle-group-sprite")[1]!;
+    const box = created.filter((e) => e.className === "battle-group")[1]!;
+    // 枠 72,2,96,96（列の箱 x92 からの相対で -20）、ラベルは 174,2（相対 82）
+    expect([sprite.style["left"], sprite.style["top"], sprite.style["width"], sprite.style["height"]]).toEqual(["-20px", "2px", "96px", "96px"]);
+    expect(box.style["left"]).toBe("92px");
+    const label = created.filter((e) => e.className === "battle-group-label")[1]!;
+    expect([label.style["left"], label.style["top"], label.style["width"], label.style["height"]]).toEqual(["82px", "2px", "62px", "20px"]);
+    const img1 = created.filter((e) => e.className === "battle-group-img")[1]!;
+    expect((img1 as unknown as { src: string }).src).toBe("/sprites/unknown_construct.png");
+    expect([img1.style["left"], img1.style["top"], img1.style["width"], img1.style["height"]]).toEqual(["0px", "0px", "96px", "96px"]);
+    // 鑑定済みのボスの 96 の絵が一覧に無ければ <img> を作らず 96×96 の矩形
+    v.setGroups([{ index: 0, monsterId: "gatekeeper_armor", name: "門番の甲冑", identified: true, count: 1 }]);
+    expect(created.filter((e) => e.className === "battle-group-img")).toHaveLength(2);
+    expect(created.filter((e) => e.className === "battle-group-sprite")[2]!.style["width"]).toBe("96px");
+  });
+
+  test("UI-60 2 グループ以上のボスの 96 の絵は枠 48 に入らないので <img> を作らず矩形（縮小しない）", () => {
+    const created = fakeDocument();
+    const v = createBattleView(data, data.strings, VIEW_W, 150, undefined, { gatekeeper_armor: { w: 96, h: 96 }, kobold: { w: 48, h: 48 } });
+    v.setGroups([
+      { index: 0, monsterId: "gatekeeper_armor", name: "門番の甲冑", identified: true, count: 1 },
+      { index: 1, monsterId: "kobold", name: "コボルド", identified: true, count: 2 },
+    ]);
+    const imgs = created.filter((e) => e.className === "battle-group-img");
+    expect(imgs.map((i) => (i as unknown as { src: string }).src)).toEqual(["/sprites/kobold.png"]);
+    expect(created.filter((e) => e.className === "battle-group-sprite").map((s) => s.style["width"])).toEqual(["48px", "48px"]);
+  });
+
+  test("UI-60 絵: 一覧にある絵（鑑定済みは本名、未鑑定は unknown_<kind>）の矩形の中に <img>（{base}sprites/<名前>.png）。塗りは未鑑定なら系統の色。読めたら塗りを消して絵を出し、読めなければ矩形のまま、その URL は次の描き直しで読まない", () => {
     const { v, byClass } = setup();
     const sprites = byClass("battle-group-sprite");
     const imgs = byClass("battle-group-img");
     expect(imgs.map((i) => (i as unknown as { src: string }).src)).toEqual([
       "/sprites/unknown_beast.png",
+      "/sprites/kobold.png",
       "/sprites/unknown_beast.png",
     ]);
-    expect(sprites.map((s) => s.children)).toEqual([[imgs[0]], [], [imgs[1]]]);
-    expect(imgs.map((i) => i.style["display"])).toEqual(["none", "none"]);
+    expect(sprites.map((s) => s.children)).toEqual([[imgs[0]], [imgs[1]], [imgs[2]]]);
+    expect(imgs.map((i) => i.style["display"])).toEqual(["none", "none", "none"]);
     // 未鑑定の大ネズミと大蜘蛛（同じ beast）は同じ色。鑑定済みのコボルドは敵ごとの色
     const beast = PALETTE[data.unknownKinds.find((k) => k.id === "beast")!.placeholderColor];
     expect(sprites.map((s) => s.style["background"])).toEqual([beast, PALETTE[enemyFill(data, "kobold", true)], beast]);
     // 読めた: 塗りを消して絵を出す
     imgs[1]!.dispatch("load");
     expect(imgs[1]!.style["display"]).toBe("block");
-    expect(sprites[2]!.style["background"]).toBe("transparent");
-    // 読めなかった: 矩形のまま。次の描き直しではその URL の <img> を作らない
+    expect(sprites[1]!.style["background"]).toBe("transparent");
+    // 読めなかった: 矩形のまま。次の描き直しではその URL の <img> を作らない（コボルドは作る）
     imgs[0]!.dispatch("error");
     expect(imgs[0]!.style["display"]).toBe("none");
     expect(sprites[0]!.style["background"]).toBe(beast);
     v.setGroups(GROUPS);
-    expect(byClass("battle-group-img").slice(2)).toEqual([]);
-    expect(byClass("battle-group-sprite").slice(3).map((s) => s.children.length)).toEqual([0, 0, 0]);
+    expect(byClass("battle-group-img").slice(3).map((i) => (i as unknown as { src: string }).src)).toEqual(["/sprites/kobold.png"]);
+    expect(byClass("battle-group-sprite").slice(3).map((s) => s.children.length)).toEqual([0, 1, 0]);
   });
 
   test("UI-54 ラベルは 2 行（高さ 20・行間 10）まで折り返し、3 行目以降は -webkit-line-clamp 2 で省く。位置は groupLabelRects（列の箱の左上からの相対）", () => {

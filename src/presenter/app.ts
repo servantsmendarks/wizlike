@@ -291,6 +291,8 @@ export function createApp(o: {
     onMapCell: (p) => guard(() => tapMapCell(p)),
     onMapGo: () => guard(() => goMapPick()),
     onSound: (k) => playUi(k),
+    // UI-60（M8）: public/sprites に実在する絵の一覧だけ読む（素材が無い間は空 = 矩形）
+    sprites: o.assets?.sprites ?? {},
   });
 
   // UI-57: debug パネルの「ポインタ」に出す直近 20 件のポインタイベント（表示層だけ。保存しない）

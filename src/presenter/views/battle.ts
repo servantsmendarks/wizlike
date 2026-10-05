@@ -8,16 +8,20 @@
 // - 対象の選択中は focus で、注目しているグループの絵の周り（focusFrame）に枠を出し、点滅させる（Element.animate の
 //   iterations: Infinity。常駐のループではなく、解除・切り替え・描き直しで cancel する）。演出スキップでは点滅せず枠だけ。
 // - setPickable の間だけ絵のタップで onPick(グループの添字) を呼ぶ（体数 1 以上のとき）。
-// - UI-60（M7）: 絵は public/sprites/<sprite>.png（鑑定済みは monsters[].sprite、未鑑定は系統の unknown_<kind>）を <img> で読み、
-//   読めたら矩形の塗りを消して絵を出す。読めなければ（素材が無い・オフラインで未キャッシュ）色付き矩形のまま。読めなかった URL は
+// - UI-60（M8）: 絵は public/sprites/<sprite>.png（鑑定済みは monsters[].sprite、未鑑定は系統の unknown_<kind>）。
+//   ビルド時の一覧（GameAssets.sprites）にあり、枠に整数倍で入るものだけ <img> で読む（chooseSprite）。大きさは w × scale、
+//   枠の中央。読めたら矩形の塗りを消して絵を出す。読めなければ（オフラインで未キャッシュ）色付き矩形のまま。読めなかった URL は
 //   このビューの間は覚えて、次の描き直しで読みに行かない。
+// - UI-54 / UI-60（M8）: 1 グループのボス（special.boss）は絵の枠 96×96（x72・y2..97）で、ラベルは絵の右（x174・y2 の 62×20）。
 // 演出は Element.animate だけで、ms が 0 以下なら animate を呼ばない。
 // モジュールのトップレベルでは DOM に触れない。
+import type { SpriteInfo } from "../../build/asset-types";
 import type { GameData, Strings } from "../../core/data/index";
 import type { EnemyGroupView } from "../../core/types";
 import { targetNumber } from "../battle-input";
 import type { Rect } from "../layout";
 import { ENEMY_FILLS, PALETTE, type PaletteName } from "../palette";
+import { chooseSprite, isBossMonster } from "../sprites";
 import { formatMessage } from "./message";
 import { onTap } from "../input/tap";
 
@@ -25,6 +29,10 @@ const COL_W = 56;
 const COL_GAP = 4;
 const SPRITE = { x: 4, y: 8, size: 48 } as const;
 const SPRITE_SOLO = { y: 2, size: 64 } as const;
+/** UI-54 / UI-60（M8）: 1 グループのボスの絵の枠（96 の絵を縮小せずに描く） */
+const SPRITE_BOSS = { y: 2, size: 96 } as const;
+/** ボスのラベルを注目の枠の右からさらに空ける幅 */
+const BOSS_LABEL_GAP = 4;
 const LABEL_H = 20;
 const LINE_H = 10;
 /** 注目の枠を絵から広げる幅（論理 px） */
@@ -40,8 +48,12 @@ export function groupBoxes(n: number, viewW: number, viewH = 150): Rect[] {
   return Array.from({ length: n }, (_, i): Rect => ({ x: left + i * (COL_W + COL_GAP), y: 0, w: COL_W, h: viewH }));
 }
 
-/** 列 i の絵の矩形。n=1 だけ 64×64（y2..65）、それ以外は 48×48（列内 x+4、y8..55） */
-export function groupColumns(n: number, viewW: number): Rect[] {
+/** 列 i の絵の矩形。n=1 だけ 64×64（y2..65。bossSolo なら 96×96 の y2..97）、それ以外は 48×48（列内 x+4、y8..55） */
+export function groupColumns(n: number, viewW: number, bossSolo = false): Rect[] {
+  if (n === 1 && bossSolo) {
+    const x = Math.floor((viewW - SPRITE_BOSS.size) / 2);
+    return [{ x, y: SPRITE_BOSS.y, w: SPRITE_BOSS.size, h: SPRITE_BOSS.size }];
+  }
   if (n === 1) {
     const x = Math.floor((viewW - SPRITE_SOLO.size) / 2);
     return [{ x, y: SPRITE_SOLO.y, w: SPRITE_SOLO.size, h: SPRITE_SOLO.size }];
@@ -52,12 +64,17 @@ export function groupColumns(n: number, viewW: number): Rect[] {
 /**
  * UI-54: 列 i のラベルの矩形（ビュー座標）。高さ 20（2 行）、y は注目の枠の下端（絵の下端 + FRAME_PAD）。
  * n=1 は列の箱の幅 56 で y68..87、それ以外は注目の枠と同じ x と幅 52 で y58..77（隣のラベルと 8px 空け、
- * 3〜4 グループで 1 行につながって見えないようにする）。戦闘で出る判定の箱（UI-40。rows 1〜2 で上端 y98 / y88）と重ならない
+ * 3〜4 グループで 1 行につながって見えないようにする）。戦闘で出る判定の箱（UI-40。rows 1〜2 で上端 y98 / y88）と重ならない。
+ * n=1 の bossSolo（M8）は絵の右: x = 注目の枠の右 + 4（174）、y = 絵の上端（2）、幅はビューの右 4px まで（62）
  */
-export function groupLabelRects(n: number, viewW: number): Rect[] {
-  const sprites = groupColumns(n, viewW);
+export function groupLabelRects(n: number, viewW: number, bossSolo = false): Rect[] {
+  const sprites = groupColumns(n, viewW, bossSolo);
   return groupBoxes(n, viewW).map((b, i): Rect => {
     const sr = sprites[i] ?? { x: b.x + SPRITE.x, y: SPRITE.y, w: SPRITE.size, h: SPRITE.size };
+    if (n === 1 && bossSolo) {
+      const x = sr.x + sr.w + FRAME_PAD + BOSS_LABEL_GAP;
+      return { x, y: sr.y, w: viewW - 4 - x, h: LABEL_H };
+    }
     const y = sr.y + sr.h + FRAME_PAD;
     if (n === 1) return { x: b.x, y, w: b.w, h: LABEL_H };
     const f = focusFrame(sr);
@@ -76,17 +93,6 @@ export function enemyFill(data: GameData, monsterId: string, identified: boolean
   if (m === undefined) return "dim";
   if (!identified) return data.unknownKinds.find((k) => k.id === m.unknownKind)?.placeholderColor ?? "dim";
   return ENEMY_FILLS[i % ENEMY_FILLS.length] ?? "dim";
-}
-
-/**
- * UI-60: 絵の名前（public/sprites/<名前>.png）。未鑑定は系統の sprite（unknown_<kind>）。
- * 鑑定済みは素材が揃うまで PNG を読まない（M3 のまま矩形。戦闘ごとの 404 を避ける）ので null。未知の id も null
- */
-export function enemySprite(data: GameData, monsterId: string, identified: boolean): string | null {
-  const m = data.monsters.find((x) => x.id === monsterId);
-  if (m === undefined) return null;
-  if (identified) return null;
-  return data.unknownKinds.find((k) => k.id === m.unknownKind)?.sprite ?? null;
 }
 
 /** UI-60: 絵の URL（base は import.meta.env.BASE_URL。本番は /wizlike/） */
@@ -147,6 +153,8 @@ export function createBattleView(
   viewW = 240,
   viewH = 150,
   onPick?: (g: number) => void,
+  /** UI-60（M8）: public/sprites に実在する絵の一覧（GameAssets.sprites）。空なら絵を読まない */
+  spriteList: Readonly<Record<string, SpriteInfo>> = {},
 ): BattleView {
   const el = document.createElement("div");
   el.className = "play-battle";
@@ -189,9 +197,11 @@ export function createBattleView(
     focused = null;
     groups = gs.map((g) => ({ ...g }));
     el.replaceChildren();
+    const first = groups[0];
+    const bossSolo = groups.length === 1 && first !== undefined && isBossMonster(data, first.monsterId);
     const boxes = groupBoxes(groups.length, viewW, viewH);
-    const sprites = groupColumns(groups.length, viewW);
-    const labels = groupLabelRects(groups.length, viewW);
+    const sprites = groupColumns(groups.length, viewW, bossSolo);
+    const labels = groupLabelRects(groups.length, viewW, bossSolo);
     cols = groups.map((g, i): Col => {
       const b = boxes[i] ?? { x: 0, y: 0, w: COL_W, h: viewH };
       const sr = sprites[i] ?? { x: b.x + SPRITE.x, y: SPRITE.y, w: SPRITE.size, h: SPRITE.size };
@@ -202,15 +212,26 @@ export function createBattleView(
       sprite.className = "battle-group-sprite";
       place(sprite, { x: sr.x - b.x, y: sr.y, w: sr.w, h: sr.h });
       sprite.style.background = PALETTE[enemyFill(data, g.monsterId, g.identified)];
-      const name = enemySprite(data, g.monsterId, g.identified);
-      const url = name === null ? null : spriteUrl(name, import.meta.env.BASE_URL);
-      if (url !== null && !missing.has(url)) {
+      const pick = chooseSprite(data, g.monsterId, g.identified, spriteList, sr.w);
+      const url = pick === null ? null : spriteUrl(pick.name, import.meta.env.BASE_URL);
+      if (pick !== null && url !== null && !missing.has(url)) {
         // UI-60: 読めたら矩形の塗りを消して絵を出す。読めなければ矩形のまま（読めなかった URL を覚える）
         const img = document.createElement("img");
         img.className = "battle-group-img";
         img.alt = "";
         img.draggable = false;
-        Object.assign(img.style, { display: "none", width: "100%", height: "100%", imageRendering: "pixelated", pointerEvents: "none" });
+        const dw = pick.w * pick.scale;
+        const dh = pick.h * pick.scale;
+        Object.assign(img.style, {
+          display: "none",
+          position: "absolute",
+          left: `${Math.floor((sr.w - dw) / 2)}px`,
+          top: `${Math.floor((sr.h - dh) / 2)}px`,
+          width: `${dw}px`,
+          height: `${dh}px`,
+          imageRendering: "pixelated",
+          pointerEvents: "none",
+        });
         img.addEventListener("load", () => {
           img.style.display = "block";
           sprite.style.background = "transparent";

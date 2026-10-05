@@ -10,6 +10,7 @@
 //   ダイスの overlay（views/dice.ts、UI-40）はビューの中のいちばん上（モードを問わない）。全体攻撃の揺れ（UI-42）はビュー全体の translate。
 // 各部品の位置と大きさは、config.ui.layout から作った regions と dungeonLayout（layout.ts）から決める。
 // 部品の結線（何を描くか、Action を何にするか）は app が行う。モジュールのトップレベルでは DOM に触れない。
+import type { SpriteInfo } from "../../build/asset-types";
 import type { GameData, Strings } from "../../core/data/index";
 import type { Pos } from "../../core/types";
 import type { DungeonLayout, Regions } from "../layout";
@@ -97,6 +98,8 @@ export function createDungeonScreen(o: {
   onMapGo?(): void;
   /** UI-66（M8）: 操作領域の決定・取り消しの音（controls の onSound） */
   onSound?(k: "ok" | "cancel"): void;
+  /** UI-60（M8）: public/sprites に実在する絵の一覧（GameAssets.sprites）。省略時は絵を読まない */
+  sprites?: Readonly<Record<string, SpriteInfo>>;
 }): DungeonScreen {
   const r = o.regions;
   const lay = o.layout;
@@ -118,7 +121,7 @@ export function createDungeonScreen(o: {
   const townFrame = document.createElement("div");
   townFrame.className = "play-view-frame";
   viewBox.appendChild(townFrame);
-  const battle = createBattleView(o.data, o.strings, r.view.w, r.view.h, (g) => o.onPick?.(g));
+  const battle = createBattleView(o.data, o.strings, r.view.w, r.view.h, (g) => o.onPick?.(g), o.sprites ?? {});
   battle.el.style.display = "none";
   viewBox.appendChild(battle.el);
   const dice = createDiceView(o.strings);
