@@ -91,7 +91,7 @@ type BandRow = { id: string; name: string; life: Character["life"]; status: Stat
 /**
  * UI-13（M8.5）: 帯の DOM。row は帯の 1 行（ステージ座標）、cells は見える 6 セル、hits は押せる範囲（帯と見出しの行。40×22）。
  * stageOf は core の sanStage、sanMaxOf は実効の sanMax（core の memberSheet）。タップで onPick（その人の id）。
- * el は row の位置に自分で置く。押せる範囲の要素は帯の下（見出しの行）まで伸ばし、透明にする
+ * el は row の位置に自分で置く。押せる範囲の要素（button。B1）は帯の下（見出しの行）まで伸ばし、透明にする
  */
 export function createPartyBand(o: {
   strings: Strings;
@@ -109,7 +109,11 @@ export function createPartyBand(o: {
   let rows: BandRow[] = [];
   const cellEls = o.cells.map((c, i) => {
     const hit = o.hits[i] ?? c;
-    const b = document.createElement("div");
+    // B1（M8.5）: セルは button にする。Android Chrome はタッチ位置を指の範囲の中の「押せる要素」（button・フォーカスできる要素・
+    // click のリスナーを持つ要素）へ補正し、押した要素が押せる要素でなければ近くの一覧の行（button。y190 から）へ押下を移す。
+    // div のままだと見出しの行（y183 以降）の押下が一覧の先頭の行になった
+    const b = document.createElement("button");
+    b.type = "button";
     b.className = "party-band-cell";
     Object.assign(b.style, {
       position: "absolute",
@@ -117,6 +121,12 @@ export function createPartyBand(o: {
       top: `${hit.y - r.y}px`,
       width: `${hit.w}px`,
       height: `${hit.h}px`,
+      margin: "0",
+      padding: "0",
+      border: "0",
+      background: "transparent",
+      color: "inherit",
+      font: "inherit",
     });
     const label = document.createElement("div");
     label.className = "party-band-label";

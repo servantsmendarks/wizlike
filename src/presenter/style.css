@@ -83,6 +83,12 @@ body {
   background: var(--c-text) !important;
 }
 
+/* UI-13（M8.5）: 街の帯のセルは押下の補正のために button にしただけ（B1）。押している間も透明のまま（見出しの行まで白く塗らない） */
+#stage button.party-band-cell.is-pressed {
+  color: inherit !important;
+  background: transparent !important;
+}
+
 /* UI-02: safe area 計測用の不可視プローブ。padding を getComputedStyle で読む */
 .stage-safe-area-probe {
   position: fixed;

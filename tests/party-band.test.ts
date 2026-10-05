@@ -10,6 +10,11 @@ import { createTownPicture, townPictureUrl } from "../src/presenter/views/town-p
 import { data, newGame } from "./helpers/core";
 
 const S = data.strings;
+// @types/node は入れていないので node の fs は文字列の動的 import で読み、型は手で書く（message.test.ts と同じ）
+const FS_MODULE = "node:fs";
+const fs = (await import(/* @vite-ignore */ FS_MODULE)) as { readFileSync(p: URL, enc: "utf8"): string };
+type Box = { x: number; y: number; w: number; h: number };
+const overlap = (a: Box, b: Box): boolean => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 const ch = (name: string, p: Partial<Pick<Character, "life" | "status">> = {}): Pick<Character, "name" | "life" | "status"> => ({
   name,
   life: p.life ?? "alive",
@@ -84,8 +89,9 @@ class FakeEl {
 function fakeDocument(): FakeEl[] {
   const created: FakeEl[] = [];
   vi.stubGlobal("document", {
-    createElement(): FakeEl {
+    createElement(tag: string): FakeEl {
       const e = new FakeEl();
+      e["tagName"] = tag.toUpperCase();
       created.push(e);
       return e;
     },
@@ -136,6 +142,37 @@ describe("UI-13 帯の DOM・UI-61 施設の絵・ヘッダーのログ", () => 
     expect(label(2).style["color"]).toBe("var(--c-san)");
     tapSpecOf(cells[3]!)!.onTap({ lx: 0, ly: 0 });
     expect(picked).toEqual([party[3]!.id]);
+  });
+
+  test("UI-13 帯の押せる範囲は見出しの行を含み、一覧の行と重ならない。帯のセルは button（Chrome のタッチ位置の補正で下の一覧の行に押下を取られない。B1）", () => {
+    // 押せる範囲（y166..187）は見出しの行（y178..187）を縦に含み、一覧（y190..）とは重ならない
+    const lo = Math.min(...T.band.hits.map((r) => r.y));
+    const hi = Math.max(...T.band.hits.map((r) => r.y + r.h));
+    expect(lo).toBeLessThanOrEqual(T.heading.y);
+    expect(hi).toBeGreaterThanOrEqual(T.heading.y + T.heading.h);
+    expect(hi).toBeLessThanOrEqual(T.list.area.y);
+    for (const r of [...T.list.rows, T.back]) for (const h of T.band.hits) expect(overlap(h, r)).toBe(false);
+    // 帯のセルは押せるものとして Chrome に見える要素（button）。div だと、指の範囲に入った一覧の行（button）に押下が補正される
+    fakeDocument();
+    const band = createPartyBand({
+      strings: S,
+      row: T.band.row,
+      cells: T.band.cells,
+      hits: T.band.hits,
+      stageOf: (san, max) => sanStage(san, max, data.config),
+      sanMaxOf: (c) => c.sanMax,
+      onPick: () => {},
+    });
+    band.render(newGame(1).party);
+    const cells = fake(band.el).children;
+    expect(cells.map((c) => [c["tagName"], c["type"], c.className])).toEqual(cells.map(() => ["BUTTON", "button", "party-band-cell"]));
+    // 見出し（controls の中）は帯より後に DOM に入る（上に描かれる）ので、押下を下の帯のセルへ通す pointer-events none が要る
+    const src = fs.readFileSync(new URL("../src/presenter/views/dungeon.ts", import.meta.url), "utf8");
+    const append = /el\.append\(([^)]*)\)/.exec(src)?.[1] ?? "";
+    expect(append.indexOf("band.el")).toBeGreaterThanOrEqual(0);
+    expect(append.indexOf("band.el")).toBeLessThan(append.indexOf("controls.el"));
+    const ctl = fs.readFileSync(new URL("../src/presenter/views/controls.ts", import.meta.url), "utf8");
+    expect(ctl).toMatch(/heading\.className = "controls-list-heading";[\s\S]*?pointerEvents: "none"[\s\S]*?el\.appendChild\(heading\)/);
   });
 
   test("UI-61 createTownPicture: 一覧に無い施設は img を作らず黒、一覧にある施設は base/town/<id>.png を読む。読めなかった URL は覚えて読み直さない", () => {
