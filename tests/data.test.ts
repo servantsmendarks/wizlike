@@ -153,6 +153,16 @@ describe("data: config.json", () => {
     expect(issuesOf((r) => (r.config.combat.autoDefendHpRatio = 0))).toEqual([]);
     expect(issuesOf((r) => (r.config.combat.autoDefendHpRatio = 1))).toEqual([]);
   });
+  test("data: TW-17 economy.upgrade*（料金 50・基礎 10・触媒 30・減衰 0.66・最大 3）【仮】の検証", () => {
+    const e = config.economy;
+    expect([e.upgradeBase, e.upgradeRateBase, e.upgradeRatePerCatalyst, e.upgradeDecay, e.upgradeMaxCatalysts]).toEqual([50, 10, 30, 0.66, 3]);
+    expectIssue((r) => (r.config.economy.upgradeBase = -1), "config.json", "economy.upgradeBase: expected integer >= 0, got -1");
+    expectIssue((r) => (r.config.economy.upgradeRateBase = 101), "config.json", "economy.upgradeRateBase: expected integer in 0..100, got 101");
+    expectIssue((r) => (r.config.economy.upgradeRatePerCatalyst = 2.5), "config.json", "economy.upgradeRatePerCatalyst: expected integer");
+    expectIssue((r) => (r.config.economy.upgradeDecay = 1.5), "config.json", "economy.upgradeDecay: expected number in 0..1, got 1.5");
+    expectIssue((r) => (r.config.economy.upgradeMaxCatalysts = 0), "config.json", "economy.upgradeMaxCatalysts: expected integer >= 1, got 0");
+    expectIssue((r) => delete r.config.economy.upgradeDecay, "config.json", "economy.upgradeDecay: missing required field");
+  });
   test("data: CB-45/CH-53 san.randomDefendChance は 0..100 の整数【仮】", () => {
     expect(config.san.randomDefendChance).toBe(50);
     expectIssue((r) => (r.config.san.randomDefendChance = 101), "config.json", "san.randomDefendChance: expected integer in 0..100, got 101");

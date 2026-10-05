@@ -36,6 +36,7 @@ import type { StorageAction } from "./rules/storage";
 import { checkDark, checkInn, checkMercy, checkTemple, darkService, grantMercy, stayInn, templeService } from "./rules/town";
 import type { TempleService } from "./rules/town";
 import { checkLookAround, lookAround } from "./rules/tavern";
+import { checkUpgrade, doUpgrade } from "./rules/upgrade";
 import { wipeIfNoneCanAct } from "./rules/wipe";
 import { cloneState, makeContext } from "./state";
 import type { BattleAction, Command, ExecuteResult, GameState, RuleContext, ShopAction } from "./types";
@@ -265,6 +266,14 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       if (r !== null) return reject(state, "town.storage", r);
       const ctx = makeContext(cloneState(state), data);
       doStorage(ctx, c.action as StorageAction, c.memberId as string, c.instanceId as string);
+      return finish(ctx);
+    }
+    case "town.upgrade": {
+      const c = command as { memberId?: unknown; slot?: unknown; catalysts?: unknown };
+      const r = checkUpgrade(state, c.memberId, c.slot, c.catalysts, data);
+      if (r !== null) return reject(state, "town.upgrade", r);
+      const ctx = makeContext(cloneState(state), data);
+      doUpgrade(ctx, c.memberId as string, c.slot as EquipSlot, c.catalysts as string[]);
       return finish(ctx);
     }
     case "dungeon.cast": {

@@ -387,6 +387,11 @@ export type Command =
   | { type: "town.mercy"; memberId: string }
   /** TW-16 / IT-64（M7）: 倉庫。deposit は本人の inventory の実体を warehouse へ、withdraw は warehouse の実体を本人の inventory へ。乱数は使わない */
   | { type: "town.storage"; action: "deposit" | "withdraw"; memberId: string; instanceId: string }
+  /**
+   * TW-17（M7）: 闇魔術の強化。本人の equipment[slot] の汎用装備を、本人の inventory の鑑定済みの汎用装備（catalysts。0〜upgradeMaxCatalysts 個、
+   * 重複なし。成否に関わらず消える）を触媒に d100 で鍛える。乱数は d100 の 1 回
+   */
+  | { type: "town.upgrade"; memberId: string; slot: EquipSlot; catalysts: string[] }
   /** TW-13（M5.5）: 酒場で見回す。街（screen town・dive null）だけ。乱数を使う */
   | { type: "town.lookAround" }
   | { type: "dungeon.enter"; dungeonId: string }
@@ -534,6 +539,26 @@ export type TownMenuShopBuybackRow = { instanceId: string; name: string; price: 
 export type TownMenuShopIdentifyRow = { memberId: string; memberName: string; instanceId: string; name: string };
 /** TW-16: 倉庫・所持品の 1 個 */
 export type TownMenuStorageRow = { instanceId: string; name: string };
+/**
+ * TW-17: 強化の部位 1 つ（EQUIP_SLOTS の順）。block は null なら対象にできる、"slot empty"（空き）/ "unique"（ユニーク）。
+ * name は表示名（空きなら null）、level は実体の level（空きなら 0）
+ */
+export type TownMenuUpgradeSlot = { slot: EquipSlot; instanceId: string | null; name: string | null; level: number; block: string | null };
+/** TW-17: 触媒の候補 1 個（本人の inventory の鑑定済みの汎用装備。inventory の順）。name は表示名 */
+export type TownMenuUpgradeCatalyst = { instanceId: string; name: string; level: number };
+/** TW-17: 1 人分。canUpgrade は block が null の部位が 1 つ以上あるか */
+export type TownMenuUpgradeMember = {
+  memberId: string;
+  name: string;
+  canUpgrade: boolean;
+  slots: TownMenuUpgradeSlot[];
+  catalysts: TownMenuUpgradeCatalyst[];
+};
+/**
+ * TW-17: rules/upgrade.ts upgradePreview の値。rate は成功率 p（整数。判定はこの値と出目を比べる）、great は大成功の率 q、fee は料金、
+ * affordable = gold >= fee、block は checkUpgrade の理由（受け付けるなら null）
+ */
+export type UpgradePreview = { rate: number; great: number; fee: number; affordable: boolean; block: string | null };
 /** rules/town.ts townMenu。screen === "town" のときだけ非 null */
 export type TownMenu = {
   gold: number;
@@ -575,6 +600,13 @@ export type TownMenu = {
     items: TownMenuStorageRow[];
     /** 全員（並び順。life を問わない）の inventory の品と、所持枠の空き（0 なら引き出しは inventory full） */
     members: { memberId: string; name: string; slotsFree: number; items: TownMenuStorageRow[] }[];
+  };
+  /** TW-17（M7）闇魔術の強化（rules/upgrade.ts upgradeMenu） */
+  upgrade: {
+    /** config.economy.upgradeMaxCatalysts */
+    maxCatalysts: number;
+    /** 全員（並び順。life を問わない） */
+    members: TownMenuUpgradeMember[];
   };
   /** TW-31: townVisit.mercyOffered なら dead / ash の全員（並び順）。申し出が無ければ null */
   mercy: { memberId: string; name: string; life: "dead" | "ash" }[] | null;

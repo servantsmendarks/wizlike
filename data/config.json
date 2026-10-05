@@ -39,7 +39,8 @@
     "templeSuccessBase": 50, "templeSuccessPerVit": 2, "templeSuccessMax": 95,
     "templeCostPerLevel": 100, "darkCostPerLevel": 1000,
     "cureCost": { "poison": 50, "paralysis": 150, "stone": 300 },
-    "uncurseCost": 200
+    "uncurseCost": 200,
+    "upgradeBase": 50, "upgradeRateBase": 10, "upgradeRatePerCatalyst": 30, "upgradeDecay": 0.66, "upgradeMaxCatalysts": 3
   },
   "items": {
     "rarities": [

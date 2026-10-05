@@ -17,6 +17,7 @@ import { clearAllStatus } from "./field";
 import { capSan, overSan, restoreSan } from "./san";
 import { shopMenu } from "./shop";
 import { storageMenu } from "./storage";
+import { upgradeMenu } from "./upgrade";
 
 export type TempleService = "resurrect" | "cure" | "uncurse";
 /** 帰還の語りのキー（DG-30: 帰還の糸 / DG-06: 徒歩 / DG-32: テレポーター / MG-40: 帰還の呪文） */
@@ -382,6 +383,7 @@ export function townMenu(state: GameState, data: GameData): TownMenu | null {
     }),
     shop: shopMenu(state, data), // TW-05 / IT-60〜65（rules/shop.ts）
     storage: storageMenu(state, data), // TW-16 / IT-64（rules/storage.ts）
+    upgrade: upgradeMenu(state, data), // TW-17（rules/upgrade.ts）
     mercy: offered
       ? state.party.flatMap((ch) => (ch.life === "alive" ? [] : [{ memberId: ch.id, name: ch.name, life: ch.life }]))
       : null,

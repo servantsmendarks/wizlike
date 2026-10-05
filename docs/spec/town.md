@@ -36,10 +36,12 @@
   - 触媒: 本人の inventory の汎用装備（装備品のベースで `uniqueId` が null）を 0〜`config.economy.upgradeMaxCatalysts`（3）個、重複なし、鑑定済み（未鑑定は Lv が分からないので不可。指示は「所持品の汎用装備」なので items.md §11 の Q13 で【仮】）。呪われた品も可。成否に関わらず実体を消す。オプション・希少度は引き継がない。
   - 成功率 p = min(100, floor(`upgradeRateBase`（10）+ Σ 触媒ごとに `upgradeRatePerCatalyst`（30）× `upgradeDecay`（0.66）^max(0, 対象Lv − 触媒Lv)))【仮】（floor は `floorRatio` と同じく +1e-9）。大成功の率 q = max(1, floor(p ÷ 10))。
   - 判定は d100（randInt(1, 100)）を 1 回。出目 r ≤ q なら大成功で Lv +2、r ≤ p なら成功で Lv +1、それ以外は失敗で Lv −1（0 で止まる）。オプション・希少度・呪いはそのまま。
+  - 成功率の小数: p は上の floor で整数にしてから使い、表示（確認の段の成功率・判定の箱の基準）も判定（r ≤ p）もこの同じ整数で行う（UI-40 / CB-04 と同じく、表示している値で比べる。例: Lv1 の対象に Lv0 の触媒 1 個は 10 + 19.8 = 29.8 → p 29 で、出目 29 は成功・30 は失敗）。q もこの整数の p から出す。
+  - Lv0 の失敗は Lv0 のまま、語りは同じ `town.upgrade.ng`（「鍛えそこねた。{name}の手に{item}が戻る。」。item は変更後の表示名なので Lv の増減はそこに出る）。
   - 料金 = `config.economy.upgradeBase`（50）× (対象Lv + 1)【仮】。触媒なしでも取る。所持金から払う（銀行は使わない）。
   - 判定順は wrong screen → bad action（形。catalysts が配列でない・多すぎる・重複）→ no such member → bad slot → slot empty → unique → bad catalyst（inventory に無い・装備でない・ユニーク・未鑑定）→ not enough gold。
   - 処理の順は 払う → 触媒を消す → 判定の箱（dice。label `dice.upgrade`{item}、行 `dice.row.roll`（base null、d100）、基準 `dice.upgrade.rule`{rate: p, great: q}（「成功率 p（うち大成功 q）」）、結果 `dice.upgrade.great` / `ok` / `ng`）→ Lv の変更 → `town.upgrade.great` / `ok` / `ng`{name, item}（item は変更後の表示名）。
-  - 画面（UI）: キャラ → 部位 → 触媒（0〜3 個を選ぶ）→ 成功率と料金の表示 → 実行 → 判定の箱。成功率・大成功・料金・可否は core の問い合わせ（`upgradePreview`）の値を描き、表示層は計算しない（UI-35）。
+  - 画面（UI）: キャラ → 部位 → 触媒（0〜3 個を選ぶ）→ 成功率と料金の表示 → 実行 → 判定の箱。成功率・大成功・料金・可否は core の問い合わせ（`upgradePreview`）の値を描き、表示層は計算しない（UI-35）。者ごとの部位（空き・ユニークは対象にできない）と触媒の候補は `townMenu.upgrade` の値を描く。
 
 ## 2. 全滅処理
 
@@ -76,4 +78,4 @@
   { "id": "good",   "name": "個室",   "cost": 60, "hpRatio": 1.0, "sanOver": 10, "goodWeight": 1, "judgeBonus": 1, "gossip": true }
 ]
 ```
-`sanOver` / `goodWeight` / `judgeBonus` は 0 以上の整数、`gossip` は真偽値。M7 の強化（TW-17）の数値は `config.economy` に `upgradeBase` 50・`upgradeRateBase` 10・`upgradeRatePerCatalyst` 30・`upgradeDecay` 0.66・`upgradeMaxCatalysts` 3【仮】を足す（B / C の実装で）。倉庫の容量は `config.items.warehouseSlots`（items.md §10）。
+`sanOver` / `goodWeight` / `judgeBonus` は 0 以上の整数、`gossip` は真偽値。M7 の強化（TW-17）の数値は `config.economy` に `upgradeBase` 50・`upgradeRateBase` 10・`upgradeRatePerCatalyst` 30・`upgradeDecay` 0.66・`upgradeMaxCatalysts` 3【仮】を足した（C の実装で。`upgradeBase` は 0 以上の整数、`upgradeRateBase` / `upgradeRatePerCatalyst` は 0..100 の整数、`upgradeDecay` は 0..1 の数、`upgradeMaxCatalysts` は 1 以上の整数）。倉庫の容量は `config.items.warehouseSlots`（items.md §10）。

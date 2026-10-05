@@ -190,6 +190,16 @@ export type Config = {
     darkCostPerLevel: number;
     cureCost: Record<CurableStatusId, number>;
     uncurseCost: number;
+    /** TW-17（M7）【仮】: 強化の料金 = upgradeBase × (対象Lv + 1) */
+    upgradeBase: number;
+    /** TW-17【仮】: 成功率の基礎（%） */
+    upgradeRateBase: number;
+    /** TW-17【仮】: 触媒 1 個あたりの成功率（%）。対象より Lv が低い触媒は upgradeDecay^(Lv 差) を掛ける */
+    upgradeRatePerCatalyst: number;
+    /** TW-17【仮】: Lv 差 1 あたりの減衰（0..1） */
+    upgradeDecay: number;
+    /** TW-17【仮】: 触媒の最大個数 */
+    upgradeMaxCatalysts: number;
   };
   /** items.md §10（M7）の数値【仮】 */
   items: ItemsConfig;

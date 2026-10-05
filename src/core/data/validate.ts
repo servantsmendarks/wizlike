@@ -314,6 +314,12 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       darkCostPerLevel: I(NON_NEG),
       cureCost: F(Object.fromEntries(CURABLE_STATUS_IDS.map((k) => [k, I(NON_NEG)]))),
       uncurseCost: I(NON_NEG),
+      // TW-17（M7）【仮】
+      upgradeBase: I(NON_NEG),
+      upgradeRateBase: I(PERCENT),
+      upgradeRatePerCatalyst: I(PERCENT),
+      upgradeDecay: N(RATIO),
+      upgradeMaxCatalysts: I(POS_INT),
     }),
     // items.md §10（M7）【仮】
     items: F({
