@@ -31,6 +31,7 @@ const START_GOLD = data.config.prototypeParty.startingGold;
 const HERB = "herb";
 const ANTIDOTE = "antidote_herb";
 const THREAD = "return_thread";
+const THEORY_BATTLE_CAP = 8; // 【仮】M7-8戦: セオリーボットはこの潜行の戦闘がこの回数に達したら帰る（ユーザー指示。40 戦の潜行は実態と離れているため）
 const HERB_PRICE = itemOf(data, HERB).price;
 const ANTIDOTE_PRICE = itemOf(data, ANTIDOTE).price;
 const THREAD_PRICE = itemOf(data, THREAD).price;
@@ -42,6 +43,7 @@ export const BOTS: BotKind[] = [
     label: "セオリー",
     shouldReturn: (c) => {
       const s = c.state;
+      if (c.battles >= THEORY_BATTLE_CAP) return true; // M7-8戦（ユーザー指示）
       if (s.party.some((x) => c.aliveAtStart.includes(x.id) && x.life !== "alive")) return true; // 潜行の開始時に alive だった者が dead / ash になった（ユーザー決定）
       // CB-14 の繰り上げ後の前衛（frontLineIds は state.party と config.party.frontRow だけを見るので、戦闘外の迷宮の state でも同じ規則で働く）。
       // そのうち life が alive の者（麻痺・石化・睡眠・SAN 0 も含む）だけで、HP の合計 × 2 < 最大 HP の合計なら帰る（ユーザー決定）。
