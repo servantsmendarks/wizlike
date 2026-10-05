@@ -591,8 +591,10 @@ export type FieldItemView = {
   name: string;
   /** "ally" なら対象を選ぶ（targetId 必須）。"none" は対象を選ばない（self / party / return / learn） */
   target: "ally" | "none";
-  /** checkUseItem(state, data, cmd) === null と同値。ally の品は「alive の味方が 1 人以上」で見る */
+  /** checkUseItem(state, data, cmd) === null と同値。ally の品は「alive の味方が 1 人以上」で見る（対象の満タン full hp は見ない。targets の block） */
   usable: boolean;
+  /** target が ally のとき、allies と同じ順の対象ごとの可否（block が null なら送れる。MG-44 / UI-53、2026-10-05）。ally 以外は [] */
+  targets: CampTargetView[];
   /** DG-30 / UI-53（M5.5）: consumable で effect.type が return（帰還の糸）。表示層が使う前の確認の段を挟む */
   isReturn: boolean;
 };
@@ -613,9 +615,17 @@ export type CampSpellView = {
   name: string;
   mp: number;
   target: "ally" | "dead" | "none";
-  /** 対象を 1 人仮に当てたうえで checkCast === null かどうか（ally なら allies の先頭、dead なら dead の先頭、none なら対象なし） */
+  /**
+   * 対象を 1 人仮に当てたうえで checkCast === null かどうか（ally なら allies の先頭、dead なら dead の先頭、none なら対象なし）。
+   * ただし対象の満タン（full hp）は見ない（対象ごとの可否は targets の block）
+   */
   usable: boolean;
+  /** target が ally のとき、allies と同じ順の対象ごとの可否（block が null なら送れる）。ally 以外は [] */
+  targets: CampTargetView[];
 };
+/** MG-44 / UI-53（2026-10-05）: 戦闘外の回復の対象を選べない理由。表示層は strings の camp.targetBlock.{block} で出す */
+export type CampTargetBlock = "fullHp";
+export type CampTargetView = { id: string; block: CampTargetBlock | null };
 /** 装備できない理由。表示層は strings の camp.equipBlock.{block} で出す */
 export type EquipBlock = "cannotAct" | "unidentified" | "class" | "cursedSlot";
 export type CampEquipCandidate = {

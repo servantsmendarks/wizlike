@@ -7,7 +7,7 @@ import type { Character, FieldItemMenu, FieldItemView, GameState, RuleContext } 
 import { canAct } from "./combat-calc";
 import { applyAllyEffect } from "./effects";
 import { hpMaxOf } from "./equip-stats";
-import { campPlace } from "./camp";
+import { campPlace, healTargetBlock } from "./camp";
 import { checkLearnFromBook, learnFromBook } from "./learning";
 import { returnToTown } from "./town";
 
@@ -49,7 +49,8 @@ export function checkUseItem(
       switch (e.target) {
         case "ally": {
           const t = typeof targetId === "string" ? memberById(state, targetId) : null;
-          return t !== null && t.life === "alive" ? null : "bad target";
+          if (t === null || t.life !== "alive") return "bad target";
+          return healTargetBlock(state, data, e.type, t) === null ? null : "full hp"; // MG-44 / UI-53（2026-10-05）
         }
         case "self":
         case "party":
@@ -125,13 +126,17 @@ export function fieldItemMenu(state: GameState, data: GameData): FieldItemMenu |
         if (item === null) continue;
         const target: FieldItemView["target"] =
           item.type === "consumable" && item.effect.type !== "return" && item.effect.target === "ally" ? "ally" : "none";
+        const effectType = item.type === "consumable" ? item.effect.type : "";
+        // 対象の満タン（full hp）は品の行では見ず、対象の行の block で出す（campMenu の呪文と同じ）
+        const r = checkUseItem(state, data, ch.id, id, target === "ally" ? probe : null);
         items.push({
           instanceId: id,
           itemId: inst.itemId,
           name: itemDisplayName(state, data, id),
           target,
           isReturn: item.type === "consumable" && item.effect.type === "return",
-          usable: checkUseItem(state, data, ch.id, id, target === "ally" ? probe : null) === null,
+          usable: r === null || r === "full hp",
+          targets: target === "ally" ? alive.map((t) => ({ id: t.id, block: healTargetBlock(state, data, effectType, t) })) : [],
         });
       }
       return { id: ch.id, name: ch.name, canAct: canAct(ch), items };

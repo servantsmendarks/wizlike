@@ -4,7 +4,7 @@
 import { describe, expect, test } from "vitest";
 import { createInitialState, execute } from "../src/core/engine";
 import { cloneRng, rollDice } from "../src/core/rng";
-import { fieldItemMenu } from "../src/core/rules/items";
+import { checkUseItem, fieldItemMenu } from "../src/core/rules/items";
 import { cloneState, createItemInstance } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState } from "../src/core/types";
 import { dived, withBattle } from "./helpers/battle";
@@ -182,6 +182,27 @@ describe("MG-25 魔法書（dungeon.useItem）", () => {
 });
 
 describe("UI-53 fieldItemMenu", () => {
+  // 2026-10-05: FieldItemView に targets（ally の品の対象ごとの可否。MG-44 の full hp）を足したので、各期待値に targets を足した。
+  // 新しく始めた直後・入場直後は全員 HP 満タンなので、薬草の対象は全員 fullHp、解毒草は全員 null
+  const FULL5 = ["c1", "c2", "c3", "c4", "c5"].map((id) => ({ id, block: "fullHp" }));
+  const NONE5 = ["c1", "c2", "c3", "c4", "c5"].map((id) => ({ id, block: null }));
+  const FULL6 = [...FULL5, { id: "c6", block: "fullHp" }];
+  const NONE6 = [...NONE5, { id: "c6", block: null }];
+
+  test("UI-53/MG-44 薬草（heal・ally）の対象は HP 満タンなら block fullHp で、dungeon.useItem は rejected full hp（品は消えない）。満タンでない者には使える。品の usable は満タンを見ない", () => {
+    const s = cloneState(newGame(1));
+    member(s, "c2").hp = 1;
+    const m = fieldItemMenu(s, data)!;
+    const herb = m.members[0]!.items.find((it) => it.itemId === "herb")!;
+    expect(herb.usable).toBe(true);
+    expect(herb.targets).toEqual(FULL6.map((t) => (t.id === "c2" ? { id: "c2", block: null } : t)));
+    expectRejected(s, use("c1", "i4", "c3"), "full hp");
+    for (const t of herb.targets) expect(t.block === null, t.id).toBe(checkUseItem(s, data, "c1", "i4", t.id) === null);
+    // 全員が満タンでも品の行は usable（対象の段で理由を見せる）
+    const all = fieldItemMenu(newGame(1), data)!;
+    expect(all.members[0]!.items.find((it) => it.itemId === "herb")).toMatchObject({ usable: true, targets: FULL6 });
+  });
+
   test("迷宮の戦闘外: 全員（並び順）、items は inventory の順の consumable / book、target は ally / none、usable は checkUseItem と同値", () => {
     const s = inDungeon({ c3: { status: ["paralysis"] }, c6: { life: "dead", hp: 0 } });
     const book = createItemInstance(s, { itemId: "tome_lightning", identified: true });
@@ -196,13 +217,13 @@ describe("UI-53 fieldItemMenu", () => {
       ["c6", false],
     ]);
     expect(m.members[0]!.items).toEqual([
-      { instanceId: "i4", itemId: "herb", name: "薬草", target: "ally", usable: true, isReturn: false },
-      { instanceId: book, itemId: "tome_lightning", name: "雷光の魔法書", target: "none", usable: false, isReturn: false },
+      { instanceId: "i4", itemId: "herb", name: "薬草", target: "ally", usable: true, isReturn: false, targets: FULL5 },
+      { instanceId: book, itemId: "tome_lightning", name: "雷光の魔法書", target: "none", usable: false, isReturn: false, targets: [] },
     ]);
     expect(m.members[1]!.items).toEqual([]);
-    expect(m.members[2]!.items).toEqual([{ instanceId: "i10", itemId: "herb", name: "薬草", target: "ally", usable: false, isReturn: false }]);
-    expect(m.members[3]!.items).toEqual([{ instanceId: "i13", itemId: "antidote_herb", name: "解毒草", target: "ally", usable: true, isReturn: false }]);
-    expect(m.members[4]!.items).toEqual([{ instanceId: "i15", itemId: "return_thread", name: "帰還の糸", target: "none", usable: true, isReturn: true }]);
+    expect(m.members[2]!.items).toEqual([{ instanceId: "i10", itemId: "herb", name: "薬草", target: "ally", usable: false, isReturn: false, targets: FULL5 }]);
+    expect(m.members[3]!.items).toEqual([{ instanceId: "i13", itemId: "antidote_herb", name: "解毒草", target: "ally", usable: true, isReturn: false, targets: NONE5 }]);
+    expect(m.members[4]!.items).toEqual([{ instanceId: "i15", itemId: "return_thread", name: "帰還の糸", target: "none", usable: true, isReturn: true, targets: [] }]);
     expect(m.allies.map((a) => a.id)).toEqual(["c1", "c2", "c3", "c4", "c5"]);
     expect(m.allies[0]).toEqual({ id: "c1", name: "アルド", hp: 15, hpMax: 15 });
   });
@@ -220,9 +241,9 @@ describe("UI-53 fieldItemMenu", () => {
 
   test("UI-53/TW-03 fieldItemMenu は街でも非 null で、帰還の糸は usable false・isReturn true（迷宮では usable true・isReturn true）。薬草・解毒草は街でも usable", () => {
     const t = fieldItemMenu(newGame(1), data)!;
-    expect(t.members[4]!.items).toEqual([{ instanceId: "i15", itemId: "return_thread", name: "帰還の糸", target: "none", usable: false, isReturn: true }]);
-    expect(t.members[0]!.items).toEqual([{ instanceId: "i4", itemId: "herb", name: "薬草", target: "ally", usable: true, isReturn: false }]);
-    expect(t.members[3]!.items).toEqual([{ instanceId: "i13", itemId: "antidote_herb", name: "解毒草", target: "ally", usable: true, isReturn: false }]);
+    expect(t.members[4]!.items).toEqual([{ instanceId: "i15", itemId: "return_thread", name: "帰還の糸", target: "none", usable: false, isReturn: true, targets: [] }]);
+    expect(t.members[0]!.items).toEqual([{ instanceId: "i4", itemId: "herb", name: "薬草", target: "ally", usable: true, isReturn: false, targets: FULL6 }]);
+    expect(t.members[3]!.items).toEqual([{ instanceId: "i13", itemId: "antidote_herb", name: "解毒草", target: "ally", usable: true, isReturn: false, targets: NONE6 }]);
     const d = fieldItemMenu(inDungeon(), data)!;
     expect(d.members[4]!.items[0]).toMatchObject({ instanceId: "i15", usable: true, isReturn: true });
   });

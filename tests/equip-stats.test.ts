@@ -473,7 +473,13 @@ describe("MG-33 魔法攻撃力", () => {
     expect(heal(8, 1, 0, "herb").amount).toBe(heal(0, 1, 0, "herb").amount);
     // アルド hpMax 15 + 10 = 25 まで回復する（素の 15 を超える）
     expect(heal(2, 24, 10, "cast")).toEqual({ amount: 1, hp: 25 });
-    expect(heal(2, 15, 0, "cast")).toEqual({ amount: 0, hp: 15 });
+    // 2026-10-05: 旧は HP 15/15 の者にかけて { amount: 0, hp: 15 } を期待していた。満タンの者は rejected full hp に改めた（MG-44）ので、
+    // 素の 15 で満タンなら受け付けず、オプションで実効の hpMax が 25 なら素の 15 でも満タンではない、で見る
+    const full = newGame(5);
+    expect(execute(full, { type: "dungeon.cast", memberId: "c4", spellId: "heal", targetId: "c1" }, data).events).toEqual([
+      { kind: "rejected", command: "dungeon.cast", reason: "full hp" },
+    ]);
+    expect(heal(2, 15, 10, "cast").hp).toBeGreaterThan(15);
   });
 });
 

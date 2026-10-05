@@ -12,6 +12,7 @@ import type {
   CampSummary,
   CampPlace,
   CampSpellView,
+  CampTargetBlock,
   Character,
   EquipBlock,
   GameState,
@@ -88,8 +89,17 @@ export function checkCast(
   if (kind !== "none") {
     const t = typeof targetId === "string" ? memberById(state, targetId) : null;
     if (t === null || t.life !== (kind === "dead" ? "dead" : "alive")) return "bad target";
+    if (kind === "ally" && healTargetBlock(state, data, sp.effect.type, t) !== null) return "full hp"; // MG-44（2026-10-05）
   }
   return null;
+}
+
+/**
+ * MG-44 / UI-53（2026-10-05）: 戦闘外で対象を選ぶ回復（呪文・道具の効果 heal、対象 ally）の、対象ごとの使えない理由。
+ * HP が実効の hpMax（CH-14）以上なら "fullHp"、それ以外（heal でない効果を含む）は null。戦闘中の対象には使わない
+ */
+export function healTargetBlock(state: GameState, data: GameData, effectType: string, t: Character): CampTargetBlock | null {
+  return effectType === "heal" && t.hp >= hpMaxOf(state, data, t) ? "fullHp" : null;
 }
 
 /**
@@ -338,7 +348,10 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
         if (sp === undefined || !fieldSpellOk(sp)) continue;
         const target = spellTargetKind(sp);
         const probe = target === "ally" ? (alive[0]?.id ?? null) : target === "dead" ? (dead[0]?.id ?? null) : null;
-        spells.push({ spellId: sp.id, name: sp.name, mp: spellCost(state, data, ch, sp), target, usable: checkCast(state, data, ch.id, sp.id, probe) === null });
+        // 対象の満タン（full hp）は呪文の行では見ず、対象の行の block で出す（全員が満タンでも対象の段で理由を見せるため）
+        const r = checkCast(state, data, ch.id, sp.id, probe);
+        const targets = target === "ally" ? alive.map((t) => ({ id: t.id, block: healTargetBlock(state, data, sp.effect.type, t) })) : [];
+        spells.push({ spellId: sp.id, name: sp.name, mp: spellCost(state, data, ch, sp), target, usable: r === null || r === "full hp", targets });
       }
       const equipCandidates: CampEquipCandidate[] = [];
       for (const id of ch.inventory) {

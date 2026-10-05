@@ -128,6 +128,15 @@ describe("MG-44 dungeon.cast の受け付け", () => {
 });
 
 describe("MG-44 dungeon.cast の効果", () => {
+  test("MG-44 治癒（heal・ally）の対象の HP が実効の hpMax 以上なら rejected full hp（MP を消費しない。2026-10-05）。満タンでなければ受け付ける。解毒（cureStatus）は HP を見ない", () => {
+    const s = inDungeon({ c4: PRIEST_ALL });
+    expectRejected(s, cast("c4", "heal", "c1"), "full hp");
+    member(s, "c1").hp -= 1;
+    expect(ok(s, cast("c4", "heal", "c1")).events[0]).toEqual({ kind: "mpChanged", id: "c4", delta: -2, mp: 28 });
+    const p = inDungeon({ c4: PRIEST_ALL, c1: { status: ["poison"] } });
+    expect(ok(p, cast("c4", "cure_poison", "c1")).events[0]).toEqual({ kind: "mpChanged", id: "c4", delta: -3, mp: 27 });
+  });
+
   test("MG-44/F9 heal: mpChanged → battle.cast → hpChanged → battle.heal。1d8 を 1 回（鏡の rng）。spell イベントは出さない", () => {
     const s = inDungeon({ c1: { hp: 1 } });
     const m = cloneRng(s.rng);
@@ -537,28 +546,33 @@ describe("UI-53/TW-03 campMenu", () => {
   });
 
   // M5.5: 街でも spells を返すようにした（旧: 街では []）
-  test("UI-53/TW-03 spells: 迷宮では heal / cure_poison / return / resurrect だけで、usable は checkCast と一致する。campMenu の place town でも spells を返し、帰還は usable false", () => {
+  test("UI-53/TW-03/MG-44 spells: 迷宮では heal / cure_poison / return / resurrect だけで、usable は checkCast と一致する（full hp だけは見ない）。targets は ally の呪文の対象ごとの可否（heal は HP 満タンなら fullHp）。campMenu の place town でも spells を返し、帰還は usable false", () => {
+    // 2026-10-05: targets を足した（MG-44 の full hp）。新しく始めた直後は全員 HP 満タンなので、治癒の対象は全員 fullHp でも usable は true のまま
+    const full = ["c1", "c2", "c3", "c4", "c5", "c6"].map((id) => ({ id, block: "fullHp" }));
+    const none = ["c1", "c2", "c3", "c4", "c5", "c6"].map((id) => ({ id, block: null }));
     const tm = campMenu(inTown({ c4: PRIEST_ALL }), data)!;
     expect(tm.place).toBe("town");
     expect(tm.members.find((x) => x.id === "c4")!.spells).toEqual([
-      { spellId: "heal", name: "治癒", mp: 2, target: "ally", usable: true },
-      { spellId: "cure_poison", name: "解毒", mp: 3, target: "ally", usable: true },
-      { spellId: "return", name: "帰還", mp: 8, target: "none", usable: false }, // 街では帰還できない
-      { spellId: "resurrect", name: "蘇生", mp: 15, target: "dead", usable: false }, // 死者なし
+      { spellId: "heal", name: "治癒", mp: 2, target: "ally", usable: true, targets: full },
+      { spellId: "cure_poison", name: "解毒", mp: 3, target: "ally", usable: true, targets: none },
+      { spellId: "return", name: "帰還", mp: 8, target: "none", usable: false, targets: [] }, // 街では帰還できない
+      { spellId: "resurrect", name: "蘇生", mp: 15, target: "dead", usable: false, targets: [] }, // 死者なし
     ]);
-    const s = inDungeon({ c4: { ...PRIEST_ALL, knownSpells: ["heal", "blessing", "cure_poison", "identify", "return", "resurrect"], mp: 8 } });
+    // 迷宮: アルド（c1）だけ HP 1 → 治癒の対象は c1 だけ送れる
+    const s = inDungeon({ c1: { hp: 1 }, c4: { ...PRIEST_ALL, knownSpells: ["heal", "blessing", "cure_poison", "identify", "return", "resurrect"], mp: 8 } });
     const m = campMenu(s, data)!;
     const c4 = m.members.find((x) => x.id === "c4")!;
     expect(c4.spells).toEqual([
-      { spellId: "heal", name: "治癒", mp: 2, target: "ally", usable: true },
-      { spellId: "cure_poison", name: "解毒", mp: 3, target: "ally", usable: true },
-      { spellId: "return", name: "帰還", mp: 8, target: "none", usable: true },
-      { spellId: "resurrect", name: "蘇生", mp: 15, target: "dead", usable: false }, // MP 不足・死者なし
+      { spellId: "heal", name: "治癒", mp: 2, target: "ally", usable: true, targets: [{ id: "c1", block: null }, ...full.slice(1)] },
+      { spellId: "cure_poison", name: "解毒", mp: 3, target: "ally", usable: true, targets: none },
+      { spellId: "return", name: "帰還", mp: 8, target: "none", usable: true, targets: [] },
+      { spellId: "resurrect", name: "蘇生", mp: 15, target: "dead", usable: false, targets: [] }, // MP 不足・死者なし
     ]);
     expect(m.members.find((x) => x.id === "c5")!.spells).toEqual([]); // fire_arrow / sleep_mist は battle 専用
     for (const sp of c4.spells) {
       const probe = sp.target === "ally" ? m.allies[0]?.id : sp.target === "dead" ? m.dead[0]?.id : undefined;
       expect(sp.usable).toBe(checkCast(s, data, "c4", sp.spellId, probe) === null);
+      for (const t of sp.targets) expect(t.block === null, `${sp.spellId} ${t.id}`).toBe(checkCast(s, data, "c4", sp.spellId, t.id) === null);
     }
     // 死者がいて MP が足りれば蘇生も使える
     const d = inDungeon({ c4: PRIEST_ALL, c2: { life: "dead", hp: 0 } });
