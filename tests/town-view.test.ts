@@ -4,9 +4,10 @@
 // 店（TW-05）: 薬草 10G / 解毒草 15G / 帰還の糸 50G。初期の所持枠の空き（townMenu.shop.members）は c1 4 / c2 6 / c3 4 / c4 5 / c5 6 / c6 5。
 import { describe, expect, test } from "vitest";
 import { townMenu } from "../src/core/rules/town";
+import { upgradePreview } from "../src/core/rules/upgrade";
 import { cloneState, createItemInstance } from "../src/core/state";
 import type { Character, GameState, TownMenu } from "../src/core/types";
-import { samePage, townEntries, townHeader, townPageIntro, townParent, townRepair, type TownEntry } from "../src/presenter/views/town";
+import { samePage, townEntries, townHeader, townPageIntro, townParent, townRepair, upgradeConfirmLines, type TownEntry } from "../src/presenter/views/town";
 import { data, newGame } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
 
@@ -96,24 +97,147 @@ describe("UI-52 街のページ", () => {
     ]);
   });
 
-  test("UI-52/TW-08 闇魔術は ash の者の行（名前と料金、払えなければ disabled）。対象がいなければ「その必要がある者はいない」", () => {
+  // M7（TW-17）で闇魔術の最初を「灰から戻す / 装備を鍛える / 戻る」にし、灰の者の一覧は darkRevive のページに移した（期待のページ名だけを変えた）
+  test("UI-52/TW-08 闇魔術の灰から戻すは ash の者の行（名前と料金、払えなければ disabled）。対象がいなければ「その必要がある者はいない」", () => {
     const per = data.config.economy.darkCostPerLevel;
     // dead の者は対象外（寺院の蘇生）。ash の c2（レベル 3）と c5（レベル 1）が並び順で出る
     const s = town({ c5: { life: "ash", hp: 0 }, c2: { life: "ash", hp: 0, level: 3 }, c3: { life: "dead", hp: 0 } }, per * 2);
     const m = menuOf(s);
-    expect(townEntries("dark", m, S)).toEqual([
+    expect(townEntries("darkRevive", m, S)).toEqual([
       { kind: "dark", memberId: "c2", label: `ベルク　${per * 3}G`, disabled: true },
       { kind: "dark", memberId: "c5", label: `エル　${per}G`, disabled: false },
       back,
     ]);
     // ちょうど払える額なら押せる
-    expect(townEntries("dark", menuOf(town({ c2: { life: "ash", hp: 0, level: 3 } }, per * 3)), S)).toEqual([
+    expect(townEntries("darkRevive", menuOf(town({ c2: { life: "ash", hp: 0, level: 3 } }, per * 3)), S)).toEqual([
       { kind: "dark", memberId: "c2", label: `ベルク　${per * 3}G`, disabled: false },
       back,
     ]);
-    expect(townEntries("dark", menuOf(town({ c3: { life: "dead", hp: 0 } })), S)).toEqual([{ kind: "templeNone", label: S["town.temple.none"] }, back]);
+    expect(townEntries("darkRevive", menuOf(town({ c3: { life: "dead", hp: 0 } })), S)).toEqual([{ kind: "templeNone", label: S["town.temple.none"] }, back]);
     expect(townParent("dark")).toBe("menu");
+    expect(townParent("darkRevive")).toBe("dark");
     expect(townPageIntro("dark", m)).toEqual(["town.dark.intro"]);
+  });
+
+  test("UI-52/TW-17 闇魔術の最初は 灰から戻す / 装備を鍛える / 戻る。鍛えるは全員の行で、対象にできる部位が無い者は disabled", () => {
+    const m = menuOf(town());
+    expect(townEntries("dark", m, S)).toEqual([
+      { kind: "page", to: "darkRevive", label: "灰から戻す" },
+      { kind: "page", to: "upgrade", label: "装備を鍛える" },
+      back,
+    ]);
+    const s = town();
+    const c5 = s.party[4]!; // エル（杖だけ）の杖をユニークにする
+    s.items[c5.equipment.weapon!]!.uniqueId = "dawn_flint_staff";
+    const e = townEntries("upgrade", menuOf(s), S);
+    expect(e.map((x) => [x.label, "disabled" in x ? x.disabled : null])).toEqual([
+      ["アルド", false],
+      ["ベルク", false],
+      ["キリ", false],
+      ["ドナ", false],
+      ["エル", true],
+      ["フィン", false],
+      [S["common.back"], null],
+    ]);
+    expect(e[0]).toEqual({ kind: "pick", to: { upSlot: "c1" }, label: "アルド", disabled: false });
+    expect(townParent("upgrade")).toBe("dark");
+    expect(townPageIntro("upgrade", m)).toEqual(["town.upgrade.intro", "town.upgrade.whom"]);
+  });
+
+  test("UI-52/TW-17 部位の段: EQUIP_SLOTS の順に「部位　品名」、空きは「部位　（なし）」で disabled。押すと触媒の段（選択なし）", () => {
+    const s = town();
+    s.items[s.party[0]!.equipment.weapon!]!.level = 3;
+    const m = menuOf(s);
+    const page = { upSlot: "c1" };
+    expect(townEntries(page, m, S)).toEqual([
+      { kind: "pick", to: { upCat: { memberId: "c1", slot: "weapon", picked: [] } }, label: "武器　長剣 +3", disabled: false },
+      { kind: "pick", to: { upCat: { memberId: "c1", slot: "armor", picked: [] } }, label: "防具　革鎧", disabled: false },
+      { kind: "pick", to: { upCat: { memberId: "c1", slot: "shield", picked: [] } }, label: "盾　木の盾", disabled: false },
+      { kind: "pick", to: { upCat: { memberId: "c1", slot: "helm", picked: [] } }, label: "兜　（なし）", disabled: true },
+      { kind: "pick", to: { upCat: { memberId: "c1", slot: "gauntlet", picked: [] } }, label: "小手　（なし）", disabled: true },
+      { kind: "pick", to: { upCat: { memberId: "c1", slot: "accessory", picked: [] } }, label: "装飾　（なし）", disabled: true },
+      back,
+    ]);
+    expect(townParent(page)).toBe("upgrade");
+    expect(townPageIntro(page, m)).toEqual(["town.upgrade.slot"]);
+  });
+
+  test("UI-52/TW-17 触媒の段: 鑑定済みの汎用装備に ○ / ● の印。押すと付け外し、maxCatalysts（3）個選ぶと未選択は disabled。決める → 確認の段", () => {
+    const s = town();
+    const add = (level: number, identified = true): string => {
+      const id = createItemInstance(s, { itemId: "dagger", level, identified });
+      s.party[0]!.inventory.push(id);
+      return id;
+    };
+    const [a, b, c, d] = [add(1), add(0), add(2), add(0)];
+    add(0, false); // 未鑑定は候補に出ない
+    const m = menuOf(s);
+    const sel = { memberId: "c1", slot: "weapon" as const, picked: [] as string[] };
+    const e0 = townEntries({ upCat: sel }, m, S);
+    expect(e0).toEqual([
+      { kind: "upPick", to: { upCat: { ...sel, picked: [a] } }, label: "○短剣 +1", disabled: false },
+      { kind: "upPick", to: { upCat: { ...sel, picked: [b] } }, label: "○短剣", disabled: false },
+      { kind: "upPick", to: { upCat: { ...sel, picked: [c] } }, label: "○短剣 +2", disabled: false },
+      { kind: "upPick", to: { upCat: { ...sel, picked: [d] } }, label: "○短剣", disabled: false },
+      { kind: "page", to: { upConfirm: sel }, label: "決める" },
+      back,
+    ]);
+    // c → a → b の順に 3 個選んだ: 印が付き、外すと選んだ順のまま 1 個抜ける。未選択の d は disabled
+    const full = { ...sel, picked: [c, a, b] };
+    const e3 = townEntries({ upCat: full }, m, S);
+    expect(e3[0]).toEqual({ kind: "upPick", to: { upCat: { ...sel, picked: [c, b] } }, label: "●短剣 +1", disabled: false });
+    expect(e3[3]).toEqual({ kind: "upPick", to: { upCat: { ...sel, picked: [c, a, b, d] } }, label: "○短剣", disabled: true });
+    expect(e3[4]).toEqual({ kind: "page", to: { upConfirm: full }, label: "決める" });
+    expect(townParent({ upCat: full })).toEqual({ upSlot: "c1" });
+    expect(townPageIntro({ upCat: full }, m)).toEqual(["town.upgrade.catalyst"]);
+    // 候補が無ければ空の行 → 決める → 戻る（触媒なしでも鍛えられる）
+    expect(townEntries({ upCat: { ...sel, memberId: "c2" } }, m, S)).toEqual([
+      { kind: "empty", label: "触媒にできる物がない", disabled: true },
+      { kind: "page", to: { upConfirm: { ...sel, memberId: "c2" } }, label: "決める" },
+      back,
+    ]);
+  });
+
+  test("UI-52/TW-17 確認の段: core の upgradePreview の値で「対象・触媒の数」「成功率（うち大成功）・料金」を語り、block が null のときだけ 鍛える を押せる", () => {
+    const s = town({}, 300);
+    s.items[s.party[0]!.equipment.weapon!]!.level = 1;
+    const cat = createItemInstance(s, { itemId: "dagger", level: 0, identified: true });
+    s.party[0]!.inventory.push(cat);
+    const m = menuOf(s);
+    const sel = { memberId: "c1", slot: "weapon" as const, picked: [cat] };
+    const p = upgradePreview(s, data, "c1", "weapon", [cat]);
+    expect(p).toEqual({ rate: 29, great: 2, fee: 100, affordable: true, block: null });
+    expect(townEntries({ upConfirm: sel }, m, S, p)).toEqual([
+      { kind: "upgrade", memberId: "c1", slot: "weapon", catalysts: [cat], label: "鍛える", disabled: false },
+      back,
+    ]);
+    expect(upgradeConfirmLines({ upConfirm: sel }, m, p, S)).toEqual(["対象 長剣 +1　触媒 1 個", "成功率 29（うち大成功 2）　料金 100G"]);
+    expect(townParent({ upConfirm: sel })).toEqual({ upCat: sel });
+    // 払えない: 鍛えるは disabled、所持金が足りないを足す
+    const poor = cloneState(s);
+    poor.gold = 99;
+    const pp = upgradePreview(poor, data, "c1", "weapon", [cat]);
+    expect(townEntries({ upConfirm: sel }, menuOf(poor), S, pp)[0]).toMatchObject({ kind: "upgrade", disabled: true });
+    expect(upgradeConfirmLines({ upConfirm: sel }, menuOf(poor), pp, S)).toEqual(["対象 長剣 +1　触媒 1 個", "成功率 29（うち大成功 2）　料金 100G", "所持金が足りない。"]);
+    // preview が無い（対象が決まらない）なら押せず、語りも無い
+    expect(townEntries({ upConfirm: sel }, m, S, null)[0]).toMatchObject({ disabled: true });
+    expect(upgradeConfirmLines({ upConfirm: sel }, m, null, S)).toEqual([]);
+    expect(upgradeConfirmLines("dark", m, p, S)).toEqual([]);
+  });
+
+  test("UI-52/TW-17 townRepair: 消えた触媒は選択から外し、部位が対象にできなくなれば部位の段、本人がいなければ者の段へ。samePage は選択まで比べる", () => {
+    const s = town();
+    const cat = createItemInstance(s, { itemId: "dagger", identified: true });
+    s.party[0]!.inventory.push(cat);
+    const m = menuOf(s);
+    const sel = { memberId: "c1", slot: "weapon" as const, picked: [cat] };
+    expect(townRepair({ upCat: sel }, m)).toEqual({ upCat: sel });
+    expect(townRepair({ upConfirm: { ...sel, picked: ["i999", cat] } }, m)).toEqual({ upConfirm: sel });
+    expect(townRepair({ upCat: { ...sel, slot: "helm" } }, m)).toEqual({ upSlot: "c1" });
+    expect(townRepair({ upCat: { ...sel, memberId: "c9" } }, m)).toBe("upgrade");
+    expect(townRepair({ upSlot: "c9" }, m)).toBe("upgrade");
+    expect(samePage({ upCat: sel }, { upCat: { ...sel, picked: [cat] } })).toBe(true);
+    expect(samePage({ upCat: sel }, { upCat: { ...sel, picked: [] } })).toBe(false);
   });
 
   // M5.5 で一覧を「見回す ＋ キャンプと同じ項目」に改めた（旧: 状態を見る・装備を替える・並び順を変える）

@@ -25,8 +25,9 @@ import { itemDetail, memberSheet, uniqueBookView } from "../core/rules/item-view
 import { sanStage } from "../core/rules/san";
 import { fieldItemMenu } from "../core/rules/items";
 import { townMenu } from "../core/rules/town";
+import { upgradePreview } from "../core/rules/upgrade";
 import { dungeonOf, itemDisplayName } from "../core/state";
-import type { BattleMenu, Command, GameState, PenaltyResult, Pos, Screen, ViewPoint } from "../core/types";
+import type { BattleMenu, Command, GameState, PenaltyResult, Pos, Screen, UpgradePreview, ViewPoint } from "../core/types";
 import type { GameListEntry, ImportPlan, SaveService } from "../save/types";
 import { downloadText, exportFileName } from "./file-io";
 import { closesInput, runChain, type ChainDeps } from "./auto-chain";
@@ -103,7 +104,7 @@ import { createSaveBanner } from "./views/save-banner";
 import { createUpdateNotice } from "./views/update-notice";
 import { createTitleScreen, titleEntries, titleHint, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
 import { formatWipeSummary } from "./views/wipe";
-import { townEntries, townHeader, townPageIntro, townParent, townRepair, type TownEntry, type TownPage } from "./views/town";
+import { townEntries, townHeader, townPageIntro, townParent, townRepair, upgradeConfirmLines, type TownEntry, type TownPage } from "./views/town";
 
 export type Route = "title" | "creation" | "custom" | "town" | "dungeon" | "battle";
 export type Overlay = null | "map" | "debug" | "camp" | "wipe" | "history" | "settings";
@@ -426,6 +427,12 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
 
   const listItem = (label: string, onSelect: () => void): ControlItem => ({ label, onSelect: () => guard(onSelect) });
 
+  /** TW-17: 確認の段（{ upConfirm }）なら core の upgradePreview の値（成功率・大成功・料金・可否）。他のページは null */
+  const previewOf = (page: TownPage): UpgradePreview | null =>
+    typeof page === "object" && "upConfirm" in page
+      ? upgradePreview(state, data, page.upConfirm.memberId, page.upConfirm.slot, page.upConfirm.picked)
+      : null;
+
   /** UI-52: 街のページを移る。入ったページの語り（宿・寺院・闇魔術・迷宮の入口、酒場は救済の申し出も）は再生の外で出す */
   const goTownPage = (page: TownPage): void => {
     townPage = page;
@@ -433,9 +440,9 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     const menu = townMenu(state, data);
     if (menu === null) return;
     // 続けて出す文は、最後の 1 文だけを文字送りにする（say は送り途中の前の文を完了させるため、前の文は即時で出す）
-    const keys = townPageIntro(page, menu);
+    const texts = [...townPageIntro(page, menu).map(t), ...upgradeConfirmLines(page, menu, previewOf(page), strings)];
     const skip = store.get().skipAnimations;
-    keys.forEach((k, i) => void play.message.say(t(k), skip || i < keys.length - 1));
+    texts.forEach((x, i) => void play.message.say(x, skip || i < texts.length - 1));
   };
 
   /** Esc・戻る: 1 つ上のページへ（menu では何もしない） */
@@ -498,6 +505,16 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
             goTownPage(e.to);
             return;
           case "empty":
+            return;
+          case "upPick":
+            // TW-17: 触媒の印の付け外し。同じ段なので語りは出さない
+            townPage = e.to;
+            syncControls();
+            return;
+          case "upgrade":
+            // TW-17: 送った後は部位の段に戻る（判定の箱は playback が続く語りの後でタップを 1 回待つ）
+            townPage = { upSlot: e.memberId };
+            void run({ type: "town.upgrade", memberId: e.memberId, slot: e.slot, catalysts: e.catalysts });
             return;
           // M7: 売る・買い戻す・鑑定・預ける・引き出すの後も同じページにとどまる（品が消えたページは sync の townRepair で 1 つ上へ）
           case "sell":
@@ -567,7 +584,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
         return;
       }
       townPage = townRepair(townPage, menu);
-      const ents = townEntries(townPage, menu, strings);
+      const ents = townEntries(townPage, menu, strings, previewOf(townPage));
       const items = ents.map(townItem);
       if (townPage === "menu") {
         // UI-52: 施設メニューは 3 列 × 2 段の 6 枠

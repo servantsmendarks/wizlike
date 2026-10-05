@@ -110,6 +110,10 @@ export type PlayerDeps = {
 export const WIPE_DICE_KEY = "dice.wipe";
 /** UI-40 / UI-55: 制止の判定の dice の label のキー。拍の外で出たら、続く message を 1 件出した後でタップを 1 回待ってから消す */
 export const RESTRAIN_DICE_KEY = "dice.restrain";
+/** UI-40 / TW-17（M7）: 強化の判定の dice の label のキー。制止の箱と同じく、拍の外で出たら続く message を 1 件出した後でタップを 1 回待つ */
+export const UPGRADE_DICE_KEY = "dice.upgrade";
+/** 拍の外で出たらタップを 1 回待つ箱の label のキー */
+const HOLD_DICE_KEYS: readonly string[] = [RESTRAIN_DICE_KEY, UPGRADE_DICE_KEY];
 
 export type Handlers = {
   [K in GameEventKind]?: (ev: Extract<GameEvent, { kind: K }>, cx: PlayCx, finalState: GameState) => Promise<void>;
@@ -475,7 +479,7 @@ export function createPlayer(deps: PlayerDeps): Player {
           if (mode !== null && (ev.kind === "message" || ev.kind === "dice")) pending = true;
           const h = handlers[ev.kind] as ((e: GameEvent, cx: PlayCx, s: GameState) => Promise<void>) | undefined;
           if (h !== undefined) await h(ev, cx, finalState);
-          if (ev.kind === "dice") hold = mode === null && ev.label.key === RESTRAIN_DICE_KEY ? "awaitMessage" : null;
+          if (ev.kind === "dice") hold = mode === null && HOLD_DICE_KEYS.includes(ev.label.key) ? "awaitMessage" : null;
           else if (ev.kind === "message" && hold === "awaitMessage") hold = "afterMessage";
         }
         if (hold !== null) {

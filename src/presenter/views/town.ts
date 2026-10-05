@@ -2,10 +2,11 @@
 // 街の画面は迷宮の画面（views/dungeon.ts）の 5 領域をそのまま使う（ビューは枠だけ）。ここはページの中身を決める純粋な部分。
 // 料金・押せるか・候補（宿のランク、寺院・闇魔術の対象、救済の候補、店の売り物・売れる品・買い戻し・鑑定・持たせる者、倉庫、入れる迷宮）は
 // core の townMenu の値だけで決める（UI-35）。
-// 表示層は式を持たない。どの項目で何を送るか（town.inn / town.temple / town.dark / town.mercy / town.shop / town.storage / dungeon.enter）は app が決める。
+// 表示層は式を持たない。どの項目で何を送るか（town.inn / town.temple / town.dark / town.mercy / town.shop / town.storage / town.upgrade / dungeon.enter）は app が決める。
+// M7: 闇魔術は最初に 灰から戻す / 装備を鍛える / 戻る の一覧。強化（TW-17）の成功率・料金・可否は app が core の upgradePreview で取って渡す。
 // M7: 店は最初に 買う / 売る / 買い戻す / 鑑定 / 倉庫 / 戻る の一覧。倉庫（TW-16）の入口は店の一覧の中（items.md §11 の Q9 の既定。銀行を作る段で移す）。
-import type { Strings } from "../../core/data/index";
-import type { TownMenu } from "../../core/types";
+import type { EquipSlot, Strings } from "../../core/data/index";
+import type { TownMenu, UpgradePreview } from "../../core/types";
 import type { CampOpen } from "./camp";
 import { formatMessage } from "./message";
 
@@ -15,7 +16,9 @@ export type TempleService = "resurrect" | "cure" | "uncurse";
  * shop は店の最初の一覧、shopBuy は売り物、{ shop: itemId } はその品を持たせる者、shopSell は売る者、{ sell: memberId } はその者の売れる品、
  * shopBuyback は買い戻しの品、{ buyback: instanceId } はその品を持たせる者、shopIdentify は鑑定する品。
  * 倉庫（TW-16）: storage は 預ける / 引き出す、storageDeposit は預ける者、{ deposit: memberId } はその者の品、
- * storageWithdraw は倉庫の品、{ withdraw: instanceId } はその品を受け取る者
+ * storageWithdraw は倉庫の品、{ withdraw: instanceId } はその品を受け取る者。
+ * 闇魔術（M7）: dark は 灰から戻す / 装備を鍛える / 戻る、darkRevive は灰の者（TW-08）。強化（TW-17）: upgrade は者、{ upSlot: memberId } は部位、
+ * { upCat } は触媒の選択（picked は選んだ順の実体 id）、{ upConfirm } は成功率と料金の確認
  */
 export type TownPage =
   | "menu"
@@ -23,6 +26,8 @@ export type TownPage =
   | "inn"
   | "temple"
   | "dark"
+  | "darkRevive"
+  | "upgrade"
   | "gate"
   | "shop"
   | "shopBuy"
@@ -37,7 +42,12 @@ export type TownPage =
   | { sell: string }
   | { buyback: string }
   | { deposit: string }
-  | { withdraw: string };
+  | { withdraw: string }
+  | { upSlot: string }
+  | { upCat: UpgradeSel }
+  | { upConfirm: UpgradeSel };
+/** TW-17: 強化の選択中の対象（本人・部位）と触媒 */
+export type UpgradeSel = { memberId: string; slot: EquipSlot; picked: string[] };
 export type TownEntry =
   | { kind: "page"; to: TownPage; label: string }
   /** M7: 次のページへ移る行で、押せないことがあるもの（売れる品の無い者・払えない買い戻しの品など）。disabled なら dim */
@@ -67,6 +77,10 @@ export type TownEntry =
   | { kind: "withdraw"; memberId: string; instanceId: string; label: string; disabled: boolean }
   /** TW-13 / UI-52（M5.5）: 酒場の「見回す」。押すと town.lookAround（酒場の一覧にとどまる） */
   | { kind: "look"; label: string }
+  /** TW-17: 触媒の行。押すと選択の印を付け外しした { upCat } へ（語りは出さない）。3 個選んだ後の未選択の行は disabled */
+  | { kind: "upPick"; to: TownPage; label: string; disabled: boolean }
+  /** TW-17: 確認の「鍛える」。押すと town.upgrade（upgradePreview の block が null でなければ disabled） */
+  | { kind: "upgrade"; memberId: string; slot: EquipSlot; catalysts: string[]; label: string; disabled: boolean }
   /** TW-03 / UI-52: 酒場のキャンプと同じ項目（状態・呪文・道具・装備・並び順・鑑定）。押すとキャンプと同じ部品（views/camp.ts）をその段で開く */
   | { kind: "camp"; open: CampOpen; label: string }
   | { kind: "back"; label: string };
@@ -80,7 +94,7 @@ function s(strings: Strings, key: string, params?: Record<string, string | numbe
 /** オブジェクトのページの種類（{ temple } なら "temple"）と値 */
 function objPage(p: Exclude<TownPage, string>): { key: string; value: string } {
   const [key, value] = Object.entries(p)[0] ?? ["", ""];
-  return { key, value: String(value) };
+  return { key, value: typeof value === "string" ? value : JSON.stringify(value) };
 }
 
 /** 同じページか（オブジェクトのページは種類と値で比べる） */
@@ -100,8 +114,12 @@ export function townParent(page: TownPage): TownPage | null {
     if ("sell" in page) return "shopSell";
     if ("buyback" in page) return "shopBuyback";
     if ("deposit" in page) return "storageDeposit";
+    if ("upSlot" in page) return "upgrade";
+    if ("upCat" in page) return { upSlot: page.upCat.memberId };
+    if ("upConfirm" in page) return { upCat: page.upConfirm };
     return "storageWithdraw";
   }
+  if (page === "darkRevive" || page === "upgrade") return "dark";
   if (page === "shopBuy" || page === "shopSell" || page === "shopBuyback" || page === "shopIdentify" || page === "storage") return "shop";
   if (page === "storageDeposit" || page === "storageWithdraw") return "storage";
   return "menu";
@@ -121,11 +139,25 @@ export function townRepair(page: TownPage, menu: TownMenu): TownPage {
   if ("buyback" in page) return menu.shop.buyback.some((r) => r.instanceId === page.buyback) ? page : "shopBuyback";
   if ("deposit" in page) return menu.storage.members.some((m) => m.memberId === page.deposit) ? page : "storageDeposit";
   if ("withdraw" in page) return menu.storage.items.some((r) => r.instanceId === page.withdraw) ? page : "storageWithdraw";
+  if ("upSlot" in page) return menu.upgrade.members.some((m) => m.memberId === page.upSlot) ? page : "upgrade";
+  if ("upCat" in page || "upConfirm" in page) {
+    // TW-17: 本人がいない → 者の段、部位が対象にできない → 部位の段、消えた触媒は選択から外す
+    const sel = "upCat" in page ? page.upCat : page.upConfirm;
+    const m = menu.upgrade.members.find((x) => x.memberId === sel.memberId);
+    if (m === undefined) return "upgrade";
+    if (m.slots.find((x) => x.slot === sel.slot)?.block !== null) return { upSlot: sel.memberId };
+    const picked = sel.picked.filter((id) => m.catalysts.some((c) => c.instanceId === id));
+    if (picked.length === sel.picked.length) return page;
+    return "upCat" in page ? { upCat: { ...sel, picked } } : { upConfirm: { ...sel, picked } };
+  }
   return page;
 }
 
-/** そのページのリストの項目（menu は 3 列 × 2 段の 6 枠。それ以外は一覧で末尾が戻る） */
-export function townEntries(page: TownPage, menu: TownMenu, strings: Strings): TownEntry[] {
+/**
+ * そのページのリストの項目（menu は 3 列 × 2 段の 6 枠。それ以外は一覧で末尾が戻る）。
+ * preview は { upConfirm } のときに app が core の upgradePreview で取った値（それ以外のページでは使わない）
+ */
+export function townEntries(page: TownPage, menu: TownMenu, strings: Strings, preview: UpgradePreview | null = null): TownEntry[] {
   const back: TownEntry = { kind: "back", label: s(strings, "common.back") };
   const empty = (key: string): TownEntry => ({ kind: "empty", label: s(strings, key), disabled: true });
   /** 空なら empty の行を 1 つ置く */
@@ -165,6 +197,19 @@ export function townEntries(page: TownPage, menu: TownMenu, strings: Strings): T
     return [...TEMPLE_SERVICES.map((sv): TownEntry => ({ kind: "page", to: { temple: sv }, label: s(strings, `town.temple.${sv}`) })), back];
   }
   if (page === "dark") {
+    // M7 UI-52: 灰から戻す / 装備を鍛える（TW-17）/ 戻る。どちらも dim にしない（中が空なら空の行）
+    return [
+      { kind: "page", to: "darkRevive", label: s(strings, "town.dark.menu.revive") },
+      { kind: "page", to: "upgrade", label: s(strings, "town.dark.menu.upgrade") },
+      back,
+    ];
+  }
+  if (page === "upgrade") {
+    // TW-17: 全員（並び順。life を問わない）。対象にできる部位が無い者は disabled
+    const rows = menu.upgrade.members.map((m): TownEntry => ({ kind: "pick", to: { upSlot: m.memberId }, label: m.name, disabled: !m.canUpgrade }));
+    return [...rows, back];
+  }
+  if (page === "darkRevive") {
     // TW-08: ash の者の行（名前と料金。払えなければ disabled）。押すと town.dark
     const rows = menu.dark.map(
       (r): TownEntry => ({ kind: "dark", memberId: r.memberId, label: s(strings, "town.dark.row", { name: r.name, cost: r.cost }), disabled: !r.affordable }),
@@ -241,6 +286,50 @@ export function townEntries(page: TownPage, menu: TownMenu, strings: Strings): T
   if (page === "storageWithdraw") {
     const rows = menu.storage.items.map((r): TownEntry => ({ kind: "pick", to: { withdraw: r.instanceId }, label: r.name, disabled: false }));
     return orEmpty(rows, "town.storage.empty");
+  }
+  if ("upSlot" in page) {
+    // TW-17: 装備の部位（EQUIP_SLOTS の順）。空き・ユニークは disabled。押すと触媒の段（選択なし）へ
+    const memberId = page.upSlot;
+    const m = menu.upgrade.members.find((x) => x.memberId === memberId);
+    const rows = (m?.slots ?? []).map((x): TownEntry => {
+      const slot = s(strings, `detail.slot.${x.slot}`);
+      const label = x.name === null ? s(strings, "town.upgrade.slotEmpty", { slot }) : s(strings, "town.upgrade.slotRow", { slot, item: x.name });
+      return { kind: "pick", to: { upCat: { memberId, slot: x.slot, picked: [] } }, label, disabled: x.block !== null };
+    });
+    return [...rows, back];
+  }
+  if ("upCat" in page) {
+    // TW-17: 触媒の候補（本人の鑑定済みの汎用装備）。押すと印を付け外し（maxCatalysts 個まで）→ 決める → 戻る
+    const sel = page.upCat;
+    const m = menu.upgrade.members.find((x) => x.memberId === sel.memberId);
+    const full = sel.picked.length >= menu.upgrade.maxCatalysts;
+    const rows = (m?.catalysts ?? []).map((c): TownEntry => {
+      const on = sel.picked.includes(c.instanceId);
+      const picked = on ? sel.picked.filter((id) => id !== c.instanceId) : [...sel.picked, c.instanceId];
+      return {
+        kind: "upPick",
+        to: { upCat: { ...sel, picked } },
+        label: s(strings, on ? "town.upgrade.catOn" : "town.upgrade.catOff", { name: c.name }),
+        disabled: !on && full,
+      };
+    });
+    const decide: TownEntry = { kind: "page", to: { upConfirm: sel }, label: s(strings, "town.upgrade.decide") };
+    return [...(rows.length === 0 ? [empty("town.upgrade.catNone")] : rows), decide, back];
+  }
+  if ("upConfirm" in page) {
+    // TW-17: 鍛える（core の upgradePreview の block が null のときだけ押せる）→ 戻る（触媒の段へ）
+    const sel = page.upConfirm;
+    return [
+      {
+        kind: "upgrade",
+        memberId: sel.memberId,
+        slot: sel.slot,
+        catalysts: [...sel.picked],
+        label: s(strings, "town.upgrade.do"),
+        disabled: preview === null || preview.block !== null,
+      },
+      back,
+    ];
   }
   if ("shop" in page) {
     // TW-05: 持たせるメンバーの行（生きている者を並び順で。所持枠の空きが無い者・払えないときは disabled）
@@ -326,6 +415,9 @@ export function townPageIntro(page: TownPage, menu: TownMenu): string[] {
   if (page === "inn") return menu.morale !== null ? ["town.inn.intro", "town.inn.moraleNow"] : ["town.inn.intro"]; // TW-15: 士気がある間は続けて語る
   if (page === "temple") return ["town.temple.intro"];
   if (page === "dark") return ["town.dark.intro"];
+  if (page === "upgrade") return ["town.upgrade.intro", "town.upgrade.whom"]; // TW-17
+  if (typeof page === "object" && "upSlot" in page) return ["town.upgrade.slot"];
+  if (typeof page === "object" && "upCat" in page) return ["town.upgrade.catalyst"];
   if (page === "gate") return ["town.dungeonGate.intro"];
   if (page === "shop") return ["town.shop.intro"];
   if (page === "shopBuy") return ["town.shop.buyIntro"];
@@ -336,6 +428,23 @@ export function townPageIntro(page: TownPage, menu: TownMenu): string[] {
   if (typeof page === "object" && ("shop" in page || "buyback" in page)) return ["town.shop.whom"];
   if (typeof page === "object" && "withdraw" in page) return ["town.storage.whom"];
   return [];
+}
+
+/**
+ * TW-17: 確認の段（{ upConfirm }）に入ったときにメッセージ窓へ出す文（整形済み）。「対象 {item}　触媒 {count} 個」→
+ * 「成功率 {rate}（うち大成功 {great}）　料金 {fee}G」→（払えなければ）所持金が足りない。値は core の townMenu.upgrade と upgradePreview。
+ * 他のページ・preview が null なら []
+ */
+export function upgradeConfirmLines(page: TownPage, menu: TownMenu, preview: UpgradePreview | null, strings: Strings): string[] {
+  if (typeof page !== "object" || !("upConfirm" in page) || preview === null) return [];
+  const sel = page.upConfirm;
+  const item = menu.upgrade.members.find((m) => m.memberId === sel.memberId)?.slots.find((x) => x.slot === sel.slot)?.name ?? "";
+  const lines = [
+    s(strings, "town.upgrade.confirm", { item, count: sel.picked.length }),
+    s(strings, "town.upgrade.preview", { rate: preview.rate, great: preview.great, fee: preview.fee }),
+  ];
+  if (!preview.affordable) lines.push(s(strings, "town.upgrade.noGold"));
+  return lines;
 }
 
 /** UI-52: 街のヘッダー（所持金） */

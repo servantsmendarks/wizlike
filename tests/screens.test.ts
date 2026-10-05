@@ -171,6 +171,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   "rules/creation": ["rollBonus", "statAllocation", "adjustStat", "classOptions", "validCreationName"],
   // M7 UI-57: debug パネルの「SAN+{n}」のラベルの n（core が足す量の定数。値を表示に使うだけ）
   "rules/debug": ["SAN_OVER_DEBUG"],
+  // M7 TW-17: 強化の確認の段の成功率・大成功・料金・可否は core の upgradePreview の値を描く
+  "rules/upgrade": ["upgradePreview"],
   rng: ["createRng"],
   // 能力値の並び（CH-10）。列挙の定数
   "data/index": ["STAT_KEYS"],
@@ -445,7 +447,18 @@ describe("入力と Command", () => {
         new RegExp(`case "${action}":\\s*void run\\(\\{ type: "town\\.storage", action: "${action}", memberId: e\\.memberId, instanceId: e\\.instanceId \\}\\);\\s*return;`),
       );
     }
-    expect(app).toMatch(/townPage = townRepair\(townPage, menu\);\s*const ents = townEntries\(townPage, menu, strings\);/);
+    expect(app).toMatch(/townPage = townRepair\(townPage, menu\);\s*const ents = townEntries\(townPage, menu, strings, previewOf\(townPage\)\);/);
+  });
+
+  test("UI-52/TW-17（M7）強化: 触媒の行は語りなしで段を替え、鍛えるは部位の段に戻してから town.upgrade を送る。確認の段は upgradePreview の値で語る（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const body = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(body).toMatch(/case "upPick":\s*townPage = e\.to;\s*syncControls\(\);\s*return;/);
+    expect(body).toMatch(
+      /case "upgrade":\s*townPage = \{ upSlot: e\.memberId \};\s*void run\(\{ type: "town\.upgrade", memberId: e\.memberId, slot: e\.slot, catalysts: e\.catalysts \}\);\s*return;/,
+    );
+    expect(app).toMatch(/upgradePreview\(state, data, page\.upConfirm\.memberId, page\.upConfirm\.slot, page\.upConfirm\.picked\)/);
+    expect(app).toMatch(/upgradeConfirmLines\(page, menu, previewOf\(page\), strings\)/);
   });
 
   test("UI-54 戦闘中はヘッダーに 第{round+1}ターン を出す。遭遇の再生（onScreen battle）は 1、sync の戦闘は battleMenu.round + 1、battleEnd の後と迷宮・街の sync では隠す。lowerInput はターンを消さない（ソースの検査）", () => {

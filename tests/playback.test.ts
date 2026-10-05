@@ -1194,6 +1194,20 @@ describe("UI-55/UI-40 制止の箱のタップ待ち（M5）", () => {
     }
   });
 
+  test("UI-40/TW-17 強化の箱（core の実際の town.upgrade の列）も制止の箱と同じく、成否の語りを出した後でタップを 1 回待ってから消す（演出スキップの真偽とも）", async () => {
+    const st = cloneState(newGame(1));
+    st.gold = 1000;
+    const r = execute(st, { type: "town.upgrade", memberId: "c1", slot: "weapon", catalysts: [] }, data);
+    expect(r.events.map((e) => e.kind)).toEqual(["dice", "message"]);
+    const m = r.events[1]!;
+    if (m.kind !== "message") throw new Error("message expected");
+    for (const skipAnimations of [false, true]) {
+      const { deps, log } = fakeDeps({ skipAnimations });
+      await createPlayer(deps).play(r.events, st, r.state);
+      expect(span(log), String(skipAnimations)).toEqual(["dice.show", say(m.key, m.params), "beat.waitTap", "dice.hide"]);
+    }
+  });
+
   test("UI-40 拍の外の dice.learn は待たない（続く message の間だけ残し、次のイベントで消す）", async () => {
     const { deps, log } = fakeDeps();
     await createPlayer(deps).play([learn, msg("event.nothing"), { kind: "sanChanged", id: "c2", delta: -1, san: 99 }], s(), s());
