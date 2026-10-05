@@ -27,6 +27,7 @@ import { GameDataError, loadGameData, type GameData, type RawGameData } from "./
 import { mountStage } from "./presenter/stage";
 import { createApp } from "./presenter/app";
 import { applyPalette } from "./presenter/palette";
+import { attachAudio, createAudioPlayer } from "./presenter/audio";
 import { createSettingsStore, loadSettings, saveSettings } from "./presenter/settings";
 import { renderDataError, STARTUP_ERROR_HEADING } from "./presenter/views/data-error";
 import { openIdbBackend } from "./save/db";
@@ -113,6 +114,17 @@ async function start(): Promise<void> {
     // SV-04 / IT-80: v3 → v4 の移行で progress.shopLevel を dungeons[].onClear.shopLevel から計算する
     migrations: createMigrations(data.dungeons),
   });
+  // UI-06 / UI-63 / UI-65: 音の再生機。AudioContext は最初のユーザー操作で作る（attachAudio）。
+  // ZzFX は評価時に AudioContext を作るので、静的に import せず、再生機が unlock の後に動的 import する。
+  const audioPlayer = createAudioPlayer({
+    createContext: () => (typeof AudioContext === "function" ? new AudioContext() : null),
+    loadZzfx: () => import("./vendor/zzfx-1.3.2/ZzFX.js"),
+    data,
+    assets,
+    // P3 で設定（settings）の音量に繋ぐまでは config.ui の既定の段
+    volumes: () => ({ music: data.config.ui.musicVolume, sfx: data.config.ui.sfxVolume }),
+  });
+  attachAudio(document, audioPlayer);
   // mountStage は同期で 1 回 onLayout を呼ぶので、app を先に作る。
   const app = createApp({ stage: stageEl, data, settings, saves, assets });
   mountStage(stageEl, data.config.stage, app.onLayout);

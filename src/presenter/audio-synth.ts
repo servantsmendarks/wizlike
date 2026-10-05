@@ -64,7 +64,7 @@ function spans<T extends readonly [number, number, unknown, number]>(
 export function renderSong(
   song: SongData,
   wt: Wavetables,
-): { samples: Float32Array; loopStart: number | null; loopEnd: number | null } {
+): { samples: Float32Array<ArrayBuffer>; loopStart: number | null; loopEnd: number | null } {
   const total = sampleAt(song.end16, song.tempoUs);
   const mix = new Float64Array(total);
   const size = wt.samples;
