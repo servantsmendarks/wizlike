@@ -1,4 +1,4 @@
-// H9 バランスのボット（ユーザー決定）: 「潜行 → 街（救済 → 寺院 → 闇魔術 → 相部屋 1 泊 → 店で補充）→ 潜行」を繰り返す。
+// H9 バランスのボット（ユーザー決定）: 「潜行 → 街（救済 → 拾った装備の売却（M7-B）→ 寺院 → 闇魔術 → 相部屋 1 泊 → 店で補充）→ 潜行」を繰り返す。
 // 200 シードの計測は tests/balance/campaign.sim.ts（npm run balance）、既定の npm test には tests/balance.test.ts の煙テスト（5 シード）だけを置く。
 // ボットは 2 つ: (a) 4 戦固定ボット（4 戦で帰る）、(b) セオリーボット（戦い続け、この潜行の開始時に alive だった者が dead / ash になった時点か、CB-14 の繰り上げ後の前衛の生存者（life が alive）の「現在 HP の合計 ÷ 最大 HP の合計」が半分を切った時点で帰る。死者は数えない。ユーザー決定）。
 // ボットはテストの中だけにあり、core の execute と問い合わせ（floorOf、fieldItemMenu、townMenu、frontLineIds）だけを使う。
@@ -76,6 +76,11 @@ type DiveRecord = {
   shopThreads: number;
   shopHerbs: number;
   shopCost: number;
+  soldCount: number; // M7-B: 売った装備品の数
+  soldGold: number; // M7-B: 売却収入の合計
+  identifyCount: number; // M7-B: 売るために店で鑑定した回数
+  identifyCost: number; // M7-B: その鑑定料の合計
+  unsold: number; // M7-B: 街の手順の後も手持ちに残った装備品（未鑑定で鑑定料が払えなかった）
   goldBefore: number; // 潜行の前の所持金
   goldAfter: number; // 街の手順をすべて終えた後の所持金
   assetsAfter: number; // 街の手順をすべて終えた後の資産（所持金 + 手持ちの消耗品の購入価格）
@@ -457,6 +462,44 @@ export class Campaign {
     return true;
   }
 
+  /** 装備品（消耗品・魔法書でない。M7 の B2 から装備は items.json に無いので findItem が null）か */
+  isEquipment(instanceId: string): boolean {
+    return findItem(data, this.state.items[instanceId]!.itemId) === null;
+  }
+
+  /**
+   * M7-B: 拾った装備を売る（街に着いて救済の後、寺院の前）。並び順（life を問わない）× inventory の順に、装備していない装備品を
+   * 鑑定済みならそのまま売り、未鑑定なら鑑定料が払えるときだけ店で鑑定してから売る（払えなければ残す）。ユニークも売る（買い戻しはしない）。
+   * 初期の所持品は消耗品だけなので、inventory の装備品は宝箱・ボスで拾った品だけ
+   */
+  sellLoot(rec: DiveRecord): void {
+    for (const c of this.state.party.map((x) => x.id)) {
+      for (const id of [...this.state.party.find((x) => x.id === c)!.inventory]) {
+        if (!this.isEquipment(id)) continue;
+        const shop = townMenu(this.state, data)!.shop;
+        if (!this.state.items[id]!.identified) {
+          if (!shop.identify.affordable) continue;
+          const g = this.state.gold;
+          this.run({ type: "town.shop", action: { kind: "identify", memberId: c, instanceId: id } });
+          expect(g - this.state.gold).toBe(shop.identify.fee);
+          rec.identifyCount += 1;
+          rec.identifyCost += shop.identify.fee;
+        }
+        const row = townMenu(this.state, data)!.shop.sellable.find((m) => m.memberId === c)!.items.find((x) => x.instanceId === id)!;
+        const g = this.state.gold;
+        this.run({ type: "town.shop", action: { kind: "sell", memberId: c, instanceId: id } });
+        expect(this.state.gold - g).toBe(row.price);
+        rec.soldCount += 1;
+        rec.soldGold += row.price;
+      }
+    }
+  }
+
+  /** パーティ全体（死者・灰を含む）の手持ちの装備品の数 */
+  equipmentInHand(): number {
+    return sum(this.state.party.map((c) => c.inventory.filter((id) => this.isEquipment(id)).length));
+  }
+
   /** パーティ全体（死者・灰を含む）の手持ちの薬草の数 */
   herbsInHand(): number {
     return sum(this.state.party.map((c) => c.inventory.filter((id) => this.state.items[id]!.itemId === HERB).length));
@@ -498,6 +541,11 @@ export class Campaign {
         shopThreads: 0,
         shopHerbs: 0,
         shopCost: 0,
+        soldCount: 0,
+        soldGold: 0,
+        identifyCount: 0,
+        identifyCost: 0,
+        unsold: 0,
         goldBefore,
         goldAfter: 0,
         assetsAfter: 0,
@@ -505,11 +553,13 @@ export class Campaign {
         anyL2: false,
       };
       this.mercy(rec);
+      this.sellLoot(rec);
       this.revive(rec);
       this.inn(rec);
       rec.allL2 = this.state.party.every((c) => c.life === "alive" && c.level >= 2);
       rec.anyL2 = this.state.party.some((c) => c.level >= 2);
       this.shop(rec);
+      rec.unsold = this.equipmentInHand();
       rec.goldAfter = this.state.gold;
       rec.assetsAfter = assetsOf(this.state);
       dives.push(rec);
@@ -522,7 +572,7 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
   const lines: string[] = [];
   const all = results.flatMap((r) => r.dives);
   lines.push(
-    `H9 再計測【${kind.label}】（${seeds} シード × 潜行 ${dives} 回。d01 の 1 階の上り階段から BFS 距離 ${NEAR} 以内。街: 救済 → 寺院 → 闇魔術 → 相部屋 1 泊 → 店（糸が無ければ 1 本 ${THREAD_PRICE}G、薬草 ${HERB_PRICE}G を手持ち ${HERB_TARGET} 個まで）。所持金の初期値 ${START_GOLD}、資産の初期値 ${results[0]?.startAssets ?? "-"}（所持金 + 手持ちの消耗品の購入価格））`,
+    `H9 再計測【${kind.label}】（${seeds} シード × 潜行 ${dives} 回。d01 の 1 階の上り階段から BFS 距離 ${NEAR} 以内。街: 救済 → 装備の売却（未鑑定は鑑定料が払えれば店で鑑定してから）→ 寺院 → 闇魔術 → 相部屋 1 泊 → 店（糸が無ければ 1 本 ${THREAD_PRICE}G、薬草 ${HERB_PRICE}G を手持ち ${HERB_TARGET} 個まで）。所持金の初期値 ${START_GOLD}、資産の初期値 ${results[0]?.startAssets ?? "-"}（所持金 + 手持ちの消耗品の購入価格））`,
   );
   lines.push(`打ち切り（行動可能な者がいなくて入れない）: ${results.filter((r) => r.aborted).length} シード`);
   for (let k = 0; k < dives; k++) {
@@ -537,6 +587,9 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
     lines.push(
       `  救済: 申し出 ${ds.filter((d) => d.mercyOffered).length}・受けた ${ds.filter((d) => d.mercyUsed).length} / 寺院 ${sum(ds.map((d) => d.templeTries))} 回（成功 ${sum(ds.map((d) => d.templeOk))}、費用計 ${sum(ds.map((d) => d.templeCost))}）/ 闇魔術 ${sum(ds.map((d) => d.darkCount))} 回（費用計 ${sum(ds.map((d) => d.darkCost))}）/ 宿 費用計 ${sum(ds.map((d) => d.innCost))}・馬小屋 ${ds.filter((d) => d.innFallback).length} / 店 糸 ${sum(ds.map((d) => d.shopThreads))}・薬草 ${sum(ds.map((d) => d.shopHerbs))}・費用計 ${sum(ds.map((d) => d.shopCost))}`,
     );
+    lines.push(
+      `  売却（M7-B）: 装備 ${sum(ds.map((d) => d.soldCount))} 品・収入計 ${sum(ds.map((d) => d.soldGold))}G（シードあたり平均 ${fmt(mean(ds.map((d) => d.soldGold)))}G）/ 売るための鑑定 ${sum(ds.map((d) => d.identifyCount))} 回・費用計 ${sum(ds.map((d) => d.identifyCost))}G / 鑑定料が払えず残った装備（街の手順の後）計 ${sum(ds.map((d) => d.unsold))}`,
+    );
     lines.push(`  ${stats("この潜行の所持金の変化（街の手順の後）", ds.map((d) => d.goldAfter - d.goldBefore))}`);
     // 打ち切られたシードは最後の潜行の後の値で据え置く
     const cumA = results.map((r) => (r.dives[Math.min(k, r.dives.length - 1)]?.assetsAfter ?? r.startAssets) - r.startAssets);
@@ -545,6 +598,9 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
     lines.push(`  （参考）${stats(`潜行 1〜${k + 1} の累積所持金（初期値 ${START_GOLD} からの差）`, cum)}・黒字 ${cum.filter((x) => x > 0).length}`);
   }
   lines.push(`全潜行の全滅率: ${pct(all.filter((d) => d.method === "wipe").length, all.length)}`);
+  lines.push(
+    `全潜行の売却（M7-B）: 装備 ${sum(all.map((d) => d.soldCount))} 品・収入計 ${sum(all.map((d) => d.soldGold))}G（シードあたり平均 ${fmt(sum(all.map((d) => d.soldGold)) / results.length)}G）/ 鑑定 ${sum(all.map((d) => d.identifyCount))} 回・費用計 ${sum(all.map((d) => d.identifyCost))}G`,
+  );
   const idx = results.map((r) => r.dives.findIndex((d) => d.allL2));
   const parts = Array.from({ length: dives }, (_, k) => `${k + 1} 回目 ${idx.filter((i) => i === k).length}`);
   parts.push(`未到達 ${idx.filter((i) => i < 0).length}`);
