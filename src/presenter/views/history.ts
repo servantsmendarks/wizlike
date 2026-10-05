@@ -3,6 +3,7 @@
 // 開いたら末尾を見せる。キーの ↑↓ は scrollBy で 3 行ずつ動かす（呼び出し側が決める）。操作領域には「閉じる」だけを置く（app）。
 // モジュールのトップレベルでは DOM に触れない。
 import type { Rect } from "../layout";
+import { WRAP_STYLE } from "./wrap";
 
 /** 1 行の高さ（論理 px。UI-03 の行間） */
 export const HISTORY_LINE_H = 10;
@@ -60,9 +61,8 @@ export function createHistoryView(r: { overlay: Rect; title: Rect; list: Rect })
     height: `${listH}px`,
     overflowY: "auto",
     overflowX: "hidden",
-    wordBreak: "break-all",
-    lineBreak: "anywhere",
-    whiteSpace: "pre-wrap",
+    // UI-43 / UI-46: 禁則（。、」）などを行頭に置かない。wrap.ts）
+    ...WRAP_STYLE,
   });
   el.append(title, list);
 

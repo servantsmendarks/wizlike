@@ -149,9 +149,11 @@ body {
   top: 2px;
   width: 232px;
   height: 30px;
+  /* UI-43（M7）: 禁則。views/wrap.ts の WRAP_STYLE と同じ値（settings-notice / creation-error も） */
   white-space: pre-wrap;
-  word-break: break-all;
-  line-break: anywhere;
+  word-break: normal;
+  line-break: strict;
+  overflow-wrap: anywhere;
 }
 
 .creation-num,
@@ -197,8 +199,9 @@ body {
   position: absolute;
   color: var(--c-danger);
   white-space: pre-wrap;
-  word-break: break-all;
-  line-break: anywhere;
+  word-break: normal;
+  line-break: strict;
+  overflow-wrap: anywhere;
   visibility: hidden;
 }
 
@@ -410,7 +413,8 @@ body {
 .settings-notice,
 .settings-install {
   white-space: pre-wrap;
-  word-break: break-all;
-  line-break: anywhere;
+  word-break: normal;
+  line-break: strict;
+  overflow-wrap: anywhere;
   overflow: hidden;
 }

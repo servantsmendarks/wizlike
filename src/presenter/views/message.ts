@@ -11,6 +11,7 @@
 //   満たないうちは上が空く（広げた一覧 UI-52 が窓の下 2 行だけを見せるため）。全文は配列に持ち、履歴の画面（UI-46）で見せる
 // - 続きの三角 x228..235、y60..67
 import { MESSAGE_LINE_H, type DungeonLayout, type Rect } from "../layout";
+import { WRAP_STYLE } from "./wrap";
 
 /** {k} を params[k] で置き換える。params に無いものは {k} のまま残す */
 export function formatMessage(tpl: string, params?: Record<string, string | number>): string {
@@ -104,9 +105,8 @@ export function createMessageWindow(o: {
     height: `${textH}px`, // 既定 60（6 行）
     overflow: "hidden",
     touchAction: "none",
-    wordBreak: "break-all",
-    lineBreak: "anywhere",
-    whiteSpace: "pre-wrap",
+    // UI-43 / UI-46: 禁則（。、」）などを行頭に置かない。wrap.ts）
+    ...WRAP_STYLE,
     userSelect: "none",
     // UI-43（M7）: 文字は常に下詰め（最新の行が窓の下端）。行が窓に満たないうちも上に空きを置き、あふれた分は上で切れる
     display: "flex",

@@ -10,6 +10,7 @@ import type { Character, GameState, TownMenu } from "../src/core/types";
 import { samePage, townEntries, townFreshIntro, townHeader, townListTall, townLowersInput, townPageIntro, townParent, townRepair, upgradeConfirmLines, type TownEntry, type TownPage } from "../src/presenter/views/town";
 import { data, newGame } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
+import { kinsokuLines } from "./helpers/wrap";
 
 const S = data.strings;
 
@@ -269,8 +270,8 @@ describe("UI-52 街のページ", () => {
   test("UI-52/TW-17（M7）広げた強化の段（鍛える者・部位・触媒）に入ったときの語りは、窓の下 2 行（全角 29 字 × 2）に収まる", () => {
     const m = menuOf(town());
     const sel = { memberId: "c1", slot: "weapon" as const, picked: [] };
-    /** 1 文の行数（全角 29 字で折り返す。語りはどれも全角） */
-    const rows = (text: string): number => Math.max(1, Math.ceil(Array.from(text).length / 29));
+    /** 1 文の行数（全角 29 字で、禁則つきで折り返す。UI-43 の WRAP_STYLE。helpers/wrap.ts） */
+    const rows = (text: string): number => kinsokuLines(text, 29).length;
     for (const p of ["upgrade", { upSlot: "c1" }, { upCat: sel }] as TownPage[]) {
       expect(townListTall(p)).toBe(true);
       const keys = townPageIntro(p, m);

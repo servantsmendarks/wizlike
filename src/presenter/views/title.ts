@@ -10,6 +10,7 @@ import type { GameListEntry } from "../../save/types";
 import type { Action } from "../input/swipe";
 import { TITLE_BUTTONS, TITLE_HEADING_Y, TITLE_HINT, TITLE_NOTICE, TITLE_ROW_AREA, TITLE_ROW_PITCH, type Rect } from "../layout";
 import { formatMessage } from "./message";
+import { WRAP_STYLE } from "./wrap";
 import { onTap } from "../input/tap";
 import { createFileButton, type FileButton } from "../file-io";
 
@@ -252,14 +253,14 @@ export function createTitleScreen(o: { strings: Strings; onSelect(index: number)
   const notice = document.createElement("div");
   notice.className = "title-notice";
   place(notice, TITLE_NOTICE);
-  Object.assign(notice.style, { whiteSpace: "pre-wrap", wordBreak: "break-all", lineBreak: "anywhere", overflow: "hidden" });
+  Object.assign(notice.style, { ...WRAP_STYLE, overflow: "hidden" });
   el.appendChild(notice);
 
   // SV-40: ホーム画面への追加の案内（押せない。dim の 2 行）
   const hintEl = document.createElement("div");
   hintEl.className = "title-hint";
   place(hintEl, TITLE_HINT);
-  Object.assign(hintEl.style, { whiteSpace: "pre-wrap", wordBreak: "break-all", lineBreak: "anywhere", overflow: "hidden", color: "var(--c-dim)" });
+  Object.assign(hintEl.style, { ...WRAP_STYLE, overflow: "hidden", color: "var(--c-dim)" });
   el.appendChild(hintEl);
 
   const buttons = document.createElement("div");

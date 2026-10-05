@@ -5,7 +5,9 @@ import { createHistoryView, HISTORY_LINE_H } from "../src/presenter/views/histor
 import { battleTurnText, headerText } from "../src/presenter/views/header";
 import { formatPartyRow } from "../src/presenter/views/party";
 import { sanStage } from "../src/core/rules/san";
+import { WRAP_STYLE } from "../src/presenter/views/wrap";
 import { data, newGame } from "./helpers/core";
+import { kinsokuLines } from "./helpers/wrap";
 
 /** UI-12: app と同じく core の sanStage で段を決める */
 const stageOf = (san: number, sanMax: number) => sanStage(san, sanMax, data.config);
@@ -255,5 +257,69 @@ describe("MessageWindow", () => {
     expect(w.typing()).toBe(false);
     expect(w.history()).toEqual(["abc"]);
     vi.useRealTimers();
+  });
+});
+
+// ---------------------------------------------------------------- 禁則（M7）
+// vitest は CSS の import を空にするので、node の fs で読む（@types/node は入れていないので型は手で書く。tap.test.ts と同じ）
+const FS_MODULE = "node:fs";
+const fs = (await import(/* @vite-ignore */ FS_MODULE)) as {
+  readFileSync(p: URL, enc: "utf8"): string;
+  readdirSync(p: URL): string[];
+};
+
+describe("UI-43/UI-46 折り返しの禁則（M7）", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("UI-43/UI-46 WRAP_STYLE は pre-wrap・word-break normal・line-break strict・overflow-wrap anywhere（anywhere の line-break は禁則を切るので使わない）", () => {
+    expect(WRAP_STYLE).toEqual({ whiteSpace: "pre-wrap", wordBreak: "normal", lineBreak: "strict", overflowWrap: "anywhere" });
+  });
+
+  test("UI-43/UI-46 メッセージ窓（message-history）と履歴の画面の一覧（history-list）は WRAP_STYLE で折り返す", () => {
+    const created: FakeEl[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => {
+        const e = new FakeEl();
+        created.push(e);
+        return e;
+      },
+      createElementNS: () => new FakeEl(),
+    });
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    createMessageWindow({ speed: () => 0, historyMax: 15, region: g.message, layout: L.message });
+    createHistoryView(L.history);
+    for (const cls of ["message-history", "history-list"]) {
+      const el = created.find((e) => e.className === cls)!;
+      for (const [k, v] of Object.entries(WRAP_STYLE)) expect(el.style[k], `${cls}.${k}`).toBe(v);
+    }
+  });
+
+  test("UI-43/UI-46 表示層の style.css と views/*.ts に line-break: anywhere と word-break: break-all が残っていない（開発用のデータの誤りの画面を除く）", () => {
+    const css = fs.readFileSync(new URL("../src/presenter/style.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(css).not.toMatch(/line-break:\s*anywhere/);
+    const breakAll = Array.from(css.matchAll(/([^{}]+)\{([^{}]*)\}/g))
+      .filter((m) => /word-break:\s*break-all/.test(m[2]!))
+      .map((m) => m[1]!.trim());
+    expect(breakAll).toEqual([".data-error-list"]);
+    const dir = new URL("../src/presenter/views/", import.meta.url);
+    for (const name of fs.readdirSync(dir).filter((n) => n.endsWith(".ts"))) {
+      const src = fs.readFileSync(new URL(name, dir), "utf8");
+      expect(src, name).not.toMatch(/lineBreak:\s*"anywhere"/);
+      expect(src, name).not.toMatch(/wordBreak:\s*"break-all"/);
+    }
+  });
+
+  test("UI-43 禁則の近似（helpers/wrap.ts）: 29 字ちょうどの後の「。」は行頭に来ず、前の字ごと次の行へ送られる（実機の報告の town.look.gm）", () => {
+    const gm = data.strings["town.look.gm"]!;
+    expect(kinsokuLines(gm, 29)).toEqual(["GMがサイコロを指先で転がしながら、卓の様子をうかがってい", "る。"]);
+    for (const c of ["。", "、", "」", "）", "！", "？", "…", "ー", "ゃ", ")"]) {
+      const lines = kinsokuLines("あ".repeat(29) + c + "次", 29);
+      expect(lines, c).toEqual(["あ".repeat(28), "あ" + c + "次"]);
+    }
+    // 開き括弧は行末に残さない
+    expect(kinsokuLines("あ".repeat(28) + "「次」", 29)).toEqual(["あ".repeat(28), "「次」"]);
   });
 });

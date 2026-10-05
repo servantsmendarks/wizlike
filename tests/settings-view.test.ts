@@ -15,6 +15,7 @@ import {
   type SettingsContext,
 } from "../src/presenter/views/settings";
 import { data } from "./helpers/core";
+import { kinsokuLines } from "./helpers/wrap";
 
 const S = data.strings;
 const D: Settings = defaultSettings(data.config);
@@ -310,20 +311,8 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
 });
 
 describe("ホーム画面への追加の案内（SV-40）", () => {
-  /** 全角 1 字 = 8px（1 単位）、半角（ASCII）= 4px（0.5 単位）で、幅 w 単位で字単位に折り返した行数（break-all と同じ） */
-  const wrappedLines = (text: string, w: number): number => {
-    let lines = 1;
-    let cur = 0;
-    for (const ch of text) {
-      const cw = (ch.codePointAt(0) ?? 0) < 0x80 ? 0.5 : 1;
-      if (cur + cw > w) {
-        lines++;
-        cur = 0;
-      }
-      cur += cw;
-    }
-    return lines;
-  };
+  /** 全角 1 字 = 8px（1 単位）、半角（ASCII）= 4px（0.5 単位）で、幅 w 単位で禁則つきで折り返した行数（UI-43 の WRAP_STYLE。helpers/wrap.ts） */
+  const wrappedLines = (text: string, w: number): number => kinsokuLines(text, w).length;
 
   test("SV-40 installGuideLines: standalone なら done の 1 行、そうでなければ 見出し・理由・iPhone・Android・保存が別 の 5 項目", () => {
     expect(installGuideLines(true, S)).toEqual([S["settings.install.done"]]);
