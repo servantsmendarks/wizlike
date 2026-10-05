@@ -69,6 +69,7 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
       },
       setMore: rec("message.setMore"),
       rush: rec("message.rush"),
+      typing: () => false,
       log: rec("message.log"),
       waitMs(ms) {
         log.push({ m: "message.waitMs", a: [ms] });
@@ -106,6 +107,7 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
         return Promise.resolve();
       },
       hide: rec("dice.hide"),
+      settled: () => true,
     },
     screens: { show: (to) => rec("screens.show")(to), sync: (st) => log.push({ m: "screens.sync", a: [st] }) },
     wipe: { show: (p) => rec("wipe.show")(p) },
@@ -977,6 +979,120 @@ describe("UI-45 拍の再生", () => {
     expect(log.filter((e) => e.m === "message.say").map((e) => e.a[1])).toEqual([false, true, false]);
     // 拍は飛ばさない（タップ待ちは 1 回ある）
     expect(log.filter((e) => e.m === "beat.waitTap")).toHaveLength(1);
+  });
+
+  /**
+   * 遭遇の再生（何かが現れた！ → 拍 → 先手判定）を既定の掛け金で流す。dice.show は finish() まで解決せず、
+   * settled（最終の段まで描いたか）と typing（文字送り中か）は試験が決める
+   */
+  const encounterRun = (tail: GameEvent[]) => {
+    const { deps, log } = fakeDeps();
+    delete deps.beat; // 既定の掛け金（Player.tap() が解く）
+    const s = battleState();
+    const player = createPlayer(deps);
+    const st = { settled: false, typing: false };
+    let finish: () => void = () => undefined;
+    deps.dice.show = (ev, skip, stepMs) => {
+      log.push({ m: "dice.show", a: [ev.label.key, skip(), stepMs] });
+      return new Promise<void>((r) => {
+        finish = r;
+      });
+    };
+    deps.dice.settled = () => st.settled;
+    deps.message.typing = () => st.typing;
+    /** message.say の頭で呼ぶ（文字送りの最中のタップを作る） */
+    const hook: { onSay: ((text: string) => void) | null } = { onSay: null };
+    const sayFn = deps.message.say;
+    deps.message.say = (text, instant) => {
+      hook.onSay?.(text);
+      return sayFn(text, instant);
+    };
+    let done = false;
+    const events: GameEvent[] = [{ kind: "screen", to: "battle" }, beat("system", false), { kind: "encounter", groups: [] }, msg("battle.encounter"), beat("system", false), ...tail];
+    expectKnownStringKeys(events);
+    const p = player
+      .play(events, s, s)
+      .then(() => {
+        done = true;
+      });
+    const flush = async (): Promise<void> => {
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+    };
+    return { log, player, st, hook, p, flush, finishDice: () => finish(), isDone: () => done };
+  };
+  const INITIATIVE_PARTY: GameEvent = { ...(INITIATIVE as DiceEvent), result: { key: "dice.initiative.party" } };
+
+  test("UI-45/UI-40 拍の中で見せる残りが無い（ダイスが最終の段まで出て、文字送り中でない）ときのタップは、その拍の待ちのタップになる（互角: 1 回で進む）", async () => {
+    const r = encounterRun([INITIATIVE]);
+    await r.flush();
+    // 「何かが現れた！」の後の拍の待ち
+    r.player.tap();
+    await r.flush();
+    expect(r.log.filter((e) => e.m === "dice.show")).toHaveLength(1);
+    // 結果の行を描いた後の点滅の最中（dice.show はまだ解決していない）にタップ
+    r.st.settled = true;
+    r.player.tap();
+    r.finishDice();
+    await r.flush();
+    // 再生の終わりの待ち（ダイスが出ている）を、さっきのタップで抜けている
+    expect(r.isDone()).toBe(true);
+    await r.p;
+    // 続きの三角は「何かが現れた！」の後の 1 回だけ
+    expect(r.log.filter((e) => e.m === "message.setMore" && e.a[0] === true)).toHaveLength(1);
+  });
+
+  test("UI-45/UI-40 ダイスの動きの途中（最終の段の前）のタップは残りを即時にするだけで、待ちは 1 回残る", async () => {
+    const r = encounterRun([INITIATIVE]);
+    await r.flush();
+    r.player.tap();
+    await r.flush();
+    r.st.settled = false;
+    r.player.tap();
+    r.finishDice();
+    await r.flush();
+    expect(r.isDone()).toBe(false);
+    expect(r.log.filter((e) => e.m === "message.setMore" && e.a[0] === true)).toHaveLength(2);
+    r.player.tap();
+    await r.p;
+    expect(r.isDone()).toBe(true);
+  });
+
+  test("UI-45/UI-43 文字送り中のタップは文の即表示だけで、待ちは 1 回残る", async () => {
+    const r = encounterRun([INITIATIVE, msg("battle.surpriseParty")]);
+    await r.flush();
+    r.player.tap();
+    await r.flush();
+    r.st.settled = true;
+    // 「こちらが先手を取った！」の文字送り中にタップ
+    r.hook.onSay = () => {
+      r.st.typing = true;
+      r.player.tap();
+      r.st.typing = false;
+    };
+    r.finishDice();
+    await r.flush();
+    expect(r.log.filter((e) => e.m === "message.rush")).toHaveLength(1);
+    expect(r.isDone()).toBe(false);
+    r.player.tap();
+    await r.p;
+  });
+
+  test("UI-45/UI-40 見せる残りが無いときのタップの後に文が来たら、そのタップは取り消す（文は即表示し、待ちは 1 回残る。先手）", async () => {
+    const r = encounterRun([INITIATIVE_PARTY, msg("battle.surpriseParty")]);
+    await r.flush();
+    r.player.tap();
+    await r.flush();
+    r.st.settled = true;
+    r.player.tap();
+    r.finishDice();
+    await r.flush();
+    expect(r.log.filter((e) => e.m === "message.say").map((e) => e.a)).toEqual([
+      [formatMessage(data.strings["battle.encounter"]!), false],
+      [formatMessage(data.strings["battle.surpriseParty"]!), true],
+    ]);
+    expect(r.isDone()).toBe(false);
+    r.player.tap();
+    await r.p;
   });
 
   test("UI-45 createTapLatch: release で待ちを解く。待っていない間の release は次の待ちを解かない", async () => {

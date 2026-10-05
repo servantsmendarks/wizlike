@@ -4,6 +4,7 @@
 // 高さは 8 + 10 ×（rows + 3）。新しい dice が来たら前の箱を置き換える（積まない）。
 // 演出: 行ごとに目を 1 個ずつ（translateY 0→−2→0、duration stepMs の finished で確定）→ その行の合計 → 次の行 → 基準 → 結果
 // （合計・基準・結果は opacity の 1 往復）。skip か stepMs が 0 以下なら animate を呼ばずに最終の段だけを描く。
+// settled は最終の段（結果の行まで）を描いたか（結果の点滅の間も真。UI-45 の拍の中のタップに見せる残りがあるかを playback が見る）。
 // hide で消す（playback が呼ぶ）。formatDiceSummary は履歴に残す 1 行（UI-46）。
 // モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
@@ -92,6 +93,8 @@ export type DiceView = {
   /** skip は段ごとに読み直す。途中で真になったら最終の段を描いて終える（UI-45 の拍の中のタップ） */
   show(ev: DiceEvent, skip: () => boolean, stepMs: number): Promise<void>;
   hide(): void;
+  /** 最終の段（結果の行まで）を描いたか。結果の点滅の間も真。hide と次の show で偽に戻る */
+  settled(): boolean;
 };
 
 async function settle(a: Animation): Promise<void> {
@@ -117,6 +120,8 @@ export function createDiceView(strings: Strings): DiceView {
   });
   /** 表示中の箱の世代（hide や次の show で古い show の描画を止める） */
   let gen = 0;
+  /** 今の箱の最終の段を描いたか */
+  let final = false;
 
   const line = (j: number): HTMLElement => {
     const d = document.createElement("div");
@@ -145,6 +150,7 @@ export function createDiceView(strings: Strings): DiceView {
     el,
     async show(ev, skip, stepMs): Promise<void> {
       const my = ++gen;
+      final = false;
       const plus = strings["dice.plus"] ?? "+";
       const r = diceBox(ev);
       Object.assign(el.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px`, display: "" });
@@ -193,7 +199,10 @@ export function createDiceView(strings: Strings): DiceView {
       const frames = diceFrames(ev, fast);
       const first = frames[0];
       if (first !== undefined) draw(first);
-      if (fast) return;
+      if (fast) {
+        final = true;
+        return;
+      }
       const last = frames[frames.length - 1];
       // 段 i（1 以降）で変わった要素を 1 つ動かす（diceFrames の順と同じ並び）
       const moves: (() => Promise<void>)[] = [];
@@ -206,16 +215,22 @@ export function createDiceView(strings: Strings): DiceView {
         if (my !== gen) return;
         if (skip()) {
           if (last !== undefined) draw(last);
+          final = true;
           return;
         }
         const f = frames[i];
         if (f !== undefined) draw(f);
+        if (i === frames.length - 1) final = true;
         const m = moves[i - 1];
         if (m !== undefined) await m();
       }
     },
+    settled(): boolean {
+      return final;
+    },
     hide(): void {
       gen++;
+      final = false;
       el.replaceChildren();
       el.style.display = "none";
     },

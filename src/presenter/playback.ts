@@ -10,6 +10,8 @@
 //   手動かオートかは beat.auto だけで決める（state から推測しない）。拍の外（迷宮・街）は待たない。
 // - tap(): タップ待ちなら解く。拍の中なら今の拍の残りを即時にする（拍は飛ばさない）。拍の外なら UI-43
 //   （1 回目は今の文の即表示、同じ再生の中の 2 回目で残りをすべて即時）。
+//   拍の中で見せる残りが無い（文字送り中でなく、出ているダイスが最終の段まで描けている）ときのタップは、
+//   その拍の手動の待ちのタップとして持ち越す（tapAhead。待ちの前に message / dice / penaltyTable が来たら取り消す）。
 // - 全滅（UI-56）: 拍の中の wipe は、開く前に最後の拍を読ませ（上の待ち）、拍の外に出てから内訳の overlay を開く。
 //   拍の外の wipe（戦闘外の全滅）も、開く前に全滅の 2d10 の箱を出したままタップを 1 回待つ。
 //   全滅の 2d10（label が WIPE_DICE_KEY）の箱は、その後の message 以外のイベント（復活の lifeChanged など）でも消さず、wipe の待ちの後に消す。
@@ -61,6 +63,8 @@ export type PlayerDeps = {
     setMore(on: boolean, blink?: boolean): void;
     /** 文字送り中の文を即表示する（UI-43 / UI-45 のタップ） */
     rush(): void;
+    /** 文字送りの最中か（UI-45 の拍の中のタップで、見せる残りがあるかを見る） */
+    typing(): boolean;
     /** UI-46: 履歴にだけ足す（ダイスの要約） */
     log(text: string): void;
     /** UI-45: オートの拍の待ち（WAAPI の animation.finished で測る） */
@@ -90,6 +94,8 @@ export type PlayerDeps = {
   dice: {
     show(ev: DiceEvent, skip: () => boolean, stepMs: number): Promise<void>;
     hide(): void;
+    /** 最終の段（結果の行まで）を描いたか（その後の結果の点滅の間も真） */
+    settled(): boolean;
   };
   /** UI-45 の手動の拍のタップ待ち。省略すると createTapLatch() を使う（Player.tap() が解く） */
   beat?: TapLatch;
@@ -183,6 +189,11 @@ export function createPlayer(deps: PlayerDeps): Player {
   let beatRush = false;
   /** タップ待ちの最中か */
   let waitingTap = false;
+  /**
+   * UI-45: 拍の中で見せる残りが無いときに受けたタップ。この拍の手動の待ちのタップとして使う。
+   * 待ちの前に新しく読ませるもの（message / dice / penaltyTable）が来たら取り消す
+   */
+  let tapAhead = false;
   /** UI-55: この再生で衝動の行動者に印を付けたか（再生の終わりで外す） */
   let marked = false;
 
@@ -398,7 +409,10 @@ export function createPlayer(deps: PlayerDeps): Player {
   /** UI-45: at の位置で待つ（beatWait が null なら待たない）。手動は続きの三角を点滅させてタップを待つ */
   const waitBeat = async (at: "beat" | "leave" | "end"): Promise<void> => {
     const w = beatWait({ mode, pending, diceShown, at });
+    const ahead = tapAhead;
+    tapAhead = false;
     if (w === "tap") {
+      if (ahead) return;
       await waitTap();
     } else if (w === "timed") {
       await deps.message.waitMs(deps.settings().autoBeatMs);
@@ -422,6 +436,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     mode = null;
     pending = false;
     beatRush = false;
+    tapAhead = false;
   };
 
   return {
@@ -477,6 +492,7 @@ export function createPlayer(deps: PlayerDeps): Player {
             hideDice();
           }
           if (mode !== null && (ev.kind === "message" || ev.kind === "dice")) pending = true;
+          if (ev.kind === "message" || ev.kind === "dice" || ev.kind === "penaltyTable") tapAhead = false;
           const h = handlers[ev.kind] as ((e: GameEvent, cx: PlayCx, s: GameState) => Promise<void>) | undefined;
           if (h !== undefined) await h(ev, cx, finalState);
           if (ev.kind === "dice") hold = mode === null && HOLD_DICE_KEYS.includes(ev.label.key) ? "awaitMessage" : null;
@@ -507,7 +523,9 @@ export function createPlayer(deps: PlayerDeps): Player {
         return;
       }
       if (mode !== null) {
-        // 拍の中: 今の拍の残りを即時にする（拍は飛ばさない）
+        // 拍の中: 今の拍の残りを即時にする（拍は飛ばさない）。
+        // 見せる残り（文字送り中の文・最終の段の前のダイス）が無ければ、このタップをこの拍の待ちのタップとして持ち越す
+        tapAhead = !deps.message.typing() && (!diceShown || deps.dice.settled());
         beatRush = true;
         deps.message.rush();
         return;
