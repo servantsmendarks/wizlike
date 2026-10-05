@@ -225,7 +225,7 @@ describe("UI-52 街のページ", () => {
     expect(upgradeConfirmLines("dark", m, p, S)).toEqual([]);
   });
 
-  test("UI-11/UI-52（M7）townListTall: 店・倉庫・酒場の一覧のページだけ広げる。施設メニュー・宿・寺院・闇魔術（強化を含む）・迷宮の入口は広げない", () => {
+  test("UI-11/UI-52（M7）townListTall: 店・倉庫・酒場の一覧のページだけ広げる。施設メニュー・宿・寺院・闇魔術（強化を含む）・迷宮の入口は広げない。店の鑑定も広げない（呪われた品では結果が 3 行になる）", () => {
     const sel = { memberId: "c1", slot: "weapon" as const, picked: [] };
     const tall: TownPage[] = [
       "tavern",
@@ -233,7 +233,6 @@ describe("UI-52 街のページ", () => {
       "shopBuy",
       "shopSell",
       "shopBuyback",
-      "shopIdentify",
       "storage",
       "storageDeposit",
       "storageWithdraw",
@@ -243,7 +242,7 @@ describe("UI-52 街のページ", () => {
       { deposit: "c1" },
       { withdraw: "i1" },
     ];
-    const normal: TownPage[] = ["menu", "inn", "temple", { temple: "cure" }, "dark", "darkRevive", "upgrade", { upSlot: "c1" }, { upCat: sel }, { upConfirm: sel }, "gate"];
+    const normal: TownPage[] = ["menu", "shopIdentify", "inn", "temple", { temple: "cure" }, "dark", "darkRevive", "upgrade", { upSlot: "c1" }, { upCat: sel }, { upConfirm: sel }, "gate"];
     expect(tall.filter((p) => !townListTall(p))).toEqual([]);
     expect(normal.filter((p) => townListTall(p))).toEqual([]);
   });

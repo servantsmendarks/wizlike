@@ -448,8 +448,8 @@ export function upgradeConfirmLines(page: TownPage, menu: TownMenu, preview: Upg
 
 /**
  * UI-11 / UI-52（M7）: 一覧をビューとメッセージの領域に広げるページか（layout.listTall。メッセージ窓は下 2 行だけ見える）。
- * 店（最初の一覧・買う・持たせる者・売る者と品・買い戻しと持たせる者・鑑定）、倉庫（最初の一覧・預ける者と品・引き出す品と受け取る者）、酒場の一覧。
- * 施設メニュー（3 列 × 2 段）・宿・寺院・闇魔術（強化を含む）・迷宮の入口は広げない
+ * 店（最初の一覧・買う・持たせる者・売る者と品・買い戻しと持たせる者）、倉庫（最初の一覧・預ける者と品・引き出す品と受け取る者）、酒場の一覧。
+ * 施設メニュー（3 列 × 2 段）・宿・寺院・闇魔術（強化を含む）・迷宮の入口は広げない。店の鑑定も広げない（呪われた品では結果の語りが 3 行になり、窓の下 2 行に収まらない）
  */
 export function townListTall(page: TownPage): boolean {
   if (typeof page === "object") return "shop" in page || "sell" in page || "buyback" in page || "deposit" in page || "withdraw" in page;
@@ -459,7 +459,6 @@ export function townListTall(page: TownPage): boolean {
     page === "shopBuy" ||
     page === "shopSell" ||
     page === "shopBuyback" ||
-    page === "shopIdentify" ||
     page === "storage" ||
     page === "storageDeposit" ||
     page === "storageWithdraw"
