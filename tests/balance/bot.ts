@@ -84,6 +84,12 @@ type DiveRecord = {
   soldUnidCount: number; // M7-経済: 未鑑定のまま売った装備品の数（soldCount に含む）
   soldUnidGold: number; // M7-経済: その売却収入（soldGold に含む）
   unsold: number; // M7-B: 街の手順の後も手持ちに残った装備品（M7-経済の規則では未鑑定でも売れるので 0 のはず）
+  unpaidAtStart: number; // M7-宝箱: 潜行の開始時に、前の街の手順で蘇生（寺院・闇魔術）を払えずに残した dead / ash の人数（定義は Campaign.unpaidLeft）
+  chests: number; // M7-宝箱: この潜行で開けた宝箱の数（battle.chest の数）
+  chestsCorridor: number; // M7-宝箱: そのうち通路（BattleOrigin の inRoom が偽）の遭遇の宝箱
+  chestGold: number; // M7-宝箱: 宝箱の金の合計（battle.chest の gold。金運込み）
+  chestItems: number; // M7-宝箱: 宝箱の品のうち所持枠に入った数（battle.chest の後の item.found）
+  chestLeft: number; // M7-宝箱: 宝箱の品のうち所持枠が無くて置いていった数（battle.chest の後の item.leftBehind）
   goldBefore: number; // 潜行の前の所持金
   goldAfter: number; // 街の手順をすべて終えた後の所持金
   assetsAfter: number; // 街の手順をすべて終えた後の資産（所持金 + 手持ちの消耗品の購入価格）
@@ -187,6 +193,19 @@ export class Campaign {
   aliveAtStart: string[] = [];
   frontDownAtStart = false;
   wiped: PenaltyResult | null = null;
+  chests = 0;
+  chestsCorridor = 0;
+  chestGold = 0;
+  chestItems = 0;
+  chestLeft = 0;
+  unpaidAtStart = 0;
+  /**
+   * M7-宝箱「蘇生を払えずに潜った」の定義: 直前の街の手順（revive）で、dead の者の寺院の蘇生、または ash の者（蘇生に失敗して灰になった者を含む）の
+   * 闇魔術の費用が、その時点の所持金で払えずに（townMenu の affordable が偽で）蘇生しなかった者の id。次の潜行の開始時に、そのうちまだ dead / ash の者が
+   * 1 人以上いれば、その潜行を「蘇生を払えずに潜った潜行」として数える。ボットの今の規則では、街の手順の後に dead / ash で残る理由は所持金不足だけ
+   * （救済は 1 人だけ受け、残りは revive が払える限り蘇生する）なので、dive() で「開始時の dead / ash の全員がここに入っている」ことを確かめる
+   */
+  unpaidLeft: string[] = [];
   readonly startAssets: number;
 
   constructor(readonly seed: number, readonly kind: BotKind, members?: PartySetupMember[]) {
@@ -200,6 +219,7 @@ export class Campaign {
     const from = this.state;
     const r = execute(from, cmd, data);
     if (r.events[0]?.kind === "rejected") throw new Error(`seed ${this.seed}: ${JSON.stringify(cmd)} rejected: ${JSON.stringify(r.events[0])}`);
+    this.countChest(from, r.events);
     // 入力を積むだけの battle.input と向きを変えるだけの dungeon.turn は時間の都合で省く（decisions の H9 の行）
     if (cmd.type !== "battle.input" && cmd.type !== "dungeon.turn") expectStateInvariants(r.state);
     expectKnownStringKeys(r.events);
@@ -211,6 +231,22 @@ export class Campaign {
     }
     this.state = r.state;
     return r.state;
+  }
+
+  /** M7-宝箱: battle.chest（宝箱）とその後の item.found / item.leftBehind（宝箱の品。ボス戦では宝箱を判定しないので混ざらない）を数える */
+  countChest(from: GameState, events: GameEvent[]): void {
+    const i = events.findIndex((e) => e.kind === "message" && e.key === "battle.chest");
+    if (i < 0) return;
+    const e = events[i] as Extract<GameEvent, { kind: "message" }>;
+    this.chests += 1;
+    const o = from.battle?.origin;
+    if (o?.kind === "random" && !o.inRoom) this.chestsCorridor += 1;
+    this.chestGold += Number(e.params!["gold"]);
+    for (const x of events.slice(i + 1)) {
+      if (x.kind !== "message") continue;
+      if (x.key === "item.found") this.chestItems += 1;
+      else if (x.key === "item.leftBehind") this.chestLeft += 1;
+    }
   }
 
   /** wipe では PenaltyResult の内訳 = state の差分（金、失った実体、EXP） */
@@ -362,6 +398,14 @@ export class Campaign {
     this.homeBattles = 0;
     this.homeWipe = false;
     this.wiped = null;
+    this.chests = 0;
+    this.chestsCorridor = 0;
+    this.chestGold = 0;
+    this.chestItems = 0;
+    this.chestLeft = 0;
+    const down = this.state.party.filter((c) => c.life !== "alive").map((c) => c.id);
+    expect(down.filter((id) => !this.unpaidLeft.includes(id))).toEqual([]); // 定義（unpaidLeft）のとおり、残った理由は所持金不足だけ
+    this.unpaidAtStart = down.length;
     this.aliveAtStart = this.state.party.filter((c) => c.life === "alive").map((c) => c.id);
     this.frontDownAtStart = this.state.party.slice(0, FRONT_ROW).some((c) => c.life !== "alive");
     this.run({ type: "dungeon.enter", dungeonId: "d01" });
@@ -409,7 +453,10 @@ export class Campaign {
 
   darkIfAffordable(id: string, rec: DiveRecord): void {
     const row = townMenu(this.state, data)!.dark.find((r) => r.memberId === id)!;
-    if (!row.affordable) return;
+    if (!row.affordable) {
+      if (!this.unpaidLeft.includes(id)) this.unpaidLeft.push(id); // M7-宝箱: 闇魔術を払えない
+      return;
+    }
     const g = this.state.gold;
     this.run({ type: "town.dark", memberId: id });
     expect(g - this.state.gold).toBe(row.cost);
@@ -421,10 +468,14 @@ export class Campaign {
   /** 寺院: dead を並び順に蘇生（払えるなら。失敗して灰なら払えるなら闇魔術）→ 灰の者を並び順に闇魔術（払えるなら） */
   revive(rec: DiveRecord): void {
     const ids = this.state.party.map((c) => c.id);
+    this.unpaidLeft = [];
     for (const id of ids) {
       if (this.life(id) !== "dead") continue;
       const row = townMenu(this.state, data)!.temple.resurrect.find((r) => r.memberId === id)!;
-      if (!row.affordable) continue;
+      if (!row.affordable) {
+        this.unpaidLeft.push(id); // M7-宝箱: 寺院の蘇生を払えない
+        continue;
+      }
       const g = this.state.gold;
       this.run({ type: "town.temple", memberId: id, service: "resurrect" });
       expect(g - this.state.gold).toBe(row.cost);
@@ -543,6 +594,12 @@ export class Campaign {
         homeBattles: this.homeBattles,
         homeWipe: this.homeWipe,
         frontDownAtStart: this.frontDownAtStart,
+        unpaidAtStart: this.unpaidAtStart,
+        chests: this.chests,
+        chestsCorridor: this.chestsCorridor,
+        chestGold: this.chestGold,
+        chestItems: this.chestItems,
+        chestLeft: this.chestLeft,
         down: this.state.party.filter((c) => c.life !== "alive").length,
         mercyOffered: this.state.townVisit!.mercyOffered,
         mercyUsed: false,
@@ -607,6 +664,9 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
     lines.push(
       `  売却: 装備 ${sum(ds.map((d) => d.soldCount))} 品（うち未鑑定のまま ${sum(ds.map((d) => d.soldUnidCount))} 品・${sum(ds.map((d) => d.soldUnidGold))}G）・収入計 ${sum(ds.map((d) => d.soldGold))}G（シードあたり平均 ${fmt(mean(ds.map((d) => d.soldGold)))}G）/ 売るための鑑定 ${sum(ds.map((d) => d.identifyCount))} 回・費用計 ${sum(ds.map((d) => d.identifyCost))}G / 売れずに残った装備（街の手順の後）計 ${sum(ds.map((d) => d.unsold))}`,
     );
+    lines.push(
+      `  宝箱: ${sum(ds.map((d) => d.chests))} 個（うち通路 ${sum(ds.map((d) => d.chestsCorridor))}）・金 計 ${sum(ds.map((d) => d.chestGold))}G・品 ${sum(ds.map((d) => d.chestItems))}（置いていった ${sum(ds.map((d) => d.chestLeft))}）/ 蘇生を払えずに潜った ${ds.filter((d) => d.unpaidAtStart > 0).length} 潜行（残した人数 計 ${sum(ds.map((d) => d.unpaidAtStart))}）`,
+    );
     lines.push(`  ${stats("この潜行の所持金の変化（街の手順の後）", ds.map((d) => d.goldAfter - d.goldBefore))}`);
     // 打ち切られたシードは最後の潜行の後の値で据え置く
     const cumA = results.map((r) => (r.dives[Math.min(k, r.dives.length - 1)]?.assetsAfter ?? r.startAssets) - r.startAssets);
@@ -617,6 +677,9 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
   lines.push(`全潜行の全滅率: ${pct(all.filter((d) => d.method === "wipe").length, all.length)}`);
   lines.push(
     `全潜行の売却: 装備 ${sum(all.map((d) => d.soldCount))} 品（うち未鑑定のまま ${sum(all.map((d) => d.soldUnidCount))} 品・${sum(all.map((d) => d.soldUnidGold))}G）・収入計 ${sum(all.map((d) => d.soldGold))}G（シードあたり平均 ${fmt(sum(all.map((d) => d.soldGold)) / results.length)}G）/ 鑑定 ${sum(all.map((d) => d.identifyCount))} 回・費用計 ${sum(all.map((d) => d.identifyCost))}G`,
+  );
+  lines.push(
+    `全潜行の宝箱: ${sum(all.map((d) => d.chests))} 個（うち通路 ${sum(all.map((d) => d.chestsCorridor))}）・金 計 ${sum(all.map((d) => d.chestGold))}G・品 ${sum(all.map((d) => d.chestItems))}（置いていった ${sum(all.map((d) => d.chestLeft))}）/ 蘇生を払えずに潜った ${all.filter((d) => d.unpaidAtStart > 0).length} 潜行（残した人数 計 ${sum(all.map((d) => d.unpaidAtStart))}）`,
   );
   const idx = results.map((r) => r.dives.findIndex((d) => d.allL2));
   const parts = Array.from({ length: dives }, (_, k) => `${k + 1} 回目 ${idx.filter((i) => i === k).length}`);
