@@ -207,6 +207,8 @@ export function createControls(o: {
     color: "var(--c-accent)",
     whiteSpace: "nowrap",
     overflow: "hidden",
+    // 帯の押せる範囲（y166..187）の上に重なるので、押下を下の帯のセルへ通す（UI-13・UI-10 の例外 town.band 40×22）
+    pointerEvents: "none",
   });
   el.appendChild(heading);
   const list = document.createElement("div");

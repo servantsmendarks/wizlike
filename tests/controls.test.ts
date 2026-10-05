@@ -370,6 +370,8 @@ describe("controls", () => {
     expect(heading["textContent"]).toBe("どこへ潜る？");
     expect(heading.style["color"]).toBe("var(--c-accent)");
     expect(tapSpecOf(heading)).toBeNull();
+    // 見出しは帯の押せる範囲（y166..187）の上に重なるので、押下を下の帯のセル（40×22）へ通す（UI-10 の例外 town.band）
+    expect(heading.style["pointerEvents"]).toBe("none");
     expect([list.style["left"], list.style["top"], list.style["width"], list.style["height"]]).toEqual(["8px", "-110px", "168px", "198px"]);
     expect(list.children.map((e) => e.style["height"])).toEqual(Array.from({ length: 10 }, () => "22px"));
     expect(list.children.map((e) => e.style["width"])).toEqual(Array.from({ length: 10 }, () => "168px"));
