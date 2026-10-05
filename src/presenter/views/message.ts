@@ -63,6 +63,8 @@ export type MessageWindow = {
   waitMs(ms: number): Promise<void>;
   /** 履歴をすべて消す。文字送り中なら完了扱いで解決する */
   clear(): void;
+  /** UI-47（M8.5）: 窓の表示（DOM の行）だけを空にし、全文の履歴は残す。文字送り中なら完了扱いで解決する */
+  clearView(): void;
   /** 続きの三角の表示。blink なら点滅させる（UI-45 のタップ待ち。演出スキップでは点滅しない） */
   setMore(on: boolean, blink?: boolean): void;
 };
@@ -233,6 +235,10 @@ export function createMessageWindow(o: {
       current?.finish();
       history.replaceChildren();
       all = [];
+    },
+    clearView(): void {
+      current?.finish();
+      history.replaceChildren();
     },
     setMore(on: boolean, blink = false): void {
       more.style.visibility = on ? "visible" : "hidden";

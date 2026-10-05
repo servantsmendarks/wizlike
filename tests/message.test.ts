@@ -170,6 +170,30 @@ describe("MessageWindow", () => {
     expect(box.children).toEqual([]);
   });
 
+  test("UI-47（M8.5）clearView は窓の DOM の行だけを消し、全文の履歴（history）は残す。その後の say は空の窓に足す", async () => {
+    const created: FakeEl[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => {
+        const e = new FakeEl();
+        created.push(e);
+        return e;
+      },
+      createElementNS: () => new FakeEl(),
+    });
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const w = createMessageWindow({ speed: () => 0, historyMax: 15, region: g.message, layout: L.message });
+    const box = created.find((e) => e.className === "message-history")!;
+    await w.say("return", true);
+    w.log("town");
+    w.clearView();
+    expect(box.children).toEqual([]);
+    expect(w.history()).toEqual(["return", "town"]);
+    await w.say("enter", true);
+    expect(box.children.map((c) => c.textContent)).toEqual(["enter"]);
+    expect(w.history()).toEqual(["return", "town", "enter"]);
+  });
+
   test("UI-11/UI-43 文字領域の見える高さは行の高さの整数倍（lines × MESSAGE_LINE_H）で、余りは上の余白にする（末尾を見せたときに最上段が切れない）", () => {
     const created: FakeEl[] = [];
     vi.stubGlobal("document", {

@@ -443,14 +443,18 @@ export function createApp(o: {
 
   /**
    * core の screen イベント。route は routeOfScreen で決める（event は迷宮の画面の上の状態。UI-55）。
-   * UI-47: 街を出るときは会話の箱を打ち切り（ログには入っている）、街に入るときは迷宮の窓で語った carry（townCarry）を会話の箱に出し直す
+   * UI-47: 街を出るときは会話の箱を打ち切り、迷宮の窓の表示を空にし（どちらもログには入っている）、街に入るときは迷宮の窓で語った carry（townCarry）を会話の箱に出し直す
    */
   const onScreen = (to: Screen, carry: readonly string[] = []): void => {
     const r = to === "title" ? "title" : routeOfScreen(to);
     if (r === null) return;
     const from = route;
     if (r === "town") townPage = "menu";
-    if (from === "town" && r !== "town") play.talk.flush();
+    if (from === "town" && r !== "town") {
+      play.talk.flush();
+      // 前に街へ入ったときに窓で語った文（帰還・救済の申し出など）を迷宮の窓に残さない（ログには入っている）
+      play.message.clearView();
+    }
     // 画面が変わったら、キャンプ・地図・履歴を閉じる（帰還の呪文で街へ、など）
     if (route !== r) {
       if (overlay === "camp") closeCamp(false);

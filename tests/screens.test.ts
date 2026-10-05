@@ -550,7 +550,7 @@ describe("入力と Command", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const onScreen = /const onScreen = \(to: Screen, carry: readonly string\[\] = \[\]\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(onScreen).toContain("const from = route;");
-    expect(onScreen).toContain('if (from === "town" && r !== "town") play.talk.flush();');
+    expect(onScreen).toMatch(/if \(from === "town" && r !== "town"\) \{\s*play\.talk\.flush\(\);\s*play\.message\.clearView\(\);\s*\}/);
     expect(onScreen).toContain('if (r === "town" && from !== "town" && carry.length > 0) void play.talk.replay(carry, store.get().skipAnimations);');
     // flush は showRoute の前（route が変わる前）、replay は後
     expect(onScreen.indexOf("play.talk.flush()")).toBeLessThan(onScreen.indexOf("showRoute(r)"));
