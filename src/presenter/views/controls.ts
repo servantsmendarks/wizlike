@@ -89,6 +89,15 @@ function buttonStyle(b: HTMLElement, r: Rect, origin: Rect): void {
   });
 }
 
+/** UI-36（M7）: 一覧の行の見た目を決める値の印（文言・dim・注目の有無・固定の戻るか・行の幅と高さ） */
+function listRowSig(it: ControlItem, isBack: boolean, w: number, h: number): string {
+  return JSON.stringify([it.label, it.disabled === true, it.onFocus !== undefined, isBack, w, h]);
+}
+
+function sameSigs(a: readonly string[], b: readonly string[]): boolean {
+  return a.length > 0 && a.length === b.length && a.every((x, i) => x === b[i]);
+}
+
 function setShown(el: HTMLElement, on: boolean): void {
   el.style.display = on ? "" : "none";
 }
@@ -197,6 +206,8 @@ export function createControls(o: {
   let listItems: ControlItem[] = [];
   /** 行の要素（fixedLast なら末尾は listBack のボタン）。添字は listItems と同じ */
   let listButtons: HTMLElement[] = [];
+  /** 今の行の見た目の印（listRowSig。setList で同じなら要素を使い回す） */
+  let listSigs: string[] = [];
   const narrow = o.layout.listNarrow[0] ?? first;
   /** UI-11: 一覧の外に固定する戻る / やめる（setList の fixedLast のときだけ出す） */
   const listBackRect = o.layout.listBack;
@@ -310,18 +321,30 @@ export function createControls(o: {
       });
     },
     setList(items: ControlItem[], opts?: { fixedLast?: boolean; tall?: boolean }): void {
+      const fixed = opts?.fixedLast === true && items.length > 0;
+      const tallOn = opts?.tall === true;
+      // 広げた一覧は固定の戻るが操作領域に残るので幅を詰めない
+      const rowW = tallOn ? tall.area.w : fixed ? narrow.w : first.w;
+      const rowH = tallOn ? tallRow.h : first.h;
+      const sigs = items.map((it, k) => listRowSig(it, fixed && k === items.length - 1, rowW, rowH));
       listItems = items.slice();
+      list.scrollTop = 0;
+      if (sameSigs(sigs, listSigs)) {
+        // UI-36 / UI-44（M7）: 行がすべて同じ（文言・dim・注目の有無・位置）なら要素を作り直さず、押したときの項目だけ替える。
+        // 再生の終わりの描き直しで、再生中に押し始めて後で離した行（宿の後の戻るなど）が DOM から外れて捨てられないように
+        listButtons.forEach((b, k) => {
+          if (listItems[k]?.disabled !== true) b.style.borderColor = "var(--c-frame)";
+        });
+        apply();
+        return;
+      }
+      listSigs = sigs;
       listButtons = [];
       list.replaceChildren();
       listBack.replaceChildren();
-      list.scrollTop = 0;
-      const fixed = opts?.fixedLast === true && listItems.length > 0;
       listBackOn = fixed;
-      listTallOn = opts?.tall === true;
+      listTallOn = tallOn;
       placeList(listTallOn);
-      // 広げた一覧は固定の戻るが操作領域に残るので幅を詰めない
-      const rowW = listTallOn ? tall.area.w : fixed ? narrow.w : first.w;
-      const rowH = listTallOn ? tallRow.h : first.h;
       list.style.width = `${rowW}px`;
       listItems.forEach((it, k) => {
         const isBack = fixed && k === listItems.length - 1;
@@ -347,13 +370,16 @@ export function createControls(o: {
             overflow: "hidden",
           });
         dimIf(b, it);
-        onTap(b, () => pick(it));
-        const focus = it.onFocus;
-        if (focus !== undefined) {
+        // 要素を使い回すので、押したときは今の listItems の k 番目を見る
+        onTap(b, () => {
+          const cur = listItems[k];
+          if (cur !== undefined) pick(cur);
+        });
+        if (it.onFocus !== undefined) {
           // 対象の一覧の Enter は、DOM のフォーカスのある行の click ではなく、いつも注目している行を選ぶ（UI-33。swipe.ts の isButton）
           b.tabIndex = -1;
-          b.addEventListener("pointerenter", () => focus());
-          b.addEventListener("pointerdown", () => focus());
+          b.addEventListener("pointerenter", () => listItems[k]?.onFocus?.());
+          b.addEventListener("pointerdown", () => listItems[k]?.onFocus?.());
         }
         (isBack ? listBack : list).appendChild(b);
         listButtons.push(b);

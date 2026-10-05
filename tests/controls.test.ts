@@ -255,6 +255,39 @@ describe("controls", () => {
     expect(scrolled).toBe(2);
   });
 
+  test("UI-36/UI-44（M7）setList は行がすべて同じ（文言・dim・注目の有無・位置）なら要素を作り直さず、押したときは新しい項目を選ぶ（再生の終わりの描き直しで、押している戻るが DOM から外れない）。1 行でも違えば作り直す", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, hold: HOLD, onClose: () => {} });
+    const picked: string[] = [];
+    const items = (tag: string, dim = false) => [
+      { label: "r0", onSelect: () => picked.push(`${tag}0`), disabled: dim },
+      { label: "back", onSelect: () => picked.push(`${tag}back`) },
+    ];
+    const buttons = (): FakeEl[] => created.filter((e) => e.className === "controls-list-item" || e.className === "controls-list-back-item");
+    c.setList(items("a"), { fixedLast: true, tall: true });
+    c.setMode("list");
+    const [row, back] = buttons();
+    c.setListFocus(0);
+    expect(row!.style["borderColor"]).toBe("var(--c-accent)");
+    // 再生の終わりの sync と同じ: 同じ一覧を描き直す
+    c.setList(items("b"), { fixedLast: true, tall: true });
+    c.setMode("list");
+    expect(buttons()).toHaveLength(2);
+    // 注目の枠は作り直したときと同じく外れる
+    expect(row!.style["borderColor"]).toBe("var(--c-frame)");
+    back!.tap();
+    row!.tap();
+    expect(picked).toEqual(["bback", "b0"]);
+    // dim が替わったら作り直す（古い要素は押しても新しい項目を選ばない）
+    c.setList(items("c", true), { fixedLast: true, tall: true });
+    expect(buttons()).toHaveLength(4);
+    // 広げ方が替わっても作り直す
+    c.setList(items("d", true), { fixedLast: true });
+    expect(buttons()).toHaveLength(6);
+  });
+
   test("UI-11 setList(fixedLast) は末尾を一覧の外の controls-list-back（layout.listBack）に置き、残りを幅 168 の一覧に置く。select(n) と setListFocus(末尾) は戻るを指す", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);
