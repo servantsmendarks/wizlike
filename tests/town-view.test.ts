@@ -225,9 +225,12 @@ describe("UI-52 街のページ", () => {
     expect(upgradeConfirmLines("dark", m, p, S)).toEqual([]);
   });
 
-  test("UI-11/UI-52（M7）townListTall: 店・倉庫・酒場の一覧のページだけ広げる。施設メニュー・宿・寺院・闇魔術（強化を含む）・迷宮の入口は広げない。店の鑑定も広げない（呪われた品では結果が 3 行になる）", () => {
+  test("UI-11/UI-52/TW-17（M7）townListTall: 店・倉庫・酒場の一覧と、闇魔術の強化の 鍛える者・部位・触媒 の段を広げる。施設メニュー・宿・寺院・闇魔術の最初の一覧と灰から戻す・強化の確認・迷宮の入口は広げない。店の鑑定も広げない（呪われた品では結果が 3 行になる）", () => {
     const sel = { memberId: "c1", slot: "weapon" as const, picked: [] };
     const tall: TownPage[] = [
+      "upgrade",
+      { upSlot: "c1" },
+      { upCat: sel },
       "tavern",
       "shop",
       "shopBuy",
@@ -242,9 +245,22 @@ describe("UI-52 街のページ", () => {
       { deposit: "c1" },
       { withdraw: "i1" },
     ];
-    const normal: TownPage[] = ["menu", "shopIdentify", "inn", "temple", { temple: "cure" }, "dark", "darkRevive", "upgrade", { upSlot: "c1" }, { upCat: sel }, { upConfirm: sel }, "gate"];
+    const normal: TownPage[] = ["menu", "shopIdentify", "inn", "temple", { temple: "cure" }, "dark", "darkRevive", { upConfirm: sel }, "gate"];
     expect(tall.filter((p) => !townListTall(p))).toEqual([]);
     expect(normal.filter((p) => townListTall(p))).toEqual([]);
+  });
+
+  test("UI-52/TW-17（M7）広げた強化の段（鍛える者・部位・触媒）に入ったときの語りは、窓の下 2 行（全角 29 字 × 2）に収まる", () => {
+    const m = menuOf(town());
+    const sel = { memberId: "c1", slot: "weapon" as const, picked: [] };
+    /** 1 文の行数（全角 29 字で折り返す。語りはどれも全角） */
+    const rows = (text: string): number => Math.max(1, Math.ceil(Array.from(text).length / 29));
+    for (const p of ["upgrade", { upSlot: "c1" }, { upCat: sel }] as TownPage[]) {
+      expect(townListTall(p)).toBe(true);
+      const keys = townPageIntro(p, m);
+      expect(keys.length).toBeGreaterThan(0);
+      expect(keys.map((k) => rows(S[k]!)).reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(2);
+    }
   });
 
   test("UI-44/TW-17 townLowersInput: 判定の箱でタップを待つ 鍛える だけが、送ったら再生の間 所持金・一覧・戻るを下げる。他の街の項目（買う・売る・宿・寺院・闇魔術・戻る）は下げない", () => {
