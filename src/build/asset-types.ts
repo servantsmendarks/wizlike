@@ -39,8 +39,10 @@ export type GameAssets = {
   sfx: Record<string, SfxData>;
   /** public/sprites の実在の PNG。キーは拡張子を除いた名前 */
   sprites: Record<string, SpriteInfo>;
+  /** UI-61（M8.5）: public/town の実在の施設の絵（240×150 のものだけ）。キーは拡張子を除いた名前（施設の id） */
+  town: Record<string, SpriteInfo>;
 };
 
-/** id は L01 など（docs/spec/ui.md の UI-64 / UI-65 / UI-60 の項目） */
+/** id は L01 など（docs/spec/ui.md の UI-64 / UI-65 / UI-60 / UI-61 の項目） */
 export type AssetIssue = { file: string; id: string; message: string };
 export type CollectResult = { assets: GameAssets; errors: AssetIssue[]; warnings: AssetIssue[] };

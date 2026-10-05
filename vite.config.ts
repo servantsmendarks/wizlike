@@ -43,7 +43,7 @@ function serviceWorker(): Plugin {
 
 const VIRTUAL_ASSETS = "virtual:wizlike-assets";
 const RESOLVED_ASSETS = "\0virtual:wizlike-assets";
-const EMPTY_ASSETS: GameAssets = { music: {}, sfx: {}, sprites: {} };
+const EMPTY_ASSETS: GameAssets = { music: {}, sfx: {}, sprites: {}, town: {} };
 
 /** dir の直下のファイル名（無いディレクトリは空） */
 function filesIn(dir: string): string[] {
@@ -54,7 +54,7 @@ function filesIn(dir: string): string[] {
 }
 
 /**
- * root の data/*.json を loadGameData で検証し（不正なら GameDataError）、assets/music・assets/sfx・public/sprites を collectAssets で検証する。
+ * root の data/*.json を loadGameData で検証し（不正なら GameDataError）、assets/music・assets/sfx・public/sprites・public/town を collectAssets で検証する。
  * 止めるものがあれば console.error に出してから throw（ファイル名と項目 ID と理由はエラーの文にも入れる）。警告は console.warn。
  */
 function scanAssets(root: string): GameAssets {
@@ -67,6 +67,7 @@ function scanAssets(root: string): GameAssets {
     music: filesIn(dir("music")).map((name) => ({ name, bytes: new Uint8Array(readFileSync(join(dir("music"), name))) })),
     sfx: filesIn(dir("sfx")).map((name) => ({ name, text: readFileSync(join(dir("sfx"), name), "utf8") })),
     sprites: filesIn(dir("sprites")).map((name) => ({ name, bytes: new Uint8Array(readFileSync(join(dir("sprites"), name))) })),
+    town: filesIn(dir("town")).map((name) => ({ name, bytes: new Uint8Array(readFileSync(join(dir("town"), name))) })),
   };
   const r = collectAssets(files, data);
   for (const w of r.warnings) console.warn(`warning: ${formatIssue(w)}`);
@@ -79,11 +80,11 @@ function scanAssets(root: string): GameAssets {
 }
 
 /**
- * UI-63 / UI-64 / UI-65 / UI-60（M8）: 曲（assets/music/*.mid）・効果音（assets/sfx/*.json）・絵の一覧（public/sprites/*.png）を
+ * UI-63 / UI-64 / UI-65 / UI-60（M8）/ UI-61（M8.5）: 曲（assets/music/*.mid）・効果音（assets/sfx/*.json）・絵の一覧（public/sprites/*.png・public/town/*.png）を
  * ビルド時と開発サーバー・preview の起動時に検証し、仮想モジュール virtual:wizlike-assets（GameAssets）にする。
  * 止めるものが 1 つでもあれば configResolved で throw する（build・dev・preview が止まる）。apply を付けない（build と serve の両方）。
  * vitest の中（VITEST）では何もしない（テストは scanInVitest で作ったものの hook を直接呼ぶ）。
- * 開発サーバーでは 3 つのディレクトリを見張り、変わったら取り直してフルリロードする（止めるものがあればオーバーレイに出し、前の内容のまま）。
+ * 開発サーバーでは 4 つのディレクトリ（ASSET_DIRS）を見張り、変わったら取り直してフルリロードする（止めるものがあればオーバーレイに出し、前の内容のまま）。
  */
 export function gameAssets(o: { scanInVitest?: boolean } = {}): Plugin {
   let root = process.cwd();

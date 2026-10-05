@@ -1,6 +1,6 @@
 // UI-60（M8）: 絵の選び方と大きさ（src/presenter/sprites.ts。純粋）
 import { describe, expect, test } from "vitest";
-import { chooseSprite, isBossMonster } from "../src/presenter/sprites";
+import { chooseSprite, isBossMonster, townPicture } from "../src/presenter/sprites";
 import { data } from "./helpers/core";
 
 const ALL = {
@@ -47,5 +47,15 @@ describe("UI-60 chooseSprite", () => {
     expect(isBossMonster(data, "gatekeeper_armor")).toBe(true);
     expect(isBossMonster(data, "kobold")).toBe(false);
     expect(isBossMonster(data, "no_such_monster")).toBe(false);
+  });
+});
+
+describe("UI-61 townPicture", () => {
+  test("UI-61 townPicture: 一覧（GameAssets.town）にある施設だけ名前を返し、無ければ null（読みに行かない）", () => {
+    const town = { inn: { w: 240, h: 150 } };
+    expect(townPicture("inn", town)).toBe("inn");
+    expect(townPicture("shop", town)).toBeNull();
+    expect(townPicture("toString", town)).toBeNull();
+    expect(townPicture("inn", {})).toBeNull();
   });
 });

@@ -35,3 +35,11 @@ export function chooseSprite(
 export function isBossMonster(data: Pick<GameData, "monsters">, monsterId: string): boolean {
   return data.monsters.find((x) => x.id === monsterId)?.special.boss === true;
 }
+
+/**
+ * UI-61（M8.5）: 施設の絵（public/town/<id>.png）の名前。available（GameAssets.town。ビルド時に 240×150 だけを入れた一覧）に
+ * 無ければ null（読みに行かず黒のまま）
+ */
+export function townPicture(id: string, available: Readonly<Record<string, SpriteInfo>>): string | null {
+  return Object.prototype.hasOwnProperty.call(available, id) ? id : null;
+}

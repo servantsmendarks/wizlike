@@ -44,7 +44,7 @@ function makeRoot(files: Record<string, string | Uint8Array> = {}): string {
 }
 
 /** load の返す `export default {...};` の中身 */
-function loaded(p: AssetsPlugin): { music: Record<string, unknown>; sfx: Record<string, unknown>; sprites: Record<string, unknown> } {
+function loaded(p: AssetsPlugin): { music: Record<string, unknown>; sfx: Record<string, unknown>; sprites: Record<string, unknown>; town: Record<string, unknown> } {
   const code = p.load(RESOLVED) ?? "";
   const m = /^export default (.*);$/s.exec(code);
   if (!m) throw new Error(`unexpected module: ${code}`);
@@ -69,7 +69,7 @@ describe("UI-64 vite.config.ts のプラグイン wizlike-assets", () => {
     const p = viteModule.gameAssets();
     const root = makeRoot({ "assets/music/town.mid": new Uint8Array([1, 2, 3]) });
     expect(() => p.configResolved({ root })).not.toThrow();
-    expect(loaded(p)).toEqual({ music: {}, sfx: {}, sprites: {} });
+    expect(loaded(p)).toEqual({ music: {}, sfx: {}, sprites: {}, town: {} });
   });
 
   test("UI-63 素材が無ければ（assets/ も public/sprites も無い）空の仮想モジュールで、エラーも警告も出さない", () => {
@@ -80,7 +80,7 @@ describe("UI-64 vite.config.ts のプラグイン wizlike-assets", () => {
     expect(p.resolveId(VIRTUAL)).toBe(RESOLVED);
     expect(p.resolveId("virtual:other")).toBeUndefined();
     expect(p.load("virtual:other")).toBeUndefined();
-    expect(loaded(p)).toEqual({ music: {}, sfx: {}, sprites: {} });
+    expect(loaded(p)).toEqual({ music: {}, sfx: {}, sprites: {}, town: {} });
     expect(err).not.toHaveBeenCalled();
     expect(warn).not.toHaveBeenCalled();
   });
@@ -99,6 +99,17 @@ describe("UI-64 vite.config.ts のプラグイン wizlike-assets", () => {
     expect(Object.keys(a.music)).toEqual(["town"]);
     expect(a.sfx).toEqual({ hit: { name: "hit", params: [null, 0.05, 220] } });
     expect(a.sprites).toEqual({ giant_rat: { w: 48, h: 48 } });
+  });
+
+  test("UI-61 public/town の 240×150 の PNG は仮想モジュールの town に入る（大きさの違う絵は警告して入れない）", () => {
+    const p = viteModule.gameAssets({ scanInVitest: true });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const u32 = (n: number): number[] => [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
+    const png = (w: number, h: number): Uint8Array =>
+      new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, ...u32(w), ...u32(h), 8, 3, 0, 0, 0, 0, 0, 0, 0]);
+    p.configResolved({ root: makeRoot({ "public/town/inn.png": png(240, 150), "public/town/shop.png": png(48, 48) }) });
+    expect(loaded(p).town).toEqual({ inn: { w: 240, h: 150 } });
+    expect(warn.mock.calls.map((c) => String(c[0])).join("\n")).toContain("warning: public/town/shop.png: UI-61/P04 ");
   });
 
   test("UI-64 壊れた MIDI があれば configResolved で throw し（build・dev・preview が止まる）、ファイル名と項目 ID と理由を出す", () => {
