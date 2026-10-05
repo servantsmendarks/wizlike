@@ -1,7 +1,8 @@
 // UI-64/E02: SMF（Standard MIDI File）の読み込み。依存パッケージを使わない純粋な関数（CLAUDE.md §2）。
 // ビルド時（vite.config.ts のプラグイン）だけで使う。DOM・node の API を使わない。
 // 読み方は工房の道具（mido と notetext.scan_midi）に揃える: トラックごとに絶対 tick のイベント列、
-// name は最初のトラック名、end は End of Track の tick（無ければ最後のイベントの tick）。
+// name は最初のトラック名、end は最後の End of Track の tick（無ければ最後のイベントの tick）。
+// End of Track の後もチャンクの末尾まで読む。
 
 export type SmfEvent =
   | { tick: number; type: "noteOn" | "noteOff"; channel: number; note: number; velocity: number }
@@ -22,7 +23,7 @@ export type SmfTrack = {
   name: string | null;
   /** End of Track を除くイベント（ファイルの順） */
   events: SmfEvent[];
-  /** End of Track の tick。無ければ最後のイベントの tick（イベントが無ければ 0） */
+  /** 最後の End of Track の tick。無ければ最後のイベントの tick（イベントが無ければ 0） */
   end: number;
 };
 
@@ -116,8 +117,10 @@ function parseTrack(bytes: Uint8Array, start: number, limit: number, index: numb
       const len = r.vlq("meta length");
       const body = r.bytes(len, "meta data");
       if (type === 0x2f) {
+        // End of Track の後もチャンクの末尾まで読む（mido の read_track と同じ）。
+        // 後ろのイベントも events に入れ、end は最後の End of Track（notetext.scan_midi と同じ）
         end = tick;
-        break; // End of Track の後ろは読まない
+        continue;
       }
       if (type === 0x03 || type === 0x06) {
         const text = latin1(body);

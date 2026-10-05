@@ -5,6 +5,7 @@ import { data } from "./helpers/core";
 import {
   buildSong,
   markerEv,
+  meta,
   noteOff,
   noteOn,
   program,
@@ -173,6 +174,14 @@ describe("UI-64 曲の検証（工房の lint と同じ基準。docs/audio/CONVE
       "L12",
       "L17",
     ]);
+  });
+  test("UI-64/L12 End of Track の後ろの音も読み、曲末を越えれば止める（工房の lint と同じ）", () => {
+    expect(
+      errorsOf((p) => {
+        tr(p, 1).evs.push({ t: END, bytes: meta(0x2f, []) }, { t: END, bytes: noteOn(0, 64, 96) }, { t: END + 480, bytes: noteOff(0, 64) });
+        tr(p, 1).end = null;
+      }),
+    ).toEqual(["L12"]);
   });
   test("UI-64/L13 ch1〜3 の Program Change が tick 0 以外なら止める", () => {
     expect(errorsOf((p) => tr(p, 1).evs.push({ t: 480, bytes: program(0, 1) }))).toEqual(["L13"]);

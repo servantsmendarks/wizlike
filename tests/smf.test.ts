@@ -77,7 +77,7 @@ describe("UI-64/E02 parseSmf（依存なしの SMF の読み込み）", () => {
     expect(f.tracks[0]!.name).toBe("second");
   });
 
-  test("UI-64/E02 parseSmf: 最初の trackName が name。End of Track が無ければ end は最後のイベントの tick。End of Track の後ろは読まない", () => {
+  test("UI-64/E02 parseSmf: 最初の trackName が name。End of Track が無ければ end は最後のイベントの tick", () => {
     const bytes = smf({
       tracks: [
         track(
@@ -88,14 +88,43 @@ describe("UI-64/E02 parseSmf（依存なしの SMF の読み込み）", () => {
           ],
           false,
         ),
-        [...track([], 3).slice(0, 4), 0, 0, 0, 6, 0, 0xff, 0x2f, 0, 0xff, 0xff], // EOT の後ろに壊れたバイト
       ],
     });
     const f = parseSmf(bytes);
     expect(f.tracks[0]!.name).toBe("ch1");
     expect(f.tracks[0]!.end).toBe(7);
-    expect(f.tracks[1]!.events).toEqual([]);
-    expect(f.tracks[1]!.end).toBe(0);
+  });
+
+  test("UI-64/E02 parseSmf: End of Track の後もチャンクの末尾まで読む（mido の read_track と notetext.scan_midi と同じ）。end は最後の End of Track", () => {
+    const f = parseSmf(
+      smf({
+        tracks: [
+          track(
+            [
+              { dt: 0, bytes: trackNameEv("ch1") },
+              { dt: 0, bytes: meta(0x2f, []) },
+              { dt: 0, bytes: noteOn(0, 60, 96) },
+              { dt: 96, bytes: noteOff(0, 60) },
+              { dt: 4, bytes: meta(0x2f, []) },
+              { dt: 0, bytes: markerEv("x") },
+            ],
+            false,
+          ),
+        ],
+      }),
+    );
+    expect(f.tracks[0]!.events).toEqual([
+      { tick: 0, type: "trackName", text: "ch1" },
+      { tick: 0, type: "noteOn", channel: 0, note: 60, velocity: 96 },
+      { tick: 96, type: "noteOff", channel: 0, note: 60, velocity: 0 },
+      { tick: 100, type: "marker", text: "x" },
+    ]);
+    expect(f.tracks[0]!.end).toBe(100);
+  });
+
+  test("UI-64/E02 parseSmf: End of Track の後ろの壊れたバイトも読めないとして止める（mido と同じ）", () => {
+    const bytes = smf({ tracks: [[...track([], 3).slice(0, 4), 0, 0, 0, 6, 0, 0xff, 0x2f, 0, 0xff, 0xff]] });
+    expect(() => parseSmf(bytes)).toThrow(SmfError);
   });
 
   test("UI-64/E02 parseSmf: テキストは latin1（mido と同じ）。テンポの 3 バイト", () => {
