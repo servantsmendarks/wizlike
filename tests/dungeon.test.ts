@@ -212,7 +212,7 @@ describe("TW-15 宿の主人の噂話（M7）", () => {
     expect(gossipCandidates(s, d, "d01")).toEqual(["giant_rat", "kobold", "whispering_shadow"]);
   });
 
-  test("TW-15 士気（gossip）ありの入場: nextUint32 → randInt(0, 候補数 − 1) を 1 回、その種類を図鑑で鑑定済みにし（kills 0 で作る）、dungeon.enter の後に dungeon.gossip{monster}", () => {
+  test("DG-03/TW-15 士気（gossip）ありの入場: nextUint32 → randInt(0, 候補数 − 1) を 1 回、その種類を図鑑で鑑定済みにし（kills 0 で作る）、dungeon.enter の後に dungeon.gossip{monster}", () => {
     for (const seed of [1, 2, 3, 4, 5]) {
       const s = withMorale(seed);
       const mirror = cloneRng(s.rng);
@@ -231,7 +231,7 @@ describe("TW-15 宿の主人の噂話（M7）", () => {
     }
   });
 
-  test("TW-15 候補が 1 種なら randInt(0, 0)、図鑑の kills は残す。候補が無ければ乱数を引かず語らない", () => {
+  test("DG-03/TW-15 候補が 1 種なら randInt(0, 0)、図鑑の kills は残す。候補が無ければ乱数を引かず語らない", () => {
     const four = Object.fromEntries(D01_ALL.filter((m) => m !== "kobold").map((m) => [m, { kills: 1, identified: true }]));
     const s = withMorale(1, { ...four, kobold: { kills: 3, identified: false } });
     const mirror = cloneRng(s.rng);
@@ -251,7 +251,7 @@ describe("TW-15 宿の主人の噂話（M7）", () => {
     expect(r2.state.bestiary).toEqual(all.bestiary);
   });
 
-  test("TW-15 士気が無い、または士気のランクの gossip が偽なら噂話はしない（nextUint32 だけ）", () => {
+  test("DG-03/TW-15 士気が無い、または士気のランクの gossip が偽なら噂話はしない（nextUint32 だけ）", () => {
     const none = newGame(1);
     const m = cloneRng(none.rng);
     nextUint32(m);
