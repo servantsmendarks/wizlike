@@ -422,7 +422,9 @@ export type Command =
   /** UI-57（開発用、M5）: その階のイベント・罠・下り階段のセルの手前へ移り、そちらを向く。行き先が無ければ message だけ。乱数は使わない */
   | { type: "debug.warp"; to: "event" | "trap" | "stairsDown" }
   /** UI-57（開発用、M5.5）: adventureTurns に config.town.tavernEventTurns を足す。party が空（title）だけ rejected no party。保留中・戦闘中・街も受け付ける。乱数は使わない */
-  | { type: "debug.addTurns" };
+  | { type: "debug.addTurns" }
+  /** UI-57（開発用、M7）: alive の全員の SAN を sanCapOf + 10 にする（士気が無くても）。party が空（title）だけ rejected no party。保留中・戦闘中・街も受け付ける。乱数は使わない */
+  | { type: "debug.sanOver" };
 
 export type CommandType = Command["type"];
 

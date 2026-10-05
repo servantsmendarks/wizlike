@@ -2,7 +2,7 @@
 // M5 の性格・イベント・SAN を実機で確かめるためのもの。乱数は使わない。
 import type { RuleContext } from "../types";
 import { floorOf, markExplored, warpTarget } from "./dungeon";
-import { loseSan, sanCapOf, sanJustBelow, sanStage } from "./san";
+import { loseSan, overSan, sanCapOf, sanJustBelow, sanStage } from "./san";
 
 /**
  * debug.hpOne: 並び順に、life alive で hp が 1 でない者の hp を 1 にして hpChanged を出す（dead / ash は変えない）。
@@ -37,6 +37,23 @@ export function sanDown(ctx: RuleContext): void {
     loseSan(ctx, ch, Math.max(0, ch.san - target), []);
   }
   ctx.events.push({ kind: "message", key: "debug.sanDown" });
+}
+
+/** debug.sanOver の超過量（開発用の道具の値で、ゲームの調整値ではないので config に置かない。ラベルの n にも使う） */
+export const SAN_OVER_DEBUG = 10;
+
+/**
+ * debug.sanOver（M7）: 並び順に、life alive の者の SAN を sanCapOf（実効の sanMax）+ SAN_OVER_DEBUG にする
+ * （overSan を通すので、今の方が高ければ変えない・下げない。士気が無くても超過させ、虚脱（0）からでも上げる）。
+ * 最後に message debug.sanOver{n}（変化が無くても出す）。士気中の制止判定の成功（TW-15）で SAN が超過分を超えて増えないことを
+ * 実機で確かめるため。超過の後の扱いは san.ts の規則のまま（減少は超過分から引き、増加は止まり、街に入ると丸める）。乱数は使わない
+ */
+export function sanOver(ctx: RuleContext): void {
+  for (const ch of ctx.state.party) {
+    if (ch.life !== "alive") continue;
+    overSan(ctx, ch, SAN_OVER_DEBUG);
+  }
+  ctx.events.push({ kind: "message", key: "debug.sanOver", params: { n: SAN_OVER_DEBUG } });
 }
 
 /**

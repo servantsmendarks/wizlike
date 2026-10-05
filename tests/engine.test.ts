@@ -9,6 +9,7 @@ import {
   dropTableOf,
   dungeonOf,
   itemDisplayName,
+  makeContext,
   memberById,
   monsterOf,
   optionOf,
@@ -16,8 +17,8 @@ import {
 } from "../src/core/state";
 import { floorOf, visibleCellsOf, warpTarget } from "../src/core/rules/dungeon";
 import { cellAt, idx, isPassable, step } from "../src/core/rules/dungeon-gen";
-import { sanJustBelow, sanStage } from "../src/core/rules/san";
-import type { Cell, Command, Floor, GameEvent, GameState } from "../src/core/types";
+import { gainSan, loseSan, sanJustBelow, sanStage } from "../src/core/rules/san";
+import type { Cell, Character, Command, Floor, GameEvent, GameState } from "../src/core/types";
 import {
   data,
   deepFreeze,
@@ -701,6 +702,62 @@ describe("UI-57 debug.sanDown / debug.warp（開発用、M5）", () => {
       expect(JSON.stringify(fz)).toBe(before);
       expect(JSON.parse(JSON.stringify(a.state))).toStrictEqual(a.state);
     }
+  });
+});
+
+describe("UI-57 debug.sanOver（開発用、M7）", () => {
+  const OVER: Command = { type: "debug.sanOver" };
+
+  test("UI-57/TW-15 debug.sanOver は alive の全員の SAN を sanCapOf + 10 にする（士気なしでも・虚脱からでも。今の方が高ければ変えない、dead は触らない）。最後に message debug.sanOver{n: 10}。乱数は変えない", () => {
+    const s = cloneState(dived(1));
+    expect(s.morale).toBeNull();
+    // sanMax は全員 100（装備に最大 SAN のオプションは無い）→ 目標は 110
+    expect(s.party.map((c) => c.sanMax)).toEqual([100, 100, 100, 100, 100, 100]);
+    const [c1, c2, c3, c4, c5, c6] = s.party as [Character, Character, Character, Character, Character, Character];
+    c1.san = 100;
+    c2.san = 30;
+    c3.life = "dead";
+    c3.hp = 0;
+    c3.san = 40;
+    c4.san = 0;
+    c5.san = 115; // 既に目標より高い → 変えない
+    c6.san = 110; // ちょうど目標 → 変えない
+    const before = JSON.stringify(s);
+    const r = execute(s, OVER, data);
+    expect(JSON.stringify(s)).toBe(before);
+    expect(r.events).toEqual([
+      { kind: "sanChanged", id: "c1", delta: 10, san: 110 },
+      { kind: "sanChanged", id: "c2", delta: 80, san: 110 },
+      { kind: "sanChanged", id: "c4", delta: 110, san: 110 },
+      { kind: "message", key: "debug.sanOver", params: { n: 10 } },
+    ]);
+    expectKnownStringKeys(r.events);
+    expect(r.state.party.map((c) => c.san)).toEqual([110, 110, 40, 110, 115, 110]);
+    expect(r.state.rng).toEqual(s.rng);
+    // 超過の後は san.ts の規則のまま: 増加は止まり（gainSan は sanCapOf 以上なら変化なし）、減少は超過分から引く
+    const ctx = makeContext(cloneState(r.state), data);
+    expect(gainSan(ctx, memberById(ctx.state, "c1")!, 5).delta).toBe(0);
+    expect(loseSan(ctx, memberById(ctx.state, "c1")!, 3, []).to).toBe(107);
+  });
+
+  test("UI-57 debug.sanOver は保留中・戦闘中・街も受け付け、title は rejected no party（同じ参照）", () => {
+    const town = cloneState(newGame(1));
+    const battle = withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }]);
+    const pending: GameState = {
+      ...dived(1),
+      pendingChoice: { kind: "stairs", promptKey: "dungeon.stairsDown", options: [{ id: "stay", labelKey: "dungeon.choice.stay" }] },
+    };
+    for (const s of [town, battle, pending]) {
+      const r = execute(s, OVER, data);
+      expect(r.events.at(-1)).toEqual({ kind: "message", key: "debug.sanOver", params: { n: 10 } });
+      expect(r.state.party.filter((c) => c.life === "alive").map((c) => c.san)).toEqual(s.party.filter((c) => c.life === "alive").map(() => 110));
+      expect(r.state.screen).toBe(s.screen);
+      expect(r.state.pendingChoice).toEqual(s.pendingChoice);
+    }
+    const t = createInitialState(1, data);
+    const r = execute(t, OVER, data);
+    expect(r.state).toBe(t);
+    expect(r.events).toEqual([{ kind: "rejected", command: "debug.sanOver", reason: "no party" }]);
   });
 });
 
