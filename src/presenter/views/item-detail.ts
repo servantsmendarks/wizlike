@@ -31,13 +31,15 @@ function chunks(text: string): string[] {
 
 /**
  * UI-59 / IT-11 / IT-12: 品の詳細の行。見出しは表示名。
- * 部位（と Lv）→（未鑑定なら「鑑定するまで分からない」だけ）→ 性能（ダメージ・魔法攻撃力・後列から届く / AC）→ オプション → 固有スキル → 呪い → 売値 → 説明
+ * 部位（と Lv）→（未鑑定なら「鑑定するまで分からない」だけ）→ 希少度（装備だけ）→ 性能（ダメージ・魔法攻撃力・後列から届く / AC）→ オプション → 固有スキル → 呪い → 売値 → 説明
  */
 export function formatItemDetail(d: ItemDetail, strings: Strings): PanelLines {
   const line = (text: string, tone: PanelLine["tone"] = "normal"): PanelLine => ({ text, tone });
   const slot = d.slot === null ? s(strings, "item.detail.consumable") : s(strings, `detail.slot.${d.slot}`);
   const lines: PanelLine[] = [line(d.level === null ? s(strings, "item.detail.slot", { slot }) : s(strings, "item.detail.slotLv", { slot, level: d.level }))];
   if (!d.identified) return { title: d.name, lines: [...lines, line(s(strings, "item.detail.unidentified"))] };
+  // IT-31: 希少度（通常も出す。語は図鑑と同じ book.rarity.*）。鑑定済みの装備だけ（消耗品・魔法書は rarity が null）
+  if (d.rarity !== null) lines.push(line(s(strings, "item.detail.rarity", { rarity: s(strings, `book.rarity.${d.rarity}`) })));
   const p = d.power;
   if (p !== null && p.kind === "weapon") {
     lines.push(line(p.damageBonus > 0 ? s(strings, "item.detail.damagePlus", { dice: p.dice, bonus: p.damageBonus }) : s(strings, "item.detail.damage", { dice: p.dice })));

@@ -20,7 +20,8 @@ const detailOf = (s: GameState, id: string) => {
 };
 
 describe("UI-59 formatItemDetail（品の詳細の行）", () => {
-  test("UI-59/IT-11/IT-20/IT-34 汎用武器: 見出しは表示名、部位と Lv、ダメージ +Lv の分、オプション（符号付き。ac は AC の増減）、売値", () => {
+  // 2026-10-05: 実機(M7-B) の【未定】で部位の次に希少度の行（item.detail.rarity「希少度 {rarity}」、語は book.rarity.*）を足し、各期待値に 1 行足した
+  test("UI-59/IT-11/IT-20/IT-31/IT-34 汎用武器: 見出しは表示名、部位と Lv、希少度、ダメージ +Lv の分、オプション（符号付き。ac は AC の増減）、売値", () => {
     const s = town();
     const id = createItemInstance(s, {
       itemId: "long_sword",
@@ -36,6 +37,7 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
       title: "希少な長剣 +5",
       lines: [
         { text: "武器　Lv5", tone: "normal" },
+        { text: "希少度 希少", tone: "normal" },
         { text: "ダメージ 1d8+2", tone: "normal" },
         { text: "命中 +10%", tone: "normal" },
         { text: "AC -1", tone: "normal" },
@@ -49,9 +51,14 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
     const armor = createItemInstance(s, { itemId: "leather_armor", level: 6, identified: true });
     const staff = createItemInstance(s, { itemId: "staff", identified: true });
     const bow = createItemInstance(s, { itemId: "short_bow", level: 2, identified: true });
-    expect(formatItemDetail(detailOf(s, armor), S).lines.map((l) => l.text)).toEqual(["防具　Lv6", "AC -4", "売値 100G"]); // floor(50 × 0.5 × 4) = 100
-    expect(formatItemDetail(detailOf(s, staff), S).lines.map((l) => l.text)).toEqual(["武器　Lv0", "ダメージ 1d4", "魔法攻撃力 0", "売値 5G"]);
-    expect(formatItemDetail(detailOf(s, bow), S).lines.map((l) => l.text)).toEqual(["武器　Lv2", "ダメージ 1d6+1", "後列から届く", "売値 80G"]); // floor(80 × 0.5 × 2) = 80
+    expect(formatItemDetail(detailOf(s, armor), S).lines.map((l) => l.text)).toEqual(["防具　Lv6", "希少度 通常", "AC -4", "売値 100G"]); // floor(50 × 0.5 × 4) = 100
+    expect(formatItemDetail(detailOf(s, staff), S).lines.map((l) => l.text)).toEqual(["武器　Lv0", "希少度 通常", "ダメージ 1d4", "魔法攻撃力 0", "売値 5G"]);
+    expect(formatItemDetail(detailOf(s, bow), S).lines.map((l) => l.text)).toEqual(["武器　Lv2", "希少度 通常", "ダメージ 1d6+1", "後列から届く", "売値 80G"]); // floor(80 × 0.5 × 2) = 80
+    // 上質・伝説の語（book.rarity.fine / legendary）
+    const fine = createItemInstance(s, { itemId: "leather_armor", rarity: "fine", options: [{ optionId: "hit", tier: 1, value: 5 }], identified: true });
+    const legend = createItemInstance(s, { itemId: "leather_armor", rarity: "legendary", identified: true });
+    expect(formatItemDetail(detailOf(s, fine), S).lines[1]).toEqual({ text: "希少度 上質", tone: "normal" });
+    expect(formatItemDetail(detailOf(s, legend), S).lines[1]).toEqual({ text: "希少度 伝説", tone: "normal" });
   });
 
   test("UI-59/IT-03/IT-40 ユニーク: Lv なし、性能、固有スキル、売値、説明（28 字ずつ。dim）", () => {
@@ -67,6 +74,7 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
     }));
     expect(p.lines).toEqual([
       { text: "武器", tone: "normal" },
+      { text: "希少度 通常", tone: "normal" },
       { text: "ダメージ 1d6", tone: "normal" },
       { text: "魔法攻撃力 2", tone: "normal" },
       { text: "呪文の消費 -1", tone: "normal" },
@@ -75,6 +83,18 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
     ]);
     // 見出し + 13 行に収まる（ビュー領域 150px）
     expect(p.lines.length).toBeLessThanOrEqual(13);
+    // 希少度の行を足しても、今のデータの最も長い形（どのユニークも伝説・呪いでオプション 3 + 1 = 4 個）で 13 行以内
+    for (const u of data.uniques) {
+      const w = createItemInstance(s, {
+        itemId: u.base,
+        uniqueId: u.id,
+        rarity: "legendary",
+        cursed: true,
+        options: [0, 1, 2, 3].map((k) => ({ optionId: "hit", tier: 1, value: k === 3 ? -5 : 5 })),
+        identified: true,
+      });
+      expect(formatItemDetail(detailOf(s, w), S).lines.length, u.id).toBeLessThanOrEqual(13);
+    }
     for (const u of data.uniques) expect(S[`item.skill.${u.skill.type}`], u.skill.type).toBeDefined();
   });
 
@@ -85,6 +105,7 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
       title: "短剣",
       lines: [
         { text: "武器　Lv0", tone: "normal" },
+        { text: "希少度 通常", tone: "normal" },
         { text: "ダメージ 1d4", tone: "normal" },
         { text: "力 -1", tone: "danger" },
         { text: "呪われている", tone: "danger" },

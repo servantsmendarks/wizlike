@@ -169,7 +169,7 @@
   - 14 行（10px）に詰める: 名前 / 種族・職業 / レベルと経験値 / HP・MP・SAN / 状態 / 能力値 2 行 / 「装備」/ 装備 6 行。下端は 144 でビュー領域（150）に収まる。
   - 装備の段では同じ表示を使い、選んでいる枠の行を accent 色にする。
   - M7: SAN は「SAN 110/100」の形のまま、超過中は UI-12 と同じ色。AC（`detail.ac`）と魔法攻撃力（MG-33。`detail.magicPower`）は 7 行目の「装備」の見出しの右（x84 / x164。14 行のまま、layout の数値は変えない）。能力値と HP / MP / SAN の最大・AC・魔法攻撃力は core の `memberSheet`（`equipStats` の実効の値と `allyAc`）の値を描く（IT-35）。パーティ欄（UI-12）の HP / MP / SAN の最大と SAN の段も同じ値。装備の名前は IT-11 の表示名で、装備の段で品を選ぶと詳細を開く。
-  - 品の詳細（M7）: キャンプのパネルに 見出し（表示名。accent）→ 部位（汎用は「　Lv{n}」）→ 性能（武器はダメージのダイスと Lv の分、術者用武器は魔法攻撃力、射程の武器は「後列から届く」、それ以外は AC）→ オプション（`item.option.row`{name, value, unit}。値は符号付きで、ac は AC の増減。負は danger 色）→ 固有スキル（`item.skill.<type>`{value}）→ 呪い（`item.cursed`。danger 色）→ 売値（`item.detail.sell`）→ ユニークの説明（28 字ずつ。dim 色）。未鑑定は見出し・部位・`item.detail.unidentified` だけ（IT-12）。値は core の `itemDetail` だけで決める。
+  - 品の詳細（M7）: キャンプのパネルに 見出し（表示名。accent）→ 部位（汎用は「　Lv{n}」）→ 希少度（`item.detail.rarity`{rarity}「希少度 上質」など。語は図鑑と同じ `book.rarity.*` で通常も出す。鑑定済みの装備だけ。2026-10-05 に足した）→ 性能（武器はダメージのダイスと Lv の分、術者用武器は魔法攻撃力、射程の武器は「後列から届く」、それ以外は AC）→ オプション（`item.option.row`{name, value, unit}。値は符号付きで、ac は AC の増減。負は danger 色）→ 固有スキル（`item.skill.<type>`{value}）→ 呪い（`item.cursed`。danger 色）→ 売値（`item.detail.sell`）→ ユニークの説明（28 字ずつ。dim 色）。未鑑定は見出し・部位・`item.detail.unidentified` だけ（IT-12）。値は core の `itemDetail` だけで決める。
   - 図鑑（M7。IT-66）: 酒場の一覧の「図鑑」（`camp.book`）から開く。パネルに見出し（`book.title`{known, total}）と uniques.json の順の行（`book.row`{name, place, rarity}。入手ダンジョンが無ければ `book.noPlace`、未記録は `book.unknown`「？？？」を dim 色）。操作は やめる だけ。値は core の `uniqueBookView` だけで決める。
 
 ## 7. 素材
