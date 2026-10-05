@@ -7,7 +7,8 @@
 // - 枠 1px（0..239 × 0..69）
 // - 文字領域 x4..235、y2..67。そのうち下詰めの y8..67 に 6 行（1 行 10px、全角 29 字）を見せ、余りの 6px は上の余白にする
 //   （見える高さを行の高さの整数倍にし、末尾を見せたときに最上段が途中で切れないようにする）。指ではスクロールしない（overflow hidden・touch-action none）。
-//   DOM には直近の lines × 2 文だけを残し、いつも末尾を見せる。全文は配列に持ち、履歴の画面（UI-46）で見せる
+//   DOM には直近の lines × 2 文だけを残し、いつも末尾を見せる。文字は常に下詰め（最新の行が窓の下端。M7）で、行が 6 行に
+//   満たないうちは上が空く（広げた一覧 UI-52 が窓の下 2 行だけを見せるため）。全文は配列に持ち、履歴の画面（UI-46）で見せる
 // - 続きの三角 x228..235、y60..67
 import { MESSAGE_LINE_H, type DungeonLayout, type Rect } from "../layout";
 
@@ -107,6 +108,10 @@ export function createMessageWindow(o: {
     lineBreak: "anywhere",
     whiteSpace: "pre-wrap",
     userSelect: "none",
+    // UI-43（M7）: 文字は常に下詰め（最新の行が窓の下端）。行が窓に満たないうちも上に空きを置き、あふれた分は上で切れる
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "flex-end",
   });
   el.appendChild(history);
 
@@ -161,6 +166,7 @@ export function createMessageWindow(o: {
     remember(text);
     const line = document.createElement("div");
     line.className = "message-line";
+    line.style.flexShrink = "0"; // 下詰めの列の中で行を縮めない（あふれた分は上で切る）
     history.appendChild(line);
     trimDom();
 

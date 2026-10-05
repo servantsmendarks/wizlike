@@ -221,7 +221,7 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
 
   const v = g.view;
   const overlay: Rect = { x: v.x, y: v.y, w: v.w, h: v.h + m.h };
-  // UI-11（M7）: メッセージ窓の文字は下詰めなので、下から LIST_TALL_MESSAGE_LINES 行の上端までを一覧で覆う
+  // UI-11（M7）: メッセージ窓の文字は下詰め（UI-43。message.ts の flex-end）なので、下から LIST_TALL_MESSAGE_LINES 行の上端までを一覧で覆う
   const tallBottom = Math.max(v.y, mText.y + mText.h - LIST_TALL_MESSAGE_LINES * MESSAGE_LINE_H);
   const backdrop: Rect = { x: v.x, y: v.y, w: v.w, h: tallBottom - v.y };
   const tallCount = Math.floor(backdrop.h / LIST_TALL_ROW_H);

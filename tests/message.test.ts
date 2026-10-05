@@ -191,6 +191,31 @@ describe("MessageWindow", () => {
     expect({ top, height }).toEqual({ top: 7, height: 60 });
   });
 
+  test("UI-43/UI-11/UI-52 窓の文字は常に下詰め（最新の行が窓の下端）。行が窓に満たないうちも上を空け、あふれた分は上で切る（広げた一覧で窓の下 2 行に語りが見える）", async () => {
+    const created: FakeEl[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => {
+        const e = new FakeEl();
+        created.push(e);
+        return e;
+      },
+      createElementNS: () => new FakeEl(),
+    });
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const w = createMessageWindow({ speed: () => 0, historyMax: 15, region: g.message, layout: L.message });
+    const box = created.find((e) => e.className === "message-history")!;
+    expect({ display: box.style["display"], flexDirection: box.style["flexDirection"], justifyContent: box.style["justifyContent"] }).toEqual({
+      display: "flex",
+      flexDirection: "column",
+      justifyContent: "flex-end",
+    });
+    // 1 文だけでも下端に置く（行は縮めない）
+    await w.say("何を買う？", true);
+    expect(box.children).toHaveLength(1);
+    expect(box.children[0]!.style["flexShrink"]).toBe("0");
+  });
+
   test("UI-46/UI-11 履歴の画面の一覧（history-list）の見える高さは行の高さの整数倍で、余りは上（題との間）の余白にする（末尾まで送ったときに最上段の行が切れない）", () => {
     const created: FakeEl[] = [];
     vi.stubGlobal("document", {
