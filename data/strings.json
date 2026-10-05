@@ -213,6 +213,8 @@
   "camp.prompt.book": "名品の図鑑",
   "camp.equip.none": "装備できる物がない",
   "camp.equip.blocked": "{name}（{why}）",
+  "camp.target.blocked": "{row}（{why}）",
+  "camp.targetBlock.fullHp": "傷はない",
   "camp.identifyRow": "{owner}: {name}",
   "camp.identify.none": "鑑定する物がない",
   "camp.order.row": "{n} {name}",

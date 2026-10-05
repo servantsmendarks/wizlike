@@ -174,6 +174,23 @@ describe("MG-44/UI-53 呪文", () => {
     accepted(s, r2.command);
   });
 
+  test("UI-53/MG-44 回復の対象の段: HP 満タンの者は dim で「（傷はない）」を付ける（core の targets の block。治癒・薬草とも）。解毒の対象は dim にしない", () => {
+    // c1 だけ HP 1。ほかは満タン
+    const s = inDungeon({ c1: { hp: 1 }, c4: { knownSpells: ["heal", "cure_poison"], mp: 30 } });
+    const m = input(s);
+    const heal = rows(campEntries("camp", { kind: "spell", stage: "target", casterId: "c4", spellId: "heal" }, m, S));
+    expect(S["camp.target.blocked"]).toBe("{row}（{why}）");
+    expect(S["camp.targetBlock.fullHp"]).toBe("傷はない");
+    expect(heal[0]).toEqual({ label: `アルド　1/${s.party[0]!.hpMax}`, disabled: false, choice: { kind: "target", targetId: "c1" } });
+    expect(heal[1]).toEqual({ label: `ベルク　${s.party[1]!.hp}/${s.party[1]!.hpMax}（傷はない）`, disabled: true, choice: { kind: "target", targetId: "c2" } });
+    expect(heal.slice(1, 6).every((r) => r.disabled)).toBe(true);
+    const cure = rows(campEntries("camp", { kind: "spell", stage: "target", casterId: "c4", spellId: "cure_poison" }, m, S));
+    expect(cure.slice(0, 6).every((r) => !r.disabled)).toBe(true);
+    const herb = rows(campEntries("camp", { kind: "item", stage: "target", memberId: "c1", instanceId: "i4" }, m, S));
+    expect(herb.slice(0, 6).map((r) => r.disabled)).toEqual([false, true, true, true, true, true]);
+    expect(herb[2]!.label).toBe(`キリ　${s.party[2]!.hp}/${s.party[2]!.hpMax}（傷はない）`);
+  });
+
   test("UI-53 使えない呪文（MP 不足）は dim。dim の行を選んでも campStep は段を進める（押せないのは操作領域の側）", () => {
     const m = input(inDungeon({ c4: { mp: 1 } }));
     expect(rows(campEntries("camp", { kind: "spell", stage: "spell", casterId: "c4" }, m, S))[0]!.disabled).toBe(true);

@@ -10,7 +10,7 @@
 // - 名前の枠（状態・呪文・道具・装備の人・並び順）はパーティ全員の 6 枠と [7] やめる。呪文・道具・装備の品・対象・鑑定の品は一覧（末尾がやめる）。
 // DOM はパネル（createCampView）だけで、モジュールのトップレベルでは DOM に触れない。結線は app が行う。
 import type { EquipSlot, Strings } from "../../core/data/index";
-import type { CampMenu, CampSummary, Command, FieldItemMenu } from "../../core/types";
+import type { CampMenu, CampSummary, CampTargetBlock, Command, FieldItemMenu } from "../../core/types";
 import type { Action } from "../input/swipe";
 import type { Rect } from "../layout";
 import { createDetailView, SLOT_ORDER, type CharacterDetail } from "./detail";
@@ -132,6 +132,15 @@ function memberGrid(m: CampInput, dim: (id: string) => boolean, cancel: CampEntr
 export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strings: Strings): CampEntries {
   const cancel: CampEntry = { label: s(strings, "common.cancel"), disabled: false, choice: { kind: "cancel" } };
   const list = (rows: CampEntry[]): CampEntries => ({ layout: "list", rows: [...rows, cancel] });
+  // MG-44 / UI-53（2026-10-05）: 回復の対象の行。core の targets の block があれば dim にし、理由を名前と HP の後ろに付ける（戦闘中の対象は別の部品）
+  const targetRow = (a: { id: string; name: string; hp: number; hpMax: number }, block: CampTargetBlock | null): CampEntry => {
+    const row = s(strings, "dungeon.items.allyRow", { name: a.name, hp: a.hp, hpMax: a.hpMax });
+    return {
+      label: block === null ? row : s(strings, "camp.target.blocked", { row, why: s(strings, `camp.targetBlock.${block}`) }),
+      disabled: block !== null,
+      choice: { kind: "target", targetId: a.id },
+    };
+  };
   const menu = m.menu;
   switch (page.kind) {
     case "top": {
@@ -174,13 +183,7 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
       if (sp?.target === "dead") {
         return list(menu.dead.map((d) => ({ label: d.name, disabled: false, choice: { kind: "target", targetId: d.id } })));
       }
-      return list(
-        menu.allies.map((a) => ({
-          label: s(strings, "dungeon.items.allyRow", { name: a.name, hp: a.hp, hpMax: a.hpMax }),
-          disabled: false,
-          choice: { kind: "target", targetId: a.id },
-        })),
-      );
+      return list(menu.allies.map((a) => targetRow(a, sp?.targets.find((t) => t.id === a.id)?.block ?? null)));
     }
     case "item": {
       const items = m.items;
@@ -198,13 +201,8 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
         // 戻る（先頭。Enter）/ やめる（末尾。UI-11 の固定の位置。Esc）
         return list([{ label: s(strings, "camp.returnConfirm.yes"), disabled: false, choice: { kind: "confirm" } }]);
       }
-      return list(
-        (items?.allies ?? []).map((a) => ({
-          label: s(strings, "dungeon.items.allyRow", { name: a.name, hp: a.hp, hpMax: a.hpMax }),
-          disabled: false,
-          choice: { kind: "target", targetId: a.id },
-        })),
-      );
+      const it = items?.members.find((y) => y.id === page.memberId)?.items.find((y) => y.instanceId === page.instanceId);
+      return list((items?.allies ?? []).map((a) => targetRow(a, it?.targets.find((t) => t.id === a.id)?.block ?? null)));
     }
     case "equip": {
       if (page.stage === "member") {
