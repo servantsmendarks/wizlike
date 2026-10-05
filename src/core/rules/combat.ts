@@ -36,6 +36,7 @@ import type {
 } from "../types";
 import {
   allyAc,
+  allyAttackBonus,
   ambushAvoider,
   attackCount,
   battleItemUsable,
@@ -62,7 +63,6 @@ import {
   partyAgiAvg,
   partyGoldLuck,
   statusPercent,
-  strBonus,
   targetMatches,
   unitAlive,
   unitCanAct,
@@ -646,7 +646,7 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan, sanKey: 
             return;
           }
           // CB-22: str は実効の値、レベルの効果とオプション damage（damageBonus）も足して最低 1
-          const dmg = Math.max(1, rollDice(state.rng, dice).total + strBonus(es.stats.str) + benefitOf(data, ch, "damage") + es.damageBonus);
+          const dmg = Math.max(1, rollDice(state.rng, dice).total + allyAttackBonus(data, ch, es));
           next = damageUnit(ctx, ga, u, dmg);
           ctx.events.push({ kind: "attack", actorId: ch.id, targetId, hit: true, damage: dmg });
           ctx.events.push({ kind: "message", key: "battle.hit", params: { target, damage: dmg } });

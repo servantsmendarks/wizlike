@@ -3,7 +3,7 @@
 import type { ClassDef, Config, ConsumableItem, GameData, Item, ItemEffect, Spell, SpellTarget, StatusId } from "../data/index";
 import { monsterOf, personalityOf } from "../state";
 import type { BattleState, Character, EnemyGroup, EnemyGroupView, EnemyUnit, GameState } from "../types";
-import { equipStats } from "./equip-stats";
+import { equipStats, type EquipStats } from "./equip-stats";
 
 /** CH-44: 行動不能にする状態異常（毒は含まない） */
 export const INCAPACITATING: readonly StatusId[] = ["paralysis", "sleep", "stone"];
@@ -104,6 +104,14 @@ export function hitPercent(cfg: Config, level: number, targetAc: number, targetA
 /** CB-22: 力補正 floor((str − 10) / 2) */
 export function strBonus(str: number): number {
   return Math.floor((str - 10) / 2);
+}
+
+/**
+ * CB-22: 味方の攻撃ダメージの武器ダイス以外の足し分（力補正 + 性格恩恵 damage + 汎用の武器のレベルの効果とオプション damage）。
+ * 戦闘の攻撃（rules/combat.ts）と状態の表示（rules/item-view.ts の memberSheet。UI-59）が同じ式を使う
+ */
+export function allyAttackBonus(data: GameData, ch: Character, es: Pick<EquipStats, "stats" | "damageBonus">): number {
+  return strBonus(es.stats.str) + benefitOf(data, ch, "damage") + es.damageBonus;
 }
 
 /** CB-23: attacksPerLevels が 0 なら 1、それ以外 min(maxAttacks, 1 + floor(level / attacksPerLevels)) */

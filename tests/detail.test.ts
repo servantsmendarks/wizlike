@@ -31,7 +31,7 @@ describe("UI-59 詳細", () => {
       "detail.status",
       "detail.statusOk",
       "detail.stat",
-      "detail.equipment",
+      "detail.attack",
       "detail.equipNone",
       "detail.ac",
       "detail.magicPower",
@@ -72,7 +72,8 @@ describe("UI-59 詳細", () => {
       ["運", 9],
     ]);
     expect(d.stats[0]!.text).toBe(t("detail.stat", { label: "力", value: 14 }));
-    expect(d.equipmentTitle).toBe(t("detail.equipment"));
+    // M7: 7 行目の「装備」の見出しは攻撃の行に譲った（2026-10-05）。sheet が無ければ攻撃は空
+    expect(d.attack).toBe("");
     expect(d.equipment).toEqual([
       { slot: "武器", item: "長剣" },
       { slot: "防具", item: "革鎧" },
@@ -205,13 +206,26 @@ describe("UI-59/CH-13/CH-14/CB-20/MG-33 状態の実効の値（M7）", () => {
     // AC = acBase 10 − 3 − 2 − 1 = 4
     expect(d.ac).toBe("AC 4");
     expect(d.magicPower).toBe("魔法攻撃力 2");
+    // CB-22: 杖 1d4（術者用なので Lv の効果は足さない）+ 力 16 の補正 3 + リーダーの性格恩恵 0 → 攻撃 1d4+3
+    expect(d.attack).toBe("攻撃 1d4+3");
     const raw = formatDetail(ch, data, S, nameOf(s));
-    expect([raw.stats[0]!.value, raw.hp, raw.ac, raw.magicPower]).toEqual([14, `HP ${ch.hp}/15`, "", ""]);
+    expect([raw.stats[0]!.value, raw.hp, raw.ac, raw.magicPower, raw.attack]).toEqual([14, `HP ${ch.hp}/15`, "", "", ""]);
     // 装備名は IT-11 の表示名（ユニークはユニークの名前、汎用は +Lv）
     expect(d.equipment.map((e) => e.item)).toEqual(["杖 +5", "革鎧 +3", t("detail.equipNone"), "早鐘の兜", t("detail.equipNone"), "護符"]);
   });
 
-  test("UI-59 render: AC は 7 行目の x84、魔法攻撃力は x164（「装備」の見出しと同じ行。14 行のまま）", () => {
+  test("UI-59/CB-22 formatDetail の攻撃: 足し分が 0 なら「攻撃 1d8」、負なら「攻撃 1d2-1」（memberSheet の attackDice / attackBonus）", () => {
+    const s = structuredClone(newGame(1));
+    const ch = s.party[0]!;
+    ch.stats.str = 10; // 長剣 Lv0・力 10（補正 0）・リーダー（恩恵 0）→ 足し分 0
+    expect(formatDetail(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d8");
+    ch.equipment.weapon = null;
+    ch.stats.str = 9; // 素手 1d2・力 9 の補正 −1
+    expect(formatDetail(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d2-1");
+  });
+
+  // M7（2026-10-05）: 7 行目の「装備」の見出しを攻撃の行（x4）に替えた
+  test("UI-59 render: 7 行目は 攻撃（x4）・AC（x84）・魔法攻撃力（x164）。14 行のまま", () => {
     vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
     const v = createDetailView({ x: 0, y: 16, w: 240, h: 150 });
     const s = equippedAld();
@@ -222,7 +236,7 @@ describe("UI-59/CH-13/CH-14/CB-20/MG-33 状態の実効の値（M7）", () => {
       const c = el.children.find((x) => x.className === cls)!;
       return [px(c.style["left"]) + 1, px(c.style["top"]) + 1, c.textContent];
     };
-    expect(at("detail-equipment")).toEqual([4, 74, "装備"]);
+    expect(at("detail-attack")).toEqual([4, 74, "攻撃 1d4+3"]);
     expect(at("detail-ac")).toEqual([84, 74, "AC 4"]);
     expect(at("detail-magic-power")).toEqual([164, 74, "魔法攻撃力 2"]);
     expect(new Set(el.children.map((c) => c.style["top"])).size).toBe(14);

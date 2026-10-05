@@ -158,6 +158,21 @@ describe("UI-59/CH-13/CH-14/MG-33 memberSheet（状態の実効の値）", () =>
     const es = equipStats(s, data, c1);
     expect(sheet).toMatchObject({ stats: es.stats, hpMax: es.hpMax, mpMax: es.mpMax, sanMax: es.sanMax, magicPower: es.magicPower });
   });
+
+  test("CB-22/UI-59 memberSheet の attackDice / attackBonus: 武器ダイスと、力補正 + 性格恩恵 damage + Lv の効果 + オプション damage（戦闘と同じ式）", () => {
+    const s = cloneState(newGame(1));
+    const c1 = s.party[0]!;
+    c1.stats.str = 14; // 力補正 floor((14 − 10) / 2) = 2
+    c1.personality = "reckless"; // EV-42: 無鉄砲の benefits.damage = 1
+    c1.equipment.weapon = createItemInstance(s, { itemId: "long_sword", level: 4, options: [{ optionId: "damage", tier: 1, value: 1 }], identified: true });
+    // 2 + 1 + floor(4 ÷ weaponLvPerDamage 2) = 2 + オプション 1 → 6
+    expect(memberSheet(s, data, c1)).toMatchObject({ attackDice: "1d8", attackBonus: 6 });
+    // 素手（combat.unarmedDice 1d2）・力 9（floor(−1 ÷ 2) = −1）・性格なし（リーダーと同じ 0）→ 1d2 と −1（最低 1 の丸めは攻撃の出目の側）
+    c1.equipment.weapon = null;
+    c1.stats.str = 9;
+    c1.personality = null;
+    expect(memberSheet(s, data, c1)).toMatchObject({ attackDice: "1d2", attackBonus: -1 });
+  });
 });
 
 describe("IT-66 uniqueBookView（図鑑）", () => {

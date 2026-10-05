@@ -291,7 +291,7 @@
   "detail.status": "状態 {status}",
   "detail.statusOk": "正常",
   "detail.stat": "{label} {value}",
-  "detail.equipment": "装備",
+  "detail.attack": "攻撃 {dice}{bonus}",
   "detail.equipNone": "なし",
   "detail.ac": "AC {ac}",
   "detail.magicPower": "魔法攻撃力 {value}",

@@ -3,7 +3,7 @@
 import type { EquipSlot, GameData, SkillType, StatBlock } from "../data/index";
 import { findBase, itemDisplayName, itemOf, optionOf, uniqueOf } from "../state";
 import type { Character, GameState, Rarity } from "../types";
-import { allyAc } from "./combat-calc";
+import { allyAc, allyAttackBonus } from "./combat-calc";
 import { equipStats, itemPower, type ItemPower } from "./equip-stats";
 import { appearanceSellPrice, sellPrice } from "./shop";
 
@@ -81,13 +81,32 @@ export function itemDetail(state: GameState, data: GameData, instanceId: string)
 
 /**
  * UI-59 / UI-12（M7）: 1 人の状態に出す実効の値（CH-13 / CH-14 / IT-35）。stats は実効の能力値、hpMax / mpMax / sanMax は実効の最大値
- * （sanMax は sanCapOf と同じ値。士気の超過は含めない）、ac は allyAc（acBase + 装備。戦闘の外では防御の補正は 0）、magicPower は MG-33 の魔法攻撃力
+ * （sanMax は sanCapOf と同じ値。士気の超過は含めない）、ac は allyAc（acBase + 装備。戦闘の外では防御の補正は 0）、magicPower は MG-33 の魔法攻撃力。
+ * attackDice / attackBonus は CB-22 の攻撃ダメージの武器ダイス（素手は combat.unarmedDice）と、それ以外の足し分（allyAttackBonus。戦闘と同じ式。最低 1 の丸めは含めない）
  */
-export type MemberSheet = { stats: StatBlock; hpMax: number; mpMax: number; sanMax: number; ac: number; magicPower: number };
+export type MemberSheet = {
+  stats: StatBlock;
+  hpMax: number;
+  mpMax: number;
+  sanMax: number;
+  ac: number;
+  magicPower: number;
+  attackDice: string;
+  attackBonus: number;
+};
 
 export function memberSheet(state: GameState, data: GameData, ch: Character): MemberSheet {
   const es = equipStats(state, data, ch);
-  return { stats: es.stats, hpMax: es.hpMax, mpMax: es.mpMax, sanMax: es.sanMax, ac: allyAc(state, data, ch), magicPower: es.magicPower };
+  return {
+    stats: es.stats,
+    hpMax: es.hpMax,
+    mpMax: es.mpMax,
+    sanMax: es.sanMax,
+    ac: allyAc(state, data, ch),
+    magicPower: es.magicPower,
+    attackDice: es.weaponDice,
+    attackBonus: allyAttackBonus(data, ch, es),
+  };
 }
 
 /**
