@@ -169,6 +169,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   // M5.5 UI-62 / CH-06: 自分で作るの配分の可否・残り・職業の条件・名前の長さは core の関数の値だけで決める。
   // 作成中はまだ GameState が無いので、ボーナスの振り（rollBonus）は表示層が持つ RngState（createRng。種は crypto）で引く（決定 5 の例外）
   "rules/creation": ["rollBonus", "statAllocation", "adjustStat", "classOptions", "validCreationName"],
+  // M7 UI-57: debug パネルの「SAN+{n}」のラベルの n（core が足す量の定数。値を表示に使うだけ）
+  "rules/debug": ["SAN_OVER_DEBUG"],
   rng: ["createRng"],
   // 能力値の並び（CH-10）。列挙の定数
   "data/index": ["STAT_KEYS"],
@@ -353,6 +355,14 @@ describe("入力と Command", () => {
     expect(app).toContain("addTurns: data.config.town.tavernEventTurns,");
     const body = /const addTurnsFromDebug = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(body).toMatch(/if \(route !== "town" && route !== "dungeon" && route !== "battle"\) return;\s*closeDebugForCommand\(\);\s*void run\(\{ type: "debug\.addTurns" \}\);/);
+  });
+
+  test("UI-57（M7）debug パネルの SAN+10 は、街・迷宮・戦闘のときだけパネルを閉じてから debug.sanOver を送る。ラベルの n は core の SAN_OVER_DEBUG（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toMatch(/onSanOver: \(\) => guard\(\(\) => sanOverFromDebug\(\)\)/);
+    expect(app).toContain("sanOver: SAN_OVER_DEBUG,");
+    const body = /const sanOverFromDebug = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(body).toMatch(/if \(route !== "town" && route !== "dungeon" && route !== "battle"\) return;\s*closeDebugForCommand\(\);\s*void run\(\{ type: "debug\.sanOver" \}\);/);
   });
 
   test("UI-57（M6）設定画面の導線: タイトルの「設定」とヘッダーの設定ボタンは openSettings、F2 は debug パネルのトグル、debug パネルは設定画面を下に残し、debug のコマンドは両方を閉じてから送る（ソースの検査）", () => {

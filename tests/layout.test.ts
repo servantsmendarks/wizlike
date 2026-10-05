@@ -6,6 +6,7 @@ import {
   CONTROLS_MIN_HEIGHT,
   DEBUG_BUTTONS,
   DEBUG_BUTTONS_M5,
+  DEBUG_BUTTONS_M7,
   DEBUG_SWIPE_Y,
   debugRow,
   dungeonLayout,
@@ -177,6 +178,26 @@ describe("layout", () => {
     }
     // 1 段目の下端（374）の下
     for (const b of m5) for (const a of Object.values(DEBUG_BUTTONS)) expect(b.y).toBeGreaterThanOrEqual(a.y + a.h);
+  });
+
+  test("UI-57/UI-10（M7）debug パネルの SAN+10 は計測値の 0〜2 行目（y42..71）の右（x188・44×30）。ステージに収まり、設定の行・1 段目・2 段目・スワイプの表示と重ならない。TOUCH_MIN_LOGICAL（30）以上", () => {
+    const b = DEBUG_BUTTONS_M7.sanOver;
+    expect(b).toEqual({ x: 188, y: 42, w: 44, h: 30 });
+    expect(inside(b, STAGE)).toBe(true);
+    expect(Math.min(b.w, b.h)).toBeGreaterThanOrEqual(TOUCH_MIN_LOGICAL);
+    // 計測値は y42 から 1 行 10px。0〜2 行目（scale / deviceScale / integer）の中に収める
+    expect(b.y).toBeGreaterThanOrEqual(42);
+    expect(b.y + b.h).toBeLessThanOrEqual(72);
+    // 0〜2 行目は「deviceScale 12.3456」でも 19 字（半角 4px で 76px、x4 から 80）なので、その右に置く
+    expect(b.x).toBeGreaterThanOrEqual(4 + 4 * 19);
+    for (const o of [
+      ...Object.values(DEBUG_BUTTONS),
+      ...Object.values(DEBUG_BUTTONS_M5),
+      ...[0, 1, 2, 3, 4, 5].flatMap((i) => Object.values(debugRow(i))),
+      { x: 0, y: DEBUG_SWIPE_Y, w: W, h: 10 },
+    ]) {
+      expect(overlaps(b, o)).toBe(false);
+    }
   });
 
   test("UI-10/UI-54/UI-52 dpad/menu/list/mapClose/battleParty/battleMember/autoStop/townMenu が操作領域の内側", () => {

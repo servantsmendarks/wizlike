@@ -404,6 +404,15 @@ export const DEBUG_BUTTONS_M5 = {
   addTurns: { x: 188, y: 376, w: 44, h: 22 },
 } as const satisfies Record<string, Rect>;
 
+/**
+ * debug パネルの 1 ページ目の「SAN+10」（M7。開発用、UI-57。debug.sanOver）: 計測値（x4・y42 の 232×80、1 行 10px）の右の x188・y42 の 44×30。
+ * 計測値の 0〜2 行目（scale / deviceScale / integer）は「deviceScale 1.7143」の 18 字（美咲の半角 4px で 72px）までなので重ならない。
+ * 1 段目・2 段目は空きが無いため（2 段目に 6 つ並べるとターン+200 の 40px が入らない）
+ */
+export const DEBUG_BUTTONS_M7 = {
+  sanOver: { x: 188, y: 42, w: 44, h: 30 },
+} as const satisfies Record<string, Rect>;
+
 /** debug パネルの 2 ページ目（UI-57 のポインタの記録）: 題 y4、行 i は y16+10i（i=0..19、最後の行は y206..215）、x4・幅 232 */
 export const DEBUG_POINTER = { x: 4, w: 232, titleY: 4, rowY: 16, rowH: 10 } as const;
 

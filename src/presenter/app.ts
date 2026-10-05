@@ -19,6 +19,7 @@ import { createRng, type RngState } from "../core/rng";
 import { battleMenu } from "../core/rules/combat";
 import { mapView, visibleCells, visibleKnownTraps } from "../core/rules/dungeon";
 import { campMenu, campSummary } from "../core/rules/camp";
+import { SAN_OVER_DEBUG } from "../core/rules/debug";
 import { planRoute, routeStepOk } from "../core/rules/pathfind";
 import { itemDetail, memberSheet, uniqueBookView } from "../core/rules/item-view";
 import { sanStage } from "../core/rules/san";
@@ -268,6 +269,8 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     onWarp: (to) => guard(() => debugCommand({ type: "debug.warp", to })),
     onAddTurns: () => guard(() => addTurnsFromDebug()),
     addTurns: data.config.town.tavernEventTurns,
+    onSanOver: () => guard(() => sanOverFromDebug()),
+    sanOver: SAN_OVER_DEBUG,
     pointers: () => pointerLog.entries(),
   });
 
@@ -1402,6 +1405,16 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     if (route !== "town" && route !== "dungeon" && route !== "battle") return;
     closeDebugForCommand();
     void run({ type: "debug.addTurns" });
+  };
+
+  /**
+   * UI-57（開発用、M7）: 「SAN+10」。街・迷宮・戦闘のときだけ、パネルを閉じてから debug.sanOver を送る（受け付けるかは core が決める）。
+   * 士気中の制止判定の成功で SAN が超過分を超えて増えないことを実機で確かめるためのもの
+   */
+  const sanOverFromDebug = (): void => {
+    if (route !== "town" && route !== "dungeon" && route !== "battle") return;
+    closeDebugForCommand();
+    void run({ type: "debug.sanOver" });
   };
 
   /**

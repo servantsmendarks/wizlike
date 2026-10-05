@@ -543,6 +543,7 @@
   "debug.warpTrapButton": "罠の前",
   "debug.warpStairsButton": "階段前",
   "debug.addTurnsButton": "ターン+{n}",
+  "debug.sanOverButton": "SAN+{n}",
   "debug.addTurns": "（デバッグ）冒険のターンを{n}進めた（計{total}）。",
   "debug.sanDown": "（デバッグ）リーダー以外の SAN を 1 段下げた。",
   "debug.sanOver": "（デバッグ）全員の SAN を最大+{n}にした。",
