@@ -4,6 +4,7 @@
 // ボットはテストの中だけにあり、core の execute と問い合わせ（floorOf、fieldItemMenu、townMenu、frontLineIds）だけを使う。
 // 合否は不変条件だけで、数字のしきい値では落とさない（数字は console.log に出し、decisions に転記する）。
 // 店: alive の者が帰還の糸を持っていなければ 1 本、その後パーティ全体の手持ちの薬草が 6 個【仮】になるまで薬草（払える範囲で。ユーザー決定）。
+// M7-解毒（2026-10-05 ユーザー指示）: 店で薬草の後にパーティ全体の手持ちの解毒草を 2 個まで、戦闘の後に毒の者がいれば解毒草を使い、寺院で蘇生・闇魔術の後に毒を治す（cure）。
 // 累積の評価は資産 = 所持金 + 手持ちの消耗品（パーティ全員の inventory の consumable）の購入価格の合計で、初期の資産からの差（所持金だけの差も参考に出す）。
 // ボットの値（BFS 距離 6、戦闘数、上限 3000 歩、潜行の回数、薬草の目標 6 個）はテストの定数で、ゲームの調整値ではない。
 import { expect } from "vitest";
@@ -24,11 +25,14 @@ const STEP_CAP = 3000; // 1 回の潜行の歩数の上限
 const BATTLE_ROUND_CAP = 300;
 const FRONT_ROW = data.config.party.frontRow; // 並び順の前衛の人数（frontDownAtStart の記録用。セオリーボットの帰還条件は CB-14 の frontLineIds を使う）
 const HERB_TARGET = 6; // 【仮】店の後のパーティ全体の手持ちの薬草の数（ユーザー決定）
+const ANTIDOTE_TARGET = 2; // M7-解毒: 店の後のパーティ全体の手持ちの解毒草の数（ユーザー指示「2 個まで」。薬草と同じくパーティ全体で数える）
 const INN_RANK = data.config.town.innRanks.findIndex((r) => r.id === "cheap"); // 相部屋
 const START_GOLD = data.config.prototypeParty.startingGold;
 const HERB = "herb";
+const ANTIDOTE = "antidote_herb";
 const THREAD = "return_thread";
 const HERB_PRICE = itemOf(data, HERB).price;
+const ANTIDOTE_PRICE = itemOf(data, ANTIDOTE).price;
 const THREAD_PRICE = itemOf(data, THREAD).price;
 
 export type BotKind = { label: string; shouldReturn: (c: Campaign) => boolean };
@@ -101,6 +105,12 @@ type DiveRecord = {
   ashInDive: number; // M7-死因: この潜行中に ash になった人数（今の規則では潜行中に灰になる経路は無いので 0 のはず。灰は寺院の蘇生の失敗だけ）
   encounterGroups: Record<string, number>; // M7-死因: 遭遇（encounter イベント）の敵グループの数（monsterId ごと）
   encounterUnits: Record<string, number>; // M7-死因: その体数
+  antidotes: number; // M7-解毒: この潜行で戦闘の後に使った解毒草の数
+  poisonedAtHome: number; // M7-解毒: 街に着いた時点（救済・蘇生の前）に alive で毒の人数
+  cureCount: number; // M7-解毒: 寺院で毒を治した人数（town.temple の cure）
+  cureCost: number; // M7-解毒: その費用の合計
+  cureUnpaid: number; // M7-解毒: 寺院の治療を払えずに毒のまま残した人数
+  shopAntidotes: number; // M7-解毒: 店で買った解毒草の数
   goldBefore: number; // 潜行の前の所持金
   goldAfter: number; // 街の手順をすべて終えた後の所持金
   assetsAfter: number; // 街の手順をすべて終えた後の資産（所持金 + 手持ちの消耗品の購入価格）
@@ -214,6 +224,7 @@ export class Campaign {
   ashInDive = 0;
   encounterGroups: Record<string, number> = {};
   encounterUnits: Record<string, number> = {};
+  antidotes = 0;
   /**
    * M7-宝箱「蘇生を払えずに潜った」の定義: 直前の街の手順（revive）で、dead の者の寺院の蘇生、または ash の者（蘇生に失敗して灰になった者を含む）の
    * 闇魔術の費用が、その時点の所持金で払えずに（townMenu の affordable が偽で）蘇生しなかった者の id。次の潜行の開始時に、そのうちまだ dead / ash の者が
@@ -332,6 +343,35 @@ export class Campaign {
     while (this.state.battle !== null) {
       if (n++ > BATTLE_ROUND_CAP) throw new Error(`seed ${this.seed}: battle did not end`);
       this.run(this.state.battle.auto ? { type: "battle.resolve" } : { type: "battle.auto", on: true });
+    }
+    this.cureAfterBattle();
+  }
+
+  /**
+   * M7-解毒（2026-10-05 ユーザー指示「戦闘後に毒の者がいれば使う」）: 戦闘が終わって迷宮に戻ったとき（勝利・逃走の後。全滅で街に戻った場合と、
+   * 選択の保留中は何もしない）、alive で毒の者が並び順にいる間、行動可能な者（並び順）が持つ解毒草（items.json の antidote_herb）を
+   * core の dungeon.useItem でその者に使う。解毒草が無くなれば止める（解毒の呪文はボットは使わない）
+   */
+  cureAfterBattle(): void {
+    for (;;) {
+      if (this.state.screen !== "dungeon" || this.state.pendingChoice !== null) return;
+      const target = this.state.party.find((c) => c.life === "alive" && c.status.includes("poison"));
+      if (target === undefined) return;
+      const menu = fieldItemMenu(this.state, data);
+      if (menu === null) return;
+      let use: { memberId: string; instanceId: string } | null = null;
+      for (const m of menu.members) {
+        if (!m.canAct) continue;
+        const it = m.items.find((x) => x.usable && x.itemId === ANTIDOTE);
+        if (it !== undefined) {
+          use = { memberId: m.id, instanceId: it.instanceId };
+          break;
+        }
+      }
+      if (use === null) return;
+      this.run({ type: "dungeon.useItem", memberId: use.memberId, itemId: use.instanceId, targetId: target.id });
+      expect(this.state.party.find((c) => c.id === target.id)!.status).not.toContain("poison");
+      this.antidotes += 1;
     }
   }
 
@@ -470,6 +510,7 @@ export class Campaign {
     this.ashInDive = 0;
     this.encounterGroups = {};
     this.encounterUnits = {};
+    this.antidotes = 0;
     const down = this.state.party.filter((c) => c.life !== "alive").map((c) => c.id);
     expect(down.filter((id) => !this.unpaidLeft.includes(id))).toEqual([]); // 定義（unpaidLeft）のとおり、残った理由は所持金不足だけ
     this.unpaidAtStart = down.length;
@@ -552,6 +593,30 @@ export class Campaign {
       else this.darkIfAffordable(id, rec);
     }
     for (const id of ids) if (this.life(id) === "ash") this.darkIfAffordable(id, rec);
+    this.cureAtTemple(rec);
+  }
+
+  /**
+   * M7-解毒（2026-10-05 ユーザー指示「寺院でも毒を治す」）: 蘇生と闇魔術の後（死者・灰を戻す方を先に払う）、宿の前に、
+   * townMenu の temple.cure の行（alive で毒・麻痺・石化のどれかを持つ者。並び順）のうち毒を持つ者を、払える限り town.temple の cure で治す。
+   * 費用は TW-07 の cureCost の合計（毒と麻痺を併せ持つなら両方の分）。払えなければその者は毒のまま（cureUnpaid）
+   */
+  cureAtTemple(rec: DiveRecord): void {
+    for (const id of this.state.party.map((c) => c.id)) {
+      const ch = this.state.party.find((c) => c.id === id)!;
+      if (ch.life !== "alive" || !ch.status.includes("poison")) continue;
+      const row = townMenu(this.state, data)!.temple.cure.find((r) => r.memberId === id)!;
+      if (!row.affordable) {
+        rec.cureUnpaid += 1;
+        continue;
+      }
+      const g = this.state.gold;
+      this.run({ type: "town.temple", memberId: id, service: "cure" });
+      expect(g - this.state.gold).toBe(row.cost);
+      expect(this.state.party.find((c) => c.id === id)!.status).not.toContain("poison");
+      rec.cureCount += 1;
+      rec.cureCost += row.cost;
+    }
   }
 
   inn(rec: DiveRecord): void {
@@ -638,11 +703,20 @@ export class Campaign {
     return sum(this.state.party.map((c) => c.inventory.filter((id) => this.state.items[id]!.itemId === HERB).length));
   }
 
-  /** 店: alive の者が帰還の糸を持っていなければ 1 本（死者・灰の糸は使えないので数えない）、その後パーティ全体の手持ちの薬草が HERB_TARGET になるまで薬草を（払える範囲で） */
+  /** M7-解毒: パーティ全体（死者・灰を含む。薬草と同じ数え方）の手持ちの解毒草の数 */
+  antidotesInHand(): number {
+    return sum(this.state.party.map((c) => c.inventory.filter((id) => this.state.items[id]!.itemId === ANTIDOTE).length));
+  }
+
+  /**
+   * 店: alive の者が帰還の糸を持っていなければ 1 本（死者・灰の糸は使えないので数えない）、その後パーティ全体の手持ちの薬草が HERB_TARGET になるまで薬草を、
+   * その後（M7-解毒）パーティ全体の手持ちの解毒草が ANTIDOTE_TARGET になるまで解毒草を（どれも払える範囲で）。解毒草は今の糸 → 薬草の順の後ろに足した（既存の補充の優先を変えない）
+   */
   shop(rec: DiveRecord): void {
     const hasThread = this.state.party.some((c) => c.life === "alive" && c.inventory.some((id) => this.state.items[id]!.itemId === THREAD));
     if (!hasThread && this.buy(THREAD, rec)) rec.shopThreads += 1;
     while (this.herbsInHand() < HERB_TARGET && this.buy(HERB, rec)) rec.shopHerbs += 1;
+    while (this.antidotesInHand() < ANTIDOTE_TARGET && this.buy(ANTIDOTE, rec)) rec.shopAntidotes += 1;
   }
 
   campaign(count: number): CampaignResult {
@@ -671,6 +745,12 @@ export class Campaign {
         ashInDive: this.ashInDive,
         encounterGroups: this.encounterGroups,
         encounterUnits: this.encounterUnits,
+        antidotes: this.antidotes,
+        poisonedAtHome: this.state.party.filter((c) => c.life === "alive" && c.status.includes("poison")).length,
+        cureCount: 0,
+        cureCost: 0,
+        cureUnpaid: 0,
+        shopAntidotes: 0,
         down: this.state.party.filter((c) => c.life !== "alive").length,
         mercyOffered: this.state.townVisit!.mercyOffered,
         mercyUsed: false,
@@ -717,7 +797,7 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
   const lines: string[] = [];
   const all = results.flatMap((r) => r.dives);
   lines.push(
-    `H9 再計測【${kind.label}】（${seeds} シード × 潜行 ${dives} 回。d01 の 1 階の上り階段から BFS 距離 ${NEAR} 以内。街: 救済 → 装備の売却（未鑑定は 見込み売値 − 未鑑定売値 > 鑑定料 なら店で鑑定してから、そうでなければ未鑑定のまま）→ 寺院 → 闇魔術 → 相部屋 1 泊 → 店（糸が無ければ 1 本 ${THREAD_PRICE}G、薬草 ${HERB_PRICE}G を手持ち ${HERB_TARGET} 個まで）。所持金の初期値 ${START_GOLD}、資産の初期値 ${results[0]?.startAssets ?? "-"}（所持金 + 手持ちの消耗品の購入価格））`,
+    `H9 再計測【${kind.label}】（${seeds} シード × 潜行 ${dives} 回。d01 の 1 階の上り階段から BFS 距離 ${NEAR} 以内。街: 救済 → 装備の売却（未鑑定は 見込み売値 − 未鑑定売値 > 鑑定料 なら店で鑑定してから、そうでなければ未鑑定のまま）→ 寺院 → 闇魔術 → 寺院の治療（毒）→ 相部屋 1 泊 → 店（糸が無ければ 1 本 ${THREAD_PRICE}G、薬草 ${HERB_PRICE}G を手持ち ${HERB_TARGET} 個まで、解毒草 ${ANTIDOTE_PRICE}G を手持ち ${ANTIDOTE_TARGET} 個まで）。戦闘の後に毒の者がいれば解毒草を使う。所持金の初期値 ${START_GOLD}、資産の初期値 ${results[0]?.startAssets ?? "-"}（所持金 + 手持ちの消耗品の購入価格））`,
   );
   lines.push(`打ち切り（行動可能な者がいなくて入れない）: ${results.filter((r) => r.aborted).length} シード`);
   for (let k = 0; k < dives; k++) {
@@ -761,7 +841,21 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
   partsAny.push(`未到達 ${idxAny.filter((i) => i < 0).length}`);
   lines.push(`（参考）誰か 1 人が L2 の最初の潜行: ${partsAny.join(" / ")}`);
   lines.push(...deathReport(results, dives));
+  lines.push(...curingReport(results, dives));
   return lines.join("\n");
+}
+
+/** M7-解毒（2026-10-05 ユーザー指示）: 解毒草・寺院の治療と、灰になった人数・闇魔術で戻した人数。既存の出力の後ろに足す */
+function curingReport(results: CampaignResult[], dives: number): string[] {
+  const lines: string[] = [];
+  const line = (label: string, ds: DiveRecord[]) => {
+    const ash = sum(ds.map((d) => d.templeTries - d.templeOk)) + sum(ds.map((d) => d.ashInDive));
+    return `  ${label}: 解毒草 使用 ${sum(ds.map((d) => d.antidotes))}・店で買った ${sum(ds.map((d) => d.shopAntidotes))} / 街に着いた時点で毒 ${sum(ds.map((d) => d.poisonedAtHome))} 人・寺院の治療 ${sum(ds.map((d) => d.cureCount))} 人（費用計 ${sum(ds.map((d) => d.cureCost))}G）・払えず毒のまま ${sum(ds.map((d) => d.cureUnpaid))} 人 / 灰になった ${ash} 人（寺院の蘇生の失敗 ${sum(ds.map((d) => d.templeTries - d.templeOk))}・潜行中 ${sum(ds.map((d) => d.ashInDive))}）・闇魔術で戻した ${sum(ds.map((d) => d.darkCount))} 人（費用計 ${sum(ds.map((d) => d.darkCost))}G）`;
+  };
+  lines.push("M7-解毒: 解毒草と寺院の治療、灰と闇魔術");
+  for (let k = 0; k < dives; k++) lines.push(line(`潜行 ${k + 1}`, results.flatMap((r) => (r.dives[k] === undefined ? [] : [r.dives[k]!]))));
+  lines.push(line("全潜行", results.flatMap((r) => r.dives)));
+  return lines;
 }
 
 /** M7-死因（2026-10-05 ユーザー指示）: 1 潜行あたりの死者数と、死因（敵の種類・階・状態異常の有無）の内訳。既存の出力の後ろに足す */
