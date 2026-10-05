@@ -6,8 +6,8 @@
     "encounterRate": { "room": 0.12, "corridor": 0.05 },
     "encounterTable": {
       "1": [
-        { "monster": "giant_rat", "weight": 5 },
-        { "monster": "kobold", "weight": 4 },
+        { "monster": "giant_rat", "weight": 10 },
+        { "monster": "kobold", "weight": 8 },
         { "monster": "giant_spider", "weight": 1 }
       ],
       "2": [
