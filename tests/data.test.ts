@@ -549,7 +549,7 @@ describe("data: monsters.json", () => {
     expectIssue((r) => (r.monsters[0].unknownKind = "dragon"), "monsters.json", '[0].unknownKind: unknown unknownKind id "dragon"');
     expectIssue((r) => delete r.monsters[1].unknownKind, "monsters.json", "[1].unknownKind: missing required field");
     expectIssue((r) => (r.monsters[2].unidentifiedName = "多脚の影"), "monsters.json", "[2].unidentifiedName: unknown field");
-    // 系統の定義を消すと、その系統を使う敵が止まる（systems との整合は見ない）
+    // 系統の定義を消すと、その系統を使う敵が止まる
     const issues = expectIssue((r) => (r.unknownKinds = r.unknownKinds.filter((k: { id: string }) => k.id !== "spirit")), "monsters.json", '[4].unknownKind: unknown unknownKind id "spirit"');
     expect(issues).toHaveLength(1);
   });
@@ -576,7 +576,7 @@ describe("data: unknown-kinds.json（CB-05 / UI-60。M7）", () => {
     expectIssue((r) => (r.unknownKinds[2].placeholderColor = "black"), F, "[2].placeholderColor: expected one of");
     expectIssue((r) => (r.unknownKinds[3].id = "beast"), F, "duplicate");
     expectIssue((r) => (r.unknownKinds = []), F, "expected at least 1");
-    expectIssue((r) => (r.unknownKinds[0].systems = ["mage"]), F, "[0].systems: unknown field");
+    expectIssue((r) => (r.unknownKinds[0].foo = 1), F, "[0].foo: unknown field");
   });
 });
 
