@@ -78,11 +78,14 @@ export function enemyFill(data: GameData, monsterId: string, identified: boolean
   return ENEMY_FILLS[i % ENEMY_FILLS.length] ?? "dim";
 }
 
-/** UI-60: 絵の名前（public/sprites/<名前>.png）。鑑定済みは monsters[].sprite、未鑑定は系統の sprite（unknown_<kind>）。未知の id は null */
+/**
+ * UI-60: 絵の名前（public/sprites/<名前>.png）。未鑑定は系統の sprite（unknown_<kind>）。
+ * 鑑定済みは素材が揃うまで PNG を読まない（M3 のまま矩形。戦闘ごとの 404 を避ける）ので null。未知の id も null
+ */
 export function enemySprite(data: GameData, monsterId: string, identified: boolean): string | null {
   const m = data.monsters.find((x) => x.id === monsterId);
   if (m === undefined) return null;
-  if (identified) return m.sprite;
+  if (identified) return null;
   return data.unknownKinds.find((k) => k.id === m.unknownKind)?.sprite ?? null;
 }
 

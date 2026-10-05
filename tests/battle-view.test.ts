@@ -72,8 +72,8 @@ describe("UI-54 敵グループの列", () => {
     expect(ENEMY_FILLS).not.toContain("black");
   });
 
-  test("UI-60 enemySprite / spriteUrl: 鑑定済みは monsters[].sprite、未鑑定は系統の unknown_<kind>（<id>_silhouette は使わない）。URL は {base}sprites/<名前>.png", () => {
-    expect(enemySprite(data, "kobold", true)).toBe("kobold");
+  test("UI-60 enemySprite / spriteUrl: 鑑定済みは素材が揃うまで読まない（null）、未鑑定は系統の unknown_<kind>（<id>_silhouette は使わない）。URL は {base}sprites/<名前>.png", () => {
+    for (const m of data.monsters) expect(enemySprite(data, m.id, true), m.id).toBeNull();
     expect(enemySprite(data, "kobold", false)).toBe("unknown_humanoid");
     expect(enemySprite(data, "rotting_corpse", false)).toBe("unknown_humanoid");
     expect(enemySprite(data, "giant_spider", false)).toBe("unknown_beast");
@@ -301,32 +301,30 @@ describe("UI-54 戦闘のビュー（DOM）", () => {
     ]);
   });
 
-  test("UI-60 絵: 各列の矩形の中に <img>（{base}sprites/<名前>.png、未鑑定は unknown_<kind>）。塗りは未鑑定なら系統の色。読めたら塗りを消して絵を出し、読めなければ矩形のまま、その URL は次の描き直しで読まない", () => {
+  test("UI-60 絵: 未鑑定の列の矩形の中に <img>（{base}sprites/unknown_<kind>.png）。鑑定済みは <img> を作らない。塗りは未鑑定なら系統の色。読めたら塗りを消して絵を出し、読めなければ矩形のまま、その URL は次の描き直しで読まない", () => {
     const { v, byClass } = setup();
     const sprites = byClass("battle-group-sprite");
     const imgs = byClass("battle-group-img");
     expect(imgs.map((i) => (i as unknown as { src: string }).src)).toEqual([
       "/sprites/unknown_beast.png",
-      "/sprites/kobold.png",
       "/sprites/unknown_beast.png",
     ]);
-    expect(sprites.map((s) => s.children)).toEqual([[imgs[0]], [imgs[1]], [imgs[2]]]);
-    expect(imgs.map((i) => i.style["display"])).toEqual(["none", "none", "none"]);
+    expect(sprites.map((s) => s.children)).toEqual([[imgs[0]], [], [imgs[1]]]);
+    expect(imgs.map((i) => i.style["display"])).toEqual(["none", "none"]);
     // 未鑑定の大ネズミと大蜘蛛（同じ beast）は同じ色。鑑定済みのコボルドは敵ごとの色
     const beast = PALETTE[data.unknownKinds.find((k) => k.id === "beast")!.placeholderColor];
     expect(sprites.map((s) => s.style["background"])).toEqual([beast, PALETTE[enemyFill(data, "kobold", true)], beast]);
     // 読めた: 塗りを消して絵を出す
     imgs[1]!.dispatch("load");
     expect(imgs[1]!.style["display"]).toBe("block");
-    expect(sprites[1]!.style["background"]).toBe("transparent");
+    expect(sprites[2]!.style["background"]).toBe("transparent");
     // 読めなかった: 矩形のまま。次の描き直しではその URL の <img> を作らない
     imgs[0]!.dispatch("error");
     expect(imgs[0]!.style["display"]).toBe("none");
     expect(sprites[0]!.style["background"]).toBe(beast);
     v.setGroups(GROUPS);
-    const imgs2 = byClass("battle-group-img").slice(3);
-    expect(imgs2.map((i) => (i as unknown as { src: string }).src)).toEqual(["/sprites/kobold.png"]);
-    expect(byClass("battle-group-sprite").slice(3).map((s) => s.children.length)).toEqual([0, 1, 0]);
+    expect(byClass("battle-group-img").slice(2)).toEqual([]);
+    expect(byClass("battle-group-sprite").slice(3).map((s) => s.children.length)).toEqual([0, 0, 0]);
   });
 
   test("UI-54 ラベルは 2 行（高さ 20・行間 10）まで折り返し、3 行目以降は -webkit-line-clamp 2 で省く。位置は groupLabelRects（列の箱の左上からの相対）", () => {
