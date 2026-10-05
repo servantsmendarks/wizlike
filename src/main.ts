@@ -21,6 +21,8 @@ import tavern from "../data/tavern.json";
 import strings from "../data/strings.json";
 import wavetables from "../data/wavetables.json";
 import audio from "../data/audio.json";
+// UI-63 / UI-65 / UI-60（M8）: ビルド時に検証した曲・効果音・絵の一覧（vite.config.ts の wizlike-assets）
+import assets from "virtual:wizlike-assets";
 import { GameDataError, loadGameData, type GameData, type RawGameData } from "./core/data";
 import { mountStage } from "./presenter/stage";
 import { createApp } from "./presenter/app";
@@ -112,7 +114,7 @@ async function start(): Promise<void> {
     migrations: createMigrations(data.dungeons),
   });
   // mountStage は同期で 1 回 onLayout を呼ぶので、app を先に作る。
-  const app = createApp({ stage: stageEl, data, settings, saves });
+  const app = createApp({ stage: stageEl, data, settings, saves, assets });
   mountStage(stageEl, data.config.stage, app.onLayout);
   app.start();
   // SV-42: 本番ビルドでだけ Service Worker を登録する（開発では残っている登録を解除する）。失敗しても起動は止めない。

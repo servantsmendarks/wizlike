@@ -14,6 +14,7 @@
 // - 画面の切り替えは各画面のルート要素の表示と非表示だけで行う。迷宮の DOM は 1 回だけ作る。
 // モジュールのトップレベルでは DOM に触れない。
 import type { GameData } from "../core/data/index";
+import type { GameAssets } from "../build/asset-types";
 import { execute, createInitialState } from "../core/engine";
 import { createRng, type RngState } from "../core/rng";
 import { battleMenu } from "../core/rules/combat";
@@ -150,7 +151,15 @@ const IMPORT_FAILED: Readonly<Record<"format" | "broken" | "tooNew" | "checksum"
 
 type DispatchResult = CommandResult;
 
-export function createApp(o: { stage: HTMLElement; data: GameData; settings: SettingsStore; saves: SaveService; seed?: number }): App {
+export function createApp(o: {
+  stage: HTMLElement;
+  data: GameData;
+  settings: SettingsStore;
+  saves: SaveService;
+  seed?: number;
+  /** UI-63 / UI-65 / UI-60（M8）: ビルド時に検証した素材（virtual:wizlike-assets）。省略時（テスト）は素材なし = 無音・矩形 */
+  assets?: GameAssets;
+}): App {
   const { data, stage } = o;
   const strings = data.strings;
   const store = o.settings;
