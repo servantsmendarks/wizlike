@@ -178,7 +178,7 @@
 
 ## 7. 素材
 
-- UI-60 モンスター絵は 48×48〜64×64 の PNG【仮】、固定パレット、1 体 4〜6 色。`public/sprites/<monsterId>.png`。未鑑定は系統ごとの `public/sprites/unknown_<kind>.png`（`unknown-kinds.json` の `sprite`。CB-05。M7 2026-10-05 に敵ごとの `<monsterId>_silhouette.png` を廃止）。PNG が読めなければ色付き矩形で代用する。色付き矩形は、鑑定済みは固定パレットの 6 色（orange, sky, red, yellow, gray, lightGreen）を `monsters.json` の順で巡回し、未鑑定は系統の `placeholderColor`（敵ごとの色にしない。同じ系統の別の種類は同じ色）。噂話（TW-15）などで鑑定済みになった敵は、以後は本名と本来の絵（または敵ごとの色）で出る。大きさは 48×48（1 グループのときは 64×64）。
+- UI-60 モンスター絵の PNG は怪物 48×48、ボス 96×96（工房の art.sizes）、固定パレット、1 体 4〜6 色。`public/sprites/<monsters[].sprite>.png`。未鑑定は系統ごとの `public/sprites/unknown_<kind>.png`（`unknown-kinds.json` の `sprite`。CB-05。M7 2026-10-05 に敵ごとの `<monsterId>_silhouette.png` を廃止）。PNG が読めなければ色付き矩形で代用する。色付き矩形は、鑑定済みは固定パレットの 6 色（orange, sky, red, yellow, gray, lightGreen）を `monsters.json` の順で巡回し、未鑑定は系統の `placeholderColor`（敵ごとの色にしない。同じ系統の別の種類は同じ色）。噂話（TW-15）などで鑑定済みになった敵は、以後は本名と本来の絵（または敵ごとの色）で出る。絵の枠は 2 グループ以上 48、1 グループ 64、1 グループのボス 96。
   - M8: 絵は `public/sprites` に実在する PNG（ビルド時の一覧 `virtual:wizlike-assets` の sprites。UI-64 / UI-65 / UI-60 の取り込み）だけを読む。一覧に無い絵は読みに行かず矩形のまま（素材が無い間に 404 や SPA の HTML を取りに行かない）。鑑定済みは `monsters.json` の `sprite`（本名）、未鑑定は系統の `unknown_<kind>`。PNG の大きさは怪物 48×48、ボス 96×96（工房の art.sizes）。絵の枠（2 グループ以上は 48、1 グループは 64、1 グループのボスは 96）に入る最大の整数倍で拡大し（最近傍。`image-rendering: pixelated`）、枠の中央に置く。縮小はしない（正方形でない絵・枠に 1 倍でも入らない絵は矩形のまま。例: 2 グループ以上のボスの 96 の絵）。例: 枠 64 の 48 の絵は 1 倍で中央、未鑑定のボス（枠 96）の `unknown_construct`（48）は 2 倍。読み込みに失敗した URL を覚えて読み直さないのは今のまま（オフラインで未キャッシュのときの保険）。
 - UI-61 街の絵は施設ごとに 1 枚、240×150。プロトタイプでは無地でよい。
 
