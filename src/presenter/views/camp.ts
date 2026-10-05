@@ -569,7 +569,7 @@ export type CampView = {
 
 /**
  * rect はステージ座標のパネルの範囲（layout.camp = ビュー領域）。メッセージ窓とパーティ欄は覆わない。
- * tallRect は広げた行のパネル（lines の tall。IT-66 の図鑑。M7）の範囲（layout.listTall.backdrop = ビューと、メッセージ窓の下 2 行を除いた範囲）。
+ * tallRect は広げた行のパネル（lines の tall。IT-66 の図鑑。酒場だけ）の範囲（M8.5: townLayout の book = ビューの上端から操作領域の上端まで）。
  * 幅は rect と同じ前提（行の幅は rect.w で決める）
  */
 export function createCampView(rect: Rect, tallRect: Rect = rect): CampView {

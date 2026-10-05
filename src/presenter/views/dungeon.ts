@@ -1,19 +1,19 @@
 // UI-53 の迷宮の画面。ui §2 の 5 領域（ヘッダー、ビュー、メッセージ、パーティ、操作）を合成する。
-// DOM は 1 回だけ作り、街（UI-52 の M2 版）でもヘッダー・メッセージ・パーティ・操作をそのまま使う（ビューは枠だけ）。
+// DOM は 1 回だけ作り、街（UI-13。M8.5）でもヘッダー・ビュー・操作を使う。街ではビューに施設の絵（UI-61。views/town-picture.ts）を出し、
+// メッセージ窓と 64 のパーティ欄を隠して、パーティの帯（views/party-band.ts）・見出しと一覧（controls の setList の town）を townLayout の位置に出す。
 // - ビュー: 線画の SVG（240×150）。スワイプはステージ全体で受ける（input/tap.ts。UI-30）。受ける間は画面に class swipe-on を付け、
 //   style.css で touch-action: none にする（ボタンの上で始めたスワイプがブラウザのパンにならないように。UI-37）。
 // - 地図（UI-24）と全滅の内訳（UI-56）と履歴（UI-46）: ビューとメッセージの領域（既定 y16..235）を覆う overlay。パーティ欄は見えたまま。
 // - キャンプと酒場のパネル（UI-53 / UI-59。views/camp.ts）: ビュー領域だけを覆う。メッセージ窓とパーティ欄は見えたまま。
-//   図鑑（IT-66。M7）だけはビューとメッセージ窓（下 2 行を除く。layout.listTall.backdrop）まで広げるので、DOM ではメッセージ窓の後に置く。
-// - 店・倉庫・酒場の一覧（UI-11 / UI-52。M7）: 操作領域の一覧を layout.listTall に広げる（views/controls.ts の setList の tall。操作領域の要素の子だが、DOM で窓の後なので上に描く）。
-// - 戦闘（UI-54）: ビューの中に敵グループの層（views/battle.ts）を重ね、battle の間は線画・街の枠を隠す。
+//   図鑑（IT-66。酒場だけ）は townLayout の book（ビューの上端から操作領域の上端まで）に広げるので、DOM では帯の後に置く。
+// - 戦闘（UI-54）: ビューの中に敵グループの層（views/battle.ts）を重ね、battle の間は線画・街の絵を隠す。
 //   ダイスの overlay（views/dice.ts、UI-40）はビューの中のいちばん上（モードを問わない）。全体攻撃の揺れ（UI-42）はビュー全体の translate。
 // 各部品の位置と大きさは、config.ui.layout から作った regions と dungeonLayout（layout.ts）から決める。
 // 部品の結線（何を描くか、Action を何にするか）は app が行う。モジュールのトップレベルでは DOM に触れない。
 import type { SpriteInfo } from "../../build/asset-types";
 import type { GameData, Strings } from "../../core/data/index";
 import type { Pos } from "../../core/types";
-import type { DungeonLayout, Regions } from "../layout";
+import type { DungeonLayout, Regions, TownLayout } from "../layout";
 import { createBattleView, type BattleView } from "./battle";
 import { createCampView, type CampView } from "./camp";
 import { createControls, type Controls, type DpadAction } from "./controls";
@@ -25,6 +25,8 @@ import { createHistoryView, type HistoryView } from "./history";
 import { createMapView, type MapViewEl } from "./map";
 import { createMessageWindow, type MessageWindow } from "./message";
 import { createPartyPanel, type MaxOf, type PartyPanel, type StageOf } from "./party";
+import { createPartyBand, type PartyBand } from "./party-band";
+import { createTownPicture } from "./town-picture";
 import { createWipeView, type WipeView } from "./wipe";
 
 export type PlayMode = "town" | "dungeon" | "battle";
@@ -34,7 +36,10 @@ export type DungeonScreen = {
   header: Header;
   view: DungeonSvg;
   message: MessageWindow;
+  /** パーティ欄（UI-12）。setSan / setLife / setStatus / render は街の帯（UI-13）にも反映する */
   party: PartyPanel;
+  /** UI-13（M8.5）: 街のパーティの帯 */
+  band: PartyBand;
   controls: Controls;
   map: MapViewEl;
   /** ビューの中の敵グループの層（battle のときだけ見える） */
@@ -49,8 +54,10 @@ export type DungeonScreen = {
   wipe: WipeView;
   /** UI-46 の履歴の画面（地図と同じ範囲） */
   history: HistoryView;
-  /** town ならビューは枠だけ、dungeon なら線画、battle なら敵グループ */
+  /** town ならビューは施設の絵（UI-61）で、メッセージ窓とパーティ欄を隠して帯とログのボタンを出す。dungeon なら線画、battle なら敵グループ */
   setMode(m: PlayMode): void;
+  /** UI-61（M8.5）: 街の施設の絵（townFacility の id。一覧に無ければ黒） */
+  setTownPicture(facility: string): void;
   /** UI-42 の全体攻撃: ビュー全体を translateX 0→−2→2→−2→0（ms が 0 以下なら何もせずに解決） */
   shake(ms: number): Promise<void>;
   /** 地図の overlay の表示 */
@@ -77,6 +84,8 @@ export function createDungeonScreen(o: {
   regions: Regions;
   /** regions から dungeonLayout で作った矩形 */
   layout: DungeonLayout;
+  /** UI-13（M8.5）: regions から townLayout で作った街の画面の矩形 */
+  town: TownLayout;
   /** 文字送りの 1 文字あたりの ms（UI-43） */
   textSpeed(): number;
   historyMax: number;
@@ -85,6 +94,10 @@ export function createDungeonScreen(o: {
   /** UI-12 / TW-15 / CH-14: パーティ欄の HP / MP / SAN の最大（core の memberSheet。省略は素の値） */
   maxOf?: MaxOf;
   onSettings(): void;
+  /** UI-46 / UI-13（M8.5）: 街のヘッダーのログ */
+  onLog(): void;
+  /** UI-13（M8.5）: 街の帯のタップ（その人の id） */
+  onBand(memberId: string): void;
   /** 十字ボタンのタップ */
   onAction(a: DpadAction): void;
   /** 前進ボタンの長押し（UI-31） */
@@ -100,13 +113,16 @@ export function createDungeonScreen(o: {
   onSound?(k: "ok" | "cancel"): void;
   /** UI-60（M8）: public/sprites に実在する絵の一覧（GameAssets.sprites）。省略時は絵を読まない */
   sprites?: Readonly<Record<string, SpriteInfo>>;
+  /** UI-61（M8.5）: public/town に実在する施設の絵の一覧（GameAssets.town）。省略時は黒 */
+  townPictures?: Readonly<Record<string, SpriteInfo>>;
 }): DungeonScreen {
   const r = o.regions;
   const lay = o.layout;
   const el = document.createElement("div");
   el.className = "screen screen-play";
 
-  const header = createHeader({ strings: o.strings, region: r.header, layout: lay.header, onSettings: o.onSettings });
+  const tl = o.town;
+  const header = createHeader({ strings: o.strings, region: r.header, layout: lay.header, town: tl.header, onSettings: o.onSettings, onLog: o.onLog });
 
   // ビュー
   const viewBox = document.createElement("div");
@@ -117,10 +133,9 @@ export function createDungeonScreen(o: {
   const view = createDungeonSvg();
   at(view.el, 0, 0);
   viewBox.appendChild(view.el);
-  // 街のビューは枠だけ（UI-61 の絵は M2 では無い）
-  const townFrame = document.createElement("div");
-  townFrame.className = "play-view-frame";
-  viewBox.appendChild(townFrame);
+  // UI-61（M8.5）: 街のビューは施設の絵（一覧に無ければ黒）
+  const townPic = createTownPicture({ w: r.view.w, h: r.view.h, available: o.townPictures ?? {}, base: import.meta.env.BASE_URL });
+  viewBox.appendChild(townPic.el);
   const battle = createBattleView(o.data, o.strings, r.view.w, r.view.h, (g) => o.onPick?.(g), o.sprites ?? {});
   battle.el.style.display = "none";
   viewBox.appendChild(battle.el);
@@ -131,7 +146,7 @@ export function createDungeonScreen(o: {
 
   const message = createMessageWindow({ speed: o.textSpeed, historyMax: o.historyMax, region: r.message, layout: lay.message });
 
-  const party = createPartyPanel({
+  const panel = createPartyPanel({
     strings: o.strings,
     classes: o.data.classes,
     region: r.party,
@@ -140,9 +155,41 @@ export function createDungeonScreen(o: {
     ...(o.maxOf !== undefined ? { maxOf: o.maxOf } : {}),
   });
 
+  // UI-13（M8.5）: 街のパーティの帯。段は core の sanStage、最大は memberSheet の実効の sanMax（パーティ欄と同じ）
+  const band = createPartyBand({
+    strings: o.strings,
+    row: tl.band.row,
+    cells: tl.band.cells,
+    hits: tl.band.hits,
+    stageOf: o.stageOf,
+    sanMaxOf: (ch) => (o.maxOf !== undefined ? o.maxOf(ch).sanMax : ch.sanMax),
+    onPick: (id) => o.onBand(id),
+  });
+  band.el.style.display = "none";
+  /** パーティ欄の setter を帯にも流す（再生中の sanChanged / statusChanged / lifeChanged と、sync の render） */
+  const party: PartyPanel = {
+    ...panel,
+    render(p): void {
+      panel.render(p);
+      band.render(p);
+    },
+    setSan(id, san): void {
+      panel.setSan(id, san);
+      band.setSan(id, san);
+    },
+    setLife(id, life): void {
+      panel.setLife(id, life);
+      band.setLife(id, life);
+    },
+    setStatus(id, status, on): void {
+      panel.setStatus(id, status, on);
+      band.setStatus(id, status, on);
+    },
+  };
+
   const controls = createControls({
     region: r.controls,
-    layout: lay,
+    layout: { ...lay, townList: { heading: tl.heading, area: tl.list.area, rows: tl.list.rows } },
     strings: o.strings,
     onAction: o.onAction,
     hold: o.hold,
@@ -155,8 +202,8 @@ export function createDungeonScreen(o: {
   const map = createMapView(lay.map, (p) => o.onMapCell?.(p), o.data.config.ui.mapSnapPx);
   map.el.style.display = "none";
 
-  // キャンプと酒場のパネル（UI-53）はビュー領域だけ（図鑑だけ listTall.backdrop に広げる。M7）
-  const camp = createCampView(lay.camp, lay.listTall.backdrop);
+  // キャンプと酒場のパネル（UI-53）はビュー領域だけ（酒場の図鑑だけ townLayout の book に広げる。M8.5）
+  const camp = createCampView(lay.camp, tl.book);
   camp.el.style.display = "none";
 
   // 全滅の内訳（UI-56）は地図と同じ範囲
@@ -167,7 +214,7 @@ export function createDungeonScreen(o: {
   const history = createHistoryView(lay.history);
   history.el.style.display = "none";
 
-  el.append(viewBox, header.el, message.el, camp.el, party.el, controls.el, map.el, wipe.el, history.el);
+  el.append(viewBox, header.el, message.el, band.el, camp.el, panel.el, controls.el, map.el, wipe.el, history.el);
 
   return {
     el,
@@ -175,6 +222,7 @@ export function createDungeonScreen(o: {
     view,
     message,
     party,
+    band,
     controls,
     map,
     battle,
@@ -184,9 +232,18 @@ export function createDungeonScreen(o: {
     wipe,
     history,
     setMode(m: PlayMode): void {
+      const town = m === "town";
       view.el.style.display = m === "dungeon" ? "" : "none";
-      townFrame.style.display = m === "town" ? "" : "none";
+      townPic.el.style.display = town ? "" : "none";
       battle.el.style.display = m === "battle" ? "" : "none";
+      // UI-13: 街はメッセージ窓とパーティ欄を置かず、帯とヘッダーのログを出す
+      message.el.style.display = town ? "none" : "";
+      panel.el.style.display = town ? "none" : "";
+      band.el.style.display = town ? "" : "none";
+      header.setLogVisible(town);
+    },
+    setTownPicture(facility: string): void {
+      townPic.show(facility);
     },
     async shake(ms: number): Promise<void> {
       if (!(ms > 0)) return;

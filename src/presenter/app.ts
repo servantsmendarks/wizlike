@@ -58,7 +58,7 @@ import {
 import { attachPointerLog, createPointerLog } from "./input/pointer-log";
 import { attachSaveOnHide } from "./lifecycle";
 import { attachStageInput, onTap } from "./input/tap";
-import { dungeonLayout, layoutWarnings, LIST_TALL_MESSAGE_LINES, regions, saveBannerRect, settingsLayout } from "./layout";
+import { dungeonLayout, layoutWarnings, regions, saveBannerRect, settingsLayout, townLayout } from "./layout";
 import { createPlayer } from "./playback";
 import type { AudioPlayer } from "./audio";
 import { songAt, soundsFor, type SoundOrder } from "./sound-cues";
@@ -107,7 +107,21 @@ import { createSaveBanner } from "./views/save-banner";
 import { createUpdateNotice } from "./views/update-notice";
 import { createTitleScreen, titleEntries, titleHint, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
 import { formatWipeSummary } from "./views/wipe";
-import { townEntries, townFreshIntro, townHeader, townListTall, townLowersInput, townPageIntro, townParent, townRepair, upgradeConfirmLines, type TownEntry, type TownPage } from "./views/town";
+import {
+  TOWN_INTRO_DEDUP,
+  townEntries,
+  townFacility,
+  townFreshIntro,
+  townHeader,
+  townHeading,
+  townLowersInput,
+  townPageIntro,
+  townParent,
+  townRepair,
+  upgradeConfirmLines,
+  type TownEntry,
+  type TownPage,
+} from "./views/town";
 
 export type Route = "title" | "creation" | "custom" | "town" | "dungeon" | "battle";
 export type Overlay = null | "map" | "debug" | "camp" | "wipe" | "history" | "settings";
@@ -274,11 +288,17 @@ export function createApp(o: {
     strings,
     regions: playRegions,
     layout: playLayout,
+    // UI-13（M8.5）: 街の画面の配置
+    town: townLayout(playRegions, data.config.party.size),
     textSpeed: () => store.get().textSpeed,
     historyMax: data.config.ui.messageHistory,
     stageOf: (san, sanMax) => sanStage(san, sanMax, data.config),
     maxOf: (ch) => memberSheet(state, data, ch), // CH-14 / UI-12（M7）: 実効の hpMax / mpMax / sanMax（core の memberSheet）
     onSettings: () => guard(() => openSettings()),
+    // UI-46 / UI-13（M8.5）: 街のヘッダーのログ（他の overlay があるとき・再生中は捨てる）
+    onLog: () => guard(() => openHistory()),
+    // UI-13 / UI-59（M8.5）: 街の帯のタップでその人の状態
+    onBand: (id) => guard(() => openCamp("tavern", "status", id)),
     onAction: (a: DpadAction) => tapDpad(a),
     // UI-31: 前進ボタンを動かずに holdRepeatMs 押し続けたら連打を始め、離したら止める
     hold: {
@@ -293,6 +313,8 @@ export function createApp(o: {
     onSound: (k) => playUi(k),
     // UI-60（M8）: public/sprites に実在する絵の一覧だけ読む（素材が無い間は空 = 矩形）
     sprites: o.assets?.sprites ?? {},
+    // UI-61（M8.5）: public/town に実在する施設の絵の一覧だけ読む（素材が無い間は空 = 黒）
+    townPictures: o.assets?.town ?? {},
   });
 
   // UI-57: debug パネルの「ポインタ」に出す直近 20 件のポインタイベント（表示層だけ。保存しない）
@@ -484,7 +506,7 @@ export function createApp(o: {
     // 窓の下に見えている直近の文と同じ語りは重ねて出さない（段を戻ってまた進んだとき。UI-52 / TW-17）
     const texts = townFreshIntro(
       [...townPageIntro(page, menu).map(t), ...upgradeConfirmLines(page, menu, previewOf(page), strings)],
-      play.message.history().slice(-LIST_TALL_MESSAGE_LINES),
+      play.message.history().slice(-TOWN_INTRO_DEDUP),
     );
     const skip = store.get().skipAnimations;
     texts.forEach((x, i) => void play.message.say(x, skip || i < texts.length - 1));
@@ -635,15 +657,12 @@ export function createApp(o: {
       townPage = townRepair(townPage, menu);
       const ents = townEntries(townPage, menu, strings, previewOf(townPage));
       const items = ents.map(townItem);
-      if (townPage === "menu") {
-        // UI-52: 施設メニューは 3 列 × 2 段の 6 枠
-        c.setBattleMenu(items, "town");
-        c.setMode("battle");
-      } else {
-        // UI-11: 末尾の戻るは一覧の外に固定する
-        c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", tall: townListTall(townPage) });
-        c.setMode("list");
-      }
+      // UI-52 / UI-61（M8.5）: ヘッダーは場所と所持金、ビューは施設の絵
+      play.header.setText(townHeader(menu, strings, townPage));
+      play.setTownPicture(townFacility(townPage));
+      // UI-13: 見出し（段の問い。ログに残さない）と一覧。施設メニューも 6 行の一覧。UI-11: 末尾の戻るは一覧の外に固定する
+      c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading: t(townHeading(townPage)) } });
+      c.setMode("list");
       return;
     }
     if (route === "battle") {
@@ -1522,7 +1541,7 @@ export function createApp(o: {
    * UI-53 / TW-03: キャンプを開く。迷宮のキャンプ（host camp）は迷宮で、酒場（host tavern）は街で、
    * 他の overlay が無く、campMenu が非 null のとき（戦闘・保留中は開かない）。open は酒場の項目（状態・呪文・道具・装備・並び順・鑑定）
    */
-  const openCamp = (host: CampHost, open?: CampOpen): void => {
+  const openCamp = (host: CampHost, open?: CampOpen, memberId?: string): void => {
     if (overlay !== null) return;
     if (host === "camp" ? route !== "dungeon" : route !== "town") return;
     const menu = campMenu(state, data);
@@ -1531,6 +1550,8 @@ export function createApp(o: {
     overlay = "camp";
     campHost = host;
     campPage = campFirstPage(host, open, menu);
+    // UI-13（M8.5）: 帯のタップはその人の状態から（やめるで元の街のページへ）
+    if (memberId !== undefined && campPage.kind === "status") campPage = { kind: "status", memberId };
     play.showCamp(true);
     syncControls();
   };

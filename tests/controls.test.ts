@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { shouldReleaseHold, type Overlay, type Route } from "../src/presenter/app";
 import { tapSpecOf } from "../src/presenter/input/tap";
-import { dungeonLayout, regions } from "../src/presenter/layout";
+import { dungeonLayout, regions, townLayout } from "../src/presenter/layout";
 import { createControls } from "../src/presenter/views/controls";
 import { data } from "./helpers/core";
 
@@ -148,7 +148,7 @@ describe("controls", () => {
     expect(picked).toEqual([7, 0]);
   });
 
-  test("UI-54/UI-52 setBattleMenu の配置: party は battleParty の 4 枠、member は battleMember の 5 枠、town は townMenu の 6 枠に置き、枠数を超える分は捨てる", () => {
+  test("UI-54 setBattleMenu の配置: party は battleParty の 4 枠、member は battleMember の 5 枠に置き、枠数を超える分は捨てる", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);
     const L = dungeonLayout(g, data.config.party.size);
@@ -180,16 +180,6 @@ describe("controls", () => {
     c.select(4);
     c.select(5);
     expect(picked).toEqual([3, 4]);
-    // UI-52 town は townMenu の 6 枠（7 件目は捨てる）
-    const before2 = created.length;
-    c.setBattleMenu([...items, { label: "x6", onSelect: () => picked.push(6) }], "town");
-    expect(created.slice(before2).filter((e) => e.className === "controls-battle-item").map((e) => [e.style["left"], e.style["top"], e.style["width"], e.style["height"]])).toEqual(
-      L.townMenu.map(rel),
-    );
-    c.select(0);
-    c.select(5);
-    c.select(6);
-    expect(picked).toEqual([3, 4, 0, 5]);
   });
 
   test("UI-54 一覧の onFocus は pointerenter / pointerdown で呼ばれ（選ぶのは離したとき）、一覧を作り直さない。setListFocus は注目の行の枠を accent にする（dim の行は dim のまま）", () => {
@@ -266,13 +256,13 @@ describe("controls", () => {
       { label: "back", onSelect: () => picked.push(`${tag}back`) },
     ];
     const buttons = (): FakeEl[] => created.filter((e) => e.className === "controls-list-item" || e.className === "controls-list-back-item");
-    c.setList(items("a"), { fixedLast: true, tall: true });
+    c.setList(items("a"), { fixedLast: true, town: { heading: "h" } });
     c.setMode("list");
     const [row, back] = buttons();
     c.setListFocus(0);
     expect(row!.style["borderColor"]).toBe("var(--c-accent)");
     // 再生の終わりの sync と同じ: 同じ一覧を描き直す
-    c.setList(items("b"), { fixedLast: true, tall: true });
+    c.setList(items("b"), { fixedLast: true, town: { heading: "h" } });
     c.setMode("list");
     expect(buttons()).toHaveLength(2);
     // 注目の枠は作り直したときと同じく外れる
@@ -281,9 +271,9 @@ describe("controls", () => {
     row!.tap();
     expect(picked).toEqual(["bback", "b0"]);
     // dim が替わったら作り直す（古い要素は押しても新しい項目を選ばない）
-    c.setList(items("c", true), { fixedLast: true, tall: true });
+    c.setList(items("c", true), { fixedLast: true, town: { heading: "h" } });
     expect(buttons()).toHaveLength(4);
-    // 広げ方が替わっても作り直す
+    // 置き方（街の一覧かどうか）が替わっても作り直す
     c.setList(items("d", true), { fixedLast: true });
     expect(buttons()).toHaveLength(6);
   });
@@ -349,44 +339,60 @@ describe("controls", () => {
     expect(holder.style["display"]).toBe("none");
   });
 
-  test("UI-11/UI-52（M7）setList(tall) は一覧をビューとメッセージの領域（layout.listTall）に広げる: 一覧は x8・y16・224×198（行は 22px）、下敷きは y16..213 の全幅、戻るは操作領域の固定の位置。tall なしで元の位置（y302・96px）に戻す", () => {
+  test("UI-13/UI-11（M8.5）setList(town) は見出し（accent の 1 行）と一覧を townList の位置に置く: 見出し x8・y178・224×10、一覧は x8・y190・168×198（行は 22px）、戻るは操作領域の固定の位置。town なしで元の位置（y302・96px）に戻し、見出しを隠す", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);
     const L = dungeonLayout(g, data.config.party.size);
-    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, hold: HOLD, onClose: () => {} });
+    const T = townLayout(g, data.config.party.size);
+    const c = createControls({
+      region: g.controls,
+      layout: { ...L, townList: { heading: T.heading, area: T.list.area, rows: T.list.rows } },
+      strings: data.strings,
+      onAction: () => {},
+      hold: HOLD,
+      onClose: () => {},
+    });
     const picked: number[] = [];
     const rows = Array.from({ length: 10 }, (_, i) => ({ label: `r${i}`, onSelect: () => picked.push(i) }));
-    c.setList([...rows, { label: "back", onSelect: () => picked.push(10) }], { fixedLast: true, tall: true });
+    c.setList([...rows, { label: "back", onSelect: () => picked.push(10) }], { fixedLast: true, town: { heading: "どこへ潜る？" } });
     c.setMode("list");
     const list = created.find((e) => e.className === "controls-list")!;
     const holder = created.find((e) => e.className === "controls-list-back")!;
-    const backdrop = created.find((e) => e.className === "controls-list-backdrop")!;
-    // 操作領域の原点は y300。一覧は y16（−284）・x8、高さは 22 × 9 = 198（下端 213。窓の下 2 行 y214..233 は見える）
-    expect([list.style["left"], list.style["top"], list.style["width"], list.style["height"]]).toEqual(["8px", "-284px", "224px", "198px"]);
-    expect(list.children.map((e) => e.style["height"])).toEqual(Array.from({ length: 10 }, () => "22px"));
-    expect(list.children.map((e) => e.style["width"])).toEqual(Array.from({ length: 10 }, () => "224px"));
-    expect([backdrop.style["left"], backdrop.style["top"], backdrop.style["width"], backdrop.style["height"], backdrop.style["display"]]).toEqual([
-      "0px",
-      "-284px",
-      "240px",
-      "198px",
+    const heading = created.find((e) => e.className === "controls-list-heading")!;
+    // 操作領域の原点は y300。見出しは y178（−122）、一覧は y190（−110）・x8、高さは 22 × 9 = 198（下端 387）
+    expect([heading.style["left"], heading.style["top"], heading.style["width"], heading.style["height"], heading.style["display"]]).toEqual([
+      "8px",
+      "-122px",
+      "224px",
+      "10px",
       "",
     ]);
+    expect(heading["textContent"]).toBe("どこへ潜る？");
+    expect(heading.style["color"]).toBe("var(--c-accent)");
+    expect(tapSpecOf(heading)).toBeNull();
+    expect([list.style["left"], list.style["top"], list.style["width"], list.style["height"]]).toEqual(["8px", "-110px", "168px", "198px"]);
+    expect(list.children.map((e) => e.style["height"])).toEqual(Array.from({ length: 10 }, () => "22px"));
+    expect(list.children.map((e) => e.style["width"])).toEqual(Array.from({ length: 10 }, () => "168px"));
     // 戻るは今までと同じ操作領域の x178・y54（56×40）。添字・数字キーは items の順のまま
     expect(holder.children.map((e) => [e["textContent"], e.style["left"], e.style["top"]])).toEqual([["back", "178px", "54px"]]);
     c.select(10);
     c.select(9);
     list.children[0]!.tap();
     expect(picked).toEqual([10, 9, 0]);
-    // 一覧以外のモードでは下敷きも隠す
+    // 施設メニュー（戻るなし）も幅 168 の一覧
+    c.setList(rows.slice(0, 6), { town: { heading: "どこへ行く？" } });
+    expect(list.style["width"]).toBe("168px");
+    expect(heading["textContent"]).toBe("どこへ行く？");
+    expect(holder.style["display"]).toBe("none");
+    // 一覧以外のモードでは見出しも隠す
     c.setMode("none");
-    expect(backdrop.style["display"]).toBe("none");
-    // tall なし（キャンプ・戦闘の一覧など）は元の位置（layout.list: x8・y302・高さ 96、行 32px）に戻し、下敷きを出さない
+    expect(heading.style["display"]).toBe("none");
+    // town なし（キャンプ・戦闘の一覧など）は元の位置（layout.list: x8・y302・高さ 96、行 32px）に戻し、見出しを出さない
     c.setList([{ label: "a", onSelect: () => {} }, { label: "back", onSelect: () => {} }], { fixedLast: true });
     c.setMode("list");
     expect([list.style["left"], list.style["top"], list.style["width"], list.style["height"]]).toEqual(["8px", "2px", "168px", "96px"]);
     expect(list.children.map((e) => e.style["height"])).toEqual(["32px"]);
-    expect(backdrop.style["display"]).toBe("none");
+    expect(heading.style["display"]).toBe("none");
   });
 
   test("UI-11 一覧は出すたびに先頭から: setMode(\"list\") で一覧の scrollTop を 0 にする（表示した後にも戻す）", () => {

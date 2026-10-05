@@ -9,12 +9,12 @@ import { cloneState, createItemInstance } from "../src/core/state";
 import type { Character, GameState, TownMenu } from "../src/core/types";
 import {
   samePage,
+  TOWN_INTRO_DEDUP,
   townEntries,
   townFacility,
   townFreshIntro,
   townHeader,
   townHeading,
-  townListTall,
   townLowersInput,
   townPageIntro,
   townParent,
@@ -271,31 +271,7 @@ describe("UI-52 街のページ", () => {
     expect(upgradeConfirmLines("dark", m, p, S)).toEqual([]);
   });
 
-  test("UI-11/UI-52/TW-17（M7）townListTall: 店・倉庫・酒場の一覧と、闇魔術の強化の 鍛える者・部位・触媒 の段を広げる。施設メニュー・宿・寺院・闇魔術の最初の一覧と灰から戻す・強化の確認・迷宮の入口は広げない。店の鑑定も広げない（呪われた品では結果が 3 行になる）", () => {
-    const sel = { memberId: "c1", slot: "weapon" as const, picked: [] };
-    const tall: TownPage[] = [
-      "upgrade",
-      { upSlot: "c1" },
-      { upCat: sel },
-      "tavern",
-      "shop",
-      "shopBuy",
-      "shopSell",
-      "shopBuyback",
-      "storage",
-      "storageDeposit",
-      "storageWithdraw",
-      { shop: "herb" },
-      { sell: "c1" },
-      { buyback: "i1" },
-      { deposit: "c1" },
-      { withdraw: "i1" },
-    ];
-    const normal: TownPage[] = ["menu", "shopIdentify", "inn", "temple", { temple: "cure" }, "dark", "darkRevive", { upConfirm: sel }, "gate"];
-    expect(tall.filter((p) => !townListTall(p))).toEqual([]);
-    expect(normal.filter((p) => townListTall(p))).toEqual([]);
-  });
-
+  // M8.5: townListTall（M7 の広げた一覧のページ）は UI-13 の街の配置に置き換えて削除した（どのページも同じ一覧の位置）
   test("UI-52/TW-17（M7）townFreshIntro: 窓の下に見えている直近の文（recent）と同じ語りは重ねて出さない。強化の段を戻ってまた進んでも「どれを鍛える？ / 触媒を選べ。」が重ならない", () => {
     const slot = S["town.upgrade.slot"]!;
     const cat = S["town.upgrade.catalyst"]!;
@@ -310,6 +286,8 @@ describe("UI-52 街のページ", () => {
     const xs = ["a"];
     expect(townFreshIntro(xs, [])).toEqual(["a"]);
     expect(townFreshIntro(xs, [])).not.toBe(xs);
+    // M8.5: app が照合する履歴の末尾の件数（LIST_TALL_MESSAGE_LINES の代わり）
+    expect(TOWN_INTRO_DEDUP).toBe(2);
   });
 
   test("UI-52（M8.5）townHeading: 全ページで strings にある params の無いキーで、1 行（見出しの幅 224 = 全角 28 字）に収まる", () => {

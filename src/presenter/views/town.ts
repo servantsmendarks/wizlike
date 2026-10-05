@@ -1,5 +1,5 @@
-// UI-52 の街。施設メニューは 酒場・宿屋・寺院 / 闇魔術・迷宮へ・店 の 3 列 × 2 段の 6 枠（操作領域の layout.townMenu）。各施設はリスト選択。
-// 街の画面は迷宮の画面（views/dungeon.ts）の 5 領域をそのまま使う（ビューは枠だけ）。ここはページの中身を決める純粋な部分。
+// UI-52 の街。施設メニューは 酒場・宿屋・寺院・闇魔術・迷宮へ・店 の 6 行の一覧（M8.5。UI-13 の街の一覧）。各施設もリスト選択。
+// 街の画面の配置は UI-13（layout の townLayout。views/dungeon.ts が組む）。ここはページの中身・見出し・施設を決める純粋な部分。
 // 料金・押せるか・候補（宿のランク、寺院・闇魔術の対象、救済の候補、店の売り物・売れる品・買い戻し・鑑定・持たせる者、倉庫、入れる迷宮）は
 // core の townMenu の値だけで決める（UI-35）。
 // 表示層は式を持たない。どの項目で何を送るか（town.inn / town.temple / town.dark / town.mercy / town.shop / town.storage / town.upgrade / dungeon.enter）は app が決める。
@@ -154,7 +154,7 @@ export function townRepair(page: TownPage, menu: TownMenu): TownPage {
 }
 
 /**
- * そのページのリストの項目（menu は 3 列 × 2 段の 6 枠。それ以外は一覧で末尾が戻る）。
+ * そのページのリストの項目（menu は 6 行で戻るは無い。それ以外は一覧で末尾が戻る）。
  * preview は { upConfirm } のときに app が core の upgradePreview で取った値（それ以外のページでは使わない）
  */
 export function townEntries(page: TownPage, menu: TownMenu, strings: Strings, preview: UpgradePreview | null = null): TownEntry[] {
@@ -509,9 +509,12 @@ export function townHeading(page: TownPage): string {
   }
 }
 
+/** UI-52（M8.5）: townFreshIntro が照合する全文の履歴の末尾の件数【仮】（M7 の窓の下 2 行の名残。広げた一覧は UI-13 に置き換えた） */
+export const TOWN_INTRO_DEDUP = 2;
+
 /**
- * UI-52 / TW-17（M7）: ページに入ったときの語り（整形済み）のうち、窓の下に見えている直近の文（recent。app は履歴の末尾
- * LIST_TALL_MESSAGE_LINES 件を渡す）と同じものを省く。段を戻ってまた進んだときに同じ語りを重ねて出さない。新しい配列を返す
+ * UI-52 / TW-17（M7）: ページに入ったときの語り（整形済み）のうち、直近の文（recent。app は全文の履歴の末尾
+ * TOWN_INTRO_DEDUP 件を渡す）と同じものを省く。段を戻ってまた進んだときに同じ語りを重ねて出さない。新しい配列を返す
  */
 export function townFreshIntro(texts: readonly string[], recent: readonly string[]): string[] {
   return texts.filter((x) => !recent.includes(x));
@@ -532,29 +535,6 @@ export function upgradeConfirmLines(page: TownPage, menu: TownMenu, preview: Upg
   ];
   if (!preview.affordable) lines.push(s(strings, "town.upgrade.noGold"));
   return lines;
-}
-
-/**
- * UI-11 / UI-52（M7）: 一覧をビューとメッセージの領域に広げるページか（layout.listTall。メッセージ窓は下 2 行だけ見える）。
- * 店（最初の一覧・買う・持たせる者・売る者と品・買い戻しと持たせる者）、倉庫（最初の一覧・預ける者と品・引き出す品と受け取る者）、酒場の一覧、
- * 闇魔術の強化（TW-17）の 鍛える者・部位・触媒 の段（6 人と戻る、触媒 3 つと決めるが操作領域の 3 行に入らないため）。
- * 施設メニュー（3 列 × 2 段）・宿・寺院・闇魔術の最初の一覧と灰から戻す・強化の確認（成功率と料金の語りが 3 行になることがある）・迷宮の入口は広げない。
- * 店の鑑定も広げない（呪われた品では結果の語りが 3 行になり、窓の下 2 行に収まらない）
- */
-export function townListTall(page: TownPage): boolean {
-  if (typeof page === "object")
-    return "shop" in page || "sell" in page || "buyback" in page || "deposit" in page || "withdraw" in page || "upSlot" in page || "upCat" in page;
-  return (
-    page === "upgrade" ||
-    page === "tavern" ||
-    page === "shop" ||
-    page === "shopBuy" ||
-    page === "shopSell" ||
-    page === "shopBuyback" ||
-    page === "storage" ||
-    page === "storageDeposit" ||
-    page === "storageWithdraw"
-  );
 }
 
 /**

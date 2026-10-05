@@ -237,16 +237,6 @@ body {
   overflow: hidden;
 }
 
-.play-view-frame {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  border: 1px solid var(--c-frame);
-  pointer-events: none;
-}
-
 /* debug パネル（M0 の確認画面と設定の仮 UI）。ステージ全面を覆う */
 .debug-panel {
   position: absolute;

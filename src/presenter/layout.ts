@@ -80,17 +80,6 @@ const LIST_NARROW_REL: readonly Rect[] = LIST_ROWS_REL.map((r): Rect => ({ ...r,
 /** UI-11: 一覧の外に固定する戻る / やめる。戦闘のメンバーの戻る（BATTLE_MEMBER_REL[4]）・キャンプの [7] と同じ 56×40。操作領域からの相対 */
 const LIST_BACK_REL: Rect = { x: 178, y: 54, w: 56, h: 40 };
 
-/**
- * UI-11（M7）: 広げた一覧（店・倉庫・酒場の一覧。UI-52）の行の高さ。ビューとメッセージの領域に縦向きで 9 行（既定の layout）を見せるため、
- * TOUCH_MIN_LOGICAL（30）ではなく UI-10 の 12 論理 px 以上の 22（Pixel 3a の scale 1.4545 で約 32 CSS px）。【仮】（decisions 2026-10-05）
- */
-export const LIST_TALL_ROW_H = 22;
-/** UI-11（M7）: 広げた一覧の下に見せておくメッセージ窓の行数（語りの最後の 2 行。窓のタップで履歴 UI-46 も開ける）【仮】 */
-export const LIST_TALL_MESSAGE_LINES = 2;
-/** UI-11（M7）: 広げた一覧の行の x と幅（LIST_ROWS_REL と同じ。固定の戻るは操作領域の LIST_BACK_REL に残すので幅は詰めない） */
-const LIST_TALL_X = 8;
-const LIST_TALL_W = 224;
-
 /** 地図の overlay を閉じるボタン（UI-24）。操作領域からの相対 */
 const MAP_CLOSE_REL: Rect = { x: 60, y: 34, w: 120, h: 32 };
 
@@ -118,15 +107,6 @@ const BATTLE_MEMBER_REL: readonly Rect[] = [
 ];
 
 /**
- * 街の施設メニュー（UI-52）。3 列 × 2 段の 76×40 の 6 枠（酒場・宿屋・寺院 / 闇魔術・迷宮へ・店）。
- * 段の位置と高さは戦闘のパーティの選択と同じ（y 6 / 54、高さ 40）。操作領域からの相対
- */
-const TOWN_MENU_REL: readonly Rect[] = [
-  ...[4, 82, 160].map((x): Rect => ({ x, y: 6, w: 76, h: 40 })),
-  ...[4, 82, 160].map((x): Rect => ({ x, y: 54, w: 76, h: 40 })),
-];
-
-/**
  * キャンプの枠（UI-53 / UI-59）。4 列 × 2 段の 56×40 の 8 枠（[7] がやめる / 戻る）。
  * 列は戦闘のメンバーの枠と同じ x 4 / 62 / 120 / 178、段は y 6 / 54。操作領域からの相対
  */
@@ -141,7 +121,7 @@ const AUTO_STOP_REL: Rect = { ...BATTLE_PARTY_REL[0]! };
 
 /** 操作領域の中身が収まる最小の高さ（相対矩形の下端の最大）。既定の layout では 98 */
 export const CONTROLS_MIN_HEIGHT = Math.max(
-  ...[...Object.values(DPAD_REL), ...MENU_SLOTS_REL, ...LIST_ROWS_REL, ...LIST_NARROW_REL, LIST_BACK_REL, MAP_CLOSE_REL, MAP_GO_REL, ...BATTLE_PARTY_REL, ...BATTLE_MEMBER_REL, ...TOWN_MENU_REL, ...CAMP_GRID_REL, AUTO_STOP_REL].map(
+  ...[...Object.values(DPAD_REL), ...MENU_SLOTS_REL, ...LIST_ROWS_REL, ...LIST_NARROW_REL, LIST_BACK_REL, MAP_CLOSE_REL, MAP_GO_REL, ...BATTLE_PARTY_REL, ...BATTLE_MEMBER_REL, ...CAMP_GRID_REL, AUTO_STOP_REL].map(
     (r) => r.y + r.h,
   ),
 );
@@ -171,12 +151,6 @@ export type DungeonLayout = {
   listNarrow: Rect[];
   /** UI-11 一覧の外に固定する戻る / やめる（battleMember[4] と同じ矩形） */
   listBack: Rect;
-  /**
-   * UI-11 / UI-52（M7）: 広げた一覧（ステージ座標）。backdrop はビューの上端からメッセージ窓の下 LIST_TALL_MESSAGE_LINES 行の上までの全幅（既定 y16..213）で、
-   * その下の窓の 2 行（既定 y214..233）は見えたまま。area は行を積むスクロールの欄（backdrop の上端から、行の高さの整数倍）、rows は見える行（既定 9 行、y16 + 22i）。
-   * 末尾の戻るは listBack に固定する
-   */
-  listTall: { backdrop: Rect; area: Rect; rows: Rect[] };
   mapClose: Rect;
   /** UI-25 地図の「移動」（mapClose の真下） */
   mapGo: Rect;
@@ -186,8 +160,6 @@ export type DungeonLayout = {
   battleMember: Rect[];
   /** オート中の「オート解除」 */
   autoStop: Rect;
-  /** UI-52 の街の施設メニューの 6 枠（上段 0..2 酒場・宿屋・寺院、下段 3..5 闇魔術・迷宮へ・店） */
-  townMenu: Rect[];
   /** UI-53 キャンプの 8 枠（上段 0..3、下段 4..7。[7] がやめる / 戻る） */
   campGrid: Rect[];
   /** text は文字領域（枠の内側）、lines はそこに入る行数、more は続きの三角 */
@@ -229,11 +201,6 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
 
   const v = g.view;
   const overlay: Rect = { x: v.x, y: v.y, w: v.w, h: v.h + m.h };
-  // UI-11（M7）: メッセージ窓の文字は下詰め（UI-43。message.ts の flex-end）なので、下から LIST_TALL_MESSAGE_LINES 行の上端までを一覧で覆う
-  const tallBottom = Math.max(v.y, mText.y + mText.h - LIST_TALL_MESSAGE_LINES * MESSAGE_LINE_H);
-  const backdrop: Rect = { x: v.x, y: v.y, w: v.w, h: tallBottom - v.y };
-  const tallCount = Math.floor(backdrop.h / LIST_TALL_ROW_H);
-  const tallArea: Rect = { x: LIST_TALL_X, y: v.y, w: LIST_TALL_W, h: tallCount * LIST_TALL_ROW_H };
   return {
     header: { text, settings, turn },
     dpad,
@@ -241,17 +208,11 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
     list: LIST_ROWS_REL.map((r) => shift(r, c)),
     listNarrow: LIST_NARROW_REL.map((r) => shift(r, c)),
     listBack: shift(LIST_BACK_REL, c),
-    listTall: {
-      backdrop,
-      area: tallArea,
-      rows: Array.from({ length: tallCount }, (_, i): Rect => ({ x: tallArea.x, y: tallArea.y + LIST_TALL_ROW_H * i, w: tallArea.w, h: LIST_TALL_ROW_H })),
-    },
     mapClose: shift(MAP_CLOSE_REL, c),
     mapGo: shift(MAP_GO_REL, c),
     battleParty: BATTLE_PARTY_REL.map((r) => shift(r, c)),
     battleMember: BATTLE_MEMBER_REL.map((r) => shift(r, c)),
     autoStop: shift(AUTO_STOP_REL, c),
-    townMenu: TOWN_MENU_REL.map((r) => shift(r, c)),
     campGrid: CAMP_GRID_REL.map((r) => shift(r, c)),
     message: { text: mText, lines: Math.max(0, Math.floor(mText.h / MESSAGE_LINE_H)), more },
     partyRows,
@@ -372,15 +333,11 @@ export function layoutWarnings(g: Regions, l: DungeonLayout): string[] {
   l.list.forEach((r, i) => check(`list[${i}]`, r, "controls"));
   l.listNarrow.forEach((r, i) => check(`listNarrow[${i}]`, r, "controls"));
   check("listBack", l.listBack, "controls");
-  // UI-11（M7）: 広げた一覧はビューとメッセージの範囲（地図の overlay と同じ）に収まり、1 行以上入る
-  if (!inside(l.listTall.backdrop, l.map.overlay)) out.push("ui.layout: listTall does not fit in the view and message regions");
-  if (l.listTall.rows.length < 1) out.push(`ui.layout: listTall has no row (row height ${LIST_TALL_ROW_H})`);
   check("mapClose", l.mapClose, "controls");
   check("mapGo", l.mapGo, "controls");
   l.battleParty.forEach((r, i) => check(`battleParty[${i}]`, r, "controls"));
   l.battleMember.forEach((r, i) => check(`battleMember[${i}]`, r, "controls"));
   check("autoStop", l.autoStop, "controls");
-  l.townMenu.forEach((r, i) => check(`townMenu[${i}]`, r, "controls"));
   l.campGrid.forEach((r, i) => check(`campGrid[${i}]`, r, "controls"));
   if (l.message.lines < 1) out.push(`ui.layout: message region (height ${g.message.h}) has no text line`);
   l.partyRows.forEach((r, i) => check(`partyRows[${i}]`, r, "party"));

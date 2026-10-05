@@ -430,7 +430,7 @@ describe("入力と Command", () => {
     expect(body).toMatch(/case "look":\s*void run\(\{ type: "town\.lookAround" \}\);\s*return;/);
     // 酒場の項目はキャンプと同じ部品をその段で開く
     expect(body).toMatch(/case "camp":\s*openCamp\("tavern", e\.open\);/);
-    expect(app).toMatch(/const openCamp = \(host: CampHost, open\?: CampOpen\): void =>/);
+    expect(app).toMatch(/const openCamp = \(host: CampHost, open\?: CampOpen, memberId\?: string\): void =>/);
   });
 
   test("UI-52/TW-05/TW-16（M7）店の売る・買い戻す・鑑定と倉庫の行は town.shop / town.storage を送り、ページを変えない。sync は townRepair で消えたページを 1 つ上へ直す（ソースの検査）", () => {
@@ -450,14 +450,37 @@ describe("入力と Command", () => {
     expect(app).toMatch(/townPage = townRepair\(townPage, menu\);\s*const ents = townEntries\(townPage, menu, strings, previewOf\(townPage\)\);/);
   });
 
-  test("UI-11/UI-52/IT-66（M7）街の一覧は townListTall のページで広げ（setList の tall）、図鑑のパネルは lines の tall で広げる（ソースの検査）", () => {
+  // M8.5: M7 の広げた一覧（townListTall・setList の tall・listTall.backdrop）は UI-13 の街の配置に置き換えた
+  test("UI-13/UI-52/IT-66（M8.5）街の一覧は見出し（townHeading）付きの setList の town で、施設メニューも同じ一覧。ヘッダーは場所と所持金、ビューは施設の絵。図鑑のパネルは townLayout の book に広げる（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
-    expect(app).toContain('c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", tall: townListTall(townPage) });');
+    expect(app).toContain('c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading: t(townHeading(townPage)) } });');
+    expect(app).not.toContain('setBattleMenu(items, "town")');
+    expect(app).toContain("play.header.setText(townHeader(menu, strings, townPage));");
+    expect(app).toContain("play.setTownPicture(townFacility(townPage));");
     expect(app).toMatch(/if \(p\.kind === "book"\) return \{ kind: "lines", \.\.\.formatBook\(uniqueBookView\(state, data\), strings\), tall: true \};/);
+    expect(app).toContain("town: townLayout(playRegions, data.config.party.size),");
+    expect(app).toContain("townPictures: o.assets?.town ?? {},");
     const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
-    // 図鑑のパネルはメッセージ窓より上に描く（DOM で窓の後）
-    expect(dungeon).toContain("const camp = createCampView(lay.camp, lay.listTall.backdrop);");
-    expect(dungeon).toContain("el.append(viewBox, header.el, message.el, camp.el, party.el, controls.el, map.el, wipe.el, history.el);");
+    expect(dungeon).toContain("const camp = createCampView(lay.camp, tl.book);");
+    // 帯は窓の後・キャンプのパネルの前（図鑑のパネルが帯を覆う）、パーティ欄はキャンプの後
+    expect(dungeon).toContain("el.append(viewBox, header.el, message.el, band.el, camp.el, panel.el, controls.el, map.el, wipe.el, history.el);");
+    // 街ではメッセージ窓と 64 のパーティ欄を隠し、帯とヘッダーのログを出す
+    expect(dungeon).toContain('message.el.style.display = town ? "none" : "";');
+    expect(dungeon).toContain('panel.el.style.display = town ? "none" : "";');
+    expect(dungeon).toContain('band.el.style.display = town ? "" : "none";');
+    expect(dungeon).toContain("header.setLogVisible(town);");
+  });
+
+  test("UI-13/UI-46/UI-59（M8.5）ヘッダーのログは履歴の画面（openHistory）を開き、帯のタップはその人の状態（酒場の状態と同じ部品）を開く。どちらも guard を通す（再生中・自動歩行中は捨てる。ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toContain("onLog: () => guard(() => openHistory()),");
+    expect(app).toContain('onBand: (id) => guard(() => openCamp("tavern", "status", id)),');
+    const open = /const openCamp = \(host: CampHost, open\?: CampOpen, memberId\?: string\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    // overlay があれば開かない、街でだけ開く（host tavern）
+    expect(open).toContain("if (overlay !== null) return;");
+    expect(open).toContain('if (memberId !== undefined && campPage.kind === "status") campPage = { kind: "status", memberId };');
+    // 状態を閉じると元の街のページ（townPage は変えない）
+    expect(open).not.toContain("townPage");
   });
 
   // M7（2026-10-05）: 鍛えるは送る前に lowerInput（UI-44）し、rejected なら sync で戻すようにしたので、upgrade の分岐の期待を改めた
@@ -472,11 +495,11 @@ describe("入力と Command", () => {
     expect(app).toMatch(/upgradeConfirmLines\(page, menu, previewOf\(page\), strings\)/);
   });
 
-  test("UI-52/TW-17（M7）ページに入ったときの語りは、窓の下 LIST_TALL_MESSAGE_LINES 件（履歴の末尾）に同じ文があれば重ねて出さない（townFreshIntro。ソースの検査）", () => {
+  test("UI-52/TW-17（M7・M8.5）ページに入ったときの語りは、全文の履歴の末尾 TOWN_INTRO_DEDUP 件に同じ文があれば重ねて出さない（townFreshIntro。ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const goTownPage = \(page: TownPage\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(body).toMatch(
-      /const texts = townFreshIntro\(\s*\[\.\.\.townPageIntro\(page, menu\)\.map\(t\), \.\.\.upgradeConfirmLines\(page, menu, previewOf\(page\), strings\)\],\s*play\.message\.history\(\)\.slice\(-LIST_TALL_MESSAGE_LINES\),\s*\);/,
+      /const texts = townFreshIntro\(\s*\[\.\.\.townPageIntro\(page, menu\)\.map\(t\), \.\.\.upgradeConfirmLines\(page, menu, previewOf\(page\), strings\)\],\s*play\.message\.history\(\)\.slice\(-TOWN_INTRO_DEDUP\),\s*\);/,
     );
   });
 

@@ -1,10 +1,10 @@
 // UI-32 / UI-53 の操作領域（ui §2 の controls 領域）。十字ボタン（dpad）、メニュー（menu）、リスト（list）、
-// 地図の「閉じる」（mapClose）と「移動」（mapGo。map モード）、戦闘のパーティの選択 4 枠・メンバーの 5 枠・街の施設 6 枠・キャンプの 8 枠（battle）、オート中の「オート解除」（autoStop）を切り替えて出す。矩形は layout.ts の dungeonLayout のステージ座標で、region の原点を引いて置く。
+// 地図の「閉じる」（mapClose）と「移動」（mapGo。map モード）、戦闘のパーティの選択 4 枠・メンバーの 5 枠・キャンプの 8 枠（battle）、オート中の「オート解除」（autoStop）を切り替えて出す。矩形は layout.ts の dungeonLayout のステージ座標で、region の原点を引いて置く。
 // どのボタンも input/tap.ts の onTap で登録し、「動かずに離した」ときに反応する（UI-36。click は使わない）。
 // 前進ボタンだけは、動かずに hold.ms() 押し続けたら hold.onHoldStart（長押しの連打）、離したら hold.onHoldEnd（UI-31）。
 // 「オート解除」は再生中も反応する（whileBusy。UI-44 の例外）。
 // 末尾が戻る / やめるの一覧は、その項目を一覧の外（layout.listBack）に固定し、一覧だけを縦にスクロールする（UI-11）。
-// M7: 店・倉庫・酒場の一覧（setList の tall）は、一覧と下敷きを操作領域の外のビューとメッセージの領域（layout.listTall）に置く（負の top）。
+// M8.5: 街の一覧（setList の town。UI-13）は、見出しと一覧を操作領域の外の townLayout の位置（帯の下。y178..387）に置く（負の top）。
 // Action から Command への変換と長押しの連打は呼び出し側（app）が持つ。表示層は前進できるかを判定しない（UI-35）。
 // モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
@@ -16,8 +16,11 @@ export type ControlsMode = "dpad" | "list" | "close" | "map" | "battle" | "autoS
 /** disabled なら dim 色で出し、押しても onSelect を呼ばない */
 /** onFocus は一覧の行に pointerenter / pointerdown したとき（戦闘の対象の注目。UI-54。押しただけで、選ぶのは離したとき） */
 export type ControlItem = { label: string; onSelect(): void; disabled?: boolean; onFocus?(): void };
-/** 枠の配置（UI-54）。party は戦闘のパーティの選択の 4 枠、member はメンバーの 5 枠、town は街の施設メニューの 6 枠（UI-52）、camp はキャンプの 8 枠（UI-53） */
-export type BattleSlots = "party" | "member" | "town" | "camp";
+/** 枠の配置（UI-54）。party は戦闘のパーティの選択の 4 枠、member はメンバーの 5 枠、camp はキャンプの 8 枠（UI-53） */
+export type BattleSlots = "party" | "member" | "camp";
+
+/** UI-13（M8.5）: 街の一覧の見出し（1 行）と一覧（スクロールの欄と見える行。ステージ座標。layout の townLayout） */
+export type TownListLayout = { heading: Rect; area: Rect; rows: Rect[] };
 
 export type Controls = {
   el: HTMLElement;
@@ -31,12 +34,12 @@ export type Controls = {
    * layout.list の位置に並べる。4 件以上は縦スクロール（UI-11）。
    * fixedLast なら末尾の項目（戻る / やめる）を一覧の外の layout.listBack に固定し、残りを幅の狭い layout.listNarrow の一覧に置く。
    * 添字（select・setListFocus・数字キー）は fixedLast によらず items の順（末尾が戻る / やめる）。
-   * tall（M7。UI-11 / UI-52 の店・倉庫・酒場の一覧）なら、一覧をビューとメッセージの領域の layout.listTall に広げる
-   * （backdrop で下のビューと窓を覆い、窓の下 2 行だけ見せる。行の高さは LIST_TALL_ROW_H、幅は 224 のまま。固定の戻るは listBack のまま）
+   * town（M8.5。UI-13 の街の一覧）なら、見出し（town.heading。accent 色の 1 行。押せない）と一覧を layout.townList の位置に置く
+   * （行の高さは townList の行、幅は 168。固定の戻るは listBack のまま）
    */
-  setList(items: ControlItem[], opts?: { fixedLast?: boolean; tall?: boolean }): void;
+  setList(items: ControlItem[], opts?: { fixedLast?: boolean; town?: { heading: string } }): void;
   /**
-   * UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠 / townMenu の 6 枠 / campGrid の 8 枠）に並べる。
+   * UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠 / campGrid の 8 枠）に並べる。
    * null は空き枠（何も置かない）。枠数を超える分は捨てる
    */
   setBattleMenu(items: (ControlItem | null)[], slots: BattleSlots): void;
@@ -89,9 +92,9 @@ function buttonStyle(b: HTMLElement, r: Rect, origin: Rect): void {
   });
 }
 
-/** UI-36（M7）: 一覧の行の見た目を決める値の印（文言・dim・注目の有無・固定の戻るか・行の幅と高さ） */
-function listRowSig(it: ControlItem, isBack: boolean, w: number, h: number): string {
-  return JSON.stringify([it.label, it.disabled === true, it.onFocus !== undefined, isBack, w, h]);
+/** UI-36（M7）: 一覧の行の見た目を決める値の印（文言・dim・注目の有無・固定の戻るか・行の幅と高さ・街の一覧か） */
+function listRowSig(it: ControlItem, isBack: boolean, w: number, h: number, town: boolean): string {
+  return JSON.stringify([it.label, it.disabled === true, it.onFocus !== undefined, isBack, w, h, town]);
 }
 
 function sameSigs(a: readonly string[], b: readonly string[]): boolean {
@@ -108,7 +111,10 @@ function setShown(el: HTMLElement, on: boolean): void {
  */
 export function createControls(o: {
   region: Rect;
-  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "listNarrow" | "listBack" | "listTall" | "mapClose" | "mapGo" | "battleParty" | "battleMember" | "autoStop" | "townMenu" | "campGrid">;
+  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "listNarrow" | "listBack" | "mapClose" | "mapGo" | "battleParty" | "battleMember" | "autoStop" | "campGrid"> & {
+    /** UI-13（M8.5）: 街の一覧の位置（省略時は街の一覧も layout.list の位置） */
+    townList?: TownListLayout;
+  };
   strings: Strings;
   onAction(a: DpadAction): void;
   hold: { ms(): number; onHoldStart(): void; onHoldEnd(): void };
@@ -129,7 +135,6 @@ export function createControls(o: {
   const BATTLE_SLOTS: Readonly<Record<BattleSlots, readonly Rect[]>> = {
     party: o.layout.battleParty,
     member: o.layout.battleMember,
-    town: o.layout.townMenu,
     camp: o.layout.campGrid,
   };
 
@@ -181,21 +186,29 @@ export function createControls(o: {
   // ---- リスト（layout.list。行は連続しているので 1 つのスクロール容器に縦に積む）
   const first = LIST_ROWS[0] ?? { x: 8, y: origin.y + 2, w: 224, h: 32 };
   const last = LIST_ROWS[LIST_ROWS.length - 1] ?? first;
-  /** UI-11（M7）: 広げた一覧の下敷き（ビューとメッセージの窓の上を覆う。押しても何もしない）。一覧より先に置く（DOM の順で一覧の下） */
-  const tall = o.layout.listTall;
-  const tallRow = tall.rows[0] ?? { ...tall.area, h: first.h };
-  let listTallOn = false;
-  const backdrop = document.createElement("div");
-  backdrop.className = "controls-list-backdrop";
-  Object.assign(backdrop.style, {
+  /** UI-13（M8.5）: 街の一覧の見出しと一覧の位置（省略時は layout.list と同じ位置で、見出しは一覧の上の行に置く） */
+  const town: TownListLayout = o.layout.townList ?? {
+    heading: { x: first.x, y: first.y - 12, w: first.w, h: 10 },
+    area: { x: first.x, y: first.y, w: 168, h: last.y + last.h - first.y },
+    rows: LIST_ROWS.map((r) => ({ ...r, w: 168 })),
+  };
+  const townRow = town.rows[0] ?? { ...town.area, h: first.h };
+  let listTownOn = false;
+  /** UI-13（M8.5）: 街の一覧の見出し（押せない 1 行。accent 色） */
+  const heading = document.createElement("div");
+  heading.className = "controls-list-heading";
+  Object.assign(heading.style, {
     position: "absolute",
-    left: `${tall.backdrop.x - origin.x}px`,
-    top: `${tall.backdrop.y - origin.y}px`,
-    width: `${tall.backdrop.w}px`,
-    height: `${tall.backdrop.h}px`,
-    background: "var(--c-bg)",
+    left: `${town.heading.x - origin.x}px`,
+    top: `${town.heading.y - origin.y}px`,
+    width: `${town.heading.w}px`,
+    height: `${town.heading.h}px`,
+    lineHeight: `${town.heading.h}px`,
+    color: "var(--c-accent)",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
   });
-  el.appendChild(backdrop);
+  el.appendChild(heading);
   const list = document.createElement("div");
   list.className = "controls-list";
   Object.assign(list.style, {
@@ -220,9 +233,9 @@ export function createControls(o: {
   const listBack = document.createElement("div");
   listBack.className = "controls-list-back";
   el.appendChild(listBack);
-  /** 一覧の容器を通常（layout.list）か広げた位置（layout.listTall.area）に置く */
+  /** 一覧の容器を通常（layout.list）か街の位置（townList.area）に置く */
   const placeList = (on: boolean): void => {
-    const r = on ? tall.area : { x: first.x, y: first.y, w: first.w, h: last.y + last.h - first.y };
+    const r = on ? town.area : { x: first.x, y: first.y, w: first.w, h: last.y + last.h - first.y };
     Object.assign(list.style, { left: `${r.x - origin.x}px`, top: `${r.y - origin.y}px`, height: `${r.h}px` });
   };
 
@@ -282,7 +295,7 @@ export function createControls(o: {
     setShown(menu, mode === "dpad");
     setShown(list, mode === "list");
     setShown(listBack, mode === "list" && listBackOn);
-    setShown(backdrop, mode === "list" && listTallOn);
+    setShown(heading, mode === "list" && listTownOn);
     setShown(close, mode === "close" || mode === "map");
     setShown(mapGo, mode === "map");
     setShown(battle, mode === "battle");
@@ -332,15 +345,18 @@ export function createControls(o: {
         menu.appendChild(b);
       });
     },
-    setList(items: ControlItem[], opts?: { fixedLast?: boolean; tall?: boolean }): void {
+    setList(items: ControlItem[], opts?: { fixedLast?: boolean; town?: { heading: string } }): void {
       const fixed = opts?.fixedLast === true && items.length > 0;
-      const tallOn = opts?.tall === true;
-      // 広げた一覧は固定の戻るが操作領域に残るので幅を詰めない
-      const rowW = tallOn ? tall.area.w : fixed ? narrow.w : first.w;
-      const rowH = tallOn ? tallRow.h : first.h;
-      const sigs = items.map((it, k) => listRowSig(it, fixed && k === items.length - 1, rowW, rowH));
+      const townOn = opts?.town !== undefined;
+      // UI-13: 街の一覧は戻るの有無によらず幅 168（townList.area の幅）
+      const rowW = townOn ? town.area.w : fixed ? narrow.w : first.w;
+      const rowH = townOn ? townRow.h : first.h;
+      if (opts?.town !== undefined && heading.textContent !== opts.town.heading) heading.textContent = opts.town.heading;
+      const sigs = items.map((it, k) => listRowSig(it, fixed && k === items.length - 1, rowW, rowH, townOn));
       listItems = items.slice();
       list.scrollTop = 0;
+      listTownOn = townOn;
+      placeList(listTownOn);
       if (sameSigs(sigs, listSigs)) {
         // UI-36 / UI-44（M7）: 行がすべて同じ（文言・dim・注目の有無・位置）なら要素を作り直さず、押したときの項目だけ替える。
         // 再生の終わりの描き直しで、再生中に押し始めて後で離した行（宿の後の戻るなど）が DOM から外れて捨てられないように
@@ -355,8 +371,6 @@ export function createControls(o: {
       list.replaceChildren();
       listBack.replaceChildren();
       listBackOn = fixed;
-      listTallOn = tallOn;
-      placeList(listTallOn);
       list.style.width = `${rowW}px`;
       listItems.forEach((it, k) => {
         const isBack = fixed && k === listItems.length - 1;

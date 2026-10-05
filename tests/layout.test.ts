@@ -60,7 +60,6 @@ const SCREENS: Record<string, Record<string, Rect>> = {
     "CREATION_BUTTONS.start": CREATION_BUTTONS.start,
     "CREATION_BUTTONS.back": CREATION_BUTTONS.back,
   },
-  town: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
   // UI-13（M8.5）新しい街の画面: ヘッダーのログと設定、帯の 6 セル（押せる範囲 40×22）、一覧の 9 行、固定の戻る
   townScreen: {
     "header.log": T.header.log,
@@ -75,8 +74,6 @@ const SCREENS: Record<string, Record<string, Rect>> = {
     ...Object.fromEntries(L.listNarrow.map((r, i) => [`listNarrow[${i}]`, r])),
     listBack: L.listBack,
   },
-  // UI-52 街の施設メニューの 3 列 × 2 段の 5 枠
-  townMenu: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.townMenu.map((r, i) => [`townMenu[${i}]`, r])) },
   dungeon: {
     "header.settings": HEADER_SETTINGS,
     ...Object.fromEntries(Object.entries(L.dpad).map(([k, r]) => [`dpad.${k}`, r])),
@@ -213,25 +210,15 @@ describe("layout", () => {
     }
   });
 
-  test("UI-10/UI-54/UI-52 dpad/menu/list/mapClose/battleParty/battleMember/autoStop/townMenu が操作領域の内側", () => {
+  // M8.5: 街の施設メニュー（3 列 × 2 段の townMenu）は UI-13 の 6 行の一覧に置き換えたので外した
+  test("UI-10/UI-54 dpad/menu/list/mapClose/battleParty/battleMember/autoStop が操作領域の内側", () => {
     const controls = regions(data.config.ui.layout, W).controls;
-    for (const r of [...Object.values(L.dpad), ...L.menu, ...L.list, L.mapClose, ...L.battleParty, ...L.battleMember, L.autoStop, ...L.townMenu]) {
+    for (const r of [...Object.values(L.dpad), ...L.menu, ...L.list, L.mapClose, ...L.battleParty, ...L.battleMember, L.autoStop]) {
       expect(inside(r, controls)).toBe(true);
     }
     // UI-54 戦闘の枠は TOUCH_MIN_LOGICAL 以上で、下端の最大（94）は CONTROLS_MIN_HEIGHT（98）以内
-    for (const r of [...L.battleParty, ...L.battleMember, L.autoStop, ...L.townMenu]) expect(Math.min(r.w, r.h)).toBeGreaterThanOrEqual(TOUCH_MIN_LOGICAL);
-    // UI-52 街の施設メニューは 3 列 × 2 段の 76×40 の 6 枠（酒場・宿屋・寺院 / 闇魔術・迷宮へ・店）。段は戦闘のパーティの選択と同じ y 6 / 54
-    expect(L.townMenu).toEqual([
-      { x: 4, y: 306, w: 76, h: 40 },
-      { x: 82, y: 306, w: 76, h: 40 },
-      { x: 160, y: 306, w: 76, h: 40 },
-      { x: 4, y: 354, w: 76, h: 40 },
-      { x: 82, y: 354, w: 76, h: 40 },
-      { x: 160, y: 354, w: 76, h: 40 },
-    ]);
-    for (const [i, a] of L.townMenu.entries()) for (const b of L.townMenu.slice(i + 1)) expect(overlaps(a, b)).toBe(false);
-    // 下端の最大は 94 のまま（CONTROLS_MIN_HEIGHT は変わらない）
-    expect(Math.max(...[...L.battleParty, ...L.battleMember, ...L.townMenu].map((r) => r.y + r.h)) - controls.y).toBe(94);
+    for (const r of [...L.battleParty, ...L.battleMember, L.autoStop]) expect(Math.min(r.w, r.h)).toBeGreaterThanOrEqual(TOUCH_MIN_LOGICAL);
+    expect(Math.max(...[...L.battleParty, ...L.battleMember].map((r) => r.y + r.h)) - controls.y).toBe(94);
     expect(L.autoStop.y + L.autoStop.h - controls.y).toBeLessThanOrEqual(CONTROLS_MIN_HEIGHT);
     // 十字ボタンとメニューは重ならない
     for (const d of Object.values(L.dpad)) for (const m of L.menu) expect(overlaps(d, m)).toBe(false);
@@ -367,9 +354,8 @@ describe("layout", () => {
       d.battleParty.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.battleParty[i]!, base.controls)));
       d.battleMember.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.battleMember[i]!, base.controls)));
       expect(rel(d.autoStop, g.controls), tag).toEqual(rel(L.autoStop, base.controls));
-      d.townMenu.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.townMenu[i]!, base.controls)));
       const fits = l.controls >= CONTROLS_MIN_HEIGHT;
-      for (const r of [...Object.values(d.dpad), ...d.menu, ...d.list, d.mapClose, d.mapGo, ...d.battleParty, ...d.battleMember, d.autoStop, ...d.townMenu])
+      for (const r of [...Object.values(d.dpad), ...d.menu, ...d.list, d.mapClose, d.mapGo, ...d.battleParty, ...d.battleMember, d.autoStop])
         if (fits) expect(inside(r, g.controls), tag).toBe(true);
       // メッセージ: 文字領域と三角は窓の内側、行数は (高さ - 4) / 10 の切り捨て
       expect(inside(d.message.text, g.message), tag).toBe(true);
@@ -402,9 +388,6 @@ describe("layout", () => {
         "ui.layout: battleParty[2] does not fit in the controls region (height 86)",
         "ui.layout: battleParty[3] does not fit in the controls region (height 86)",
         "ui.layout: battleMember[4] does not fit in the controls region (height 86)",
-        "ui.layout: townMenu[3] does not fit in the controls region (height 86)",
-        "ui.layout: townMenu[4] does not fit in the controls region (height 86)",
-        "ui.layout: townMenu[5] does not fit in the controls region (height 86)",
         "ui.layout: campGrid[4] does not fit in the controls region (height 86)",
         "ui.layout: campGrid[5] does not fit in the controls region (height 86)",
         "ui.layout: campGrid[6] does not fit in the controls region (height 86)",
@@ -413,29 +396,7 @@ describe("layout", () => {
     }
   });
 
-  test("UI-11/UI-10（M7）広げた一覧 listTall: 既定で 下敷き y16..213 の全幅（メッセージ窓の文字は下詰め y174..233 なので、下 2 行 y214..233 は見える）、行は x8・幅 224・高さ 22 の 9 行（y16 + 22i）。UI-10 の 12 論理 px 以上で、240×400・ビューとメッセージの範囲に収まり、固定の戻る（操作領域）と重ならない", () => {
-    const t = L.listTall;
-    // 窓の文字領域 y168..233（枠 1 + 余白 2）の下 2 行の上端は 168 + 66 − 20 = 214
-    expect(L.message.text.y + L.message.text.h - 2 * 10).toBe(214);
-    expect(t.backdrop).toEqual({ x: 0, y: 16, w: W, h: 198 });
-    // 198 ÷ 22 = 9 行ちょうど（行の途中で切れない）
-    expect(t.area).toEqual({ x: 8, y: 16, w: 224, h: 198 });
-    expect(t.rows).toEqual(Array.from({ length: 9 }, (_, i) => ({ x: 8, y: 16 + 22 * i, w: 224, h: 22 })));
-    for (const r of t.rows) {
-      expect(inside(r, STAGE)).toBe(true);
-      expect(inside(r, t.backdrop)).toBe(true);
-      expect(Math.min(r.w, r.h)).toBeGreaterThanOrEqual(12); // UI-10 の 12 論理 px（TOUCH_MIN_LOGICAL 30 の例外。decisions 2026-10-05）
-      expect(overlaps(r, L.listBack)).toBe(false);
-      expect(overlaps(r, HEADER_SETTINGS)).toBe(false);
-    }
-    expect(inside(t.backdrop, L.map.overlay)).toBe(true);
-    expect(layoutWarnings(regions(data.config.ui.layout, W), L)).toEqual([]);
-    // 区切りを変えても下 2 行の上端までで、行の高さの整数倍（view 140・message 80 → 窓の文字 y158..233、下 2 行の上端 214 → 198 で 9 行）
-    const g2 = regions({ header: 16, view: 140, message: 80, party: 64, controls: 100 }, W);
-    const t2 = dungeonLayout(g2, N).listTall;
-    expect([t2.backdrop.y, t2.backdrop.h, t2.rows.length]).toEqual([16, 198, 9]);
-  });
-
+  // M8.5: M7 の広げた一覧（listTall）は UI-13 の街の配置（townLayout）に置き換えた
   test("UI-13（M8.5）townLayout: ヘッダー（文字 x4..155・ログ x160..199・設定 x200..239）、絵 240×150、会話の箱、帯 6 セル、見出し、一覧 9 行×22・幅 168、戻る x178 y354。重ならずステージに収まる", () => {
     expect(T.header).toEqual({
       text: { x: 4, y: 0, w: 152, h: 16 },
