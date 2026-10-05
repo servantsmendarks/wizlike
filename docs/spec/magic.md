@@ -1,5 +1,7 @@
 # 呪文仕様（MG）
 
+敵・アイテム・呪文の個別の数値はすべて暫定で、コンテンツ拡充の段で見直す。
+
 ## 1. MP
 
 - MG-01 MP 制。各キャラクターは単一の MP プール（`mp` / `mpMax`）を持つ。レベルごとの増分は `classes[].mpPerLevel + max(0, floor((関連能力値 − config.growth.mpStatPivot) / config.growth.mpStatDivisor))`【仮】（既定 10 と 2）。関連能力値は魔術師系なら知恵、僧侶系なら信仰心、両方持つ職業は高い方、系統を持たない職業は補正 0。開始レベルに関係なく増える。レベル 1 の `mpMax` はこの増分 1 回分。
