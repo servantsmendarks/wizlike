@@ -34,6 +34,9 @@
 //   制止の判定の箱（label が RESTRAIN_DICE_KEY、拍の外）は、続く message を 1 件（成否の語り）出した後でタップを 1 回待ってから消す
 //   （先に message・dice 以外のイベントか再生の終わりが来たらそこで待つ）。演出スキップでも待つ（§3-9。手動のタップ待ち）。
 //   他の拍の外の箱（dice.learn など）は待たない。
+// - 街（UI-47。M8.5）: message の表示先（迷宮の窓か街の会話の箱）は結線側の deps.message が決める。会話の箱の say は文ごとのタップ待ちを
+//   自分の中で待つので、ここは変えない（拍の外のタップは message.rush に行き、箱の文字送りの即表示か次の文へ）。
+//   screen{town} では、その前に迷宮の窓で語った文（townCarry）を screens.show に渡す。
 // 具体的な views は import しない（純粋な enemyGroupOfId / formatMessage / formatDiceSummary だけ）。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, StatusId, Strings } from "../core/data/index";
 import type { EnemyGroupView, GameEvent, GameEventKind, GameState, Life, PenaltyResult, Screen, ViewPoint } from "../core/types";
@@ -99,7 +102,11 @@ export type PlayerDeps = {
   };
   /** UI-45 の手動の拍のタップ待ち。省略すると createTapLatch() を使う（Player.tap() が解く） */
   beat?: TapLatch;
-  screens: { show(to: Screen, state: GameState): void; sync(state: GameState): void };
+  /**
+   * show の carry（UI-47。M8.5）は screen{town} のときだけ渡す、街に入る前に迷宮の窓で語った文（townCarry）。
+   * 受けた側が会話の箱に出し直す（ログには入れ直さない）
+   */
+  screens: { show(to: Screen, state: GameState, carry?: readonly string[]): void; sync(state: GameState): void };
   /** UI-56 の全滅の内訳の overlay を開く（入力は待たない。閉じるのは app） */
   wipe: { show(p: PenaltyResult): void };
   /** UI-56（M5.5）の全滅の出目の表（views/penalty-table.ts）。show は描き直しも兼ねる */
@@ -125,6 +132,21 @@ export const RESTRAIN_DICE_KEY = "dice.restrain";
 export const UPGRADE_DICE_KEY = "dice.upgrade";
 /** 拍の外で出たらタップを 1 回待つ箱の label のキー */
 const HOLD_DICE_KEYS: readonly string[] = [RESTRAIN_DICE_KEY, UPGRADE_DICE_KEY];
+
+/**
+ * UI-47（M8.5。純粋）: 添字 i の screen{town} の前で、最後の screen / wipe / beat より後にある message の整形済みの文。
+ * 街に入る語り（帰還の dungeon.return・town.enter・救済の申し出、全滅の後の town.enter など）は screen{town} の前に迷宮の窓で語られるので、
+ * 街の会話の箱に出し直すために使う。game.new のように前に message が無ければ空
+ */
+export function townCarry(events: readonly GameEvent[], i: number, strings: Strings): string[] {
+  const out: string[] = [];
+  for (let k = Math.min(i, events.length) - 1; k >= 0; k--) {
+    const ev = events[k]!;
+    if (ev.kind === "screen" || ev.kind === "wipe" || ev.kind === "beat") break;
+    if (ev.kind === "message") out.push(formatMessage(strings[ev.key] ?? ev.key, ev.params));
+  }
+  return out.reverse();
+}
 
 export type Handlers = {
   [K in GameEventKind]?: (ev: Extract<GameEvent, { kind: K }>, cx: PlayCx, finalState: GameState) => Promise<void>;
@@ -209,6 +231,8 @@ export function createPlayer(deps: PlayerDeps): Player {
   let tapAhead = false;
   /** UI-55: この再生で衝動の行動者に印を付けたか（再生の終わりで外す） */
   let marked = false;
+  /** UI-47: 今の screen{town} の前の語り（townCarry。screen ハンドラが screens.show に渡す） */
+  let carry: string[] = [];
 
   const isSkip = (): boolean => deps.settings().skipAnimations || rushed || beatRush;
   /** ダイスの overlay が出ているか（出ていなければ hide を呼ばない） */
@@ -299,7 +323,9 @@ export function createPlayer(deps: PlayerDeps): Player {
         cx.screen = ev.to;
         return;
       }
-      deps.screens.show(ev.to, finalState);
+      // UI-47: 街に入るときは、その前に迷宮の窓で語った文を渡す（会話の箱に出し直す）
+      if (ev.to === "town") deps.screens.show(ev.to, finalState, carry);
+      else deps.screens.show(ev.to, finalState);
       cx.screen = ev.to;
       if (ev.to === "dungeon") {
         const c = cursorOfDive(finalState);
@@ -467,7 +493,8 @@ export function createPlayer(deps: PlayerDeps): Player {
        */
       let hold: null | "awaitMessage" | "afterMessage" = null;
       try {
-        for (const ev of events) {
+        for (const [idx, ev] of events.entries()) {
+          if (ev.kind === "screen" && ev.to === "town") carry = townCarry(events, idx, deps.strings);
           if (hold === "afterMessage" || (hold === "awaitMessage" && ev.kind !== "message" && ev.kind !== "dice")) {
             // 制止の箱を出したまま、続く message を 1 件出した後（先に別のイベントが来たらその前）でタップを 1 回待ち、待ちの後に消す
             await waitTap();

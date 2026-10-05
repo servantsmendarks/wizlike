@@ -4,6 +4,8 @@
 // - 再生中（busy）の入力はすべて捨てる。ステージのどこかのタップ（オート解除を除く）と Enter / Space だけは受け、player.tap() に渡す
 //   （拍のタップ待ちを解く・拍の残りを即時にする・拍の外は 1 回目で今の文、2 回目で残りを即表示。UI-44 / UI-45 / UI-43）。
 // - 再生の外のメッセージ窓のタップは、文字送り中なら即表示、それ以外なら履歴の画面（UI-46）を開く。
+// - 街（UI-47。M8.5）の語りは会話の箱（narrator が route で振り分ける）。再生の外の箱と施設の絵のタップで次へ・閉じる。
+//   一覧・戻る・帯・数字・Esc は会話を打ち切ってから動き、Enter は箱が開いていれば箱のタップ。
 // - 迷宮のキャンプと酒場の状態・装備・並び順（UI-53 / UI-59 / TW-03）は views/camp.ts の段で進め、ビュー領域だけを覆う（overlay 'camp'）。
 // - 地図のタップ（UI-25）は 2 段階。探索済みのセルに吸着したら core の planRoute で経路を確かめてそのセルを選び（点滅）、同じセルの
 //   再タップか「移動」で、holdRepeatMs おきに 1 手ずつ送る（自動歩行）。続けるかは core の
@@ -107,6 +109,7 @@ import { createSaveBanner } from "./views/save-banner";
 import { createUpdateNotice } from "./views/update-notice";
 import { createTitleScreen, titleEntries, titleHint, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
 import { formatWipeSummary } from "./views/wipe";
+import { createNarrator } from "./views/talk";
 import {
   TOWN_INTRO_DEDUP,
   townEntries,
@@ -291,6 +294,8 @@ export function createApp(o: {
     // UI-13（M8.5）: 街の画面の配置
     town: townLayout(playRegions, data.config.party.size),
     textSpeed: () => store.get().textSpeed,
+    // UI-47 / UI-41: 会話の箱の ▼ は演出スキップでは点滅しない（タップ待ちは残す）
+    talkBlink: () => !store.get().skipAnimations,
     historyMax: data.config.ui.messageHistory,
     stageOf: (san, sanMax) => sanStage(san, sanMax, data.config),
     maxOf: (ch) => memberSheet(state, data, ch), // CH-14 / UI-12（M7）: 実効の hpMax / mpMax / sanMax（core の memberSheet）
@@ -298,7 +303,13 @@ export function createApp(o: {
     // UI-46 / UI-13（M8.5）: 街のヘッダーのログ（他の overlay があるとき・再生中は捨てる）
     onLog: () => guard(() => openHistory()),
     // UI-13 / UI-59（M8.5）: 街の帯のタップでその人の状態
-    onBand: (id) => guard(() => openCamp("tavern", "status", id)),
+    onBand: (id) =>
+      guard(() => {
+        // UI-47: 帯のタップは会話を打ち切ってから開く（他の overlay があるときは開かないので打ち切らない）
+        if (overlay !== null) return;
+        play.talk.flush();
+        openCamp("tavern", "status", id);
+      }),
     onAction: (a: DpadAction) => tapDpad(a),
     // UI-31: 前進ボタンを動かずに holdRepeatMs 押し続けたら連打を始め、離したら止める
     hold: {
@@ -316,6 +327,12 @@ export function createApp(o: {
     // UI-61（M8.5）: public/town に実在する施設の絵の一覧だけ読む（素材が無い間は空 = 黒）
     townPictures: o.assets?.town ?? {},
   });
+
+  /**
+   * UI-47（M8.5）: 語りの表示先。route が街なら会話の箱、それ以外（迷宮・戦闘）は今のメッセージ窓。
+   * ログ（UI-46）はどちらもメッセージ窓の 1 本の配列。再生（PlayerDeps.message）・save.failed・再開の語りはここを通す
+   */
+  const narrator = createNarrator({ town: () => route === "town", talk: play.talk, window: play.message });
 
   // UI-57: debug パネルの「ポインタ」に出す直近 20 件のポインタイベント（表示層だけ。保存しない）
   const pointerLog = createPointerLog();
@@ -379,12 +396,12 @@ export function createApp(o: {
       shake: (ms) => play.shake(ms),
     },
     header: { showAt: showHeaderAt },
-    message: play.message,
+    message: narrator,
     party: play.party,
     battle: play.battle,
     dice: play.dice,
     screens: {
-      show: (to: Screen) => onScreen(to),
+      show: (to: Screen, _st, carry) => onScreen(to, carry ?? []),
       sync: (st) => sync(st),
     },
     wipe: { show: (p) => openWipe(p) },
@@ -424,11 +441,16 @@ export function createApp(o: {
     play.header.setTurn(null);
   };
 
-  /** core の screen イベント。route は routeOfScreen で決める（event は迷宮の画面の上の状態。UI-55） */
-  const onScreen = (to: Screen): void => {
+  /**
+   * core の screen イベント。route は routeOfScreen で決める（event は迷宮の画面の上の状態。UI-55）。
+   * UI-47: 街を出るときは会話の箱を打ち切り（ログには入っている）、街に入るときは迷宮の窓で語った carry（townCarry）を会話の箱に出し直す
+   */
+  const onScreen = (to: Screen, carry: readonly string[] = []): void => {
     const r = to === "title" ? "title" : routeOfScreen(to);
     if (r === null) return;
+    const from = route;
     if (r === "town") townPage = "menu";
+    if (from === "town" && r !== "town") play.talk.flush();
     // 画面が変わったら、キャンプ・地図・履歴を閉じる（帰還の呪文で街へ、など）
     if (route !== r) {
       if (overlay === "camp") closeCamp(false);
@@ -444,6 +466,7 @@ export function createApp(o: {
       play.header.setTurn(battleTurnText(strings, 1));
     }
     showRoute(r);
+    if (r === "town" && from !== "town" && carry.length > 0) void play.talk.replay(carry, store.get().skipAnimations);
     // 操作は再生の最後の sync で出し直す
     if (r !== "title") play.controls.setMode("none");
   };
@@ -502,14 +525,14 @@ export function createApp(o: {
     syncControls();
     const menu = townMenu(state, data);
     if (menu === null) return;
-    // 続けて出す文は、最後の 1 文だけを文字送りにする（say は送り途中の前の文を完了させるため、前の文は即時で出す）
-    // 窓の下に見えている直近の文と同じ語りは重ねて出さない（段を戻ってまた進んだとき。UI-52 / TW-17）
+    // UI-47: 会話の箱に 1 文ずつ語る（どの文も文字送り。2 文目からはタップで次へ。演出スキップは文字送りだけ省く）
+    // 履歴の末尾 2 件と同じ語りは重ねて出さない（段を戻ってまた進んだとき。UI-52 / TW-17）
     const texts = townFreshIntro(
       [...townPageIntro(page, menu).map(t), ...upgradeConfirmLines(page, menu, previewOf(page), strings)],
       play.message.history().slice(-TOWN_INTRO_DEDUP),
     );
     const skip = store.get().skipAnimations;
-    texts.forEach((x, i) => void play.message.say(x, skip || i < texts.length - 1));
+    texts.forEach((x) => void narrator.say(x, skip));
   };
 
   /** Esc・戻る: 1 つ上のページへ（menu では何もしない） */
@@ -520,12 +543,16 @@ export function createApp(o: {
     syncControls();
   };
 
-  /** 街の項目 → ページの移動か Command（料金・可否は core が決める。UI-35） */
+  /**
+   * 街の項目 → ページの移動か Command（料金・可否は core が決める。UI-35）。
+   * UI-47: 一覧・戻る（と数字キー）は、先に会話の箱を打ち切ってから動く（残りの文はログに入っている）
+   */
   const townItem = (e: TownEntry): ControlItem => ({
     label: e.label,
     disabled: "disabled" in e ? e.disabled : false,
     onSelect: () =>
       guard(() => {
+        play.talk.flush();
         switch (e.kind) {
           case "page":
             goTownPage(e.to);
@@ -534,7 +561,7 @@ export function createApp(o: {
             townBack();
             return;
           case "templeNone":
-            void play.message.say(t("town.temple.none"), store.get().skipAnimations);
+            void narrator.say(t("town.temple.none"), store.get().skipAnimations);
             return;
           case "inn":
             // 泊まった後も宿のページにとどまる（再生の最後の sync で townMenu を取り直す）
@@ -986,7 +1013,7 @@ export function createApp(o: {
   const onSaveStatus = (s: SaveStatus): void => {
     const r = bannerState.update(s);
     banner.setVisible(r.visible);
-    if (r.announce) void play.message.say(t("save.failed"), true);
+    if (r.announce) void narrator.say(t("save.failed"), true);
   };
 
   /** UI-31: 前進の長押し。1 歩ごとに再生の終わりを待ち、[moved] の後が hpChanged だけのときに続ける（canRepeat） */
@@ -1323,6 +1350,8 @@ export function createApp(o: {
     stopRequested = false;
     chaining = false;
     play.message.clear();
+    // UI-47: 会話の箱も閉じる（救済の申し出は下で街なら会話の箱に出し直す）
+    play.talk.clear();
     play.battle.clear();
     play.dice.hide();
     play.penaltyTable.hide();
@@ -1331,7 +1360,7 @@ export function createApp(o: {
     setSceneSong(state.screen, state.battle?.groups.map((g) => g.monsterId) ?? []);
     sync(state);
     const instant = true;
-    for (const k of plan.prompts) void play.message.say(t(k), instant);
+    for (const k of plan.prompts) void narrator.say(t(k), instant);
     if (plan.route === "battle") kickBattle();
   };
 
@@ -1720,9 +1749,16 @@ export function createApp(o: {
         return;
       }
       case "town":
-        if (a === "confirm") play.controls.select(0);
-        else if (typeof a === "object") play.controls.select(a.menu);
-        else if (a === "back") townBack();
+        // UI-33 / UI-47: Enter は会話の箱が開いていれば箱のタップ（次へ・閉じる）、閉じていれば先頭。
+        // 数字は n 番目の行（townItem が会話を打ち切る）、Esc は会話を打ち切ってから 1 つ上
+        if (a === "confirm") {
+          if (play.talk.isOpen()) play.talk.tap();
+          else play.controls.select(0);
+        } else if (typeof a === "object") play.controls.select(a.menu);
+        else if (a === "back") {
+          play.talk.flush();
+          townBack();
+        }
         return;
       case "dungeon": {
         if (!fieldFree()) {
@@ -1775,6 +1811,16 @@ export function createApp(o: {
     if (overlay === null) openHistory();
   };
 
+  /**
+   * UI-47: 再生の外の会話の箱・施設の絵のタップ（再生中のタップはステージが player.tap() に回す）。
+   * 文字送り中なら即表示、タップ待ちなら次の文、最後の文なら閉じる。overlay（キャンプ・履歴など）があるときは何もしない
+   */
+  const tapTalk = (): void => {
+    if (isBusy() || chaining) return;
+    if (route !== "town" || overlay !== null) return;
+    play.talk.tap();
+  };
+
   const blurActive = (): void => {
     const a = document.activeElement;
     if (a instanceof HTMLElement) a.blur();
@@ -1791,6 +1837,9 @@ export function createApp(o: {
       // UI-63: タイトルの曲は showRoute が求める（最初の操作で AudioContext を作ったときに始まる）
       showRoute("title");
       onTap(play.message.el, () => tapMessage());
+      // UI-47: 街の会話の箱と施設の絵のタップで会話を進める
+      onTap(play.talk.el, () => tapTalk());
+      onTap(play.picture, () => tapTalk());
       // UI-57: ポインタの記録（capture なので attachStageInput の処理より先に走る）。debug パネルを開いている間は記録しない
       attachPointerLog(stage, { log: pointerLog, scale, now: () => performance.now(), enabled: () => overlay !== "debug" });
       const stageInput = attachStageInput(stage, {

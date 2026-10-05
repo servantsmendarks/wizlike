@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { beatWait, createPlayer, createTapLatch, type PlayerDeps } from "../src/presenter/playback";
+import { beatWait, createPlayer, createTapLatch, townCarry, type PlayerDeps } from "../src/presenter/playback";
+import { createNarrator, createTalkModel } from "../src/presenter/views/talk";
+import { returnToTown } from "../src/core/rules/town";
 import { formatDiceSummary, type DiceEvent } from "../src/presenter/views/dice";
 import { formatMessage } from "../src/presenter/views/message";
 import type { PenaltyTableText } from "../src/presenter/views/penalty-table";
@@ -1414,5 +1416,129 @@ describe("UI-66 playback の音の契機", () => {
     expect(names(log)).toContain("message.say");
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------- UI-47（M8.5）街の会話の箱
+describe("UI-47 街の会話の箱と再生", () => {
+  test("UI-47 townCarry: 帰還（core の returnToTown）は screen{town} の前の dungeon.return・town.enter（と救済）を整形して返す", () => {
+    const base = stateWith(diveAt(1, 1, "N"));
+    const ctx = makeContext(cloneState(base), data);
+    returnToTown(ctx, "dungeon.return");
+    const evs = ctx.events;
+    const i = evs.findIndex((e) => e.kind === "screen" && e.to === "town");
+    expect(i).toBeGreaterThan(0);
+    expect(townCarry(evs, i, data.strings)).toEqual([data.strings["dungeon.return"], data.strings["town.enter"]]);
+    // 救済の申し出も（leader 以外が全員死亡で、金が足りない）
+    const dead = cloneState(base);
+    dead.gold = 0;
+    dead.bank = 0;
+    for (const c of dead.party) if (!c.isLeader) Object.assign(c, { life: "dead", hp: 0 });
+    const ctx2 = makeContext(dead, data);
+    returnToTown(ctx2, "dungeon.return");
+    const j = ctx2.events.findIndex((e) => e.kind === "screen" && e.to === "town");
+    expect(townCarry(ctx2.events, j, data.strings)).toEqual([data.strings["dungeon.return"], data.strings["town.enter"], data.strings["town.mercy.offer"]]);
+  });
+
+  test("UI-47 townCarry: 全滅は wipe より後の語りだけ、game.new（前に message が無い）は空、params は整形する", () => {
+    const evs: GameEvent[] = [
+      { kind: "message", key: "wipe.intro" },
+      { kind: "wipe", penalty: { roll: 2, bandIndex: 0, goldLost: 0, itemsLost: [], expLost: [], levelDowns: [], revived: [] } as unknown as PenaltyResult },
+      { kind: "message", key: "town.enter" },
+      { kind: "sanChanged", id: "c1", delta: 1, san: 100 },
+      { kind: "screen", to: "town" },
+    ];
+    expect(townCarry(evs, 4, data.strings)).toEqual([data.strings["town.enter"]]);
+    expect(townCarry([{ kind: "screen", to: "town" }], 0, data.strings)).toEqual([]);
+    const withParams: GameEvent[] = [{ kind: "message", key: "dungeon.enter", params: { dungeon: "D" } }, { kind: "screen", to: "town" }];
+    expect(townCarry(withParams, 1, data.strings)).toEqual([formatMessage(data.strings["dungeon.enter"]!, { dungeon: "D" })]);
+    // 拍（戦闘）の語りは持ち越さない
+    const beat: GameEvent[] = [{ kind: "message", key: "town.enter" }, { kind: "beat", phase: "system", auto: false } as GameEvent, { kind: "screen", to: "town" }];
+    expect(townCarry(beat, 2, data.strings)).toEqual([]);
+  });
+
+  test("UI-47 screen{town} では carry を screens.show に渡し、他の画面では渡さない", async () => {
+    const { deps } = fakeDeps();
+    const shown: Array<{ to: string; carry: readonly string[] | undefined }> = [];
+    deps.screens.show = (to, _st, carry) => {
+      shown.push({ to, carry });
+    };
+    const base = stateWith(diveAt(1, 1, "N"));
+    const ctx = makeContext(cloneState(base), data);
+    returnToTown(ctx, "dungeon.return");
+    await createPlayer(deps).play(ctx.events, base, ctx.state);
+    expect(shown).toEqual([{ to: "town", carry: [data.strings["dungeon.return"], data.strings["town.enter"]] }]);
+    const shown2: Array<{ to: string; n: number }> = [];
+    deps.screens.show = (to, _st, ...rest: unknown[]) => {
+      shown2.push({ to, n: rest.length });
+    };
+    await createPlayer(deps).play([{ kind: "screen", to: "dungeon" }], stateWith(null), base);
+    expect(shown2).toEqual([{ to: "dungeon", n: 0 }]);
+  });
+
+  test("UI-47/UI-40/TW-17 街の強化の箱: 会話の箱（実物のモデル）に結果を出した後、▼ を出してタップを 1 回待ってから箱を消す。結果の文は残る（演出スキップでも待ち、▼ は点滅しない）", async () => {
+    const st = cloneState(newGame(1));
+    st.gold = 1000;
+    const r = execute(st, { type: "town.upgrade", memberId: "c1", slot: "weapon", catalysts: [] }, data);
+    const m = r.events[1]!;
+    if (m.kind !== "message") throw new Error("message expected");
+    for (const skipAnimations of [false, true]) {
+      const { deps, log } = fakeDeps({ skipAnimations });
+      const sink = { open: false, text: "", more: { on: false, blink: false } };
+      const logs: string[] = [];
+      const talk = createTalkModel({
+        sink: {
+          open: (on) => (sink.open = on),
+          text: (t) => (sink.text = t),
+          more: (on, blink) => (sink.more = { on, blink }),
+        },
+        log: (t) => logs.push(t),
+        speed: () => 0,
+        blink: () => !skipAnimations,
+        schedule: () => () => {},
+      });
+      deps.message = createNarrator({ town: () => true, talk, window: deps.message });
+      const latch = createTapLatch();
+      deps.beat = latch;
+      const player = createPlayer(deps);
+      const p = player.play(r.events, st, r.state);
+      await new Promise<void>((res) => setTimeout(res, 0));
+      // 結果を出し、▼ を出して待っている（箱はまだ消していない）
+      expect(sink.text, String(skipAnimations)).toBe(formatMessage(data.strings[m.key]!, m.params));
+      expect(sink.more).toEqual({ on: true, blink: !skipAnimations });
+      expect(names(log)).not.toContain("dice.hide");
+      player.tap();
+      await p;
+      expect(names(log)).toContain("dice.hide");
+      // 結果の文は残り（最後の文は ▼ なし）、次のタップで閉じる
+      expect({ open: sink.open, more: sink.more.on }).toEqual({ open: true, more: false });
+      expect(logs).toEqual([formatMessage(data.strings[m.key]!, m.params)]);
+      talk.tap();
+      expect(sink.open).toBe(false);
+    }
+  });
+
+  test("UI-47/UI-43 再生の中の街の語りは、2 文目からタップを待つ（playback は変えずに会話の箱の say が待つ）。拍の外のタップ（player.tap）で次の文へ進む", async () => {
+    const { deps } = fakeDeps({ skipAnimations: true });
+    const sink = { text: "" };
+    const talk = createTalkModel({
+      sink: { open: () => {}, text: (t) => (sink.text = t), more: () => {} },
+      log: () => {},
+      speed: () => 0,
+      blink: () => false,
+      schedule: () => () => {},
+    });
+    deps.message = createNarrator({ town: () => true, talk, window: deps.message });
+    const player = createPlayer(deps);
+    let done = false;
+    const p = player.play([{ kind: "message", key: "town.enter" }, { kind: "message", key: "town.inn.intro" }], stateWith(null), stateWith(null)).then(() => {
+      done = true;
+    });
+    await new Promise<void>((res) => setTimeout(res, 0));
+    expect(sink.text).toBe(data.strings["town.enter"]);
+    expect(done).toBe(false);
+    player.tap();
+    await p;
+    expect(sink.text).toBe(data.strings["town.inn.intro"]);
   });
 });

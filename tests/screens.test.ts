@@ -318,7 +318,7 @@ describe("入力と Command", () => {
   test("UI-55 onScreen は routeOfScreen を通し、swipeEnabled / repeater / walker / openMap / handleAction / 長押しの解除は fieldFree（screen dungeon かつ保留なし）を見る（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     expect(app).toMatch(/const fieldFree = \(\): boolean => state\.screen === "dungeon" && state\.pendingChoice === null;/);
-    const onScreen = /const onScreen = \(to: Screen\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    const onScreen = /const onScreen = \(to: Screen, carry: readonly string\[\] = \[\]\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(onScreen).toMatch(/const r = to === "title" \? "title" : routeOfScreen\(to\);/);
     expect(onScreen).toMatch(/showRoute\(r\)/);
     expect(onScreen).not.toMatch(/showRoute\(to\)/);
@@ -462,8 +462,10 @@ describe("入力と Command", () => {
     expect(app).toContain("townPictures: o.assets?.town ?? {},");
     const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
     expect(dungeon).toContain("const camp = createCampView(lay.camp, tl.book);");
-    // 帯は窓の後・キャンプのパネルの前（図鑑のパネルが帯を覆う）、パーティ欄はキャンプの後
-    expect(dungeon).toContain("el.append(viewBox, header.el, message.el, band.el, camp.el, panel.el, controls.el, map.el, wipe.el, history.el);");
+    // 帯は窓の後・キャンプのパネルの前（図鑑のパネルが帯を覆う）、会話の箱（UI-47）はキャンプの後、パーティ欄はその後
+    expect(dungeon).toContain(
+      "el.append(viewBox, header.el, message.el, band.el, camp.el, talk.el, panel.el, controls.el, map.el, wipe.el, history.el);",
+    );
     // 街ではメッセージ窓と 64 のパーティ欄を隠し、帯とヘッダーのログを出す
     expect(dungeon).toContain('message.el.style.display = town ? "none" : "";');
     expect(dungeon).toContain('panel.el.style.display = town ? "none" : "";');
@@ -474,7 +476,8 @@ describe("入力と Command", () => {
   test("UI-13/UI-46/UI-59（M8.5）ヘッダーのログは履歴の画面（openHistory）を開き、帯のタップはその人の状態（酒場の状態と同じ部品）を開く。どちらも guard を通す（再生中・自動歩行中は捨てる。ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     expect(app).toContain("onLog: () => guard(() => openHistory()),");
-    expect(app).toContain('onBand: (id) => guard(() => openCamp("tavern", "status", id)),');
+    // UI-47: 開く前に会話の箱を打ち切る（overlay があれば開かないので打ち切らない）
+    expect(app).toMatch(/onBand: \(id\) =>\s*guard\(\(\) => \{\s*if \(overlay !== null\) return;\s*play\.talk\.flush\(\);\s*openCamp\("tavern", "status", id\);\s*\}\),/);
     const open = /const openCamp = \(host: CampHost, open\?: CampOpen, memberId\?: string\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     // overlay があれば開かない、街でだけ開く（host tavern）
     expect(open).toContain("if (overlay !== null) return;");
@@ -503,9 +506,61 @@ describe("入力と Command", () => {
     );
   });
 
+  test("UI-47（M8.5）語りは narrator が route で振り分け（街は会話の箱）、再生・save.failed・再開・街の語りはそこを通す。ページに入ったときの語りは全部 say(x, skip)（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toContain('const narrator = createNarrator({ town: () => route === "town", talk: play.talk, window: play.message });');
+    const deps = /const player = createPlayer\(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(deps).toContain("message: narrator,");
+    expect(deps).not.toContain("message: play.message");
+    // 街の語りの say は narrator だけ（メッセージ窓に直接は語らない）
+    expect(app).not.toMatch(/play\.message\.say\(/);
+    expect(app).toContain('if (r.announce) void narrator.say(t("save.failed"), true);');
+    expect(app).toContain("for (const k of plan.prompts) void narrator.say(t(k), instant);");
+    const body = /const goTownPage = \(page: TownPage\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(body).toContain("texts.forEach((x) => void narrator.say(x, skip));");
+    // 箱の ▼ は演出スキップでは点滅しない
+    expect(app).toContain("talkBlink: () => !store.get().skipAnimations,");
+  });
+
+  test("UI-47（M8.5）一覧・戻る・数字（townItem）と Esc は会話を打ち切ってから動き、Enter は会話の箱が開いていれば箱のタップ。箱と施設の絵のタップは再生の外・overlay なしの街で talk.tap（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const item = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(item).toMatch(/onSelect: \(\) =>\s*guard\(\(\) => \{\s*play\.talk\.flush\(\);\s*switch \(e\.kind\) \{/);
+    const core = /const handleActionCore = \(a: Action\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(core).toMatch(
+      /case "town":\s*if \(a === "confirm"\) \{\s*if \(play\.talk\.isOpen\(\)\) play\.talk\.tap\(\);\s*else play\.controls\.select\(0\);\s*\} else if \(typeof a === "object"\) play\.controls\.select\(a\.menu\);\s*else if \(a === "back"\) \{\s*play\.talk\.flush\(\);\s*townBack\(\);\s*\}\s*return;/,
+    );
+    const tap = /const tapTalk = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(tap).toContain("if (isBusy() || chaining) return;");
+    expect(tap).toContain('if (route !== "town" || overlay !== null) return;');
+    expect(tap).toContain("play.talk.tap();");
+    expect(app).toContain("onTap(play.talk.el, () => tapTalk());");
+    expect(app).toContain("onTap(play.picture, () => tapTalk());");
+  });
+
+  test("UI-47/SV-50（M8.5）街を出るときは会話の箱を打ち切り、街に入るときは迷宮の窓で語った carry を出し直す（ログには入れない）。再開では箱を閉じる（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const onScreen = /const onScreen = \(to: Screen, carry: readonly string\[\] = \[\]\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(onScreen).toContain("const from = route;");
+    expect(onScreen).toContain('if (from === "town" && r !== "town") play.talk.flush();');
+    expect(onScreen).toContain('if (r === "town" && from !== "town" && carry.length > 0) void play.talk.replay(carry, store.get().skipAnimations);');
+    // flush は showRoute の前（route が変わる前）、replay は後
+    expect(onScreen.indexOf("play.talk.flush()")).toBeLessThan(onScreen.indexOf("showRoute(r)"));
+    expect(onScreen.indexOf("play.talk.replay(")).toBeGreaterThan(onScreen.indexOf("showRoute(r)"));
+    expect(app).toContain("show: (to: Screen, _st, carry) => onScreen(to, carry ?? []),");
+    const resume = /const resume = \(st: GameState\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(resume).toContain("play.talk.clear();");
+    // 再開の語りは showRoute の後（route が決まってから振り分ける）
+    expect(resume.indexOf("narrator.say(")).toBeGreaterThan(resume.indexOf("showRoute(plan.route)"));
+    // 判定の箱の下端は街だけ会話の箱の上
+    const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
+    expect(dungeon).toContain("dice.setBottom(town ? tl.diceBottom : DICE_BOX_BOTTOM);");
+    expect(dungeon).toContain("const talk = createTalkBox({ layout: tl.talk, speed: o.textSpeed, blink: o.talkBlink, log: (t) => message.log(t) });");
+  });
+
   test("UI-54 戦闘中はヘッダーに 第{round+1}ターン を出す。遭遇の再生（onScreen battle）は 1、sync の戦闘は battleMenu.round + 1、battleEnd の後と迷宮・街の sync では隠す。lowerInput はターンを消さない（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
-    const onScreen = /const onScreen = \(to: Screen\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    const onScreen = /const onScreen = \(to: Screen, carry: readonly string\[\] = \[\]\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(onScreen).toMatch(/if \(r === "battle"\) \{[^}]*play\.header\.setTurn\(battleTurnText\(strings, 1\)\);/);
     const sync = /const sync = \(st: GameState\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(sync).toContain("play.header.setTurn(menu === null ? null : battleTurnText(strings, menu.round + 1));");

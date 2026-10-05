@@ -1,7 +1,8 @@
 // UI-40: 判定の箱（src/presenter/views/dice.ts の純粋な部分）。
 import { describe, expect, test } from "vitest";
 import type { GameEvent } from "../src/core/types";
-import { diceBox, diceFrames, formatDiceSummary, type DiceEvent } from "../src/presenter/views/dice";
+import { DICE_BOX_BOTTOM, diceBox, diceFrames, formatDiceSummary, type DiceEvent } from "../src/presenter/views/dice";
+import { regions, townLayout } from "../src/presenter/layout";
 import { data, expectKnownStringKeys } from "./helpers/core";
 
 const INITIATIVE: DiceEvent = {
@@ -83,6 +84,22 @@ describe("UI-40 diceBox", () => {
     for (const r of [diceBox(FLEE), diceBox(INITIATIVE)]) {
       expect(r.x >= 0 && r.y >= 0 && r.x + r.w <= 240 && r.y + r.h <= 150).toBe(true);
     }
+  });
+
+  test("UI-40/UI-47（M8.5）街では下端を会話の箱の上（townLayout の diceBottom = ビューの y110）に上げる。1 行は y62..109、3 行（制止の士気）も y42 でビューの内側、会話の箱（ビューの y112..147）と重ならない", () => {
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const T = townLayout(g, data.config.party.size);
+    expect(T.diceBottom).toBe(110);
+    expect(DICE_BOX_BOTTOM).toBe(146);
+    expect(diceBox(FLEE, T.diceBottom)).toEqual({ x: 8, y: 62, w: 224, h: 48 });
+    expect(diceBox(RESTRAIN_MORALE, T.diceBottom)).toEqual({ x: 8, y: 42, w: 224, h: 68 });
+    const talkTop = T.talk.box.y - g.view.y;
+    expect(talkTop).toBe(112);
+    for (const r of [diceBox(FLEE, T.diceBottom), diceBox(INITIATIVE, T.diceBottom), diceBox(RESTRAIN_MORALE, T.diceBottom)]) {
+      expect(r.y >= 0 && r.y + r.h <= talkTop).toBe(true);
+    }
+    // 既定（迷宮・戦闘）は今のまま
+    expect(diceBox(FLEE, DICE_BOX_BOTTOM)).toEqual(diceBox(FLEE));
   });
 });
 

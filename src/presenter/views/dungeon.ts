@@ -1,6 +1,7 @@
 // UI-53 の迷宮の画面。ui §2 の 5 領域（ヘッダー、ビュー、メッセージ、パーティ、操作）を合成する。
 // DOM は 1 回だけ作り、街（UI-13。M8.5）でもヘッダー・ビュー・操作を使う。街ではビューに施設の絵（UI-61。views/town-picture.ts）を出し、
 // メッセージ窓と 64 のパーティ欄を隠して、パーティの帯（views/party-band.ts）・見出しと一覧（controls の setList の town）を townLayout の位置に出す。
+// 街の語りは会話の箱（UI-47。views/talk.ts）で、箱は閉じている間は見えない（setMode では出し入れしない。街を出るときは app が flush する）。
 // - ビュー: 線画の SVG（240×150）。スワイプはステージ全体で受ける（input/tap.ts。UI-30）。受ける間は画面に class swipe-on を付け、
 //   style.css で touch-action: none にする（ボタンの上で始めたスワイプがブラウザのパンにならないように。UI-37）。
 // - 地図（UI-24）と全滅の内訳（UI-56）と履歴（UI-46）: ビューとメッセージの領域（既定 y16..235）を覆う overlay。パーティ欄は見えたまま。
@@ -17,7 +18,7 @@ import type { DungeonLayout, Regions, TownLayout } from "../layout";
 import { createBattleView, type BattleView } from "./battle";
 import { createCampView, type CampView } from "./camp";
 import { createControls, type Controls, type DpadAction } from "./controls";
-import { createDiceView, type DiceView } from "./dice";
+import { createDiceView, DICE_BOX_BOTTOM, type DiceView } from "./dice";
 import { createPenaltyTableView, type PenaltyTableView } from "./penalty-table";
 import { createDungeonSvg, type DungeonSvg } from "./dungeon-svg";
 import { createHeader, type Header } from "./header";
@@ -26,6 +27,7 @@ import { createMapView, type MapViewEl } from "./map";
 import { createMessageWindow, type MessageWindow } from "./message";
 import { createPartyPanel, type MaxOf, type PartyPanel, type StageOf } from "./party";
 import { createPartyBand, type PartyBand } from "./party-band";
+import { createTalkBox, type TalkBox } from "./talk";
 import { createTownPicture } from "./town-picture";
 import { createWipeView, type WipeView } from "./wipe";
 
@@ -40,6 +42,10 @@ export type DungeonScreen = {
   party: PartyPanel;
   /** UI-13（M8.5）: 街のパーティの帯 */
   band: PartyBand;
+  /** UI-47（M8.5）: 街の会話の箱（ログはメッセージ窓の履歴に入れる） */
+  talk: TalkBox;
+  /** UI-47（M8.5）: 街の施設の絵の層（再生の外のタップで会話を進める） */
+  picture: HTMLElement;
   controls: Controls;
   map: MapViewEl;
   /** ビューの中の敵グループの層（battle のときだけ見える） */
@@ -88,6 +94,8 @@ export function createDungeonScreen(o: {
   town: TownLayout;
   /** 文字送りの 1 文字あたりの ms（UI-43） */
   textSpeed(): number;
+  /** UI-47: 会話の箱のタップ待ちの ▼ を点滅させるか（演出スキップでは偽） */
+  talkBlink(): boolean;
   historyMax: number;
   /** UI-12: パーティ欄の SAN の段（core の sanStage） */
   stageOf: StageOf;
@@ -214,7 +222,10 @@ export function createDungeonScreen(o: {
   const history = createHistoryView(lay.history);
   history.el.style.display = "none";
 
-  el.append(viewBox, header.el, message.el, band.el, camp.el, panel.el, controls.el, map.el, wipe.el, history.el);
+  // UI-47（M8.5）: 街の会話の箱。キャンプのパネルより上（酒場の呪文の結果が見える）、overlay より下。ログはメッセージ窓の 1 本の履歴
+  const talk = createTalkBox({ layout: tl.talk, speed: o.textSpeed, blink: o.talkBlink, log: (t) => message.log(t) });
+
+  el.append(viewBox, header.el, message.el, band.el, camp.el, talk.el, panel.el, controls.el, map.el, wipe.el, history.el);
 
   return {
     el,
@@ -223,6 +234,8 @@ export function createDungeonScreen(o: {
     message,
     party,
     band,
+    talk,
+    picture: townPic.el,
     controls,
     map,
     battle,
@@ -241,6 +254,8 @@ export function createDungeonScreen(o: {
       panel.el.style.display = town ? "none" : "";
       band.el.style.display = town ? "" : "none";
       header.setLogVisible(town);
+      // UI-40 / UI-47: 街の判定の箱は会話の箱の上に上げる
+      dice.setBottom(town ? tl.diceBottom : DICE_BOX_BOTTOM);
     },
     setTownPicture(facility: string): void {
       townPic.show(facility);

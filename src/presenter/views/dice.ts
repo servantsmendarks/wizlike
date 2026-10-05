@@ -1,4 +1,4 @@
-// UI-40: 判定の箱。ビューの下部に重ねる overlay（ビューの左上が原点で x8..231、下端 y146）。
+// UI-40: 判定の箱。ビューの下部に重ねる overlay（ビューの左上が原点で x8..231、下端 y146。街では会話の箱 UI-47 の上の y110。setBottom）。
 // 中身は上から 見出し（label）/ 各行「{label} {base}{dice.plus}{目…}{dice.total}」/ 基準（rule）/ {dice.arrow}{結果}。
 // 補正の行（base が値で目が無い。EV-21 の士気 +1 など。M7）は「{label}」だけを出す（値は label の中にある）。
 // 高さは 8 + 10 ×（rows + 3）。新しい dice が来たら前の箱を置き換える（積まない）。
@@ -19,7 +19,8 @@ export type DiceFrame = { rows: { dice: (number | null)[]; total: number | null 
 
 const BOX_X = 8;
 const BOX_W = 224;
-const BOX_BOTTOM = 146;
+/** UI-40: 迷宮・戦闘の箱の下端（ビューの座標）。街は会話の箱（UI-47）の上（townLayout の diceBottom）に setBottom で上げる */
+export const DICE_BOX_BOTTOM = 146;
 const LINE_H = 10;
 const PAD = 4;
 
@@ -48,10 +49,10 @@ export function diceFrames(ev: Pick<DiceEvent, "rows">, skip: boolean): DiceFram
   return out;
 }
 
-/** 純粋: 箱の位置（ビューの左上が原点）。x8 w224、下端 y146、高さ 8 + 10 ×（3 + rows.length） */
-export function diceBox(ev: Pick<DiceEvent, "rows">): Rect {
+/** 純粋: 箱の位置（ビューの左上が原点）。x8 w224、下端 bottom（既定 y146。街は y110）、高さ 8 + 10 ×（3 + rows.length） */
+export function diceBox(ev: Pick<DiceEvent, "rows">, bottom: number = DICE_BOX_BOTTOM): Rect {
   const h = PAD * 2 + LINE_H * (3 + ev.rows.length);
-  return { x: BOX_X, y: BOX_BOTTOM - h, w: BOX_W, h };
+  return { x: BOX_X, y: bottom - h, w: BOX_W, h };
 }
 
 function text(strings: Strings, ref: TextRef): string {
@@ -95,6 +96,8 @@ export type DiceView = {
   hide(): void;
   /** 最終の段（結果の行まで）を描いたか。結果の点滅の間も真。hide と次の show で偽に戻る */
   settled(): boolean;
+  /** UI-40 / UI-47（M8.5）: 箱の下端（ビューの座標）。次の show から効く */
+  setBottom(bottom: number): void;
 };
 
 async function settle(a: Animation): Promise<void> {
@@ -122,6 +125,8 @@ export function createDiceView(strings: Strings): DiceView {
   let gen = 0;
   /** 今の箱の最終の段を描いたか */
   let final = false;
+  /** 箱の下端（ビューの座標） */
+  let bottom = DICE_BOX_BOTTOM;
 
   const line = (j: number): HTMLElement => {
     const d = document.createElement("div");
@@ -152,7 +157,7 @@ export function createDiceView(strings: Strings): DiceView {
       const my = ++gen;
       final = false;
       const plus = strings["dice.plus"] ?? "+";
-      const r = diceBox(ev);
+      const r = diceBox(ev, bottom);
       Object.assign(el.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px`, display: "" });
 
       const head = line(0);
@@ -227,6 +232,9 @@ export function createDiceView(strings: Strings): DiceView {
     },
     settled(): boolean {
       return final;
+    },
+    setBottom(b: number): void {
+      bottom = b;
     },
     hide(): void {
       gen++;
