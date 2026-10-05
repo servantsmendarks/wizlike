@@ -202,4 +202,21 @@ describe("UI-59 パネルの lines", () => {
       ["説明", "34px", "var(--c-dim)"],
     ]);
   });
+
+  test("IT-66/UI-11（M7）lines の tall（図鑑）はパネルを tallRect（ビューとメッセージ窓の下 2 行の上まで。既定 y16・240×198）に広げ、tall なし（品の詳細）・ほかの表示はビュー領域（y16・240×150）に戻す", () => {
+    vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
+    const v = createCampView({ x: 0, y: 16, w: 240, h: 150 }, { x: 0, y: 16, w: 240, h: 198 });
+    const el = v.el as unknown as FakeEl;
+    const box = (): string[] => [el.style["left"]!, el.style["top"]!, el.style["width"]!, el.style["height"]!];
+    expect(box()).toEqual(["0px", "16px", "240px", "150px"]);
+    // 見出し + 18 行（4 + 10 × 19 = 194 ≤ 198）
+    v.render({ kind: "lines", title: "図鑑", lines: Array.from({ length: 18 }, (_, i) => ({ text: `r${i}`, tone: "normal" as const })), tall: true });
+    expect(box()).toEqual(["0px", "16px", "240px", "198px"]);
+    expect(el.children.at(-1)!.style["top"]).toBe("184px");
+    v.render({ kind: "lines", title: "短剣", lines: [] });
+    expect(box()).toEqual(["0px", "16px", "240px", "150px"]);
+    v.render({ kind: "lines", title: "図鑑", lines: [], tall: true });
+    v.render({ kind: "text", title: "酒場" });
+    expect(box()).toEqual(["0px", "16px", "240px", "150px"]);
+  });
 });

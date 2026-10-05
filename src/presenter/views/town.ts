@@ -447,6 +447,26 @@ export function upgradeConfirmLines(page: TownPage, menu: TownMenu, preview: Upg
 }
 
 /**
+ * UI-11 / UI-52（M7）: 一覧をビューとメッセージの領域に広げるページか（layout.listTall。メッセージ窓は下 2 行だけ見える）。
+ * 店（最初の一覧・買う・持たせる者・売る者と品・買い戻しと持たせる者・鑑定）、倉庫（最初の一覧・預ける者と品・引き出す品と受け取る者）、酒場の一覧。
+ * 施設メニュー（3 列 × 2 段）・宿・寺院・闇魔術（強化を含む）・迷宮の入口は広げない
+ */
+export function townListTall(page: TownPage): boolean {
+  if (typeof page === "object") return "shop" in page || "sell" in page || "buyback" in page || "deposit" in page || "withdraw" in page;
+  return (
+    page === "tavern" ||
+    page === "shop" ||
+    page === "shopBuy" ||
+    page === "shopSell" ||
+    page === "shopBuyback" ||
+    page === "shopIdentify" ||
+    page === "storage" ||
+    page === "storageDeposit" ||
+    page === "storageWithdraw"
+  );
+}
+
+/**
  * UI-44（M7）: 押して送ったら、再生が終わるまで入力の UI（ヘッダーの所持金・一覧と固定の戻る）を下げる項目か。
  * 判定の箱（UI-40）を出してタップを待つ強化（TW-17）の「鍛える」だけ（戦闘の逃走・全滅の 2d10 と同じ扱い）。
  * 他の項目は判定の箱を出さないので、一覧を出したまま再生する

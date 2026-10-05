@@ -104,7 +104,7 @@ import { createSaveBanner } from "./views/save-banner";
 import { createUpdateNotice } from "./views/update-notice";
 import { createTitleScreen, titleEntries, titleHint, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
 import { formatWipeSummary } from "./views/wipe";
-import { townEntries, townHeader, townLowersInput, townPageIntro, townParent, townRepair, upgradeConfirmLines, type TownEntry, type TownPage } from "./views/town";
+import { townEntries, townHeader, townListTall, townLowersInput, townPageIntro, townParent, townRepair, upgradeConfirmLines, type TownEntry, type TownPage } from "./views/town";
 
 export type Route = "title" | "creation" | "custom" | "town" | "dungeon" | "battle";
 export type Overlay = null | "map" | "debug" | "camp" | "wipe" | "history" | "settings";
@@ -596,7 +596,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
         c.setMode("battle");
       } else {
         // UI-11: 末尾の戻るは一覧の外に固定する
-        c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back" });
+        c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", tall: townListTall(townPage) });
         c.setMode("list");
       }
       return;
@@ -677,7 +677,7 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
       const d = itemDetail(state, data, p.instanceId);
       return d === null ? { kind: "text", title: "" } : { kind: "lines", ...formatItemDetail(d, strings) };
     }
-    if (p.kind === "book") return { kind: "lines", ...formatBook(uniqueBookView(state, data), strings) }; // IT-66
+    if (p.kind === "book") return { kind: "lines", ...formatBook(uniqueBookView(state, data), strings), tall: true }; // IT-66 / UI-11（M7）: 図鑑はビューとメッセージの領域に広げる
     const ch = state.party.find((x) => x.id === p.memberId);
     if (ch === undefined) return { kind: "text", title: "" };
     return {

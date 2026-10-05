@@ -316,6 +316,46 @@ describe("controls", () => {
     expect(holder.style["display"]).toBe("none");
   });
 
+  test("UI-11/UI-52（M7）setList(tall) は一覧をビューとメッセージの領域（layout.listTall）に広げる: 一覧は x8・y16・224×198（行は 22px）、下敷きは y16..213 の全幅、戻るは操作領域の固定の位置。tall なしで元の位置（y302・96px）に戻す", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, hold: HOLD, onClose: () => {} });
+    const picked: number[] = [];
+    const rows = Array.from({ length: 10 }, (_, i) => ({ label: `r${i}`, onSelect: () => picked.push(i) }));
+    c.setList([...rows, { label: "back", onSelect: () => picked.push(10) }], { fixedLast: true, tall: true });
+    c.setMode("list");
+    const list = created.find((e) => e.className === "controls-list")!;
+    const holder = created.find((e) => e.className === "controls-list-back")!;
+    const backdrop = created.find((e) => e.className === "controls-list-backdrop")!;
+    // 操作領域の原点は y300。一覧は y16（−284）・x8、高さは 22 × 9 = 198（下端 213。窓の下 2 行 y214..233 は見える）
+    expect([list.style["left"], list.style["top"], list.style["width"], list.style["height"]]).toEqual(["8px", "-284px", "224px", "198px"]);
+    expect(list.children.map((e) => e.style["height"])).toEqual(Array.from({ length: 10 }, () => "22px"));
+    expect(list.children.map((e) => e.style["width"])).toEqual(Array.from({ length: 10 }, () => "224px"));
+    expect([backdrop.style["left"], backdrop.style["top"], backdrop.style["width"], backdrop.style["height"], backdrop.style["display"]]).toEqual([
+      "0px",
+      "-284px",
+      "240px",
+      "198px",
+      "",
+    ]);
+    // 戻るは今までと同じ操作領域の x178・y54（56×40）。添字・数字キーは items の順のまま
+    expect(holder.children.map((e) => [e["textContent"], e.style["left"], e.style["top"]])).toEqual([["back", "178px", "54px"]]);
+    c.select(10);
+    c.select(9);
+    list.children[0]!.tap();
+    expect(picked).toEqual([10, 9, 0]);
+    // 一覧以外のモードでは下敷きも隠す
+    c.setMode("none");
+    expect(backdrop.style["display"]).toBe("none");
+    // tall なし（キャンプ・戦闘の一覧など）は元の位置（layout.list: x8・y302・高さ 96、行 32px）に戻し、下敷きを出さない
+    c.setList([{ label: "a", onSelect: () => {} }, { label: "back", onSelect: () => {} }], { fixedLast: true });
+    c.setMode("list");
+    expect([list.style["left"], list.style["top"], list.style["width"], list.style["height"]]).toEqual(["8px", "2px", "168px", "96px"]);
+    expect(list.children.map((e) => e.style["height"])).toEqual(["32px"]);
+    expect(backdrop.style["display"]).toBe("none");
+  });
+
   test("UI-11 一覧は出すたびに先頭から: setMode(\"list\") で一覧の scrollTop を 0 にする（表示した後にも戻す）", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);

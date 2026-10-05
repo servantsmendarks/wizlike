@@ -450,6 +450,16 @@ describe("入力と Command", () => {
     expect(app).toMatch(/townPage = townRepair\(townPage, menu\);\s*const ents = townEntries\(townPage, menu, strings, previewOf\(townPage\)\);/);
   });
 
+  test("UI-11/UI-52/IT-66（M7）街の一覧は townListTall のページで広げ（setList の tall）、図鑑のパネルは lines の tall で広げる（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toContain('c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", tall: townListTall(townPage) });');
+    expect(app).toMatch(/if \(p\.kind === "book"\) return \{ kind: "lines", \.\.\.formatBook\(uniqueBookView\(state, data\), strings\), tall: true \};/);
+    const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
+    // 図鑑のパネルはメッセージ窓より上に描く（DOM で窓の後）
+    expect(dungeon).toContain("const camp = createCampView(lay.camp, lay.listTall.backdrop);");
+    expect(dungeon).toContain("el.append(viewBox, header.el, message.el, camp.el, party.el, controls.el, map.el, wipe.el, history.el);");
+  });
+
   // M7（2026-10-05）: 鍛えるは送る前に lowerInput（UI-44）し、rejected なら sync で戻すようにしたので、upgrade の分岐の期待を改めた
   test("UI-52/TW-17/UI-44（M7）強化: 触媒の行は語りなしで段を替え、鍛えるは部位の段に戻して入力の UI を下げてから town.upgrade を送り、rejected なら sync で戻す。確認の段は upgradePreview の値で語る（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);

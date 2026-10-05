@@ -4,6 +4,8 @@
 //   style.css で touch-action: none にする（ボタンの上で始めたスワイプがブラウザのパンにならないように。UI-37）。
 // - 地図（UI-24）と全滅の内訳（UI-56）と履歴（UI-46）: ビューとメッセージの領域（既定 y16..235）を覆う overlay。パーティ欄は見えたまま。
 // - キャンプと酒場のパネル（UI-53 / UI-59。views/camp.ts）: ビュー領域だけを覆う。メッセージ窓とパーティ欄は見えたまま。
+//   図鑑（IT-66。M7）だけはビューとメッセージ窓（下 2 行を除く。layout.listTall.backdrop）まで広げるので、DOM ではメッセージ窓の後に置く。
+// - 店・倉庫・酒場の一覧（UI-11 / UI-52。M7）: 操作領域の一覧を layout.listTall に広げる（views/controls.ts の setList の tall。操作領域の要素の子だが、DOM で窓の後なので上に描く）。
 // - 戦闘（UI-54）: ビューの中に敵グループの層（views/battle.ts）を重ね、battle の間は線画・街の枠を隠す。
 //   ダイスの overlay（views/dice.ts、UI-40）はビューの中のいちばん上（モードを問わない）。全体攻撃の揺れ（UI-42）はビュー全体の translate。
 // 各部品の位置と大きさは、config.ui.layout から作った regions と dungeonLayout（layout.ts）から決める。
@@ -147,8 +149,8 @@ export function createDungeonScreen(o: {
   const map = createMapView(lay.map, (p) => o.onMapCell?.(p), o.data.config.ui.mapSnapPx);
   map.el.style.display = "none";
 
-  // キャンプと酒場のパネル（UI-53）はビュー領域だけ
-  const camp = createCampView(lay.camp);
+  // キャンプと酒場のパネル（UI-53）はビュー領域だけ（図鑑だけ listTall.backdrop に広げる。M7）
+  const camp = createCampView(lay.camp, lay.listTall.backdrop);
   camp.el.style.display = "none";
 
   // 全滅の内訳（UI-56）は地図と同じ範囲
@@ -159,7 +161,7 @@ export function createDungeonScreen(o: {
   const history = createHistoryView(lay.history);
   history.el.style.display = "none";
 
-  el.append(viewBox, camp.el, header.el, message.el, party.el, controls.el, map.el, wipe.el, history.el);
+  el.append(viewBox, header.el, message.el, camp.el, party.el, controls.el, map.el, wipe.el, history.el);
 
   return {
     el,

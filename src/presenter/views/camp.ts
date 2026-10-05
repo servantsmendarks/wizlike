@@ -559,27 +559,32 @@ export type CampPanelView =
   | { kind: "text"; title: string; lines?: string[] }
   | { kind: "detail"; detail: CharacterDetail; focusSlot: number | null }
   | { kind: "order"; lines: { label: string; row: string; picked: boolean }[] }
-  /** UI-59 の品の詳細・IT-66 の図鑑（M7）。見出しは accent、行は tone の色（danger / dim） */
-  | { kind: "lines"; title: string; lines: PanelLine[] };
+  /** UI-59 の品の詳細・IT-66 の図鑑（M7）。見出しは accent、行は tone の色（danger / dim）。tall ならパネルを tallRect に広げる（図鑑。UI-11） */
+  | { kind: "lines"; title: string; lines: PanelLine[]; tall?: boolean };
 
 export type CampView = {
   el: HTMLElement;
   render(p: CampPanelView): void;
 };
 
-/** rect はステージ座標のパネルの範囲（layout.camp = ビュー領域）。メッセージ窓とパーティ欄は覆わない */
-export function createCampView(rect: Rect): CampView {
+/**
+ * rect はステージ座標のパネルの範囲（layout.camp = ビュー領域）。メッセージ窓とパーティ欄は覆わない。
+ * tallRect は広げた行のパネル（lines の tall。IT-66 の図鑑。M7）の範囲（layout.listTall.backdrop = ビューと、メッセージ窓の下 2 行を除いた範囲）。
+ * 幅は rect と同じ前提（行の幅は rect.w で決める）
+ */
+export function createCampView(rect: Rect, tallRect: Rect = rect): CampView {
   const el = document.createElement("div");
   el.className = "camp-view";
   Object.assign(el.style, {
     position: "absolute",
-    left: `${rect.x}px`,
-    top: `${rect.y}px`,
-    width: `${rect.w}px`,
-    height: `${rect.h}px`,
     background: "var(--c-bg)",
     color: "var(--c-text)",
+    overflow: "hidden",
   });
+  const place =(r: Rect): void => {
+    Object.assign(el.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
+  };
+  place(rect);
   const detail = createDetailView({ x: 0, y: 0, w: rect.w, h: rect.h });
 
   const line = (row: number, text: string, cls: string, color?: string, col: { left: number; width: number } = { left: PAD, width: rect.w - 2 * PAD }): HTMLElement => {
@@ -603,6 +608,7 @@ export function createCampView(rect: Rect): CampView {
   return {
     el,
     render(p: CampPanelView): void {
+      place(p.kind === "lines" && p.tall === true ? tallRect : rect);
       if (p.kind === "detail") {
         detail.render(p.detail, p.focusSlot);
         el.replaceChildren(detail.el);

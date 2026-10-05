@@ -7,7 +7,7 @@ import { townMenu } from "../src/core/rules/town";
 import { upgradePreview } from "../src/core/rules/upgrade";
 import { cloneState, createItemInstance } from "../src/core/state";
 import type { Character, GameState, TownMenu } from "../src/core/types";
-import { samePage, townEntries, townHeader, townLowersInput, townPageIntro, townParent, townRepair, upgradeConfirmLines, type TownEntry } from "../src/presenter/views/town";
+import { samePage, townEntries, townHeader, townListTall, townLowersInput, townPageIntro, townParent, townRepair, upgradeConfirmLines, type TownEntry, type TownPage } from "../src/presenter/views/town";
 import { data, newGame } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
 
@@ -223,6 +223,29 @@ describe("UI-52 街のページ", () => {
     expect(townEntries({ upConfirm: sel }, m, S, null)[0]).toMatchObject({ disabled: true });
     expect(upgradeConfirmLines({ upConfirm: sel }, m, null, S)).toEqual([]);
     expect(upgradeConfirmLines("dark", m, p, S)).toEqual([]);
+  });
+
+  test("UI-11/UI-52（M7）townListTall: 店・倉庫・酒場の一覧のページだけ広げる。施設メニュー・宿・寺院・闇魔術（強化を含む）・迷宮の入口は広げない", () => {
+    const sel = { memberId: "c1", slot: "weapon" as const, picked: [] };
+    const tall: TownPage[] = [
+      "tavern",
+      "shop",
+      "shopBuy",
+      "shopSell",
+      "shopBuyback",
+      "shopIdentify",
+      "storage",
+      "storageDeposit",
+      "storageWithdraw",
+      { shop: "herb" },
+      { sell: "c1" },
+      { buyback: "i1" },
+      { deposit: "c1" },
+      { withdraw: "i1" },
+    ];
+    const normal: TownPage[] = ["menu", "inn", "temple", { temple: "cure" }, "dark", "darkRevive", "upgrade", { upSlot: "c1" }, { upCat: sel }, { upConfirm: sel }, "gate"];
+    expect(tall.filter((p) => !townListTall(p))).toEqual([]);
+    expect(normal.filter((p) => townListTall(p))).toEqual([]);
   });
 
   test("UI-44/TW-17 townLowersInput: 判定の箱でタップを待つ 鍛える だけが、送ったら再生の間 所持金・一覧・戻るを下げる。他の街の項目（買う・売る・宿・寺院・闇魔術・戻る）は下げない", () => {

@@ -4,6 +4,7 @@
 // 前進ボタンだけは、動かずに hold.ms() 押し続けたら hold.onHoldStart（長押しの連打）、離したら hold.onHoldEnd（UI-31）。
 // 「オート解除」は再生中も反応する（whileBusy。UI-44 の例外）。
 // 末尾が戻る / やめるの一覧は、その項目を一覧の外（layout.listBack）に固定し、一覧だけを縦にスクロールする（UI-11）。
+// M7: 店・倉庫・酒場の一覧（setList の tall）は、一覧と下敷きを操作領域の外のビューとメッセージの領域（layout.listTall）に置く（負の top）。
 // Action から Command への変換と長押しの連打は呼び出し側（app）が持つ。表示層は前進できるかを判定しない（UI-35）。
 // モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
@@ -29,9 +30,11 @@ export type Controls = {
   /**
    * layout.list の位置に並べる。4 件以上は縦スクロール（UI-11）。
    * fixedLast なら末尾の項目（戻る / やめる）を一覧の外の layout.listBack に固定し、残りを幅の狭い layout.listNarrow の一覧に置く。
-   * 添字（select・setListFocus・数字キー）は fixedLast によらず items の順（末尾が戻る / やめる）
+   * 添字（select・setListFocus・数字キー）は fixedLast によらず items の順（末尾が戻る / やめる）。
+   * tall（M7。UI-11 / UI-52 の店・倉庫・酒場の一覧）なら、一覧をビューとメッセージの領域の layout.listTall に広げる
+   * （backdrop で下のビューと窓を覆い、窓の下 2 行だけ見せる。行の高さは LIST_TALL_ROW_H、幅は 224 のまま。固定の戻るは listBack のまま）
    */
-  setList(items: ControlItem[], opts?: { fixedLast?: boolean }): void;
+  setList(items: ControlItem[], opts?: { fixedLast?: boolean; tall?: boolean }): void;
   /**
    * UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠 / townMenu の 6 枠 / campGrid の 8 枠）に並べる。
    * null は空き枠（何も置かない）。枠数を超える分は捨てる
@@ -96,7 +99,7 @@ function setShown(el: HTMLElement, on: boolean): void {
  */
 export function createControls(o: {
   region: Rect;
-  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "listNarrow" | "listBack" | "mapClose" | "mapGo" | "battleParty" | "battleMember" | "autoStop" | "townMenu" | "campGrid">;
+  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "listNarrow" | "listBack" | "listTall" | "mapClose" | "mapGo" | "battleParty" | "battleMember" | "autoStop" | "townMenu" | "campGrid">;
   strings: Strings;
   onAction(a: DpadAction): void;
   hold: { ms(): number; onHoldStart(): void; onHoldEnd(): void };
@@ -164,6 +167,21 @@ export function createControls(o: {
   // ---- リスト（layout.list。行は連続しているので 1 つのスクロール容器に縦に積む）
   const first = LIST_ROWS[0] ?? { x: 8, y: origin.y + 2, w: 224, h: 32 };
   const last = LIST_ROWS[LIST_ROWS.length - 1] ?? first;
+  /** UI-11（M7）: 広げた一覧の下敷き（ビューとメッセージの窓の上を覆う。押しても何もしない）。一覧より先に置く（DOM の順で一覧の下） */
+  const tall = o.layout.listTall;
+  const tallRow = tall.rows[0] ?? { ...tall.area, h: first.h };
+  let listTallOn = false;
+  const backdrop = document.createElement("div");
+  backdrop.className = "controls-list-backdrop";
+  Object.assign(backdrop.style, {
+    position: "absolute",
+    left: `${tall.backdrop.x - origin.x}px`,
+    top: `${tall.backdrop.y - origin.y}px`,
+    width: `${tall.backdrop.w}px`,
+    height: `${tall.backdrop.h}px`,
+    background: "var(--c-bg)",
+  });
+  el.appendChild(backdrop);
   const list = document.createElement("div");
   list.className = "controls-list";
   Object.assign(list.style, {
@@ -186,6 +204,11 @@ export function createControls(o: {
   const listBack = document.createElement("div");
   listBack.className = "controls-list-back";
   el.appendChild(listBack);
+  /** 一覧の容器を通常（layout.list）か広げた位置（layout.listTall.area）に置く */
+  const placeList = (on: boolean): void => {
+    const r = on ? tall.area : { x: first.x, y: first.y, w: first.w, h: last.y + last.h - first.y };
+    Object.assign(list.style, { left: `${r.x - origin.x}px`, top: `${r.y - origin.y}px`, height: `${r.h}px` });
+  };
 
   // ---- 地図の「閉じる」
   const close = document.createElement("button");
@@ -238,6 +261,7 @@ export function createControls(o: {
     setShown(menu, mode === "dpad");
     setShown(list, mode === "list");
     setShown(listBack, mode === "list" && listBackOn);
+    setShown(backdrop, mode === "list" && listTallOn);
     setShown(close, mode === "close" || mode === "map");
     setShown(mapGo, mode === "map");
     setShown(battle, mode === "battle");
@@ -285,7 +309,7 @@ export function createControls(o: {
         menu.appendChild(b);
       });
     },
-    setList(items: ControlItem[], opts?: { fixedLast?: boolean }): void {
+    setList(items: ControlItem[], opts?: { fixedLast?: boolean; tall?: boolean }): void {
       listItems = items.slice();
       listButtons = [];
       list.replaceChildren();
@@ -293,7 +317,11 @@ export function createControls(o: {
       list.scrollTop = 0;
       const fixed = opts?.fixedLast === true && listItems.length > 0;
       listBackOn = fixed;
-      const rowW = fixed ? narrow.w : first.w;
+      listTallOn = opts?.tall === true;
+      placeList(listTallOn);
+      // 広げた一覧は固定の戻るが操作領域に残るので幅を詰めない
+      const rowW = listTallOn ? tall.area.w : fixed ? narrow.w : first.w;
+      const rowH = listTallOn ? tallRow.h : first.h;
       list.style.width = `${rowW}px`;
       listItems.forEach((it, k) => {
         const isBack = fixed && k === listItems.length - 1;
@@ -306,14 +334,14 @@ export function createControls(o: {
           Object.assign(b.style, {
             display: "block",
             width: `${rowW}px`,
-            height: `${first.h}px`,
+            height: `${rowH}px`,
             margin: "0",
             padding: "0 4px",
             border: "1px solid var(--c-frame)",
             background: "var(--c-bg)",
             color: "var(--c-text)",
             font: "inherit",
-            lineHeight: `${first.h - 2}px`,
+            lineHeight: `${rowH - 2}px`,
             textAlign: "left",
             whiteSpace: "nowrap",
             overflow: "hidden",

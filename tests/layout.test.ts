@@ -400,6 +400,29 @@ describe("layout", () => {
     }
   });
 
+  test("UI-11/UI-10（M7）広げた一覧 listTall: 既定で 下敷き y16..213 の全幅（メッセージ窓の文字は下詰め y174..233 なので、下 2 行 y214..233 は見える）、行は x8・幅 224・高さ 22 の 9 行（y16 + 22i）。UI-10 の 12 論理 px 以上で、240×400・ビューとメッセージの範囲に収まり、固定の戻る（操作領域）と重ならない", () => {
+    const t = L.listTall;
+    // 窓の文字領域 y168..233（枠 1 + 余白 2）の下 2 行の上端は 168 + 66 − 20 = 214
+    expect(L.message.text.y + L.message.text.h - 2 * 10).toBe(214);
+    expect(t.backdrop).toEqual({ x: 0, y: 16, w: W, h: 198 });
+    // 198 ÷ 22 = 9 行ちょうど（行の途中で切れない）
+    expect(t.area).toEqual({ x: 8, y: 16, w: 224, h: 198 });
+    expect(t.rows).toEqual(Array.from({ length: 9 }, (_, i) => ({ x: 8, y: 16 + 22 * i, w: 224, h: 22 })));
+    for (const r of t.rows) {
+      expect(inside(r, STAGE)).toBe(true);
+      expect(inside(r, t.backdrop)).toBe(true);
+      expect(Math.min(r.w, r.h)).toBeGreaterThanOrEqual(12); // UI-10 の 12 論理 px（TOUCH_MIN_LOGICAL 30 の例外。decisions 2026-10-05）
+      expect(overlaps(r, L.listBack)).toBe(false);
+      expect(overlaps(r, HEADER_SETTINGS)).toBe(false);
+    }
+    expect(inside(t.backdrop, L.map.overlay)).toBe(true);
+    expect(layoutWarnings(regions(data.config.ui.layout, W), L)).toEqual([]);
+    // 区切りを変えても下 2 行の上端までで、行の高さの整数倍（view 140・message 80 → 窓の文字 y158..233、下 2 行の上端 214 → 198 で 9 行）
+    const g2 = regions({ header: 16, view: 140, message: 80, party: 64, controls: 100 }, W);
+    const t2 = dungeonLayout(g2, N).listTall;
+    expect([t2.backdrop.y, t2.backdrop.h, t2.rows.length]).toEqual([16, 198, 9]);
+  });
+
   test("ui §2 パーティ欄がちょうど party.size × 10 なら上の余白を詰める。メッセージに 1 行も入らなければ warn", () => {
     const g = regions({ header: 16, view: 150, message: 74, party: 60, controls: 100 }, W);
     expect(dungeonLayout(g, N).partyRows[0]).toEqual({ x: 0, y: g.party.y, w: W, h: 10 });
