@@ -1725,6 +1725,11 @@ export function createApp(o: {
       return;
     }
     if (overlay === "camp") {
+      // UI-47: 街（酒場）のキャンプの上に会話の箱が見えている間は、Enter / Space は箱のタップ（次へ・閉じる）
+      if (a === "confirm" && route === "town" && play.talk.isOpen()) {
+        play.talk.tap();
+        return;
+      }
       // UI-33: 数字 n → n 番目の枠・行（空き枠は無視）、Enter → 先頭の押せる項目、Esc → やめる（top では戻る）
       const m = campInput();
       if (m === null) return;
@@ -1813,11 +1818,12 @@ export function createApp(o: {
 
   /**
    * UI-47: 再生の外の会話の箱・施設の絵のタップ（再生中のタップはステージが player.tap() に回す）。
-   * 文字送り中なら即表示、タップ待ちなら次の文、最後の文なら閉じる。overlay（キャンプ・履歴など）があるときは何もしない
+   * 文字送り中なら即表示、タップ待ちなら次の文、最後の文なら閉じる。キャンプ（酒場）は箱がパネルの上に描かれるので受ける。
+   * それ以外の overlay（履歴・設定など）があるときは何もしない
    */
   const tapTalk = (): void => {
     if (isBusy() || chaining) return;
-    if (route !== "town" || overlay !== null) return;
+    if (route !== "town" || (overlay !== null && overlay !== "camp")) return;
     play.talk.tap();
   };
 

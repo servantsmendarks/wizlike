@@ -522,7 +522,7 @@ describe("入力と Command", () => {
     expect(app).toContain("talkBlink: () => !store.get().skipAnimations,");
   });
 
-  test("UI-47（M8.5）一覧・戻る・数字（townItem）と Esc は会話を打ち切ってから動き、Enter は会話の箱が開いていれば箱のタップ。箱と施設の絵のタップは再生の外・overlay なしの街で talk.tap（ソースの検査）", () => {
+  test("UI-47（M8.5）一覧・戻る・数字（townItem）と Esc は会話を打ち切ってから動き、Enter は会話の箱が開いていれば箱のタップ。箱と施設の絵のタップは再生の外・overlay なし（キャンプは除く）の街で talk.tap（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const item = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
     expect(item).toMatch(/onSelect: \(\) =>\s*guard\(\(\) => \{\s*play\.talk\.flush\(\);\s*switch \(e\.kind\) \{/);
@@ -532,10 +532,18 @@ describe("入力と Command", () => {
     );
     const tap = /const tapTalk = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(tap).toContain("if (isBusy() || chaining) return;");
-    expect(tap).toContain('if (route !== "town" || overlay !== null) return;');
+    expect(tap).toContain('if (route !== "town" || (overlay !== null && overlay !== "camp")) return;');
     expect(tap).toContain("play.talk.tap();");
     expect(app).toContain("onTap(play.talk.el, () => tapTalk());");
     expect(app).toContain("onTap(play.picture, () => tapTalk());");
+  });
+
+  test("UI-47（M8.5）キャンプ（酒場）の上に見えている会話の箱は、タップと Enter / Space で進める・閉じる。箱が閉じていれば Enter はキャンプへ（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const core = /const handleActionCore = \(a: Action\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(core).toMatch(
+      /if \(overlay === "camp"\) \{\s*if \(a === "confirm" && route === "town" && play\.talk\.isOpen\(\)\) \{\s*play\.talk\.tap\(\);\s*return;\s*\}\s*const m = campInput\(\);/,
+    );
   });
 
   test("UI-47/SV-50（M8.5）街を出るときは会話の箱を打ち切り、街に入るときは迷宮の窓で語った carry を出し直す（ログには入れない）。再開では箱を閉じる（ソースの検査）", () => {
