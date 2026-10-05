@@ -469,3 +469,78 @@ describe("controls", () => {
     expect(tapSpecOf(close)?.whileBusy).toBeUndefined();
   });
 });
+
+describe("UI-66 決定・取り消しの音", () => {
+  test("UI-66 pick で ok、disabled では鳴らない、固定の戻る・閉じるで cancel（タップでも select でも）", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const sounds: string[] = [];
+    const c = createControls({
+      region: g.controls,
+      layout: L,
+      strings: data.strings,
+      onAction: () => {},
+      hold: HOLD,
+      onClose: () => {},
+      onSound: (k) => sounds.push(k),
+    });
+    // メニュー
+    c.setMenu([{ label: "m0", onSelect: () => {} }, { label: "m1", onSelect: () => {}, disabled: true }]);
+    c.setMode("dpad");
+    const menu = created.filter((e) => e.className === "controls-menu-item");
+    menu[0]!.tap();
+    menu[1]!.tap();
+    expect(sounds).toEqual(["ok"]);
+    // 一覧（固定の戻るあり）: 行は ok、戻るは cancel
+    sounds.length = 0;
+    c.setList([{ label: "r0", onSelect: () => {} }, { label: "r1", onSelect: () => {}, disabled: true }, { label: "back", onSelect: () => {} }], {
+      fixedLast: true,
+    });
+    c.setMode("list");
+    const list = created.find((e) => e.className === "controls-list")!;
+    const holder = created.find((e) => e.className === "controls-list-back")!;
+    list.children[0]!.tap();
+    list.children[1]!.tap();
+    holder.children[0]!.tap();
+    c.select(0);
+    c.select(2);
+    expect(sounds).toEqual(["ok", "cancel", "ok", "cancel"]);
+    // 固定しない一覧の末尾は ok
+    sounds.length = 0;
+    c.setList([{ label: "a", onSelect: () => {} }, { label: "b", onSelect: () => {} }]);
+    c.select(1);
+    expect(sounds).toEqual(["ok"]);
+    // 戦闘の枠
+    sounds.length = 0;
+    c.setBattleMenu([{ label: "x", onSelect: () => {} }], "member");
+    c.setMode("battle");
+    created.filter((e) => e.className === "controls-battle-item")[0]!.tap();
+    expect(sounds).toEqual(["ok"]);
+    // 閉じる（タップと select(0)）
+    sounds.length = 0;
+    c.setMode("close");
+    created.find((e) => e.className === "controls-close")!.tap();
+    c.select(0);
+    expect(sounds).toEqual(["cancel", "cancel"]);
+    // 十字ボタンは鳴らさない
+    sounds.length = 0;
+    c.setMode("dpad");
+    for (const b of created.filter((e) => e.className.startsWith("controls-dpad-"))) b.tap();
+    expect(sounds).toEqual([]);
+  });
+
+  test("UI-66 onSound を省略しても動く（無音）", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const picked: string[] = [];
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, hold: HOLD, onClose: () => picked.push("close") });
+    c.setMenu([{ label: "m0", onSelect: () => picked.push("m0") }]);
+    c.setMode("dpad");
+    created.filter((e) => e.className === "controls-menu-item")[0]!.tap();
+    c.setMode("close");
+    c.select(0);
+    expect(picked).toEqual(["m0", "close"]);
+  });
+});

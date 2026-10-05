@@ -115,6 +115,11 @@ export function createControls(o: {
   onClose(): void;
   /** UI-25: 地図の「移動」（押せるときだけ呼ぶ） */
   onMapGo?(): void;
+  /**
+   * UI-66（M8）: 決定・取り消しの音。disabled でない項目を選んだら ok、固定の戻る（listBack）と「閉じる」なら cancel。
+   * 十字ボタン・地図の「移動」・オート解除では鳴らさない。省略すると無音
+   */
+  onSound?(k: "ok" | "cancel"): void;
 }): Controls {
   const s = (key: string): string => o.strings[key] ?? key;
   const origin = o.region;
@@ -222,12 +227,17 @@ export function createControls(o: {
   };
 
   // ---- 地図の「閉じる」
+  /** 「閉じる」（UI-66: 取り消しの音） */
+  const closeNow = (): void => {
+    o.onSound?.("cancel");
+    o.onClose();
+  };
   const close = document.createElement("button");
   close.type = "button";
   close.className = "controls-close";
   close.textContent = s("common.close");
   buttonStyle(close, o.layout.mapClose, origin);
-  onTap(close, () => o.onClose());
+  onTap(close, () => closeNow());
   el.appendChild(close);
 
   // ---- 地図の「移動」（UI-25。map モードで閉じるの真下）
@@ -279,9 +289,11 @@ export function createControls(o: {
     setShown(autoStop, mode === "autoStop");
   };
 
-  /** disabled の見た目（dim 色）。押しても onSelect を呼ばない */
-  const pick = (it: ControlItem): void => {
-    if (it.disabled !== true) it.onSelect();
+  /** disabled の見た目（dim 色）。押しても onSelect を呼ばない。back は固定の戻る（UI-66 の取り消しの音） */
+  const pick = (it: ControlItem, back = false): void => {
+    if (it.disabled === true) return;
+    o.onSound?.(back ? "cancel" : "ok");
+    it.onSelect();
   };
   const dimIf = (b: HTMLElement, it: ControlItem): void => {
     if (it.disabled === true) {
@@ -373,7 +385,7 @@ export function createControls(o: {
         // 要素を使い回すので、押したときは今の listItems の k 番目を見る
         onTap(b, () => {
           const cur = listItems[k];
-          if (cur !== undefined) pick(cur);
+          if (cur !== undefined) pick(cur, listBackOn && k === listItems.length - 1);
         });
         if (it.onFocus !== undefined) {
           // 対象の一覧の Enter は、DOM のフォーカスのある行の click ではなく、いつも注目している行を選ぶ（UI-33。swipe.ts の isButton）
@@ -426,14 +438,14 @@ export function createControls(o: {
       autoStopPress = onPress;
     },
     select(n: number): void {
-      const at = (items: readonly (ControlItem | null)[]): void => {
+      const at = (items: readonly (ControlItem | null)[], back = false): void => {
         const it = items[n];
-        if (it !== undefined && it !== null) pick(it);
+        if (it !== undefined && it !== null) pick(it, back);
       };
       if (mode === "dpad") at(menuItems);
-      else if (mode === "list") at(listItems);
+      else if (mode === "list") at(listItems, listBackOn && n === listItems.length - 1);
       else if (mode === "battle") at(battleItems);
-      else if ((mode === "close" || mode === "map") && n === 0) o.onClose();
+      else if ((mode === "close" || mode === "map") && n === 0) closeNow();
       else if (mode === "map" && n === 1) pressMapGo();
       else if (mode === "autoStop" && n === 0) autoStopPress();
     },

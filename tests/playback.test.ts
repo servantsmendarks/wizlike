@@ -1376,3 +1376,43 @@ describe("UI-55/UI-40 制止の箱のタップ待ち（M5）", () => {
     expect(sp.slice(i)).toEqual(["show:dice.initiative", "say", "beat.waitTap", "dice.hide", "show:dice.ambushAvoid", "say", "beat.waitTap", "dice.hide"]);
   });
 });
+
+describe("UI-66 playback の音の契機", () => {
+  test("UI-66 deps.sound は各イベントのハンドラの前に 1 回ずつ呼ばれる（演出スキップでも同じ）", async () => {
+    const run = async (skipAnimations: boolean): Promise<string[]> => {
+      const { deps, log } = fakeDeps({ skipAnimations });
+      deps.sound = (ev) => log.push({ m: `sound:${ev.kind}`, a: [] });
+      const before = stateWith(diveAt(3, 3, "N"));
+      const after = stateWith(diveAt(3, 2, "E", 2));
+      const events: GameEvent[] = [
+        { kind: "message", key: "dungeon.door" },
+        { kind: "moved", pos: { x: 3, y: 2 }, facing: "N" },
+        { kind: "floorChanged", floor: 2, pos: { x: 3, y: 2 }, facing: "E" },
+        { kind: "beat", phase: "system", auto: false },
+        { kind: "hpChanged", id: "c1", delta: -2, hp: 5 },
+      ];
+      await createPlayer(deps).play(events, before, after);
+      const seq = names(log);
+      // 音はハンドラの描画より前
+      expect(seq.indexOf("sound:message")).toBeLessThan(seq.indexOf("message.say"));
+      expect(seq.indexOf("sound:hpChanged")).toBeLessThan(seq.indexOf("party.setHp"));
+      return seq.filter((m) => m.startsWith("sound:"));
+    };
+    const want = ["sound:message", "sound:moved", "sound:floorChanged", "sound:beat", "sound:hpChanged"];
+    expect(await run(false)).toEqual(want);
+    expect(await run(true)).toEqual(want);
+  });
+
+  test("UI-66 deps.sound が例外を投げても再生は続く", async () => {
+    const { deps, log } = fakeDeps({ skipAnimations: true });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    deps.sound = () => {
+      throw new Error("boom");
+    };
+    const s = stateWith(diveAt(3, 3, "N"));
+    await createPlayer(deps).play([{ kind: "message", key: "dungeon.door" }], s, s);
+    expect(names(log)).toContain("message.say");
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});

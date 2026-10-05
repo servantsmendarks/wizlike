@@ -60,6 +60,8 @@ import { attachSaveOnHide } from "./lifecycle";
 import { attachStageInput, onTap } from "./input/tap";
 import { dungeonLayout, layoutWarnings, LIST_TALL_MESSAGE_LINES, regions, saveBannerRect, settingsLayout } from "./layout";
 import { createPlayer } from "./playback";
+import type { AudioPlayer } from "./audio";
+import { songAt, soundsFor, type SoundOrder } from "./sound-cues";
 import { resumePlan, routeOfScreen } from "./resume";
 import { createRunGate } from "./run-gate";
 import { defaultSettings, type SettingsStore } from "./settings";
@@ -159,8 +161,11 @@ export function createApp(o: {
   seed?: number;
   /** UI-63 / UI-65 / UI-60（M8）: ビルド時に検証した素材（virtual:wizlike-assets）。省略時（テスト）は素材なし = 無音・矩形 */
   assets?: GameAssets;
+  /** UI-06 / UI-66（M8）: 音の再生機。省略時（テスト）は無音 */
+  audio?: AudioPlayer;
 }): App {
   const { data, stage } = o;
+  const audio = o.audio ?? null;
   const strings = data.strings;
   const store = o.settings;
   const t = (k: string): string => strings[k] ?? k;
@@ -200,6 +205,26 @@ export function createApp(o: {
   let mapTitle = "";
 
   const scale = (): number => layout?.scale ?? 1;
+
+  // ---------------------------------------------------------------- 音（UI-63 / UI-65 / UI-66。M8）
+  /** 決定・取り消しの音を鳴らした回数（キーの back で二重に鳴らさないため） */
+  let uiSounds = 0;
+  const playUi = (k: "ok" | "cancel"): void => {
+    uiSounds++;
+    audio?.playSfx(data.audio.ui[k]);
+  };
+  const playOrder = (x: SoundOrder): void => {
+    if (audio === null) return;
+    if (x.type === "song") audio.setSong(x.name);
+    else if (x.type === "jingle") audio.playJingle(x.name);
+    else audio.playSfx(x.name);
+  };
+  /** UI-63 / SV-50: screen イベントの来ない場面（タイトル・続きから）の曲 */
+  const setSceneSong = (screen: Screen, monsterIds: readonly string[]): void => {
+    if (audio === null) return;
+    const name = songAt(screen, monsterIds, data);
+    if (name !== undefined) audio.setSong(name);
+  };
 
   // ---------------------------------------------------------------- 画面
   // SV-31: 読み込みのファイルはタップで透明の input が直接受ける（guard を通らないので importFromFile が route と titleBusy を見る）
@@ -265,6 +290,7 @@ export function createApp(o: {
     onPick: (g) => guard(() => chooseBattle({ kind: "group", index: g })),
     onMapCell: (p) => guard(() => tapMapCell(p)),
     onMapGo: () => guard(() => goMapPick()),
+    onSound: (k) => playUi(k),
   });
 
   // UI-57: debug パネルの「ポインタ」に出す直近 20 件のポインタイベント（表示層だけ。保存しない）
@@ -343,6 +369,10 @@ export function createApp(o: {
     inputClosed: () => lowerInput(),
     // UI-55: イベントの再生の間は十字ボタン（迷宮の操作）を下げる。再生の最後の sync で出し直す
     eventStarted: () => play.controls.setMode("none"),
+    // UI-66: 出来事と曲・効果音の対応（data/audio.json）。screen と encounter は場面の曲
+    sound: (ev) => {
+      for (const x of soundsFor(ev, data)) playOrder(x);
+    },
   });
 
   /**
@@ -818,6 +848,8 @@ export function createApp(o: {
   const showRoute = (r: Route): void => {
     route = r;
     if (r === "title") enterTitle();
+    // UI-63: タイトルと作成の画面は core の screen が title のまま（screen イベントは来ない）
+    if (r === "title" || r === "creation" || r === "custom") setSceneSong("title", []);
     title.el.style.display = r === "title" ? "" : "none";
     creation.el.style.display = r === "creation" ? "" : "none";
     custom.el.style.display = r === "custom" ? "" : "none";
@@ -1274,6 +1306,8 @@ export function createApp(o: {
     play.dice.hide();
     play.penaltyTable.hide();
     showRoute(plan.route);
+    // UI-63 / SV-50: 保存した画面の曲（最初の操作で AudioContext を作ったときに始まる）
+    setSceneSong(state.screen, state.battle?.groups.map((g) => g.monsterId) ?? []);
     sync(state);
     const instant = true;
     for (const k of plan.prompts) void play.message.say(t(k), instant);
@@ -1576,7 +1610,20 @@ export function createApp(o: {
 
   // ---------------------------------------------------------------- 入力
   /** Action → Command / 画面の操作。変換は app だけが行う */
+  /**
+   * UI-66: キーの back で実際に何かを閉じた・戻った（route・overlay・街のページ・キャンプの段・戦闘の入力の段階が変わった）ときだけ取り消しの音。
+   * 操作領域のボタンを選んだ（controls が鳴らした）ときは二重に鳴らさない。タイトル・作成・設定画面・debug パネルは対象外
+   */
   const handleAction = (a: Action): void => {
+    const watch = a === "back" && audio !== null && (route === "town" || route === "dungeon" || route === "battle") && overlay !== "settings" && overlay !== "debug";
+    const sig = (): string => JSON.stringify([route, overlay, townPage, campPage, cursor]);
+    const before = watch ? sig() : "";
+    const n = uiSounds;
+    handleActionCore(a);
+    if (watch && uiSounds === n && sig() !== before) playUi("cancel");
+  };
+
+  const handleActionCore = (a: Action): void => {
     // UI-25: 自動歩行中のキーは歩行を止めるだけ（その入力は捨てる）
     if (stopWalk()) return;
     // UI-44 の例外: オート中の「オート解除」（Esc / Enter / 1）は再生中も予約として受ける
@@ -1718,6 +1765,7 @@ export function createApp(o: {
     start(): void {
       debug.el.style.display = "none";
       settingsView.el.style.display = "none";
+      // UI-63: タイトルの曲は showRoute が求める（最初の操作で AudioContext を作ったときに始まる）
       showRoute("title");
       onTap(play.message.el, () => tapMessage());
       // UI-57: ポインタの記録（capture なので attachStageInput の処理より先に走る）。debug パネルを開いている間は記録しない

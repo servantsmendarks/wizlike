@@ -126,7 +126,7 @@ async function start(): Promise<void> {
   });
   attachAudio(document, audioPlayer);
   // mountStage は同期で 1 回 onLayout を呼ぶので、app を先に作る。
-  const app = createApp({ stage: stageEl, data, settings, saves, assets });
+  const app = createApp({ stage: stageEl, data, settings, saves, assets, audio: audioPlayer });
   mountStage(stageEl, data.config.stage, app.onLayout);
   app.start();
   // SV-42: 本番ビルドでだけ Service Worker を登録する（開発では残っている登録を解除する）。失敗しても起動は止めない。

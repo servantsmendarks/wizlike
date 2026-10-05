@@ -95,6 +95,8 @@ export function createDungeonScreen(o: {
   onMapCell?(p: Pos): void;
   /** UI-25: 操作領域の地図の「移動」（選んでいるときだけ呼ぶ） */
   onMapGo?(): void;
+  /** UI-66（M8）: 操作領域の決定・取り消しの音（controls の onSound） */
+  onSound?(k: "ok" | "cancel"): void;
 }): DungeonScreen {
   const r = o.regions;
   const lay = o.layout;
@@ -143,6 +145,7 @@ export function createDungeonScreen(o: {
     hold: o.hold,
     onClose: o.onClose,
     onMapGo: () => o.onMapGo?.(),
+    onSound: (k) => o.onSound?.(k),
   });
 
   // 地図はビューの上端から、メッセージの下端まで（既定 240×220）

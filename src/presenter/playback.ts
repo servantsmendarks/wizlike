@@ -110,6 +110,11 @@ export type PlayerDeps = {
   inputClosed(): void;
   /** UI-55: eventStarted を再生した（十字ボタンなど迷宮の操作を下げる。続きの再生の間は出さない） */
   eventStarted(): void;
+  /**
+   * UI-66（M8）: 各イベントのハンドラの前（拍・全滅の待ちの後）に 1 回ずつ呼ぶ。何を鳴らすかは呼ばれた側（sound-cues.ts）が決める。
+   * 演出スキップでも同じに呼ぶ。例外は console.warn にとどめて再生を続ける。省略すると無音
+   */
+  sound?(ev: GameEvent): void;
 };
 
 /** UI-40 / UI-56: 全滅の 2d10 の dice の label のキー。この箱は wipe（内訳を開く）まで消さない */
@@ -176,6 +181,14 @@ function copyCursor(c: ViewPoint): ViewPoint {
 }
 
 export function createPlayer(deps: PlayerDeps): Player {
+  /** UI-66: 音の契機。音は付加機能なので、例外で再生を止めない */
+  const sound = (ev: GameEvent): void => {
+    try {
+      deps.sound?.(ev);
+    } catch (e) {
+      console.warn("sound:", e);
+    }
+  };
   const latch = deps.beat ?? createTapLatch();
   /** UI-43: 拍の外の 2 回目のタップで、同じ再生の残りをすべて即時にする */
   let rushed = false;
@@ -465,6 +478,7 @@ export function createPlayer(deps: PlayerDeps): Player {
             // UI-45: 次の拍の前で待ち、待った後にダイスを消してから拍に入る
             await waitBeat("beat");
             hideDice();
+            sound(ev);
             mode = ev.auto ? "timed" : "tap";
             pending = false;
             beatRush = false;
@@ -494,6 +508,7 @@ export function createPlayer(deps: PlayerDeps): Player {
           if (mode !== null && (ev.kind === "message" || ev.kind === "dice")) pending = true;
           if (ev.kind === "message" || ev.kind === "dice" || ev.kind === "penaltyTable") tapAhead = false;
           const h = handlers[ev.kind] as ((e: GameEvent, cx: PlayCx, s: GameState) => Promise<void>) | undefined;
+          sound(ev);
           if (h !== undefined) await h(ev, cx, finalState);
           if (ev.kind === "dice") hold = mode === null && HOLD_DICE_KEYS.includes(ev.label.key) ? "awaitMessage" : null;
           else if (ev.kind === "message" && hold === "awaitMessage") hold = "afterMessage";
