@@ -197,10 +197,10 @@ describe("MG-44 dungeon.cast の効果", () => {
       { kind: "message", key: "battle.cast", params: { actor: "ドナ", spell: "蘇生" } },
       { kind: "message", key: "dungeon.cast.resurrectRoll", params: { name: "アルド" } },
     ];
-    // 成功: dived(1) の最初の d100 は 14 ≤ 74
+    // 成功: dived(1) の最初の d100 は 14 ≤ 84
     const s = inDungeon({ c4: PRIEST_ALL, c1: { life: "dead", hp: 0 } });
     const rate = resurrectRate(member(s, "c1"), data);
-    expect(rate).toBe(Math.min(95, 50 + 12 * 2)); // c1 の vit 12 → 74
+    expect(rate).toBe(Math.min(95, 60 + 12 * 2)); // c1 の vit 12 → 84（templeSuccessBase 60【仮】。M7-解毒の灰の経済で 50 → 60 にし、74 → 84）
     const m = cloneRng(s.rng);
     expect(randInt(m, 1, 100)).toBe(14);
     const r = ok(s, cast("c4", "resurrect", "c1"));
@@ -211,9 +211,9 @@ describe("MG-44 dungeon.cast の効果", () => {
       { kind: "hpChanged", id: "c1", delta: 1, hp: 1 },
       { kind: "message", key: "dungeon.cast.resurrectOk", params: { name: "アルド" } },
     ]);
-    // 失敗: 最初の d100 が 74 を超えるシードに差し替える
-    const { seed, roll } = seedWithFirstD100((x) => x > 74);
-    expect(roll).toBeGreaterThan(74);
+    // 失敗: 最初の d100 が 84 を超えるシードに差し替える
+    const { seed, roll } = seedWithFirstD100((x) => x > 84);
+    expect(roll).toBeGreaterThan(84);
     const f = inDungeon({ c4: PRIEST_ALL, c1: { life: "dead", hp: 0 } });
     f.rng = createRng(seed);
     const fm = createRng(seed);
@@ -228,7 +228,7 @@ describe("MG-44 dungeon.cast の効果", () => {
   });
 
   test("MG-42/CH-45 呪文の蘇生で戻る者も常に状態異常なし（古い保存の死者に毒が残っていても hpChanged の後に statusChanged off）", () => {
-    // dived(1) の最初の d100 は 14 ≤ 74（上のテストと同じ）で成功
+    // dived(1) の最初の d100 は 14 ≤ 84（上のテストと同じ）で成功
     const s = inDungeon({ c4: PRIEST_ALL, c1: { life: "dead", hp: 0, status: ["poison"] } });
     const r = ok(s, cast("c4", "resurrect", "c1"));
     expect(r.events.slice(3)).toEqual([
@@ -259,10 +259,10 @@ describe("MG-44 dungeon.cast の効果", () => {
   });
 
   test("TW-07 寺院の蘇生は resurrectRate / rollResurrect に切り出した後も、イベント順と乱数が同じ（d100 を 1 回）", () => {
-    // 成功: newGame(1) の最初の d100 は 49 ≤ 74（c1 の vit 12）
+    // 成功: newGame(1) の最初の d100 は 49 ≤ 84（c1 の vit 12）
     const s = inTown({ c1: { life: "dead", hp: 0 } });
     s.gold = 10000;
-    expect(resurrectRate(member(s, "c1"), data)).toBe(74);
+    expect(resurrectRate(member(s, "c1"), data)).toBe(84);
     const m = cloneRng(s.rng);
     expect(randInt(m, 1, 100)).toBe(49);
     const r = ok(s, { type: "town.temple", memberId: "c1", service: "resurrect" });
@@ -273,8 +273,8 @@ describe("MG-44 dungeon.cast の効果", () => {
       { kind: "hpChanged", id: "c1", delta: 1, hp: 1 },
       { kind: "message", key: "town.temple.resurrectOk", params: { name: "アルド" } },
     ]);
-    // 失敗: 最初の d100 が 74 を超えるシードに差し替える
-    const { seed } = seedWithFirstD100((x) => x > 74);
+    // 失敗: 最初の d100 が 84 を超えるシードに差し替える
+    const { seed } = seedWithFirstD100((x) => x > 84);
     const f = inTown({ c1: { life: "dead", hp: 0 } });
     f.gold = 10000;
     f.rng = createRng(seed);

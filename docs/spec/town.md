@@ -11,13 +11,13 @@
   - M7 で在庫制を置き換えた（items.md §11 の Q3【衝突】）: 売り物は 消耗品（今どおり `infinite` の品）と、流通レベルの汎用装備（IT-62。`buy` の `itemId` はベースの id で、Lv は `progress.shopLevel`。買値は IT-60）。`sell {memberId, instanceId}` は本人の inventory の品を IT-61 の店での売値で売る（鑑定済みのユニークは買い戻しのストックへ。IT-63。2026-10-05 から未鑑定の品も見た目の品種の売値で売れる）。`buyback {memberId, instanceId}` はストックのユニークを `uniques[].price` で本人の inventory の末尾へ戻す。`identify {memberId, instanceId}` は IT-65（品ごとの鑑定料）。受け付けの順は今の buy に揃え、wrong screen → bad action → （kind ごとに）no such member → not alive（buy / buyback だけ）→ not for sale / item not in inventory / not in stock → already identified（identify）→ inventory full（buy / buyback）→ not enough gold（buy / buyback / identify）。乱数は使わない。`items[].stock` は廃止する。
 - TW-06 店の流通レベル `progress.shopLevel` は、ダンジョンの初回クリアで `dungeons[].onClear.shopLevel` により上がる（IT-62。max(今の値, shopLevel)）。M6 までは `onClear.shopStock` で在庫を追加していた（各 1 個。`infinite` の品なら無限として解放）が、M7 で流通レベルに置き換えて廃止した。
 - TW-07 寺院: 
-  - 蘇生: `dead` → `alive`（HP 1）。成功率% = `config.economy.templeSuccessBase`（50）+ `vit × config.economy.templeSuccessPerVit`（2）【仮】、上限 95（`templeSuccessMax`）。式と判定は `rules/town.ts` の `resurrectRate` / `rollResurrect` で、呪文の蘇生（MG-42）と共有する。失敗すると `ash`。費用 = `level × config.economy.templeCostPerLevel`（100）【仮】。費用は成否に関わらず支払う。
+  - 蘇生: `dead` → `alive`（HP 1）。成功率% = `config.economy.templeSuccessBase`（60）+ `vit × config.economy.templeSuccessPerVit`（2）【仮】、上限 95（`templeSuccessMax`）。M7（2026-10-05 ユーザー指示「灰の経済」）で templeSuccessBase を 50 から 60 にした（vit 12 で 74% → 84%）。式と判定は `rules/town.ts` の `resurrectRate` / `rollResurrect` で、呪文の蘇生（MG-42）と共有する。失敗すると `ash`。費用 = `level × config.economy.templeCostPerLevel`（100）【仮】。費用は成否に関わらず支払う。
   - 治療: 毒・麻痺・石化を回復。費用 = `config.economy.cureCost[status]`。
   - 解呪: 呪われた装備を外す（アイテムは失われる【仮】）。費用 = `config.economy.uncurseCost`。
   - 蘇生の対象は `dead` だけ（`ash` は闇魔術）。判定は d100 ≤ 成功率で、ダイスは表示しない（UI-40 の一覧に寺院は無い）。蘇生しても MP・SAN はそのまま。状態異常は常に無しで戻る（CH-45。死亡の時点で外れている。失敗して灰になっても状態異常は持たない）。M7 の途中までは「状態異常もそのまま」だった（2026-10-05 のユーザー決定で改めた）。
   - 治療は対象の毒・麻痺・石化をすべて治し、`cureCost` の合計を払う。対象は `alive` の者だけ。
   - 解呪は対象が装備している呪われた品をすべて失い、費用は 1 回分。対象の life は問わない。
-- TW-08 闇魔術（`town.dark`）: `ash` → `alive`（HP 1）。確定（乱数を使わない）。費用 = `level × config.economy.darkCostPerLevel`（1000）【仮】を所持金から払う（銀行の残高は使わない）。対象は `ash` の者だけ（`alive` / `dead` は rejected `not ash`）、所持金が足りなければ rejected `not enough gold`。戻しても MP・SAN はそのまま、状態異常は常に無し（寺院の蘇生と同じ。CH-45）。M7 で同じ施設に汎用装備の強化（TW-17）を足す。
+- TW-08 闇魔術（`town.dark`）: `ash` → `alive`（HP 1）。確定（乱数を使わない）。費用 = `level × config.economy.darkCostPerLevel`（500）【仮】を所持金から払う（M7。2026-10-05 ユーザー指示「灰の経済」で 1000 から 500 にした）（銀行の残高は使わない）。対象は `ash` の者だけ（`alive` / `dead` は rejected `not ash`）、所持金が足りなければ rejected `not enough gold`。戻しても MP・SAN はそのまま、状態異常は常に無し（寺院の蘇生と同じ。CH-45）。M7 で同じ施設に汎用装備の強化（TW-17）を足す。
 - TW-09 訓練所: ゲーム開始時のキャラクター作成。以降はステータス閲覧のみ（転職は【未定】）。
 - TW-10 銀行: 預入・引出（`town.bank`）。銀行残高 `bank` は全滅ペナルティ（TW-22）の対象外。M7 では併設の倉庫（TW-16）だけを作る（金の預入・引出はプロトタイプ後。items.md §11 の Q9）。
 - TW-11 迷宮入口: 開放済みダンジョン（`progress.unlockedDungeons`）を選んで入場（`dungeon.enter`）。入場時に `diveSeed` を発行する（DG-03）。行動可能な者（CH-44）がいなければ入れない（rejected `no one can act`）。

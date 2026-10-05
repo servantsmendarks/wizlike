@@ -448,9 +448,10 @@ describe("TW-07 寺院（town.temple）", () => {
 // ---------------------------------------------------------------------------
 
 describe("TW-08 闇魔術（town.dark）", () => {
-  test("TW-08/CH-45 ash の者が level × 1000 を払って alive・HP 1 に戻る（確定。乱数なし）。状態異常はすべて外し、MP・SAN はそのまま", () => {
+  test("TW-08/CH-45 ash の者が level × 500 を払って alive・HP 1 に戻る（確定。乱数なし）。状態異常はすべて外し、MP・SAN はそのまま", () => {
     // 2026-10-05 ユーザー決定（CH-45）で期待値を変えた: 旧は status ["poison"] が残った
-    // ベルク L2 → 2 × 1000 = 2000。所持金 2500 → 500
+    // 2026-10-05 ユーザー指示（灰の経済）で darkCostPerLevel を 1000 → 500【仮】にし、期待値を変えた（旧は 2 × 1000 = 2000 で所持金 2500 → 500）
+    // ベルク L2 → 2 × 500 = 1000。所持金 2500 → 1500
     const s = town(
       { c2: { ...ASH, level: 2, levelHistory: [{ level: 2, hpGain: 5, mpGain: 0 }], hpMax: 19, mp: 0, san: 30, status: ["poison"] } },
       2500,
@@ -462,20 +463,20 @@ describe("TW-08 闇魔術（town.dark）", () => {
       { kind: "statusChanged", id: "c2", status: "poison", on: false },
       { kind: "message", key: "town.dark.done", params: { name: "ベルク" } },
     ]);
-    expect(r.state.gold).toBe(500);
+    expect(r.state.gold).toBe(1500);
     expect(member(r.state, "c2")).toMatchObject({ life: "alive", hp: 1, hpMax: 19, mp: 0, san: 30, status: [], level: 2 });
     expect(r.state.rng).toEqual(s.rng);
     expect(r.state.townVisit).toEqual(s.townVisit);
   });
 
-  test("TW-08 所持金ちょうど（L1 で 1000）なら払えて 0 になる", () => {
-    const r = ok(town({ c3: ASH }, 1000), { type: "town.dark", memberId: "c3" });
+  test("TW-08 所持金ちょうど（L1 で 500。darkCostPerLevel 500【仮】）なら払えて 0 になる", () => {
+    const r = ok(town({ c3: ASH }, 500), { type: "town.dark", memberId: "c3" });
     expect(r.state.gold).toBe(0);
     expect(member(r.state, "c3").life).toBe("alive");
   });
 
-  test("TW-08 rejected: alive・dead は not ash、所持金不足（L1 で 999）、未知のメンバー・文字列でない id、街の外（同じ参照・乱数不変）", () => {
-    const s = town({ c2: DEAD, c3: ASH }, 999);
+  test("TW-08 rejected: alive・dead は not ash、所持金不足（L1 で 499）、未知のメンバー・文字列でない id、街の外（同じ参照・乱数不変）", () => {
+    const s = town({ c2: DEAD, c3: ASH }, 499);
     expectRejected(s, { type: "town.dark", memberId: "c1" }, "not ash");
     expectRejected(s, { type: "town.dark", memberId: "c2" }, "not ash");
     expectRejected(s, { type: "town.dark", memberId: "c3" }, "not enough gold");
@@ -486,7 +487,7 @@ describe("TW-08 闇魔術（town.dark）", () => {
   });
 
   test("TW-08 銀行の残高は使わない（所持金だけで払う）", () => {
-    const s = town({ c3: ASH }, 500);
+    const s = town({ c3: ASH }, 499); // L1 の 500 に 1 足りない
     s.bank = 5000;
     expectRejected(s, { type: "town.dark", memberId: "c3" }, "not enough gold");
   });
@@ -528,13 +529,14 @@ describe("TW-30〜32 GM の救済", () => {
     expect(mercyEligible(diving({ c2: DEAD, c3: DEAD, c4: DEAD, c5: DEAD }, 0), data)).toBe(false);
   });
 
-  test("TW-30 ash の費用は level × 1000（闇魔術）: 全員 ash の L1 なら所持金 999 で申し出、dead が混じれば 100 が最安", () => {
+  test("TW-30 ash の費用は level × 500（闇魔術。darkCostPerLevel 500【仮】）: 全員 ash の L1 なら所持金 499 で申し出、dead が混じれば 100 が最安", () => {
+    // 2026-10-05 ユーザー指示（灰の経済）で darkCostPerLevel を 1000 → 500 にし、期待値を変えた（旧は 3000・999 / 1000）
     const allAsh = { c2: ASH, c3: ASH, c4: ASH, c5: ASH, c6: ASH };
-    expect(resurrectCostOf({ ...member(newGame(1), "c2"), ...ASH, level: 3 }, data)).toBe(3000);
+    expect(resurrectCostOf({ ...member(newGame(1), "c2"), ...ASH, level: 3 }, data)).toBe(1500);
     expect(resurrectCostOf({ ...member(newGame(1), "c2"), ...DEAD, level: 3 }, data)).toBe(300);
-    expect(mercyEligible(diving(allAsh, 999), data)).toBe(true);
-    expect(mercyEligible(diving(allAsh, 1000), data)).toBe(false);
-    expect(mercyEligible(diving({ ...allAsh, c6: DEAD }, 999), data)).toBe(false);
+    expect(mercyEligible(diving(allAsh, 499), data)).toBe(true);
+    expect(mercyEligible(diving(allAsh, 500), data)).toBe(false);
+    expect(mercyEligible(diving({ ...allAsh, c6: DEAD }, 499), data)).toBe(false);
   });
 
   /** 救済の申し出がある街の state（c1 だけ alive、c2..c6 は dead / ash、所持金 0） */
@@ -612,12 +614,12 @@ describe("TW-30〜32 GM の救済", () => {
   });
 
   test("TW-32 申し出の間も闇魔術（town.dark）は使え、申し出は下りない（mercyOffered は true のまま）", () => {
-    // c2..c6 が ash（L1 で 1000）、所持金 999 → 最安の蘇生費 1000 に届かないので申し出る
-    const ctx = ctxFor(diving({ c2: ASH, c3: ASH, c4: ASH, c5: ASH, c6: ASH }, 999));
+    // c2..c6 が ash（L1 で 500。darkCostPerLevel 500【仮】）、所持金 499 → 最安の蘇生費 500 に届かないので申し出る
+    const ctx = ctxFor(diving({ c2: ASH, c3: ASH, c4: ASH, c5: ASH, c6: ASH }, 499));
     returnToTown(ctx, "dungeon.exit");
     expect(ctx.state.townVisit).toEqual({ mercyOffered: true });
     const s = cloneState(ctx.state);
-    s.gold = 1000;
+    s.gold = 500;
     const r = ok(s, { type: "town.dark", memberId: "c2" });
     expect(r.events).toEqual([
       { kind: "lifeChanged", id: "c2", life: "alive" },
@@ -668,17 +670,18 @@ describe("UI-52/TW-11 townMenu（表示層向けの問い合わせ）", () => {
       { memberId: "c6", name: "フィン", cost: 300, affordable: false },
     ]);
     expect(m.temple.uncurse).toEqual([{ memberId: "c4", name: "ドナ", cost: 200, affordable: true }]);
-    // TW-08: ash の c5 エル（L1）だけ。1 × 1000 > 200
-    expect(m.dark).toEqual([{ memberId: "c5", name: "エル", cost: 1000, affordable: false }]);
+    // TW-08: ash の c5 エル（L1）だけ。1 × 500 > 200（darkCostPerLevel 500【仮】。旧 1000）
+    expect(m.dark).toEqual([{ memberId: "c5", name: "エル", cost: 500, affordable: false }]);
     expect(m.mercy).toBeNull();
     expect(m.dungeons).toEqual([{ id: "d01", name: data.dungeons[0]!.name, canEnter: true }]);
   });
 
-  test("TW-08 dark は ash の者を並び順に、cost = level × 1000、affordable = 所持金 ≥ cost（dead は入らない）", () => {
-    const s = town({ c2: { ...ASH, level: 3 }, c4: DEAD, c6: ASH }, 1500);
+  test("TW-08 dark は ash の者を並び順に、cost = level × 500（darkCostPerLevel 500【仮】）、affordable = 所持金 ≥ cost（dead は入らない）", () => {
+    // 2026-10-05 ユーザー指示（灰の経済）で 1000 → 500。旧は所持金 1500 で 3000（払えない）/ 1000（払える）。同じ分かれ方になるよう所持金を 750 にした
+    const s = town({ c2: { ...ASH, level: 3 }, c4: DEAD, c6: ASH }, 750);
     expect(townMenu(s, data)!.dark).toEqual([
-      { memberId: "c2", name: "ベルク", cost: 3000, affordable: false },
-      { memberId: "c6", name: "フィン", cost: 1000, affordable: true },
+      { memberId: "c2", name: "ベルク", cost: 1500, affordable: false },
+      { memberId: "c6", name: "フィン", cost: 500, affordable: true },
     ]);
     expect(townMenu(town(), data)!.dark).toEqual([]);
   });

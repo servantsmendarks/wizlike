@@ -520,15 +520,15 @@ describe("CH-13 能力値を読むほかのルール（成長・習得・寺院�
     expect(box?.rule.params?.["rate"]).toBe(learnRate(c4, priest, blessing, 2, cfg, eff));
   });
 
-  test("TW-07/MG-42/CH-13 蘇生の成功率は実効の生命力（ベルク 14 → 78%、生命力 +4 で 86%。出目 79〜86 で成否が分かれる）", () => {
+  test("TW-07/MG-42/CH-13 蘇生の成功率は実効の生命力（ベルク 14 → 88%、生命力 +3 で 94%。出目 89〜94 で成否が分かれる。templeSuccessBase 60【仮】。50 のときは 78% と +4 で 86% だったが、+4 では上限 95 に当たるので +3 にした）", () => {
     const s = newGame(1);
     const c2 = member(s, "c2");
     Object.assign(c2, { life: "dead", hp: 0 });
-    expect(resurrectRate(c2, data)).toBe(78);
-    equipNew(s, "c2", "accessory", { itemId: "charm", identified: true, options: [opt("vit", 4)] });
-    expect(resurrectRate(c2, data, equipStats(s, data, c2).stats)).toBe(86);
+    expect(resurrectRate(c2, data)).toBe(88);
+    equipNew(s, "c2", "accessory", { itemId: "charm", identified: true, options: [opt("vit", 3)] });
+    expect(resurrectRate(c2, data, equipStats(s, data, c2).stats)).toBe(94);
     let k = 1;
-    while (!(randInt(createRng(k), 1, 100) > 78 && randInt(createRng(k), 1, 100) <= 86)) k++;
+    while (!(randInt(createRng(k), 1, 100) > 88 && randInt(createRng(k), 1, 100) <= 94)) k++;
     s.rng = createRng(k);
     const ctx = makeContext(s, data);
     expect(rollResurrect(ctx, c2)).toBe(true);

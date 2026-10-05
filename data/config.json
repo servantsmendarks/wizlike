@@ -36,8 +36,8 @@
   "wipe": { "reviveHpRatio": 0.5, "clearStatus": true },
   "economy": {
     "sellRatio": 0.5, "identifyFeeRatio": 0.5, "identifyFeeMin": 10,
-    "templeSuccessBase": 50, "templeSuccessPerVit": 2, "templeSuccessMax": 95,
-    "templeCostPerLevel": 100, "darkCostPerLevel": 1000,
+    "templeSuccessBase": 60, "templeSuccessPerVit": 2, "templeSuccessMax": 95,
+    "templeCostPerLevel": 100, "darkCostPerLevel": 500,
     "cureCost": { "poison": 50, "paralysis": 150, "stone": 300 },
     "uncurseCost": 200,
     "upgradeBase": 50, "upgradeRateBase": 10, "upgradeRatePerCatalyst": 30, "upgradeDecay": 0.66, "upgradeMaxCatalysts": 3
