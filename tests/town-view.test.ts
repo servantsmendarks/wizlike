@@ -7,7 +7,7 @@ import { townMenu } from "../src/core/rules/town";
 import { upgradePreview } from "../src/core/rules/upgrade";
 import { cloneState, createItemInstance } from "../src/core/state";
 import type { Character, GameState, TownMenu } from "../src/core/types";
-import { samePage, townEntries, townHeader, townListTall, townLowersInput, townPageIntro, townParent, townRepair, upgradeConfirmLines, type TownEntry, type TownPage } from "../src/presenter/views/town";
+import { samePage, townEntries, townFreshIntro, townHeader, townListTall, townLowersInput, townPageIntro, townParent, townRepair, upgradeConfirmLines, type TownEntry, type TownPage } from "../src/presenter/views/town";
 import { data, newGame } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
 
@@ -248,6 +248,22 @@ describe("UI-52 街のページ", () => {
     const normal: TownPage[] = ["menu", "shopIdentify", "inn", "temple", { temple: "cure" }, "dark", "darkRevive", { upConfirm: sel }, "gate"];
     expect(tall.filter((p) => !townListTall(p))).toEqual([]);
     expect(normal.filter((p) => townListTall(p))).toEqual([]);
+  });
+
+  test("UI-52/TW-17（M7）townFreshIntro: 窓の下に見えている直近の文（recent）と同じ語りは重ねて出さない。強化の段を戻ってまた進んでも「どれを鍛える？ / 触媒を選べ。」が重ならない", () => {
+    const slot = S["town.upgrade.slot"]!;
+    const cat = S["town.upgrade.catalyst"]!;
+    // 初めて入る段は出す
+    expect(townFreshIntro([slot], ["誰の装備を鍛える？"])).toEqual([slot]);
+    // 部位 → 触媒 → 戻る → 戻る → 同じ者 → 同じ部位（窓の下 2 件は「どれを鍛える？ / 触媒を選べ。」のまま）
+    expect(townFreshIntro([slot], [slot, cat])).toEqual([]);
+    expect(townFreshIntro([cat], [slot, cat])).toEqual([]);
+    // 2 文の語りは、見えている方だけ省く
+    expect(townFreshIntro(["a", "b"], ["x", "a"])).toEqual(["b"]);
+    // 履歴が空なら全部出す。元の配列は変えない
+    const xs = ["a"];
+    expect(townFreshIntro(xs, [])).toEqual(["a"]);
+    expect(townFreshIntro(xs, [])).not.toBe(xs);
   });
 
   test("UI-52/TW-17（M7）広げた強化の段（鍛える者・部位・触媒）に入ったときの語りは、窓の下 2 行（全角 29 字 × 2）に収まる", () => {

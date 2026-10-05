@@ -472,6 +472,14 @@ describe("入力と Command", () => {
     expect(app).toMatch(/upgradeConfirmLines\(page, menu, previewOf\(page\), strings\)/);
   });
 
+  test("UI-52/TW-17（M7）ページに入ったときの語りは、窓の下 LIST_TALL_MESSAGE_LINES 件（履歴の末尾）に同じ文があれば重ねて出さない（townFreshIntro。ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const body = /const goTownPage = \(page: TownPage\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(body).toMatch(
+      /const texts = townFreshIntro\(\s*\[\.\.\.townPageIntro\(page, menu\)\.map\(t\), \.\.\.upgradeConfirmLines\(page, menu, previewOf\(page\), strings\)\],\s*play\.message\.history\(\)\.slice\(-LIST_TALL_MESSAGE_LINES\),\s*\);/,
+    );
+  });
+
   test("UI-54 戦闘中はヘッダーに 第{round+1}ターン を出す。遭遇の再生（onScreen battle）は 1、sync の戦闘は battleMenu.round + 1、battleEnd の後と迷宮・街の sync では隠す。lowerInput はターンを消さない（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const onScreen = /const onScreen = \(to: Screen\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";

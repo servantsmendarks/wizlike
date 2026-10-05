@@ -57,7 +57,7 @@ import {
 import { attachPointerLog, createPointerLog } from "./input/pointer-log";
 import { attachSaveOnHide } from "./lifecycle";
 import { attachStageInput, onTap } from "./input/tap";
-import { dungeonLayout, layoutWarnings, regions, saveBannerRect, settingsLayout } from "./layout";
+import { dungeonLayout, layoutWarnings, LIST_TALL_MESSAGE_LINES, regions, saveBannerRect, settingsLayout } from "./layout";
 import { createPlayer } from "./playback";
 import { resumePlan, routeOfScreen } from "./resume";
 import { createRunGate } from "./run-gate";
@@ -104,7 +104,7 @@ import { createSaveBanner } from "./views/save-banner";
 import { createUpdateNotice } from "./views/update-notice";
 import { createTitleScreen, titleEntries, titleHint, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
 import { formatWipeSummary } from "./views/wipe";
-import { townEntries, townHeader, townListTall, townLowersInput, townPageIntro, townParent, townRepair, upgradeConfirmLines, type TownEntry, type TownPage } from "./views/town";
+import { townEntries, townFreshIntro, townHeader, townListTall, townLowersInput, townPageIntro, townParent, townRepair, upgradeConfirmLines, type TownEntry, type TownPage } from "./views/town";
 
 export type Route = "title" | "creation" | "custom" | "town" | "dungeon" | "battle";
 export type Overlay = null | "map" | "debug" | "camp" | "wipe" | "history" | "settings";
@@ -440,7 +440,11 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
     const menu = townMenu(state, data);
     if (menu === null) return;
     // 続けて出す文は、最後の 1 文だけを文字送りにする（say は送り途中の前の文を完了させるため、前の文は即時で出す）
-    const texts = [...townPageIntro(page, menu).map(t), ...upgradeConfirmLines(page, menu, previewOf(page), strings)];
+    // 窓の下に見えている直近の文と同じ語りは重ねて出さない（段を戻ってまた進んだとき。UI-52 / TW-17）
+    const texts = townFreshIntro(
+      [...townPageIntro(page, menu).map(t), ...upgradeConfirmLines(page, menu, previewOf(page), strings)],
+      play.message.history().slice(-LIST_TALL_MESSAGE_LINES),
+    );
     const skip = store.get().skipAnimations;
     texts.forEach((x, i) => void play.message.say(x, skip || i < texts.length - 1));
   };

@@ -430,6 +430,14 @@ export function townPageIntro(page: TownPage, menu: TownMenu): string[] {
 }
 
 /**
+ * UI-52 / TW-17（M7）: ページに入ったときの語り（整形済み）のうち、窓の下に見えている直近の文（recent。app は履歴の末尾
+ * LIST_TALL_MESSAGE_LINES 件を渡す）と同じものを省く。段を戻ってまた進んだときに同じ語りを重ねて出さない。新しい配列を返す
+ */
+export function townFreshIntro(texts: readonly string[], recent: readonly string[]): string[] {
+  return texts.filter((x) => !recent.includes(x));
+}
+
+/**
  * TW-17: 確認の段（{ upConfirm }）に入ったときにメッセージ窓へ出す文（整形済み）。「対象 {item}　触媒 {count} 個」→
  * 「成功率 {rate}（うち大成功 {great}）　料金 {fee}G」→（払えなければ）所持金が足りない。値は core の townMenu.upgrade と upgradePreview。
  * 他のページ・preview が null なら []
