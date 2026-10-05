@@ -15,6 +15,7 @@ import type {
   PersonalityId,
   Spell,
   UniqueDef,
+  UnknownKind,
 } from "./data/index";
 import { EQUIP_SLOTS } from "./data/index";
 import type { Character, GameState, ItemOptionRoll, Rarity, RuleContext } from "./types";
@@ -90,6 +91,13 @@ export function monsterOf(data: GameData, id: string): Monster {
   const m = data.monsters.find((x) => x.id === id);
   if (m === undefined) throw new Error(`unknown monster id: ${id}`);
   return m;
+}
+
+/** CB-05: 未鑑定の系統（unknown-kinds.json）。検証済みのデータでは必ず見つかる */
+export function unknownKindOf(data: GameData, id: string): UnknownKind {
+  const k = data.unknownKinds.find((x) => x.id === id);
+  if (k === undefined) throw new Error(`unknown unknownKind id: ${id}`);
+  return k;
 }
 
 export function dungeonOf(data: GameData, id: string): DungeonDef {

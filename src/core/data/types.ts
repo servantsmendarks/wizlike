@@ -26,6 +26,9 @@ export type LureWeights = Record<LureTag, number>;
 export const SPELL_TARGETS = ["enemy", "enemyGroup", "allEnemies", "ally", "party", "self", "none"] as const;
 export type SpellTarget = (typeof SPELL_TARGETS)[number];
 
+export const PLACEHOLDER_COLORS = ["white", "gray", "dim", "lightGreen", "darkGreen", "red", "orange", "sky", "yellow"] as const;
+export type PlaceholderColor = (typeof PLACEHOLDER_COLORS)[number];
+
 export const PERSONALITY_IDS = ["cautious", "reckless", "greedy", "normal"] as const;
 export type PersonalityId = (typeof PERSONALITY_IDS)[number];
 
@@ -316,7 +319,8 @@ export type MonsterAttack = {
 export type Monster = {
   id: string;
   name: string;
-  unidentifiedName: string;
+  /** CB-05 / UI-60: 未鑑定の系統（unknown-kinds.json の id） */
+  unknownKind: string;
   sprite: string;
   level: number;
   hp: string;
@@ -330,6 +334,16 @@ export type Monster = {
   resist: Partial<Record<StatusId, boolean>>;
   tags: string[];
   description: string;
+};
+
+// ---- unknown-kinds.json（CB-05 / UI-60。M7） ----
+
+/** 未鑑定の系統。name は未鑑定の表示名、sprite は unknown_<id>、placeholderColor は PNG が無いときの矩形の色（表示層のパレットの色名） */
+export type UnknownKind = {
+  id: string;
+  name: string;
+  sprite: string;
+  placeholderColor: PlaceholderColor;
 };
 
 // ---- items.json（M7 の B2 から消耗品と魔法書だけ。装備は equipment-bases.json。IT-01） ----
@@ -646,6 +660,7 @@ export type GameData = {
   classes: ClassDef[];
   spells: Spell[];
   monsters: Monster[];
+  unknownKinds: UnknownKind[];
   items: Item[];
   equipmentBases: EquipmentBase[];
   itemOptions: ItemOptions;
@@ -669,6 +684,7 @@ export const DATA_FILES: { readonly [K in keyof RawGameData]: string } = {
   classes: "classes.json",
   spells: "spells.json",
   monsters: "monsters.json",
+  unknownKinds: "unknown-kinds.json",
   items: "items.json",
   equipmentBases: "equipment-bases.json",
   itemOptions: "item-options.json",

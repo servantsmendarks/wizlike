@@ -7,6 +7,7 @@ import races from "../../data/races.json";
 import classes from "../../data/classes.json";
 import spells from "../../data/spells.json";
 import monsters from "../../data/monsters.json";
+import unknownKinds from "../../data/unknown-kinds.json";
 import items from "../../data/items.json";
 import equipmentBases from "../../data/equipment-bases.json";
 import itemOptions from "../../data/item-options.json";
@@ -33,6 +34,7 @@ export function loadFreshData(): GameData {
       classes,
       spells,
       monsters,
+      unknownKinds,
       items,
       equipmentBases,
       itemOptions,

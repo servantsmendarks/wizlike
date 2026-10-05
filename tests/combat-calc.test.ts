@@ -196,10 +196,61 @@ describe("勝敗", () => {
       { monsterId: "kobold", hps: [2, 0, 3] },
     ], { identified: ["kobold"] });
     expect(groupViews(s, data)).toEqual([
-      { index: 0, monsterId: "giant_rat", name: "小さな獣", identified: false, count: 0 },
+      { index: 0, monsterId: "giant_rat", name: "何かの獣", identified: false, count: 0 },
       { index: 1, monsterId: "kobold", name: "コボルド", identified: true, count: 2 },
     ]);
     expect(enemyId(2, 0)).toBe("e2-0");
+  });
+
+  test("CB-05 未鑑定の表示名は monsters[].unknownKind の系統（unknown-kinds.json）の name。同じ系統の別の種類は同じ名前、鑑定済みは本名", () => {
+    const kindName = (monsterId: string): string => {
+      const m = data.monsters.find((x) => x.id === monsterId)!;
+      return data.unknownKinds.find((k) => k.id === m.unknownKind)!.name;
+    };
+    // 系統の割り当て（2026-10-05 のユーザー指示）
+    expect(Object.fromEntries(data.monsters.map((m) => [m.id, m.unknownKind]))).toEqual({
+      giant_rat: "beast",
+      giant_spider: "beast",
+      kobold: "humanoid",
+      rotting_corpse: "humanoid",
+      whispering_shadow: "spirit",
+      gatekeeper_armor: "construct",
+    });
+    expect(kindName("giant_rat")).toBe("何かの獣");
+    expect(kindName("kobold")).toBe("人の形をした影");
+    expect(kindName("whispering_shadow")).toBe("声だけの何か");
+    expect(kindName("gatekeeper_armor")).toBe("動く何か");
+    // 同じ系統の 2 種（大ネズミ・大蜘蛛 / コボルド・腐った死体）が同じ遭遇にいても同じ名前。区別はグループの番号（UI-54）
+    const s = withBattle(dived(1), [
+      { monsterId: "giant_rat", hps: [2, 2] },
+      { monsterId: "giant_spider", hps: [3] },
+      { monsterId: "kobold", hps: [2] },
+      { monsterId: "rotting_corpse", hps: [4, 4, 4] },
+    ]);
+    expect(groupViews(s, data).map((v) => [v.monsterId, v.name, v.identified])).toEqual([
+      ["giant_rat", "何かの獣", false],
+      ["giant_spider", "何かの獣", false],
+      ["kobold", "人の形をした影", false],
+      ["rotting_corpse", "人の形をした影", false],
+    ]);
+    // 鑑定は敵単位: 大蜘蛛だけ鑑定済みなら大蜘蛛だけ本名で、同じ系統の大ネズミは系統の名前のまま
+    const s2 = withBattle(dived(1), [
+      { monsterId: "giant_rat", hps: [2] },
+      { monsterId: "giant_spider", hps: [3] },
+    ], { identified: ["giant_spider"] });
+    expect(groupViews(s2, data).map((v) => [v.name, v.identified])).toEqual([
+      ["何かの獣", false],
+      ["大蜘蛛", true],
+    ]);
+  });
+
+  test("CB-05/SV セーブの互換: 戦闘の state は表示名を持たない（monsterId と bestiary だけ）ので、JSON を経ても系統の名前が出る", () => {
+    const s = withBattle(dived(1), [{ monsterId: "kobold", hps: [2] }]);
+    const json = JSON.stringify(s);
+    expect(json).not.toContain("人の形をした影");
+    expect(json).not.toContain("unidentifiedName");
+    const back = JSON.parse(json) as GameState;
+    expect(groupViews(back, data)[0]!.name).toBe("人の形をした影");
   });
 });
 

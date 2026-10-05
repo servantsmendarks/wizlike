@@ -667,7 +667,7 @@ describe("UI-41 playback", () => {
 
 describe("UI-41/UI-42/UI-40 戦闘の再生", () => {
   const groups: EnemyGroupView[] = [
-    { index: 0, monsterId: "giant_rat", name: "小さな獣", identified: false, count: 2 },
+    { index: 0, monsterId: "giant_rat", name: "何かの獣", identified: false, count: 2 },
     { index: 1, monsterId: "kobold", name: "コボルド", identified: true, count: 1 },
   ];
   const battleState = (): GameState => ({ ...stateWith(diveAt(1, 1, "N")), screen: "battle" });

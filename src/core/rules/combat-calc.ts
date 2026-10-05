@@ -1,7 +1,7 @@
 // 戦闘の判定と式（combat.md CB-04/05/13/14/20〜23/30/42/50/53、CH-44/60）。
 // すべて純粋関数。乱数も RuleContext も使わない（乱数を使う手続きは rules/combat.ts）。
 import type { ClassDef, Config, ConsumableItem, GameData, Item, ItemEffect, Spell, SpellTarget, StatusId } from "../data/index";
-import { monsterOf, personalityOf } from "../state";
+import { monsterOf, personalityOf, unknownKindOf } from "../state";
 import type { BattleState, Character, EnemyGroup, EnemyGroupView, EnemyUnit, GameState } from "../types";
 import { equipStats, type EquipStats } from "./equip-stats";
 
@@ -230,13 +230,13 @@ export function isIdentified(state: GameState, monsterId: string): boolean {
   return state.bestiary[monsterId]?.identified === true;
 }
 
-/** グループの表示名（鑑定済みなら name、未鑑定なら unidentifiedName） */
+/** CB-05: グループの表示名（鑑定済みなら monsters[].name、未鑑定なら系統 unknown-kinds.json の name） */
 export function groupName(state: GameState, data: GameData, g: number): string {
   const b = state.battle;
   const grp = b?.groups[g];
   if (grp === undefined) throw new Error(`groupName: no group ${g}`);
   const m = monsterOf(data, grp.monsterId);
-  return isIdentified(state, grp.monsterId) ? m.name : m.unidentifiedName;
+  return isIdentified(state, grp.monsterId) ? m.name : unknownKindOf(data, m.unknownKind).name;
 }
 
 /** §7: 全グループを添字順に（体数 0 も残す） */

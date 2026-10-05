@@ -16,6 +16,8 @@ import {
 import { floorOf, gossipCandidates, mapView, visibleCells, visibleCellsOf, visibleKnownTraps } from "../src/core/rules/dungeon";
 import { addIndex, removeIndex } from "../src/core/rules/field";
 import { battleMenu } from "../src/core/rules/combat";
+import { groupViews } from "../src/core/rules/combat-calc";
+import { withBattle } from "./helpers/battle";
 import { offerExit, offerStairs, offerTeleporter, offerTrap } from "../src/core/rules/choices";
 import { cloneState, createItemInstance, dungeonOf, makeContext, monsterOf } from "../src/core/state";
 import type { Cell, Command, Facing, Floor, GameEvent, GameState } from "../src/core/types";
@@ -229,6 +231,22 @@ describe("TW-15 宿の主人の噂話（M7）", () => {
       ]);
       expect(r.state.morale).toEqual({ rankId: "good" }); // 迷宮の中でも士気は残る（使った印は持たない）
     }
+  });
+
+  test("CB-05/TW-15 噂話で鑑定済みになった敵は、以後の戦闘で本名（同じ系統の別の種類は系統の名前のまま）", () => {
+    // kobold 以外を鑑定済みにして候補を kobold の 1 種にする → 噂話で kobold が鑑定済み
+    const known = Object.fromEntries(D01_ALL.filter((m) => m !== "kobold").map((m) => [m, { kills: 0, identified: true }]));
+    const r = run(withMorale(1, known), ENTER_D01);
+    expect(r.state.bestiary["kobold"]).toEqual({ kills: 0, identified: true });
+    const s = withBattle(r.state, [
+      { monsterId: "kobold", hps: [2] },
+      { monsterId: "rotting_corpse", hps: [3] },
+    ]);
+    s.bestiary["rotting_corpse"] = { kills: 0, identified: false };
+    expect(groupViews(s, data).map((v) => [v.name, v.identified])).toEqual([
+      ["コボルド", true],
+      ["人の形をした影", false],
+    ]);
   });
 
   test("DG-03/TW-15 候補が 1 種なら randInt(0, 0)、図鑑の kills は残す。候補が無ければ乱数を引かず語らない", () => {

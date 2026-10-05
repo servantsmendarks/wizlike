@@ -65,9 +65,9 @@ function menu(o: Partial<BattleMenu> = {}): BattleMenu {
     ready: false,
     pending: ["c1", "c2", "c4", "c5", "c6"],
     groups: [
-      { index: 0, monsterId: "giant_rat", name: "小さな獣", identified: false, count: 0 },
+      { index: 0, monsterId: "giant_rat", name: "何かの獣", identified: false, count: 0 },
       { index: 1, monsterId: "kobold", name: "コボルド", identified: true, count: 3 },
-      { index: 2, monsterId: "giant_spider", name: "多脚の影", identified: false, count: 1 },
+      { index: 2, monsterId: "giant_spider", name: "何かの獣", identified: false, count: 1 },
     ],
     members,
     allies: [
@@ -85,7 +85,7 @@ function withInput(m: BattleMenu, inputs: Record<string, BattleAction>): BattleM
 
 /** グループ 1 だけが生存（W5 の 1 グループ） */
 const ONE_GROUP: BattleMenu["groups"] = [
-  { index: 0, monsterId: "giant_rat", name: "小さな獣", identified: false, count: 0 },
+  { index: 0, monsterId: "giant_rat", name: "何かの獣", identified: false, count: 0 },
   { index: 1, monsterId: "kobold", name: "コボルド", identified: true, count: 2 },
 ];
 
@@ -196,7 +196,7 @@ describe("UI-54 入力の段階", () => {
     const rows = entries(m, a.cursor, S);
     expect(rows.map((e) => e.label)).toEqual([
       t("battle.targetGroup", { n: 1, name: "コボルド", count: 3 }),
-      t("battle.targetGroup", { n: 2, name: "多脚の影", count: 1 }),
+      t("battle.targetGroup", { n: 2, name: "何かの獣", count: 1 }),
       t("common.back"),
     ]);
     expect(rows.map((e) => e.choice)).toEqual([{ kind: "group", index: 1 }, { kind: "group", index: 2 }, { kind: "back" }]);

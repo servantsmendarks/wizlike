@@ -4,6 +4,7 @@ import races from "../data/races.json";
 import classes from "../data/classes.json";
 import spells from "../data/spells.json";
 import monsters from "../data/monsters.json";
+import unknownKinds from "../data/unknown-kinds.json";
 import items from "../data/items.json";
 import equipmentBases from "../data/equipment-bases.json";
 import itemOptions from "../data/item-options.json";
@@ -33,6 +34,7 @@ function rawData(): Mutable {
     classes,
     spells,
     monsters,
+    unknownKinds,
     items,
     equipmentBases,
     itemOptions,
@@ -95,7 +97,9 @@ describe("data: 実データ", () => {
     expect(DATA_FILES.itemOptions).toBe("item-options.json");
     expect(DATA_FILES.uniques).toBe("uniques.json");
     expect(DATA_FILES.drops).toBe("drops.json");
-    expect(Object.keys(DATA_FILES)).toHaveLength(16);
+    // M7: 未鑑定の系統（CB-05 / UI-60）
+    expect(DATA_FILES.unknownKinds).toBe("unknown-kinds.json");
+    expect(Object.keys(DATA_FILES)).toHaveLength(17);
   });
 
   test("data: 実データの定数形ダイス（gold \"0\"、groupSize \"1\"）が通る", () => {
@@ -540,6 +544,39 @@ describe("data: monsters.json", () => {
   });
   test("data: attacks は 1 つ以上", () => {
     expectIssue((r) => (r.monsters[0].attacks = []), "monsters.json", "[0].attacks: expected at least 1");
+  });
+  test("data: CB-05 unknownKind は必須で unknown-kinds.json に定義済みの id。廃止した unidentifiedName が残っていれば未知の欄", () => {
+    expectIssue((r) => (r.monsters[0].unknownKind = "dragon"), "monsters.json", '[0].unknownKind: unknown unknownKind id "dragon"');
+    expectIssue((r) => delete r.monsters[1].unknownKind, "monsters.json", "[1].unknownKind: missing required field");
+    expectIssue((r) => (r.monsters[2].unidentifiedName = "多脚の影"), "monsters.json", "[2].unidentifiedName: unknown field");
+    // 系統の定義を消すと、その系統を使う敵が止まる（systems との整合は見ない）
+    const issues = expectIssue((r) => (r.unknownKinds = r.unknownKinds.filter((k: { id: string }) => k.id !== "spirit")), "monsters.json", '[4].unknownKind: unknown unknownKind id "spirit"');
+    expect(issues).toHaveLength(1);
+  });
+});
+
+describe("data: unknown-kinds.json（CB-05 / UI-60。M7）", () => {
+  const F = "unknown-kinds.json";
+  test("data: CB-05/UI-60 実データは 4 系統（beast / humanoid / spirit / construct）、sprite は unknown_<id>、色は系統ごとに別", () => {
+    const d = loadGameData(rawData());
+    expect(d.unknownKinds.map((k) => [k.id, k.name, k.sprite])).toEqual([
+      ["beast", "何かの獣", "unknown_beast"],
+      ["humanoid", "人の形をした影", "unknown_humanoid"],
+      ["spirit", "声だけの何か", "unknown_spirit"],
+      ["construct", "動く何か", "unknown_construct"],
+    ]);
+    expect(new Set(d.unknownKinds.map((k) => k.placeholderColor)).size).toBe(d.unknownKinds.length);
+    // UI-54: 名前は全角 8 字以内（ラベルの 2 行に収まる。battle-view.test.ts で幅を確かめる）
+    for (const k of d.unknownKinds) expect([...k.name].length, k.id).toBeLessThanOrEqual(8);
+  });
+  test("data: CB-05/UI-60 unknown-kinds.json の検証: 空の name、sprite が unknown_<id> でない、パレットに無い色・黒、id の重複、空の配列、未知の欄は起動を止める", () => {
+    expectIssue((r) => (r.unknownKinds[0].name = ""), F, "[0].name: expected non-empty string");
+    expectIssue((r) => (r.unknownKinds[1].sprite = "kobold_silhouette"), F, '[1].sprite: UI-60: sprite must be "unknown_humanoid"');
+    expectIssue((r) => (r.unknownKinds[2].placeholderColor = "#123456"), F, "[2].placeholderColor: expected one of");
+    expectIssue((r) => (r.unknownKinds[2].placeholderColor = "black"), F, "[2].placeholderColor: expected one of");
+    expectIssue((r) => (r.unknownKinds[3].id = "beast"), F, "duplicate");
+    expectIssue((r) => (r.unknownKinds = []), F, "expected at least 1");
+    expectIssue((r) => (r.unknownKinds[0].systems = ["mage"]), F, "[0].systems: unknown field");
   });
 });
 

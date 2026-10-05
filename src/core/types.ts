@@ -439,7 +439,7 @@ export type CommandType = Command["type"];
 
 /**
  * §7: encounter / enemyGroups と BattleMenu.groups で同じ形。全グループを添字順に返す（体数 0 も残す）。
- * name は core が選んだ表示名（bestiary[monsterId].identified なら monsters[].name、でなければ unidentifiedName）。
+ * name は core が選んだ表示名（bestiary[monsterId].identified なら monsters[].name、でなければ系統の unknown-kinds.json の name。CB-05）。
  */
 export type EnemyGroupView = {
   index: number;

@@ -343,7 +343,7 @@ describe("遭遇（CB-03/04/05/06）", () => {
     }
   });
 
-  test("CB-05/CB-06 未鑑定 2 グループで生存者全員の SAN −4（無鉄砲・慎重でも −4、死者は減らない）。encounter の name は unidentifiedName", () => {
+  test("CB-05/CB-06 未鑑定 2 グループで生存者全員の SAN −4（無鉄砲・慎重でも −4、死者は減らない）。encounter の name は系統（unknown-kinds.json）の name", () => {
     const d = dataWith({ combat: { surpriseDiff: 1000 } });
     const s0 = patchParty(dived(1), { c6: DEAD });
     const ctx = runCtx(s0, d, (c) =>
@@ -353,8 +353,8 @@ describe("遭遇（CB-03/04/05/06）", () => {
       ]),
     );
     expect(eventsOf(ctx.events, "encounter")[0]!.groups).toEqual([
-      { index: 0, monsterId: "giant_rat", name: "小さな獣", identified: false, count: 1 },
-      { index: 1, monsterId: "kobold", name: "小柄な人影", identified: false, count: 1 },
+      { index: 0, monsterId: "giant_rat", name: "何かの獣", identified: false, count: 1 },
+      { index: 1, monsterId: "kobold", name: "人の形をした影", identified: false, count: 1 },
     ]);
     expect(kindsOf(ctx.events)).toContain("message:battle.unidentified");
     expect(eventsOf(ctx.events, "sanChanged")).toEqual(

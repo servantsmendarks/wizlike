@@ -37,6 +37,7 @@ import {
   OPTION_UNITS,
   OUTCOME_QUALITIES,
   PERSONALITY_IDS,
+  PLACEHOLDER_COLORS,
   SKILL_TYPES,
   SCHOOLS,
   SPELL_TARGETS,
@@ -149,6 +150,8 @@ type Index = {
   classes: Map<string, Obj>;
   spells: Map<string, Obj>;
   monsters: Map<string, Obj>;
+  /** unknown-kinds.json（CB-05 / UI-60。M7） */
+  unknownKinds: Map<string, Obj>;
   items: Map<string, Obj>;
   /** equipment-bases.json（IT-02。M7） */
   bases: Map<string, Obj>;
@@ -193,6 +196,7 @@ function buildIndex(raw: RawGameData): Index {
     classes: byId(raw.classes),
     spells: byId(raw.spells),
     monsters: byId(raw.monsters),
+    unknownKinds: byId(raw.unknownKinds),
     items: byId(raw.items),
     bases: byId(raw.equipmentBases),
     uniques: byId(raw.uniques),
@@ -609,7 +613,12 @@ function validateMonsters(ctx: Ctx, v: unknown, ix: Index): void {
     F({
       id: S,
       name: S,
-      unidentifiedName: S,
+      // CB-05 / UI-60: 未鑑定の系統。unknown-kinds.json に定義があること
+      unknownKind: (c, p, x) => {
+        const s = str(c, p, x);
+        ref(c, p, s, ix.unknownKinds, "unknownKind");
+        return s;
+      },
       sprite: S,
       level: I(POS_INT),
       hp: D,
@@ -636,6 +645,21 @@ function validateMonsters(ctx: Ctx, v: unknown, ix: Index): void {
     if (r.min < 1) report(ctx, p, `CB-03: groupSize ${JSON.stringify(g)} can be ${r.min} (< 1)`);
     if (ix.maxPerGroup !== undefined && r.max > ix.maxPerGroup)
       report(ctx, p, `CB-03: groupSize ${JSON.stringify(g)} can be ${r.max} (> combat.maxPerGroup ${ix.maxPerGroup})`);
+  });
+}
+
+// ---- unknown-kinds.json（CB-05 / UI-60。M7） ----
+
+function validateUnknownKinds(ctx: Ctx, v: unknown): void {
+  const a = L(F({ id: S, name: S, sprite: S, placeholderColor: E(PLACEHOLDER_COLORS) }), 1)(ctx, "", v);
+  if (!Array.isArray(a)) return;
+  uniqueIds(ctx, "", a);
+  // UI-60: 絵は public/sprites/unknown_<id>.png
+  a.forEach((k, i) => {
+    const id = strOf(get(k, "id"));
+    const sprite = strOf(get(k, "sprite"));
+    if (id !== undefined && sprite !== undefined && sprite !== `unknown_${id}`)
+      report(ctx, at(at("", i), "sprite"), `UI-60: sprite must be ${JSON.stringify(`unknown_${id}`)} (found ${JSON.stringify(sprite)})`);
   });
 }
 
@@ -1226,6 +1250,7 @@ export function validateGameData(raw: RawGameData): string[] {
   validateClasses(ctxOf("classes"), raw.classes, ix);
   validateSpells(ctxOf("spells"), raw.spells);
   validateMonsters(ctxOf("monsters"), raw.monsters, ix);
+  validateUnknownKinds(ctxOf("unknownKinds"), raw.unknownKinds);
   validateItems(ctxOf("items"), raw.items, ix);
   validateEquipmentBases(ctxOf("equipmentBases"), raw.equipmentBases, ix);
   validateItemOptions(ctxOf("itemOptions"), raw.itemOptions, ix);

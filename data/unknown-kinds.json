@@ -1,0 +1,6 @@
+[
+  { "id": "beast", "name": "何かの獣", "sprite": "unknown_beast", "placeholderColor": "dim" },
+  { "id": "humanoid", "name": "人の形をした影", "sprite": "unknown_humanoid", "placeholderColor": "gray" },
+  { "id": "spirit", "name": "声だけの何か", "sprite": "unknown_spirit", "placeholderColor": "darkGreen" },
+  { "id": "construct", "name": "動く何か", "sprite": "unknown_construct", "placeholderColor": "white" }
+]

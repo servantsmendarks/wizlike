@@ -73,7 +73,7 @@ describe("UI-54 敵グループの列", () => {
 
   test("UI-54 groupLabel は battle.groupLabel「{n} {name} ×{count}」。旧 battle.groupCount は無い", () => {
     expect(data.strings["battle.groupLabel"]).toBe("{n} {name} ×{count}");
-    expect(groupLabel({ name: "小柄な人影", count: 3 }, 1, data.strings)).toBe("1 小柄な人影 ×3");
+    expect(groupLabel({ name: "人の形をした影", count: 3 }, 1, data.strings)).toBe("1 人の形をした影 ×3");
     expect(groupLabel({ name: "N", count: 2 }, 4, data.strings)).toBe(formatMessage(data.strings["battle.groupLabel"]!, { n: 4, name: "N", count: 2 }));
     expect(Object.prototype.hasOwnProperty.call(data.strings, "battle.groupCount")).toBe(false);
   });
@@ -104,7 +104,7 @@ describe("UI-54 敵グループの列", () => {
     for (let n = 1; n <= data.config.combat.maxEnemyGroups; n++) {
       const width = groupLabelRects(n, VIEW_W)[0]!.w;
       for (const m of data.monsters) {
-        for (const name of [m.name, m.unidentifiedName]) {
+        for (const name of [m.name, data.unknownKinds.find((k) => k.id === m.unknownKind)!.name]) {
           const label = groupLabel({ name, count: data.config.combat.maxPerGroup }, data.config.combat.maxEnemyGroups, data.strings);
           expect(lines(label, width), `${n} ${label}`).toBeLessThanOrEqual(2);
         }
@@ -236,9 +236,9 @@ afterEach(() => {
 });
 
 const GROUPS: EnemyGroupView[] = [
-  { index: 0, monsterId: "giant_rat", name: "小さな獣", identified: false, count: 1 },
+  { index: 0, monsterId: "giant_rat", name: "何かの獣", identified: false, count: 1 },
   { index: 1, monsterId: "kobold", name: "コボルド", identified: true, count: 3 },
-  { index: 2, monsterId: "giant_spider", name: "多脚の影", identified: false, count: 0 },
+  { index: 2, monsterId: "giant_spider", name: "何かの獣", identified: false, count: 0 },
 ];
 
 function setup(onPick?: (g: number) => void) {
