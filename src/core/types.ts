@@ -531,12 +531,12 @@ export type TownMenuShopItem = { itemId: string; name: string; price: number; af
 /** IT-62: 流通レベルの汎用装備の売り物。name は表示名（「長剣 +2」）、level は progress.shopLevel、price は IT-60 の買値 */
 export type TownMenuShopEquipment = { itemId: string; name: string; level: number; price: number; affordable: boolean };
 export type TownMenuShopMember = { memberId: string; name: string; slotsFree: number };
-/** IT-61: 売れる品 1 個（本人の inventory の鑑定済みの品）。price は売値 */
+/** IT-61: 売れる品 1 個（本人の inventory の品。未鑑定も売れる）。price は店での売値 shopSellPrice（未鑑定は見た目の品種の売値、name は未鑑定の名前） */
 export type TownMenuShopSellRow = { instanceId: string; name: string; price: number };
 /** IT-63: 買い戻しのストックの品 1 個。price は uniques[].price、affordable = gold >= price */
 export type TownMenuShopBuybackRow = { instanceId: string; name: string; price: number; affordable: boolean };
-/** IT-65: 店で鑑定できる品 1 個（本人の inventory の未鑑定の品）。name は未鑑定の表示名 */
-export type TownMenuShopIdentifyRow = { memberId: string; memberName: string; instanceId: string; name: string };
+/** IT-65: 店で鑑定できる品 1 個（本人の inventory の未鑑定の品）。name は未鑑定の表示名、fee は品ごとの鑑定料 identifyFeeOf、affordable = gold >= fee */
+export type TownMenuShopIdentifyRow = { memberId: string; memberName: string; instanceId: string; name: string; fee: number; affordable: boolean };
 /** TW-16: 倉庫・所持品の 1 個 */
 export type TownMenuStorageRow = { instanceId: string; name: string };
 /**
@@ -583,12 +583,12 @@ export type TownMenu = {
     equipment: TownMenuShopEquipment[];
     /** 持たせる候補（buy / buyback）= life alive の者（並び順）。slotsFree = slotsPerCharacter − 装備数 − inventory（CH-71。0 なら inventory full） */
     members: TownMenuShopMember[];
-    /** IT-61: 全員（並び順。life を問わない）の、inventory の鑑定済みの品（inventory の順） */
+    /** IT-61: 全員（並び順。life を問わない）の、inventory の品（inventory の順。2026-10-05 から未鑑定も含む） */
     sellable: { memberId: string; name: string; items: TownMenuShopSellRow[] }[];
     /** IT-63: 買い戻しのストック（売った順） */
     buyback: TownMenuShopBuybackRow[];
-    /** IT-65: 鑑定料（identifyFee）、affordable = gold >= fee、全員（並び順。life を問わない）の inventory の未鑑定の品 */
-    identify: { fee: number; affordable: boolean; items: TownMenuShopIdentifyRow[] };
+    /** IT-65: 全員（並び順。life を問わない）の inventory の未鑑定の品（鑑定料は品ごと） */
+    identify: { items: TownMenuShopIdentifyRow[] };
   };
   /** TW-16 / IT-64 倉庫（rules/storage.ts storageMenu） */
   storage: {

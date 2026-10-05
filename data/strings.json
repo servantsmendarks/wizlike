@@ -106,7 +106,7 @@
   "town.shop.menu.identify": "鑑定",
   "town.shop.menu.storage": "倉庫",
   "town.shop.buyIntro": "何を買う？",
-  "town.shop.sellIntro": "誰の品を売る？鑑定の済んだ品だけ引き取るそうだ。",
+  "town.shop.sellIntro": "誰の品を売る？鑑定していない品は、見た目どおりの値で引き取るそうだ。",
   "town.shop.buybackIntro": "売り払った名品は、店の奥にしまってあるという。",
   "town.shop.identifyIntro": "店主が鑑定を請け負う。一品ごとに料金を取る。",
   "town.shop.sellWho": "{name}　{count}品",

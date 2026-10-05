@@ -1,5 +1,5 @@
 // 店（TW-05、IT-60〜65）と流通レベルの更新（IT-62）。M7 の B7 で town.ts から切り出した（town.ts は townMenu のために shopMenu を import するだけ）。
-// 値段の式（買値 IT-60・売値 IT-61・買い戻し IT-63・鑑定料 IT-65）は core のここだけに置く（表示層は shopMenu の値を描く。TW-27 の総資産も sellPrice）。
+// 値段の式（買値 IT-60・売値 IT-61（未鑑定は見た目の品種）・買い戻し IT-63・鑑定料 IT-65）は core のここだけに置く（表示層は shopMenu の値を描く。TW-27 の総資産も sellPrice）。
 // 乱数は使わない。import してよいのは state と data（town.ts / combat.ts は import しない。combat.ts と town.ts から呼ばれる側）。
 import type { ConsumableItem, EquipmentBase, GameData } from "../data/index";
 import {
@@ -60,6 +60,26 @@ export function sellPrice(inst: ItemInstance, data: GameData): number {
   return v;
 }
 
+/**
+ * IT-61（2026-10-05 ユーザー指示）: 見た目の品種の売値。未鑑定の表示（IT-12）が出しているのはベース（装備）か品（消耗品・魔法書）だけなので、
+ * その Lv0・通常・オプションなしの売値 = floor(ベースまたは品の price × sellRatio)。本当の Lv・希少度・オプション・ユニークは見ない
+ */
+export function appearanceSellPrice(inst: ItemInstance, data: GameData): number {
+  const base = findBase(data, inst.itemId);
+  return floorRatio(base === null ? itemOf(data, inst.itemId).price : base.price, data.config.economy.sellRatio);
+}
+
+/** IT-61: 店での売値。鑑定済みなら本当の売値 sellPrice、未鑑定なら見た目の品種の売値 appearanceSellPrice */
+export function shopSellPrice(inst: ItemInstance, data: GameData): number {
+  return inst.identified ? sellPrice(inst, data) : appearanceSellPrice(inst, data);
+}
+
+/** IT-65（2026-10-05 ユーザー指示）: 店の鑑定料 = max(identifyFeeMin, floor(見た目の品種の売値 × identifyFeeRatio))。中身は料金に出ない */
+export function identifyFeeOf(inst: ItemInstance, data: GameData): number {
+  const e = data.config.economy;
+  return Math.max(e.identifyFeeMin, floorRatio(appearanceSellPrice(inst, data), e.identifyFeeRatio));
+}
+
 /** IT-63: 買い戻しの値段 = uniques[].price */
 function buybackPrice(inst: ItemInstance, data: GameData): number {
   if (inst.uniqueId === null) throw new Error(`buybackPrice: ${inst.id} is not unique`);
@@ -82,7 +102,8 @@ function buyQuote(state: GameState, data: GameData, itemId: string): { price: nu
 /**
  * town.shop を受け付けない理由。順: wrong screen → bad action（オブジェクトでない・kind が buy / sell / buyback / identify でない・
  * buy の memberId / itemId、ほかの memberId / instanceId が文字列でない）→（kind ごとに）no such member → not alive（buy / buyback だけ）
- * → not for sale（buy）/ item not in inventory（sell / identify）/ not in stock（buyback）→ not identified（sell）/ already identified（identify）
+ * → not for sale（buy）/ item not in inventory（sell / identify）/ not in stock（buyback）→ already identified（identify）
+ * （2026-10-05 から未鑑定の品も売れるので sell の not identified は無い）
  * → inventory full（buy / buyback）→ not enough gold（buy / buyback / identify）
  */
 export function checkShop(state: GameState, action: unknown, data: GameData): string | null {
@@ -107,7 +128,6 @@ export function checkShop(state: GameState, action: unknown, data: GameData): st
     case "sell": {
       const inst = ownInventoryItem(state, ch, a.instanceId as string);
       if (inst === null) return "item not in inventory";
-      if (!inst.identified) return "not identified";
       return null;
     }
     case "buyback": {
@@ -123,7 +143,7 @@ export function checkShop(state: GameState, action: unknown, data: GameData): st
       const inst = ownInventoryItem(state, ch, a.instanceId as string);
       if (inst === null) return "item not in inventory";
       if (inst.identified) return "already identified";
-      if (gold < data.config.economy.identifyFee) return "not enough gold";
+      if (gold < identifyFeeOf(inst, data)) return "not enough gold";
       return null;
     }
   }
@@ -174,7 +194,8 @@ export function buyItem(ctx: RuleContext, memberId: string, itemId: string): voi
 
 /**
  * IT-61 / IT-63 の売却。乱数は使わない。
- * 本人の inventory から外す → ユニークなら buyback の末尾へ（実体はそのまま）、それ以外は実体を消す → 売値を受け取る
+ * 本人の inventory から外す → 鑑定済みのユニークなら buyback の末尾へ（実体はそのまま）、それ以外（未鑑定の品はユニークでも）は実体を消す
+ * → 店での売値 shopSellPrice（未鑑定は見た目の品種の売値）を受け取る
  * → message town.shop.sold{name, item, gold}
  */
 export function sellItem(ctx: RuleContext, memberId: string, instanceId: string): void {
@@ -183,8 +204,8 @@ export function sellItem(ctx: RuleContext, memberId: string, instanceId: string)
   const inst = state.items[instanceId];
   if (ch === null || inst === undefined) throw new Error(`sellItem: bad ${memberId} / ${instanceId}`);
   const item = itemDisplayName(state, data, instanceId);
-  const gold = sellPrice(inst, data);
-  if (inst.uniqueId !== null) {
+  const gold = shopSellPrice(inst, data);
+  if (inst.uniqueId !== null && inst.identified) {
     ch.inventory = ch.inventory.filter((x) => x !== instanceId);
     state.buyback.push(instanceId);
   } else {
@@ -216,14 +237,15 @@ export function buyBack(ctx: RuleContext, memberId: string, instanceId: string):
 
 /**
  * IT-65 店の鑑定。乱数は使わない（結果は CH-77 と同じ）。
- * identifyFee を払う → 鑑定済みにし、ユニークなら図鑑に記録（IT-66）→ message town.shop.identified{name, old, item, cost}
+ * 品ごとの鑑定料 identifyFeeOf を払う → 鑑定済みにし、ユニークなら図鑑に記録（IT-66）→ message town.shop.identified{name, old, item, cost}
  * → 呪われていれば message camp.identifiedCursed{item}
  */
 export function identifyAtShop(ctx: RuleContext, memberId: string, instanceId: string): void {
   const { state, data } = ctx;
   const ch = memberById(state, memberId);
-  if (ch === null || state.items[instanceId] === undefined) throw new Error(`identifyAtShop: bad ${memberId} / ${instanceId}`);
-  const cost = data.config.economy.identifyFee;
+  const inst = state.items[instanceId];
+  if (ch === null || inst === undefined) throw new Error(`identifyAtShop: bad ${memberId} / ${instanceId}`);
+  const cost = identifyFeeOf(inst, data);
   state.gold -= cost;
   const old = itemDisplayName(state, data, instanceId);
   identifyInstance(state, instanceId);
@@ -250,7 +272,6 @@ export function raiseShopLevel(ctx: RuleContext, level: number): void {
 export function shopMenu(state: GameState, data: GameData): TownMenu["shop"] {
   const gold = state.gold;
   const level = state.progress.shopLevel;
-  const fee = data.config.economy.identifyFee;
   return {
     items: shopConsumables(data).map((it) => ({ itemId: it.id, name: it.name, price: it.price, affordable: gold >= it.price })),
     equipment: shopBases(state, data).map((b) => {
@@ -265,9 +286,7 @@ export function shopMenu(state: GameState, data: GameData): TownMenu["shop"] {
       name: ch.name,
       items: ch.inventory.flatMap((id) => {
         const inst = state.items[id];
-        return inst !== undefined && inst.identified
-          ? [{ instanceId: id, name: itemDisplayName(state, data, id), price: sellPrice(inst, data) }]
-          : [];
+        return inst !== undefined ? [{ instanceId: id, name: itemDisplayName(state, data, id), price: shopSellPrice(inst, data) }] : [];
       }),
     })),
     buyback: state.buyback.map((id) => {
@@ -277,14 +296,12 @@ export function shopMenu(state: GameState, data: GameData): TownMenu["shop"] {
       return { instanceId: id, name: itemDisplayName(state, data, id), price, affordable: gold >= price };
     }),
     identify: {
-      fee,
-      affordable: gold >= fee,
       items: state.party.flatMap((ch) =>
         ch.inventory.flatMap((id) => {
           const inst = state.items[id];
-          return inst !== undefined && !inst.identified
-            ? [{ memberId: ch.id, memberName: ch.name, instanceId: id, name: itemDisplayName(state, data, id) }]
-            : [];
+          if (inst === undefined || inst.identified) return [];
+          const fee = identifyFeeOf(inst, data);
+          return [{ memberId: ch.id, memberName: ch.name, instanceId: id, name: itemDisplayName(state, data, id), fee, affordable: gold >= fee }];
         }),
       ),
     },

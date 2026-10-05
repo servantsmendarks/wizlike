@@ -182,7 +182,9 @@ export type Config = {
   wipe: { reviveHpRatio: number; clearStatus: boolean };
   economy: {
     sellRatio: number;
-    identifyFee: number;
+    /** IT-65【仮】: 店の鑑定料 = max(identifyFeeMin, floor(見た目の品種（Lv0・通常）の売値 × identifyFeeRatio)) */
+    identifyFeeRatio: number;
+    identifyFeeMin: number;
     templeSuccessBase: number;
     templeSuccessPerVit: number;
     templeSuccessMax: number;

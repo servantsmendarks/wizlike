@@ -306,7 +306,8 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
     wipe: F({ reviveHpRatio: N(RATIO), clearStatus: B }),
     economy: F({
       sellRatio: N(RATIO),
-      identifyFee: I(NON_NEG),
+      identifyFeeRatio: N(RATIO), // IT-65【仮】
+      identifyFeeMin: I(NON_NEG),
       templeSuccessBase: I(PERCENT),
       templeSuccessPerVit: I(),
       templeSuccessMax: I(PERCENT),

@@ -35,7 +35,7 @@
   },
   "wipe": { "reviveHpRatio": 0.5, "clearStatus": true },
   "economy": {
-    "sellRatio": 0.5, "identifyFee": 100,
+    "sellRatio": 0.5, "identifyFeeRatio": 0.5, "identifyFeeMin": 10,
     "templeSuccessBase": 50, "templeSuccessPerVit": 2, "templeSuccessMax": 95,
     "templeCostPerLevel": 100, "darkCostPerLevel": 1000,
     "cureCost": { "poison": 50, "paralysis": 150, "stone": 300 },

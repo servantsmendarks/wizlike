@@ -7,7 +7,7 @@ import { describe, expect, test } from "vitest";
 import { createInitialState, execute } from "../src/core/engine";
 import { createRng, randInt, type RngState } from "../src/core/rng";
 import { checkEnter } from "../src/core/rules/dungeon";
-import { sellPrice, shopPrice } from "../src/core/rules/shop";
+import { identifyFeeOf, sellPrice, shopPrice, shopSellPrice } from "../src/core/rules/shop";
 import { arriveTown, mercyEligible, resurrectCostOf, returnToTown, townMenu } from "../src/core/rules/town";
 import { cloneState, createItemInstance, makeContext } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState } from "../src/core/types";
@@ -829,16 +829,15 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
         { memberId: "c6", name: "フィン", items: [{ instanceId: "i18", name: "薬草", price: 5 }] },
       ],
       buyback: [],
-      identify: { fee: 100, affordable: true, items: [] },
+      identify: { items: [] }, // 2026-10-05: 鑑定料は品ごと（IT-65）になり、全体の fee / affordable を外した
     });
     const m = townMenu(town({ c2: DEAD, c5: ASH }, 15), data)!.shop;
     expect(m.items.map((i) => i.affordable)).toEqual([true, true, false]);
     expect(m.members.map((x) => x.memberId)).toEqual(["c1", "c3", "c4", "c6"]);
     expect(m.sellable.map((x) => x.memberId)).toEqual(["c1", "c2", "c3", "c4", "c5", "c6"]); // 売るのは life を問わない
-    expect(m.identify.affordable).toBe(false);
   });
 
-  test("IT-62/IT-63/IT-65 townMenu.shop: shopLevel 2 の売り物（Lv2・買値 ×2・表示名 +2）、未鑑定の品は鑑定の一覧にだけ、ユニークの買い戻しの行", () => {
+  test("IT-62/IT-63/IT-65 townMenu.shop: shopLevel 2 の売り物（Lv2・買値 ×2・表示名 +2）、未鑑定の品は売る一覧（見た目の売値）と鑑定の一覧の両方、ユニークの買い戻しの行", () => {
     const s = town({}, 150);
     s.progress.shopLevel = 2;
     const unid = createItemInstance(s, { itemId: "long_sword", identified: false, level: 3 });
@@ -862,8 +861,9 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
       ["leather_gloves", "革小手 +2", 2, 60, true],
       ["charm", "護符 +2", 2, 400, false],
     ]);
-    expect(m.sellable.find((x) => x.memberId === "c2")!.items).toEqual([]); // 未鑑定は売れない
-    expect(m.identify).toEqual({ fee: 100, affordable: true, items: [{ memberId: "c2", memberName: "ベルク", instanceId: unid, name: "剣？" }] });
+    // 2026-10-05: 未鑑定も見た目の品種（長剣 Lv0）の売値 floor(100 × 0.5) = 50 で売れる。鑑定料は max(10, floor(50 × 0.5)) = 25（所持金 150 で払える）
+    expect(m.sellable.find((x) => x.memberId === "c2")!.items).toEqual([{ instanceId: unid, name: "剣？", price: 50 }]);
+    expect(m.identify).toEqual({ items: [{ memberId: "c2", memberName: "ベルク", instanceId: unid, name: "剣？", fee: 25, affordable: true }] });
     expect(m.buyback).toEqual([{ instanceId: u, name: "上質な影法師の剣", price: 1200, affordable: false }]);
   });
 });
@@ -1007,7 +1007,7 @@ describe("IT-60〜63 店の装備の購入・売却・買い戻し（town.shop�
     expectStateInvariants(r3.state);
   });
 
-  test("IT-61/IT-63/TW-05 sell と buyback の理由と順: no such member → not alive（buyback だけ）→ item not in inventory / not in stock → not identified（sell）→ inventory full → not enough gold（buyback）", () => {
+  test("IT-61/IT-63/TW-05 sell と buyback の理由と順: no such member → not alive（buyback だけ）→ item not in inventory / not in stock → inventory full → not enough gold（buyback）", () => {
     const s = town({ c3: DEAD }, 599);
     const unid = give(s, "c1", { itemId: "long_sword", identified: false });
     const u = createItemInstance(s, { itemId: "leather_cap", uniqueId: "alarm_bell_helm", identified: true }); // 買い戻し 600G
@@ -1018,7 +1018,7 @@ describe("IT-60〜63 店の装備の購入・売却・買い戻し（town.shop�
     expectRejected(s, sell("c1", "i1"), "item not in inventory"); // 装備中
     expectRejected(s, sell("c1", u), "item not in inventory"); // ストックの品
     expectRejected(s, sell("c1", "i999"), "item not in inventory");
-    expectRejected(s, sell("c1", unid), "not identified");
+    expect(ok(s, sell("c1", unid)).state.gold).toBe(649); // 2026-10-05: 未鑑定も売れる（not identified を廃止）。見た目の長剣の 50G
     // buyback
     expectRejected(s, buyback("c9", u), "no such member");
     expectRejected(s, buyback("c3", u), "not alive");
@@ -1043,20 +1043,20 @@ describe("IT-65/IT-66 店の鑑定（town.shop identify。M7）", () => {
     return { s, id };
   }
 
-  test("IT-65 identifyFee（100G）を払って本人の未鑑定の品を鑑定: town.shop.identified{name, old, item, cost}。乱数なし。呪われていれば camp.identifiedCursed が続く", () => {
+  test("IT-65 鑑定料（長剣は max(10, floor(50 × 0.5)) = 25G。2026-10-05 に一律 100G から変えた）を払って本人の未鑑定の品を鑑定: town.shop.identified{name, old, item, cost}。乱数なし。呪われていれば camp.identifiedCursed が続く", () => {
     const { s, id } = withUnidentified(town({}, 300), "c2");
     const r = ok(s, identify("c2", id));
-    expect(r.state.gold).toBe(200);
+    expect(r.state.gold).toBe(275);
     expect(r.state.items[id]!.identified).toBe(true);
     expect(r.events).toEqual([
-      { kind: "message", key: "town.shop.identified", params: { name: "ベルク", old: "剣？", item: "希少な長剣 +3", cost: 100 } },
+      { kind: "message", key: "town.shop.identified", params: { name: "ベルク", old: "剣？", item: "希少な長剣 +3", cost: 25 } },
     ]);
     expect(r.state.rng).toEqual(s.rng);
     expect(r.state.uniqueBook).toEqual({});
     const c = withUnidentified(town({}, 300), "c2", { cursed: true, options: [{ optionId: "str", tier: 1, value: -1 }], rarity: "normal", level: 0 });
     const rc = ok(c.s, identify("c2", c.id));
     expect(rc.events).toEqual([
-      { kind: "message", key: "town.shop.identified", params: { name: "ベルク", old: "剣？", item: "長剣", cost: 100 } },
+      { kind: "message", key: "town.shop.identified", params: { name: "ベルク", old: "剣？", item: "長剣", cost: 25 } },
       { kind: "message", key: "camp.identifiedCursed", params: { item: "長剣" } },
     ]);
   });
@@ -1064,12 +1064,12 @@ describe("IT-65/IT-66 店の鑑定（town.shop identify。M7）", () => {
   test("IT-65/IT-66 ユニークを店で鑑定しても図鑑に記録する。死亡している者の品も鑑定できる（life を問わない）", () => {
     const { s, id } = withUnidentified(town({ c3: DEAD }, 300), "c3", { itemId: "leather_cap", uniqueId: "alarm_bell_helm", level: 0, rarity: "legendary", foundIn: "d02" });
     const r = ok(s, identify("c3", id));
-    expect(r.events[0]).toEqual({ kind: "message", key: "town.shop.identified", params: { name: "キリ", old: data.equipmentBases.find((b) => b.id === "leather_cap")!.unidentifiedName, item: "伝説の早鐘の兜", cost: 100 } });
+    expect(r.events[0]).toEqual({ kind: "message", key: "town.shop.identified", params: { name: "キリ", old: data.equipmentBases.find((b) => b.id === "leather_cap")!.unidentifiedName, item: "伝説の早鐘の兜", cost: 10 } }); // 革兜 30 → 15 → floor(7.5) = 7 → 最低 10G
     expect(r.state.uniqueBook).toEqual({ alarm_bell_helm: { foundIn: "d02", bestRarity: "legendary" } });
   });
 
   test("IT-65/TW-05 理由と順: wrong screen → bad action → no such member → item not in inventory → already identified → not enough gold。所持金ちょうどなら 0 になる", () => {
-    const { s, id } = withUnidentified(town({}, 99), "c1");
+    const { s, id } = withUnidentified(town({}, 24), "c1"); // 長剣の鑑定料 25 に 1 足りない（2026-10-05 に 100 から変えた）
     const diveState = withUnidentified(diving({}, 300), "c1");
     expectRejected(diveState.s, identify("c1", diveState.id), "wrong screen");
     expectRejected(s, identify(1, id), "bad action");
@@ -1081,8 +1081,91 @@ describe("IT-65/IT-66 店の鑑定（town.shop identify。M7）", () => {
     expectRejected(s, identify("c1", "i4"), "already identified"); // 薬草（鑑定済み）
     expectRejected(s, identify("c1", id), "not enough gold");
     const rich = cloneState(s);
-    rich.gold = 100;
+    rich.gold = 25;
     expect(ok(rich, identify("c1", id)).state.gold).toBe(0);
+  });
+});
+
+describe("IT-61/IT-65 鑑定料と未鑑定の売値（2026-10-05 ユーザー指示。見た目の品種 = ベースの Lv0・通常）", () => {
+  const sell = (memberId: string, instanceId: string): Command => ({ type: "town.shop", action: { kind: "sell", memberId, instanceId } });
+  const identify = (memberId: string, instanceId: string): Command => ({ type: "town.shop", action: { kind: "identify", memberId, instanceId } });
+  const RARE_OPTS = [{ optionId: "str", tier: 1 as const, value: 1 }, { optionId: "hit", tier: 1 as const, value: 5 }];
+
+  test("IT-65 鑑定料 = max(identifyFeeMin 10, floor(見た目の品種の売値 × identifyFeeRatio 0.5))。本当の Lv・希少度・オプション・ユニークは料金に出ない", () => {
+    const s = town();
+    const fee = (spec: Parameters<typeof createItemInstance>[1]) => identifyFeeOf(s.items[createItemInstance(s, spec)]!, data);
+    // 長剣 100: 見た目の売値 floor(100 × 0.5) = 50 → floor(50 × 0.5) = 25。Lv3・希少・オプション 2 つでも、ユニーク（影法師の剣）でも 25
+    expect(fee({ itemId: "long_sword", identified: false })).toBe(25);
+    expect(fee({ itemId: "long_sword", identified: false, level: 3, rarity: "rare", options: RARE_OPTS })).toBe(25);
+    expect(fee({ itemId: "long_sword", uniqueId: "shadowfolk_sword", identified: false, rarity: "legendary" })).toBe(25);
+    // 鎖帷子 300: 150 → 75。護符 200: 100 → 50
+    expect(fee({ itemId: "chain_mail", identified: false, level: 5 })).toBe(75);
+    expect(fee({ itemId: "charm", identified: false })).toBe(50);
+    // 最低 10G: 短剣 15 は floor(15 × 0.5) = 7 → floor(3.5) = 3 → 10。革兜 30 のユニーク（早鐘の兜）は 15 → 7 → 10
+    expect(fee({ itemId: "dagger", identified: false, level: 2 })).toBe(10);
+    expect(fee({ itemId: "leather_cap", uniqueId: "alarm_bell_helm", identified: false })).toBe(10);
+  });
+
+  test("IT-61 店での売値: 未鑑定は見た目の品種の売値（長剣 50・短剣 7）、鑑定済みは本当の売値（長剣 Lv3 の希少 floor(100 × 0.5 × 2.5) + 20 + 20 = 165）", () => {
+    const s = town();
+    const v = (spec: Parameters<typeof createItemInstance>[1]) => shopSellPrice(s.items[createItemInstance(s, spec)]!, data);
+    expect(v({ itemId: "long_sword", identified: false, level: 3, rarity: "rare", options: RARE_OPTS })).toBe(50);
+    expect(v({ itemId: "long_sword", identified: true, level: 3, rarity: "rare", options: RARE_OPTS })).toBe(165);
+    expect(v({ itemId: "dagger", identified: false, level: 2 })).toBe(7);
+    // ユニークも未鑑定なら見た目の品種（長剣）の 50。鑑定済みなら floor(1200 × 0.5) = 600
+    expect(v({ itemId: "long_sword", uniqueId: "shadowfolk_sword", identified: false })).toBe(50);
+    expect(v({ itemId: "long_sword", uniqueId: "shadowfolk_sword", identified: true })).toBe(600);
+  });
+
+  test("IT-61 未鑑定の品も売れる: 見た目の売値を受け取り実体は消える（ユニークでも買い戻しのストックに入らない・図鑑に記録しない）。語りの item は未鑑定の名前", () => {
+    const s = town({}, 300);
+    const sword = createItemInstance(s, { itemId: "long_sword", identified: false, level: 3, rarity: "rare", options: RARE_OPTS });
+    const uniq = createItemInstance(s, { itemId: "long_sword", uniqueId: "shadowfolk_sword", identified: false, foundIn: "d01" });
+    member(s, "c2").inventory.push(sword, uniq);
+    const r1 = ok(s, sell("c2", sword));
+    expect(r1.events).toEqual([{ kind: "message", key: "town.shop.sold", params: { name: "ベルク", item: "剣？", gold: 50 } }]);
+    expect(r1.state.gold).toBe(350);
+    expect(r1.state.items[sword]).toBeUndefined();
+    const r2 = ok(r1.state, sell("c2", uniq));
+    expect(r2.events).toEqual([{ kind: "message", key: "town.shop.sold", params: { name: "ベルク", item: "剣？", gold: 50 } }]);
+    expect(r2.state.gold).toBe(400);
+    expect(r2.state.items[uniq]).toBeUndefined();
+    expect(r2.state.buyback).toEqual([]);
+    expect(r2.state.uniqueBook).toEqual({});
+    expect(member(r2.state, "c2").inventory).toEqual([]);
+    expect(r2.state.rng).toEqual(s.rng);
+    expectStateInvariants(r2.state);
+  });
+
+  test("IT-65 店の鑑定は品ごとの鑑定料を払う（長剣 25G）。足りなければ not enough gold、ちょうどなら 0 になる", () => {
+    const s = town({}, 25);
+    const sword = createItemInstance(s, { itemId: "long_sword", identified: false, level: 3 });
+    member(s, "c1").inventory.push(sword);
+    const r = ok(s, identify("c1", sword));
+    expect(r.state.gold).toBe(0);
+    expect(r.events[0]).toEqual({ kind: "message", key: "town.shop.identified", params: { name: "アルド", old: "剣？", item: "長剣 +3", cost: 25 } });
+    const poor = cloneState(s);
+    poor.gold = 24;
+    expectRejected(poor, identify("c1", sword), "not enough gold");
+  });
+
+  test("IT-61/IT-65 townMenu.shop: 未鑑定の品は売る一覧（見た目の売値）と鑑定の一覧（品ごとの fee と affordable）の両方に出る", () => {
+    const s = town({}, 24);
+    const sword = createItemInstance(s, { itemId: "long_sword", identified: false, level: 3 });
+    const dagger = createItemInstance(s, { itemId: "dagger", identified: false });
+    member(s, "c2").inventory.push(sword, dagger);
+    const m = townMenu(s, data)!.shop;
+    expect(m.sellable.find((x) => x.memberId === "c2")!.items).toEqual([
+      { instanceId: sword, name: "剣？", price: 50 },
+      { instanceId: dagger, name: "短い刃？", price: 7 },
+    ]);
+    // 所持金 24: 長剣の 25 は払えず、短剣の 10 は払える
+    expect(m.identify).toEqual({
+      items: [
+        { memberId: "c2", memberName: "ベルク", instanceId: sword, name: "剣？", fee: 25, affordable: false },
+        { memberId: "c2", memberName: "ベルク", instanceId: dagger, name: "短い刃？", fee: 10, affordable: true },
+      ],
+    });
   });
 });
 

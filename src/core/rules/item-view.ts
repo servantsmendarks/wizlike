@@ -5,17 +5,17 @@ import { findBase, itemDisplayName, itemOf, optionOf, uniqueOf } from "../state"
 import type { Character, GameState, Rarity } from "../types";
 import { allyAc } from "./combat-calc";
 import { equipStats, itemPower, type ItemPower } from "./equip-stats";
-import { sellPrice } from "./shop";
+import { appearanceSellPrice, sellPrice } from "./shop";
 
 /** 品の詳細のオプション 1 行。value は表示する符号付きの値（ac は AC の増減として −値。IT-34）、bad は負のオプション（呪い。IT-32） */
 export type ItemDetailOption = { name: string; value: number; unit: string; bad: boolean };
 
 /**
- * UI-59（M7）: 品の詳細。未鑑定（IT-12）は name（未鑑定の名前）・slot・identified だけで、ほかは null / [] / false（呪いも見せない。CH-73）。
+ * UI-59（M7）: 品の詳細。未鑑定（IT-12）は name（未鑑定の名前）・slot・identified・sellPrice（見た目の品種の売値）だけで、ほかは null / [] / false（呪いも見せない。CH-73）。
  * - level: 鑑定済みの汎用装備の Lv（ユニーク・消耗品・魔法書は null）
  * - rarity / power: 鑑定済みの装備だけ（power はオプションを除く性能。IT-20〜23）
  * - options: 鑑定済みの装備のオプション（実体の順）。skill: 鑑定済みのユニークの固有スキル（IT-40）
- * - cursed: 鑑定済みかつ呪われている。sellPrice: 鑑定済みの品の売値（IT-61。未鑑定は売れないので null）
+ * - cursed: 鑑定済みかつ呪われている。sellPrice: 店での売値（IT-61。鑑定済みは本当の売値、未鑑定は見た目の品種の売値。2026-10-05 から未鑑定も売れる）
  * - description: 鑑定済みのユニークの説明（uniques[].description）
  */
 export type ItemDetail = {
@@ -56,7 +56,7 @@ export function itemDetail(state: GameState, data: GameData, instanceId: string)
     sellPrice: null,
     description: null,
   };
-  if (!inst.identified) return hidden;
+  if (!inst.identified) return { ...hidden, sellPrice: appearanceSellPrice(inst, data) };
   if (base === null) {
     itemOf(data, inst.itemId); // 消耗品・魔法書（知らない id なら Error）
     return { ...hidden, sellPrice: sellPrice(inst, data) };

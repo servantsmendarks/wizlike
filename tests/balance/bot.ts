@@ -13,6 +13,7 @@ import { cellAt, edgeOf, FACINGS, isPassable, opposite, step, turnLeft, turnRigh
 import { floorOf } from "../../src/core/rules/dungeon";
 import { fieldItemMenu } from "../../src/core/rules/items";
 import { frontLineIds } from "../../src/core/rules/combat-calc";
+import { sellPrice } from "../../src/core/rules/shop";
 import { townMenu } from "../../src/core/rules/town";
 import { findItem, itemOf } from "../../src/core/state";
 import type { Command, Facing, Floor, GameEvent, GameState, PartySetupMember, PenaltyResult, Pos } from "../../src/core/types";
@@ -80,7 +81,9 @@ type DiveRecord = {
   soldGold: number; // M7-B: 売却収入の合計
   identifyCount: number; // M7-B: 売るために店で鑑定した回数
   identifyCost: number; // M7-B: その鑑定料の合計
-  unsold: number; // M7-B: 街の手順の後も手持ちに残った装備品（未鑑定で鑑定料が払えなかった）
+  soldUnidCount: number; // M7-経済: 未鑑定のまま売った装備品の数（soldCount に含む）
+  soldUnidGold: number; // M7-経済: その売却収入（soldGold に含む）
+  unsold: number; // M7-B: 街の手順の後も手持ちに残った装備品（M7-経済の規則では未鑑定でも売れるので 0 のはず）
   goldBefore: number; // 潜行の前の所持金
   goldAfter: number; // 街の手順をすべて終えた後の所持金
   assetsAfter: number; // 街の手順をすべて終えた後の資産（所持金 + 手持ちの消耗品の購入価格）
@@ -468,8 +471,10 @@ export class Campaign {
   }
 
   /**
-   * M7-B: 拾った装備を売る（街に着いて救済の後、寺院の前）。並び順（life を問わない）× inventory の順に、装備していない装備品を
-   * 鑑定済みならそのまま売り、未鑑定なら鑑定料が払えるときだけ店で鑑定してから売る（払えなければ残す）。ユニークも売る（買い戻しはしない）。
+   * M7-B / M7-経済（2026-10-05 ユーザー指示）: 拾った装備を売る（街に着いて救済の後、寺院の前）。並び順（life を問わない）× inventory の順に、
+   * 装備していない装備品を売る。未鑑定の品は「鑑定後の見込み売値 − 未鑑定売値 > 鑑定料」かつ鑑定料が払えるときだけ店で鑑定してから売り、
+   * そうでなければ未鑑定のまま（見た目の品種の売値で）売る。見込み売値はボットが実体を覗いた本当の売値（core の sellPrice）で、
+   * プレイヤーには分からない値なので、鑑定の判断としては最良の場合（上限）になる。ユニークも売る（買い戻しはしない）。
    * 初期の所持品は消耗品だけなので、inventory の装備品は宝箱・ボスで拾った品だけ
    */
   sellLoot(rec: DiveRecord): void {
@@ -477,13 +482,19 @@ export class Campaign {
       for (const id of [...this.state.party.find((x) => x.id === c)!.inventory]) {
         if (!this.isEquipment(id)) continue;
         const shop = townMenu(this.state, data)!.shop;
-        if (!this.state.items[id]!.identified) {
-          if (!shop.identify.affordable) continue;
-          const g = this.state.gold;
-          this.run({ type: "town.shop", action: { kind: "identify", memberId: c, instanceId: id } });
-          expect(g - this.state.gold).toBe(shop.identify.fee);
-          rec.identifyCount += 1;
-          rec.identifyCost += shop.identify.fee;
+        const inst = this.state.items[id]!;
+        let unid = !inst.identified;
+        if (unid) {
+          const idRow = shop.identify.items.find((x) => x.instanceId === id)!;
+          const unidPrice = shop.sellable.find((m) => m.memberId === c)!.items.find((x) => x.instanceId === id)!.price;
+          if (sellPrice(inst, data) - unidPrice > idRow.fee && idRow.affordable) {
+            const g = this.state.gold;
+            this.run({ type: "town.shop", action: { kind: "identify", memberId: c, instanceId: id } });
+            expect(g - this.state.gold).toBe(idRow.fee);
+            rec.identifyCount += 1;
+            rec.identifyCost += idRow.fee;
+            unid = false;
+          }
         }
         const row = townMenu(this.state, data)!.shop.sellable.find((m) => m.memberId === c)!.items.find((x) => x.instanceId === id)!;
         const g = this.state.gold;
@@ -491,6 +502,10 @@ export class Campaign {
         expect(this.state.gold - g).toBe(row.price);
         rec.soldCount += 1;
         rec.soldGold += row.price;
+        if (unid) {
+          rec.soldUnidCount += 1;
+          rec.soldUnidGold += row.price;
+        }
       }
     }
   }
@@ -545,6 +560,8 @@ export class Campaign {
         soldGold: 0,
         identifyCount: 0,
         identifyCost: 0,
+        soldUnidCount: 0,
+        soldUnidGold: 0,
         unsold: 0,
         goldBefore,
         goldAfter: 0,
@@ -572,7 +589,7 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
   const lines: string[] = [];
   const all = results.flatMap((r) => r.dives);
   lines.push(
-    `H9 再計測【${kind.label}】（${seeds} シード × 潜行 ${dives} 回。d01 の 1 階の上り階段から BFS 距離 ${NEAR} 以内。街: 救済 → 装備の売却（未鑑定は鑑定料が払えれば店で鑑定してから）→ 寺院 → 闇魔術 → 相部屋 1 泊 → 店（糸が無ければ 1 本 ${THREAD_PRICE}G、薬草 ${HERB_PRICE}G を手持ち ${HERB_TARGET} 個まで）。所持金の初期値 ${START_GOLD}、資産の初期値 ${results[0]?.startAssets ?? "-"}（所持金 + 手持ちの消耗品の購入価格））`,
+    `H9 再計測【${kind.label}】（${seeds} シード × 潜行 ${dives} 回。d01 の 1 階の上り階段から BFS 距離 ${NEAR} 以内。街: 救済 → 装備の売却（未鑑定は 見込み売値 − 未鑑定売値 > 鑑定料 なら店で鑑定してから、そうでなければ未鑑定のまま）→ 寺院 → 闇魔術 → 相部屋 1 泊 → 店（糸が無ければ 1 本 ${THREAD_PRICE}G、薬草 ${HERB_PRICE}G を手持ち ${HERB_TARGET} 個まで）。所持金の初期値 ${START_GOLD}、資産の初期値 ${results[0]?.startAssets ?? "-"}（所持金 + 手持ちの消耗品の購入価格））`,
   );
   lines.push(`打ち切り（行動可能な者がいなくて入れない）: ${results.filter((r) => r.aborted).length} シード`);
   for (let k = 0; k < dives; k++) {
@@ -588,7 +605,7 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
       `  救済: 申し出 ${ds.filter((d) => d.mercyOffered).length}・受けた ${ds.filter((d) => d.mercyUsed).length} / 寺院 ${sum(ds.map((d) => d.templeTries))} 回（成功 ${sum(ds.map((d) => d.templeOk))}、費用計 ${sum(ds.map((d) => d.templeCost))}）/ 闇魔術 ${sum(ds.map((d) => d.darkCount))} 回（費用計 ${sum(ds.map((d) => d.darkCost))}）/ 宿 費用計 ${sum(ds.map((d) => d.innCost))}・馬小屋 ${ds.filter((d) => d.innFallback).length} / 店 糸 ${sum(ds.map((d) => d.shopThreads))}・薬草 ${sum(ds.map((d) => d.shopHerbs))}・費用計 ${sum(ds.map((d) => d.shopCost))}`,
     );
     lines.push(
-      `  売却（M7-B）: 装備 ${sum(ds.map((d) => d.soldCount))} 品・収入計 ${sum(ds.map((d) => d.soldGold))}G（シードあたり平均 ${fmt(mean(ds.map((d) => d.soldGold)))}G）/ 売るための鑑定 ${sum(ds.map((d) => d.identifyCount))} 回・費用計 ${sum(ds.map((d) => d.identifyCost))}G / 鑑定料が払えず残った装備（街の手順の後）計 ${sum(ds.map((d) => d.unsold))}`,
+      `  売却: 装備 ${sum(ds.map((d) => d.soldCount))} 品（うち未鑑定のまま ${sum(ds.map((d) => d.soldUnidCount))} 品・${sum(ds.map((d) => d.soldUnidGold))}G）・収入計 ${sum(ds.map((d) => d.soldGold))}G（シードあたり平均 ${fmt(mean(ds.map((d) => d.soldGold)))}G）/ 売るための鑑定 ${sum(ds.map((d) => d.identifyCount))} 回・費用計 ${sum(ds.map((d) => d.identifyCost))}G / 売れずに残った装備（街の手順の後）計 ${sum(ds.map((d) => d.unsold))}`,
     );
     lines.push(`  ${stats("この潜行の所持金の変化（街の手順の後）", ds.map((d) => d.goldAfter - d.goldBefore))}`);
     // 打ち切られたシードは最後の潜行の後の値で据え置く
@@ -599,7 +616,7 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
   }
   lines.push(`全潜行の全滅率: ${pct(all.filter((d) => d.method === "wipe").length, all.length)}`);
   lines.push(
-    `全潜行の売却（M7-B）: 装備 ${sum(all.map((d) => d.soldCount))} 品・収入計 ${sum(all.map((d) => d.soldGold))}G（シードあたり平均 ${fmt(sum(all.map((d) => d.soldGold)) / results.length)}G）/ 鑑定 ${sum(all.map((d) => d.identifyCount))} 回・費用計 ${sum(all.map((d) => d.identifyCost))}G`,
+    `全潜行の売却: 装備 ${sum(all.map((d) => d.soldCount))} 品（うち未鑑定のまま ${sum(all.map((d) => d.soldUnidCount))} 品・${sum(all.map((d) => d.soldUnidGold))}G）・収入計 ${sum(all.map((d) => d.soldGold))}G（シードあたり平均 ${fmt(sum(all.map((d) => d.soldGold)) / results.length)}G）/ 鑑定 ${sum(all.map((d) => d.identifyCount))} 回・費用計 ${sum(all.map((d) => d.identifyCost))}G`,
   );
   const idx = results.map((r) => r.dives.findIndex((d) => d.allL2));
   const parts = Array.from({ length: dives }, (_, k) => `${k + 1} 回目 ${idx.filter((i) => i === k).length}`);

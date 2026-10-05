@@ -87,7 +87,7 @@ describe("UI-59/IT-11/IT-12 itemDetail（品の詳細）", () => {
     expect(itemDetail(s, data, helm)!.power).toEqual({ kind: "armor", ac: -2 });
   });
 
-  test("IT-32/CH-73 呪いは鑑定済みなら cursed と負のオプション（bad）。未鑑定（IT-12）は名前と部位だけで、呪いも売値も見せない", () => {
+  test("IT-32/CH-73 呪いは鑑定済みなら cursed と負のオプション（bad）。未鑑定（IT-12）は名前と部位と見た目の品種の売値だけで、呪いは見せない", () => {
     const s = town();
     const known = cursedDagger(s, true);
     expect(itemDetail(s, data, known)).toMatchObject({
@@ -109,12 +109,12 @@ describe("UI-59/IT-11/IT-12 itemDetail（品の詳細）", () => {
       options: [],
       skill: null,
       cursed: false,
-      sellPrice: null,
+      sellPrice: 7, // 2026-10-05 から未鑑定も見た目の品種（短剣 Lv0）の売値 floor(15 × 0.5) = 7 で売れる（以前は売れないので null）
       description: null,
     });
-    // 未鑑定のユニークもユニークであることを見せない
+    // 未鑑定のユニークもユニークであることを見せない（売値も見た目の短剣の 7。ユニークの floor(price × 0.5) は出さない）
     const u = createItemInstance(s, { itemId: "dagger", uniqueId: "twin_tongue_dagger", identified: false });
-    expect(itemDetail(s, data, u)).toMatchObject({ name: "短い刃？", unique: false, skill: null, description: null });
+    expect(itemDetail(s, data, u)).toMatchObject({ name: "短い刃？", unique: false, skill: null, description: null, sellPrice: 7 });
   });
 
   test("UI-59 消耗品は slot null・性能なし・売値（薬草 floor(10 × 0.5) = 5）。実体が無ければ null", () => {

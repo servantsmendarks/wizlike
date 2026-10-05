@@ -8,7 +8,7 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 
 - IT-01 アイテムは 装備（汎用 / ユニーク）・消耗品・魔法書 の 3 種。消耗品と魔法書は今どおり `data/items.json`（M7 の実装で装備の行を `data/equipment-bases.json` に移す）。
 - IT-02 汎用装備: 流通している装備。ベースは `data/equipment-bases.json`（汎用ベース表）。実体ごとにレベル（Lv、0 以上の整数）を持つ。店で「流通レベル」（IT-62）のものを無限に買える（オプションなし・通常・鑑定済み）。売却しても店のストックには入らない（IT-61）。
-- IT-03 ユニーク: 固有名の装備。`data/uniques.json`（ユニーク表）。性能（ダメージのダイス・AC・魔法攻撃力）は表の固定値で、レベルを持たない（実体の level は常に 0 で、IT-20〜23 のレベルの効果も強化（TW-17）も無い。ダンジョンが進むと時代遅れになる）。固有スキル（IT-40）を 1 つ持つ。売却すると店のストックに入り買い戻せる（IT-63）。鑑定すると図鑑に記録する（IT-66）。部位・装備できる職業・`ranged`・`caster` はベースの値を引き継ぐ。
+- IT-03 ユニーク: 固有名の装備。`data/uniques.json`（ユニーク表）。性能（ダメージのダイス・AC・魔法攻撃力）は表の固定値で、レベルを持たない（実体の level は常に 0 で、IT-20〜23 のレベルの効果も強化（TW-17）も無い。ダンジョンが進むと時代遅れになる）。固有スキル（IT-40）を 1 つ持つ。売却すると店のストックに入り買い戻せる（IT-63。鑑定済みのときだけ）。鑑定すると図鑑に記録する（IT-66）。部位・装備できる職業・`ranged`・`caster` はベースの値を引き継ぐ。
 - IT-04 初期装備（`config.prototypeParty`、`classes[].start`）は汎用 Lv0・通常・オプションなし・鑑定済み・呪いなし。
 
 ## 2. 実体と表示
@@ -23,7 +23,7 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
   - `foundIn`: ドロップしたダンジョンの id。店で買った品・初期装備は null（IT-66 の入手ダンジョン）。
   - GameState に入れる値なので省略可能な欄は持たない（無いは null か空配列）。
 - IT-11 表示名（§11 の Q11 は既定の案で確定: core の `itemDisplayName` が strings の `item.rarity.<rarity>` と `item.plus`（{n} を 1 つだけ持つ。どちらも読み込み時の検証で必須）を引いて組む）: 鑑定済みなら「希少度の接頭辞 + 名前 + Lv」。接頭辞は 通常 なし / 上質「上質な」/ 希少「希少な」/ 伝説「伝説の」（strings の `item.rarity.<rarity>`）。名前はユニークならユニークの名前、それ以外はベースの名前。Lv は汎用装備で 1 以上のときだけ「 +N」（例「上質な長剣 +5」）。オプション・呪い・固有スキルは名前に出さず、詳細の画面（UI-59 の装備の行から開く）に出す。
-- IT-12 未鑑定（CH-72）の実体は、ベースの `unidentifiedName`（例「剣？」）だけを出す（希少度・Lv・ユニークかどうか・オプション・呪いは見せない）。未鑑定の品は装備できない（CH-72 / CH-76 のまま。§11 の Q2【衝突】があるので【仮】）。鑑定すると希少度・Lv・オプション・呪い・ユニークの名前と固有スキルが分かる。鑑定は司教（CH-77。無料）か店（IT-65。有料）。
+- IT-12 未鑑定（CH-72）の実体は、ベースの `unidentifiedName`（例「剣？」）だけを出す（希少度・Lv・ユニークかどうか・オプション・呪いは見せない）。未鑑定の品は装備できない（CH-72 / CH-76 のまま。§11 の Q2【衝突】があるので【仮】）。鑑定すると希少度・Lv・オプション・呪い・ユニークの名前と固有スキルが分かる。鑑定は司教（CH-77。無料）か店（IT-65。有料）。未鑑定のままでも店で売れる（見た目の品種の売値。IT-61）。
 - IT-13 ドロップ（IT-50）の品は未鑑定で生まれる。店で買った品・買い戻した品・初期装備は鑑定済み。
 
 ## 3. レベルの効果
@@ -80,11 +80,13 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 ## 7. 経済と施設
 
 - IT-60 汎用装備の買値 = floor(ベースの `price` × (1 + `config.items.levelPriceRatio`（0.5）× Lv))【仮】。
-- IT-61 売値: 汎用装備 = floor(ベースの `price` × `config.economy.sellRatio`（0.5）× (1 + levelPriceRatio × Lv)) + オプションの分（正のオプションごとに `config.items.optionSellValue[tier − 1]`（20 / 40 / 80）【仮】。負のオプションは 0）。ユニーク = floor(`uniques[].price` × sellRatio)（希少度・オプションに関わらず固定）。消耗品・魔法書 = floor(`price` × sellRatio)（TW-05 の旧規則のまま）。未鑑定の品と装備中の品は売れない（rejected `not identified` / 装備は inventory に無いので `item not in inventory`）。
+- IT-61 売値: 汎用装備 = floor(ベースの `price` × `config.economy.sellRatio`（0.5）× (1 + levelPriceRatio × Lv)) + オプションの分（正のオプションごとに `config.items.optionSellValue[tier − 1]`（20 / 40 / 80）【仮】。負のオプションは 0）。ユニーク = floor(`uniques[].price` × sellRatio)（希少度・オプションに関わらず固定）。消耗品・魔法書 = floor(`price` × sellRatio)（TW-05 の旧規則のまま）。装備中の品は売れない（inventory に無いので rejected `item not in inventory`）。
+  - 2026-10-05 ユーザー指示（経済【仮】）: 未鑑定の品も売れる。店での売値（`shopSellPrice`）は、鑑定済みなら上の本当の売値、未鑑定なら「見た目の品種の売値」= 未鑑定の表示（IT-12）が出しているベース（装備。ユニークならそのベース）または品（消耗品・魔法書）の Lv0・通常・オプションなしの売値 floor(`price` × sellRatio)（例: 未鑑定の長剣は Lv・希少度・オプション・ユニークに関わらず 50G）。それまでの rejected `not identified`（sell）は廃止した。未鑑定のまま売った品はユニークでも実体を消す（買い戻しのストックに入れない・図鑑に記録しない。IT-63）。品の詳細（UI-59）の売値も店での売値を出す（未鑑定なら見た目の品種の売値）。TW-27 の総資産は今どおり本当の売値（`sellPrice`）で数える（全滅と徒歩の帰還の両方の側で同じ関数なので不変条件は変わらない）。
 - IT-62 店の流通レベル `progress.shopLevel`: game.new で 0。ダンジョンの初回クリア（DG-32）で max(今の値, `dungeons[].onClear.shopLevel`)（d01 2 / d02 4【仮】）にする。店は `equipment-bases.json` のうち `shopMinLevel ≤ shopLevel` のベースを、Lv = shopLevel・通常・鑑定済み・オプションなしで無限に売る（TW-05）。`onClear.shopStock`（TW-06 の在庫の追加）は M7 で廃止する。上がったときだけ、品の語り（IT-50 の `item.found`）の後に message `dungeon.shopLevel`（params なし）を出す（すでに同じか高ければ変えず語らない）。購入の語りは `town.shop.bought`{name, item（表示名「長剣 +2」）, cost}。
-- IT-63 ユニークの買い戻し: ユニークを売ると、その実体を店の買い戻しのストック `buyback`（実体の id の配列。売った順）に入れる。ストックの品は `uniques[].price` で買い戻せ（その実体をそのまま返す。希少度・オプション・呪いもそのまま）、ストックから外れる。汎用・消耗品・魔法書は売ると実体を消す（ストックに入らない）。ストックは全滅（TW-22）の対象外。語りは売却 `town.shop.sold`{name, item, gold}、買い戻し `town.shop.boughtBack`{name, item, cost}。乱数は使わない。
+- IT-63 ユニークの買い戻し: 鑑定済みのユニークを売ると（未鑑定のまま売ったユニークは汎用と同じく実体を消す。IT-61 の 2026-10-05 の注記）、その実体を店の買い戻しのストック `buyback`（実体の id の配列。売った順）に入れる。ストックの品は `uniques[].price` で買い戻せ（その実体をそのまま返す。希少度・オプション・呪いもそのまま）、ストックから外れる。汎用・消耗品・魔法書は売ると実体を消す（ストックに入らない）。ストックは全滅（TW-22）の対象外。語りは売却 `town.shop.sold`{name, item, gold}、買い戻し `town.shop.boughtBack`{name, item, cost}。乱数は使わない。
 - IT-64 倉庫（TW-16）: 銀行に併設。品の実体の id の配列 `warehouse`。容量は `config.items.warehouseSlots`（40）【仮】。全滅（TW-21 / 22）の対象外。
-- IT-65 店の鑑定: `town.shop {kind: "identify"}` で `config.economy.identifyFee`（100）【仮】を払い、本人の inventory の未鑑定の品を鑑定する（結果は CH-77 と同じ。乱数なし）。本人の life は問わない（TW-05 の M7 の順）。語りは `town.shop.identified`{name, old, item, cost}（料金を見せるため CH-77 の `camp.identified` とは別のキー）、呪われていれば続けて `camp.identifiedCursed`{item}。
+- IT-65 店の鑑定: `town.shop {kind: "identify"}` で鑑定料（品ごと。下の注記。M7-B までは一律の `config.economy.identifyFee`（100））を払い、本人の inventory の未鑑定の品を鑑定する（結果は CH-77 と同じ。乱数なし）。本人の life は問わない（TW-05 の M7 の順）。語りは `town.shop.identified`{name, old, item, cost}（料金を見せるため CH-77 の `camp.identified` とは別のキー）、呪われていれば続けて `camp.identifiedCursed`{item}。
+  - 2026-10-05 ユーザー指示（経済【仮】）: 鑑定料 = max(`config.economy.identifyFeeMin`（10）, floor(見た目の品種の売値（IT-61）× `config.economy.identifyFeeRatio`（0.5）))【仮】。品の本当の Lv・希少度・オプション・ユニークは料金に反映しない（鑑定料から中身を推測できないようにする）。例: 長剣 50 → 25G、護符 100 → 50G、短剣 7 → 3 → 10G。司教の鑑定（CH-77）は無料のまま。`townMenu.shop.identify` は品ごとの `fee` と `affordable`（gold ≥ fee）を持つ（全体の fee / affordable は外した）。
 - IT-66 図鑑（ユニーク）`uniqueBook`: uniqueId → `{ foundIn, bestRarity }`。ユニークを鑑定した時点（司教・店）で記録し（指示は「入手は図鑑に記録」。§11 の Q12 で【仮】）、既にあれば bestRarity だけを良い方に更新する（foundIn は最初の記録のまま。foundIn が null の実体なら null）。ゲーム単位で永続（全滅・売却でも消えない）。名前は uniques.json から出す。
 
 ## 8. 強化

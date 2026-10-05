@@ -240,7 +240,7 @@ export function townEntries(page: TownPage, menu: TownMenu, strings: Strings, pr
     return [...rows, back];
   }
   if (page === "shopSell") {
-    // IT-61: 全員（並び順。life を問わない）。売れる品（鑑定済みの所持品）が無い者は disabled
+    // IT-61: 全員（並び順。life を問わない）。売れる品（所持品。未鑑定も売れる）が無い者は disabled
     const rows = menu.shop.sellable.map(
       (m): TownEntry => ({ kind: "pick", to: { sell: m.memberId }, label: s(strings, "town.shop.sellWho", { name: m.name, count: m.items.length }), disabled: m.items.length === 0 }),
     );
@@ -254,15 +254,14 @@ export function townEntries(page: TownPage, menu: TownMenu, strings: Strings, pr
     return orEmpty(rows, "town.shop.buyback.none");
   }
   if (page === "shopIdentify") {
-    // IT-65: 全員の未鑑定の品（持ち主・未鑑定の名前・鑑定料。払えなければ disabled）
-    const id = menu.shop.identify;
-    const rows = id.items.map(
+    // IT-65: 全員の未鑑定の品（持ち主・未鑑定の名前・品ごとの鑑定料。払えなければ disabled）
+    const rows = menu.shop.identify.items.map(
       (r): TownEntry => ({
         kind: "identify",
         memberId: r.memberId,
         instanceId: r.instanceId,
-        label: s(strings, "town.shop.identifyRow", { owner: r.memberName, name: r.name, cost: id.fee }),
-        disabled: !id.affordable,
+        label: s(strings, "town.shop.identifyRow", { owner: r.memberName, name: r.name, cost: r.fee }),
+        disabled: !r.affordable,
       }),
     );
     return orEmpty(rows, "camp.identify.none");

@@ -375,22 +375,26 @@ describe("UI-52 街のページ", () => {
   test("UI-52/IT-61 売るは全員（life を問わない）の行（名前と売れる品の数。無ければ disabled）→ その者の売れる品（名前と売値）。押すと sell", () => {
     // 初期の所持品: c1 薬草・c2 なし・c3 薬草・c4 解毒草・c5 帰還の糸・c6 薬草（どれも鑑定済み）。c3 を dead にしても行は出る
     const s = town({ c3: { life: "dead", hp: 0 } });
-    // c2 に 上質な長剣 +2（力 +1 の段階 1）と未鑑定の長剣（売れないので数えない）を持たせる
+    // c2 に 上質な長剣 +2（力 +1 の段階 1）と未鑑定の長剣（2026-10-05 から見た目の売値で売れるので数える）を持たせる
     const fine = createItemInstance(s, { itemId: "long_sword", level: 2, rarity: "fine", options: [{ optionId: "str", tier: 1, value: 1 }], identified: true });
     const unk = createItemInstance(s, { itemId: "long_sword", identified: false });
     s.party[1]!.inventory.push(fine, unk);
     const m = menuOf(s);
     expect(townEntries("shopSell", m, S)).toEqual([
       { kind: "pick", to: { sell: "c1" }, label: "アルド　1品", disabled: false },
-      { kind: "pick", to: { sell: "c2" }, label: "ベルク　1品", disabled: false },
+      { kind: "pick", to: { sell: "c2" }, label: "ベルク　2品", disabled: false },
       { kind: "pick", to: { sell: "c3" }, label: "キリ　1品", disabled: false },
       { kind: "pick", to: { sell: "c4" }, label: "ドナ　1品", disabled: false },
       { kind: "pick", to: { sell: "c5" }, label: "エル　1品", disabled: false },
       { kind: "pick", to: { sell: "c6" }, label: "フィン　1品", disabled: false },
       back,
     ]);
-    // IT-61: floor(100 × 0.5 × (1 + 0.5 × 2)) = 100 + 正のオプション 段階 1 の 20 = 120
-    expect(townEntries({ sell: "c2" }, m, S)).toEqual([{ kind: "sell", memberId: "c2", instanceId: fine, label: "上質な長剣 +2　120G", disabled: false }, back]);
+    // IT-61: floor(100 × 0.5 × (1 + 0.5 × 2)) = 100 + 正のオプション 段階 1 の 20 = 120。未鑑定の長剣は見た目の品種の floor(100 × 0.5) = 50
+    expect(townEntries({ sell: "c2" }, m, S)).toEqual([
+      { kind: "sell", memberId: "c2", instanceId: fine, label: "上質な長剣 +2　120G", disabled: false },
+      { kind: "sell", memberId: "c2", instanceId: unk, label: "剣？　50G", disabled: false },
+      back,
+    ]);
     // 薬草 floor(10 × 0.5) = 5
     expect(townEntries({ sell: "c1" }, m, S)).toEqual([{ kind: "sell", memberId: "c1", instanceId: s.party[0]!.inventory[0]!, label: "薬草　5G", disabled: false }, back]);
     // 売れる品が無い者は disabled、そのページは「売れる物がない」
@@ -427,20 +431,20 @@ describe("UI-52 街のページ", () => {
     expect(townPageIntro({ buyback: twin }, m)).toEqual(["town.shop.whom"]);
   });
 
-  test("UI-52/IT-65 鑑定は全員の未鑑定の品（持ち主・未鑑定の名前・鑑定料 identifyFee）。払えなければ disabled。押すと identify", () => {
-    const fee = data.config.economy.identifyFee;
-    const s = town({ c3: { life: "dead", hp: 0 } }, fee);
+  test("UI-52/IT-65 鑑定は全員の未鑑定の品（持ち主・未鑑定の名前・品ごとの鑑定料）。払えない品は disabled。押すと identify", () => {
+    // 2026-10-05: 鑑定料は品ごと（max(10, floor(見た目の売値 × 0.5))）。護符 200 → 100 → 50、長剣 100 → 50 → 25
+    const s = town({ c3: { life: "dead", hp: 0 } }, 50);
     const a = createItemInstance(s, { itemId: "long_sword", identified: false });
     const b = createItemInstance(s, { itemId: "charm", identified: false });
     s.party[2]!.inventory.push(a);
     s.party[0]!.inventory.push(b);
     expect(townEntries("shopIdentify", menuOf(s), S)).toEqual([
-      { kind: "identify", memberId: "c1", instanceId: b, label: `アルド: 飾り？　${fee}G`, disabled: false },
-      { kind: "identify", memberId: "c3", instanceId: a, label: `キリ: 剣？　${fee}G`, disabled: false },
+      { kind: "identify", memberId: "c1", instanceId: b, label: "アルド: 飾り？　50G", disabled: false },
+      { kind: "identify", memberId: "c3", instanceId: a, label: "キリ: 剣？　25G", disabled: false },
       back,
     ]);
-    s.gold = fee - 1;
-    expect(townEntries("shopIdentify", menuOf(s), S).filter((e) => e.kind === "identify").every((e) => e.kind === "identify" && e.disabled)).toBe(true);
+    s.gold = 49;
+    expect(townEntries("shopIdentify", menuOf(s), S).map((e) => (e.kind === "identify" ? e.disabled : e.kind))).toEqual([true, false, "back"]);
     expect(townEntries("shopIdentify", menuOf(town()), S)).toEqual([{ kind: "empty", label: "鑑定する物がない", disabled: true }, back]);
     expect(townParent("shopIdentify")).toBe("shop");
   });

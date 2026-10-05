@@ -98,7 +98,7 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
     for (const u of data.uniques) expect(S[`item.skill.${u.skill.type}`], u.skill.type).toBeDefined();
   });
 
-  test("UI-59/IT-32/IT-12 呪いは負のオプション（danger）と「呪われている」（danger）。未鑑定は名前・部位・「鑑定するまで分からない」だけ", () => {
+  test("UI-59/IT-32/IT-12 呪いは負のオプション（danger）と「呪われている」（danger）。未鑑定は名前・部位・「鑑定するまで分からない」・見た目の品種の売値だけ", () => {
     const s = town();
     const known = cursedDagger(s, true);
     expect(formatItemDetail(detailOf(s, known), S)).toEqual({
@@ -118,6 +118,7 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
       lines: [
         { text: "武器", tone: "normal" },
         { text: "鑑定するまで正体は分からない。", tone: "normal" },
+        { text: "売値 7G", tone: "normal" }, // 2026-10-05 から未鑑定も見た目の品種（短剣 Lv0）の floor(15 × 0.5) = 7 で売れる
       ],
     });
     const herb = createItemInstance(s, { itemId: "herb", identified: true });
