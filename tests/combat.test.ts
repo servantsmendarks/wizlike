@@ -877,7 +877,7 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
       inputs: { c1: DEF, c4: DEF, c5: DEF, c6: DEF },
     });
 
-  test("CB-30/F8 大蜘蛛の毒: 出目 ≤ 30 − (9 − 10) × 2 = 32 で付与（鏡の rng）。毒はラウンド終了で −1", () => {
+  test("CB-30/F8 大蜘蛛の毒: 出目 ≤ 20 − (9 − 10) × 2 = 22 で付与（鏡の rng）。毒はラウンド終了で −1", () => {
     const d = dataWith({ combat: ALWAYS_HIT });
     const outcomes = new Set<boolean>();
     for (let seed = 1; seed <= 30; seed++) {
@@ -888,7 +888,7 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
       chance(m, 100);
       const dmg = Math.ceil(Math.max(1, rollDice(m, "1d4").total) / 2);
       const roll = randInt(m, 1, 100);
-      const poisoned = roll <= statusPercent(data.config, 30, 9);
+      const poisoned = roll <= statusPercent(data.config, 20, 9);
       const r = exec(s, RESOLVE, d);
       expect(r.state.rng).toEqual(m);
       expect(member(r.state, "c1").status).toEqual(poisoned ? ["poison"] : []);

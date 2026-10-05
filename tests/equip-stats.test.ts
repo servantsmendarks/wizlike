@@ -337,7 +337,7 @@ describe("戦闘の読み替え（CB-11 / 21 / 22 / 30 / 31 / 05 / 42 / 51）", 
     expect(first?.params).toEqual({ actor: "アルド" });
   });
 
-  test("CB-30/IT-34 状態異常の付与率から statusResist を引き、luk は実効の値: 大蜘蛛の毒 30% は luk 9 で 32、luk +5 で 22、resist_poison 100 なら付かない（乱数の消費は同じ）", () => {
+  test("CB-30/IT-34 状態異常の付与率から statusResist を引き、luk は実効の値: 大蜘蛛の毒 20% は luk 9 で 22、luk +5 で 12、resist_poison 100 なら付かない（乱数の消費は同じ）", () => {
     const d = dataWith({ combat: ALWAYS_HIT });
     const spider = (seed: number, options: ItemOptionRoll[]): GameState => {
       const s0 = dived(seed);
@@ -354,12 +354,12 @@ describe("戦闘の読み替え（CB-11 / 21 / 22 / 30 / 31 / 05 / 42 / 51）", 
       rollDice(m, "1d4");
       const roll = randInt(m, 1, 100);
       const luk = exec(spider(seed, [opt("luk", 5)]), RESOLVE, d);
-      expect(member(luk.state, "c1").status.includes("poison")).toBe(roll <= 30 - (14 - 10) * 2);
+      expect(member(luk.state, "c1").status.includes("poison")).toBe(roll <= 20 - (14 - 10) * 2);
       expect(luk.state.rng).toEqual(m);
       const resist = exec(spider(seed, [opt("resist_poison", 100)]), RESOLVE, d);
       expect(member(resist.state, "c1").status).toEqual([]);
       expect(resist.state.rng).toEqual(m);
-      seen.add(`${roll <= 22}`);
+      seen.add(`${roll <= 12}`);
     }
     expect(seen).toEqual(new Set(["true", "false"]));
   });

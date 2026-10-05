@@ -18,7 +18,7 @@
   {
     "id": "giant_spider", "name": "大蜘蛛", "unidentifiedName": "多脚の影",
     "sprite": "giant_spider", "level": 2, "hp": "2d8", "ac": 6, "agi": 12,
-    "attacks": [ { "dice": "1d4", "status": "poison", "chance": 30 } ],
+    "attacks": [ { "dice": "1d4", "status": "poison", "chance": 20 } ],
     "exp": 45, "gold": "1d6+2", "groupSize": "1d3",
     "special": {}, "resist": {}, "tags": ["beast"],
     "description": "噛まれると毒を受ける。"
