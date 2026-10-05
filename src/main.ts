@@ -121,8 +121,8 @@ async function start(): Promise<void> {
     loadZzfx: () => import("./vendor/zzfx-1.3.2/ZzFX.js"),
     data,
     assets,
-    // P3 で設定（settings）の音量に繋ぐまでは config.ui の既定の段
-    volumes: () => ({ music: data.config.ui.musicVolume, sfx: data.config.ui.sfxVolume }),
+    // UI-57: 設定画面の音量の段（0〜10。既定は config.ui.musicVolume / sfxVolume）。変わったら app が refreshVolumes を呼ぶ
+    volumes: () => ({ music: settings.get().musicVolume, sfx: settings.get().sfxVolume }),
   });
   attachAudio(document, audioPlayer);
   // mountStage は同期で 1 回 onLayout を呼ぶので、app を先に作る。

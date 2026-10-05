@@ -1806,6 +1806,8 @@ export function createApp(o: {
         void autosaver.flush(state).then((r) => console.debug("autosave: flush", r));
       });
       store.subscribe(() => {
+        // UI-57（M8）: 音量の段の変化を再生機に知らせる（GainNode の値。0 なら止め、0 から上げたら場面の曲を頭から）
+        audio?.refreshVolumes();
         debug.refresh();
         settingsView.refresh();
         if (!isBusy()) syncControls();

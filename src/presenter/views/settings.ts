@@ -1,5 +1,6 @@
 // UI-57 の設定画面（M6）とホーム画面への追加の案内（SV-40）。タイトルの「設定」とヘッダーの設定ボタンから開くステージ全面の overlay（app の overlay "settings"）。
-// 上から 見出し → 4 行（演出スキップ・文字速度・オートの速さ・入力。押すたびに巡回し、その場で store.set）→ 書き出し・読み込み
+// 上から 見出し → 4 行（演出スキップ・文字速度・オートの速さ・入力。押すたびに巡回し、その場で store.set）→ 音量の 1 行（M8。
+// 曲・効果音の 2 つのトグル。0〜10 を巡回）→ 書き出し・読み込み
 // （SV-30〜33。遊んでいる途中は書き出しだけ、タイトルでは読み込みだけ）→ 案内の欄（2 行）→ ホーム画面への追加の案内（SV-40）→
 // 下の段に「開発用」（debug パネルを開く）と「閉じる」（UI-11 の固定の位置）。
 // 純粋な部分（settingsRows / settingsToggle / settingsItems / settingsKeyIndex / settingsFileHint）は DOM に触れないので node でテストできる。
@@ -10,13 +11,16 @@ import type { Action } from "../input/swipe";
 import { onTap } from "../input/tap";
 import { createFileButton } from "../file-io";
 import type { Rect, SettingsLayout } from "../layout";
-import { nextAutoBeat, nextInputMode, nextTextSpeed, type Settings, type SettingsStore } from "../settings";
+import { nextAutoBeat, nextInputMode, nextTextSpeed, nextVolume, type Settings, type SettingsStore } from "../settings";
 import { formatMessage } from "./message";
 
 export type SettingsKey = "skipAnimations" | "textSpeed" | "autoBeatMs" | "inputMode";
 /** UI-57: 4 行の並び（固定） */
 export const SETTINGS_ROW_KEYS: readonly SettingsKey[] = ["skipAnimations", "textSpeed", "autoBeatMs", "inputMode"];
 export type SettingsRowView = { key: SettingsKey; label: string; value: string };
+/** UI-57（M8）: 音量の 1 行に並べる 2 つ（曲・効果音） */
+export type VolumeKey = "musicVolume" | "sfxVolume";
+export const VOLUME_KEYS: readonly VolumeKey[] = ["musicVolume", "sfxVolume"];
 
 const tr = (strings: Strings, k: string): string => strings[k] ?? k;
 
@@ -51,6 +55,14 @@ export function settingsToggle(s: Settings, key: SettingsKey): Partial<Settings>
   }
 }
 
+/** UI-57（M8）: 音量のトグルの文字（settings.volume.music「曲 {n}」・settings.volume.sfx「効果音 {n}」。0 のときも数字のまま） */
+export function settingsVolumeText(s: Settings, strings: Strings): Record<VolumeKey, string> {
+  return {
+    musicVolume: formatMessage(tr(strings, "settings.volume.music"), { n: s.musicVolume }),
+    sfxVolume: formatMessage(tr(strings, "settings.volume.sfx"), { n: s.sfxVolume }),
+  };
+}
+
 export type SettingsContext = {
   /** 書き出せる（遊んでいる途中で、保存先が使え、current がある） */
   canExport: boolean;
@@ -64,15 +76,17 @@ export type SettingsContext = {
 
 export type SettingsItem =
   | { kind: "row"; key: SettingsKey }
+  | { kind: "volume"; key: VolumeKey }
   | { kind: "export"; disabled: boolean }
   | { kind: "import"; disabled: boolean }
   | { kind: "debug" }
   | { kind: "close" };
 
-/** UI-33: 項目の並び（数字キーの番号）。4 行 → 書き出し → 読み込み → 開発用 → 閉じる */
+/** UI-33: 項目の並び（数字キーの番号）。4 行 → 曲 → 効果音 → 書き出し → 読み込み → 開発用 → 閉じる（10 番目。数字キーは 1〜9 なので Esc / Enter で閉じる） */
 export function settingsItems(ctx: SettingsContext): SettingsItem[] {
   return [
     ...SETTINGS_ROW_KEYS.map((key): SettingsItem => ({ kind: "row", key })),
+    ...VOLUME_KEYS.map((key): SettingsItem => ({ kind: "volume", key })),
     { kind: "export", disabled: !ctx.canExport },
     { kind: "import", disabled: !ctx.canImport },
     { kind: "debug" },
@@ -178,6 +192,17 @@ export function createSettingsScreen(o: {
     return { label, toggle };
   });
 
+  // UI-57（M8）: 音量の 1 行（ラベルは押せない、曲・効果音の toggle は押すたびに 0〜10 を巡回）
+  const volumeLabel = document.createElement("div");
+  volumeLabel.className = "settings-label";
+  place(volumeLabel, L.volume.label);
+  volumeLabel.textContent = t("settings.volume");
+  el.appendChild(volumeLabel);
+  const volumeEls: Record<VolumeKey, HTMLButtonElement> = {
+    musicVolume: button("", L.volume.music, () => stepVolume("musicVolume")),
+    sfxVolume: button("", L.volume.sfx, () => stepVolume("sfxVolume")),
+  };
+
   let ctx: SettingsContext = { canExport: false, canImport: false, where: "none", standalone: false };
 
   const exportButton = button(t("title.export"), L.exportButton, () => {
@@ -205,6 +230,10 @@ export function createSettingsScreen(o: {
     o.store.set(settingsToggle(o.store.get(), key));
   };
 
+  const stepVolume = (key: VolumeKey): void => {
+    o.store.set({ [key]: nextVolume(o.store.get()[key]) });
+  };
+
   const refresh = (): void => {
     const rows = settingsRows(o.store.get(), o.strings);
     rows.forEach((row, i) => {
@@ -213,6 +242,8 @@ export function createSettingsScreen(o: {
       e.label.textContent = row.label;
       e.toggle.textContent = row.value;
     });
+    const vt = settingsVolumeText(o.store.get(), o.strings);
+    for (const key of VOLUME_KEYS) volumeEls[key].textContent = vt[key];
   };
   refresh();
 
@@ -241,6 +272,9 @@ export function createSettingsScreen(o: {
       switch (it.kind) {
         case "row":
           toggleRow(it.key);
+          return;
+        case "volume":
+          stepVolume(it.key);
           return;
         case "export":
           if (!it.disabled) o.onExport();

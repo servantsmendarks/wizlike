@@ -22,6 +22,10 @@ export type Settings = {
   holdRepeatMs: number;
   /** UI-45: オートの拍の待ち（ms）。AUTO_BEAT_CHOICES のどれか */
   autoBeatMs: number;
+  /** UI-57 / UI-63（M8）: 曲の音量の段（VOLUME_CHOICES。0 なら鳴らさない） */
+  musicVolume: number;
+  /** UI-57 / UI-65（M8）: 効果音の音量の段（VOLUME_CHOICES。0 なら鳴らさない） */
+  sfxVolume: number;
 };
 
 export const SETTINGS_KEY = "wizlike.settings";
@@ -61,6 +65,25 @@ export function nextTextSpeed(ms: number): number {
   return TEXT_SPEED_CHOICES[0];
 }
 
+/** UI-57（M8）: 音量の段の選択肢（0〜10。入力欄の選択肢なのでコードの定数。既定値は config.ui.musicVolume / sfxVolume） */
+export const VOLUME_CHOICES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+const VOLUME_MAX = 10;
+
+function isVolume(v: unknown): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= VOLUME_MAX;
+}
+
+/** UI-57: 0 → 1 → … → 10 → 0。範囲外・非整数は 0 に寄せてから 1 つ進める */
+export function nextVolume(v: number): number {
+  const cur = isVolume(v) ? v : 0;
+  return cur >= VOLUME_MAX ? 0 : cur + 1;
+}
+
+/** config の音量を 0〜10 の整数に丸める（validateConfig で整数 0〜10 は保証されている） */
+function clampVolume(v: number): number {
+  return Number.isFinite(v) ? Math.min(VOLUME_MAX, Math.max(0, Math.round(v))) : 0;
+}
+
 function isAutoBeat(v: unknown): v is number {
   return typeof v === "number" && (AUTO_BEAT_CHOICES as readonly number[]).includes(v);
 }
@@ -88,6 +111,8 @@ function normalize(src: Record<string, unknown>, fallback: Settings): Settings {
     swipeThreshold: num("swipeThreshold"),
     holdRepeatMs: num("holdRepeatMs"),
     autoBeatMs: isAutoBeat(src.autoBeatMs) ? src.autoBeatMs : fallback.autoBeatMs,
+    musicVolume: isVolume(src.musicVolume) ? src.musicVolume : fallback.musicVolume,
+    sfxVolume: isVolume(src.sfxVolume) ? src.sfxVolume : fallback.sfxVolume,
   };
 }
 
@@ -100,6 +125,8 @@ export function defaultSettings(config: Config): Settings {
     swipeThreshold: clampTo("swipeThreshold", config.input.swipeThresholdPx),
     holdRepeatMs: clampTo("holdRepeatMs", config.input.holdRepeatMs),
     autoBeatMs: snapAutoBeat(config.ui.autoBeatMs),
+    musicVolume: clampVolume(config.ui.musicVolume),
+    sfxVolume: clampVolume(config.ui.sfxVolume),
   };
 }
 
@@ -125,6 +152,8 @@ export function serializeSettings(s: Settings): string {
     autoBeatMs: s.autoBeatMs,
     swipeThreshold: s.swipeThreshold,
     holdRepeatMs: s.holdRepeatMs,
+    musicVolume: s.musicVolume,
+    sfxVolume: s.sfxVolume,
   });
 }
 

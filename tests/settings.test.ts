@@ -15,6 +15,8 @@ import {
   stepSetting,
   TEXT_SPEED_CHOICES,
   nextTextSpeed,
+  nextVolume,
+  VOLUME_CHOICES,
   type Settings,
 } from "../src/presenter/settings";
 import { data } from "./helpers/core";
@@ -28,7 +30,7 @@ afterEach(() => {
 
 describe("settings", () => {
   test("SV-24 defaultSettings は config から取る（28/250/30/both/false/400）", () => {
-    expect(D).toEqual({ skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400 });
+    expect(D).toEqual({ skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400, musicVolume: 7, sfxVolume: 7 });
     expect(D.swipeThreshold).toBe(data.config.input.swipeThresholdPx);
     expect(D.holdRepeatMs).toBe(data.config.input.holdRepeatMs);
     expect(D.textSpeed).toBe(data.config.ui.textSpeedMs);
@@ -61,9 +63,9 @@ describe("settings", () => {
     });
     // 未知のキーは捨てる
     const p = parseSettings(JSON.stringify({ ...D, volume: 3, extra: true }), D);
-    expect(Object.keys(p).sort()).toEqual(["autoBeatMs", "holdRepeatMs", "inputMode", "skipAnimations", "swipeThreshold", "textSpeed"]);
+    expect(Object.keys(p).sort()).toEqual(["autoBeatMs", "holdRepeatMs", "inputMode", "musicVolume", "sfxVolume", "skipAnimations", "swipeThreshold", "textSpeed"]);
     // 往復
-    const s: Settings = { skipAnimations: true, textSpeed: 0, inputMode: "swipe", swipeThreshold: 40, holdRepeatMs: 500, autoBeatMs: 600 };
+    const s: Settings = { skipAnimations: true, textSpeed: 0, inputMode: "swipe", swipeThreshold: 40, holdRepeatMs: 500, autoBeatMs: 600, musicVolume: 0, sfxVolume: 10 };
     expect(parseSettings(serializeSettings(s), D)).toEqual(s);
     // 返り値は defaults と別のオブジェクト
     expect(parseSettings(null, D)).not.toBe(D);
@@ -191,6 +193,8 @@ describe("UI-45 オートの拍の速さ", () => {
       "autoBeatMs",
       "swipeThreshold",
       "holdRepeatMs",
+      "musicVolume",
+      "sfxVolume",
     ]);
     // store の set でも選択肢に無い値は今の値のまま
     const st = createSettingsStore(D, () => {});
@@ -220,5 +224,34 @@ describe("UI-57 設定画面の文字速度の選択肢", () => {
     const st = createSettingsStore({ ...D, textSpeed: 30 }, () => {});
     st.set({ textSpeed: nextTextSpeed(st.get().textSpeed) });
     expect(st.get().textSpeed).toBe(60);
+  });
+
+  test("SV-24 musicVolume・sfxVolume: 既定は config.ui.musicVolume / sfxVolume。範囲外・非整数・型違いは既定（store の set では今の値のまま）。serialize の末尾。欄の無い古い保存は既定", () => {
+    expect(D.musicVolume).toBe(data.config.ui.musicVolume);
+    expect(D.sfxVolume).toBe(data.config.ui.sfxVolume);
+    const cfg = structuredClone(data.config);
+    cfg.ui.musicVolume = 3;
+    cfg.ui.sfxVolume = 0;
+    expect(defaultSettings(cfg)).toMatchObject({ musicVolume: 3, sfxVolume: 0 });
+    for (const bad of [-1, 11, 2.5, "5", null, true]) {
+      const p = parseSettings(JSON.stringify({ ...D, musicVolume: bad, sfxVolume: bad }), D);
+      expect([p.musicVolume, p.sfxVolume], String(bad)).toEqual([D.musicVolume, D.sfxVolume]);
+    }
+    expect(parseSettings(JSON.stringify({ ...D, musicVolume: 0, sfxVolume: 10 }), D)).toMatchObject({ musicVolume: 0, sfxVolume: 10 });
+    const { musicVolume: _m, sfxVolume: _s, ...old } = { ...D, holdRepeatMs: 300 };
+    expect(parseSettings(JSON.stringify(old), D)).toEqual({ ...D, holdRepeatMs: 300 });
+    const keys = Object.keys(JSON.parse(serializeSettings(D)) as object);
+    expect(keys.slice(-2)).toEqual(["musicVolume", "sfxVolume"]);
+    const st = createSettingsStore({ ...D, musicVolume: 4 }, () => {});
+    st.set({ musicVolume: 12 });
+    expect(st.get().musicVolume).toBe(4);
+    st.set({ sfxVolume: 0 });
+    expect(st.get().sfxVolume).toBe(0);
+  });
+
+  test("UI-57 nextVolume: 0 → 1 → … → 9 → 10 → 0。範囲外・非整数は 0 に寄せてから", () => {
+    expect([...VOLUME_CHOICES]).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(VOLUME_CHOICES.map((v) => nextVolume(v))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0]);
+    for (const bad of [-1, 11, 2.5, Number.NaN]) expect(nextVolume(bad), String(bad)).toBe(1);
   });
 });
