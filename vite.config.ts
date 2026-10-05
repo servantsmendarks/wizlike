@@ -52,5 +52,7 @@ export default defineConfig(({ command, isPreview }) => ({
   test: {
     include: ["tests/**/*.test.ts"],
     environment: "node",
+    // GitHub Actions の runner は手元より遅く、重いテスト（検証の網羅・迷宮の生成）が既定の 5 秒を超えたため
+    testTimeout: 30_000,
   },
 }));
