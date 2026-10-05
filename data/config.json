@@ -69,8 +69,10 @@
     "textSpeedMs": 30, "diceStepMs": 300, "flashMs": 120, "shakeMs": 150, "viewFadeMs": 80,
     "layout": { "header": 16, "view": 150, "message": 70, "party": 64, "controls": 100 },
     "messageHistory": 200, "autoBeatMs": 400,
-    "saveBannerHeight": 12, "mapSnapPx": 12
+    "saveBannerHeight": 12, "mapSnapPx": 12,
+    "musicVolume": 7, "sfxVolume": 7
   },
+  "audio": { "musicGain": 0.3, "sfxGain": 0.3 },
   "prototypeParty": {
     "startingGold": 300,
     "members": [

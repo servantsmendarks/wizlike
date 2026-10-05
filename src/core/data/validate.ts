@@ -24,9 +24,13 @@ import {
 } from "./check";
 import { diceRange, isDiceExpr, parseDice } from "../rng";
 import {
+  AUDIO_SCREENS,
   AUTO_BATTLE_STYLES,
   CLASS_ABILITIES,
   CLASS_TIERS,
+  CUE_EVENTS,
+  CUE_RESULTS,
+  CUE_TARGETS,
   CURABLE_STATUS_IDS,
   DATA_FILES,
   EQUIP_SLOTS,
@@ -123,6 +127,8 @@ const numPair = (r: Range = {}): Field => (ctx, p, v) => {
 const UI_VIEW_HEIGHT = 150;
 /** ui §2: パーティ欄は 1 行 10px で party.size 行 */
 const UI_PARTY_ROW_H = 10;
+/** UI-57 / SV-24（M8）: 設定の音量の段 0..10 */
+const VOLUME_STEPS: Range = { min: 0, max: 10 };
 const STAT_RANGE: Range = { min: 1, max: 18 }; // CH-10（上限 18。下限 1 は推測）
 const statBlock: Field = F(Object.fromEntries(STAT_KEYS.map((k) => [k, I(STAT_RANGE)])));
 const lure: Field = F(Object.fromEntries(LURE_TAGS.map((k) => [k, I({ min: 0, max: 3 })]))); // EV-03
@@ -378,7 +384,10 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       autoBeatMs: I(POS_INT), // UI-45【仮】
       saveBannerHeight: I(POS_INT), // SV-23【仮】
       mapSnapPx: I(POS_INT), // UI-25（ユーザーが決めた値。【仮】ではない）
+      musicVolume: I(VOLUME_STEPS), // UI-57 / SV-24（M8）【仮】
+      sfxVolume: I(VOLUME_STEPS), // UI-57 / SV-24（M8）【仮】
     }),
+    audio: F({ musicGain: N(RATIO), sfxGain: N(RATIO) }), // UI-63 / UI-65（M8）【仮】
     prototypeParty: F({ startingGold: I(NON_NEG), members: L(member) }),
   });
   if (c === undefined) return;
@@ -1238,6 +1247,154 @@ function validateStrings(ctx: Ctx, v: unknown, ix: Index): void {
   }
 }
 
+// ---- wavetables.json（UI-63。docs/audio/CONVENTIONS.md §1。M8） ----
+
+/** CONV §1 の波形テーブルの値（32 サンプル・4 bit）。工房の規約の値に固定する */
+const WAVE_SAMPLES = 32;
+const WAVE_DEPTH = 4;
+/** 波形・ノイズ・曲・効果音の名前（工房の名前と同じ文字種） */
+const AUDIO_NAME_RE = /^[a-z0-9_]+$/;
+const MIDI_7BIT: Range = { min: 0, max: 127 };
+
+/** 名前付きのオブジェクト（波形・ノイズ）。1 個以上、名前は AUDIO_NAME_RE で "noise" でない（CONV §1 の予約語） */
+function namedEntries(ctx: Ctx, p: string, v: unknown): [string, unknown][] {
+  const o = obj(ctx, p, v, null);
+  if (o === undefined) return [];
+  const es = Object.entries(o);
+  if (es.length === 0) report(ctx, p, "UI-63: expected at least 1 entry");
+  for (const [k] of es) {
+    if (!AUDIO_NAME_RE.test(k)) report(ctx, at(p, k), `UI-63: name must match ${AUDIO_NAME_RE.source}`);
+    else if (k === "noise") report(ctx, at(p, k), 'UI-63: "noise" is reserved (ch4)');
+  }
+  return es;
+}
+
+/** 同じ値を持つ先の名前を報告する（program / note の重複） */
+function uniqueValue(ctx: Ctx, p: string, entries: [string, unknown][], key: string, what: string): void {
+  const seen = new Map<number, string>();
+  for (const [name, e] of entries) {
+    const n = intOf(get(e, key));
+    if (n === undefined) continue;
+    const first = seen.get(n);
+    if (first !== undefined) report(ctx, at(at(p, name), key), `UI-63: duplicate ${what} ${n} (${first})`);
+    else seen.set(n, name);
+  }
+}
+
+function validateWavetables(ctx: Ctx, v: unknown): void {
+  const o = obj(ctx, "", v, ["samples", "depth", "waves", "noise"]);
+  if (o === undefined) return;
+  const samples = int(ctx, "samples", o.samples);
+  if (samples !== undefined && samples !== WAVE_SAMPLES) report(ctx, "samples", `UI-63: samples must be ${WAVE_SAMPLES}`);
+  const depth = int(ctx, "depth", o.depth);
+  if (depth !== undefined && depth !== WAVE_DEPTH) report(ctx, "depth", `UI-63: depth must be ${WAVE_DEPTH}`);
+  const maxSample = 2 ** WAVE_DEPTH - 1;
+
+  const waves = namedEntries(ctx, "waves", o.waves);
+  for (const [name, w] of waves) {
+    const p = at("waves", name);
+    fields(ctx, p, w, {
+      program: I(MIDI_7BIT),
+      data: (c, dp, x) => {
+        const a = list(c, dp, x);
+        if (a === undefined) return undefined;
+        if (a.length !== WAVE_SAMPLES) report(c, dp, `UI-63: expected ${WAVE_SAMPLES} samples, got ${a.length}`);
+        a.forEach((e, i) => int(c, at(dp, i), e, { min: 0, max: maxSample }));
+        return a;
+      },
+    });
+  }
+  uniqueValue(ctx, "waves", waves, "program", "program");
+
+  const noise = namedEntries(ctx, "noise", o.noise);
+  for (const [name, n] of noise) fields(ctx, at("noise", name), n, { note: I(MIDI_7BIT), clock: N({ positive: true }) });
+  uniqueValue(ctx, "noise", noise, "note", "note");
+}
+
+// ---- audio.json（UI-63 / UI-65 / UI-66。M8） ----
+
+/** 名前の配列。各要素は AUDIO_NAME_RE。seen に先に出た名前があれば重複として報告する */
+function audioNames(ctx: Ctx, p: string, v: unknown, seen: Set<string>, id: string): string[] {
+  const out: string[] = [];
+  const a = list(ctx, p, v);
+  a?.forEach((e, i) => {
+    const s = str(ctx, at(p, i), e);
+    if (s === undefined) return;
+    if (!AUDIO_NAME_RE.test(s)) report(ctx, at(p, i), `${id}: name must match ${AUDIO_NAME_RE.source}`);
+    if (seen.has(s)) report(ctx, at(p, i), `${id}: duplicate name ${JSON.stringify(s)}`);
+    seen.add(s);
+    out.push(s);
+  });
+  return out;
+}
+
+function validateAudio(ctx: Ctx, v: unknown, ix: Index): void {
+  const o = obj(ctx, "", v, ["music", "sfx", "screenSongs", "bossSong", "cues", "ui"]);
+  if (o === undefined) return;
+
+  const musicNames = new Set<string>();
+  const music = obj(ctx, "music", o.music, ["songs", "jingles", "noteRange"]);
+  const songs = new Set(music ? audioNames(ctx, "music.songs", music.songs, musicNames, "UI-63") : []);
+  const jingles = new Set(music ? audioNames(ctx, "music.jingles", music.jingles, musicNames, "UI-63") : []);
+  if (music) pair(MIDI_7BIT)(ctx, "music.noteRange", music.noteRange);
+
+  const sfxObj = obj(ctx, "sfx", o.sfx, ["names"]);
+  const sfx = new Set(sfxObj ? audioNames(ctx, "sfx.names", sfxObj.names, new Set(), "UI-65") : []);
+
+  const song = (p: string, x: unknown): void => {
+    const s = str(ctx, p, x);
+    if (s !== undefined && !songs.has(s)) report(ctx, p, `unknown song ${JSON.stringify(s)}`);
+  };
+  const sfxName = (p: string, x: unknown): void => {
+    const s = str(ctx, p, x);
+    if (s !== undefined && !sfx.has(s)) report(ctx, p, `unknown sfx ${JSON.stringify(s)}`);
+  };
+
+  const screens = obj(ctx, "screenSongs", o.screenSongs, AUDIO_SCREENS);
+  if (screens) for (const k of AUDIO_SCREENS) if (screens[k] !== undefined) song(at("screenSongs", k), screens[k]);
+  song("bossSong", o.bossSong);
+
+  // UI-66: 欄 → それを付けられる event
+  const only: Record<string, readonly string[]> = {
+    key: ["message"],
+    result: ["battleEnd"],
+    hit: ["attack"],
+    target: ["attack", "hpChanged"],
+    loss: ["hpChanged"],
+  };
+  list(ctx, "cues", o.cues)?.forEach((cv, i) => {
+    const p = at("cues", i);
+    const c = fields(ctx, p, cv, {
+      event: E(CUE_EVENTS),
+      key: opt(S),
+      result: opt(E(CUE_RESULTS)),
+      hit: opt(B),
+      target: opt(E(CUE_TARGETS)),
+      loss: opt(B),
+      sfx: opt(S),
+      jingle: opt(S),
+    });
+    if (c === undefined) return;
+    const ev = strOf(c.event);
+    if ((c.sfx === undefined) === (c.jingle === undefined)) report(ctx, p, "UI-66: exactly one of sfx / jingle");
+    if (c.sfx !== undefined) sfxName(at(p, "sfx"), c.sfx);
+    const j = strOf(c.jingle);
+    if (j !== undefined && !jingles.has(j)) report(ctx, at(p, "jingle"), `unknown jingle ${JSON.stringify(j)}`);
+    if (ev === "message" && c.key === undefined) report(ctx, at(p, "key"), "UI-66: required for event message");
+    strKey(ctx, at(p, "key"), c.key, ix);
+    if (ev === undefined || !(CUE_EVENTS as readonly string[]).includes(ev)) return;
+    for (const [k, evs] of Object.entries(only)) {
+      if (c[k] !== undefined && !evs.includes(ev)) report(ctx, at(p, k), `UI-66: only for event ${evs.join(" / ")}`);
+    }
+  });
+
+  const ui = obj(ctx, "ui", o.ui, ["ok", "cancel"]);
+  if (ui) {
+    sfxName("ui.ok", ui.ok);
+    sfxName("ui.cancel", ui.cancel);
+  }
+}
+
 // ---- 全体 ----
 
 export function validateGameData(raw: RawGameData): string[] {
@@ -1262,5 +1419,7 @@ export function validateGameData(raw: RawGameData): string[] {
   validateEvents(ctxOf("events"), raw.events, ix);
   validateTavern(ctxOf("tavern"), raw.tavern, ix);
   validateStrings(ctxOf("strings"), raw.strings, ix);
+  validateWavetables(ctxOf("wavetables"), raw.wavetables);
+  validateAudio(ctxOf("audio"), raw.audio, ix);
   return issues;
 }

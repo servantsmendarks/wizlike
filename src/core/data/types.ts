@@ -232,7 +232,16 @@ export type Config = {
     saveBannerHeight: number;
     /** UI-25: 地図のタップを探索済みのセルの中心に吸着させる距離（論理 px）。ユーザーが決めた値（【仮】ではない） */
     mapSnapPx: number;
+    /** UI-57 / SV-24（M8）: 設定の曲の音量の既定値（0〜10 の段）【仮】 */
+    musicVolume: number;
+    /** UI-57 / SV-24（M8）: 設定の効果音の音量の既定値（0〜10 の段）【仮】 */
+    sfxVolume: number;
   };
+  /**
+   * UI-63 / UI-65（M8）: 基準の音量（0..1）【仮】。実際の音量 = 基準 × 設定の段 / 10。
+   * musicGain は曲の合成結果に、sfxGain は効果音（ZzFX の buildSamples の結果）に掛ける
+   */
+  audio: { musicGain: number; sfxGain: number };
   prototypeParty: { startingGold: number; members: PrototypeMember[] };
 };
 
@@ -652,6 +661,63 @@ export type TavernData = {
 
 export type Strings = Record<string, string>;
 
+// ---- wavetables.json（UI-63。docs/audio/CONVENTIONS.md §1。工房の instruments/wavetables.json の複製） ----
+
+/** 波形テーブル。program は Program Change の値、data は samples 個の 0..(2^depth − 1) */
+export type Wave = { program: number; data: number[] };
+/** ch4 のノイズの種類。note は ch4 のノート番号、clock は LFSR を進める速さ（Hz） */
+export type NoiseKind = { note: number; clock: number };
+export type Wavetables = {
+  samples: number;
+  depth: number;
+  waves: Record<string, Wave>;
+  noise: Record<string, NoiseKind>;
+};
+
+// ---- audio.json（UI-63 / UI-65 / UI-66。M8） ----
+
+/** 場面の曲を持てる画面（core/types の Screen と同じ値） */
+export const AUDIO_SCREENS = ["title", "town", "dungeon", "battle", "event"] as const;
+export type AudioScreen = (typeof AUDIO_SCREENS)[number];
+
+/** 音の契機にできる GameEvent の kind（UI-66） */
+export const CUE_EVENTS = ["message", "attack", "hpChanged", "spell", "floorChanged", "battleEnd", "levelUp", "wipe"] as const;
+export type CueEvent = (typeof CUE_EVENTS)[number];
+
+export const CUE_RESULTS = ["win", "flee", "wipe"] as const;
+export const CUE_TARGETS = ["enemy", "party"] as const;
+
+export type SoundCue = {
+  event: CueEvent;
+  /** event "message" のときだけ（必須）。strings.json のキー */
+  key?: string;
+  /** event "battleEnd" のときだけ */
+  result?: (typeof CUE_RESULTS)[number];
+  /** event "attack" のときだけ。命中したか */
+  hit?: boolean;
+  /** event "attack"（targetId）・"hpChanged"（id）のときだけ。enemy = 敵の id（"e{g}-{u}"）、party = それ以外 */
+  target?: (typeof CUE_TARGETS)[number];
+  /** event "hpChanged" のときだけ。true なら delta < 0 のときだけ */
+  loss?: boolean;
+  /** sfx と jingle のどちらか一方だけ */
+  sfx?: string;
+  jingle?: string;
+};
+
+export type AudioData = {
+  /** 工房の project.json の music.songs（ループする曲）・jingles（ジングル）・noteRange（ch1〜ch3 の音域）の写し */
+  music: { songs: string[]; jingles: string[]; noteRange: [number, number] };
+  /** 工房の project.json の sfx.names の写し */
+  sfx: { names: string[] };
+  /** 画面 → ループする曲。無い画面（event）は今の曲のまま */
+  screenSongs: Partial<Record<AudioScreen, string>>;
+  /** 戦闘の敵に special.boss の敵がいるときの曲（battle の代わり） */
+  bossSong: string;
+  cues: SoundCue[];
+  /** 表示層の操作の効果音（決定・取り消し） */
+  ui: { ok: string; cancel: string };
+};
+
 // ---- 全体 ----
 
 export type GameData = {
@@ -672,6 +738,8 @@ export type GameData = {
   events: EventDef[];
   tavern: TavernData;
   strings: Strings;
+  wavetables: Wavetables;
+  audio: AudioData;
 };
 
 /** loadGameData に渡す生データ。各値は JSON.parse（または JSON import）した結果そのまま。 */
@@ -696,4 +764,6 @@ export const DATA_FILES: { readonly [K in keyof RawGameData]: string } = {
   events: "events.json",
   tavern: "tavern.json",
   strings: "strings.json",
+  wavetables: "wavetables.json",
+  audio: "audio.json",
 };

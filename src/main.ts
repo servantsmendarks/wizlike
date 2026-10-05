@@ -19,6 +19,8 @@ import dungeons from "../data/dungeons.json";
 import events from "../data/events.json";
 import tavern from "../data/tavern.json";
 import strings from "../data/strings.json";
+import wavetables from "../data/wavetables.json";
+import audio from "../data/audio.json";
 import { GameDataError, loadGameData, type GameData, type RawGameData } from "./core/data";
 import { mountStage } from "./presenter/stage";
 import { createApp } from "./presenter/app";
@@ -52,6 +54,8 @@ const raw: RawGameData = {
   events,
   tavern,
   strings,
+  wavetables,
+  audio,
 };
 
 function fail(e: unknown): never {

@@ -1,0 +1,25 @@
+{
+  "music": {
+    "songs": ["title", "town", "dungeon", "battle", "boss"],
+    "jingles": ["victory", "levelup", "wipe", "inn"],
+    "noteRange": [36, 96]
+  },
+  "sfx": { "names": ["ok", "cancel", "hit", "damage", "spell", "door", "stairs", "trap"] },
+  "screenSongs": { "title": "title", "town": "town", "dungeon": "dungeon", "battle": "battle" },
+  "bossSong": "boss",
+  "cues": [
+    { "event": "battleEnd", "result": "win", "jingle": "victory" },
+    { "event": "levelUp", "jingle": "levelup" },
+    { "event": "wipe", "jingle": "wipe" },
+    { "event": "message", "key": "town.inn.stay", "jingle": "inn" },
+    { "event": "attack", "hit": true, "target": "enemy", "sfx": "hit" },
+    { "event": "hpChanged", "target": "party", "loss": true, "sfx": "damage" },
+    { "event": "spell", "sfx": "spell" },
+    { "event": "message", "key": "dungeon.door", "sfx": "door" },
+    { "event": "floorChanged", "sfx": "stairs" },
+    { "event": "message", "key": "dungeon.trap.pit", "sfx": "trap" },
+    { "event": "message", "key": "dungeon.trap.spinner", "sfx": "trap" },
+    { "event": "message", "key": "dungeon.trap.teleport", "sfx": "trap" }
+  ],
+  "ui": { "ok": "ok", "cancel": "cancel" }
+}

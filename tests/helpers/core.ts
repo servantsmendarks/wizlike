@@ -19,6 +19,8 @@ import dungeons from "../../data/dungeons.json";
 import events from "../../data/events.json";
 import tavern from "../../data/tavern.json";
 import strings from "../../data/strings.json";
+import wavetables from "../../data/wavetables.json";
+import audio from "../../data/audio.json";
 import { EQUIP_SLOTS, loadGameData, type GameData, type PersonalityId } from "../../src/core/data";
 import { createInitialState, execute } from "../../src/core/engine";
 import { createRng, randInt, rollDice, type RngState } from "../../src/core/rng";
@@ -46,6 +48,8 @@ export function loadFreshData(): GameData {
       events,
       tavern,
       strings,
+      wavetables,
+      audio,
     }),
   );
 }
