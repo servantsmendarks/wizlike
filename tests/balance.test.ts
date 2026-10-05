@@ -13,6 +13,7 @@ describe("バランス（H9 煙テスト）", () => {
       expect(results).toHaveLength(SEEDS);
       for (const k of ["battle.encounter", "town.enter", "town.inn.stay"]) expect(keys.has(k), k).toBe(true);
       expect(report(kind, results, SEEDS, DIVES)).toContain(kind.label);
+      expect(report(kind, results, SEEDS, DIVES)).toContain("M7-死因"); // M7-死因の集計が後ろに足されている
     }, 60_000);
   }
 });

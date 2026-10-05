@@ -54,6 +54,13 @@ export const BOTS: BotKind[] = [
 
 type Method = "thread" | "walk" | "cap" | "wipe";
 
+/**
+ * M7-死因（2026-10-05 ユーザー指示）: 潜行中に dead になった 1 人分の記録。cause は殺した敵の monsterId（戦闘中の死亡は CB の敵の攻撃だけ）、
+ * 戦闘外は "trap:pit"（DG-20 の落とし穴）・"event:<eventId>"（EV-32 の damage）、どれでもなければ "other"。
+ * floor は死んだ階、status は死んだ時点（lifeChanged dead の直前。CH-45 で死亡と同時に外れる前）の状態異常
+ */
+type DeathRecord = { cause: string; monster: boolean; floor: number; status: string[] };
+
 /** 潜行 1 回分（潜行 → 街の手順）の記録 */
 type DiveRecord = {
   method: Method;
@@ -90,6 +97,10 @@ type DiveRecord = {
   chestGold: number; // M7-宝箱: 宝箱の金の合計（battle.chest の gold。金運込み）
   chestItems: number; // M7-宝箱: 宝箱の品のうち所持枠に入った数（battle.chest の後の item.found）
   chestLeft: number; // M7-宝箱: 宝箱の品のうち所持枠が無くて置いていった数（battle.chest の後の item.leftBehind）
+  deaths: DeathRecord[]; // M7-死因: この潜行中に dead になった延べ人数分（全滅の前に死んだ者も、全滅の処理で起こされる者も含む）
+  ashInDive: number; // M7-死因: この潜行中に ash になった人数（今の規則では潜行中に灰になる経路は無いので 0 のはず。灰は寺院の蘇生の失敗だけ）
+  encounterGroups: Record<string, number>; // M7-死因: 遭遇（encounter イベント）の敵グループの数（monsterId ごと）
+  encounterUnits: Record<string, number>; // M7-死因: その体数
   goldBefore: number; // 潜行の前の所持金
   goldAfter: number; // 街の手順をすべて終えた後の所持金
   assetsAfter: number; // 街の手順をすべて終えた後の資産（所持金 + 手持ちの消耗品の購入価格）
@@ -199,6 +210,10 @@ export class Campaign {
   chestItems = 0;
   chestLeft = 0;
   unpaidAtStart = 0;
+  deaths: DeathRecord[] = [];
+  ashInDive = 0;
+  encounterGroups: Record<string, number> = {};
+  encounterUnits: Record<string, number> = {};
   /**
    * M7-宝箱「蘇生を払えずに潜った」の定義: 直前の街の手順（revive）で、dead の者の寺院の蘇生、または ash の者（蘇生に失敗して灰になった者を含む）の
    * 闇魔術の費用が、その時点の所持金で払えずに（townMenu の affordable が偽で）蘇生しなかった者の id。次の潜行の開始時に、そのうちまだ dead / ash の者が
@@ -220,6 +235,7 @@ export class Campaign {
     const r = execute(from, cmd, data);
     if (r.events[0]?.kind === "rejected") throw new Error(`seed ${this.seed}: ${JSON.stringify(cmd)} rejected: ${JSON.stringify(r.events[0])}`);
     this.countChest(from, r.events);
+    this.countDeaths(from, r.events);
     // 入力を積むだけの battle.input と向きを変えるだけの dungeon.turn は時間の都合で省く（decisions の H9 の行）
     if (cmd.type !== "battle.input" && cmd.type !== "dungeon.turn") expectStateInvariants(r.state);
     expectKnownStringKeys(r.events);
@@ -246,6 +262,53 @@ export class Campaign {
       if (x.kind !== "message") continue;
       if (x.key === "item.found") this.chestItems += 1;
       else if (x.key === "item.leftBehind") this.chestLeft += 1;
+    }
+  }
+
+  /**
+   * M7-死因: 潜行中（from.dive がある）のコマンドのイベントから、遭遇した敵グループと、味方の死亡（lifeChanged dead）の死因・階・状態異常を数える。
+   * 死因は、戦闘中なら直前にその者に命中した attack の actorId（e{g}-{u}）の敵グループの monsterId、戦闘外なら直前の落とし穴の発動（message dungeon.trap.pit）か
+   * イベントの開始（eventStarted。選択の保留中なら pendingChoice の eventId）。敵グループは from.battle、無ければ同じコマンドの encounter の groups
+   * （CB の不意打ち（surpriseEnemy）では、遭遇した dungeon.move の中で敵が先に攻撃する）の添字で引く。状態異常は from の status に statusChanged を順に当てた、死亡の時点の値
+   */
+  countDeaths(from: GameState, events: GameEvent[]): void {
+    const dive = from.dive;
+    if (dive === null) return; // 街（寺院の蘇生の失敗の灰）は数えない
+    const status = new Map(from.party.map((c) => [c.id, [...c.status] as string[]]));
+    const lastHit = new Map<string, string>(); // 味方の id → 最後に命中した敵の actorId
+    let groupIds: string[] | null = from.battle === null ? null : from.battle.groups.map((g) => g.monsterId);
+    let field: string | null = from.pendingChoice?.kind === "event" ? `event:${from.pendingChoice.eventId}` : null;
+    for (const e of events) {
+      if (e.kind === "encounter") {
+        groupIds = [];
+        for (const g of e.groups) groupIds[g.index] = g.monsterId;
+        for (const g of e.groups) {
+          this.encounterGroups[g.monsterId] = (this.encounterGroups[g.monsterId] ?? 0) + 1;
+          this.encounterUnits[g.monsterId] = (this.encounterUnits[g.monsterId] ?? 0) + g.count;
+        }
+      } else if (e.kind === "statusChanged") {
+        const st = status.get(e.id);
+        if (st !== undefined) status.set(e.id, e.on ? [...st, e.status] : st.filter((x) => x !== e.status));
+      } else if (e.kind === "attack") {
+        if (e.hit && status.has(e.targetId)) lastHit.set(e.targetId, e.actorId);
+      } else if (e.kind === "message" && e.key === "dungeon.trap.pit") field = "trap:pit";
+      else if (e.kind === "eventStarted") field = `event:${e.eventId}`;
+      else if (e.kind === "lifeChanged" && status.has(e.id)) {
+        if (e.life === "ash") this.ashInDive += 1;
+        if (e.life !== "dead") continue;
+        const actor = lastHit.get(e.id);
+        let cause: string;
+        let monster = false;
+        if (groupIds !== null && actor !== undefined) {
+          const m = /^e(\d+)-(\d+)$/.exec(actor);
+          if (m === null) throw new Error(`seed ${this.seed}: unknown actor ${actor}`);
+          const id = groupIds[Number(m[1])];
+          if (id === undefined) throw new Error(`seed ${this.seed}: no group for ${actor}`);
+          cause = id;
+          monster = true;
+        } else cause = field ?? "other";
+        this.deaths.push({ cause, monster, floor: dive.floor, status: [...status.get(e.id)!] });
+      }
     }
   }
 
@@ -403,6 +466,10 @@ export class Campaign {
     this.chestGold = 0;
     this.chestItems = 0;
     this.chestLeft = 0;
+    this.deaths = [];
+    this.ashInDive = 0;
+    this.encounterGroups = {};
+    this.encounterUnits = {};
     const down = this.state.party.filter((c) => c.life !== "alive").map((c) => c.id);
     expect(down.filter((id) => !this.unpaidLeft.includes(id))).toEqual([]); // 定義（unpaidLeft）のとおり、残った理由は所持金不足だけ
     this.unpaidAtStart = down.length;
@@ -600,6 +667,10 @@ export class Campaign {
         chestGold: this.chestGold,
         chestItems: this.chestItems,
         chestLeft: this.chestLeft,
+        deaths: this.deaths,
+        ashInDive: this.ashInDive,
+        encounterGroups: this.encounterGroups,
+        encounterUnits: this.encounterUnits,
         down: this.state.party.filter((c) => c.life !== "alive").length,
         mercyOffered: this.state.townVisit!.mercyOffered,
         mercyUsed: false,
@@ -689,7 +760,68 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
   const partsAny = Array.from({ length: dives }, (_, k) => `${k + 1} 回目 ${idxAny.filter((i) => i === k).length}`);
   partsAny.push(`未到達 ${idxAny.filter((i) => i < 0).length}`);
   lines.push(`（参考）誰か 1 人が L2 の最初の潜行: ${partsAny.join(" / ")}`);
+  lines.push(...deathReport(results, dives));
   return lines.join("\n");
+}
+
+/** M7-死因（2026-10-05 ユーザー指示）: 1 潜行あたりの死者数と、死因（敵の種類・階・状態異常の有無）の内訳。既存の出力の後ろに足す */
+function deathReport(results: CampaignResult[], dives: number): string[] {
+  const lines: string[] = [];
+  const all = results.flatMap((r) => r.dives);
+  const deaths = all.flatMap((d) => d.deaths);
+  const dist = (ds: DiveRecord[]) => {
+    const max = Math.max(0, ...ds.map((d) => d.deaths.length));
+    return Array.from({ length: max + 1 }, (_, n) => `${n}:${ds.filter((d) => d.deaths.length === n).length}`).join(" ");
+  };
+  lines.push(`M7-死因: 潜行中に dead になった延べ人数（全滅の処理で起こされる者も含む。潜行中に ash になった人数 計 ${sum(all.map((d) => d.ashInDive))}）`);
+  for (let k = 0; k < dives; k++) {
+    const ds = results.flatMap((r) => (r.dives[k] === undefined ? [] : [r.dives[k]!]));
+    const wiped = ds.filter((d) => d.method === "wipe");
+    const rest = ds.filter((d) => d.method !== "wipe");
+    lines.push(
+      `  潜行 ${k + 1}: 死者 計 ${sum(ds.map((d) => d.deaths.length))}・1 潜行あたり 平均 ${fmt(mean(ds.map((d) => d.deaths.length)))}（全滅の潜行を除く ${fmt(mean(rest.map((d) => d.deaths.length)))}、全滅の潜行 ${fmt(mean(wiped.map((d) => d.deaths.length)))}）/ 分布 ${dist(ds)}`,
+    );
+  }
+  const rest = all.filter((d) => d.method !== "wipe");
+  lines.push(
+    `  全潜行: 死者 計 ${deaths.length}・1 潜行あたり 平均 ${fmt(mean(all.map((d) => d.deaths.length)))}（全滅の潜行を除く ${fmt(mean(rest.map((d) => d.deaths.length)))}）/ 分布 ${dist(all)} / 寺院の蘇生の失敗で灰 計 ${sum(all.map((d) => d.templeTries - d.templeOk))}`,
+  );
+  const statusLabel = (xs: readonly DeathRecord[]) => {
+    const withSt = xs.filter((x) => x.status.length > 0).length;
+    const per = ["poison", "paralysis", "sleep", "stone"].map((s) => `${s} ${xs.filter((x) => x.status.includes(s)).length}`).join("・");
+    return `状態異常あり ${pct(withSt, xs.length)}（${per}）`;
+  };
+  const floorLabel = (xs: readonly DeathRecord[]) => {
+    const fs = [...new Set(xs.map((x) => x.floor))].sort((a, b) => a - b);
+    return fs.map((f) => `${f} 階 ${xs.filter((x) => x.floor === f).length}`).join("・");
+  };
+  const groups: Record<string, number> = {};
+  const units: Record<string, number> = {};
+  for (const d of all) {
+    for (const [m, n] of Object.entries(d.encounterGroups)) groups[m] = (groups[m] ?? 0) + n;
+    for (const [m, n] of Object.entries(d.encounterUnits)) units[m] = (units[m] ?? 0) + n;
+  }
+  const totalGroups = sum(Object.values(groups));
+  const byEnemy = deaths.filter((x) => x.monster);
+  lines.push(
+    `  死因: 敵 ${pct(byEnemy.length, deaths.length)}・敵以外 ${deaths.length - byEnemy.length} / 全体の ${statusLabel(deaths)} / 階 ${floorLabel(deaths)} / 遭遇の敵グループ 計 ${totalGroups}（体数 計 ${sum(Object.values(units))}）`,
+  );
+  const monsterIds = [...new Set([...Object.keys(groups), ...byEnemy.map((x) => x.cause)])].sort(
+    (a, b) => byEnemy.filter((x) => x.cause === b).length - byEnemy.filter((x) => x.cause === a).length || a.localeCompare(b),
+  );
+  for (const m of monsterIds) {
+    const xs = byEnemy.filter((x) => x.cause === m);
+    const dShare = byEnemy.length === 0 ? NaN : xs.length / byEnemy.length;
+    const gShare = totalGroups === 0 ? NaN : (groups[m] ?? 0) / totalGroups;
+    lines.push(
+      `    ${m}: 死者 ${xs.length}（敵による死者の ${fmt(dShare * 100)}%）/ 遭遇 ${groups[m] ?? 0} グループ（${fmt(gShare * 100)}%）・${units[m] ?? 0} 体 / 死者の割合 ÷ 遭遇の割合 ${fmt(dShare / gShare)} / 1 グループあたりの死者 ${fmt(xs.length / (groups[m] ?? 0))} / ${statusLabel(xs)} / 階 ${floorLabel(xs) || "-"}`,
+    );
+  }
+  for (const c of [...new Set(deaths.filter((x) => !x.monster).map((x) => x.cause))].sort()) {
+    const xs = deaths.filter((x) => x.cause === c);
+    lines.push(`    （敵以外）${c}: 死者 ${xs.length}（全死者の ${fmt((xs.length / deaths.length) * 100)}%）/ ${statusLabel(xs)} / 階 ${floorLabel(xs)}`);
+  }
+  return lines;
 }
 
 /**
