@@ -9,8 +9,8 @@ import type { Role } from "../palette";
 
 /** 1 セルの幅（美咲の半角 1 = 4px を 1 単位として 10 単位 = 40px） */
 export const BAND_CELL_UNITS = 10;
-/** 省略の記号（全角。2 単位） */
-export const BAND_ELLIPSIS = "…";
+/** 省略の記号の strings のキー（既定は全角「…」= 2 単位。§3-10） */
+export const BAND_ELLIPSIS_KEY = "town.band.ellipsis";
 
 /** 状態異常の印の優先順（重いものが先。UI-13） */
 const STATUS_ORDER: readonly StatusId[] = ["stone", "paralysis", "sleep", "poison"];
@@ -35,10 +35,10 @@ export function textUnits(text: string): number {
   return n;
 }
 
-/** units に収まるように切る。収まらなければ末尾を BAND_ELLIPSIS にする（記号を含めて units 以内） */
-export function fitName(name: string, units: number): string {
+/** units に収まるように切る。収まらなければ末尾を ellipsis（strings の town.band.ellipsis）にする（記号を含めて units 以内） */
+export function fitName(name: string, units: number, ellipsis: string): string {
   if (textUnits(name) <= units) return name;
-  const room = units - textUnits(BAND_ELLIPSIS);
+  const room = units - textUnits(ellipsis);
   let out = "";
   let n = 0;
   for (const ch of name) {
@@ -47,7 +47,7 @@ export function fitName(name: string, units: number): string {
     out += ch;
     n += w;
   }
-  return out + BAND_ELLIPSIS;
+  return out + ellipsis;
 }
 
 function str(strings: Strings, key: string): string {
@@ -71,7 +71,7 @@ function markOf(ch: Pick<Character, "life" | "status">, stage: SanStage, strings
  */
 export function bandCell(ch: Pick<Character, "name" | "life" | "status">, stage: SanStage, strings: Strings): BandCell {
   const { mark, role } = markOf(ch, stage, strings);
-  const name = fitName(ch.name, BAND_CELL_UNITS - textUnits(mark));
+  const name = fitName(ch.name, BAND_CELL_UNITS - textUnits(mark), str(strings, BAND_ELLIPSIS_KEY));
   return { label: `${name}${mark}`, mark, role };
 }
 

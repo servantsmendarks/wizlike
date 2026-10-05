@@ -35,7 +35,7 @@
   | 一覧の見出し | x8..231・y178..187 | 1 行。accent 色。押せない（UI-52 の townHeading。ログに残さない） |
   | 一覧 | x8..175・y190..387 | 行の高さ 22 × 9 行（幅 168）。多ければ縦スクロール（UI-11） |
   | 戻る | x178..233・y354..393 | UI-11 の固定の 56×40（迷宮・戦闘と同じ絶対位置） |
-  - パーティの帯: 1 人 40px（全角 5 字 = 10 単位。半角（ASCII・半角カナ）は 1 単位）に 6 人の名前。収まらない名前は末尾を「…」（2 単位）で切る（全角 6 字の名前は 4 字＋…）。死亡・灰・状態異常・SAN の段（CH-53）は、名前の後ろの印の字（2 単位。印があれば 6 字の名前は 3 字＋…＋印）と色で区別する（色だけに頼らない）。印は 1 人に 1 つで、優先順は 灰（`town.band.mark.ash`「灰」・dim）> 死亡（`town.band.mark.dead`「死」・danger）> 石 > 痺 > 眠 > 毒（`party.status.<id>`・役 `status` = orange）> 虚脱 > 錯乱 > 不安（`town.band.mark.broken` / `confused` / `uneasy`「虚」「錯」「不」・役 `san` = sky）。正常は印なしの text。名前と印は同じ色。段は core の `sanStage`（表示層の `bandCell` は段の境を計算しない。UI-35）。帯をタップすると、その人の状態（UI-59。酒場の「状態」と同じ画面）を開く。描き直しは再生の最後の sync と、再生中の sanChanged / statusChanged / lifeChanged。
+  - パーティの帯: 1 人 40px（全角 5 字 = 10 単位。半角（ASCII・半角カナ）は 1 単位）に 6 人の名前。収まらない名前は末尾を「…」（`town.band.ellipsis`。2 単位）で切る（全角 6 字の名前は 4 字＋…）。死亡・灰・状態異常・SAN の段（CH-53）は、名前の後ろの印の字（2 単位。印があれば 6 字の名前は 3 字＋…＋印）と色で区別する（色だけに頼らない）。印は 1 人に 1 つで、優先順は 灰（`town.band.mark.ash`「灰」・dim）> 死亡（`town.band.mark.dead`「死」・danger）> 石 > 痺 > 眠 > 毒（`party.status.<id>`・役 `status` = orange）> 虚脱 > 錯乱 > 不安（`town.band.mark.broken` / `confused` / `uneasy`「虚」「錯」「不」・役 `san` = sky）。正常は印なしの text。名前と印は同じ色。段は core の `sanStage`（表示層の `bandCell` は段の境を計算しない。UI-35）。帯をタップすると、その人の状態（UI-59。酒場の「状態」と同じ画面）を開く。描き直しは再生の最後の sync と、再生中の sanChanged / statusChanged / lifeChanged。
   - UI-10 の例外（TOUCH_MIN_LOGICAL 30 を満たさない）: ヘッダーのログ（`header.log`。高さ 16。設定と同じ）、帯（`town.band`。40×22）、一覧の行（`town.list`。高さ 22。Pixel 3a で約 32 CSS px）。どれも UI-10 の 12 論理 px 以上。
 
 ## 3. 線画ビュー

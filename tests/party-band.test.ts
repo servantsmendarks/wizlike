@@ -26,8 +26,10 @@ describe("UI-13 bandCell", () => {
     expect(bandCell(ch("Aldorinsons"), "normal", S).label).toBe("Aldorins…");
     expect(bandCell(ch("ｱﾙﾄﾞﾘﾝﾄﾞ"), "normal", S).label).toBe("ｱﾙﾄﾞﾘﾝﾄﾞ");
     for (const n of ["アルドリンド", "Aldorinsons", "アルドABCDEF"]) expect(textUnits(bandCell(ch(n), "normal", S).label), n).toBeLessThanOrEqual(BAND_CELL_UNITS);
-    expect(fitName("あいうえおか", 10)).toBe("あいうえ…");
-    expect(fitName("あいうえお", 10)).toBe("あいうえお");
+    expect(S["town.band.ellipsis"]).toBe("…");
+    expect(fitName("あいうえおか", 10, S["town.band.ellipsis"]!)).toBe("あいうえ…");
+    expect(fitName("あいうえお", 10, S["town.band.ellipsis"]!)).toBe("あいうえお");
+    expect(fitName("あいうえおか", 10, "~")).toBe("あいうえ~");
   });
 
   test("UI-13 bandCell: 印は 1 人に 1 つで、優先順は 灰 > 死亡 > 石 > 痺 > 眠 > 毒 > 虚脱 > 錯乱 > 不安。印があれば 6 字の名前は 3 字＋…＋印", () => {
