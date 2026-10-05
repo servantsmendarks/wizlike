@@ -26,6 +26,8 @@ const viteModule = (await import(/* @vite-ignore */ new URL("../vite.config.ts",
   gameAssets: (o?: { scanInVitest?: boolean }) => AssetsPlugin;
 };
 
+const NODE_PATH = "node:path";
+const npath = (await import(/* @vite-ignore */ NODE_PATH)) as { resolve(...p: string[]): string };
 const VIRTUAL = "virtual:wizlike-assets";
 const RESOLVED = "\0virtual:wizlike-assets";
 const roots: string[] = [];
@@ -137,5 +139,26 @@ describe("UI-64 vite.config.ts のプラグイン wizlike-assets", () => {
     const root = makeRoot();
     nfs.writeFileSync(`${root}/data/audio.json`, '{ "music": {} }');
     expect(() => p.configResolved({ root })).toThrow(/audio\.json/);
+  });
+});
+
+describe("UI-61 開発サーバーの素材の見張り（B3。M8.5）", () => {
+  const watchTargets = (viteModule as unknown as { watchTargets: (root: string, dirs: readonly string[]) => string[] }).watchTargets;
+  const dirsOf = (root: string): string[] => ["assets/music", "assets/sfx", "public/sprites", "public/town"].map((d) => npath.resolve(root, d));
+
+  test("UI-61 watchTargets: 在るディレクトリはそのまま見張り、無いものは root の中で在るいちばん近い親（無ければ root）に置き換える（chokidar に無いパスを足さない）", () => {
+    const root = makeRoot({ "public/fonts/x.txt": "x", "assets/music/town.mid": conformingSong() });
+    expect(watchTargets(root, dirsOf(root))).toEqual([npath.resolve(root, "assets/music"), npath.resolve(root, "assets"), npath.resolve(root, "public")]);
+    const bare = makeRoot();
+    expect(watchTargets(bare, dirsOf(bare))).toEqual([npath.resolve(bare)]);
+    const full = makeRoot({ "assets/music/a.txt": "x", "assets/sfx/a.txt": "x", "public/sprites/a.txt": "x", "public/town/a.txt": "x" });
+    expect(watchTargets(full, dirsOf(full))).toEqual(dirsOf(full));
+  });
+
+  test("UI-61 configureServer は watchTargets のパスだけを見張りに足す（無いディレクトリを直接 add しない）", () => {
+    const src = (nfs as unknown as { readFileSync(p: URL, e: "utf8"): string }).readFileSync(new URL("../vite.config.ts", import.meta.url), "utf8");
+    const body = /configureServer\(server\) \{([\s\S]*?)\n {4}\},/.exec(src)?.[1] ?? "";
+    expect(body).toContain("server.watcher.add(watchTargets(root, dirs));");
+    expect(body.match(/server\.watcher\.add\(/g)).toHaveLength(1);
   });
 });

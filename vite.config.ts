@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 import type { Plugin } from "vite";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { join, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { precacheUrls, renderServiceWorker } from "./src/pwa/sw-template.ts";
 import { ASSET_DIRS, collectAssets, formatIssue, type AssetFiles } from "./src/build/assets.ts";
 import type { GameAssets } from "./src/build/asset-types.ts";
@@ -80,11 +80,28 @@ function scanAssets(root: string): GameAssets {
 }
 
 /**
+ * 開発サーバーで見張りに足すパス。dirs のうち在るものはそのまま、無いものは root の中で在るいちばん近い親（無ければ root）に置き換える
+ * （重複は除く）。B3（M8.5）: chokidar 3 に無いディレクトリを add すると、後から作ったそのディレクトリのファイルの add が届かなかった。
+ * 親を見張れば、作られたディレクトリの中のファイルの add は親の見張りから届く。exists は差し替えてテストする
+ */
+export function watchTargets(root: string, dirs: readonly string[], exists: (p: string) => boolean = existsSync): string[] {
+  const top = resolve(root);
+  const out: string[] = [];
+  for (const d of dirs) {
+    let p = resolve(d);
+    while (!exists(p) && p !== top && p.startsWith(top + sep)) p = dirname(p);
+    if (!p.startsWith(top + sep) && p !== top) p = top;
+    if (!out.includes(p)) out.push(p);
+  }
+  return out;
+}
+
+/**
  * UI-63 / UI-64 / UI-65 / UI-60（M8）/ UI-61（M8.5）: 曲（assets/music/*.mid）・効果音（assets/sfx/*.json）・絵の一覧（public/sprites/*.png・public/town/*.png）を
  * ビルド時と開発サーバー・preview の起動時に検証し、仮想モジュール virtual:wizlike-assets（GameAssets）にする。
  * 止めるものが 1 つでもあれば configResolved で throw する（build・dev・preview が止まる）。apply を付けない（build と serve の両方）。
  * vitest の中（VITEST）では何もしない（テストは scanInVitest で作ったものの hook を直接呼ぶ）。
- * 開発サーバーでは 4 つのディレクトリ（ASSET_DIRS）を見張り、変わったら取り直してフルリロードする（止めるものがあればオーバーレイに出し、前の内容のまま）。
+ * 開発サーバーでは 4 つのディレクトリ（ASSET_DIRS。無ければ在る親。watchTargets）を見張り、変わったら取り直してフルリロードする（止めるものがあればオーバーレイに出し、前の内容のまま）。
  */
 export function gameAssets(o: { scanInVitest?: boolean } = {}): Plugin {
   let root = process.cwd();
@@ -104,7 +121,8 @@ export function gameAssets(o: { scanInVitest?: boolean } = {}): Plugin {
     },
     configureServer(server) {
       const dirs = Object.values(ASSET_DIRS).map((d) => resolve(root, d));
-      server.watcher.add(dirs);
+      // B3（M8.5）: 無いディレクトリは add しない（在る親を見張る。起動の後に作ったディレクトリも拾う）
+      server.watcher.add(watchTargets(root, dirs));
       const onChange = (file: string): void => {
         const f = resolve(file);
         if (!dirs.some((d) => f.startsWith(d + sep))) return;
