@@ -153,6 +153,20 @@ describe("TW-17 town.upgrade の判定と処理", () => {
     }
   });
 
+  test("TW-17 強化の Lv に上限はない（Lv20 が触媒なし・p 10・q 1・出目 1 で大成功 → Lv22、料金 50 × 21 = 1050）", () => {
+    const s = town(2000, 20);
+    withFirstRoll(s, 1);
+    const mirror = structuredClone(s.rng);
+    expect(randInt(mirror, 1, 100)).toBe(1);
+    const r = ok(s, up([]));
+    const d = r.events[0];
+    expect(d?.kind === "dice" && d.rule.params).toEqual({ rate: 10, great: 1 });
+    expect(d?.kind === "dice" && d.result.key).toBe("dice.upgrade.great");
+    expect(weaponOf(r.state, "c1").level).toBe(22);
+    expect(r.state.gold).toBe(2000 - 1050);
+    expect(r.state.rng).toEqual(mirror);
+  });
+
   test("TW-17 Lv0 で失敗しても 0 のまま。触媒なしでも料金（50）は取る（p 10・q 1、出目 11）", () => {
     const s = town(1000, 0);
     withFirstRoll(s, 11);
