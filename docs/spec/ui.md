@@ -177,5 +177,5 @@
 
 ## 7. 素材
 
-- UI-60 モンスター絵は 48×48〜64×64 の PNG【仮】、固定パレット、1 体 4〜6 色。`public/sprites/<monsterId>.png`。未鑑定は `<monsterId>_silhouette.png`（機械生成）。プロトタイプでは無ければ色付き矩形で代用する。色付き矩形は、鑑定済みは固定パレットの 6 色（orange, sky, red, yellow, gray, lightGreen）を `monsters.json` の順で巡回し、未鑑定は dim。大きさは 48×48（1 グループのときは 64×64）。
+- UI-60 モンスター絵は 48×48〜64×64 の PNG【仮】、固定パレット、1 体 4〜6 色。`public/sprites/<monsterId>.png`。未鑑定は系統ごとの `public/sprites/unknown_<kind>.png`（`unknown-kinds.json` の `sprite`。CB-05。M7 2026-10-05 に敵ごとの `<monsterId>_silhouette.png` を廃止）。PNG が読めなければ色付き矩形で代用する。色付き矩形は、鑑定済みは固定パレットの 6 色（orange, sky, red, yellow, gray, lightGreen）を `monsters.json` の順で巡回し、未鑑定は系統の `placeholderColor`（敵ごとの色にしない。同じ系統の別の種類は同じ色）。噂話（TW-15）などで鑑定済みになった敵は、以後は本名と本来の絵（または敵ごとの色）で出る。大きさは 48×48（1 グループのときは 64×64）。
 - UI-61 街の絵は施設ごとに 1 枚、240×150。プロトタイプでは無地でよい。

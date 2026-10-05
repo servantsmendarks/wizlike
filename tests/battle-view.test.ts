@@ -8,12 +8,14 @@ import {
   createBattleView,
   enemyFill,
   enemyGroupOfId,
+  enemySprite,
   focusFrame,
   FOCUS_BLINK_MS,
   groupBoxes,
   groupColumns,
   groupLabel,
   groupLabelRects,
+  spriteUrl,
 } from "../src/presenter/views/battle";
 import { diceBox } from "../src/presenter/views/dice";
 import { formatMessage } from "../src/presenter/views/message";
@@ -52,16 +54,35 @@ describe("UI-54 敵グループの列", () => {
     expect(groupBoxes(0, VIEW_W)).toEqual([]);
   });
 
-  test("UI-60 enemyFill: 鑑定済みは monsters の添字で ENEMY_FILLS を巡回、未鑑定・未知は dim。色はすべて PALETTE にある", () => {
+  test("UI-60 enemyFill: 鑑定済みは monsters の添字で ENEMY_FILLS を巡回、未鑑定は系統の placeholderColor（敵ごとの色にしない）、未知は dim。色はすべて PALETTE にある", () => {
     data.monsters.forEach((m, i) => {
       expect(enemyFill(data, m.id, true), m.id).toBe(ENEMY_FILLS[i % ENEMY_FILLS.length]);
-      expect(enemyFill(data, m.id, false), m.id).toBe("dim");
+      expect(enemyFill(data, m.id, false), m.id).toBe(data.unknownKinds.find((k) => k.id === m.unknownKind)!.placeholderColor);
     });
+    // 同じ系統の 2 種は同じ色、系統が違えば別の色
+    expect(enemyFill(data, "giant_rat", false)).toBe(enemyFill(data, "giant_spider", false));
+    expect(enemyFill(data, "kobold", false)).toBe(enemyFill(data, "rotting_corpse", false));
+    expect(enemyFill(data, "giant_rat", false)).not.toBe(enemyFill(data, "kobold", false));
+    for (const k of data.unknownKinds) expect(Object.keys(PALETTE), k.id).toContain(k.placeholderColor);
     expect(enemyFill(data, "no_such_monster", true)).toBe("dim");
+    expect(enemyFill(data, "no_such_monster", false)).toBe("dim");
     expect(enemyFill(data, data.monsters[0]!.id, true)).toBe("orange");
     for (const c of ENEMY_FILLS) expect(Object.keys(PALETTE)).toContain(c);
     expect(ENEMY_FILLS).not.toContain("dim");
     expect(ENEMY_FILLS).not.toContain("black");
+  });
+
+  test("UI-60 enemySprite / spriteUrl: 鑑定済みは monsters[].sprite、未鑑定は系統の unknown_<kind>（<id>_silhouette は使わない）。URL は {base}sprites/<名前>.png", () => {
+    expect(enemySprite(data, "kobold", true)).toBe("kobold");
+    expect(enemySprite(data, "kobold", false)).toBe("unknown_humanoid");
+    expect(enemySprite(data, "rotting_corpse", false)).toBe("unknown_humanoid");
+    expect(enemySprite(data, "giant_spider", false)).toBe("unknown_beast");
+    expect(enemySprite(data, "whispering_shadow", false)).toBe("unknown_spirit");
+    expect(enemySprite(data, "gatekeeper_armor", false)).toBe("unknown_construct");
+    expect(enemySprite(data, "no_such_monster", false)).toBeNull();
+    for (const m of data.monsters) expect(enemySprite(data, m.id, false), m.id).not.toMatch(/silhouette/);
+    expect(spriteUrl("unknown_beast", "/wizlike/")).toBe("/wizlike/sprites/unknown_beast.png");
+    expect(spriteUrl("kobold", "/")).toBe("/sprites/kobold.png");
   });
 
   test("UI-41 enemyGroupOfId は core の敵の id e{g}-{u} のグループ添字。味方の id などは null", () => {
@@ -265,6 +286,47 @@ describe("UI-54 戦闘のビュー（DOM）", () => {
     expect(boxes.map((b) => b.style["visibility"])).toEqual(["visible", "visible", "hidden"]);
     v.focus(1, true);
     for (const b of boxes) expect(b.style["outline"] ?? "").toBe("");
+  });
+
+  test("UI-54/CB-05 同じ系統の別の種類が 2 グループいても、ラベルはグループの番号で区別できる（「1 人の形をした影 ×2」「2 人の形をした影 ×3」）", () => {
+    const gs: EnemyGroupView[] = [
+      { index: 0, monsterId: "kobold", name: "人の形をした影", identified: false, count: 2 },
+      { index: 1, monsterId: "rotting_corpse", name: "人の形をした影", identified: false, count: 3 },
+    ];
+    const created = fakeDocument();
+    createBattleView(data, data.strings, VIEW_W, 150).setGroups(gs);
+    expect(created.filter((e) => e.className === "battle-group-label").map((l) => l.textContent)).toEqual([
+      "1 人の形をした影 ×2",
+      "2 人の形をした影 ×3",
+    ]);
+  });
+
+  test("UI-60 絵: 各列の矩形の中に <img>（{base}sprites/<名前>.png、未鑑定は unknown_<kind>）。塗りは未鑑定なら系統の色。読めたら塗りを消して絵を出し、読めなければ矩形のまま、その URL は次の描き直しで読まない", () => {
+    const { v, byClass } = setup();
+    const sprites = byClass("battle-group-sprite");
+    const imgs = byClass("battle-group-img");
+    expect(imgs.map((i) => (i as unknown as { src: string }).src)).toEqual([
+      "/sprites/unknown_beast.png",
+      "/sprites/kobold.png",
+      "/sprites/unknown_beast.png",
+    ]);
+    expect(sprites.map((s) => s.children)).toEqual([[imgs[0]], [imgs[1]], [imgs[2]]]);
+    expect(imgs.map((i) => i.style["display"])).toEqual(["none", "none", "none"]);
+    // 未鑑定の大ネズミと大蜘蛛（同じ beast）は同じ色。鑑定済みのコボルドは敵ごとの色
+    const beast = PALETTE[data.unknownKinds.find((k) => k.id === "beast")!.placeholderColor];
+    expect(sprites.map((s) => s.style["background"])).toEqual([beast, PALETTE[enemyFill(data, "kobold", true)], beast]);
+    // 読めた: 塗りを消して絵を出す
+    imgs[1]!.dispatch("load");
+    expect(imgs[1]!.style["display"]).toBe("block");
+    expect(sprites[1]!.style["background"]).toBe("transparent");
+    // 読めなかった: 矩形のまま。次の描き直しではその URL の <img> を作らない
+    imgs[0]!.dispatch("error");
+    expect(imgs[0]!.style["display"]).toBe("none");
+    expect(sprites[0]!.style["background"]).toBe(beast);
+    v.setGroups(GROUPS);
+    const imgs2 = byClass("battle-group-img").slice(3);
+    expect(imgs2.map((i) => (i as unknown as { src: string }).src)).toEqual(["/sprites/kobold.png"]);
+    expect(byClass("battle-group-sprite").slice(3).map((s) => s.children.length)).toEqual([0, 1, 0]);
   });
 
   test("UI-54 ラベルは 2 行（高さ 20・行間 10）まで折り返し、3 行目以降は -webkit-line-clamp 2 で省く。位置は groupLabelRects（列の箱の左上からの相対）", () => {

@@ -36,7 +36,7 @@ export type Role = keyof typeof ROLES;
 
 /**
  * UI-60: 敵の絵の代わりの色付き矩形の塗り（PNG の素材が無い間）。鑑定済みの種類は monsters.json の添字で巡回して選び、
- * 未鑑定は dim（views/battle.ts の enemyFill）。用途（ROLES）ではないので CSS 変数を通さず PALETTE の値を直接使う
+ * 未鑑定は系統（unknown-kinds.json）の placeholderColor（views/battle.ts の enemyFill）。用途（ROLES）ではないので CSS 変数を通さず PALETTE の値を直接使う
  */
 export const ENEMY_FILLS: readonly PaletteName[] = ["orange", "sky", "red", "yellow", "gray", "lightGreen"];
 

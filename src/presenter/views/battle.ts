@@ -8,7 +8,10 @@
 // - 対象の選択中は focus で、注目しているグループの絵の周り（focusFrame）に枠を出し、点滅させる（Element.animate の
 //   iterations: Infinity。常駐のループではなく、解除・切り替え・描き直しで cancel する）。演出スキップでは点滅せず枠だけ。
 // - setPickable の間だけ絵のタップで onPick(グループの添字) を呼ぶ（体数 1 以上のとき）。
-// PNG（public/sprites）は M3 では読まない。演出は Element.animate だけで、ms が 0 以下なら animate を呼ばない。
+// - UI-60（M7）: 絵は public/sprites/<sprite>.png（鑑定済みは monsters[].sprite、未鑑定は系統の unknown_<kind>）を <img> で読み、
+//   読めたら矩形の塗りを消して絵を出す。読めなければ（素材が無い・オフラインで未キャッシュ）色付き矩形のまま。読めなかった URL は
+//   このビューの間は覚えて、次の描き直しで読みに行かない。
+// 演出は Element.animate だけで、ms が 0 以下なら animate を呼ばない。
 // モジュールのトップレベルでは DOM に触れない。
 import type { GameData, Strings } from "../../core/data/index";
 import type { EnemyGroupView } from "../../core/types";
@@ -62,12 +65,30 @@ export function groupLabelRects(n: number, viewW: number): Rect[] {
   });
 }
 
-/** UI-60: 色付き矩形の塗り。鑑定済みは monsters の添字で ENEMY_FILLS を巡回、未鑑定（と未知の id）は dim */
+/**
+ * UI-60: 色付き矩形の塗り。鑑定済みは monsters の添字で ENEMY_FILLS を巡回、未鑑定は系統（unknown-kinds.json）の
+ * placeholderColor（敵ごとの色にしない。同じ系統の別の種類は同じ色）。未知の id は dim。
+ * placeholderColor の型（core の PLACEHOLDER_COLORS）を PaletteName として返すので、パレットに無い色名が一覧にあると typecheck が落ちる
+ */
 export function enemyFill(data: GameData, monsterId: string, identified: boolean): PaletteName {
-  if (!identified) return "dim";
   const i = data.monsters.findIndex((m) => m.id === monsterId);
-  if (i < 0) return "dim";
+  const m = data.monsters[i];
+  if (m === undefined) return "dim";
+  if (!identified) return data.unknownKinds.find((k) => k.id === m.unknownKind)?.placeholderColor ?? "dim";
   return ENEMY_FILLS[i % ENEMY_FILLS.length] ?? "dim";
+}
+
+/** UI-60: 絵の名前（public/sprites/<名前>.png）。鑑定済みは monsters[].sprite、未鑑定は系統の sprite（unknown_<kind>）。未知の id は null */
+export function enemySprite(data: GameData, monsterId: string, identified: boolean): string | null {
+  const m = data.monsters.find((x) => x.id === monsterId);
+  if (m === undefined) return null;
+  if (identified) return m.sprite;
+  return data.unknownKinds.find((k) => k.id === m.unknownKind)?.sprite ?? null;
+}
+
+/** UI-60: 絵の URL（base は import.meta.env.BASE_URL。本番は /wizlike/） */
+export function spriteUrl(sprite: string, base: string): string {
+  return `${base}sprites/${sprite}.png`;
 }
 
 const ENEMY_ID = /^e(\d+)-(\d+)$/;
@@ -135,6 +156,8 @@ export function createBattleView(
   let focused: number | null = null;
   let blinking: Animation | null = null;
   let pickable = false;
+  /** UI-60: 読めなかった絵の URL（このビューの間は読みに行かない） */
+  const missing = new Set<string>();
 
   const stopBlink = (): void => {
     if (blinking !== null) blinking.cancel();
@@ -176,6 +199,25 @@ export function createBattleView(
       sprite.className = "battle-group-sprite";
       place(sprite, { x: sr.x - b.x, y: sr.y, w: sr.w, h: sr.h });
       sprite.style.background = PALETTE[enemyFill(data, g.monsterId, g.identified)];
+      const name = enemySprite(data, g.monsterId, g.identified);
+      const url = name === null ? null : spriteUrl(name, import.meta.env.BASE_URL);
+      if (url !== null && !missing.has(url)) {
+        // UI-60: 読めたら矩形の塗りを消して絵を出す。読めなければ矩形のまま（読めなかった URL を覚える）
+        const img = document.createElement("img");
+        img.className = "battle-group-img";
+        img.alt = "";
+        img.draggable = false;
+        Object.assign(img.style, { display: "none", width: "100%", height: "100%", imageRendering: "pixelated", pointerEvents: "none" });
+        img.addEventListener("load", () => {
+          img.style.display = "block";
+          sprite.style.background = "transparent";
+        });
+        img.addEventListener("error", () => {
+          missing.add(url);
+        });
+        img.src = url;
+        sprite.appendChild(img);
+      }
       const index = g.index;
       onTap(sprite, () => {
         const c = cols.find((x) => x.view.index === index);
