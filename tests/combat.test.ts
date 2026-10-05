@@ -980,7 +980,8 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
     chance(m, 100);
     rollDice(m, "1d8");
     rollDice(m, "1d4");
-    const k = exec(kill, RESOLVE, dataWith({ combat: { ...base, sleepWakeChance: 100 } }));
+    chance(m, 0); // CB-51: 通路の遭遇の宝箱の判定（chestChanceCorridor 0 で外れ）
+    const k = exec(kill, RESOLVE, dataWith({ combat: { ...base, sleepWakeChance: 100, chestChanceCorridor: 0 } }));
     expect(k.state.rng).toEqual(m);
   });
 
@@ -1074,12 +1075,13 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
       patches: { c2: { status: ["sleep"] } },
       inputs: { c1: atk(0), c3: DEF, c4: DEF, c5: DEF, c6: DEF },
     });
-    const dw = dataWith({ combat: { ...ALWAYS_HIT, sleepNaturalWake: 100 } });
+    const dw = dataWith({ combat: { ...ALWAYS_HIT, sleepNaturalWake: 100, chestChanceCorridor: 0 } });
     const m = cloneRng(win.rng);
     rolls(m, 5);
     chance(m, 100);
     rollDice(m, "1d8");
     rollDice(m, "1d4"); // 金
+    chance(m, 0); // CB-51: 通路の遭遇の宝箱の判定（外れ）
     const rw = exec(win, RESOLVE, dw);
     expect(rw.state.rng).toEqual(m);
     expect(kindsOf(rw.events)).not.toContain("message:battle.wake");
@@ -1395,7 +1397,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
   });
 
   test("CB-51/DG-40/CH-60 勝利: EXP は生存者で等分（死者は受け取らない、端数切り捨て）、金は個体ごとに振って state.gold と ledger.gold の両方へ（鏡の rng）", () => {
-    const d = dataWith({ combat: ALWAYS_HIT });
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChanceCorridor: 0 } });
     const s = setup([{ monsterId: "giant_rat", hps: [1, 1], status: [["paralysis"], ["paralysis"]] }], {
       identified: ["giant_rat"],
       patches: { c1: { level: 5 }, c6: DEAD },
@@ -1408,6 +1410,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     chance(m, 100);
     rollDice(m, "1d8");
     const gold = rollDice(m, "1d4+1").total + rollDice(m, "1d4+1").total; // giant_rat の gold【仮】
+    chance(m, 0); // CB-51: 通路の遭遇の宝箱の判定（外れ）
     const r = exec(s, RESOLVE, d);
     expect(r.state.rng).toEqual(m);
     expect(r.events).toContainEqual({ kind: "message", key: "battle.exp", params: { exp: 4 } }); // 24 / 5
@@ -1424,7 +1427,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(rc.state.gold).toBe(c.gold);
   });
 
-  test("CB-52【仮】宝箱: 部屋の遭遇で chestChance 100 なら chestGoldDice の金。通路とボスでは乱数を消費しない", () => {
+  test("CB-51/CB-52【仮】宝箱: 部屋の遭遇で chestChance 100 なら chestGoldDice の金。通路の遭遇は chestChanceCorridor で同じ手順（0 なら chance を 1 回振って出ない）", () => {
     const mk = (origin: BattleOpts["origin"], monsterId = "rotting_corpse") => {
       const s = setup([{ monsterId, hps: [1], status: [["paralysis"]] }], { identified: [monsterId], origin });
       s.battle!.inputs["c1"] = atk(0);
@@ -1448,14 +1451,61 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(r.events).toContainEqual({ kind: "message", key: "battle.chest", params: { gold: cg } });
     expect(r.state.gold).toBe(room.gold + cg);
     expect(r.state.dive!.ledger.gold).toBe(cg);
+    // 通路: chestChanceCorridor 0 なら chance を 1 回振って出ない（部屋の chestChance 100 は効かない）
+    const noItems = (x: GameData) => {
+      for (const t of x.drops.tables) t.itemChance = 0;
+    };
     const corr = mk({ kind: "random", inRoom: false });
     const m2 = cloneRng(corr.rng);
     rolls(m2, 6);
     chance(m2, 100);
     rollDice(m2, "1d8");
-    const rc = exec(corr, RESOLVE, d);
+    chance(m2, 0);
+    const rc = exec(corr, RESOLVE, dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100, chestChanceCorridor: 0 } }, noItems));
     expect(rc.state.rng).toEqual(m2);
     expect(kindsOf(rc.events)).not.toContain("message:battle.chest");
+    // 通路: chestChanceCorridor 100 なら部屋と同じ手順で金（部屋の chestChance 0 は効かない）
+    const corr2 = mk({ kind: "random", inRoom: false });
+    const m3 = cloneRng(corr2.rng);
+    rolls(m3, 6);
+    chance(m3, 100);
+    rollDice(m3, "1d8");
+    chance(m3, 100);
+    const cg3 = rollDice(m3, "2d10").total;
+    chance(m3, 0); // d01 1 階の表の品の chance。外れ
+    const r3 = exec(corr2, RESOLVE, dataWith({ combat: { ...ALWAYS_HIT, chestChance: 0, chestChanceCorridor: 100 } }, noItems));
+    expect(r3.state.rng).toEqual(m3);
+    expect(r3.events).toContainEqual({ kind: "message", key: "battle.chest", params: { gold: cg3 } });
+    expect(r3.state.gold).toBe(corr2.gold + cg3);
+    expect(r3.state.dive!.ledger.gold).toBe(cg3);
+  });
+
+  test("CB-51/CB-52【仮】宝箱の既定の確率: 部屋 chestChance 60・通路 chestChanceCorridor 15。勝利の金の後の chance 1 回の出目で決まる（鏡の rng、シード 1〜20）", () => {
+    expect(data.config.combat.chestChance).toBe(60);
+    expect(data.config.combat.chestChanceCorridor).toBe(15);
+    const d = dataWith({ combat: ALWAYS_HIT }); // 宝箱の確率は既定のまま
+    const seen = { room: [0, 0], corridor: [0, 0] };
+    for (let seed = 1; seed <= 20; seed++) {
+      for (const inRoom of [true, false]) {
+        const s = setup([{ monsterId: "rotting_corpse", hps: [1], status: [["paralysis"]] }], {
+          seed,
+          identified: ["rotting_corpse"],
+          origin: { kind: "random", inRoom },
+        });
+        s.battle!.inputs["c1"] = atk(0);
+        const m = cloneRng(s.rng);
+        rolls(m, 6);
+        chance(m, 100);
+        rollDice(m, "1d8");
+        const want = randInt(m, 1, 100) <= (inRoom ? 60 : 15);
+        const r = exec(s, RESOLVE, d);
+        expect(kindsOf(r.events).includes("message:battle.chest"), `seed ${seed} inRoom ${String(inRoom)}`).toBe(want);
+        seen[inRoom ? "room" : "corridor"][want ? 1 : 0]! += 1;
+      }
+    }
+    // 20 シードで部屋・通路とも、出る場合と出ない場合の両方を通る
+    expect(seen.room.every((n) => n > 0)).toBe(true);
+    expect(seen.corridor.every((n) => n > 0)).toBe(true);
   });
 
   test("CH-52/A8 強欲の treasureGain: 戦闘の金・宝箱の金ごとに、金のメッセージの直後で強欲（ドナ c4）の SAN +2。死者・虚脱・金 0 では増えない", () => {

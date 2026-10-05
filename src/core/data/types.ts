@@ -152,7 +152,10 @@ export type Config = {
     poisonDamagePerTick: number;
     fleeBase: number;
     fleeAgiMul: number;
+    /** CB-51 / CB-52【仮】: 部屋のセル（roomId が非 null）のランダム遭遇に勝ったときの宝箱の確率（%） */
     chestChance: number;
+    /** CB-51 / CB-52【仮】: 通路のセル（部屋でないセル）のランダム遭遇に勝ったときの宝箱の確率（%） */
+    chestChanceCorridor: number;
     chestTrapChance: number;
     /** CB-52【仮】: M3 の仮実装の宝箱の金のダイス */
     chestGoldDice: string;

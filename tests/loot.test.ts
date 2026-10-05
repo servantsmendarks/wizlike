@@ -305,7 +305,7 @@ describe("CB-52 宝箱の品（IT-50 / IT-31 / IT-53）", () => {
     expect(p.state.items[pid]).toMatchObject({ level: 2, rarity: "normal", options: [] });
   });
 
-  test("CB-52 通路の遭遇では宝箱も品も出ない", () => {
+  test("CB-51/CB-52 通路の遭遇の宝箱は chestChanceCorridor で判定し、出れば部屋と同じく金の後に品。0 なら宝箱も品も出ない", () => {
     const base = dived(1);
     const inputs = allInputs(base, DEF);
     inputs["c1"] = { type: "attack", group: 0 };
@@ -314,8 +314,21 @@ describe("CB-52 宝箱の品（IT-50 / IT-31 / IT-53）", () => {
       inputs,
       identified: ["rotting_corpse"],
     });
-    const r = exec(s, RESOLVE, chestData("normal"));
-    expect(kindsOf(r.events)).not.toContain("message:item.found");
-    expect(r.state.dive!.ledger.items).toEqual([]);
+    const corridor = (pct: number) => {
+      const d = chestData("normal");
+      d.config.combat.chestChanceCorridor = pct;
+      return d;
+    };
+    const r0 = exec(s, RESOLVE, corridor(0));
+    expect(kindsOf(r0.events)).not.toContain("message:battle.chest");
+    expect(kindsOf(r0.events)).not.toContain("message:item.found");
+    expect(r0.state.dive!.ledger.items).toEqual([]);
+    const r = exec(s, RESOLVE, corridor(100));
+    const ks = kindsOf(r.events);
+    expect(ks.indexOf("message:battle.chest")).toBeGreaterThan(-1);
+    expect(ks.indexOf("message:item.found")).toBeGreaterThan(ks.indexOf("message:battle.chest"));
+    const id = r.state.dive!.ledger.items[0]!;
+    expect(r.state.items[id]).toMatchObject({ itemId: "long_sword", level: 2, identified: false, foundIn: "d01" });
+    expectStateInvariants(r.state);
   });
 });

@@ -283,7 +283,8 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       poisonDamagePerTick: I(POS_INT),
       fleeBase: I(),
       fleeAgiMul: I(),
-      chestChance: I(PERCENT),
+      chestChance: I(PERCENT), // CB-51 / CB-52【仮】部屋
+      chestChanceCorridor: I(PERCENT), // CB-51 / CB-52【仮】通路
       chestTrapChance: I(PERCENT),
       chestGoldDice: D, // CB-52【仮】（M3 の仮実装）
       unarmedDice: D,

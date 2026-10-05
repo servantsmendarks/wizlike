@@ -1034,9 +1034,11 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
     const luck = partyGoldLuck(state, data);
     const gold = withGoldLuck(rolled, luck);
     if (gold > 0) gainGold(ctx, gold, { key: "battle.gold", params: { gold } }); // CH-52: 強欲の treasureGain もここ
-    if (b.origin.kind === "random" && b.origin.inRoom) {
-      // CB-52。罠・調べる・解除はプロトタイプ後（A7 / items.md §11 の Q7）。chestQuality は品の希少度（IT-31）
-      if (chance(state.rng, cfg.combat.chestChance)) {
+    if (b.origin.kind === "random") {
+      // CB-51 / CB-52: 部屋のセルは chestChance、通路のセルは chestChanceCorridor（どちらも chance を 1 回）。ボス戦では判定しない。
+      // 罠・調べる・解除はプロトタイプ後（A7 / items.md §11 の Q7）。chestQuality は品の希少度（IT-31）
+      const chestPct = b.origin.inRoom ? cfg.combat.chestChance : cfg.combat.chestChanceCorridor;
+      if (chance(state.rng, chestPct)) {
         const cg = withGoldLuck(Math.max(0, rollDice(state.rng, cfg.combat.chestGoldDice).total), luck); // CB-52 / IT-34
         gainGold(ctx, cg, { key: "battle.chest", params: { gold: cg } }); // cg が 0 でも message は出す
         // IT-50 / IT-53: 金の後に品。Lv はこの戦闘で倒した種類の level の最大
