@@ -414,19 +414,99 @@ export function townPageIntro(page: TownPage, menu: TownMenu): string[] {
   if (page === "inn") return menu.morale !== null ? ["town.inn.intro", "town.inn.moraleNow"] : ["town.inn.intro"]; // TW-15: 士気がある間は続けて語る
   if (page === "temple") return ["town.temple.intro"];
   if (page === "dark") return ["town.dark.intro"];
-  if (page === "upgrade") return ["town.upgrade.intro", "town.upgrade.whom"]; // TW-17
-  if (typeof page === "object" && "upSlot" in page) return ["town.upgrade.slot"];
-  if (typeof page === "object" && "upCat" in page) return ["town.upgrade.catalyst"];
+  if (page === "upgrade") return ["town.upgrade.intro"]; // TW-17
   if (page === "gate") return ["town.dungeonGate.intro"];
   if (page === "shop") return ["town.shop.intro"];
-  if (page === "shopBuy") return ["town.shop.buyIntro"];
   if (page === "shopSell") return ["town.shop.sellIntro"];
   if (page === "shopBuyback") return ["town.shop.buybackIntro"];
   if (page === "shopIdentify") return ["town.shop.identifyIntro"];
   if (page === "storage") return ["town.storage.intro"];
-  if (typeof page === "object" && ("shop" in page || "buyback" in page)) return ["town.shop.whom"];
-  if (typeof page === "object" && "withdraw" in page) return ["town.storage.whom"];
+  // M8.5: 問いだけの語り（買う・持たせる者・受け取る者・強化の部位と触媒）は一覧の見出し（townHeading）に移した
   return [];
+}
+
+/** UI-61 / UI-13（M8.5）: 施設の id（施設の絵 public/town/<id>.png・ヘッダーの場所 town.place.<id>） */
+export type TownFacility = "town" | "tavern" | "inn" | "temple" | "dark" | "gate" | "shop";
+
+/**
+ * UI-61（M8.5）: ページの施設。menu は town、寺院のサービスの対象は temple、闇魔術（灰から戻す・強化の各段）は dark、
+ * 店（売る・買う・買い戻す・鑑定・倉庫の各段）は shop
+ */
+export function townFacility(page: TownPage): TownFacility {
+  if (typeof page === "object") {
+    if ("temple" in page) return "temple";
+    if ("upSlot" in page || "upCat" in page || "upConfirm" in page) return "dark";
+    return "shop"; // shop / sell / buyback / deposit / withdraw
+  }
+  switch (page) {
+    case "menu":
+      return "town";
+    case "tavern":
+    case "inn":
+    case "temple":
+    case "dark":
+    case "gate":
+    case "shop":
+      return page;
+    case "darkRevive":
+    case "upgrade":
+      return "dark";
+    default:
+      return "shop"; // shopBuy / shopSell / shopBuyback / shopIdentify / storage / storageDeposit / storageWithdraw
+  }
+}
+
+/** UI-52（M8.5）: ヘッダーの場所の strings キー（town.place.<施設>） */
+export function townPlace(page: TownPage): string {
+  return `town.place.${townFacility(page)}`;
+}
+
+/**
+ * UI-52 / UI-13（M8.5）: 一覧の先頭に固定する見出し（段の問い）の strings キー。ログ（UI-46）には入れない。
+ * 1 行（見出しの幅 224 = 全角 28 字）に収める
+ */
+export function townHeading(page: TownPage): string {
+  if (typeof page === "object") {
+    if ("temple" in page) return "town.ask.templeWho";
+    if ("upSlot" in page) return "town.upgrade.slot";
+    if ("upCat" in page) return "town.upgrade.catalyst";
+    if ("upConfirm" in page) return "town.ask.upConfirm";
+    if ("shop" in page || "buyback" in page) return "town.shop.whom";
+    if ("sell" in page) return "town.ask.sellItem";
+    if ("deposit" in page) return "town.ask.depositItem";
+    return "town.storage.whom"; // withdraw
+  }
+  switch (page) {
+    case "menu":
+      return "town.ask.menu";
+    case "tavern":
+    case "shop":
+    case "storage":
+      return "town.ask.what";
+    case "inn":
+      return "town.ask.inn";
+    case "temple":
+    case "dark":
+      return "town.ask.service";
+    case "darkRevive":
+      return "town.ask.revive";
+    case "upgrade":
+      return "town.upgrade.whom";
+    case "gate":
+      return "town.ask.gate";
+    case "shopBuy":
+      return "town.shop.buyIntro";
+    case "shopSell":
+      return "town.ask.sellWho";
+    case "shopBuyback":
+      return "town.ask.buyback";
+    case "shopIdentify":
+      return "town.ask.identify";
+    case "storageDeposit":
+      return "town.ask.depositWho";
+    case "storageWithdraw":
+      return "town.ask.withdraw";
+  }
 }
 
 /**
@@ -486,7 +566,7 @@ export function townLowersInput(e: TownEntry): boolean {
   return e.kind === "upgrade";
 }
 
-/** UI-52: 街のヘッダー（所持金） */
-export function townHeader(menu: TownMenu, strings: Strings): string {
-  return s(strings, "town.header", { gold: menu.gold });
+/** UI-52（M8.5）: 街のヘッダー（場所と所持金。「{place}　{gold}G」） */
+export function townHeader(menu: TownMenu, strings: Strings, page: TownPage): string {
+  return s(strings, "town.header", { place: s(strings, townPlace(page)), gold: menu.gold });
 }

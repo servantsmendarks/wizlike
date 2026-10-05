@@ -30,6 +30,10 @@ export const ROLES = {
   player: "yellow",
   stairs: "sky",
   mapFloor: "darkGreen",
+  /** UI-13（M8.5）: 街のパーティの帯の状態異常 */
+  status: "orange",
+  /** UI-13（M8.5）: 街のパーティの帯の SAN の段 */
+  san: "sky",
 } as const satisfies Record<string, PaletteName>;
 
 export type Role = keyof typeof ROLES;

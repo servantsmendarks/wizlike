@@ -15,6 +15,7 @@ import {
   layoutWarnings,
   regions,
   saveBannerRect,
+  isTouchException,
   TITLE_BUTTONS,
   TITLE_HEADING_Y,
   TITLE_HINT,
@@ -24,6 +25,7 @@ import {
   TITLE_ROWS,
   TOUCH_EXCEPTIONS,
   TOUCH_MIN_LOGICAL,
+  townLayout,
   UPDATE_NOTICE,
   type Rect,
 } from "../src/presenter/layout";
@@ -35,6 +37,8 @@ const N = data.config.party.size;
 /** 既定の config.ui.layout（16/150/70/64/100）での迷宮の画面の矩形 */
 const L = dungeonLayout(regions(data.config.ui.layout, W), N);
 const HEADER_SETTINGS = L.header.settings;
+/** UI-13（M8.5）: 既定の config での街の画面の矩形 */
+const T = townLayout(regions(data.config.ui.layout, W), N);
 /** 既定の config での SV-23 の帯 */
 const SAVE_BANNER = saveBannerRect(regions(data.config.ui.layout, W), data.config.ui.saveBannerHeight);
 
@@ -57,6 +61,14 @@ const SCREENS: Record<string, Record<string, Rect>> = {
     "CREATION_BUTTONS.back": CREATION_BUTTONS.back,
   },
   town: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
+  // UI-13（M8.5）新しい街の画面: ヘッダーのログと設定、帯の 6 セル（押せる範囲 40×22）、一覧の 9 行、固定の戻る
+  townScreen: {
+    "header.log": T.header.log,
+    "header.settings": T.header.settings,
+    ...Object.fromEntries(T.band.hits.map((r, i) => [`town.band[${i}]`, r])),
+    ...Object.fromEntries(T.list.rows.map((r, i) => [`town.list[${i}]`, r])),
+    back: T.back,
+  },
   // UI-11 末尾が戻る / やめるの一覧（街の各施設・キャンプと酒場の一覧の段・戦闘の呪文・道具・対象）: 幅 168 の行と、一覧の外の戻る
   listFixed: {
     "header.settings": HEADER_SETTINGS,
@@ -129,15 +141,16 @@ describe("layout", () => {
       for (const [name, r] of entries) {
         expect(inside(r, STAGE), `${screen} ${name}`).toBe(true);
         for (const v of [r.x, r.y, r.w, r.h]) expect(Number.isInteger(v), `${screen} ${name}`).toBe(true);
-        if (TOUCH_EXCEPTIONS.includes(name)) continue;
+        if (isTouchException(name)) continue;
         expect(Math.min(r.w, r.h), `${screen} ${name}`).toBeGreaterThanOrEqual(TOUCH_MIN_LOGICAL);
       }
       for (let i = 0; i < entries.length; i++)
         for (let j = i + 1; j < entries.length; j++)
           expect(overlaps(entries[i]![1], entries[j]![1]), `${screen} ${entries[i]![0]} / ${entries[j]![0]}`).toBe(false);
     }
-    // 例外はヘッダーの設定ボタンだけで、ヘッダーの中に収まる
-    expect(TOUCH_EXCEPTIONS).toEqual(["header.settings"]);
+    // 例外はヘッダーの設定ボタン、M8.5 の街のログ・帯・一覧の行だけで、ヘッダーの 2 つはヘッダーの中に収まる
+    expect(TOUCH_EXCEPTIONS).toEqual(["header.settings", "header.log", "town.band", "town.list"]);
+    expect(inside(T.header.log, regions(data.config.ui.layout, W).header)).toBe(true);
     expect(inside(HEADER_SETTINGS, regions(data.config.ui.layout, W).header)).toBe(true);
     // 押せない欄も画面の内側
     expect(inside(CREATION_ERROR, STAGE)).toBe(true);
@@ -421,6 +434,52 @@ describe("layout", () => {
     const g2 = regions({ header: 16, view: 140, message: 80, party: 64, controls: 100 }, W);
     const t2 = dungeonLayout(g2, N).listTall;
     expect([t2.backdrop.y, t2.backdrop.h, t2.rows.length]).toEqual([16, 198, 9]);
+  });
+
+  test("UI-13（M8.5）townLayout: ヘッダー（文字 x4..155・ログ x160..199・設定 x200..239）、絵 240×150、会話の箱、帯 6 セル、見出し、一覧 9 行×22・幅 168、戻る x178 y354。重ならずステージに収まる", () => {
+    expect(T.header).toEqual({
+      text: { x: 4, y: 0, w: 152, h: 16 },
+      log: { x: 160, y: 0, w: 40, h: 16 },
+      settings: { x: 200, y: 0, w: 40, h: 16 },
+    });
+    expect(T.picture).toEqual({ x: 0, y: 16, w: 240, h: 150 });
+    // UI-47 会話の箱: 絵の下端に重なる 3 行（枠 x2..237・y128..163、文字 x7..230・y131..160、▼ x223..230・y153..160）
+    expect(T.talk).toEqual({
+      box: { x: 2, y: 128, w: 236, h: 36 },
+      text: { x: 7, y: 131, w: 224, h: 30 },
+      lines: 3,
+      more: { x: 223, y: 153, w: 8, h: 8 },
+    });
+    expect(inside(T.talk.box, T.picture)).toBe(true);
+    // UI-40 街の判定の箱の下端はビューの y110（ステージ y126。会話の箱の上 2）
+    expect(T.diceBottom).toBe(110);
+    expect(T.band.row).toEqual({ x: 0, y: 166, w: 240, h: 10 });
+    expect(T.band.cells).toEqual([0, 1, 2, 3, 4, 5].map((i) => ({ x: 40 * i, y: 166, w: 40, h: 10 })));
+    expect(T.band.hits).toEqual([0, 1, 2, 3, 4, 5].map((i) => ({ x: 40 * i, y: 166, w: 40, h: 22 })));
+    expect(T.heading).toEqual({ x: 8, y: 178, w: 224, h: 10 });
+    expect(T.list.area).toEqual({ x: 8, y: 190, w: 168, h: 198 });
+    expect(T.list.rows).toEqual(Array.from({ length: 9 }, (_, i) => ({ x: 8, y: 190 + 22 * i, w: 168, h: 22 })));
+    expect(T.back).toEqual({ x: 178, y: 354, w: 56, h: 40 });
+    expect(T.back).toEqual(L.listBack);
+    expect(T.book).toEqual({ x: 0, y: 16, w: 240, h: 284 });
+    // 押せないもの（文字・絵・見出し・一覧の欄）と押せるもの（ログ・設定・帯・戻る）の重なり
+    const parts: [string, Rect][] = [
+      ["header.text", T.header.text],
+      ["header.log", T.header.log],
+      ["header.settings", T.header.settings],
+      ["picture", T.picture],
+      ["band", T.band.row],
+      ["list", T.list.area],
+      ["back", T.back],
+    ];
+    for (const [n, r] of parts) expect(inside(r, STAGE), n).toBe(true);
+    for (let i = 0; i < parts.length; i++)
+      for (let j = i + 1; j < parts.length; j++) expect(overlaps(parts[i]![1], parts[j]![1]), `${parts[i]![0]} / ${parts[j]![0]}`).toBe(false);
+    expect(overlaps(T.heading, T.band.row)).toBe(false);
+    expect(overlaps(T.heading, T.list.area)).toBe(false);
+    for (const r of T.list.rows) expect(inside(r, T.list.area)).toBe(true);
+    // 行は UI-10 の 12 論理 px 以上（TOUCH_MIN_LOGICAL の例外 town.list）
+    expect(Math.min(...T.list.rows.map((r) => r.h))).toBeGreaterThanOrEqual(12);
   });
 
   test("ui §2 パーティ欄がちょうど party.size × 10 なら上の余白を詰める。メッセージに 1 行も入らなければ warn", () => {

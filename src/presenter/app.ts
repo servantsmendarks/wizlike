@@ -454,7 +454,7 @@ export function createApp(o: {
       play.setMode("town");
       // UI-52: ヘッダーに所持金（再生中は前の額のまま。ここで最終の額に描き直す）
       const menu = townMenu(st, data);
-      if (menu !== null) play.header.setText(townHeader(menu, strings));
+      if (menu !== null) play.header.setText(townHeader(menu, strings, townPage));
     } else {
       play.setMode("dungeon");
       const d = st.dive;
@@ -1544,7 +1544,7 @@ export function createApp(o: {
     const d = state.dive;
     if (route === "town") {
       const menu = townMenu(state, data);
-      if (menu !== null) play.header.setText(townHeader(menu, strings));
+      if (menu !== null) play.header.setText(townHeader(menu, strings, townPage));
     } else if (d !== null) showHeaderAt(state, { floor: d.floor, pos: d.pos, facing: d.facing });
     if (resync) syncControls();
   };

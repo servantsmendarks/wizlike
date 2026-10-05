@@ -20,4 +20,11 @@ describe("palette", () => {
     expect(cssVar("stairs")).toBe("--c-stairs");
     for (const r of roles) expect(v[cssVar(r)]).toBe(PALETTE[ROLES[r]]);
   });
+
+  test("UI-13（M8.5）帯の役 status / san はパレットの既存の色（orange / sky）で、死亡 danger・灰 dim・正常 text と互いに違う", () => {
+    expect(ROLES.status).toBe("orange");
+    expect(ROLES.san).toBe("sky");
+    const band = (["text", "dim", "danger", "status", "san"] as const).map((r) => PALETTE[ROLES[r]]);
+    expect(new Set(band).size).toBe(band.length);
+  });
 });

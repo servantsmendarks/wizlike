@@ -25,8 +25,16 @@ export function regions(l: Config["ui"]["layout"], width: number): Regions {
 /** UI-10 の最小の一辺（論理 px）。CSS px の 40 を scale 4/3 で満たす */
 export const TOUCH_MIN_LOGICAL = 30;
 
-/** UI-10 の最小寸法を満たさなくてよい矩形の名前（dungeonLayout の header.settings） */
-export const TOUCH_EXCEPTIONS: readonly string[] = ["header.settings"];
+/**
+ * UI-10 の最小寸法を満たさなくてよい矩形の名前（dungeonLayout の header.settings、M8.5 の townLayout の header.log・
+ * パーティの帯 town.band（40×22）・一覧の行 town.list（高さ 22）。添字付きの名前 "town.band[0]" なども含む）
+ */
+export const TOUCH_EXCEPTIONS: readonly string[] = ["header.settings", "header.log", "town.band", "town.list"];
+
+/** UI-10: name が TOUCH_EXCEPTIONS の名前そのものか、その添字付き（"town.band[2]"） */
+export function isTouchException(name: string): boolean {
+  return TOUCH_EXCEPTIONS.some((e) => name === e || name.startsWith(`${e}[`));
+}
 
 // ---- 迷宮の画面（各領域の左上からの相対座標）
 
@@ -259,6 +267,88 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
       title: { x: overlay.x, y: overlay.y, w: overlay.w, h: MAP_TITLE_H },
       list: { x: overlay.x, y: overlay.y + MAP_TITLE_H, w: overlay.w, h: overlay.h - MAP_TITLE_H },
     },
+  };
+}
+
+// ---- 街の画面（UI-13。M8.5）。ヘッダー 16 / 施設の絵 150 / パーティの帯 10 / 見出し / 一覧 / 戻る。数値は【仮】（decisions 2026-10-06）
+
+/** UI-13: ヘッダーのログのボタンの幅（設定の左に並べる。高さはヘッダー。UI-10 の例外 header.log） */
+const HEADER_LOG_W = 40;
+/** UI-13: パーティの帯の高さ（1 行）と、押せる範囲の高さ（帯と見出しの行。UI-10 の例外 town.band） */
+export const TOWN_BAND_H = 10;
+const TOWN_BAND_HIT_H = 22;
+/** UI-13: 一覧の行の高さ（UI-10 の 12 論理 px 以上。TOUCH_MIN_LOGICAL は満たさない例外 town.list。Pixel 3a で約 32 CSS px） */
+export const TOWN_ROW_H = 22;
+/** UI-13: 見出しと一覧の x と幅（一覧は固定の戻る LIST_BACK_REL の左に幅 168） */
+const TOWN_LIST_X = 8;
+const TOWN_HEADING_W = 224;
+const TOWN_LIST_W = 168;
+/** UI-13: 帯・見出し・一覧の間の余白 */
+const TOWN_GAP = 2;
+/** UI-47: 会話の箱の行数と、箱の左右の余白（ステージの端からの距離）・絵の下端との余白 */
+const TALK_LINES = 3;
+const TALK_MARGIN_X = 2;
+const TALK_MARGIN_BOTTOM = 2;
+/** UI-47: 会話の箱の文字の幅（全角 28 字。UI-43 の禁則で 1 行 28 字以下） */
+const TALK_TEXT_W = 224;
+/** UI-40（M8.5）: 街の判定の箱の下端と会話の箱の上端の間 */
+const TOWN_DICE_GAP = 2;
+
+export type TownLayout = {
+  /** text は場所と所持金、log はログのボタン（UI-46 の履歴を開く）、settings は設定のボタン */
+  header: { text: Rect; log: Rect; settings: Rect };
+  /** UI-61 施設の絵（= ビュー領域。240×150） */
+  picture: Rect;
+  /** UI-47 会話の箱。box は枠、text は文字領域（lines 行）、more は ▼ */
+  talk: { box: Rect; text: Rect; lines: number; more: Rect };
+  /** UI-40 街の判定の箱の下端（ビューの座標。会話の箱の上 TOWN_DICE_GAP） */
+  diceBottom: number;
+  /** パーティの帯。cells は見える 1 行の 6 セル（40×10）、hits は押せる範囲（帯と見出しの行の 40×22） */
+  band: { row: Rect; cells: Rect[]; hits: Rect[] };
+  /** 一覧の見出し（1 行。押せない） */
+  heading: Rect;
+  /** 一覧。area は縦スクロールの欄（行の高さの整数倍）、rows は見える行 */
+  list: { area: Rect; rows: Rect[] };
+  /** UI-11 の固定の戻る（操作領域の x178・y54 の 56×40） */
+  back: Rect;
+  /** UI-59 酒場の図鑑のパネル（ビューの上端から操作領域の上端まで） */
+  book: Rect;
+};
+
+/** UI-13: 街の画面の矩形（ステージ座標）。既定の regions では ヘッダー y0..15、絵 y16..165、帯 y166..175、見出し y178..187、一覧 y190..387（22×9 行）、戻る 178,354 */
+export function townLayout(g: Regions, partySize: number): TownLayout {
+  const h = g.header;
+  const settings: Rect = { x: h.x + h.w - HEADER_SETTINGS_W, y: h.y, w: HEADER_SETTINGS_W, h: h.h };
+  const log: Rect = { x: settings.x - HEADER_LOG_W, y: h.y, w: HEADER_LOG_W, h: h.h };
+  const text: Rect = { x: h.x + HEADER_TEXT_PAD, y: h.y, w: log.x - h.x - 2 * HEADER_TEXT_PAD, h: h.h };
+
+  const v = g.view;
+  const boxH = TALK_LINES * MESSAGE_LINE_H + 2 * (MESSAGE_PAD_Y + 1);
+  const box: Rect = { x: v.x + TALK_MARGIN_X, y: v.y + v.h - TALK_MARGIN_BOTTOM - boxH, w: v.w - 2 * TALK_MARGIN_X, h: boxH };
+  const tText: Rect = { x: box.x + 1 + MESSAGE_PAD_X, y: box.y + 1 + MESSAGE_PAD_Y, w: Math.min(TALK_TEXT_W, box.w - 2 * (1 + MESSAGE_PAD_X)), h: TALK_LINES * MESSAGE_LINE_H };
+  const more: Rect = { x: tText.x + tText.w - MESSAGE_MORE, y: tText.y + tText.h - MESSAGE_MORE, w: MESSAGE_MORE, h: MESSAGE_MORE };
+
+  const bandY = v.y + v.h;
+  const cellW = Math.floor(v.w / Math.max(1, partySize));
+  const cells = Array.from({ length: partySize }, (_, i): Rect => ({ x: v.x + cellW * i, y: bandY, w: cellW, h: TOWN_BAND_H }));
+  const hits = cells.map((r): Rect => ({ ...r, h: TOWN_BAND_HIT_H }));
+
+  const heading: Rect = { x: TOWN_LIST_X, y: bandY + TOWN_BAND_H + TOWN_GAP, w: TOWN_HEADING_W, h: MESSAGE_LINE_H };
+  const listY = heading.y + heading.h + TOWN_GAP;
+  const bottom = g.controls.y + g.controls.h;
+  const count = Math.max(1, Math.floor((bottom - listY) / TOWN_ROW_H));
+  const area: Rect = { x: TOWN_LIST_X, y: listY, w: TOWN_LIST_W, h: count * TOWN_ROW_H };
+  const back = shift(LIST_BACK_REL, g.controls);
+  return {
+    header: { text, log, settings },
+    picture: { ...v },
+    talk: { box, text: tText, lines: TALK_LINES, more },
+    diceBottom: box.y - v.y - TOWN_DICE_GAP,
+    band: { row: { x: v.x, y: bandY, w: v.w, h: TOWN_BAND_H }, cells, hits },
+    heading,
+    list: { area, rows: Array.from({ length: count }, (_, i): Rect => ({ x: area.x, y: area.y + TOWN_ROW_H * i, w: area.w, h: TOWN_ROW_H })) },
+    back,
+    book: { x: v.x, y: v.y, w: v.w, h: g.controls.y - v.y },
   };
 }
 

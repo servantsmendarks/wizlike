@@ -7,7 +7,23 @@ import { townMenu } from "../src/core/rules/town";
 import { upgradePreview } from "../src/core/rules/upgrade";
 import { cloneState, createItemInstance } from "../src/core/state";
 import type { Character, GameState, TownMenu } from "../src/core/types";
-import { samePage, townEntries, townFreshIntro, townHeader, townListTall, townLowersInput, townPageIntro, townParent, townRepair, upgradeConfirmLines, type TownEntry, type TownPage } from "../src/presenter/views/town";
+import {
+  samePage,
+  townEntries,
+  townFacility,
+  townFreshIntro,
+  townHeader,
+  townHeading,
+  townListTall,
+  townLowersInput,
+  townPageIntro,
+  townParent,
+  townPlace,
+  townRepair,
+  upgradeConfirmLines,
+  type TownEntry,
+  type TownPage,
+} from "../src/presenter/views/town";
 import { data, newGame } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
 import { kinsokuLines } from "./helpers/wrap";
@@ -32,6 +48,35 @@ function menuOf(s: GameState): TownMenu {
 
 const back: TownEntry = { kind: "back", label: S["common.back"]! };
 
+/** M8.5: TownPage のすべての種類（オブジェクトのページは代表の値） */
+const ALL_PAGES: readonly TownPage[] = [
+  "menu",
+  "tavern",
+  "inn",
+  "temple",
+  { temple: "resurrect" },
+  "dark",
+  "darkRevive",
+  "upgrade",
+  { upSlot: "c1" },
+  { upCat: { memberId: "c1", slot: "weapon", picked: [] } },
+  { upConfirm: { memberId: "c1", slot: "weapon", picked: [] } },
+  "gate",
+  "shop",
+  "shopBuy",
+  "shopSell",
+  "shopBuyback",
+  "shopIdentify",
+  "storage",
+  "storageDeposit",
+  "storageWithdraw",
+  { shop: "herb" },
+  { sell: "c1" },
+  { buyback: "i1" },
+  { deposit: "c1" },
+  { withdraw: "i1" },
+];
+
 describe("UI-52 街のページ", () => {
   test("UI-52/TW-08/TW-05 施設メニューは 酒場・宿屋・寺院・闇魔術・迷宮へ・店 の 6 枠。ヘッダーは所持金", () => {
     const m = menuOf(town());
@@ -43,8 +88,8 @@ describe("UI-52 街のページ", () => {
       { kind: "page", to: "gate", label: "迷宮へ" },
       { kind: "page", to: "shop", label: "店" },
     ]);
-    expect(townHeader(m, S)).toBe("街　300G");
-    expect(townHeader(menuOf(town({}, 0)), S)).toBe("街　0G");
+    expect(townHeader(m, S, "menu")).toBe("街　300G");
+    expect(townHeader(menuOf(town({}, 0)), S, "menu")).toBe("街　0G");
   });
 
   test("UI-52/TW-04/TW-15 宿屋はランクの行（名前と料金。士気の立つ個室は末尾に「＋士気」）。払えないランクは disabled。末尾が戻る", () => {
@@ -142,7 +187,7 @@ describe("UI-52 街のページ", () => {
     ]);
     expect(e[0]).toEqual({ kind: "pick", to: { upSlot: "c1" }, label: "アルド", disabled: false });
     expect(townParent("upgrade")).toBe("dark");
-    expect(townPageIntro("upgrade", m)).toEqual(["town.upgrade.intro", "town.upgrade.whom"]);
+    expect(townPageIntro("upgrade", m)).toEqual(["town.upgrade.intro"]);
   });
 
   test("UI-52/TW-17 部位の段: EQUIP_SLOTS の順に「部位　品名」、空きは「部位　（なし）」で disabled。押すと触媒の段（選択なし）", () => {
@@ -160,7 +205,7 @@ describe("UI-52 街のページ", () => {
       back,
     ]);
     expect(townParent(page)).toBe("upgrade");
-    expect(townPageIntro(page, m)).toEqual(["town.upgrade.slot"]);
+    expect(townPageIntro(page, m)).toEqual([]);
   });
 
   test("UI-52/TW-17 触媒の段: 鑑定済みの汎用装備に ○ / ● の印。押すと付け外し、maxCatalysts（3）個選ぶと未選択は disabled。決める → 確認の段", () => {
@@ -190,7 +235,7 @@ describe("UI-52 街のページ", () => {
     expect(e3[3]).toEqual({ kind: "upPick", to: { upCat: { ...sel, picked: [c, a, b, d] } }, label: "○短剣", disabled: true });
     expect(e3[4]).toEqual({ kind: "page", to: { upConfirm: full }, label: "決める" });
     expect(townParent({ upCat: full })).toEqual({ upSlot: "c1" });
-    expect(townPageIntro({ upCat: full }, m)).toEqual(["town.upgrade.catalyst"]);
+    expect(townPageIntro({ upCat: full }, m)).toEqual([]);
     // 候補が無ければ空の行 → 決める → 戻る（触媒なしでも鍛えられる）
     expect(townEntries({ upCat: { ...sel, memberId: "c2" } }, m, S)).toEqual([
       { kind: "empty", label: "触媒にできる物がない", disabled: true },
@@ -267,16 +312,105 @@ describe("UI-52 街のページ", () => {
     expect(townFreshIntro(xs, [])).not.toBe(xs);
   });
 
-  test("UI-52/TW-17（M7）広げた強化の段（鍛える者・部位・触媒）に入ったときの語りは、窓の下 2 行（全角 29 字 × 2）に収まる", () => {
-    const m = menuOf(town());
+  test("UI-52（M8.5）townHeading: 全ページで strings にある params の無いキーで、1 行（見出しの幅 224 = 全角 28 字）に収まる", () => {
+    for (const p of ALL_PAGES) {
+      const k = townHeading(p);
+      expect(S[k], JSON.stringify(p)).toBeDefined();
+      expect(S[k], k).not.toContain("{");
+      expect(kinsokuLines(S[k]!, 28), k).toHaveLength(1);
+    }
+    expect(townHeading("menu")).toBe("town.ask.menu");
+    expect(townHeading("inn")).toBe("town.ask.inn");
+    expect(townHeading("gate")).toBe("town.ask.gate");
+    expect(townHeading("upgrade")).toBe("town.upgrade.whom");
+    expect(townHeading({ upSlot: "c1" })).toBe("town.upgrade.slot");
+    expect(townHeading("shopBuy")).toBe("town.shop.buyIntro");
+    expect(townHeading({ shop: "herb" })).toBe("town.shop.whom");
+    expect(townHeading({ withdraw: "i1" })).toBe("town.storage.whom");
+    expect(S["town.ask.inn"]).toBe("どの部屋にする？");
+  });
+
+  test("UI-52（M8.5）townPageIntro は問いを含まない（見出し townHeading のキーと重ならず、語りの文に「？」が無い）", () => {
+    const s = town({ c3: { life: "dead", hp: 0 } });
+    s.morale = { rankId: "good" };
+    const m = menuOf(s);
+    const headings = new Set(ALL_PAGES.map((p) => townHeading(p)));
+    for (const p of ALL_PAGES) {
+      for (const k of townPageIntro(p, m)) {
+        expect(headings.has(k), `${JSON.stringify(p)} ${k}`).toBe(false);
+        // 救済の申し出（TW-30）は GM の台詞の中の問い（「」の中）なので除く
+        if (k !== "town.mercy.offer") expect(S[k], k).not.toContain("？");
+      }
+    }
+    expect(S["town.inn.intro"]).toBe("宿の主人が鍵を並べる。");
+    expect(S["town.dungeonGate.intro"]).toBe("迷宮の入口。");
+    expect(S["town.shop.sellIntro"]).toBe("鑑定していない品は、見た目どおりの値で引き取るそうだ。");
+  });
+
+  test("UI-61（M8.5）townFacility: menu は town、寺院のサービスは temple、闇魔術の灰から戻す・強化の各段は dark、店と倉庫の各段は shop。townPlace は town.place.<施設>", () => {
     const sel = { memberId: "c1", slot: "weapon" as const, picked: [] };
-    /** 1 文の行数（全角 29 字で、禁則つきで折り返す。UI-43 の WRAP_STYLE。helpers/wrap.ts） */
-    const rows = (text: string): number => kinsokuLines(text, 29).length;
-    for (const p of ["upgrade", { upSlot: "c1" }, { upCat: sel }] as TownPage[]) {
-      expect(townListTall(p)).toBe(true);
-      const keys = townPageIntro(p, m);
-      expect(keys.length).toBeGreaterThan(0);
-      expect(keys.map((k) => rows(S[k]!)).reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(2);
+    const want: [TownPage, string][] = [
+      ["menu", "town"],
+      ["tavern", "tavern"],
+      ["inn", "inn"],
+      ["temple", "temple"],
+      [{ temple: "cure" }, "temple"],
+      ["dark", "dark"],
+      ["darkRevive", "dark"],
+      ["upgrade", "dark"],
+      [{ upSlot: "c1" }, "dark"],
+      [{ upCat: sel }, "dark"],
+      [{ upConfirm: sel }, "dark"],
+      ["gate", "gate"],
+      ["shop", "shop"],
+      ["shopBuy", "shop"],
+      ["shopSell", "shop"],
+      ["shopBuyback", "shop"],
+      ["shopIdentify", "shop"],
+      ["storage", "shop"],
+      ["storageDeposit", "shop"],
+      ["storageWithdraw", "shop"],
+      [{ shop: "herb" }, "shop"],
+      [{ sell: "c1" }, "shop"],
+      [{ buyback: "i1" }, "shop"],
+      [{ deposit: "c1" }, "shop"],
+      [{ withdraw: "i1" }, "shop"],
+    ];
+    expect(want.map(([p]) => townFacility(p))).toEqual(want.map(([, f]) => f));
+    expect(want.length).toBe(ALL_PAGES.length);
+    for (const [p, f] of want) {
+      expect(townPlace(p)).toBe(`town.place.${f}`);
+      expect(S[townPlace(p)], f).toBeDefined();
+    }
+  });
+
+  test("UI-52（M8.5）townHeader は「{place}　{gold}G」（場所はページの施設）", () => {
+    const m = menuOf(town());
+    expect(townHeader(m, S, "menu")).toBe("街　300G");
+    expect(townHeader(m, S, "inn")).toBe("宿屋　300G");
+    expect(townHeader(m, S, { upSlot: "c1" })).toBe("闇魔術　300G");
+    expect(townHeader(m, S, "gate")).toBe("迷宮の入口　300G");
+    expect(townHeader(m, S, { withdraw: "i1" })).toBe("店　300G");
+  });
+
+  test("UI-47（M8.5）街で語る固定の文（ページの語り・救済の申し出・士気・街に入る・見回す・対象なし）は、会話の箱の 3 行（全角 28 字。禁則つき）に収まる", () => {
+    const s = town({ c3: { life: "dead", hp: 0 } });
+    s.morale = { rankId: "good" };
+    const m = menuOf(s);
+    const keys = new Set<string>([
+      "town.enter",
+      "town.mercy.offer",
+      "town.temple.none",
+      "town.look.crowd",
+      "town.look.quiet",
+      "town.look.gm",
+      "town.look.board",
+    ]);
+    for (const p of ALL_PAGES) for (const k of townPageIntro(p, m)) keys.add(k);
+    expect(keys.has("town.inn.moraleNow")).toBe(true);
+    for (const k of keys) {
+      expect(S[k], k).toBeDefined();
+      expect(kinsokuLines(S[k]!, 28).length, `${k}: ${S[k]}`).toBeLessThanOrEqual(3);
     }
   });
 
@@ -422,7 +556,7 @@ describe("UI-52 街のページ", () => {
       "long_sword",
       "short_bow",
     ]);
-    expect(townPageIntro("shopBuy", menuOf(town()))).toEqual(["town.shop.buyIntro"]);
+    expect(townPageIntro("shopBuy", menuOf(town()))).toEqual([]);
     expect(townParent("shopBuy")).toBe("shop");
   });
 
@@ -443,7 +577,7 @@ describe("UI-52 街のページ", () => {
     expect(townEntries({ shop: "return_thread" }, m, S).filter((e) => e.kind === "buy").every((e) => e.kind === "buy" && e.disabled)).toBe(true);
     expect(townEntries({ shop: "long_sword" }, m, S).filter((e) => e.kind === "buy").every((e) => e.kind === "buy" && e.disabled)).toBe(true);
     expect(townEntries({ shop: "staff" }, m, S).filter((e) => e.kind === "buy" && !e.disabled).length).toBe(4);
-    expect(townPageIntro({ shop: "herb" }, m)).toEqual(["town.shop.whom"]);
+    expect(townPageIntro({ shop: "herb" }, m)).toEqual([]);
     for (const k of ["town.shop.intro", "town.shop.whom", "town.shop.buyIntro", "town.shop.sellIntro", "town.shop.buybackIntro", "town.shop.identifyIntro", "town.storage.intro", "town.storage.whom"]) {
       expect(S[k], k).toBeDefined();
       expect(S[k], k).not.toContain("{");
@@ -506,7 +640,7 @@ describe("UI-52 街のページ", () => {
     expect(townEntries({ buyback: sword }, m, S).filter((e) => e.kind === "buyback").every((e) => e.kind === "buyback" && e.disabled)).toBe(true);
     expect(townEntries("shopBuyback", menuOf(town()), S)).toEqual([{ kind: "empty", label: "買い戻せる品はない", disabled: true }, back]);
     expect(townParent({ buyback: twin })).toBe("shopBuyback");
-    expect(townPageIntro({ buyback: twin }, m)).toEqual(["town.shop.whom"]);
+    expect(townPageIntro({ buyback: twin }, m)).toEqual([]);
   });
 
   test("UI-52/IT-65 鑑定は全員の未鑑定の品（持ち主・未鑑定の名前・品ごとの鑑定料）。払えない品は disabled。押すと identify", () => {
@@ -572,7 +706,7 @@ describe("UI-52 街のページ", () => {
     expect(townParent("storageDeposit")).toBe("storage");
     expect(townParent({ deposit: "c1" })).toBe("storageDeposit");
     expect(townParent({ withdraw: kept })).toBe("storageWithdraw");
-    expect(townPageIntro({ withdraw: kept }, m)).toEqual(["town.storage.whom"]);
+    expect(townPageIntro({ withdraw: kept }, m)).toEqual([]);
   });
 
   test("UI-52 townRepair: townMenu を取り直して品や者が消えたページは 1 つ上へ。成り立つページはそのまま", () => {
