@@ -938,3 +938,8 @@
 - 2026-10-06 presenter(M8.5): 街の判定の箱の下端はビューの y110（townLayout の diceBottom【仮】。会話の箱の上 2px）。dice.ts の diceBox に bottom の引数（既定 DICE_BOX_BOTTOM = 146）、DiceView に setBottom を足し、dungeon.ts の setMode が街なら y110・それ以外は 146 にする。強化の箱の待ち（続く語りの後でタップ 1 回）は playback のまま（▼ は narrator 経由で会話の箱に出る）。
 - 2026-10-06 presenter(M8.5): 街のページに入ったときの語り（goTownPage）は全部 say(x, skip)（どの文も文字送り）にした（M7 の「最後の 1 文だけ文字送り」は、say が送り途中の前の文を完了させるメッセージ窓のためのもので、会話の箱は文ごとに待つので要らない）。
 - 2026-10-06 presenter(M8.5): 会話の箱は閉じている間は display:none（絵が全部見える）で、setMode では出し入れしない（開閉は会話のモデルだけが決める。街を出るときは app が flush する）。
+- 2026-10-06 presenter(M8.5): 衝突（ユーザーの確認待ち）。ユーザーの指示は会話の箱に「噂話」を出すとしているが、宿の主人の噂話 dungeon.gossip は core が迷宮への入場で screen{dungeon} → dungeon.enter → dungeon.gossip の順に語る（2026-10-05 core(M7) の行）ので、M8.5（core を変えない）では迷宮の窓とログに出し、会話の箱には出さない。UI-47 の列挙と M8.5 の完了条件 3 から噂話を外した。代替案は core の入場で噂話を screen{dungeon} の前に語ること（core の変更になるのでユーザーの判断が要る）。
+- 2026-10-06 presenter(M8.5): 一覧の見出し（controls-list-heading）は pointer-events none にした。帯の押せる範囲 40×22（y166..187）の上に重なり、DOM の順で見出しが上に描かれるため、押下を下の帯のセルへ通す（帯を 40×10 に縮めると UI-10 を大きく割るのでしない）。
+- 2026-10-06 presenter(M8.5): 酒場のキャンプを開いている間も、パネルの上に描かれる会話の箱はタップと Enter / Space で進める・閉じる（箱が閉じていれば Enter はキャンプへ）。キャンプのコマンドの語りが箱に出て、閉じられずにパネルの下端を覆い続けたため。キャンプ中の語りを窓やログだけに回す案より変更が小さい。
+- 2026-10-06 presenter(M8.5): 街から迷宮へ出るとき（onScreen で from が town）、迷宮のメッセージ窓の表示だけを空にする（MessageWindow.clearView。履歴は残す）。街の語りは窓の DOM に行を足さないので、前に街へ入ったときの帰還・救済の申し出の文が入場の直後の窓に残って見えたため。
+- 2026-10-06 presenter(M8.5): 帯の省略の記号は strings の town.band.ellipsis「…」から引く（§3-10）。fitName は記号を引数で受け、幅は textUnits で数える。
