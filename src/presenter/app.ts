@@ -104,7 +104,7 @@ import { createSaveBanner } from "./views/save-banner";
 import { createUpdateNotice } from "./views/update-notice";
 import { createTitleScreen, titleEntries, titleHint, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
 import { formatWipeSummary } from "./views/wipe";
-import { townEntries, townHeader, townPageIntro, townParent, townRepair, upgradeConfirmLines, type TownEntry, type TownPage } from "./views/town";
+import { townEntries, townHeader, townLowersInput, townPageIntro, townParent, townRepair, upgradeConfirmLines, type TownEntry, type TownPage } from "./views/town";
 
 export type Route = "title" | "creation" | "custom" | "town" | "dungeon" | "battle";
 export type Overlay = null | "map" | "debug" | "camp" | "wipe" | "history" | "settings";
@@ -512,9 +512,13 @@ export function createApp(o: { stage: HTMLElement; data: GameData; settings: Set
             syncControls();
             return;
           case "upgrade":
-            // TW-17: 送った後は部位の段に戻る（判定の箱は playback が続く語りの後でタップを 1 回待つ）
+            // TW-17: 送った後は部位の段に戻る（判定の箱は playback が続く語りの後でタップを 1 回待つ）。
+            // UI-44（M7）: 待ちの間は所持金・一覧・戻るを出さない（再生の最後の sync で出し直す。rejected なら再生が無いのでここで描き直す）
             townPage = { upSlot: e.memberId };
-            void run({ type: "town.upgrade", memberId: e.memberId, slot: e.slot, catalysts: e.catalysts });
+            if (townLowersInput(e)) lowerInput();
+            void run({ type: "town.upgrade", memberId: e.memberId, slot: e.slot, catalysts: e.catalysts }).then((r) => {
+              if (r === null || r.rejected) sync(state);
+            });
             return;
           // M7: 売る・買い戻す・鑑定・預ける・引き出すの後も同じページにとどまる（品が消えたページは sync の townRepair で 1 つ上へ）
           case "sell":

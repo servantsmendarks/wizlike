@@ -446,6 +446,15 @@ export function upgradeConfirmLines(page: TownPage, menu: TownMenu, preview: Upg
   return lines;
 }
 
+/**
+ * UI-44（M7）: 押して送ったら、再生が終わるまで入力の UI（ヘッダーの所持金・一覧と固定の戻る）を下げる項目か。
+ * 判定の箱（UI-40）を出してタップを待つ強化（TW-17）の「鍛える」だけ（戦闘の逃走・全滅の 2d10 と同じ扱い）。
+ * 他の項目は判定の箱を出さないので、一覧を出したまま再生する
+ */
+export function townLowersInput(e: TownEntry): boolean {
+  return e.kind === "upgrade";
+}
+
 /** UI-52: 街のヘッダー（所持金） */
 export function townHeader(menu: TownMenu, strings: Strings): string {
   return s(strings, "town.header", { gold: menu.gold });

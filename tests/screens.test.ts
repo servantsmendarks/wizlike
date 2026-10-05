@@ -450,12 +450,13 @@ describe("入力と Command", () => {
     expect(app).toMatch(/townPage = townRepair\(townPage, menu\);\s*const ents = townEntries\(townPage, menu, strings, previewOf\(townPage\)\);/);
   });
 
-  test("UI-52/TW-17（M7）強化: 触媒の行は語りなしで段を替え、鍛えるは部位の段に戻してから town.upgrade を送る。確認の段は upgradePreview の値で語る（ソースの検査）", () => {
+  // M7（2026-10-05）: 鍛えるは送る前に lowerInput（UI-44）し、rejected なら sync で戻すようにしたので、upgrade の分岐の期待を改めた
+  test("UI-52/TW-17/UI-44（M7）強化: 触媒の行は語りなしで段を替え、鍛えるは部位の段に戻して入力の UI を下げてから town.upgrade を送り、rejected なら sync で戻す。確認の段は upgradePreview の値で語る（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
     expect(body).toMatch(/case "upPick":\s*townPage = e\.to;\s*syncControls\(\);\s*return;/);
     expect(body).toMatch(
-      /case "upgrade":\s*townPage = \{ upSlot: e\.memberId \};\s*void run\(\{ type: "town\.upgrade", memberId: e\.memberId, slot: e\.slot, catalysts: e\.catalysts \}\);\s*return;/,
+      /case "upgrade":\s*townPage = \{ upSlot: e\.memberId \};\s*if \(townLowersInput\(e\)\) lowerInput\(\);\s*void run\(\{ type: "town\.upgrade", memberId: e\.memberId, slot: e\.slot, catalysts: e\.catalysts \}\)\.then\(\(r\) => \{\s*if \(r === null \|\| r\.rejected\) sync\(state\);\s*\}\);\s*return;/,
     );
     expect(app).toMatch(/upgradePreview\(state, data, page\.upConfirm\.memberId, page\.upConfirm\.slot, page\.upConfirm\.picked\)/);
     expect(app).toMatch(/upgradeConfirmLines\(page, menu, previewOf\(page\), strings\)/);

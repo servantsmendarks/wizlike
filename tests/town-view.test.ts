@@ -7,7 +7,7 @@ import { townMenu } from "../src/core/rules/town";
 import { upgradePreview } from "../src/core/rules/upgrade";
 import { cloneState, createItemInstance } from "../src/core/state";
 import type { Character, GameState, TownMenu } from "../src/core/types";
-import { samePage, townEntries, townHeader, townPageIntro, townParent, townRepair, upgradeConfirmLines, type TownEntry } from "../src/presenter/views/town";
+import { samePage, townEntries, townHeader, townLowersInput, townPageIntro, townParent, townRepair, upgradeConfirmLines, type TownEntry } from "../src/presenter/views/town";
 import { data, newGame } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
 
@@ -223,6 +223,29 @@ describe("UI-52 街のページ", () => {
     expect(townEntries({ upConfirm: sel }, m, S, null)[0]).toMatchObject({ disabled: true });
     expect(upgradeConfirmLines({ upConfirm: sel }, m, null, S)).toEqual([]);
     expect(upgradeConfirmLines("dark", m, p, S)).toEqual([]);
+  });
+
+  test("UI-44/TW-17 townLowersInput: 判定の箱でタップを待つ 鍛える だけが、送ったら再生の間 所持金・一覧・戻るを下げる。他の街の項目（買う・売る・宿・寺院・闇魔術・戻る）は下げない", () => {
+    const s = town({}, 300);
+    const cat = createItemInstance(s, { itemId: "dagger", level: 0, identified: true });
+    s.party[0]!.inventory.push(cat);
+    const m = menuOf(s);
+    const sel = { memberId: "c1", slot: "weapon" as const, picked: [cat] };
+    const confirm = townEntries({ upConfirm: sel }, m, S, upgradePreview(s, data, "c1", "weapon", [cat]));
+    expect(confirm.map((e) => [e.kind, townLowersInput(e)])).toEqual([
+      ["upgrade", true],
+      ["back", false],
+    ]);
+    const others = [
+      ...townEntries("inn", m, S),
+      ...townEntries({ temple: "cure" }, m, S),
+      ...townEntries("darkRevive", m, S),
+      ...townEntries("shopBuy", m, S),
+      ...townEntries({ shop: "herb" }, m, S),
+      ...townEntries({ sell: "c1" }, m, S),
+    ];
+    expect(others.length).toBeGreaterThan(6);
+    expect(others.filter((e) => townLowersInput(e))).toEqual([]);
   });
 
   test("UI-52/TW-17 townRepair: 消えた触媒は選択から外し、部位が対象にできなくなれば部位の段、本人がいなければ者の段へ。samePage は選択まで比べる", () => {
