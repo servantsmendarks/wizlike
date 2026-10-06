@@ -143,6 +143,7 @@
   "town.mercy.done": "{name}が卓に戻ってきた。",
   "town.dungeonGate.intro": "迷宮の入口。",
   "town.gate.notReady": "{name}（準備中）",
+  "town.gate.notReadyReason": "{name}はまだ道が開いていない。",
   "town.title": "街",
   "town.menu.dungeon": "迷宮へ",
   "town.header": "{place}　{gold}G",

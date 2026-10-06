@@ -473,18 +473,19 @@ describe("UI-52 街のページ", () => {
 
   test("UI-52/TW-11 迷宮の入口は開放済みの迷宮の行。行動可能な者がいなければ disabled", () => {
     const d01 = data.dungeons.find((d) => d.id === "d01")!.name;
-    expect(townEntries("gate", menuOf(town()), S)).toEqual([{ kind: "enter", dungeonId: "d01", label: d01, disabled: false }, back]);
+    expect(townEntries("gate", menuOf(town()), S)).toEqual([{ kind: "enter", dungeonId: "d01", label: d01, disabled: false, notReady: null }, back]);
     const allDead = town(Object.fromEntries(["c1", "c2", "c3", "c4", "c5", "c6"].map((id) => [id, { life: "dead" as const, hp: 0 }])));
-    expect(townEntries("gate", menuOf(allDead), S)).toEqual([{ kind: "enter", dungeonId: "d01", label: d01, disabled: true }, back]);
+    expect(townEntries("gate", menuOf(allDead), S)).toEqual([{ kind: "enter", dungeonId: "d01", label: d01, disabled: true, notReady: null }, back]);
   });
 
-  test("UI-52/DG-35 迷宮の入口の準備中の行は town.gate.notReady のラベルで dim（M9）", () => {
+  test("UI-52/DG-35/TW-11 迷宮の入口の準備中の行は town.gate.notReady のラベルで dim、押したときの理由の文 town.gate.notReadyReason を持つ（M9）", () => {
     const s = town();
     s.progress.unlockedDungeons.push("d02", "d03");
     expect(townEntries("gate", menuOf(s), S)).toEqual([
-      { kind: "enter", dungeonId: "d01", label: "試しの坑道", disabled: false },
-      { kind: "enter", dungeonId: "d02", label: "沈んだ聖堂", disabled: false },
-      { kind: "enter", dungeonId: "d03", label: "灰の地下墓所（準備中）", disabled: true },
+      { kind: "enter", dungeonId: "d01", label: "試しの坑道", disabled: false, notReady: null },
+      { kind: "enter", dungeonId: "d02", label: "沈んだ聖堂", disabled: false, notReady: null },
+      // UI-52 / TW-11（M9 実機 B2）: 押したときに会話の箱へ出す理由の 1 文（準備中かは core の notReady）
+      { kind: "enter", dungeonId: "d03", label: "灰の地下墓所（準備中）", disabled: true, notReady: "灰の地下墓所はまだ道が開いていない。" },
       back,
     ]);
   });

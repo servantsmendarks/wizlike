@@ -558,9 +558,22 @@ export function createApp(o: {
    * 街の項目 → ページの移動か Command（料金・可否は core が決める。UI-35）。
    * UI-47: 一覧・戻る（と数字キー）は、先に会話の箱を打ち切ってから動く（残りの文はログに入っている）
    */
+  const notReadyReason = (e: TownEntry): Pick<ControlItem, "onDisabled"> => {
+    const reason = e.kind === "enter" ? e.notReady : null;
+    if (reason === null) return {};
+    return {
+      onDisabled: () =>
+        guard(() => {
+          play.talk.flush();
+          void narrator.say(reason, store.get().skipAnimations);
+        }),
+    };
+  };
   const townItem = (e: TownEntry): ControlItem => ({
     label: e.label,
     disabled: "disabled" in e ? e.disabled : false,
+    // UI-52 / TW-11（M9）: 準備中の迷宮の dim の行を押したら、会話の箱に理由の 1 文（準備中かは core の notReady）
+    ...notReadyReason(e),
     onSelect: () =>
       guard(() => {
         play.talk.flush();

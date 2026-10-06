@@ -60,7 +60,8 @@ export type TownEntry =
   /** M7: 一覧が空（「売れる物がない」など）。押しても何もしない */
   | { kind: "empty"; label: string; disabled: true }
   | { kind: "mercy"; memberId: string; label: string }
-  | { kind: "enter"; dungeonId: string; label: string; disabled: boolean }
+  /** notReady: 準備中（DG-35。core の notReady）なら押したときに会話の箱へ出す理由の文、そうでなければ null（UI-52 / TW-11。M9） */
+  | { kind: "enter"; dungeonId: string; label: string; disabled: boolean; notReady: string | null }
   /** TW-05: 店の売り物の行（名前と価格。払えなければ disabled）。押すと { shop: itemId } のページへ */
   | { kind: "shopItem"; itemId: string; label: string; disabled: boolean }
   /** TW-05: 持たせるメンバーの行（名前と所持枠の空き。空きが無いか払えなければ disabled）。押すと town.shop の buy */
@@ -225,6 +226,7 @@ export function townEntries(page: TownPage, menu: TownMenu, strings: Strings, pr
         dungeonId: d.id,
         label: d.notReady ? s(strings, "town.gate.notReady", { name: d.name }) : d.name,
         disabled: !d.canEnter,
+        notReady: d.notReady ? s(strings, "town.gate.notReadyReason", { name: d.name }) : null,
       }),
     );
     return [...rows, back];

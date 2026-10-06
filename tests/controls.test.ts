@@ -479,7 +479,7 @@ describe("controls", () => {
 });
 
 describe("UI-66 決定・取り消しの音", () => {
-  test("UI-66 pick で ok、disabled では鳴らない、固定の戻る・閉じるで cancel（タップでも select でも）", () => {
+  test("UI-66/UI-52 pick で ok、disabled では鳴らない（onDisabled だけ呼ぶ）、固定の戻る・閉じるで cancel（タップでも select でも）", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);
     const L = dungeonLayout(g, data.config.party.size);
@@ -514,6 +514,14 @@ describe("UI-66 決定・取り消しの音", () => {
     c.select(0);
     c.select(2);
     expect(sounds).toEqual(["ok", "cancel", "ok", "cancel"]);
+    // UI-52（M9 実機 B2）: disabled の項目を押すと onDisabled だけを呼ぶ（onSelect は呼ばず、音も鳴らさない）
+    sounds.length = 0;
+    const got: string[] = [];
+    c.setList([{ label: "n0", onSelect: () => got.push("select"), disabled: true, onDisabled: () => got.push("disabled") }, { label: "n1", onSelect: () => {} }]);
+    created.find((e) => e.className === "controls-list")!.children[0]!.tap();
+    c.select(0);
+    expect(got).toEqual(["disabled", "disabled"]);
+    expect(sounds).toEqual([]);
     // 固定しない一覧の末尾は ok
     sounds.length = 0;
     c.setList([{ label: "a", onSelect: () => {} }, { label: "b", onSelect: () => {} }]);

@@ -15,7 +15,14 @@ export type DpadAction = "forward" | "left" | "right" | "around";
 export type ControlsMode = "dpad" | "list" | "close" | "map" | "battle" | "autoStop" | "none";
 /** disabled なら dim 色で出し、押しても onSelect を呼ばない */
 /** onFocus は一覧の行に pointerenter / pointerdown したとき（戦闘の対象の注目。UI-54。押しただけで、選ぶのは離したとき） */
-export type ControlItem = { label: string; onSelect(): void; disabled?: boolean; onFocus?(): void };
+export type ControlItem = {
+  label: string;
+  onSelect(): void;
+  disabled?: boolean;
+  onFocus?(): void;
+  /** UI-52（M9）: disabled の項目を押したときだけ呼ぶ（理由の文を出すなど。音は鳴らさない） */
+  onDisabled?(): void;
+};
 /** 枠の配置（UI-54）。party は戦闘のパーティの選択の 4 枠、member はメンバーの 5 枠、camp はキャンプの 8 枠（UI-53） */
 export type BattleSlots = "party" | "member" | "camp";
 
@@ -304,9 +311,12 @@ export function createControls(o: {
     setShown(autoStop, mode === "autoStop");
   };
 
-  /** disabled の見た目（dim 色）。押しても onSelect を呼ばない。back は固定の戻る（UI-66 の取り消しの音） */
+  /** disabled の見た目（dim 色）。押しても onSelect を呼ばない（onDisabled があればそれだけ呼ぶ）。back は固定の戻る（UI-66 の取り消しの音） */
   const pick = (it: ControlItem, back = false): void => {
-    if (it.disabled === true) return;
+    if (it.disabled === true) {
+      it.onDisabled?.();
+      return;
+    }
     o.onSound?.(back ? "cancel" : "ok");
     it.onSelect();
   };

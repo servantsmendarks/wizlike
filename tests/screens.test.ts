@@ -524,6 +524,15 @@ describe("入力と Command", () => {
     expect(app).toContain("talkBlink: () => !store.get().skipAnimations,");
   });
 
+  test("UI-52/TW-11（M9 実機 B2）準備中の迷宮の行（townEntries の notReady）を押すと、会話の箱を打ち切ってから理由の文を会話の箱に出す（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const item = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(item).toContain("...notReadyReason(e),");
+    const fn = /const notReadyReason = \(e: TownEntry\): Pick<ControlItem, "onDisabled"> => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(fn).toContain('const reason = e.kind === "enter" ? e.notReady : null;');
+    expect(fn).toMatch(/onDisabled: \(\) =>\s*guard\(\(\) => \{\s*play\.talk\.flush\(\);\s*void narrator\.say\(reason, store\.get\(\)\.skipAnimations\);\s*\}\),/);
+  });
+
   test("UI-47（M8.5）一覧・戻る・数字（townItem）と Esc は会話を打ち切ってから動き、Enter は会話の箱が開いていれば箱のタップ。箱と施設の絵のタップは再生の外・overlay なし（キャンプは除く）の街で talk.tap（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const item = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
