@@ -7,6 +7,12 @@
 // M7-解毒（2026-10-05 ユーザー指示）: 店で薬草の後にパーティ全体の手持ちの解毒草を 2 個まで、戦闘の後に毒の者がいれば解毒草を使い、寺院で蘇生・闇魔術の後に毒を治す（cure）。
 // 累積の評価は資産 = 所持金 + 手持ちの消耗品（パーティ全員の inventory の consumable）の購入価格の合計で、初期の資産からの差（所持金だけの差も参考に出す）。
 // ボットの値（BFS 距離 6、戦闘数、上限 3000 歩、潜行の回数、薬草の目標 6 個）はテストの定数で、ゲームの調整値ではない。
+// M9（2026-10-06 ユーザー指示「ボットを d01 の 2 階と、d01 クリア後の d02 まで潜らせる」）: 上の 2 つ（旧ルート。d01 の 1 階だけ）はそのまま残し、
+// 進行ボット（route progress。帰る条件はセオリーと同じ）を足す。d01 の 1 階は、降りる条件（全員 alive・全員 L ≥ DESCEND_LEVEL）を満たせば
+// 上り階段から下り階段へ BFS の最短で歩いて降り、満たさなければ旧ルートと同じく上り階段の近傍を歩く。2 階（最下層）では
+// ボスに挑む条件（全員 alive・全員 L ≥ BOSS_LEVEL・前衛の HP の合計 ≥ BOSS_FRONT_HP_PCT%）を満たせばボスへ歩いて戦い、勝てばテレポーターで街へ。
+// 満たさなければ 2 階の上り階段から BFS ≤ NEAR を歩く。帰りは糸が無ければ階ごとに上り階段へ歩いて ascend / exit。
+// d01 を踏破した後は d02 の 1 階だけを旧ルートと同じ規則で歩き、d02 に D02_DIVES 回潜ったらそのシードを終える。
 import { expect } from "vitest";
 import { execute } from "../../src/core/engine";
 import { createRng, randInt, type RngState } from "../../src/core/rng";
@@ -35,30 +41,46 @@ const THEORY_BATTLE_CAP = 8; // 【仮】M7-8戦: セオリーボットはこの
 const HERB_PRICE = itemOf(data, HERB).price;
 const ANTIDOTE_PRICE = itemOf(data, ANTIDOTE).price;
 const THREAD_PRICE = itemOf(data, THREAD).price;
+// M9 進行ボットの定数（テストの定数で、ゲームの調整値ではない）
+export const PROGRESS_DIVES = 15; // 1 シードあたりの潜行の上限
+export const D02_DIVES = 3; // d02 にこの回数潜ったらそのシードを終える
+export const DESCEND_LEVEL = 3; // 下の階へ降りる条件: 全員 alive かつ全員の level がこれ以上
+const BOSS_LEVEL = 4; // ボスに挑む条件: 全員の level がこれ以上
+const BOSS_FRONT_HP_PCT = 70; // ボスに挑む条件: 前衛（frontLineIds）の HP の合計がこの % 以上
+/** M9 で足した敵（死因の集計用） */
+export const M9_MONSTERS = ["dusk_bat", "drowsy_slime", "drowned_acolyte", "glass_moth", "choir_wraith", "font_mire", "stone_gazer", "sunken_bishop"];
 
-export type BotKind = { label: string; shouldReturn: (c: Campaign) => boolean };
+/**
+ * route progress は M9 の進行ボット。descendLevel / bossLevel はその降りる条件・ボスに挑む条件の level（省略は DESCEND_LEVEL / BOSS_LEVEL。
+ * 1 なら level を問わない。比較と煙テスト用）
+ */
+export type BotKind = { label: string; shouldReturn: (c: Campaign) => boolean; route?: "progress"; descendLevel?: number; bossLevel?: number };
+
+/** セオリーボットの帰る条件（M9 の進行ボットも同じ規則を使う） */
+function theoryShouldReturn(c: Campaign): boolean {
+  const s = c.state;
+  if (c.battles >= THEORY_BATTLE_CAP) return true; // M7-8戦（ユーザー指示）
+  if (s.party.some((x) => c.aliveAtStart.includes(x.id) && x.life !== "alive")) return true; // 潜行の開始時に alive だった者が dead / ash になった（ユーザー決定）
+  // CB-14 の繰り上げ後の前衛（frontLineIds は state.party と config.party.frontRow だけを見るので、戦闘外の迷宮の state でも同じ規則で働く）。
+  // そのうち life が alive の者（麻痺・石化・睡眠・SAN 0 も含む）だけで、HP の合計 × 2 < 最大 HP の合計なら帰る（ユーザー決定）。
+  // 生存者が 0 人なら HP の規則では帰らない（その状況は上の「開始時に alive だった者が dead / ash」で帰る）。
+  const ids = frontLineIds(s, data);
+  const front = s.party.filter((x) => ids.includes(x.id) && x.life === "alive");
+  if (front.length === 0) return false;
+  const hp = front.reduce((a, x) => a + x.hp, 0);
+  const max = front.reduce((a, x) => a + x.hpMax, 0);
+  return hp * 2 < max;
+}
+
 export const BOTS: BotKind[] = [
   { label: "4 戦固定", shouldReturn: (c) => c.battles >= 4 },
-  {
-    label: "セオリー",
-    shouldReturn: (c) => {
-      const s = c.state;
-      if (c.battles >= THEORY_BATTLE_CAP) return true; // M7-8戦（ユーザー指示）
-      if (s.party.some((x) => c.aliveAtStart.includes(x.id) && x.life !== "alive")) return true; // 潜行の開始時に alive だった者が dead / ash になった（ユーザー決定）
-      // CB-14 の繰り上げ後の前衛（frontLineIds は state.party と config.party.frontRow だけを見るので、戦闘外の迷宮の state でも同じ規則で働く）。
-      // そのうち life が alive の者（麻痺・石化・睡眠・SAN 0 も含む）だけで、HP の合計 × 2 < 最大 HP の合計なら帰る（ユーザー決定）。
-      // 生存者が 0 人なら HP の規則では帰らない（その状況は上の「開始時に alive だった者が dead / ash」で帰る）。
-      const ids = frontLineIds(s, data);
-      const front = s.party.filter((x) => ids.includes(x.id) && x.life === "alive");
-      if (front.length === 0) return false;
-      const hp = front.reduce((a, x) => a + x.hp, 0);
-      const max = front.reduce((a, x) => a + x.hpMax, 0);
-      return hp * 2 < max;
-    },
-  },
+  { label: "セオリー", shouldReturn: theoryShouldReturn },
 ];
 
-type Method = "thread" | "walk" | "cap" | "wipe";
+/** M9 の進行ボット（帰る条件はセオリーと同じ。d01 の 2 階とボス、d01 の踏破の後は d02 の 1 階） */
+export const PROGRESS_BOT: BotKind = { label: "進行", shouldReturn: theoryShouldReturn, route: "progress" };
+
+type Method = "thread" | "walk" | "cap" | "wipe" | "teleport"; // teleport は M9 の進行ボットのボス撃破の後
 
 /**
  * M7-死因（2026-10-05 ユーザー指示）: 潜行中に dead になった 1 人分の記録。cause は殺した敵の monsterId（戦闘中の死亡は CB の敵の攻撃だけ）、
@@ -118,6 +140,15 @@ type DiveRecord = {
   assetsAfter: number; // 街の手順をすべて終えた後の資産（所持金 + 手持ちの消耗品の購入価格）
   allL2: boolean; // 宿の後に全員が alive かつ L2 以上
   anyL2: boolean; // 宿の後に誰かが L2 以上
+  // M9 進行ボット
+  dungeonId: string; // 潜ったダンジョン
+  deepestFloor: number; // この潜行で到達した最も深い階
+  bossFight: boolean; // ボス戦をした
+  bossWin: boolean; // ボスを倒した
+  bossWipe: boolean; // ボス戦で全滅した
+  outOfReach: number; // CB-26 飛行で味方の攻撃が届かなかった回数（message battle.outOfReach）
+  newMonsterDeaths: number; // 死因が M9 の新しい敵の死者数
+  minLevelAfter: number; // 宿の後の全員の最小 level
 };
 
 export type CampaignResult = { seed: number; startAssets: number; dives: DiveRecord[]; aborted: boolean };
@@ -129,8 +160,8 @@ function effectType(itemId: string): string | null {
   return findItem(data, itemId)?.effect.type ?? null;
 }
 
-/** 上り階段からの BFS 距離（open / door の辺を通る。下り階段のセルは通らない） */
-function distancesFrom(f: Floor, from: Pos): Map<string, number> {
+/** 上り階段からの BFS 距離（open / door の辺を通る。下り階段のセルは通らない。M9: avoid の kind のセルは通らない） */
+function distancesFrom(f: Floor, from: Pos, avoid: readonly string[] = ["stairsDown"]): Map<string, number> {
   const dist = new Map<string, number>([[key(from), 0]]);
   const queue: Pos[] = [from];
   while (queue.length > 0) {
@@ -140,7 +171,7 @@ function distancesFrom(f: Floor, from: Pos): Map<string, number> {
     for (const dir of FACINGS) {
       if (!isPassable(edgeOf(c, dir))) continue;
       const q = step(p, dir);
-      if (dist.has(key(q)) || cellAt(f, q.x, q.y).kind === "stairsDown") continue;
+      if (dist.has(key(q)) || avoid.includes(cellAt(f, q.x, q.y).kind)) continue;
       dist.set(key(q), d + 1);
       queue.push(q);
     }
@@ -227,6 +258,13 @@ export class Campaign {
   encounterGroups: Record<string, number> = {};
   encounterUnits: Record<string, number> = {};
   antidotes = 0;
+  // M9 進行ボット（潜行ごとにリセット）
+  floorNo = 1; // floor / homeDist / near を作った階
+  deepest = 1;
+  outOfReach = 0;
+  bossFight = false;
+  bossWin = false;
+  bossWipe = false;
   /**
    * M7-宝箱「蘇生を払えずに潜った」の定義: 直前の街の手順（revive）で、dead の者の寺院の蘇生、または ash の者（蘇生に失敗して灰になった者を含む）の
    * 闇魔術の費用が、その時点の所持金で払えずに（townMenu の affordable が偽で）蘇生しなかった者の id。次の潜行の開始時に、そのうちまだ dead / ash の者が
@@ -252,7 +290,11 @@ export class Campaign {
     // 入力を積むだけの battle.input と向きを変えるだけの dungeon.turn は時間の都合で省く（decisions の H9 の行）
     if (cmd.type !== "battle.input" && cmd.type !== "dungeon.turn") expectStateInvariants(r.state);
     expectKnownStringKeys(r.events);
-    for (const e of r.events) if (e.kind === "message") this.keys.add(e.key);
+    for (const e of r.events) {
+      if (e.kind !== "message") continue;
+      this.keys.add(e.key);
+      if (e.key === "battle.outOfReach") this.outOfReach += 1; // M9: CB-26
+    }
     const w = r.events.find((e): e is Extract<GameEvent, { kind: "wipe" }> => e.kind === "wipe");
     if (w !== undefined) {
       this.wiped = w.penalty;
@@ -419,23 +461,29 @@ export class Campaign {
     const dirs = FACINGS.filter((d) => isPassable(edgeOf(c, d)) && this.near.has(key(step(dive.pos, d))));
     if (dirs.length === 0) throw new Error(`seed ${this.seed}: no way from ${key(dive.pos)}`);
     this.moveTo(dirs[randInt(this.bot, 0, dirs.length - 1)]!);
-    this.resolvePending(false);
+    this.resolvePending("wander");
   }
 
   /**
-   * 保留中の選択を 1 か所で解決する（無ければ何もしない）。kind stairs / teleporter は exit があり goExit なら exit、それ以外は stay。
+   * 保留中の選択を 1 か所で解決する（無ければ何もしない）。kind stairs は、mode home なら exit（無ければ M9 の ascend）、mode descend（M9: 下り階段へ
+   * 向かっている間）なら descend、それ以外は stay。kind teleporter（M9: ボス撃破の後）は teleport。
    * kind trap（DG-21 の察知）は proceed（罠を踏んで進む）、kind event（EV-31 の選択）は先頭の選択肢。選んだ結果で遭遇したら戦う。
+   * 旧ルート（d01 の 1 階だけ）では ascend・descend・teleporter の選択は出ないので、M8 までの「goExit なら exit、それ以外は stay」と同じ。
    */
-  resolvePending(goExit: boolean): void {
+  resolvePending(mode: "wander" | "home" | "descend"): void {
     const pc = this.state.pendingChoice;
     if (pc === null) return;
+    const has = (id: string) => pc.options.some((o) => o.id === id);
     let optionId: string;
     if (pc.kind === "trap") optionId = "proceed";
     else if (pc.kind === "event") optionId = pc.options[0]!.id;
-    else optionId = goExit && pc.options.some((o) => o.id === "exit") ? "exit" : "stay";
+    else if (pc.kind === "teleporter") optionId = "teleport";
+    else if (mode === "home") optionId = has("exit") ? "exit" : has("ascend") ? "ascend" : "stay";
+    else if (mode === "descend") optionId = has("descend") ? "descend" : "stay";
+    else optionId = "stay";
     const goldBefore = this.state.gold;
     this.run({ type: "event.choose", optionId });
-    if (optionId === "exit") expect(this.state.gold).toBe(goldBefore); // DG-43
+    if (optionId === "exit" || optionId === "teleport") expect(this.state.gold).toBe(goldBefore); // DG-43
     if (this.state.battle !== null) this.fight();
   }
 
@@ -453,7 +501,8 @@ export class Campaign {
 
   /** 帰還: 上り階段の上でなく、帰還の品があれば使う。無ければ合間の回復をしてから BFS の最短で上り階段へ歩いて exit（途中の遭遇も戦う） */
   goHome(): "thread" | "walk" {
-    const onStairs = this.homeDist.get(key(this.state.dive!.pos)) === 0;
+    // M9: 2 階以上の上り階段の上では歩いて出られないので糸を使う（旧ルートは 1 階だけなので変わらない）
+    const onStairs = this.state.dive!.floor === 1 && this.homeDist.get(key(this.state.dive!.pos)) === 0;
     const t = onStairs ? null : this.threadInHand(); // 上り階段の上なら糸を使わず、1 歩出て戻って exit
     if (t !== null) {
       const goldBefore = this.state.gold;
@@ -465,37 +514,109 @@ export class Campaign {
     this.healBetweenBattles();
     let guard = 0;
     while (this.inDungeon) {
-      if (guard++ > 1000) throw new Error(`seed ${this.seed}: walk home did not finish`);
+      if (guard++ > 2000) throw new Error(`seed ${this.seed}: walk home did not finish`);
       if (this.state.pendingChoice !== null) {
-        this.resolvePending(true);
+        this.resolvePending("home");
         continue;
       }
       if (this.state.screen === "battle") {
         this.fight();
         continue;
       }
-      const dive = this.state.dive!;
-      const dist = this.homeDist;
-      const c = cellAt(this.floor!, dive.pos.x, dive.pos.y);
-      const here = dist.get(key(dive.pos));
-      let best: Facing | null = null;
-      for (const d of FACINGS) {
-        if (!isPassable(edgeOf(c, d))) continue;
-        const nd = dist.get(key(step(dive.pos, d)));
-        if (nd !== undefined && (here === undefined || nd < here) && (best === null || nd < dist.get(key(step(dive.pos, best)))!)) best = d;
-      }
-      if (best === null && here === 0) {
-        for (const d of FACINGS) if (best === null && isPassable(edgeOf(c, d)) && dist.get(key(step(dive.pos, d))) !== undefined) best = d;
-      }
-      if (best === null) throw new Error(`seed ${this.seed}: no way home from ${key(dive.pos)}`);
-      this.moveTo(best);
+      if (this.state.dive!.floor !== this.floorNo) this.setFloor(); // M9: ascend の後は上の階の構造で歩く
+      this.moveTo(this.stepToward(this.homeDist, "home"));
     }
     return "walk";
   }
 
-  /** 1 回の潜行（入場から街に戻るまで）。入れなければ null */
-  dive(): Method | null {
-    if (townMenu(this.state, data)!.dungeons.find((d) => d.id === "d01")?.canEnter !== true) return null;
+  /**
+   * dist（目標からの BFS 距離）が今より小さい隣のうち最小の方向。今のセルが dist に無ければ dist にある隣の最小、
+   * 今が 0（目標の上）なら dist にある最初の隣（1 歩出て戻る）。どれも無ければ例外（M8 までの goHome の規則をそのまま切り出した）
+   */
+  stepToward(dist: Map<string, number>, what: string): Facing {
+    const dive = this.state.dive!;
+    const c = cellAt(this.floor!, dive.pos.x, dive.pos.y);
+    const here = dist.get(key(dive.pos));
+    let best: Facing | null = null;
+    for (const d of FACINGS) {
+      if (!isPassable(edgeOf(c, d))) continue;
+      const nd = dist.get(key(step(dive.pos, d)));
+      if (nd !== undefined && (here === undefined || nd < here) && (best === null || nd < dist.get(key(step(dive.pos, best)))!)) best = d;
+    }
+    if (best === null && here === 0) {
+      for (const d of FACINGS) if (best === null && isPassable(edgeOf(c, d)) && dist.get(key(step(dive.pos, d))) !== undefined) best = d;
+    }
+    if (best === null) throw new Error(`seed ${this.seed}: no way ${what} from ${key(dive.pos)} on floor ${dive.floor}`);
+    return best;
+  }
+
+  /**
+   * 今の階（dive.floor）の構造・上り階段からの距離・近傍をキャッシュする。構造の辺はこの潜行の間変わらない（罠の発動・イベントの処理は kind だけ）。
+   * 下り階段とボスのセルは通らない（M9。旧ルートの d01 の 1 階にボスのセルは無いので M8 までと同じ）
+   */
+  setFloor(): void {
+    const dive = this.state.dive!;
+    this.floorNo = dive.floor;
+    this.deepest = Math.max(this.deepest, dive.floor);
+    this.floor = floorOf(dive, data, dive.floor);
+    this.homeDist = distancesFrom(this.floor, this.floor.stairsUp, ["stairsDown", "boss"]);
+    this.near = new Set([...this.homeDist].filter(([, d]) => d <= NEAR).map(([k]) => k));
+  }
+
+  /** M9: ボスに挑む条件（全員 alive・全員 level ≥ BOSS_LEVEL・前衛（frontLineIds）の HP の合計 ≥ 最大の合計の BOSS_FRONT_HP_PCT%） */
+  bossReady(): boolean {
+    const s = this.state;
+    if (!s.party.every((c) => c.life === "alive" && c.level >= (this.kind.bossLevel ?? BOSS_LEVEL))) return false;
+    const ids = frontLineIds(s, data);
+    const front = s.party.filter((x) => ids.includes(x.id));
+    return sum(front.map((x) => x.hp)) * 100 >= sum(front.map((x) => x.hpMax)) * BOSS_FRONT_HP_PCT;
+  }
+
+  /**
+   * M9: 目標のセルへ BFS の最短で歩く（各歩で遭遇すれば戦い、保留は mode で解決し、歩く前に合間の回復）。迷宮を出た・階が変わった（descend）・
+   * 帰る条件・歩数の上限で止まり、その理由を返す。ボスのセル以外が目標なら途中でボスのセルを通らない。
+   * ボスのセルに入る歩ではボス戦（bossFight）とその結果（bossWin = 撃破、bossWipe = 全滅）を記録する。勝てばテレポーターの確認を teleport で解決して街へ
+   */
+  walkTo(target: Pos, mode: "descend" | "wander"): "left" | "floor" | "return" | "cap" {
+    const startFloor = this.state.dive!.floor;
+    const boss = this.floor!.boss;
+    const isBoss = boss !== null && boss.x === target.x && boss.y === target.y;
+    const dist = distancesFrom(this.floor!, target, isBoss ? [] : ["boss"]);
+    for (;;) {
+      if (!this.inDungeon) return "left";
+      if (this.state.pendingChoice !== null) {
+        this.resolvePending(mode);
+        continue;
+      }
+      if (this.state.screen === "battle") {
+        this.fight();
+        continue;
+      }
+      if (this.state.dive!.floor !== startFloor) return "floor";
+      if (this.kind.shouldReturn(this)) return "return";
+      if (this.steps >= STEP_CAP) return "cap";
+      this.healBetweenBattles();
+      if (!this.inDungeon || this.state.pendingChoice !== null) continue;
+      const dir = this.stepToward(dist, "to target");
+      const next = step(this.state.dive!.pos, dir);
+      const intoBoss = isBoss && next.x === target.x && next.y === target.y && !this.state.dive!.bossDefeated;
+      this.moveTo(dir);
+      if (intoBoss) {
+        this.bossFight = true;
+        this.bossWipe = this.wiped !== null;
+        this.bossWin = this.state.dive?.bossDefeated === true;
+      }
+    }
+  }
+
+  /** 1 回の潜行（入場から街に戻るまで）。入れなければ null。M9: dungeonId（旧ルートは d01）と、進行ボットの d01 は 2 階とボスまで */
+  dive(dungeonId = "d01"): Method | null {
+    if (townMenu(this.state, data)!.dungeons.find((d) => d.id === dungeonId)?.canEnter !== true) return null;
+    this.deepest = 1;
+    this.outOfReach = 0;
+    this.bossFight = false;
+    this.bossWin = false;
+    this.bossWipe = false;
     this.battles = 0;
     this.steps = 0;
     this.herbs = 0;
@@ -518,22 +639,11 @@ export class Campaign {
     this.unpaidAtStart = down.length;
     this.aliveAtStart = this.state.party.filter((c) => c.life === "alive").map((c) => c.id);
     this.frontDownAtStart = this.state.party.slice(0, FRONT_ROW).some((c) => c.life !== "alive");
-    this.run({ type: "dungeon.enter", dungeonId: "d01" });
+    this.run({ type: "dungeon.enter", dungeonId });
     // 1 階の構造はこの潜行の間変わらない（罠の発動は kind だけを変え、辺は変えない）ので、潜行ごとにキャッシュする
-    this.floor = floorOf(this.state.dive!, data, 1);
-    this.homeDist = distancesFrom(this.floor, this.floor.stairsUp);
-    this.near = new Set([...this.homeDist].filter(([, d]) => d <= NEAR).map(([k]) => k));
-    let capped = false;
-    // 帰る判定は各歩（戦闘・罠を含む）の直後、合間の回復より前
-    while (this.inDungeon && !this.kind.shouldReturn(this)) {
-      if (this.steps >= STEP_CAP) {
-        capped = true;
-        break;
-      }
-      this.healBetweenBattles();
-      if (!this.inDungeon) break;
-      this.wanderStep();
-    }
+    this.setFloor();
+    const capped =
+      this.kind.route === "progress" && dungeonId === "d01" ? this.progressD01() : this.wanderHere() === true;
     if (this.inDungeon) {
       const b0 = this.battles;
       const m = this.goHome();
@@ -542,7 +652,57 @@ export class Campaign {
       if (this.wiped === null) return capped ? "cap" : m;
     }
     if (this.wiped !== null) return "wipe";
+    if (this.bossWin) return "teleport"; // M9: ボスを倒してテレポーターで街へ
     throw new Error(`seed ${this.seed}: left the dungeon without returning or wiping`);
+  }
+
+  /**
+   * 今の階の上り階段から BFS ≤ NEAR を歩く（M8 までの潜行の本体）。帰る判定は各歩（戦闘・罠を含む）の直後、合間の回復より前。
+   * 歩数の上限で止まったら true。M9: 進行ボットでは、歩く間に until（降りる条件・ボスに挑む条件）を満たせば null を返して階段・ボスへ向かわせる
+   */
+  wanderHere(until?: () => boolean): boolean | null {
+    while (this.inDungeon && !this.kind.shouldReturn(this)) {
+      if (this.steps >= STEP_CAP) return true;
+      this.healBetweenBattles();
+      if (!this.inDungeon) break;
+      if (until !== undefined && this.state.pendingChoice === null && until()) return null;
+      this.wanderStep();
+    }
+    return false;
+  }
+
+  /** M9: 下の階へ降りる条件（全員 alive・全員 level ≥ descendLevel。既定 DESCEND_LEVEL） */
+  descendReady(): boolean {
+    const lv = this.kind.descendLevel ?? DESCEND_LEVEL;
+    return this.state.party.every((c) => c.life === "alive" && c.level >= lv);
+  }
+
+  /**
+   * M9 進行ボットの d01: 最下層より上の階は、降りる条件を満たせば下り階段へ最短で歩いて降り、満たさなければ上り階段の近傍を歩く（途中で満たせば階段へ）。
+   * 2 階（最下層）はボスに挑む条件を満たせばボスへ歩いて戦い（勝てば teleport で街へ）、満たさなければ上り階段の近傍を歩き、途中で満たせばボスへ向かう。
+   * 歩数の上限で止まったら true
+   */
+  progressD01(): boolean {
+    const last = data.dungeons.find((d) => d.id === "d01")!.floors;
+    for (;;) {
+      if (!this.inDungeon) return false;
+      if (this.state.dive!.floor !== this.floorNo) this.setFloor();
+      if (this.floorNo < last) {
+        if (!this.descendReady()) {
+          const w = this.wanderHere(() => this.descendReady());
+          if (w !== null) return w;
+        }
+        const r = this.walkTo(this.floor!.stairsDown!, "descend");
+        if (r === "floor") continue;
+        return r === "cap";
+      }
+      if (!this.bossReady()) {
+        const w = this.wanderHere(() => this.bossReady());
+        if (w !== null) return w;
+      }
+      const r = this.walkTo(this.floor!.boss!, "wander");
+      return r === "cap";
+    }
   }
 
   life(id: string): "alive" | "dead" | "ash" {
@@ -721,11 +881,18 @@ export class Campaign {
     while (this.antidotesInHand() < ANTIDOTE_TARGET && this.buy(ANTIDOTE, rec)) rec.shopAntidotes += 1;
   }
 
+  /**
+   * 潜行 → 街 を count 回。M9 の進行ボット（route progress）は、d01 を踏破していなければ d01、していれば d02 に潜り、
+   * d02 に D02_DIVES 回潜ったところで終える（count は潜行の上限）
+   */
   campaign(count: number): CampaignResult {
     const dives: DiveRecord[] = [];
+    const progress = this.kind.route === "progress";
     for (let k = 0; k < count; k++) {
+      const dungeonId = progress && this.state.progress.clearedDungeons.includes("d01") ? "d02" : "d01";
+      if (progress && dives.filter((d) => d.dungeonId === "d02").length >= D02_DIVES) break;
       const goldBefore = this.state.gold;
-      const method = this.dive();
+      const method = this.dive(dungeonId);
       if (method === null) return { seed: this.seed, startAssets: this.startAssets, dives, aborted: true };
       expect(this.state.screen).toBe("town");
       const rec: DiveRecord = {
@@ -778,6 +945,14 @@ export class Campaign {
         assetsAfter: 0,
         allL2: false,
         anyL2: false,
+        dungeonId,
+        deepestFloor: this.deepest,
+        bossFight: this.bossFight,
+        bossWin: this.bossWin,
+        bossWipe: this.bossWipe,
+        outOfReach: this.outOfReach,
+        newMonsterDeaths: this.deaths.filter((d) => d.monster && M9_MONSTERS.includes(d.cause)).length,
+        minLevelAfter: 0,
       };
       this.mercy(rec);
       this.sellLoot(rec);
@@ -785,6 +960,7 @@ export class Campaign {
       this.inn(rec);
       rec.allL2 = this.state.party.every((c) => c.life === "alive" && c.level >= 2);
       rec.anyL2 = this.state.party.some((c) => c.level >= 2);
+      rec.minLevelAfter = Math.min(...this.state.party.map((c) => c.level));
       this.shop(rec);
       rec.unsold = this.equipmentInHand();
       rec.goldAfter = this.state.gold;
@@ -845,6 +1021,55 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
   lines.push(...deathReport(results, dives));
   lines.push(...curingReport(results, dives));
   return lines.join("\n");
+}
+
+/**
+ * M9 進行ボットの集計（2026-10-06 ユーザー指示）: d01 の踏破（潜行回数・ボス戦）、d01 の潜行（踏破まで）の全滅率・死者・敵ごとの死者・飛行で届かなかった回数、
+ * d02 の潜行 1（各シードの最初の d02）と潜行 2〜3 の全滅率・死者・死因・戦闘数
+ */
+export function progressReport(results: CampaignResult[], kind: BotKind = PROGRESS_BOT): string {
+  const lines: string[] = [];
+  const seeds = results.length;
+  lines.push(
+    `M9-進行【${kind.label}】（${seeds} シード × 最大 ${PROGRESS_DIVES} 潜行。帰る条件はセオリー（8 戦・開始時に alive の者の死亡・前衛の HP 半分）。d01: 1 階は「全員 alive・全員 L${kind.descendLevel ?? DESCEND_LEVEL} 以上」なら下り階段へ最短で歩いて降り（そうでなければ上り階段から BFS ${NEAR} 以内）、2 階は「全員 alive・全員 L${kind.bossLevel ?? BOSS_LEVEL} 以上・前衛の HP ${BOSS_FRONT_HP_PCT}% 以上」ならボスへ、そうでなければ上り階段から BFS ${NEAR} 以内。d01 の踏破の後は d02 の 1 階を BFS ${NEAR} 以内で ${D02_DIVES} 潜行）`,
+  );
+  lines.push(`打ち切り（行動可能な者がいなくて入れない）: ${results.filter((r) => r.aborted).length} シード`);
+  const clearedAt = results.map((r) => r.dives.findIndex((d) => d.bossWin));
+  const cleared = clearedAt.filter((i) => i >= 0).map((i) => i + 1);
+  lines.push(`d01 の踏破: ${cleared.length}/${seeds} シード / ${stats("踏破までの潜行回数（踏破した潜行を含む）", cleared)}`);
+  const d01 = results.flatMap((r, i) => r.dives.slice(0, clearedAt[i]! >= 0 ? clearedAt[i]! + 1 : r.dives.length).filter((d) => d.dungeonId === "d01"));
+  const fights = d01.filter((d) => d.bossFight);
+  lines.push(
+    `d01 のボス戦: ${fights.length} 回・勝ち ${pct(fights.filter((d) => d.bossWin).length, fights.length)}・ボス戦で全滅 ${fights.filter((d) => d.bossWipe).length} / 2 階に降りた潜行 ${d01.filter((d) => d.deepestFloor >= 2).length}/${d01.length}`,
+  );
+  lines.push(...diveLines("d01 の潜行（踏破まで）", d01));
+  for (const [label, k] of [["d02 の潜行 1", 0], ["d02 の潜行 2", 1], ["d02 の潜行 3", 2]] as const) {
+    const ds = results.flatMap((r) => {
+      const d = r.dives.filter((x) => x.dungeonId === "d02")[k];
+      return d === undefined ? [] : [d];
+    });
+    lines.push(...diveLines(label, ds));
+    if (k === 0 && ds.length > 0) lines.push(`  ${stats("d02 の潜行 1 の開始時（直前の宿の後）の最小 level", results.flatMap((r) => { const i = r.dives.findIndex((x) => x.dungeonId === "d02"); return i > 0 ? [r.dives[i - 1]!.minLevelAfter] : []; }))}`);
+  }
+  return lines.join("\n");
+}
+
+/** M9: 潜行の集まり ds の全滅率・帰り方・死者・戦闘数・飛行で届かなかった回数・死因（敵ごと・敵以外） */
+function diveLines(label: string, ds: readonly DiveRecord[]): string[] {
+  const lines: string[] = [];
+  const m = (x: Method) => ds.filter((d) => d.method === x).length;
+  const deaths = ds.flatMap((d) => d.deaths);
+  lines.push(
+    `${label}: ${ds.length} 潜行 / 全滅率 ${pct(m("wipe"), ds.length)} / 帰還 糸 ${m("thread")}・徒歩 ${m("walk")}・テレポーター ${m("teleport")}・上限 ${m("cap")} / 1 潜行あたりの死者 ${fmt(mean(ds.map((d) => d.deaths.length)))}（計 ${deaths.length}。うち M9 の敵 ${sum(ds.map((d) => d.newMonsterDeaths))}）/ 潜行の終わりに alive でない人数 平均 ${fmt(mean(ds.map((d) => d.down)))} / 戦闘数 平均 ${fmt(mean(ds.map((d) => d.battles)))}・中央値 ${fmt(median(ds.map((d) => d.battles)))} / 飛行で届かなかった ${sum(ds.map((d) => d.outOfReach))} 回`,
+  );
+  const groups: Record<string, number> = {};
+  for (const d of ds) for (const [id, n] of Object.entries(d.encounterGroups)) groups[id] = (groups[id] ?? 0) + n;
+  const causes = [...new Set([...Object.keys(groups), ...deaths.map((x) => x.cause)])].sort(
+    (a, b) => deaths.filter((x) => x.cause === b).length - deaths.filter((x) => x.cause === a).length || a.localeCompare(b),
+  );
+  const parts = causes.map((c) => `${c}${M9_MONSTERS.includes(c) ? "*" : ""} ${deaths.filter((x) => x.cause === c).length}（遭遇 ${groups[c] ?? 0}）`);
+  if (parts.length > 0) lines.push(`  死因（死者・遭遇のグループ数。* は M9 の敵）: ${parts.join(" / ")}`);
+  return lines;
 }
 
 /** M7-解毒（2026-10-05 ユーザー指示）: 解毒草・寺院の治療と、灰になった人数・闇魔術で戻した人数。既存の出力の後ろに足す */
