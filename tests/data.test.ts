@@ -85,7 +85,7 @@ describe("data: 実データ", () => {
     expect(data.items).toHaveLength(4); // M7 の B2: 消耗品 3・魔法書 1（装備は equipment-bases.json。IT-01）
     expect(data.personalities.map((p) => p.id).sort()).toEqual(["cautious", "greedy", "normal", "reckless"]);
     expect(data.penaltyTable.bands).toHaveLength(7);
-    expect(data.dungeons.map((d) => d.id)).toEqual(["d01", "d02"]);
+    expect(data.dungeons.map((d) => d.id)).toEqual(["d01", "d02", "d03"]); // d03 は準備中の枠（DG-35。M9）
     expect(data.events).toHaveLength(3);
     expect(data.tavern.events.map((e) => e.id)).toEqual(["dropped_coin", "old_rumor"]);
     expect(data.tavern.lookTexts).toHaveLength(4);
@@ -881,11 +881,11 @@ describe("data: drops.json（IT-50〜53。M7）", () => {
     expectIssue((r) => delete r.drops.chest.d02, "drops.json", "chest.d02: missing required field");
     expectIssue((r) => delete r.drops.chest.d01["2"], "drops.json", "chest.d01.2: missing required field");
     expectIssue((r) => (r.drops.chest.d01["3"] = "d01_f2"), "drops.json", "chest.d01.3: IT-51: floor key must be 1..2");
-    expectIssue((r) => (r.drops.chest.d03 = { "1": "d01_f1" }), "drops.json", 'chest.d03: unknown dungeon id "d03"');
+    expectIssue((r) => (r.drops.chest.d09 = { "1": "d01_f1" }), "drops.json", 'chest.d09: unknown dungeon id "d09"');
     expectIssue((r) => (r.drops.chest.d01["1"] = "d09_f1"), "drops.json", 'chest.d01.1: unknown drop table id "d09_f1"');
     expectIssue((r) => delete r.drops.boss.d02, "drops.json", "boss.d02: missing required field");
     expectIssue((r) => (r.drops.boss.d01 = "nope"), "drops.json", 'boss.d01: unknown drop table id "nope"');
-    expectIssue((r) => (r.drops.boss.d03 = "d01_boss"), "drops.json", 'boss.d03: unknown dungeon id "d03"');
+    expectIssue((r) => (r.drops.boss.d09 = "d01_boss"), "drops.json", 'boss.d09: unknown dungeon id "d09"');
   });
 });
 
@@ -946,7 +946,7 @@ describe("data: dungeons.json", () => {
     );
   });
   test("data: IT-62 onClear.shopLevel は 0 以上の整数（d01 2 / d02 4【仮】）。TW-06 の onClear.shopStock は廃止したので未知の欄として止める（M7 の B7）", () => {
-    expect(loadGameData(rawData()).dungeons.map((d) => d.onClear.shopLevel)).toEqual([2, 4]);
+    expect(loadGameData(rawData()).dungeons.map((d) => d.onClear.shopLevel)).toEqual([2, 4, 4]); // d03（準備中。M9）は 4
     expectIssue((r) => delete r.dungeons[0].onClear.shopLevel, "dungeons.json", "[0].onClear.shopLevel: missing required field");
     expectIssue((r) => (r.dungeons[0].onClear.shopLevel = -1), "dungeons.json", "[0].onClear.shopLevel: expected integer >= 0");
     expect(loadGameData(rawData()).dungeons.some((d) => "shopStock" in d.onClear)).toBe(false);
@@ -1330,5 +1330,27 @@ describe("data: M9 の敵（工房の同期）とボス（DG-31）", () => {
   test("data: DG-31 dungeons[].boss の敵は special.boss", () => {
     expectIssue((r) => (r.dungeons[0].boss.monster = "kobold"), "dungeons.json", '[0].boss.monster: DG-31: boss monster "kobold" must have special.boss');
     expectIssue((r) => delete r.monsters.find((m: { id: string }) => m.id === "sunken_bishop").special.boss, "dungeons.json", "[1].boss.monster: DG-31");
+  });
+});
+
+describe("data: DG-35 準備中のダンジョン（M9）", () => {
+  test("data: DG-35 placeholder は末尾・floors 1・unlockDungeon null。d03 は準備中で、drops の chest / boss は d02 の表を参照", () => {
+    const d = loadGameData(rawData());
+    expect(d.dungeons.map((x) => [x.id, x.placeholder === true])).toEqual([
+      ["d01", false],
+      ["d02", false],
+      ["d03", true],
+    ]);
+    expect(d.dungeons[1]!.onClear.unlockDungeon).toBe("d03");
+    expect(d.drops.chest["d03"]).toEqual({ "1": "d02_f3" });
+    expect(d.drops.boss["d03"]).toBe("d02_boss");
+    expectIssue((r) => (r.dungeons[2].placeholder = "yes"), "dungeons.json", "[2].placeholder: expected boolean");
+    expectIssue((r) => (r.dungeons[2].floors = 2), "dungeons.json", "[2].floors: DG-35: a placeholder dungeon must have floors 1");
+    expectIssue((r) => (r.dungeons[2].onClear.unlockDungeon = "d01"), "dungeons.json", "[2].onClear.unlockDungeon: DG-35: a placeholder dungeon cannot unlock another");
+    // 準備中の後ろに遊べるダンジョンは置けない（d02 を準備中・d03 を遊べるにする）
+    expectIssue((r) => ((r.dungeons[1].placeholder = true), (r.dungeons[2].placeholder = false)), "dungeons.json", "[2]: DG-35: a playable dungeon cannot follow a placeholder");
+    // 準備中でも drops の表は要る（IT-51）
+    expectIssue((r) => delete r.drops.chest.d03, "drops.json", "chest.d03: missing required field");
+    expectIssue((r) => delete r.drops.boss.d03, "drops.json", "boss.d03: missing required field");
   });
 });

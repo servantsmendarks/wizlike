@@ -555,6 +555,8 @@ export type EncounterEntry = { monster: string; weight: number };
 export type DungeonDef = {
   id: string;
   name: string;
+  /** DG-35（M9）: 真なら「準備中」の枠。開放はされるが入場できない（配列の末尾の側・floors 1・onClear.unlockDungeon null） */
+  placeholder?: boolean;
   floors: number;
   width: number;
   height: number;

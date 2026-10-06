@@ -31,6 +31,7 @@
 - DG-32 ボス撃破で、その場に街へのテレポーターが出現し（セルを `teleporter` に書き換える）、`progress.clearedDungeons` にそのダンジョンを加える（永続）。`onClear` で次のダンジョンの開放と店の在庫追加（TW-06）を行う（M7: 在庫追加 `shopStock` は流通レベルの更新 `shopLevel`（IT-62）に置き換える）。実装ではセルを書き換えず、`bossDefeated` が真なら floorOf がボスのセルを `teleporter` に重ねる。ボス撃破の直後（一行はテレポーターの上に立っている）と、前進でテレポーターのセルに入ったときに確認（`pendingChoice`。kind `teleporter`、promptKey `dungeon.teleporter`、選択肢は「街へ戻る」`teleport` /「やめる」`stay`）を出し、`teleport` で街へ戻る（DG-43）。テレポーターのセルでは遭遇判定をしない。`clearedDungeons` への追加と `onClear` の開放は初回の撃破だけ。
 - DG-33 クリア済みのダンジョンにも再入場できる（ファーミング用）。ボスは再入場ごとに再出現する【仮】。再撃破でも `onClear` は再度は起きない。
 - DG-34 ボス以外のテレポーター（街へ戻る中継点）は `dungeons[].teleporterFloors` に列挙した階にだけ置く【仮】。プロトタイプでは無し。
+- DG-35 準備中のダンジョン（M9。2026-10-06）: `dungeons[].placeholder`（任意の真偽値。省略は偽）が真のダンジョンは「準備中」の枠。前のダンジョンのクリアで開放（DG-01 / DG-32）はされ `dungeon.unlocked` も語るが、入場はできない（rejected `not ready`。TW-11）。検証: 準備中の後ろに準備中でないダンジョンを置けない、`floors` は 1、`onClear.unlockDungeon` は null。他の欄（出現表・ボス・`drops.json` の chest / boss）は普通のダンジョンと同じに要る（中身は前のダンジョンの表を参照してよい）。M9 の d03（灰の地下墓所。名前は仮）がこれ。
 
 ## 5. 潜行台帳
 

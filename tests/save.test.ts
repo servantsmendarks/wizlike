@@ -419,7 +419,7 @@ describe("SV-04 v3 → v4 の移行（M7 の B。IT-80）", () => {
   });
 
   test("SV-04/IT-80/IT-62 v3 → v4 の progress.shopLevel は clearedDungeons の各 onClear.shopLevel の最大（d01 2・d02 4【仮】、無ければ 0）", () => {
-    expect(data.dungeons.map((d) => d.onClear.shopLevel)).toEqual([2, 4]);
+    expect(data.dungeons.map((d) => d.onClear.shopLevel)).toEqual([2, 4, 4]); // d03（準備中の枠。M9）も 4
     const level = (ids: string[], mig = MIG): number => {
       const r = migrateState(toV3(cleared(newGame(1), ids)), 3, SCHEMA, mig);
       if (!r.ok) throw new Error("migrate failed");

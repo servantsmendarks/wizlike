@@ -218,7 +218,15 @@ export function townEntries(page: TownPage, menu: TownMenu, strings: Strings, pr
     return [...rows, back];
   }
   if (page === "gate") {
-    const rows = menu.dungeons.map((d): TownEntry => ({ kind: "enter", dungeonId: d.id, label: d.name, disabled: !d.canEnter }));
+    // DG-35（M9）: 準備中の行は「名前（準備中）」。dim は canEnter だけで決まる（判定は core）
+    const rows = menu.dungeons.map(
+      (d): TownEntry => ({
+        kind: "enter",
+        dungeonId: d.id,
+        label: d.notReady ? s(strings, "town.gate.notReady", { name: d.name }) : d.name,
+        disabled: !d.canEnter,
+      }),
+    );
     return [...rows, back];
   }
   if (page === "shop") {

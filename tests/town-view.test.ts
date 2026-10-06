@@ -478,6 +478,17 @@ describe("UI-52 街のページ", () => {
     expect(townEntries("gate", menuOf(allDead), S)).toEqual([{ kind: "enter", dungeonId: "d01", label: d01, disabled: true }, back]);
   });
 
+  test("UI-52/DG-35 迷宮の入口の準備中の行は town.gate.notReady のラベルで dim（M9）", () => {
+    const s = town();
+    s.progress.unlockedDungeons.push("d02", "d03");
+    expect(townEntries("gate", menuOf(s), S)).toEqual([
+      { kind: "enter", dungeonId: "d01", label: "試しの坑道", disabled: false },
+      { kind: "enter", dungeonId: "d02", label: "沈んだ聖堂", disabled: false },
+      { kind: "enter", dungeonId: "d03", label: "灰の地下墓所（準備中）", disabled: true },
+      back,
+    ]);
+  });
+
   // M7 で店の最初に 買う / 売る / 買い戻す / 鑑定 / 倉庫 の一覧を置いた（ui.md UI-52 の M7）。旧「店は売り物の行」は買うのページ（shopBuy）に移した
   test("UI-52/TW-05/TW-16 店の最初の一覧は 買う・売る・買い戻す・鑑定・倉庫・戻る。どれも dim にしない", () => {
     expect(townEntries("shop", menuOf(town({}, 0)), S)).toEqual([

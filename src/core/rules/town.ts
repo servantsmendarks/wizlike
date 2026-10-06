@@ -128,6 +128,7 @@ export function enterBlockReason(state: GameState, dungeonId: unknown, data: Gam
   if (state.dive !== null) return "already diving";
   if (typeof dungeonId !== "string" || !data.dungeons.some((d) => d.id === dungeonId)) return "unknown dungeon";
   if (!state.progress.unlockedDungeons.includes(dungeonId)) return "not unlocked";
+  if (dungeonOf(data, dungeonId).placeholder === true) return "not ready"; // DG-35
   if (!state.party.some(canAct)) return "no one can act";
   return null;
 }
@@ -391,6 +392,7 @@ export function townMenu(state: GameState, data: GameData): TownMenu | null {
       id,
       name: dungeonOf(data, id).name,
       canEnter: enterBlockReason(state, id, data) === null,
+      notReady: dungeonOf(data, id).placeholder === true, // DG-35
     })),
     // TW-03（M5.5）: camp.ts を import しない（循環を作らない）ので、campMenu の identifiers と同じ条件をここで数える
     canIdentify: state.party.some((c) => canAct(c) && classOf(data, c.classId).abilities.includes("identify")),

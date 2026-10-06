@@ -142,6 +142,7 @@
   "town.mercy.offer": "GMが卓を見渡した。「このままでは続けられないな。一人だけ、無償で戻してやる。誰にする？」",
   "town.mercy.done": "{name}が卓に戻ってきた。",
   "town.dungeonGate.intro": "迷宮の入口。",
+  "town.gate.notReady": "{name}（準備中）",
   "town.title": "街",
   "town.menu.dungeon": "迷宮へ",
   "town.header": "{place}　{gold}G",

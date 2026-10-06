@@ -998,6 +998,7 @@ function validateDungeons(ctx: Ctx, v: unknown, ix: Index): void {
     F({
       id: S,
       name: S,
+      placeholder: opt(B), // DG-35（M9）
       floors: I(POS_INT),
       width: I({ min: 5 }), // DG-02: 生成の前提（部屋が置ける寸法）
       height: I({ min: 5 }), // DG-02
@@ -1077,6 +1078,15 @@ function validateDungeons(ctx: Ctx, v: unknown, ix: Index): void {
     const bossDef = bossId === undefined ? undefined : ix.monsters.get(bossId);
     if (bossDef !== undefined && get(bossDef, "special", "boss") !== true)
       report(ctx, at(at(p, "boss"), "monster"), `DG-31: boss monster ${JSON.stringify(bossId)} must have special.boss`);
+
+    // DG-35（M9）: 準備中の枠は末尾の側だけ・1 階・次を開かない
+    if (d.placeholder === true) {
+      if (floors !== undefined && floors !== 1) report(ctx, at(p, "floors"), "DG-35: a placeholder dungeon must have floors 1");
+      const next = get(d, "onClear", "unlockDungeon");
+      if (next !== undefined && next !== null) report(ctx, at(at(p, "onClear"), "unlockDungeon"), "DG-35: a placeholder dungeon cannot unlock another");
+    } else if (a.slice(0, i).some((x) => get(x, "placeholder") === true)) {
+      report(ctx, p, "DG-35: a playable dungeon cannot follow a placeholder");
+    }
 
     // DG-01: 配列の順に開放する
     const prevId = i === 0 ? null : strOf(get(a[i - 1], "id"));

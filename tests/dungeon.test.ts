@@ -16,6 +16,7 @@ import {
 import { floorOf, gossipCandidates, mapView, visibleCells, visibleCellsOf, visibleKnownTraps } from "../src/core/rules/dungeon";
 import { addIndex, removeIndex } from "../src/core/rules/field";
 import { battleMenu } from "../src/core/rules/combat";
+import { townMenu } from "../src/core/rules/town";
 import { groupViews } from "../src/core/rules/combat-calc";
 import { withBattle } from "./helpers/battle";
 import { offerExit, offerStairs, offerTeleporter, offerTrap } from "../src/core/rules/choices";
@@ -1936,5 +1937,54 @@ describe("冒険のターン数（TW-12。M5.5）", () => {
     expect(r.state.screen).toBe("battle");
     expect(r.state.battle!.round).toBe(0);
     expect(r.state.adventureTurns).toBe(42);
+  });
+});
+
+describe("準備中のダンジョン d03（DG-35。M9）", () => {
+  test("TW-11/DG-35 d03 は unlocked でも rejected not ready（state と rng は変わらない）、townMenu の notReady は真で canEnter は偽", () => {
+    const s = cloneState(newGame(1));
+    s.progress.unlockedDungeons.push("d02", "d03");
+    const rng = cloneRng(s.rng);
+    const r = execute(s, { type: "dungeon.enter", dungeonId: "d03" }, data);
+    expect(r.state).toBe(s);
+    expect(r.events).toEqual([{ kind: "rejected", command: "dungeon.enter", reason: "not ready" }]);
+    expect(s.rng).toEqual(rng);
+    expect(townMenu(s, data)!.dungeons).toEqual([
+      { id: "d01", name: "試しの坑道", canEnter: true, notReady: false },
+      { id: "d02", name: "沈んだ聖堂", canEnter: true, notReady: false },
+      { id: "d03", name: "灰の地下墓所", canEnter: false, notReady: true },
+    ]);
+    // 未開放なら not unlocked が先
+    const t = newGame(1);
+    expect(execute(t, { type: "dungeon.enter", dungeonId: "d03" }, data).events).toEqual([
+      { kind: "rejected", command: "dungeon.enter", reason: "not unlocked" },
+    ]);
+  });
+
+  test("DG-32/DG-35 d02 のボス（沈鐘の大司祭）を初めて倒すと d03 が開く（dungeon.unlocked）。clearedDungeons に d02、流通レベル 4", () => {
+    const base = (seed: number) => {
+      const s = cloneState(newGame(seed));
+      s.progress.unlockedDungeons.push("d02");
+      s.progress.clearedDungeons.push("d01");
+      return execute(s, { type: "dungeon.enter", dungeonId: "d02" }, data).state;
+    };
+    const D0 = dataEnc(0, 0);
+    const { state } = findSituation((c) => c.kind === "boss", { floor: 3, base });
+    const fought = run(state, MOVE, D0).state;
+    expect(fought.battle!.groups.map((g) => g.monsterId)).toEqual(["sunken_bishop"]);
+    const s = cloneState(fought);
+    const u = s.battle!.groups[0]!.units[0]!;
+    u.hp = 1;
+    u.status = ["paralysis"];
+    for (const c of s.party) s.battle!.inputs[c.id] = { type: "defend" };
+    s.battle!.inputs["c1"] = { type: "attack", group: 0 };
+    const d = loadFreshData();
+    d.config.combat.hitMin = 100;
+    d.config.combat.hitMax = 100;
+    const r = run(s, { type: "battle.resolve" }, d);
+    expect(r.events).toContainEqual({ kind: "message", key: "dungeon.unlocked", params: { dungeon: "灰の地下墓所" } });
+    expect(r.state.progress.clearedDungeons).toEqual(["d01", "d02"]);
+    expect(r.state.progress.unlockedDungeons).toEqual(["d01", "d02", "d03"]);
+    expect(r.state.progress.shopLevel).toBe(4);
   });
 });

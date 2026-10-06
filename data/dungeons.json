@@ -62,7 +62,29 @@
     "traps": ["pit", "spinner", "teleport"],
     "trapsPerFloor": [2, 4],
     "teleporterFloors": [],
-    "onClear": { "unlockDungeon": null, "shopLevel": 4 },
+    "onClear": { "unlockDungeon": "d03", "shopLevel": 4 },
     "description": "水底に沈んだ古い聖堂。歌う亡霊がさまよい、最下層では鐘を背負った大司祭が待つ。"
+  },
+  {
+    "id": "d03", "name": "灰の地下墓所", "placeholder": true,
+    "floors": 1, "width": 20, "height": 20, "rooms": [3, 6],
+    "unlock": "d02",
+    "encounterRate": { "room": 0.14, "corridor": 0.06 },
+    "encounterTable": {
+      "1": [
+        { "monster": "drowned_acolyte", "weight": 2 },
+        { "monster": "choir_wraith", "weight": 3 },
+        { "monster": "font_mire", "weight": 3 },
+        { "monster": "stone_gazer", "weight": 2 }
+      ]
+    },
+    "groupCountWeights": { "1": [40, 35, 18, 7] },
+    "boss": { "monster": "sunken_bishop" },
+    "events": [],
+    "traps": [],
+    "trapsPerFloor": [0, 0],
+    "teleporterFloors": [],
+    "onClear": { "unlockDungeon": null, "shopLevel": 4 },
+    "description": "準備中。灰に埋もれた地下墓所。まだ誰も降りた者がいない。"
   }
 ]
