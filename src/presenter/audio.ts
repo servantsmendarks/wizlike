@@ -84,6 +84,11 @@ function hasBothBranches(plan: SongPlan): boolean {
   return plan.voices.slice(0, 3).some((l) => overlaps(l)) && overlaps(plan.voices[3]);
 }
 
+/** 暖機の曲選び（M9.5）: 区間 0 のサンプル数（短い曲で暖機すると JIT の遅い 1 回が消えないので、最も長い曲を選ぶ） */
+function seg0Length(plan: SongPlan): number {
+  return (plan.bounds[1] ?? 0) - (plan.bounds[0] ?? 0);
+}
+
 /** 曲（またはジングル）の計画と合成済みの区間 */
 type SongCache = { name: string; plan: SongPlan; buffers: (AudioBuffer | undefined)[] };
 /** 鳴っている曲・ジングル */
@@ -584,19 +589,17 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
   };
 
   // 暖機（M9.5 B6）: renderer が warmup を持てば（Web Worker 版）、作成時（読み込み時。worker の起動の直後）に読み込まれている
-  // 最初のループする曲（無ければ最初のジングル）の計画を作って区間 0 を 1 回合成させて捨てる。計画は保持に入れない。曲のファイルが無ければしない
+  // ループする曲（下の規則で選ぶ。無ければ最初のジングル）の計画を作って区間 0 を 1 回合成させて捨てる。計画は保持に入れない。曲のファイルが無ければしない
   if (deps.renderer.warmup !== undefined) {
     try {
       const all = Object.values(deps.assets.music);
-      // 区間 0 にトーン（ch1〜ch3）とノイズ（ch4）の音が両方ある最初のループする曲を選ぶ（renderSegment の両方の枝を温める）。無ければ従来どおり
+      // 区間 0 にトーン（ch1〜ch3）とノイズ（ch4）の音が両方あるループする曲のうち、区間 0 のサンプル数が最も長い曲を選ぶ（renderSegment の
+      // 両方の枝を温める。短い曲では JIT の遅い 1 回が消えない。同じ長さなら先の曲＝名前順）。無ければ従来どおり
       let plan: SongPlan | null = null;
       for (const s of all) {
         if (s.kind !== "song") continue;
         const p = deps.renderer.plan(s, deps.data.wavetables, conf.sampleRate);
-        if (segmentCount(p) > 0 && hasBothBranches(p)) {
-          plan = p;
-          break;
-        }
+        if (segmentCount(p) > 0 && hasBothBranches(p) && (plan === null || seg0Length(p) > seg0Length(plan))) plan = p;
       }
       if (plan === null) {
         const song = all.find((x) => x.kind === "song") ?? all[0];

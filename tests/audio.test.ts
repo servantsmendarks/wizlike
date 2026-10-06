@@ -1354,7 +1354,7 @@ describe("UI-63 Web Worker の合成（M9.5）", () => {
   });
 
   // 2026-10-06 レビュー F1: 名前順で先に来る曲の区間 0 にノイズ（ch4）が無いと、renderSegment のノイズの枝が暖機で回らない
-  it("UI-63 worker 暖機: 区間 0 にトーンとノイズの両方の音がある最初のループする曲で暖機する（無ければ最初のループする曲）", () => {
+  it("UI-63 worker 暖機: 区間 0 にトーンとノイズの両方の音があるループする曲で暖機する（両方ある曲が無ければ最初のループする曲）", () => {
     const quiet: SongData = { ...songData("aquiet", "song", 2), ch: [[[0, 4, 69, 12]], [], [], []] };
     const late: SongData = { ...songData("blate", "song", 2), ch: [[[0, 4, 69, 12]], [], [], [[16, 1, "kick", 15]]] };
     const f = setup({ music: { aquiet: quiet, blate: late, victory: MUSIC.victory!, town: MUSIC.town! } });
@@ -1368,6 +1368,26 @@ describe("UI-63 Web Worker の合成（M9.5）", () => {
     g.deps.renderer = createWorkerRenderer(() => asWorker(v));
     createAudioPlayer(g.deps);
     expect(v.posted).toEqual([{ type: "warmup", plan: planSong(quiet, data.wavetables, RATE) }]);
+  });
+
+  // 2026-10-06 実機(M9.5-暖機) の Q・P: 区間 0 の短い曲（battle1 相当）で暖機すると JIT の遅い 1 回が消えないので、両方の音がある曲のうち区間 0 が最も長い曲で暖機する
+  it("UI-63 worker 暖機: 両方の音がある曲のうち区間 0 のサンプル数が最も長い曲で暖機する（名前順で先の短い曲があっても。同じ長さなら先の曲）", () => {
+    const short: SongData = songData("abattle", "song", 2, { tempoUs: 300000 });
+    const longer: SongData = songData("zdungeon", "song", 2, { tempoUs: 900000 });
+    const same: SongData = songData("zz", "song", 2, { tempoUs: 900000 });
+    const quiet: SongData = { ...songData("aquiet", "song", 2, { tempoUs: 2000000 }), ch: [[[0, 4, 69, 12]], [], [], []] };
+    const f = setup({ music: { abattle: short, aquiet: quiet, town: MUSIC.town!, zdungeon: longer, zz: same } });
+    const w = new FakeWorker();
+    f.deps.renderer = createWorkerRenderer(() => asWorker(w));
+    createAudioPlayer(f.deps);
+    const lenOf = (s: SongData): number => {
+      const b = planSong(s, data.wavetables, RATE).bounds;
+      return b[1]! - b[0]!;
+    };
+    expect(lenOf(short)).toBeLessThan(lenOf(MUSIC.town!));
+    expect(lenOf(MUSIC.town!)).toBeLessThan(lenOf(longer));
+    expect(lenOf(longer)).toBeLessThan(lenOf(quiet));
+    expect(w.posted).toEqual([{ type: "warmup", plan: planSong(longer, data.wavetables, RATE) }]);
   });
 
   it("UI-63 worker 暖機: ループする曲が無ければ最初のジングル、曲のファイルが 1 つも無ければ暖機しない（壊れない）", () => {
