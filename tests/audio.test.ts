@@ -15,6 +15,7 @@ import {
 } from "../src/presenter/audio";
 import { planSong, renderSegment, sampleAt, warmupPlan, type SongPlan } from "../src/presenter/audio-synth";
 import { createSynthHandler, type FromSynthWorker, type ToSynthWorker } from "../src/presenter/synth-protocol";
+import { buildSfxSamples, sfxArgs } from "../src/presenter/sfx-samples";
 import { data } from "./helpers/core";
 
 const RATE = data.config.audio.sampleRate;
@@ -52,6 +53,7 @@ class FakeBuffer {
 }
 class FakeSource extends FakeNode {
   buffer: FakeBuffer | null = null;
+  playbackRate = new FakeParam();
   loop = false;
   loopStart = 0;
   loopEnd = 0;
@@ -226,6 +228,7 @@ function setup(
       yieldTask: (cb) => {
         f.tasks.push(cb);
       },
+      random: () => 0.5,
     },
   };
   return f;
@@ -1009,7 +1012,7 @@ describe("UI-65 効果音", () => {
     expect(f.zz.ZZFX.volume).toBe(0.3);
     p.playSfx("hit");
     expect(f.zz.ZZFX.buildSamples).toHaveBeenCalledTimes(1);
-    expect(f.zz.ZZFX.buildSamples.mock.calls[0]).toEqual([undefined, 0.05, 220, undefined, undefined, 0.1]);
+    expect(f.zz.ZZFX.buildSamples.mock.calls[0]).toEqual([undefined, 0, 220, undefined, undefined, 0.1]);
     const s = c.sources[0]!;
     expect(s.connected).toEqual([c.gains[1]]);
     expect(s.started).toBe(1);
@@ -1167,6 +1170,8 @@ const segOf = (m: ToSynthWorker | undefined): { name: string; i: number; id: num
 };
 
 describe("UI-63 Web Worker の合成（M9.5）", () => {
+  // 2026-10-07: 再生機を作ると効果音の事前合成（UI-65。type "sfx"）も worker に頼むので、送ったものを数える曲の観点のテストは
+  // setup({ sfx: {} }) にした（曲の観点は変えていない。効果音の事前合成は下の「UI-65 効果音の事前合成（M9.5）」で確かめる）
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -1178,7 +1183,7 @@ describe("UI-63 Web Worker の合成（M9.5）", () => {
     for (const i of [0, 1, 5]) {
       const r = handle({ type: "seg", name: "long", i, id: 10 + i });
       expect(r?.type).toBe("seg");
-      expect(r?.id).toBe(10 + i);
+      expect(r?.type === "seg" ? r.id : null).toBe(10 + i);
       expect(r?.samples).toEqual(renderSegment(plan, i));
     }
     expect(handle({ type: "seg", name: "nope", i: 0, id: 99 })).toEqual({ type: "seg", id: 99, samples: null });
@@ -1302,7 +1307,7 @@ describe("UI-63 Web Worker の合成（M9.5）", () => {
   });
 
   it("UI-63 worker: 再生機は worker の返事を待って区間 0 を鳴らし、返事が来るたびに先読みを予約する", () => {
-    const f = setup();
+    const f = setup({ sfx: {} });
     const w = new LoopbackWorker();
     f.deps.renderer = createWorkerRenderer(() => asWorker(w));
     const p = createAudioPlayer(f.deps);
@@ -1332,7 +1337,7 @@ describe("UI-63 Web Worker の合成（M9.5）", () => {
   // 2026-10-07 ユーザーの指示: 暖機は実在の曲から選ばず、固定のダミー区間（warmupPlan）にする。曲の構成に依存させない
   // （実在の曲を選ぶ規則のテスト 3 つ（最初のループする曲・両方の音がある曲・区間 0 が最も長い曲）はこの指示で規則ごと消した）
   it("UI-63 worker 暖機: 再生機の作成時に warmupPlan(wt, sampleRate, warmupSeconds) の計画で warmup を 1 回だけ送り、保持に入れず、以後の本物の依頼に影響しない", () => {
-    const f = setup({ music: { victory: MUSIC.victory!, town: MUSIC.town!, long: MUSIC.long! } });
+    const f = setup({ music: { victory: MUSIC.victory!, town: MUSIC.town!, long: MUSIC.long! }, sfx: {} });
     const w = new LoopbackWorker();
     f.deps.renderer = createWorkerRenderer(() => asWorker(w));
     const p = createAudioPlayer(f.deps);
@@ -1361,7 +1366,7 @@ describe("UI-63 Web Worker の合成（M9.5）", () => {
     const expected = [{ type: "warmup", plan: warmupPlan(data.wavetables, RATE, data.config.audio.warmupSeconds) }];
     const quiet: SongData = { ...songData("aquiet", "song", 2), ch: [[[0, 4, 69, 12]], [], [], []] };
     for (const music of [{}, { victory: MUSIC.victory! }, { aquiet: quiet }, MUSIC]) {
-      const f = setup({ music });
+      const f = setup({ music, sfx: {} });
       const w = new FakeWorker();
       f.deps.renderer = createWorkerRenderer(() => asWorker(w));
       const q = createAudioPlayer(f.deps);
@@ -1375,7 +1380,7 @@ describe("UI-63 Web Worker の合成（M9.5）", () => {
   });
 
   it("UI-63 worker 暖機: config.audio.warmupSeconds が 0 なら暖機しない", () => {
-    const f = setup();
+    const f = setup({ sfx: {} });
     f.deps.data = { ...data, config: { ...data.config, audio: { ...data.config.audio, warmupSeconds: 0 } } };
     const w = new FakeWorker();
     f.deps.renderer = createWorkerRenderer(() => asWorker(w));
@@ -1388,7 +1393,7 @@ describe("UI-63 Web Worker の合成（M9.5）", () => {
 
   it("UI-63 worker 暖機: 暖機の後に error が来ても壊れず（warn は 1 回、主スレッドで暖機し直さない）、以後は主スレッドで合成する", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const f = setup();
+    const f = setup({ sfx: {} });
     const w = new FakeWorker();
     f.deps.renderer = createWorkerRenderer(() => asWorker(w));
     const p = createAudioPlayer(f.deps);
@@ -1418,5 +1423,217 @@ describe("UI-63 Web Worker の合成（M9.5）", () => {
     });
     f.deps.renderer = r;
     expect(() => createAudioPlayer(f.deps)).not.toThrow();
+  });
+});
+
+// UI-65（M9.5）: 効果音は読み込み時に worker で合成してバッファを持つ（実機(M8-素材) B10【低】。初回の合成が主スレッドで 60ms 以上）。
+// 2026-10-07 ユーザーの指示「ZzFX の 26 個は読み込み時に合成してバッファを保持する（初回の 60ms 対策）」。
+describe("UI-65 効果音の事前合成（M9.5）", () => {
+  const SFX_RATE = 44100;
+  const sfxOf = (m: ToSynthWorker): { name: string; params: (number | null)[] } => {
+    if (m.type !== "sfx") throw new Error(`not sfx: ${m.type}`);
+    return m;
+  };
+
+  it("UI-65 worker: sfx の依頼に、名前と buildSfxSamples（揺らぎ 0 の ZzFX の合成）と同じ samples を返す", () => {
+    const handle = createSynthHandler();
+    const r = handle({ type: "sfx", name: "hit", params: SFX.hit!.params });
+    expect(r?.type).toBe("sfx");
+    expect(r?.type === "sfx" ? r.name : null).toBe("hit");
+    expect(r?.samples).toEqual(buildSfxSamples(SFX.hit!.params));
+    expect(r?.samples?.length).toBeGreaterThan(0);
+  });
+
+  it("UI-65 事前合成: 作成時（unlock の前・暖機の後）に assets のすべての効果音（26 個）の合成を worker に 1 回ずつ頼む。params はそのまま。AudioContext は作らない", () => {
+    const names = data.audio.sfx.names;
+    expect(names).toHaveLength(26);
+    const sfx: GameAssets["sfx"] = Object.fromEntries(names.map((n, k) => [n, { name: n, params: [null, 0.02, 200 + k] }]));
+    const f = setup({ sfx });
+    const w = new FakeWorker();
+    f.deps.renderer = createWorkerRenderer(() => asWorker(w));
+    const p = createAudioPlayer(f.deps);
+    expect(f.contexts).toHaveLength(0);
+    expect(w.posted[0]?.type).toBe("warmup");
+    expect(w.posted.slice(1)).toEqual(names.map((n, k) => ({ type: "sfx", name: n, params: [null, 0.02, 200 + k] })));
+    // unlock でも頼み直さない
+    p.unlock();
+    expect(w.posted).toHaveLength(27);
+    // 効果音のファイルが無ければ頼まない
+    const g = setup({ sfx: {} });
+    const v = new FakeWorker();
+    g.deps.renderer = createWorkerRenderer(() => asWorker(v));
+    createAudioPlayer(g.deps);
+    expect(v.posted.map((m) => m.type)).toEqual(["warmup"]);
+  });
+
+  it("UI-65 事前合成: unlock の前に来た返事は unlock で AudioBuffer（44100）にし、再生はそれを使う（ZzFX の読み込みの前でも鳴る。合成し直さない）", async () => {
+    const f = setup();
+    const w = new LoopbackWorker();
+    f.deps.renderer = createWorkerRenderer(() => asWorker(w));
+    const p = createAudioPlayer(f.deps);
+    expect(w.out.map((m) => m.type)).toEqual(["sfx", "sfx"]);
+    w.deliver();
+    w.deliver();
+    p.unlock();
+    const c = f.contexts[0]!;
+    const hit = buildSfxSamples(SFX.hit!.params);
+    const ok = buildSfxSamples(SFX.ok!.params);
+    expect(c.buffers.map((b) => [b.channels, b.length, b.sampleRate])).toEqual([
+      [1, hit.length, SFX_RATE],
+      [1, ok.length, SFX_RATE],
+    ]);
+    // ZzFX の読み込み（loadZzfx）が終わる前でも、持っているバッファで鳴る
+    p.playSfx("hit");
+    expect(c.sources).toHaveLength(1);
+    expect(c.sources[0]!.buffer?.data).toEqual(hit);
+    expect(c.sources[0]!.connected).toEqual([c.gains[1]]);
+    expect(c.sources[0]!.started).toBe(1);
+    await flush();
+    p.playSfx("hit");
+    p.playSfx("ok");
+    p.playSfx("hit");
+    expect(c.sources).toHaveLength(4);
+    expect(c.sources[1]!.buffer).toBe(c.sources[0]!.buffer);
+    expect(c.sources[3]!.buffer).toBe(c.sources[0]!.buffer);
+    expect(c.sources[2]!.buffer?.data).toEqual(ok);
+    // 再生のときに合成しない（AudioBuffer も増えない）
+    expect(c.buffers).toHaveLength(2);
+    expect(f.zz.ZZFX.buildSamples).not.toHaveBeenCalled();
+  });
+
+  it("UI-65 事前合成: unlock の後に来た返事は返事のときに AudioBuffer にする。返事の前で ZzFX も無い効果音は捨てる", () => {
+    const f = setup();
+    const w = new LoopbackWorker();
+    f.deps.renderer = createWorkerRenderer(() => asWorker(w));
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.playSfx("hit");
+    expect(c.sources).toHaveLength(0);
+    expect(c.buffers).toHaveLength(0);
+    w.deliver();
+    expect(c.buffers).toHaveLength(1);
+    p.playSfx("hit");
+    expect(c.sources).toHaveLength(1);
+    expect(c.sources[0]!.buffer?.data).toEqual(buildSfxSamples(SFX.hit!.params));
+    expect(f.zz.ZZFX.buildSamples).not.toHaveBeenCalled();
+  });
+
+  it("UI-65 事前合成: 返事の前の再生は ZzFX で 1 回だけ合成して持ち（引数は揺らぎ 0）、後から来た返事は捨てる", async () => {
+    const f = setup();
+    const w = new LoopbackWorker();
+    f.deps.renderer = createWorkerRenderer(() => asWorker(w));
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    await flush();
+    const c = f.contexts[0]!;
+    p.playSfx("hit");
+    expect(f.zz.ZZFX.buildSamples).toHaveBeenCalledTimes(1);
+    expect(f.zz.ZZFX.buildSamples.mock.calls[0]).toEqual(sfxArgs(SFX.hit!.params));
+    const first = c.sources[0]!.buffer;
+    w.deliver();
+    p.playSfx("hit");
+    expect(c.sources[1]!.buffer).toBe(first);
+    expect(c.buffers).toHaveLength(1);
+    expect(f.zz.ZZFX.buildSamples).toHaveBeenCalledTimes(1);
+  });
+
+  it("UI-65 事前合成: worker が無ければ（同期版・worker が作れない）読み込み時に合成せず、初回の再生のときに主スレッドで 1 回だけ合成して以後は使う", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    // 同期版は sfx を持たない
+    expect(createSyncRenderer().sfx).toBeUndefined();
+    const f = setup();
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    await flush();
+    const c = f.contexts[0]!;
+    expect(c.buffers).toHaveLength(0);
+    p.playSfx("hit");
+    p.playSfx("hit");
+    p.playSfx("hit");
+    expect(f.zz.ZZFX.buildSamples).toHaveBeenCalledTimes(1);
+    expect(c.sources).toHaveLength(3);
+    expect(c.sources[2]!.buffer).toBe(c.sources[0]!.buffer);
+    // worker が作れない renderer は頼まれた効果音にすぐ null を返す（主スレッドで合成しない）
+    const g = setup();
+    const r = createWorkerRenderer(() => {
+      throw new Error("no worker");
+    });
+    const got: (Float32Array | null)[] = [];
+    r.sfx?.("hit", SFX.hit!.params, (s) => got.push(s));
+    expect(got).toEqual([null]);
+    g.deps.renderer = r;
+    const q = createAudioPlayer(g.deps);
+    q.unlock();
+    await flush();
+    q.playSfx("ok");
+    q.playSfx("ok");
+    expect(g.zz.ZZFX.buildSamples).toHaveBeenCalledTimes(1);
+    expect(g.contexts[0]!.sources).toHaveLength(2);
+  });
+
+  it("UI-65 事前合成: worker の error で返事を待っている効果音は null（主スレッドで合成し直さない。warn は 1 回）、以後は初回の再生で合成する", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const f = setup();
+    const w = new FakeWorker();
+    f.deps.renderer = createWorkerRenderer(() => asWorker(w));
+    const p = createAudioPlayer(f.deps);
+    expect(w.posted.filter((m) => m.type === "sfx").map((m) => sfxOf(m).name)).toEqual(["hit", "ok"]);
+    w.onerror?.(new Error("boom"));
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(f.zz.ZZFX.buildSamples).not.toHaveBeenCalled();
+    // 古い返事が来ても使わない
+    w.reply({ type: "sfx", name: "hit", samples: new Float32Array([0.5]) });
+    p.unlock();
+    await flush();
+    const c = f.contexts[0]!;
+    expect(c.buffers).toHaveLength(0);
+    p.playSfx("hit");
+    expect(f.zz.ZZFX.buildSamples).toHaveBeenCalledTimes(1);
+    expect(c.sources).toHaveLength(1);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("UI-65 / UI-57 事前合成: 音量の段（効果音の GainNode = sfxGain × 段 / 10）が効き、段 0 ならバッファがあっても source を作らない", () => {
+    const f = setup();
+    const w = new LoopbackWorker();
+    f.deps.renderer = createWorkerRenderer(() => asWorker(w));
+    f.vol.sfx = 0;
+    const p = createAudioPlayer(f.deps);
+    w.deliver();
+    w.deliver();
+    p.unlock();
+    const c = f.contexts[0]!;
+    const sg = c.gains[1]!;
+    expect(sg.gain.value).toBe(0);
+    p.playSfx("hit");
+    p.playSfx("ok");
+    expect(c.sources).toHaveLength(0);
+    f.vol.sfx = 4;
+    p.refreshVolumes();
+    expect(sg.gain.value).toBeCloseTo(data.config.audio.sfxGain * 0.4, 10);
+    p.playSfx("hit");
+    expect(c.sources).toHaveLength(1);
+    expect(c.sources[0]!.connected).toEqual([sg]);
+  });
+
+  it("UI-65 事前合成: 揺らぎは再生のたびの playbackRate = 1 + randomness × (乱数 × 2 − 1)（randomness が null なら 0.05）", () => {
+    const f = setup();
+    const w = new LoopbackWorker();
+    f.deps.renderer = createWorkerRenderer(() => asWorker(w));
+    const rs = [0, 0.75, 0.5];
+    f.deps.random = () => rs.shift() ?? 0.5;
+    const p = createAudioPlayer(f.deps);
+    w.deliver();
+    w.deliver();
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.playSfx("hit"); // randomness 0.05、乱数 0
+    p.playSfx("ok"); // randomness null（0.05）、乱数 0.75
+    p.playSfx("hit"); // 乱数 0.5
+    expect(c.sources[0]!.playbackRate.value).toBeCloseTo(0.95, 12);
+    expect(c.sources[1]!.playbackRate.value).toBeCloseTo(1.025, 12);
+    expect(c.sources[2]!.playbackRate.value).toBe(1);
+    expect(c.sources[2]!.buffer).toBe(c.sources[0]!.buffer);
   });
 });

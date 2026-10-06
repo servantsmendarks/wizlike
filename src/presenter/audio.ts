@@ -16,9 +16,14 @@
 //   ジングルは鳴っている間だけ持つ（保持の数に入れない）。
 // - ジングルは鳴っている曲を止めて頭から 1 回。最後の区間を予約したら setSong の曲の区間 0 をジングルの終わりの時刻に予約し
 //   （無音を挟まない。ジングルの間の setSong・別のジングル・停止で予約し直す・取り消す）、最後の区間の ended でそれを鳴っているものにする。
-// - 効果音は ZzFX 1.3.2（src/vendor）。最初の unlock の後に 1 回だけ動的 import し（効果音のファイルが 1 つも無ければ読まない）、
-//   モジュールが評価時に作った AudioContext は閉じてゲームの context に差し替える。buildSamples だけを使い、
-//   params の null は undefined に変える（CONV §6・§7、proposal の案 A）。読み込みが終わる前の効果音は捨てる。
+// - 効果音は ZzFX 1.3.2（src/vendor）。名前ごとに 1 回だけ合成して AudioBuffer を持ち、再生はそれを使う（M9.5。初回の合成が
+//   主スレッドで 60ms 以上かかったため）。合成は ZzFX の事前合成（ZZFXSound）と同じく randomness を 0 にし、揺らぎは再生のたびの
+//   playbackRate で付ける（sfx-samples.ts）。params の null は undefined に変える（CONV §6・§7、proposal の案 A）。
+//   renderer が sfx を持てば（Web Worker 版）、作成時（読み込み時）にすべての効果音の合成を頼み、返ってきたサンプル列を持ち、
+//   AudioContext ができたら（または返事が後なら返事のときに）AudioBuffer にする。返事の前・worker が無い・合成できなかった効果音は、
+//   最初の unlock の後に 1 回だけ動的 import する ZzFX（効果音のファイルが 1 つも無ければ読まない。モジュールが評価時に作った
+//   AudioContext は閉じてゲームの context に差し替える）の buildSamples で、初回の再生のときに主スレッドで合成する。
+//   バッファも ZzFX も無い効果音は捨てる。
 // - 音量: 曲 = config.audio.musicGain × 段 / 10、効果音 = config.audio.sfxGain × 段 / 10（段は 0〜10。0 なら source を作らない）。
 //   ZZFX.volume（0.3）は buildSamples の中で掛かる（zzfx() の playSamples の GainNode の 0.3 の代わりが sfxGain）。
 // - 演出スキップ（settings.skipAnimations）は音に関わらない（UI-41 の省く対象に音は入らない）。
@@ -27,6 +32,7 @@
 import type { GameData, Wavetables } from "../core/data/index";
 import type { GameAssets, SongData } from "../build/asset-types";
 import { nextSegment, planSong, renderSegment, segmentCount, warmupPlan, type SongPlan } from "./audio-synth";
+import { sfxArgs, sfxRate, sfxSampleRate } from "./sfx-samples";
 import type { FromSynthWorker, ToSynthWorker } from "./synth-protocol";
 
 export type ZzfxModule = typeof import("../vendor/zzfx-1.3.2/ZzFX.js");
@@ -39,6 +45,11 @@ export type SegmentRenderer = {
   render(name: string, plan: SongPlan, i: number, cb: (samples: Float32Array<ArrayBuffer> | null) => void): void;
   /** 暖機（Web Worker 版だけが持つ）。計画（warmupPlan）の区間 0 を本物と同じ経路で合成して捨てる。返事も保持もしない */
   warmup?(plan: SongPlan): void;
+  /**
+   * UI-65（M9.5）: 効果音の事前合成（Web Worker 版だけが持つ）。params は assets の引数配列のまま。合成したサンプル列を cb に渡す。
+   * worker が無い（作れない・error の後）・合成できなければ null（再生機は初回の再生のときに主スレッドで合成する）
+   */
+  sfx?(name: string, params: (number | null)[], cb: (samples: Float32Array<ArrayBuffer> | null) => void): void;
 };
 /** UI-63（M9.5）: cb をイベントループへ 1 回戻してから呼ぶ（間にタップの処理が入れるように） */
 export type YieldTask = (cb: () => void) => void;
@@ -56,6 +67,8 @@ export type AudioDeps = {
   renderer: SegmentRenderer;
   /** 先読みの 1 区間ごとにイベントループへ戻す（本番は createMessageChannelYield()） */
   yieldTask: YieldTask;
+  /** UI-65（M9.5）: 効果音の揺らぎの乱数（0 以上 1 未満。省略なら Math.random。表示層の演出だけに使う） */
+  random?: () => number;
 };
 
 export type AudioPlayer = {
@@ -133,6 +146,8 @@ export function createWorkerRenderer(make: () => Worker): SegmentRenderer {
   let idSeq = 0;
   const sent: Record<string, SongPlan> = {};
   const waiting = new Map<number, Waiting>();
+  /** 返事を待っている効果音（名前ごと。同じ名前の依頼は最後のものだけ） */
+  const waitingSfx = new Map<string, (samples: Float32Array<ArrayBuffer> | null) => void>();
 
   const fail = (e: unknown): void => {
     if (failed) return;
@@ -148,6 +163,10 @@ export function createWorkerRenderer(make: () => Worker): SegmentRenderer {
     const rest = [...waiting.values()];
     waiting.clear();
     for (const r of rest) sync.render(r.name, r.plan, r.i, r.cb);
+    // 効果音は主スレッドで合成し直さない（読み込み時に主スレッドを止めないため。再生機が初回の再生のときに合成する）
+    const sfxRest = [...waitingSfx.values()];
+    waitingSfx.clear();
+    for (const cb of sfxRest) cb(null);
   };
 
   const get = (): Worker | null => {
@@ -157,6 +176,13 @@ export function createWorkerRenderer(make: () => Worker): SegmentRenderer {
       const w = make();
       w.onmessage = (e: MessageEvent<FromSynthWorker>) => {
         const m = e.data;
+        if (m.type === "sfx") {
+          const cb = waitingSfx.get(m.name);
+          if (cb === undefined) return;
+          waitingSfx.delete(m.name);
+          cb(m.samples);
+          return;
+        }
         const r = waiting.get(m.id);
         if (r === undefined) return;
         waiting.delete(m.id);
@@ -185,6 +211,21 @@ export function createWorkerRenderer(make: () => Worker): SegmentRenderer {
         const m: ToSynthWorker = { type: "warmup", plan };
         w.postMessage(m);
       } catch (e) {
+        fail(e);
+      }
+    },
+    sfx(name, params, cb) {
+      const w = get();
+      if (w === null) {
+        cb(null);
+        return;
+      }
+      waitingSfx.set(name, cb);
+      try {
+        const m: ToSynthWorker = { type: "sfx", name, params };
+        w.postMessage(m);
+      } catch (e) {
+        // 待っている効果音（この依頼を含む）は fail が null で返す
         fail(e);
       }
     },
@@ -246,6 +287,11 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
   let caches: SongCache[] = [];
   let zzfxLoad: Promise<void> | null = null;
   let zz: ZzfxModule | null = null;
+  /** UI-65（M9.5）: worker が合成した効果音のサンプル列（AudioContext ができる前の返事。AudioBuffer にしたら消す） */
+  const sfxSamples: Record<string, Float32Array<ArrayBuffer>> = {};
+  /** UI-65（M9.5）: 効果音の AudioBuffer（名前ごとに 1 つ。以後の再生はこれを使い、合成し直さない） */
+  const sfxBuffers: Record<string, AudioBuffer> = {};
+  const random = deps.random ?? Math.random;
   const conf = deps.data.config.audio;
 
   const level = (k: "music" | "sfx"): number => {
@@ -574,6 +620,43 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
       });
   };
 
+  /** 効果音のサンプル列を AudioBuffer にして持つ（効果音のレート 44100。空なら持たない） */
+  const keepSfx = (c: AudioContext, name: string, samples: Float32Array<ArrayBuffer>, rate: number): AudioBuffer | null => {
+    if (samples.length === 0) return null;
+    const buffer = c.createBuffer(1, samples.length, rate);
+    buffer.copyToChannel(samples, 0);
+    sfxBuffers[name] = buffer;
+    return buffer;
+  };
+  const keepWorkerSfx = (c: AudioContext): void => {
+    for (const [name, samples] of Object.entries(sfxSamples)) {
+      delete sfxSamples[name];
+      if (sfxBuffers[name] === undefined) keepSfx(c, name, samples, sfxSampleRate);
+    }
+  };
+
+  // UI-65（M9.5）: 効果音の事前合成。renderer が sfx を持てば（Web Worker 版）、作成時（読み込み時。暖機の後）にすべての効果音を頼む。
+  // 同期版・worker が無いときは頼まない（主スレッドで合成するのは初回の再生のとき）
+  const requestSfx = (): void => {
+    const sfx = deps.renderer.sfx;
+    if (sfx === undefined) return;
+    for (const [name, data] of Object.entries(deps.assets.sfx)) {
+      try {
+        sfx.call(deps.renderer, name, data.params, (samples) => {
+          try {
+            if (samples === null || sfxBuffers[name] !== undefined) return;
+            if (ctx === null) sfxSamples[name] = samples;
+            else keepSfx(ctx, name, samples, sfxSampleRate);
+          } catch (e) {
+            warn(e);
+          }
+        });
+      } catch (e) {
+        warn(e);
+      }
+    }
+  };
+
   // 暖機（M9.5 B6。2026-10-07 ユーザーの判断で固定のダミー区間）: renderer が warmup を持てば（Web Worker 版）、作成時（読み込み時。
   // worker の起動の直後）に warmupPlan（実在の曲に依存しない。波形の全種とノイズの全種を含む config.audio.warmupSeconds 秒の 1 区間）を
   // 1 回合成させて捨てる。曲のファイルの有無に関係なく送る。warmupSeconds が 0 なら送らない。計画は保持に入れない
@@ -585,6 +668,7 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
       warn(e);
     }
   }
+  requestSfx();
 
   return {
     unlock(): void {
@@ -600,6 +684,7 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
           sfxGain.connect(c.destination);
           applyGains();
           startWanted();
+          keepWorkerSfx(c);
           loadSfx(c);
         }
         const c = ctx;
@@ -639,15 +724,20 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
         const c = ctx;
         const g = sfxGain;
         const mod = zz;
-        if (c === null || g === null || mod === null || level("sfx") === 0) return;
+        if (c === null || g === null || level("sfx") === 0) return;
         const sfx = deps.assets.sfx[name];
         if (sfx === undefined) return;
-        const samples = mod.ZZFX.buildSamples(...sfx.params.map((x) => x ?? undefined));
-        if (samples.length === 0) return;
-        const buffer = c.createBuffer(1, samples.length, mod.ZZFX.sampleRate);
-        buffer.copyToChannel(Float32Array.from(samples), 0);
+        // 持っているバッファを使う。無ければ（worker の返事の前・worker が無い）ZzFX で 1 回だけ合成して持つ。ZzFX も無ければ捨てる
+        let buffer: AudioBuffer | null = sfxBuffers[name] ?? null;
+        if (buffer === null) {
+          if (mod === null) return;
+          buffer = keepSfx(c, name, Float32Array.from(mod.ZZFX.buildSamples(...sfxArgs(sfx.params))), mod.ZZFX.sampleRate);
+          if (buffer === null) return;
+        }
         const source = c.createBufferSource();
         source.buffer = buffer;
+        // 揺らぎ（ZZFXSound と同じく再生の速さで付ける）
+        source.playbackRate.value = sfxRate(sfx.params, random());
         source.connect(g);
         source.onended = () => {
           try {

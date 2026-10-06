@@ -1,16 +1,21 @@
 // UI-63（M9.5）: 区間の合成を Web Worker で行うときの主スレッドと worker の間のメッセージと、worker の側の処理。
 // worker の本体（synth.worker.ts）はこの createSynthHandler を呼ぶだけ。ここは Web API に触れない（node のテストで直接呼ぶ）。
 // - 主 → worker: { type: "plan" }（曲の計画。名前ごとに持ち、同じ名前の新しい計画で置き換える）、{ type: "seg" }（区間 i を合成）、
-//   { type: "warmup" }（暖機。渡された計画の区間 0 を本物と同じ renderSegment で合成して捨てる。計画は持たず、返事もしない）。
-// - worker → 主: { type: "seg"; id; samples }（samples の buffer は transfer。合成できなければ null）。
+//   { type: "warmup" }（暖機。渡された計画の区間 0 を本物と同じ renderSegment で合成して捨てる。計画は持たず、返事もしない）、
+//   { type: "sfx" }（UI-65。効果音 1 つを sfx-samples.ts の buildSfxSamples で事前合成する。params は assets の引数配列のまま）。
+// - worker → 主: { type: "seg"; id; samples }・{ type: "sfx"; name; samples }（samples の buffer は transfer。合成できなければ null）。
 import { renderSegment, type SongPlan } from "./audio-synth";
+import { buildSfxSamples } from "./sfx-samples";
 
 export type ToSynthWorker =
   | { type: "plan"; name: string; plan: SongPlan }
   | { type: "seg"; name: string; i: number; id: number }
-  | { type: "warmup"; plan: SongPlan };
+  | { type: "warmup"; plan: SongPlan }
+  | { type: "sfx"; name: string; params: (number | null)[] };
 
-export type FromSynthWorker = { type: "seg"; id: number; samples: Float32Array<ArrayBuffer> | null };
+export type FromSynthWorker =
+  | { type: "seg"; id: number; samples: Float32Array<ArrayBuffer> | null }
+  | { type: "sfx"; name: string; samples: Float32Array<ArrayBuffer> | null };
 
 /** worker の側のメッセージ処理。返事が要るものは返事を返す（plan と warmup は null） */
 export function createSynthHandler(): (m: ToSynthWorker) => FromSynthWorker | null {
@@ -28,6 +33,15 @@ export function createSynthHandler(): (m: ToSynthWorker) => FromSynthWorker | nu
         // 暖機の失敗は本物の依頼に関わらない
       }
       return null;
+    }
+    if (m.type === "sfx") {
+      let samples: Float32Array<ArrayBuffer> | null = null;
+      try {
+        samples = buildSfxSamples(m.params);
+      } catch {
+        samples = null;
+      }
+      return { type: "sfx", name: m.name, samples };
     }
     const plan = plans[m.name];
     let samples: Float32Array<ArrayBuffer> | null = null;
