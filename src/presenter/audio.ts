@@ -116,7 +116,8 @@ export function createSyncRenderer(): SegmentRenderer {
 
 /**
  * UI-63（M9.5）: Web Worker（synth.worker.ts。make で作る）で区間を合成する renderer（1 区間の合成が実機で 50ms 以上かかったため）。
- * worker は最初の render で作る。計画は名前ごとに送り、同じ計画を送り済みなら送らない（worker は名前ごとに最後の計画を持つ）。
+ * worker は作成時（main.ts がページの読み込み時に作る）に起動しておく（最初のタップで worker の起動を待たないため。2026-10-06）。
+ * 計画は名前ごとに送り、同じ計画を送り済みなら送らない（worker は名前ごとに最後の計画を持つ）。
  * 返事は依頼ごとの番号 id で cb に渡す（古い結果を捨てるのは再生機の req と gen）。worker が作れない・error か messageerror が
  * 来たら、warn を 1 回出して以後は同期版で合成し、返事を待っている依頼も同期版で合成し直して cb に渡す。
  */
@@ -166,6 +167,9 @@ export function createWorkerRenderer(make: () => Worker): SegmentRenderer {
       return null;
     }
   };
+
+  // 読み込み時に起動しておく。作れなければ fail が warn を出し、以後は同期版（待っている依頼は無い）
+  get();
 
   return {
     plan: (song, wt, rate) => sync.plan(song, wt, rate),

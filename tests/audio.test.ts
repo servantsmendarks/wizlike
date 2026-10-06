@@ -1188,15 +1188,18 @@ describe("UI-63 Web Worker の合成（M9.5）", () => {
     expect(handle({ type: "seg", name: "long", i: 0, id: 1 })?.samples).toEqual(renderSegment(other, 0));
   });
 
-  it("UI-63 worker: worker は最初の render で作り、計画は名前ごとに 1 回だけ送り、返事は id で cb に渡す（順が入れ替わっても）", () => {
+  // 2026-10-06 ユーザーの判断で、worker は最初の render ではなく作成時（ページの読み込み時）に作る（最初のタップの鳴り始めの遅れ B3 を減らす）
+  it("UI-63 worker: worker は作成時（読み込み時）に作り、計画は名前ごとに 1 回だけ送り、返事は id で cb に渡す（順が入れ替わっても）", () => {
     const workers: FakeWorker[] = [];
     const r = createWorkerRenderer(() => {
       const w = new FakeWorker();
       workers.push(w);
       return asWorker(w);
     });
+    expect(workers).toHaveLength(1);
+    expect(workers[0]!.posted).toEqual([]);
     const plan = r.plan(MUSIC.long!, data.wavetables, RATE);
-    expect(workers).toHaveLength(0);
+    expect(workers).toHaveLength(1);
     const got: (string | null)[] = [];
     const samplesOf: Record<number, Float32Array | null> = {};
     r.render("long", plan, 0, (s) => {
@@ -1254,6 +1257,31 @@ describe("UI-63 Web Worker の合成（M9.5）", () => {
     expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("UI-63 worker: render を一度も頼まれていない間に error が来ても壊れず、warn を 1 回出して worker を閉じ、以後は主スレッドで合成する", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const workers: FakeWorker[] = [];
+    const r = createWorkerRenderer(() => {
+      const w = new FakeWorker();
+      workers.push(w);
+      return asWorker(w);
+    });
+    expect(workers).toHaveLength(1);
+    const w = workers[0]!;
+    expect(() => w.onerror?.(new Error("load failed"))).not.toThrow();
+    expect(w.terminated).toBe(1);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    w.onmessageerror?.(new Error("again"));
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const plan = r.plan(MUSIC.town!, data.wavetables, RATE);
+    const got: (Float32Array | null)[] = [];
+    r.render("town", plan, 0, (s) => got.push(s));
+    r.render("town", plan, 1, (s) => got.push(s));
+    expect(got).toEqual([renderSegment(plan, 0), renderSegment(plan, 1)]);
+    // worker は作り直さず、閉じた worker には送らない
+    expect(workers).toHaveLength(1);
+    expect(w.posted).toEqual([]);
+  });
+
   it("UI-63 worker: worker が作れなければ（例外）主スレッドで合成する", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     let made = 0;
@@ -1261,6 +1289,9 @@ describe("UI-63 Web Worker の合成（M9.5）", () => {
       made++;
       throw new Error("no worker");
     });
+    // 作成時に作ろうとして失敗する（作成そのものは例外を投げない）
+    expect(made).toBe(1);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
     const plan = r.plan(MUSIC.town!, data.wavetables, RATE);
     const got: (Float32Array | null)[] = [];
     r.render("town", plan, 0, (s) => got.push(s));
