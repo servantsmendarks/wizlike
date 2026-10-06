@@ -716,6 +716,46 @@ describe("UI-63 区間の予約（M9.5）", () => {
     expect(f.renders).toEqual(["town:0", "dungeon:0", "long:0", "town:0"]);
   });
 
+  it("UI-63 再生: 非同期の合成で曲を素早く切り替えても、保持の刈り込みはいま頼んだ曲を捨てない（戻ったときに合成し直さない）", () => {
+    const f = setup({ delay: true });
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    p.setSong("town");
+    settle(f);
+    // dungeon の区間 0 を待つ間に long を頼む（鳴っている town と待っている dungeon が保持の後ろに並ぶ）
+    p.setSong("dungeon");
+    p.setSong("long");
+    settle(f);
+    p.setSong("town");
+    settle(f);
+    p.setSong("long");
+    settle(f);
+    expect(f.renders.filter((r) => r === "long:0").length).toBe(1);
+  });
+
+  it("UI-63 再生: 途中の区間の合成に失敗した曲は止まり、同じ曲の setSong で区間 0 から予約し直す", () => {
+    const f = setup();
+    const orig = f.deps.renderer;
+    const fail = new Set(["long:2"]);
+    f.deps.renderer = {
+      plan: orig.plan,
+      render: (name, plan, i, cb) => (fail.has(`${name}:${i}`) ? cb(null) : orig.render(name, plan, i, cb)),
+    };
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("long");
+    runTasks(f);
+    expect(tags(c)).toEqual(["long:0", "long:1"]);
+    // 予約済みの区間も止める（鳴っている扱いを残さない）
+    expect(c.sources[0]?.stopped).toBe(1);
+    expect(c.sources[1]?.stopped).toBe(1);
+    fail.clear();
+    p.setSong("long");
+    expect(tags(c)).toEqual(["long:0", "long:1", "long:0"]);
+    expect(c.sources[2]?.startAt.length).toBe(1);
+  });
+
   it("UI-63 再生: ジングルは区間で鳴らし、最後の区間の ended で場面の曲を頭から。ジングルは保持に入れない", () => {
     const f = setup();
     const p = createAudioPlayer(f.deps);

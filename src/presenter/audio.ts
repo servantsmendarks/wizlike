@@ -175,9 +175,10 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
     if (cache === undefined || cache === null) return null;
     caches = [cache, ...caches.filter((x) => x !== cache)];
     while (caches.length > conf.keepSongs) {
-      // 鳴っている曲と待っている曲は捨てない（keepSongs = 1 のときだけ起きうる）
+      // いま頼んだ曲・鳴っている曲・区間 0 を待っている曲は捨てない（非同期の renderer で、鳴っている曲と待っている曲が
+      // 後ろに並んだまま別の曲を頼んだときや、keepSongs = 1 のとき。その間は keepSongs を一時的に越え、次の刈り込みで減る）
       let j = caches.length - 1;
-      while (j >= 0 && (caches[j] === playing?.cache || caches[j] === pending?.cache)) j--;
+      while (j >= 0 && (caches[j] === cache || caches[j] === playing?.cache || caches[j] === pending?.cache)) j--;
       if (j < 0) break;
       caches.splice(j, 1);
     }
@@ -251,9 +252,10 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
       if (playing !== t) return;
       try {
         if (b === null) {
-          // 合成できない区間から先は鳴らさない
+          // 合成できない区間から先は鳴らさない。ループする曲は止めて「鳴っている」扱いを外す（同じ曲の setSong・音量の変更で作り直せる）
           t.nextSeg = null;
-          finishJingle(t);
+          if (t.kind === "song") stopTrack();
+          else finishJingle(t);
           return;
         }
         schedule(t, i, b);
@@ -299,6 +301,11 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
   /** すぐ止める（段 0・wanted が null・ファイルが無い曲）。待っている依頼も取り消す */
   const stopPlaying = (): void => {
     pending = null;
+    stopTrack();
+  };
+
+  /** 鳴っている曲・ジングルの予約をすぐ止める（待っている依頼はそのまま） */
+  const stopTrack = (): void => {
     const p = playing;
     if (p === null) return;
     playing = null;
