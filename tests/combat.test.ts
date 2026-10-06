@@ -943,6 +943,32 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
     expect(kindsOf(r2.events)).toContain(a || b ? "message:battle.status.sleep" : "message:battle.noEffect");
   });
 
+  test("MG-45 縛り言葉（M9）は敵 1 体だけに麻痺（CB-30 の付与。chance 100 のデータで確定）。MP 4。沈鐘の大司祭（resist paralysis）には乱数を引かず battle.noEffect", () => {
+    const d = dataWith({}, (x) => {
+      const sp = x.spells.find((s) => s.id === "binding_word")!;
+      if (sp.effect.type === "status") sp.effect.chance = 100;
+    });
+    const el = { c5: { knownSpells: ["fire_arrow", "sleep_mist", "binding_word"], mp: 10, mpMax: 10 } };
+    const cast = { type: "cast" as const, spellId: "binding_word", target: { side: "enemy" as const, group: 0 } };
+    const s = setup([{ monsterId: "giant_rat", hps: [30, 30, 30], status: [["sleep"], ["sleep"], ["sleep"]] }], { identified: ["giant_rat"], patches: el });
+    s.battle!.inputs["c5"] = cast;
+    const r = exec(s, RESOLVE, d);
+    expect(eventsOf(r.events, "spell")).toEqual([{ kind: "spell", actorId: "c5", spellId: "binding_word", targets: ["e0-0"] }]);
+    expect(eventsOf(r.events, "statusChanged").filter((e) => e.status === "paralysis")).toEqual([{ kind: "statusChanged", id: "e0-0", status: "paralysis", on: true }]);
+    expect(member(r.state, "c5").mp).toBe(6);
+    expectKnownStringKeys(r.events, d);
+
+    const b = setup([{ monsterId: "sunken_bishop", hps: [60], status: [["sleep"]] }], { identified: ["sunken_bishop"], patches: el });
+    b.battle!.inputs["c5"] = cast;
+    const m = cloneRng(b.rng);
+    rolls(m, 6); // 行動順だけ（付与の d100 は引かない）
+    chance(m, data.config.combat.sleepNaturalWake); // ラウンド終了の自然覚醒（眠っている大司祭）
+    const rb = exec(b, RESOLVE, d);
+    expect(rb.events).toContainEqual({ kind: "message", key: "battle.noEffect", params: { target: "沈鐘の大司祭" } });
+    expect(eventsOf(rb.events, "statusChanged").filter((e) => e.status === "paralysis")).toEqual([]);
+    expect(rb.state.rng).toEqual(m);
+  });
+
   test("CB-31 囁く影の sanDrain 4（battle.sanDrain）、無鉄砲は fear 耐性で 2。SAN 0 で行動不能", () => {
     // noSanOverride: SAN 2（錯乱）のキリの防御が CB-45 で置き換わらないようにする（耐性の量だけを見る）
     const d = dataWith({ combat: ALWAYS_HIT }, noSanOverride);

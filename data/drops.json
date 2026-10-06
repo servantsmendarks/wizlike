@@ -56,7 +56,8 @@
         { "base": "halberd", "weight": 2 }, { "base": "long_bow", "weight": 3 }, { "base": "oak_staff", "weight": 2 }, { "base": "sigil_staff", "weight": 1 },
         { "base": "warded_robe", "weight": 2 }, { "base": "chain_mail", "weight": 3 }, { "base": "plate_armor", "weight": 1 },
         { "base": "iron_shield", "weight": 2 }, { "base": "great_helm", "weight": 1 }, { "base": "iron_gloves", "weight": 2 }, { "base": "charm", "weight": 2 },
-        { "unique": "choir_robe", "weight": 1 }, { "unique": "gull_flock_knives", "weight": 1 }, { "unique": "tidewalker_spear", "weight": 1 }
+        { "unique": "choir_robe", "weight": 1 }, { "unique": "gull_flock_knives", "weight": 1 }, { "unique": "tidewalker_spear", "weight": 1 },
+        { "item": "tome_sanctuary_hymn", "weight": 1 }
       ]
     },
     {
@@ -64,7 +65,8 @@
       "entries": [
         { "base": "halberd", "weight": 2 }, { "base": "long_bow", "weight": 2 }, { "base": "sigil_staff", "weight": 2 },
         { "base": "plate_armor", "weight": 2 }, { "base": "great_helm", "weight": 2 }, { "base": "iron_gloves", "weight": 2 }, { "base": "charm", "weight": 2 },
-        { "unique": "abbot_sigil_staff", "weight": 2 }, { "unique": "choir_robe", "weight": 1 }, { "unique": "dawn_flint_staff", "weight": 1 }
+        { "unique": "abbot_sigil_staff", "weight": 2 }, { "unique": "choir_robe", "weight": 1 }, { "unique": "dawn_flint_staff", "weight": 1 },
+        { "item": "tome_ash_gale", "weight": 2 }
       ]
     }
   ],

@@ -172,6 +172,41 @@ describe("MG-44 dungeon.cast の効果", () => {
     expect(r2.events.slice(2)).toEqual([{ kind: "message", key: "battle.noEffect", params: { target: "キリ" } }]);
   });
 
+  test("MG-47 解縛（M9。cureStatus paralysis・ally・both）は迷宮でも街でも麻痺を解く（statusChanged off → battle.cured）。MP 4、乱数なし。麻痺でなければ battle.noEffect", () => {
+    const spells = { knownSpells: ["heal", "unbind"], mp: 20, mpMax: 20 };
+    for (const s of [inDungeon({ c4: spells, c2: { status: ["paralysis"] } }), inTown({ c4: spells, c2: { status: ["paralysis"] } })]) {
+      const r = ok(s, cast("c4", "unbind", "c2"));
+      expect(r.events).toEqual([
+        { kind: "mpChanged", id: "c4", delta: -4, mp: 16 },
+        { kind: "message", key: "battle.cast", params: { actor: "ドナ", spell: "解縛" } },
+        { kind: "statusChanged", id: "c2", status: "paralysis", on: false },
+        { kind: "message", key: "battle.cured", params: { target: "ベルク" } },
+      ]);
+      expect(member(r.state, "c2").status).toEqual([]);
+      expect(r.state.rng).toEqual(s.rng);
+    }
+    const r2 = ok(inDungeon({ c4: spells }), cast("c4", "unbind", "c3"));
+    expect(r2.events.slice(2)).toEqual([{ kind: "message", key: "battle.noEffect", params: { target: "キリ" } }]);
+  });
+
+  test("MG-48 聖域の讃歌（M9。heal 2d8・party・both）は dungeon.cast で生存者全員を 1 人 2d8 ずつ回復する（targetId は見ない。死者は飛ばす）。MP 12", () => {
+    const hurt = { hp: 1 };
+    const s = inDungeon({ c1: hurt, c2: hurt, c3: { life: "dead", hp: 0 }, c4: { ...hurt, knownSpells: ["heal", "sanctuary_hymn"], mp: 20, mpMax: 20 }, c5: hurt, c6: hurt });
+    const m = cloneRng(s.rng);
+    const alive = ["c1", "c2", "c4", "c5", "c6"];
+    const want = alive.map((id) => Math.min(member(s, id).hpMax, 1 + rollDice(m, "2d8").total));
+    const r = ok(s, cast("c4", "sanctuary_hymn", "c3"));
+    expect(r.events.slice(0, 2)).toEqual([
+      { kind: "mpChanged", id: "c4", delta: -12, mp: 8 },
+      { kind: "message", key: "battle.cast", params: { actor: "ドナ", spell: "聖域の讃歌" } },
+    ]);
+    expect(r.events.filter((e) => e.kind === "hpChanged").map((e) => (e.kind === "hpChanged" ? [e.id, e.hp] : []))).toEqual(alive.map((id, i) => [id, want[i]]));
+    expect(member(r.state, "c3").hp).toBe(0);
+    expect(r.state.rng).toEqual(m);
+    // 街でも使える（MG-32）
+    expect(checkCast(inTown({ c4: { knownSpells: ["sanctuary_hymn"], mp: 20, mpMax: 20 } }), data, "c4", "sanctuary_hymn", undefined)).toBeNull();
+  });
+
   test("MG-40 return: mpChanged → battle.cast → dungeon.returnSpell → town.enter → screen town。台帳の品と金は残る（DG-43）。乱数なし", () => {
     const s = inDungeon({ c4: PRIEST_ALL });
     s.gold = 350;

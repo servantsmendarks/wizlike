@@ -68,5 +68,33 @@
     "effect": { "type": "resurrect" },
     "bookOnly": false, "tags": [],
     "description": "死者を蘇らせる。失敗すると灰になる。"
+  },
+  {
+    "id": "binding_word", "name": "縛り言葉", "school": "mage", "level": 2, "learnLevel": 3,
+    "mp": 4, "target": "enemy", "usableIn": "battle",
+    "effect": { "type": "status", "status": "paralysis", "chance": 50 },
+    "bookOnly": false, "tags": [],
+    "description": "一体を言葉で縛り、動けなくする。眠らない相手にも効く。"
+  },
+  {
+    "id": "ash_gale", "name": "灰嵐", "school": "mage", "level": 4, "learnLevel": 7,
+    "mp": 12, "target": "allEnemies", "usableIn": "battle",
+    "effect": { "type": "damage", "dice": "4d6" },
+    "bookOnly": true, "tags": [],
+    "description": "敵全体を灼けた灰の嵐で包む。魔法書でしか覚えられない。"
+  },
+  {
+    "id": "unbind", "name": "解縛", "school": "priest", "level": 3, "learnLevel": 5,
+    "mp": 4, "target": "ally", "usableIn": "both",
+    "effect": { "type": "cureStatus", "status": "paralysis" },
+    "bookOnly": false, "tags": [],
+    "description": "麻痺を解く。"
+  },
+  {
+    "id": "sanctuary_hymn", "name": "聖域の讃歌", "school": "priest", "level": 4, "learnLevel": 7,
+    "mp": 12, "target": "party", "usableIn": "both",
+    "effect": { "type": "heal", "dice": "2d8" },
+    "bookOnly": true, "tags": [],
+    "description": "全員の傷を癒やす。魔法書でしか覚えられない。"
   }
 ]

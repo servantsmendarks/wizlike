@@ -39,6 +39,11 @@
 - MG-42 蘇生 `resurrect`（僧侶系 Lv5【仮】、field）: 対象 `dead` → `alive`（HP 1）。成功率は寺院と同式（TW-07）。失敗すると `ash`。`dungeon.cast`（MG-44）で使う。成功率は `resurrectRate`（寺院と共有）、判定は d100 を 1 回で、ダイスは表示しない（TW-07 と同じ）。対象は `life` が `dead` の者（`alive` / `ash` は rejected `bad target`）。成否に関わらず MP を消費する。戻る者は状態異常なし（CH-45）。
 - MG-43 睡眠 `sleep_mist`（魔術師系 Lv1【仮】、battle）: 対象グループに睡眠を付与。付与判定は CB-30。
 - MG-44 `dungeon.cast {memberId, spellId, targetId?}`（M4.5）: 街と、迷宮の戦闘外かつ保留なし（キャンプと酒場。UI-53。街は M5.5 から）で受け付ける。判定順は wrong screen（戦闘中・title。M5.5 で not in dungeon から改めた）→ no such member → cannot act（CH-44）→ unknown spell（data に無い・本人が覚えていない）→ not usable here（MG-32 の条件を満たさない。街の帰還も。M5.5）→ no mp → bad target（`ally` の heal / cureStatus は `alive` の者、蘇生は `dead` の者。`self` / `party` / `none` は targetId を見ない）→ full hp（2026-10-05。`ally` の heal で対象の HP が実効の hpMax（CH-14）以上。MP を消費しない。戦闘外の道具 `dungeon.useItem` の heal・`ally` の品（薬草）も同じく rejected `full hp` で品は消えない。`self` / `party` の heal と戦闘中の回復は今のまま満タンでも受け付ける）。`campMenu` / `fieldItemMenu` の呪文・品の `usable` は full hp を見ず、対象ごとの可否を `targets`（allies の順に `{ id, block: "fullHp" | null }`）で返す。保留中は E3 の choice pending。受け付けたら MP を引き（`mpChanged`）→ `battle.cast{actor, spell}` → 効果の順。`spell` イベントは出さない。heal / cureStatus は戦闘と同じ効果（F9。heal は対象ごとに 1 回振る）、帰還は `dungeon.returnSpell` → 街に入る処理（DG-30 と同じで台帳は持ち帰る）、蘇生は `dungeon.cast.resurrectRoll` → 判定 → `lifeChanged`（成功なら続けて `hpChanged`）→ `dungeon.cast.resurrectOk` / `resurrectFail`。
+- MG-45 縛り言葉 `binding_word`（M9。魔術師系 Lv2、battle、`enemy`）: 敵 1 体に麻痺を付与する。付与判定は CB-30（耐性 `resist.paralysis` の敵には乱数を引かず `battle.noEffect`）。同じ帯の炎裂（攻撃）とは役割が重ならない（MG-31）。
+- MG-46 灰嵐 `ash_gale`（M9。魔術師系 Lv4、battle、`allEnemies`、`bookOnly`）: 敵全体にダメージ（魔法攻撃力 MG-33 を足す）。灰嵐の魔法書（d02 のボスの戦利品。IT-55）でだけ覚える。
+- MG-47 解縛 `unbind`（M9。僧侶系 Lv3、both、`ally`）: 麻痺を解く（`cureStatus`。解毒と同じ処理）。戦闘でも迷宮・街の `dungeon.cast`（MG-44）でも使う。
+- MG-48 聖域の讃歌 `sanctuary_hymn`（M9。僧侶系 Lv4、both、`party`、`bookOnly`）: 生存者全員を回復する（1 人ごとに出目を振る。`party` なので `dungeon.cast` の targetId を見ない）。讃歌の魔法書（d02 の 3 階のドロップ表。IT-55）でだけ覚える。
+- M9 の 4 つは `spells.json` の末尾に置く（MG-21 の判定は並び順なので、既存の呪文の判定の順を変えない）。どれも今の効果の種類（`status` / `damage` / `cureStatus` / `heal`）だけで表す。
 
 ## 6. データ
 

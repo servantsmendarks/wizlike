@@ -7,5 +7,11 @@
     "usableIn": "field", "effect": { "type": "return" } },
 
   { "id": "tome_lightning", "name": "雷光の魔法書", "type": "book", "price": 1500, "infinite": false,
-    "usableIn": "field", "effect": { "type": "learn", "spell": "lightning_tome" } }
+    "usableIn": "field", "effect": { "type": "learn", "spell": "lightning_tome" } },
+  { "id": "tome_ash_gale", "name": "灰嵐の魔法書", "type": "book", "price": 2000, "infinite": false,
+    "usableIn": "field", "effect": { "type": "learn", "spell": "ash_gale" },
+    "description": "灰色の革で綴じた重い本。頁をめくるたびに熱い灰がこぼれる。" },
+  { "id": "tome_sanctuary_hymn", "name": "讃歌の魔法書", "type": "book", "price": 2000, "infinite": false,
+    "usableIn": "field", "effect": { "type": "learn", "spell": "sanctuary_hymn" },
+    "description": "水に濡れても滲まない譜面の本。聖堂の讃歌が書き留められている。" }
 ]

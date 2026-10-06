@@ -80,9 +80,9 @@ describe("data: 実データ", () => {
     const data = loadGameData(rawData());
     expect(data.races).toHaveLength(5);
     expect(data.classes).toHaveLength(7);
-    expect(data.spells).toHaveLength(10);
+    expect(data.spells).toHaveLength(14); // M9: 4 つ（MG-45〜48）を末尾に追加
     expect(data.monsters).toHaveLength(14); // M9: 8 種を追加
-    expect(data.items).toHaveLength(4); // M7 の B2: 消耗品 3・魔法書 1（装備は equipment-bases.json。IT-01）
+    expect(data.items).toHaveLength(6); // M7 の B2: 消耗品 3・魔法書 1（装備は equipment-bases.json。IT-01）。M9 で魔法書 2 冊
     expect(data.personalities.map((p) => p.id).sort()).toEqual(["cautious", "greedy", "normal", "reckless"]);
     expect(data.penaltyTable.bands).toHaveLength(7);
     expect(data.dungeons.map((d) => d.id)).toEqual(["d01", "d02", "d03"]); // d03 は準備中の枠（DG-35。M9）
@@ -745,7 +745,7 @@ describe("data: items.json", () => {
   });
   test("data: IT-01（M7）items.json は消耗品と魔法書だけ。装備の type・装備の欄・cursed は止める。cursed_dagger は無い（Q10）", () => {
     const d = loadGameData(rawData());
-    expect(d.items.map((i) => i.id)).toEqual(["herb", "antidote_herb", "return_thread", "tome_lightning"]);
+    expect(d.items.map((i) => i.id)).toEqual(["herb", "antidote_herb", "return_thread", "tome_lightning", "tome_ash_gale", "tome_sanctuary_hymn"]);
     expect(d.items.some((i) => i.id === "cursed_dagger")).toBe(false);
     expect(d.equipmentBases.some((b) => b.id === "cursed_dagger")).toBe(false);
     expectIssue((r) => (r.items[0].type = "weapon"), "items.json", "[0].type: expected one of consumable|book");
@@ -900,6 +900,14 @@ describe("data: uniques.json（IT-03 / IT-40。M7）", () => {
 });
 
 describe("data: drops.json（IT-50〜53。M7）", () => {
+  test("data: IT-55 魔法書（M9）は d02 の 3 階の表（讃歌、低い重み 1）と d02 のボスの表（灰嵐、重み 2）にだけある", () => {
+    const d = loadGameData(rawData());
+    const books = d.drops.tables.flatMap((t) => t.entries.flatMap((e) => ("item" in e ? [[t.id, e.item, e.weight]] : [])));
+    expect(books).toEqual([
+      ["d02_f3", "tome_sanctuary_hymn", 1],
+      ["d02_boss", "tome_ash_gale", 2],
+    ]);
+  });
   test("data: IT-51 実データの表 7 つ。12 種のユニークはどれかの表に入る", () => {
     const d = loadGameData(rawData());
     expect(d.drops.tables.map((t) => t.id)).toEqual(["d01_f1", "d01_f2", "d01_boss", "d02_f1", "d02_f2", "d02_f3", "d02_boss"]);
