@@ -1,9 +1,23 @@
 // UI-06 / UI-63 / UI-65 / UI-57: 再生機（src/presenter/audio.ts）。偽の AudioContext で呼び出しを記録する。
+// UI-63（M9.5）: 曲とジングルは区間（小節）ごとの AudioBufferSourceNode の予約で鳴らす。合成の口（renderer）と
+// イベントループへ戻す口（yieldTask）は偽物を注入し、テストが 1 つずつ進める。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GameAssets, SongData } from "../src/build/asset-types";
-import { attachAudio, createAudioPlayer, type AudioDeps, type ZzfxModule } from "../src/presenter/audio";
-import { sampleAt, SAMPLE_RATE } from "../src/presenter/audio-synth";
+import {
+  attachAudio,
+  createAudioPlayer,
+  createMessageChannelYield,
+  createSyncRenderer,
+  type AudioDeps,
+  type SegmentRenderer,
+  type ZzfxModule,
+} from "../src/presenter/audio";
+import { planSong, sampleAt } from "../src/presenter/audio-synth";
 import { data } from "./helpers/core";
+
+const RATE = data.config.audio.sampleRate;
+const LEAD = data.config.audio.startLeadMs / 1000;
+const PREFETCH = data.config.audio.prefetchBars;
 
 class FakeParam {
   value = 1;
@@ -27,6 +41,8 @@ class FakeBuffer {
     public channels: number,
     public length: number,
     public sampleRate: number,
+    /** どの曲のどの区間か（"town:0"。偽の renderer が最後に合成したもの） */
+    public tag: string,
   ) {}
   copyToChannel(src: Float32Array, ch: number): void {
     if (ch === 0) this.data = src;
@@ -39,14 +55,20 @@ class FakeSource extends FakeNode {
   loopEnd = 0;
   started = 0;
   stopped = 0;
+  /** start(when) の when */
+  startAt: number[] = [];
+  /** stop(when) の when（引数なしは undefined） */
+  stopAt: (number | undefined)[] = [];
   onended: (() => void) | null = null;
-  start(): void {
+  start(when?: number): void {
     this.started++;
+    this.startAt.push(when ?? 0);
   }
-  stop(): void {
+  stop(when?: number): void {
     this.stopped++;
+    this.stopAt.push(when);
   }
-  /** 鳴り終わった（ジングルの終わり） */
+  /** 鳴り終わった（ended） */
   end(): void {
     this.onended?.();
   }
@@ -54,19 +76,23 @@ class FakeSource extends FakeNode {
 class FakeContext {
   state: "suspended" | "running" | "closed" = "suspended";
   destination = { name: "destination" };
+  currentTime = 0;
+  baseLatency: number | undefined = undefined;
+  sampleRate = 48000;
   gains: FakeGain[] = [];
   sources: FakeSource[] = [];
   buffers: FakeBuffer[] = [];
   resumes = 0;
   suspends = 0;
   closes = 0;
+  constructor(private tag: () => string = () => "?") {}
   createGain(): FakeGain {
     const g = new FakeGain();
     this.gains.push(g);
     return g;
   }
   createBuffer(ch: number, len: number, rate: number): FakeBuffer {
-    const b = new FakeBuffer(ch, len, rate);
+    const b = new FakeBuffer(ch, len, rate, this.tag());
     this.buffers.push(b);
     return b;
   }
@@ -92,16 +118,21 @@ class FakeContext {
   }
 }
 
-function songData(name: string, kind: "song" | "jingle", bars: number): SongData {
+function songData(
+  name: string,
+  kind: "song" | "jingle",
+  bars: number,
+  o: { tempoUs?: number; loop?: { start16: number; end16: number } } = {},
+): SongData {
   return {
     name,
     kind,
-    tempoUs: 500000,
+    tempoUs: o.tempoUs ?? 500000,
     time: [4, 4],
     barLen16: 16,
     bars,
     end16: bars * 16,
-    loop: kind === "song" ? { start16: 16, end16: bars * 16 } : null,
+    loop: kind === "song" ? (o.loop ?? { start16: 16, end16: bars * 16 }) : null,
     waves: ["pulse50", "triangle", "organ"],
     ch: [[[0, 4, 69, 12]], [], [], [[0, 1, "kick", 15]]],
   };
@@ -112,6 +143,12 @@ const MUSIC: GameAssets["music"] = {
   dungeon: songData("dungeon", "song", 3),
   victory: songData("victory", "jingle", 1),
   inn: songData("inn", "jingle", 4),
+  // 前奏 1 小節 + ループ 5 小節（区間 0..5、ループは区間 1..5）
+  long: songData("long", "song", 6),
+  // ループの終わりが曲末より前（区間 0..3、ループは区間 0..1）
+  cut: songData("cut", "song", 4, { loop: { start16: 0, end16: 32 } }),
+  // 小節の頭が整数のサンプルにならないテンポ（区間の長さが 1 サンプル揺れる）
+  odd: songData("odd", "song", 4, { tempoUs: 789474, loop: { start16: 0, end16: 64 } }),
 };
 const SFX: GameAssets["sfx"] = {
   hit: { name: "hit", params: [null, 0.05, 220, null, null, 0.1] },
@@ -124,9 +161,17 @@ type Fake = {
   zz: { ZZFX: { volume: number; sampleRate: number; audioContext: FakeContext; buildSamples: ReturnType<typeof vi.fn> } };
   vol: { music: number; sfx: number };
   loads: number;
+  /** 合成を頼まれた区間（"town:0"）の順 */
+  renders: string[];
+  /** yieldTask に積まれた cb */
+  tasks: (() => void)[];
+  /** delay のとき、まだ返していない合成（release で返す） */
+  held: { key: string; run: () => void }[];
 };
 
-function setup(o: { music?: GameAssets["music"]; sfx?: GameAssets["sfx"]; noContext?: boolean; loadFails?: boolean } = {}): Fake {
+function setup(
+  o: { music?: GameAssets["music"]; sfx?: GameAssets["sfx"]; noContext?: boolean; loadFails?: boolean; delay?: boolean } = {},
+): Fake {
   const contexts: FakeContext[] = [];
   const zzContext = new FakeContext();
   const zz = {
@@ -138,15 +183,33 @@ function setup(o: { music?: GameAssets["music"]; sfx?: GameAssets["sfx"]; noCont
     },
   };
   const vol = { music: 7, sfx: 7 };
+  const sync = createSyncRenderer();
+  let last = "?";
+  const renderer: SegmentRenderer = {
+    plan: (song, wt, rate) => sync.plan(song, wt, rate),
+    render: (name, plan, i, cb) => {
+      const key = `${name}:${i}`;
+      f.renders.push(key);
+      const run = (): void => {
+        last = key;
+        sync.render(name, plan, i, cb);
+      };
+      if (o.delay === true) f.held.push({ key, run });
+      else run();
+    },
+  };
   const f: Fake = {
     contexts,
     zz,
     vol,
     loads: 0,
+    renders: [],
+    tasks: [],
+    held: [],
     deps: {
       createContext: () => {
         if (o.noContext === true) return null;
-        const c = new FakeContext();
+        const c = new FakeContext(() => last);
         contexts.push(c);
         return c as unknown as AudioContext;
       },
@@ -157,9 +220,52 @@ function setup(o: { music?: GameAssets["music"]; sfx?: GameAssets["sfx"]; noCont
       data,
       assets: { music: o.music ?? MUSIC, sfx: o.sfx ?? SFX },
       volumes: () => ({ ...vol }),
+      renderer,
+      yieldTask: (cb) => {
+        f.tasks.push(cb);
+      },
     },
   };
   return f;
+}
+
+/** yieldTask に積まれた cb を 1 つ呼ぶ */
+function runTask(f: Fake): void {
+  const t = f.tasks.shift();
+  if (t === undefined) throw new Error("no task");
+  t();
+}
+/** yieldTask に積まれた cb を空になるまで呼ぶ */
+function runTasks(f: Fake): void {
+  for (let n = 0; f.tasks.length > 0; n++) {
+    if (n > 100) throw new Error("tasks do not settle");
+    runTask(f);
+  }
+}
+/** delay の合成を key で返す（無ければ先頭） */
+function release(f: Fake, key?: string): void {
+  const k = key === undefined ? 0 : f.held.findIndex((h) => h.key === key);
+  const h = f.held[k];
+  if (k < 0 || h === undefined) throw new Error(`not held: ${key}`);
+  f.held.splice(k, 1);
+  h.run();
+}
+/** delay の合成と yieldTask を両方とも空になるまで進める */
+function settle(f: Fake): void {
+  for (let n = 0; f.held.length > 0 || f.tasks.length > 0; n++) {
+    if (n > 100) throw new Error("does not settle");
+    if (f.held.length > 0) release(f);
+    else runTask(f);
+  }
+}
+const tags = (c: FakeContext): string[] => c.sources.map((s) => s.buffer?.tag ?? "?");
+/** まだ鳴り終わっていない（end を呼んでいない）source の先頭を終わらせる */
+function endNext(c: FakeContext, ended: Set<FakeSource>): FakeSource {
+  const s = c.sources.find((x) => !ended.has(x));
+  if (s === undefined) throw new Error("no source");
+  ended.add(s);
+  s.end();
+  return s;
 }
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
@@ -221,6 +327,7 @@ describe("UI-06 AudioContext の開始", () => {
     p.refreshVolumes();
     p.setHidden(true);
     expect(f.loads).toBe(0);
+    expect(f.renders).toEqual([]);
   });
 
   it("UI-06 attachAudio: pointerup・touchend・keydown（capture）で unlock、visibilitychange で setHidden。外す関数で外れる", () => {
@@ -269,41 +376,43 @@ describe("UI-63 曲とジングル", () => {
     const c = f.contexts[0]!;
     expect(c.sources.length).toBe(0);
     expect(c.buffers.length).toBe(0);
+    expect(f.renders).toEqual([]);
     // 効果音のファイルが 1 つも無ければ ZzFX を読まない（素材なしで chunk の要求を出さない）
     expect(f.loads).toBe(0);
     expect(err).not.toHaveBeenCalled();
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("UI-63 ループする曲は loop true・loopStart/loopEnd が秒、同じ曲の setSong は作り直さない、別の曲は前を止める", () => {
+  it("UI-63 曲は区間の source（loop なし）で鳴らす。同じ曲の setSong は作り直さない、別の曲は前を区間 0 の時刻で止める、ファイルが無い曲は止めて無音", () => {
     const f = setup();
     const p = createAudioPlayer(f.deps);
     p.unlock();
     const c = f.contexts[0]!;
     p.setSong("town");
-    expect(c.sources.length).toBe(1);
+    expect(tags(c)).toEqual(["town:0"]);
     const s = c.sources[0]!;
     expect(s.started).toBe(1);
-    expect(s.loop).toBe(true);
-    expect(s.loopStart).toBe(sampleAt(16, 500000) / SAMPLE_RATE);
-    expect(s.loopEnd).toBe(sampleAt(32, 500000) / SAMPLE_RATE);
-    expect(nameOf(s)).toBe("town");
+    expect(s.loop).toBe(false);
     expect(s.connected).toEqual([c.gains[0]]);
-    expect(s.buffer?.length).toBe(sampleAt(32, 500000));
-    expect(s.buffer?.sampleRate).toBe(44100);
     p.setSong("town");
     expect(c.sources.length).toBe(1);
+    expect(f.renders).toEqual(["town:0"]);
+    c.currentTime = 0.5;
     p.setSong("dungeon");
-    expect(s.stopped).toBe(1);
+    expect(s.stopAt).toEqual([0.5 + LEAD]);
+    // disconnect は ended の中（すぐ切ると区間 0 の時刻までの音が切れる）
+    expect(s.disconnected).toBe(0);
+    s.end();
     expect(s.disconnected).toBe(1);
-    expect(c.sources.length).toBe(2);
-    // 合成は曲名ごとに 1 回（town に戻っても buffer を作り直さない）
+    expect(tags(c)).toEqual(["town:0", "dungeon:0"]);
+    expect(c.sources[1]?.startAt).toEqual([0.5 + LEAD]);
+    // 合成は区間ごとに 1 回（town に戻っても区間 0 を作り直さない）
     p.setSong("town");
-    expect(c.buffers.length).toBe(2);
+    expect(f.renders).toEqual(["town:0", "dungeon:0"]);
     expect(c.sources[2]?.buffer).toBe(s.buffer);
-    // ファイルが無い曲は止めて無音
+    // ファイルが無い曲は止めて無音（即時の停止）
     p.setSong("boss");
-    expect(c.sources[2]?.stopped).toBe(1);
+    expect(c.sources[2]?.stopAt).toEqual([undefined]);
     expect(c.sources.length).toBe(3);
     p.setSong(null);
     expect(c.sources.length).toBe(3);
@@ -319,6 +428,7 @@ describe("UI-63 曲とジングル", () => {
     p.playJingle("victory");
     expect(town.stopped).toBe(1);
     const j = c.sources[1]!;
+    expect(j.buffer?.tag).toBe("victory:0");
     expect(j.loop).toBe(false);
     expect(j.started).toBe(1);
     p.playJingle("victory");
@@ -326,25 +436,28 @@ describe("UI-63 曲とジングル", () => {
     p.setSong("dungeon");
     expect(c.sources.length).toBe(2);
     j.end();
-    expect(c.sources.length).toBe(3);
-    const d = c.sources[2]!;
-    expect(d.loop).toBe(true);
-    expect(d.started).toBe(1);
-    expect(nameOf(d)).toBe("dungeon");
+    expect(tags(c)).toEqual(["town:0", "victory:0", "dungeon:0"]);
+    expect(c.sources[2]?.started).toBe(1);
     // 別のジングルは置き換え。置き換えられた方の ended は無視する
     p.playJingle("victory");
     const v = c.sources[3]!;
     p.playJingle("inn");
     const inn = c.sources[4]!;
+    expect(inn.buffer?.tag).toBe("inn:0");
     expect(v.stopped).toBe(1);
     v.end();
     expect(c.sources.length).toBe(5);
-    inn.end();
-    expect(c.sources.length).toBe(6);
+    // inn は 4 区間。全部の ended の後に場面の曲
+    runTasks(f);
+    const ended = new Set<FakeSource>([c.sources[0]!, c.sources[1]!, c.sources[2]!, v]);
+    c.sources[2]!.end();
+    for (let n = 0; n < 4; n++) endNext(c, ended);
+    expect(tags(c).slice(4)).toEqual(["inn:0", "inn:1", "inn:2", "inn:3", "dungeon:0"]);
     // ファイルの無いジングルは何もしない（鳴っている曲のまま）
+    const before = c.sources.length;
     p.playJingle("wipe");
-    expect(c.sources.length).toBe(6);
-    expect(c.sources[5]?.stopped).toBe(0);
+    expect(c.sources.length).toBe(before);
+    expect(c.sources[before - 1]?.stopped).toBe(0);
   });
 
   it("UI-63 unlock 前の setSong は覚えて unlock で始める、unlock 前のジングルは捨てる", () => {
@@ -354,9 +467,315 @@ describe("UI-63 曲とジングル", () => {
     p.playJingle("victory");
     p.unlock();
     const c = f.contexts[0]!;
+    expect(tags(c)).toEqual(["dungeon:0"]);
+  });
+});
+
+describe("UI-63 区間の予約（M9.5）", () => {
+  it("UI-63 再生: setSong は区間 0 だけを合成して currentTime + baseLatency + startLeadMs/1000 に予約する", () => {
+    const f = setup();
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    c.currentTime = 1.5;
+    c.baseLatency = 0.01;
+    p.setSong("long");
+    expect(f.renders).toEqual(["long:0"]);
     expect(c.sources.length).toBe(1);
-    expect(c.sources[0]?.loop).toBe(true);
-    expect(nameOf(c.sources[0]!)).toBe("dungeon");
+    expect(c.sources[0]?.startAt[0]).toBeCloseTo(1.5 + 0.01 + LEAD, 12);
+    // baseLatency が無い context では currentTime + startLeadMs/1000
+    const g = setup();
+    const q = createAudioPlayer(g.deps);
+    q.unlock();
+    const d = g.contexts[0]!;
+    d.currentTime = 2;
+    q.setSong("town");
+    expect(d.sources[0]?.startAt).toEqual([2 + LEAD]);
+  });
+
+  it("UI-63 再生: yieldTask を 1 回回すごとに 1 区間ずつ合成・予約し、1 + prefetchBars 個で止まる", () => {
+    expect(PREFETCH).toBe(2);
+    const f = setup();
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("long");
+    expect(f.tasks.length).toBe(1);
+    runTask(f);
+    expect(f.renders).toEqual(["long:0", "long:1"]);
+    expect(f.tasks.length).toBe(1);
+    runTask(f);
+    expect(f.renders).toEqual(["long:0", "long:1", "long:2"]);
+    expect(tags(c)).toEqual(["long:0", "long:1", "long:2"]);
+    expect(f.tasks.length).toBe(0);
+  });
+
+  it("UI-63 再生: 予約の時刻は t0 + 累計サンプル / rate で隙間なく連なる（長さが 1 サンプル違う区間が混ざっても）", () => {
+    const plan = planSong(MUSIC.odd!, data.wavetables, RATE);
+    const lens = plan.bounds.slice(1).map((b, i) => b - (plan.bounds[i] ?? 0));
+    expect(new Set(lens).size).toBe(2);
+    const f = setup();
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("odd");
+    runTasks(f);
+    const ended = new Set<FakeSource>();
+    // 4 区間 + ループの 2 周目の頭まで
+    for (let n = 0; n < 3; n++) endNext(c, ended);
+    expect(tags(c)).toEqual(["odd:0", "odd:1", "odd:2", "odd:3", "odd:0", "odd:1"]);
+    const starts = c.sources.map((s) => s.startAt[0]);
+    const cum = [0, ...plan.bounds.slice(1), plan.total + (plan.bounds[1] ?? 0)];
+    expect(starts).toEqual(cum.map((x) => LEAD + x / RATE));
+  });
+
+  it("UI-63 再生: 区間の ended で次の 1 区間を予約する（先読みは常に 2）。ended が順番どおりに来なくても自分の source だけを外す", () => {
+    const f = setup();
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("long");
+    runTasks(f);
+    c.sources[0]!.end();
+    expect(tags(c)).toEqual(["long:0", "long:1", "long:2", "long:3"]);
+    expect(f.tasks.length).toBe(0);
+    // 区間 2 の ended が区間 1 より先に来る
+    c.sources[2]!.end();
+    expect(tags(c)).toEqual(["long:0", "long:1", "long:2", "long:3", "long:4"]);
+    // 切り替えでは予約に残っている source（区間 1・3・4）だけを止める
+    c.currentTime = 3;
+    p.setSong("town");
+    expect(c.sources[1]?.stopAt).toEqual([3 + LEAD]);
+    expect(c.sources[3]?.stopAt).toEqual([3 + LEAD]);
+    expect(c.sources[4]?.stopAt).toEqual([3 + LEAD]);
+    expect(c.sources[0]?.stopAt).toEqual([]);
+    expect(c.sources[2]?.stopAt).toEqual([]);
+    // 止めた source の ended は先読みを増やさない
+    const n = c.sources.length;
+    c.sources[1]!.end();
+    expect(c.sources.length).toBe(n);
+  });
+
+  it("UI-63 再生: ループの終わりの次はループの頭（前奏は 1 回だけ）。2 周目は合成しない（合成の回数が区間の数のまま）", () => {
+    const f = setup();
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("long");
+    runTasks(f);
+    const ended = new Set<FakeSource>();
+    for (let n = 0; n < 12; n++) endNext(c, ended);
+    expect(tags(c)).toEqual([
+      "long:0", "long:1", "long:2", "long:3", "long:4", "long:5",
+      "long:1", "long:2", "long:3", "long:4", "long:5",
+      "long:1", "long:2", "long:3", "long:4",
+    ]);
+    expect(f.renders).toEqual(["long:0", "long:1", "long:2", "long:3", "long:4", "long:5"]);
+    expect(c.buffers.length).toBe(6);
+    // 2 周目は同じ AudioBuffer を使い回す
+    expect(c.sources[6]?.buffer).toBe(c.sources[1]?.buffer);
+  });
+
+  it("UI-63 再生: loop_end < 曲末の曲は loop_end 以降を合成も予約もしない", () => {
+    const f = setup();
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("cut");
+    runTasks(f);
+    const ended = new Set<FakeSource>();
+    for (let n = 0; n < 4; n++) endNext(c, ended);
+    expect(tags(c)).toEqual(["cut:0", "cut:1", "cut:0", "cut:1", "cut:0", "cut:1", "cut:0"]);
+    expect(f.renders).toEqual(["cut:0", "cut:1"]);
+  });
+
+  it("UI-63 再生: 切り替えは次の曲の区間 0 が揃ってから、前の曲の予約済みの source を区間 0 の時刻で stop する", () => {
+    const f = setup({ delay: true });
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("long");
+    settle(f);
+    expect(tags(c)).toEqual(["long:0", "long:1", "long:2"]);
+    c.currentTime = 1;
+    p.setSong("dungeon");
+    expect(f.held.map((h) => h.key)).toEqual(["dungeon:0"]);
+    // 合成を待つ間は前の曲が鳴り続ける
+    for (const s of c.sources) expect(s.stopAt).toEqual([]);
+    c.currentTime = 1.2;
+    release(f, "dungeon:0");
+    for (const s of c.sources.slice(0, 3)) expect(s.stopAt).toEqual([1.2 + LEAD]);
+    expect(c.sources[3]?.buffer?.tag).toBe("dungeon:0");
+    expect(c.sources[3]?.startAt).toEqual([1.2 + LEAD]);
+  });
+
+  it("UI-63 再生: 区間 0 を待つ間の setSong（元の曲）・setSong（別の曲）・playJingle・音量 0 で、待っていた依頼は取り消され、遅れて届いた結果では切り替わらない", () => {
+    // A→B を頼み、B の前に A に戻る → B が届いても A のまま
+    {
+      const f = setup({ delay: true });
+      const p = createAudioPlayer(f.deps);
+      p.unlock();
+      const c = f.contexts[0]!;
+      p.setSong("town");
+      release(f, "town:0");
+      p.setSong("dungeon");
+      p.setSong("town");
+      release(f, "dungeon:0");
+      expect(tags(c)).toEqual(["town:0"]);
+      expect(c.sources[0]?.stopped).toBe(0);
+    }
+    // A→B→C を頼み、B が先に届いても B は始まらず、C で C が始まる
+    {
+      const f = setup({ delay: true });
+      const p = createAudioPlayer(f.deps);
+      p.unlock();
+      const c = f.contexts[0]!;
+      p.setSong("town");
+      release(f, "town:0");
+      p.setSong("dungeon");
+      p.setSong("long");
+      release(f, "dungeon:0");
+      expect(tags(c)).toEqual(["town:0"]);
+      release(f, "long:0");
+      expect(tags(c)).toEqual(["town:0", "long:0"]);
+      expect(c.sources[0]?.stopped).toBe(1);
+    }
+    // A→ジングル J を頼み、J の前に setSong(B) → J で J、終わったら B
+    {
+      const f = setup({ delay: true });
+      const p = createAudioPlayer(f.deps);
+      p.unlock();
+      const c = f.contexts[0]!;
+      p.setSong("town");
+      release(f, "town:0");
+      p.playJingle("victory");
+      p.setSong("dungeon");
+      expect(f.held.map((h) => h.key)).toEqual(["victory:0"]);
+      release(f, "victory:0");
+      expect(tags(c)).toEqual(["town:0", "victory:0"]);
+      c.sources[1]!.end();
+      release(f, "dungeon:0");
+      expect(tags(c)).toEqual(["town:0", "victory:0", "dungeon:0"]);
+    }
+    // A→B を頼み、B の前に音量 0 → B が届いても何も始まらない
+    {
+      const f = setup({ delay: true });
+      const p = createAudioPlayer(f.deps);
+      p.unlock();
+      const c = f.contexts[0]!;
+      p.setSong("town");
+      release(f, "town:0");
+      p.setSong("dungeon");
+      f.vol.music = 0;
+      p.refreshVolumes();
+      release(f, "dungeon:0");
+      expect(tags(c)).toEqual(["town:0"]);
+      expect(c.sources[0]?.stopAt).toEqual([undefined]);
+    }
+  });
+
+  it("UI-63 再生: 古い曲の ended と合成の結果は捨てる", () => {
+    const f = setup({ delay: true });
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("long");
+    release(f, "long:0");
+    runTask(f);
+    expect(f.held.map((h) => h.key)).toEqual(["long:1"]);
+    p.setSong("town");
+    release(f, "town:0");
+    expect(tags(c)).toEqual(["long:0", "town:0"]);
+    // 切り替えの後に届いた前の曲の区間は予約しない
+    release(f, "long:1");
+    expect(tags(c)).toEqual(["long:0", "town:0"]);
+    // 前の曲の ended は合成を頼まない
+    const n = f.renders.length;
+    c.sources[0]!.end();
+    expect(f.renders.length).toBe(n);
+  });
+
+  it("UI-63 再生: 保持は直近 keepSongs 曲。3 曲目で最も古い曲を捨て、戻ったら合成し直す。保持にある曲は合成なしで区間 0 を予約", () => {
+    expect(data.config.audio.keepSongs).toBe(2);
+    const f = setup();
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("town");
+    p.setSong("dungeon");
+    const dungeon0 = c.sources[1]!.buffer;
+    p.setSong("long");
+    expect(f.renders).toEqual(["town:0", "dungeon:0", "long:0"]);
+    // dungeon は保持にある
+    p.setSong("dungeon");
+    expect(f.renders).toEqual(["town:0", "dungeon:0", "long:0"]);
+    expect(c.sources[3]?.buffer).toBe(dungeon0);
+    expect(c.sources[3]?.startAt.length).toBe(1);
+    // town は捨てられている
+    p.setSong("town");
+    expect(f.renders).toEqual(["town:0", "dungeon:0", "long:0", "town:0"]);
+  });
+
+  it("UI-63 再生: ジングルは区間で鳴らし、最後の区間の ended で場面の曲を頭から。ジングルは保持に入れない", () => {
+    const f = setup();
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("town");
+    p.setSong("dungeon");
+    p.playJingle("inn");
+    runTasks(f);
+    const ended = new Set<FakeSource>([c.sources[0]!, c.sources[1]!]);
+    for (let n = 0; n < 3; n++) endNext(c, ended);
+    expect(tags(c)).toEqual(["town:0", "dungeon:0", "inn:0", "inn:1", "inn:2", "inn:3"]);
+    endNext(c, ended);
+    // 場面の曲（dungeon）を頭から。保持にあるので合成しない
+    expect(tags(c).at(-1)).toBe("dungeon:0");
+    expect(f.renders.filter((r) => r === "dungeon:0").length).toBe(1);
+    // ジングルを数に入れないので town も捨てられていない
+    p.setSong("town");
+    expect(f.renders.filter((r) => r === "town:0").length).toBe(1);
+    // 同じジングルをもう一度鳴らすと合成し直す（鳴り終わったら捨てる）
+    p.playJingle("inn");
+    expect(f.renders.filter((r) => r === "inn:0").length).toBe(2);
+  });
+
+  it("UI-63 再生: 間に合わない区間（when < currentTime + 先行の時間）は時刻を置き直し、後続が重ならない", () => {
+    const f = setup();
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("long");
+    runTasks(f);
+    const bar = sampleAt(16, 500000, RATE) / RATE;
+    expect(c.sources.map((s) => s.startAt[0])).toEqual([LEAD, LEAD + bar, LEAD + 2 * bar]);
+    // 主スレッドが長く止まった
+    c.currentTime = 100;
+    c.sources[0]!.end();
+    expect(c.sources[3]?.startAt[0]).toBeCloseTo(100 + LEAD, 9);
+    c.sources[1]!.end();
+    expect(c.sources[4]?.startAt[0]).toBeCloseTo(100 + LEAD + bar, 9);
+  });
+
+  it("UI-63 再生: buffer のレートは config.audio.sampleRate（22050【仮】）、長さは区間の長さ", () => {
+    expect(RATE).toBe(22050);
+    const f = setup();
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("town");
+    expect(c.sources[0]?.buffer?.sampleRate).toBe(RATE);
+    expect(c.sources[0]?.buffer?.length).toBe(sampleAt(16, 500000, RATE));
+    expect(c.sources[0]?.buffer?.channels).toBe(1);
+  });
+
+  it("UI-63 再生: createMessageChannelYield は呼ばれたときだけ 1 回 cb を呼ぶ（タイマーを使わない）", async () => {
+    const yieldTask = createMessageChannelYield();
+    let n = 0;
+    yieldTask(() => n++);
+    expect(n).toBe(0);
+    await new Promise<void>((r) => yieldTask(r));
+    expect(n).toBe(1);
   });
 });
 
@@ -380,15 +799,15 @@ describe("UI-57 音量", () => {
     p.refreshVolumes();
     expect(mg?.gain.value).toBeCloseTo(data.config.audio.musicGain * 0.7, 10);
     expect(sg?.gain.value).toBeCloseTo(data.config.audio.sfxGain * 0.4, 10);
-    expect(c.sources.length).toBe(1);
+    expect(tags(c)).toEqual(["town:0"]);
     expect(c.sources[0]?.started).toBe(1);
     // 同じ段のままの refresh では作り直さない
     p.refreshVolumes();
     expect(c.sources.length).toBe(1);
-    // 0 に下げたら止める
+    // 0 に下げたら止める（即時）
     f.vol.music = 0;
     p.refreshVolumes();
-    expect(c.sources[0]?.stopped).toBe(1);
+    expect(c.sources[0]?.stopAt).toEqual([undefined]);
     expect(mg?.gain.value).toBe(0);
   });
 });
@@ -464,8 +883,9 @@ describe("UI-41 演出スキップ", () => {
       p.setSong("town");
       p.playJingle("victory");
       p.playSfx("hit");
+      runTasks(f);
       const c = f.contexts[0]!;
-      return c.sources.map((s) => `${s.loop}:${s.started}:${s.buffer?.length}`);
+      return c.sources.map((s) => `${s.buffer?.tag}:${s.startAt.join(",")}:${s.buffer?.length}`);
     };
     expect(await run(true)).toEqual(await run(false));
   });
@@ -498,7 +918,6 @@ describe("UI-63 / UI-65 / UI-66 音の対応の拡充（2026-10-06）", () => {
       encounter: songData("encounter", "jingle", 1),
       battle1: songData("battle1", "song", 3),
     };
-    const lenOf = (n: string): number => sampleAt(music[n]!.end16, music[n]!.tempoUs);
     const f = setup({ music });
     const p = createAudioPlayer(f.deps);
     p.unlock();
@@ -507,12 +926,10 @@ describe("UI-63 / UI-65 / UI-66 音の対応の拡充（2026-10-06）", () => {
     // soundsFor(encounter) の順: jingle encounter → song battle1
     p.playJingle("encounter");
     p.setSong("battle1");
-    expect(c.sources.map((x) => x.buffer?.length)).toEqual([lenOf("dungeon1"), lenOf("encounter")]);
+    expect(tags(c)).toEqual(["dungeon1:0", "encounter:0"]);
     expect(c.sources[0]!.stopped).toBe(1);
     c.sources[1]!.end();
-    expect(c.sources.length).toBe(3);
-    expect(c.sources[2]!.buffer?.length).toBe(lenOf("battle1"));
-    expect(c.sources[2]!.loop).toBe(true);
+    expect(tags(c)).toEqual(["dungeon1:0", "encounter:0", "battle1:0"]);
     // ジングルのファイルが無ければ、迷宮の曲を止めてすぐ戦闘の曲
     const g = setup({ music: { dungeon1: music.dungeon1!, battle1: music.battle1! } });
     const q = createAudioPlayer(g.deps);
@@ -521,12 +938,7 @@ describe("UI-63 / UI-65 / UI-66 音の対応の拡充（2026-10-06）", () => {
     q.setSong("dungeon1");
     q.playJingle("encounter");
     q.setSong("battle1");
-    expect(d.sources.map((x) => x.buffer?.length)).toEqual([lenOf("dungeon1"), lenOf("battle1")]);
+    expect(tags(d)).toEqual(["dungeon1:0", "battle1:0"]);
     expect(d.sources[0]!.stopped).toBe(1);
   });
 });
-
-/** source の buffer から曲名を引く（テストの曲は長さがすべて違う） */
-function nameOf(s: FakeSource): string {
-  return Object.values(MUSIC).find((m) => sampleAt(m.end16, m.tempoUs) === s.buffer?.length)?.name ?? "?";
-}

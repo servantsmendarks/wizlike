@@ -27,7 +27,7 @@ import { GameDataError, loadGameData, type GameData, type RawGameData } from "./
 import { mountStage } from "./presenter/stage";
 import { createApp } from "./presenter/app";
 import { applyPalette } from "./presenter/palette";
-import { attachAudio, createAudioPlayer } from "./presenter/audio";
+import { attachAudio, createAudioPlayer, createMessageChannelYield, createSyncRenderer } from "./presenter/audio";
 import { createSettingsStore, loadSettings, saveSettings } from "./presenter/settings";
 import { renderDataError, STARTUP_ERROR_HEADING } from "./presenter/views/data-error";
 import { openIdbBackend } from "./save/db";
@@ -123,6 +123,9 @@ async function start(): Promise<void> {
     assets,
     // UI-57: 設定画面の音量の段（0〜10。既定は config.ui.musicVolume / sfxVolume）。変わったら app が refreshVolumes を呼ぶ
     volumes: () => ({ music: settings.get().musicVolume, sfx: settings.get().sfxVolume }),
+    // UI-63（M9.5）: 曲は区間ごとに主スレッドで合成し、先読みは 1 区間ごとに MessageChannel でイベントループへ戻す
+    renderer: createSyncRenderer(),
+    yieldTask: createMessageChannelYield(),
   });
   attachAudio(document, audioPlayer);
   // mountStage は同期で 1 回 onLayout を呼ぶので、app を先に作る。

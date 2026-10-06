@@ -1,9 +1,18 @@
 // UI-06 / UI-63 / UI-65: 音の再生機（Web Audio）。
 // - AudioContext は最初のユーザー操作（pointerup・touchend・keydown。attachAudio）の中で作り、suspended なら毎回 resume する（iOS の制約）。
-//   作る前の setSong は覚えて、作ったときに始める。作る前のジングル・効果音は捨てる。
-// - 曲は SongData を audio-synth.ts で合成して AudioBuffer にし（曲名ごとに 1 回）、AudioBufferSourceNode で鳴らす。
-//   ループする曲は loop と loopStart / loopEnd（秒）で回す。常駐のループ・rAF・タイマーは使わない（CLAUDE.md §2）。
-// - ジングルは鳴っている曲を止めて頭から 1 回。終わったら（ended）setSong の曲を頭から。ジングルの間の setSong は終わった後に始める。
+//   作る前の setSong は覚えて、作ったときに始める。作る前のジングル・効果音は捨てる。AudioContext のレートは指定しない（端末の既定）。
+// - 曲とジングルは区間（小節の頭とループ点で区切る。audio-synth.ts の planSong / renderSegment / nextSegment）ごとに
+//   合成して AudioBuffer（1 チャンネル、config.audio.sampleRate）にし、区間ごとの AudioBufferSourceNode を start(when) で
+//   隙間なく予約して鳴らす（M9.5）。when = 区間 0 の時刻 t0 + 予約済みの区間の長さの累計（整数のサンプル数）/ レート。
+//   t0 = currentTime + baseLatency（取れなければ 0）+ config.audio.startLeadMs / 1000。
+// - 鳴らし始めは区間 0 の合成だけを待つ。前の曲は区間 0 が揃ってから t0 で止まるように予約する（stop(t0)。無音を挟まない）。
+//   区間 0 を待つ間に別の曲・ジングル・停止が頼まれたら、待っていた依頼は取り消す（依頼ごとの番号 req）。
+// - 先読みは config.audio.prefetchBars 区間。鳴らし始めの直後は yieldTask（イベントループへ 1 回戻す）ごとに 1 区間ずつ、
+//   以後は区間の ended で 1 区間ずつ合成して予約する。常駐のループ・rAF・タイマーは使わない（CLAUDE.md §2）。
+//   予約の時刻に間に合わない区間は時刻を置き直す（隙間は出るが重ならない）。
+// - 合成済みの区間はループする曲ごとに持ち（2 周目と戻ったときは合成しない）、直近 config.audio.keepSongs 曲だけ残す。
+//   ジングルは鳴っている間だけ持つ（保持の数に入れない）。
+// - ジングルは鳴っている曲を止めて頭から 1 回。最後の区間の ended で setSong の曲を頭から。ジングルの間の setSong は終わった後に始める。
 // - 効果音は ZzFX 1.3.2（src/vendor）。最初の unlock の後に 1 回だけ動的 import し（効果音のファイルが 1 つも無ければ読まない）、
 //   モジュールが評価時に作った AudioContext は閉じてゲームの context に差し替える。buildSamples だけを使い、
 //   params の null は undefined に変える（CONV §6・§7、proposal の案 A）。読み込みが終わる前の効果音は捨てる。
@@ -12,11 +21,21 @@
 // - 演出スキップ（settings.skipAnimations）は音に関わらない（UI-41 の省く対象に音は入らない）。
 // - ファイルが無い曲・ジングル・効果音は無音（例外も console.error も出さない）。それ以外の例外も捕まえて console.warn にとどめる。
 // モジュールのトップレベルでは Web API に触れない（依存は注入する。node のテストで動かす）。
-import type { GameData } from "../core/data/index";
-import type { GameAssets } from "../build/asset-types";
-import { renderSong, SAMPLE_RATE } from "./audio-synth";
+import type { GameData, Wavetables } from "../core/data/index";
+import type { GameAssets, SongData } from "../build/asset-types";
+import { nextSegment, planSong, renderSegment, segmentCount, type SongPlan } from "./audio-synth";
 
 export type ZzfxModule = typeof import("../vendor/zzfx-1.3.2/ZzFX.js");
+
+/** UI-63（M9.5）: 区間の合成の口。同期版はその場で cb を呼ぶ（Web Worker 版を入れるなら後で呼ぶ） */
+export type SegmentRenderer = {
+  /** 計画を作る（同期。音符の並べ替えだけで軽い） */
+  plan(song: SongData, wt: Wavetables, rate: number): SongPlan;
+  /** 区間 i を合成して cb に渡す。合成できなければ null */
+  render(name: string, plan: SongPlan, i: number, cb: (samples: Float32Array<ArrayBuffer> | null) => void): void;
+};
+/** UI-63（M9.5）: cb をイベントループへ 1 回戻してから呼ぶ（間にタップの処理が入れるように） */
+export type YieldTask = (cb: () => void) => void;
 
 export type AudioDeps = {
   /** 最初のユーザー操作の中で呼ぶ。作れなければ（古いブラウザ）null を返し、以後無音 */
@@ -27,6 +46,10 @@ export type AudioDeps = {
   assets: Pick<GameAssets, "music" | "sfx">;
   /** 設定の段（0..10） */
   volumes(): { music: number; sfx: number };
+  /** 区間の合成（本番は createSyncRenderer()） */
+  renderer: SegmentRenderer;
+  /** 先読みの 1 区間ごとにイベントループへ戻す（本番は createMessageChannelYield()） */
+  yieldTask: YieldTask;
 };
 
 export type AudioPlayer = {
@@ -44,11 +67,62 @@ export type AudioPlayer = {
   setHidden(hidden: boolean): void;
 };
 
-type Rendered = { buffer: AudioBuffer; loopStart: number | null; loopEnd: number | null };
-type Playing = { kind: "song" | "jingle"; name: string; source: AudioBufferSourceNode };
+type Kind = "song" | "jingle";
+/** 曲（またはジングル）の計画と合成済みの区間 */
+type SongCache = { name: string; plan: SongPlan; buffers: (AudioBuffer | undefined)[] };
+/** 鳴っている曲・ジングル */
+type Track = {
+  kind: Kind;
+  name: string;
+  cache: SongCache;
+  /** 区間 0 の開始の ctx 時刻（予約の基準。間に合わないときは置き直す） */
+  t0: number;
+  /** 予約済みの区間の長さの累計（サンプル数） */
+  played: number;
+  /** 次に予約する区間（無ければ null） */
+  nextSeg: number | null;
+  /** 予約済みで鳴り終わっていない source */
+  queued: AudioBufferSourceNode[];
+  /** 先読みの区間を合成している最中 */
+  filling: boolean;
+};
+/** 鳴らし始めの区間 0 を頼んでいる最中のもの */
+type Pending = { req: number; kind: Kind; name: string; cache: SongCache };
 
 function warn(e: unknown): void {
   console.warn("audio:", e);
+}
+
+/** UI-63（M9.5）: 主スレッドでその場で合成する renderer */
+export function createSyncRenderer(): SegmentRenderer {
+  return {
+    plan: (song, wt, rate) => planSong(song, wt, rate),
+    render(_name, plan, i, cb) {
+      let samples: Float32Array<ArrayBuffer> | null = null;
+      try {
+        samples = renderSegment(plan, i);
+      } catch (e) {
+        warn(e);
+      }
+      cb(samples);
+    },
+  };
+}
+
+/**
+ * UI-63（M9.5）: MessageChannel の 1 回きりの通知で cb をイベントループへ戻す（タイマーではない。呼ばれたときだけ作り、
+ * 通知の後に閉じるので常駐しない）。モジュールの評価時には Web API に触れない。
+ */
+export function createMessageChannelYield(): YieldTask {
+  return (cb) => {
+    const ch = new MessageChannel();
+    ch.port2.onmessage = () => {
+      ch.port1.close();
+      ch.port2.close();
+      cb();
+    };
+    ch.port1.postMessage(null);
+  };
 }
 
 export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
@@ -59,94 +133,234 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
   let hidden = false;
   /** setSong で求められた場面の曲 */
   let wanted: string | null = null;
-  let playing: Playing | null = null;
-  /** ended の古い通知を捨てるための番号 */
-  let gen = 0;
-  /** 曲名 → 合成済みの buffer（ファイルが無い・作れないなら null） */
-  const rendered: Record<string, Rendered | null> = {};
+  let playing: Track | null = null;
+  let pending: Pending | null = null;
+  /** 区間 0 の依頼ごとに増やす番号 */
+  let reqSeq = 0;
+  /** 合成済みの区間を持つループする曲（先頭が最近）。config.audio.keepSongs 曲まで */
+  let caches: SongCache[] = [];
   let zzfxLoad: Promise<void> | null = null;
   let zz: ZzfxModule | null = null;
+  const conf = deps.data.config.audio;
 
   const level = (k: "music" | "sfx"): number => {
     const v = deps.volumes()[k];
     return Number.isFinite(v) ? Math.min(10, Math.max(0, v)) : 0;
   };
-  const gainOf = (k: "music" | "sfx"): number =>
-    (k === "music" ? deps.data.config.audio.musicGain : deps.data.config.audio.sfxGain) * (level(k) / 10);
+  const gainOf = (k: "music" | "sfx"): number => (k === "music" ? conf.musicGain : conf.sfxGain) * (level(k) / 10);
 
-  const stopPlaying = (): void => {
-    const p = playing;
-    if (p === null) return;
-    playing = null;
-    gen++;
+  /** 鳴らし始めの先行の時間（秒）= baseLatency（取れなければ 0）+ startLeadMs */
+  const lead = (c: AudioContext): number => {
+    const bl: unknown = (c as { baseLatency?: unknown }).baseLatency;
+    return (typeof bl === "number" && Number.isFinite(bl) && bl > 0 ? bl : 0) + conf.startLeadMs / 1000;
+  };
+
+  /** 計画を作る（ファイルが無い・区間が無い・作れないなら null） */
+  const newCache = (name: string): SongCache | null => {
+    const song = deps.assets.music[name];
+    if (song === undefined) return null;
     try {
-      p.source.onended = null;
-      p.source.stop();
-      p.source.disconnect();
+      const plan = deps.renderer.plan(song, deps.data.wavetables, conf.sampleRate);
+      return segmentCount(plan) > 0 ? { name, plan, buffers: [] } : null;
+    } catch (e) {
+      warn(e);
+      return null;
+    }
+  };
+
+  /** ループする曲の保持（LRU）から引く。無ければ計画を作って入れる。直近 keepSongs 曲を越えた古いものは捨てる */
+  const songCache = (name: string): SongCache | null => {
+    const k = caches.findIndex((x) => x.name === name);
+    const cache = k >= 0 ? caches[k] : newCache(name);
+    if (cache === undefined || cache === null) return null;
+    caches = [cache, ...caches.filter((x) => x !== cache)];
+    while (caches.length > conf.keepSongs) {
+      // 鳴っている曲と待っている曲は捨てない（keepSongs = 1 のときだけ起きうる）
+      let j = caches.length - 1;
+      while (j >= 0 && (caches[j] === playing?.cache || caches[j] === pending?.cache)) j--;
+      if (j < 0) break;
+      caches.splice(j, 1);
+    }
+    return cache;
+  };
+
+  /** 区間 i の AudioBuffer を cb に渡す（合成済みならその場で） */
+  const withSegment = (cache: SongCache, i: number, cb: (b: AudioBuffer | null) => void): void => {
+    const have = cache.buffers[i];
+    if (have !== undefined) {
+      cb(have);
+      return;
+    }
+    deps.renderer.render(cache.name, cache.plan, i, (samples) => {
+      let b: AudioBuffer | null = null;
+      try {
+        const c = ctx;
+        if (c !== null && samples !== null && samples.length > 0) {
+          b = c.createBuffer(1, samples.length, cache.plan.rate);
+          b.copyToChannel(samples, 0);
+          cache.buffers[i] = b;
+        }
+      } catch (e) {
+        warn(e);
+        b = null;
+      }
+      cb(b);
+    });
+  };
+
+  /** 区間 i を予約する（when = t0 + 累計 / レート。間に合わなければ t0 を置き直す） */
+  const schedule = (t: Track, i: number, buffer: AudioBuffer): void => {
+    const c = ctx;
+    const g = musicGain;
+    if (c === null || g === null) return;
+    const { plan } = t.cache;
+    let when = t.t0 + t.played / plan.rate;
+    const min = c.currentTime + lead(c);
+    if (when < min) {
+      t.t0 = min - t.played / plan.rate;
+      when = min;
+    }
+    const source = c.createBufferSource();
+    source.buffer = buffer;
+    source.connect(g);
+    source.onended = () => onEnded(t, source);
+    t.queued.push(source);
+    t.played += (plan.bounds[i + 1] ?? 0) - (plan.bounds[i] ?? 0);
+    t.nextSeg = nextSegment(plan, i);
+    source.start(when);
+  };
+
+  const needMore = (t: Track): boolean => t.nextSeg !== null && t.queued.length < 1 + conf.prefetchBars;
+
+  /** ジングルの終わり（最後の区間まで鳴り終わった）なら場面の曲へ */
+  const finishJingle = (t: Track): boolean => {
+    if (t.kind !== "jingle" || t.nextSeg !== null || t.queued.length > 0 || t.filling) return false;
+    playing = null;
+    startWanted();
+    return true;
+  };
+
+  /** 先読みを 1 区間埋める。まだ足りなければ yieldTask でもう一度 */
+  const fill = (t: Track): void => {
+    if (playing !== t || t.filling || !needMore(t)) return;
+    const i = t.nextSeg;
+    if (i === null) return;
+    t.filling = true;
+    withSegment(t.cache, i, (b) => {
+      t.filling = false;
+      if (playing !== t) return;
+      try {
+        if (b === null) {
+          // 合成できない区間から先は鳴らさない
+          t.nextSeg = null;
+          finishJingle(t);
+          return;
+        }
+        schedule(t, i, b);
+        if (needMore(t)) deps.yieldTask(() => fill(t));
+      } catch (e) {
+        warn(e);
+      }
+    });
+  };
+
+  const onEnded = (t: Track, source: AudioBufferSourceNode): void => {
+    try {
+      const k = t.queued.indexOf(source);
+      if (k >= 0) t.queued.splice(k, 1);
+      source.disconnect();
+      if (playing !== t) return;
+      if (finishJingle(t)) return;
+      fill(t);
     } catch (e) {
       warn(e);
     }
   };
 
-  const bufferOf = (c: AudioContext, name: string): Rendered | null => {
-    if (name in rendered) return rendered[name] ?? null;
-    const song = deps.assets.music[name];
-    let r: Rendered | null = null;
-    if (song !== undefined) {
-      try {
-        const out = renderSong(song, deps.data.wavetables);
-        if (out.samples.length > 0) {
-          const buffer = c.createBuffer(1, out.samples.length, SAMPLE_RATE);
-          buffer.copyToChannel(out.samples, 0);
-          r = { buffer, loopStart: out.loopStart, loopEnd: out.loopEnd };
+  /** 前の曲の予約を t0 で止める（disconnect は ended の中。すぐ切ると t0 までの音が切れる） */
+  const switchAt = (old: Track, t0: number): void => {
+    for (const s of old.queued) {
+      s.onended = () => {
+        try {
+          s.disconnect();
+        } catch (e) {
+          warn(e);
         }
+      };
+      try {
+        s.stop(t0);
       } catch (e) {
         warn(e);
       }
     }
-    rendered[name] = r;
-    return r;
+    old.queued = [];
   };
 
-  /** buffer を頭から鳴らす（loop なら loopStart / loopEnd で回す） */
-  const start = (kind: Playing["kind"], name: string, r: Rendered): void => {
-    const c = ctx;
-    const g = musicGain;
-    if (c === null || g === null) return;
-    const source = c.createBufferSource();
-    source.buffer = r.buffer;
-    if (kind === "song" && r.loopStart !== null && r.loopEnd !== null) {
-      source.loop = true;
-      source.loopStart = r.loopStart / SAMPLE_RATE;
-      source.loopEnd = r.loopEnd / SAMPLE_RATE;
+  /** すぐ止める（段 0・wanted が null・ファイルが無い曲）。待っている依頼も取り消す */
+  const stopPlaying = (): void => {
+    pending = null;
+    const p = playing;
+    if (p === null) return;
+    playing = null;
+    for (const s of p.queued) {
+      try {
+        s.onended = null;
+        s.stop();
+        s.disconnect();
+      } catch (e) {
+        warn(e);
+      }
     }
-    source.connect(g);
-    const my = ++gen;
-    playing = { kind, name, source };
-    if (kind === "jingle") {
-      source.onended = () => {
-        if (my !== gen) return;
-        playing = null;
-        try {
-          source.disconnect();
-        } catch (e) {
-          warn(e);
-        }
-        startWanted();
-      };
-    }
-    source.start(0);
+    p.queued = [];
   };
+
+  /** 区間 0 を頼み、揃ったら（その依頼が最新なら）前を t0 で止めて鳴らし始める */
+  const begin = (kind: Kind, cache: SongCache): void => {
+    const req = ++reqSeq;
+    pending = { req, kind, name: cache.name, cache };
+    withSegment(cache, 0, (b) => {
+      if (pending?.req !== req) return;
+      pending = null;
+      try {
+        const c = ctx;
+        if (c === null) return;
+        if (b === null) {
+          if (kind === "song") stopPlaying();
+          return;
+        }
+        const t0 = c.currentTime + lead(c);
+        const old = playing;
+        if (old !== null) switchAt(old, t0);
+        const t: Track = { kind, name: cache.name, cache, t0, played: 0, nextSeg: 0, queued: [], filling: false };
+        playing = t;
+        schedule(t, 0, b);
+        if (!finishJingle(t) && needMore(t)) deps.yieldTask(() => fill(t));
+      } catch (e) {
+        warn(e);
+      }
+    });
+  };
+
+  const jingleBusy = (): boolean => playing?.kind === "jingle" || pending?.kind === "jingle";
 
   /** 場面の曲を始める（同じ曲が鳴っていれば何もしない） */
   const startWanted = (): void => {
     try {
-      if (playing !== null && playing.kind === "song" && playing.name === wanted) return;
-      stopPlaying();
-      const c = ctx;
-      if (c === null || wanted === null || level("music") === 0) return;
-      const r = bufferOf(c, wanted);
-      if (r !== null) start("song", wanted, r);
+      if (playing !== null && playing.kind === "song" && playing.name === wanted) {
+        pending = null;
+        return;
+      }
+      if (ctx === null || wanted === null || level("music") === 0) {
+        stopPlaying();
+        return;
+      }
+      if (pending !== null && pending.kind === "song" && pending.name === wanted) return;
+      const cache = songCache(wanted);
+      if (cache === null) {
+        stopPlaying();
+        return;
+      }
+      begin("song", cache);
     } catch (e) {
       warn(e);
     }
@@ -205,19 +419,18 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
     },
     setSong(name: string | null): void {
       wanted = name;
-      if (playing !== null && playing.kind === "jingle") return;
+      if (jingleBusy()) return;
       startWanted();
     },
     playJingle(name: string): void {
       try {
-        const c = ctx;
-        if (c === null) return;
-        if (playing !== null && playing.kind === "jingle" && playing.name === name) return;
+        if (ctx === null) return;
+        // 同じジングルが鳴っている・頼んでいる最中なら無視
+        if (pending !== null ? pending.kind === "jingle" && pending.name === name : playing?.kind === "jingle" && playing.name === name) return;
         if (level("music") === 0) return;
-        const r = bufferOf(c, name);
-        if (r === null) return;
-        stopPlaying();
-        start("jingle", name, r);
+        const cache = newCache(name);
+        if (cache === null) return;
+        begin("jingle", cache);
       } catch (e) {
         warn(e);
       }
@@ -254,7 +467,7 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
         applyGains();
         if (ctx === null) return;
         if (level("music") === 0) stopPlaying();
-        else if (playing === null) startWanted();
+        else if (playing === null && pending === null) startWanted();
       } catch (e) {
         warn(e);
       }
