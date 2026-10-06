@@ -532,8 +532,8 @@ describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
   const F = "audio.json";
   test("data: UI-63 / UI-65 / UI-66 実データが通る（工房の project.json の名前の写しと、ゲーム側が足した名前）", () => {
     const d = loadGameData(rawData());
-    // 工房の project.json（2026-10-06）の 11 曲 + ボスの曲 boss（工房への提案）
-    expect(d.audio.music.songs).toEqual(["title", "town", "dungeon1", "dungeon2", "camp", "battle1", "battle2", "tavern", "shop", "temple", "dark", "boss"]);
+    // 工房の project.json（2026-10-06）の 11 曲と同じ（ボスの曲 boss の提案はユーザーの判断 4（2026-10-06）で取り下げ。ボスは battle2）
+    expect(d.audio.music.songs).toEqual(["title", "town", "dungeon1", "dungeon2", "camp", "battle1", "battle2", "tavern", "shop", "temple", "dark"]);
     expect(d.audio.music.jingles).toEqual(["encounter", "victory", "wipe", "levelup", "inn", "clear", "rare"]);
     expect(d.audio.music.noteRange).toEqual([36, 96]);
     // 工房の 22 + learn・ailment・tent・page（工房への提案）
@@ -543,8 +543,9 @@ describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
       "learn", "ailment", "tent", "page",
     ]);
     expect(d.audio.screenSongs).toEqual({ title: "title", town: "town", dungeon: "dungeon1" });
-    expect(d.audio.battleSongs).toEqual(["battle1", "battle2"]);
-    expect(d.audio.bossSong).toBe("boss");
+    // ユーザーの判断 4（2026-10-06）: 通常の戦闘は battle1 だけ、ボス戦は battle2（工房の確定版の意味どおり）
+    expect(d.audio.battleSongs).toEqual(["battle1"]);
+    expect(d.audio.bossSong).toBe("battle2");
     expect(d.audio.facilitySongs).toEqual({ tavern: "tavern", shop: "shop", temple: "temple", dark: "dark" });
     expect(d.audio.campSong).toBe("camp");
     expect(d.audio.ui).toEqual({ ok: "ok", cancel: "cancel", facility: "door", camp: "tent", talk: "page" });
@@ -561,8 +562,9 @@ describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
   });
   test("data: UI-63 songs と jingles は名前の配列で全体で重複しない", () => {
     expectIssue((r) => r.audio.music.jingles.push("town"), F, 'music.jingles[7]: UI-63: duplicate name "town"');
-    expectIssue((r) => r.audio.music.songs.push("title"), F, 'music.songs[12]: UI-63: duplicate name "title"');
-    expectIssue((r) => r.audio.music.songs.push("Boss 2"), F, "music.songs[12]: UI-63: name must match");
+    // 添字は実データの songs が 11 曲（判断 4 で boss を消した）になったので [11]
+    expectIssue((r) => r.audio.music.songs.push("title"), F, 'music.songs[11]: UI-63: duplicate name "title"');
+    expectIssue((r) => r.audio.music.songs.push("Boss 2"), F, "music.songs[11]: UI-63: name must match");
     expectIssue((r) => r.audio.sfx.names.push("ok"), F, 'sfx.names[26]: UI-65: duplicate name "ok"');
   });
   test("data: UI-63 noteRange は 0 <= lo <= hi <= 127 の整数", () => {
@@ -573,10 +575,13 @@ describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
     expectIssue((r) => (r.audio.screenSongs.town = "victory"), F, 'screenSongs.town: unknown song "victory"');
     expectIssue((r) => (r.audio.screenSongs.shop = "town"), F, "screenSongs.shop: unknown field");
     expectIssue((r) => (r.audio.bossSong = "inn"), F, 'bossSong: unknown song "inn"');
+    // ユーザーの判断 4（2026-10-06）で曲 boss は songs から消えた
+    expectIssue((r) => (r.audio.bossSong = "boss"), F, 'bossSong: unknown song "boss"');
   });
   test("data: UI-63（2026-10-06）battleSongs は songs の 1 つ以上、screenSongs.battle は置けない、facilitySongs のキーは施設で値は songs、campSong も songs", () => {
     expectIssue((r) => (r.audio.battleSongs = []), F, "battleSongs: expected at least 1");
-    expectIssue((r) => r.audio.battleSongs.push("victory"), F, 'battleSongs[2]: unknown song "victory"');
+    // 添字は実データの battleSongs が 1 件（判断 4）になったので [1]
+    expectIssue((r) => r.audio.battleSongs.push("victory"), F, 'battleSongs[1]: unknown song "victory"');
     expectIssue((r) => delete r.audio.battleSongs, F, "battleSongs: missing required field");
     expectIssue((r) => (r.audio.screenSongs.battle = "battle1"), F, "screenSongs.battle: UI-63: use battleSongs / bossSong for battle");
     expectIssue((r) => (r.audio.facilitySongs.inn = "victory"), F, 'facilitySongs.inn: unknown song "victory"');

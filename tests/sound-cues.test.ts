@@ -126,14 +126,14 @@ describe("UI-66 soundsFor", () => {
     expect(soundsFor({ kind: "battleEnd", result: "flee" }, data, BOSS_CTX)).toEqual([{ type: "sfx", name: "flee" }]);
   });
 
-  it("UI-63/UI-66 screen battle は何も求めない。encounter は encounter のジングルの後に戦闘の曲（battleSongs を遭遇の数で交互、ボスは bossSong）", () => {
+  it("UI-63/UI-66 screen battle は何も求めない。encounter は encounter のジングルの後に戦闘の曲（battleSongs を遭遇の数で巡回 = 今は battle1 だけ、ボスは bossSong = battle2）", () => {
     expect(soundsFor({ kind: "screen", to: "battle" }, data)).toEqual([]);
     const enc = (groups: EnemyGroupView[]): GameEvent => ({ kind: "encounter", groups });
     const jingle = { type: "jingle", name: "encounter" };
     expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 0 })).toEqual([jingle, { type: "song", name: "battle1" }]);
-    expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 1 })).toEqual([jingle, { type: "song", name: "battle2" }]);
+    expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 1 })).toEqual([jingle, { type: "song", name: "battle1" }]);
     expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 2 })).toEqual([jingle, { type: "song", name: "battle1" }]);
-    expect(soundsFor(enc([group(normalId), group(bossId, 1)]), data, { boss: false, encounters: 1 })).toEqual([jingle, { type: "song", name: "boss" }]);
+    expect(soundsFor(enc([group(normalId), group(bossId, 1)]), data, { boss: false, encounters: 1 })).toEqual([jingle, { type: "song", name: "battle2" }]);
   });
 
   it("UI-63 nextSoundContext: ボスのいない遭遇を数え、ボスかを覚える。ほかの出来事では変えない", () => {
@@ -146,8 +146,8 @@ describe("UI-66 soundsFor", () => {
       ctx = nextSoundContext(enc(ids), data, ctx);
       expect(ctx.boss).toBe(ids.includes(bossId));
     }
-    // 交互（ボス戦は数えない）
-    expect(songs).toEqual(["battle1", "battle2", "boss", "battle1"]);
+    // 巡回（今の battleSongs は battle1 だけ。ボス戦は battle2 で、数えない）
+    expect(songs).toEqual(["battle1", "battle1", "battle2", "battle1"]);
     expect(ctx).toEqual({ boss: false, encounters: 3 });
     expect(nextSoundContext({ kind: "battleEnd", result: "win" }, data, ctx)).toBe(ctx);
   });
@@ -185,8 +185,8 @@ describe("UI-63 sceneSong ほか", () => {
     expect(sceneSong("dungeon", data)).toBe("dungeon1");
     expect(sceneSong("dungeon", data, { dungeonId: "d02" })).toBe("dungeon2");
     expect(sceneSong("battle", data, { monsterIds: [normalId] })).toBe("battle1");
-    expect(sceneSong("battle", data, { monsterIds: [normalId], battleIndex: 1 })).toBe("battle2");
-    expect(sceneSong("battle", data, { monsterIds: [normalId, bossId] })).toBe("boss");
+    expect(sceneSong("battle", data, { monsterIds: [normalId], battleIndex: 1 })).toBe("battle1");
+    expect(sceneSong("battle", data, { monsterIds: [normalId, bossId] })).toBe("battle2");
     expect(sceneSong("event", data)).toBeUndefined();
     // battle 以外の画面ではボスを見ない。未知の monsterId は無視
     expect(sceneSong("dungeon", data, { monsterIds: [bossId] })).toBe("dungeon1");
@@ -195,9 +195,12 @@ describe("UI-63 sceneSong ほか", () => {
 
   it("UI-63 battleSong / dungeonSong / townSong / campSong", () => {
     expect(battleSong([normalId], 0, data)).toBe("battle1");
-    expect(battleSong([normalId], 3, data)).toBe("battle2");
-    expect(battleSong([bossId], 1, data)).toBe("boss");
+    expect(battleSong([normalId], 3, data)).toBe("battle1");
+    expect(battleSong([bossId], 1, data)).toBe("battle2");
     expect(battleSong([normalId], 0, { ...data, audio: { ...data.audio, battleSongs: [] } })).toBeUndefined();
+    // 2 曲以上なら先頭から巡回する（battleSongs を替えたデータ）
+    const two = { ...data, audio: { ...data.audio, battleSongs: ["battle1", "camp"] } };
+    expect([0, 1, 2, 3].map((i) => battleSong([normalId], i, two))).toEqual(["battle1", "camp", "battle1", "camp"]);
     expect(dungeonSong("d01", data)).toBe("dungeon1");
     expect(dungeonSong("d02", data)).toBe("dungeon2");
     expect(dungeonSong("no_such", data)).toBe("dungeon1");
@@ -213,27 +216,41 @@ describe("UI-63 sceneSong ほか", () => {
     expect(campSong(data)).toBe("camp");
   });
 
+  it("UI-63（2026-10-06 判断 4）実データの battleSongs は battle1 の 1 件で、ボスのいない遭遇は何番目でも battle1。ボス戦は battle2", () => {
+    expect(data.audio.battleSongs).toEqual(["battle1"]);
+    expect(data.audio.bossSong).toBe("battle2");
+    for (let i = 0; i < 10; i++) expect(battleSong([normalId], i, data)).toBe("battle1");
+    expect(battleSong([normalId, bossId], 0, data)).toBe("battle2");
+    let ctx = INITIAL_SOUND_CONTEXT;
+    for (let i = 0; i < 5; i++) {
+      const ev: GameEvent = { kind: "encounter", groups: [group(normalId)] };
+      expect(soundsFor(ev, data, ctx)).toContainEqual({ type: "song", name: "battle1" });
+      ctx = nextSoundContext(ev, data, ctx);
+    }
+    expect(data.audio.music.songs).not.toContain("boss");
+  });
+
   it("UI-63 AUDIO_FACILITIES は表示層の施設の id（townFacility。施設の絵の名前から town と title を除いたもの）と同じ", () => {
     expect([...AUDIO_FACILITIES].sort()).toEqual(TOWN_PICTURE_IDS.filter((x) => x !== "town" && x !== "title").sort());
   });
 });
 
 describe("UI-63 / SV-50 songAt と resumeSoundContext（screen イベントの来ない場面: 続きから・タイトル）", () => {
-  it("UI-63 songAt: 保存した画面の曲。event は迷宮の画面の上なので迷宮の曲、battle は先頭の battle1（ボスは boss）", () => {
+  it("UI-63 songAt: 保存した画面の曲。event は迷宮の画面の上なので迷宮の曲、battle は先頭の battle1（ボスは bossSong = battle2）", () => {
     expect(songAt("town", data)).toBe("town");
     expect(songAt("dungeon", data, { dungeonId: "d02" })).toBe("dungeon2");
     expect(songAt("event", data, { dungeonId: "d02" })).toBe("dungeon2");
     expect(songAt("event", data)).toBe("dungeon1");
     expect(songAt("battle", data, { monsterIds: [normalId], battleIndex: 1 })).toBe("battle1");
-    expect(songAt("battle", data, { monsterIds: [bossId] })).toBe("boss");
+    expect(songAt("battle", data, { monsterIds: [bossId] })).toBe("battle2");
     expect(songAt("title", data)).toBe("title");
   });
 
-  it("UI-63 resumeSoundContext: 戦闘中の続きからはその戦闘を 1 つ目の遭遇として数える（次は battle2）。ボス戦は数えずボスを覚える", () => {
+  it("UI-63 resumeSoundContext: 戦闘中の続きからはその戦闘を 1 つ目の遭遇として数える（次は battleSongs の 2 番目。今は 1 曲なので battle1）。ボス戦は数えずボスを覚える", () => {
     expect(resumeSoundContext("battle", [normalId], data)).toEqual({ boss: false, encounters: 1 });
     expect(resumeSoundContext("battle", [bossId], data)).toEqual({ boss: true, encounters: 0 });
     expect(resumeSoundContext("dungeon", [], data)).toEqual(INITIAL_SOUND_CONTEXT);
     const next = soundsFor({ kind: "encounter", groups: [group(normalId)] }, data, resumeSoundContext("battle", [normalId], data));
-    expect(next).toContainEqual({ type: "song", name: "battle2" });
+    expect(next).toContainEqual({ type: "song", name: "battle1" });
   });
 });
