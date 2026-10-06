@@ -55,7 +55,15 @@ describe("バランス（H9 煙テスト）", () => {
     // M9-装備: d01 の踏破で流通レベル 2 になり、その帰還の街で後衛の魔術師（エル）に投げナイフを買い与える。d02 では飛行だけの遭遇で逃走を選ぶ
     expect(r.dives[k]!.rangedBought).toBe(1);
     expect(c.state.items[c.state.party[4]!.equipment.weapon!]!.itemId).toBe("throwing_knives");
-    expect(sum(r.dives.slice(k + 1).map((d) => d.fleeTries))).toBeGreaterThan(0);  }, 60_000);
+    expect(sum(r.dives.slice(k + 1).map((d) => d.fleeTries))).toBeGreaterThan(0);
+    // 逃走を選んだ戦闘の数は戦闘ごとに 1 回だけ数える（試みのラウンド数以下で、逃げ切った戦闘の数以上）
+    for (const d of r.dives) {
+      expect(d.fleeBattles).toBeLessThanOrEqual(d.fleeTries);
+      expect(d.fleeOk).toBeLessThanOrEqual(d.fleeBattles);
+      expect(d.fleeBattles).toBeLessThanOrEqual(d.battles);
+    }
+    expect(sum(r.dives.slice(k + 1).map((d) => d.fleeBattles))).toBeGreaterThan(0);
+  }, 60_000);
 
   test("H9/M9 M9-装備: 所持金 5000・流通レベル 2 で 1 潜行すると、街で前衛の防具を流通レベルの品に替え（実効の AC が下がるものだけ）、後衛に ranged を買い、蘇生費 × RESERVE_MUL を残す", () => {
     const c = new Campaign(1, PROGRESS_BOT);

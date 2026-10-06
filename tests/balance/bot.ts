@@ -174,8 +174,9 @@ type DiveRecord = {
   minLevelAfter: number; // 宿の後の全員の最小 level
   encounterByFloor: Record<string, number>; // M9: 遭遇の敵グループの数（キーは「階:monsterId」。階ごとの倍率用）
   // M9-装備（進行ボットだけ。旧ルートは 0）
-  fleeTries: number; // 飛行だけの遭遇で前衛が全員近接のときに選んだ逃走の回数
-  fleeOk: number; // そのうち逃げ切った回数
+  fleeTries: number; // 逃走の試み（ラウンド）の数。shouldFlee が真のラウンドごとに 1（失敗して次のラウンドにまた選べばまた 1）
+  fleeBattles: number; // 逃走を 1 回以上選んだ戦闘の数（戦闘ごとに 1 回だけ数える）
+  fleeOk: number; // そのうち逃げ切った戦闘の数（逃げ切ると戦闘が終わるので、戦闘ごとに高々 1）
   rangedBought: number; // 街で後衛に買い与えた ranged の武器の数
   armorBought: number; // 街で前衛の防具・盾・兜・小手を更新した数
   outfitCost: number; // その 2 つの購入の費用の合計
@@ -301,6 +302,7 @@ export class Campaign {
   deepest = 1;
   encounterByFloor: Record<string, number> = {};
   fleeTries = 0;
+  fleeBattles = 0;
   fleeOk = 0;
   bossFight = false;
   bossWin = false;
@@ -422,6 +424,7 @@ export class Campaign {
   fight(): void {
     this.battles += 1;
     let n = 0;
+    let fled = false; // この戦闘で逃走を選んだか（fleeBattles を戦闘ごとに 1 回だけ数える）
     while (this.state.battle !== null) {
       if (n++ > BATTLE_ROUND_CAP) throw new Error(`seed ${this.seed}: battle did not end`);
       if (this.kind.outfit === true && this.shouldFlee()) {
@@ -429,6 +432,8 @@ export class Campaign {
         if (this.state.battle.auto) this.run({ type: "battle.auto", on: false });
         this.run({ type: "battle.flee" });
         this.fleeTries += 1;
+        if (!fled) this.fleeBattles += 1;
+        fled = true;
         if (this.state.battle === null && this.wiped === null) this.fleeOk += 1;
         continue;
       }
@@ -439,7 +444,10 @@ export class Campaign {
 
   /**
    * M9-装備: 逃走を選ぶか。逃げられる戦闘（CB-02 の random）で、行動可能な味方がいて、生存グループがすべて飛行で、
-   * 前衛（CB-14 の繰り上げ後の frontLineIds）の行動可能な者が全員 reach melee のとき
+   * 前衛（CB-14 の繰り上げ後の frontLineIds）の行動可能な者が全員 reach melee のとき。
+   * 毎ラウンド判定するので、混成の遭遇で飛行でない敵を倒し終えた後も「生存グループがすべて飛行」なら選ぶ（decisions の M9-装備の逃走の行）。
+   * 前衛に行動可能な者が 1 人もいないとき（後衛だけが動ける）は every が真になり逃走を選ぶ。これは意図どおり
+   * （long / ranged で打てる前衛がいない点で「前衛が全員近接」と同じに扱う）
    */
   shouldFlee(): boolean {
     const s = this.state;
@@ -676,6 +684,7 @@ export class Campaign {
     this.deepest = 1;
     this.encounterByFloor = {};
     this.fleeTries = 0;
+    this.fleeBattles = 0;
     this.fleeOk = 0;
     this.bossFight = false;
     this.bossWin = false;
@@ -1093,6 +1102,7 @@ export class Campaign {
         minLevelAfter: 0,
         encounterByFloor: this.encounterByFloor,
         fleeTries: this.fleeTries,
+        fleeBattles: this.fleeBattles,
         fleeOk: this.fleeOk,
         rangedBought: 0,
         armorBought: 0,
@@ -1178,7 +1188,7 @@ export function progressReport(results: CampaignResult[], kind: BotKind = PROGRE
   const lines: string[] = [];
   const seeds = results.length;
   lines.push(
-    `M9-進行【${kind.label}】（${seeds} シード × 最大 ${PROGRESS_DIVES} 潜行。帰る条件はセオリー（8 戦・開始時に alive の者の死亡・前衛の HP 半分）。d01: 1 階は「全員 alive・全員 L${kind.descendLevel ?? DESCEND_LEVEL} 以上」なら下り階段へ最短で歩いて降り（そうでなければ上り階段から BFS ${NEAR} 以内）、2 階は「全員 alive・全員 L${kind.bossLevel ?? BOSS_LEVEL} 以上・前衛の HP ${BOSS_FRONT_HP_PCT}% 以上」ならボスへ、そうでなければ上り階段から BFS ${NEAR} 以内。d01 の踏破の後は d02 の 1 階を BFS ${NEAR} 以内で ${D02_DIVES} 潜行。M9-装備 ${kind.outfit === true ? `あり（街で後衛に ranged（${RANGED_BUY.join("・")}）、所持金 − 蘇生費 × ${RESERVE_MUL} の範囲で前衛の防具を流通レベルの品に、飛行だけの遭遇で前衛が全員近接なら逃走）` : "なし"}）`,
+    `M9-進行【${kind.label}】（${seeds} シード × 最大 ${PROGRESS_DIVES} 潜行。帰る条件はセオリー（8 戦・開始時に alive の者の死亡・前衛の HP 半分）。d01: 1 階は「全員 alive・全員 L${kind.descendLevel ?? DESCEND_LEVEL} 以上」なら下り階段へ最短で歩いて降り（そうでなければ上り階段から BFS ${NEAR} 以内）、2 階は「全員 alive・全員 L${kind.bossLevel ?? BOSS_LEVEL} 以上・前衛の HP ${BOSS_FRONT_HP_PCT}% 以上」ならボスへ、そうでなければ上り階段から BFS ${NEAR} 以内。d01 の踏破の後は d02 の 1 階を BFS ${NEAR} 以内で ${D02_DIVES} 潜行。M9-装備 ${kind.outfit === true ? `あり（街で後衛に ranged（${RANGED_BUY.join("・")}）、所持金 − 蘇生費 × ${RESERVE_MUL} の範囲で前衛の防具を流通レベルの品に、生存グループがすべて飛行のラウンドで前衛が全員近接なら逃走）` : "なし"}）`,
   );
   lines.push(`打ち切り（行動可能な者がいなくて入れない）: ${results.filter((r) => r.aborted).length} シード`);
   const clearedAt = results.map((r) => r.dives.findIndex((d) => d.bossWin));
@@ -1214,7 +1224,7 @@ function diveLines(label: string, ds: readonly DiveRecord[], floor?: number): st
     `${label}: ${ds.length} 潜行 / 全滅率 ${pct(m("wipe"), ds.length)} / 帰還 糸 ${m("thread")}・徒歩 ${m("walk")}・テレポーター ${m("teleport")}・上限 ${m("cap")} / 1 潜行あたりの死者 ${fmt(mean(ds.map((d) => d.deaths.length)))}（計 ${deaths.length}。うち M9 の敵 ${sum(ds.map((d) => d.newMonsterDeaths))}）/ 潜行の終わりに alive でない人数 平均 ${fmt(mean(ds.map((d) => d.down)))} / 戦闘数 平均 ${fmt(mean(ds.map((d) => d.battles)))}・中央値 ${fmt(median(ds.map((d) => d.battles)))}`,
   );
   lines.push(
-    `  M9-装備: 飛行だけの遭遇で逃走 ${sum(ds.map((d) => d.fleeTries))} 回（逃げ切った ${sum(ds.map((d) => d.fleeOk))}）/ この潜行の後の街で ranged を買った ${sum(ds.map((d) => d.rangedBought))} 本・前衛の防具の更新 ${sum(ds.map((d) => d.armorBought))} 品（費用計 ${sum(ds.map((d) => d.outfitCost))}G、外した品の売却 ${sum(ds.map((d) => d.outfitSoldGold))}G）`,
+    `  M9-装備: 逃走を選んだ戦闘 ${sum(ds.map((d) => d.fleeBattles))}（逃げ切った ${sum(ds.map((d) => d.fleeOk))}。生存グループがすべて飛行のラウンドで選ぶ）・逃走の試み（ラウンド）${sum(ds.map((d) => d.fleeTries))} 回 / この潜行の後の街で ranged を買った ${sum(ds.map((d) => d.rangedBought))} 本・前衛の防具の更新 ${sum(ds.map((d) => d.armorBought))} 品（費用計 ${sum(ds.map((d) => d.outfitCost))}G、外した品の売却 ${sum(ds.map((d) => d.outfitSoldGold))}G）`,
   );
   const causeLine = (title: string, dd: readonly DeathRecord[], groups: Record<string, number>) => {
     const byEnemy = dd.filter((x) => x.monster).length;
