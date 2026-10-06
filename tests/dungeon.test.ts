@@ -214,6 +214,12 @@ describe("TW-15 宿の主人の噂話（M7）", () => {
     expect(gossipCandidates(s, d, "d01")).toEqual(["giant_rat", "kobold", "whispering_shadow"]);
   });
 
+  test("TW-15/UI-47 dungeon.gossip の文は迷宮の窓で語る「宿で聞いた噂を思い出す。{monster}が出るらしい。」（2026-10-06 ユーザー決定。params は monster だけ）", () => {
+    const text = data.strings["dungeon.gossip"]!;
+    expect(text).toBe("宿で聞いた噂を思い出す。{monster}が出るらしい。");
+    expect(text.match(/\{(\w+)\}/g)).toEqual(["{monster}"]);
+  });
+
   test("DG-03/TW-15 士気（gossip）ありの入場: nextUint32 → randInt(0, 候補数 − 1) を 1 回、その種類を図鑑で鑑定済みにし（kills 0 で作る）、dungeon.enter の後に dungeon.gossip{monster}", () => {
     for (const seed of [1, 2, 3, 4, 5]) {
       const s = withMorale(seed);

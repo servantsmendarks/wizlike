@@ -245,7 +245,14 @@ export function createApp(o: {
 
   // ---------------------------------------------------------------- 画面
   // SV-31: 読み込みのファイルはタップで透明の input が直接受ける（guard を通らないので importFromFile が route と titleBusy を見る）
-  const title = createTitleScreen({ strings, onSelect: (i) => guard(() => selectTitle(i)), onFile: (f) => importFromFile(f) });
+  // UI-50（2026-10-06 ユーザー決定）: public/town/title.png があればタイトルに出す
+  const title = createTitleScreen({
+    strings,
+    onSelect: (i) => guard(() => selectTitle(i)),
+    onFile: (f) => importFromFile(f),
+    pictures: o.assets?.town ?? {},
+    base: import.meta.env.BASE_URL,
+  });
   /** UI-50: タイトルのページ */
   let titlePage: TitlePage = { kind: "list" };
   /** 保存先の一覧。読み終えるまで null（行を出さない） */

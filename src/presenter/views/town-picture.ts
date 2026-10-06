@@ -4,6 +4,15 @@
 import type { SpriteInfo } from "../../build/asset-types";
 import { townPicture } from "../sprites";
 
+/**
+ * UI-61 / UI-50: public/town の絵の名前の一覧（施設は townFacility の 7 つ。title はタイトル画面の絵。2026-10-06 ユーザー決定）。
+ * ビルドの一覧（GameAssets.town）は名前で選ばないので、この一覧は表示層が読みに行く名前の正
+ */
+export const TOWN_PICTURE_IDS = ["town", "tavern", "inn", "temple", "dark", "gate", "shop", "title"] as const;
+
+/** UI-50: タイトル画面の絵の名前（public/town/title.png） */
+export const TITLE_PICTURE_ID = "title";
+
 /** UI-61: 施設の絵の URL（base は import.meta.env.BASE_URL。本番は /wizlike/） */
 export function townPictureUrl(id: string, base: string): string {
   return `${base}town/${id}.png`;

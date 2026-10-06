@@ -3,7 +3,8 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createFileButton, downloadText, exportFileName } from "../src/presenter/file-io";
 import { tapSpecOf } from "../src/presenter/input/tap";
-import { TITLE_HINT } from "../src/presenter/layout";
+import { TITLE_HINT, TITLE_PICTURE } from "../src/presenter/layout";
+import { TOWN_PICTURE_IDS } from "../src/presenter/views/town-picture";
 import { buildRecord } from "../src/save/record";
 import { createSaveService } from "../src/save/saves";
 import type { GameListEntry } from "../src/save/types";
@@ -466,6 +467,32 @@ describe("file-io の DOM（SV-30 / SV-31）", () => {
     const a2 = created.filter((e) => e.tagName === "A")[1]!;
     expect([a2.href, a2.download, a2.clicks]).toEqual(["blob:2", "b.json", 1]);
     expect(revoked).toEqual(["blob:1"]);
+  });
+});
+
+describe("UI-50 タイトルの絵（DOM。2026-10-06 ユーザー決定）", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("UI-50/UI-61 タイトルの絵: 一覧（GameAssets.town）に title があれば最下層に base/town/title.png を 240×150・y0 で出し（押せない）、無ければ何も足さない", () => {
+    expect(TOWN_PICTURE_IDS).toEqual(["town", "tavern", "inn", "temple", "dark", "gate", "shop", "title"]);
+    expect(TITLE_PICTURE).toEqual({ x: 0, y: 0, w: 240, h: 150 });
+    stubDocument();
+    const none = createTitleScreen({ strings: S, onSelect: () => {}, onFile: () => {}, pictures: { inn: { w: 240, h: 150 } }, base: "/wizlike/" });
+    expect((none.el as unknown as FakeEl).children.some((c) => c.className.includes("title-picture"))).toBe(false);
+    expect((none.el as unknown as FakeEl).children[0]!.className).toBe("title-heading");
+    const withPic = createTitleScreen({ strings: S, onSelect: () => {}, onFile: () => {}, pictures: { title: { w: 240, h: 150 } }, base: "/wizlike/" });
+    const root = withPic.el as unknown as FakeEl;
+    const pic = root.children[0]!;
+    expect(pic.className).toBe("town-picture title-picture");
+    expect([pic.style["left"], pic.style["top"], pic.style["width"], pic.style["height"], pic.style["pointerEvents"]]).toEqual(["0px", "0px", "240px", "150px", "none"]);
+    const img = pic.children[0]! as FakeEl & { src?: string };
+    expect(img.src).toBe("/wizlike/town/title.png");
+    expect(img.style["imageRendering"]).toBe("pixelated");
+    // 題字と一覧の行は絵の後（上の層）
+    expect(root.children[1]!.className).toBe("title-heading");
+    expect(root.children[2]!.className).toBe("title-rows");
   });
 });
 

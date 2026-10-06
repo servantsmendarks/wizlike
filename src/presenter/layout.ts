@@ -354,6 +354,12 @@ export function saveBannerRect(g: Regions, height: number): Rect {
 
 // ---- タイトル（UI-50）。題字 → 一覧の行（最大 5 行が見え、それより多ければ縦スクロール）→ 案内の欄 → ボタン 4 枠
 
+/**
+ * UI-50（2026-10-06 ユーザー決定）: タイトルの絵（public/town/title.png、240×150）の矩形。ステージの上端から等倍で、
+ * 題字・一覧の行の下の層に置く（どちらも隠さない。行のボタンは不透明なので行のある所では絵が隠れる）
+ */
+export const TITLE_PICTURE: Rect = { x: 0, y: 0, w: 240, h: 150 };
+
 /** 題字の上端（論理 px）。中央寄せ。既定の SV-23 の帯（y16..27）の下に置く */
 export const TITLE_HEADING_Y = 32;
 

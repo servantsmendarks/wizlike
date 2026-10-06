@@ -8,7 +8,9 @@
 import type { Strings } from "../../core/data/index";
 import type { GameListEntry } from "../../save/types";
 import type { Action } from "../input/swipe";
-import { TITLE_BUTTONS, TITLE_HEADING_Y, TITLE_HINT, TITLE_NOTICE, TITLE_ROW_AREA, TITLE_ROW_PITCH, type Rect } from "../layout";
+import type { SpriteInfo } from "../../build/asset-types";
+import { TITLE_BUTTONS, TITLE_HEADING_Y, TITLE_HINT, TITLE_NOTICE, TITLE_PICTURE, TITLE_ROW_AREA, TITLE_ROW_PITCH, type Rect } from "../layout";
+import { createTownPicture, TITLE_PICTURE_ID } from "./town-picture";
 import { formatMessage } from "./message";
 import { WRAP_STYLE } from "./wrap";
 import { onTap } from "../input/tap";
@@ -232,9 +234,28 @@ function place(el: HTMLElement, r: Rect): void {
   Object.assign(el.style, { position: "absolute", left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
 }
 
-export function createTitleScreen(o: { strings: Strings; onSelect(index: number): void; onFile(f: File): void }): TitleScreen {
+/**
+ * pictures はビルド時の施設の絵の一覧（GameAssets.town）、base は import.meta.env.BASE_URL。
+ * UI-50（2026-10-06 ユーザー決定）: 一覧に title があれば public/town/title.png を TITLE_PICTURE に出す（無ければ何も出さない = 今のまま）
+ */
+export function createTitleScreen(o: {
+  strings: Strings;
+  onSelect(index: number): void;
+  onFile(f: File): void;
+  pictures?: Readonly<Record<string, SpriteInfo>>;
+  base?: string;
+}): TitleScreen {
   const el = document.createElement("div");
   el.className = "screen screen-title";
+
+  // UI-50: タイトルの絵は最下層（題字・一覧の行・ボタンより前に置く）。押せない
+  if (o.pictures !== undefined && Object.prototype.hasOwnProperty.call(o.pictures, TITLE_PICTURE_ID)) {
+    const pic = createTownPicture({ w: TITLE_PICTURE.w, h: TITLE_PICTURE.h, available: o.pictures, base: o.base ?? "/" });
+    pic.el.className = "town-picture title-picture";
+    Object.assign(pic.el.style, { left: `${TITLE_PICTURE.x}px`, top: `${TITLE_PICTURE.y}px`, pointerEvents: "none" });
+    pic.show(TITLE_PICTURE_ID);
+    el.appendChild(pic.el);
+  }
 
   const heading = document.createElement("div");
   heading.className = "title-heading";

@@ -460,6 +460,8 @@ describe("入力と Command", () => {
     expect(app).toMatch(/if \(p\.kind === "book"\) return \{ kind: "lines", \.\.\.formatBook\(uniqueBookView\(state, data\), strings\), tall: true \};/);
     expect(app).toContain("town: townLayout(playRegions, data.config.party.size),");
     expect(app).toContain("townPictures: o.assets?.town ?? {},");
+    // UI-50（2026-10-06 ユーザー決定）: タイトルの絵も同じ一覧（GameAssets.town）の title を読む
+    expect(app).toMatch(/createTitleScreen\(\{[\s\S]*?pictures: o\.assets\?\.town \?\? \{\},\s*base: import\.meta\.env\.BASE_URL,/);
     const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
     expect(dungeon).toContain("const camp = createCampView(lay.camp, tl.book);");
     // 帯は窓の後・キャンプのパネルの前（図鑑のパネルが帯を覆う）、会話の箱（UI-47）はキャンプの後、パーティ欄はその後
