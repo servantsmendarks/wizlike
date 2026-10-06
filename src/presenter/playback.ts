@@ -36,6 +36,9 @@
 //   他の拍の外の箱（dice.learn など）は待たない。
 // - 街（UI-47。M8.5）: message の表示先（迷宮の窓か街の会話の箱）は結線側の deps.message が決める。会話の箱の say は文ごとのタップ待ちを
 //   自分の中で待つので、ここは変えない（拍の外のタップは message.rush に行き、箱の文字送りの即表示か次の文へ）。
+//   ただし（UI-66。2026-10-06）この再生で文を語った後は、次の出来事（dice を除く）の再生と音の前に deps.message.hold を待つ
+//   （会話の箱はその文のタップまで待つ。窓は待たない）。音（learn・levelup・文の音）が前の文の間に鳴らないようにする。
+//   dice は語った文（「…を掴もうとしている」）と一緒に出す（判定の箱）。制止・強化の箱のタップ待ちの後は、その文を読んだものとして待たない。
 //   screen{town} では、その前に迷宮の窓で語った文（townCarry）を screens.show に渡す。
 // 具体的な views は import しない（純粋な enemyGroupOfId / formatMessage / formatDiceSummary だけ）。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, StatusId, Strings } from "../core/data/index";
@@ -70,6 +73,11 @@ export type PlayerDeps = {
     typing(): boolean;
     /** UI-46: 履歴にだけ足す（ダイスの要約） */
     log(text: string): void;
+    /**
+     * UI-47 / UI-66（2026-10-06）: この再生で語った文の後、次の出来事（dice を除く）の再生と音の前に呼ぶ。
+     * 街の会話の箱はその文のタップまで待つ（talk.ts の hold）。メッセージ窓は待たない。省略すると待たない
+     */
+    hold?(): Promise<void>;
     /** UI-45: オートの拍の待ち（WAAPI の animation.finished で測る） */
     waitMs(ms: number): Promise<void>;
   };
@@ -492,6 +500,8 @@ export function createPlayer(deps: PlayerDeps): Player {
        * afterMessage = 語りを 1 件出した（次のイベントの前で待つ）
        */
       let hold: null | "awaitMessage" | "afterMessage" = null;
+      /** UI-47 / UI-66: この再生で文を語り、まだその文の後の待ち（message.hold）をしていない */
+      let said = false;
       try {
         for (const [idx, ev] of events.entries()) {
           if (ev.kind === "screen" && ev.to === "town") carry = townCarry(events, idx, deps.strings);
@@ -500,6 +510,12 @@ export function createPlayer(deps: PlayerDeps): Player {
             await waitTap();
             hideDice();
             hold = null;
+            said = false;
+          }
+          if (said && ev.kind !== "dice") {
+            // UI-47 / UI-66: 街の会話の箱は、語った文のタップまで次の出来事（と音）を出さない
+            said = false;
+            await deps.message.hold?.();
           }
           if (ev.kind === "beat") {
             // UI-45: 次の拍の前で待ち、待った後にダイスを消してから拍に入る
@@ -537,6 +553,7 @@ export function createPlayer(deps: PlayerDeps): Player {
           const h = handlers[ev.kind] as ((e: GameEvent, cx: PlayCx, s: GameState) => Promise<void>) | undefined;
           sound(ev);
           if (h !== undefined) await h(ev, cx, finalState);
+          if (ev.kind === "message") said = true;
           if (ev.kind === "dice") hold = mode === null && HOLD_DICE_KEYS.includes(ev.label.key) ? "awaitMessage" : null;
           else if (ev.kind === "message" && hold === "awaitMessage") hold = "afterMessage";
         }

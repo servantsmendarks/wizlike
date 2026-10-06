@@ -4,6 +4,8 @@
 //   say の Promise はその文の文字送りが終わったら解決する（再生の中では playback の message ハンドラがこれを待つ）。
 // - タップ（tap）: 文字送り中なら即表示、待っていれば次の文へ、最後の文が出ているなら箱を閉じる（言い終わったら消える）。
 //   rush は tap から「閉じる」を除いたもの（再生中のステージのタップ。playback の Player.tap → message.rush）。
+// - hold（UI-47 / UI-66。2026-10-06）: 出ている文のタップまで、playback の次の出来事（とその音）を待たせる。
+//   解けたら箱を閉じ、次の say はタップなしで出る（「タップで次」の 1 回のタップで、次の出来事と次の文が出る）。
 // - 演出スキップ（UI-41 / CLAUDE.md §3-9）が省くのは文字送り（say の instant）と ▼ の点滅だけで、タップ待ちは省かない。
 // - flush は待っている文をすべて解決して箱を閉じる（ログには入っている）。clear は flush に加えて外からの ▼ を下ろす（再開 SV-50）。
 // - replay はログに入れずに出す（迷宮から持ち越した語り。playback の townCarry）。
@@ -52,6 +54,12 @@ export type TalkModel = {
   isOpen(): boolean;
   /** 外からの ▼（playback の続きの三角と、判定の箱の待ち）。文字送りの間は出さない */
   setMore(on: boolean, blink?: boolean): void;
+  /**
+   * UI-47 / UI-66（2026-10-06）: 出ている文を読み終える（タップする）まで待つ。playback が、語った文の後の
+   * 次の出来事（dice を除く）の再生と音の前に呼ぶ。文が出ていない（閉じている・文字送り中・次の文が待っている）なら
+   * すぐ解決する。待つ間は ▼ を出し（点滅は blink()）、tap か rush で解いて箱を閉じる（次の say はタップなしで出る）
+   */
+  hold(): Promise<void>;
   /** 待っている文をすべて解決して箱を閉じる */
   flush(): void;
   /** flush に加えて外からの ▼ を下ろす */
@@ -70,9 +78,11 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
   let waiting = false;
   /** 外からの ▼ */
   let ext: { blink: boolean } | null = null;
+  /** hold の待ち（出ている文のタップを待っている） */
+  let held: (() => void) | null = null;
 
   const refreshMore = (): void => {
-    if (waiting) {
+    if (waiting || held !== null) {
       d.sink.more(true, d.blink());
       return;
     }
@@ -152,7 +162,20 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
     refreshMore();
   };
 
+  /** hold を解いて箱を閉じ、待っている文があれば出す */
+  const release = (): void => {
+    const r = held;
+    held = null;
+    close();
+    r?.();
+    pump();
+  };
+
   const rush = (): boolean => {
+    if (held !== null) {
+      release();
+      return true;
+    }
     if (job !== null) {
       finish();
       return true;
@@ -171,7 +194,10 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
     j?.item.resolve();
     waiting = false;
     for (const it of queue.splice(0)) it.resolve();
+    const h = held;
+    held = null;
     close();
+    h?.();
   };
 
   return {
@@ -186,6 +212,11 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
       rush();
     },
     tap(): void {
+      if (held !== null) {
+        d.advanced?.();
+        release();
+        return;
+      }
       if (job !== null) {
         finish();
         return;
@@ -209,6 +240,13 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
     setMore(on: boolean, blink = false): void {
       ext = on ? { blink } : null;
       refreshMore();
+    },
+    hold(): Promise<void> {
+      if (shown === null || job !== null || waiting || queue.length > 0 || held !== null) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        held = resolve;
+        refreshMore();
+      });
     },
     flush,
     clear(): void {
@@ -338,12 +376,14 @@ export type Narration = {
   typing(): boolean;
   log(text: string): void;
   waitMs(ms: number): Promise<void>;
+  /** UI-47 / UI-66（2026-10-06）: 語った文の後の出来事の前の待ち（TalkModel.hold）。メッセージ窓には無い（待たない） */
+  hold?(): Promise<void>;
 };
 
 export function createNarrator(o: {
   /** 今の route が街か */
   town(): boolean;
-  talk: Pick<TalkModel, "say" | "setMore" | "rush" | "typing">;
+  talk: Pick<TalkModel, "say" | "setMore" | "rush" | "typing"> & Partial<Pick<TalkModel, "hold">>;
   window: Narration;
 }): Narration {
   const to = (): Pick<Narration, "say" | "setMore" | "rush" | "typing"> => (o.town() ? o.talk : o.window);
@@ -362,5 +402,7 @@ export function createNarrator(o: {
     typing: () => to().typing(),
     log: (text) => o.window.log(text),
     waitMs: (ms) => o.window.waitMs(ms),
+    // 街なら会話の箱の hold。メッセージ窓（迷宮・戦闘）は待たない（拍の待ちは playback の beat が受け持つ）
+    hold: () => (o.town() ? (o.talk.hold?.() ?? Promise.resolve()) : Promise.resolve()),
   };
 }

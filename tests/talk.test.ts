@@ -207,6 +207,59 @@ describe("UI-47 会話の箱（モデル）", () => {
   });
 });
 
+describe("UI-47/UI-66（2026-10-06）会話の箱の hold（文の後の出来事の前の待ち）", () => {
+  test("UI-47 箱が閉じていれば hold はすぐ解決する", async () => {
+    const { m } = setup();
+    expect(await settled(m.hold())).toBe(true);
+  });
+
+  test("UI-47 文が出ていれば ▼ を点滅させてタップを待つ。rush で解け（送りの音なし）、箱を閉じ、次の say はタップなしで出る", async () => {
+    const { m, sink, adv } = setup();
+    void m.say("一", true);
+    const h = m.hold();
+    expect(await settled(h)).toBe(false);
+    expect(sink.more).toEqual({ on: true, blink: true });
+    m.rush();
+    expect(await settled(h)).toBe(true);
+    expect(adv.n).toBe(0);
+    expect({ open: sink.open, more: sink.more.on }).toEqual({ open: false, more: false });
+    const p2 = m.say("二", true);
+    expect(await settled(p2)).toBe(true);
+    expect({ open: sink.open, text: sink.text }).toEqual({ open: true, text: "二" });
+  });
+
+  test("UI-47/UI-66 tap でも解ける（送りの音を 1 回）。flush でも解ける。演出スキップの ▼ は点滅しない", async () => {
+    const a = setup();
+    void a.m.say("一", true);
+    const h = a.m.hold();
+    a.m.tap();
+    expect(await settled(h)).toBe(true);
+    expect(a.adv.n).toBe(1);
+    const b = setup({ blink: false });
+    void b.m.say("一", true);
+    const h2 = b.m.hold();
+    expect(b.sink.more).toEqual({ on: true, blink: false });
+    b.m.flush();
+    expect(await settled(h2)).toBe(true);
+    expect(b.sink.open).toBe(false);
+  });
+
+  test("UI-47 語りの表示先の hold は、街なら会話の箱の hold、それ以外は待たない", async () => {
+    const { m } = setup();
+    let town = true;
+    const win: Narration = { say: async () => {}, setMore: () => {}, rush: () => {}, typing: () => false, log: () => {}, waitMs: async () => {} };
+    const n = createNarrator({ town: () => town, talk: m, window: win });
+    await n.say("一", true);
+    const h = n.hold!();
+    expect(await settled(h)).toBe(false);
+    town = false;
+    expect(await settled(n.hold!())).toBe(true);
+    town = true;
+    n.rush();
+    expect(await settled(h)).toBe(true);
+  });
+});
+
 describe("UI-47 語りの表示先（createNarrator）", () => {
   const fake = (name: string, calls: string[]): Narration => ({
     say: async (t) => {

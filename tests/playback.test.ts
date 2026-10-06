@@ -1541,4 +1541,111 @@ describe("UI-47 街の会話の箱と再生", () => {
     await p;
     expect(sink.text).toBe(data.strings["town.inn.intro"]);
   });
+
+  /** UI-47 / UI-66（2026-10-06）: 実物の会話の箱と音の記録 */
+  const townTalk = (skipAnimations: boolean) => {
+    const { deps, log } = fakeDeps({ skipAnimations });
+    const sink = { open: false, text: "", more: { on: false, blink: false } };
+    const talk = createTalkModel({
+      sink: {
+        open: (on) => (sink.open = on),
+        text: (t) => (sink.text = t),
+        more: (on, blink) => (sink.more = { on, blink }),
+      },
+      log: () => {},
+      speed: () => 0,
+      blink: () => !skipAnimations,
+      schedule: () => () => {},
+    });
+    deps.message = createNarrator({ town: () => true, talk, window: deps.message });
+    deps.sound = (ev) => log.push({ m: `sound:${ev.kind}`, a: [ev.kind === "message" ? ev.key : ""] });
+    return { deps, log, sink, talk };
+  };
+  const tick = (): Promise<void> => new Promise<void>((res) => setTimeout(res, 0));
+  const fmt = (ev: GameEvent): string => (ev.kind === "message" ? formatMessage(data.strings[ev.key]!, ev.params) : "");
+
+  test("UI-47/UI-66（2026-10-06）街の会話の箱: 文の後の出来事（spellLearned）の再生と音は、その文のタップの後。判定の箱はその文と一緒に出したまま待つ", async () => {
+    const p = { name: "アル", spell: "灯火" };
+    const roll = msg("town.inn.learnRoll", p);
+    const learned = msg("town.inn.learned", p);
+    const events: GameEvent[] = [
+      roll,
+      rollDiceEv("dice.learn", [12], 12, "dice.learn.ok"),
+      { kind: "spellLearned", id: "c1", spellId: "x", via: "roll" },
+      learned,
+    ];
+    for (const skipAnimations of [false, true]) {
+      const { deps, log, sink } = townTalk(skipAnimations);
+      const player = createPlayer(deps);
+      let done = false;
+      const run = player.play(events, stateWith(null), stateWith(null)).then(() => {
+        done = true;
+      });
+      await tick();
+      // 「掴もうとしている」の文と判定の箱を出したまま、▼ でタップを待つ。learn はまだ鳴らない
+      expect(sink.text, String(skipAnimations)).toBe(fmt(roll));
+      expect(sink.more).toEqual({ on: true, blink: !skipAnimations });
+      expect(names(log)).toContain("dice.show");
+      expect(names(log)).not.toContain("dice.hide");
+      expect(names(log)).not.toContain("sound:spellLearned");
+      expect(done).toBe(false);
+      player.tap();
+      await run;
+      // タップの後に learn が鳴り、続けて覚えた文が出る（もう 1 回のタップは要らない）
+      expect(sink.text).toBe(fmt(learned));
+      const seq = names(log);
+      expect(seq.indexOf("sound:spellLearned")).toBeGreaterThan(seq.indexOf("dice.show"));
+    }
+  });
+
+  test("UI-47/UI-66（2026-10-06）街の会話の箱: levelUp のジングルとパーティ欄の描き直し、message の音（resurrectOk）も、前の文のタップの後", async () => {
+    const before = msg("town.inn.morale");
+    const lv = msg("town.inn.levelUp", { name: "アル", level: 2 });
+    const ok = msg("town.temple.resurrectOk", { name: "アル" });
+    const events: GameEvent[] = [
+      before,
+      { kind: "levelUp", id: "c1", level: 2, hpGain: 3, mpGain: 0, hpMax: 13, mpMax: 0, hp: 13, mp: 0 },
+      lv,
+      ok,
+    ];
+    const { deps, log, sink, talk } = townTalk(false);
+    const player = createPlayer(deps);
+    const run = player.play(events, stateWith(null), stateWith(null));
+    await tick();
+    expect(sink.text).toBe(fmt(before));
+    expect(names(log)).not.toContain("sound:levelUp");
+    expect(names(log)).not.toContain("party.setMax");
+    player.tap();
+    await tick();
+    expect(sink.text).toBe(fmt(lv));
+    expect(names(log)).toContain("sound:levelUp");
+    expect(names(log)).toContain("party.setMax");
+    // 次の文の音は、その文が出るまで（タップまで）鳴らない
+    expect(log.some((e) => e.m === "sound:message" && e.a[0] === "town.temple.resurrectOk")).toBe(false);
+    player.tap();
+    await run;
+    expect(sink.text).toBe(fmt(ok));
+    expect(log.some((e) => e.m === "sound:message" && e.a[0] === "town.temple.resurrectOk")).toBe(true);
+    // 最後の文は残り、次のタップで閉じる
+    expect(sink.open).toBe(true);
+    talk.tap();
+    expect(sink.open).toBe(false);
+  });
+
+  test("UI-47（2026-10-06）前の再生で残った文では待たない（この再生で語った文の後だけ待つ）。メッセージ窓（迷宮）では待たない", async () => {
+    const { deps, log, sink, talk } = townTalk(true);
+    void talk.say("前の文", true);
+    const player = createPlayer(deps);
+    await player.play([{ kind: "levelUp", id: "c1", level: 2, hpGain: 3, mpGain: 0, hpMax: 13, mpMax: 0, hp: 13, mp: 0 }], stateWith(null), stateWith(null));
+    expect(names(log)).toContain("sound:levelUp");
+    expect(sink.text).toBe("前の文");
+    const w = fakeDeps({ skipAnimations: true });
+    w.deps.message = createNarrator({ town: () => false, talk, window: w.deps.message });
+    await createPlayer(w.deps).play(
+      [msg("town.inn.morale"), { kind: "levelUp", id: "c1", level: 2, hpGain: 3, mpGain: 0, hpMax: 13, mpMax: 0, hp: 13, mp: 0 }],
+      stateWith(null),
+      stateWith(null),
+    );
+    expect(names(w.log)).toContain("party.setMax");
+  });
 });
