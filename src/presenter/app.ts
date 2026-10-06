@@ -40,6 +40,7 @@ import {
   firstCursor,
   focusedChoice,
   focusedGroup,
+  isBackChoice,
   moveFocus,
   nextCursor,
   setFocus,
@@ -595,6 +596,8 @@ export function createApp(o: {
     // UI-66（2026-10-06）: 施設メニューから施設に入る行は ok の代わりに施設に入る音
     ...(townPage === "menu" && e.kind === "page" ? { sound: "facility" as const } : {}),
     disabled: "disabled" in e ? e.disabled : false,
+    // UI-66（2026-10-07）: 戻るは位置によらず取り消しの音
+    back: e.kind === "back",
     // UI-52 / TW-11（M9）: 準備中の迷宮の dim の行を押したら、会話の箱に理由の 1 文（準備中かは core の notReady）
     ...notReadyReason(e),
     onSelect: () =>
@@ -793,7 +796,13 @@ export function createApp(o: {
     play.camp.render(campPanelView(campPage, m));
     const c = play.controls;
     const e = campEntries(campHost, campPage, m, strings);
-    const item = (x: CampEntry): ControlItem => ({ label: x.label, disabled: x.disabled, onSelect: () => guard(() => chooseCamp(x.choice)) });
+    // UI-66（2026-10-07）: 戻る・やめる（choice の cancel）は 8 枠の中でも一覧の外でも取り消しの音
+    const item = (x: CampEntry): ControlItem => ({
+      label: x.label,
+      disabled: x.disabled,
+      back: x.choice.kind === "cancel",
+      onSelect: () => guard(() => chooseCamp(x.choice)),
+    });
     if (e.layout === "grid") {
       c.setBattleMenu(e.slots.map((x) => (x === null ? null : item(x))), "camp");
       c.setMode("battle");
@@ -892,6 +901,8 @@ export function createApp(o: {
       (e, i): ControlItem => ({
         label: e.label,
         disabled: e.disabled,
+        // UI-66（2026-10-07）: 戻るは枠の中でも一覧の外でも取り消しの音
+        back: isBackChoice(e.choice),
         onSelect: () => guard(() => chooseBattle(e.choice)),
         ...(targeting ? { onFocus: () => guard(() => focusTo(i, false)) } : {}),
       }),

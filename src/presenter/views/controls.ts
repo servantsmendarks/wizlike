@@ -22,8 +22,13 @@ export type ControlItem = {
   onFocus?(): void;
   /** UI-52（M9）: disabled の項目を押したときだけ呼ぶ（理由の文を出すなど。音は鳴らさない） */
   onDisabled?(): void;
-  /** UI-66（2026-10-06）: 選んだときの音（audio.json の ui のキー）。省略は ok（固定の戻るは cancel） */
+  /** UI-66（2026-10-06）: 選んだときの音（audio.json の ui のキー）。省略は ok（戻る・やめるの項目は cancel） */
   sound?: UiSound;
+  /**
+   * UI-66（2026-10-07）: 戻る・やめるの意味の項目（真なら位置によらず cancel。sound より優先）。
+   * 呼び出し側が項目の種類（戦闘の back・キャンプの cancel・街の back）から付ける。setList の fixedLast の末尾は印が無くても戻る・やめる
+   */
+  back?: boolean;
 };
 
 /** UI-66: 表示層の操作の音の種類（data/audio.json の ui のキー） */
@@ -134,7 +139,8 @@ export function createControls(o: {
   /** UI-25: 地図の「移動」（押せるときだけ呼ぶ） */
   onMapGo?(): void;
   /**
-   * UI-66（M8）: 決定・取り消しの音。disabled でない項目を選んだら ok、固定の戻る（listBack）と「閉じる」なら cancel。
+   * UI-66（M8）: 決定・取り消しの音。disabled でない項目を選んだら ok、戻る・やめるの項目（ControlItem の back。固定の戻る（listBack）を含み、
+   * 戦闘の枠の中でも同じ。2026-10-07）と「閉じる」なら cancel。
    * 十字ボタン・地図の「移動」・オート解除では鳴らさない。省略すると無音
    */
   onSound?(k: UiSound): void;
@@ -316,13 +322,16 @@ export function createControls(o: {
     setShown(autoStop, mode === "autoStop");
   };
 
-  /** disabled の見た目（dim 色）。押しても onSelect を呼ばない（onDisabled があればそれだけ呼ぶ）。back は固定の戻る（UI-66 の取り消しの音） */
+  /**
+   * disabled の見た目（dim 色）。押しても onSelect を呼ばない（onDisabled があればそれだけ呼ぶ）。
+   * back は固定の戻る（setList の fixedLast の末尾）。UI-66（2026-10-07）: それか項目の back の印なら、位置によらず取り消しの音
+   */
   const pick = (it: ControlItem, back = false): void => {
     if (it.disabled === true) {
       it.onDisabled?.();
       return;
     }
-    o.onSound?.(back ? "cancel" : (it.sound ?? "ok"));
+    o.onSound?.(back || it.back === true ? "cancel" : (it.sound ?? "ok"));
     it.onSelect();
   };
   const dimIf = (b: HTMLElement, it: ControlItem): void => {

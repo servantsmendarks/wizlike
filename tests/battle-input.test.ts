@@ -7,6 +7,7 @@ import {
   firstCursor,
   focusedChoice,
   focusedGroup,
+  isBackChoice,
   moveFocus,
   nextCursor,
   setFocus,
@@ -403,5 +404,23 @@ describe("UI-54 入力の段階", () => {
     // 注目の選択肢を step に渡すと、その対象で送る（Enter = 注目を選ぶ）
     expect(step(m, c1, focusedChoice(m, c1)!).send).toEqual({ type: "battle.input", memberId: "c1", action: { type: "attack", group: 2 } });
     expect(step(m, c2, focusedChoice(m, c2)!).cursor).toEqual(mem("c1"));
+  });
+});
+
+describe("UI-66（2026-10-07）戻るの選択肢", () => {
+  test("UI-66 isBackChoice はメンバーの枠の戻る（member の back）と一覧の末尾の戻る（back）だけ真。各段の entries で戻るの行だけが真", () => {
+    expect(isBackChoice(mc("back"))).toBe(true);
+    expect(isBackChoice({ kind: "back" })).toBe(true);
+    for (const c of ["attack", "spell", "defend", "item"] as const) expect(isBackChoice(mc(c))).toBe(false);
+    for (const c of ["fight", "repeat", "flee", "auto"] as const) expect(isBackChoice(pc(c))).toBe(false);
+    const m = menu();
+    const backs = (cur: InputCursor): boolean[] => entries(m, cur, S).map((e) => isBackChoice(e.choice));
+    expect(backs(PARTY)).toEqual([false, false, false, false]);
+    expect(backs(mem("c1"))).toEqual([false, false, false, false, true]);
+    const spell = backs(list("spell", "c5"));
+    expect(spell[spell.length - 1]).toBe(true);
+    expect(spell.slice(0, -1).every((x) => !x)).toBe(true);
+    const enemy = backs(tgt("enemy", "c1", { kind: "attack" }));
+    expect(enemy).toEqual([false, false, true]);
   });
 });

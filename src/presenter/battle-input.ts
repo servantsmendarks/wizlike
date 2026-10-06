@@ -32,6 +32,11 @@ export type Choice =
   | { kind: "back" };
 export type MenuEntry = { label: string; disabled: boolean; choice: Choice };
 
+/** UI-66（2026-10-07）: 戻るの意味の選択肢か（メンバーの枠の「戻る」と、一覧の末尾の戻る。取り消しの音を鳴らす項目） */
+export function isBackChoice(c: Choice): boolean {
+  return c.kind === "back" || (c.kind === "member" && c.cmd === "back");
+}
+
 const PARTY_CMDS: readonly PartyCmd[] = ["fight", "repeat", "flee", "auto"];
 const MEMBER_CMDS: readonly MemberCmd[] = ["attack", "spell", "defend", "item", "back"];
 

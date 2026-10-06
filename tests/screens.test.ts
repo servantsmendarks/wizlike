@@ -540,6 +540,16 @@ describe("入力と Command", () => {
     expect(app).toContain('talkAdvanced: () => playUi("talk"),');
   });
 
+  test("UI-66（2026-10-07）戻る・やめるは位置に関わらず cancel の配線: 戦闘・キャンプ・街の項目は種類から back の印を付ける（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const battle = /const syncBattleControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(battle).toContain("back: isBackChoice(e.choice),");
+    const camp = /const syncCampControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(camp).toContain('back: x.choice.kind === "cancel",');
+    const town = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(town).toContain('back: e.kind === "back",');
+  });
+
   test("UI-52/TW-11（M9 実機 B2）準備中の迷宮の行（townEntries の notReady）を押すと、会話の箱を打ち切ってから理由の文を会話の箱に出す（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const item = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";

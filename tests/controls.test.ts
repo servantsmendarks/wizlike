@@ -555,6 +555,62 @@ describe("UI-66 決定・取り消しの音", () => {
     expect(sounds).toEqual([]);
   });
 
+  test("UI-66（2026-10-07）戻る・やめるは位置に関わらず cancel: 戦闘の枠・キャンプの 8 枠・固定しない一覧の中でも back の印の項目は cancel、ほかの項目は ok（sound より back を優先）", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const sounds: string[] = [];
+    const c = createControls({
+      region: g.controls,
+      layout: L,
+      strings: data.strings,
+      onAction: () => {},
+      hold: HOLD,
+      onClose: () => {},
+      onSound: (k) => sounds.push(k),
+    });
+    // 戦闘のメンバーの 5 枠（末尾が戻る）: タップでも select でも
+    c.setBattleMenu(
+      [
+        { label: "a", onSelect: () => {} },
+        { label: "b", onSelect: () => {} },
+        { label: "c", onSelect: () => {} },
+        { label: "d", onSelect: () => {} },
+        { label: "back", onSelect: () => {}, back: true },
+      ],
+      "member",
+    );
+    c.setMode("battle");
+    const slots = created.filter((e) => e.className === "controls-battle-item");
+    slots[0]!.tap();
+    slots[4]!.tap();
+    c.select(4);
+    c.select(1);
+    expect(sounds).toEqual(["ok", "cancel", "cancel", "ok"]);
+    // キャンプの 8 枠（空き枠あり。[7] がやめる）
+    sounds.length = 0;
+    c.setBattleMenu([{ label: "m1", onSelect: () => {} }, null, null, null, null, null, null, { label: "cancel", onSelect: () => {}, back: true }], "camp");
+    c.select(0);
+    c.select(7);
+    expect(sounds).toEqual(["ok", "cancel"]);
+    // 固定しない一覧の中の戻る、メニュー、sound を持つ項目でも back が優先
+    sounds.length = 0;
+    c.setList([{ label: "r", onSelect: () => {} }, { label: "back", onSelect: () => {}, back: true }]);
+    c.setMode("list");
+    c.select(1);
+    c.select(0);
+    c.setMenu([{ label: "x", onSelect: () => {}, sound: "camp", back: true }]);
+    c.setMode("dpad");
+    c.select(0);
+    expect(sounds).toEqual(["cancel", "ok", "cancel"]);
+    // dim の戻るは鳴らさない
+    sounds.length = 0;
+    c.setBattleMenu([{ label: "back", onSelect: () => {}, back: true, disabled: true }], "member");
+    c.setMode("battle");
+    c.select(0);
+    expect(sounds).toEqual([]);
+  });
+
   test("UI-66 onSound を省略しても動く（無音）", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);
