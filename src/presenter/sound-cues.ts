@@ -3,7 +3,7 @@
 //   ここはデータを引いて当てはめるだけ（§3-5）。
 // - 判定は GameEvent の欄と id の形（敵は "e{g}-{u}"。enemyGroupOfId）だけで行い、state を掘らない（§3-4）。
 // - ボスの判定は monsters[].special.boss を表示のためだけに引く（battle.ts の色と同じ扱い）。
-// - 戦闘の曲の順（battleSongs を交互に）とボス戦か（battleEnd の boss）は、表示層だけの値 SoundContext で持つ（保存しない。リロードで初めから）。
+// - 戦闘の曲の順（battleSongs を順に巡回）とボス戦か（battleEnd の boss）は、表示層だけの値 SoundContext で持つ（保存しない。リロードで初めから）。
 import type { AudioFacility, GameData, SoundCue } from "../core/data/index";
 import type { GameEvent, Screen } from "../core/types";
 import { routeOfScreen } from "./resume";
