@@ -1353,6 +1353,23 @@ describe("UI-63 Web Worker の合成（M9.5）", () => {
     expect(w.posted.filter((m) => m.type === "warmup")).toHaveLength(1);
   });
 
+  // 2026-10-06 レビュー F1: 名前順で先に来る曲の区間 0 にノイズ（ch4）が無いと、renderSegment のノイズの枝が暖機で回らない
+  it("UI-63 worker 暖機: 区間 0 にトーンとノイズの両方の音がある最初のループする曲で暖機する（無ければ最初のループする曲）", () => {
+    const quiet: SongData = { ...songData("aquiet", "song", 2), ch: [[[0, 4, 69, 12]], [], [], []] };
+    const late: SongData = { ...songData("blate", "song", 2), ch: [[[0, 4, 69, 12]], [], [], [[16, 1, "kick", 15]]] };
+    const f = setup({ music: { aquiet: quiet, blate: late, victory: MUSIC.victory!, town: MUSIC.town! } });
+    const w = new FakeWorker();
+    f.deps.renderer = createWorkerRenderer(() => asWorker(w));
+    createAudioPlayer(f.deps);
+    expect(w.posted).toEqual([{ type: "warmup", plan: planSong(MUSIC.town!, data.wavetables, RATE) }]);
+    // 両方ある曲が無ければ従来どおり最初のループする曲
+    const g = setup({ music: { aquiet: quiet, blate: late } });
+    const v = new FakeWorker();
+    g.deps.renderer = createWorkerRenderer(() => asWorker(v));
+    createAudioPlayer(g.deps);
+    expect(v.posted).toEqual([{ type: "warmup", plan: planSong(quiet, data.wavetables, RATE) }]);
+  });
+
   it("UI-63 worker 暖機: ループする曲が無ければ最初のジングル、曲のファイルが 1 つも無ければ暖機しない（壊れない）", () => {
     const f = setup({ music: { victory: MUSIC.victory! } });
     const w = new FakeWorker();

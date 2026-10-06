@@ -74,6 +74,16 @@ export type AudioPlayer = {
 };
 
 type Kind = "song" | "jingle";
+
+/** 暖機の曲選び（M9.5 B6）: 区間 0 に重なるトーン（voices[0..2]）とノイズ（voices[3]）の音が両方あるか */
+function hasBothBranches(plan: SongPlan): boolean {
+  const a = plan.bounds[0] ?? 0;
+  const z = plan.bounds[1] ?? a;
+  const overlaps = (list: readonly { s0: number; s1: number }[] | undefined): boolean =>
+    (list ?? []).some((v) => v.s0 < z && v.s1 > a);
+  return plan.voices.slice(0, 3).some((l) => overlaps(l)) && overlaps(plan.voices[3]);
+}
+
 /** 曲（またはジングル）の計画と合成済みの区間 */
 type SongCache = { name: string; plan: SongPlan; buffers: (AudioBuffer | undefined)[] };
 /** 鳴っている曲・ジングル */
@@ -578,11 +588,21 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
   if (deps.renderer.warmup !== undefined) {
     try {
       const all = Object.values(deps.assets.music);
-      const song = all.find((x) => x.kind === "song") ?? all[0];
-      if (song !== undefined) {
-        const plan = deps.renderer.plan(song, deps.data.wavetables, conf.sampleRate);
-        if (segmentCount(plan) > 0) deps.renderer.warmup(plan);
+      // 区間 0 にトーン（ch1〜ch3）とノイズ（ch4）の音が両方ある最初のループする曲を選ぶ（renderSegment の両方の枝を温める）。無ければ従来どおり
+      let plan: SongPlan | null = null;
+      for (const s of all) {
+        if (s.kind !== "song") continue;
+        const p = deps.renderer.plan(s, deps.data.wavetables, conf.sampleRate);
+        if (segmentCount(p) > 0 && hasBothBranches(p)) {
+          plan = p;
+          break;
+        }
       }
+      if (plan === null) {
+        const song = all.find((x) => x.kind === "song") ?? all[0];
+        if (song !== undefined) plan = deps.renderer.plan(song, deps.data.wavetables, conf.sampleRate);
+      }
+      if (plan !== null && segmentCount(plan) > 0) deps.renderer.warmup(plan);
     } catch (e) {
       warn(e);
     }
