@@ -47,6 +47,7 @@ CLAUDE.md
 docs/
   decisions.md          決定の記録（追記のみ。消さない）
   milestones.md         作業の順番と完了条件
+  checklist.md          実機で確かめてきた観点の一覧（decisions の実機の記録から起こす。次の実機確認の手順）
   spec/
     character.md  magic.md  combat.md  dungeon.md  town.md  events.md  save.md  ui.md  items.md
   audio/                工房（make-assets）の取り決めの複製。工房の版が正
