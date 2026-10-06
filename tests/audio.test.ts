@@ -8,11 +8,13 @@ import {
   createAudioPlayer,
   createMessageChannelYield,
   createSyncRenderer,
+  createWorkerRenderer,
   type AudioDeps,
   type SegmentRenderer,
   type ZzfxModule,
 } from "../src/presenter/audio";
-import { planSong, sampleAt } from "../src/presenter/audio-synth";
+import { planSong, renderSegment, sampleAt, type SongPlan } from "../src/presenter/audio-synth";
+import { createSynthHandler, type FromSynthWorker, type ToSynthWorker } from "../src/presenter/synth-protocol";
 import { data } from "./helpers/core";
 
 const RATE = data.config.audio.sampleRate;
@@ -1092,5 +1094,178 @@ describe("UI-63 / UI-65 / UI-66 音の対応の拡充（2026-10-06）", () => {
     q.setSong("battle1");
     expect(tags(d)).toEqual(["dungeon1:0", "battle1:0"]);
     expect(d.sources[0]!.stopped).toBe(1);
+  });
+});
+
+// UI-63（M9.5）: 1 区間の合成が実機で 50ms 以上かかったので Web Worker で合成する。node に Worker は無いので、
+// worker の側の処理（createSynthHandler）は直接呼び、主の側（createWorkerRenderer）は偽の Worker で確かめる。
+class FakeWorker {
+  posted: ToSynthWorker[] = [];
+  terminated = 0;
+  onmessage: ((e: { data: FromSynthWorker }) => void) | null = null;
+  onerror: ((e: unknown) => void) | null = null;
+  onmessageerror: ((e: unknown) => void) | null = null;
+  postMessage(m: ToSynthWorker): void {
+    // 本物の postMessage と同じく構造化複製できる形であること（関数・クラスが入ると例外）
+    this.posted.push(structuredClone(m));
+  }
+  terminate(): void {
+    this.terminated++;
+  }
+  /** worker の返事を届ける */
+  reply(m: FromSynthWorker): void {
+    this.onmessage?.({ data: m });
+  }
+}
+/** 本物の handler で worker を動かす偽物（返事は deliver で 1 つずつ届ける） */
+class LoopbackWorker extends FakeWorker {
+  handle = createSynthHandler();
+  out: FromSynthWorker[] = [];
+  override postMessage(m: ToSynthWorker): void {
+    super.postMessage(m);
+    const r = this.handle(structuredClone(m));
+    if (r !== null) this.out.push(r);
+  }
+  deliver(): void {
+    const r = this.out.shift();
+    if (r === undefined) throw new Error("no reply");
+    this.reply(r);
+  }
+}
+const asWorker = (w: FakeWorker): Worker => w as unknown as Worker;
+const segOf = (m: ToSynthWorker | undefined): { name: string; i: number; id: number } => {
+  if (m?.type !== "seg") throw new Error(`not seg: ${JSON.stringify(m?.type)}`);
+  return m;
+};
+
+describe("UI-63 Web Worker の合成（M9.5）", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("UI-63 worker: 計画を受けた後の区間の依頼に renderSegment と同じ samples を返す。計画は返事なし、知らない曲は null", () => {
+    const handle = createSynthHandler();
+    const plan = planSong(MUSIC.long!, data.wavetables, RATE);
+    expect(handle({ type: "plan", name: "long", plan: structuredClone(plan) })).toBeNull();
+    for (const i of [0, 1, 5]) {
+      const r = handle({ type: "seg", name: "long", i, id: 10 + i });
+      expect(r?.type).toBe("seg");
+      expect(r?.id).toBe(10 + i);
+      expect(r?.samples).toEqual(renderSegment(plan, i));
+    }
+    expect(handle({ type: "seg", name: "nope", i: 0, id: 99 })).toEqual({ type: "seg", id: 99, samples: null });
+    // 同じ名前の新しい計画で置き換える
+    const other = planSong(MUSIC.town!, data.wavetables, RATE);
+    handle({ type: "plan", name: "long", plan: other });
+    expect(handle({ type: "seg", name: "long", i: 0, id: 1 })?.samples).toEqual(renderSegment(other, 0));
+  });
+
+  it("UI-63 worker: worker は最初の render で作り、計画は名前ごとに 1 回だけ送り、返事は id で cb に渡す（順が入れ替わっても）", () => {
+    const workers: FakeWorker[] = [];
+    const r = createWorkerRenderer(() => {
+      const w = new FakeWorker();
+      workers.push(w);
+      return asWorker(w);
+    });
+    const plan = r.plan(MUSIC.long!, data.wavetables, RATE);
+    expect(workers).toHaveLength(0);
+    const got: (string | null)[] = [];
+    const samplesOf: Record<number, Float32Array | null> = {};
+    r.render("long", plan, 0, (s) => {
+      got.push("long:0");
+      samplesOf[0] = s;
+    });
+    r.render("long", plan, 1, (s) => {
+      got.push("long:1");
+      samplesOf[1] = s;
+    });
+    expect(workers).toHaveLength(1);
+    const w = workers[0]!;
+    expect(w.posted.map((m) => m.type)).toEqual(["plan", "seg", "seg"]);
+    expect(got).toEqual([]);
+    const s0 = segOf(w.posted[1]);
+    const s1 = segOf(w.posted[2]);
+    expect([s0.name, s0.i, s1.name, s1.i]).toEqual(["long", 0, "long", 1]);
+    expect(s0.id).not.toBe(s1.id);
+    const a = new Float32Array([0.5]);
+    const b = new Float32Array([0.25]);
+    w.reply({ type: "seg", id: s1.id, samples: b });
+    w.reply({ type: "seg", id: s0.id, samples: a });
+    w.reply({ type: "seg", id: s0.id, samples: a }); // 2 回目と知らない id は捨てる
+    w.reply({ type: "seg", id: 12345, samples: a });
+    expect(got).toEqual(["long:1", "long:0"]);
+    expect(samplesOf[0]).toBe(a);
+    expect(samplesOf[1]).toBe(b);
+    // 同じ名前でも計画が新しければ送り直す（ジングルは鳴らすたびに計画を作る）
+    const plan2 = r.plan(MUSIC.long!, data.wavetables, RATE);
+    r.render("long", plan2, 2, () => {});
+    r.render("long", plan2, 3, () => {});
+    expect(w.posted.slice(3).map((m) => m.type)).toEqual(["plan", "seg", "seg"]);
+    expect(workers).toHaveLength(1);
+  });
+
+  it("UI-63 worker: error が来たら warn を 1 回出して worker を閉じ、返事を待つ依頼と以後の依頼は主スレッドで合成する", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const w = new FakeWorker();
+    const r = createWorkerRenderer(() => asWorker(w));
+    const plan: SongPlan = r.plan(MUSIC.long!, data.wavetables, RATE);
+    const got: [number, Float32Array | null][] = [];
+    r.render("long", plan, 0, (s) => got.push([0, s]));
+    r.render("long", plan, 1, (s) => got.push([1, s]));
+    expect(got).toEqual([]);
+    w.onerror?.(new Error("boom"));
+    expect(w.terminated).toBe(1);
+    expect(got.map(([i]) => i)).toEqual([0, 1]);
+    expect(got[0]![1]).toEqual(renderSegment(plan, 0));
+    expect(got[1]![1]).toEqual(renderSegment(plan, 1));
+    const n = w.posted.length;
+    r.render("long", plan, 2, (s) => got.push([2, s]));
+    expect(w.posted).toHaveLength(n);
+    expect(got[2]).toEqual([2, renderSegment(plan, 2)]);
+    w.onmessageerror?.(new Error("again"));
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("UI-63 worker: worker が作れなければ（例外）主スレッドで合成する", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let made = 0;
+    const r = createWorkerRenderer(() => {
+      made++;
+      throw new Error("no worker");
+    });
+    const plan = r.plan(MUSIC.town!, data.wavetables, RATE);
+    const got: (Float32Array | null)[] = [];
+    r.render("town", plan, 0, (s) => got.push(s));
+    r.render("town", plan, 1, (s) => got.push(s));
+    expect(got).toEqual([renderSegment(plan, 0), renderSegment(plan, 1)]);
+    expect(made).toBe(1);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("UI-63 worker: 再生機は worker の返事を待って区間 0 を鳴らし、返事が来るたびに先読みを予約する", () => {
+    const f = setup();
+    const w = new LoopbackWorker();
+    f.deps.renderer = createWorkerRenderer(() => asWorker(w));
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("long");
+    expect(c.sources).toHaveLength(0);
+    const plan = planSong(MUSIC.long!, data.wavetables, RATE);
+    w.deliver();
+    expect(c.sources).toHaveLength(1);
+    expect(c.sources[0]!.buffer?.data).toEqual(renderSegment(plan, 0));
+    expect(c.sources[0]!.startAt).toEqual([LEAD]);
+    for (let k = 1; k <= PREFETCH; k++) {
+      runTasks(f);
+      w.deliver();
+      expect(c.sources).toHaveLength(1 + k);
+      expect(c.sources[k]!.buffer?.data).toEqual(renderSegment(plan, k));
+      expect(c.sources[k]!.startAt[0]).toBeCloseTo(LEAD + (plan.bounds[k] ?? 0) / RATE, 12);
+    }
+    runTasks(f);
+    expect(w.out).toHaveLength(0);
+    // 計画は 1 回だけ送る
+    expect(w.posted.filter((m) => m.type === "plan")).toHaveLength(1);
   });
 });

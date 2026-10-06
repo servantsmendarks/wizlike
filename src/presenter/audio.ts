@@ -10,6 +10,7 @@
 // - 先読みは config.audio.prefetchBars 区間。鳴らし始めの直後は yieldTask（イベントループへ 1 回戻す）ごとに 1 区間ずつ、
 //   以後は区間の ended で 1 区間ずつ合成して予約する。常駐のループ・rAF・タイマーは使わない（CLAUDE.md §2）。
 //   予約の時刻に間に合わない区間は時刻を置き直す（隙間は出るが重ならない）。
+// - 区間の合成は注入した renderer（本番は Web Worker の createWorkerRenderer。作れなければ主スレッドの createSyncRenderer）。
 // - 合成済みの区間はループする曲ごとに持ち（2 周目と戻ったときは合成しない）、直近 config.audio.keepSongs 曲だけ残す。
 //   ジングルは鳴っている間だけ持つ（保持の数に入れない）。
 // - ジングルは鳴っている曲を止めて頭から 1 回。最後の区間を予約したら setSong の曲の区間 0 をジングルの終わりの時刻に予約し
@@ -25,10 +26,11 @@
 import type { GameData, Wavetables } from "../core/data/index";
 import type { GameAssets, SongData } from "../build/asset-types";
 import { nextSegment, planSong, renderSegment, segmentCount, type SongPlan } from "./audio-synth";
+import type { FromSynthWorker, ToSynthWorker } from "./synth-protocol";
 
 export type ZzfxModule = typeof import("../vendor/zzfx-1.3.2/ZzFX.js");
 
-/** UI-63（M9.5）: 区間の合成の口。同期版はその場で cb を呼ぶ（Web Worker 版を入れるなら後で呼ぶ） */
+/** UI-63（M9.5）: 区間の合成の口。同期版はその場で cb を呼ぶ。Web Worker 版（createWorkerRenderer）は後で呼ぶ */
 export type SegmentRenderer = {
   /** 計画を作る（同期。音符の並べ替えだけで軽い） */
   plan(song: SongData, wt: Wavetables, rate: number): SongPlan;
@@ -47,7 +49,7 @@ export type AudioDeps = {
   assets: Pick<GameAssets, "music" | "sfx">;
   /** 設定の段（0..10） */
   volumes(): { music: number; sfx: number };
-  /** 区間の合成（本番は createSyncRenderer()） */
+  /** 区間の合成（本番は createWorkerRenderer(...)。worker が使えなければその中で同期版に切り替わる） */
   renderer: SegmentRenderer;
   /** 先読みの 1 区間ごとにイベントループへ戻す（本番は createMessageChannelYield()） */
   yieldTask: YieldTask;
@@ -108,6 +110,85 @@ export function createSyncRenderer(): SegmentRenderer {
         warn(e);
       }
       cb(samples);
+    },
+  };
+}
+
+/**
+ * UI-63（M9.5）: Web Worker（synth.worker.ts。make で作る）で区間を合成する renderer（1 区間の合成が実機で 50ms 以上かかったため）。
+ * worker は最初の render で作る。計画は名前ごとに送り、同じ計画を送り済みなら送らない（worker は名前ごとに最後の計画を持つ）。
+ * 返事は依頼ごとの番号 id で cb に渡す（古い結果を捨てるのは再生機の req と gen）。worker が作れない・error か messageerror が
+ * 来たら、warn を 1 回出して以後は同期版で合成し、返事を待っている依頼も同期版で合成し直して cb に渡す。
+ */
+export function createWorkerRenderer(make: () => Worker): SegmentRenderer {
+  const sync = createSyncRenderer();
+  type Waiting = { name: string; plan: SongPlan; i: number; cb: (samples: Float32Array<ArrayBuffer> | null) => void };
+  let worker: Worker | null = null;
+  let failed = false;
+  let idSeq = 0;
+  const sent: Record<string, SongPlan> = {};
+  const waiting = new Map<number, Waiting>();
+
+  const fail = (e: unknown): void => {
+    if (failed) return;
+    failed = true;
+    warn(e);
+    const w = worker;
+    worker = null;
+    try {
+      w?.terminate();
+    } catch (err) {
+      warn(err);
+    }
+    const rest = [...waiting.values()];
+    waiting.clear();
+    for (const r of rest) sync.render(r.name, r.plan, r.i, r.cb);
+  };
+
+  const get = (): Worker | null => {
+    if (failed) return null;
+    if (worker !== null) return worker;
+    try {
+      const w = make();
+      w.onmessage = (e: MessageEvent<FromSynthWorker>) => {
+        const m = e.data;
+        const r = waiting.get(m.id);
+        if (r === undefined) return;
+        waiting.delete(m.id);
+        r.cb(m.samples);
+      };
+      w.onerror = (e) => fail(e);
+      w.onmessageerror = (e) => fail(e);
+      worker = w;
+      return w;
+    } catch (e) {
+      fail(e);
+      return null;
+    }
+  };
+
+  return {
+    plan: (song, wt, rate) => sync.plan(song, wt, rate),
+    render(name, plan, i, cb) {
+      const w = get();
+      if (w === null) {
+        sync.render(name, plan, i, cb);
+        return;
+      }
+      const id = ++idSeq;
+      waiting.set(id, { name, plan, i, cb });
+      try {
+        if (sent[name] !== plan) {
+          const m: ToSynthWorker = { type: "plan", name, plan };
+          w.postMessage(m);
+          sent[name] = plan;
+        }
+        const m: ToSynthWorker = { type: "seg", name, i, id };
+        w.postMessage(m);
+      } catch (e) {
+        // 待っている依頼（この依頼を含む）は fail が同期版で合成し直す
+        fail(e);
+      }
     },
   };
 }
