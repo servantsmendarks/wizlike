@@ -848,7 +848,7 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
     const u = createItemInstance(s, { itemId: "long_sword", uniqueId: "shadowfolk_sword", rarity: "fine", identified: true });
     s.buyback.push(u);
     const m = townMenu(s, data)!.shop;
-    // shopMinLevel ≤ 2 で鉄の小手（4）だけ並ばない。買値 = floor(price × (1 + 0.5 × 2)) = price × 2
+    // shopMinLevel ≤ 2 で shopMinLevel 4 のベース（斧槍・長弓・刻印の杖・板金鎧・大兜・鉄の小手）は並ばない。買値 = floor(price × (1 + 0.5 × 2)) = price × 2
     expect(m.equipment.map((e) => [e.itemId, e.name, e.level, e.price, e.affordable])).toEqual([
       ["dagger", "短剣 +2", 2, 30, true],
       ["long_sword", "長剣 +2", 2, 200, false],
@@ -856,11 +856,18 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
       ["short_bow", "短弓 +2", 2, 160, false],
       ["sling", "投石紐 +2", 2, 40, true],
       ["staff", "杖 +2", 2, 20, true],
+      ["spear", "長槍 +2", 2, 300, false],
+      ["throwing_knives", "投げナイフ +2", 2, 120, true],
+      ["oak_staff", "樫の杖 +2", 2, 400, false],
       ["leather_armor", "革鎧 +2", 2, 100, true],
       ["chain_mail", "鎖帷子 +2", 2, 600, false],
+      ["studded_leather", "鋲打ち革鎧 +2", 2, 300, false],
+      ["warded_robe", "守りの法衣 +2", 2, 500, false],
       ["wooden_shield", "木の盾 +2", 2, 80, true],
+      ["iron_shield", "鉄の盾 +2", 2, 400, false],
       ["leather_cap", "革兜 +2", 2, 60, true],
       ["iron_helm", "鉄兜 +2", 2, 240, false],
+      ["chain_coif", "鎖頭巾 +2", 2, 240, false],
       ["leather_gloves", "革小手 +2", 2, 60, true],
       ["charm", "護符 +2", 2, 400, false],
     ]);
@@ -868,6 +875,25 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
     expect(m.sellable.find((x) => x.memberId === "c2")!.items).toEqual([{ instanceId: unid, name: "剣？", price: 50 }]);
     expect(m.identify).toEqual({ items: [{ memberId: "c2", memberName: "ベルク", instanceId: unid, name: "剣？", fee: 25, affordable: true }] });
     expect(m.buyback).toEqual([{ instanceId: u, name: "上質な影法師の剣", price: 1200, affordable: false }]);
+  });
+});
+
+describe("IT-62 流通レベルで並ぶベース（M9）", () => {
+  test("IT-62 流通レベル 2 で長槍・投げナイフ・樫の杖・鋲打ち革鎧・守りの法衣・鉄の盾・鎖頭巾が並び、4 で斧槍・長弓・刻印の杖・板金鎧・大兜（と鉄の小手）が足される", () => {
+    const M9 = ["spear", "halberd", "throwing_knives", "long_bow", "oak_staff", "sigil_staff", "studded_leather", "warded_robe", "plate_armor", "iron_shield", "great_helm", "chain_coif"];
+    const at = (level: number): string[] => {
+      const s = town({}, 0);
+      s.progress.shopLevel = level;
+      return townMenu(s, data)!.shop.equipment.map((e) => e.itemId);
+    };
+    expect(at(0).filter((id) => M9.includes(id))).toEqual([]);
+    expect(at(2).filter((id) => M9.includes(id))).toEqual(["spear", "throwing_knives", "oak_staff", "studded_leather", "warded_robe", "iron_shield", "chain_coif"]);
+    const added = at(4).filter((id) => !at(2).includes(id));
+    expect(added).toEqual(["halberd", "long_bow", "sigil_staff", "plate_armor", "great_helm", "iron_gloves"]);
+    // Lv = 流通レベル。刻印の杖 Lv4 の買値 floor(600 × (1 + 0.5 × 4)) = 1800
+    const s = town({}, 0);
+    s.progress.shopLevel = 4;
+    expect(townMenu(s, data)!.shop.equipment.find((e) => e.itemId === "sigil_staff")).toMatchObject({ name: "刻印の杖 +4", level: 4, price: 1800 });
   });
 });
 

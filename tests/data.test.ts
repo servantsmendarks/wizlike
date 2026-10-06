@@ -760,19 +760,45 @@ describe("data: items.json", () => {
 });
 
 describe("data: equipment-bases.json（IT-02。M7）", () => {
-  test("data: IT-02 実データの汎用ベース 14 種（武器 6・防具 2・盾 1・兜 2・小手 2・装飾 1）", () => {
+  test("data: IT-02 実データの汎用ベース 26 種（武器 12・防具 5・盾 2・兜 4・小手 2・装飾 1。M9 で 12 種を足した）", () => {
     const d = loadGameData(rawData());
-    expect(d.equipmentBases).toHaveLength(14);
-    expect(d.equipmentBases.map((b) => b.slot).filter((s) => s === "weapon")).toHaveLength(6);
+    expect(d.equipmentBases).toHaveLength(26);
+    const count = (slot: string): number => d.equipmentBases.filter((b) => b.slot === slot).length;
+    expect(["weapon", "armor", "shield", "helm", "gauntlet", "accessory"].map(count)).toEqual([12, 5, 2, 4, 2, 1]);
+  });
+  test("data: IT-02/CB-13/IT-22 M9 のベース 12 種: 長柄・投擲・弓は ranged、杖 2 種は caster で magicPower 1 / 2、shopMinLevel は 2 か 4（流通レベル）", () => {
+    const d = loadGameData(rawData());
+    const M9 = ["spear", "halberd", "throwing_knives", "long_bow", "oak_staff", "sigil_staff", "studded_leather", "warded_robe", "plate_armor", "iron_shield", "great_helm", "chain_coif"];
+    const got = M9.map((id) => {
+      const b = d.equipmentBases.find((x) => x.id === id)!;
+      return b.slot === "weapon" ? [id, b.ranged, b.caster, b.magicPower ?? 0, b.shopMinLevel] : [id, b.slot, b.ac, b.shopMinLevel];
+    });
+    expect(got).toEqual([
+      ["spear", true, false, 0, 2],
+      ["halberd", true, false, 0, 4],
+      ["throwing_knives", true, false, 0, 2],
+      ["long_bow", true, false, 0, 4],
+      ["oak_staff", false, true, 1, 2],
+      ["sigil_staff", false, true, 2, 4],
+      ["studded_leather", "armor", -3, 2],
+      ["warded_robe", "armor", -3, 2],
+      ["plate_armor", "armor", -6, 4],
+      ["iron_shield", "shield", -2, 2],
+      ["great_helm", "helm", -3, 4],
+      ["chain_coif", "helm", -2, 2],
+    ]);
+    // 後衛の術者（魔術師・司教）が持てる ranged の武器がある（投げナイフ）
+    const knives = d.equipmentBases.find((x) => x.id === "throwing_knives")!;
+    expect(knives.classes).toEqual(expect.arrayContaining(["mage", "bishop", "thief"]));
   });
   test("data: IT-02 武器は damage / ranged / caster を持ち ac を持たない、それ以外は ac を持ち damage / ranged / caster を持たない", () => {
     expectIssue((r) => delete r.equipmentBases[1].damage, "equipment-bases.json", "[1].damage: missing required field");
     expectIssue((r) => delete r.equipmentBases[1].caster, "equipment-bases.json", "[1].caster: missing required field");
     expectIssue((r) => (r.equipmentBases[1].ac = 0), "equipment-bases.json", "[1].ac: unknown field");
-    expectIssue((r) => delete r.equipmentBases[6].ac, "equipment-bases.json", "[6].ac: missing required field");
-    expectIssue((r) => (r.equipmentBases[6].damage = "1d4"), "equipment-bases.json", "[6].damage: unknown field");
-    expectIssue((r) => (r.equipmentBases[6].ranged = false), "equipment-bases.json", "[6].ranged: unknown field");
-    expectIssue((r) => (r.equipmentBases[6].ac = 1.5), "equipment-bases.json", "[6].ac: expected integer");
+    expectIssue((r) => delete r.equipmentBases[12].ac, "equipment-bases.json", "[12].ac: missing required field");
+    expectIssue((r) => (r.equipmentBases[12].damage = "1d4"), "equipment-bases.json", "[12].damage: unknown field");
+    expectIssue((r) => (r.equipmentBases[12].ranged = false), "equipment-bases.json", "[12].ranged: unknown field");
+    expectIssue((r) => (r.equipmentBases[12].ac = 1.5), "equipment-bases.json", "[12].ac: expected integer");
     expectIssue((r) => (r.equipmentBases[0].slot = "ring"), "equipment-bases.json", "[0].slot: expected one of");
     expectIssue((r) => (r.equipmentBases[0].damage = "1x4"), "equipment-bases.json", "[0].damage: invalid dice expression");
   });
@@ -784,7 +810,7 @@ describe("data: equipment-bases.json（IT-02。M7）", () => {
     expect(issuesOf((r) => (r.equipmentBases[5].magicPower = 3))).toEqual([]);
     expectIssue((r) => (r.equipmentBases[5].magicPower = -1), "equipment-bases.json", "[5].magicPower: expected integer >= 0");
     expectIssue((r) => (r.equipmentBases[1].magicPower = 1), "equipment-bases.json", "[1].magicPower: IT-22: magicPower is only for caster weapons");
-    expectIssue((r) => (r.equipmentBases[6].magicPower = 1), "equipment-bases.json", "[6].magicPower: unknown field");
+    expectIssue((r) => (r.equipmentBases[12].magicPower = 1), "equipment-bases.json", "[12].magicPower: unknown field");
   });
   test("data: IT-02 classes は実在の職業、price / shopMinLevel は 0 以上の整数、unidentifiedName は空でない、id は一意", () => {
     expectIssue((r) => r.equipmentBases[2].classes.push("ninja"), "equipment-bases.json", '[2].classes[5]: unknown class id "ninja"');
@@ -797,8 +823,8 @@ describe("data: equipment-bases.json（IT-02。M7）", () => {
     expectIssue((r) => (r.equipmentBases[1].id = "herb"), "equipment-bases.json", '[1].id: IT-10: base id "herb" overlaps an items.json id');
   });
   test("data: CB-20 防具類のベースの ac は整数（正の ac も可。負のオプションと同じく AC が悪化しうる）", () => {
-    expect(issuesOf((r) => (r.equipmentBases[6].ac = 2))).toEqual([]);
-    expectIssue((r) => (r.equipmentBases[6].ac = 1.5), "equipment-bases.json", "[6].ac: expected integer, got number");
+    expect(issuesOf((r) => (r.equipmentBases[12].ac = 2))).toEqual([]);
+    expectIssue((r) => (r.equipmentBases[12].ac = 1.5), "equipment-bases.json", "[12].ac: expected integer, got number");
   });
   test("data: IT-04 開始の装備（prototypeParty / classes[].start）は汎用ベース表の id（items.json に無い鎚矛も可）", () => {
     // ベルク（fighter）に鎚矛。items.json には無く、ベース表にだけある
@@ -835,8 +861,15 @@ describe("data: item-options.json（IT-33 / IT-34。M7）", () => {
 });
 
 describe("data: uniques.json（IT-03 / IT-40。M7）", () => {
-  test("data: IT-03 実データのユニーク 8 種", () => {
-    expect(loadGameData(rawData()).uniques).toHaveLength(8);
+  test("data: IT-03 実データのユニーク 12 種（M9 で 4 種）。M9 の固有スキルは既存の 9 種から", () => {
+    const d = loadGameData(rawData());
+    expect(d.uniques).toHaveLength(12);
+    expect(d.uniques.slice(8).map((u) => [u.id, u.base, u.skill.type, u.skill.value])).toEqual([
+      ["tidewalker_spear", "spear", "walkRegen", 5],
+      ["choir_robe", "warded_robe", "fearImmune", 0],
+      ["abbot_sigil_staff", "sigil_staff", "mpCostDown", 2],
+      ["gull_flock_knives", "throwing_knives", "extraAttack", 1],
+    ]);
   });
   test("data: IT-03 base は実在のベース。武器なら damage（caster なら magicPower も）、それ以外は ac", () => {
     expectIssue((r) => (r.uniques[1].base = "katana"), "uniques.json", '[1].base: unknown equipment base id "katana"');
@@ -867,7 +900,7 @@ describe("data: uniques.json（IT-03 / IT-40。M7）", () => {
 });
 
 describe("data: drops.json（IT-50〜53。M7）", () => {
-  test("data: IT-51 実データの表 7 つ。8 種のユニークはどれかの表に入る", () => {
+  test("data: IT-51 実データの表 7 つ。12 種のユニークはどれかの表に入る", () => {
     const d = loadGameData(rawData());
     expect(d.drops.tables.map((t) => t.id)).toEqual(["d01_f1", "d01_f2", "d01_boss", "d02_f1", "d02_f2", "d02_f3", "d02_boss"]);
     const inTables = new Set(d.drops.tables.flatMap((t) => t.entries.flatMap((e) => ("unique" in e ? [e.unique] : []))));

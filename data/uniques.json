@@ -46,5 +46,29 @@
     "ac": -2,
     "skill": { "type": "judgeBonus", "value": 1 }, "optionTier": 1, "price": 500,
     "description": "表に賽の目を描いた盾。持ち主の判断を一目ぶん後押しする。"
+  },
+  {
+    "id": "tidewalker_spear", "name": "潮渡りの槍", "base": "spear",
+    "damage": "1d8",
+    "skill": { "type": "walkRegen", "value": 5 }, "optionTier": 2, "price": 1100,
+    "description": "穂先に貝殻が貼りついた槍。持って歩くと、潮が満ちるように傷が少しずつ塞がる。"
+  },
+  {
+    "id": "choir_robe", "name": "聖歌隊の法衣", "base": "warded_robe",
+    "ac": -4,
+    "skill": { "type": "fearImmune", "value": 0 }, "optionTier": 2, "price": 1000,
+    "description": "歌う亡霊が脱ぎ捨てた白い法衣。袖を通すと、どんな歌声も子守歌にしか聞こえない。"
+  },
+  {
+    "id": "abbot_sigil_staff", "name": "院長の刻印杖", "base": "sigil_staff",
+    "damage": "1d6", "magicPower": 3,
+    "skill": { "type": "mpCostDown", "value": 2 }, "optionTier": 3, "price": 1800,
+    "description": "沈んだ聖堂の院長が持っていた杖。刻まれた印が呪文の手順を一つ省く。"
+  },
+  {
+    "id": "gull_flock_knives", "name": "群れ鴎の投げナイフ", "base": "throwing_knives",
+    "damage": "1d4+1",
+    "skill": { "type": "extraAttack", "value": 1 }, "optionTier": 2, "price": 1300,
+    "description": "鴎の羽根を柄に巻いた投げナイフの束。一本投げると、群れのようにもう一本が後を追う。"
   }
 ]

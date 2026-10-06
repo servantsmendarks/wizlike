@@ -520,7 +520,7 @@ describe("UI-52 街のページ", () => {
       { kind: "shopItem", itemId: "leather_gloves", label: "革小手　30G", disabled: true },
       back,
     ]);
-    // shopLevel 2: shopMinLevel 2 のベース（鎚矛・鎖帷子・鉄兜・護符）も並び、Lv2（買値 = price × (1 + 0.5 × 2) = price × 2、名前は「 +2」）
+    // shopLevel 2: shopMinLevel 2 のベース（鎚矛・鎖帷子・鉄兜・護符と、M9 の長槍・投げナイフ・樫の杖・鋲打ち革鎧・守りの法衣・鉄の盾・鎖頭巾）も並び、Lv2（買値 = price × (1 + 0.5 × 2) = price × 2、名前は「 +2」）
     const s = town({}, 1000);
     s.progress.shopLevel = 2;
     const consumables = ["herb", "antidote_herb", "return_thread"];
@@ -532,11 +532,18 @@ describe("UI-52 街のページ", () => {
       "短弓 +2　160G",
       "投石紐 +2　40G",
       "杖 +2　20G",
+      "長槍 +2　300G",
+      "投げナイフ +2　120G",
+      "樫の杖 +2　400G",
       "革鎧 +2　100G",
       "鎖帷子 +2　600G",
+      "鋲打ち革鎧 +2　300G",
+      "守りの法衣 +2　500G",
       "木の盾 +2　80G",
+      "鉄の盾 +2　400G",
       "革兜 +2　60G",
       "鉄兜 +2　240G",
+      "鎖頭巾 +2　240G",
       "革小手 +2　60G",
       "護符 +2　400G",
     ]);

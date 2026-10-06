@@ -112,6 +112,15 @@ describe("IT-20〜23 レベルの効果（equipStats）", () => {
     expect(equipStats(s, d, member(s, "c5")).magicPower).toBe(2);
   });
 
+  test("IT-22 実データの上位の杖（M9）: 樫の杖（magicPower 1）Lv0 → 1・Lv2 → 2、刻印の杖（2）Lv4 → 4。院長の刻印杖（ユニーク 3）は 3", () => {
+    const mp = (itemId: string, level: number, uniqueId?: string): number => {
+      const s = newGame(1);
+      equipNew(s, "c5", "weapon", { itemId, identified: true, level, ...(uniqueId === undefined ? {} : { uniqueId }) });
+      return equipStats(s, data, member(s, "c5")).magicPower;
+    };
+    expect([mp("oak_staff", 0), mp("oak_staff", 2), mp("sigil_staff", 4), mp("sigil_staff", 0, "abbot_sigil_staff")]).toEqual([1, 2, 4, 3]);
+  });
+
   test("IT-21 防具・盾・兜・小手の AC −floor(Lv ÷ 3): 革鎧（−2）の Lv 0/2/3/5/6 → −2/−2/−3/−3/−4。IT-23 装飾（護符 0）は Lv 9 でも 0", () => {
     const acOf = (slot: EquipSlot, itemId: string, level: number): number => {
       const s = newGame(1);

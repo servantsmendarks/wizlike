@@ -32,34 +32,39 @@
     {
       "id": "d02_f1", "itemChance": 50, "rolls": 1,
       "entries": [
-        { "base": "short_bow", "weight": 3 }, { "base": "long_sword", "weight": 3 }, { "base": "mace", "weight": 3 }, { "base": "staff", "weight": 2 },
-        { "base": "leather_armor", "weight": 2 }, { "base": "chain_mail", "weight": 2 }, { "base": "wooden_shield", "weight": 3 },
-        { "base": "iron_helm", "weight": 2 }, { "base": "leather_gloves", "weight": 2 }, { "base": "charm", "weight": 1 },
-        { "unique": "alarm_bell_helm", "weight": 1 }, { "unique": "farsight_monocle", "weight": 1 }
+        { "base": "spear", "weight": 3 }, { "base": "throwing_knives", "weight": 3 }, { "base": "oak_staff", "weight": 2 },
+        { "base": "long_sword", "weight": 2 }, { "base": "mace", "weight": 2 },
+        { "base": "studded_leather", "weight": 3 }, { "base": "warded_robe", "weight": 2 }, { "base": "chain_mail", "weight": 2 },
+        { "base": "iron_shield", "weight": 2 }, { "base": "chain_coif", "weight": 2 }, { "base": "iron_helm", "weight": 2 }, { "base": "charm", "weight": 1 },
+        { "unique": "tidewalker_spear", "weight": 1 }, { "unique": "alarm_bell_helm", "weight": 1 }
       ]
     },
     {
       "id": "d02_f2", "itemChance": 55, "rolls": 1,
       "entries": [
-        { "base": "long_sword", "weight": 3 }, { "base": "mace", "weight": 3 }, { "base": "short_bow", "weight": 2 },
-        { "base": "chain_mail", "weight": 3 }, { "base": "iron_helm", "weight": 3 }, { "base": "iron_gloves", "weight": 1 },
-        { "base": "wooden_shield", "weight": 2 }, { "base": "charm", "weight": 2 },
+        { "base": "spear", "weight": 2 }, { "base": "throwing_knives", "weight": 2 }, { "base": "long_bow", "weight": 2 }, { "base": "oak_staff", "weight": 2 },
+        { "base": "studded_leather", "weight": 2 }, { "base": "warded_robe", "weight": 2 }, { "base": "chain_mail", "weight": 3 },
+        { "base": "iron_shield", "weight": 3 }, { "base": "chain_coif", "weight": 2 }, { "base": "iron_helm", "weight": 2 },
+        { "base": "iron_gloves", "weight": 1 }, { "base": "charm", "weight": 2 },
+        { "unique": "choir_robe", "weight": 1 }, { "unique": "gull_flock_knives", "weight": 1 },
         { "unique": "dice_eye_shield", "weight": 1 }, { "unique": "calm_sea_charm", "weight": 1 }
       ]
     },
     {
       "id": "d02_f3", "itemChance": 60, "rolls": 1,
       "entries": [
-        { "base": "long_sword", "weight": 3 }, { "base": "mace", "weight": 2 }, { "base": "staff", "weight": 2 },
-        { "base": "chain_mail", "weight": 3 }, { "base": "iron_helm", "weight": 3 }, { "base": "iron_gloves", "weight": 2 }, { "base": "charm", "weight": 2 },
-        { "unique": "calm_sea_charm", "weight": 1 }, { "unique": "bloodsucker_gloves", "weight": 1 }, { "unique": "dawn_flint_staff", "weight": 1 }
+        { "base": "halberd", "weight": 2 }, { "base": "long_bow", "weight": 3 }, { "base": "oak_staff", "weight": 2 }, { "base": "sigil_staff", "weight": 1 },
+        { "base": "warded_robe", "weight": 2 }, { "base": "chain_mail", "weight": 3 }, { "base": "plate_armor", "weight": 1 },
+        { "base": "iron_shield", "weight": 2 }, { "base": "great_helm", "weight": 1 }, { "base": "iron_gloves", "weight": 2 }, { "base": "charm", "weight": 2 },
+        { "unique": "choir_robe", "weight": 1 }, { "unique": "gull_flock_knives", "weight": 1 }, { "unique": "tidewalker_spear", "weight": 1 }
       ]
     },
     {
       "id": "d02_boss", "itemChance": 100, "rolls": 2,
       "entries": [
-        { "base": "chain_mail", "weight": 3 }, { "base": "iron_helm", "weight": 2 }, { "base": "iron_gloves", "weight": 3 }, { "base": "charm", "weight": 2 },
-        { "unique": "dawn_flint_staff", "weight": 2 }, { "unique": "calm_sea_charm", "weight": 1 }, { "unique": "shadowfolk_sword", "weight": 1 }
+        { "base": "halberd", "weight": 2 }, { "base": "long_bow", "weight": 2 }, { "base": "sigil_staff", "weight": 2 },
+        { "base": "plate_armor", "weight": 2 }, { "base": "great_helm", "weight": 2 }, { "base": "iron_gloves", "weight": 2 }, { "base": "charm", "weight": 2 },
+        { "unique": "abbot_sigil_staff", "weight": 2 }, { "unique": "choir_robe", "weight": 1 }, { "unique": "dawn_flint_staff", "weight": 1 }
       ]
     }
   ],
