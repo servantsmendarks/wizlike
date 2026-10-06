@@ -12,7 +12,8 @@
 //   予約の時刻に間に合わない区間は時刻を置き直す（隙間は出るが重ならない）。
 // - 合成済みの区間はループする曲ごとに持ち（2 周目と戻ったときは合成しない）、直近 config.audio.keepSongs 曲だけ残す。
 //   ジングルは鳴っている間だけ持つ（保持の数に入れない）。
-// - ジングルは鳴っている曲を止めて頭から 1 回。最後の区間の ended で setSong の曲を頭から。ジングルの間の setSong は終わった後に始める。
+// - ジングルは鳴っている曲を止めて頭から 1 回。最後の区間を予約したら setSong の曲の区間 0 をジングルの終わりの時刻に予約し
+//   （無音を挟まない。ジングルの間の setSong・別のジングル・停止で予約し直す・取り消す）、最後の区間の ended でそれを鳴っているものにする。
 // - 効果音は ZzFX 1.3.2（src/vendor）。最初の unlock の後に 1 回だけ動的 import し（効果音のファイルが 1 つも無ければ読まない）、
 //   モジュールが評価時に作った AudioContext は閉じてゲームの context に差し替える。buildSamples だけを使い、
 //   params の null は undefined に変える（CONV §6・§7、proposal の案 A）。読み込みが終わる前の効果音は捨てる。
@@ -88,6 +89,8 @@ type Track = {
 };
 /** 鳴らし始めの区間 0 を頼んでいる最中のもの */
 type Pending = { req: number; kind: Kind; name: string; cache: SongCache };
+/** ジングルの終わりの時刻に予約した場面の曲（track は区間 0 が揃うまで null） */
+type Follow = { name: string; cache: SongCache; track: Track | null };
 
 function warn(e: unknown): void {
   console.warn("audio:", e);
@@ -137,6 +140,8 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
   let pending: Pending | null = null;
   /** 区間 0 の依頼ごとに増やす番号 */
   let reqSeq = 0;
+  /** 鳴っているジングルの後に続ける場面の曲 */
+  let follow: Follow | null = null;
   /** 合成済みの区間を持つループする曲（先頭が最近）。config.audio.keepSongs 曲まで */
   let caches: SongCache[] = [];
   let zzfxLoad: Promise<void> | null = null;
@@ -178,7 +183,7 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
       // いま頼んだ曲・鳴っている曲・区間 0 を待っている曲は捨てない（非同期の renderer で、鳴っている曲と待っている曲が
       // 後ろに並んだまま別の曲を頼んだときや、keepSongs = 1 のとき。その間は keepSongs を一時的に越え、次の刈り込みで減る）
       let j = caches.length - 1;
-      while (j >= 0 && (caches[j] === cache || caches[j] === playing?.cache || caches[j] === pending?.cache)) j--;
+      while (j >= 0 && (caches[j] === cache || caches[j] === playing?.cache || caches[j] === pending?.cache || caches[j] === follow?.cache)) j--;
       if (j < 0) break;
       caches.splice(j, 1);
     }
@@ -237,6 +242,16 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
   const finishJingle = (t: Track): boolean => {
     if (t.kind !== "jingle" || t.nextSeg !== null || t.queued.length > 0 || t.filling) return false;
     playing = null;
+    const fw = follow;
+    if (fw !== null && fw.track !== null && fw.name === wanted && ctx !== null && level("music") > 0) {
+      // ジングルの終わりの時刻に予約済みの場面の曲を、鳴っているものにして先読みを続ける
+      follow = null;
+      const next = fw.track;
+      playing = next;
+      if (needMore(next)) deps.yieldTask(() => fill(next));
+      return true;
+    }
+    cancelFollow();
     startWanted();
     return true;
   };
@@ -255,10 +270,14 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
           // 合成できない区間から先は鳴らさない。ループする曲は止めて「鳴っている」扱いを外す（同じ曲の setSong・音量の変更で作り直せる）
           t.nextSeg = null;
           if (t.kind === "song") stopTrack();
-          else finishJingle(t);
+          else {
+            prepareFollow(t);
+            finishJingle(t);
+          }
           return;
         }
         schedule(t, i, b);
+        prepareFollow(t);
         if (needMore(t)) deps.yieldTask(() => fill(t));
       } catch (e) {
         warn(e);
@@ -304,8 +323,57 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
     stopTrack();
   };
 
-  /** 鳴っている曲・ジングルの予約をすぐ止める（待っている依頼はそのまま） */
+  /** ジングルの後に予約した場面の曲を取り消す（予約済みの区間 0 はすぐ止める） */
+  const cancelFollow = (): void => {
+    const fw = follow;
+    follow = null;
+    if (fw === null || fw.track === null) return;
+    for (const s of fw.track.queued) {
+      try {
+        s.onended = null;
+        s.stop();
+        s.disconnect();
+      } catch (e) {
+        warn(e);
+      }
+    }
+    fw.track.queued = [];
+  };
+
+  /**
+   * ジングル j の最後の区間を予約した後（j.nextSeg === null）に呼ぶ。場面の曲の区間 0 を用意し、ジングルの終わりの時刻
+   * （j.t0 + 累計 / レート。過ぎていれば schedule が currentTime + 先行の時間に置き直す）に予約する。
+   * ジングルの間に場面が変わったら（setSong）予約し直す。最後の区間の ended（finishJingle）でこれを鳴っているものにする。
+   */
+  const prepareFollow = (j: Track): void => {
+    if (playing !== j || j.kind !== "jingle" || j.nextSeg !== null) return;
+    if (follow !== null && follow.name === wanted) return;
+    cancelFollow();
+    if (ctx === null || wanted === null || level("music") === 0) return;
+    const cache = songCache(wanted);
+    if (cache === null) return;
+    const fw: Follow = { name: wanted, cache, track: null };
+    follow = fw;
+    const jEnd = j.t0 + j.played / j.cache.plan.rate;
+    withSegment(cache, 0, (b) => {
+      if (follow !== fw) return;
+      try {
+        if (b === null) {
+          follow = null;
+          return;
+        }
+        const t: Track = { kind: "song", name: fw.name, cache, t0: jEnd, played: 0, nextSeg: 0, queued: [], filling: false };
+        fw.track = t;
+        schedule(t, 0, b);
+      } catch (e) {
+        warn(e);
+      }
+    });
+  };
+
+  /** 鳴っている曲・ジングルの予約をすぐ止める（待っている依頼はそのまま）。ジングルの後の予約も取り消す */
   const stopTrack = (): void => {
+    cancelFollow();
     const p = playing;
     if (p === null) return;
     playing = null;
@@ -337,10 +405,13 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
         }
         const t0 = c.currentTime + lead(c);
         const old = playing;
+        // 前のジングルの後に予約した場面の曲は取り消す（新しい曲・ジングルに置き換わる）
+        cancelFollow();
         if (old !== null) switchAt(old, t0);
         const t: Track = { kind, name: cache.name, cache, t0, played: 0, nextSeg: 0, queued: [], filling: false };
         playing = t;
         schedule(t, 0, b);
+        prepareFollow(t);
         if (!finishJingle(t) && needMore(t)) deps.yieldTask(() => fill(t));
       } catch (e) {
         warn(e);
@@ -426,7 +497,15 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
     },
     setSong(name: string | null): void {
       wanted = name;
-      if (jingleBusy()) return;
+      if (jingleBusy()) {
+        // ジングルの最後の区間を予約済みなら、後に続ける場面の曲を予約し直す
+        try {
+          if (playing?.kind === "jingle") prepareFollow(playing);
+        } catch (e) {
+          warn(e);
+        }
+        return;
+      }
       startWanted();
     },
     playJingle(name: string): void {

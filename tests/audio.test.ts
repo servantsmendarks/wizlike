@@ -431,28 +431,36 @@ describe("UI-63 曲とジングル", () => {
     expect(j.buffer?.tag).toBe("victory:0");
     expect(j.loop).toBe(false);
     expect(j.started).toBe(1);
+    // ジングルの最後の区間（victory は 1 区間）を予約したので、場面の曲（town）をジングルの終わりの時刻に予約済み
+    expect(tags(c)).toEqual(["town:0", "victory:0", "town:0"]);
     p.playJingle("victory");
-    expect(c.sources.length).toBe(2);
+    expect(c.sources.length).toBe(3);
+    // ジングルの間の setSong は、ジングルの後の予約を取り消して新しい場面の曲を予約し直す
     p.setSong("dungeon");
-    expect(c.sources.length).toBe(2);
+    expect(tags(c)).toEqual(["town:0", "victory:0", "town:0", "dungeon:0"]);
+    expect(c.sources[2]?.stopped).toBe(1);
     j.end();
-    expect(tags(c)).toEqual(["town:0", "victory:0", "dungeon:0"]);
-    expect(c.sources[2]?.started).toBe(1);
+    expect(c.sources.length).toBe(4);
+    expect(c.sources[3]?.started).toBe(1);
+    expect(c.sources[3]?.stopped).toBe(0);
     // 別のジングルは置き換え。置き換えられた方の ended は無視する
     p.playJingle("victory");
-    const v = c.sources[3]!;
+    const v = c.sources[4]!;
+    expect(v.buffer?.tag).toBe("victory:0");
     p.playJingle("inn");
-    const inn = c.sources[4]!;
+    const inn = c.sources[6]!;
     expect(inn.buffer?.tag).toBe("inn:0");
     expect(v.stopped).toBe(1);
+    // victory の後に予約した dungeon も取り消す
+    expect(c.sources[5]?.buffer?.tag).toBe("dungeon:0");
+    expect(c.sources[5]?.stopped).toBe(1);
     v.end();
-    expect(c.sources.length).toBe(5);
-    // inn は 4 区間。全部の ended の後に場面の曲
+    expect(c.sources.length).toBe(7);
+    // inn は 4 区間。最後の区間を予約したら場面の曲を予約し、全部の ended の後にそれが鳴っているものになる
     runTasks(f);
-    const ended = new Set<FakeSource>([c.sources[0]!, c.sources[1]!, c.sources[2]!, v]);
-    c.sources[2]!.end();
+    const ended = new Set<FakeSource>(c.sources.slice(0, 6));
     for (let n = 0; n < 4; n++) endNext(c, ended);
-    expect(tags(c).slice(4)).toEqual(["inn:0", "inn:1", "inn:2", "inn:3", "dungeon:0"]);
+    expect(tags(c).slice(6)).toEqual(["inn:0", "inn:1", "inn:2", "inn:3", "dungeon:0"]);
     // ファイルの無いジングルは何もしない（鳴っている曲のまま）
     const before = c.sources.length;
     p.playJingle("wipe");
@@ -653,9 +661,13 @@ describe("UI-63 区間の予約（M9.5）", () => {
       expect(f.held.map((h) => h.key)).toEqual(["victory:0"]);
       release(f, "victory:0");
       expect(tags(c)).toEqual(["town:0", "victory:0"]);
-      c.sources[1]!.end();
+      // ジングルの最後の区間を予約したので B の区間 0 を頼み、揃ったらジングルの終わりの時刻に予約する
+      expect(f.held.map((h) => h.key)).toEqual(["dungeon:0"]);
       release(f, "dungeon:0");
       expect(tags(c)).toEqual(["town:0", "victory:0", "dungeon:0"]);
+      c.sources[1]!.end();
+      expect(tags(c)).toEqual(["town:0", "victory:0", "dungeon:0"]);
+      expect(c.sources[2]?.stopped).toBe(0);
     }
     // A→B を頼み、B の前に音量 0 → B が届いても何も始まらない
     {
@@ -767,9 +779,15 @@ describe("UI-63 区間の予約（M9.5）", () => {
     runTasks(f);
     const ended = new Set<FakeSource>([c.sources[0]!, c.sources[1]!]);
     for (let n = 0; n < 3; n++) endNext(c, ended);
-    expect(tags(c)).toEqual(["town:0", "dungeon:0", "inn:0", "inn:1", "inn:2", "inn:3"]);
+    // 最後の区間（inn:3）を予約した時点で、場面の曲（dungeon）の区間 0 をジングルの終わりの時刻に予約する
+    expect(tags(c)).toEqual(["town:0", "dungeon:0", "inn:0", "inn:1", "inn:2", "inn:3", "dungeon:0"]);
+    const innStart = c.sources[2]!.startAt[0]!;
+    const innTotal = planSong(MUSIC.inn!, data.wavetables, RATE).total;
+    expect(c.sources[6]?.startAt[0]).toBeCloseTo(innStart + innTotal / RATE, 12);
+    expect(c.sources[6]?.startAt[0]).toBeCloseTo(c.sources[5]!.startAt[0]! + sampleAt(16, 500000, RATE) / RATE, 12);
     endNext(c, ended);
-    // 場面の曲（dungeon）を頭から。保持にあるので合成しない
+    // 最後の区間の ended では新しい source を作らない（予約済みの dungeon をそのまま鳴らす）。保持にあるので合成しない
+    expect(c.sources.length).toBe(7);
     expect(tags(c).at(-1)).toBe("dungeon:0");
     expect(f.renders.filter((r) => r === "dungeon:0").length).toBe(1);
     // ジングルを数に入れないので town も捨てられていない
@@ -778,6 +796,95 @@ describe("UI-63 区間の予約（M9.5）", () => {
     // 同じジングルをもう一度鳴らすと合成し直す（鳴り終わったら捨てる）
     p.playJingle("inn");
     expect(f.renders.filter((r) => r === "inn:0").length).toBe(2);
+  });
+
+  it("UI-63 再生: ジングルの最後の区間を予約したら場面の曲の区間 0 をジングルの終わりの時刻に予約する（無音を挟まない）。ジングルの間に変わった場面・別のジングル・停止で予約し直す・取り消す", () => {
+    const bar = sampleAt(16, 500000, RATE) / RATE;
+    // 区間 0 の時刻 = ジングルの終わり。ended が時刻ちょうどに来ても、遅れて来ても、場面の曲の頭は動かない
+    {
+      const f = setup();
+      const p = createAudioPlayer(f.deps);
+      p.unlock();
+      const c = f.contexts[0]!;
+      c.baseLatency = 0.02;
+      p.setSong("dungeon");
+      p.playJingle("victory");
+      const j = c.sources[1]!;
+      expect(j.buffer?.tag).toBe("victory:0");
+      const jEnd = j.startAt[0]! + bar;
+      expect(tags(c)).toEqual(["dungeon:0", "victory:0", "dungeon:0"]);
+      const d = c.sources[2]!;
+      expect(d.startAt).toEqual([jEnd]);
+      expect(d.stopped).toBe(0);
+      // 保持にある区間 0 を使い、合成し直さない
+      expect(f.renders.filter((r) => r === "dungeon:0").length).toBe(1);
+      c.currentTime = jEnd + 0.05;
+      j.end();
+      expect(c.sources.length).toBe(3);
+      // 場面の曲を鳴っているものにして、先読みを続ける
+      runTasks(f);
+      expect(tags(c)).toEqual(["dungeon:0", "victory:0", "dungeon:0", "dungeon:1", "dungeon:2"]);
+      expect(c.sources[3]?.startAt[0]).toBeCloseTo(jEnd + bar, 12);
+      // 鳴っている曲と同じ場面では作り直さない
+      p.setSong("dungeon");
+      expect(c.sources.length).toBe(5);
+    }
+    // 場面の曲の区間 0 の合成が遅れてジングルの終わりを過ぎたら、currentTime + 先行の時間に置き直す
+    {
+      const f = setup({ delay: true });
+      const p = createAudioPlayer(f.deps);
+      p.unlock();
+      const c = f.contexts[0]!;
+      p.setSong("dungeon");
+      settle(f);
+      p.playJingle("victory");
+      p.setSong("town");
+      release(f, "victory:0");
+      expect(f.held.map((h) => h.key)).toEqual(["town:0"]);
+      c.currentTime = 50;
+      release(f, "town:0");
+      expect(tags(c)).toEqual(["dungeon:0", "dungeon:1", "dungeon:2", "victory:0", "town:0"]);
+      expect(c.sources[4]?.startAt[0]).toBeCloseTo(50 + LEAD, 9);
+    }
+    // ジングルの間の setSong は予約し直す（前の予約は止める）。null なら取り消す
+    {
+      const f = setup();
+      const p = createAudioPlayer(f.deps);
+      p.unlock();
+      const c = f.contexts[0]!;
+      p.setSong("dungeon");
+      p.playJingle("victory");
+      const jEnd = c.sources[1]!.startAt[0]! + bar;
+      p.setSong("town");
+      expect(tags(c)).toEqual(["dungeon:0", "victory:0", "dungeon:0", "town:0"]);
+      expect(c.sources[2]?.stopAt).toEqual([undefined]);
+      expect(c.sources[3]?.startAt).toEqual([jEnd]);
+      p.setSong(null);
+      expect(c.sources[3]?.stopAt).toEqual([undefined]);
+      c.sources[1]!.end();
+      runTasks(f);
+      expect(c.sources.length).toBe(4);
+    }
+    // ジングルの間の別のジングルは、場面の曲の予約も取り消す
+    {
+      const f = setup();
+      const p = createAudioPlayer(f.deps);
+      p.unlock();
+      const c = f.contexts[0]!;
+      p.setSong("dungeon");
+      p.playJingle("victory");
+      p.playJingle("inn");
+      expect(tags(c)).toEqual(["dungeon:0", "victory:0", "dungeon:0", "inn:0"]);
+      expect(c.sources[2]?.stopAt).toEqual([undefined]);
+      // 音量 0 でも取り消す（inn の最後の区間を予約して場面の曲を予約した後）
+      runTasks(f);
+      c.sources[3]!.end();
+      const n = c.sources.length;
+      expect(tags(c).slice(3)).toEqual(["inn:0", "inn:1", "inn:2", "inn:3", "dungeon:0"]);
+      f.vol.music = 0;
+      p.refreshVolumes();
+      expect(c.sources[n - 1]?.stopAt).toEqual([undefined]);
+    }
   });
 
   it("UI-63 再生: 間に合わない区間（when < currentTime + 先行の時間）は時刻を置き直し、後続が重ならない", () => {
@@ -966,10 +1073,15 @@ describe("UI-63 / UI-65 / UI-66 音の対応の拡充（2026-10-06）", () => {
     // soundsFor(encounter) の順: jingle encounter → song battle1
     p.playJingle("encounter");
     p.setSong("battle1");
-    expect(tags(c)).toEqual(["dungeon1:0", "encounter:0"]);
+    // ジングル（1 区間）の後に予約した迷宮の曲は setSong で取り消し、戦闘の曲をジングルの終わりの時刻に予約し直す（先に始めない）
+    expect(tags(c)).toEqual(["dungeon1:0", "encounter:0", "dungeon1:0", "battle1:0"]);
     expect(c.sources[0]!.stopped).toBe(1);
+    expect(c.sources[2]!.stopped).toBe(1);
+    const bar = sampleAt(16, 500000, RATE) / RATE;
+    expect(c.sources[3]?.startAt[0]).toBeCloseTo(c.sources[1]!.startAt[0]! + bar, 12);
     c.sources[1]!.end();
-    expect(tags(c)).toEqual(["dungeon1:0", "encounter:0", "battle1:0"]);
+    expect(tags(c)).toEqual(["dungeon1:0", "encounter:0", "dungeon1:0", "battle1:0"]);
+    expect(c.sources[3]!.stopped).toBe(0);
     // ジングルのファイルが無ければ、迷宮の曲を止めてすぐ戦闘の曲
     const g = setup({ music: { dungeon1: music.dungeon1!, battle1: music.battle1! } });
     const q = createAudioPlayer(g.deps);
