@@ -1,4 +1,4 @@
-> 出典: make-assets の projects/wizlike/docs/proposal-to-game.md（ed4cd94、2026-10-05 に複製）。工房の版が正。変更は工房から提案として来る。
+> 出典: make-assets の projects/wizlike/docs/proposal-to-game.md（37d013f、2026-10-06 に複製）。工房の版が正。変更は工房から提案として来る。
 
 # ゲーム側への提案（wizlike）
 
@@ -53,3 +53,38 @@
 - 済み: 規格（CONV §1〜§7）、`instruments/wavetables.json` の初期セット【仮】、`palette/fc54.json`（ゲームの UI の 10 色をすべて含む 54 色。Shin の確認待ち）、`manifest.yaml`（6 体: 怪物 5、ボス 1）、6 体分のプロンプト票、道具（pixelize・silhouette・lint・export・sfx_render・render ほか）。
 - 未: 絵の採用分（`art/out/` はまだ無い。giant_rat 1 体で設定を固めてから残りへ）、効果音の JSON（`music/sfx/params/` はまだ無い）、曲（`music/final/` はまだ無い）、場面の絵（第 2 段）。
 - 未: 上の「決めてほしいこと」の回答に合わせた export の修正（案 B、CONVENTIONS の同梱を選んだ場合）。
+
+## 2026-10-06 追記
+
+- シルエットの項（上の「未鑑定はシルエット」と、受け渡しの `<id>_silhouette.png`）は取り下げる。ゲーム側が UI-60 で敵ごとのシルエットを廃止済みのため。工房も `<id>_silhouette.png` を作らず、渡さない（Shin の決定）。上の「工房側の準備」の道具のうち silhouette も廃止した。
+- 未鑑定の表示は系統ごとの `unknown_<kind>.png` で渡す（`public/sprites/`、48×48、系統の placeholderColor と黒の 2 色。ボスの枠ではゲーム側が 2 倍に拡大）。
+
+## 2026-10-06 追記（曲の名前）
+
+- 曲の受け渡しの名前を `dungeon1`（以後 `dungeon2`、`dungeon3` …）にしたい。`data/audio.json` の `music.songs` に `"dungeon1"` を足し（`"dungeon"` は外す）、`screenSongs.dungeon` を `"dungeon1"` にしてほしい。ダンジョンごとに曲を変える仕組みは、ゲーム側の設計に任せる。
+- 工房は `music/final/dungeon1.mid` を用意済み。`audio.json` が変わるまで、曲の export は行わない（今の `audio.json` のままだと、ビルドの E01 で止まるため）。
+- 曲の中身は、工房の `render.py` の合成（CONV §1）と同じ数値で鳴る前提で作っている。v2b で試した「各音の頭と尻の 3 ms のフェード」は採用しておらず、再生機の仕様は今のままでよい。
+
+## 2026-10-06 追記（音の一覧の確定）
+
+Shin の決定で、工房の音の一覧を次のように確定した（工房の `project.json` と CONVENTIONS §2・§6 は更新済み）。
+
+- 曲（11、ループする）: `title`（イントロ 4 小節 + ループ 16 小節。`loop_start` は 5 小節目の頭）、`town`、`dungeon1`、`dungeon2`、`camp`、`battle1`、`battle2`（ボス）、`tavern`、`shop`、`temple`、`dark`。
+  - `tavern`・`shop`・`temple`・`dark` は `town` の編曲違い（town の動機を使う）。
+- ジングル（7、ループなし）: `encounter`、`victory`、`wipe`、`levelup`、`inn`、`clear`（ダンジョン制覇）、`rare`（伝説品の入手）。
+- 効果音（22、ZzFX のパラメータ）: `ok`、`cancel`、`hit`、`miss`、`damage`、`spell`、`door`、`stairs`、`trap`、`wall`、`heal`、`chest`、`gold`、`dice`、`death`、`flee`、`san`、`identify`、`upgrade_ok`、`upgrade_fail`、`teleport`、`stop`。
+
+旧い一覧（今の `data/audio.json`）との差:
+
+- 曲: `battle` → `battle1`、`boss` → `battle2`、`dungeon` → `dungeon1`（前の追記のとおり）。`dungeon2`・`camp`・`tavern`・`shop`・`temple`・`dark` を追加。
+- ジングル: `encounter`・`clear`・`rare` を追加（`victory`・`wipe`・`levelup`・`inn` はそのまま）。
+- 効果音: 8 → 22。`miss`・`wall`・`heal`・`chest`・`gold`・`dice`・`death`・`flee`・`san`・`identify`・`upgrade_ok`・`upgrade_fail`・`teleport`・`stop` を追加。
+
+`data/audio.json` で変えてほしい点:
+
+- `music.songs`・`music.jingles`・`sfx.names` を上の一覧に。
+- `bossSong` を `"battle2"` に、`screenSongs.battle` を `"battle1"` に、`screenSongs.dungeon` を `"dungeon1"` に。
+- `screenSongs` に街の施設ごとの曲（`tavern`・`shop`・`temple`）を割り当てるか、`camp`・`dungeon2`・`dark` をどの画面・状況で鳴らすかは、ゲーム側の設計に任せる。
+- `cues` に新しい効果音とジングルの契機を足す（例: 遭遇で `encounter`、ダンジョン制覇で `clear`、伝説品の入手で `rare`、攻撃の空振りで `miss`、壁にぶつかったら `wall` など。契機のイベント名はゲーム側の定義に従う）。
+
+工房は `audio.json` が変わるまで、曲と効果音の export は行わない（今の `audio.json` のままだと名前が合わずビルドの検証で止まるため）。
