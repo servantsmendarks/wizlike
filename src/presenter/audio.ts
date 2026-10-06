@@ -5,7 +5,7 @@
 //   合成して AudioBuffer（1 チャンネル、config.audio.sampleRate）にし、区間ごとの AudioBufferSourceNode を start(when) で
 //   隙間なく予約して鳴らす（M9.5）。when = 区間 0 の時刻 t0 + 予約済みの区間の長さの累計（整数のサンプル数）/ レート。
 //   t0 = currentTime + baseLatency（取れなければ 0）+ config.audio.startLeadMs / 1000。
-// - 鳴らし始めは区間 0 の合成だけを待つ。前の曲は区間 0 が揃ってから t0 で止まるように予約する（stop(t0)。無音を挟まない）。
+// - 鳴らし始めは区間 0 の合成だけを待つ。前の曲は区間 0 が揃ってから、区間 0 を予約した後の t0（置き直されたら置き直した後）で止まるように予約する（stop(t0)。無音を挟まない）。
 //   区間 0 を待つ間に別の曲・ジングル・停止が頼まれたら、待っていた依頼は取り消す（依頼ごとの番号 req）。
 // - 先読みは config.audio.prefetchBars 区間。鳴らし始めの直後は yieldTask（イベントループへ 1 回戻す）ごとに 1 区間ずつ、
 //   以後は区間の ended で 1 区間ずつ合成して予約する。常駐のループ・rAF・タイマーは使わない（CLAUDE.md §2）。
@@ -484,14 +484,15 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
           if (kind === "song") stopPlaying();
           return;
         }
-        const t0 = c.currentTime + lead(c);
         const old = playing;
         // 前のジングルの後に予約した場面の曲は取り消す（新しい曲・ジングルに置き換わる）
         cancelFollow();
-        if (old !== null) switchAt(old, t0);
-        const t: Track = { kind, name: cache.name, cache, t0, played: 0, nextSeg: 0, queued: [], filling: false };
+        const t: Track = { kind, name: cache.name, cache, t0: c.currentTime + lead(c), played: 0, nextSeg: 0, queued: [], filling: false };
         playing = t;
+        // 区間 0 を先に予約して時刻を確定させ（schedule が置き直したら置き直した後の t.t0）、前の曲をその時刻で止める。
+        // 先に止めると、間に currentTime が 1 レンダー量子進んで schedule が置き直したとき stop と start の間に隙間ができる
         schedule(t, 0, b);
+        if (old !== null) switchAt(old, t.t0);
         prepareFollow(t);
         if (!finishJingle(t) && needMore(t)) deps.yieldTask(() => fill(t));
       } catch (e) {

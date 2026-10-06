@@ -619,6 +619,33 @@ describe("UI-63 区間の予約（M9.5）", () => {
     expect(c.sources[3]?.startAt).toEqual([1.2 + LEAD]);
   });
 
+  it("UI-63 再生: 切り替えで currentTime が読むたびに 1 レンダー量子進んで区間 0 の時刻が置き直されても、前の曲の stop と区間 0 の start は同じ時刻（無音を挟まない）", () => {
+    const f = setup({ delay: true });
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("long");
+    settle(f);
+    p.setSong("dungeon");
+    // 実機では切り替えの処理の間に currentTime が 1 量子（128 / context の sampleRate）進むことがある。読むたびに進める
+    const q = 128 / c.sampleRate;
+    let now = 1.2;
+    Object.defineProperty(c, "currentTime", {
+      configurable: true,
+      get: () => {
+        const v = now;
+        now += q;
+        return v;
+      },
+    });
+    release(f, "dungeon:0");
+    const next = c.sources[3]!;
+    expect(next.buffer?.tag).toBe("dungeon:0");
+    const at = next.startAt[0]!;
+    expect(at).toBeGreaterThanOrEqual(1.2 + LEAD);
+    for (const s of c.sources.slice(0, 3)) expect(s.stopAt).toEqual([at]);
+  });
+
   it("UI-63 再生: 区間 0 を待つ間の setSong（元の曲）・setSong（別の曲）・playJingle・音量 0 で、待っていた依頼は取り消され、遅れて届いた結果では切り替わらない", () => {
     // A→B を頼み、B の前に A に戻る → B が届いても A のまま
     {
