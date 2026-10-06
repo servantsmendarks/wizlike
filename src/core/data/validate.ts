@@ -1072,6 +1072,12 @@ function validateDungeons(ctx: Ctx, v: unknown, ix: Index): void {
       });
     }
 
+    // DG-31（M9）: ボスの敵は special.boss
+    const bossId = strOf(get(d, "boss", "monster"));
+    const bossDef = bossId === undefined ? undefined : ix.monsters.get(bossId);
+    if (bossDef !== undefined && get(bossDef, "special", "boss") !== true)
+      report(ctx, at(at(p, "boss"), "monster"), `DG-31: boss monster ${JSON.stringify(bossId)} must have special.boss`);
+
     // DG-01: 配列の順に開放する
     const prevId = i === 0 ? null : strOf(get(a[i - 1], "id"));
     const nextId = i === a.length - 1 ? null : strOf(get(a[i + 1], "id"));

@@ -180,9 +180,10 @@ describe("dungeon.enter", () => {
 });
 
 describe("TW-15 宿の主人の噂話（M7）", () => {
-  // d01 の出現表は 1 階 [大ネズミ, コボルド, 大蜘蛛]、2 階 [大ネズミ, コボルド, 大蜘蛛, 腐った死体, 囁く影]（ボス 門番の甲冑は表に無い）。
-  // d02 は 1〜3 階で [コボルド, 大蜘蛛, 腐った死体, 囁く影]。monsters.json の順は 大ネズミ・コボルド・大蜘蛛・腐った死体・囁く影・門番の甲冑
-  const D01_ALL = ["giant_rat", "kobold", "giant_spider", "rotting_corpse", "whispering_shadow"];
+  // d01 の出現表は 1 階 [大ネズミ, コボルド, 大蜘蛛]、2 階 [大ネズミ, コボルド, 大蜘蛛, 腐った死体, 囁く影, 宵闇コウモリ, 眠り粘体]（M9 で 2 種。ボス 門番の甲冑は表に無い）。
+  // d02（M9）は 1〜3 階で [腐った死体, 囁く影, 宵闇コウモリ, 眠り粘体, 溺れた侍祭, 色硝子の蛾, 歌う亡霊, 濁り聖水, 石睨みの像]（ボス 沈鐘の大司祭は表に無い）。
+  // monsters.json の順は 大ネズミ・コボルド・大蜘蛛・腐った死体・囁く影・門番の甲冑・M9 の 8 種
+  const D01_ALL = ["giant_rat", "kobold", "giant_spider", "rotting_corpse", "whispering_shadow", "dusk_bat", "drowsy_slime"];
   /** 個室に泊まった街の state（morale good）。bestiary を差し替える */
   function withMorale(seed: number, bestiary: GameState["bestiary"] = {}): GameState {
     const s = cloneState(execute(newGame(seed), { type: "town.inn", rank: 2 }, data).state);
@@ -194,10 +195,20 @@ describe("TW-15 宿の主人の噂話（M7）", () => {
   test("TW-15 gossipCandidates: 全階の出現表の敵を重複なく monsters.json の順に並べ、図鑑で鑑定済みの種類とボスを除く", () => {
     const s = newGame(1);
     expect(gossipCandidates(s, data, "d01")).toEqual(D01_ALL);
-    expect(gossipCandidates(s, data, "d02")).toEqual(["kobold", "giant_spider", "rotting_corpse", "whispering_shadow"]);
+    expect(gossipCandidates(s, data, "d02")).toEqual([
+      "rotting_corpse",
+      "whispering_shadow",
+      "dusk_bat",
+      "drowsy_slime",
+      "drowned_acolyte",
+      "glass_moth",
+      "choir_wraith",
+      "font_mire",
+      "stone_gazer",
+    ]);
     const known = cloneState(s);
     known.bestiary = { kobold: { kills: 2, identified: true }, rotting_corpse: { kills: 0, identified: false } };
-    expect(gossipCandidates(known, data, "d01")).toEqual(["giant_rat", "giant_spider", "rotting_corpse", "whispering_shadow"]);
+    expect(gossipCandidates(known, data, "d01")).toEqual(["giant_rat", "giant_spider", "rotting_corpse", "whispering_shadow", "dusk_bat", "drowsy_slime"]);
     // 表の順ではなく monsters.json の順。ボスは表にあっても除く
     const d = loadFreshData();
     dungeonOf(d, "d01").encounterTable = {

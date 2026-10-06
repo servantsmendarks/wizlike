@@ -8,7 +8,7 @@ import { execute } from "../src/core/engine";
 import { chance, cloneRng, randInt, rollDice, rollDie, weightedIndex, type RngState } from "../src/core/rng";
 import { allyAc, canAct, statusPercent } from "../src/core/rules/combat-calc";
 import { autoInput } from "../src/core/rules/combat-plan";
-import { battleMenu, beatSwitchForTests, startBattle, startBossEncounter, startRandomEncounter } from "../src/core/rules/combat";
+import { battleMenu, beatSwitchForTests, startBattle, startRandomEncounter } from "../src/core/rules/combat";
 import { cloneState, createItemInstance, makeContext, memberById, monsterOf } from "../src/core/state";
 import type { BattleAction, Character, Command, GameEvent, GameState } from "../src/core/types";
 import {
@@ -1623,11 +1623,17 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
 });
 
 describe("網羅（完了条件「6 種と戦える」、敵の id、battleMenu）", () => {
-  test("完了条件: d01 の 2 階の encounterTable とボスで、monsters.json の 6 種すべてが出うる", () => {
+  test("完了条件: d01 の 2 階の encounterTable とボスで、M6 の 6 種と M9 の d01 の 2 階向けの 2 種（宵闇コウモリ・眠り粘体）が出うる。全ダンジョンの表とボスで monsters.json の全種が出うる", () => {
     const def = data.dungeons.find((x) => x.id === "d01")!;
     const ids = new Set([...def.encounterTable["2"]!.filter((e) => e.weight > 0).map((e) => e.monster), def.boss.monster]);
-    expect([...ids].sort()).toEqual(data.monsters.map((m) => m.id).sort());
-    expect(data.monsters).toHaveLength(6);
+    expect([...ids].sort()).toEqual(
+      ["giant_rat", "kobold", "giant_spider", "rotting_corpse", "whispering_shadow", "gatekeeper_armor", "dusk_bat", "drowsy_slime"].sort(),
+    );
+    const all = new Set(
+      data.dungeons.flatMap((d) => [...Object.values(d.encounterTable).flatMap((t) => t.filter((e) => e.weight > 0).map((e) => e.monster)), d.boss.monster]),
+    );
+    expect([...all].sort()).toEqual(data.monsters.map((m) => m.id).sort());
+    expect(data.monsters).toHaveLength(14);
   });
 
   test.each(data.monsters.map((m) => m.id))("完了条件「6 種と戦える」%s: 1 グループで戦闘を始め、オートで battleEnd（win か wipe）まで例外なく回る。敵の id は e{g}-{u}", (monsterId) => {
@@ -1635,7 +1641,10 @@ describe("網羅（完了条件「6 種と戦える」、敵の id、battleMenu�
       const s0 = dived(seed);
       const m = monsterOf(data, monsterId);
       const ctx = runCtx(s0, data, (c) =>
-        m.special.boss === true ? startBossEncounter(c) : startBattle(c, { kind: "random", inRoom: true }, [{ monsterId, count: 2 }]),
+        // ボスは種類ごとに boss の戦闘を組む（d01 で潜っているので startBossEncounter だと d01 のボスになる。M9）
+        m.special.boss === true
+          ? startBattle(c, { kind: "boss" }, [{ monsterId, count: 1 }])
+          : startBattle(c, { kind: "random", inRoom: true }, [{ monsterId, count: 2 }]),
       );
       const all: GameEvent[] = [...ctx.events];
       let s = ctx.state;

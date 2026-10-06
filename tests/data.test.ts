@@ -81,7 +81,7 @@ describe("data: 実データ", () => {
     expect(data.races).toHaveLength(5);
     expect(data.classes).toHaveLength(7);
     expect(data.spells).toHaveLength(10);
-    expect(data.monsters).toHaveLength(6);
+    expect(data.monsters).toHaveLength(14); // M9: 8 種を追加
     expect(data.items).toHaveLength(4); // M7 の B2: 消耗品 3・魔法書 1（装備は equipment-bases.json。IT-01）
     expect(data.personalities.map((p) => p.id).sort()).toEqual(["cautious", "greedy", "normal", "reckless"]);
     expect(data.penaltyTable.bands).toHaveLength(7);
@@ -690,9 +690,12 @@ describe("data: monsters.json", () => {
     expectIssue((r) => (r.monsters[0].unknownKind = "dragon"), "monsters.json", '[0].unknownKind: unknown unknownKind id "dragon"');
     expectIssue((r) => delete r.monsters[1].unknownKind, "monsters.json", "[1].unknownKind: missing required field");
     expectIssue((r) => (r.monsters[2].unidentifiedName = "多脚の影"), "monsters.json", "[2].unidentifiedName: unknown field");
-    // 系統の定義を消すと、その系統を使う敵が止まる
+    // 系統の定義を消すと、その系統を使う敵が止まる（spirit は囁く影と歌う亡霊。M9）
     const issues = expectIssue((r) => (r.unknownKinds = r.unknownKinds.filter((k: { id: string }) => k.id !== "spirit")), "monsters.json", '[4].unknownKind: unknown unknownKind id "spirit"');
-    expect(issues).toHaveLength(1);
+    expect(issues).toEqual([
+      'monsters.json: [4].unknownKind: unknown unknownKind id "spirit"',
+      'monsters.json: [10].unknownKind: unknown unknownKind id "spirit"',
+    ]);
   });
 });
 
@@ -1166,7 +1169,7 @@ describe("data: エラー報告", () => {
   });
 
   test("data: 問題が多いときメッセージは先頭だけで、issues は全件", () => {
-    // 6 体 × 2 フィールド = 12 件
+    // 14 体 × 2 フィールド = 28 件（M9 で 8 種を追加）
     const r = rawData();
     for (const m of r.monsters) {
       m.hp = 0;
@@ -1178,9 +1181,9 @@ describe("data: エラー報告", () => {
     } catch (e) {
       err = e as GameDataError;
     }
-    expect(err?.issues).toHaveLength(12);
-    expect(err?.message).toContain("12 issue(s)");
-    expect(err?.message).toContain("... and 2 more");
+    expect(err?.issues).toHaveLength(28);
+    expect(err?.message).toContain("28 issue(s)");
+    expect(err?.message).toContain("... and 18 more");
     expect(err?.message).not.toContain("monsters.json: [5].gold");
   });
 
@@ -1298,5 +1301,34 @@ describe("data: CB-26 飛行（M9）", () => {
   test("data: CB-26 special.flying は真偽値", () => {
     expect(issuesOf((r) => (r.monsters[0].special.flying = true))).toEqual([]);
     expectIssue((r) => (r.monsters[0].special.flying = 1), "monsters.json", "[0].special.flying: expected boolean");
+  });
+});
+
+describe("data: M9 の敵（工房の同期）とボス（DG-31）", () => {
+  const M9 = ["dusk_bat", "drowsy_slime", "drowned_acolyte", "glass_moth", "choir_wraith", "font_mire", "stone_gazer", "sunken_bishop"];
+  test("data: M9 の敵 8 種の sprite は id と同じ・unknownKind が定義済み・ボスは tags に boss（工房の同期）。Lv 3〜5、名前は 7 字以内、description は空でない", () => {
+    const d = loadGameData(rawData());
+    const kinds = new Set(d.unknownKinds.map((k) => k.id));
+    const ms = M9.map((id) => d.monsters.find((m) => m.id === id)!);
+    expect(ms.every((m) => m !== undefined)).toBe(true);
+    for (const m of ms) {
+      expect(m.sprite, m.id).toBe(m.id);
+      expect(kinds.has(m.unknownKind), m.id).toBe(true);
+      expect(m.level, m.id).toBeGreaterThanOrEqual(3);
+      expect(m.level, m.id).toBeLessThanOrEqual(5);
+      expect([...m.name].length, m.id).toBeLessThanOrEqual(7);
+      expect(m.description.length, m.id).toBeGreaterThan(0);
+      expect(m.tags.includes("boss"), m.id).toBe(m.special.boss === true);
+    }
+    expect(ms.filter((m) => m.special.boss === true).map((m) => m.id)).toEqual(["sunken_bishop"]);
+    expect(ms.filter((m) => m.special.flying === true).map((m) => m.id)).toEqual(["dusk_bat", "glass_moth"]);
+    // 工房の unknown_<kind> の合成（所属 2 種以上）: winged と ooze はちょうど 2 種
+    for (const k of ["winged", "ooze"]) expect(d.monsters.filter((m) => m.unknownKind === k), k).toHaveLength(2);
+    // d02 のボスは沈鐘の大司祭
+    expect(d.dungeons.find((x) => x.id === "d02")!.boss.monster).toBe("sunken_bishop");
+  });
+  test("data: DG-31 dungeons[].boss の敵は special.boss", () => {
+    expectIssue((r) => (r.dungeons[0].boss.monster = "kobold"), "dungeons.json", '[0].boss.monster: DG-31: boss monster "kobold" must have special.boss');
+    expectIssue((r) => delete r.monsters.find((m: { id: string }) => m.id === "sunken_bishop").special.boss, "dungeons.json", "[1].boss.monster: DG-31");
   });
 });

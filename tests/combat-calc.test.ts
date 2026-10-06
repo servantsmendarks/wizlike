@@ -215,7 +215,18 @@ describe("勝敗", () => {
       rotting_corpse: "humanoid",
       whispering_shadow: "spirit",
       gatekeeper_armor: "construct",
+      // M9（2026-10-06）
+      dusk_bat: "winged",
+      drowsy_slime: "ooze",
+      drowned_acolyte: "humanoid",
+      glass_moth: "winged",
+      choir_wraith: "spirit",
+      font_mire: "ooze",
+      stone_gazer: "construct",
+      sunken_bishop: "humanoid",
     });
+    expect(kindName("dusk_bat")).toBe("羽ばたく何か");
+    expect(kindName("font_mire")).toBe("ぬめる何か");
     expect(kindName("giant_rat")).toBe("何かの獣");
     expect(kindName("kobold")).toBe("人の形をした影");
     expect(kindName("whispering_shadow")).toBe("声だけの何か");
