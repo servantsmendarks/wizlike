@@ -779,6 +779,13 @@ describe("data: equipment-bases.json（IT-02。M7）", () => {
   test("data: IT-22 術者用武器（caster）は ranged と両立しない", () => {
     expectIssue((r) => (r.equipmentBases[5].ranged = true), "equipment-bases.json", "[5].caster: IT-22");
   });
+  test("data: IT-22 ベースの magicPower（M9）は caster の武器だけで 0 以上の整数（caster でない武器・防具類には書けない）", () => {
+    expect(issuesOf((r) => (r.equipmentBases[5].magicPower = 0))).toEqual([]);
+    expect(issuesOf((r) => (r.equipmentBases[5].magicPower = 3))).toEqual([]);
+    expectIssue((r) => (r.equipmentBases[5].magicPower = -1), "equipment-bases.json", "[5].magicPower: expected integer >= 0");
+    expectIssue((r) => (r.equipmentBases[1].magicPower = 1), "equipment-bases.json", "[1].magicPower: IT-22: magicPower is only for caster weapons");
+    expectIssue((r) => (r.equipmentBases[6].magicPower = 1), "equipment-bases.json", "[6].magicPower: unknown field");
+  });
   test("data: IT-02 classes は実在の職業、price / shopMinLevel は 0 以上の整数、unidentifiedName は空でない、id は一意", () => {
     expectIssue((r) => r.equipmentBases[2].classes.push("ninja"), "equipment-bases.json", '[2].classes[5]: unknown class id "ninja"');
     expectIssue((r) => (r.equipmentBases[2].price = -1), "equipment-bases.json", "[2].price: expected integer >= 0");

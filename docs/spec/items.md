@@ -32,7 +32,7 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 
 - IT-20 武器（`slot` が weapon で `caster` でないもの）の汎用装備は、ダメージ +floor(Lv ÷ `config.items.weaponLvPerDamage`（2）)【仮】（CB-22）。
 - IT-21 防具・盾・兜・小手（armor / shield / helm / gauntlet）の汎用装備は、AC −floor(Lv ÷ `config.items.armorLvPerAc`（3）)【仮】（CB-20）。
-- IT-22 術者用武器（ベースの `caster: true`。杖など）の汎用装備は、ダメージは増えず、魔法攻撃力 +floor(Lv ÷ `config.items.casterLvPerPower`（2）)【仮】（MG-33）。
+- IT-22 術者用武器（ベースの `caster: true`。杖など）の汎用装備は、ダメージは増えず、魔法攻撃力 = ベースの `magicPower` + floor(Lv ÷ `config.items.casterLvPerPower`（2）)【仮】（MG-33）。ベースの `magicPower`（M9。0 以上の整数）は任意で、省略は 0。`caster` が偽の武器には書けない（読み込み時に止める）。上位の杖はこの値で表す（店では Lv = 流通レベルで売るので、Lv だけでは杖の段差が出ないため）。ユニークはベースの値を使わず `uniques[].magicPower`（IT-03）。
 - IT-23 装飾（accessory）のレベルは、オプションの段階（IT-33）と値段（IT-60 / 61）にだけ効く。
 - IT-24 AC の下限（`config.combat.acMin` −10）は M7 で撤廃し、命中率の `hitMin`〜`hitMax`（5〜95%）のクランプに任せる（CB-20 / CB-21）。
 
@@ -105,6 +105,7 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 ```
 { "id": "long_sword", "name": "長剣", "unidentifiedName": "剣？", "slot": "weapon",
   "damage": "1d8", "ranged": false, "caster": false,      // 武器だけ
+  "magicPower": 1,                                         // 任意。caster の武器だけ（IT-22。M9）
   "ac": 0,                                                 // 防具類と装飾（武器は持たない）
   "classes": ["fighter", "samurai", "lord"], "price": 100, "shopMinLevel": 0 }
 ```

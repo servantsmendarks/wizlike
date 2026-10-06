@@ -89,6 +89,29 @@ describe("IT-20〜23 レベルの効果（equipStats）", () => {
     ]);
   });
 
+  test("IT-22 汎用の術者用武器の魔法攻撃力 = ベースの magicPower + floor(Lv ÷ 2)（M9）: 杖に magicPower 2 を足すと Lv 0/1/2/5 → 2/2/3/4。ユニークはベースの値を使わない", () => {
+    const d = loadFreshData();
+    const staff = d.equipmentBases.find((b) => b.id === "staff")!;
+    if (staff.slot !== "weapon") throw new Error("staff is a weapon");
+    staff.magicPower = 2;
+    const got = [0, 1, 2, 5].map((level) => {
+      const s = newGame(1);
+      equipNew(s, "c5", "weapon", { itemId: "staff", identified: true, level });
+      const es = equipStats(s, d, member(s, "c5"));
+      return [es.magicPower, es.damageBonus];
+    });
+    expect(got).toEqual([
+      [2, 0],
+      [2, 0],
+      [3, 0],
+      [4, 0],
+    ]);
+    // 夜明けの火打ち杖（ユニークの magicPower 2）はベースの 2 を足さない
+    const s = newGame(1);
+    equipNew(s, "c5", "weapon", { itemId: "staff", uniqueId: "dawn_flint_staff", identified: true });
+    expect(equipStats(s, d, member(s, "c5")).magicPower).toBe(2);
+  });
+
   test("IT-21 防具・盾・兜・小手の AC −floor(Lv ÷ 3): 革鎧（−2）の Lv 0/2/3/5/6 → −2/−2/−3/−3/−4。IT-23 装飾（護符 0）は Lv 9 でも 0", () => {
     const acOf = (slot: EquipSlot, itemId: string, level: number): number => {
       const s = newGame(1);
@@ -449,6 +472,31 @@ describe("MG-33 魔法攻撃力", () => {
       const lv4 = at(4);
       expect(dmgOf(lv4)).toBe(dmgOf(lv0) - 2);
       expect(lv4.state.rng).toEqual(lv0.state.rng);
+    }
+  });
+
+  test("MG-33/IT-22 ベースの magicPower（M9）も火矢のダメージに足される: 杖 Lv0 に magicPower 3 で出目 + 3（乱数の消費は同じ）", () => {
+    const d = loadFreshData();
+    const staff = d.equipmentBases.find((b) => b.id === "staff")!;
+    if (staff.slot !== "weapon") throw new Error("staff is a weapon");
+    for (let seed = 1; seed <= 4; seed++) {
+      const at = (dd: typeof d): ReturnType<typeof exec> => {
+        const s0 = dived(seed);
+        equipNew(s0, "c5", "weapon", { itemId: "staff", identified: true, level: 0 });
+        const s = withBattle(s0, [{ monsterId: "giant_rat", hps: [50], status: [["paralysis"]] }], {
+          identified: ["giant_rat"],
+          inputs: allInputs(s0, DEF),
+        });
+        s.battle!.inputs["c5"] = { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 0 } };
+        return exec(s, RESOLVE, dd);
+      };
+      const dmgOf = (r: ReturnType<typeof exec>): number => eventsOf(r.events, "hpChanged").find((e) => e.id === "e0-0")!.delta;
+      delete staff.magicPower;
+      const plain = at(d);
+      staff.magicPower = 3;
+      const up = at(d);
+      expect(dmgOf(up)).toBe(dmgOf(plain) - 3);
+      expect(up.state.rng).toEqual(plain.state.rng);
     }
   });
 

@@ -406,7 +406,14 @@ type EquipmentBaseCommon = {
 };
 
 /** 武器のベース。caster（術者用武器。IT-22）は ranged と両立しない */
-export type WeaponBase = EquipmentBaseCommon & { slot: "weapon"; damage: string; ranged: boolean; caster: boolean };
+export type WeaponBase = EquipmentBaseCommon & {
+  slot: "weapon";
+  damage: string;
+  ranged: boolean;
+  caster: boolean;
+  /** IT-22（M9）: 汎用の術者用武器のベースの魔法攻撃力（caster のときだけ書ける。省略は 0） */
+  magicPower?: number;
+};
 
 /** 防具・盾・兜・小手・装飾のベース（CB-20 の ac） */
 export type ArmorLikeBase = EquipmentBaseCommon & { slot: Exclude<EquipSlot, "weapon">; ac: number };

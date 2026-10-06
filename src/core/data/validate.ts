@@ -728,9 +728,12 @@ function validateEquipmentBases(ctx: Ctx, v: unknown, ix: Index): void {
     const slot = oneOf(c, at(p, "slot"), o.slot, EQUIP_SLOTS);
     if (slot === undefined) return undefined;
     // 武器は damage / ranged / caster を持ち ac を持たない。それ以外は ac を持ち damage / ranged / caster を持たない（CB-20 / CB-22）
-    const spec = slot === "weapon" ? { ...common, damage: D, ranged: B, caster: B } : { ...common, ac: I() };
+    // IT-22（M9）: 武器は任意の magicPower（0 以上）を持てるが、caster のときだけ
+    const spec = slot === "weapon" ? { ...common, damage: D, ranged: B, caster: B, magicPower: opt(I(NON_NEG)) } : { ...common, ac: I() };
     const f = fields(c, p, o, spec);
     if (f !== undefined && f.caster === true && f.ranged === true) report(c, at(p, "caster"), "IT-22: a caster weapon cannot be ranged");
+    if (f !== undefined && f.caster !== true && f.magicPower !== undefined)
+      report(c, at(p, "magicPower"), "IT-22: magicPower is only for caster weapons");
     return f;
   };
   const a = L(base)(ctx, "", v);

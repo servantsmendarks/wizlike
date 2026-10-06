@@ -24,7 +24,7 @@ export type EquipStats = {
   weaponDice: string;
   /** CB-22 / IT-20: 汎用の武器（術者用でない）の floor(Lv ÷ weaponLvPerDamage) + オプション damage */
   damageBonus: number;
-  /** MG-33 / IT-22: 汎用の術者用武器の floor(Lv ÷ casterLvPerPower) + ユニークの magicPower */
+  /** MG-33 / IT-22: 汎用の術者用武器のベースの magicPower + floor(Lv ÷ casterLvPerPower)、ユニークはユニークの magicPower */
   magicPower: number;
   /** CB-21: オプション hit の合計（%） */
   hit: number;
@@ -49,7 +49,8 @@ export type EquipStats = {
 /**
  * IT-03 / IT-20〜23: 装備 1 つの性能（オプションを除く）。equipStats と品の詳細（rules/item-view.ts）が同じ式を使う。
  * - weapon: dice（ユニークはユニークの damage）、damageBonus（汎用の術者用でない武器の floor(Lv ÷ weaponLvPerDamage)。IT-20）、
- *   magicPower（汎用の術者用武器の floor(Lv ÷ casterLvPerPower)、ユニークはユニークの magicPower。IT-22）、ranged / caster はベースの値
+ *   magicPower（汎用の術者用武器のベースの magicPower（省略は 0）+ floor(Lv ÷ casterLvPerPower)、ユニークはユニークの magicPower。IT-22）、
+ *   ranged / caster はベースの値
  * - それ以外: ac（ユニークはユニークの ac、汎用はベースの ac − 装飾以外の floor(Lv ÷ armorLvPerAc)。IT-21 / IT-23）
  * ユニークはレベルの効果を持たない（IT-03）
  */
@@ -66,7 +67,7 @@ export function itemPower(data: GameData, inst: ItemInstance, base: EquipmentBas
       kind: "weapon",
       dice: uniq?.damage ?? base.damage,
       damageBonus: generic && !base.caster ? Math.floor(inst.level / ic.weaponLvPerDamage) : 0,
-      magicPower: uniq !== null ? (uniq.magicPower ?? 0) : base.caster ? Math.floor(inst.level / ic.casterLvPerPower) : 0,
+      magicPower: uniq !== null ? (uniq.magicPower ?? 0) : base.caster ? (base.magicPower ?? 0) + Math.floor(inst.level / ic.casterLvPerPower) : 0,
       ranged: base.ranged,
       caster: base.caster,
     };
