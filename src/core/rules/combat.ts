@@ -625,6 +625,18 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan, sanKey: 
       const grp = groupAt(b, ga);
       const m = monsterOf(data, grp.monsterId);
       const es = equipStats(state, data, ch); // CB-21 / CB-22 / IT-20 / IT-34
+      // CB-26: 飛行の敵に ranged でない攻撃は届かない。結果の拍を 1 つ出して終える（乱数は引かない。残りの攻撃回数も振らない）
+      if (m.special.flying === true && !es.ranged) {
+        const u = firstAliveUnit(grp);
+        if (u === null) return;
+        const targetId = enemyId(ga, u);
+        const target = groupName(state, data, ga);
+        section(ctx, "result", () => {
+          ctx.events.push({ kind: "attack", actorId: ch.id, targetId, hit: false, damage: 0 });
+          ctx.events.push({ kind: "message", key: "battle.outOfReach", params: { actor, target } });
+        });
+        return;
+      }
       const dice = es.weaponDice;
       // CB-23 / IT-40: 固有スキル extraAttack は maxAttacks の後に足す（超えてよい）
       const times = attackCount(classOf(data, ch.classId), ch.level) + skillTotal(es, "extraAttack");

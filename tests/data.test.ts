@@ -1282,3 +1282,10 @@ describe("data: 検証の網羅性", () => {
     expect([...TYPE_SWAP_EXEMPT.keys()].filter((k) => !all.has(k))).toEqual([]);
   });
 });
+
+describe("data: CB-26 飛行（M9）", () => {
+  test("data: CB-26 special.flying は真偽値", () => {
+    expect(issuesOf((r) => (r.monsters[0].special.flying = true))).toEqual([]);
+    expectIssue((r) => (r.monsters[0].special.flying = 1), "monsters.json", "[0].special.flying: expected boolean");
+  });
+});

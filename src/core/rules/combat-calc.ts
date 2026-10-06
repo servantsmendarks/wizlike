@@ -1,4 +1,4 @@
-// 戦闘の判定と式（combat.md CB-04/05/13/14/20〜23/30/42/50/53、CH-44/60）。
+// 戦闘の判定と式（combat.md CB-04/05/13/14/20〜23/26/30/42/50/53、CH-44/60）。
 // すべて純粋関数。乱数も RuleContext も使わない（乱数を使う手続きは rules/combat.ts）。
 import type { ClassDef, Config, ConsumableItem, GameData, Item, ItemEffect, Spell, SpellTarget, StatusId } from "../data/index";
 import { monsterOf, personalityOf, unknownKindOf } from "../state";
@@ -201,6 +201,25 @@ export function firstAliveUnit(group: EnemyGroup): number | null {
 /** CB-42: 生存個体のあるグループのうち添字が最小のもの */
 export function lowestAliveGroup(b: BattleState): number | null {
   const i = b.groups.findIndex((g) => g.units.some(unitAlive));
+  return i === -1 ? null : i;
+}
+
+/** CB-26: グループ g の敵が飛行（monsters[].special.flying）か。範囲外は偽 */
+export function groupFlying(state: GameState, data: GameData, g: number): boolean {
+  const grp = state.battle?.groups[g];
+  return grp !== undefined && monsterOf(data, grp.monsterId).special.flying === true;
+}
+
+/** CB-26: 味方 ch の通常攻撃がグループ g に届くか（飛行でない、または実効の ranged。CB-13 と同じ値） */
+export function canReach(state: GameState, data: GameData, ch: Character, g: number): boolean {
+  return !groupFlying(state, data, g) || equipStats(state, data, ch).ranged;
+}
+
+/** CB-26 / CB-40: ch の通常攻撃が届く生存グループのうち添字が最小のもの。無ければ null */
+export function lowestReachableGroup(state: GameState, data: GameData, ch: Character): number | null {
+  const b = state.battle;
+  if (b === null) return null;
+  const i = b.groups.findIndex((grp, g) => grp.units.some(unitAlive) && canReach(state, data, ch, g));
   return i === -1 ? null : i;
 }
 

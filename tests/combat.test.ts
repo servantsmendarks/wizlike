@@ -9,7 +9,7 @@ import { chance, cloneRng, randInt, rollDice, rollDie, weightedIndex, type RngSt
 import { allyAc, canAct, statusPercent } from "../src/core/rules/combat-calc";
 import { autoInput } from "../src/core/rules/combat-plan";
 import { battleMenu, beatSwitchForTests, startBattle, startBossEncounter, startRandomEncounter } from "../src/core/rules/combat";
-import { cloneState, makeContext, memberById, monsterOf } from "../src/core/state";
+import { cloneState, createItemInstance, makeContext, memberById, monsterOf } from "../src/core/state";
 import type { BattleAction, Character, Command, GameEvent, GameState } from "../src/core/types";
 import {
   allInputs,
@@ -2272,5 +2272,82 @@ describe("冒険のターン数（TW-12。M5.5）", () => {
     const t = cloneState(on);
     t.adventureTurns = 999;
     expect(exec(t, RESOLVE).state.rng).toEqual(exec(on, RESOLVE).state.rng);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CB-26: 飛行（M9）
+
+describe("飛行（CB-26）", () => {
+  /** giant_rat を飛行にした data（共有の data は変えない） */
+  const flyData = (combat: Partial<GameData["config"]["combat"]> = {}): GameData =>
+    dataWith({ combat }, (d) => {
+      d.monsters.find((m) => m.id === "giant_rat")!.special.flying = true;
+    });
+  const flyingRats = (seed: number, patches: Record<string, Partial<Character>>, inputs: Record<string, BattleAction>) =>
+    setup([{ monsterId: "giant_rat", hps: [50, 50], status: [["paralysis"], ["paralysis"]] }], {
+      seed,
+      identified: ["giant_rat"],
+      patches,
+      inputs,
+    });
+
+  test("CB-26 飛行: 前衛の近接（ranged でない）の攻撃は宣言の後に attack(hit false, damage 0) と battle.outOfReach{actor, target} で終わり、乱数を引かない（state.rng が鏡と同じ）", () => {
+    const d = flyData(ALWAYS_HIT);
+    for (let seed = 1; seed <= 6; seed++) {
+      // アルド Lv5 は 2 振り（CB-23）だが、届かなければ残りも振らない
+      const s = flyingRats(seed, { ...ONLY_C1, c1: { level: 5 } }, { c1: atk(0) });
+      const m = cloneRng(s.rng);
+      rolls(m, 1); // initiative はアルドだけ（麻痺のネズミは振らない）
+      const r = exec(s, RESOLVE, d);
+      expect(r.state.rng).toEqual(m);
+      expect(eventsOf(r.events, "attack")).toEqual([{ kind: "attack", actorId: "c1", targetId: "e0-0", hit: false, damage: 0 }]);
+      expect(r.events).toContainEqual({ kind: "message", key: "battle.outOfReach", params: { actor: "アルド", target: "大ネズミ" } });
+      expect(r.state.battle!.groups[0]!.units.map((u) => u.hp)).toEqual([50, 50]);
+      expectBeatShape(r.events);
+      expect(phasesOf(r.events)).toEqual([
+        ["declare", ["message:battle.attackDeclare"]],
+        ["result", ["attack", "message:battle.outOfReach"]],
+      ]);
+    }
+    // 未鑑定なら target は系統の名前
+    const u = setup([{ monsterId: "giant_rat", hps: [50], status: [["paralysis"]] }], { patches: ONLY_C1, inputs: { c1: atk(0) } });
+    expect(exec(u, RESOLVE, d).events).toContainEqual({ kind: "message", key: "battle.outOfReach", params: { actor: "アルド", target: "何かの獣" } });
+    // 飛行でなければ今どおり命中判定（d100 を引く）
+    const plain = flyingRats(1, ONLY_C1, { c1: atk(0) });
+    const r0 = exec(plain, RESOLVE, dataWith({ combat: ALWAYS_HIT }));
+    expect(eventsOf(r0.events, "attack")[0]!.hit).toBe(true);
+    expect(kindsOf(r0.events)).not.toContain("message:battle.outOfReach");
+  });
+
+  test("CB-26 飛行: ranged の武器（短弓）の攻撃は今どおり命中判定する（d100 を引く）。reachFromBack の固有スキルも届く", () => {
+    const d = flyData(ALWAYS_HIT);
+    // フィン（後衛・short_bow）
+    const fin = flyingRats(1, { c1: PARA, c2: PARA, c3: PARA, c4: PARA, c5: PARA }, { c6: atk(0) });
+    const rf = exec(fin, RESOLVE, d);
+    expect(eventsOf(rf.events, "attack").map((e) => [e.actorId, e.hit])).toEqual([["c6", true]]);
+    expect(kindsOf(rf.events)).not.toContain("message:battle.outOfReach");
+    expect(rf.state.rng).not.toEqual(cloneRng(fin.rng));
+    // アルドに影法師の剣（reachFromBack）
+    const s = flyingRats(1, ONLY_C1, { c1: atk(0) });
+    const al = memberById(s, "c1")!;
+    const old = al.equipment.weapon;
+    if (old !== null) delete s.items[old];
+    al.equipment.weapon = createItemInstance(s, { itemId: "long_sword", uniqueId: "shadowfolk_sword", identified: true });
+    const ra = exec(s, RESOLVE, d);
+    expect(eventsOf(ra.events, "attack").map((e) => [e.actorId, e.hit])).toEqual([["c1", true]]);
+    expect(kindsOf(ra.events)).not.toContain("message:battle.outOfReach");
+  });
+
+  test("CB-26 飛行: 呪文（火矢・炎裂）は飛行の敵に当たる", () => {
+    const d = flyData();
+    for (const spellId of ["fire_arrow", "flame_burst"]) {
+      const s = flyingRats(1, { c1: PARA, c2: PARA, c3: PARA, c4: PARA, c6: PARA, c5: { knownSpells: ["fire_arrow", "flame_burst"], mp: 20 } }, {
+        c5: { type: "cast", spellId, target: { side: "enemy", group: 0 } },
+      });
+      const r = exec(s, RESOLVE, d);
+      expect(kindsOf(r.events)).not.toContain("message:battle.outOfReach");
+      expect(r.events.some((e) => e.kind === "hpChanged" && e.id === "e0-0" && e.delta < 0), spellId).toBe(true);
+    }
   });
 });

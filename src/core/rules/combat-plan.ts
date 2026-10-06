@@ -7,11 +7,13 @@ import type { BattleAction, BattleState, BattleTarget, Character, GameState, Lif
 import {
   battleItemUsable,
   battleSpellUsable,
+  canReach,
   canStrike,
   frontLineIds,
   groupAlive,
   lowestAliveGroup,
   lowestHpRatioAlly,
+  lowestReachableGroup,
   unitAlive,
 } from "./combat-calc";
 import { hpMaxOf, spellCost } from "./equip-stats";
@@ -33,9 +35,9 @@ export type TargetRef = { side: "enemy"; g: number; u: number } | { side: "ally"
 /** CB-43 用のラウンド開始時の写し */
 export type MemberSnap = { id: string; life: Life; hp: number; hpMax: number; status: StatusId[]; sanRank: number };
 
+/** CB-40 / CB-26: canStrike かつ届く生存グループがあれば、その最小への攻撃。無ければ防御 */
 function defaultAction(state: GameState, data: GameData, ch: Character): BattleAction {
-  const b = state.battle;
-  const g = b === null ? null : lowestAliveGroup(b);
+  const g = lowestReachableGroup(state, data, ch);
   if (g !== null && canStrike(state, data, ch)) return { type: "attack", group: g };
   return { type: "defend" };
 }
@@ -75,9 +77,10 @@ function baseAutoInput(state: GameState, data: GameData, ch: Character): BattleA
     case "defend":
       return { type: "defend" };
     case "attack": {
+      // CB-42 / CB-26: 前回のグループが生きていて届けばそのまま、でなければ届く最小、それも無ければ既定（= 防御）
       const b = state.battle;
-      if (b !== null && groupAlive(b, a.group)) return { type: "attack", group: a.group };
-      const g = b === null ? null : lowestAliveGroup(b);
+      if (b !== null && groupAlive(b, a.group) && canReach(state, data, ch, a.group)) return { type: "attack", group: a.group };
+      const g = lowestReachableGroup(state, data, ch);
       return g === null ? defaultAction(state, data, ch) : { type: "attack", group: g };
     }
     case "cast": {
@@ -164,8 +167,7 @@ export function toPlan(state: GameState, data: GameData, ch: Character, action: 
     case "cast": {
       const sp = spellOf(data, action.spellId);
       if (ch.mp < spellCost(state, data, ch, sp)) { // MG-30 / IT-40
-        const b = state.battle;
-        const g = b === null ? null : lowestAliveGroup(b);
+        const g = lowestReachableGroup(state, data, ch); // CB-26: 届くグループだけ
         if (g !== null && canStrike(state, data, ch)) return { kind: "attack", memberId, group: g, noMp: true };
         return { kind: "defend", memberId, why: "noMp" };
       }

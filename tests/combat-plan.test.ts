@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, richestGroup, snapMembers, toPlan } from "../src/core/rules/combat-plan";
 import { memberById } from "../src/core/state";
 import type { BattleAction, Character, GameState } from "../src/core/types";
-import { dived, withBattle } from "./helpers/battle";
+import { dataWith, dived, withBattle } from "./helpers/battle";
 import { data, withChar } from "./helpers/core";
 
 const twoGroups = (): GameState =>
@@ -271,5 +271,52 @@ describe("CB-43 autoInterruptReason", () => {
     expect(autoInterruptReason(before, withChar(c3dead(s0), 1, { status: ["poison"] }), data)).toBe("dead");
     // c1 の毒と c3 の SAN の段階の悪化（49 で uneasy）が同時 → status（san より優先）
     expect(autoInterruptReason(before, withChar(withChar(s0, 0, { status: ["poison"] }), 2, { san: 49 }), data)).toBe("status");
+  });
+});
+
+describe("CB-26 飛行とオートの対象", () => {
+  // twoGroups: 0 = 大ネズミ（全滅）、1 = コボルド ×2、2 = 大ネズミ ×1。アルド c1 は前衛の近接、フィン c6 は後衛の short_bow（ranged）
+  const flying = (...ids: string[]) =>
+    dataWith({}, (d) => {
+      for (const m of d.monsters) if (ids.includes(m.id)) m.special.flying = true;
+    });
+  const dK = flying("kobold");
+  const dKR = flying("kobold", "giant_rat");
+
+  test("CB-26/CB-40 オートの既定の入力は届く最小の生存グループ、届くグループが無ければ防御", () => {
+    const s = twoGroups();
+    expect(autoInput(s, dK, ch(s, "c1"))).toEqual({ type: "attack", group: 2 });
+    expect(autoInput(s, dK, ch(s, "c6"))).toEqual({ type: "attack", group: 1 }); // ranged は飛行にも届く
+    expect(autoInput(s, dKR, ch(s, "c1"))).toEqual({ type: "defend" });
+    expect(autoInput(s, dKR, ch(s, "c6"))).toEqual({ type: "attack", group: 1 });
+    // 飛行の敵がいなければ今どおり
+    expect(autoInput(s, data, ch(s, "c1"))).toEqual({ type: "attack", group: 1 });
+  });
+
+  test("CB-26/CB-40 前回の攻撃のグループが届かなければ届く最小へ", () => {
+    let s = withLast(twoGroups(), 0, { type: "attack", group: 1 });
+    s = withLast(s, 5, { type: "attack", group: 1 });
+    expect(autoInput(s, dK, ch(s, "c1"))).toEqual({ type: "attack", group: 2 });
+    expect(autoInput(s, dKR, ch(s, "c1"))).toEqual({ type: "defend" });
+    expect(autoInput(s, dKR, ch(s, "c6"))).toEqual({ type: "attack", group: 1 });
+    // 前回のグループが届けばそのまま
+    const t = withLast(s, 0, { type: "attack", group: 2 });
+    expect(autoInput(t, dK, ch(t, "c1"))).toEqual({ type: "attack", group: 2 });
+  });
+
+  test("CB-26/CB-41 MP 不足の置き換えも届くグループ", () => {
+    const fire: BattleAction = { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 1 } };
+    const f = frontParalyzed(withChar(twoGroups(), 4, { mp: 1 })); // エルは前衛扱い
+    expect(toPlan(f, dK, ch(f, "c5"), fire)).toEqual({ kind: "attack", memberId: "c5", group: 2, noMp: true });
+    expect(toPlan(f, dKR, ch(f, "c5"), fire)).toEqual({ kind: "defend", memberId: "c5", why: "noMp" });
+  });
+
+  test("CB-26/CB-44 無鉄砲・強欲の傾向は届かない相手も狙う（変えない）", () => {
+    // 無鉄砲（キリ c3）: 基本の入力が防御（届くグループが無い）→ 最小の生存グループへの攻撃（飛行でも）
+    const r = withLast(twoGroups(), 2, { type: "defend" });
+    expect(autoInput(r, dKR, ch(r, "c3"))).toEqual({ type: "attack", group: 1 });
+    // 強欲（アルドを強欲に）: 基本の入力は届くネズミ（2）だが、金の期待値が最大のコボルド（1。飛行）に変える
+    const g = withChar(twoGroups(), 0, { personality: "greedy" });
+    expect(autoInput(g, dK, ch(g, "c1"))).toEqual({ type: "attack", group: 1 });
   });
 });

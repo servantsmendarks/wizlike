@@ -339,7 +339,8 @@ export type Monster = {
   exp: number;
   gold: string;
   groupSize: string;
-  special: { undead?: boolean; boss?: boolean };
+  /** flying: CB-26（M9）。宙にいて、ranged でない味方の通常攻撃が届かない */
+  special: { undead?: boolean; boss?: boolean; flying?: boolean };
   resist: Partial<Record<StatusId, boolean>>;
   tags: string[];
   description: string;

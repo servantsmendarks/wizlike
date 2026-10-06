@@ -386,6 +386,7 @@
   "battle.hit": "{target}に{damage}のダメージ。",
   "battle.lifeSteal": "{name}は{hp}の生気を吸った。",
   "battle.miss": "{target}には当たらなかった。",
+  "battle.outOfReach": "{actor}の攻撃は、宙を舞う{target}に届かない。",
   "battle.defend": "{actor}は身を守っている。",
   "battle.backRowCannotAttack": "{actor}は後ろからでは届かない。身を守った。",
   "battle.cast": "{actor}は{spell}を唱えた。",

@@ -637,7 +637,7 @@ function validateMonsters(ctx: Ctx, v: unknown, ix: Index): void {
       exp: I(NON_NEG),
       gold: D,
       groupSize: D,
-      special: F({ undead: opt(B), boss: opt(B) }),
+      special: F({ undead: opt(B), boss: opt(B), flying: opt(B) }), // flying: CB-26（M9）
       resist: F(Object.fromEntries(STATUS_IDS.map((k) => [k, opt(B)]))),
       tags: L(S),
       description: S,
