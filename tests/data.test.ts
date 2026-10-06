@@ -148,6 +148,15 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.combat.hitMin = 96), "config.json", "CB-21");
     expectIssue((r) => (r.config.combat.hitMax = 101), "config.json", "combat.hitMax: expected integer in 0..100, got 101");
   });
+  test("data: CB-21/CB-26【仮】flyingHit は reach ごと（melee / long / ranged）の整数、rangedHitAgiMul・rangedHitLukPivot は整数", () => {
+    const d = loadGameData(rawData());
+    expect([d.config.combat.flyingHit, d.config.combat.rangedHitAgiMul, d.config.combat.rangedHitLukPivot]).toEqual([{ melee: -30, long: -15, ranged: 0 }, 2, 10]);
+    expectIssue((r) => delete r.config.combat.flyingHit.long, "config.json", "combat.flyingHit.long: missing required field");
+    expectIssue((r) => (r.config.combat.flyingHit.far = 0), "config.json", "combat.flyingHit.far: unknown field");
+    expectIssue((r) => (r.config.combat.flyingHit.melee = -0.5), "config.json", "combat.flyingHit.melee: expected integer");
+    expectIssue((r) => delete r.config.combat.rangedHitAgiMul, "config.json", "combat.rangedHitAgiMul: missing required field");
+    expectIssue((r) => delete r.config.combat.rangedHitLukPivot, "config.json", "combat.rangedHitLukPivot: missing required field");
+  });
   test("data: CB-32 combat.sleepNaturalWake は 0..100 の整数【仮】", () => {
     expect(config.combat.sleepNaturalWake).toBe(20);
     expectIssue((r) => (r.config.combat.sleepNaturalWake = -1), "config.json", "combat.sleepNaturalWake: expected integer in 0..100, got -1");
@@ -814,20 +823,20 @@ describe("data: equipment-bases.json（IT-02。M7）", () => {
     const count = (slot: string): number => d.equipmentBases.filter((b) => b.slot === slot).length;
     expect(["weapon", "armor", "shield", "helm", "gauntlet", "accessory"].map(count)).toEqual([12, 5, 2, 4, 2, 1]);
   });
-  test("data: IT-02/CB-13/IT-22 M9 のベース 12 種: 長柄・投擲・弓は ranged、杖 2 種は caster で magicPower 1 / 2、shopMinLevel は 2 か 4（流通レベル）", () => {
+  test("data: IT-02/IT-25/CB-13/IT-22 M9 のベース 12 種: 長柄は reach long、投擲・弓は reach ranged、杖 2 種は caster で magicPower 1 / 2、shopMinLevel は 2 か 4（流通レベル）", () => {
     const d = loadGameData(rawData());
     const M9 = ["spear", "halberd", "throwing_knives", "long_bow", "oak_staff", "sigil_staff", "studded_leather", "warded_robe", "plate_armor", "iron_shield", "great_helm", "chain_coif"];
     const got = M9.map((id) => {
       const b = d.equipmentBases.find((x) => x.id === id)!;
-      return b.slot === "weapon" ? [id, b.ranged, b.caster, b.magicPower ?? 0, b.shopMinLevel] : [id, b.slot, b.ac, b.shopMinLevel];
+      return b.slot === "weapon" ? [id, b.reach ?? "melee", b.caster, b.magicPower ?? 0, b.shopMinLevel] : [id, b.slot, b.ac, b.shopMinLevel];
     });
     expect(got).toEqual([
-      ["spear", true, false, 0, 2],
-      ["halberd", true, false, 0, 4],
-      ["throwing_knives", true, false, 0, 2],
-      ["long_bow", true, false, 0, 4],
-      ["oak_staff", false, true, 1, 2],
-      ["sigil_staff", false, true, 2, 4],
+      ["spear", "long", false, 0, 2],
+      ["halberd", "long", false, 0, 4],
+      ["throwing_knives", "ranged", false, 0, 2],
+      ["long_bow", "ranged", false, 0, 4],
+      ["oak_staff", "melee", true, 1, 2],
+      ["sigil_staff", "melee", true, 2, 4],
       ["studded_leather", "armor", -3, 2],
       ["warded_robe", "armor", -3, 2],
       ["plate_armor", "armor", -6, 4],
@@ -839,19 +848,28 @@ describe("data: equipment-bases.json（IT-02。M7）", () => {
     const knives = d.equipmentBases.find((x) => x.id === "throwing_knives")!;
     expect(knives.classes).toEqual(expect.arrayContaining(["mage", "bishop", "thief"]));
   });
-  test("data: IT-02 武器は damage / ranged / caster を持ち ac を持たない、それ以外は ac を持ち damage / ranged / caster を持たない", () => {
+  test("data: IT-02/IT-25 武器は damage / caster と任意の reach を持ち ac を持たない、それ以外は ac を持ち damage / reach / caster を持たない", () => {
     expectIssue((r) => delete r.equipmentBases[1].damage, "equipment-bases.json", "[1].damage: missing required field");
     expectIssue((r) => delete r.equipmentBases[1].caster, "equipment-bases.json", "[1].caster: missing required field");
     expectIssue((r) => (r.equipmentBases[1].ac = 0), "equipment-bases.json", "[1].ac: unknown field");
     expectIssue((r) => delete r.equipmentBases[12].ac, "equipment-bases.json", "[12].ac: missing required field");
     expectIssue((r) => (r.equipmentBases[12].damage = "1d4"), "equipment-bases.json", "[12].damage: unknown field");
-    expectIssue((r) => (r.equipmentBases[12].ranged = false), "equipment-bases.json", "[12].ranged: unknown field");
+    expectIssue((r) => (r.equipmentBases[12].reach = "melee"), "equipment-bases.json", "[12].reach: unknown field");
+    // IT-25（2026-10-06）: 前の ranged の欄は武器でも未知の欄。reach は melee / long / ranged だけ。省略は melee
+    expectIssue((r) => (r.equipmentBases[1].ranged = true), "equipment-bases.json", "[1].ranged: unknown field");
+    expectIssue((r) => (r.equipmentBases[1].reach = "far"), "equipment-bases.json", "[1].reach: expected one of");
+    expect(issuesOf((r) => (r.equipmentBases[1].reach = "long"))).toEqual([]);
+    expect(loadGameData(rawData()).equipmentBases.filter((b) => b.slot === "weapon" && b.reach === undefined).map((b) => b.id)).toEqual([
+      "dagger", "long_sword", "mace", "staff", "oak_staff", "sigil_staff",
+    ]);
     expectIssue((r) => (r.equipmentBases[12].ac = 1.5), "equipment-bases.json", "[12].ac: expected integer");
     expectIssue((r) => (r.equipmentBases[0].slot = "ring"), "equipment-bases.json", "[0].slot: expected one of");
     expectIssue((r) => (r.equipmentBases[0].damage = "1x4"), "equipment-bases.json", "[0].damage: invalid dice expression");
   });
-  test("data: IT-22 術者用武器（caster）は ranged と両立しない", () => {
-    expectIssue((r) => (r.equipmentBases[5].ranged = true), "equipment-bases.json", "[5].caster: IT-22");
+  test("data: IT-22/IT-25 術者用武器（caster）の reach は melee だけ（long / ranged は止める）", () => {
+    expectIssue((r) => (r.equipmentBases[5].reach = "ranged"), "equipment-bases.json", "[5].caster: IT-22");
+    expectIssue((r) => (r.equipmentBases[5].reach = "long"), "equipment-bases.json", "[5].caster: IT-22");
+    expect(issuesOf((r) => (r.equipmentBases[5].reach = "melee"))).toEqual([]);
   });
   test("data: IT-22 ベースの magicPower（M9）は caster の武器だけで 0 以上の整数（caster でない武器・防具類には書けない）", () => {
     expect(issuesOf((r) => (r.equipmentBases[5].magicPower = 0))).toEqual([]);

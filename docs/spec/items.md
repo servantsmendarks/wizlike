@@ -10,7 +10,7 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 
 - IT-01 アイテムは 装備（汎用 / ユニーク）・消耗品・魔法書 の 3 種。消耗品と魔法書は今どおり `data/items.json`（M7 の実装で装備の行を `data/equipment-bases.json` に移す）。
 - IT-02 汎用装備: 流通している装備。ベースは `data/equipment-bases.json`（汎用ベース表）。実体ごとにレベル（Lv、0 以上の整数）を持つ。店で「流通レベル」（IT-62）のものを無限に買える（オプションなし・通常・鑑定済み）。売却しても店のストックには入らない（IT-61）。
-- IT-03 ユニーク: 固有名の装備。`data/uniques.json`（ユニーク表）。性能（ダメージのダイス・AC・魔法攻撃力）は表の固定値で、レベルを持たない（実体の level は常に 0 で、IT-20〜23 のレベルの効果も強化（TW-17）も無い。ダンジョンが進むと時代遅れになる）。固有スキル（IT-40）を 1 つ持つ。売却すると店のストックに入り買い戻せる（IT-63。鑑定済みのときだけ）。鑑定すると図鑑に記録する（IT-66）。部位・装備できる職業・`ranged`・`caster` はベースの値を引き継ぐ。
+- IT-03 ユニーク: 固有名の装備。`data/uniques.json`（ユニーク表）。性能（ダメージのダイス・AC・魔法攻撃力）は表の固定値で、レベルを持たない（実体の level は常に 0 で、IT-20〜23 のレベルの効果も強化（TW-17）も無い。ダンジョンが進むと時代遅れになる）。固有スキル（IT-40）を 1 つ持つ。売却すると店のストックに入り買い戻せる（IT-63。鑑定済みのときだけ）。鑑定すると図鑑に記録する（IT-66）。部位・装備できる職業・`reach`（IT-25）・`caster` はベースの値を引き継ぐ。
 - IT-04 初期装備（`config.prototypeParty`、`classes[].start`）は汎用 Lv0・通常・オプションなし・鑑定済み・呪いなし。
 
 ## 2. 実体と表示
@@ -35,6 +35,7 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 - IT-22 術者用武器（ベースの `caster: true`。杖など）の汎用装備は、ダメージは増えず、魔法攻撃力 = ベースの `magicPower` + floor(Lv ÷ `config.items.casterLvPerPower`（2）)【仮】（MG-33）。ベースの `magicPower`（M9。0 以上の整数）は任意で、省略は 0。`caster` が偽の武器には書けない（読み込み時に止める）。上位の杖はこの値で表す（店では Lv = 流通レベルで売るので、Lv だけでは杖の段差が出ないため）。ユニークはベースの値を使わず `uniques[].magicPower`（IT-03）。
 - IT-23 装飾（accessory）のレベルは、オプションの段階（IT-33）と値段（IT-60 / 61）にだけ効く。
 - IT-24 AC の下限（`config.combat.acMin` −10）は M7 で撤廃し、命中率の `hitMin`〜`hitMax`（5〜95%）のクランプに任せる（CB-20 / CB-21）。
+- IT-25 武器の届き方（2026-10-06）: 武器のベースは任意の `reach` を持つ。`melee`（近接。省略時の既定）/ `long`（長柄。長槍・斧槍。後衛から使える）/ `ranged`（飛び道具。弓・投石紐・投げナイフ。後衛から使える）。前の `ranged: true` はこの `ranged` に統合し、`ranged` の欄は消した（残っていれば読み込み時に未知の欄として止める）。術者用武器（IT-22）の `reach` は `melee` だけ（`long` / `ranged` は止める）。ユニークはベースの `reach` を継ぐ（IT-03）。効き目: 後衛から攻撃できるか（CB-13）、`ranged` の命中の式（CB-21）、飛行への命中の補正（CB-26）。品の詳細は `long` に「長柄。後列から届く」、`ranged` に「飛び道具。後列から届く」を出す（UI-59 の品の詳細）。
 
 ## 4. 希少度・呪い・オプション
 
@@ -63,7 +64,7 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 - IT-40 ユニークだけが持つ。閉じた集合から始めて後で増やす。`uniques[].skill` は `{ type, value }`【仮】（value を使わない `reachFromBack` / `fearImmune` / `autoIdentify` は 0）。装備中だけ効く。
   - `mpCostDown`: その者の呪文の MP 消費 −value（最低 1。ただし元の消費より増やさない（`spells[].mp` が 0 の呪文は 0 のまま）。MG-30。複数の品なら合計）。
   - `extraAttack`: CB-23 の攻撃回数 +value（`maxAttacks` を超えてよい）。
-  - `reachFromBack`: 後衛からでも近接攻撃できる（CB-13 の `ranged` と同じ扱い）。
+  - `reachFromBack`: 後衛からでも近接攻撃できる（CB-13 で `reach` が `long` / `ranged` の武器と同じ扱い）。命中の補正（CB-21 / CB-26）は変えない（ベースの `reach` のまま）。
   - `initiativeUp`: CB-04 の先手判定で味方側の合計に +value（パーティに 1 人でも行動可能な装備者がいれば。複数でも（1 人が 2 つ装備していても）品の値の最大の 1 つ）。
   - `fearImmune`: その者の fear タグの SAN 減少を 0 にする（CB-31）。
   - `lifeSteal`: その者の攻撃が当たるたびに、与えたダメージ（attack の damage の値。残り HP で頭打ちにしない）の value % を切り捨てで HP に戻す（実効の hpMax で止まる。0 なら何もしない）。語りは battle.hit の後に `battle.lifeSteal`{name, hp}。
@@ -105,7 +106,8 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 `data/equipment-bases.json`（汎用ベース表。M7 の雛形。B の実装で読み込みと検証を足し、`items.json` の装備の行を消す）
 ```
 { "id": "long_sword", "name": "長剣", "unidentifiedName": "剣？", "slot": "weapon",
-  "damage": "1d8", "ranged": false, "caster": false,      // 武器だけ
+  "damage": "1d8", "caster": false,                       // 武器だけ
+  "reach": "long",                                         // 任意。武器だけ。melee（既定）/ long / ranged（IT-25。2026-10-06）
   "magicPower": 1,                                         // 任意。caster の武器だけ（IT-22。M9）
   "ac": 0,                                                 // 防具類と装飾（武器は持たない）
   "classes": ["fighter", "samurai", "lord"], "price": 100, "shopMinLevel": 0 }

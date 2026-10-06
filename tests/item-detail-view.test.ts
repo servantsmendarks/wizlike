@@ -46,14 +46,17 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
     });
   });
 
-  test("UI-59/IT-21/IT-22/CB-13 防具は AC、術者用武器は魔法攻撃力、射程の武器は「後列から届く」。Lv0 でも Lv を出し、ダメージの +0 は出さない", () => {
+  test("UI-59/IT-21/IT-22/CB-13 防具は AC、術者用武器は魔法攻撃力、長柄・飛び道具は「…後列から届く」（IT-25）。Lv0 でも Lv を出し、ダメージの +0 は出さない", () => {
     const s = town();
     const armor = createItemInstance(s, { itemId: "leather_armor", level: 6, identified: true });
     const staff = createItemInstance(s, { itemId: "staff", identified: true });
     const bow = createItemInstance(s, { itemId: "short_bow", level: 2, identified: true });
+    const spear = createItemInstance(s, { itemId: "spear", identified: true });
     expect(formatItemDetail(detailOf(s, armor), S).lines.map((l) => l.text)).toEqual(["防具　Lv6", "希少度 通常", "AC -4", "売値 100G"]); // floor(50 × 0.5 × 4) = 100
     expect(formatItemDetail(detailOf(s, staff), S).lines.map((l) => l.text)).toEqual(["武器　Lv0", "希少度 通常", "ダメージ 1d4", "魔法攻撃力 0", "売値 5G"]);
-    expect(formatItemDetail(detailOf(s, bow), S).lines.map((l) => l.text)).toEqual(["武器　Lv2", "希少度 通常", "ダメージ 1d6+1", "後列から届く", "売値 80G"]); // floor(80 × 0.5 × 2) = 80
+    expect(formatItemDetail(detailOf(s, bow), S).lines.map((l) => l.text)).toEqual(["武器　Lv2", "希少度 通常", "ダメージ 1d6+1", "飛び道具。後列から届く", "売値 80G"]); // floor(80 × 0.5 × 2) = 80
+    // IT-25: 長柄（reach long）
+    expect(formatItemDetail(detailOf(s, spear), S).lines.map((l) => l.text)).toEqual(["武器　Lv0", "希少度 通常", "ダメージ 1d6", "長柄。後列から届く", "売値 75G"]);
     // 上質・伝説の語（book.rarity.fine / legendary）
     const fine = createItemInstance(s, { itemId: "leather_armor", rarity: "fine", options: [{ optionId: "hit", tier: 1, value: 5 }], identified: true });
     const legend = createItemInstance(s, { itemId: "leather_armor", rarity: "legendary", identified: true });

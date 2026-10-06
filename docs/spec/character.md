@@ -76,7 +76,7 @@ M7 で、装備品の分類（汎用 / ユニーク）・実体の形・レベ�
 - CH-71 所持枠は 8（装備中を含む）【仮】。`Character.inventory` は装備中の品を含まない。使用枠 = 装備数 + inventory の数。
 - CH-72 未鑑定アイテムは `unidentifiedName` で表示され、装備できない（CH-76）。鑑定は司教（無料。CH-77）か店（有料）。M7: 表示は IT-12、店の鑑定は IT-65（鑑定料は見た目の品種の売値から決まる。2026-10-05）。未鑑定のままでも店で見た目の品種の売値で売れる（IT-61）。「装備できない」は items.md §11 の Q2【衝突】で代替案（未鑑定のまま装備できる）を諮っている。
 - CH-73 呪われたアイテムは装備すると外せない。寺院の解呪（TW-07）で外せる。呪いはアイテムの `cursed` で、未鑑定のうちは見えない（表示で呪いと示さないだけで、外せないことは鑑定と関係ない。CH-76）。M7: 呪いは実体の `cursed`（IT-10 / IT-32。ドロップの判定で付き、負のオプションを 1 つ持つ）で、`items[].cursed` は廃止する。
-- CH-74 後衛が攻撃できるのは `ranged: true` の武器を装備しているときだけ（CB-13）。M7: 固有スキル `reachFromBack`（IT-40）の品も同じ扱い。
+- CH-74 後衛が攻撃できるのは `reach` が `long` か `ranged`（IT-25。2026-10-06 に `ranged: true` から改めた）の武器を装備しているときだけ（CB-13）。M7: 固有スキル `reachFromBack`（IT-40）の品も同じ扱い。
 - CH-75 職業ごとの装備制限は `items[].classes`（空なら全職業可）。M7: 装備のベース `equipment-bases.json` の `classes`（ユニークはベースのものを引き継ぐ。IT-03）。
 - CH-76 装備の付け外し（M4.5）: `party.equip {memberId, instanceId}` / `party.unequip {memberId, slot}`。受け付けは街と、迷宮の戦闘外かつ保留なし。本人は行動可能（CH-44）であること。
   - `party.equip` の判定順: wrong screen → no such member → cannot act → item not in inventory（本人の inventory に無い。装備中の品も含まない）→ not equipment（`items[].type` が装備スロットでない）→ not identified（CH-72）→ class cannot equip（CH-75）→ slot cursed（その枠の今の品が `cursed`）。受け付けたら、inventory の新しい品の位置に旧品を入れ（旧品が無ければ取り除く）、枠に新しい品を入れる → `camp.equipped{name, item}`。新しい品が呪われていれば続けて `camp.cursed{item}`。所持枠（CH-71）と潜行台帳は変わらない。

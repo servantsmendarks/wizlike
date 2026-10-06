@@ -1,6 +1,6 @@
 // 戦闘の判定と式（combat.md CB-04/05/13/14/20〜23/26/30/42/50/53、CH-44/60）。
 // すべて純粋関数。乱数も RuleContext も使わない（乱数を使う手続きは rules/combat.ts）。
-import type { ClassDef, Config, ConsumableItem, GameData, Item, ItemEffect, Spell, SpellTarget, StatusId } from "../data/index";
+import type { ClassDef, Config, ConsumableItem, GameData, Item, ItemEffect, Spell, SpellTarget, StatusId, WeaponReach } from "../data/index";
 import { monsterOf, personalityOf, unknownKindOf } from "../state";
 import type { BattleState, Character, EnemyGroup, EnemyGroupView, EnemyUnit, GameState } from "../types";
 import { equipStats, type EquipStats } from "./equip-stats";
@@ -77,9 +77,9 @@ export function frontLineIds(state: GameState, data: GameData): string[] {
   return state.party.slice(n).map((c) => c.id);
 }
 
-/** CB-13/14: 前衛扱いなら近接攻撃可、後衛は ranged の武器（equipStats の ranged）のときだけ */
+/** CB-13/14: 前衛扱いなら攻撃可、後衛は reach が long / ranged の武器か reachFromBack の品（equipStats の backAttack）のときだけ */
 export function canStrike(state: GameState, data: GameData, ch: Character): boolean {
-  return frontLineIds(state, data).includes(ch.id) || equipStats(state, data, ch).ranged;
+  return frontLineIds(state, data).includes(ch.id) || equipStats(state, data, ch).backAttack;
 }
 
 /**
@@ -99,6 +99,17 @@ export function hitPercent(cfg: Config, level: number, targetAc: number, targetA
   const c = cfg.combat;
   const raw = c.hitBase + c.hitPerLevel * level + c.hitPerAC * targetAc + (targetAsleep ? c.sleepHitBonus : 0) + bonus;
   return clamp(raw, c.hitMin, c.hitMax);
+}
+
+/**
+ * CB-21 / CB-26【仮】: 味方の通常攻撃の命中率に足す、武器の reach による補正（hitPercent の bonus に入れる。clamp の内側）。
+ * - ranged: (自分の実効の agi − 相手の agi) × rangedHitAgiMul + (自分の実効の luk − rangedHitLukPivot)。飛行かどうかに関係なく常に
+ * - 相手が飛行なら flyingHit[reach]（melee −30 / long −15 / ranged 0）
+ */
+export function reachHitBonus(cfg: Config, reach: WeaponReach, flying: boolean, agi: number, luk: number, targetAgi: number): number {
+  const c = cfg.combat;
+  const ranged = reach === "ranged" ? (agi - targetAgi) * c.rangedHitAgiMul + (luk - c.rangedHitLukPivot) : 0;
+  return ranged + (flying ? c.flyingHit[reach] : 0);
 }
 
 /** CB-22: 力補正 floor((str − 10) / 2) */
@@ -201,25 +212,6 @@ export function firstAliveUnit(group: EnemyGroup): number | null {
 /** CB-42: 生存個体のあるグループのうち添字が最小のもの */
 export function lowestAliveGroup(b: BattleState): number | null {
   const i = b.groups.findIndex((g) => g.units.some(unitAlive));
-  return i === -1 ? null : i;
-}
-
-/** CB-26: グループ g の敵が飛行（monsters[].special.flying）か。範囲外は偽 */
-export function groupFlying(state: GameState, data: GameData, g: number): boolean {
-  const grp = state.battle?.groups[g];
-  return grp !== undefined && monsterOf(data, grp.monsterId).special.flying === true;
-}
-
-/** CB-26: 味方 ch の通常攻撃がグループ g に届くか（飛行でない、または実効の ranged。CB-13 と同じ値） */
-export function canReach(state: GameState, data: GameData, ch: Character, g: number): boolean {
-  return !groupFlying(state, data, g) || equipStats(state, data, ch).ranged;
-}
-
-/** CB-26 / CB-40: ch の通常攻撃が届く生存グループのうち添字が最小のもの。無ければ null */
-export function lowestReachableGroup(state: GameState, data: GameData, ch: Character): number | null {
-  const b = state.battle;
-  if (b === null) return null;
-  const i = b.groups.findIndex((grp, g) => grp.units.some(unitAlive) && canReach(state, data, ch, g));
   return i === -1 ? null : i;
 }
 

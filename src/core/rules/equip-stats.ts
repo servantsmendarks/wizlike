@@ -1,7 +1,7 @@
 // 実効の値（IT-34 / IT-35、CH-13 / CH-14、IT-20〜23、MG-33、CB-20〜22）。純粋。乱数も RuleContext も使わない。
 // 能力値・最大値・AC・武器・魔法攻撃力・オプションの加算を計算するのはこのファイルだけ。ルールはここから読む（表示層は計算しない。UI-35）。
 // 装備中の品は、鑑定の有無に関係なく効く（IT-34）。state.items に無い id（表示層が古い写しの Character を渡した場合など）は飛ばす。
-import type { EquipmentBase, GameData, SkillType, Spell, StatBlock, StatusId } from "../data/index";
+import type { EquipmentBase, GameData, SkillType, Spell, StatBlock, StatusId, WeaponBase, WeaponReach } from "../data/index";
 import { EQUIP_SLOTS, STAT_KEYS, STATUS_IDS } from "../data/index";
 import { findBase, moraleOf, optionOf, uniqueOf } from "../state";
 import type { Character, GameState, ItemInstance, RuleContext } from "../types";
@@ -40,8 +40,10 @@ export type EquipStats = {
   goldLuck: number;
   /** CB-30: 状態ごとのオプション statusResist の合計（%。付与の確率から引く） */
   statusResist: Record<StatusId, number>;
-  /** CB-13: 武器の ranged、または固有スキル reachFromBack（IT-40）の品を装備している */
-  ranged: boolean;
+  /** IT-25 / CB-21 / CB-26: 装備中の武器の reach（ユニークはベースの値。素手は melee） */
+  reach: WeaponReach;
+  /** CB-13: 武器の reach が long か ranged、または固有スキル reachFromBack（IT-40）の品を装備している（後衛から攻撃できる） */
+  backAttack: boolean;
   /** IT-40: 装備中のユニークの固有スキル（EQUIP_SLOTS の順。instanceId はその品の実体） */
   skills: EquipSkill[];
 };
@@ -50,13 +52,18 @@ export type EquipStats = {
  * IT-03 / IT-20〜23: 装備 1 つの性能（オプションを除く）。equipStats と品の詳細（rules/item-view.ts）が同じ式を使う。
  * - weapon: dice（ユニークはユニークの damage）、damageBonus（汎用の術者用でない武器の floor(Lv ÷ weaponLvPerDamage)。IT-20）、
  *   magicPower（汎用の術者用武器のベースの magicPower（省略は 0）+ floor(Lv ÷ casterLvPerPower)、ユニークはユニークの magicPower。IT-22）、
- *   ranged / caster はベースの値
+ *   reach（省略は melee。IT-25）/ caster はベースの値
  * - それ以外: ac（ユニークはユニークの ac、汎用はベースの ac − 装飾以外の floor(Lv ÷ armorLvPerAc)。IT-21 / IT-23）
  * ユニークはレベルの効果を持たない（IT-03）
  */
 export type ItemPower =
-  | { kind: "weapon"; dice: string; damageBonus: number; magicPower: number; ranged: boolean; caster: boolean }
+  | { kind: "weapon"; dice: string; damageBonus: number; magicPower: number; reach: WeaponReach; caster: boolean }
   | { kind: "armor"; ac: number };
+
+/** IT-25: 武器のベースの reach（省略は melee） */
+export function weaponReach(base: WeaponBase): WeaponReach {
+  return base.reach ?? "melee";
+}
 
 export function itemPower(data: GameData, inst: ItemInstance, base: EquipmentBase): ItemPower {
   const ic = data.config.items;
@@ -68,7 +75,7 @@ export function itemPower(data: GameData, inst: ItemInstance, base: EquipmentBas
       dice: uniq?.damage ?? base.damage,
       damageBonus: generic && !base.caster ? Math.floor(inst.level / ic.weaponLvPerDamage) : 0,
       magicPower: uniq !== null ? (uniq.magicPower ?? 0) : base.caster ? (base.magicPower ?? 0) + Math.floor(inst.level / ic.casterLvPerPower) : 0,
-      ranged: base.ranged,
+      reach: weaponReach(base),
       caster: base.caster,
     };
   }
@@ -93,7 +100,7 @@ export function equipStats(state: GameState, data: GameData, ch: Character): Equ
   let trapDetect = 0;
   let identifyRate = 0;
   let goldLuck = 0;
-  let ranged = false;
+  let reach: WeaponReach = "melee";
   const skills: EquipSkill[] = [];
   for (const slot of EQUIP_SLOTS) {
     const id = ch.equipment[slot];
@@ -105,7 +112,7 @@ export function equipStats(state: GameState, data: GameData, ch: Character): Equ
     const perf = itemPower(data, inst, base);
     if (perf.kind === "weapon") {
       weaponDice = perf.dice;
-      ranged = perf.ranged;
+      reach = perf.reach;
       magicPower += perf.magicPower;
       damageBonus += perf.damageBonus;
     } else {
@@ -178,7 +185,8 @@ export function equipStats(state: GameState, data: GameData, ch: Character): Equ
     identifyRate,
     goldLuck,
     statusResist,
-    ranged: ranged || skills.some((x) => x.type === "reachFromBack"), // CB-13 / IT-40
+    reach,
+    backAttack: reach !== "melee" || skills.some((x) => x.type === "reachFromBack"), // CB-13 / IT-40
     skills,
   };
 }

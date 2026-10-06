@@ -33,7 +33,7 @@ describe("UI-59/IT-11/IT-12 itemDetail（品の詳細）", () => {
       level: 5,
       rarity: "rare",
       unique: false,
-      power: { kind: "weapon", dice: "1d8", damageBonus: 2, magicPower: 0, ranged: false, caster: false },
+      power: { kind: "weapon", dice: "1d8", damageBonus: 2, magicPower: 0, reach: "melee", caster: false },
       options: [
         { name: "力", value: 2, unit: "", bad: false },
         { name: "AC", value: -1, unit: "", bad: false },
@@ -54,8 +54,8 @@ describe("UI-59/IT-11/IT-12 itemDetail（品の詳細）", () => {
     const bow = createItemInstance(s, { itemId: "short_bow", level: 3, identified: true });
     expect(itemDetail(s, data, armor)!.power).toEqual({ kind: "armor", ac: -4 }); // −2 − floor(6/3)
     expect(itemDetail(s, data, charm)!.power).toEqual({ kind: "armor", ac: 0 });
-    expect(itemDetail(s, data, staff)!.power).toEqual({ kind: "weapon", dice: "1d4", damageBonus: 0, magicPower: 2, ranged: false, caster: true });
-    expect(itemDetail(s, data, bow)!.power).toEqual({ kind: "weapon", dice: "1d6", damageBonus: 1, magicPower: 0, ranged: true, caster: false });
+    expect(itemDetail(s, data, staff)!.power).toEqual({ kind: "weapon", dice: "1d4", damageBonus: 0, magicPower: 2, reach: "melee", caster: true });
+    expect(itemDetail(s, data, bow)!.power).toEqual({ kind: "weapon", dice: "1d6", damageBonus: 1, magicPower: 0, reach: "ranged", caster: false });
     expect(itemDetail(s, data, armor)!.name).toBe("革鎧 +6");
     expect(itemDetail(s, data, armor)!.level).toBe(6);
   });
@@ -76,7 +76,7 @@ describe("UI-59/IT-11/IT-12 itemDetail（品の詳細）", () => {
       level: null,
       rarity: "fine",
       unique: true,
-      power: { kind: "weapon", dice: "1d6", damageBonus: 0, magicPower: 2, ranged: false, caster: true },
+      power: { kind: "weapon", dice: "1d6", damageBonus: 0, magicPower: 2, reach: "melee", caster: true },
       options: [{ name: "最大MP", value: 4, unit: "", bad: false }],
       skill: { type: "mpCostDown", value: 1 },
       cursed: false,

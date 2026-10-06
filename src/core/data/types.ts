@@ -166,6 +166,12 @@ export type Config = {
     autoInterrupt: { hpRatio: number };
     /** CB-44【仮】: 慎重（defendBelowHalf）のオートは hp < hpMax × この値で防御 */
     autoDefendHpRatio: number;
+    /** CB-26【仮】: 飛行の敵への味方の通常攻撃の命中率の補正（武器の reach ごと。clamp の内側に足す） */
+    flyingHit: Record<WeaponReach, number>;
+    /** CB-21【仮】: reach ranged の命中率に (自分の agi − 相手の agi) × この値 を足す */
+    rangedHitAgiMul: number;
+    /** CB-21【仮】: reach ranged の命中率に (自分の luk − この値) を足す */
+    rangedHitLukPivot: number;
   };
   san: {
     max: number;
@@ -339,7 +345,7 @@ export type Monster = {
   exp: number;
   gold: string;
   groupSize: string;
-  /** flying: CB-26（M9）。宙にいて、ranged でない味方の通常攻撃が届かない */
+  /** flying: CB-26（M9。2026-10-06 に改めた）。宙にいて、味方の通常攻撃の命中率に武器の reach ごとの補正（combat.flyingHit）が付く */
   special: { undead?: boolean; boss?: boolean; flying?: boolean };
   resist: Partial<Record<StatusId, boolean>>;
   tags: string[];
@@ -405,11 +411,16 @@ type EquipmentBaseCommon = {
   shopMinLevel: number;
 };
 
-/** 武器のベース。caster（術者用武器。IT-22）は ranged と両立しない */
+/** IT-25 / CB-13（2026-10-06）: 武器の届き方。melee 近接（既定）/ long 長柄（後衛から使える）/ ranged 飛び道具（後衛から使える） */
+export const WEAPON_REACHES = ["melee", "long", "ranged"] as const;
+export type WeaponReach = (typeof WEAPON_REACHES)[number];
+
+/** 武器のベース。caster（術者用武器。IT-22）の reach は melee だけ */
 export type WeaponBase = EquipmentBaseCommon & {
   slot: "weapon";
   damage: string;
-  ranged: boolean;
+  /** IT-25: 省略は melee（weaponReach） */
+  reach?: WeaponReach;
   caster: boolean;
   /** IT-22（M9）: 汎用の術者用武器のベースの魔法攻撃力（caster のときだけ書ける。省略は 0） */
   magicPower?: number;

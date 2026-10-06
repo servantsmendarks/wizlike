@@ -31,7 +31,7 @@ function chunks(text: string): string[] {
 
 /**
  * UI-59 / IT-11 / IT-12: 品の詳細の行。見出しは表示名。
- * 部位（と Lv）→（未鑑定なら「鑑定するまで分からない」と売値（見た目の品種の売値。IT-61）だけ）→ 希少度（装備だけ）→ 性能（ダメージ・魔法攻撃力・後列から届く / AC）→ オプション → 固有スキル → 呪い → 売値 → 説明
+ * 部位（と Lv）→（未鑑定なら「鑑定するまで分からない」と売値（見た目の品種の売値。IT-61）だけ）→ 希少度（装備だけ）→ 性能（ダメージ・魔法攻撃力・長柄 / 飛び道具の後列から届く / AC）→ オプション → 固有スキル → 呪い → 売値 → 説明
  */
 export function formatItemDetail(d: ItemDetail, strings: Strings): PanelLines {
   const line = (text: string, tone: PanelLine["tone"] = "normal"): PanelLine => ({ text, tone });
@@ -48,7 +48,7 @@ export function formatItemDetail(d: ItemDetail, strings: Strings): PanelLines {
   if (p !== null && p.kind === "weapon") {
     lines.push(line(p.damageBonus > 0 ? s(strings, "item.detail.damagePlus", { dice: p.dice, bonus: p.damageBonus }) : s(strings, "item.detail.damage", { dice: p.dice })));
     if (p.caster || p.magicPower > 0) lines.push(line(s(strings, "item.detail.magicPower", { value: p.magicPower })));
-    if (p.ranged) lines.push(line(s(strings, "item.detail.ranged")));
+    if (p.reach !== "melee") lines.push(line(s(strings, `item.detail.reach.${p.reach}`))); // IT-25: 長柄・飛び道具は後列から届く
   } else if (p !== null) {
     lines.push(line(s(strings, "item.detail.ac", { ac: p.ac })));
   }

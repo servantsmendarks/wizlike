@@ -148,11 +148,11 @@ describe("IT-20〜23 レベルの効果（equipStats）", () => {
     expect([equipStats(s2, data, member(s2, "c1")).weaponDice, equipStats(s2, data, member(s2, "c1")).damageBonus]).toEqual(["1d8", 0]);
   });
 
-  test("CB-22 素手（武器なし）のダイスは combat.unarmedDice、ranged は偽", () => {
+  test("CB-22/IT-25 素手（武器なし）のダイスは combat.unarmedDice、reach は melee で後衛からは打てない", () => {
     const s = newGame(1);
     bare(s, "c1");
     const es = equipStats(s, data, member(s, "c1"));
-    expect([es.weaponDice, es.ranged, es.acEquip]).toEqual([cfg.combat.unarmedDice, false, 0]);
+    expect([es.weaponDice, es.reach, es.backAttack, es.acEquip]).toEqual([cfg.combat.unarmedDice, "melee", false, 0]);
   });
 });
 
@@ -299,6 +299,15 @@ describe("CB-20 / CB-21 / IT-24 AC と命中", () => {
     expect(canStrike(s, data, member(s, "c4"))).toBe(false);
     equipNew(s, "c4", "weapon", { itemId: "short_bow", identified: true });
     expect(canStrike(s, data, member(s, "c4"))).toBe(true);
+  });
+
+  test("CB-13/IT-25 canStrike: 後衛は長柄（reach long の長槍・斧槍）でも打てる。reach は equipStats に出る", () => {
+    const s = withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }]);
+    for (const [itemId, reach] of [["spear", "long"], ["halberd", "long"], ["throwing_knives", "ranged"], ["dagger", "melee"]] as const) {
+      equipNew(s, "c4", "weapon", { itemId, identified: true });
+      const es = equipStats(s, data, member(s, "c4"));
+      expect([itemId, es.reach, es.backAttack, canStrike(s, data, member(s, "c4"))]).toEqual([itemId, reach, reach !== "melee", reach !== "melee"]);
+    }
   });
 });
 
@@ -668,7 +677,8 @@ describe("IT-40 固有スキル", () => {
     expect(canStrike(s, data, member(s, "c4"))).toBe(false);
     equipNew(s, "c4", "weapon", { itemId: "long_sword", uniqueId: "shadowfolk_sword", identified: true });
     expect(canStrike(s, data, member(s, "c4"))).toBe(true);
-    expect(equipStats(s, data, member(s, "c4")).ranged).toBe(true);
+    // reach はベース（長剣）の melee のまま（CB-21 / CB-26 の命中の補正は melee）。後衛から打てるのは backAttack
+    expect([equipStats(s, data, member(s, "c4")).reach, equipStats(s, data, member(s, "c4")).backAttack]).toEqual(["melee", true]);
   });
 
   test("CB-04/IT-40 initiativeUp: 行動可能な装備者がいれば先手判定の味方の行の base に +2（2 人いても最大の 2）。装備者が麻痺なら足さない。乱数は同じ", () => {

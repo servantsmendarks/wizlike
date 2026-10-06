@@ -275,7 +275,8 @@ describe("CB-43 autoInterruptReason", () => {
 });
 
 describe("CB-26 飛行とオートの対象", () => {
-  // twoGroups: 0 = 大ネズミ（全滅）、1 = コボルド ×2、2 = 大ネズミ ×1。アルド c1 は前衛の近接、フィン c6 は後衛の short_bow（ranged）
+  // twoGroups: 0 = 大ネズミ（全滅）、1 = コボルド ×2、2 = 大ネズミ ×1。アルド c1 は前衛の近接、フィン c6 は後衛の short_bow（reach ranged）
+  // 2026-10-06: 飛行の相手にも近接は届く（命中の補正だけ。CB-21）ので、オートは飛行を避けず、防御にも置き換えない
   const flying = (...ids: string[]) =>
     dataWith({}, (d) => {
       for (const m of d.monsters) if (ids.includes(m.id)) m.special.flying = true;
@@ -283,39 +284,35 @@ describe("CB-26 飛行とオートの対象", () => {
   const dK = flying("kobold");
   const dKR = flying("kobold", "giant_rat");
 
-  test("CB-26/CB-40 オートの既定の入力は届く最小の生存グループ、届くグループが無ければ防御", () => {
+  test("CB-26/CB-40 オートの既定の入力は飛行に関係なく最小の生存グループへの攻撃（飛行だけの相手でも防御にしない）", () => {
     const s = twoGroups();
-    expect(autoInput(s, dK, ch(s, "c1"))).toEqual({ type: "attack", group: 2 });
-    expect(autoInput(s, dK, ch(s, "c6"))).toEqual({ type: "attack", group: 1 }); // ranged は飛行にも届く
-    expect(autoInput(s, dKR, ch(s, "c1"))).toEqual({ type: "defend" });
+    expect(autoInput(s, dK, ch(s, "c1"))).toEqual({ type: "attack", group: 1 });
+    expect(autoInput(s, dK, ch(s, "c6"))).toEqual({ type: "attack", group: 1 });
+    expect(autoInput(s, dKR, ch(s, "c1"))).toEqual({ type: "attack", group: 1 });
     expect(autoInput(s, dKR, ch(s, "c6"))).toEqual({ type: "attack", group: 1 });
-    // 飛行の敵がいなければ今どおり
     expect(autoInput(s, data, ch(s, "c1"))).toEqual({ type: "attack", group: 1 });
   });
 
-  test("CB-26/CB-40 前回の攻撃のグループが届かなければ届く最小へ", () => {
+  test("CB-26/CB-40 前回の攻撃のグループが飛行でも生きていればそのまま", () => {
     let s = withLast(twoGroups(), 0, { type: "attack", group: 1 });
     s = withLast(s, 5, { type: "attack", group: 1 });
-    expect(autoInput(s, dK, ch(s, "c1"))).toEqual({ type: "attack", group: 2 });
-    expect(autoInput(s, dKR, ch(s, "c1"))).toEqual({ type: "defend" });
+    expect(autoInput(s, dK, ch(s, "c1"))).toEqual({ type: "attack", group: 1 });
+    expect(autoInput(s, dKR, ch(s, "c1"))).toEqual({ type: "attack", group: 1 });
     expect(autoInput(s, dKR, ch(s, "c6"))).toEqual({ type: "attack", group: 1 });
-    // 前回のグループが届けばそのまま
     const t = withLast(s, 0, { type: "attack", group: 2 });
-    expect(autoInput(t, dK, ch(t, "c1"))).toEqual({ type: "attack", group: 2 });
+    expect(autoInput(t, dKR, ch(t, "c1"))).toEqual({ type: "attack", group: 2 });
   });
 
-  test("CB-26/CB-41 MP 不足の置き換えも届くグループ", () => {
+  test("CB-26/CB-41 MP 不足の置き換えも飛行に関係なく最小の生存グループへの攻撃", () => {
     const fire: BattleAction = { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 1 } };
     const f = frontParalyzed(withChar(twoGroups(), 4, { mp: 1 })); // エルは前衛扱い
-    expect(toPlan(f, dK, ch(f, "c5"), fire)).toEqual({ kind: "attack", memberId: "c5", group: 2, noMp: true });
-    expect(toPlan(f, dKR, ch(f, "c5"), fire)).toEqual({ kind: "defend", memberId: "c5", why: "noMp" });
+    expect(toPlan(f, dK, ch(f, "c5"), fire)).toEqual({ kind: "attack", memberId: "c5", group: 1, noMp: true });
+    expect(toPlan(f, dKR, ch(f, "c5"), fire)).toEqual({ kind: "attack", memberId: "c5", group: 1, noMp: true });
   });
 
-  test("CB-26/CB-44 無鉄砲・強欲の傾向は届かない相手も狙う（変えない）", () => {
-    // 無鉄砲（キリ c3）: 基本の入力が防御（届くグループが無い）→ 最小の生存グループへの攻撃（飛行でも）
+  test("CB-26/CB-44 無鉄砲・強欲の傾向は今どおり（飛行も狙う）", () => {
     const r = withLast(twoGroups(), 2, { type: "defend" });
     expect(autoInput(r, dKR, ch(r, "c3"))).toEqual({ type: "attack", group: 1 });
-    // 強欲（アルドを強欲に）: 基本の入力は届くネズミ（2）だが、金の期待値が最大のコボルド（1。飛行）に変える
     const g = withChar(twoGroups(), 0, { personality: "greedy" });
     expect(autoInput(g, dK, ch(g, "c1"))).toEqual({ type: "attack", group: 1 });
   });

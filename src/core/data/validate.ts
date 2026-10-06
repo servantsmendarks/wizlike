@@ -52,6 +52,7 @@ import {
   TRAP_IDS,
   USABLE_IN,
   VALUELESS_SKILL_TYPES,
+  WEAPON_REACHES,
   type RawGameData,
 } from "./types";
 
@@ -305,6 +306,9 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       unarmedDice: D,
       autoInterrupt: F({ hpRatio: N(RATIO) }),
       autoDefendHpRatio: N(RATIO), // CB-44【仮】
+      flyingHit: F(Object.fromEntries(WEAPON_REACHES.map((k) => [k, I()]))), // CB-26【仮】
+      rangedHitAgiMul: I(), // CB-21【仮】
+      rangedHitLukPivot: I(), // CB-21【仮】
     }),
     san: F({
       max: I(POS_INT),
@@ -732,11 +736,16 @@ function validateEquipmentBases(ctx: Ctx, v: unknown, ix: Index): void {
     if (o === undefined) return undefined;
     const slot = oneOf(c, at(p, "slot"), o.slot, EQUIP_SLOTS);
     if (slot === undefined) return undefined;
-    // 武器は damage / ranged / caster を持ち ac を持たない。それ以外は ac を持ち damage / ranged / caster を持たない（CB-20 / CB-22）
+    // 武器は damage / caster と任意の reach を持ち ac を持たない。それ以外は ac を持ち damage / reach / caster を持たない（CB-20 / CB-22）
+    // IT-25（2026-10-06）: reach は melee / long / ranged、省略は melee。前の ranged の欄は未知の欄として止める
     // IT-22（M9）: 武器は任意の magicPower（0 以上）を持てるが、caster のときだけ
-    const spec = slot === "weapon" ? { ...common, damage: D, ranged: B, caster: B, magicPower: opt(I(NON_NEG)) } : { ...common, ac: I() };
+    const spec =
+      slot === "weapon"
+        ? { ...common, damage: D, reach: opt(E(WEAPON_REACHES)), caster: B, magicPower: opt(I(NON_NEG)) }
+        : { ...common, ac: I() };
     const f = fields(c, p, o, spec);
-    if (f !== undefined && f.caster === true && f.ranged === true) report(c, at(p, "caster"), "IT-22: a caster weapon cannot be ranged");
+    if (f !== undefined && f.caster === true && f.reach !== undefined && f.reach !== "melee")
+      report(c, at(p, "caster"), "IT-22: a caster weapon must be melee (reach)");
     if (f !== undefined && f.caster !== true && f.magicPower !== undefined)
       report(c, at(p, "magicPower"), "IT-22: magicPower is only for caster weapons");
     return f;

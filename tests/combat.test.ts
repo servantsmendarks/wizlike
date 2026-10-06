@@ -6,11 +6,11 @@ import { describe, expect, test } from "vitest";
 import type { GameData } from "../src/core/data";
 import { execute } from "../src/core/engine";
 import { chance, cloneRng, randInt, rollDice, rollDie, weightedIndex, type RngState } from "../src/core/rng";
-import { allyAc, canAct, statusPercent } from "../src/core/rules/combat-calc";
+import { allyAc, canAct, hitPercent, reachHitBonus, statusPercent } from "../src/core/rules/combat-calc";
 import { autoInput } from "../src/core/rules/combat-plan";
 import { battleMenu, beatSwitchForTests, startBattle, startRandomEncounter } from "../src/core/rules/combat";
 import { cloneState, createItemInstance, makeContext, memberById, monsterOf } from "../src/core/state";
-import type { BattleAction, Character, Command, GameEvent, GameState } from "../src/core/types";
+import type { BattleAction, Character, Command, GameEvent, GameState, ItemOptionRoll } from "../src/core/types";
 import {
   allInputs,
   ALWAYS_HIT,
@@ -20,6 +20,7 @@ import {
   exec,
   expectRejected,
   kindsOf,
+  NEVER_HIT,
   withBattle,
   withoutBeats,
   type BattleOpts,
@@ -2327,51 +2328,149 @@ describe("飛行（CB-26）", () => {
       inputs,
     });
 
-  test("CB-26 飛行: 前衛の近接（ranged でない）の攻撃は宣言の後に attack(hit false, damage 0) と battle.outOfReach{actor, target} で終わり、乱数を引かない（state.rng が鏡と同じ）", () => {
-    const d = flyData(ALWAYS_HIT);
-    for (let seed = 1; seed <= 6; seed++) {
-      // アルド Lv5 は 2 振り（CB-23）だが、届かなければ残りも振らない
-      const s = flyingRats(seed, { ...ONLY_C1, c1: { level: 5 } }, { c1: atk(0) });
-      const m = cloneRng(s.rng);
-      rolls(m, 1); // initiative はアルドだけ（麻痺のネズミは振らない）
-      const r = exec(s, RESOLVE, d);
-      expect(r.state.rng).toEqual(m);
-      expect(eventsOf(r.events, "attack")).toEqual([{ kind: "attack", actorId: "c1", targetId: "e0-0", hit: false, damage: 0 }]);
-      expect(r.events).toContainEqual({ kind: "message", key: "battle.outOfReach", params: { actor: "アルド", target: "大ネズミ" } });
-      expect(r.state.battle!.groups[0]!.units.map((u) => u.hp)).toEqual([50, 50]);
-      expectBeatShape(r.events);
-      expect(phasesOf(r.events)).toEqual([
-        ["declare", ["message:battle.attackDeclare"]],
-        ["result", ["attack", "message:battle.outOfReach"]],
-      ]);
+  /** 命中率がちょうど hitBase になる上書き（レベル・AC の項を 0 に。clamp は 5〜95 のまま） */
+  const HIT50 = { hitBase: 50, hitPerLevel: 0, hitPerAC: 0, hitMin: 5, hitMax: 95 };
+  type Opt = ItemOptionRoll;
+  /** id の武器を新しい品 itemId に替える（元の品は消す） */
+  const arm = (s: GameState, id: string, itemId: string, options: Opt[] = [], uniqueId?: string): void => {
+    const c = memberById(s, id)!;
+    const old = c.equipment.weapon;
+    if (old !== null) delete s.items[old];
+    c.equipment.weapon = createItemInstance(s, { itemId, identified: true, options, ...(uniqueId === undefined ? {} : { uniqueId }) });
+  };
+  /** 1 人だけが攻撃する戦闘を解決し、最初の振りの d100（鏡の rng。initiative は行動可能な actors 人の 1d10）と命中を返す */
+  const firstSwing = (s: GameState, d: GameData, actorId: string, actors = 1): { d100: number; hit: boolean } => {
+    const m = cloneRng(s.rng);
+    rolls(m, actors);
+    const d100 = randInt(m, 1, 100);
+    const r = exec(s, RESOLVE, d);
+    const a = eventsOf(r.events, "attack").filter((e) => e.actorId === actorId);
+    return { d100, hit: a[0]!.hit };
+  };
+  const SEEDS = Array.from({ length: 40 }, (_, i) => i + 1);
+
+  test("CB-26/CB-21 飛行: 近接（melee）は命中率 −30、長柄（long）は −15、飛び道具（ranged）は補正なし。前衛の近接も命中判定する（d100）", () => {
+    const d = flyData(HIT50);
+    // 補正の後の命中率。アルドの agi 9（大ネズミと同じ）・luk 10 にして、ranged の式の足し分を 0 にする
+    const cases: [string, number][] = [["long_sword", 20], ["spear", 35], ["short_bow", 50]];
+    for (const [itemId, pct] of cases) {
+      const d100s: number[] = [];
+      for (const seed of SEEDS) {
+        const s = flyingRats(seed, ONLY_C1, { c1: atk(0) });
+        Object.assign(memberById(s, "c1")!.stats, { agi: 9, luk: 10 });
+        arm(s, "c1", itemId);
+        const { d100, hit } = firstSwing(s, d, "c1");
+        expect(hit, `${itemId} seed ${seed} d100 ${d100}`).toBe(d100 <= pct);
+        d100s.push(d100);
+      }
+      // 補正の前（50%）と後で結果の分かれる出目がある
+      if (pct !== 50) expect(d100s.some((x) => x > pct && x <= 50), itemId).toBe(true);
     }
-    // 未鑑定なら target は系統の名前
-    const u = setup([{ monsterId: "giant_rat", hps: [50], status: [["paralysis"]] }], { patches: ONLY_C1, inputs: { c1: atk(0) } });
-    expect(exec(u, RESOLVE, d).events).toContainEqual({ kind: "message", key: "battle.outOfReach", params: { actor: "アルド", target: "何かの獣" } });
-    // 飛行でなければ今どおり命中判定（d100 を引く）
-    const plain = flyingRats(1, ONLY_C1, { c1: atk(0) });
-    const r0 = exec(plain, RESOLVE, dataWith({ combat: ALWAYS_HIT }));
-    expect(eventsOf(r0.events, "attack")[0]!.hit).toBe(true);
-    expect(kindsOf(r0.events)).not.toContain("message:battle.outOfReach");
+    // 飛行でなければ近接・長柄は補正なし（50%）
+    for (const itemId of ["long_sword", "spear"]) {
+      for (const seed of SEEDS) {
+        const s = flyingRats(seed, ONLY_C1, { c1: atk(0) });
+        arm(s, "c1", itemId);
+        const { d100, hit } = firstSwing(s, dataWith({ combat: HIT50 }), "c1");
+        expect(hit).toBe(d100 <= 50);
+      }
+    }
   });
 
-  test("CB-26 飛行: ranged の武器（短弓）の攻撃は今どおり命中判定する（d100 を引く）。reachFromBack の固有スキルも届く", () => {
-    const d = flyData(ALWAYS_HIT);
-    // フィン（後衛・short_bow）
-    const fin = flyingRats(1, { c1: PARA, c2: PARA, c3: PARA, c4: PARA, c5: PARA }, { c6: atk(0) });
-    const rf = exec(fin, RESOLVE, d);
-    expect(eventsOf(rf.events, "attack").map((e) => [e.actorId, e.hit])).toEqual([["c6", true]]);
-    expect(kindsOf(rf.events)).not.toContain("message:battle.outOfReach");
-    expect(rf.state.rng).not.toEqual(cloneRng(fin.rng));
-    // アルドに影法師の剣（reachFromBack）
-    const s = flyingRats(1, ONLY_C1, { c1: atk(0) });
-    const al = memberById(s, "c1")!;
-    const old = al.equipment.weapon;
-    if (old !== null) delete s.items[old];
-    al.equipment.weapon = createItemInstance(s, { itemId: "long_sword", uniqueId: "shadowfolk_sword", identified: true });
-    const ra = exec(s, RESOLVE, d);
-    expect(eventsOf(ra.events, "attack").map((e) => [e.actorId, e.hit])).toEqual([["c1", true]]);
-    expect(kindsOf(ra.events)).not.toContain("message:battle.outOfReach");
+  test("CB-26 飛行: 届かない相手は無い。外れても CB-23 の攻撃回数はすべて振り、当たればダメージを与える（battle.outOfReach の語りは無くなった）", () => {
+    // アルド Lv5 は 2 振り（CB-23）。必ず外れる設定でも d100 を 2 回引く
+    const s = flyingRats(1, { ...ONLY_C1, c1: { level: 5 } }, { c1: atk(0) });
+    const m = cloneRng(s.rng);
+    rolls(m, 1);
+    randInt(m, 1, 100);
+    randInt(m, 1, 100);
+    const r = exec(s, RESOLVE, flyData(NEVER_HIT));
+    expect(r.state.rng).toEqual(m);
+    expect(eventsOf(r.events, "attack").map((e) => [e.actorId, e.hit])).toEqual([["c1", false], ["c1", false]]);
+    expect(kindsOf(r.events)).toContain("message:battle.miss");
+    expect(data.strings["battle.outOfReach"]).toBeUndefined();
+    // 必中なら飛行の相手にも近接でダメージ
+    const r2 = exec(flyingRats(1, ONLY_C1, { c1: atk(0) }), RESOLVE, flyData(ALWAYS_HIT));
+    expect(eventsOf(r2.events, "attack")[0]!.hit).toBe(true);
+    expect(r2.state.battle!.groups[0]!.units[0]!.hp).toBeLessThan(50);
+    expectKnownStringKeys(r2.events, data);
+  });
+
+  test("CB-21 飛び道具（ranged）の命中: 飛行に関係なく (自分の agi − 相手の agi) × 2 + (自分の luk − 10) を足す。agi・luk は実効の値（オプションを含む）", () => {
+    // フィン（後衛・short_bow）だけが撃つ。大ネズミの agi は 9
+    const fin = (seed: number) => flyingRats(seed, { c1: PARA, c2: PARA, c3: PARA, c4: PARA, c5: PARA }, { c6: atk(0) });
+    const cases: { agi: number; luk: number; opts?: Opt[]; pct: number }[] = [
+      { agi: 12, luk: 13, pct: 59 }, // 50 + 3 × 2 + 3
+      { agi: 4, luk: 5, pct: 35 }, // 50 − 5 × 2 − 5
+      { agi: 9, luk: 10, pct: 50 },
+      { agi: 10, luk: 10, opts: [{ optionId: "agi", tier: 1, value: 2 }, { optionId: "luk", tier: 1, value: 3 }], pct: 59 }, // 実効の agi 12・luk 13
+    ];
+    for (const d of [dataWith({ combat: HIT50 }), flyData(HIT50)]) {
+      for (const c of cases) {
+        const d100s: number[] = [];
+        for (const seed of SEEDS) {
+          const s = fin(seed);
+          Object.assign(memberById(s, "c6")!.stats, { agi: c.agi, luk: c.luk });
+          arm(s, "c6", "short_bow", c.opts ?? []);
+          const { d100, hit } = firstSwing(s, d, "c6");
+          expect(hit, `agi ${c.agi} luk ${c.luk} seed ${seed} d100 ${d100}`).toBe(d100 <= c.pct);
+          d100s.push(d100);
+        }
+        if (c.pct !== 50) expect(d100s.some((x) => x > 50 !== x > c.pct)).toBe(true);
+      }
+    }
+    // 近接（アルドの長剣）は agi・luk が高くても足さない（50%）
+    for (const seed of SEEDS) {
+      const s = flyingRats(seed, ONLY_C1, { c1: atk(0) });
+      Object.assign(memberById(s, "c1")!.stats, { agi: 18, luk: 18 });
+      const { d100, hit } = firstSwing(s, dataWith({ combat: HIT50 }), "c1");
+      expect(hit).toBe(d100 <= 50);
+    }
+  });
+
+  test("CB-21/CB-26 reachHitBonus と clamp: 補正の後に hitMin〜hitMax で切る（飛行への近接でも 0 にはならず 5%）", () => {
+    const cfg = data.config;
+    expect([reachHitBonus(cfg, "melee", true, 9, 10, 9), reachHitBonus(cfg, "long", true, 9, 10, 9), reachHitBonus(cfg, "ranged", true, 9, 10, 9)]).toEqual([-30, -15, 0]);
+    expect([reachHitBonus(cfg, "melee", false, 18, 18, 1), reachHitBonus(cfg, "long", false, 18, 18, 1)]).toEqual([0, 0]);
+    expect(reachHitBonus(cfg, "ranged", false, 15, 12, 9)).toBe(14); // (15 − 9) × 2 + (12 − 10)
+    expect(reachHitBonus(cfg, "ranged", true, 3, 4, 13)).toBe(-26); // (3 − 13) × 2 + (4 − 10) + 0
+    // hitBase 20 + 5 × Lv1 + 4 × AC9 = 61。近接で飛行 −30 → 31、ranged で −26 → 35
+    expect(hitPercent(cfg, 1, 9, false, reachHitBonus(cfg, "melee", true, 9, 10, 9))).toBe(31);
+    expect(hitPercent(cfg, 1, 9, false, reachHitBonus(cfg, "ranged", true, 3, 4, 13))).toBe(35);
+    // AC 0 の飛行の相手: 25 − 30 = −5 → 5（hitMin）。0 にはしない
+    expect(hitPercent(cfg, 1, 0, false, reachHitBonus(cfg, "melee", true, 9, 10, 9))).toBe(5);
+    // 上側も clamp: 61 + (18 − 1) × 2 + 8 = 103 → 95
+    expect(hitPercent(cfg, 1, 9, false, reachHitBonus(cfg, "ranged", false, 18, 18, 1))).toBe(95);
+  });
+
+  test("CB-13 後衛は長柄（long）でも攻撃できる。近接（長剣）の後衛は今どおり防御（battle.backRowCannotAttack）", () => {
+    const d = dataWith({ combat: ALWAYS_HIT });
+    const donna = (itemId: string) => {
+      // アルドは行動可能で防御（前衛が残るので CB-14 で後衛が前衛扱いにならない）
+      const s = flyingRats(1, { c2: PARA, c3: PARA, c5: PARA, c6: PARA }, { c1: DEF, c4: atk(0) });
+      arm(s, "c4", itemId);
+      return exec(s, RESOLVE, d);
+    };
+    for (const itemId of ["spear", "halberd"]) {
+      const r = donna(itemId);
+      expect(eventsOf(r.events, "attack").map((e) => [e.actorId, e.hit]), itemId).toEqual([["c4", true]]);
+      expect(kindsOf(r.events)).not.toContain("message:battle.backRowCannotAttack");
+    }
+    const r = donna("long_sword");
+    expect(eventsOf(r.events, "attack")).toEqual([]);
+    expect(r.events).toContainEqual({ kind: "message", key: "battle.backRowCannotAttack", params: { actor: "ドナ" } });
+  });
+
+  test("CB-26/IT-40 reachFromBack（影法師の剣）は後衛から打てるが、命中の補正はベースの reach（melee）の −30", () => {
+    const d = flyData(HIT50);
+    for (const seed of SEEDS) {
+      // アルドは行動可能で防御（CB-14 で後衛が前衛扱いにならない）。アルドの防御は乱数を引かず、initiative は 2 人分
+      const s = flyingRats(seed, { c2: PARA, c3: PARA, c5: PARA, c6: PARA }, { c1: DEF, c4: atk(0) });
+      Object.assign(memberById(s, "c4")!.stats, { agi: 18, luk: 18 });
+      arm(s, "c4", "long_sword", [], "shadowfolk_sword");
+      const { d100, hit } = firstSwing(s, d, "c4", 2);
+      expect(hit).toBe(d100 <= 20);
+    }
   });
 
   test("CB-26 飛行: 呪文（火矢・炎裂）は飛行の敵に当たる", () => {
@@ -2381,7 +2480,6 @@ describe("飛行（CB-26）", () => {
         c5: { type: "cast", spellId, target: { side: "enemy", group: 0 } },
       });
       const r = exec(s, RESOLVE, d);
-      expect(kindsOf(r.events)).not.toContain("message:battle.outOfReach");
       expect(r.events.some((e) => e.kind === "hpChanged" && e.id === "e0-0" && e.delta < 0), spellId).toBe(true);
     }
   });
@@ -2417,7 +2515,6 @@ describe("飛行（CB-26）", () => {
         ["e0-1", expected[1]],
         ["e1-0", expected[2]],
       ]);
-      expect(kindsOf(r.events)).not.toContain("message:battle.outOfReach");
       expect(member(r.state, "c5").mp).toBe(8);
       expect(r.state.rng).toEqual(m);
       expectKnownStringKeys(r.events, d);

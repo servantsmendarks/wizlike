@@ -24,7 +24,9 @@
     "chestChance": 60, "chestChanceCorridor": 15, "chestTrapChance": 40, "chestGoldDice": "2d10",
     "unarmedDice": "1d2",
     "autoInterrupt": { "hpRatio": 0.3 },
-    "autoDefendHpRatio": 0.5
+    "autoDefendHpRatio": 0.5,
+    "flyingHit": { "melee": -30, "long": -15, "ranged": 0 },
+    "rangedHitAgiMul": 2, "rangedHitLukPivot": 10
   },
   "san": {
     "max": 100,
