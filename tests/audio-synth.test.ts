@@ -3,8 +3,21 @@ import { describe, expect, it } from "vitest";
 import wavetablesJson from "../data/wavetables.json";
 import type { Wavetables } from "../src/core/data/index";
 import type { SongData, ToneNote, NoiseNote } from "../src/build/asset-types";
-import { lfsrBits, renderSong, sampleAt, SAMPLE_RATE } from "../src/presenter/audio-synth";
-import { RENDER_REF } from "./helpers/render-ref";
+import {
+  lfsrBits,
+  nextSegment,
+  planSong,
+  renderSegment,
+  renderSong,
+  sampleAt,
+  SAMPLE_RATE,
+  segmentCount,
+  type SongPlan,
+} from "../src/presenter/audio-synth";
+import { checkSong } from "../src/build/music";
+import { parseSmf } from "../src/build/smf";
+import { data } from "./helpers/core";
+import { RENDER_REF, RENDER_REF_22050 } from "./helpers/render-ref";
 
 const wt = wavetablesJson as Wavetables;
 const B32 = "0123456789abcdefghijklmnopqrstuv";
@@ -174,5 +187,243 @@ describe("UI-63 工房の render.py との照合（python で実行して写し�
     }
     expect(sum).toBeCloseTo(RENDER_REF.mixSum, 3);
     expect(abs).toBeCloseTo(RENDER_REF.mixAbs, 3);
+  });
+});
+
+// ---- M9.5: 区間ごとの合成（planSong / renderSegment / nextSegment） ----
+
+const FS_MODULE = "node:fs";
+const fs = (await import(/* @vite-ignore */ FS_MODULE)) as { readFileSync(p: URL): Uint8Array };
+
+/** 本物の曲（assets/music の .mid をビルドと同じ checkSong に通したもの） */
+function realSong(name: string): SongData {
+  const bytes = new Uint8Array(fs.readFileSync(new URL(`../assets/music/${name}.mid`, import.meta.url)));
+  const r = checkSong(`assets/music/${name}.mid`, name, parseSmf(bytes), { wavetables: data.wavetables, audio: data.audio });
+  if (r.song === null || r.errors.length > 0) throw new Error(`${name}: ${JSON.stringify(r.errors)}`);
+  return r.song;
+}
+
+/** 区間を 0..n−1 の順につないだもの */
+function joined(plan: SongPlan): Float32Array {
+  const out = new Float32Array(plan.total);
+  let at = 0;
+  for (let i = 0; i < segmentCount(plan); i++) {
+    const seg = renderSegment(plan, i);
+    expect(seg.length).toBe((plan.bounds[i + 1] ?? 0) - (plan.bounds[i] ?? 0));
+    out.set(seg, at);
+    at += seg.length;
+  }
+  expect(at).toBe(plan.total);
+  return out;
+}
+
+/** 区間をつないだものと renderSong の不一致の数（長い列を toEqual で比べない。最初の不一致の添字をメッセージに） */
+function expectSame(s: SongData, rate: number): void {
+  const full = renderSong(s, wt, rate).samples;
+  const j = joined(planSong(s, wt, rate));
+  expect(j.length).toBe(full.length);
+  let count = 0;
+  let first = -1;
+  for (let i = 0; i < full.length; i++) {
+    if (full[i] !== j[i]) {
+      count++;
+      if (first < 0) first = i;
+    }
+  }
+  expect(count, `rate ${rate}: first mismatch at ${first}`).toBe(0);
+}
+
+const TOWN = realSong("town");
+const DUNGEON1 = realSong("dungeon1");
+
+describe("UI-63 小節: 区間の境界", () => {
+  it("UI-63 小節: 区間の境界は bounds[b] = sampleAt(b·barLen16)、最後は total、長さ 0 の区間は無い", () => {
+    for (const rate of [44100, 22050]) {
+      const s = song({ kind: "song", tempoUs: 789474, bars: 3, end16: 48, loop: { start16: 0, end16: 48 } });
+      const plan = planSong(s, wt, rate);
+      expect(plan.rate).toBe(rate);
+      expect(plan.total).toBe(sampleAt(48, 789474, rate));
+      expect(plan.bounds).toEqual([0, 1, 2, 3].map((b) => sampleAt(b * 16, 789474, rate)));
+      for (let i = 1; i < plan.bounds.length; i++) expect(plan.bounds[i]!).toBeGreaterThan(plan.bounds[i - 1]!);
+      expect(segmentCount(plan)).toBe(3);
+      expect(plan.loop).toEqual({ startSeg: 0, endSeg: 3 });
+    }
+  });
+
+  it("UI-63 小節: town の 1 区間の長さは 2 通り（端数を四捨五入で吸収し、誤差は積み上がらない）", () => {
+    const lensAt = (rate: number): number[] => {
+      const plan = planSong(TOWN, wt, rate);
+      expect(segmentCount(plan)).toBe(TOWN.bars);
+      // 頭から計算するので最後の境界は曲末のサンプル番号そのもの
+      expect(plan.bounds.at(-1)).toBe(sampleAt(TOWN.end16, TOWN.tempoUs, rate));
+      return [...new Set(plan.bounds.slice(1).map((b, i) => b - (plan.bounds[i] ?? 0)))].sort((x, y) => x - y);
+    };
+    expect(lensAt(44100)).toEqual([139263, 139264]);
+    const l22 = lensAt(22050);
+    expect(l22.length).toBe(2);
+    expect(l22[1]! - l22[0]!).toBe(1);
+  });
+});
+
+describe("UI-63 小節: 区間をつないだものは曲全体の合成と一致", () => {
+  it("UI-63 小節: 区間をつないだものは renderSong と一致（town / dungeon1 × 44100 / 22050）", () => {
+    for (const s of [TOWN, DUNGEON1]) for (const rate of [44100, 22050]) expectSame(s, rate);
+  });
+
+  it("UI-63 小節: 小節をまたぐ tone と noise の音符でも一致", () => {
+    // 789474μs は小節の頭が整数のサンプルにならないテンポ。小節の頭をまたぐ音符を全チャンネルに置く
+    const s = song({
+      kind: "song",
+      tempoUs: 789474,
+      bars: 3,
+      end16: 48,
+      loop: { start16: 0, end16: 48 },
+      waves: ["pulse25", "triangle", "saw"],
+      ch: [[[10, 12, 69, 15]], [[14, 20, 57, 9]], [[0, 48, 40, 6]], [[12, 8, "hat", 7], [28, 6, "openhat", 11]]],
+    });
+    for (const rate of [44100, 22050]) {
+      const plan = planSong(s, wt, rate);
+      // またいでいることの確かめ: 区間 0 の終わりと区間 1 の頭が 0 でない
+      const s0 = renderSegment(plan, 0);
+      const s1 = renderSegment(plan, 1);
+      expect(s0[s0.length - 1]).not.toBe(0);
+      expect(s1[0]).not.toBe(0);
+      expectSame(s, rate);
+    }
+  });
+
+  it("UI-63 小節: 波形の無いチャンネル・種類の無いノイズでも一致（鳴らさない）", () => {
+    const s = song({
+      bars: 2,
+      end16: 32,
+      waves: ["pulse50", "nosuchwave", "organ"],
+      ch: [[[0, 20, 60, 15]], [[0, 32, 60, 15]], [[4, 20, 72, 8]], [[0, 4, "nosuchkind", 15], [8, 18, "snare", 9]]],
+    });
+    for (const rate of [44100, 22050]) {
+      const plan = planSong(s, wt, rate);
+      expect(plan.voices[1]).toEqual([]);
+      expect(plan.voices[3]?.length).toBe(1);
+      expectSame(s, rate);
+    }
+  });
+
+  it("UI-63 小節: 次の音の頭で切った音・total を越える音でも一致（ビルドでは L11/L12 で止まる。合成器の防御）", () => {
+    const s = song({
+      bars: 2,
+      end16: 32,
+      ch: [[[0, 20, 69, 15], [6, 30, 72, 9]], [], [[10, 40, 48, 7]], [[2, 20, "kick", 15], [14, 30, "snare", 5]]],
+    });
+    for (const rate of [44100, 22050]) expectSame(s, rate);
+  });
+
+  it("UI-63 小節: 3/4・前奏あり（loop_start > 0）・loop_end < 曲末・ジングルでも一致", () => {
+    const notes: SongData["ch"] = [
+      [[0, 9, 64, 12], [11, 14, 67, 10], [30, 6, 71, 8]],
+      [[3, 30, 52, 7]],
+      [[0, 48, 40, 5]],
+      [[0, 1, "kick", 15], [12, 13, "snare", 8], [26, 1, "hat", 4], [27, 9, "openhat", 6]],
+    ];
+    const cases: SongData[] = [
+      song({ kind: "song", time: [3, 4], barLen16: 12, bars: 4, end16: 48, loop: { start16: 0, end16: 48 }, ch: notes }),
+      song({ kind: "song", bars: 3, end16: 48, loop: { start16: 16, end16: 48 }, ch: notes }),
+      song({ kind: "song", bars: 3, end16: 48, loop: { start16: 0, end16: 32 }, ch: notes }),
+      song({ kind: "jingle", tempoUs: 612245, bars: 3, end16: 48, ch: notes }),
+    ];
+    for (const s of cases) for (const rate of [44100, 22050]) expectSame(s, rate);
+    expect(planSong(cases[0]!, wt, 22050).bounds).toEqual([0, 12, 24, 36, 48].map((p) => sampleAt(p, 500000, 22050)));
+    expect(planSong(cases[1]!, wt, 22050).loop).toEqual({ startSeg: 1, endSeg: 3 });
+    expect(planSong(cases[2]!, wt, 22050).loop).toEqual({ startSeg: 0, endSeg: 2 });
+    expect(planSong(cases[3]!, wt, 22050).loop).toBeNull();
+  });
+
+  it("UI-63 小節: ループ点が小節の頭に無い曲でもループ点が区間の境界になる（ビルドでは L28 で止まる）", () => {
+    const s = song({
+      kind: "song",
+      bars: 3,
+      end16: 48,
+      loop: { start16: 6, end16: 40 },
+      ch: [[[0, 48, 60, 10]], [[5, 30, 64, 9]], [], [[4, 8, "snare", 9], [38, 6, "hat", 4]]],
+    });
+    for (const rate of [44100, 22050]) {
+      const plan = planSong(s, wt, rate);
+      expect(plan.bounds).toEqual([0, 6, 16, 32, 40, 48].map((p) => sampleAt(p, 500000, rate)));
+      expect(plan.loop).toEqual({ startSeg: 1, endSeg: 4 });
+      expectSame(s, rate);
+    }
+  });
+
+  it("UI-63 小節: nextSegment は前奏を 1 回、以後 startSeg..endSeg−1 を繰り返す。ジングルは最後で null", () => {
+    const walk = (plan: SongPlan, steps: number): (number | null)[] => {
+      const seq: (number | null)[] = [0];
+      let i: number | null = 0;
+      for (let k = 0; k < steps && i !== null; k++) {
+        i = nextSegment(plan, i);
+        seq.push(i);
+      }
+      return seq;
+    };
+    // 前奏 1 小節 + ループ 2 小節 + loop_end の後ろに 1 小節（鳴らさない）
+    const intro = planSong(song({ kind: "song", bars: 4, end16: 64, loop: { start16: 16, end16: 48 } }), wt, 22050);
+    expect(segmentCount(intro)).toBe(4);
+    expect(walk(intro, 7)).toEqual([0, 1, 2, 1, 2, 1, 2, 1]);
+    const whole = planSong(song({ kind: "song", bars: 3, end16: 48, loop: { start16: 0, end16: 48 } }), wt, 22050);
+    expect(walk(whole, 6)).toEqual([0, 1, 2, 0, 1, 2, 0]);
+    const jingle = planSong(song({ kind: "jingle", bars: 3, end16: 48 }), wt, 22050);
+    expect(walk(jingle, 6)).toEqual([0, 1, 2, null]);
+    expect(nextSegment(planSong(TOWN, wt, 22050), TOWN.bars - 1)).toBe(0);
+  });
+});
+
+describe("UI-63 22050: 工房の render.py（sr = 22050）との照合", () => {
+  it("UI-63 22050: render.py（22050）の値と一致（試験用の 1 小節と、本物の 2 曲の 16 区間の頭）", () => {
+    const R = RENDER_REF_22050;
+    expect([0, 1, 2, 3, 16, 17, 64].map((p) => sampleAt(p, 500000, 22050))).toEqual(R.t2s);
+    const mixSong = song({
+      waves: ["pulse50", "triangle", "organ"],
+      ch: [
+        [
+          [0, 4, 69, 15],
+          [6, 3, 72, 9],
+        ],
+        [[2, 4, 60, 8]],
+        [
+          [4, 4, 96, 12],
+          [8, 8, 36, 5],
+        ],
+        [
+          [0, 2, "snare", 10],
+          [4, 1, "kick", 15],
+          [12, 1, "hat", 3],
+        ],
+      ],
+    });
+    const mix = joined(planSong(mixSong, wt, 22050));
+    expect(mix.length).toBe(R.mixLen);
+    for (const [i, v] of R.mixAt) expect(mix[i]).toBe(Math.fround(v));
+    let sum = 0;
+    let abs = 0;
+    for (const x of mix) {
+      sum += x;
+      abs += Math.abs(x);
+    }
+    expect(sum).toBeCloseTo(R.mixSum, 3);
+    expect(abs).toBeCloseTo(R.mixAbs, 3);
+
+    for (const [name, s] of [
+      ["town", TOWN],
+      ["dungeon1", DUNGEON1],
+    ] as const) {
+      const ref = R.songs[name]!;
+      const plan = planSong(s, wt, 22050);
+      expect(plan.total).toBe(ref.len);
+      expect(plan.bounds).toEqual(ref.bounds);
+      expect(ref.heads.length).toBe(16);
+      for (let i = 0; i < ref.heads.length; i++) expect(renderSegment(plan, i)[0]).toBe(Math.fround(ref.heads[i]!));
+      const all = joined(plan);
+      for (const [i, v] of ref.at) expect(all[i]).toBe(Math.fround(v));
+      let a = 0;
+      for (const x of all) a += Math.abs(x);
+      expect(Math.abs(a - ref.mixAbs)).toBeLessThan(1e-3);
+    }
   });
 });
