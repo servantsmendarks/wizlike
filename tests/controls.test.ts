@@ -522,6 +522,15 @@ describe("UI-66 決定・取り消しの音", () => {
     c.select(0);
     expect(got).toEqual(["disabled", "disabled"]);
     expect(sounds).toEqual([]);
+    // UI-66（2026-10-06）: 項目の sound があればその音（施設に入る・キャンプを開く）。固定の戻るは cancel のまま
+    sounds.length = 0;
+    c.setList([{ label: "s0", onSelect: () => {}, sound: "facility" }, { label: "s1", onSelect: () => {}, sound: "camp" }, { label: "back", onSelect: () => {} }], {
+      fixedLast: true,
+    });
+    c.select(0);
+    c.select(1);
+    c.select(2);
+    expect(sounds).toEqual(["facility", "camp", "cancel"]);
     // 固定しない一覧の末尾は ok
     sounds.length = 0;
     c.setList([{ label: "a", onSelect: () => {} }, { label: "b", onSelect: () => {} }]);

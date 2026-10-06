@@ -471,6 +471,61 @@ describe("UI-41 演出スキップ", () => {
   });
 });
 
+describe("UI-63 / UI-65 / UI-66 音の対応の拡充（2026-10-06）", () => {
+  it("UI-63/UI-65 audio.json のすべての曲・ジングル・効果音・操作の音は、ファイルが無ければ無音で、例外も console.error / warn も出ない", async () => {
+    const err = vi.spyOn(console, "error");
+    const warn = vi.spyOn(console, "warn");
+    const f = setup({ music: {}, sfx: {} });
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    await flush();
+    for (const n of data.audio.music.songs) p.setSong(n);
+    for (const n of data.audio.music.jingles) p.playJingle(n);
+    for (const n of data.audio.sfx.names) p.playSfx(n);
+    for (const n of Object.values(data.audio.ui)) p.playSfx(n);
+    p.setSong(null);
+    await flush();
+    const c = f.contexts[0]!;
+    expect(c.sources.length).toBe(0);
+    expect(f.loads).toBe(0);
+    expect(err).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("UI-63 遭遇: encounter のジングルが鳴り終わってから戦闘の曲（soundsFor の順に setSong が来ても先に始めない）。ジングルが無ければすぐ戦闘の曲", () => {
+    const music: GameAssets["music"] = {
+      dungeon1: songData("dungeon1", "song", 2),
+      encounter: songData("encounter", "jingle", 1),
+      battle1: songData("battle1", "song", 3),
+    };
+    const lenOf = (n: string): number => sampleAt(music[n]!.end16, music[n]!.tempoUs);
+    const f = setup({ music });
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("dungeon1");
+    // soundsFor(encounter) の順: jingle encounter → song battle1
+    p.playJingle("encounter");
+    p.setSong("battle1");
+    expect(c.sources.map((x) => x.buffer?.length)).toEqual([lenOf("dungeon1"), lenOf("encounter")]);
+    expect(c.sources[0]!.stopped).toBe(1);
+    c.sources[1]!.end();
+    expect(c.sources.length).toBe(3);
+    expect(c.sources[2]!.buffer?.length).toBe(lenOf("battle1"));
+    expect(c.sources[2]!.loop).toBe(true);
+    // ジングルのファイルが無ければ、迷宮の曲を止めてすぐ戦闘の曲
+    const g = setup({ music: { dungeon1: music.dungeon1!, battle1: music.battle1! } });
+    const q = createAudioPlayer(g.deps);
+    q.unlock();
+    const d = g.contexts[0]!;
+    q.setSong("dungeon1");
+    q.playJingle("encounter");
+    q.setSong("battle1");
+    expect(d.sources.map((x) => x.buffer?.length)).toEqual([lenOf("dungeon1"), lenOf("battle1")]);
+    expect(d.sources[0]!.stopped).toBe(1);
+  });
+});
+
 /** source の buffer から曲名を引く（テストの曲は長さがすべて違う） */
 function nameOf(s: FakeSource): string {
   return Object.values(MUSIC).find((m) => sampleAt(m.end16, m.tempoUs) === s.buffer?.length)?.name ?? "?";

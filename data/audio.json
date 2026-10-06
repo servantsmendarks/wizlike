@@ -1,14 +1,23 @@
 {
   "music": {
-    "songs": ["title", "town", "dungeon", "battle", "boss"],
-    "jingles": ["victory", "levelup", "wipe", "inn"],
+    "songs": ["title", "town", "dungeon1", "dungeon2", "camp", "battle1", "battle2", "tavern", "shop", "temple", "dark", "boss"],
+    "jingles": ["encounter", "victory", "wipe", "levelup", "inn", "clear", "rare"],
     "noteRange": [36, 96]
   },
-  "sfx": { "names": ["ok", "cancel", "hit", "damage", "spell", "door", "stairs", "trap"] },
-  "screenSongs": { "title": "title", "town": "town", "dungeon": "dungeon", "battle": "battle" },
+  "sfx": {
+    "names": [
+      "ok", "cancel", "hit", "miss", "damage", "spell", "door", "stairs", "trap", "wall", "heal",
+      "chest", "gold", "dice", "death", "flee", "san", "identify", "upgrade_ok", "upgrade_fail", "teleport", "stop",
+      "learn", "ailment", "tent", "page"
+    ]
+  },
+  "screenSongs": { "title": "title", "town": "town", "dungeon": "dungeon1" },
+  "battleSongs": ["battle1", "battle2"],
   "bossSong": "boss",
+  "facilitySongs": { "tavern": "tavern", "shop": "shop", "temple": "temple", "dark": "dark" },
+  "campSong": "camp",
   "cues": [
-    { "event": "battleEnd", "result": "win", "jingle": "victory" },
+    { "event": "battleEnd", "result": "win", "boss": false, "jingle": "victory" },
     { "event": "levelUp", "jingle": "levelup" },
     { "event": "wipe", "jingle": "wipe" },
     { "event": "message", "key": "town.inn.stay", "jingle": "inn" },
@@ -19,7 +28,32 @@
     { "event": "floorChanged", "sfx": "stairs" },
     { "event": "message", "key": "dungeon.trap.pit", "sfx": "trap" },
     { "event": "message", "key": "dungeon.trap.spinner", "sfx": "trap" },
-    { "event": "message", "key": "dungeon.trap.teleport", "sfx": "trap" }
+    { "event": "message", "key": "dungeon.trap.teleport", "sfx": "trap" },
+    { "event": "encounter", "jingle": "encounter" },
+    { "event": "message", "key": "battle.bossDefeated", "jingle": "clear" },
+    { "event": "message", "key": "camp.identified", "rarity": "legendary", "jingle": "rare" },
+    { "event": "message", "key": "town.shop.identified", "rarity": "legendary", "jingle": "rare" },
+    { "event": "message", "key": "camp.identified", "sfx": "identify" },
+    { "event": "message", "key": "town.shop.identified", "sfx": "identify" },
+    { "event": "attack", "hit": false, "target": "enemy", "sfx": "miss" },
+    { "event": "blocked", "sfx": "wall" },
+    { "event": "battleEnd", "result": "flee", "sfx": "flee" },
+    { "event": "lifeChanged", "target": "party", "life": "dead", "sfx": "death" },
+    { "event": "message", "key": "battle.chest", "sfx": "chest" },
+    { "event": "message", "key": "town.shop.bought", "sfx": "gold" },
+    { "event": "message", "key": "town.shop.sold", "sfx": "gold" },
+    { "event": "message", "key": "town.shop.boughtBack", "sfx": "gold" },
+    { "event": "dice", "key": "dice.wipe", "sfx": "dice" },
+    { "event": "sanChanged", "target": "party", "loss": true, "sfx": "san" },
+    { "event": "statusChanged", "target": "party", "on": true, "sfx": "ailment" },
+    { "event": "spellLearned", "sfx": "learn" },
+    { "event": "message", "key": "dungeon.teleport", "sfx": "teleport" },
+    { "event": "message", "key": "town.upgrade.ok", "sfx": "upgrade_ok" },
+    { "event": "message", "key": "town.upgrade.great", "sfx": "upgrade_ok" },
+    { "event": "message", "key": "town.upgrade.ng", "sfx": "upgrade_fail" },
+    { "event": "message", "key": "event.stop.success", "sfx": "stop" },
+    { "event": "message", "key": "town.temple.cured", "sfx": "heal" },
+    { "event": "message", "key": "town.temple.resurrectOk", "sfx": "heal" }
   ],
-  "ui": { "ok": "ok", "cancel": "cancel" }
+  "ui": { "ok": "ok", "cancel": "cancel", "facility": "door", "camp": "tent", "talk": "page" }
 }

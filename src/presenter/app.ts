@@ -63,12 +63,22 @@ import { attachStageInput, onTap } from "./input/tap";
 import { dungeonLayout, layoutWarnings, regions, saveBannerRect, settingsLayout, townLayout } from "./layout";
 import { createPlayer } from "./playback";
 import type { AudioPlayer } from "./audio";
-import { songAt, soundsFor, type SoundOrder } from "./sound-cues";
+import {
+  campSong,
+  INITIAL_SOUND_CONTEXT,
+  nextSoundContext,
+  resumeSoundContext,
+  songAt,
+  soundsFor,
+  townSong,
+  type SoundContext,
+  type SoundOrder,
+} from "./sound-cues";
 import { resumePlan, routeOfScreen } from "./resume";
 import { createRunGate } from "./run-gate";
 import { defaultSettings, type SettingsStore } from "./settings";
 import type { StageLayout, StageLayoutInput } from "./stage";
-import type { ControlItem, DpadAction } from "./views/controls";
+import type { ControlItem, DpadAction, UiSound } from "./views/controls";
 import { createCreationScreen } from "./views/creation";
 import {
   createCustomCreationScreen,
@@ -226,21 +236,29 @@ export function createApp(o: {
   // ---------------------------------------------------------------- 音（UI-63 / UI-65 / UI-66。M8）
   /** 決定・取り消しの音を鳴らした回数（キーの back で二重に鳴らさないため） */
   let uiSounds = 0;
-  const playUi = (k: "ok" | "cancel"): void => {
+  const playUi = (k: UiSound): void => {
     uiSounds++;
     audio?.playSfx(data.audio.ui[k]);
   };
+  /** UI-63 / UI-66（2026-10-06）: 戦闘の曲の順とボス戦か（表示層だけの値。保存しない） */
+  let soundCtx: SoundContext = INITIAL_SOUND_CONTEXT;
+  /** UI-63: いまの場面の曲（迷宮のキャンプの曲を除く。キャンプを閉じたらこれに戻す） */
+  let sceneSongName: string | null = null;
+  const setScene = (name: string | null): void => {
+    sceneSongName = name;
+    audio?.setSong(name);
+  };
   const playOrder = (x: SoundOrder): void => {
     if (audio === null) return;
-    if (x.type === "song") audio.setSong(x.name);
+    if (x.type === "song") setScene(x.name);
     else if (x.type === "jingle") audio.playJingle(x.name);
     else audio.playSfx(x.name);
   };
-  /** UI-63 / SV-50: screen イベントの来ない場面（タイトル・続きから）の曲 */
-  const setSceneSong = (screen: Screen, monsterIds: readonly string[]): void => {
-    if (audio === null) return;
-    const name = songAt(screen, monsterIds, data);
-    if (name !== undefined) audio.setSong(name);
+  /** UI-63 / SV-50: screen イベントの来ない場面（タイトル・続きから）の曲と、音の状態（続きからの戦闘は 1 つ目の遭遇） */
+  const setSceneSong = (screen: Screen, monsterIds: readonly string[], dungeonId: string | null): void => {
+    soundCtx = resumeSoundContext(screen, monsterIds, data);
+    const name = songAt(screen, data, { monsterIds, dungeonId });
+    if (name !== undefined) setScene(name);
   };
 
   // ---------------------------------------------------------------- 画面
@@ -329,6 +347,8 @@ export function createApp(o: {
     onMapCell: (p) => guard(() => tapMapCell(p)),
     onMapGo: () => guard(() => goMapPick()),
     onSound: (k) => playUi(k),
+    // UI-66（2026-10-06）: 会話の箱の送り
+    talkAdvanced: () => playUi("talk"),
     // UI-60（M8）: public/sprites に実在する絵の一覧だけ読む（素材が無い間は空 = 矩形）
     sprites: o.assets?.sprites ?? {},
     // UI-61（M8.5）: public/town に実在する施設の絵の一覧だけ読む（素材が無い間は空 = 黒）
@@ -419,7 +439,8 @@ export function createApp(o: {
     eventStarted: () => play.controls.setMode("none"),
     // UI-66: 出来事と曲・効果音の対応（data/audio.json）。screen と encounter は場面の曲
     sound: (ev) => {
-      for (const x of soundsFor(ev, data)) playOrder(x);
+      for (const x of soundsFor(ev, data, soundCtx)) playOrder(x);
+      soundCtx = nextSoundContext(ev, data, soundCtx);
     },
   });
 
@@ -571,6 +592,8 @@ export function createApp(o: {
   };
   const townItem = (e: TownEntry): ControlItem => ({
     label: e.label,
+    // UI-66（2026-10-06）: 施設メニューから施設に入る行は ok の代わりに施設に入る音
+    ...(townPage === "menu" && e.kind === "page" ? { sound: "facility" as const } : {}),
     disabled: "disabled" in e ? e.disabled : false,
     // UI-52 / TW-11（M9）: 準備中の迷宮の dim の行を押したら、会話の箱に理由の 1 文（準備中かは core の notReady）
     ...notReadyReason(e),
@@ -711,6 +734,9 @@ export function createApp(o: {
       // UI-52 / UI-61（M8.5）: ヘッダーは場所と所持金、ビューは施設の絵
       play.header.setText(townHeader(menu, strings, townPage));
       play.setTownPicture(townFacility(townPage));
+      // UI-63（2026-10-06）: 施設の曲（無い施設と施設メニューは街の曲）
+      const song = townSong(townFacility(townPage), data);
+      if (song !== undefined) setScene(song);
       // UI-13: 見出し（段の問い。ログに残さない）と一覧。施設メニューも 6 行の一覧。UI-11: 末尾の戻るは一覧の外に固定する
       c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading: t(townHeading(townPage)) } });
       c.setMode("list");
@@ -739,7 +765,8 @@ export function createApp(o: {
       return;
     }
     // UI-53: [キャンプ][地図]
-    c.setMenu([listItem(t("dungeon.menu.camp"), () => openCamp("camp")), listItem(t("dungeon.menu.map"), () => openMap())]);
+    // UI-66（2026-10-06）: キャンプを開く項目は ok の代わりにキャンプの音
+    c.setMenu([{ ...listItem(t("dungeon.menu.camp"), () => openCamp("camp")), sound: "camp" }, listItem(t("dungeon.menu.map"), () => openMap())]);
     c.setDpadVisible(s.inputMode !== "swipe");
     c.setMode("dpad");
   };
@@ -921,7 +948,7 @@ export function createApp(o: {
     route = r;
     if (r === "title") enterTitle();
     // UI-63: タイトルと作成の画面は core の screen が title のまま（screen イベントは来ない）
-    if (r === "title" || r === "creation" || r === "custom") setSceneSong("title", []);
+    if (r === "title" || r === "creation" || r === "custom") setSceneSong("title", [], null);
     title.el.style.display = r === "title" ? "" : "none";
     creation.el.style.display = r === "creation" ? "" : "none";
     custom.el.style.display = r === "custom" ? "" : "none";
@@ -1381,7 +1408,7 @@ export function createApp(o: {
     play.penaltyTable.hide();
     showRoute(plan.route);
     // UI-63 / SV-50: 保存した画面の曲（最初の操作で AudioContext を作ったときに始まる）
-    setSceneSong(state.screen, state.battle?.groups.map((g) => g.monsterId) ?? []);
+    setSceneSong(state.screen, state.battle?.groups.map((g) => g.monsterId) ?? [], state.dive?.dungeonId ?? null);
     sync(state);
     const instant = true;
     for (const k of plan.prompts) void narrator.say(t(k), instant);
@@ -1606,6 +1633,8 @@ export function createApp(o: {
     // UI-13（M8.5）: 帯のタップはその人の状態から（やめるで元の街のページへ）
     if (memberId !== undefined && campPage.kind === "status") campPage = { kind: "status", memberId };
     play.showCamp(true);
+    // UI-63（2026-10-06）: 迷宮のキャンプの間はキャンプの曲（酒場のキャンプでは変えない）。場面の曲（sceneSongName）は変えない
+    if (host === "camp") audio?.setSong(campSong(data));
     syncControls();
   };
 
@@ -1615,6 +1644,8 @@ export function createApp(o: {
     overlay = null;
     campPage = { kind: "top" };
     play.showCamp(false);
+    // UI-63: 迷宮のキャンプを閉じたら場面の曲（迷宮の曲。キャンプの間に場面が変わっていればその曲）に戻す
+    if (campHost === "camp") audio?.setSong(sceneSongName);
     const d = state.dive;
     if (route === "town") {
       const menu = townMenu(state, data);

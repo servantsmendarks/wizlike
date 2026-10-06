@@ -524,6 +524,22 @@ describe("入力と Command", () => {
     expect(app).toContain("talkBlink: () => !store.get().skipAnimations,");
   });
 
+  test("UI-63/UI-66（2026-10-06）音の拡充の配線: 出来事の音は表示層だけの SoundContext を通す、街は施設の曲、迷宮のキャンプの間はキャンプの曲で閉じたら場面の曲、続きからは潜っているダンジョンの曲、施設に入る・キャンプを開く・会話の送りの音（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toMatch(/sound: \(ev\) => \{\s*for \(const x of soundsFor\(ev, data, soundCtx\)\) playOrder\(x\);\s*soundCtx = nextSoundContext\(ev, data, soundCtx\);\s*\},/);
+    expect(app).toMatch(/if \(x\.type === "song"\) setScene\(x\.name\);/);
+    expect(app).toMatch(/play\.setTownPicture\(townFacility\(townPage\)\);\s*const song = townSong\(townFacility\(townPage\), data\);\s*if \(song !== undefined\) setScene\(song\);/);
+    const open = /const openCamp = \([\s\S]*?\n {2}\};/.exec(app)?.[0] ?? "";
+    expect(open).toContain('if (host === "camp") audio?.setSong(campSong(data));');
+    const close = /const closeCamp = \([\s\S]*?\n {2}\};/.exec(app)?.[0] ?? "";
+    expect(close).toContain('if (campHost === "camp") audio?.setSong(sceneSongName);');
+    expect(app).toContain("setSceneSong(state.screen, state.battle?.groups.map((g) => g.monsterId) ?? [], state.dive?.dungeonId ?? null);");
+    expect(app).toMatch(/soundCtx = resumeSoundContext\(screen, monsterIds, data\);/);
+    expect(app).toContain('{ ...listItem(t("dungeon.menu.camp"), () => openCamp("camp")), sound: "camp" }');
+    expect(app).toContain('...(townPage === "menu" && e.kind === "page" ? { sound: "facility" as const } : {}),');
+    expect(app).toContain('talkAdvanced: () => playUi("talk"),');
+  });
+
   test("UI-52/TW-11（M9 実機 B2）準備中の迷宮の行（townEntries の notReady）を押すと、会話の箱を打ち切ってから理由の文を会話の箱に出す（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const item = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
@@ -574,7 +590,7 @@ describe("入力と Command", () => {
     // 判定の箱の下端は街だけ会話の箱の上
     const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
     expect(dungeon).toContain("dice.setBottom(town ? tl.diceBottom : DICE_BOX_BOTTOM);");
-    expect(dungeon).toContain("const talk = createTalkBox({ layout: tl.talk, speed: o.textSpeed, blink: o.talkBlink, log: (t) => message.log(t) });");
+    expect(dungeon).toContain("const talk = createTalkBox({ layout: tl.talk, speed: o.textSpeed, blink: o.talkBlink, log: (t) => message.log(t), advanced: () => o.talkAdvanced?.() });");
   });
 
   test("UI-54 戦闘中はヘッダーに 第{round+1}ターン を出す。遭遇の再生（onScreen battle）は 1、sync の戦闘は battleMenu.round + 1、battleEnd の後と迷宮・街の sync では隠す。lowerInput はターンを消さない（ソースの検査）", () => {

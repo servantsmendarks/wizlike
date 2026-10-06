@@ -521,14 +521,29 @@ describe("data: wavetables.json（UI-63。M8）", () => {
 
 describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
   const F = "audio.json";
-  test("data: UI-63 / UI-65 / UI-66 実データが通る（工房の project.json の名前の写し）", () => {
+  test("data: UI-63 / UI-65 / UI-66 実データが通る（工房の project.json の名前の写しと、ゲーム側が足した名前）", () => {
     const d = loadGameData(rawData());
-    expect(d.audio.music.songs).toEqual(["title", "town", "dungeon", "battle", "boss"]);
-    expect(d.audio.music.jingles).toEqual(["victory", "levelup", "wipe", "inn"]);
+    // 工房の project.json（2026-10-06）の 11 曲 + ボスの曲 boss（工房への提案）
+    expect(d.audio.music.songs).toEqual(["title", "town", "dungeon1", "dungeon2", "camp", "battle1", "battle2", "tavern", "shop", "temple", "dark", "boss"]);
+    expect(d.audio.music.jingles).toEqual(["encounter", "victory", "wipe", "levelup", "inn", "clear", "rare"]);
     expect(d.audio.music.noteRange).toEqual([36, 96]);
-    expect(d.audio.sfx.names).toEqual(["ok", "cancel", "hit", "damage", "spell", "door", "stairs", "trap"]);
+    // 工房の 22 + learn・ailment・tent・page（工房への提案）
+    expect(d.audio.sfx.names).toEqual([
+      "ok", "cancel", "hit", "miss", "damage", "spell", "door", "stairs", "trap", "wall", "heal",
+      "chest", "gold", "dice", "death", "flee", "san", "identify", "upgrade_ok", "upgrade_fail", "teleport", "stop",
+      "learn", "ailment", "tent", "page",
+    ]);
+    expect(d.audio.screenSongs).toEqual({ title: "title", town: "town", dungeon: "dungeon1" });
+    expect(d.audio.battleSongs).toEqual(["battle1", "battle2"]);
     expect(d.audio.bossSong).toBe("boss");
-    expect(d.audio.ui).toEqual({ ok: "ok", cancel: "cancel" });
+    expect(d.audio.facilitySongs).toEqual({ tavern: "tavern", shop: "shop", temple: "temple", dark: "dark" });
+    expect(d.audio.campSong).toBe("camp");
+    expect(d.audio.ui).toEqual({ ok: "ok", cancel: "cancel", facility: "door", camp: "tent", talk: "page" });
+    expect(d.dungeons.map((x) => [x.id, x.song])).toEqual([
+      ["d01", "dungeon1"],
+      ["d02", "dungeon2"],
+      ["d03", undefined],
+    ]);
   });
   test("data: UI-63 screenSongs のキーの一覧 AUDIO_SCREENS は core/types の Screen と同じ値", () => {
     const all: Record<Screen, true> = { title: true, town: true, dungeon: true, battle: true, event: true };
@@ -536,10 +551,10 @@ describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
     expect([...screens].sort()).toEqual(Object.keys(all).sort());
   });
   test("data: UI-63 songs と jingles は名前の配列で全体で重複しない", () => {
-    expectIssue((r) => r.audio.music.jingles.push("town"), F, 'music.jingles[4]: UI-63: duplicate name "town"');
-    expectIssue((r) => r.audio.music.songs.push("title"), F, 'music.songs[5]: UI-63: duplicate name "title"');
-    expectIssue((r) => r.audio.music.songs.push("Boss 2"), F, "music.songs[5]: UI-63: name must match");
-    expectIssue((r) => r.audio.sfx.names.push("ok"), F, 'sfx.names[8]: UI-65: duplicate name "ok"');
+    expectIssue((r) => r.audio.music.jingles.push("town"), F, 'music.jingles[7]: UI-63: duplicate name "town"');
+    expectIssue((r) => r.audio.music.songs.push("title"), F, 'music.songs[12]: UI-63: duplicate name "title"');
+    expectIssue((r) => r.audio.music.songs.push("Boss 2"), F, "music.songs[12]: UI-63: name must match");
+    expectIssue((r) => r.audio.sfx.names.push("ok"), F, 'sfx.names[26]: UI-65: duplicate name "ok"');
   });
   test("data: UI-63 noteRange は 0 <= lo <= hi <= 127 の整数", () => {
     expectIssue((r) => (r.audio.music.noteRange = [96, 36]), F, "music.noteRange: min 96 > max 36");
@@ -549,6 +564,24 @@ describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
     expectIssue((r) => (r.audio.screenSongs.town = "victory"), F, 'screenSongs.town: unknown song "victory"');
     expectIssue((r) => (r.audio.screenSongs.shop = "town"), F, "screenSongs.shop: unknown field");
     expectIssue((r) => (r.audio.bossSong = "inn"), F, 'bossSong: unknown song "inn"');
+  });
+  test("data: UI-63（2026-10-06）battleSongs は songs の 1 つ以上、screenSongs.battle は置けない、facilitySongs のキーは施設で値は songs、campSong も songs", () => {
+    expectIssue((r) => (r.audio.battleSongs = []), F, "battleSongs: expected at least 1");
+    expectIssue((r) => r.audio.battleSongs.push("victory"), F, 'battleSongs[2]: unknown song "victory"');
+    expectIssue((r) => delete r.audio.battleSongs, F, "battleSongs: missing required field");
+    expectIssue((r) => (r.audio.screenSongs.battle = "battle1"), F, "screenSongs.battle: UI-63: use battleSongs / bossSong for battle");
+    expectIssue((r) => (r.audio.facilitySongs.inn = "victory"), F, 'facilitySongs.inn: unknown song "victory"');
+    expectIssue((r) => (r.audio.facilitySongs.town = "town"), F, "facilitySongs.town: unknown field");
+    expectIssue((r) => delete r.audio.facilitySongs, F, "facilitySongs: missing required field");
+    expectIssue((r) => (r.audio.campSong = "rare"), F, 'campSong: unknown song "rare"');
+    expectIssue((r) => delete r.audio.campSong, F, "campSong: missing required field");
+    // 省略できる施設（inn・gate）と空の facilitySongs は通る
+    expect(issuesOf((r) => (r.audio.facilitySongs = {}))).toEqual([]);
+  });
+  test("data: UI-63（2026-10-06）dungeons[].song は任意で、audio.json の music.songs のどれか", () => {
+    expectIssue((r) => (r.dungeons[0].song = "dungeon9"), "dungeons.json", '[0].song: UI-63: unknown song "dungeon9"');
+    expectIssue((r) => (r.dungeons[0].song = "victory"), "dungeons.json", '[0].song: UI-63: unknown song "victory"');
+    expect(issuesOf((r) => delete r.dungeons[1].song)).toEqual([]);
   });
   test("data: UI-66 cue は sfx と jingle のちょうど一方（sfx は sfx.names、jingle は jingles）", () => {
     expectIssue((r) => (r.audio.cues[0].sfx = "hit"), F, "cues[0]: UI-66: exactly one of sfx / jingle");
@@ -560,17 +593,32 @@ describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
     expectIssue((r) => delete r.audio.cues[3].key, F, "cues[3].key: UI-66: required for event message");
     expectIssue((r) => (r.audio.cues[3].key = "town.inn.nope"), F, 'cues[3].key: unknown strings.json key "town.inn.nope"');
   });
-  test("data: UI-66 result・hit・target・loss・key は決まった event にだけ付けられる", () => {
+  test("data: UI-66 result・boss・hit・target・loss・key・rarity・status・on・life は決まった event にだけ付けられる", () => {
     expectIssue((r) => (r.audio.cues[4].result = "win"), F, "cues[4].result: UI-66: only for event battleEnd");
+    expectIssue((r) => (r.audio.cues[4].boss = true), F, "cues[4].boss: UI-66: only for event battleEnd");
     expectIssue((r) => (r.audio.cues[6].hit = true), F, "cues[6].hit: UI-66: only for event attack");
-    expectIssue((r) => (r.audio.cues[6].target = "enemy"), F, "cues[6].target: UI-66: only for event attack / hpChanged");
-    expectIssue((r) => (r.audio.cues[4].loss = true), F, "cues[4].loss: UI-66: only for event hpChanged");
-    expectIssue((r) => (r.audio.cues[6].key = "dungeon.door"), F, "cues[6].key: UI-66: only for event message");
+    expectIssue((r) => (r.audio.cues[6].target = "enemy"), F, "cues[6].target: UI-66: only for event attack / hpChanged / statusChanged / sanChanged / lifeChanged");
+    expectIssue((r) => (r.audio.cues[4].loss = true), F, "cues[4].loss: UI-66: only for event hpChanged / sanChanged");
+    expectIssue((r) => (r.audio.cues[6].key = "dungeon.door"), F, "cues[6].key: UI-66: only for event message / dice");
+    expectIssue((r) => (r.audio.cues[6].rarity = "legendary"), F, "cues[6].rarity: UI-66: only for event message");
+    expectIssue((r) => (r.audio.cues[6].status = "poison"), F, "cues[6].status: UI-66: only for event statusChanged");
+    expectIssue((r) => (r.audio.cues[6].on = true), F, "cues[6].on: UI-66: only for event statusChanged");
+    expectIssue((r) => (r.audio.cues[6].life = "dead"), F, "cues[6].life: UI-66: only for event lifeChanged");
+    expectIssue((r) => (r.audio.cues[3].rarity = "mythic"), F, "cues[3].rarity: expected one of normal|fine|rare|legendary");
+    expectIssue((r) => r.audio.cues.push({ event: "statusChanged", status: "cursed", sfx: "ailment" }), F, ".status: expected one of");
+    expectIssue((r) => r.audio.cues.push({ event: "lifeChanged", life: "lost", sfx: "death" }), F, ".life: expected one of alive|dead|ash");
+    // dice の key は任意（無ければすべての判定の箱）で、あれば strings.json のキー
+    expect(issuesOf((r) => r.audio.cues.push({ event: "dice", sfx: "dice" }))).toEqual([]);
+    expectIssue((r) => r.audio.cues.push({ event: "dice", key: "dice.nope", sfx: "dice" }), F, '.key: unknown strings.json key "dice.nope"');
     expectIssue((r) => (r.audio.cues[0].result = "draw"), F, "cues[0].result: expected one of win|flee|wipe");
     expectIssue((r) => (r.audio.cues[0].event = "moved"), F, "cues[0].event: expected one of");
   });
-  test("data: UI-65 ui.ok・ui.cancel は sfx.names のどれか、未知の欄は止める", () => {
+  test("data: UI-65 ui.ok・ui.cancel・ui.facility・ui.camp・ui.talk は sfx.names のどれか（必須）、未知の欄は止める", () => {
     expectIssue((r) => (r.audio.ui.ok = "beep"), F, 'ui.ok: unknown sfx "beep"');
+    for (const k of ["facility", "camp", "talk"]) {
+      expectIssue((r) => (r.audio.ui[k] = "beep"), F, `ui.${k}: unknown sfx "beep"`);
+      expectIssue((r) => delete r.audio.ui[k], F, `ui.${k}: missing required field`);
+    }
     expectIssue((r) => (r.audio.ui.back = "cancel"), F, "ui.back: unknown field");
     expectIssue((r) => (r.audio.loops = {}), F, "loops: unknown field");
     expectIssue((r) => (r.audio.cues[0].volume = 1), F, "cues[0].volume: unknown field");

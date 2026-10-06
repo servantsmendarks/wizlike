@@ -7,7 +7,7 @@
 // M8.5: 街の一覧（setList の town。UI-13）は、見出しと一覧を操作領域の外の townLayout の位置（帯の下。y178..387）に置く（負の top）。
 // Action から Command への変換と長押しの連打は呼び出し側（app）が持つ。表示層は前進できるかを判定しない（UI-35）。
 // モジュールのトップレベルでは DOM に触れない。
-import type { Strings } from "../../core/data/index";
+import type { AudioData, Strings } from "../../core/data/index";
 import { onTap } from "../input/tap";
 import type { DungeonLayout, Rect } from "../layout";
 
@@ -22,7 +22,12 @@ export type ControlItem = {
   onFocus?(): void;
   /** UI-52（M9）: disabled の項目を押したときだけ呼ぶ（理由の文を出すなど。音は鳴らさない） */
   onDisabled?(): void;
+  /** UI-66（2026-10-06）: 選んだときの音（audio.json の ui のキー）。省略は ok（固定の戻るは cancel） */
+  sound?: UiSound;
 };
+
+/** UI-66: 表示層の操作の音の種類（data/audio.json の ui のキー） */
+export type UiSound = keyof AudioData["ui"];
 /** 枠の配置（UI-54）。party は戦闘のパーティの選択の 4 枠、member はメンバーの 5 枠、camp はキャンプの 8 枠（UI-53） */
 export type BattleSlots = "party" | "member" | "camp";
 
@@ -132,7 +137,7 @@ export function createControls(o: {
    * UI-66（M8）: 決定・取り消しの音。disabled でない項目を選んだら ok、固定の戻る（listBack）と「閉じる」なら cancel。
    * 十字ボタン・地図の「移動」・オート解除では鳴らさない。省略すると無音
    */
-  onSound?(k: "ok" | "cancel"): void;
+  onSound?(k: UiSound): void;
 }): Controls {
   const s = (key: string): string => o.strings[key] ?? key;
   const origin = o.region;
@@ -317,7 +322,7 @@ export function createControls(o: {
       it.onDisabled?.();
       return;
     }
-    o.onSound?.(back ? "cancel" : "ok");
+    o.onSound?.(back ? "cancel" : (it.sound ?? "ok"));
     it.onSelect();
   };
   const dimIf = (b: HTMLElement, it: ControlItem): void => {

@@ -25,6 +25,8 @@ export type TalkSink = {
 
 export type TalkModelDeps = {
   sink: TalkSink;
+  /** UI-66（2026-10-06）: tap で次の文へ進んだ・箱を閉じたとき（送りの音）。文字送りの即表示では呼ばない */
+  advanced?(): void;
   /** UI-46: 全文の履歴に 1 行足す（メッセージ窓と同じ 1 本の配列） */
   log(text: string): void;
   /** 文字送りの 1 文字あたりの ms（settings.textSpeed）。0 以下なら即時 */
@@ -184,8 +186,19 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
       rush();
     },
     tap(): void {
-      if (rush()) return;
-      if (shown !== null) close();
+      if (job !== null) {
+        finish();
+        return;
+      }
+      if (waiting) {
+        d.advanced?.();
+        start();
+        return;
+      }
+      if (shown !== null) {
+        d.advanced?.();
+        close();
+      }
     },
     typing(): boolean {
       return job !== null;
@@ -211,7 +224,14 @@ const MORE_BLINK_MS = 600;
 export type TalkBox = TalkModel & { el: HTMLElement };
 
 /** UI-47: 会話の箱の DOM。layout は townLayout の talk（ステージ座標）。log はメッセージ窓の log（同じ 1 本の履歴） */
-export function createTalkBox(o: { layout: TownLayout["talk"]; speed(): number; blink(): boolean; log(text: string): void }): TalkBox {
+export function createTalkBox(o: {
+  layout: TownLayout["talk"];
+  speed(): number;
+  blink(): boolean;
+  log(text: string): void;
+  /** UI-66: 送りの音（TalkModelDeps の advanced） */
+  advanced?(): void;
+}): TalkBox {
   const r = o.layout.box;
   const t = o.layout.text;
   const mr = o.layout.more;
@@ -274,6 +294,7 @@ export function createTalkBox(o: { layout: TownLayout["talk"]; speed(): number; 
 
   let moreBlink: Animation | null = null;
   const model = createTalkModel({
+    ...(o.advanced !== undefined ? { advanced: o.advanced } : {}),
     log: o.log,
     speed: o.speed,
     blink: o.blink,

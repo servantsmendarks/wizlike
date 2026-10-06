@@ -24,12 +24,14 @@ import {
 } from "./check";
 import { diceRange, isDiceExpr, parseDice } from "../rng";
 import {
+  AUDIO_FACILITIES,
   AUDIO_SCREENS,
   AUTO_BATTLE_STYLES,
   CLASS_ABILITIES,
   CLASS_TIERS,
   CUE_EVENTS,
   CUE_RESULTS,
+  CUE_LIVES,
   CUE_TARGETS,
   CURABLE_STATUS_IDS,
   DATA_FILES,
@@ -165,6 +167,8 @@ type Index = {
   uniques: Map<string, Obj>;
   events: Map<string, Obj>;
   dungeons: Map<string, Obj>;
+  /** audio.json の music.songs（UI-63 のダンジョンごとの曲の照合。M8） */
+  songs: Set<string>;
   strings: Set<string>;
   /** strings.json の値（EV-34 / E3 の差し込みの検査に使う） */
   stringText: Map<string, string>;
@@ -208,6 +212,7 @@ function buildIndex(raw: RawGameData): Index {
     uniques: byId(raw.uniques),
     events: byId(raw.events),
     dungeons: byId(raw.dungeons),
+    songs: new Set(arrOf(get(raw.audio, "music", "songs")).filter((x): x is string => typeof x === "string")),
     strings,
     stringText,
     partySize: intOf(get(raw.config, "party", "size")),
@@ -1020,6 +1025,12 @@ function validateDungeons(ctx: Ctx, v: unknown, ix: Index): void {
       encounterTable: (c, p, x) => obj(c, p, x, null),
       groupCountWeights: (c, p, x) => obj(c, p, x, null),
       boss: F({ monster: refField(ix.monsters, "monster") }),
+      // UI-63（M8。2026-10-06）: 迷宮の曲。audio.json の music.songs のどれか
+      song: opt((c, p, x) => {
+        const s = str(c, p, x);
+        if (s !== undefined && !ix.songs.has(s)) report(c, p, `UI-63: unknown song ${JSON.stringify(s)}`);
+        return s;
+      }),
       events: L(refField(ix.events, "event")),
       traps: L((c, p, x) => {
         const t = oneOf(c, p, x, TRAP_IDS);
@@ -1360,7 +1371,7 @@ function audioNames(ctx: Ctx, p: string, v: unknown, seen: Set<string>, id: stri
 }
 
 function validateAudio(ctx: Ctx, v: unknown, ix: Index): void {
-  const o = obj(ctx, "", v, ["music", "sfx", "screenSongs", "bossSong", "cues", "ui"]);
+  const o = obj(ctx, "", v, ["music", "sfx", "screenSongs", "battleSongs", "bossSong", "facilitySongs", "campSong", "cues", "ui"]);
   if (o === undefined) return;
 
   const musicNames = new Set<string>();
@@ -1382,26 +1393,47 @@ function validateAudio(ctx: Ctx, v: unknown, ix: Index): void {
   };
 
   const screens = obj(ctx, "screenSongs", o.screenSongs, AUDIO_SCREENS);
-  if (screens) for (const k of AUDIO_SCREENS) if (screens[k] !== undefined) song(at("screenSongs", k), screens[k]);
+  if (screens) {
+    for (const k of AUDIO_SCREENS) if (screens[k] !== undefined) song(at("screenSongs", k), screens[k]);
+    // UI-63（2026-10-06）: 戦闘の曲は battleSongs / bossSong で決める（二重に持たない）
+    if (screens.battle !== undefined) report(ctx, at("screenSongs", "battle"), "UI-63: use battleSongs / bossSong for battle");
+  }
+  L((_c, p, x) => {
+    song(p, x);
+    return x;
+  }, 1)(ctx, "battleSongs", o.battleSongs);
   song("bossSong", o.bossSong);
+  const facilities = obj(ctx, "facilitySongs", o.facilitySongs, AUDIO_FACILITIES);
+  if (facilities) for (const k of AUDIO_FACILITIES) if (facilities[k] !== undefined) song(at("facilitySongs", k), facilities[k]);
+  song("campSong", o.campSong);
 
   // UI-66: 欄 → それを付けられる event
   const only: Record<string, readonly string[]> = {
-    key: ["message"],
+    key: ["message", "dice"],
+    rarity: ["message"],
     result: ["battleEnd"],
+    boss: ["battleEnd"],
     hit: ["attack"],
-    target: ["attack", "hpChanged"],
-    loss: ["hpChanged"],
+    target: ["attack", "hpChanged", "statusChanged", "sanChanged", "lifeChanged"],
+    loss: ["hpChanged", "sanChanged"],
+    status: ["statusChanged"],
+    on: ["statusChanged"],
+    life: ["lifeChanged"],
   };
   list(ctx, "cues", o.cues)?.forEach((cv, i) => {
     const p = at("cues", i);
     const c = fields(ctx, p, cv, {
       event: E(CUE_EVENTS),
       key: opt(S),
+      rarity: opt(E(RARITY_IDS)),
       result: opt(E(CUE_RESULTS)),
+      boss: opt(B),
       hit: opt(B),
       target: opt(E(CUE_TARGETS)),
       loss: opt(B),
+      status: opt(E(STATUS_IDS)),
+      on: opt(B),
+      life: opt(E(CUE_LIVES)),
       sfx: opt(S),
       jingle: opt(S),
     });
@@ -1419,11 +1451,8 @@ function validateAudio(ctx: Ctx, v: unknown, ix: Index): void {
     }
   });
 
-  const ui = obj(ctx, "ui", o.ui, ["ok", "cancel"]);
-  if (ui) {
-    sfxName("ui.ok", ui.ok);
-    sfxName("ui.cancel", ui.cancel);
-  }
+  const ui = obj(ctx, "ui", o.ui, ["ok", "cancel", "facility", "camp", "talk"]);
+  if (ui) for (const k of ["ok", "cancel", "facility", "camp", "talk"] as const) sfxName(at("ui", k), ui[k]);
 }
 
 // ---- 全体 ----

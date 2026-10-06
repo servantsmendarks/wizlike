@@ -52,6 +52,7 @@
   "encounterTable": { "1": [ { "monster": "giant_rat", "weight": 5 } ], "2": [ ... ] },  // 階ごとの出現表。出現する敵はこれだけで決まる（CB-03）
   "groupCountWeights": { "1": [80, 20, 0, 0], "2": [50, 35, 12, 3] },  // グループ数 1〜4 の重み【仮】
   "boss": { "monster": "gatekeeper_armor" },
+  "song": "dungeon1",                   // 任意。迷宮の曲（audio.json の music.songs）。省略時は screenSongs.dungeon（UI-63。M8 の拡充）
   "events": ["glowing_tablet", "abandoned_sack"],
   "traps": ["pit", "spinner"],
   "trapsPerFloor": [1, 3],

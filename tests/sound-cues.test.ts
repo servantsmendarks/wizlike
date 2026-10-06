@@ -1,17 +1,33 @@
-// UI-66 / UI-63: 出来事と曲・効果音の対応（src/presenter/sound-cues.ts。純粋）。data/audio.json の cues と screenSongs を使う。
+// UI-66 / UI-63: 出来事と曲・効果音の対応（src/presenter/sound-cues.ts。純粋）。data/audio.json の cues・screenSongs・battleSongs・
+// bossSong・facilitySongs・campSong と dungeons[].song を使う。
 import { describe, expect, it } from "vitest";
+import { AUDIO_FACILITIES } from "../src/core/data/index";
 import type { EnemyGroupView, GameEvent } from "../src/core/types";
-import { sceneSong, songAt, soundsFor } from "../src/presenter/sound-cues";
+import {
+  battleSong,
+  campSong,
+  dungeonSong,
+  INITIAL_SOUND_CONTEXT,
+  nextSoundContext,
+  resumeSoundContext,
+  sceneSong,
+  songAt,
+  soundsFor,
+  townSong,
+  type SoundContext,
+} from "../src/presenter/sound-cues";
+import { TOWN_PICTURE_IDS } from "../src/presenter/views/town-picture";
 import { data } from "./helpers/core";
 
 const group = (monsterId: string, index = 0): EnemyGroupView => ({ index, monsterId, name: monsterId, identified: true, count: 1 });
 const bossId = data.monsters.find((m) => m.special.boss === true)?.id ?? "";
 const normalId = data.monsters.find((m) => m.special.boss !== true)?.id ?? "";
+const BOSS_CTX: SoundContext = { boss: true, encounters: 0 };
 
 describe("UI-66 soundsFor", () => {
   const cases: [string, GameEvent, ReturnType<typeof soundsFor>][] = [
-    ["勝利で victory", { kind: "battleEnd", result: "win" }, [{ type: "jingle", name: "victory" }]],
-    ["逃走では鳴らない", { kind: "battleEnd", result: "flee" }, []],
+    ["勝利（ボスでない戦闘）で victory", { kind: "battleEnd", result: "win" }, [{ type: "jingle", name: "victory" }]],
+    ["逃走で flee", { kind: "battleEnd", result: "flee" }, [{ type: "sfx", name: "flee" }]],
     ["全滅の battleEnd では鳴らない（wipe で鳴る）", { kind: "battleEnd", result: "wipe" }, []],
     [
       "levelUp で levelup",
@@ -21,7 +37,7 @@ describe("UI-66 soundsFor", () => {
     ["wipe で wipe", { kind: "wipe", penalty: {} } as unknown as GameEvent, [{ type: "jingle", name: "wipe" }]],
     ["宿（town.inn.stay）で inn", { kind: "message", key: "town.inn.stay" }, [{ type: "jingle", name: "inn" }]],
     ["敵への命中で hit", { kind: "attack", actorId: "m1", targetId: "e0-1", hit: true, damage: 3 }, [{ type: "sfx", name: "hit" }]],
-    ["敵への外れは無し", { kind: "attack", actorId: "m1", targetId: "e0-1", hit: false, damage: 0 }, []],
+    ["敵への外れで miss", { kind: "attack", actorId: "m1", targetId: "e0-1", hit: false, damage: 0 }, [{ type: "sfx", name: "miss" }]],
     ["味方への攻撃は無し", { kind: "attack", actorId: "e0-0", targetId: "m1", hit: true, damage: 3 }, []],
     ["味方の hpChanged の減少で damage", { kind: "hpChanged", id: "m1", delta: -3, hp: 5 }, [{ type: "sfx", name: "damage" }]],
     ["味方の回復は無し", { kind: "hpChanged", id: "m1", delta: 3, hp: 8 }, []],
@@ -37,7 +53,62 @@ describe("UI-66 soundsFor", () => {
     ["回転床で trap", { kind: "message", key: "dungeon.trap.spinner" }, [{ type: "sfx", name: "trap" }]],
     ["転移で trap", { kind: "message", key: "dungeon.trap.teleport" }, [{ type: "sfx", name: "trap" }]],
     ["ほかの message は無し", { kind: "message", key: "town.inn.title" }, []],
-    ["blocked は無し", { kind: "blocked" }, []],
+    ["blocked（壁）で wall", { kind: "blocked" }, [{ type: "sfx", name: "wall" }]],
+    ["ボス撃破の語りで clear", { kind: "message", key: "battle.bossDefeated", params: { boss: "x" } }, [{ type: "jingle", name: "clear" }]],
+    [
+      "司教の鑑定で identify",
+      { kind: "message", key: "camp.identified", params: { name: "a", old: "b", item: "c", rarity: "rare" } },
+      [{ type: "sfx", name: "identify" }],
+    ],
+    [
+      "司教の鑑定で伝説の品なら rare と identify",
+      { kind: "message", key: "camp.identified", params: { name: "a", old: "b", item: "c", rarity: "legendary" } },
+      [
+        { type: "jingle", name: "rare" },
+        { type: "sfx", name: "identify" },
+      ],
+    ],
+    [
+      "店の鑑定で伝説の品なら rare と identify",
+      { kind: "message", key: "town.shop.identified", params: { name: "a", old: "b", item: "c", cost: 10, rarity: "legendary" } },
+      [
+        { type: "jingle", name: "rare" },
+        { type: "sfx", name: "identify" },
+      ],
+    ],
+    [
+      "店の鑑定で通常の品は identify だけ",
+      { kind: "message", key: "town.shop.identified", params: { name: "a", old: "b", item: "c", cost: 10, rarity: "normal" } },
+      [{ type: "sfx", name: "identify" }],
+    ],
+    ["宝箱で chest", { kind: "message", key: "battle.chest", params: { gold: 3 } }, [{ type: "sfx", name: "chest" }]],
+    ["買うで gold", { kind: "message", key: "town.shop.bought" }, [{ type: "sfx", name: "gold" }]],
+    ["売るで gold", { kind: "message", key: "town.shop.sold" }, [{ type: "sfx", name: "gold" }]],
+    ["買い戻すで gold", { kind: "message", key: "town.shop.boughtBack" }, [{ type: "sfx", name: "gold" }]],
+    [
+      "全滅の 2d10 で dice",
+      { kind: "dice", label: { key: "dice.wipe" }, rows: [], rule: { key: "x" }, result: { key: "y" } },
+      [{ type: "sfx", name: "dice" }],
+    ],
+    ["ほかの判定の箱は無し", { kind: "dice", label: { key: "dice.restrain" }, rows: [], rule: { key: "x" }, result: { key: "y" } }, []],
+    ["味方の SAN の減少で san", { kind: "sanChanged", id: "m1", delta: -3, san: 40 }, [{ type: "sfx", name: "san" }]],
+    ["SAN の回復は無し", { kind: "sanChanged", id: "m1", delta: 2, san: 42 }, []],
+    ["味方が毒を受けて ailment", { kind: "statusChanged", id: "m1", status: "poison", on: true }, [{ type: "sfx", name: "ailment" }]],
+    ["味方が麻痺を受けて ailment", { kind: "statusChanged", id: "m1", status: "paralysis", on: true }, [{ type: "sfx", name: "ailment" }]],
+    ["味方が眠って ailment", { kind: "statusChanged", id: "m1", status: "sleep", on: true }, [{ type: "sfx", name: "ailment" }]],
+    ["味方が石化して ailment", { kind: "statusChanged", id: "m1", status: "stone", on: true }, [{ type: "sfx", name: "ailment" }]],
+    ["状態が外れるのは無し", { kind: "statusChanged", id: "m1", status: "sleep", on: false }, []],
+    ["敵の状態は無し", { kind: "statusChanged", id: "e0-0", status: "sleep", on: true }, []],
+    ["味方の死亡で death", { kind: "lifeChanged", id: "m1", life: "dead" }, [{ type: "sfx", name: "death" }]],
+    ["敵の死亡は無し", { kind: "lifeChanged", id: "e0-0", life: "dead" }, []],
+    ["呪文の習得で learn", { kind: "spellLearned", id: "m1", spellId: "x", via: "roll" }, [{ type: "sfx", name: "learn" }]],
+    ["テレポーターで teleport", { kind: "message", key: "dungeon.teleport" }, [{ type: "sfx", name: "teleport" }]],
+    ["強化の成功で upgrade_ok", { kind: "message", key: "town.upgrade.ok" }, [{ type: "sfx", name: "upgrade_ok" }]],
+    ["強化の大成功で upgrade_ok", { kind: "message", key: "town.upgrade.great" }, [{ type: "sfx", name: "upgrade_ok" }]],
+    ["強化の失敗で upgrade_fail", { kind: "message", key: "town.upgrade.ng" }, [{ type: "sfx", name: "upgrade_fail" }]],
+    ["制止の成功で stop", { kind: "message", key: "event.stop.success" }, [{ type: "sfx", name: "stop" }]],
+    ["寺院の治療で heal", { kind: "message", key: "town.temple.cured" }, [{ type: "sfx", name: "heal" }]],
+    ["寺院の蘇生で heal", { kind: "message", key: "town.temple.resurrectOk" }, [{ type: "sfx", name: "heal" }]],
   ];
   for (const [name, ev, want] of cases) {
     it(`UI-66 soundsFor: ${name}`, () => {
@@ -45,21 +116,48 @@ describe("UI-66 soundsFor", () => {
     });
   }
 
-  it("UI-66 audio.json の罠の 3 キーは strings.json にある（core の dungeon.trap.<id>）", () => {
-    for (const k of ["dungeon.trap.pit", "dungeon.trap.spinner", "dungeon.trap.teleport", "dungeon.door", "town.inn.stay"]) {
-      expect(data.strings[k]).toBeTypeOf("string");
+  it("UI-66 audio.json の message と dice の cue のキーは strings.json にある", () => {
+    for (const c of data.audio.cues) if (c.key !== undefined) expect(data.strings[c.key], c.key).toBeTypeOf("string");
+  });
+
+  it("UI-66 ボス戦の勝利は victory を鳴らさない（clear はボス撃破の語りで鳴る）。逃走はボスかを問わない", () => {
+    expect(soundsFor({ kind: "battleEnd", result: "win" }, data, BOSS_CTX)).toEqual([]);
+    expect(soundsFor({ kind: "battleEnd", result: "win" }, data, INITIAL_SOUND_CONTEXT)).toEqual([{ type: "jingle", name: "victory" }]);
+    expect(soundsFor({ kind: "battleEnd", result: "flee" }, data, BOSS_CTX)).toEqual([{ type: "sfx", name: "flee" }]);
+  });
+
+  it("UI-63/UI-66 screen battle は何も求めない。encounter は encounter のジングルの後に戦闘の曲（battleSongs を遭遇の数で交互、ボスは bossSong）", () => {
+    expect(soundsFor({ kind: "screen", to: "battle" }, data)).toEqual([]);
+    const enc = (groups: EnemyGroupView[]): GameEvent => ({ kind: "encounter", groups });
+    const jingle = { type: "jingle", name: "encounter" };
+    expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 0 })).toEqual([jingle, { type: "song", name: "battle1" }]);
+    expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 1 })).toEqual([jingle, { type: "song", name: "battle2" }]);
+    expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 2 })).toEqual([jingle, { type: "song", name: "battle1" }]);
+    expect(soundsFor(enc([group(normalId), group(bossId, 1)]), data, { boss: false, encounters: 1 })).toEqual([jingle, { type: "song", name: "boss" }]);
+  });
+
+  it("UI-63 nextSoundContext: ボスのいない遭遇を数え、ボスかを覚える。ほかの出来事では変えない", () => {
+    const enc = (ids: string[]): GameEvent => ({ kind: "encounter", groups: ids.map((id, i) => group(id, i)) });
+    let ctx = INITIAL_SOUND_CONTEXT;
+    const songs: string[] = [];
+    for (const ids of [[normalId], [normalId], [bossId], [normalId]]) {
+      const song = soundsFor(enc(ids), data, ctx).find((x) => x.type === "song");
+      songs.push(song?.type === "song" ? (song.name ?? "") : "");
+      ctx = nextSoundContext(enc(ids), data, ctx);
+      expect(ctx.boss).toBe(ids.includes(bossId));
     }
+    // 交互（ボス戦は数えない）
+    expect(songs).toEqual(["battle1", "battle2", "boss", "battle1"]);
+    expect(ctx).toEqual({ boss: false, encounters: 3 });
+    expect(nextSoundContext({ kind: "battleEnd", result: "win" }, data, ctx)).toBe(ctx);
   });
 
-  it("UI-66 screen battle → battle、encounter にボス（special.boss）がいれば boss、いなければ battle", () => {
-    expect(soundsFor({ kind: "screen", to: "battle" }, data)).toEqual([{ type: "song", name: "battle" }]);
-    expect(soundsFor({ kind: "encounter", groups: [group(normalId), group(bossId, 1)] }, data)).toEqual([{ type: "song", name: "boss" }]);
-    expect(soundsFor({ kind: "encounter", groups: [group(normalId)] }, data)).toEqual([{ type: "song", name: "battle" }]);
-  });
-
-  it("UI-66 screen town / dungeon / title は場面の曲、event は何もしない（今の曲のまま）", () => {
+  it("UI-63 screen town / title は場面の曲、dungeon はダンジョンの song（無ければ screenSongs.dungeon）、event は何もしない（今の曲のまま）", () => {
     expect(soundsFor({ kind: "screen", to: "town" }, data)).toEqual([{ type: "song", name: "town" }]);
-    expect(soundsFor({ kind: "screen", to: "dungeon" }, data)).toEqual([{ type: "song", name: "dungeon" }]);
+    expect(soundsFor({ kind: "screen", to: "dungeon", dungeonId: "d01" }, data)).toEqual([{ type: "song", name: "dungeon1" }]);
+    expect(soundsFor({ kind: "screen", to: "dungeon", dungeonId: "d02" }, data)).toEqual([{ type: "song", name: "dungeon2" }]);
+    expect(soundsFor({ kind: "screen", to: "dungeon", dungeonId: "d03" }, data)).toEqual([{ type: "song", name: "dungeon1" }]);
+    expect(soundsFor({ kind: "screen", to: "dungeon" }, data)).toEqual([{ type: "song", name: "dungeon1" }]);
     expect(soundsFor({ kind: "screen", to: "title" }, data)).toEqual([{ type: "song", name: "title" }]);
     expect(soundsFor({ kind: "screen", to: "event" }, data)).toEqual([]);
   });
@@ -79,29 +177,63 @@ describe("UI-66 soundsFor", () => {
   });
 });
 
-describe("UI-63 sceneSong", () => {
-  it("UI-63 sceneSong: title/town/dungeon/battle は screenSongs、event は undefined、boss の敵がいれば bossSong", () => {
+describe("UI-63 sceneSong ほか", () => {
+  it("UI-63 sceneSong: title/town は screenSongs、dungeon はダンジョンの曲、battle は battleSongs（ボスは bossSong）、event は undefined", () => {
     expect(bossId).not.toBe("");
-    expect(sceneSong("title", [], data)).toBe("title");
-    expect(sceneSong("town", [], data)).toBe("town");
-    expect(sceneSong("dungeon", [], data)).toBe("dungeon");
-    expect(sceneSong("battle", [normalId], data)).toBe("battle");
-    expect(sceneSong("battle", [normalId, bossId], data)).toBe("boss");
-    expect(sceneSong("event", [], data)).toBeUndefined();
-    // battle 以外の画面ではボスを見ない
-    expect(sceneSong("dungeon", [bossId], data)).toBe("dungeon");
-    // 未知の monsterId は無視
-    expect(sceneSong("battle", ["no_such_monster"], data)).toBe("battle");
+    expect(sceneSong("title", data)).toBe("title");
+    expect(sceneSong("town", data)).toBe("town");
+    expect(sceneSong("dungeon", data)).toBe("dungeon1");
+    expect(sceneSong("dungeon", data, { dungeonId: "d02" })).toBe("dungeon2");
+    expect(sceneSong("battle", data, { monsterIds: [normalId] })).toBe("battle1");
+    expect(sceneSong("battle", data, { monsterIds: [normalId], battleIndex: 1 })).toBe("battle2");
+    expect(sceneSong("battle", data, { monsterIds: [normalId, bossId] })).toBe("boss");
+    expect(sceneSong("event", data)).toBeUndefined();
+    // battle 以外の画面ではボスを見ない。未知の monsterId は無視
+    expect(sceneSong("dungeon", data, { monsterIds: [bossId] })).toBe("dungeon1");
+    expect(sceneSong("battle", data, { monsterIds: ["no_such_monster"] })).toBe("battle1");
+  });
+
+  it("UI-63 battleSong / dungeonSong / townSong / campSong", () => {
+    expect(battleSong([normalId], 0, data)).toBe("battle1");
+    expect(battleSong([normalId], 3, data)).toBe("battle2");
+    expect(battleSong([bossId], 1, data)).toBe("boss");
+    expect(battleSong([normalId], 0, { ...data, audio: { ...data.audio, battleSongs: [] } })).toBeUndefined();
+    expect(dungeonSong("d01", data)).toBe("dungeon1");
+    expect(dungeonSong("d02", data)).toBe("dungeon2");
+    expect(dungeonSong("no_such", data)).toBe("dungeon1");
+    expect(dungeonSong(null, data)).toBe("dungeon1");
+    expect(townSong("town", data)).toBe("town");
+    expect(townSong("tavern", data)).toBe("tavern");
+    expect(townSong("shop", data)).toBe("shop");
+    expect(townSong("temple", data)).toBe("temple");
+    expect(townSong("dark", data)).toBe("dark");
+    // 宿屋は曲を持たない（宿のジングル inn だけ）。入口も街の曲
+    expect(townSong("inn", data)).toBe("town");
+    expect(townSong("gate", data)).toBe("town");
+    expect(campSong(data)).toBe("camp");
+  });
+
+  it("UI-63 AUDIO_FACILITIES は表示層の施設の id（townFacility。施設の絵の名前から town と title を除いたもの）と同じ", () => {
+    expect([...AUDIO_FACILITIES].sort()).toEqual(TOWN_PICTURE_IDS.filter((x) => x !== "town" && x !== "title").sort());
   });
 });
 
-describe("UI-63 / SV-50 songAt（screen イベントの来ない場面: 続きから・タイトル）", () => {
-  it("UI-63 songAt: 保存した画面の曲。event は迷宮の画面の上なので dungeon の曲、battle はボスを見る", () => {
-    expect(songAt("town", [], data)).toBe("town");
-    expect(songAt("dungeon", [], data)).toBe("dungeon");
-    expect(songAt("event", [], data)).toBe("dungeon");
-    expect(songAt("battle", [normalId], data)).toBe("battle");
-    expect(songAt("battle", [bossId], data)).toBe("boss");
-    expect(songAt("title", [], data)).toBe("title");
+describe("UI-63 / SV-50 songAt と resumeSoundContext（screen イベントの来ない場面: 続きから・タイトル）", () => {
+  it("UI-63 songAt: 保存した画面の曲。event は迷宮の画面の上なので迷宮の曲、battle は先頭の battle1（ボスは boss）", () => {
+    expect(songAt("town", data)).toBe("town");
+    expect(songAt("dungeon", data, { dungeonId: "d02" })).toBe("dungeon2");
+    expect(songAt("event", data, { dungeonId: "d02" })).toBe("dungeon2");
+    expect(songAt("event", data)).toBe("dungeon1");
+    expect(songAt("battle", data, { monsterIds: [normalId], battleIndex: 1 })).toBe("battle1");
+    expect(songAt("battle", data, { monsterIds: [bossId] })).toBe("boss");
+    expect(songAt("title", data)).toBe("title");
+  });
+
+  it("UI-63 resumeSoundContext: 戦闘中の続きからはその戦闘を 1 つ目の遭遇として数える（次は battle2）。ボス戦は数えずボスを覚える", () => {
+    expect(resumeSoundContext("battle", [normalId], data)).toEqual({ boss: false, encounters: 1 });
+    expect(resumeSoundContext("battle", [bossId], data)).toEqual({ boss: true, encounters: 0 });
+    expect(resumeSoundContext("dungeon", [], data)).toEqual(INITIAL_SOUND_CONTEXT);
+    const next = soundsFor({ kind: "encounter", groups: [group(normalId)] }, data, resumeSoundContext("battle", [normalId], data));
+    expect(next).toContainEqual({ type: "song", name: "battle2" });
   });
 });

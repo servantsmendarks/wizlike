@@ -70,18 +70,18 @@ describe("UI-63 / UI-65 / UI-60 collectAssets", () => {
         music: [
           { name: "town.mid", bytes: new Uint8Array([1, 2, 3]) },
           { name: "credits.mid", bytes: conformingSong() },
-          { name: "battle.mid", bytes: buildSong(p) },
-          { name: "dungeon.mid", bytes: conformingSong() },
+          { name: "battle1.mid", bytes: buildSong(p) },
+          { name: "dungeon1.mid", bytes: conformingSong() },
         ],
       },
       data,
     );
     expect(r.errors.map((e) => [e.file, e.id])).toEqual([
-      ["assets/music/battle.mid", "L01"],
+      ["assets/music/battle1.mid", "L01"],
       ["assets/music/credits.mid", "E01"],
       ["assets/music/town.mid", "E02"],
     ]);
-    expect(Object.keys(r.assets.music)).toEqual(["dungeon"]);
+    expect(Object.keys(r.assets.music)).toEqual(["dungeon1"]);
   });
   test("UI-65 collectAssets: 効果音の止めるもの（S01〜S09）はそのファイルを入れない", () => {
     const r = collectAssets({ ...EMPTY, sfx: [{ name: "door.json", text: "{" }, { name: "ok.json", text: '{ "name": "ok", "params": [] }' }] }, data);
@@ -172,7 +172,7 @@ describe("UI-63 / UI-65 / UI-60 collectAssets", () => {
     const files: AssetFiles = {
       music: [
         { name: "town.mid", bytes: conformingSong() },
-        { name: "battle.mid", bytes: conformingSong() },
+        { name: "battle1.mid", bytes: conformingSong() },
       ],
       sfx: [],
       sprites: [{ name: "b.png", bytes: png(48, 48) }, { name: "a.png", bytes: png(48, 48) }],

@@ -17,7 +17,7 @@ import type { Pos } from "../../core/types";
 import type { DungeonLayout, Regions, TownLayout } from "../layout";
 import { createBattleView, type BattleView } from "./battle";
 import { createCampView, type CampView } from "./camp";
-import { createControls, type Controls, type DpadAction } from "./controls";
+import { createControls, type Controls, type DpadAction, type UiSound } from "./controls";
 import { createDiceView, DICE_BOX_BOTTOM, type DiceView } from "./dice";
 import { createPenaltyTableView, type PenaltyTableView } from "./penalty-table";
 import { createDungeonSvg, type DungeonSvg } from "./dungeon-svg";
@@ -118,7 +118,9 @@ export function createDungeonScreen(o: {
   /** UI-25: 操作領域の地図の「移動」（選んでいるときだけ呼ぶ） */
   onMapGo?(): void;
   /** UI-66（M8）: 操作領域の決定・取り消しの音（controls の onSound） */
-  onSound?(k: "ok" | "cancel"): void;
+  onSound?(k: UiSound): void;
+  /** UI-66（2026-10-06）: 会話の箱の送り（次の文へ・閉じる）。即表示では呼ばない */
+  talkAdvanced?(): void;
   /** UI-60（M8）: public/sprites に実在する絵の一覧（GameAssets.sprites）。省略時は絵を読まない */
   sprites?: Readonly<Record<string, SpriteInfo>>;
   /** UI-61（M8.5）: public/town に実在する施設の絵の一覧（GameAssets.town）。省略時は黒 */
@@ -223,7 +225,7 @@ export function createDungeonScreen(o: {
   history.el.style.display = "none";
 
   // UI-47（M8.5）: 街の会話の箱。キャンプのパネルより上（酒場の呪文の結果が見える）、overlay より下。ログはメッセージ窓の 1 本の履歴
-  const talk = createTalkBox({ layout: tl.talk, speed: o.textSpeed, blink: o.talkBlink, log: (t) => message.log(t) });
+  const talk = createTalkBox({ layout: tl.talk, speed: o.textSpeed, blink: o.talkBlink, log: (t) => message.log(t), advanced: () => o.talkAdvanced?.() });
 
   el.append(viewBox, header.el, message.el, band.el, camp.el, talk.el, panel.el, controls.el, map.el, wipe.el, history.el);
 

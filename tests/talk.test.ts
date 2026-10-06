@@ -7,6 +7,8 @@ import { data } from "./helpers/core";
 /** 偽の表示先と手動のタイマー */
 function setup(o: { speed?: number; blink?: boolean } = {}) {
   const logs: string[] = [];
+  /** UI-66: 送りの音の回数 */
+  const adv = { n: 0 };
   const sink = { open: false, text: "", more: { on: false, blink: false } };
   const timers: { fn: () => void; ms: number; dead: boolean }[] = [];
   const s: TalkSink = {
@@ -21,6 +23,7 @@ function setup(o: { speed?: number; blink?: boolean } = {}) {
     },
   };
   const m = createTalkModel({
+    advanced: () => adv.n++,
     sink: s,
     log: (t) => logs.push(t),
     speed: () => o.speed ?? 0,
@@ -41,7 +44,7 @@ function setup(o: { speed?: number; blink?: boolean } = {}) {
     t.fn();
     return true;
   };
-  return { m, logs, sink, tick, timers };
+  return { m, logs, sink, tick, timers, adv };
 }
 
 /** Promise が解決済みかを調べる */
@@ -107,6 +110,31 @@ describe("UI-47 会話の箱（モデル）", () => {
     tick();
     expect(sink.text).toBe("えお");
     expect(await settled(p2)).toBe(true);
+  });
+
+  test("UI-66/UI-47（2026-10-06）送りの音（advanced）は tap で次の文へ進んだときと箱を閉じたときだけ。文字送りの即表示・rush・flush では鳴らさない", async () => {
+    const { m, tick, adv } = setup({ speed: 30 });
+    void m.say("あいう", false);
+    m.tap(); // 即表示
+    expect(adv.n).toBe(0);
+    void m.say("えお", false);
+    m.tap(); // 次の文へ
+    expect(adv.n).toBe(1);
+    tick();
+    tick();
+    void m.say("かきく", false);
+    m.rush(); // rush は鳴らさない
+    expect(adv.n).toBe(1);
+    m.tap(); // 文字送り中の即表示
+    expect(adv.n).toBe(1);
+    m.tap(); // 閉じる
+    expect(adv.n).toBe(2);
+    expect(m.isOpen()).toBe(false);
+    m.tap(); // 閉じている箱のタップは何もしない
+    expect(adv.n).toBe(2);
+    void m.say("き", true);
+    m.flush();
+    expect(adv.n).toBe(2);
   });
 
   test("UI-47/UI-41 skip（instant）は文字送りだけ省き、タップ待ちは残る。演出スキップの ▼ は点滅しない", async () => {

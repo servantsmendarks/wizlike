@@ -577,6 +577,8 @@ export type DungeonDef = {
   /** キーは階番号の文字列。要素 i はグループ数 i+1 の重み */
   groupCountWeights: Record<string, number[]>;
   boss: { monster: string };
+  /** UI-63（M8。2026-10-06）: このダンジョンの迷宮の曲（audio.json の music.songs）。省略は audio.json の screenSongs.dungeon */
+  song?: string;
   events: string[];
   traps: TrapId[];
   trapsPerFloor: [number, number];
@@ -687,46 +689,86 @@ export type Wavetables = {
 
 // ---- audio.json（UI-63 / UI-65 / UI-66。M8） ----
 
-/** 場面の曲を持てる画面（core/types の Screen と同じ値） */
+/** 場面の曲を持てる画面（core/types の Screen と同じ値）。battle は screenSongs に置かず battleSongs / bossSong で決める（2026-10-06） */
 export const AUDIO_SCREENS = ["title", "town", "dungeon", "battle", "event"] as const;
 export type AudioScreen = (typeof AUDIO_SCREENS)[number];
 
-/** 音の契機にできる GameEvent の kind（UI-66） */
-export const CUE_EVENTS = ["message", "attack", "hpChanged", "spell", "floorChanged", "battleEnd", "levelUp", "wipe"] as const;
+/**
+ * UI-63（2026-10-06）: 施設ごとの曲を持てる街の施設（表示層の townFacility の id から town を除いたもの。
+ * data に施設の一覧が無いので、ここに写す。表示層の値と同じことをテストで確かめる）
+ */
+export const AUDIO_FACILITIES = ["tavern", "inn", "temple", "dark", "gate", "shop"] as const;
+export type AudioFacility = (typeof AUDIO_FACILITIES)[number];
+
+/** 音の契機にできる GameEvent の kind（UI-66。encounter 以降は 2026-10-06 に足した） */
+export const CUE_EVENTS = [
+  "message",
+  "attack",
+  "hpChanged",
+  "spell",
+  "floorChanged",
+  "battleEnd",
+  "levelUp",
+  "wipe",
+  "encounter",
+  "blocked",
+  "statusChanged",
+  "sanChanged",
+  "lifeChanged",
+  "dice",
+  "spellLearned",
+] as const;
 export type CueEvent = (typeof CUE_EVENTS)[number];
 
 export const CUE_RESULTS = ["win", "flee", "wipe"] as const;
 export const CUE_TARGETS = ["enemy", "party"] as const;
+export const CUE_LIVES = ["alive", "dead", "ash"] as const;
 
 export type SoundCue = {
   event: CueEvent;
-  /** event "message" のときだけ（必須）。strings.json のキー */
+  /** event "message"（必須。strings.json のキー）と "dice"（任意。label のキー）のときだけ */
   key?: string;
+  /** event "message" のときだけ。params.rarity（鑑定の語りの品の希少度）がこれのときだけ */
+  rarity?: RarityDef["id"];
   /** event "battleEnd" のときだけ */
   result?: (typeof CUE_RESULTS)[number];
+  /** event "battleEnd" のときだけ。真ならボス戦の終わり、偽ならボス戦でない戦闘の終わりだけ（ボスかは直前の encounter で表示層が覚える） */
+  boss?: boolean;
   /** event "attack" のときだけ。命中したか */
   hit?: boolean;
-  /** event "attack"（targetId）・"hpChanged"（id）のときだけ。enemy = 敵の id（"e{g}-{u}"）、party = それ以外 */
+  /** event "attack"（targetId）・"hpChanged" / "statusChanged" / "sanChanged" / "lifeChanged"（id）のときだけ。enemy = 敵の id（"e{g}-{u}"）、party = それ以外 */
   target?: (typeof CUE_TARGETS)[number];
-  /** event "hpChanged" のときだけ。true なら delta < 0 のときだけ */
+  /** event "hpChanged" / "sanChanged" のときだけ。真なら delta < 0、偽なら delta > 0 のときだけ */
   loss?: boolean;
+  /** event "statusChanged" のときだけ。その状態のときだけ */
+  status?: StatusId;
+  /** event "statusChanged" のときだけ。真なら付いたとき、偽なら外れたときだけ */
+  on?: boolean;
+  /** event "lifeChanged" のときだけ */
+  life?: (typeof CUE_LIVES)[number];
   /** sfx と jingle のどちらか一方だけ */
   sfx?: string;
   jingle?: string;
 };
 
 export type AudioData = {
-  /** 工房の project.json の music.songs（ループする曲）・jingles（ジングル）・noteRange（ch1〜ch3 の音域）の写し */
+  /** 工房の project.json の music.songs（ループする曲）・jingles（ジングル）・noteRange（ch1〜ch3 の音域）の写し（ゲーム側が先に足した名前は工房への提案。decisions） */
   music: { songs: string[]; jingles: string[]; noteRange: [number, number] };
-  /** 工房の project.json の sfx.names の写し */
+  /** 工房の project.json の sfx.names の写し（同上） */
   sfx: { names: string[] };
-  /** 画面 → ループする曲。無い画面（event）は今の曲のまま */
+  /** 画面 → ループする曲。無い画面（event）は今の曲のまま。battle は置かない（battleSongs / bossSong）。dungeon はダンジョンに song が無いときの曲 */
   screenSongs: Partial<Record<AudioScreen, string>>;
-  /** 戦闘の敵に special.boss の敵がいるときの曲（battle の代わり） */
+  /** 戦闘の曲。ボスのいない遭遇ごとに先頭から順に（交互）。続きからの戦闘は先頭（1 つ以上） */
+  battleSongs: string[];
+  /** 戦闘の敵に special.boss の敵がいるときの曲（battleSongs の代わり） */
   bossSong: string;
+  /** 街の施設のページ → 曲。無い施設（と施設メニュー）は screenSongs.town */
+  facilitySongs: Partial<Record<AudioFacility, string>>;
+  /** 迷宮のキャンプを開いている間の曲（閉じたら迷宮の曲に戻る。酒場のキャンプでは変えない） */
+  campSong: string;
   cues: SoundCue[];
-  /** 表示層の操作の効果音（決定・取り消し） */
-  ui: { ok: string; cancel: string };
+  /** 表示層の操作の効果音（決定・取り消し・施設に入る・迷宮のキャンプを開く・会話の箱の送り） */
+  ui: { ok: string; cancel: string; facility: string; camp: string; talk: string };
 };
 
 // ---- 全体 ----

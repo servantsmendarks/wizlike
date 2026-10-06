@@ -119,10 +119,10 @@ describe("UI-64 vite.config.ts のプラグイン wizlike-assets", () => {
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
     const bad = songParts();
     bad.format = 0;
-    const root = makeRoot({ "assets/music/town.mid": new Uint8Array([1, 2, 3]), "assets/music/battle.mid": buildSong(bad) });
-    expect(() => p.configResolved({ root })).toThrow(/wizlike-assets: 2 error\(s\)[\s\S]*assets\/music\/battle\.mid: UI-64\/L01 /);
+    const root = makeRoot({ "assets/music/town.mid": new Uint8Array([1, 2, 3]), "assets/music/battle1.mid": buildSong(bad) });
+    expect(() => p.configResolved({ root })).toThrow(/wizlike-assets: 2 error\(s\)[\s\S]*assets\/music\/battle1.mid: UI-64\/L01 /);
     const out = err.mock.calls.map((c) => String(c[0])).join("\n");
-    expect(out).toContain("assets/music/battle.mid: UI-64/L01 SMF format must be 1, got 0");
+    expect(out).toContain("assets/music/battle1.mid: UI-64/L01 SMF format must be 1, got 0");
     expect(out).toMatch(/assets\/music\/town\.mid: UI-64\/E02 /);
   });
 
