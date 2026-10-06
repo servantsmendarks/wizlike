@@ -665,6 +665,9 @@ function validateUnknownKinds(ctx: Ctx, v: unknown): void {
   uniqueIds(ctx, "", a);
   // UI-60: 絵は public/sprites/unknown_<id>.png
   a.forEach((k, i) => {
+    // CB-05 / UI-54（M9）: 名前は全角 8 字以内（戦闘のラベルの 2 行に収まる）
+    const name = strOf(get(k, "name"));
+    if (name !== undefined && [...name].length > 8) report(ctx, at(at("", i), "name"), "CB-05: name must be at most 8 characters");
     const id = strOf(get(k, "id"));
     const sprite = strOf(get(k, "sprite"));
     if (id !== undefined && sprite !== undefined && sprite !== `unknown_${id}`)

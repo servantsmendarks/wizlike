@@ -14,6 +14,10 @@ export const PALETTE = {
   orange: "#FCA044",
   sky: "#3CBCFC",
   yellow: "#F8B800",
+  /** UI-60（M9）: 未鑑定の系統 winged の矩形。工房の fc54 にある色 */
+  violet: "#9878F8",
+  /** UI-60（M9）: 未鑑定の系統 ooze の矩形。工房の fc54 にある色 */
+  teal: "#008888",
 } as const;
 
 export type PaletteName = keyof typeof PALETTE;

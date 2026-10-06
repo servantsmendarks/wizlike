@@ -698,13 +698,15 @@ describe("data: monsters.json", () => {
 
 describe("data: unknown-kinds.json（CB-05 / UI-60。M7）", () => {
   const F = "unknown-kinds.json";
-  test("data: CB-05/UI-60 実データは 4 系統（beast / humanoid / spirit / construct）、sprite は unknown_<id>、色は系統ごとに別", () => {
+  test("data: CB-05/UI-60 実データは 6 系統（beast / humanoid / spirit / construct / winged / ooze）、sprite は unknown_<id>、色は系統ごとに別", () => {
     const d = loadGameData(rawData());
     expect(d.unknownKinds.map((k) => [k.id, k.name, k.sprite])).toEqual([
       ["beast", "何かの獣", "unknown_beast"],
       ["humanoid", "人の形をした影", "unknown_humanoid"],
       ["spirit", "声だけの何か", "unknown_spirit"],
       ["construct", "動く何か", "unknown_construct"],
+      ["winged", "羽ばたく何か", "unknown_winged"],
+      ["ooze", "ぬめる何か", "unknown_ooze"],
     ]);
     expect(new Set(d.unknownKinds.map((k) => k.placeholderColor)).size).toBe(d.unknownKinds.length);
     // UI-54: 名前は全角 8 字以内（ラベルの 2 行に収まる。battle-view.test.ts で幅を確かめる）
@@ -718,6 +720,15 @@ describe("data: unknown-kinds.json（CB-05 / UI-60。M7）", () => {
     expectIssue((r) => (r.unknownKinds[3].id = "beast"), F, "duplicate");
     expectIssue((r) => (r.unknownKinds = []), F, "expected at least 1");
     expectIssue((r) => (r.unknownKinds[0].foo = 1), F, "[0].foo: unknown field");
+  });
+  test("data: CB-05 unknown-kinds の name は 8 字以内、winged / ooze の色は violet / teal（M9）", () => {
+    expectIssue((r) => (r.unknownKinds[0].name = "なにかとてもおおきい獣"), F, "[0].name: CB-05: name must be at most 8 characters");
+    expect(issuesOf((r) => (r.unknownKinds[0].name = "八文字ちょうど獣")).filter((s) => s.startsWith(F))).toEqual([]);
+    const d = loadGameData(rawData());
+    expect(d.unknownKinds.filter((k) => k.id === "winged" || k.id === "ooze").map((k) => [k.id, k.placeholderColor])).toEqual([
+      ["winged", "violet"],
+      ["ooze", "teal"],
+    ]);
   });
 });
 

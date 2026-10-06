@@ -26,7 +26,7 @@ export type LureWeights = Record<LureTag, number>;
 export const SPELL_TARGETS = ["enemy", "enemyGroup", "allEnemies", "ally", "party", "self", "none"] as const;
 export type SpellTarget = (typeof SPELL_TARGETS)[number];
 
-export const PLACEHOLDER_COLORS = ["white", "gray", "dim", "lightGreen", "darkGreen", "red", "orange", "sky", "yellow"] as const;
+export const PLACEHOLDER_COLORS = ["white", "gray", "dim", "lightGreen", "darkGreen", "red", "orange", "sky", "yellow", "violet", "teal"] as const;
 export type PlaceholderColor = (typeof PLACEHOLDER_COLORS)[number];
 
 export const PERSONALITY_IDS = ["cautious", "reckless", "greedy", "normal"] as const;
