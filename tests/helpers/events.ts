@@ -2,7 +2,8 @@
 import type { GameData, OutcomeQuality } from "../../src/core/data/index";
 import { dungeonOf, eventOf } from "../../src/core/state";
 import type { Floor, GameState } from "../../src/core/types";
-import { data, noAmbushAvoid, noTrapDetect } from "./core";
+import { execute } from "../../src/core/engine";
+import { data, newGame, noAmbushAvoid, noTrapDetect } from "./core";
 import { dataWithRate, findSituation, placeAt, type Approach } from "./dungeon";
 
 /** d01 で eventId が置かれる階（DG-22: events の i 番目を (i mod floors)+1 階）。光る石板は 1 階、宝袋は 2 階 */
@@ -13,14 +14,24 @@ export function floorOfEvent(eventId: string, dungeonId = "d01"): number {
   return (i % def.floors) + 1;
 }
 
-/** d01 で eventId のセルの手前に立って向いている state（findSituation。シードは 1 から探す） */
-export function atEvent(eventId: string): { state: GameState; a: Approach; f: Floor; seed: number } {
-  return findSituation((c) => c.kind === "event" && c.eventId === eventId, { floor: floorOfEvent(eventId) });
+/** dungeonId（既定 d01）で eventId のセルの手前に立って向いている state（findSituation。シードは 1 から探す） */
+export function atEvent(eventId: string, dungeonId = "d01"): { state: GameState; a: Approach; f: Floor; seed: number } {
+  const base = dungeonId === "d01" ? undefined : (seed: number) => enterDungeon(seed, dungeonId);
+  return findSituation((c) => c.kind === "event" && c.eventId === eventId, { floor: floorOfEvent(eventId, dungeonId), base });
+}
+
+/** newGame(seed) で dungeonId を開放済みにして dungeon.enter したもの（d01 以外のイベントのテスト用） */
+export function enterDungeon(seed: number, dungeonId: string): GameState {
+  const s = newGame(seed);
+  if (!s.progress.unlockedDungeons.includes(dungeonId)) s.progress.unlockedDungeons.push(dungeonId);
+  const r = execute(s, { type: "dungeon.enter", dungeonId }, data);
+  if (r.events[0]?.kind === "rejected") throw new Error(JSON.stringify(r.events));
+  return r.state;
 }
 
 /** atEvent の 1 歩先（イベントのセルの上）に立った state。startEvent を直接呼ぶテスト用 */
-export function onEvent(eventId: string): { state: GameState; a: Approach; f: Floor } {
-  const sit = atEvent(eventId);
+export function onEvent(eventId: string, dungeonId = "d01"): { state: GameState; a: Approach; f: Floor } {
+  const sit = atEvent(eventId, dungeonId);
   return { state: placeAt(sit.state, sit.a.target, sit.a.facing), a: sit.a, f: sit.f };
 }
 

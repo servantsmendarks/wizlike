@@ -55,5 +55,63 @@
                      { "type": "revealStairs" } ] },
       { "id": "abandon", "label": "見捨てる", "labelKey": "event.wounded_adventurer.choice.abandon", "text": "event.wounded_adventurer.abandon", "effects": [ { "type": "san", "target": "party", "value": -2 } ] }
     ]
+  },
+  {
+    "id": "sunken_offering_box", "name": "沈んだ献金箱", "kind": "mixed",
+    "lure": { "treasure": 3, "unknown": 0, "danger": 1, "weak": 0 },
+    "stat": "agi",
+    "stopCheck": true,
+    "text": { "intro": "event.sunken_offering_box.intro", "impulse": "event.sunken_offering_box.impulse" },
+    "impulseOutcomes": [
+      { "weight": 4, "quality": "good", "text": "event.sunken_offering_box.good",
+        "effects": [ { "type": "gold", "dice": "6d10" } ],
+        "requires": "impulse", "impulseBonus": [ { "type": "gold", "dice": "3d10" } ] },
+      { "weight": 2, "quality": "neutral", "text": "event.sunken_offering_box.neutral",
+        "effects": [ { "type": "gold", "dice": "2d6" } ] },
+      { "weight": 4, "quality": "bad", "text": "event.sunken_offering_box.bad",
+        "effects": [ { "type": "damage", "target": "actor", "dice": "2d4" }, { "type": "san", "target": "actor", "value": -3 } ] }
+    ],
+    "choices": [
+      { "id": "pry", "label": "錠を壊して開ける", "labelKey": "event.sunken_offering_box.choice.pry", "text": "event.sunken_offering_box.pry", "effects": [ { "type": "gold", "dice": "2d10" } ] },
+      { "id": "leave", "label": "放っておく", "labelKey": "event.sunken_offering_box.choice.leave", "text": "event.common.ignore", "effects": [ { "type": "nothing" } ] }
+    ]
+  },
+  {
+    "id": "murmuring_font", "name": "囁く洗礼盤", "kind": "mixed",
+    "lure": { "treasure": 0, "unknown": 3, "danger": 1, "weak": 0 },
+    "stat": "iq",
+    "stopCheck": true,
+    "text": { "intro": "event.murmuring_font.intro", "impulse": "event.murmuring_font.impulse" },
+    "impulseOutcomes": [
+      { "weight": 3, "quality": "good", "text": "event.murmuring_font.good",
+        "effects": [ { "type": "revealStairs" }, { "type": "san", "target": "actor", "value": -2 } ],
+        "requires": "impulse", "impulseBonus": [ { "type": "san", "target": "actor", "value": 4 } ] },
+      { "weight": 3, "quality": "neutral", "text": "event.murmuring_font.neutral",
+        "effects": [ { "type": "san", "target": "actor", "value": -2 } ] },
+      { "weight": 4, "quality": "bad", "text": "event.murmuring_font.bad",
+        "effects": [ { "type": "san", "target": "party", "value": -6 } ] }
+    ],
+    "choices": [
+      { "id": "pray", "label": "祈りを捧げる", "labelKey": "event.murmuring_font.choice.pray", "text": "event.murmuring_font.pray", "effects": [ { "type": "san", "target": "party", "value": 2 } ] },
+      { "id": "leave", "label": "立ち去る", "labelKey": "event.murmuring_font.choice.leave", "text": "event.common.ignore", "effects": [ { "type": "nothing" } ] }
+    ]
+  },
+  {
+    "id": "pinned_pilgrim", "name": "瓦礫の下の巡礼者", "kind": "mixed",
+    "lure": { "treasure": 0, "unknown": 0, "danger": 0, "weak": 3 },
+    "stat": "str",
+    "stopCheck": false,
+    "text": { "intro": "event.pinned_pilgrim.intro", "impulse": "event.pinned_pilgrim.impulse" },
+    "impulseOutcomes": [
+      { "weight": 3, "quality": "good", "text": "event.pinned_pilgrim.good",
+        "effects": [ { "type": "gold", "dice": "3d10" }, { "type": "san", "target": "actor", "value": 4 } ],
+        "requires": "impulse" },
+      { "weight": 2, "quality": "bad", "text": "event.pinned_pilgrim.bad",
+        "effects": [ { "type": "damage", "target": "actor", "dice": "2d6" } ] }
+    ],
+    "choices": [
+      { "id": "lift", "label": "皆で瓦礫をどける", "labelKey": "event.pinned_pilgrim.choice.lift", "text": "event.pinned_pilgrim.lift", "effects": [ { "type": "damage", "target": "party", "dice": "1d2" }, { "type": "gold", "dice": "1d10" } ] },
+      { "id": "abandon", "label": "見捨てる", "labelKey": "event.pinned_pilgrim.choice.abandon", "text": "event.pinned_pilgrim.abandon", "effects": [ { "type": "san", "target": "party", "value": -3 } ] }
+    ]
   }
 ]

@@ -58,7 +58,7 @@
     },
     "groupCountWeights": { "1": [60, 30, 10, 0], "2": [45, 35, 15, 5], "3": [40, 35, 18, 7] },
     "boss": { "monster": "sunken_bishop" },
-    "events": ["glowing_tablet", "abandoned_sack", "wounded_adventurer"],
+    "events": ["sunken_offering_box", "murmuring_font", "pinned_pilgrim", "wounded_adventurer"],
     "traps": ["pit", "spinner", "teleport"],
     "trapsPerFloor": [2, 4],
     "teleporterFloors": [],

@@ -11,12 +11,12 @@ import { floorOf } from "../src/core/rules/dungeon";
 import { cellAt, idx } from "../src/core/rules/dungeon-gen";
 import { applyEffects, decideImpulse, lureProduct, pickStopper, startEvent } from "../src/core/rules/events";
 import { wipeIfNoneCanAct } from "../src/core/rules/wipe";
-import { cloneState, createItemInstance, eventOf, itemDisplayName, makeContext } from "../src/core/state";
+import { cloneState, createItemInstance, dungeonOf, eventOf, itemDisplayName, makeContext } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState, RuleContext } from "../src/core/types";
 import { execute } from "../src/core/engine";
 import { data, deepFreeze, expectKnownStringKeys, expectStateInvariants, newGame } from "./helpers/core";
 import { dataWithRate, findSituation, MOVE, placeAt, run, withRng } from "./helpers/dungeon";
-import { atEvent, dataEvents, onEvent, outcomeOnly } from "./helpers/events";
+import { atEvent, dataEvents, enterDungeon, onEvent, outcomeOnly } from "./helpers/events";
 
 const TABLET = "glowing_tablet";
 const SACK = "abandoned_sack";
@@ -996,5 +996,209 @@ describe("イベントのセル（DG-22, EV-13, EV-33）", () => {
       expect(JSON.parse(JSON.stringify(a.state))).toStrictEqual(a.state);
       expectStateInvariants(a.state);
     }
+  });
+});
+
+describe("M9 のイベント（EV-53〜55, DG-22）", () => {
+  const BOX = "sunken_offering_box";
+  const FONT = "murmuring_font";
+  const PILGRIM = "pinned_pilgrim";
+  /** 衝動が起きない data（閾値 1000、遭遇率 0） */
+  const calm = () => dataEvents((x) => (x.config.events.impulseThreshold = 1000));
+  /** ベルクを普通にし、フィン（慎重）の iq を −100 にして必ず制止に失敗させる。全員 SAN 80 */
+  function failing(s0: GameState): GameState {
+    let s = sanAll(s0, 80);
+    s = patch(s, 1, { personality: "normal" });
+    return patch(s, 5, { stats: { ...s.party[5]!.stats, iq: -100 } });
+  }
+  const afterFail = (ctx: RuleContext) => ctx.events.slice(kinds(ctx.events).indexOf("message:event.stop.fail") + 1);
+
+  test("EV-11/EV-53〜55 lureProduct（献金箱: 強欲 9・無鉄砲 2。洗礼盤: 無鉄砲 11・強欲 3。巡礼者: 慎重 3。普通はどれも 0）。EV-41 good は衝動でしか出ない", () => {
+    const lure = (id: string) => data.personalities.find((p) => p.id === id)!.lure;
+    const prod = (ev: string) =>
+      ["cautious", "reckless", "greedy", "normal"].map((p) => lureProduct(lure(p), eventOf(data, ev).lure));
+    expect(prod(BOX)).toEqual([0, 2, 9, 0]);
+    expect(prod(FONT)).toEqual([0, 11, 3, 0]);
+    expect(prod(PILGRIM)).toEqual([3, 0, 0, 0]);
+    for (const id of [BOX, FONT, PILGRIM]) {
+      expect(eventOf(data, id).impulseOutcomes.filter((o) => o.quality === "good").map((o) => o.requires)).toEqual(["impulse"]);
+    }
+  });
+
+  test("DG-22 d02 の events の配置: 1 階に献金箱と傷ついた冒険者、2 階に洗礼盤、3 階に巡礼者（各 1 回）", () => {
+    expect(dungeonOf(data, "d02").events).toEqual([BOX, FONT, PILGRIM, "wounded_adventurer"]);
+    for (const seed of [1, 2, 3]) {
+      const s = enterDungeon(seed, "d02");
+      const byFloor = [1, 2, 3].map((n) => {
+        const f = floorOf(s.dive!, data, n);
+        return f.cells.filter((c) => c.kind === "event").map((c) => c.eventId).sort();
+      });
+      expect(byFloor).toEqual([[BOX, "wounded_adventurer"].sort(), [FONT], [PILGRIM]]);
+    }
+  });
+
+  test("EV-53 沈んだ献金箱: 強欲のドナが衝動で掴み、制止に失敗すると good の 6d10 と impulseBonus の 3d10（金ごとに強欲 +2）。bad は 2d4 と SAN −3 と言わんこっちゃない", () => {
+    const { state } = onEvent(BOX, "d02");
+    const s = patch(failing(state), 2, { personality: "normal" }); // キリを普通にして 1d6 はドナだけ
+    const m = cloneRng(s.rng);
+    rollDie(m, 6); // ドナ
+    rollDie(m, 10); // フィン（制止者）
+    rollDie(m, 10); // ドナ
+    weightedIndex(m, [4, 0, 0]);
+    const g1 = rollDice(m, "6d10").total;
+    const g2 = rollDice(m, "3d10").total;
+    const ctx = start(s, dataEvents((x) => outcomeOnly(x, BOX, "good")), BOX);
+    expect(ctx.events.find((e) => e.kind === "eventStarted")).toEqual({ kind: "eventStarted", eventId: BOX, actorId: "c4" });
+    expect(afterFail(ctx)).toEqual([
+      { kind: "message", key: "event.sunken_offering_box.impulse", params: { actor: "ドナ" } },
+      { kind: "message", key: "event.sunken_offering_box.good", params: { actor: "ドナ" } },
+      { kind: "message", key: "event.gold", params: { gold: g1 } },
+      { kind: "sanChanged", id: "c4", delta: 2, san: 82 },
+      { kind: "message", key: "event.gold", params: { gold: g2 } },
+      { kind: "sanChanged", id: "c4", delta: 2, san: 84 },
+    ]);
+    expect(ctx.state.gold).toBe(s.gold + g1 + g2);
+    expect(ctx.state.rng).toEqual(m);
+    const mb = cloneRng(s.rng);
+    rollDie(mb, 6);
+    rollDie(mb, 10);
+    rollDie(mb, 10);
+    weightedIndex(mb, [0, 0, 4]);
+    const dmg = rollDice(mb, "2d4").total;
+    const bad = start(s, dataEvents((x) => outcomeOnly(x, BOX, "bad")), BOX);
+    const hp = s.party[3]!.hp;
+    expect(afterFail(bad)).toEqual([
+      { kind: "message", key: "event.sunken_offering_box.impulse", params: { actor: "ドナ" } },
+      { kind: "message", key: "event.sunken_offering_box.bad", params: { actor: "ドナ" } },
+      { kind: "hpChanged", id: "c4", delta: -Math.min(hp, dmg), hp: Math.max(0, hp - dmg) },
+      { kind: "sanChanged", id: "c4", delta: -3, san: 77 },
+      { kind: "message", key: "event.stop.told", params: { stopper: "フィン" } },
+      { kind: "sanChanged", id: "c6", delta: 3, san: 83 },
+    ]);
+    expect(bad.state.rng).toEqual(mb);
+  });
+
+  test("EV-53 選択 pry は gold 2d10（強欲 +2）、leave は何もしない", () => {
+    const { state, a } = atEvent(BOX, "d02");
+    const s1 = run(patch(state, 3, { san: 50 }), MOVE, calm()).state;
+    expect(s1.pendingChoice?.kind).toBe("event");
+    const m = cloneRng(s1.rng);
+    const g = rollDice(m, "2d10").total;
+    const r = run(s1, { type: "event.choose", optionId: "pry" }, calm());
+    expect(r.events).toEqual([
+      { kind: "screen", to: "dungeon" },
+      { kind: "message", key: "event.sunken_offering_box.pry" },
+      { kind: "message", key: "event.gold", params: { gold: g } },
+      { kind: "sanChanged", id: "c4", delta: 2, san: 52 },
+    ]);
+    expect(r.state.rng).toEqual(m);
+    expect(r.state.gold).toBe(s1.gold + g);
+    expect(r.state.dive!.ledger.gold).toBe(s1.dive!.ledger.gold + g);
+    expect(r.state.dive!.clearedCells).toEqual([{ floor: 1, ...a.target }]);
+    const lv = run(s1, { type: "event.choose", optionId: "leave" }, calm());
+    expect(kinds(lv.events)).toEqual(["screen", "message:event.common.ignore"]);
+    expect(lv.state.rng).toEqual(s1.rng);
+  });
+
+  test("EV-54 囁く洗礼盤: good は revealStairs（2 階の下り階段のセルが explored に入る）と SAN −2、impulseBonus +4。bad は全員 SAN −6", () => {
+    const { state } = onEvent(FONT, "d02");
+    const s = failing(state);
+    const m = cloneRng(s.rng);
+    rollDie(m, 6); // キリ
+    rollDie(m, 6); // ドナ
+    rollDie(m, 10);
+    rollDie(m, 10);
+    weightedIndex(m, [3, 0, 0]);
+    const ctx = start(s, dataEvents((x) => outcomeOnly(x, FONT, "good")), FONT);
+    expect(afterFail(ctx)).toEqual([
+      { kind: "message", key: "event.murmuring_font.impulse", params: { actor: "キリ" } },
+      { kind: "message", key: "event.murmuring_font.good", params: { actor: "キリ" } },
+      { kind: "sanChanged", id: "c3", delta: -2, san: 78 },
+      { kind: "sanChanged", id: "c3", delta: 4, san: 82 },
+    ]);
+    expect(ctx.state.rng).toEqual(m);
+    expect(ctx.state.dive!.floor).toBe(2);
+    const f = floorOf(ctx.state.dive!, data);
+    expect(ctx.state.dive!.explored["2"]).toContain(idx(f, f.stairsDown!.x, f.stairsDown!.y));
+    expect(ctx.state.dive!.explored["2"]!.length).toBeLessThan(f.width * f.height); // 全景ではない
+    const mb = cloneRng(s.rng);
+    rollDie(mb, 6);
+    rollDie(mb, 6);
+    rollDie(mb, 10);
+    rollDie(mb, 10);
+    weightedIndex(mb, [0, 0, 4]);
+    const bad = start(s, dataEvents((x) => outcomeOnly(x, FONT, "bad")), FONT);
+    expect(afterFail(bad).slice(2, 8)).toEqual(s.party.map((c) => ({ kind: "sanChanged", id: c.id, delta: -6, san: 74 })));
+    expect(bad.state.rng).toEqual(mb);
+  });
+
+  test("EV-54 pray は全員 SAN +2（sanMax で止まる）、乱数を引かない", () => {
+    const { state } = atEvent(FONT, "d02");
+    const s0 = patch(sanAll(state, 80), 0, { san: 99 });
+    const s1 = run(s0, MOVE, calm()).state;
+    expect(s1.pendingChoice?.kind).toBe("event");
+    const r = run(s1, { type: "event.choose", optionId: "pray" }, calm());
+    expect(r.events).toEqual([
+      { kind: "screen", to: "dungeon" },
+      { kind: "message", key: "event.murmuring_font.pray" },
+      { kind: "sanChanged", id: "c1", delta: 1, san: 100 },
+      ...["c2", "c3", "c4", "c5", "c6"].map((id) => ({ kind: "sanChanged", id, delta: 2, san: 82 })),
+    ]);
+    expect(r.state.rng).toEqual(s1.rng);
+  });
+
+  test("EV-55 瓦礫の下の巡礼者: stopCheck 偽で制止判定をしない（慎重のフィンがいても）。good は 3d10 の金と行動者の SAN +4", () => {
+    expect(eventOf(data, PILGRIM).stopCheck).toBe(false);
+    const { state } = onEvent(PILGRIM, "d02");
+    let s = sanAll(state, 80);
+    s = patch(s, 5, { stats: { ...s.party[5]!.stats, str: -100 } }); // フィンは 1d6 を振るが閾値に届かない → 行動者はベルク
+    const m = cloneRng(s.rng);
+    rollDie(m, 6); // ベルク
+    rollDie(m, 6); // フィン（制止の 1d10 は振らない）
+    weightedIndex(m, [3, 0]);
+    const g = rollDice(m, "3d10").total;
+    const ctx = start(s, dataEvents((x) => outcomeOnly(x, PILGRIM, "good")), PILGRIM);
+    expect(ctx.events).toEqual([
+      { kind: "eventStarted", eventId: PILGRIM, actorId: "c2" },
+      { kind: "message", key: "event.pinned_pilgrim.intro" },
+      { kind: "message", key: "event.impulse.actor", params: { actor: "ベルク" } },
+      { kind: "message", key: "event.pinned_pilgrim.impulse", params: { actor: "ベルク" } },
+      { kind: "message", key: "event.pinned_pilgrim.good", params: { actor: "ベルク" } },
+      { kind: "message", key: "event.gold", params: { gold: g } },
+      { kind: "sanChanged", id: "c4", delta: 2, san: 82 }, // 強欲の財宝入手（CH-52）
+      { kind: "sanChanged", id: "c2", delta: 4, san: 84 },
+    ]);
+    expect(ctx.state.rng).toEqual(m);
+    // 対照: stopCheck を真にすると制止判定が起きる
+    const withStop = start(s, dataEvents((x) => {
+      eventOf(x, PILGRIM).stopCheck = true;
+      outcomeOnly(x, PILGRIM, "good");
+    }), PILGRIM);
+    expect(kinds(withStop.events)).toContain("message:event.stop.roll");
+  });
+
+  test("EV-55 lift は全員に 1d2 のダメージ（並び順）と gold 1d10、abandon は全員 SAN −3", () => {
+    const { state } = atEvent(PILGRIM, "d02");
+    const s1 = run(state, MOVE, calm()).state;
+    expect(s1.pendingChoice?.kind).toBe("event");
+    const m = cloneRng(s1.rng);
+    const dmg = s1.party.map(() => rollDice(m, "1d2").total);
+    const g = rollDice(m, "1d10").total;
+    const r = run(s1, { type: "event.choose", optionId: "lift" }, calm());
+    expect(r.events).toEqual([
+      { kind: "screen", to: "dungeon" },
+      { kind: "message", key: "event.pinned_pilgrim.lift" },
+      ...s1.party.map((c, i) => ({ kind: "hpChanged", id: c.id, delta: -dmg[i]!, hp: c.hp - dmg[i]! })),
+      { kind: "message", key: "event.gold", params: { gold: g } },
+    ]);
+    expect(r.state.rng).toEqual(m);
+    expect(r.state.gold).toBe(s1.gold + g);
+    const ab = run(s1, { type: "event.choose", optionId: "abandon" }, calm());
+    expect(ab.events).toEqual([
+      { kind: "screen", to: "dungeon" },
+      { kind: "message", key: "event.pinned_pilgrim.abandon" },
+      ...s1.party.map((c) => ({ kind: "sanChanged", id: c.id, delta: -3, san: c.san - 3 })),
+    ]);
+    expect(ab.state.rng).toEqual(s1.rng);
   });
 });
