@@ -599,7 +599,9 @@ describe("UI-57 debug.sanDown / debug.warp（開発用、M5）", () => {
         ? c.kind === "event" && c.eventId !== null
         : to === "trap"
           ? c.kind === "trap" && (c.trapId === "pit" || c.trapId === "spinner")
-          : f.stairsDown !== null && f.stairsDown.x === x && f.stairsDown.y === y;
+          : f.stairsDown !== null
+            ? f.stairsDown.x === x && f.stairsDown.y === y
+            : f.boss !== null && f.boss.x === x && f.boss.y === y; // M9: 最下層はボスのセル
   /** 期待の行き先: approaches（目標の添字順 → FACINGS の順に隣から入る立ち位置）のうち、立ち位置が corridor / room の最初のもの */
   const expectedWarp = (f: Floor, to: To) =>
     approaches(f, isTarget(f, to), isPassable).find((a) => {
@@ -630,7 +632,7 @@ describe("UI-57 debug.sanDown / debug.warp（開発用、M5）", () => {
           found.add(to);
           expect(r.events).toEqual([
             { kind: "moved", pos: want.pos, facing: want.facing },
-            { kind: "message", key: `debug.warp.${to}` },
+            { kind: "message", key: `debug.warp.${to === "stairsDown" && f.stairsDown === null ? "boss" : to}` },
           ]);
           const d = r.state.dive!;
           expect(d.pos).toEqual(want.pos);
@@ -648,7 +650,7 @@ describe("UI-57 debug.sanDown / debug.warp（開発用、M5）", () => {
     expect([...found].sort()).toEqual(["event", "stairsDown", "trap"]);
   });
 
-  test("UI-57 debug.warp: 処理済みのイベント・最下層の下り階段は行き先が無く debug.warp.none（state 不変）", () => {
+  test("UI-57 debug.warp: 処理済みのイベントは行き先が無く debug.warp.none（state 不変）。最下層の「階段前」はボスの手前へ（debug.warp.boss。M9）", () => {
     const s0 = findSituation((c) => c.kind === "event" && c.eventId !== null).state;
     const f = floorOf(s0.dive!, data);
     const cleared = cloneState(s0);
@@ -660,12 +662,19 @@ describe("UI-57 debug.sanDown / debug.warp（開発用、M5）", () => {
     const r = execute(cleared, { type: "debug.warp", to: "event" }, data);
     expect(r.events).toEqual([{ kind: "message", key: "debug.warp.none" }]);
     expect(r.state).toEqual(cleared);
-    // d01 は 2 階が最下層（stairsDown null）
+    // d01 は 2 階が最下層（stairsDown null）: ボスのセルの隣へ移ってボスを向く。乱数は使わない
     const last = placeAt(s0, s0.dive!.pos, s0.dive!.facing, 2);
-    expect(floorOf(last.dive!, data).stairsDown).toBeNull();
+    const f2 = floorOf(last.dive!, data);
+    expect(f2.stairsDown).toBeNull();
     const r2 = execute(last, { type: "debug.warp", to: "stairsDown" }, data);
-    expect(r2.events).toEqual([{ kind: "message", key: "debug.warp.none" }]);
-    expect(r2.state).toEqual(last);
+    expect(r2.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["moved", "debug.warp.boss"]);
+    expect(r2.state.rng).toEqual(last.rng);
+    const p = r2.state.dive!.pos;
+    const v = { N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0] }[r2.state.dive!.facing]!;
+    expect({ x: p.x + v[0]!, y: p.y + v[1]! }).toEqual(f2.boss);
+    // 前進でボスの固定遭遇（DG-31）
+    const r3 = execute(r2.state, { type: "dungeon.move" }, data);
+    expect(r3.state.battle?.origin).toEqual({ kind: "boss" });
   });
 
   test("UI-57/E3/D2 debug.warp: 保留中は choice pending、迷宮の外・戦闘中は not in dungeon、知らない行き先は bad target（同じ参照）", () => {

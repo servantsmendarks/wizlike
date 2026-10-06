@@ -69,11 +69,13 @@ export function warp(ctx: RuleContext, to: "event" | "trap" | "stairsDown"): voi
     ctx.events.push({ kind: "message", key: "debug.warp.none" });
     return;
   }
+  // UI-57（M9）: 最下層の「階段前」はボスの手前（warpTarget）。語りは debug.warp.boss
+  const key = to === "stairsDown" && floorOf(dive, data).stairsDown === null ? "boss" : to;
   dive.pos = { x: t.pos.x, y: t.pos.y };
   dive.facing = t.facing;
   markExplored(dive, floorOf(dive, data), data.config.dungeon.viewDepth);
   ctx.events.push({ kind: "moved", pos: { x: dive.pos.x, y: dive.pos.y }, facing: dive.facing });
-  ctx.events.push({ kind: "message", key: `debug.warp.${to}` });
+  ctx.events.push({ kind: "message", key: `debug.warp.${key}` });
 }
 
 /**

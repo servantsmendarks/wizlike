@@ -611,6 +611,7 @@
   "debug.warp.event": "（デバッグ）イベントの手前へ移った。",
   "debug.warp.trap": "（デバッグ）罠の手前へ移った。",
   "debug.warp.stairsDown": "（デバッグ）下り階段の手前へ移った。",
+  "debug.warp.boss": "（デバッグ）ボスの手前へ移った。",
   "debug.warp.none": "（デバッグ）この階に行き先が無い。",
   "debug.pointersButton": "ポインタ",
   "debug.settingsButton": "設定",

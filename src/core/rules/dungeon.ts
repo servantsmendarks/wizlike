@@ -195,7 +195,9 @@ export function warpTarget(
       case "trap":
         return c.kind === "trap" && (c.trapId === "pit" || c.trapId === "spinner");
       case "stairsDown":
-        return f.stairsDown !== null && f.stairsDown.x === x && f.stairsDown.y === y;
+        // UI-57（M9）: 最下層（下り階段が無い）ではボスのセル（撃破の後はテレポーターが重なる）
+        if (f.stairsDown === null) return f.boss !== null && f.boss.x === x && f.boss.y === y;
+        return f.stairsDown.x === x && f.stairsDown.y === y;
     }
   };
   for (let y = 0; y < f.height; y++) {
