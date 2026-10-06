@@ -171,6 +171,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   "rules/creation": ["rollBonus", "statAllocation", "adjustStat", "classOptions", "validCreationName"],
   // M7 UI-57: debug パネルの「SAN+{n}」のラベルの n（core が足す量の定数。値を表示に使うだけ）
   "rules/debug": ["SAN_OVER_DEBUG"],
+  // M9.5 UI-66（2026-10-07）: 迷宮の確認の取り消し（やめる）の id の定数。cancel の音の印を付けるのに使うだけ
+  "rules/choices": ["STAY_CHOICE_ID"],
   // M7 TW-17: 強化の確認の段の成功率・大成功・料金・可否は core の upgradePreview の値を描く
   "rules/upgrade": ["upgradePreview"],
   rng: ["createRng"],
@@ -550,6 +552,10 @@ describe("入力と Command", () => {
     expect(camp).toContain('back: x.choice.kind === "cancel",');
     const town = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
     expect(town).toContain('back: e.kind === "back",');
+    // 迷宮の確認（階段・地上への出口・テレポーター）の「やめる」は core が固定で入れる STAY（id は STAY_CHOICE_ID）。罠の「引き返す」は対象外
+    expect(app).toContain(
+      'c.setList(pc.options.map((op) => ({ ...listItem(t(op.labelKey), () => void run({ type: "event.choose", optionId: op.id })), back: op.id === STAY_CHOICE_ID })));',
+    );
   });
 
   test("UI-52/TW-11（M9 実機 B2）準備中の迷宮の行（townEntries の notReady）を押すと、会話の箱を打ち切ってから理由の文を会話の箱に出す（ソースの検査）", () => {

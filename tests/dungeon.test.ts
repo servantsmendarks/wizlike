@@ -19,7 +19,7 @@ import { battleMenu } from "../src/core/rules/combat";
 import { townMenu } from "../src/core/rules/town";
 import { groupViews } from "../src/core/rules/combat-calc";
 import { withBattle } from "./helpers/battle";
-import { offerExit, offerStairs, offerTeleporter, offerTrap } from "../src/core/rules/choices";
+import { offerExit, offerStairs, offerTeleporter, offerTrap, STAY_CHOICE_ID } from "../src/core/rules/choices";
 import { cloneState, createItemInstance, dungeonOf, makeContext, monsterOf } from "../src/core/state";
 import type { Cell, Command, Facing, Floor, GameEvent, GameState } from "../src/core/types";
 import { data, deepFreeze, expectKnownStringKeys, expectStateInvariants, loadFreshData, mirrorWipeRolls, newGame, noAmbushAvoid, noTrapDetect } from "./helpers/core";
@@ -1703,6 +1703,25 @@ describe("保留中の選択の不変条件（E3、SV-50）", () => {
       expect(data.strings[pc!.promptKey], name).not.toContain("{");
       for (const o of pc!.options) expect(data.strings[o.labelKey], o.labelKey).not.toContain("{");
     }
+  });
+
+  test("UI-66（2026-10-07）階段・出口・テレポーターの確認は最後に取り消しの STAY（id STAY_CHOICE_ID、dungeon.choice.stay）を持つ。罠の確認は持たない", () => {
+    const withStay: [string, (ctx: ReturnType<typeof ctxOf>) => void][] = [
+      ["down", (c) => offerStairs(c, "down")],
+      ["up", (c) => offerStairs(c, "up")],
+      ["exit", (c) => offerExit(c)],
+      ["teleporter", (c) => offerTeleporter(c)],
+    ];
+    for (const [name, f] of withStay) {
+      const ctx = ctxOf(enterD01(1));
+      f(ctx);
+      const ops = ctx.state.pendingChoice!.options;
+      expect(ops[ops.length - 1], name).toEqual({ id: STAY_CHOICE_ID, labelKey: "dungeon.choice.stay" });
+      expect(ops.filter((o) => o.id === STAY_CHOICE_ID), name).toHaveLength(1);
+    }
+    const trap = ctxOf(enterD01(1));
+    offerTrap(trap);
+    expect(trap.state.pendingChoice!.options.map((o) => o.id)).not.toContain(STAY_CHOICE_ID);
   });
 });
 

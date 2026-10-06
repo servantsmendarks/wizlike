@@ -24,6 +24,7 @@ import { mapView, visibleCells, visibleKnownTraps } from "../core/rules/dungeon"
 import { campMenu, campSummary } from "../core/rules/camp";
 import { SAN_OVER_DEBUG } from "../core/rules/debug";
 import { planRoute, routeStepOk } from "../core/rules/pathfind";
+import { STAY_CHOICE_ID } from "../core/rules/choices";
 import { itemDetail, memberSheet, uniqueBookView } from "../core/rules/item-view";
 import { sanStage } from "../core/rules/san";
 import { fieldItemMenu } from "../core/rules/items";
@@ -763,7 +764,8 @@ export function createApp(o: {
     }
     const pc = state.pendingChoice;
     if (pc !== null) {
-      c.setList(pc.options.map((op) => listItem(t(op.labelKey), () => void run({ type: "event.choose", optionId: op.id }))));
+      // UI-66（2026-10-07）: 階段・出口・テレポーターの確認の「やめる」（STAY）は位置に関わらず cancel の音。罠の「引き返す」は対象外
+      c.setList(pc.options.map((op) => ({ ...listItem(t(op.labelKey), () => void run({ type: "event.choose", optionId: op.id })), back: op.id === STAY_CHOICE_ID })));
       c.setMode("list");
       return;
     }

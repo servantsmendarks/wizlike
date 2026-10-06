@@ -9,7 +9,9 @@ function offer(ctx: RuleContext, kind: "stairs" | "teleporter" | "trap", promptK
   ctx.events.push({ kind: "message", key: promptKey });
 }
 
-const STAY: ChoiceOption = { id: "stay", labelKey: "dungeon.choice.stay" };
+/** UI-66: 確認の取り消し（やめる）の id。表示層は戻る・やめるの印（cancel の音）をこれで付ける */
+export const STAY_CHOICE_ID = "stay";
+const STAY: ChoiceOption = { id: STAY_CHOICE_ID, labelKey: "dungeon.choice.stay" };
 
 /** DG-14: 下り階段（descend / stay）と、2 階以降の上り階段（ascend / stay） */
 export function offerStairs(ctx: RuleContext, dir: "down" | "up"): void {
