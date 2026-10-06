@@ -190,6 +190,23 @@ describe("UI-59/CH-13/CH-14/MG-33 memberSheet（状態の実効の値）", () =>
     c1.personality = null;
     expect(memberSheet(s, data, c1)).toMatchObject({ attackDice: "1d2", attackBonus: -1 });
   });
+
+  // 2026-10-06（ユーザーの指示）: キャンプの状態画面の攻撃の行に出す実効値（オプションまで合算）
+  test("CB-22/UI-59 memberSheet の attackDamageDice: 武器ダイスの定数と足し分（力補正 + 性格恩恵 + Lv の効果 + オプション damage）を 1 つの定数に合算", () => {
+    const s = cloneState(newGame(1));
+    const c1 = s.party[0]!;
+    c1.stats.str = 14; // 力補正 2
+    c1.personality = "reckless"; // 恩恵 damage 1
+    c1.equipment.weapon = createItemInstance(s, { itemId: "throwing_knives", level: 2, options: [{ optionId: "damage", tier: 1, value: 1 }], identified: true });
+    // 1d4+1 の定数 1 + 2 + 1 + Lv2 の 1 + オプション 1 = 6。足し分は 5（attackDice / attackBonus は今までどおり）
+    expect(memberSheet(s, data, c1)).toMatchObject({ attackDice: "1d4+1", attackBonus: 5, attackDamageDice: "1d4+6" });
+    // 品の詳細（判断 7 (a)）はオプションを足さない
+    expect(itemDetail(s, data, c1.equipment.weapon)?.damageDice).toBe("1d4+2");
+    c1.equipment.weapon = null;
+    c1.stats.str = 10;
+    c1.personality = null;
+    expect(memberSheet(s, data, c1).attackDamageDice).toBe("1d2"); // 合計 0 は定数を省く
+  });
 });
 
 describe("IT-66 uniqueBookView（図鑑）", () => {

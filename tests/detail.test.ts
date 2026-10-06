@@ -224,6 +224,20 @@ describe("UI-59/CH-13/CH-14/CB-20/MG-33 状態の実効の値（M7）", () => {
     expect(formatDetail(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d2-1");
   });
 
+  // 2026-10-06（ユーザーの指示）: 攻撃の行はオプションまで合算した実効値。ダイスの記法の定数と足し分を 1 つの定数にする（品の詳細とは役割が違う）
+  test("UI-59/CB-22 formatDetail の攻撃: ダイスの定数・Lv の分・オプション damage・力補正を 1 つの定数に合算する（「1d4+1+4」にしない）", () => {
+    const s = structuredClone(newGame(1));
+    const ch = s.party[0]!;
+    ch.stats.str = 14; // 力補正 2、リーダー（恩恵 0）
+    ch.equipment.weapon = createItemInstance(s, { itemId: "throwing_knives", level: 2, options: [{ optionId: "damage", tier: 1, value: 1 }], identified: true });
+    // 投げナイフ 1d4+1 + 力 2 + Lv2 の 1 + オプション 1 → 1d4+5
+    expect(formatDetail(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d4+5");
+    ch.stats.str = 6; // 力補正 −2 → 1d4+1 − 2 + 1 + 1 = 1d4+1
+    expect(formatDetail(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d4+1");
+    ch.stats.str = 2; // 力補正 −4 → 合計 −1
+    expect(formatDetail(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d4-1");
+  });
+
   // M7（2026-10-05）: 7 行目の「装備」の見出しを攻撃の行（x4）に替えた
   test("UI-59 render: 7 行目は 攻撃（x4）・AC（x84）・魔法攻撃力（x164）。14 行のまま", () => {
     vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });

@@ -94,7 +94,8 @@ export function itemDetail(state: GameState, data: GameData, instanceId: string)
 /**
  * UI-59 / UI-12（M7）: 1 人の状態に出す実効の値（CH-13 / CH-14 / IT-35）。stats は実効の能力値、hpMax / mpMax / sanMax は実効の最大値
  * （sanMax は sanCapOf と同じ値。士気の超過は含めない）、ac は allyAc（acBase + 装備。戦闘の外では防御の補正は 0）、magicPower は MG-33 の魔法攻撃力。
- * attackDice / attackBonus は CB-22 の攻撃ダメージの武器ダイス（素手は combat.unarmedDice）と、それ以外の足し分（allyAttackBonus。戦闘と同じ式。最低 1 の丸めは含めない）
+ * attackDice / attackBonus は CB-22 の攻撃ダメージの武器ダイス（素手は combat.unarmedDice）と、それ以外の足し分（allyAttackBonus。戦闘と同じ式。最低 1 の丸めは含めない）。
+ * attackDamageDice は状態画面の攻撃の行に出す実効値で、武器ダイスの記法の定数と attackBonus（オプション damage まで含む）を 1 つの定数に合算した正規形（weaponDamageDice。「1d4+1」と足し分 4 は「1d4+5」。2026-10-06）
  */
 export type MemberSheet = {
   stats: StatBlock;
@@ -105,10 +106,12 @@ export type MemberSheet = {
   magicPower: number;
   attackDice: string;
   attackBonus: number;
+  attackDamageDice: string;
 };
 
 export function memberSheet(state: GameState, data: GameData, ch: Character): MemberSheet {
   const es = equipStats(state, data, ch);
+  const attackBonus = allyAttackBonus(data, ch, es);
   return {
     stats: es.stats,
     hpMax: es.hpMax,
@@ -117,7 +120,8 @@ export function memberSheet(state: GameState, data: GameData, ch: Character): Me
     ac: allyAc(state, data, ch),
     magicPower: es.magicPower,
     attackDice: es.weaponDice,
-    attackBonus: allyAttackBonus(data, ch, es),
+    attackBonus,
+    attackDamageDice: weaponDamageDice(es.weaponDice, attackBonus),
   };
 }
 

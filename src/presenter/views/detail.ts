@@ -34,7 +34,8 @@ export type CharacterDetail = {
   /** 能力値 6 つ（STAT_ORDER の順）。text は detail.stat「{label} {value}」 */
   stats: { label: string; value: number; text: string }[];
   /**
-   * M7 / CB-22: 攻撃（detail.attack「攻撃 1d8+3」。core の memberSheet の attackDice と attackBonus。足し分が 0 なら「攻撃 1d8」、負なら「攻撃 1d8-1」）。
+   * M7 / CB-22: 攻撃（detail.attack「攻撃 1d8+3」。core の memberSheet の attackDamageDice（武器ダイスの定数と足し分を 1 つの定数に合算した実効値。2026-10-06）。
+   * 合計 0 なら「攻撃 1d8」、負なら「攻撃 1d8-1」）。
    * sheet が無ければ空
    */
   attack: string;
@@ -45,11 +46,6 @@ export type CharacterDetail = {
   /** 装備 6 枠（SLOT_ORDER の順）。item は表示名、空きは detail.equipNone */
   equipment: { slot: string; item: string }[];
 };
-
-/** 足し分の表記（表示のためだけ）: 正は「+3」、負は「-1」、0 は空 */
-function signedOrEmpty(v: number): string {
-  return v > 0 ? `+${v}` : v < 0 ? String(v) : "";
-}
 
 /**
  * UI-59 の状態の文字列（純粋）。itemName は実体の id → 鑑定を反映した表示名。
@@ -84,7 +80,7 @@ export function formatDetail(
       const value = stats[k];
       return { label, value, text: s("detail.stat", { label, value }) };
     }),
-    attack: sheet === undefined ? "" : s("detail.attack", { dice: sheet.attackDice, bonus: signedOrEmpty(sheet.attackBonus) }),
+    attack: sheet === undefined ? "" : s("detail.attack", { dice: sheet.attackDamageDice }),
     ac: sheet === undefined ? "" : s("detail.ac", { ac: sheet.ac }),
     magicPower: sheet === undefined ? "" : s("detail.magicPower", { value: sheet.magicPower }),
     equipment: SLOT_ORDER.map((slot) => {
