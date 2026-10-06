@@ -247,7 +247,18 @@ export type Config = {
    * UI-63 / UI-65（M8）: 基準の音量（0..1）【仮】。実際の音量 = 基準 × 設定の段 / 10。
    * musicGain は曲の合成結果に、sfxGain は効果音（ZzFX の buildSamples の結果）に掛ける
    */
-  audio: { musicGain: number; sfxGain: number };
+  audio: {
+    musicGain: number;
+    sfxGain: number;
+    /** UI-63（M9.5）: 曲の区間を合成するレート（Hz）【仮】22050。AudioBuffer のレート。CONV §1 の基準は 44100 */
+    sampleRate: number;
+    /** UI-63（M9.5）: 先読みの区間の数（鳴っている区間の後ろに予約しておく数） */
+    prefetchBars: number;
+    /** UI-63（M9.5）: 合成済みの区間を持っておくループする曲の数（直近の曲から） */
+    keepSongs: number;
+    /** UI-63（M9.5）: 鳴らし始めの区間の時刻を currentTime + baseLatency より先にする分（ms）【仮】40。0..100 */
+    startLeadMs: number;
+  };
   prototypeParty: { startingGold: number; members: PrototypeMember[] };
 };
 

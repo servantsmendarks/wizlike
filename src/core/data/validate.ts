@@ -396,7 +396,14 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       musicVolume: I(VOLUME_STEPS), // UI-57 / SV-24（M8）【仮】
       sfxVolume: I(VOLUME_STEPS), // UI-57 / SV-24（M8）【仮】
     }),
-    audio: F({ musicGain: N(RATIO), sfxGain: N(RATIO) }), // UI-63 / UI-65（M8）【仮】
+    audio: F({
+      musicGain: N(RATIO), // UI-63 / UI-65（M8）【仮】
+      sfxGain: N(RATIO), // UI-63 / UI-65（M8）【仮】
+      sampleRate: I({ min: 8000, max: 96000 }), // UI-63（M9.5）【仮】createBuffer が全ブラウザで受ける範囲
+      prefetchBars: I(POS_INT), // UI-63（M9.5）
+      keepSongs: I(POS_INT), // UI-63（M9.5）
+      startLeadMs: I({ min: 0, max: 100 }), // UI-63（M9.5）【仮】上限は M9.5 の完了条件の 100ms
+    }),
     prototypeParty: F({ startingGold: I(NON_NEG), members: L(member) }),
   });
   if (c === undefined) return;

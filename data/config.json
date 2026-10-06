@@ -74,7 +74,7 @@
     "saveBannerHeight": 12, "mapSnapPx": 12,
     "musicVolume": 7, "sfxVolume": 7
   },
-  "audio": { "musicGain": 0.3, "sfxGain": 0.3 },
+  "audio": { "musicGain": 0.3, "sfxGain": 0.3, "sampleRate": 22050, "prefetchBars": 2, "keepSongs": 2, "startLeadMs": 40 },
   "prototypeParty": {
     "startingGold": 300,
     "members": [
