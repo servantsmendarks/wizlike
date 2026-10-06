@@ -11,6 +11,7 @@
 //   以後は区間の ended で 1 区間ずつ合成して予約する。常駐のループ・rAF・タイマーは使わない（CLAUDE.md §2）。
 //   予約の時刻に間に合わない区間は時刻を置き直す（隙間は出るが重ならない）。
 // - 区間の合成は注入した renderer（本番は Web Worker の createWorkerRenderer。作れなければ主スレッドの createSyncRenderer）。
+//   Web Worker 版は再生機の作成時に 1 区間を合成して捨てる（暖機。新しい worker の最初の合成が遅いため。同期版はしない）。
 // - 合成済みの区間はループする曲ごとに持ち（2 周目と戻ったときは合成しない）、直近 config.audio.keepSongs 曲だけ残す。
 //   ジングルは鳴っている間だけ持つ（保持の数に入れない）。
 // - ジングルは鳴っている曲を止めて頭から 1 回。最後の区間を予約したら setSong の曲の区間 0 をジングルの終わりの時刻に予約し
@@ -36,6 +37,8 @@ export type SegmentRenderer = {
   plan(song: SongData, wt: Wavetables, rate: number): SongPlan;
   /** 区間 i を合成して cb に渡す。合成できなければ null */
   render(name: string, plan: SongPlan, i: number, cb: (samples: Float32Array<ArrayBuffer> | null) => void): void;
+  /** 暖機（Web Worker 版だけが持つ）。計画の区間 0 を本物と同じ経路で合成して捨てる。返事も保持もしない */
+  warmup?(plan: SongPlan): void;
 };
 /** UI-63（M9.5）: cb をイベントループへ 1 回戻してから呼ぶ（間にタップの処理が入れるように） */
 export type YieldTask = (cb: () => void) => void;
@@ -173,6 +176,17 @@ export function createWorkerRenderer(make: () => Worker): SegmentRenderer {
 
   return {
     plan: (song, wt, rate) => sync.plan(song, wt, rate),
+    warmup(plan) {
+      // worker が無い（作れない・error の後）なら暖機しない（主スレッドで合成すると読み込み時に主スレッドを止めるだけ）
+      const w = get();
+      if (w === null) return;
+      try {
+        const m: ToSynthWorker = { type: "warmup", plan };
+        w.postMessage(m);
+      } catch (e) {
+        fail(e);
+      }
+    },
     render(name, plan, i, cb) {
       const w = get();
       if (w === null) {
@@ -558,6 +572,21 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
         warn(e);
       });
   };
+
+  // 暖機（M9.5 B6）: renderer が warmup を持てば（Web Worker 版）、作成時（読み込み時。worker の起動の直後）に読み込まれている
+  // 最初のループする曲（無ければ最初のジングル）の計画を作って区間 0 を 1 回合成させて捨てる。計画は保持に入れない。曲のファイルが無ければしない
+  if (deps.renderer.warmup !== undefined) {
+    try {
+      const all = Object.values(deps.assets.music);
+      const song = all.find((x) => x.kind === "song") ?? all[0];
+      if (song !== undefined) {
+        const plan = deps.renderer.plan(song, deps.data.wavetables, conf.sampleRate);
+        if (segmentCount(plan) > 0) deps.renderer.warmup(plan);
+      }
+    } catch (e) {
+      warn(e);
+    }
+  }
 
   return {
     unlock(): void {

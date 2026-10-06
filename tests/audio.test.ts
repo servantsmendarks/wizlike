@@ -1327,4 +1327,79 @@ describe("UI-63 Web Worker の合成（M9.5）", () => {
     // 計画は 1 回だけ送る
     expect(w.posted.filter((m) => m.type === "plan")).toHaveLength(1);
   });
+
+  // 2026-10-06 ユーザーの判断（B6 の (a)）: 新しい worker の最初の合成が 2〜3 倍遅いので、読み込み時に 1 区間を合成して捨てる（暖機）
+  it("UI-63 worker 暖機: 再生機の作成時に最初のループする曲の計画で warmup を 1 回だけ送り、保持に入れず、以後の本物の依頼に影響しない", () => {
+    const f = setup({ music: { victory: MUSIC.victory!, town: MUSIC.town!, long: MUSIC.long! } });
+    const w = new LoopbackWorker();
+    f.deps.renderer = createWorkerRenderer(() => asWorker(w));
+    const p = createAudioPlayer(f.deps);
+    // unlock の前（読み込み時）。AudioContext はまだ作らない
+    expect(f.contexts).toHaveLength(0);
+    expect(w.posted).toEqual([{ type: "warmup", plan: planSong(MUSIC.town!, data.wavetables, RATE) }]);
+    // 暖機は返事をしない（worker は計画を名前で持たない）
+    expect(w.out).toHaveLength(0);
+    p.unlock();
+    const c = f.contexts[0]!;
+    // 暖機に使った曲を鳴らしても、計画は送り直し、区間 0 は本物の依頼として合成する（暖機の結果は保持に入っていない）
+    p.setSong("town");
+    expect(w.posted.slice(1).map((m) => m.type)).toEqual(["plan", "seg"]);
+    expect(segOf(w.posted[2]).i).toBe(0);
+    expect(c.sources).toHaveLength(0);
+    w.deliver();
+    expect(c.sources).toHaveLength(1);
+    expect(c.sources[0]!.buffer?.data).toEqual(renderSegment(planSong(MUSIC.town!, data.wavetables, RATE), 0));
+    expect(c.sources[0]!.startAt).toEqual([LEAD]);
+    expect(w.posted.filter((m) => m.type === "warmup")).toHaveLength(1);
+  });
+
+  it("UI-63 worker 暖機: ループする曲が無ければ最初のジングル、曲のファイルが 1 つも無ければ暖機しない（壊れない）", () => {
+    const f = setup({ music: { victory: MUSIC.victory! } });
+    const w = new FakeWorker();
+    f.deps.renderer = createWorkerRenderer(() => asWorker(w));
+    createAudioPlayer(f.deps);
+    expect(w.posted).toEqual([{ type: "warmup", plan: planSong(MUSIC.victory!, data.wavetables, RATE) }]);
+    const g = setup({ music: {} });
+    const v = new FakeWorker();
+    g.deps.renderer = createWorkerRenderer(() => asWorker(v));
+    const q = createAudioPlayer(g.deps);
+    expect(v.posted).toEqual([]);
+    q.unlock();
+    expect(() => q.setSong("town")).not.toThrow();
+    expect(v.posted).toEqual([]);
+  });
+
+  it("UI-63 worker 暖機: 暖機の後に error が来ても壊れず（warn は 1 回、主スレッドで暖機し直さない）、以後は主スレッドで合成する", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const f = setup();
+    const w = new FakeWorker();
+    f.deps.renderer = createWorkerRenderer(() => asWorker(w));
+    const p = createAudioPlayer(f.deps);
+    expect(w.posted.map((m) => m.type)).toEqual(["warmup"]);
+    expect(() => w.onerror?.(new Error("boom"))).not.toThrow();
+    expect(w.terminated).toBe(1);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("long");
+    expect(c.sources).toHaveLength(1);
+    expect(c.sources[0]!.buffer?.data).toEqual(renderSegment(planSong(MUSIC.long!, data.wavetables, RATE), 0));
+    expect(w.posted.map((m) => m.type)).toEqual(["warmup"]);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("UI-63 worker 暖機: worker が作れないとき・同期版では暖機しない（読み込み時に主スレッドで合成しない）", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    // 同期版は warmup を持たないので、再生機は暖機しない（renderer.render も呼ばない）
+    expect(createSyncRenderer().warmup).toBeUndefined();
+    const f = setup();
+    createAudioPlayer(f.deps);
+    expect(f.renders).toEqual([]);
+    // worker が作れない renderer の warmup は何もしない（主スレッドで合成しないことは synth-protocol.test.ts で renderSegment の呼び出しを数えて確かめる）
+    const r = createWorkerRenderer(() => {
+      throw new Error("no worker");
+    });
+    f.deps.renderer = r;
+    expect(() => createAudioPlayer(f.deps)).not.toThrow();
+  });
 });
