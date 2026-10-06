@@ -458,7 +458,7 @@
   "book.rarity.fine": "上質",
   "book.rarity.rare": "希少",
   "book.rarity.legendary": "伝説",
-  "battle.bossDefeated": "門番は崩れ落ちた。",
+  "battle.bossDefeated": "{boss}は崩れ落ちた。",
   "battle.dungeonCleared": "この迷宮を踏破した。",
   "battle.wipe": "一行は全員動けなくなった……。",
   "dungeon.unlocked": "{dungeon}への道が開いた。",

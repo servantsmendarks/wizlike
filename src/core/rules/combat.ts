@@ -1062,8 +1062,9 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
     if (b.origin.kind === "boss") {
       const dive = requireDive(state);
       dive.bossDefeated = true;
-      ctx.events.push({ kind: "message", key: "battle.bossDefeated" });
       const def = dungeonOf(data, dive.dungeonId);
+      // DG-32（M9）: 撃破の語りはそのダンジョンのボスの本名（鑑定の有無を問わない。倒した後なので正体を明かす）
+      ctx.events.push({ kind: "message", key: "battle.bossDefeated", params: { boss: monsterOf(data, def.boss.monster).name } });
       const firstClear = !state.progress.clearedDungeons.includes(def.id);
       if (firstClear) {
         state.progress.clearedDungeons.push(def.id);

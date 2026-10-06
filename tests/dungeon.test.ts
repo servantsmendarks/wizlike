@@ -1470,7 +1470,7 @@ describe("ボス（DG-31〜33, DG-01）", () => {
     const r = defeatBoss(fought);
     expect(eventsOfKind(r.events, "battleEnd")).toEqual([{ kind: "battleEnd", result: "win" }]);
     const ks = kinds(r.events);
-    expect(ks).toContain("message:battle.bossDefeated");
+    expect(r.events).toContainEqual({ kind: "message", key: "battle.bossDefeated", params: { boss: "門番の甲冑" } });
     expect(ks).toContain("message:battle.dungeonCleared");
     expect(r.events).toContainEqual({ kind: "message", key: "dungeon.unlocked", params: { dungeon: "沈んだ聖堂" } });
     expect(ks).not.toContain("message:battle.chest");
@@ -1961,7 +1961,7 @@ describe("準備中のダンジョン d03（DG-35。M9）", () => {
     ]);
   });
 
-  test("DG-32/DG-35 d02 のボス（沈鐘の大司祭）を初めて倒すと d03 が開く（dungeon.unlocked）。clearedDungeons に d02、流通レベル 4", () => {
+  test("DG-32/DG-35 d02 のボス（沈鐘の大司祭）を初めて倒すと撃破の語りは沈鐘の大司祭の名前で、d03 が開く（dungeon.unlocked）。clearedDungeons に d02、流通レベル 4", () => {
     const base = (seed: number) => {
       const s = cloneState(newGame(seed));
       s.progress.unlockedDungeons.push("d02");
@@ -1982,6 +1982,9 @@ describe("準備中のダンジョン d03（DG-35。M9）", () => {
     d.config.combat.hitMin = 100;
     d.config.combat.hitMax = 100;
     const r = run(s, { type: "battle.resolve" }, d);
+    // DG-32（M9 実機 B1）: 撃破の語りはそのダンジョンのボスの本名（鑑定の有無を問わない）
+    expect(r.state.bestiary["sunken_bishop"]!.identified).toBe(false);
+    expect(r.events).toContainEqual({ kind: "message", key: "battle.bossDefeated", params: { boss: "沈鐘の大司祭" } });
     expect(r.events).toContainEqual({ kind: "message", key: "dungeon.unlocked", params: { dungeon: "灰の地下墓所" } });
     expect(r.state.progress.clearedDungeons).toEqual(["d01", "d02"]);
     expect(r.state.progress.unlockedDungeons).toEqual(["d01", "d02", "d03"]);
