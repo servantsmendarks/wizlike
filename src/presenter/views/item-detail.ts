@@ -46,7 +46,8 @@ export function formatItemDetail(d: ItemDetail, strings: Strings): PanelLines {
   if (d.rarity !== null) lines.push(line(s(strings, "item.detail.rarity", { rarity: s(strings, `book.rarity.${d.rarity}`) })));
   const p = d.power;
   if (p !== null && p.kind === "weapon") {
-    lines.push(line(p.damageBonus > 0 ? s(strings, "item.detail.damagePlus", { dice: p.dice, bonus: p.damageBonus }) : s(strings, "item.detail.damage", { dice: p.dice })));
+    // B3（M9-飛行）: ダイスの定数と Lv の分は core が 1 つの定数に合算した damageDice をそのまま出す（「1d4+1+1」にしない）
+    lines.push(line(s(strings, "item.detail.damage", { dice: d.damageDice ?? p.dice })));
     if (p.caster || p.magicPower > 0) lines.push(line(s(strings, "item.detail.magicPower", { value: p.magicPower })));
     if (p.reach !== "melee") lines.push(line(s(strings, `item.detail.reach.${p.reach}`))); // IT-25: 長柄・飛び道具は後列から届く
   } else if (p !== null) {

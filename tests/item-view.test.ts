@@ -2,7 +2,7 @@
 // 期待値はデータの値（equipment-bases / uniques / item-options、config.items と economy.sellRatio 0.5、combat.acBase 10）から手で数える。乱数は使わない。
 import { describe, expect, test } from "vitest";
 import { equipStats } from "../src/core/rules/equip-stats";
-import { itemDetail, memberSheet, uniqueBookView } from "../src/core/rules/item-view";
+import { itemDetail, memberSheet, uniqueBookView, weaponDamageDice } from "../src/core/rules/item-view";
 import { cloneState, createItemInstance, memberById } from "../src/core/state";
 import type { Character, GameState } from "../src/core/types";
 import { data, newGame } from "./helpers/core";
@@ -34,6 +34,7 @@ describe("UI-59/IT-11/IT-12 itemDetail（品の詳細）", () => {
       rarity: "rare",
       unique: false,
       power: { kind: "weapon", dice: "1d8", damageBonus: 2, magicPower: 0, reach: "melee", caster: false },
+      damageDice: "1d8+2", // 2026-10-06（実機(M9-飛行) B3）: 表示用のダイス（定数と Lv の分を合算）の項目を足した
       options: [
         { name: "力", value: 2, unit: "", bad: false },
         { name: "AC", value: -1, unit: "", bad: false },
@@ -106,6 +107,7 @@ describe("UI-59/IT-11/IT-12 itemDetail（品の詳細）", () => {
       rarity: null,
       unique: false,
       power: null,
+      damageDice: null, // 2026-10-06: 新しい項目（未鑑定は null）
       options: [],
       skill: null,
       cursed: false,
@@ -122,6 +124,21 @@ describe("UI-59/IT-11/IT-12 itemDetail（品の詳細）", () => {
     const herb = createItemInstance(s, { itemId: "herb", identified: true });
     expect(itemDetail(s, data, herb)).toMatchObject({ name: "薬草", slot: null, identified: true, level: null, power: null, sellPrice: 5 });
     expect(itemDetail(s, data, "i9999")).toBeNull();
+  });
+
+  // 2026-10-06: 実機(M9-飛行) の B3（投げナイフ Lv2 が「1d4+1+1」と出た）
+  test("UI-59/IT-20 damageDice はダイスの定数と Lv の分を 1 つの定数に合算する（合計 0 は省き、負は -）。武器でなければ null", () => {
+    expect(weaponDamageDice("1d4+1", 1)).toBe("1d4+2");
+    expect(weaponDamageDice("1d4", 2)).toBe("1d4+2");
+    expect(weaponDamageDice("1d8", 0)).toBe("1d8");
+    expect(weaponDamageDice("1d4+1", -1)).toBe("1d4");
+    expect(weaponDamageDice("1d4+1", -2)).toBe("1d4-1");
+    expect(weaponDamageDice("2d6-1", 0)).toBe("2d6-1");
+    const s = town();
+    const knives = createItemInstance(s, { itemId: "throwing_knives", level: 2, identified: true });
+    const armor = createItemInstance(s, { itemId: "leather_armor", level: 6, identified: true });
+    expect(itemDetail(s, data, knives)).toMatchObject({ power: { kind: "weapon", dice: "1d4+1", damageBonus: 1 }, damageDice: "1d4+2" });
+    expect(itemDetail(s, data, armor)!.damageDice).toBeNull();
   });
 });
 

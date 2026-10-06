@@ -434,7 +434,6 @@
   "item.detail.rarity": "希少度 {rarity}",
   "item.detail.unidentified": "鑑定するまで正体は分からない。",
   "item.detail.damage": "ダメージ {dice}",
-  "item.detail.damagePlus": "ダメージ {dice}+{bonus}",
   "item.detail.magicPower": "魔法攻撃力 {value}",
   "item.detail.reach.long": "長柄。後列から届く",
   "item.detail.reach.ranged": "飛び道具。後列から届く",

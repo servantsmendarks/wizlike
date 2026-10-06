@@ -127,6 +127,29 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
     const herb = createItemInstance(s, { itemId: "herb", identified: true });
     expect(formatItemDetail(detailOf(s, herb), S).lines.map((l) => l.text)).toEqual(["道具", "売値 5G"]);
   });
+
+  // 2026-10-06: 実機(M9-飛行) の B3。ダイスの記法の定数と Lv の分（ItemPower.damageBonus）を 1 つの定数に合算して出す（「1d4+1+1」→「1d4+2」）
+  test("UI-59/IT-20 ダメージの行はダイスの定数と Lv の分を合算する（定数のあるダイス・無いダイス・合計 0・負）", () => {
+    // 負の定数のダイスは今のデータに無いので、投げナイフのベースの damage だけを替えたデータで見る（読み込みの検証はダイス記法なら通す）
+    const neg = structuredClone(data);
+    const knivesBase = neg.equipmentBases.find((b) => b.id === "throwing_knives");
+    if (knivesBase === undefined || knivesBase.slot !== "weapon") throw new Error("no throwing_knives");
+    const damageLine = (d: typeof data, itemId: string, level: number): string | undefined => {
+      const s = town();
+      const id = createItemInstance(s, { itemId, level, identified: true });
+      const detail = itemDetail(s, d, id);
+      if (detail === null) throw new Error("no item");
+      return formatItemDetail(detail, S).lines.find((l) => l.text.startsWith("ダメージ "))?.text;
+    };
+    expect(damageLine(data, "throwing_knives", 2)).toBe("ダメージ 1d4+2"); // 1d4+1、Lv2 → +1
+    expect(damageLine(data, "throwing_knives", 0)).toBe("ダメージ 1d4+1");
+    expect(damageLine(data, "dagger", 4)).toBe("ダメージ 1d4+2"); // 1d4、Lv4 → +2
+    knivesBase.damage = "1d4-1";
+    expect(damageLine(neg, "throwing_knives", 2)).toBe("ダメージ 1d4"); // 合計 0 は定数を出さない
+    knivesBase.damage = "1d4-2";
+    expect(damageLine(neg, "throwing_knives", 0)).toBe("ダメージ 1d4-2"); // 負は「-」
+    expect(damageLine(neg, "throwing_knives", 2)).toBe("ダメージ 1d4-1");
+  });
 });
 
 describe("IT-66 formatBook（図鑑）", () => {

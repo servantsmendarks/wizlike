@@ -2,6 +2,7 @@
 // 値の式は equip-stats.ts（実効の値・品 1 つの性能）と shop.ts（売値）のものをそのまま使う（表示層は計算しない。UI-35）。
 import type { EquipSlot, GameData, SkillType, StatBlock } from "../data/index";
 import { findBase, itemDisplayName, itemOf, optionOf, uniqueOf } from "../state";
+import { formatDice, parseDice } from "../rng";
 import type { Character, GameState, Rarity } from "../types";
 import { allyAc, allyAttackBonus } from "./combat-calc";
 import { equipStats, itemPower, type ItemPower } from "./equip-stats";
@@ -14,6 +15,7 @@ export type ItemDetailOption = { name: string; value: number; unit: string; bad:
  * UI-59（M7）: 品の詳細。未鑑定（IT-12）は name（未鑑定の名前）・slot・identified・sellPrice（見た目の品種の売値）だけで、ほかは null / [] / false（呪いも見せない。CH-73）。
  * - level: 鑑定済みの汎用装備の Lv（ユニーク・消耗品・魔法書は null）
  * - rarity / power: 鑑定済みの装備だけ（power はオプションを除く性能。IT-20〜23）
+ * - damageDice: 鑑定済みの武器のダメージの表示用のダイス。power.dice の定数と power.damageBonus（Lv の分）を 1 つの定数に合算した正規形（「1d4+1」の Lv2 は「1d4+2」、合計 0 は「1d4」、負は「1d4-1」）。武器でなければ null
  * - options: 鑑定済みの装備のオプション（実体の順）。skill: 鑑定済みのユニークの固有スキル（IT-40）
  * - cursed: 鑑定済みかつ呪われている。sellPrice: 店での売値（IT-61。鑑定済みは本当の売値、未鑑定は見た目の品種の売値。2026-10-05 から未鑑定も売れる）
  * - description: 鑑定済みのユニークの説明（uniques[].description）
@@ -28,12 +30,19 @@ export type ItemDetail = {
   rarity: Rarity | null;
   unique: boolean;
   power: ItemPower | null;
+  damageDice: string | null;
   options: ItemDetailOption[];
   skill: { type: SkillType; value: number } | null;
   cursed: boolean;
   sellPrice: number | null;
   description: string | null;
 };
+
+/** UI-59 / IT-20: 武器のダメージの表示用のダイス。ダイスの記法の定数に Lv の分を足して 1 つの定数にする（「1d4+1+1」と出さない） */
+export function weaponDamageDice(dice: string, damageBonus: number): string {
+  const spec = parseDice(dice);
+  return formatDice({ ...spec, modifier: spec.modifier + damageBonus });
+}
 
 /** UI-59 / IT-11 / IT-12: 品の詳細。実体が無ければ null */
 export function itemDetail(state: GameState, data: GameData, instanceId: string): ItemDetail | null {
@@ -50,6 +59,7 @@ export function itemDetail(state: GameState, data: GameData, instanceId: string)
     rarity: null,
     unique: false,
     power: null,
+    damageDice: null,
     options: [],
     skill: null,
     cursed: false,
@@ -62,12 +72,14 @@ export function itemDetail(state: GameState, data: GameData, instanceId: string)
     return { ...hidden, sellPrice: sellPrice(inst, data) };
   }
   const uniq = inst.uniqueId === null ? null : uniqueOf(data, inst.uniqueId);
+  const power = itemPower(data, inst, base);
   return {
     ...hidden,
     level: uniq === null ? inst.level : null,
     rarity: inst.rarity,
     unique: uniq !== null,
-    power: itemPower(data, inst, base),
+    power,
+    damageDice: power.kind === "weapon" ? weaponDamageDice(power.dice, power.damageBonus) : null,
     options: inst.options.map((o) => {
       const def = optionOf(data, o.optionId);
       return { name: def.name, value: def.effect.type === "ac" ? -o.value : o.value, unit: def.unit, bad: o.value < 0 };
