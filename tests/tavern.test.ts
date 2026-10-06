@@ -104,14 +104,16 @@ describe("酒場の見回す（TW-13）", () => {
     expect(r.state.gold).toBe(s.gold);
   });
 
-  test("TW-14 当たり（tavernEventChance 100 の data）: weightedIndex で選んだイベントの text → 効果。tavernEventMark = adventureTurns。dropped_coin は 2d6 を所持金に足して event.gold（台帳は無い）。続けて見回すと差 0 なので起きない", () => {
+  test("TW-14 当たり（tavernEventChance 100 の data）: weightedIndex で選んだイベントの text → 効果。tavernEventMark = adventureTurns。dropped_coin は 2d6・spilled_wager は 3d6 を所持金に足して event.gold（台帳は無い）、old_rumor・drowned_bell_rumor は message。続けて見回すと差 0 なので起きない（M9 で 4 つ: 重み 2 / 1 / 2 / 1）", () => {
     const d = dataChance(100);
     expect(d.tavern.events.map((e) => [e.id, e.weight])).toEqual([
       ["dropped_coin", 2],
       ["old_rumor", 1],
+      ["spilled_wager", 2],
+      ["drowned_bell_rumor", 1],
     ]);
     const seen = new Set<string>();
-    for (let seed = 1; seed <= 30; seed++) {
+    for (let seed = 1; seed <= 60; seed++) {
       const s = town(300, 0, seed);
       const m = cloneRng(s.rng);
       const key = mirrorLook(m, d);
@@ -123,12 +125,12 @@ describe("酒場の見回す（TW-13）", () => {
         { kind: "message", key: ev.text },
       ];
       let gold = s.gold;
-      if (ev.id === "dropped_coin") {
-        const g = rollDice(m, "2d6").total;
+      if (ev.id === "dropped_coin" || ev.id === "spilled_wager") {
+        const g = rollDice(m, ev.id === "dropped_coin" ? "2d6" : "3d6").total;
         gold += g;
         want.push({ kind: "message", key: "event.gold", params: { gold: g } }); // 街では SAN が満タンなので強欲の SAN は動かない
       } else {
-        want.push({ kind: "message", key: "tavern.old_rumor.more" });
+        want.push({ kind: "message", key: `tavern.${ev.id}.more` });
       }
       const r = look(s, d);
       expect(r.events, `seed ${seed}`).toEqual(want);
@@ -144,7 +146,7 @@ describe("酒場の見回す（TW-13）", () => {
       expect(r2.events).toEqual([{ kind: "message", key: key2 }]);
       expect(r2.state.rng).toEqual(m2);
     }
-    expect([...seen].sort()).toEqual(["dropped_coin", "old_rumor"]);
+    expect([...seen].sort()).toEqual(["dropped_coin", "drowned_bell_rumor", "old_rumor", "spilled_wager"]);
   });
 
   test("TW-14 san（party）と nothing の効果: san は生存者全員に耐性なしで足し引き、nothing は何もしない", () => {

@@ -87,7 +87,7 @@ describe("data: 実データ", () => {
     expect(data.penaltyTable.bands).toHaveLength(7);
     expect(data.dungeons.map((d) => d.id)).toEqual(["d01", "d02", "d03"]); // d03 は準備中の枠（DG-35。M9）
     expect(data.events).toHaveLength(6); // M9: EV-53〜55 を追加
-    expect(data.tavern.events.map((e) => e.id)).toEqual(["dropped_coin", "old_rumor"]);
+    expect(data.tavern.events.map((e) => e.id)).toEqual(["dropped_coin", "old_rumor", "spilled_wager", "drowned_bell_rumor"]); // M9 で 2 つ
     expect(data.tavern.lookTexts).toHaveLength(4);
     expect(data.config.prototypeParty.members).toHaveLength(6);
     expect(data.config.prototypeParty.members[0]?.isLeader).toBe(true);

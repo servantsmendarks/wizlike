@@ -14,6 +14,20 @@
       "weight": 1,
       "text": "tavern.old_rumor.text",
       "effects": [{ "type": "message", "key": "tavern.old_rumor.more" }]
+    },
+    {
+      "id": "spilled_wager",
+      "name": "賭けの勝ち分",
+      "weight": 2,
+      "text": "tavern.spilled_wager.text",
+      "effects": [{ "type": "gold", "dice": "3d6" }]
+    },
+    {
+      "id": "drowned_bell_rumor",
+      "name": "沈鐘の噂",
+      "weight": 1,
+      "text": "tavern.drowned_bell_rumor.text",
+      "effects": [{ "type": "message", "key": "tavern.drowned_bell_rumor.more" }]
     }
   ]
 }
