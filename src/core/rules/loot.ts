@@ -5,10 +5,11 @@
 // 乱数の消費順（1 品。IT-52）: chance(itemChance) →（当たれば）weightedIndex(entries) →（汎用なら）randInt(−spread, +spread)
 //   → weightedIndex(rarities) → chance(curseChance) → オプションの個数だけ weightedIndex(残りのオプションの weight)。
 //   外れならその品はそこで終わり。表の rolls 回くり返す。置いていく品（IT-54）も乱数は同じだけ消費する。
+//   魔法書の項目（IT-55）は weightedIndex(entries) で終わる。
 import type { DropEntry, GameData } from "../data/index";
 import { chance, randInt, weightedIndex } from "../rng";
 import type { ItemInstanceSpec } from "../state";
-import { baseOf, createItemInstance, dropTableOf, itemDisplayName, personalityOf, uniqueOf, slotsUsed } from "../state";
+import { baseOf, createItemInstance, dropTableOf, findBase, itemDisplayName, itemOf, personalityOf, uniqueOf, slotsUsed } from "../state";
 import type { GameState, ItemOptionRoll, RuleContext } from "../types";
 import { canAct } from "./combat-calc";
 
@@ -31,6 +32,7 @@ export function partyChestQuality(state: GameState, data: GameData): number {
 /**
  * IT-52 / IT-53 / IT-30〜33: entries から 1 品の中身を引く（chance(itemChance) は呼び出し側）。未鑑定（IT-13）。
  * 汎用は Lv = max(1, dropLevel + randInt(−spread, +spread))、ユニークは Lv0 で段階は optionTier。
+ * 魔法書（IT-55）は weightedIndex(entries) の後に乱数を引かず、鑑定済みの Lv0・通常で返す。
  * 希少度は重みで引いた直後に quality 段だけ上げ、伝説で止める（乱数なし）。呪われたら個数 +1 で、最後の 1 つの値を負にする。
  */
 export function rollItemSpec(
@@ -43,6 +45,9 @@ export function rollItemSpec(
 ): ItemInstanceSpec {
   const cfg = data.config.items;
   const entry = entries[weightedIndex(state.rng, entries.map((e) => e.weight))]!;
+  // IT-55（M9）: 魔法書の項目は Lv0・通常・オプションなし・呪いなし・鑑定済みで、以降の乱数を引かない
+  if ("item" in entry)
+    return { itemId: entry.item, identified: true, level: 0, rarity: "normal", options: [], uniqueId: null, cursed: false, foundIn };
   let itemId: string;
   let uniqueId: string | null = null;
   let level = 0;
@@ -92,7 +97,10 @@ export function placeFoundItem(ctx: RuleContext, spec: ItemInstanceSpec): boolea
   const { state, data } = ctx;
   const ch = state.party.find((c) => slotsUsed(c) < data.config.inventory.slotsPerCharacter) ?? null;
   if (ch === null) {
-    ctx.events.push({ kind: "message", key: "item.leftBehind", params: { item: baseOf(data, spec.itemId).unidentifiedName } });
+    // 装備はベースの unidentifiedName、魔法書（IT-55。鑑定済みで生まれる）は items の name
+    const base = findBase(data, spec.itemId);
+    const item = base !== null ? base.unidentifiedName : itemOf(data, spec.itemId).name;
+    ctx.events.push({ kind: "message", key: "item.leftBehind", params: { item } });
     return false;
   }
   const id = createItemInstance(state, spec);

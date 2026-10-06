@@ -497,7 +497,8 @@ export type UniqueDef = {
 
 // ---- drops.json（IT-50〜53。M7） ----
 
-export type DropEntry = { base: string; weight: number } | { unique: string; weight: number };
+/** IT-51: 汎用ベース・ユニーク・魔法書（items.json の type book。IT-55。M9）のどれか 1 つ */
+export type DropEntry = { base: string; weight: number } | { unique: string; weight: number } | { item: string; weight: number };
 
 export type DropTable = { id: string; itemChance: number; rolls: number; entries: DropEntry[] };
 

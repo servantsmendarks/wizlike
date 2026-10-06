@@ -884,6 +884,13 @@ describe("data: drops.json（IT-50〜53。M7）", () => {
     expectIssue((r) => (r.drops.tables[0].entries[0].weight = 0), "drops.json", "tables[0].entries[0].weight: expected integer >= 1");
     expectIssue((r) => (r.drops.tables[1].id = "d01_f1"), "drops.json", 'tables[1].id: duplicate id "d01_f1"');
   });
+  test("data: IT-51/IT-55 項目は base / unique / item のちょうど 1 つ。item は items.json の id で type book（M9）", () => {
+    expect(issuesOf((r) => (r.drops.tables[0].entries[0] = { item: "tome_lightning", weight: 1 }))).toEqual([]);
+    expectIssue((r) => (r.drops.tables[0].entries[0].item = "tome_lightning"), "drops.json", "tables[0].entries[0]: IT-51: entry needs exactly one of base, unique or item");
+    expectIssue((r) => (r.drops.tables[0].entries[0] = { weight: 1 }), "drops.json", "tables[0].entries[0]: IT-51: entry needs exactly one of base, unique or item");
+    expectIssue((r) => (r.drops.tables[0].entries[0] = { item: "herb", weight: 1 }), "drops.json", "tables[0].entries[0].item: IT-55: item must be a book");
+    expectIssue((r) => (r.drops.tables[0].entries[0] = { item: "grimoire", weight: 1 }), "drops.json", 'tables[0].entries[0].item: unknown item id "grimoire"');
+  });
   test("data: IT-51 chest は全ダンジョンの全階（1..floors）に実在の表、boss は全ダンジョンに実在の表", () => {
     expectIssue((r) => delete r.drops.chest.d02, "drops.json", "chest.d02: missing required field");
     expectIssue((r) => delete r.drops.chest.d01["2"], "drops.json", "chest.d01.2: missing required field");

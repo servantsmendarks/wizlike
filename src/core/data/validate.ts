@@ -833,8 +833,17 @@ function validateDrops(ctx: Ctx, v: unknown, ix: Index): void {
     return s;
   };
   const entry: Field = (c, p, x) => {
-    const o = fields(c, p, x, { base: opt(refTo(ix.bases, "equipment base")), unique: opt(refTo(ix.uniques, "unique")), weight: I(POS_INT) });
-    if (o !== undefined && (o.base === undefined) === (o.unique === undefined)) report(c, p, "IT-51: entry needs exactly one of base or unique");
+    const o = fields(c, p, x, {
+      base: opt(refTo(ix.bases, "equipment base")),
+      unique: opt(refTo(ix.uniques, "unique")),
+      item: opt(refTo(ix.items, "item")), // IT-55（M9）: 魔法書
+      weight: I(POS_INT),
+    });
+    if (o === undefined) return o;
+    if ([o.base, o.unique, o.item].filter((k) => k !== undefined).length !== 1) report(c, p, "IT-51: entry needs exactly one of base, unique or item");
+    const itemId = strOf(o.item);
+    const it = itemId === undefined ? undefined : ix.items.get(itemId);
+    if (it !== undefined && it.type !== "book") report(c, at(p, "item"), "IT-55: item must be a book");
     return o;
   };
   const t = fields(ctx, "", v, {

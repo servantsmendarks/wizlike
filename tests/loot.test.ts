@@ -260,6 +260,60 @@ describe("IT-54 配る・置いていく", () => {
   });
 });
 
+describe("IT-55 ドロップ表の魔法書の項目（M9）", () => {
+  test("IT-55 魔法書の項目: chance → weightedIndex(entries) だけを引き（Lv・希少度・呪い・オプションの乱数を引かない）、Lv0・通常・オプションなし・呪いなし・鑑定済みで入る", () => {
+    // 実データの希少度の重みと呪い 8% のまま（引かないことを鏡で確かめる）
+    const d = loadFreshData();
+    const t = d.drops.tables.find((x) => x.id === "d01_f1")!;
+    t.itemChance = 100;
+    t.rolls = 1;
+    t.entries = [
+      { base: "dagger", weight: 1 },
+      { item: "tome_lightning", weight: 3 },
+    ];
+    for (let seed = 1; seed < 40; seed++) {
+      const ctx = makeContext(cloneState(dived(seed)), d);
+      const m = cloneRng(ctx.state.rng);
+      chance(m, 100);
+      if (weightedIndex(m, [1, 3]) !== 1) continue;
+      const seq = ctx.state.nextItemSeq;
+      rollDropTable(ctx, "d01_f1", 5, 1, "d01");
+      expect(ctx.state.rng).toEqual(m);
+      const id = `i${seq}`;
+      expect(ctx.state.items[id]).toEqual({
+        id,
+        itemId: "tome_lightning",
+        level: 0,
+        rarity: "normal",
+        options: [],
+        uniqueId: null,
+        identified: true,
+        cursed: false,
+        foundIn: "d01",
+      });
+      expect(ctx.state.dive!.ledger.items).toEqual([id]);
+      // 鑑定済みなので語りは品の名前
+      expect(ctx.events).toEqual([{ kind: "message", key: "item.found", params: { name: ctx.state.party[0]!.name, item: "雷光の魔法書" } }]);
+      expectStateInvariants(ctx.state);
+      return;
+    }
+    throw new Error("no seed that draws the book");
+  });
+
+  test("IT-54/IT-55 置いていくときの item.leftBehind の item は魔法書の名前（ベースの unidentifiedName ではない）", () => {
+    const s = dived(1);
+    for (const ch of s.party) {
+      const used = Object.values(ch.equipment).filter((x) => x !== null).length + ch.inventory.length;
+      for (let i = used; i < data.config.inventory.slotsPerCharacter; i++) ch.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
+    }
+    const ctx = makeContext(cloneState(s), data);
+    const seq = ctx.state.nextItemSeq;
+    expect(placeFoundItem(ctx, rollItemSpec(ctx.state, data, [{ item: "tome_lightning", weight: 1 }], 3, 0, "d02"))).toBe(false);
+    expect(ctx.events).toEqual([{ kind: "message", key: "item.leftBehind", params: { item: "雷光の魔法書" } }]);
+    expect(ctx.state.nextItemSeq).toBe(seq);
+  });
+});
+
 describe("CB-52 宝箱の品（IT-50 / IT-31 / IT-53）", () => {
   /** 部屋のランダム遭遇で、HP 1・麻痺の敵をアルドが必中で倒す戦闘 */
   function roomWin(groups: { monsterId: string }[], patch?: (s: GameState) => void): GameState {

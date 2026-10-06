@@ -26,7 +26,7 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
   - GameState に入れる値なので省略可能な欄は持たない（無いは null か空配列）。
 - IT-11 表示名（§11 の Q11 は既定の案で確定: core の `itemDisplayName` が strings の `item.rarity.<rarity>` と `item.plus`（{n} を 1 つだけ持つ。どちらも読み込み時の検証で必須）を引いて組む）: 鑑定済みなら「希少度の接頭辞 + 名前 + Lv」。接頭辞は 通常 なし / 上質「上質な」/ 希少「希少な」/ 伝説「伝説の」（strings の `item.rarity.<rarity>`）。名前はユニークならユニークの名前、それ以外はベースの名前。Lv は汎用装備で 1 以上のときだけ「 +N」（例「上質な長剣 +5」）。オプション・呪い・固有スキルは名前に出さず、詳細の画面（UI-59 の装備の行から開く）に出す。
 - IT-12 未鑑定（CH-72）の実体は、ベースの `unidentifiedName`（例「剣？」）だけを出す（希少度・Lv・ユニークかどうか・オプション・呪いは見せない）。未鑑定の品は装備できない（CH-72 / CH-76 のまま。§11 の Q2【衝突】があるので【仮】）。鑑定すると希少度・Lv・オプション・呪い・ユニークの名前と固有スキルが分かる。鑑定は司教（CH-77。無料）か店（IT-65。有料）。未鑑定のままでも店で売れる（見た目の品種の売値。IT-61）。
-- IT-13 ドロップ（IT-50）の品は未鑑定で生まれる。店で買った品・買い戻した品・初期装備は鑑定済み。
+- IT-13 ドロップ（IT-50）の品は未鑑定で生まれる（魔法書は例外で鑑定済み。IT-55）。店で買った品・買い戻した品・初期装備は鑑定済み。
 
 ## 3. レベルの効果
 
@@ -74,10 +74,11 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 ## 6. 入手（ドロップ）
 
 - IT-50 ドロップ元は 宝箱（CB-52。ランダム遭遇の勝利時に、部屋のセルなら `config.combat.chestChance`（60）%【仮】、通路のセルなら `config.combat.chestChanceCorridor`（15）%【仮】。2026-10-05 に通路を足した）と ボスの戦利品（DG-31。ボスに勝つたび。再撃破でも）の 2 つ。どちらも `data/drops.json`（ドロップ表）を引く。宝箱の金（`config.combat.chestGoldDice`）は今のまま出し、品はその後に引く。ボスの戦利品はボスの語り（`battle.bossDefeated`・初回の `battle.dungeonCleared`・`dungeon.unlocked`）の後、`screen`{dungeon} とテレポーターの申し出（DG-32）の前に引く。
-- IT-51 ドロップ表 `drops.json` は `tables`（表の配列）・`chest`（ダンジョン id → 階番号の文字列 → 表の id）・`boss`（ダンジョン id → 表の id）を持つ。表は `{ id, itemChance, rolls, entries }` で、`entries` の各要素は `{ base, weight }` か `{ unique, weight }`。`rolls` 回だけ、`itemChance` % で 1 品を引く（rolls 回とも独立）。
-- IT-52 1 品の生成と乱数の順: chance(itemChance) → weightedIndex(entries) →（汎用なら）Lv の randInt(−`config.items.dropLevelSpread`（1）, +spread) → weightedIndex(rarities) → chance(curseChance) → オプションの個数（IT-30 / IT-32）だけ weightedIndex（オプション表から既に引いたものを除いた残り）。宝箱の chestQuality（IT-31）は希少度を引いた直後に足す（乱数なし）。
+- IT-51 ドロップ表 `drops.json` は `tables`（表の配列）・`chest`（ダンジョン id → 階番号の文字列 → 表の id）・`boss`（ダンジョン id → 表の id）を持つ。表は `{ id, itemChance, rolls, entries }` で、`entries` の各要素は `{ base, weight }` か `{ unique, weight }` か `{ item, weight }`（魔法書。IT-55。M9）のどれか 1 つ。`rolls` 回だけ、`itemChance` % で 1 品を引く（rolls 回とも独立）。
+- IT-52 1 品の生成と乱数の順: chance(itemChance) → weightedIndex(entries) →（魔法書の項目ならここで終わり。IT-55）→（汎用なら）Lv の randInt(−`config.items.dropLevelSpread`（1）, +spread) → weightedIndex(rarities) → chance(curseChance) → オプションの個数（IT-30 / IT-32）だけ weightedIndex（オプション表から既に引いたものを除いた残り）。宝箱の chestQuality（IT-31）は希少度を引いた直後に足す（乱数なし）。
 - IT-53 ドロップの Lv = 落とした敵の Lv（`monsters[].level`）± spread、最低 1【仮】。宝箱の「落とした敵」はその戦闘で倒した敵のうち `level` が最大の種類。ボスはボスの `level`。
 - IT-54 生成した品は未鑑定（IT-13）で、並び順に最初に所持枠（CH-71）が空いている者（life を問わない）の inventory の末尾に入れ、潜行台帳（DG-40）に入れる。誰も空いていなければ置いていく（`item.leftBehind`{item}。品は作らないので item はベースの `unidentifiedName`。乱数は引いた分を消費したまま）。語りは `item.found`{name, item}（item は未鑑定の表示名）。
+- IT-55 ドロップ表の魔法書の項目（M9）: `{ item, weight }` の `item` は `items.json` の id で、`type` が `book` のものだけ（読み込み時に止める）。引いた品は Lv0・通常・オプションなし・呪いなし・`uniqueId` null・**鑑定済み**で生まれる（隠す中身が無いため。IT-13 の例外）。乱数は weightedIndex(entries) の後に何も引かない（Lv・希少度・呪い・オプションを引かない）。所持枠（IT-54）が空いていなければ置いていき、語り `item.leftBehind` の item は品の `name`。
 
 ## 7. 経済と施設
 
@@ -126,7 +127,8 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 `data/drops.json`（ドロップ表）
 ```
 { "tables": [ { "id": "d01_f1", "itemChance": 40, "rolls": 1,
-                "entries": [ { "base": "dagger", "weight": 4 }, { "unique": "twin_tongue_dagger", "weight": 1 } ] } ],
+                "entries": [ { "base": "dagger", "weight": 4 }, { "unique": "twin_tongue_dagger", "weight": 1 },
+                             { "item": "tome_sanctuary_hymn", "weight": 1 } ] } ],   // item は魔法書だけ（IT-55）
   "chest": { "d01": { "1": "d01_f1", "2": "d01_f2" } },
   "boss":  { "d01": "d01_boss" } }
 ```
