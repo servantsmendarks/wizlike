@@ -2385,4 +2385,42 @@ describe("飛行（CB-26）", () => {
       expect(r.events.some((e) => e.kind === "hpChanged" && e.id === "e0-0" && e.delta < 0), spellId).toBe(true);
     }
   });
+
+  test("MG-46 灰嵐（M9）は敵全体（飛行のグループを含む）に 4d6 + 魔法攻撃力（MG-33）。生きている個体ごとに出目を振る。MP 12", () => {
+    const d = flyData();
+    for (let seed = 1; seed <= 4; seed++) {
+      const s = setup(
+        [
+          { monsterId: "giant_rat", hps: [50, 50], status: [["paralysis"], ["paralysis"]] },
+          { monsterId: "kobold", hps: [50, 0], status: [["paralysis"], []] },
+        ],
+        {
+          seed,
+          identified: ["giant_rat", "kobold"],
+          patches: { c1: PARA, c2: PARA, c3: PARA, c4: PARA, c6: PARA, c5: { knownSpells: ["fire_arrow", "ash_gale"], mp: 20, mpMax: 20 } },
+          inputs: { c5: { type: "cast", spellId: "ash_gale", target: { side: "none" } } },
+        },
+      );
+      // エルの武器を杖 Lv4（魔法攻撃力 2）にする
+      const el = memberById(s, "c5")!;
+      const old = el.equipment.weapon;
+      if (old !== null) delete s.items[old];
+      el.equipment.weapon = createItemInstance(s, { itemId: "staff", identified: true, level: 4 });
+      const m = cloneRng(s.rng);
+      rolls(m, 1); // initiative はエルだけ（麻痺の敵は振らない）
+      // 飛行のネズミ 2 体、コボルト 1 体（倒れている e1-1 は振らない）の順に 4d6
+      const expected = [0, 1, 2].map(() => rollDice(m, "4d6").total + 2);
+      const r = exec(s, RESOLVE, d);
+      expect(eventsOf(r.events, "spell")).toEqual([{ kind: "spell", actorId: "c5", spellId: "ash_gale", targets: ["e0-0", "e0-1", "e1-0"] }]);
+      expect(eventsOf(r.events, "hpChanged").map((e) => [e.id, -e.delta])).toEqual([
+        ["e0-0", expected[0]],
+        ["e0-1", expected[1]],
+        ["e1-0", expected[2]],
+      ]);
+      expect(kindsOf(r.events)).not.toContain("message:battle.outOfReach");
+      expect(member(r.state, "c5").mp).toBe(8);
+      expect(r.state.rng).toEqual(m);
+      expectKnownStringKeys(r.events, d);
+    }
+  });
 });
