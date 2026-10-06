@@ -13,17 +13,27 @@
 // ボスに挑む条件（全員 alive・全員 L ≥ BOSS_LEVEL・前衛の HP の合計 ≥ BOSS_FRONT_HP_PCT%）を満たせばボスへ歩いて戦い、勝てばテレポーターで街へ。
 // 満たさなければ 2 階の上り階段から BFS ≤ NEAR を歩く。帰りは糸が無ければ階ごとに上り階段へ歩いて ascend / exit。
 // d01 を踏破した後は d02 の 1 階だけを旧ルートと同じ規則で歩き、d02 に D02_DIVES 回潜ったらそのシードを終える。
+// M9-装備（2026-10-06 ユーザー指示。飛行への攻撃の規則の変更（仮）に伴うボットの変更）: 進行ボット（outfit）だけ、街の店の補充の後に
+// (1) 後衛（並び 4〜6）の alive・行動可能な者で武器の reach が ranged でない者に、店に並ぶ ranged の武器（RANGED_BUY の順。職業が使えるもの）を
+// 1 本買って装備させ（払える範囲）、外した武器は売る。(2) 所持金のうち「蘇生費の RESERVE_MUL 倍」（蘇生費 = templeCostPerLevel × パーティの最大 level。
+// 最も高い 1 人分の寺院の蘇生）を超える分で、前衛（並び 1〜3）の alive・行動可能な者の防具・盾・兜・小手を、流通レベル（shopLevel）の品のうち
+// 実効の AC が最も低いものに替える（今の品より Lv が上がり（空の枠は常に上がるとみなす）、実効の AC が下がるものだけ。並び順 × 部位の順に 1 周、
+// 払えるものだけ）。外した品は売る。(3) 戦闘の各ラウンドの前に、生存グループがすべて飛行（monsters[].special.flying）で、前衛（CB-14 の繰り上げ後、
+// 行動可能な者）が全員 reach melee なら、オートを切って逃走（battle.flee）を選ぶ（逃げられない戦闘では選ばない）。旧ルートの 2 つはこれらをしない。
+// 進行ボットの降りる条件は「全員 L3 以上」（DESCEND_LEVEL）を公式とし、常に降りる規則（BALANCE_DESCEND_LEVEL=1）の数字は参考として残す。
 import { expect } from "vitest";
 import { execute } from "../../src/core/engine";
 import { createRng, randInt, type RngState } from "../../src/core/rng";
 import { cellAt, edgeOf, FACINGS, isPassable, opposite, step, turnLeft, turnRight } from "../../src/core/rules/dungeon-gen";
 import { floorOf } from "../../src/core/rules/dungeon";
 import { fieldItemMenu } from "../../src/core/rules/items";
-import { frontLineIds } from "../../src/core/rules/combat-calc";
+import { canAct, canFleeOf, frontLineIds, unitAlive } from "../../src/core/rules/combat-calc";
+import { equipStats, itemPower } from "../../src/core/rules/equip-stats";
 import { sellPrice } from "../../src/core/rules/shop";
 import { townMenu } from "../../src/core/rules/town";
-import { findItem, itemOf } from "../../src/core/state";
-import type { Command, Facing, Floor, GameEvent, GameState, PartySetupMember, PenaltyResult, Pos } from "../../src/core/types";
+import { findBase, findItem, itemOf, monsterOf } from "../../src/core/state";
+import type { EquipSlot } from "../../src/core/data/index";
+import type { Command, Facing, Floor, GameEvent, GameState, ItemInstance, PartySetupMember, PenaltyResult, Pos } from "../../src/core/types";
 import { data, expectKnownStringKeys, expectStateInvariants, newGame } from "../helpers/core";
 
 const NEAR = 6; // 上り階段からの BFS 距離
@@ -49,12 +59,26 @@ const BOSS_LEVEL = 4; // ボスに挑む条件: 全員の level がこれ以上
 const BOSS_FRONT_HP_PCT = 70; // ボスに挑む条件: 前衛（frontLineIds）の HP の合計がこの % 以上
 /** M9 で足した敵（死因の集計用） */
 export const M9_MONSTERS = ["dusk_bat", "drowsy_slime", "drowned_acolyte", "glass_moth", "choir_wraith", "font_mire", "stone_gazer", "sunken_bishop"];
+// M9-装備の定数（テストの定数で、ゲームの調整値ではない）
+/** 後衛に買い与える ranged の武器の優先順（ユーザー指示の「投げナイフ・短弓」の順。店に並び、職業が使える最初のものを 1 本） */
+export const RANGED_BUY = ["throwing_knives", "short_bow"] as const;
+/** 前衛の防具の更新で替える部位（防具・盾・兜・小手。この順に見る） */
+const ARMOR_SLOTS: readonly EquipSlot[] = ["armor", "shield", "helm", "gauntlet"];
+/** 【仮】防具の更新に使えるのは、所持金のうち「蘇生費 × RESERVE_MUL」を超える分（ユーザー指示「蘇生費の 2 倍」） */
+export const RESERVE_MUL = 2;
 
 /**
  * route progress は M9 の進行ボット。descendLevel / bossLevel はその降りる条件・ボスに挑む条件の level（省略は DESCEND_LEVEL / BOSS_LEVEL。
- * 1 なら level を問わない。比較と煙テスト用）
+ * 1 なら level を問わない。比較と煙テスト用）。outfit は M9-装備（ranged の購入・前衛の防具の更新・飛行だけの遭遇の逃走）をするか
  */
-export type BotKind = { label: string; shouldReturn: (c: Campaign) => boolean; route?: "progress"; descendLevel?: number; bossLevel?: number };
+export type BotKind = {
+  label: string;
+  shouldReturn: (c: Campaign) => boolean;
+  route?: "progress";
+  descendLevel?: number;
+  bossLevel?: number;
+  outfit?: boolean;
+};
 
 /** セオリーボットの帰る条件（M9 の進行ボットも同じ規則を使う） */
 function theoryShouldReturn(c: Campaign): boolean {
@@ -77,8 +101,8 @@ export const BOTS: BotKind[] = [
   { label: "セオリー", shouldReturn: theoryShouldReturn },
 ];
 
-/** M9 の進行ボット（帰る条件はセオリーと同じ。d01 の 2 階とボス、d01 の踏破の後は d02 の 1 階） */
-export const PROGRESS_BOT: BotKind = { label: "進行", shouldReturn: theoryShouldReturn, route: "progress" };
+/** M9 の進行ボット（帰る条件はセオリーと同じ。d01 の 2 階とボス、d01 の踏破の後は d02 の 1 階。M9-装備をする） */
+export const PROGRESS_BOT: BotKind = { label: "進行", shouldReturn: theoryShouldReturn, route: "progress", outfit: true };
 
 type Method = "thread" | "walk" | "cap" | "wipe" | "teleport"; // teleport は M9 の進行ボットのボス撃破の後
 
@@ -146,9 +170,16 @@ type DiveRecord = {
   bossFight: boolean; // ボス戦をした
   bossWin: boolean; // ボスを倒した
   bossWipe: boolean; // ボス戦で全滅した
-  outOfReach: number; // CB-26 飛行で味方の攻撃が届かなかった回数（message battle.outOfReach）
   newMonsterDeaths: number; // 死因が M9 の新しい敵の死者数
   minLevelAfter: number; // 宿の後の全員の最小 level
+  encounterByFloor: Record<string, number>; // M9: 遭遇の敵グループの数（キーは「階:monsterId」。階ごとの倍率用）
+  // M9-装備（進行ボットだけ。旧ルートは 0）
+  fleeTries: number; // 飛行だけの遭遇で前衛が全員近接のときに選んだ逃走の回数
+  fleeOk: number; // そのうち逃げ切った回数
+  rangedBought: number; // 街で後衛に買い与えた ranged の武器の数
+  armorBought: number; // 街で前衛の防具・盾・兜・小手を更新した数
+  outfitCost: number; // その 2 つの購入の費用の合計
+  outfitSoldGold: number; // 外した品を売った収入の合計
 };
 
 export type CampaignResult = { seed: number; startAssets: number; dives: DiveRecord[]; aborted: boolean };
@@ -229,6 +260,13 @@ function assetsOf(s: GameState): number {
   return v;
 }
 
+/** M9-装備: 防具・盾・兜・小手の実体の実効の AC（IT-21 の itemPower。オプションは見ない。店の品と初期装備はオプションを持たない） */
+function armorAc(inst: ItemInstance): number {
+  const p = itemPower(data, inst, findBase(data, inst.itemId)!);
+  if (p.kind !== "armor") throw new Error(`armorAc: ${inst.itemId} is a weapon`);
+  return p.ac;
+}
+
 /** 1 シード分のボット（潜行 × dives） */
 export class Campaign {
   state: GameState;
@@ -261,7 +299,9 @@ export class Campaign {
   // M9 進行ボット（潜行ごとにリセット）
   floorNo = 1; // floor / homeDist / near を作った階
   deepest = 1;
-  outOfReach = 0;
+  encounterByFloor: Record<string, number> = {};
+  fleeTries = 0;
+  fleeOk = 0;
   bossFight = false;
   bossWin = false;
   bossWipe = false;
@@ -290,11 +330,7 @@ export class Campaign {
     // 入力を積むだけの battle.input と向きを変えるだけの dungeon.turn は時間の都合で省く（decisions の H9 の行）
     if (cmd.type !== "battle.input" && cmd.type !== "dungeon.turn") expectStateInvariants(r.state);
     expectKnownStringKeys(r.events);
-    for (const e of r.events) {
-      if (e.kind !== "message") continue;
-      this.keys.add(e.key);
-      if (e.key === "battle.outOfReach") this.outOfReach += 1; // M9: CB-26
-    }
+    for (const e of r.events) if (e.kind === "message") this.keys.add(e.key);
     const w = r.events.find((e): e is Extract<GameEvent, { kind: "wipe" }> => e.kind === "wipe");
     if (w !== undefined) {
       this.wiped = w.penalty;
@@ -340,6 +376,8 @@ export class Campaign {
         for (const g of e.groups) {
           this.encounterGroups[g.monsterId] = (this.encounterGroups[g.monsterId] ?? 0) + 1;
           this.encounterUnits[g.monsterId] = (this.encounterUnits[g.monsterId] ?? 0) + g.count;
+          const fk = `${dive.floor}:${g.monsterId}`;
+          this.encounterByFloor[fk] = (this.encounterByFloor[fk] ?? 0) + 1;
         }
       } else if (e.kind === "statusChanged") {
         const st = status.get(e.id);
@@ -386,9 +424,32 @@ export class Campaign {
     let n = 0;
     while (this.state.battle !== null) {
       if (n++ > BATTLE_ROUND_CAP) throw new Error(`seed ${this.seed}: battle did not end`);
+      if (this.kind.outfit === true && this.shouldFlee()) {
+        // M9-装備: 逃走はオートが切れているときだけ受け付ける（CB-12/50 の checkFlee）
+        if (this.state.battle.auto) this.run({ type: "battle.auto", on: false });
+        this.run({ type: "battle.flee" });
+        this.fleeTries += 1;
+        if (this.state.battle === null && this.wiped === null) this.fleeOk += 1;
+        continue;
+      }
       this.run(this.state.battle.auto ? { type: "battle.resolve" } : { type: "battle.auto", on: true });
     }
     this.cureAfterBattle();
+  }
+
+  /**
+   * M9-装備: 逃走を選ぶか。逃げられる戦闘（CB-02 の random）で、行動可能な味方がいて、生存グループがすべて飛行で、
+   * 前衛（CB-14 の繰り上げ後の frontLineIds）の行動可能な者が全員 reach melee のとき
+   */
+  shouldFlee(): boolean {
+    const s = this.state;
+    const b = s.battle!;
+    if (!canFleeOf(b) || !s.party.some(canAct)) return false;
+    const alive = b.groups.filter((g) => g.units.some(unitAlive));
+    if (alive.length === 0 || !alive.every((g) => monsterOf(data, g.monsterId).special.flying === true)) return false;
+    const ids = frontLineIds(s, data);
+    const front = s.party.filter((c) => ids.includes(c.id) && canAct(c));
+    return front.every((c) => equipStats(s, data, c).reach === "melee");
   }
 
   /**
@@ -613,7 +674,9 @@ export class Campaign {
   dive(dungeonId = "d01"): Method | null {
     if (townMenu(this.state, data)!.dungeons.find((d) => d.id === dungeonId)?.canEnter !== true) return null;
     this.deepest = 1;
-    this.outOfReach = 0;
+    this.encounterByFloor = {};
+    this.fleeTries = 0;
+    this.fleeOk = 0;
     this.bossFight = false;
     this.bossWin = false;
     this.bossWipe = false;
@@ -882,6 +945,82 @@ export class Campaign {
   }
 
   /**
+   * M9-装備: 店の装備（流通レベルの汎用ベース）を memberId に買い、装備させ、外した品（あれば）を売る。買えなければ（並んでいない・払えない・
+   * 所持枠が無い・装備できない）false で、何もしない。費用は rec.outfitCost、売った額は rec.outfitSoldGold
+   */
+  buyAndEquip(memberId: string, itemId: string, budget: number, rec: DiveRecord): boolean {
+    const shop = townMenu(this.state, data)!.shop;
+    const row = shop.equipment.find((x) => x.itemId === itemId);
+    const m = shop.members.find((x) => x.memberId === memberId);
+    if (row === undefined || m === undefined || m.slotsFree === 0 || row.price > budget || row.price > this.state.gold) return false;
+    const ch = this.state.party.find((c) => c.id === memberId)!;
+    const base = findBase(data, itemId)!;
+    if (!canAct(ch) || (base.classes.length > 0 && !base.classes.includes(ch.classId))) return false;
+    const old = ch.equipment[base.slot];
+    if (old !== null && this.state.items[old]!.cursed) return false;
+    const g = this.state.gold;
+    this.run({ type: "town.shop", action: { kind: "buy", memberId, itemId } });
+    expect(g - this.state.gold).toBe(row.price);
+    rec.outfitCost += row.price;
+    const inv = this.state.party.find((c) => c.id === memberId)!.inventory;
+    const bought = inv[inv.length - 1]!;
+    this.run({ type: "party.equip", memberId, instanceId: bought });
+    expect(this.state.party.find((c) => c.id === memberId)!.equipment[base.slot]).toBe(bought);
+    if (old !== null) {
+      const price = townMenu(this.state, data)!.shop.sellable.find((x) => x.memberId === memberId)!.items.find((x) => x.instanceId === old)!.price;
+      const g2 = this.state.gold;
+      this.run({ type: "town.shop", action: { kind: "sell", memberId, instanceId: old } });
+      expect(this.state.gold - g2).toBe(price);
+      rec.outfitSoldGold += price;
+    }
+    return true;
+  }
+
+  /** M9-装備（ユーザー指示）: 蘇生費 = templeCostPerLevel × パーティの最大 level（最も高い 1 人分の寺院の蘇生） */
+  reviveCost(): number {
+    return data.config.economy.templeCostPerLevel * Math.max(...this.state.party.map((c) => c.level));
+  }
+
+  /**
+   * M9-装備（ユーザー指示）: (1) 後衛（並び FRONT_ROW 以降）の alive・行動可能な者で、武器の reach が ranged でない者に、RANGED_BUY の順で
+   * 店に並び職業が使える最初の ranged の武器を 1 本（払える範囲。予備費は取らない）。(2) 所持金 − 蘇生費 × RESERVE_MUL の範囲で、前衛（並び 1〜FRONT_ROW）の
+   * alive・行動可能な者の ARMOR_SLOTS を、店の同じ部位で職業が使える品のうち実効の AC（itemPower）が最も低いもの（同じなら安いもの、さらに同じならファイルの順）に替える。
+   * 替えるのは「店の Lv（shopLevel）> 今の品の Lv（空の枠は常に真）」かつ「実効の AC が今より下がる」ときだけ。並び順 × 部位の順に 1 周する
+   */
+  outfit(rec: DiveRecord): void {
+    for (const ch of this.state.party.slice(FRONT_ROW)) {
+      if (ch.life !== "alive" || !canAct(ch)) continue;
+      if (equipStats(this.state, data, ch).reach === "ranged") continue;
+      for (const id of RANGED_BUY) {
+        if (this.buyAndEquip(ch.id, id, Infinity, rec)) {
+          rec.rangedBought += 1;
+          break;
+        }
+      }
+    }
+    const level = this.state.progress.shopLevel;
+    for (const id of this.state.party.slice(0, FRONT_ROW).map((c) => c.id)) {
+      for (const slot of ARMOR_SLOTS) {
+        const ch = this.state.party.find((c) => c.id === id)!;
+        if (ch.life !== "alive" || !canAct(ch)) break;
+        const curId = ch.equipment[slot];
+        const cur = curId === null ? null : this.state.items[curId]!;
+        const curAc = cur === null ? 0 : armorAc(cur);
+        if (cur !== null && cur.level >= level) continue;
+        let best: { itemId: string; ac: number; price: number } | null = null;
+        for (const row of townMenu(this.state, data)!.shop.equipment) {
+          const base = findBase(data, row.itemId)!;
+          if (base.slot !== slot || (base.classes.length > 0 && !base.classes.includes(ch.classId))) continue;
+          const ac = armorAc({ id: "-", itemId: row.itemId, level: row.level, rarity: "normal", options: [], uniqueId: null, identified: true, cursed: false, foundIn: null });
+          if (best === null || ac < best.ac || (ac === best.ac && row.price < best.price)) best = { itemId: row.itemId, ac, price: row.price };
+        }
+        if (best === null || best.ac >= curAc) continue;
+        if (this.buyAndEquip(id, best.itemId, this.state.gold - this.reviveCost() * RESERVE_MUL, rec)) rec.armorBought += 1;
+      }
+    }
+  }
+
+  /**
    * 潜行 → 街 を count 回。M9 の進行ボット（route progress）は、d01 を踏破していなければ d01、していれば d02 に潜り、
    * d02 に D02_DIVES 回潜ったところで終える（count は潜行の上限）
    */
@@ -950,9 +1089,15 @@ export class Campaign {
         bossFight: this.bossFight,
         bossWin: this.bossWin,
         bossWipe: this.bossWipe,
-        outOfReach: this.outOfReach,
         newMonsterDeaths: this.deaths.filter((d) => d.monster && M9_MONSTERS.includes(d.cause)).length,
         minLevelAfter: 0,
+        encounterByFloor: this.encounterByFloor,
+        fleeTries: this.fleeTries,
+        fleeOk: this.fleeOk,
+        rangedBought: 0,
+        armorBought: 0,
+        outfitCost: 0,
+        outfitSoldGold: 0,
       };
       this.mercy(rec);
       this.sellLoot(rec);
@@ -962,6 +1107,7 @@ export class Campaign {
       rec.anyL2 = this.state.party.some((c) => c.level >= 2);
       rec.minLevelAfter = Math.min(...this.state.party.map((c) => c.level));
       this.shop(rec);
+      if (this.kind.outfit === true) this.outfit(rec); // M9-装備（消耗品の補充の後）
       rec.unsold = this.equipmentInHand();
       rec.goldAfter = this.state.gold;
       rec.assetsAfter = assetsOf(this.state);
@@ -1024,14 +1170,15 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
 }
 
 /**
- * M9 進行ボットの集計（2026-10-06 ユーザー指示）: d01 の踏破（潜行回数・ボス戦）、d01 の潜行（踏破まで）の全滅率・死者・敵ごとの死者・飛行で届かなかった回数、
- * d02 の潜行 1（各シードの最初の d02）と潜行 2〜3 の全滅率・死者・死因・戦闘数
+ * M9 進行ボットの集計（2026-10-06 ユーザー指示）: d01 の踏破（潜行回数・ボス戦）、d01 の潜行（踏破まで）の全滅率・死者・敵ごとの死者と倍率（2 階だけの行も）、
+ * d02 の潜行 1（各シードの最初の d02）と潜行 2〜3 の全滅率・死者・死因・戦闘数。M9-装備の逃走と購入の数（「飛行で届かなかった回数」は
+ * CB-26 の置き換えで battle.outOfReach が無くなったので消した）
  */
 export function progressReport(results: CampaignResult[], kind: BotKind = PROGRESS_BOT): string {
   const lines: string[] = [];
   const seeds = results.length;
   lines.push(
-    `M9-進行【${kind.label}】（${seeds} シード × 最大 ${PROGRESS_DIVES} 潜行。帰る条件はセオリー（8 戦・開始時に alive の者の死亡・前衛の HP 半分）。d01: 1 階は「全員 alive・全員 L${kind.descendLevel ?? DESCEND_LEVEL} 以上」なら下り階段へ最短で歩いて降り（そうでなければ上り階段から BFS ${NEAR} 以内）、2 階は「全員 alive・全員 L${kind.bossLevel ?? BOSS_LEVEL} 以上・前衛の HP ${BOSS_FRONT_HP_PCT}% 以上」ならボスへ、そうでなければ上り階段から BFS ${NEAR} 以内。d01 の踏破の後は d02 の 1 階を BFS ${NEAR} 以内で ${D02_DIVES} 潜行）`,
+    `M9-進行【${kind.label}】（${seeds} シード × 最大 ${PROGRESS_DIVES} 潜行。帰る条件はセオリー（8 戦・開始時に alive の者の死亡・前衛の HP 半分）。d01: 1 階は「全員 alive・全員 L${kind.descendLevel ?? DESCEND_LEVEL} 以上」なら下り階段へ最短で歩いて降り（そうでなければ上り階段から BFS ${NEAR} 以内）、2 階は「全員 alive・全員 L${kind.bossLevel ?? BOSS_LEVEL} 以上・前衛の HP ${BOSS_FRONT_HP_PCT}% 以上」ならボスへ、そうでなければ上り階段から BFS ${NEAR} 以内。d01 の踏破の後は d02 の 1 階を BFS ${NEAR} 以内で ${D02_DIVES} 潜行。M9-装備 ${kind.outfit === true ? `あり（街で後衛に ranged（${RANGED_BUY.join("・")}）、所持金 − 蘇生費 × ${RESERVE_MUL} の範囲で前衛の防具を流通レベルの品に、飛行だけの遭遇で前衛が全員近接なら逃走）` : "なし"}）`,
   );
   lines.push(`打ち切り（行動可能な者がいなくて入れない）: ${results.filter((r) => r.aborted).length} シード`);
   const clearedAt = results.map((r) => r.dives.findIndex((d) => d.bossWin));
@@ -1042,7 +1189,7 @@ export function progressReport(results: CampaignResult[], kind: BotKind = PROGRE
   lines.push(
     `d01 のボス戦: ${fights.length} 回・勝ち ${pct(fights.filter((d) => d.bossWin).length, fights.length)}・ボス戦で全滅 ${fights.filter((d) => d.bossWipe).length} / 2 階に降りた潜行 ${d01.filter((d) => d.deepestFloor >= 2).length}/${d01.length}`,
   );
-  lines.push(...diveLines("d01 の潜行（踏破まで）", d01));
+  lines.push(...diveLines("d01 の潜行（踏破まで）", d01, 2));
   for (const [label, k] of [["d02 の潜行 1", 0], ["d02 の潜行 2", 1], ["d02 の潜行 3", 2]] as const) {
     const ds = results.flatMap((r) => {
       const d = r.dives.filter((x) => x.dungeonId === "d02")[k];
@@ -1054,21 +1201,47 @@ export function progressReport(results: CampaignResult[], kind: BotKind = PROGRE
   return lines.join("\n");
 }
 
-/** M9: 潜行の集まり ds の全滅率・帰り方・死者・戦闘数・飛行で届かなかった回数・死因（敵ごと・敵以外） */
-function diveLines(label: string, ds: readonly DiveRecord[]): string[] {
+/**
+ * M9: 潜行の集まり ds の全滅率・帰り方・死者・戦闘数・死因（敵ごと・敵以外）と、M9-装備の逃走・購入。
+ * 死因の「倍率」は deathReport と同じ式（その敵による死者 ÷ 敵による死者の合計）÷（その敵の遭遇グループ ÷ 遭遇グループの合計）。
+ * floor を渡すとその階の死者と遭遇だけで死因の行をもう 1 つ出す
+ */
+function diveLines(label: string, ds: readonly DiveRecord[], floor?: number): string[] {
   const lines: string[] = [];
   const m = (x: Method) => ds.filter((d) => d.method === x).length;
   const deaths = ds.flatMap((d) => d.deaths);
   lines.push(
-    `${label}: ${ds.length} 潜行 / 全滅率 ${pct(m("wipe"), ds.length)} / 帰還 糸 ${m("thread")}・徒歩 ${m("walk")}・テレポーター ${m("teleport")}・上限 ${m("cap")} / 1 潜行あたりの死者 ${fmt(mean(ds.map((d) => d.deaths.length)))}（計 ${deaths.length}。うち M9 の敵 ${sum(ds.map((d) => d.newMonsterDeaths))}）/ 潜行の終わりに alive でない人数 平均 ${fmt(mean(ds.map((d) => d.down)))} / 戦闘数 平均 ${fmt(mean(ds.map((d) => d.battles)))}・中央値 ${fmt(median(ds.map((d) => d.battles)))} / 飛行で届かなかった ${sum(ds.map((d) => d.outOfReach))} 回`,
+    `${label}: ${ds.length} 潜行 / 全滅率 ${pct(m("wipe"), ds.length)} / 帰還 糸 ${m("thread")}・徒歩 ${m("walk")}・テレポーター ${m("teleport")}・上限 ${m("cap")} / 1 潜行あたりの死者 ${fmt(mean(ds.map((d) => d.deaths.length)))}（計 ${deaths.length}。うち M9 の敵 ${sum(ds.map((d) => d.newMonsterDeaths))}）/ 潜行の終わりに alive でない人数 平均 ${fmt(mean(ds.map((d) => d.down)))} / 戦闘数 平均 ${fmt(mean(ds.map((d) => d.battles)))}・中央値 ${fmt(median(ds.map((d) => d.battles)))}`,
   );
+  lines.push(
+    `  M9-装備: 飛行だけの遭遇で逃走 ${sum(ds.map((d) => d.fleeTries))} 回（逃げ切った ${sum(ds.map((d) => d.fleeOk))}）/ この潜行の後の街で ranged を買った ${sum(ds.map((d) => d.rangedBought))} 本・前衛の防具の更新 ${sum(ds.map((d) => d.armorBought))} 品（費用計 ${sum(ds.map((d) => d.outfitCost))}G、外した品の売却 ${sum(ds.map((d) => d.outfitSoldGold))}G）`,
+  );
+  const causeLine = (title: string, dd: readonly DeathRecord[], groups: Record<string, number>) => {
+    const byEnemy = dd.filter((x) => x.monster).length;
+    const total = sum(Object.values(groups));
+    const causes = [...new Set([...Object.keys(groups), ...dd.map((x) => x.cause)])].sort(
+      (a, b) => dd.filter((x) => x.cause === b).length - dd.filter((x) => x.cause === a).length || a.localeCompare(b),
+    );
+    const parts = causes.map((c) => {
+      const n = dd.filter((x) => x.cause === c).length;
+      const g = groups[c] ?? 0;
+      const ratio = g === 0 || byEnemy === 0 || !dd.some((x) => x.cause === c && x.monster) ? "" : `・倍率 ${fmt(n / byEnemy / (g / total))}`;
+      return `${c}${M9_MONSTERS.includes(c) ? "*" : ""} ${n}（遭遇 ${g}${ratio}）`;
+    });
+    if (parts.length > 0) lines.push(`  ${title}（死者・遭遇のグループ数・倍率。* は M9 の敵。遭遇グループ 計 ${total}・敵による死者 計 ${byEnemy}）: ${parts.join(" / ")}`);
+  };
   const groups: Record<string, number> = {};
   for (const d of ds) for (const [id, n] of Object.entries(d.encounterGroups)) groups[id] = (groups[id] ?? 0) + n;
-  const causes = [...new Set([...Object.keys(groups), ...deaths.map((x) => x.cause)])].sort(
-    (a, b) => deaths.filter((x) => x.cause === b).length - deaths.filter((x) => x.cause === a).length || a.localeCompare(b),
-  );
-  const parts = causes.map((c) => `${c}${M9_MONSTERS.includes(c) ? "*" : ""} ${deaths.filter((x) => x.cause === c).length}（遭遇 ${groups[c] ?? 0}）`);
-  if (parts.length > 0) lines.push(`  死因（死者・遭遇のグループ数。* は M9 の敵）: ${parts.join(" / ")}`);
+  causeLine("死因", deaths, groups);
+  if (floor !== undefined) {
+    const fg: Record<string, number> = {};
+    for (const d of ds)
+      for (const [k, n] of Object.entries(d.encounterByFloor)) {
+        const [f, id] = k.split(":") as [string, string];
+        if (Number(f) === floor) fg[id] = (fg[id] ?? 0) + n;
+      }
+    causeLine(`${floor} 階だけの死因`, deaths.filter((x) => x.floor === floor), fg);
+  }
   return lines;
 }
 

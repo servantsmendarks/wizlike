@@ -3,7 +3,9 @@
 // M9: 進行ボット（d01 の 2 階とボス、d01 の踏破の後の d02）の煙テストを足した（数字は見ない）。
 import { describe, expect, test } from "vitest";
 import { expectStateInvariants } from "./helpers/core";
-import { BOTS, Campaign, D02_DIVES, PROGRESS_BOT, PROGRESS_DIVES, progressReport, report, runCampaigns } from "./balance/bot";
+import { BOTS, Campaign, D02_DIVES, PROGRESS_BOT, PROGRESS_DIVES, progressReport, report, RESERVE_MUL, runCampaigns } from "./balance/bot";
+
+const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0);
 
 const SEEDS = 5;
 const DIVES = 2;
@@ -49,6 +51,35 @@ describe("バランス（H9 煙テスト）", () => {
     expect(r.dives.slice(0, k + 1).every((d) => d.dungeonId === "d01")).toBe(true);
     expect(r.dives.slice(k + 1).map((d) => d.dungeonId)).toEqual(Array.from({ length: D02_DIVES }, () => "d02"));
     expect(c.state.progress.clearedDungeons).toContain("d01");
+    expectStateInvariants(c.state);
+    // M9-装備: d01 の踏破で流通レベル 2 になり、その帰還の街で後衛の魔術師（エル）に投げナイフを買い与える。d02 では飛行だけの遭遇で逃走を選ぶ
+    expect(r.dives[k]!.rangedBought).toBe(1);
+    expect(c.state.items[c.state.party[4]!.equipment.weapon!]!.itemId).toBe("throwing_knives");
+    expect(sum(r.dives.slice(k + 1).map((d) => d.fleeTries))).toBeGreaterThan(0);  }, 60_000);
+
+  test("H9/M9 M9-装備: 所持金 5000・流通レベル 2 で 1 潜行すると、街で前衛の防具を流通レベルの品に替え（実効の AC が下がるものだけ）、後衛に ranged を買い、蘇生費 × RESERVE_MUL を残す", () => {
+    const c = new Campaign(1, PROGRESS_BOT);
+    c.state.gold = 5000;
+    c.state.progress.shopLevel = 2;
+    const r = c.campaign(1);
+    const d = r.dives[0]!;
+    expect(d.method).not.toBe("wipe");
+    const eq = (i: number, slot: "weapon" | "armor" | "shield" | "helm" | "gauntlet") => {
+      const id = c.state.party[i]!.equipment[slot];
+      return id === null ? null : `${c.state.items[id]!.itemId}+${c.state.items[id]!.level}`;
+    };
+    // アルド（戦士）: 革鎧 → 鎖帷子、木の盾 → 鉄の盾、空の兜 → 鉄兜、空の小手 → 革小手（鉄の小手は流通レベル 4）
+    expect([eq(0, "armor"), eq(0, "shield"), eq(0, "helm"), eq(0, "gauntlet")]).toEqual(["chain_mail+2", "iron_shield+2", "iron_helm+2", "leather_gloves+2"]);
+    // ベルク（戦士）: 鎖帷子 +0 は AC が同じなので替えない
+    expect(eq(1, "armor")).toBe("chain_mail+0");
+    // キリ（盗賊）: 革鎧 → 鋲打ち革鎧、革兜 → 鎖頭巾、盾は使えない
+    expect([eq(2, "armor"), eq(2, "shield"), eq(2, "helm")]).toEqual(["studded_leather+2", null, "chain_coif+2"]);
+    // 後衛: 僧侶（ドナ）は投げナイフも短弓も使えない、魔術師（エル）は投げナイフ、短弓のフィンはそのまま
+    expect([eq(3, "weapon"), eq(4, "weapon"), eq(5, "weapon")]).toEqual(["staff+0", "throwing_knives+2", "short_bow+0"]);
+    expect(d.rangedBought).toBe(1);
+    expect(d.armorBought).toBe(10); // アルド 4・ベルク 3（盾・兜・小手）・キリ 3（鎧・兜・小手）
+    expect(d.unsold).toBe(0); // 外した品は売った
+    expect(c.state.gold).toBeGreaterThanOrEqual(c.reviveCost() * RESERVE_MUL);
     expectStateInvariants(c.state);
   }, 60_000);
 

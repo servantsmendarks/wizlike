@@ -5,7 +5,8 @@
 // 例（Git Bash）: BALANCE_PERSONALITIES=normal npm run balance
 // M9: 進行ボット（d01 の 2 階とボス、d01 の踏破の後の d02。tests/balance/bot.ts の PROGRESS_BOT）を足した。
 // 環境変数 BALANCE_BOTS=f1 で旧ルート（4 戦固定・セオリー）だけ、BALANCE_BOTS=progress で進行ボットだけを回す。未設定なら両方。
-// BALANCE_DESCEND_LEVEL=<正の整数> で進行ボットの降りる条件の level を替える（既定は bot.ts の DESCEND_LEVEL。1 なら d01 の 1 階で必ず降りる。比較用）。
+// BALANCE_DESCEND_LEVEL=<正の整数> で進行ボットの降りる条件の level を替える（既定は bot.ts の DESCEND_LEVEL = 3 で、これを公式の数字とする。
+// 1 なら d01 の 1 階で必ず降りる。その数字は参考として残す比較用）。
 import { describe, expect, test } from "vitest";
 import type { PartySetupMember } from "../../src/core/types";
 import { defaultMembers } from "../helpers/core";
