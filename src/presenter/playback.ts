@@ -130,6 +130,11 @@ export type PlayerDeps = {
    * 演出スキップでも同じに呼ぶ。例外は console.warn にとどめて再生を続ける。省略すると無音
    */
   sound?(ev: GameEvent): void;
+  /**
+   * UI-66（2026-10-07）: 再生の開始に 1 回、最初の sound より前に呼ぶ（同じ拍の効果音の記録を空にする。拍の外の再生も 1 つの拍として扱う）。
+   * 例外は sound と同じく console.warn にとどめる
+   */
+  soundStart?(): void;
 };
 
 /** UI-40 / UI-56: 全滅の 2d10 の dice の label のキー。この箱は wipe（内訳を開く）まで消さない */
@@ -492,6 +497,11 @@ export function createPlayer(deps: PlayerDeps): Player {
       taps = 0;
       marked = false;
       leaveBeats();
+      try {
+        deps.soundStart?.();
+      } catch (e) {
+        console.warn("sound:", e);
+      }
       const cx: PlayCx = { cursor: cursorOfDive(before), skip: isSkip(), screen: before.screen };
       // 後ろに message が残っているか（続きの三角。拍の外はタップを待たずに先へ進む）
       let messagesLeft = events.filter((e) => e.kind === "message").length;

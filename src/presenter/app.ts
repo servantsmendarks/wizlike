@@ -71,6 +71,7 @@ import {
   resumeSoundContext,
   songAt,
   soundsFor,
+  startSoundPlayback,
   townSong,
   type SoundContext,
   type SoundOrder,
@@ -442,6 +443,10 @@ export function createApp(o: {
     sound: (ev) => {
       for (const x of soundsFor(ev, data, soundCtx)) playOrder(x);
       soundCtx = nextSoundContext(ev, data, soundCtx);
+    },
+    // UI-66（2026-10-07）: 同じ拍の中で同じ効果音は 1 回だけ。再生の開始（と beat）で記録を空にする
+    soundStart: () => {
+      soundCtx = startSoundPlayback(soundCtx);
     },
   });
 

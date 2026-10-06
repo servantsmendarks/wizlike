@@ -1405,6 +1405,18 @@ describe("UI-66 playback の音の契機", () => {
     expect(await run(true)).toEqual(want);
   });
 
+  test("UI-66（2026-10-07）deps.soundStart は再生の開始に 1 回、最初の deps.sound より前に呼ばれる（同じ拍の効果音の記録を空にする契機）", async () => {
+    const { deps, log } = fakeDeps({ skipAnimations: true });
+    deps.sound = (ev) => log.push({ m: `sound:${ev.kind}`, a: [] });
+    deps.soundStart = () => log.push({ m: "soundStart", a: [] });
+    const s = stateWith(diveAt(3, 3, "N"));
+    const p = createPlayer(deps);
+    await p.play([{ kind: "blocked" }, { kind: "beat", phase: "system", auto: true }, { kind: "blocked" }], s, s);
+    await p.play([{ kind: "blocked" }], s, s);
+    const seq = names(log).filter((m) => m === "soundStart" || m.startsWith("sound:"));
+    expect(seq).toEqual(["soundStart", "sound:blocked", "sound:beat", "sound:blocked", "soundStart", "sound:blocked"]);
+  });
+
   test("UI-66 deps.sound が例外を投げても再生は続く", async () => {
     const { deps, log } = fakeDeps({ skipAnimations: true });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

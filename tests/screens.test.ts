@@ -527,6 +527,8 @@ describe("入力と Command", () => {
   test("UI-63/UI-66（2026-10-06）音の拡充の配線: 出来事の音は表示層だけの SoundContext を通す、街は施設の曲、迷宮のキャンプの間はキャンプの曲で閉じたら場面の曲、続きからは潜っているダンジョンの曲、施設に入る・キャンプを開く・会話の送りの音（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     expect(app).toMatch(/sound: \(ev\) => \{\s*for \(const x of soundsFor\(ev, data, soundCtx\)\) playOrder\(x\);\s*soundCtx = nextSoundContext\(ev, data, soundCtx\);\s*\},/);
+    // UI-66（2026-10-07）: 同じ拍の中で同じ効果音は 1 回だけ。再生の開始で記録を空にする
+    expect(app).toMatch(/soundStart: \(\) => \{\s*soundCtx = startSoundPlayback\(soundCtx\);\s*\},/);
     expect(app).toMatch(/if \(x\.type === "song"\) setScene\(x\.name\);/);
     expect(app).toMatch(/play\.setTownPicture\(townFacility\(townPage\)\);\s*const song = townSong\(townFacility\(townPage\), data\);\s*if \(song !== undefined\) setScene\(song\);/);
     const open = /const openCamp = \([\s\S]*?\n {2}\};/.exec(app)?.[0] ?? "";

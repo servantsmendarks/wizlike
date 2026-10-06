@@ -13,6 +13,7 @@ import {
   sceneSong,
   songAt,
   soundsFor,
+  startSoundPlayback,
   townSong,
   type SoundContext,
 } from "../src/presenter/sound-cues";
@@ -22,7 +23,7 @@ import { data } from "./helpers/core";
 const group = (monsterId: string, index = 0): EnemyGroupView => ({ index, monsterId, name: monsterId, identified: true, count: 1 });
 const bossId = data.monsters.find((m) => m.special.boss === true)?.id ?? "";
 const normalId = data.monsters.find((m) => m.special.boss !== true)?.id ?? "";
-const BOSS_CTX: SoundContext = { boss: true, encounters: 0 };
+const BOSS_CTX: SoundContext = { boss: true, encounters: 0, beatSfx: [] };
 
 describe("UI-66 soundsFor", () => {
   const cases: [string, GameEvent, ReturnType<typeof soundsFor>][] = [
@@ -130,10 +131,10 @@ describe("UI-66 soundsFor", () => {
     expect(soundsFor({ kind: "screen", to: "battle" }, data)).toEqual([]);
     const enc = (groups: EnemyGroupView[]): GameEvent => ({ kind: "encounter", groups });
     const jingle = { type: "jingle", name: "encounter" };
-    expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 0 })).toEqual([jingle, { type: "song", name: "battle1" }]);
-    expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 1 })).toEqual([jingle, { type: "song", name: "battle1" }]);
-    expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 2 })).toEqual([jingle, { type: "song", name: "battle1" }]);
-    expect(soundsFor(enc([group(normalId), group(bossId, 1)]), data, { boss: false, encounters: 1 })).toEqual([jingle, { type: "song", name: "battle2" }]);
+    expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 0, beatSfx: [] })).toEqual([jingle, { type: "song", name: "battle1" }]);
+    expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 1, beatSfx: [] })).toEqual([jingle, { type: "song", name: "battle1" }]);
+    expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 2, beatSfx: [] })).toEqual([jingle, { type: "song", name: "battle1" }]);
+    expect(soundsFor(enc([group(normalId), group(bossId, 1)]), data, { boss: false, encounters: 1, beatSfx: [] })).toEqual([jingle, { type: "song", name: "battle2" }]);
   });
 
   it("UI-63 nextSoundContext: ボスのいない遭遇を数え、ボスかを覚える。ほかの出来事では変えない", () => {
@@ -148,7 +149,7 @@ describe("UI-66 soundsFor", () => {
     }
     // 巡回（今の battleSongs は battle1 だけ。ボス戦は battle2 で、数えない）
     expect(songs).toEqual(["battle1", "battle1", "battle2", "battle1"]);
-    expect(ctx).toEqual({ boss: false, encounters: 3 });
+    expect(ctx).toEqual({ boss: false, encounters: 3, beatSfx: [] });
     expect(nextSoundContext({ kind: "battleEnd", result: "win" }, data, ctx)).toBe(ctx);
   });
 
@@ -247,10 +248,67 @@ describe("UI-63 / SV-50 songAt と resumeSoundContext（screen イベントの�
   });
 
   it("UI-63 resumeSoundContext: 戦闘中の続きからはその戦闘を 1 つ目の遭遇として数える（次は battleSongs の 2 番目。今は 1 曲なので battle1）。ボス戦は数えずボスを覚える", () => {
-    expect(resumeSoundContext("battle", [normalId], data)).toEqual({ boss: false, encounters: 1 });
-    expect(resumeSoundContext("battle", [bossId], data)).toEqual({ boss: true, encounters: 0 });
+    expect(resumeSoundContext("battle", [normalId], data)).toEqual({ boss: false, encounters: 1, beatSfx: [] });
+    expect(resumeSoundContext("battle", [bossId], data)).toEqual({ boss: true, encounters: 0, beatSfx: [] });
     expect(resumeSoundContext("dungeon", [], data)).toEqual(INITIAL_SOUND_CONTEXT);
     const next = soundsFor({ kind: "encounter", groups: [group(normalId)] }, data, resumeSoundContext("battle", [normalId], data));
     expect(next).toContainEqual({ type: "song", name: "battle1" });
+  });
+});
+
+describe("UI-66（2026-10-07）同じ拍の中で同じ効果音は 1 回だけ", () => {
+  /** app の sound と同じ回し方で、出来事の列から鳴らすもの（効果音の名前と、ジングルは "jingle:名前"）を集める */
+  const run = (events: GameEvent[], start: SoundContext = INITIAL_SOUND_CONTEXT): { heard: string[]; ctx: SoundContext } => {
+    let ctx = startSoundPlayback(start);
+    const heard: string[] = [];
+    for (const ev of events) {
+      for (const x of soundsFor(ev, data, ctx)) {
+        if (x.type === "sfx") heard.push(x.name);
+        else if (x.type === "jingle") heard.push(`jingle:${x.name}`);
+      }
+      ctx = nextSoundContext(ev, data, ctx);
+    }
+    return { heard, ctx };
+  };
+  const ids = ["c1", "c2", "c3", "c4", "c5", "c6"];
+  const beat: GameEvent = { kind: "beat", phase: "system", auto: false };
+
+  it("UI-66 全員の sanChanged が 1 拍に 6 つ → san は 1 回", () => {
+    const evs: GameEvent[] = ids.map((id) => ({ kind: "sanChanged", id, delta: -2, san: 40 }));
+    expect(run(evs).heard).toEqual(["san"]);
+    expect(run([beat, ...evs]).heard).toEqual(["san"]);
+  });
+
+  it("UI-66 味方の hpChanged の減少が 1 拍に 6 つ → damage は 1 回", () => {
+    const evs: GameEvent[] = ids.map((id) => ({ kind: "hpChanged", id, delta: -3, hp: 5 }));
+    expect(run([beat, ...evs]).heard).toEqual(["damage"]);
+  });
+
+  it("UI-66 拍をまたげばまた鳴る。別の名前は同じ拍でも鳴る", () => {
+    const san = (id: string): GameEvent => ({ kind: "sanChanged", id, delta: -1, san: 30 });
+    const dmg = (id: string): GameEvent => ({ kind: "hpChanged", id, delta: -1, hp: 3 });
+    expect(run([beat, san("c1"), dmg("c1"), san("c2"), dmg("c2"), beat, san("c3"), dmg("c3")]).heard).toEqual([
+      "san",
+      "damage",
+      "san",
+      "damage",
+    ]);
+  });
+
+  it("UI-66 再生の開始（startSoundPlayback）で空にする: 前の再生で鳴った名前も次の再生ではまた鳴る", () => {
+    const wall: GameEvent = { kind: "blocked" };
+    const first = run([wall, wall]);
+    expect(first.heard).toEqual(["wall"]);
+    expect(first.ctx.beatSfx).toEqual(["wall"]);
+    expect(run([wall], first.ctx).heard).toEqual(["wall"]);
+  });
+
+  it("UI-66 ジングルと曲はまとめない（同じ拍の 2 つの levelUp でジングルは 2 回）。戦闘の曲の数え方も変えない", () => {
+    const lv = { kind: "levelUp", id: "m1", level: 2, hpMax: 10, mpMax: 0, hp: 10, mp: 0 } as unknown as GameEvent;
+    expect(run([beat, lv, lv]).heard).toEqual(["jingle:levelup", "jingle:levelup"]);
+    const enc: GameEvent = { kind: "encounter", groups: [group(normalId)] };
+    const r = run([enc, beat, enc]);
+    expect(r.ctx.encounters).toBe(2);
+    expect(r.ctx.boss).toBe(false);
   });
 });
