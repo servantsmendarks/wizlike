@@ -464,7 +464,8 @@ describe("data: config.json", () => {
   });
   test("data: UI-63 / UI-65 audio.musicGain・audio.sfxGain は 0..1 の数（必須。既定 0.3【仮】）", () => {
     // M9.5 で sampleRate・prefetchBars・keepSongs・startLeadMs を足したので 6 欄（musicGain・sfxGain の値と検証は変えていない）
-    expect(config.audio).toEqual({ musicGain: 0.3, sfxGain: 0.3, sampleRate: 22050, prefetchBars: 2, keepSongs: 2, startLeadMs: 40 });
+    // sampleRate は 22050【仮】から 44100 に戻した（2026-10-06 ユーザーの判断。工房の render.py の WAV との一致を優先）
+    expect(config.audio).toEqual({ musicGain: 0.3, sfxGain: 0.3, sampleRate: 44100, prefetchBars: 2, keepSongs: 2, startLeadMs: 40 });
     for (const k of ["musicGain", "sfxGain"]) {
       expectIssue((r) => (r.config.audio[k] = 1.5), "config.json", `audio.${k}: expected number in 0..1, got 1.5`);
       expectIssue((r) => (r.config.audio[k] = -0.1), "config.json", `audio.${k}: expected number in 0..1, got -0.1`);
@@ -474,7 +475,7 @@ describe("data: config.json", () => {
     }
     expectIssue((r) => (r.config.audio.masterGain = 1), "config.json", "audio.masterGain: unknown field");
   });
-  test("data: UI-63 audio.sampleRate・prefetchBars・keepSongs・startLeadMs は範囲内の整数（必須。sampleRate 22050【仮】・startLeadMs 40【仮】、M9.5）", () => {
+  test("data: UI-63 audio.sampleRate・prefetchBars・keepSongs・startLeadMs は範囲内の整数（必須。sampleRate 44100・startLeadMs 40【仮】、M9.5）", () => {
     const ranges: [string, number, number | null][] = [
       ["sampleRate", 8000, 96000],
       ["prefetchBars", 1, null],

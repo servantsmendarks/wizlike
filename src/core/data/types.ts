@@ -250,7 +250,7 @@ export type Config = {
   audio: {
     musicGain: number;
     sfxGain: number;
-    /** UI-63（M9.5）: 曲の区間を合成するレート（Hz）【仮】22050。AudioBuffer のレート。CONV §1 の基準は 44100 */
+    /** UI-63（M9.5）: 曲の区間を合成するレート（Hz）44100（CONV §1 の基準と同じ。工房の render.py の WAV と一致）。AudioBuffer のレート */
     sampleRate: number;
     /** UI-63（M9.5）: 先読みの区間の数（鳴っている区間の後ろに予約しておく数） */
     prefetchBars: number;

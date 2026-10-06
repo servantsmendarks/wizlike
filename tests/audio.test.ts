@@ -933,8 +933,9 @@ describe("UI-63 区間の予約（M9.5）", () => {
     expect(c.sources[4]?.startAt[0]).toBeCloseTo(100 + LEAD + bar, 9);
   });
 
-  it("UI-63 再生: buffer のレートは config.audio.sampleRate（22050【仮】）、長さは区間の長さ", () => {
-    expect(RATE).toBe(22050);
+  it("UI-63 再生: buffer のレートは config.audio.sampleRate（44100）、長さは区間の長さ", () => {
+    // 22050【仮】から 44100 に戻した（2026-10-06 ユーザーの判断。工房の render.py の WAV との一致を優先）
+    expect(RATE).toBe(44100);
     const f = setup();
     const p = createAudioPlayer(f.deps);
     p.unlock();
