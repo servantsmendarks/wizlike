@@ -284,7 +284,7 @@ export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
   state.townVisit = null; // TW-32: 来訪の終わり（救済の申し出も下ろす）
   state.screen = "dungeon";
   explore(ctx, dive, f);
-  ctx.events.push({ kind: "screen", to: "dungeon" });
+  ctx.events.push({ kind: "screen", to: "dungeon", dungeonId: dive.dungeonId });
   ctx.events.push({ kind: "message", key: "dungeon.enter", params: { dungeon: def.name } });
   gossip(ctx, dungeonId);
 }

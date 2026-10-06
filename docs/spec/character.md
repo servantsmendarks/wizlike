@@ -82,7 +82,7 @@ M7 で、装備品の分類（汎用 / ユニーク）・実体の形・レベ�
   - `party.equip` の判定順: wrong screen → no such member → cannot act → item not in inventory（本人の inventory に無い。装備中の品も含まない）→ not equipment（`items[].type` が装備スロットでない）→ not identified（CH-72）→ class cannot equip（CH-75）→ slot cursed（その枠の今の品が `cursed`）。受け付けたら、inventory の新しい品の位置に旧品を入れ（旧品が無ければ取り除く）、枠に新しい品を入れる → `camp.equipped{name, item}`。新しい品が呪われていれば続けて `camp.cursed{item}`。所持枠（CH-71）と潜行台帳は変わらない。
   - `party.unequip` の判定順: wrong screen → no such member → cannot act → bad slot → slot empty → cursed（`items[].cursed` の品は鑑定と関係なく外せない）。受け付けたら枠を空にして inventory の末尾に入れる → `camp.unequipped{name, item}`。
   - どちらも乱数は使わない。
-- CH-77 鑑定（M4.5）: `party.identify {memberId, instanceId}`。鑑定する者は `classes[].abilities` に `identify` を持つ職業（司教）。対象はパーティの誰かの inventory にある未鑑定品（装備中は対象外）。受け付けは街と、迷宮の戦闘外かつ保留なし。判定順: wrong screen → no such member → cannot identify → cannot act → no such item → already identified。成功は確定・無料・乱数なしで、`identified` を真にして `camp.identified{name, old, item}`、呪われていれば続けて `camp.identifiedCursed{item}`。M7: ユニークなら図鑑（IT-66）に記録する。`item` は IT-11 の表示名。
+- CH-77 鑑定（M4.5）: `party.identify {memberId, instanceId}`。鑑定する者は `classes[].abilities` に `identify` を持つ職業（司教）。対象はパーティの誰かの inventory にある未鑑定品（装備中は対象外）。受け付けは街と、迷宮の戦闘外かつ保留なし。判定順: wrong screen → no such member → cannot identify → cannot act → no such item → already identified。成功は確定・無料・乱数なしで、`identified` を真にして `camp.identified{name, old, item, rarity}`（rarity は品の希少度。文には出さず、音の契機に使う。UI-66。M8）、呪われていれば続けて `camp.identifiedCursed{item}`。M7: ユニークなら図鑑（IT-66）に記録する。`item` は IT-11 の表示名。
 
 ## 9. データ
 

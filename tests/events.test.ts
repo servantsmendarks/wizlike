@@ -815,7 +815,7 @@ describe("イベントのセル（DG-22, EV-13, EV-33）", () => {
     });
     const r2 = run(r1.state, { type: "event.choose", optionId: "examine" }, calm());
     expect(r2.events).toEqual([
-      { kind: "screen", to: "dungeon" },
+      { kind: "screen", to: "dungeon", dungeonId: "d01" },
       { kind: "message", key: "event.glowing_tablet.examine" },
     ]);
     expect(r2.state.rng).toEqual(r1.state.rng); // 乱数なし
@@ -832,7 +832,7 @@ describe("イベントのセル（DG-22, EV-13, EV-33）", () => {
     const g = rollDice(m, "2d10").total;
     const r3 = run(s1, { type: "event.choose", optionId: "search" }, calm());
     expect(r3.events).toEqual([
-      { kind: "screen", to: "dungeon" },
+      { kind: "screen", to: "dungeon", dungeonId: "d01" },
       { kind: "message", key: "event.abandoned_sack.search" },
       { kind: "message", key: "event.gold", params: { gold: g } },
       { kind: "sanChanged", id: "c4", delta: 2, san: 52 },
@@ -1086,7 +1086,7 @@ describe("M9 のイベント（EV-53〜55, DG-22）", () => {
     const g = rollDice(m, "2d10").total;
     const r = run(s1, { type: "event.choose", optionId: "pry" }, calm());
     expect(r.events).toEqual([
-      { kind: "screen", to: "dungeon" },
+      { kind: "screen", to: "dungeon", dungeonId: "d02" },
       { kind: "message", key: "event.sunken_offering_box.pry" },
       { kind: "message", key: "event.gold", params: { gold: g } },
       { kind: "sanChanged", id: "c4", delta: 2, san: 52 },
@@ -1139,7 +1139,7 @@ describe("M9 のイベント（EV-53〜55, DG-22）", () => {
     expect(s1.pendingChoice?.kind).toBe("event");
     const r = run(s1, { type: "event.choose", optionId: "pray" }, calm());
     expect(r.events).toEqual([
-      { kind: "screen", to: "dungeon" },
+      { kind: "screen", to: "dungeon", dungeonId: "d02" },
       { kind: "message", key: "event.murmuring_font.pray" },
       { kind: "sanChanged", id: "c1", delta: 1, san: 100 },
       ...["c2", "c3", "c4", "c5", "c6"].map((id) => ({ kind: "sanChanged", id, delta: 2, san: 82 })),
@@ -1186,7 +1186,7 @@ describe("M9 のイベント（EV-53〜55, DG-22）", () => {
     const g = rollDice(m, "1d10").total;
     const r = run(s1, { type: "event.choose", optionId: "lift" }, calm());
     expect(r.events).toEqual([
-      { kind: "screen", to: "dungeon" },
+      { kind: "screen", to: "dungeon", dungeonId: "d02" },
       { kind: "message", key: "event.pinned_pilgrim.lift" },
       ...s1.party.map((c, i) => ({ kind: "hpChanged", id: c.id, delta: -dmg[i]!, hp: c.hp - dmg[i]! })),
       { kind: "message", key: "event.gold", params: { gold: g } },
@@ -1195,7 +1195,7 @@ describe("M9 のイベント（EV-53〜55, DG-22）", () => {
     expect(r.state.gold).toBe(s1.gold + g);
     const ab = run(s1, { type: "event.choose", optionId: "abandon" }, calm());
     expect(ab.events).toEqual([
-      { kind: "screen", to: "dungeon" },
+      { kind: "screen", to: "dungeon", dungeonId: "d02" },
       { kind: "message", key: "event.pinned_pilgrim.abandon" },
       ...s1.party.map((c) => ({ kind: "sanChanged", id: c.id, delta: -3, san: c.san - 3 })),
     ]);

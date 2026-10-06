@@ -1094,7 +1094,7 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
   state.screen = "dungeon";
   // CB-53 / TW-20: 全滅なら呼び出し側（endBattle）が全滅処理で街へ（screen{dungeon} は出さない。performWipe の最後が screen{town}）
   if (result === "wipe") return;
-  ctx.events.push({ kind: "screen", to: "dungeon" });
+  ctx.events.push({ kind: "screen", to: "dungeon", dungeonId: requireDive(state).dungeonId });
   // DG-32: ボスを倒すとその場にテレポーターが出て、一行はその上に立っているので、すぐに街へ戻るかを尋ねる
   if (result === "win" && b.origin.kind === "boss") offerTeleporter(ctx);
 }

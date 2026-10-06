@@ -469,10 +469,10 @@ function withBishop(base: GameState): GameState {
 }
 
 describe("CH-77 party.identify", () => {
-  test("CH-77 司教が他人の未鑑定品を鑑定する: identified true、message camp.identified{name, old, item}。乱数は変わらない", () => {
+  test("CH-77 司教が他人の未鑑定品を鑑定する: identified true、message camp.identified{name, old, item, rarity}。乱数は変わらない", () => {
     const { s, id } = give(withBishop(inDungeon()), "c1", "dagger", false);
     const r = ok(s, { type: "party.identify", memberId: "c5", instanceId: id });
-    expect(r.events).toEqual([{ kind: "message", key: "camp.identified", params: { name: "エル", old: "短い刃？", item: "短剣" } }]);
+    expect(r.events).toEqual([{ kind: "message", key: "camp.identified", params: { name: "エル", old: "短い刃？", item: "短剣", rarity: "normal" } }]);
     expect(r.state.items[id]!.identified).toBe(true);
     expect(r.state.rng).toEqual(s.rng);
   });
@@ -481,7 +481,7 @@ describe("CH-77 party.identify", () => {
     const { s, id } = giveCursed(withBishop(inTown()), "c3", false);
     const r = ok(s, { type: "party.identify", memberId: "c5", instanceId: id });
     expect(r.events).toEqual([
-      { kind: "message", key: "camp.identified", params: { name: "エル", old: "短い刃？", item: "短剣" } },
+      { kind: "message", key: "camp.identified", params: { name: "エル", old: "短い刃？", item: "短剣", rarity: "normal" } },
       { kind: "message", key: "camp.identifiedCursed", params: { item: "短剣" } },
     ]);
   });
@@ -512,7 +512,7 @@ describe("CH-77 party.identify", () => {
     expect(s.uniqueBook).toEqual({});
     const r1 = ok(s, { type: "party.identify", memberId: "c5", instanceId: a });
     // IT-11 / IT-12: 鑑定前は「剣？」、鑑定後は「上質な影法師の剣」（ユニークは Lv を出さない）
-    expect(r1.events).toEqual([{ kind: "message", key: "camp.identified", params: { name: "エル", old: "剣？", item: "上質な影法師の剣" } }]);
+    expect(r1.events).toEqual([{ kind: "message", key: "camp.identified", params: { name: "エル", old: "剣？", item: "上質な影法師の剣", rarity: "fine" } }]);
     expect(r1.state.uniqueBook).toEqual({ shadowfolk_sword: { foundIn: "d01", bestRarity: "fine" } });
     const r2 = ok(r1.state, { type: "party.identify", memberId: "c5", instanceId: b });
     expect(r2.state.uniqueBook).toEqual({ shadowfolk_sword: { foundIn: "d01", bestRarity: "rare" } });
@@ -520,7 +520,7 @@ describe("CH-77 party.identify", () => {
     expect(r3.state.uniqueBook).toEqual({ shadowfolk_sword: { foundIn: "d01", bestRarity: "rare" } });
     const r4 = ok(r3.state, { type: "party.identify", memberId: "c5", instanceId: g });
     expect(r4.state.uniqueBook).toEqual(r3.state.uniqueBook);
-    expect(r4.events[0]).toEqual({ kind: "message", key: "camp.identified", params: { name: "エル", old: "剣？", item: "伝説の長剣 +2" } });
+    expect(r4.events[0]).toEqual({ kind: "message", key: "camp.identified", params: { name: "エル", old: "剣？", item: "伝説の長剣 +2", rarity: "legendary" } });
   });
 });
 

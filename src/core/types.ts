@@ -798,7 +798,8 @@ export type GameEvent =
   | { kind: "eventStarted"; eventId: string; actorId?: string }
   /** 階の移動（DG-14 の昇降）。moved は同じ階の前進だけに使う */
   | { kind: "floorChanged"; floor: number; pos: Pos; facing: Facing }
-  | { kind: "screen"; to: Screen }
+  /** dungeonId は to が dungeon のときだけ（潜っているダンジョン。UI-63 のダンジョンごとの曲。M8） */
+  | { kind: "screen"; to: Screen; dungeonId?: string }
   /** D2: 受け付けなかったコマンド。command は受け取った type（形が壊れていれば "unknown"）、reason は英語の短い理由 */
   | { kind: "rejected"; command: string; reason: string }
   /** M3 追加: 鑑定（CB-05 / MG-41）で表示名が変わったときに全グループを出し直す */

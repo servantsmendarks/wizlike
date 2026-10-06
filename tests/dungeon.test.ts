@@ -135,7 +135,7 @@ describe("dungeon.enter", () => {
     expect(Object.keys(dive.explored)).toEqual(["1"]);
     expectExploredCovers(r.state);
     expect(r.events).toEqual([
-      { kind: "screen", to: "dungeon" },
+      { kind: "screen", to: "dungeon", dungeonId: "d01" },
       { kind: "message", key: "dungeon.enter", params: { dungeon: "試しの坑道" } },
     ]);
   });
@@ -243,7 +243,7 @@ describe("TW-15 宿の主人の噂話（M7）", () => {
       expect(r.state.rng, String(seed)).toEqual(mirror);
       expect(r.state.bestiary, String(seed)).toEqual({ [id]: { kills: 0, identified: true } });
       expect(r.events, String(seed)).toEqual([
-        { kind: "screen", to: "dungeon" },
+        { kind: "screen", to: "dungeon", dungeonId: "d01" },
         { kind: "message", key: "dungeon.enter", params: { dungeon: "試しの坑道" } },
         { kind: "message", key: "dungeon.gossip", params: { monster: monsterOf(data, id).name } },
       ]);
@@ -1985,6 +1985,8 @@ describe("準備中のダンジョン d03（DG-35。M9）", () => {
     // DG-32（M9 実機 B1）: 撃破の語りはそのダンジョンのボスの本名（鑑定の有無を問わない）
     expect(r.state.bestiary["sunken_bishop"]!.identified).toBe(false);
     expect(r.events).toContainEqual({ kind: "message", key: "battle.bossDefeated", params: { boss: "沈鐘の大司祭" } });
+    // UI-63（M8）: 戦闘の後の screen dungeon は潜っているダンジョンを持つ（ダンジョンごとの曲）
+    expect(r.events).toContainEqual({ kind: "screen", to: "dungeon", dungeonId: "d02" });
     expect(r.events).toContainEqual({ kind: "message", key: "dungeon.unlocked", params: { dungeon: "灰の地下墓所" } });
     expect(r.state.progress.clearedDungeons).toEqual(["d01", "d02"]);
     expect(r.state.progress.unlockedDungeons).toEqual(["d01", "d02", "d03"]);

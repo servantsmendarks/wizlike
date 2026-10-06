@@ -285,7 +285,7 @@ export function chooseEventOption(
   const choice = def.choices.find((c) => c.id === optionId);
   if (choice === undefined) throw new Error(`chooseEventOption: unknown option ${optionId}`);
   state.screen = "dungeon";
-  ctx.events.push({ kind: "screen", to: "dungeon" });
+  ctx.events.push({ kind: "screen", to: "dungeon", dungeonId: requireDiveOf(state).dungeonId });
   ctx.events.push({ kind: "message", key: choice.text });
   applyEffects(ctx, f, choice.effects, leaderOf(state));
   clearHere(ctx);

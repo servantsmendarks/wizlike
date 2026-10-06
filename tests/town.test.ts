@@ -1072,20 +1072,20 @@ describe("IT-65/IT-66 店の鑑定（town.shop identify。M7）", () => {
     return { s, id };
   }
 
-  test("IT-65 鑑定料（長剣は max(10, floor(50 × 0.5)) = 25G。2026-10-05 に一律 100G から変えた）を払って本人の未鑑定の品を鑑定: town.shop.identified{name, old, item, cost}。乱数なし。呪われていれば camp.identifiedCursed が続く", () => {
+  test("IT-65 鑑定料（長剣は max(10, floor(50 × 0.5)) = 25G。2026-10-05 に一律 100G から変えた）を払って本人の未鑑定の品を鑑定: town.shop.identified{name, old, item, cost, rarity}。乱数なし。呪われていれば camp.identifiedCursed が続く", () => {
     const { s, id } = withUnidentified(town({}, 300), "c2");
     const r = ok(s, identify("c2", id));
     expect(r.state.gold).toBe(275);
     expect(r.state.items[id]!.identified).toBe(true);
     expect(r.events).toEqual([
-      { kind: "message", key: "town.shop.identified", params: { name: "ベルク", old: "剣？", item: "希少な長剣 +3", cost: 25 } },
+      { kind: "message", key: "town.shop.identified", params: { name: "ベルク", old: "剣？", item: "希少な長剣 +3", cost: 25, rarity: "rare" } },
     ]);
     expect(r.state.rng).toEqual(s.rng);
     expect(r.state.uniqueBook).toEqual({});
     const c = withUnidentified(town({}, 300), "c2", { cursed: true, options: [{ optionId: "str", tier: 1, value: -1 }], rarity: "normal", level: 0 });
     const rc = ok(c.s, identify("c2", c.id));
     expect(rc.events).toEqual([
-      { kind: "message", key: "town.shop.identified", params: { name: "ベルク", old: "剣？", item: "長剣", cost: 25 } },
+      { kind: "message", key: "town.shop.identified", params: { name: "ベルク", old: "剣？", item: "長剣", cost: 25, rarity: "normal" } },
       { kind: "message", key: "camp.identifiedCursed", params: { item: "長剣" } },
     ]);
   });
@@ -1093,7 +1093,7 @@ describe("IT-65/IT-66 店の鑑定（town.shop identify。M7）", () => {
   test("IT-65/IT-66 ユニークを店で鑑定しても図鑑に記録する。死亡している者の品も鑑定できる（life を問わない）", () => {
     const { s, id } = withUnidentified(town({ c3: DEAD }, 300), "c3", { itemId: "leather_cap", uniqueId: "alarm_bell_helm", level: 0, rarity: "legendary", foundIn: "d02" });
     const r = ok(s, identify("c3", id));
-    expect(r.events[0]).toEqual({ kind: "message", key: "town.shop.identified", params: { name: "キリ", old: data.equipmentBases.find((b) => b.id === "leather_cap")!.unidentifiedName, item: "伝説の早鐘の兜", cost: 10 } }); // 革兜 30 → 15 → floor(7.5) = 7 → 最低 10G
+    expect(r.events[0]).toEqual({ kind: "message", key: "town.shop.identified", params: { name: "キリ", old: data.equipmentBases.find((b) => b.id === "leather_cap")!.unidentifiedName, item: "伝説の早鐘の兜", cost: 10, rarity: "legendary" } }); // 革兜 30 → 15 → floor(7.5) = 7 → 最低 10G
     expect(r.state.uniqueBook).toEqual({ alarm_bell_helm: { foundIn: "d02", bestRarity: "legendary" } });
   });
 
@@ -1172,7 +1172,7 @@ describe("IT-61/IT-65 鑑定料と未鑑定の売値（2026-10-05 ユーザー�
     member(s, "c1").inventory.push(sword);
     const r = ok(s, identify("c1", sword));
     expect(r.state.gold).toBe(0);
-    expect(r.events[0]).toEqual({ kind: "message", key: "town.shop.identified", params: { name: "アルド", old: "剣？", item: "長剣 +3", cost: 25 } });
+    expect(r.events[0]).toEqual({ kind: "message", key: "town.shop.identified", params: { name: "アルド", old: "剣？", item: "長剣 +3", cost: 25, rarity: "normal" } });
     const poor = cloneState(s);
     poor.gold = 24;
     expectRejected(poor, identify("c1", sword), "not enough gold");

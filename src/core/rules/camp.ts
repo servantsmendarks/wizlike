@@ -303,7 +303,7 @@ export function checkIdentify(state: GameState, data: GameData, memberId: unknow
 
 /**
  * CH-77。checkIdentify が null を返した前提。確定・無料・乱数なし。
- * identified = true（ユニークなら図鑑に記録。IT-66）→ message camp.identified{name, old, item} → 呪われていれば message camp.identifiedCursed{item}
+ * identified = true（ユニークなら図鑑に記録。IT-66）→ message camp.identified{name, old, item, rarity} → 呪われていれば message camp.identifiedCursed{item}
  */
 export function identifyItem(ctx: RuleContext, memberId: string, instanceId: string): void {
   const { state, data } = ctx;
@@ -313,7 +313,8 @@ export function identifyItem(ctx: RuleContext, memberId: string, instanceId: str
   const old = itemDisplayName(state, data, instanceId);
   identifyInstance(state, instanceId); // IT-66: ユニークなら図鑑に記録
   const item = itemDisplayName(state, data, instanceId);
-  ctx.events.push({ kind: "message", key: "camp.identified", params: { name: ch.name, old, item } });
+  // UI-66（M8）: rarity は文には出さない（音の契機。伝説の品の鑑定で rare）
+  ctx.events.push({ kind: "message", key: "camp.identified", params: { name: ch.name, old, item, rarity: inst.rarity } });
   if (inst.cursed) ctx.events.push({ kind: "message", key: "camp.identifiedCursed", params: { item } });
 }
 

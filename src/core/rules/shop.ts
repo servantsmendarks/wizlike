@@ -237,7 +237,7 @@ export function buyBack(ctx: RuleContext, memberId: string, instanceId: string):
 
 /**
  * IT-65 店の鑑定。乱数は使わない（結果は CH-77 と同じ）。
- * 品ごとの鑑定料 identifyFeeOf を払う → 鑑定済みにし、ユニークなら図鑑に記録（IT-66）→ message town.shop.identified{name, old, item, cost}
+ * 品ごとの鑑定料 identifyFeeOf を払う → 鑑定済みにし、ユニークなら図鑑に記録（IT-66）→ message town.shop.identified{name, old, item, cost, rarity}
  * → 呪われていれば message camp.identifiedCursed{item}
  */
 export function identifyAtShop(ctx: RuleContext, memberId: string, instanceId: string): void {
@@ -250,7 +250,8 @@ export function identifyAtShop(ctx: RuleContext, memberId: string, instanceId: s
   const old = itemDisplayName(state, data, instanceId);
   identifyInstance(state, instanceId);
   const item = itemDisplayName(state, data, instanceId);
-  ctx.events.push({ kind: "message", key: "town.shop.identified", params: { name: ch.name, old, item, cost } });
+  // UI-66（M8）: rarity は文には出さない（音の契機。伝説の品の鑑定で rare）
+  ctx.events.push({ kind: "message", key: "town.shop.identified", params: { name: ch.name, old, item, cost, rarity: inst.rarity } });
   if (state.items[instanceId]!.cursed) ctx.events.push({ kind: "message", key: "camp.identifiedCursed", params: { item } });
 }
 
