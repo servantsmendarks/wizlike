@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SongData } from "../src/build/asset-types";
 import { createWorkerRenderer } from "../src/presenter/audio";
-import { planSong, renderSegment, type SongPlan } from "../src/presenter/audio-synth";
+import { planSong, renderSegment, warmupPlan, type SongPlan } from "../src/presenter/audio-synth";
 import { createSynthHandler } from "../src/presenter/synth-protocol";
 import { data } from "./helpers/core";
 
@@ -34,15 +34,17 @@ afterEach(() => {
 });
 
 describe("UI-63 Web Worker の合成の暖機（M9.5）", () => {
-  it("UI-63 worker 暖機: warmup は計画の区間 0 を本物と同じ renderSegment で合成して捨てる（返事なし・計画を名前で持たない）", () => {
+  // 2026-10-07 ユーザーの指示: 暖機の計画は実在の曲ではなく固定のダミー区間（warmupPlan）。送られるものに合わせて計画を warmupPlan に直した
+  it("UI-63 worker 暖機: warmup はダミー区間（warmupPlan）の区間 0 を本物と同じ renderSegment で合成して捨てる（返事なし・計画を名前で持たない）", () => {
     const handle = createSynthHandler();
-    const plan = planSong(SONG, data.wavetables, RATE);
+    const plan = warmupPlan(data.wavetables, RATE, data.config.audio.warmupSeconds);
     spy.mockClear();
     expect(handle({ type: "warmup", plan: structuredClone(plan) })).toBeNull();
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0]![0]).toEqual(plan);
     expect(spy.mock.calls[0]![1]).toBe(0);
-    // 合成した中身は本物の区間 0 と同じ（全チャンネル・ノイズを通っている）
+    // 合成した中身は直接呼んだ区間 0 と同じ（全チャンネル・ノイズを通っている）
+    expect(spy.mock.results[0]!.value).toHaveLength(plan.total);
     expect(spy.mock.results[0]!.value).toEqual(renderSegment(plan, 0));
     // 計画は持たない: 同じ名前の区間を頼んでも null
     expect(handle({ type: "seg", name: "town", i: 0, id: 1 })).toEqual({ type: "seg", id: 1, samples: null });
@@ -61,7 +63,7 @@ describe("UI-63 Web Worker の合成の暖機（M9.5）", () => {
     const r = createWorkerRenderer(() => {
       throw new Error("no worker");
     });
-    const plan = r.plan(SONG, data.wavetables, RATE);
+    const plan = warmupPlan(data.wavetables, RATE, data.config.audio.warmupSeconds);
     spy.mockClear();
     r.warmup?.(plan);
     expect(spy).not.toHaveBeenCalled();

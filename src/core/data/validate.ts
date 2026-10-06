@@ -403,6 +403,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       prefetchBars: I(POS_INT), // UI-63（M9.5）
       keepSongs: I(POS_INT), // UI-63（M9.5）
       startLeadMs: I({ min: 0, max: 100 }), // UI-63（M9.5）【仮】上限は M9.5 の完了条件の 100ms
+      warmupSeconds: N({ min: 0, max: 10 }), // UI-63（M9.5）【仮】3。0 なら暖機しない。上限は単純に 10
     }),
     prototypeParty: F({ startingGold: I(NON_NEG), members: L(member) }),
   });

@@ -12,6 +12,7 @@ import {
   sampleAt,
   SAMPLE_RATE,
   segmentCount,
+  warmupPlan,
   type SongPlan,
 } from "../src/presenter/audio-synth";
 import { checkSong } from "../src/build/music";
@@ -424,6 +425,70 @@ describe("UI-63 22050: 工房の render.py（sr = 22050）との照合", () => {
       let a = 0;
       for (const x of all) a += Math.abs(x);
       expect(Math.abs(a - ref.mixAbs)).toBeLessThan(1e-3);
+    }
+  });
+});
+
+// 2026-10-07 ユーザーの指示: 暖機は実在の曲から選ばず、合成器に固定のダミー区間（3 秒分【仮】、波形 6 種とノイズ 4 種をすべて含む）を作らせる
+describe("UI-63 暖機のダミー区間 warmupPlan（M9.5）", () => {
+  const wt = data.wavetables;
+  const rate = data.config.audio.sampleRate;
+
+  it("UI-63 warmupPlan: 区間は 1 つで長さは round(seconds × rate)、ジングルと同じくループしない（小数の秒も可）", () => {
+    for (const sec of [3, 1.5, data.config.audio.warmupSeconds]) {
+      const plan = warmupPlan(wt, rate, sec);
+      expect(segmentCount(plan)).toBe(1);
+      expect(plan.bounds).toEqual([0, Math.round(sec * rate)]);
+      expect(plan.total).toBe(Math.round(sec * rate));
+      expect(plan.rate).toBe(rate);
+      expect(plan.size).toBe(wt.samples);
+      expect(plan.loop).toBeNull();
+      expect(plan.voices).toHaveLength(4);
+    }
+    expect(warmupPlan(wt, 44100, 3).total).toBe(132300);
+    expect(segmentCount(warmupPlan(wt, rate, 0))).toBe(0);
+    // 構造化複製できるプレーンな値
+    const p = warmupPlan(wt, rate, 3);
+    expect(structuredClone(p)).toEqual(p);
+  });
+
+  it("UI-63 warmupPlan: 波形の全種（6 種）が ch1〜ch3 に、ノイズの全種（4 種）が ch4 に入り、全部が区間 0 の中で鳴る", () => {
+    const plan = warmupPlan(wt, rate, 3);
+    const z = plan.bounds[1]!;
+    const tones = plan.voices.slice(0, 3).flat();
+    expect(tones.every((v) => v.kind === "tone")).toBe(true);
+    const waveNames = Object.keys(wt.waves);
+    expect(waveNames).toHaveLength(6);
+    const usedWaves = tones.map((v) => (v.kind === "tone" ? waveNames.find((k) => wt.waves[k]!.data === v.data) : undefined));
+    expect(new Set(usedWaves)).toEqual(new Set(waveNames));
+    expect(tones).toHaveLength(6);
+    const noise = plan.voices[3]!;
+    const noiseKinds = Object.keys(wt.noise);
+    expect(noiseKinds).toHaveLength(4);
+    expect(noise.map((v) => (v.kind === "noise" ? v.clock : -1))).toEqual(noiseKinds.map((k) => wt.noise[k]!.clock));
+    for (const list of plan.voices) {
+      expect(list.length).toBeGreaterThan(0);
+      // 各チャンネルは s0 昇順で重ならず、区間 [0, z) の中で長さがある
+      list.forEach((v, j) => {
+        expect(v.s0).toBeGreaterThanOrEqual(j === 0 ? 0 : list[j - 1]!.s1);
+        expect(v.s1).toBeGreaterThan(v.s0);
+        expect(v.s1).toBeLessThanOrEqual(z);
+        expect(v.v).toBeGreaterThan(0);
+      });
+    }
+  });
+
+  it("UI-63 warmupPlan: renderSegment(plan, 0) が例外なく終わり、全チャンネルに音がある（チャンネルごとの出力が 0 だけでない）", () => {
+    const plan = warmupPlan(wt, rate, 3);
+    const out = renderSegment(plan, 0);
+    expect(out).toHaveLength(plan.total);
+    expect(out.some((x) => x !== 0)).toBe(true);
+    for (let c = 0; c < 4; c++) {
+      const only: SongPlan = { ...plan, voices: plan.voices.map((l, k) => (k === c ? l : [])) };
+      const o = renderSegment(only, 0);
+      expect(o.some((x) => x !== 0)).toBe(true);
+      // 各音符の中にも音がある（波形・ノイズの種類ごと）
+      for (const v of plan.voices[c]!) expect(o.subarray(v.s0, v.s1).some((x) => x !== 0)).toBe(true);
     }
   });
 });

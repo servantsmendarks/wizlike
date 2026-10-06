@@ -11,7 +11,7 @@
 //   以後は区間の ended で 1 区間ずつ合成して予約する。常駐のループ・rAF・タイマーは使わない（CLAUDE.md §2）。
 //   予約の時刻に間に合わない区間は時刻を置き直す（隙間は出るが重ならない）。
 // - 区間の合成は注入した renderer（本番は Web Worker の createWorkerRenderer。作れなければ主スレッドの createSyncRenderer）。
-//   Web Worker 版は再生機の作成時に 1 区間を合成して捨てる（暖機。新しい worker の最初の合成が遅いため。同期版はしない）。
+//   Web Worker 版は再生機の作成時に固定のダミー区間（warmupPlan）を合成して捨てる（暖機。新しい worker の最初の合成が遅いため。同期版はしない）。
 // - 合成済みの区間はループする曲ごとに持ち（2 周目と戻ったときは合成しない）、直近 config.audio.keepSongs 曲だけ残す。
 //   ジングルは鳴っている間だけ持つ（保持の数に入れない）。
 // - ジングルは鳴っている曲を止めて頭から 1 回。最後の区間を予約したら setSong の曲の区間 0 をジングルの終わりの時刻に予約し
@@ -26,7 +26,7 @@
 // モジュールのトップレベルでは Web API に触れない（依存は注入する。node のテストで動かす）。
 import type { GameData, Wavetables } from "../core/data/index";
 import type { GameAssets, SongData } from "../build/asset-types";
-import { nextSegment, planSong, renderSegment, segmentCount, type SongPlan } from "./audio-synth";
+import { nextSegment, planSong, renderSegment, segmentCount, warmupPlan, type SongPlan } from "./audio-synth";
 import type { FromSynthWorker, ToSynthWorker } from "./synth-protocol";
 
 export type ZzfxModule = typeof import("../vendor/zzfx-1.3.2/ZzFX.js");
@@ -37,7 +37,7 @@ export type SegmentRenderer = {
   plan(song: SongData, wt: Wavetables, rate: number): SongPlan;
   /** 区間 i を合成して cb に渡す。合成できなければ null */
   render(name: string, plan: SongPlan, i: number, cb: (samples: Float32Array<ArrayBuffer> | null) => void): void;
-  /** 暖機（Web Worker 版だけが持つ）。計画の区間 0 を本物と同じ経路で合成して捨てる。返事も保持もしない */
+  /** 暖機（Web Worker 版だけが持つ）。計画（warmupPlan）の区間 0 を本物と同じ経路で合成して捨てる。返事も保持もしない */
   warmup?(plan: SongPlan): void;
 };
 /** UI-63（M9.5）: cb をイベントループへ 1 回戻してから呼ぶ（間にタップの処理が入れるように） */
@@ -74,20 +74,6 @@ export type AudioPlayer = {
 };
 
 type Kind = "song" | "jingle";
-
-/** 暖機の曲選び（M9.5 B6）: 区間 0 に重なるトーン（voices[0..2]）とノイズ（voices[3]）の音が両方あるか */
-function hasBothBranches(plan: SongPlan): boolean {
-  const a = plan.bounds[0] ?? 0;
-  const z = plan.bounds[1] ?? a;
-  const overlaps = (list: readonly { s0: number; s1: number }[] | undefined): boolean =>
-    (list ?? []).some((v) => v.s0 < z && v.s1 > a);
-  return plan.voices.slice(0, 3).some((l) => overlaps(l)) && overlaps(plan.voices[3]);
-}
-
-/** 暖機の曲選び（M9.5）: 区間 0 のサンプル数（短い曲で暖機すると JIT の遅い 1 回が消えないので、最も長い曲を選ぶ） */
-function seg0Length(plan: SongPlan): number {
-  return (plan.bounds[1] ?? 0) - (plan.bounds[0] ?? 0);
-}
 
 /** 曲（またはジングル）の計画と合成済みの区間 */
 type SongCache = { name: string; plan: SongPlan; buffers: (AudioBuffer | undefined)[] };
@@ -588,24 +574,13 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
       });
   };
 
-  // 暖機（M9.5 B6）: renderer が warmup を持てば（Web Worker 版）、作成時（読み込み時。worker の起動の直後）に読み込まれている
-  // ループする曲（下の規則で選ぶ。無ければ最初のジングル）の計画を作って区間 0 を 1 回合成させて捨てる。計画は保持に入れない。曲のファイルが無ければしない
-  if (deps.renderer.warmup !== undefined) {
+  // 暖機（M9.5 B6。2026-10-07 ユーザーの判断で固定のダミー区間）: renderer が warmup を持てば（Web Worker 版）、作成時（読み込み時。
+  // worker の起動の直後）に warmupPlan（実在の曲に依存しない。波形の全種とノイズの全種を含む config.audio.warmupSeconds 秒の 1 区間）を
+  // 1 回合成させて捨てる。曲のファイルの有無に関係なく送る。warmupSeconds が 0 なら送らない。計画は保持に入れない
+  if (deps.renderer.warmup !== undefined && conf.warmupSeconds > 0) {
     try {
-      const all = Object.values(deps.assets.music);
-      // 区間 0 にトーン（ch1〜ch3）とノイズ（ch4）の音が両方あるループする曲のうち、区間 0 のサンプル数が最も長い曲を選ぶ（renderSegment の
-      // 両方の枝を温める。短い曲では JIT の遅い 1 回が消えない。同じ長さなら先の曲＝名前順）。無ければ従来どおり
-      let plan: SongPlan | null = null;
-      for (const s of all) {
-        if (s.kind !== "song") continue;
-        const p = deps.renderer.plan(s, deps.data.wavetables, conf.sampleRate);
-        if (segmentCount(p) > 0 && hasBothBranches(p) && (plan === null || seg0Length(p) > seg0Length(plan))) plan = p;
-      }
-      if (plan === null) {
-        const song = all.find((x) => x.kind === "song") ?? all[0];
-        if (song !== undefined) plan = deps.renderer.plan(song, deps.data.wavetables, conf.sampleRate);
-      }
-      if (plan !== null && segmentCount(plan) > 0) deps.renderer.warmup(plan);
+      const plan = warmupPlan(deps.data.wavetables, conf.sampleRate, conf.warmupSeconds);
+      if (segmentCount(plan) > 0) deps.renderer.warmup(plan);
     } catch (e) {
       warn(e);
     }

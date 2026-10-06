@@ -465,7 +465,8 @@ describe("data: config.json", () => {
   test("data: UI-63 / UI-65 audio.musicGain・audio.sfxGain は 0..1 の数（必須。既定 0.3【仮】）", () => {
     // M9.5 で sampleRate・prefetchBars・keepSongs・startLeadMs を足したので 6 欄（musicGain・sfxGain の値と検証は変えていない）
     // sampleRate は 22050【仮】から 44100 に戻した（2026-10-06 ユーザーの判断。工房の render.py の WAV との一致を優先）
-    expect(config.audio).toEqual({ musicGain: 0.3, sfxGain: 0.3, sampleRate: 44100, prefetchBars: 2, keepSongs: 2, startLeadMs: 40 });
+    // warmupSeconds 3【仮】を足した（2026-10-07 ユーザーの指示: 暖機を固定のダミー区間にする）ので 7 欄
+    expect(config.audio).toEqual({ musicGain: 0.3, sfxGain: 0.3, sampleRate: 44100, prefetchBars: 2, keepSongs: 2, startLeadMs: 40, warmupSeconds: 3 });
     for (const k of ["musicGain", "sfxGain"]) {
       expectIssue((r) => (r.config.audio[k] = 1.5), "config.json", `audio.${k}: expected number in 0..1, got 1.5`);
       expectIssue((r) => (r.config.audio[k] = -0.1), "config.json", `audio.${k}: expected number in 0..1, got -0.1`);
@@ -491,6 +492,12 @@ describe("data: config.json", () => {
       expect(issuesOf((r) => (r.config.audio[k] = min))).toEqual([]);
       if (max !== null) expect(issuesOf((r) => (r.config.audio[k] = max))).toEqual([]);
     }
+  });
+  test("data: UI-63 audio.warmupSeconds は 0..10 の数（必須。3【仮】、小数可、M9.5）", () => {
+    expectIssue((r) => delete r.config.audio.warmupSeconds, "config.json", "audio.warmupSeconds: missing required field");
+    expectIssue((r) => (r.config.audio.warmupSeconds = -0.5), "config.json", "audio.warmupSeconds: expected number in 0..10, got -0.5");
+    expectIssue((r) => (r.config.audio.warmupSeconds = 10.5), "config.json", "audio.warmupSeconds: expected number in 0..10, got 10.5");
+    for (const v of [0, 1.5, 10]) expect(issuesOf((r) => (r.config.audio.warmupSeconds = v))).toEqual([]);
   });
 });
 

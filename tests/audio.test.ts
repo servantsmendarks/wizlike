@@ -13,7 +13,7 @@ import {
   type SegmentRenderer,
   type ZzfxModule,
 } from "../src/presenter/audio";
-import { planSong, renderSegment, sampleAt, type SongPlan } from "../src/presenter/audio-synth";
+import { planSong, renderSegment, sampleAt, warmupPlan, type SongPlan } from "../src/presenter/audio-synth";
 import { createSynthHandler, type FromSynthWorker, type ToSynthWorker } from "../src/presenter/synth-protocol";
 import { data } from "./helpers/core";
 
@@ -1328,20 +1328,24 @@ describe("UI-63 Web Worker の合成（M9.5）", () => {
     expect(w.posted.filter((m) => m.type === "plan")).toHaveLength(1);
   });
 
-  // 2026-10-06 ユーザーの判断（B6 の (a)）: 新しい worker の最初の合成が 2〜3 倍遅いので、読み込み時に 1 区間を合成して捨てる（暖機）
-  it("UI-63 worker 暖機: 再生機の作成時に最初のループする曲の計画で warmup を 1 回だけ送り、保持に入れず、以後の本物の依頼に影響しない", () => {
+  // 2026-10-06 ユーザーの判断（B6 の (a)）: 新しい worker の最初の合成が 2〜3 倍遅いので、読み込み時に 1 区間を合成して捨てる（暖機）。
+  // 2026-10-07 ユーザーの指示: 暖機は実在の曲から選ばず、固定のダミー区間（warmupPlan）にする。曲の構成に依存させない
+  // （実在の曲を選ぶ規則のテスト 3 つ（最初のループする曲・両方の音がある曲・区間 0 が最も長い曲）はこの指示で規則ごと消した）
+  it("UI-63 worker 暖機: 再生機の作成時に warmupPlan(wt, sampleRate, warmupSeconds) の計画で warmup を 1 回だけ送り、保持に入れず、以後の本物の依頼に影響しない", () => {
     const f = setup({ music: { victory: MUSIC.victory!, town: MUSIC.town!, long: MUSIC.long! } });
     const w = new LoopbackWorker();
     f.deps.renderer = createWorkerRenderer(() => asWorker(w));
     const p = createAudioPlayer(f.deps);
     // unlock の前（読み込み時）。AudioContext はまだ作らない
     expect(f.contexts).toHaveLength(0);
-    expect(w.posted).toEqual([{ type: "warmup", plan: planSong(MUSIC.town!, data.wavetables, RATE) }]);
+    expect(w.posted).toEqual([{ type: "warmup", plan: warmupPlan(data.wavetables, RATE, data.config.audio.warmupSeconds) }]);
+    // 実在の曲の計画ではない
+    for (const s of Object.values(MUSIC)) expect(w.posted[0]).not.toEqual({ type: "warmup", plan: planSong(s, data.wavetables, RATE) });
     // 暖機は返事をしない（worker は計画を名前で持たない）
     expect(w.out).toHaveLength(0);
     p.unlock();
     const c = f.contexts[0]!;
-    // 暖機に使った曲を鳴らしても、計画は送り直し、区間 0 は本物の依頼として合成する（暖機の結果は保持に入っていない）
+    // 曲を鳴らすと計画を送り、区間 0 は本物の依頼として合成する（暖機の結果は保持に入っていない）
     p.setSong("town");
     expect(w.posted.slice(1).map((m) => m.type)).toEqual(["plan", "seg"]);
     expect(segOf(w.posted[2]).i).toBe(0);
@@ -1353,57 +1357,33 @@ describe("UI-63 Web Worker の合成（M9.5）", () => {
     expect(w.posted.filter((m) => m.type === "warmup")).toHaveLength(1);
   });
 
-  // 2026-10-06 レビュー F1: 名前順で先に来る曲の区間 0 にノイズ（ch4）が無いと、renderSegment のノイズの枝が暖機で回らない
-  it("UI-63 worker 暖機: 区間 0 にトーンとノイズの両方の音があるループする曲で暖機する（両方ある曲が無ければ最初のループする曲）", () => {
+  it("UI-63 worker 暖機: 曲の構成に依存しない（曲のファイルが 1 つも無くても・どんな曲があっても同じ計画を 1 回送る）", () => {
+    const expected = [{ type: "warmup", plan: warmupPlan(data.wavetables, RATE, data.config.audio.warmupSeconds) }];
     const quiet: SongData = { ...songData("aquiet", "song", 2), ch: [[[0, 4, 69, 12]], [], [], []] };
-    const late: SongData = { ...songData("blate", "song", 2), ch: [[[0, 4, 69, 12]], [], [], [[16, 1, "kick", 15]]] };
-    const f = setup({ music: { aquiet: quiet, blate: late, victory: MUSIC.victory!, town: MUSIC.town! } });
-    const w = new FakeWorker();
-    f.deps.renderer = createWorkerRenderer(() => asWorker(w));
-    createAudioPlayer(f.deps);
-    expect(w.posted).toEqual([{ type: "warmup", plan: planSong(MUSIC.town!, data.wavetables, RATE) }]);
-    // 両方ある曲が無ければ従来どおり最初のループする曲
-    const g = setup({ music: { aquiet: quiet, blate: late } });
-    const v = new FakeWorker();
-    g.deps.renderer = createWorkerRenderer(() => asWorker(v));
-    createAudioPlayer(g.deps);
-    expect(v.posted).toEqual([{ type: "warmup", plan: planSong(quiet, data.wavetables, RATE) }]);
+    for (const music of [{}, { victory: MUSIC.victory! }, { aquiet: quiet }, MUSIC]) {
+      const f = setup({ music });
+      const w = new FakeWorker();
+      f.deps.renderer = createWorkerRenderer(() => asWorker(w));
+      const q = createAudioPlayer(f.deps);
+      expect(w.posted).toEqual(expected);
+      if (Object.keys(music).length === 0) {
+        q.unlock();
+        expect(() => q.setSong("town")).not.toThrow();
+        expect(w.posted).toEqual(expected);
+      }
+    }
   });
 
-  // 2026-10-06 実機(M9.5-暖機) の Q・P: 区間 0 の短い曲（battle1 相当）で暖機すると JIT の遅い 1 回が消えないので、両方の音がある曲のうち区間 0 が最も長い曲で暖機する
-  it("UI-63 worker 暖機: 両方の音がある曲のうち区間 0 のサンプル数が最も長い曲で暖機する（名前順で先の短い曲があっても。同じ長さなら先の曲）", () => {
-    const short: SongData = songData("abattle", "song", 2, { tempoUs: 300000 });
-    const longer: SongData = songData("zdungeon", "song", 2, { tempoUs: 900000 });
-    const same: SongData = songData("zz", "song", 2, { tempoUs: 900000 });
-    const quiet: SongData = { ...songData("aquiet", "song", 2, { tempoUs: 2000000 }), ch: [[[0, 4, 69, 12]], [], [], []] };
-    const f = setup({ music: { abattle: short, aquiet: quiet, town: MUSIC.town!, zdungeon: longer, zz: same } });
+  it("UI-63 worker 暖機: config.audio.warmupSeconds が 0 なら暖機しない", () => {
+    const f = setup();
+    f.deps.data = { ...data, config: { ...data.config, audio: { ...data.config.audio, warmupSeconds: 0 } } };
     const w = new FakeWorker();
     f.deps.renderer = createWorkerRenderer(() => asWorker(w));
-    createAudioPlayer(f.deps);
-    const lenOf = (s: SongData): number => {
-      const b = planSong(s, data.wavetables, RATE).bounds;
-      return b[1]! - b[0]!;
-    };
-    expect(lenOf(short)).toBeLessThan(lenOf(MUSIC.town!));
-    expect(lenOf(MUSIC.town!)).toBeLessThan(lenOf(longer));
-    expect(lenOf(longer)).toBeLessThan(lenOf(quiet));
-    expect(w.posted).toEqual([{ type: "warmup", plan: planSong(longer, data.wavetables, RATE) }]);
-  });
-
-  it("UI-63 worker 暖機: ループする曲が無ければ最初のジングル、曲のファイルが 1 つも無ければ暖機しない（壊れない）", () => {
-    const f = setup({ music: { victory: MUSIC.victory! } });
-    const w = new FakeWorker();
-    f.deps.renderer = createWorkerRenderer(() => asWorker(w));
-    createAudioPlayer(f.deps);
-    expect(w.posted).toEqual([{ type: "warmup", plan: planSong(MUSIC.victory!, data.wavetables, RATE) }]);
-    const g = setup({ music: {} });
-    const v = new FakeWorker();
-    g.deps.renderer = createWorkerRenderer(() => asWorker(v));
-    const q = createAudioPlayer(g.deps);
-    expect(v.posted).toEqual([]);
-    q.unlock();
-    expect(() => q.setSong("town")).not.toThrow();
-    expect(v.posted).toEqual([]);
+    const p = createAudioPlayer(f.deps);
+    expect(w.posted).toEqual([]);
+    p.unlock();
+    p.setSong("town");
+    expect(w.posted.map((m) => m.type)).toEqual(["plan", "seg"]);
   });
 
   it("UI-63 worker 暖機: 暖機の後に error が来ても壊れず（warn は 1 回、主スレッドで暖機し直さない）、以後は主スレッドで合成する", () => {

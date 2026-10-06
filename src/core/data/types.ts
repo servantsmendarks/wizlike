@@ -258,6 +258,8 @@ export type Config = {
     keepSongs: number;
     /** UI-63（M9.5）: 鳴らし始めの区間の時刻を currentTime + baseLatency より先にする分（ms）【仮】40。0..100 */
     startLeadMs: number;
+    /** UI-63（M9.5）: Web Worker の暖機で合成して捨てる固定のダミー区間の長さ（秒）【仮】3。0..10。0 なら暖機しない */
+    warmupSeconds: number;
   };
   prototypeParty: { startingGold: number; members: PrototypeMember[] };
 };

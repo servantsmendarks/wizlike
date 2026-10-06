@@ -252,3 +252,43 @@ export function nextSegment(plan: SongPlan, i: number): number | null {
   if (plan.loop !== null) return i + 1 < plan.loop.endSeg ? i + 1 : plan.loop.startSeg;
   return i + 1 < segmentCount(plan) ? i + 1 : null;
 }
+
+/** 暖機の音符の音量（1..15）。鳴らさずに捨てるので値は何でもよい（0 以外なら全チャンネルの出力が 0 にならない） */
+const WARMUP_V = 8;
+
+/** list を [0, n) に順に等分して並べる（長さ 0 の区間は落とす） */
+function warmupSlots<T>(list: readonly T[], n: number): { item: T; s0: number; s1: number }[] {
+  const out: { item: T; s0: number; s1: number }[] = [];
+  list.forEach((item, j) => {
+    const s0 = Math.floor((n * j) / list.length);
+    const s1 = Math.floor((n * (j + 1)) / list.length);
+    if (s1 > s0) out.push({ item, s0, s1 });
+  });
+  return out;
+}
+
+/**
+ * UI-63（M9.5）: 暖機用の固定のダミー区間の計画（実在の曲に依存しない）。区間は 1 つで、長さは round(seconds × rate) サンプル。
+ * wavetables の波形（waves の全種）を ch1〜ch3 に順に配り（波形 k はチャンネル k mod 3）、各チャンネルは配られた波形の音符を
+ * 区間の中に等分して順に並べる。ch4 はノイズの全種を等分して順に並べる。全部が区間 0 の中で鳴るので、renderSegment の
+ * トーンとノイズの両方の枝・全チャンネル・LFSR を本物と同じ経路で通る。seconds が 0 以下なら区間は無い。
+ */
+export function warmupPlan(wt: Wavetables, rate: number, seconds: number): SongPlan {
+  const n = Math.max(0, Math.round(seconds * rate));
+  const voices: Voice[][] = [[], [], []];
+  const waves = Object.values(wt.waves).map((w) => w.data);
+  for (let c = 0; c < 3; c++) {
+    const mine = waves.filter((_, k) => k % 3 === c);
+    // チャンネルごとに高さを変える（C4・G4・D5）
+    const freq = 440 * 2 ** ((60 + 7 * c - 69) / 12);
+    for (const { item, s0, s1 } of warmupSlots(mine, n)) {
+      voices[c]?.push({ s0, s1, kind: "tone", data: item, freq, v: WARMUP_V });
+    }
+  }
+  const noise: Voice[] = [];
+  for (const { item, s0, s1 } of warmupSlots(Object.values(wt.noise), n)) {
+    noise.push({ s0, s1, kind: "noise", clock: item.clock, v: WARMUP_V });
+  }
+  voices.push(noise);
+  return { rate, size: wt.samples, total: n, bounds: n > 0 ? [0, n] : [0], voices, loop: null };
+}
