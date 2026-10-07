@@ -1009,6 +1009,8 @@ export function createApp(o: {
         // UI-66（2026-10-07）: 戻るは枠の中でも一覧の外でも取り消しの音
         back: isBackChoice(e.choice),
         onSelect: () => guard(() => chooseBattle(e.choice)),
+        // UI-68（2026-10-07）: peek の行（唱えられない呪文）は dim でも選べる（確認の段で説明を見る）
+        ...(e.peek === true ? { onDisabled: () => guard(() => chooseBattle(e.choice)) } : {}),
         ...(targeting ? { onFocus: () => guard(() => focusTo(i, false)) } : {}),
       }),
     );

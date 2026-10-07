@@ -7,6 +7,7 @@
 // - UI-68（M10）/ U4: 呪文を選ぶと、対象を選ぶ呪文（enemy / enemyGroup / ally）は対象の段へ、対象を選ばない呪文（allEnemies / party / self / none）と、
 //   体数 1 以上の敵グループが 1 つだけのときの敵の呪文は確認の段 spellConfirm（[唱える][戻る]）へ進む（説明を読む 1 タップ。対象の有無で手数を揃える）。
 //   説明を出す段は spellNote が返す（呪文の対象の段と確認の段）。確認の段の戻るは呪文の一覧。
+//   唱えられない（MP 不足で dim の）呪文の行は peek で、押すと確認の段で説明だけ見せる（唱えるは dim。2026-10-07。キャンプと同じ）。
 // - 体数 1 以上の敵グループが 1 つだけなら enemy の段を飛ばしてそのグループを送る。enemy / ally の段の初期の注目は、
 //   並び順で 1 つ前の行動可能なメンバーの入力の対象（今も選べるとき）。無ければ 0。
 // - step は選択を受けて次の cursor と、送る Command（無ければ null）を返す。送るときの cursor は元のまま
@@ -37,7 +38,8 @@ export type Choice =
   /** UI-68（M10）: 確認の段の「唱える」 */
   | { kind: "castConfirm" }
   | { kind: "back" };
-export type MenuEntry = { label: string; disabled: boolean; choice: Choice };
+/** peek: dim でも押せば選ぶ行（UI-68。唱えられない呪文の説明を見る。キャンプの CampEntry の peek と同じ） */
+export type MenuEntry = { label: string; disabled: boolean; choice: Choice; peek?: boolean };
 
 /** UI-66（2026-10-07）: 戻るの意味の選択肢か（メンバーの枠の「戻る」と、一覧の末尾の戻る。取り消しの音を鳴らす項目） */
 export function isBackChoice(c: Choice): boolean {
@@ -153,12 +155,16 @@ export function entries(menu: BattleMenu, cursor: InputCursor, strings: Strings)
             label: s("battle.spellRow", { name: sp.name, mp: sp.mp }),
             disabled: !sp.usable,
             choice: { kind: "spell", spellId: sp.spellId },
+            ...(sp.usable ? {} : { peek: true }),
           }),
         ),
         back,
       ];
-    case "spellConfirm":
-      return [{ label: s("spell.info.cast"), disabled: false, choice: { kind: "castConfirm" } }, back];
+    case "spellConfirm": {
+      // UI-68（2026-10-07）: 唱えられない（MP 不足の）呪文の確認の段は説明だけで、唱えるは dim
+      const sp = m.spells.find((x) => x.spellId === cursor.spellId);
+      return [{ label: s("spell.info.cast"), disabled: sp === undefined || !sp.usable, choice: { kind: "castConfirm" } }, back];
+    }
     case "item":
       return [
         ...m.items.map((it): MenuEntry => ({ label: it.name, disabled: false, choice: { kind: "item", instanceId: it.instanceId } })),
@@ -277,7 +283,9 @@ export function step(menu: BattleMenu, cursor: InputCursor, choice: Choice): { c
     case "spell": {
       if (choice.kind !== "spell") return stay;
       const sp = m.spells.find((x) => x.spellId === choice.spellId);
-      if (sp === undefined || !sp.usable) return stay;
+      if (sp === undefined) return stay;
+      // UI-68（2026-10-07）: 唱えられない（MP 不足の）呪文は送らず、確認の段で説明だけ見せる（唱えるは dim。キャンプの peek と同じ）
+      if (!sp.usable) return { cursor: { stage: "spellConfirm", memberId: id, spellId: sp.spellId }, send: null };
       const next = targetStage(sp.target);
       // UI-68 / U4: 対象の段を飛ばす（対象なし・敵グループが 1 つだけの敵の呪文）ときは確認の段で説明を見せる
       if (next === null || (next === "enemy" && liveGroups(menu).length === 1)) {

@@ -261,8 +261,9 @@ describe("UI-54 入力の段階", () => {
         send: { type: "battle.input", memberId: "c5", action: { type: "cast", spellId, target: { side: "none" } } },
       });
     }
-    // usable 偽（MP 不足）と知らない呪文は送らず、cursor も不変
-    expect(step(m, sp.cursor, { kind: "spell", spellId: "flame_burst" })).toEqual({ cursor: sp.cursor, send: null });
+    // 2026-10-07（A-A3）: usable 偽（MP 不足）の呪文は送らず、確認の段で説明だけ見せる（キャンプの peek と揃えた。M10 の初めは cursor 不変だった）。
+    // 知らない呪文は送らず、cursor も不変
+    expect(step(m, sp.cursor, { kind: "spell", spellId: "flame_burst" })).toEqual({ cursor: { stage: "spellConfirm", memberId: "c5", spellId: "flame_burst" }, send: null });
     expect(step(m, sp.cursor, { kind: "spell", spellId: "nope" })).toEqual({ cursor: sp.cursor, send: null });
   });
 
@@ -452,6 +453,23 @@ describe("UI-68 呪文の確認の段と説明（M10）", () => {
     expect(step(m, confirm("c5", "flame_burst"), { kind: "castConfirm" })).toEqual({ cursor: confirm("c5", "flame_burst"), send: null });
     // 一覧の段では castConfirm を受けない
     expect(step(m, { stage: "spell", memberId: "c5" }, { kind: "castConfirm" })).toEqual({ cursor: { stage: "spell", memberId: "c5" }, send: null });
+  });
+
+  test("UI-68（2026-10-07 A-A3）唱えられない（MP 不足で dim の）呪文も押せば確認の段で説明を見られ、[唱える] は dim で送らない。dim の行だけ peek（キャンプと同じ）", () => {
+    const m = menu();
+    const sp: InputCursor = { stage: "spell", memberId: "c5" };
+    const rows = entries(m, sp, S);
+    // dim の行は peek（押せば選ぶ）。押せる行と戻るには付けない
+    expect(rows.map((e) => e.peek === true)).toEqual([false, true, false, false, false, false]);
+    const fb = step(m, sp, { kind: "spell", spellId: "flame_burst" });
+    expect(fb).toEqual({ cursor: confirm("c5", "flame_burst"), send: null });
+    expect(spellNote(fb.cursor)).toEqual({ memberId: "c5", spellId: "flame_burst" });
+    expect(entries(m, fb.cursor, S)).toEqual([
+      { label: t("spell.info.cast"), disabled: true, choice: { kind: "castConfirm" } },
+      { label: t("common.back"), disabled: false, choice: { kind: "back" } },
+    ]);
+    expect(step(m, fb.cursor, { kind: "castConfirm" })).toEqual({ cursor: fb.cursor, send: null });
+    expect(step(m, fb.cursor, { kind: "back" })).toEqual({ cursor: sp, send: null });
   });
 
   test("UI-68/U4 手数: 対象を選ぶ呪文（火矢・治癒）は一覧 → 対象 → 送る、対象を選ばない呪文（加護）は一覧 → 確認 → 送る。どちらも一覧の後 2 タップ", () => {

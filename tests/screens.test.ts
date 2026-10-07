@@ -666,6 +666,8 @@ describe("入力と Command", () => {
     expect(lower).toContain("play.message.hideNote();");
     // 窓の説明を出すのは app の戦闘の 1 か所だけ（キャンプの説明はキャラクター画面の呪文の枠に出す）
     expect(app.match(/showNote\(/g)?.length).toBe(1);
+    // 2026-10-07（A-A3）: peek の行（MP 不足の呪文）は dim でも選べて、確認の段で説明を見る（キャンプと同じ）
+    expect(sync).toContain("...(e.peek === true ? { onDisabled: () => guard(() => chooseBattle(e.choice)) } : {}),");
   });
 
   test("UI-59（M10）キャラクター画面の開閉は setCharacter を通す: campCharacterOpen の段で開き、閉じる・再開で閉じる。閉じるとき街でなければ会話の箱を打ち切る。押せない項目の理由は会話の箱に語る（ソースの検査）", () => {
