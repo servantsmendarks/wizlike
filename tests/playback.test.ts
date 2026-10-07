@@ -1660,4 +1660,77 @@ describe("UI-47 街の会話の箱と再生", () => {
     );
     expect(names(w.log)).toContain("party.setMax");
   });
+
+  /** UI-66（2026-10-07 未定-17）: 実物の会話の箱に送りの音（advanced → page）の回数の記録を付けたもの */
+  const pagedTalk = () => {
+    const { deps, log } = fakeDeps({ skipAnimations: false });
+    const sink = { open: false, text: "" };
+    const pages = { n: 0 };
+    const talk = createTalkModel({
+      sink: { open: (on) => (sink.open = on), text: (t) => (sink.text = t), more: () => {} },
+      advanced: () => pages.n++,
+      log: () => {},
+      speed: () => 0,
+      blink: () => true,
+      schedule: () => () => {},
+    });
+    deps.message = createNarrator({ town: () => true, talk, window: deps.message });
+    deps.beat = createTapLatch();
+    return { deps, log, sink, talk, pages };
+  };
+
+  test("UI-66（2026-10-07 未定-17）寺院の蘇生（実際の execute の出来事を Player で再生）: 文を送るタップは再生中も再生後も 1 回ずつ page、送らないタップは無音。page の回数は語った文の数", async () => {
+    const st = withChar(newGame(1), 1, { life: "dead", hp: 0 });
+    st.gold = 100000;
+    const id = st.party[1]!.id;
+    const r = execute(st, { type: "town.temple", memberId: id, service: "resurrect" }, data);
+    expect(r.events.some((e) => e.kind === "rejected")).toBe(false);
+    const texts = r.events.filter((e) => e.kind === "message").map(fmt);
+    expect(texts.length).toBeGreaterThanOrEqual(1);
+    const { deps, sink, talk, pages } = pagedTalk();
+    const player = createPlayer(deps);
+    let done = false;
+    const run = player.play(r.events, st, r.state).then(() => {
+      done = true;
+    });
+    await tick();
+    const seen: string[] = [sink.text];
+    for (let i = 0; i < 20 && !done; i++) {
+      const before = { text: sink.text, open: sink.open, n: pages.n };
+      player.tap();
+      await tick();
+      const sent = sink.text !== before.text || sink.open !== before.open;
+      expect(pages.n - before.n, `tap ${i}`).toBe(sent ? 1 : 0);
+      if (sink.open && sink.text !== seen[seen.length - 1]) seen.push(sink.text);
+    }
+    await run;
+    expect(seen).toEqual(texts);
+    // 最後の文は再生の外のタップで閉じる（これも送りなので page）
+    expect(sink.open).toBe(true);
+    const n = pages.n;
+    talk.tap();
+    expect(sink.open).toBe(false);
+    expect(pages.n).toBe(n + 1);
+    expect(pages.n).toBe(texts.length);
+  });
+
+  test("UI-66/UI-40/TW-17（2026-10-07 未定-17）闇魔術の強化（実際の execute の出来事を Player で再生）: 判定の箱を消す 1 回目のタップは文を送らないので無音、結果の文を閉じる 2 回目のタップで page が 1 回", async () => {
+    const st = cloneState(newGame(1));
+    st.gold = 1000;
+    const r = execute(st, { type: "town.upgrade", memberId: "c1", slot: "weapon", catalysts: [] }, data);
+    expect(r.events.map((e) => e.kind).slice(0, 2)).toEqual(["dice", "message"]);
+    const { deps, log, sink, talk, pages } = pagedTalk();
+    const player = createPlayer(deps);
+    const p = player.play(r.events, st, r.state);
+    await tick();
+    const text = sink.text;
+    expect(pages.n).toBe(0);
+    player.tap();
+    await p;
+    // 判定の箱は消え、結果の文は残る（送っていない）ので鳴らない
+    expect(names(log)).toContain("dice.hide");
+    expect({ open: sink.open, text: sink.text, pages: pages.n }).toEqual({ open: true, text, pages: 0 });
+    talk.tap();
+    expect({ open: sink.open, pages: pages.n }).toEqual({ open: false, pages: 1 });
+  });
 });

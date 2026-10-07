@@ -250,7 +250,8 @@ export function createWorkerRenderer(make: () => Worker): SegmentRenderer {
         return;
       }
       waitingSfx.set(name, cb);
-      // まだ送っていない同じ名前の依頼があれば引数だけ新しくする（送り済みなら返事が新しい cb に渡る）
+      // まだ送っていない同じ名前の依頼があれば引数だけ新しくする。送り済み（返事待ち）の同じ名前はもう一度送る
+      // （先の返事が新しい cb に渡り、後の返事は捨てる。今の呼び手は requestSfx の名前ごとに 1 回だけ）
       const queued = sfxQueue.find((q) => q.name === name);
       if (queued !== undefined) queued.params = params;
       else sfxQueue.push({ name, params });
