@@ -141,6 +141,7 @@ export type PlayerDeps = {
   sound?(ev: GameEvent): void;
   /**
    * UI-66（2026-10-07）: 再生の開始に 1 回、最初の sound より前に呼ぶ（同じ拍の効果音の記録を空にする。拍の外の再生も 1 つの拍として扱う）。
+   * 街の会話の箱（拍の外で message.keepsDice が真）では、さらに各 message の sound の直前にも呼ぶ（文ごとに 1 拍。未定-21）。
    * 例外は sound と同じく console.warn にとどめる
    */
   soundStart?(): void;
@@ -244,6 +245,14 @@ export function createPlayer(deps: PlayerDeps): Player {
   const sound = (ev: GameEvent): void => {
     try {
       deps.sound?.(ev);
+    } catch (e) {
+      console.warn("sound:", e);
+    }
+  };
+  /** UI-66: 同じ拍の効果音の記録を空にする契機（再生の開始と、街の文ごと） */
+  const soundStart = (): void => {
+    try {
+      deps.soundStart?.();
     } catch (e) {
       console.warn("sound:", e);
     }
@@ -523,11 +532,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       taps = 0;
       marked = false;
       leaveBeats();
-      try {
-        deps.soundStart?.();
-      } catch (e) {
-        console.warn("sound:", e);
-      }
+      soundStart();
       const cx: PlayCx = { cursor: cursorOfDive(before), skip: isSkip(), screen: before.screen };
       // 後ろに message が残っているか（続きの三角。拍の外はタップを待たずに先へ進む）
       let messagesLeft = events.filter((e) => e.kind === "message").length;
@@ -588,6 +593,8 @@ export function createPlayer(deps: PlayerDeps): Player {
           if (mode !== null && (ev.kind === "message" || ev.kind === "dice")) pending = true;
           if (ev.kind === "message" || ev.kind === "dice" || ev.kind === "penaltyTable") tapAhead = false;
           const h = handlers[ev.kind] as ((e: GameEvent, cx: PlayCx, s: GameState) => Promise<void>) | undefined;
+          // UI-66（未定-21。2026-10-07）: 街の会話の箱（拍の外・keepsDice）では文ごとに 1 拍。文の音の前に同じ拍の効果音の記録を空にする
+          if (ev.kind === "message" && keepDice()) soundStart();
           sound(ev);
           if (h !== undefined) await h(ev, cx, finalState);
           if (ev.kind === "message") said = true;

@@ -16,6 +16,7 @@ import { startBattle } from "../src/core/rules/combat";
 import { execute } from "../src/core/engine";
 import { ALWAYS_HIT, dataWith, dived, withBattle } from "./helpers/battle";
 import { atEvent, dataEvents } from "./helpers/events";
+import { INITIAL_SOUND_CONTEXT, nextSoundContext, soundsFor, startSoundPlayback, type SoundContext } from "../src/presenter/sound-cues";
 
 /** UI-47（M10.5）: 街の会話の箱の矩形（行数と 1 行の単位） */
 const T = townLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size);
@@ -1983,5 +1984,88 @@ describe("UI-47 街の会話の箱と再生", () => {
     expect(one("town.inn.hpUp", { gain: 99, max: 9999 })).toBeLessThanOrEqual(56);
     expect(one("town.inn.mpUp", { gain: 99, max: 9999 })).toBeLessThanOrEqual(56);
     for (const k of STAT_KEYS) expect(one(`town.inn.statUp.${k}`, { from: 17, to: 18 }), k).toBeLessThanOrEqual(56);
+  });
+});
+
+describe("UI-66（未定-21。2026-10-07）街の再生は文（message）ごとに 1 拍", () => {
+  /** app と同じ結線（soundStart → startSoundPlayback、sound → soundsFor と nextSoundContext）で、鳴らした効果音の名前を集める */
+  const wire = (deps: PlayerDeps): string[] => {
+    let ctx: SoundContext = INITIAL_SOUND_CONTEXT;
+    const heard: string[] = [];
+    deps.soundStart = () => {
+      ctx = startSoundPlayback(ctx);
+    };
+    deps.sound = (ev) => {
+      for (const x of soundsFor(ev, data, ctx)) if (x.type === "sfx") heard.push(x.name);
+      ctx = nextSoundContext(ev, data, ctx);
+    };
+    return heard;
+  };
+  const townDeps = (skipAnimations: boolean): PlayerDeps => {
+    const { deps } = fakeDeps({ skipAnimations });
+    const talk = createTalkModel({
+      sink: { open: () => {}, text: () => {}, more: () => {} },
+      log: () => {},
+      speed: () => 0,
+      blink: () => false,
+      schedule: () => () => {},
+      cleared: () => deps.dice.hide(),
+      ...TALK_DIMS,
+    });
+    deps.message = createNarrator({ town: () => true, talk, window: deps.message });
+    return deps;
+  };
+  const learnOf = (id: string, name: string, spell: string): GameEvent[] => [
+    msg("town.inn.learnRoll", { name, spell }),
+    rollDiceEv("dice.learn", [12], 12, "dice.learn.ok"),
+    { kind: "spellLearned", id, spellId: spell, via: "roll" },
+    msg("town.inn.learned", { name, spell }),
+  ];
+  const ids = ["c1", "c2", "c3", "c4", "c5", "c6"];
+  const sanAll = (): GameEvent[] => ids.map((id) => ({ kind: "sanChanged", id, delta: -2, san: 40 }));
+
+  test("UI-66 宿屋で 2 人が覚えると learn は 2 回鳴る（1 回の再生でも、文ごとに拍が変わる）。救済の習得・転職の続けての習得も文ごとに鳴る", async () => {
+    for (const skipAnimations of [false, true]) {
+      const deps = townDeps(skipAnimations);
+      const heard = wire(deps);
+      const events: GameEvent[] = [
+        ...learnOf("c1", "アル", "灯火"),
+        ...learnOf("c2", "ドナ", "解毒"),
+        msg("town.inn.guaranteed", { name: "エル" }),
+        { kind: "spellLearned", id: "c3", spellId: "s1", via: "guarantee" },
+        msg("town.inn.learned", { name: "エル", spell: "縛り言葉" }),
+        { kind: "spellLearned", id: "c3", spellId: "s2", via: "classChange" },
+        msg("town.inn.learned", { name: "エル", spell: "炎裂" }),
+      ];
+      await createPlayer(deps).play(events, stateWith(null), stateWith(null));
+      expect(heard.filter((n) => n === "learn"), String(skipAnimations)).toHaveLength(4);
+    }
+  });
+
+  test("UI-66 街でも、文を挟まない出来事の重なり（sanChanged × 6）は 1 回のまま", async () => {
+    const deps = townDeps(true);
+    const heard = wire(deps);
+    await createPlayer(deps).play([msg("town.inn.morale"), ...sanAll(), msg("town.inn.morale")], stateWith(null), stateWith(null));
+    expect(heard.filter((n) => n === "san")).toEqual(["san"]);
+  });
+
+  test("UI-66 遭遇（拍の中）の sanChanged × 6 は、間に段の文（san.uneasy）が挟まっても 1 回のまま。戦闘の拍の規則は変えない（拍をまたげばまた鳴る）", async () => {
+    const { deps } = fakeDeps({ skipAnimations: true });
+    const heard = wire(deps);
+    const s = stateWith(diveAt(3, 3, "N"));
+    const beat: GameEvent = { kind: "beat", phase: "system", auto: true };
+    const evs = sanAll();
+    const mixed: GameEvent[] = [evs[0]!, msg("san.uneasy", { name: "アル" }), ...evs.slice(1, 3), msg("san.uneasy", { name: "ベルク" }), ...evs.slice(3)];
+    await createPlayer(deps).play([beat, msg("battle.unidentified"), ...mixed, beat, ...sanAll()], { ...s, screen: "battle" }, { ...s, screen: "battle" });
+    expect(heard.filter((n) => n === "san")).toEqual(["san", "san"]);
+  });
+
+  test("UI-66 迷宮の拍の外（罠など）は今までどおり 1 回の再生が 1 拍（段の文が挟まっても san は 1 回）", async () => {
+    const { deps } = fakeDeps({ skipAnimations: true });
+    const heard = wire(deps);
+    const s = stateWith(diveAt(3, 3, "N"));
+    const evs = sanAll();
+    await createPlayer(deps).play([msg("dungeon.trap.pit"), evs[0]!, msg("san.uneasy", { name: "アル" }), ...evs.slice(1)], s, s);
+    expect(heard.filter((n) => n === "san")).toEqual(["san"]);
   });
 });
