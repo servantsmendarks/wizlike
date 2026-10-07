@@ -374,7 +374,9 @@ describe("入力と Command", () => {
     expect(branch).toMatch(/const ents = chestEntries\(chestPage, chest, strings\);/);
     expect(branch).toMatch(/const heading = chestHeading\(chestPage, chest, strings\);/);
     expect(branch).toMatch(/if \(heading !== null\) play\.header\.setText\(heading\);/);
-    expect(branch).toMatch(/c\.setList\(ents\.map\(chestItem\), \{ fixedLast: ents\[ents\.length - 1\]\?\.choice\.kind === "back" \}\);/);
+    // レビュー A-A-2（2026-10-08）: 最初の段の 4 件目 [放っておく] も一覧の外に固定する（音は取り消しにしない）ようにしたので期待を書き直した
+    expect(branch).toMatch(/const lastBack = ents\[ents\.length - 1\]\?\.choice\.kind === "back";/);
+    expect(branch).toMatch(/c\.setList\(ents\.map\(chestItem\), \{ fixedLast: lastBack \|\| chestPage\.kind === "menu", fixedLastCancel: lastBack \}\);/);
     expect(branch).toMatch(/c\.setMode\("list"\);\s*return;/);
     // 4b の直書きは残っていない
     expect(branch).not.toMatch(/chest\.menu\.open/);

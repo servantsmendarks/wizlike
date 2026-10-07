@@ -262,7 +262,7 @@
     - 戦闘で死んだ ready の者は、sync までの間、パーティ欄が「名前…↑」のまま状態の列に「死亡」と出る。帯でも理屈の上では「死↑」があり得る。どちらも sync で消える（表示層で life を見て印を消すと CH-80 の条件を表示層に持ち込む。UI-35）。
 - UI-70 宝箱の操作（M11。combat.md CB-60〜CB-67）: 出すかどうかは core の `chestView(state, data)`（rules/chest。UI-35 の許可リスト）だけで決める。非 null（`dive.chest` が残っていて、戦闘中でも保留中の選択も無い）の間、迷宮の操作領域は箱の一覧だけにする。
   - 段（M11 作業 8。表示層の局所の状態で保存しない。`views/chest.ts` が chestView の値から作る）。どの段も UI-11 の一覧（数字キー・Enter も一覧の項目）。
-    - 最初の段: [調べる]（`chest.menu.inspect`）[解除]（`chest.menu.disarm`）[開ける]（`chest.menu.open`。`chest.open` を送る）[放っておく]（`chest.menu.leave`。`chest.leave` を送る）。ヘッダーは場所のまま（問いは core が語る `chest.prompt`）。
+    - 最初の段: [調べる]（`chest.menu.inspect`）[解除]（`chest.menu.disarm`）[開ける]（`chest.menu.open`。`chest.open` を送る）[放っておく]（`chest.menu.leave`。`chest.leave` を送る）。ヘッダーは場所のまま（問いは core が語る `chest.prompt`）。一覧は 3 行なので、4 件目の [放っておく] は人・罠の段の [戻る] と同じ一覧の外の固定の位置（UI-11 の listBack）に置き、4 件がスクロールなしで一度に見えるようにする（数字キーは 1〜4 のまま。戻るではないので音は UI-66 の取り消しにしない）。
     - 調べる → 人の段: chestView の `members`（パーティ全員、並び順。リーダーも可）と末尾の [戻る]（一覧の外に固定）。選ぶと `chest.inspect{memberId}` を送る。ヘッダーは `chest.menu.whoInspect`「誰が箱を調べる？」。
     - 解除 → 人の段（ヘッダー `chest.menu.whoDisarm`「誰が罠を外す？」）→ 罠の名前の段: chestView の `trapNames`（chest-traps.json の全種、データの順）と [戻る]。選ぶと `chest.disarm{memberId, trapId}` を送る。ヘッダーは `chest.menu.which`「{name}が外す罠は？」。
     - 人の段: `canAct` でない者は dim。押すと理由の 1 文 `chest.menu.cannotAct`「{name}は動けない。」を語る（UI-59 の作法。迷宮ではメッセージ窓）。職業の掛け合いの担当（chestView の `ownerId`。EV-73）は `chest.menu.owner`「{name}（担当）」の印（調べる・解除の両方の段。補正が効くのは調べるだけ。EV-75）。

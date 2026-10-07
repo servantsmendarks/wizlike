@@ -617,6 +617,41 @@ describe("UI-66 決定・取り消しの音", () => {
     expect(sounds).toEqual([]);
   });
 
+  test("UI-70/UI-11/UI-66 setList(fixedLast, fixedLastCancel: false) は末尾を一覧の外の controls-list-back に置くが、音は取り消しにしない（宝箱の最初の段の [放っておく]）。添字は items の順", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const sounds: string[] = [];
+    const picked: number[] = [];
+    const c = createControls({
+      region: g.controls,
+      layout: L,
+      strings: data.strings,
+      onAction: () => {},
+      hold: HOLD,
+      onClose: () => {},
+      onSound: (k) => sounds.push(k),
+    });
+    const it = (k: number): { label: string; onSelect: () => void } => ({ label: `r${k}`, onSelect: () => picked.push(k) });
+    c.setList([it(0), it(1), it(2), it(3)], { fixedLast: true, fixedLastCancel: false });
+    c.setMode("list");
+    const list = created.find((e) => e.className === "controls-list")!;
+    const holder = created.find((e) => e.className === "controls-list-back")!;
+    expect(list.children.map((b) => b["textContent"])).toEqual(["r0", "r1", "r2"]);
+    expect(holder.children.map((b) => b["textContent"])).toEqual(["r3"]);
+    expect(holder.style["display"]).not.toBe("none");
+    holder.children[0]!.tap();
+    c.select(3);
+    c.select(0);
+    expect(picked).toEqual([3, 3, 0]);
+    expect(sounds).toEqual(["ok", "ok", "ok"]);
+    // 同じ行のまま（要素の使い回し）でも、fixedLastCancel を外せば固定の末尾は取り消しの音に戻る
+    sounds.length = 0;
+    c.setList([it(0), it(1), it(2), it(3)], { fixedLast: true });
+    c.select(3);
+    expect(sounds).toEqual(["cancel"]);
+  });
+
   test("UI-66（2026-10-07）戻る・やめるは位置に関わらず cancel: 戦闘の枠・キャンプの 8 枠・固定しない一覧の中でも back の印の項目は cancel、ほかの項目は ok（sound より back を優先）", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);

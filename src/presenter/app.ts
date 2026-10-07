@@ -890,8 +890,10 @@ export function createApp(o: {
       const d = state.dive;
       if (heading !== null) play.header.setText(heading);
       else if (d !== null) showHeaderAt(state, { floor: d.floor, pos: d.pos, facing: d.facing });
-      // UI-11: 人と罠の段の末尾の戻るは一覧の外に固定する
-      c.setList(ents.map(chestItem), { fixedLast: ents[ents.length - 1]?.choice.kind === "back" });
+      // UI-11: 人と罠の段の末尾の戻るは一覧の外に固定する。
+      // UI-70: 最初の段の 4 件目 [放っておく] も同じ位置に固定し、3 行の一覧からはみ出さないようにする（戻るではないので音は取り消しにしない）
+      const lastBack = ents[ents.length - 1]?.choice.kind === "back";
+      c.setList(ents.map(chestItem), { fixedLast: lastBack || chestPage.kind === "menu", fixedLastCancel: lastBack });
       c.setMode("list");
       return;
     }

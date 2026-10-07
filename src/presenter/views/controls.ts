@@ -60,10 +60,11 @@ export type Controls = {
    * layout.list の位置に並べる。4 件以上は縦スクロール（UI-11）。
    * fixedLast なら末尾の項目（戻る / やめる）を一覧の外の layout.listBack に固定し、残りを幅の狭い layout.listNarrow の一覧に置く。
    * 添字（select・setListFocus・数字キー）は fixedLast によらず items の順（末尾が戻る / やめる）。
+   * fixedLastCancel が false なら、固定した末尾は戻る / やめるではない項目として扱い、取り消しの音にしない（UI-70 の宝箱の最初の段の [放っておく]。既定は true）。
    * town（M8.5。UI-13 の街の一覧）なら、見出し（town.heading。accent 色の 1 行。押せない）と一覧を layout.townList の位置に置く
    * （行の高さは townList の行、幅は 168。固定の戻るは listBack のまま）
    */
-  setList(items: ControlItem[], opts?: { fixedLast?: boolean; town?: { heading: string } }): void;
+  setList(items: ControlItem[], opts?: { fixedLast?: boolean; fixedLastCancel?: boolean; town?: { heading: string } }): void;
   /**
    * UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠 / campGrid の 8 枠 / townList.grid の 6 枠）に並べる。
    * null は空き枠（何も置かない）。枠数を超える分は捨てる。
@@ -271,6 +272,8 @@ export function createControls(o: {
   /** UI-11: 一覧の外に固定する戻る / やめる（setList の fixedLast のときだけ出す） */
   const listBackRect = o.layout.listBack;
   let listBackOn = false;
+  /** 固定した末尾を押したら取り消しの音にするか（setList の fixedLastCancel。既定は真） */
+  let listBackCancel = true;
   const listBack = document.createElement("div");
   listBack.className = "controls-list-back";
   el.appendChild(listBack);
@@ -400,8 +403,9 @@ export function createControls(o: {
         menu.appendChild(b);
       });
     },
-    setList(items: ControlItem[], opts?: { fixedLast?: boolean; town?: { heading: string } }): void {
+    setList(items: ControlItem[], opts?: { fixedLast?: boolean; fixedLastCancel?: boolean; town?: { heading: string } }): void {
       const fixed = opts?.fixedLast === true && items.length > 0;
+      listBackCancel = opts?.fixedLastCancel !== false;
       const townOn = opts?.town !== undefined;
       // UI-13: 街の一覧は戻るの有無によらず幅 168（townList.area の幅）
       const rowW = townOn ? town.area.w : fixed ? narrow.w : first.w;
@@ -454,7 +458,7 @@ export function createControls(o: {
         // 要素を使い回すので、押したときは今の listItems の k 番目を見る
         onTap(b, () => {
           const cur = listItems[k];
-          if (cur !== undefined) pick(cur, listBackOn && k === listItems.length - 1);
+          if (cur !== undefined) pick(cur, listBackOn && listBackCancel && k === listItems.length - 1);
         });
         if (it.onFocus !== undefined) {
           // 対象の一覧の Enter は、DOM のフォーカスのある行の click ではなく、いつも注目している行を選ぶ（UI-33。swipe.ts の isButton）
@@ -515,7 +519,7 @@ export function createControls(o: {
         if (it !== undefined && it !== null) pick(it, back);
       };
       if (mode === "dpad") at(menuItems);
-      else if (mode === "list") at(listItems, listBackOn && n === listItems.length - 1);
+      else if (mode === "list") at(listItems, listBackOn && listBackCancel && n === listItems.length - 1);
       else if (mode === "battle") at(battleItems);
       else if ((mode === "close" || mode === "map") && n === 0) closeNow();
       else if (mode === "map" && n === 1) pressMapGo();
