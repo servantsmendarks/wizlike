@@ -3,7 +3,7 @@
 // app が十字ボタンを出さない間に長押しを離したものとする判定（shouldReleaseHold）も確かめる。
 // createControls は node 環境なので、document を最小の偽物に差し替える。
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { shouldReleaseHold, type Overlay, type Route } from "../src/presenter/app";
+import { shouldReleaseHold, talkBlocksStage, talkTakesTap, type Overlay, type Route } from "../src/presenter/app";
 import { tapSpecOf } from "../src/presenter/input/tap";
 import { dungeonLayout, regions, townLayout } from "../src/presenter/layout";
 import { createControls } from "../src/presenter/views/controls";
@@ -97,6 +97,26 @@ describe("controls", () => {
     expect(shouldReleaseHold("dungeon", "camp", false)).toBe(true);
     expect(shouldReleaseHold("dungeon", "history", false)).toBe(true);
     expect(shouldReleaseHold("dungeon", null, true)).toBe(true);
+  });
+
+  // 2026-10-07 未定-25: 以前は overlay wipe で箱のタップを捨てた（tapTalk が overlay null / camp だけを受けた）ので、全滅の内訳の間の箱は閉じられなかった
+  test("UI-47/UI-56（M10.5 追補 2・未定-25）全滅の内訳の間（街の route・overlay wipe）は、会話の箱そのもののタップで閉じる（talkTakesTap）が、ステージのほかのタップは奪わない（talkBlocksStage が偽。「街へ」は 1 回で効く）", () => {
+    expect(talkTakesTap("town", "wipe", false)).toBe(true);
+    expect(talkBlocksStage("town", "wipe", false)).toBe(false);
+    // 「街へ」で内訳を閉じた後（overlay null）は、街の箱の今までの規則（ステージのどこのタップも箱のタップ）
+    expect(talkTakesTap("town", null, false)).toBe(true);
+    expect(talkBlocksStage("town", null, false)).toBe(true);
+    // 今までどおり: 酒場のキャンプ・迷宮のキャラクター画面は受け、履歴・設定・debug・地図の上では受けない。迷宮の内訳（箱は開かない）も受けない
+    expect(talkTakesTap("town", "camp", false)).toBe(true);
+    expect(talkTakesTap("dungeon", "camp", true)).toBe(true);
+    expect(talkBlocksStage("dungeon", "camp", true)).toBe(true);
+    for (const o of ["history", "settings", "debug", "map"] as const) {
+      expect(talkTakesTap("town", o, false), o).toBe(false);
+      expect(talkBlocksStage("town", o, false), o).toBe(false);
+    }
+    expect(talkTakesTap("dungeon", "wipe", false)).toBe(false);
+    expect(talkTakesTap("battle", null, false)).toBe(false);
+    expect(talkBlocksStage("dungeon", null, false)).toBe(false);
   });
 
   test("UI-54/UI-36 戦闘の枠（member の配置）: disabled は dim 色で、タップでも select でも onSelect を呼ばない。select は battle モードの枠を選ぶ", () => {

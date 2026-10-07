@@ -276,6 +276,11 @@ export const TOWN_GRID_LABEL_MAX = 4;
 const TALK_COMPACT_LINES = 3;
 const TALK_MARGIN_X = 2;
 const TALK_MARGIN_BOTTOM = 2;
+/**
+ * UI-47 / UI-56（M10.5 追補 2。2026-10-07 未定-25）: 全滅の内訳の間の会話の箱（talkWipe）と内訳の下端の間。
+ * 箱は 3 行（compact と同じ大きさ）で、内訳（ビューとメッセージの範囲）の下・「街へ」（操作の欄の y34）の上に置く
+ */
+const TALK_WIPE_GAP = 2;
 /** UI-47: 会話の箱の文字の幅（全角 28 字。UI-43 の禁則で 1 行 28 字以下） */
 const TALK_TEXT_W = 224;
 /** UI-47（M10.5）: 会話の箱の文字の幅の単位（半角 1 字。8px の字で 4px。全角は 2 単位）。cols = 文字の幅 / これ */
@@ -313,6 +318,8 @@ export type TownLayout = {
   talk: TalkRect;
   /** UI-47 / UI-59 迷宮のキャラクター画面の会話の箱（M8.5 の 3 行。絵の下端に重なる） */
   talkCompact: TalkRect;
+  /** UI-47 / UI-56（M10.5 追補 2・未定-25）全滅の内訳の間の会話の箱（3 行。内訳の下・「街へ」の上） */
+  talkWipe: TalkRect;
   /** UI-40 街の判定の箱の下端（ビューの座標。会話の箱の上 TOWN_DICE_GAP = 絵の下端の 2 上） */
   diceBottom: number;
   /** UI-40 / UI-59 迷宮のキャラクター画面の判定の箱の下端（ビューの座標。compact の箱の上 TOWN_DICE_GAP） */
@@ -330,7 +337,7 @@ export type TownLayout = {
 };
 
 /** UI-13: 街の画面の矩形（ステージ座標）。既定の regions では ヘッダー y0..15、絵 y16..165、帯 y166..175、見出し y178..187、一覧 y190..387（22×9 行）、施設メニューの 6 枠 x40/96/152・y190/246 の 48×48（M10）、戻る 178,354。
- * 会話の箱（M10.5）は x0..239・y166..399（22 行。帯から戻るまでに被せる）、迷宮のキャラクター画面の箱は x2..237・y128..163（3 行） */
+ * 会話の箱（M10.5）は x0..239・y166..399（22 行。帯から戻るまでに被せる）、迷宮のキャラクター画面の箱は x2..237・y128..163（3 行）、全滅の内訳の間の箱は x2..237・y238..273（3 行。M10.5 追補 2） */
 export function townLayout(g: Regions, partySize: number): TownLayout {
   const h = g.header;
   const settings: Rect = { x: h.x + h.w - HEADER_SETTINGS_W, y: h.y, w: HEADER_SETTINGS_W, h: h.h };
@@ -343,6 +350,8 @@ export function townLayout(g: Regions, partySize: number): TownLayout {
   const talk = talkRect({ x: v.x, y: bandY, w: v.w, h: stageBottom - bandY });
   const compactH = TALK_COMPACT_LINES * MESSAGE_LINE_H + 2 * (MESSAGE_PAD_Y + 1);
   const talkCompact = talkRect({ x: v.x + TALK_MARGIN_X, y: v.y + v.h - TALK_MARGIN_BOTTOM - compactH, w: v.w - 2 * TALK_MARGIN_X, h: compactH });
+  // 全滅の内訳は dungeonLayout の wipe（ビューの上端からメッセージ窓の下端まで）
+  const talkWipe = talkRect({ x: v.x + TALK_MARGIN_X, y: g.message.y + g.message.h + TALK_WIPE_GAP, w: v.w - 2 * TALK_MARGIN_X, h: compactH });
 
   const cellW = Math.floor(v.w / Math.max(1, partySize));
   const cells = Array.from({ length: partySize }, (_, i): Rect => ({ x: v.x + cellW * i, y: bandY, w: cellW, h: TOWN_BAND_H }));
@@ -367,6 +376,7 @@ export function townLayout(g: Regions, partySize: number): TownLayout {
     picture: { ...v },
     talk,
     talkCompact,
+    talkWipe,
     diceBottom: talk.box.y - v.y - TOWN_DICE_GAP,
     diceBottomCompact: talkCompact.box.y - v.y - TOWN_DICE_GAP,
     band: { row: { x: v.x, y: bandY, w: v.w, h: TOWN_BAND_H }, cells, hits },

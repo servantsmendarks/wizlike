@@ -1,5 +1,6 @@
 // UI-47（M8.5。M10.5 で広げて溜める形に。M10.5 追補でログ形式に）: 街の会話の箱。絵の下端からステージの下端までを覆う箱（矩形は layout.ts の townLayout の talk。
-// 帯・見出し・一覧・施設メニュー・戻るに被せる）。迷宮のキャラクター画面では M8.5 の 3 行の箱（talkCompact。setCompact）。
+// 帯・見出し・一覧・施設メニュー・戻るに被せる）。迷宮のキャラクター画面では M8.5 の 3 行の箱（talkCompact。setRect("compact")）。
+// 全滅の内訳（UI-56）の間は、内訳の下・「街へ」の上の 3 行の箱（talkWipe。setRect("wipe")。M10.5 追補 2・未定-25）。
 // - 語り（say）は呼ばれた時点で 1 回だけ全文の履歴（UI-46。log）に入れる。
 // - 文は箱に溜める（M10.5。2026-10-07 ユーザーの指示）: 1 文ずつ文字送りで出し、終わったら改行して次の文を続ける（文ごとのタップ待ちは無い）。
 // - ログ形式（M10.5 追補。2026-10-07 ユーザーの指示「多い場合はログ形式で、下、上に続きがある旨を示してください」。未定-24）:
@@ -276,10 +277,16 @@ export const TALK_KEY_LINES = 3;
 /** UI-03: 1 行の高さ（論理 px） */
 const TALK_LINE_H = 10;
 
+/**
+ * UI-47: 会話の箱の矩形の種類。town は街の広い箱、compact は迷宮のキャラクター画面の 3 行の箱（UI-59。M10.5）、
+ * wipe は全滅の内訳の間の 3 行の箱（UI-56。M10.5 追補 2・未定-25）
+ */
+export type TalkRectKind = "town" | "compact" | "wipe";
+
 export type TalkBox = TalkModel & {
   el: HTMLElement;
-  /** UI-47 / UI-59（M10.5）: 迷宮のキャラクター画面の 3 行の箱（compact）に切り替える。偽なら街の箱 */
-  setCompact(on: boolean): void;
+  /** UI-47: 箱の矩形を切り替える（開いている箱の文はそのまま） */
+  setRect(kind: TalkRectKind): void;
   /** UI-47 / UI-33（M10.5 追補）: 文字領域を lines 行ぶん動かす（負で上へ。↑↓ キー）。下端まで戻れば追従に戻る */
   scrollBy(lines: number): void;
 };
@@ -297,12 +304,14 @@ export function talkMarkPos(rect: TalkRect): ScrollMarkPos {
 }
 
 /**
- * UI-47: 会話の箱の DOM。layout は townLayout の talk、compact は talkCompact（ステージ座標）。log はメッセージ窓の log（同じ 1 本の履歴）。
+ * UI-47: 会話の箱の DOM。layout は townLayout の talk、compact は talkCompact、wipe は talkWipe（ステージ座標）。log はメッセージ窓の log（同じ 1 本の履歴）。
  * cleared は中身のある箱を閉じたとき（判定の箱を消す）。strings は続きの印の字（scroll.up / scroll.down）。max は溜める文の数の上限
  */
 export function createTalkBox(o: {
   layout: TalkRect;
   compact?: TalkRect;
+  /** UI-56（M10.5 追補 2）: 全滅の内訳の間の箱（townLayout の talkWipe） */
+  wipe?: TalkRect;
   strings: Strings;
   speed(): number;
   blink(): boolean;
@@ -490,8 +499,8 @@ export function createTalkBox(o: {
   return {
     ...model,
     el,
-    setCompact(on: boolean): void {
-      const next = on && o.compact !== undefined ? o.compact : o.layout;
+    setRect(kind: TalkRectKind): void {
+      const next = (kind === "compact" ? o.compact : kind === "wipe" ? o.wipe : undefined) ?? o.layout;
       if (next === rect) return;
       rect = next;
       place();

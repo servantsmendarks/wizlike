@@ -357,22 +357,36 @@ describe("UI-59 キャラクター画面の層（placeDice / applyPanels）", ()
     const { applyPanels } = await import("../src/presenter/views/dungeon");
     const { DICE_BOX_BOTTOM } = await import("../src/presenter/views/dice");
     const B = { town: 94, compact: 57 };
-    const cases: ["town" | "dungeon" | "battle", boolean, boolean, number, boolean][] = [
-      ["town", false, true, B.town, false],
-      ["town", true, true, B.town, false],
-      ["dungeon", true, true, B.compact, true],
-      ["dungeon", false, false, DICE_BOX_BOTTOM, true],
-      ["battle", false, false, DICE_BOX_BOTTOM, true],
+    // M10.5 追補 2（未定-25）: 会話の箱の大きさは setTalkCompact(on) から setTalkRect(kind) にした（compact が真 → "compact"、偽 → "town"）
+    const cases: ["town" | "dungeon" | "battle", boolean, boolean, number, string][] = [
+      ["town", false, true, B.town, "town"],
+      ["town", true, true, B.town, "town"],
+      ["dungeon", true, true, B.compact, "compact"],
+      ["dungeon", false, false, DICE_BOX_BOTTOM, "compact"],
+      ["battle", false, false, DICE_BOX_BOTTOM, "compact"],
     ];
-    for (const [mode, open, hidden, want, compact] of cases) {
+    for (const [mode, open, hidden, want, kind] of cases) {
       const message = new LayerEl("message");
       const panel = new LayerEl("panel");
       message.style.display = "x";
       panel.style.display = "x";
       let bottom = -1;
-      let small: boolean | null = null;
-      applyPanels(mode, open, { message, panel, setDiceBottom: (b) => (bottom = b), setTalkCompact: (on) => (small = on) }, B);
-      expect([mode, open, message.style.display, panel.style.display, bottom, small]).toEqual([mode, open, hidden ? "none" : "", hidden ? "none" : "", want, compact]);
+      let rect: string | null = null;
+      applyPanels(mode, open, false, { message, panel, setDiceBottom: (b) => (bottom = b), setTalkRect: (k) => (rect = k) }, B);
+      expect([mode, open, message.style.display, panel.style.display, bottom, rect]).toEqual([mode, open, hidden ? "none" : "", hidden ? "none" : "", want, kind]);
     }
+  });
+
+  // 2026-10-07 未定-25: 全滅の内訳の間は、街の広い箱（y166..399）が内訳の下からはみ出して「街へ」を覆っていた
+  test("UI-47/UI-56（M10.5 追補 2・未定-25）全滅の内訳が出ている間は、街でも会話の箱を内訳の下の 3 行の箱（wipe）にする。内訳を閉じる（「街へ」・再開 SV-50 の showWipe(false)）と街の広い箱に戻る", async () => {
+    const { applyPanels } = await import("../src/presenter/views/dungeon");
+    const B = { town: 94, compact: 57 };
+    const kindOf = (mode: "town" | "dungeon" | "battle", wipeOpen: boolean): string | null => {
+      let rect: string | null = null;
+      applyPanels(mode, false, wipeOpen, { message: new LayerEl("message"), panel: new LayerEl("panel"), setDiceBottom: () => {}, setTalkRect: (k) => (rect = k) }, B);
+      return rect;
+    };
+    // 全滅の列: 内訳が開く（迷宮・戦闘の route の間）→ screen{town} で街の route（carry を箱に出す）→「街へ」で閉じる
+    expect([kindOf("battle", true), kindOf("dungeon", true), kindOf("town", true), kindOf("town", false)]).toEqual(["wipe", "wipe", "wipe", "town"]);
   });
 });

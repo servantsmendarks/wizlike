@@ -468,6 +468,23 @@ describe("layout", () => {
     expect(Math.min(...T.list.rows.map((r) => r.h))).toBeGreaterThanOrEqual(12);
   });
 
+  // 2026-10-07 未定-25: 全滅の内訳の間は、広い箱（y166..399）が内訳の下からはみ出して「街へ」を覆い、タッチで抜けられなかった
+  test("UI-47/UI-56（M10.5 追補 2・未定-25）全滅の内訳の間の会話の箱 talkWipe は内訳の下・「街へ」の上（枠 x2..237・y238..273 の 3 行）。内訳・「街へ」と重ならない", () => {
+    expect(T.talkWipe).toEqual({
+      box: { x: 2, y: 238, w: 236, h: 36 },
+      text: { x: 7, y: 241, w: 220, h: 30 },
+      lines: 3,
+      cols: 55,
+      more: { x: 219, y: 263, w: 8, h: 8 },
+    });
+    expect(inside(T.talkWipe.box, STAGE)).toBe(true);
+    expect(overlaps(T.talkWipe.box, L.wipe)).toBe(false);
+    // 内訳の間の操作の欄は「街へ」（setMode("close")。地図の閉じると同じ矩形 x60..179・y334..365）だけ
+    expect(L.mapClose).toEqual({ x: 60, y: 334, w: 120, h: 32 });
+    expect(overlaps(T.talkWipe.box, L.mapClose)).toBe(false);
+    expect(T.talkWipe.box.y + T.talkWipe.box.h).toBeLessThanOrEqual(L.mapClose.y);
+  });
+
   // M10.5: 会話の箱を施設メニューに被せるようにしたので、重ならない相手から会話の箱を外した（被さることは townLayout の試験で確かめる）
   test("UI-13/UI-52（M10）townLayout の grid: 施設メニューの 48×48 を 3 列 × 2 段（x40/96/152・y190/246、間 8）でステージの中央寄せ。一覧の行の y 範囲（y190..387）に収まり、見出し・帯・絵と重ならない", () => {
     expect(T.grid).toEqual([190, 246].flatMap((y) => [40, 96, 152].map((x) => ({ x, y, w: 48, h: 48 }))));

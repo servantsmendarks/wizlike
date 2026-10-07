@@ -163,6 +163,24 @@ export function shouldReleaseHold(route: Route, overlay: Overlay, hasPendingChoi
   return route !== "dungeon" || overlay !== null || hasPendingChoice;
 }
 
+/**
+ * UI-47: 会話の箱そのもの（と施設の絵）のタップを受けるか（再生の外。app の tapTalk）。箱を受ける画面（街・キャラクター画面）で、
+ * 箱より上の overlay（履歴・設定など）が無いとき。酒場のキャンプ（camp）は箱がパネルの上に描かれるので受ける。
+ * 全滅の内訳（wipe）の間の街は、箱が内訳の下・「街へ」の上に出る（UI-56。M10.5 追補 2・未定-25）ので受ける
+ */
+export function talkTakesTap(route: Route, overlay: Overlay, characterOpen: boolean): boolean {
+  if (route !== "town" && !characterOpen) return false;
+  return overlay === null || overlay === "camp" || (overlay === "wipe" && route === "town");
+}
+
+/**
+ * UI-47 / UI-66（未定-19）: 会話の箱が文送りを待つ間に、ステージのどこのタップも箱のタップにしてよい画面か（app の talkWaits の画面の条件）。
+ * 全滅の内訳（wipe）の間は偽: 箱は「街へ」に重ならないので、「街へ」は箱を閉じなくても 1 回で効く（M10.5 追補 2・未定-25）
+ */
+export function talkBlocksStage(route: Route, overlay: Overlay, characterOpen: boolean): boolean {
+  return (route === "town" || characterOpen) && (overlay === null || overlay === "camp");
+}
+
 /** UI-46: 履歴の画面のキーの ↑↓ で動かす行数 */
 const HISTORY_KEY_LINES = 3;
 
@@ -2022,27 +2040,27 @@ export function createApp(o: {
   /**
    * UI-47: 再生の外の会話の箱・施設の絵のタップ（再生中のタップはステージが player.tap() に回す）。
    * 文字送り中なら即表示、そうでなければ閉じる（M10.5 追補のログ形式。箱を空にして続けることは無い）。キャンプ（酒場）は箱がパネルの上に描かれるので受ける。
-   * それ以外の overlay（履歴・設定など）があるときは何もしない
+   * 全滅の内訳の間（街）は箱が内訳の下に出るので受ける（M10.5 追補 2・未定-25）。それ以外の overlay（履歴・設定など）があるときは何もしない（talkTakesTap）
    */
   const tapTalk = (): void => {
     if (isBusy() || chaining) return;
     // UI-59（M10）: キャラクター画面の間は迷宮でも箱に語る
-    if ((route !== "town" && !characterOpen) || (overlay !== null && overlay !== "camp")) return;
+    if (!talkTakesTap(route, overlay, characterOpen)) return;
     play.talk.tap();
   };
 
   /**
    * UI-47 / UI-66（2026-10-07 未定-19。M10.5）: 再生の外で会話の箱が文送りを待っている（箱が開いている（最後の文の ▼ を含む）か、続きの文がある）。
    * この間は一覧・ヘッダー・帯などステージのどこのタップも箱のタップ（tapTalk）にし、数字キーも同じにする（一覧は選ばない）。
-   * 箱を受ける画面（街・キャラクター画面）で、箱より上の overlay（履歴・設定など）が無いときだけ。
+   * 箱を受ける画面（街・キャラクター画面）で、箱より上の overlay（履歴・設定など）が無いときだけ（talkBlocksStage。全滅の内訳の間は偽で、
+   * 箱は箱そのもののタップで閉じ、「街へ」は 1 回で効く。M10.5 追補 2・未定-25）。
    * 迷宮のキャラクター画面（3 行の箱。操作の欄に被らない）は M10 の規則（talk.waiting: ▼ で待つか文が控える間だけ。
    * 文字送り中の 1 文と最後の文の ▼ の間は項目が効き、項目は会話を打ち切ってから動く）
    */
   const talkWaits = (): boolean =>
     !isBusy() &&
     !chaining &&
-    (route === "town" || characterOpen) &&
-    (overlay === null || overlay === "camp") &&
+    talkBlocksStage(route, overlay, characterOpen) &&
     (route === "town" ? play.talk.pending() : play.talk.waiting());
 
   const blurActive = (): void => {

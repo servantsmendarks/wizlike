@@ -509,9 +509,12 @@ describe("入力と Command", () => {
     // 街とキャラクター画面ではメッセージ窓と 64 のパーティ欄を隠す。街では帯とヘッダーのログを出す。
     // 2026-10-07（B-B-5）: 隠す処理は export の applyPanels に切り出し、振る舞いは dungeon-view.test の偽の要素で確かめる。ここは結線だけ
     // M10.5: 判定の箱の下端は街と迷宮のキャラクター画面で分け、会話の箱の大きさも applyPanels で切り替える
+    // M10.5 追補 2（未定-25）: 全滅の内訳が出ている間（wipeOpen）は内訳の下の 3 行の箱。setTalkCompact(on) を setTalkRect(kind) にした
+    //（以前の期待値は wipeOpen なし・setTalkCompact: (on) => talk.setCompact(on)）。内訳の出し入れ（showWipe）で出し直す
     expect(dungeon).toMatch(
-      /const syncPanels = \(\): void =>\s*applyPanels\(\s*mode,\s*characterOpen,\s*\{ message: message\.el, panel: panel\.el, setDiceBottom: \(b\) => dice\.setBottom\(b\), setTalkCompact: \(on\) => talk\.setCompact\(on\) \},\s*\{ town: tl\.diceBottom, compact: tl\.diceBottomCompact \},\s*\);/,
+      /const syncPanels = \(\): void =>\s*applyPanels\(\s*mode,\s*characterOpen,\s*wipeOpen,\s*\{ message: message\.el, panel: panel\.el, setDiceBottom: \(b\) => dice\.setBottom\(b\), setTalkRect: \(k\) => talk\.setRect\(k\) \},\s*\{ town: tl\.diceBottom, compact: tl\.diceBottomCompact \},\s*\);/,
     );
+    expect(dungeon).toMatch(/showWipe\(on: boolean\): void \{[\s\S]*?wipeOpen = on;\s*syncPanels\(\);\s*\}/);
     expect(dungeon).toContain('band.el.style.display = town ? "" : "none";');
     expect(dungeon).toContain("header.setLogVisible(town);");
   });
@@ -639,7 +642,9 @@ describe("入力と Command", () => {
     const tap = /const tapTalk = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(tap).toContain("if (isBusy() || chaining) return;");
     // M10（UI-59）: キャラクター画面の間は迷宮でも箱のタップを受ける
-    expect(tap).toContain('if ((route !== "town" && !characterOpen) || (overlay !== null && overlay !== "camp")) return;');
+    // M10.5 追補 2（未定-25）: 条件は export の talkTakesTap に切り出し（全滅の内訳の間の街も受ける）、振る舞いは controls.test で確かめる
+    //（以前の期待値は 'if ((route !== "town" && !characterOpen) || (overlay !== null && overlay !== "camp")) return;'）
+    expect(tap).toContain("if (!talkTakesTap(route, overlay, characterOpen)) return;");
     expect(tap).toContain("play.talk.tap();");
     expect(app).toContain("onTap(play.talk.el, () => tapTalk());");
     expect(app).toContain("onTap(play.picture, () => tapTalk());");
@@ -649,8 +654,10 @@ describe("入力と Command", () => {
   // M10 の規則（talk.waiting）に戻した
   test("UI-47/UI-66/UI-59（2026-10-07 未定-19。M10.5）会話の箱が文送りを待つ間は、再生の外の街・キャラクター画面（overlay なしかキャンプ）でステージのどこのタップも tapTalk、数字と Enter / Space も箱のタップ。待つ間は街なら talk.pending（箱が開いている間）、迷宮のキャラクター画面なら talk.waiting（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    // M10.5 追補 2（未定-25）: 画面の条件（(route === "town" || characterOpen) && (overlay === null || overlay === "camp")）は
+    // export の talkBlocksStage に切り出した（同じ条件。全滅の内訳の間は偽のまま。controls.test で確かめる）
     expect(app).toMatch(
-      /const talkWaits = \(\): boolean =>\s*!isBusy\(\) &&\s*!chaining &&\s*\(route === "town" \|\| characterOpen\) &&\s*\(overlay === null \|\| overlay === "camp"\) &&\s*\(route === "town" \? play\.talk\.pending\(\) : play\.talk\.waiting\(\)\);/,
+      /const talkWaits = \(\): boolean =>\s*!isBusy\(\) &&\s*!chaining &&\s*talkBlocksStage\(route, overlay, characterOpen\) &&\s*\(route === "town" \? play\.talk\.pending\(\) : play\.talk\.waiting\(\)\);/,
     );
     const input = /const stageInput = attachStageInput\(stage, \{([\s\S]*?)\n {6}\}\);/.exec(app)?.[1] ?? "";
     expect(input).toContain("talkWaits: () => talkWaits(),");
@@ -729,10 +736,27 @@ describe("入力と Command", () => {
     const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
     // M10.5: 街は広げた会話の箱の上、迷宮のキャラクター画面は 3 行の箱の上。会話の箱は閉じるときに判定の箱を消す。
     // M10.5 追補: 続きの印の字（strings）と、溜める文の上限（historyMax）を渡す（以前の期待値は strings・max なし）
+    // M10.5 追補 2（未定-25）: 全滅の内訳の間の箱（wipe: tl.talkWipe）を渡す（以前の期待値は wipe なし）
     expect(dungeon).toContain('p.setDiceBottom(mode === "town" ? diceBottom.town : characterOpen ? diceBottom.compact : DICE_BOX_BOTTOM);');
     expect(dungeon).toMatch(
-      /const talk = createTalkBox\(\{\s*layout: tl\.talk,\s*compact: tl\.talkCompact,\s*strings: o\.strings,\s*speed: o\.textSpeed,\s*blink: o\.talkBlink,\s*log: \(t\) => message\.log\(t\),\s*max: o\.historyMax,\s*advanced: \(\) => o\.talkAdvanced\?\.\(\),\s*cleared: \(\) => dice\.hide\(\),\s*\}\);/,
+      /const talk = createTalkBox\(\{\s*layout: tl\.talk,\s*compact: tl\.talkCompact,\s*wipe: tl\.talkWipe,\s*strings: o\.strings,\s*speed: o\.textSpeed,\s*blink: o\.talkBlink,\s*log: \(t\) => message\.log\(t\),\s*max: o\.historyMax,\s*advanced: \(\) => o\.talkAdvanced\?\.\(\),\s*cleared: \(\) => dice\.hide\(\),\s*\}\);/,
     );
+  });
+
+  // 2026-10-07 未定-25: 全滅の内訳の間に街へ入った語り（carry）が広い箱に出て「街へ」を覆い、箱のタップも捨てていた
+  test("UI-47/UI-56/SV-50（M10.5 追補 2・未定-25）全滅の内訳を開くと（openWipe → showWipe(true)）会話の箱は内訳の下の 3 行、「街へ」（closeWipe → showWipe(false)）と再開（resume → showWipe(false)）で街の広い箱に戻る。内訳の間の箱のタップは tapTalk が受ける（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const open = /const openWipe = \(p: PenaltyResult\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(open).toMatch(/overlay = "wipe";[\s\S]*play\.showWipe\(true\);/);
+    const close = /const closeWipe = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    // 「街へ」は箱を打ち切らない（語りは街の広い箱で続きが読める）
+    expect(close).toMatch(/overlay = null;\s*play\.showWipe\(false\);\s*syncControls\(\);/);
+    expect(close).not.toContain("play.talk.");
+    const resume = /const resume = \(st: GameState\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    // 再開では内訳を出さない（PenaltyResult は保存しない。全滅の後の state の screen は town）。箱は街の広い箱で、救済の申し出は overlay null で閉じられる
+    expect(resume).toMatch(/overlay = null;[\s\S]*play\.showWipe\(false\);/);
+    expect(resume.indexOf("play.showWipe(false);")).toBeLessThan(resume.indexOf("narrator.say("));
+    expect(app).toContain("onTap(play.talk.el, () => tapTalk());");
   });
 
   test("UI-47/UI-59（M10。2026-10-07 A-A2）キャンプの項目（と peek の dim の行）は、街かキャラクター画面なら会話の箱を打ち切ってから動く。Esc も campKeyIndex → select でこの onSelect を通る（ソースの検査）", () => {
