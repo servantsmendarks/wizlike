@@ -56,11 +56,24 @@ export function createMemoryBackend(opts: { fail?: FailSpec } = {}): MemoryBacke
 }
 
 /**
- * 今の state（schemaVersion 5）から M10 の欄（CH-63: 職業ごとの maxLevelReached）を v4 の形（今の職業の値の数）に戻した複製
- * （JSON の複製。引数は書き換えない）
+ * 今の state（schemaVersion 6）から M11 の欄（CB-60: dive.chest と dive.disarmedChests）を消した v5 の形（JSON の複製。引数は書き換えない）
+ */
+export function toV5(s: GameState): Record<string, unknown> {
+  const v5 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+  const dive = v5["dive"] as Record<string, unknown> | null;
+  if (dive !== null) {
+    delete dive["chest"];
+    delete dive["disarmedChests"];
+  }
+  return v5;
+}
+
+/**
+ * 今の state から M10 の欄（CH-63: 職業ごとの maxLevelReached）を v4 の形（今の職業の値の数）に戻し、M11 の欄も消した複製
+ * （toV5 を通した JSON の複製。引数は書き換えない）
  */
 export function toV4(s: GameState): Record<string, unknown> {
-  const v4 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+  const v4 = toV5(s);
   for (const ch of v4["party"] as Array<Record<string, unknown>>) {
     ch["maxLevelReached"] = (ch["maxLevelReached"] as Record<string, number>)[ch["classId"] as string];
   }

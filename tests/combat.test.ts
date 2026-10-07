@@ -1454,34 +1454,44 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(rc.state.gold).toBe(c.gold);
   });
 
-  test("CB-51/CB-52【仮】宝箱: 部屋の遭遇で chestChance 100 なら chestGoldDice の金。通路の遭遇は chestChanceCorridor で同じ手順（0 なら chance を 1 回振って出ない）", () => {
+  test("CB-51/CB-60 宝箱: 部屋の遭遇で chestChance 100 なら勝利の金の後に箱を置き（罠の抽選 CB-61。中身はまだ配らない）、screen dungeon の後に chestFound → chest.found.drop → chest.prompt。chest.open で chestGoldDice の金。通路は chestChanceCorridor で同じ手順（0 なら chance を 1 回振って出ない）", () => {
     const mk = (origin: BattleOpts["origin"], monsterId = "rotting_corpse") => {
       const s = setup([{ monsterId, hps: [1], status: [["paralysis"]] }], { identified: [monsterId], origin });
       s.battle!.inputs["c1"] = atk(0);
       return s;
     };
     // M7（IT-50 / IT-52）: 宝箱の金の後に品の chance(itemChance) を 1 回引く。ここでは金だけを見るので表の itemChance を 0 にする
-    // （品の生成は tests/loot.test.ts）
-    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100 } }, (x) => {
+    // （品の生成は tests/loot.test.ts）。M11: 罠の抽選は noTrapChance 100 で chance 1 回（罠なし）に固定する（罠は tests/chest.test.ts）
+    const noItems = (x: GameData) => {
       for (const t of x.drops.tables) t.itemChance = 0;
-    });
+      x.config.chest.noTrapChance = 100;
+    };
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100 } }, noItems);
     const room = mk({ kind: "random", inRoom: true });
     const m = cloneRng(room.rng);
     rolls(m, 6);
     chance(m, 100);
     rollDice(m, "1d8");
-    chance(m, 100);
-    const cg = rollDice(m, "2d10").total;
-    chance(m, 0); // d01 1 階の表（rolls 1）の品の chance。外れ
+    chance(m, 100); // CB-51
+    chance(m, 100); // CB-61: 罠なし
     const r = exec(room, RESOLVE, d);
     expect(r.state.rng).toEqual(m);
-    expect(r.events).toContainEqual({ kind: "message", key: "battle.chest", params: { gold: cg } });
-    expect(r.state.gold).toBe(room.gold + cg);
-    expect(r.state.dive!.ledger.gold).toBe(cg);
+    expect(r.state.dive!.chest).toEqual({ source: "drop", cell: null, inRoom: true, trapId: null, danger: 0, level: 2, finding: null, rivalry: null });
+    expect(r.state.gold).toBe(room.gold); // 腐った死体の金は "0"、宝箱の金はまだ
+    const ks = kindsOf(r.events);
+    const iScreen = ks.indexOf("screen");
+    expect(ks.slice(iScreen + 1)).toEqual(["chestFound", "message:chest.found.drop", "message:chest.prompt"]);
+    expect(r.events).toContainEqual({ kind: "chestFound", source: "drop" });
+    // chest.open（罠なし）: 金 chestGoldDice → 品の chance → chestEnd opened
+    const cg = rollDice(m, "2d10").total;
+    chance(m, 0); // d01 1 階の表（rolls 1）の品の chance。外れ
+    const o = exec(r.state, { type: "chest.open" }, d);
+    expect(o.state.rng).toEqual(m);
+    expect(o.events).toEqual([{ kind: "message", key: "chest.open.gold", params: { gold: cg } }, { kind: "chestEnd", result: "opened" }]);
+    expect(o.state.gold).toBe(room.gold + cg);
+    expect(o.state.dive!.ledger.gold).toBe(cg);
+    expect(o.state.dive!.chest).toBeNull();
     // 通路: chestChanceCorridor 0 なら chance を 1 回振って出ない（部屋の chestChance 100 は効かない）
-    const noItems = (x: GameData) => {
-      for (const t of x.drops.tables) t.itemChance = 0;
-    };
     const corr = mk({ kind: "random", inRoom: false });
     const m2 = cloneRng(corr.rng);
     rolls(m2, 6);
@@ -1490,27 +1500,27 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     chance(m2, 0);
     const rc = exec(corr, RESOLVE, dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100, chestChanceCorridor: 0 } }, noItems));
     expect(rc.state.rng).toEqual(m2);
-    expect(kindsOf(rc.events)).not.toContain("message:battle.chest");
-    // 通路: chestChanceCorridor 100 なら部屋と同じ手順で金（部屋の chestChance 0 は効かない）
+    expect(rc.state.dive!.chest).toBeNull();
+    expect(kindsOf(rc.events)).not.toContain("chestFound");
+    // 通路: chestChanceCorridor 100 なら部屋と同じ手順（部屋の chestChance 0 は効かない）。inRoom は偽
     const corr2 = mk({ kind: "random", inRoom: false });
     const m3 = cloneRng(corr2.rng);
     rolls(m3, 6);
     chance(m3, 100);
     rollDice(m3, "1d8");
     chance(m3, 100);
-    const cg3 = rollDice(m3, "2d10").total;
-    chance(m3, 0); // d01 1 階の表の品の chance。外れ
+    chance(m3, 100);
     const r3 = exec(corr2, RESOLVE, dataWith({ combat: { ...ALWAYS_HIT, chestChance: 0, chestChanceCorridor: 100 } }, noItems));
     expect(r3.state.rng).toEqual(m3);
-    expect(r3.events).toContainEqual({ kind: "message", key: "battle.chest", params: { gold: cg3 } });
-    expect(r3.state.gold).toBe(corr2.gold + cg3);
-    expect(r3.state.dive!.ledger.gold).toBe(cg3);
+    expect(r3.state.dive!.chest).toMatchObject({ source: "drop", inRoom: false, trapId: null });
+    // ボス戦では判定しない（乱数も使わない）は tests/dungeon.test.ts の DG-31
   });
 
-  test("CB-51/CB-52【仮】宝箱の既定の確率: 部屋 chestChance 60・通路 chestChanceCorridor 15。勝利の金の後の chance 1 回の出目で決まる（鏡の rng、シード 1〜20）", () => {
+  test("CB-51/CB-60【仮】宝箱の既定の確率: 部屋 chestChance 60・通路 chestChanceCorridor 15。勝利の金の後の chance 1 回の出目で決まる（鏡の rng、シード 1〜20）", () => {
     expect(data.config.combat.chestChance).toBe(60);
     expect(data.config.combat.chestChanceCorridor).toBe(15);
-    const d = dataWith({ combat: ALWAYS_HIT }); // 宝箱の確率は既定のまま
+    // M11（B8）: dataWith は既定で宝箱の判定を 0 にするので、実データの値を戻す
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 60, chestChanceCorridor: 15 } });
     const seen = { room: [0, 0], corridor: [0, 0] };
     for (let seed = 1; seed <= 20; seed++) {
       for (const inRoom of [true, false]) {
@@ -1526,7 +1536,8 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
         rollDice(m, "1d8");
         const want = randInt(m, 1, 100) <= (inRoom ? 60 : 15);
         const r = exec(s, RESOLVE, d);
-        expect(kindsOf(r.events).includes("message:battle.chest"), `seed ${seed} inRoom ${String(inRoom)}`).toBe(want);
+        expect(kindsOf(r.events).includes("chestFound"), `seed ${seed} inRoom ${String(inRoom)}`).toBe(want);
+        expect(r.state.dive!.chest !== null, `seed ${seed} inRoom ${String(inRoom)}`).toBe(want);
         seen[inRoom ? "room" : "corridor"][want ? 1 : 0]! += 1;
       }
     }
@@ -1536,7 +1547,9 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
   });
 
   test("CH-52/A8 強欲の treasureGain: 戦闘の金・宝箱の金ごとに、金のメッセージの直後で強欲（ドナ c4）の SAN +2。死者・虚脱・金 0 では増えない", () => {
-    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100 } });
+    // M11: 宝箱の金は chest.open で配る（CB-65）。罠なしに固定する
+    const noTrap = (x: GameData) => (x.config.chest.noTrapChance = 100);
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100 } }, noTrap);
     const mk = (patches: Record<string, Partial<Character>>, monsterId = "giant_rat") => {
       const s = setup([{ monsterId, hps: [1], status: [["paralysis"]] }], {
         identified: [monsterId],
@@ -1546,24 +1559,29 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
       s.battle!.inputs["c1"] = atk(0);
       return s;
     };
-    // ドナ SAN 50: battle.gold（giant_rat の 1d4+1 > 0）→ +2、battle.chest（2d10 > 0）→ +2 の 2 回
-    const r = exec(mk({ c4: { san: 50 } }), RESOLVE, d);
+    const winAndOpen = (s: GameState, dd: GameData) => {
+      const w = exec(s, RESOLVE, dd);
+      const o = exec(w.state, { type: "chest.open" }, dd);
+      return { state: o.state, events: [...w.events, ...o.events] };
+    };
+    // ドナ SAN 50: battle.gold（giant_rat の 1d4+1 > 0）→ +2、chest.open.gold（2d10 > 0）→ +2 の 2 回
+    const r = winAndOpen(mk({ c4: { san: 50 } }), d);
     const ks = kindsOf(r.events);
     const iGold = ks.indexOf("message:battle.gold");
-    const iChest = ks.indexOf("message:battle.chest");
+    const iChest = ks.indexOf("message:chest.open.gold");
     expect(r.events[iGold + 1]).toEqual({ kind: "sanChanged", id: "c4", delta: 2, san: 52 });
     expect(r.events[iChest + 1]).toEqual({ kind: "sanChanged", id: "c4", delta: 2, san: 54 });
     expect(eventsOf(r.events, "sanChanged")).toHaveLength(2); // 強欲以外（treasureGain 0）は増えない
     expect(member(r.state, "c4").san).toBe(54);
     // SAN 100（上限）なら sanChanged は出ない（delta 0）
-    expect(eventsOf(exec(mk({}), RESOLVE, d).events, "sanChanged")).toEqual([]);
+    expect(eventsOf(winAndOpen(mk({}), d).events, "sanChanged")).toEqual([]);
     // 死んだ強欲・虚脱（SAN 0）の強欲は増えない
-    expect(member(exec(mk({ c4: { ...DEAD, san: 50 } }), RESOLVE, d).state, "c4").san).toBe(50);
-    expect(member(exec(mk({ c4: { san: 0 } }), RESOLVE, d).state, "c4").san).toBe(0);
+    expect(member(winAndOpen(mk({ c4: { ...DEAD, san: 50 } }), d).state, "c4").san).toBe(50);
+    expect(member(winAndOpen(mk({ c4: { san: 0 } }), d).state, "c4").san).toBe(0);
     // gold "0" の敵（battle.gold なし）で宝箱の金が 0 なら 1 回も増えない（宝箱の message は出る）
-    const d0 = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100, chestGoldDice: "0" } });
-    const r0 = exec(mk({ c4: { san: 50 } }, "rotting_corpse"), RESOLVE, d0);
-    expect(r0.events).toContainEqual({ kind: "message", key: "battle.chest", params: { gold: 0 } });
+    const d0 = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100, chestGoldDice: "0" } }, noTrap);
+    const r0 = winAndOpen(mk({ c4: { san: 50 } }, "rotting_corpse"), d0);
+    expect(r0.events).toContainEqual({ kind: "message", key: "chest.open.gold", params: { gold: 0 } });
     expect(eventsOf(r0.events, "sanChanged")).toEqual([]);
   });
 

@@ -79,11 +79,12 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 
 ## 6. 入手（ドロップ）
 
-- IT-50 ドロップ元は 宝箱（CB-52。ランダム遭遇の勝利時に、部屋のセルなら `config.combat.chestChance`（60）%【仮】、通路のセルなら `config.combat.chestChanceCorridor`（15）%【仮】。2026-10-05 に通路を足した）と ボスの戦利品（DG-31。ボスに勝つたび。再撃破でも）の 2 つ。どちらも `data/drops.json`（ドロップ表）を引く。宝箱の金（`config.combat.chestGoldDice`）は今のまま出し、品はその後に引く。ボスの戦利品はボスの語り（`battle.bossDefeated`・初回の `battle.dungeonCleared`・`dungeon.unlocked`）の後、`screen`{dungeon} とテレポーターの申し出（DG-32）の前に引く。
+- IT-50 ドロップ元は 宝箱（CB-52 / CB-65。M11 から開けたときに配る。ランダム遭遇の勝利時に、部屋のセルなら `config.combat.chestChance`（60）%【仮】、通路のセルなら `config.combat.chestChanceCorridor`（15）%【仮】。2026-10-05 に通路を足した）と ボスの戦利品（DG-31。ボスに勝つたび。再撃破でも）の 2 つ。どちらも `data/drops.json`（ドロップ表）を引く。宝箱の金（`config.combat.chestGoldDice`）は今のまま出し、品はその後に引く。ボスの戦利品はボスの語り（`battle.bossDefeated`・初回の `battle.dungeonCleared`・`dungeon.unlocked`）の後、`screen`{dungeon} とテレポーターの申し出（DG-32）の前に引く。
 - IT-51 ドロップ表 `drops.json` は `tables`（表の配列）・`chest`（ダンジョン id → 階番号の文字列 → 表の id）・`boss`（ダンジョン id → 表の id）を持つ。表は `{ id, itemChance, rolls, entries }` で、`entries` の各要素は `{ base, weight }` か `{ unique, weight }` か `{ item, weight }`（魔法書。IT-55。M9）のどれか 1 つ。`rolls` 回だけ、`itemChance` % で 1 品を引く（rolls 回とも独立）。
-- IT-52 1 品の生成と乱数の順: chance(itemChance) → weightedIndex(entries) →（魔法書の項目ならここで終わり。IT-55）→（汎用なら）Lv の randInt(−`config.items.dropLevelSpread`（1）, +spread) → weightedIndex(rarities) → chance(curseChance) → オプションの個数（IT-30 / IT-32）だけ weightedIndex（オプション表のうちその品の品種に付けられるもの（IT-36）から、既に引いたものを除いた残り。乱数の回数は品種で変わらない）。宝箱の chestQuality（IT-31）は希少度を引いた直後に足す（乱数なし）。
-- IT-53 ドロップの Lv = 落とした敵の Lv（`monsters[].level`）± spread、最低 1【仮】。宝箱の「落とした敵」はその戦闘で倒した敵のうち `level` が最大の種類。ボスはボスの `level`。
+- IT-52 1 品の生成と乱数の順: chance(itemChance) → weightedIndex(entries) →（魔法書の項目ならここで終わり。IT-55）→（汎用なら）Lv の randInt(−`config.items.dropLevelSpread`（1）, +spread) → weightedIndex(rarities) →（宝箱の危険度が正なら）chance(危険度 × `config.chest.rarityUpPerDanger`)（IT-56。M11）→ chance(curseChance) → オプションの個数（IT-30 / IT-32）だけ weightedIndex（オプション表のうちその品の品種に付けられるもの（IT-36）から、既に引いたものを除いた残り。乱数の回数は品種で変わらない）。宝箱の chestQuality（IT-31）は希少度を引いた直後に足す（乱数なし）。
+- IT-53 ドロップの Lv = 落とした敵の Lv（`monsters[].level`）± spread、最低 1【仮】。宝箱の「落とした敵」はその戦闘で倒した敵のうち `level` が最大の種類（M11: 見つけた時点で箱の `level` に入れ、開けたときに使う）。ボスはボスの `level`。
 - IT-54 生成した品は未鑑定（IT-13）で、並び順に最初に所持枠（CH-71）が空いている者（life を問わない）の inventory の末尾に入れ、潜行台帳（DG-40）に入れる。誰も空いていなければ置いていく（`item.leftBehind`{item}。品は作らないので item はベースの `unidentifiedName`。乱数は引いた分を消費したまま）。語りは `item.found`{name, item}（item は未鑑定の表示名）。
+- IT-56 宝箱の上振れ（M11）: 宝箱の品は、希少度を重みで引いた直後に、箱の危険度（見つけた時点の値。CB-60。解除・作動しても残す）が正なら `chance(危険度 × config.chest.rarityUpPerDanger)`（15）%【仮】を 1 回振り、当たれば 1 段上げる。その上に強欲の chestQuality（IT-31）を足し、伝説で止める。危険度 0（罠なしの箱・ボスの戦利品）と魔法書の項目（IT-55）では振らない。
 - IT-55 ドロップ表の魔法書の項目（M9）: `{ item, weight }` の `item` は `items.json` の id で、`type` が `book` のものだけ（読み込み時に止める）。引いた品は Lv0・通常・オプションなし・呪いなし・`uniqueId` null・**鑑定済み**で生まれる（隠す中身が無いため。IT-13 の例外）。乱数は weightedIndex(entries) の後に何も引かない（Lv・希少度・呪い・オプションを引かない）。所持枠（IT-54）が空いていなければ置いていき、語り `item.leftBehind` の item は品の `name`。
 
 ## 7. 経済と施設

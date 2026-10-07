@@ -31,7 +31,8 @@ import {
   unequipItem,
 } from "./rules/camp";
 import { startNewGame, validatePartySetup } from "./rules/creation";
-import { addTurns, giveCursed, hpOne, sanDown, sanOver, warp } from "./rules/debug";
+import { checkChest, disarmChest, inspectChest, leaveChest, openChest } from "./rules/chest";
+import { addTurns, debugChest, giveCursed, hpOne, sanDown, sanOver, warp } from "./rules/debug";
 import { checkEnter, chooseOption, enterDungeon, moveForward, turn } from "./rules/dungeon";
 import { checkUseItem, useItemInField } from "./rules/items";
 import { checkShop, doShop } from "./rules/shop";
@@ -126,6 +127,10 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
   // E3: 保留中の選択があれば event.choose 以外は受け付けない
   if (state.pendingChoice !== null && command.type !== "event.choose") {
     return reject(state, command.type, "choice pending");
+  }
+  // CB-60（M11。A5）: 宝箱がある間（戦闘中を除く）は chest.* 以外を受け付けない（debug.warp / debug.chest も。E3 より前の debug は通る）
+  if (state.dive !== null && state.dive.chest !== null && state.battle === null && !command.type.startsWith("chest.")) {
+    return reject(state, command.type, "chest pending");
   }
   switch (command.type) {
     case "game.new": {
@@ -360,6 +365,34 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       if (to !== "event" && to !== "trap" && to !== "stairsDown") return reject(state, "debug.warp", "bad target");
       const ctx = makeContext(cloneState(state), data);
       warp(ctx, to);
+      return finish(ctx);
+    }
+    case "debug.chest": {
+      // UI-57（開発用、M11）: 迷宮の戦闘外・保留なし・箱なし（E3 と CB-60 の門の後）だけ
+      if (state.screen !== "dungeon" || state.dive === null || state.battle !== null) {
+        return reject(state, "debug.chest", "not in dungeon");
+      }
+      const trapId = (command as { trapId?: unknown }).trapId;
+      if (trapId !== null && (typeof trapId !== "string" || !data.chestTraps.some((t) => t.id === trapId))) {
+        return reject(state, "debug.chest", "unknown trap");
+      }
+      const ctx = makeContext(cloneState(state), data);
+      debugChest(ctx, trapId);
+      return finish(ctx);
+    }
+    case "chest.inspect":
+    case "chest.disarm":
+    case "chest.open":
+    case "chest.leave": {
+      // CB-63〜66（M11）
+      const c = command as { type: string; memberId?: unknown; trapId?: unknown };
+      const r = checkChest(state, data, c);
+      if (r !== null) return reject(state, command.type, r);
+      const ctx = makeContext(cloneState(state), data);
+      if (command.type === "chest.inspect") inspectChest(ctx, command.memberId);
+      else if (command.type === "chest.disarm") disarmChest(ctx, command.memberId, command.trapId);
+      else if (command.type === "chest.open") openChest(ctx);
+      else leaveChest(ctx);
       return finish(ctx);
     }
     case "town.bank":

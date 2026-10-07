@@ -149,11 +149,11 @@ type DiveRecord = {
   soldUnidGold: number; // M7-経済: その売却収入（soldGold に含む）
   unsold: number; // M7-B: 街の手順の後も手持ちに残った装備品（M7-経済の規則では未鑑定でも売れるので 0 のはず）
   unpaidAtStart: number; // M7-宝箱: 潜行の開始時に、前の街の手順で蘇生（寺院・闇魔術）を払えずに残した dead / ash の人数（定義は Campaign.unpaidLeft）
-  chests: number; // M7-宝箱: この潜行で開けた宝箱の数（battle.chest の数）
-  chestsCorridor: number; // M7-宝箱: そのうち通路（BattleOrigin の inRoom が偽）の遭遇の宝箱
-  chestGold: number; // M7-宝箱: 宝箱の金の合計（battle.chest の gold。金運込み）
-  chestItems: number; // M7-宝箱: 宝箱の品のうち所持枠に入った数（battle.chest の後の item.found）
-  chestLeft: number; // M7-宝箱: 宝箱の品のうち所持枠が無くて置いていった数（battle.chest の後の item.leftBehind）
+  chests: number; // M7-宝箱: この潜行で中身を得た宝箱の数（M11: chest.open.gold の数）
+  chestsCorridor: number; // M7-宝箱: そのうち通路（ChestState の inRoom が偽）の宝箱
+  chestGold: number; // M7-宝箱: 宝箱の金の合計（chest.open.gold の gold。金運込み）
+  chestItems: number; // M7-宝箱: 宝箱の品のうち所持枠に入った数（chest.open.gold の後の item.found）
+  chestLeft: number; // M7-宝箱: 宝箱の品のうち所持枠が無くて置いていった数（chest.open.gold の後の item.leftBehind）
   deaths: DeathRecord[]; // M7-死因: この潜行中に dead になった延べ人数分（全滅の前に死んだ者も、全滅の処理で起こされる者も含む）
   ashInDive: number; // M7-死因: この潜行中に ash になった人数（今の規則では潜行中に灰になる経路は無いので 0 のはず。灰は寺院の蘇生の失敗だけ）
   encounterGroups: Record<string, number>; // M7-死因: 遭遇（encounter イベント）の敵グループの数（monsterId ごと）
@@ -345,14 +345,16 @@ export class Campaign {
     return r.state;
   }
 
-  /** M7-宝箱: battle.chest（宝箱）とその後の item.found / item.leftBehind（宝箱の品。ボス戦では宝箱を判定しないので混ざらない）を数える */
+  /**
+   * M7-宝箱: chest.open.gold（M11 で battle.chest から替えた。宝箱の中身）とその後の item.found / item.leftBehind（宝箱の品）を数える。
+   * 開けるのは別の execute（chest.open）なので、通路かどうかは開ける前の dive.chest の inRoom で見る
+   */
   countChest(from: GameState, events: GameEvent[]): void {
-    const i = events.findIndex((e) => e.kind === "message" && e.key === "battle.chest");
+    const i = events.findIndex((e) => e.kind === "message" && e.key === "chest.open.gold");
     if (i < 0) return;
     const e = events[i] as Extract<GameEvent, { kind: "message" }>;
     this.chests += 1;
-    const o = from.battle?.origin;
-    if (o?.kind === "random" && !o.inRoom) this.chestsCorridor += 1;
+    if (from.dive?.chest?.inRoom === false) this.chestsCorridor += 1;
     this.chestGold += Number(e.params!["gold"]);
     for (const x of events.slice(i + 1)) {
       if (x.kind !== "message") continue;
@@ -447,7 +449,20 @@ export class Campaign {
       if (n++ > BATTLE_ROUND_CAP) throw new Error(`seed ${this.seed}: battle did not end`);
       this.run(this.state.battle.auto ? { type: "battle.resolve" } : { type: "battle.auto", on: true });
     }
+    this.resolveChest();
     this.cureAfterBattle();
+  }
+
+  /**
+   * M11（作業 4 の最小版。A3）: 宝箱が残っていて戦闘中でなければ開ける（調べる・解除の方針は作業 9）。開けて戦闘になれば戦う（fight の中でまた呼ぶ）。
+   * 呼ぶのは fight の後・dungeon.move の後・resolvePending の後の 3 か所と、fight からの再帰
+   */
+  resolveChest(): void {
+    for (let n = 0; this.inDungeon && this.state.dive?.chest != null && this.state.battle === null; n++) {
+      if (n > 10) throw new Error(`seed ${this.seed}: chest did not end`);
+      this.run({ type: "chest.open" });
+      if (this.state.battle !== null) this.fight();
+    }
   }
 
   /**
@@ -457,7 +472,7 @@ export class Campaign {
    */
   cureAfterBattle(): void {
     for (;;) {
-      if (this.state.screen !== "dungeon" || this.state.pendingChoice !== null) return;
+      if (this.state.screen !== "dungeon" || this.state.pendingChoice !== null || this.state.dive?.chest != null) return;
       const target = this.state.party.find((c) => c.life === "alive" && c.status.includes("poison"));
       if (target === undefined) return;
       const menu = fieldItemMenu(this.state, data);
@@ -486,12 +501,13 @@ export class Campaign {
     this.run({ type: "dungeon.move" });
     this.steps += 1;
     if (this.state.battle !== null) this.fight();
+    else this.resolveChest();
   }
 
   /** 戦闘の合間の回復: HP が半分未満の alive の者がいて、行動可能な誰かが heal の品を持つ間、HP 割合が最小の者に使う */
   healBetweenBattles(): void {
     for (;;) {
-      if (this.state.screen !== "dungeon" || this.state.pendingChoice !== null) return;
+      if (this.state.screen !== "dungeon" || this.state.pendingChoice !== null || this.state.dive?.chest != null) return;
       const alive = this.state.party.filter((c) => c.life === "alive");
       if (!alive.some((c) => c.hp * 2 < c.hpMax)) return;
       const menu = fieldItemMenu(this.state, data);
@@ -544,6 +560,7 @@ export class Campaign {
     this.run({ type: "event.choose", optionId });
     if (optionId === "exit" || optionId === "teleport") expect(this.state.gold).toBe(goldBefore); // DG-43
     if (this.state.battle !== null) this.fight();
+    this.resolveChest();
   }
 
   /** 行動可能な者が持つ、使える帰還の品（無ければ null） */

@@ -83,12 +83,24 @@ export function migrateV4toV5(x: unknown): unknown {
 }
 
 /**
+ * SV-04 v5 → v6（M11。CB-60）: dive がオブジェクトなら chest null と disarmedChests [] を足す（宝箱の保留なし）。
+ * 引数は書き換えない（浅い複製。dive も複製する）。オブジェクトでなければそのまま返す（形の検査で broken）
+ */
+export function migrateV5toV6(x: unknown): unknown {
+  if (!isPlainObject(x)) return x;
+  const out: Record<string, unknown> = { ...x };
+  const dive = x["dive"];
+  if (isPlainObject(dive)) out["dive"] = { ...dive, chest: null, disarmedChests: [] };
+  return out;
+}
+
+/**
  * 移行関数の列（MIGRATIONS[i] は版 i+1 → i+2）。v3 → v4 の流通レベルは dungeons の onClear.shopLevel から計算する（IT-80）。
  * アプリ（main.ts）は検証済みの data.dungeons を渡して SaveDeps.migrations にする
  */
 export function createMigrations(dungeons: readonly Pick<DungeonDef, "id" | "onClear">[]): readonly Migration[] {
   const table: ShopLevelTable = Object.fromEntries(dungeons.map((d) => [d.id, d.onClear.shopLevel]));
-  return [migrateV1toV2, migrateV2toV3, (x) => migrateV3toV4(x, table), migrateV4toV5];
+  return [migrateV1toV2, migrateV2toV3, (x) => migrateV3toV4(x, table), migrateV4toV5, migrateV5toV6];
 }
 
 /** 既定の移行関数の列（流通レベルの表が空なので v3 → v4 の shopLevel は 0）。アプリは createMigrations(data.dungeons) を使う */
@@ -160,6 +172,29 @@ function isCharacterShape(x: unknown): boolean {
   return Object.prototype.hasOwnProperty.call(m, x["classId"]);
 }
 
+function isCellRefShape(x: unknown): boolean {
+  return isPlainObject(x) && [x["floor"], x["x"], x["y"]].every(isTurnCount);
+}
+
+/**
+ * CB-60（schemaVersion 6）: dive.chest は null か ChestState の形（source drop / cell、cell は CellRef か null で source cell なら CellRef、
+ * inRoom 真偽、trapId 文字列か null、danger / level 0 以上の整数、finding は null か { trapId: 文字列か null }、rivalry は null か { id, ownerId } の文字列）
+ */
+function isChestShape(x: unknown): boolean {
+  if (x === null) return true;
+  if (!isPlainObject(x)) return false;
+  if (x["source"] !== "drop" && x["source"] !== "cell") return false;
+  if (x["cell"] !== null && !isCellRefShape(x["cell"])) return false;
+  if (x["source"] === "cell" && x["cell"] === null) return false;
+  if (typeof x["inRoom"] !== "boolean" || !isStringOrNull(x["trapId"])) return false;
+  if (!isTurnCount(x["danger"]) || !isTurnCount(x["level"])) return false;
+  const f = x["finding"];
+  if (f !== null && !(isPlainObject(f) && isStringOrNull(f["trapId"]))) return false;
+  const r = x["rivalry"];
+  if (r !== null && !(isPlainObject(r) && typeof r["id"] === "string" && typeof r["ownerId"] === "string")) return false;
+  return true;
+}
+
 /**
  * GameState の最小限の形の検査（深い検証はしない）。
  * screen は town / dungeon / battle / event、party は 1 件以上の配列、rng / items はオブジェクト、gold は数、
@@ -172,6 +207,8 @@ function isCharacterShape(x: unknown): boolean {
  * uniqueBook は各値が { foundIn, bestRarity } のプレーンなオブジェクト、progress はプレーンなオブジェクトで shopLevel が 0 以上の安全な整数。
  * schemaVersion 5（M10。CH-63）: party の各要素の classId が文字列、maxLevelReached がプレーンなオブジェクトで各値が 1 以上の安全な整数、
  * 今の職業の欄がある（isCharacterShape。Character の欄の最初の検査）。
+ * schemaVersion 6（M11。CB-60）: dive がオブジェクトなら chest が null か ChestState の形（isChestShape）、disarmedChests が CellRef の配列。
+ * dive.chest が非 null なら pendingChoice は null。
  */
 export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(x)) return false;
@@ -187,6 +224,12 @@ export function isGameStateShape(x: unknown): x is GameState {
   if (!isTurnCount(x["adventureTurns"]) || !isTurnCount(x["tavernEventMark"])) return false;
   const dive = x["dive"];
   if (isPlainObject(dive) && !isPlainObject(dive["knownTraps"])) return false;
+  if (isPlainObject(dive)) {
+    if (!isChestShape(dive["chest"])) return false;
+    const dc = dive["disarmedChests"];
+    if (!Array.isArray(dc) || !dc.every(isCellRefShape)) return false;
+    if (dive["chest"] !== null && x["pendingChoice"] !== null) return false;
+  }
   if (!isMoraleShape(x["morale"])) return false;
   if (!Object.values(x["items"] as Record<string, unknown>).every(isItemInstanceShape)) return false;
   if (!isStringArray(x["warehouse"]) || !isStringArray(x["buyback"])) return false;

@@ -193,6 +193,34 @@ export type Dive = {
   bossDefeated: boolean;
   /** DG-40 */
   ledger: Ledger;
+  /**
+   * CB-60（M11。schemaVersion 6）: 見つけて、まだ片付いていない宝箱。非 null の間（戦闘中を除く）は chest.* 以外のコマンドを rejected（"chest pending"）にする。
+   * 不変条件: 非 null なら pendingChoice は null
+   */
+  chest: ChestState | null;
+  /** CB-64 / DG-24（M11。schemaVersion 6）: 罠が無くなった（解除の成功・作動）宝箱のセル。入場時 [] */
+  disarmedChests: CellRef[];
+};
+
+/**
+ * CB-60（M11）: 宝箱 1 つの状態。
+ * - source: drop は戦闘後のドロップ（CB-51）、cell は階に置かれた宝箱のセル（DG-23。cell が非 null）
+ * - inRoom: 見つけたセルが部屋か（警報の遭遇の部屋 / 通路。CB-67）
+ * - trapId: 今かかっている罠（chest-traps.json の id。解除・作動で null）
+ * - danger: 見つけた時点の危険度（罠なし 0）。解除・作動しても残す。使うのは中身の上振れ（IT-56）だけ（調べる・解除の式は trapId から引く）
+ * - level: 中身の Lv（IT-53）
+ * - finding: 最後の「調べる」で GM が告げた名前（偽りもありうる）。{ trapId: null } は「罠は無さそう」、null は未調査か不明。解除に成功したら { trapId: null }
+ * - rivalry: 職業の掛け合い（EV-70〜76）の担当。発生していなければ null
+ */
+export type ChestState = {
+  source: "drop" | "cell";
+  cell: CellRef | null;
+  inRoom: boolean;
+  trapId: string | null;
+  danger: number;
+  level: number;
+  finding: { trapId: string | null } | null;
+  rivalry: { id: string; ownerId: string } | null;
 };
 
 // ===================== 保留中の選択（E3） =====================
@@ -248,6 +276,20 @@ export type MapCellKind = "plain" | "stairsUp" | "stairsDown" | "trap";
 export type MapCell = { x: number; y: number; kind: MapCellKind; n: Edge; e: Edge; s: Edge; w: Edge };
 /** DG-13 / UI-24。cells は探索済みセルだけ（添字の昇順） */
 export type MapView = { dungeonId: string; floor: number; width: number; height: number; pos: Pos; facing: Facing; cells: MapCell[] };
+
+/**
+ * CB-60 / UI-70（M11）: 宝箱の操作の値。rules/chest.ts の chestView(state, data)。dive.chest が非 null で、battle も pendingChoice も null のときだけ非 null。
+ * 判定の成否・罠の有無と危険度は載せない（表示層に漏らさない）。
+ * - members: パーティ全員（並び順）。canAct の者だけが調べる・解除の人に選べる（リーダーも可）
+ * - trapNames: chest-traps.json の全種（データの順）。name は表示名（strings を引いた値）。解除で宣言する名前の一覧
+ * - finding: 最後の「調べる」で告げられた結果（ChestState.finding）。trapId null は「罠は無さそう」。name は trapId の表示名（null なら null）
+ */
+export type ChestView = {
+  source: "drop" | "cell";
+  members: { id: string; name: string; canAct: boolean }[];
+  trapNames: { id: string; name: string }[];
+  finding: { trapId: string | null; name: string | null } | null;
+};
 
 // ---- 経路探索（DG-15。rules/pathfind.ts。state には入れない） ----
 export type RouteCommand = Extract<Command, { type: "dungeon.move" } | { type: "dungeon.turn" }>;
@@ -447,7 +489,20 @@ export type Command =
    * wearable が真なら鑑定できる職業（司教）が装備できる最初のベース、偽なら装備できない最初のベース。party が空（title）だけ
    * rejected no party。保留中・戦闘中・街も受け付ける。乱数は使わない
    */
-  | { type: "debug.giveCursed"; wearable: boolean };
+  | { type: "debug.giveCursed"; wearable: boolean }
+  /**
+   * UI-57（開発用、M11）: 今の位置にドロップの宝箱を出す（罠を指定する。null は罠なし。U-1 の確認用）。迷宮の戦闘外・保留なし・箱なしのときだけ。
+   * 危険度は罠の値、中身の Lv はその階の遭遇表の敵の level の最大。乱数は使わない（衝動判定もしない）
+   */
+  | { type: "debug.chest"; trapId: string | null }
+  /** CB-63（M11）: memberId（行動可能な者。リーダーも可）が箱を調べる。何度でもできる */
+  | { type: "chest.inspect"; memberId: string }
+  /** CB-64（M11）: memberId（行動可能な者）が、罠の名前（chest-traps.json の id）を宣言して解除する */
+  | { type: "chest.disarm"; memberId: string; trapId: string }
+  /** CB-65（M11）: 箱を開ける。罠があれば必ず作動する */
+  | { type: "chest.open" }
+  /** CB-66（M11）: 箱を放っておく */
+  | { type: "chest.leave" };
 
 export type CommandType = Command["type"];
 
@@ -825,7 +880,18 @@ export type GameEvent =
   /** id は味方か敵。敵の撃破は life "dead" */
   | { kind: "lifeChanged"; id: string; life: Life }
   /** UI-40: 判定 1 件。見出し / 各行（DiceRow）/ 基準 / 結果。どれも strings のキーと埋め込み値 */
-  | { kind: "dice"; label: TextRef; rows: DiceRow[]; rule: TextRef; result: TextRef }
+  | {
+      kind: "dice";
+      label: TextRef;
+      rows: DiceRow[];
+      rule: TextRef;
+      result: TextRef;
+      /**
+       * UI-71（M11。U-2）: 真なら GM が出目と結果を伏せた判定。rows は判定する人の力の内訳だけで、出目の行は無い。result は伏せたことを表す文。
+       * 表示層は結果の行の演出（成否の色）を出さない。今は宝箱の「調べる」（CB-63）だけ
+       */
+      hidden?: true;
+    }
   /** CB-55: 区切りの始まり。直後は必ず拍以外のイベント。auto はその区切りを始めた時点の state.battle.auto（battle が null なら false） */
   | { kind: "beat"; phase: BeatPhase; auto: boolean }
   | { kind: "battleEnd"; result: "win" | "flee" | "wipe" }
@@ -862,7 +928,20 @@ export type GameEvent =
   /** 階の移動（DG-14 の昇降）。moved は同じ階の前進だけに使う */
   | { kind: "floorChanged"; floor: number; pos: Pos; facing: Facing }
   /** dungeonId は to が dungeon のときだけ（潜っているダンジョン。UI-63 のダンジョンごとの曲。M8） */
-  | { kind: "screen"; to: Screen; dungeonId?: string }
+  /**
+   * at は to が dungeon のときの視点（M11。A2 / U-6）。戦闘の終わり（勝利・逃走）では必ず載せる（戦った位置と向き）。
+   * 同じ events の後で位置が変わりうる（宝箱の転移など）ので、表示層はあればこれで迷宮を描き、無ければ最終の state から描く
+   */
+  | { kind: "screen"; to: Screen; dungeonId?: string; at?: { pos: Pos; facing: Facing } }
+  /** CB-60（M11）: 宝箱を見つけた（dive.chest に置いた）。表示層は箱の操作を出す合図にする */
+  | { kind: "chestFound"; source: "drop" | "cell" }
+  /**
+   * CB-62（M11）: 宝箱の罠が作動した。続けて語り chest.trap.<trapId> と効果の hpChanged / statusChanged / sanChanged など。
+   * actorId は作動させた人（調べる・解除の失敗はその人、開けるで target one の罠なら選ばれた人）。開けるで target one でない罠は null
+   */
+  | { kind: "chestTrap"; trapId: string; actorId: string | null }
+  /** CB-65 / CB-66（M11）: 箱が片付いた（dive.chest が null になった）。opened 開けた、left 放っておいた、lost 失った。表示層は箱の操作を下げる */
+  | { kind: "chestEnd"; result: "opened" | "left" | "lost" }
   /** D2: 受け付けなかったコマンド。command は受け取った type（形が壊れていれば "unknown"）、reason は英語の短い理由 */
   | { kind: "rejected"; command: string; reason: string }
   /** M3 追加: 鑑定（CB-05 / MG-41）で表示名が変わったときに全グループを出し直す */

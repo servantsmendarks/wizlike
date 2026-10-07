@@ -3,7 +3,7 @@
 // 純粋（乱数は state.rng だけ）。combat.ts の勝利の処理から呼ぶ。
 //
 // 乱数の消費順（1 品。IT-52）: chance(itemChance) →（当たれば）weightedIndex(entries) →（汎用なら）randInt(−spread, +spread)
-//   → weightedIndex(rarities) → chance(curseChance) → オプションの個数だけ weightedIndex(残りのオプションの weight)。
+//   → weightedIndex(rarities) →（宝箱の危険度が正なら）chance(危険度 × rarityUpPerDanger)（IT-56。M11）→ chance(curseChance) → オプションの個数だけ weightedIndex(残りのオプションの weight)。
 //   オプションの母集団はその品の品種に付けられるもの（IT-36）で、引く回数は品種に依存しない。
 //   外れならその品はそこで終わり。表の rolls 回くり返す。置いていく品（IT-54）も乱数は同じだけ消費する。
 //   魔法書の項目（IT-55）は weightedIndex(entries) で終わる。
@@ -35,7 +35,8 @@ export function partyChestQuality(state: GameState, data: GameData): number {
  * IT-52 / IT-53 / IT-30〜33: entries から 1 品の中身を引く（chance(itemChance) は呼び出し側）。未鑑定（IT-13）。
  * 汎用は Lv = max(1, dropLevel + randInt(−spread, +spread))、ユニークは Lv0 で段階は optionTier。
  * 魔法書（IT-55）は weightedIndex(entries) の後に乱数を引かず、鑑定済みの Lv0・通常で返す。
- * 希少度は重みで引いた直後に quality 段だけ上げ、伝説で止める（乱数なし）。呪われたら個数 +1 で、最後の 1 つの値を負にする。
+ * 希少度は重みで引いた直後に、danger > 0 なら chance(danger × chest.rarityUpPerDanger) で 1 段上げ（IT-56。M11。danger 0 では振らない）、
+ * さらに quality 段だけ上げ（乱数なし）、伝説で止める。呪われたら個数 +1 で、最後の 1 つの値を負にする。
  */
 export function rollItemSpec(
   state: GameState,
@@ -44,6 +45,7 @@ export function rollItemSpec(
   dropLevel: number,
   quality: number,
   foundIn: string,
+  danger = 0,
 ): ItemInstanceSpec {
   const cfg = data.config.items;
   const entry = entries[weightedIndex(state.rng, entries.map((e) => e.weight))]!;
@@ -69,7 +71,9 @@ export function rollItemSpec(
     state.rng,
     cfg.rarities.map((r) => r.weight),
   );
-  const rIdx = Math.min(cfg.rarities.length - 1, drawn + Math.max(0, quality));
+  // IT-56（M11）: 宝箱の危険度の上振れ。危険度 0（罠なし・ボスの品）では chance を振らない（B2）
+  const up = danger > 0 && chance(state.rng, danger * data.config.chest.rarityUpPerDanger) ? 1 : 0;
+  const rIdx = Math.min(cfg.rarities.length - 1, drawn + up + Math.max(0, quality));
   const rarity = cfg.rarities[rIdx]!;
   const cursed = chance(state.rng, cfg.curseChance);
   const count = rarity.options + (cursed ? 1 : 0);
@@ -114,21 +118,23 @@ export function placeFoundItem(ctx: RuleContext, spec: ItemInstanceSpec): boolea
   return true;
 }
 
-/** IT-51 / IT-52: 表の rolls 回だけ、itemChance % で 1 品を引いて配る（rolls 回とも独立） */
-export function rollDropTable(ctx: RuleContext, tableId: string, dropLevel: number, quality: number, foundIn: string): void {
+/** IT-51 / IT-52: 表の rolls 回だけ、itemChance % で 1 品を引いて配る（rolls 回とも独立）。danger は宝箱の危険度（IT-56。宝箱以外は 0） */
+export function rollDropTable(ctx: RuleContext, tableId: string, dropLevel: number, quality: number, foundIn: string, danger = 0): void {
   const { state, data } = ctx;
   const t = dropTableOf(data, tableId);
   for (let i = 0; i < t.rolls; i++) {
     if (!chance(state.rng, t.itemChance)) continue;
-    placeFoundItem(ctx, rollItemSpec(state, data, t.entries, dropLevel, quality, foundIn));
+    placeFoundItem(ctx, rollItemSpec(state, data, t.entries, dropLevel, quality, foundIn, danger));
   }
 }
 
-/** CB-52 / IT-50: 宝箱の品。表は drops.chest[dungeonId][floor]、Lv はその戦闘で倒した種類の level の最大、quality は IT-31 */
-export function rollChestItems(ctx: RuleContext, dungeonId: string, floor: number, dropLevel: number): void {
+/**
+ * CB-65 / IT-50: 宝箱の品。表は drops.chest[dungeonId][floor]、Lv は箱の level（IT-53）、quality は IT-31、danger は見つけた時点の危険度（IT-56）
+ */
+export function rollChestItems(ctx: RuleContext, dungeonId: string, floor: number, dropLevel: number, danger: number): void {
   const tableId = ctx.data.drops.chest[dungeonId]?.[String(floor)];
   if (tableId === undefined) throw new Error(`no chest drop table: ${dungeonId} / ${floor}`);
-  rollDropTable(ctx, tableId, dropLevel, partyChestQuality(ctx.state, ctx.data), dungeonId);
+  rollDropTable(ctx, tableId, dropLevel, partyChestQuality(ctx.state, ctx.data), dungeonId, danger);
 }
 
 /** DG-31 / IT-50: ボスの戦利品。表は drops.boss[dungeonId]、Lv はボスの level、chestQuality は効かない（IT-31） */

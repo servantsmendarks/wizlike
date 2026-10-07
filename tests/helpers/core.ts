@@ -163,6 +163,7 @@ export function mirrorWipeRolls(m: RngState, unequipped: number, d: GameData = d
  * - dive が非 null なら潜行台帳の品は所持品の部分集合
  * - screen town ⇔ townVisit 非 null、screen battle ⇔ battle 非 null、dive null ⇔ screen が title / town
  * - screen event ⇔ pendingChoice の kind が event（M5。A4）
+ * - dive.chest が非 null なら pendingChoice null、screen は dungeon か battle（M11。CB-60）
  * - gold は 0 以上の整数、各人の levelHistory.length === level − 1、各人の maxLevelReached[classId] ≥ level（CH-63）
  * - JSON 往復で変わらない（CLAUDE.md §3-11）
  */
@@ -188,6 +189,11 @@ export function expectStateInvariants(state: GameState): void {
   expect(state.screen === "battle", "screen battle ⇔ battle").toBe(state.battle !== null);
   expect(state.screen === "event", "screen event ⇔ pendingChoice kind event").toBe(state.pendingChoice?.kind === "event");
   expect(state.dive === null, "dive null ⇔ screen title / town").toBe(state.screen === "title" || state.screen === "town");
+  // CB-60（M11）: 宝箱があれば保留の選択は無く、画面は迷宮か（警報の）戦闘
+  if (state.dive !== null && state.dive.chest !== null) {
+    expect(state.pendingChoice, "chest ⇒ pendingChoice null").toBeNull();
+    expect(state.screen === "dungeon" || state.screen === "battle", `chest ⇒ screen dungeon / battle (${state.screen})`).toBe(true);
+  }
   expect(Number.isInteger(state.gold) && state.gold >= 0, `gold ${state.gold}`).toBe(true);
   if (state.screen === "title") expect(state.morale, "morale is null on title (TW-15)").toBeNull();
   for (const ch of state.party) expect(ch.levelHistory, `levelHistory of ${ch.id}`).toHaveLength(ch.level - 1);

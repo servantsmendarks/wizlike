@@ -175,6 +175,59 @@ describe("IT-30〜33 希少度・chestQuality・呪い・オプション", () =>
     expect(a.rng).toEqual(m);
   });
 
+  test("IT-56 宝箱の危険度の上振れ: 希少度を引いた直後に chance(危険度 × rarityUpPerDanger) を 1 回（当たれば 1 段）。危険度 0 では振らない（鏡の rng）", () => {
+    expect(data.config.chest.rarityUpPerDanger).toBe(15);
+    const seen = new Set<string>();
+    for (let seed = 1; seed <= 40; seed++) {
+      const a = dived(seed);
+      const m = cloneRng(a.rng);
+      weightedIndex(m, [1]);
+      randInt(m, -1, 1);
+      weightedIndex(m, ONLY.normal);
+      const up = chance(m, 30); // 危険度 2 × 15
+      chance(m, 0);
+      if (up) weightedIndex(m, OPTION_WEIGHTS);
+      const spec = rollItemSpec(a, lootData({ rarity: "normal" }), SWORD, 3, 0, "d01", 2);
+      expect(spec.rarity, `seed ${seed}`).toBe(up ? "fine" : "normal");
+      expect(a.rng, `seed ${seed}`).toEqual(m);
+      seen.add(String(spec.rarity));
+    }
+    expect([...seen].sort()).toEqual(["fine", "normal"]);
+    // 危険度 0（罠なし・ボスの品）は chance を振らない（引数を省いたときと同じ乱数）
+    const b = dived(5);
+    const c = dived(5);
+    rollItemSpec(b, lootData({ rarity: "normal" }), SWORD, 3, 0, "d01", 0);
+    rollItemSpec(c, lootData({ rarity: "normal" }), SWORD, 3, 0, "d01");
+    expect(b.rng).toEqual(c.rng);
+  });
+
+  test("IT-56 上振れの上に chestQuality を足し、伝説で止める。魔法書の項目では振らない", () => {
+    // 危険度 4（60%）が当たるシードと外れるシードで、上質 + quality 1 は 当たり → 伝説、外れ → 希少
+    let hit = false;
+    let miss = false;
+    for (let seed = 1; seed <= 40 && !(hit && miss); seed++) {
+      const a = dived(seed);
+      const m = cloneRng(a.rng);
+      weightedIndex(m, [1]);
+      randInt(m, -1, 1);
+      weightedIndex(m, ONLY.fine);
+      const up = chance(m, 60);
+      const spec = rollItemSpec(a, lootData({ rarity: "fine" }), SWORD, 3, 1, "d01", 4);
+      expect(spec.rarity, `seed ${seed}`).toBe(up ? "legendary" : "rare");
+      if (up) hit = true;
+      else miss = true;
+    }
+    expect([hit, miss]).toEqual([true, true]);
+    // 伝説はそれ以上上がらない
+    expect(rollItemSpec(dived(5), lootData({ rarity: "legendary" }), SWORD, 3, 1, "d01", 4).rarity).toBe("legendary");
+    // 魔法書（IT-55）: weightedIndex(entries) の後に何も引かない
+    const book = dived(5);
+    const mb = cloneRng(book.rng);
+    weightedIndex(mb, [1]);
+    expect(rollItemSpec(book, data, [{ item: "tome_lightning", weight: 1 }], 3, 0, "d02", 4).rarity).toBe("normal");
+    expect(book.rng).toEqual(mb);
+  });
+
   test("IT-31 partyChestQuality は行動可能な味方の benefits.chestQuality の最大（強欲 1）。強欲が行動不能・死亡なら 0。リーダーは 0", () => {
     const s = dived(1);
     expect(member(s, "c4").personality).toBe("greedy");
@@ -405,18 +458,26 @@ describe("CB-52 宝箱の品（IT-50 / IT-31 / IT-53）", () => {
       d.config.items.rarities.forEach((r, i) => (r.weight = ONLY[rarity][i]!));
       d.config.items.curseChance = 0;
       d.config.items.dropLevelSpread = 0;
+      d.config.chest.noTrapChance = 100; // M11: 罠なし（危険度 0 なので IT-56 の上振れも振らない）
       for (const t of d.drops.tables) {
         t.itemChance = 100;
         t.entries = SWORD;
       }
     });
+  /** M11（CB-60 / CB-65）: 勝って箱を置き、chest.open で中身を得る。2 つの execute の events をつなげたもの */
+  const winOpen = (s: GameState, d: GameData) => {
+    const w = exec(s, RESOLVE, d);
+    if (w.state.dive!.chest === null) return w;
+    const o = exec(w.state, { type: "chest.open" }, d);
+    return { state: o.state, events: [...w.events, ...o.events] };
+  };
 
-  test("CB-52/IT-13 宝箱の金の後に、その階の表から品（未鑑定・foundIn 迷宮・台帳）。Lv は倒した種類の level の最大。強欲が行動可能なら希少度 +1", () => {
+  test("CB-65/IT-13 宝箱を開けると金の後に、その階の表から品（未鑑定・foundIn 迷宮・台帳）。Lv は倒した種類の level の最大（IT-53）。強欲が行動可能なら希少度 +1", () => {
     // 腐乱死体 level 2・大鼠 level 1 → Lv 2（振れ幅 0）。強欲のドナ（c4）が行動可能 → 通常 + 1 = 上質
     const s = roomWin([{ monsterId: "giant_rat" }, { monsterId: "rotting_corpse" }]);
-    const r = exec(s, RESOLVE, chestData("normal"));
+    const r = winOpen(s, chestData("normal"));
     const ks = kindsOf(r.events);
-    const iChest = ks.indexOf("message:battle.chest");
+    const iChest = ks.indexOf("message:chest.open.gold");
     const iFound = ks.indexOf("message:item.found");
     expect(iChest).toBeGreaterThan(-1);
     expect(iFound).toBeGreaterThan(iChest);
@@ -426,12 +487,12 @@ describe("CB-52 宝箱の品（IT-50 / IT-31 / IT-53）", () => {
     expect(r.state.party[0]!.inventory.at(-1)).toBe(id);
     expectStateInvariants(r.state);
     // 強欲が麻痺なら上げない（通常・オプションなし）
-    const p = exec(roomWin([{ monsterId: "rotting_corpse" }], (b) => (member(b, "c4").status = ["paralysis"])), RESOLVE, chestData("normal"));
+    const p = winOpen(roomWin([{ monsterId: "rotting_corpse" }], (b) => (member(b, "c4").status = ["paralysis"])), chestData("normal"));
     const pid = p.state.dive!.ledger.items[0]!;
     expect(p.state.items[pid]).toMatchObject({ level: 2, rarity: "normal", options: [] });
   });
 
-  test("CB-51/CB-52 通路の遭遇の宝箱は chestChanceCorridor で判定し、出れば部屋と同じく金の後に品。0 なら宝箱も品も出ない", () => {
+  test("CB-51/CB-65 通路の遭遇の宝箱は chestChanceCorridor で判定し、出れば部屋と同じく開けると金の後に品。0 なら宝箱も品も出ない", () => {
     const base = dived(1);
     const inputs = allInputs(base, DEF);
     inputs["c1"] = { type: "attack", group: 0 };
@@ -445,14 +506,15 @@ describe("CB-52 宝箱の品（IT-50 / IT-31 / IT-53）", () => {
       d.config.combat.chestChanceCorridor = pct;
       return d;
     };
-    const r0 = exec(s, RESOLVE, corridor(0));
-    expect(kindsOf(r0.events)).not.toContain("message:battle.chest");
+    const r0 = winOpen(s, corridor(0));
+    expect(kindsOf(r0.events)).not.toContain("chestFound");
+    expect(kindsOf(r0.events)).not.toContain("message:chest.open.gold");
     expect(kindsOf(r0.events)).not.toContain("message:item.found");
     expect(r0.state.dive!.ledger.items).toEqual([]);
-    const r = exec(s, RESOLVE, corridor(100));
+    const r = winOpen(s, corridor(100));
     const ks = kindsOf(r.events);
-    expect(ks.indexOf("message:battle.chest")).toBeGreaterThan(-1);
-    expect(ks.indexOf("message:item.found")).toBeGreaterThan(ks.indexOf("message:battle.chest"));
+    expect(ks.indexOf("message:chest.open.gold")).toBeGreaterThan(-1);
+    expect(ks.indexOf("message:item.found")).toBeGreaterThan(ks.indexOf("message:chest.open.gold"));
     const id = r.state.dive!.ledger.items[0]!;
     expect(r.state.items[id]).toMatchObject({ itemId: "long_sword", level: 2, identified: false, foundIn: "d01" });
     expectStateInvariants(r.state);

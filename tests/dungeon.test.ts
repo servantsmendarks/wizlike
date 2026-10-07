@@ -131,6 +131,8 @@ describe("dungeon.enter", () => {
       knownTraps: {},
       bossDefeated: false,
       ledger: { items: [], gold: 0 },
+      chest: null, // CB-60（M11）
+      disarmedChests: [],
     });
     expect(Object.keys(dive.explored)).toEqual(["1"]);
     expectExploredCovers(r.state);
@@ -2005,7 +2007,8 @@ describe("準備中のダンジョン d03（DG-35。M9）", () => {
     expect(r.state.bestiary["sunken_bishop"]!.identified).toBe(false);
     expect(r.events).toContainEqual({ kind: "message", key: "battle.bossDefeated", params: { boss: "沈鐘の大司祭" } });
     // UI-63（M8）: 戦闘の後の screen dungeon は潜っているダンジョンを持つ（ダンジョンごとの曲）
-    expect(r.events).toContainEqual({ kind: "screen", to: "dungeon", dungeonId: "d02" });
+    // A2（M11）: 戦闘の終わりの screen dungeon は戦った位置と向き（at）も持つ
+    expect(r.events).toContainEqual({ kind: "screen", to: "dungeon", dungeonId: "d02", at: { pos: s.dive!.pos, facing: s.dive!.facing } });
     expect(r.events).toContainEqual({ kind: "message", key: "dungeon.unlocked", params: { dungeon: "灰の地下墓所" } });
     expect(r.state.progress.clearedDungeons).toEqual(["d01", "d02"]);
     expect(r.state.progress.unlockedDungeons).toEqual(["d01", "d02", "d03"]);

@@ -34,6 +34,8 @@ function diveAt(x: number, y: number, facing: Dive["facing"], floor = 1): Dive {
     knownTraps: {},
     bossDefeated: false,
     ledger: { items: [], gold: 0 },
+    chest: null,
+    disarmedChests: [],
   };
 }
 

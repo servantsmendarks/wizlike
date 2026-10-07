@@ -49,12 +49,18 @@ export function withBattle(state: GameState, groups: GroupSpec[], opts: BattleOp
   return s;
 }
 
-/** loadFreshData の複製に config.combat / config.san / config.events の上書きを当て、mut でさらに書き換えたもの */
+/**
+ * loadFreshData の複製に config.combat / config.san / config.events の上書きを当て、mut でさらに書き換えたもの。
+ * M11（B8）: 既定で宝箱の判定（combat.chestChance / chestChanceCorridor）を 0 にする（勝利の後に箱が残ると次のコマンドが "chest pending" で断られるため）。
+ * 宝箱を出すテストは patch.combat で値を戻す
+ */
 export function dataWith(
   patch: { combat?: Partial<Config["combat"]>; san?: Partial<Config["san"]>; events?: Partial<Config["events"]> } = {},
   mut?: (d: GameData) => void,
 ): GameData {
   const d = loadFreshData();
+  d.config.combat.chestChance = 0;
+  d.config.combat.chestChanceCorridor = 0;
   Object.assign(d.config.combat, patch.combat ?? {});
   Object.assign(d.config.san, patch.san ?? {});
   Object.assign(d.config.events, patch.events ?? {});

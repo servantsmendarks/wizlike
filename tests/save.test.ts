@@ -5,7 +5,7 @@ import { cloneState } from "../src/core/state";
 import type { BattleAction, Command, GameState } from "../src/core/types";
 import { DB_NAME, DB_VERSION, openIdbBackend, STORE_GAMES, STORE_SETTINGS } from "../src/save/db";
 import { newGameId } from "../src/save/id";
-import { createMigrations, isGameStateShape, migrateState, migrateV4toV5, MIGRATIONS } from "../src/save/migrate";
+import { createMigrations, isGameStateShape, migrateState, migrateV4toV5, migrateV5toV6, MIGRATIONS } from "../src/save/migrate";
 import { buildRecord, checkStoredRecord, summarize } from "../src/save/record";
 import { createSaveService } from "../src/save/saves";
 import { buildExportFile, parseExportFile, serializeExportFile } from "../src/save/transfer";
@@ -13,7 +13,7 @@ import type { GameRecord, GameStoreBackend, ImportPlan, Migration, SaveDeps } fr
 import { dived, exec, withBattle } from "./helpers/battle";
 import { data, expectKnownStringKeys, loadFreshData, newGame, withChar } from "./helpers/core";
 import { atEvent } from "./helpers/events";
-import { createMemoryBackend, toV3, toV4 } from "./helpers/save";
+import { createMemoryBackend, toV3, toV4, toV5 } from "./helpers/save";
 import mainSrc from "../src/main.ts?raw";
 
 const SCHEMA = data.config.save.schemaVersion;
@@ -215,7 +215,7 @@ describe("SV-04 v1 → v2 の移行（M5.5）", () => {
   }
 
   test("SV-04 v1 の保存（adventureTurns・tavernEventMark・knownTraps が無い）は v2 へ移行して 0 / 0 / {} が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(5); // M10（CH-63）で 4 → 5
+    expect(SCHEMA).toBe(6); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -301,7 +301,7 @@ describe("SV-04 v2 → v3 の移行（M7 の A）", () => {
   }
 
   test("SV-04/TW-15 v2 の保存（morale が無い）は v3 へ移行して morale null が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(5); // M10（CH-63）で 4 → 5
+    expect(SCHEMA).toBe(6); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -378,8 +378,8 @@ describe("SV-04 v3 → v4 の移行（M7 の B。IT-80）", () => {
   const MIG = createMigrations(data.dungeons);
 
   test("SV-04/IT-80 v3 の保存は v4 へ移行し、各実体に Lv0・通常・オプションなし・ユニークでない・呪いなし・foundIn null、warehouse []・buyback []・uniqueBook {} が入る。街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(5); // M10（CH-63）で 4 → 5
-    expect(MIGRATIONS).toHaveLength(4); // M10（CH-63）で v4 → v5 を足した
+    expect(SCHEMA).toBe(6); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6
+    expect(MIGRATIONS).toHaveLength(5); // M10（CH-63）で v4 → v5、M11（CB-60）で v5 → v6 を足した
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -515,8 +515,8 @@ describe("SV-04 v4 → v5 の移行（M10。CH-63）", () => {
     return execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state;
   }
   test("SV-04/CH-63 v4 の保存（maxLevelReached が数）は v5 へ移行して今の職業の記録 { [classId]: n } になり、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(5);
-    expect(MIGRATIONS).toHaveLength(4);
+    expect(SCHEMA).toBe(6); // M11（CB-60）で 5 → 6
+    expect(MIGRATIONS).toHaveLength(5);
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -1329,5 +1329,83 @@ describe("SV-30〜33 書き出しと読み込み（SaveService）", () => {
     // 別の gameId に書いても current は変わらない
     await sv.applyImport(await planOf(sv, fileOf("other", 4, s)));
     expect(sv.current()).toEqual({ gameId: "g1", turn: 11 });
+  });
+});
+
+describe("SV-04 v5 → v6 の移行（M11。CB-60）", () => {
+  function eventState(): GameState {
+    const d = loadFreshData();
+    d.config.events.cap = 0;
+    for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    return execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state;
+  }
+  function chestState(): GameState {
+    return exec(dived(1), { type: "debug.chest", trapId: "bomb" }).state;
+  }
+
+  test("SV-04/CB-60 v5 の保存（dive に chest・disarmedChests が無い）は v6 へ移行して chest null・disarmedChests [] が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
+    expect(SCHEMA).toBe(6);
+    expect(MIGRATIONS).toHaveLength(5);
+    const cases: Array<[string, GameState]> = [
+      ["town", newGame(1)],
+      ["dungeon", dived(1)],
+      ["battle", withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }])],
+      ["event", eventState()],
+    ];
+    for (const [name, s] of cases) {
+      const v5 = toV5(s);
+      const before = json(v5);
+      if (s.dive !== null) expect(isGameStateShape(v5), name).toBe(false); // v5 のままでは v6 の形の検査を通らない
+      const r = migrateState(v5, 5, SCHEMA);
+      expect(r.ok, name).toBe(true);
+      if (!r.ok) continue;
+      expect(r.fromVersion).toBe(5);
+      expect(r.state, name).toEqual(json(s));
+      expect(v5, name).toEqual(before);
+    }
+    expect(MIGRATIONS[4]!("x")).toBe("x");
+    expect(migrateV5toV6({ dive: null })).toEqual({ dive: null });
+    expect(migrateV5toV6({ dive: { floor: 1 } })).toEqual({ dive: { floor: 1, chest: null, disarmedChests: [] } });
+  });
+
+  test("SV-04/CB-60 形の検査: 箱のある迷宮の state は JSON 往復で通る。chest・disarmedChests の型が違う、箱と保留の選択が同時にある v6 は broken", () => {
+    const s = chestState();
+    expect(isGameStateShape(json(s))).toBe(true);
+    const bad = (f: (dive: Record<string, unknown>, x: Record<string, unknown>) => void): boolean => {
+      const x = json(s) as unknown as Record<string, unknown>;
+      f(x["dive"] as Record<string, unknown>, x);
+      return isGameStateShape(x);
+    };
+    const chest = (dive: Record<string, unknown>) => dive["chest"] as Record<string, unknown>;
+    expect(bad(() => {})).toBe(true);
+    expect(bad((d) => delete d["chest"])).toBe(false);
+    expect(bad((d) => (d["chest"] = "x"))).toBe(false);
+    expect(bad((d) => delete d["disarmedChests"])).toBe(false);
+    expect(bad((d) => (d["disarmedChests"] = [{ floor: 1, x: 2 }]))).toBe(false);
+    expect(bad((d) => (d["disarmedChests"] = [{ floor: 1, x: 2, y: 3 }]))).toBe(true);
+    expect(bad((d) => (chest(d)["source"] = "boss"))).toBe(false);
+    expect(bad((d) => (chest(d)["source"] = "cell"))).toBe(false); // cell なのに位置が無い
+    expect(bad((d) => Object.assign(chest(d), { source: "cell", cell: { floor: 1, x: 2, y: 3 } }))).toBe(true);
+    expect(bad((d) => (chest(d)["trapId"] = 3))).toBe(false);
+    expect(bad((d) => (chest(d)["danger"] = -1))).toBe(false);
+    expect(bad((d) => (chest(d)["level"] = 1.5))).toBe(false);
+    expect(bad((d) => (chest(d)["inRoom"] = 1))).toBe(false);
+    expect(bad((d) => (chest(d)["finding"] = { trapId: "bomb" }))).toBe(true);
+    expect(bad((d) => (chest(d)["finding"] = { trapId: 1 }))).toBe(false);
+    expect(bad((d) => (chest(d)["rivalry"] = { id: "thief_chest", ownerId: "c3" }))).toBe(true);
+    expect(bad((d) => (chest(d)["rivalry"] = { id: "thief_chest" }))).toBe(false);
+    expect(bad((_d, x) => (x["pendingChoice"] = { kind: "stairs", promptKey: "k", options: [] }))).toBe(false); // B4
+  });
+
+  test("SV-04/SV-50 箱の選択中に保存したレコードは、続きからで同じ箱の操作に戻る（chest.open を受け付ける）", async () => {
+    const mem = createMemoryBackend();
+    const svc = service(mem);
+    const s = chestState();
+    mem.raw("g1", buildRecord("g1", 1, 999, SCHEMA, s));
+    const r = await svc.load("g1");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.dive!.chest).toEqual(s.dive!.chest);
+    expect(exec(r.state, { type: "chest.open" }).state.dive!.chest).toBeNull();
   });
 });

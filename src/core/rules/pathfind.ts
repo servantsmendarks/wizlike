@@ -80,7 +80,7 @@ export function planRoute(state: GameState, data: GameData, target: Pos): RouteS
  * 真になるのは次をすべて満たすときだけ:
  * - events から、move のときだけ先頭の message dungeon.door を 1 件除いた残りの [0] が、move なら moved、turn なら turned
  * - その後ろが hpChanged（毒の 1 歩）だけ
- * - after が迷宮（screen dungeon）で、戦闘なし・保留なし・dive あり
+ * - after が迷宮（screen dungeon）で、戦闘なし・保留なし・dive あり・宝箱なし（M11）
  * - dive の pos と facing が step の予定値と一致する
  * 遭遇・罠の語り・スピナー（向きが違う）・階段などの確認（pendingChoice）・壁（blocked）・rejected では偽。扉では止まらない。
  */
@@ -94,5 +94,6 @@ export function routeStepOk(step: RouteStep, events: readonly GameEvent[], after
   if (!rest.slice(1).every((e) => e.kind === "hpChanged")) return false;
   const dive = after.dive;
   if (after.screen !== "dungeon" || after.battle !== null || after.pendingChoice !== null || dive === null) return false;
+  if (dive.chest !== null) return false; // CB-60 / B6（M11）: 宝箱を見つけたら止まる
   return dive.pos.x === step.pos.x && dive.pos.y === step.pos.y && dive.facing === step.facing;
 }

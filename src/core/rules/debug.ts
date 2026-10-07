@@ -3,6 +3,8 @@
 import { optionAppliesTo, optionKindOf } from "../data/index";
 import { createItemInstance, itemDisplayName, slotsUsed } from "../state";
 import type { RuleContext } from "../types";
+import { placeDebugChest } from "./chest";
+import { cellAt } from "./dungeon-gen";
 import { floorOf, markExplored, warpTarget } from "./dungeon";
 import { loseSan, overSan, sanCapOf, sanJustBelow, sanStage } from "./san";
 
@@ -127,4 +129,15 @@ export function giveCursed(ctx: RuleContext, wearable: boolean): void {
   ch.inventory.push(id);
   if (state.dive !== null) state.dive.ledger.items.push(id);
   ctx.events.push({ kind: "message", key: "debug.giveCursed", params: { name: ch.name, item: itemDisplayName(state, data, id) } });
+}
+
+/**
+ * debug.chest（M11）: 今の位置にドロップの宝箱を置く（罠は trapId。null は罠なし）。U-1 の確認用（危険度 3〜4 の罠は普通の遊びで出にくい）。
+ * inRoom は今のセルの roomId !== null。chestFound → chest.found.drop → chest.prompt。衝動判定はしない。乱数は使わない
+ */
+export function debugChest(ctx: RuleContext, trapId: string | null): void {
+  const dive = ctx.state.dive;
+  if (dive === null) throw new Error("debugChest: not in dungeon");
+  const cell = cellAt(floorOf(dive, ctx.data), dive.pos.x, dive.pos.y);
+  placeDebugChest(ctx, trapId, cell.roomId !== null);
 }

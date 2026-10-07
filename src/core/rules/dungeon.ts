@@ -279,6 +279,8 @@ export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
     knownTraps: {},
     bossDefeated: false,
     ledger: { items: [], gold: 0 },
+    chest: null,
+    disarmedChests: [],
   };
   state.dive = dive;
   state.townVisit = null; // TW-32: 来訪の終わり（救済の申し出も下ろす）

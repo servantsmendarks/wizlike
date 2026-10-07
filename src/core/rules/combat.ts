@@ -14,7 +14,7 @@
 //     味方の攻撃 1 振り: 命中 → [ダメージ] → [覚醒]
 //     敵の攻撃要素: 対象 → 命中 → [ダメージ] → [覚醒] → [付与]
 //     呪文・道具: 個体ごとのダメージ（→ 覚醒）・付与、回復のダイス
-//   → ラウンド終了の鑑定（g 順）→（勝利なら）金（g→u）→ 宝箱 d100 → 宝箱の金 → 宝箱の品（loot.ts。IT-52）
+//   → ラウンド終了の鑑定（g 順）→（勝利なら）金（g→u）→ 宝箱 d100 →（当たれば）罠の抽選（chest.ts。CB-61。中身は開けたとき CB-65）
 //     →（ボスなら）ボスの戦利品（loot.ts。IT-52）
 //   免疫・既に同じ状態・対象なしは消費しない。
 import type { GameData, Spell, SpellEffect, SpellTarget, StatusId } from "../data/index";
@@ -75,7 +75,8 @@ import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, richestGro
 import { offerTeleporter } from "./choices";
 import { applyAllyEffect } from "./effects";
 import { clearAllStatus, gainGold } from "./field";
-import { rollDropChest } from "./chest";
+import { presentChest, rollDropChest } from "./chest";
+import { tryInflictStatus } from "./status";
 import { rollBossItems } from "./loot";
 import { equipStats, hasSkill, hpMaxOf, skillTotal, spellCost } from "./equip-stats";
 import { loseSan, sanCapOf, sanStage } from "./san";
@@ -904,20 +905,6 @@ function actEnemyUnit(ctx: RuleContext, g: number, u: number, defending: Readonl
   }
 }
 
-/**
- * CB-30: 状態の付与の判定。chance(statusPercent(基礎 %, 実効の luk（CH-13）) − その状態のオプション statusResist（IT-34）) を 1 回引き、
- * 当たれば status に足して statusChanged on を出す（語りは呼び出し側）。既にかかっているかは呼び出し側が確かめる。付いたら true。
- * M11 の作業 1 で敵の攻撃から切り出した（宝箱のガスの罠と共用する予定。挙動と乱数の順は変えない）
- */
-export function tryInflictStatus(ctx: RuleContext, ch: Character, status: StatusId, basePct: number): boolean {
-  const { state, data } = ctx;
-  const es = equipStats(state, data, ch);
-  if (!chance(state.rng, statusPercent(data.config, basePct, es.stats.luk) - es.statusResist[status])) return false;
-  ch.status.push(status);
-  ctx.events.push({ kind: "statusChanged", id: ch.id, status, on: true });
-  return true;
-}
-
 /** CB-54/CH-45: 戦闘中の死亡。状態異常をすべて外す。本人以外の生存者の SAN が減る */
 function allyDies(ctx: RuleContext, ch: Character): void {
   ch.life = "dead";
@@ -1055,7 +1042,8 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
     const gold = withGoldLuck(rolled, luck);
     if (gold > 0) gainGold(ctx, gold, { key: "battle.gold", params: { gold } }); // CH-52: 強欲の treasureGain もここ
     if (b.origin.kind === "random") {
-      // CB-51 / CB-52: 宝箱の判定と中身は chest.ts（ボス戦では判定しない）。IT-53: Lv はこの戦闘で倒した種類の level の最大
+      // CB-51 / CB-60: 宝箱の判定と罠の抽選は chest.ts（ボス戦では判定しない）。箱を置くだけで、語りは screen{dungeon} の後（presentChest）。
+      // IT-53: Lv はこの戦闘で倒した種類の level の最大
       rollDropChest(ctx, b.origin.inRoom, Math.max(...b.groups.map((g) => monsterOf(data, g.monsterId).level)));
     }
     if (b.origin.kind === "boss") {
@@ -1093,9 +1081,18 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
   state.screen = "dungeon";
   // CB-53 / TW-20: 全滅なら呼び出し側（endBattle）が全滅処理で街へ（screen{dungeon} は出さない。performWipe の最後が screen{town}）
   if (result === "wipe") return;
-  ctx.events.push({ kind: "screen", to: "dungeon", dungeonId: requireDive(state).dungeonId });
+  const dive = requireDive(state);
+  // A2（M11）: 戦った位置と向きを載せる（同じ events の後で位置が変わりうるため）
+  ctx.events.push({
+    kind: "screen",
+    to: "dungeon",
+    dungeonId: dive.dungeonId,
+    at: { pos: { x: dive.pos.x, y: dive.pos.y }, facing: dive.facing },
+  });
   // DG-32: ボスを倒すとその場にテレポーターが出て、一行はその上に立っているので、すぐに街へ戻るかを尋ねる
   if (result === "win" && b.origin.kind === "boss") offerTeleporter(ctx);
+  // CB-60: 勝利で宝箱を置いたら、迷宮に戻った後で見つけたことを語る（テレポーターの申し出とは同時に起きない）
+  if (result === "win" && dive.chest !== null) presentChest(ctx);
 }
 
 // ---------------------------------------------------------------------------
