@@ -1287,9 +1287,9 @@ function impulseReport(ds: readonly DiveRecord[]): string[] {
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .map(([p, n]) => `${p} ${n}`)
       .join("・");
-    lines.push(`  ${id}: ${x.impulses}/${x.starts}（${pct(x.impulses, x.starts)}）・制止 ${x.stopped}（衝動の ${pct(x.stopped, x.impulses)}）/ 行動者 ${by || "-"}`);
+    lines.push(`  ${id}: 衝動 ${pct(x.impulses, x.starts)}・制止 ${x.stopped}（衝動の ${pct(x.stopped, x.impulses)}）/ 行動者 ${by || "-"}`);
   }
-  lines.push(`  計: ${all.impulses}/${all.starts}（${pct(all.impulses, all.starts)}）・制止 ${all.stopped}`);
+  lines.push(`  計: 衝動 ${pct(all.impulses, all.starts)}・制止 ${all.stopped}`);
   return lines;
 }
 
