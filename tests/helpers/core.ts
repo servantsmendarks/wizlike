@@ -159,7 +159,7 @@ export function mirrorWipeRolls(m: RngState, unequipped: number, d: GameData = d
  * - dive が非 null なら潜行台帳の品は所持品の部分集合
  * - screen town ⇔ townVisit 非 null、screen battle ⇔ battle 非 null、dive null ⇔ screen が title / town
  * - screen event ⇔ pendingChoice の kind が event（M5。A4）
- * - gold は 0 以上の整数、各人の levelHistory.length === level − 1
+ * - gold は 0 以上の整数、各人の levelHistory.length === level − 1、各人の maxLevelReached[classId] ≥ level（CH-63）
  * - JSON 往復で変わらない（CLAUDE.md §3-11）
  */
 export function expectStateInvariants(state: GameState): void {
@@ -187,6 +187,8 @@ export function expectStateInvariants(state: GameState): void {
   expect(Number.isInteger(state.gold) && state.gold >= 0, `gold ${state.gold}`).toBe(true);
   if (state.screen === "title") expect(state.morale, "morale is null on title (TW-15)").toBeNull();
   for (const ch of state.party) expect(ch.levelHistory, `levelHistory of ${ch.id}`).toHaveLength(ch.level - 1);
+  // CH-63（SV-04 v5）: maxLevelReached は職業ごとの記録で、今の職業の欄は level 以上
+  for (const ch of state.party) expect(ch.maxLevelReached[ch.classId] ?? 0, `maxLevelReached of ${ch.id}`).toBeGreaterThanOrEqual(ch.level);
   expect(JSON.parse(JSON.stringify(state))).toStrictEqual(state);
 }
 

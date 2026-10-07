@@ -5,7 +5,7 @@ import { cloneState } from "../src/core/state";
 import type { BattleAction, Command, GameState } from "../src/core/types";
 import { DB_NAME, DB_VERSION, openIdbBackend, STORE_GAMES, STORE_SETTINGS } from "../src/save/db";
 import { newGameId } from "../src/save/id";
-import { createMigrations, isGameStateShape, migrateState, MIGRATIONS } from "../src/save/migrate";
+import { createMigrations, isGameStateShape, migrateState, migrateV4toV5, MIGRATIONS } from "../src/save/migrate";
 import { buildRecord, checkStoredRecord, summarize } from "../src/save/record";
 import { createSaveService } from "../src/save/saves";
 import { buildExportFile, parseExportFile, serializeExportFile } from "../src/save/transfer";
@@ -13,7 +13,7 @@ import type { GameRecord, GameStoreBackend, ImportPlan, Migration, SaveDeps } fr
 import { dived, exec, withBattle } from "./helpers/battle";
 import { data, expectKnownStringKeys, loadFreshData, newGame, withChar } from "./helpers/core";
 import { atEvent } from "./helpers/events";
-import { createMemoryBackend, toV3 } from "./helpers/save";
+import { createMemoryBackend, toV3, toV4 } from "./helpers/save";
 import mainSrc from "../src/main.ts?raw";
 
 const SCHEMA = data.config.save.schemaVersion;
@@ -215,7 +215,7 @@ describe("SV-04 v1 → v2 の移行（M5.5）", () => {
   }
 
   test("SV-04 v1 の保存（adventureTurns・tavernEventMark・knownTraps が無い）は v2 へ移行して 0 / 0 / {} が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(4); // IT-80（M7 の B）
+    expect(SCHEMA).toBe(5); // M10（CH-63）で 4 → 5
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -301,7 +301,7 @@ describe("SV-04 v2 → v3 の移行（M7 の A）", () => {
   }
 
   test("SV-04/TW-15 v2 の保存（morale が無い）は v3 へ移行して morale null が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(4); // IT-80（M7 の B）
+    expect(SCHEMA).toBe(5); // M10（CH-63）で 4 → 5
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -378,8 +378,8 @@ describe("SV-04 v3 → v4 の移行（M7 の B。IT-80）", () => {
   const MIG = createMigrations(data.dungeons);
 
   test("SV-04/IT-80 v3 の保存は v4 へ移行し、各実体に Lv0・通常・オプションなし・ユニークでない・呪いなし・foundIn null、warehouse []・buyback []・uniqueBook {} が入る。街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(4);
-    expect(MIGRATIONS).toHaveLength(3);
+    expect(SCHEMA).toBe(5); // M10（CH-63）で 4 → 5
+    expect(MIGRATIONS).toHaveLength(4); // M10（CH-63）で v4 → v5 を足した
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -504,6 +504,95 @@ describe("SV-04 v3 → v4 の移行（M7 の B。IT-80）", () => {
     expect(r.state.screen).toBe("town");
     expect(r.state.progress.shopLevel).toBe(2);
     expect([r.state.warehouse, r.state.buyback, r.state.uniqueBook]).toEqual([[], [], {}]);
+  });
+});
+
+describe("SV-04 v4 → v5 の移行（M10。CH-63）", () => {
+  function eventState(): GameState {
+    const d = loadFreshData();
+    d.config.events.impulseThreshold = 1000;
+    for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    return execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state;
+  }
+  test("SV-04/CH-63 v4 の保存（maxLevelReached が数）は v5 へ移行して今の職業の記録 { [classId]: n } になり、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
+    expect(SCHEMA).toBe(5);
+    expect(MIGRATIONS).toHaveLength(4);
+    const cases: Array<[string, GameState]> = [
+      ["town", newGame(1)],
+      ["dungeon", dived(1)],
+      ["battle", withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }])],
+      ["event", eventState()],
+    ];
+    for (const [name, s] of cases) {
+      const v4 = toV4(s);
+      const before = json(v4);
+      expect((v4["party"] as Array<Record<string, unknown>>)[0]!["maxLevelReached"], name).toBe(1);
+      expect(isGameStateShape(v4), name).toBe(false); // v4 のままでは v5 の形の検査を通らない
+      const r = migrateState(v4, 4, SCHEMA);
+      expect(r.ok, name).toBe(true);
+      if (!r.ok) continue;
+      expect(r.fromVersion).toBe(4);
+      expect(r.state, name).toEqual(json(s));
+      expect(v4, name).toEqual(before); // 引数は書き換えない
+    }
+    // 上がっていた値は今の職業の欄に写す（ほかの職業の欄は作らない）
+    const lv = withChar(newGame(1), 3, { level: 3, maxLevelReached: { priest: 5 }, levelHistory: [{ level: 2, hpGain: 5, mpGain: 5 }, { level: 3, hpGain: 4, mpGain: 5 }] });
+    const r = migrateState(toV4(lv), 4, SCHEMA);
+    expect(r.ok && r.state.party[3]!.maxLevelReached).toEqual({ priest: 5 });
+    expect(r.ok && r.state.party.map((c) => c.maxLevelReached)).toEqual(lv.party.map((c) => ({ [c.classId]: c.maxLevelReached[c.classId] })));
+    // MIGRATIONS[3] 単体: オブジェクトでなければそのまま。party が配列でない・人がオブジェクトでない・maxLevelReached が数でない人は変えない
+    expect(MIGRATIONS[3]!("x")).toBe("x");
+    expect(MIGRATIONS[3]!(null)).toBe(null);
+    expect(migrateV4toV5({ party: "x" })).toEqual({ party: "x" });
+    expect(migrateV4toV5({ party: [1, { classId: "mage", maxLevelReached: { mage: 2 } }, { classId: 3, maxLevelReached: 2 }] })).toEqual({
+      party: [1, { classId: "mage", maxLevelReached: { mage: 2 } }, { classId: 3, maxLevelReached: 2 }],
+    });
+  });
+
+  test("SV-04/CH-63 v1 の保存も v1 → v2 → v3 → v4 → v5 の順に移行して今の state と同じになる", () => {
+    const s = newGame(1);
+    const v1 = toV3(s);
+    delete v1["adventureTurns"];
+    delete v1["tavernEventMark"];
+    delete v1["morale"];
+    const r = migrateState(v1, 1, SCHEMA, createMigrations(data.dungeons));
+    expect(r.ok && r.state).toEqual(json(s));
+  });
+
+  test("SV-04/CH-63 形の検査: maxLevelReached が数・null・配列、値が 0・小数・文字列、今の職業の欄が無い、classId が文字列でない v5 は broken", () => {
+    const town = json(newGame(1));
+    const c0 = town.party[0]!;
+    const withC0 = (patch: Record<string, unknown>): unknown => ({ ...town, party: [{ ...c0, ...patch }, ...town.party.slice(1)] });
+    const broken: Array<[string, unknown]> = [
+      ["number (v4)", withC0({ maxLevelReached: 1 })],
+      ["null", withC0({ maxLevelReached: null })],
+      ["array", withC0({ maxLevelReached: [1] })],
+      ["missing", withC0({ maxLevelReached: undefined })],
+      ["zero", withC0({ maxLevelReached: { [c0.classId]: 0 } })],
+      ["fraction", withC0({ maxLevelReached: { [c0.classId]: 1.5 } })],
+      ["string value", withC0({ maxLevelReached: { [c0.classId]: "1" } })],
+      ["other class value 0", withC0({ maxLevelReached: { [c0.classId]: 1, mage: 0 } })],
+      ["no current class", withC0({ maxLevelReached: { zz: 1 } })],
+      ["classId number", withC0({ classId: 1 })],
+      ["member not object", { ...town, party: ["x", ...town.party.slice(1)] }],
+    ];
+    for (const [name, s] of broken) {
+      expect(isGameStateShape(s), name).toBe(false);
+      expect(migrateState(s, SCHEMA, SCHEMA), name).toEqual({ ok: false, reason: "broken" });
+    }
+    // ほかの職業の記録があっても通る（転職の後の形）
+    expect(isGameStateShape(withC0({ maxLevelReached: { [c0.classId]: 1, mage: 7 } }))).toBe(true);
+  });
+
+  test("SV-04/SV-50 v4 のレコードを保存先（メモリ）に置くと、一覧で ok、続きからで読めて maxLevelReached が職業ごとの記録になる", async () => {
+    const mem = createMemoryBackend();
+    const s = newGame(1);
+    mem.raw("g1", { ...buildRecord("g1", 4, 999, 4, s), state: toV4(s) });
+    const svc = service(mem, { migrations: createMigrations(data.dungeons) });
+    const list = await svc.list();
+    expect(list.ok && list.entries.map((e) => [e.gameId, e.status])).toEqual([["g1", "ok"]]);
+    const r = await svc.load("g1");
+    expect(r.ok && r.state.party.map((c) => c.maxLevelReached)).toEqual(s.party.map((c) => ({ [c.classId]: 1 })));
   });
 });
 

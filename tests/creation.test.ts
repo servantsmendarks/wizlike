@@ -152,11 +152,11 @@ describe("creation: game.new", () => {
     }
   });
 
-  test("CH-63 作成時は level 1、exp 0、maxLevelReached 1、levelHistory []", () => {
+  test("CH-63 作成時は level 1、exp 0、maxLevelReached は今の職業だけ 1（{ [classId]: 1 }）、levelHistory []", () => {
     for (const c of newGame(1).party) {
       expect(c.level).toBe(1);
       expect(c.exp).toBe(0);
-      expect(c.maxLevelReached).toBe(1);
+      expect(c.maxLevelReached).toEqual({ [c.classId]: 1 }); // SV-04 v5: 職業ごとの記録
       expect(c.levelHistory).toEqual([]);
     }
   });

@@ -12,7 +12,9 @@ import {
   levelUpOnce,
   levelUpWhilePossible,
   mpGainFor,
+  maxLevelReachedIn,
   mpStatFor,
+  peakLevelReached,
   rollHpGain,
   vitBonus,
 } from "../src/core/rules/growth";
@@ -47,7 +49,7 @@ function kinds(events: readonly GameEvent[]): string[] {
 /** ドナを L3 にした形（増分は手で決める）。hpMax = 12（CH-65 のレベル 1）+ 5 + 4、mpMax = 5 + 5 + 5。 */
 const DONA_L3: Partial<Character> = {
   level: 3,
-  maxLevelReached: 3,
+  maxLevelReached: { priest: 3 },
   exp: 1500,
   levelHistory: [
     { level: 2, hpGain: 5, mpGain: 5 },
@@ -191,7 +193,7 @@ describe("growth: レベルアップ（CH-61、CH-63、CH-65）", () => {
     const { ctx, ch } = setup(1, BERK, { exp: 1000 });
     levelUpOnce(ctx, ch);
     expect(ch.levelHistory).toEqual([{ level: 2, hpGain: 11, mpGain: 0 }]);
-    expect(ch.maxLevelReached).toBe(2);
+    expect(ch.maxLevelReached).toEqual({ [ch.classId]: 2 }); // SV-04 v5: 職業ごとの記録
     expect(ctx.events).toEqual([
       { kind: "levelUp", id: "c2", level: 2, hpGain: 11, mpGain: 0, hpMax: 27, mpMax: 0, hp: 27, mp: 0 },
       { kind: "message", key: "town.inn.levelUp", params: { name: ch.name, level: 2 } },
@@ -227,6 +229,7 @@ describe("growth: レベルアップ（CH-61、CH-63、CH-65）", () => {
   test("MG-01 開始レベル前の侍も MP が伸び、習得判定は対象が空で d100 を振らない（seed 1: d8 = 5、vit 14 で +2 → 7）", () => {
     const { ctx, ch } = setup(1, BERK, {
       classId: "samurai",
+      maxLevelReached: { samurai: 1 }, // CH-63（SV-04 v5）: 今の職業の記録も合わせる
       stats: { str: 15, iq: 14, pie: 10, vit: 14, agi: 10, luk: 6 },
       exp: 1300,
       mpMax: 4,
@@ -234,7 +237,7 @@ describe("growth: レベルアップ（CH-61、CH-63、CH-65）", () => {
     });
     expect(levelUpOnce(ctx, ch)).toEqual({ level: 2, hpGain: 7, mpGain: 4 });
     expect(ch.mpMax).toBe(8);
-    expect(ch.maxLevelReached).toBe(2);
+    expect(ch.maxLevelReached).toEqual({ [ch.classId]: 2 }); // SV-04 v5: 職業ごとの記録
     expect(kinds(ctx.events)).toEqual(["levelUp", "message"]);
     expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 8]]));
   });
@@ -245,7 +248,7 @@ describe("growth: レベルアップ（CH-61、CH-63、CH-65）", () => {
     expect(ch.hpMax).toBe(17); // 12 + 5
     expect(ch.mpMax).toBe(10);
     expect(ch.knownSpells).toEqual(["heal", "blessing"]);
-    expect(ch.maxLevelReached).toBe(2);
+    expect(ch.maxLevelReached).toEqual({ [ch.classId]: 2 }); // SV-04 v5: 職業ごとの記録
     expect(kinds(ctx.events)).toEqual(["levelUp", "message", "message", "dice", "spellLearned", "message"]);
     const dice = ctx.events.find((e) => e.kind === "dice");
     expect(dice).toEqual({
@@ -265,7 +268,7 @@ describe("growth: レベルアップ（CH-61、CH-63、CH-65）", () => {
     ch.exp = 0;
     expect(levelDownWhileBelow(ctx, ch)).toBe(1);
     expect(ch.level).toBe(1);
-    expect(ch.maxLevelReached).toBe(2);
+    expect(ch.maxLevelReached).toEqual({ [ch.classId]: 2 }); // SV-04 v5: 職業ごとの記録
     ctx.events.length = 0;
     ch.exp = 1000;
     expect(levelUpWhilePossible(ctx, ch)).toBe(1);
@@ -292,7 +295,7 @@ describe("growth: 複数段の上昇と習得判定（CH-61、CH-63、MG-20）",
     const { ctx, ch } = setup(1, DONA, { exp: 1500 });
     expect(levelUpWhilePossible(ctx, ch)).toBe(2);
     expect(ch.level).toBe(3);
-    expect(ch.maxLevelReached).toBe(3);
+    expect(ch.maxLevelReached).toEqual({ [ch.classId]: 3 }); // SV-04 v5: 職業ごとの記録
     expect(ch.levelHistory).toEqual([
       { level: 2, hpGain: 5, mpGain: 5 },
       { level: 3, hpGain: 4, mpGain: 5 },
@@ -330,13 +333,13 @@ describe("growth: 複数段の上昇と習得判定（CH-61、CH-63、MG-20）",
     ch.exp = 0;
     expect(levelDownWhileBelow(ctx, ch)).toBe(2);
     expect(ch.level).toBe(1);
-    expect(ch.maxLevelReached).toBe(3);
+    expect(ch.maxLevelReached).toEqual({ [ch.classId]: 3 }); // SV-04 v5: 職業ごとの記録
     ctx.events.length = 0;
     // expFor(4) = 2250（priest）。L2、L3 は再到達、L4 だけが初到達。L4 の判定対象は無い（learnLevel 4 の priest 呪文が無い）
     ch.exp = 2250;
     expect(levelUpWhilePossible(ctx, ch)).toBe(3);
     expect(ch.level).toBe(4);
-    expect(ch.maxLevelReached).toBe(4);
+    expect(ch.maxLevelReached).toEqual({ [ch.classId]: 4 }); // SV-04 v5: 職業ごとの記録
     expect(ch.levelHistory.map((r) => r.level)).toEqual([2, 3, 4]);
     expect(ctx.events.filter((e) => e.kind === "dice")).toEqual([]);
     expect(ctx.events.filter((e) => e.kind === "spellLearned")).toEqual([]);
@@ -393,11 +396,40 @@ describe("growth: レベルダウン（CH-62、MG-26）", () => {
     expect(ch.knownSpells).toEqual(["heal", "blessing", "cure_poison"]);
   });
 
+  test("CH-63 maxLevelReached は職業ごと: ほかの職業の記録（魔術師 L5）は今の職業（僧侶）の初到達の判定を止めない。seed 1 でドナを L2 に上げると blessing の判定が起き、僧侶の欄だけが 2 になる", () => {
+    const { ctx, ch } = setup(1, DONA, { exp: 1000, maxLevelReached: { mage: 5, priest: 1 } });
+    expect(maxLevelReachedIn(ch)).toBe(1);
+    expect(maxLevelReachedIn(ch, "mage")).toBe(5);
+    expect(maxLevelReachedIn(ch, "fighter")).toBe(0); // なったことの無い職業は 0
+    levelUpOnce(ctx, ch);
+    expect(ch.level).toBe(2);
+    expect(ctx.events.filter((e) => e.kind === "spellLearned").map((e) => e.kind === "spellLearned" && e.spellId)).toEqual(["blessing"]);
+    expect(ch.maxLevelReached).toEqual({ mage: 5, priest: 2 });
+    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 8], [1, 100]]));
+  });
+
+  test("CH-63 maxLevelReached は職業ごと: 今の職業の記録が 2 なら、L2 への上げ直しで判定しない（HP の d8 だけを引く）", () => {
+    const { ctx, ch } = setup(1, DONA, { exp: 1000, maxLevelReached: { priest: 2 } });
+    levelUpOnce(ctx, ch);
+    expect(ctx.events.filter((e) => e.kind === "dice" || e.kind === "spellLearned")).toEqual([]);
+    expect(ch.maxLevelReached).toEqual({ priest: 2 });
+    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 8]]));
+  });
+
+  test("CH-63/U5 peakLevelReached は職業ごとの記録の最大（全体の最高到達レベル）。記録が空なら 0", () => {
+    const { ch } = setup(1, DONA, { maxLevelReached: { mage: 5, priest: 2 } });
+    expect(peakLevelReached(ch)).toBe(5);
+    ch.maxLevelReached = { priest: 1 };
+    expect(peakLevelReached(ch)).toBe(1);
+    ch.maxLevelReached = {};
+    expect(peakLevelReached(ch)).toBe(0);
+  });
+
   test("CH-63 maxLevelReached は下がらない", () => {
     const { ctx, ch } = setup(1, DONA, { ...DONA_L3, exp: 0 });
     levelDownWhileBelow(ctx, ch);
     expect(ch.level).toBe(1);
-    expect(ch.maxLevelReached).toBe(3);
+    expect(ch.maxLevelReached).toEqual({ [ch.classId]: 3 }); // SV-04 v5: 職業ごとの記録
   });
 
   test("CH-62 不変条件が崩れていれば Error（履歴が空、末尾の level が現在の level と違う）", () => {

@@ -235,7 +235,7 @@ function buildCharacter(
     stats,
     level: 1,
     exp: 0,
-    maxLevelReached: 1,
+    maxLevelReached: { [o.classId]: 1 },
     levelHistory: [],
     hp: hpMax,
     hpMax,

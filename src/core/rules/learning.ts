@@ -55,7 +55,7 @@ export function bandUnlockLevel(cls: ClassDef, school: School, spellLevel: numbe
 
 /**
  * MG-20〜24: レベル L に初めて到達したときの習得判定。新しく覚えた呪文の id を覚えた順に返す。
- * 呼び出し側（growth.levelUpOnce）が CH-63 の条件（L > maxLevelReached）を確かめる。
+ * 呼び出し側（growth.levelUpOnce）が CH-63 の条件（L > 今の職業の maxLevelReached）を確かめる。
  */
 export function rollSpellLearning(ctx: RuleContext, ch: Character, level: number): string[] {
   const { state, data, events } = ctx;

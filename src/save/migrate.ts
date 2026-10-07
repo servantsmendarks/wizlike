@@ -62,12 +62,33 @@ export function migrateV3toV4(x: unknown, shopLevels: ShopLevelTable = {}): unkn
 }
 
 /**
+ * SV-04 v4 → v5（M10。CH-63）: party の各人の maxLevelReached（数）を、今の職業の記録 { [classId]: n } にする。
+ * 全体の最高到達レベル（U5）は記録の最大なので、移行の後も n のまま。数でない maxLevelReached と classId が文字列でない人はそのまま（形の検査で broken）。
+ * 引数は書き換えない（浅い複製。party と各人も複製する）。オブジェクトでなければそのまま返す（形の検査で broken）
+ */
+export function migrateV4toV5(x: unknown): unknown {
+  if (!isPlainObject(x)) return x;
+  const party = x["party"];
+  if (!Array.isArray(party)) return { ...x };
+  return {
+    ...x,
+    party: party.map((ch: unknown) => {
+      if (!isPlainObject(ch)) return ch;
+      const n = ch["maxLevelReached"];
+      const classId = ch["classId"];
+      if (typeof n !== "number" || typeof classId !== "string") return { ...ch };
+      return { ...ch, maxLevelReached: { [classId]: n } };
+    }),
+  };
+}
+
+/**
  * 移行関数の列（MIGRATIONS[i] は版 i+1 → i+2）。v3 → v4 の流通レベルは dungeons の onClear.shopLevel から計算する（IT-80）。
  * アプリ（main.ts）は検証済みの data.dungeons を渡して SaveDeps.migrations にする
  */
 export function createMigrations(dungeons: readonly Pick<DungeonDef, "id" | "onClear">[]): readonly Migration[] {
   const table: ShopLevelTable = Object.fromEntries(dungeons.map((d) => [d.id, d.onClear.shopLevel]));
-  return [migrateV1toV2, migrateV2toV3, (x) => migrateV3toV4(x, table)];
+  return [migrateV1toV2, migrateV2toV3, (x) => migrateV3toV4(x, table), migrateV4toV5];
 }
 
 /** 既定の移行関数の列（流通レベルの表が空なので v3 → v4 の shopLevel は 0）。アプリは createMigrations(data.dungeons) を使う */
@@ -130,6 +151,15 @@ function isUniqueBookEntryShape(x: unknown): boolean {
   return isPlainObject(x) && isStringOrNull(x["foundIn"]) && RARITIES.includes(x["bestRarity"]);
 }
 
+/** CH-63（schemaVersion 5）: classId が文字列で、maxLevelReached がプレーンなオブジェクト、各値が 1 以上の安全な整数、今の職業の欄がある */
+function isCharacterShape(x: unknown): boolean {
+  if (!isPlainObject(x) || typeof x["classId"] !== "string") return false;
+  const m = x["maxLevelReached"];
+  if (!isPlainObject(m)) return false;
+  if (!Object.values(m).every((v) => typeof v === "number" && Number.isSafeInteger(v) && v >= 1)) return false;
+  return Object.prototype.hasOwnProperty.call(m, x["classId"]);
+}
+
 /**
  * GameState の最小限の形の検査（深い検証はしない）。
  * screen は town / dungeon / battle / event、party は 1 件以上の配列、rng / items はオブジェクト、gold は数、
@@ -140,12 +170,15 @@ function isUniqueBookEntryShape(x: unknown): boolean {
  * schemaVersion 3（M7 の A）: morale は null か、rankId が文字列のプレーンなオブジェクト。
  * schemaVersion 4（M7 の B。IT-80）: items の各実体の欄の型（isItemInstanceShape）、warehouse / buyback は文字列の配列、
  * uniqueBook は各値が { foundIn, bestRarity } のプレーンなオブジェクト、progress はプレーンなオブジェクトで shopLevel が 0 以上の安全な整数。
+ * schemaVersion 5（M10。CH-63）: party の各要素の classId が文字列、maxLevelReached がプレーンなオブジェクトで各値が 1 以上の安全な整数、
+ * 今の職業の欄がある（isCharacterShape。Character の欄の最初の検査）。
  */
 export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(x)) return false;
   if (!RESUMABLE_SCREENS.includes(x["screen"])) return false;
   const party = x["party"];
   if (!Array.isArray(party) || party.length === 0) return false;
+  if (!party.every(isCharacterShape)) return false;
   if (!isPlainObject(x["rng"]) || !isPlainObject(x["items"])) return false;
   if (typeof x["gold"] !== "number") return false;
   for (const k of ["dive", "pendingChoice", "battle", "townVisit"]) {

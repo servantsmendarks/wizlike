@@ -90,8 +90,11 @@ export type Character = {
   level: number;
   /** 累計 EXP（CH-64 は累計の閾値と比べる。D6） */
   exp: number;
-  /** CH-63 */
-  maxLevelReached: number;
+  /**
+   * CH-63（SV-04 schemaVersion 5）: 職業ごとの最高到達レベル（classId → レベル）。今の職業の欄は常にあり、level 以上。
+   * 全体の最高到達レベル（U5）は値の最大（growth.peakLevelReached。別の欄は持たない）
+   */
+  maxLevelReached: Record<string, number>;
   /** CH-61/62。不変条件: levelHistory.length === level - 1、末尾の level === 現在の level */
   levelHistory: LevelRecord[];
   hp: number;

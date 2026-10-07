@@ -56,11 +56,23 @@ export function createMemoryBackend(opts: { fail?: FailSpec } = {}): MemoryBacke
 }
 
 /**
- * 今の state（schemaVersion 4）から M7 の B の欄（IT-80: 各実体の level / rarity / options / uniqueId / cursed / foundIn、
- * warehouse、buyback、uniqueBook、progress.shopLevel）を消した v3 の形（JSON の複製。引数は書き換えない）
+ * 今の state（schemaVersion 5）から M10 の欄（CH-63: 職業ごとの maxLevelReached）を v4 の形（今の職業の値の数）に戻した複製
+ * （JSON の複製。引数は書き換えない）
+ */
+export function toV4(s: GameState): Record<string, unknown> {
+  const v4 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+  for (const ch of v4["party"] as Array<Record<string, unknown>>) {
+    ch["maxLevelReached"] = (ch["maxLevelReached"] as Record<string, number>)[ch["classId"] as string];
+  }
+  return v4;
+}
+
+/**
+ * 今の state（schemaVersion 5）から M7 の B の欄（IT-80: 各実体の level / rarity / options / uniqueId / cursed / foundIn、
+ * warehouse、buyback、uniqueBook、progress.shopLevel）を消した v3 の形（toV4 を通した複製。引数は書き換えない）
  */
 export function toV3(s: GameState): Record<string, unknown> {
-  const v3 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+  const v3 = toV4(s);
   delete v3["warehouse"];
   delete v3["buyback"];
   delete v3["uniqueBook"];

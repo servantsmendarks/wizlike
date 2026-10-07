@@ -465,7 +465,7 @@ describe("CH-76 party.equip / party.unequip", () => {
 
 /** c5 を司教にした state（prototypeParty に司教はいないので、テストで職業を差し替える） */
 function withBishop(base: GameState): GameState {
-  return patched(base, { c5: { classId: "bishop" } });
+  return patched(base, { c5: { classId: "bishop", maxLevelReached: { bishop: 1 } } }); // CH-63（SV-04 v5）: 今の職業の記録も合わせる
 }
 
 describe("CH-77 party.identify", () => {

@@ -55,12 +55,22 @@ export function rollHpGain(ctx: RuleContext, ch: Character): number {
   return Math.max(cfg.growth.hpGainMin, die + vitBonus(effectiveStats(ctx.state, ctx.data, ch).vit, cfg));
 }
 
+/** CH-63（SV-04 v5）: 職業 classId（既定は今の職業）で到達した最高レベル。記録が無ければ 0（まだその職業になったことが無い） */
+export function maxLevelReachedIn(ch: Character, classId: string = ch.classId): number {
+  return Object.prototype.hasOwnProperty.call(ch.maxLevelReached, classId) ? (ch.maxLevelReached[classId] ?? 0) : 0;
+}
+
+/** U5: 全体の最高到達レベル（職業ごとの記録の最大。記録が無ければ 0）。能力値の成長の判定（CH-61）が使う */
+export function peakLevelReached(ch: Character): number {
+  return Math.max(0, ...Object.values(ch.maxLevelReached));
+}
+
 /** CH-64: exp ≥ expFor(level + 1)。 */
 export function canLevelUp(ch: Character, data: GameData): boolean {
   return ch.exp >= expFor(ch.level + 1, classOf(data, ch.classId), data.config);
 }
 
-/** CH-61/63: 1 段上げる。初めて到達したレベルなら習得判定（MG-20）をする。 */
+/** CH-61/63: 1 段上げる。今の職業で初めて到達したレベルなら習得判定（MG-20）をする。 */
 export function levelUpOnce(ctx: RuleContext, ch: Character): LevelRecord {
   const { data, events } = ctx;
   const cfg = data.config;
@@ -82,9 +92,9 @@ export function levelUpOnce(ctx: RuleContext, ch: Character): LevelRecord {
   events.push({ kind: "levelUp", id: ch.id, level, hpGain, mpGain, hpMax: es.hpMax, mpMax: es.mpMax, hp: ch.hp, mp: ch.mp });
   events.push({ kind: "message", key: "town.inn.levelUp", params: { name: ch.name, level } });
 
-  if (level > ch.maxLevelReached) {
+  if (level > maxLevelReachedIn(ch)) {
     rollSpellLearning(ctx, ch, level);
-    ch.maxLevelReached = level;
+    ch.maxLevelReached[ch.classId] = level;
   }
   return rec;
 }
