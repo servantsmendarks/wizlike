@@ -5,6 +5,8 @@ import { WRAP_STYLE } from "../src/presenter/views/wrap";
 import { townMenu } from "../src/core/rules/town";
 import { townPageIntro, type TownPage } from "../src/presenter/views/town";
 import { data, newGame } from "./helpers/core";
+import { FakeNode, FakeStage } from "./helpers/dom";
+import { attachStageInput, onTap } from "../src/presenter/input/tap";
 
 /** 偽の表示先と手動のタイマー */
 function setup(o: { speed?: number; blink?: boolean } = {}) {
@@ -318,6 +320,75 @@ describe("UI-66（2026-10-07 未定-17）施設の会話の送りの音（page�
     m.tap();
     expect(adv.n).toBe(base + 3);
     expect(m.isOpen()).toBe(false);
+  });
+});
+
+describe("UI-47/UI-66（2026-10-07 未定-19）▼ で待つ間はどこのタップも文送り", () => {
+  test("UI-47 pending は ▼ でタップを待つ間（次の文がある・hold）と、文字送り中の文の後に次の文が控える間だけ真。最後の文が出ているだけなら偽", async () => {
+    const { m, tick } = setup({ speed: 30 });
+    expect(m.pending()).toBe(false);
+    void m.say("一", false);
+    // 文字送り中で次の文が無い
+    expect(m.pending()).toBe(false);
+    void m.say("二", false);
+    // 文字送り中で次の文が控える
+    expect(m.pending()).toBe(true);
+    while (tick());
+    // 一 が出て ▼
+    expect(m.pending()).toBe(true);
+    m.tap();
+    while (tick());
+    // 最後の文（二）が出ているだけ
+    expect({ open: m.isOpen(), pending: m.pending() }).toEqual({ open: true, pending: false });
+    const h = m.hold();
+    expect(m.pending()).toBe(true);
+    m.tap();
+    expect(await settled(h)).toBe(true);
+    expect({ open: m.isOpen(), pending: m.pending() }).toEqual({ open: false, pending: false });
+  });
+
+  test("UI-66 地上に戻ったときの持ち越しの文（replay）: 1 文目の ▼ の間に一覧の項目を押しても項目は動かず、page が鳴って 2 文目が出る。2 文目が残ったら一覧が効く", () => {
+    const { m, sink, adv } = setup();
+    const stage = new FakeStage(10);
+    const out: string[] = [];
+    attachStageInput(stage as unknown as HTMLElement, {
+      scale: () => 2,
+      threshold: () => 28,
+      deadZone: data.config.input.edgeDeadZonePx,
+      width: data.config.stage.width,
+      swipeEnabled: () => false,
+      busy: () => false,
+      onBusyTap: () => out.push("busyTap"),
+      // app の talkWaits / tapTalk と同じ（再生の外の街で overlay なし）
+      talkWaits: () => m.pending(),
+      onTalkTap: () => m.tap(),
+      onSwipe: () => {},
+      onSwipeRelease: () => {},
+    });
+    const item = new FakeNode("BUTTON", stage);
+    item.left = 20;
+    item.top = 600;
+    onTap(item as unknown as Element, () => {
+      // 施設の項目は会話を打ち切ってから施設に入る（app の townItem）
+      m.flush();
+      out.push("facility");
+    });
+    const press = (id: number): void => {
+      stage.emit("pointerdown", { pointerId: id, clientX: 40, clientY: 620, target: item, pointerType: "touch" });
+      stage.emit("pointerup", { pointerId: id, clientX: 40, clientY: 620, target: item });
+    };
+    const first = data.strings["dungeon.exit"]!;
+    const second = data.strings["town.enter"]!;
+    void m.replay([first, second], true);
+    expect({ text: sink.text, more: sink.more.on }).toEqual({ text: first, more: true });
+    press(1);
+    expect(out).toEqual([]);
+    expect(adv.n).toBe(1);
+    expect({ open: sink.open, text: sink.text, more: sink.more.on }).toEqual({ open: true, text: second, more: false });
+    // 最後の文が出ているだけなら、一覧の項目が効く（箱は打ち切る）
+    press(2);
+    expect(out).toEqual(["facility"]);
+    expect(sink.open).toBe(false);
   });
 });
 

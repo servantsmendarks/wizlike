@@ -544,6 +544,34 @@ const FS_MODULE = "node:fs";
 const fs = (await import(/* @vite-ignore */ FS_MODULE)) as { readFileSync(p: URL, enc: "utf8"): string };
 const STYLE_CSS = fs.readFileSync(new URL("../src/presenter/style.css", import.meta.url), "utf8");
 
+describe("UI-47/UI-66（2026-10-07 未定-19）会話の箱が文送りを待つ間のタップ", () => {
+  test("UI-66 talkWaits の間は、押した要素（whileBusy を含む）・押せないところ・キーボード由来の click のどれも onTalkTap に回し、要素の onTap は呼ばない。長押しも始めない", () => {
+    vi.useFakeTimers();
+    let waits = true;
+    const t = setup({ talkWaits: () => waits, onTalkTap: () => t.out.push("talkTap") });
+    const a = t.button("a");
+    const stop = t.button("stop", { onTap: () => t.out.push("stop"), whileBusy: true });
+    const fwd = t.button("fwd", { onTap: () => t.out.push("fwd"), hold: { ms: () => 100, onHoldStart: () => t.out.push("holdStart"), onHoldEnd: () => t.out.push("holdEnd") } });
+    t.down(1, 40, 620, a.inner);
+    t.up(1, 40, 620);
+    t.down(2, 40, 620, stop.btn);
+    t.up(2, 40, 620);
+    t.down(3, 100, 100, t.stage);
+    t.up(3, 100, 100);
+    t.down(4, 40, 620, fwd.btn);
+    vi.advanceTimersByTime(500);
+    t.up(4, 40, 620);
+    t.stage.emit("click", { detail: 0, target: a.btn });
+    expect(t.out).toEqual(["press", "talkTap", "press", "talkTap", "press", "talkTap", "press", "talkTap", "press", "talkTap"]);
+    // 待ちが終われば今までどおり
+    waits = false;
+    t.out.length = 0;
+    t.down(5, 40, 620, a.inner);
+    t.up(5, 40, 620);
+    expect(t.out).toEqual(["press", "tap a 10,10"]);
+  });
+});
+
 describe("UI-37 style.css の touch-action", () => {
   const css = STYLE_CSS.replace(/\/\*[\s\S]*?\*\//g, "");
   /** セレクタ（カンマ区切りの 1 つ）→ その規則の本文。同じセレクタが複数あれば連結 */

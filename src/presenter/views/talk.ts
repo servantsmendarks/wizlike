@@ -10,6 +10,7 @@
 // - 演出スキップ（UI-41 / CLAUDE.md §3-9）が省くのは文字送り（say の instant）と ▼ の点滅だけで、タップ待ちは省かない。
 // - flush は待っている文をすべて解決して箱を閉じる（ログには入っている）。clear は flush に加えて外からの ▼ を下ろす（再開 SV-50）。
 // - replay はログに入れずに出す（迷宮から持ち越した語り。playback の townCarry）。
+// - pending（2026-10-07 未定-19）: 文送りを待つ間（▼・続きの文）は真。再生の外ではステージのどのタップも箱のタップにする（app と input/tap.ts）。
 // 純粋なモデル（createTalkModel。キュー・表示中・文字送り中・タップ待ち）と、薄い DOM の層（createTalkBox）に分ける。
 // 文字送りの setTimeout は DOM の層だけが使う（CLAUDE.md §2 の文字送りの例外）。モジュールのトップレベルでは DOM に触れない。
 import type { TownLayout } from "../layout";
@@ -56,6 +57,11 @@ export type TalkModel = {
   typing(): boolean;
   /** 箱が開いているか */
   isOpen(): boolean;
+  /**
+   * UI-47 / UI-66（2026-10-07 未定-19）: 文送りを待っているか。▼ でタップを待っている（次の文がある・hold）か、
+   * 文字送り中の文の後に次の文が控えている（文字送りが終われば ▼ になる）。最後の文が出ているだけなら偽
+   */
+  pending(): boolean;
   /** 外からの ▼（playback の続きの三角と、判定の箱の待ち）。文字送りの間は出さない */
   setMore(on: boolean, blink?: boolean): void;
   /**
@@ -233,6 +239,9 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
     },
     isOpen(): boolean {
       return shown !== null;
+    },
+    pending(): boolean {
+      return held !== null || waiting || queue.length > 0;
     },
     setMore(on: boolean, blink = false): void {
       ext = on ? { blink } : null;

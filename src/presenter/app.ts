@@ -1850,6 +1850,11 @@ export function createApp(o: {
       return;
     }
     if (isBusy() || chaining) return; // UI-44
+    // 未定-19（UI-47 / UI-66）: 会話の箱が文送りを待つ間は、数字と Enter / Space も箱のタップ（一覧は選ばない。Esc は会話を打ち切って戻る）
+    if (talkWaits() && (a === "confirm" || typeof a === "object")) {
+      play.talk.tap();
+      return;
+    }
     if (a === "debug") {
       if (overlay === "debug") closeDebug();
       else openDebug();
@@ -1998,6 +2003,14 @@ export function createApp(o: {
     play.talk.tap();
   };
 
+  /**
+   * UI-47 / UI-66（2026-10-07 未定-19）: 再生の外で会話の箱が文送りを待っている（▼ か続きの文がある）。
+   * この間は一覧・ヘッダー・帯などステージのどこのタップも箱のタップ（tapTalk）にし、数字キーも同じにする（一覧は選ばない）。
+   * 箱を受ける画面（街・キャラクター画面）で、箱より上の overlay（履歴・設定など）が無いときだけ
+   */
+  const talkWaits = (): boolean =>
+    !isBusy() && !chaining && (route === "town" || characterOpen) && (overlay === null || overlay === "camp") && play.talk.pending();
+
   const blurActive = (): void => {
     const a = document.activeElement;
     if (a instanceof HTMLElement) a.blur();
@@ -2027,6 +2040,9 @@ export function createApp(o: {
         swipeEnabled,
         busy: () => isBusy() || chaining,
         onBusyTap: () => player.tap(),
+        // 未定-19: 会話の箱が文送りを待つ間は、どこのタップも文送り
+        talkWaits: () => talkWaits(),
+        onTalkTap: () => tapTalk(),
         // UI-25: 自動歩行中にどこかを押したら止め、その押下は捨てる
         onAnyPress: () => stopWalk(),
         onSwipe: (a) => handleAction(a),

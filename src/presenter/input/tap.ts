@@ -6,6 +6,7 @@
 //   左右の非反応帯（UI-34。ステージの左右の全高）で始まった押下はスワイプにしないが、タップは通す。
 // - 前進ボタン（spec.hold）は、動かずに hold.ms() 押し続けたら onHoldStart、離したら onHoldEnd（onTap は呼ばない。UI-31）。
 // - 再生中（busy）のタップは、whileBusy の要素（オート解除）以外はすべて onBusyTap（player.tap()）に回す（UI-44 / UI-45）。
+// - 再生の外で会話の箱が文送りを待つ間（talkWaits。未定-19）は、押した要素によらずタップを onTalkTap（箱のタップ）に回す。
 // - 名前の入力欄（INPUT / TEXTAREA）の上の押下は追わず、touchend の preventDefault もしない。入力欄の外を押したら入力欄の
 //   フォーカスを外す（touchend の preventDefault で合成のフォーカス移動が起きないため）。
 // - touchend は passive:false で受けて preventDefault する（UI-37: ダブルタップの拡大と、合成の click を止める）。
@@ -141,6 +142,13 @@ export type StageInputOptions = {
   /** 再生中のタップ（player.tap()） */
   onBusyTap(): void;
   /**
+   * UI-47 / UI-66（2026-10-07 未定-19）: 再生の外で会話の箱が文送りを待っているか（▼ か続きの文がある）。
+   * 真の間は、どの要素のタップ（whileBusy・キーボードの click も）も onTalkTap に回し、長押しも始めない。省略すると偽
+   */
+  talkWaits?(): boolean;
+  /** talkWaits の間のタップ（会話の箱のタップ） */
+  onTalkTap?(): void;
+  /**
    * どこかを押した瞬間（入力欄の上を除く）。地図のタップ移動の自動歩行を止めるのに使う（UI-25）。
    * true を返したら、その押下は捨てる（タップ・スワイプ・長押し・押下の見た目のどれにもしない）
    */
@@ -194,7 +202,14 @@ export function attachStageInput(stage: HTMLElement, o: StageInputOptions): Stag
     if (a !== null && a !== undefined && isTextInput(a) && typeof a.blur === "function") a.blur();
   };
 
+  /** 未定-19: 会話の箱が文送りを待っているか */
+  const talkWaits = (): boolean => o.talkWaits?.() === true;
+
   const fireTap = (pressed: NonNullable<PressState>, s: TapSpec | null): void => {
+    if (talkWaits()) {
+      o.onTalkTap?.();
+      return;
+    }
     if (o.busy() && s?.whileBusy !== true) {
       o.onBusyTap();
       return;
@@ -251,7 +266,7 @@ export function attachStageInput(stage: HTMLElement, o: StageInputOptions): Stag
       }
     }
     const hold = spec?.hold;
-    if (hold !== undefined && !o.busy()) {
+    if (hold !== undefined && !o.busy() && !talkWaits()) {
       const id = e.pointerId;
       holdTimer = setTimeout(() => {
         holdTimer = null;
@@ -309,6 +324,10 @@ export function attachStageInput(stage: HTMLElement, o: StageInputOptions): Stag
     const s = tapSpecOf(el);
     if (el === null || s === null) return;
     e.preventDefault?.();
+    if (talkWaits()) {
+      o.onTalkTap?.();
+      return;
+    }
     if (o.busy() && s.whileBusy !== true) {
       o.onBusyTap();
       return;

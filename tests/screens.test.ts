@@ -632,6 +632,18 @@ describe("入力と Command", () => {
     expect(app).toContain("onTap(play.picture, () => tapTalk());");
   });
 
+  test("UI-47/UI-66（2026-10-07 未定-19）会話の箱が文送りを待つ間（talk.pending）は、再生の外の街・キャラクター画面（overlay なしかキャンプ）でステージのどこのタップも tapTalk、数字と Enter / Space も箱のタップ（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toMatch(
+      /const talkWaits = \(\): boolean =>\s*!isBusy\(\) && !chaining && \(route === "town" \|\| characterOpen\) && \(overlay === null \|\| overlay === "camp"\) && play\.talk\.pending\(\);/,
+    );
+    const input = /const stageInput = attachStageInput\(stage, \{([\s\S]*?)\n {6}\}\);/.exec(app)?.[1] ?? "";
+    expect(input).toContain("talkWaits: () => talkWaits(),");
+    expect(input).toContain("onTalkTap: () => tapTalk(),");
+    const core = /const handleActionCore = \(a: Action\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(core).toMatch(/if \(isBusy\(\) \|\| chaining\) return;\s*if \(talkWaits\(\) && \(a === "confirm" \|\| typeof a === "object"\)\) \{\s*play\.talk\.tap\(\);\s*return;\s*\}/);
+  });
+
   // M10（UI-59）: キャラクター画面の間は迷宮でも同じ。← / → は前後の人（campCycle）
   test("UI-47/UI-59（M8.5・M10）キャンプ（酒場）とキャラクター画面の上に見えている会話の箱は、タップと Enter / Space で進める・閉じる。箱が閉じていれば Enter はキャンプへ。← / → は前後の人（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);

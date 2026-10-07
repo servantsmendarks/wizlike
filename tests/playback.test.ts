@@ -1508,6 +1508,36 @@ describe("UI-47 街の会話の箱と再生", () => {
     expect(shown2).toEqual([{ to: "dungeon", n: 0 }]);
   });
 
+  test("UI-47/UI-66（2026-10-07 未定-19）階段で地上へ: 再生が終わった後も持ち越しの 1 文目が ▼ で待ち（pending）、箱のタップで page とともに 2 文目が出る", async () => {
+    const { deps } = fakeDeps({ skipAnimations: true });
+    const sink = { open: false, text: "", more: { on: false, blink: false } };
+    const adv = { n: 0 };
+    const talk = createTalkModel({
+      advanced: () => adv.n++,
+      sink: {
+        open: (on) => (sink.open = on),
+        text: (t) => (sink.text = t),
+        more: (on, blink) => (sink.more = { on, blink }),
+      },
+      log: () => {},
+      speed: () => 0,
+      blink: () => false,
+      schedule: () => () => {},
+    });
+    // app の onScreen と同じく、街に入るときに carry を会話の箱に出し直す（再生は待たない）
+    deps.screens.show = (to, _st, carry) => {
+      if (to === "town" && carry !== undefined && carry.length > 0) void talk.replay(carry, true);
+    };
+    const base = stateWith(diveAt(1, 1, "N"));
+    const ctx = makeContext(cloneState(base), data);
+    returnToTown(ctx, "dungeon.exit");
+    await createPlayer(deps).play(ctx.events, base, ctx.state);
+    expect({ text: sink.text, more: sink.more.on, pending: talk.pending() }).toEqual({ text: data.strings["dungeon.exit"], more: true, pending: true });
+    talk.tap();
+    expect(adv.n).toBe(1);
+    expect({ text: sink.text, more: sink.more.on, pending: talk.pending() }).toEqual({ text: data.strings["town.enter"], more: false, pending: false });
+  });
+
   test("UI-47/UI-40/TW-17 街の強化の箱: 会話の箱（実物のモデル）に結果を出した後、▼ を出してタップを 1 回待ってから箱を消す。結果の文は残る（演出スキップでも待ち、▼ は点滅しない）", async () => {
     const st = cloneState(newGame(1));
     st.gold = 1000;
