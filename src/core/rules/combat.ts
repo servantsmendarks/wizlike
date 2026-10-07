@@ -75,7 +75,7 @@ import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, richestGro
 import { offerTeleporter } from "./choices";
 import { applyAllyEffect } from "./effects";
 import { clearAllStatus, gainGold } from "./field";
-import { presentChest, rollDropChest } from "./chest";
+import { abandonChest, presentChest, returnToChest, rollDropChest } from "./chest";
 import { tryInflictStatus } from "./status";
 import { rollBossItems } from "./loot";
 import { equipStats, hasSkill, hpMaxOf, skillTotal, spellCost } from "./equip-stats";
@@ -160,6 +160,14 @@ export function startTableEncounter(ctx: RuleContext, origin: BattleOrigin): voi
     specs.push({ monsterId: m.id, count });
   }
   startBattle(ctx, origin, specs);
+}
+
+/**
+ * CB-67（M11）: 宝箱の警報の罠の戦闘。origin alarm（逃走できる。勝っても新しい宝箱は判定しない）で、編成は今の階の遭遇表（startTableEncounter）。
+ * chest.ts は combat.ts を import しない（循環を作らない）ので、宝箱の操作を呼ぶ側（engine など）がこの関数を chest.ts に渡す
+ */
+export function startAlarmEncounter(ctx: RuleContext, inRoom: boolean): void {
+  startTableEncounter(ctx, { kind: "alarm", inRoom });
 }
 
 /** DG-31: ボスの固定遭遇（逃走不可） */
@@ -1091,8 +1099,16 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
   });
   // DG-32: ボスを倒すとその場にテレポーターが出て、一行はその上に立っているので、すぐに街へ戻るかを尋ねる
   if (result === "win" && b.origin.kind === "boss") offerTeleporter(ctx);
-  // CB-60: 勝利で宝箱を置いたら、迷宮に戻った後で見つけたことを語る（テレポーターの申し出とは同時に起きない）
-  if (result === "win" && dive.chest !== null) presentChest(ctx);
+  if (dive.chest !== null) {
+    if (b.origin.kind === "alarm") {
+      // CB-67: 警報の戦闘に勝てば同じ箱（作動した罠は消えている）の選択に戻る。逃げたら箱を失う（宝箱のセルは罠なしで残る）
+      if (result === "win") returnToChest(ctx);
+      else abandonChest(ctx);
+    } else if (result === "win") {
+      // CB-60: 勝利で宝箱を置いたら、迷宮に戻った後で見つけたことを語る（テレポーターの申し出とは同時に起きない）
+      presentChest(ctx);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

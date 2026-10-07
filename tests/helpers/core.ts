@@ -164,6 +164,7 @@ export function mirrorWipeRolls(m: RngState, unequipped: number, d: GameData = d
  * - screen town ⇔ townVisit 非 null、screen battle ⇔ battle 非 null、dive null ⇔ screen が title / town
  * - screen event ⇔ pendingChoice の kind が event（M5。A4）
  * - dive.chest が非 null なら pendingChoice null、screen は dungeon か battle（M11。CB-60）
+ * - 戦闘中は「origin が alarm ⇔ dive.chest が非 null」（M11。CB-67: 箱があるのは警報の戦闘だけで、警報の戦闘には必ず箱がある）
  * - gold は 0 以上の整数、各人の levelHistory.length === level − 1、各人の maxLevelReached[classId] ≥ level（CH-63）
  * - JSON 往復で変わらない（CLAUDE.md §3-11）
  */
@@ -193,6 +194,9 @@ export function expectStateInvariants(state: GameState): void {
   if (state.dive !== null && state.dive.chest !== null) {
     expect(state.pendingChoice, "chest ⇒ pendingChoice null").toBeNull();
     expect(state.screen === "dungeon" || state.screen === "battle", `chest ⇒ screen dungeon / battle (${state.screen})`).toBe(true);
+  }
+  if (state.battle !== null) {
+    expect(state.battle.origin.kind === "alarm", "in battle: origin alarm ⇔ chest (CB-67)").toBe(state.dive?.chest != null);
   }
   expect(Number.isInteger(state.gold) && state.gold >= 0, `gold ${state.gold}`).toBe(true);
   if (state.screen === "title") expect(state.morale, "morale is null on title (TW-15)").toBeNull();

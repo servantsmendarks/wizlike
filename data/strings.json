@@ -524,6 +524,8 @@
   "chest.open.gold": "箱の中には{gold}の金があった。",
   "chest.left": "宝箱をその場に残した。",
   "chest.lost": "宝箱は失われた。",
+  "chest.afterAlarm": "騒ぎは静まった。宝箱はまだそこにある。",
+  "chest.fled": "宝箱を置いて逃げ出した。",
   "dice.chestInspect": "{name}が箱を調べる",
   "dice.chestInspect.hidden": "出目は GM だけが見た",
   "chest.ruleHidden": "ここから罠の危険度 ×{mul} を引いた値以下で見抜ける",

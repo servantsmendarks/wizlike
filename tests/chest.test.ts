@@ -5,11 +5,14 @@ import type { GameData } from "../src/core/data";
 import { chance, cloneRng, createRng, randInt, rollDice, weightedIndex } from "../src/core/rng";
 import { statusPercent } from "../src/core/rules/combat-calc";
 import { chestRate, chestView, rollChestTrap } from "../src/core/rules/chest";
+import { battleMenu, startAlarmEncounter } from "../src/core/rules/combat";
+import { floorOf, mapView, visibleCellsOf } from "../src/core/rules/dungeon";
+import { cellAt, idx } from "../src/core/rules/dungeon-gen";
 import { equipStats } from "../src/core/rules/equip-stats";
 import { routeStepOk } from "../src/core/rules/pathfind";
-import { cloneState, memberById } from "../src/core/state";
+import { cloneState, makeContext, memberById } from "../src/core/state";
 import type { Character, ChestState, Command, GameEvent, GameState } from "../src/core/types";
-import { dataWith, dived, eventsOf, exec, expectRejected, kindsOf, withBattle } from "./helpers/battle";
+import { allInputs, dataWith, dived, eventsOf, exec, expectRejected, kindsOf, withBattle } from "./helpers/battle";
 import { data, expectStateInvariants, loadFreshData, withChar } from "./helpers/core";
 import { withRng } from "./helpers/dungeon";
 
@@ -256,15 +259,184 @@ describe("CB-62 罠の効果（開けて作動させる）", () => {
     expect(r.state.dive).toBeNull();
     expect(r.state.screen).toBe("town");
   });
+});
 
-  test("CB-62（作業 5 までの仮）警報は語りだけで罠が消え、箱は残る（中身なし・chest.prompt）。転移は箱を失う（chestEnd lost）", () => {
-    const a = exec(withChest("alarm", 1, 1, D), OPEN, D);
-    expect(kindsOf(a.events)).toEqual(["chestTrap", "message:chest.trap.alarm", "message:chest.prompt"]);
-    expect(chestOf(a.state)).toMatchObject({ trapId: null, danger: 3 });
-    const t = exec(withChest("teleport", 1, 1, D), OPEN, D);
-    expect(kindsOf(t.events)).toEqual(["chestTrap", "message:chest.trap.teleport", "chestEnd"]);
-    expect(t.events.at(-1)).toEqual({ kind: "chestEnd", result: "lost" });
-    expect(chestOf(t.state)).toBeNull();
+describe("CB-67 警報の戦闘", () => {
+  const D = chestData();
+
+  test("CB-62/CB-67 開けて警報: chestTrap（actorId null）→ chest.trap.alarm → 遭遇（startTableEncounter と同じ乱数と events）。origin alarm（inRoom は箱の値）、箱は罠なしで残り、中身・chestEnd・chest.prompt は無い", () => {
+    for (const inRoom of [false, true]) {
+      const s = withChest("alarm", 5, 1, D);
+      s.dive!.chest!.inRoom = inRoom;
+      const m = cloneState(s);
+      m.dive!.chest!.trapId = null;
+      const ctx = makeContext(m, D);
+      startAlarmEncounter(ctx, inRoom);
+      const r = exec(s, OPEN, D);
+      expect(r.state.rng).toEqual(m.rng);
+      expect(r.events).toEqual([{ kind: "chestTrap", trapId: "alarm", actorId: null }, { kind: "message", key: "chest.trap.alarm" }, ...ctx.events]);
+      expect(r.events[2]).toEqual({ kind: "screen", to: "battle" });
+      expect(r.state.battle).toEqual(m.battle);
+      expect(r.state.battle!.origin).toEqual({ kind: "alarm", inRoom });
+      expect(chestOf(r.state)).toMatchObject({ trapId: null, danger: 3 });
+      const ks = kindsOf(r.events);
+      for (const k of ["message:chest.open.gold", "message:chest.prompt", "chestEnd"]) expect(ks).not.toContain(k);
+      expectStateInvariants(r.state);
+      // 戦闘中は chest.* を断り（in battle）、逃走できる（CB-02）
+      expectRejected(r.state, OPEN, "in battle");
+      expect(battleMenu(r.state, D)!.canFlee).toBe(true);
+      expect(chestView(r.state, D)).toBeNull();
+    }
+  });
+
+  test("CB-64/CB-67 解除の名前違いでも警報（作動させた人は解除した人）→ 遭遇", () => {
+    const r = exec(withChest("alarm", 5, 1, D), disarm("c3", "bomb"), D);
+    expect(kindsOf(r.events).slice(0, 4)).toEqual(["message:chest.disarm.wrong", "chestTrap", "message:chest.trap.alarm", "screen"]);
+    expect(r.events[1]).toEqual({ kind: "chestTrap", trapId: "alarm", actorId: "c3" });
+    expect(r.state.battle!.origin).toEqual({ kind: "alarm", inRoom: false });
+    expect(kindsOf(r.events)).not.toContain("message:chest.prompt");
+  });
+
+  test("CB-67/CB-51/A2 警報の戦闘に勝つと新しい宝箱を判定せず（chance を振らない）、screen{dungeon, at} → chestFound → chest.afterAlarm → chest.prompt で同じ箱に戻る。その後は開けて中身を得る", () => {
+    const d = chestData((x) => {
+      x.config.combat.hitMin = x.config.combat.hitMax = 100;
+      x.config.combat.chestChance = x.config.combat.chestChanceCorridor = 0;
+    });
+    const s0 = exec(withChest("alarm", 5, 1, d), OPEN, d).state;
+    const s = withBattle(s0, [{ monsterId: "giant_rat", hps: [1], status: [["paralysis"]] }], {
+      origin: { kind: "alarm", inRoom: true },
+      identified: ["giant_rat"],
+      inputs: allInputs(s0, { type: "defend" }, { c1: { type: "attack", group: 0 } }),
+    });
+    const r = exec(s, { type: "battle.resolve" }, d);
+    expect(eventsOf(r.events, "battleEnd")).toEqual([{ kind: "battleEnd", result: "win" }]);
+    // 同じ戦闘を origin random（箱なし）で解くと、宝箱の chance の 1 回だけ多く引く
+    const sr = cloneState(s);
+    sr.battle!.origin = { kind: "random", inRoom: true };
+    sr.dive!.chest = null;
+    const rr = exec(sr, { type: "battle.resolve" }, d);
+    const m = cloneRng(r.state.rng);
+    chance(m, 0);
+    expect(rr.state.rng).toEqual(m);
+    // 再生の並び: 戦闘の終わりの screen{dungeon}（戦った位置）の後に同じ箱へ戻る
+    const iScreen = r.events.findIndex((e) => e.kind === "screen");
+    expect(r.events.slice(iScreen)).toEqual([
+      { kind: "screen", to: "dungeon", dungeonId: "d01", at: { pos: s.dive!.pos, facing: s.dive!.facing } },
+      { kind: "chestFound", source: "drop" },
+      { kind: "message", key: "chest.afterAlarm" },
+      { kind: "message", key: "chest.prompt" },
+    ]);
+    expect(r.state.battle).toBeNull();
+    expect(chestOf(r.state)).toEqual({ ...chestOf(s0)!, trapId: null });
+    expect(chestView(r.state, d)).not.toBeNull();
+    expectStateInvariants(r.state);
+    // 罠は作動して消えているので、開ければ中身だけ
+    const o = exec(r.state, OPEN, d);
+    expect(kindsOf(o.events)[0]).toBe("message:chest.open.gold");
+    expect(o.events.at(-1)).toEqual({ kind: "chestEnd", result: "opened" });
+  });
+
+  test("CB-67/CB-02 警報の戦闘は逃走でき、逃げると箱を失う: screen{dungeon, at} → chest.fled → chestEnd lost（ドロップ）。宝箱のセルは chestEnd left（罠なしで残り、clearedCells に入れない）", () => {
+    const dF = chestData((x) => (x.config.combat.fleeBase = 1000));
+    const s = exec(withChest("alarm", 5, 1, D), OPEN, D).state;
+    const r = exec(s, { type: "battle.flee" }, dF);
+    const iScreen = r.events.findIndex((e) => e.kind === "screen");
+    expect(r.events.slice(iScreen)).toEqual([
+      { kind: "screen", to: "dungeon", dungeonId: "d01", at: { pos: s.dive!.pos, facing: s.dive!.facing } },
+      { kind: "message", key: "chest.fled" },
+      { kind: "chestEnd", result: "lost" },
+    ]);
+    expect(chestOf(r.state)).toBeNull();
+    expectStateInvariants(r.state);
+    // 宝箱のセル
+    const sc = cloneState(s);
+    const cell = { floor: 1, x: sc.dive!.pos.x, y: sc.dive!.pos.y };
+    sc.dive!.chest = { ...sc.dive!.chest!, source: "cell", cell };
+    sc.dive!.disarmedChests = [{ ...cell }];
+    const rc = exec(sc, { type: "battle.flee" }, dF);
+    expect(rc.events.at(-1)).toEqual({ kind: "chestEnd", result: "left" });
+    expect(rc.state.dive!.clearedCells).toEqual(sc.dive!.clearedCells);
+    expect(rc.state.dive!.disarmedChests).toEqual([cell]);
+  });
+});
+
+describe("DG-25 転移", () => {
+  const D = chestData();
+  /** 今の階の実効の構造で、corridor かつ roomId null の、今の位置以外のセル（添字の昇順） */
+  const candidates = (s: GameState, d: GameData = D) => {
+    const f = floorOf(s.dive!, d);
+    const here = idx(f, s.dive!.pos.x, s.dive!.pos.y);
+    return f.cells.flatMap((c, i) => (c.kind === "corridor" && c.roomId === null && i !== here ? [{ x: i % f.width, y: Math.floor(i / f.width) }] : []));
+  };
+
+  test("DG-25/CB-62 開けて転移: chestTrap → chest.trap.teleport → chestEnd lost → moved{pos, facing}。行き先は同じ階の通路（roomId null・今の位置以外。添字の昇順）から randInt、向きはそのまま。中身なし（シード 1〜20）", () => {
+    const seen = new Set<string>();
+    for (let k = 1; k <= 20; k++) {
+      const s = withChest("teleport", k, 1, D);
+      const cands = candidates(s);
+      const m = cloneRng(s.rng);
+      const to = cands[randInt(m, 0, cands.length - 1)]!;
+      const r = exec(s, OPEN, D);
+      expect(r.state.rng).toEqual(m);
+      expect(r.events).toEqual([
+        { kind: "chestTrap", trapId: "teleport", actorId: null },
+        { kind: "message", key: "chest.trap.teleport" },
+        { kind: "chestEnd", result: "lost" },
+        { kind: "moved", pos: to, facing: s.dive!.facing },
+      ]);
+      expect(r.state.dive!.pos).toEqual(to);
+      expect(r.state.dive!.facing).toBe(s.dive!.facing);
+      expect(r.state.dive!.floor).toBe(s.dive!.floor);
+      expect(chestOf(r.state)).toBeNull();
+      const f = floorOf(r.state.dive!, D);
+      expect(cellAt(f, to.x, to.y)).toMatchObject({ kind: "corridor", roomId: null });
+      expectStateInvariants(r.state);
+      seen.add(`${to.x},${to.y}`);
+    }
+    expect(seen.size).toBeGreaterThan(5);
+  });
+
+  test("DG-25/DG-13 転移の前後で explored は続く（前の区画を保ち、行き先の視野を足す）。mapView は両方の区画を返し、着地では遭遇も歩の続きも起きず、次のコマンドを受け付ける", () => {
+    const s = withChest("teleport", 3, 1, D);
+    const r = exec(s, OPEN, D);
+    expect(r.state.dive!.pos).not.toEqual(s.dive!.pos);
+    const fl = String(s.dive!.floor);
+    const before = s.dive!.explored[fl]!;
+    const after = r.state.dive!.explored[fl]!;
+    for (const i of before) expect(after).toContain(i);
+    const f = floorOf(r.state.dive!, D);
+    const to = r.state.dive!.pos;
+    for (const v of visibleCellsOf(f, to, r.state.dive!.facing, D.config.dungeon.viewDepth)) expect(after).toContain(idx(f, v.x, v.y));
+    expect([...after].sort((a, b) => a - b)).toEqual(after);
+    const cells = mapView(r.state, D)!.cells.map((c) => `${c.x},${c.y}`);
+    expect(cells).toContain(`${s.dive!.pos.x},${s.dive!.pos.y}`);
+    expect(cells).toContain(`${to.x},${to.y}`);
+    expect(r.state.screen).toBe("dungeon");
+    expect(r.state.pendingChoice).toBeNull();
+    expect(exec(r.state, { type: "dungeon.turn", dir: "left" }, D).events[0]!.kind).not.toBe("rejected");
+  });
+
+  test("DG-25/CB-63 調べるの失敗で作動した転移も移る（作動させた人は調べた人。chest.prompt は出さない）。宝箱のセルは clearedCells に入る", () => {
+    const d = chestData((x) => {
+      x.config.chest.inspect.min = x.config.chest.inspect.max = 0;
+      x.config.chest.triggerChance = 100;
+    });
+    const s = withChest("teleport", 4, 1, d);
+    const cell = { floor: 1, x: s.dive!.pos.x, y: s.dive!.pos.y };
+    s.dive!.chest = { ...s.dive!.chest!, source: "cell", cell };
+    const m = cloneRng(s.rng);
+    randInt(m, 1, 100);
+    randInt(m, 1, 100);
+    // 今の位置（入場の上り階段）は clearedCells に入っても候補から外れるので、入れる前の構造で数えてよい
+    const cands = candidates(s, d);
+    const to = cands[randInt(m, 0, cands.length - 1)]!;
+    const r = exec(s, inspect("c3"), d);
+    expect(r.state.rng).toEqual(m);
+    expect(kindsOf(r.events)).toEqual(["dice", "chestTrap", "message:chest.trap.teleport", "chestEnd", "moved"]);
+    expect(r.events[1]).toEqual({ kind: "chestTrap", trapId: "teleport", actorId: "c3" });
+    expect(r.state.dive!.pos).toEqual(to);
+    expect(r.state.dive!.clearedCells).toContainEqual(cell);
+    expect(r.state.dive!.disarmedChests).toContainEqual(cell);
   });
 });
 

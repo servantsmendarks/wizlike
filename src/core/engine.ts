@@ -13,6 +13,7 @@ import {
   repeatRound,
   resolveRound,
   setAuto,
+  startAlarmEncounter,
 } from "./rules/combat";
 import {
   castInField,
@@ -389,9 +390,10 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       const r = checkChest(state, data, c);
       if (r !== null) return reject(state, command.type, r);
       const ctx = makeContext(cloneState(state), data);
-      if (command.type === "chest.inspect") inspectChest(ctx, command.memberId);
-      else if (command.type === "chest.disarm") disarmChest(ctx, command.memberId, command.trapId);
-      else if (command.type === "chest.open") openChest(ctx);
+      // CB-67: 警報の罠の戦闘は combat.ts の startAlarmEncounter を渡して始める（chest.ts は combat.ts を import しない）
+      if (command.type === "chest.inspect") inspectChest(ctx, command.memberId, startAlarmEncounter);
+      else if (command.type === "chest.disarm") disarmChest(ctx, command.memberId, command.trapId, startAlarmEncounter);
+      else if (command.type === "chest.open") openChest(ctx, startAlarmEncounter);
       else leaveChest(ctx);
       return finish(ctx);
     }

@@ -61,9 +61,9 @@ export function enemyId(g: number, u: number): string {
   return `e${g}-${u}`;
 }
 
-/** CB-02: ランダム遭遇だけ逃走できる */
+/** CB-02 / CB-67: ランダム遭遇と宝箱の警報の戦闘だけ逃走できる */
 export function canFleeOf(b: BattleState): boolean {
-  return b.origin.kind === "random";
+  return b.origin.kind === "random" || b.origin.kind === "alarm";
 }
 
 /**

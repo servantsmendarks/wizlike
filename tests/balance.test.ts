@@ -2,6 +2,7 @@
 // 5 シード × 潜行 2 回だけ回し、不変条件（rejected が出ない、state の不変条件、全滅の内訳 = 差分、DG-43 など）だけを確かめる。
 // M9: 進行ボット（d01 の 2 階とボス、d01 の踏破の後の d02）の煙テストを足した（数字は見ない）。
 import { describe, expect, test } from "vitest";
+import { execute } from "../src/core/engine";
 import { townMenu } from "../src/core/rules/town";
 import { data, expectStateInvariants } from "./helpers/core";
 import { BOTS, Campaign, D02_DIVES, PROGRESS_BOT, PROGRESS_DIVES, progressReport, report, runCampaigns } from "./balance/bot";
@@ -133,6 +134,19 @@ describe("バランス（H9 煙テスト）", () => {
     expect(r.dives[0]!.dungeonId).toBe("d02");
     expect(r.dives[0]!.deepestFloor).toBe(1);
     expect(c.state.screen).toBe("town");
+    expectStateInvariants(c.state);
+  }, 60_000);
+  test("H9/M11 CB-67 ボットは警報の箱を開けると警報の戦闘を戦い、勝って同じ箱に戻ったらもう一度開けて中身を得る（resolveChest → fight → resolveChest のループ）", () => {
+    const c = new Campaign(1, PROGRESS_BOT);
+    c.state = execute(c.state, { type: "dungeon.enter", dungeonId: "d01" }, data).state;
+    c.state = execute(c.state, { type: "debug.chest", trapId: "alarm" }, data).state;
+    expect(c.state.dive!.chest).not.toBeNull();
+    c.resolveChest();
+    expect(c.battles).toBe(1);
+    expect(c.state.battle).toBeNull();
+    expect(c.state.screen).toBe("dungeon");
+    expect(c.state.dive!.chest).toBeNull();
+    expect(c.chests).toBe(1); // 2 回目の開けるで中身（chest.open.gold）を得た
     expectStateInvariants(c.state);
   }, 60_000);
 });

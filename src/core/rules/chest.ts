@@ -1,6 +1,7 @@
 // 宝箱（combat.md §6b。CB-51 / CB-60〜66、IT-50 / IT-53 / IT-56、DG-40）。M11 の作業 1 で combat.ts の勝利の処理から切り出し、
 // 作業 4 で開封の流れ（調べる・解除・開ける・放っておく）に置き換えた。
 // 純粋（乱数は state.rng だけ）。import は combat.ts と dungeon.ts を含まない（combat.ts → chest.ts の向き。循環を作らない）。
+// 警報の戦闘（CB-67）は呼び出し側が startAlarm（combat.ts の startAlarmEncounter）を渡し、転移（DG-25）は floor.ts の teleportParty を使う。
 //
 // 乱数の消費順（state.rng。テストの鏡で固定する）:
 //   勝利（CB-51 / CB-61）: chance(chestPct) →（当たれば）[chance(noTrapChance) →（罠ありなら）weightedIndex(危険度の重み) → randInt(その危険度の罠)]
@@ -8,7 +9,8 @@
 //   解除（CB-64）: （名前が合えば）d100 →（失敗なら）chance(disarmFailTrigger) →（当たれば）[作動]。名前違いは乱数なしで [作動]
 //   開ける（CB-65）: （罠があれば）[作動] →（中身を得るなら）rollDice(chestGoldDice) → rollChestItems（IT-52 / IT-56）
 //   [作動]（CB-62）: （開けるで target one の罠なら、作動させた人の randInt(行動可能な者)）→ 効果のダイス（damage は並び順に 1 人 1 回、
-//     status は並び順に chance 1 回。既にかかっている者は振らない。san は乱数なし）
+//     status は並び順に chance 1 回。既にかかっている者は振らない。san は乱数なし。alarm は遭遇の編成と開始（CB-03 / CB-04。startTableEncounter と同じ順）、
+//     teleport は行き先の randInt（DG-25））
 import type { ChestTrapDef, GameData } from "../data/index";
 import { chance, randInt, rollDice, weightedIndex } from "../rng";
 import { classOf, dungeonOf, memberById, personalityOf } from "../state";
@@ -16,9 +18,16 @@ import type { Character, ChestState, ChestView, DiceRow, Dive, GameState, RuleCo
 import { canAct, partyGoldLuck, withGoldLuck } from "./combat-calc";
 import { equipStats } from "./equip-stats";
 import { aliveMembers, damageMembers, gainGold } from "./field";
+import { teleportParty } from "./floor";
 import { rollChestItems } from "./loot";
 import { loseSan } from "./san";
 import { tryInflictStatus } from "./status";
+
+/**
+ * CB-67: 警報の罠の戦闘を始める関数（combat.ts の startAlarmEncounter）。chest.ts は combat.ts を import しないので、罠を作動させうる操作
+ * （調べる・解除・開ける）の呼び出し側が渡す
+ */
+export type StartAlarm = (ctx: RuleContext, inRoom: boolean) => void;
 
 function requireDive(state: GameState): Dive {
   if (state.dive === null) throw new Error("not in dungeon");
@@ -137,6 +146,26 @@ export function presentChest(ctx: RuleContext): void {
   promptIfPending(ctx);
 }
 
+/**
+ * CB-67: 警報の戦闘に勝って同じ箱に戻る。chestFound{source} → message chest.afterAlarm → chest.prompt（衝動判定・職業の掛け合いはしない）。乱数は使わない
+ */
+export function returnToChest(ctx: RuleContext): void {
+  const chest = requireChest(ctx.state);
+  ctx.events.push({ kind: "chestFound", source: chest.source });
+  ctx.events.push({ kind: "message", key: "chest.afterAlarm" });
+  promptIfPending(ctx);
+}
+
+/**
+ * CB-67: 警報の戦闘から逃げた。message chest.fled → 箱を失う（ドロップの箱は chestEnd lost。宝箱のセルは罠なしで残るので chestEnd left で、
+ * clearedCells には入れない）。乱数は使わない
+ */
+export function abandonChest(ctx: RuleContext): void {
+  const chest = requireChest(ctx.state);
+  ctx.events.push({ kind: "message", key: "chest.fled" });
+  endChest(ctx, chest.cell === null ? "lost" : "left");
+}
+
 /** 箱を片付ける（dive.chest = null。セルの箱で opened / lost なら clearedCells に入れる）→ chestEnd{result} */
 function endChest(ctx: RuleContext, result: "opened" | "left" | "lost"): void {
   const dive = requireDive(ctx.state);
@@ -158,9 +187,10 @@ function removeTrap(dive: Dive, chest: ChestState): void {
  * CB-62: 罠の作動。罠は経路を問わず消える（removeTrap）。actor は作動させた人（null なら、開けるで作動した）。
  * target one の罠で actor が null なら、行動可能な者（並び順）から randInt で 1 人を選ぶ。
  * chestTrap{trapId, actorId} → message chest.trap.<id>（actor がいれば {actor}）→ 効果。返り値は効果の kind（中身を得るかの判断に使う）。
- * alarm と teleport は M11 の作業 5 で入れる。それまでは語りだけで、alarm は箱を残し、teleport は箱を失う（chestEnd lost は呼び出し側）
+ * alarm（CB-67）: 箱を残したまま startAlarm(ctx, chest.inRoom) で戦闘を始める（screen{battle} → encounter …）。
+ * teleport（DG-25）: 箱を失い（chestEnd lost。宝箱のセルは clearedCells）、teleportParty で同じ階の通路へ移る（moved）
  */
-function triggerTrap(ctx: RuleContext, actor: Character | null): ChestTrapDef["effect"]["kind"] {
+function triggerTrap(ctx: RuleContext, actor: Character | null, startAlarm: StartAlarm): ChestTrapDef["effect"]["kind"] {
   const { state, data } = ctx;
   const dive = requireDive(state);
   const chest = requireChest(state);
@@ -207,7 +237,11 @@ function triggerTrap(ctx: RuleContext, actor: Character | null): ChestTrapDef["e
       break;
     }
     case "alarm":
+      startAlarm(ctx, chest.inRoom);
+      break;
     case "teleport":
+      endChest(ctx, "lost");
+      teleportParty(ctx);
       break;
   }
   return eff.kind;
@@ -256,7 +290,7 @@ export function checkChest(state: GameState, data: GameData, cmd: { type: string
  * 判定の箱は U-2 (1): 調べる人の力の内訳と危険度を引く前の値だけを出し、危険度・出目・結果は伏せる（hidden）。結果の文は箱の後の語り。
  * 告げた結果は chest.finding（不明・作動は null）
  */
-export function inspectChest(ctx: RuleContext, memberId: string): void {
+export function inspectChest(ctx: RuleContext, memberId: string, startAlarm: StartAlarm): void {
   const { state, data } = ctx;
   const chest = requireChest(state);
   const ch = memberById(state, memberId);
@@ -290,7 +324,7 @@ export function inspectChest(ctx: RuleContext, memberId: string): void {
       if (chest.trapId === null) unknown();
       else {
         chest.finding = null;
-        fireOutsideOpen(ctx, ch);
+        triggerTrap(ctx, ch, startAlarm);
       }
     } else if (r2 <= cfg.triggerChance + cfg.wrongNameChance) {
       const others = data.chestTraps.filter((t) => t.id !== chest.trapId);
@@ -310,7 +344,7 @@ export function inspectChest(ctx: RuleContext, memberId: string): void {
  * 成功: 罠なし（セルの箱は disarmedChests）、finding は { trapId: null }、chest.disarm.ok。
  * 失敗: chance(disarmFailTrigger)（U-4）が当たれば作動、外れれば chest.disarm.fail（箱も罠も残り、再挑戦できる）
  */
-export function disarmChest(ctx: RuleContext, memberId: string, trapId: string): void {
+export function disarmChest(ctx: RuleContext, memberId: string, trapId: string, startAlarm: StartAlarm): void {
   const { state, data } = ctx;
   const dive = requireDive(state);
   const chest = requireChest(state);
@@ -320,7 +354,7 @@ export function disarmChest(ctx: RuleContext, memberId: string, trapId: string):
     ctx.events.push({ kind: "message", key: "chest.disarm.nothing" });
   } else if (chest.trapId !== trapId) {
     ctx.events.push({ kind: "message", key: "chest.disarm.wrong" });
-    fireOutsideOpen(ctx, ch);
+    triggerTrap(ctx, ch, startAlarm);
   } else {
     const r = chestRate(state, data, "disarm", ch, chestTrapOf(data, chest.trapId).danger);
     const roll = randInt(state.rng, 1, 100);
@@ -337,7 +371,7 @@ export function disarmChest(ctx: RuleContext, memberId: string, trapId: string):
       chest.finding = { trapId: null };
       ctx.events.push({ kind: "message", key: "chest.disarm.ok" });
     } else if (chance(state.rng, data.config.chest.disarmFailTrigger)) {
-      fireOutsideOpen(ctx, ch);
+      triggerTrap(ctx, ch, startAlarm);
     } else {
       ctx.events.push({ kind: "message", key: "chest.disarm.fail" });
     }
@@ -345,30 +379,18 @@ export function disarmChest(ctx: RuleContext, memberId: string, trapId: string):
   promptIfPending(ctx);
 }
 
-/** 調べる・解除の失敗で作動したとき。teleport は箱を失う（chestEnd lost。作業 5 で移動を足す）。ほかは箱が残る */
-function fireOutsideOpen(ctx: RuleContext, actor: Character): void {
-  const kind = triggerTrap(ctx, actor);
-  if (kind === "teleport") endChest(ctx, "lost");
-}
-
 /**
  * CB-65 開ける: 罠があれば必ず作動する（作動させた人は、target one の罠なら行動可能な者から randInt で 1 人）。
  * その後、teleport でなく alarm でなく、行動可能な者が残っていれば中身を得て、chestEnd opened（セルの箱は clearedCells）。
- * teleport は箱を失う（chestEnd lost）。alarm は箱が残る（作業 5 で遭遇を足す）。全員が行動不能なら中身を得ず chestEnd opened（全滅処理は engine の finish）
+ * teleport は箱を失って移る（triggerTrap の中で chestEnd lost → moved）。alarm は箱を残して戦闘になる（勝てば returnToChest で戻る）。
+ * 全員が行動不能なら中身を得ず chestEnd opened（全滅処理は engine の finish）
  */
-export function openChest(ctx: RuleContext): void {
+export function openChest(ctx: RuleContext, startAlarm: StartAlarm): void {
   const { state } = ctx;
   const chest = requireChest(state);
   let kind: ChestTrapDef["effect"]["kind"] | null = null;
-  if (chest.trapId !== null) kind = triggerTrap(ctx, null);
-  if (kind === "teleport") {
-    endChest(ctx, "lost");
-    return;
-  }
-  if (kind === "alarm") {
-    promptIfPending(ctx);
-    return;
-  }
+  if (chest.trapId !== null) kind = triggerTrap(ctx, null, startAlarm);
+  if (kind === "teleport" || kind === "alarm") return;
   if (state.party.some(canAct)) grantChestContents(ctx, chest);
   endChest(ctx, "opened");
 }

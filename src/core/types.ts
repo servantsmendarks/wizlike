@@ -312,10 +312,11 @@ export type EnemyUnit = {
 /** CB-03: 同じ種類の敵の集まり。groups の添字は戦闘中に詰めない（CB-42「添字が最小の生存グループ」）。鑑定済みかは bestiary だけが持つ */
 export type EnemyGroup = { monsterId: string; units: EnemyUnit[] };
 
-/** 遭遇の出どころ。逃走の可否は origin から導く（random だけ可。CB-02）。イベントの encounter 効果（EV-32）を実装するときに { kind: "event"; eventId: string } を足す */
+/** 遭遇の出どころ。逃走の可否は origin から導く（random と alarm だけ可。CB-02）。イベントの encounter 効果（EV-32）を実装するときに { kind: "event"; eventId: string } を足す */
 export type BattleOrigin =
   | { kind: "random"; inRoom: boolean } // CB-01。inRoom は遭遇したセルの roomId !== null（CB-51 の宝箱）
-  | { kind: "boss" }; // DG-31
+  | { kind: "boss" } // DG-31
+  | { kind: "alarm"; inRoom: boolean }; // CB-67（M11）: 宝箱の警報の罠。inRoom は箱の inRoom。勝っても新しい宝箱の判定（CB-51）はしない
 
 /**
  * F1: 戦闘中だけ非 null。state.screen === "battle" と同値。
@@ -548,7 +549,7 @@ export type BattleMenuMember = {
 export type BattleMenu = {
   round: number;
   auto: boolean;
-  /** CB-02: origin が random のときだけ真 */
+  /** CB-02: origin が random か alarm のときだけ真 */
   canFlee: boolean;
   /** battle.resolve を受け付けるか（checkResolve(state, data) === null と同値） */
   ready: boolean;

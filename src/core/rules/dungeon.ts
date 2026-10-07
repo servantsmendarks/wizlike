@@ -6,7 +6,6 @@ import { dungeonOf, moraleOf, personalityOf } from "../state";
 import type {
   Cell,
   Dive,
-  Edge,
   Facing,
   Floor,
   GameState,
@@ -31,77 +30,18 @@ import {
   turnLeft,
   turnRight,
 } from "./dungeon-gen";
+import { floorOf, markExplored, visibleCellsOf } from "./floor";
 import { startBossEncounter, startRandomEncounter, tickPoisonStep } from "./combat";
 import { canAct } from "./combat-calc";
 import { offerExit, offerStairs, offerTeleporter, offerTrap } from "./choices";
 import { equipStats } from "./equip-stats";
 import { chooseEventOption, startEvent } from "./events";
-import { addExplored, addIndex, aliveMembers, damageMembers, removeIndex } from "./field";
+import { addIndex, aliveMembers, damageMembers, removeIndex } from "./field";
 import { loseSan } from "./san";
 import { enterBlockReason, returnToTown } from "./town";
 
-/**
- * 潜行中の階の実効の構造。generateDive(...)[floorNo-1] に、その階の
- * clearedCells（kind を roomId !== null ? "room" : "corridor" に、eventId と trapId を null に）を重ねる。
- * 最下層でボスを倒していれば（dive.bossDefeated）、ボスのセルを teleporter に重ねる（DG-32。前進で入ると街へ戻るかを尋ねる）。
- * 辺は生成のまま（扉は通り抜けても door。DG-10）。
- */
-export function floorOf(dive: Dive, data: GameData, floorNo: number = dive.floor): Floor {
-  const def = dungeonOf(data, dive.dungeonId);
-  if (!Number.isInteger(floorNo) || floorNo < 1 || floorNo > def.floors) throw new Error(`floorOf: bad floor ${floorNo}`);
-  // generateDive(...)[floorNo-1] と同じ。下の階は上の階に依存しない（DG-06 は上の階の stairsDown だけ）ので、floorNo までで止める
-  let f = generateFloor(def, data.config.dungeon, dive.diveSeed, 1, null);
-  for (let n = 2; n <= floorNo; n++) f = generateFloor(def, data.config.dungeon, dive.diveSeed, n, f.stairsDown);
-  for (const c of dive.clearedCells) {
-    if (c.floor !== floorNo) continue;
-    const cell = cellAt(f, c.x, c.y);
-    cell.kind = cell.roomId !== null ? "room" : "corridor";
-    cell.eventId = null;
-    cell.trapId = null;
-  }
-  if (floorNo === def.floors && dive.bossDefeated && f.boss !== null) cellAt(f, f.boss.x, f.boss.y).kind = "teleporter";
-  return f;
-}
-
-/** 向きに対する前・左・右の辺と、階段の記号（DG-12。罠・イベント・ボスは返さない） */
-function relEdges(
-  f: Floor,
-  x: number,
-  y: number,
-  facing: Facing,
-): { front: Edge; left: Edge; right: Edge; stairs: VisibleCell["stairs"] } {
-  const c = cellAt(f, x, y);
-  const stairs = c.kind === "stairsUp" ? "up" : c.kind === "stairsDown" ? "down" : null;
-  return { front: edgeOf(c, facing), left: edgeOf(c, turnLeft(facing)), right: edgeOf(c, turnRight(facing)), stairs };
-}
-
-/**
- * DG-12。正面の列は前の辺が open のときだけ奥へ進む（扉も遮る）。左右の列は、同じ奥行きの正面のセルの
- * 側の辺が open のときだけ返す。並びは depth の昇順、同じ depth の中は lane -1, 0, 1。
- * どのレーンのセルでも、階段なら stairs に "up" / "down" を入れる（UI-20）。
- */
-export function visibleCellsOf(f: Floor, pos: Pos, facing: Facing, depth: number): VisibleCell[] {
-  const out: VisibleCell[] = [];
-  let c: Pos = { x: pos.x, y: pos.y };
-  for (let d = 0; d <= depth; d++) {
-    if (d > 0) {
-      c = step(c, facing);
-      if (!inBounds(f, c.x, c.y)) break;
-    }
-    const rel = relEdges(f, c.x, c.y, facing);
-    if (rel.left === "open") {
-      const l = step(c, turnLeft(facing));
-      if (inBounds(f, l.x, l.y)) out.push({ depth: d, lane: -1, x: l.x, y: l.y, ...relEdges(f, l.x, l.y, facing) });
-    }
-    out.push({ depth: d, lane: 0, x: c.x, y: c.y, ...rel });
-    if (rel.right === "open") {
-      const r = step(c, turnRight(facing));
-      if (inBounds(f, r.x, r.y)) out.push({ depth: d, lane: 1, x: r.x, y: r.y, ...relEdges(f, r.x, r.y, facing) });
-    }
-    if (rel.front !== "open") break;
-  }
-  return out;
-}
+// M11 の作業 5: floorOf・visibleCellsOf・markExplored は floor.ts に移した（chest.ts の転移が使うため）。既存の import の先を変えないよう再び export する
+export { floorOf, markExplored, visibleCellsOf };
 
 /** DG-12。dive が null なら []。at を省くと dive の現在値。奥行きは config.dungeon.viewDepth */
 export function visibleCells(state: GameState, data: GameData, at?: ViewPoint): VisibleCell[] {
@@ -165,15 +105,6 @@ export function mapView(state: GameState, data: GameData): MapView | null {
     facing: dive.facing,
     cells,
   };
-}
-
-/** DG-13: 視野のセルの添字を explored[階] に昇順・重複なしで足す。f は dive.floor の実効の構造 */
-export function markExplored(dive: Dive, f: Floor, depth: number): void {
-  addExplored(
-    dive,
-    dive.floor,
-    visibleCellsOf(f, dive.pos, dive.facing, depth).map((v) => idx(f, v.x, v.y)),
-  );
 }
 
 /**
