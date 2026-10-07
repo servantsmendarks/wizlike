@@ -42,7 +42,7 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 - IT-30 希少度は 4 段階で、オプションの個数は 通常 0 / 上質 1 / 希少 2 / 伝説 3（`config.items.rarities[].options`）。ドロップのたびに `config.items.rarities[].weight`（通常 75 / 上質 18 / 希少 6 / 伝説 1）【仮】の重みで引く。ユニークも同じ判定を受ける（同じユニークでも当たり外れがある）。店で買う汎用装備は常に通常。
 - IT-31 宝箱（CB-52）の品は、行動可能（CH-44）な味方の性格の `benefits.chestQuality`（強欲 1）の最大（合計しない）だけ、引いた希少度を上げる（伝説で止まる。乱数は使わない）。ボスの戦利品には効かない。CB-52 の旧文「1 段階上の表を引く」はこれで置き換える。
 - IT-32 呪い: ドロップのたびに `config.items.curseChance`（8）%【仮】で呪われる（ユニークも同じ。店の品は呪われない）。呪われた品は、希少度の個数より 1 つ多くオプションを持ち、最後に引いた 1 つの値の符号を反転する（負の効果）。呪われた品は装備すると外せず（CH-73）、寺院の解呪（TW-07）で失う。呪いと負のオプションは鑑定するまで見えない（IT-12）。
-- IT-33 オプションは `data/item-options.json`（オプション表）から、重み `weight` で、同じ実体の中で重複しないように引く。値は段階 `tier`（1〜3）の値 `values[tier − 1]`。段階は汎用装備なら min(3, 1 + floor(Lv ÷ `config.items.optionTierStep`（4）))【仮】（Lv0〜3 は 1、4〜7 は 2、8 以上は 3）、ユニークは `uniques[].optionTier` の固定値。生成した後でレベルが変わってもオプションは変わらない（TW-17）。
+- IT-33 オプションは `data/item-options.json`（オプション表）から、重み `weight` で、同じ実体の中で重複しないように引く。値は段階 `tier`（1〜3）の値 `values[tier − 1]`。段階は汎用装備なら min(3, 1 + floor(Lv ÷ `config.items.optionTierStep`（4）))【仮】（Lv0〜3 は 1、4〜7 は 2、8 以上は 3）、ユニークは `uniques[].optionTier` の固定値。生成した後でレベルが変わってもオプションは変わらない（TW-17）。引く母集団は、オプション表のうちその品の品種に付けられるもの（IT-36。M10）。
 - IT-34 オプションの効果（装備中の品のものだけを、全部位の分を足して使う。鑑定の有無に関係なく効く）【仮】:
   - 能力値 `stat`（6 種。+1 / +2 / +3）: 能力値に足す（CH-13 の実効の能力値）。
   - 最大 HP `hpMax`（+3 / +6 / +10）・最大 MP `mpMax`（+2 / +4 / +6）: 実効の最大値に足す（CH-14）。
@@ -56,8 +56,13 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
   - 罠察知 `trapDetect`（+5 / +10 / +15 %）: DG-21 のその者の察知の確率に足す（性格の `trapDetect` と合わせて正なら、リーダーも振る）。
   - 鑑定率 `identifyRate`（+5 / +10 / +15 %）: CB-05 のラウンド終了の確率鑑定に、行動可能な味方の値の合計を足す（敵の鑑定と読んだ。§11 の Q4）。
   - 金運 `goldLuck`（+2 / +4 / +6 %。控えめ）: 戦闘の金（CB-51）と宝箱の金（CB-52）を、行動可能な味方の値の合計 % だけ増やす（floor(金 × (100 + 合計) ÷ 100)）。
-  - 負のオプション（IT-32）は同じ式に負の値を入れる（能力値・最大値は 1 未満にしない。確率は 0 未満にしない）。
+  - 魔法攻撃力 `magicPower`（+1 / +2 / +3。杖と装飾品だけ。IT-36。M10）: MG-33 の魔法攻撃力に足す。
+  - 負のオプション（IT-32）は同じ式に負の値を入れる（能力値・最大値は 1 未満にしない。確率は 0 未満にしない。魔法攻撃力は合計を 0 未満にしない）。
 - IT-35 実効の値の計算は core の 1 か所（`rules/equip-stats.ts` の `equipStats(state, data, ch)`）で行い、ルールはそこから読む。表示層は計算しない（UI-35）。
+- IT-36 オプションの適用品種（M10）: オプション表の各行は、任意の `appliesTo`（品種の配列）を持てる。省略はすべての品種に付く。
+  - 品種は次の 7 つ: `weapon`（slot が weapon で caster でない武器）、`caster`（slot が weapon で caster の武器。杖）、`armor`、`shield`、`helm`、`gauntlet`、`accessory`。
+  - 品の品種はベース（ユニークなら `uniques[].base` のベース）の slot と caster で決める。
+  - 読み込み時の検査: `appliesTo` は空でなく、値は上の品種のいずれかで、重複しない。表全体の件数の検査（IT-30 / IT-32）とは別に、品種ごとに、その品種に付けられるオプションの件数が `max(rarities[].options) + 1` 以上あること。全体が足りないときは全体のエラーだけを出す。
 
 ## 5. 固有スキル
 
@@ -76,7 +81,7 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 
 - IT-50 ドロップ元は 宝箱（CB-52。ランダム遭遇の勝利時に、部屋のセルなら `config.combat.chestChance`（60）%【仮】、通路のセルなら `config.combat.chestChanceCorridor`（15）%【仮】。2026-10-05 に通路を足した）と ボスの戦利品（DG-31。ボスに勝つたび。再撃破でも）の 2 つ。どちらも `data/drops.json`（ドロップ表）を引く。宝箱の金（`config.combat.chestGoldDice`）は今のまま出し、品はその後に引く。ボスの戦利品はボスの語り（`battle.bossDefeated`・初回の `battle.dungeonCleared`・`dungeon.unlocked`）の後、`screen`{dungeon} とテレポーターの申し出（DG-32）の前に引く。
 - IT-51 ドロップ表 `drops.json` は `tables`（表の配列）・`chest`（ダンジョン id → 階番号の文字列 → 表の id）・`boss`（ダンジョン id → 表の id）を持つ。表は `{ id, itemChance, rolls, entries }` で、`entries` の各要素は `{ base, weight }` か `{ unique, weight }` か `{ item, weight }`（魔法書。IT-55。M9）のどれか 1 つ。`rolls` 回だけ、`itemChance` % で 1 品を引く（rolls 回とも独立）。
-- IT-52 1 品の生成と乱数の順: chance(itemChance) → weightedIndex(entries) →（魔法書の項目ならここで終わり。IT-55）→（汎用なら）Lv の randInt(−`config.items.dropLevelSpread`（1）, +spread) → weightedIndex(rarities) → chance(curseChance) → オプションの個数（IT-30 / IT-32）だけ weightedIndex（オプション表から既に引いたものを除いた残り）。宝箱の chestQuality（IT-31）は希少度を引いた直後に足す（乱数なし）。
+- IT-52 1 品の生成と乱数の順: chance(itemChance) → weightedIndex(entries) →（魔法書の項目ならここで終わり。IT-55）→（汎用なら）Lv の randInt(−`config.items.dropLevelSpread`（1）, +spread) → weightedIndex(rarities) → chance(curseChance) → オプションの個数（IT-30 / IT-32）だけ weightedIndex（オプション表のうちその品の品種に付けられるもの（IT-36）から、既に引いたものを除いた残り。乱数の回数は品種で変わらない）。宝箱の chestQuality（IT-31）は希少度を引いた直後に足す（乱数なし）。
 - IT-53 ドロップの Lv = 落とした敵の Lv（`monsters[].level`）± spread、最低 1【仮】。宝箱の「落とした敵」はその戦闘で倒した敵のうち `level` が最大の種類。ボスはボスの `level`。
 - IT-54 生成した品は未鑑定（IT-13）で、並び順に最初に所持枠（CH-71）が空いている者（life を問わない）の inventory の末尾に入れ、潜行台帳（DG-40）に入れる。誰も空いていなければ置いていく（`item.leftBehind`{item}。品は作らないので item はベースの `unidentifiedName`。乱数は引いた分を消費したまま）。語りは `item.found`{name, item}（item は未鑑定の表示名）。
 - IT-55 ドロップ表の魔法書の項目（M9）: `{ item, weight }` の `item` は `items.json` の id で、`type` が `book` のものだけ（読み込み時に止める）。引いた品は Lv0・通常・オプションなし・呪いなし・`uniqueId` null・**鑑定済み**で生まれる（隠す中身が無いため。IT-13 の例外）。乱数は weightedIndex(entries) の後に何も引かない（Lv・希少度・呪い・オプションを引かない）。所持枠（IT-54）が空いていなければ置いていき、語り `item.leftBehind` の item は品の `name`。

@@ -20,6 +20,7 @@
     { "id": "resist_stone", "name": "石化への耐性", "effect": { "type": "statusResist", "status": "stone" }, "unit": "%", "values": [10, 20, 30], "weight": 2 },
     { "id": "trap_detect", "name": "罠察知", "effect": { "type": "trapDetect" }, "unit": "%", "values": [5, 10, 15], "weight": 3 },
     { "id": "identify_rate", "name": "鑑定率", "effect": { "type": "identifyRate" }, "unit": "%", "values": [5, 10, 15], "weight": 3 },
-    { "id": "gold_luck", "name": "金運", "effect": { "type": "goldLuck" }, "unit": "%", "values": [2, 4, 6], "weight": 2 }
+    { "id": "gold_luck", "name": "金運", "effect": { "type": "goldLuck" }, "unit": "%", "values": [2, 4, 6], "weight": 2 },
+    { "id": "magic_power", "name": "魔法攻撃力", "effect": { "type": "magicPower" }, "unit": "", "values": [1, 2, 3], "weight": 4, "appliesTo": ["caster", "accessory"] }
   ]
 }

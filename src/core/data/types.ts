@@ -460,8 +460,16 @@ export const OPTION_EFFECT_TYPES = [
   "trapDetect",
   "identifyRate",
   "goldLuck",
+  "magicPower",
 ] as const;
 export type OptionEffectType = (typeof OPTION_EFFECT_TYPES)[number];
+
+/**
+ * IT-36（M10）: オプションの適用品種。weapon は術者用でない武器、caster は術者用武器（杖。IT-22）、ほかは装備の部位。
+ * 品の品種はベース（ユニークなら uniques[].base のベース）の slot と caster で決める（optionKindOf）
+ */
+export const OPTION_KINDS = ["weapon", "caster", "armor", "shield", "helm", "gauntlet", "accessory"] as const;
+export type OptionKind = (typeof OPTION_KINDS)[number];
 
 export type OptionEffect =
   | { type: "stat"; stat: StatKey }
@@ -479,9 +487,22 @@ export type ItemOption = {
   /** 段階 1〜3 の値（正の整数で単調非減少。IT-33） */
   values: [number, number, number];
   weight: number;
+  /** IT-36（M10）: 付けられる品種（空でなく重複なし）。省略はすべての品種 */
+  appliesTo?: OptionKind[];
 };
 
 export type ItemOptions = { options: ItemOption[] };
+
+/** IT-36: ベースの品種（slot が weapon なら caster で weapon / caster を分け、それ以外は slot そのもの） */
+export function optionKindOf(base: EquipmentBase): OptionKind {
+  if (base.slot === "weapon") return base.caster ? "caster" : "weapon";
+  return base.slot;
+}
+
+/** IT-36: オプション o を品種 kind の品に付けられるか（appliesTo の省略はすべての品種） */
+export function optionAppliesTo(o: Pick<ItemOption, "appliesTo">, kind: OptionKind): boolean {
+  return o.appliesTo === undefined || o.appliesTo.includes(kind);
+}
 
 // ---- uniques.json（IT-03 / IT-40。M7） ----
 

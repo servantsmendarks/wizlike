@@ -518,6 +518,93 @@ describe("MG-33 魔法攻撃力", () => {
     }
   });
 
+  test("IT-34/MG-33 オプション魔法攻撃力（M10）: 護符 +2 で 0 → 2、樫の杖 Lv2（1 + 1）+ 護符 +3 で 5、院長の刻印杖（3）+ 護符 +1 で 4。戦士にも値は立つ", () => {
+    const mp = (memberId: string, setup: (s: GameState) => void): number => {
+      const s = newGame(1);
+      bare(s, memberId);
+      setup(s);
+      return equipStats(s, data, member(s, memberId)).magicPower;
+    };
+    expect(mp("c5", () => {})).toBe(0);
+    expect(mp("c5", (s) => equipNew(s, "c5", "accessory", { itemId: "charm", identified: true, options: [opt("magic_power", 2, 2)] }))).toBe(2);
+    expect(
+      mp("c5", (s) => {
+        equipNew(s, "c5", "weapon", { itemId: "oak_staff", identified: true, level: 2 });
+        equipNew(s, "c5", "accessory", { itemId: "charm", identified: true, options: [opt("magic_power", 3, 3)] });
+      }),
+    ).toBe(5);
+    expect(
+      mp("c5", (s) => {
+        equipNew(s, "c5", "weapon", { itemId: "sigil_staff", uniqueId: "abbot_sigil_staff", identified: true });
+        equipNew(s, "c5", "accessory", { itemId: "charm", identified: true, options: [opt("magic_power", 1)] });
+      }),
+    ).toBe(4);
+    // 杖そのもののオプションも足す（樫の杖 Lv0 = 1、オプション +2 で 3）
+    expect(mp("c5", (s) => equipNew(s, "c5", "weapon", { itemId: "oak_staff", identified: true, options: [opt("magic_power", 2, 2)] }))).toBe(3);
+    // 戦士（c1）にも値は立つ（呪文を唱えないので効かない）
+    expect(mp("c1", (s) => equipNew(s, "c1", "accessory", { itemId: "charm", identified: true, options: [opt("magic_power", 2, 2)] }))).toBe(2);
+  });
+
+  test("IT-34/MG-33 魔法攻撃力の合計は 0 未満にしない: 呪いの −3 の護符だけなら 0、樫の杖 Lv2（2）+ 護符 −3 でも 0、刻印の杖（2）Lv4（+2）+ −3 で 1", () => {
+    const mp = (setup: (s: GameState) => void): number => {
+      const s = newGame(1);
+      bare(s, "c5");
+      setup(s);
+      return equipStats(s, data, member(s, "c5")).magicPower;
+    };
+    const cursedCharm = (s: GameState): string => equipNew(s, "c5", "accessory", { itemId: "charm", identified: true, cursed: true, options: [opt("magic_power", -3, 3)] });
+    expect(mp(cursedCharm)).toBe(0);
+    expect(
+      mp((s) => {
+        equipNew(s, "c5", "weapon", { itemId: "oak_staff", identified: true, level: 2 });
+        cursedCharm(s);
+      }),
+    ).toBe(0);
+    expect(
+      mp((s) => {
+        equipNew(s, "c5", "weapon", { itemId: "sigil_staff", identified: true, level: 4 });
+        cursedCharm(s);
+      }),
+    ).toBe(1);
+  });
+
+  test("MG-33 オプション魔法攻撃力（M10）も火矢のダメージに足される: エルの護符 +2 で出目 + 2（同じシードの護符なしとの差。乱数の消費は同じ）", () => {
+    for (let seed = 1; seed <= 4; seed++) {
+      const at = (withCharm: boolean): ReturnType<typeof exec> => {
+        const s0 = dived(seed);
+        equipNew(s0, "c5", "weapon", { itemId: "staff", identified: true, level: 0 });
+        if (withCharm) equipNew(s0, "c5", "accessory", { itemId: "charm", identified: true, options: [opt("magic_power", 2, 2)] });
+        const s = withBattle(s0, [{ monsterId: "giant_rat", hps: [50], status: [["paralysis"]] }], {
+          identified: ["giant_rat"],
+          inputs: allInputs(s0, DEF),
+        });
+        s.battle!.inputs["c5"] = { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 0 } };
+        return exec(s, RESOLVE);
+      };
+      const dmgOf = (r: ReturnType<typeof exec>): number => eventsOf(r.events, "hpChanged").find((e) => e.id === "e0-0")!.delta;
+      const plain = at(false);
+      const up = at(true);
+      expect(dmgOf(up)).toBe(dmgOf(plain) - 2);
+      expect(up.state.rng).toEqual(plain.state.rng);
+    }
+  });
+
+  test("MG-33 オプション魔法攻撃力（M10）は迷宮の heal（dungeon.cast）にも足される: ドナの護符 +3 で回復量 + 3（乱数の消費は同じ）", () => {
+    const heal = (bonus: number): { amount: number; rng: RngState } => {
+      const s = newGame(5);
+      equipNew(s, "c4", "weapon", { itemId: "staff", identified: true, level: 0 });
+      if (bonus > 0) equipNew(s, "c4", "accessory", { itemId: "charm", identified: true, options: [opt("magic_power", bonus, 3)] });
+      member(s, "c1").hp = 1;
+      const r = exec(s, { type: "dungeon.cast", memberId: "c4", spellId: "heal", targetId: "c1" });
+      const m = r.events.find((e): e is Extract<GameEvent, { kind: "message" }> => e.kind === "message" && e.key === "battle.heal")!;
+      return { amount: m.params!["amount"] as number, rng: r.state.rng };
+    };
+    const plain = heal(0);
+    const up = heal(3);
+    expect(up.amount).toBe(plain.amount + 3);
+    expect(up.rng).toEqual(plain.rng);
+  });
+
   test("MG-33 戦闘外の heal（dungeon.cast）: ドナの杖 Lv2（+1）で回復量 + 1、実効の hpMax（オプション hp_max）で止める。道具（薬草）には足さない", () => {
     const heal = (level: number, hp: number, hpMaxOpt: number, cmd: "cast" | "herb"): { amount: number; hp: number } => {
       const s = newGame(5);

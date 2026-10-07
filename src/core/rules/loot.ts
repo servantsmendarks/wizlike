@@ -4,9 +4,11 @@
 //
 // 乱数の消費順（1 品。IT-52）: chance(itemChance) →（当たれば）weightedIndex(entries) →（汎用なら）randInt(−spread, +spread)
 //   → weightedIndex(rarities) → chance(curseChance) → オプションの個数だけ weightedIndex(残りのオプションの weight)。
+//   オプションの母集団はその品の品種に付けられるもの（IT-36）で、引く回数は品種に依存しない。
 //   外れならその品はそこで終わり。表の rolls 回くり返す。置いていく品（IT-54）も乱数は同じだけ消費する。
 //   魔法書の項目（IT-55）は weightedIndex(entries) で終わる。
 import type { DropEntry, GameData } from "../data/index";
+import { optionAppliesTo, optionKindOf } from "../data/index";
 import { chance, randInt, weightedIndex } from "../rng";
 import type { ItemInstanceSpec } from "../state";
 import { baseOf, createItemInstance, dropTableOf, findBase, itemDisplayName, itemOf, personalityOf, uniqueOf, slotsUsed } from "../state";
@@ -71,7 +73,9 @@ export function rollItemSpec(
   const rarity = cfg.rarities[rIdx]!;
   const cursed = chance(state.rng, cfg.curseChance);
   const count = rarity.options + (cursed ? 1 : 0);
-  const pool = [...data.itemOptions.options];
+  // IT-33 / IT-36（M10）: 母集団はその品の品種（ユニークはベースの品種。itemId はベース）に付けられるオプションだけ
+  const kind = optionKindOf(baseOf(data, itemId));
+  const pool = data.itemOptions.options.filter((o) => optionAppliesTo(o, kind));
   const options: ItemOptionRoll[] = [];
   for (let i = 0; i < count && pool.length > 0; i++) {
     const k = weightedIndex(

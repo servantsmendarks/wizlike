@@ -40,6 +40,7 @@ import {
   ITEM_TYPES,
   LURE_TAGS,
   OPTION_EFFECT_TYPES,
+  OPTION_KINDS,
   OPTION_UNITS,
   OUTCOME_QUALITIES,
   PERSONALITY_IDS,
@@ -787,8 +788,17 @@ function validateItemOptions(ctx: Ctx, v: unknown, ix: Index): void {
   const effectSpecs: Record<string, Record<string, Field>> = Object.fromEntries(OPTION_EFFECT_TYPES.map((t) => [t, {}]));
   effectSpecs.stat = { stat: E(STAT_KEYS) };
   effectSpecs.statusResist = { status: E(STATUS_IDS) };
+  // IT-36（M10）: 適用品種。空でなく、OPTION_KINDS のいずれかで、重複しない
+  const appliesTo: Field = (c, p, x) => {
+    const a = L(E(OPTION_KINDS), 1)(c, p, x);
+    if (!Array.isArray(a)) return a;
+    a.forEach((k, i) => {
+      if (typeof k === "string" && a.indexOf(k) < i) report(c, at(p, i), `IT-36: duplicate kind ${JSON.stringify(k)}`);
+    });
+    return a;
+  };
   const t = fields(ctx, "", v, {
-    options: L(F({ id: S, name: S, effect: U(effectSpecs), unit: E(OPTION_UNITS), values, weight: I(POS_INT) }), 1),
+    options: L(F({ id: S, name: S, effect: U(effectSpecs), unit: E(OPTION_UNITS), values, weight: I(POS_INT), appliesTo: opt(appliesTo) }), 1),
   });
   if (t !== undefined && Array.isArray(t.options)) {
     uniqueIds(ctx, "options", t.options);
@@ -796,6 +806,16 @@ function validateItemOptions(ctx: Ctx, v: unknown, ix: Index): void {
     const need = ix.maxRarityOptions === undefined ? undefined : ix.maxRarityOptions + 1;
     if (need !== undefined && t.options.length < need)
       report(ctx, "options", `IT-30/IT-32: expected at least ${need} options (max rarities[].options + 1 for a curse), got ${t.options.length}`);
+    // IT-36: 品種ごとに、その品種に付けられる件数も同じだけ要る。全体が足りないときは全体のエラーだけ（重ねない）
+    else if (need !== undefined) {
+      for (const kind of OPTION_KINDS) {
+        const n = t.options.filter((o) => {
+          const a = get(o, "appliesTo");
+          return !Array.isArray(a) || a.includes(kind);
+        }).length;
+        if (n < need) report(ctx, "options", `IT-36: kind ${JSON.stringify(kind)} has only ${n} options (need ${need})`);
+      }
+    }
   }
 }
 

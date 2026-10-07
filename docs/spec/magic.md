@@ -30,7 +30,7 @@
 - MG-30 呪文の MP コストは `spells[].mp`。高レベルほど高く、範囲が広い。戦闘では MP は行動の時点で消費する。入力時（`battle.input`）は mp ≥ cost の検査だけ行う。M7: 唱える者が固有スキル `mpCostDown`（IT-40）の品を装備していれば、cost = max(1, `spells[].mp` − 値)（戦闘・`dungeon.cast` とも。入力時の検査も同じ cost）。
 - MG-31 設計原則: 低レベルの単体呪文は、単体相手なら上位の範囲呪文より確実に MP 効率が良い。上位呪文は「複数相手」「状態異常付き」「フィールド用途」で差別化する。同レベルの呪文は役割（攻撃 / 状態異常 / 回復 / 補助）が重ならないようにする。
 - MG-32 `usableIn`: `battle` / `field` / `both`。フィールド呪文は迷宮内の非戦闘時と街（酒場。TW-03。M5.5）で `dungeon.cast`（MG-44）で使う。迷宮と街で使えるのは `usableIn` が `battle` でなく、効果が `heal` / `cureStatus` / `return` / `resurrect` で、対象が `ally` / `self` / `party` / `none` の呪文（M4.5 のデータでは 治癒・解毒・帰還・蘇生）。帰還は迷宮だけ（街では rejected `not usable here`。M5.5）。
-- MG-33 魔法攻撃力（M7。新しい派生値）: 唱える者の 魔法攻撃力 = 装備中の汎用の術者用武器のベースの `magicPower`（M9。省略は 0）とレベルの効果（IT-22。+floor(Lv ÷ `config.items.casterLvPerPower`（2）)）+ ユニークの `magicPower`（IT-03）。呪文の効果 `damage` と `heal` の出目に、対象ごとに足す（戦闘・`dungeon.cast` とも。道具（薬草など）には足さない。敵の呪文は無い）。damage は足した後に最低 1、heal は最低 0 のまま。表示層向けには UI-59 の状態に出す（core の `equipStats` の値）。
+- MG-33 魔法攻撃力（M7。新しい派生値）: 唱える者の 魔法攻撃力 = 装備中の汎用の術者用武器のベースの `magicPower`（M9。省略は 0）とレベルの効果（IT-22。+floor(Lv ÷ `config.items.casterLvPerPower`（2）)）+ ユニークの `magicPower`（IT-03）+ 装備中の品のオプション `magicPower` の合計（IT-34。全部位。M10）。合計は 0 未満にしない。呪文の効果 `damage` と `heal` の出目に、対象ごとに足す（戦闘・`dungeon.cast` とも。道具（薬草など）には足さない。敵の呪文は無い）。damage は足した後に最低 1、heal は最低 0 のまま。表示層向けには UI-59 の状態に出す（core の `equipStats` の値）。
 
 ## 5. 特定呪文
 

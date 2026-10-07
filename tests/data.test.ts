@@ -24,6 +24,9 @@ import {
   DATA_FILES,
   GameDataError,
   loadGameData,
+  OPTION_KINDS,
+  optionAppliesTo,
+  optionKindOf,
   type RawGameData,
 } from "../src/core/data";
 import { createRng, isDiceExpr, rollDice } from "../src/core/rng";
@@ -934,8 +937,59 @@ describe("data: equipment-bases.json（IT-02。M7）", () => {
 });
 
 describe("data: item-options.json（IT-33 / IT-34。M7）", () => {
-  test("data: IT-33 実データのオプション 21 種", () => {
-    expect(loadGameData(rawData()).itemOptions.options).toHaveLength(21);
+  test("data: IT-33 実データのオプション 22 種（M10 で魔法攻撃力を足した）", () => {
+    expect(loadGameData(rawData()).itemOptions.options).toHaveLength(22);
+  });
+  test("data: IT-36 魔法攻撃力（magic_power）は杖と装飾品だけ（appliesTo [caster, accessory]）。ほかの 21 種は appliesTo を省略（全品種）", () => {
+    const opts = loadGameData(rawData()).itemOptions.options;
+    const mp = opts.find((o) => o.id === "magic_power")!;
+    expect(mp.effect).toEqual({ type: "magicPower" });
+    expect(mp.values).toEqual([1, 2, 3]);
+    expect(mp.appliesTo).toEqual(["caster", "accessory"]);
+    expect(opts.filter((o) => o.appliesTo !== undefined).map((o) => o.id)).toEqual(["magic_power"]);
+    // 実データの全品種に、引ける件数が希少度の個数の最大 + 1（4）以上ある
+    for (const k of OPTION_KINDS) expect(opts.filter((o) => optionAppliesTo(o, k)).length).toBeGreaterThanOrEqual(4);
+  });
+  test("data: IT-36 appliesTo は空でない品種の配列で、未知の品種と重複で止まる", () => {
+    expectIssue((r) => (r.itemOptions.options[0].appliesTo = []), "item-options.json", "options[0].appliesTo: expected at least 1 element(s)");
+    expectIssue((r) => (r.itemOptions.options[0].appliesTo = ["staff"]), "item-options.json", "options[0].appliesTo[0]: expected one of");
+    expectIssue((r) => (r.itemOptions.options[0].appliesTo = ["weapon", "weapon"]), "item-options.json", 'options[0].appliesTo[1]: IT-36: duplicate kind "weapon"');
+    expectIssue((r) => (r.itemOptions.options[0].appliesTo = "weapon"), "item-options.json", "options[0].appliesTo: expected array");
+    expect(issuesOf((r) => (r.itemOptions.options[0].appliesTo = ["weapon", "caster", "armor", "shield", "helm", "gauntlet", "accessory"]))).toEqual([]);
+  });
+  test("data: IT-36 品種ごとに引ける件数が希少度の個数の最大 + 1 以上。全体が足りないときは IT-30/IT-32 だけを出す", () => {
+    // 全体は 5 件あるが、5 件目は杖だけ。ほかの品種は 3 件で足りない
+    const five = (r: Mutable): void => {
+      r.itemOptions.options = r.itemOptions.options.slice(0, 5);
+      r.itemOptions.options[3].appliesTo = ["caster"];
+      r.itemOptions.options[4].appliesTo = ["caster"];
+    };
+    const issues = issuesOf(five);
+    expect(issues).toContain('item-options.json: options: IT-36: kind "weapon" has only 3 options (need 4)');
+    expect(issues).toContain('item-options.json: options: IT-36: kind "accessory" has only 3 options (need 4)');
+    expect(issues.some((x) => x.includes('kind "caster"'))).toBe(false);
+    // 全体が 3 件なら IT-30/IT-32 のエラーだけ（品種ごとのエラーは重ねない）
+    const short = issuesOf((r) => {
+      r.itemOptions.options = r.itemOptions.options.slice(0, 3);
+      r.itemOptions.options[0].appliesTo = ["caster"];
+    });
+    expect(short.filter((x) => x.includes("IT-36"))).toEqual([]);
+    expect(short.some((x) => x.includes("IT-30/IT-32: expected at least 4 options"))).toBe(true);
+  });
+  test("data: IT-36 optionKindOf は slot と caster で品種を決める（杖は caster、ほかの武器は weapon）", () => {
+    const d = loadGameData(rawData());
+    const kind = (id: string): string => optionKindOf(d.equipmentBases.find((b) => b.id === id)!);
+    expect(["long_sword", "short_bow", "staff", "oak_staff", "leather_armor", "wooden_shield", "leather_cap", "leather_gloves", "charm"].map(kind)).toEqual([
+      "weapon",
+      "weapon",
+      "caster",
+      "caster",
+      "armor",
+      "shield",
+      "helm",
+      "gauntlet",
+      "accessory",
+    ]);
   });
   test("data: IT-34 effect.type は列挙、stat は能力値、status は状態異常、それ以外は追加の欄を持たない", () => {
     expectIssue((r) => (r.itemOptions.options[0].effect.type = "luck"), "item-options.json", "options[0].effect.type: expected one of");

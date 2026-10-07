@@ -24,7 +24,7 @@ export type EquipStats = {
   weaponDice: string;
   /** CB-22 / IT-20: 汎用の武器（術者用でない）の floor(Lv ÷ weaponLvPerDamage) + オプション damage */
   damageBonus: number;
-  /** MG-33 / IT-22: 汎用の術者用武器のベースの magicPower + floor(Lv ÷ casterLvPerPower)、ユニークはユニークの magicPower */
+  /** MG-33 / IT-22: 汎用の術者用武器のベースの magicPower + floor(Lv ÷ casterLvPerPower)、ユニークはユニークの magicPower、+ オプション magicPower の合計（IT-34。M10）。下限 0 */
   magicPower: number;
   /** CB-21: オプション hit の合計（%） */
   hit: number;
@@ -162,9 +162,16 @@ export function equipStats(state: GameState, data: GameData, ch: Character): Equ
         case "identifyRate":
           identifyRate += v;
           break;
+        case "magicPower":
+          magicPower += v; // IT-34 / MG-33（M10）: 全部位の合計。最後に 0 未満にしない
+          break;
         case "goldLuck":
           goldLuck += v;
           break;
+        default: {
+          const unreachable: never = e; // OPTION_EFFECT_TYPES を足して case を書き忘れたらここで型エラーになる
+          throw new Error(`unknown option effect: ${JSON.stringify(unreachable)}`);
+        }
       }
     }
   }
@@ -177,7 +184,7 @@ export function equipStats(state: GameState, data: GameData, ch: Character): Equ
     acEquip,
     weaponDice,
     damageBonus,
-    magicPower,
+    magicPower: Math.max(0, magicPower), // IT-34 / MG-33: 負のオプションでも合計は 0 未満にしない
     hit,
     initiative,
     fearLossPct,

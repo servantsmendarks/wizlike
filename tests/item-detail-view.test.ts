@@ -64,6 +64,15 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
     expect(formatItemDetail(detailOf(s, legend), S).lines[1]).toEqual({ text: "希少度 伝説", tone: "normal" });
   });
 
+  test("UI-59/IT-34/IT-36 杖のオプション魔法攻撃力（M10。U10）: 性能の行（ベース + Lv。オプションを含まない）とオプションの行の両方を出す。護符はオプションの行だけ", () => {
+    const s = town();
+    const staff = createItemInstance(s, { itemId: "oak_staff", level: 2, rarity: "fine", options: [{ optionId: "magic_power", tier: 1, value: 2 }], identified: true });
+    const charm = createItemInstance(s, { itemId: "charm", rarity: "fine", options: [{ optionId: "magic_power", tier: 1, value: 1 }], identified: true });
+    const staffLines = formatItemDetail(detailOf(s, staff), S).lines.map((l) => l.text);
+    expect(staffLines.slice(0, 5)).toEqual(["武器　Lv2", "希少度 上質", "ダメージ 1d6", "魔法攻撃力 2", "魔法攻撃力 +2"]); // 樫の杖 1 + floor(2/2)
+    expect(formatItemDetail(detailOf(s, charm), S).lines.map((l) => l.text).slice(0, 4)).toEqual(["装飾　Lv0", "希少度 上質", "AC 0", "魔法攻撃力 +1"]);
+  });
+
   test("UI-59/IT-03/IT-40 ユニーク: Lv なし、性能、固有スキル、売値、説明（28 字ずつ。dim）", () => {
     const s = town();
     const id = createItemInstance(s, { itemId: "staff", uniqueId: "dawn_flint_staff", identified: true });

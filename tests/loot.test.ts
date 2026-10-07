@@ -2,7 +2,8 @@
 // 期待値は、データを書き換えて結果を 1 通りに絞った上で手で数え、乱数の消費は鏡の rng（同じ順に同じ引数で呼ぶ）で数える。
 // ボスの戦利品（DG-31）は tests/dungeon.test.ts のボスの describe にある。
 import { describe, expect, test } from "vitest";
-import type { DropEntry, GameData } from "../src/core/data";
+import type { DropEntry, GameData, ItemOption, OptionKind } from "../src/core/data";
+import { optionAppliesTo } from "../src/core/data";
 import { chance, cloneRng, randInt, weightedIndex } from "../src/core/rng";
 import { genericOptionTier, partyChestQuality, placeFoundItem, rollDropTable, rollItemSpec } from "../src/core/rules/loot";
 import { cloneState, createItemInstance, makeContext, memberById } from "../src/core/state";
@@ -28,8 +29,10 @@ function lootData(o: { rarity?: keyof typeof ONLY; curse?: number; spread?: numb
   return d;
 }
 
-/** 実データのオプション表の重み（IT-33 の鏡で、引いた分を除きながら使う） */
-const OPTION_WEIGHTS = data.itemOptions.options.map((x) => x.weight);
+/** IT-36: 実データのオプション表のうち、その品種に付けられるもの（IT-33 / IT-52 の母集団の鏡） */
+const poolOf = (kind: OptionKind): ItemOption[] => data.itemOptions.options.filter((x) => optionAppliesTo(x, kind));
+/** 武器（術者用でない）の母集団の重み（IT-33 の鏡で、引いた分を除きながら使う）。M10 で表に杖・装飾品だけの magic_power を足したので品種で絞る */
+const OPTION_WEIGHTS = poolOf("weapon").map((x) => x.weight);
 
 describe("IT-52 1 品の生成と乱数の順", () => {
   test("IT-52 汎用: weightedIndex(entries) → randInt(−spread, +spread) → weightedIndex(rarities) → chance(curse) → オプションの個数だけ weightedIndex（残りの重み）。鏡の rng", () => {
@@ -46,7 +49,7 @@ describe("IT-52 1 品の生成と乱数の順", () => {
       if (n < 2) continue;
       const level = Math.max(1, 5 + delta);
       const tier = level >= 4 ? 2 : 1; // IT-33: Lv4〜7 は段階 2
-      const pool = data.itemOptions.options.map((x) => x);
+      const pool = poolOf("weapon"); // 短剣・長剣は品種 weapon（IT-36）
       const want: { optionId: string; tier: number; value: number }[] = [];
       for (let i = 0; i < n; i++) {
         const k = weightedIndex(
@@ -82,7 +85,7 @@ describe("IT-52 1 品の生成と乱数の順", () => {
     weightedIndex(m, ONLY.fine);
     chance(m, 0);
     const k = weightedIndex(m, OPTION_WEIGHTS);
-    const o = data.itemOptions.options[k]!;
+    const o = poolOf("weapon")[k]!;
     // 二枚舌の短剣: ベース dagger、optionTier 1
     const spec = rollItemSpec(s, d, [{ unique: "twin_tongue_dagger", weight: 1 }], 9, 0, "d01");
     expect(s.rng).toEqual(m);
@@ -210,6 +213,75 @@ describe("IT-30〜33 希少度・chestQuality・呪い・オプション", () =>
     const spec = rollItemSpec(dived(4), lootData({ rarity: "fine", spread: 0 }), SWORD, 8, 0, "d01");
     const o = data.itemOptions.options.find((x) => x.id === spec.options![0]!.optionId)!;
     expect(spec.options).toEqual([{ optionId: o.id, tier: 3, value: o.values[2] }]);
+  });
+
+  test("IT-36/IT-33 剣・弓・鎧・盾・兜・小手のドロップには魔法攻撃力（magic_power）が付かない（伝説 + 呪いで 4 個 × 60 シード）", () => {
+    const d = lootData({ rarity: "legendary", curse: 100 });
+    for (const base of ["long_sword", "short_bow", "leather_armor", "wooden_shield", "leather_cap", "leather_gloves"]) {
+      for (let seed = 1; seed <= 60; seed++) {
+        const spec = rollItemSpec(dived(seed), d, [{ base, weight: 1 }], 3, 0, "d01");
+        expect(spec.options).toHaveLength(4);
+        expect(spec.options!.map((o) => o.optionId)).not.toContain("magic_power");
+      }
+    }
+  });
+
+  test("IT-36/IT-52 杖と護符の母集団は magic_power を含む 22 件（重み 76）。鏡の rng で出目と optionId を数え、magic_power が付くシードがある", () => {
+    expect(poolOf("caster").map((x) => x.id)).toEqual(poolOf("accessory").map((x) => x.id));
+    expect(poolOf("caster")).toHaveLength(22);
+    expect(poolOf("caster").reduce((a, x) => a + x.weight, 0)).toBe(76);
+    expect(OPTION_WEIGHTS.reduce((a, x) => a + x, 0)).toBe(72);
+    const d = lootData({ rarity: "rare", spread: 0 });
+    for (const [base, kind] of [
+      ["staff", "caster"],
+      ["charm", "accessory"],
+    ] as const) {
+      let found = 0;
+      for (let seed = 1; seed <= 40; seed++) {
+        const s = dived(seed);
+        const m = cloneRng(s.rng);
+        weightedIndex(m, [1]);
+        randInt(m, 0, 0);
+        weightedIndex(m, ONLY.rare);
+        chance(m, 0);
+        const pool = poolOf(kind);
+        const want: string[] = [];
+        for (let i = 0; i < 2; i++) want.push(pool.splice(weightedIndex(m, pool.map((x) => x.weight)), 1)[0]!.id);
+        const spec = rollItemSpec(s, d, [{ base, weight: 1 }], 5, 0, "d01");
+        expect(s.rng).toEqual(m);
+        expect(spec.options!.map((o) => o.optionId)).toEqual(want);
+        const mp = spec.options!.find((o) => o.optionId === "magic_power");
+        if (mp !== undefined) {
+          found++;
+          expect(mp).toEqual({ optionId: "magic_power", tier: 2, value: 2 }); // Lv5 は段階 2 で値 2
+        }
+      }
+      expect(found).toBeGreaterThan(0);
+    }
+  });
+
+  test("IT-36 ユニークはベースの品種で絞る: 夜明けの火打ち杖（staff）と凪の護符（charm）は magic_power を引けるが、二枚舌の短剣（dagger）の母集団には無い", () => {
+    // magic_power 以外の重みを 0 にすると、杖・護符は必ず magic_power を引き、短剣は母集団の重みが 0 で引けない
+    const d = lootData({
+      rarity: "fine",
+      mut: (x) => x.itemOptions.options.forEach((o) => (o.weight = o.id === "magic_power" ? 1 : 0)),
+    });
+    for (const unique of ["dawn_flint_staff", "calm_sea_charm"]) {
+      const spec = rollItemSpec(dived(2), d, [{ unique, weight: 1 }], 1, 0, "d01");
+      expect(spec.options!.map((o) => o.optionId)).toEqual(["magic_power"]);
+    }
+    expect(() => rollItemSpec(dived(2), d, [{ unique: "twin_tongue_dagger", weight: 1 }], 1, 0, "d01")).toThrow("total weight is 0");
+  });
+
+  test("IT-52 引く乱数の回数は品種で変わらない: 同じシードで長剣と護符（希少 + 呪い = 3 個）を作ると rng が同じところまで進む", () => {
+    const d = lootData({ rarity: "rare", curse: 100 });
+    for (let seed = 1; seed <= 10; seed++) {
+      const a = dived(seed);
+      const b = dived(seed);
+      rollItemSpec(a, d, SWORD, 3, 0, "d01");
+      rollItemSpec(b, d, [{ base: "charm", weight: 1 }], 3, 0, "d01");
+      expect(a.rng).toEqual(b.rng);
+    }
   });
 });
 
