@@ -480,6 +480,81 @@ describe("UI-47/UI-66（未定-19。M10.5）箱が開いている間はどこの
     press(3);
     expect(out).toEqual(["facility"]);
   });
+
+  test("UI-47/UI-59（未定-19。M10.5 の修正）waiting は箱が埋まって ▼ で待つか、文や hold が控える間だけ真。文字送り中の 1 文だけのときと最後の文の ▼ の間は偽（迷宮のキャラクター画面の 3 行の箱）", async () => {
+    const { m, tick } = setup({ speed: 30, lines: T.talkCompact.lines, cols: T.talkCompact.cols });
+    expect(m.waiting()).toBe(false);
+    void m.say("一つ目の文", false);
+    // 文字送り中の 1 文だけ
+    expect({ typing: m.typing(), waiting: m.waiting() }).toEqual({ typing: true, waiting: false });
+    void m.say("二つ目の文", false);
+    // 続きの文が控えている
+    expect(m.waiting()).toBe(true);
+    const h = m.hold();
+    while (tick());
+    expect(await settled(h)).toBe(true);
+    // 最後の文の ▼（箱は開いたまま。pending は真）
+    expect({ open: m.isOpen(), pending: m.pending(), waiting: m.waiting() }).toEqual({ open: true, pending: true, waiting: false });
+    // 3 行の箱を埋めて、入らない文が ▼ で待つ
+    void m.say("三", false);
+    void m.say("四", false);
+    while (tick());
+    expect({ text: m.typing(), waiting: m.waiting() }).toEqual({ text: false, waiting: true });
+    m.tap();
+    while (tick());
+    expect(m.waiting()).toBe(false);
+  });
+
+  // M10 の 実機(M10-閉) (5) の振る舞い（M10.5 で一時的に崩れた）を、app の talkWaits の迷宮の側（talk.waiting）で確かめる
+  test("UI-47/UI-59（M10.5 の修正）迷宮のキャラクター画面（3 行の箱）: 文字送りの途中に dim の項目を押すと前の文を打ち切って理由を語り直し、最後の文の後は項目が効く（会話を打ち切ってから動く）", () => {
+    const { m, sink, adv } = setup({ speed: 30, lines: T.talkCompact.lines, cols: T.talkCompact.cols });
+    const stage = new FakeStage(10);
+    const out: string[] = [];
+    attachStageInput(stage as unknown as HTMLElement, {
+      scale: () => 2,
+      threshold: () => 28,
+      deadZone: data.config.input.edgeDeadZonePx,
+      width: data.config.stage.width,
+      swipeEnabled: () => false,
+      busy: () => false,
+      onBusyTap: () => out.push("busyTap"),
+      // app の talkWaits の迷宮のキャラクター画面（route が街でない）と同じ
+      talkWaits: () => m.waiting(),
+      onTalkTap: () => {
+        out.push("talkTap");
+        m.tap();
+      },
+      onSwipe: () => {},
+      onSwipeRelease: () => {},
+    });
+    const reason = data.strings["camp.equipReason.cannotAct"]!;
+    const item = new FakeNode("BUTTON", stage);
+    item.left = 20;
+    item.top = 700;
+    onTap(item as unknown as Element, () => {
+      // app の campReason / item と同じ: 会話の箱を打ち切ってから動く
+      m.flush();
+      out.push("item");
+      void m.say(reason, false);
+    });
+    const press = (id: number): void => {
+      stage.emit("pointerdown", { pointerId: id, clientX: 40, clientY: 720, target: item, pointerType: "touch" });
+      stage.emit("pointerup", { pointerId: id, clientX: 40, clientY: 720, target: item });
+    };
+    press(1);
+    expect(out).toEqual(["item"]);
+    expect({ open: sink.open, typing: m.typing() }).toEqual({ open: true, typing: true });
+    // 文字送りの途中にもう一度押すと、項目が動いて語り直す（箱のタップにはならない）
+    press(2);
+    expect(out).toEqual(["item", "item"]);
+    expect(m.typing()).toBe(true);
+    m.rush();
+    // 最後の文の ▼ の間も項目が効く（閉じるだけにならない）
+    expect({ open: sink.open, more: sink.more.on, text: sink.text }).toEqual({ open: true, more: true, text: reason });
+    press(3);
+    expect(out).toEqual(["item", "item", "item"]);
+    expect(adv.n).toBe(0);
+  });
 });
 
 describe("UI-47 語りの表示先（createNarrator）", () => {

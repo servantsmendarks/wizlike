@@ -2032,10 +2032,16 @@ export function createApp(o: {
   /**
    * UI-47 / UI-66（2026-10-07 未定-19。M10.5）: 再生の外で会話の箱が文送りを待っている（箱が開いている（最後の文の ▼ を含む）か、続きの文がある）。
    * この間は一覧・ヘッダー・帯などステージのどこのタップも箱のタップ（tapTalk）にし、数字キーも同じにする（一覧は選ばない）。
-   * 箱を受ける画面（街・キャラクター画面）で、箱より上の overlay（履歴・設定など）が無いときだけ
+   * 箱を受ける画面（街・キャラクター画面）で、箱より上の overlay（履歴・設定など）が無いときだけ。
+   * 迷宮のキャラクター画面（3 行の箱。操作の欄に被らない）は M10 の規則（talk.waiting: ▼ で待つか文が控える間だけ。
+   * 文字送り中の 1 文と最後の文の ▼ の間は項目が効き、項目は会話を打ち切ってから動く）
    */
   const talkWaits = (): boolean =>
-    !isBusy() && !chaining && (route === "town" || characterOpen) && (overlay === null || overlay === "camp") && play.talk.pending();
+    !isBusy() &&
+    !chaining &&
+    (route === "town" || characterOpen) &&
+    (overlay === null || overlay === "camp") &&
+    (route === "town" ? play.talk.pending() : play.talk.waiting());
 
   const blurActive = (): void => {
     const a = document.activeElement;

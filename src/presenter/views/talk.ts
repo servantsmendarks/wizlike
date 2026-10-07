@@ -16,7 +16,10 @@
 // - flush は控えている文をすべて解決して箱を閉じる（ログには入っている）。clear は flush に加えて外からの ▼ を下ろす（再開 SV-50）。
 // - replay はログに入れずに出す（迷宮から持ち越した語り。playback の townCarry）。
 // - pending（未定-19。M10.5）: 箱が開いているか、出す文が控えている間は真（箱は操作の欄に被さるので、最後の文の ▼ の間も含む）。
-//   再生の外ではステージのどのタップも箱のタップにする（app と input/tap.ts）。
+//   再生の外ではステージのどのタップも箱のタップにする（app と input/tap.ts）。街（広い箱）だけで使う。
+// - waiting（未定-19 の M10 の規則。M10.5 の修正）: 箱が埋まって ▼ で待つか、出す文（と hold）が控えている間だけ真
+//   （文字送り中の 1 文だけ・最後の文の ▼ の間は偽）。迷宮のキャラクター画面（3 行の箱。操作の欄に被らない）で使い、
+//   項目は会話を打ち切ってから動き、最後の文の後は項目が効く。
 // 純粋なモデル（createTalkModel）と、薄い DOM の層（createTalkBox）に分ける。
 // 文字送りの setTimeout は DOM の層だけが使う（CLAUDE.md §2 の文字送りの例外）。モジュールのトップレベルでは DOM に触れない。
 import type { TalkRect } from "../layout";
@@ -91,6 +94,11 @@ export type TalkModel = {
    * 出す文（と hold）が控えている
    */
   pending(): boolean;
+  /**
+   * UI-47 / UI-59（未定-19。M10 の規則）: 箱が埋まって ▼ で待つか、出す文（と hold）が控えている間だけ真。
+   * 文字送り中の 1 文だけのときと、最後の文の ▼ の間は偽（迷宮のキャラクター画面の 3 行の箱。操作の欄に被らない）
+   */
+  waiting(): boolean;
   /** 外からの ▼（playback の続きの三角と、判定の箱の待ち）。文字送りの間と箱が埋まって待つ間は出さない */
   setMore(on: boolean, blink?: boolean): void;
   /**
@@ -294,6 +302,9 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
     },
     pending(): boolean {
       return opened || queue.length > 0 || full !== null;
+    },
+    waiting(): boolean {
+      return queue.length > 0 || full !== null;
     },
     setMore(on: boolean, blink = false): void {
       ext = on ? { blink } : null;

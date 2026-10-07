@@ -635,10 +635,12 @@ describe("入力と Command", () => {
     expect(app).toContain("onTap(play.picture, () => tapTalk());");
   });
 
-  test("UI-47/UI-66（2026-10-07 未定-19）会話の箱が文送りを待つ間（talk.pending）は、再生の外の街・キャラクター画面（overlay なしかキャンプ）でステージのどこのタップも tapTalk、数字と Enter / Space も箱のタップ（ソースの検査）", () => {
+  // M10.5 の修正（F1）: 以前の期待値は route を問わず play.talk.pending()。迷宮のキャラクター画面（3 行の箱。操作の欄に被らない）は
+  // M10 の規則（talk.waiting）に戻した
+  test("UI-47/UI-66/UI-59（2026-10-07 未定-19。M10.5）会話の箱が文送りを待つ間は、再生の外の街・キャラクター画面（overlay なしかキャンプ）でステージのどこのタップも tapTalk、数字と Enter / Space も箱のタップ。待つ間は街なら talk.pending（箱が開いている間）、迷宮のキャラクター画面なら talk.waiting（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     expect(app).toMatch(
-      /const talkWaits = \(\): boolean =>\s*!isBusy\(\) && !chaining && \(route === "town" \|\| characterOpen\) && \(overlay === null \|\| overlay === "camp"\) && play\.talk\.pending\(\);/,
+      /const talkWaits = \(\): boolean =>\s*!isBusy\(\) &&\s*!chaining &&\s*\(route === "town" \|\| characterOpen\) &&\s*\(overlay === null \|\| overlay === "camp"\) &&\s*\(route === "town" \? play\.talk\.pending\(\) : play\.talk\.waiting\(\)\);/,
     );
     const input = /const stageInput = attachStageInput\(stage, \{([\s\S]*?)\n {6}\}\);/.exec(app)?.[1] ?? "";
     expect(input).toContain("talkWaits: () => talkWaits(),");
