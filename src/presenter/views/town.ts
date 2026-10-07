@@ -627,6 +627,7 @@ function upgradeTarget(menu: TownMenu, sel: UpgradeSel): string {
  *   「…。所持金が足りない。」（town.upgrade.ask / askNoGold）。対象と触媒の数は答えのボタンのラベル（town.upgrade.do）。preview が null なら town.ask.upConfirm
  * - 転職の確認（{ ccConfirm }）: 「{name}を{cls}にする。レベルは 1 に戻る。よいか。」（town.classChange.confirm）。cc が null なら town.ask.classChangeConfirm
  * - 酒場で救済の申し出（TW-30。menu.mercy が null でない）の間: town.ask.mercy（答えは救済の行）
+ * - 施設メニューで救済の申し出の間: town.ask.menuMercy（酒場へ行けば戻してもらえる、と施設の問い。街に入るときの語り town.mercy.offer は問いを含まない）
  * - ほかは townHeading のキーの文
  */
 export function townHeadingText(
@@ -646,6 +647,7 @@ export function townHeadingText(
     return s(strings, "town.classChange.confirm", { name, cls });
   }
   if (page === "tavern" && menu.mercy !== null) return s(strings, "town.ask.mercy");
+  if (page === "menu" && menu.mercy !== null) return s(strings, "town.ask.menuMercy");
   return s(strings, townHeading(page));
 }
 

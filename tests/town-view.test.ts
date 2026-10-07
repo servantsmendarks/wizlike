@@ -340,8 +340,8 @@ describe("UI-52 街のページ", () => {
     for (const p of ALL_PAGES) {
       for (const k of townPageIntro(p, m)) {
         expect(headings.has(k), `${JSON.stringify(p)} ${k}`).toBe(false);
-        // 救済の申し出（TW-30）は GM の台詞の中の問い（「」の中）なので除く
-        if (k !== "town.mercy.offer") expect(S[k], k).not.toContain("？");
+        // 2026-10-07（M10.5 追補）: 救済の申し出（TW-30）の town.mercy.offer も問いを含まなくなったので、除外をやめた
+        expect(S[k], k).not.toContain("？");
       }
     }
     expect(S["town.inn.intro"]).toBe("宿の主人が鍵を並べる。");
@@ -484,6 +484,20 @@ describe("UI-52 街のページ", () => {
     expect(townPageIntro("tavern", m)).toEqual(["town.tavern.intro"]);
     expect(townHeadingText("tavern", m, S)).toBe(S["town.ask.mercy"]);
     expect(townHeadingText("tavern", menuOf(town()), S)).toBe(S["town.ask.what"]);
+  });
+
+  // 2026-10-07（M10.5 追補・未定-22 のレビュー）: 街に入るとき（core の town.enter）と再開のとき（SV-50）に会話の箱で語る town.mercy.offer は
+  // 施設メニューのボタンを覆うので、問い（旧「…誰にする？」）を含まない語りに改め、問いは施設メニューの見出しに出す
+  test("UI-47/UI-52/TW-30 未定-22 救済の申し出の間、施設メニューの見出しは town.ask.menuMercy（1 行の問い）。箱で語る town.mercy.offer は問いを含まない", () => {
+    const s = town({ c3: { life: "dead", hp: 0 } });
+    s.townVisit = { mercyOffered: true };
+    const m = menuOf(s);
+    expect(m.mercy).not.toBeNull();
+    expect(townHeadingText("menu", m, S)).toBe(S["town.ask.menuMercy"]);
+    expect(townHeadingText("menu", menuOf(town()), S)).toBe(S["town.ask.menu"]);
+    expect(kinsokuLines(S["town.ask.menuMercy"]!, 28)).toHaveLength(1);
+    expect(S["town.ask.menuMercy"]).toContain("？");
+    expect(S["town.mercy.offer"]).not.toContain("？");
   });
 
   test("UI-47/UI-52 未定-22 答えのボタンが続く問い（強化の確認・転職の確認・救済の申し出）は見出しの 1 行（全角 28 字）に収まり、強化のボタンのラベルは一覧の幅 168（全角 21 字）に収まる", () => {
