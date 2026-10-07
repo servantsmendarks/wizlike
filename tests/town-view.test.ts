@@ -28,6 +28,7 @@ import {
   type TownEntry,
   type TownPage,
 } from "../src/presenter/views/town";
+import { regions, TOWN_GRID_LABEL_MAX, townLayout } from "../src/presenter/layout";
 import { data, newGame } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
 import { kinsokuLines } from "./helpers/wrap";
@@ -97,6 +98,18 @@ describe("UI-52 街のページ", () => {
     ]);
     expect(townHeader(m, S, "menu")).toBe("街　300G");
     expect(townHeader(menuOf(town({}, 0)), S, "menu")).toBe("街　0G");
+  });
+
+  test("UI-13/UI-52（M10）施設メニューのラベルは 4 字（TOWN_GRID_LABEL_MAX）まで。8px の字で 48×48 の枠の内側に収まる（strings を差し替えて 5 字にしたら落ちる）", () => {
+    expect(TOWN_GRID_LABEL_MAX).toBe(4);
+    const grid = townLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size).grid;
+    const labels = townEntries("menu", menuOf(town()), S).map((e) => e.label);
+    expect(labels).toHaveLength(grid.length);
+    for (const l of labels) expect([...l].length, l).toBeLessThanOrEqual(TOWN_GRID_LABEL_MAX);
+    for (const r of grid) expect(8 * TOWN_GRID_LABEL_MAX).toBeLessThanOrEqual(r.w - 2);
+    // 差し替えの検査が効くこと（5 字の施設名は上の検査で落ちる）
+    const long = townEntries("menu", menuOf(town()), { ...S, "town.menu.tavern": "冒険者の酒場" }).map((e) => e.label);
+    expect(long.some((l) => [...l].length > TOWN_GRID_LABEL_MAX)).toBe(true);
   });
 
   test("UI-52/TW-04/TW-15 宿屋はランクの行（名前と料金。士気の立つ個室は末尾に「＋士気」）。払えないランクは disabled。末尾が戻る", () => {

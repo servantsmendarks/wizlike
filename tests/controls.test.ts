@@ -148,6 +148,48 @@ describe("controls", () => {
     expect(picked).toEqual([7, 0]);
   });
 
+  test("UI-13/UI-52（M10）街の施設メニュー（town の配置）: townList.grid の 48×48 の 6 枠（操作領域の原点 y300 からの相対で x40/96/152・top −110/−54）に置き、見出しも出す。数字キーは行の順。ほかの配置・一覧に移ると見出しを出し分ける", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const T = townLayout(g, data.config.party.size);
+    const c = createControls({
+      region: g.controls,
+      layout: { ...L, townList: { heading: T.heading, area: T.list.area, rows: T.list.rows, grid: T.grid } },
+      strings: data.strings,
+      onAction: () => {},
+      hold: HOLD,
+      onClose: () => {},
+    });
+    const picked: number[] = [];
+    const items = Array.from({ length: 7 }, (_, i) => ({ label: `f${i}`, onSelect: () => picked.push(i) }));
+    c.setBattleMenu(items, "town", { heading: "どこへ行く？" });
+    c.setMode("battle");
+    const buttons = created.filter((e) => e.className === "controls-battle-item");
+    expect(buttons.map((e) => [e["textContent"], e.style["left"], e.style["top"], e.style["width"], e.style["height"]])).toEqual([
+      ["f0", "40px", "-110px", "48px", "48px"],
+      ["f1", "96px", "-110px", "48px", "48px"],
+      ["f2", "152px", "-110px", "48px", "48px"],
+      ["f3", "40px", "-54px", "48px", "48px"],
+      ["f4", "96px", "-54px", "48px", "48px"],
+      ["f5", "152px", "-54px", "48px", "48px"],
+    ]);
+    const heading = created.find((e) => e.className === "controls-list-heading")!;
+    expect(heading["textContent"]).toBe("どこへ行く？");
+    expect(heading.style["display"]).toBe("");
+    c.select(4);
+    c.select(6); // 枠数を超える分は捨てた
+    buttons[0]!.tap();
+    expect(picked).toEqual([4, 0]);
+    // 施設のページ（一覧）へ移ると見出しは一覧の見出し、キャンプの枠では隠す
+    c.setList([{ label: "a", onSelect: () => {} }], { town: { heading: "何をする？" } });
+    c.setMode("list");
+    expect([heading["textContent"], heading.style["display"]]).toEqual(["何をする？", ""]);
+    c.setBattleMenu(items, "camp");
+    c.setMode("battle");
+    expect(heading.style["display"]).toBe("none");
+  });
+
   test("UI-54 setBattleMenu の配置: party は battleParty の 4 枠、member は battleMember の 5 枠に置き、枠数を超える分は捨てる", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);
@@ -346,7 +388,7 @@ describe("controls", () => {
     const T = townLayout(g, data.config.party.size);
     const c = createControls({
       region: g.controls,
-      layout: { ...L, townList: { heading: T.heading, area: T.list.area, rows: T.list.rows } },
+      layout: { ...L, townList: { heading: T.heading, area: T.list.area, rows: T.list.rows, grid: T.grid } },
       strings: data.strings,
       onAction: () => {},
       hold: HOLD,

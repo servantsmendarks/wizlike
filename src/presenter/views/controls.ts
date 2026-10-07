@@ -5,6 +5,7 @@
 // 「オート解除」は再生中も反応する（whileBusy。UI-44 の例外）。
 // 末尾が戻る / やめるの一覧は、その項目を一覧の外（layout.listBack）に固定し、一覧だけを縦にスクロールする（UI-11）。
 // M8.5: 街の一覧（setList の town。UI-13）は、見出しと一覧を操作領域の外の townLayout の位置（帯の下。y178..387）に置く（負の top）。
+// M10: 街の施設メニュー（setBattleMenu の town。UI-13 / UI-52）は、見出しと 48×48 の 3 列 × 2 段を同じく townLayout の位置に置く。
 // Action から Command への変換と長押しの連打は呼び出し側（app）が持つ。表示層は前進できるかを判定しない（UI-35）。
 // モジュールのトップレベルでは DOM に触れない。
 import type { AudioData, Strings } from "../../core/data/index";
@@ -33,11 +34,17 @@ export type ControlItem = {
 
 /** UI-66: 表示層の操作の音の種類（data/audio.json の ui のキー） */
 export type UiSound = keyof AudioData["ui"];
-/** 枠の配置（UI-54）。party は戦闘のパーティの選択の 4 枠、member はメンバーの 5 枠、camp はキャンプの 8 枠（UI-53） */
-export type BattleSlots = "party" | "member" | "camp";
+/**
+ * 枠の配置（UI-54）。party は戦闘のパーティの選択の 4 枠、member はメンバーの 5 枠、camp はキャンプの 8 枠（UI-53）、
+ * town は街の施設メニューの 6 枠（UI-13 / UI-52。M10。見出しも出す）
+ */
+export type BattleSlots = "party" | "member" | "camp" | "town";
 
-/** UI-13（M8.5）: 街の一覧の見出し（1 行）と一覧（スクロールの欄と見える行。ステージ座標。layout の townLayout） */
-export type TownListLayout = { heading: Rect; area: Rect; rows: Rect[] };
+/**
+ * UI-13（M8.5）: 街の一覧の見出し（1 行）と一覧（スクロールの欄と見える行）。grid は施設メニューの 6 枠（M10）。
+ * ステージ座標。layout の townLayout
+ */
+export type TownListLayout = { heading: Rect; area: Rect; rows: Rect[]; grid: Rect[] };
 
 export type Controls = {
   el: HTMLElement;
@@ -56,10 +63,11 @@ export type Controls = {
    */
   setList(items: ControlItem[], opts?: { fixedLast?: boolean; town?: { heading: string } }): void;
   /**
-   * UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠 / campGrid の 8 枠）に並べる。
-   * null は空き枠（何も置かない）。枠数を超える分は捨てる
+   * UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠 / campGrid の 8 枠 / townList.grid の 6 枠）に並べる。
+   * null は空き枠（何も置かない）。枠数を超える分は捨てる。
+   * town（UI-13 / UI-52。M10）なら、setList の town と同じ見出し（opts.heading。accent 色の 1 行。押せない）も出す
    */
-  setBattleMenu(items: (ControlItem | null)[], slots: BattleSlots): void;
+  setBattleMenu(items: (ControlItem | null)[], slots: BattleSlots, opts?: { heading?: string }): void;
   /**
    * UI-54: 一覧の i 行目を注目の見た目（枠線を accent 色。dim の行は dim のまま）にし、見える位置へ動かす。null で解除。
    * 一覧は作り直さない。scroll: false なら見える位置へは動かさない（ポインタで触れた行。タッチの途中で一覧が動かないように）
@@ -154,6 +162,7 @@ export function createControls(o: {
     party: o.layout.battleParty,
     member: o.layout.battleMember,
     camp: o.layout.campGrid,
+    town: o.layout.townList?.grid ?? o.layout.campGrid.slice(0, 6),
   };
 
   const el = document.createElement("div");
@@ -209,6 +218,7 @@ export function createControls(o: {
     heading: { x: first.x, y: first.y - 12, w: first.w, h: 10 },
     area: { x: first.x, y: first.y, w: 168, h: last.y + last.h - first.y },
     rows: LIST_ROWS.map((r) => ({ ...r, w: 168 })),
+    grid: o.layout.campGrid.slice(0, 6),
   };
   const townRow = town.rows[0] ?? { ...town.area, h: first.h };
   let listTownOn = false;
@@ -297,6 +307,8 @@ export function createControls(o: {
   battle.className = "controls-battle";
   el.appendChild(battle);
   let battleItems: (ControlItem | null)[] = [];
+  /** UI-13 / UI-52（M10）: 戦闘の枠を街の施設メニュー（town）の配置で出しているか（見出しも出す） */
+  let battleTownOn = false;
 
   // ---- オート中の「オート解除」
   const autoStop = document.createElement("button");
@@ -315,7 +327,7 @@ export function createControls(o: {
     setShown(menu, mode === "dpad");
     setShown(list, mode === "list");
     setShown(listBack, mode === "list" && listBackOn);
-    setShown(heading, mode === "list" && listTownOn);
+    setShown(heading, (mode === "list" && listTownOn) || (mode === "battle" && battleTownOn));
     setShown(close, mode === "close" || mode === "map");
     setShown(mapGo, mode === "map");
     setShown(battle, mode === "battle");
@@ -449,8 +461,10 @@ export function createControls(o: {
       if (listBackOn && i === listButtons.length - 1) return;
       if (b !== undefined && typeof b.scrollIntoView === "function") b.scrollIntoView({ block: "nearest" });
     },
-    setBattleMenu(items: (ControlItem | null)[], slots: BattleSlots): void {
+    setBattleMenu(items: (ControlItem | null)[], slots: BattleSlots, opts?: { heading?: string }): void {
       const rects = BATTLE_SLOTS[slots];
+      battleTownOn = slots === "town";
+      if (battleTownOn && opts?.heading !== undefined && heading.textContent !== opts.heading) heading.textContent = opts.heading;
       battleItems = items.slice(0, rects.length);
       battle.replaceChildren();
       battleItems.forEach((it, i) => {
@@ -465,6 +479,7 @@ export function createControls(o: {
         onTap(b, () => pick(it));
         battle.appendChild(b);
       });
+      apply();
     },
     setMapGo(enabled: boolean): void {
       mapGoOn = enabled;

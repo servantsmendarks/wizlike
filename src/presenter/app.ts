@@ -779,7 +779,13 @@ export function createApp(o: {
       // UI-63（2026-10-06）: 施設の曲（無い施設と施設メニューは街の曲）
       const song = townSong(townFacility(townPage), data);
       if (song !== undefined) setScene(song);
-      // UI-13: 見出し（段の問い。ログに残さない）と一覧。施設メニューも 6 行の一覧。UI-11: 末尾の戻るは一覧の外に固定する
+      // UI-13 / UI-52（M10）: 施設メニューは見出しと 48×48 の 3 列 × 2 段（戻るは無い。数字キーは行の順）
+      if (townPage === "menu") {
+        c.setBattleMenu(items, "town", { heading: t(townHeading(townPage)) });
+        c.setMode("battle");
+        return;
+      }
+      // UI-13: 見出し（段の問い。ログに残さない）と一覧。UI-11: 末尾の戻るは一覧の外に固定する
       c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading: t(townHeading(townPage)) } });
       c.setMode("list");
       return;

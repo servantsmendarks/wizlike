@@ -68,6 +68,13 @@ const SCREENS: Record<string, Record<string, Rect>> = {
     ...Object.fromEntries(T.list.rows.map((r, i) => [`town.list[${i}]`, r])),
     back: T.back,
   },
+  // UI-13 / UI-52（M10）街の施設メニュー: ヘッダーのログと設定、帯の 6 セル、48×48 の 6 枠（一覧の行と戻るは出さない）
+  townMenu: {
+    "header.log": T.header.log,
+    "header.settings": T.header.settings,
+    ...Object.fromEntries(T.band.hits.map((r, i) => [`town.band[${i}]`, r])),
+    ...Object.fromEntries(T.grid.map((r, i) => [`town.grid[${i}]`, r])),
+  },
   // UI-11 末尾が戻る / やめるの一覧（街の各施設・キャンプと酒場の一覧の段・戦闘の呪文・道具・対象）: 幅 168 の行と、一覧の外の戻る
   listFixed: {
     "header.settings": HEADER_SETTINGS,
@@ -441,6 +448,19 @@ describe("layout", () => {
     for (const r of T.list.rows) expect(inside(r, T.list.area)).toBe(true);
     // 行は UI-10 の 12 論理 px 以上（TOUCH_MIN_LOGICAL の例外 town.list）
     expect(Math.min(...T.list.rows.map((r) => r.h))).toBeGreaterThanOrEqual(12);
+  });
+
+  test("UI-13/UI-52（M10）townLayout の grid: 施設メニューの 48×48 を 3 列 × 2 段（x40/96/152・y190/246、間 8）でステージの中央寄せ。一覧の行の y 範囲（y190..387）に収まり、見出し・帯・絵・会話の箱と重ならない", () => {
+    expect(T.grid).toEqual([190, 246].flatMap((y) => [40, 96, 152].map((x) => ({ x, y, w: 48, h: 48 }))));
+    const left = Math.min(...T.grid.map((r) => r.x));
+    const right = Math.max(...T.grid.map((r) => r.x + r.w));
+    expect(left).toBe(W - right);
+    const rows: Rect = { x: T.heading.x, y: T.list.area.y, w: T.heading.w, h: T.list.area.h };
+    for (const r of T.grid) {
+      expect(r.w).toBe(r.h);
+      expect(inside(r, rows), JSON.stringify(r)).toBe(true);
+      for (const o of [T.heading, T.band.row, ...T.band.hits, T.picture, T.talk.box, T.header.text]) expect(overlaps(r, o), JSON.stringify([r, o])).toBe(false);
+    }
   });
 
   test("ui §2 パーティ欄がちょうど party.size × 10 なら上の余白を詰める。メッセージに 1 行も入らなければ warn", () => {

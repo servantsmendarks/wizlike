@@ -480,10 +480,13 @@ describe("入力と Command", () => {
   // M8.5: M7 の広げた一覧（townListTall・setList の tall・listTall.backdrop）は UI-13 の街の配置に置き換えた
   // M10（UI-59）: 図鑑とキャラクター画面のパネルは layout.character（townLayout の book と同じ範囲）に広げる。判定の箱の層 diceLayer をキャンプと会話の箱の間に足した。
   // メッセージ窓とパーティ欄の出し入れは applyPanels（街かキャラクター画面なら隠す）に移した
-  test("UI-13/UI-52/IT-66/UI-59（M8.5・M10）街の一覧は見出し（townHeading）付きの setList の town で、施設メニューも同じ一覧。ヘッダーは場所と所持金、ビューは施設の絵。図鑑とキャラクター画面のパネルは layout.character に広げる（ソースの検査）", () => {
+  // M10（UI-13 / UI-52。2026-10-07 U3）: 施設メニューは一覧ではなく 48×48 の 3 列 × 2 段（setBattleMenu の town）に改めたので、not.toContain を toContain に替えた
+  test("UI-13/UI-52/IT-66/UI-59（M8.5・M10）街の一覧は見出し（townHeading）付きの setList の town。施設メニューは見出し付きの setBattleMenu の town（48×48 の 3 列 × 2 段）。ヘッダーは場所と所持金、ビューは施設の絵。図鑑とキャラクター画面のパネルは layout.character に広げる（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     expect(app).toContain('c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading: t(townHeading(townPage)) } });');
-    expect(app).not.toContain('setBattleMenu(items, "town")');
+    expect(app).toMatch(
+      /if \(townPage === "menu"\) \{\s*c\.setBattleMenu\(items, "town", \{ heading: t\(townHeading\(townPage\)\) \}\);\s*c\.setMode\("battle"\);\s*return;\s*\}/,
+    );
     expect(app).toContain("play.header.setText(townHeader(menu, strings, townPage));");
     expect(app).toContain("play.setTownPicture(townFacility(townPage));");
     expect(app).toMatch(/if \(p\.kind === "book"\) return \{ kind: "lines", \.\.\.formatBook\(uniqueBookView\(state, data\), strings\), tall: true \};/);
@@ -493,6 +496,7 @@ describe("入力と Command", () => {
     expect(app).toMatch(/createTitleScreen\(\{[\s\S]*?pictures: o\.assets\?\.town \?\? \{\},\s*base: import\.meta\.env\.BASE_URL,/);
     const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
     expect(dungeon).toContain("const camp = createCampView(lay.camp, lay.character);");
+    expect(dungeon).toContain("townList: { heading: tl.heading, area: tl.list.area, rows: tl.list.rows, grid: tl.grid } }");
     // 帯は窓の後・キャンプのパネルの前（図鑑・キャラクター画面のパネルが帯を覆う）、判定の箱の層（UI-59）はキャンプの後、
     // 会話の箱（UI-47）はその後、パーティ欄はその後（キャラクター画面の間は隠す）
     expect(dungeon).toContain(

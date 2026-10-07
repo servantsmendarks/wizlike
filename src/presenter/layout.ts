@@ -259,6 +259,16 @@ const TOWN_HEADING_W = 224;
 const TOWN_LIST_W = 168;
 /** UI-13: 帯・見出し・一覧の間の余白 */
 const TOWN_GAP = 2;
+/**
+ * UI-13 / UI-52（M10。2026-10-07 ユーザー判断 U3）: 施設メニューの正方形のボタン。一辺 48 を 3 列 × 2 段、間 8。
+ * 列はステージの中央寄せ（x40 / 96 / 152）、段は一覧の欄の上端から（y190 / 246）。施設メニューには戻るが無いので一覧の幅 168 に縛らない
+ */
+const TOWN_GRID_SIZE = 48;
+const TOWN_GRID_GAP = 8;
+const TOWN_GRID_COLS = 3;
+const TOWN_GRID_ROWS = 2;
+/** UI-13 / UI-52（M10。U3）: 施設メニューのラベルの字数の上限（8px の字で 48×48 の内側 46 に収まる。town-view.test で strings を検査する） */
+export const TOWN_GRID_LABEL_MAX = 4;
 /** UI-47: 会話の箱の行数と、箱の左右の余白（ステージの端からの距離）・絵の下端との余白 */
 const TALK_LINES = 3;
 const TALK_MARGIN_X = 2;
@@ -283,13 +293,15 @@ export type TownLayout = {
   heading: Rect;
   /** 一覧。area は縦スクロールの欄（行の高さの整数倍）、rows は見える行 */
   list: { area: Rect; rows: Rect[] };
+  /** UI-13 / UI-52（M10）: 施設メニューの 6 枠（48×48 の 3 列 × 2 段。行の順に 酒場・宿屋・寺院 / 闇魔術・迷宮へ・店） */
+  grid: Rect[];
   /** UI-11 の固定の戻る（操作領域の x178・y54 の 56×40） */
   back: Rect;
   /** UI-59 酒場の図鑑のパネル（ビューの上端から操作領域の上端まで） */
   book: Rect;
 };
 
-/** UI-13: 街の画面の矩形（ステージ座標）。既定の regions では ヘッダー y0..15、絵 y16..165、帯 y166..175、見出し y178..187、一覧 y190..387（22×9 行）、戻る 178,354 */
+/** UI-13: 街の画面の矩形（ステージ座標）。既定の regions では ヘッダー y0..15、絵 y16..165、帯 y166..175、見出し y178..187、一覧 y190..387（22×9 行）、施設メニューの 6 枠 x40/96/152・y190/246 の 48×48（M10）、戻る 178,354 */
 export function townLayout(g: Regions, partySize: number): TownLayout {
   const h = g.header;
   const settings: Rect = { x: h.x + h.w - HEADER_SETTINGS_W, y: h.y, w: HEADER_SETTINGS_W, h: h.h };
@@ -313,6 +325,14 @@ export function townLayout(g: Regions, partySize: number): TownLayout {
   const count = Math.max(1, Math.floor((bottom - listY) / TOWN_ROW_H));
   const area: Rect = { x: TOWN_LIST_X, y: listY, w: TOWN_LIST_W, h: count * TOWN_ROW_H };
   const back = shift(LIST_BACK_REL, g.controls);
+  const gridW = TOWN_GRID_COLS * TOWN_GRID_SIZE + (TOWN_GRID_COLS - 1) * TOWN_GRID_GAP;
+  const gridX = v.x + Math.floor((v.w - gridW) / 2);
+  const grid = Array.from({ length: TOWN_GRID_COLS * TOWN_GRID_ROWS }, (_, i): Rect => ({
+    x: gridX + (TOWN_GRID_SIZE + TOWN_GRID_GAP) * (i % TOWN_GRID_COLS),
+    y: listY + (TOWN_GRID_SIZE + TOWN_GRID_GAP) * Math.floor(i / TOWN_GRID_COLS),
+    w: TOWN_GRID_SIZE,
+    h: TOWN_GRID_SIZE,
+  }));
   return {
     header: { text, log, settings },
     picture: { ...v },
@@ -321,6 +341,7 @@ export function townLayout(g: Regions, partySize: number): TownLayout {
     band: { row: { x: v.x, y: bandY, w: v.w, h: TOWN_BAND_H }, cells, hits },
     heading,
     list: { area, rows: Array.from({ length: count }, (_, i): Rect => ({ x: area.x, y: area.y + TOWN_ROW_H * i, w: area.w, h: TOWN_ROW_H })) },
+    grid,
     back,
     book: { x: v.x, y: v.y, w: v.w, h: g.controls.y - v.y },
   };

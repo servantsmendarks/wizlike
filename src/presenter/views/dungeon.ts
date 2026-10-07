@@ -217,7 +217,7 @@ export function createDungeonScreen(o: {
 
   const controls = createControls({
     region: r.controls,
-    layout: { ...lay, townList: { heading: tl.heading, area: tl.list.area, rows: tl.list.rows } },
+    layout: { ...lay, townList: { heading: tl.heading, area: tl.list.area, rows: tl.list.rows, grid: tl.grid } },
     strings: o.strings,
     onAction: o.onAction,
     hold: o.hold,
