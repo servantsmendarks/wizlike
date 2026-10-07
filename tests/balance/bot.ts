@@ -412,11 +412,13 @@ export class Campaign {
     this.chests += 1;
     // M11 作業 9: セルの箱は開ける前の dive.chest の source（衝動で開けたセルの箱は、乗った dungeon.move の同じ execute なので from には無い。
     // そのときは同じ events の chest.found.cell で見る）
-    if (from.dive?.chest?.source === "cell" || events.some((x) => x.kind === "message" && x.key === "chest.found.cell")) this.chestFlow.cellContents += 1;
+    const isCell = from.dive?.chest?.source === "cell" || events.some((x) => x.kind === "message" && x.key === "chest.found.cell");
+    if (isCell) this.chestFlow.cellContents += 1;
     // M11（EV-16）: 衝動で開けた箱は勝利と同じ execute で置かれて開くので、from には箱が無い。そのときは勝った戦闘の origin の inRoom で見る
     const origin = from.battle?.origin;
     const inRoom = from.dive?.chest?.inRoom ?? (origin?.kind === "random" ? origin.inRoom : undefined);
-    if (inRoom === false) this.chestsCorridor += 1;
+    // M11（レビュー A-R5）: chestsCorridor は M7 からの「通路の戦闘の宝箱」の指標なので、ドロップの箱だけ数える（セルの箱は cellContents だけ）
+    if (!isCell && inRoom === false) this.chestsCorridor += 1;
     this.chestGold += Number(e.params!["gold"]);
     for (const x of events.slice(i + 1)) {
       if (x.kind !== "message") continue;
@@ -1520,7 +1522,7 @@ function impulseReport(ds: readonly DiveRecord[]): string[] {
   const c = emptyChestImpulse();
   for (const d of ds) for (const k of Object.keys(c) as (keyof ChestImpulseTally)[]) c[k] += d.chestImpulse[k];
   lines.push(
-    `  宝箱: 衝動 ${pct(c.impulses, c.found)}（${c.impulses} / 見つけた箱 ${c.found}）・制止 ${c.stopped}（衝動の ${pct(c.stopped, c.impulses)}）・開けてしまった ${pct(c.impulses - c.stopped, c.found)} / 掛け合い ${pct(c.rivalries, c.found)}（${c.rivalries}）・担当の失敗 ${c.rivalryFails}`,
+    `  宝箱: 衝動 ${pct(c.impulses, c.found)}・制止 ${c.stopped}（衝動の ${pct(c.stopped, c.impulses)}）・開けてしまった ${pct(c.impulses - c.stopped, c.found)} / 掛け合い ${pct(c.rivalries, c.found)}・担当の失敗 ${c.rivalryFails}`,
   );
   return lines;
 }
