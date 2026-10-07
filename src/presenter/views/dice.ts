@@ -1,4 +1,4 @@
-// UI-40: 判定の箱。ビューの下部に重ねる overlay（ビューの左上が原点で x8..231、下端 y146。街では会話の箱 UI-47 の上の y110。setBottom）。
+// UI-40: 判定の箱。ビューの下部に重ねる overlay（ビューの左上が原点で x8..231、下端 y146。街では会話の箱 UI-47 の上の y148（M10.5）、迷宮のキャラクター画面では 3 行の箱の上の y110。setBottom）。
 // 中身は上から 見出し（label）/ 各行「{label} {base}{dice.plus}{目…}{dice.total}」/ 基準（rule）/ {dice.arrow}{結果}。
 // 補正の行（base が値で目が無い。EV-21 の士気 +1 など。M7）は「{label}」だけを出す（値は label の中にある）。
 // 高さは 8 + 10 ×（rows + 3）。新しい dice が来たら前の箱を置き換える（積まない）。
@@ -19,7 +19,7 @@ export type DiceFrame = { rows: { dice: (number | null)[]; total: number | null 
 
 const BOX_X = 8;
 const BOX_W = 224;
-/** UI-40: 迷宮・戦闘の箱の下端（ビューの座標）。街は会話の箱（UI-47）の上（townLayout の diceBottom）に setBottom で上げる */
+/** UI-40: 迷宮・戦闘の箱の下端（ビューの座標）。街は会話の箱（UI-47）の上（townLayout の diceBottom。迷宮のキャラクター画面は diceBottomCompact）に setBottom で置く */
 export const DICE_BOX_BOTTOM = 146;
 const LINE_H = 10;
 const PAD = 4;

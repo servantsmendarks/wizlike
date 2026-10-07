@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { beatWait, createPlayer, createTapLatch, townCarry, type PlayerDeps } from "../src/presenter/playback";
-import { createNarrator, createTalkModel } from "../src/presenter/views/talk";
+import { beatWait, createPlayer, createTapLatch, nextSaid, townCarry, type PlayerDeps } from "../src/presenter/playback";
+import { createNarrator, createTalkModel, talkRows } from "../src/presenter/views/talk";
+import { regions, townLayout } from "../src/presenter/layout";
 import { returnToTown } from "../src/core/rules/town";
 import { formatDiceSummary, type DiceEvent } from "../src/presenter/views/dice";
 import { formatMessage } from "../src/presenter/views/message";
@@ -15,6 +16,10 @@ import { startBattle } from "../src/core/rules/combat";
 import { execute } from "../src/core/engine";
 import { ALWAYS_HIT, dataWith, dived, withBattle } from "./helpers/battle";
 import { atEvent, dataEvents } from "./helpers/events";
+
+/** UI-47（M10.5）: 街の会話の箱の矩形（行数と 1 行の単位） */
+const T = townLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size);
+const TALK_DIMS = { lines: () => T.talk.lines, cols: () => T.talk.cols };
 
 function diveAt(x: number, y: number, facing: Dive["facing"], floor = 1): Dive {
   return {
@@ -1508,7 +1513,8 @@ describe("UI-47 街の会話の箱と再生", () => {
     expect(shown2).toEqual([{ to: "dungeon", n: 0 }]);
   });
 
-  test("UI-47/UI-66（2026-10-07 未定-19）階段で地上へ: 再生が終わった後も持ち越しの 1 文目が ▼ で待ち（pending）、箱のタップで page とともに 2 文目が出る", async () => {
+  // M10.5: 文を溜めるので、持ち越しの 2 文は 1 回で出る（以前の期待値は「1 文目が ▼ で待ち、タップで 2 文目」）
+  test("UI-47/UI-66（M10.5）階段で地上へ: 再生が終わった後、持ち越しの 2 文が箱に並び、最後の ▼ で待つ（pending）。箱のタップで page とともに閉じる", async () => {
     const { deps } = fakeDeps({ skipAnimations: true });
     const sink = { open: false, text: "", more: { on: false, blink: false } };
     const adv = { n: 0 };
@@ -1523,6 +1529,7 @@ describe("UI-47 街の会話の箱と再生", () => {
       speed: () => 0,
       blink: () => false,
       schedule: () => () => {},
+      ...TALK_DIMS,
     });
     // app の onScreen と同じく、街に入るときに carry を会話の箱に出し直す（再生は待たない）
     deps.screens.show = (to, _st, carry) => {
@@ -1532,12 +1539,17 @@ describe("UI-47 街の会話の箱と再生", () => {
     const ctx = makeContext(cloneState(base), data);
     returnToTown(ctx, "dungeon.exit");
     await createPlayer(deps).play(ctx.events, base, ctx.state);
-    expect({ text: sink.text, more: sink.more.on, pending: talk.pending() }).toEqual({ text: data.strings["dungeon.exit"], more: true, pending: true });
+    expect({ text: sink.text, more: sink.more.on, pending: talk.pending() }).toEqual({
+      text: `${data.strings["dungeon.exit"]}\n${data.strings["town.enter"]}`,
+      more: true,
+      pending: true,
+    });
     talk.tap();
     expect(adv.n).toBe(1);
-    expect({ text: sink.text, more: sink.more.on, pending: talk.pending() }).toEqual({ text: data.strings["town.enter"], more: false, pending: false });
+    expect({ open: sink.open, more: sink.more.on, pending: talk.pending() }).toEqual({ open: false, more: false, pending: false });
   });
 
+  // M10.5: 結果の文の後に残る ▼ は、閉じるタップを待つ最後の ▼（以前の期待値は「最後の文は ▼ なし」）
   test("UI-47/UI-40/TW-17 街の強化の箱: 会話の箱（実物のモデル）に結果を出した後、▼ を出してタップを 1 回待ってから箱を消す。結果の文は残る（演出スキップでも待ち、▼ は点滅しない）", async () => {
     const st = cloneState(newGame(1));
     st.gold = 1000;
@@ -1558,6 +1570,7 @@ describe("UI-47 街の会話の箱と再生", () => {
         speed: () => 0,
         blink: () => !skipAnimations,
         schedule: () => () => {},
+        ...TALK_DIMS,
       });
       deps.message = createNarrator({ town: () => true, talk, window: deps.message });
       const latch = createTapLatch();
@@ -1572,15 +1585,16 @@ describe("UI-47 街の会話の箱と再生", () => {
       player.tap();
       await p;
       expect(names(log)).toContain("dice.hide");
-      // 結果の文は残り（最後の文は ▼ なし）、次のタップで閉じる
-      expect({ open: sink.open, more: sink.more.on }).toEqual({ open: true, more: false });
+      // 結果の文は残り（閉じるタップを待つ最後の ▼）、次のタップで閉じる
+      expect({ open: sink.open, more: sink.more }).toEqual({ open: true, more: { on: true, blink: !skipAnimations } });
       expect(logs).toEqual([formatMessage(data.strings[m.key]!, m.params)]);
       talk.tap();
       expect(sink.open).toBe(false);
     }
   });
 
-  test("UI-47/UI-43 再生の中の街の語りは、2 文目からタップを待つ（playback は変えずに会話の箱の say が待つ）。拍の外のタップ（player.tap）で次の文へ進む", async () => {
+  // M10.5: 文ごとのタップ待ちをやめた（以前の期待値は「2 文目からタップを待つ」）
+  test("UI-47（M10.5）再生の中の街の語りは箱に溜まり、文ごとのタップは待たない（再生はタップなしで終わる）", async () => {
     const { deps } = fakeDeps({ skipAnimations: true });
     const sink = { text: "" };
     const talk = createTalkModel({
@@ -1589,25 +1603,35 @@ describe("UI-47 街の会話の箱と再生", () => {
       speed: () => 0,
       blink: () => false,
       schedule: () => () => {},
+      ...TALK_DIMS,
     });
     deps.message = createNarrator({ town: () => true, talk, window: deps.message });
     const player = createPlayer(deps);
-    let done = false;
-    const p = player.play([{ kind: "message", key: "town.enter" }, { kind: "message", key: "town.inn.intro" }], stateWith(null), stateWith(null)).then(() => {
-      done = true;
-    });
-    await new Promise<void>((res) => setTimeout(res, 0));
-    expect(sink.text).toBe(data.strings["town.enter"]);
-    expect(done).toBe(false);
-    player.tap();
-    await p;
-    expect(sink.text).toBe(data.strings["town.inn.intro"]);
+    await player.play([{ kind: "message", key: "town.enter" }, { kind: "message", key: "town.inn.intro" }], stateWith(null), stateWith(null));
+    expect(sink.text).toBe(`${data.strings["town.enter"]}\n${data.strings["town.inn.intro"]}`);
   });
 
-  /** UI-47 / UI-66（2026-10-06）: 実物の会話の箱と音の記録 */
-  const townTalk = (skipAnimations: boolean) => {
+  test("UI-47（M10.5）nextSaid: 添字以降で最初の message の整形済みの文。先に screen / wipe / beat が来たら undefined", () => {
+    const evs: GameEvent[] = [
+      { kind: "levelUp", id: "c1", level: 2, hpGain: 3, mpGain: 0, hpMax: 13, mpMax: 0, hp: 13, mp: 0, statGains: [] },
+      msg("town.inn.levelUp", { name: "アル", level: 2 }),
+      { kind: "screen", to: "dungeon" },
+      msg("dungeon.door"),
+    ];
+    expect(nextSaid(evs, 0, data.strings)).toBe(formatMessage(data.strings["town.inn.levelUp"]!, { name: "アル", level: 2 }));
+    expect(nextSaid(evs, 2, data.strings)).toBeUndefined();
+    expect(nextSaid(evs, 3, data.strings)).toBe(data.strings["dungeon.door"]);
+    expect(nextSaid(evs, 4, data.strings)).toBeUndefined();
+  });
+
+  /**
+   * UI-47 / UI-66（M10.5）: 実物の会話の箱と音の記録。cleared は app と同じく判定の箱を消す。
+   * 音の記録の a[1] は、その音が鳴った時点で箱に出ている文（文字送りの途中の段を含む）
+   */
+  const townTalk = (skipAnimations: boolean, speed = 0) => {
     const { deps, log } = fakeDeps({ skipAnimations });
     const sink = { open: false, text: "", more: { on: false, blink: false } };
+    const timers: Array<{ fn: () => void; dead: boolean }> = [];
     const talk = createTalkModel({
       sink: {
         open: (on) => (sink.open = on),
@@ -1615,18 +1639,36 @@ describe("UI-47 街の会話の箱と再生", () => {
         more: (on, blink) => (sink.more = { on, blink }),
       },
       log: () => {},
-      speed: () => 0,
+      speed: () => speed,
       blink: () => !skipAnimations,
-      schedule: () => () => {},
+      schedule: (fn) => {
+        const t = { fn, dead: false };
+        timers.push(t);
+        return () => {
+          t.dead = true;
+        };
+      },
+      cleared: () => deps.dice.hide(),
+      ...TALK_DIMS,
     });
     deps.message = createNarrator({ town: () => true, talk, window: deps.message });
-    deps.sound = (ev) => log.push({ m: `sound:${ev.kind}`, a: [ev.kind === "message" ? ev.key : ""] });
-    return { deps, log, sink, talk };
+    deps.sound = (ev) => log.push({ m: `sound:${ev.kind}`, a: [ev.kind === "message" ? ev.key : "", sink.text] });
+    /** 生きている文字送りのタイマーを 1 つ進める */
+    const step = (): boolean => {
+      const t = timers.find((x) => !x.dead);
+      if (t === undefined) return false;
+      t.dead = true;
+      t.fn();
+      return true;
+    };
+    return { deps, log, sink, talk, step };
   };
   const tick = (): Promise<void> => new Promise<void>((res) => setTimeout(res, 0));
   const fmt = (ev: GameEvent): string => (ev.kind === "message" ? formatMessage(data.strings[ev.key]!, ev.params) : "");
+  /** 箱をちょうど n 行埋める文（士気の文。1 行） */
+  const fill = (n: number): GameEvent[] => Array.from({ length: n }, () => msg("town.inn.morale"));
 
-  test("UI-47/UI-66（2026-10-06）街の会話の箱: 文の後の出来事（spellLearned）の再生と音は、その文のタップの後。判定の箱はその文と一緒に出したまま待つ", async () => {
+  test("UI-47/UI-66（M10.5）街の会話の箱: 文の後の出来事（spellLearned）の音は、その文の文字送りが終わった後（早く鳴らない）。箱に入れば待たず、判定の箱はページを閉じるまで残る", async () => {
     const p = { name: "アル", spell: "灯火" };
     const roll = msg("town.inn.learnRoll", p);
     const learned = msg("town.inn.learned", p);
@@ -1636,16 +1678,66 @@ describe("UI-47 街の会話の箱と再生", () => {
       { kind: "spellLearned", id: "c1", spellId: "x", via: "roll" },
       learned,
     ];
+    // 文字送りあり: 掴もうとしている の文の文字送りが終わるまで、判定の箱も learn も出ない
+    {
+      const { deps, log, sink, talk, step } = townTalk(false, 30);
+      let done = false;
+      const run = createPlayer(deps)
+        .play(events, stateWith(null), stateWith(null))
+        .then(() => {
+          done = true;
+        });
+      await tick();
+      expect(sink.text.length).toBeLessThan(fmt(roll).length);
+      expect(names(log)).not.toContain("dice.show");
+      expect(names(log)).not.toContain("sound:spellLearned");
+      for (let i = 0; i < 200 && !done; i++) {
+        step();
+        await tick();
+      }
+      await run;
+      const at = log.find((e) => e.m === "sound:spellLearned")!;
+      // learn は、掴もうとしている の文が出終わり、覚えた の文が出る前に鳴る
+      expect(at.a[1]).toBe(fmt(roll));
+      expect(sink.text).toBe(`${fmt(roll)}\n${fmt(learned)}`);
+      // 判定の箱は再生の終わりでも消さず、箱を閉じるタップで消す
+      expect(names(log)).not.toContain("dice.hide");
+      talk.tap();
+      expect(names(log)).toContain("dice.hide");
+    }
     for (const skipAnimations of [false, true]) {
       const { deps, log, sink } = townTalk(skipAnimations);
+      await createPlayer(deps).play(events, stateWith(null), stateWith(null));
+      // タップなしで再生が終わり、2 文が並ぶ
+      expect(sink.text, String(skipAnimations)).toBe(`${fmt(roll)}\n${fmt(learned)}`);
+      const seq = names(log);
+      expect(seq.indexOf("sound:spellLearned")).toBeGreaterThan(seq.indexOf("dice.show"));
+      expect(seq).not.toContain("dice.hide");
+    }
+  });
+
+  test("UI-47/UI-66（M10.5）箱が埋まって次の文が入らなければ、learn は箱を空にするタップの後に空の箱の上で鳴る（前のページの間に鳴らない。演出スキップでも ▼ のタップを待つ）", async () => {
+    const p = { name: "アル", spell: "灯火" };
+    const roll = msg("town.inn.learnRoll", p);
+    const learned = msg("town.inn.learned", p);
+    const events: GameEvent[] = [
+      ...fill(T.talk.lines - 1),
+      roll,
+      rollDiceEv("dice.learn", [12], 12, "dice.learn.ok"),
+      { kind: "spellLearned", id: "c1", spellId: "x", via: "roll" },
+      learned,
+    ];
+    for (const skipAnimations of [false, true]) {
+      const { deps, log, sink, talk } = townTalk(skipAnimations);
       const player = createPlayer(deps);
       let done = false;
       const run = player.play(events, stateWith(null), stateWith(null)).then(() => {
         done = true;
       });
       await tick();
-      // 「掴もうとしている」の文と判定の箱を出したまま、▼ でタップを待つ。learn はまだ鳴らない
-      expect(sink.text, String(skipAnimations)).toBe(fmt(roll));
+      // 箱が埋まり（22 行目が 掴もうとしている）、判定の箱を出したまま ▼ でタップを待つ。learn はまだ鳴らない
+      expect(sink.text.split("\n"), String(skipAnimations)).toHaveLength(T.talk.lines);
+      expect(sink.text.endsWith(fmt(roll))).toBe(true);
       expect(sink.more).toEqual({ on: true, blink: !skipAnimations });
       expect(names(log)).toContain("dice.show");
       expect(names(log)).not.toContain("dice.hide");
@@ -1653,45 +1745,45 @@ describe("UI-47 街の会話の箱と再生", () => {
       expect(done).toBe(false);
       player.tap();
       await run;
-      // タップの後に learn が鳴り、続けて覚えた文が出る（もう 1 回のタップは要らない）
+      // タップで箱を空にし（判定の箱も消える）、learn が鳴ってから 覚えた の文が 1 行目に出る
+      const at = log.find((e) => e.m === "sound:spellLearned")!;
+      expect(at.a[1]).toBe("");
+      expect(names(log).indexOf("dice.hide")).toBeLessThan(names(log).indexOf("sound:spellLearned"));
       expect(sink.text).toBe(fmt(learned));
-      const seq = names(log);
-      expect(seq.indexOf("sound:spellLearned")).toBeGreaterThan(seq.indexOf("dice.show"));
+      expect(talk.isOpen()).toBe(true);
     }
   });
 
-  test("UI-47/UI-66（2026-10-06）街の会話の箱: levelUp のジングルとパーティ欄の描き直し、message の音（resurrectOk）も、前の文のタップの後", async () => {
+  test("UI-47/UI-66（M10.5）街の会話の箱: levelUp のジングルとパーティ欄の描き直し、message の音（resurrectOk）は、前の文の文字送りの後・その文が出る前。箱が埋まれば空にするタップの後", async () => {
     const before = msg("town.inn.morale");
     const lv = msg("town.inn.levelUp", { name: "アル", level: 2 });
     const ok = msg("town.temple.resurrectOk", { name: "アル" });
-    const events: GameEvent[] = [
-      before,
-      { kind: "levelUp", id: "c1", level: 2, hpGain: 3, mpGain: 0, hpMax: 13, mpMax: 0, hp: 13, mp: 0, statGains: [] },
-      lv,
-      ok,
-    ];
-    const { deps, log, sink, talk } = townTalk(false);
-    const player = createPlayer(deps);
-    const run = player.play(events, stateWith(null), stateWith(null));
-    await tick();
-    expect(sink.text).toBe(fmt(before));
-    expect(names(log)).not.toContain("sound:levelUp");
-    expect(names(log)).not.toContain("party.setMax");
-    player.tap();
-    await tick();
-    expect(sink.text).toBe(fmt(lv));
-    expect(names(log)).toContain("sound:levelUp");
-    expect(names(log)).toContain("party.setMax");
-    // 次の文の音は、その文が出るまで（タップまで）鳴らない
-    expect(log.some((e) => e.m === "sound:message" && e.a[0] === "town.temple.resurrectOk")).toBe(false);
-    player.tap();
-    await run;
-    expect(sink.text).toBe(fmt(ok));
-    expect(log.some((e) => e.m === "sound:message" && e.a[0] === "town.temple.resurrectOk")).toBe(true);
-    // 最後の文は残り、次のタップで閉じる
-    expect(sink.open).toBe(true);
-    talk.tap();
-    expect(sink.open).toBe(false);
+    const lvEv: GameEvent = { kind: "levelUp", id: "c1", level: 2, hpGain: 3, mpGain: 0, hpMax: 13, mpMax: 0, hp: 13, mp: 0, statGains: [] };
+    {
+      const { deps, log, sink, talk } = townTalk(false);
+      await createPlayer(deps).play([before, lvEv, lv, ok], stateWith(null), stateWith(null));
+      expect(log.find((e) => e.m === "sound:levelUp")!.a[1]).toBe(fmt(before));
+      expect(log.find((e) => e.m === "sound:message" && e.a[0] === "town.temple.resurrectOk")!.a[1]).toBe(`${fmt(before)}\n${fmt(lv)}`);
+      expect(names(log).indexOf("party.setMax")).toBeGreaterThan(names(log).indexOf("sound:levelUp"));
+      expect(sink.text).toBe([before, lv, ok].map(fmt).join("\n"));
+      // 最後の文は残り、次のタップで閉じる
+      expect(sink.open).toBe(true);
+      talk.tap();
+      expect(sink.open).toBe(false);
+    }
+    {
+      // 箱が埋まった後のジングルと文の音は、空にするタップの後
+      const { deps, log, sink } = townTalk(false);
+      const player = createPlayer(deps);
+      const run = player.play([...fill(T.talk.lines), lvEv, lv, ok], stateWith(null), stateWith(null));
+      await tick();
+      expect(names(log)).not.toContain("sound:levelUp");
+      expect(names(log)).not.toContain("party.setMax");
+      player.tap();
+      await run;
+      expect(log.find((e) => e.m === "sound:levelUp")!.a[1]).toBe("");
+      expect(sink.text).toBe(`${fmt(lv)}\n${fmt(ok)}`);
+    }
   });
 
   test("UI-47（2026-10-06）前の再生で残った文では待たない（この再生で語った文の後だけ待つ）。メッセージ窓（迷宮）では待たない", async () => {
@@ -1711,7 +1803,7 @@ describe("UI-47 街の会話の箱と再生", () => {
     expect(names(w.log)).toContain("party.setMax");
   });
 
-  /** UI-66（2026-10-07 未定-17）: 実物の会話の箱に送りの音（advanced → page）の回数の記録を付けたもの */
+  /** UI-66（M10.5）: 実物の会話の箱に送りの音（advanced → page）の回数の記録を付けたもの */
   const pagedTalk = () => {
     const { deps, log } = fakeDeps({ skipAnimations: false });
     const sink = { open: false, text: "" };
@@ -1719,17 +1811,20 @@ describe("UI-47 街の会話の箱と再生", () => {
     const talk = createTalkModel({
       sink: { open: (on) => (sink.open = on), text: (t) => (sink.text = t), more: () => {} },
       advanced: () => pages.n++,
+      cleared: () => deps.dice.hide(),
       log: () => {},
       speed: () => 0,
       blink: () => true,
       schedule: () => () => {},
+      ...TALK_DIMS,
     });
     deps.message = createNarrator({ town: () => true, talk, window: deps.message });
     deps.beat = createTapLatch();
     return { deps, log, sink, talk, pages };
   };
 
-  test("UI-66（2026-10-07 未定-17）寺院の蘇生（実際の execute の出来事を Player で再生）: 文を送るタップは再生中も再生後も 1 回ずつ page、送らないタップは無音。page の回数は語った文の数", async () => {
+  // M10.5: 文を溜めるので、蘇生の語りは 1 ページに並び、page は閉じるタップの 1 回（以前の期待値は page の回数 = 文の数）
+  test("UI-66（M10.5）寺院の蘇生（実際の execute の出来事を Player で再生）: 語りは 1 ページに並び、再生はタップなしで終わる。page は閉じるタップの 1 回", async () => {
     const st = withChar(newGame(1), 1, { life: "dead", hp: 0 });
     st.gold = 100000;
     const id = st.party[1]!.id;
@@ -1738,30 +1833,12 @@ describe("UI-47 街の会話の箱と再生", () => {
     const texts = r.events.filter((e) => e.kind === "message").map(fmt);
     expect(texts.length).toBeGreaterThanOrEqual(1);
     const { deps, sink, talk, pages } = pagedTalk();
-    const player = createPlayer(deps);
-    let done = false;
-    const run = player.play(r.events, st, r.state).then(() => {
-      done = true;
-    });
-    await tick();
-    const seen: string[] = [sink.text];
-    for (let i = 0; i < 20 && !done; i++) {
-      const before = { text: sink.text, open: sink.open, n: pages.n };
-      player.tap();
-      await tick();
-      const sent = sink.text !== before.text || sink.open !== before.open;
-      expect(pages.n - before.n, `tap ${i}`).toBe(sent ? 1 : 0);
-      if (sink.open && sink.text !== seen[seen.length - 1]) seen.push(sink.text);
-    }
-    await run;
-    expect(seen).toEqual(texts);
-    // 最後の文は再生の外のタップで閉じる（これも送りなので page）
-    expect(sink.open).toBe(true);
-    const n = pages.n;
+    await createPlayer(deps).play(r.events, st, r.state);
+    expect(sink.text).toBe(texts.join("\n"));
+    expect(pages.n).toBe(0);
     talk.tap();
     expect(sink.open).toBe(false);
-    expect(pages.n).toBe(n + 1);
-    expect(pages.n).toBe(texts.length);
+    expect(pages.n).toBe(1);
   });
 
   test("UI-66/UI-40/TW-17（2026-10-07 未定-17）闇魔術の強化（実際の execute の出来事を Player で再生）: 判定の箱を消す 1 回目のタップは文を送らないので無音、結果の文を閉じる 2 回目のタップで page が 1 回", async () => {
@@ -1784,7 +1861,8 @@ describe("UI-47 街の会話の箱と再生", () => {
     expect({ open: sink.open, pages: pages.n }).toEqual({ open: false, pages: 1 });
   });
 
-  test("UI-47/CH-61（M10）宿屋のレベルアップの内訳（実際の execute の出来事を Player で再生）: レベルアップの文 → 最大 HP → 最大 MP（増分があるとき）→ 上がった能力値を 1 文ずつタップで送る。上がらなかった段は能力値の文を出さない。ジングルはその人の levelUp の文の直前の 1 回", async () => {
+  // M10.5: 文ごとのタップをやめ、箱が埋まったときだけタップで次のページ（以前の期待値は 1 文ずつタップで送り、page の回数 = 文の数）
+  test("UI-47/CH-61（M10.5）宿屋のレベルアップの内訳（実際の execute の出来事を Player で再生）: 文は箱に溜まり、箱が埋まったときだけタップで次のページ。ジングルはその人の levelUp の文の直前（前のページの間には鳴らない）", async () => {
     // seed 1: ベルク（戦士）exp 50 → L2、ドナ（僧侶）exp 200 → L5（L4 の段は能力値が 1 つも上がらない）
     const st = withChar(withChar(newGame(1), 1, { exp: 50 }), 3, { exp: 200 });
     const r = execute(st, { type: "town.inn", rank: 0 }, data);
@@ -1815,43 +1893,70 @@ describe("UI-47 街の会話の箱と再生", () => {
       ["town.inn.levelUp", "town.inn.hpUp", "town.inn.mpUp", "town.inn.statUp.vit", "town.inn.statUp.luk"],
     ]);
     const texts = r.events.filter((e) => e.kind === "message").map(fmt);
-    const lvTexts = new Set(r.events.flatMap((e) => (e.kind === "message" && e.key === "town.inn.levelUp" ? [fmt(e)] : [])));
-    const { deps, log, sink, talk, pages } = pagedTalk();
-    deps.sound = (ev) => log.push({ m: `sound:${ev.kind}`, a: [] });
-    const player = createPlayer(deps);
-    let done = false;
-    const run = player.play(r.events, st, r.state).then(() => {
-      done = true;
-    });
-    const jingles = (): number => names(log).filter((n) => n === "sound:levelUp").length;
-    await tick();
-    const seen: string[] = [sink.text];
-    // 文ごとの、その文が出ている間に鳴ったジングルの数
-    const jingleAt: number[] = [jingles()];
-    for (let i = 0; i < 80 && !done; i++) {
-      player.tap();
+    const lvTexts = r.events.flatMap((e) => (e.kind === "message" && e.key === "town.inn.levelUp" ? [fmt(e)] : []));
+    for (const skipAnimations of [false, true]) {
+      const { deps, log, sink, talk } = townTalk(skipAnimations);
+      /** ▼ で待つ間のタップ（箱を空にする）の回数 */
+      const taps = { n: 0 };
+      const player = createPlayer(deps);
+      let done = false;
+      const run = player.play(r.events, st, r.state).then(() => {
+        done = true;
+      });
       await tick();
-      if (sink.open && sink.text !== seen[seen.length - 1]) {
-        seen.push(sink.text);
-        jingleAt.push(jingles());
+      const pagesSeen: string[] = [];
+      for (let i = 0; i < 40 && !done; i++) {
+        // 再生が止まっているのは、箱が埋まって ▼ で待つときだけ
+        expect(sink.more, `${skipAnimations} ${i}`).toEqual({ on: true, blink: !skipAnimations });
+        pagesSeen.push(sink.text);
+        player.tap();
+        taps.n++;
+        await tick();
       }
+      await run;
+      pagesSeen.push(sink.text);
+      // ページをつなぐと全文。どのページも箱の行数以内
+      expect(pagesSeen.join("\n").split("\n")).toEqual(texts);
+      for (const pg of pagesSeen) expect(pg.split("\n").length).toBeLessThanOrEqual(T.talk.lines);
+      expect(pagesSeen.length).toBeGreaterThan(1);
+      expect(taps.n).toBe(pagesSeen.length - 1);
+      // ページを替えるのは、次のページの最初の文が前のページに入らないときだけ
+      const rowsOf = (pg: string): number => pg.split("\n").reduce((n, t) => n + talkRows(t, T.talk.cols), 0);
+      for (let i = 0; i + 1 < pagesSeen.length; i++) {
+        const head = pagesSeen[i + 1]!.split("\n")[0]!;
+        expect(rowsOf(pagesSeen[i]!) + talkRows(head, T.talk.cols), `page ${i}`).toBeGreaterThan(T.talk.lines);
+      }
+      // 最初のページには、宿の文とベルクの内訳（レベル・HP・能力値 2 つ）が並ぶ
+      const firstLv = lvAt[0]!;
+      const berk = r.events.slice(firstLv + 1, firstLv + 1 + breakdown(firstLv).length).map(fmt);
+      expect(berk).toHaveLength(4);
+      for (const t of berk) expect(pagesSeen[0]!.split("\n")).toContain(t);
+      // ジングルは levelUp の数だけ鳴り、鳴った時点の箱の中身は、その levelUp の文が足されるページの先頭部分（前のページの上では鳴らない）
+      const jingles = log.filter((e) => e.m === "sound:levelUp");
+      expect(jingles).toHaveLength(lvs.length);
+      jingles.forEach((j, k) => {
+        const snap = j.a[1] as string;
+        const lvText = lvTexts[k]!;
+        expect(snap.includes(lvText)).toBe(false);
+        const page = pagesSeen.find((pg) => pg.includes(lvText))!;
+        expect(page.startsWith(snap), `${k}: ${snap}`).toBe(true);
+      });
+      // 最後のページは残り、再生の外のタップで閉じる
+      expect(sink.open).toBe(true);
+      talk.tap();
+      expect(sink.open).toBe(false);
     }
-    await run;
-    expect(seen).toEqual(texts);
-    // ジングルは levelUp の文が出たときにだけ 1 つ増える（宿の文・内訳・習得の文の間は増えない）
-    const expected: number[] = [];
-    let n = 0;
-    for (const t of texts) {
-      if (lvTexts.has(t)) n++;
-      expected.push(n);
-    }
-    expect(jingleAt).toEqual(expected);
-    expect(n).toBe(lvs.length);
-    // 最後の文は残り、再生の外のタップで閉じる。送りの音は文の数
-    expect(sink.open).toBe(true);
-    talk.tap();
-    expect(sink.open).toBe(false);
-    expect(pages.n).toBe(texts.length);
+  });
+
+  test("UI-47/CH-61（M10.5）宿屋のレベルアップ 1 人分（実際の execute。ベルク L2）は、宿の文と一緒に 1 ページに出て、再生はタップなしで終わる", async () => {
+    const st = withChar(newGame(1), 1, { exp: 50 });
+    const r = execute(st, { type: "town.inn", rank: 0 }, data);
+    const texts = r.events.filter((e) => e.kind === "message").map(fmt);
+    expect(texts.some((t) => t === formatMessage(data.strings["town.inn.levelUp"]!, { name: st.party[1]!.name, level: 2 }))).toBe(true);
+    const { deps, sink, log } = townTalk(true);
+    await createPlayer(deps).play(r.events, st, r.state);
+    expect(sink.text).toBe(texts.join("\n"));
+    expect(names(log)).toContain("sound:levelUp");
   });
 
   test("UI-47/CH-61（M10）内訳の文は大きな値（6 字の名前・Lv 99・増分 99・最大 9999・能力値 17 → 18）でも会話の箱の 1 行（224px = 全角 28 字）に収まる", () => {

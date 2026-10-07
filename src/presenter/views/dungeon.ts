@@ -106,19 +106,21 @@ export function bandLookups(maxOf: MaxOf | undefined): { sanMaxOf: (ch: Characte
 export type Displayed = { style: { display: string } };
 
 /**
- * UI-13 / UI-59 / UI-40（M10）: メッセージ窓・パーティ欄・判定の箱の下端。街かキャラクター画面なら窓と欄を隠し、
- * 判定の箱の下端を会話の箱の上（townDiceBottom）に上げる。それ以外は窓と欄を出し、箱は迷宮の下端（DICE_BOX_BOTTOM）
+ * UI-13 / UI-59 / UI-40（M10。M10.5）: メッセージ窓・パーティ欄・判定の箱の下端・会話の箱の大きさ。街かキャラクター画面なら窓と欄を隠し、
+ * 判定の箱の下端を会話の箱の上に上げる（街は絵の下端の上 diceBottom.town、迷宮のキャラクター画面は 3 行の箱の上 diceBottom.compact）。
+ * それ以外は窓と欄を出し、箱は迷宮の下端（DICE_BOX_BOTTOM）。会話の箱は街の外（迷宮のキャラクター画面）では 3 行の箱（compact）
  */
 export function applyPanels(
   mode: PlayMode,
   characterOpen: boolean,
-  p: { message: Displayed; panel: Displayed; setDiceBottom(bottom: number): void },
-  townDiceBottom: number,
+  p: { message: Displayed; panel: Displayed; setDiceBottom(bottom: number): void; setTalkCompact?(on: boolean): void },
+  diceBottom: { town: number; compact: number },
 ): void {
   const hide = mode === "town" || characterOpen;
   p.message.style.display = hide ? "none" : "";
   p.panel.style.display = hide ? "none" : "";
-  p.setDiceBottom(hide ? townDiceBottom : DICE_BOX_BOTTOM);
+  p.setDiceBottom(mode === "town" ? diceBottom.town : characterOpen ? diceBottom.compact : DICE_BOX_BOTTOM);
+  p.setTalkCompact?.(mode !== "town");
 }
 
 /**
@@ -276,10 +278,19 @@ export function createDungeonScreen(o: {
   const history = createHistoryView(lay.history);
   history.el.style.display = "none";
 
-  // UI-47（M8.5）: 街の会話の箱。キャンプのパネルより上（酒場の呪文の結果が見える）、overlay より下。ログはメッセージ窓の 1 本の履歴
-  const talk = createTalkBox({ layout: tl.talk, speed: o.textSpeed, blink: o.talkBlink, log: (t) => message.log(t), advanced: () => o.talkAdvanced?.() });
+  // UI-47（M8.5。M10.5）: 街の会話の箱。キャンプのパネルと操作の欄より上（操作の欄に被せる。酒場の呪文の結果が見える）、overlay より下。
+  // ログはメッセージ窓の 1 本の履歴。迷宮のキャラクター画面では 3 行の箱（compact）。ページを空にする・閉じるときに判定の箱を消す
+  const talk = createTalkBox({
+    layout: tl.talk,
+    compact: tl.talkCompact,
+    speed: o.textSpeed,
+    blink: o.talkBlink,
+    log: (t) => message.log(t),
+    advanced: () => o.talkAdvanced?.(),
+    cleared: () => dice.hide(),
+  });
 
-  el.append(viewBox, header.el, message.el, band.el, camp.el, diceLayer, talk.el, panel.el, controls.el, map.el, wipe.el, history.el);
+  el.append(viewBox, header.el, message.el, band.el, camp.el, diceLayer, panel.el, controls.el, talk.el, map.el, wipe.el, history.el);
 
   let mode: PlayMode = "dungeon";
   let characterOpen = false;
@@ -287,7 +298,13 @@ export function createDungeonScreen(o: {
    * メッセージ窓・パーティ欄・判定の箱の下端（街かキャラクター画面なら窓と欄を隠し、箱は会話の箱の上）。
    * UI-13: 街はメッセージ窓とパーティ欄を置かず、帯とヘッダーのログを出す。UI-59（M10）: キャラクター画面の間も隠す
    */
-  const syncPanels = (): void => applyPanels(mode, characterOpen, { message: message.el, panel: panel.el, setDiceBottom: (b) => dice.setBottom(b) }, tl.diceBottom);
+  const syncPanels = (): void =>
+    applyPanels(
+      mode,
+      characterOpen,
+      { message: message.el, panel: panel.el, setDiceBottom: (b) => dice.setBottom(b), setTalkCompact: (on) => talk.setCompact(on) },
+      { town: tl.diceBottom, compact: tl.diceBottomCompact },
+    );
 
   return {
     el,

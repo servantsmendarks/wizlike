@@ -88,17 +88,24 @@ describe("UI-40 diceBox", () => {
     }
   });
 
-  test("UI-40/UI-47（M8.5）街では下端を会話の箱の上（townLayout の diceBottom = ビューの y110）に上げる。1 行は y62..109、3 行（制止の士気）も y42 でビューの内側、会話の箱（ビューの y112..147）と重ならない", () => {
+  // M10.5: 会話の箱を絵の下端から下に広げたので、街の下端は絵の下端の 2 上（y148）。以前の期待値（y110・3 行の箱の上）は迷宮のキャラクター画面の diceBottomCompact
+  test("UI-40/UI-47（M10.5）街では下端を会話の箱の上（townLayout の diceBottom = ビューの y148）に置く。1 行は y100..147、3 行（制止の士気）も y80 でビューの内側、会話の箱（ビューの y150..）と重ならない。迷宮のキャラクター画面は 3 行の箱（ビューの y112..147）の上の y110", () => {
     const g = regions(data.config.ui.layout, data.config.stage.width);
     const T = townLayout(g, data.config.party.size);
-    expect(T.diceBottom).toBe(110);
+    expect(T.diceBottom).toBe(148);
     expect(DICE_BOX_BOTTOM).toBe(146);
-    expect(diceBox(FLEE, T.diceBottom)).toEqual({ x: 8, y: 62, w: 224, h: 48 });
-    expect(diceBox(RESTRAIN_MORALE, T.diceBottom)).toEqual({ x: 8, y: 42, w: 224, h: 68 });
+    expect(diceBox(FLEE, T.diceBottom)).toEqual({ x: 8, y: 100, w: 224, h: 48 });
+    expect(diceBox(RESTRAIN_MORALE, T.diceBottom)).toEqual({ x: 8, y: 80, w: 224, h: 68 });
     const talkTop = T.talk.box.y - g.view.y;
-    expect(talkTop).toBe(112);
+    expect(talkTop).toBe(150);
     for (const r of [diceBox(FLEE, T.diceBottom), diceBox(INITIATIVE, T.diceBottom), diceBox(RESTRAIN_MORALE, T.diceBottom)]) {
       expect(r.y >= 0 && r.y + r.h <= talkTop).toBe(true);
+    }
+    expect(T.diceBottomCompact).toBe(110);
+    const compactTop = T.talkCompact.box.y - g.view.y;
+    expect(compactTop).toBe(112);
+    for (const r of [diceBox(FLEE, T.diceBottomCompact), diceBox(INITIATIVE, T.diceBottomCompact), diceBox(RESTRAIN_MORALE, T.diceBottomCompact)]) {
+      expect(r.y >= 0 && r.y + r.h <= compactTop).toBe(true);
     }
     // 既定（迷宮・戦闘）は今のまま
     expect(diceBox(FLEE, DICE_BOX_BOTTOM)).toEqual(diceBox(FLEE));
@@ -171,5 +178,9 @@ describe("UI-40/CH-77 司教の鑑定の箱（M10）", () => {
     const b = diceBox(full, T.diceBottom);
     expect(b.y).toBeGreaterThanOrEqual(0);
     expect(b.y + b.h).toBeLessThanOrEqual(T.talk.box.y - g.view.y);
+    // M10.5: 迷宮のキャラクター画面（3 行の箱の上）でも
+    const c = diceBox(full, T.diceBottomCompact);
+    expect(c.y).toBeGreaterThanOrEqual(0);
+    expect(c.y + c.h).toBeLessThanOrEqual(T.talkCompact.box.y - g.view.y);
   });
 });

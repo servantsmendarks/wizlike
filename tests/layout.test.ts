@@ -411,16 +411,33 @@ describe("layout", () => {
       settings: { x: 200, y: 0, w: 40, h: 16 },
     });
     expect(T.picture).toEqual({ x: 0, y: 16, w: 240, h: 150 });
-    // UI-47 会話の箱: 絵の下端に重なる 3 行（枠 x2..237・y128..163、文字 x7..230・y131..160、▼ x223..230・y153..160）
+    // UI-47（M10.5）会話の箱: 絵の下端からステージの下端まで（枠 x0..239・y166..399、文字 x5..228・y169..388 の 22 行 × 56 単位、▼ x221..228・y381..388）。
+    // 以前の期待値は絵の下端に重なる 3 行（枠 x2..237・y128..163）で、迷宮のキャラクター画面の talkCompact に残した
     expect(T.talk).toEqual({
+      box: { x: 0, y: 166, w: 240, h: 234 },
+      text: { x: 5, y: 169, w: 224, h: 220 },
+      lines: 22,
+      cols: 56,
+      more: { x: 221, y: 381, w: 8, h: 8 },
+    });
+    expect(T.talkCompact).toEqual({
       box: { x: 2, y: 128, w: 236, h: 36 },
       text: { x: 7, y: 131, w: 224, h: 30 },
       lines: 3,
+      cols: 56,
       more: { x: 223, y: 153, w: 8, h: 8 },
     });
-    expect(inside(T.talk.box, T.picture)).toBe(true);
-    // UI-40 街の判定の箱の下端はビューの y110（ステージ y126。会話の箱の上 2）
-    expect(T.diceBottom).toBe(110);
+    expect(inside(T.talk.box, STAGE)).toBe(true);
+    expect(overlaps(T.talk.box, T.picture)).toBe(false);
+    expect(overlaps(T.talk.box, T.header.text)).toBe(false);
+    expect(inside(T.talk.text, T.talk.box)).toBe(true);
+    expect(inside(T.talk.more, T.talk.text)).toBe(true);
+    // 帯・見出し・一覧・施設メニュー・戻るは、会話の箱の下に入る（被せる）
+    for (const r of [T.band.row, T.heading, T.list.area, ...T.grid, T.back]) expect(inside(r, T.talk.box), JSON.stringify(r)).toBe(true);
+    expect(inside(T.talkCompact.box, T.picture)).toBe(true);
+    // UI-40（M10.5）街の判定の箱の下端はビューの y148（ステージ y164。会話の箱の上 2 = 絵の下端の 2 上）。迷宮のキャラクター画面は y110
+    expect(T.diceBottom).toBe(148);
+    expect(T.diceBottomCompact).toBe(110);
     expect(T.band.row).toEqual({ x: 0, y: 166, w: 240, h: 10 });
     expect(T.band.cells).toEqual([0, 1, 2, 3, 4, 5].map((i) => ({ x: 40 * i, y: 166, w: 40, h: 10 })));
     expect(T.band.hits).toEqual([0, 1, 2, 3, 4, 5].map((i) => ({ x: 40 * i, y: 166, w: 40, h: 22 })));
@@ -451,7 +468,8 @@ describe("layout", () => {
     expect(Math.min(...T.list.rows.map((r) => r.h))).toBeGreaterThanOrEqual(12);
   });
 
-  test("UI-13/UI-52（M10）townLayout の grid: 施設メニューの 48×48 を 3 列 × 2 段（x40/96/152・y190/246、間 8）でステージの中央寄せ。一覧の行の y 範囲（y190..387）に収まり、見出し・帯・絵・会話の箱と重ならない", () => {
+  // M10.5: 会話の箱を施設メニューに被せるようにしたので、重ならない相手から会話の箱を外した（被さることは townLayout の試験で確かめる）
+  test("UI-13/UI-52（M10）townLayout の grid: 施設メニューの 48×48 を 3 列 × 2 段（x40/96/152・y190/246、間 8）でステージの中央寄せ。一覧の行の y 範囲（y190..387）に収まり、見出し・帯・絵と重ならない", () => {
     expect(T.grid).toEqual([190, 246].flatMap((y) => [40, 96, 152].map((x) => ({ x, y, w: 48, h: 48 }))));
     const left = Math.min(...T.grid.map((r) => r.x));
     const right = Math.max(...T.grid.map((r) => r.x + r.w));
@@ -460,7 +478,7 @@ describe("layout", () => {
     for (const r of T.grid) {
       expect(r.w).toBe(r.h);
       expect(inside(r, rows), JSON.stringify(r)).toBe(true);
-      for (const o of [T.heading, T.band.row, ...T.band.hits, T.picture, T.talk.box, T.header.text]) expect(overlaps(r, o), JSON.stringify([r, o])).toBe(false);
+      for (const o of [T.heading, T.band.row, ...T.band.hits, T.picture, T.header.text]) expect(overlaps(r, o), JSON.stringify([r, o])).toBe(false);
     }
   });
 

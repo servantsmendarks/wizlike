@@ -328,7 +328,7 @@ describe("UI-59 キャラクター画面の層（placeDice / applyPanels）", ()
     const { placeDice } = await import("../src/presenter/views/dungeon");
     const stage = new LayerEl("stage");
     const [viewBox, camp, diceLayer, talk] = ["viewBox", "camp", "diceLayer", "talk"].map((n) => new LayerEl(n)) as [LayerEl, LayerEl, LayerEl, LayerEl];
-    for (const n of [viewBox, new LayerEl("header"), new LayerEl("message"), new LayerEl("band"), camp, diceLayer, talk, new LayerEl("panel"), new LayerEl("controls")]) stage.appendChild(n);
+    for (const n of [viewBox, new LayerEl("header"), new LayerEl("message"), new LayerEl("band"), camp, diceLayer, new LayerEl("panel"), new LayerEl("controls"), talk]) stage.appendChild(n);
     const dice = new LayerEl("dice");
     const penaltyTable = new LayerEl("penaltyTable");
     for (const n of [new LayerEl("svg"), new LayerEl("town"), new LayerEl("battle"), dice, penaltyTable]) viewBox.appendChild(n);
@@ -342,6 +342,8 @@ describe("UI-59 キャラクター画面の層（placeDice / applyPanels）", ()
       const order = names(stage);
       expect(order.indexOf("camp")).toBeLessThan(order.indexOf("diceLayer"));
       expect(order.indexOf("diceLayer")).toBeLessThan(order.indexOf("talk"));
+      // M10.5: 会話の箱は操作の欄に被せるので、操作の欄より後
+      expect(order.indexOf("controls")).toBeLessThan(order.indexOf("talk"));
       placeDice(false, p);
       expect(dice.parent).toBe(viewBox);
       expect(names(diceLayer)).toEqual([]);
@@ -349,25 +351,28 @@ describe("UI-59 キャラクター画面の層（placeDice / applyPanels）", ()
     }
   });
 
-  test("UI-13/UI-59/UI-40 街かキャラクター画面ならメッセージ窓とパーティ欄を隠し、判定の箱の下端を会話の箱の上へ。迷宮・戦闘で閉じていれば出して下端は DICE_BOX_BOTTOM", async () => {
+  // M10.5: 判定の箱の下端を街と迷宮のキャラクター画面で分け（街は広げた会話の箱の上、迷宮のキャラクター画面は 3 行の箱の上）、
+  // 会話の箱の大きさ（setTalkCompact）も足した（以前は街かキャラクター画面なら 1 つの値 TOWN_BOTTOM）
+  test("UI-13/UI-59/UI-40/UI-47（M10.5）街かキャラクター画面ならメッセージ窓とパーティ欄を隠し、判定の箱の下端を会話の箱の上へ（街は town、迷宮のキャラクター画面は compact）。迷宮・戦闘で閉じていれば出して下端は DICE_BOX_BOTTOM。会話の箱は街だけ広げ、それ以外は 3 行", async () => {
     const { applyPanels } = await import("../src/presenter/views/dungeon");
     const { DICE_BOX_BOTTOM } = await import("../src/presenter/views/dice");
-    const TOWN_BOTTOM = 94;
-    const cases: ["town" | "dungeon" | "battle", boolean, boolean][] = [
-      ["town", false, true],
-      ["town", true, true],
-      ["dungeon", true, true],
-      ["dungeon", false, false],
-      ["battle", false, false],
+    const B = { town: 94, compact: 57 };
+    const cases: ["town" | "dungeon" | "battle", boolean, boolean, number, boolean][] = [
+      ["town", false, true, B.town, false],
+      ["town", true, true, B.town, false],
+      ["dungeon", true, true, B.compact, true],
+      ["dungeon", false, false, DICE_BOX_BOTTOM, true],
+      ["battle", false, false, DICE_BOX_BOTTOM, true],
     ];
-    for (const [mode, open, hidden] of cases) {
+    for (const [mode, open, hidden, want, compact] of cases) {
       const message = new LayerEl("message");
       const panel = new LayerEl("panel");
       message.style.display = "x";
       panel.style.display = "x";
       let bottom = -1;
-      applyPanels(mode, open, { message, panel, setDiceBottom: (b) => (bottom = b) }, TOWN_BOTTOM);
-      expect([mode, open, message.style.display, panel.style.display, bottom]).toEqual([mode, open, hidden ? "none" : "", hidden ? "none" : "", hidden ? TOWN_BOTTOM : DICE_BOX_BOTTOM]);
+      let small: boolean | null = null;
+      applyPanels(mode, open, { message, panel, setDiceBottom: (b) => (bottom = b), setTalkCompact: (on) => (small = on) }, B);
+      expect([mode, open, message.style.display, panel.style.display, bottom, small]).toEqual([mode, open, hidden ? "none" : "", hidden ? "none" : "", want, compact]);
     }
   });
 });

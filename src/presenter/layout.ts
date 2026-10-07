@@ -269,24 +269,45 @@ const TOWN_GRID_COLS = 3;
 const TOWN_GRID_ROWS = 2;
 /** UI-13 / UI-52（M10。U3）: 施設メニューのラベルの字数の上限（8px の字で 48×48 の内側 46 に収まる。town-view.test で strings を検査する） */
 export const TOWN_GRID_LABEL_MAX = 4;
-/** UI-47: 会話の箱の行数と、箱の左右の余白（ステージの端からの距離）・絵の下端との余白 */
-const TALK_LINES = 3;
+/**
+ * UI-47（M10.5）: 街の会話の箱は絵の下端からステージの下端まで（帯・見出し・一覧・施設メニュー・戻るに被せる）。行数は矩形と行の高さから決める。
+ * 迷宮のキャラクター画面の箱（compact）は M8.5 の 3 行のまま（行数と、箱の左右の余白・絵の下端との余白）
+ */
+const TALK_COMPACT_LINES = 3;
 const TALK_MARGIN_X = 2;
 const TALK_MARGIN_BOTTOM = 2;
 /** UI-47: 会話の箱の文字の幅（全角 28 字。UI-43 の禁則で 1 行 28 字以下） */
 const TALK_TEXT_W = 224;
+/** UI-47（M10.5）: 会話の箱の文字の幅の単位（半角 1 字。8px の字で 4px。全角は 2 単位）。cols = 文字の幅 / これ */
+const TALK_UNIT_PX = 4;
 /** UI-40（M8.5）: 街の判定の箱の下端と会話の箱の上端の間 */
 const TOWN_DICE_GAP = 2;
+
+/** UI-47: 会話の箱の矩形。box は枠、text は文字領域（lines 行）、cols は 1 行の単位（半角 1・全角 2）、more は ▼ */
+export type TalkRect = { box: Rect; text: Rect; lines: number; cols: number; more: Rect };
+
+/** UI-47: 枠 box の内側に文字領域（枠の内側から左 4・上下 2 の余白、幅は TALK_TEXT_W まで）と ▼（文字領域の右下）を置く */
+function talkRect(box: Rect): TalkRect {
+  const w = Math.min(TALK_TEXT_W, box.w - 2 * (1 + MESSAGE_PAD_X));
+  const lines = Math.max(1, Math.floor((box.h - 2 * (1 + MESSAGE_PAD_Y)) / MESSAGE_LINE_H));
+  const text: Rect = { x: box.x + 1 + MESSAGE_PAD_X, y: box.y + 1 + MESSAGE_PAD_Y, w, h: lines * MESSAGE_LINE_H };
+  const more: Rect = { x: text.x + text.w - MESSAGE_MORE, y: text.y + text.h - MESSAGE_MORE, w: MESSAGE_MORE, h: MESSAGE_MORE };
+  return { box, text, lines, cols: Math.floor(w / TALK_UNIT_PX), more };
+}
 
 export type TownLayout = {
   /** text は場所と所持金、log はログのボタン（UI-46 の履歴を開く）、settings は設定のボタン */
   header: { text: Rect; log: Rect; settings: Rect };
   /** UI-61 施設の絵（= ビュー領域。240×150） */
   picture: Rect;
-  /** UI-47 会話の箱。box は枠、text は文字領域（lines 行）、more は ▼ */
-  talk: { box: Rect; text: Rect; lines: number; more: Rect };
-  /** UI-40 街の判定の箱の下端（ビューの座標。会話の箱の上 TOWN_DICE_GAP） */
+  /** UI-47 会話の箱（M10.5。絵の下端からステージの下端まで） */
+  talk: TalkRect;
+  /** UI-47 / UI-59 迷宮のキャラクター画面の会話の箱（M8.5 の 3 行。絵の下端に重なる） */
+  talkCompact: TalkRect;
+  /** UI-40 街の判定の箱の下端（ビューの座標。会話の箱の上 TOWN_DICE_GAP = 絵の下端の 2 上） */
   diceBottom: number;
+  /** UI-40 / UI-59 迷宮のキャラクター画面の判定の箱の下端（ビューの座標。compact の箱の上 TOWN_DICE_GAP） */
+  diceBottomCompact: number;
   /** パーティの帯。cells は見える 1 行の 6 セル（40×10）、hits は押せる範囲（帯と見出しの行の 40×22） */
   band: { row: Rect; cells: Rect[]; hits: Rect[] };
   /** 一覧の見出し（1 行。押せない） */
@@ -299,7 +320,8 @@ export type TownLayout = {
   back: Rect;
 };
 
-/** UI-13: 街の画面の矩形（ステージ座標）。既定の regions では ヘッダー y0..15、絵 y16..165、帯 y166..175、見出し y178..187、一覧 y190..387（22×9 行）、施設メニューの 6 枠 x40/96/152・y190/246 の 48×48（M10）、戻る 178,354 */
+/** UI-13: 街の画面の矩形（ステージ座標）。既定の regions では ヘッダー y0..15、絵 y16..165、帯 y166..175、見出し y178..187、一覧 y190..387（22×9 行）、施設メニューの 6 枠 x40/96/152・y190/246 の 48×48（M10）、戻る 178,354。
+ * 会話の箱（M10.5）は x0..239・y166..399（22 行。帯から戻るまでに被せる）、迷宮のキャラクター画面の箱は x2..237・y128..163（3 行） */
 export function townLayout(g: Regions, partySize: number): TownLayout {
   const h = g.header;
   const settings: Rect = { x: h.x + h.w - HEADER_SETTINGS_W, y: h.y, w: HEADER_SETTINGS_W, h: h.h };
@@ -307,12 +329,12 @@ export function townLayout(g: Regions, partySize: number): TownLayout {
   const text: Rect = { x: h.x + HEADER_TEXT_PAD, y: h.y, w: log.x - h.x - 2 * HEADER_TEXT_PAD, h: h.h };
 
   const v = g.view;
-  const boxH = TALK_LINES * MESSAGE_LINE_H + 2 * (MESSAGE_PAD_Y + 1);
-  const box: Rect = { x: v.x + TALK_MARGIN_X, y: v.y + v.h - TALK_MARGIN_BOTTOM - boxH, w: v.w - 2 * TALK_MARGIN_X, h: boxH };
-  const tText: Rect = { x: box.x + 1 + MESSAGE_PAD_X, y: box.y + 1 + MESSAGE_PAD_Y, w: Math.min(TALK_TEXT_W, box.w - 2 * (1 + MESSAGE_PAD_X)), h: TALK_LINES * MESSAGE_LINE_H };
-  const more: Rect = { x: tText.x + tText.w - MESSAGE_MORE, y: tText.y + tText.h - MESSAGE_MORE, w: MESSAGE_MORE, h: MESSAGE_MORE };
-
   const bandY = v.y + v.h;
+  const stageBottom = g.controls.y + g.controls.h;
+  const talk = talkRect({ x: v.x, y: bandY, w: v.w, h: stageBottom - bandY });
+  const compactH = TALK_COMPACT_LINES * MESSAGE_LINE_H + 2 * (MESSAGE_PAD_Y + 1);
+  const talkCompact = talkRect({ x: v.x + TALK_MARGIN_X, y: v.y + v.h - TALK_MARGIN_BOTTOM - compactH, w: v.w - 2 * TALK_MARGIN_X, h: compactH });
+
   const cellW = Math.floor(v.w / Math.max(1, partySize));
   const cells = Array.from({ length: partySize }, (_, i): Rect => ({ x: v.x + cellW * i, y: bandY, w: cellW, h: TOWN_BAND_H }));
   const hits = cells.map((r): Rect => ({ ...r, h: TOWN_BAND_HIT_H }));
@@ -334,8 +356,10 @@ export function townLayout(g: Regions, partySize: number): TownLayout {
   return {
     header: { text, log, settings },
     picture: { ...v },
-    talk: { box, text: tText, lines: TALK_LINES, more },
-    diceBottom: box.y - v.y - TOWN_DICE_GAP,
+    talk,
+    talkCompact,
+    diceBottom: talk.box.y - v.y - TOWN_DICE_GAP,
+    diceBottomCompact: talkCompact.box.y - v.y - TOWN_DICE_GAP,
     band: { row: { x: v.x, y: bandY, w: v.w, h: TOWN_BAND_H }, cells, hits },
     heading,
     list: { area, rows: Array.from({ length: count }, (_, i): Rect => ({ x: area.x, y: area.y + TOWN_ROW_H * i, w: area.w, h: TOWN_ROW_H })) },

@@ -498,14 +498,16 @@ describe("入力と Command", () => {
     expect(dungeon).toContain("const camp = createCampView(lay.camp, lay.character);");
     expect(dungeon).toContain("townList: { heading: tl.heading, area: tl.list.area, rows: tl.list.rows, grid: tl.grid } }");
     // 帯は窓の後・キャンプのパネルの前（図鑑・キャラクター画面のパネルが帯を覆う）、判定の箱の層（UI-59）はキャンプの後、
-    // 会話の箱（UI-47）はその後、パーティ欄はその後（キャラクター画面の間は隠す）
+    // パーティ欄はその後（キャラクター画面の間は隠す）、操作はその後。会話の箱（UI-47）は M10.5 で操作の後に移した（操作の欄に被せる。
+    // 以前は判定の箱の層の直後・パーティ欄の前）
     expect(dungeon).toContain(
-      "el.append(viewBox, header.el, message.el, band.el, camp.el, diceLayer, talk.el, panel.el, controls.el, map.el, wipe.el, history.el);",
+      "el.append(viewBox, header.el, message.el, band.el, camp.el, diceLayer, panel.el, controls.el, talk.el, map.el, wipe.el, history.el);",
     );
     // 街とキャラクター画面ではメッセージ窓と 64 のパーティ欄を隠す。街では帯とヘッダーのログを出す。
     // 2026-10-07（B-B-5）: 隠す処理は export の applyPanels に切り出し、振る舞いは dungeon-view.test の偽の要素で確かめる。ここは結線だけ
-    expect(dungeon).toContain(
-      "const syncPanels = (): void => applyPanels(mode, characterOpen, { message: message.el, panel: panel.el, setDiceBottom: (b) => dice.setBottom(b) }, tl.diceBottom);",
+    // M10.5: 判定の箱の下端は街と迷宮のキャラクター画面で分け、会話の箱の大きさも applyPanels で切り替える
+    expect(dungeon).toMatch(
+      /const syncPanels = \(\): void =>\s*applyPanels\(\s*mode,\s*characterOpen,\s*\{ message: message\.el, panel: panel\.el, setDiceBottom: \(b\) => dice\.setBottom\(b\), setTalkCompact: \(on\) => talk\.setCompact\(on\) \},\s*\{ town: tl\.diceBottom, compact: tl\.diceBottomCompact \},\s*\);/,
     );
     expect(dungeon).toContain('band.el.style.display = town ? "" : "none";');
     expect(dungeon).toContain("header.setLogVisible(town);");
@@ -712,8 +714,11 @@ describe("入力と Command", () => {
     expect(resume.indexOf("narrator.say(")).toBeGreaterThan(resume.indexOf("showRoute(plan.route)"));
     // 判定の箱の下端は街とキャラクター画面（M10）だけ会話の箱の上（2026-10-07 B-B-5: applyPanels に切り出し、dungeon-view.test で確かめる）
     const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
-    expect(dungeon).toContain("p.setDiceBottom(hide ? townDiceBottom : DICE_BOX_BOTTOM);");
-    expect(dungeon).toContain("const talk = createTalkBox({ layout: tl.talk, speed: o.textSpeed, blink: o.talkBlink, log: (t) => message.log(t), advanced: () => o.talkAdvanced?.() });");
+    // M10.5: 街は広げた会話の箱の上、迷宮のキャラクター画面は 3 行の箱の上。会話の箱はページを空にする・閉じるときに判定の箱を消す
+    expect(dungeon).toContain('p.setDiceBottom(mode === "town" ? diceBottom.town : characterOpen ? diceBottom.compact : DICE_BOX_BOTTOM);');
+    expect(dungeon).toMatch(
+      /const talk = createTalkBox\(\{\s*layout: tl\.talk,\s*compact: tl\.talkCompact,\s*speed: o\.textSpeed,\s*blink: o\.talkBlink,\s*log: \(t\) => message\.log\(t\),\s*advanced: \(\) => o\.talkAdvanced\?\.\(\),\s*cleared: \(\) => dice\.hide\(\),\s*\}\);/,
+    );
   });
 
   test("UI-47/UI-59（M10。2026-10-07 A-A2）キャンプの項目（と peek の dim の行）は、街かキャラクター画面なら会話の箱を打ち切ってから動く。Esc も campKeyIndex → select でこの onSelect を通る（ソースの検査）", () => {

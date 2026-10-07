@@ -369,7 +369,7 @@ export function createApp(o: {
 
   /**
    * UI-47（M8.5）: 語りの表示先。route が街なら会話の箱、それ以外（迷宮・戦闘）は今のメッセージ窓。
-   * UI-59（M10）: キャラクター画面の間は迷宮でも会話の箱（メッセージ窓は隠れている。hold もこの条件に従い、文ごとにタップを待つ）。
+   * UI-59（M10）: キャラクター画面の間は迷宮でも会話の箱（メッセージ窓は隠れている。hold もこの条件に従う。迷宮では 3 行の箱）。
    * ログ（UI-46）はどちらもメッセージ窓の 1 本の配列。再生（PlayerDeps.message）・save.failed・再開の語りはここを通す
    */
   const narrator = createNarrator({ town: () => route === "town" || characterOpen, talk: play.talk, window: play.message });
@@ -589,7 +589,7 @@ export function createApp(o: {
     syncControls();
     const menu = townMenu(state, data);
     if (menu === null) return;
-    // UI-47: 会話の箱に 1 文ずつ語る（どの文も文字送り。2 文目からはタップで次へ。演出スキップは文字送りだけ省く）
+    // UI-47: 会話の箱に 1 文ずつ語る（どの文も文字送り。M10.5: 箱に溜め、埋まったときだけタップで次のページ。演出スキップは文字送りだけ省く）
     // 履歴の末尾 2 件と同じ語りは重ねて出さない（段を戻ってまた進んだとき。UI-52 / TW-17）
     const texts = townFreshIntro(
       [
@@ -1956,7 +1956,7 @@ export function createApp(o: {
       }
       case "town":
         // UI-33 / UI-47: Enter は会話の箱が開いていれば箱のタップ（次へ・閉じる）、閉じていれば先頭。
-        // 数字は n 番目の行（townItem が会話を打ち切る）、Esc は会話を打ち切ってから 1 つ上
+        // 数字は n 番目の行（箱が開いている間は上の talkWaits で箱のタップになる。M10.5）、Esc は会話を打ち切ってから 1 つ上
         if (a === "confirm") {
           if (play.talk.isOpen()) play.talk.tap();
           else play.controls.select(0);
@@ -2019,7 +2019,7 @@ export function createApp(o: {
 
   /**
    * UI-47: 再生の外の会話の箱・施設の絵のタップ（再生中のタップはステージが player.tap() に回す）。
-   * 文字送り中なら即表示、タップ待ちなら次の文、最後の文なら閉じる。キャンプ（酒場）は箱がパネルの上に描かれるので受ける。
+   * 文字送り中なら即表示、箱が埋まって待っていれば空にして続け、最後の文の ▼ なら閉じる。キャンプ（酒場）は箱がパネルの上に描かれるので受ける。
    * それ以外の overlay（履歴・設定など）があるときは何もしない
    */
   const tapTalk = (): void => {
@@ -2030,7 +2030,7 @@ export function createApp(o: {
   };
 
   /**
-   * UI-47 / UI-66（2026-10-07 未定-19）: 再生の外で会話の箱が文送りを待っている（▼ か続きの文がある）。
+   * UI-47 / UI-66（2026-10-07 未定-19。M10.5）: 再生の外で会話の箱が文送りを待っている（箱が開いている（最後の文の ▼ を含む）か、続きの文がある）。
    * この間は一覧・ヘッダー・帯などステージのどこのタップも箱のタップ（tapTalk）にし、数字キーも同じにする（一覧は選ばない）。
    * 箱を受ける画面（街・キャラクター画面）で、箱より上の overlay（履歴・設定など）が無いときだけ
    */
