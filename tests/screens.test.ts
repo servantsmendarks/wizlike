@@ -673,7 +673,8 @@ describe("入力と Command", () => {
     const sync = /const syncCampControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(sync).toMatch(/campPage = campRepair\(campHost, campPage, m\);\s*setCharacter\(campCharacterOpen\(campPage\)\);/);
     // UI-68（M10）: peek の行（唱えられない呪文）は dim でも選べる。それ以外は理由を語る
-    expect(sync).toContain("...(x.peek === true ? { onDisabled: () => guard(() => chooseCamp(x.choice)) } : campReason(x)),");
+    // 2026-10-07（A-A2）: peek の onDisabled も onSelect と同じ choose（会話の箱を打ち切ってから chooseCamp）にした
+    expect(sync).toContain("...(x.peek === true ? { onDisabled: choose } : campReason(x)),");
     const set = /const setCharacter = \(on: boolean, keepTalk = false\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     // 2026-10-07（A-A1）: 迷宮のキャラクター画面から街へ入るときは打ち切らない（keepTalk。UI-47 / UI-59 の帰還のテスト）
     expect(set).toMatch(/if \(characterOpen === on\) return;\s*characterOpen = on;\s*if \(!on && route !== "town" && !keepTalk\) play\.talk\.flush\(\);\s*play\.setCharacterOpen\(on\);/);
@@ -707,6 +708,18 @@ describe("入力と Command", () => {
     const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
     expect(dungeon).toContain("dice.setBottom(hide ? tl.diceBottom : DICE_BOX_BOTTOM);");
     expect(dungeon).toContain("const talk = createTalkBox({ layout: tl.talk, speed: o.textSpeed, blink: o.talkBlink, log: (t) => message.log(t), advanced: () => o.talkAdvanced?.() });");
+  });
+
+  test("UI-47/UI-59（M10。2026-10-07 A-A2）キャンプの項目（と peek の dim の行）は、街かキャラクター画面なら会話の箱を打ち切ってから動く。Esc も campKeyIndex → select でこの onSelect を通る（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const sync = /const syncCampControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(sync).toMatch(
+      /const choose = \(\): void =>\s*guard\(\(\) => \{\s*if \(route === "town" \|\| characterOpen\) play\.talk\.flush\(\);\s*chooseCamp\(x\.choice\);\s*\}\);/,
+    );
+    expect(sync).toContain("...(x.peek === true ? { onDisabled: choose } : campReason(x)),");
+    expect(sync).toContain("onSelect: choose,");
+    const core = /const handleActionCore = \(a: Action\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(core).toMatch(/const k = campKeyIndex\(a, campEntries\(campHost, campPage, m, strings\)\);\s*if \(k !== null\) play\.controls\.select\(k\);/);
   });
 
   test("UI-47/UI-59（M10。2026-10-07 A-A1）迷宮のキャラクター画面から帰還（帰還の糸・帰還の呪文）で街へ入るときは、語りが既に会話の箱に出ているので carry を出し直さず、箱も打ち切らない（ソースの検査）", () => {

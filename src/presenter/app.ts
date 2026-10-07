@@ -848,14 +848,22 @@ export function createApp(o: {
     const e = campEntries(campHost, campPage, m, strings);
     // UI-66（2026-10-07）: 戻る・やめる（choice の cancel）は 8 枠の中でも一覧の外でも取り消しの音
     // UI-59（M10）: 押せない項目に理由（core の値から作った reason）があれば、会話の箱を打ち切ってから理由を語る
-    const item = (x: CampEntry): ControlItem => ({
-      label: x.label,
-      disabled: x.disabled,
-      back: x.choice.kind === "cancel",
-      // UI-68（M10）: peek の行は dim でも選べる（唱えられない呪文の説明を見る）
-      ...(x.peek === true ? { onDisabled: () => guard(() => chooseCamp(x.choice)) } : campReason(x)),
-      onSelect: () => guard(() => chooseCamp(x.choice)),
-    });
+    // UI-47 / UI-59（2026-10-07）: 街（酒場）とキャラクター画面では、項目は会話の箱を打ち切ってから動く（townItem と同じ。Esc も select でここを通る）
+    const item = (x: CampEntry): ControlItem => {
+      const choose = (): void =>
+        guard(() => {
+          if (route === "town" || characterOpen) play.talk.flush();
+          chooseCamp(x.choice);
+        });
+      return {
+        label: x.label,
+        disabled: x.disabled,
+        back: x.choice.kind === "cancel",
+        // UI-68（M10）: peek の行は dim でも選べる（唱えられない呪文の説明を見る）
+        ...(x.peek === true ? { onDisabled: choose } : campReason(x)),
+        onSelect: choose,
+      };
+    };
     if (e.layout === "grid") {
       c.setBattleMenu(e.slots.map((x) => (x === null ? null : item(x))), "camp");
       c.setMode("battle");
