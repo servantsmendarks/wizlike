@@ -1477,7 +1477,7 @@ describe("ボス（DG-31〜33, DG-01）", () => {
     expect(r.events).toContainEqual({ kind: "message", key: "battle.bossDefeated", params: { boss: "門番の甲冑" } });
     expect(ks).toContain("message:battle.dungeonCleared");
     expect(r.events).toContainEqual({ kind: "message", key: "dungeon.unlocked", params: { dungeon: "沈んだ聖堂" } });
-    expect(ks).not.toContain("message:battle.chest");
+    expect(ks).not.toContain("chestFound");
     const s = r.state;
     expect(s.dive!.bossDefeated).toBe(true);
     expect(s.progress.clearedDungeons).toEqual(["d01"]);

@@ -128,6 +128,7 @@ function matches(cue: SoundCue, ev: GameEvent, ctx: SoundContext): boolean {
     case "encounter":
     case "blocked":
     case "spellLearned":
+    case "chestFound":
       return true;
     default:
       return false;

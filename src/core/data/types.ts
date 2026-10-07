@@ -853,7 +853,7 @@ export type AudioScreen = (typeof AUDIO_SCREENS)[number];
 export const AUDIO_FACILITIES = ["tavern", "inn", "temple", "dark", "gate", "shop"] as const;
 export type AudioFacility = (typeof AUDIO_FACILITIES)[number];
 
-/** 音の契機にできる GameEvent の kind（UI-66。encounter 以降は 2026-10-06 に足した） */
+/** 音の契機にできる GameEvent の kind（UI-66。encounter 以降は 2026-10-06、chestFound は 2026-10-08（M11）に足した） */
 export const CUE_EVENTS = [
   "message",
   "attack",
@@ -870,6 +870,7 @@ export const CUE_EVENTS = [
   "lifeChanged",
   "dice",
   "spellLearned",
+  "chestFound",
 ] as const;
 export type CueEvent = (typeof CUE_EVENTS)[number];
 

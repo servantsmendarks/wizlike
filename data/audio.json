@@ -39,7 +39,7 @@
     { "event": "blocked", "sfx": "wall" },
     { "event": "battleEnd", "result": "flee", "sfx": "flee" },
     { "event": "lifeChanged", "target": "party", "life": "dead", "sfx": "death" },
-    { "event": "message", "key": "battle.chest", "sfx": "chest" },
+    { "event": "chestFound", "sfx": "chest" },
     { "event": "message", "key": "town.shop.bought", "sfx": "gold" },
     { "event": "message", "key": "town.shop.sold", "sfx": "gold" },
     { "event": "message", "key": "town.shop.boughtBack", "sfx": "gold" },

@@ -495,7 +495,6 @@
   "battle.noEffect": "{target}には効かなかった。",
   "battle.wake": "{target}は目を覚ました。",
   "battle.useItem": "{actor}は{item}を使った。",
-  "battle.chest": "宝箱があった。中に{gold}の金。",
   "chest.trapName.poison_needle": "毒針",
   "chest.trapName.crossbow": "石弓",
   "chest.trapName.bomb": "爆弾",
