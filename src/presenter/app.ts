@@ -388,6 +388,7 @@ export function createApp(o: {
     addTurns: data.config.town.tavernEventTurns,
     onSanOver: () => guard(() => sanOverFromDebug()),
     sanOver: SAN_OVER_DEBUG,
+    onGiveCursed: (wearable) => guard(() => giveCursedFromDebug(wearable)),
     pointers: () => pointerLog.entries(),
   });
 
@@ -1705,6 +1706,16 @@ export function createApp(o: {
     if (route !== "town" && route !== "dungeon" && route !== "battle") return;
     closeDebugForCommand();
     void run({ type: "debug.sanOver" });
+  };
+
+  /**
+   * UI-57（開発用、M10）: 「呪い:司可」「呪い:司否」。街・迷宮・戦闘のときだけ、パネルを閉じてから debug.giveCursed を送る（受け付けるかは core が決める）。
+   * 取り憑き・街での鑑定の失敗・呪いの警告を実機で確かめるためのもの
+   */
+  const giveCursedFromDebug = (wearable: boolean): void => {
+    if (route !== "town" && route !== "dungeon" && route !== "battle") return;
+    closeDebugForCommand();
+    void run({ type: "debug.giveCursed", wearable });
   };
 
   /**

@@ -1,5 +1,7 @@
 // UI-57（開発用）: debug パネルのコマンド。全滅の流れ（M4 の実機の結果、ユーザー指示）と、
 // M5 の性格・イベント・SAN を実機で確かめるためのもの。乱数は使わない。
+import { optionAppliesTo, optionKindOf } from "../data/index";
+import { createItemInstance, itemDisplayName, slotsUsed } from "../state";
 import type { RuleContext } from "../types";
 import { floorOf, markExplored, warpTarget } from "./dungeon";
 import { loseSan, overSan, sanCapOf, sanJustBelow, sanStage } from "./san";
@@ -86,4 +88,43 @@ export function addTurns(ctx: RuleContext): void {
   const n = ctx.data.config.town.tavernEventTurns;
   ctx.state.adventureTurns += n;
   ctx.events.push({ kind: "message", key: "debug.addTurns", params: { n, total: ctx.state.adventureTurns } });
+}
+
+/**
+ * debug.giveCursed（M10）: 呪われた未鑑定の装備品の実体を 1 つ作り、並び順で最初に使用枠（CH-71）の空いた者（life を問わない。IT-54 と同じ）の
+ * inventory の末尾に入れる。品は equipment-bases.json の並びで最初の、鑑定できる職業（abilities に identify）のすべてが装備できる（wearable 真）／
+ * どれも装備できない（偽）ベース。Lv0・通常・ユニークでない。オプションはその品種に付けられる最初の 1 つ（段階 1）の値を負にしたもの
+ * （IT-32 の「呪いの余分の 1 個の符号を反転」と同じ形）。迷宮内なら潜行台帳（DG-40）に入れ、foundIn はそのダンジョン（街では null）。
+ * message debug.giveCursed{name, item}（item は未鑑定の表示名）。誰も空いていない・該当するベースが無ければ実体を作らず message debug.giveCursed.full /
+ * debug.giveCursed.none。取り憑き（CH-77）・街での鑑定の失敗・呪いの警告を実機で確かめるため。乱数は使わない
+ */
+export function giveCursed(ctx: RuleContext, wearable: boolean): void {
+  const { state, data } = ctx;
+  const identifiers = data.classes.filter((c) => c.abilities.includes("identify")).map((c) => c.id);
+  const canWear = (classes: readonly string[], classId: string): boolean => classes.length === 0 || classes.includes(classId);
+  const base = data.equipmentBases.find((b) =>
+    wearable ? identifiers.every((id) => canWear(b.classes, id)) : identifiers.every((id) => !canWear(b.classes, id)),
+  );
+  if (base === undefined) {
+    ctx.events.push({ kind: "message", key: "debug.giveCursed.none" });
+    return;
+  }
+  const ch = state.party.find((c) => slotsUsed(c) < data.config.inventory.slotsPerCharacter);
+  if (ch === undefined) {
+    ctx.events.push({ kind: "message", key: "debug.giveCursed.full" });
+    return;
+  }
+  const kind = optionKindOf(base);
+  const option = data.itemOptions.options.find((o) => optionAppliesTo(o, kind));
+  const options = option === undefined ? [] : [{ optionId: option.id, tier: 1 as const, value: -option.values[0]! }];
+  const id = createItemInstance(state, {
+    itemId: base.id,
+    identified: false,
+    cursed: true,
+    options,
+    foundIn: state.dive === null ? null : state.dive.dungeonId,
+  });
+  ch.inventory.push(id);
+  if (state.dive !== null) state.dive.ledger.items.push(id);
+  ctx.events.push({ kind: "message", key: "debug.giveCursed", params: { name: ch.name, item: itemDisplayName(state, data, id) } });
 }

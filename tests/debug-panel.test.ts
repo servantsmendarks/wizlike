@@ -1,7 +1,7 @@
 // debug パネル（M0 の確認画面と設定の仮 UI、UI-57 のポインタの記録）。純粋な部分と、偽の document の DOM の部分。
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { tapSpecOf } from "../src/presenter/input/tap";
-import { DEBUG_BUTTONS, DEBUG_BUTTONS_M5, DEBUG_BUTTONS_M7, DEBUG_POINTER, debugRow } from "../src/presenter/layout";
+import { DEBUG_BUTTONS, DEBUG_BUTTONS_M10, DEBUG_BUTTONS_M5, DEBUG_BUTTONS_M7, DEBUG_POINTER, debugRow } from "../src/presenter/layout";
 import { createSettingsStore, defaultSettings } from "../src/presenter/settings";
 import type { StageLayout } from "../src/presenter/stage";
 import { createDebugPanel, DEBUG_ROW_KEYS, debugRows, formatStageInfo, formatSwipeDebug, pointerRowsText, type StageInfoInput } from "../src/presenter/views/debug-panel";
@@ -117,6 +117,7 @@ describe("createDebugPanel", () => {
       addTurns: 200,
       onSanOver: () => calls.push("sanOver"),
       sanOver: 10,
+      onGiveCursed: (wearable) => calls.push(`giveCursed:${wearable}`),
       pointers: () => [],
     });
     const root = panel.el as unknown as FakeEl;
@@ -129,6 +130,49 @@ describe("createDebugPanel", () => {
     tapSpecOf(b!)!.onTap({ lx: 0, ly: 0 });
     expect(calls).toEqual(["sanOver"]);
     expect(root.children.includes(b!)).toBe(false);
+  });
+
+  test("UI-57（M10）1 ページ目の SAN+10 の下に「呪い:司可」「呪い:司否」（DEBUG_BUTTONS_M10）。押すと onGiveCursed(true / false)。1 ページ目の子で、計測値の長い行・設定の行・SAN+10 と重ならない", () => {
+    vi.stubGlobal("document", { createElement: () => new FakeEl(), createElementNS: () => new FakeEl() });
+    const store = createSettingsStore(defaultSettings(data.config), () => {});
+    const calls: string[] = [];
+    const panel = createDebugPanel({
+      strings: data.strings,
+      store,
+      defaults: defaultSettings(data.config),
+      onClose: () => calls.push("close"),
+      onHpOne: () => calls.push("hpOne"),
+      onSanDown: () => calls.push("sanDown"),
+      onWarp: (to) => calls.push(`warp:${to}`),
+      onAddTurns: () => calls.push("addTurns"),
+      addTurns: 200,
+      onSanOver: () => calls.push("sanOver"),
+      sanOver: 10,
+      onGiveCursed: (wearable) => calls.push(`giveCursed:${wearable}`),
+      pointers: () => [],
+    });
+    const root = panel.el as unknown as FakeEl;
+    const [page1] = root.children.filter((c) => c.className === "debug-page") as [FakeEl];
+    for (const [key, r, call] of [
+      ["debug.giveCursedWearButton", DEBUG_BUTTONS_M10.giveCursedWear, "giveCursed:true"],
+      ["debug.giveCursedOtherButton", DEBUG_BUTTONS_M10.giveCursedOther, "giveCursed:false"],
+    ] as const) {
+      const b = page1.children.find((c) => c.className === "ui-button" && c.textContent === data.strings[key]);
+      expect(b, key).toBeDefined();
+      expect([b!.style["left"], b!.style["top"], b!.style["width"], b!.style["height"], b!.style["lineHeight"]]).toEqual([`${r.x}px`, `${r.y}px`, `${r.w}px`, `${r.h}px`, `${r.h - 2}px`]);
+      calls.length = 0;
+      tapSpecOf(b!)!.onTap({ lx: 0, ly: 0 });
+      expect(calls, key).toEqual([call]);
+      expect(root.children.includes(b!), key).toBe(false);
+      // 計測値の行（x4 から、美咲の半角 4px。"viewport    411.4286 x 845.7143" の 31 字 = 124px）より右、SAN+10 より下、設定の行 0 より上
+      expect(r.x).toBeGreaterThanOrEqual(4 + 31 * 4);
+      expect(r.y).toBeGreaterThanOrEqual(DEBUG_BUTTONS_M7.sanOver.y + DEBUG_BUTTONS_M7.sanOver.h);
+      expect(r.y + r.h).toBeLessThanOrEqual(debugRow(0).label.y);
+      expect(r.x + r.w).toBeLessThanOrEqual(236);
+    }
+    const a = DEBUG_BUTTONS_M10.giveCursedWear;
+    const b = DEBUG_BUTTONS_M10.giveCursedOther;
+    expect(a.x + a.w <= b.x || b.x + b.w <= a.x).toBe(true);
   });
 
   test("UI-57 1 ページ目の 2 段目（y376 の 44×22 ×5。M5・M5.5）: SAN段↓・イベント・罠の前・階段前・ターン+{n}。押すと onSanDown / onWarp(event|trap|stairsDown) / onAddTurns。1 ページ目の子なので 2 ページ目では見えない。line-height は内側の高さ（h−2）", () => {
@@ -155,6 +199,7 @@ describe("createDebugPanel", () => {
       addTurns: data.config.town.tavernEventTurns,
       onSanOver: () => calls.push("sanOver"),
       sanOver: 10,
+      onGiveCursed: (wearable) => calls.push(`giveCursed:${wearable}`),
       pointers: () => [],
     });
     const root = panel.el as unknown as FakeEl;
@@ -200,7 +245,7 @@ describe("createDebugPanel", () => {
     const store = createSettingsStore(defaultSettings(data.config), (s) => persisted.push(s.autoBeatMs));
     let hpOne = 0;
     let closed = 0;
-    createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => closed++, onHpOne: () => hpOne++, onSanDown: () => {}, onWarp: () => {}, onAddTurns: () => {}, addTurns: 200, onSanOver: () => {}, sanOver: 10, pointers: () => [] });
+    createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => closed++, onHpOne: () => hpOne++, onSanDown: () => {}, onWarp: () => {}, onAddTurns: () => {}, addTurns: 200, onSanOver: () => {}, sanOver: 10, onGiveCursed: () => {}, pointers: () => [] });
     const buttons = created.filter((e) => e.className === "ui-button");
     const byText = (t: string): FakeEl => buttons.find((b) => b.textContent === t)!;
     const tap = (b: FakeEl): void => tapSpecOf(b)!.onTap({ lx: 0, ly: 0 });
@@ -246,7 +291,7 @@ describe("createDebugPanel", () => {
     });
     const store = createSettingsStore(defaultSettings(data.config), () => {});
     let entries: PointerEntry[] = [];
-    const panel = createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => {}, onHpOne: () => {}, onSanDown: () => {}, onWarp: () => {}, onAddTurns: () => {}, addTurns: 200, onSanOver: () => {}, sanOver: 10, pointers: () => entries });
+    const panel = createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => {}, onHpOne: () => {}, onSanDown: () => {}, onWarp: () => {}, onAddTurns: () => {}, addTurns: 200, onSanOver: () => {}, sanOver: 10, onGiveCursed: () => {}, pointers: () => entries });
     const root = panel.el as unknown as FakeEl;
     const pages = root.children.filter((c) => c.className === "debug-page");
     expect(pages).toHaveLength(2);

@@ -529,6 +529,15 @@ export const DEBUG_BUTTONS_M7 = {
   sanOver: { x: 188, y: 42, w: 44, h: 30 },
 } as const satisfies Record<string, Rect>;
 
+/**
+ * debug パネルの 1 ページ目の「呪い:司可」「呪い:司否」（M10。開発用、UI-57。debug.giveCursed{wearable}）: SAN+10 の下の y74 の 44×30 を x142 / x188 に 2 つ
+ * （下端 104 は設定の行 0（y124）より上）。計測値の 3〜5 行目（y72..101）は最長でも「viewport    411.4286 x 845.7143」の 31 字（124px、右端 128）なので重ならない
+ */
+export const DEBUG_BUTTONS_M10 = {
+  giveCursedWear: { x: 142, y: 74, w: 44, h: 30 },
+  giveCursedOther: { x: 188, y: 74, w: 44, h: 30 },
+} as const satisfies Record<string, Rect>;
+
 /** debug パネルの 2 ページ目（UI-57 のポインタの記録）: 題 y4、行 i は y16+10i（i=0..19、最後の行は y206..215）、x4・幅 232 */
 export const DEBUG_POINTER = { x: 4, w: 232, titleY: 4, rowY: 16, rowH: 10 } as const;
 

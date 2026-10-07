@@ -13,6 +13,7 @@ import {
   memberById,
   monsterOf,
   optionOf,
+  slotsUsed as slotsUsedOf,
   uniqueOf,
 } from "../src/core/state";
 import { floorOf, visibleCellsOf, warpTarget } from "../src/core/rules/dungeon";
@@ -767,6 +768,73 @@ describe("UI-57 debug.sanOver（開発用、M7）", () => {
     const r = execute(t, OVER, data);
     expect(r.state).toBe(t);
     expect(r.events).toEqual([{ kind: "rejected", command: "debug.sanOver", reason: "no party" }]);
+  });
+});
+
+describe("UI-57 debug.giveCursed（開発用、M10）", () => {
+  const WEAR: Command = { type: "debug.giveCursed", wearable: true };
+  const OTHER: Command = { type: "debug.giveCursed", wearable: false };
+
+  test("UI-57/CH-77 debug.giveCursed{wearable: true} は司教が装備できる最初のベース（dagger）の呪われた未鑑定品（Lv0・通常・負のオプション 1 つ）を、並び順で最初に使用枠の空いた者の末尾に入れる。街では台帳なし・foundIn null。message debug.giveCursed{name, item}。乱数は変えない", () => {
+    const s = cloneState(newGame(1));
+    s.party[0]!.inventory.push(...Array.from({ length: 8 }, () => createItemInstance(s, { itemId: "herb", identified: true })));
+    expect(slotsUsedOf(s.party[0]!)).toBeGreaterThanOrEqual(data.config.inventory.slotsPerCharacter);
+    const before = JSON.stringify(s);
+    const r = execute(s, WEAR, data);
+    expect(JSON.stringify(s)).toBe(before);
+    const id = `i${s.nextItemSeq}`;
+    const c2 = r.state.party[1]!;
+    expect(c2.inventory.at(-1)).toBe(id);
+    expect(r.state.items[id]).toEqual({ id, itemId: "dagger", level: 0, rarity: "normal", options: [{ optionId: "str", tier: 1, value: -1 }], uniqueId: null, identified: false, cursed: true, foundIn: null });
+    expect(r.state.nextItemSeq).toBe(s.nextItemSeq + 1);
+    expect(r.events).toEqual([{ kind: "message", key: "debug.giveCursed", params: { name: c2.name, item: "短い刃？" } }]);
+    expectKnownStringKeys(r.events);
+    expect(r.state.rng).toEqual(s.rng);
+    expect(r.state.screen).toBe("town");
+    // 司教が装備できる（取り憑きの強制装備を試せる）
+    const bishop = data.classes.find((c) => c.abilities.includes("identify"))!;
+    const dagger = baseOf(data, "dagger");
+    expect(dagger.classes.length === 0 || dagger.classes.includes(bishop.id)).toBe(true);
+  });
+
+  test("UI-57/CH-77 debug.giveCursed{wearable: false} は司教が装備できない最初のベース（long_sword）。迷宮では台帳に入り foundIn はそのダンジョン", () => {
+    const s = dived(1);
+    const r = execute(s, OTHER, data);
+    const id = `i${s.nextItemSeq}`;
+    const inst = r.state.items[id]!;
+    expect(inst.itemId).toBe("long_sword");
+    expect(baseOf(data, "long_sword").classes.includes("bishop")).toBe(false);
+    expect([inst.cursed, inst.identified, inst.level, inst.rarity, inst.foundIn]).toEqual([true, false, 0, "normal", s.dive!.dungeonId]);
+    expect(inst.options).toHaveLength(1);
+    expect(inst.options[0]!.value).toBeLessThan(0);
+    expect(r.state.dive!.ledger.items).toEqual([...s.dive!.ledger.items, id]);
+    expect(r.state.party[0]!.inventory.at(-1)).toBe(id);
+    expect(r.events).toEqual([{ kind: "message", key: "debug.giveCursed", params: { name: r.state.party[0]!.name, item: itemDisplayName(r.state, data, id) } }]);
+    expect(r.state.rng).toEqual(s.rng);
+  });
+
+  test("UI-57 debug.giveCursed は誰の使用枠も空いていなければ実体を作らず message debug.giveCursed.full。保留中・戦闘中も受け付け、title は rejected no party", () => {
+    const s = cloneState(newGame(1));
+    for (const ch of s.party) while (slotsUsedOf(ch) < data.config.inventory.slotsPerCharacter) ch.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
+    const full = execute(s, WEAR, data);
+    expect(full.events).toEqual([{ kind: "message", key: "debug.giveCursed.full" }]);
+    expectKnownStringKeys(full.events);
+    expect(full.state).toEqual(s);
+    const battle = withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }]);
+    const pending: GameState = {
+      ...dived(1),
+      pendingChoice: { kind: "stairs", promptKey: "dungeon.stairsDown", options: [{ id: "stay", labelKey: "dungeon.choice.stay" }] },
+    };
+    for (const st of [battle, pending]) {
+      const r = execute(st, WEAR, data);
+      expect(r.events.at(-1)?.kind).toBe("message");
+      expect(r.state.items[`i${st.nextItemSeq}`]?.cursed).toBe(true);
+      expect(r.state.pendingChoice).toEqual(st.pendingChoice);
+    }
+    const t = createInitialState(1, data);
+    const r = execute(t, WEAR, data);
+    expect(r.state).toBe(t);
+    expect(r.events).toEqual([{ kind: "rejected", command: "debug.giveCursed", reason: "no party" }]);
   });
 });
 

@@ -7,6 +7,7 @@
 // - DEBUG_BUTTONS_M5（y376。1 ページ目だけ）: SAN段↓・イベント・罠の前・階段前（M5。debug.sanDown / debug.warp を送るのは app）・
 //   ターン+（M5.5。ラベルは debug.addTurnsButton{n}、debug.addTurns を送るのは app）
 // - DEBUG_BUTTONS_M7（計測値の右。1 ページ目だけ）: SAN+10（M7。ラベルは debug.sanOverButton{n}、debug.sanOver を送るのは app）
+// - DEBUG_BUTTONS_M10（SAN+10 の下。1 ページ目だけ）: 呪い:司可・呪い:司否（M10。debug.giveCursed{wearable: true / false} を送るのは app）
 // - 「ポインタ」で 2 ページ目（UI-57。直近 20 件のポインタイベント。input/pointer-log の記録を DEBUG_POINTER の 20 行に古い順）。
 //   2 ページ目ではボタンが「設定」に変わり、全員HP1・既定に戻すは出さない。開くたびに app が showSettings で 1 ページ目に戻す
 // 値を変えたら、その場で store.set を呼ぶ（保存とすぐの反映は store の購読者が行う）。
@@ -14,7 +15,7 @@
 import type { Strings } from "../../core/data/index";
 import { thresholdCss } from "../input/swipe";
 import { formatPointerRow, POINTER_LOG_MAX, type PointerEntry } from "../input/pointer-log";
-import { DEBUG_BUTTONS, DEBUG_BUTTONS_M5, DEBUG_BUTTONS_M7, DEBUG_POINTER, DEBUG_SWIPE_Y, debugRow, type Rect } from "../layout";
+import { DEBUG_BUTTONS, DEBUG_BUTTONS_M10, DEBUG_BUTTONS_M5, DEBUG_BUTTONS_M7, DEBUG_POINTER, DEBUG_SWIPE_Y, debugRow, type Rect } from "../layout";
 import type { Insets, StageLayout, StageLayoutInput } from "../stage";
 import { nextAutoBeat, nextInputMode, stepSetting, type NumericSettingKey, type Settings, type SettingsStore } from "../settings";
 import { formatMessage } from "./message";
@@ -166,6 +167,8 @@ export function createDebugPanel(o: {
   onSanOver(): void;
   /** UI-57（M7）: SAN+ のラベルの n（core の SAN_OVER_DEBUG を表示のためだけに受ける） */
   sanOver: number;
+  /** UI-57（M10）: 「呪い:司可」（true）「呪い:司否」（false）（debug.giveCursed。送れるかは app が決める） */
+  onGiveCursed(wearable: boolean): void;
   /** UI-57: 2 ページ目に出すポインタの記録（古い順。input/pointer-log の entries） */
   pointers(): readonly PointerEntry[];
 }): DebugPanel {
@@ -242,6 +245,9 @@ export function createDebugPanel(o: {
   page1.appendChild(shortButton(formatMessage(t("debug.addTurnsButton"), { n: o.addTurns }), DEBUG_BUTTONS_M5.addTurns, () => o.onAddTurns()));
   // M7: 計測値の右（DEBUG_BUTTONS_M7。高さ 30 も内側の高さに合わせて縦の中央に置く）
   page1.appendChild(shortButton(formatMessage(t("debug.sanOverButton"), { n: o.sanOver }), DEBUG_BUTTONS_M7.sanOver, () => o.onSanOver()));
+  // M10: SAN+10 の下（DEBUG_BUTTONS_M10。高さ 30 も内側の高さに合わせて縦の中央に置く）
+  page1.appendChild(shortButton(t("debug.giveCursedWearButton"), DEBUG_BUTTONS_M10.giveCursedWear, () => o.onGiveCursed(true)));
+  page1.appendChild(shortButton(t("debug.giveCursedOtherButton"), DEBUG_BUTTONS_M10.giveCursedOther, () => o.onGiveCursed(false)));
 
   // 2 ページ目（UI-57 のポインタの記録）: 題と 20 行（古い順）。描くのはページを切り替えたときだけ
   const page2 = document.createElement("div");

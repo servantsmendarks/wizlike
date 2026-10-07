@@ -441,7 +441,13 @@ export type Command =
   /** UI-57（開発用、M5.5）: adventureTurns に config.town.tavernEventTurns を足す。party が空（title）だけ rejected no party。保留中・戦闘中・街も受け付ける。乱数は使わない */
   | { type: "debug.addTurns" }
   /** UI-57（開発用、M7）: alive の全員の SAN を sanCapOf + 10 にする（士気が無くても）。party が空（title）だけ rejected no party。保留中・戦闘中・街も受け付ける。乱数は使わない */
-  | { type: "debug.sanOver" };
+  | { type: "debug.sanOver" }
+  /**
+   * UI-57（開発用、M10）: 呪われた未鑑定の装備品を 1 つ、並び順で最初に使用枠の空いた者の inventory の末尾に入れる。
+   * wearable が真なら鑑定できる職業（司教）が装備できる最初のベース、偽なら装備できない最初のベース。party が空（title）だけ
+   * rejected no party。保留中・戦闘中・街も受け付ける。乱数は使わない
+   */
+  | { type: "debug.giveCursed"; wearable: boolean };
 
 export type CommandType = Command["type"];
 
