@@ -5,7 +5,9 @@ import { describe, expect, test } from "vitest";
 import { execute } from "../src/core/engine";
 import { townMenu } from "../src/core/rules/town";
 import { data, expectStateInvariants } from "./helpers/core";
-import { BOTS, Campaign, D02_DIVES, PROGRESS_BOT, PROGRESS_DIVES, progressReport, report, runCampaigns } from "./balance/bot";
+import { chestRate } from "../src/core/rules/chest";
+import type { Command, GameState } from "../src/core/types";
+import { BOTS, Campaign, D02_DIVES, DISARM_TRIES, PROGRESS_BOT, PROGRESS_DIVES, progressReport, report, runCampaigns } from "./balance/bot";
 
 const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0);
 
@@ -151,6 +153,8 @@ describe("バランス（H9 煙テスト）", () => {
     c.state = execute(c.state, { type: "dungeon.enter", dungeonId: "d01" }, data).state;
     c.state = execute(c.state, { type: "debug.chest", trapId: "alarm" }, data).state;
     expect(c.state.dive!.chest).not.toBeNull();
+    // M11 作業 9: ボットは盗賊がいれば先に調べ・解除するので、盗賊を麻痺させて「開ける」だけの経路にする（作業 5 の最小版のボットは常に開けていた）
+    for (const ch of c.state.party) if (ch.classId === "thief") ch.status.push("paralysis");
     c.resolveChest();
     expect(c.battles).toBe(1);
     expect(c.state.battle).toBeNull();
@@ -158,5 +162,131 @@ describe("バランス（H9 煙テスト）", () => {
     expect(c.state.dive!.chest).toBeNull();
     expect(c.chests).toBe(1); // 2 回目の開けるで中身（chest.open.gold）を得た
     expectStateInvariants(c.state);
+  }, 60_000);
+
+  // ---- M11 作業 9: ボットの本番の方針（設計書 §8）と集計 ----
+
+  /** 送ったコマンドと、その直前に告げられていた結果（chestView の finding）を記録するボット */
+  class Spy extends Campaign {
+    log: { cmd: Command; finding: { trapId: string | null } | null }[] = [];
+    override run(cmd: Command): GameState {
+      if (cmd.type.startsWith("chest.")) this.log.push({ cmd, finding: this.state.dive?.chest?.finding ?? null });
+      return super.run(cmd);
+    }
+  }
+  const THIEVES = (s: GameState) => s.party.filter((c) => c.classId === "thief").map((c) => c.id);
+  /** d01 に入り、debug.chest で trapId の箱を置いた Spy（setFloor 済み） */
+  function spyAtChest(seed: number, trapId: string | null): Spy {
+    const c = new Spy(seed, PROGRESS_BOT);
+    c.state = execute(c.state, { type: "dungeon.enter", dungeonId: "d01" }, data).state;
+    c.setFloor();
+    c.state = execute(c.state, { type: "debug.chest", trapId }, data).state;
+    expect(c.state.dive!.chest).not.toBeNull();
+    return c;
+  }
+  const paralyzeThieves = (c: Campaign) => {
+    for (const ch of c.state.party) if (ch.classId === "thief") ch.status.push("paralysis");
+  };
+
+  test("H9/M11 CB-63/CB-64 ボットの方針: 行動可能な盗賊がいれば調べる力の最大の盗賊で調べ、告げられた名前を同じ盗賊で解除してから開ける（finding だけを見る）", () => {
+    let disarmed = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const c = spyAtChest(seed, "crossbow");
+      const s0 = c.state;
+      const thieves = s0.party.filter((x) => x.classId === "thief");
+      const power = (id: string) => chestRate(s0, data, "inspect", s0.party.find((x) => x.id === id)!, 0).power;
+      const top = Math.max(...thieves.map((x) => power(x.id)));
+      c.resolveChest();
+      expect(c.state.dive!.chest).toBeNull();
+      expect(c.chestMemo).toBeNull();
+      const first = c.log[0]!.cmd;
+      expect(first.type).toBe("chest.inspect");
+      const inspector = (first as Extract<Command, { type: "chest.inspect" }>).memberId;
+      expect(THIEVES(s0)).toContain(inspector);
+      expect(power(inspector)).toBe(top);
+      for (const { cmd, finding } of c.log.slice(1)) {
+        expect(cmd.type).not.toBe("chest.inspect"); // 調べるのは 1 回だけ
+        if (cmd.type === "chest.disarm") {
+          expect(cmd.trapId).toBe(finding!.trapId); // 告げられた名前（偽りもありうる）をそのまま解除する
+          expect(cmd.memberId).toBe(inspector);
+          disarmed += 1;
+        }
+      }
+      expect(c.log.length).toBeLessThanOrEqual(2 + DISARM_TRIES);
+      expectStateInvariants(c.state);
+    }
+    expect(disarmed).toBeGreaterThan(0); // 解除の経路を通った
+  }, 60_000);
+
+  test("H9/M11 EV-75 ボットの方針: 職業の掛け合いの担当がいれば、調べる力が低くても担当が調べる", () => {
+    const c = spyAtChest(3, null);
+    const s0 = c.state;
+    const [a, b] = s0.party.filter((x) => x.classId === "thief");
+    const pw = (x: typeof a) => chestRate(s0, data, "inspect", x!, 0).power;
+    const low = pw(a) <= pw(b) ? a! : b!;
+    c.state.dive!.chest!.rivalry = { id: "thief_chest", ownerId: low.id };
+    c.resolveChest();
+    expect(c.log[0]!.cmd).toEqual({ type: "chest.inspect", memberId: low.id });
+  });
+
+  test("H9/M11 CB-65 ボットの方針: 行動可能な盗賊がいなければ調べずに開ける", () => {
+    const c = spyAtChest(1, "crossbow");
+    paralyzeThieves(c);
+    c.resolveChest();
+    expect(c.log.map((x) => x.cmd.type)).toEqual(["chest.open"]);
+    expect(c.chestFlow.traps).toEqual({ crossbow: 1 });
+    expect(c.chestFlow.trapsBy).toEqual({ open: 1 });
+    expect(c.chestFlow.ends.opened).toBe(1);
+  });
+
+  test("H9/M11 CB-62 集計: 宝箱の罠で死んだ者の死因は chestTrap:<罠の id>", () => {
+    const c = spyAtChest(1, "bomb");
+    paralyzeThieves(c);
+    c.state.party[0]!.hp = 1; // 爆弾（全員 1d6）で必ず死ぬ
+    c.resolveChest();
+    expect(c.deaths.some((d) => d.cause === "chestTrap:bomb" && !d.monster)).toBe(true);
+    expect(c.chestFlow.traps["bomb"]).toBe(1);
+  });
+
+  test("H9/M11 DG-25 ボットは転移の罠で上り階段の近傍の外に移ったら、上り階段への最短で近傍に戻ってから歩き回る", () => {
+    let c: Spy | null = null;
+    for (let seed = 1; seed <= 30 && c === null; seed++) {
+      const x = spyAtChest(seed, "teleport");
+      paralyzeThieves(x);
+      x.resolveChest();
+      expect(x.chestFlow.ends.lost).toBe(1);
+      expect(x.chestFlow.traps).toEqual({ teleport: 1 });
+      if (!x.near.has(`${x.state.dive!.pos.x},${x.state.dive!.pos.y}`)) c = x;
+    }
+    expect(c).not.toBeNull();
+    const k = () => `${c!.state.dive!.pos.x},${c!.state.dive!.pos.y}`;
+    for (let n = 0; n < 200 && c!.inDungeon && !c!.near.has(k()); n++) c!.wanderStep();
+    expect(c!.inDungeon).toBe(true);
+    expect(c!.near.has(k())).toBe(true);
+    c!.wanderStep(); // 近傍に戻った後は今までどおり歩ける
+    expectStateInvariants(c!.state);
+  }, 60_000);
+
+  test("H9/M11 TW-07 ボットは寺院で麻痺の者も治す（宝箱の麻痺ガス）", () => {
+    const c = new Campaign(1, PROGRESS_BOT);
+    c.state.gold = 5000;
+    c.state.party[1]!.status.push("paralysis");
+    const rec = { cureCount: 0, cureCost: 0, cureUnpaid: 0 } as unknown as Parameters<Campaign["cureAtTemple"]>[0];
+    c.cureAtTemple(rec);
+    expect(c.state.party[1]!.status).not.toContain("paralysis");
+    expect(rec.cureCount).toBe(1);
+  });
+
+  test("H9/M11 集計: 宝箱の経路別の数（ドロップ + セル = 衝動判定をした箱）と、report / progressReport の M11-宝箱の行", () => {
+    const { results } = runCampaigns(BOTS[1]!, 3, 2);
+    const ds = results.flatMap((r) => r.dives);
+    for (const d of ds) {
+      expect(d.chestFlow.found.drop + d.chestFlow.found.cell).toBe(d.chestImpulse.found);
+      expect(d.chestFlow.cellContents).toBeLessThanOrEqual(d.chests);
+      expect(d.chestFlow.disarmOk + d.chestFlow.disarmWrong).toBeLessThanOrEqual(d.chestFlow.disarms);
+    }
+    expect(sum(ds.map((d) => d.chestFlow.inspects))).toBeGreaterThan(0);
+    expect(report(BOTS[1]!, results, 3, 2)).toContain("M11-宝箱【全潜行】");
+    expect(progressReport(results)).toContain("M11-宝箱【d01 の潜行（踏破まで）】");
   }, 60_000);
 });

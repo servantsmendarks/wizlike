@@ -28,10 +28,11 @@ import { cellAt, edgeOf, FACINGS, isPassable, opposite, step, turnLeft, turnRigh
 import { floorOf } from "../../src/core/rules/dungeon";
 import { fieldItemMenu } from "../../src/core/rules/items";
 import { canAct, frontLineIds } from "../../src/core/rules/combat-calc";
+import { chestRate, chestView } from "../../src/core/rules/chest";
 import { equipStats, itemPower } from "../../src/core/rules/equip-stats";
 import { sellPrice } from "../../src/core/rules/shop";
 import { townMenu } from "../../src/core/rules/town";
-import { findBase, findItem, itemOf } from "../../src/core/state";
+import { classOf, findBase, findItem, itemOf } from "../../src/core/state";
 import type { EquipSlot } from "../../src/core/data/index";
 import type { Command, Facing, Floor, GameEvent, GameState, ItemInstance, PartySetupMember, PenaltyResult, Pos } from "../../src/core/types";
 import { data, expectKnownStringKeys, expectStateInvariants, newGame } from "../helpers/core";
@@ -64,6 +65,8 @@ export const M9_MONSTERS = ["dusk_bat", "drowsy_slime", "drowned_acolyte", "glas
 export const RANGED_BUY = ["throwing_knives", "short_bow"] as const;
 /** 前衛の防具の更新で替える部位（防具・盾・兜・小手。この順に見る） */
 const ARMOR_SLOTS: readonly EquipSlot[] = ["armor", "shield", "helm", "gauntlet"];
+/** M11: 同じ箱で解除を試す回数の上限（U-4 の「作動しなければ再挑戦」。超えたら開ける。テストの定数で、ゲームの調整値ではない） */
+export const DISARM_TRIES = 5;
 
 /**
  * route progress は M9 の進行ボット。descendLevel / bossLevel はその降りる条件・ボスに挑む条件の level（省略は DESCEND_LEVEL / BOSS_LEVEL。
@@ -126,6 +129,40 @@ type ImpulseTally = { starts: number; impulses: number; stopped: number; byPerso
 type ChestImpulseTally = { found: number; impulses: number; stopped: number; rivalries: number; rivalryFails: number };
 
 const emptyChestImpulse = (): ChestImpulseTally => ({ found: 0, impulses: 0, stopped: 0, rivalries: 0, rivalryFails: 0 });
+
+/**
+ * M11 作業 9: 宝箱の流れの数。found は見つけた箱の経路別（message chest.found.drop / cell。警報の後の戻りは数えない）、
+ * ends は箱の終わり（chestEnd の result）、traps は罠の作動回数（chestTrap の trapId ごと）、trapsBy は作動させた操作
+ * （impulse = 衝動で開けた・inspect = 調べるの失敗・disarm = 解除の失敗か名前違い・open = 開ける）、
+ * inspects / disarms はボットが送った回数、disarmOk は解除の成功（chest.disarm.ok）、disarmWrong は名前違い（chest.disarm.wrong）、
+ * falseNames は調べるで偽りの名前を告げられた数（計測のためだけに state の trapId と比べる。ボットの判断には使わない）、
+ * cellContents は中身を得たセルの箱の数（chests のうち）
+ */
+type ChestFlowTally = {
+  found: { drop: number; cell: number };
+  ends: { opened: number; left: number; lost: number };
+  traps: Record<string, number>;
+  trapsBy: Record<string, number>;
+  inspects: number;
+  disarms: number;
+  disarmOk: number;
+  disarmWrong: number;
+  falseNames: number;
+  cellContents: number;
+};
+
+const emptyChestFlow = (): ChestFlowTally => ({
+  found: { drop: 0, cell: 0 },
+  ends: { opened: 0, left: 0, lost: 0 },
+  traps: {},
+  trapsBy: {},
+  inspects: 0,
+  disarms: 0,
+  disarmOk: 0,
+  disarmWrong: 0,
+  falseNames: 0,
+  cellContents: 0,
+});
 
 /** 潜行 1 回分（潜行 → 街の手順）の記録 */
 type DiveRecord = {
@@ -195,6 +232,7 @@ type DiveRecord = {
   outfitSoldGold: number; // 外した品を売った収入の合計
   chestImpulse: ChestImpulseTally; // M11: 宝箱の衝動と職業の掛け合いの数
   impulses: Record<string, ImpulseTally>; // M11-EV: イベントの id ごとの衝動判定の数
+  chestFlow: ChestFlowTally; // M11 作業 9: 宝箱の経路・作動・操作の数
 };
 
 export type CampaignResult = { seed: number; startAssets: number; dives: DiveRecord[]; aborted: boolean };
@@ -313,6 +351,12 @@ export class Campaign {
   antidotes = 0;
   impulses: Record<string, ImpulseTally> = {}; // M11-EV
   chestImpulse: ChestImpulseTally = emptyChestImpulse(); // M11
+  chestFlow: ChestFlowTally = emptyChestFlow(); // M11 作業 9
+  /**
+   * M11 作業 9: 今の箱についてボットが覚えていること（箱が無くなったら null）。inspector は調べた盗賊（未調査は null）、
+   * trapGone は罠がもう無いと分かった（作動を見た・chest.disarm.nothing）、disarms はこの箱で解除を送った回数
+   */
+  chestMemo: { inspector: string | null; trapGone: boolean; disarms: number } | null = null;
   // M9 進行ボット（潜行ごとにリセット）
   floorNo = 1; // floor / homeDist / near を作った階
   deepest = 1;
@@ -343,6 +387,7 @@ export class Campaign {
     this.countChest(from, r.events);
     this.countDeaths(from, r.events);
     this.countImpulses(from, r.events);
+    this.countChestFlow(cmd, from, r.state, r.events);
     // 入力を積むだけの battle.input と向きを変えるだけの dungeon.turn は時間の都合で省く（decisions の H9 の行）
     if (cmd.type !== "battle.input" && cmd.type !== "dungeon.turn") expectStateInvariants(r.state);
     expectKnownStringKeys(r.events);
@@ -365,6 +410,9 @@ export class Campaign {
     if (i < 0) return;
     const e = events[i] as Extract<GameEvent, { kind: "message" }>;
     this.chests += 1;
+    // M11 作業 9: セルの箱は開ける前の dive.chest の source（衝動で開けたセルの箱は、乗った dungeon.move の同じ execute なので from には無い。
+    // そのときは同じ events の chest.found.cell で見る）
+    if (from.dive?.chest?.source === "cell" || events.some((x) => x.kind === "message" && x.key === "chest.found.cell")) this.chestFlow.cellContents += 1;
     // M11（EV-16）: 衝動で開けた箱は勝利と同じ execute で置かれて開くので、from には箱が無い。そのときは勝った戦闘の origin の inRoom で見る
     const origin = from.battle?.origin;
     const inRoom = from.dive?.chest?.inRoom ?? (origin?.kind === "random" ? origin.inRoom : undefined);
@@ -412,6 +460,35 @@ export class Campaign {
   }
 
   /**
+   * M11 作業 9: 宝箱の流れ（chestFlow）を数え、ボットの覚え（chestMemo）の trapGone を立てる。作動させた操作は、同じ events の chestTrap より前に
+   * chestImpulse があれば impulse、なければ送ったコマンド（chest.inspect / disarm / open）。偽りの名前の数は計測のためだけに to の trapId と比べる
+   */
+  countChestFlow(cmd: Command, from: GameState, to: GameState, events: GameEvent[]): void {
+    const f = this.chestFlow;
+    if (cmd.type === "chest.inspect") f.inspects += 1;
+    if (cmd.type === "chest.disarm") f.disarms += 1;
+    let impulse = false;
+    for (const e of events) {
+      if (e.kind === "message" && e.key === "chest.found.drop") f.found.drop += 1;
+      else if (e.kind === "message" && e.key === "chest.found.cell") f.found.cell += 1;
+      else if (e.kind === "chestImpulse") impulse = true;
+      else if (e.kind === "chestEnd") f.ends[e.result] += 1;
+      else if (e.kind === "chestTrap") {
+        f.traps[e.trapId] = (f.traps[e.trapId] ?? 0) + 1;
+        const by = impulse ? "impulse" : cmd.type.startsWith("chest.") ? cmd.type.slice("chest.".length) : cmd.type;
+        f.trapsBy[by] = (f.trapsBy[by] ?? 0) + 1;
+        if (this.chestMemo !== null) this.chestMemo.trapGone = true; // 作動した罠は消える（公開の規則）
+      } else if (e.kind === "message" && e.key === "chest.disarm.ok") f.disarmOk += 1;
+      else if (e.kind === "message" && e.key === "chest.disarm.wrong") f.disarmWrong += 1;
+      else if (e.kind === "message" && e.key === "chest.disarm.nothing" && this.chestMemo !== null) this.chestMemo.trapGone = true;
+    }
+    if (cmd.type === "chest.inspect" && from.dive?.chest != null) {
+      const c = to.dive?.chest ?? null;
+      if (c !== null && c.finding !== null && c.finding.trapId !== null && c.finding.trapId !== from.dive.chest.trapId) f.falseNames += 1;
+    }
+  }
+
+  /**
    * M7-死因: 潜行中（from.dive がある）のコマンドのイベントから、遭遇した敵グループと、味方の死亡（lifeChanged dead）の死因・階・状態異常を数える。
    * 死因は、戦闘中なら直前にその者に命中した attack の actorId（e{g}-{u}）の敵グループの monsterId、戦闘外なら直前の落とし穴の発動（message dungeon.trap.pit）か
    * イベントの開始（eventStarted。選択の保留中なら pendingChoice の eventId）。敵グループは from.battle、無ければ同じコマンドの encounter の groups
@@ -441,6 +518,11 @@ export class Campaign {
         if (e.hit && status.has(e.targetId)) lastHit.set(e.targetId, e.actorId);
       } else if (e.kind === "message" && e.key === "dungeon.trap.pit") field = "trap:pit";
       else if (e.kind === "eventStarted") field = `event:${e.eventId}`;
+      else if (e.kind === "chestTrap") {
+        // M11 作業 9: 宝箱の罠（勝利と同じ execute の衝動で開けた箱では、その前の戦闘の命中を死因にしない）
+        field = `chestTrap:${e.trapId}`;
+        lastHit.clear();
+      }
       else if (e.kind === "lifeChanged" && status.has(e.id)) {
         if (e.life === "ash") this.ashInDive += 1;
         if (e.life !== "dead") continue;
@@ -486,15 +568,57 @@ export class Campaign {
   }
 
   /**
-   * M11（作業 4 の最小版。A3）: 宝箱が残っていて戦闘中でなければ開ける（調べる・解除の方針は作業 9）。開けて戦闘になれば戦う（fight の中でまた呼ぶ）。
+   * M11（設計書 §8。A3）: 宝箱が残っていて戦闘中でも保留中でもなければ、chestCommand の方針で 1 手ずつ送る。警報で戦闘になれば戦う
+   * （fight の中でまた呼ぶ。勝って同じ箱に戻れば、その中で方針を続ける）。箱が無くなったら覚え（chestMemo）を消す。
    * 呼ぶのは fight の後・dungeon.move の後・resolvePending の後の 3 か所と、fight からの再帰
    */
   resolveChest(): void {
-    for (let n = 0; this.inDungeon && this.state.dive?.chest != null && this.state.battle === null; n++) {
-      if (n > 10) throw new Error(`seed ${this.seed}: chest did not end`);
-      this.run({ type: "chest.open" });
+    for (let n = 0; ; n++) {
+      if (!this.inDungeon || this.state.dive?.chest == null) {
+        this.chestMemo = null;
+        return;
+      }
+      if (this.state.battle !== null || this.state.pendingChoice !== null) return;
+      if (n > DISARM_TRIES + 10) throw new Error(`seed ${this.seed}: chest did not end`);
+      this.run(this.chestCommand());
       if (this.state.battle !== null) this.fight();
     }
+  }
+
+  /**
+   * M11（設計書 §8。B7）: 宝箱の 1 手。判断に使うのは chestView（finding）・パーティ・告げられた掛け合いの担当（chest.rivalry）・覚え（chestMemo）だけで、
+   * dive.chest.trapId は覗かない。
+   * 1. 罠がもう無いと分かっている（作動を見た・解除する罠が無かった）なら開ける。
+   * 2. 行動可能な盗賊（職業の abilities に disarm）がいなければ開ける。
+   * 3. まだ調べていなければ、掛け合いの担当（行動可能な盗賊なら）、いなければ調べる力（chestRate の power。危険度は分からないので 0）が最大の盗賊
+   *    （同点は並び順が前）で調べる。
+   * 4. 告げられた名前があれば、調べた盗賊（行動できなければ解除の力が最大の盗賊）でその名前を解除する。失敗して作動しなければ再挑戦（DISARM_TRIES 回まで）。
+   *    偽りの名前は見分けられないので、そのまま解除する（実プレイと同じ）。
+   * 5. それ以外（罠は無さそう・不明・解除の上限）は開ける
+   */
+  chestCommand(): Command {
+    const v = chestView(this.state, data);
+    if (v === null) throw new Error(`seed ${this.seed}: chestCommand without chestView`);
+    const m = (this.chestMemo ??= { inspector: null, trapGone: false, disarms: 0 });
+    if (m.trapGone) return { type: "chest.open" };
+    const thieves = this.state.party.filter((c) => canAct(c) && classOf(data, c.classId).abilities.includes("disarm"));
+    if (thieves.length === 0) return { type: "chest.open" };
+    const best = (kind: "inspect" | "disarm") => {
+      let b = thieves[0]!;
+      for (const c of thieves) if (chestRate(this.state, data, kind, c, 0).power > chestRate(this.state, data, kind, b, 0).power) b = c;
+      return b;
+    };
+    if (m.inspector === null) {
+      const owner = this.state.dive!.chest!.rivalry?.ownerId;
+      const ch = thieves.find((c) => c.id === owner) ?? best("inspect");
+      m.inspector = ch.id;
+      return { type: "chest.inspect", memberId: ch.id };
+    }
+    const f = v.finding;
+    if (f === null || f.trapId === null || m.disarms >= DISARM_TRIES) return { type: "chest.open" };
+    const ch = thieves.find((c) => c.id === m.inspector) ?? best("disarm");
+    m.disarms += 1;
+    return { type: "chest.disarm", memberId: ch.id, trapId: f.trapId };
   }
 
   /**
@@ -561,9 +685,17 @@ export class Campaign {
     }
   }
 
-  /** 階段付近の歩行: 今のセルから、近傍（near）のセルへ通れる方向を bot で選ぶ */
+  /**
+   * 階段付近の歩行: 今のセルから、近傍（near）のセルへ通れる方向を bot で選ぶ。
+   * M11（DG-25）: 宝箱の転移の罠で近傍の外に移っていたら、上り階段への BFS の最短（homeDist）で 1 歩戻る
+   */
   wanderStep(): void {
     const dive = this.state.dive!;
+    if (!this.near.has(key(dive.pos))) {
+      this.moveTo(this.stepToward(this.homeDist, "back to near"));
+      this.resolvePending("wander");
+      return;
+    }
     const c = cellAt(this.floor!, dive.pos.x, dive.pos.y);
     const dirs = FACINGS.filter((d) => isPassable(edgeOf(c, d)) && this.near.has(key(step(dive.pos, d))));
     if (dirs.length === 0) throw new Error(`seed ${this.seed}: no way from ${key(dive.pos)}`);
@@ -744,6 +876,8 @@ export class Campaign {
     this.antidotes = 0;
     this.impulses = {};
     this.chestImpulse = emptyChestImpulse();
+    this.chestFlow = emptyChestFlow();
+    this.chestMemo = null;
     const down = this.state.party.filter((c) => c.life !== "alive").map((c) => c.id);
     expect(down.filter((id) => !this.unpaidLeft.includes(id))).toEqual([]); // 定義（unpaidLeft）のとおり、残った理由は所持金不足だけ
     this.unpaidAtStart = down.length;
@@ -871,12 +1005,13 @@ export class Campaign {
   /**
    * M7-解毒（2026-10-05 ユーザー指示「寺院でも毒を治す」）: 蘇生と闇魔術の後（死者・灰を戻す方を先に払う）、宿の前に、
    * townMenu の temple.cure の行（alive で毒・麻痺・石化のどれかを持つ者。並び順）のうち毒を持つ者を、払える限り town.temple の cure で治す。
-   * 費用は TW-07 の cureCost の合計（毒と麻痺を併せ持つなら両方の分）。払えなければその者は毒のまま（cureUnpaid）
+   * 費用は TW-07 の cureCost の合計（毒と麻痺を併せ持つなら両方の分）。払えなければその者は毒のまま（cureUnpaid）。
+   * M11 作業 9（設計書 §8）: 宝箱の麻痺ガスで麻痺のまま帰る者がいるので、麻痺の者も治す（cureCount / cureUnpaid に含める）
    */
   cureAtTemple(rec: DiveRecord): void {
     for (const id of this.state.party.map((c) => c.id)) {
       const ch = this.state.party.find((c) => c.id === id)!;
-      if (ch.life !== "alive" || !ch.status.includes("poison")) continue;
+      if (ch.life !== "alive" || !(ch.status.includes("poison") || ch.status.includes("paralysis"))) continue;
       const row = townMenu(this.state, data)!.temple.cure.find((r) => r.memberId === id)!;
       if (!row.affordable) {
         rec.cureUnpaid += 1;
@@ -885,7 +1020,9 @@ export class Campaign {
       const g = this.state.gold;
       this.run({ type: "town.temple", memberId: id, service: "cure" });
       expect(g - this.state.gold).toBe(row.cost);
-      expect(this.state.party.find((c) => c.id === id)!.status).not.toContain("poison");
+      const after = this.state.party.find((c) => c.id === id)!.status;
+      expect(after).not.toContain("poison");
+      expect(after).not.toContain("paralysis");
       rec.cureCount += 1;
       rec.cureCost += row.cost;
     }
@@ -1110,6 +1247,7 @@ export class Campaign {
         antidotes: this.antidotes,
         impulses: this.impulses,
         chestImpulse: this.chestImpulse,
+        chestFlow: this.chestFlow,
         poisonedAtHome: this.state.party.filter((c) => c.life === "alive" && c.status.includes("poison")).length,
         cureCount: 0,
         cureCost: 0,
@@ -1176,7 +1314,7 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
   const lines: string[] = [];
   const all = results.flatMap((r) => r.dives);
   lines.push(
-    `H9 再計測【${kind.label}】（${seeds} シード × 潜行 ${dives} 回。d01 の 1 階の上り階段から BFS 距離 ${NEAR} 以内。街: 救済 → 装備の売却（未鑑定は 見込み売値 − 未鑑定売値 > 鑑定料 なら店で鑑定してから、そうでなければ未鑑定のまま）→ 寺院 → 闇魔術 → 寺院の治療（毒）→ 相部屋 1 泊 → 店（糸が無ければ 1 本 ${THREAD_PRICE}G、薬草 ${HERB_PRICE}G を手持ち ${HERB_TARGET} 個まで、解毒草 ${ANTIDOTE_PRICE}G を手持ち ${ANTIDOTE_TARGET} 個まで）。戦闘の後に毒の者がいれば解毒草を使う。所持金の初期値 ${START_GOLD}、資産の初期値 ${results[0]?.startAssets ?? "-"}（所持金 + 手持ちの消耗品の購入価格））`,
+    `H9 再計測【${kind.label}】（${seeds} シード × 潜行 ${dives} 回。d01 の 1 階の上り階段から BFS 距離 ${NEAR} 以内。街: 救済 → 装備の売却（未鑑定は 見込み売値 − 未鑑定売値 > 鑑定料 なら店で鑑定してから、そうでなければ未鑑定のまま）→ 寺院 → 闇魔術 → 寺院の治療（毒・麻痺）→ 相部屋 1 泊 → 店（糸が無ければ 1 本 ${THREAD_PRICE}G、薬草 ${HERB_PRICE}G を手持ち ${HERB_TARGET} 個まで、解毒草 ${ANTIDOTE_PRICE}G を手持ち ${ANTIDOTE_TARGET} 個まで）。戦闘の後に毒の者がいれば解毒草を使う。所持金の初期値 ${START_GOLD}、資産の初期値 ${results[0]?.startAssets ?? "-"}（所持金 + 手持ちの消耗品の購入価格））`,
   );
   lines.push(`打ち切り（行動可能な者がいなくて入れない）: ${results.filter((r) => r.aborted).length} シード`);
   for (let k = 0; k < dives; k++) {
@@ -1222,7 +1360,42 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
   lines.push(...deathReport(results, dives));
   lines.push(...curingReport(results, dives));
   lines.push(...impulseReport(results.flatMap((r) => r.dives)));
+  lines.push(...chestReport("全潜行", all));
   return lines.join("\n");
+}
+
+/**
+ * M11 作業 9（設計書 §8）: 宝箱の経路別の数・箱の終わり・中身・ボットの操作（調べる・解除）・罠の作動回数（罠別と操作別）・罠による死者。
+ * 罠による死者は死因 chestTrap:<id>（countDeaths。全滅の処理で起こされる者も含む）
+ */
+function chestReport(label: string, ds: readonly DiveRecord[]): string[] {
+  const f = emptyChestFlow();
+  for (const d of ds) {
+    const x = d.chestFlow;
+    f.found.drop += x.found.drop;
+    f.found.cell += x.found.cell;
+    f.ends.opened += x.ends.opened;
+    f.ends.left += x.ends.left;
+    f.ends.lost += x.ends.lost;
+    for (const [id, n] of Object.entries(x.traps)) f.traps[id] = (f.traps[id] ?? 0) + n;
+    for (const [id, n] of Object.entries(x.trapsBy)) f.trapsBy[id] = (f.trapsBy[id] ?? 0) + n;
+    f.inspects += x.inspects;
+    f.disarms += x.disarms;
+    f.disarmOk += x.disarmOk;
+    f.disarmWrong += x.disarmWrong;
+    f.falseNames += x.falseNames;
+    f.cellContents += x.cellContents;
+  }
+  const found = f.found.drop + f.found.cell;
+  const fired = sum(Object.values(f.traps));
+  const deaths = ds.flatMap((d) => d.deaths).filter((x) => x.cause.startsWith("chestTrap:"));
+  const trapIds = data.chestTraps.map((t) => t.id).filter((id) => (f.traps[id] ?? 0) > 0 || deaths.some((x) => x.cause === `chestTrap:${id}`));
+  const perTrap = trapIds.map((id) => `${id} ${f.traps[id] ?? 0}（死者 ${deaths.filter((x) => x.cause === `chestTrap:${id}`).length}）`).join("・");
+  const by = ["impulse", "inspect", "disarm", "open"].map((k) => `${k} ${f.trapsBy[k] ?? 0}`).join("・");
+  return [
+    `M11-宝箱【${label}】（${ds.length} 潜行）: 見つけた ${found}（ドロップ ${f.found.drop}・セル ${f.found.cell}）/ 終わり 開けた ${f.ends.opened}・放っておいた ${f.ends.left}・失った ${f.ends.lost} / 中身を得た ${sum(ds.map((d) => d.chests))}（うちセル ${f.cellContents}）/ 調べる ${f.inspects}（偽りの名前 ${f.falseNames}）・解除 ${f.disarms}（成功 ${f.disarmOk}・名前違い ${f.disarmWrong}）`,
+    `  罠の作動 計 ${fired}（見つけた箱の ${pct(fired, found)}）: ${perTrap || "-"} / 作動させた操作 ${by} / 罠による死者 ${deaths.length}（潜行中の死者 ${pct(deaths.length, ds.flatMap((d) => d.deaths).length)}）`,
+  ];
 }
 
 /**
@@ -1255,6 +1428,8 @@ export function progressReport(results: CampaignResult[], kind: BotKind = PROGRE
     if (k === 0 && ds.length > 0) lines.push(`  ${stats("d02 の潜行 1 の開始時（直前の宿の後）の最小 level", results.flatMap((r) => { const i = r.dives.findIndex((x) => x.dungeonId === "d02"); return i > 0 ? [r.dives[i - 1]!.minLevelAfter] : []; }))}`);
   }
   lines.push(...impulseReport(results.flatMap((r) => r.dives)));
+  lines.push(...chestReport("d01 の潜行（踏破まで）", d01));
+  lines.push(...chestReport("d02 の潜行", results.flatMap((r) => r.dives.filter((d) => d.dungeonId === "d02"))));
   return lines.join("\n");
 }
 
