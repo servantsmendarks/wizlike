@@ -1174,3 +1174,6 @@
 - 2026-10-07 core(M10): 転職で得た start の呪文の出来事は spellLearned の via に `classChange` を足して表した（設計書 §7.1 は via を書いていない。presenter の spellLearned は via を見ないので表示は変わらない）。転職そのものの GameEvent は足さず、語りの message と mpChanged だけにした（職業・レベル・MP の最大値は表示層が state から描き直す。levelUp のような最大値の載った出来事は無い）。
 - 2026-10-07 計測(M10): 転職はボット（tests/balance/bot.ts）が使わないので、計測は変わらない（balance は回していない）。
 - 2026-10-07 core(M10): CH-11 / UI-62 のボーナスの内訳は `rollBonusParts(rng, cfg) → { base, die, big, total }`（big は当たれば bonusBig、外れは 0）。設計書 §5 の `{ base, die, big }` に合計 total を足した（表示層で足し算をさせないため）。`rollBonus` は total を返す包みで、乱数の順（rollDie → chance）と値は変わらない。振り直しは今どおり表示層の下書きの中で引き直すので、Command は足さない（作成中は GameState が無い。U1 で簡易作成には出さない）。
+- 2026-10-07 core(M10): CH-77 の指示「街では SAN は減らない」は失敗の −3（`failSanDungeon`）だけに掛かると読み、取り憑けないときの −10（`possessSan`）は街でも起きる（rules/camp.ts の identifyItem、tests/camp.test.ts の「街なので失敗の SAN は無い」の例。character.md の CH-77「街でも迷宮でも」と同じ）。
+- 2026-10-07 core(M10): TW-09 で新しい職業が装備できない呪われた品は外さない（CH-73 / CH-76。解呪 TW-07 で外す）。指示 7「新職業で使えない装備は外す」の例外で、その結果、職業が装備できない品を着けたままの者がありうる（rules/town.ts の転職の `if (inst.cursed) continue`）。
+- 2026-10-07 docs(M10): IT-12 に、司教の鑑定（CH-77）の成功率と判定の箱の内訳では希少度とユニークの減点が見える例外を書き足した（上の identifyChance の行の食い違いを仕様書にも揃えた。IT-65 の「鑑定料から推測させない」は店の鑑定だけの話）。items.md §11 Q4 の前提を「店の鑑定は確定」に言い換え、鑑定率オプションは品の鑑定に足さないことを追記した。
