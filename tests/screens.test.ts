@@ -481,11 +481,13 @@ describe("入力と Command", () => {
   // M10（UI-59）: 図鑑とキャラクター画面のパネルは layout.character に広げる（townLayout の book は 2026-10-07 に消した）。判定の箱の層 diceLayer をキャンプと会話の箱の間に足した。
   // メッセージ窓とパーティ欄の出し入れは applyPanels（街かキャラクター画面なら隠す）に移した
   // M10（UI-13 / UI-52。2026-10-07 U3）: 施設メニューは一覧ではなく 48×48 の 3 列 × 2 段（setBattleMenu の town）に改めたので、not.toContain を toContain に替えた
-  test("UI-13/UI-52/IT-66/UI-59（M8.5・M10）街の一覧は見出し（townHeading）付きの setList の town。施設メニューは見出し付きの setBattleMenu の town（48×48 の 3 列 × 2 段）。ヘッダーは場所と所持金、ビューは施設の絵。図鑑とキャラクター画面のパネルは layout.character に広げる（ソースの検査）", () => {
+  // 2026-10-07（M10.5 追補・未定-22）: 見出しは townHeadingText（確認の段と救済の申し出は値の入った問い）で作るので、heading の期待を改めた
+  test("UI-13/UI-52/IT-66/UI-59（M8.5・M10）街の一覧は見出し（townHeadingText）付きの setList の town。施設メニューは見出し付きの setBattleMenu の town（48×48 の 3 列 × 2 段）。ヘッダーは場所と所持金、ビューは施設の絵。図鑑とキャラクター画面のパネルは layout.character に広げる（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
-    expect(app).toContain('c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading: t(townHeading(townPage)) } });');
+    expect(app).toContain("const heading = townHeadingText(townPage, menu, strings, previewOf(townPage), classChangeOf(townPage));");
+    expect(app).toContain('c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading } });');
     expect(app).toMatch(
-      /if \(townPage === "menu"\) \{\s*c\.setBattleMenu\(items, "town", \{ heading: t\(townHeading\(townPage\)\) \}\);\s*c\.setMode\("battle"\);\s*return;\s*\}/,
+      /if \(townPage === "menu"\) \{\s*c\.setBattleMenu\(items, "town", \{ heading \}\);\s*c\.setMode\("battle"\);\s*return;\s*\}/,
     );
     expect(app).toContain("play.header.setText(townHeader(menu, strings, townPage));");
     expect(app).toContain("play.setTownPicture(townFacility(townPage));");
@@ -528,7 +530,8 @@ describe("入力と Command", () => {
   });
 
   // M7（2026-10-05）: 鍛えるは送る前に lowerInput（UI-44）し、rejected なら sync で戻すようにしたので、upgrade の分岐の期待を改めた
-  test("UI-52/TW-17/UI-44（M7）強化: 触媒の行は語りなしで段を替え、鍛えるは部位の段に戻して入力の UI を下げてから town.upgrade を送り、rejected なら sync で戻す。確認の段は upgradePreview の値で語る（ソースの検査）", () => {
+  // 2026-10-07（M10.5 追補・未定-22）: 確認の段は会話の箱で語らず見出し（townHeadingText）に出すので、upgradeConfirmLines の期待を「使わない」に替えた
+  test("UI-52/TW-17/UI-44（M7）強化: 触媒の行は語りなしで段を替え、鍛えるは部位の段に戻して入力の UI を下げてから town.upgrade を送り、rejected なら sync で戻す。確認の段は upgradePreview の値を見出しに出す（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
     expect(body).toMatch(/case "upPick":\s*townPage = e\.to;\s*syncControls\(\);\s*return;/);
@@ -536,7 +539,7 @@ describe("入力と Command", () => {
       /case "upgrade":\s*townPage = \{ upSlot: e\.memberId \};\s*if \(townLowersInput\(e\)\) lowerInput\(\);\s*void run\(\{ type: "town\.upgrade", memberId: e\.memberId, slot: e\.slot, catalysts: e\.catalysts \}\)\.then\(\(r\) => \{\s*if \(r === null \|\| r\.rejected\) sync\(state\);\s*\}\);\s*return;/,
     );
     expect(app).toMatch(/upgradePreview\(state, data, page\.upConfirm\.memberId, page\.upConfirm\.slot, page\.upConfirm\.picked\)/);
-    expect(app).toMatch(/upgradeConfirmLines\(page, menu, previewOf\(page\), strings\)/);
+    expect(app).not.toContain("upgradeConfirmLines");
   });
 
   test("TW-09/CH-22（M10）転職の「転職する」は town.classChange を送ってその者の職業の段へ戻る。転職先の値は core の classChangeOptions、名前は campMenu（ソースの検査）", () => {
@@ -551,11 +554,12 @@ describe("入力と Command", () => {
     expect(app).toContain("townEntries(townPage, menu, strings, previewOf(townPage), classChangeOf(townPage))");
   });
 
+  // 2026-10-07（M10.5 追補・未定-22）: 語りは townPageIntro だけ（強化・転職の確認の文は見出しに移した）に改めた
   test("UI-52/TW-17（M7・M8.5）ページに入ったときの語りは、全文の履歴の末尾 TOWN_INTRO_DEDUP 件に同じ文があれば重ねて出さない（townFreshIntro。ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const goTownPage = \(page: TownPage\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(body).toMatch(
-      /const texts = townFreshIntro\(\s*\[\s*\.\.\.townPageIntro\(page, menu\)\.map\(t\),\s*\.\.\.upgradeConfirmLines\(page, menu, previewOf\(page\), strings\),\s*\.\.\.classChangeConfirmLines\(page, classChangeOf\(page\), strings\),\s*\],\s*play\.message\.history\(\)\.slice\(-TOWN_INTRO_DEDUP\),\s*\);/,
+      /const texts = townFreshIntro\(townPageIntro\(page, menu\)\.map\(t\), play\.message\.history\(\)\.slice\(-TOWN_INTRO_DEDUP\)\);/,
     );
   });
 

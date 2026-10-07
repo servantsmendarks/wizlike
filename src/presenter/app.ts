@@ -130,17 +130,15 @@ import { formatWipeSummary } from "./views/wipe";
 import { createNarrator } from "./views/talk";
 import {
   TOWN_INTRO_DEDUP,
-  classChangeConfirmLines,
   townEntries,
   townFacility,
   townFreshIntro,
   townHeader,
-  townHeading,
+  townHeadingText,
   townLowersInput,
   townPageIntro,
   townParent,
   townRepair,
-  upgradeConfirmLines,
   type ClassChangeView,
   type TownEntry,
   type TownPage,
@@ -591,14 +589,8 @@ export function createApp(o: {
     if (menu === null) return;
     // UI-47: 会話の箱に 1 文ずつ語る（どの文も文字送り。M10.5: 箱に溜め、埋まったときだけタップで次のページ。演出スキップは文字送りだけ省く）
     // 履歴の末尾 2 件と同じ語りは重ねて出さない（段を戻ってまた進んだとき。UI-52 / TW-17）
-    const texts = townFreshIntro(
-      [
-        ...townPageIntro(page, menu).map(t),
-        ...upgradeConfirmLines(page, menu, previewOf(page), strings),
-        ...classChangeConfirmLines(page, classChangeOf(page), strings),
-      ],
-      play.message.history().slice(-TOWN_INTRO_DEDUP),
-    );
+    // M10.5 追補（未定-22）: 答えのボタンが続く問い（強化・転職の確認、救済の申し出）は箱で語らず、見出し（townHeadingText）に出す
+    const texts = townFreshIntro(townPageIntro(page, menu).map(t), play.message.history().slice(-TOWN_INTRO_DEDUP));
     const skip = store.get().skipAnimations;
     texts.forEach((x) => void narrator.say(x, skip));
   };
@@ -776,6 +768,8 @@ export function createApp(o: {
       townPage = townRepair(townPage, menu);
       const ents = townEntries(townPage, menu, strings, previewOf(townPage), classChangeOf(townPage));
       const items = ents.map(townItem);
+      // UI-52 / UI-47（M10.5 追補。未定-22）: 見出しは段の問い。確認の段と救済の申し出は core の値を入れた問い（答えのボタンと同時に見える）
+      const heading = townHeadingText(townPage, menu, strings, previewOf(townPage), classChangeOf(townPage));
       // UI-52 / UI-61（M8.5）: ヘッダーは場所と所持金、ビューは施設の絵
       play.header.setText(townHeader(menu, strings, townPage));
       play.setTownPicture(townFacility(townPage));
@@ -784,12 +778,12 @@ export function createApp(o: {
       if (song !== undefined) setScene(song);
       // UI-13 / UI-52（M10）: 施設メニューは見出しと 48×48 の 3 列 × 2 段（戻るは無い。数字キーは行の順）
       if (townPage === "menu") {
-        c.setBattleMenu(items, "town", { heading: t(townHeading(townPage)) });
+        c.setBattleMenu(items, "town", { heading });
         c.setMode("battle");
         return;
       }
       // UI-13: 見出し（段の問い。ログに残さない）と一覧。UI-11: 末尾の戻るは一覧の外に固定する
-      c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading: t(townHeading(townPage)) } });
+      c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading } });
       c.setMode("list");
       return;
     }

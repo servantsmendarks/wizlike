@@ -10,7 +10,6 @@ import { upgradePreview } from "../src/core/rules/upgrade";
 import { cloneState, createItemInstance } from "../src/core/state";
 import type { Character, GameState, TownMenu } from "../src/core/types";
 import {
-  classChangeConfirmLines,
   samePage,
   TOWN_INTRO_DEDUP,
   townEntries,
@@ -18,16 +17,17 @@ import {
   townFreshIntro,
   townHeader,
   townHeading,
+  townHeadingText,
   townLowersInput,
   townPageIntro,
   townParent,
   townPlace,
   townRepair,
-  upgradeConfirmLines,
   type ClassChangeView,
   type TownEntry,
   type TownPage,
 } from "../src/presenter/views/town";
+import { formatMessage } from "../src/presenter/views/message";
 import { regions, TOWN_GRID_LABEL_MAX, townLayout } from "../src/presenter/layout";
 import { data, newGame } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
@@ -264,7 +264,9 @@ describe("UI-52 街のページ", () => {
     ]);
   });
 
-  test("UI-52/TW-17 確認の段: core の upgradePreview の値で「対象・触媒の数」「成功率（うち大成功）・料金」を語り、block が null のときだけ 鍛える を押せる", () => {
+  // 2026-10-07（M10.5 追補・未定-22）: 確認の段は会話の箱で語らず、問いを見出しに出し、対象と触媒の数を答えのボタンのラベルに出す。
+  // 旧「対象・触媒の数」「成功率・料金」「所持金が足りない」の語り（upgradeConfirmLines）とラベル「鍛える」の期待を置き換えた
+  test("UI-52/UI-47/TW-17 未定-22 確認の段: core の upgradePreview の値で見出しに「成功率（大成功）料金。鍛えるか？」（払えなければ「所持金が足りない。」）、ボタンに「{item}を鍛える（触媒 n）」。会話の箱では語らない。block が null のときだけ 鍛える を押せる", () => {
     const s = town({}, 300);
     s.items[s.party[0]!.equipment.weapon!]!.level = 1;
     const cat = createItemInstance(s, { itemId: "dagger", level: 0, identified: true });
@@ -274,21 +276,23 @@ describe("UI-52 街のページ", () => {
     const p = upgradePreview(s, data, "c1", "weapon", [cat]);
     expect(p).toEqual({ rate: 29, great: 2, fee: 100, affordable: true, block: null });
     expect(townEntries({ upConfirm: sel }, m, S, p)).toEqual([
-      { kind: "upgrade", memberId: "c1", slot: "weapon", catalysts: [cat], label: "鍛える", disabled: false },
+      { kind: "upgrade", memberId: "c1", slot: "weapon", catalysts: [cat], label: "長剣 +1を鍛える（触媒 1）", disabled: false },
       back,
     ]);
-    expect(upgradeConfirmLines({ upConfirm: sel }, m, p, S)).toEqual(["対象 長剣 +1　触媒 1 個", "成功率 29（うち大成功 2）　料金 100G"]);
+    expect(townHeadingText({ upConfirm: sel }, m, S, p)).toBe("成功率 29（大成功 2）料金 100G。鍛えるか？");
+    // 問いは見出しに出すので、会話の箱（広い箱は答えのボタンを覆う）で語らない
+    expect(townPageIntro({ upConfirm: sel }, m)).toEqual([]);
     expect(townParent({ upConfirm: sel })).toEqual({ upCat: sel });
-    // 払えない: 鍛えるは disabled、所持金が足りないを足す
+    // 払えない: 鍛えるは disabled、見出しの問いを「所持金が足りない。」に替える
     const poor = cloneState(s);
     poor.gold = 99;
     const pp = upgradePreview(poor, data, "c1", "weapon", [cat]);
     expect(townEntries({ upConfirm: sel }, menuOf(poor), S, pp)[0]).toMatchObject({ kind: "upgrade", disabled: true });
-    expect(upgradeConfirmLines({ upConfirm: sel }, menuOf(poor), pp, S)).toEqual(["対象 長剣 +1　触媒 1 個", "成功率 29（うち大成功 2）　料金 100G", "所持金が足りない。"]);
-    // preview が無い（対象が決まらない）なら押せず、語りも無い
+    expect(townHeadingText({ upConfirm: sel }, menuOf(poor), S, pp)).toBe("成功率 29（大成功 2）料金 100G。所持金が足りない。");
+    // preview が無い（対象が決まらない）なら押せず、見出しは値の無い問い
     expect(townEntries({ upConfirm: sel }, m, S, null)[0]).toMatchObject({ disabled: true });
-    expect(upgradeConfirmLines({ upConfirm: sel }, m, null, S)).toEqual([]);
-    expect(upgradeConfirmLines("dark", m, p, S)).toEqual([]);
+    expect(townHeadingText({ upConfirm: sel }, m, S, null)).toBe(S["town.ask.upConfirm"]);
+    expect(townHeadingText("dark", m, S, p)).toBe(S["town.ask.service"]);
   });
 
   // M8.5: townListTall（M7 の広げた一覧のページ）は UI-13 の街の配置に置き換えて削除した（どのページも同じ一覧の位置）
@@ -475,7 +479,22 @@ describe("UI-52 街のページ", () => {
       { kind: "mercy", memberId: "c3", label: "キリを戻してもらう" },
       back,
     ]);
-    expect(townPageIntro("tavern", m)).toEqual(["town.tavern.intro", "town.mercy.offer"]);
+    // 2026-10-07（M10.5 追補・未定-22）: 救済の申し出の問いは会話の箱で語らず、酒場の見出しに出す（答えの救済の行と同時に見える）。
+    // 旧期待 ["town.tavern.intro", "town.mercy.offer"] を置き換えた。街に入るときの core の town.mercy.offer（施設メニューの上）は変えない
+    expect(townPageIntro("tavern", m)).toEqual(["town.tavern.intro"]);
+    expect(townHeadingText("tavern", m, S)).toBe(S["town.ask.mercy"]);
+    expect(townHeadingText("tavern", menuOf(town()), S)).toBe(S["town.ask.what"]);
+  });
+
+  test("UI-47/UI-52 未定-22 答えのボタンが続く問い（強化の確認・転職の確認・救済の申し出）は見出しの 1 行（全角 28 字）に収まり、強化のボタンのラベルは一覧の幅 168（全角 21 字）に収まる", () => {
+    const ask = (k: string, p: Record<string, number>): string => formatMessage(S[k]!, p);
+    // 成功率 100・大成功 100・料金 5 桁の最悪の場合
+    for (const k of ["town.upgrade.ask", "town.upgrade.askNoGold"]) expect(kinsokuLines(ask(k, { rate: 100, great: 100, fee: 99999 }), 28), k).toHaveLength(1);
+    expect(kinsokuLines(S["town.ask.mercy"]!, 28)).toHaveLength(1);
+    expect(S["town.ask.mercy"]).toContain("？");
+    // 品の名前は最も長いユニーク + 強化値 2 桁、触媒 3 個
+    const longest = [...data.uniques].sort((a, b) => b.name.length - a.name.length)[0]!.name;
+    expect(kinsokuLines(formatMessage(S["town.upgrade.do"]!, { item: `${longest} +10`, count: 3 }), 21)).toHaveLength(1);
   });
 
   // M10（2026-10-07）: 鑑定は酒場の一覧ではなくキャラクター画面の「鑑定」（司教だけ）から。旧「鑑定の行は canIdentify のときだけ」を置き換えた
@@ -830,13 +849,15 @@ describe("TW-09/CH-22 転職（酒場の「GMに申し出る」。M10）", () =>
     expect(townHeading({ ccClass: "c5" })).toBe("town.ask.classChangeTo");
   });
 
-  test("TW-09 確認の段: 会話の箱に「{name}を{cls}にする。レベルは 1 に戻る。よいか。」、[転職する]（core の ok が偽なら dim）→ 戻る。送る Command を core が受け付け、結果の語りが出る", () => {
+  // 2026-10-07（M10.5 追補・未定-22）: 確認の文は会話の箱ではなく見出しに出す（classChangeConfirmLines を townHeadingText に置き換えた）
+  test("TW-09/UI-47 未定-22 確認の段: 見出しに「{name}を{cls}にする。レベルは 1 に戻る。よいか。」（会話の箱では語らない）、[転職する]（core の ok が偽なら dim）→ 戻る。送る Command を core が受け付け、結果の語りが出る", () => {
     const s = town();
     const page: TownPage = { ccConfirm: { memberId: "c5", classId: "thief" } };
     const cc = ccOf(s, "c5");
-    expect(classChangeConfirmLines(page, cc, S)).toEqual(["エルを盗賊にする。レベルは 1 に戻る。よいか。"]);
-    expect(classChangeConfirmLines({ ccClass: "c5" }, cc, S)).toEqual([]);
-    expect(classChangeConfirmLines(page, null, S)).toEqual([]);
+    expect(townHeadingText(page, menuOf(s), S, null, cc)).toBe("エルを盗賊にする。レベルは 1 に戻る。よいか。");
+    expect(townPageIntro(page, menuOf(s))).toEqual([]);
+    expect(townHeadingText({ ccClass: "c5" }, menuOf(s), S, null, cc)).toBe(S["town.ask.classChangeTo"]);
+    expect(townHeadingText(page, menuOf(s), S, null, null)).toBe(S["town.ask.classChangeConfirm"]);
     const e = townEntries(page, menuOf(s), S, null, cc);
     expect(e).toEqual([{ kind: "classChange", memberId: "c5", classId: "thief", label: "転職する", disabled: false }, back]);
     expect(townEntries({ ccConfirm: { memberId: "c5", classId: "fighter" } }, menuOf(s), S, null, cc)[0]).toMatchObject({ kind: "classChange", disabled: true });
@@ -851,10 +872,13 @@ describe("TW-09/CH-22 転職（酒場の「GMに申し出る」。M10）", () =>
     expect(after.find((y) => y.label === "盗賊（今）")).toMatchObject({ disabled: true });
   });
 
-  test("TW-09/UI-47 転職の文（確認・理由・語り）は会話の箱の 3 行（全角 28 字）に収まり、見出しは 1 行", () => {
-    const s = town();
+  test("TW-09/UI-47 転職の文（理由・語り）は会話の箱の 3 行（全角 28 字）に収まる。未定-22: 確認の見出しは全角 6 字の名前と最も長い職業名でも 1 行", () => {
+    const s = town({ c5: { name: "ああああああ" } });
+    const longest = [...data.classes].sort((a, b) => b.name.length - a.name.length)[0]!;
+    const heading = townHeadingText({ ccConfirm: { memberId: "c5", classId: longest.id } }, menuOf(s), S, null, ccOf(s, "c5"));
+    expect(heading).toBe(`ああああああを${longest.name}にする。レベルは 1 に戻る。よいか。`);
+    expect(kinsokuLines(heading, 28)).toHaveLength(1);
     const lines = [
-      ...classChangeConfirmLines({ ccConfirm: { memberId: "c5", classId: "bishop" } }, ccOf(s, "c5"), S),
       ...townEntries({ ccClass: "c5" }, menuOf(s), S, null, ccOf(s, "c5")).flatMap((x) => (x.kind === "ccClass" && x.reason !== null ? [x.reason] : [])),
       S["town.classChange.intro"]!,
     ];

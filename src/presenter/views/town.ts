@@ -411,7 +411,7 @@ export function townEntries(
         memberId: sel.memberId,
         slot: sel.slot,
         catalysts: [...sel.picked],
-        label: s(strings, "town.upgrade.do"),
+        label: s(strings, "town.upgrade.do", { item: upgradeTarget(menu, sel), count: sel.picked.length }),
         disabled: preview === null || preview.block !== null,
       },
       back,
@@ -494,10 +494,10 @@ export function townEntries(
 
 /**
  * ページに入ったときにメッセージ窓へ出す語りの strings キー（params なし。再生の外で出す）。
- * 酒場は救済の申し出（menu.mercy が null でない）の間だけ town.mercy.offer も続けて出す
+ * 答えのボタンが続く問い（強化・転職の確認、救済の申し出）は語らず、見出し（townHeadingText）に出す（M10.5 追補。未定-22）
  */
 export function townPageIntro(page: TownPage, menu: TownMenu): string[] {
-  if (page === "tavern") return menu.mercy !== null ? ["town.tavern.intro", "town.mercy.offer"] : ["town.tavern.intro"];
+  if (page === "tavern") return ["town.tavern.intro"]; // M10.5 追補（未定-22）: 救済の申し出の問いは見出し（townHeadingText）
   if (page === "inn") return menu.morale !== null ? ["town.inn.intro", "town.inn.moraleNow"] : ["town.inn.intro"]; // TW-15: 士気がある間は続けて語る
   if (page === "temple") return ["town.temple.intro"];
   if (page === "dark") return ["town.dark.intro"];
@@ -615,33 +615,38 @@ export function townFreshIntro(texts: readonly string[], recent: readonly string
   return texts.filter((x) => !recent.includes(x));
 }
 
-/**
- * TW-17: 確認の段（{ upConfirm }）に入ったときにメッセージ窓へ出す文（整形済み）。「対象 {item}　触媒 {count} 個」→
- * 「成功率 {rate}（うち大成功 {great}）　料金 {fee}G」→（払えなければ）所持金が足りない。値は core の townMenu.upgrade と upgradePreview。
- * 他のページ・preview が null なら []
- */
-export function upgradeConfirmLines(page: TownPage, menu: TownMenu, preview: UpgradePreview | null, strings: Strings): string[] {
-  if (typeof page !== "object" || !("upConfirm" in page) || preview === null) return [];
-  const sel = page.upConfirm;
-  const item = menu.upgrade.members.find((m) => m.memberId === sel.memberId)?.slots.find((x) => x.slot === sel.slot)?.name ?? "";
-  const lines = [
-    s(strings, "town.upgrade.confirm", { item, count: sel.picked.length }),
-    s(strings, "town.upgrade.preview", { rate: preview.rate, great: preview.great, fee: preview.fee }),
-  ];
-  if (!preview.affordable) lines.push(s(strings, "town.upgrade.noGold"));
-  return lines;
+/** TW-17: 確認の段の対象の品名（townMenu.upgrade の部位の name。見つからなければ空） */
+function upgradeTarget(menu: TownMenu, sel: UpgradeSel): string {
+  return menu.upgrade.members.find((m) => m.memberId === sel.memberId)?.slots.find((x) => x.slot === sel.slot)?.name ?? "";
 }
 
 /**
- * TW-09（M10）: 確認の段（{ ccConfirm }）に入ったときに会話の箱へ出す文（整形済み）。
- * 「{name}を{cls}にする。レベルは 1 に戻る。よいか。」。名前と職業名は cc（campMenu と classChangeOptions）の値。他のページ・cc が null なら []
+ * UI-52 / UI-47（M10.5 追補。2026-10-07 ユーザーの指示「ボタンが隠れてはまずいので問いがある場合はその出し方に。全体表示はボタンがない場合」。未定-22）:
+ * 一覧の見出し（1 行・全角 28 字）に出す文（整形済み）。答えのボタンが続く問いは会話の箱（広い箱は答えのボタンを覆う）で語らず、ここに値を入れて出す。
+ * - 強化の確認（{ upConfirm }）: core の upgradePreview の値で「成功率 {rate}（大成功 {great}）料金 {fee}G。鍛えるか？」、払えなければ問いの代わりに
+ *   「…。所持金が足りない。」（town.upgrade.ask / askNoGold）。対象と触媒の数は答えのボタンのラベル（town.upgrade.do）。preview が null なら town.ask.upConfirm
+ * - 転職の確認（{ ccConfirm }）: 「{name}を{cls}にする。レベルは 1 に戻る。よいか。」（town.classChange.confirm）。cc が null なら town.ask.classChangeConfirm
+ * - 酒場で救済の申し出（TW-30。menu.mercy が null でない）の間: town.ask.mercy（答えは救済の行）
+ * - ほかは townHeading のキーの文
  */
-export function classChangeConfirmLines(page: TownPage, cc: ClassChangeView | null, strings: Strings): string[] {
-  if (typeof page !== "object" || !("ccConfirm" in page) || cc === null) return [];
-  const sel = page.ccConfirm;
-  const name = cc.members.find((x) => x.memberId === sel.memberId)?.name ?? "";
-  const cls = cc.options.find((o) => o.classId === sel.classId)?.name ?? "";
-  return [s(strings, "town.classChange.confirm", { name, cls })];
+export function townHeadingText(
+  page: TownPage,
+  menu: TownMenu,
+  strings: Strings,
+  preview: UpgradePreview | null = null,
+  cc: ClassChangeView | null = null,
+): string {
+  if (typeof page === "object" && "upConfirm" in page && preview !== null) {
+    return s(strings, preview.affordable ? "town.upgrade.ask" : "town.upgrade.askNoGold", { rate: preview.rate, great: preview.great, fee: preview.fee });
+  }
+  if (typeof page === "object" && "ccConfirm" in page && cc !== null) {
+    const sel = page.ccConfirm;
+    const name = cc.members.find((x) => x.memberId === sel.memberId)?.name ?? "";
+    const cls = cc.options.find((o) => o.classId === sel.classId)?.name ?? "";
+    return s(strings, "town.classChange.confirm", { name, cls });
+  }
+  if (page === "tavern" && menu.mercy !== null) return s(strings, "town.ask.mercy");
+  return s(strings, townHeading(page));
 }
 
 /**
