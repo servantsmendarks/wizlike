@@ -632,6 +632,10 @@ describe("入力と Command", () => {
       /case "town":\s*if \(a === "confirm"\) \{\s*if \(play\.talk\.isOpen\(\)\) play\.talk\.tap\(\);\s*else play\.controls\.select\(0\);\s*\} else if \(typeof a === "object"\) play\.controls\.select\(a\.menu\);\s*else if \(a === "back"\) \{\s*play\.talk\.flush\(\);\s*townBack\(\);\s*\} else if \(\(a === "forward" \|\| a === "around"\) && play\.talk\.isOpen\(\)\) \{\s*play\.talk\.scrollBy\(a === "forward" \? -TALK_KEY_LINES : TALK_KEY_LINES\);\s*\}\s*return;/,
     );
     // M10.5 追補（未定-24）: 会話の箱が開いていれば ↑↓ で 3 行ずつ読み返す（以前の期待値は ↑↓ の分岐なし）
+    // 2026-10-07 レビュー: 酒場のキャンプの上と迷宮のキャラクター画面（overlay camp）でも、箱が開いていれば ↑↓ は箱を動かす
+    expect(core).toMatch(
+      /if \(overlay === "camp"\) \{[\s\S]*?if \(\(a === "forward" \|\| a === "around"\) && \(route === "town" \|\| characterOpen\) && play\.talk\.isOpen\(\)\) \{\s*play\.talk\.scrollBy\(a === "forward" \? -TALK_KEY_LINES : TALK_KEY_LINES\);\s*return;\s*\}[\s\S]*?const m = campInput\(\);/,
+    );
     const tap = /const tapTalk = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(tap).toContain("if (isBusy() || chaining) return;");
     // M10（UI-59）: キャラクター画面の間は迷宮でも箱のタップを受ける
@@ -660,8 +664,9 @@ describe("入力と Command", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const core = /const handleActionCore = \(a: Action\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(core).toMatch(
-      /if \(overlay === "camp"\) \{\s*if \(a === "confirm" && \(route === "town" \|\| characterOpen\) && play\.talk\.isOpen\(\)\) \{\s*play\.talk\.tap\(\);\s*return;\s*\}\s*const m = campInput\(\);/,
+      /if \(overlay === "camp"\) \{\s*if \(a === "confirm" && \(route === "town" \|\| characterOpen\) && play\.talk\.isOpen\(\)\) \{\s*play\.talk\.tap\(\);\s*return;\s*\}\s*if \(\(a === "forward" \|\| a === "around"\)[^\n]*\n[\s\S]*?\}\s*const m = campInput\(\);/,
     );
+    // 2026-10-07 レビュー: confirm と campInput の間に ↑↓ の読み返し（UI-33）を挟んだ（以前の期待値は confirm の直後が campInput）
     expect(core).toMatch(/if \(a === "left" \|\| a === "right"\) \{\s*const next = campCycle\(campPage, m, a === "right" \? 1 : -1\);/);
   });
 

@@ -1916,6 +1916,11 @@ export function createApp(o: {
         play.talk.tap();
         return;
       }
+      // UI-33 / UI-47（M10.5 追補。2026-10-07 レビュー）: 同じく箱が開いている間は ↑↓ で 3 行ずつ読み返す（キャンプの一覧に ↑↓ の意味は無い）
+      if ((a === "forward" || a === "around") && (route === "town" || characterOpen) && play.talk.isOpen()) {
+        play.talk.scrollBy(a === "forward" ? -TALK_KEY_LINES : TALK_KEY_LINES);
+        return;
+      }
       // UI-33: 数字 n → n 番目の枠・行（空き枠は無視）、Enter → 先頭の押せる項目、Esc → やめる（top では戻る）
       const m = campInput();
       if (m === null) return;
