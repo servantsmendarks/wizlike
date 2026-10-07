@@ -9,7 +9,8 @@ import { LURE_TAGS } from "../src/core/data/index";
 import { cloneRng, randInt, rollDice, rollDie, weightedIndex, type RngState } from "../src/core/rng";
 import { floorOf } from "../src/core/rules/dungeon";
 import { cellAt, idx } from "../src/core/rules/dungeon-gen";
-import { applyEffects, decideImpulse, lureProduct, pickStopper, startEvent } from "../src/core/rules/events";
+import { effectiveStats } from "../src/core/rules/equip-stats";
+import { applyEffects, decideImpulse, impulseChance, lureProduct, pickStopper, startEvent } from "../src/core/rules/events";
 import { wipeIfNoneCanAct } from "../src/core/rules/wipe";
 import { cloneState, createItemInstance, dungeonOf, eventOf, itemDisplayName, makeContext } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState, RuleContext } from "../src/core/types";
@@ -54,7 +55,24 @@ function start(s: GameState, d: GameData, eventId: string): RuleContext {
 const tablet = () => onEvent(TABLET);
 const sack = () => onEvent(SACK);
 
-describe("衝動判定（EV-10〜14）", () => {
+/**
+ * M11（EV-11 の確率型）: 衝動の行動者を 1 人に固定する data。eventId の impulseClasses を classId だけにし、
+ * floor = cap = 100 でその者の d100 を必ず成功させる。衝動の乱数はその者の d100 の 1 回だけ
+ */
+function oneActor(eventId: string, classId: string, mut?: (d: GameData) => void): GameData {
+  return dataEvents((x) => {
+    eventOf(x, eventId).impulseClasses = [classId];
+    x.config.events.floor = 100;
+    x.config.events.cap = 100;
+    mut?.(x);
+  });
+}
+/** 光る石板の行動者をキリ（盗賊）に固定する（フィンは慎重で積 0、ドナは僧侶で対象外） */
+const kiriActs = (mut?: (d: GameData) => void) => oneActor(TABLET, "thief", mut);
+/** 宝袋の行動者をドナ（僧侶）に固定する */
+const donaActs = (mut?: (d: GameData) => void) => oneActor(SACK, "priest", mut);
+
+describe("衝動判定（EV-04, EV-10〜14。M11 で確率型）", () => {
   test("EV-11 lureProduct は Σ lure×lure（光る石板: 無鉄砲 11・強欲 3・慎重 0・普通 0。宝袋: 強欲 9・無鉄砲 2・慎重 0・普通 0）", () => {
     const lure = (id: string) => data.personalities.find((p) => p.id === id)!.lure;
     const t = eventOf(data, TABLET).lure;
@@ -63,22 +81,55 @@ describe("衝動判定（EV-10〜14）", () => {
     expect(["reckless", "greedy", "cautious", "normal"].map((p) => lureProduct(lure(p), s))).toEqual([2, 9, 0, 0]);
   });
 
-  test("EV-10/EV-11/A2 光る石板: 1d6 を振るのはキリ・ドナだけ（積 0 の慎重・普通とリーダーは振らない）", () => {
-    const d = dataEvents((x) => (x.config.events.impulseThreshold = 1000));
+  test("EV-11 impulseChance = clamp(floor, cap, 積 × lureMul + (stat − 10))。既定の編成の p（石板・洗礼盤 キリ 60・ドナ 34、宝袋・献金箱 キリ 29・ドナ 60、冒険者 ベルク 24・フィン 20、巡礼者 ベルク 41・フィン 36。積 0 は 0）", () => {
+    const s = newGame(1);
+    const cfg = data.config;
+    expect([cfg.events.lureMul, cfg.events.cap, cfg.events.floor]).toEqual([12, 60, 0]);
+    const pOf = (id: string) => {
+      const def = eventOf(data, id);
+      return s.party.slice(1).map((ch) => {
+        const prod = lureProduct(data.personalities.find((p) => p.id === ch.personality)!.lure, def.lure);
+        return prod > 0 ? impulseChance(prod, effectiveStats(s, data, ch)[def.stat], cfg) : 0;
+      });
+    };
+    // 並びは [ベルク, キリ, ドナ, エル, フィン]
+    expect(pOf(TABLET)).toEqual([0, 60, 34, 0, 0]); // キリ 11×12 − 1 = 131 → 60、ドナ 3×12 − 2
+    expect(pOf("murmuring_font")).toEqual([0, 60, 34, 0, 0]);
+    expect(pOf(SACK)).toEqual([0, 29, 60, 0, 0]); // キリ 2×12 + 5、ドナ 9×12 + 0 → 60
+    expect(pOf("sunken_offering_box")).toEqual([0, 29, 60, 0, 0]);
+    expect(pOf("wounded_adventurer")).toEqual([24, 0, 0, 0, 20]); // ベルク 2×12 + 0、フィン 2×12 − 4
+    expect(pOf("pinned_pilgrim")).toEqual([41, 0, 0, 0, 36]); // ベルク 3×12 + 5、フィン 3×12 + 0
+    // clamp: 下限 floor・上限 cap
+    expect(impulseChance(1, 3, cfg)).toBe(5); // 12 − 7
+    expect(impulseChance(0, 3, cfg)).toBe(0); // −7 → 0
+    const d = dataEvents((x) => {
+      x.config.events.floor = 10;
+      x.config.events.cap = 100;
+    });
+    expect(impulseChance(0, 3, d.config)).toBe(10);
+    expect(impulseChance(11, 9, d.config)).toBe(100); // 131 → 100
+    expect(impulseChance(5, 10, d.config)).toBe(60);
+  });
+
+  test("EV-10/EV-11/A2 光る石板・宝袋: d100 を振るのはキリ・ドナだけ（積 0 の慎重・普通とリーダーは振らない）。cap 0 なら誰も振らない", () => {
     for (const id of [TABLET, SACK]) {
       const { state } = onEvent(id);
-      const ctx = ctxWith(state, d);
+      const ctx = ctxWith(state, dataEvents());
       const m = cloneRng(state.rng);
-      rollDie(m, 6); // キリ
-      rollDie(m, 6); // ドナ
-      expect(decideImpulse(ctx, eventOf(d, id)), id).toBeNull();
+      rollDie(m, 100); // キリ
+      rollDie(m, 100); // ドナ
+      decideImpulse(ctx, eventOf(data, id));
       expect(ctx.state.rng, id).toEqual(m);
       expect(ctx.events).toEqual([]);
+      const d0 = dataEvents((x) => (x.config.events.cap = 0));
+      const ctx0 = ctxWith(state, d0);
+      expect(decideImpulse(ctx0, eventOf(d0, id)), id).toBeNull();
+      expect(ctx0.state.rng, id).toEqual(state.rng); // p 0 は振らない
     }
   });
 
-  test("EV-10 行動不能の者（麻痺・SAN 0・死亡）は対象外で 1d6 も振らない", () => {
-    const d = dataEvents((x) => (x.config.events.impulseThreshold = 1000));
+  test("EV-10 行動不能の者（麻痺・SAN 0・死亡）は対象外で d100 も振らない", () => {
+    const d = dataEvents();
     const { state } = tablet();
     const s = patch(patch(state, 2, { status: ["paralysis"] }), 3, { san: 0 });
     const ctx = ctxWith(s, d);
@@ -87,109 +138,159 @@ describe("衝動判定（EV-10〜14）", () => {
     const s2 = patch(state, 2, { life: "dead", hp: 0 });
     const ctx2 = ctxWith(s2, d);
     const m = cloneRng(s2.rng);
-    rollDie(m, 6); // ドナだけ
+    rollDie(m, 100); // ドナだけ
     decideImpulse(ctx2, eventOf(d, TABLET));
     expect(ctx2.state.rng).toEqual(m);
   });
 
-  test("EV-11/EV-12 score = 積 + (stat − 10) + 1d6 ≥ 閾値の最大。同点は agi、次に並び順", () => {
-    // 宝袋（agi）: キリ 2 + (15 − 10) + rK = 7 + rK、ドナ 9 + (10 − 10) + rD = 9 + rD。閾値 8
+  test("EV-11/EV-12/EV-13 d100 ≤ p で成功、成功者のうち p − 出目 が最大（宝袋: キリ 29・ドナ 60）。誰も成功しなければ null", () => {
     const { state } = sack();
     const def = eventOf(data, SACK);
-    let sawKiri = false;
-    let sawDona = false;
-    let sawTie = false;
-    for (let k = 1; k <= 80; k++) {
+    const seen = new Set<string>();
+    for (let k = 1; k <= 200; k++) {
       const s = withRng(state, k);
       const m = cloneRng(s.rng);
-      const sK = 7 + rollDie(m, 6);
-      const sD = 9 + rollDie(m, 6);
-      // 同点はキリ（agi 15 > 10）
-      const want = sK >= sD ? "c3" : "c4";
-      if (sK === sD) sawTie = true;
+      const rK = rollDie(m, 100);
+      const rD = rollDie(m, 100);
+      const cands: [string, number][] = [];
+      if (rK <= 29) cands.push(["c3", 29 - rK]);
+      if (rD <= 60) cands.push(["c4", 60 - rD]);
+      // 同点はキリ（agi 15 > 10）。キリが先なので > で比べる
+      let want: string | null = null;
+      let best = -Infinity;
+      for (const [id, mg] of cands) {
+        if (mg > best) {
+          want = id;
+          best = mg;
+        }
+      }
       const ctx = ctxWith(s, data);
-      expect(decideImpulse(ctx, def)?.id).toBe(want);
+      expect(decideImpulse(ctx, def)?.id ?? null, String(k)).toBe(want);
       expect(ctx.state.rng).toEqual(m);
-      if (want === "c3") sawKiri = true;
-      else sawDona = true;
+      seen.add(want === null ? "none" : cands.length === 2 ? `both:${want}` : want);
     }
-    expect([sawKiri, sawDona, sawTie]).toEqual([true, true, true]);
-    // 光る石板（iq）: ドナの iq を 17 にすると キリ 11 + (9 − 10) + rK = 10 + rK、ドナ 3 + (17 − 10) + rD = 10 + rD。出目が同じなら同点
+    // キリだけ・ドナだけ・両方成功でキリ・両方成功でドナ・誰もいない、のすべてを見る
+    expect([...seen].sort()).toEqual(["both:c3", "both:c4", "c3", "c4", "none"]);
+  });
+
+  test("EV-11 出目 = p はちょうど成功、出目 = p + 1 は失敗（ドナを普通にしてキリだけが振る）", () => {
+    const { state } = sack();
+    const s0 = patch(state, 3, { personality: "normal" });
+    const s = (() => {
+      for (let k = 1; k < 100; k++) {
+        const t = withRng(s0, k);
+        if (rollDie(cloneRng(t.rng), 100) >= 2) return t;
+      }
+      throw new Error("no seed");
+    })();
+    const r = rollDie(cloneRng(s.rng), 100);
+    const fixed = (p: number) =>
+      dataEvents((x) => {
+        x.config.events.floor = p;
+        x.config.events.cap = p;
+      });
+    expect(decideImpulse(ctxWith(s, fixed(r)), eventOf(data, SACK))?.id).toBe("c3");
+    expect(decideImpulse(ctxWith(s, fixed(r - 1)), eventOf(data, SACK))).toBeNull();
+  });
+
+  test("EV-12 p − 出目 の同点は agi が高い方、それも同じなら並び順が前の方（floor = cap = 50 で光る石板）", () => {
     const { state: st } = tablet();
-    const tdef = eventOf(data, TABLET);
+    const d = dataEvents((x) => {
+      x.config.events.floor = 50;
+      x.config.events.cap = 50;
+    });
+    const tdef = eventOf(d, TABLET);
     const tie = (() => {
-      for (let k = 1; k < 1000; k++) {
+      for (let k = 1; k < 20000; k++) {
         const s = withRng(st, k);
         const m = cloneRng(s.rng);
-        if (rollDie(m, 6) === rollDie(m, 6)) return s;
+        const a = rollDie(m, 100);
+        if (a <= 50 && a === rollDie(m, 100)) return s;
       }
       throw new Error("no tie");
     })();
-    const dona = (agi: number) => patch(tie, 3, { stats: { ...tie.party[3]!.stats, iq: 17, agi } });
-    expect(decideImpulse(ctxWith(dona(10), data), tdef)?.id).toBe("c3"); // agi 15 > 10 でキリ
-    expect(decideImpulse(ctxWith(dona(16), data), tdef)?.id).toBe("c4"); // agi 16 > 15 でドナ
-    expect(decideImpulse(ctxWith(dona(15), data), tdef)?.id).toBe("c3"); // agi も同じなら並び順が前のキリ
-    // 閾値に届かなければ行動者にならない（閾値 = キリの score + 1、ドナは iq 8 のまま 3 − 2 + rD ≤ 7）
-    const m = cloneRng(tie.rng);
-    const sK = 10 + rollDie(m, 6);
-    const high = dataEvents((x) => (x.config.events.impulseThreshold = sK + 1));
-    expect(decideImpulse(ctxWith(tie, high), eventOf(high, TABLET))).toBeNull();
-    const eq = dataEvents((x) => (x.config.events.impulseThreshold = sK));
-    expect(decideImpulse(ctxWith(tie, eq), eventOf(eq, TABLET))?.id).toBe("c3"); // ちょうど閾値は届く
+    const dona = (agi: number) => patch(tie, 3, { stats: { ...tie.party[3]!.stats, agi } });
+    expect(decideImpulse(ctxWith(dona(10), d), tdef)?.id).toBe("c3"); // agi 15 > 10 でキリ
+    expect(decideImpulse(ctxWith(dona(16), d), tdef)?.id).toBe("c4"); // agi 16 > 15 でドナ
+    expect(decideImpulse(ctxWith(dona(15), d), tdef)?.id).toBe("c3"); // agi も同じなら並び順が前のキリ
   });
 
-  test("EV-14 錯乱の普通は randInt(0,3) のタグに重み 2 で衝動に乗る（性格の lure を置き換え）", () => {
+  test("EV-04 impulseClasses の外の職業の者は対象外（randInt も d100 も引かない）。リーダーは職業が入っていても対象外", () => {
+    const { state } = tablet();
+    const withClasses = (cls: string[]) => dataEvents((x) => (eventOf(x, TABLET).impulseClasses = cls));
+    // 僧侶だけ: キリ（盗賊）は外れ、ドナだけが振る。錯乱のキリでも randInt を引かない
+    const priest = withClasses(["priest"]);
+    for (const s of [state, patch(state, 2, { san: 20 })]) {
+      const m = cloneRng(s.rng);
+      const rD = rollDie(m, 100); // ドナ
+      const ctx = ctxWith(s, priest);
+      expect(decideImpulse(ctx, eventOf(priest, TABLET))?.id ?? null).toBe(rD <= 34 ? "c4" : null);
+      expect(ctx.state.rng).toEqual(m);
+    }
+    // 盗賊だけ: ドナは外れる。フィン（慎重・盗賊）は積 0 で振らない → キリだけ
+    const thief = withClasses(["thief"]);
+    const m = cloneRng(state.rng);
+    const rK = rollDie(m, 100);
+    const ctx = ctxWith(state, thief);
+    expect(decideImpulse(ctx, eventOf(thief, TABLET))?.id ?? null).toBe(rK <= 60 ? "c3" : null);
+    expect(ctx.state.rng).toEqual(m);
+    // 戦士だけ: リーダーのアルドは対象外、ベルク（慎重）は積 0 → 誰も振らない
+    const fighter = withClasses(["fighter"]);
+    const ctxF = ctxWith(state, fighter);
+    expect(decideImpulse(ctxF, eventOf(fighter, TABLET))).toBeNull();
+    expect(ctxF.state.rng).toEqual(state.rng);
+  });
+
+  test("EV-14 錯乱の普通は randInt(0,3) のタグに重み 2 で衝動に乗る（性格の lure を置き換え。p = 2 × lure[tag] × 12 + (iq − 10)）", () => {
     const { state } = tablet();
     const def = eventOf(data, TABLET);
     const base = patch(state, 4, { san: 20 }); // エル（普通）SAN 20 < 25 で錯乱
     let sawEl = false;
     let sawSkip = false;
-    for (let k = 1; k <= 60; k++) {
+    for (let k = 1; k <= 200; k++) {
       const s = withRng(base, k);
       const m = cloneRng(s.rng);
-      const sK = 11 + (9 - 10) + rollDie(m, 6);
-      const sD = 3 + (8 - 10) + rollDie(m, 6);
+      const cands: [string, number, number][] = []; // [id, p − 出目, agi]
+      const rK = rollDie(m, 100);
+      if (rK <= 60) cands.push(["c3", 60 - rK, 15]);
+      const rD = rollDie(m, 100);
+      if (rD <= 34) cands.push(["c4", 34 - rD, 10]);
       const tag = LURE_TAGS[randInt(m, 0, 3)]!;
       const prodE = 2 * def.lure[tag]; // 未知 6、危険 2、宝・弱者 0
-      let sE = -Infinity;
-      if (prodE > 0) sE = prodE + (16 - 10) + rollDie(m, 6);
-      else sawSkip = true;
-      const cands: [string, number, number][] = [
-        ["c3", sK, 15],
-        ["c4", sD, 10],
-        ["c5", sE, 11],
-      ];
+      if (prodE > 0) {
+        const pE = Math.min(60, prodE * 12 + (16 - 10)); // 未知 78 → 60、危険 30
+        const rE = rollDie(m, 100);
+        if (rE <= pE) cands.push(["c5", pE - rE, 11]);
+      } else sawSkip = true;
       let want: string | null = null;
       let best = -Infinity;
       let bestAgi = -Infinity;
-      for (const [id, sc, agi] of cands) {
-        if (sc < 8) continue;
-        if (sc > best || (sc === best && agi > bestAgi)) {
+      for (const [id, mg, agi] of cands) {
+        if (mg > best || (mg === best && agi > bestAgi)) {
           want = id;
-          best = sc;
+          best = mg;
           bestAgi = agi;
         }
       }
       const ctx = ctxWith(s, data);
-      expect(decideImpulse(ctx, def)?.id ?? null).toBe(want);
+      expect(decideImpulse(ctx, def)?.id ?? null, String(k)).toBe(want);
       expect(ctx.state.rng).toEqual(m);
       if (want === "c5") sawEl = true;
     }
     expect(sawEl).toBe(true);
     expect(sawSkip).toBe(true);
-    // 置き換え（加算しない）: 錯乱のキリは無鉄砲の lure（未知 3）を失い、タグが宝・弱者なら積 0 で 1d6 を振らない
-    const d = dataEvents((x) => (x.config.events.impulseThreshold = 1000));
+    // 置き換え（加算しない）: 錯乱のキリは無鉄砲の lure（未知 3）を失い、タグが宝・弱者なら積 0 で d100 を振らない
     const kiri = patch(state, 2, { san: 20 });
     let sawZero = false;
     for (let k = 1; k <= 40; k++) {
       const s = withRng(kiri, k);
       const m = cloneRng(s.rng);
       const tag = LURE_TAGS[randInt(m, 0, 3)]!;
-      if (def.lure[tag] > 0) rollDie(m, 6);
+      if (def.lure[tag] > 0) rollDie(m, 100);
       else sawZero = true;
-      rollDie(m, 6); // ドナ
-      const ctx = ctxWith(s, d);
-      decideImpulse(ctx, eventOf(d, TABLET));
+      rollDie(m, 100); // ドナ
+      const ctx = ctxWith(s, data);
+      decideImpulse(ctx, def);
       expect(ctx.state.rng).toEqual(m);
     }
     expect(sawZero).toBe(true);
@@ -214,17 +315,16 @@ describe("制止判定（EV-15, EV-20〜22）", () => {
     expect(pickStopper(patch(state, 1, { personality: "normal" }), data, def, kiri(state))?.id).toBe("c6");
   });
 
-  test("EV-15/EV-20 制止の dice は 1 件 2 行（フィン iq / キリ agi、diff）。衝動の 1d6 は dice を出さない", () => {
+  test("EV-15/EV-20 制止の dice は 1 件 2 行（フィン iq / キリ agi、diff）。衝動の d100 は dice を出さない", () => {
     const { state } = tablet();
     for (let k = 1; k <= 10; k++) {
       const s = withRng(state, k);
       const m = cloneRng(s.rng);
-      rollDie(m, 6);
-      rollDie(m, 6);
+      rollDie(m, 100); // 衝動の d100（行動者だけが振る）
       const rS = rollDie(m, 10);
       const rA = rollDie(m, 10);
       const ok = 9 + rS >= 15 + rA;
-      const ctx = start(s, dataEvents(), TABLET);
+      const ctx = start(s, kiriActs(), TABLET);
       const dice = ctx.events.filter((e) => e.kind === "dice");
       expect(dice).toEqual([
         {
@@ -247,19 +347,18 @@ describe("制止判定（EV-15, EV-20〜22）", () => {
 
   test("EV-20 stopCheck 偽・慎重が行動不能なら判定しない（1d10 を引かない）", () => {
     const { state } = tablet();
-    const noStop = dataEvents((x) => {
+    const noStop = kiriActs((x) => {
       eventOf(x, TABLET).stopCheck = false;
       outcomeOnly(x, TABLET, "good");
     });
-    const good = dataEvents((x) => outcomeOnly(x, TABLET, "good"));
+    const good = kiriActs((x) => outcomeOnly(x, TABLET, "good"));
     const cases: [string, GameState, GameData][] = [
       ["stopCheck 偽", state, noStop],
       ["慎重が麻痺と睡眠", patch(patch(state, 1, { status: ["paralysis"] }), 5, { status: ["sleep"] }), good],
     ];
     for (const [name, s, d] of cases) {
       const m = cloneRng(s.rng);
-      rollDie(m, 6);
-      rollDie(m, 6);
+      rollDie(m, 100); // 衝動の d100（行動者だけが振る）
       weightedIndex(m, [3, 0, 0]); // good の効果（revealFloor と SAN）は乱数を引かない
       const ctx = start(s, d, TABLET);
       expect(kinds(ctx.events), name).not.toContain("message:event.stop.roll");
@@ -272,8 +371,7 @@ describe("制止判定（EV-15, EV-20〜22）", () => {
     const { state } = tablet();
     const s0 = patch(state, 1, { personality: "normal" }); // ベルクを外し、制止者をフィンに固定する
     const m = cloneRng(s0.rng);
-    rollDie(m, 6);
-    rollDie(m, 6);
+    rollDie(m, 100); // 衝動の d100（行動者だけが振る）
     const rS = rollDie(m, 10);
     const rA = rollDie(m, 10);
     const iq = 15 + rA - rS; // フィンの合計 iq + rS がキリの合計 15 + rA とちょうど等しくなる iq
@@ -282,7 +380,7 @@ describe("制止判定（EV-15, EV-20〜22）", () => {
       [iq - 1, false, -1],
     ] as const) {
       const s = patch(s0, 5, { stats: { ...s0.party[5]!.stats, iq: v } });
-      const ctx = start(s, dataEvents(), TABLET);
+      const ctx = start(s, kiriActs(), TABLET);
       const dice = ctx.events.find((e) => e.kind === "dice")!;
       expect(dice.kind === "dice" && dice.result.key).toBe(ok ? "dice.restrain.ok" : "dice.restrain.ng");
       expect(dice.kind === "dice" && dice.rule.params).toEqual({ diff });
@@ -294,8 +392,7 @@ describe("制止判定（EV-15, EV-20〜22）", () => {
     const s0 = cloneState(patch(state, 1, { personality: "normal" })); // 制止者をフィンに固定する
     s0.morale = { rankId: "good" };
     const m = cloneRng(s0.rng);
-    rollDie(m, 6);
-    rollDie(m, 6);
+    rollDie(m, 100); // 衝動の d100（行動者だけが振る）
     const rS = rollDie(m, 10);
     const rA = rollDie(m, 10);
     const iq = 15 + rA - rS - 1; // 士気なしなら フィンの iq + rS = キリの 15 + rA − 1（差 −1 で失敗）
@@ -304,7 +401,7 @@ describe("制止判定（EV-15, EV-20〜22）", () => {
       [iq - 1, false, -1],
     ] as const) {
       const s = patch(s0, 5, { stats: { ...s0.party[5]!.stats, iq: v } });
-      const ctx = start(s, dataEvents(), TABLET);
+      const ctx = start(s, kiriActs(), TABLET);
       const dice = ctx.events.find((e) => e.kind === "dice")!;
       expect(dice).toEqual({
         kind: "dice",
@@ -321,12 +418,12 @@ describe("制止判定（EV-15, EV-20〜22）", () => {
     // 同じ出目で士気なしなら差 −1 で失敗（2 行のまま）
     const noMorale = patch(s0, 5, { stats: { ...s0.party[5]!.stats, iq } });
     noMorale.morale = null;
-    const dice0 = start(noMorale, dataEvents(), TABLET).events.find((e) => e.kind === "dice")!;
+    const dice0 = start(noMorale, kiriActs(), TABLET).events.find((e) => e.kind === "dice")!;
     expect(dice0.kind === "dice" && dice0.rows.length).toBe(2);
     expect(dice0.kind === "dice" && dice0.rule.params).toEqual({ diff: -1 });
     // 士気のランクの judgeBonus が 0 なら補正の行は出さない（2 行・差 −1）
     const zero = patch(s0, 5, { stats: { ...s0.party[5]!.stats, iq } });
-    const d0 = dataEvents((x) => (x.config.town.innRanks.find((r) => r.id === "good")!.judgeBonus = 0));
+    const d0 = kiriActs((x) => (x.config.town.innRanks.find((r) => r.id === "good")!.judgeBonus = 0));
     const dice1 = start(zero, d0, TABLET).events.find((e) => e.kind === "dice")!;
     expect(dice1.kind === "dice" && dice1.rows.length).toBe(2);
     expect(dice1.kind === "dice" && dice1.rule.params).toEqual({ diff: -1 });
@@ -341,8 +438,7 @@ describe("制止判定（EV-15, EV-20〜22）", () => {
     fin.equipment.shield = shield;
     const item = itemDisplayName(s0, data, shield);
     const m = cloneRng(s0.rng);
-    rollDie(m, 6);
-    rollDie(m, 6);
+    rollDie(m, 100); // 衝動の d100（行動者だけが振る）
     const rS = rollDie(m, 10);
     const rA = rollDie(m, 10);
     const iq = 15 + rA - rS - 2; // 補正なしなら差 −2
@@ -351,7 +447,7 @@ describe("制止判定（EV-15, EV-20〜22）", () => {
       [iq - 1, false, -1],
     ] as const) {
       const s = patch(s0, 5, { stats: { ...fin.stats, iq: v } });
-      const ctx = start(s, dataEvents(), TABLET);
+      const ctx = start(s, kiriActs(), TABLET);
       const dice = ctx.events.find((e) => e.kind === "dice")!;
       expect(dice).toEqual({
         kind: "dice",
@@ -365,12 +461,12 @@ describe("制止判定（EV-15, EV-20〜22）", () => {
         rule: { key: "dice.restrain.rule", params: { diff } },
         result: { key: ok ? "dice.restrain.ok" : "dice.restrain.ng" },
       });
-      if (ok) expect(ctx.state.rng).toEqual(m); // 1d6 × 2 と 1d10 × 2 だけ（補正の行は乱数を使わない。制止できたので結果の抽選も無い）
+      if (ok) expect(ctx.state.rng).toEqual(m); // 衝動の d100 × 1 と 1d10 × 2 だけ（補正の行は乱数を使わない。制止できたので結果の抽選も無い）
     }
     // 士気なしで盾だけなら 3 行（盾の行だけ）で差 −1
     const noMorale = patch(s0, 5, { stats: { ...fin.stats, iq } });
     noMorale.morale = null;
-    const d1 = start(noMorale, dataEvents(), TABLET).events.find((e) => e.kind === "dice")!;
+    const d1 = start(noMorale, kiriActs(), TABLET).events.find((e) => e.kind === "dice")!;
     expect(d1.kind === "dice" && d1.rows.map((r) => r.label.key)).toEqual(["dice.restrain.stopper", "dice.bonus.skill", "dice.restrain.actor"]);
     expect(d1.kind === "dice" && d1.rule.params).toEqual({ diff: -1 });
   });
@@ -380,11 +476,10 @@ describe("制止判定（EV-15, EV-20〜22）", () => {
     let s = patch(state, 5, { stats: { ...state.party[5]!.stats, iq: 100 }, san: 50 }); // フィンは必ず止める
     s = patch(s, 2, { san: 50 });
     const m = cloneRng(s.rng);
-    rollDie(m, 6);
-    rollDie(m, 6);
+    rollDie(m, 100); // 衝動の d100（行動者だけが振る）
     const rS = rollDie(m, 10);
     const rA = rollDie(m, 10);
-    const ctx = start(s, dataEvents(), TABLET);
+    const ctx = start(s, kiriActs(), TABLET);
     expect(ctx.events).toEqual([
       { kind: "eventStarted", eventId: TABLET, actorId: "c3" },
       { kind: "message", key: "event.glowing_tablet.intro" },
@@ -419,7 +514,7 @@ describe("制止判定（EV-15, EV-20〜22）", () => {
     expect(ctx.state.dive!.clearedCells).toEqual([]); // B10: 選択の保留中はまだ通常セルにしない
     expectStateInvariants(ctx.state);
     // impulse 型は「何も起きない」で終わり、セルを通常にする
-    const ctx2 = start(s, dataEvents((x) => (eventOf(x, TABLET).kind = "impulse")), TABLET);
+    const ctx2 = start(s, kiriActs((x) => (eventOf(x, TABLET).kind = "impulse")), TABLET);
     expect(kinds(ctx2.events).slice(-4)).toEqual(["message:event.stop.success", "sanChanged", "sanChanged", "message:event.nothing"]);
     expect(ctx2.state.screen).toBe("dungeon");
     expect(ctx2.state.pendingChoice).toBeNull();
@@ -435,11 +530,10 @@ describe("衝動の実行（EV-23, EV-24, EV-30）", () => {
     s = patch(s, 5, { stats: { ...s.party[5]!.stats, iq: -100 } });
     return patch(s, 2, { hp: 30, hpMax: 30 });
   }
-  /** 失敗までの乱数（1d6 ×2、1d10 ×2）を引いた鏡 */
+  /** 失敗までの乱数（衝動の d100 ×1、1d10 ×2）を引いた鏡 */
   function mirrorToFail(s: GameState): RngState {
     const m = cloneRng(s.rng);
-    rollDie(m, 6);
-    rollDie(m, 6);
+    rollDie(m, 100); // 衝動の d100（行動者だけが振る）
     rollDie(m, 10);
     rollDie(m, 10);
     return m;
@@ -452,7 +546,7 @@ describe("衝動の実行（EV-23, EV-24, EV-30）", () => {
     const s = failing(state);
     const m = mirrorToFail(s);
     weightedIndex(m, [3, 0, 0]);
-    const ctx = start(s, dataEvents((x) => outcomeOnly(x, TABLET, "good")), TABLET);
+    const ctx = start(s, kiriActs((x) => outcomeOnly(x, TABLET, "good")), TABLET);
     expect(afterFail(ctx)).toEqual([
       { kind: "message", key: "event.glowing_tablet.impulse", params: { actor: "キリ" } },
       { kind: "message", key: "event.glowing_tablet.good", params: { actor: "キリ" } },
@@ -471,7 +565,7 @@ describe("衝動の実行（EV-23, EV-24, EV-30）", () => {
     weightedIndex(m2, [5, 0]);
     const g1 = rollDice(m2, "5d10").total;
     const g2 = rollDice(m2, "2d10").total;
-    const ctx2 = start(s2, dataEvents((x) => outcomeOnly(x, SACK, "good")), SACK);
+    const ctx2 = start(s2, donaActs((x) => outcomeOnly(x, SACK, "good")), SACK);
     const actor = ctx2.events.find((e) => e.kind === "eventStarted");
     const name = s2.party.find((c) => actor?.kind === "eventStarted" && c.id === actor.actorId)!.name;
     expect(afterFail(ctx2)).toEqual([
@@ -493,7 +587,7 @@ describe("衝動の実行（EV-23, EV-24, EV-30）", () => {
     const m = mirrorToFail(s);
     weightedIndex(m, [0, 0, 4]);
     const dmg = rollDice(m, "1d6").total;
-    const ctx = start(s, dataEvents((x) => outcomeOnly(x, TABLET, "bad")), TABLET);
+    const ctx = start(s, kiriActs((x) => outcomeOnly(x, TABLET, "bad")), TABLET);
     expect(afterFail(ctx)).toEqual([
       { kind: "message", key: "event.glowing_tablet.impulse", params: { actor: "キリ" } },
       { kind: "message", key: "event.glowing_tablet.bad", params: { actor: "キリ" } },
@@ -507,7 +601,7 @@ describe("衝動の実行（EV-23, EV-24, EV-30）", () => {
     const mn = mirrorToFail(s);
     weightedIndex(mn, [0, 3, 0]);
     const g = rollDice(mn, "2d6").total;
-    const ctxN = start(s, dataEvents((x) => outcomeOnly(x, TABLET, "neutral")), TABLET);
+    const ctxN = start(s, kiriActs((x) => outcomeOnly(x, TABLET, "neutral")), TABLET);
     expect(afterFail(ctxN)).toEqual([
       { kind: "message", key: "event.glowing_tablet.impulse", params: { actor: "キリ" } },
       { kind: "message", key: "event.glowing_tablet.neutral", params: { actor: "キリ" } },
@@ -522,7 +616,7 @@ describe("衝動の実行（EV-23, EV-24, EV-30）", () => {
     let s = sanAll(state, 80);
     s = patch(patch(s, 1, { personality: "normal" }), 5, { personality: "normal" });
     s = patch(s, 2, { hp: 30, hpMax: 30 });
-    const good = start(s, dataEvents((x) => outcomeOnly(x, TABLET, "good")), TABLET);
+    const good = start(s, kiriActs((x) => outcomeOnly(x, TABLET, "good")), TABLET);
     expect(kinds(good.events)).toEqual([
       "eventStarted",
       "message:event.glowing_tablet.intro",
@@ -531,10 +625,10 @@ describe("衝動の実行（EV-23, EV-24, EV-30）", () => {
       "message:event.glowing_tablet.good",
       "sanChanged", // −2 だけ（+4 の bonus は無い）
     ]);
-    const bad = start(s, dataEvents((x) => outcomeOnly(x, TABLET, "bad")), TABLET);
+    const bad = start(s, kiriActs((x) => outcomeOnly(x, TABLET, "bad")), TABLET);
     expect(kinds(bad.events)).not.toContain("message:event.stop.told");
     // stopCheck 偽（慎重はいる）でも同じ
-    const noStop = start(failing(state), dataEvents((x) => {
+    const noStop = start(failing(state), kiriActs((x) => {
       eventOf(x, TABLET).stopCheck = false;
       outcomeOnly(x, TABLET, "good");
     }), TABLET);
@@ -550,12 +644,11 @@ describe("衝動の実行（EV-23, EV-24, EV-30）", () => {
     for (let k = 1; k <= 40; k++) {
       const s = withRng(s0, k);
       const m = cloneRng(s.rng);
-      rollDie(m, 6);
-      rollDie(m, 6);
+      rollDie(m, 100); // 衝動の d100（行動者だけが振る）
       const o = def.impulseOutcomes[weightedIndex(m, [3, 3, 4])]!;
       if (o.quality === "neutral") rollDice(m, "2d6");
       if (o.quality === "bad") rollDice(m, "1d6");
-      const ctx = start(s, dataEvents(), TABLET);
+      const ctx = start(s, kiriActs(), TABLET);
       expect(kinds(ctx.events)).toContain(`message:${o.text}`);
       expect(ctx.state.rng).toEqual(m);
       seen.add(o.quality);
@@ -578,12 +671,11 @@ describe("衝動の実行（EV-23, EV-24, EV-30）", () => {
     for (let k = 1; k <= 40; k++) {
       const s = withRng(s0, k);
       const m = cloneRng(s.rng);
-      rollDie(m, 6);
-      rollDie(m, 6);
+      rollDie(m, 100); // 衝動の d100（行動者だけが振る）
       const o = def.impulseOutcomes[weightedIndex(m, [4, 3, 4])]!;
       if (o.quality === "neutral") rollDice(m, "2d6");
       if (o.quality === "bad") rollDice(m, "1d6");
-      const ctx = start(s, dataEvents(), TABLET);
+      const ctx = start(s, kiriActs(), TABLET);
       expect(kinds(ctx.events), String(k)).toContain(`message:${o.text}`);
       expect(ctx.state.rng, String(k)).toEqual(m);
       seen.add(o.quality);
@@ -760,10 +852,10 @@ describe("効果（EV-32）", () => {
 // 迷宮から（execute 経由）。DG-22 / EV-13 / EV-33 / A4
 
 describe("イベントのセル（DG-22, EV-13, EV-33）", () => {
-  /** 衝動が起きない data（閾値 1000）。遭遇率は room / corridor とも rate */
+  /** 衝動が起きない data（cap 0。M11 まで閾値 1000）。遭遇率は room / corridor とも rate */
   const calm = (rate = 0) =>
     dataEvents((x) => {
-      x.config.events.impulseThreshold = 1000;
+      x.config.events.cap = 0;
       for (const def of x.dungeons) def.encounterRate = { room: rate, corridor: rate };
     });
   const choiceOf = (id: string) => ({
@@ -776,9 +868,7 @@ describe("イベントのセル（DG-22, EV-13, EV-33）", () => {
   test("EV-13 衝動なしの mixed は選択型: screen{event}、pendingChoice kind event（promptKey = intro、labelKey = event.<id>.choice.<id>、eventId）、遭遇の d100 を振らない", () => {
     for (const id of [TABLET, SACK]) {
       const { state, a } = atEvent(id);
-      const m = cloneRng(state.rng);
-      rollDie(m, 6); // キリ
-      rollDie(m, 6); // ドナ（遭遇の d100 は振らない）
+      const m = cloneRng(state.rng); // cap 0 なので衝動の d100 は誰も振らない（遭遇の d100 も振らない）
       const r = run(state, MOVE, calm(1)); // 遭遇率 1 でも戦闘にならない
       expect(r.events).toEqual([
         { kind: "moved", pos: a.target, facing: a.facing },
@@ -872,14 +962,13 @@ describe("イベントのセル（DG-22, EV-13, EV-33）", () => {
 
   test("DG-22/CB-01 イベントセルでは遭遇の d100 を振らない（rate 1 でも戦闘にならない。衝動で決着する歩も）", () => {
     const { state } = atEvent(TABLET);
-    const d1 = dataEvents((x) => {
+    const d1 = kiriActs((x) => {
       for (const def of x.dungeons) def.encounterRate = { room: 1, corridor: 1 };
       eventOf(x, TABLET).stopCheck = false;
       outcomeOnly(x, TABLET, "good");
     });
     const m = cloneRng(state.rng);
-    rollDie(m, 6);
-    rollDie(m, 6);
+    rollDie(m, 100); // キリ
     weightedIndex(m, [3, 0, 0]);
     const r = run(state, MOVE, d1);
     expect(r.state.battle).toBeNull();
@@ -890,8 +979,8 @@ describe("イベントのセル（DG-22, EV-13, EV-33）", () => {
     const { state } = atEvent(TABLET);
     const s = sanAll(state, 5);
     for (const c of s.party) c.hp = 1;
-    const d = dataEvents((x) => {
-      x.config.san.confusedRatio = 0.01; // SAN 5 を不安（錯乱でない）にして、衝動の乱数を既定の 2 人の 1d6 に保つ
+    const d = kiriActs((x) => {
+      x.config.san.confusedRatio = 0.01; // SAN 5 を不安（錯乱でない）にして、衝動の乱数をキリの d100 だけに保つ
       eventOf(x, TABLET).stopCheck = false;
       outcomeOnly(x, TABLET, "bad");
     });
@@ -1003,8 +1092,8 @@ describe("M9 のイベント（EV-53〜55, DG-22）", () => {
   const BOX = "sunken_offering_box";
   const FONT = "murmuring_font";
   const PILGRIM = "pinned_pilgrim";
-  /** 衝動が起きない data（閾値 1000、遭遇率 0） */
-  const calm = () => dataEvents((x) => (x.config.events.impulseThreshold = 1000));
+  /** 衝動が起きない data（cap 0。M11 まで閾値 1000。遭遇率 0） */
+  const calm = () => dataEvents((x) => (x.config.events.cap = 0));
   /** ベルクを普通にし、フィン（慎重）の iq を −100 にして必ず制止に失敗させる。全員 SAN 80 */
   function failing(s0: GameState): GameState {
     let s = sanAll(s0, 80);
@@ -1039,15 +1128,16 @@ describe("M9 のイベント（EV-53〜55, DG-22）", () => {
 
   test("EV-53 沈んだ献金箱: 強欲のドナが衝動で掴み、制止に失敗すると good の 6d10 と impulseBonus の 3d10（金ごとに強欲 +2）。bad は 2d4 と SAN −3 と言わんこっちゃない", () => {
     const { state } = onEvent(BOX, "d02");
-    const s = patch(failing(state), 2, { personality: "normal" }); // キリを普通にして 1d6 はドナだけ
+    const s = patch(failing(state), 2, { personality: "normal" }); // キリを普通にして d100 はドナだけ
+    const boxDona = (mut: (d: GameData) => void) => oneActor(BOX, "priest", mut); // ドナの d100 を必ず成功させる
     const m = cloneRng(s.rng);
-    rollDie(m, 6); // ドナ
+    rollDie(m, 100); // ドナ
     rollDie(m, 10); // フィン（制止者）
     rollDie(m, 10); // ドナ
     weightedIndex(m, [4, 0, 0]);
     const g1 = rollDice(m, "6d10").total;
     const g2 = rollDice(m, "3d10").total;
-    const ctx = start(s, dataEvents((x) => outcomeOnly(x, BOX, "good")), BOX);
+    const ctx = start(s, boxDona((x) => outcomeOnly(x, BOX, "good")), BOX);
     expect(ctx.events.find((e) => e.kind === "eventStarted")).toEqual({ kind: "eventStarted", eventId: BOX, actorId: "c4" });
     expect(afterFail(ctx)).toEqual([
       { kind: "message", key: "event.sunken_offering_box.impulse", params: { actor: "ドナ" } },
@@ -1060,12 +1150,12 @@ describe("M9 のイベント（EV-53〜55, DG-22）", () => {
     expect(ctx.state.gold).toBe(s.gold + g1 + g2);
     expect(ctx.state.rng).toEqual(m);
     const mb = cloneRng(s.rng);
-    rollDie(mb, 6);
+    rollDie(mb, 100);
     rollDie(mb, 10);
     rollDie(mb, 10);
     weightedIndex(mb, [0, 0, 4]);
     const dmg = rollDice(mb, "2d4").total;
-    const bad = start(s, dataEvents((x) => outcomeOnly(x, BOX, "bad")), BOX);
+    const bad = start(s, boxDona((x) => outcomeOnly(x, BOX, "bad")), BOX);
     const hp = s.party[3]!.hp;
     expect(afterFail(bad)).toEqual([
       { kind: "message", key: "event.sunken_offering_box.impulse", params: { actor: "ドナ" } },
@@ -1103,13 +1193,13 @@ describe("M9 のイベント（EV-53〜55, DG-22）", () => {
   test("EV-54 囁く洗礼盤: good は revealStairs（2 階の下り階段のセルが explored に入る）と SAN −2、impulseBonus +4。bad は全員 SAN −6", () => {
     const { state } = onEvent(FONT, "d02");
     const s = failing(state);
+    const fontKiri = (mut: (d: GameData) => void) => oneActor(FONT, "thief", mut); // キリの d100 を必ず成功させる（ドナは対象外）
     const m = cloneRng(s.rng);
-    rollDie(m, 6); // キリ
-    rollDie(m, 6); // ドナ
+    rollDie(m, 100); // キリ
     rollDie(m, 10);
     rollDie(m, 10);
     weightedIndex(m, [3, 0, 0]);
-    const ctx = start(s, dataEvents((x) => outcomeOnly(x, FONT, "good")), FONT);
+    const ctx = start(s, fontKiri((x) => outcomeOnly(x, FONT, "good")), FONT);
     expect(afterFail(ctx)).toEqual([
       { kind: "message", key: "event.murmuring_font.impulse", params: { actor: "キリ" } },
       { kind: "message", key: "event.murmuring_font.good", params: { actor: "キリ" } },
@@ -1122,12 +1212,11 @@ describe("M9 のイベント（EV-53〜55, DG-22）", () => {
     expect(ctx.state.dive!.explored["2"]).toContain(idx(f, f.stairsDown!.x, f.stairsDown!.y));
     expect(ctx.state.dive!.explored["2"]!.length).toBeLessThan(f.width * f.height); // 全景ではない
     const mb = cloneRng(s.rng);
-    rollDie(mb, 6);
-    rollDie(mb, 6);
+    rollDie(mb, 100);
     rollDie(mb, 10);
     rollDie(mb, 10);
     weightedIndex(mb, [0, 0, 4]);
-    const bad = start(s, dataEvents((x) => outcomeOnly(x, FONT, "bad")), FONT);
+    const bad = start(s, fontKiri((x) => outcomeOnly(x, FONT, "bad")), FONT);
     expect(afterFail(bad).slice(2, 8)).toEqual(s.party.map((c) => ({ kind: "sanChanged", id: c.id, delta: -6, san: 74 })));
     expect(bad.state.rng).toEqual(mb);
   });
@@ -1151,13 +1240,12 @@ describe("M9 のイベント（EV-53〜55, DG-22）", () => {
     expect(eventOf(data, PILGRIM).stopCheck).toBe(false);
     const { state } = onEvent(PILGRIM, "d02");
     let s = sanAll(state, 80);
-    s = patch(s, 5, { stats: { ...s.party[5]!.stats, str: -100 } }); // フィンは 1d6 を振るが閾値に届かない → 行動者はベルク
+    const berk = (mut: (d: GameData) => void) => oneActor(PILGRIM, "fighter", mut); // 行動者をベルクに固定（フィンは盗賊で対象外）
     const m = cloneRng(s.rng);
-    rollDie(m, 6); // ベルク
-    rollDie(m, 6); // フィン（制止の 1d10 は振らない）
+    rollDie(m, 100); // ベルク（制止の 1d10 は振らない）
     weightedIndex(m, [3, 0]);
     const g = rollDice(m, "3d10").total;
-    const ctx = start(s, dataEvents((x) => outcomeOnly(x, PILGRIM, "good")), PILGRIM);
+    const ctx = start(s, berk((x) => outcomeOnly(x, PILGRIM, "good")), PILGRIM);
     expect(ctx.events).toEqual([
       { kind: "eventStarted", eventId: PILGRIM, actorId: "c2" },
       { kind: "message", key: "event.pinned_pilgrim.intro" },
@@ -1170,7 +1258,7 @@ describe("M9 のイベント（EV-53〜55, DG-22）", () => {
     ]);
     expect(ctx.state.rng).toEqual(m);
     // 対照: stopCheck を真にすると制止判定が起きる
-    const withStop = start(s, dataEvents((x) => {
+    const withStop = start(s, berk((x) => {
       eventOf(x, PILGRIM).stopCheck = true;
       outcomeOnly(x, PILGRIM, "good");
     }), PILGRIM);

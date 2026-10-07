@@ -70,7 +70,7 @@
     "tavernEventTurns": 200,
     "tavernEventChance": 30
   },
-  "events": { "impulseThreshold": 8, "stopSanGain": 3, "confusedLureWeight": 2 },
+  "events": { "lureMul": 12, "cap": 60, "floor": 0, "stopSanGain": 3, "confusedLureWeight": 2 },
   "save": { "maxGames": 5, "schemaVersion": 5 },
   "input": { "swipeThresholdPx": 28, "holdRepeatMs": 250, "edgeDeadZonePx": 12 },
   "ui": {

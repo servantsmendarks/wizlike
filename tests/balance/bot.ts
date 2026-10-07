@@ -111,6 +111,13 @@ type Method = "thread" | "walk" | "cap" | "wipe" | "teleport"; // teleport は M
  */
 type DeathRecord = { cause: string; monster: boolean; floor: number; status: string[] };
 
+/**
+ * M11-EV（2026-10-08 ユーザー指示「計測で衝動の発生率を記録」）: イベント 1 種の衝動判定の数。starts はイベントの開始（eventStarted）の数
+ * （= 衝動判定の回数。対象者がいなくても数える）、impulses はそのうち行動者が決まった数（eventStarted に actorId がある）、stopped は
+ * そのうち制止に成功した数（event.stop.success）、byPersonality は行動者の性格ごとの数
+ */
+type ImpulseTally = { starts: number; impulses: number; stopped: number; byPersonality: Record<string, number> };
+
 /** 潜行 1 回分（潜行 → 街の手順）の記録 */
 type DiveRecord = {
   method: Method;
@@ -177,6 +184,7 @@ type DiveRecord = {
   armorBoughtByLevel: Record<string, number>; // そのうち買った品の Lv（= その時点の流通レベル）ごとの数
   outfitCost: number; // その 2 つの購入の費用の合計
   outfitSoldGold: number; // 外した品を売った収入の合計
+  impulses: Record<string, ImpulseTally>; // M11-EV: イベントの id ごとの衝動判定の数
 };
 
 export type CampaignResult = { seed: number; startAssets: number; dives: DiveRecord[]; aborted: boolean };
@@ -293,6 +301,7 @@ export class Campaign {
   encounterGroups: Record<string, number> = {};
   encounterUnits: Record<string, number> = {};
   antidotes = 0;
+  impulses: Record<string, ImpulseTally> = {}; // M11-EV
   // M9 進行ボット（潜行ごとにリセット）
   floorNo = 1; // floor / homeDist / near を作った階
   deepest = 1;
@@ -322,6 +331,7 @@ export class Campaign {
     if (r.events[0]?.kind === "rejected") throw new Error(`seed ${this.seed}: ${JSON.stringify(cmd)} rejected: ${JSON.stringify(r.events[0])}`);
     this.countChest(from, r.events);
     this.countDeaths(from, r.events);
+    this.countImpulses(from, r.events);
     // 入力を積むだけの battle.input と向きを変えるだけの dungeon.turn は時間の都合で省く（decisions の H9 の行）
     if (cmd.type !== "battle.input" && cmd.type !== "dungeon.turn") expectStateInvariants(r.state);
     expectKnownStringKeys(r.events);
@@ -348,6 +358,22 @@ export class Campaign {
       if (x.kind !== "message") continue;
       if (x.key === "item.found") this.chestItems += 1;
       else if (x.key === "item.leftBehind") this.chestLeft += 1;
+    }
+  }
+
+  /** M11-EV: eventStarted（衝動判定の後に出る。行動者がいれば actorId）と、その後の event.stop.success をイベントの id ごとに数える */
+  countImpulses(from: GameState, events: GameEvent[]): void {
+    let cur: ImpulseTally | null = null;
+    for (const e of events) {
+      if (e.kind === "eventStarted") {
+        const t = (this.impulses[e.eventId] ??= { starts: 0, impulses: 0, stopped: 0, byPersonality: {} });
+        t.starts += 1;
+        cur = t;
+        if (e.actorId === undefined) continue;
+        t.impulses += 1;
+        const p = from.party.find((c) => c.id === e.actorId)?.personality ?? "none";
+        t.byPersonality[p] = (t.byPersonality[p] ?? 0) + 1;
+      } else if (cur !== null && e.kind === "message" && e.key === "event.stop.success") cur.stopped += 1;
     }
   }
 
@@ -667,6 +693,7 @@ export class Campaign {
     this.encounterGroups = {};
     this.encounterUnits = {};
     this.antidotes = 0;
+    this.impulses = {};
     const down = this.state.party.filter((c) => c.life !== "alive").map((c) => c.id);
     expect(down.filter((id) => !this.unpaidLeft.includes(id))).toEqual([]); // 定義（unpaidLeft）のとおり、残った理由は所持金不足だけ
     this.unpaidAtStart = down.length;
@@ -1031,6 +1058,7 @@ export class Campaign {
         encounterGroups: this.encounterGroups,
         encounterUnits: this.encounterUnits,
         antidotes: this.antidotes,
+        impulses: this.impulses,
         poisonedAtHome: this.state.party.filter((c) => c.life === "alive" && c.status.includes("poison")).length,
         cureCount: 0,
         cureCost: 0,
@@ -1142,6 +1170,7 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
   lines.push(`（参考）誰か 1 人が L2 の最初の潜行: ${partsAny.join(" / ")}`);
   lines.push(...deathReport(results, dives));
   lines.push(...curingReport(results, dives));
+  lines.push(...impulseReport(results.flatMap((r) => r.dives)));
   return lines.join("\n");
 }
 
@@ -1174,6 +1203,7 @@ export function progressReport(results: CampaignResult[], kind: BotKind = PROGRE
     lines.push(...diveLines(label, ds));
     if (k === 0 && ds.length > 0) lines.push(`  ${stats("d02 の潜行 1 の開始時（直前の宿の後）の最小 level", results.flatMap((r) => { const i = r.dives.findIndex((x) => x.dungeonId === "d02"); return i > 0 ? [r.dives[i - 1]!.minLevelAfter] : []; }))}`);
   }
+  lines.push(...impulseReport(results.flatMap((r) => r.dives)));
   return lines.join("\n");
 }
 
@@ -1228,6 +1258,38 @@ function diveLines(label: string, ds: readonly DiveRecord[], floor?: number): st
       }
     causeLine(`${floor} 階だけの死因`, deaths.filter((x) => x.floor === floor), fg);
   }
+  return lines;
+}
+
+/**
+ * M11-EV（2026-10-08 ユーザー指示）: イベントごとの衝動の発生率（衝動 ÷ イベントの開始）と制止の数、行動者の性格の内訳。
+ * イベントの開始は衝動判定の回数（EV-10〜14 の確率型。対象者の能力値・SAN はその時点の値なので、式の初期値の確率とは成長や錯乱でずれる）
+ */
+function impulseReport(ds: readonly DiveRecord[]): string[] {
+  const t: Record<string, ImpulseTally> = {};
+  for (const d of ds)
+    for (const [id, x] of Object.entries(d.impulses)) {
+      const a = (t[id] ??= { starts: 0, impulses: 0, stopped: 0, byPersonality: {} });
+      a.starts += x.starts;
+      a.impulses += x.impulses;
+      a.stopped += x.stopped;
+      for (const [p, n] of Object.entries(x.byPersonality)) a.byPersonality[p] = (a.byPersonality[p] ?? 0) + n;
+    }
+  const ids = data.events.map((e) => e.id).filter((id) => t[id] !== undefined);
+  const lines = ["M11-EV: イベントの衝動（衝動 / イベントの開始 = 発生率。制止はそのうち制止に成功した数。行動者の性格）"];
+  const all = { starts: 0, impulses: 0, stopped: 0 };
+  for (const id of ids) {
+    const x = t[id]!;
+    all.starts += x.starts;
+    all.impulses += x.impulses;
+    all.stopped += x.stopped;
+    const by = Object.entries(x.byPersonality)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([p, n]) => `${p} ${n}`)
+      .join("・");
+    lines.push(`  ${id}: ${x.impulses}/${x.starts}（${pct(x.impulses, x.starts)}）・制止 ${x.stopped}（衝動の ${pct(x.stopped, x.impulses)}）/ 行動者 ${by || "-"}`);
+  }
+  lines.push(`  計: ${all.impulses}/${all.starts}（${pct(all.impulses, all.starts)}）・制止 ${all.stopped}`);
   return lines;
 }
 

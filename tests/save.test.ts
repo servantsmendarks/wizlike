@@ -169,7 +169,7 @@ describe("SV-04 migrate", () => {
 
   test("SV-04 形の検査: screen event（pendingChoice kind event・dive あり・battle null）は通り、pendingChoice が null・別の kind・screen dungeon で kind event なら broken", () => {
     const d = loadFreshData();
-    d.config.events.impulseThreshold = 1000; // 衝動を起こさず選択を待たせる
+    d.config.events.cap = 0; // 衝動を起こさず選択を待たせる
     for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
     const ev = json(execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state);
     expect(ev.screen).toBe("event");
@@ -209,7 +209,7 @@ describe("SV-04 v1 → v2 の移行（M5.5）", () => {
   }
   function eventState(): GameState {
     const d = loadFreshData();
-    d.config.events.impulseThreshold = 1000;
+    d.config.events.cap = 0;
     for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
     return execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state;
   }
@@ -295,7 +295,7 @@ describe("SV-04 v2 → v3 の移行（M7 の A）", () => {
   }
   function eventState(): GameState {
     const d = loadFreshData();
-    d.config.events.impulseThreshold = 1000;
+    d.config.events.cap = 0;
     for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
     return execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state;
   }
@@ -364,7 +364,7 @@ describe("SV-04 v2 → v3 の移行（M7 の A）", () => {
 describe("SV-04 v3 → v4 の移行（M7 の B。IT-80）", () => {
   function eventState(): GameState {
     const d = loadFreshData();
-    d.config.events.impulseThreshold = 1000;
+    d.config.events.cap = 0;
     for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
     return execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state;
   }
@@ -510,7 +510,7 @@ describe("SV-04 v3 → v4 の移行（M7 の B。IT-80）", () => {
 describe("SV-04 v4 → v5 の移行（M10。CH-63）", () => {
   function eventState(): GameState {
     const d = loadFreshData();
-    d.config.events.impulseThreshold = 1000;
+    d.config.events.cap = 0;
     for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
     return execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state;
   }

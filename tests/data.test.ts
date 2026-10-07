@@ -223,6 +223,21 @@ describe("data: config.json", () => {
     expect(issuesOf((r) => (r.config.events.confusedLureWeight = 0))).toEqual([]);
     expect(issuesOf((r) => (r.config.events.confusedLureWeight = 3))).toEqual([]);
   });
+  test("data: EV-11 events.lureMul は 0 以上、cap・floor は 0..100 の整数で floor ≤ cap【仮】。impulseThreshold は無い（M11）", () => {
+    expect([config.events.lureMul, config.events.cap, config.events.floor]).toEqual([12, 60, 0]);
+    expect("impulseThreshold" in config.events).toBe(false);
+    expectIssue((r) => (r.config.events.impulseThreshold = 8), "config.json", "events.impulseThreshold: unknown field");
+    expectIssue((r) => (r.config.events.lureMul = -1), "config.json", "events.lureMul: expected integer >= 0, got -1");
+    expectIssue((r) => (r.config.events.lureMul = 1.5), "config.json", "events.lureMul: expected integer");
+    expectIssue((r) => (r.config.events.cap = 101), "config.json", "events.cap: expected integer in 0..100, got 101");
+    expectIssue((r) => (r.config.events.floor = -1), "config.json", "events.floor: expected integer in 0..100, got -1");
+    expectIssue((r) => delete r.config.events.cap, "config.json", "events.cap: missing required field");
+    expectIssue((r) => delete r.config.events.floor, "config.json", "events.floor: missing required field");
+    expectIssue((r) => (r.config.events.floor = 61), "config.json", "events.floor: EV-11: floor 61 > cap 60");
+    expect(issuesOf((r) => (r.config.events.floor = 60))).toEqual([]);
+    expect(issuesOf((r) => (r.config.events.cap = 0))).toEqual([]);
+    expect(issuesOf((r) => (r.config.events.lureMul = 0))).toEqual([]);
+  });
   test("data: CB-05 combat.identifyIqPerPoint は 0 以上の整数【仮】", () => {
     expectIssue((r) => (r.config.combat.identifyIqPerPoint = -1), "config.json", "combat.identifyIqPerPoint: expected integer >= 0, got -1");
     expectIssue((r) => (r.config.combat.identifyIqPerPoint = 0.5), "config.json", "combat.identifyIqPerPoint: expected integer");
@@ -1284,6 +1299,14 @@ describe("data: events.json", () => {
   test("data: EV-34 文言キーが strings.json にある", () => {
     expectIssue((r) => (r.events[0].text.intro = "event.nope"), "events.json", '[0].text.intro: unknown strings.json key "event.nope"');
     expectIssue((r) => (r.events[1].choices[0].text = "event.nope2"), "events.json", "[1].choices[0].text: unknown strings.json key");
+  });
+  test("data: EV-04 impulseClasses は省略可。あれば職業の id の 1 件以上の重複なしの一覧（M11）", () => {
+    expect(issuesOf((r) => (r.events[0].impulseClasses = ["thief"]))).toEqual([]);
+    expect(issuesOf((r) => (r.events[0].impulseClasses = ["thief", "priest"]))).toEqual([]);
+    expectIssue((r) => (r.events[0].impulseClasses = ["ninja"]), "events.json", '[0].impulseClasses[0]: unknown class id "ninja"');
+    expectIssue((r) => (r.events[0].impulseClasses = []), "events.json", "[0].impulseClasses: expected at least 1 element(s), got 0");
+    expectIssue((r) => (r.events[0].impulseClasses = ["thief", "thief"]), "events.json", '[0].impulseClasses[1]: EV-04: duplicate class "thief"');
+    expectIssue((r) => (r.events[0].impulseClasses = "thief"), "events.json", "[0].impulseClasses: expected array");
   });
   test("data: EV-32 効果の型と参照", () => {
     expectIssue((r) => (r.events[2].choices[0].effects[0].itemId = "herbx"), "events.json", '[2].choices[0].effects[0].itemId: unknown item id "herbx"');

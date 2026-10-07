@@ -1,7 +1,7 @@
 // イベント（EV-10〜15 衝動判定、EV-20〜24 制止判定、EV-30〜34 結果、EV-31/33 選択、DG-22）。
 // dungeon.ts から呼ばれる（dungeon.ts は import しない。Floor は引数で受ける）。import の向きは events.ts → field.ts → san.ts。
-// 乱数はすべて ctx.state.rng を処理の順に引く。ただし衝動判定の 1d6 群は eventStarted を出す前に引く（actorId を付けるため。B12）。
-import type { EventDef, EventEffect, GameData, LureWeights } from "../data/index";
+// 乱数はすべて ctx.state.rng を処理の順に引く。ただし衝動判定の d100 群（M10.5 までは 1d6）は eventStarted を出す前に引く（actorId を付けるため。B12）。
+import type { EventDef, EventEffect, GameData, LureWeights, StatKey } from "../data/index";
 import { LURE_TAGS } from "../data/index";
 import { randInt, rollDice, rollDie, weightedIndex } from "../rng";
 import { destroyItemInstance, eventOf, itemDisplayName, itemOf, moraleOf, personalityOf } from "../state";
@@ -23,18 +23,32 @@ export function lureProduct(lure: LureWeights, ev: LureWeights): number {
   return sum;
 }
 
+/** EV-04 / EV-11（M11）: 衝動判定の仕様。EventDef はそのまま渡せる（宝箱 EV-16 は config から作る） */
+export type ImpulseSpec = { lure: LureWeights; stat: StatKey; impulseClasses?: readonly string[] };
+
 /**
- * EV-10〜14 / A2: 衝動の行動者。リーダーと行動不能の者は対象外。並び順に、錯乱（CH-53）の者は先に randInt(0,3) で
- * LURE_TAGS のタグを 1 つ選び、性格の lure をそのタグだけ events.confusedLureWeight の重みに置き換える（加算しない）。
- * 誘いの積が 0 以下の者は 1d6 も振らない。score = 積 + (stats[def.stat] − 10) + 1d6 が impulseThreshold 以上の者のうち最大、
- * 同点は agi が高い方、それも同じなら並び順が前の者。誰もいなければ null
+ * EV-11（M11）: 衝動確率（%）= clamp(floor, cap, 誘いの積 × lureMul + (能力値 − 10))。
+ * 誘いの積が 0 以下の者は衝動判定に乗らないので呼ばない（decideImpulse が 0 を返す扱いにする）
  */
-export function decideImpulse(ctx: RuleContext, def: EventDef): Character | null {
+export function impulseChance(prod: number, stat: number, cfg: GameData["config"]): number {
+  const raw = prod * cfg.events.lureMul + (stat - 10);
+  return Math.min(cfg.events.cap, Math.max(cfg.events.floor, raw));
+}
+
+/**
+ * EV-04 / EV-10〜14 / A2（M11 で確率型）: 衝動の行動者。リーダー・行動不能の者・spec.impulseClasses の外の職業の者は対象外
+ * （乱数も引かない）。並び順に、錯乱（CH-53）の者は先に randInt(0,3) で LURE_TAGS のタグを 1 つ選び、性格の lure を
+ * そのタグだけ events.confusedLureWeight の重みに置き換える（加算しない）。誘いの積が 0 以下の者と確率 p が 0 以下の者は
+ * d100 を振らない。d100 ≤ p で成功。成功者のうち p − 出目 が最大の者、同点は agi が高い方、それも同じなら並び順が前の者。
+ * 成功者がいなければ null
+ */
+export function decideImpulse(ctx: RuleContext, spec: ImpulseSpec): Character | null {
   const { state, data } = ctx;
   const cfg = data.config;
-  let best: { ch: Character; score: number; agi: number } | null = null;
+  let best: { ch: Character; margin: number; agi: number } | null = null;
   for (const ch of state.party) {
     if (ch.isLeader || !canAct(ch)) continue; // EV-10
+    if (spec.impulseClasses !== undefined && !spec.impulseClasses.includes(ch.classId)) continue; // EV-04
     const p = personalityOf(data, ch.personality);
     if (p === null) continue; // リーダー以外は性格を持つ（来ない）
     let lure: LureWeights = p.lure;
@@ -43,12 +57,15 @@ export function decideImpulse(ctx: RuleContext, def: EventDef): Character | null
       const tag = LURE_TAGS[randInt(state.rng, 0, LURE_TAGS.length - 1)]!;
       lure = { treasure: 0, unknown: 0, danger: 0, weak: 0, [tag]: cfg.events.confusedLureWeight };
     }
-    const prod = lureProduct(lure, def.lure);
+    const prod = lureProduct(lure, spec.lure);
     if (prod <= 0) continue; // A2: 誘いの積 0 の者は衝動判定に乗らない
     const stats = effectiveStats(state, data, ch); // CH-13
-    const score = prod + (stats[def.stat] - 10) + rollDie(state.rng, 6);
-    if (score < cfg.events.impulseThreshold) continue; // EV-12
-    if (best === null || score > best.score || (score === best.score && stats.agi > best.agi)) best = { ch, score, agi: stats.agi };
+    const chance = impulseChance(prod, stats[spec.stat], cfg); // EV-11
+    if (chance <= 0) continue; // 0% は振らない（結果は同じ）
+    const roll = rollDie(state.rng, 100);
+    if (roll > chance) continue; // EV-11
+    const margin = chance - roll; // EV-12
+    if (best === null || margin > best.margin || (margin === best.margin && stats.agi > best.agi)) best = { ch, margin, agi: stats.agi };
   }
   return best?.ch ?? null;
 }
@@ -220,7 +237,7 @@ function leaderOf(state: GameState): Character {
 export function startEvent(ctx: RuleContext, f: Floor, eventId: string): void {
   const { state, data } = ctx;
   const def = eventOf(data, eventId);
-  const actor = def.kind === "choice" ? null : decideImpulse(ctx, def); // 1d6 群（B12: eventStarted の前）
+  const actor = def.kind === "choice" ? null : decideImpulse(ctx, def); // d100 群（B12: eventStarted の前）
   ctx.events.push({ kind: "eventStarted", eventId, ...(actor !== null ? { actorId: actor.id } : {}) });
   ctx.events.push({ kind: "message", key: def.text.intro });
   if (actor === null) {

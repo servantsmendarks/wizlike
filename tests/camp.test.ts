@@ -925,7 +925,7 @@ describe("UI-53/TW-03 campMenu", () => {
 
   test("UI-53/UI-55 screen event（イベントの選択を待つ間）では campMenu が null", () => {
     const d = loadFreshData();
-    d.config.events.impulseThreshold = 1000; // 衝動を起こさず選択を待たせる
+    d.config.events.cap = 0; // 衝動を起こさず選択を待たせる
     for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
     const r = execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d);
     expect(r.state.screen).toBe("event");

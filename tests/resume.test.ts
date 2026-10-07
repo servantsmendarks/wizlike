@@ -83,7 +83,7 @@ describe("続きから（SV-50）", () => {
 
   test("SV-50/UI-55 screen event は route dungeon、prompts は [intro]（保存と読み込みの往復でも）", async () => {
     const d = loadFreshData();
-    d.config.events.impulseThreshold = 1000; // 衝動を起こさず選択を待たせる
+    d.config.events.cap = 0; // 衝動を起こさず選択を待たせる
     for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
     const ev = execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state;
     expect(ev.screen).toBe("event");

@@ -399,7 +399,13 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       tavernEventTurns: I(POS_INT), // TW-14【仮】
       tavernEventChance: I(PERCENT), // TW-14【仮】
     }),
-    events: F({ impulseThreshold: I(), stopSanGain: I(NON_NEG), confusedLureWeight: I({ min: 0, max: 3 }) }), // EV-14 の仮の重み【仮】
+    events: F({
+      lureMul: I(NON_NEG), // EV-11（M11）【仮】
+      cap: I(PERCENT), // EV-11（M11）【仮】
+      floor: I(PERCENT), // EV-11（M11）【仮】
+      stopSanGain: I(NON_NEG),
+      confusedLureWeight: I({ min: 0, max: 3 }), // EV-14 の仮の重み【仮】
+    }),
     save: F({ maxGames: I(POS_INT), schemaVersion: I(POS_INT) }),
     input: F({ swipeThresholdPx: I(POS_INT), holdRepeatMs: I(POS_INT), edgeDeadZonePx: I(NON_NEG) }),
     ui: F({
@@ -438,6 +444,10 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
   const idMin = numOf(get(c, "identify", "min"));
   const idMax = numOf(get(c, "identify", "max"));
   if (idMin !== undefined && idMax !== undefined && idMin > idMax) report(ctx, "identify.min", `CH-77: min ${idMin} > max ${idMax}`);
+  // EV-11（M11）
+  const evFloor = intOf(get(c, "events", "floor"));
+  const evCap = intOf(get(c, "events", "cap"));
+  if (evFloor !== undefined && evCap !== undefined && evFloor > evCap) report(ctx, "events.floor", `EV-11: floor ${evFloor} > cap ${evCap}`);
 
   // IT-30: 希少度は normal / fine / rare / legendary の順で 4 件。重みの合計は正、個数は 0..3
   const rarities = arrOf(get(c, "items", "rarities"));
@@ -1209,6 +1219,11 @@ function validateEvents(ctx: Ctx, v: unknown, ix: Index): void {
     if (bad.length > 0) report(ctx, p, `EV-34: strings ${JSON.stringify(key)} may only use {actor} (found ${bad.join(" ")})`);
   };
   const count: Field = (c, p, x) => (typeof x === "number" ? int(c, p, x, POS_INT) : dice(c, p, x));
+  const classRef: Field = (c, p, x) => {
+    const s = str(c, p, x);
+    ref(c, p, s, ix.classes, "class");
+    return s;
+  };
   const effectU = U({
     gold: { dice: D },
     item: { itemId: opt(itemRef), table: opt(S) },
@@ -1255,6 +1270,7 @@ function validateEvents(ctx: Ctx, v: unknown, ix: Index): void {
       lure,
       stat: E(STAT_KEYS),
       stopCheck: B,
+      impulseClasses: opt(L(classRef, 1)), // EV-04（M11）
       text: F({ intro: strRef, impulse: strRef }), // EV-34
       impulseOutcomes: L(outcome), // 件数は下の EV-01 で kind ごとに検査する
       choices: L(choice),
@@ -1272,6 +1288,10 @@ function validateEvents(ctx: Ctx, v: unknown, ix: Index): void {
     }
     // EV-34 / E3: 問い（intro）・選択肢のラベルと語りは params なしで出すので差し込みを持たない。衝動の語りは {actor} だけを差し込む
     const ei = at("", i);
+    // EV-04（M11）: impulseClasses の職業は重複しない
+    arrOf(e.impulseClasses).forEach((k, j, a) => {
+      if (typeof k === "string" && a.indexOf(k) < j) report(ctx, at(at(ei, "impulseClasses"), j), `EV-04: duplicate class ${JSON.stringify(k)}`);
+    });
     noPlaceholder(at(at(ei, "text"), "intro"), get(e, "text", "intro"));
     actorOnly(at(at(ei, "text"), "impulse"), get(e, "text", "impulse"));
     arrOf(e.choices).forEach((c, j) => {

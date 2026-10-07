@@ -245,7 +245,8 @@ export type Config = {
   items: ItemsConfig;
   /** TW-04 / TW-14（M5.5）: tavernEventTurns は酒場のイベントが起きうるまでの冒険のターン数【仮】、tavernEventChance は見回すごとの確率%【仮】 */
   town: { innRanks: InnRank[]; tavernEventTurns: number; tavernEventChance: number };
-  events: { impulseThreshold: number; stopSanGain: number; confusedLureWeight: number };
+  /** EV-11 / EV-14（M11）: 衝動確率の誘いの倍率 lureMul（%）、上限 cap・下限 floor（%）【仮】。stopSanGain は EV-22、confusedLureWeight は EV-14【仮】 */
+  events: { lureMul: number; cap: number; floor: number; stopSanGain: number; confusedLureWeight: number };
   save: { maxGames: number; schemaVersion: number };
   input: { swipeThresholdPx: number; holdRepeatMs: number; edgeDeadZonePx: number };
   ui: {
@@ -710,6 +711,8 @@ export type EventDef = {
   lure: LureWeights;
   stat: StatKey;
   stopCheck: boolean;
+  /** EV-04（M11）: 衝動できる職業の id の一覧。省略時は全職業 */
+  impulseClasses?: string[];
   text: { intro: string; impulse: string };
   impulseOutcomes: ImpulseOutcome[];
   choices: EventChoice[];
