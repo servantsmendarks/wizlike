@@ -422,10 +422,10 @@ describe("layout", () => {
     });
     expect(T.talkCompact).toEqual({
       box: { x: 2, y: 128, w: 236, h: 36 },
-      text: { x: 7, y: 131, w: 224, h: 30 },
+      text: { x: 7, y: 131, w: 220, h: 30 },
       lines: 3,
-      cols: 56,
-      more: { x: 223, y: 153, w: 8, h: 8 },
+      cols: 55,
+      more: { x: 219, y: 153, w: 8, h: 8 },
     });
     expect(inside(T.talk.box, STAGE)).toBe(true);
     expect(overlaps(T.talk.box, T.picture)).toBe(false);

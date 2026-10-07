@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { regions, townLayout } from "../src/presenter/layout";
+import { regions, TALK_MARK_GUTTER, townLayout } from "../src/presenter/layout";
+import { SCROLL_MARK_SIZE } from "../src/presenter/views/scroll-marks";
 import { createNarrator, createTalkBox, createTalkModel, talkMarkPos, TALK_KEY_LINES, type Narration, type TalkSink } from "../src/presenter/views/talk";
 import { formatMessage } from "../src/presenter/views/message";
 import { WRAP_STYLE } from "../src/presenter/views/wrap";
@@ -646,12 +647,12 @@ describe("UI-47 会話の箱（DOM）", () => {
     const { box, el, body, pos } = make();
     box.setCompact(true);
     expect(pos(el)).toEqual({ left: "2px", top: "128px", width: "236px", height: "36px" });
-    expect(pos(body)).toEqual({ left: "4px", top: "2px", width: "224px", height: "30px" });
+    expect(pos(body)).toEqual({ left: "4px", top: "2px", width: "220px", height: "30px" });
     box.setCompact(false);
     expect(pos(el)).toEqual({ left: "0px", top: "166px", width: "240px", height: "234px" });
   });
 
-  test("UI-47/UI-11（M10.5 追補）続きの印は右の余白の列に置く（広い箱 x230・y169 と y381、3 行の箱 x230・y131 と y153。字は strings の scroll.up / scroll.down、accent 色、押せない、点滅しない）", () => {
+  test("UI-47/UI-11（M10.5 追補）続きの印は右の余白の列に置く（広い箱 x230・y169 と y381、3 行の箱 x228・y131 と y153。字は strings の scroll.up / scroll.down、accent 色、押せない、点滅しない）", () => {
     const { box, up, down, pos } = make();
     expect(talkMarkPos(T.talk)).toEqual({ up: { x: 229, y: 2 }, down: { x: 229, y: 214 } });
     expect([pos(up), pos(down)]).toEqual([
@@ -663,8 +664,21 @@ describe("UI-47 会話の箱（DOM）", () => {
     expect([data.strings["scroll.up"], data.strings["scroll.down"]]).toEqual(["▲", "▼"]);
     for (const m of [up, down]) expect({ color: m.style["color"], pe: m.style["pointerEvents"] }).toEqual({ color: "var(--c-accent)", pe: "none" });
     box.setCompact(true);
-    // 3 行の箱: 枠 x2..237 の内側の右端 x236 に収める（x230..237 の字の幅 7 の部分）。y128 + 1 + 2 = y131、y128 + 1 + 24 = y153
-    expect([pos(up).left, pos(up).top, pos(down).top]).toEqual(["227px", "2px", "24px"]);
+    // 3 行の箱（2026-10-07 レビューで文字の幅を 224 → 220 にした。以前は印が x230..237 で文字の最後の列 x230・▼・枠線 x237 に重なった）:
+    // 枠 x2 + 1 + 225 = x228..235（文字 x7..226 と ▼ x219..226 の右に 1px、枠線 x237 の左に 1px）。y128 + 1 + 2 = y131、y128 + 1 + 24 = y153
+    expect([pos(up).left, pos(up).top, pos(down).top]).toEqual(["225px", "2px", "24px"]);
+  });
+
+  test("UI-47/UI-11（M10.5 追補）続きの印は、どちらの箱でも文字領域・▼・枠線と重ならない（間に 1px ずつ）", () => {
+    for (const r of [T.talk, T.talkCompact]) {
+      const p = talkMarkPos(r);
+      const left = r.box.x + 1 + p.up.x;
+      const right = left + SCROLL_MARK_SIZE - 1;
+      expect(left, JSON.stringify(r.box)).toBe(r.text.x + r.text.w + 1);
+      expect(left).toBeGreaterThan(r.more.x + r.more.w - 1);
+      expect(right, JSON.stringify(r.box)).toBe(r.box.x + r.box.w - 1 - 2);
+    }
+    expect(TALK_MARK_GUTTER).toBe(SCROLL_MARK_SIZE + 2);
   });
 
   test("UI-47/UI-11（M10.5 追補）ログ形式: 22 行を超えたら最新の行に追従し、上に続きの印。指で上へ戻すと追従をやめて下に続きの印、下端に戻すと追従に戻る。閉じると印は消える", async () => {
