@@ -81,6 +81,7 @@ M7 で、装備品の分類（汎用 / ユニーク）・実体の形・レベ�
 - CH-76 装備の付け外し（M4.5）: `party.equip {memberId, instanceId}` / `party.unequip {memberId, slot}`。受け付けは街と、迷宮の戦闘外かつ保留なし。本人は行動可能（CH-44）であること。
   - `party.equip` の判定順: wrong screen → no such member → cannot act → item not in inventory（本人の inventory に無い。装備中の品も含まない）→ not equipment（`items[].type` が装備スロットでない）→ not identified（CH-72）→ class cannot equip（CH-75）→ slot cursed（その枠の今の品が `cursed`）。受け付けたら、inventory の新しい品の位置に旧品を入れ（旧品が無ければ取り除く）、枠に新しい品を入れる → `camp.equipped{name, item}`。新しい品が呪われていれば続けて `camp.cursed{item}`。所持枠（CH-71）と潜行台帳は変わらない。
   - `party.unequip` の判定順: wrong screen → no such member → cannot act → bad slot → slot empty → cursed（`items[].cursed` の品は鑑定と関係なく外せない）。受け付けたら枠を空にして inventory の末尾に入れる → `camp.unequipped{name, item}`。
+    - M10（2026-10-07 ユーザー判断 U6）: `party.unequip` は本人の life と行動の可否を問わない（cannot act を外した。判定順は wrong screen → no such member → bad slot → slot empty → cursed）。死亡・灰の者の装備も、呪われていなければ外して回収できる（外した品は本人の inventory に入るので、CH-78 で他の者に渡す）。`party.equip` は今どおり本人が行動可能であること。
   - どちらも乱数は使わない。
 - CH-77 鑑定（M4.5。M10 で MP・確率・取り憑きに書き換え。2026-10-07 ユーザー指示）: `party.identify {memberId, instanceId}`。鑑定する者は `classes[].abilities` に `identify` を持つ職業（司教）。対象はパーティの誰かの inventory にある未鑑定品（装備中は対象外）。受け付けは街と、迷宮の戦闘外かつ保留なし。判定順: wrong screen → no such member → cannot identify → cannot act → no mp（MP が `config.identify.mpCost` 未満）→ no such item → already identified。回数の制限は MP だけ（同じ品を何度でも試せる）。
   - 処理: MP を `mpCost`（1【仮】）減らす（`mpChanged`）→ d100（`randInt(1, 100)`）を 1 回 → 判定の箱（UI-40）に `dice` を出す → 出目 ≤ 成功率なら成功。
@@ -91,6 +92,14 @@ M7 で、装備品の分類（汎用 / ユニーク）・実体の形・レベ�
     - 司教が装備できる品（装備品で、職業が装備でき（CH-75）、その枠の今の品が呪われておらず、枠が空なら品が司教の inventory にあるか司教の使用枠（CH-71）に空きがある）なら強制装備: 品は未鑑定のまま枠に入り、枠の旧品は品があった持ち主の inventory の同じ位置へ入る（旧品が無ければその位置から取り除く）→ `camp.possessed{name, item}` → `camp.cursed{item}` → 実効の最大値を超えた HP・MP・SAN を止める（CH-14）。取り憑いた品は CH-73 のとおり外せず、装備中なので鑑定の対象にもならない（解呪 TW-07 で失う）。
     - 装備できない品なら品は元の場所のまま `camp.possessedSan{name, item}` → 司教の SAN を `possessSan`（10【仮】）減らす（タグなし）。
   - 乱数の順: d100 →（失敗かつ品が呪われているときだけ）chance。呪われていない品の失敗と成功では chance を引かない。
+- CH-78 渡す（M10。2026-10-07 ユーザー指示）: `party.give {memberId, instanceId, toId}`。memberId の inventory の品（装備中は対象外）を、パーティの他の者 toId に渡す。受け付けは街と、迷宮の戦闘外かつ保留なし（CH-76 と同じ）。
+  - 判定順: wrong screen → no such member → item not in inventory（本人の inventory に無い）→ no such target（自分・パーティ外）→ target full（受け取る側の使用枠（CH-71）が `config.inventory.slotsPerCharacter` 以上）。
+  - 渡す側・受け取る側とも life と行動の可否は問わない（操作するのはプレイヤー。死亡・灰の者の品も渡せ、死亡・灰の者にも渡せる。2026-10-07 ユーザー判断 U6）。呪われた品・未鑑定の品も渡せる。
+  - 処理: 渡す側の inventory から外し、受け取る側の inventory の末尾に入れる → `camp.gave{name, item, to}`（item は IT-11 / IT-12 の表示名）。潜行台帳と品の実体は変わらない。乱数は使わない。
+  - 表示層は相手の可否を `campMenu` の `members[].canReceive`（target full の逆。自分かどうかは見ない）で出す。
+- CH-79 捨てる（M10。2026-10-07 ユーザー指示）: `party.drop {memberId, instanceId}`。受け付けは CH-78 と同じ。
+  - 判定順: wrong screen → no such member → item not in inventory。本人の life と行動の可否は問わない（U6）。呪われた品・未鑑定の品も捨てられる（装備中の品は対象外なので、取り憑いた品は捨てられない）。
+  - 処理: `camp.dropped{name, item}` → 品の実体を消す（潜行中なら潜行台帳からも消える。DG-41）。図鑑（IT-66）は消さない。乱数は使わない。確認は表示層が出す（core は確認を持たない）。
 
 ## 9. データ
 

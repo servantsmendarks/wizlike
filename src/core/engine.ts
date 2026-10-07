@@ -17,11 +17,15 @@ import {
 import {
   castInField,
   checkCast,
+  checkDrop,
   checkEquip,
+  checkGive,
   checkIdentify,
   checkReorder,
   checkUnequip,
+  dropItem,
   equipItem,
+  giveItem,
   identifyItem,
   reorderParty,
   unequipItem,
@@ -314,6 +318,22 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       if (r !== null) return reject(state, "party.identify", r);
       const ctx = makeContext(cloneState(state), data);
       identifyItem(ctx, c.memberId as string, c.instanceId as string);
+      return finish(ctx);
+    }
+    case "party.give": {
+      const c = command as { memberId?: unknown; instanceId?: unknown; toId?: unknown };
+      const r = checkGive(state, data, c.memberId, c.instanceId, c.toId);
+      if (r !== null) return reject(state, "party.give", r);
+      const ctx = makeContext(cloneState(state), data);
+      giveItem(ctx, c.memberId as string, c.instanceId as string, c.toId as string);
+      return finish(ctx);
+    }
+    case "party.drop": {
+      const c = command as { memberId?: unknown; instanceId?: unknown };
+      const r = checkDrop(state, c.memberId, c.instanceId);
+      if (r !== null) return reject(state, "party.drop", r);
+      const ctx = makeContext(cloneState(state), data);
+      dropItem(ctx, c.memberId as string, c.instanceId as string);
       return finish(ctx);
     }
     case "debug.warp": {

@@ -457,7 +457,7 @@ describe("CH-76 party.equip / party.unequip", () => {
     expectRejected(s, { type: "party.unequip", memberId: "c1", slot: "tail" as "helm" }, "bad slot");
     expectRejected(s, { type: "party.unequip", memberId: "c1", slot: "helm" }, "slot empty");
     expectRejected(battleOf(s), { type: "party.unequip", memberId: "c1", slot: "shield" }, "wrong screen");
-    expectRejected(patched(s, { c1: { life: "dead", hp: 0 } }), { type: "party.unequip", memberId: "c1", slot: "shield" }, "cannot act");
+    // M10（U6。2026-10-07）: 死亡・灰・行動不能の者の装備も外せるようにしたので、cannot act の理由は無くなった（CH-76/U6 のテスト）
   });
 });
 
@@ -767,6 +767,115 @@ describe("CH-77 party.identify", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+
+/** memberId の inventory を薬草で使用枠の上限（config.inventory.slotsPerCharacter）まで埋めた state */
+function fillSlots(base: GameState, memberId: string): GameState {
+  let s = base;
+  while (true) {
+    const ch = member(s, memberId);
+    const used = Object.values(ch.equipment).filter((x) => x !== null).length + ch.inventory.length;
+    if (used >= data.config.inventory.slotsPerCharacter) return s;
+    s = give(s, memberId, "herb").s;
+  }
+}
+
+const giveCmd = (memberId: string, instanceId: string, toId: string): Command => ({ type: "party.give", memberId, instanceId, toId });
+const dropCmd = (memberId: string, instanceId: string): Command => ({ type: "party.drop", memberId, instanceId });
+
+describe("CH-78 party.give", () => {
+  test("CH-78 理由の順: wrong screen → no such member → item not in inventory（装備中・他人の品）→ no such target（自分・パーティ外）→ target full", () => {
+    const s = inDungeon();
+    expectRejected(battleOf(s), giveCmd("c1", "i4", "c2"), "wrong screen");
+    expectRejected(s, giveCmd("zz", "i4", "c2"), "no such member");
+    expectRejected(s, giveCmd("c1", "i1", "c2"), "item not in inventory"); // 装備中の長剣
+    expectRejected(s, giveCmd("c1", "i10", "c2"), "item not in inventory"); // c3 の薬草
+    expectRejected(s, giveCmd("c1", "i4", "c1"), "no such target");
+    expectRejected(s, giveCmd("c1", "i4", "zz"), "no such target");
+    expectRejected(fillSlots(s, "c2"), giveCmd("c1", "i4", "c2"), "target full");
+    // 順: item not in inventory は no such target より先
+    expectRejected(s, giveCmd("c1", "i1", "zz"), "item not in inventory");
+  });
+
+  test("CH-78 受け取る側の inventory の末尾に入る。message camp.gave。潜行台帳と乱数は変わらない", () => {
+    const base = inDungeon();
+    const { s, id } = give(base, "c1", "herb");
+    s.dive!.ledger.items = [id];
+    const r = ok(s, giveCmd("c1", id, "c3"));
+    expect(r.events).toEqual([{ kind: "message", key: "camp.gave", params: { name: "アルド", item: "薬草", to: "キリ" } }]);
+    expect(member(r.state, "c1").inventory).toEqual(["i4"]);
+    expect(member(r.state, "c3").inventory).toEqual(["i10", id]);
+    expect(r.state.dive!.ledger).toEqual(s.dive!.ledger);
+    expect(r.state.rng).toEqual(s.rng);
+    expect(r.state.items[id]).toEqual(s.items[id]);
+  });
+
+  test("CH-78 街でも渡せる。呪われた品・未鑑定の品も渡せる（表示名は未鑑定のまま）", () => {
+    const cur = giveCursed(inTown(), "c3", false);
+    const r = ok(cur.s, giveCmd("c3", cur.id, "c2"));
+    expect(r.events).toEqual([{ kind: "message", key: "camp.gave", params: { name: "キリ", item: "短い刃？", to: "ベルク" } }]);
+    expect(member(r.state, "c2").inventory).toEqual([cur.id]);
+  });
+
+  test("CH-78/U6 渡す側・受け取る側の life と行動の可否は問わない（死亡・灰・睡眠の者の品も渡せる）", () => {
+    for (const p of [{ life: "dead" as const, hp: 0 }, { life: "ash" as const, hp: 0 }, { status: ["sleep" as const] }]) {
+      const s = inDungeon({ c1: p, c2: p });
+      const r = ok(s, giveCmd("c1", "i4", "c2"));
+      expect(member(r.state, "c2").inventory).toEqual(["i4"]);
+    }
+  });
+
+  test("CH-78 campMenu の members[].canReceive は使用枠が満杯でない者だけ真（life は問わない）", () => {
+    const s = fillSlots(inDungeon({ c4: { life: "ash", hp: 0 } }), "c2");
+    const m = campMenu(s, data)!.members;
+    expect(m.map((x) => x.canReceive)).toEqual([true, false, true, true, true, true]);
+  });
+});
+
+describe("CH-79 party.drop", () => {
+  test("CH-79 理由の順: wrong screen → no such member → item not in inventory（装備中・他人の品）", () => {
+    const s = inDungeon();
+    expectRejected(battleOf(s), dropCmd("c1", "i4"), "wrong screen");
+    expectRejected(s, dropCmd("zz", "i4"), "no such member");
+    expectRejected(s, dropCmd("c1", "i1"), "item not in inventory");
+    expectRejected(s, dropCmd("c1", "i10"), "item not in inventory");
+  });
+
+  test("CH-79 品の実体ごと消え、潜行中なら台帳からも消える。message camp.dropped。乱数は変わらない", () => {
+    const base = inDungeon();
+    const { s, id } = give(base, "c1", "herb");
+    s.dive!.ledger.items = [id];
+    const r = ok(s, dropCmd("c1", id));
+    expect(r.events).toEqual([{ kind: "message", key: "camp.dropped", params: { name: "アルド", item: "薬草" } }]);
+    expect(member(r.state, "c1").inventory).toEqual(["i4"]);
+    expect(r.state.items[id]).toBeUndefined();
+    expect(r.state.dive!.ledger.items).toEqual([]);
+    expect(r.state.rng).toEqual(s.rng);
+  });
+
+  test("CH-79 街でも捨てられる。図鑑（IT-66）は消えない。死亡の者の品も捨てられる（U6）", () => {
+    const s = inTown({ c1: { life: "dead", hp: 0 } });
+    s.uniqueBook = { u_test: { foundIn: "d01", bestRarity: "rare" } } as GameState["uniqueBook"];
+    const r = ok(s, dropCmd("c1", "i4"));
+    expect(r.state.uniqueBook).toEqual(s.uniqueBook);
+    expect(r.state.items["i4"]).toBeUndefined();
+  });
+});
+
+describe("CH-76/U6 死亡・灰の者の装備を外す", () => {
+  test("CH-76/U6 死亡・灰・睡眠の者でも呪われていなければ外せる。呪われていれば cursed", () => {
+    for (const p of [{ life: "dead" as const, hp: 0 }, { life: "ash" as const, hp: 0 }, { status: ["sleep" as const] }]) {
+      const r = ok(inDungeon({ c1: p }), { type: "party.unequip", memberId: "c1", slot: "shield" });
+      expect(member(r.state, "c1").inventory).toEqual(["i4", "i3"]);
+      expect(campMenu(inDungeon({ c1: p }), data)!.members[0]!.slots.find((x) => x.slot === "shield")!.canUnequip).toBe(true);
+    }
+    const cur = giveCursed(inDungeon(), "c3");
+    const equipped = ok(cur.s, { type: "party.equip", memberId: "c3", instanceId: cur.id }).state;
+    const dead = patched(equipped, { c3: { life: "dead", hp: 0 } });
+    expectRejected(dead, { type: "party.unequip", memberId: "c3", slot: "weapon" }, "cursed");
+  });
+});
+
 describe("IT-11/IT-12 itemDisplayName（表示名）", () => {
   const nameOf = (spec: Parameters<typeof createItemInstance>[1], d: GameData = data): string => {
     const s = cloneState(newGame(1));
@@ -923,6 +1032,8 @@ describe("D2 キャンプのコマンドの形", () => {
     { type: "party.equip", memberId: "c1", instanceId: "i4" },
     { type: "party.unequip", memberId: "c1", slot: "shield" },
     { type: "party.identify", memberId: "c1", instanceId: "i4" },
+    { type: "party.give", memberId: "c1", instanceId: "i4", toId: "c2" },
+    { type: "party.drop", memberId: "c1", instanceId: "i4" },
     { type: "party.reorder", order: ["c2", "c1", "c3", "c4", "c5", "c6"] },
   ])("D2 title では wrong screen: $type", (cmd) => {
     expectRejected(createInitialState(1, data), cmd, "wrong screen");

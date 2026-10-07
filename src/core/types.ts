@@ -423,6 +423,10 @@ export type Command =
   | { type: "party.unequip"; memberId: string; slot: EquipSlot }
   /** CH-77: memberId は鑑定する者（abilities に identify を持つ職業）。instanceId はパーティの誰かの inventory にある未鑑定品 */
   | { type: "party.identify"; memberId: string; instanceId: string }
+  /** CH-78（M10）: memberId の inventory の品を toId（自分以外のパーティの者）の inventory の末尾へ渡す。両者の life と行動の可否は問わない */
+  | { type: "party.give"; memberId: string; instanceId: string; toId: string }
+  /** CH-79（M10）: memberId の inventory の品を捨てる（実体ごと消える。潜行中なら台帳からも）。本人の life と行動の可否は問わない */
+  | { type: "party.drop"; memberId: string; instanceId: string }
   /** UI-57（開発用）: alive の全員の hp を 1 にする。保留中も受け付ける。乱数は使わない */
   | { type: "debug.hpOne" }
   /** UI-57（開発用、M5）: リーダー以外の alive の SAN を 1 段下げる（境の 1 つ下、錯乱の次は 0）。保留中も受け付ける。乱数は使わない */
@@ -693,6 +697,8 @@ export type CampMember = {
   slots: CampSlotView[];
   /** 本人の inventory の順で、type が EQUIP_SLOTS のどれかに当たる品 */
   equipCandidates: CampEquipCandidate[];
+  /** CH-78（M10）: 使用枠（CH-71）に空きがあり、party.give の受け取る側になれる（target full の逆）。life は問わない。自分かどうかは見ない */
+  canReceive: boolean;
 };
 export type CampIdentifyItem = {
   instanceId: string;

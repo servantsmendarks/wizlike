@@ -238,6 +238,8 @@
   "camp.identifyFailed": "{name}は{item}の正体を見極められなかった。",
   "camp.possessed": "{item}が{name}に取り憑いた！",
   "camp.possessedSan": "{item}の呪いが{name}の心を蝕む。",
+  "camp.gave": "{name}は{item}を{to}に渡した。",
+  "camp.dropped": "{name}は{item}を捨てた。",
   "camp.equipBlock.cannotAct": "動けない",
   "camp.equipBlock.unidentified": "未鑑定",
   "camp.equipBlock.class": "装備できない",

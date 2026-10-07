@@ -1,4 +1,4 @@
-// キャンプと酒場のコマンド（MG-44 dungeon.cast、CH-03 party.reorder、CH-76 party.equip / party.unequip、CH-77 party.identify）と、
+// キャンプと酒場のコマンド（MG-44 dungeon.cast、CH-03 party.reorder、CH-76 party.equip / party.unequip、CH-77 party.identify、CH-78 party.give、CH-79 party.drop）と、
 // 表示層向けの問い合わせ campMenu（UI-53 / TW-03）・campSummary（UI-53）。
 // 受け付ける場所は campPlace が決める（街、または迷宮の戦闘外かつ保留なし。M5.5 から dungeon.cast も街で受け付ける。帰還は迷宮だけ）。
 // 乱数を使うのは dungeon.cast の heal（対象ごとに effect.dice を 1 回）と resurrect（randInt(1, 100) を 1 回）、party.identify（d100 と、失敗した呪いの品の取り憑きの chance。CH-77）だけ。
@@ -6,7 +6,7 @@
 import type { EquipmentBase, EquipSlot, GameData, Spell } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
 import { chance, randInt } from "../rng";
-import { classOf, dungeonOf, findBase, findItem, identifyInstance, itemDisplayName, memberById, moraleOf, slotsUsed, spellOf } from "../state";
+import { classOf, destroyItemInstance, dungeonOf, findBase, findItem, identifyInstance, itemDisplayName, memberById, moraleOf, slotsUsed, spellOf } from "../state";
 import type {
   CampEquipCandidate,
   CampMenu,
@@ -247,14 +247,14 @@ export function equipItem(ctx: RuleContext, memberId: string, instanceId: string
 }
 
 /**
- * party.unequip を受け付けない理由。順: wrong screen → no such member → cannot act → bad slot → slot empty → cursed。
+ * party.unequip を受け付けない理由。順: wrong screen → no such member → bad slot → slot empty → cursed。
+ * M10（U6）: 本人の life と行動の可否は問わない（死亡・灰の者の装備も、呪われていなければ外して回収できる。操作するのはプレイヤー）。
  * 呪いは実体の cursed（M7）で見るので data は読まない（引数は呼び出し側との形を保つために残す）
  */
 export function checkUnequip(state: GameState, _data: GameData, memberId: unknown, slot: unknown): string | null {
   if (campPlace(state) === null) return "wrong screen";
   const ch = typeof memberId === "string" ? memberById(state, memberId) : null;
   if (ch === null) return "no such member";
-  if (!canAct(ch)) return "cannot act";
   if (!isEquipSlot(slot)) return "bad slot";
   const id = ch.equipment[slot];
   if (id === null) return "slot empty";
@@ -273,6 +273,66 @@ export function unequipItem(ctx: RuleContext, memberId: string, slot: EquipSlot)
   ch.inventory.push(id);
   ctx.events.push({ kind: "message", key: "camp.unequipped", params: { name: ch.name, item: itemDisplayName(state, data, id) } });
   clampToMax(ctx, ch); // CH-14
+}
+
+// ---------------------------------------------------------------------------
+// CH-78 party.give / CH-79 party.drop（M10）
+
+/** 使用枠（CH-71）に空きがあるか（CH-78 の target full の逆。campMenu の canReceive） */
+function hasFreeSlot(data: GameData, ch: Character): boolean {
+  return slotsUsed(ch) < data.config.inventory.slotsPerCharacter;
+}
+
+/** CH-78 / CH-79 共通の前半。順: wrong screen → no such member → item not in inventory（本人の inventory に無い。装備中は対象外） */
+function checkOwnItem(state: GameState, memberId: unknown, instanceId: unknown): string | null {
+  if (campPlace(state) === null) return "wrong screen";
+  const ch = typeof memberId === "string" ? memberById(state, memberId) : null;
+  if (ch === null) return "no such member";
+  if (typeof instanceId !== "string" || !ch.inventory.includes(instanceId) || state.items[instanceId] === undefined) {
+    return "item not in inventory";
+  }
+  return null;
+}
+
+/**
+ * party.give を受け付けない理由。順: wrong screen → no such member → item not in inventory → no such target（自分・パーティ外）→ target full。
+ * 渡す側・受け取る側の life と行動の可否は問わない（U6）。呪われた品・未鑑定の品も渡せる
+ */
+export function checkGive(state: GameState, data: GameData, memberId: unknown, instanceId: unknown, toId: unknown): string | null {
+  const r = checkOwnItem(state, memberId, instanceId);
+  if (r !== null) return r;
+  const to = typeof toId === "string" && toId !== memberId ? memberById(state, toId) : null;
+  if (to === null) return "no such target";
+  if (!hasFreeSlot(data, to)) return "target full";
+  return null;
+}
+
+/** CH-78。checkGive が null を返した前提。渡す側の inventory から外し、受け取る側の inventory の末尾へ → message camp.gave{name, item, to}。台帳・乱数は変わらない */
+export function giveItem(ctx: RuleContext, memberId: string, instanceId: string, toId: string): void {
+  const { state, data } = ctx;
+  const ch = memberById(state, memberId);
+  const to = memberById(state, toId);
+  if (ch === null || to === null) throw new Error(`giveItem: unknown member ${memberId} / ${toId}`);
+  const i = ch.inventory.indexOf(instanceId);
+  if (i < 0) throw new Error(`giveItem: ${instanceId} not in inventory`);
+  ch.inventory.splice(i, 1);
+  to.inventory.push(instanceId);
+  ctx.events.push({ kind: "message", key: "camp.gave", params: { name: ch.name, item: itemDisplayName(state, data, instanceId), to: to.name } });
+}
+
+/** party.drop を受け付けない理由。順: wrong screen → no such member → item not in inventory。本人の life と行動の可否は問わない（U6） */
+export function checkDrop(state: GameState, memberId: unknown, instanceId: unknown): string | null {
+  return checkOwnItem(state, memberId, instanceId);
+}
+
+/** CH-79。checkDrop が null を返した前提。message camp.dropped{name, item} → 実体ごと消す（潜行中なら台帳からも。DG-41）。図鑑は消さない。乱数なし */
+export function dropItem(ctx: RuleContext, memberId: string, instanceId: string): void {
+  const { state, data } = ctx;
+  const ch = memberById(state, memberId);
+  if (ch === null) throw new Error(`dropItem: unknown member ${memberId}`);
+  const item = itemDisplayName(state, data, instanceId);
+  destroyItemInstance(state, ch, instanceId);
+  ctx.events.push({ kind: "message", key: "camp.dropped", params: { name: ch.name, item } });
 }
 
 // ---------------------------------------------------------------------------
@@ -500,6 +560,7 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
           return { slot, instanceId: id, name: itemDisplayName(state, data, id), cursed, canUnequip: checkUnequip(state, data, ch.id, slot) === null };
         }),
         equipCandidates,
+        canReceive: hasFreeSlot(data, ch),
       };
     }),
     allies: alive.map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: hpMaxOf(state, data, c) })),
