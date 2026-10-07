@@ -346,6 +346,22 @@ describe("CB-67 警報の戦闘", () => {
     expect(o.events.at(-1)).toEqual({ kind: "chestEnd", result: "opened" });
   });
 
+  test("CB-67/CB-04 警報の戦闘は入力が要らない状態（battleMenu の ready が真・pending が空）で始まりうる: 全員が眠っていると isWipe は偽で、行動できる者が 0 人なので揃っている（UI-70 の表示層はここで kickBattle する）", () => {
+    // rng 2 は敵の奇襲にならない（奇襲なら敵のラウンドで殴られて起きる者が出る）。全員眠ったまま入力の段階に入る
+    const s = withChest("alarm", 2, 1, D);
+    for (const c of s.party) c.status = ["sleep"];
+    const r = exec(s, OPEN, D);
+    expect(kindsOf(r.events)).not.toContain("message:battle.surpriseEnemy");
+    expect(r.state.party.every((c) => c.status.includes("sleep"))).toBe(true);
+    expect(r.state.battle).not.toBeNull();
+    expect(r.state.screen).toBe("battle");
+    const menu = battleMenu(r.state, D)!;
+    expect(menu.auto).toBe(false);
+    expect(menu.ready).toBe(true);
+    expect(menu.pending).toEqual([]);
+    expectStateInvariants(r.state);
+  });
+
   test("CB-67/CB-02 警報の戦闘は逃走でき、逃げると箱を失う: screen{dungeon, at} → chest.fled → chestEnd lost（ドロップ）。宝箱のセルは chestEnd left（罠なしで残り、clearedCells に入れない）", () => {
     const dF = chestData((x) => (x.config.combat.fleeBase = 1000));
     const s = exec(withChest("alarm", 5, 1, D), OPEN, D).state;

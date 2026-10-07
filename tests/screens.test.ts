@@ -389,7 +389,12 @@ describe("入力と Command", () => {
     const choose = /const chooseChest = \(ch: ChestChoice\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(choose).toMatch(/if \(ch\.kind === "back"\) \{\s*chestBack\(\);\s*return;\s*\}/);
     expect(choose).toMatch(/if \(ch\.kind === "page"\) \{\s*chestPage = ch\.page;\s*syncControls\(\);\s*return;\s*\}/);
-    expect(choose).toMatch(/chestPage = CHEST_MENU;\s*void run\(ch\.command\)\.then\(\(r\) => \{\s*if \(r !== null && r\.rejected && !isBusy\(\)\) syncControls\(\);/);
+    // レビュー A-A-1 / A-A-3（2026-10-08）で送る前に場所のヘッダーへ戻し、警報の戦闘に入ったら kickBattle するよう直したので期待を書き直した
+    expect(choose).toMatch(
+      /chestPage = CHEST_MENU;\s*const d = state\.dive;\s*if \(d !== null\) showHeaderAt\(state, \{ floor: d\.floor, pos: d\.pos, facing: d\.facing \}\);\s*void run\(ch\.command\)\.then\(\(r\) => \{/,
+    );
+    // 警報（CB-67）は箱の操作の execute の中で戦闘に入る。入力が要らない状態（全員が眠っている等。battleMenu の ready）でも連鎖を始める（前進・自動歩行と同じ形）
+    expect(choose).toMatch(/if \(r !== null && !r\.rejected && route === "battle"\) kickBattle\(\);\s*else if \(r !== null && r\.rejected && !isBusy\(\)\) syncControls\(\);/);
     const item = /const chestItem = \(e: ChestEntry\): ControlItem => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(item).toMatch(/back: e\.choice\.kind === "back",/);
     expect(item).toMatch(/onDisabled: \(\) => guard\(\(\) => void narrator\.say\(reason, store\.get\(\)\.skipAnimations\)\)/);

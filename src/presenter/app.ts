@@ -776,9 +776,14 @@ export function createApp(o: {
       return;
     }
     chestPage = CHEST_MENU;
+    // 人・罠の段の問いはヘッダーにあるので、送る前に場所に戻す（結果の再生の間に前の問いを残さない。レビュー A-A-3）
+    const d = state.dive;
+    if (d !== null) showHeaderAt(state, { floor: d.floor, pos: d.pos, facing: d.facing });
     void run(ch.command).then((r) => {
+      // 警報（CB-67）は箱の操作の execute の中で戦闘に入る。入力が要らない状態（全員が眠っている等）でも連鎖を始める（前進・自動歩行と同じ。レビュー A-A-1）
+      if (r !== null && !r.rejected && route === "battle") kickBattle();
       // rejected は再生も sync も無いので、ここで描き直す
-      if (r !== null && r.rejected && !isBusy()) syncControls();
+      else if (r !== null && r.rejected && !isBusy()) syncControls();
     });
   };
 
