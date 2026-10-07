@@ -4,8 +4,11 @@
 // - 保留中の選択（pendingChoice）の promptKey。core は選択を立てた execute で同じ key の message を出す（decisions）ので、
 //   通常の再生では出さず、復帰のときだけ出す。
 // - 救済の申し出（TW-30）。townMenu の mercy が null でなければ town.mercy.offer。
-// 判定は core の値（state.screen、pendingChoice、townMenu）だけで行う（§3-4）。
+// - 宝箱の問い（UI-70。M11）。chestView が null でなければ（箱が残っていて、戦闘中でも保留中でもない）chest.prompt。
+//   警報の戦闘中（battle 非 null）は出さない（勝って戻るときに core が出す）。
+// 判定は core の値（state.screen、pendingChoice、townMenu、chestView）だけで行う（§3-4）。
 import type { GameData } from "../core/data/index";
+import { chestView } from "../core/rules/chest";
 import { townMenu } from "../core/rules/town";
 import type { GameState, Screen } from "../core/types";
 
@@ -35,6 +38,7 @@ export function resumePlan(st: GameState, data: GameData): ResumePlan {
   if (route === null) throw new Error(`resumePlan: unexpected screen ${st.screen}`);
   const prompts: string[] = [];
   if (st.pendingChoice !== null) prompts.push(st.pendingChoice.promptKey);
+  if (chestView(st, data) !== null) prompts.push("chest.prompt");
   const menu = townMenu(st, data);
   if (menu !== null && menu.mercy !== null) prompts.push("town.mercy.offer");
   return { route, prompts };

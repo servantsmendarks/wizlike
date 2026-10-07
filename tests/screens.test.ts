@@ -200,6 +200,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   "rules/choices": ["STAY_CHOICE_ID"],
   // M7 TW-17: 強化の確認の段の成功率・大成功・料金・可否は core の upgradePreview の値を描く
   "rules/upgrade": ["upgradePreview"],
+  // M11 UI-70 / SV-50: 宝箱の操作を出すか（と続きからの chest.prompt）は core の chestView の値（null でなければ箱が残っていて戦闘中・保留中でない）
+  "rules/chest": ["chestView"],
   rng: ["createRng"],
   // 能力値の並び（CH-10）。列挙の定数
   "data/index": ["STAT_KEYS"],
@@ -343,9 +345,27 @@ describe("入力と Command", () => {
     expect(app).toMatch(/const stageInput = attachStageInput\(/);
   });
 
+  test("UI-70/CB-60（M11 作業 4b）宝箱の操作: syncControls は保留の一覧の次で core の chestView を見て、非 null なら一覧 [開ける][放っておく]（chest.open / chest.leave を送る）を出し、十字ボタン・キャンプ・地図は出さない。fieldFree も chestView が null のときだけ真（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const sync = /const syncControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    const iPending = sync.indexOf("const pc = state.pendingChoice;");
+    const iChest = sync.indexOf("const chest = chestView(state, data);");
+    const iDpad = sync.indexOf('c.setMode("dpad");');
+    expect(iPending).toBeGreaterThan(0);
+    expect(iChest).toBeGreaterThan(iPending);
+    expect(iDpad).toBeGreaterThan(iChest);
+    const branch = /if \(chest !== null\) \{([\s\S]*?)\n {4}\}/.exec(sync.slice(iChest))?.[1] ?? "";
+    expect(branch).toMatch(/listItem\(t\("chest\.menu\.open"\), \(\) => void run\(\{ type: "chest\.open" \}\)\)/);
+    expect(branch).toMatch(/listItem\(t\("chest\.menu\.leave"\), \(\) => void run\(\{ type: "chest\.leave" \}\)\)/);
+    expect(branch).toMatch(/c\.setMode\("list"\);\s*return;/);
+    expect(app).toMatch(/const fieldFree = \(\): boolean => state\.screen === "dungeon" && state\.pendingChoice === null && chestView\(state, data\) === null;/);
+    for (const k of ["chest.menu.open", "chest.menu.leave", "chest.prompt"]) expect(data.strings[k], k).toBeTypeOf("string");
+  });
+
   test("UI-55 onScreen は routeOfScreen を通し、swipeEnabled / repeater / walker / openMap / handleAction / 長押しの解除は fieldFree（screen dungeon かつ保留なし）を見る（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
-    expect(app).toMatch(/const fieldFree = \(\): boolean => state\.screen === "dungeon" && state\.pendingChoice === null;/);
+    // M11（UI-70）: 宝箱が残っている間（chestView 非 null）も歩けない
+    expect(app).toMatch(/const fieldFree = \(\): boolean => state\.screen === "dungeon" && state\.pendingChoice === null && chestView\(state, data\) === null;/);
     const onScreen = /const onScreen = \(to: Screen, carry: readonly string\[\] = \[\]\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(onScreen).toMatch(/const r = to === "title" \? "title" : routeOfScreen\(to\);/);
     expect(onScreen).toMatch(/showRoute\(r\)/);

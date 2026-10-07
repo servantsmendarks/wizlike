@@ -20,6 +20,7 @@ import type { GameData } from "../core/data/index";
 import type { GameAssets } from "../build/asset-types";
 import { execute, createInitialState } from "../core/engine";
 import { createRng, type RngState } from "../core/rng";
+import { chestView } from "../core/rules/chest";
 import { battleMenu } from "../core/rules/combat";
 import { mapView, visibleCells, visibleKnownTraps } from "../core/rules/dungeon";
 import { campMenu, campSummary } from "../core/rules/camp";
@@ -736,8 +737,11 @@ export function createApp(o: {
       }),
   });
 
-  /** UI-55: 迷宮を歩ける状態か（core の screen が dungeon で、保留中の選択が無い。イベントの選択を待つ間・罠の察知・階段の確認では偽） */
-  const fieldFree = (): boolean => state.screen === "dungeon" && state.pendingChoice === null;
+  /**
+   * UI-55: 迷宮を歩ける状態か（core の screen が dungeon で、保留中の選択が無い。イベントの選択を待つ間・罠の察知・階段の確認では偽）。
+   * UI-70（M11）: 宝箱が残っている間（core の chestView が非 null）も偽
+   */
+  const fieldFree = (): boolean => state.screen === "dungeon" && state.pendingChoice === null && chestView(state, data) === null;
 
   /**
    * UI-30: ステージ全体でスワイプを受けるか（迷宮で、overlay も保留も無く、inputMode が buttons でなく、自動歩行中でなく、
@@ -820,6 +824,14 @@ export function createApp(o: {
     if (pc !== null) {
       // UI-66（2026-10-07）: 階段・出口・テレポーターの確認の「やめる」（STAY）は位置に関わらず cancel の音。罠の「引き返す」は対象外
       c.setList(pc.options.map((op) => ({ ...listItem(t(op.labelKey), () => void run({ type: "event.choose", optionId: op.id })), back: op.id === STAY_CHOICE_ID })));
+      c.setMode("list");
+      return;
+    }
+    // UI-70（M11。作業 4b の最小版）: 宝箱が残っていて戦闘中でも保留中でもない（chestView が非 null）なら、操作領域は箱の一覧だけ
+    // （十字ボタン・キャンプ・地図は出さない）。問い chest.prompt は core が語る（続きからは resumePlan が出し直す）
+    const chest = chestView(state, data);
+    if (chest !== null) {
+      c.setList([listItem(t("chest.menu.open"), () => void run({ type: "chest.open" })), listItem(t("chest.menu.leave"), () => void run({ type: "chest.leave" }))]);
       c.setMode("list");
       return;
     }

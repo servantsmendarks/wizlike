@@ -34,6 +34,9 @@
 //   制止の判定の箱（label が RESTRAIN_DICE_KEY、拍の外）は、続く message を 1 件（成否の語り）出した後でタップを 1 回待ってから消す
 //   （先に message・dice 以外のイベントか再生の終わりが来たらそこで待つ）。演出スキップでも待つ（§3-9。手動のタップ待ち）。
 //   他の拍の外の箱（dice.learn など）は待たない。
+// - 宝箱（UI-70。M11）: chestFound は迷宮の操作を下げ（音は sound）、chestImpulse は eventStarted と同じ印。chestTrap / chestEnd は何もしない。
+//   宝箱の判定の箱（調べる・解除・掛け合い）は制止の箱と同じくタップを待つ（HOLD_DICE_KEYS）。
+//   勝利・逃走の screen{dungeon} に at があれば、最終の dive ではなくその位置と向きで視点を作る（衝動の転移は続く moved で移る。A2）。
 // - 街（UI-47。M8.5。M10.5 で溜める形に）: message の表示先（迷宮の窓か街の会話の箱）は結線側の deps.message が決める。
 //   会話の箱は文を溜め続けてスクロールする（M10.5 追補のログ形式。拍の外のタップは message.rush に行き、文字送り中なら即表示）。
 //   この再生で文を語った後の次の出来事（dice を除く）と、各 message の再生と音の前に deps.message.hold() を待つ
@@ -170,8 +173,11 @@ export const RESTRAIN_DICE_KEY = "dice.restrain";
 export const UPGRADE_DICE_KEY = "dice.upgrade";
 /** UI-40 / CH-77（M10）: 司教の鑑定の判定の dice の label のキー。強化の箱と同じく、拍の外で出たら続く message を 1 件出した後でタップを 1 回待つ */
 export const IDENTIFY_DICE_KEY = "dice.identify";
-/** 拍の外で出たらタップを 1 回待つ箱の label のキー */
-const HOLD_DICE_KEYS: readonly string[] = [RESTRAIN_DICE_KEY, UPGRADE_DICE_KEY, IDENTIFY_DICE_KEY];
+/**
+ * 拍の外で出たらタップを 1 回待つ箱の label のキー。
+ * M11（UI-70 / UI-71）: 宝箱の調べる（dice.chestInspect）・解除（dice.chestDisarm）・職業の掛け合い（dice.rivalry）も、制止の箱と同じく待つ
+ */
+const HOLD_DICE_KEYS: readonly string[] = [RESTRAIN_DICE_KEY, UPGRADE_DICE_KEY, IDENTIFY_DICE_KEY, "dice.chestInspect", "dice.chestDisarm", "dice.rivalry"];
 
 /**
  * UI-47（M8.5。純粋）: 添字 i の screen{town} の前で、最後の screen / wipe / beat より後にある message の整形済みの文。
@@ -236,6 +242,16 @@ export function createTapLatch(): TapLatch {
 function cursorOfDive(state: GameState): ViewPoint | null {
   const d = state.dive;
   return d === null ? null : { floor: d.floor, pos: { x: d.pos.x, y: d.pos.y }, facing: d.facing };
+}
+
+/**
+ * UI-70（M11。A2）: 迷宮へ戻る screen の視点。at（戦った位置と向き）があればそれで作り、階は最終の dive の階
+ * （宝箱の衝動の転移は同じ階。続く moved で転移先へ移る）。at が無ければ最終の dive
+ */
+function cursorOfScreen(ev: Extract<GameEvent, { kind: "screen" }>, state: GameState): ViewPoint | null {
+  const d = state.dive;
+  if (d === null || ev.at === undefined) return cursorOfDive(state);
+  return { floor: d.floor, pos: { x: ev.at.pos.x, y: ev.at.pos.y }, facing: ev.at.facing };
 }
 
 function copyCursor(c: ViewPoint): ViewPoint {
@@ -383,7 +399,8 @@ export function createPlayer(deps: PlayerDeps): Player {
         // UI-45（M10.5 追補 2）: 迷宮に入る・戦闘を終えて探索に戻るときは窓を空から（戦闘の結果の文は leave の待ちで読ませた後。
         // 行は履歴に残る）。画面を切り替えた後に呼ぶ（表示先は迷宮の窓。イベントから戻るときは上の分岐で空にしない）
         deps.message.clearView?.();
-        const c = cursorOfDive(finalState);
+        // UI-70（M11。A2）: 勝利・逃走の screen は at（戦った位置）を持つ。同じ再生の衝動の転移・警報の前に、まず戦った場所を描く
+        const c = cursorOfScreen(ev, finalState);
         if (c === null) return;
         cx.cursor = c;
         await redraw(cx, finalState);
@@ -513,6 +530,26 @@ export function createPlayer(deps: PlayerDeps): Player {
         deps.party.markActor(ev.actorId, !cx.skip);
         marked = true;
       }
+    },
+    async chestFound(_ev, cx) {
+      // UI-70（M11）: 宝箱を見つけた。迷宮の操作を下げる（箱の操作は再生の最後の sync で出す）。音は sound（audio.json の chestFound）
+      cx.skip = isSkip();
+      deps.eventStarted();
+    },
+    async chestImpulse(ev, cx) {
+      // UI-70 / EV-16（M11）: 宝箱の衝動の行動者。eventStarted と同じ印（演出スキップでは点滅せず色だけ）。印は再生の終わりで外す
+      cx.skip = isSkip();
+      deps.eventStarted();
+      deps.party.markActor(ev.actorId, !cx.skip);
+      marked = true;
+    },
+    async chestTrap(_ev, cx) {
+      // 何もしない（作動の語りは message、効果は hpChanged / statusChanged / sanChanged / moved / screen が来る）
+      cx.skip = isSkip();
+    },
+    async chestEnd(_ev, cx) {
+      // 何もしない（箱の操作を下げるのは再生の最後の sync。dive.chest が null なら迷宮の操作に戻る）
+      cx.skip = isSkip();
     },
   };
 

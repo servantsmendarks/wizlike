@@ -10,11 +10,11 @@ import { STAT_KEYS } from "../src/core/data/index";
 import type { PenaltyTableText } from "../src/presenter/views/penalty-table";
 import type { Settings } from "../src/presenter/settings";
 import type { Dive, EnemyGroupView, GameEvent, GameState, PenaltyResult, ViewPoint } from "../src/core/types";
-import { data, expectKnownStringKeys, newGame, withChar } from "./helpers/core";
+import { data, expectKnownStringKeys, loadFreshData, newGame, withChar } from "./helpers/core";
 import { cloneState, createItemInstance, makeContext } from "../src/core/state";
 import { startBattle } from "../src/core/rules/combat";
 import { execute } from "../src/core/engine";
-import { ALWAYS_HIT, dataWith, dived, withBattle } from "./helpers/battle";
+import { ALWAYS_HIT, allInputs, dataWith, dived, withBattle } from "./helpers/battle";
 import { atEvent, dataEvents } from "./helpers/events";
 import { INITIAL_SOUND_CONTEXT, nextSoundContext, soundsFor, startSoundPlayback, type SoundContext } from "../src/presenter/sound-cues";
 
@@ -2281,5 +2281,121 @@ describe("UI-40/UI-47（M10.5 追補 2・未定-23）演出スキップ ON の�
     const a = await run(true);
     expect(a).toEqual(await run(false));
     expect(a).toEqual(["soundStart", "hold", "soundStart", "sound:message", "sound:dice", "dice.show", "hold", "soundStart", "sound:message"]);
+  });
+});
+
+describe("UI-70 宝箱の再生（M11 作業 4b）", () => {
+  const s = (): GameState => stateWith(diveAt(1, 1, "N"));
+  /** 箱・語り・待ち・消す・画面の切り替えの順だけを見る */
+  const span = (log: Log): string[] =>
+    log
+      .filter((e) => ["dice.show", "dice.hide", "beat.waitTap", "message.say"].includes(e.m))
+      .map((e) => (e.m === "message.say" ? `say:${String(e.a[0])}` : e.m));
+  const say = (key: string, params?: Record<string, string | number>): string => `say:${formatMessage(data.strings[key]!, params)}`;
+  const shownAt = (log: Log): unknown[] => log.filter((e) => e.m === "view.showAt").map((e) => e.a[0]);
+
+  test("UI-70/A2 screen{dungeon} に at があれば、その位置と向き（階は最終の dive）で視点を作り、続く moved（転移）で移る。at が無ければ今どおり最終の dive", async () => {
+    const before: GameState = { ...stateWith(diveAt(1, 1, "N")), screen: "battle" };
+    const after = stateWith(diveAt(5, 3, "N"));
+    const at = { pos: { x: 1, y: 1 }, facing: "N" as const };
+    const events: GameEvent[] = [
+      { kind: "screen", to: "dungeon", dungeonId: "d01", at },
+      { kind: "chestFound", source: "drop" },
+      msg("chest.found.drop"),
+      { kind: "chestImpulse", actorId: "c3" },
+      msg("chest.impulse.actor", { actor: "キリ" }),
+      msg("chest.impulse.open", { actor: "キリ" }),
+      { kind: "chestTrap", trapId: "teleport", actorId: "c3" },
+      msg("chest.trap.teleport"),
+      { kind: "chestEnd", result: "lost" },
+      { kind: "moved", pos: { x: 5, y: 3 }, facing: "N" },
+    ];
+    expectKnownStringKeys(events);
+    const { deps, log } = fakeDeps({ skipAnimations: true });
+    await createPlayer(deps).play(events, before, after);
+    expect(shownAt(log)).toEqual([
+      { floor: 1, pos: { x: 1, y: 1 }, facing: "N" },
+      { floor: 1, pos: { x: 5, y: 3 }, facing: "N" },
+    ]);
+    // at が無い screen{dungeon} は最終の dive の位置
+    const f2 = fakeDeps({ skipAnimations: true });
+    await createPlayer(f2.deps).play([{ kind: "screen", to: "dungeon" }], before, after);
+    expect(shownAt(f2.log)).toEqual([{ floor: 1, pos: { x: 5, y: 3 }, facing: "N" }]);
+  });
+
+  test("UI-70/A2/EV-16/DG-25 core の実際の列（勝利 → 衝動 → 転移）: 再生はまず戦った位置を描き、moved で転移先へ移る", async () => {
+    const d = loadFreshData();
+    for (const t of d.drops.tables) t.itemChance = 0;
+    d.config.combat.hitMin = d.config.combat.hitMax = 100;
+    d.config.combat.chestChance = 100;
+    d.config.chest.noTrapChance = 0;
+    d.config.events.floor = d.config.events.cap = 100;
+    d.chestTraps = d.chestTraps.filter((t) => t.danger !== 1 && t.id !== "teleport").concat(d.chestTraps.filter((t) => t.id === "teleport").map((t) => ({ ...t, danger: 1 })));
+    d.dungeons.find((y) => y.id === "d01")!.chestTrapDangerWeights = [1, 0];
+    // 制止者（ベルク・フィン）を行動不能にし、麻痺した大ネズミ 1 匹をアルドが倒す勝利の直前
+    const base = withChar(withChar(dived(1), 1, { status: ["paralysis"] }), 5, { status: ["paralysis"] });
+    const s0 = withBattle(base, [{ monsterId: "giant_rat", hps: [1], status: [["paralysis"]] }], {
+      origin: { kind: "random", inRoom: true },
+      identified: ["giant_rat"],
+      inputs: allInputs(base, { type: "defend" }, { c1: { type: "attack", group: 0 } }),
+    });
+    const r = execute(s0, { type: "battle.resolve" }, d);
+    expect(r.events.map((e) => e.kind)).toContain("chestImpulse");
+    const moved = r.events.find((e) => e.kind === "moved") as Extract<GameEvent, { kind: "moved" }>;
+    expect(moved.pos).not.toEqual(s0.dive!.pos);
+    const { deps, log } = fakeDeps({ skipAnimations: true });
+    await createPlayer({ ...deps, data: d, strings: d.strings }).play(r.events, s0, r.state);
+    const fl = s0.dive!.floor;
+    expect(shownAt(log)).toEqual([
+      { floor: fl, pos: s0.dive!.pos, facing: s0.dive!.facing },
+      { floor: fl, pos: moved.pos, facing: moved.facing },
+    ]);
+    // 衝動の行動者（キリ c3）に印、再生の終わりで外す
+    expect(log.filter((e) => e.m === "party.markActor").map((e) => e.a)).toEqual([
+      ["c3", false],
+      [null, false],
+    ]);
+  });
+
+  test("UI-70/EV-16 chestImpulse は eventStarted と同じ印（迷宮の操作を下げ、行動者に markActor(id, 点滅は演出スキップでなければ)）。再生の終わり（sync の前）に外す。chestFound も迷宮の操作を下げる", async () => {
+    for (const skipAnimations of [false, true]) {
+      const { deps, log } = fakeDeps({ skipAnimations });
+      const events: GameEvent[] = [
+        { kind: "chestFound", source: "cell" },
+        msg("chest.found.cell"),
+        { kind: "chestImpulse", actorId: "c3" },
+        msg("chest.impulse.actor", { actor: "キリ" }),
+      ];
+      await createPlayer(deps).play(events, s(), s());
+      const ms = names(log);
+      expect(ms.indexOf("eventStarted")).toBeGreaterThanOrEqual(0);
+      expect(ms.indexOf("eventStarted")).toBeLessThan(ms.indexOf("message.say"));
+      expect(log.filter((e) => e.m === "party.markActor").map((e) => e.a)).toEqual([
+        ["c3", !skipAnimations],
+        [null, false],
+      ]);
+      expect(ms.slice(-2)).toEqual(["party.markActor", "screens.sync"]);
+    }
+    // chestFound だけ（衝動なし）でも操作を下げ、印は付けない
+    const f = fakeDeps();
+    await createPlayer(f.deps).play([{ kind: "chestFound", source: "drop" }, msg("chest.found.drop"), msg("chest.prompt")], s(), s());
+    expect(names(f.log)).toContain("eventStarted");
+    expect(names(f.log)).not.toContain("party.markActor");
+  });
+
+  test("UI-70/UI-40 宝箱の判定の箱（調べる dice.chestInspect・解除 dice.chestDisarm・掛け合い dice.rivalry）は拍の外で、続く message を 1 件出した後でタップを待ってから消す（演出スキップでも）", async () => {
+    for (const key of ["dice.chestInspect", "dice.chestDisarm", "dice.rivalry"]) {
+      for (const skipAnimations of [false, true]) {
+        const { deps, log } = fakeDeps({ skipAnimations });
+        await createPlayer(deps).play([rollDiceEv(key, [42], 42, "dice.chestDisarm.ok"), msg("chest.disarm.ok"), msg("chest.prompt")], s(), s());
+        expect(span(log), `${key} ${skipAnimations}`).toEqual(["dice.show", say("chest.disarm.ok"), "beat.waitTap", "dice.hide", say("chest.prompt")]);
+      }
+    }
+  });
+
+  test("UI-70 chestTrap・chestEnd は表示を変えない（語りは message、移動は moved で来る）", async () => {
+    const { deps, log } = fakeDeps({ skipAnimations: true });
+    await createPlayer(deps).play([{ kind: "chestTrap", trapId: "bomb", actorId: null }, { kind: "chestEnd", result: "opened" }], s(), s());
+    expect(names(log).filter((m) => !["message.setMore", "screens.sync"].includes(m))).toEqual([]);
   });
 });

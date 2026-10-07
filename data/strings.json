@@ -521,6 +521,8 @@
   "chest.found.drop": "戦いの跡に宝箱が残されていた。",
   "chest.found.cell": "足元に宝箱が置かれている。",
   "chest.prompt": "宝箱をどうする？",
+  "chest.menu.open": "開ける",
+  "chest.menu.leave": "放っておく",
   "chest.open.gold": "箱の中には{gold}の金があった。",
   "chest.left": "宝箱をその場に残した。",
   "chest.lost": "宝箱は失われた。",
