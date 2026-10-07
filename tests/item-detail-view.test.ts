@@ -3,13 +3,22 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { campMenu } from "../src/core/rules/camp";
 import { fieldItemMenu } from "../src/core/rules/items";
-import { itemDetail, uniqueBookView } from "../src/core/rules/item-view";
+import { equipPreview, itemDetail, spellInfo, uniqueBookView } from "../src/core/rules/item-view";
 import { cloneState, createItemInstance } from "../src/core/state";
 import type { GameState } from "../src/core/types";
 import { campEntries, campFirstPage, campHeader, campPanel, campRepair, campStep, createCampView, type CampInput } from "../src/presenter/views/camp";
-import { DESCRIPTION_CHARS, formatBook, formatItemDetail } from "../src/presenter/views/item-detail";
+import { chunkDescription, DESCRIPTION_CHARS, formatBook, formatEquipPreview, formatItemDetail } from "../src/presenter/views/item-detail";
+import { formatSpellInfo } from "../src/presenter/views/spell-info";
+import { dived } from "./helpers/battle";
 import { data, newGame } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
+
+const inDungeonState = (): GameState => cloneState(dived(1));
+function campInput(s: GameState): CampInput {
+  const menu = campMenu(s, data);
+  if (menu === null) throw new Error("no camp menu");
+  return { menu, items: fieldItemMenu(s, data), summary: null };
+}
 
 const S = data.strings;
 const town = (): GameState => cloneState(newGame(1));
@@ -253,5 +262,86 @@ describe("UI-59 パネルの lines", () => {
     v.render({ kind: "lines", title: "図鑑", lines: [], tall: true });
     v.render({ kind: "text", title: "酒場" });
     expect(box()).toEqual(["0px", "16px", "240px", "150px"]);
+  });
+
+  test("UI-67（M10）lines の accent（装備の差分の変わった行）は accent 色", () => {
+    vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
+    const v = createCampView({ x: 0, y: 16, w: 240, h: 150 });
+    v.render({ kind: "lines", title: "鎖帷子", lines: [{ text: "AC 8 → 6", tone: "accent" }] });
+    const el = v.el as unknown as FakeEl;
+    expect(el.children.map((c) => [c.textContent, c.style["color"]])).toEqual([
+      ["鎖帷子", "var(--c-accent)"],
+      ["AC 8 → 6", "var(--c-accent)"],
+    ]);
+  });
+});
+
+// M10（2026-10-07）: UI-67 装備の差分の行と、UI-68 呪文の説明の行（どちらも core の equipPreview / spellInfo の値を描くだけ）
+describe("UI-67 formatEquipPreview（装備の差分）", () => {
+  test("UI-67 鎧の入れ替え: 「AC {from} → {to}」「攻撃 {from} → {to}」「魔法攻撃力 {from} → {to}」の 3 行。changed の行だけ accent。呪いの警告は出さない", () => {
+    const s = town();
+    const mail = createItemInstance(s, { itemId: "chain_mail", identified: true });
+    s.party[0]!.inventory.push(mail);
+    const p = equipPreview(s, data, "c1", "armor", mail)!;
+    expect(p.ac.changed).toBe(true);
+    expect(formatEquipPreview(p, S)).toEqual([
+      { text: `AC ${p.ac.from} → ${p.ac.to}`, tone: "accent" },
+      { text: `攻撃 ${p.attack.from} → ${p.attack.from}`, tone: "normal" },
+      { text: "魔法攻撃力 0 → 0", tone: "normal" },
+    ]);
+  });
+
+  test("UI-67 呪いの警告は鑑定済みの呪われた品（core の cursedWarning）だけ、差分の上に danger で", () => {
+    const s = town();
+    const known = cursedDagger(s, true);
+    s.party[0]!.inventory.push(known);
+    const p = equipPreview(s, data, "c1", "weapon", known)!;
+    const lines = formatEquipPreview(p, S);
+    expect(lines[0]).toEqual({ text: "呪われている。装備すると外せない。", tone: "danger" });
+    expect(lines.slice(1).map((x) => x.text)).toEqual([
+      `AC ${p.ac.from} → ${p.ac.to}`,
+      `攻撃 ${p.attack.from} → ${p.attack.to}`,
+      `魔法攻撃力 ${p.magicPower.from} → ${p.magicPower.to}`,
+    ]);
+    expect(formatEquipPreview({ ...p, cursedWarning: false }, S)).toHaveLength(3);
+  });
+
+  test("UI-67 品の詳細の段のパネルは差分の引数を持つ（候補は装備するとき、装備中の品は外すとき null）", () => {
+    const s = inDungeonState();
+    const mail = createItemInstance(s, { itemId: "chain_mail", identified: true });
+    s.party[0]!.inventory.push(mail);
+    const m = campInput(s);
+    const armor = s.party[0]!.equipment.armor!;
+    expect(campPanel({ kind: "equip", stage: "detail", memberId: "c1", slot: "armor", instanceId: mail }, m, S)).toEqual({
+      kind: "item",
+      instanceId: mail,
+      preview: { memberId: "c1", slot: "armor", instanceId: mail },
+    });
+    expect(campPanel({ kind: "equip", stage: "detail", memberId: "c1", slot: "armor", instanceId: armor }, m, S)).toEqual({
+      kind: "item",
+      instanceId: armor,
+      preview: { memberId: "c1", slot: "armor", instanceId: null },
+    });
+  });
+});
+
+describe("UI-68 formatSpellInfo（呪文の説明）", () => {
+  test("UI-68 4 行: 「{name}　MP {mp}」・対象・場面・効果の文（spells.json の description）", () => {
+    const s = town();
+    const heal = spellInfo(s, data, "c4", "heal")!;
+    expect(formatSpellInfo(heal, S)).toEqual(["治癒　MP 2", "対象 味方 1 人", "場面 いつでも", "一人のHPを回復する。"]);
+    expect(formatSpellInfo(spellInfo(s, data, "c5", "sleep_mist")!, S).slice(1, 3)).toEqual(["対象 敵 1 グループ", "場面 戦闘中"]);
+    expect(formatSpellInfo(spellInfo(s, data, "c4", "return")!, S).slice(1, 3)).toEqual(["対象 なし", "場面 戦闘の外"]);
+  });
+
+  test("UI-68 spells.json の全呪文で、対象・場面の語が strings にあり（{v} や鍵が残らない）、効果の文は 28 字ずつで 7 − 3 行に収まる", () => {
+    const s = town();
+    for (const sp of data.spells) {
+      const lines = formatSpellInfo(spellInfo(s, data, "c4", sp.id)!, S);
+      for (const x of lines.slice(0, 3)) expect(x, sp.id).not.toMatch(/[{}]|spell\./);
+      expect(chunkDescription(lines[3]).length, sp.id).toBeLessThanOrEqual(4);
+    }
+    for (const k of ["enemy", "enemyGroup", "allEnemies", "ally", "party", "self", "none"]) expect(S[`spell.target.${k}`], k).toBeDefined();
+    for (const k of ["battle", "field", "both"]) expect(S[`spell.usableIn.${k}`], k).toBeDefined();
   });
 });

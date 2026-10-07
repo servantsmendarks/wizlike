@@ -11,6 +11,8 @@
 // - 帰還の糸（FieldItemView.isReturn）は送る前に確認の段（confirmReturn。戻る / やめる）を挟む。捨てるも確認の段（drop の confirm）を挟む。
 //   確認の段は表示層だけの値で、core の状態は確認まで変えない（保存しない）。
 // - 所持品は 8 件、呪文は 14 件ずつの頁（渡す・捨てる・呪文の段の一覧の [次の頁][前の頁]。パネルも同じ頁を出す）。
+// - UI-68（M10）: 呪文は 一覧 → 説明（[唱える][やめる]。パネルの呪文の枠を説明に置き換える）→ 対象。一覧の dim の呪文も説明を見られる（peek）。
+// - UI-67（M10）: 装備の品の詳細の段のパネルには差分の引数（preview）を付け、app が core の equipPreview の差分を詳細の下に出す。
 // DOM はパネル（createCampView）だけで、モジュールのトップレベルでは DOM に触れない。結線は app が行う。
 import type { EquipSlot, Strings } from "../../core/data/index";
 import type { CampMember, CampMenu, CampSummary, CampTargetBlock, Command, FieldItemMenu } from "../../core/types";
@@ -43,8 +45,9 @@ export type CampPage =
   /** CH-79（M10）: 捨てる品（page は所持品の頁） → 確認 */
   | { kind: "drop"; stage: "item"; memberId: string; page: number }
   | { kind: "drop"; stage: "confirm"; memberId: string; instanceId: string }
-  /** MG-44（M10 で キャラクター画面の下へ）: 習得呪文の一覧（page は呪文の頁）→ 対象 */
+  /** MG-44（M10 で キャラクター画面の下へ）: 習得呪文の一覧（page は呪文の頁）→ 説明（UI-68。[唱える][やめる]）→ 対象 */
   | { kind: "spell"; stage: "spell"; memberId: string; page: number }
+  | { kind: "spell"; stage: "info"; memberId: string; spellId: string }
   | { kind: "spell"; stage: "target"; memberId: string; spellId: string }
   /** CH-77（M10 で キャラクター画面の下へ）: memberId は鑑定する者。品はパーティ全員の未鑑定品 */
   | { kind: "identify"; memberId: string }
@@ -71,14 +74,17 @@ export type CampChoice =
   /** UI-59（M7）: 装備の段の品の行。押すと品の詳細の段へ */
   | { kind: "detail"; instanceId: string }
   | { kind: "identifyItem"; instanceId: string }
-  /** 確認の段の決定（帰還の糸の「戻る」・捨てるの「捨てる」） */
+  /** 確認の段の決定（帰還の糸の「戻る」・捨てるの「捨てる」・呪文の説明の段の「唱える」（UI-68）） */
   | { kind: "confirm" }
   /** 押しても何もしない行（「装備できる物がない」など） */
   | { kind: "none" }
   /** やめる / 戻る */
   | { kind: "cancel" };
-/** reason は押せない項目を押したときに語る文（core の値から作ったものだけ。無ければ何もしない） */
-export type CampEntry = { label: string; disabled: boolean; choice: CampChoice; reason?: string };
+/**
+ * reason は押せない項目を押したときに語る文（core の値から作ったものだけ。無ければ何もしない）。
+ * peek は dim（disabled）でも選べる行（UI-68 の呪文の一覧。唱えられない呪文も説明を見られる。押しても送るのは説明の段の「唱える」だけ）
+ */
+export type CampEntry = { label: string; disabled: boolean; choice: CampChoice; reason?: string; peek?: true };
 /** grid は layout.campGrid の 8 枠（null は空き枠）、list は操作領域の一覧 */
 export type CampEntries = { layout: "grid"; slots: (CampEntry | null)[] } | { layout: "list"; rows: CampEntry[] };
 /** 段を移る・閉じる・送る（送った後は after の段へ） */
@@ -90,10 +96,14 @@ export type CampStep = { kind: "page"; page: CampPage } | { kind: "close" } | { 
  */
 export type CampPanel =
   | { kind: "text"; title: string; lines?: string[] }
-  | { kind: "character"; memberId: string; focusSlot: EquipSlot | null; spellPage?: number; inventoryPage?: number }
+  /** spellInfo は UI-68（M10）の呪文の説明の段・対象の段の呪文（呪文の枠を説明に置き換える。app が core の spellInfo から作る） */
+  | { kind: "character"; memberId: string; focusSlot: EquipSlot | null; spellPage?: number; inventoryPage?: number; spellInfo?: string }
   | { kind: "order"; rows: { n: number; name: string; row: string; picked: boolean }[] }
-  /** UI-59（M7）: 品の詳細（app が core の itemDetail から formatItemDetail で行を作る） */
-  | { kind: "item"; instanceId: string }
+  /**
+   * UI-59（M7）: 品の詳細（app が core の itemDetail から formatItemDetail で行を作る）。
+   * preview は UI-67（M10）の装備の差分の引数（app が core の equipPreview に渡す。instanceId null はその枠の装備中の品を外すとき）
+   */
+  | { kind: "item"; instanceId: string; preview?: { memberId: string; slot: EquipSlot; instanceId: string | null } }
   /** IT-66（M7）: 図鑑（app が core の uniqueBookView から formatBook で行を作る） */
   | { kind: "book" };
 /** summary は core の campSummary（迷宮のキャンプだけ非 null。UI-53） */
@@ -162,7 +172,8 @@ function cancelStep(host: CampHost, page: CampPage, m: CampInput): CampStep {
       return go({ kind: "drop", stage: "item", memberId: page.memberId, page: inventoryPageOf(m, page.memberId, page.instanceId) });
     case "spell":
       if (page.stage === "spell") return go({ kind: "character", memberId: page.memberId });
-      return go(spellListPage(m, page.memberId, page.spellId));
+      if (page.stage === "info") return go(spellListPage(m, page.memberId, page.spellId));
+      return go({ kind: "spell", stage: "info", memberId: page.memberId, spellId: page.spellId });
     case "identify":
       return go({ kind: "character", memberId: page.memberId });
   }
@@ -254,7 +265,8 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
           act("use", it === undefined || !it.canAct || !it.items.some((y) => y.usable)),
           act("give", empty),
           act("drop", empty),
-          act("spell", !(x?.knownSpells.some((y) => y.castable) ?? false)),
+          // UI-68（M10）: 習得呪文があれば押せる（唱えられない呪文も一覧から説明を見られる。唱えられるかは説明の段の「唱える」）
+          act("spell", (x?.knownSpells.length ?? 0) === 0),
           identify,
           { label: s(strings, "character.next"), disabled: menu.members.length <= 1, choice: { kind: "nextMember" } },
           back,
@@ -349,8 +361,14 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
         const known = x?.knownSpells ?? [];
         const rows: CampEntry[] = known
           .slice(page.page * CHARACTER_SPELL_CELLS, (page.page + 1) * CHARACTER_SPELL_CELLS)
-          .map((sp) => ({ label: s(strings, "camp.spellRow", { name: sp.name, mp: sp.mp }), disabled: !sp.castable, choice: { kind: "spell", spellId: sp.spellId } }));
+          // UI-68（M10）: 唱えられない呪文は dim のまま、押すと説明の段へ（peek）
+          .map((sp) => ({ label: s(strings, "camp.spellRow", { name: sp.name, mp: sp.mp }), disabled: !sp.castable, choice: { kind: "spell", spellId: sp.spellId }, peek: true }));
         return list([...rows, ...pageRows(strings, page.page, pageCount(known.length, CHARACTER_SPELL_CELLS))]);
+      }
+      if (page.stage === "info") {
+        // UI-68（M10）: 唱える（戦闘外で唱えられ MP が足りる。core の castable）/ やめる
+        const castable = x?.knownSpells.find((y) => y.spellId === page.spellId)?.castable ?? false;
+        return list([{ label: s(strings, "spell.info.cast"), disabled: !castable, choice: { kind: "confirm" } }]);
       }
       const sp = x?.spells.find((y) => y.spellId === page.spellId);
       if (sp?.target === "dead") {
@@ -479,10 +497,17 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
           return p < 0 || p >= pageCount(x?.knownSpells.length ?? 0, CHARACTER_SPELL_CELLS) ? stay : go({ ...page, page: p });
         }
         if (choice.kind !== "spell") return stay;
-        // 戦闘外で唱えられる呪文（campMenu の spells）だけ先へ進む。戦闘専用の呪文は同じ段のまま
-        const sp = x?.spells.find((y) => y.spellId === choice.spellId);
-        if (sp === undefined) return stay;
-        if (sp.target === "none") return { kind: "send", command: { type: "dungeon.cast", memberId: page.memberId, spellId: sp.spellId }, after: page };
+        // UI-68（M10）: 習得呪文なら（戦闘専用・MP の足りない呪文も）説明の段へ
+        if (!(x?.knownSpells.some((y) => y.spellId === choice.spellId) ?? false)) return stay;
+        return go({ kind: "spell", stage: "info", memberId: page.memberId, spellId: choice.spellId });
+      }
+      if (page.stage === "info") {
+        if (choice.kind !== "confirm") return stay;
+        // 戦闘外で唱えられる呪文（knownSpells の castable、対象は campMenu の spells）だけ先へ進む
+        const sp = x?.spells.find((y) => y.spellId === page.spellId);
+        if (sp === undefined || !(x?.knownSpells.find((y) => y.spellId === page.spellId)?.castable ?? false)) return stay;
+        const list = spellListPage(m, page.memberId, sp.spellId);
+        if (sp.target === "none") return { kind: "send", command: { type: "dungeon.cast", memberId: page.memberId, spellId: sp.spellId }, after: list };
         return go({ kind: "spell", stage: "target", memberId: page.memberId, spellId: sp.spellId });
       }
       if (choice.kind !== "target") return stay;
@@ -540,7 +565,7 @@ export function campHeader(page: CampPage, m: CampInput, strings: Strings): stri
       return s(strings, "camp.dropConfirm", { item: it?.name ?? "" });
     }
     case "spell": {
-      if (page.stage === "spell") return s(strings, "camp.prompt.spellWhich", { name: nameOf(m, page.memberId) });
+      if (page.stage === "spell" || page.stage === "info") return s(strings, "camp.prompt.spellWhich", { name: nameOf(m, page.memberId) });
       const sp = memberOf(m, page.memberId)?.spells.find((x) => x.spellId === page.spellId);
       return s(strings, sp?.target === "dead" ? "camp.prompt.spellDead" : "camp.prompt.spellTarget");
     }
@@ -555,15 +580,21 @@ export function campHeader(page: CampPage, m: CampInput, strings: Strings): stri
 
 /** ビューに出すもの（キャラクター画面とその下の段は UI-59 の画面、品の詳細、並び順の表、図鑑、それ以外は場所の見出しだけ） */
 export function campPanel(page: CampPage, m: CampInput, strings: Strings): CampPanel {
-  if (page.kind === "equip" && page.stage === "detail") return { kind: "item", instanceId: page.instanceId };
+  if (page.kind === "equip" && page.stage === "detail") {
+    // UI-67（M10）: 差分の引数。その枠の装備中の品なら外すとき（null）、候補なら装備するとき
+    const cur = memberOf(m, page.memberId)?.slots.find((sl) => sl.slot === page.slot);
+    const equipped = cur !== undefined && cur.instanceId === page.instanceId;
+    return { kind: "item", instanceId: page.instanceId, preview: { memberId: page.memberId, slot: page.slot, instanceId: equipped ? null : page.instanceId } };
+  }
   if (page.kind === "book") return { kind: "book" };
   const who = pageMember(page);
   if (who !== null) {
     const focusSlot = page.kind === "equip" && page.stage === "item" ? page.slot : null;
     const base = { kind: "character" as const, memberId: who, focusSlot };
     if (page.kind === "spell") {
-      const p = page.stage === "spell" ? page.page : spellPageOf(m, page.memberId, page.spellId);
-      return { ...base, spellPage: p };
+      if (page.stage === "spell") return { ...base, spellPage: page.page };
+      // UI-68（M10）: 説明の段と対象の段は、呪文の枠をその呪文の説明に置き換える
+      return { ...base, spellPage: spellPageOf(m, page.memberId, page.spellId), spellInfo: page.spellId };
     }
     if ((page.kind === "give" || page.kind === "drop") && page.stage === "item") return { ...base, inventoryPage: page.page };
     return base;
@@ -651,6 +682,8 @@ export function campRepair(host: CampHost, page: CampPage, m: CampInput): CampPa
         const last = pageCount(x.knownSpells.length, CHARACTER_SPELL_CELLS) - 1;
         return page.page > last ? { ...page, page: last } : page;
       }
+      // UI-68（M10）: 説明の段は、その呪文を覚えている間は成り立つ（唱えられなければ「唱える」が dim）
+      if (page.stage === "info") return x.knownSpells.some((y) => y.spellId === page.spellId) ? page : spellListPage(m, page.memberId, page.spellId);
       // 対象の段で、その呪文が使えなくなった（MP 切れ・行動不能）→ 同じ者の呪文の一覧
       return x.spells.some((y) => y.spellId === page.spellId && y.usable) ? page : spellListPage(m, page.memberId, page.spellId);
     }
@@ -770,7 +803,8 @@ export function createCampView(rect: Rect, tallRect: Rect = rect): CampView {
         return;
       }
       if (p.kind === "lines") {
-        const color = (tone: PanelLine["tone"]): string | undefined => (tone === "danger" ? "var(--c-danger)" : tone === "dim" ? "var(--c-dim)" : undefined);
+        const color = (tone: PanelLine["tone"]): string | undefined =>
+          tone === "danger" ? "var(--c-danger)" : tone === "dim" ? "var(--c-dim)" : tone === "accent" ? "var(--c-accent)" : undefined;
         el.replaceChildren(line(0, p.title, "camp-title", "var(--c-accent)"), ...p.lines.map((x, i) => line(i + 1, x.text, "camp-line", color(x.tone))));
         return;
       }

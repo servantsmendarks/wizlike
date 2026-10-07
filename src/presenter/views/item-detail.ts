@@ -2,11 +2,11 @@
 // 値は core の itemDetail / uniqueBookView の値だけで決める（UI-35。式・判定を持たない）。ここは文字列を組むだけの純粋な部分で、
 // 描くのはキャンプのパネル（views/camp.ts の lines）。行は 10px で、パネル（ビュー領域 150px）に見出し + 13 行まで。
 import type { Strings } from "../../core/data/index";
-import type { ItemDetail, UniqueBookRow } from "../../core/rules/item-view";
+import type { EquipPreview, EquipPreviewLine, ItemDetail, UniqueBookRow } from "../../core/rules/item-view";
 import { formatMessage } from "./message";
 
-/** パネルの 1 行。tone は色（danger は負のオプションと呪い、dim は説明） */
-export type PanelLine = { text: string; tone: "normal" | "danger" | "dim" };
+/** パネルの 1 行。tone は色（danger は負のオプションと呪い、dim は説明、accent は装備の差分の変わった行（UI-67）） */
+export type PanelLine = { text: string; tone: "normal" | "danger" | "dim" | "accent" };
 export type PanelLines = { title: string; lines: PanelLine[] };
 
 /** 説明を 1 行に入れる文字数（美咲の全角 8px。パネルの幅 240 − 左右の余白 8 = 232px → 29 字。1 字の余裕を残す） */
@@ -21,8 +21,8 @@ function signed(v: number): string {
   return v > 0 ? `+${v}` : String(v);
 }
 
-/** 説明を DESCRIPTION_CHARS 字ずつに切る（表示のためだけの計算） */
-function chunks(text: string): string[] {
+/** 説明を DESCRIPTION_CHARS 字ずつに切る（表示のためだけの計算。UI-68 の呪文の説明もこれで切る） */
+export function chunkDescription(text: string): string[] {
   const chars = Array.from(text);
   const out: string[] = [];
   for (let i = 0; i < chars.length; i += DESCRIPTION_CHARS) out.push(chars.slice(i, i + DESCRIPTION_CHARS).join(""));
@@ -57,8 +57,26 @@ export function formatItemDetail(d: ItemDetail, strings: Strings): PanelLines {
   if (d.skill !== null) lines.push(line(s(strings, `item.skill.${d.skill.type}`, { value: d.skill.value })));
   if (d.cursed) lines.push(line(s(strings, "item.cursed"), "danger"));
   if (d.sellPrice !== null) lines.push(line(s(strings, "item.detail.sell", { gold: d.sellPrice })));
-  if (d.description !== null) lines.push(...chunks(d.description).map((t) => line(t, "dim")));
+  if (d.description !== null) lines.push(...chunkDescription(d.description).map((t) => line(t, "dim")));
   return { title: d.name, lines };
+}
+
+/**
+ * UI-67（M10）: 装備の差分の行（品の詳細の下に足す）。値は core の equipPreview だけ（UI-35）。
+ * 呪いの警告（cursedWarning。鑑定済みの呪われた品）があれば先頭に camp.equipCursedWarn（danger）、続けて
+ * equip.diffAc / equip.diffAttack / equip.diffMagic の 3 行（変わらない行も出す。core の changed が真の行は accent。良し悪しの色分けはしない）
+ */
+export function formatEquipPreview(p: EquipPreview, strings: Strings): PanelLine[] {
+  const row = <T extends string | number>(key: string, l: EquipPreviewLine<T>): PanelLine => ({
+    text: s(strings, key, { from: l.from, to: l.to }),
+    tone: l.changed ? "accent" : "normal",
+  });
+  return [
+    ...(p.cursedWarning ? [{ text: s(strings, "camp.equipCursedWarn"), tone: "danger" as const }] : []),
+    row("equip.diffAc", p.ac),
+    row("equip.diffAttack", p.attack),
+    row("equip.diffMagic", p.magicPower),
+  ];
 }
 
 /** IT-66: 図鑑の行（uniques.json の順）。記録の無いものは book.unknown、入手ダンジョンが無ければ book.noPlace */

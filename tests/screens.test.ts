@@ -605,11 +605,26 @@ describe("入力と Command", () => {
     expect(core).toMatch(/if \(a === "left" \|\| a === "right"\) \{\s*const next = campCycle\(campPage, m, a === "right" \? 1 : -1\);/);
   });
 
+  test("UI-68（M10）戦闘の呪文の説明は窓の showNote（履歴に残さない）: syncBattleControls が spellNote の段だけ core の spellInfo を出し、それ以外とオートでは hideNote。確定（送る）と入力の UI を下げるときも hideNote（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const sync = /const syncBattleControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(sync).toMatch(
+      /const note = menu === null \|\| menu\.auto \|\| cursor === null \? null : spellNote\(cursor\);\s*const info = note === null \? null : spellInfo\(state, data, note\.memberId, note\.spellId\);\s*if \(info === null\) play\.message\.hideNote\(\);\s*else play\.message\.showNote\(formatSpellInfo\(info, strings\)\);\s*if \(menu === null\)/,
+    );
+    const choose = /const chooseBattle = \(choice: Choice\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(choose).toMatch(/clearFocus\(\);\s*play\.message\.hideNote\(\);\s*void runBattle\(r\.send\);/);
+    const lower = /const lowerInput = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(lower).toContain("play.message.hideNote();");
+    // 窓の説明を出すのは app の戦闘の 1 か所だけ（キャンプの説明はキャラクター画面の呪文の枠に出す）
+    expect(app.match(/showNote\(/g)?.length).toBe(1);
+  });
+
   test("UI-59（M10）キャラクター画面の開閉は setCharacter を通す: campCharacterOpen の段で開き、閉じる・再開で閉じる。閉じるとき街でなければ会話の箱を打ち切る。押せない項目の理由は会話の箱に語る（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const sync = /const syncCampControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(sync).toMatch(/campPage = campRepair\(campHost, campPage, m\);\s*setCharacter\(campCharacterOpen\(campPage\)\);/);
-    expect(sync).toContain("...campReason(x),");
+    // UI-68（M10）: peek の行（唱えられない呪文）は dim でも選べる。それ以外は理由を語る
+    expect(sync).toContain("...(x.peek === true ? { onDisabled: () => guard(() => chooseCamp(x.choice)) } : campReason(x)),");
     const set = /const setCharacter = \(on: boolean\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(set).toMatch(/if \(characterOpen === on\) return;\s*characterOpen = on;\s*if \(!on && route !== "town"\) play\.talk\.flush\(\);\s*play\.setCharacterOpen\(on\);/);
     const close = /const closeCamp = \([\s\S]*?\n {2}\};/.exec(app)?.[0] ?? "";

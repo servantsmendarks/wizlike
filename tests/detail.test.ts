@@ -421,3 +421,38 @@ describe("UI-69 キャラクター画面の行 2（M10）", () => {
     }
   });
 });
+
+describe("UI-68 キャラクター画面の呪文の説明（M10）", () => {
+  const px = (v: string | undefined): number => Number((v ?? "").replace("px", ""));
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("UI-68 spellNote があれば呪文の枠（行 20〜26）の代わりに説明を 1 行ずつ出す（見出しは accent、7 行まで）。無ければ今までどおり呪文の枠", () => {
+    vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
+    const v = createDetailView({ x: 0, y: 16, w: 240, h: 284 });
+    const s = newGame(1);
+    const ch = s.party[3]!;
+    const member = campMenu(s, data)!.members[3]!;
+    const d = formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch), member);
+    v.render({ ...d, spellNote: ["治癒　MP 2", "対象 味方 1 人", "場面 いつでも", "a", "b", "c", "d", "あふれる行"] });
+    const el = v.el as unknown as FakeEl;
+    expect(el.children.filter((c) => c.className === "detail-spell")).toEqual([]);
+    const note = el.children.filter((c) => c.className === "detail-spell-note");
+    expect(note.map((c) => [px(c.style["left"]) + 1, px(c.style["top"]) + 1, c.textContent])).toEqual([
+      [4, 204, "治癒　MP 2"],
+      [4, 214, "対象 味方 1 人"],
+      [4, 224, "場面 いつでも"],
+      [4, 234, "a"],
+      [4, 244, "b"],
+      [4, 254, "c"],
+      [4, 264, "d"],
+    ]);
+    expect(note.map((c) => c.style["color"])).toEqual(["var(--c-accent)", undefined, undefined, undefined, undefined, undefined, undefined]);
+    // 見出し「呪文」は残す
+    expect(el.children.filter((c) => c.className === "detail-spell-head").map((c) => c.textContent)).toEqual([t("character.spellHeading")]);
+    v.render(d);
+    expect(el.children.filter((c) => c.className === "detail-spell-note")).toEqual([]);
+    expect(el.children.filter((c) => c.className === "detail-spell").length).toBe(member.knownSpells.length);
+  });
+});

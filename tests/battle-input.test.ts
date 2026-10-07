@@ -11,6 +11,7 @@ import {
   moveFocus,
   nextCursor,
   setFocus,
+  spellNote,
   step,
   targetNumber,
   type Choice,
@@ -101,7 +102,8 @@ describe("UI-54 入力の段階", () => {
   test("UI-54/CB-12 入力の段階で使う文言のキーがすべて strings にある", () => {
     for (const k of [
       ...["fight", "repeat", "flee", "auto", "attack", "spell", "defend", "item", "autoStop"].map((c) => `battle.cmd.${c}`),
-      ...["party", "member", "spell", "item", "enemy", "ally"].map((p) => `battle.prompt.${p}`),
+      ...["party", "member", "spell", "item", "enemy", "ally", "spellConfirm"].map((p) => `battle.prompt.${p}`),
+      "spell.info.cast",
       "battle.targetGroup",
       "battle.targetAlly",
       "battle.spellRow",
@@ -250,9 +252,12 @@ describe("UI-54 入力の段階", () => {
     // allies に居ない味方（死亡など）は選べない
     expect(step(m, he.cursor, { kind: "ally", id: "c3" }).send).toBeNull();
 
+    // UI-68（M10）/ U4: 対象を選ばない呪文は確認の段（説明を窓に出す）を挟み、唱えるで送る（M3 では即 send だった）
     for (const spellId of ["blessing", "identify"]) {
-      expect(step(m, sp.cursor, { kind: "spell", spellId })).toEqual({
-        cursor: sp.cursor,
+      const cf = step(m, sp.cursor, { kind: "spell", spellId });
+      expect(cf).toEqual({ cursor: { stage: "spellConfirm", memberId: "c5", spellId }, send: null });
+      expect(step(m, cf.cursor, { kind: "castConfirm" })).toEqual({
+        cursor: cf.cursor,
         send: { type: "battle.input", memberId: "c5", action: { type: "cast", spellId, target: { side: "none" } } },
       });
     }
@@ -321,15 +326,18 @@ describe("UI-54 入力の段階", () => {
     expect(step(m, tgt("enemy", "c1", { kind: "attack" }), { kind: "back" })).toEqual({ cursor: mem("c1"), send: null });
   });
 
-  test("UI-54 W5 体数 1 以上の敵グループが 1 つだけなら、攻撃と敵の呪文は対象の一覧を飛ばしてすぐ送る。味方の対象は飛ばさない", () => {
+  // UI-68（M10）/ U4: 敵の呪文は、対象の一覧を飛ばす代わりに確認の段（説明）を挟み、唱えるでそのグループへ送る（M3 では即 send だった）
+  test("UI-54 W5 体数 1 以上の敵グループが 1 つだけなら、攻撃と敵の呪文は対象の一覧を飛ばす（呪文は UI-68 の確認の段の後に送る）。味方の対象は飛ばさない", () => {
     const m = menu({ groups: ONE_GROUP });
     expect(step(m, mem("c1"), mc("attack"))).toEqual({
       cursor: mem("c1"),
       send: { type: "battle.input", memberId: "c1", action: { type: "attack", group: 1 } },
     });
     const sp = list("spell", "c5");
-    expect(step(m, sp, { kind: "spell", spellId: "fire_arrow" })).toEqual({
-      cursor: sp,
+    const cf = step(m, sp, { kind: "spell", spellId: "fire_arrow" });
+    expect(cf).toEqual({ cursor: { stage: "spellConfirm", memberId: "c5", spellId: "fire_arrow" }, send: null });
+    expect(step(m, cf.cursor, { kind: "castConfirm" })).toEqual({
+      cursor: cf.cursor,
       send: { type: "battle.input", memberId: "c5", action: { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 1 } } },
     });
     expect(step(m, sp, { kind: "spell", spellId: "heal" })).toEqual({
@@ -422,5 +430,49 @@ describe("UI-66（2026-10-07）戻るの選択肢", () => {
     expect(spell.slice(0, -1).every((x) => !x)).toBe(true);
     const enemy = backs(tgt("enemy", "c1", { kind: "attack" }));
     expect(enemy).toEqual([false, false, true]);
+  });
+});
+
+// M10（2026-10-07）: UI-68 呪文の説明。対象を選ぶ呪文は対象の段、対象を選ばない呪文（と敵が 1 グループの敵の呪文）は確認の段 spellConfirm（U4）
+describe("UI-68 呪文の確認の段と説明（M10）", () => {
+  const confirm = (memberId: string, spellId: string): InputCursor => ({ stage: "spellConfirm", memberId, spellId });
+
+  test("UI-68 確認の段は [唱える][戻る]（末尾が戻る）。戻るは呪文の一覧。段に合わない選択と usable 偽は送らない", () => {
+    const m = menu();
+    const cf = confirm("c5", "blessing");
+    expect(entries(m, cf, S)).toEqual([
+      { label: t("spell.info.cast"), disabled: false, choice: { kind: "castConfirm" } },
+      { label: t("common.back"), disabled: false, choice: { kind: "back" } },
+    ]);
+    expect(back(m, cf)).toEqual({ stage: "spell", memberId: "c5" });
+    expect(step(m, cf, { kind: "back" })).toEqual({ cursor: { stage: "spell", memberId: "c5" }, send: null });
+    expect(step(m, cf, { kind: "group", index: 1 })).toEqual({ cursor: cf, send: null });
+    expect(step(m, cf, mc("back"))).toEqual({ cursor: cf, send: null });
+    // MP 不足（usable 偽）の呪文の確認の段は送らない
+    expect(step(m, confirm("c5", "flame_burst"), { kind: "castConfirm" })).toEqual({ cursor: confirm("c5", "flame_burst"), send: null });
+    // 一覧の段では castConfirm を受けない
+    expect(step(m, { stage: "spell", memberId: "c5" }, { kind: "castConfirm" })).toEqual({ cursor: { stage: "spell", memberId: "c5" }, send: null });
+  });
+
+  test("UI-68/U4 手数: 対象を選ぶ呪文（火矢・治癒）は一覧 → 対象 → 送る、対象を選ばない呪文（加護）は一覧 → 確認 → 送る。どちらも一覧の後 2 タップ", () => {
+    const m = menu();
+    const sp: InputCursor = { stage: "spell", memberId: "c5" };
+    const fa = step(m, sp, { kind: "spell", spellId: "fire_arrow" });
+    expect(fa.cursor.stage).toBe("enemy");
+    expect(step(m, fa.cursor, { kind: "group", index: 1 }).send).not.toBeNull();
+    const bl = step(m, sp, { kind: "spell", spellId: "blessing" });
+    expect(bl.cursor.stage).toBe("spellConfirm");
+    expect(step(m, bl.cursor, { kind: "castConfirm" }).send).not.toBeNull();
+  });
+
+  test("UI-68 spellNote: 説明を出すのは確認の段と、呪文の対象の段だけ（攻撃・道具の対象、一覧、メンバーの枠、パーティの選択は null）", () => {
+    expect(spellNote(confirm("c5", "blessing"))).toEqual({ memberId: "c5", spellId: "blessing" });
+    expect(spellNote(tgt("enemy", "c5", { kind: "cast", spellId: "fire_arrow" }))).toEqual({ memberId: "c5", spellId: "fire_arrow" });
+    expect(spellNote(tgt("ally", "c5", { kind: "cast", spellId: "heal" }))).toEqual({ memberId: "c5", spellId: "heal" });
+    expect(spellNote(tgt("enemy", "c1", { kind: "attack" }))).toBeNull();
+    expect(spellNote(tgt("ally", "c6", { kind: "item", instanceId: "i1" }))).toBeNull();
+    expect(spellNote({ stage: "spell", memberId: "c5" })).toBeNull();
+    expect(spellNote(mem("c5"))).toBeNull();
+    expect(spellNote({ stage: "party" })).toBeNull();
   });
 });

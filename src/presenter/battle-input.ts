@@ -4,6 +4,9 @@
 //   逃げるは battle.flee、オートは battle.auto on を送る。戦うで先頭の行動可能なメンバーの member へ。
 // - member は 5 枠（上段 攻撃・呪文・防御・道具、下段の右端 戻る）。戻るは並び順で前の行動可能なメンバー、先頭なら party。
 // - spell / item / enemy / ally は一覧で、末尾が「戻る」（親の段へ）。enemy / ally は注目（focus。一覧の添字）を持つ。
+// - UI-68（M10）/ U4: 呪文を選ぶと、対象を選ぶ呪文（enemy / enemyGroup / ally）は対象の段へ、対象を選ばない呪文（allEnemies / party / self / none）と、
+//   体数 1 以上の敵グループが 1 つだけのときの敵の呪文は確認の段 spellConfirm（[唱える][戻る]）へ進む（説明を読む 1 タップ。対象の有無で手数を揃える）。
+//   説明を出す段は spellNote が返す（呪文の対象の段と確認の段）。確認の段の戻るは呪文の一覧。
 // - 体数 1 以上の敵グループが 1 つだけなら enemy の段を飛ばしてそのグループを送る。enemy / ally の段の初期の注目は、
 //   並び順で 1 つ前の行動可能なメンバーの入力の対象（今も選べるとき）。無ければ 0。
 // - step は選択を受けて次の cursor と、送る Command（無ければ null）を返す。送るときの cursor は元のまま
@@ -13,11 +16,13 @@ import type { SpellTarget, Strings } from "../core/data/index";
 import type { BattleAction, BattleMenu, BattleMenuMember, BattleTarget, Command } from "../core/types";
 import { formatMessage } from "./views/message";
 
-export type InputStage = "party" | "member" | "spell" | "item" | "enemy" | "ally";
+export type InputStage = "party" | "member" | "spell" | "item" | "enemy" | "ally" | "spellConfirm";
 export type Pick = { kind: "attack" } | { kind: "cast"; spellId: string } | { kind: "item"; instanceId: string };
 export type InputCursor =
   | { stage: "party" }
   | { stage: "member" | "spell" | "item"; memberId: string }
+  /** UI-68（M10）: 呪文の確認の段（説明を窓に出し、[唱える][戻る]） */
+  | { stage: "spellConfirm"; memberId: string; spellId: string }
   /** focus は一覧（末尾の戻るを含む）の添字 */
   | { stage: "enemy" | "ally"; memberId: string; pick: Pick; focus: number };
 export type PartyCmd = "fight" | "repeat" | "flee" | "auto";
@@ -29,6 +34,8 @@ export type Choice =
   | { kind: "item"; instanceId: string }
   | { kind: "group"; index: number }
   | { kind: "ally"; id: string }
+  /** UI-68（M10）: 確認の段の「唱える」 */
+  | { kind: "castConfirm" }
   | { kind: "back" };
 export type MenuEntry = { label: string; disabled: boolean; choice: Choice };
 
@@ -150,6 +157,8 @@ export function entries(menu: BattleMenu, cursor: InputCursor, strings: Strings)
         ),
         back,
       ];
+    case "spellConfirm":
+      return [{ label: s("spell.info.cast"), disabled: false, choice: { kind: "castConfirm" } }, back];
     case "item":
       return [
         ...m.items.map((it): MenuEntry => ({ label: it.name, disabled: false, choice: { kind: "item", instanceId: it.instanceId } })),
@@ -269,6 +278,17 @@ export function step(menu: BattleMenu, cursor: InputCursor, choice: Choice): { c
       if (choice.kind !== "spell") return stay;
       const sp = m.spells.find((x) => x.spellId === choice.spellId);
       if (sp === undefined || !sp.usable) return stay;
+      const next = targetStage(sp.target);
+      // UI-68 / U4: 対象の段を飛ばす（対象なし・敵グループが 1 つだけの敵の呪文）ときは確認の段で説明を見せる
+      if (next === null || (next === "enemy" && liveGroups(menu).length === 1)) {
+        return { cursor: { stage: "spellConfirm", memberId: id, spellId: sp.spellId }, send: null };
+      }
+      return toTarget(menu, cursor, id, { kind: "cast", spellId: sp.spellId }, next);
+    }
+    case "spellConfirm": {
+      if (choice.kind !== "castConfirm") return stay;
+      const sp = m.spells.find((x) => x.spellId === cursor.spellId);
+      if (sp === undefined || !sp.usable) return stay;
       const pick: Pick = { kind: "cast", spellId: sp.spellId };
       const next = targetStage(sp.target);
       if (next !== null) return toTarget(menu, cursor, id, pick, next);
@@ -315,6 +335,8 @@ export function back(menu: BattleMenu, cursor: InputCursor): InputCursor {
       if (cursor.pick.kind === "item") return { stage: "item", memberId: id };
       return { stage: "member", memberId: id };
     }
+    case "spellConfirm":
+      return { stage: "spell", memberId: cursor.memberId };
     case "spell":
     case "item":
       return { stage: "member", memberId: cursor.memberId };
@@ -323,6 +345,16 @@ export function back(menu: BattleMenu, cursor: InputCursor): InputCursor {
       return prev === null ? { stage: "party" } : { stage: "member", memberId: prev.id };
     }
   }
+}
+
+/**
+ * UI-68（M10）: 呪文の説明を窓に出す段なら、その者と呪文（確認の段と、呪文の対象の段）。それ以外（一覧に戻った・攻撃・道具）は null。
+ * 説明の値は core の spellInfo（呼ぶのは app）
+ */
+export function spellNote(cursor: InputCursor): { memberId: string; spellId: string } | null {
+  if (cursor.stage === "spellConfirm") return { memberId: cursor.memberId, spellId: cursor.spellId };
+  if ((cursor.stage === "enemy" || cursor.stage === "ally") && cursor.pick.kind === "cast") return { memberId: cursor.memberId, spellId: cursor.pick.spellId };
+  return null;
 }
 
 /** enemy / ally の段の選択肢の数（末尾の戻るを含む）。それ以外は 0 */

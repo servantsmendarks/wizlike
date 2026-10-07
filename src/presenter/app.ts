@@ -26,7 +26,7 @@ import { campMenu, campSummary } from "../core/rules/camp";
 import { SAN_OVER_DEBUG } from "../core/rules/debug";
 import { planRoute, routeStepOk } from "../core/rules/pathfind";
 import { STAY_CHOICE_ID } from "../core/rules/choices";
-import { itemDetail, memberSheet, uniqueBookView } from "../core/rules/item-view";
+import { equipPreview, itemDetail, memberSheet, spellInfo, uniqueBookView } from "../core/rules/item-view";
 import { sanStage } from "../core/rules/san";
 import { fieldItemMenu } from "../core/rules/items";
 import { townMenu } from "../core/rules/town";
@@ -46,6 +46,7 @@ import {
   moveFocus,
   nextCursor,
   setFocus,
+  spellNote,
   step,
   type Choice,
   type InputCursor,
@@ -115,7 +116,8 @@ import {
   type CampPanelView,
 } from "./views/camp";
 import { formatCharacter, SLOT_ORDER } from "./views/detail";
-import { formatBook, formatItemDetail } from "./views/item-detail";
+import { chunkDescription, formatBook, formatEquipPreview, formatItemDetail } from "./views/item-detail";
+import { formatSpellInfo } from "./views/spell-info";
 import { createDungeonScreen } from "./views/dungeon";
 import { mapTapAction } from "./views/map";
 import { slotsFor } from "./views/dungeon-geometry";
@@ -465,6 +467,7 @@ export function createApp(o: {
   const lowerInput = (): void => {
     play.party.setActive(null);
     clearFocus();
+    play.message.hideNote(); // UI-68: 呪文の説明を下げて、前の行に戻す
     play.header.setText("");
     play.controls.setMode("none");
   };
@@ -817,7 +820,8 @@ export function createApp(o: {
       label: x.label,
       disabled: x.disabled,
       back: x.choice.kind === "cancel",
-      ...campReason(x),
+      // UI-68（M10）: peek の行は dim でも選べる（唱えられない呪文の説明を見る）
+      ...(x.peek === true ? { onDisabled: () => guard(() => chooseCamp(x.choice)) } : campReason(x)),
       onSelect: () => guard(() => chooseCamp(x.choice)),
     });
     if (e.layout === "grid") {
@@ -865,16 +869,28 @@ export function createApp(o: {
       // UI-59（M7）: 品の詳細は core の itemDetail の値を描く（実体が消えていれば見出しだけ。sync の campRepair で段を直す）。
       // M10: キャラクター画面の下の段なので、同じ広さ（layout.character）に出す
       const d = itemDetail(state, data, p.instanceId);
-      return d === null ? { kind: "text", title: "" } : { kind: "lines", ...formatItemDetail(d, strings), tall: true };
+      if (d === null) return { kind: "text", title: "" };
+      const panel = formatItemDetail(d, strings);
+      // UI-67（M10）: 装備の段の品の詳細の下に、core の equipPreview の差分（装備できない・外せないなら null で出さない）
+      const pv = p.preview === undefined ? null : equipPreview(state, data, p.preview.memberId, p.preview.slot, p.preview.instanceId);
+      const lines = pv === null ? panel.lines : [...panel.lines, ...formatEquipPreview(pv, strings)];
+      return { kind: "lines", title: panel.title, lines, tall: true };
     }
     if (p.kind === "book") return { kind: "lines", ...formatBook(uniqueBookView(state, data), strings), tall: true }; // IT-66 / UI-11（M7）: 図鑑はビューとメッセージの領域に広げる
     const ch = state.party.find((x) => x.id === p.memberId);
     const member = m.menu.members.find((x) => x.id === p.memberId);
     if (ch === undefined || member === undefined) return { kind: "text", title: "" };
     const view = { ...(p.inventoryPage !== undefined ? { inventoryPage: p.inventoryPage } : {}), ...(p.spellPage !== undefined ? { spellPage: p.spellPage } : {}) };
+    const detail = formatCharacter(ch, data, strings, (iid) => itemDisplayName(state, data, iid), memberSheet(state, data, ch), member, view);
+    // UI-68（M10）: 呪文の説明の段と対象の段は、呪文の枠（行 20〜26）を core の spellInfo の説明に置き換える
+    const info = p.spellInfo === undefined ? null : spellInfo(state, data, p.memberId, p.spellInfo);
+    if (info !== null) {
+      const [head, target, scene, description] = formatSpellInfo(info, strings);
+      detail.spellNote = [head, target, scene, ...chunkDescription(description)];
+    }
     return {
       kind: "character",
-      detail: formatCharacter(ch, data, strings, (iid) => itemDisplayName(state, data, iid), memberSheet(state, data, ch), member, view),
+      detail,
       focusSlot: p.focusSlot === null ? null : SLOT_ORDER.indexOf(p.focusSlot),
     };
   };
@@ -912,6 +928,11 @@ export function createApp(o: {
   const syncBattleControls = (): void => {
     const c = play.controls;
     const menu = battleMenu(state, data);
+    // UI-68（M10）: 呪文の説明は確認の段と呪文の対象の段だけ窓に出す（履歴に残さない）。それ以外の段・オート・入力なしでは前の行に戻す
+    const note = menu === null || menu.auto || cursor === null ? null : spellNote(cursor);
+    const info = note === null ? null : spellInfo(state, data, note.memberId, note.spellId);
+    if (info === null) play.message.hideNote();
+    else play.message.showNote(formatSpellInfo(info, strings));
     if (menu === null) {
       c.setMode("none");
       return;
@@ -1089,6 +1110,7 @@ export function createApp(o: {
     if (r.send.type === "battle.input") advanceFrom = r.send.memberId;
     // 再生の間は注目の枠の点滅と絵のタップを止める（rejected なら runBattle の後の描き直しで戻る）
     clearFocus();
+    play.message.hideNote(); // UI-68: 入力を確定したら呪文の説明を下げる（rejected なら描き直しで出し直す）
     void runBattle(r.send);
   };
 

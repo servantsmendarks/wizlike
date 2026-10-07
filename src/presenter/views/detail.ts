@@ -26,6 +26,8 @@ export const SLOT_ORDER = ["weapon", "armor", "shield", "helm", "gauntlet", "acc
 /** UI-59（M10）: 所持品の枠（2 列 × 4 行）と呪文の枠（2 列 × 7 行）の数。渡す・捨てる・呪文の段の 1 頁の件数も同じ */
 export const CHARACTER_INVENTORY_CELLS = 8;
 export const CHARACTER_SPELL_CELLS = 14;
+/** UI-68（M10）: 呪文の枠の行数（2 列 × 7 行の 7）。呪文の説明はこの行数まで */
+export const CHARACTER_SPELL_ROWS = CHARACTER_SPELL_CELLS / 2;
 
 /** 所持品・呪文の 1 枠。dim は dim 色（戦闘外で唱えられない呪文） */
 export type CharacterCell = { text: string; dim: boolean };
@@ -66,6 +68,11 @@ export type CharacterDetail = {
   spellHeading: string;
   /** UI-59（M10）: 習得呪文の枠（最大 CHARACTER_SPELL_CELLS） */
   spells: CharacterCell[];
+  /**
+   * UI-68（M10）: 呪文の説明（見出し・対象・場面・効果の文を 28 字ずつ。最大 CHARACTER_SPELL_ROWS 行）。あれば呪文の枠（行 20〜26）の代わりに出す。
+   * 作るのは app（core の spellInfo を formatSpellInfo で文字列にしたもの）
+   */
+  spellNote?: string[];
 };
 
 /**
@@ -242,7 +249,14 @@ export function createDetailView(rect: Rect): DetailView {
         text(ROW_INVENTORY_HEAD, 4, full, d.inventoryHeading, "detail-inventory-head"),
         ...cells(ROW_INVENTORY_HEAD + 1, d.inventory, "detail-inventory"),
         text(ROW_SPELL_HEAD, 4, full, d.spellHeading, "detail-spell-head"),
-        ...cells(ROW_SPELL_HEAD + 1, d.spells, "detail-spell"),
+        ...(d.spellNote === undefined
+          ? cells(ROW_SPELL_HEAD + 1, d.spells, "detail-spell")
+          : d.spellNote.slice(0, CHARACTER_SPELL_ROWS).map((x, i) => {
+              // UI-68: 呪文の説明。見出しの行は accent
+              const t = text(ROW_SPELL_HEAD + 1 + i, 4, full, x, "detail-spell-note");
+              if (i === 0) t.style.color = "var(--c-accent)";
+              return t;
+            })),
       ];
       el.replaceChildren(...parts);
     },

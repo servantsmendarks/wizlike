@@ -347,3 +347,67 @@ describe("UI-43/UI-46 折り返しの禁則（M7）", () => {
     expect(kinsokuLines("あ".repeat(28) + "「次」", 29)).toEqual(["あ".repeat(28), "「次」"]);
   });
 });
+
+describe("UI-68 MessageWindow の説明（showNote / hideNote。M10）", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+  const make = () => {
+    const created: FakeEl[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => {
+        const e = new FakeEl();
+        created.push(e);
+        return e;
+      },
+      createElementNS: () => new FakeEl(),
+    });
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const w = createMessageWindow({ speed: () => 0, historyMax: 15, region: g.message, layout: L.message });
+    const box = created.find((e) => e.className === "message-history")!;
+    return { w, box, texts: () => box.children.map((c) => c.textContent) };
+  };
+
+  test("UI-68 showNote は窓の行を説明に替え、全文の履歴（UI-46）を増やさない。hideNote で前の行に戻る", async () => {
+    const { w, box, texts } = make();
+    await w.say("ゴブリンが現れた。", true);
+    await w.say("第1ターン", true);
+    w.showNote(["火矢　MP 2", "対象 敵 1 体", "場面 戦闘中", "一体に火の矢を放つ。"]);
+    expect(texts()).toEqual(["火矢　MP 2", "対象 敵 1 体", "場面 戦闘中", "一体に火の矢を放つ。"]);
+    expect(box.children.map((c) => c.className)).toEqual(Array(4).fill("message-note"));
+    expect(w.noting()).toBe(true);
+    expect(w.history()).toEqual(["ゴブリンが現れた。", "第1ターン"]);
+    // 説明の差し替え（退避はそのまま）
+    w.showNote(["治癒　MP 2"]);
+    expect(texts()).toEqual(["治癒　MP 2"]);
+    w.hideNote();
+    expect(texts()).toEqual(["ゴブリンが現れた。", "第1ターン"]);
+    expect(w.noting()).toBe(false);
+    // 出していなければ何もしない
+    w.hideNote();
+    expect(texts()).toEqual(["ゴブリンが現れた。", "第1ターン"]);
+    expect(w.history()).toEqual(["ゴブリンが現れた。", "第1ターン"]);
+  });
+
+  test("UI-68 説明を出している間の say は、説明を消して前の行に戻してから足す。clearView / clear は退避ごと捨てる", async () => {
+    const { w, texts } = make();
+    await w.say("a", true);
+    w.showNote(["note"]);
+    await w.say("b", true);
+    expect(texts()).toEqual(["a", "b"]);
+    expect(w.noting()).toBe(false);
+    expect(w.history()).toEqual(["a", "b"]);
+    w.showNote(["note"]);
+    w.clearView();
+    expect(texts()).toEqual([]);
+    w.hideNote();
+    expect(texts()).toEqual([]);
+    expect(w.noting()).toBe(false);
+    await w.say("c", true);
+    w.showNote(["note"]);
+    w.clear();
+    w.hideNote();
+    expect(texts()).toEqual([]);
+  });
+});

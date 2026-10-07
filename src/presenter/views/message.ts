@@ -67,6 +67,15 @@ export type MessageWindow = {
   clearView(): void;
   /** 続きの三角の表示。blink なら点滅させる（UI-45 のタップ待ち。演出スキップでは点滅しない） */
   setMore(on: boolean, blink?: boolean): void;
+  /**
+   * UI-68（M10）: 窓の今の行を退避して lines（1 要素 1 行。長い行は窓の幅で折り返す）を出す。全文の履歴（UI-46）には足さない。
+   * 説明を出している間にもう一度呼ぶと、退避はそのままで説明だけを差し替える
+   */
+  showNote(lines: readonly string[]): void;
+  /** UI-68（M10）: 説明を消して退避した行を戻す。説明を出していなければ何もしない。say は先にこれを行い、clear / clearView は退避ごと捨てる */
+  hideNote(): void;
+  /** 説明を出しているか */
+  noting(): boolean;
 };
 
 export function createMessageWindow(o: {
@@ -162,9 +171,20 @@ export function createMessageWindow(o: {
     for (let i = 0; i < excess; i++) history.firstElementChild?.remove();
   };
 
+  /** UI-68（M10）: 説明（showNote）を出している間の、退避した窓の行。出していなければ null */
+  let saved: Element[] | null = null;
+  const hideNote = (): void => {
+    if (saved === null) return;
+    history.replaceChildren(...saved);
+    saved = null;
+    scrollToEnd();
+  };
+
   const say = (text: string, instant: boolean): Promise<void> => {
     // 前の文が送り途中なら完了させてから次へ
     current?.finish();
+    // UI-68: 説明を出していれば、元の行に戻してから足す
+    hideNote();
     remember(text);
     const line = document.createElement("div");
     line.className = "message-line";
@@ -233,12 +253,32 @@ export function createMessageWindow(o: {
     },
     clear(): void {
       current?.finish();
+      saved = null;
       history.replaceChildren();
       all = [];
     },
     clearView(): void {
       current?.finish();
+      saved = null;
       history.replaceChildren();
+    },
+    showNote(lines: readonly string[]): void {
+      current?.finish();
+      if (saved === null) saved = Array.from(history.children);
+      history.replaceChildren(
+        ...lines.map((text) => {
+          const line = document.createElement("div");
+          line.className = "message-note";
+          line.style.flexShrink = "0";
+          line.textContent = text;
+          return line;
+        }),
+      );
+      scrollToEnd();
+    },
+    hideNote,
+    noting(): boolean {
+      return saved !== null;
     },
     setMore(on: boolean, blink = false): void {
       more.style.visibility = on ? "visible" : "hidden";
