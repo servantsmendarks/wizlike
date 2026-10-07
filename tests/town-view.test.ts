@@ -500,15 +500,19 @@ describe("UI-52 街のページ", () => {
     expect(S["town.mercy.offer"]).not.toContain("？");
   });
 
-  test("UI-47/UI-52 未定-22 答えのボタンが続く問い（強化の確認・転職の確認・救済の申し出）は見出しの 1 行（全角 28 字）に収まり、強化のボタンのラベルは一覧の幅 168（全角 21 字）に収まる", () => {
+  test("UI-47/UI-52 未定-22 答えのボタンが続く問い（強化の確認・転職の確認・救済の申し出）は見出しの 1 行（全角 28 字）に収まり、強化のボタンのラベルは一覧の行の文字の幅 158（168 − 余白 4×2 − 枠 1×2。半角 39 単位 = 全角 19.5 字）に収まる", () => {
     const ask = (k: string, p: Record<string, number>): string => formatMessage(S[k]!, p);
     // 成功率 100・大成功 100・料金 5 桁の最悪の場合
     for (const k of ["town.upgrade.ask", "town.upgrade.askNoGold"]) expect(kinsokuLines(ask(k, { rate: 100, great: 100, fee: 99999 }), 28), k).toHaveLength(1);
     expect(kinsokuLines(S["town.ask.mercy"]!, 28)).toHaveLength(1);
     expect(S["town.ask.mercy"]).toContain("？");
-    // 品の名前は最も長いユニーク + 強化値 2 桁、触媒 3 個
-    const longest = [...data.uniques].sort((a, b) => b.name.length - a.name.length)[0]!.name;
-    expect(kinsokuLines(formatMessage(S["town.upgrade.do"]!, { item: `${longest} +10`, count: 3 }), 21)).toHaveLength(1);
+    // 品の名前は equipmentDisplayName の汎用の形（ユニークは強化値が付かず、強化の部位の段で dim なので確認の段に来ない）:
+    // 最も長い希少度の接頭辞 + 最も長いベースの名前 + 強化値 2 桁（item.plus）、触媒 3 個。2026-10-07 レビュー: 以前は最も長いユニーク + " +10" を全角 21 字で測っていた
+    const longestOf = (xs: string[]): string => [...xs].sort((a, b) => Array.from(b).length - Array.from(a).length)[0]!;
+    const prefix = longestOf(["fine", "rare", "legendary"].map((r) => S[`item.rarity.${r}`]!));
+    const base = longestOf(data.equipmentBases.map((b) => b.name));
+    const item = prefix + base + S["item.plus"]!.replace("{n}", "10");
+    expect(kinsokuLines(formatMessage(S["town.upgrade.do"]!, { item, count: 3 }), 19.5)).toHaveLength(1);
   });
 
   // M10（2026-10-07）: 鑑定は酒場の一覧ではなくキャラクター画面の「鑑定」（司教だけ）から。旧「鑑定の行は canIdentify のときだけ」を置き換えた
