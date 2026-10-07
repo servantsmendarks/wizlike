@@ -2,9 +2,12 @@
 // 期待値はデータの値（equipment-bases / uniques / item-options、config.items と economy.sellRatio 0.5、combat.acBase 10）から手で数える。乱数は使わない。
 import { describe, expect, test } from "vitest";
 import { equipStats } from "../src/core/rules/equip-stats";
-import { itemDetail, memberSheet, uniqueBookView, weaponDamageDice } from "../src/core/rules/item-view";
+import { createInitialState, execute } from "../src/core/engine";
+import { spellCost } from "../src/core/rules/equip-stats";
+import { canLevelUp, expFor, levelUpReady } from "../src/core/rules/growth";
+import { equipPreview, itemDetail, memberSheet, spellInfo, uniqueBookView, weaponDamageDice } from "../src/core/rules/item-view";
 import { cloneState, createItemInstance, memberById } from "../src/core/state";
-import type { Character, GameState } from "../src/core/types";
+import type { Character, Command, GameState } from "../src/core/types";
 import { data, newGame } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
 
@@ -227,5 +230,172 @@ describe("IT-66 uniqueBookView（図鑑）", () => {
     expect(rows.find((r) => r.uniqueId === "alarm_bell_helm")).toEqual({ uniqueId: "alarm_bell_helm", known: true, name: "早鐘の兜", foundIn: null, bestRarity: "normal" });
     expect(rows.find((r) => r.uniqueId === "twin_tongue_dagger")).toEqual({ uniqueId: "twin_tongue_dagger", known: false, name: null, foundIn: null, bestRarity: null });
     expect(rows.filter((r) => r.known)).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M10: UI-67 equipPreview・UI-68 spellInfo・CH-80 memberSheet のレベルアップ可
+
+/** party.equip / party.unequip を実際に送った後の memberSheet（equipPreview の to の鏡） */
+function sheetAfter(s: GameState, cmd: Command, memberId: string) {
+  const r = execute(s, cmd, data);
+  expect(r.events.find((e) => e.kind === "rejected")).toBeUndefined();
+  return memberSheet(r.state, data, member(r.state, memberId));
+}
+
+describe("UI-67 equipPreview（装備の差分）", () => {
+  test("UI-67 武器の入れ替え: attack は長剣 1d8 系 → 短剣 1d4 系、AC・魔法攻撃力は変わらず changed 偽。値は party.equip を送った後の memberSheet と一致", () => {
+    const s = town();
+    const dagger = createItemInstance(s, { itemId: "dagger", identified: true });
+    member(s, "c1").inventory.push(dagger);
+    const before = memberSheet(s, data, member(s, "c1"));
+    const p = equipPreview(s, data, "c1", "weapon", dagger)!;
+    const after = sheetAfter(s, { type: "party.equip", memberId: "c1", instanceId: dagger }, "c1");
+    expect(p.attack).toEqual({ from: before.attackDamageDice, to: after.attackDamageDice, changed: true });
+    expect(p.attack.from.startsWith("1d8")).toBe(true);
+    expect(p.attack.to.startsWith("1d4")).toBe(true);
+    expect(p.ac).toEqual({ from: before.ac, to: before.ac, changed: false });
+    expect(p.magicPower).toEqual({ from: 0, to: 0, changed: false });
+    expect(p.cursedWarning).toBe(false);
+  });
+
+  test("UI-67 鎧の入れ替え: 革鎧（−2）→ 鎖帷子（−4）で AC は 2 下がる（7 → 5 の形）。値は party.equip の後と一致", () => {
+    const s = town();
+    const mail = createItemInstance(s, { itemId: "chain_mail", identified: true });
+    member(s, "c1").inventory.push(mail);
+    const p = equipPreview(s, data, "c1", "armor", mail)!;
+    expect(p.ac.to).toBe(p.ac.from - 2);
+    expect(p.ac.changed).toBe(true);
+    expect(p.ac.to).toBe(sheetAfter(s, { type: "party.equip", memberId: "c1", instanceId: mail }, "c1").ac);
+    expect(p.attack.changed).toBe(false);
+  });
+
+  test("UI-67/IT-34/MG-33 外す（instanceId null）と魔法攻撃力: 杖 Lv4（floor(4/2) = 2）を外すと 2 → 0。オプション magic_power +2 の護符を着けると 0 → 2", () => {
+    const s = town();
+    const c5 = member(s, "c5");
+    const staff = createItemInstance(s, { itemId: "staff", level: 4, identified: true });
+    c5.equipment.weapon = staff;
+    const off = equipPreview(s, data, "c5", "weapon", null)!;
+    expect(off.magicPower).toEqual({ from: 2, to: 0, changed: true });
+    expect(off.magicPower.to).toBe(sheetAfter(s, { type: "party.unequip", memberId: "c5", slot: "weapon" }, "c5").magicPower);
+    expect(off.cursedWarning).toBe(false);
+    const charm = createItemInstance(s, { itemId: "charm", options: [{ optionId: "magic_power", tier: 2, value: 2 }], identified: true });
+    member(s, "c1").inventory.push(charm);
+    expect(equipPreview(s, data, "c1", "accessory", charm)!.magicPower).toEqual({ from: 0, to: 2, changed: true });
+  });
+
+  test("UI-67 呪いの警告は鑑定済みの呪われた品だけ（cursedWarning）。未鑑定の品は CH-76 で装備できないので null", () => {
+    const s = town();
+    const known = cursedDagger(s, true);
+    const hidden = cursedDagger(s, false);
+    member(s, "c1").inventory.push(known, hidden);
+    expect(equipPreview(s, data, "c1", "weapon", known)!.cursedWarning).toBe(true);
+    expect(equipPreview(s, data, "c1", "weapon", hidden)).toBeNull();
+  });
+
+  test("UI-67 checkEquip / checkUnequip が拒むとき・部位が違うとき・知らない者は null", () => {
+    const s = town();
+    const bow = createItemInstance(s, { itemId: "short_bow", identified: true });
+    member(s, "c5").inventory.push(bow); // 魔術師は短弓を装備できない（class cannot equip）
+    expect(equipPreview(s, data, "c5", "weapon", bow)).toBeNull();
+    const mail = createItemInstance(s, { itemId: "chain_mail", identified: true });
+    member(s, "c1").inventory.push(mail);
+    expect(equipPreview(s, data, "c1", "weapon", mail)).toBeNull(); // 部位が違う
+    expect(equipPreview(s, data, "c1", "helm", null)).toBeNull(); // slot empty
+    expect(equipPreview(s, data, "c9", "weapon", null)).toBeNull();
+    const cursedOn = cloneState(s);
+    member(cursedOn, "c1").equipment.weapon = cursedDagger(cursedOn, true);
+    expect(equipPreview(cursedOn, data, "c1", "weapon", null)).toBeNull(); // cursed
+    expect(equipPreview(createInitialState(1, data), data, "c1", "weapon", null)).toBeNull(); // wrong screen
+  });
+
+  test("UI-67 元の state と乱数は変えない", () => {
+    const s = town();
+    const mail = createItemInstance(s, { itemId: "chain_mail", identified: true });
+    member(s, "c1").inventory.push(mail);
+    const before = JSON.stringify(s);
+    equipPreview(s, data, "c1", "armor", mail);
+    equipPreview(s, data, "c1", "shield", null);
+    expect(JSON.stringify(s)).toBe(before);
+  });
+});
+
+describe("UI-68 spellInfo（呪文の説明）", () => {
+  test("UI-68 MP・対象・使える場面・説明は spells.json の値（mp は唱える者の消費）", () => {
+    const s = town();
+    const heal = data.spells.find((x) => x.id === "heal")!;
+    expect(spellInfo(s, data, "c4", "heal")).toEqual({
+      spellId: "heal",
+      name: heal.name,
+      mp: heal.mp,
+      target: "ally",
+      usableIn: "both",
+      description: heal.description,
+    });
+    expect(spellInfo(s, data, "c5", "sleep_mist")).toMatchObject({ target: "enemyGroup", usableIn: "battle" });
+  });
+
+  test("UI-68/IT-40 mp は spellCost（固有スキル mpCostDown の後）。覚えていない呪文でも返す。知らない者・呪文は null", () => {
+    const s = town();
+    const c4 = member(s, "c4");
+    const sp = data.spells.find((x) => x.id === "heal")!;
+    expect(spellInfo(s, data, "c4", "heal")!.mp).toBe(spellCost(s, data, c4, sp));
+    expect(spellInfo(s, data, "c1", "fire_arrow")!.spellId).toBe("fire_arrow");
+    expect(spellInfo(s, data, "c9", "heal")).toBeNull();
+    expect(spellInfo(s, data, "c4", "no_such_spell")).toBeNull();
+  });
+});
+
+describe("CH-80 memberSheet のレベルアップ可（expNext / expToNext / canLevelUp / levelUpView）", () => {
+  const fighterNext = (): number => expFor(2, data.classes.find((c) => c.id === "fighter")!, data.config);
+
+  test("CH-80/CH-64 戦士 L1: exp が必要値の 1 手前なら残り 1・next・不可、ちょうどなら残り 0・ready、何段分あっても ready", () => {
+    const need = fighterNext();
+    expect(need).toBe(50); // expBase 50 × 戦士の倍率 1.0
+    const at = (exp: number) => {
+      const s = town();
+      const c1 = member(s, "c1");
+      c1.exp = exp;
+      return memberSheet(s, data, c1);
+    };
+    expect(at(need - 1)).toMatchObject({ expNext: need, expToNext: 1, canLevelUp: false, levelUpView: "next" });
+    expect(at(need)).toMatchObject({ expNext: need, expToNext: 0, canLevelUp: true, levelUpView: "ready" });
+    expect(at(200)).toMatchObject({ expToNext: 0, canLevelUp: true, levelUpView: "ready" });
+  });
+
+  test("CH-80/U9 死亡・灰で exp が足りるなら blocked・不可・残り 0。足りなければ next", () => {
+    const need = fighterNext();
+    for (const life of ["dead", "ash"] as const) {
+      const s = town();
+      const c1 = member(s, "c1");
+      c1.life = life;
+      c1.hp = 0;
+      c1.exp = need;
+      expect(memberSheet(s, data, c1)).toMatchObject({ expToNext: 0, canLevelUp: false, levelUpView: "blocked" });
+      c1.exp = need - 5;
+      expect(memberSheet(s, data, c1)).toMatchObject({ expToNext: 5, canLevelUp: false, levelUpView: "next" });
+    }
+  });
+
+  test("CH-80/CH-64 expNext は職業の倍率込みの expFor（侍 1.3 で 65）。state と乱数は変えない", () => {
+    const s = town();
+    const c1 = member(s, "c1");
+    c1.classId = "samurai";
+    const before = JSON.stringify(s);
+    const sheet = memberSheet(s, data, c1);
+    expect(sheet.expNext).toBe(expFor(2, data.classes.find((c) => c.id === "samurai")!, data.config));
+    expect(sheet.expNext).toBe(65);
+    expect(JSON.stringify(s)).toBe(before);
+  });
+
+  test("CH-80 levelUpReady は alive かつ canLevelUp（canLevelUp 自体は life を見ない）", () => {
+    const s = town();
+    const c1 = member(s, "c1");
+    c1.exp = fighterNext();
+    expect(levelUpReady(c1, data)).toBe(true);
+    expect(canLevelUp(c1, data)).toBe(true);
+    c1.life = "dead";
+    expect(levelUpReady(c1, data)).toBe(false);
+    expect(canLevelUp(c1, data)).toBe(true); // 宿のループの条件は life を見ない（呼び出し側が alive を選ぶ）
   });
 });

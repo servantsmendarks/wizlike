@@ -767,6 +767,11 @@ describe("data: spells.json", () => {
   test("data: 不正なダイス文字列", () => {
     expectIssue((r) => (r.spells[0].effect.dice = "d8"), "spells.json", '[0].effect.dice: invalid dice expression "d8"');
   });
+  test("data: UI-68（M10）呪文の説明 description は必須で空でない（実データも全件）", () => {
+    for (const sp of loadGameData(rawData()).spells) expect(sp.description.length, sp.id).toBeGreaterThan(0);
+    expectIssue((r) => (r.spells[0].description = ""), "spells.json", "[0].description: expected non-empty string");
+    expectIssue((r) => delete r.spells[0].description, "spells.json", "[0].description: missing required field");
+  });
 });
 
 describe("data: monsters.json", () => {

@@ -5,7 +5,7 @@
 //   「無い」は null か空配列・空オブジェクトで表す。
 // - verbatimModuleSyntax が有効なので、型は import type で取る。data の型は定義し直さない。
 // - import 先は "./data/index" と "./rng"（どちらも src/core 内。architecture.test の制約）。
-import type { EquipSlot, GameData, PersonalityId, SpellTarget, StatBlock, StatKey, StatusId, TrapId } from "./data/index";
+import type { EquipSlot, GameData, PersonalityId, SpellTarget, StatBlock, StatKey, StatusId, TrapId, UsableIn } from "./data/index";
 import type { RngState } from "./rng";
 
 // ===================== 小さな型 =====================
@@ -457,6 +457,12 @@ export type EnemyGroupView = {
   count: number;
 };
 
+/**
+ * UI-68（M10）: 呪文の説明。rules/item-view.ts の spellInfo。mp は唱える者の消費（spellCost。MG-30 / IT-40）、
+ * target / usableIn / description は spells.json の値をそのまま写す（表示層は spell.target.{target} / spell.usableIn.{usableIn} で出す）
+ */
+export type SpellInfo = { spellId: string; name: string; mp: number; target: SpellTarget; usableIn: UsableIn; description: string };
+
 /** 戦闘で使える既知の呪文。usable = mp >= spells[].mp */
 export type BattleMenuSpell = { spellId: string; name: string; mp: number; target: SpellTarget; usable: boolean };
 /** 本人の inventory のうち戦闘で使える消耗品。name は鑑定を反映した表示名 */
@@ -699,7 +705,37 @@ export type CampMember = {
   equipCandidates: CampEquipCandidate[];
   /** CH-78（M10）: 使用枠（CH-71）に空きがあり、party.give の受け取る側になれる（target full の逆）。life は問わない。自分かどうかは見ない */
   canReceive: boolean;
+  /** UI-59（M10）: 本人の inventory の順の所持品（装備中は含めない。渡す・捨てるの候補） */
+  inventory: CampInventoryItem[];
+  /** CH-71（M10）: 使用枠の数（装備 + 所持品。slotsUsed）と上限（config.inventory.slotsPerCharacter）。表示の数字だけ */
+  slotsUsed: number;
+  slotsMax: number;
+  /**
+   * UI-59 / UI-68（M10）: knownSpells の順で、data にある全習得呪文（戦闘専用も含む）。castable は spells（戦闘外で使える呪文）に
+   * あって usable が真のとき（戦闘外で唱えられ MP が足りる）。説明は spellInfo
+   */
+  knownSpells: CampKnownSpell[];
+  /** CH-77（M10）: 今この者が party.identify を送れるか（identifyBlock === null） */
+  canIdentifyNow: boolean;
+  /** CH-77（M10）: 送れない理由。checkIdentify の順（cannotIdentify → cannotAct → noMp → noUnidentified）。送れるなら null */
+  identifyBlock: IdentifyBlock | null;
+  /** CH-77（M10）: この者が鑑定するときの、CampMenu.unidentified と同じ順の成功率（identifyChance の rate）。鑑定できる職業でなければ [] */
+  identifyRates: { instanceId: string; rate: number }[];
 };
+/** UI-59（M10）: 所持品の品種。装備品（equipment-bases）・消耗品・魔法書 */
+export type CampInventoryKind = "equipment" | "consumable" | "book";
+export type CampInventoryItem = {
+  instanceId: string;
+  /** itemDisplayName。未鑑定なら unidentifiedName（CH-72） */
+  name: string;
+  identified: boolean;
+  kind: CampInventoryKind;
+  /** 鑑定済みかつ実体の cursed（CampSlotView.cursed と同じ。未鑑定なら false） */
+  cursed: boolean;
+};
+export type CampKnownSpell = { spellId: string; name: string; mp: number; castable: boolean };
+/** CH-77（M10）: 鑑定を送れない理由。表示層は strings の camp.identifyBlock.{block} で出す */
+export type IdentifyBlock = "cannotIdentify" | "cannotAct" | "noMp" | "noUnidentified";
 export type CampIdentifyItem = {
   instanceId: string;
   ownerId: string;

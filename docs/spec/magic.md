@@ -61,3 +61,4 @@
 - `target`: `enemy`（敵 1 体）/ `enemyGroup` / `allEnemies` / `ally` / `party` / `self` / `none`
 - `effect.type`: `damage` / `heal` / `status`（`status`, `chance`）/ `acBonus`（`value`, 戦闘中のみ）/ `cureStatus`（`status`）/ `identify` / `return` / `resurrect` / `sanHeal`（`value`）
 - `tags`: 省略可。`fear` など、耐性の参照用。
+- `description`: 必須・空でない（読み込み時に検査する）。呪文の効果の文。M10: 呪文の説明（UI-68）として `mp`（唱える者の消費。MG-30）・`target`・`usableIn` と並べて出す（core の `spellInfo`）。文言はデータで、表示層は書き足さない。1 行（全角 28 字）を超えたら表示層が折り返す。

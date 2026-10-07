@@ -1,11 +1,14 @@
-// 表示層向けの装備の問い合わせ（IT-11 / IT-12 / IT-35 / IT-66、UI-59 の状態と品の詳細、図鑑）。純粋。state を変えない。乱数を使わない。
+// 表示層向けの装備の問い合わせ（IT-11 / IT-12 / IT-35 / IT-66、UI-59 の状態と品の詳細、図鑑）と、M10 の装備の差分（UI-67）・
+// 呪文の説明（UI-68）・レベルアップ可（CH-80）。純粋。state を変えない。乱数を使わない。
 // 値の式は equip-stats.ts（実効の値・品 1 つの性能）と shop.ts（売値）のものをそのまま使う（表示層は計算しない。UI-35）。
 import type { EquipSlot, GameData, SkillType, StatBlock } from "../data/index";
-import { findBase, itemDisplayName, itemOf, optionOf, uniqueOf } from "../state";
+import { classOf, cloneState, findBase, itemDisplayName, itemOf, memberById, optionOf, uniqueOf } from "../state";
 import { formatDice, parseDice } from "../rng";
-import type { Character, GameState, Rarity } from "../types";
+import type { Character, GameState, Rarity, RuleContext, SpellInfo } from "../types";
+import { checkEquip, checkUnequip, equipItem, unequipItem } from "./camp";
 import { allyAc, allyAttackBonus } from "./combat-calc";
-import { equipStats, itemPower, type ItemPower } from "./equip-stats";
+import { equipStats, itemPower, spellCost, type ItemPower } from "./equip-stats";
+import { expFor, levelUpReady } from "./growth";
 import { appearanceSellPrice, sellPrice } from "./shop";
 
 /** 品の詳細のオプション 1 行。value は表示する符号付きの値（ac は AC の増減として −値。IT-34）、bad は負のオプション（呪い。IT-32） */
@@ -107,12 +110,31 @@ export type MemberSheet = {
   attackDice: string;
   attackBonus: number;
   attackDamageDice: string;
+  /** CH-80（M10）: 次のレベルに要る累計 EXP（expFor(level + 1)。CH-64） */
+  expNext: number;
+  /** CH-80（M10）: 次のレベルまでの残り max(0, expNext − exp)。life を問わない */
+  expToNext: number;
+  /** CH-80（M10）: レベルアップ可（levelUpReady。life alive かつ exp ≥ expNext）。levelUpView === "ready" と同じ */
+  canLevelUp: boolean;
+  /**
+   * CH-80（M10）: 表示の段。ready = レベルアップ可、next = 残りが 1 以上（life を問わない）、
+   * blocked = 残りが 0 だが alive でない（死亡・灰。U9。蘇生すれば ready）
+   */
+  levelUpView: LevelUpView;
 };
+export type LevelUpView = "ready" | "next" | "blocked";
 
 export function memberSheet(state: GameState, data: GameData, ch: Character): MemberSheet {
   const es = equipStats(state, data, ch);
   const attackBonus = allyAttackBonus(data, ch, es);
+  const expNext = expFor(ch.level + 1, classOf(data, ch.classId), data.config);
+  const expToNext = Math.max(0, expNext - ch.exp);
+  const canLevelUp = levelUpReady(ch, data);
   return {
+    expNext,
+    expToNext,
+    canLevelUp,
+    levelUpView: canLevelUp ? "ready" : expToNext > 0 ? "next" : "blocked",
     stats: es.stats,
     hpMax: es.hpMax,
     mpMax: es.mpMax,
@@ -122,6 +144,72 @@ export function memberSheet(state: GameState, data: GameData, ch: Character): Me
     attackDice: es.weaponDice,
     attackBonus,
     attackDamageDice: weaponDamageDice(es.weaponDice, attackBonus),
+  };
+}
+
+/** UI-67（M10）: 差分の 1 行。changed は from と to が違うか（表示層は比べない） */
+export type EquipPreviewLine<T> = { from: T; to: T; changed: boolean };
+/**
+ * UI-67（M10）: 装備の差分。ac / magicPower は memberSheet の ac / magicPower、attack は memberSheet の attackDamageDice。
+ * cursedWarning は装備しようとする品が鑑定済みかつ呪われているとき真（呪いの警告。未鑑定は CH-76 で装備できないので出ない。外すときは偽）
+ */
+export type EquipPreview = {
+  ac: EquipPreviewLine<number>;
+  attack: EquipPreviewLine<string>;
+  magicPower: EquipPreviewLine<number>;
+  cursedWarning: boolean;
+};
+
+function line<T>(from: T, to: T): EquipPreviewLine<T> {
+  return { from, to, changed: from !== to };
+}
+
+/**
+ * UI-67（M10）/ UI-35: 枠 slot に instanceId を装備したとき（null なら枠の品を外したとき）の memberSheet の前後。
+ * 求め方は、state の複製（cloneState）に party.equip / party.unequip の処理（equipItem / unequipItem）をそのまま当てて前後の memberSheet を比べる
+ * （upgradePreview と同じく、表示の値と処理の結果がずれない）。元の state と乱数は変えない（どちらの処理も乱数を使わない）。
+ * checkEquip / checkUnequip が拒む（装備できない・外せない・キャンプの外）か、品の部位が slot でなければ null
+ */
+export function equipPreview(state: GameState, data: GameData, memberId: string, slot: EquipSlot, instanceId: string | null): EquipPreview | null {
+  const ch = memberById(state, memberId);
+  if (ch === null) return null;
+  if (instanceId === null) {
+    if (checkUnequip(state, data, memberId, slot) !== null) return null;
+  } else {
+    if (checkEquip(state, data, memberId, instanceId) !== null) return null;
+    const inst = state.items[instanceId]!;
+    if (findBase(data, inst.itemId)?.slot !== slot) return null;
+  }
+  const copy = cloneState(state);
+  const ctx: RuleContext = { state: copy, data, events: [] };
+  if (instanceId === null) unequipItem(ctx, memberId, slot);
+  else equipItem(ctx, memberId, instanceId);
+  const before = memberSheet(state, data, ch);
+  const after = memberSheet(copy, data, memberById(copy, memberId)!);
+  const inst = instanceId === null ? undefined : state.items[instanceId];
+  return {
+    ac: line(before.ac, after.ac),
+    attack: line(before.attackDamageDice, after.attackDamageDice),
+    magicPower: line(before.magicPower, after.magicPower),
+    cursedWarning: inst !== undefined && inst.identified && inst.cursed,
+  };
+}
+
+/**
+ * UI-68（M10）/ UI-35: 呪文の説明（キャラクター画面の呪文の段と戦闘の呪文の一覧で共通）。mp は memberId の者が唱えるときの消費（spellCost）。
+ * memberId がいないか、spellId が spells.json に無ければ null。本人が覚えているかは見ない
+ */
+export function spellInfo(state: GameState, data: GameData, memberId: string, spellId: string): SpellInfo | null {
+  const ch = memberById(state, memberId);
+  const sp = data.spells.find((s) => s.id === spellId);
+  if (ch === null || sp === undefined) return null;
+  return {
+    spellId: sp.id,
+    name: sp.name,
+    mp: spellCost(state, data, ch, sp),
+    target: sp.target,
+    usableIn: sp.usableIn,
+    description: sp.description,
   };
 }
 

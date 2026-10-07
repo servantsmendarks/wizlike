@@ -9,6 +9,9 @@ import { chance, randInt } from "../rng";
 import { classOf, destroyItemInstance, dungeonOf, findBase, findItem, identifyInstance, itemDisplayName, memberById, moraleOf, slotsUsed, spellOf } from "../state";
 import type {
   CampEquipCandidate,
+  CampIdentifyItem,
+  CampInventoryKind,
+  CampMember,
   CampMenu,
   CampSummary,
   CampPlace,
@@ -18,6 +21,7 @@ import type {
   Character,
   EquipBlock,
   GameState,
+  IdentifyBlock,
   RuleContext,
 } from "../types";
 import { canAct } from "./combat-calc";
@@ -512,6 +516,7 @@ const BLOCK_OF: Record<string, EquipBlock> = {
  * UI-53 / TW-03 のキャンプと酒場の値。campPlace が null なら null。
  * spells の usable は、対象を 1 人仮に当てたうえで checkCast === null（ally なら allies の先頭、dead なら dead の先頭）。
  * equipCandidates の block は checkEquip の理由を写したもの、slots の canUnequip は checkUnequip === null。
+ * M10（UI-59）: inventory・slotsUsed / slotsMax・knownSpells（全習得呪文と castable）・鑑定の欄（identifyView）を足した。
  */
 export function campMenu(state: GameState, data: GameData): CampMenu | null {
   const place = campPlace(state);
@@ -519,6 +524,13 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
   const alive = state.party.filter((c) => c.life === "alive");
   const dead = state.party.filter((c) => c.life === "dead");
   const frontRow = data.config.party.frontRow;
+  const unidentified: CampIdentifyItem[] = state.party.flatMap((c) =>
+    c.inventory.flatMap((id) => {
+      const inst = state.items[id];
+      if (inst === undefined || inst.identified) return [];
+      return [{ instanceId: id, ownerId: c.id, ownerName: c.name, name: itemDisplayName(state, data, id) }];
+    }),
+  );
   return {
     place,
     members: state.party.map((ch, i) => {
@@ -561,19 +573,54 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
         }),
         equipCandidates,
         canReceive: hasFreeSlot(data, ch),
+        inventory: ch.inventory.flatMap((id) => {
+          const inst = state.items[id];
+          if (inst === undefined) return [];
+          const kind: CampInventoryKind = findBase(data, inst.itemId) !== null ? "equipment" : (findItem(data, inst.itemId)?.type ?? "consumable");
+          return [{ instanceId: id, name: itemDisplayName(state, data, id), identified: inst.identified, kind, cursed: inst.identified && inst.cursed }];
+        }),
+        slotsUsed: slotsUsed(ch),
+        slotsMax: data.config.inventory.slotsPerCharacter,
+        knownSpells: ch.knownSpells.flatMap((id) => {
+          const sp = data.spells.find((s) => s.id === id);
+          if (sp === undefined) return [];
+          const field = spells.find((v) => v.spellId === id);
+          return [{ spellId: id, name: sp.name, mp: spellCost(state, data, ch, sp), castable: field?.usable ?? false }];
+        }),
+        ...identifyView(state, data, ch, unidentified),
       };
     }),
     allies: alive.map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: hpMaxOf(state, data, c) })),
     dead: dead.map((c) => ({ id: c.id, name: c.name })),
     identifiers: state.party.filter((c) => canIdentify(c, data) && canAct(c)).map((c) => ({ id: c.id, name: c.name })),
-    unidentified: state.party.flatMap((c) =>
-      c.inventory.flatMap((id) => {
-        const inst = state.items[id];
-        if (inst === undefined || inst.identified) return [];
-        return [{ instanceId: id, ownerId: c.id, ownerName: c.name, name: itemDisplayName(state, data, id) }];
-      }),
-    ),
+    unidentified,
   };
+}
+
+/**
+ * CH-77（M10）: campMenu の members[] の鑑定の欄。identifyBlock は checkIdentify の順（cannot identify → cannot act → no mp）の後に、
+ * パーティに未鑑定品が無ければ noUnidentified。identifyRates は鑑定できる職業なら unidentified と同じ順の identifyChance の rate（行動の可否・MP は問わない）
+ */
+function identifyView(
+  state: GameState,
+  data: GameData,
+  ch: Character,
+  unidentified: CampIdentifyItem[],
+): Pick<CampMember, "canIdentifyNow" | "identifyBlock" | "identifyRates"> {
+  const able = canIdentify(ch, data);
+  const identifyBlock: IdentifyBlock | null = !able
+    ? "cannotIdentify"
+    : !canAct(ch)
+      ? "cannotAct"
+      : ch.mp < data.config.identify.mpCost
+        ? "noMp"
+        : unidentified.length === 0
+          ? "noUnidentified"
+          : null;
+  const identifyRates = able
+    ? unidentified.map((u) => ({ instanceId: u.instanceId, rate: identifyChance(state, data, ch.id, u.instanceId)!.rate }))
+    : [];
+  return { canIdentifyNow: identifyBlock === null, identifyBlock, identifyRates };
 }
 
 /**

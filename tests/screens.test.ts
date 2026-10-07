@@ -166,7 +166,9 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   // M7 UI-12 / UI-59 / TW-15: SAN の最大として描く値と、士気の超過の色の基準は core の sanCapOf（B で実効の sanMax になる）
   "rules/san": ["sanStage", "sanCapOf"],
   // M7 UI-59 / UI-12 / IT-66: 品の詳細・状態とパーティ欄の実効の値（能力値・最大値・AC・魔法攻撃力）・図鑑は core の問い合わせの値を描く（IT-35）
-  "rules/item-view": ["itemDetail", "memberSheet", "uniqueBookView"],
+  // M10 UI-67 / UI-68 / CH-80: 装備の差分（変わったか・呪いの警告を含む）は equipPreview、呪文の説明は spellInfo、
+  // レベルアップ可は memberSheet の canLevelUp / levelUpView の値を描く
+  "rules/item-view": ["itemDetail", "memberSheet", "uniqueBookView", "equipPreview", "spellInfo"],
   // M5.5 UI-62 / CH-06: 自分で作るの配分の可否・残り・職業の条件・名前の長さは core の関数の値だけで決める。
   // 作成中はまだ GameState が無いので、ボーナスの振り（rollBonus）は表示層が持つ RngState（createRng。種は crypto）で引く（決定 5 の例外）
   "rules/creation": ["rollBonus", "statAllocation", "adjustStat", "classOptions", "validCreationName"],

@@ -201,6 +201,15 @@
   - 品の詳細（M7）: キャンプのパネルに 見出し（表示名。accent）→ 部位（汎用は「　Lv{n}」）→ 希少度（`item.detail.rarity`{rarity}「希少度 上質」など。語は図鑑と同じ `book.rarity.*` で通常も出す。鑑定済みの装備だけ。2026-10-05 に足した）→ 性能（武器はダメージのダイスと Lv の分。ダイスの記法の定数と Lv の分は 1 つの定数に合算して（core の `itemDetail` の `damageDice`）`item.detail.damage`{dice} で出す（「1d4+1」の Lv2 は「1d4+2」。合計 0 は定数を省き、負は「1d4-1」。2026-10-06）。術者用武器は魔法攻撃力、reach が long / ranged の武器（IT-25）は `item.detail.reach.<reach>`「長柄。後列から届く」/「飛び道具。後列から届く」（2026-10-06）、それ以外は AC）→ オプション（`item.option.row`{name, value, unit}。値は符号付きで、ac は AC の増減。負は danger 色）→ 固有スキル（`item.skill.<type>`{value}）→ 呪い（`item.cursed`。danger 色）→ 売値（`item.detail.sell`）→ ユニークの説明（28 字ずつ。dim 色）。未鑑定は見出し・部位・`item.detail.unidentified`・売値（見た目の品種の売値。IT-61）だけ（IT-12）。値は core の `itemDetail` だけで決める。
   - 図鑑（M7。IT-66）: 酒場の一覧の「図鑑」（`camp.book`）から開く。パネルに見出し（`book.title`{known, total}）と uniques.json の順の行（`book.row`{name, place, rarity}。入手ダンジョンが無ければ `book.noPlace`、未記録は `book.unknown`「？？？」を dim 色）。操作は やめる だけ。値は core の `uniqueBookView` だけで決める。M7（2026-10-05）: 図鑑のパネルはビュー領域より広げる。M8.5: 範囲は townLayout の book（ビューの上端から操作領域の上端まで。既定 y16..299、見出し + 27 行。帯と見出しも覆う）。
 
+- UI-67 装備の差分（M10。2026-10-07 ユーザー指示）: 装備の段で候補を選んだ時点で、AC・攻撃・魔法攻撃力の変化を「AC 7 → 5」の形で出す。
+  - 値は core の `equipPreview(state, data, memberId, slot, instanceId | null)`（rules/item-view。UI-35 の許可リスト）。`{ ac, attack, magicPower }` の各行は `{ from, to, changed }`（ac / magicPower は `memberSheet` の値、attack は `memberSheet.attackDamageDice`）。null は外すときの差分。
+  - 求め方は state の複製に `party.equip` / `party.unequip` の処理をそのまま当て、前後の `memberSheet` を比べる（表示と処理の結果がずれない）。元の state と乱数は変えない。`checkEquip` / `checkUnequip` が拒む品・部位が違う品は null（差分を出さず、理由 `camp.equipBlock.*` を出す）。
+  - 変わったかどうかは core の `changed` をそのまま使う（表示層で比べない）。良し悪しの色分けはしない。
+  - 呪いの警告は、装備しようとする品が鑑定済みかつ呪われているときだけ（core の `cursedWarning`）。未鑑定の品は CH-76 で装備できないので差分も警告も出ない。
+- UI-68 呪文の説明（M10。2026-10-07 ユーザー指示）: 呪文を選ぶと MP・対象・使える場面・効果の文を出す。キャラクター画面の呪文の段と戦闘の呪文の一覧で同じ。
+  - 値は core の `spellInfo(state, data, memberId, spellId)`（rules/item-view。UI-35 の許可リスト）→ `{ spellId, name, mp, target, usableIn, description }`。mp は唱える者の消費（MG-30 / IT-40 の後）、target / usableIn / description は `spells.json` の値（magic.md §6）。いない者・知らない呪文は null。
+  - キャラクター画面の呪文の一覧は core の `campMenu` の `members[].knownSpells`（戦闘専用も含む全習得呪文。`castable` は戦闘外で唱えられ MP が足りるとき。唱える段の対象は今までどおり `members[].spells`）。
+
 ## 7. 素材
 
 - UI-60 モンスター絵の PNG は怪物 48×48、ボス 96×96（工房の art.sizes）、固定パレット、1 体 4〜6 色。`public/sprites/<monsters[].sprite>.png`。未鑑定は系統ごとの `public/sprites/unknown_<kind>.png`（`unknown-kinds.json` の `sprite`。CB-05。M7 2026-10-05 に敵ごとの `<monsterId>_silhouette.png` を廃止）。PNG が読めなければ色付き矩形で代用する。色付き矩形は、鑑定済みは固定パレットの 6 色（orange, sky, red, yellow, gray, lightGreen）を `monsters.json` の順で巡回し、未鑑定は系統の `placeholderColor`（敵ごとの色にしない。同じ系統の別の種類は同じ色）。M9（2026-10-06）: 系統 winged（羽ばたく何か）と ooze（ぬめる何か）の色に、パレットへ足した violet（#9878F8）と teal（#008888）を使う（既存の系統の色・鑑定済みの巡回の 6 色と重ならない。どちらも工房の fc54 の色）。`placeholderColor` に書ける色は、パレットの black 以外の全色（core の `PLACEHOLDER_COLORS`）。系統の `name` は全角 8 字以内（読み込み時の検証。CB-05）。噂話（TW-15）などで鑑定済みになった敵は、以後は本名と本来の絵（または敵ごとの色）で出る。絵の枠は 2 グループ以上 48、1 グループ 64、1 グループのボス 96。

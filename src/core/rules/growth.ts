@@ -71,6 +71,14 @@ export function canLevelUp(ch: Character, data: GameData): boolean {
 }
 
 /**
+ * CH-80（M10）: レベルアップ可（表示用）。life alive で、かつ canLevelUp（exp ≥ expFor(level + 1)）。宿（TW-04）が上げる者と同じ条件。
+ * canLevelUp は life を見ない（levelUpWhilePossible のループの条件）ので別に置く
+ */
+export function levelUpReady(ch: Character, data: GameData): boolean {
+  return ch.life === "alive" && canLevelUp(ch, data);
+}
+
+/**
  * CH-61（M10）: 能力値の成長。STAT_KEYS の順に chance(statUpChance) を 6 回振り、当たれば素の stats を +1（statCap まで）。
  * 上限の能力値も振る（消費は常に 6 回）。上がった能力値を STAT_KEYS の順に返す。
  */

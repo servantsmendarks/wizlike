@@ -8,6 +8,7 @@ import { STAT_KEYS, type StatKey } from "../src/core/data";
 import { createInitialState, execute } from "../src/core/engine";
 import { createRng, randInt, type RngState } from "../src/core/rng";
 import { checkEnter } from "../src/core/rules/dungeon";
+import { memberSheet } from "../src/core/rules/item-view";
 import { identifyFeeOf, sellPrice, shopPrice, shopSellPrice } from "../src/core/rules/shop";
 import { arriveTown, mercyEligible, resurrectCostOf, returnToTown, townMenu } from "../src/core/rules/town";
 import { cloneState, createItemInstance, makeContext } from "../src/core/state";
@@ -1312,5 +1313,21 @@ describe("TW-16/IT-64 倉庫（town.storage。M7）", () => {
         { memberId: "c6", name: "フィン", slotsFree: 5, items: [{ instanceId: "i18", name: "薬草" }] },
       ],
     });
+  });
+});
+
+describe("CH-80（M10）レベルアップ可の表示と宿の条件の一致", () => {
+  test("CH-80/TW-04 宿の前に可（memberSheet の canLevelUp）だった者だけが宿で上がり、宿の後は誰も可でない。死亡の者は前後とも上がらず blocked", () => {
+    // アルド・ベルク（戦士。必要 50）は足りる、キリ（盗賊。必要 45）は死亡で足りる、ドナは足りない
+    const s = town({ c1: { exp: 50 }, c2: { exp: 200 }, c3: { life: "dead", hp: 0, exp: 100 }, c4: { exp: 10 } });
+    const view = (st: GameState) => st.party.map((c) => memberSheet(st, data, c).levelUpView);
+    expect(view(s)).toEqual(["ready", "ready", "blocked", "next", "next", "next"]);
+    const readyBefore = s.party.filter((c) => memberSheet(s, data, c).canLevelUp).map((c) => c.id);
+    const r = ok(s, { type: "town.inn", rank: 0 });
+    const leveled = [...new Set(r.events.flatMap((e) => (e.kind === "levelUp" ? [e.id] : [])))];
+    expect(leveled).toEqual(readyBefore);
+    expect(r.state.party.map((c) => memberSheet(r.state, data, c).canLevelUp)).toEqual([false, false, false, false, false, false]);
+    expect(view(r.state)[2]).toBe("blocked");
+    expect(r.state.party[2]!.level).toBe(1);
   });
 });

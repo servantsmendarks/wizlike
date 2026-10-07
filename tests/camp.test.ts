@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest";
 import type { GameData } from "../src/core/data";
 import { execute } from "../src/core/engine";
 import { chance, cloneRng, createRng, randInt, rollDice } from "../src/core/rng";
-import { campMenu, campSummary, checkCast, checkEquip, checkUnequip, identifyChance } from "../src/core/rules/camp";
+import { campMenu, campSummary, checkCast, checkEquip, checkIdentify, checkUnequip, identifyChance } from "../src/core/rules/camp";
 import { frontLineIds } from "../src/core/rules/combat-calc";
 import { resurrectRate, townMenu } from "../src/core/rules/town";
 import { cloneState, createItemInstance, itemDisplayName } from "../src/core/state";
@@ -1024,6 +1024,68 @@ describe("UI-53/TW-03 campMenu", () => {
       { instanceId: "i19", ownerId: "c3", ownerName: "キリ", name: "短い刃？" },
     ]);
     expect(campMenu(patched(s, { c5: { status: ["sleep"] } }), data)!.identifiers).toEqual([]);
+  });
+});
+
+describe("UI-59（M10）campMenu のキャラクター画面の欄（inventory・slotsUsed・knownSpells・鑑定）", () => {
+  test("UI-59/CH-71 inventory は本人の inventory の順で品種と呪いの印（鑑定済みだけ）。slotsUsed は装備 + 所持品、slotsMax は config", () => {
+    let s = inTown();
+    s = giveCursed(s, "c1", true).s; // i19 鑑定済みの呪われた短剣
+    s = giveCursed(s, "c1", false).s; // i20 未鑑定の呪われた短剣
+    s = give(s, "c1", "tome_lightning").s; // i21 魔法書
+    const c1 = campMenu(s, data)!.members[0]!;
+    expect(c1.inventory).toEqual([
+      { instanceId: "i4", name: "薬草", identified: true, kind: "consumable", cursed: false },
+      { instanceId: "i19", name: "短剣", identified: true, kind: "equipment", cursed: true },
+      { instanceId: "i20", name: "短い刃？", identified: false, kind: "equipment", cursed: false },
+      { instanceId: "i21", name: "雷光の魔法書", identified: true, kind: "book", cursed: false },
+    ]);
+    expect(c1.slotsUsed).toBe(3 + 4); // 長剣・革鎧・木の盾 + 所持品 4
+    expect(c1.slotsMax).toBe(data.config.inventory.slotsPerCharacter);
+    expect(campMenu(s, data)!.members[1]!.inventory).toEqual([]); // ベルクは所持品なし
+  });
+
+  test("UI-59/UI-68/MG-32 knownSpells は戦闘専用も含む全習得呪文（knownSpells の順）。castable は spells にあって usable のときだけ", () => {
+    const s = inDungeon({ c4: { knownSpells: ["heal", "blessing", "return", "resurrect"], mp: 8, mpMax: 30 } });
+    const m = campMenu(s, data)!;
+    expect(m.members.find((x) => x.id === "c4")!.knownSpells).toEqual([
+      { spellId: "heal", name: "治癒", mp: 2, castable: true },
+      { spellId: "blessing", name: "加護", mp: 3, castable: false }, // 戦闘専用
+      { spellId: "return", name: "帰還", mp: 8, castable: true },
+      { spellId: "resurrect", name: "蘇生", mp: 15, castable: false }, // MP 不足・死者なし
+    ]);
+    expect(m.members.find((x) => x.id === "c5")!.knownSpells).toEqual([
+      { spellId: "fire_arrow", name: "火矢", mp: 2, castable: false },
+      { spellId: "sleep_mist", name: "眠りの霧", mp: 3, castable: false },
+    ]);
+    // 街では帰還は唱えられない（MG-32）。MP 0 なら治癒も唱えられない
+    const t = campMenu(inTown({ c4: { knownSpells: ["heal", "return"], mp: 0, mpMax: 30 } }), data)!;
+    expect(t.members.find((x) => x.id === "c4")!.knownSpells.map((x) => x.castable)).toEqual([false, false]);
+  });
+
+  test("CH-77（M10）canIdentifyNow / identifyBlock の順: cannotIdentify → cannotAct → noMp → noUnidentified。identifyRates は unidentified の順の identifyChance", () => {
+    const base = bishopAt(inDungeon(), 13, 10); // 60 + 9 + 10 = 79
+    const c5Of = (s: GameState) => campMenu(s, data)!.members.find((x) => x.id === "c5")!;
+    expect(c5Of(base)).toMatchObject({ canIdentifyNow: false, identifyBlock: "noUnidentified", identifyRates: [] });
+    let s = give(base, "c3", "dagger", false).s; // i19
+    s = give(s, "c1", "dagger", false).s; // i20
+    s.items["i20"]!.rarity = "rare";
+    const c5 = c5Of(s);
+    expect(c5.canIdentifyNow).toBe(true);
+    expect(c5.identifyBlock).toBeNull();
+    // unidentified は並び順 × inventory の順（c1 の i20 → c3 の i19）
+    expect(c5.identifyRates).toEqual([
+      { instanceId: "i20", rate: 59 }, // 79 − 希少 20
+      { instanceId: "i19", rate: 79 },
+    ]);
+    for (const r of c5.identifyRates) expect(r.rate).toBe(identifyChance(s, data, "c5", r.instanceId)!.rate);
+    expect(c5Of(patched(s, { c5: { mp: 0 } }))).toMatchObject({ canIdentifyNow: false, identifyBlock: "noMp" });
+    // 行動できなくても成功率は返す（行動の可否と MP は問わない）
+    expect(c5Of(patched(s, { c5: { status: ["sleep"], mp: 0 } }))).toMatchObject({ canIdentifyNow: false, identifyBlock: "cannotAct", identifyRates: c5.identifyRates });
+    expect(campMenu(s, data)!.members[0]).toMatchObject({ canIdentifyNow: false, identifyBlock: "cannotIdentify", identifyRates: [] });
+    // 理由の順は checkIdentify と同じ（受け付けるときだけ canIdentifyNow）
+    expect(checkIdentify(s, data, "c5", "i19")).toBeNull();
+    expect(checkIdentify(patched(s, { c5: { mp: 0 } }), data, "c5", "i19")).toBe("no mp");
   });
 });
 
