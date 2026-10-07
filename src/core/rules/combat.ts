@@ -75,7 +75,8 @@ import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, richestGro
 import { offerTeleporter } from "./choices";
 import { applyAllyEffect } from "./effects";
 import { clearAllStatus, gainGold } from "./field";
-import { rollBossItems, rollChestItems } from "./loot";
+import { rollDropChest } from "./chest";
+import { rollBossItems } from "./loot";
 import { equipStats, hasSkill, hpMaxOf, skillTotal, spellCost } from "./equip-stats";
 import { loseSan, sanCapOf, sanStage } from "./san";
 import { raiseShopLevel } from "./shop";
@@ -129,8 +130,16 @@ function groupAt(b: BattleState, g: number): EnemyGroup {
 // ---------------------------------------------------------------------------
 // 遭遇の開始（CB-01〜06、DG-31）
 
-/** CB-01/03: ランダム遭遇。グループ数と種類は重みづけの抽選、体数は groupSize を 1..maxPerGroup にクランプ */
+/** CB-01/03: ランダム遭遇（origin random）。編成は startTableEncounter */
 export function startRandomEncounter(ctx: RuleContext, inRoom: boolean): void {
+  startTableEncounter(ctx, { kind: "random", inRoom });
+}
+
+/**
+ * CB-03: 今の階の遭遇表で編成を引き、origin の戦闘を始める。グループ数と種類は重みづけの抽選、体数は groupSize を 1..maxPerGroup にクランプ。
+ * M11 の作業 1 で startRandomEncounter から origin を受け取る形に切り出した（宝箱の警報の戦闘と共用する予定。乱数の順は変えない）
+ */
+export function startTableEncounter(ctx: RuleContext, origin: BattleOrigin): void {
   const { state, data } = ctx;
   const dive = requireDive(state);
   const def = dungeonOf(data, dive.dungeonId);
@@ -144,12 +153,12 @@ export function startRandomEncounter(ctx: RuleContext, inRoom: boolean): void {
   const tableWeights = table.map((x) => x.weight);
   for (let i = 0; i < n; i++) {
     const e = table[weightedIndex(state.rng, tableWeights)];
-    if (e === undefined) throw new Error("startRandomEncounter: bad table index");
+    if (e === undefined) throw new Error("startTableEncounter: bad table index");
     const m = monsterOf(data, e.monster);
     const count = Math.min(cfg.maxPerGroup, Math.max(1, rollDice(state.rng, m.groupSize).total));
     specs.push({ monsterId: m.id, count });
   }
-  startBattle(ctx, { kind: "random", inRoom }, specs);
+  startBattle(ctx, origin, specs);
 }
 
 /** DG-31: ボスの固定遭遇（逃走不可） */
@@ -884,13 +893,8 @@ function actEnemyUnit(ctx: RuleContext, g: number, u: number, defending: Readonl
       }
       wakeCheck(ctx, tt, tt.id, tt.name);
       if (atk.status !== undefined && !tt.status.includes(atk.status)) {
-        // CB-30: luk は実効の値（CH-13）、その状態のオプション statusResist（IT-34）を引く
-        const tes = equipStats(state, data, tt);
-        if (chance(state.rng, statusPercent(data.config, atk.chance ?? 0, tes.stats.luk) - tes.statusResist[atk.status])) {
-          tt.status.push(atk.status);
-          ctx.events.push({ kind: "statusChanged", id: tt.id, status: atk.status, on: true });
+        if (tryInflictStatus(ctx, tt, atk.status, atk.chance ?? 0))
           ctx.events.push({ kind: "message", key: `battle.status.${atk.status}`, params: { target: tt.name } });
-        }
       }
       if (atk.sanDrain !== undefined) {
         const c = loseSan(ctx, tt, atk.sanDrain, atk.tags ?? []); // CB-31: fear 耐性は san.ts が効かせる
@@ -898,6 +902,20 @@ function actEnemyUnit(ctx: RuleContext, g: number, u: number, defending: Readonl
       }
     });
   }
+}
+
+/**
+ * CB-30: 状態の付与の判定。chance(statusPercent(基礎 %, 実効の luk（CH-13）) − その状態のオプション statusResist（IT-34）) を 1 回引き、
+ * 当たれば status に足して statusChanged on を出す（語りは呼び出し側）。既にかかっているかは呼び出し側が確かめる。付いたら true。
+ * M11 の作業 1 で敵の攻撃から切り出した（宝箱のガスの罠と共用する予定。挙動と乱数の順は変えない）
+ */
+export function tryInflictStatus(ctx: RuleContext, ch: Character, status: StatusId, basePct: number): boolean {
+  const { state, data } = ctx;
+  const es = equipStats(state, data, ch);
+  if (!chance(state.rng, statusPercent(data.config, basePct, es.stats.luk) - es.statusResist[status])) return false;
+  ch.status.push(status);
+  ctx.events.push({ kind: "statusChanged", id: ch.id, status, on: true });
+  return true;
 }
 
 /** CB-54/CH-45: 戦闘中の死亡。状態異常をすべて外す。本人以外の生存者の SAN が減る */
@@ -1018,7 +1036,6 @@ function endBattle(ctx: RuleContext, result: "win" | "flee" | "wipe"): void {
 function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void {
   const { state, data } = ctx;
   const b = requireBattle(state);
-  const cfg = data.config;
   ctx.events.push({ kind: "battleEnd", result });
   if (result === "win") {
     ctx.events.push({ kind: "message", key: "battle.win" });
@@ -1038,17 +1055,8 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
     const gold = withGoldLuck(rolled, luck);
     if (gold > 0) gainGold(ctx, gold, { key: "battle.gold", params: { gold } }); // CH-52: 強欲の treasureGain もここ
     if (b.origin.kind === "random") {
-      // CB-51 / CB-52: 部屋のセルは chestChance、通路のセルは chestChanceCorridor（どちらも chance を 1 回）。ボス戦では判定しない。
-      // 罠・調べる・解除はプロトタイプ後（A7 / items.md §11 の Q7）。chestQuality は品の希少度（IT-31）
-      const chestPct = b.origin.inRoom ? cfg.combat.chestChance : cfg.combat.chestChanceCorridor;
-      if (chance(state.rng, chestPct)) {
-        const cg = withGoldLuck(Math.max(0, rollDice(state.rng, cfg.combat.chestGoldDice).total), luck); // CB-52 / IT-34
-        gainGold(ctx, cg, { key: "battle.chest", params: { gold: cg } }); // cg が 0 でも message は出す
-        // IT-50 / IT-53: 金の後に品。Lv はこの戦闘で倒した種類の level の最大
-        const dive = requireDive(state);
-        const lv = Math.max(...b.groups.map((g) => monsterOf(data, g.monsterId).level));
-        rollChestItems(ctx, dive.dungeonId, dive.floor, lv);
-      }
+      // CB-51 / CB-52: 宝箱の判定と中身は chest.ts（ボス戦では判定しない）。IT-53: Lv はこの戦闘で倒した種類の level の最大
+      rollDropChest(ctx, b.origin.inRoom, Math.max(...b.groups.map((g) => monsterOf(data, g.monsterId).level)));
     }
     if (b.origin.kind === "boss") {
       const dive = requireDive(state);

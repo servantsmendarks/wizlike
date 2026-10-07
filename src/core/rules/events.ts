@@ -77,7 +77,7 @@ export function decideImpulse(ctx: RuleContext, spec: ImpulseSpec): Character | 
  * EV-20 / B1: 制止者。def.stopCheck が偽なら null。行動者以外で行動可能かつ性格の canStop が真の者のうち iq 最大、
  * 同値は並び順が前の者。乱数なし
  */
-export function pickStopper(state: GameState, data: GameData, def: EventDef, actor: Character): Character | null {
+export function pickStopper(state: GameState, data: GameData, def: Pick<EventDef, "stopCheck">, actor: Character): Character | null {
   if (!def.stopCheck) return null;
   let best: Character | null = null;
   for (const ch of state.party) {
@@ -110,7 +110,7 @@ export function restrainBonusRows(state: GameState, data: GameData, stopper: Cha
  * 判定の箱（UI-40）を 1 件出す。行は [制止者, 補正の内訳（restrainBonusRows。無ければ無し）, 行動者]。差 = 制止者の合計 + 補正 − 行動者の合計。
  * 拍は出さない（CB-55 は戦闘だけ）
  */
-function rollRestrain(ctx: RuleContext, stopper: Character, actor: Character): boolean {
+export function rollRestrain(ctx: RuleContext, stopper: Character, actor: Character): boolean {
   const rng = ctx.state.rng;
   const rS = rollDie(rng, 10);
   const rA = rollDie(rng, 10);
