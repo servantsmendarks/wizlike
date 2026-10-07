@@ -4,6 +4,7 @@
 //   say の Promise はその文の文字送りが終わったら解決する（再生の中では playback の message ハンドラがこれを待つ）。
 // - タップ（tap）: 文字送り中なら即表示、待っていれば次の文へ、最後の文が出ているなら箱を閉じる（言い終わったら消える）。
 //   rush は tap から「閉じる」を除いたもの（再生中のステージのタップ。playback の Player.tap → message.rush）。
+//   文を送る（次の文へ・hold を解く・閉じる）と送りの音（advanced → page）。tap と rush で同じ（UI-66。2026-10-07 未定-17）。
 // - hold（UI-47 / UI-66。2026-10-06）: 出ている文のタップまで、playback の次の出来事（とその音）を待たせる。
 //   解けたら箱を閉じ、次の say はタップなしで出る（「タップで次」の 1 回のタップで、次の出来事と次の文が出る）。
 // - 演出スキップ（UI-41 / CLAUDE.md §3-9）が省くのは文字送り（say の instant）と ▼ の点滅だけで、タップ待ちは省かない。
@@ -27,7 +28,10 @@ export type TalkSink = {
 
 export type TalkModelDeps = {
   sink: TalkSink;
-  /** UI-66（2026-10-06）: tap で次の文へ進んだ・箱を閉じたとき（送りの音）。文字送りの即表示では呼ばない */
+  /**
+   * UI-66（2026-10-06。2026-10-07 未定-17 で rush も）: 文を送ったとき（送りの音）。tap・rush で hold を解いた・次の文へ進んだときと、
+   * tap で箱を閉じたとき。文字送りの即表示・flush・箱が開くとき（say）では呼ばない
+   */
   advanced?(): void;
   /** UI-46: 全文の履歴に 1 行足す（メッセージ窓と同じ 1 本の配列） */
   log(text: string): void;
@@ -171,8 +175,13 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
     pump();
   };
 
+  /**
+   * UI-66（2026-10-07 未定-17）: 文を送る（hold を解く・次の文へ進む）なら送りの音（advanced）。tap と再生中の rush で同じ
+   * （どこを押したかによらない）。文字送りの即表示は送りではないので鳴らさない
+   */
   const rush = (): boolean => {
     if (held !== null) {
+      d.advanced?.();
       release();
       return true;
     }
@@ -181,6 +190,7 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
       return true;
     }
     if (waiting) {
+      d.advanced?.();
       start();
       return true;
     }
@@ -212,20 +222,7 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
       rush();
     },
     tap(): void {
-      if (held !== null) {
-        d.advanced?.();
-        release();
-        return;
-      }
-      if (job !== null) {
-        finish();
-        return;
-      }
-      if (waiting) {
-        d.advanced?.();
-        start();
-        return;
-      }
+      if (rush()) return;
       if (shown !== null) {
         d.advanced?.();
         close();

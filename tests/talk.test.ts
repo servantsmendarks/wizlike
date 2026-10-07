@@ -2,7 +2,9 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { regions, townLayout } from "../src/presenter/layout";
 import { createNarrator, createTalkBox, createTalkModel, type Narration, type TalkSink } from "../src/presenter/views/talk";
 import { WRAP_STYLE } from "../src/presenter/views/wrap";
-import { data } from "./helpers/core";
+import { townMenu } from "../src/core/rules/town";
+import { townPageIntro, type TownPage } from "../src/presenter/views/town";
+import { data, newGame } from "./helpers/core";
 
 /** 偽の表示先と手動のタイマー */
 function setup(o: { speed?: number; blink?: boolean } = {}) {
@@ -112,9 +114,11 @@ describe("UI-47 会話の箱（モデル）", () => {
     expect(await settled(p2)).toBe(true);
   });
 
-  test("UI-66/UI-47（2026-10-06）送りの音（advanced）は tap で次の文へ進んだときと箱を閉じたときだけ。文字送りの即表示・rush・flush では鳴らさない", async () => {
+  // 2026-10-07 未定-17: 再生中のタップ（rush）で次の文へ進んだときも鳴らすようにした（以前の期待値は rush で 1 のまま）
+  test("UI-66/UI-47（2026-10-07）送りの音（advanced）は文を送ったとき（tap・rush で次の文へ、tap で閉じる）。箱が開くとき・文字送りの即表示・flush では鳴らさない", async () => {
     const { m, tick, adv } = setup({ speed: 30 });
     void m.say("あいう", false);
+    expect(adv.n).toBe(0); // 箱が開くときは鳴らさない
     m.tap(); // 即表示
     expect(adv.n).toBe(0);
     void m.say("えお", false);
@@ -123,18 +127,26 @@ describe("UI-47 会話の箱（モデル）", () => {
     tick();
     tick();
     void m.say("かきく", false);
-    m.rush(); // rush は鳴らさない
-    expect(adv.n).toBe(1);
-    m.tap(); // 文字送り中の即表示
-    expect(adv.n).toBe(1);
+    m.rush(); // 再生中のタップで次の文へ（送り）
+    expect(adv.n).toBe(2);
+    m.rush(); // 文字送り中の即表示（rush）
+    expect(adv.n).toBe(2);
+    m.rush(); // 最後の文は rush では閉じない
+    expect(adv.n).toBe(2);
+    expect(m.isOpen()).toBe(true);
     m.tap(); // 閉じる
-    expect(adv.n).toBe(2);
+    expect(adv.n).toBe(3);
     expect(m.isOpen()).toBe(false);
+    void m.say("けこ", false);
+    m.tap(); // 文字送り中の即表示（tap）は送りではない
+    expect(adv.n).toBe(3);
+    m.tap(); // 閉じる
+    expect(adv.n).toBe(4);
     m.tap(); // 閉じている箱のタップは何もしない
-    expect(adv.n).toBe(2);
+    expect(adv.n).toBe(4);
     void m.say("き", true);
     m.flush();
-    expect(adv.n).toBe(2);
+    expect(adv.n).toBe(4);
   });
 
   test("UI-47/UI-41 skip（instant）は文字送りだけ省き、タップ待ちは残る。演出スキップの ▼ は点滅しない", async () => {
@@ -213,7 +225,8 @@ describe("UI-47/UI-66（2026-10-06）会話の箱の hold（文の後の出来�
     expect(await settled(m.hold())).toBe(true);
   });
 
-  test("UI-47 文が出ていれば ▼ を点滅させてタップを待つ。rush で解け（送りの音なし）、箱を閉じ、次の say はタップなしで出る", async () => {
+  // 2026-10-07 未定-17: rush で解いたときも送りの音を鳴らすようにした（以前の期待値は 0）
+  test("UI-47/UI-66 文が出ていれば ▼ を点滅させてタップを待つ。rush で解け（送りの音を 1 回）、箱を閉じ、次の say はタップなしで出る", async () => {
     const { m, sink, adv } = setup();
     void m.say("一", true);
     const h = m.hold();
@@ -221,7 +234,7 @@ describe("UI-47/UI-66（2026-10-06）会話の箱の hold（文の後の出来�
     expect(sink.more).toEqual({ on: true, blink: true });
     m.rush();
     expect(await settled(h)).toBe(true);
-    expect(adv.n).toBe(0);
+    expect(adv.n).toBe(1);
     expect({ open: sink.open, more: sink.more.on }).toEqual({ open: false, more: false });
     const p2 = m.say("二", true);
     expect(await settled(p2)).toBe(true);
@@ -257,6 +270,54 @@ describe("UI-47/UI-66（2026-10-06）会話の箱の hold（文の後の出来�
     town = true;
     n.rush();
     expect(await settled(h)).toBe(true);
+  });
+});
+
+describe("UI-66（2026-10-07 未定-17）施設の会話の送りの音（page）", () => {
+  // 施設に入ると語り（townPageIntro）で箱が開き（音は施設の項目の door / ok。会話の箱は鳴らさない）、
+  // 項目（蘇生・泊まる・買うなど）の結果の文は再生中に出る（再生中のステージのタップは場所によらず Player.tap → narrator.rush）。
+  // 文を送るタップは、再生の中（rush）でも外（tap）でも page。施設による違いは無い。
+  const FACILITIES: TownPage[] = ["temple", "tavern", "inn", "shop", "dark", "gate"];
+  const menu = townMenu(newGame(1), data);
+  if (menu === null) throw new Error("not in town");
+
+  test.each(FACILITIES)("UI-66 %s: 箱を開くときは鳴らさず、再生中・再生の外とも文を送るタップで page。文字送りの即表示では鳴らさない", async (page) => {
+    const { m, tick, adv } = setup({ speed: 30 });
+    const win: Narration = { say: async () => {}, setMore: () => {}, rush: () => {}, typing: () => false, log: () => {}, waitMs: async () => {} };
+    const n = createNarrator({ town: () => true, talk: m, window: win });
+    const intro = townPageIntro(page, menu).map((k) => data.strings[k]!);
+    expect(intro.length).toBeGreaterThan(0);
+    // 施設に入る: 語りで箱が開く（送りの音なし）
+    for (const t of intro) void n.say(t, false);
+    expect(adv.n).toBe(0);
+    // 文字送り中のタップは即表示（送りではない）
+    m.tap();
+    expect(adv.n).toBe(0);
+    while (tick());
+    // 項目を選んで再生: 出ている入場の文の後に結果の文が 2 つ来る
+    void n.say("結果一", false);
+    void n.say("結果二", false);
+    while (tick());
+    let base = adv.n;
+    // 再生中の最初のタップ（どこを押しても narrator.rush）で入場の文から次の文へ送る → page
+    n.rush();
+    expect(adv.n).toBe(base + 1);
+    while (tick());
+    base = adv.n;
+    n.rush(); // 結果一 → 結果二
+    expect(adv.n).toBe(base + 1);
+    while (tick());
+    // 文の後の出来事の前の待ち（hold）を再生中のタップで解く → page
+    const h = n.hold!();
+    expect(await settled(h)).toBe(false);
+    n.rush();
+    expect(await settled(h)).toBe(true);
+    expect(adv.n).toBe(base + 2);
+    // 再生の後に残った最後の文を再生の外のタップで閉じる → page
+    void n.say("結果三", true);
+    m.tap();
+    expect(adv.n).toBe(base + 3);
+    expect(m.isOpen()).toBe(false);
   });
 });
 
