@@ -2,7 +2,7 @@
 // 側壁の扉は台形の横 1/4〜3/4。四捨五入で .5 は切り上げ）と階段の記号の比率（横線 3 本、f = 1/4, 1/2, 3/4、幅 3/4, 1/2, 1/4）から
 // 計算し直して突き合わせる。
 import { describe, expect, test } from "vitest";
-import { isStairsSlot, isTrapSlot, PLANES, SLOT_DEPTHS, SLOT_IDS, SLOT_PATHS, type SlotId } from "../src/presenter/views/dungeon-geometry";
+import { isChestSlot, isStairsSlot, isTrapSlot, PLANES, SLOT_DEPTHS, SLOT_IDS, SLOT_PATHS, type SlotId } from "../src/presenter/views/dungeon-geometry";
 
 type Pt = [number, number];
 type Cmd = { c: "M" | "L" | "H" | "V" | "Z"; n: number[] };
@@ -83,15 +83,26 @@ describe("dungeon-geometry", () => {
     }
   });
 
-  test("UI-20 76 個（壁・扉 40 と階段の記号 24 と罠の印 12。M5.5 で 64 から増やした）の SlotId に空でない path があり、重複が無い", () => {
-    expect(SLOT_IDS).toHaveLength(76);
-    expect(new Set(SLOT_IDS).size).toBe(76);
+  test("UI-20 UI-72 88 個（壁・扉 40 と階段の記号 24 と罠の印 12 と宝箱の印 12。M5.5 で 64 → 76、M11 で 76 → 88）の SlotId に空でない path があり、重複が無い", () => {
+    expect(SLOT_IDS).toHaveLength(88);
+    expect(new Set(SLOT_IDS).size).toBe(88);
     expect(SLOT_IDS.filter(isStairsSlot)).toHaveLength(24);
     expect(SLOT_IDS.filter(isTrapSlot)).toHaveLength(12);
+    expect(SLOT_IDS.filter(isChestSlot)).toHaveLength(12);
     expect(Object.keys(SLOT_PATHS).sort()).toEqual([...SLOT_IDS].sort());
     const ds = SLOT_IDS.map((id) => SLOT_PATHS[id]);
     for (const d of ds) expect(d.trim().length).toBeGreaterThan(0);
-    expect(new Set(ds).size).toBe(76);
+    expect(new Set(ds).size).toBe(88);
+  });
+
+  test("UI-72 描画順: 同じ奥行きでは宝箱の印は罠の印の後・壁の前（床の印 → 壁 → 扉）", () => {
+    for (const d of SLOT_DEPTHS) {
+      const i = (p: string) => SLOT_IDS.indexOf(`${p}${d}` as SlotId);
+      expect(i("rT"), `${d}`).toBeLessThan(i("cC"));
+      expect(i("cC")).toBeLessThan(i("lC"));
+      expect(i("lC")).toBeLessThan(i("rC"));
+      expect(i("rC")).toBeLessThan(i("cF"));
+    }
   });
 
   test("UI-22 全座標が 0..239 × 0..149 の整数", () => {
@@ -138,6 +149,7 @@ describe("dungeon-geometry", () => {
       ["rSU", "lSU"],
       ["rSD", "lSD"],
       ["rT", "lT"],
+      ["rC", "lC"],
     ];
     for (const [r, l] of pairs) {
       for (const d of SLOT_DEPTHS) {
@@ -146,7 +158,7 @@ describe("dungeon-geometry", () => {
     }
     // 正面の壁と扉は自分自身と左右対称
     for (const d of SLOT_DEPTHS) {
-      for (const part of ["cF", "cD", "cT"]) {
+      for (const part of ["cF", "cD", "cT", "cC"]) {
         const b = bbox(path(`${part}${d}` as SlotId));
         expect(b.x0 + b.x1, `${part}${d}`).toBe(239);
       }
@@ -377,6 +389,70 @@ describe("dungeon-geometry", () => {
         }
       }
     }
+  });
+
+  test("UI-72 宝箱の印（M11）: 前面の矩形（M x0 y0 H x1 V y1 H x0 Z）と、奥行き 0〜2 の中央・奥行き 0〜1 の左右の列には蓋の継ぎ目の横線 1 本（矩形の内側の y、全幅）", () => {
+    for (const d of SLOT_DEPTHS) {
+      for (const part of ["cC", "lC", "rC"]) {
+        const tag = `${part}${d}`;
+        const cmds = parse(path(sid(tag)));
+        expect(cmds.slice(0, 5).map((c) => c.c).join(""), tag).toBe("MHVHZ");
+        const [m, h1, v, h2] = cmds as [Cmd, Cmd, Cmd, Cmd];
+        expect(h2.n[0], tag).toBe(m.n[0]);
+        const x0 = Math.min(m.n[0]!, h1.n[0]!);
+        const x1 = Math.max(m.n[0]!, h1.n[0]!);
+        const y0 = m.n[1]!;
+        const y1 = v.n[0]!;
+        expect(y1 - y0, tag).toBeGreaterThanOrEqual(2);
+        expect(x1 - x0, tag).toBeGreaterThan(y1 - y0);
+        const lid = part === "cC" ? d <= 2 : d <= 1;
+        if (!lid) {
+          expect(cmds, tag).toHaveLength(5);
+          continue;
+        }
+        expect(cmds.slice(5).map((c) => c.c).join(""), tag).toBe("MH");
+        const [lm, lh] = cmds.slice(5) as [Cmd, Cmd];
+        expect([Math.min(lm.n[0]!, lh.n[0]!), Math.max(lm.n[0]!, lh.n[0]!)], tag).toEqual([x0, x1]);
+        expect(lm.n[1]! > y0 && lm.n[1]! < y1, tag).toBe(true);
+      }
+    }
+  });
+
+  test("UI-72 宝箱の印は床の上に立つ: 上端は P_{d+1}.B より下（奥の壁の下辺と交わらない）、下端は P_d.B より上。中央の列は左右対称で奥ほど狭い。左の列は見えている床の三角形の中（左端 P_d.L+1 以上、右下の角は側壁の下辺より上、右端 P_{d+1}.L 以下）", () => {
+    let prevW = Infinity;
+    for (const d of SLOT_DEPTHS) {
+      const a = P(d);
+      const b = P(d + 1);
+      for (const part of ["cC", "lC", "rC"]) {
+        const tag = `${part}${d}`;
+        const bb = bbox(path(sid(tag)));
+        expect(bb.y0 > b.B, `${tag} top ${bb.y0}`).toBe(true);
+        expect(bb.y1 < a.B, `${tag} bottom ${bb.y1}`).toBe(true);
+      }
+      const c = bbox(path(sid(`cC${d}`)));
+      expect(c.x0 + c.x1).toBe(239);
+      // 中央の列は床の台形の中（下端の y の側壁の下辺の内側）
+      expect(c.x0).toBeGreaterThan(floorL(d, c.y1));
+      expect(c.x1 - c.x0).toBeLessThan(prevW);
+      prevW = c.x1 - c.x0;
+      const l = bbox(path(sid(`lC${d}`)));
+      expect(l.x0).toBeGreaterThanOrEqual(a.L + 1);
+      expect(l.x1).toBeLessThanOrEqual(b.L);
+      // 右下の角 (x1, y1) は側壁の下辺（(a.L, a.B) と (b.L, b.B) を結ぶ線）の上（y が小さい側）
+      const yEdge = a.B - ((l.x1 - a.L) * (a.B - b.B)) / (b.L - a.L);
+      expect(l.y1, `lC${d}`).toBeLessThanOrEqual(yEdge);
+    }
+  });
+
+  test("UI-72 isChestSlot は宝箱の印のスロットだけ真（罠・階段・壁は偽）。isTrapSlot・isStairsSlot は宝箱の印で偽", () => {
+    expect(isChestSlot("cC0")).toBe(true);
+    expect(isChestSlot("lC2")).toBe(true);
+    expect(isChestSlot("rC3")).toBe(true);
+    expect(isChestSlot("cT0")).toBe(false);
+    expect(isChestSlot("cSU0")).toBe(false);
+    expect(isChestSlot("cF0")).toBe(false);
+    expect(isTrapSlot("cC1")).toBe(false);
+    expect(isStairsSlot("rC1")).toBe(false);
   });
 
   test("UI-20 isTrapSlot は罠の印のスロットだけ真（階段・壁は偽）", () => {

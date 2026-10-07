@@ -22,7 +22,7 @@ import { execute, createInitialState } from "../core/engine";
 import { createRng, type RngState } from "../core/rng";
 import { chestView } from "../core/rules/chest";
 import { battleMenu } from "../core/rules/combat";
-import { mapView, visibleCells, visibleKnownTraps } from "../core/rules/dungeon";
+import { mapView, visibleCells, visibleChests, visibleKnownTraps } from "../core/rules/dungeon";
 import { campMenu, campSummary } from "../core/rules/camp";
 import { SAN_OVER_DEBUG } from "../core/rules/debug";
 import { planRoute, routeStepOk } from "../core/rules/pathfind";
@@ -409,6 +409,9 @@ export function createApp(o: {
     onSanOver: () => guard(() => sanOverFromDebug()),
     sanOver: SAN_OVER_DEBUG,
     onGiveCursed: (wearable) => guard(() => giveCursedFromDebug(wearable)),
+    // M11 UI-57: 「箱:{罠}」。迷宮のときだけパネルを閉じてから debug.chest を送る（受け付けるかは core が決める。箱がある間は rejected）
+    onChest: (trapId) => guard(() => debugCommand({ type: "debug.chest", trapId })),
+    chestTraps: data.chestTraps,
     pointers: () => pointerLog.entries(),
   });
 
@@ -453,7 +456,7 @@ export function createApp(o: {
     view: {
       fade: (ms, apply) => play.view.fade(ms, apply),
       // UI-20: 察知した罠（visibleKnownTraps）は床の印。壁・階段と同じ視点で描く
-      showAt: (st, at) => play.view.show(slotsFor(visibleCells(st, data, at), visibleKnownTraps(st, data, at))),
+      showAt: (st, at) => play.view.show(slotsFor(visibleCells(st, data, at), visibleKnownTraps(st, data, at), visibleChests(st, data, at))),
       shake: (ms) => play.shake(ms),
     },
     header: { showAt: showHeaderAt },
@@ -578,7 +581,7 @@ export function createApp(o: {
       const d = st.dive;
       if (d !== null) {
         showHeaderAt(st, { floor: d.floor, pos: d.pos, facing: d.facing });
-        play.view.show(slotsFor(visibleCells(st, data), visibleKnownTraps(st, data)));
+        play.view.show(slotsFor(visibleCells(st, data), visibleKnownTraps(st, data), visibleChests(st, data)));
       }
     }
     syncControls();

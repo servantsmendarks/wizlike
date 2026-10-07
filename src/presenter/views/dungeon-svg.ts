@@ -1,8 +1,8 @@
-// UI-20〜23: 線画のビュー。76 本の path（壁・扉・階段の記号・罠の印） を最初に 1 回だけ作り、以後は visibility を差分で切り替えるだけ。
+// UI-20〜23: 線画のビュー。88 本の path（壁・扉・階段の記号・罠の印・宝箱の印） を最初に 1 回だけ作り、以後は visibility を差分で切り替えるだけ。
 // UI-23 の歩行・旋回の演出は、ビュー全体の opacity のフェードだけ（Element.animate。fill は使わない）。
 // モジュールのトップレベルでは DOM に触れない。
 import { cssVar } from "../palette";
-import { isStairsSlot, isTrapSlot, SLOT_IDS, SLOT_PATHS, type SlotId } from "./dungeon-geometry";
+import { isChestSlot, isStairsSlot, isTrapSlot, SLOT_IDS, SLOT_PATHS, type SlotId } from "./dungeon-geometry";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 export const VIEW_WIDTH = 240;
@@ -40,6 +40,8 @@ export function createDungeonSvg(): DungeonSvg {
     if (isStairsSlot(id)) p.setAttribute("stroke", `var(${cssVar("stairs")})`);
     // 察知した罠の印は danger（赤。地図の罠の × と同じ。M5.5）
     if (isTrapSlot(id)) p.setAttribute("stroke", `var(${cssVar("danger")})`);
+    // 宝箱の印は accent（地図の宝箱の □ と同じ。M11。UI-72）
+    if (isChestSlot(id)) p.setAttribute("stroke", `var(${cssVar("accent")})`);
     p.setAttribute("visibility", "hidden");
     g.appendChild(p);
     paths[id] = p;

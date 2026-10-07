@@ -581,6 +581,17 @@ export const DEBUG_BUTTONS_M10 = {
   giveCursedOther: { x: 188, y: 74, w: 44, h: 30 },
 } as const satisfies Record<string, Rect>;
 
+/**
+ * debug パネルの 1 ページ目の「宝箱前」と「箱:{罠}」（M11。開発用、UI-57。debug.warp{chest} / debug.chest{trapId}）:
+ * SAN+10 の左の y42 の高さ 30 に、x96 の幅 36 と x134 の幅 52（右端 186、SAN+10 の x188 の 2 左）。
+ * 計測値の 0〜2 行目（y42..71）は「deviceScale 1.7143」の 18 字（72px、右端 76）までなので重ならない。
+ * 箱のボタンは最長の「箱:麻痺ガス」（全角 5 字 + 半角 1 字 = 44px）が内側の幅 50 に入る
+ */
+export const DEBUG_BUTTONS_M11 = {
+  warpChest: { x: 96, y: 42, w: 36, h: 30 },
+  chest: { x: 134, y: 42, w: 52, h: 30 },
+} as const satisfies Record<string, Rect>;
+
 /** debug パネルの 2 ページ目（UI-57 のポインタの記録）: 題 y4、行 i は y16+10i（i=0..19、最後の行は y206..215）、x4・幅 232 */
 export const DEBUG_POINTER = { x: 4, w: 232, titleY: 4, rowY: 16, rowH: 10 } as const;
 

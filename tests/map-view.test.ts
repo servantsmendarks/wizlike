@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { execute } from "../src/core/engine";
-import { floorOf, mapView } from "../src/core/rules/dungeon";
+import { floorOf, mapView, visibleCells, visibleChests, visibleKnownTraps } from "../src/core/rules/dungeon";
+import { slotsFor } from "../src/presenter/views/dungeon-geometry";
 import { cloneState } from "../src/core/state";
 import { tapSpecOf } from "../src/presenter/input/tap";
 import { createMapView, MAP_PICK_BLINK_MS, mapLayout, mapPaths, mapPickPath, mapSnapCell, mapTapAction, playerTriangle } from "../src/presenter/views/map";
@@ -169,6 +170,23 @@ describe("UI-24 地図", () => {
     const p6 = mapPaths(view([cellOf(0, 0, { kind: "trap" })], { width: 30, height: 30 }), lay6);
     const o = { x: lay6.ox, y: lay6.oy };
     expect(p6.traps).toBe(`M${o.x + 2} ${o.y + 2}L${o.x + 5} ${o.y + 5}M${o.x + 5} ${o.y + 2}L${o.x + 2} ${o.y + 5}`);
+  });
+
+  test("UI-72 kind chest のセル（開ける前の宝箱）は chests に □ の枠（cell 8 で M2 2H6V6H2Z を原点に足したもの）を出し、traps・stairs には出さない。ほかのセルは chests に出さない", () => {
+    const lay = mapLayout(20, 20, MAP_AREA);
+    const v = view([cellOf(2, 3, { kind: "chest" }), cellOf(3, 3, { kind: "trap" }), cellOf(4, 3, { kind: "stairsUp" }), cellOf(5, 3)], { pos: { x: 5, y: 3 } });
+    const p = mapPaths(v, lay);
+    const px = 39 + 2 * 8;
+    const py = 23 + 3 * 8;
+    expect(p.chests).toBe(`M${px + 2} ${py + 2}H${px + 6}V${py + 6}H${px + 2}Z`);
+    expect(p.traps).toBe(`M${px + 8 + 2} ${py + 2}L${px + 8 + 6} ${py + 6}M${px + 8 + 6} ${py + 2}L${px + 8 + 2} ${py + 6}`);
+    expect(p.stairs).toBe(`M${px + 16 + 2} ${py + 5}L${px + 16 + 4} ${py + 3}L${px + 16 + 6} ${py + 5}`);
+    expect(mapPaths(view([cellOf(2, 3), cellOf(3, 3, { kind: "trap" })]), lay).chests).toBe("");
+    // cell 6（30×30）でも 8 基準の相対座標を丸めて使う（sc(2)=2・sc(6)=5）
+    const lay6 = mapLayout(30, 30, MAP_AREA);
+    const p6 = mapPaths(view([cellOf(0, 0, { kind: "chest" })], { width: 30, height: 30 }), lay6);
+    const o = { x: lay6.ox, y: lay6.oy };
+    expect(p6.chests).toBe(`M${o.x + 2} ${o.y + 2}H${o.x + 5}V${o.y + 5}H${o.x + 2}Z`);
   });
 
   test("UI-24 cells に無いセルは描かない", () => {
@@ -393,8 +411,31 @@ afterEach(() => {
 
 describe("UI-25 地図のビュー（偽の DOM）", () => {
   const L = dungeonLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size);
-  /** 選んだセルの枠の path（stroke が accent） */
-  const pickOf = (paths: FakeEl[]): FakeEl => paths.find((p) => p.attrs["stroke"] === "var(--c-accent)")!;
+  /** 選んだセルの枠の path（stroke が accent の最後の path。M11 で宝箱の □ も accent になったので、最初ではなく最後に作る枠を取る） */
+  const pickOf = (paths: FakeEl[]): FakeEl => [...paths].reverse().find((p) => p.attrs["stroke"] === "var(--c-accent)")!;
+
+  test("UI-72 render は宝箱の □（mapPaths の chests）を accent の線の path に入れる。重ね順は罠の × の後・現在位置の前", () => {
+    const { svgs, paths } = fakeDocument();
+    const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx);
+    const v = view([cellOf(0, 0, { kind: "chest" }), cellOf(1, 0, { kind: "trap" }), cellOf(2, 0)], { pos: { x: 2, y: 0 } });
+    m.render(v, "t");
+    const p = mapPaths(v, mapLayout(v.width, v.height, L.map.area));
+    expect(p.chests).not.toBe("");
+    const chests = paths.filter((e) => e.attrs["d"] === p.chests);
+    expect(chests).toHaveLength(1);
+    expect(chests[0]!.attrs["stroke"]).toBe("var(--c-accent)");
+    expect(chests[0]!.attrs["fill"]).toBe("none");
+    const g = svgs[0]!.children.find((c) => c.children.length > 0)!;
+    const order = g.children;
+    const traps = order.findIndex((e) => e.attrs["d"] === p.traps);
+    const chest = order.indexOf(chests[0]!);
+    const player = order.findIndex((e) => e.attrs["d"] === p.player);
+    expect(traps).toBeGreaterThanOrEqual(0);
+    expect(traps).toBeLessThan(chest);
+    expect(chest).toBeLessThan(player);
+    // 選んだ枠は宝箱の □ とは別の path
+    expect(pickOf(paths)).not.toBe(chests[0]);
+  });
 
   test("UI-25 地図本体のタップは config.ui.mapSnapPx 以内の探索済みのセルに吸着したときだけ onCell を呼ぶ（範囲外は呼ばない）", () => {
     const { svgs } = fakeDocument();
@@ -440,5 +481,61 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     m.setPick({ x: 0, y: 0 }, false);
     expect(pick.attrs["d"]).toBe("M39 23h8v8h-8Z");
     expect(pick.anims).toHaveLength(3);
+  });
+});
+
+// UI-72 / DG-25（M11）: core の実際の state から描く（宝箱のセルの印の出入りと、転移の後の地図の連続）
+describe("UI-72 宝箱の印と転移の後の地図（core の state から）", () => {
+  const run = (s: ReturnType<typeof newGame>, cmd: Parameters<typeof execute>[1]) => {
+    const r = execute(s, cmd, data);
+    expect(r.events[0]?.kind, JSON.stringify(r.events[0])).not.toBe("rejected");
+    return r.state;
+  };
+  const dived = (seed: number) => run(newGame(seed), { type: "dungeon.enter", dungeonId: "d01" });
+  const floorSquare = (v: MapView, x: number, y: number): string => {
+    const lay = mapLayout(v.width, v.height, MAP_AREA);
+    const px = lay.ox + x * lay.cell;
+    const py = lay.oy + y * lay.cell;
+    return `M${px + 1} ${py + 1}h${lay.cell - 1}v${lay.cell - 1}h${-(lay.cell - 1)}Z`;
+  };
+
+  test("UI-72 宝箱の前（debug.warp chest）では線画の正面の奥行き 1 に cC1、踏むと足元に cC0 と地図にそのセルの □。開けた後は線画にも地図にも出ない", () => {
+    // 踏んだときに衝動で開けてしまわない（箱が残る）最初のシード
+    const seed = Array.from({ length: 30 }, (_, i) => i + 1).find((k) => {
+      const w = run(dived(k), { type: "debug.warp", to: "chest" });
+      return run(w, { type: "dungeon.move" }).dive!.chest !== null;
+    })!;
+    expect(seed).toBeDefined();
+    const s0 = run(dived(seed), { type: "debug.warp", to: "chest" });
+    expect(visibleChests(s0, data)).toContainEqual({ depth: 1, lane: 0 });
+    expect(slotsFor(visibleCells(s0, data), visibleKnownTraps(s0, data), visibleChests(s0, data)).has("cC1")).toBe(true);
+    const s1 = run(s0, { type: "dungeon.move" });
+    expect(s1.dive!.chest).not.toBeNull();
+    const v1 = mapView(s1, data)!;
+    const lay1 = mapLayout(v1.width, v1.height, MAP_AREA);
+    const at = s1.dive!.pos;
+    expect(mapPaths(v1, lay1).chests).toContain(`M${lay1.ox + at.x * lay1.cell + 2} ${lay1.oy + at.y * lay1.cell + 2}H`);
+    expect(slotsFor(visibleCells(s1, data), visibleKnownTraps(s1, data), visibleChests(s1, data)).has("cC0")).toBe(true);
+    const s2 = run(s1, { type: "chest.open" });
+    expect(s2.dive!.chest).toBeNull();
+    const v2 = mapView(s2, data)!;
+    expect(v2.cells.find((c) => c.x === at.x && c.y === at.y)!.kind).toBe("plain");
+    expect(mapPaths(v2, mapLayout(v2.width, v2.height, MAP_AREA)).chests).not.toContain(`M${lay1.ox + at.x * lay1.cell + 2} ${lay1.oy + at.y * lay1.cell + 2}H`);
+    expect([...slotsFor(visibleCells(s2, data), visibleKnownTraps(s2, data), visibleChests(s2, data))].filter((id) => id === "cC0")).toEqual([]);
+  });
+
+  test("UI-72/DG-25 転移の罠で移った後の地図は、転移の前の区画と行き先の区画の床を両方描き、現在位置の三角形は行き先にある", () => {
+    const s0 = run(dived(1), { type: "debug.chest", trapId: "teleport" });
+    const from = s0.dive!.pos;
+    const s1 = run(s0, { type: "chest.open" });
+    const to = s1.dive!.pos;
+    expect(to).not.toEqual(from);
+    const v = mapView(s1, data)!;
+    const p = mapPaths(v, mapLayout(v.width, v.height, MAP_AREA));
+    expect(p.floor).toContain(floorSquare(v, from.x, from.y));
+    expect(p.floor).toContain(floorSquare(v, to.x, to.y));
+    const lay = mapLayout(v.width, v.height, MAP_AREA);
+    const tri = playerTriangle(v.facing, lay.cell);
+    expect(p.player.startsWith(`M${lay.ox + to.x * lay.cell + tri[0]![0]} ${lay.oy + to.y * lay.cell + tri[0]![1]}`)).toBe(true);
   });
 });

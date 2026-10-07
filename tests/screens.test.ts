@@ -168,7 +168,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   engine: ["execute", "createInitialState"],
   // decisions の UI-35 の行のとおり。floorOf / visibleCellsOf は Floor（kind・trapId・eventId）に触れるので許さない
   // M5.5 UI-20: 察知した罠の印は visibleKnownTraps（視野の中の knownTraps の {depth, lane}）
-  "rules/dungeon": ["visibleCells", "mapView", "visibleKnownTraps"],
+  // M11 UI-72: 宝箱の印は visibleChests（視野の中の開ける前の宝箱のセルの {depth, lane}。罠の有無は返さない）
+  "rules/dungeon": ["visibleCells", "mapView", "visibleKnownTraps", "visibleChests"],
   // UI-59: キャンプの状態の装備名（鑑定を反映した表示名。CH-72）
   state: ["dungeonOf", "itemDisplayName"],
   // M3: 戦闘の入力の段階・オートの連鎖は battleMenu の値だけで決める（行動できるか・使えるか・揃ったかを core が返す）
@@ -327,6 +328,18 @@ describe("入力と Command", () => {
     const choose = /const chooseCustom = \(c: CustomChoice\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(choose).toMatch(/run\(\{ type: "game\.new", party: r\.setup \}\)/);
     expect(choose).not.toMatch(/saves\./);
+  });
+
+  test("UI-72 線画を描く slotsFor の呼び出しはすべて、察知した罠と宝箱の印を同じ視点で渡す（再生の showAt は at、それ以外は今の dive）。debug パネルの宝箱前・箱は debug.warp{chest}・debug.chest で送る（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    // 呼び出しの行の slotsFor( から行末まで
+    const calls = app.match(/slotsFor\(.*$/gm) ?? [];
+    expect(calls).toHaveLength(2);
+    expect(calls.some((l) => l.startsWith("slotsFor(visibleCells(st, data, at), visibleKnownTraps(st, data, at), visibleChests(st, data, at))"))).toBe(true);
+    expect(calls.some((l) => l.startsWith("slotsFor(visibleCells(st, data), visibleKnownTraps(st, data), visibleChests(st, data))"))).toBe(true);
+    expect(app).toMatch(/onWarp: \(to\) => guard\(\(\) => debugCommand\(\{ type: "debug\.warp", to \}\)\)/);
+    expect(app).toMatch(/onChest: \(trapId\) => guard\(\(\) => debugCommand\(\{ type: "debug\.chest", trapId \}\)\)/);
+    expect(app).toMatch(/chestTraps: data\.chestTraps/);
   });
 
   test("UI-46 履歴の画面は表示してから描く（display:none の間は scrollHeight が 0 で、末尾へ送れない）", () => {

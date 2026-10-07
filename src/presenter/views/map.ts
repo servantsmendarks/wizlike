@@ -1,5 +1,6 @@
 // UI-24: オートマップ。探索済みセル（core の mapView が返す MapView）だけを描く。
 // イベント・ボスと察知していない罠は core が plain で返すので、表示層は区別しない（DG-13）。察知した罠は kind trap で × を描く（M5.5）。
+// 開ける前の宝箱は kind chest で □ を描く（M11。UI-72。開けたり転移で失ったりしたセルは core が plain で返す）。
 // 純粋な部分（mapLayout / mapPaths / mapSnapCell / mapPickPath）を export し、node 環境のテストから試せるようにする。
 // 地図本体のタップ（UI-25）は探索済みのセルに吸着させて（mapSnapCell。表示のための座標の計算）onCell に渡すだけで、
 // 経路は app が core の planRoute で探す。選んだセルの枠（setPick）は Element.animate の iterations Infinity で点滅させ、
@@ -114,14 +115,15 @@ export function playerTriangle(facing: Facing, cell: number): Array<[number, num
   });
 }
 
-export type MapPaths = { floor: string; walls: string; stairs: string; traps: string; player: string };
+export type MapPaths = { floor: string; walls: string; stairs: string; traps: string; chests: string; player: string };
 
 /**
- * 地図の 4 本の path。
+ * 地図の path。
  * - floor: 探索済みセルの床（px+1..px+cell-1 の正方形。素の座標）
  * - walls: wall の辺は全長、door の辺は両端の 2px だけ（中央が隙間）。open は描かない。共有辺は 1 回だけ
  * - stairs: 下りは「V」、上りは「^」
  * - traps: 察知した罠（kind trap）は「×」（cell 8 で (2,2)-(6,6) と (6,2)-(2,6)。M5.5）。色は danger で、階段とは形も色も違う
+ * - chests: 開ける前の宝箱（kind chest）は「□」（cell 8 で (2,2)-(6,6) の正方形の枠。M11。UI-72）。色は accent
  * - player: 現在位置の三角形（塗り）
  */
 export function mapPaths(v: MapView, lay: MapLayout): MapPaths {
@@ -130,6 +132,7 @@ export function mapPaths(v: MapView, lay: MapLayout): MapPaths {
   const walls: string[] = [];
   const stairs: string[] = [];
   const traps: string[] = [];
+  const chests: string[] = [];
   const seen = new Set<string>();
 
   const hLine = (px: number, py: number, door: boolean): string =>
@@ -164,6 +167,10 @@ export function mapPaths(v: MapView, lay: MapLayout): MapPaths {
       const a = sc(2, cell);
       const b = sc(6, cell);
       traps.push(`M${px + a} ${py + a}L${px + b} ${py + b}M${px + b} ${py + a}L${px + a} ${py + b}`);
+    } else if (c.kind === "chest") {
+      const a = sc(2, cell);
+      const b = sc(6, cell);
+      chests.push(`M${px + a} ${py + a}H${px + b}V${py + b}H${px + a}Z`);
     }
   }
 
@@ -172,7 +179,7 @@ export function mapPaths(v: MapView, lay: MapLayout): MapPaths {
   const tri = playerTriangle(v.facing, cell);
   const player = tri.map(([x, y], i) => `${i === 0 ? "M" : "L"}${ppx + x} ${ppy + y}`).join("") + "Z";
 
-  return { floor: floor.join(""), walls: walls.join(""), stairs: stairs.join(""), traps: traps.join(""), player };
+  return { floor: floor.join(""), walls: walls.join(""), stairs: stairs.join(""), traps: traps.join(""), chests: chests.join(""), player };
 }
 
 export type MapViewEl = {
@@ -240,11 +247,13 @@ export function createMapView(lay: DungeonLayout["map"], onCell: ((p: Pos) => vo
   const stairsPath = path({ fill: "none", stroke: "var(--c-stairs)", "stroke-width": "1" });
   // 察知した罠の ×（M5.5）。階段の後、現在位置の前
   const trapsPath = path({ fill: "none", stroke: "var(--c-danger)", "stroke-width": "1" });
+  // 開ける前の宝箱の □（M11。UI-72）。罠の後、現在位置の前（宝箱のセルに立つと三角形が上に重なる）
+  const chestsPath = path({ fill: "none", stroke: "var(--c-accent)", "stroke-width": "1" });
   // 現在位置は階段・罠より後に描く
   const playerPath = path({ fill: "var(--c-player)", stroke: "none" });
   // UI-25: 選んだセルの枠（壁と現在位置の上に描く）
   const pickPath = path({ fill: "none", stroke: "var(--c-accent)", "stroke-width": "1", d: "" });
-  g.append(wallPath, stairsPath, trapsPath, playerPath, pickPath);
+  g.append(wallPath, stairsPath, trapsPath, chestsPath, playerPath, pickPath);
   let blinking: Animation | null = null;
   const stopBlink = (): void => {
     if (blinking !== null) blinking.cancel();
@@ -293,6 +302,7 @@ export function createMapView(lay: DungeonLayout["map"], onCell: ((p: Pos) => vo
       wallPath.setAttribute("d", p.walls);
       stairsPath.setAttribute("d", p.stairs);
       trapsPath.setAttribute("d", p.traps);
+      chestsPath.setAttribute("d", p.chests);
       playerPath.setAttribute("d", p.player);
     },
   };

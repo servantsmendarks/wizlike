@@ -64,6 +64,15 @@ describe("slotsFor", () => {
     // 罠の印はセル（VisibleCell）が無くても traps だけで出る（core が視野の中のものだけを返す）。範囲外は無視
     expect(slotsFor([], [{ depth: 4, lane: 0 }, { depth: -1, lane: 0 }]).size).toBe(0);
   });
+
+  test("UI-72 slotsFor は chests（core の visibleChests の {depth, lane}）に cC/lC/rC を足し、壁・階段・罠の印と独立。depth 0..3 の外は無視。chests を省くと今までと同じ", () => {
+    const cells = [cell(0, 0, "open", "wall", "wall"), cell(1, 0, "wall", "wall", "wall")];
+    expect(sorted(slotsFor(cells, [], []))).toEqual(sorted(slotsFor(cells)));
+    expect(sorted(slotsFor(cells, [], [{ depth: 1, lane: 0 }]))).toEqual(["cC1", "cF1", "cL0", "cL1", "cR0", "cR1"]);
+    expect(sorted(slotsFor(cells, [{ depth: 0, lane: 0 }], [{ depth: 1, lane: 0 }]))).toEqual(["cC1", "cF1", "cL0", "cL1", "cR0", "cR1", "cT0"]);
+    expect(sorted(slotsFor([], [], [{ depth: 0, lane: -1 }, { depth: 2, lane: 1 }, { depth: 3, lane: 0 }]))).toEqual(["cC3", "lC0", "rC2"]);
+    expect(slotsFor([], [], [{ depth: 4, lane: 0 }, { depth: -1, lane: 1 }]).size).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -139,7 +148,7 @@ afterEach(() => {
 });
 
 describe("createDungeonSvg", () => {
-  test("UI-20 UI-22 76 本（壁・扉と階段の記号・罠の印）の path を 1 回だけ作り、viewBox 240×150、translate(0.5 0.5)・crispEdges・塗り無し", () => {
+  test("UI-20 UI-22 UI-72 88 本（壁・扉と階段の記号・罠の印・宝箱の印）の path を 1 回だけ作り、viewBox 240×150、translate(0.5 0.5)・crispEdges・塗り無し", () => {
     const log: string[] = [];
     const { created } = fakeDocument(log);
     const v = createDungeonSvg();
@@ -154,15 +163,15 @@ describe("createDungeonSvg", () => {
     expect(g.attrs["stroke-width"]).toBe("1");
     expect(g.attrs.fill).toBe("none");
     expect(g.attrs.stroke).toBe("var(--c-line)");
-    // M5.5 で罠の印 12 本を足して 64 → 76
-    expect(g.children).toHaveLength(76);
+    // M5.5 で罠の印 12 本を足して 64 → 76、M11 で宝箱の印 12 本を足して 76 → 88
+    expect(g.children).toHaveLength(88);
     expect(g.children.map((p) => p.attrs["data-slot"])).toEqual([...SLOT_IDS]);
     for (const p of g.children) {
       expect(p.attrs.d).toBe(SLOT_PATHS[p.attrs["data-slot"] as SlotId]);
       expect(p.attrs.visibility).toBe("hidden");
       // 階段の記号は地図と同じ色（--c-stairs）、罠の印は danger（M5.5）。ほかは g の線の色を継ぐ
       const id = p.attrs["data-slot"]!;
-      expect(p.attrs.stroke).toBe(/S[UD][0-3]$/.test(id) ? "var(--c-stairs)" : /^[clr]T[0-3]$/.test(id) ? "var(--c-danger)" : undefined);
+      expect(p.attrs.stroke).toBe(/S[UD][0-3]$/.test(id) ? "var(--c-stairs)" : /^[clr]T[0-3]$/.test(id) ? "var(--c-danger)" : /^[clr]C[0-3]$/.test(id) ? "var(--c-accent)" : undefined);
     }
     const before = created.length;
     v.show(new Set<SlotId>(["cF0"]));

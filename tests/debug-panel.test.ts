@@ -1,7 +1,7 @@
 // debug パネル（M0 の確認画面と設定の仮 UI、UI-57 のポインタの記録）。純粋な部分と、偽の document の DOM の部分。
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { tapSpecOf } from "../src/presenter/input/tap";
-import { DEBUG_BUTTONS, DEBUG_BUTTONS_M10, DEBUG_BUTTONS_M5, DEBUG_BUTTONS_M7, DEBUG_POINTER, debugRow } from "../src/presenter/layout";
+import { DEBUG_BUTTONS, DEBUG_BUTTONS_M10, DEBUG_BUTTONS_M11, DEBUG_BUTTONS_M5, DEBUG_BUTTONS_M7, DEBUG_POINTER, debugRow } from "../src/presenter/layout";
 import { createSettingsStore, defaultSettings } from "../src/presenter/settings";
 import type { StageLayout } from "../src/presenter/stage";
 import { createDebugPanel, DEBUG_ROW_KEYS, debugRows, formatStageInfo, formatSwipeDebug, pointerRowsText, type StageInfoInput } from "../src/presenter/views/debug-panel";
@@ -118,6 +118,8 @@ describe("createDebugPanel", () => {
       onSanOver: () => calls.push("sanOver"),
       sanOver: 10,
       onGiveCursed: (wearable) => calls.push(`giveCursed:${wearable}`),
+      onChest: (trapId) => calls.push(`chest:${trapId}`),
+      chestTraps: data.chestTraps,
       pointers: () => [],
     });
     const root = panel.el as unknown as FakeEl;
@@ -149,6 +151,8 @@ describe("createDebugPanel", () => {
       onSanOver: () => calls.push("sanOver"),
       sanOver: 10,
       onGiveCursed: (wearable) => calls.push(`giveCursed:${wearable}`),
+      onChest: (trapId) => calls.push(`chest:${trapId}`),
+      chestTraps: data.chestTraps,
       pointers: () => [],
     });
     const root = panel.el as unknown as FakeEl;
@@ -173,6 +177,73 @@ describe("createDebugPanel", () => {
     const a = DEBUG_BUTTONS_M10.giveCursedWear;
     const b = DEBUG_BUTTONS_M10.giveCursedOther;
     expect(a.x + a.w <= b.x || b.x + b.w <= a.x).toBe(true);
+  });
+
+  test("UI-57（M11）1 ページ目の SAN+10 の左に「宝箱前」と「箱:{罠}」（DEBUG_BUTTONS_M11）。宝箱前は onWarp(chest)。箱は押すたびにラベルの罠で onChest を呼んでから次へ巡回する（なし → chest-traps.json の 8 種 → なし）。計測値の短い行・SAN+10・呪いのボタンと重ならない", () => {
+    vi.stubGlobal("document", { createElement: () => new FakeEl(), createElementNS: () => new FakeEl() });
+    const store = createSettingsStore(defaultSettings(data.config), () => {});
+    const calls: string[] = [];
+    const panel = createDebugPanel({
+      strings: data.strings,
+      store,
+      defaults: defaultSettings(data.config),
+      onClose: () => calls.push("close"),
+      onHpOne: () => calls.push("hpOne"),
+      onSanDown: () => calls.push("sanDown"),
+      onWarp: (to) => calls.push(`warp:${to}`),
+      onAddTurns: () => calls.push("addTurns"),
+      addTurns: 200,
+      onSanOver: () => calls.push("sanOver"),
+      sanOver: 10,
+      onGiveCursed: (wearable) => calls.push(`giveCursed:${wearable}`),
+      onChest: (trapId) => calls.push(`chest:${trapId}`),
+      chestTraps: data.chestTraps,
+      pointers: () => [],
+    });
+    const root = panel.el as unknown as FakeEl;
+    const [page1] = root.children.filter((c) => c.className === "debug-page") as [FakeEl];
+    const at = (r: { x: number; y: number }) => page1.children.find((c) => c.className === "ui-button" && c.style["left"] === `${r.x}px` && c.style["top"] === `${r.y}px`);
+    const shape = (b: FakeEl) => [b.style["left"], b.style["top"], b.style["width"], b.style["height"], b.style["lineHeight"]];
+    const box = (r: { x: number; y: number; w: number; h: number }) => [`${r.x}px`, `${r.y}px`, `${r.w}px`, `${r.h}px`, `${r.h - 2}px`];
+
+    expect(data.strings["debug.warpChestButton"]).toBe("宝箱前");
+    const warp = at(DEBUG_BUTTONS_M11.warpChest)!;
+    expect(warp.textContent).toBe("宝箱前");
+    expect(shape(warp)).toEqual(box(DEBUG_BUTTONS_M11.warpChest));
+    tapSpecOf(warp)!.onTap({ lx: 0, ly: 0 });
+    expect(calls).toEqual(["warp:chest"]);
+
+    const chest = at(DEBUG_BUTTONS_M11.chest)!;
+    expect(shape(chest)).toEqual(box(DEBUG_BUTTONS_M11.chest));
+    const label = (k: string | null) => formatMessage(data.strings["debug.chestButton"]!, { trap: k === null ? data.strings["debug.chestNone"]! : data.strings[`chest.trapName.${k}`]! });
+    expect(label(null)).toBe("箱:なし");
+    expect(label("paralysis_gas")).toBe("箱:麻痺ガス");
+    const order = [null, ...data.chestTraps.map((c) => c.id), null];
+    expect(order).toHaveLength(10);
+    calls.length = 0;
+    for (let i = 0; i < 9; i++) {
+      expect(chest.textContent, `${i}`).toBe(label(order[i]!));
+      tapSpecOf(chest)!.onTap({ lx: 0, ly: 0 });
+      expect(chest.textContent, `${i}`).toBe(label(order[i + 1]!));
+    }
+    expect(calls).toEqual(order.slice(0, 9).map((k) => `chest:${k}`));
+    expect(root.children.includes(chest)).toBe(false);
+
+    // 計測値の 0〜2 行目（y42..71）は "deviceScale 1.7143" の 18 字（美咲の半角 4px で 72px、x4 から右端 76）まで
+    const sanOver = DEBUG_BUTTONS_M7.sanOver;
+    const rects = [DEBUG_BUTTONS_M11.warpChest, DEBUG_BUTTONS_M11.chest];
+    for (const r of rects) {
+      expect(r.x).toBeGreaterThanOrEqual(4 + 18 * 4);
+      expect(r.y + r.h).toBeLessThanOrEqual(DEBUG_BUTTONS_M10.giveCursedWear.y);
+      expect(r.x + r.w).toBeLessThanOrEqual(sanOver.x);
+    }
+    expect(DEBUG_BUTTONS_M11.warpChest.x + DEBUG_BUTTONS_M11.warpChest.w).toBeLessThanOrEqual(DEBUG_BUTTONS_M11.chest.x);
+    // 最長のラベル（全角 8px・半角 4px）が内側の幅（枠 1px ×2 を除く）に入る
+    const units = (s: string) => [...s].reduce((n, c) => n + (c.charCodeAt(0) < 0x80 ? 4 : 8), 0);
+    const longest = Math.max(...order.map((k) => units(label(k))));
+    expect(longest).toBe(44);
+    expect(longest).toBeLessThanOrEqual(DEBUG_BUTTONS_M11.chest.w - 2);
+    expect(units(data.strings["debug.warpChestButton"]!)).toBeLessThanOrEqual(DEBUG_BUTTONS_M11.warpChest.w - 2);
   });
 
   test("UI-57 1 ページ目の 2 段目（y376 の 44×22 ×5。M5・M5.5）: SAN段↓・イベント・罠の前・階段前・ターン+{n}。押すと onSanDown / onWarp(event|trap|stairsDown) / onAddTurns。1 ページ目の子なので 2 ページ目では見えない。line-height は内側の高さ（h−2）", () => {
@@ -200,6 +271,8 @@ describe("createDebugPanel", () => {
       onSanOver: () => calls.push("sanOver"),
       sanOver: 10,
       onGiveCursed: (wearable) => calls.push(`giveCursed:${wearable}`),
+      onChest: (trapId) => calls.push(`chest:${trapId}`),
+      chestTraps: data.chestTraps,
       pointers: () => [],
     });
     const root = panel.el as unknown as FakeEl;
@@ -245,7 +318,7 @@ describe("createDebugPanel", () => {
     const store = createSettingsStore(defaultSettings(data.config), (s) => persisted.push(s.autoBeatMs));
     let hpOne = 0;
     let closed = 0;
-    createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => closed++, onHpOne: () => hpOne++, onSanDown: () => {}, onWarp: () => {}, onAddTurns: () => {}, addTurns: 200, onSanOver: () => {}, sanOver: 10, onGiveCursed: () => {}, pointers: () => [] });
+    createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => closed++, onHpOne: () => hpOne++, onSanDown: () => {}, onWarp: () => {}, onAddTurns: () => {}, addTurns: 200, onSanOver: () => {}, sanOver: 10, onGiveCursed: () => {}, onChest: () => {}, chestTraps: data.chestTraps, pointers: () => [] });
     const buttons = created.filter((e) => e.className === "ui-button");
     const byText = (t: string): FakeEl => buttons.find((b) => b.textContent === t)!;
     const tap = (b: FakeEl): void => tapSpecOf(b)!.onTap({ lx: 0, ly: 0 });
@@ -291,7 +364,7 @@ describe("createDebugPanel", () => {
     });
     const store = createSettingsStore(defaultSettings(data.config), () => {});
     let entries: PointerEntry[] = [];
-    const panel = createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => {}, onHpOne: () => {}, onSanDown: () => {}, onWarp: () => {}, onAddTurns: () => {}, addTurns: 200, onSanOver: () => {}, sanOver: 10, onGiveCursed: () => {}, pointers: () => entries });
+    const panel = createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => {}, onHpOne: () => {}, onSanDown: () => {}, onWarp: () => {}, onAddTurns: () => {}, addTurns: 200, onSanOver: () => {}, sanOver: 10, onGiveCursed: () => {}, onChest: () => {}, chestTraps: data.chestTraps, pointers: () => entries });
     const root = panel.el as unknown as FakeEl;
     const pages = root.children.filter((c) => c.className === "debug-page");
     expect(pages).toHaveLength(2);

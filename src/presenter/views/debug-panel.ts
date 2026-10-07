@@ -8,6 +8,8 @@
 //   ターン+（M5.5。ラベルは debug.addTurnsButton{n}、debug.addTurns を送るのは app）
 // - DEBUG_BUTTONS_M7（計測値の右。1 ページ目だけ）: SAN+10（M7。ラベルは debug.sanOverButton{n}、debug.sanOver を送るのは app）
 // - DEBUG_BUTTONS_M10（SAN+10 の下。1 ページ目だけ）: 呪い:司可・呪い:司否（M10。debug.giveCursed{wearable: true / false} を送るのは app）
+// - DEBUG_BUTTONS_M11（SAN+10 の左。1 ページ目だけ）: 宝箱前・箱:{罠}（M11。debug.warp{chest} / debug.chest{trapId} を送るのは app。
+//   箱のボタンは押すたびにラベルの罠で送ってから次の罠へ巡回する）
 // - 「ポインタ」で 2 ページ目（UI-57。直近 20 件のポインタイベント。input/pointer-log の記録を DEBUG_POINTER の 20 行に古い順）。
 //   2 ページ目ではボタンが「設定」に変わり、全員HP1・既定に戻すは出さない。開くたびに app が showSettings で 1 ページ目に戻す
 // 値を変えたら、その場で store.set を呼ぶ（保存とすぐの反映は store の購読者が行う）。
@@ -15,7 +17,7 @@
 import type { Strings } from "../../core/data/index";
 import { thresholdCss } from "../input/swipe";
 import { formatPointerRow, POINTER_LOG_MAX, type PointerEntry } from "../input/pointer-log";
-import { DEBUG_BUTTONS, DEBUG_BUTTONS_M10, DEBUG_BUTTONS_M5, DEBUG_BUTTONS_M7, DEBUG_POINTER, DEBUG_SWIPE_Y, debugRow, type Rect } from "../layout";
+import { DEBUG_BUTTONS, DEBUG_BUTTONS_M10, DEBUG_BUTTONS_M11, DEBUG_BUTTONS_M5, DEBUG_BUTTONS_M7, DEBUG_POINTER, DEBUG_SWIPE_Y, debugRow, type Rect } from "../layout";
 import type { Insets, StageLayout, StageLayoutInput } from "../stage";
 import { nextAutoBeat, nextInputMode, stepSetting, type NumericSettingKey, type Settings, type SettingsStore } from "../settings";
 import { formatMessage } from "./message";
@@ -158,7 +160,7 @@ export function createDebugPanel(o: {
   /** UI-57（M5）: 「SAN段↓」（debug.sanDown。送れるかは app が決める） */
   onSanDown(): void;
   /** UI-57（M5）: 「イベント」「罠の前」「階段前」（debug.warp。送れるかは app が決める） */
-  onWarp(to: "event" | "trap" | "stairsDown"): void;
+  onWarp(to: "event" | "trap" | "stairsDown" | "chest"): void;
   /** UI-57（M5.5）: 「ターン+」（debug.addTurns。送れるかは app が決める） */
   onAddTurns(): void;
   /** UI-57（M5.5）: ターン+ のラベルの n（config.town.tavernEventTurns。core が足す量と同じ値を表示のためだけに受ける） */
@@ -169,6 +171,10 @@ export function createDebugPanel(o: {
   sanOver: number;
   /** UI-57（M10）: 「呪い:司可」（true）「呪い:司否」（false）（debug.giveCursed。送れるかは app が決める） */
   onGiveCursed(wearable: boolean): void;
+  /** UI-57（M11）: 「箱:{罠}」（debug.chest{trapId}。null は罠なし。送れるかは app が決める） */
+  onChest(trapId: string | null): void;
+  /** UI-57（M11）: 箱のボタンが巡回する罠（chest-traps.json の並び。name は strings の鍵）。巡回は 罠なし → 先頭 → … → 末尾 → 罠なし */
+  chestTraps: readonly { id: string; name: string }[];
   /** UI-57: 2 ページ目に出すポインタの記録（古い順。input/pointer-log の entries） */
   pointers(): readonly PointerEntry[];
 }): DebugPanel {
@@ -248,6 +254,23 @@ export function createDebugPanel(o: {
   // M10: SAN+10 の下（DEBUG_BUTTONS_M10。高さ 30 も内側の高さに合わせて縦の中央に置く）
   page1.appendChild(shortButton(t("debug.giveCursedWearButton"), DEBUG_BUTTONS_M10.giveCursedWear, () => o.onGiveCursed(true)));
   page1.appendChild(shortButton(t("debug.giveCursedOtherButton"), DEBUG_BUTTONS_M10.giveCursedOther, () => o.onGiveCursed(false)));
+  // M11: SAN+10 の左（DEBUG_BUTTONS_M11）。「宝箱前」は debug.warp{chest}。「箱:{罠}」は今のラベルの罠で debug.chest を送り、
+  // ラベルを次の罠へ進める（罠なし → chest-traps.json の並び → 罠なし。パネルの局所の状態で保存しない）
+  page1.appendChild(shortButton(t("debug.warpChestButton"), DEBUG_BUTTONS_M11.warpChest, () => o.onWarp("chest")));
+  const chestChoices: readonly (string | null)[] = [null, ...o.chestTraps.map((c) => c.id)];
+  let chestIndex = 0;
+  const chestLabel = (): string => {
+    const id = chestChoices[chestIndex] ?? null;
+    const def = id === null ? undefined : o.chestTraps.find((c) => c.id === id);
+    return formatMessage(t("debug.chestButton"), { trap: def === undefined ? t("debug.chestNone") : t(def.name) });
+  };
+  const chestButton = shortButton(chestLabel(), DEBUG_BUTTONS_M11.chest, () => {
+    const id = chestChoices[chestIndex] ?? null;
+    chestIndex = (chestIndex + 1) % chestChoices.length;
+    chestButton.textContent = chestLabel();
+    o.onChest(id);
+  });
+  page1.appendChild(chestButton);
 
   // 2 ページ目（UI-57 のポインタの記録）: 題と 20 行（古い順）。描くのはページを切り替えたときだけ
   const page2 = document.createElement("div");
