@@ -59,6 +59,14 @@ const PARA = { status: ["paralysis" as const] };
 /** 生存しているが敵の対象にならない（CB-15: 石化は除く）。対象を 1 人に絞るのに使う */
 const STONE = { status: ["stone" as const] };
 const DEAD = { life: "dead" as const, hp: 0 };
+/**
+ * M11（EV-16 / EV-71）: 宝箱を見つけたときの衝動（cap 0 で d100 を振らない）と職業の掛け合い（定義なし）を止める。
+ * ドロップの経路の順だけを確かめるテストで使う（衝動・掛け合いは tests/chest.test.ts）
+ */
+function noChestImpulse(d: GameData): void {
+  d.config.events.cap = 0;
+  d.rivalries = [];
+}
 
 /** startBattle / startRandomEncounter を ctx で呼んだ結果 */
 function runCtx(state: GameState, d: GameData, f: (ctx: ReturnType<typeof makeContext>) => void) {
@@ -1465,6 +1473,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     const noItems = (x: GameData) => {
       for (const t of x.drops.tables) t.itemChance = 0;
       x.config.chest.noTrapChance = 100;
+      noChestImpulse(x);
     };
     const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100 } }, noItems);
     const room = mk({ kind: "random", inRoom: true });
@@ -1520,7 +1529,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(data.config.combat.chestChance).toBe(60);
     expect(data.config.combat.chestChanceCorridor).toBe(15);
     // M11（B8）: dataWith は既定で宝箱の判定を 0 にするので、実データの値を戻す
-    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 60, chestChanceCorridor: 15 } });
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 60, chestChanceCorridor: 15 } }, noChestImpulse);
     const seen = { room: [0, 0], corridor: [0, 0] };
     for (let seed = 1; seed <= 20; seed++) {
       for (const inRoom of [true, false]) {
@@ -1548,7 +1557,10 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
 
   test("CH-52/A8 強欲の treasureGain: 戦闘の金・宝箱の金ごとに、金のメッセージの直後で強欲（ドナ c4）の SAN +2。死者・虚脱・金 0 では増えない", () => {
     // M11: 宝箱の金は chest.open で配る（CB-65）。罠なしに固定する
-    const noTrap = (x: GameData) => (x.config.chest.noTrapChance = 100);
+    const noTrap = (x: GameData) => {
+      x.config.chest.noTrapChance = 100;
+      noChestImpulse(x);
+    };
     const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100 } }, noTrap);
     const mk = (patches: Record<string, Partial<Character>>, monsterId = "giant_rat") => {
       const s = setup([{ monsterId, hps: [1], status: [["paralysis"]] }], {

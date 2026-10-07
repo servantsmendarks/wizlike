@@ -1105,8 +1105,9 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
       if (result === "win") returnToChest(ctx);
       else abandonChest(ctx);
     } else if (result === "win") {
-      // CB-60: 勝利で宝箱を置いたら、迷宮に戻った後で見つけたことを語る（テレポーターの申し出とは同時に起きない）
-      presentChest(ctx);
+      // CB-60: 勝利で宝箱を置いたら、迷宮に戻った後で見つけたことを語る（テレポーターの申し出とは同時に起きない）。
+      // EV-16 / EV-25 / EV-71: 衝動・制止・職業の掛け合いもここ（衝動で開けて警報になれば、同じ events で次の戦闘が始まる）
+      presentChest(ctx, { impulse: true, startAlarm: startAlarmEncounter });
     }
   }
 }

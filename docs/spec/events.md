@@ -3,7 +3,7 @@
 ## 1. 種別
 
 - EV-01 イベントの種別 `kind`: 選択型 `choice`（リーダーが選択肢を選ぶ）、衝動型 `impulse`（性格で行動者が決まり、勝手に動く）、混合型 `mixed`（衝動判定を先に行い、衝動が無ければ選択型として続く）。
-- EV-02 イベント定義は `data/events.json`。発生の契機は、イベントセルを踏む（DG-22）が基本。酒場（TW-14）でも語りと効果だけの簡単なイベントが起きる（`data/tavern.json`。M5.5）。将来は戦闘後・宝箱でも使う。
+- EV-02 イベント定義は `data/events.json`。発生の契機は、イベントセルを踏む（DG-22）が基本。酒場（TW-14）でも語りと効果だけの簡単なイベントが起きる（`data/tavern.json`。M5.5）。宝箱は events.json の定義を使わず、衝動判定と制止判定の仕組みだけを使う（EV-16 / EV-25。M11）。
 - EV-03 誘いタグ `lure`: 宝 `treasure`、未知 `unknown`、危険 `danger`、弱者 `weak`。イベントはタグごとに重み 0〜3 を持つ。性格も同じタグごとに重み 0〜3 を持つ（`personalities[].lure`）。
 - EV-04 イベント定義の任意の欄 `impulseClasses`（衝動できる職業の id の一覧。1 件以上、重複なし、classes.json にある id）。省略時は全職業。一覧の外の職業のメンバーは衝動判定（EV-10）の対象外（乱数も引かない）。リーダーは職業に関わらず対象外のまま（M11）。
 
@@ -15,7 +15,7 @@
 - EV-13 成功者がいなければ「衝動なし」。`impulse` なら「何も起きない」の結果、`mixed` なら選択型として続行。
 - EV-14 普通 `normal` は `lure` がすべて 0 で、衝動しない（0%）。ただし SAN が「錯乱」（CH-53、25% 未満）のメンバーは、性格に関わらずランダムな 1 タグに重み `config.events.confusedLureWeight`（2）【仮】を持つものとして EV-11 の積を計算する（普通も暴走する）。この重みは性格の `lure` を置き換える（加算しない）。タグはその者の d100 の前に randInt(0, 3) で `LURE_TAGS`（宝・未知・危険・弱者）の順から選び、積が 0 なら d100 は振らない（M5）。`impulseClasses` の外の者は錯乱していてもタグを選ばない（EV-04）。
 - EV-15 判定のダイス（衝動の d100）は表示しない。制止判定（EV-20）の 1d10 は表示する【仮】。
-- EV-16 宝箱の衝動（M11。実装中。今はデータと検証まで）: 宝箱を見つけたとき（combat.md §6b）、`config.chest.impulse` を spec にして EV-10〜14 の衝動判定を行う。誘いは宝 2・危険 1【仮】、能力値は `agi`【仮】、`impulseClasses` は `["thief"]`【仮】（EV-04）。衝動なら行動者が「調べずに開ける」。制止と開封の流れの文は実装のコミットで足す。
+- EV-16 宝箱の衝動（M11）: 宝箱を見つけたとき（combat.md の CB-60。ランダム遭遇の勝利の後。警報の戦闘に勝って同じ箱に戻ったとき（CB-67）と開発用の `debug.chest` ではしない）、`config.chest.impulse` を spec にして EV-10〜14 の衝動判定を行う。誘いは宝 2・危険 1【仮】、能力値は `agi`【仮】、`impulseClasses` は `["thief"]`【仮】（EV-04）。錯乱（EV-14）の仮の重みも `impulseClasses` の内側だけ（盗賊でない者は錯乱しても宝箱では衝動しない）。行動者がいれば `chestImpulse{actorId}` → message `chest.impulse.actor`{actor} を出し、制止判定（EV-25）に進む。制止できなければ message `chest.impulse.open`{actor} の後、行動者が「調べずに開ける」（combat.md の CB-65。作動させた人は罠を問わず行動者）。衝動で開けたら（中身・転移・警報のどれでも）職業の掛け合い（EV-71）と `chest.prompt` は無い。
 
 ## 3. 制止判定
 
@@ -24,6 +24,7 @@
 - EV-22 成功: 衝動は不発。制止者と行動者の SAN +`config.events.stopSanGain`（3）【仮】（制止者 → 行動者の順）。`mixed` なら選択型として続行、`impulse` なら「何も起きない」。
 - EV-23 失敗: 衝動を実行する。結果が `good` なら行動者に `impulseBonus`（イベント定義。金額増や SAN 回復）を加える。結果が `bad` なら、制止者が生きていれば（life alive）、効果の後に「言わんこっちゃない」（`event.stop.told`）と制止者の SAN +`config.events.stopSanGain`（3。同じ値を使う。M5）。`neutral` はどちらも無い。
 - EV-24 制止者がいない場合（`stopCheck` が偽の場合も）はそのまま衝動を実行する（ボーナスや慰めはない）。`impulseBonus` と EV-23 の慰めは、制止者がいて失敗したときだけ（M5）。
+- EV-25 宝箱の制止: 宝箱の衝動（EV-16）で行動者が決まったら、宝箱を `stopCheck: true` として EV-20〜21 の制止判定をそのまま行う（制止者の選び方・判定の箱・補正は同じ。語りは `event.stop.roll`{stopper} と、成功 `event.stop.success`{stopper, actor}・失敗 `event.stop.fail`{stopper}）。成功: 衝動は不発。制止者 → 行動者の順に SAN +`config.events.stopSanGain`（EV-22）。箱は残り、職業の掛け合い（EV-71）を経て開封の選択へ。失敗（制止者がいない場合も）: 行動者が開ける（EV-16）。開けて罠が作動し、制止者がいて生きていて（life alive）、戦闘に入っておらず（警報でない）全滅処理にも入っていなければ、開封の後（`chestEnd` の後、転移なら `moved` の後）に `event.stop.told`{stopper} と制止者の SAN +`stopSanGain`（EV-23 の bad と同じ扱い）。罠なしの箱を開けたら good として扱い、何も足さない（宝箱に `impulseBonus` は無い）。
 
 ## 4. 結果
 
@@ -83,17 +84,16 @@
 
 `data/events.json` は EV-50〜52 を例として構造を示す。フィールドの追加は許すが、既存のフィールドの意味は変えない。
 
-## 9. 職業の掛け合い（M11。実装中）
-
-今はデータと検証まで。発生・競り合い・補正の処理は実装のコミットで入る。
+## 9. 職業の掛け合い（M11）
 
 - EV-70 職業の掛け合いは、同じ職業のメンバーが 2 人以上いるときに起きる寸劇。定義は `data/rivalries.json`（空の配列は可）。契機 `trigger` は今は宝箱 `chest` だけ。
-- EV-71 発生: 宝箱を見つけ（combat.md §6b）、衝動（EV-16）と制止を終えて箱が残り、戦闘中でないときに判定する。対象は `classId` の職業で行動可能なメンバー（リーダーを含む。性格は問わない）。2 人以上いれば d100 ≤ `chance` で発生。
-- EV-72 競り合い: 対象者ごとに並び順で `contest.stats` の能力値の合計 + `contest.dice` を振り、最大の者が担当（同点は並び順が前の者）。勝者以外は全員が負け。`contest.stats` は 1 個以上で重複しない（検証で止める）。
-- EV-73 語りと判定の箱: 文言は `text.start`（差し込み `{a}` `{b}`）・`text.win`（`{winner}` `{loser}`）・`text.fail`（`{name}`）の strings キー。ほかの差し込みは検証で止める。判定の箱に対象者全員の内訳を出す。
-- EV-74 負けた者それぞれに SAN −`loserSan`。
-- EV-75 担当者がその箱を調べる（CB-63）ときだけ、成功率に `bonus.inspect` を足す（clamp の前）。
-- EV-76 担当者が調べるに失敗するたびに `text.fail` を語り、担当者の SAN −`failSan`。
+- EV-71 発生: 宝箱を見つけ（combat.md §6b）、衝動（EV-16）と制止（EV-25）を終えて箱が残り、戦闘中でないときに判定する（衝動で開けた・転移で失った・警報の戦闘に入ったときは判定しない）。警報の戦闘に勝って同じ箱に戻ったとき（CB-67）と開発用の `debug.chest` では判定しない。対象は `classId` の職業で行動可能なメンバー（リーダーを含む。性格は問わない）。2 人以上いれば d100 ≤ `chance` で発生。`trigger` が `chest` の定義が複数あれば、データの順に判定して最初に発生した 1 つだけ。
+- EV-72 競り合い: 対象者ごとに並び順で `contest.stats` の能力値（実効の値。CH-13）の合計 + `contest.dice` を振り、最大の者が担当（同点は並び順が前の者）。勝者以外は全員が負け。`contest.stats` は 1 個以上で重複しない（検証で止める）。
+- EV-73 語りと判定の箱: 文言は `text.start`（差し込み `{a}` `{b}`）・`text.win`（`{winner}` `{loser}`）・`text.fail`（`{name}`）の strings キー。ほかの差し込みは検証で止める。順は message `text.start`{a, b}（対象者の先頭の 2 人）→ 判定の箱 → message `text.win`{winner, loser}（loser は負けた者の先頭。文言は 2 人を前提に書く）→ 負けの SAN（EV-74）。判定の箱は `dice{label: dice.rivalry, rows, rule: dice.rivalry.rule, result: dice.rivalry.win{winner}}` で、行は対象者ごとに 1 行（並び順。label `dice.rivalry.member`{name と contest.stats の各能力値}、base は能力値の合計、dice は contest.dice の出目、total は合計）。担当は箱に `rivalry{id, ownerId}` として残す（箱が片付けば消える。放っておいた宝箱のセルを踏み直すと新しい箱として EV-71 からやり直す）。
+- EV-74 負けた者それぞれに SAN −`loserSan`（耐性なし。並び順）。
+- EV-75 担当者がその箱を調べる（CB-63）ときだけ、成功率に `bonus.inspect` を足す（clamp の前）。判定の箱には `chest.row.rivalry`{v} の行を罠の勘の行の後に置き、危険度を引く前の値（`chest.row.subtotal`）に含める。ほかのメンバーの調べると解除（CB-64）には効かない。
+- EV-76 担当者が調べるに失敗するたびに、その調べるの語りと効果（偽りの名前・不明・作動）の後に `text.fail`{name} を語り、担当者の SAN −`failSan`（耐性なし。乱数なし）。担当者が生きていない（作動で死んだ）とき、作動が警報で戦闘に入った（または全滅処理に入った）ときは出さない。成功では出さない。
+- 乱数の順（`state.rng`）: 宝箱の衝動と制止（EV-16 / EV-25）の乱数の後に（衝動で開けたときは判定しない）、[対象が 2 人以上なら d100（chance）] →[発生すれば対象者ごとに並び順で contest.dice]。対象が 1 人以下なら何も引かない。
 
 `data/rivalries.json`
 ```

@@ -20,6 +20,15 @@ describe("バランス（H9 煙テスト）", () => {
       for (const k of ["battle.encounter", "town.enter", "town.inn.stay"]) expect(keys.has(k), k).toBe(true);
       expect(report(kind, results, SEEDS, DIVES)).toContain(kind.label);
       expect(report(kind, results, SEEDS, DIVES)).toContain("M7-死因"); // M7-死因の集計が後ろに足されている
+      // M11（U-5 / EV-16 / EV-71）: 宝箱あたりの衝動と掛け合いの行。見つけた箱 ≥ 衝動 ≥ 制止
+      expect(report(kind, results, SEEDS, DIVES)).toContain("宝箱: 衝動");
+      for (const d of results.flatMap((r) => r.dives)) {
+        const c = d.chestImpulse;
+        expect(c.found).toBeGreaterThanOrEqual(c.impulses);
+        expect(c.impulses).toBeGreaterThanOrEqual(c.stopped);
+        expect(c.found).toBeGreaterThanOrEqual(c.rivalries);
+      }
+      expect(sum(results.flatMap((r) => r.dives).map((d) => d.chestImpulse.found))).toBeGreaterThan(0);
     }, 60_000);
   }
 
@@ -42,9 +51,10 @@ describe("バランス（H9 煙テスト）", () => {
     }
   }, 60_000);
 
-  // ユーザーの判断 2（2026-10-06）で逃走をやめたらシード 4 が 15 潜行で踏破しなくなったので、踏破するシード 2 に替えた
-  test("H9/M9 進行ボットの煙テスト: シード 2 は d01 のボスを倒してテレポーターで帰り、その後は d02 に D02_DIVES 回潜って終わる（ボスへの経路の煙。データが変わってシード 2 が踏破しなくなったら、踏破するシードに替える）", () => {
-    const c = new Campaign(2, PROGRESS_BOT);
+  // ユーザーの判断 2（2026-10-06）で逃走をやめたらシード 4 が 15 潜行で踏破しなくなったので、踏破するシード 2 に替えた。
+  // M11 の作業 6（宝箱の衝動 EV-16 と職業の掛け合い EV-71 で勝利の後の乱数の消費が変わった）でシード 2 が踏破しなくなったので、踏破するシード 4 に戻した
+  test("H9/M9 進行ボットの煙テスト: シード 4 は d01 のボスを倒してテレポーターで帰り、その後は d02 に D02_DIVES 回潜って終わる（ボスへの経路の煙。データが変わってシード 4 が踏破しなくなったら、踏破するシードに替える）", () => {
+    const c = new Campaign(4, PROGRESS_BOT);
     const r = c.campaign(PROGRESS_DIVES);
     const k = r.dives.findIndex((d) => d.bossWin);
     expect(k).toBeGreaterThanOrEqual(0);

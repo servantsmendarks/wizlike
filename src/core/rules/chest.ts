@@ -5,22 +5,26 @@
 //
 // 乱数の消費順（state.rng。テストの鏡で固定する）:
 //   勝利（CB-51 / CB-61）: chance(chestPct) →（当たれば）[chance(noTrapChance) →（罠ありなら）weightedIndex(危険度の重み) → randInt(その危険度の罠)]
-//   調べる（CB-63）: d100 →（失敗なら）d100 →（作動の段なら）[作動] /（偽りの名前の段なら）randInt(本当の罠以外)
+//   見つけた（presentChest。衝動あり）: [EV-16 衝動: 対象者（盗賊）ごとに並び順で（錯乱なら randInt(0,3)）→（p > 0 なら）d100]
+//     →（行動者がいて制止者がいれば）[EV-25 制止: 1d10 制止者 → 1d10 行動者] →（開けるなら）[開ける]
+//     →（箱が残り戦闘中でなければ）[EV-71 掛け合い: 対象が 2 人以上なら chance(d100) →（発生すれば）対象者ごとに並び順で contest.dice]
+//   調べる（CB-63）: d100 →（失敗なら）d100 →（作動の段なら）[作動] /（偽りの名前の段なら）randInt(本当の罠以外)。担当の失敗（EV-76）は乱数なし
 //   解除（CB-64）: （名前が合えば）d100 →（失敗なら）chance(disarmFailTrigger) →（当たれば）[作動]。名前違いは乱数なしで [作動]
 //   開ける（CB-65）: （罠があれば）[作動] →（中身を得るなら）rollDice(chestGoldDice) → rollChestItems（IT-52 / IT-56）
 //   [作動]（CB-62）: （開けるで target one の罠なら、作動させた人の randInt(行動可能な者)）→ 効果のダイス（damage は並び順に 1 人 1 回、
 //     status は並び順に chance 1 回。既にかかっている者は振らない。san は乱数なし。alarm は遭遇の編成と開始（CB-03 / CB-04。startTableEncounter と同じ順）、
 //     teleport は行き先の randInt（DG-25））
-import type { ChestTrapDef, GameData } from "../data/index";
+import type { ChestTrapDef, GameData, RivalryDef } from "../data/index";
 import { chance, randInt, rollDice, weightedIndex } from "../rng";
 import { classOf, dungeonOf, memberById, personalityOf } from "../state";
 import type { Character, ChestState, ChestView, DiceRow, Dive, GameState, RuleContext } from "../types";
 import { canAct, partyGoldLuck, withGoldLuck } from "./combat-calc";
-import { equipStats } from "./equip-stats";
+import { effectiveStats, equipStats } from "./equip-stats";
+import { decideImpulse, pickStopper, rollRestrain } from "./events";
 import { aliveMembers, damageMembers, gainGold } from "./field";
 import { teleportParty } from "./floor";
 import { rollChestItems } from "./loot";
-import { loseSan } from "./san";
+import { applySanValue, gainSan, loseSan } from "./san";
 import { tryInflictStatus } from "./status";
 
 /**
@@ -79,6 +83,7 @@ function row(key: string, value: number, v: string = signed(value)): DiceRow {
  * rate = clamp(min, max, base + (盗賊なら thiefBonus) + (実効の agi − statPivot) × agiMul + (実効の luk − statPivot) × lukMul + trapDetect − danger × dangerMul)。
  * 盗賊は職業の abilities に disarm があること。trapDetect は性格の benefits.trapDetect + オプション trapDetect（DG-21 と同じ合算）。
  * danger は今かかっている罠の危険度（無ければ 0。B1）。
+ * rivalry は職業の掛け合いの担当の補正（EV-75。調べるの担当だけ呼び出し側が bonus.inspect を渡す。ほかは 0）で、trapDetect の後に足す（clamp の前）。
  * power は危険度を引く前の値、powerRows はその内訳（基本は常に、ほかは 0 でない行だけ。UI-71）、riskRows は危険度と上下限の行（0 でない行だけ）
  */
 export function chestRate(
@@ -87,6 +92,7 @@ export function chestRate(
   kind: "inspect" | "disarm",
   ch: Character,
   danger: number,
+  rivalry = 0,
 ): { rate: number; power: number; powerRows: DiceRow[]; riskRows: DiceRow[] } {
   const c = data.config.chest[kind];
   const es = equipStats(state, data, ch);
@@ -94,7 +100,7 @@ export function chestRate(
   const agi = (es.stats.agi - c.statPivot) * c.agiMul;
   const luk = (es.stats.luk - c.statPivot) * c.lukMul;
   const detect = (personalityOf(data, ch.personality)?.benefits.trapDetect ?? 0) + es.trapDetect;
-  const power = c.base + thief + agi + luk + detect;
+  const power = c.base + thief + agi + luk + detect + rivalry;
   const risk = -danger * c.dangerMul;
   const rate = Math.min(c.max, Math.max(c.min, power + risk));
   const powerRows: DiceRow[] = [row("chest.row.base", c.base, `${c.base}`)];
@@ -103,6 +109,7 @@ export function chestRate(
     ["chest.row.agi", agi],
     ["chest.row.luk", luk],
     ["chest.row.trapDetect", detect],
+    ["chest.row.rivalry", rivalry],
   ] as const) {
     if (v !== 0) powerRows.push(row(key, v));
   }
@@ -135,15 +142,107 @@ export function rollDropChest(ctx: RuleContext, inRoom: boolean, level: number):
   return true;
 }
 
+/** presentChest の指定。impulse が偽なら衝動判定（EV-16）も職業の掛け合い（EV-71）もしない（debug.chest。乱数を使わない） */
+export type PresentChestOptions = { impulse: false } | { impulse: true; startAlarm: StartAlarm };
+
 /**
- * CB-60: 箱を見つけたことを語る。chestFound{source} → message chest.found.<source> → chest.prompt（B5）。
- * 衝動判定（EV-16）と職業の掛け合い（EV-71）は M11 の以降の作業でここに足す。乱数は使わない
+ * CB-60 / EV-16 / EV-25 / EV-71: 箱を見つけたことを語る。chestFound{source} → message chest.found.<source> →
+ * （impulse なら）衝動と制止（chestImpulse）。衝動で開けたら（中身・転移・警報のどれでも）ここで終わる（掛け合いも chest.prompt も無し）→
+ * （impulse なら）職業の掛け合い（rollRivalry）→ chest.prompt（B5）
  */
-export function presentChest(ctx: RuleContext): void {
+export function presentChest(ctx: RuleContext, opts: PresentChestOptions): void {
   const chest = requireChest(ctx.state);
   ctx.events.push({ kind: "chestFound", source: chest.source });
   ctx.events.push({ kind: "message", key: `chest.found.${chest.source}` });
+  if (opts.impulse) {
+    if (chestImpulse(ctx, opts.startAlarm)) return;
+    rollRivalry(ctx);
+  }
   promptIfPending(ctx);
+}
+
+/**
+ * EV-16 / EV-25: 宝箱の衝動と制止。decideImpulse(config.chest.impulse)（盗賊だけ。EV-04）で行動者が決まらなければ偽。
+ * 決まれば chestImpulse{actorId} → message chest.impulse.actor{actor} →（制止者がいれば。宝箱は常に stopCheck 真）event.stop.roll{stopper} → rollRestrain:
+ * - 成功: event.stop.success{stopper, actor}、制止者 → 行動者の順に SAN +stopSanGain（EV-22）。開封の選択へ（偽を返す）
+ * - 失敗（event.stop.fail{stopper}）・制止者なし: message chest.impulse.open{actor} → 行動者が「調べずに開ける」（openChest。作動させた人は行動者）。
+ *   罠が作動し、制止者がいて生きていて、戦闘に入っておらず潜行が続いていれば event.stop.told{stopper} と制止者の SAN +stopSanGain（EV-23。罠なしは good で、
+ *   impulseBonus は無い）。真を返す
+ */
+function chestImpulse(ctx: RuleContext, startAlarm: StartAlarm): boolean {
+  const { state, data } = ctx;
+  const actor = decideImpulse(ctx, data.config.chest.impulse);
+  if (actor === null) return false;
+  ctx.events.push({ kind: "chestImpulse", actorId: actor.id });
+  ctx.events.push({ kind: "message", key: "chest.impulse.actor", params: { actor: actor.name } });
+  const stopper = pickStopper(state, data, { stopCheck: true }, actor);
+  if (stopper !== null) {
+    ctx.events.push({ kind: "message", key: "event.stop.roll", params: { stopper: stopper.name } });
+    if (rollRestrain(ctx, stopper, actor)) {
+      ctx.events.push({ kind: "message", key: "event.stop.success", params: { stopper: stopper.name, actor: actor.name } });
+      gainSan(ctx, stopper, data.config.events.stopSanGain);
+      gainSan(ctx, actor, data.config.events.stopSanGain);
+      return false;
+    }
+    ctx.events.push({ kind: "message", key: "event.stop.fail", params: { stopper: stopper.name } });
+  }
+  ctx.events.push({ kind: "message", key: "chest.impulse.open", params: { actor: actor.name } });
+  const trapped = requireChest(state).trapId !== null;
+  openChest(ctx, startAlarm, actor);
+  if (trapped && stopper !== null && stopper.life === "alive" && state.battle === null && state.dive !== null) {
+    ctx.events.push({ kind: "message", key: "event.stop.told", params: { stopper: stopper.name } });
+    gainSan(ctx, stopper, data.config.events.stopSanGain);
+  }
+  return true;
+}
+
+/**
+ * EV-70〜74: 職業の掛け合い（宝箱の契機）。箱が残り戦闘中でないときだけ。rivalries.json の trigger chest の定義をデータの順に見て、
+ * classId の行動可能なメンバー（リーダーを含む）が 2 人以上なら chance(def.chance)。最初に発生した 1 つだけ。
+ * 発生: 対象者ごとに並び順で Σ contest.stats（実効の能力値 CH-13）+ contest.dice。最大の者が担当（同点は並び順が前）。
+ * message text.start{a, b}（先頭の 2 人）→ dice{dice.rivalry、行は対象者ごと dice.rivalry.member{name, 各能力値}、rule dice.rivalry.rule、
+ * result dice.rivalry.win{winner}} → message text.win{winner, loser（先頭の負け）}→ 負けた者それぞれに SAN −loserSan（耐性なし。並び順）。
+ * chest.rivalry = { id, ownerId }
+ */
+function rollRivalry(ctx: RuleContext): void {
+  const { state, data } = ctx;
+  const chest = requireChest(state);
+  if (state.battle !== null) return;
+  for (const def of data.rivalries) {
+    if (def.trigger !== "chest") continue;
+    const cands = state.party.filter((c) => c.classId === def.classId && canAct(c));
+    if (cands.length < 2) continue;
+    if (!chance(state.rng, def.chance)) continue;
+    const scores = cands.map((ch) => {
+      const st = effectiveStats(state, data, ch);
+      const base = def.contest.stats.reduce((a, k) => a + st[k], 0);
+      const roll = rollDice(state.rng, def.contest.dice);
+      const params: Record<string, string | number> = { name: ch.name };
+      for (const k of def.contest.stats) params[k] = st[k];
+      return { ch, base, dice: roll.dice, total: base + roll.total, params };
+    });
+    let win = scores[0]!;
+    for (const s of scores) if (s.total > win.total) win = s;
+    const losers = scores.filter((s) => s !== win).map((s) => s.ch);
+    ctx.events.push({ kind: "message", key: def.text.start, params: { a: cands[0]!.name, b: cands[1]!.name } });
+    ctx.events.push({
+      kind: "dice",
+      label: { key: "dice.rivalry" },
+      rows: scores.map((s) => ({ label: { key: "dice.rivalry.member", params: s.params }, base: s.base, dice: s.dice, total: s.total })),
+      rule: { key: "dice.rivalry.rule" },
+      result: { key: "dice.rivalry.win", params: { winner: win.ch.name } },
+    });
+    ctx.events.push({ kind: "message", key: def.text.win, params: { winner: win.ch.name, loser: losers[0]!.name } });
+    for (const l of losers) applySanValue(ctx, l, -def.loserSan); // EV-74: 耐性なし
+    chest.rivalry = { id: def.id, ownerId: win.ch.id };
+    return;
+  }
+}
+
+function rivalryOf(data: GameData, id: string): RivalryDef {
+  const r = data.rivalries.find((x) => x.id === id);
+  if (r === undefined) throw new Error(`unknown rivalry id: ${id}`);
+  return r;
 }
 
 /**
@@ -296,7 +395,9 @@ export function inspectChest(ctx: RuleContext, memberId: string, startAlarm: Sta
   const ch = memberById(state, memberId);
   if (ch === null) throw new Error(`inspectChest: unknown member ${memberId}`);
   const danger = chest.trapId === null ? 0 : chestTrapOf(data, chest.trapId).danger;
-  const r = chestRate(state, data, "inspect", ch, danger);
+  // EV-75: 掛け合いの担当がこの箱を調べるときだけ bonus.inspect
+  const riv = chest.rivalry !== null && chest.rivalry.ownerId === ch.id ? rivalryOf(data, chest.rivalry.id) : null;
+  const r = chestRate(state, data, "inspect", ch, danger, riv?.bonus.inspect ?? 0);
   const roll = randInt(state.rng, 1, 100);
   ctx.events.push({
     kind: "dice",
@@ -333,6 +434,12 @@ export function inspectChest(ctx: RuleContext, memberId: string, startAlarm: Sta
       tell(t.id);
     } else {
       unknown();
+    }
+    // EV-76: 担当の失敗は、この調べるの語りと効果の後に text.fail{name} と SAN −failSan（耐性なし。乱数なし）。
+    // 担当が生きていなければ、また警報で戦闘に入った（全滅処理に入った）ときは出さない
+    if (riv !== null && ch.life === "alive" && state.battle === null && state.dive !== null) {
+      ctx.events.push({ kind: "message", key: riv.text.fail, params: { name: ch.name } });
+      applySanValue(ctx, ch, -riv.failSan);
     }
   }
   promptIfPending(ctx);
@@ -380,16 +487,17 @@ export function disarmChest(ctx: RuleContext, memberId: string, trapId: string, 
 }
 
 /**
- * CB-65 開ける: 罠があれば必ず作動する（作動させた人は、target one の罠なら行動可能な者から randInt で 1 人）。
+ * CB-65 開ける: 罠があれば必ず作動する（作動させた人は actor。null（コマンドの開ける）なら、target one の罠は行動可能な者から randInt で 1 人。
+ * 衝動で開ける EV-16 は行動者を渡す）。
  * その後、teleport でなく alarm でなく、行動可能な者が残っていれば中身を得て、chestEnd opened（セルの箱は clearedCells）。
  * teleport は箱を失って移る（triggerTrap の中で chestEnd lost → moved）。alarm は箱を残して戦闘になる（勝てば returnToChest で戻る）。
  * 全員が行動不能なら中身を得ず chestEnd opened（全滅処理は engine の finish）
  */
-export function openChest(ctx: RuleContext, startAlarm: StartAlarm): void {
+export function openChest(ctx: RuleContext, startAlarm: StartAlarm, actor: Character | null = null): void {
   const { state } = ctx;
   const chest = requireChest(state);
   let kind: ChestTrapDef["effect"]["kind"] | null = null;
-  if (chest.trapId !== null) kind = triggerTrap(ctx, null, startAlarm);
+  if (chest.trapId !== null) kind = triggerTrap(ctx, actor, startAlarm);
   if (kind === "teleport" || kind === "alarm") return;
   if (state.party.some(canAct)) grantChestContents(ctx, chest);
   endChest(ctx, "opened");
@@ -412,7 +520,7 @@ export function placeDebugChest(ctx: RuleContext, trapId: string | null, inRoom:
   const level = Math.max(1, ...table.map((e) => data.monsters.find((m) => m.id === e.monster)?.level ?? 1));
   const danger = trapId === null ? 0 : chestTrapOf(data, trapId).danger;
   dive.chest = { source: "drop", cell: null, inRoom, trapId, danger, level, finding: null, rivalry: null };
-  presentChest(ctx);
+  presentChest(ctx, { impulse: false });
 }
 
 // ---------------------------------------------------------------------------

@@ -118,6 +118,15 @@ type DeathRecord = { cause: string; monster: boolean; floor: number; status: str
  */
 type ImpulseTally = { starts: number; impulses: number; stopped: number; byPersonality: Record<string, number> };
 
+/**
+ * M11（EV-16 / EV-71。U-5「計測で衝動の割合（箱あたり）を記録」）: 宝箱の衝動と職業の掛け合いの数。found は衝動判定をした箱の数
+ * （message chest.found.drop / cell。警報の後に戻った chest.afterAlarm は数えない）、impulses は行動者が決まった数（chestImpulse）、
+ * stopped はそのうち制止に成功した数（event.stop.success）、rivalries は掛け合いの発生（rivalry.*.start）、rivalryFails は担当の失敗（rivalry.*.fail）
+ */
+type ChestImpulseTally = { found: number; impulses: number; stopped: number; rivalries: number; rivalryFails: number };
+
+const emptyChestImpulse = (): ChestImpulseTally => ({ found: 0, impulses: 0, stopped: 0, rivalries: 0, rivalryFails: 0 });
+
 /** 潜行 1 回分（潜行 → 街の手順）の記録 */
 type DiveRecord = {
   method: Method;
@@ -184,6 +193,7 @@ type DiveRecord = {
   armorBoughtByLevel: Record<string, number>; // そのうち買った品の Lv（= その時点の流通レベル）ごとの数
   outfitCost: number; // その 2 つの購入の費用の合計
   outfitSoldGold: number; // 外した品を売った収入の合計
+  chestImpulse: ChestImpulseTally; // M11: 宝箱の衝動と職業の掛け合いの数
   impulses: Record<string, ImpulseTally>; // M11-EV: イベントの id ごとの衝動判定の数
 };
 
@@ -302,6 +312,7 @@ export class Campaign {
   encounterUnits: Record<string, number> = {};
   antidotes = 0;
   impulses: Record<string, ImpulseTally> = {}; // M11-EV
+  chestImpulse: ChestImpulseTally = emptyChestImpulse(); // M11
   // M9 進行ボット（潜行ごとにリセット）
   floorNo = 1; // floor / homeDist / near を作った階
   deepest = 1;
@@ -354,7 +365,10 @@ export class Campaign {
     if (i < 0) return;
     const e = events[i] as Extract<GameEvent, { kind: "message" }>;
     this.chests += 1;
-    if (from.dive?.chest?.inRoom === false) this.chestsCorridor += 1;
+    // M11（EV-16）: 衝動で開けた箱は勝利と同じ execute で置かれて開くので、from には箱が無い。そのときは勝った戦闘の origin の inRoom で見る
+    const origin = from.battle?.origin;
+    const inRoom = from.dive?.chest?.inRoom ?? (origin?.kind === "random" ? origin.inRoom : undefined);
+    if (inRoom === false) this.chestsCorridor += 1;
     this.chestGold += Number(e.params!["gold"]);
     for (const x of events.slice(i + 1)) {
       if (x.kind !== "message") continue;
@@ -363,10 +377,28 @@ export class Campaign {
     }
   }
 
-  /** M11-EV: eventStarted（衝動判定の後に出る。行動者がいれば actorId）と、その後の event.stop.success をイベントの id ごとに数える */
+  /**
+   * M11-EV: eventStarted（衝動判定の後に出る。行動者がいれば actorId）と、その後の event.stop.success をイベントの id ごとに数える。
+   * M11（EV-16 / EV-71）: 宝箱を見つけた語り・chestImpulse・その後の event.stop.success・掛け合いの start / fail を chestImpulse に数える
+   */
   countImpulses(from: GameState, events: GameEvent[]): void {
-    let cur: ImpulseTally | null = null;
+    let cur: ImpulseTally | ChestImpulseTally | null = null;
+    const ct = this.chestImpulse;
     for (const e of events) {
+      if (e.kind === "message" && (e.key === "chest.found.drop" || e.key === "chest.found.cell")) {
+        ct.found += 1;
+        cur = ct;
+        continue;
+      }
+      if (e.kind === "chestImpulse") {
+        ct.impulses += 1;
+        continue;
+      }
+      if (e.kind === "message" && e.key.startsWith("rivalry.")) {
+        if (e.key.endsWith(".start")) ct.rivalries += 1;
+        else if (e.key.endsWith(".fail")) ct.rivalryFails += 1;
+        continue;
+      }
       if (e.kind === "eventStarted") {
         const t = (this.impulses[e.eventId] ??= { starts: 0, impulses: 0, stopped: 0, byPersonality: {} });
         t.starts += 1;
@@ -711,6 +743,7 @@ export class Campaign {
     this.encounterUnits = {};
     this.antidotes = 0;
     this.impulses = {};
+    this.chestImpulse = emptyChestImpulse();
     const down = this.state.party.filter((c) => c.life !== "alive").map((c) => c.id);
     expect(down.filter((id) => !this.unpaidLeft.includes(id))).toEqual([]); // 定義（unpaidLeft）のとおり、残った理由は所持金不足だけ
     this.unpaidAtStart = down.length;
@@ -1076,6 +1109,7 @@ export class Campaign {
         encounterUnits: this.encounterUnits,
         antidotes: this.antidotes,
         impulses: this.impulses,
+        chestImpulse: this.chestImpulse,
         poisonedAtHome: this.state.party.filter((c) => c.life === "alive" && c.status.includes("poison")).length,
         cureCount: 0,
         cureCost: 0,
@@ -1307,6 +1341,12 @@ function impulseReport(ds: readonly DiveRecord[]): string[] {
     lines.push(`  ${id}: 衝動 ${pct(x.impulses, x.starts)}・制止 ${x.stopped}（衝動の ${pct(x.stopped, x.impulses)}）/ 行動者 ${by || "-"}`);
   }
   lines.push(`  計: 衝動 ${pct(all.impulses, all.starts)}・制止 ${all.stopped}`);
+  // M11（U-5）: 宝箱あたりの衝動の割合（目安は既定の編成で 30% 以下）と、職業の掛け合い
+  const c = emptyChestImpulse();
+  for (const d of ds) for (const k of Object.keys(c) as (keyof ChestImpulseTally)[]) c[k] += d.chestImpulse[k];
+  lines.push(
+    `  宝箱: 衝動 ${pct(c.impulses, c.found)}（${c.impulses} / 見つけた箱 ${c.found}）・制止 ${c.stopped}（衝動の ${pct(c.stopped, c.impulses)}）・開けてしまった ${pct(c.impulses - c.stopped, c.found)} / 掛け合い ${pct(c.rivalries, c.found)}（${c.rivalries}）・担当の失敗 ${c.rivalryFails}`,
+  );
   return lines;
 }
 

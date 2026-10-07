@@ -943,6 +943,11 @@ export type GameEvent =
   | { kind: "chestTrap"; trapId: string; actorId: string | null }
   /** CB-65 / CB-66（M11）: 箱が片付いた（dive.chest が null になった）。opened 開けた、left 放っておいた、lost 失った。表示層は箱の操作を下げる */
   | { kind: "chestEnd"; result: "opened" | "left" | "lost" }
+  /**
+   * EV-16（M11）: 宝箱を見つけたときの衝動で行動者が決まった（語り chest.impulse.actor の前）。続けて制止（EV-25）と、制止できなければ
+   * 「調べずに開ける」（CB-65。作動させた人は行動者）。表示層の印は eventStarted の actorId と同じ扱い
+   */
+  | { kind: "chestImpulse"; actorId: string }
   /** D2: 受け付けなかったコマンド。command は受け取った type（形が壊れていれば "unknown"）、reason は英語の短い理由 */
   | { kind: "rejected"; command: string; reason: string }
   /** M3 追加: 鑑定（CB-05 / MG-41）で表示名が変わったときに全グループを出し直す */
