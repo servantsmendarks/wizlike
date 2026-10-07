@@ -1,7 +1,7 @@
 // UI-62（M5.5）: 自分で作るキャラ作成（CH-06）。6 人（1 人目がリーダー）を 1 人ずつ、
 // 種族 → 能力値 → 職業 → 性格（リーダーは飛ばす）→ 名前 の順に決め、6 人そろったら確認して game.new を送る。
 // - 判定（配分の可否・残り・職業の条件・名前の長さ）は core の関数（statAllocation / adjustStat / classOptions /
-//   validCreationName）の値だけで決める（UI-35）。ボーナスの振り（rollBonus）も core の関数。
+//   validCreationName）の値だけで決める（UI-35）。ボーナスの振りと内訳（rollBonusParts）も core の関数。
 // - 作成中の乱数（RngState）は呼び出し側（app）が持ち、customStep に渡す（作成中はまだ GameState が無い。CH-06 の例外）。
 // - 下書き（CustomDraft）は表示層だけの値で保存しない（リロードするとタイトルから。SV-50）。
 // 純粋な部分（initialDraft / customStep / customKeyChoice / customView）は DOM に触れないので node でテストできる。
@@ -9,7 +9,7 @@
 import type { GameData, StatBlock, StatKey, Strings } from "../../core/data/index";
 import { STAT_KEYS } from "../../core/data/index";
 import type { RngState } from "../../core/rng";
-import { adjustStat, classOptions, rollBonus, statAllocation, validCreationName } from "../../core/rules/creation";
+import { adjustStat, classOptions, rollBonusParts, statAllocation, validCreationName, type BonusParts } from "../../core/rules/creation";
 import type { CustomPartySetup } from "../../core/types";
 import type { Action } from "../input/swipe";
 import { onTap } from "../input/tap";
@@ -33,8 +33,10 @@ export type CustomStepId = "race" | "stats" | "class" | "personality" | "name" |
 
 export type CustomMemberDraft = {
   raceId: string | null;
-  /** CH-11 のボーナス（種族を選んだ・振り直したときに rollBonus） */
+  /** CH-11 のボーナス（種族を選んだ・振り直したときに rollBonusParts の total） */
   bonus: number;
+  /** CH-11 / UI-62 のボーナスの内訳（rollBonusParts の値。種族を選ぶまでは null） */
+  bonusParts: BonusParts | null;
   stats: StatBlock | null;
   classId: string | null;
   /** リーダー（添字 0）は null のまま */
@@ -75,6 +77,7 @@ export function initialDraft(data: GameData): CustomDraft {
     members.push({
       raceId: null,
       bonus: 0,
+      bonusParts: null,
       stats: null,
       classId: null,
       personality: i === 0 ? null : (pers[i] ?? "random"),
@@ -93,8 +96,11 @@ function withMember(d: CustomDraft, patch: Partial<CustomMemberDraft>, step: Cus
 
 const same = (d: CustomDraft): CustomResult => ({ kind: "draft", draft: d });
 
+/** CH-11 / UI-62: 振ったボーナスを下書きの欄に。bonus は配分（core の statAllocation / adjustStat）に渡す合計、bonusParts は内訳の表示用 */
+const bonusOf = (p: BonusParts): Pick<CustomMemberDraft, "bonus" | "bonusParts"> => ({ bonus: p.total, bonusParts: p });
+
 /**
- * UI-62 / CH-06: 1 つ選んだ結果（純粋。rng だけは rollBonus で進む）。今の段に合わない選択・選べない選択は同じ下書きのまま。
+ * UI-62 / CH-06: 1 つ選んだ結果（純粋。rng だけは rollBonusParts で進む）。今の段に合わない選択・選べない選択は同じ下書きのまま。
  * 戻る: 0 人目の種族 → exit、k 人目の種族 → k−1 人目の名前、能力値 → 種族、職業 → 能力値（配分は残す）、
  * 性格 → 職業、名前 → 性格（リーダーは職業）、確認 → 6 人目の名前
  */
@@ -128,7 +134,7 @@ export function customStep(d: CustomDraft, c: CustomChoice, data: GameData, rng:
       if (base === null) return same(d);
       // 同じ種族を選び直したら配分と職業を残す（戻ってきてそのまま進むため）。違う種族なら基礎値から振り直す（CH-11）
       if (m.raceId === c.raceId && m.stats !== null) return { kind: "draft", draft: { ...d, step: "stats" } };
-      return { kind: "draft", draft: withMember(d, { raceId: c.raceId, stats: { ...base }, bonus: rollBonus(rng, data.config.creation), classId: null }, "stats") };
+      return { kind: "draft", draft: withMember(d, { raceId: c.raceId, stats: { ...base }, ...bonusOf(rollBonusParts(rng, data.config.creation)), classId: null }, "stats") };
     }
     case "stats": {
       if (m.raceId === null || m.stats === null) return same(d);
@@ -139,7 +145,7 @@ export function customStep(d: CustomDraft, c: CustomChoice, data: GameData, rng:
       if (c.kind === "reroll") {
         const base = raceBase(data, m.raceId);
         if (base === null) return same(d);
-        return { kind: "draft", draft: withMember(d, { stats: { ...base }, bonus: rollBonus(rng, data.config.creation) }, "stats") };
+        return { kind: "draft", draft: withMember(d, { stats: { ...base }, ...bonusOf(rollBonusParts(rng, data.config.creation)) }, "stats") };
       }
       if (c.kind === "next") {
         if (!statAllocation(m.raceId, m.stats, m.bonus, data).complete) return same(d);
@@ -227,6 +233,12 @@ function statPairs(stats: Partial<StatBlock>, strings: Strings): string {
   }).join(" ");
 }
 
+/** CH-11 / UI-62: ボーナスの内訳の文（7+2、当たりは 7+2+10）。値は core の rollBonusParts のまま並べる（big は外れなら 0 で、0 の項は書かない） */
+function bonusDetail(p: BonusParts | null, strings: Strings): string {
+  if (p === null) return "";
+  return formatMessage(tr(strings, p.big > 0 ? "custom.bonusDetailBig" : "custom.bonusDetail"), { base: p.base, die: p.die, big: p.big });
+}
+
 const raceName = (data: GameData, id: string | null): string => (id === null ? "" : (data.races.find((r) => r.id === id)?.name ?? id));
 const className = (data: GameData, id: string | null): string => (id === null ? "" : (data.classes.find((c) => c.id === id)?.name ?? id));
 
@@ -270,7 +282,7 @@ export function customView(d: CustomDraft, data: GameData, strings: Strings): Cu
       const a = statAllocation(m.raceId, m.stats, m.bonus, data);
       view.stats = {
         rows: a.rows.map((r) => ({ key: r.key, label: tr(strings, `stat.${r.key}`), value: r.value, canInc: r.canInc, canDec: r.canDec })),
-        remaining: formatMessage(tr(strings, "custom.remaining"), { remaining: a.remaining, bonus: a.bonus }),
+        remaining: formatMessage(tr(strings, "custom.remaining"), { remaining: a.remaining, bonus: a.bonus, detail: bonusDetail(m.bonusParts, strings) }),
       };
       view.buttons.a = { label: tr(strings, "custom.reroll"), choice: { kind: "reroll" }, dim: false };
       view.buttons.b = { label: tr(strings, "custom.next"), choice: { kind: "next" }, dim: !a.complete };
