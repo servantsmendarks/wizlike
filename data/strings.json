@@ -565,6 +565,8 @@
   "dice.plus": "+",
   "dice.sep": " / ",
   "dice.arrow": "→ ",
+  "dice.inline.head": "{label}：{rows}",
+  "dice.inline.result": "　{rule} → {result}",
   "dice.row.roll": "出目",
   "dice.rule.rate": "成功率 {rate}（出目が {rate} 以下で成功）",
   "dice.initiative": "先手判定",

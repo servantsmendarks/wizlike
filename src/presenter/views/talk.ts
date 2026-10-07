@@ -546,12 +546,17 @@ export type Narration = {
   clearView?(): void;
   /** UI-47（M10.5 追補 2）: 区切り（section）で読ませる文が出ているか（会話の箱が開いている）。メッセージ窓は偽。省略すると偽 */
   shown?(): boolean;
+  /**
+   * UI-40 / UI-47（M10.5 追補 2・未定-23）: 判定の箱の内訳の行を、ログに入れずに文字送りなしで会話の箱に足す（TalkModel.replay）。
+   * 街でだけ足し、メッセージ窓（迷宮・戦闘）には足さない。省略すると足さない
+   */
+  aside?(lines: readonly string[]): Promise<void>;
 };
 
 export function createNarrator(o: {
   /** 今の route が街か（キャラクター画面を含む） */
   town(): boolean;
-  talk: Pick<TalkModel, "say" | "setMore" | "rush" | "typing"> & Partial<Pick<TalkModel, "hold" | "clearPage" | "isOpen">>;
+  talk: Pick<TalkModel, "say" | "setMore" | "rush" | "typing"> & Partial<Pick<TalkModel, "hold" | "clearPage" | "isOpen" | "replay">>;
   window: Narration;
 }): Narration {
   const to = (): Pick<Narration, "say" | "setMore" | "rush" | "typing"> => (o.town() ? o.talk : o.window);
@@ -578,5 +583,6 @@ export function createNarrator(o: {
       else o.window.clearView?.();
     },
     shown: () => o.town() && o.talk.isOpen?.() === true,
+    aside: (lines) => (o.town() ? (o.talk.replay?.(lines, true) ?? Promise.resolve()) : Promise.resolve()),
   };
 }

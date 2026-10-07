@@ -77,16 +77,33 @@ function rowHead(strings: Strings, row: DiceRow): string {
   return `${text(strings, row.label)} ${row.base === null ? "" : `${row.base}${plus}`}`;
 }
 
+/** 1 行の文（「{rowHead}{目…}{dice.total}」。合計は showsTotal のときだけ） */
+function rowText(strings: Strings, row: DiceRow): string {
+  const plus = strings["dice.plus"] ?? "+";
+  const total = showsTotal(row) ? formatMessage(strings["dice.total"] ?? "dice.total", { total: row.total }) : "";
+  return `${rowHead(strings, row)}${row.dice.join(plus)}${total}`;
+}
+
 /** 純粋: 履歴に残す 1 行。「{label} {row1}{sep}{row2}{sep}{rule}{arrow}{result}」。base が null で目が 1 個の行は「出目 42」、補正の行は「士気 +1」 */
 export function formatDiceSummary(ev: DiceEvent, strings: Strings): string {
-  const plus = strings["dice.plus"] ?? "+";
   const sep = strings["dice.sep"] ?? " / ";
   const arrow = strings["dice.arrow"] ?? "";
-  const rows = ev.rows.map((r) => {
-    const total = showsTotal(r) ? formatMessage(strings["dice.total"] ?? "dice.total", { total: r.total }) : "";
-    return `${rowHead(strings, r)}${r.dice.join(plus)}${total}`;
-  });
+  const rows = ev.rows.map((r) => rowText(strings, r));
   return `${text(strings, ev.label)} ${[...rows, text(strings, ev.rule)].join(sep)}${arrow}${text(strings, ev.result)}`;
+}
+
+/**
+ * 純粋（UI-40 / UI-47。M10.5 追補 2・未定-23）: 演出スキップ ON の街で会話の箱に溜める内訳の 2 行。
+ * 1 行目は dice.inline.head（{label} は見出し、{rows} は各行を dice.sep でつないだもの。行の形は formatDiceSummary と同じ）、
+ * 2 行目は dice.inline.result（{rule} と {result}）。表示のためだけの整形
+ */
+export function formatDiceInline(ev: DiceEvent, strings: Strings): string[] {
+  const sep = strings["dice.sep"] ?? " / ";
+  const rows = ev.rows.map((r) => rowText(strings, r));
+  return [
+    formatMessage(strings["dice.inline.head"] ?? "dice.inline.head", { label: text(strings, ev.label), rows: rows.join(sep) }),
+    formatMessage(strings["dice.inline.result"] ?? "dice.inline.result", { rule: text(strings, ev.rule), result: text(strings, ev.result) }),
+  ];
 }
 
 export type DiceView = {

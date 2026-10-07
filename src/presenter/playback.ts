@@ -50,7 +50,7 @@ import type { GameData, StatusId, Strings } from "../core/data/index";
 import type { EnemyGroupView, GameEvent, GameEventKind, GameState, Life, PenaltyResult, Screen, ViewPoint } from "../core/types";
 import type { Settings } from "./settings";
 import { enemyGroupOfId } from "./views/battle";
-import { formatDiceSummary, type DiceEvent } from "./views/dice";
+import { formatDiceInline, formatDiceSummary, type DiceEvent } from "./views/dice";
 import { formatMessage } from "./views/message";
 import { formatPenaltyTable, type PenaltyTableText } from "./views/penalty-table";
 
@@ -96,6 +96,12 @@ export type PlayerDeps = {
     clearView?(): void;
     /** UI-47（M10.5 追補 2）: section で読ませる文が出ているか（会話の箱が開いている）。省略すると偽（section で待たない） */
     shown?(): boolean;
+    /**
+     * UI-40 / UI-47（M10.5 追補 2・未定-23）: 演出スキップ ON の街（keepsDice）で、拍の外のタップを待たない判定の箱（HOLD_DICE_KEYS 以外）の
+     * 内訳の行（formatDiceInline）を会話の箱の行として足す。ログには入れない（履歴は dice の要約 1 行。二重にしない）。
+     * 文字送りしない。省略すると足さない
+     */
+    aside?(lines: readonly string[]): Promise<void>;
     /** UI-45: オートの拍の待ち（WAAPI の animation.finished で測る） */
     waitMs(ms: number): Promise<void>;
   };
@@ -457,6 +463,10 @@ export function createPlayer(deps: PlayerDeps): Player {
       // UI-44 / UI-56: 全滅の 2d10 を出したら、内訳を開くまでの待ちの間は入力の UI を出さない（戦闘の内と外で同じ）
       if (wipeDiceShown) deps.inputClosed();
       deps.message.log(formatDiceSummary(ev, deps.strings));
+      // UI-40 / UI-47（未定-23）: 演出スキップ ON の街では、タップを待たない箱の内訳を会話の箱にも溜める（箱そのものも出す）
+      if (deps.settings().skipAnimations && keepDice() && !HOLD_DICE_KEYS.includes(ev.label.key) && !wipeDiceShown) {
+        await deps.message.aside?.(formatDiceInline(ev, deps.strings));
+      }
       await deps.dice.show(ev, isSkip, msOf(cx, ui.diceStepMs));
     },
     async penaltyTable(ev, cx) {

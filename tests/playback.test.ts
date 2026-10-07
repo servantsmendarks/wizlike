@@ -3,7 +3,7 @@ import { beatWait, createPlayer, createTapLatch, townCarry, type PlayerDeps } fr
 import { createNarrator, createTalkModel } from "../src/presenter/views/talk";
 import { regions, townLayout } from "../src/presenter/layout";
 import { returnToTown } from "../src/core/rules/town";
-import { formatDiceSummary, type DiceEvent } from "../src/presenter/views/dice";
+import { formatDiceInline, formatDiceSummary, type DiceEvent } from "../src/presenter/views/dice";
 import { formatMessage } from "../src/presenter/views/message";
 import { textUnits } from "../src/presenter/views/party-band";
 import { STAT_KEYS } from "../src/core/data/index";
@@ -1710,8 +1710,10 @@ describe("UI-47 街の会話の箱と再生", () => {
     for (const skipAnimations of [false, true]) {
       const { deps, log, sink } = townTalk(skipAnimations);
       await createPlayer(deps).play(events, stateWith(null), stateWith(null));
-      // タップなしで再生が終わり、2 文が並ぶ
-      expect(sink.text, String(skipAnimations)).toBe(`${fmt(roll)}\n${fmt(learned)}`);
+      // タップなしで再生が終わり、2 文が並ぶ。
+      // M10.5 追補 2（未定-23）: 演出スキップ ON では間に判定の箱の内訳の 2 行も溜まる（以前の期待値は ON でも 2 文だけ）
+      const inl = skipAnimations ? formatDiceInline(events[1] as DiceEvent, data.strings) : [];
+      expect(sink.text, String(skipAnimations)).toBe([fmt(roll), ...inl, fmt(learned)].join("\n"));
       const seq = names(log);
       expect(seq.indexOf("sound:spellLearned")).toBeGreaterThan(seq.indexOf("dice.show"));
       expect(seq).not.toContain("dice.hide");
@@ -1729,7 +1731,9 @@ describe("UI-47 街の会話の箱と再生", () => {
     for (const skipAnimations of [false, true]) {
       const { deps, log, sink, talk } = townTalk(skipAnimations);
       await createPlayer(deps).play(events, stateWith(null), stateWith(null));
-      const all = [...filler, roll, learned].map(fmt);
+      // M10.5 追補 2（未定-23）: 演出スキップ ON では判定の箱の内訳の 2 行も溜まる（以前の期待値は ON でも文だけ）
+      const inl = skipAnimations ? formatDiceInline(events[filler.length + 1] as DiceEvent, data.strings) : [];
+      const all = [...[...filler, roll].map(fmt), ...inl, fmt(learned)];
       // 22 行を超えても空にせず、全文が溜まっている（タップは 0 回）
       expect(sink.text.split("\n"), String(skipAnimations)).toEqual(all);
       expect(all.length).toBeGreaterThan(T.talk.lines);
@@ -1878,16 +1882,23 @@ describe("UI-47 街の会話の箱と再生", () => {
       ["town.inn.levelUp", "town.inn.hpUp", "town.inn.mpUp"],
       ["town.inn.levelUp", "town.inn.hpUp", "town.inn.mpUp", "town.inn.statUp.vit", "town.inn.statUp.luk"],
     ]);
-    // 区切り（section）で分けた文の塊。0 番は宿の語り、1 番からはメンバーごと
-    const segments: string[][] = [[]];
-    for (const e of r.events) {
-      if (e.kind === "section") segments.push([]);
-      else if (e.kind === "message") segments[segments.length - 1]!.push(fmt(e));
-    }
-    expect(segments).toHaveLength(3); // 宿の語り・ベルク・ドナ
-    expect(segments[1]!.slice(0, 4)).toEqual(r.events.slice(lvAt[0]! + 1, lvAt[0]! + 5).map(fmt));
+    // 区切り（section）で分けた文の塊。0 番は宿の語り、1 番からはメンバーごと。
+    // M10.5 追補 2（未定-23）: 演出スキップ ON では習得判定（dice.learn）の内訳の 2 行も塊に入る（以前の期待値は ON でも文だけ）
+    const segmentsOf = (inline: boolean): string[][] => {
+      const out: string[][] = [[]];
+      for (const e of r.events) {
+        if (e.kind === "section") out.push([]);
+        else if (e.kind === "message") out[out.length - 1]!.push(fmt(e));
+        else if (e.kind === "dice" && inline) out[out.length - 1]!.push(...formatDiceInline(e, data.strings));
+      }
+      return out;
+    };
+    expect(segmentsOf(false)).toHaveLength(3); // 宿の語り・ベルク・ドナ
+    expect(segmentsOf(false)[1]!.slice(0, 4)).toEqual(r.events.slice(lvAt[0]! + 1, lvAt[0]! + 5).map(fmt));
+    expect(r.events.some((e) => e.kind === "dice" && e.label.key === "dice.learn")).toBe(true);
     const lvTexts = r.events.flatMap((e) => (e.kind === "message" && e.key === "town.inn.levelUp" ? [fmt(e)] : []));
     for (const skipAnimations of [false, true]) {
+      const segments = segmentsOf(skipAnimations);
       const { deps, log, sink, talk } = townTalk(skipAnimations);
       // 区切りのタップ待ち（演出スキップでも待つ）の時点の箱の中身と ▼ を記録して、すぐ解く
       const waits: Array<{ text: string; more: { on: boolean; blink: boolean } }> = [];
@@ -2078,6 +2089,8 @@ describe("UI-45/UI-47（M10.5 追補 2）区切りで窓を空にする", () => 
         msg("town.inn.levelUp", { name: "ベルク", level: 2 }),
       ];
       const texts = events.map(fmt).filter((t) => t !== "");
+      // M10.5 追補 2（未定-23）: 演出スキップ ON では判定の箱の内訳の 2 行も箱に溜まる（履歴には入れない）。以前の期待値は ON でも文だけ
+      const inl = skipAnimations ? formatDiceInline(events[2] as DiceEvent, data.strings) : [];
       const player = createPlayer(deps);
       let done = false;
       const p = player.play(events, stateWith(null), stateWith(null)).then(() => {
@@ -2086,7 +2099,7 @@ describe("UI-45/UI-47（M10.5 追補 2）区切りで窓を空にする", () => 
       await flushMicro();
       // 区切りで止まり、前の文はそのまま・▼（演出ありなら点滅）・判定の箱も出たまま。次の出来事（levelUp）はまだ
       expect(done).toBe(false);
-      expect(sink.text).toBe(texts.slice(0, 3).join("\n"));
+      expect(sink.text).toBe([...texts.slice(0, 2), ...inl, texts[2]].join("\n"));
       expect(sink.more).toEqual({ on: true, blink: !skipAnimations });
       expect(names(log)).not.toContain("dice.hide");
       expect(names(log)).not.toContain("party.setMax");
@@ -2177,5 +2190,94 @@ describe("UI-45/UI-47（M10.5 追補 2）区切りで窓を空にする", () => 
     const st = withChar(withChar(newGame(1), 1, { exp: 50 }), 3, { exp: 200 });
     const r = execute(st, { type: "town.inn", rank: 0 }, data);
     expect(r.events.filter((e) => e.kind === "section")).toHaveLength(2);
+  });
+});
+
+describe("UI-40/UI-47（M10.5 追補 2・未定-23）演出スキップ ON の街では、タップを待たない判定の箱の内訳を会話の箱の行として溜める", () => {
+  const fmt = (ev: GameEvent): string => (ev.kind === "message" ? formatMessage(data.strings[ev.key]!, ev.params) : "");
+  const p1 = { name: "アル", spell: "灯火" };
+  const LEARN = rollDiceEv("dice.learn", [12], 12, "dice.learn.ok");
+  const learnEvents: GameEvent[] = [msg("town.inn.learnRoll", p1), { ...LEARN, label: { key: "dice.learn", params: { spell: "灯火" } } } as GameEvent, msg("town.inn.learned", p1)];
+  const learnDice = learnEvents[1] as DiceEvent;
+
+  /** 実物の会話の箱（文字送りなし）。town で街かを切り替える */
+  const box = (skipAnimations: boolean, town = true) => {
+    const { deps, log } = fakeDeps({ skipAnimations });
+    const window = deps.message;
+    const sink = { open: false, text: "", more: { on: false, blink: false } };
+    const history: string[] = [];
+    const talk = createTalkModel({
+      sink: { open: (on) => (sink.open = on), text: (t) => (sink.text = t), more: (on, blink) => (sink.more = { on, blink }) },
+      cleared: () => deps.dice.hide(),
+      log: (t) => history.push(t),
+      speed: () => 0,
+      blink: () => !skipAnimations,
+      schedule: () => () => {},
+    });
+    deps.message = createNarrator({ town: () => town, talk, window });
+    return { deps, log, sink, history, talk };
+  };
+
+  test("UI-40 formatDiceInline: 見出しと各行（dice.inline.head）、基準と結果（dice.inline.result）の 2 行。文言は strings の鍵", () => {
+    expect(formatDiceInline(learnDice, data.strings)).toEqual(["習得判定 灯火：出目 12", "　成功率 50（出目が 50 以下で成功） → 習得"]);
+    expect(formatDiceInline(INITIATIVE as DiceEvent, data.strings)).toEqual(["先手判定：味方 8+4=12 / 敵 9+2=11", "　差 1（5 以上で先手、-5 以下で不意打ち） → 互角"]);
+    for (const k of ["dice.inline.head", "dice.inline.result"]) expect(data.strings[k]).toBeDefined();
+  });
+
+  test("UI-40/UI-47 習得判定の内訳の 2 行は、大きな値（6 字の呪文名・出目 100・成功率 100・習得できず）でも会話の箱の 1 行（224px = 全角 28 字）に収まる", () => {
+    const ev: DiceEvent = { ...learnDice, label: { key: "dice.learn", params: { spell: "アアアアアア" } }, rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [100], total: 100 }], rule: { key: "dice.rule.rate", params: { rate: 100 } }, result: { key: "dice.learn.ng" } };
+    for (const line of formatDiceInline(ev, data.strings)) expect(textUnits(line), line).toBeLessThanOrEqual(56);
+  });
+
+  test("UI-40/UI-47 演出スキップ ON の街: 習得判定（dice.learn）の内訳の 2 行が、語りの文の間に会話の箱の行として溜まる。履歴は判定の要約 1 行だけ（行は二重に入れない）。判定の箱も出す", async () => {
+    const { deps, log, sink, history } = box(true);
+    await createPlayer(deps).play(learnEvents, stateWith(null), stateWith(null));
+    const inline = formatDiceInline(learnDice, data.strings);
+    expect(sink.text).toBe([fmt(learnEvents[0]!), ...inline, fmt(learnEvents[2]!)].join("\n"));
+    // 語りの文だけが会話の箱から履歴に入り、判定は要約 1 行（message.log）
+    expect(history).toEqual([fmt(learnEvents[0]!), fmt(learnEvents[2]!)]);
+    expect(log.filter((e) => e.m === "message.log").map((e) => e.a[0])).toEqual([formatDiceSummary(learnDice, data.strings)]);
+    expect(names(log)).toContain("dice.show");
+  });
+
+  test("UI-40/UI-47 演出スキップ OFF の街では内訳の行を溜めない（今までどおり）", async () => {
+    const { deps, sink } = box(false);
+    await createPlayer(deps).play(learnEvents, stateWith(null), stateWith(null));
+    expect(sink.text).toBe([fmt(learnEvents[0]!), fmt(learnEvents[2]!)].join("\n"));
+  });
+
+  test("UI-40/UI-55 タップを待つ判定の箱（HOLD_DICE_KEYS: 強化・鑑定・制止）は、演出スキップ ON の街でも行を溜めない", async () => {
+    for (const key of ["dice.upgrade", "dice.identify", "dice.restrain"]) {
+      const { deps, sink } = box(true);
+      const evs: GameEvent[] = [msg("town.inn.morale"), rollDiceEv(key, [12], 12, "dice.upgrade.ok"), msg("town.inn.morale")];
+      await createPlayer(deps).play(evs, stateWith(null), stateWith(null));
+      expect(sink.text, key).toBe([fmt(evs[0]!), fmt(evs[2]!)].join("\n"));
+    }
+  });
+
+  test("UI-40/UI-45 迷宮・戦闘のメッセージ窓（街の外）では、演出スキップ ON でも行を溜めない", async () => {
+    const { deps, log } = box(true, false);
+    const s = stateWith(diveAt(3, 3, "N"));
+    await createPlayer(deps).play(learnEvents, s, s);
+    expect(log.filter((e) => e.m === "message.say").map((e) => e.a[0])).toEqual([fmt(learnEvents[0]!), fmt(learnEvents[2]!)]);
+  });
+
+  test("UI-66/UI-47 行を溜めても、音（soundStart・sound）と hold と判定の箱の時機は変わらない（行を溜めない結線と同じ列）", async () => {
+    const run = async (withInline: boolean): Promise<string[]> => {
+      const { deps, log } = box(true);
+      if (!withInline) delete deps.message.aside;
+      deps.soundStart = () => log.push({ m: "soundStart", a: [] });
+      deps.sound = (ev) => log.push({ m: `sound:${ev.kind}`, a: [] });
+      const hold = deps.message.hold!;
+      deps.message.hold = () => {
+        log.push({ m: "hold", a: [] });
+        return hold();
+      };
+      await createPlayer(deps).play(learnEvents, stateWith(null), stateWith(null));
+      return names(log).filter((m) => m === "soundStart" || m.startsWith("sound:") || m === "hold" || m.startsWith("dice."));
+    };
+    const a = await run(true);
+    expect(a).toEqual(await run(false));
+    expect(a).toEqual(["soundStart", "hold", "soundStart", "sound:message", "sound:dice", "dice.show", "hold", "soundStart", "sound:message"]);
   });
 });
