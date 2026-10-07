@@ -1454,6 +1454,9 @@ describe("UI-65 効果音の事前合成（M9.5）", () => {
     const p = createAudioPlayer(f.deps);
     expect(f.contexts).toHaveLength(0);
     expect(w.posted[0]?.type).toBe("warmup");
+    // 未定-16（2026-10-07）: 効果音は 1 個ずつ（前の返事が来てから次を）送るので、作成時に送るのは最初の 1 個。返事のたびに次を送る
+    expect(w.posted.slice(1)).toEqual([{ type: "sfx", name: names[0], params: [null, 0.02, 200] }]);
+    for (const n of names) w.reply({ type: "sfx", name: n, samples: new Float32Array([0.5]) });
     expect(w.posted.slice(1)).toEqual(names.map((n, k) => ({ type: "sfx", name: n, params: [null, 0.02, 200 + k] })));
     // unlock でも頼み直さない
     p.unlock();
@@ -1471,7 +1474,8 @@ describe("UI-65 効果音の事前合成（M9.5）", () => {
     const w = new LoopbackWorker();
     f.deps.renderer = createWorkerRenderer(() => asWorker(w));
     const p = createAudioPlayer(f.deps);
-    expect(w.out.map((m) => m.type)).toEqual(["sfx", "sfx"]);
+    // 未定-16: 効果音は 1 個ずつ送るので、2 個目は 1 個目の返事の後
+    expect(w.out.map((m) => m.type)).toEqual(["sfx"]);
     w.deliver();
     w.deliver();
     p.unlock();
@@ -1578,7 +1582,8 @@ describe("UI-65 効果音の事前合成（M9.5）", () => {
     const w = new FakeWorker();
     f.deps.renderer = createWorkerRenderer(() => asWorker(w));
     const p = createAudioPlayer(f.deps);
-    expect(w.posted.filter((m) => m.type === "sfx").map((m) => sfxOf(m).name)).toEqual(["hit", "ok"]);
+    // 未定-16: 送るのは 1 個目だけ（ok はまだ送っていない。error でどちらも null）
+    expect(w.posted.filter((m) => m.type === "sfx").map((m) => sfxOf(m).name)).toEqual(["hit"]);
     w.onerror?.(new Error("boom"));
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(f.zz.ZZFX.buildSamples).not.toHaveBeenCalled();
@@ -1635,5 +1640,76 @@ describe("UI-65 効果音の事前合成（M9.5）", () => {
     expect(c.sources[1]!.playbackRate.value).toBeCloseTo(1.025, 12);
     expect(c.sources[2]!.playbackRate.value).toBe(1);
     expect(c.sources[2]!.buffer).toBe(c.sources[0]!.buffer);
+  });
+
+  // 未定-16（2026-10-07 ユーザーの指示「Worker の待ち行列で曲の区間の依頼を効果音より優先する」）: worker は届いた順に 1 件ずつ
+  // 処理するので、主スレッドが効果音を 1 個ずつ（前の返事の後に次を）送り、曲の区間の依頼はすぐ送る。偽の worker は本物と同じく
+  // 届いた順に 1 件ずつ処理し（step）、返事を順に記録する
+  class SerialWorker extends FakeWorker {
+    handle = createSynthHandler();
+    inbox: ToSynthWorker[] = [];
+    replied: string[] = [];
+    override postMessage(m: ToSynthWorker): void {
+      super.postMessage(m);
+      this.inbox.push(structuredClone(m));
+    }
+    step(): boolean {
+      const m = this.inbox.shift();
+      if (m === undefined) return false;
+      const r = this.handle(m);
+      if (r !== null) {
+        this.replied.push(r.type === "sfx" ? `sfx:${r.name}` : `seg:${r.id}`);
+        this.reply(r);
+      }
+      return true;
+    }
+  }
+
+  it("UI-65 事前合成（未定-16）: 効果音の合成の途中で頼んだ曲の区間 0 は、残りの効果音より先に返る（効果音の依頼は 1 個ずつ）。26 個はすべて後でそろう", () => {
+    const names = data.audio.sfx.names;
+    const sfx: GameAssets["sfx"] = Object.fromEntries(names.map((n, k) => [n, { name: n, params: [null, 0.02, 200 + k] }]));
+    const f = setup({ sfx });
+    const w = new SerialWorker();
+    const r = createWorkerRenderer(() => asWorker(w));
+    f.deps.renderer = r;
+    const p = createAudioPlayer(f.deps);
+    // 作成時に送るのは暖機と最初の効果音 1 個だけ
+    expect(w.posted.map((m) => m.type)).toEqual(["warmup", "sfx"]);
+    expect(w.step()).toBe(true); // 暖機
+    expect(w.step()).toBe(true); // 効果音 1 個目
+    expect(w.replied).toEqual([`sfx:${names[0]}`]);
+    // 返事を受けて 2 個目を送った後に、読み込み直後のタップで曲の区間 0 を頼む
+    const plan = r.plan(MUSIC.long!, data.wavetables, RATE);
+    let seg0: Float32Array | null = null;
+    r.render("long", plan, 0, (s) => {
+      seg0 = s;
+    });
+    const s0 = segOf(w.posted.find((m) => m.type === "seg"));
+    while (w.step());
+    // 区間 0 の前に並んだ効果音は高々 1 個
+    const at = w.replied.indexOf(`seg:${s0.id}`);
+    expect(at).toBeLessThanOrEqual(2);
+    expect(at).toBeGreaterThan(0);
+    expect(seg0).toEqual(renderSegment(plan, 0));
+    // 26 個すべてが 1 回ずつ合成され、unlock で AudioBuffer になる
+    const done = w.replied.filter((x) => x.startsWith("sfx:"));
+    expect(done).toEqual(names.map((n) => `sfx:${n}`));
+    expect(w.posted.filter((m) => m.type === "sfx")).toHaveLength(26);
+    p.unlock();
+    expect(f.contexts[0]!.buffers).toHaveLength(26);
+  });
+
+  it("UI-65 事前合成（未定-16）: 1 個ずつ送る途中で worker が error になると、まだ送っていない効果音も null で返す（送らない）", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const w = new FakeWorker();
+    const r = createWorkerRenderer(() => asWorker(w));
+    const got: string[] = [];
+    for (const n of ["hit", "ok", "cancel"]) r.sfx?.(n, SFX.hit!.params, (s) => got.push(`${n}:${s === null ? "null" : s.length}`));
+    expect(w.posted.map((m) => (m.type === "sfx" ? m.name : m.type))).toEqual(["hit"]);
+    w.reply({ type: "sfx", name: "hit", samples: new Float32Array([0.5]) });
+    expect(w.posted.map((m) => (m.type === "sfx" ? m.name : m.type))).toEqual(["hit", "ok"]);
+    w.onerror?.(new Error("boom"));
+    expect(got).toEqual(["hit:1", "ok:null", "cancel:null"]);
+    expect(w.posted).toHaveLength(2);
   });
 });

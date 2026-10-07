@@ -146,8 +146,15 @@ export function createWorkerRenderer(make: () => Worker): SegmentRenderer {
   let idSeq = 0;
   const sent: Record<string, SongPlan> = {};
   const waiting = new Map<number, Waiting>();
-  /** 返事を待っている効果音（名前ごと。同じ名前の依頼は最後のものだけ） */
+  /** 返事を待っている効果音（名前ごと。同じ名前の依頼は最後のものだけ。まだ送っていないものも含む） */
   const waitingSfx = new Map<string, (samples: Float32Array<ArrayBuffer> | null) => void>();
+  /**
+   * 未定-16（2026-10-07）: まだ送っていない効果音の依頼（届いた順）。worker は届いた順に 1 件ずつ処理するので、効果音は 1 個ずつ
+   * （前の返事が来てから次を）送り、曲の区間の依頼（plan・seg）はすぐ送る。区間の前に並ぶ効果音は高々 1 個になる
+   */
+  const sfxQueue: { name: string; params: (number | null)[] }[] = [];
+  /** 送って返事を待っている効果音があるか（高々 1 個） */
+  let sfxBusy = false;
 
   const fail = (e: unknown): void => {
     if (failed) return;
@@ -166,6 +173,8 @@ export function createWorkerRenderer(make: () => Worker): SegmentRenderer {
     // 効果音は主スレッドで合成し直さない（読み込み時に主スレッドを止めないため。再生機が初回の再生のときに合成する）
     const sfxRest = [...waitingSfx.values()];
     waitingSfx.clear();
+    sfxQueue.length = 0;
+    sfxBusy = false;
     for (const cb of sfxRest) cb(null);
   };
 
@@ -177,10 +186,13 @@ export function createWorkerRenderer(make: () => Worker): SegmentRenderer {
       w.onmessage = (e: MessageEvent<FromSynthWorker>) => {
         const m = e.data;
         if (m.type === "sfx") {
+          sfxBusy = false;
           const cb = waitingSfx.get(m.name);
-          if (cb === undefined) return;
-          waitingSfx.delete(m.name);
-          cb(m.samples);
+          if (cb !== undefined) {
+            waitingSfx.delete(m.name);
+            cb(m.samples);
+          }
+          pumpSfx();
           return;
         }
         const r = waiting.get(m.id);
@@ -195,6 +207,23 @@ export function createWorkerRenderer(make: () => Worker): SegmentRenderer {
     } catch (e) {
       fail(e);
       return null;
+    }
+  };
+
+  /** 返事を待っている効果音が無ければ、待ち行列の先頭の効果音を 1 個送る */
+  const pumpSfx = (): void => {
+    if (sfxBusy || failed) return;
+    const next = sfxQueue.shift();
+    if (next === undefined) return;
+    const w = get();
+    if (w === null) return;
+    sfxBusy = true;
+    try {
+      const m: ToSynthWorker = { type: "sfx", name: next.name, params: next.params };
+      w.postMessage(m);
+    } catch (e) {
+      // 待っている効果音（送っていないものを含む）は fail が null で返す
+      fail(e);
     }
   };
 
@@ -221,13 +250,11 @@ export function createWorkerRenderer(make: () => Worker): SegmentRenderer {
         return;
       }
       waitingSfx.set(name, cb);
-      try {
-        const m: ToSynthWorker = { type: "sfx", name, params };
-        w.postMessage(m);
-      } catch (e) {
-        // 待っている効果音（この依頼を含む）は fail が null で返す
-        fail(e);
-      }
+      // まだ送っていない同じ名前の依頼があれば引数だけ新しくする（送り済みなら返事が新しい cb に渡る）
+      const queued = sfxQueue.find((q) => q.name === name);
+      if (queued !== undefined) queued.params = params;
+      else sfxQueue.push({ name, params });
+      pumpSfx();
     },
     render(name, plan, i, cb) {
       const w = get();
