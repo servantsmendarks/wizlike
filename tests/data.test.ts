@@ -481,8 +481,8 @@ describe("data: config.json", () => {
   test("data: MG-11 使えない系統の呪文を初期呪文に持たない", () => {
     expectIssue((r) => r.config.prototypeParty.members[4].knownSpells.push("heal"), "config.json", "MG-11");
   });
-  test("data: UI-57 / SV-24 ui.musicVolume・ui.sfxVolume は 0..10 の整数（必須。既定 7【仮】）", () => {
-    expect([config.ui.musicVolume, config.ui.sfxVolume]).toEqual([7, 7]);
+  test("data: UI-57 / SV-24 ui.musicVolume・ui.sfxVolume は 0..10 の整数（必須。既定 曲 3・効果音 2【仮】）", () => {
+    expect([config.ui.musicVolume, config.ui.sfxVolume]).toEqual([3, 2]);
     for (const k of ["musicVolume", "sfxVolume"]) {
       expectIssue((r) => (r.config.ui[k] = 11), "config.json", `ui.${k}: expected integer in 0..10, got 11`);
       expectIssue((r) => (r.config.ui[k] = -1), "config.json", `ui.${k}: expected integer in 0..10, got -1`);

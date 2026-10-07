@@ -30,7 +30,7 @@ afterEach(() => {
 
 describe("settings", () => {
   test("SV-24 defaultSettings は config から取る（28/250/30/both/false/400）", () => {
-    expect(D).toEqual({ skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400, musicVolume: 7, sfxVolume: 7 });
+    expect(D).toEqual({ skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400, musicVolume: 3, sfxVolume: 2 });
     expect(D.swipeThreshold).toBe(data.config.input.swipeThresholdPx);
     expect(D.holdRepeatMs).toBe(data.config.input.holdRepeatMs);
     expect(D.textSpeed).toBe(data.config.ui.textSpeedMs);

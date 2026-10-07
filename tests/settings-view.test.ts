@@ -306,31 +306,32 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
     expect(root.children.some((c) => c.textContent === S["settings.fileHintTitle"])).toBe(true);
   });
 
-  test("UI-57 音量の行: ラベル「音量」、トグル「曲 7」「効果音 7」（onTap）。押すと 1 上がり、10 の次は 0（0 のときも数字のまま）", () => {
+  test("UI-57 音量の行: ラベル「音量」、トグル「曲 3」「効果音 2」（既定。onTap）。押すと 1 上がり、10 の次は 0（0 のときも数字のまま）", () => {
     const { store, persisted, L, view, at, buttonAt, tap } = setup();
     view.render(PLAY, null);
     expect(S["settings.volume"]).toBe("音量");
     expect(at(L.volume.label).map((e) => e.textContent)).toEqual([S["settings.volume"]]);
     const music = buttonAt(L.volume.music);
     const sfx = buttonAt(L.volume.sfx);
-    expect([music.textContent, sfx.textContent]).toEqual(["曲 7", "効果音 7"]);
-    expect(settingsVolumeText(store.get(), S)).toEqual({ musicVolume: "曲 7", sfxVolume: "効果音 7" });
+    expect([music.textContent, sfx.textContent]).toEqual(["曲 3", "効果音 2"]);
+    expect(settingsVolumeText(store.get(), S)).toEqual({ musicVolume: "曲 3", sfxVolume: "効果音 2" });
     expect(tapSpecOf(music)).not.toBeNull();
     expect(tapSpecOf(sfx)).not.toBeNull();
     tap(music);
-    expect(store.get().musicVolume).toBe(8);
-    expect(persisted.at(-1)?.musicVolume).toBe(8);
+    expect(store.get().musicVolume).toBe(4);
+    expect(persisted.at(-1)?.musicVolume).toBe(4);
     view.refresh();
-    expect(music.textContent).toBe("曲 8");
-    tap(music);
-    tap(music);
+    expect(music.textContent).toBe("曲 4");
+    for (let i = 0; i < 6; i++) tap(music); // 5 → … → 10
+    view.refresh();
+    expect(music.textContent).toBe("曲 10");
     tap(music);
     view.refresh();
     expect(store.get().musicVolume).toBe(0);
     expect(music.textContent).toBe("曲 0");
     tap(sfx);
     view.refresh();
-    expect(sfx.textContent).toBe("効果音 8");
+    expect(sfx.textContent).toBe("効果音 3");
   });
 
   test("UI-33 select(i): 行は巡回、書き出し・開発用・閉じるはそれぞれを呼び、読み込みは input.click()。dim の項目は何もしない", () => {
