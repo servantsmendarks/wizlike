@@ -40,6 +40,7 @@
 //   （会話の箱は、次の文が箱に入らなければ空にするタップまで待つ。窓は待たない）。音（learn・levelup・文の音）が前のページの間に鳴らないようにする。
 //   dice は語った文（「…を掴もうとしている」）と一緒に出す（判定の箱）。街では message と dice 以外の出来事と再生の終わりで消さず（keepsDice）、
 //   会話の箱のページを空にする・閉じるときに結線側が消す。制止・強化の箱のタップ待ちの後は、その文を読んだものとして待たない。
+//   強化・鑑定の箱（HOLD_DICE_KEYS）で列が終わるときの待ちは、keepsDice の間は会話の箱の最後の ▼ に任せる（M10.5 の修正。タップは 1 回）。
 //   screen{town} では、その前に迷宮の窓で語った文（townCarry）を screens.show に渡す。
 // 具体的な views は import しない（純粋な enemyGroupOfId / formatMessage / formatDiceSummary だけ）。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, StatusId, Strings } from "../core/data/index";
@@ -594,9 +595,13 @@ export function createPlayer(deps: PlayerDeps): Player {
           else if (ev.kind === "message" && hold === "awaitMessage") hold = "afterMessage";
         }
         if (hold !== null) {
-          // 制止の箱で列が終わる（または成否の語りが最後の文）なら、再生の終わりで待つ
-          await waitTap();
-          hideDice();
+          // 制止の箱で列が終わる（または成否の語りが最後の文）なら、再生の終わりで待つ。
+          // UI-47（M10.5）: 会話の箱に語る間（keepsDice。街の強化・鑑定）は、この待ちを会話の箱の最後の ▼ に任せる
+          // （見た目が同じ ▼ のタップが 2 回続かないように。閉じるタップの cleared で判定の箱が消える）
+          if (!keepDice()) {
+            await waitTap();
+            hideDice();
+          }
           hold = null;
         }
         await waitBeat("end");

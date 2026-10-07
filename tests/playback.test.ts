@@ -1549,47 +1549,66 @@ describe("UI-47 街の会話の箱と再生", () => {
     expect({ open: sink.open, more: sink.more.on, pending: talk.pending() }).toEqual({ open: false, more: false, pending: false });
   });
 
-  // M10.5: 結果の文の後に残る ▼ は、閉じるタップを待つ最後の ▼（以前の期待値は「最後の文は ▼ なし」）
-  test("UI-47/UI-40/TW-17 街の強化の箱: 会話の箱（実物のモデル）に結果を出した後、▼ を出してタップを 1 回待ってから箱を消す。結果の文は残る（演出スキップでも待ち、▼ は点滅しない）", async () => {
+  // M10.5: 結果の文の後に残る ▼ は、閉じるタップを待つ最後の ▼（以前の期待値は「最後の文は ▼ なし」）。
+  // M10.5 の修正（F3）: 以前の期待値は「再生が ▼ でタップを 1 回待って判定の箱を消し、さらに閉じるタップ」（見た目が同じ ▼ のタップが 2 回）。
+  // 街（keepsDice）では列の終わりの待ちを会話の箱の最後の ▼ に任せ、閉じるタップ 1 回で箱と判定の箱を消す
+  test("UI-47/UI-40/TW-17/CH-77 街の強化・鑑定の箱: 会話の箱（実物のモデル）に結果を出したら再生は終わり、最後の ▼ の 1 回のタップで会話の箱を閉じて判定の箱を消す（演出スキップでも ▼ のタップ待ちは残り、▼ は点滅しない）", async () => {
     const st = cloneState(newGame(1));
     st.gold = 1000;
-    const r = execute(st, { type: "town.upgrade", memberId: "c1", slot: "weapon", catalysts: [] }, data);
-    const m = r.events[1]!;
-    if (m.kind !== "message") throw new Error("message expected");
-    for (const skipAnimations of [false, true]) {
-      const { deps, log } = fakeDeps({ skipAnimations });
-      const sink = { open: false, text: "", more: { on: false, blink: false } };
-      const logs: string[] = [];
-      const talk = createTalkModel({
-        sink: {
-          open: (on) => (sink.open = on),
-          text: (t) => (sink.text = t),
-          more: (on, blink) => (sink.more = { on, blink }),
-        },
-        log: (t) => logs.push(t),
-        speed: () => 0,
-        blink: () => !skipAnimations,
-        schedule: () => () => {},
-        ...TALK_DIMS,
-      });
-      deps.message = createNarrator({ town: () => true, talk, window: deps.message });
-      const latch = createTapLatch();
-      deps.beat = latch;
-      const player = createPlayer(deps);
-      const p = player.play(r.events, st, r.state);
-      await new Promise<void>((res) => setTimeout(res, 0));
-      // 結果を出し、▼ を出して待っている（箱はまだ消していない）
-      expect(sink.text, String(skipAnimations)).toBe(formatMessage(data.strings[m.key]!, m.params));
-      expect(sink.more).toEqual({ on: true, blink: !skipAnimations });
-      expect(names(log)).not.toContain("dice.hide");
-      player.tap();
-      await p;
-      expect(names(log)).toContain("dice.hide");
-      // 結果の文は残り（閉じるタップを待つ最後の ▼）、次のタップで閉じる
-      expect({ open: sink.open, more: sink.more }).toEqual({ open: true, more: { on: true, blink: !skipAnimations } });
-      expect(logs).toEqual([formatMessage(data.strings[m.key]!, m.params)]);
-      talk.tap();
-      expect(sink.open).toBe(false);
+    const c5 = st.party.find((c) => c.id === "c5")!;
+    c5.classId = "bishop";
+    c5.maxLevelReached = { bishop: 1 };
+    const id = createItemInstance(st, { itemId: "dagger", identified: false });
+    st.party.find((c) => c.id === "c1")!.inventory.push(id);
+    const cases = [
+      execute(st, { type: "town.upgrade", memberId: "c1", slot: "weapon", catalysts: [] }, data),
+      execute(st, { type: "party.identify", memberId: "c5", instanceId: id }, data),
+    ];
+    for (const [i, r] of cases.entries()) {
+      const m = r.events[r.events.length - 1]!;
+      if (m.kind !== "message") throw new Error("message expected");
+      for (const skipAnimations of [false, true]) {
+        const tag = `${i}:${String(skipAnimations)}`;
+        const { deps, log } = fakeDeps({ skipAnimations });
+        const sink = { open: false, text: "", more: { on: false, blink: false } };
+        const logs: string[] = [];
+        const talk = createTalkModel({
+          sink: {
+            open: (on) => (sink.open = on),
+            text: (t) => (sink.text = t),
+            more: (on, blink) => (sink.more = { on, blink }),
+          },
+          log: (t) => logs.push(t),
+          speed: () => 0,
+          blink: () => !skipAnimations,
+          schedule: () => () => {},
+          // dungeon.ts の結線と同じ（中身のある箱を閉じたら判定の箱を消す）
+          cleared: () => deps.dice.hide(),
+          ...TALK_DIMS,
+        });
+        deps.message = createNarrator({ town: () => true, talk, window: deps.message });
+        const latch = createTapLatch();
+        deps.beat = latch;
+        const player = createPlayer(deps);
+        const p = player.play(r.events, st, r.state);
+        let done = false;
+        void p.then(() => {
+          done = true;
+        });
+        await new Promise<void>((res) => setTimeout(res, 0));
+        // 再生はタップを待たずに終わる
+        expect(done, tag).toBe(true);
+        // 結果の文と最後の ▼。判定の箱は残っている
+        expect(sink.text, tag).toBe(formatMessage(data.strings[m.key]!, m.params));
+        expect({ open: sink.open, more: sink.more }, tag).toEqual({ open: true, more: { on: true, blink: !skipAnimations } });
+        expect(names(log), tag).toContain("dice.show");
+        expect(names(log), tag).not.toContain("dice.hide");
+        expect(logs, tag).toEqual([formatMessage(data.strings[m.key]!, m.params)]);
+        // 1 回のタップで会話の箱を閉じ、判定の箱も消える
+        talk.tap();
+        expect(sink.open, tag).toBe(false);
+        expect(names(log).filter((x) => x === "dice.hide"), tag).toHaveLength(1);
+      }
     }
   });
 
@@ -1841,24 +1860,23 @@ describe("UI-47 街の会話の箱と再生", () => {
     expect(pages.n).toBe(1);
   });
 
-  test("UI-66/UI-40/TW-17（2026-10-07 未定-17）闇魔術の強化（実際の execute の出来事を Player で再生）: 判定の箱を消す 1 回目のタップは文を送らないので無音、結果の文を閉じる 2 回目のタップで page が 1 回", async () => {
+  // M10.5 の修正（F3）: 以前の期待値は「判定の箱を消す 1 回目のタップ（無音）と、結果の文を閉じる 2 回目のタップ（page）」。
+  // 街では列の終わりの判定の箱の待ちを会話の箱の最後の ▼ に任せたので、閉じるタップ 1 回（page 1 回）で判定の箱も消える
+  test("UI-66/UI-40/TW-17（2026-10-07 未定-17。M10.5）闇魔術の強化（実際の execute の出来事を Player で再生）: 再生はタップなしで終わり、結果の文を閉じる 1 回のタップで page が 1 回鳴って判定の箱も消える", async () => {
     const st = cloneState(newGame(1));
     st.gold = 1000;
     const r = execute(st, { type: "town.upgrade", memberId: "c1", slot: "weapon", catalysts: [] }, data);
     expect(r.events.map((e) => e.kind).slice(0, 2)).toEqual(["dice", "message"]);
     const { deps, log, sink, talk, pages } = pagedTalk();
-    const player = createPlayer(deps);
-    const p = player.play(r.events, st, r.state);
-    await tick();
+    await createPlayer(deps).play(r.events, st, r.state);
     const text = sink.text;
-    expect(pages.n).toBe(0);
-    player.tap();
-    await p;
-    // 判定の箱は消え、結果の文は残る（送っていない）ので鳴らない
-    expect(names(log)).toContain("dice.hide");
-    expect({ open: sink.open, text: sink.text, pages: pages.n }).toEqual({ open: true, text, pages: 0 });
+    // 判定の箱は残り、結果の文が出ている（送っていない）ので鳴らない
+    expect(names(log)).not.toContain("dice.hide");
+    expect({ open: sink.open, pages: pages.n }).toEqual({ open: true, pages: 0 });
+    expect(text).not.toBe("");
     talk.tap();
     expect({ open: sink.open, pages: pages.n }).toEqual({ open: false, pages: 1 });
+    expect(names(log).filter((x) => x === "dice.hide")).toHaveLength(1);
   });
 
   // M10.5: 文ごとのタップをやめ、箱が埋まったときだけタップで次のページ（以前の期待値は 1 文ずつタップで送り、page の回数 = 文の数）
