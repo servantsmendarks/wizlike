@@ -495,6 +495,8 @@ export function createApp(o: {
     const r = to === "title" ? "title" : routeOfScreen(to);
     if (r === null) return;
     const from = route;
+    // UI-47 / UI-59（M10）: キャラクター画面の間の語りは既に会話の箱に出ているので、街に入っても carry を出し直さず、最後の文を箱に残す
+    const talked = characterOpen;
     if (r === "town") townPage = "menu";
     if (from === "town" && r !== "town") {
       play.talk.flush();
@@ -503,7 +505,7 @@ export function createApp(o: {
     }
     // 画面が変わったら、キャンプ・地図・履歴を閉じる（帰還の呪文で街へ、など）
     if (route !== r) {
-      if (overlay === "camp") closeCamp(false);
+      if (overlay === "camp") closeCamp(false, r === "town" && talked);
       if (overlay === "map") closeMap();
       if (overlay === "history") closeHistory();
     }
@@ -516,7 +518,7 @@ export function createApp(o: {
       play.header.setTurn(battleTurnText(strings, 1));
     }
     showRoute(r);
-    if (r === "town" && from !== "town" && carry.length > 0) void play.talk.replay(carry, store.get().skipAnimations);
+    if (r === "town" && from !== "town" && carry.length > 0 && !talked) void play.talk.replay(carry, store.get().skipAnimations);
     // 操作は再生の最後の sync で出し直す
     if (r !== "title") play.controls.setMode("none");
   };
@@ -877,11 +879,14 @@ export function createApp(o: {
     };
   };
 
-  /** UI-59（M10）: キャラクター画面の開閉を表示に反映する。閉じるとき街でなければ会話の箱を打ち切る（残りの文はログに入っている） */
-  const setCharacter = (on: boolean): void => {
+  /**
+   * UI-59（M10）: キャラクター画面の開閉を表示に反映する。閉じるとき街でなければ会話の箱を打ち切る（残りの文はログに入っている）。
+   * keepTalk は迷宮のキャラクター画面から街へ入るとき（帰還）で、箱の最後の文を街に持ち込む（UI-47。carry は出し直さない）
+   */
+  const setCharacter = (on: boolean, keepTalk = false): void => {
     if (characterOpen === on) return;
     characterOpen = on;
-    if (!on && route !== "town") play.talk.flush();
+    if (!on && route !== "town" && !keepTalk) play.talk.flush();
     play.setCharacterOpen(on);
   };
 
@@ -1744,11 +1749,11 @@ export function createApp(o: {
   };
 
   /** キャンプを閉じ、ヘッダーを迷宮か街の表示に戻す（resync が偽なら操作領域は描き直さない） */
-  const closeCamp = (resync: boolean): void => {
+  const closeCamp = (resync: boolean, keepTalk = false): void => {
     if (overlay !== "camp") return;
     overlay = null;
     campPage = { kind: "top" };
-    setCharacter(false);
+    setCharacter(false, keepTalk);
     play.showCamp(false);
     // UI-63: 迷宮のキャンプを閉じたら場面の曲（迷宮の曲。キャンプの間に場面が変わっていればその曲）に戻す
     if (campHost === "camp") audio?.setSong(sceneSongName);

@@ -674,10 +674,11 @@ describe("入力と Command", () => {
     expect(sync).toMatch(/campPage = campRepair\(campHost, campPage, m\);\s*setCharacter\(campCharacterOpen\(campPage\)\);/);
     // UI-68（M10）: peek の行（唱えられない呪文）は dim でも選べる。それ以外は理由を語る
     expect(sync).toContain("...(x.peek === true ? { onDisabled: () => guard(() => chooseCamp(x.choice)) } : campReason(x)),");
-    const set = /const setCharacter = \(on: boolean\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
-    expect(set).toMatch(/if \(characterOpen === on\) return;\s*characterOpen = on;\s*if \(!on && route !== "town"\) play\.talk\.flush\(\);\s*play\.setCharacterOpen\(on\);/);
+    const set = /const setCharacter = \(on: boolean, keepTalk = false\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    // 2026-10-07（A-A1）: 迷宮のキャラクター画面から街へ入るときは打ち切らない（keepTalk。UI-47 / UI-59 の帰還のテスト）
+    expect(set).toMatch(/if \(characterOpen === on\) return;\s*characterOpen = on;\s*if \(!on && route !== "town" && !keepTalk\) play\.talk\.flush\(\);\s*play\.setCharacterOpen\(on\);/);
     const close = /const closeCamp = \([\s\S]*?\n {2}\};/.exec(app)?.[0] ?? "";
-    expect(close).toContain("setCharacter(false);");
+    expect(close).toContain("setCharacter(false, keepTalk);");
     const resume = /const resume = \(st: GameState\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(resume).toMatch(/characterOpen = false;\s*play\.setCharacterOpen\(false\);/);
     const reason = /const campReason = \(x: CampEntry\): Pick<ControlItem, "onDisabled"> => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
@@ -692,7 +693,8 @@ describe("入力と Command", () => {
     const onScreen = /const onScreen = \(to: Screen, carry: readonly string\[\] = \[\]\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(onScreen).toContain("const from = route;");
     expect(onScreen).toMatch(/if \(from === "town" && r !== "town"\) \{\s*play\.talk\.flush\(\);\s*play\.message\.clearView\(\);\s*\}/);
-    expect(onScreen).toContain('if (r === "town" && from !== "town" && carry.length > 0) void play.talk.replay(carry, store.get().skipAnimations);');
+    // 2026-10-07（A-A1）: キャラクター画面の間に語った carry は出し直さない（!talked。UI-47 / UI-59 の帰還のテスト）
+    expect(onScreen).toContain('if (r === "town" && from !== "town" && carry.length > 0 && !talked) void play.talk.replay(carry, store.get().skipAnimations);');
     // flush は showRoute の前（route が変わる前）、replay は後
     expect(onScreen.indexOf("play.talk.flush()")).toBeLessThan(onScreen.indexOf("showRoute(r)"));
     expect(onScreen.indexOf("play.talk.replay(")).toBeGreaterThan(onScreen.indexOf("showRoute(r)"));
@@ -705,6 +707,21 @@ describe("入力と Command", () => {
     const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
     expect(dungeon).toContain("dice.setBottom(hide ? tl.diceBottom : DICE_BOX_BOTTOM);");
     expect(dungeon).toContain("const talk = createTalkBox({ layout: tl.talk, speed: o.textSpeed, blink: o.talkBlink, log: (t) => message.log(t), advanced: () => o.talkAdvanced?.() });");
+  });
+
+  test("UI-47/UI-59（M10。2026-10-07 A-A1）迷宮のキャラクター画面から帰還（帰還の糸・帰還の呪文）で街へ入るときは、語りが既に会話の箱に出ているので carry を出し直さず、箱も打ち切らない（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const onScreen = /const onScreen = \(to: Screen, carry: readonly string\[\] = \[\]\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    // キャンプを閉じる（characterOpen が偽になる）前に、キャラクター画面だったかを取っておく
+    expect(onScreen).toContain("const talked = characterOpen;");
+    expect(onScreen.indexOf("const talked = characterOpen;")).toBeLessThan(onScreen.indexOf("closeCamp("));
+    expect(onScreen).toContain('if (overlay === "camp") closeCamp(false, r === "town" && talked);');
+    expect(onScreen).toMatch(/if \(r === "town" && from !== "town" && carry\.length > 0 && !talked\) void play\.talk\.replay\(/);
+    const close = /const closeCamp = \([\s\S]*?\n {2}\};/.exec(app)?.[0] ?? "";
+    expect(close).toContain("const closeCamp = (resync: boolean, keepTalk = false): void => {");
+    expect(close).toContain("setCharacter(false, keepTalk);");
+    const set = /const setCharacter = \(on: boolean, keepTalk = false\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(set).toContain('if (!on && route !== "town" && !keepTalk) play.talk.flush();');
   });
 
   test("UI-54 戦闘中はヘッダーに 第{round+1}ターン を出す。遭遇の再生（onScreen battle）は 1、sync の戦闘は battleMenu.round + 1、battleEnd の後と迷宮・街の sync では隠す。lowerInput はターンを消さない（ソースの検査）", () => {
