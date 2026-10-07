@@ -268,6 +268,8 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       level1Bonus: I(NON_NEG), // CH-65【仮】
       mpStatPivot: I(), // MG-01
       mpStatDivisor: I(POS_INT), // MG-01（0 除算を防ぐ）
+      statUpChance: I(PERCENT), // CH-61【仮】
+      statCap: I(POS_INT), // CH-61【仮】
     }),
     learning: F({ base: I(), perLevelDiff: I(), guaranteeDiff: I(), statPivot: I(), statPerPoint: I() }),
     dungeon: F({

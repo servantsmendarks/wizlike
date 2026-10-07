@@ -3,7 +3,7 @@
   "party": { "size": 6, "frontRow": 3 },
   "inventory": { "slotsPerCharacter": 8 },
   "creation": { "bonusBase": 7, "bonusDie": 4, "bonusBigChance": 5, "bonusBig": 10, "nameMaxLength": 6 },
-  "growth": { "expBase": 50, "expGrowth": 1.5, "hpVitPivot": 10, "hpVitDivisor": 2, "hpGainMin": 1, "level1Bonus": 4, "mpStatPivot": 10, "mpStatDivisor": 2 },
+  "growth": { "expBase": 50, "expGrowth": 1.5, "hpVitPivot": 10, "hpVitDivisor": 2, "hpGainMin": 1, "level1Bonus": 4, "mpStatPivot": 10, "mpStatDivisor": 2, "statUpChance": 25, "statCap": 18 },
   "learning": { "base": 35, "perLevelDiff": 20, "guaranteeDiff": 4, "statPivot": 10, "statPerPoint": 3 },
   "dungeon": {
     "defaultRooms": [3, 6],

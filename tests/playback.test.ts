@@ -267,7 +267,7 @@ describe("UI-41 playback", () => {
       const { deps, log } = fakeDeps({ skipAnimations });
       const s = stateWith(null);
       const events: GameEvent[] = [
-        { kind: "levelUp", id: "c4", level: 3, hpGain: 4, mpGain: 2, hpMax: 20, mpMax: 9, hp: 17, mp: 8 },
+        { kind: "levelUp", id: "c4", level: 3, hpGain: 4, mpGain: 2, hpMax: 20, mpMax: 9, hp: 17, mp: 8, statGains: [] },
         { kind: "spellLearned", id: "c4", spellId: "p_heal", via: "roll" },
         { kind: "levelDown", id: "c1", level: 2, hpMax: 15, mpMax: 0, hp: 15, mp: 0 },
       ];
@@ -1616,7 +1616,7 @@ describe("UI-47 街の会話の箱と再生", () => {
     const ok = msg("town.temple.resurrectOk", { name: "アル" });
     const events: GameEvent[] = [
       before,
-      { kind: "levelUp", id: "c1", level: 2, hpGain: 3, mpGain: 0, hpMax: 13, mpMax: 0, hp: 13, mp: 0 },
+      { kind: "levelUp", id: "c1", level: 2, hpGain: 3, mpGain: 0, hpMax: 13, mpMax: 0, hp: 13, mp: 0, statGains: [] },
       lv,
       ok,
     ];
@@ -1648,13 +1648,13 @@ describe("UI-47 街の会話の箱と再生", () => {
     const { deps, log, sink, talk } = townTalk(true);
     void talk.say("前の文", true);
     const player = createPlayer(deps);
-    await player.play([{ kind: "levelUp", id: "c1", level: 2, hpGain: 3, mpGain: 0, hpMax: 13, mpMax: 0, hp: 13, mp: 0 }], stateWith(null), stateWith(null));
+    await player.play([{ kind: "levelUp", id: "c1", level: 2, hpGain: 3, mpGain: 0, hpMax: 13, mpMax: 0, hp: 13, mp: 0, statGains: [] }], stateWith(null), stateWith(null));
     expect(names(log)).toContain("sound:levelUp");
     expect(sink.text).toBe("前の文");
     const w = fakeDeps({ skipAnimations: true });
     w.deps.message = createNarrator({ town: () => false, talk, window: w.deps.message });
     await createPlayer(w.deps).play(
-      [msg("town.inn.morale"), { kind: "levelUp", id: "c1", level: 2, hpGain: 3, mpGain: 0, hpMax: 13, mpMax: 0, hp: 13, mp: 0 }],
+      [msg("town.inn.morale"), { kind: "levelUp", id: "c1", level: 2, hpGain: 3, mpGain: 0, hpMax: 13, mpMax: 0, hp: 13, mp: 0, statGains: [] }],
       stateWith(null),
       stateWith(null),
     );

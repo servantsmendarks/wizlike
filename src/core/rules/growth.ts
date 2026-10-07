@@ -1,9 +1,9 @@
 // 成長（CH-61〜65、MG-01）。経験値の閾値、HP/MP の増分、レベルアップとレベルダウン。
-// 乱数を引く順: HP のダイス → 習得の d100（spells.json 順）→ 保証の randInt（帯の順）。
+// 乱数を引く順: HP のダイス → 能力値の d100 × 6（全体の最高到達レベルを超えたときだけ）→ 習得の d100（spells.json 順）→ 保証の randInt（帯の順）。
 // 渡された 1 人だけを処理し、life は見ない（誰を上げ下げするかは呼び出し側が決める）。
-import type { ClassDef, Config, GameData, StatBlock } from "../data/index";
-import { SCHOOLS } from "../data/index";
-import { rollDie } from "../rng";
+import type { ClassDef, Config, GameData, StatBlock, StatKey } from "../data/index";
+import { SCHOOLS, STAT_KEYS } from "../data/index";
+import { chance, rollDie } from "../rng";
 import { classOf } from "../state";
 import type { Character, LevelRecord, RuleContext } from "../types";
 import { effectiveStats, equipStats } from "./equip-stats";
@@ -70,7 +70,27 @@ export function canLevelUp(ch: Character, data: GameData): boolean {
   return ch.exp >= expFor(ch.level + 1, classOf(data, ch.classId), data.config);
 }
 
-/** CH-61/63: 1 段上げる。今の職業で初めて到達したレベルなら習得判定（MG-20）をする。 */
+/**
+ * CH-61（M10）: 能力値の成長。STAT_KEYS の順に chance(statUpChance) を 6 回振り、当たれば素の stats を +1（statCap まで）。
+ * 上限の能力値も振る（消費は常に 6 回）。上がった能力値を STAT_KEYS の順に返す。
+ */
+export function rollStatGains(ctx: RuleContext, ch: Character): StatKey[] {
+  const g = ctx.data.config.growth;
+  const gains: StatKey[] = [];
+  for (const key of STAT_KEYS) {
+    const hit = chance(ctx.state.rng, g.statUpChance);
+    if (hit && ch.stats[key] < g.statCap) {
+      ch.stats[key] += 1;
+      gains.push(key);
+    }
+  }
+  return gains;
+}
+
+/**
+ * CH-61/63: 1 段上げる。乱数の順は HP のダイス → 能力値 6 回（全体の最高到達レベルを超えたときだけ。U5）→ 習得判定（今の職業で初到達のときだけ）。
+ * HP・MP の増分は能力値を上げる前の値で求める。語りは levelUp → hpUp → mpUp（mpGain > 0）→ statUp.{stat}（上がったものだけ）。
+ */
 export function levelUpOnce(ctx: RuleContext, ch: Character): LevelRecord {
   const { data, events } = ctx;
   const cfg = data.config;
@@ -78,6 +98,8 @@ export function levelUpOnce(ctx: RuleContext, ch: Character): LevelRecord {
   const level = ch.level + 1;
   const hpGain = rollHpGain(ctx, ch);
   const mpGain = mpGainFor(cls, effectiveStats(ctx.state, data, ch), cfg); // CH-13
+  const before = { ...ch.stats };
+  const statGains = level > peakLevelReached(ch) ? rollStatGains(ctx, ch) : [];
 
   ch.level = level;
   ch.hpMax += hpGain;
@@ -89,8 +111,24 @@ export function levelUpOnce(ctx: RuleContext, ch: Character): LevelRecord {
 
   // CH-14: イベントの最大値は実効の値（表示層がそのまま描く。保存するのは素の値）
   const es = equipStats(ctx.state, data, ch);
-  events.push({ kind: "levelUp", id: ch.id, level, hpGain, mpGain, hpMax: es.hpMax, mpMax: es.mpMax, hp: ch.hp, mp: ch.mp });
+  events.push({
+    kind: "levelUp",
+    id: ch.id,
+    level,
+    hpGain,
+    mpGain,
+    hpMax: es.hpMax,
+    mpMax: es.mpMax,
+    hp: ch.hp,
+    mp: ch.mp,
+    statGains,
+  });
   events.push({ kind: "message", key: "town.inn.levelUp", params: { name: ch.name, level } });
+  events.push({ kind: "message", key: "town.inn.hpUp", params: { gain: hpGain, max: es.hpMax } });
+  if (mpGain > 0) events.push({ kind: "message", key: "town.inn.mpUp", params: { gain: mpGain, max: es.mpMax } });
+  for (const key of statGains) {
+    events.push({ kind: "message", key: `town.inn.statUp.${key}`, params: { from: before[key], to: ch.stats[key] } });
+  }
 
   if (level > maxLevelReachedIn(ch)) {
     rollSpellLearning(ctx, ch, level);

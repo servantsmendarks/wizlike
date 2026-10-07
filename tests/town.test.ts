@@ -4,6 +4,7 @@
 // 宿のランク: 0 馬小屋 0G HP ×0、1 相部屋 20G HP ×1.0、2 個室 60G HP ×1.0 と士気（MP はどのランクでも全回復）。寺院: 蘇生 level × 100、
 // 成功率 min(95, 50 + vit × 2)、治療 毒 50 / 麻痺 150 / 石化 300、解呪 200。闇魔術 level × 1000。
 import { describe, expect, test } from "vitest";
+import { STAT_KEYS, type StatKey } from "../src/core/data";
 import { createInitialState, execute } from "../src/core/engine";
 import { createRng, randInt, type RngState } from "../src/core/rng";
 import { checkEnter } from "../src/core/rules/dungeon";
@@ -64,6 +65,11 @@ function rngAfter(seed: number, specs: [number, number][]): RngState {
   const r = createRng(seed);
   for (const [a, b] of specs) randInt(r, a, b);
   return r;
+}
+
+/** CH-61（M10）の鏡: STAT_KEYS の順に d100 を 6 回引き、statUpChance 以下の能力値を返す（上限 18 に届く者がいない前提） */
+function statRolls(m: RngState): StatKey[] {
+  return STAT_KEYS.filter(() => randInt(m, 1, 100) <= data.config.growth.statUpChance);
 }
 
 const DEAD: Partial<Character> = { life: "dead", hp: 0 };
@@ -263,11 +269,26 @@ describe("TW-04 宿屋（town.inn）", () => {
     const r = ok(s, { type: "town.inn", rank: 0 });
     const mirror = createRng(1);
     const g = Math.max(1, randInt(mirror, 1, 10) + 2);
+    const gains = statRolls(mirror); // M10（CH-61）: 初到達なので能力値の d100 × 6 が HP のダイスに続く
     expect(r.state.rng).toEqual(mirror);
     expect(r.state.gold).toBe(300);
     expect(r.events.filter((e) => e.kind === "levelUp")).toEqual([
-      { kind: "levelUp", id: "c2", level: 2, hpGain: g, mpGain: 0, hpMax: 16 + g, mpMax: 0, hp: 16 + g, mp: 0 },
+      { kind: "levelUp", id: "c2", level: 2, hpGain: g, mpGain: 0, hpMax: 16 + g, mpMax: 0, hp: 16 + g, mp: 0, statGains: gains },
     ]);
+  });
+
+  test("TW-04/CH-61 宿屋のレベルアップで内訳を語る: levelUp の語り → 最大 HP → 上がった能力値（seed 1 のベルク: d10 = 9 で +11、d100 = 14 / 7 で力 15 → 16・生命力 14 → 15。戦士なので MP の行は無い）", () => {
+    const r = ok(town({ c2: { exp: 50 } }), { type: "town.inn", rank: 0 });
+    expectKnownStringKeys(r.events);
+    const at = r.events.findIndex((e) => e.kind === "levelUp");
+    expect(r.events.slice(at)).toEqual([
+      { kind: "levelUp", id: "c2", level: 2, hpGain: 11, mpGain: 0, hpMax: 27, mpMax: 0, hp: 27, mp: 0, statGains: ["str", "vit"] },
+      { kind: "message", key: "town.inn.levelUp", params: { name: "ベルク", level: 2 } },
+      { kind: "message", key: "town.inn.hpUp", params: { gain: 11, max: 27 } },
+      { kind: "message", key: "town.inn.statUp.str", params: { from: 15, to: 16 } },
+      { kind: "message", key: "town.inn.statUp.vit", params: { from: 14, to: 15 } },
+    ]);
+    expect(member(r.state, "c2").stats).toEqual({ str: 16, iq: 7, pie: 10, vit: 15, agi: 6, luk: 6 });
   });
 
   test("TW-04/CH-61 回復の後に alive の者を並び順にレベルアップ（複数段）。dead は上がらない。乱数は鏡の rng どおり、習得の dice は dice.learn（UI-40）", () => {
@@ -278,16 +299,20 @@ describe("TW-04 宿屋（town.inn）", () => {
     const s = town({ c2: { exp: 1500 }, c3: { ...DEAD, exp: 5000 }, c4: { exp: 1000 } });
     const r = execute(s, { type: "town.inn", rank: 0 }, d);
     expectKnownStringKeys(r.events);
+    // M10（CH-61）: 段ごとに HP のダイスの後へ能力値の d100 × 6。ベルクの生命力は L2 で 15 になっても補正は +2 のまま
     const mirror = createRng(1);
     const g1 = Math.max(1, randInt(mirror, 1, 10) + 2);
+    const s1 = statRolls(mirror);
     const g2 = Math.max(1, randInt(mirror, 1, 10) + 2);
+    const s2 = statRolls(mirror);
     const g3 = Math.max(1, randInt(mirror, 1, 8) + 0);
+    const s3 = statRolls(mirror);
     const roll = randInt(mirror, 1, 100);
     expect(r.state.rng).toEqual(mirror);
     expect(r.events.filter((e) => e.kind === "levelUp")).toEqual([
-      { kind: "levelUp", id: "c2", level: 2, hpGain: g1, mpGain: 0, hpMax: 16 + g1, mpMax: 0, hp: 16 + g1, mp: 0 },
-      { kind: "levelUp", id: "c2", level: 3, hpGain: g2, mpGain: 0, hpMax: 16 + g1 + g2, mpMax: 0, hp: 16 + g1 + g2, mp: 0 },
-      { kind: "levelUp", id: "c4", level: 2, hpGain: g3, mpGain: 5, hpMax: 12 + g3, mpMax: 10, hp: 12 + g3, mp: 10 },
+      { kind: "levelUp", id: "c2", level: 2, hpGain: g1, mpGain: 0, hpMax: 16 + g1, mpMax: 0, hp: 16 + g1, mp: 0, statGains: s1 },
+      { kind: "levelUp", id: "c2", level: 3, hpGain: g2, mpGain: 0, hpMax: 16 + g1 + g2, mpMax: 0, hp: 16 + g1 + g2, mp: 0, statGains: s2 },
+      { kind: "levelUp", id: "c4", level: 2, hpGain: g3, mpGain: 5, hpMax: 12 + g3, mpMax: 10, hp: 12 + g3, mp: 10, statGains: s3 },
     ]);
     expect(r.events.filter((e) => e.kind === "dice")).toEqual([
       {

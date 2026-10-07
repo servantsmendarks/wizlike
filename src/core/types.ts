@@ -5,7 +5,7 @@
 //   「無い」は null か空配列・空オブジェクトで表す。
 // - verbatimModuleSyntax が有効なので、型は import type で取る。data の型は定義し直さない。
 // - import 先は "./data/index" と "./rng"（どちらも src/core 内。architecture.test の制約）。
-import type { EquipSlot, GameData, PersonalityId, SpellTarget, StatBlock, StatusId, TrapId } from "./data/index";
+import type { EquipSlot, GameData, PersonalityId, SpellTarget, StatBlock, StatKey, StatusId, TrapId } from "./data/index";
 import type { RngState } from "./rng";
 
 // ===================== 小さな型 =====================
@@ -793,6 +793,8 @@ export type GameEvent =
       mpMax: number;
       hp: number;
       mp: number;
+      /** CH-61（M10）: この段で +1 された能力値（STAT_KEYS の順）。判定しなかった段・上がらなかった段は空。state には残さない */
+      statGains: StatKey[];
     }
   /** §5 に追加（CH-62）。1 段下がるごとに 1 件。hp / mp は変化後の現在値 */
   | { kind: "levelDown"; id: string; level: number; hpMax: number; mpMax: number; hp: number; mp: number }

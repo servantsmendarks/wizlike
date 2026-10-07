@@ -446,6 +446,15 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.growth.mpStatDivisor = 1.5), "config.json", "growth.mpStatDivisor: expected integer");
     expectIssue((r) => delete r.config.growth.mpStatDivisor, "config.json", "growth.mpStatDivisor: missing required field");
   });
+  test("data: CH-61 growth.statUpChance は 0..100 の整数、statCap は 1 以上の整数【仮】（既定 25 / 18）", () => {
+    expect(config.growth.statUpChance).toBe(25);
+    expect(config.growth.statCap).toBe(18);
+    expectIssue((r) => (r.config.growth.statUpChance = 101), "config.json", "growth.statUpChance: expected integer in 0..100, got 101");
+    expectIssue((r) => (r.config.growth.statUpChance = 2.5), "config.json", "growth.statUpChance: expected integer");
+    expectIssue((r) => delete r.config.growth.statUpChance, "config.json", "growth.statUpChance: missing required field");
+    expectIssue((r) => (r.config.growth.statCap = 0), "config.json", "growth.statCap: expected integer >= 1, got 0");
+    expectIssue((r) => delete r.config.growth.statCap, "config.json", "growth.statCap: missing required field");
+  });
   test("data: CH-05 creation.nameMaxLength は 1 以上の整数", () => {
     expectIssue((r) => (r.config.creation.nameMaxLength = 0), "config.json", "creation.nameMaxLength: expected integer >= 1, got 0");
     expectIssue((r) => (r.config.creation.nameMaxLength = "6"), "config.json", "creation.nameMaxLength: expected integer >= 1, got string");

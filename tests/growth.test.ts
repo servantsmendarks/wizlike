@@ -1,7 +1,9 @@
-// 成長（CH-61〜65、MG-01）。levelUpOnce は HP のダイスを先に振り、その後に習得の d100 を振る。
+// 成長（CH-61〜65、MG-01）。levelUpOnce は HP のダイスを先に振り、全体の最高到達レベルを超えたら能力値の d100 を 6 回（CH-61、M10）、その後に習得の d100 を振る。
 // ルールのテストは expBase を RULE_EXP_BASE（1000）に固定したデータ（loadRuleData）で書く。実データの expBase（50【仮】）は表のテストだけで見る。
 // 固定シードの出目（src/core/rng.ts の randInt で実測）:
-//   seed 1: d10 = 9, 4, 2 / d4 = 1 / d8 = 5 → 続く d100 = 14 → 続く d8 = 4
+//   seed 1: d10 = 9, 4, 2 / d4 = 1 / d8 = 5 → 続く d100 = 14 → 続く d8 = 4（能力値の判定が無いときの列）
+//   seed 1（M10 の能力値の判定あり）: d10 = 9 → d100 × 6 = 14, 92, 83, 7, 68, 51 → d10 = 10 → d100 × 6 = 16, 75, 26, 97, 9, 77 → d10 = 8 → d100 × 6 = 83, 98, 30, 27, 100, 60
+//   seed 1（同、ドナ）: d8 = 5 → d100 × 6 = 14, 92, 83, 7, 68, 51 → d100 = 70 → d8 = 4 → d100 × 6 = 75, 26, 97, 9, 77, 28 → d100 = 83 → randInt(0, 0)
 import { describe, expect, test } from "vitest";
 import { createRng, randInt, type RngState } from "../src/core/rng";
 import {
@@ -45,6 +47,16 @@ function rngAfter(seed: number, specs: [number, number][]): RngState {
 function kinds(events: readonly GameEvent[]): string[] {
   return events.map((e) => e.kind);
 }
+
+/** CH-61（M10）: 能力値の判定 6 回分（d100）。全体の最高到達レベルを超えた段で HP のダイスの直後に引く */
+const STAT_ROLLS6: [number, number][] = [
+  [1, 100],
+  [1, 100],
+  [1, 100],
+  [1, 100],
+  [1, 100],
+  [1, 100],
+];
 
 /** ドナを L3 にした形（増分は手で決める）。hpMax = 12（CH-65 のレベル 1）+ 5 + 4、mpMax = 5 + 5 + 5。 */
 const DONA_L3: Partial<Character> = {
@@ -175,7 +187,7 @@ describe("growth: レベルアップ（CH-61、CH-63、CH-65）", () => {
     expect(ch.hpMax).toBe(27);
     expect(ch.hp).toBe(16);
     expect(ch.mpMax).toBe(0);
-    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 10]]));
+    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 10], ...STAT_ROLLS6])); // M10: 初到達なので能力値の判定 6 回が続く
   });
 
   test("CH-65 hpGainMin: seed 1 でエルを L2 に。d4 = 1、−2 で −1 → 1。対象の呪文が無いので d100 は振らない", () => {
@@ -186,7 +198,7 @@ describe("growth: レベルアップ（CH-61、CH-63、CH-65）", () => {
     expect(ch.mpMax).toBe(14);
     expect(ch.mp).toBe(14);
     expect(ctx.events.some((e) => e.kind === "dice")).toBe(false);
-    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 4]]));
+    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 4], ...STAT_ROLLS6])); // M10: 能力値の判定 6 回
   });
 
   test("CH-61 levelHistory に {level:2,hpGain,mpGain} を積み、levelUp に増分と新しい最大値と変化後の現在値を載せ、message town.inn.levelUp が続く（seed 1 ベルク d10 = 9、hp 16 + 11 = 27）", () => {
@@ -195,30 +207,35 @@ describe("growth: レベルアップ（CH-61、CH-63、CH-65）", () => {
     expect(ch.levelHistory).toEqual([{ level: 2, hpGain: 11, mpGain: 0 }]);
     expect(ch.maxLevelReached).toEqual({ [ch.classId]: 2 }); // SV-04 v5: 職業ごとの記録
     expect(ctx.events).toEqual([
-      { kind: "levelUp", id: "c2", level: 2, hpGain: 11, mpGain: 0, hpMax: 27, mpMax: 0, hp: 27, mp: 0 },
+      { kind: "levelUp", id: "c2", level: 2, hpGain: 11, mpGain: 0, hpMax: 27, mpMax: 0, hp: 27, mp: 0, statGains: ["str", "vit"] },
       { kind: "message", key: "town.inn.levelUp", params: { name: ch.name, level: 2 } },
+      // M10（CH-61）: 内訳の語り（d100 = 14 / 7 で力と生命力）
+      { kind: "message", key: "town.inn.hpUp", params: { gain: 11, max: 27 } },
+      { kind: "message", key: "town.inn.statUp.str", params: { from: 15, to: 16 } },
+      { kind: "message", key: "town.inn.statUp.vit", params: { from: 14, to: 15 } },
     ]);
     expectKnownStringKeys(ctx.events);
   });
 
-  test("CH-61 seed 1 でベルク exp 1500: d10 = 9, 4 で hpGain 11, 6。L3 になり levelUp は 2 件", () => {
+  test("CH-61 seed 1 でベルク exp 1500: d10 = 9, 10 で hpGain 11, 12（間に能力値の d100 × 6）。L3 になり levelUp は 2 件", () => {
     const { ctx, ch } = setup(1, BERK, { exp: 1500 });
     expect(levelUpWhilePossible(ctx, ch)).toBe(2);
     expect(ch.level).toBe(3);
     expect(ch.levelHistory).toEqual([
       { level: 2, hpGain: 11, mpGain: 0 },
-      { level: 3, hpGain: 6, mpGain: 0 },
+      { level: 3, hpGain: 12, mpGain: 0 }, // M10: d10 = 10 + 2（vit は L2 で 15 に上がったが補正は +2 のまま）
     ]);
-    expect(ch.hpMax).toBe(33); // 16 + 11 + 6
-    expect(ch.hp).toBe(33);
+    expect(ch.hpMax).toBe(39); // 16 + 11 + 12
+    expect(ch.hp).toBe(39);
+    expect(ch.stats).toEqual({ str: 17, iq: 7, pie: 10, vit: 15, agi: 7, luk: 6 }); // L2 で力・生命力、L3 で力・素早さ
     expect(ctx.events.filter((e) => e.kind === "levelUp").map((e) => (e.kind === "levelUp" ? e.level : 0))).toEqual([
       2, 3,
     ]);
-    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 10], [1, 10]]));
-    // 注: exp 2250 なら expFor(4) = 2250 なので L4 まで 3 段（d10 = 9, 4, 2）
+    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 10], ...STAT_ROLLS6, [1, 10], ...STAT_ROLLS6]));
+    // 注: exp 2250 なら expFor(4) = 2250 なので L4 まで 3 段（d10 = 9, 10, 8。L4 の能力値の d100 は 83, 98, 30, 27, 100, 60 で当たりなし）
     const b = setup(1, BERK, { exp: 2250 });
     expect(levelUpWhilePossible(b.ctx, b.ch)).toBe(3);
-    expect(b.ch.levelHistory.map((r) => r.hpGain)).toEqual([11, 6, 4]);
+    expect(b.ch.levelHistory.map((r) => r.hpGain)).toEqual([11, 12, 10]);
     // 上げられないときは何もしない
     const c = setup(1, BERK, { exp: 999 });
     expect(levelUpWhilePossible(c.ctx, c.ch)).toBe(0);
@@ -238,31 +255,32 @@ describe("growth: レベルアップ（CH-61、CH-63、CH-65）", () => {
     expect(levelUpOnce(ctx, ch)).toEqual({ level: 2, hpGain: 7, mpGain: 4 });
     expect(ch.mpMax).toBe(8);
     expect(ch.maxLevelReached).toEqual({ [ch.classId]: 2 }); // SV-04 v5: 職業ごとの記録
-    expect(kinds(ctx.events)).toEqual(["levelUp", "message"]);
-    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 8]]));
+    expect(kinds(ctx.events)).toEqual(["levelUp", "message", "message", "message", "message", "message"]); // M10: levelUp・hpUp・mpUp・statUp.str・statUp.vit
+    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 8], ...STAT_ROLLS6]));
   });
 
-  test("CH-63 seed 1 でドナを L2 に: d8 = 5 で hpGain 5。続く d100 = 14 ≤ 70 で blessing を習得。maxLevelReached は 2", () => {
+  test("CH-63 seed 1 でドナを L2 に: d8 = 5 で hpGain 5。能力値の d100 × 6 の後の d100 = 70 ≤ 70 で blessing を習得。maxLevelReached は 2", () => {
     const { ctx, ch } = setup(1, DONA, { exp: 1000 });
     expect(levelUpOnce(ctx, ch)).toEqual({ level: 2, hpGain: 5, mpGain: 5 });
     expect(ch.hpMax).toBe(17); // 12 + 5
     expect(ch.mpMax).toBe(10);
     expect(ch.knownSpells).toEqual(["heal", "blessing"]);
     expect(ch.maxLevelReached).toEqual({ [ch.classId]: 2 }); // SV-04 v5: 職業ごとの記録
-    expect(kinds(ctx.events)).toEqual(["levelUp", "message", "message", "dice", "spellLearned", "message"]);
+    // M10: levelUp の語りの後に hpUp・mpUp・statUp.str・statUp.vit の 4 行
+    expect(kinds(ctx.events)).toEqual(["levelUp", "message", "message", "message", "message", "message", "message", "dice", "spellLearned", "message"]);
     const dice = ctx.events.find((e) => e.kind === "dice");
     expect(dice).toEqual({
       kind: "dice",
       label: { key: "dice.learn", params: { spell: "加護" } },
-      rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [14], total: 14 }],
+      rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [70], total: 70 }],
       rule: { key: "dice.rule.rate", params: { rate: 70 } }, // 35 + 20×1 + (15−10)×3 + 0
       result: { key: "dice.learn.ok" },
     });
-    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 8], [1, 100]]));
+    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 8], ...STAT_ROLLS6, [1, 100]]));
     expectKnownStringKeys(ctx.events);
   });
 
-  test("CH-63 再到達では判定しない: 上の後に exp 0 で下げ、1000 で上げ直すと d8 の 1 回だけ消費し、dice は出ない（2 回目の d8 = 4）", () => {
+  test("CH-63 再到達では判定しない: 上の後に exp 0 で下げ、1000 で上げ直すと d8 の 1 回だけ消費し（能力値の判定も無い。U5）、dice は出ない（2 回目の d8 = 4）", () => {
     const { ctx, ch } = setup(1, DONA, { exp: 1000 });
     levelUpOnce(ctx, ch);
     ch.exp = 0;
@@ -275,23 +293,17 @@ describe("growth: レベルアップ（CH-61、CH-63、CH-65）", () => {
     expect(ch.levelHistory).toEqual([{ level: 2, hpGain: 4, mpGain: 5 }]);
     expect(ch.hpMax).toBe(16); // 12 + 4
     expect(ch.knownSpells).toEqual(["heal", "blessing"]);
-    expect(kinds(ctx.events)).toEqual(["levelUp", "message"]);
-    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 8], [1, 100], [1, 8]]));
+    expect(kinds(ctx.events)).toEqual(["levelUp", "message", "message", "message"]); // M10: hpUp・mpUp（statUp は無い）
+    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 8], ...STAT_ROLLS6, [1, 100], [1, 8]]));
   });
 });
 
 describe("growth: 複数段の上昇と習得判定（CH-61、CH-63、MG-20）", () => {
-  // seed 1 の列: d8 = 5 → d100 = 14 → d8 = 4 → d100 = 83 → randInt(0,0)。
+  // seed 1 の列: d8 = 5 → 能力値の d100 × 6 → d100 = 70 → d8 = 4 → 能力値の d100 × 6 → d100 = 83 → randInt(0,0)（M10 で能力値の判定が入った）。
   // blessing（L2）の率は 35 + 20 + (15−10)×3 = 70、cure_poison（L3）は 35 + 0 + 15 = 50（ドナ pie 15、priest learnMod 0）。
-  const L1_TO_L3: [number, number][] = [
-    [1, 8],
-    [1, 100],
-    [1, 8],
-    [1, 100],
-    [0, 0],
-  ];
+  const L1_TO_L3: [number, number][] = [[1, 8], ...STAT_ROLLS6, [1, 100], [1, 8], ...STAT_ROLLS6, [1, 100], [0, 0]];
 
-  test("CH-61/MG-20 ドナ exp 1500 で L1→L3: 段ごとに d8 → d100 の順（L2 blessing 14 ≤ 70、L3 cure_poison 83 > 50 で保証）", () => {
+  test("CH-61/MG-20 ドナ exp 1500 で L1→L3: 段ごとに d8 → 能力値の d100 × 6 → 習得の d100 の順（L2 blessing 70 ≤ 70、L3 cure_poison 83 > 50 で保証）", () => {
     const { ctx, ch } = setup(1, DONA, { exp: 1500 });
     expect(levelUpWhilePossible(ctx, ch)).toBe(2);
     expect(ch.level).toBe(3);
@@ -301,22 +313,30 @@ describe("growth: 複数段の上昇と習得判定（CH-61、CH-63、MG-20）",
       { level: 3, hpGain: 4, mpGain: 5 },
     ]);
     expect(ch.knownSpells).toEqual(["heal", "blessing", "cure_poison"]);
-    expect(kinds(ctx.events)).toEqual([
+    // M10: 段ごとに levelUp の語りの後へ内訳（L2 は hpUp・mpUp・statUp.str・statUp.vit、L3 は hpUp・mpUp・statUp.vit）
+    expect(ctx.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual([
       "levelUp",
-      "message",
-      "message",
+      "town.inn.levelUp",
+      "town.inn.hpUp",
+      "town.inn.mpUp",
+      "town.inn.statUp.str",
+      "town.inn.statUp.vit",
+      "town.inn.learnRoll",
       "dice",
       "spellLearned",
-      "message",
+      "town.inn.learned",
       "levelUp",
-      "message",
-      "message",
+      "town.inn.levelUp",
+      "town.inn.hpUp",
+      "town.inn.mpUp",
+      "town.inn.statUp.vit",
+      "town.inn.learnRoll",
       "dice",
-      "message",
+      "town.inn.notLearned",
       "spellLearned",
-      "message",
+      "town.inn.learned",
     ]);
-    expect(ctx.events.flatMap((e) => (e.kind === "dice" ? e.rows.flatMap((row) => row.dice) : []))).toEqual([14, 83]);
+    expect(ctx.events.flatMap((e) => (e.kind === "dice" ? e.rows.flatMap((row) => row.dice) : []))).toEqual([70, 83]);
     expect(
       ctx.events.flatMap((e) => (e.kind === "spellLearned" ? [[e.spellId, e.via]] : [])),
     ).toEqual([
@@ -344,8 +364,109 @@ describe("growth: 複数段の上昇と習得判定（CH-61、CH-63、MG-20）",
     expect(ctx.events.filter((e) => e.kind === "dice")).toEqual([]);
     expect(ctx.events.filter((e) => e.kind === "spellLearned")).toEqual([]);
     expect(ch.knownSpells).toEqual(["heal", "blessing", "cure_poison"]);
-    // 上げ直しで消費するのは HP の d8 を 3 回だけ
-    expect(ctx.state.rng).toEqual(rngAfter(1, [...L1_TO_L3, [1, 8], [1, 8], [1, 8]]));
+    // 上げ直しで消費するのは HP の d8 を 3 回と、全体の最高到達レベル（3）を超えた L4 の能力値の判定 6 回（U5）
+    expect(ctx.state.rng).toEqual(rngAfter(1, [...L1_TO_L3, [1, 8], [1, 8], [1, 8], ...STAT_ROLLS6]));
+  });
+});
+
+describe("growth: 能力値の成長と内訳（CH-61、U5）", () => {
+  // seed 1 の列: d10 = 9（d8 = 5）→ 能力値の d100 = 14, 92, 83, 7, 68, 51（str, iq, pie, vit, agi, luk の順。25 以下が当たり）→ 続く d100 = 70
+  const STAT_ROLLS: [number, number][] = [
+    [1, 100],
+    [1, 100],
+    [1, 100],
+    [1, 100],
+    [1, 100],
+    [1, 100],
+  ];
+
+  test("CH-61 seed 1 でベルクを L2 に: d10 = 9 の後に能力値を 6 回振り（14 / 7 が当たり）、力 15 → 16・生命力 14 → 15。levelUp に statGains、語りは levelUp → hpUp → statUp.{stat}", () => {
+    const { ctx, ch } = setup(1, BERK, { exp: 1000 });
+    expect(levelUpOnce(ctx, ch)).toEqual({ level: 2, hpGain: 11, mpGain: 0 });
+    expect(ch.stats).toEqual({ str: 16, iq: 7, pie: 10, vit: 15, agi: 6, luk: 6 });
+    expect(ch.levelHistory).toEqual([{ level: 2, hpGain: 11, mpGain: 0 }]); // 上がった能力値は記録しない
+    expect(ctx.events).toEqual([
+      { kind: "levelUp", id: "c2", level: 2, hpGain: 11, mpGain: 0, hpMax: 27, mpMax: 0, hp: 27, mp: 0, statGains: ["str", "vit"] },
+      { kind: "message", key: "town.inn.levelUp", params: { name: ch.name, level: 2 } },
+      { kind: "message", key: "town.inn.hpUp", params: { gain: 11, max: 27 } },
+      { kind: "message", key: "town.inn.statUp.str", params: { from: 15, to: 16 } },
+      { kind: "message", key: "town.inn.statUp.vit", params: { from: 14, to: 15 } },
+    ]);
+    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 10], ...STAT_ROLLS]));
+    expectKnownStringKeys(ctx.events);
+  });
+
+  test("CH-61 乱数の順は HP のダイス → 能力値 6 回 → 習得判定。ドナ L2: d8 = 5、力 8 → 9・生命力 10 → 11、続く d100 = 70 ≤ 70 で blessing。MP の語りは mpGain > 0 のときだけ", () => {
+    const { ctx, ch } = setup(1, DONA, { exp: 1000 });
+    expect(levelUpOnce(ctx, ch)).toEqual({ level: 2, hpGain: 5, mpGain: 5 });
+    expect(ch.stats).toEqual({ str: 9, iq: 8, pie: 15, vit: 11, agi: 10, luk: 7 });
+    expect(ch.knownSpells).toEqual(["heal", "blessing"]);
+    expect(ctx.events.slice(0, 6)).toEqual([
+      { kind: "levelUp", id: "c4", level: 2, hpGain: 5, mpGain: 5, hpMax: 17, mpMax: 10, hp: 17, mp: 10, statGains: ["str", "vit"] },
+      { kind: "message", key: "town.inn.levelUp", params: { name: ch.name, level: 2 } },
+      { kind: "message", key: "town.inn.hpUp", params: { gain: 5, max: 17 } },
+      { kind: "message", key: "town.inn.mpUp", params: { gain: 5, max: 10 } },
+      { kind: "message", key: "town.inn.statUp.str", params: { from: 8, to: 9 } },
+      { kind: "message", key: "town.inn.statUp.vit", params: { from: 10, to: 11 } },
+    ]);
+    expect(kinds(ctx.events.slice(6))).toEqual(["message", "dice", "spellLearned", "message"]);
+    expect(ctx.events.flatMap((e) => (e.kind === "dice" ? e.rows.flatMap((row) => row.dice) : []))).toEqual([70]);
+    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 8], ...STAT_ROLLS, [1, 100]]));
+    expectKnownStringKeys(ctx.events);
+  });
+
+  test("CH-61 HP の増分は上げる前の能力値で求める（ベルク vit 15: d10 = 9 + 2 = 11。上げた後の 16 なら +3 で 12）", () => {
+    const { ctx, ch } = setup(1, BERK, { exp: 1000, stats: { str: 15, iq: 7, pie: 10, vit: 15, agi: 6, luk: 6 } });
+    expect(levelUpOnce(ctx, ch).hpGain).toBe(11);
+    expect(ch.stats.vit).toBe(16);
+  });
+
+  test("CH-61 上限（statCap 18）の能力値も判定はする（消費は 6 回のまま）が上げない。力 18 のベルクは 14 が当たっても 18 のまま、statGains は vit だけ", () => {
+    expect(cfg.growth.statCap).toBe(18);
+    expect(cfg.growth.statUpChance).toBe(25);
+    const { ctx, ch } = setup(1, BERK, { exp: 1000, stats: { str: 18, iq: 7, pie: 10, vit: 14, agi: 6, luk: 6 } });
+    levelUpOnce(ctx, ch);
+    expect(ch.stats).toEqual({ str: 18, iq: 7, pie: 10, vit: 15, agi: 6, luk: 6 });
+    const lv = ctx.events.find((e) => e.kind === "levelUp");
+    expect(lv?.kind === "levelUp" ? lv.statGains : null).toEqual(["vit"]);
+    expect(ctx.events.filter((e) => e.kind === "message").map((e) => (e.kind === "message" ? e.key : ""))).toEqual([
+      "town.inn.levelUp",
+      "town.inn.hpUp",
+      "town.inn.statUp.vit",
+    ]);
+    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 10], ...STAT_ROLLS]));
+  });
+
+  test("CH-61/U5 全体の最高到達レベル以下の段では能力値を判定しない（ベルク maxLevelReached { fighter: 3 } で L2 へ: d10 だけ、statGains は空、statUp の語りなし）", () => {
+    const { ctx, ch } = setup(1, BERK, { exp: 1000, maxLevelReached: { fighter: 3 } });
+    levelUpOnce(ctx, ch);
+    expect(ch.stats).toEqual({ str: 15, iq: 7, pie: 10, vit: 14, agi: 6, luk: 6 });
+    expect(ctx.events).toEqual([
+      { kind: "levelUp", id: "c2", level: 2, hpGain: 11, mpGain: 0, hpMax: 27, mpMax: 0, hp: 27, mp: 0, statGains: [] },
+      { kind: "message", key: "town.inn.levelUp", params: { name: ch.name, level: 2 } },
+      { kind: "message", key: "town.inn.hpUp", params: { gain: 11, max: 27 } },
+    ]);
+    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 10]]));
+  });
+
+  test("CH-61/U5 ほかの職業の記録も全体の最高到達レベルに入る: { mage: 5, fighter: 1 } の戦士は L2 で判定しない。L5 → L6 は 5 を超えるので判定する", () => {
+    const a = setup(1, BERK, { exp: 1000, maxLevelReached: { mage: 5, fighter: 1 } });
+    levelUpOnce(a.ctx, a.ch);
+    expect(a.ch.maxLevelReached).toEqual({ mage: 5, fighter: 2 });
+    expect(a.ctx.state.rng).toEqual(rngAfter(1, [[1, 10]]));
+    const b = setup(1, BERK, { level: 5, exp: 100000, maxLevelReached: { mage: 5, fighter: 5 } });
+    levelUpOnce(b.ctx, b.ch);
+    expect(b.ch.stats).toEqual({ str: 16, iq: 7, pie: 10, vit: 15, agi: 6, luk: 6 });
+    expect(b.ctx.state.rng).toEqual(rngAfter(1, [[1, 10], ...STAT_ROLLS]));
+  });
+
+  test("CH-62 レベルダウンでも能力値は戻さない（ベルク L2 で力 16・生命力 15 → exp 0 で L1 に下がっても 16 / 15）", () => {
+    const { ctx, ch } = setup(1, BERK, { exp: 1000 });
+    levelUpOnce(ctx, ch);
+    ch.exp = 0;
+    expect(levelDownWhileBelow(ctx, ch)).toBe(1);
+    expect(ch.level).toBe(1);
+    expect(ch.stats).toEqual({ str: 16, iq: 7, pie: 10, vit: 15, agi: 6, luk: 6 });
   });
 });
 

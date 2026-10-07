@@ -112,6 +112,10 @@ export type Config = {
     level1Bonus: number;
     mpStatPivot: number;
     mpStatDivisor: number;
+    /** CH-61: レベルアップ（全体の最高到達レベルを超えたとき）で各能力値が +1 される確率（%）【仮】 */
+    statUpChance: number;
+    /** CH-61: 成長で上がる能力値の上限【仮】（作成の STAT_MAX とは別） */
+    statCap: number;
   };
   learning: { base: number; perLevelDiff: number; guaranteeDiff: number; statPivot: number; statPerPoint: number };
   dungeon: {
