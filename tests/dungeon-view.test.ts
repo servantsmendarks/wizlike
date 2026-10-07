@@ -291,3 +291,83 @@ describe("UI-69 bandLookups", () => {
     expect(plain.sanMaxOf({ ...p0, sanMax: 77 })).toBe(77);
   });
 });
+
+// ---------------------------------------------------------------------------
+// UI-59 / UI-40（M10。2026-10-07 B-B-5）: キャラクター画面の開閉の層（dungeon.ts の placeDice / applyPanels）。
+// node 環境なので、appendChild / insertBefore と style.display だけを持つ偽の要素で兄弟の順と表示を確かめる。
+
+class LayerEl {
+  parent: LayerEl | null = null;
+  children: LayerEl[] = [];
+  style = { display: "" };
+  constructor(readonly name: string) {}
+  private detach(): void {
+    if (this.parent === null) return;
+    this.parent.children = this.parent.children.filter((c) => c !== this);
+    this.parent = null;
+  }
+  appendChild(n: LayerEl): LayerEl {
+    n.detach();
+    this.children.push(n);
+    n.parent = this;
+    return n;
+  }
+  insertBefore(n: LayerEl, ref: LayerEl): LayerEl {
+    n.detach();
+    const i = this.children.indexOf(ref);
+    if (i < 0) throw new Error("ref is not a child");
+    this.children.splice(i, 0, n);
+    n.parent = this;
+    return n;
+  }
+}
+const names = (el: LayerEl): string[] => el.children.map((c) => c.name);
+
+describe("UI-59 キャラクター画面の層（placeDice / applyPanels）", () => {
+  test("UI-59/UI-40 開くと判定の箱は diceLayer（キャンプのパネルより後・会話の箱より前の兄弟）の子、閉じるとビューの中の全滅の出目の表の前の元の位置へ戻る。繰り返しても同じ", async () => {
+    const { placeDice } = await import("../src/presenter/views/dungeon");
+    const stage = new LayerEl("stage");
+    const [viewBox, camp, diceLayer, talk] = ["viewBox", "camp", "diceLayer", "talk"].map((n) => new LayerEl(n)) as [LayerEl, LayerEl, LayerEl, LayerEl];
+    for (const n of [viewBox, new LayerEl("header"), new LayerEl("message"), new LayerEl("band"), camp, diceLayer, talk, new LayerEl("panel"), new LayerEl("controls")]) stage.appendChild(n);
+    const dice = new LayerEl("dice");
+    const penaltyTable = new LayerEl("penaltyTable");
+    for (const n of [new LayerEl("svg"), new LayerEl("town"), new LayerEl("battle"), dice, penaltyTable]) viewBox.appendChild(n);
+    const p = { dice, layer: diceLayer, viewBox, anchor: penaltyTable };
+    for (let k = 0; k < 2; k++) {
+      placeDice(true, p);
+      expect(dice.parent).toBe(diceLayer);
+      expect(names(diceLayer)).toEqual(["dice"]);
+      expect(names(viewBox)).toEqual(["svg", "town", "battle", "penaltyTable"]);
+      // 層の順: キャンプのパネル < 判定の箱の層 < 会話の箱
+      const order = names(stage);
+      expect(order.indexOf("camp")).toBeLessThan(order.indexOf("diceLayer"));
+      expect(order.indexOf("diceLayer")).toBeLessThan(order.indexOf("talk"));
+      placeDice(false, p);
+      expect(dice.parent).toBe(viewBox);
+      expect(names(diceLayer)).toEqual([]);
+      expect(names(viewBox)).toEqual(["svg", "town", "battle", "dice", "penaltyTable"]);
+    }
+  });
+
+  test("UI-13/UI-59/UI-40 街かキャラクター画面ならメッセージ窓とパーティ欄を隠し、判定の箱の下端を会話の箱の上へ。迷宮・戦闘で閉じていれば出して下端は DICE_BOX_BOTTOM", async () => {
+    const { applyPanels } = await import("../src/presenter/views/dungeon");
+    const { DICE_BOX_BOTTOM } = await import("../src/presenter/views/dice");
+    const TOWN_BOTTOM = 94;
+    const cases: ["town" | "dungeon" | "battle", boolean, boolean][] = [
+      ["town", false, true],
+      ["town", true, true],
+      ["dungeon", true, true],
+      ["dungeon", false, false],
+      ["battle", false, false],
+    ];
+    for (const [mode, open, hidden] of cases) {
+      const message = new LayerEl("message");
+      const panel = new LayerEl("panel");
+      message.style.display = "x";
+      panel.style.display = "x";
+      let bottom = -1;
+      applyPanels(mode, open, { message, panel, setDiceBottom: (b) => (bottom = b) }, TOWN_BOTTOM);
+      expect([mode, open, message.style.display, panel.style.display, bottom]).toEqual([mode, open, hidden ? "none" : "", hidden ? "none" : "", hidden ? TOWN_BOTTOM : DICE_BOX_BOTTOM]);
+    }
+  });
+});

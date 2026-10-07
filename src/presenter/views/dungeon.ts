@@ -102,6 +102,34 @@ export function bandLookups(maxOf: MaxOf | undefined): { sanMaxOf: (ch: Characte
   };
 }
 
+/** 表示の出し入れだけを使う要素（applyPanels の引数。テストでは偽の要素を渡す） */
+export type Displayed = { style: { display: string } };
+
+/**
+ * UI-13 / UI-59 / UI-40（M10）: メッセージ窓・パーティ欄・判定の箱の下端。街かキャラクター画面なら窓と欄を隠し、
+ * 判定の箱の下端を会話の箱の上（townDiceBottom）に上げる。それ以外は窓と欄を出し、箱は迷宮の下端（DICE_BOX_BOTTOM）
+ */
+export function applyPanels(
+  mode: PlayMode,
+  characterOpen: boolean,
+  p: { message: Displayed; panel: Displayed; setDiceBottom(bottom: number): void },
+  townDiceBottom: number,
+): void {
+  const hide = mode === "town" || characterOpen;
+  p.message.style.display = hide ? "none" : "";
+  p.panel.style.display = hide ? "none" : "";
+  p.setDiceBottom(hide ? townDiceBottom : DICE_BOX_BOTTOM);
+}
+
+/**
+ * UI-59 / UI-40（M10）: 判定の箱の付け替え。キャラクター画面を開いたら diceLayer（キャンプのパネルより上・会話の箱より下）の子に、
+ * 閉じたらビューの中の全滅の出目の表（anchor）の前の元の位置へ戻す。appendChild / insertBefore だけを使う（テストでは偽の要素を渡す）
+ */
+export function placeDice<N>(on: boolean, p: { dice: N; layer: { appendChild(n: N): unknown }; viewBox: { insertBefore(n: N, ref: N): unknown }; anchor: N }): void {
+  if (on) p.layer.appendChild(p.dice);
+  else p.viewBox.insertBefore(p.dice, p.anchor);
+}
+
 export function createDungeonScreen(o: {
   data: GameData;
   strings: Strings;
@@ -255,15 +283,11 @@ export function createDungeonScreen(o: {
 
   let mode: PlayMode = "dungeon";
   let characterOpen = false;
-  /** メッセージ窓・パーティ欄・判定の箱の下端（街かキャラクター画面なら窓と欄を隠し、箱は会話の箱の上） */
-  const applyPanels = (): void => {
-    const hide = mode === "town" || characterOpen;
-    // UI-13: 街はメッセージ窓とパーティ欄を置かず、帯とヘッダーのログを出す。UI-59（M10）: キャラクター画面の間も隠す
-    message.el.style.display = hide ? "none" : "";
-    panel.el.style.display = hide ? "none" : "";
-    // UI-40 / UI-47: 街とキャラクター画面の判定の箱は会話の箱の上に上げる
-    dice.setBottom(hide ? tl.diceBottom : DICE_BOX_BOTTOM);
-  };
+  /**
+   * メッセージ窓・パーティ欄・判定の箱の下端（街かキャラクター画面なら窓と欄を隠し、箱は会話の箱の上）。
+   * UI-13: 街はメッセージ窓とパーティ欄を置かず、帯とヘッダーのログを出す。UI-59（M10）: キャラクター画面の間も隠す
+   */
+  const syncPanels = (): void => applyPanels(mode, characterOpen, { message: message.el, panel: panel.el, setDiceBottom: (b) => dice.setBottom(b) }, tl.diceBottom);
 
   return {
     el,
@@ -290,7 +314,7 @@ export function createDungeonScreen(o: {
       battle.el.style.display = m === "battle" ? "" : "none";
       band.el.style.display = town ? "" : "none";
       header.setLogVisible(town);
-      applyPanels();
+      syncPanels();
     },
     setTownPicture(facility: string): void {
       townPic.show(facility);
@@ -322,9 +346,8 @@ export function createDungeonScreen(o: {
     setCharacterOpen(on: boolean): void {
       characterOpen = on;
       // 付け替えは appendChild / insertBefore だけ（ビューの中では全滅の出目の表の前の、元の位置へ戻す）
-      if (on) diceLayer.appendChild(dice.el);
-      else viewBox.insertBefore(dice.el, penaltyTable.el);
-      applyPanels();
+      placeDice(on, { dice: dice.el, layer: diceLayer, viewBox, anchor: penaltyTable.el });
+      syncPanels();
     },
     showWipe(on: boolean): void {
       wipe.el.style.display = on ? "" : "none";

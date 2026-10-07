@@ -478,7 +478,7 @@ describe("入力と Command", () => {
   });
 
   // M8.5: M7 の広げた一覧（townListTall・setList の tall・listTall.backdrop）は UI-13 の街の配置に置き換えた
-  // M10（UI-59）: 図鑑とキャラクター画面のパネルは layout.character（townLayout の book と同じ範囲）に広げる。判定の箱の層 diceLayer をキャンプと会話の箱の間に足した。
+  // M10（UI-59）: 図鑑とキャラクター画面のパネルは layout.character に広げる（townLayout の book は 2026-10-07 に消した）。判定の箱の層 diceLayer をキャンプと会話の箱の間に足した。
   // メッセージ窓とパーティ欄の出し入れは applyPanels（街かキャラクター画面なら隠す）に移した
   // M10（UI-13 / UI-52。2026-10-07 U3）: 施設メニューは一覧ではなく 48×48 の 3 列 × 2 段（setBattleMenu の town）に改めたので、not.toContain を toContain に替えた
   test("UI-13/UI-52/IT-66/UI-59（M8.5・M10）街の一覧は見出し（townHeading）付きの setList の town。施設メニューは見出し付きの setBattleMenu の town（48×48 の 3 列 × 2 段）。ヘッダーは場所と所持金、ビューは施設の絵。図鑑とキャラクター画面のパネルは layout.character に広げる（ソースの検査）", () => {
@@ -502,10 +502,11 @@ describe("入力と Command", () => {
     expect(dungeon).toContain(
       "el.append(viewBox, header.el, message.el, band.el, camp.el, diceLayer, talk.el, panel.el, controls.el, map.el, wipe.el, history.el);",
     );
-    // 街とキャラクター画面ではメッセージ窓と 64 のパーティ欄を隠す。街では帯とヘッダーのログを出す
-    expect(dungeon).toContain('const hide = mode === "town" || characterOpen;');
-    expect(dungeon).toContain('message.el.style.display = hide ? "none" : "";');
-    expect(dungeon).toContain('panel.el.style.display = hide ? "none" : "";');
+    // 街とキャラクター画面ではメッセージ窓と 64 のパーティ欄を隠す。街では帯とヘッダーのログを出す。
+    // 2026-10-07（B-B-5）: 隠す処理は export の applyPanels に切り出し、振る舞いは dungeon-view.test の偽の要素で確かめる。ここは結線だけ
+    expect(dungeon).toContain(
+      "const syncPanels = (): void => applyPanels(mode, characterOpen, { message: message.el, panel: panel.el, setDiceBottom: (b) => dice.setBottom(b) }, tl.diceBottom);",
+    );
     expect(dungeon).toContain('band.el.style.display = town ? "" : "none";');
     expect(dungeon).toContain("header.setLogVisible(town);");
   });
@@ -686,9 +687,10 @@ describe("入力と Command", () => {
     expect(resume).toMatch(/characterOpen = false;\s*play\.setCharacterOpen\(false\);/);
     const reason = /const campReason = \(x: CampEntry\): Pick<ControlItem, "onDisabled"> => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(reason).toMatch(/onDisabled: \(\) =>\s*guard\(\(\) => \{\s*play\.talk\.flush\(\);\s*void narrator\.say\(reason, store\.get\(\)\.skipAnimations\);\s*\}\),/);
-    // dungeon.ts: 判定の箱は diceLayer へ付け替え、閉じたらビューの中の全滅の出目の表の前へ戻す
+    // dungeon.ts: 判定の箱は diceLayer へ付け替え、閉じたらビューの中の全滅の出目の表の前へ戻す。
+    // 2026-10-07（B-B-5）: 付け替えは export の placeDice に切り出し、兄弟の順は dungeon-view.test の偽の要素で確かめる。ここは結線だけ
     const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
-    expect(dungeon).toMatch(/if \(on\) diceLayer\.appendChild\(dice\.el\);\s*else viewBox\.insertBefore\(dice\.el, penaltyTable\.el\);/);
+    expect(dungeon).toMatch(/placeDice\(on, \{ dice: dice\.el, layer: diceLayer, viewBox, anchor: penaltyTable\.el \}\);\s*syncPanels\(\);/);
   });
 
   test("UI-47/SV-50（M8.5）街を出るときは会話の箱を打ち切り、街に入るときは迷宮の窓で語った carry を出し直す（ログには入れない）。再開では箱を閉じる（ソースの検査）", () => {
@@ -706,9 +708,9 @@ describe("入力と Command", () => {
     expect(resume).toContain("play.talk.clear();");
     // 再開の語りは showRoute の後（route が決まってから振り分ける）
     expect(resume.indexOf("narrator.say(")).toBeGreaterThan(resume.indexOf("showRoute(plan.route)"));
-    // 判定の箱の下端は街とキャラクター画面（M10）だけ会話の箱の上
+    // 判定の箱の下端は街とキャラクター画面（M10）だけ会話の箱の上（2026-10-07 B-B-5: applyPanels に切り出し、dungeon-view.test で確かめる）
     const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
-    expect(dungeon).toContain("dice.setBottom(hide ? tl.diceBottom : DICE_BOX_BOTTOM);");
+    expect(dungeon).toContain("p.setDiceBottom(hide ? townDiceBottom : DICE_BOX_BOTTOM);");
     expect(dungeon).toContain("const talk = createTalkBox({ layout: tl.talk, speed: o.textSpeed, blink: o.talkBlink, log: (t) => message.log(t), advanced: () => o.talkAdvanced?.() });");
   });
 
