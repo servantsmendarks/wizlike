@@ -172,7 +172,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   "rules/item-view": ["itemDetail", "memberSheet", "uniqueBookView", "equipPreview", "spellInfo"],
   // M5.5 UI-62 / CH-06: 自分で作るの配分の可否・残り・職業の条件・名前の長さは core の関数の値だけで決める。
   // 作成中はまだ GameState が無いので、ボーナスの振り（rollBonus）は表示層が持つ RngState（createRng。種は crypto）で引く（決定 5 の例外）
-  "rules/creation": ["rollBonus", "statAllocation", "adjustStat", "classOptions", "validCreationName"],
+  // M10 UI-62 / CH-11: ボーナスの内訳（7+2、当たりは 7+2+10）と合計は core の rollBonusParts の値を描く
+  "rules/creation": ["rollBonus", "rollBonusParts", "statAllocation", "adjustStat", "classOptions", "validCreationName"],
   // M7 UI-57: debug パネルの「SAN+{n}」のラベルの n（core が足す量の定数。値を表示に使うだけ）
   "rules/debug": ["SAN_OVER_DEBUG"],
   // M9.5 UI-66（2026-10-07）: 迷宮の確認の取り消し（やめる）の id の定数。cancel の音の印を付けるのに使うだけ

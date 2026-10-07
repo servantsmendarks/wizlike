@@ -9,6 +9,7 @@ import {
   nameLength,
   normalizeName,
   rollBonus,
+  rollBonusParts,
   STAT_MAX,
   statAllocation,
   validCreationName,
@@ -298,6 +299,41 @@ describe("creation: 自分で作る（CH-06 / CH-11 / CH-21 / CH-24）", () => {
         expect(v).toBeLessThanOrEqual(pct === 100 ? 21 : 11);
       }
     }
+  });
+
+  test("CH-11 / UI-62 rollBonusParts は rollBonus と同じ順で引き、内訳 base / die / big と合計 total を返す（鏡の rng。bonusBigChance 0 / 100）", () => {
+    for (const pct of [0, 100]) {
+      const cfg = { ...data.config.creation, bonusBigChance: pct };
+      for (const seed of [1, 2, 3, 4, 5]) {
+        const rng = createRng(seed);
+        const mirror = cloneRng(rng);
+        const die = rollDie(mirror, cfg.bonusDie);
+        const hit = chance(mirror, pct);
+        const parts = rollBonusParts(rng, cfg);
+        expect(parts).toEqual({ base: 7, die, big: hit ? 10 : 0, total: 7 + die + (hit ? 10 : 0) });
+        expect(rng).toEqual(mirror); // randInt を 2 回だけ消費する
+        // rollBonus は同じ種で同じ合計（包み）
+        expect(rollBonus(createRng(seed), cfg)).toBe(parts.total);
+      }
+    }
+  });
+
+  test("CH-11 / UI-62 rollBonusParts（実データ）: seed 固定の出目（seed 1..400 で外れは big 0、当たりは big 10。合計は base + die + big）", () => {
+    let hits = 0;
+    for (let seed = 1; seed <= 400; seed++) {
+      const p = rollBonusParts(createRng(seed), data.config.creation);
+      expect(p.base).toBe(7);
+      expect(p.die).toBeGreaterThanOrEqual(1);
+      expect(p.die).toBeLessThanOrEqual(4);
+      expect([0, 10]).toContain(p.big);
+      expect(p.total).toBe(p.base + p.die + p.big);
+      expect(p.total).toBe(rollBonus(createRng(seed), data.config.creation));
+      if (p.big === 10) hits++;
+    }
+    expect(hits).toBeGreaterThan(0); // 5% の当たりの分岐を通る
+    // 固定の種の出目: seed 1 は外れ（7+1）、seed 22 は当たり（7+4+10）
+    expect(rollBonusParts(createRng(1), data.config.creation)).toEqual({ base: 7, die: 1, big: 0, total: 8 });
+    expect(rollBonusParts(createRng(22), data.config.creation)).toEqual({ base: 7, die: 4, big: 10, total: 21 });
   });
 
   test("CH-11 rollBonus は実データ（7 + 1d4、5% で +10）の範囲 8..11 / 18..21 だけを出す（seed 1..400）", () => {

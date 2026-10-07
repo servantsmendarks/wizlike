@@ -41,11 +41,19 @@ function raceBase(raceId: string, data: GameData): StatBlock {
   return r.baseStats;
 }
 
+/** CH-11 / UI-62: ボーナスポイントの内訳。big は当たれば bonusBig、外れは 0。total = base + die + big */
+export type BonusParts = { base: number; die: number; big: number; total: number };
+
+/** CH-11 / UI-62: ボーナスポイントを内訳つきで振る。乱数の順は rollDie(bonusDie) → chance(bonusBigChance)（rollBonus と同じ） */
+export function rollBonusParts(rng: RngState, cfg: Config["creation"]): BonusParts {
+  const die = rollDie(rng, cfg.bonusDie);
+  const big = chance(rng, cfg.bonusBigChance) ? cfg.bonusBig : 0;
+  return { base: cfg.bonusBase, die, big, total: cfg.bonusBase + die + big };
+}
+
 /** CH-11: ボーナスポイント。乱数の順は rollDie(bonusDie) → chance(bonusBigChance)。bonusBase + 出目（当たれば + bonusBig） */
 export function rollBonus(rng: RngState, cfg: Config["creation"]): number {
-  const die = rollDie(rng, cfg.bonusDie);
-  const big = chance(rng, cfg.bonusBigChance);
-  return cfg.bonusBase + die + (big ? cfg.bonusBig : 0);
+  return rollBonusParts(rng, cfg).total;
 }
 
 /** CH-11: 配分の様子。rows は STAT_KEYS の順 */
