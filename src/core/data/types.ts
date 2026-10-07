@@ -196,6 +196,26 @@ export type Config = {
     restoreOnTown: boolean;
   };
   wipe: { reviveHpRatio: number; clearStatus: boolean };
+  /**
+   * CH-77（M10）【仮】: 司教の鑑定。成功率 = base + (知恵（実効）− iqPivot) × iqPerPoint + perLevelStep × floor(レベル / levelStep)
+   * − rarityPenalty[希少度] −（ユニークなら uniquePenalty）を min〜max に収める。消費 MP は mpCost。
+   * 失敗: 迷宮内なら SAN −failSanDungeon。呪われた品なら possessChance % で取り憑く（装備できなければ SAN −possessSan）
+   */
+  identify: {
+    mpCost: number;
+    base: number;
+    iqPivot: number;
+    iqPerPoint: number;
+    levelStep: number;
+    perLevelStep: number;
+    rarityPenalty: Record<RarityDef["id"], number>;
+    uniquePenalty: number;
+    min: number;
+    max: number;
+    failSanDungeon: number;
+    possessChance: number;
+    possessSan: number;
+  };
   economy: {
     sellRatio: number;
     /** IT-65【仮】: 店の鑑定料 = max(identifyFeeMin, floor(見た目の品種（Lv0・通常）の売値 × identifyFeeRatio)) */

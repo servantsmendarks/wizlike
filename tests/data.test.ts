@@ -151,6 +151,18 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.combat.hitMin = 96), "config.json", "CB-21");
     expectIssue((r) => (r.config.combat.hitMax = 101), "config.json", "combat.hitMax: expected integer in 0..100, got 101");
   });
+  test("data: CH-77【仮】config.identify の既定値、希少度ごとの減点、min <= max、levelStep は 1 以上", () => {
+    const d = loadGameData(rawData());
+    expect(d.config.identify).toEqual({
+      mpCost: 1, base: 60, iqPivot: 10, iqPerPoint: 3, levelStep: 10, perLevelStep: 10,
+      rarityPenalty: { normal: 0, fine: 10, rare: 20, legendary: 30 }, uniquePenalty: 15,
+      min: 5, max: 95, failSanDungeon: 3, possessChance: 50, possessSan: 10,
+    });
+    expectIssue((r) => delete r.config.identify.rarityPenalty.rare, "config.json", "identify.rarityPenalty.rare: missing required field");
+    expectIssue((r) => (r.config.identify.min = 96), "config.json", "CH-77");
+    expectIssue((r) => (r.config.identify.levelStep = 0), "config.json", "identify.levelStep: expected integer >= 1");
+    expectIssue((r) => (r.config.identify.possessChance = 101), "config.json", "identify.possessChance: expected integer in 0..100, got 101");
+  });
   test("data: CB-21/CB-26【仮】flyingHit は reach ごと（melee / long / ranged）の整数、rangedHitAgiMul・rangedHitLukPivot は整数", () => {
     const d = loadGameData(rawData());
     expect([d.config.combat.flyingHit, d.config.combat.rangedHitAgiMul, d.config.combat.rangedHitLukPivot]).toEqual([{ melee: -30, long: -15, ranged: 0 }, 2, 10]);

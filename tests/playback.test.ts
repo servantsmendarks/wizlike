@@ -8,7 +8,7 @@ import type { PenaltyTableText } from "../src/presenter/views/penalty-table";
 import type { Settings } from "../src/presenter/settings";
 import type { Dive, EnemyGroupView, GameEvent, GameState, PenaltyResult, ViewPoint } from "../src/core/types";
 import { data, expectKnownStringKeys, newGame, withChar } from "./helpers/core";
-import { cloneState, makeContext } from "../src/core/state";
+import { cloneState, createItemInstance, makeContext } from "../src/core/state";
 import { startBattle } from "../src/core/rules/combat";
 import { execute } from "../src/core/engine";
 import { ALWAYS_HIT, dataWith, dived, withBattle } from "./helpers/battle";
@@ -1318,6 +1318,24 @@ describe("UI-55/UI-40 制止の箱のタップ待ち（M5）", () => {
     const r = execute(st, { type: "town.upgrade", memberId: "c1", slot: "weapon", catalysts: [] }, data);
     expect(r.events.map((e) => e.kind)).toEqual(["dice", "message"]);
     const m = r.events[1]!;
+    if (m.kind !== "message") throw new Error("message expected");
+    for (const skipAnimations of [false, true]) {
+      const { deps, log } = fakeDeps({ skipAnimations });
+      await createPlayer(deps).play(r.events, st, r.state);
+      expect(span(log), String(skipAnimations)).toEqual(["dice.show", say(m.key, m.params), "beat.waitTap", "dice.hide"]);
+    }
+  });
+
+  test("UI-40/CH-77 司教の鑑定の箱（core の実際の party.identify の列）も、続く語りを出した後でタップを 1 回待ってから消す（演出スキップの真偽とも）", async () => {
+    const st = cloneState(newGame(1));
+    const c5 = st.party.find((c) => c.id === "c5")!;
+    c5.classId = "bishop";
+    c5.maxLevelReached = { bishop: 1 };
+    const id = createItemInstance(st, { itemId: "dagger", identified: false });
+    st.party.find((c) => c.id === "c1")!.inventory.push(id);
+    const r = execute(st, { type: "party.identify", memberId: "c5", instanceId: id }, data);
+    expect(r.events.map((e) => e.kind)).toEqual(["mpChanged", "dice", "message"]);
+    const m = r.events[2]!;
     if (m.kind !== "message") throw new Error("message expected");
     for (const skipAnimations of [false, true]) {
       const { deps, log } = fakeDeps({ skipAnimations });

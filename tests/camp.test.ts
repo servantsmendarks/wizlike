@@ -5,8 +5,8 @@
 import { describe, expect, test } from "vitest";
 import type { GameData } from "../src/core/data";
 import { execute } from "../src/core/engine";
-import { cloneRng, createRng, randInt, rollDice } from "../src/core/rng";
-import { campMenu, campSummary, checkCast, checkEquip, checkUnequip } from "../src/core/rules/camp";
+import { chance, cloneRng, createRng, randInt, rollDice } from "../src/core/rng";
+import { campMenu, campSummary, checkCast, checkEquip, checkUnequip, identifyChance } from "../src/core/rules/camp";
 import { frontLineIds } from "../src/core/rules/combat-calc";
 import { resurrectRate, townMenu } from "../src/core/rules/town";
 import { cloneState, createItemInstance, itemDisplayName } from "../src/core/state";
@@ -468,38 +468,281 @@ function withBishop(base: GameState): GameState {
   return patched(base, { c5: { classId: "bishop", maxLevelReached: { bishop: 1 } } }); // CH-63（SV-04 v5）: 今の職業の記録も合わせる
 }
 
+/**
+ * c5 を司教にし、知恵・レベル・MP を決めた state（CH-77 の成功率を式どおりに数えるため）。
+ * 杖（i14）にはオプションが無いので、実効の知恵は stats.iq のまま
+ */
+function bishopAt(base: GameState, iq = 10, level = 1, extra: Partial<Character> = {}): GameState {
+  const c5 = member(base, "c5");
+  return patched(base, {
+    c5: { classId: "bishop", maxLevelReached: { bishop: level }, stats: { ...c5.stats, iq }, level, mp: 5, mpMax: 5, ...extra },
+  });
+}
+
+/** 最初の d100 が pred を満たし、続く chance(possessChance) の当たり外れが hit になる種（hit が undefined なら 2 つめは見ない） */
+function seedFor(pred: (roll: number) => boolean, hit?: boolean): number {
+  for (let k = 1; k < 100000; k++) {
+    const r = createRng(k);
+    if (!pred(randInt(r, 1, 100))) continue;
+    if (hit === undefined || chance(r, data.config.identify.possessChance) === hit) return k;
+  }
+  throw new Error("no seed");
+}
+
+function withSeed(s: GameState, seed: number): GameState {
+  const t = cloneState(s);
+  t.rng = createRng(seed);
+  return t;
+}
+
+/** 成功率を 100 に固定した data（min = max = 100。鑑定の結果だけを見たいテスト用） */
+function sureData(): GameData {
+  const d = loadFreshData();
+  d.config.identify.min = 100;
+  d.config.identify.max = 100;
+  return d;
+}
+
+const identify = (memberId: string, instanceId: string): Command => ({ type: "party.identify", memberId, instanceId });
+const messagesOf = (events: GameEvent[]): GameEvent[] => events.filter((e) => e.kind === "message");
+
 describe("CH-77 party.identify", () => {
-  test("CH-77 司教が他人の未鑑定品を鑑定する: identified true、message camp.identified{name, old, item, rarity}。乱数は変わらない", () => {
-    const { s, id } = give(withBishop(inDungeon()), "c1", "dagger", false);
-    const r = ok(s, { type: "party.identify", memberId: "c5", instanceId: id });
-    expect(r.events).toEqual([{ kind: "message", key: "camp.identified", params: { name: "エル", old: "短い刃？", item: "短剣", rarity: "normal" } }]);
-    expect(r.state.items[id]!.identified).toBe(true);
-    expect(r.state.rng).toEqual(s.rng);
+  test("CH-77 成功: MP −1（mpChanged）→ dice{dice.identify・内訳の行・出目の行・identify.rule{rate}・dice.identify.ok}→ camp.identified。乱数は d100 を 1 回だけ", () => {
+    const g = give(bishopAt(inDungeon(), 16), "c1", "dagger", false);
+    const rate = 60 + 18; // 基本 60 + (16 − 10) × 3
+    const s = withSeed(g.s, seedFor((x) => x <= rate));
+    const m = cloneRng(s.rng);
+    const roll = randInt(m, 1, 100);
+    const r = ok(s, identify("c5", g.id));
+    expect(r.events).toEqual([
+      { kind: "mpChanged", id: "c5", delta: -1, mp: 4 },
+      {
+        kind: "dice",
+        label: { key: "dice.identify", params: { item: "短い刃？" } },
+        rows: [
+          { label: { key: "identify.row.base", params: { v: "60" } }, base: 60, dice: [], total: 60 },
+          { label: { key: "identify.row.iq", params: { v: "+18" } }, base: 18, dice: [], total: 18 },
+          { label: { key: "identify.row.roll" }, base: null, dice: [roll], total: roll },
+        ],
+        rule: { key: "identify.rule", params: { rate } },
+        result: { key: "dice.identify.ok" },
+      },
+      { kind: "message", key: "camp.identified", params: { name: "エル", old: "短い刃？", item: "短剣", rarity: "normal" } },
+    ]);
+    expect(r.state.items[g.id]!.identified).toBe(true);
+    expect(member(r.state, "c5").mp).toBe(4);
+    expect(r.state.rng).toEqual(m);
   });
 
-  test("CH-73/77 呪われた品を鑑定すると camp.identifiedCursed が続く（街でも受け付ける）", () => {
-    const { s, id } = giveCursed(withBishop(inTown()), "c3", false);
-    const r = ok(s, { type: "party.identify", memberId: "c5", instanceId: id });
-    expect(r.events).toEqual([
+  test("CH-73/77 呪われた品の鑑定に成功すると camp.identifiedCursed が続く（街でも受け付ける。取り憑きの chance は引かない）", () => {
+    const g = giveCursed(bishopAt(inTown()), "c3", false);
+    const s = withSeed(g.s, seedFor((x) => x <= 60));
+    const m = cloneRng(s.rng);
+    randInt(m, 1, 100);
+    const r = ok(s, identify("c5", g.id));
+    expect(messagesOf(r.events)).toEqual([
       { kind: "message", key: "camp.identified", params: { name: "エル", old: "短い刃？", item: "短剣", rarity: "normal" } },
       { kind: "message", key: "camp.identifiedCursed", params: { item: "短剣" } },
     ]);
+    expect(r.state.rng).toEqual(m);
   });
 
-  test("CH-77 理由の順: wrong screen → no such member → cannot identify → cannot act → no such item → already identified", () => {
-    const { s, id } = give(withBishop(inDungeon()), "c1", "dagger", false);
-    expectRejected(battleOf(s), { type: "party.identify", memberId: "c5", instanceId: id }, "wrong screen");
-    expectRejected(s, { type: "party.identify", memberId: "c9", instanceId: id }, "no such member");
-    expectRejected(s, { type: "party.identify", memberId: "c4", instanceId: id }, "cannot identify"); // 僧侶
-    expectRejected(patched(s, { c5: { status: ["sleep"] } }), { type: "party.identify", memberId: "c5", instanceId: id }, "cannot act");
-    expectRejected(s, { type: "party.identify", memberId: "c5", instanceId: "i1" }, "no such item"); // 装備中は対象外
-    expectRejected(s, { type: "party.identify", memberId: "c5", instanceId: "i999" }, "no such item");
-    expectRejected(s, { type: "party.identify", memberId: "c5", instanceId: "i4" }, "already identified");
+  test("CH-77 失敗（迷宮）: dice.identify.ng → camp.identifyFailed → 司教の SAN −3。品は未鑑定のまま。呪われていない品では chance を引かない", () => {
+    const g = give(bishopAt(inDungeon()), "c1", "dagger", false);
+    const s = withSeed(g.s, seedFor((x) => x > 60));
+    const m = cloneRng(s.rng);
+    const roll = randInt(m, 1, 100);
+    const san = member(s, "c5").san;
+    const r = ok(s, identify("c5", g.id));
+    expect(r.events).toEqual([
+      { kind: "mpChanged", id: "c5", delta: -1, mp: 4 },
+      {
+        kind: "dice",
+        label: { key: "dice.identify", params: { item: "短い刃？" } },
+        rows: [
+          { label: { key: "identify.row.base", params: { v: "60" } }, base: 60, dice: [], total: 60 },
+          { label: { key: "identify.row.roll" }, base: null, dice: [roll], total: roll },
+        ],
+        rule: { key: "identify.rule", params: { rate: 60 } },
+        result: { key: "dice.identify.ng" },
+      },
+      { kind: "message", key: "camp.identifyFailed", params: { name: "エル", item: "短い刃？" } },
+      { kind: "sanChanged", id: "c5", delta: -3, san: san - 3 },
+    ]);
+    expect(r.state.items[g.id]!.identified).toBe(false);
+    expect(r.state.rng).toEqual(m);
+  });
+
+  test("CH-77 失敗（街）: SAN は減らない。何度でも試せ、制限は MP だけ（尽きたら no mp）", () => {
+    const g = give(bishopAt(inTown(), 10, 1, { mp: 2 }), "c1", "dagger", false);
+    const s = withSeed(g.s, seedFor((x) => x > 60));
+    const san = member(s, "c5").san;
+    const r = ok(s, identify("c5", g.id));
+    expect(messagesOf(r.events)).toEqual([{ kind: "message", key: "camp.identifyFailed", params: { name: "エル", item: "短い刃？" } }]);
+    expect(r.events.some((e) => e.kind === "sanChanged")).toBe(false);
+    expect(member(r.state, "c5").san).toBe(san);
+    const r2 = ok(r.state, identify("c5", g.id));
+    expect(member(r2.state, "c5").mp).toBe(0);
+    expectRejected(r2.state, identify("c5", g.id), "no mp"); // 成功していても no mp が already identified より先
+  });
+
+  test("CH-77 理由の順: wrong screen → no such member → cannot identify → cannot act → no mp → no such item → already identified", () => {
+    const { s, id } = give(bishopAt(inDungeon()), "c1", "dagger", false);
+    expectRejected(battleOf(s), identify("c5", id), "wrong screen");
+    expectRejected(s, identify("c9", id), "no such member");
+    expectRejected(s, identify("c4", id), "cannot identify"); // 僧侶
+    expectRejected(patched(s, { c5: { status: ["sleep"] } }), identify("c5", id), "cannot act");
+    expectRejected(patched(s, { c5: { mp: 0 } }), identify("c5", "i999"), "no mp"); // no mp は no such item より先
+    expectRejected(s, identify("c5", "i1"), "no such item"); // 装備中は対象外
+    expectRejected(s, identify("c5", "i999"), "no such item");
+    expectRejected(s, identify("c5", "i4"), "already identified");
+  });
+
+  test("CH-77 identifyChance: 基本 60 + (知恵 − 10) × 3 + 10 × floor(Lv / 10) − 希少度（0 / 10 / 20 / 30）− ユニーク 15 を 5〜95 に。基本以外の 0 の行は出さない", () => {
+    const base = inTown();
+    const at = (iq: number, level: number, spec: Parameters<typeof createItemInstance>[1]) => {
+      const s = bishopAt(base, iq, level);
+      const id = createItemInstance(s, spec);
+      member(s, "c1").inventory.push(id);
+      return identifyChance(s, data, "c5", id)!;
+    };
+    const v = (r: { rows: Array<{ label: { key: string; params?: Record<string, string | number> }; base: number | null }> }) =>
+      r.rows.map((x) => [x.label.key.replace("identify.row.", ""), x.label.params?.["v"], x.base]);
+    expect(at(10, 1, { identified: false, itemId: "dagger" })).toEqual({
+      rate: 60,
+      rows: [{ label: { key: "identify.row.base", params: { v: "60" } }, base: 60, dice: [], total: 60 }],
+    });
+    expect(at(13, 9, { identified: false, itemId: "dagger" }).rate).toBe(69);
+    const a = at(13, 10, { identified: false, itemId: "long_sword", rarity: "fine" });
+    expect(a.rate).toBe(60 + 9 + 10 - 10);
+    expect(v(a)).toEqual([["base", "60", 60], ["iq", "+9", 9], ["level", "+10", 10], ["rarity", "-10", -10]]);
+    expect(at(10, 25, { identified: false, itemId: "dagger", rarity: "rare" }).rate).toBe(60 + 20 - 20);
+    const u = at(8, 1, { identified: false, itemId: "long_sword", uniqueId: "shadowfolk_sword", rarity: "legendary" });
+    expect(u.rate).toBe(60 - 6 - 30 - 15);
+    expect(v(u)).toEqual([["base", "60", 60], ["iq", "-6", -6], ["rarity", "-30", -30], ["unique", "-15", -15]]);
+    // 上限 95: 60 + 60 + 30 = 150 → 上下限 −55
+    const hi = at(30, 30, { identified: false, itemId: "dagger" });
+    expect(hi.rate).toBe(95);
+    expect(v(hi).at(-1)).toEqual(["clamp", "-55", -55]);
+    // 下限 5: 60 − 21 − 30 − 15 = −6 → 上下限 +11
+    const lo = at(3, 1, { identified: false, itemId: "long_sword", uniqueId: "shadowfolk_sword", rarity: "legendary" });
+    expect(lo.rate).toBe(5);
+    expect(v(lo).at(-1)).toEqual(["clamp", "+11", 11]);
+    // 鑑定できない職業・いない者・無い品は null
+    expect(identifyChance(base, data, "c4", "i4")).toBeNull();
+    expect(identifyChance(bishopAt(base), data, "c9", "i4")).toBeNull();
+    expect(identifyChance(bishopAt(base), data, "c5", "i999")).toBeNull();
+  });
+
+  test("CH-77/CH-13 知恵は実効の値（装備のオプションを含む）", () => {
+    const s = bishopAt(inTown(), 10);
+    s.items["i14"]!.options = [{ optionId: "iq", tier: 1, value: 2 }]; // c5 の杖に知恵 +2
+    const id = createItemInstance(s, { identified: false, itemId: "dagger" });
+    member(s, "c1").inventory.push(id);
+    expect(identifyChance(s, data, "c5", id)!.rate).toBe(66);
+  });
+
+  test("CH-77 取り憑き（当たり・装備できる）: 他人の inventory の呪われた品が未鑑定のまま司教の枠に入り、旧品は持ち主の同じ位置へ。SAN −3 の後に camp.possessed → camp.cursed。乱数は d100 → chance", () => {
+    const g = giveCursed(bishopAt(inDungeon()), "c1", false);
+    member(g.s, "c1").inventory = [g.id, "i4"];
+    const s = withSeed(g.s, seedFor((x) => x > 60, true));
+    const m = cloneRng(s.rng);
+    randInt(m, 1, 100);
+    chance(m, 50);
+    const san = member(s, "c5").san;
+    const r = ok(s, identify("c5", g.id));
+    expect(r.events.slice(2)).toEqual([
+      { kind: "message", key: "camp.identifyFailed", params: { name: "エル", item: "短い刃？" } },
+      { kind: "sanChanged", id: "c5", delta: -3, san: san - 3 },
+      { kind: "message", key: "camp.possessed", params: { name: "エル", item: "短い刃？" } },
+      { kind: "message", key: "camp.cursed", params: { item: "短い刃？" } },
+    ]);
+    expect(member(r.state, "c5").equipment.weapon).toBe(g.id);
+    expect(member(r.state, "c1").inventory).toEqual(["i14", "i4"]); // 旧品の杖は c1 の同じ位置へ
+    expect(r.state.items[g.id]!.identified).toBe(false);
+    expect(r.state.rng).toEqual(m);
+    // 外せない（CH-73）。装備中なので鑑定の対象でもない
+    expectRejected(r.state, { type: "party.unequip", memberId: "c5", slot: "weapon" }, "cursed");
+    expectRejected(r.state, identify("c5", g.id), "no such item");
+  });
+
+  test("CH-77/CH-14 取り憑き（街でも起き、SAN は減らない）: 自分の inventory の品で枠が空なら取り除いて枠へ。強制装備の後 hp は実効の最大値に止まる", () => {
+    const empty = { weapon: null, armor: null, shield: null, helm: null, gauntlet: null, accessory: null };
+    const s0 = bishopAt(inTown(), 10, 1, { equipment: empty });
+    const c5 = member(s0, "c5");
+    const hpMax = c5.hpMax;
+    c5.hp = hpMax;
+    const id = createItemInstance(s0, { itemId: "charm", identified: false, cursed: true, options: [{ optionId: "hp_max", tier: 1, value: -3 }] });
+    const rest = [...c5.inventory, "i14"]; // 外した杖も持たせる（実体の参照を保つ）
+    c5.inventory = [id, ...rest];
+    const san = c5.san;
+    const s = withSeed(s0, seedFor((x) => x > 60, true));
+    const r = ok(s, identify("c5", id));
+    const after = member(r.state, "c5");
+    expect(after.equipment.accessory).toBe(id);
+    expect(after.inventory).toEqual(rest);
+    expect(after.san).toBe(san);
+    expect(r.events.slice(-3)).toEqual([
+      { kind: "message", key: "camp.possessed", params: { name: "エル", item: "飾り？" } },
+      { kind: "message", key: "camp.cursed", params: { item: "飾り？" } },
+      { kind: "hpChanged", id: "c5", delta: -3, hp: hpMax - 3 },
+    ]);
+    expect(after.hp).toBe(hpMax - 3);
+  });
+
+  test("CH-77 取り憑きの外れ: 失敗の SAN だけで、品も装備も動かない", () => {
+    const g = giveCursed(bishopAt(inDungeon()), "c1", false);
+    const s = withSeed(g.s, seedFor((x) => x > 60, false));
+    const r = ok(s, identify("c5", g.id));
+    expect(messagesOf(r.events)).toEqual([{ kind: "message", key: "camp.identifyFailed", params: { name: "エル", item: "短い刃？" } }]);
+    expect(member(r.state, "c1").inventory).toContain(g.id);
+    expect(member(r.state, "c5").equipment.weapon).toBe("i14");
+  });
+
+  test("CH-77 取り憑き（装備できない）: 職業が装備できない・枠の品が呪われている・枠が空で使用枠が満杯なら、品は元の場所のまま camp.possessedSan → SAN −10", () => {
+    const seed = seedFor((x) => x > 60, true);
+    const check = (s0: GameState, id: string, name: string, failSan: number) => {
+      const s = withSeed(s0, seed);
+      const san = member(s, "c5").san;
+      const eq = { ...member(s, "c5").equipment };
+      const inv = [...member(s, "c1").inventory];
+      const r = ok(s, identify("c5", id));
+      expect(r.events.slice(-2)).toEqual([
+        { kind: "message", key: "camp.possessedSan", params: { name: "エル", item: name } },
+        { kind: "sanChanged", id: "c5", delta: -10, san: san - failSan - 10 },
+      ]);
+      expect(member(r.state, "c5").san).toBe(san - failSan - 10);
+      expect(member(r.state, "c5").equipment).toEqual(eq);
+      expect(member(r.state, "c1").inventory).toEqual(inv);
+    };
+    // 職業: 長剣は司教が装備できない（街なので失敗の SAN は無い）
+    const t = bishopAt(inTown());
+    const sword = createItemInstance(t, { itemId: "long_sword", identified: false, cursed: true });
+    member(t, "c1").inventory.push(sword);
+    check(t, sword, "剣？", 0);
+    // 枠の品が呪われている: 司教の武器が呪いの短剣（迷宮なので失敗の −3 も）
+    const u = bishopAt(inDungeon());
+    member(u, "c5").inventory.push("i14");
+    member(u, "c5").equipment.weapon = cursedDagger(u, true);
+    const second = cursedDagger(u, false);
+    member(u, "c1").inventory.push(second);
+    check(u, second, "短い刃？", 3);
+    // 枠が空で、品は他人の inventory、司教の使用枠が満杯
+    const w = bishopAt(inTown());
+    const c5 = member(w, "c5");
+    c5.equipment.weapon = null;
+    member(w, "c2").inventory.push("i14", ...c5.inventory); // 杖と帰還の糸は c2 へ（実体の参照を保つ）
+    c5.inventory = [];
+    while (c5.inventory.length < data.config.inventory.slotsPerCharacter) c5.inventory.push(createItemInstance(w, { itemId: "herb", identified: true }));
+    const third = cursedDagger(w, false);
+    member(w, "c1").inventory.push(third);
+    check(w, third, "短い刃？", 0);
   });
 
   test("CH-77/IT-66 ユニークを鑑定すると図鑑に記録（foundIn・bestRarity）。2 本目以降は bestRarity だけ良い方に更新し、foundIn は最初のまま。汎用では記録しない", () => {
-    const base = withBishop(inTown());
-    const s = cloneState(base);
+    // M10（CH-77 が確率になった）: 成功率を 100 に固定した data で結果だけを見る。期待する図鑑と語りは変えていない
+    const sure = sureData();
+    const s = bishopAt(inTown());
     const add = (spec: Parameters<typeof createItemInstance>[1]) => {
       const id = createItemInstance(s, spec);
       member(s, "c1").inventory.push(id);
@@ -510,17 +753,17 @@ describe("CH-77 party.identify", () => {
     const c = add({ itemId: "long_sword", uniqueId: "shadowfolk_sword", rarity: "normal", identified: false, foundIn: "d02" });
     const g = add({ itemId: "long_sword", level: 2, rarity: "legendary", identified: false, foundIn: "d01" });
     expect(s.uniqueBook).toEqual({});
-    const r1 = ok(s, { type: "party.identify", memberId: "c5", instanceId: a });
+    const r1 = ok(s, identify("c5", a), sure);
     // IT-11 / IT-12: 鑑定前は「剣？」、鑑定後は「上質な影法師の剣」（ユニークは Lv を出さない）
-    expect(r1.events).toEqual([{ kind: "message", key: "camp.identified", params: { name: "エル", old: "剣？", item: "上質な影法師の剣", rarity: "fine" } }]);
+    expect(messagesOf(r1.events)).toEqual([{ kind: "message", key: "camp.identified", params: { name: "エル", old: "剣？", item: "上質な影法師の剣", rarity: "fine" } }]);
     expect(r1.state.uniqueBook).toEqual({ shadowfolk_sword: { foundIn: "d01", bestRarity: "fine" } });
-    const r2 = ok(r1.state, { type: "party.identify", memberId: "c5", instanceId: b });
+    const r2 = ok(r1.state, identify("c5", b), sure);
     expect(r2.state.uniqueBook).toEqual({ shadowfolk_sword: { foundIn: "d01", bestRarity: "rare" } });
-    const r3 = ok(r2.state, { type: "party.identify", memberId: "c5", instanceId: c });
+    const r3 = ok(r2.state, identify("c5", c), sure);
     expect(r3.state.uniqueBook).toEqual({ shadowfolk_sword: { foundIn: "d01", bestRarity: "rare" } });
-    const r4 = ok(r3.state, { type: "party.identify", memberId: "c5", instanceId: g });
+    const r4 = ok(r3.state, identify("c5", g), sure);
     expect(r4.state.uniqueBook).toEqual(r3.state.uniqueBook);
-    expect(r4.events[0]).toEqual({ kind: "message", key: "camp.identified", params: { name: "エル", old: "剣？", item: "伝説の長剣 +2", rarity: "legendary" } });
+    expect(messagesOf(r4.events)[0]).toEqual({ kind: "message", key: "camp.identified", params: { name: "エル", old: "剣？", item: "伝説の長剣 +2", rarity: "legendary" } });
   });
 });
 

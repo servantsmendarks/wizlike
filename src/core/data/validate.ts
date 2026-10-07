@@ -327,6 +327,22 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       restoreOnTown: B,
     }),
     wipe: F({ reviveHpRatio: N(RATIO), clearStatus: B }),
+    // CH-77（M10）【仮】
+    identify: F({
+      mpCost: I(NON_NEG),
+      base: I(),
+      iqPivot: I(),
+      iqPerPoint: I(NON_NEG),
+      levelStep: I(POS_INT), // 0 除算を防ぐ
+      perLevelStep: I(NON_NEG),
+      rarityPenalty: F(Object.fromEntries(RARITY_IDS.map((k) => [k, I(NON_NEG)]))),
+      uniquePenalty: I(NON_NEG),
+      min: I(PERCENT),
+      max: I(PERCENT),
+      failSanDungeon: I(NON_NEG),
+      possessChance: I(PERCENT),
+      possessSan: I(NON_NEG),
+    }),
     economy: F({
       sellRatio: N(RATIO),
       identifyFeeRatio: N(RATIO), // IT-65【仮】
@@ -417,6 +433,10 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
   const hitMax = numOf(get(c, "combat", "hitMax"));
   if (hitMin !== undefined && hitMax !== undefined && hitMin > hitMax)
     report(ctx, "combat.hitMin", `CB-21: hitMin ${hitMin} > hitMax ${hitMax}`);
+  // CH-77（M10）
+  const idMin = numOf(get(c, "identify", "min"));
+  const idMax = numOf(get(c, "identify", "max"));
+  if (idMin !== undefined && idMax !== undefined && idMin > idMax) report(ctx, "identify.min", `CH-77: min ${idMin} > max ${idMax}`);
 
   // IT-30: 希少度は normal / fine / rare / legendary の順で 4 件。重みの合計は正、個数は 0..3
   const rarities = arrOf(get(c, "items", "rarities"));

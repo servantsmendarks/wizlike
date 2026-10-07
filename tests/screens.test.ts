@@ -158,7 +158,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   // M4 UI-53: 迷宮の道具の候補・押せるか・対象の要否は fieldItemMenu の値だけで決める
   "rules/items": ["fieldItemMenu"],
   // M4.5 UI-53 / TW-03: キャンプと酒場の候補・押せるか・対象の要否は campMenu の値だけで決める。キャンプの top の要約は campSummary
-  "rules/camp": ["campMenu", "campSummary"],
+  // M10 CH-77: 司教の鑑定の成功率と内訳は core の identifyChance の値を描く
+  "rules/camp": ["campMenu", "campSummary", "identifyChance"],
   // M4.5 UI-25 / DG-15: 地図のタップ移動の経路と、自動歩行を続けてよいかは core が決める
   "rules/pathfind": ["planRoute", "routeStepOk"],
   // M5 UI-12: パーティ欄の SAN の段は core の sanStage で決める（境の比率を表示層で持たない）

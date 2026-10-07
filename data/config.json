@@ -36,6 +36,11 @@
     "restoreOnTown": true
   },
   "wipe": { "reviveHpRatio": 0.5, "clearStatus": true },
+  "identify": {
+    "mpCost": 1, "base": 60, "iqPivot": 10, "iqPerPoint": 3, "levelStep": 10, "perLevelStep": 10,
+    "rarityPenalty": { "normal": 0, "fine": 10, "rare": 20, "legendary": 30 }, "uniquePenalty": 15,
+    "min": 5, "max": 95, "failSanDungeon": 3, "possessChance": 50, "possessSan": 10
+  },
   "economy": {
     "sellRatio": 0.5, "identifyFeeRatio": 0.5, "identifyFeeMin": 10,
     "templeSuccessBase": 60, "templeSuccessPerVit": 2, "templeSuccessMax": 95,

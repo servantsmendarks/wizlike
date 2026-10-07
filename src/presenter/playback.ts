@@ -143,8 +143,10 @@ export const WIPE_DICE_KEY = "dice.wipe";
 export const RESTRAIN_DICE_KEY = "dice.restrain";
 /** UI-40 / TW-17（M7）: 強化の判定の dice の label のキー。制止の箱と同じく、拍の外で出たら続く message を 1 件出した後でタップを 1 回待つ */
 export const UPGRADE_DICE_KEY = "dice.upgrade";
+/** UI-40 / CH-77（M10）: 司教の鑑定の判定の dice の label のキー。強化の箱と同じく、拍の外で出たら続く message を 1 件出した後でタップを 1 回待つ */
+export const IDENTIFY_DICE_KEY = "dice.identify";
 /** 拍の外で出たらタップを 1 回待つ箱の label のキー */
-const HOLD_DICE_KEYS: readonly string[] = [RESTRAIN_DICE_KEY, UPGRADE_DICE_KEY];
+const HOLD_DICE_KEYS: readonly string[] = [RESTRAIN_DICE_KEY, UPGRADE_DICE_KEY, IDENTIFY_DICE_KEY];
 
 /**
  * UI-47（M8.5。純粋）: 添字 i の screen{town} の前で、最後の screen / wipe / beat より後にある message の整形済みの文。

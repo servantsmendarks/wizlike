@@ -1,11 +1,12 @@
 // キャンプと酒場のコマンド（MG-44 dungeon.cast、CH-03 party.reorder、CH-76 party.equip / party.unequip、CH-77 party.identify）と、
 // 表示層向けの問い合わせ campMenu（UI-53 / TW-03）・campSummary（UI-53）。
 // 受け付ける場所は campPlace が決める（街、または迷宮の戦闘外かつ保留なし。M5.5 から dungeon.cast も街で受け付ける。帰還は迷宮だけ）。
-// 乱数を使うのは dungeon.cast の heal（対象ごとに effect.dice を 1 回）と resurrect（randInt(1, 100) を 1 回）だけ。
+// 乱数を使うのは dungeon.cast の heal（対象ごとに effect.dice を 1 回）と resurrect（randInt(1, 100) を 1 回）、party.identify（d100 と、失敗した呪いの品の取り憑きの chance。CH-77）だけ。
 // town.ts からはこのファイルを import しない（循環を作らない）。
 import type { EquipmentBase, EquipSlot, GameData, Spell } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
-import { classOf, dungeonOf, findBase, findItem, identifyInstance, itemDisplayName, memberById, moraleOf, spellOf } from "../state";
+import { chance, randInt } from "../rng";
+import { classOf, dungeonOf, findBase, findItem, identifyInstance, itemDisplayName, memberById, moraleOf, slotsUsed, spellOf } from "../state";
 import type {
   CampEquipCandidate,
   CampMenu,
@@ -13,6 +14,7 @@ import type {
   CampPlace,
   CampSpellView,
   CampTargetBlock,
+  DiceRow,
   Character,
   EquipBlock,
   GameState,
@@ -21,6 +23,7 @@ import type {
 import { canAct } from "./combat-calc";
 import { applyAllyEffect } from "./effects";
 import { clampToMax, equipStats, hpMaxOf, spellCost } from "./equip-stats";
+import { loseSan } from "./san";
 import { returnToTown, rollResurrect } from "./town";
 
 /** キャンプのコマンドを受け付ける場所。街（dive null）か迷宮の戦闘外。どちらも保留なしのときだけ。それ以外は null */
@@ -285,8 +288,8 @@ function ownerOf(state: GameState, instanceId: string): Character | null {
 }
 
 /**
- * party.identify を受け付けない理由。順: wrong screen → no such member → cannot identify → cannot act → no such item →
- * already identified
+ * party.identify を受け付けない理由。順: wrong screen → no such member → cannot identify → cannot act → no mp → no such item →
+ * already identified（M10: no mp を足した。回数の制限は MP だけ）
  */
 export function checkIdentify(state: GameState, data: GameData, memberId: unknown, instanceId: unknown): string | null {
   if (campPlace(state) === null) return "wrong screen";
@@ -294,6 +297,7 @@ export function checkIdentify(state: GameState, data: GameData, memberId: unknow
   if (ch === null) return "no such member";
   if (!canIdentify(ch, data)) return "cannot identify";
   if (!canAct(ch)) return "cannot act";
+  if (ch.mp < data.config.identify.mpCost) return "no mp";
   if (typeof instanceId !== "string" || ownerOf(state, instanceId) === null || state.items[instanceId] === undefined) {
     return "no such item";
   }
@@ -301,21 +305,137 @@ export function checkIdentify(state: GameState, data: GameData, memberId: unknow
   return null;
 }
 
+/** 符号付きの数（"+6" / "-10" / "0"） */
+function signed(n: number): string {
+  return n > 0 ? `+${n}` : `${n}`;
+}
+
+/** 内訳の 1 行（UI-40 の補正の行: base が値で目が無い。値は label の params の v にも入れる） */
+function identifyRow(key: string, value: number, v: string = signed(value)): DiceRow {
+  return { label: { key, params: { v } }, base: value, dice: [], total: value };
+}
+
 /**
- * CH-77。checkIdentify が null を返した前提。確定・無料・乱数なし。
- * identified = true（ユニークなら図鑑に記録。IT-66）→ message camp.identified{name, old, item, rarity} → 呪われていれば message camp.identifiedCursed{item}
+ * CH-77（M10）/ UI-35: 司教の鑑定の成功率と内訳（出目の行を除く）。純粋。
+ * memberId がいない・鑑定できる職業でない・instanceId の実体が無いなら null（受け付けの可否は checkIdentify が決める）。
+ * rate = base + (知恵（実効。CH-13）− iqPivot) × iqPerPoint + perLevelStep × floor(レベル / levelStep) − rarityPenalty[希少度]
+ * −（ユニークなら uniquePenalty）を min〜max に収めた値。
+ * rows の順: 基本（常に）→ 知恵 → レベル → 希少度 → ユニーク → 上下限（クランプが効いたとき）。基本以外は値が 0 の行を出さない
+ */
+export function identifyChance(
+  state: GameState,
+  data: GameData,
+  memberId: string,
+  instanceId: string,
+): { rate: number; rows: DiceRow[] } | null {
+  const ch = memberById(state, memberId);
+  const inst = state.items[instanceId];
+  if (ch === null || inst === undefined || !canIdentify(ch, data)) return null;
+  const c = data.config.identify;
+  const iq = (equipStats(state, data, ch).stats.iq - c.iqPivot) * c.iqPerPoint;
+  const level = c.perLevelStep * Math.floor(ch.level / c.levelStep);
+  const rarity = -c.rarityPenalty[inst.rarity];
+  const unique = inst.uniqueId !== null ? -c.uniquePenalty : 0;
+  const raw = c.base + iq + level + rarity + unique;
+  const rate = Math.min(c.max, Math.max(c.min, raw));
+  const rows: DiceRow[] = [identifyRow("identify.row.base", c.base, `${c.base}`)];
+  const parts: Array<[string, number]> = [
+    ["identify.row.iq", iq],
+    ["identify.row.level", level],
+    ["identify.row.rarity", rarity],
+    ["identify.row.unique", unique],
+    ["identify.row.clamp", rate - raw],
+  ];
+  for (const [key, v] of parts) if (v !== 0) rows.push(identifyRow(key, v));
+  return { rate, rows };
+}
+
+/**
+ * CH-77（M10）: 取り憑いた品を司教に強制装備できるか。品が装備品で、司教の職業が装備でき（CH-75）、
+ * その枠の今の品が呪われておらず、枠が空のときは品が司教の inventory にあるか司教の使用枠（CH-71）に空きがあること。
+ * 未鑑定（CH-72）は問わない（取り憑きは CH-76 を通らない別の経路）
+ */
+function canForceEquip(state: GameState, data: GameData, bishop: Character, owner: Character, instanceId: string): boolean {
+  const inst = state.items[instanceId];
+  if (inst === undefined) return false;
+  const base = asEquip(data, inst.itemId);
+  if (base === null) return false;
+  if (base.classes.length > 0 && !base.classes.includes(bishop.classId)) return false;
+  const old = bishop.equipment[base.slot];
+  if (old !== null) return !isCursed(state, old);
+  return owner.id === bishop.id || slotsUsed(bishop) < data.config.inventory.slotsPerCharacter;
+}
+
+/**
+ * CH-77（M10）: 取り憑いた品を司教の枠に入れる（未鑑定のまま）。枠の旧品は品があった持ち主の inventory の同じ位置へ入れ、
+ * 旧品が無ければその位置から取り除く → message camp.possessed{name, item} → camp.cursed{item} → clampToMax（CH-14）。
+ * canForceEquip が真の前提
+ */
+function forceEquip(ctx: RuleContext, bishop: Character, owner: Character, instanceId: string): void {
+  const { state, data } = ctx;
+  const inst = state.items[instanceId]!;
+  const slot = equipSlotOf(data, inst.itemId)!;
+  const i = owner.inventory.indexOf(instanceId);
+  if (i < 0) throw new Error(`forceEquip: ${instanceId} not in ${owner.id}`);
+  const old = bishop.equipment[slot];
+  if (old === null) owner.inventory.splice(i, 1);
+  else owner.inventory[i] = old;
+  bishop.equipment[slot] = instanceId;
+  const item = itemDisplayName(state, data, instanceId);
+  ctx.events.push({ kind: "message", key: "camp.possessed", params: { name: bishop.name, item } });
+  ctx.events.push({ kind: "message", key: "camp.cursed", params: { item } });
+  clampToMax(ctx, bishop);
+}
+
+/**
+ * CH-77（M10）。checkIdentify が null を返した前提。
+ * MP を mpCost 引く（mpChanged）→ randInt(1, 100) を 1 回 → dice（label dice.identify{item: 鑑定前の表示名}、内訳の行（identifyChance）
+ * と最後に出目の行 identify.row.roll（base null）、基準 identify.rule{rate}、結果 dice.identify.ok / ng）。出目 ≤ rate で成功。
+ * 成功: identified = true（ユニークなら図鑑。IT-66）→ message camp.identified{name, old, item, rarity} → 呪われていれば camp.identifiedCursed{item}。
+ * 失敗: message camp.identifyFailed{name, item} → 迷宮内（dive が null でない）なら司教の SAN −failSanDungeon（tags 空）→
+ * 品が呪われていれば chance(possessChance) を 1 回。当たれば canForceEquip なら forceEquip、そうでなければ
+ * message camp.possessedSan{name, item} → 司教の SAN −possessSan（tags 空）。
+ * 乱数の順: d100 →（失敗かつ呪いのときだけ）chance
  */
 export function identifyItem(ctx: RuleContext, memberId: string, instanceId: string): void {
   const { state, data } = ctx;
   const ch = memberById(state, memberId);
   const inst = state.items[instanceId];
-  if (ch === null || inst === undefined) throw new Error(`identifyItem: bad ${memberId} / ${instanceId}`);
+  const owner = ownerOf(state, instanceId);
+  const chanceOf = identifyChance(state, data, memberId, instanceId);
+  if (ch === null || inst === undefined || owner === null || chanceOf === null) {
+    throw new Error(`identifyItem: bad ${memberId} / ${instanceId}`);
+  }
+  const c = data.config.identify;
+  ch.mp -= c.mpCost;
+  ctx.events.push({ kind: "mpChanged", id: ch.id, delta: -c.mpCost, mp: ch.mp });
   const old = itemDisplayName(state, data, instanceId);
-  identifyInstance(state, instanceId); // IT-66: ユニークなら図鑑に記録
-  const item = itemDisplayName(state, data, instanceId);
-  // UI-66（M8）: rarity は文には出さない（音の契機。伝説の品の鑑定で rare）
-  ctx.events.push({ kind: "message", key: "camp.identified", params: { name: ch.name, old, item, rarity: inst.rarity } });
-  if (inst.cursed) ctx.events.push({ kind: "message", key: "camp.identifiedCursed", params: { item } });
+  const roll = randInt(state.rng, 1, 100);
+  const success = roll <= chanceOf.rate;
+  ctx.events.push({
+    kind: "dice",
+    label: { key: "dice.identify", params: { item: old } },
+    rows: [...chanceOf.rows, { label: { key: "identify.row.roll" }, base: null, dice: [roll], total: roll }],
+    rule: { key: "identify.rule", params: { rate: chanceOf.rate } },
+    result: { key: success ? "dice.identify.ok" : "dice.identify.ng" },
+  });
+  if (success) {
+    identifyInstance(state, instanceId); // IT-66: ユニークなら図鑑に記録
+    const item = itemDisplayName(state, data, instanceId);
+    // UI-66（M8）: rarity は文には出さない（音の契機。伝説の品の鑑定で rare）
+    ctx.events.push({ kind: "message", key: "camp.identified", params: { name: ch.name, old, item, rarity: inst.rarity } });
+    if (inst.cursed) ctx.events.push({ kind: "message", key: "camp.identifiedCursed", params: { item } });
+    return;
+  }
+  ctx.events.push({ kind: "message", key: "camp.identifyFailed", params: { name: ch.name, item: old } });
+  if (state.dive !== null) loseSan(ctx, ch, c.failSanDungeon);
+  if (!inst.cursed || !chance(state.rng, c.possessChance)) return;
+  if (canForceEquip(state, data, ch, owner, instanceId)) {
+    forceEquip(ctx, ch, owner, instanceId);
+    return;
+  }
+  ctx.events.push({ kind: "message", key: "camp.possessedSan", params: { name: ch.name, item: old } });
+  loseSan(ctx, ch, c.possessSan);
 }
 
 // ---------------------------------------------------------------------------

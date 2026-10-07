@@ -74,7 +74,7 @@ M7 で、装備品の分類（汎用 / ユニーク）・実体の形・レベ�
 
 - CH-70 装備スロットは 6: 武器 `weapon`、防具 `armor`、盾 `shield`、兜 `helm`、小手 `gauntlet`、装飾 `accessory`。
 - CH-71 所持枠は 8（装備中を含む）【仮】。`Character.inventory` は装備中の品を含まない。使用枠 = 装備数 + inventory の数。
-- CH-72 未鑑定アイテムは `unidentifiedName` で表示され、装備できない（CH-76）。鑑定は司教（無料。CH-77）か店（有料）。M7: 表示は IT-12、店の鑑定は IT-65（鑑定料は見た目の品種の売値から決まる。2026-10-05）。未鑑定のままでも店で見た目の品種の売値で売れる（IT-61）。「装備できない」は items.md §11 の Q2【衝突】で代替案（未鑑定のまま装備できる）を諮っている。
+- CH-72 未鑑定アイテムは `unidentifiedName` で表示され、装備できない（CH-76。CH-77 の取り憑きは例外）。鑑定は司教（CH-77。MP を使い、確率で成功する。M10）か店（IT-65。料金を払い、必ず成功する）。M7: 表示は IT-12、店の鑑定は IT-65（鑑定料は見た目の品種の売値から決まる。2026-10-05）。未鑑定のままでも店で見た目の品種の売値で売れる（IT-61）。「装備できない」は items.md §11 の Q2【衝突】で代替案（未鑑定のまま装備できる）を諮っている。
 - CH-73 呪われたアイテムは装備すると外せない。寺院の解呪（TW-07）で外せる。呪いはアイテムの `cursed` で、未鑑定のうちは見えない（表示で呪いと示さないだけで、外せないことは鑑定と関係ない。CH-76）。M7: 呪いは実体の `cursed`（IT-10 / IT-32。ドロップの判定で付き、負のオプションを 1 つ持つ）で、`items[].cursed` は廃止する。
 - CH-74 後衛が攻撃できるのは `reach` が `long` か `ranged`（IT-25。2026-10-06 に `ranged: true` から改めた）の武器を装備しているときだけ（CB-13）。M7: 固有スキル `reachFromBack`（IT-40）の品も同じ扱い。
 - CH-75 職業ごとの装備制限は `items[].classes`（空なら全職業可）。M7: 装備のベース `equipment-bases.json` の `classes`（ユニークはベースのものを引き継ぐ。IT-03）。
@@ -82,7 +82,15 @@ M7 で、装備品の分類（汎用 / ユニーク）・実体の形・レベ�
   - `party.equip` の判定順: wrong screen → no such member → cannot act → item not in inventory（本人の inventory に無い。装備中の品も含まない）→ not equipment（`items[].type` が装備スロットでない）→ not identified（CH-72）→ class cannot equip（CH-75）→ slot cursed（その枠の今の品が `cursed`）。受け付けたら、inventory の新しい品の位置に旧品を入れ（旧品が無ければ取り除く）、枠に新しい品を入れる → `camp.equipped{name, item}`。新しい品が呪われていれば続けて `camp.cursed{item}`。所持枠（CH-71）と潜行台帳は変わらない。
   - `party.unequip` の判定順: wrong screen → no such member → cannot act → bad slot → slot empty → cursed（`items[].cursed` の品は鑑定と関係なく外せない）。受け付けたら枠を空にして inventory の末尾に入れる → `camp.unequipped{name, item}`。
   - どちらも乱数は使わない。
-- CH-77 鑑定（M4.5）: `party.identify {memberId, instanceId}`。鑑定する者は `classes[].abilities` に `identify` を持つ職業（司教）。対象はパーティの誰かの inventory にある未鑑定品（装備中は対象外）。受け付けは街と、迷宮の戦闘外かつ保留なし。判定順: wrong screen → no such member → cannot identify → cannot act → no such item → already identified。成功は確定・無料・乱数なしで、`identified` を真にして `camp.identified{name, old, item, rarity}`（rarity は品の希少度。文には出さず、音の契機に使う。UI-66。M8）、呪われていれば続けて `camp.identifiedCursed{item}`。M7: ユニークなら図鑑（IT-66）に記録する。`item` は IT-11 の表示名。
+- CH-77 鑑定（M4.5。M10 で MP・確率・取り憑きに書き換え。2026-10-07 ユーザー指示）: `party.identify {memberId, instanceId}`。鑑定する者は `classes[].abilities` に `identify` を持つ職業（司教）。対象はパーティの誰かの inventory にある未鑑定品（装備中は対象外）。受け付けは街と、迷宮の戦闘外かつ保留なし。判定順: wrong screen → no such member → cannot identify → cannot act → no mp（MP が `config.identify.mpCost` 未満）→ no such item → already identified。回数の制限は MP だけ（同じ品を何度でも試せる）。
+  - 処理: MP を `mpCost`（1【仮】）減らす（`mpChanged`）→ d100（`randInt(1, 100)`）を 1 回 → 判定の箱（UI-40）に `dice` を出す → 出目 ≤ 成功率なら成功。
+  - 成功率（`identifyChance`。UI-35 の問い合わせ）= `base`（60【仮】）+ (知恵 − `iqPivot`（10【仮】）) × `iqPerPoint`（3【仮】）+ `perLevelStep`（10【仮】）× floor(レベル / `levelStep`（10【仮】）) − `rarityPenalty`[希少度]（通常 0 / 上質 10 / 希少 20 / 伝説 30【仮】）−（ユニークなら `uniquePenalty`（15【仮】））を `min`（5【仮】）〜`max`（95【仮】）に収めた値。知恵は実効の値（CH-13）。鍵はすべて `config.identify`。
+  - 判定の箱: label `dice.identify{item: 鑑定前の表示名}`。行は内訳（基本（常に）→ 知恵 → レベル → 希少度 → ユニーク → 上下限（クランプが効いたとき）。基本以外は 0 の行を出さない。値は label の params `v` に符号付きで入れ、`base` が値で `dice` が空の補正の行）と、最後に出目の行 `identify.row.roll`（base null・dice [出目]）。基準 `identify.rule{rate}`、結果 `dice.identify.ok` / `dice.identify.ng`。拍の外で出たら続く語りの後でタップを待つ（UI-40 の強化の箱と同じ）。
+  - 成功: `identified` を真にして `camp.identified{name, old, item, rarity}`（rarity は品の希少度。文には出さず、音の契機に使う。UI-66。M8）、呪われていれば続けて `camp.identifiedCursed{item}`。M7: ユニークなら図鑑（IT-66）に記録する。`item` は IT-11 の表示名。
+  - 失敗: `camp.identifyFailed{name, item}`（item は未鑑定の表示名）。迷宮内（`dive` が null でない）なら司教の SAN を `failSanDungeon`（3【仮】）減らす（CH-51。タグなし）。街では減らない。品が呪われていれば続けて `chance(possessChance)`（50【仮】）を 1 回引き、当たれば品が司教に取り憑く（街でも迷宮でも）:
+    - 司教が装備できる品（装備品で、職業が装備でき（CH-75）、その枠の今の品が呪われておらず、枠が空なら品が司教の inventory にあるか司教の使用枠（CH-71）に空きがある）なら強制装備: 品は未鑑定のまま枠に入り、枠の旧品は品があった持ち主の inventory の同じ位置へ入る（旧品が無ければその位置から取り除く）→ `camp.possessed{name, item}` → `camp.cursed{item}` → 実効の最大値を超えた HP・MP・SAN を止める（CH-14）。取り憑いた品は CH-73 のとおり外せず、装備中なので鑑定の対象にもならない（解呪 TW-07 で失う）。
+    - 装備できない品なら品は元の場所のまま `camp.possessedSan{name, item}` → 司教の SAN を `possessSan`（10【仮】）減らす（タグなし）。
+  - 乱数の順: d100 →（失敗かつ品が呪われているときだけ）chance。呪われていない品の失敗と成功では chance を引かない。
 
 ## 9. データ
 
