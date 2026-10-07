@@ -344,7 +344,7 @@ M2〜M5 の実機確認の結果（`docs/decisions.md` の 2026-10-04 の行）�
     - U-1: 危険度 4（転移・呪詛）は d03 が placeholder のため普通の遊びでは出ない。実機の確認は debug（`debug.chest`）で行う。
   - 4 開封の流れ（本家式。CB-63〜CB-66）: 調べる（人を選ぶ）／解除（罠の名前を一覧から指定）／開ける／放っておく。調べる成功率 = 40 + 盗賊 30 + (素早さ−10)×2 + (運−10)×2 + 慎重の trapDetect − 危険度×10（5〜95）【仮】。失敗時は 50% で別の罠の名前、10% で作動。解除の基礎は 50。開けると罠は必ず作動し、その後に中身（転移・警報を除く）。
     - U-2: (1)。調べるの判定の箱は内訳だけ出し、危険度・出目・結果は伏せる。結果の文（作動した・何も起きない・解除した等）は箱の後に通常の語りとして出す。解除の箱は全部出す。
-    - U-4: 名前が違えば必ず作動。名前が合っていて判定に失敗したら `config.chest.disarm.failTriggerChance` 50%【仮】で作動し、作動しなければ再挑戦できる。
+    - U-4: 名前が違えば必ず作動。名前が合っていて判定に失敗したら `config.chest.disarmFailTrigger` 50%【仮】で作動し、作動しなければ再挑戦できる。
     - U-3: 床の転移罠（DG-20 の未実装）は実装しない。
     - U-6: 1 つの再生で衝動の転移・警報が続く表示は、`screen{dungeon}` に位置と向き（`at`）を載せて playback を直す。
   - 5 中身（IT-53 / IT-56）: 既存のドロップ表から。希少度の抽選に「危険度 × 15%【仮】で 1 段」の上振れ。強欲の chestQuality はその上に乗る。
@@ -359,7 +359,7 @@ M2〜M5 の実機確認の結果（`docs/decisions.md` の 2026-10-04 の行）�
   - #0 `docs(M11): milestones に M11 宝箱と罠の節を足し、計測(M11 前) を記録する`
   - #1 `core(M11): EV-04 / EV-10〜15 衝動判定を確率型に（impulseClasses を含む）`（ev-prob。追加の指示 A・B。ボットにイベントごとの衝動の数を足し、balance の前後を decisions に）
   - #2 `core(M11)`: 切り出しのみ（挙動は不変。tryInflictStatus・rollRestrain の export・startRandomEncounter の origin）
-  - #3 `core(M11)`: データと検証（chest-traps.json・config.chest（U-4 の failTriggerChance と宝箱の impulse の spec を含む）・dungeons の 2 欄・chestTrapChance の削除・strings）
+  - #3 `core(M11)`: データと検証（chest-traps.json・config.chest（U-4 の `disarmFailTrigger` と宝箱の impulse の spec を含む）・dungeons の 2 欄・chestTrapChance の削除・strings）
   - #4 `core(M11)`: 箱の状態と開封の流れ（ドロップの経路。schemaVersion 6、ChestState（rivalry の欄は null で持つ）、chest.* のコマンド、U-2・U-4、IT-56、screen の at、ボットの最小の resolveChest）
   - #4b `presenter(M11)`: 最小の操作（[開ける][放っておく]、resume の chest.prompt、playback の at）
   - #5 `core(M11)`: 警報と転移（CB-67・CB-02 の改・DG-25）
