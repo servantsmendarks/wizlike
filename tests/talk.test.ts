@@ -570,7 +570,7 @@ class FakeEl {
   children: FakeEl[] = [];
   attrs: Record<string, string> = {};
   scrollTop = 0;
-  listeners = new Map<string, Array<() => void>>();
+  listeners = new Map<string, Array<(e?: unknown) => void>>();
   setAttribute(k: string, v: string): void {
     this.attrs[k] = v;
   }
@@ -578,11 +578,11 @@ class FakeEl {
     this.children.push(c);
     return c;
   }
-  addEventListener(type: string, f: () => void): void {
+  addEventListener(type: string, f: (e?: unknown) => void): void {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), f]);
   }
-  emit(type: string): void {
-    for (const f of this.listeners.get(type) ?? []) f();
+  emit(type: string, e?: unknown): void {
+    for (const f of this.listeners.get(type) ?? []) f(e);
   }
   animate(): { finished: Promise<void>; cancel(): void } {
     return { finished: Promise.resolve(), cancel() {} };
@@ -703,5 +703,39 @@ describe("UI-47 会話の箱（DOM）", () => {
     expect(marks()).toEqual({ up: "hidden", down: "hidden" });
     for (const t of nums(25)) await box.say(t, true);
     expect({ top: body.scrollTop, ...marks() }).toEqual({ top: 30, up: "visible", down: "hidden" });
+  });
+
+  // レビュー（2026-10-07）: 追従をやめる判断を scroll（後から届く）だけで行うと、その前に来た文字送りの送りが読み返しを下端へ引き戻す
+  test("UI-47（M10.5 追補）文字送りの途中で指が触れたら、scroll が届く前の送りでも下端へ引き戻さない。動かさずに離せば（タップ）追従に戻る。ホイールを上へ回しても引き戻さない", async () => {
+    const { box, body, marks } = make();
+    for (const t of nums(30)) await box.say(t, true);
+    expect(body.scrollTop).toBe(80);
+    // 指が触れて上へ動かした（scroll はまだ届かない）ところに次の文
+    body.emit("pointerdown");
+    body.emit("touchstart");
+    body.scrollTop = 40;
+    await box.say("次", true);
+    expect(body.scrollTop).toBe(40);
+    // 遅れて scroll が届き、指を離しても（動いていて下端でない）追従しない
+    body.emit("scroll");
+    body.emit("pointerup");
+    body.emit("touchend");
+    await box.say("また", true);
+    expect({ top: body.scrollTop, ...marks() }).toEqual({ top: 40, up: "visible", down: "visible" });
+    // 下端（32 行 − 22 = 100）へ戻して追従に戻ってから、動かさずに触れて離す（タップ）間に文が来ても、離せば下端へ
+    body.scrollTop = 100;
+    body.emit("scroll");
+    body.emit("pointerdown");
+    await box.say("触れている間", true);
+    expect(body.scrollTop).toBe(100);
+    body.emit("pointerup");
+    expect({ top: body.scrollTop, ...marks() }).toEqual({ top: 110, up: "visible", down: "hidden" });
+    await box.say("追従", true);
+    expect(body.scrollTop).toBe(120);
+    // ホイールを上へ回した時点でやめる（scroll が届く前の送りでも引き戻さない）
+    body.emit("wheel", { deltaY: -10 });
+    body.scrollTop = 90;
+    await box.say("ホイール", true);
+    expect(body.scrollTop).toBe(90);
   });
 });

@@ -362,6 +362,8 @@ export function createTalkBox(o: {
   const metrics = () => ({ scrollTop: body.scrollTop || 0, scrollHeight: body.scrollHeight || 0, clientHeight: body.clientHeight || 0 });
   /** toEnd で送った位置（scroll は後から届くので、その間に文が伸びても自分の送りを利用者のスクロールと取り違えない） */
   let autoTop = -1;
+  /** 指が触れた時点の位置と追従（離すまで。下の onGrab） */
+  let grab: { top: number; follow: boolean } | null = null;
   /** 最新の行（下端）を見せる */
   const toEnd = (): void => {
     const m = metrics();
@@ -376,6 +378,11 @@ export function createTalkBox(o: {
     pos: talkMarkPos(rect),
     // 利用者のスクロールで下端を離れたら追従をやめ、下端に戻ったら追従する（toEnd の送りの scroll は追従のまま）
     onScroll: () => {
+      // 指が触れている間は、遅れて届いた送りの scroll でも追従に戻さない（離したときに決める）
+      if (grab !== null) {
+        follow = false;
+        return;
+      }
       if (autoTop >= 0 && Math.abs((body.scrollTop || 0) - autoTop) <= 1) {
         follow = true;
         return;
@@ -384,6 +391,42 @@ export function createTalkBox(o: {
       follow = scrolledToEnd(metrics());
     },
   });
+
+  /**
+   * UI-47（M10.5 追補。レビュー）: 指（ポインタ）が文字領域に触れた時点で追従をやめる（scroll は後から届くので、それを待つと
+   * その間の文字送りの送りが利用者の読み返しを下端へ引き戻す）。離したときに、触れてから動いていなければ触れる前の追従に戻し
+   * （タップ）、動いていれば下端にいるときだけ追従に戻す。ホイールは上へ回したときだけやめる（下端に戻れば onScroll で戻る）
+   */
+  const onGrab = (): void => {
+    if (grab === null) grab = { top: body.scrollTop || 0, follow };
+    follow = false;
+    autoTop = -1;
+  };
+  const onRelease = (): void => {
+    if (grab === null) return;
+    const g = grab;
+    grab = null;
+    const still = Math.abs((body.scrollTop || 0) - g.top) <= 1;
+    follow = still ? g.follow : scrolledToEnd(metrics());
+    if (follow) toEnd();
+    marks.refresh();
+  };
+  body.addEventListener("pointerdown", onGrab);
+  body.addEventListener("touchstart", onGrab, { passive: true });
+  // pointercancel（ブラウザがパンを引き取った）の後も touchend は届くので、離したときの判定は pointerup と touchend
+  body.addEventListener("pointerup", onRelease);
+  body.addEventListener("touchend", onRelease);
+  body.addEventListener("touchcancel", onRelease);
+  body.addEventListener(
+    "wheel",
+    (e: WheelEvent) => {
+      if (e.deltaY < 0 && (body.scrollTop || 0) > 0) {
+        follow = false;
+        autoTop = -1;
+      }
+    },
+    { passive: true },
+  );
 
   /** 矩形を当てる */
   const place = (): void => {
@@ -414,7 +457,10 @@ export function createTalkBox(o: {
     sink: {
       open(on: boolean): void {
         el.style.display = on ? "" : "none";
-        if (!on) follow = true;
+        if (!on) {
+          follow = true;
+          grab = null;
+        }
         marks.refresh();
       },
       text(s: string): void {

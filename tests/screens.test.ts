@@ -275,8 +275,9 @@ describe("入力と Command", () => {
     for (const [file, src] of Object.entries(presenterRaw)) {
       const code = stripComments(src);
       expect(code, file).not.toMatch(/createGhostClickGuard|GHOST_CLICK_MS|play-swipe|setSwipeEnabled/);
-      // 押せるものを pointerdown で直接反応させない（ステージ 1 か所で受ける）。一覧の注目（onFocus）だけは例外
-      if (file !== "../src/presenter/input/tap.ts" && file !== "../src/presenter/views/controls.ts") {
+      // 押せるものを pointerdown で直接反応させない（ステージ 1 か所で受ける）。一覧の注目（onFocus）だけは例外。
+      // M10.5 追補（2026-10-07 レビュー）: 会話の箱（talk.ts）が文字領域で指が触れた・離したを受けて追従を止める・戻すのも例外（押す操作ではない）
+      if (file !== "../src/presenter/input/tap.ts" && file !== "../src/presenter/views/controls.ts" && file !== "../src/presenter/views/talk.ts") {
         expect(code, file).not.toMatch(/addEventListener\(\s*["'`]pointer(?:down|up)["'`]/);
       }
     }
