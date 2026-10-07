@@ -6,7 +6,7 @@
 // 旧い段（唱える者・使う人・誰の装備・鑑定する者の名前の枠）のテストは消し、同じ中身をキャラクター画面の下の段で確かめる形に書き直した。
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { execute } from "../src/core/engine";
-import { campMenu, campSummary } from "../src/core/rules/camp";
+import { campMenu, campSummary, identifyChance } from "../src/core/rules/camp";
 import { fieldItemMenu } from "../src/core/rules/items";
 import { cloneState, createItemInstance } from "../src/core/state";
 import type { Character, Command, GameState } from "../src/core/types";
@@ -48,7 +48,7 @@ const inTown = (patches: Record<string, Partial<Character>> = {}) => patched(new
 function input(s: GameState): CampInput {
   const menu = campMenu(s, data);
   if (menu === null) throw new Error("no camp menu");
-  return { menu, items: fieldItemMenu(s, data), summary: campSummary(s, data) };
+  return { menu, items: fieldItemMenu(s, data), summary: campSummary(s, data), identifyMpCost: data.config.identify.mpCost };
 }
 
 /** 送った Command を core が受け付けること */
@@ -589,15 +589,18 @@ describe("CH-79/UI-59 捨てる", () => {
 });
 
 describe("CH-77/UI-59 鑑定（キャラクター画面の下）", () => {
-  test("CH-77/UI-59 品の一覧は「{owner}: {name}」（パーティ全員の未鑑定品）。送ったら同じ段。品が無ければ「鑑定する物がない」（dim）", () => {
+  // M10 §6: 行に成功率（core の identifyRates）、見出しに 1 回の MP（config.identify.mpCost）を足した（旧「{owner}: {name}」・「何を鑑定する？」）
+  test("CH-77/UI-59 品の一覧は「{owner}: {name}　{rate}%」（パーティ全員の未鑑定品。rate は core の identifyChance）。見出しは 1 回の MP。送ったら同じ段。品が無ければ「鑑定する物がない」（dim）", () => {
     const s = inDungeon({ c5: { classId: "bishop", mp: 5 } });
     const p: CampPage = { kind: "identify", memberId: "c5" };
     expect(rows(campEntries("camp", p, input(s), S))).toEqual([{ label: "鑑定する物がない", disabled: true, choice: { kind: "none" } }, cancel]);
     const id = cursedDagger(s, false);
     s.party[0]!.inventory.push(id);
     const m = input(s);
-    expect(campHeader(p, m, S)).toBe("何を鑑定する？");
-    expect(rows(campEntries("camp", p, m, S))).toEqual([{ label: "アルド: 短い刃？", disabled: false, choice: { kind: "identifyItem", instanceId: id } }, cancel]);
+    expect(campHeader(p, m, S)).toBe(`何を鑑定する？（1 回 MP ${data.config.identify.mpCost}）`);
+    // エル（知恵 16・Lv1）: 基本 60 + (16 − 10) × 3 = 78。品は通常の希少度で補正なし
+    expect(identifyChance(s, data, "c5", id)?.rate).toBe(78);
+    expect(rows(campEntries("camp", p, m, S))).toEqual([{ label: "アルド: 短い刃？　78%", disabled: false, choice: { kind: "identifyItem", instanceId: id } }, cancel]);
     const r = campStep("camp", p, m, { kind: "identifyItem", instanceId: id });
     expect(r).toEqual({ kind: "send", command: { type: "party.identify", memberId: "c5", instanceId: id }, after: p });
     if (r.kind !== "send") throw new Error("not send");
@@ -605,6 +608,30 @@ describe("CH-77/UI-59 鑑定（キャラクター画面の下）", () => {
     // 鑑定できない職業の者の鑑定の段はキャラクター画面へ直す
     expect(campRepair("camp", { kind: "identify", memberId: "c1" }, m)).toEqual(character("c1"));
     expect(campRepair("camp", p, m)).toBe(p);
+  });
+
+  test("CH-77/UI-59 MP が足りない間・動けない間は品の行が dim で、押すと core の identifyBlock の理由を語る（可否は canIdentifyNow だけ）。段はそのまま", () => {
+    const s = inDungeon({ c5: { classId: "bishop", mp: 0 } });
+    const id = cursedDagger(s, false);
+    s.party[0]!.inventory.push(id);
+    const p: CampPage = { kind: "identify", memberId: "c5" };
+    const m = input(s);
+    const x = m.menu.members.find((y) => y.id === "c5")!;
+    expect([x.canIdentifyNow, x.identifyBlock]).toEqual([false, "noMp"]);
+    expect(rows(campEntries("camp", p, m, S))).toEqual([
+      { label: "アルド: 短い刃？　78%", disabled: true, choice: { kind: "identifyItem", instanceId: id }, reason: "エルは MP が足りない。" },
+      cancel,
+    ]);
+    expect(campRepair("camp", p, m)).toBe(p);
+    // 1 回鑑定して MP が尽きたら、取り直した値で dim になる
+    const t = inDungeon({ c5: { classId: "bishop", mp: data.config.identify.mpCost } });
+    const a = cursedDagger(t, false);
+    const b = cursedDagger(t, false);
+    t.party[0]!.inventory.push(a, b);
+    const after = accepted(t, { type: "party.identify", memberId: "c5", instanceId: a });
+    const left = rows(campEntries("camp", p, input(after), S)).filter((r) => r?.choice.kind === "identifyItem");
+    expect(left.length).toBeGreaterThan(0);
+    for (const r of left) expect(r).toMatchObject({ disabled: true, reason: "エルは MP が足りない。" });
   });
 });
 

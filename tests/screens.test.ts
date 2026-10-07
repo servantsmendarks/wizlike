@@ -443,7 +443,7 @@ describe("入力と Command", () => {
   test("UI-52/TW-05/TW-16（M7）店の売る・買い戻す・鑑定と倉庫の行は town.shop / town.storage を送り、ページを変えない。sync は townRepair で消えたページを 1 つ上へ直す（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
-    expect(body).toMatch(/case "pick":\s*goTownPage\(e\.to\);\s*return;/);
+    expect(body).toMatch(/case "pick":\s*case "ccClass":\s*goTownPage\(e\.to\);\s*return;/);
     for (const kind of ["sell", "buyback", "identify"]) {
       expect(body).toMatch(
         new RegExp(`case "${kind}":\\s*void run\\(\\{ type: "town\\.shop", action: \\{ kind: "${kind}", memberId: e\\.memberId, instanceId: e\\.instanceId \\} \\}\\);\\s*return;`),
@@ -454,7 +454,7 @@ describe("入力と Command", () => {
         new RegExp(`case "${action}":\\s*void run\\(\\{ type: "town\\.storage", action: "${action}", memberId: e\\.memberId, instanceId: e\\.instanceId \\}\\);\\s*return;`),
       );
     }
-    expect(app).toMatch(/townPage = townRepair\(townPage, menu\);\s*const ents = townEntries\(townPage, menu, strings, previewOf\(townPage\)\);/);
+    expect(app).toMatch(/townPage = townRepair\(townPage, menu\);\s*const ents = townEntries\(townPage, menu, strings, previewOf\(townPage\), classChangeOf\(townPage\)\);/);
   });
 
   // M8.5: M7 の広げた一覧（townListTall・setList の tall・listTall.backdrop）は UI-13 の街の配置に置き換えた
@@ -512,11 +512,23 @@ describe("入力と Command", () => {
     expect(app).toMatch(/upgradeConfirmLines\(page, menu, previewOf\(page\), strings\)/);
   });
 
+  test("TW-09/CH-22（M10）転職の「転職する」は town.classChange を送ってその者の職業の段へ戻る。転職先の値は core の classChangeOptions、名前は campMenu（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const body = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(body).toMatch(
+      /case "classChange":\s*townPage = \{ ccClass: e\.memberId \};\s*void run\(\{ type: "town\.classChange", memberId: e\.memberId, classId: e\.classId \}\);\s*return;/,
+    );
+    const fn = /const classChangeOf = \(page: TownPage\): ClassChangeView \| null => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(fn).toContain("campMenu(state, data)?.members ?? []");
+    expect(fn).toContain("classChangeOptions(state, data, who)");
+    expect(app).toContain("townEntries(townPage, menu, strings, previewOf(townPage), classChangeOf(townPage))");
+  });
+
   test("UI-52/TW-17（M7・M8.5）ページに入ったときの語りは、全文の履歴の末尾 TOWN_INTRO_DEDUP 件に同じ文があれば重ねて出さない（townFreshIntro。ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const goTownPage = \(page: TownPage\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(body).toMatch(
-      /const texts = townFreshIntro\(\s*\[\.\.\.townPageIntro\(page, menu\)\.map\(t\), \.\.\.upgradeConfirmLines\(page, menu, previewOf\(page\), strings\)\],\s*play\.message\.history\(\)\.slice\(-TOWN_INTRO_DEDUP\),\s*\);/,
+      /const texts = townFreshIntro\(\s*\[\s*\.\.\.townPageIntro\(page, menu\)\.map\(t\),\s*\.\.\.upgradeConfirmLines\(page, menu, previewOf\(page\), strings\),\s*\.\.\.classChangeConfirmLines\(page, classChangeOf\(page\), strings\),\s*\],\s*play\.message\.history\(\)\.slice\(-TOWN_INTRO_DEDUP\),\s*\);/,
     );
   });
 
@@ -574,7 +586,8 @@ describe("入力と Command", () => {
     const item = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
     expect(item).toContain("...notReadyReason(e),");
     const fn = /const notReadyReason = \(e: TownEntry\): Pick<ControlItem, "onDisabled"> => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
-    expect(fn).toContain('const reason = e.kind === "enter" ? e.notReady : null;');
+    // TW-09（M10）: 転職先の dim の行（ccClass の reason）も同じ経路で語る
+    expect(fn).toContain('const reason = e.kind === "enter" ? e.notReady : e.kind === "ccClass" ? e.reason : null;');
     expect(fn).toMatch(/onDisabled: \(\) =>\s*guard\(\(\) => \{\s*play\.talk\.flush\(\);\s*void narrator\.say\(reason, store\.get\(\)\.skipAnimations\);\s*\}\),/);
   });
 

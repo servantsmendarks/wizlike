@@ -1,9 +1,11 @@
 // UI-40: 判定の箱（src/presenter/views/dice.ts の純粋な部分）。
 import { describe, expect, test } from "vitest";
+import { execute } from "../src/core/engine";
+import { cloneState, createItemInstance } from "../src/core/state";
 import type { GameEvent } from "../src/core/types";
 import { DICE_BOX_BOTTOM, diceBox, diceFrames, formatDiceSummary, type DiceEvent } from "../src/presenter/views/dice";
 import { regions, townLayout } from "../src/presenter/layout";
-import { data, expectKnownStringKeys } from "./helpers/core";
+import { data, expectKnownStringKeys, newGame } from "./helpers/core";
 
 const INITIATIVE: DiceEvent = {
   kind: "dice",
@@ -126,5 +128,48 @@ describe("UI-40/UI-46 formatDiceSummary", () => {
     expectKnownStringKeys(evs);
     for (const k of ["dice.plus", "dice.total", "dice.sep", "dice.arrow"]) expect(data.strings[k]).toBeDefined();
     expect(data.strings["dice.total"]).toContain("{total}");
+  });
+});
+
+describe("UI-40/CH-77 司教の鑑定の箱（M10）", () => {
+  test("UI-40/CH-77 core の実際の party.identify の箱: 内訳の行は label だけ（値は params）、最後の行は「出目 n」。基準は「{rate} 以下で成功」", () => {
+    const st = cloneState(newGame(1));
+    const c5 = st.party.find((c) => c.id === "c5")!;
+    c5.classId = "bishop";
+    c5.maxLevelReached = { bishop: 1 };
+    const id = createItemInstance(st, { itemId: "dagger", identified: false });
+    st.party[0]!.inventory.push(id);
+    const r = execute(st, { type: "party.identify", memberId: "c5", instanceId: id }, data);
+    const ev = r.events.find((e): e is DiceEvent => e.kind === "dice");
+    if (ev === undefined) throw new Error("dice expected");
+    const roll = ev.rows[ev.rows.length - 1]!.total;
+    const ok = roll <= 78;
+    // エル（知恵 16・Lv1）: 基本 60・知恵 +18（レベル・希少度・ユニーク・上下限は 0 なので出さない）
+    expect(formatDiceSummary(ev, data.strings)).toBe(`鑑定 短い刃？ 基本 60 / 知恵 +18 / 出目 ${roll} / 78 以下で成功→ ${ok ? "見極めた" : "見極められない"}`);
+    expectKnownStringKeys([ev]);
+  });
+
+  test("UI-40/UI-59/CH-77 内訳の行がすべて出ても（基本・知恵・レベル・希少度・ユニーク・上下限・出目の 7 行）、会話の箱の上（diceBottom）に置いた箱はビューの内側", () => {
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const T = townLayout(g, data.config.party.size);
+    const row = (key: string, v: number) => ({ label: { key, params: { v } }, base: v, dice: [], total: v });
+    const full: DiceEvent = {
+      kind: "dice",
+      label: { key: "dice.identify", params: { item: "短い刃？" } },
+      rows: [
+        row("identify.row.base", 60),
+        row("identify.row.iq", 18),
+        row("identify.row.level", 10),
+        row("identify.row.rarity", -30),
+        row("identify.row.unique", -15),
+        row("identify.row.clamp", 52),
+        { label: { key: "identify.row.roll" }, base: null, dice: [5], total: 5 },
+      ],
+      rule: { key: "identify.rule", params: { rate: 95 } },
+      result: { key: "dice.identify.ok" },
+    };
+    const b = diceBox(full, T.diceBottom);
+    expect(b.y).toBeGreaterThanOrEqual(0);
+    expect(b.y + b.h).toBeLessThanOrEqual(T.talk.box.y - g.view.y);
   });
 });

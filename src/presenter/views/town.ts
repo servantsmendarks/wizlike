@@ -6,8 +6,10 @@
 // M7: 闇魔術は最初に 灰から戻す / 装備を鍛える / 戻る の一覧。強化（TW-17）の成功率・料金・可否は app が core の upgradePreview で取って渡す。
 // M7: 店は最初に 買う / 売る / 買い戻す / 鑑定 / 倉庫 / 戻る の一覧。倉庫（TW-16）の入口は店の一覧の中（items.md §11 の Q9 の既定。銀行を作る段で移す）。
 import type { EquipSlot, Strings } from "../../core/data/index";
+import type { ClassChangeOption } from "../../core/rules/town";
 import type { TownMenu, UpgradePreview } from "../../core/types";
 import type { CampOpen } from "./camp";
+import { STAT_ORDER } from "./detail";
 import { formatMessage } from "./message";
 
 export type TempleService = "resurrect" | "cure" | "uncurse";
@@ -45,9 +47,20 @@ export type TownPage =
   | { withdraw: string }
   | { upSlot: string }
   | { upCat: UpgradeSel }
-  | { upConfirm: UpgradeSel };
+  | { upConfirm: UpgradeSel }
+  /** TW-09 / CH-22（M10）: 転職。classChange は申し出る者、{ ccClass } はその者の転職先、{ ccConfirm } は確認 */
+  | "classChange"
+  | { ccClass: string }
+  | { ccConfirm: ClassChangeSel };
 /** TW-17: 強化の選択中の対象（本人・部位）と触媒 */
 export type UpgradeSel = { memberId: string; slot: EquipSlot; picked: string[] };
+/** TW-09（M10）: 転職の確認の対象（者と転職先） */
+export type ClassChangeSel = { memberId: string; classId: string };
+/**
+ * TW-09（M10）: 転職の段に要る core の値。members はパーティ全員（並び順。app が campMenu の members から渡す）、
+ * options はページの者の classChangeOptions（申し出る者の段では []）
+ */
+export type ClassChangeView = { members: { memberId: string; name: string }[]; options: ClassChangeOption[] };
 export type TownEntry =
   | { kind: "page"; to: TownPage; label: string }
   /** M7: 次のページへ移る行で、押せないことがあるもの（売れる品の無い者・払えない買い戻しの品など）。disabled なら dim */
@@ -84,9 +97,38 @@ export type TownEntry =
   | { kind: "upgrade"; memberId: string; slot: EquipSlot; catalysts: string[]; label: string; disabled: boolean }
   /** TW-03 / UI-52: 酒場の状態（キャラクター画面 UI-59）・並び順・図鑑。押すとキャンプと同じ部品（views/camp.ts）をその段で開く */
   | { kind: "camp"; open: CampOpen; label: string }
+  /**
+   * TW-09 / CH-22（M10）: 転職先の行。押すと確認の段（{ ccConfirm }）へ。core の classChangeOptions の ok が偽なら dim で、
+   * 押すと会話の箱に reason（core の理由から作った文。無ければ null）を語る
+   */
+  | { kind: "ccClass"; to: TownPage; label: string; disabled: boolean; reason: string | null }
+  /** TW-09（M10）: 確認の「転職する」。押すと town.classChange */
+  | { kind: "classChange"; memberId: string; classId: string; label: string; disabled: boolean }
   | { kind: "back"; label: string };
 
 const TEMPLE_SERVICES: readonly TempleService[] = ["resurrect", "cure", "uncurse"];
+
+/** TW-09（M10）: core の checkClassChange の理由 → 語る文の strings キー（受け付けの段の理由は表に無いので語らない） */
+const CLASS_CHANGE_REASON: Readonly<Record<string, string>> = {
+  "not alive": "town.classChange.reason.notAlive",
+  "same class": "town.classChange.reason.same",
+  "requirements not met": "town.classChange.reason.need",
+  "not enough gold": "town.classChange.reason.noGold",
+};
+
+/**
+ * TW-09 / CH-22（M10）: 転職先の dim の行を押したときに語る文。要る能力値は core の requirements を能力値の順に並べるだけ
+ * （満たしているかを表示層で比べない）。ok か、表に無い理由なら null
+ */
+function classChangeReason(o: ClassChangeOption, name: string, strings: Strings): string | null {
+  const key = o.reason === null ? undefined : CLASS_CHANGE_REASON[o.reason];
+  if (key === undefined) return null;
+  const stats = STAT_ORDER.flatMap((k) => {
+    const n = o.requirements[k];
+    return n === undefined ? [] : [s(strings, "town.classChange.stat", { stat: s(strings, `stat.${k}`), n })];
+  }).join(s(strings, "town.classChange.statSep"));
+  return s(strings, key, { name, cls: o.name, stats });
+}
 
 function s(strings: Strings, key: string, params?: Record<string, string | number>): string {
   return formatMessage(strings[key] ?? key, params);
@@ -118,8 +160,11 @@ export function townParent(page: TownPage): TownPage | null {
     if ("upSlot" in page) return "upgrade";
     if ("upCat" in page) return { upSlot: page.upCat.memberId };
     if ("upConfirm" in page) return { upCat: page.upConfirm };
+    if ("ccClass" in page) return "classChange";
+    if ("ccConfirm" in page) return { ccClass: page.ccConfirm.memberId };
     return "storageWithdraw";
   }
+  if (page === "classChange") return "tavern";
   if (page === "darkRevive" || page === "upgrade") return "dark";
   if (page === "shopBuy" || page === "shopSell" || page === "shopBuyback" || page === "shopIdentify" || page === "storage") return "shop";
   if (page === "storageDeposit" || page === "storageWithdraw") return "storage";
@@ -158,7 +203,13 @@ export function townRepair(page: TownPage, menu: TownMenu): TownPage {
  * そのページのリストの項目（menu は 6 行で戻るは無い。それ以外は一覧で末尾が戻る）。
  * preview は { upConfirm } のときに app が core の upgradePreview で取った値（それ以外のページでは使わない）
  */
-export function townEntries(page: TownPage, menu: TownMenu, strings: Strings, preview: UpgradePreview | null = null): TownEntry[] {
+export function townEntries(
+  page: TownPage,
+  menu: TownMenu,
+  strings: Strings,
+  preview: UpgradePreview | null = null,
+  cc: ClassChangeView | null = null,
+): TownEntry[] {
   const back: TownEntry = { kind: "back", label: s(strings, "common.back") };
   const empty = (key: string): TownEntry => ({ kind: "empty", label: s(strings, key), disabled: true });
   /** 空なら empty の行を 1 つ置く */
@@ -181,8 +232,36 @@ export function townEntries(page: TownPage, menu: TownMenu, strings: Strings, pr
       { kind: "look", label: s(strings, "town.tavern.look") },
       ...opens.map((open): TownEntry => ({ kind: "camp", open, label: s(strings, `camp.${open}`) })),
     ];
+    // TW-09（M10）: GM に申し出る（転職）は図鑑の後。dim にしない（可否は職業の段で dim）
+    camp.push({ kind: "page", to: "classChange", label: s(strings, "town.tavern.classChange") });
     const rows = (menu.mercy ?? []).map((m): TownEntry => ({ kind: "mercy", memberId: m.memberId, label: s(strings, "town.tavern.mercyRow", { name: m.name }) }));
     return [...camp, ...rows, back];
+  }
+  if (page === "classChange") {
+    // TW-09（M10）: 申し出る者（全員。並び順。dim にしない。死亡・灰の者は職業の段で理由を語る）
+    const rows = (cc?.members ?? []).map((x): TownEntry => ({ kind: "pick", to: { ccClass: x.memberId }, label: x.name, disabled: false }));
+    return [...rows, back];
+  }
+  if (typeof page === "object" && "ccClass" in page) {
+    // TW-09 / CH-22（M10）: 転職先（classes.json の順。今の職業は印）。可否と理由は core の classChangeOptions だけで決める
+    const memberId = page.ccClass;
+    const name = cc?.members.find((x) => x.memberId === memberId)?.name ?? "";
+    const rows = (cc?.options ?? []).map(
+      (o): TownEntry => ({
+        kind: "ccClass",
+        to: { ccConfirm: { memberId, classId: o.classId } },
+        label: o.current ? s(strings, "town.classChange.current", { cls: o.name }) : o.name,
+        disabled: !o.ok,
+        reason: classChangeReason(o, name, strings),
+      }),
+    );
+    return [...rows, back];
+  }
+  if (typeof page === "object" && "ccConfirm" in page) {
+    // TW-09（M10）: 転職する（core の ok が偽なら dim）→ 戻る（職業の段へ）
+    const sel = page.ccConfirm;
+    const ok = cc?.options.find((o) => o.classId === sel.classId)?.ok ?? false;
+    return [{ kind: "classChange", memberId: sel.memberId, classId: sel.classId, label: s(strings, "town.classChange.yes"), disabled: !ok }, back];
   }
   if (page === "inn") {
     // TW-15（M7）: 士気の立つランク（core の townMenu の morale）は行の末尾に印（town.inn.moraleMark）
@@ -429,6 +508,7 @@ export function townPageIntro(page: TownPage, menu: TownMenu): string[] {
   if (page === "shopBuyback") return ["town.shop.buybackIntro"];
   if (page === "shopIdentify") return ["town.shop.identifyIntro"];
   if (page === "storage") return ["town.storage.intro"];
+  if (page === "classChange") return ["town.classChange.intro"]; // TW-09（M10）
   // M8.5: 問いだけの語り（買う・持たせる者・受け取る者・強化の部位と触媒）は一覧の見出し（townHeading）に移した
   return [];
 }
@@ -443,6 +523,7 @@ export type TownFacility = "town" | "tavern" | "inn" | "temple" | "dark" | "gate
 export function townFacility(page: TownPage): TownFacility {
   if (typeof page === "object") {
     if ("temple" in page) return "temple";
+    if ("ccClass" in page || "ccConfirm" in page) return "tavern"; // TW-09（M10）
     if ("upSlot" in page || "upCat" in page || "upConfirm" in page) return "dark";
     return "shop"; // shop / sell / buyback / deposit / withdraw
   }
@@ -456,6 +537,8 @@ export function townFacility(page: TownPage): TownFacility {
     case "gate":
     case "shop":
       return page;
+    case "classChange":
+      return "tavern";
     case "darkRevive":
     case "upgrade":
       return "dark";
@@ -479,6 +562,8 @@ export function townHeading(page: TownPage): string {
     if ("upSlot" in page) return "town.upgrade.slot";
     if ("upCat" in page) return "town.upgrade.catalyst";
     if ("upConfirm" in page) return "town.ask.upConfirm";
+    if ("ccClass" in page) return "town.ask.classChangeTo";
+    if ("ccConfirm" in page) return "town.ask.classChangeConfirm";
     if ("shop" in page || "buyback" in page) return "town.shop.whom";
     if ("sell" in page) return "town.ask.sellItem";
     if ("deposit" in page) return "town.ask.depositItem";
@@ -514,6 +599,8 @@ export function townHeading(page: TownPage): string {
       return "town.ask.depositWho";
     case "storageWithdraw":
       return "town.ask.withdraw";
+    case "classChange":
+      return "town.ask.classChangeWho";
   }
 }
 
@@ -543,6 +630,18 @@ export function upgradeConfirmLines(page: TownPage, menu: TownMenu, preview: Upg
   ];
   if (!preview.affordable) lines.push(s(strings, "town.upgrade.noGold"));
   return lines;
+}
+
+/**
+ * TW-09（M10）: 確認の段（{ ccConfirm }）に入ったときに会話の箱へ出す文（整形済み）。
+ * 「{name}を{cls}にする。レベルは 1 に戻る。よいか。」。名前と職業名は cc（campMenu と classChangeOptions）の値。他のページ・cc が null なら []
+ */
+export function classChangeConfirmLines(page: TownPage, cc: ClassChangeView | null, strings: Strings): string[] {
+  if (typeof page !== "object" || !("ccConfirm" in page) || cc === null) return [];
+  const sel = page.ccConfirm;
+  const name = cc.members.find((x) => x.memberId === sel.memberId)?.name ?? "";
+  const cls = cc.options.find((o) => o.classId === sel.classId)?.name ?? "";
+  return [s(strings, "town.classChange.confirm", { name, cls })];
 }
 
 /**

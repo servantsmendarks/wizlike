@@ -29,7 +29,7 @@ import { STAY_CHOICE_ID } from "../core/rules/choices";
 import { equipPreview, itemDetail, memberSheet, spellInfo, uniqueBookView } from "../core/rules/item-view";
 import { sanStage } from "../core/rules/san";
 import { fieldItemMenu } from "../core/rules/items";
-import { townMenu } from "../core/rules/town";
+import { classChangeOptions, townMenu } from "../core/rules/town";
 import { upgradePreview } from "../core/rules/upgrade";
 import { dungeonOf, itemDisplayName } from "../core/state";
 import type { BattleMenu, Command, GameState, PenaltyResult, Pos, Screen, UpgradePreview, ViewPoint } from "../core/types";
@@ -130,6 +130,7 @@ import { formatWipeSummary } from "./views/wipe";
 import { createNarrator } from "./views/talk";
 import {
   TOWN_INTRO_DEDUP,
+  classChangeConfirmLines,
   townEntries,
   townFacility,
   townFreshIntro,
@@ -140,6 +141,7 @@ import {
   townParent,
   townRepair,
   upgradeConfirmLines,
+  type ClassChangeView,
   type TownEntry,
   type TownPage,
 } from "./views/town";
@@ -567,6 +569,17 @@ export function createApp(o: {
       ? upgradePreview(state, data, page.upConfirm.memberId, page.upConfirm.slot, page.upConfirm.picked)
       : null;
 
+  /**
+   * TW-09（M10）: 転職の段（classChange / { ccClass } / { ccConfirm }）なら、パーティの名前（campMenu）とその段の者の
+   * core の classChangeOptions（申し出る者の段では []）。他のページは null
+   */
+  const classChangeOf = (page: TownPage): ClassChangeView | null => {
+    const who = typeof page === "object" ? ("ccClass" in page ? page.ccClass : "ccConfirm" in page ? page.ccConfirm.memberId : null) : null;
+    if (page !== "classChange" && who === null) return null;
+    const members = (campMenu(state, data)?.members ?? []).map((x) => ({ memberId: x.id, name: x.name }));
+    return { members, options: who === null ? [] : classChangeOptions(state, data, who) };
+  };
+
   /** UI-52: 街のページを移る。入ったページの語り（宿・寺院・闇魔術・迷宮の入口、酒場は救済の申し出も）は再生の外で出す */
   const goTownPage = (page: TownPage): void => {
     townPage = page;
@@ -576,7 +589,11 @@ export function createApp(o: {
     // UI-47: 会話の箱に 1 文ずつ語る（どの文も文字送り。2 文目からはタップで次へ。演出スキップは文字送りだけ省く）
     // 履歴の末尾 2 件と同じ語りは重ねて出さない（段を戻ってまた進んだとき。UI-52 / TW-17）
     const texts = townFreshIntro(
-      [...townPageIntro(page, menu).map(t), ...upgradeConfirmLines(page, menu, previewOf(page), strings)],
+      [
+        ...townPageIntro(page, menu).map(t),
+        ...upgradeConfirmLines(page, menu, previewOf(page), strings),
+        ...classChangeConfirmLines(page, classChangeOf(page), strings),
+      ],
       play.message.history().slice(-TOWN_INTRO_DEDUP),
     );
     const skip = store.get().skipAnimations;
@@ -596,7 +613,8 @@ export function createApp(o: {
    * UI-47: 一覧・戻る（と数字キー）は、先に会話の箱を打ち切ってから動く（残りの文はログに入っている）
    */
   const notReadyReason = (e: TownEntry): Pick<ControlItem, "onDisabled"> => {
-    const reason = e.kind === "enter" ? e.notReady : null;
+    // TW-09（M10）: 転職先の dim の行も同じく理由の 1 文（理由は core の classChangeOptions から views/town が作る）
+    const reason = e.kind === "enter" ? e.notReady : e.kind === "ccClass" ? e.reason : null;
     if (reason === null) return {};
     return {
       onDisabled: () =>
@@ -661,7 +679,13 @@ export function createApp(o: {
             void run({ type: "town.shop", action: { kind: "buy", memberId: e.memberId, itemId: e.itemId } });
             return;
           case "pick":
+          case "ccClass":
             goTownPage(e.to);
+            return;
+          case "classChange":
+            // TW-09（M10）: 送った後はその者の職業の段へ戻る（今の職業の印が移る。結果の語りは再生が会話の箱に出す）
+            townPage = { ccClass: e.memberId };
+            void run({ type: "town.classChange", memberId: e.memberId, classId: e.classId });
             return;
           case "empty":
             return;
@@ -747,7 +771,7 @@ export function createApp(o: {
         return;
       }
       townPage = townRepair(townPage, menu);
-      const ents = townEntries(townPage, menu, strings, previewOf(townPage));
+      const ents = townEntries(townPage, menu, strings, previewOf(townPage), classChangeOf(townPage));
       const items = ents.map(townItem);
       // UI-52 / UI-61（M8.5）: ヘッダーは場所と所持金、ビューは施設の絵
       play.header.setText(townHeader(menu, strings, townPage));
@@ -794,7 +818,7 @@ export function createApp(o: {
   const campInput = (): CampInput | null => {
     const menu = campMenu(state, data);
     if (menu === null) return null;
-    return { menu, items: fieldItemMenu(state, data), summary: campSummary(state, data) };
+    return { menu, items: fieldItemMenu(state, data), summary: campSummary(state, data), identifyMpCost: data.config.identify.mpCost };
   };
 
   /**

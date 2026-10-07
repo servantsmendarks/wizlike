@@ -3,11 +3,14 @@
 // 宿: 馬小屋 0G / 相部屋 20G / 個室 60G。寺院: 蘇生 level × 100、治療 毒 50 + 麻痺 150、解呪 200。闇魔術: level × darkCostPerLevel。
 // 店（TW-05）: 薬草 10G / 解毒草 15G / 帰還の糸 50G。初期の所持枠の空き（townMenu.shop.members）は c1 4 / c2 6 / c3 4 / c4 5 / c5 6 / c6 5。
 import { describe, expect, test } from "vitest";
-import { townMenu } from "../src/core/rules/town";
+import { campMenu } from "../src/core/rules/camp";
+import { classChangeOptions, townMenu } from "../src/core/rules/town";
+import { execute } from "../src/core/engine";
 import { upgradePreview } from "../src/core/rules/upgrade";
 import { cloneState, createItemInstance } from "../src/core/state";
 import type { Character, GameState, TownMenu } from "../src/core/types";
 import {
+  classChangeConfirmLines,
   samePage,
   TOWN_INTRO_DEDUP,
   townEntries,
@@ -21,6 +24,7 @@ import {
   townPlace,
   townRepair,
   upgradeConfirmLines,
+  type ClassChangeView,
   type TownEntry,
   type TownPage,
 } from "../src/presenter/views/town";
@@ -75,6 +79,9 @@ const ALL_PAGES: readonly TownPage[] = [
   { buyback: "i1" },
   { deposit: "c1" },
   { withdraw: "i1" },
+  "classChange",
+  { ccClass: "c1" },
+  { ccConfirm: { memberId: "c1", classId: "mage" } },
 ];
 
 describe("UI-52 街のページ", () => {
@@ -353,6 +360,9 @@ describe("UI-52 街のページ", () => {
       [{ buyback: "i1" }, "shop"],
       [{ deposit: "c1" }, "shop"],
       [{ withdraw: "i1" }, "shop"],
+      ["classChange", "tavern"],
+      [{ ccClass: "c1" }, "tavern"],
+      [{ ccConfirm: { memberId: "c1", classId: "mage" } }, "tavern"],
     ];
     expect(want.map(([p]) => townFacility(p))).toEqual(want.map(([, f]) => f));
     expect(want.length).toBe(ALL_PAGES.length);
@@ -432,12 +442,14 @@ describe("UI-52 街のページ", () => {
 
   // M5.5 で一覧を「見回す ＋ キャンプと同じ項目」に改めた（旧: 状態を見る・装備を替える・並び順を変える）。
   // M10（2026-10-07）: 呪文・道具・装備・鑑定はキャラクター画面（UI-59。状態から開く）の操作に移したので、酒場の一覧から外した
-  test("TW-01/TW-03/TW-13/UI-52/TW-31/IT-66 酒場: 見回す → 状態・並び順 → 図鑑 → 救済の行（申し出の間だけ。dead / ash の者、リーダーも）→ 戻る", () => {
+  // M10 TW-09: 図鑑の後に「GMに申し出る」（転職）を足した
+  test("TW-01/TW-03/TW-13/UI-52/TW-31/IT-66/TW-09 酒場: 見回す → 状態・並び順 → 図鑑 → GMに申し出る → 救済の行（申し出の間だけ。dead / ash の者、リーダーも）→ 戻る", () => {
     const camp: TownEntry[] = [
       { kind: "look", label: "見回す" },
       { kind: "camp", open: "status", label: "状態" },
       { kind: "camp", open: "order", label: "並び順" },
       { kind: "camp", open: "book", label: "図鑑" }, // IT-66（M7）: 図鑑は酒場の一覧（並び順の後）
+      { kind: "page", to: "classChange", label: "GMに申し出る" }, // TW-09（M10）: 転職は図鑑の後
     ];
     expect(townEntries("tavern", menuOf(town()), S)).toEqual([...camp, back]);
     expect(townPageIntro("tavern", menuOf(town()))).toEqual(["town.tavern.intro"]);
@@ -460,7 +472,7 @@ describe("UI-52 街のページ", () => {
     const m = menuOf(s);
     expect(m.canIdentify).toBe(true);
     const e = townEntries("tavern", m, S);
-    expect(e.map((x) => x.kind)).toEqual(["look", "camp", "camp", "camp", "mercy", "back"]);
+    expect(e.map((x) => x.kind)).toEqual(["look", "camp", "camp", "camp", "page", "mercy", "back"]);
     for (const x of e) expect("disabled" in x, x.label).toBe(false);
   });
 
@@ -755,5 +767,84 @@ describe("UI-52 街のページ", () => {
       expect(S[k], k).toBeDefined();
       expect(S[k], k).not.toContain("{");
     }
+  });
+});
+
+describe("TW-09/CH-22 転職（酒場の「GMに申し出る」。M10）", () => {
+  /** app の classChangeOf と同じ値（名前は campMenu、転職先はその段の者の classChangeOptions） */
+  function ccOf(s: GameState, memberId: string | null): ClassChangeView {
+    const members = (campMenu(s, data)?.members ?? []).map((x) => ({ memberId: x.id, name: x.name }));
+    return { members, options: memberId === null ? [] : classChangeOptions(s, data, memberId) };
+  }
+
+  test("TW-09/UI-52 申し出る者の段: 全員（並び順。死亡も dim にしない）→ 戻る。語りは town.classChange.intro、見出しは誰が転職する？、戻るは酒場", () => {
+    const s = town({ c2: { life: "dead", hp: 0 } });
+    const m = menuOf(s);
+    const names = ["アルド", "ベルク", "キリ", "ドナ", "エル", "フィン"];
+    expect(townEntries("classChange", m, S, null, ccOf(s, null))).toEqual([
+      ...names.map((label, i): TownEntry => ({ kind: "pick", to: { ccClass: `c${i + 1}` }, label, disabled: false })),
+      back,
+    ]);
+    expect(townPageIntro("classChange", m)).toEqual(["town.classChange.intro"]);
+    expect(townHeading("classChange")).toBe("town.ask.classChangeWho");
+    expect(townParent("classChange")).toBe("tavern");
+    expect(townParent({ ccClass: "c5" })).toBe("classChange");
+    expect(townParent({ ccConfirm: { memberId: "c5", classId: "thief" } })).toEqual({ ccClass: "c5" });
+  });
+
+  test("TW-09/CH-22 職業の段: classes.json の順。core の ok が偽なら dim で、押したときの理由（要る能力値は requirements をそのまま並べる）。今の職業は「（今）」", () => {
+    // エル（魔術師。力 7・知恵 16・信仰心 10・素早さ 11）: 盗賊（素早さ 11）だけ条件を満たす
+    const s = town();
+    const e = townEntries({ ccClass: "c5" }, menuOf(s), S, null, ccOf(s, "c5"));
+    const to = (classId: string): TownPage => ({ ccConfirm: { memberId: "c5", classId } });
+    expect(e).toEqual([
+      { kind: "ccClass", to: to("fighter"), label: "戦士", disabled: true, reason: "戦士には 力 11 が要る。" },
+      { kind: "ccClass", to: to("thief"), label: "盗賊", disabled: false, reason: null },
+      { kind: "ccClass", to: to("priest"), label: "僧侶", disabled: true, reason: "僧侶には 信仰心 11 が要る。" },
+      { kind: "ccClass", to: to("mage"), label: "魔術師（今）", disabled: true, reason: "エルはすでに魔術師だ。" },
+      { kind: "ccClass", to: to("samurai"), label: "侍", disabled: true, reason: "侍には 力 15・知恵 11・信仰心 10・生命力 14・素早さ 10 が要る。" },
+      { kind: "ccClass", to: to("lord"), label: "君主", disabled: true, reason: "君主には 力 15・知恵 12・信仰心 12・生命力 15・素早さ 14・運 15 が要る。" },
+      { kind: "ccClass", to: to("bishop"), label: "司教", disabled: true, reason: "司教には 知恵 12・信仰心 12 が要る。" },
+      back,
+    ]);
+    // 死亡の者はどの職業も dim（core の not alive）
+    const d = town({ c5: { life: "dead", hp: 0 } });
+    const de = townEntries({ ccClass: "c5" }, menuOf(d), S, null, ccOf(d, "c5"));
+    for (const x of de.slice(0, -1)) expect(x).toMatchObject({ kind: "ccClass", disabled: true, reason: "エルは今、転職を申し出られない。" });
+    // dim かどうかは core の ok と一致する（表示層は比べない）
+    const opts = classChangeOptions(s, data, "c5");
+    expect(e.slice(0, -1).map((x) => ("disabled" in x ? !x.disabled : null))).toEqual(opts.map((o) => o.ok));
+    expect(townHeading({ ccClass: "c5" })).toBe("town.ask.classChangeTo");
+  });
+
+  test("TW-09 確認の段: 会話の箱に「{name}を{cls}にする。レベルは 1 に戻る。よいか。」、[転職する]（core の ok が偽なら dim）→ 戻る。送る Command を core が受け付け、結果の語りが出る", () => {
+    const s = town();
+    const page: TownPage = { ccConfirm: { memberId: "c5", classId: "thief" } };
+    const cc = ccOf(s, "c5");
+    expect(classChangeConfirmLines(page, cc, S)).toEqual(["エルを盗賊にする。レベルは 1 に戻る。よいか。"]);
+    expect(classChangeConfirmLines({ ccClass: "c5" }, cc, S)).toEqual([]);
+    expect(classChangeConfirmLines(page, null, S)).toEqual([]);
+    const e = townEntries(page, menuOf(s), S, null, cc);
+    expect(e).toEqual([{ kind: "classChange", memberId: "c5", classId: "thief", label: "転職する", disabled: false }, back]);
+    expect(townEntries({ ccConfirm: { memberId: "c5", classId: "fighter" } }, menuOf(s), S, null, cc)[0]).toMatchObject({ kind: "classChange", disabled: true });
+    expect(townHeading(page)).toBe("town.ask.classChangeConfirm");
+    const x = e[0]!;
+    if (x.kind !== "classChange") throw new Error("classChange expected");
+    const r = execute(s, { type: "town.classChange", memberId: x.memberId, classId: x.classId }, data);
+    expect(r.events.some((ev) => ev.kind === "rejected")).toBe(false);
+    expect(r.events).toContainEqual({ kind: "message", key: "town.tavern.classChanged", params: { name: "エル", cls: "盗賊" } });
+    // 転職の後は今の職業の印が盗賊に移る
+    const after = townEntries({ ccClass: "c5" }, menuOf(r.state), S, null, ccOf(r.state, "c5"));
+    expect(after.find((y) => y.label === "盗賊（今）")).toMatchObject({ disabled: true });
+  });
+
+  test("TW-09/UI-47 転職の文（確認・理由・語り）は会話の箱の 3 行（全角 28 字）に収まり、見出しは 1 行", () => {
+    const s = town();
+    const lines = [
+      ...classChangeConfirmLines({ ccConfirm: { memberId: "c5", classId: "bishop" } }, ccOf(s, "c5"), S),
+      ...townEntries({ ccClass: "c5" }, menuOf(s), S, null, ccOf(s, "c5")).flatMap((x) => (x.kind === "ccClass" && x.reason !== null ? [x.reason] : [])),
+      S["town.classChange.intro"]!,
+    ];
+    for (const l of lines) expect(kinsokuLines(l, 28).length, l).toBeLessThanOrEqual(3);
   });
 });

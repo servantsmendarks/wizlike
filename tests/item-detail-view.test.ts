@@ -17,7 +17,7 @@ const inDungeonState = (): GameState => cloneState(dived(1));
 function campInput(s: GameState): CampInput {
   const menu = campMenu(s, data);
   if (menu === null) throw new Error("no camp menu");
-  return { menu, items: fieldItemMenu(s, data), summary: null };
+  return { menu, items: fieldItemMenu(s, data), summary: null, identifyMpCost: data.config.identify.mpCost };
 }
 
 const S = data.strings;
@@ -190,7 +190,7 @@ describe("IT-66 formatBook（図鑑）", () => {
 function input(s: GameState): CampInput {
   const menu = campMenu(s, data);
   if (menu === null) throw new Error("camp closed");
-  return { menu, items: fieldItemMenu(s, data), summary: null };
+  return { menu, items: fieldItemMenu(s, data), summary: null, identifyMpCost: data.config.identify.mpCost };
 }
 
 describe("IT-66/TW-03 酒場の図鑑の段", () => {

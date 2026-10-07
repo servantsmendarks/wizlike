@@ -106,8 +106,11 @@ export type CampPanel =
   | { kind: "item"; instanceId: string; preview?: { memberId: string; slot: EquipSlot; instanceId: string | null } }
   /** IT-66（M7）: 図鑑（app が core の uniqueBookView から formatBook で行を作る） */
   | { kind: "book" };
-/** summary は core の campSummary（迷宮のキャンプだけ非 null。UI-53） */
-export type CampInput = { menu: CampMenu; items: FieldItemMenu | null; summary: CampSummary | null };
+/**
+ * summary は core の campSummary（迷宮のキャンプだけ非 null。UI-53）。
+ * identifyMpCost は CH-77（M10）の鑑定 1 回の MP（config.identify.mpCost。鑑定の段の見出しに出すだけ）
+ */
+export type CampInput = { menu: CampMenu; items: FieldItemMenu | null; summary: CampSummary | null; identifyMpCost: number };
 
 /** campGrid の枠の数（4 列 × 2 段）。[7] がやめる / 戻る */
 export const CAMP_GRID_SLOTS = 8;
@@ -377,10 +380,20 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
       return list(menu.allies.map((a) => targetRow(a, sp?.targets.find((t) => t.id === a.id)?.block ?? null)));
     }
     case "identify": {
+      // CH-77（M10）: 行は「{owner}: {name}　{rate}%」（rate は core の identifyRates）。送れない間（行動不能・MP 切れ）は dim で、
+      // 押すと core の identifyBlock の理由を語る（可否は canIdentifyNow だけで決める）
+      const x = memberOf(m, page.memberId);
+      const block = x?.identifyBlock ?? null;
+      const why = block === null || x?.canIdentifyNow === true ? undefined : s(strings, `camp.identifyBlock.${block}`, { name: x?.name ?? "" });
       const rows: CampEntry[] = menu.unidentified.map((u) => ({
-        label: s(strings, "camp.identifyRow", { owner: u.ownerName, name: u.name }),
-        disabled: false,
+        label: s(strings, "camp.identifyRow", {
+          owner: u.ownerName,
+          name: u.name,
+          rate: x?.identifyRates.find((r) => r.instanceId === u.instanceId)?.rate ?? "?",
+        }),
+        disabled: x?.canIdentifyNow !== true,
         choice: { kind: "identifyItem", instanceId: u.instanceId },
+        ...(why === undefined ? {} : { reason: why }),
       }));
       if (rows.length === 0) rows.push({ label: s(strings, "camp.identify.none"), disabled: true, choice: { kind: "none" } });
       return list(rows);
@@ -570,7 +583,7 @@ export function campHeader(page: CampPage, m: CampInput, strings: Strings): stri
       return s(strings, sp?.target === "dead" ? "camp.prompt.spellDead" : "camp.prompt.spellTarget");
     }
     case "identify":
-      return s(strings, "camp.prompt.identifyWhich");
+      return s(strings, "camp.prompt.identifyWhich", { cost: m.identifyMpCost });
     case "order":
       return page.picked === null ? s(strings, "camp.prompt.order") : s(strings, "camp.prompt.orderSecond", { name: nameOf(m, page.picked) });
     case "book":
