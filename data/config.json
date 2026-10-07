@@ -21,7 +21,7 @@
     "statusLukPerPoint": 2, "sleepWakeChance": 50, "sleepHitBonus": 30, "sleepNaturalWake": 20,
     "poisonDamagePerTick": 1,
     "fleeBase": 50, "fleeAgiMul": 3,
-    "chestChance": 60, "chestChanceCorridor": 15, "chestTrapChance": 40, "chestGoldDice": "2d10",
+    "chestChance": 60, "chestChanceCorridor": 15, "chestGoldDice": "2d10",
     "unarmedDice": "1d2",
     "autoInterrupt": { "hpRatio": 0.3 },
     "autoDefendHpRatio": 0.5,
@@ -71,6 +71,13 @@
     "tavernEventChance": 30
   },
   "events": { "lureMul": 12, "cap": 60, "floor": 0, "stopSanGain": 3, "confusedLureWeight": 2 },
+  "chest": {
+    "noTrapChance": 30, "rarityUpPerDanger": 15,
+    "inspect": { "base": 40, "statPivot": 10, "thiefBonus": 30, "agiMul": 2, "lukMul": 2, "dangerMul": 10, "min": 5, "max": 95 },
+    "disarm": { "base": 50, "statPivot": 10, "thiefBonus": 30, "agiMul": 2, "lukMul": 2, "dangerMul": 10, "min": 5, "max": 95 },
+    "triggerChance": 10, "wrongNameChance": 50, "disarmFailTrigger": 50,
+    "impulse": { "lure": { "treasure": 2, "unknown": 0, "danger": 1, "weak": 0 }, "stat": "agi", "impulseClasses": ["thief"] }
+  },
   "save": { "maxGames": 5, "schemaVersion": 5 },
   "input": { "swipeThresholdPx": 28, "holdRepeatMs": 250, "edgeDeadZonePx": 12 },
   "ui": {

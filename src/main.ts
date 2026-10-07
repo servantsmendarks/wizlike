@@ -18,6 +18,8 @@ import penaltyTable from "../data/penalty-table.json";
 import dungeons from "../data/dungeons.json";
 import events from "../data/events.json";
 import tavern from "../data/tavern.json";
+import chestTraps from "../data/chest-traps.json";
+import rivalries from "../data/rivalries.json";
 import strings from "../data/strings.json";
 import wavetables from "../data/wavetables.json";
 import audio from "../data/audio.json";
@@ -56,6 +58,8 @@ const raw: RawGameData = {
   dungeons,
   events,
   tavern,
+  chestTraps,
+  rivalries,
   strings,
   wavetables,
   audio,

@@ -1,0 +1,10 @@
+[
+  { "id": "poison_needle", "name": "chest.trapName.poison_needle", "danger": 1, "effect": { "kind": "damage", "target": "one", "dice": "1d4", "status": "poison" } },
+  { "id": "crossbow", "name": "chest.trapName.crossbow", "danger": 1, "effect": { "kind": "damage", "target": "one", "dice": "2d4" } },
+  { "id": "bomb", "name": "chest.trapName.bomb", "danger": 2, "effect": { "kind": "damage", "target": "all", "dice": "1d6" } },
+  { "id": "poison_gas", "name": "chest.trapName.poison_gas", "danger": 2, "effect": { "kind": "status", "target": "all", "status": "poison", "chance": 60 } },
+  { "id": "paralysis_gas", "name": "chest.trapName.paralysis_gas", "danger": 3, "effect": { "kind": "status", "target": "all", "status": "paralysis", "chance": 35 } },
+  { "id": "alarm", "name": "chest.trapName.alarm", "danger": 3, "effect": { "kind": "alarm" } },
+  { "id": "teleport", "name": "chest.trapName.teleport", "danger": 4, "effect": { "kind": "teleport" } },
+  { "id": "curse", "name": "chest.trapName.curse", "danger": 4, "effect": { "kind": "san", "target": "all", "amount": 8 } }
+]

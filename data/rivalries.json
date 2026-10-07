@@ -1,0 +1,17 @@
+[
+  {
+    "id": "thief_chest",
+    "trigger": "chest",
+    "classId": "thief",
+    "chance": 50,
+    "contest": { "stats": ["agi", "luk"], "dice": "1d6" },
+    "bonus": { "inspect": 10 },
+    "loserSan": 1,
+    "failSan": 3,
+    "text": {
+      "start": "rivalry.thief_chest.start",
+      "win": "rivalry.thief_chest.win",
+      "fail": "rivalry.thief_chest.fail"
+    }
+  }
+]

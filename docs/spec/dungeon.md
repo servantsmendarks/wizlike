@@ -56,6 +56,9 @@
   "events": ["glowing_tablet", "abandoned_sack"],
   "traps": ["pit", "spinner"],
   "trapsPerFloor": [1, 3],
+  "chestsPerFloor": [1, 3],             // M11: 階ごとの宝箱のセルの個数 [min, max]（DG-23。生成はまだ）
+  "chestTrapMaxDanger": 2,              // M11: 宝箱の罠の危険度の上限 1〜4（CB-61）
+  "chestTrapDangerWeights": [60, 40, 0, 0],  // M11: 危険度 1〜4 の重み。上限より上は 0、合計 > 0（CB-61）
   "teleporterFloors": [],
   "onClear": { "unlockDungeon": "d02", "shopLevel": 2 }  // M7: shopStock は廃止し、流通レベル shopLevel（IT-62）【仮】
 }

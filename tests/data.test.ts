@@ -15,6 +15,8 @@ import penaltyTable from "../data/penalty-table.json";
 import dungeons from "../data/dungeons.json";
 import events from "../data/events.json";
 import tavern from "../data/tavern.json";
+import chestTraps from "../data/chest-traps.json";
+import rivalries from "../data/rivalries.json";
 import strings from "../data/strings.json";
 import wavetables from "../data/wavetables.json";
 import audio from "../data/audio.json";
@@ -52,6 +54,8 @@ function rawData(): Mutable {
     dungeons,
     events,
     tavern,
+    chestTraps,
+    rivalries,
     strings,
     wavetables,
     audio,
@@ -90,6 +94,8 @@ describe("data: 実データ", () => {
     expect(data.penaltyTable.bands).toHaveLength(7);
     expect(data.dungeons.map((d) => d.id)).toEqual(["d01", "d02", "d03"]); // d03 は準備中の枠（DG-35。M9）
     expect(data.events).toHaveLength(6); // M9: EV-53〜55 を追加
+    expect(data.chestTraps.map((t) => t.id)).toEqual(["poison_needle", "crossbow", "bomb", "poison_gas", "paralysis_gas", "alarm", "teleport", "curse"]); // M11（CB-62）
+    expect(data.rivalries.map((x) => x.id)).toEqual(["thief_chest"]); // M11（EV-70）
     expect(data.tavern.events.map((e) => e.id)).toEqual(["dropped_coin", "old_rumor", "spilled_wager", "drowned_bell_rumor"]); // M9 で 2 つ
     expect(data.tavern.lookTexts).toHaveLength(4);
     expect(data.config.prototypeParty.members).toHaveLength(6);
@@ -110,7 +116,10 @@ describe("data: 実データ", () => {
     expect(DATA_FILES.unknownKinds).toBe("unknown-kinds.json");
     expect(DATA_FILES.wavetables).toBe("wavetables.json");
     expect(DATA_FILES.audio).toBe("audio.json");
-    expect(Object.keys(DATA_FILES)).toHaveLength(19);
+    // M11: 宝箱の罠（CB-62）と職業の掛け合い（EV-70）
+    expect(DATA_FILES.chestTraps).toBe("chest-traps.json");
+    expect(DATA_FILES.rivalries).toBe("rivalries.json");
+    expect(Object.keys(DATA_FILES)).toHaveLength(21);
   });
 
   test("data: 実データの定数形ダイス（gold \"0\"、groupSize \"1\"）が通る", () => {
@@ -237,6 +246,39 @@ describe("data: config.json", () => {
     expect(issuesOf((r) => (r.config.events.floor = 60))).toEqual([]);
     expect(issuesOf((r) => (r.config.events.cap = 0))).toEqual([]);
     expect(issuesOf((r) => (r.config.events.lureMul = 0))).toEqual([]);
+  });
+  test("data: CB-61/CB-63/CB-64/IT-56/EV-16 config.chest の既定値【仮】と検証。combat.chestTrapChance は廃止（M11）", () => {
+    const d = loadGameData(rawData());
+    const rate = { statPivot: 10, thiefBonus: 30, agiMul: 2, lukMul: 2, dangerMul: 10, min: 5, max: 95 };
+    expect(d.config.chest).toEqual({
+      noTrapChance: 30,
+      rarityUpPerDanger: 15,
+      inspect: { base: 40, ...rate },
+      disarm: { base: 50, ...rate },
+      triggerChance: 10,
+      wrongNameChance: 50,
+      disarmFailTrigger: 50,
+      impulse: { lure: { treasure: 2, unknown: 0, danger: 1, weak: 0 }, stat: "agi", impulseClasses: ["thief"] },
+    });
+    expect("chestTrapChance" in config.combat).toBe(false);
+    expectIssue((r) => (r.config.combat.chestTrapChance = 40), "config.json", "combat.chestTrapChance: unknown field");
+    expectIssue((r) => delete r.config.chest.noTrapChance, "config.json", "chest.noTrapChance: missing required field");
+    expectIssue((r) => (r.config.chest.noTrapChance = 101), "config.json", "chest.noTrapChance: expected integer in 0..100, got 101");
+    expectIssue((r) => (r.config.chest.rarityUpPerDanger = -1), "config.json", "chest.rarityUpPerDanger: expected integer in 0..100, got -1");
+    expectIssue((r) => delete r.config.chest.inspect.thiefBonus, "config.json", "chest.inspect.thiefBonus: missing required field");
+    expectIssue((r) => (r.config.chest.disarm.dangerMul = 1.5), "config.json", "chest.disarm.dangerMul: expected integer");
+    expectIssue((r) => (r.config.chest.inspect.min = 96), "config.json", "chest.inspect.min: CB-63: min 96 > max 95");
+    expectIssue((r) => (r.config.chest.disarm.max = 4), "config.json", "chest.disarm.min: CB-64: min 5 > max 4");
+    expectIssue((r) => (r.config.chest.disarm.max = 101), "config.json", "chest.disarm.max: expected integer in 0..100, got 101");
+    expectIssue((r) => (r.config.chest.triggerChance = 51), "config.json", "chest.wrongNameChance: CB-63: triggerChance 51 + wrongNameChance 50 > 100");
+    expectIssue((r) => (r.config.chest.disarmFailTrigger = 101), "config.json", "chest.disarmFailTrigger: expected integer in 0..100, got 101");
+    expectIssue((r) => (r.config.chest.impulse.lure.treasure = 4), "config.json", "chest.impulse.lure.treasure: expected integer in 0..3, got 4");
+    expectIssue((r) => (r.config.chest.impulse.stat = "spd"), "config.json", "chest.impulse.stat: expected one of");
+    expectIssue((r) => (r.config.chest.impulse.impulseClasses = ["ninja"]), "config.json", 'chest.impulse.impulseClasses[0]: unknown class id "ninja"');
+    expectIssue((r) => (r.config.chest.impulse.impulseClasses = ["thief", "thief"]), "config.json", 'chest.impulse.impulseClasses[1]: EV-04: duplicate class "thief"');
+    expectIssue((r) => (r.config.chest.impulse.impulseClasses = []), "config.json", "chest.impulse.impulseClasses: expected at least 1 element(s), got 0");
+    expect(issuesOf((r) => delete r.config.chest.impulse.impulseClasses)).toEqual([]);
+    expect(issuesOf((r) => ((r.config.chest.triggerChance = 50), (r.config.chest.wrongNameChance = 50)))).toEqual([]);
   });
   test("data: CB-05 combat.identifyIqPerPoint は 0 以上の整数【仮】", () => {
     expectIssue((r) => (r.config.combat.identifyIqPerPoint = -1), "config.json", "combat.identifyIqPerPoint: expected integer >= 0, got -1");
@@ -1242,6 +1284,22 @@ describe("data: dungeons.json", () => {
     expect(issuesOf((r) => delete r.dungeons[0].rooms)).toEqual([]);
     expect(issuesOf((r) => (r.dungeons[0].rooms = [4, 7]))).toEqual([]);
   });
+  test("data: DG-23/CB-61 chestsPerFloor・chestTrapMaxDanger・chestTrapDangerWeights の実データと検証（M11）", () => {
+    const ds = loadGameData(rawData()).dungeons;
+    expect(ds.map((d) => d.chestsPerFloor)).toEqual([[1, 3], [1, 3], [1, 3]]);
+    expect(ds.map((d) => d.chestTrapMaxDanger)).toEqual([2, 3, 4]);
+    expect(ds.map((d) => d.chestTrapDangerWeights)).toEqual([[60, 40, 0, 0], [40, 35, 25, 0], [30, 30, 25, 15]]);
+    expectIssue((r) => delete r.dungeons[0].chestsPerFloor, "dungeons.json", "[0].chestsPerFloor: missing required field");
+    expectIssue((r) => (r.dungeons[0].chestsPerFloor = [3, 1]), "dungeons.json", "[0].chestsPerFloor: min 3 > max 1");
+    expectIssue((r) => (r.dungeons[0].chestTrapMaxDanger = 0), "dungeons.json", "[0].chestTrapMaxDanger: expected integer in 1..4, got 0");
+    expectIssue((r) => (r.dungeons[0].chestTrapMaxDanger = 5), "dungeons.json", "[0].chestTrapMaxDanger: expected integer in 1..4, got 5");
+    expectIssue((r) => (r.dungeons[0].chestTrapDangerWeights = [60, 40, 0]), "dungeons.json", "[0].chestTrapDangerWeights: CB-61: expected 4 weights (danger 1..4), got 3");
+    expectIssue((r) => (r.dungeons[0].chestTrapDangerWeights = [60, -1, 0, 0]), "dungeons.json", "[0].chestTrapDangerWeights[1]: expected integer >= 0, got -1");
+    expectIssue((r) => (r.dungeons[0].chestTrapDangerWeights = [60, 40, 10, 0]), "dungeons.json", "[0].chestTrapDangerWeights[2]: CB-61: danger 3 exceeds chestTrapMaxDanger 2 (weight must be 0)");
+    expectIssue((r) => (r.dungeons[0].chestTrapDangerWeights = [0, 0, 0, 0]), "dungeons.json", "[0].chestTrapDangerWeights: CB-61: weights must sum to > 0");
+    expect(issuesOf((r) => (r.dungeons[0].chestsPerFloor = [0, 0]))).toEqual([]);
+    expect(issuesOf((r) => (r.dungeons[0].chestTrapDangerWeights = [0, 1, 0, 0]))).toEqual([]);
+  });
 });
 
 describe("data: penalty-table.json の帯の数（UI-56。M5.5）", () => {
@@ -1370,6 +1428,86 @@ describe("data: events.json", () => {
       r.events[0].kind = "choice";
       delete r.events[0].impulseOutcomes;
     }, "events.json", "[0].impulseOutcomes: missing required field");
+  });
+});
+
+describe("data: chest-traps.json（CB-62。M11）", () => {
+  const F = "chest-traps.json";
+  test("data: CB-62 実データの 8 種（危険度・効果）", () => {
+    const ts = loadGameData(rawData()).chestTraps;
+    expect(ts.map((t) => [t.id, t.danger, t.effect.kind])).toEqual([
+      ["poison_needle", 1, "damage"],
+      ["crossbow", 1, "damage"],
+      ["bomb", 2, "damage"],
+      ["poison_gas", 2, "status"],
+      ["paralysis_gas", 3, "status"],
+      ["alarm", 3, "alarm"],
+      ["teleport", 4, "teleport"],
+      ["curse", 4, "san"],
+    ]);
+    expect(ts.map((t) => t.name)).toEqual(ts.map((t) => `chest.trapName.${t.id}`));
+    expect(ts[0]!.effect).toEqual({ kind: "damage", target: "one", dice: "1d4", status: "poison" });
+    expect(ts[3]!.effect).toEqual({ kind: "status", target: "all", status: "poison", chance: 60 });
+    expect(ts[7]!.effect).toEqual({ kind: "san", target: "all", amount: 8 });
+  });
+  test("data: CB-62 検証: id の重複、danger 1..4、効果の kind と欄、ダイス、状態、確率、文言の鍵", () => {
+    expectIssue((r) => (r.chestTraps[1].id = "poison_needle"), F, '[1].id: duplicate id "poison_needle"');
+    expectIssue((r) => (r.chestTraps[0].danger = 0), F, "[0].danger: expected integer in 1..4, got 0");
+    expectIssue((r) => (r.chestTraps[0].danger = 5), F, "[0].danger: expected integer in 1..4, got 5");
+    expectIssue((r) => (r.chestTraps[0].effect.kind = "fire"), F, "[0].effect.kind: expected one of damage|status|alarm|teleport|san");
+    expectIssue((r) => (r.chestTraps[0].effect.target = "row"), F, "[0].effect.target: expected one of one|all");
+    expectIssue((r) => (r.chestTraps[0].effect.dice = "d4"), F, "[0].effect.dice");
+    expectIssue((r) => (r.chestTraps[0].effect.status = "curse"), F, "[0].effect.status: expected one of");
+    expectIssue((r) => (r.chestTraps[3].effect.chance = 101), F, "[3].effect.chance: expected integer in 0..100, got 101");
+    expectIssue((r) => (r.chestTraps[3].effect.target = "one"), F, "[3].effect.target: expected one of all");
+    expectIssue((r) => (r.chestTraps[5].effect.dice = "1d6"), F, "[5].effect.dice: unknown field");
+    expectIssue((r) => (r.chestTraps[7].effect.amount = -1), F, "[7].effect.amount: expected integer >= 0, got -1");
+    expectIssue((r) => (r.chestTraps[0].name = "chest.trapName.nope"), F, '[0].name: unknown strings.json key "chest.trapName.nope"');
+    expectIssue((r) => delete r.strings["chest.trap.bomb"], F, '[2]: unknown strings.json key "chest.trap.bomb"');
+    expect(issuesOf((r) => delete r.chestTraps[1].effect.status)).toEqual([]);
+  });
+  test("data: CB-61 危険度 1〜4 のそれぞれに 1 件以上ある", () => {
+    expectIssue((r) => (r.chestTraps = r.chestTraps.filter((t: any) => t.danger !== 3)), F, "(root): CB-61: no trap with danger 3");
+    expectIssue((r) => (r.chestTraps = []), F, "(root): CB-61: no trap with danger 1");
+  });
+  test("data: CB-62 語り chest.trap.<id> は {actor} だけを差し込む", () => {
+    expectIssue((r) => (r.strings["chest.trap.bomb"] = "{name}の手元で爆ぜた。"), F, '[2]: CB-62: strings "chest.trap.bomb" may only use {actor} (found {name})');
+  });
+});
+
+describe("data: rivalries.json（EV-70〜76。M11）", () => {
+  const F = "rivalries.json";
+  test("data: EV-70 実データの thief_chest", () => {
+    expect(loadGameData(rawData()).rivalries).toEqual([
+      {
+        id: "thief_chest",
+        trigger: "chest",
+        classId: "thief",
+        chance: 50,
+        contest: { stats: ["agi", "luk"], dice: "1d6" },
+        bonus: { inspect: 10 },
+        loserSan: 1,
+        failSan: 3,
+        text: { start: "rivalry.thief_chest.start", win: "rivalry.thief_chest.win", fail: "rivalry.thief_chest.fail" },
+      },
+    ]);
+  });
+  test("data: EV-70〜76 検証: id の重複、trigger、職業、確率、競り合いの能力値とダイス、補正、SAN、文言の鍵と差し込み", () => {
+    expectIssue((r) => r.rivalries.push(structuredClone(r.rivalries[0])), F, '[1].id: duplicate id "thief_chest"');
+    expectIssue((r) => (r.rivalries[0].trigger = "event"), F, "[0].trigger: expected one of chest");
+    expectIssue((r) => (r.rivalries[0].classId = "ninja"), F, '[0].classId: unknown class id "ninja"');
+    expectIssue((r) => (r.rivalries[0].chance = 101), F, "[0].chance: expected integer in 0..100, got 101");
+    expectIssue((r) => (r.rivalries[0].contest.stats = []), F, "[0].contest.stats: expected at least 1 element(s), got 0");
+    expectIssue((r) => (r.rivalries[0].contest.stats = ["agi", "spd"]), F, "[0].contest.stats[1]: expected one of");
+    expectIssue((r) => (r.rivalries[0].contest.stats = ["agi", "agi"]), F, '[0].contest.stats[1]: EV-72: duplicate stat "agi"');
+    expectIssue((r) => (r.rivalries[0].contest.dice = "x"), F, "[0].contest.dice");
+    expectIssue((r) => (r.rivalries[0].bonus.inspect = -1), F, "[0].bonus.inspect: expected integer >= 0, got -1");
+    expectIssue((r) => (r.rivalries[0].loserSan = -1), F, "[0].loserSan: expected integer >= 0, got -1");
+    expectIssue((r) => (r.rivalries[0].failSan = 1.5), F, "[0].failSan: expected integer");
+    expectIssue((r) => (r.rivalries[0].text.win = "rivalry.nope"), F, '[0].text.win: unknown strings.json key "rivalry.nope"');
+    expectIssue((r) => (r.strings["rivalry.thief_chest.fail"] = "{actor}は唇を噛んだ。"), F, '[0].text.fail: EV-73: strings "rivalry.thief_chest.fail" may only use {name} (found {actor})');
+    expectIssue((r) => (r.strings["rivalry.thief_chest.start"] = "{winner}と{b}が箱を見た。"), F, "[0].text.start: EV-73");
+    expect(issuesOf((r) => (r.rivalries = []))).toEqual([]);
   });
 });
 

@@ -95,6 +95,21 @@ export type PrototypeMember = {
   knownSpells: string[];
 };
 
+/**
+ * CB-63 / CB-64（M11）【仮】: 成功率 = clamp(min, max, base + (盗賊なら thiefBonus) + (agi − statPivot) × agiMul
+ * + (luk − statPivot) × lukMul + trapDetect − 危険度 × dangerMul)
+ */
+export type ChestRateConfig = {
+  base: number;
+  statPivot: number;
+  thiefBonus: number;
+  agiMul: number;
+  lukMul: number;
+  dangerMul: number;
+  min: number;
+  max: number;
+};
+
 export type Config = {
   stage: { width: number; height: number };
   party: { size: number; frontRow: number };
@@ -163,7 +178,6 @@ export type Config = {
     chestChance: number;
     /** CB-51 / CB-52【仮】: 通路のセル（部屋でないセル）のランダム遭遇に勝ったときの宝箱の確率（%） */
     chestChanceCorridor: number;
-    chestTrapChance: number;
     /** CB-52【仮】: M3 の仮実装の宝箱の金のダイス */
     chestGoldDice: string;
     unarmedDice: string;
@@ -247,6 +261,25 @@ export type Config = {
   town: { innRanks: InnRank[]; tavernEventTurns: number; tavernEventChance: number };
   /** EV-11 / EV-14（M11）: 衝動確率の誘いの倍率 lureMul（%）、上限 cap・下限 floor（%）【仮】。stopSanGain は EV-22、confusedLureWeight は EV-14【仮】 */
   events: { lureMul: number; cap: number; floor: number; stopSanGain: number; confusedLureWeight: number };
+  /** combat.md §6b（M11）宝箱の数値【仮】 */
+  chest: {
+    /** CB-61: 罠なしの箱の確率（%） */
+    noTrapChance: number;
+    /** IT-56: 危険度 1 あたりの希少度の 1 段の上振れの確率（%） */
+    rarityUpPerDanger: number;
+    /** CB-63: 調べるの成功率の式の定数 */
+    inspect: ChestRateConfig;
+    /** CB-64: 解除の成功率の式の定数 */
+    disarm: ChestRateConfig;
+    /** CB-63: 調べるに失敗したとき、2 回目の d100 がこれ以下なら作動（失敗のうちの %） */
+    triggerChance: number;
+    /** CB-63: 調べるに失敗して作動しなかったとき、別の罠の名前を告げる段の幅（失敗のうちの %。triggerChance + これ ≤ 100） */
+    wrongNameChance: number;
+    /** CB-64（U-4）: 名前が合って解除の判定に失敗したときに作動する確率（%）。作動しなければ再挑戦できる */
+    disarmFailTrigger: number;
+    /** EV-16: 宝箱の衝動判定の spec（decideImpulse に渡す） */
+    impulse: { lure: LureWeights; stat: StatKey; impulseClasses?: string[] };
+  };
   save: { maxGames: number; schemaVersion: number };
   input: { swipeThresholdPx: number; holdRepeatMs: number; edgeDeadZonePx: number };
   ui: {
@@ -654,6 +687,12 @@ export type DungeonDef = {
   events: string[];
   traps: TrapId[];
   trapsPerFloor: [number, number];
+  /** DG-23（M11）: 階ごとの宝箱のセルの個数 [min, max] */
+  chestsPerFloor: [number, number];
+  /** CB-61（M11）: 宝箱の罠の危険度の上限 1..4 */
+  chestTrapMaxDanger: number;
+  /** CB-61（M11）: 危険度 1..4 の重み（長さ 4。上限より上の段は 0。合計 > 0） */
+  chestTrapDangerWeights: number[];
   teleporterFloors: number[];
   /** shopLevel: IT-62 の流通レベル（初回クリアで progress.shopLevel をこれ以上にする。M7。v3 → v4 の移行でも使う）【仮】 */
   onClear: { unlockDungeon: string | null; shopLevel: number };
@@ -716,6 +755,46 @@ export type EventDef = {
   text: { intro: string; impulse: string };
   impulseOutcomes: ImpulseOutcome[];
   choices: EventChoice[];
+};
+
+// ---- chest-traps.json（CB-61 / CB-62。M11） ----
+
+export const CHEST_TRAP_KINDS = ["damage", "status", "alarm", "teleport", "san"] as const;
+export type ChestTrapKind = (typeof CHEST_TRAP_KINDS)[number];
+/** CB-61: 宝箱の罠の危険度は 1..4 */
+export const CHEST_TRAP_MAX_DANGER = 4;
+
+/** CB-62: 宝箱の罠の効果。target one は作動させた人 1 人、all は生存者全員 */
+export type ChestTrapEffect =
+  | { kind: "damage"; target: "one" | "all"; dice: string; status?: StatusId }
+  | { kind: "status"; target: "all"; status: StatusId; chance: number }
+  | { kind: "alarm" }
+  | { kind: "teleport" }
+  | { kind: "san"; target: "all"; amount: number };
+
+/** CB-62: 宝箱の罠。床の罠（TRAP_IDS）とは別の id 空間。name は罠の名前の strings キー、語りは chest.trap.<id> */
+export type ChestTrapDef = { id: string; name: string; danger: number; effect: ChestTrapEffect };
+
+// ---- rivalries.json（EV-70〜76。M11） ----
+
+export const RIVALRY_TRIGGERS = ["chest"] as const;
+export type RivalryTrigger = (typeof RIVALRY_TRIGGERS)[number];
+
+/**
+ * EV-70: 職業の掛け合い。classId の行動可能なメンバーが 2 人以上いるとき、契機（trigger）で chance % で起きる。
+ * contest の能力値の合計 + dice の最大が担当。担当の調べるに bonus.inspect、負けた者に SAN −loserSan、担当の調べるの失敗で SAN −failSan
+ */
+export type RivalryDef = {
+  id: string;
+  trigger: RivalryTrigger;
+  classId: string;
+  chance: number;
+  contest: { stats: StatKey[]; dice: string };
+  bonus: { inspect: number };
+  loserSan: number;
+  failSan: number;
+  /** strings キー。start は {a}{b}、win は {winner}{loser}、fail は {name} を差し込む */
+  text: { start: string; win: string; fail: string };
 };
 
 // ---- tavern.json（TW-13 / TW-14。M5.5） ----
@@ -864,6 +943,8 @@ export type GameData = {
   dungeons: DungeonDef[];
   events: EventDef[];
   tavern: TavernData;
+  chestTraps: ChestTrapDef[];
+  rivalries: RivalryDef[];
   strings: Strings;
   wavetables: Wavetables;
   audio: AudioData;
@@ -890,6 +971,8 @@ export const DATA_FILES: { readonly [K in keyof RawGameData]: string } = {
   dungeons: "dungeons.json",
   events: "events.json",
   tavern: "tavern.json",
+  chestTraps: "chest-traps.json",
+  rivalries: "rivalries.json",
   strings: "strings.json",
   wavetables: "wavetables.json",
   audio: "audio.json",

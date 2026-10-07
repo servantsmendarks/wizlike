@@ -27,6 +27,8 @@ import {
   AUDIO_FACILITIES,
   AUDIO_SCREENS,
   AUTO_BATTLE_STYLES,
+  CHEST_TRAP_KINDS,
+  CHEST_TRAP_MAX_DANGER,
   CLASS_ABILITIES,
   CLASS_TIERS,
   CUE_EVENTS,
@@ -45,6 +47,7 @@ import {
   OUTCOME_QUALITIES,
   PERSONALITY_IDS,
   PLACEHOLDER_COLORS,
+  RIVALRY_TRIGGERS,
   SKILL_TYPES,
   SCHOOLS,
   SPELL_TARGETS,
@@ -248,6 +251,22 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
     inventory: L(S),
     knownSpells: L(S),
   });
+  const classRef: Field = (c2, p, x) => {
+    const s = str(c2, p, x);
+    ref(c2, p, s, ix.classes, "class");
+    return s;
+  };
+  // CB-63 / CB-64（M11）【仮】: 調べる・解除の成功率の式の定数
+  const chestRate = F({
+    base: I(),
+    statPivot: I(),
+    thiefBonus: I(NON_NEG),
+    agiMul: I(),
+    lukMul: I(),
+    dangerMul: I(NON_NEG),
+    min: I(PERCENT),
+    max: I(PERCENT),
+  });
   const c = fields(ctx, "", v, {
     stage: F({ width: I({ min: 240, max: 240 }), height: I({ min: 400, max: 400 }) }), // UI-01
     party: F({ size: I({ min: 6, max: 6 }), frontRow: I({ min: 3, max: 3 }) }), // CH-01
@@ -304,7 +323,6 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       fleeAgiMul: I(),
       chestChance: I(PERCENT), // CB-51 / CB-52【仮】部屋
       chestChanceCorridor: I(PERCENT), // CB-51 / CB-52【仮】通路
-      chestTrapChance: I(PERCENT),
       chestGoldDice: D, // CB-52【仮】（M3 の仮実装）
       unarmedDice: D,
       autoInterrupt: F({ hpRatio: N(RATIO) }),
@@ -406,6 +424,17 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       stopSanGain: I(NON_NEG),
       confusedLureWeight: I({ min: 0, max: 3 }), // EV-14 の仮の重み【仮】
     }),
+    // combat.md §6b（M11）宝箱【仮】
+    chest: F({
+      noTrapChance: I(PERCENT), // CB-61
+      rarityUpPerDanger: I(PERCENT), // IT-56
+      inspect: chestRate, // CB-63
+      disarm: chestRate, // CB-64
+      triggerChance: I(PERCENT), // CB-63
+      wrongNameChance: I(PERCENT), // CB-63
+      disarmFailTrigger: I(PERCENT), // CB-64（U-4）
+      impulse: F({ lure, stat: E(STAT_KEYS), impulseClasses: opt(L(classRef, 1)) }), // EV-16 / EV-04
+    }),
     save: F({ maxGames: I(POS_INT), schemaVersion: I(POS_INT) }),
     input: F({ swipeThresholdPx: I(POS_INT), holdRepeatMs: I(POS_INT), edgeDeadZonePx: I(NON_NEG) }),
     ui: F({
@@ -448,6 +477,21 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
   const evFloor = intOf(get(c, "events", "floor"));
   const evCap = intOf(get(c, "events", "cap"));
   if (evFloor !== undefined && evCap !== undefined && evFloor > evCap) report(ctx, "events.floor", `EV-11: floor ${evFloor} > cap ${evCap}`);
+  // CB-63 / CB-64（M11）: 成功率の上下限
+  for (const [k, id] of [["inspect", "CB-63"], ["disarm", "CB-64"]] as const) {
+    const lo = intOf(get(c, "chest", k, "min"));
+    const hi = intOf(get(c, "chest", k, "max"));
+    if (lo !== undefined && hi !== undefined && lo > hi) report(ctx, `chest.${k}.min`, `${id}: min ${lo} > max ${hi}`);
+  }
+  // CB-63（M11）: 調べるの失敗の 2 回目の d100 は「作動」「別の名前」「不明」の段に分ける。前の 2 段の幅の合計は 100 以下
+  const trig = intOf(get(c, "chest", "triggerChance"));
+  const wrong = intOf(get(c, "chest", "wrongNameChance"));
+  if (trig !== undefined && wrong !== undefined && trig + wrong > 100)
+    report(ctx, "chest.wrongNameChance", `CB-63: triggerChance ${trig} + wrongNameChance ${wrong} > 100`);
+  // EV-04（M11）: 宝箱の衝動の impulseClasses の職業は重複しない
+  arrOf(get(c, "chest", "impulse", "impulseClasses")).forEach((k, j, a) => {
+    if (typeof k === "string" && a.indexOf(k) < j) report(ctx, at("chest.impulse.impulseClasses", j), `EV-04: duplicate class ${JSON.stringify(k)}`);
+  });
 
   // IT-30: 希少度は normal / fine / rare / legendary の順で 4 件。重みの合計は正、個数は 0..3
   const rarities = arrOf(get(c, "items", "rarities"));
@@ -1108,6 +1152,9 @@ function validateDungeons(ctx: Ctx, v: unknown, ix: Index): void {
         return t;
       }),
       trapsPerFloor: pair(NON_NEG),
+      chestsPerFloor: pair(NON_NEG), // DG-23（M11）
+      chestTrapMaxDanger: I({ min: 1, max: CHEST_TRAP_MAX_DANGER }), // CB-61（M11）
+      chestTrapDangerWeights: L(I(NON_NEG)), // CB-61（M11）。長さと上限は下で検査する
       teleporterFloors: L(I(POS_INT)),
       onClear: F({
         unlockDungeon: nullable(refField(ix.dungeons, "dungeon")),
@@ -1164,6 +1211,22 @@ function validateDungeons(ctx: Ctx, v: unknown, ix: Index): void {
       arrOf(d.teleporterFloors).forEach((f, j) => {
         if (typeof f === "number" && f > floors) report(ctx, at(at(p, "teleporterFloors"), j), `DG-34: floor ${f} exceeds floors ${floors}`);
       });
+    }
+
+    // CB-61（M11）: 危険度 1..4 の重みは 4 個。chestTrapMaxDanger より上の段は 0。合計 > 0
+    const cw = d.chestTrapDangerWeights;
+    if (Array.isArray(cw)) {
+      const wp = at(p, "chestTrapDangerWeights");
+      if (cw.length !== CHEST_TRAP_MAX_DANGER)
+        report(ctx, wp, `CB-61: expected ${CHEST_TRAP_MAX_DANGER} weights (danger 1..${CHEST_TRAP_MAX_DANGER}), got ${cw.length}`);
+      const maxDanger = intOf(d.chestTrapMaxDanger);
+      if (maxDanger !== undefined)
+        cw.forEach((w, j) => {
+          if (j + 1 > maxDanger && typeof w === "number" && w !== 0)
+            report(ctx, at(wp, j), `CB-61: danger ${j + 1} exceeds chestTrapMaxDanger ${maxDanger} (weight must be 0)`);
+        });
+      const nums = cw.filter((n): n is number => typeof n === "number");
+      if (nums.length === cw.length && nums.reduce((s, n) => s + n, 0) <= 0) report(ctx, wp, "CB-61: weights must sum to > 0");
     }
 
     // DG-31（M9）: ボスの敵は special.boss
@@ -1302,6 +1365,97 @@ function validateEvents(ctx: Ctx, v: unknown, ix: Index): void {
     // EV-01: 衝動型・混合型は衝動判定をするので、衝動の結果が要る（選択型は空でよい）
     if ((e.kind === "impulse" || e.kind === "mixed") && Array.isArray(e.impulseOutcomes) && e.impulseOutcomes.length === 0)
       report(ctx, at(at("", i), "impulseOutcomes"), `EV-01: kind ${JSON.stringify(e.kind)} needs at least 1 impulse outcome`);
+  });
+}
+
+/** strings[key] の差し込みが allowed の部分集合でなければ報告する（キーが無いときは strKey が報告する） */
+function onlyPlaceholders(ctx: Ctx, p: string, key: unknown, allowed: readonly string[], id: string, ix: Index): void {
+  if (typeof key !== "string") return;
+  const bad = [...(ix.stringText.get(key) ?? "").matchAll(PLACEHOLDER_RE)].map((m) => m[0]).filter((x) => !allowed.includes(x));
+  if (bad.length > 0)
+    report(ctx, p, `${id}: strings ${JSON.stringify(key)} may only use ${allowed.join(" ") || "no placeholders"} (found ${bad.join(" ")})`);
+}
+
+// ---- chest-traps.json（CB-61 / CB-62。M11） ----
+
+/** CB-62: 効果の kind ごとの欄（kind 以外） */
+const CHEST_EFFECT_FIELDS: Record<(typeof CHEST_TRAP_KINDS)[number], Record<string, Field>> = {
+  damage: { target: E(["one", "all"]), dice: D, status: opt(E(STATUS_IDS)) },
+  status: { target: E(["all"]), status: E(STATUS_IDS), chance: I(PERCENT) },
+  alarm: {},
+  teleport: {},
+  san: { target: E(["all"]), amount: I(NON_NEG) },
+};
+
+function validateChestTraps(ctx: Ctx, v: unknown, ix: Index): void {
+  const effect: Field = (c, p, x) => {
+    const o = obj(c, p, x, null);
+    if (o === undefined) return undefined;
+    const k = oneOf(c, at(p, "kind"), o.kind, CHEST_TRAP_KINDS);
+    if (k === undefined) return undefined;
+    return fields(c, p, o, { kind: () => undefined, ...CHEST_EFFECT_FIELDS[k] });
+  };
+  const nameRef: Field = (c, p, x) => {
+    const s = str(c, p, x);
+    strKey(c, p, s, ix);
+    onlyPlaceholders(c, p, s, [], "CB-62", ix);
+    return s;
+  };
+  const a = L(F({ id: S, name: nameRef, danger: I({ min: 1, max: CHEST_TRAP_MAX_DANGER }), effect }))(ctx, "", v);
+  if (!Array.isArray(a)) return;
+  uniqueIds(ctx, "", a);
+  a.forEach((t, i) => {
+    const id = strOf(get(t, "id"));
+    if (id === undefined) return;
+    // CB-62: 作動の語りは chest.trap.<id>。作動させた人 {actor} だけを差し込む
+    const key = `chest.trap.${id}`;
+    strKey(ctx, at("", i), key, ix);
+    onlyPlaceholders(ctx, at("", i), key, ["{actor}"], "CB-62", ix);
+  });
+  // CB-61: 危険度 1..4 のそれぞれに 1 件以上（抽選で空の段を作らない）
+  for (let dg = 1; dg <= CHEST_TRAP_MAX_DANGER; dg++)
+    if (!a.some((t) => get(t, "danger") === dg)) report(ctx, "", `CB-61: no trap with danger ${dg}`);
+}
+
+// ---- rivalries.json（EV-70〜76。M11） ----
+
+/** EV-73: 掛け合いの文言の差し込み */
+const RIVALRY_PLACEHOLDERS = { start: ["{a}", "{b}"], win: ["{winner}", "{loser}"], fail: ["{name}"] } as const;
+
+function validateRivalries(ctx: Ctx, v: unknown, ix: Index): void {
+  const classRef: Field = (c, p, x) => {
+    const s = str(c, p, x);
+    ref(c, p, s, ix.classes, "class");
+    return s;
+  };
+  const strRef: Field = (c, p, x) => {
+    const s = str(c, p, x);
+    strKey(c, p, s, ix);
+    return s;
+  };
+  const a = L(
+    F({
+      id: S,
+      trigger: E(RIVALRY_TRIGGERS),
+      classId: classRef,
+      chance: I(PERCENT),
+      contest: F({ stats: L(E(STAT_KEYS), 1), dice: D }),
+      bonus: F({ inspect: I(NON_NEG) }),
+      loserSan: I(NON_NEG),
+      failSan: I(NON_NEG),
+      text: F({ start: strRef, win: strRef, fail: strRef }),
+    }),
+  )(ctx, "", v); // 空の配列は可（掛け合いなし）
+  if (!Array.isArray(a)) return;
+  uniqueIds(ctx, "", a);
+  a.forEach((r, i) => {
+    const p = at("", i);
+    // EV-72: 競り合いの能力値は重複しない
+    arrOf(get(r, "contest", "stats")).forEach((k, j, ks) => {
+      if (typeof k === "string" && ks.indexOf(k) < j) report(ctx, at(at(at(p, "contest"), "stats"), j), `EV-72: duplicate stat ${JSON.stringify(k)}`);
+    });
+    for (const [k, allowed] of Object.entries(RIVALRY_PLACEHOLDERS))
+      onlyPlaceholders(ctx, at(at(p, "text"), k), get(r, "text", k), allowed, "EV-73", ix);
   });
 }
 
@@ -1558,6 +1712,8 @@ export function validateGameData(raw: RawGameData): string[] {
   validateDungeons(ctxOf("dungeons"), raw.dungeons, ix);
   validateEvents(ctxOf("events"), raw.events, ix);
   validateTavern(ctxOf("tavern"), raw.tavern, ix);
+  validateChestTraps(ctxOf("chestTraps"), raw.chestTraps, ix);
+  validateRivalries(ctxOf("rivalries"), raw.rivalries, ix);
   validateStrings(ctxOf("strings"), raw.strings, ix);
   validateWavetables(ctxOf("wavetables"), raw.wavetables);
   validateAudio(ctxOf("audio"), raw.audio, ix);

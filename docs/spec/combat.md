@@ -73,9 +73,40 @@
   - 受け付けないとき: 逃走できない戦闘（CB-02）、オート中、行動可能な味方が 0 人。
   - 成功すると戦闘終了（経験値なし）。失敗すると敵だけが 1 ラウンド行動し、次のラウンドへ進む（CB-04 の味方の奇襲は消費する）。
 - CB-51 勝利: EXP を生存者で等分（CH-60）。金は `monsters[].gold` の合計を所持金へ加え、潜行台帳（DG-40）に記録。宝箱判定はランダム遭遇の勝利時に、部屋セルでの遭遇なら `config.combat.chestChance`（60）%【仮】、通路のセル（部屋でないセル）での遭遇なら `config.combat.chestChanceCorridor`（15）%【仮】（2026-10-05。以前は部屋セルだけで 30%）。金は倒した個体ごとに `monsters[].gold` を振り（負は 0）、所持金と潜行台帳の両方に加える。EXP の等分の対象は、戦闘終了時に life が alive の全員（麻痺・石化・SAN 0 を含む）。M7: 金の合計（宝箱の金も）に、行動可能な味方のオプション `goldLuck`（IT-34）の合計 % を掛ける（floor）。ボスに勝ったら戦利品（IT-50。drops.json の boss）を引く。
-- CB-52 宝箱: 罠付きの可能性 `config.combat.chestTrapChance`（40）%【仮】。手順は「調べる（慎重の `trapDetect` で罠の有無が分かる）→ 解除（盗賊の `disarm`、失敗で罠発動）→ 開ける」。中身は階のドロップ表から、強欲の `chestQuality` で 1 段階上の表を引く。プロトタイプでは罠は「ダメージ」1 種類【仮】。M3 の仮実装: ランダム遭遇の部屋のセルでの勝利時だけ chestChance% で出て、罠なし、中身は `config.combat.chestGoldDice`（2d10）【仮】の金。ボス戦では判定しない。罠・解除・`chestQuality` は M5。（M5 で罠・解除・chestQuality はプロトタイプ後とした。A7）M7: 中身を品に広げる。金（chestGoldDice）は今のまま出し、続けて `drops.json` の `chest`（ダンジョン・階ごとの表）から品を引く（IT-50〜54）。強欲の `chestQuality` は「1 段階上の表」ではなく、品の希少度を上げる段数（IT-31）。罠・調べる・解除はプロトタイプ後のまま（items.md §11 の Q7）。2026-10-05: 宝箱はランダム遭遇の通路のセルでの勝利時にも `config.combat.chestChanceCorridor`（15）%【仮】で出る（部屋のセルは chestChance 60%【仮】）。判定は勝利の金の後に chance 1 回で、出たときの金と品の手順は部屋と同じ。ボス戦では判定しない（乱数も使わない）。
+- CB-52 宝箱: 罠付きの可能性 `config.combat.chestTrapChance` は M11 で廃止し、罠の抽選は CB-61 に置き換えた（使っていなかった値。M11 の流れが入るまで、下の仮実装は罠なしのまま）。手順は「調べる（慎重の `trapDetect` で罠の有無が分かる）→ 解除（盗賊の `disarm`、失敗で罠発動）→ 開ける」。中身は階のドロップ表から、強欲の `chestQuality` で 1 段階上の表を引く。プロトタイプでは罠は「ダメージ」1 種類【仮】。M3 の仮実装: ランダム遭遇の部屋のセルでの勝利時だけ chestChance% で出て、罠なし、中身は `config.combat.chestGoldDice`（2d10）【仮】の金。ボス戦では判定しない。罠・解除・`chestQuality` は M5。（M5 で罠・解除・chestQuality はプロトタイプ後とした。A7）M7: 中身を品に広げる。金（chestGoldDice）は今のまま出し、続けて `drops.json` の `chest`（ダンジョン・階ごとの表）から品を引く（IT-50〜54）。強欲の `chestQuality` は「1 段階上の表」ではなく、品の希少度を上げる段数（IT-31）。罠・調べる・解除はプロトタイプ後のまま（items.md §11 の Q7）。2026-10-05: 宝箱はランダム遭遇の通路のセルでの勝利時にも `config.combat.chestChanceCorridor`（15）%【仮】で出る（部屋のセルは chestChance 60%【仮】）。判定は勝利の金の後に chance 1 回で、出たときの金と品の手順は部屋と同じ。ボス戦では判定しない（乱数も使わない）。
 - CB-53 全滅 = 味方全員が行動不能（CH-44）。睡眠だけの場合は全滅としない（睡眠は覚める）。全滅時は `battleEnd(wipe)` → `battle.wipe` → 味方の睡眠の解除 → 全滅処理（TW-20〜26）で、screen は town になる（screen{dungeon} は出さない）。「睡眠だけ」とは、行動可能な者が 0 人でも、alive・SAN>0・睡眠あり・麻痺と石化なしの者が 1 人でもいる状態で、このときは戦闘を続ける。
 - CB-54 戦闘中の死亡は即座に `dead`。戦闘後も持続する（CH-45）。
+
+## 6b. 宝箱と罠（M11。実装中）
+
+M11 で CB-52 の仮実装を置き換える。この節は今はデータと検証（罠の表・数値・ダンジョンごとの制限）まで。開封の流れ（CB-60 経路と状態、CB-63 調べる、CB-64 解除、CB-65 開ける、CB-66 放っておく、CB-67 警報の戦闘）の文は、実装のコミットで足す。
+
+- CB-61 罠の抽選: 箱を見つけた時点で次の順に引く（ドロップの箱は `state.rng`、宝箱のセルは生成時に階の rng。DG-23）。(1) `chance(config.chest.noTrapChance)`（30）%【仮】が当たれば罠なし（危険度 0）。(2) `weightedIndex(dungeons[].chestTrapDangerWeights)` で危険度 1〜4 を決める。(3) その危険度の罠（`data/chest-traps.json` のデータの順）から `randInt` で 1 つ選ぶ。ダンジョンごとの上限 `dungeons[].chestTrapMaxDanger`（1〜4）より上の段の重みは 0 でなければならない（検証で止める）。重みは長さ 4・非負の整数・合計 > 0。危険度 1〜4 のそれぞれに罠が 1 件以上あること（検証で止める）。
+- CB-62 罠の表 `data/chest-traps.json`: `{ id, name（罠の名前の strings キー）, danger（1〜4）, effect }`。床の罠（DG-20 の `TRAP_IDS`）とは別の id 空間。作動の語りは strings の `chest.trap.<id>`（差し込みは `{actor}` だけ）。効果 `effect.kind`:
+  - `damage`: `target` が `one` なら作動させた人 1 人、`all` なら生存者全員に、それぞれ `dice` のダメージ。`status` があれば（`one` のとき）判定なしで付ける。
+  - `status`: `target` は `all`。生存者それぞれに CB-30 と同じ式（`chance` と運・`statusResist`）で `status` を付ける。
+  - `alarm`: 罠を消し、箱を残したまま即座に遭遇する（CB-67）。中身は得ない。
+  - `teleport`: 箱を失い、同じ階の通路のランダムな位置へ移る（DG-25）。中身は得ない。
+  - `san`: `target` は `all`。生存者全員の SAN を `amount` 減らす（"trap" の耐性が効く）。
+
+  | id | 名前 | 危険度 | 効果 |
+  |---|---|---|---|
+  | poison_needle | 毒針 | 1 | 1 人に 1d4 と毒 |
+  | crossbow | 石弓 | 1 | 1 人に 2d4 |
+  | bomb | 爆弾 | 2 | 全員に 1d6 |
+  | poison_gas | 毒ガス | 2 | 全員に毒の判定（60） |
+  | paralysis_gas | 麻痺ガス | 3 | 全員に麻痺の判定（35） |
+  | alarm | 警報 | 3 | 即遭遇。箱は残る |
+  | teleport | 転移 | 4 | 同じ階の通路へ。箱は失う |
+  | curse | 呪詛 | 4 | 全員 SAN −8 |
+
+- 宝箱の数値 `config.chest`【仮】:
+  - `noTrapChance` 30（CB-61）。
+  - `inspect`（CB-63）・`disarm`（CB-64）: 成功率 = clamp(`min`, `max`, `base` + (盗賊なら `thiefBonus`) + (agi − `statPivot`) × `agiMul` + (luk − `statPivot`) × `lukMul` + trapDetect − 危険度 × `dangerMul`)。調べるは base 40、解除は base 50。ほかは共通で statPivot 10・thiefBonus 30・agiMul 2・lukMul 2・dangerMul 10・min 5・max 95。
+  - `triggerChance` 10・`wrongNameChance` 50（CB-63）: 調べるに失敗したとき、2 回目の d100 が 1〜triggerChance なら作動、続く wrongNameChance の幅なら別の罠の名前を告げ、残りは「分からない」。2 つの合計は 100 以下（検証で止める）。
+  - `disarmFailTrigger` 50（CB-64）: 名前が合っていて解除の判定に失敗したとき、この確率で作動する。作動しなければ箱は残り、再挑戦できる。名前が違えば必ず作動する。
+  - `rarityUpPerDanger` 15（items.md の IT-56）: 箱の危険度 × この値 % で、品の希少度を 1 段上げる。
+  - `impulse`（events.md の EV-16）: 宝箱の衝動判定の誘い `lure`（宝 2・危険 1）、能力値 `stat`（agi）、`impulseClasses`（["thief"]）。
 
 ## 7. 表示層への引き渡し
 

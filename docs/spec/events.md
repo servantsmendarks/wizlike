@@ -15,6 +15,7 @@
 - EV-13 成功者がいなければ「衝動なし」。`impulse` なら「何も起きない」の結果、`mixed` なら選択型として続行。
 - EV-14 普通 `normal` は `lure` がすべて 0 で、衝動しない（0%）。ただし SAN が「錯乱」（CH-53、25% 未満）のメンバーは、性格に関わらずランダムな 1 タグに重み `config.events.confusedLureWeight`（2）【仮】を持つものとして EV-11 の積を計算する（普通も暴走する）。この重みは性格の `lure` を置き換える（加算しない）。タグはその者の d100 の前に randInt(0, 3) で `LURE_TAGS`（宝・未知・危険・弱者）の順から選び、積が 0 なら d100 は振らない（M5）。`impulseClasses` の外の者は錯乱していてもタグを選ばない（EV-04）。
 - EV-15 判定のダイス（衝動の d100）は表示しない。制止判定（EV-20）の 1d10 は表示する【仮】。
+- EV-16 宝箱の衝動（M11。実装中。今はデータと検証まで）: 宝箱を見つけたとき（combat.md §6b）、`config.chest.impulse` を spec にして EV-10〜14 の衝動判定を行う。誘いは宝 2・危険 1【仮】、能力値は `agi`【仮】、`impulseClasses` は `["thief"]`【仮】（EV-04）。衝動なら行動者が「調べずに開ける」。制止と開封の流れの文は実装のコミットで足す。
 
 ## 3. 制止判定
 
@@ -81,3 +82,27 @@
 `autoBattle`: `"none"` / `"defendBelowHalf"` / `"alwaysAttack"` / `"targetRichest"`。
 
 `data/events.json` は EV-50〜52 を例として構造を示す。フィールドの追加は許すが、既存のフィールドの意味は変えない。
+
+## 9. 職業の掛け合い（M11。実装中）
+
+今はデータと検証まで。発生・競り合い・補正の処理は実装のコミットで入る。
+
+- EV-70 職業の掛け合いは、同じ職業のメンバーが 2 人以上いるときに起きる寸劇。定義は `data/rivalries.json`（空の配列は可）。契機 `trigger` は今は宝箱 `chest` だけ。
+- EV-71 発生: 宝箱を見つけ（combat.md §6b）、衝動（EV-16）と制止を終えて箱が残り、戦闘中でないときに判定する。対象は `classId` の職業で行動可能なメンバー（リーダーを含む。性格は問わない）。2 人以上いれば d100 ≤ `chance` で発生。
+- EV-72 競り合い: 対象者ごとに並び順で `contest.stats` の能力値の合計 + `contest.dice` を振り、最大の者が担当（同点は並び順が前の者）。勝者以外は全員が負け。`contest.stats` は 1 個以上で重複しない（検証で止める）。
+- EV-73 語りと判定の箱: 文言は `text.start`（差し込み `{a}` `{b}`）・`text.win`（`{winner}` `{loser}`）・`text.fail`（`{name}`）の strings キー。ほかの差し込みは検証で止める。判定の箱に対象者全員の内訳を出す。
+- EV-74 負けた者それぞれに SAN −`loserSan`。
+- EV-75 担当者がその箱を調べる（CB-63）ときだけ、成功率に `bonus.inspect` を足す（clamp の前）。
+- EV-76 担当者が調べるに失敗するたびに `text.fail` を語り、担当者の SAN −`failSan`。
+
+`data/rivalries.json`
+```
+{
+  "id": "thief_chest", "trigger": "chest", "classId": "thief",
+  "chance": 50,
+  "contest": { "stats": ["agi", "luk"], "dice": "1d6" },
+  "bonus": { "inspect": 10 },
+  "loserSan": 1, "failSan": 3,
+  "text": { "start": "rivalry.thief_chest.start", "win": "rivalry.thief_chest.win", "fail": "rivalry.thief_chest.fail" }
+}
+```
