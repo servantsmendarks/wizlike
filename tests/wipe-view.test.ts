@@ -3,7 +3,7 @@
 import { describe, expect, test } from "vitest";
 import { execute } from "../src/core/engine";
 import type { GameEvent, PenaltyResult } from "../src/core/types";
-import { formatWipeSummary } from "../src/presenter/views/wipe";
+import { formatWipeSummary, wipeKeyAction } from "../src/presenter/views/wipe";
 import { data, newGame } from "./helpers/core";
 
 const S = data.strings;
@@ -98,5 +98,25 @@ describe("UI-56 全滅の内訳", () => {
     expect(lines.length).toBe(4 + Math.max(1, w!.penalty.itemsLost.length) + w!.penalty.expLost.length);
     for (const l of lines) expect(l).not.toMatch(/[{}]/);
     expect(S["wipe.toTown"]).toBe("街へ");
+  });
+});
+
+describe("UI-33/UI-56 全滅の内訳のキー（wipeKeyAction。純粋）", () => {
+  test("UI-33/UI-56 Enter / Esc / 1 は箱の開閉に関わらず「街へ」", () => {
+    for (const open of [true, false]) {
+      expect(wipeKeyAction("confirm", open)).toBe("toTown");
+      expect(wipeKeyAction("back", open)).toBe("toTown");
+      expect(wipeKeyAction({ menu: 0 }, open)).toBe("toTown");
+    }
+  });
+  test("UI-33/UI-56 会話の箱（3 行の箱）が開いていれば ↑ で前へ、↓ で後へ読み返す", () => {
+    expect(wipeKeyAction("forward", true)).toBe("scrollUp");
+    expect(wipeKeyAction("around", true)).toBe("scrollDown");
+  });
+  test("UI-33/UI-56 箱が閉じていれば ↑↓ は何もしない。ほかのキーも何もしない", () => {
+    expect(wipeKeyAction("forward", false)).toBeNull();
+    expect(wipeKeyAction("around", false)).toBeNull();
+    for (const a of ["left", "right", "map", "debug"] as const) expect(wipeKeyAction(a, true)).toBeNull();
+    expect(wipeKeyAction({ menu: 1 }, true)).toBeNull();
   });
 });

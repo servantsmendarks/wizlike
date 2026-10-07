@@ -6,6 +6,7 @@
 // モジュールのトップレベルでは DOM に触れない。
 import type { GameData, Strings } from "../../core/data/index";
 import type { PenaltyResult } from "../../core/types";
+import type { Action } from "../input/swipe";
 import type { Rect } from "../layout";
 import { formatMessage } from "./message";
 import { attachScrollMarks, marksAt, SCROLL_MARK_SIZE } from "./scroll-marks";
@@ -25,6 +26,17 @@ export function formatWipeSummary(p: PenaltyResult, data: Pick<GameData, "penalt
     else out.push(s("wipe.summary.exp", { name: e.name, exp: e.lost }));
   }
   return out;
+}
+
+/**
+ * UI-33 / UI-56 全滅の内訳の間のキー（純粋）。Enter / Esc / 1 は「街へ」。
+ * 内訳の下の会話の箱（3 行の箱）が開いていれば ↑ / ↓ で 3 行ずつ読み返す（街・キャンプの箱と同じ。2026-10-07 レビュー）。
+ */
+export function wipeKeyAction(a: Action, talkOpen: boolean): "toTown" | "scrollUp" | "scrollDown" | null {
+  if (a === "back" || a === "confirm" || (typeof a === "object" && a.menu === 0)) return "toTown";
+  if (talkOpen && a === "forward") return "scrollUp";
+  if (talkOpen && a === "around") return "scrollDown";
+  return null;
 }
 
 const LINE_H = 10;

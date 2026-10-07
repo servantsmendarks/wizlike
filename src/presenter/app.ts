@@ -126,7 +126,7 @@ import { formatMessage } from "./views/message";
 import { createSaveBanner } from "./views/save-banner";
 import { createUpdateNotice } from "./views/update-notice";
 import { createTitleScreen, titleEntries, titleHint, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
-import { formatWipeSummary } from "./views/wipe";
+import { formatWipeSummary, wipeKeyAction } from "./views/wipe";
 import { createNarrator, TALK_KEY_LINES } from "./views/talk";
 import {
   TOWN_INTRO_DEDUP,
@@ -1918,7 +1918,10 @@ export function createApp(o: {
       return;
     }
     if (overlay === "wipe") {
-      if (a === "back" || a === "confirm" || (typeof a === "object" && a.menu === 0)) closeWipe();
+      // UI-33 / UI-56: Enter / Esc / 1 で街へ。内訳の下の会話の箱が開いていれば ↑↓ で 3 行ずつ読み返す
+      const k = wipeKeyAction(a, route === "town" && play.talk.isOpen());
+      if (k === "toTown") closeWipe();
+      else if (k !== null) play.talk.scrollBy(k === "scrollUp" ? -TALK_KEY_LINES : TALK_KEY_LINES);
       return;
     }
     if (overlay === "history") {
