@@ -1,6 +1,8 @@
 // UI-13（M8.5）: 街のパーティの帯（ヘッダー・施設の絵の下の 1 行。1 人 40px = 全角 5 字 × 6 人）。
 // 名前を省略して出し、死亡・灰・状態異常・SAN の段を色と印の字（色だけに頼らない）で区別する。全文は状態の画面（UI-59）で見る。
-// bandCell は純粋（DOM に触れない）。段は app が core の sanStage で決めて渡す（表示層は段の境を計算しない。UI-35）。
+// UI-69（M10）: レベルアップ可（CH-80）の者は、状態の印とは別枠で末尾に Lv の印（town.band.mark.levelUp「↑」。色は変えない）を付ける。
+// bandCell は純粋（DOM に触れない）。段は app が core の sanStage で、Lv UP 可は core の memberSheet の canLevelUp で決めて渡す
+// （表示層は段の境も Lv UP の条件も計算しない。UI-35）。
 import type { StatusId, Strings } from "../../core/data/index";
 import type { SanStage } from "../../core/rules/san";
 import type { Character } from "../../core/types";
@@ -11,6 +13,8 @@ import type { Role } from "../palette";
 export const BAND_CELL_UNITS = 10;
 /** 省略の記号の strings のキー（既定は全角「…」= 2 単位。§3-10） */
 export const BAND_ELLIPSIS_KEY = "town.band.ellipsis";
+/** UI-69（M10）: Lv UP 可の印の strings のキー（既定は「↑」= 2 単位。帯とパーティ欄で共用） */
+export const LEVEL_MARK_KEY = "town.band.mark.levelUp";
 
 /** 状態異常の印の優先順（重いものが先。UI-13） */
 const STATUS_ORDER: readonly StatusId[] = ["stone", "paralysis", "sleep", "poison"];
@@ -19,8 +23,11 @@ const SAN_ORDER: readonly Exclude<SanStage, "normal">[] = ["broken", "confused",
 
 /** 帯の色の役（palette の ROLES）。死亡 danger・灰 dim・状態異常 status・SAN の段 san・正常 text */
 export type BandRole = Extract<Role, "text" | "dim" | "danger" | "status" | "san">;
-/** label は省略した名前に印の字を続けたもの（名前と印は同じ色）。mark は印の字（無ければ空） */
-export type BandCell = { label: string; mark: string; role: BandRole };
+/**
+ * label は省略した名前に状態の印の字と Lv の印を続けたもの（名前と印は同じ色）。mark は状態の印の字（無ければ空）、
+ * levelMark は Lv の印（UI-69。Lv UP 可でなければ空）
+ */
+export type BandCell = { label: string; mark: string; levelMark: string; role: BandRole };
 
 /** 文字の幅（単位）。ASCII と半角カナは 1、それ以外は 2 */
 export function charUnits(ch: string): number {
@@ -54,7 +61,7 @@ function str(strings: Strings, key: string): string {
   return strings[key] ?? key;
 }
 
-/** 印の字と色の役。優先順は 灰 > 死亡 > 石 > 痺 > 眠 > 毒 > 虚脱 > 錯乱 > 不安（1 人に 1 つ） */
+/** 状態の印の字と色の役。優先順は 灰 > 死亡 > 石 > 痺 > 眠 > 毒 > 虚脱 > 錯乱 > 不安（状態の印は 1 人に 1 つ。Lv の印は別枠） */
 function markOf(ch: Pick<Character, "life" | "status">, stage: SanStage, strings: Strings): { mark: string; role: BandRole } {
   if (ch.life === "ash") return { mark: str(strings, "town.band.mark.ash"), role: "dim" };
   if (ch.life === "dead") return { mark: str(strings, "town.band.mark.dead"), role: "danger" };
@@ -66,13 +73,15 @@ function markOf(ch: Pick<Character, "life" | "status">, stage: SanStage, strings
 }
 
 /**
- * UI-13（M8.5）: 帯の 1 セル。名前は BAND_CELL_UNITS から印の幅を引いた幅に収め、収まらなければ「…」で切る
- * （全角 6 字の名前は 4 字＋…、印があれば 3 字＋…＋印）。stage は app が core の sanStage で決めた段
+ * UI-13（M8.5）/ UI-69（M10）: 帯の 1 セル。名前は BAND_CELL_UNITS から状態の印と Lv の印の幅を引いた幅に収め、収まらなければ「…」で切る
+ * （全角 6 字の名前は 4 字＋…、状態の印か Lv の印の一方があれば 3 字＋…＋印、両方あれば 2 字＋…＋状態の印＋Lv の印）。
+ * stage は app が core の sanStage で決めた段、levelUp は core の memberSheet の canLevelUp（CH-80。省略は false）
  */
-export function bandCell(ch: Pick<Character, "name" | "life" | "status">, stage: SanStage, strings: Strings): BandCell {
+export function bandCell(ch: Pick<Character, "name" | "life" | "status">, stage: SanStage, strings: Strings, levelUp = false): BandCell {
   const { mark, role } = markOf(ch, stage, strings);
-  const name = fitName(ch.name, BAND_CELL_UNITS - textUnits(mark), str(strings, BAND_ELLIPSIS_KEY));
-  return { label: `${name}${mark}`, mark, role };
+  const levelMark = levelUp ? str(strings, LEVEL_MARK_KEY) : "";
+  const name = fitName(ch.name, BAND_CELL_UNITS - textUnits(mark) - textUnits(levelMark), str(strings, BAND_ELLIPSIS_KEY));
+  return { label: `${name}${mark}${levelMark}`, mark, levelMark, role };
 }
 
 /** UI-13: 帯の役の CSS 変数（palette の ROLES） */
@@ -86,11 +95,13 @@ export type PartyBand = {
   setStatus(id: string, status: StatusId, on: boolean): void;
 };
 
-type BandRow = { id: string; name: string; life: Character["life"]; status: StatusId[]; san: number; sanMax: number };
+/** levelUp は render の時点の Lv UP 可（UI-69）。再生中の setter は触れず、次の render（sync）で直る */
+type BandRow = { id: string; name: string; life: Character["life"]; status: StatusId[]; san: number; sanMax: number; levelUp: boolean };
 
 /**
  * UI-13（M8.5）: 帯の DOM。row は帯の 1 行（ステージ座標）、cells は見える 6 セル、hits は押せる範囲（帯と見出しの行。40×22）。
- * stageOf は core の sanStage、sanMaxOf は実効の sanMax（core の memberSheet）。タップで onPick（その人の id）。
+ * stageOf は core の sanStage、sanMaxOf は実効の sanMax（core の memberSheet）、levelUpOf は Lv UP 可（memberSheet の canLevelUp。UI-69。
+ * 省略は印なし）。タップで onPick（その人の id）。
  * el は row の位置に自分で置く。押せる範囲の要素（button。B1）は帯の下（見出しの行）まで伸ばし、透明にする
  */
 export function createPartyBand(o: {
@@ -100,6 +111,7 @@ export function createPartyBand(o: {
   hits: readonly { x: number; y: number; w: number; h: number }[];
   stageOf: (san: number, sanMax: number) => SanStage;
   sanMaxOf: (ch: Character) => number;
+  levelUpOf?: (ch: Character) => boolean;
   onPick(memberId: string): void;
 }): PartyBand {
   const r = o.row;
@@ -159,7 +171,7 @@ export function createPartyBand(o: {
       return;
     }
     c.b.style.display = "";
-    const cell = bandCell(row, o.stageOf(row.san, row.sanMax), o.strings);
+    const cell = bandCell(row, o.stageOf(row.san, row.sanMax), o.strings, row.levelUp);
     c.label.textContent = cell.label;
     c.label.style.color = roleColor(cell.role);
   };
@@ -173,7 +185,7 @@ export function createPartyBand(o: {
   return {
     el,
     render(party: readonly Character[]): void {
-      rows = party.map((ch) => ({ id: ch.id, name: ch.name, life: ch.life, status: [...ch.status], san: ch.san, sanMax: o.sanMaxOf(ch) }));
+      rows = party.map((ch) => ({ id: ch.id, name: ch.name, life: ch.life, status: [...ch.status], san: ch.san, sanMax: o.sanMaxOf(ch), levelUp: o.levelUpOf?.(ch) ?? false }));
       cellEls.forEach((_, i) => paint(i));
     },
     setSan(id: string, san: number): void {

@@ -268,3 +268,26 @@ describe("visibleCellsOf と slotsFor の結合", () => {
     expect(sorted(s).filter((id) => id.includes("S"))).toEqual(["cSD2", "lSU1"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// UI-69（M10）: 帯へ渡す sanMaxOf / levelUpOf（dungeon.ts の bandLookups。maxOf = core の memberSheet）
+
+describe("UI-69 bandLookups", () => {
+  test("UI-69 帯の levelUpOf は maxOf（memberSheet）の canLevelUp を中継し、sanMaxOf は maxOf の sanMax。maxOf が無ければ印は出ない（false）・素の sanMax", async () => {
+    const { bandLookups } = await import("../src/presenter/views/dungeon");
+    const { memberSheet } = await import("../src/core/rules/item-view");
+    const { data, newGame } = await import("./helpers/core");
+    const state = newGame(1);
+    const p0 = state.party[0]!;
+    const ready = { ...p0, exp: 1_000_000 };
+    const maxOf = (c: typeof p0) => memberSheet(state, data, c);
+    const withMax = bandLookups(maxOf);
+    expect(withMax.levelUpOf(ready)).toBe(true);
+    expect(withMax.levelUpOf(p0)).toBe(false);
+    expect(withMax.levelUpOf({ ...ready, life: "dead" })).toBe(false); // U9: 死亡・灰は core が不可を返す
+    expect(withMax.sanMaxOf(p0)).toBe(maxOf(p0).sanMax);
+    const plain = bandLookups(undefined);
+    expect(plain.levelUpOf(ready)).toBe(false);
+    expect(plain.sanMaxOf({ ...p0, sanMax: 77 })).toBe(77);
+  });
+});

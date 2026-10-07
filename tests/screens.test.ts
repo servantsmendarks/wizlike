@@ -9,7 +9,8 @@ import {
   personalityLabel,
   randomizePersonalities,
 } from "../src/presenter/views/creation";
-import { formatPartyRow, PARTY_COLUMNS } from "../src/presenter/views/party";
+import { formatPartyRow, PARTY_COLUMNS, PARTY_NAME_UNITS } from "../src/presenter/views/party";
+import { textUnits } from "../src/presenter/views/party-band";
 import { sanStage } from "../src/core/rules/san";
 import { createRunGate } from "../src/presenter/run-gate";
 import type { Command, GameEvent } from "../src/core/types";
@@ -132,6 +133,25 @@ describe("パーティ欄", () => {
     // 状態の列: 4 つの状態異常の短い名前を空白区切り（全角 4 + 半角 3）
     expect(PARTY_COLUMNS.status.width).toBeGreaterThanOrEqual(4 * 8 + 3 * 4);
     for (const k of ["hp", "mp", "san"] as const) expect(PARTY_COLUMNS[k].right, k).toBe(true);
+  });
+
+  test("UI-69 パーティ欄の名前の幅 PARTY_NAME_UNITS（半角 1 = 4px の単位）は名前の列の幅と一致する", () => {
+    expect(PARTY_NAME_UNITS * 4).toBe(PARTY_COLUMNS.name.width);
+  });
+
+  test("UI-69 formatPartyRow: canLevelUp なら名前を PARTY_NAME_UNITS − Lv の印の幅に fitName で切って↑を付ける（6 字は 4 字＋…＋↑、5 字は切れない）。false・省略は今のまま", () => {
+    const ch = { ...newGame(1).party[0]!, name: "アルドリンド" };
+    const mark = data.strings["town.band.mark.levelUp"]!;
+    expect(mark).toBe("↑");
+    expect(textUnits(mark)).toBe(2);
+    const max = (canLevelUp?: boolean) => ({ hpMax: ch.hpMax, mpMax: ch.mpMax, sanMax: ch.sanMax, ...(canLevelUp !== undefined ? { canLevelUp } : {}) });
+    expect(formatPartyRow(ch, data.strings, data.classes, stageOf, max(true)).name).toBe("アルドリ…↑");
+    expect(textUnits(formatPartyRow(ch, data.strings, data.classes, stageOf, max(true)).name)).toBeLessThanOrEqual(PARTY_NAME_UNITS);
+    expect(formatPartyRow({ ...ch, name: "アルドリン" }, data.strings, data.classes, stageOf, max(true)).name).toBe("アルドリン↑");
+    expect(formatPartyRow({ ...ch, name: "Aldorinsons" }, data.strings, data.classes, stageOf, max(true)).name).toBe("Aldorins…↑");
+    expect(formatPartyRow(ch, data.strings, data.classes, stageOf, max(false)).name).toBe("アルドリンド");
+    expect(formatPartyRow(ch, data.strings, data.classes, stageOf, max()).name).toBe("アルドリンド");
+    expect(formatPartyRow(ch, data.strings, data.classes, stageOf).name).toBe("アルドリンド");
   });
 });
 

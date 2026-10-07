@@ -15,7 +15,7 @@
 // 部品の結線（何を描くか、Action を何にするか）は app が行う。モジュールのトップレベルでは DOM に触れない。
 import type { SpriteInfo } from "../../build/asset-types";
 import type { GameData, Strings } from "../../core/data/index";
-import type { Pos } from "../../core/types";
+import type { Character, Pos } from "../../core/types";
 import type { DungeonLayout, Regions, TownLayout } from "../layout";
 import { createBattleView, type BattleView } from "./battle";
 import { createCampView, type CampView } from "./camp";
@@ -89,6 +89,17 @@ function at(el: HTMLElement | SVGElement, x: number, y: number): void {
   el.style.position = "absolute";
   el.style.left = `${x}px`;
   el.style.top = `${y}px`;
+}
+
+/**
+ * UI-13 / UI-69（M10）: 帯へ渡す実効の sanMax と Lv UP 可。どちらも maxOf（app が渡す core の memberSheet）の値を中継するだけ（UI-35）。
+ * maxOf が無ければ素の sanMax で、Lv の印は出さない
+ */
+export function bandLookups(maxOf: MaxOf | undefined): { sanMaxOf: (ch: Character) => number; levelUpOf: (ch: Character) => boolean } {
+  return {
+    sanMaxOf: (ch) => (maxOf !== undefined ? maxOf(ch).sanMax : ch.sanMax),
+    levelUpOf: (ch) => (maxOf !== undefined ? maxOf(ch).canLevelUp === true : false),
+  };
 }
 
 export function createDungeonScreen(o: {
@@ -179,7 +190,7 @@ export function createDungeonScreen(o: {
     cells: tl.band.cells,
     hits: tl.band.hits,
     stageOf: o.stageOf,
-    sanMaxOf: (ch) => (o.maxOf !== undefined ? o.maxOf(ch).sanMax : ch.sanMax),
+    ...bandLookups(o.maxOf),
     onPick: (id) => o.onBand(id),
   });
   band.el.style.display = "none";

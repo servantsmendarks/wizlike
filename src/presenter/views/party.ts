@@ -7,12 +7,14 @@
 // その後ろに SAN の段の短い名前（UI-12。party.san.<stage>、normal は出さない。段は引数の stageOf = core の sanStage）。
 // 戦闘の再生用に setMp / setMax（レベルの変化）/ setStatus / flash（UI-42 の被弾。opacity 2 往復）/ setActive（入力中の名前を accent 色）を持つ。
 // UI-55: markActor（衝動の行動者の名前を accent 色、行を点滅。render で消える）。
+// UI-69（M10）: Lv UP 可（maxOf の canLevelUp = core の memberSheet。CH-80）の者は名前を 12 − 2 単位に切って↑を付ける。再生中の setter は触れず、sync の render で直る。
 // UI-12（M7）: HP / MP / SAN の最大は maxOf（app が core の memberSheet の実効の値を渡す。CH-14）。SAN が最大を超えている間（士気の超過。TW-15）は SAN の値を accent 色。
 // el は region の位置と大きさに自分で置く。モジュールのトップレベルでは DOM に触れない。
 import type { ClassDef, StatusId, Strings } from "../../core/data/index";
 import type { SanStage } from "../../core/rules/san";
 import type { Character, Life } from "../../core/types";
 import { PARTY_ROW_H, type Rect } from "../layout";
+import { BAND_ELLIPSIS_KEY, fitName, LEVEL_MARK_KEY, textUnits } from "./party-band";
 
 /**
  * abbr は職業の略称（classes[].abbr）。mp と mpLabel は mpMax が 0 なら空。
@@ -26,7 +28,22 @@ export type StageOf = (san: number, sanMax: number) => SanStage;
  * UI-12 / TW-15 / CH-14（M7）: HP / MP / SAN の最大（app が core の memberSheet の実効の値を渡す）。SAN が sanMax を超えている間は SAN の値を accent 色、
  * SAN の段は sanMax 比（core の CH-53 と同じ基準）
  */
-export type MaxOf = (ch: Character) => { hpMax: number; mpMax: number; sanMax: number };
+export type MaxOf = (ch: Character) => PartyMax;
+/**
+ * 行の最大値と Lv UP 可。canLevelUp は core の memberSheet の CH-80（UI-69。省略は false。表示層は条件を計算しない。UI-35）。
+ * Character もそのまま渡せる（canLevelUp を持たないので印なし）
+ */
+export type PartyMax = { hpMax: number; mpMax: number; sanMax: number; canLevelUp?: boolean };
+
+/** UI-69（M10）: 名前の列の幅（半角 1 = 4px の単位。PARTY_COLUMNS.name.width ÷ 4）。Lv UP 可の者はここから Lv の印の幅を引いて切る */
+export const PARTY_NAME_UNITS = 12;
+
+/** UI-69: 名前の列の文字列。Lv UP 可なら帯と同じ fitName で PARTY_NAME_UNITS − 印の幅に切って Lv の印を付ける（6 字は 4 字＋…＋↑） */
+function nameText(name: string, canLevelUp: boolean, strings: Strings): string {
+  if (!canLevelUp) return name;
+  const mark = strings[LEVEL_MARK_KEY] ?? LEVEL_MARK_KEY;
+  return fitName(name, PARTY_NAME_UNITS - textUnits(mark), strings[BAND_ELLIPSIS_KEY] ?? BAND_ELLIPSIS_KEY) + mark;
+}
 
 /**
  * 状態の列の文字列（純粋）。死亡・灰はそれだけ、生存なら状態異常の短い名前を status の順に空白区切りし、
@@ -66,10 +83,10 @@ export function formatPartyRow(
   strings: Strings,
   classes: readonly ClassDef[],
   stageOf: StageOf,
-  max: { hpMax: number; mpMax: number; sanMax: number } = ch,
+  max: PartyMax = ch,
 ): PartyRowText {
   return {
-    name: ch.name,
+    name: nameText(ch.name, max.canLevelUp === true, strings),
     abbr: classes.find((c) => c.id === ch.classId)?.abbr ?? "",
     hp: hpText(ch.hp, max.hpMax),
     mp: mpText(ch.mp, max.mpMax),

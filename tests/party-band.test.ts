@@ -23,7 +23,7 @@ const ch = (name: string, p: Partial<Pick<Character, "life" | "status">> = {}): 
 
 describe("UI-13 bandCell", () => {
   test("UI-13 bandCell: 正常は印なしの text。全角 5 字までは全文、6 字は 4 字＋…（10 単位）。半角（ASCII・半角カナ）は 1 単位", () => {
-    expect(bandCell(ch("アルド"), "normal", S)).toEqual({ label: "アルド", mark: "", role: "text" });
+    expect(bandCell(ch("アルド"), "normal", S)).toEqual({ label: "アルド", mark: "", levelMark: "", role: "text" });
     expect(bandCell(ch("アルドリン"), "normal", S).label).toBe("アルドリン");
     expect(bandCell(ch("アルドリンド"), "normal", S).label).toBe("アルドリ…");
     expect(bandCell(ch("Aldorin"), "normal", S).label).toBe("Aldorin");
@@ -38,18 +38,37 @@ describe("UI-13 bandCell", () => {
   });
 
   test("UI-13 bandCell: 印は 1 人に 1 つで、優先順は 灰 > 死亡 > 石 > 痺 > 眠 > 毒 > 虚脱 > 錯乱 > 不安。印があれば 6 字の名前は 3 字＋…＋印", () => {
-    expect(bandCell(ch("アルド", { life: "ash", status: ["poison"] }), "broken", S)).toEqual({ label: "アルド灰", mark: "灰", role: "dim" });
-    expect(bandCell(ch("アルド", { life: "dead", status: ["stone"] }), "broken", S)).toEqual({ label: "アルド死", mark: "死", role: "danger" });
+    expect(bandCell(ch("アルド", { life: "ash", status: ["poison"] }), "broken", S)).toEqual({ label: "アルド灰", mark: "灰", levelMark: "", role: "dim" });
+    expect(bandCell(ch("アルド", { life: "dead", status: ["stone"] }), "broken", S)).toEqual({ label: "アルド死", mark: "死", levelMark: "", role: "danger" });
     expect(bandCell(ch("アルド", { status: ["poison", "sleep", "paralysis", "stone"] }), "broken", S)).toMatchObject({ mark: "石", role: "status" });
     expect(bandCell(ch("アルド", { status: ["poison", "sleep", "paralysis"] }), "normal", S)).toMatchObject({ mark: "痺", role: "status" });
     expect(bandCell(ch("アルド", { status: ["poison", "sleep"] }), "normal", S)).toMatchObject({ mark: "眠", role: "status" });
     expect(bandCell(ch("アルド", { status: ["poison"] }), "uneasy", S)).toMatchObject({ mark: "毒", role: "status" });
-    expect(bandCell(ch("アルド"), "broken", S)).toEqual({ label: "アルド虚", mark: "虚", role: "san" });
+    expect(bandCell(ch("アルド"), "broken", S)).toEqual({ label: "アルド虚", mark: "虚", levelMark: "", role: "san" });
     expect(bandCell(ch("アルド"), "confused", S)).toMatchObject({ mark: "錯", role: "san" });
     expect(bandCell(ch("アルド"), "uneasy", S)).toMatchObject({ mark: "不", role: "san" });
     expect(bandCell(ch("アルドリンド", { life: "dead" }), "normal", S).label).toBe("アルド…死");
     expect(bandCell(ch("アルドリン", { status: ["poison"] }), "normal", S).label).toBe("アルド…毒");
     expect(bandCell(ch("アルドリ", { status: ["poison"] }), "normal", S).label).toBe("アルドリ毒");
+  });
+
+  test("UI-69 bandCell: Lv UP 可（levelUp）の者は名前の後ろに↑。状態の印と別枠で「名前…＋状態の印＋↑」。6 字は ↑だけなら 3 字＋…＋↑、状態の印もあれば 2 字＋…＋印＋↑", () => {
+    const up = S["town.band.mark.levelUp"]!;
+    expect(up).toBe("↑");
+    expect(textUnits(up)).toBe(2);
+    expect(bandCell(ch("アルドリンド"), "normal", S, true)).toEqual({ label: "アルド…↑", mark: "", levelMark: "↑", role: "text" });
+    expect(bandCell(ch("アルドリンド", { status: ["poison"] }), "normal", S, true)).toEqual({ label: "アル…毒↑", mark: "毒", levelMark: "↑", role: "status" });
+    expect(bandCell(ch("アルドリンド"), "uneasy", S, true)).toEqual({ label: "アル…不↑", mark: "不", levelMark: "↑", role: "san" });
+    // 短い名前は切らない
+    expect(bandCell(ch("アルド", { status: ["poison"] }), "normal", S, true).label).toBe("アルド毒↑");
+    expect(bandCell(ch("アルドリ"), "normal", S, true).label).toBe("アルドリ↑");
+    for (const n of ["アルドリンド", "Aldorinsons", "アルドABCDEF"])
+      for (const st of [[], ["poison"]] as const) expect(textUnits(bandCell(ch(n, { status: [...st] }), "normal", S, true).label), n).toBeLessThanOrEqual(BAND_CELL_UNITS);
+    // levelUp の省略・false は今の出力と同じ
+    for (const n of ["アルド", "アルドリンド"]) {
+      expect(bandCell(ch(n), "normal", S, false)).toEqual(bandCell(ch(n), "normal", S));
+      expect(bandCell(ch(n), "normal", S).levelMark).toBe("");
+    }
   });
 
   test("UI-13 帯の印の文言は strings にある 1 字（死亡・灰・SAN の段は town.band.mark.*、状態異常は party.status.*）", () => {
@@ -142,6 +161,52 @@ describe("UI-13 帯の DOM・UI-61 施設の絵・ヘッダーのログ", () => 
     expect(label(2).style["color"]).toBe("var(--c-san)");
     tapSpecOf(cells[3]!)!.onTap({ lx: 0, ly: 0 });
     expect(picked).toEqual([party[3]!.id]);
+  });
+
+  test("UI-69 createPartyBand: levelUpOf が真の者に↑。setLife / setStatus / setSan は Lv の印に触れない（sync の render まで古いまま）。levelUpOf の省略は印なし", () => {
+    fakeDocument();
+    const party = newGame(1).party;
+    const up = new Set([party[0]!.id, party[1]!.id]);
+    const band = createPartyBand({
+      strings: S,
+      row: T.band.row,
+      cells: T.band.cells,
+      hits: T.band.hits,
+      stageOf: (san, max) => sanStage(san, max, data.config),
+      sanMaxOf: (c) => c.sanMax,
+      levelUpOf: (c) => up.has(c.id),
+      onPick: () => {},
+    });
+    band.render(party);
+    const cells = fake(band.el).children;
+    const label = (i: number): FakeEl => cells[i]!.children[0]!;
+    expect(label(0).textContent).toBe(`${party[0]!.name}↑`);
+    expect(label(2).textContent).toBe(party[2]!.name);
+    band.setStatus(party[1]!.id, "poison", true);
+    expect(label(1).textContent).toBe(`${party[1]!.name}毒↑`);
+    expect(label(1).style["color"]).toBe("var(--c-status)");
+    // 再生中に死んでも sync までは↑が残る（表示層は life で印を消さない。UI-35）
+    band.setLife(party[0]!.id, "dead");
+    expect(label(0).textContent).toBe(`${party[0]!.name}死↑`);
+    band.setSan(party[0]!.id, 0);
+    expect(label(0).textContent).toBe(`${party[0]!.name}死↑`);
+    // sync の render で今の levelUpOf に揃う
+    up.clear();
+    band.render(party);
+    expect(label(0).textContent).toBe(party[0]!.name);
+    // levelUpOf の省略は印なし
+    fakeDocument();
+    const plain = createPartyBand({
+      strings: S,
+      row: T.band.row,
+      cells: T.band.cells,
+      hits: T.band.hits,
+      stageOf: (san, max) => sanStage(san, max, data.config),
+      sanMaxOf: (c) => c.sanMax,
+      onPick: () => {},
+    });
+    plain.render(party);
+    expect(fake(plain.el).children[0]!.children[0]!.textContent).toBe(party[0]!.name);
   });
 
   test("UI-13 帯の押せる範囲は見出しの行を含み、一覧の行と重ならない。帯のセルは button（Chrome のタッチ位置の補正で下の一覧の行に押下を取られない。B1）", () => {
