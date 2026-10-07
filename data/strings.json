@@ -89,6 +89,7 @@
   "town.inn.statUp.agi": "素早さが {from} → {to}。",
   "town.inn.statUp.luk": "運が {from} → {to}。",
   "town.inn.learnRoll": "{name}は{spell}の理を掴もうとしている……",
+  "town.inn.guaranteed": "{name}の指先が、眠っていた理の一つにふと触れた。",
   "town.inn.learned": "{name}は{spell}を覚えた。",
   "town.inn.notLearned": "{name}は{spell}を掴みきれなかった。",
   "town.temple.intro": "祭壇の前で司祭が待っている。",

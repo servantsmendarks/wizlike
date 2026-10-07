@@ -103,6 +103,8 @@ export function rollSpellLearning(ctx: RuleContext, ch: Character, level: number
     if (pick === undefined) throw new Error(`rollSpellLearning: empty guarantee pool ${k}`);
     ch.knownSpells.push(pick.id);
     learned.push(pick.id);
+    // MG-23: 救済で覚えるときは、前に GM の語りを 1 行挟む（ダイスは出さない）
+    events.push({ kind: "message", key: "town.inn.guaranteed", params: { name: ch.name } });
     events.push({ kind: "spellLearned", id: ch.id, spellId: pick.id, via: "guarantee" });
     events.push({ kind: "message", key: "town.inn.learned", params: { name: ch.name, spell: pick.name } });
   }

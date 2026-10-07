@@ -333,6 +333,7 @@ describe("growth: 複数段の上昇と習得判定（CH-61、CH-63、MG-20）",
       "town.inn.learnRoll",
       "dice",
       "town.inn.notLearned",
+      "town.inn.guaranteed", // MG-23: 救済の前置き
       "spellLearned",
       "town.inn.learned",
     ]);

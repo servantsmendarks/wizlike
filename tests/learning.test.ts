@@ -184,6 +184,7 @@ describe("learning: rollSpellLearning", () => {
       { kind: "message", key: "town.inn.learnRoll", params: { name, spell: "解毒" } },
       learnDice("解毒", 93, 50, false), // 35 + 20×0 + 15 + 0 = 50。93 > 50
       { kind: "message", key: "town.inn.notLearned", params: { name, spell: "解毒" } },
+      { kind: "message", key: "town.inn.guaranteed", params: { name } }, // MG-23: 救済の前置き
       { kind: "spellLearned", id: "c4", spellId: "cure_poison", via: "guarantee" },
       { kind: "message", key: "town.inn.learned", params: { name, spell: "解毒" } },
     ]);
@@ -219,6 +220,35 @@ describe("learning: rollSpellLearning", () => {
     expect(learnedOf(ctx.events)).toEqual([["cure_poison", "roll"]]);
     expect(ctx.state.rng).toEqual(rngAfter(1, [D100]));
     expectKnownStringKeys(ctx.events);
+  });
+
+  test("MG-23 seed 8: 保証の習得は GM の語り town.inn.guaranteed を 1 行挟んでから spellLearned と town.inn.learned（ダイスは無い）", () => {
+    const { ctx, ch } = setup(8, DONA, { knownSpells: ["heal", "blessing"] });
+    rollSpellLearning(ctx, ch, 3);
+    expect(ctx.events).toEqual([
+      { kind: "message", key: "town.inn.learnRoll", params: { name: ch.name, spell: spellOf(data, "cure_poison").name } },
+      learnDice(spellOf(data, "cure_poison").name, 87, 50, false),
+      { kind: "message", key: "town.inn.notLearned", params: { name: ch.name, spell: spellOf(data, "cure_poison").name } },
+      { kind: "message", key: "town.inn.guaranteed", params: { name: ch.name } },
+      { kind: "spellLearned", id: ch.id, spellId: "cure_poison", via: "guarantee" },
+      { kind: "message", key: "town.inn.learned", params: { name: ch.name, spell: spellOf(data, "cure_poison").name } },
+    ]);
+    expectKnownStringKeys(ctx.events);
+  });
+
+  test("MG-23 seed 1: 判定で覚えたときは town.inn.guaranteed を出さない", () => {
+    const { ctx, ch } = setup(1, DONA, { knownSpells: ["heal", "blessing"] });
+    rollSpellLearning(ctx, ch, 3);
+    expect(ctx.events.some((e) => e.kind === "message" && e.key === "town.inn.guaranteed")).toBe(false);
+  });
+
+  test("MG-23 seed 4: 司教 L3 の 2 帯の保証は、帯ごとに town.inn.guaranteed → spellLearned の順", () => {
+    const { ctx, ch } = setup(4, EL, { ...BISHOP, knownSpells: ["fire_arrow", "sleep_mist", "heal", "blessing", "binding_word"] });
+    rollSpellLearning(ctx, ch, 3);
+    const seq = ctx.events.flatMap((e) =>
+      e.kind === "spellLearned" ? [`learned:${e.spellId}`] : e.kind === "message" && e.key === "town.inn.guaranteed" ? ["guaranteed"] : [],
+    );
+    expect(seq).toEqual(["guaranteed", "learned:flame_burst", "guaranteed", "learned:cure_poison"]);
   });
 
   test("MG-23 seed 7: ドナ L3（blessing も未知）は blessing 4 ≤ 90 で習得、cure_poison 93 > 50 で失敗し、保証で cure_poison", () => {
