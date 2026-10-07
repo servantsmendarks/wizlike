@@ -4,6 +4,8 @@ import { createNarrator, createTalkModel } from "../src/presenter/views/talk";
 import { returnToTown } from "../src/core/rules/town";
 import { formatDiceSummary, type DiceEvent } from "../src/presenter/views/dice";
 import { formatMessage } from "../src/presenter/views/message";
+import { textUnits } from "../src/presenter/views/party-band";
+import { STAT_KEYS } from "../src/core/data/index";
 import type { PenaltyTableText } from "../src/presenter/views/penalty-table";
 import type { Settings } from "../src/presenter/settings";
 import type { Dive, EnemyGroupView, GameEvent, GameState, PenaltyResult, ViewPoint } from "../src/core/types";
@@ -1750,5 +1752,83 @@ describe("UI-47 街の会話の箱と再生", () => {
     expect({ open: sink.open, text: sink.text, pages: pages.n }).toEqual({ open: true, text, pages: 0 });
     talk.tap();
     expect({ open: sink.open, pages: pages.n }).toEqual({ open: false, pages: 1 });
+  });
+
+  test("UI-47/CH-61（M10）宿屋のレベルアップの内訳（実際の execute の出来事を Player で再生）: レベルアップの文 → 最大 HP → 最大 MP（増分があるとき）→ 上がった能力値を 1 文ずつタップで送る。上がらなかった段は能力値の文を出さない。ジングルはその人の levelUp の文の直前の 1 回", async () => {
+    // seed 1: ベルク（戦士）exp 50 → L2、ドナ（僧侶）exp 200 → L5（L4 の段は能力値が 1 つも上がらない）
+    const st = withChar(withChar(newGame(1), 1, { exp: 50 }), 3, { exp: 200 });
+    const r = execute(st, { type: "town.inn", rank: 0 }, data);
+    expectKnownStringKeys(r.events);
+    const lvs = r.events.flatMap((e) => (e.kind === "levelUp" ? [e] : []));
+    expect(lvs.map((e) => [e.id, e.level, e.statGains.length])).toEqual([
+      ["c2", 2, 2],
+      ["c4", 2, 2],
+      ["c4", 3, 1],
+      ["c4", 4, 0],
+      ["c4", 5, 2],
+    ]);
+    // 各 levelUp の直後の文の並び（習得の文の手前まで）
+    const breakdown = (at: number): string[] => {
+      const out: string[] = [];
+      for (const e of r.events.slice(at + 1)) {
+        if (e.kind !== "message" || !e.key.startsWith("town.inn.") || e.key.startsWith("town.inn.learn") || e.key === "town.inn.notLearned") break;
+        out.push(e.key);
+      }
+      return out;
+    };
+    const lvAt = r.events.flatMap((e, i) => (e.kind === "levelUp" ? [i] : []));
+    expect(lvAt.map(breakdown)).toEqual([
+      ["town.inn.levelUp", "town.inn.hpUp", "town.inn.statUp.str", "town.inn.statUp.vit"],
+      ["town.inn.levelUp", "town.inn.hpUp", "town.inn.mpUp", "town.inn.statUp.str", "town.inn.statUp.agi"],
+      ["town.inn.levelUp", "town.inn.hpUp", "town.inn.mpUp", "town.inn.statUp.luk"],
+      ["town.inn.levelUp", "town.inn.hpUp", "town.inn.mpUp"],
+      ["town.inn.levelUp", "town.inn.hpUp", "town.inn.mpUp", "town.inn.statUp.vit", "town.inn.statUp.luk"],
+    ]);
+    const texts = r.events.filter((e) => e.kind === "message").map(fmt);
+    const lvTexts = new Set(r.events.flatMap((e) => (e.kind === "message" && e.key === "town.inn.levelUp" ? [fmt(e)] : [])));
+    const { deps, log, sink, talk, pages } = pagedTalk();
+    deps.sound = (ev) => log.push({ m: `sound:${ev.kind}`, a: [] });
+    const player = createPlayer(deps);
+    let done = false;
+    const run = player.play(r.events, st, r.state).then(() => {
+      done = true;
+    });
+    const jingles = (): number => names(log).filter((n) => n === "sound:levelUp").length;
+    await tick();
+    const seen: string[] = [sink.text];
+    // 文ごとの、その文が出ている間に鳴ったジングルの数
+    const jingleAt: number[] = [jingles()];
+    for (let i = 0; i < 80 && !done; i++) {
+      player.tap();
+      await tick();
+      if (sink.open && sink.text !== seen[seen.length - 1]) {
+        seen.push(sink.text);
+        jingleAt.push(jingles());
+      }
+    }
+    await run;
+    expect(seen).toEqual(texts);
+    // ジングルは levelUp の文が出たときにだけ 1 つ増える（宿の文・内訳・習得の文の間は増えない）
+    const expected: number[] = [];
+    let n = 0;
+    for (const t of texts) {
+      if (lvTexts.has(t)) n++;
+      expected.push(n);
+    }
+    expect(jingleAt).toEqual(expected);
+    expect(n).toBe(lvs.length);
+    // 最後の文は残り、再生の外のタップで閉じる。送りの音は文の数
+    expect(sink.open).toBe(true);
+    talk.tap();
+    expect(sink.open).toBe(false);
+    expect(pages.n).toBe(texts.length);
+  });
+
+  test("UI-47/CH-61（M10）内訳の文は大きな値（6 字の名前・Lv 99・増分 99・最大 9999・能力値 17 → 18）でも会話の箱の 1 行（224px = 全角 28 字）に収まる", () => {
+    const one = (key: string, params: Record<string, string | number>): number => textUnits(formatMessage(data.strings[key]!, params));
+    expect(one("town.inn.levelUp", { name: "アアアアアア", level: 99 })).toBeLessThanOrEqual(56);
+    expect(one("town.inn.hpUp", { gain: 99, max: 9999 })).toBeLessThanOrEqual(56);
+    expect(one("town.inn.mpUp", { gain: 99, max: 9999 })).toBeLessThanOrEqual(56);
+    for (const k of STAT_KEYS) expect(one(`town.inn.statUp.${k}`, { from: 17, to: 18 }), k).toBeLessThanOrEqual(56);
   });
 });
