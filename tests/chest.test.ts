@@ -1163,6 +1163,41 @@ describe("EV-70〜76 職業の掛け合い", () => {
     expect(member(rd.state, "c3").life).toBe("dead");
     expect(kindsOf(rd.events)).not.toContain("message:rivalry.thief_chest.fail");
   });
+
+  test("EV-76 担当の失敗の作動で全員が行動不能（麻痺ガス）になれば、全滅処理に入るので text.fail と SAN −3 は出さない", () => {
+    const allPara = chestData((x) => {
+      x.config.events.cap = 0;
+      x.config.chest.inspect.min = x.config.chest.inspect.max = 0;
+      x.config.chest.triggerChance = 100;
+      x.chestTraps.find((t) => t.id === "paralysis_gas")!.effect = { kind: "status", target: "all", status: "paralysis", chance: 1000 };
+    });
+    const s = withChest("paralysis_gas", 2, 1, allPara);
+    s.dive!.chest!.rivalry = { id: "thief_chest", ownerId: "c3" };
+    const r = exec(s, inspect("c3"), allPara);
+    const ks = kindsOf(r.events);
+    expect(ks).toContain("chestTrap");
+    expect(eventsOf(r.events, "statusChanged").filter((e) => e.status === "paralysis" && e.on)).toHaveLength(6);
+    expect(ks).toContain("wipe");
+    expect(ks).not.toContain("message:rivalry.thief_chest.fail");
+    expect(ks.slice(0, ks.indexOf("wipe"))).not.toContain("sanChanged");
+  });
+});
+
+describe("EV-25 宝箱の衝動の told と全滅処理", () => {
+  test("EV-25/EV-23 衝動で開けた罠で全員が行動不能（麻痺ガス）になれば、全滅処理に入るので event.stop.told と制止者の SAN +3 は出さない", () => {
+    const allPara = chestData((x) => {
+      x.rivalries = [];
+      x.chestTraps.find((t) => t.id === "paralysis_gas")!.effect = { kind: "status", target: "all", status: "paralysis", chance: 1000 };
+    });
+    const k = findK((m) => rollDie(m, 100) <= P_KIRI && 9 + rollDie(m, 10) < 15 + rollDie(m, 10));
+    const r = present(withChar(withChest("paralysis_gas", k, 1, allPara), 5, { san: 50 }), allPara);
+    const ks = kindsOf(r.events);
+    expect(ks).toContain("message:event.stop.fail");
+    expect(ks).toContain("chestTrap");
+    expect(r.state.party.every((c) => c.status.includes("paralysis"))).toBe(true);
+    expect(ks).not.toContain("message:event.stop.told");
+    expect(ks).not.toContain("sanChanged");
+  });
 });
 
 describe("DG-24 宝箱のセルに乗る（M11 の作業 7）", () => {

@@ -196,7 +196,7 @@ export function presentChest(ctx: RuleContext, opts: PresentChestOptions): void 
  * 決まれば chestImpulse{actorId} → message chest.impulse.actor{actor} →（制止者がいれば。宝箱は常に stopCheck 真）event.stop.roll{stopper} → rollRestrain:
  * - 成功: event.stop.success{stopper, actor}、制止者 → 行動者の順に SAN +stopSanGain（EV-22）。開封の選択へ（偽を返す）
  * - 失敗（event.stop.fail{stopper}）・制止者なし: message chest.impulse.open{actor} → 行動者が「調べずに開ける」（openChest。作動させた人は行動者）。
- *   罠が作動し、制止者がいて生きていて、戦闘に入っておらず潜行が続いていれば event.stop.told{stopper} と制止者の SAN +stopSanGain（EV-23。罠なしは good で、
+ *   罠が作動し、制止者がいて生きていて、戦闘に入っておらず潜行が続いていて行動可能な者がいれば（全滅処理に入らなければ）event.stop.told{stopper} と制止者の SAN +stopSanGain（EV-23。罠なしは good で、
  *   impulseBonus は無い）。真を返す
  */
 function chestImpulse(ctx: RuleContext, startAlarm: StartAlarm): boolean {
@@ -219,7 +219,7 @@ function chestImpulse(ctx: RuleContext, startAlarm: StartAlarm): boolean {
   ctx.events.push({ kind: "message", key: "chest.impulse.open", params: { actor: actor.name } });
   const trapped = requireChest(state).trapId !== null;
   openChest(ctx, startAlarm, actor);
-  if (trapped && stopper !== null && stopper.life === "alive" && state.battle === null && state.dive !== null) {
+  if (trapped && stopper !== null && stopper.life === "alive" && state.battle === null && state.dive !== null && state.party.some(canAct)) {
     ctx.events.push({ kind: "message", key: "event.stop.told", params: { stopper: stopper.name } });
     gainSan(ctx, stopper, data.config.events.stopSanGain);
   }
@@ -467,7 +467,7 @@ export function inspectChest(ctx: RuleContext, memberId: string, startAlarm: Sta
     }
     // EV-76: 担当の失敗は、この調べるの語りと効果の後に text.fail{name} と SAN −failSan（耐性なし。乱数なし）。
     // 担当が生きていなければ、また警報で戦闘に入った（全滅処理に入った）ときは出さない
-    if (riv !== null && ch.life === "alive" && state.battle === null && state.dive !== null) {
+    if (riv !== null && ch.life === "alive" && state.battle === null && state.dive !== null && state.party.some(canAct)) {
       ctx.events.push({ kind: "message", key: riv.text.fail, params: { name: ch.name } });
       applySanValue(ctx, ch, -riv.failSan);
     }
