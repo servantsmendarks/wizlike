@@ -4,7 +4,7 @@ import { EQUIP_SLOTS, STAT_KEYS } from "../src/core/data/index";
 import { createItemInstance, itemDisplayName } from "../src/core/state";
 import type { GameState } from "../src/core/types";
 import { campMenu } from "../src/core/rules/camp";
-import { CHARACTER_LINES, CHARACTER_MIN_HEIGHT, dungeonLayout, layoutWarnings, regions, townLayout } from "../src/presenter/layout";
+import { CHARACTER_LINES, CHARACTER_MIN_HEIGHT, dungeonLayout, layoutWarnings, regions } from "../src/presenter/layout";
 import { characterCells, createDetailView, formatCharacter, LEVEL_COLUMNS, SLOT_ORDER, STAT_ORDER } from "../src/presenter/views/detail";
 import { textUnits } from "../src/presenter/views/party-band";
 import { formatMessage } from "../src/presenter/views/message";
@@ -287,11 +287,10 @@ describe("UI-59 キャラクター画面の配置（M10）", () => {
   const RECT = { x: 0, y: 16, w: 240, h: 284 };
   const px = (v: string | undefined): number => Number((v ?? "").replace("px", ""));
 
-  test("UI-59 layout.character は 240×284（ビューの上端から操作領域の上端まで。townLayout の book と同じ）で、27 行（CHARACTER_MIN_HEIGHT 274）が入る。足りなければ layoutWarnings", () => {
+  test("UI-59 layout.character は 240×284（ビューの上端から操作領域の上端まで。酒場の図鑑も同じ範囲）で、27 行（CHARACTER_MIN_HEIGHT 274）が入る。足りなければ layoutWarnings", () => {
     const g = regions(data.config.ui.layout, data.config.stage.width);
     const l = dungeonLayout(g, data.config.party.size);
     expect(l.character).toEqual(RECT);
-    expect(l.character).toEqual(townLayout(g, data.config.party.size).book);
     expect(CHARACTER_LINES).toBe(27);
     expect(CHARACTER_MIN_HEIGHT).toBe(274);
     expect(layoutWarnings(g, l)).toEqual([]);

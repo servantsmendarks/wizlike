@@ -429,7 +429,8 @@ describe("layout", () => {
     expect(T.list.rows).toEqual(Array.from({ length: 9 }, (_, i) => ({ x: 8, y: 190 + 22 * i, w: 168, h: 22 })));
     expect(T.back).toEqual({ x: 178, y: 354, w: 56, h: 40 });
     expect(T.back).toEqual(L.listBack);
-    expect(T.book).toEqual({ x: 0, y: 16, w: 240, h: 284 });
+    // 2026-10-07（B-B-4）: 図鑑の範囲は townLayout の book を消し、layout.character（キャラクター画面と同じ）に寄せた
+    expect(L.character).toEqual({ x: 0, y: 16, w: 240, h: 284 });
     // 押せないもの（文字・絵・見出し・一覧の欄）と押せるもの（ログ・設定・帯・戻る）の重なり
     const parts: [string, Rect][] = [
       ["header.text", T.header.text],

@@ -178,7 +178,7 @@ export type DungeonLayout = {
   /** UI-53 キャンプと酒場のパネル（= ビュー領域。メッセージ窓とパーティ欄は見えたまま） */
   camp: Rect;
   /**
-   * UI-59（M10）: キャラクター画面（と酒場の図鑑）のパネル。ビューの上端から操作領域の上端まで（既定 y16..299 の 240×284。townLayout の book と同じ範囲）。
+   * UI-59（M10）: キャラクター画面（と酒場の図鑑）のパネル。ビューの上端から操作領域の上端まで（既定 y16..299 の 240×284）。
    * 開いている間はパーティ欄とメッセージ窓を隠す（dungeon.ts の setCharacterOpen）
    */
   character: Rect;
@@ -297,8 +297,6 @@ export type TownLayout = {
   grid: Rect[];
   /** UI-11 の固定の戻る（操作領域の x178・y54 の 56×40） */
   back: Rect;
-  /** UI-59 酒場の図鑑のパネル（ビューの上端から操作領域の上端まで） */
-  book: Rect;
 };
 
 /** UI-13: 街の画面の矩形（ステージ座標）。既定の regions では ヘッダー y0..15、絵 y16..165、帯 y166..175、見出し y178..187、一覧 y190..387（22×9 行）、施設メニューの 6 枠 x40/96/152・y190/246 の 48×48（M10）、戻る 178,354 */
@@ -343,7 +341,6 @@ export function townLayout(g: Regions, partySize: number): TownLayout {
     list: { area, rows: Array.from({ length: count }, (_, i): Rect => ({ x: area.x, y: area.y + TOWN_ROW_H * i, w: area.w, h: TOWN_ROW_H })) },
     grid,
     back,
-    book: { x: v.x, y: v.y, w: v.w, h: g.controls.y - v.y },
   };
 }
 
