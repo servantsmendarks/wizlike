@@ -4,6 +4,7 @@
 // 前進ボタンだけは、動かずに hold.ms() 押し続けたら hold.onHoldStart（長押しの連打）、離したら hold.onHoldEnd（UI-31）。
 // 「オート解除」は再生中も反応する（whileBusy。UI-44 の例外）。
 // 末尾が戻る / やめるの一覧は、その項目を一覧の外（layout.listBack）に固定し、一覧だけを縦にスクロールする（UI-11）。
+// M10.5 追補（未定-24）: 一覧の左の 8px の列に続きの印（scroll-marks.ts。上端の行の左・下端の行の左）を出す。
 // M8.5: 街の一覧（setList の town。UI-13）は、見出しと一覧を操作領域の外の townLayout の位置（帯の下。y178..387）に置く（負の top）。
 // M10: 街の施設メニュー（setBattleMenu の town。UI-13 / UI-52）は、見出しと 48×48 の 3 列 × 2 段を同じく townLayout の位置に置く。
 // Action から Command への変換と長押しの連打は呼び出し側（app）が持つ。表示層は前進できるかを判定しない（UI-35）。
@@ -11,6 +12,7 @@
 import type { AudioData, Strings } from "../../core/data/index";
 import { onTap } from "../input/tap";
 import type { DungeonLayout, Rect } from "../layout";
+import { attachScrollMarks, marksLeftOf } from "./scroll-marks";
 
 export type DpadAction = "forward" | "left" | "right" | "around";
 export type ControlsMode = "dpad" | "list" | "close" | "map" | "battle" | "autoStop" | "none";
@@ -251,6 +253,15 @@ export function createControls(o: {
     overflowX: "hidden",
   });
   el.appendChild(list);
+  /** 一覧の容器の矩形（ステージ座標）。on なら街の位置（townList.area） */
+  const listRect = (on: boolean): Rect => (on ? town.area : { x: first.x, y: first.y, w: first.w, h: last.y + last.h - first.y });
+  /** 一覧の続きの印の位置（操作領域の原点からの座標） */
+  const listMarkPos = (on: boolean) => {
+    const r = listRect(on);
+    return marksLeftOf({ x: r.x - origin.x, y: r.y - origin.y, h: r.h });
+  };
+  // UI-11（M10.5 追補）: 一覧の続きの印
+  const listMarks = attachScrollMarks({ scroller: list, host: el, strings: o.strings, pos: listMarkPos(false) });
   let listItems: ControlItem[] = [];
   /** 行の要素（fixedLast なら末尾は listBack のボタン）。添字は listItems と同じ */
   let listButtons: HTMLElement[] = [];
@@ -265,8 +276,9 @@ export function createControls(o: {
   el.appendChild(listBack);
   /** 一覧の容器を通常（layout.list）か街の位置（townList.area）に置く */
   const placeList = (on: boolean): void => {
-    const r = on ? town.area : { x: first.x, y: first.y, w: first.w, h: last.y + last.h - first.y };
+    const r = listRect(on);
     Object.assign(list.style, { left: `${r.x - origin.x}px`, top: `${r.y - origin.y}px`, height: `${r.h}px` });
+    listMarks.place(listMarkPos(on));
   };
 
   // ---- 地図の「閉じる」
@@ -332,6 +344,8 @@ export function createControls(o: {
     setShown(mapGo, mode === "map");
     setShown(battle, mode === "battle");
     setShown(autoStop, mode === "autoStop");
+    // UI-11（M10.5 追補）: 一覧を出し入れした・中身を替えた後の続きの印（隠れている一覧は寸法が 0 で印も消える）
+    listMarks.refresh();
   };
 
   /**
@@ -361,7 +375,10 @@ export function createControls(o: {
       mode = m;
       apply();
       // UI-11: 一覧は出すたびに先頭から見せる（display:none の間の代入が効かないことがあるので、表示した後にも 0 にする）
-      if (m === "list") list.scrollTop = 0;
+      if (m === "list") {
+        list.scrollTop = 0;
+        listMarks.refresh();
+      }
     },
     setDpadVisible(on: boolean): void {
       dpadVisible = on;

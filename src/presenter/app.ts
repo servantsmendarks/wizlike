@@ -127,7 +127,7 @@ import { createSaveBanner } from "./views/save-banner";
 import { createUpdateNotice } from "./views/update-notice";
 import { createTitleScreen, titleEntries, titleHint, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
 import { formatWipeSummary } from "./views/wipe";
-import { createNarrator } from "./views/talk";
+import { createNarrator, TALK_KEY_LINES } from "./views/talk";
 import {
   TOWN_INTRO_DEDUP,
   townEntries,
@@ -1958,6 +1958,9 @@ export function createApp(o: {
         else if (a === "back") {
           play.talk.flush();
           townBack();
+        } else if ((a === "forward" || a === "around") && play.talk.isOpen()) {
+          // UI-33 / UI-47（M10.5 追補）: 会話の箱が開いていれば ↑↓ で 3 行ずつ読み返す（履歴の画面と同じ）
+          play.talk.scrollBy(a === "forward" ? -TALK_KEY_LINES : TALK_KEY_LINES);
         }
         return;
       case "dungeon": {
@@ -2013,7 +2016,7 @@ export function createApp(o: {
 
   /**
    * UI-47: 再生の外の会話の箱・施設の絵のタップ（再生中のタップはステージが player.tap() に回す）。
-   * 文字送り中なら即表示、箱が埋まって待っていれば空にして続け、最後の文の ▼ なら閉じる。キャンプ（酒場）は箱がパネルの上に描かれるので受ける。
+   * 文字送り中なら即表示、そうでなければ閉じる（M10.5 追補のログ形式。箱を空にして続けることは無い）。キャンプ（酒場）は箱がパネルの上に描かれるので受ける。
    * それ以外の overlay（履歴・設定など）があるときは何もしない
    */
   const tapTalk = (): void => {

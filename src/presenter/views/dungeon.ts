@@ -271,21 +271,24 @@ export function createDungeonScreen(o: {
   Object.assign(diceLayer.style, { width: `${r.view.w}px`, height: `${r.view.h}px`, pointerEvents: "none" });
 
   // 全滅の内訳（UI-56）は地図と同じ範囲
-  const wipe = createWipeView(lay.wipe);
+  const wipe = createWipeView(lay.wipe, o.strings);
   wipe.el.style.display = "none";
 
   // 履歴（UI-46）も同じ範囲
-  const history = createHistoryView(lay.history);
+  const history = createHistoryView(lay.history, o.strings);
   history.el.style.display = "none";
 
   // UI-47（M8.5。M10.5）: 街の会話の箱。キャンプのパネルと操作の欄より上（操作の欄に被せる。酒場の呪文の結果が見える）、overlay より下。
-  // ログはメッセージ窓の 1 本の履歴。迷宮のキャラクター画面では 3 行の箱（compact）。ページを空にする・閉じるときに判定の箱を消す
+  // ログはメッセージ窓の 1 本の履歴。迷宮のキャラクター画面では 3 行の箱（compact）。閉じるときに判定の箱を消す。
+  // M10.5 追補: 溜める文は履歴と同じ数まで（historyMax）、続きの印の字は strings
   const talk = createTalkBox({
     layout: tl.talk,
     compact: tl.talkCompact,
+    strings: o.strings,
     speed: o.textSpeed,
     blink: o.talkBlink,
     log: (t) => message.log(t),
+    max: o.historyMax,
     advanced: () => o.talkAdvanced?.(),
     cleared: () => dice.hide(),
   });
@@ -368,6 +371,8 @@ export function createDungeonScreen(o: {
     },
     showWipe(on: boolean): void {
       wipe.el.style.display = on ? "" : "none";
+      // UI-11（M10.5 追補）: 見えてから続きの印を出し直す（隠れている間は寸法が 0）
+      if (on) wipe.refresh();
     },
     showHistory(on: boolean): void {
       history.el.style.display = on ? "" : "none";

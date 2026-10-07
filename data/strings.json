@@ -370,6 +370,8 @@
   "map.noRoute": "道が分からない。",
   "map.go": "移動",
   "history.title": "これまでの語り",
+  "scroll.up": "▲",
+  "scroll.down": "▼",
 
   "party.hp": "HP",
   "party.mp": "MP",

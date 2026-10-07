@@ -12,6 +12,7 @@ import type { SpriteInfo } from "../../build/asset-types";
 import { TITLE_BUTTONS, TITLE_HEADING_Y, TITLE_HINT, TITLE_NOTICE, TITLE_PICTURE, TITLE_ROW_AREA, TITLE_ROW_PITCH, type Rect } from "../layout";
 import { createTownPicture, TITLE_PICTURE_ID } from "./town-picture";
 import { formatMessage } from "./message";
+import { attachScrollMarks, marksLeftOf } from "./scroll-marks";
 import { WRAP_STYLE } from "./wrap";
 import { onTap } from "../input/tap";
 import { createFileButton, type FileButton } from "../file-io";
@@ -286,6 +287,8 @@ export function createTitleScreen(o: {
 
   const buttons = document.createElement("div");
   el.appendChild(buttons);
+  // UI-11（M10.5 追補。未定-24）: 一覧の左の 8px の列に続きの印（題字・一覧・案内・ボタンの後ろに足す）
+  const marks = attachScrollMarks({ scroller: rows, host: el, strings: o.strings, pos: marksLeftOf(TITLE_ROW_AREA) });
 
   const makeButton = (it: TitleItem, index: number): HTMLButtonElement => {
     const b = document.createElement("button");
@@ -338,6 +341,7 @@ export function createTitleScreen(o: {
         }
       });
       rows.replaceChildren(...rowEls);
+      marks.refresh();
       buttons.replaceChildren(...buttonEls);
       notice.textContent = text;
     },

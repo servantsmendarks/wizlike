@@ -628,8 +628,9 @@ describe("入力と Command", () => {
     expect(item).toMatch(/onSelect: \(\) =>\s*guard\(\(\) => \{\s*play\.talk\.flush\(\);\s*switch \(e\.kind\) \{/);
     const core = /const handleActionCore = \(a: Action\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(core).toMatch(
-      /case "town":\s*if \(a === "confirm"\) \{\s*if \(play\.talk\.isOpen\(\)\) play\.talk\.tap\(\);\s*else play\.controls\.select\(0\);\s*\} else if \(typeof a === "object"\) play\.controls\.select\(a\.menu\);\s*else if \(a === "back"\) \{\s*play\.talk\.flush\(\);\s*townBack\(\);\s*\}\s*return;/,
+      /case "town":\s*if \(a === "confirm"\) \{\s*if \(play\.talk\.isOpen\(\)\) play\.talk\.tap\(\);\s*else play\.controls\.select\(0\);\s*\} else if \(typeof a === "object"\) play\.controls\.select\(a\.menu\);\s*else if \(a === "back"\) \{\s*play\.talk\.flush\(\);\s*townBack\(\);\s*\} else if \(\(a === "forward" \|\| a === "around"\) && play\.talk\.isOpen\(\)\) \{\s*play\.talk\.scrollBy\(a === "forward" \? -TALK_KEY_LINES : TALK_KEY_LINES\);\s*\}\s*return;/,
     );
+    // M10.5 追補（未定-24）: 会話の箱が開いていれば ↑↓ で 3 行ずつ読み返す（以前の期待値は ↑↓ の分岐なし）
     const tap = /const tapTalk = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(tap).toContain("if (isBusy() || chaining) return;");
     // M10（UI-59）: キャラクター画面の間は迷宮でも箱のタップを受ける
@@ -720,10 +721,11 @@ describe("入力と Command", () => {
     expect(resume.indexOf("narrator.say(")).toBeGreaterThan(resume.indexOf("showRoute(plan.route)"));
     // 判定の箱の下端は街とキャラクター画面（M10）だけ会話の箱の上（2026-10-07 B-B-5: applyPanels に切り出し、dungeon-view.test で確かめる）
     const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
-    // M10.5: 街は広げた会話の箱の上、迷宮のキャラクター画面は 3 行の箱の上。会話の箱はページを空にする・閉じるときに判定の箱を消す
+    // M10.5: 街は広げた会話の箱の上、迷宮のキャラクター画面は 3 行の箱の上。会話の箱は閉じるときに判定の箱を消す。
+    // M10.5 追補: 続きの印の字（strings）と、溜める文の上限（historyMax）を渡す（以前の期待値は strings・max なし）
     expect(dungeon).toContain('p.setDiceBottom(mode === "town" ? diceBottom.town : characterOpen ? diceBottom.compact : DICE_BOX_BOTTOM);');
     expect(dungeon).toMatch(
-      /const talk = createTalkBox\(\{\s*layout: tl\.talk,\s*compact: tl\.talkCompact,\s*speed: o\.textSpeed,\s*blink: o\.talkBlink,\s*log: \(t\) => message\.log\(t\),\s*advanced: \(\) => o\.talkAdvanced\?\.\(\),\s*cleared: \(\) => dice\.hide\(\),\s*\}\);/,
+      /const talk = createTalkBox\(\{\s*layout: tl\.talk,\s*compact: tl\.talkCompact,\s*strings: o\.strings,\s*speed: o\.textSpeed,\s*blink: o\.talkBlink,\s*log: \(t\) => message\.log\(t\),\s*max: o\.historyMax,\s*advanced: \(\) => o\.talkAdvanced\?\.\(\),\s*cleared: \(\) => dice\.hide\(\),\s*\}\);/,
     );
   });
 

@@ -35,11 +35,11 @@
 //   （先に message・dice 以外のイベントか再生の終わりが来たらそこで待つ）。演出スキップでも待つ（§3-9。手動のタップ待ち）。
 //   他の拍の外の箱（dice.learn など）は待たない。
 // - 街（UI-47。M8.5。M10.5 で溜める形に）: message の表示先（迷宮の窓か街の会話の箱）は結線側の deps.message が決める。
-//   会話の箱は文を溜め、埋まったときだけ箱を空にするタップを自分の中で待つ（拍の外のタップは message.rush に行き、即表示か空にして続ける）。
-//   この再生で文を語った後の次の出来事（dice を除く）と、各 message の再生と音の前に deps.message.hold(次に語る文) を待つ
-//   （会話の箱は、次の文が箱に入らなければ空にするタップまで待つ。窓は待たない）。音（learn・levelup・文の音）が前のページの間に鳴らないようにする。
+//   会話の箱は文を溜め続けてスクロールする（M10.5 追補のログ形式。拍の外のタップは message.rush に行き、文字送り中なら即表示）。
+//   この再生で文を語った後の次の出来事（dice を除く）と、各 message の再生と音の前に deps.message.hold() を待つ
+//   （会話の箱は、前の文の文字送りが終わるまで待つ。窓は待たない）。音（learn・levelup・文の音）が前の文の文字送りの途中に鳴らないようにする。
 //   dice は語った文（「…を掴もうとしている」）と一緒に出す（判定の箱）。街では message と dice 以外の出来事と再生の終わりで消さず（keepsDice）、
-//   会話の箱のページを空にする・閉じるときに結線側が消す。制止・強化の箱のタップ待ちの後は、その文を読んだものとして待たない。
+//   会話の箱を閉じるときに結線側が消す（M10.5 追補: 箱を空にすることは無くなったので、次の判定の箱に置き換わるか閉じるまで残る）。制止・強化の箱のタップ待ちの後は、その文を読んだものとして待たない。
 //   強化・鑑定の箱（HOLD_DICE_KEYS）で列が終わるときの待ちは、keepsDice の間は会話の箱の最後の ▼ に任せる（M10.5 の修正。タップは 1 回）。
 //   screen{town} では、その前に迷宮の窓で語った文（townCarry）を screens.show に渡す。
 // 具体的な views は import しない（純粋な enemyGroupOfId / formatMessage / formatDiceSummary だけ）。モジュールのトップレベルでは DOM に触れない。
@@ -77,14 +77,13 @@ export type PlayerDeps = {
     log(text: string): void;
     /**
      * UI-47 / UI-66（2026-10-06。M10.5）: この再生で語った文の後の次の出来事（dice を除く）と、各 message の、再生と音の前に呼ぶ。
-     * next は次に語る文（同じ画面の中の、この出来事以降の最初の message。無ければ undefined）。
-     * 街の会話の箱は、前の文の文字送りが終わり、next が箱に入るならすぐ、入らなければ箱を空にするタップの後に解く（talk.ts の hold）。
+     * 街の会話の箱は、前の文の文字送りが終わったら解く（talk.ts の hold。M10.5 追補のログ形式で、箱を空にするタップは無くなった）。
      * メッセージ窓は待たない。省略すると待たない
      */
-    hold?(next?: string): Promise<void>;
+    hold?(): Promise<void>;
     /**
      * UI-40 / UI-47（M10.5）: 拍の外の判定の箱を、message と dice 以外の出来事と再生の終わりで消さずに残すか（街の会話の箱は真。
-     * 箱は会話の箱のページを空にする・閉じるときに結線側が消す）。省略すると偽
+     * 箱は会話の箱を閉じるときに結線側が消す）。省略すると偽
      */
     keepsDice?(): boolean;
     /** UI-45: オートの拍の待ち（WAAPI の animation.finished で測る） */
@@ -171,19 +170,6 @@ export function townCarry(events: readonly GameEvent[], i: number, strings: Stri
     if (ev.kind === "message") out.push(formatMessage(strings[ev.key] ?? ev.key, ev.params));
   }
   return out.reverse();
-}
-
-/**
- * UI-47（M10.5。純粋）: 添字 i 以降で最初の message の整形済みの文（会話の箱の hold に渡す次の文）。
- * 先に screen / wipe / beat が来たら undefined（画面が変わると語りの表示先が変わる）
- */
-export function nextSaid(events: readonly GameEvent[], i: number, strings: Strings): string | undefined {
-  for (let k = Math.max(0, i); k < events.length; k++) {
-    const ev = events[k]!;
-    if (ev.kind === "message") return formatMessage(strings[ev.key] ?? ev.key, ev.params);
-    if (ev.kind === "screen" || ev.kind === "wipe" || ev.kind === "beat") return undefined;
-  }
-  return undefined;
 }
 
 export type Handlers = {
@@ -281,7 +267,7 @@ export function createPlayer(deps: PlayerDeps): Player {
   let carry: string[] = [];
 
   const isSkip = (): boolean => deps.settings().skipAnimations || rushed || beatRush;
-  /** UI-47（M10.5）: 拍の外で、判定の箱を会話の箱のページと一緒に消すか（deps.message.keepsDice） */
+  /** UI-47（M10.5）: 拍の外で、判定の箱を会話の箱と一緒に消すか（deps.message.keepsDice） */
   const keepDice = (): boolean => mode === null && deps.message.keepsDice?.() === true;
   /** ダイスの overlay が出ているか（出ていなければ hide を呼ばない） */
   let diceShown = false;
@@ -554,9 +540,9 @@ export function createPlayer(deps: PlayerDeps): Player {
             said = false;
           }
           if ((said && ev.kind !== "dice") || ev.kind === "message") {
-            // UI-47 / UI-66（M10.5）: 街の会話の箱は、次に語る文が箱に入らなければ、箱を空にするタップまで次の出来事（と音）を出さない
+            // UI-47 / UI-66（M10.5）: 街の会話の箱は、前の文の文字送りが終わるまで次の出来事（と音）を出さない
             said = false;
-            await deps.message.hold?.(nextSaid(events, idx, deps.strings));
+            await deps.message.hold?.();
           }
           if (ev.kind === "beat") {
             // UI-45: 次の拍の前で待ち、待った後にダイスを消してから拍に入る
@@ -587,7 +573,7 @@ export function createPlayer(deps: PlayerDeps): Player {
           } else if (ev.kind !== "dice" && !wipeDiceShown && !keepDice()) {
             // UI-40: ダイスは続く message（と続けて来たダイス）の間だけ残す。
             // UI-56: 全滅の 2d10 は復活の lifeChanged / hpChanged / statusChanged などでは消さず、wipe の待ちの後に消す
-            // UI-47（M10.5）: 街の会話の箱では消さない（文と一緒に出た箱は、そのページを空にする・閉じるときに消える）
+            // UI-47（M10.5）: 街の会話の箱では消さない（文と一緒に出た箱は、次の判定の箱に置き換わるか、会話の箱を閉じるときに消える）
             hideDice();
           }
           if (mode !== null && (ev.kind === "message" || ev.kind === "dice")) pending = true;

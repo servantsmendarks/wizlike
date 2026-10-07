@@ -587,7 +587,8 @@ describe("UI-37 style.css の touch-action", () => {
     expect(touch("#stage *")).toBe("manipulation");
     expect(touch("#stage .screen-play.swipe-on")).toBe("none");
     expect(touch("#stage .screen-play.swipe-on *")).toBe("none");
-    for (const c of ["controls-list", "history-list", "wipe-view", "title-rows"]) {
+    // M10.5 追補（未定-24）: 会話の箱の文字領域（talk-text）も指でスクロールする
+    for (const c of ["controls-list", "history-list", "wipe-view", "title-rows", "talk-text"]) {
       expect(touch(`#stage .screen .${c}`), c).toBe("pan-y");
       expect(touch(`#stage .screen .${c} *`), c).toBe("pan-y");
     }

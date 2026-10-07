@@ -254,7 +254,7 @@ describe("MessageWindow", () => {
     });
     const g = regions(data.config.ui.layout, data.config.stage.width);
     const L = dungeonLayout(g, data.config.party.size);
-    createHistoryView(L.history);
+    createHistoryView(L.history, data.strings);
     const list = created.find((e) => e.className === "history-list")!;
     const top = Number.parseFloat(list.style["top"]!);
     const height = Number.parseFloat(list.style["height"]!);
@@ -314,7 +314,7 @@ describe("UI-43/UI-46 折り返しの禁則（M7）", () => {
     const g = regions(data.config.ui.layout, data.config.stage.width);
     const L = dungeonLayout(g, data.config.party.size);
     createMessageWindow({ speed: () => 0, historyMax: 15, region: g.message, layout: L.message });
-    createHistoryView(L.history);
+    createHistoryView(L.history, data.strings);
     for (const cls of ["message-history", "history-list"]) {
       const el = created.find((e) => e.className === cls)!;
       for (const [k, v] of Object.entries(WRAP_STYLE)) expect(el.style[k], `${cls}.${k}`).toBe(v);
