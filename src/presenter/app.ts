@@ -84,6 +84,7 @@ import { resumePlan, routeOfScreen } from "./resume";
 import { createRunGate } from "./run-gate";
 import { defaultSettings, type SettingsStore } from "./settings";
 import type { StageLayout, StageLayoutInput } from "./stage";
+import { CHEST_MENU, chestEntries, chestHeading, chestParent, chestRepair, type ChestChoice, type ChestEntry, type ChestPage } from "./views/chest";
 import type { ControlItem, DpadAction, UiSound } from "./views/controls";
 import { createCreationScreen } from "./views/creation";
 import {
@@ -251,6 +252,8 @@ export function createApp(o: {
   /** UI-53 / TW-03: キャンプを開いた場所（迷宮のキャンプか酒場か）と今の段（overlay が camp の間だけ使う） */
   let campHost: CampHost = "camp";
   let campPage: CampPage = { kind: "top" };
+  /** UI-70（M11）: 宝箱の操作の段（chestView が非 null の間だけ使う。表示層だけの値で保存しない。コマンドを送ったら menu に戻す） */
+  let chestPage: ChestPage = CHEST_MENU;
   /** UI-59（M10）: キャラクター画面（とその下の段）を開いている間か（迷宮でも語りを会話の箱に出す。setCharacter） */
   let characterOpen = false;
   /** UI-25: 地図のタップ移動の自動歩行（歩いている間だけ非 null。SV-50 の再開では戻さない） */
@@ -744,6 +747,47 @@ export function createApp(o: {
   const fieldFree = (): boolean => state.screen === "dungeon" && state.pendingChoice === null && chestView(state, data) === null;
 
   /**
+   * UI-70（M11）: 宝箱の段の 1 行。押せない人の行（canAct でない。core の chestView）を押したら理由の 1 文を語る（UI-59 の作法。迷宮ではメッセージ窓）。
+   * 戻るは UI-66 の取り消しの音
+   */
+  const chestItem = (e: ChestEntry): ControlItem => {
+    const reason = e.reason;
+    return {
+      label: e.label,
+      disabled: e.disabled,
+      back: e.choice.kind === "back",
+      ...(reason === undefined ? {} : { onDisabled: () => guard(() => void narrator.say(reason, store.get().skipAnimations)) }),
+      onSelect: () => guard(() => chooseChest(e.choice)),
+    };
+  };
+
+  /** UI-70: 段を移るか、Command を送る（送ったら段は menu に戻す。結果の語りと判定の箱は再生が出す）。可否は core が決める（UI-35） */
+  const chooseChest = (ch: ChestChoice): void => {
+    if (ch.kind === "back") {
+      chestBack();
+      return;
+    }
+    if (ch.kind === "page") {
+      chestPage = ch.page;
+      syncControls();
+      return;
+    }
+    chestPage = CHEST_MENU;
+    void run(ch.command).then((r) => {
+      // rejected は再生も sync も無いので、ここで描き直す
+      if (r !== null && r.rejected && !isBusy()) syncControls();
+    });
+  };
+
+  /** UI-70: 1 つ上の段へ（menu では何もしない。Esc と [戻る]） */
+  const chestBack = (): void => {
+    const up = chestParent(chestPage);
+    if (up === null) return;
+    chestPage = up;
+    syncControls();
+  };
+
+  /**
    * UI-30: ステージ全体でスワイプを受けるか（迷宮で、overlay も保留も無く、inputMode が buttons でなく、自動歩行中でなく、
    * SV-42 の更新の案内が出ていない）
    */
@@ -827,14 +871,23 @@ export function createApp(o: {
       c.setMode("list");
       return;
     }
-    // UI-70（M11。作業 4b の最小版）: 宝箱が残っていて戦闘中でも保留中でもない（chestView が非 null）なら、操作領域は箱の一覧だけ
-    // （十字ボタン・キャンプ・地図は出さない）。問い chest.prompt は core が語る（続きからは resumePlan が出し直す）
+    // UI-70（M11）: 宝箱が残っていて戦闘中でも保留中でもない（chestView が非 null）なら、操作領域は箱の段の一覧だけ
+    // （十字ボタン・キャンプ・地図は出さない）。問い chest.prompt は core が語る（続きからは resumePlan が出し直す）。
+    // 段（[調べる][解除][開ける][放っておく] → 人 → 罠の名前）は views/chest が chestView の値から作る。人と罠の段の問いはヘッダー、menu は場所
     const chest = chestView(state, data);
     if (chest !== null) {
-      c.setList([listItem(t("chest.menu.open"), () => void run({ type: "chest.open" })), listItem(t("chest.menu.leave"), () => void run({ type: "chest.leave" }))]);
+      chestPage = chestRepair(chestPage, chest);
+      const ents = chestEntries(chestPage, chest, strings);
+      const heading = chestHeading(chestPage, chest, strings);
+      const d = state.dive;
+      if (heading !== null) play.header.setText(heading);
+      else if (d !== null) showHeaderAt(state, { floor: d.floor, pos: d.pos, facing: d.facing });
+      // UI-11: 人と罠の段の末尾の戻るは一覧の外に固定する
+      c.setList(ents.map(chestItem), { fixedLast: ents[ents.length - 1]?.choice.kind === "back" });
       c.setMode("list");
       return;
     }
+    chestPage = CHEST_MENU;
     // 壊れた state（screen event で保留が無い、など）でも十字ボタンを出さない守り
     if (state.screen !== "dungeon") {
       c.setMode("none");
@@ -1535,6 +1588,7 @@ export function createApp(o: {
     settingsNotice = null;
     campHost = "camp";
     campPage = { kind: "top" };
+    chestPage = CHEST_MENU;
     characterOpen = false;
     play.setCharacterOpen(false);
     walking = null;
@@ -1879,7 +1933,7 @@ export function createApp(o: {
    */
   const handleAction = (a: Action): void => {
     const watch = a === "back" && audio !== null && (route === "town" || route === "dungeon" || route === "battle") && overlay !== "settings" && overlay !== "debug";
-    const sig = (): string => JSON.stringify([route, overlay, townPage, campPage, cursor]);
+    const sig = (): string => JSON.stringify([route, overlay, townPage, campPage, chestPage, cursor]);
     const before = watch ? sig() : "";
     const n = uiSounds;
     handleActionCore(a);
@@ -2005,6 +2059,8 @@ export function createApp(o: {
         if (!fieldFree()) {
           if (a === "confirm") play.controls.select(0);
           else if (typeof a === "object") play.controls.select(a.menu);
+          // UI-70 / UI-33（M11）: 宝箱の人・罠の段では Esc で 1 つ上の段へ
+          else if (a === "back" && chestView(state, data) !== null) chestBack();
           return;
         }
         if (a === "forward") repeater.press();

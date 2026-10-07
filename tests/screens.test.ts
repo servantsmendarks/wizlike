@@ -345,7 +345,9 @@ describe("入力と Command", () => {
     expect(app).toMatch(/const stageInput = attachStageInput\(/);
   });
 
-  test("UI-70/CB-60（M11 作業 4b）宝箱の操作: syncControls は保留の一覧の次で core の chestView を見て、非 null なら一覧 [開ける][放っておく]（chest.open / chest.leave を送る）を出し、十字ボタン・キャンプ・地図は出さない。fieldFree も chestView が null のときだけ真（ソースの検査）", () => {
+  // M11 作業 8: 4b の最小版（[開ける][放っておく] を app に直書き）を、views/chest の段（[調べる][解除][開ける][放っておく] → 人 → 罠の名前）に
+  // 置き換えたので、このテストを新しい配線の検査に書き直した（段の中身は tests/chest-view.test.ts）
+  test("UI-70/CB-60（M11 作業 8）宝箱の操作: syncControls は保留の一覧の次で core の chestView を見て、非 null なら views/chest の段（chestRepair → chestEntries → chestHeading）の一覧を出し、十字ボタン・キャンプ・地図は出さない。null なら段を menu に戻す。fieldFree も chestView が null のときだけ真（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const sync = /const syncControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     const iPending = sync.indexOf("const pc = state.pendingChoice;");
@@ -355,11 +357,38 @@ describe("入力と Command", () => {
     expect(iChest).toBeGreaterThan(iPending);
     expect(iDpad).toBeGreaterThan(iChest);
     const branch = /if \(chest !== null\) \{([\s\S]*?)\n {4}\}/.exec(sync.slice(iChest))?.[1] ?? "";
-    expect(branch).toMatch(/listItem\(t\("chest\.menu\.open"\), \(\) => void run\(\{ type: "chest\.open" \}\)\)/);
-    expect(branch).toMatch(/listItem\(t\("chest\.menu\.leave"\), \(\) => void run\(\{ type: "chest\.leave" \}\)\)/);
+    expect(branch).toMatch(/chestPage = chestRepair\(chestPage, chest\);/);
+    expect(branch).toMatch(/const ents = chestEntries\(chestPage, chest, strings\);/);
+    expect(branch).toMatch(/const heading = chestHeading\(chestPage, chest, strings\);/);
+    expect(branch).toMatch(/if \(heading !== null\) play\.header\.setText\(heading\);/);
+    expect(branch).toMatch(/c\.setList\(ents\.map\(chestItem\), \{ fixedLast: ents\[ents\.length - 1\]\?\.choice\.kind === "back" \}\);/);
     expect(branch).toMatch(/c\.setMode\("list"\);\s*return;/);
+    // 4b の直書きは残っていない
+    expect(branch).not.toMatch(/chest\.menu\.open/);
+    // 箱が無ければ段を menu に戻す（次の箱は menu から）
+    expect(sync.slice(iChest, iDpad)).toMatch(/\n {4}\}\n {4}chestPage = CHEST_MENU;/);
     expect(app).toMatch(/const fieldFree = \(\): boolean => state\.screen === "dungeon" && state\.pendingChoice === null && chestView\(state, data\) === null;/);
-    for (const k of ["chest.menu.open", "chest.menu.leave", "chest.prompt"]) expect(data.strings[k], k).toBeTypeOf("string");
+    for (const k of ["chest.menu.inspect", "chest.menu.disarm", "chest.menu.open", "chest.menu.leave", "chest.prompt"]) expect(data.strings[k], k).toBeTypeOf("string");
+  });
+
+  test("UI-70（M11 作業 8）宝箱の段の操作: 段の移動は syncControls だけ、送るときは段を menu に戻して run（rejected なら描き直す）。dim の行は理由を narrator で語る。[戻る] と Esc は chestBack（1 つ上の段）。load で段を menu に戻す（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const choose = /const chooseChest = \(ch: ChestChoice\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(choose).toMatch(/if \(ch\.kind === "back"\) \{\s*chestBack\(\);\s*return;\s*\}/);
+    expect(choose).toMatch(/if \(ch\.kind === "page"\) \{\s*chestPage = ch\.page;\s*syncControls\(\);\s*return;\s*\}/);
+    expect(choose).toMatch(/chestPage = CHEST_MENU;\s*void run\(ch\.command\)\.then\(\(r\) => \{\s*if \(r !== null && r\.rejected && !isBusy\(\)\) syncControls\(\);/);
+    const item = /const chestItem = \(e: ChestEntry\): ControlItem => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(item).toMatch(/back: e\.choice\.kind === "back",/);
+    expect(item).toMatch(/onDisabled: \(\) => guard\(\(\) => void narrator\.say\(reason, store\.get\(\)\.skipAnimations\)\)/);
+    expect(item).toMatch(/onSelect: \(\) => guard\(\(\) => chooseChest\(e\.choice\)\)/);
+    const back = /const chestBack = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(back).toMatch(/const up = chestParent\(chestPage\);\s*if \(up === null\) return;\s*chestPage = up;\s*syncControls\(\);/);
+    expect(app).toMatch(/else if \(a === "back" && chestView\(state, data\) !== null\) chestBack\(\);/);
+    expect(app).toMatch(/const sig = \(\): string => JSON\.stringify\(\[route, overlay, townPage, campPage, chestPage, cursor\]\);/);
+    expect(app).toMatch(/campPage = \{ kind: "top" \};\s*chestPage = CHEST_MENU;/);
+    // views/chest は core の型だけを使う（値は chestView を app が渡す。UI-35）
+    const view = stripComments(presenterRaw["../src/presenter/views/chest.ts"]!);
+    for (const m of view.matchAll(/^import\b(.*?)from\s*"([^"]+)"/gm)) if (m[2]!.includes("/core/")) expect(m[1]!.trim().startsWith("type"), m[0]).toBe(true);
   });
 
   test("UI-55 onScreen は routeOfScreen を通し、swipeEnabled / repeater / walker / openMap / handleAction / 長押しの解除は fieldFree（screen dungeon かつ保留なし）を見る（ソースの検査）", () => {

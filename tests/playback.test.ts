@@ -2399,3 +2399,141 @@ describe("UI-70 宝箱の再生（M11 作業 4b）", () => {
     expect(names(log).filter((m) => !["message.setMore", "screens.sync"].includes(m))).toEqual([]);
   });
 });
+
+describe("UI-70/UI-71 宝箱の判定の箱と衝動の流れの再生（M11 作業 8。core の実際の列）", () => {
+  /** 判定の箱・語り・待ち・消す・画面の切り替え・視点・敵の群れの順 */
+  const flow = (log: Log): string[] =>
+    log
+      .filter((e) => ["dice.show", "dice.hide", "beat.waitTap", "message.say", "screens.show", "battle.setGroups", "view.showAt"].includes(e.m))
+      .map((e) =>
+        e.m === "message.say" ? `say:${String(e.a[0])}` : e.m === "dice.show" ? `dice.show:${String(e.a[0])}` : e.m === "screens.show" ? `screens.show:${String(e.a[0])}` : e.m,
+      );
+  const sayOf = (d: typeof data, key: string, params?: Record<string, string | number>): string => `say:${formatMessage(d.strings[key]!, params)}`;
+  /** 箱から箱の後の語り 1 件までの再生の期待（HOLD: 語り → タップ待ち → 消す） */
+  const holdSpan = (d: typeof data, events: readonly GameEvent[], label: string): string[] => {
+    const i = events.findIndex((e) => e.kind === "dice" && e.label.key === label);
+    const next = events.slice(i + 1).find((e) => e.kind === "message") as Extract<GameEvent, { kind: "message" }>;
+    return [`dice.show:${label}`, sayOf(d, next.key, next.params), "beat.waitTap", "dice.hide"];
+  };
+  /** 再生して、記録と、描いた判定の箱（label・行の数・hidden）を返す */
+  const play = async (events: readonly GameEvent[], before: GameState, after: GameState, d: typeof data, skipAnimations = true) => {
+    const { deps, log } = fakeDeps({ skipAnimations });
+    const boxes: { label: string; rows: number; hidden: boolean }[] = [];
+    const show = deps.dice.show;
+    deps.dice.show = (ev, skip, stepMs) => {
+      boxes.push({ label: ev.label.key, rows: ev.rows.length, hidden: ev.hidden === true });
+      return show(ev, skip, stepMs);
+    };
+    await createPlayer({ ...deps, data: d, strings: d.strings }).play(events, before, after);
+    return { log, boxes };
+  };
+  /** 麻痺した大ネズミ 1 匹をアルドが倒す勝利の直前 */
+  const winning = (base: GameState): GameState =>
+    withBattle(base, [{ monsterId: "giant_rat", hps: [1], status: [["paralysis"]] }], {
+      origin: { kind: "random", inRoom: true },
+      identified: ["giant_rat"],
+      inputs: allInputs(base, { type: "defend" }, { c1: { type: "attack", group: 0 } }),
+    });
+
+  test("UI-71/CB-63（U-2）調べる: 伏せた箱（hidden。内訳と計だけで出目の行が無い）を出し、結果の文（GM が告げた名前）を箱の後に語ってからタップを待って消す。その後に chest.prompt（演出スキップでも待つ）", async () => {
+    const d = loadFreshData();
+    d.config.chest.inspect.min = d.config.chest.inspect.max = 100;
+    const s0 = execute(dived(1), { type: "debug.chest", trapId: "bomb" }, d).state;
+    const r = execute(s0, { type: "chest.inspect", memberId: "c3" }, d);
+    expectKnownStringKeys(r.events, d);
+    const ev = r.events.find((e) => e.kind === "dice") as DiceEvent;
+    expect(ev.hidden).toBe(true);
+    expect(ev.rows.every((x) => x.dice.length === 0)).toBe(true);
+    for (const skipAnimations of [true, false]) {
+      const { log, boxes } = await play(r.events, s0, r.state, d, skipAnimations);
+      expect(flow(log)).toEqual([...holdSpan(d, r.events, "dice.chestInspect"), sayOf(d, "chest.prompt")]);
+      expect(flow(log)[1]).toBe(sayOf(d, "chest.inspect.found", { trap: "爆弾" }));
+      expect(boxes).toEqual([{ label: "dice.chestInspect", rows: ev.rows.length, hidden: true }]);
+    }
+  });
+
+  test("UI-71/CB-64 解除: 全行の箱（内訳・危険度・上下限・出目）→ 結果の文 chest.disarm.ok → タップ → 消す → chest.prompt", async () => {
+    const d = loadFreshData();
+    d.config.chest.disarm.min = d.config.chest.disarm.max = 100;
+    const s0 = execute(dived(1), { type: "debug.chest", trapId: "bomb" }, d).state;
+    const r = execute(s0, { type: "chest.disarm", memberId: "c6", trapId: "bomb" }, d);
+    expectKnownStringKeys(r.events, d);
+    const ev = r.events.find((e) => e.kind === "dice") as DiceEvent;
+    expect(ev.hidden).toBeUndefined();
+    expect(ev.rows.at(-1)!.dice).toHaveLength(1);
+    const { log, boxes } = await play(r.events, s0, r.state, d);
+    expect(flow(log)).toEqual(["dice.show:dice.chestDisarm", sayOf(d, "chest.disarm.ok"), "beat.waitTap", "dice.hide", sayOf(d, "chest.prompt")]);
+    expect(boxes).toEqual([{ label: "dice.chestDisarm", rows: ev.rows.length, hidden: false }]);
+  });
+
+  test("UI-71/EV-73 職業の掛け合い（勝利の後の箱）: start → 両者の行の箱（キリ・フィン）→ win を語ってタップ → 消す → chest.prompt。履歴の要約にも両者の内訳", async () => {
+    const d = loadFreshData();
+    for (const t of d.drops.tables) t.itemChance = 0;
+    d.config.combat.hitMin = d.config.combat.hitMax = 100;
+    d.config.combat.chestChance = 100;
+    d.config.events.cap = 0;
+    d.rivalries[0]!.chance = 100;
+    const s0 = winning(dived(1));
+    const r = execute(s0, { type: "battle.resolve" }, d);
+    expectKnownStringKeys(r.events, d);
+    const ev = r.events.find((e) => e.kind === "dice" && e.label.key === "dice.rivalry") as DiceEvent;
+    expect(ev.rows.map((x) => x.label.params?.name)).toEqual(["キリ", "フィン"]);
+    const { log, boxes } = await play(r.events, s0, r.state, d);
+    const f = flow(log);
+    const i = f.indexOf("dice.show:dice.rivalry");
+    expect(f[i - 1]).toBe(sayOf(d, "rivalry.thief_chest.start", { a: "キリ", b: "フィン" }));
+    expect(f.slice(i)).toEqual([...holdSpan(d, r.events, "dice.rivalry"), sayOf(d, "chest.prompt")]);
+    expect(f[i + 1]).toBe(sayOf(d, "rivalry.thief_chest.win", { winner: "キリ", loser: "フィン" }));
+    expect(boxes.find((b) => b.label === "dice.rivalry")).toEqual({ label: "dice.rivalry", rows: 2, hidden: false });
+    const sum = formatDiceSummary(ev, d.strings);
+    expect(sum).toContain("キリ（素早さ 15・運 15）");
+    expect(sum).toContain("フィン（素早さ 14・運 11）");
+  });
+
+  test("UI-70/A2/EV-16/EV-25/CB-67 勝利 → 衝動 → 制止の箱（失敗）→ 開けて警報 → 同じ再生で 2 回目の戦闘: 戦った位置を描き、制止の箱は語りの後でタップを待ち、screen{battle} の後に警報の敵の群れ（encounter の値）を描く", async () => {
+    const d = loadFreshData();
+    for (const t of d.drops.tables) t.itemChance = 0;
+    d.config.combat.hitMin = d.config.combat.hitMax = 100;
+    d.config.combat.chestChance = 100;
+    d.config.chest.noTrapChance = 0;
+    d.config.events.floor = d.config.events.cap = 100;
+    d.rivalries[0]!.chance = 0;
+    d.chestTraps = d.chestTraps.filter((t) => t.danger !== 1 && t.id !== "alarm").concat(d.chestTraps.filter((t) => t.id === "alarm").map((t) => ({ ...t, danger: 1 })));
+    d.dungeons.find((y) => y.id === "d01")!.chestTrapDangerWeights = [1, 0];
+    // 制止者はフィンだけ（ベルクは麻痺）。フィンの知恵を 1 にして制止を必ず失敗させる
+    const b0 = withChar(dived(1), 1, { status: ["paralysis"] });
+    const s0 = winning(withChar(b0, 5, { stats: { ...b0.party[5]!.stats, iq: 1 } }));
+    const r = execute(s0, { type: "battle.resolve" }, d);
+    expectKnownStringKeys(r.events, d);
+    const restrain = r.events.find((e) => e.kind === "dice" && e.label.key === "dice.restrain") as DiceEvent;
+    expect(restrain.result.key).toBe("dice.restrain.ng");
+    expect(r.state.battle!.origin).toEqual({ kind: "alarm", inRoom: true });
+    const enc = r.events.filter((e): e is Extract<GameEvent, { kind: "encounter" }> => e.kind === "encounter");
+    expect(enc).toHaveLength(1);
+    const { log } = await play(r.events, s0, r.state, d);
+    const f = flow(log);
+    const tail = f.slice(f.indexOf("screens.show:dungeon"));
+    const iBattle = tail.indexOf("screens.show:battle");
+    expect(tail.slice(0, iBattle + 1)).toEqual([
+      "screens.show:dungeon",
+      "view.showAt",
+      sayOf(d, "chest.found.drop"),
+      sayOf(d, "chest.impulse.actor", { actor: "キリ" }),
+      sayOf(d, "event.stop.roll", { stopper: "フィン" }),
+      ...holdSpan(d, r.events, "dice.restrain"),
+      sayOf(d, "chest.impulse.open", { actor: "キリ" }),
+      sayOf(d, "chest.trap.alarm"),
+      "screens.show:battle",
+    ]);
+    // 2 回目の戦闘: 迷宮は描き直さず、群れは encounter の値（警報の敵）
+    expect(tail.slice(iBattle + 1)).not.toContain("view.showAt");
+    expect(tail.slice(iBattle + 1)).toContain("battle.setGroups");
+    expect(log.filter((e) => e.m === "view.showAt").map((e) => e.a[0])).toEqual([{ floor: s0.dive!.floor, pos: s0.dive!.pos, facing: s0.dive!.facing }]);
+    expect(log.filter((e) => e.m === "battle.setGroups").at(-1)!.a[0]).toEqual(JSON.parse(JSON.stringify(enc[0]!.groups)));
+    // 衝動の行動者（キリ）に印、再生の終わりで外す
+    expect(log.filter((e) => e.m === "party.markActor").map((e) => e.a)).toEqual([
+      ["c3", false],
+      [null, false],
+    ]);
+  });
+});

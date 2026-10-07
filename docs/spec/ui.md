@@ -261,12 +261,25 @@
     - 戦闘の勝利の exp と宿の levelUp の再生中は印が古いまま残り、sync で直る（exp の出来事は足さない）。
     - 戦闘で死んだ ready の者は、sync までの間、パーティ欄が「名前…↑」のまま状態の列に「死亡」と出る。帯でも理屈の上では「死↑」があり得る。どちらも sync で消える（表示層で life を見て印を消すと CH-80 の条件を表示層に持ち込む。UI-35）。
 - UI-70 宝箱の操作（M11。combat.md CB-60〜CB-67）: 出すかどうかは core の `chestView(state, data)`（rules/chest。UI-35 の許可リスト）だけで決める。非 null（`dive.chest` が残っていて、戦闘中でも保留中の選択も無い）の間、迷宮の操作領域は箱の一覧だけにする。
-  - 今の項目（作業 4b の最小版）: [開ける]（`chest.menu.open`。`chest.open` を送る）[放っておく]（`chest.menu.leave`。`chest.leave` を送る）の一覧（UI-11 の一覧。数字キー・Enter も一覧の項目）。[調べる][解除]（人の段・罠の名前の段）は M11 の作業 8 で足す。
+  - 段（M11 作業 8。表示層の局所の状態で保存しない。`views/chest.ts` が chestView の値から作る）。どの段も UI-11 の一覧（数字キー・Enter も一覧の項目）。
+    - 最初の段: [調べる]（`chest.menu.inspect`）[解除]（`chest.menu.disarm`）[開ける]（`chest.menu.open`。`chest.open` を送る）[放っておく]（`chest.menu.leave`。`chest.leave` を送る）。ヘッダーは場所のまま（問いは core が語る `chest.prompt`）。
+    - 調べる → 人の段: chestView の `members`（パーティ全員、並び順。リーダーも可）と末尾の [戻る]（一覧の外に固定）。選ぶと `chest.inspect{memberId}` を送る。ヘッダーは `chest.menu.whoInspect`「誰が箱を調べる？」。
+    - 解除 → 人の段（ヘッダー `chest.menu.whoDisarm`「誰が罠を外す？」）→ 罠の名前の段: chestView の `trapNames`（chest-traps.json の全種、データの順）と [戻る]。選ぶと `chest.disarm{memberId, trapId}` を送る。ヘッダーは `chest.menu.which`「{name}が外す罠は？」。
+    - 人の段: `canAct` でない者は dim。押すと理由の 1 文 `chest.menu.cannotAct`「{name}は動けない。」を語る（UI-59 の作法。迷宮ではメッセージ窓）。職業の掛け合いの担当（chestView の `ownerId`。EV-73）は `chest.menu.owner`「{name}（担当）」の印（調べる・解除の両方の段。補正が効くのは調べるだけ。EV-75）。
+    - 罠の名前の段: 最後の調べるで告げられた名前（chestView の `finding`。偽りもありうる）に `chest.menu.found`「{name}（見立て）」の印。並びは変えない（数字キーの位置を保つ）。「罠は無さそう」（finding の trapId が null）と未調査・不明は印なし。
+    - [戻る] と Esc は 1 つ上の段（罠の名前 → 人 → 最初の段。最初の段では何もしない）。戻るは UI-66 の取り消しの音。
+    - コマンドを送ったら段は最初の段に戻す（結果の語り・判定の箱は再生が出し、再生の最後の sync で箱が残っていれば最初の段を出す）。罠の名前の段の人が動けなくなっていたら人の段に戻す。箱が無くなったら（chestView が null）最初の段に戻す。
   - 十字ボタン・キャンプ・地図は出さず、スワイプ・長押しの前進・地図のタップ移動も受けない（UI-55 の「迷宮を歩ける状態」に、chestView が null であることを足した）。core も箱がある間は chest.* 以外を断る（CB-60）。
   - 問い `chest.prompt`「宝箱をどうする？」は core が箱の残る execute の終わりに語る。続きから（SV-50）は、chestView が非 null のときだけ（警報の戦闘中は出さない）メッセージ窓に出し直す。
   - 再生（UI-41）: `chestFound` は迷宮の操作を下げ（効果音 chest は UI-66 の cue）、`chestImpulse` は UI-55 の `eventStarted` と同じ行動者の印。`chestTrap` / `chestEnd` は表示を変えない（語りは message、効果は hpChanged・moved・screen などが来る）。操作は再生の最後の sync で、箱が残っていれば箱の一覧、片付いていれば迷宮の操作に戻る。
-  - 判定の箱（UI-40）: 調べる `dice.chestInspect`・解除 `dice.chestDisarm`・職業の掛け合い `dice.rivalry` は、制止の箱（UI-55）と同じく拍の外で続く message を 1 件出した後でタップを 1 回待ってから消す（演出スキップでも待つ。§3-9 の手動の待ち）。
+  - 判定の箱（UI-40）: 調べる `dice.chestInspect`・解除 `dice.chestDisarm`・職業の掛け合い `dice.rivalry` は、制止の箱（UI-55）と同じく拍の外で続く message を 1 件出した後でタップを 1 回待ってから消す（演出スキップでも待つ。§3-9 の手動の待ち）。箱の中身は UI-71。
   - 視点（A2）: 勝利・逃走の `screen{dungeon}` が `at`（戦った位置と向き）を持つときは、最終の dive ではなくその位置で迷宮を描き（階は最終の dive の階）、同じ再生の衝動の転移は続く `moved` で転移先へ移る。`at` の無い `screen{dungeon}` は今どおり最終の dive。
+  - 衝動の流れ（EV-16 / EV-25。1 つの再生）: 勝利の後なら `screen{dungeon, at}` で戦った位置を描き → `chestFound`（操作を下げる）→ 見つけた語り → `chestImpulse`（行動者の印）→ 制止の語りと制止の箱（HOLD）→ 開けてしまった語り → 罠の語りと効果。警報なら同じ再生の 2 回目の `screen{battle}` で線画を消し、`encounter` の値（警報の敵）で群れを描く（state の battle を掘らない）。転移なら `chestEnd{lost}` の後の `moved` で視点が転移先へ移る。
+- UI-71 宝箱の判定の箱（M11。combat.md CB-63 / CB-64、events.md EV-73。ユーザーの判断 U-2）: どれも core の `dice` をそのまま UI-40 の形で描く（表示層は行を足し引きしない）。
+  - 調べる `dice.chestInspect`: `hidden: true` の箱。行は調べる人の力の内訳（基本・盗賊・素早さ・運・罠の勘・張り合い。0 の行は core が出さない）と危険度を引く前の値 `chest.row.subtotal`。危険度・上下限・出目の行は無く、基準は `chest.ruleHidden`、結果の行は `dice.chestInspect.hidden`「出目は GM だけが見た」（成否の文ではない）。GM が告げる結果（名前・罠は無さそう・分からない・作動）は箱の後の通常の語り。
+  - 解除 `dice.chestDisarm`: 全行（内訳・危険度・上下限・出目 `chest.row.roll`）、基準 `chest.rule{rate}`、結果 `dice.chestDisarm.ok / ng`。続く結果の文（外した・外れない・作動）も語る。
+  - 職業の掛け合い `dice.rivalry`: 対象者ごとに 1 行（`dice.rivalry.member{name, agi, luk}` と、能力値の合計 + 1d6 の出目 = 合計）。2 人なら 2 行。前に `text.start`、後に `text.win` を語る。
+  - 3 つとも UI-70 の HOLD（続く message 1 件の後でタップを待って消す）。履歴（UI-46）には UI-40 の要約 1 行が入る（掛け合いは両者の内訳を含む）。
 
 ## 7. 素材
 
