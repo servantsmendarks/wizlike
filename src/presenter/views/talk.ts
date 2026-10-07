@@ -9,6 +9,7 @@
 //   上・下に隠れた行があれば、右の余白の列に続きの印（scroll-marks.ts。点滅しない）を出す。
 //   say の Promise はその文の文字送りが終わったら解決する。溜める文の数は max（config.ui.messageHistory）まで（古い文から外す。全文はログ）。
 // - 最後の文の後（控えている文が無く、文字送りも終わった）は ▼ を出し、タップで箱を閉じる（言い終わったら消える）。
+// - 区切り（M10.5 追補 2。core の section）: playback が ▼ のタップを待った後に clearPage で箱を空にして閉じる（文はログに残る）。続きは空の箱から。
 // - タップ（tap）: 文字送り中なら即表示、そうでなく開いていれば閉じる。
 //   rush は tap から「閉じる」を除いたもの（再生中のステージのタップ。playback の Player.tap → message.rush）。
 //   閉じるタップで送りの音（advanced → page。UI-66）。文字送りの即表示・flush・say では鳴らさない。
@@ -90,6 +91,12 @@ export type TalkModel = {
    * 控えている文の文字送りが終わった時点で解決する（箱が閉じていればすぐ）
    */
   hold(): Promise<void>;
+  /**
+   * UI-47（M10.5 追補 2）: 区切り（GameEvent の section）。溜めた文を空にして箱を閉じる（文はログに入っている。中身があれば cleared）。
+   * 区切りの ▼ のタップの後に playback が呼ぶので、中身があれば送りの音（advanced）も鳴らす。控えている文はそのまま続ける。
+   * 文字送りの終わった後に呼ぶ（playback は hold の後に呼ぶ）
+   */
+  clearPage(): void;
   /** 控えている文をすべて解決して箱を閉じる */
   flush(): void;
   /** flush に加えて外からの ▼ を下ろす */
@@ -260,6 +267,10 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
     },
     hold(): Promise<void> {
       return new Promise<void>((resolve) => enqueue({ kind: "hold", resolve }));
+    },
+    clearPage(): void {
+      if (page.length > 0) d.advanced?.();
+      close();
     },
     flush,
     clear(): void {
@@ -528,12 +539,19 @@ export type Narration = {
   hold?(): Promise<void>;
   /** UI-40 / UI-47（M10.5）: 判定の箱を会話の箱と一緒に消すか（街なら真。消すのは箱の cleared）。省略すると偽 */
   keepsDice?(): boolean;
+  /**
+   * UI-45 / UI-47（M10.5 追補 2）: 区切りで今の表示先の文を空にする（全文の履歴 UI-46 には残る）。
+   * 会話の箱は clearPage（箱を閉じる。cleared で判定の箱も消える）、メッセージ窓は clearView。省略すると何もしない
+   */
+  clearView?(): void;
+  /** UI-47（M10.5 追補 2）: 区切り（section）で読ませる文が出ているか（会話の箱が開いている）。メッセージ窓は偽。省略すると偽 */
+  shown?(): boolean;
 };
 
 export function createNarrator(o: {
   /** 今の route が街か（キャラクター画面を含む） */
   town(): boolean;
-  talk: Pick<TalkModel, "say" | "setMore" | "rush" | "typing"> & Partial<Pick<TalkModel, "hold">>;
+  talk: Pick<TalkModel, "say" | "setMore" | "rush" | "typing"> & Partial<Pick<TalkModel, "hold" | "clearPage" | "isOpen">>;
   window: Narration;
 }): Narration {
   const to = (): Pick<Narration, "say" | "setMore" | "rush" | "typing"> => (o.town() ? o.talk : o.window);
@@ -555,5 +573,10 @@ export function createNarrator(o: {
     // 街なら会話の箱の hold。メッセージ窓（迷宮・戦闘）は待たない（拍の待ちは playback の beat が受け持つ）
     hold: () => (o.town() ? (o.talk.hold?.() ?? Promise.resolve()) : Promise.resolve()),
     keepsDice: () => o.town(),
+    clearView(): void {
+      if (o.town()) o.talk.clearPage?.();
+      else o.window.clearView?.();
+    },
+    shown: () => o.town() && o.talk.isOpen?.() === true,
   };
 }

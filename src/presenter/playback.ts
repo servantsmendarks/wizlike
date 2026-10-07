@@ -42,6 +42,9 @@
 //   会話の箱を閉じるときに結線側が消す（M10.5 追補: 箱を空にすることは無くなったので、次の判定の箱に置き換わるか閉じるまで残る）。制止・強化の箱のタップ待ちの後は、その文を読んだものとして待たない。
 //   強化・鑑定の箱（HOLD_DICE_KEYS）で列が終わるときの待ちは、keepsDice の間は会話の箱の最後の ▼ に任せる（M10.5 の修正。タップは 1 回）。
 //   screen{town} では、その前に迷宮の窓で語った文（townCarry）を screens.show に渡す。
+// - 区切り（M10.5 追補 2。UI-45 / UI-47）: section は、会話の箱に文が出ていれば（message.shown）タップを 1 回待ってから（演出スキップでも待つ）
+//   message.clearView で箱を空にする。迷宮・戦闘の窓は encounter・イベントから戻る以外の screen{dungeon}・floorChanged で clearView する（待たない）。
+//   空にするのは表示だけで、全文の履歴（UI-46）は残る。戦闘中の beat では空にしない。
 // 具体的な views は import しない（純粋な enemyGroupOfId / formatMessage / formatDiceSummary だけ）。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, StatusId, Strings } from "../core/data/index";
 import type { EnemyGroupView, GameEvent, GameEventKind, GameState, Life, PenaltyResult, Screen, ViewPoint } from "../core/types";
@@ -86,6 +89,13 @@ export type PlayerDeps = {
      * 箱は会話の箱を閉じるときに結線側が消す）。省略すると偽
      */
     keepsDice?(): boolean;
+    /**
+     * UI-45 / UI-47（M10.5 追補 2）: 区切りで今の表示先の文を空にする（全文の履歴には残る。会話の箱は閉じ、判定の箱も消える）。
+     * 省略すると空にしない
+     */
+    clearView?(): void;
+    /** UI-47（M10.5 追補 2）: section で読ませる文が出ているか（会話の箱が開いている）。省略すると偽（section で待たない） */
+    shown?(): boolean;
     /** UI-45: オートの拍の待ち（WAAPI の animation.finished で測る） */
     waitMs(ms: number): Promise<void>;
   };
@@ -330,6 +340,8 @@ export function createPlayer(deps: PlayerDeps): Player {
     },
     async floorChanged(ev, cx, finalState) {
       cx.skip = isSkip();
+      // UI-45（M10.5 追補 2）: 階を移ったら窓は空から（前の階の行は履歴に残る）
+      deps.message.clearView?.();
       cx.cursor = { floor: ev.floor, pos: { x: ev.pos.x, y: ev.pos.y }, facing: ev.facing };
       await redraw(cx, finalState);
     },
@@ -362,6 +374,9 @@ export function createPlayer(deps: PlayerDeps): Player {
       else deps.screens.show(ev.to, finalState);
       cx.screen = ev.to;
       if (ev.to === "dungeon") {
+        // UI-45（M10.5 追補 2）: 迷宮に入る・戦闘を終えて探索に戻るときは窓を空から（戦闘の結果の文は leave の待ちで読ませた後。
+        // 行は履歴に残る）。画面を切り替えた後に呼ぶ（表示先は迷宮の窓。イベントから戻るときは上の分岐で空にしない）
+        deps.message.clearView?.();
         const c = cursorOfDive(finalState);
         if (c === null) return;
         cx.cursor = c;
@@ -406,7 +421,19 @@ export function createPlayer(deps: PlayerDeps): Player {
     },
     async encounter(ev, cx) {
       cx.skip = isSkip();
+      // UI-45（M10.5 追補 2）: 戦闘が始まったら探索中の行を空にする（履歴には残る）。戦闘中の拍では空にしない
+      deps.message.clearView?.();
       deps.battle.setGroups(ev.groups);
+    },
+    async section(_ev, cx) {
+      // UI-47（M10.5 追補 2）: 区切り。会話の箱に文が出ていれば、▼ を出してタップを 1 回待ってから（演出スキップでも待つ。§3-9）箱を空にする。
+      // 箱を空にすると判定の箱も消える（会話の箱の cleared）。文は語った時点でログに入っている
+      cx.skip = isSkip();
+      if (deps.message.shown?.() !== true) return;
+      await waitTap();
+      deps.message.clearView?.();
+      diceShown = false;
+      wipeDiceShown = false;
     },
     async enemyGroups(ev, cx) {
       cx.skip = isSkip();

@@ -87,7 +87,7 @@
 - MP の変化は `mpChanged`。
 - dice の形は UI-40（`{label, rows, rule, result}`、どれも strings のキーと params）。先手判定の dice は 1 件 2 行（CB-04）。逃走の dice は label `dice.flee`、行は `dice.row.roll`（base null、出目 d100）、基準は `dice.rule.rate`（params rate = 逃走の成功率。クランプしない）、結果は 出目 ≤ 成功率なら `dice.flee.ok`、そうでなければ `dice.flee.ng`。
 - ラウンド終了（決着しなかったラウンドだけ）の順は 毒（CB-33）→ 自然覚醒（CB-32）→ 確率鑑定（CB-05）→ オート解除（CB-43）。
-- 遭遇の順は screen{battle} → beat{system} → encounter → message → （未鑑定の message と sanChanged）→（CB-06 の SAN で CB-53 の全滅になれば、先手判定の dice を出さずに戦闘の終わりの順へ進む）→ beat{system} → 先手判定の dice 1 件 → 奇襲の message →（敵の奇襲ならそのラウンド）。戦闘の終わりの順は beat{system} → battleEnd → 結果の message → 味方の睡眠の解除 → screen{dungeon}（全滅では screen{dungeon} の代わりに beat{system} → 全滅処理 TW-20〜26 が続き、最後が screen{town}）。
+- 遭遇の順は screen{battle} → beat{system} → encounter → message → （未鑑定の message と sanChanged）→（CB-06 の SAN で CB-53 の全滅になれば、先手判定の dice を出さずに戦闘の終わりの順へ進む）→ beat{system} → 先手判定の dice 1 件 → 奇襲の message →（敵の奇襲ならそのラウンド）。戦闘の終わりの順は beat{system} → battleEnd → 結果の message → 味方の睡眠の解除 → screen{dungeon}（全滅では screen{dungeon} の代わりに beat{system} → 全滅処理 TW-20〜26 が続き、最後が screen{town}）。表示層はこの順の `encounter` で探索中の窓の行を空にし、戦闘の終わりの `screen{dungeon}` で戦闘の行を空にする（UI-45 の窓の区切り。M10.5 追補 2。core の出来事は足さない）。
 - `battle.flee` のイベント順: beat{system} → dice（`dice.flee`）→ 成功なら戦闘の終わりの順 / 失敗なら message `battle.fleeFail` → 敵だけのラウンド →（決着しなければ）ラウンド終了の順。
 - `battle.repeat` のイベントの形と順は `battle.resolve` と同じ（違うのは入力を自動で作ることだけ）。
 - 1 行動のイベントの順（拍は CB-55）:

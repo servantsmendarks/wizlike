@@ -561,6 +561,45 @@ describe("UI-47 語りの表示先（createNarrator）", () => {
       "win.more:false",
     ]);
   });
+
+  test("UI-45/UI-47（M10.5 追補 2）区切りの clearView は、街なら会話の箱の clearPage、それ以外はメッセージ窓の clearView。shown は街で箱が開いているときだけ真", () => {
+    const calls: string[] = [];
+    let town = true;
+    let open = true;
+    const talk = { ...fake("talk", calls), clearPage: () => calls.push("talk.clearPage"), isOpen: () => open };
+    const win = { ...fake("win", calls), clearView: () => calls.push("win.clearView") };
+    const n = createNarrator({ town: () => town, talk, window: win });
+    expect(n.shown?.()).toBe(true);
+    n.clearView?.();
+    open = false;
+    expect(n.shown?.()).toBe(false);
+    town = false;
+    open = true;
+    expect(n.shown?.()).toBe(false);
+    n.clearView?.();
+    expect(calls).toEqual(["talk.clearPage", "win.clearView"]);
+  });
+});
+
+describe("UI-47（M10.5 追補 2）会話の箱の clearPage（区切り）", () => {
+  test("UI-47 clearPage は溜めた文を空にして箱を閉じる（cleared と送りの音を 1 回ずつ）。文はログに残り、次の say は空の箱から", async () => {
+    const { m, logs, sink, adv, cleared } = setup();
+    await m.say("一つ目", true);
+    await m.say("二つ目", true);
+    m.clearPage();
+    expect({ open: sink.open, text: sink.text, more: sink.more.on }).toEqual({ open: false, text: "", more: false });
+    expect({ adv: adv.n, cleared: cleared.n }).toEqual({ adv: 1, cleared: 1 });
+    await m.say("三つ目", true);
+    expect(sink.text).toBe("三つ目");
+    expect(sink.open).toBe(true);
+    expect(logs).toEqual(["一つ目", "二つ目", "三つ目"]);
+  });
+
+  test("UI-47 空の箱の clearPage は音も cleared も無い", () => {
+    const { m, adv, cleared, sink } = setup();
+    m.clearPage();
+    expect({ adv: adv.n, cleared: cleared.n, open: sink.open }).toEqual({ adv: 0, cleared: 0, open: false });
+  });
 });
 
 // ---------------------------------------------------------------- DOM の層（偽の document）
