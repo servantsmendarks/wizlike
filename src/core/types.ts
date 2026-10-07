@@ -291,12 +291,14 @@ export type MapView = { dungeonId: string; floor: number; width: number; height:
  * - members: パーティ全員（並び順）。canAct の者だけが調べる・解除の人に選べる（リーダーも可）
  * - trapNames: chest-traps.json の全種（データの順）。name は表示名（strings を引いた値）。解除で宣言する名前の一覧
  * - finding: 最後の「調べる」で告げられた結果（ChestState.finding）。trapId null は「罠は無さそう」。name は trapId の表示名（null なら null）
+ * - ownerId: 職業の掛け合い（EV-73）で決まった担当の id（ChestState.rivalry の ownerId。語りで告げた公開の値）。発生していなければ null。UI-70 の人の段の印
  */
 export type ChestView = {
   source: "drop" | "cell";
   members: { id: string; name: string; canAct: boolean }[];
   trapNames: { id: string; name: string }[];
   finding: { trapId: string | null; name: string | null } | null;
+  ownerId: string | null;
 };
 
 // ---- 経路探索（DG-15。rules/pathfind.ts。state には入れない） ----

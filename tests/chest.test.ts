@@ -118,8 +118,17 @@ describe("CB-60 箱の状態と受け付け", () => {
     expect(v.finding).toBeNull();
     const d = chestData((x) => (x.config.chest.inspect.min = x.config.chest.inspect.max = 100));
     expect(chestView(exec(s, inspect("c3"), d).state, data)!.finding).toEqual({ trapId: "crossbow", name: "石弓" });
-    // 判定の成否・罠の有無は載せない
-    expect(Object.keys(v).sort()).toEqual(["finding", "members", "source", "trapNames"]);
+    // 判定の成否・罠の有無は載せない（M11 作業 8: 掛け合いの担当 ownerId を足した。語りで告げた公開の値）
+    expect(Object.keys(v).sort()).toEqual(["finding", "members", "ownerId", "source", "trapNames"]);
+    expect(v.ownerId).toBeNull();
+  });
+
+  test("CB-60/UI-70/EV-73 chestView の ownerId は掛け合いの担当（dive.chest.rivalry の ownerId）。発生していなければ null", () => {
+    const s = withChest("crossbow");
+    s.dive!.chest!.rivalry = { id: "thief_chest", ownerId: "c3" };
+    expect(chestView(s, data)!.ownerId).toBe("c3");
+    s.dive!.chest!.rivalry = null;
+    expect(chestView(s, data)!.ownerId).toBeNull();
   });
 });
 

@@ -565,5 +565,6 @@ export function chestView(state: GameState, data: GameData): ChestView | null {
     members: state.party.map((c) => ({ id: c.id, name: c.name, canAct: canAct(c) })),
     trapNames: data.chestTraps.map((t) => ({ id: t.id, name: data.strings[t.name] ?? t.name })),
     finding: f === null ? null : { trapId: f.trapId, name: f.trapId === null ? null : trapName(data, f.trapId) },
+    ownerId: chest.rivalry?.ownerId ?? null,
   };
 }
