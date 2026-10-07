@@ -163,6 +163,12 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.identify.levelStep = 0), "config.json", "identify.levelStep: expected integer >= 1");
     expectIssue((r) => (r.config.identify.possessChance = 101), "config.json", "identify.possessChance: expected integer in 0..100, got 101");
   });
+  test("data: TW-09 / CH-22【仮】config.classChange の料金は 0 以上の整数（既定 0）", () => {
+    const d = loadGameData(rawData());
+    expect(d.config.classChange).toEqual({ fee: 0 });
+    expectIssue((r) => delete r.config.classChange.fee, "config.json", "classChange.fee: missing required field");
+    expectIssue((r) => (r.config.classChange.fee = -1), "config.json", "classChange.fee: expected integer >= 0, got -1");
+  });
   test("data: CB-21/CB-26【仮】flyingHit は reach ごと（melee / long / ranged）の整数、rangedHitAgiMul・rangedHitLukPivot は整数", () => {
     const d = loadGameData(rawData());
     expect([d.config.combat.flyingHit, d.config.combat.rangedHitAgiMul, d.config.combat.rangedHitLukPivot]).toEqual([{ melee: -30, long: -15, ranged: 0 }, 2, 10]);

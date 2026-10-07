@@ -10,7 +10,8 @@ import { createRng, randInt, type RngState } from "../src/core/rng";
 import { checkEnter } from "../src/core/rules/dungeon";
 import { memberSheet } from "../src/core/rules/item-view";
 import { identifyFeeOf, sellPrice, shopPrice, shopSellPrice } from "../src/core/rules/shop";
-import { arriveTown, mercyEligible, resurrectCostOf, returnToTown, townMenu } from "../src/core/rules/town";
+import { expFor } from "../src/core/rules/growth";
+import { arriveTown, classChangeOptions, mercyEligible, resurrectCostOf, returnToTown, townMenu } from "../src/core/rules/town";
 import { cloneState, createItemInstance, makeContext } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState } from "../src/core/types";
 import { ctxFor, data, expectKnownStringKeys, expectStateInvariants, loadFreshData, loadRuleData, newGame, seedWithFirstD100 } from "./helpers/core";
@@ -1329,5 +1330,174 @@ describe("CH-80（M10）レベルアップ可の表示と宿の条件の一致",
     expect(r.state.party.map((c) => memberSheet(r.state, data, c).canLevelUp)).toEqual([false, false, false, false, false, false]);
     expect(view(r.state)[2]).toBe("blocked");
     expect(r.state.party[2]!.level).toBe(1);
+  });
+});
+
+describe("TW-09 / CH-22 / CH-63（M10）転職（town.classChange）", () => {
+  const change = (memberId: string, classId: string): Command => ({ type: "town.classChange", memberId, classId });
+  const statsOf = (id: string, patch: Partial<Character["stats"]>): Character["stats"] => ({ ...member(town(), id).stats, ...patch });
+  /** アルド（戦士・リーダー。long_sword / leather_armor / wooden_shield、所持 herb）を知恵 14 にしたもの */
+  const smartAldo = (extra: Partial<Character> = {}): GameState => town({ c1: { stats: statsOf("c1", { iq: 14 }), ...extra } });
+  /** id の者の exp を n にした複製 */
+  const withExp = (s: GameState, id: string, n: number): GameState => ({ ...s, party: s.party.map((c) => (c.id === id ? { ...c, exp: n } : c)) });
+
+  test("TW-09 理由の順: wrong screen → no such member → not alive → no such class → same class → requirements not met → not enough gold。rng は変えない", () => {
+    expectRejected(diving({ c1: { stats: statsOf("c1", { iq: 14 }) } }), change("c1", "mage"), "wrong screen");
+    expectRejected(smartAldo(), change("c9", "mage"), "no such member");
+    expectRejected(smartAldo(DEAD), change("c1", "mage"), "not alive");
+    expectRejected(smartAldo(ASH), change("c1", "nope"), "not alive");
+    expectRejected(smartAldo(), change("c1", "nope"), "no such class");
+    expectRejected(smartAldo(), change("c1", "fighter"), "same class");
+    expectRejected(town(), change("c1", "mage"), "requirements not met"); // 知恵 8 < 11
+    const d = loadFreshData();
+    d.config.classChange.fee = 301;
+    const r = execute(smartAldo(), change("c1", "mage"), d);
+    expect(r.events).toEqual([{ kind: "rejected", command: "town.classChange", reason: "not enough gold" }]);
+  });
+
+  test("TW-09 / CH-22 戦士 → 魔術師（リーダー可・料金 0）: L1・exp 0・levelHistory 空、hpMax と hp と能力値は保つ、使えない武器と盾は所持の末尾へ、火矢と眠りの霧を得る。乱数なし", () => {
+    const s0 = smartAldo({
+      level: 3,
+      exp: 300,
+      levelHistory: [
+        { level: 2, hpGain: 5, mpGain: 0 },
+        { level: 3, hpGain: 5, mpGain: 0 },
+      ],
+      maxLevelReached: { fighter: 3 },
+      hp: 20,
+      hpMax: 25,
+      san: 40,
+    });
+    const before = member(s0, "c1");
+    const r = ok(s0, change("c1", "mage"));
+    const c = member(r.state, "c1");
+    expect(c.isLeader).toBe(true);
+    expect([c.classId, c.level, c.exp, c.levelHistory]).toEqual(["mage", 1, 0, []]);
+    expect([c.hp, c.hpMax, c.san]).toEqual([20, 25, 40]);
+    expect(c.stats).toEqual(before.stats);
+    // U2: mpMax = 魔術師の mpPerLevel 4 + floor((知恵 14 − 10) / 2) = 6。mp 0 はそのまま
+    expect([c.mpMax, c.mp]).toEqual([6, 0]);
+    const weapon = before.equipment.weapon!;
+    const shield = before.equipment.shield!;
+    expect(c.equipment.weapon).toBeNull();
+    expect(c.equipment.shield).toBeNull();
+    expect(c.equipment.armor).toBe(before.equipment.armor);
+    expect(c.inventory).toEqual([...before.inventory, weapon, shield]);
+    expect(c.knownSpells).toEqual(["fire_arrow", "sleep_mist"]);
+    expect(c.maxLevelReached).toEqual({ fighter: 3, mage: 1 });
+    expect(r.state.gold).toBe(300);
+    expect(r.state.rng).toEqual(s0.rng);
+    expect(r.events).toEqual([
+      { kind: "message", key: "town.tavern.classChanged", params: { name: "アルド", cls: "魔術師" } },
+      { kind: "message", key: "camp.unequipped", params: { name: "アルド", item: "長剣" } },
+      { kind: "message", key: "camp.unequipped", params: { name: "アルド", item: "木の盾" } },
+      { kind: "spellLearned", id: "c1", spellId: "fire_arrow", via: "classChange" },
+      { kind: "message", key: "town.inn.learned", params: { name: "アルド", spell: "火矢" } },
+      { kind: "spellLearned", id: "c1", spellId: "sleep_mist", via: "classChange" },
+      { kind: "message", key: "town.inn.learned", params: { name: "アルド", spell: "眠りの霧" } },
+    ]);
+    expect(member(r.state, "c2")).toEqual(member(s0, "c2"));
+    expectStateInvariants(r.state);
+  });
+
+  test("TW-09 二度目の職業では start の呪文を足さない: 戦士 → 魔術師 → 戦士 → 魔術師で spellLearned は最初の 1 回だけ。maxLevelReached の欄は消えない", () => {
+    let s = smartAldo();
+    s = ok(s, change("c1", "mage")).state;
+    s = ok(s, change("c1", "fighter")).state;
+    expect(member(s, "c1").knownSpells).toEqual(["fire_arrow", "sleep_mist"]); // 習得呪文は保持
+    const r = ok(s, change("c1", "mage"));
+    expect(r.events.filter((e) => e.kind === "spellLearned")).toEqual([]);
+    expect(member(r.state, "c1").knownSpells).toEqual(["fire_arrow", "sleep_mist"]);
+    expect(member(r.state, "c1").maxLevelReached).toEqual({ fighter: 1, mage: 1 });
+  });
+
+  test("TW-09 既知の呪文は重ねない: 僧侶ドナ（治癒を習得）を司教にすると火矢だけを足す", () => {
+    const r = ok(town({ c4: { stats: statsOf("c4", { iq: 12 }) } }), change("c4", "bishop"));
+    expect(member(r.state, "c4").knownSpells).toEqual(["heal", "fire_arrow"]);
+    expect(r.events.flatMap((e) => (e.kind === "spellLearned" ? [e.spellId] : []))).toEqual(["fire_arrow"]);
+  });
+
+  test("TW-09 U2: MP の最大値は新しい職業の L1 の値で、現在値はその上限に丸める（エル 魔術師 MP 7 → 僧侶 4、ドナ 僧侶 MP 5 → 戦士 0）", () => {
+    const s0 = town({ c5: { stats: statsOf("c5", { pie: 12 }) }, c4: { stats: statsOf("c4", { str: 11 }) } });
+    expect([member(s0, "c5").mp, member(s0, "c5").mpMax, member(s0, "c4").mp, member(s0, "c4").mpMax]).toEqual([7, 7, 5, 5]);
+    const r1 = ok(s0, change("c5", "priest"));
+    const elle = member(r1.state, "c5");
+    // 僧侶の mpPerLevel 3 + floor((信仰心 12 − 10) / 2) = 4
+    expect([elle.mpMax, elle.mp]).toEqual([4, 4]);
+    expect(r1.events).toContainEqual({ kind: "mpChanged", id: "c5", delta: -3, mp: 4 });
+    expect(elle.knownSpells).toEqual(["fire_arrow", "sleep_mist", "heal"]);
+    const r2 = ok(r1.state, change("c4", "fighter"));
+    const dona = member(r2.state, "c4");
+    expect([dona.mpMax, dona.mp]).toEqual([0, 0]);
+    expect(r2.events).toContainEqual({ kind: "mpChanged", id: "c4", delta: -5, mp: 0 });
+    expect(dona.knownSpells).toEqual(["heal"]); // MP 0 で唱えられないが、習得呪文は保持
+    // MP の上限が増える向きでは現在値を変えない（mp 2 のまま。満たすのは宿）
+    const s3 = town({ c5: { stats: statsOf("c5", { pie: 12 }), mp: 2 } });
+    const r3 = ok(ok(s3, change("c5", "priest")).state, change("c5", "mage"));
+    expect([member(r3.state, "c5").mpMax, member(r3.state, "c5").mp]).toEqual([7, 2]);
+    expect(r3.events.filter((e) => e.kind === "mpChanged")).toEqual([]);
+  });
+
+  test("TW-09 呪われた装備は外さない（使えない職業でも装備したまま）。ほかの使えない品は外す", () => {
+    const s0 = smartAldo();
+    const weapon = member(s0, "c1").equipment.weapon!;
+    s0.items[weapon]!.cursed = true;
+    const r = ok(s0, change("c1", "mage"));
+    const c = member(r.state, "c1");
+    expect(c.equipment.weapon).toBe(weapon);
+    expect(c.equipment.shield).toBeNull();
+    expect(r.events.filter((e) => e.kind === "message" && e.key === "camp.unequipped")).toHaveLength(1);
+    expectStateInvariants(r.state);
+  });
+
+  test("TW-09 料金（config.classChange.fee）を払う", () => {
+    const d = loadFreshData();
+    d.config.classChange.fee = 100;
+    const r = execute(smartAldo(), change("c1", "mage"), d);
+    expect(r.events.find((e) => e.kind === "rejected")).toBeUndefined();
+    expect(r.state.gold).toBe(200);
+  });
+
+  test("CH-63 転職後の初到達レベルでは習得判定をし、職業の記録があるレベルへの再到達では判定しない", () => {
+    // 僧侶の L2 の判定対象は加護（blessing。learnLevel 1）。治癒は転職で start から得ている
+    const priest = data.classes.find((c) => c.id === "priest")!;
+    const need = expFor(2, priest, data.config);
+    const pious = (extra: Partial<Character> = {}): GameState => town({ c1: { stats: statsOf("c1", { pie: 12 }), ...extra } });
+    // 初めての僧侶: L2 で加護の判定（learnRoll）が 1 回起き、僧侶の欄が 2 になる
+    const a = ok(pious(), change("c1", "priest")).state;
+    expect(member(a, "c1").knownSpells).toEqual(["heal"]);
+    const ra = ok(withExp(a, "c1", need), { type: "town.inn", rank: 0 });
+    expect(member(ra.state, "c1").level).toBe(2);
+    expect(ra.events.filter((e) => e.kind === "message" && e.key === "town.inn.learnRoll")).toEqual([
+      { kind: "message", key: "town.inn.learnRoll", params: { name: "アルド", spell: "加護" } },
+    ]);
+    expect(member(ra.state, "c1").maxLevelReached).toEqual({ fighter: 1, priest: 2 });
+    // 僧侶の記録が 3 ある者: 転職で start の呪文は得ず、L2 では判定しない
+    const b = ok(pious({ maxLevelReached: { fighter: 1, priest: 3 } }), change("c1", "priest")).state;
+    expect(member(b, "c1").knownSpells).toEqual([]);
+    const rb = ok(withExp(b, "c1", need), { type: "town.inn", rank: 0 });
+    expect(member(rb.state, "c1").level).toBe(2);
+    expect(rb.events.some((e) => e.kind === "message" && e.key === "town.inn.learnRoll")).toBe(false);
+    expect(rb.events.filter((e) => e.kind === "spellLearned")).toEqual([]);
+    expect(member(rb.state, "c1").maxLevelReached).toEqual({ fighter: 1, priest: 3 });
+  });
+
+  test("TW-09 / CH-22 classChangeOptions: classes.json の順、可否と理由は checkClassChange と同じ、今の職業は current。状態も乱数も変えない", () => {
+    const s = smartAldo();
+    const snap = structuredClone(s);
+    const opts = classChangeOptions(s, data, "c1");
+    expect(opts.map((o) => [o.classId, o.ok, o.reason, o.current])).toEqual([
+      ["fighter", false, "same class", true],
+      ["thief", false, "requirements not met", false], // 素早さ 9 < 11
+      ["priest", false, "requirements not met", false],
+      ["mage", true, null, false],
+      ["samurai", false, "requirements not met", false],
+      ["lord", false, "requirements not met", false],
+      ["bishop", false, "requirements not met", false],
+    ]);
+    expect(opts[3]).toEqual({ classId: "mage", name: "魔術師", ok: true, reason: null, requirements: { iq: 11 }, current: false });
+    expect(s).toEqual(snap);
+    expect(classChangeOptions(s, data, "c9")).toEqual([]);
+    expect(classChangeOptions(diving(), data, "c1").every((o) => o.reason === "wrong screen")).toBe(true);
   });
 });

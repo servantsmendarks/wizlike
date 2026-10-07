@@ -37,7 +37,7 @@ import { checkUseItem, useItemInField } from "./rules/items";
 import { checkShop, doShop } from "./rules/shop";
 import { checkStorage, doStorage } from "./rules/storage";
 import type { StorageAction } from "./rules/storage";
-import { checkDark, checkInn, checkMercy, checkTemple, darkService, grantMercy, stayInn, templeService } from "./rules/town";
+import { changeClass, checkClassChange, checkDark, checkInn, checkMercy, checkTemple, darkService, grantMercy, stayInn, templeService } from "./rules/town";
 import type { TempleService } from "./rules/town";
 import { checkLookAround, lookAround } from "./rules/tavern";
 import { checkUpgrade, doUpgrade } from "./rules/upgrade";
@@ -238,6 +238,14 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       if (r !== null) return reject(state, "town.mercy", r);
       const ctx = makeContext(cloneState(state), data);
       grantMercy(ctx, memberId as string);
+      return finish(ctx);
+    }
+    case "town.classChange": {
+      const c = command as { memberId?: unknown; classId?: unknown };
+      const r = checkClassChange(state, data, c.memberId, c.classId);
+      if (r !== null) return reject(state, "town.classChange", r);
+      const ctx = makeContext(cloneState(state), data);
+      changeClass(ctx, c.memberId as string, c.classId as string);
       return finish(ctx);
     }
     case "town.lookAround": {

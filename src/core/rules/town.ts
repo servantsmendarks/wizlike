@@ -1,17 +1,17 @@
-// 街（TW-02, TW-04, TW-07, TW-08, TW-11, TW-30〜32、DG-30/43 の帰還）と、表示層向けの問い合わせ townMenu。
+// 街（TW-02, TW-04, TW-07, TW-08, TW-09 の転職, TW-11, TW-30〜32、DG-30/43 の帰還）と、表示層向けの問い合わせ townMenu・classChangeOptions。
 // 料金の式（宿のランク・寺院の 3 サービス・闇魔術・救済の蘇生費）は core のここだけに置く（表示層は townMenu の値を描く）。
 // 店（TW-05 / IT-60〜65）は rules/shop.ts（M7 の B7 で切り出した。townMenu.shop は shopMenu の値）。
 // dungeon.ts は import しない（dungeon → combat → … → town の向きだけにして循環を作らない）。
 // 迷宮入口の可否（TW-11）は enterBlockReason が持ち、dungeon.checkEnter がそれを呼ぶ。
-// 乱数を使うのは寺院の蘇生の d100（randInt(1, 100) を 1 回）と、宿屋のレベルアップ（growth の既存の順）だけ。
+// 乱数を使うのは寺院の蘇生の d100（randInt(1, 100) を 1 回）と、宿屋のレベルアップ（growth の既存の順）だけ（転職は使わない）。
 import type { CurableStatusId, GameData, StatBlock, StatusId } from "../data/index";
-import { CURABLE_STATUS_IDS, EQUIP_SLOTS } from "../data/index";
+import { CURABLE_STATUS_IDS, EQUIP_SLOTS, STAT_KEYS } from "../data/index";
 import { randInt } from "../rng";
-import { classOf, destroyItemInstance, dungeonOf, itemDisplayName, memberById, moraleOf, raisesMorale } from "../state";
+import { classOf, destroyItemInstance, dungeonOf, findBase, itemDisplayName, memberById, moraleOf, raisesMorale, spellOf } from "../state";
 import type { Character, GameState, RuleContext, TownMenu } from "../types";
 import { canAct } from "./combat-calc";
 import { clampToMax, effectiveStats, equipStats } from "./equip-stats";
-import { levelUpWhilePossible } from "./growth";
+import { levelUpWhilePossible, mpGainFor } from "./growth";
 import { ceilRatio } from "./ratio";
 import { clearAllStatus } from "./field";
 import { capSan, overSan, restoreSan } from "./san";
@@ -397,4 +397,100 @@ export function townMenu(state: GameState, data: GameData): TownMenu | null {
     // TW-03（M5.5）: camp.ts を import しない（循環を作らない）ので、campMenu の identifiers と同じ条件をここで数える
     canIdentify: state.party.some((c) => canAct(c) && classOf(data, c.classId).abilities.includes("identify")),
   };
+}
+
+// ---------------------------------------------------------------------------
+// 転職（TW-09 / CH-22。M10）
+
+/** CH-21 / CH-22: 素の能力値（CH-21）が職業の requirements をすべて満たすか */
+function meetsRequirements(stats: StatBlock, req: Partial<StatBlock>): boolean {
+  return STAT_KEYS.every((k) => {
+    const need = req[k];
+    return need === undefined || stats[k] >= need;
+  });
+}
+
+/**
+ * town.classChange を受け付けない理由。順: wrong screen → no such member → not alive → no such class → same class →
+ * requirements not met → not enough gold（config.classChange.fee > 0 のときだけ意味を持つ）
+ */
+export function checkClassChange(state: GameState, data: GameData, memberId: unknown, classId: unknown): string | null {
+  if (!inTown(state)) return "wrong screen";
+  const ch = typeof memberId === "string" ? memberById(state, memberId) : null;
+  if (ch === null) return "no such member";
+  if (ch.life !== "alive") return "not alive";
+  const cls = typeof classId === "string" ? data.classes.find((c) => c.id === classId) : undefined;
+  if (cls === undefined) return "no such class";
+  if (cls.id === ch.classId) return "same class";
+  if (!meetsRequirements(ch.stats, cls.requirements)) return "requirements not met";
+  if (state.gold < data.config.classChange.fee) return "not enough gold";
+  return null;
+}
+
+/** TW-09（M10）: 転職先の候補 1 件。ok は checkClassChange が null、reason はその理由（ok なら null）。current は今の職業 */
+export type ClassChangeOption = {
+  classId: string;
+  name: string;
+  ok: boolean;
+  reason: string | null;
+  requirements: Partial<StatBlock>;
+  current: boolean;
+};
+
+/**
+ * TW-09 / CH-22（M10）: 表示層向けの問い合わせ。memberId の者の転職先の候補を classes.json の順に返す（今の職業も current で含む）。
+ * 可否と理由は checkClassChange と同じ。memberId が party に無ければ []。状態も乱数も変えない
+ */
+export function classChangeOptions(state: GameState, data: GameData, memberId: string): ClassChangeOption[] {
+  const ch = memberById(state, memberId);
+  if (ch === null) return [];
+  return data.classes.map((c) => {
+    const reason = checkClassChange(state, data, memberId, c.id);
+    return { classId: c.id, name: c.name, ok: reason === null, reason, requirements: { ...c.requirements }, current: c.id === ch.classId };
+  });
+}
+
+/**
+ * TW-09 / CH-22 / CH-63（M10）。checkClassChange が null を返した前提。乱数は使わない。
+ * 料金（config.classChange.fee）を払う → classId を新しい職業に、level 1・exp 0・levelHistory [] → message town.tavern.classChanged{name, cls}
+ * → 新しい職業で装備できない品（CH-75。呪われた品は残す）を EQUIP_SLOTS の順に外して inventory の末尾へ（message camp.unequipped）
+ * → mpMax（素）を新しい職業の L1 の値（mpGainFor。外した後の実効の能力値）にする → clampToMax（U2: mp を上限に丸める。mpChanged）
+ * → 新しい職業に初めてなるとき（maxLevelReached に欄が無い）だけ、start.knownSpells のうち未習得のものを data の順に足す
+ *   （spellLearned via classChange と town.inn.learned）と maxLevelReached[新職業] = 1。
+ * hp・hpMax・能力値・SAN・状態・knownSpells（足す分を除く）・ほかの職業の maxLevelReached は変えない
+ */
+export function changeClass(ctx: RuleContext, memberId: string, classId: string): void {
+  const { state, data, events } = ctx;
+  const ch = memberById(state, memberId);
+  if (ch === null) throw new Error(`changeClass: unknown member ${memberId}`);
+  const cls = classOf(data, classId);
+  state.gold -= data.config.classChange.fee;
+  ch.classId = cls.id;
+  ch.level = 1;
+  ch.exp = 0;
+  ch.levelHistory = [];
+  events.push({ kind: "message", key: "town.tavern.classChanged", params: { name: ch.name, cls: cls.name } });
+  for (const slot of EQUIP_SLOTS) {
+    const id = ch.equipment[slot];
+    if (id === null) continue;
+    const inst = state.items[id];
+    if (inst === undefined) throw new Error(`changeClass: unknown item instance ${id}`);
+    if (inst.cursed) continue; // 呪われた品は外れない（CH-76）
+    const base = findBase(data, inst.itemId);
+    if (base === null || base.classes.length === 0 || base.classes.includes(cls.id)) continue;
+    ch.equipment[slot] = null;
+    ch.inventory.push(id); // 使用枠（CH-71）は装備も数えるので変わらない
+    events.push({ kind: "message", key: "camp.unequipped", params: { name: ch.name, item: itemDisplayName(state, data, id) } });
+  }
+  ch.mpMax = mpGainFor(cls, effectiveStats(state, data, ch), data.config); // U2・CH-13
+  clampToMax(ctx, ch); // U2 / CH-14: mp（と外した品で下がった hp・SAN）を実効の最大値で止める
+  if (!Object.prototype.hasOwnProperty.call(ch.maxLevelReached, cls.id)) {
+    for (const spellId of cls.start.knownSpells) {
+      if (ch.knownSpells.includes(spellId)) continue;
+      ch.knownSpells.push(spellId);
+      events.push({ kind: "spellLearned", id: ch.id, spellId, via: "classChange" });
+      events.push({ kind: "message", key: "town.inn.learned", params: { name: ch.name, spell: spellOf(data, spellId).name } });
+    }
+    ch.maxLevelReached[cls.id] = 1;
+  }
 }

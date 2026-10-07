@@ -154,7 +154,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   // M3: 戦闘の入力の段階・オートの連鎖は battleMenu の値だけで決める（行動できるか・使えるか・揃ったかを core が返す）
   "rules/combat": ["battleMenu"],
   // M4 SV-50 / UI-52: 続きからの救済の申し出（resume.ts）と街のページ。料金・可否・候補は townMenu の値だけで決める
-  "rules/town": ["townMenu"],
+  // M10 TW-09 / CH-22: 転職先の可否と理由は classChangeOptions の値を描く
+  "rules/town": ["townMenu", "classChangeOptions"],
   // M4 UI-53: 迷宮の道具の候補・押せるか・対象の要否は fieldItemMenu の値だけで決める
   "rules/items": ["fieldItemMenu"],
   // M4.5 UI-53 / TW-03: キャンプと酒場の候補・押せるか・対象の要否は campMenu の値だけで決める。キャンプの top の要約は campSummary

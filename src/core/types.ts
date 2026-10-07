@@ -388,6 +388,11 @@ export type Command =
   | { type: "town.shop"; action: ShopAction }
   | { type: "town.bank"; amount: number } // 正で預け入れ、負で引き出し
   | { type: "town.mercy"; memberId: string }
+  /**
+   * TW-09 / CH-22（M10）: 酒場で GM に申し出る転職。街（screen town・dive null）だけ。素の能力値が新しい職業の requirements を満たすこと。
+   * level 1・exp 0、hpMax と習得呪文は保持、mpMax は新しい職業の L1 の値（U2）。乱数は使わない
+   */
+  | { type: "town.classChange"; memberId: string; classId: string }
   /** TW-16 / IT-64（M7）: 倉庫。deposit は本人の inventory の実体を warehouse へ、withdraw は warehouse の実体を本人の inventory へ。乱数は使わない */
   | { type: "town.storage"; action: "deposit" | "withdraw"; memberId: string; instanceId: string }
   /**
@@ -840,8 +845,8 @@ export type GameEvent =
     }
   /** §5 に追加（CH-62）。1 段下がるごとに 1 件。hp / mp は変化後の現在値 */
   | { kind: "levelDown"; id: string; level: number; hpMax: number; mpMax: number; hp: number; mp: number }
-  /** via は §5 に追加（MG-21 の判定 / MG-23 の保証 / MG-25 の魔法書） */
-  | { kind: "spellLearned"; id: string; spellId: string; via: "roll" | "guarantee" | "book" }
+  /** via は §5 に追加（MG-21 の判定 / MG-23 の保証 / MG-25 の魔法書 / TW-09 の転職で初めての職業の start.knownSpells。M10） */
+  | { kind: "spellLearned"; id: string; spellId: string; via: "roll" | "guarantee" | "book" | "classChange" }
   | { kind: "eventStarted"; eventId: string; actorId?: string }
   /** 階の移動（DG-14 の昇降）。moved は同じ階の前進だけに使う */
   | { kind: "floorChanged"; floor: number; pos: Pos; facing: Facing }

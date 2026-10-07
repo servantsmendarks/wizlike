@@ -343,6 +343,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       possessChance: I(PERCENT),
       possessSan: I(NON_NEG),
     }),
+    classChange: F({ fee: I(NON_NEG) }), // TW-09 / CH-22（M10）【仮】
     economy: F({
       sellRatio: N(RATIO),
       identifyFeeRatio: N(RATIO), // IT-65【仮】

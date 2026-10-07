@@ -18,7 +18,11 @@
   - 治療は対象の毒・麻痺・石化をすべて治し、`cureCost` の合計を払う。対象は `alive` の者だけ。
   - 解呪は対象が装備している呪われた品をすべて失い、費用は 1 回分。対象の life は問わない。
 - TW-08 闇魔術（`town.dark`）: `ash` → `alive`（HP 1）。確定（乱数を使わない）。費用 = `level × config.economy.darkCostPerLevel`（500）【仮】を所持金から払う（M7。2026-10-05 ユーザー指示「灰の経済」で 1000 から 500 にした）（銀行の残高は使わない）。対象は `ash` の者だけ（`alive` / `dead` は rejected `not ash`）、所持金が足りなければ rejected `not enough gold`。戻しても MP・SAN はそのまま、状態異常は常に無し（寺院の蘇生と同じ。CH-45）。M7 で同じ施設に汎用装備の強化（TW-17）を足す。
-- TW-09 訓練所: ゲーム開始時のキャラクター作成。以降はステータス閲覧のみ（転職は【未定】）。
+- TW-09 訓練所: ゲーム開始時のキャラクター作成。以降はステータス閲覧のみ。（M10）転職（CH-22）は訓練所を作らず、酒場で GM に申し出る `town.classChange { memberId, classId }` にする（TW-01 の「訓練所は実装しない」はそのまま）。
+  - 受け付け: 街（screen town・dive null）だけ。理由の順: `wrong screen` → `no such member` → `not alive`（死亡・灰は不可）→ `no such class` → `same class` → `requirements not met`（素の能力値。CH-21）→ `not enough gold`（料金 `config.classChange.fee`（0）【仮】が所持金を超えるとき。銀行の残高は使わない）。乱数は使わない。
+  - 処理の順: 料金を払う → `classId` を新しい職業に、level 1・exp 0・`levelHistory` 空 → 語り `town.tavern.classChanged{name, cls}` → 新しい職業で装備できない品（CH-75）を装備枠の順（EQUIP_SLOTS）に外して `inventory` の末尾へ（品ごとに `camp.unequipped`。使用枠（CH-71）は装備も数えるので増えない。呪われた品は装備したまま残す）→ 素の `mpMax` を新しい職業の L1 の値（MG-01 の `mpGainFor`。外した後の実効の能力値。CH-13）にする → 実効の最大値で現在値を止める（CH-14。MP が下がれば `mpChanged`。上限が増えても現在値は変えない）→ 新しい職業に初めてなるとき（`maxLevelReached` にその職業の欄が無いとき）だけ、`classes[新職業].start.knownSpells` のうち未習得のものを data の順に `knownSpells` の末尾へ足し（呪文ごとに `spellLearned`（via `classChange`）と `town.inn.learned`）、`maxLevelReached[新職業] = 1`。L1 では習得判定（MG-20）をしない。二度目以降の職業では呪文を足さず、記録も変えない。
+  - 変えないもの: `hpMax`・`hp`、能力値、SAN、状態、習得済みの呪文、ほかの職業の `maxLevelReached`。
+  - 表示層向けの問い合わせ `classChangeOptions(state, data, memberId)`: `classes.json` の順に `{ classId, name, ok, reason, requirements, current }`（ok と reason は上の判定と同じ。current は今の職業）。memberId が party に無ければ空。
 - TW-10 銀行: 預入・引出（`town.bank`）。銀行残高 `bank` は全滅ペナルティ（TW-22）の対象外。M7 では併設の倉庫（TW-16）だけを作る（金の預入・引出はプロトタイプ後。items.md §11 の Q9）。
 - TW-11 迷宮入口: 開放済みダンジョン（`progress.unlockedDungeons`）を選んで入場（`dungeon.enter`）。入場時に `diveSeed` を発行する（DG-03）。行動可能な者（CH-44）がいなければ入れない（rejected `no one can act`）。M9: 準備中（`placeholder`）のダンジョンは開放済みでも入れない（rejected `not ready`。DG-35。`not unlocked` の後・`no one can act` の前で判定）。`townMenu().dungeons` の各行は `notReady`（準備中か）を持つ（表示層は準備中の行を押したときに理由の文を出す。UI-52）。
 - TW-12 冒険のターン数 `adventureTurns`: `dungeon.move` の前進が成立した 1 歩ごとに +1、戦闘のラウンド（CB-10。敵の奇襲・逃走失敗のラウンドを含む）を 1 つ解決するごとに +1。旋回・壁・階段の昇降・罠の引き返し・逃走の成功・debug の移動では増えない。game.new で 0、全滅・帰還で戻さない（M5.5）。

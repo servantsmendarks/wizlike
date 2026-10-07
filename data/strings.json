@@ -191,6 +191,7 @@
   "town.tavern.intro": "酒場のざわめき。GMが卓の向こうで次の展開を待っている。",
   "town.tavern.mercyRow": "{name}を戻してもらう",
   "town.tavern.look": "見回す",
+  "town.tavern.classChanged": "{name}は{cls}として歩み直すことにした。",
   "town.look.crowd": "酔った冒険者たちが、昨夜の戦果を大げさに語り合っている。",
   "town.look.quiet": "暖炉の火がはぜる。今夜の酒場は静かだ。",
   "town.look.gm": "GMがサイコロを指先で転がしながら、卓の様子をうかがっている。",

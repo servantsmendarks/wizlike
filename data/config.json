@@ -41,6 +41,7 @@
     "rarityPenalty": { "normal": 0, "fine": 10, "rare": 20, "legendary": 30 }, "uniquePenalty": 15,
     "min": 5, "max": 95, "failSanDungeon": 3, "possessChance": 50, "possessSan": 10
   },
+  "classChange": { "fee": 0 },
   "economy": {
     "sellRatio": 0.5, "identifyFeeRatio": 0.5, "identifyFeeMin": 10,
     "templeSuccessBase": 60, "templeSuccessPerVit": 2, "templeSuccessMax": 95,

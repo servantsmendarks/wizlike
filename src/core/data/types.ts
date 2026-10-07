@@ -216,6 +216,8 @@ export type Config = {
     possessChance: number;
     possessSan: number;
   };
+  /** TW-09 / CH-22（M10）【仮】: 転職の料金（0 なら無料） */
+  classChange: { fee: number };
   economy: {
     sellRatio: number;
     /** IT-65【仮】: 店の鑑定料 = max(identifyFeeMin, floor(見た目の品種（Lv0・通常）の売値 × identifyFeeRatio)) */
