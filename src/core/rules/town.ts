@@ -11,7 +11,7 @@ import { classOf, destroyItemInstance, dungeonOf, findBase, itemDisplayName, mem
 import type { Character, GameState, RuleContext, TownMenu } from "../types";
 import { canAct } from "./combat-calc";
 import { clampToMax, effectiveStats, equipStats } from "./equip-stats";
-import { levelUpWhilePossible, mpGainFor } from "./growth";
+import { canLevelUp, levelUpWhilePossible, mpGainFor } from "./growth";
 import { ceilRatio } from "./ratio";
 import { clearAllStatus } from "./field";
 import { capSan, overSan, restoreSan } from "./san";
@@ -153,6 +153,7 @@ export function checkInn(state: GameState, rank: unknown, data: GameData): strin
  * TW-04 / MG-02: 料金を 1 回払う → message town.inn.stay → alive の者を並び順に、HP に ceil(hpMax × hpRatio) を足して hpMax で止め
  * （hpRatio 0 なら増えない）、MP は全ランクで mpMax に戻す →（TW-15。士気の立つランクなら）morale = { rankId } →
  * sanOver > 0 なら alive の者を並び順に overSan → message town.inn.morale → alive の者を並び順に levelUpWhilePossible（どのランクでも）。
+ * 上がる者（canLevelUp）の処理の前には section を 1 回出す（UI-47 の区切り。M10.5 追補 2。上がらない者には出さない）。
  * 士気の立たないランクでは morale を変えない（消さない）。状態異常は治さない。満タンでも泊まれる。
  */
 export function stayInn(ctx: RuleContext, rank: number): void {
@@ -181,7 +182,10 @@ export function stayInn(ctx: RuleContext, rank: number): void {
     ctx.events.push({ kind: "message", key: "town.inn.morale" });
   }
   for (const ch of state.party) {
-    if (ch.life === "alive") levelUpWhilePossible(ctx, ch);
+    if (ch.life !== "alive" || !canLevelUp(ch, data)) continue;
+    // UI-47（M10.5 追補 2）: レベルアップはメンバーごとに区切る（表示層は区切りで会話の箱を空にする）。上がる者の前にだけ出す
+    ctx.events.push({ kind: "section" });
+    levelUpWhilePossible(ctx, ch);
   }
 }
 

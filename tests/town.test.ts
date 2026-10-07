@@ -330,6 +330,22 @@ describe("TW-04 宿屋（town.inn）", () => {
     // 宿の語りが先、レベルアップは後
     expect(r.events[0]).toEqual({ kind: "message", key: "town.inn.stay", params: { room: "馬小屋", cost: 0 } });
   });
+
+  test("TW-04/UI-47（M10.5 追補 2）宿のレベルアップはメンバーごとの区切り: 上がる者の処理の前に section を 1 回（複数段でも 1 回）。上がらない者・dead には出さない", () => {
+    const d = loadRuleData();
+    const s = town({ c2: { exp: 1500 }, c3: { ...DEAD, exp: 5000 }, c4: { exp: 1000 } });
+    const r = execute(s, { type: "town.inn", rank: 0 }, d);
+    const ks = r.events.map((e) => (e.kind === "levelUp" ? `levelUp:${e.id}` : e.kind === "message" ? e.key : e.kind));
+    const at = ks.flatMap((k, i) => (k === "section" ? [i] : []));
+    // c2（2 段）と c4 の 2 人分。どちらも直後がその人の最初の levelUp
+    expect(at).toHaveLength(2);
+    expect(at.map((i) => ks[i + 1])).toEqual(["levelUp:c2", "levelUp:c4"]);
+    // 区切りの前には宿の語りがあり、c2 の 2 段目の前には区切りが無い
+    expect(at[0]).toBeGreaterThan(ks.indexOf("town.inn.stay"));
+    expect(ks.slice(at[0]! + 1, at[1]).filter((k) => k === "levelUp:c2")).toHaveLength(2);
+    // 上がる者がいなければ出さない
+    expect(ok(town(), { type: "town.inn", rank: 0 }).events.some((e) => e.kind === "section")).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

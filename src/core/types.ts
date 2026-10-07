@@ -829,6 +829,11 @@ export type GameEvent =
   /** CB-55: 区切りの始まり。直後は必ず拍以外のイベント。auto はその区切りを始めた時点の state.battle.auto（battle が null なら false） */
   | { kind: "beat"; phase: BeatPhase; auto: boolean }
   | { kind: "battleEnd"; result: "win" | "flee" | "wipe" }
+  /**
+   * UI-47 / TW-04（M10.5 追補 2）: 語りの区切り。表示層は会話の箱の文を読ませてから（▼ のタップ待ち）空にして続ける。
+   * 今は宿のレベルアップでメンバーごとに 1 回（その人の最初の levelUp の直前）。区切りの前に語った文が無ければ表示層は何もしない
+   */
+  | { kind: "section" }
   | { kind: "wipe"; penalty: PenaltyResult }
   /**
    * TW-22 / UI-56（M5.5）: 全滅の出目の表。title は見出し、rows は penalty-table.json の帯の順に 1 行ずつ（strings のキーと埋め込み値。core が作る）。
