@@ -169,6 +169,8 @@ export function createBattleView(
   let pickable = false;
   /** UI-60: 読めなかった絵の URL（このビューの間は読みに行かない） */
   const missing = new Set<string>();
+  /** UI-60: 一度読めた絵の URL（作り直しで load を待たずに出す。ブラウザのメモリキャッシュから描ける） */
+  const loaded = new Set<string>();
 
   const stopBlink = (): void => {
     if (blinking !== null) blinking.cancel();
@@ -211,11 +213,16 @@ export function createBattleView(
       const sprite = document.createElement("div");
       sprite.className = "battle-group-sprite";
       place(sprite, { x: sr.x - b.x, y: sr.y, w: sr.w, h: sr.h });
-      sprite.style.background = PALETTE[enemyFill(data, g.monsterId, g.identified)];
+      const fill = PALETTE[enemyFill(data, g.monsterId, g.identified)];
       const pick = chooseSprite(data, g.monsterId, g.identified, spriteList, sr.w);
       const url = pick === null ? null : spriteUrl(pick.name, import.meta.env.BASE_URL);
-      if (pick !== null && url !== null && !missing.has(url)) {
-        // UI-60: 読めたら矩形の塗りを消して絵を出す。読めなければ矩形のまま（読めなかった URL を覚える）
+      if (pick === null || url === null || missing.has(url)) {
+        sprite.style.background = fill;
+      } else {
+        // UI-60: 読み込み中は矩形を塗らない（正体の判明や sync の作り直しで鑑定済みの色が一瞬見えないように）。
+        // 読めたら絵を出す。読めなければ矩形を塗る（読めなかった URL を覚える）。一度読めた URL は load を待たずに出す
+        const ready = loaded.has(url);
+        sprite.style.background = "transparent";
         const img = document.createElement("img");
         img.className = "battle-group-img";
         img.alt = "";
@@ -223,7 +230,7 @@ export function createBattleView(
         const dw = pick.w * pick.scale;
         const dh = pick.h * pick.scale;
         Object.assign(img.style, {
-          display: "none",
+          display: ready ? "block" : "none",
           position: "absolute",
           left: `${Math.floor((sr.w - dw) / 2)}px`,
           top: `${Math.floor((sr.h - dh) / 2)}px`,
@@ -233,11 +240,14 @@ export function createBattleView(
           pointerEvents: "none",
         });
         img.addEventListener("load", () => {
+          loaded.add(url);
           img.style.display = "block";
-          sprite.style.background = "transparent";
         });
         img.addEventListener("error", () => {
           missing.add(url);
+          loaded.delete(url);
+          img.style.display = "none";
+          sprite.style.background = fill;
         });
         img.src = url;
         sprite.appendChild(img);

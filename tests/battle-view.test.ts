@@ -396,20 +396,47 @@ describe("UI-54 戦闘のビュー（DOM）", () => {
     ]);
     expect(sprites.map((s) => s.children)).toEqual([[imgs[0]], [imgs[1]], [imgs[2]]]);
     expect(imgs.map((i) => i.style["display"])).toEqual(["none", "none", "none"]);
-    // 未鑑定の大ネズミと大蜘蛛（同じ beast）は同じ色。鑑定済みのコボルドは敵ごとの色
-    const beast = PALETTE[data.unknownKinds.find((k) => k.id === "beast")!.placeholderColor];
-    expect(sprites.map((s) => s.style["background"])).toEqual([beast, PALETTE[enemyFill(data, "kobold", true)], beast]);
-    // 読めた: 塗りを消して絵を出す
+    // 読み込み中は矩形を塗らない（M9.5 2026-10-07。正体の判明で鑑定済みの色が一瞬見えた件）
+    expect(sprites.map((s) => s.style["background"])).toEqual(["transparent", "transparent", "transparent"]);
+    // 読めた: 絵を出す
     imgs[1]!.dispatch("load");
     expect(imgs[1]!.style["display"]).toBe("block");
     expect(sprites[1]!.style["background"]).toBe("transparent");
-    // 読めなかった: 矩形のまま。次の描き直しではその URL の <img> を作らない（コボルドは作る）
+    // 読めなかった: 矩形を塗る。未鑑定の大ネズミと大蜘蛛（同じ beast）は同じ色。次の描き直しではその URL の <img> を作らない（コボルドは作る）
+    const beast = PALETTE[data.unknownKinds.find((k) => k.id === "beast")!.placeholderColor];
     imgs[0]!.dispatch("error");
+    imgs[2]!.dispatch("error");
     expect(imgs[0]!.style["display"]).toBe("none");
-    expect(sprites[0]!.style["background"]).toBe(beast);
+    expect([sprites[0]!.style["background"], sprites[2]!.style["background"]]).toEqual([beast, beast]);
     v.setGroups(GROUPS);
     expect(byClass("battle-group-img").slice(3).map((i) => (i as unknown as { src: string }).src)).toEqual(["/sprites/kobold.png"]);
     expect(byClass("battle-group-sprite").slice(3).map((s) => s.children.length)).toEqual([0, 1, 0]);
+  });
+
+  test("UI-60 正体の判明（未鑑定 → 鑑定済み）で列を作り直しても、絵の読み込み中に鑑定済みの色（大ネズミは orange）の矩形を出さない。一度読めた URL は次の描き直しで load を待たずに出す", () => {
+    const created = fakeDocument();
+    const v = createBattleView(data, data.strings, VIEW_W, 150, undefined, { giant_rat: { w: 48, h: 48 }, unknown_beast: { w: 48, h: 48 } });
+    const byClass = (c: string): FakeEl[] => created.filter((e) => e.className === c);
+    const orange = PALETTE[enemyFill(data, "giant_rat", true)];
+    expect(orange).toBe(PALETTE.orange);
+    // 未鑑定の大ネズミ（unknown_beast）が読めた状態
+    v.setGroups([{ index: 0, monsterId: "giant_rat", name: "何かの獣", identified: false, count: 2 }]);
+    byClass("battle-group-img")[0]!.dispatch("load");
+    // 正体の判明（enemyGroups）: 本名の絵を読み始めた時点で矩形を塗らない
+    v.setGroups([{ index: 0, monsterId: "giant_rat", name: "大ネズミ", identified: true, count: 2 }]);
+    const s1 = byClass("battle-group-sprite")[1]!;
+    const i1 = byClass("battle-group-img")[1]!;
+    expect((i1 as unknown as { src: string }).src).toBe("/sprites/giant_rat.png");
+    expect(s1.style["background"]).not.toBe(orange);
+    expect(s1.style["background"]).toBe("transparent");
+    i1.dispatch("load");
+    expect(i1.style["display"]).toBe("block");
+    // 再生の最後の sync で同じ列をもう一度作り直す: 読めた URL は load を待たずに絵を出し、矩形は塗らない
+    v.setGroups([{ index: 0, monsterId: "giant_rat", name: "大ネズミ", identified: true, count: 2 }]);
+    const s2 = byClass("battle-group-sprite")[2]!;
+    const i2 = byClass("battle-group-img")[2]!;
+    expect(i2.style["display"]).toBe("block");
+    expect(s2.style["background"]).toBe("transparent");
   });
 
   test("UI-54 ラベルは 2 行（高さ 20・行間 10）まで折り返し、3 行目以降は -webkit-line-clamp 2 で省く。位置は groupLabelRects（列の箱の左上からの相対）", () => {
