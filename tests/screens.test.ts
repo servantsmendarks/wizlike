@@ -678,6 +678,8 @@ describe("入力と Command", () => {
     // UI-68（M10）: peek の行（唱えられない呪文）は dim でも選べる。それ以外は理由を語る
     // 2026-10-07（A-A2）: peek の onDisabled も onSelect と同じ choose（会話の箱を打ち切ってから chooseCamp）にした
     expect(sync).toContain("...(x.peek === true ? { onDisabled: choose } : campReason(x)),");
+    // UI-59（M10）: 一覧の段（装備の詳細の dim の「装備する（{why}）」）も同じ item を通り、理由を語る
+    expect(sync).toContain("c.setList(e.rows.map(item), ");
     const set = /const setCharacter = \(on: boolean, keepTalk = false\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     // 2026-10-07（A-A1）: 迷宮のキャラクター画面から街へ入るときは打ち切らない（keepTalk。UI-47 / UI-59 の帰還のテスト）
     expect(set).toMatch(/if \(characterOpen === on\) return;\s*characterOpen = on;\s*if \(!on && route !== "town" && !keepTalk\) play\.talk\.flush\(\);\s*play\.setCharacterOpen\(on\);/);

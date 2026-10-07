@@ -453,7 +453,7 @@ describe("CH-76/UI-59 装備（キャラクター画面の下）", () => {
     const swordDetail: CampPage = { kind: "equip", stage: "detail", memberId: "c5", slot: "weapon", instanceId: sword };
     expect(campStep("camp", weapon, m, { kind: "detail", instanceId: sword })).toEqual({ kind: "page", page: swordDetail });
     expect(rows(campEntries("camp", swordDetail, m, S))).toEqual([
-      { label: "装備する（装備できない）", disabled: true, choice: { kind: "equip", instanceId: sword } },
+      { label: "装備する（装備できない）", disabled: true, choice: { kind: "equip", instanceId: sword }, reason: "エルは長剣を装備できない。" },
       cancel,
     ]);
     expect(campStep("tavern", swordDetail, m, { kind: "cancel" })).toEqual({ kind: "page", page: weapon }); // 酒場でも閉じない
@@ -488,6 +488,13 @@ describe("CH-76/UI-59 装備（キャラクター画面の下）", () => {
       { label: "短剣（呪いで外せない）", disabled: false, choice: { kind: "detail", instanceId: "i7" } },
       cancel,
     ]);
+    // UI-59（M10）: dim の「装備する（{why}）」は押すと理由を語る
+    expect(rows(campEntries("camp", { kind: "equip", stage: "detail", memberId: "c3", slot: "weapon", instanceId: "i7" }, m, S))[0]).toEqual({
+      label: "装備する（呪いで外せない）",
+      disabled: true,
+      choice: { kind: "equip", instanceId: "i7" },
+      reason: `${m.menu.members.find((x) => x.id === "c3")!.name}の今の装備は呪われていて、外せない。`,
+    });
   });
 
   test("CH-76/U6 死亡の者の装備の段も成り立ち、呪われていない品は外せる（core が受け付ける）。装備するは「動けない」で dim", () => {
@@ -505,6 +512,25 @@ describe("CH-76/UI-59 装備（キャラクター画面の下）", () => {
     expect(after.party[0]!.equipment.weapon).toBeNull();
     const helm = rows(campEntries("camp", { kind: "equip", stage: "item", memberId: "c1", slot: "helm" }, m, S));
     expect(helm[0]!.label).toBe("革兜（動けない）");
+    expect(rows(campEntries("camp", { kind: "equip", stage: "detail", memberId: "c1", slot: "helm", instanceId: cap }, m, S))[0]).toEqual({
+      label: "装備する（動けない）",
+      disabled: true,
+      choice: { kind: "equip", instanceId: cap },
+      reason: "アルドは動けない。",
+    });
+  });
+
+  test("UI-59/CH-76 未鑑定の品の「装備する（未鑑定）」は dim で、押すと理由「{item}は未鑑定で、装備できない。」を語る", () => {
+    const s = inDungeon();
+    const id = cursedDagger(s, false);
+    s.party[0]!.inventory.push(id);
+    const m = input(s);
+    const c = m.menu.members.find((x) => x.id === "c1")!.equipCandidates.find((x) => x.instanceId === id)!;
+    expect(c.block).toBe("unidentified");
+    expect(rows(campEntries("camp", { kind: "equip", stage: "detail", memberId: "c1", slot: c.slot, instanceId: id }, m, S))).toEqual([
+      { label: "装備する（未鑑定）", disabled: true, choice: { kind: "equip", instanceId: id }, reason: `${c.name}は未鑑定で、装備できない。` },
+      cancel,
+    ]);
   });
 });
 
@@ -785,7 +811,7 @@ describe("UI-33 campKeyIndex", () => {
       "camp.order.row",
       "camp.order.front",
       "camp.order.back",
-      ...["cannotAct", "unidentified", "class", "cursedSlot"].map((x) => `camp.equipBlock.${x}`),
+      ...["cannotAct", "unidentified", "class", "cursedSlot"].flatMap((x) => [`camp.equipBlock.${x}`, `camp.equipReason.${x}`]),
       "dungeon.items.which",
       "dungeon.items.target",
       "dungeon.items.allyRow",

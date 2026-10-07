@@ -296,11 +296,13 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
         const c = cands.find((y) => y.instanceId === page.instanceId);
         if (c === undefined) return list([]);
         const label = s(strings, "camp.equip.do");
+        // UI-59（M10）: dim の「装備する（{why}）」は押すと理由を語る（core の block ごとの文。転職の dim の行と同じ作法）
         return list([
           {
             label: c.block === null ? label : s(strings, "camp.equip.blocked", { name: label, why: s(strings, `camp.equipBlock.${c.block}`) }),
             disabled: c.block !== null,
             choice: { kind: "equip", instanceId: c.instanceId },
+            ...(c.block === null ? {} : { reason: s(strings, `camp.equipReason.${c.block}`, { name: x?.name ?? "", item: c.name }) }),
           },
         ]);
       }
