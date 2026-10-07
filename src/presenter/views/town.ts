@@ -82,7 +82,7 @@ export type TownEntry =
   | { kind: "upPick"; to: TownPage; label: string; disabled: boolean }
   /** TW-17: 確認の「鍛える」。押すと town.upgrade（upgradePreview の block が null でなければ disabled） */
   | { kind: "upgrade"; memberId: string; slot: EquipSlot; catalysts: string[]; label: string; disabled: boolean }
-  /** TW-03 / UI-52: 酒場のキャンプと同じ項目（状態・呪文・道具・装備・並び順・鑑定）。押すとキャンプと同じ部品（views/camp.ts）をその段で開く */
+  /** TW-03 / UI-52: 酒場の状態（キャラクター画面 UI-59）・並び順・図鑑。押すとキャンプと同じ部品（views/camp.ts）をその段で開く */
   | { kind: "camp"; open: CampOpen; label: string }
   | { kind: "back"; label: string };
 
@@ -174,11 +174,9 @@ export function townEntries(page: TownPage, menu: TownMenu, strings: Strings, pr
     ];
   }
   if (page === "tavern") {
-    // TW-13: 見回す → TW-03: キャンプと同じ項目（状態・呪文・道具・装備・並び順・鑑定（canIdentify のときだけ））。どれも disabled にしない（可否は各段で dim）
+    // TW-13: 見回す → TW-03: 状態（M10: キャラクター画面 UI-59。呪文・道具・装備・鑑定はその画面の操作に移した）・並び順
     // → IT-66（M7）: 図鑑 → TW-31: 救済の申し出の間だけ、dead / ash の者の行（押すと town.mercy）→ 戻る（UI-11 の固定の位置）
-    const opens: readonly CampOpen[] = menu.canIdentify
-      ? ["status", "spell", "item", "equip", "order", "identify", "book"]
-      : ["status", "spell", "item", "equip", "order", "book"];
+    const opens: readonly CampOpen[] = ["status", "order", "book"];
     const camp: TownEntry[] = [
       { kind: "look", label: s(strings, "town.tavern.look") },
       ...opens.map((open): TownEntry => ({ kind: "camp", open, label: s(strings, `camp.${open}`) })),

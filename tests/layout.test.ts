@@ -447,7 +447,11 @@ describe("layout", () => {
     const g = regions({ header: 16, view: 150, message: 74, party: 60, controls: 100 }, W);
     expect(dungeonLayout(g, N).partyRows[0]).toEqual({ x: 0, y: g.party.y, w: W, h: 10 });
     const g2 = regions({ header: 16, view: 150, message: 13, party: 64, controls: 157 }, W);
-    expect(layoutWarnings(g2, dungeonLayout(g2, N))).toEqual(["ui.layout: message region (height 13) has no text line"]);
+    // M10（UI-59）: キャラクター画面（ビューの上端から操作領域の上端まで = 227）にも 27 行（274）が入らないので、その警告も出る
+    expect(layoutWarnings(g2, dungeonLayout(g2, N))).toEqual([
+      "ui.layout: character panel (height 227) is lower than 274",
+      "ui.layout: message region (height 13) has no text line",
+    ]);
   });
 
   test("UI-50 タイトル: 題字 y32、行 i は y52+34i の 224×32、行の欄は 5 行ちょうど、案内の欄・ボタン 4 枠は行と重ならない", () => {

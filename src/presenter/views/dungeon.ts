@@ -5,8 +5,10 @@
 // - ビュー: 線画の SVG（240×150）。スワイプはステージ全体で受ける（input/tap.ts。UI-30）。受ける間は画面に class swipe-on を付け、
 //   style.css で touch-action: none にする（ボタンの上で始めたスワイプがブラウザのパンにならないように。UI-37）。
 // - 地図（UI-24）と全滅の内訳（UI-56）と履歴（UI-46）: ビューとメッセージの領域（既定 y16..235）を覆う overlay。パーティ欄は見えたまま。
-// - キャンプと酒場のパネル（UI-53 / UI-59。views/camp.ts）: ビュー領域だけを覆う。メッセージ窓とパーティ欄は見えたまま。
-//   図鑑（IT-66。酒場だけ）は townLayout の book（ビューの上端から操作領域の上端まで）に広げるので、DOM では帯の後に置く。
+// - キャンプと酒場のパネル（UI-53。views/camp.ts）: ビュー領域だけを覆う。メッセージ窓とパーティ欄は見えたまま。
+//   キャラクター画面（UI-59。M10）と図鑑（IT-66。酒場だけ）は layout.character（ビューの上端から操作領域の上端まで）に広げるので、DOM では帯の後に置く。
+//   キャラクター画面の間（setCharacterOpen）は、パーティ欄とメッセージ窓を隠し（パーティ欄はキャンプより上の層なので、隠さないと覆う）、
+//   判定の箱をキャンプより上・会話の箱より下の層（diceLayer。ビューと同じ位置・寸法、押せない）へ移して会話の箱の上（townLayout の diceBottom）に出す。
 // - 戦闘（UI-54）: ビューの中に敵グループの層（views/battle.ts）を重ね、battle の間は線画・街の絵を隠す。
 //   ダイスの overlay（views/dice.ts、UI-40）はビューの中のいちばん上（モードを問わない）。全体攻撃の揺れ（UI-42）はビュー全体の translate。
 // 各部品の位置と大きさは、config.ui.layout から作った regions と dungeonLayout（layout.ts）から決める。
@@ -70,6 +72,11 @@ export type DungeonScreen = {
   showMap(on: boolean): void;
   /** UI-53 キャンプと酒場のパネルの表示 */
   showCamp(on: boolean): void;
+  /**
+   * UI-59（M10）: キャラクター画面の間か。真ならパーティ欄とメッセージ窓を隠し、判定の箱を diceLayer へ移して会話の箱の上に出す。
+   * 偽なら setMode の見え方と、ビューの中の判定の箱（迷宮・戦闘の下端）に戻す
+   */
+  setCharacterOpen(on: boolean): void;
   /** UI-56 の全滅の内訳の overlay の表示 */
   showWipe(on: boolean): void;
   /** UI-46 の履歴の画面の表示 */
@@ -212,9 +219,15 @@ export function createDungeonScreen(o: {
   const map = createMapView(lay.map, (p) => o.onMapCell?.(p), o.data.config.ui.mapSnapPx);
   map.el.style.display = "none";
 
-  // キャンプと酒場のパネル（UI-53）はビュー領域だけ（酒場の図鑑だけ townLayout の book に広げる。M8.5）
-  const camp = createCampView(lay.camp, tl.book);
+  // キャンプと酒場のパネル（UI-53）はビュー領域だけ（キャラクター画面と酒場の図鑑は layout.character に広げる。M8.5 / M10）
+  const camp = createCampView(lay.camp, lay.character);
   camp.el.style.display = "none";
+
+  // UI-59 / UI-40（M10）: キャラクター画面の間の判定の箱の層（キャンプのパネルより上、会話の箱より下。押せない）
+  const diceLayer = document.createElement("div");
+  diceLayer.className = "dice-layer";
+  at(diceLayer, r.view.x, r.view.y);
+  Object.assign(diceLayer.style, { width: `${r.view.w}px`, height: `${r.view.h}px`, pointerEvents: "none" });
 
   // 全滅の内訳（UI-56）は地図と同じ範囲
   const wipe = createWipeView(lay.wipe);
@@ -227,7 +240,19 @@ export function createDungeonScreen(o: {
   // UI-47（M8.5）: 街の会話の箱。キャンプのパネルより上（酒場の呪文の結果が見える）、overlay より下。ログはメッセージ窓の 1 本の履歴
   const talk = createTalkBox({ layout: tl.talk, speed: o.textSpeed, blink: o.talkBlink, log: (t) => message.log(t), advanced: () => o.talkAdvanced?.() });
 
-  el.append(viewBox, header.el, message.el, band.el, camp.el, talk.el, panel.el, controls.el, map.el, wipe.el, history.el);
+  el.append(viewBox, header.el, message.el, band.el, camp.el, diceLayer, talk.el, panel.el, controls.el, map.el, wipe.el, history.el);
+
+  let mode: PlayMode = "dungeon";
+  let characterOpen = false;
+  /** メッセージ窓・パーティ欄・判定の箱の下端（街かキャラクター画面なら窓と欄を隠し、箱は会話の箱の上） */
+  const applyPanels = (): void => {
+    const hide = mode === "town" || characterOpen;
+    // UI-13: 街はメッセージ窓とパーティ欄を置かず、帯とヘッダーのログを出す。UI-59（M10）: キャラクター画面の間も隠す
+    message.el.style.display = hide ? "none" : "";
+    panel.el.style.display = hide ? "none" : "";
+    // UI-40 / UI-47: 街とキャラクター画面の判定の箱は会話の箱の上に上げる
+    dice.setBottom(hide ? tl.diceBottom : DICE_BOX_BOTTOM);
+  };
 
   return {
     el,
@@ -247,17 +272,14 @@ export function createDungeonScreen(o: {
     wipe,
     history,
     setMode(m: PlayMode): void {
+      mode = m;
       const town = m === "town";
       view.el.style.display = m === "dungeon" ? "" : "none";
       townPic.el.style.display = town ? "" : "none";
       battle.el.style.display = m === "battle" ? "" : "none";
-      // UI-13: 街はメッセージ窓とパーティ欄を置かず、帯とヘッダーのログを出す
-      message.el.style.display = town ? "none" : "";
-      panel.el.style.display = town ? "none" : "";
       band.el.style.display = town ? "" : "none";
       header.setLogVisible(town);
-      // UI-40 / UI-47: 街の判定の箱は会話の箱の上に上げる
-      dice.setBottom(town ? tl.diceBottom : DICE_BOX_BOTTOM);
+      applyPanels();
     },
     setTownPicture(facility: string): void {
       townPic.show(facility);
@@ -285,6 +307,13 @@ export function createDungeonScreen(o: {
     },
     showCamp(on: boolean): void {
       camp.el.style.display = on ? "" : "none";
+    },
+    setCharacterOpen(on: boolean): void {
+      characterOpen = on;
+      // 付け替えは appendChild / insertBefore だけ（ビューの中では全滅の出目の表の前の、元の位置へ戻す）
+      if (on) diceLayer.appendChild(dice.el);
+      else viewBox.insertBefore(dice.el, penaltyTable.el);
+      applyPanels();
     },
     showWipe(on: boolean): void {
       wipe.el.style.display = on ? "" : "none";

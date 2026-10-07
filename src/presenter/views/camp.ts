@@ -1,49 +1,67 @@
-// UI-53 迷宮のキャンプと、TW-03 / UI-52 酒場のキャンプと同じ項目（状態・呪文・道具・装備・並び順・鑑定。UI-59 の状態を含む。M5.5）。
-// ページ（CampPage）を段にした純粋な状態機械（M4 の field-items.ts の道具の 3 段を吸収した）と、ビュー領域を覆うパネルの DOM。
+// UI-53 迷宮のキャンプ、UI-59 キャラクター画面（M10）、TW-03 / UI-52 酒場の状態・並び順・図鑑。
+// ページ（CampPage）を段にした純粋な状態機械と、パネルの DOM。
 // - 候補・押せるか・対象の要否は core の campMenu と fieldItemMenu の値だけで決める（UI-35）。送る Command は
-//   dungeon.cast / dungeon.useItem / party.equip / party.unequip / party.reorder / party.identify。
-// - 迷宮の top は [状態][呪文][道具][装備] / [並び順][鑑定（identifiers が空なら空き枠）][空き][戻る] の 4×2 の枠（layout.campGrid）。
-//   top の「戻る」で閉じる。ほかの段の末尾は「やめる」（common.cancel）で、host の最初のページへ戻る（camp は top、酒場は閉じて酒場の一覧へ）。
+//   dungeon.cast / dungeon.useItem / party.equip / party.unequip / party.give / party.drop / party.reorder / party.identify。
+// - 迷宮のキャンプの top は [状態][並び順][空き][空き] / [空き][空き][空き][戻る] の 4×2 の枠（layout.campGrid。M10 で 道具・装備・呪文・鑑定 を
+//   キャラクター画面へ移した）。状態 → メンバー一覧（名前の 6 枠と [7] 戻る）→ 人 → キャラクター画面。
+// - キャラクター画面（UI-59。M10）は 1 人の全部（能力値・装備・所持品・習得呪文）を 1 画面に出し、操作は 4×2 の枠
+//   [装備][使う][渡す][捨てる] / [呪文][鑑定（鑑定できる職業の者だけ）][次の人][戻る]。その下の段（装備・使う・渡す・捨てる・呪文・鑑定）の
+//   やめるは同じ人のキャラクター画面へ。キャラクター画面の戻るは、キャンプはメンバー一覧、酒場は閉じる（酒場の一覧・帯を押した街のページへ）。
 // - 送った後も閉じずに、同じ者の段へ戻る（CampStep の after）。sync で campMenu を取り直し、campRepair で成り立たない段を直す。
-// - 帰還の糸（FieldItemView.isReturn）は送る前に確認の段（confirmReturn。戻る / やめる）を挟む。やめるは酒場でも同じ者の道具の段へ（M5.5）。
+// - 帰還の糸（FieldItemView.isReturn）は送る前に確認の段（confirmReturn。戻る / やめる）を挟む。捨てるも確認の段（drop の confirm）を挟む。
 //   確認の段は表示層だけの値で、core の状態は確認まで変えない（保存しない）。
-// - 名前の枠（状態・呪文・道具・装備の人・並び順）はパーティ全員の 6 枠と [7] やめる。呪文・道具・装備の品・対象・鑑定の品は一覧（末尾がやめる）。
+// - 所持品は 8 件、呪文は 14 件ずつの頁（渡す・捨てる・呪文の段の一覧の [次の頁][前の頁]。パネルも同じ頁を出す）。
 // DOM はパネル（createCampView）だけで、モジュールのトップレベルでは DOM に触れない。結線は app が行う。
 import type { EquipSlot, Strings } from "../../core/data/index";
-import type { CampMenu, CampSummary, CampTargetBlock, Command, FieldItemMenu } from "../../core/types";
+import type { CampMember, CampMenu, CampSummary, CampTargetBlock, Command, FieldItemMenu } from "../../core/types";
 import type { Action } from "../input/swipe";
 import type { Rect } from "../layout";
-import { createDetailView, SLOT_ORDER, type CharacterDetail } from "./detail";
+import { CHARACTER_INVENTORY_CELLS, CHARACTER_SPELL_CELLS, createDetailView, SLOT_ORDER, type CharacterDetail } from "./detail";
 import type { PanelLine } from "./item-detail";
 import { formatMessage } from "./message";
 
 export type CampHost = "camp" | "tavern";
-/** TW-03（M5.5）: 酒場の一覧から開く項目（キャンプの top の項目と同じ） */
-export type CampOpen = "status" | "spell" | "item" | "equip" | "order" | "identify" | "book";
+/** TW-03（M10）: 酒場の一覧から開く項目（状態は先頭の者のキャラクター画面） */
+export type CampOpen = "status" | "order" | "book";
 export type CampPage =
   | { kind: "top" }
-  | { kind: "status"; memberId: string }
-  | { kind: "spell"; stage: "caster" }
-  | { kind: "spell"; stage: "spell"; casterId: string }
-  | { kind: "spell"; stage: "target"; casterId: string; spellId: string }
-  | { kind: "item"; stage: "member" }
-  | { kind: "item"; stage: "item"; memberId: string }
-  | { kind: "item"; stage: "target"; memberId: string; instanceId: string }
-  /** DG-30 / UI-53（M5.5）: 帰還の糸を使う前の確認 */
-  | { kind: "item"; stage: "confirmReturn"; memberId: string; instanceId: string }
-  | { kind: "equip"; stage: "member" }
+  /** UI-53（M10）: キャンプの「状態」のメンバー一覧（名前の 6 枠と [7] 戻る） */
+  | { kind: "members" }
+  /** UI-59（M10）: キャラクター画面 */
+  | { kind: "character"; memberId: string }
   | { kind: "equip"; stage: "slot"; memberId: string }
   | { kind: "equip"; stage: "item"; memberId: string; slot: EquipSlot }
   /** UI-59（M7）: 品の詳細（装備中の品なら 外す、候補なら 装備する / やめる） */
   | { kind: "equip"; stage: "detail"; memberId: string; slot: EquipSlot; instanceId: string }
+  | { kind: "use"; stage: "item"; memberId: string }
+  | { kind: "use"; stage: "target"; memberId: string; instanceId: string }
+  /** DG-30 / UI-53（M5.5）: 帰還の糸を使う前の確認 */
+  | { kind: "use"; stage: "confirmReturn"; memberId: string; instanceId: string }
+  /** CH-78（M10）: 渡す品（page は所持品の頁） → 相手 */
+  | { kind: "give"; stage: "item"; memberId: string; page: number }
+  | { kind: "give"; stage: "to"; memberId: string; instanceId: string }
+  /** CH-79（M10）: 捨てる品（page は所持品の頁） → 確認 */
+  | { kind: "drop"; stage: "item"; memberId: string; page: number }
+  | { kind: "drop"; stage: "confirm"; memberId: string; instanceId: string }
+  /** MG-44（M10 で キャラクター画面の下へ）: 習得呪文の一覧（page は呪文の頁）→ 対象 */
+  | { kind: "spell"; stage: "spell"; memberId: string; page: number }
+  | { kind: "spell"; stage: "target"; memberId: string; spellId: string }
+  /** CH-77（M10 で キャラクター画面の下へ）: memberId は鑑定する者。品はパーティ全員の未鑑定品 */
+  | { kind: "identify"; memberId: string }
   | { kind: "order"; picked: string | null }
-  | { kind: "identify"; stage: "appraiser" }
-  | { kind: "identify"; stage: "item"; appraiserId: string }
   /** IT-66（M7）: 図鑑（酒場の一覧から開く。操作はやめるだけ） */
   | { kind: "book" };
+/** キャラクター画面の操作（UI-59。M10） */
+export type CharacterAction = "equip" | "use" | "give" | "drop" | "spell" | "identify";
 export type CampChoice =
   | { kind: "open"; page: CampPage }
   | { kind: "member"; memberId: string }
+  /** UI-59（M10）: キャラクター画面の操作の枠 */
+  | { kind: "action"; action: CharacterAction }
+  /** UI-59（M10）: 次の人（並び順で巡回） */
+  | { kind: "nextMember" }
+  /** 渡す・捨てる・呪文の段の頁送り（+1 で次、-1 で前） */
+  | { kind: "pageTurn"; delta: 1 | -1 }
   | { kind: "spell"; spellId: string }
   | { kind: "item"; instanceId: string }
   | { kind: "target"; targetId: string }
@@ -53,21 +71,26 @@ export type CampChoice =
   /** UI-59（M7）: 装備の段の品の行。押すと品の詳細の段へ */
   | { kind: "detail"; instanceId: string }
   | { kind: "identifyItem"; instanceId: string }
-  /** 確認の段の「戻る」（帰還の糸を使う。M5.5） */
+  /** 確認の段の決定（帰還の糸の「戻る」・捨てるの「捨てる」） */
   | { kind: "confirm" }
   /** 押しても何もしない行（「装備できる物がない」など） */
   | { kind: "none" }
-  /** やめる（top では戻る = 閉じる） */
+  /** やめる / 戻る */
   | { kind: "cancel" };
-export type CampEntry = { label: string; disabled: boolean; choice: CampChoice };
+/** reason は押せない項目を押したときに語る文（core の値から作ったものだけ。無ければ何もしない） */
+export type CampEntry = { label: string; disabled: boolean; choice: CampChoice; reason?: string };
 /** grid は layout.campGrid の 8 枠（null は空き枠）、list は操作領域の一覧 */
 export type CampEntries = { layout: "grid"; slots: (CampEntry | null)[] } | { layout: "list"; rows: CampEntry[] };
 /** 段を移る・閉じる・送る（送った後は after の段へ） */
 export type CampStep = { kind: "page"; page: CampPage } | { kind: "close" } | { kind: "send"; command: Command; after: CampPage };
-/** ビュー領域に出すもの。text は場所の見出し（キャンプ / 酒場。段の問いはヘッダーにだけ出し、パネルでは繰り返さない。迷宮のキャンプの top だけ、見出しの下に campSummary の 4 行を lines で出す）、detail は UI-59 の状態（focusSlot はその枠を accent 色）、order は並び順の表 */
+/**
+ * ビューに出すもの。text は場所の見出し（キャンプ / 酒場。迷宮のキャンプの top だけ、見出しの下に campSummary の行を lines で出す）、
+ * character は UI-59 のキャラクター画面（focusSlot はその枠を accent 色、spellPage / inventoryPage は頁の段の頁。省略は先頭から「ほか n」）、
+ * order は並び順の表
+ */
 export type CampPanel =
   | { kind: "text"; title: string; lines?: string[] }
-  | { kind: "detail"; memberId: string; focusSlot: EquipSlot | null }
+  | { kind: "character"; memberId: string; focusSlot: EquipSlot | null; spellPage?: number; inventoryPage?: number }
   | { kind: "order"; rows: { n: number; name: string; row: string; picked: boolean }[] }
   /** UI-59（M7）: 品の詳細（app が core の itemDetail から formatItemDetail で行を作る） */
   | { kind: "item"; instanceId: string }
@@ -84,40 +107,90 @@ function s(strings: Strings, key: string, params?: Record<string, string | numbe
 }
 
 /**
- * host の最初のページ。camp は top。酒場は開いた項目（状態は先頭の者、呪文は唱える者の段、道具は使う人の段、装備は人の段、
- * 並び順は未選択、鑑定は鑑定する者の段。鑑定する者が 1 人なら品の段。キャンプの top から開くときと同じ）
+ * UI-59（M10）: キャラクター画面とその下の段か（パネルを 240×284 に広げ、パーティ欄とメッセージ窓を隠し、語りを会話の箱に出す間）。
+ * top・メンバー一覧・並び順・図鑑は偽
  */
-export function campFirstPage(host: CampHost, open?: CampOpen, menu?: CampMenu): CampPage {
+export function campCharacterOpen(page: CampPage): boolean {
+  return page.kind !== "top" && page.kind !== "members" && page.kind !== "order" && page.kind !== "book";
+}
+
+/** キャラクター画面とその下の段の人（それ以外は null） */
+function pageMember(page: CampPage): string | null {
+  return campCharacterOpen(page) && "memberId" in page ? page.memberId : null;
+}
+
+/**
+ * host の最初のページ。camp は top。酒場は開いた項目（状態は先頭の者（memberId を渡せばその人）のキャラクター画面、並び順は未選択、図鑑）
+ */
+export function campFirstPage(host: CampHost, open?: CampOpen, menu?: CampMenu, memberId?: string): CampPage {
   if (host === "camp" || open === undefined) return { kind: "top" };
   switch (open) {
     case "status":
-      return { kind: "status", memberId: menu?.members[0]?.id ?? "" };
-    case "spell":
-      return { kind: "spell", stage: "caster" };
-    case "item":
-      return { kind: "item", stage: "member" };
-    case "equip":
-      return { kind: "equip", stage: "member" };
+      return { kind: "character", memberId: memberId ?? menu?.members[0]?.id ?? "" };
     case "order":
       return { kind: "order", picked: null };
-    case "identify": {
-      const ids = menu?.identifiers ?? [];
-      return ids.length === 1 ? { kind: "identify", stage: "item", appraiserId: ids[0]!.id } : { kind: "identify", stage: "appraiser" };
-    }
     case "book":
       return { kind: "book" };
   }
 }
 
-/** 酒場で「やめる」の後に戻る先が無い（閉じる）か。camp は top のときだけ閉じる */
-function cancelStep(host: CampHost, page: CampPage): CampStep {
-  if (host === "tavern" || page.kind === "top") return { kind: "close" };
-  return { kind: "page", page: { kind: "top" } };
+/** やめる / 戻るの行き先（キャラクター画面の下の段は同じ人のキャラクター画面、その上は host ごと） */
+function cancelStep(host: CampHost, page: CampPage, m: CampInput): CampStep {
+  const go = (p: CampPage): CampStep => ({ kind: "page", page: p });
+  switch (page.kind) {
+    case "top":
+      return { kind: "close" };
+    case "members":
+      return host === "camp" ? go({ kind: "top" }) : { kind: "close" };
+    case "character":
+      return host === "camp" ? go({ kind: "members" }) : { kind: "close" };
+    case "order":
+    case "book":
+      return host === "camp" ? go({ kind: "top" }) : { kind: "close" };
+    case "equip":
+      if (page.stage === "slot") return go({ kind: "character", memberId: page.memberId });
+      if (page.stage === "item") return go({ kind: "equip", stage: "slot", memberId: page.memberId });
+      return go({ kind: "equip", stage: "item", memberId: page.memberId, slot: page.slot });
+    case "use":
+      if (page.stage === "item") return go({ kind: "character", memberId: page.memberId });
+      return go({ kind: "use", stage: "item", memberId: page.memberId });
+    case "give":
+      if (page.stage === "item") return go({ kind: "character", memberId: page.memberId });
+      return go({ kind: "give", stage: "item", memberId: page.memberId, page: inventoryPageOf(m, page.memberId, page.instanceId) });
+    case "drop":
+      if (page.stage === "item") return go({ kind: "character", memberId: page.memberId });
+      return go({ kind: "drop", stage: "item", memberId: page.memberId, page: inventoryPageOf(m, page.memberId, page.instanceId) });
+    case "spell":
+      if (page.stage === "spell") return go({ kind: "character", memberId: page.memberId });
+      return go(spellListPage(m, page.memberId, page.spellId));
+    case "identify":
+      return go({ kind: "character", memberId: page.memberId });
+  }
 }
 
-const nameOf = (m: CampInput, id: string): string => m.menu.members.find((x) => x.id === id)?.name ?? "";
+const memberOf = (m: CampInput, id: string): CampMember | undefined => m.menu.members.find((x) => x.id === id);
+const nameOf = (m: CampInput, id: string): string => memberOf(m, id)?.name ?? "";
 
-/** 名前の 6 枠と [7] やめる（disabled は dim） */
+/** 頁の数（0 件でも 1） */
+function pageCount(n: number, per: number): number {
+  return Math.max(1, Math.ceil(n / per));
+}
+/** 所持品の instanceId が載る頁（無ければ 0） */
+function inventoryPageOf(m: CampInput, memberId: string, instanceId: string): number {
+  const i = memberOf(m, memberId)?.inventory.findIndex((x) => x.instanceId === instanceId) ?? -1;
+  return i < 0 ? 0 : Math.floor(i / CHARACTER_INVENTORY_CELLS);
+}
+/** spellId が載る呪文の頁（無ければ 0） */
+function spellPageOf(m: CampInput, memberId: string, spellId: string): number {
+  const i = memberOf(m, memberId)?.knownSpells.findIndex((x) => x.spellId === spellId) ?? -1;
+  return i < 0 ? 0 : Math.floor(i / CHARACTER_SPELL_CELLS);
+}
+/** 呪文の一覧の段（spellId が載る頁） */
+function spellListPage(m: CampInput, memberId: string, spellId: string): CampPage {
+  return { kind: "spell", stage: "spell", memberId, page: spellPageOf(m, memberId, spellId) };
+}
+
+/** 名前の 6 枠と [7] やめる / 戻る（disabled は dim） */
 function memberGrid(m: CampInput, dim: (id: string) => boolean, cancel: CampEntry): CampEntries {
   const slots: (CampEntry | null)[] = Array.from({ length: CAMP_GRID_SLOTS }, () => null);
   m.menu.members.slice(0, CAMP_GRID_SLOTS - 1).forEach((x, i) => {
@@ -127,10 +200,19 @@ function memberGrid(m: CampInput, dim: (id: string) => boolean, cancel: CampEntr
   return { layout: "grid", slots };
 }
 
+/** 頁送りの行（頁が 2 つ以上のときだけ。次の頁は最後の頁で、前の頁は最初の頁で dim） */
+function pageRows(strings: Strings, page: number, count: number): CampEntry[] {
+  if (count <= 1) return [];
+  return [
+    { label: s(strings, "character.pageNext"), disabled: page >= count - 1, choice: { kind: "pageTurn", delta: 1 } },
+    { label: s(strings, "character.pagePrev"), disabled: page <= 0, choice: { kind: "pageTurn", delta: -1 } },
+  ];
+}
+
 /** その段の項目。grid は 8 枠、list は末尾がやめる */
-/** host は今の配置では項目に影響しない（酒場は top を開かない）が、呼び出しの形をそろえるために受ける */
 export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strings: Strings): CampEntries {
   const cancel: CampEntry = { label: s(strings, "common.cancel"), disabled: false, choice: { kind: "cancel" } };
+  const back: CampEntry = { label: s(strings, "common.back"), disabled: false, choice: { kind: "cancel" } };
   const list = (rows: CampEntry[]): CampEntries => ({ layout: "list", rows: [...rows, cancel] });
   // MG-44 / UI-53（2026-10-05）: 回復の対象の行。core の targets の block があれば dim にし、理由を名前と HP の後ろに付ける（戦闘中の対象は別の部品）
   const targetRow = (a: { id: string; name: string; hp: number; hpMax: number }, block: CampTargetBlock | null): CampEntry => {
@@ -145,70 +227,42 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
   switch (page.kind) {
     case "top": {
       const open = (key: string, p: CampPage): CampEntry => ({ label: s(strings, key), disabled: false, choice: { kind: "open", page: p } });
-      const first = menu.members[0]?.id ?? "";
+      return {
+        layout: "grid",
+        slots: [open("camp.status", { kind: "members" }), open("camp.order", { kind: "order", picked: null }), null, null, null, null, null, back],
+      };
+    }
+    case "members":
+      return memberGrid(m, () => false, back);
+    case "character": {
+      const x = memberOf(m, page.memberId);
+      const it = m.items?.members.find((y) => y.id === page.memberId);
+      const act = (action: CharacterAction, disabled: boolean, reason?: string): CampEntry => ({
+        label: s(strings, `character.${action}`),
+        disabled,
+        choice: { kind: "action", action },
+        ...(reason !== undefined ? { reason } : {}),
+      });
+      const empty = (x?.inventory.length ?? 0) === 0;
+      // 鑑定: 鑑定できる職業の者だけ枠を出す。送れない理由（行動不能・MP・品が無い）は core の identifyBlock
+      const block = x === undefined ? "cannotIdentify" : x.identifyBlock;
+      const identify = block === "cannotIdentify" ? null : act("identify", block !== null, block === null ? undefined : s(strings, `camp.identifyBlock.${block}`, { name: x?.name ?? "" }));
       return {
         layout: "grid",
         slots: [
-          open("camp.status", { kind: "status", memberId: first }),
-          open("camp.spell", { kind: "spell", stage: "caster" }),
-          open("camp.item", { kind: "item", stage: "member" }),
-          open("camp.equip", { kind: "equip", stage: "member" }),
-          open("camp.order", { kind: "order", picked: null }),
-          menu.identifiers.length > 0 ? open("camp.identify", { kind: "identify", stage: "appraiser" }) : null,
-          null,
-          { label: s(strings, "common.back"), disabled: false, choice: { kind: "cancel" } },
+          act("equip", false),
+          act("use", it === undefined || !it.canAct || !it.items.some((y) => y.usable)),
+          act("give", empty),
+          act("drop", empty),
+          act("spell", !(x?.knownSpells.some((y) => y.castable) ?? false)),
+          identify,
+          { label: s(strings, "character.next"), disabled: menu.members.length <= 1, choice: { kind: "nextMember" } },
+          back,
         ],
       };
     }
-    case "status":
-      return memberGrid(m, () => false, cancel);
-    case "spell": {
-      if (page.stage === "caster") {
-        return memberGrid(m, (id) => {
-          const x = menu.members.find((y) => y.id === id);
-          return x === undefined || !x.canAct || !x.spells.some((sp) => sp.usable);
-        }, cancel);
-      }
-      const caster = menu.members.find((x) => x.id === page.casterId);
-      if (page.stage === "spell") {
-        return list(
-          (caster?.spells ?? []).map((sp) => ({
-            label: s(strings, "camp.spellRow", { name: sp.name, mp: sp.mp }),
-            disabled: !sp.usable,
-            choice: { kind: "spell", spellId: sp.spellId },
-          })),
-        );
-      }
-      const sp = caster?.spells.find((x) => x.spellId === page.spellId);
-      if (sp?.target === "dead") {
-        return list(menu.dead.map((d) => ({ label: d.name, disabled: false, choice: { kind: "target", targetId: d.id } })));
-      }
-      return list(menu.allies.map((a) => targetRow(a, sp?.targets.find((t) => t.id === a.id)?.block ?? null)));
-    }
-    case "item": {
-      const items = m.items;
-      if (page.stage === "member") {
-        return memberGrid(m, (id) => {
-          const x = items?.members.find((y) => y.id === id);
-          return x === undefined || !x.canAct || !x.items.some((it) => it.usable);
-        }, cancel);
-      }
-      if (page.stage === "item") {
-        const x = items?.members.find((y) => y.id === page.memberId);
-        return list((x?.items ?? []).map((it) => ({ label: it.name, disabled: !it.usable, choice: { kind: "item", instanceId: it.instanceId } })));
-      }
-      if (page.stage === "confirmReturn") {
-        // 戻る（先頭。Enter）/ やめる（末尾。UI-11 の固定の位置。Esc）
-        return list([{ label: s(strings, "camp.returnConfirm.yes"), disabled: false, choice: { kind: "confirm" } }]);
-      }
-      const it = items?.members.find((y) => y.id === page.memberId)?.items.find((y) => y.instanceId === page.instanceId);
-      return list((items?.allies ?? []).map((a) => targetRow(a, it?.targets.find((t) => t.id === a.id)?.block ?? null)));
-    }
     case "equip": {
-      if (page.stage === "member") {
-        return memberGrid(m, (id) => menu.members.find((y) => y.id === id)?.canAct !== true, cancel);
-      }
-      const x = menu.members.find((y) => y.id === page.memberId);
+      const x = memberOf(m, page.memberId);
       if (page.stage === "slot") {
         const slots: (CampEntry | null)[] = Array.from({ length: CAMP_GRID_SLOTS }, () => null);
         SLOT_ORDER.forEach((slot, i) => {
@@ -251,17 +305,60 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
       if (cands.length === 0) rows.push({ label: s(strings, "camp.equip.none"), disabled: true, choice: { kind: "none" } });
       return list(rows);
     }
-    case "order":
-      return memberGrid(m, () => false, cancel);
-    case "identify": {
-      if (page.stage === "appraiser") {
-        const slots: (CampEntry | null)[] = Array.from({ length: CAMP_GRID_SLOTS }, () => null);
-        menu.identifiers.slice(0, CAMP_GRID_SLOTS - 1).forEach((x, i) => {
-          slots[i] = { label: x.name, disabled: false, choice: { kind: "member", memberId: x.id } };
-        });
-        slots[CAMP_GRID_SLOTS - 1] = cancel;
-        return { layout: "grid", slots };
+    case "use": {
+      const items = m.items;
+      if (page.stage === "item") {
+        const x = items?.members.find((y) => y.id === page.memberId);
+        return list((x?.items ?? []).map((it) => ({ label: it.name, disabled: !it.usable, choice: { kind: "item", instanceId: it.instanceId } })));
       }
+      if (page.stage === "confirmReturn") {
+        // 戻る（先頭。Enter）/ やめる（末尾。UI-11 の固定の位置。Esc）
+        return list([{ label: s(strings, "camp.returnConfirm.yes"), disabled: false, choice: { kind: "confirm" } }]);
+      }
+      const it = items?.members.find((y) => y.id === page.memberId)?.items.find((y) => y.instanceId === page.instanceId);
+      return list((items?.allies ?? []).map((a) => targetRow(a, it?.targets.find((t) => t.id === a.id)?.block ?? null)));
+    }
+    case "give":
+    case "drop": {
+      const x = memberOf(m, page.memberId);
+      if (page.kind === "drop" && page.stage === "confirm") {
+        return list([{ label: s(strings, "camp.dropYes"), disabled: false, choice: { kind: "confirm" } }]);
+      }
+      if (page.kind === "give" && page.stage === "to") {
+        // CH-78: 自分以外の全員。受け取れない者（使用枠が満杯。core の canReceive）は理由付きで dim
+        return list(
+          menu.members
+            .filter((y) => y.id !== page.memberId)
+            .map((y) => ({
+              label: y.canReceive ? y.name : s(strings, "camp.equip.blocked", { name: y.name, why: s(strings, "camp.giveBlock.full") }),
+              disabled: !y.canReceive,
+              choice: { kind: "target", targetId: y.id },
+            })),
+        );
+      }
+      const inv = x?.inventory ?? [];
+      const p = page.stage === "item" ? page.page : 0;
+      const rows: CampEntry[] = inv
+        .slice(p * CHARACTER_INVENTORY_CELLS, (p + 1) * CHARACTER_INVENTORY_CELLS)
+        .map((it) => ({ label: it.name, disabled: false, choice: { kind: "item", instanceId: it.instanceId } }));
+      return list([...rows, ...pageRows(strings, p, pageCount(inv.length, CHARACTER_INVENTORY_CELLS))]);
+    }
+    case "spell": {
+      const x = memberOf(m, page.memberId);
+      if (page.stage === "spell") {
+        const known = x?.knownSpells ?? [];
+        const rows: CampEntry[] = known
+          .slice(page.page * CHARACTER_SPELL_CELLS, (page.page + 1) * CHARACTER_SPELL_CELLS)
+          .map((sp) => ({ label: s(strings, "camp.spellRow", { name: sp.name, mp: sp.mp }), disabled: !sp.castable, choice: { kind: "spell", spellId: sp.spellId } }));
+        return list([...rows, ...pageRows(strings, page.page, pageCount(known.length, CHARACTER_SPELL_CELLS))]);
+      }
+      const sp = x?.spells.find((y) => y.spellId === page.spellId);
+      if (sp?.target === "dead") {
+        return list(menu.dead.map((d) => ({ label: d.name, disabled: false, choice: { kind: "target", targetId: d.id } })));
+      }
+      return list(menu.allies.map((a) => targetRow(a, sp?.targets.find((t) => t.id === a.id)?.block ?? null)));
+    }
+    case "identify": {
       const rows: CampEntry[] = menu.unidentified.map((u) => ({
         label: s(strings, "camp.identifyRow", { owner: u.ownerName, name: u.name }),
         disabled: false,
@@ -270,105 +367,138 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
       if (rows.length === 0) rows.push({ label: s(strings, "camp.identify.none"), disabled: true, choice: { kind: "none" } });
       return list(rows);
     }
+    case "order":
+      return memberGrid(m, () => false, cancel);
     case "book":
       // IT-66: 図鑑はパネルに出すだけで、操作はやめるだけ
       return list([]);
   }
 }
 
+/**
+ * UI-59（M10）: キャラクター画面の人を並び順で dir（+1 次 / −1 前）に巡回したページ。キャラクター画面でなければ null
+ */
+export function campCycle(page: CampPage, m: CampInput, dir: 1 | -1): CampPage | null {
+  if (page.kind !== "character") return null;
+  const ids = m.menu.members.map((x) => x.id);
+  if (ids.length === 0) return null;
+  const i = ids.indexOf(page.memberId);
+  const n = ids.length;
+  return { kind: "character", memberId: ids[(((i < 0 ? 0 : i) + dir) % n + n) % n]! };
+}
+
 /** 1 つ選ぶ。段に合わない選択と none は同じ段のまま */
 export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: CampChoice): CampStep {
   const stay: CampStep = { kind: "page", page };
-  // 帰還の糸の確認のやめるは、酒場でも閉じずに同じ者の道具の段へ（cancelStep より先に見る）
-  if (page.kind === "item" && page.stage === "confirmReturn") {
-    if (choice.kind === "cancel") return { kind: "page", page: { kind: "item", stage: "item", memberId: page.memberId } };
-    if (choice.kind !== "confirm") return stay;
-    return {
-      kind: "send",
-      command: { type: "dungeon.useItem", memberId: page.memberId, itemId: page.instanceId },
-      after: { kind: "item", stage: "item", memberId: page.memberId },
-    };
-  }
-  // UI-59（M7）: 品の詳細のやめるは、酒場でも閉じずに同じ枠の品の段へ（cancelStep より先に見る）。送った後は枠の段へ
-  if (page.kind === "equip" && page.stage === "detail") {
-    const itemStage: CampPage = { kind: "equip", stage: "item", memberId: page.memberId, slot: page.slot };
-    const slotStage: CampPage = { kind: "equip", stage: "slot", memberId: page.memberId };
-    if (choice.kind === "cancel") return { kind: "page", page: itemStage };
-    if (choice.kind === "unequip") return { kind: "send", command: { type: "party.unequip", memberId: page.memberId, slot: page.slot }, after: slotStage };
-    if (choice.kind === "equip") return { kind: "send", command: { type: "party.equip", memberId: page.memberId, instanceId: choice.instanceId }, after: slotStage };
-    return stay;
-  }
-  if (choice.kind === "cancel") return cancelStep(host, page);
+  const go = (p: CampPage): CampStep => ({ kind: "page", page: p });
+  if (choice.kind === "cancel") return cancelStep(host, page, m);
   const menu = m.menu;
   switch (page.kind) {
     case "top":
-      if (choice.kind !== "open") return stay;
-      // 鑑定する者が 1 人なら、鑑定する者の段を飛ばす
-      if (choice.page.kind === "identify" && menu.identifiers.length === 1) {
-        return { kind: "page", page: { kind: "identify", stage: "item", appraiserId: menu.identifiers[0]!.id } };
+      return choice.kind === "open" ? go(choice.page) : stay;
+    case "members":
+      return choice.kind === "member" ? go({ kind: "character", memberId: choice.memberId }) : stay;
+    case "character": {
+      if (choice.kind === "nextMember") return go(campCycle(page, m, 1) ?? page);
+      if (choice.kind !== "action") return stay;
+      const id = page.memberId;
+      switch (choice.action) {
+        case "equip":
+          return go({ kind: "equip", stage: "slot", memberId: id });
+        case "use":
+          return go({ kind: "use", stage: "item", memberId: id });
+        case "give":
+          return go({ kind: "give", stage: "item", memberId: id, page: 0 });
+        case "drop":
+          return go({ kind: "drop", stage: "item", memberId: id, page: 0 });
+        case "spell":
+          return go({ kind: "spell", stage: "spell", memberId: id, page: 0 });
+        case "identify":
+          return go({ kind: "identify", memberId: id });
       }
-      return { kind: "page", page: choice.page };
-    case "status":
-      return choice.kind === "member" ? { kind: "page", page: { kind: "status", memberId: choice.memberId } } : stay;
-    case "spell": {
-      if (page.stage === "caster") {
-        return choice.kind === "member" ? { kind: "page", page: { kind: "spell", stage: "spell", casterId: choice.memberId } } : stay;
-      }
-      const back: CampPage = { kind: "spell", stage: "spell", casterId: page.casterId };
-      if (page.stage === "spell") {
-        if (choice.kind !== "spell") return stay;
-        const sp = menu.members.find((x) => x.id === page.casterId)?.spells.find((x) => x.spellId === choice.spellId);
-        if (sp === undefined) return stay;
-        if (sp.target === "none") return { kind: "send", command: { type: "dungeon.cast", memberId: page.casterId, spellId: sp.spellId }, after: back };
-        return { kind: "page", page: { kind: "spell", stage: "target", casterId: page.casterId, spellId: sp.spellId } };
-      }
-      if (choice.kind !== "target") return stay;
-      return {
-        kind: "send",
-        command: { type: "dungeon.cast", memberId: page.casterId, spellId: page.spellId, targetId: choice.targetId },
-        after: back,
-      };
+      return stay;
     }
-    case "item": {
-      if (page.stage === "member") {
-        return choice.kind === "member" ? { kind: "page", page: { kind: "item", stage: "item", memberId: choice.memberId } } : stay;
+    case "equip": {
+      if (page.stage === "slot") {
+        return choice.kind === "slot" ? go({ kind: "equip", stage: "item", memberId: page.memberId, slot: choice.slot }) : stay;
       }
-      const back: CampPage = { kind: "item", stage: "item", memberId: page.memberId };
+      const slotStage: CampPage = { kind: "equip", stage: "slot", memberId: page.memberId };
+      if (choice.kind === "unequip") return { kind: "send", command: { type: "party.unequip", memberId: page.memberId, slot: page.slot }, after: slotStage };
+      if (choice.kind === "equip") return { kind: "send", command: { type: "party.equip", memberId: page.memberId, instanceId: choice.instanceId }, after: slotStage };
+      if (choice.kind === "detail" && page.stage === "item") {
+        return go({ kind: "equip", stage: "detail", memberId: page.memberId, slot: page.slot, instanceId: choice.instanceId });
+      }
+      return stay;
+    }
+    case "use": {
+      const back: CampPage = { kind: "use", stage: "item", memberId: page.memberId };
+      if (page.stage === "confirmReturn") {
+        if (choice.kind !== "confirm") return stay;
+        return { kind: "send", command: { type: "dungeon.useItem", memberId: page.memberId, itemId: page.instanceId }, after: back };
+      }
       if (page.stage === "item") {
         if (choice.kind !== "item") return stay;
         const it = m.items?.members.find((x) => x.id === page.memberId)?.items.find((x) => x.instanceId === choice.instanceId);
         if (it === undefined) return stay;
-        if (it.target === "ally") return { kind: "page", page: { kind: "item", stage: "target", memberId: page.memberId, instanceId: it.instanceId } };
+        if (it.target === "ally") return go({ kind: "use", stage: "target", memberId: page.memberId, instanceId: it.instanceId });
         // DG-30 / UI-53（M5.5）: 帰還の糸は送らずに確認の段へ（使えるかは core の usable。dim の品は操作領域が押させない）
-        if (it.isReturn) return { kind: "page", page: { kind: "item", stage: "confirmReturn", memberId: page.memberId, instanceId: it.instanceId } };
+        if (it.isReturn) return go({ kind: "use", stage: "confirmReturn", memberId: page.memberId, instanceId: it.instanceId });
         return { kind: "send", command: { type: "dungeon.useItem", memberId: page.memberId, itemId: it.instanceId }, after: back };
+      }
+      if (choice.kind !== "target") return stay;
+      return { kind: "send", command: { type: "dungeon.useItem", memberId: page.memberId, itemId: page.instanceId, targetId: choice.targetId }, after: back };
+    }
+    case "give":
+    case "drop": {
+      const inv = memberOf(m, page.memberId)?.inventory ?? [];
+      if (page.stage === "item") {
+        if (choice.kind === "pageTurn") {
+          const p = page.page + choice.delta;
+          return p < 0 || p >= pageCount(inv.length, CHARACTER_INVENTORY_CELLS) ? stay : go({ ...page, page: p });
+        }
+        if (choice.kind !== "item" || !inv.some((x) => x.instanceId === choice.instanceId)) return stay;
+        return page.kind === "give"
+          ? go({ kind: "give", stage: "to", memberId: page.memberId, instanceId: choice.instanceId })
+          : go({ kind: "drop", stage: "confirm", memberId: page.memberId, instanceId: choice.instanceId });
+      }
+      const after: CampPage = { kind: page.kind, stage: "item", memberId: page.memberId, page: inventoryPageOf(m, page.memberId, page.instanceId) };
+      if (page.kind === "give" && page.stage === "to") {
+        if (choice.kind !== "target" || choice.targetId === page.memberId) return stay;
+        return { kind: "send", command: { type: "party.give", memberId: page.memberId, instanceId: page.instanceId, toId: choice.targetId }, after };
+      }
+      if (page.kind === "drop" && page.stage === "confirm" && choice.kind === "confirm") {
+        return { kind: "send", command: { type: "party.drop", memberId: page.memberId, instanceId: page.instanceId }, after };
+      }
+      return stay;
+    }
+    case "spell": {
+      const x = memberOf(m, page.memberId);
+      if (page.stage === "spell") {
+        if (choice.kind === "pageTurn") {
+          const p = page.page + choice.delta;
+          return p < 0 || p >= pageCount(x?.knownSpells.length ?? 0, CHARACTER_SPELL_CELLS) ? stay : go({ ...page, page: p });
+        }
+        if (choice.kind !== "spell") return stay;
+        // 戦闘外で唱えられる呪文（campMenu の spells）だけ先へ進む。戦闘専用の呪文は同じ段のまま
+        const sp = x?.spells.find((y) => y.spellId === choice.spellId);
+        if (sp === undefined) return stay;
+        if (sp.target === "none") return { kind: "send", command: { type: "dungeon.cast", memberId: page.memberId, spellId: sp.spellId }, after: page };
+        return go({ kind: "spell", stage: "target", memberId: page.memberId, spellId: sp.spellId });
       }
       if (choice.kind !== "target") return stay;
       return {
         kind: "send",
-        command: { type: "dungeon.useItem", memberId: page.memberId, itemId: page.instanceId, targetId: choice.targetId },
-        after: back,
+        command: { type: "dungeon.cast", memberId: page.memberId, spellId: page.spellId, targetId: choice.targetId },
+        after: spellListPage(m, page.memberId, page.spellId),
       };
     }
-    case "equip": {
-      if (page.stage === "member") {
-        return choice.kind === "member" ? { kind: "page", page: { kind: "equip", stage: "slot", memberId: choice.memberId } } : stay;
-      }
-      if (page.stage === "slot") {
-        return choice.kind === "slot" ? { kind: "page", page: { kind: "equip", stage: "item", memberId: page.memberId, slot: choice.slot } } : stay;
-      }
-      const back: CampPage = { kind: "equip", stage: "slot", memberId: page.memberId };
-      if (choice.kind === "unequip") return { kind: "send", command: { type: "party.unequip", memberId: page.memberId, slot: page.slot }, after: back };
-      if (choice.kind === "equip") return { kind: "send", command: { type: "party.equip", memberId: page.memberId, instanceId: choice.instanceId }, after: back };
-      if (choice.kind === "detail" && page.stage === "item") {
-        return { kind: "page", page: { kind: "equip", stage: "detail", memberId: page.memberId, slot: page.slot, instanceId: choice.instanceId } };
-      }
-      return stay;
-    }
+    case "identify":
+      if (choice.kind !== "identifyItem") return stay;
+      return { kind: "send", command: { type: "party.identify", memberId: page.memberId, instanceId: choice.instanceId }, after: page };
     case "order": {
       if (choice.kind !== "member") return stay;
-      if (page.picked === null) return { kind: "page", page: { kind: "order", picked: choice.memberId } };
-      if (page.picked === choice.memberId) return { kind: "page", page: { kind: "order", picked: null } };
+      if (page.picked === null) return go({ kind: "order", picked: choice.memberId });
+      if (page.picked === choice.memberId) return go({ kind: "order", picked: null });
       const ids = menu.members.map((x) => x.id);
       const a = ids.indexOf(page.picked);
       const b = ids.indexOf(choice.memberId);
@@ -377,13 +507,6 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
       order[a] = choice.memberId;
       order[b] = page.picked;
       return { kind: "send", command: { type: "party.reorder", order }, after: { kind: "order", picked: null } };
-    }
-    case "identify": {
-      if (page.stage === "appraiser") {
-        return choice.kind === "member" ? { kind: "page", page: { kind: "identify", stage: "item", appraiserId: choice.memberId } } : stay;
-      }
-      if (choice.kind !== "identifyItem") return stay;
-      return { kind: "send", command: { type: "party.identify", memberId: page.appraiserId, instanceId: choice.instanceId }, after: page };
     }
     case "book":
       return stay;
@@ -395,42 +518,55 @@ export function campHeader(page: CampPage, m: CampInput, strings: Strings): stri
   switch (page.kind) {
     case "top":
       return s(strings, "camp.prompt.top");
-    case "status":
+    case "members":
+      return s(strings, "camp.prompt.members");
+    case "character":
       return s(strings, "camp.prompt.status", { name: nameOf(m, page.memberId) });
-    case "spell": {
-      if (page.stage === "caster") return s(strings, "camp.prompt.spellWho");
-      if (page.stage === "spell") return s(strings, "camp.prompt.spellWhich", { name: nameOf(m, page.casterId) });
-      const sp = m.menu.members.find((x) => x.id === page.casterId)?.spells.find((x) => x.spellId === page.spellId);
-      return s(strings, sp?.target === "dead" ? "camp.prompt.spellDead" : "camp.prompt.spellTarget");
-    }
-    case "item":
-      if (page.stage === "member") return s(strings, "dungeon.items.who");
+    case "equip":
+      if (page.stage === "slot") return s(strings, "camp.prompt.equipSlot", { name: nameOf(m, page.memberId) });
+      return s(strings, "camp.prompt.equipItem", { name: nameOf(m, page.memberId), slot: s(strings, `detail.slot.${page.slot}`) });
+    case "use":
       if (page.stage === "item") return s(strings, "dungeon.items.which", { name: nameOf(m, page.memberId) });
       if (page.stage === "confirmReturn") {
         const it = m.items?.members.find((x) => x.id === page.memberId)?.items.find((x) => x.instanceId === page.instanceId);
         return s(strings, "camp.returnConfirm.prompt", { item: it?.name ?? "" });
       }
       return s(strings, "dungeon.items.target");
-    case "equip":
-      if (page.stage === "member") return s(strings, "camp.prompt.equipWho");
-      if (page.stage === "slot") return s(strings, "camp.prompt.equipSlot", { name: nameOf(m, page.memberId) });
-      return s(strings, "camp.prompt.equipItem", { name: nameOf(m, page.memberId), slot: s(strings, `detail.slot.${page.slot}`) });
+    case "give":
+      return page.stage === "item" ? s(strings, "camp.prompt.giveWhich", { name: nameOf(m, page.memberId) }) : s(strings, "camp.prompt.giveTo");
+    case "drop": {
+      if (page.stage === "item") return s(strings, "camp.prompt.dropWhich", { name: nameOf(m, page.memberId) });
+      const it = memberOf(m, page.memberId)?.inventory.find((x) => x.instanceId === page.instanceId);
+      return s(strings, "camp.dropConfirm", { item: it?.name ?? "" });
+    }
+    case "spell": {
+      if (page.stage === "spell") return s(strings, "camp.prompt.spellWhich", { name: nameOf(m, page.memberId) });
+      const sp = memberOf(m, page.memberId)?.spells.find((x) => x.spellId === page.spellId);
+      return s(strings, sp?.target === "dead" ? "camp.prompt.spellDead" : "camp.prompt.spellTarget");
+    }
+    case "identify":
+      return s(strings, "camp.prompt.identifyWhich");
     case "order":
       return page.picked === null ? s(strings, "camp.prompt.order") : s(strings, "camp.prompt.orderSecond", { name: nameOf(m, page.picked) });
-    case "identify":
-      return s(strings, page.stage === "appraiser" ? "camp.prompt.identifyWho" : "camp.prompt.identifyWhich");
     case "book":
       return s(strings, "camp.prompt.book");
   }
 }
 
-/** ビュー領域に出すもの（状態と装備の枠・品は UI-59 の詳細、並び順は表、それ以外は場所の見出しだけ。問いは campHeader でヘッダーに出す） */
+/** ビューに出すもの（キャラクター画面とその下の段は UI-59 の画面、品の詳細、並び順の表、図鑑、それ以外は場所の見出しだけ） */
 export function campPanel(page: CampPage, m: CampInput, strings: Strings): CampPanel {
-  if (page.kind === "status") return { kind: "detail", memberId: page.memberId, focusSlot: null };
   if (page.kind === "equip" && page.stage === "detail") return { kind: "item", instanceId: page.instanceId };
   if (page.kind === "book") return { kind: "book" };
-  if (page.kind === "equip" && page.stage !== "member") {
-    return { kind: "detail", memberId: page.memberId, focusSlot: page.stage === "item" ? page.slot : null };
+  const who = pageMember(page);
+  if (who !== null) {
+    const focusSlot = page.kind === "equip" && page.stage === "item" ? page.slot : null;
+    const base = { kind: "character" as const, memberId: who, focusSlot };
+    if (page.kind === "spell") {
+      const p = page.stage === "spell" ? page.page : spellPageOf(m, page.memberId, page.spellId);
+      return { ...base, spellPage: p };
+    }
+    if ((page.kind === "give" || page.kind === "drop") && page.stage === "item") return { ...base, inventoryPage: page.page };
+    return base;
   }
   if (page.kind === "order") {
     return {
@@ -461,56 +597,65 @@ export function campPanel(page: CampPage, m: CampInput, strings: Strings): CampP
 
 /**
  * sync で campMenu を取り直した後に、成り立たなくなった段を直す（送った後・戦闘の外での変化）。
- * 人がいない・行動できない・候補が無い段は host の最初のページへ（酒場は開いた項目の最初の段）。成り立つならそのまま返す
+ * 人がいなくなった段は host の最初のページ（キャンプはメンバー一覧、酒場は先頭の者のキャラクター画面）、
+ * 品・呪文・対象が成り立たない段は同じ人の 1 つ上の段へ。成り立つならそのまま返す
  */
 export function campRepair(host: CampHost, page: CampPage, m: CampInput): CampPage {
   const menu = m.menu;
-  const member = (id: string) => menu.members.find((x) => x.id === id);
-  const reset = (): CampPage => {
-    if (host === "camp") return { kind: "top" };
-    // 酒場は開いた項目の最初の段（酒場は top を開かないので、top は並び順の未選択に倒す。M4.5 のまま）
-    return campFirstPage("tavern", page.kind === "top" ? "order" : page.kind, menu);
-  };
+  const member = (id: string) => memberOf(m, id);
+  const lost = (): CampPage => (host === "camp" ? { kind: "members" } : campFirstPage("tavern", "status", menu));
   switch (page.kind) {
     case "top":
-      return host === "camp" ? page : reset();
-    case "status":
-      return member(page.memberId) === undefined ? (host === "camp" ? reset() : campFirstPage("tavern", "status", menu)) : page;
-    case "spell": {
-      // M5.5: 街（酒場）でも呪文の段は成り立つ（core の campMenu が街でも呪文を返す。帰還は usable false）
-      if (page.stage === "caster") return page;
-      const c = member(page.casterId);
-      if (c === undefined || !c.canAct) return reset();
-      if (page.stage === "spell") return page;
-      return c.spells.some((x) => x.spellId === page.spellId && x.usable) ? page : { kind: "spell", stage: "spell", casterId: page.casterId };
-    }
-    case "item": {
-      if (m.items === null) return reset();
-      if (page.stage === "member") return page;
-      const x = m.items.members.find((y) => y.id === page.memberId);
-      if (x === undefined || !x.canAct) return reset();
-      if (page.stage === "item") return page;
-      // 対象の段・確認の段: 品が消えた・使えなくなったら同じ者の道具の段へ
-      return x.items.some((it) => it.instanceId === page.instanceId && it.usable) ? page : { kind: "item", stage: "item", memberId: page.memberId };
-    }
+      return host === "camp" ? page : campFirstPage("tavern", "order", menu);
+    case "members":
+      return host === "camp" ? page : campFirstPage("tavern", "status", menu);
+    case "order":
+      return page.picked === null || member(page.picked) !== undefined ? page : { kind: "order", picked: null };
+    case "book":
+      return page;
+    default:
+      break;
+  }
+  const x = member(page.memberId);
+  if (x === undefined) return lost();
+  const character: CampPage = { kind: "character", memberId: page.memberId };
+  switch (page.kind) {
+    case "character":
+      return page;
     case "equip": {
-      if (page.stage === "member") return page;
-      const x = member(page.memberId);
-      if (x?.canAct !== true) return reset();
+      // U6（M10）: 行動できない者・死亡・灰の者の段も成り立つ（外すは core の canUnequip、装備するは core の block で dim）
       if (page.stage !== "detail") return page;
       // UI-59（M7）: 詳細の品が、その枠の装備中の品でも候補でもなくなったら（付け外しの後など）同じ枠の品の段へ
       const id = page.instanceId;
       const here = x.slots.some((sl) => sl.slot === page.slot && sl.instanceId === id) || x.equipCandidates.some((c) => c.slot === page.slot && c.instanceId === id);
       return here ? page : { kind: "equip", stage: "item", memberId: page.memberId, slot: page.slot };
     }
-    case "order":
-      return page.picked === null || member(page.picked) !== undefined ? page : { kind: "order", picked: null };
+    case "use": {
+      const it = m.items?.members.find((y) => y.id === page.memberId);
+      if (it === undefined || !it.canAct) return character;
+      if (page.stage === "item") return page;
+      // 対象の段・確認の段: 品が消えた・使えなくなったら同じ者の道具の段へ
+      return it.items.some((y) => y.instanceId === page.instanceId && y.usable) ? page : { kind: "use", stage: "item", memberId: page.memberId };
+    }
+    case "give":
+    case "drop": {
+      if (page.stage === "item") {
+        const last = pageCount(x.inventory.length, CHARACTER_INVENTORY_CELLS) - 1;
+        return page.page > last ? { ...page, page: last } : page;
+      }
+      // 相手・確認の段: 品が手元から消えたら同じ者の品の段へ
+      return x.inventory.some((y) => y.instanceId === page.instanceId) ? page : { kind: page.kind, stage: "item", memberId: page.memberId, page: 0 };
+    }
+    case "spell": {
+      if (page.stage === "spell") {
+        const last = pageCount(x.knownSpells.length, CHARACTER_SPELL_CELLS) - 1;
+        return page.page > last ? { ...page, page: last } : page;
+      }
+      // 対象の段で、その呪文が使えなくなった（MP 切れ・行動不能）→ 同じ者の呪文の一覧
+      return x.spells.some((y) => y.spellId === page.spellId && y.usable) ? page : spellListPage(m, page.memberId, page.spellId);
+    }
     case "identify":
-      if (menu.identifiers.length === 0) return reset();
-      if (page.stage === "appraiser") return page;
-      return menu.identifiers.some((x) => x.id === page.appraiserId) ? page : reset();
-    case "book":
-      return page;
+      return x.identifyBlock === "cannotIdentify" ? character : page;
   }
 }
 
@@ -554,12 +699,13 @@ export const ORDER_COLUMNS = {
   row: { left: PAD + 64, width: 16 },
 } as const;
 
-/** 描くもの。detail は app が formatDetail で作った文字列（state の Character から）。order の label は番号と名前、row は前衛 / 後衛 */
+/** 描くもの。character は app が formatCharacter で作った文字列。order の label は番号と名前、row は前衛 / 後衛 */
 export type CampPanelView =
   | { kind: "text"; title: string; lines?: string[] }
-  | { kind: "detail"; detail: CharacterDetail; focusSlot: number | null }
+  /** UI-59（M10）: キャラクター画面（tallRect に広げる） */
+  | { kind: "character"; detail: CharacterDetail; focusSlot: number | null }
   | { kind: "order"; lines: { label: string; row: string; picked: boolean }[] }
-  /** UI-59 の品の詳細・IT-66 の図鑑（M7）。見出しは accent、行は tone の色（danger / dim）。tall ならパネルを tallRect に広げる（図鑑。UI-11） */
+  /** UI-59 の品の詳細・IT-66 の図鑑（M7）。見出しは accent、行は tone の色（danger / dim）。tall ならパネルを tallRect に広げる（図鑑・キャラクター画面の下の品の詳細。UI-11） */
   | { kind: "lines"; title: string; lines: PanelLine[]; tall?: boolean };
 
 export type CampView = {
@@ -569,7 +715,7 @@ export type CampView = {
 
 /**
  * rect はステージ座標のパネルの範囲（layout.camp = ビュー領域）。メッセージ窓とパーティ欄は覆わない。
- * tallRect は広げた行のパネル（lines の tall。IT-66 の図鑑。酒場だけ）の範囲（M8.5: townLayout の book = ビューの上端から操作領域の上端まで）。
+ * tallRect は広げたパネル（キャラクター画面（UI-59。M10）・その下の品の詳細と、IT-66 の図鑑）の範囲（layout.character = ビューの上端から操作領域の上端まで）。
  * 幅は rect と同じ前提（行の幅は rect.w で決める）
  */
 export function createCampView(rect: Rect, tallRect: Rect = rect): CampView {
@@ -581,11 +727,11 @@ export function createCampView(rect: Rect, tallRect: Rect = rect): CampView {
     color: "var(--c-text)",
     overflow: "hidden",
   });
-  const place =(r: Rect): void => {
+  const place = (r: Rect): void => {
     Object.assign(el.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
   };
   place(rect);
-  const detail = createDetailView({ x: 0, y: 0, w: rect.w, h: rect.h });
+  const detail = createDetailView({ x: 0, y: 0, w: tallRect.w, h: tallRect.h });
 
   const line = (row: number, text: string, cls: string, color?: string, col: { left: number; width: number } = { left: PAD, width: rect.w - 2 * PAD }): HTMLElement => {
     const t = document.createElement("div");
@@ -608,8 +754,8 @@ export function createCampView(rect: Rect, tallRect: Rect = rect): CampView {
   return {
     el,
     render(p: CampPanelView): void {
-      place(p.kind === "lines" && p.tall === true ? tallRect : rect);
-      if (p.kind === "detail") {
+      place(p.kind === "character" || (p.kind === "lines" && p.tall === true) ? tallRect : rect);
+      if (p.kind === "character") {
         detail.render(p.detail, p.focusSlot);
         el.replaceChildren(detail.el);
         return;

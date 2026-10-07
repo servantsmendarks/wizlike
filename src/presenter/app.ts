@@ -6,7 +6,8 @@
 // - 再生の外のメッセージ窓のタップは、文字送り中なら即表示、それ以外なら履歴の画面（UI-46）を開く。
 // - 街（UI-47。M8.5）の語りは会話の箱（narrator が route で振り分ける）。再生の外の箱と施設の絵のタップで次へ・閉じる。
 //   一覧・戻る・帯・数字・Esc は会話を打ち切ってから動き、Enter は箱が開いていれば箱のタップ。
-// - 迷宮のキャンプと酒場の状態・装備・並び順（UI-53 / UI-59 / TW-03）は views/camp.ts の段で進め、ビュー領域だけを覆う（overlay 'camp'）。
+// - 迷宮のキャンプと酒場の状態・並び順（UI-53 / TW-03）とキャラクター画面（UI-59。M10）は views/camp.ts の段で進める（overlay 'camp'）。
+//   キャンプはビュー領域だけを覆い、キャラクター画面はビューの上端から操作領域の上端まで広げてパーティ欄とメッセージ窓を隠す（setCharacter）。
 // - 地図のタップ（UI-25）は 2 段階。探索済みのセルに吸着したら core の planRoute で経路を確かめてそのセルを選び（点滅）、同じセルの
 //   再タップか「移動」で、holdRepeatMs おきに 1 手ずつ送る（自動歩行）。続けるかは core の
 //   routeStepOk が決める。歩いている間に触れる・キーを押すと止まり、その入力は捨てる。
@@ -96,6 +97,8 @@ import { createDebugPanel } from "./views/debug-panel";
 import { createSettingsScreen, settingsItems, settingsKeyIndex, type SettingsContext } from "./views/settings";
 import { isStandalone, type StandaloneEnv } from "./pwa-env";
 import {
+  campCharacterOpen,
+  campCycle,
   campEntries,
   campFirstPage,
   campHeader,
@@ -111,7 +114,7 @@ import {
   type CampPage,
   type CampPanelView,
 } from "./views/camp";
-import { formatDetail, SLOT_ORDER } from "./views/detail";
+import { formatCharacter, SLOT_ORDER } from "./views/detail";
 import { formatBook, formatItemDetail } from "./views/item-detail";
 import { createDungeonScreen } from "./views/dungeon";
 import { mapTapAction } from "./views/map";
@@ -227,6 +230,8 @@ export function createApp(o: {
   /** UI-53 / TW-03: キャンプを開いた場所（迷宮のキャンプか酒場か）と今の段（overlay が camp の間だけ使う） */
   let campHost: CampHost = "camp";
   let campPage: CampPage = { kind: "top" };
+  /** UI-59（M10）: キャラクター画面（とその下の段）を開いている間か（迷宮でも語りを会話の箱に出す。setCharacter） */
+  let characterOpen = false;
   /** UI-25: 地図のタップ移動の自動歩行（歩いている間だけ非 null。SV-50 の再開では戻さない） */
   let walking: RouteWalk | null = null;
   /** UI-25: 地図で選んだセル（地図を開いている間だけ。表示層だけの値で保存しない） */
@@ -360,9 +365,10 @@ export function createApp(o: {
 
   /**
    * UI-47（M8.5）: 語りの表示先。route が街なら会話の箱、それ以外（迷宮・戦闘）は今のメッセージ窓。
+   * UI-59（M10）: キャラクター画面の間は迷宮でも会話の箱（メッセージ窓は隠れている。hold もこの条件に従い、文ごとにタップを待つ）。
    * ログ（UI-46）はどちらもメッセージ窓の 1 本の配列。再生（PlayerDeps.message）・save.failed・再開の語りはここを通す
    */
-  const narrator = createNarrator({ town: () => route === "town", talk: play.talk, window: play.message });
+  const narrator = createNarrator({ town: () => route === "town" || characterOpen, talk: play.talk, window: play.message });
 
   // UI-57: debug パネルの「ポインタ」に出す直近 20 件のポインタイベント（表示層だけ。保存しない）
   const pointerLog = createPointerLog();
@@ -638,7 +644,7 @@ export function createApp(o: {
             void run({ type: "town.lookAround" });
             return;
           case "camp":
-            // TW-03: 酒場の状態・呪文・道具・装備・並び順・鑑定はキャンプと同じ部品で開く（やめるで酒場の一覧へ戻る）
+            // TW-03: 酒場の状態（キャラクター画面）・並び順・図鑑はキャンプと同じ部品で開く（戻る・やめるで酒場の一覧へ戻る）
             openCamp("tavern", e.open);
             return;
           case "enter":
@@ -799,15 +805,19 @@ export function createApp(o: {
       return;
     }
     campPage = campRepair(campHost, campPage, m);
+    // UI-59（M10）: キャラクター画面の間はパーティ欄とメッセージ窓を隠し、判定の箱を上の層へ（パネルより先に切り替える）
+    setCharacter(campCharacterOpen(campPage));
     play.header.setText(campHeader(campPage, m, strings));
     play.camp.render(campPanelView(campPage, m));
     const c = play.controls;
     const e = campEntries(campHost, campPage, m, strings);
     // UI-66（2026-10-07）: 戻る・やめる（choice の cancel）は 8 枠の中でも一覧の外でも取り消しの音
+    // UI-59（M10）: 押せない項目に理由（core の値から作った reason）があれば、会話の箱を打ち切ってから理由を語る
     const item = (x: CampEntry): ControlItem => ({
       label: x.label,
       disabled: x.disabled,
       back: x.choice.kind === "cancel",
+      ...campReason(x),
       onSelect: () => guard(() => chooseCamp(x.choice)),
     });
     if (e.layout === "grid") {
@@ -820,7 +830,28 @@ export function createApp(o: {
     }
   };
 
-  /** campPanel の値を描くもの（UI-59 の状態は state の Character から formatDetail で作る） */
+  /** UI-59（M10）: 押せない項目の理由を語る（理由が無ければ何もしない） */
+  const campReason = (x: CampEntry): Pick<ControlItem, "onDisabled"> => {
+    const reason = x.reason;
+    if (reason === undefined) return {};
+    return {
+      onDisabled: () =>
+        guard(() => {
+          play.talk.flush();
+          void narrator.say(reason, store.get().skipAnimations);
+        }),
+    };
+  };
+
+  /** UI-59（M10）: キャラクター画面の開閉を表示に反映する。閉じるとき街でなければ会話の箱を打ち切る（残りの文はログに入っている） */
+  const setCharacter = (on: boolean): void => {
+    if (characterOpen === on) return;
+    characterOpen = on;
+    if (!on && route !== "town") play.talk.flush();
+    play.setCharacterOpen(on);
+  };
+
+  /** campPanel の値を描くもの（UI-59 のキャラクター画面は state の Character と campMenu の members[] から formatCharacter で作る） */
   const campPanelView = (page: CampPage, m: CampInput): CampPanelView => {
     const p = campPanel(page, m, strings);
     if (p.kind === "text") return p;
@@ -831,16 +862,19 @@ export function createApp(o: {
       };
     }
     if (p.kind === "item") {
-      // UI-59（M7）: 品の詳細は core の itemDetail の値を描く（実体が消えていれば見出しだけ。sync の campRepair で段を直す）
+      // UI-59（M7）: 品の詳細は core の itemDetail の値を描く（実体が消えていれば見出しだけ。sync の campRepair で段を直す）。
+      // M10: キャラクター画面の下の段なので、同じ広さ（layout.character）に出す
       const d = itemDetail(state, data, p.instanceId);
-      return d === null ? { kind: "text", title: "" } : { kind: "lines", ...formatItemDetail(d, strings) };
+      return d === null ? { kind: "text", title: "" } : { kind: "lines", ...formatItemDetail(d, strings), tall: true };
     }
     if (p.kind === "book") return { kind: "lines", ...formatBook(uniqueBookView(state, data), strings), tall: true }; // IT-66 / UI-11（M7）: 図鑑はビューとメッセージの領域に広げる
     const ch = state.party.find((x) => x.id === p.memberId);
-    if (ch === undefined) return { kind: "text", title: "" };
+    const member = m.menu.members.find((x) => x.id === p.memberId);
+    if (ch === undefined || member === undefined) return { kind: "text", title: "" };
+    const view = { ...(p.inventoryPage !== undefined ? { inventoryPage: p.inventoryPage } : {}), ...(p.spellPage !== undefined ? { spellPage: p.spellPage } : {}) };
     return {
-      kind: "detail",
-      detail: formatDetail(ch, data, strings, (iid) => itemDisplayName(state, data, iid), memberSheet(state, data, ch)),
+      kind: "character",
+      detail: formatCharacter(ch, data, strings, (iid) => itemDisplayName(state, data, iid), memberSheet(state, data, ch), member, view),
       focusSlot: p.focusSlot === null ? null : SLOT_ORDER.indexOf(p.focusSlot),
     };
   };
@@ -1409,6 +1443,8 @@ export function createApp(o: {
     settingsNotice = null;
     campHost = "camp";
     campPage = { kind: "top" };
+    characterOpen = false;
+    play.setCharacterOpen(false);
     walking = null;
     walker.release();
     mapPick = null;
@@ -1637,7 +1673,7 @@ export function createApp(o: {
 
   /**
    * UI-53 / TW-03: キャンプを開く。迷宮のキャンプ（host camp）は迷宮で、酒場（host tavern）は街で、
-   * 他の overlay が無く、campMenu が非 null のとき（戦闘・保留中は開かない）。open は酒場の項目（状態・呪文・道具・装備・並び順・鑑定）
+   * 他の overlay が無く、campMenu が非 null のとき（戦闘・保留中は開かない）。open は酒場の項目（状態・並び順・図鑑）、memberId は状態で開く人（帯のタップ）
    */
   const openCamp = (host: CampHost, open?: CampOpen, memberId?: string): void => {
     if (overlay !== null) return;
@@ -1647,9 +1683,8 @@ export function createApp(o: {
     repeater.release();
     overlay = "camp";
     campHost = host;
-    campPage = campFirstPage(host, open, menu);
-    // UI-13（M8.5）: 帯のタップはその人の状態から（やめるで元の街のページへ）
-    if (memberId !== undefined && campPage.kind === "status") campPage = { kind: "status", memberId };
+    // UI-13（M8.5）: 帯のタップはその人のキャラクター画面から（戻るで元の街のページへ）
+    campPage = campFirstPage(host, open, menu, memberId);
     play.showCamp(true);
     // UI-63（2026-10-06）: 迷宮のキャンプの間はキャンプの曲（酒場のキャンプでは変えない）。場面の曲（sceneSongName）は変えない
     if (host === "camp") audio?.setSong(campSong(data));
@@ -1661,6 +1696,7 @@ export function createApp(o: {
     if (overlay !== "camp") return;
     overlay = null;
     campPage = { kind: "top" };
+    setCharacter(false);
     play.showCamp(false);
     // UI-63: 迷宮のキャンプを閉じたら場面の曲（迷宮の曲。キャンプの間に場面が変わっていればその曲）に戻す
     if (campHost === "camp") audio?.setSong(sceneSongName);
@@ -1798,14 +1834,23 @@ export function createApp(o: {
       return;
     }
     if (overlay === "camp") {
-      // UI-47: 街（酒場）のキャンプの上に会話の箱が見えている間は、Enter / Space は箱のタップ（次へ・閉じる）
-      if (a === "confirm" && route === "town" && play.talk.isOpen()) {
+      // UI-47: 街（酒場）のキャンプとキャラクター画面（UI-59。M10。迷宮でも）の上に会話の箱が見えている間は、Enter / Space は箱のタップ（次へ・閉じる）
+      if (a === "confirm" && (route === "town" || characterOpen) && play.talk.isOpen()) {
         play.talk.tap();
         return;
       }
       // UI-33: 数字 n → n 番目の枠・行（空き枠は無視）、Enter → 先頭の押せる項目、Esc → やめる（top では戻る）
       const m = campInput();
       if (m === null) return;
+      // UI-59（M10）: キャラクター画面の ← / → は前後の人
+      if (a === "left" || a === "right") {
+        const next = campCycle(campPage, m, a === "right" ? 1 : -1);
+        if (next !== null) {
+          campPage = next;
+          syncControls();
+        }
+        return;
+      }
       const k = campKeyIndex(a, campEntries(campHost, campPage, m, strings));
       if (k !== null) play.controls.select(k);
       return;
@@ -1896,7 +1941,8 @@ export function createApp(o: {
    */
   const tapTalk = (): void => {
     if (isBusy() || chaining) return;
-    if (route !== "town" || (overlay !== null && overlay !== "camp")) return;
+    // UI-59（M10）: キャラクター画面の間は迷宮でも箱に語る
+    if ((route !== "town" && !characterOpen) || (overlay !== null && overlay !== "camp")) return;
     play.talk.tap();
   };
 

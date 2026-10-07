@@ -132,6 +132,13 @@ const MESSAGE_PAD_X = 4;
 const MESSAGE_PAD_Y = 2;
 const MESSAGE_MORE = 8;
 
+/**
+ * UI-59（M10）: キャラクター画面の行数（10px の行。上の余白 4 を足した CHARACTER_MIN_HEIGHT が layout.character の高さに入ること）。
+ * 行の中身は views/detail.ts
+ */
+export const CHARACTER_LINES = 27;
+export const CHARACTER_MIN_HEIGHT = 4 + MESSAGE_LINE_H * CHARACTER_LINES;
+
 /** パーティ欄（ui §2）。1 行 10px、上の余白は 2px（入らなければ詰める） */
 export const PARTY_ROW_H = 10;
 const PARTY_ROW_TOP = 2;
@@ -168,8 +175,13 @@ export type DungeonLayout = {
   partyRows: Rect[];
   /** overlay はビューとメッセージを合わせた範囲。title は題の行、area は地図本体（mapLayout に渡す寸法） */
   map: { overlay: Rect; title: Rect; area: Rect };
-  /** UI-53 / UI-59 キャンプと酒場のパネル（= ビュー領域。メッセージ窓とパーティ欄は見えたまま） */
+  /** UI-53 キャンプと酒場のパネル（= ビュー領域。メッセージ窓とパーティ欄は見えたまま） */
   camp: Rect;
+  /**
+   * UI-59（M10）: キャラクター画面（と酒場の図鑑）のパネル。ビューの上端から操作領域の上端まで（既定 y16..299 の 240×284。townLayout の book と同じ範囲）。
+   * 開いている間はパーティ欄とメッセージ窓を隠す（dungeon.ts の setCharacterOpen）
+   */
+  character: Rect;
   /** UI-56 の全滅の内訳の overlay。地図と同じくビューとメッセージを合わせた範囲 */
   wipe: Rect;
   /** UI-46 の履歴の画面。地図と同じ範囲で、title は題の行、list は縦スクロールの一覧 */
@@ -222,6 +234,7 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
       area: { x: overlay.x, y: overlay.y + MAP_TITLE_H, w: overlay.w, h: overlay.h - MAP_TITLE_H },
     },
     camp: { ...v },
+    character: { x: v.x, y: v.y, w: v.w, h: c.y - v.y },
     wipe: { ...overlay },
     history: {
       overlay: { ...overlay },
@@ -339,6 +352,8 @@ export function layoutWarnings(g: Regions, l: DungeonLayout): string[] {
   l.battleMember.forEach((r, i) => check(`battleMember[${i}]`, r, "controls"));
   check("autoStop", l.autoStop, "controls");
   l.campGrid.forEach((r, i) => check(`campGrid[${i}]`, r, "controls"));
+  // UI-59（M10）: キャラクター画面の 27 行が入るか
+  if (l.character.h < CHARACTER_MIN_HEIGHT) out.push(`ui.layout: character panel (height ${l.character.h}) is lower than ${CHARACTER_MIN_HEIGHT}`);
   if (l.message.lines < 1) out.push(`ui.layout: message region (height ${g.message.h}) has no text line`);
   l.partyRows.forEach((r, i) => check(`partyRows[${i}]`, r, "party"));
   return out;
