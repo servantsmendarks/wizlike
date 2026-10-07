@@ -15,7 +15,7 @@ import { findSituation, withRng } from "./helpers/dungeon";
 // 手組みの Floor（全セル corridor、全辺 wall）
 function makeFloor(w: number, h: number): Floor {
   const cells: Cell[] = [];
-  for (let i = 0; i < w * h; i++) cells.push({ kind: "corridor", n: "wall", e: "wall", s: "wall", w: "wall", roomId: null, eventId: null, trapId: null });
+  for (let i = 0; i < w * h; i++) cells.push({ kind: "corridor", n: "wall", e: "wall", s: "wall", w: "wall", roomId: null, eventId: null, trapId: null, chestTrapId: null });
   return { floor: 1, width: w, height: h, cells, rooms: [], stairsUp: { x: 0, y: 0 }, stairsDown: null, boss: null };
 }
 

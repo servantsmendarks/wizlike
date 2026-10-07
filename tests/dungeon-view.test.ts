@@ -238,7 +238,7 @@ describe("createDungeonSvg", () => {
 describe("visibleCellsOf と slotsFor の結合", () => {
   test("UI-20/DG-12 手組みの 5×5: 通路 2 マス、d1 で左に開き、d2 の正面が扉なら {cL0,cR0,lF1,cR1,cF2,cD2,cL2,cR2}", () => {
     const cells: Cell[] = [];
-    for (let i = 0; i < 25; i++) cells.push({ kind: "corridor", n: "wall", e: "wall", s: "wall", w: "wall", roomId: null, eventId: null, trapId: null });
+    for (let i = 0; i < 25; i++) cells.push({ kind: "corridor", n: "wall", e: "wall", s: "wall", w: "wall", roomId: null, eventId: null, trapId: null, chestTrapId: null });
     const f: Floor = { floor: 1, width: 5, height: 5, cells, rooms: [], stairsUp: { x: 2, y: 4 }, stairsDown: null, boss: null };
     // (2,4) から北へ (2,3)、(2,2)。(2,3) の西は (1,3) へ開く。(2,2) の北は扉（扉は遮る）
     setEdge(f, 2, 4, "N", "open");
@@ -253,7 +253,7 @@ describe("visibleCellsOf と slotsFor の結合", () => {
 
   test("UI-20/DG-12 手組みの 5×5: 2 マス先の下り階段と、左に開いた列の上り階段に記号が出る", () => {
     const cells: Cell[] = [];
-    for (let i = 0; i < 25; i++) cells.push({ kind: "corridor", n: "wall", e: "wall", s: "wall", w: "wall", roomId: null, eventId: null, trapId: null });
+    for (let i = 0; i < 25; i++) cells.push({ kind: "corridor", n: "wall", e: "wall", s: "wall", w: "wall", roomId: null, eventId: null, trapId: null, chestTrapId: null });
     const f: Floor = { floor: 1, width: 5, height: 5, cells, rooms: [], stairsUp: { x: 1, y: 3 }, stairsDown: { x: 2, y: 2 }, boss: null };
     setEdge(f, 2, 4, "N", "open");
     setEdge(f, 2, 3, "N", "open");

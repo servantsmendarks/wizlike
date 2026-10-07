@@ -13,7 +13,7 @@ import {
   setEdge,
   step,
 } from "../src/core/rules/dungeon-gen";
-import { floorOf, gossipCandidates, mapView, visibleCells, visibleCellsOf, visibleKnownTraps } from "../src/core/rules/dungeon";
+import { chestGenOf, floorOf, gossipCandidates, mapView, visibleCells, visibleCellsOf, visibleKnownTraps } from "../src/core/rules/dungeon";
 import { addIndex, removeIndex } from "../src/core/rules/field";
 import { battleMenu } from "../src/core/rules/combat";
 import { townMenu } from "../src/core/rules/town";
@@ -102,7 +102,7 @@ function trapLoss(s: GameState, id: string): number {
 // 手組みの Floor（全セル corridor、全辺 wall）
 function makeFloor(w: number, h: number): Floor {
   const cells: Cell[] = [];
-  for (let i = 0; i < w * h; i++) cells.push({ kind: "corridor", n: "wall", e: "wall", s: "wall", w: "wall", roomId: null, eventId: null, trapId: null });
+  for (let i = 0; i < w * h; i++) cells.push({ kind: "corridor", n: "wall", e: "wall", s: "wall", w: "wall", roomId: null, eventId: null, trapId: null, chestTrapId: null });
   return { floor: 1, width: w, height: h, cells, rooms: [], stairsUp: { x: 0, y: 0 }, stairsDown: null, boss: null };
 }
 
@@ -113,7 +113,7 @@ describe("dungeon.enter", () => {
     const s0 = newGame(1);
     const r = run(s0, ENTER_D01);
     const dive = r.state.dive!;
-    const f1 = generateDive(data.dungeons[0]!, data.config.dungeon, dive.diveSeed)[0]!;
+    const f1 = generateDive(data.dungeons[0]!, data.config.dungeon, dive.diveSeed, chestGenOf(data, "d01"))[0]!;
     // facing は N→E→S→W で最初の通れる辺
     const up = cellAt(f1, f1.stairsUp.x, f1.stairsUp.y);
     const facing = FACINGS.find((d) => edgeOf(up, d) !== "wall")!;
@@ -758,7 +758,8 @@ describe("オートマップ（DG-13）", () => {
     expect(Object.keys(s.dive!.explored)).toEqual(["1"]);
   });
 
-  test("DG-13/UI-24 mapView: 探索済みセルだけ、辺は生成のまま（通った扉も door）、trap/event/boss/room は plain、stairsUp/stairsDown は記号。dive が null なら null", () => {
+  // M11（DG-13 改）: 宝箱のセルは記号 chest（旧: plain）。宝箱は隠れた仕掛けではないため
+  test("DG-13/UI-24 mapView: 探索済みセルだけ、辺は生成のまま（通った扉も door）、trap/event/boss/room は plain、stairsUp/stairsDown/chest は記号。dive が null なら null", () => {
     expect(mapView(newGame(1), data)).toBeNull();
     const s0 = enterD01(1);
     const mv0 = mapView(s0, data)!;
@@ -778,11 +779,12 @@ describe("オートマップ（DG-13）", () => {
       for (const c of mv.cells) {
         const cell = cellAt(f, c.x, c.y);
         seenKinds.add(cell.kind);
-        const expected = cell.kind === "stairsUp" || cell.kind === "stairsDown" ? cell.kind : "plain";
+        const expected = cell.kind === "stairsUp" || cell.kind === "stairsDown" || cell.kind === "chest" ? cell.kind : "plain";
         expect(c.kind).toBe(expected);
         expect([c.n, c.e, c.s, c.w]).toEqual([cell.n, cell.e, cell.s, cell.w]);
       }
       expect(seenKinds.has("trap")).toBe(true);
+      expect(seenKinds.has("chest")).toBe(true);
       expect(seenKinds.has(floorNo === 1 ? "stairsDown" : "boss")).toBe(true);
     }
     // 通り抜けた扉も door のまま描く（UI-24）
@@ -844,7 +846,7 @@ describe("階段（DG-14, E3）", () => {
     s1.party[2]!.hp = 0;
     const r = run(s1, { type: "event.choose", optionId: "descend" }, dataWithRate(1, 1));
     const dive = r.state.dive!;
-    const floors = generateDive(data.dungeons[0]!, data.config.dungeon, dive.diveSeed);
+    const floors = generateDive(data.dungeons[0]!, data.config.dungeon, dive.diveSeed, chestGenOf(data, "d01"));
     expect(dive.floor).toBe(2);
     expect(dive.deepestFloor).toBe(2);
     expect(dive.pos).toEqual(s1.dive!.pos);
@@ -943,7 +945,7 @@ describe("階段（DG-14, E3）", () => {
     expect(rt.state.pendingChoice).toBeNull();
     // ascend
     const ra = run(r1.state, { type: "event.choose", optionId: "ascend" }, dataWithRate(1, 1));
-    const floors = generateDive(data.dungeons[0]!, data.config.dungeon, ra.state.dive!.diveSeed);
+    const floors = generateDive(data.dungeons[0]!, data.config.dungeon, ra.state.dive!.diveSeed, chestGenOf(data, "d01"));
     expect(ra.state.dive!.floor).toBe(1);
     expect(ra.state.dive!.pos).toEqual(floors[0]!.stairsDown);
     expect(ra.events).toEqual([

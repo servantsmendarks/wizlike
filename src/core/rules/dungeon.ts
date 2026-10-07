@@ -30,8 +30,9 @@ import {
   turnLeft,
   turnRight,
 } from "./dungeon-gen";
-import { floorOf, markExplored, visibleCellsOf } from "./floor";
-import { startBossEncounter, startRandomEncounter, tickPoisonStep } from "./combat";
+import { chestGenOf, floorOf, markExplored, visibleCellsOf } from "./floor";
+import { startAlarmEncounter, startBossEncounter, startRandomEncounter, tickPoisonStep } from "./combat";
+import { findCellChest } from "./chest";
 import { canAct } from "./combat-calc";
 import { offerExit, offerStairs, offerTeleporter, offerTrap } from "./choices";
 import { equipStats } from "./equip-stats";
@@ -41,7 +42,7 @@ import { loseSan } from "./san";
 import { enterBlockReason, returnToTown } from "./town";
 
 // M11 の作業 5: floorOf・visibleCellsOf・markExplored は floor.ts に移した（chest.ts の転移が使うため）。既存の import の先を変えないよう再び export する
-export { floorOf, markExplored, visibleCellsOf };
+export { chestGenOf, floorOf, markExplored, visibleCellsOf };
 
 /** DG-12。dive が null なら []。at を省くと dive の現在値。奥行きは config.dungeon.viewDepth */
 export function visibleCells(state: GameState, data: GameData, at?: ViewPoint): VisibleCell[] {
@@ -73,8 +74,23 @@ export function visibleKnownTraps(
 }
 
 /**
+ * DG-12 / UI-72（M11）: 視野（visibleCells と同じ視点・奥行き）のうち、実効のセルの kind が chest（開ける前の宝箱のセル。DG-23）の {depth, lane}
+ * （visibleCells の順）。dive が null なら []。宝箱は隠れた仕掛けではないので視野に出す（罠の有無は返さない）。
+ * visibleKnownTraps と同じく visibleCells とは別の問い合わせにする（VisibleCell の形は変えない）
+ */
+export function visibleChests(state: GameState, data: GameData, at?: ViewPoint): { depth: number; lane: -1 | 0 | 1 }[] {
+  const dive = state.dive;
+  if (dive === null) return [];
+  const vp: ViewPoint = at ?? { floor: dive.floor, pos: dive.pos, facing: dive.facing };
+  const f = floorOf(dive, data, vp.floor);
+  return visibleCellsOf(f, vp.pos, vp.facing, data.config.dungeon.viewDepth)
+    .filter((v) => cellAt(f, v.x, v.y).kind === "chest")
+    .map((v) => ({ depth: v.depth, lane: v.lane }));
+}
+
+/**
  * DG-13 / UI-24。探索済みセルだけを、実効の 4 辺で返す。記号は上り・下り階段と、察知した罠（knownTraps にあり、
- * 実効のセルの kind が trap のもの。M5.5）。dive が null なら null
+ * 実効のセルの kind が trap のもの。M5.5）と、開ける前の宝箱のセル（実効のセルの kind が chest。M11 の DG-13 改）。dive が null なら null
  */
 export function mapView(state: GameState, data: GameData): MapView | null {
   const dive = state.dive;
@@ -93,7 +109,9 @@ export function mapView(state: GameState, data: GameData): MapView | null {
           ? "stairsDown"
           : c.kind === "trap" && known.includes(i)
             ? "trap"
-            : "plain";
+            : c.kind === "chest"
+              ? "chest"
+              : "plain";
     cells.push({ x, y, kind, n: c.n, e: c.e, s: c.s, w: c.w });
   }
   return {
@@ -111,12 +129,13 @@ export function mapView(state: GameState, data: GameData): MapView | null {
  * UI-57（開発用、M5）: debug.warp の行き先。dive.floor の実効の構造（floorOf。処理済みのイベント・発動済みの罠は消えている）で、
  * 目標のセルを添字順に、各セルについて FACINGS（N,E,S,W）の順に隣 n = step(セル, d) を見て、盤内・n の kind が corridor か room・
  * セルの辺 d が通れるものを探し、最初の { pos: n, facing: opposite(d) } を返す。無ければ null。
- * 目標: event は kind event かつ eventId 非 null、trap は kind trap かつ trapId が pit / spinner、stairsDown は f.stairsDown のセル
+ * 目標: event は kind event かつ eventId 非 null、trap は kind trap かつ trapId が pit / spinner、stairsDown は f.stairsDown のセル、
+ * chest は kind chest（開ける前の宝箱のセル。M11）
  */
 export function warpTarget(
   state: GameState,
   data: GameData,
-  to: "event" | "trap" | "stairsDown",
+  to: "event" | "trap" | "stairsDown" | "chest",
 ): { pos: Pos; facing: Facing } | null {
   const f = floorOf(requireDive(state), data);
   const isTarget = (c: Cell, x: number, y: number): boolean => {
@@ -125,6 +144,8 @@ export function warpTarget(
         return c.kind === "event" && c.eventId !== null;
       case "trap":
         return c.kind === "trap" && (c.trapId === "pit" || c.trapId === "spinner");
+      case "chest":
+        return c.kind === "chest";
       case "stairsDown":
         // UI-57（M9）: 最下層（下り階段が無い）ではボスのセル（撃破の後はテレポーターが重なる）
         if (f.stairsDown === null) return f.boss !== null && f.boss.x === x && f.boss.y === y;
@@ -194,7 +215,7 @@ export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
   const { state, data } = ctx;
   const def = dungeonOf(data, dungeonId);
   const diveSeed = nextUint32(state.rng); // 迷宮の構造に使う乱数はこの 1 回だけ（DG-03）
-  const f = generateFloor(def, data.config.dungeon, diveSeed, 1, null);
+  const f = generateFloor(def, data.config.dungeon, diveSeed, 1, null, chestGenOf(data, dungeonId));
   const upCell = cellAt(f, f.stairsUp.x, f.stairsUp.y);
   const facing = FACINGS.find((d) => isPassable(edgeOf(upCell, d)));
   if (facing === undefined) throw new Error("enterDungeon: stairsUp has no exit");
@@ -293,7 +314,7 @@ function walkRegen(ctx: RuleContext): void {
 
 /**
  * 前進の 1 歩の続き（罠の後）。罠の察知で「進む」を選んだときもここから続ける。f は dive.floor の実効の構造。
- * 行動可能な者がいなければ何もしない → 階段・出口・テレポーター・ボス → イベント（DG-22）→ 遭遇判定。
+ * 行動可能な者がいなければ何もしない → 階段・出口・テレポーター・ボス → イベント（DG-22）→ 宝箱のセル（DG-24。M11）→ 遭遇判定。
  */
 function continueStep(ctx: RuleContext, f: Floor, cell: Cell): void {
   const { state } = ctx;
@@ -322,6 +343,12 @@ function continueStep(ctx: RuleContext, f: Floor, cell: Cell): void {
   // DG-22 / B11: イベントのセルは events.ts の手順で処理し、遭遇の d100 は振らない（処理後は floorOf が通常のセルに戻す）
   if (cell.kind === "event" && cell.eventId !== null) {
     startEvent(ctx, f, cell.eventId);
+    return;
+  }
+  // DG-24（M11）: 宝箱のセルは箱を置いて CB-60 の流れ（衝動・制止・掛け合い → chest.prompt）。遭遇の d100 は振らない。
+  // 開けた・転移で失った箱は clearedCells に入り floorOf が消す。放っておいた箱は残り、次に乗るとまた見つかる
+  if (cell.kind === "chest") {
+    findCellChest(ctx, cell, dive.pos, startAlarmEncounter);
     return;
   }
   rollEncounter(ctx, cell.roomId !== null);

@@ -6,7 +6,7 @@ import { chance, cloneRng, createRng, randInt, rollDice, rollDie, weightedIndex,
 import { statusPercent } from "../src/core/rules/combat-calc";
 import { chestRate, chestView, presentChest, rollChestTrap } from "../src/core/rules/chest";
 import { battleMenu, startAlarmEncounter } from "../src/core/rules/combat";
-import { floorOf, mapView, visibleCellsOf } from "../src/core/rules/dungeon";
+import { floorOf, mapView, visibleCellsOf, visibleChests } from "../src/core/rules/dungeon";
 import { cellAt, idx } from "../src/core/rules/dungeon-gen";
 import { effectiveStats, equipStats } from "../src/core/rules/equip-stats";
 import { impulseChance } from "../src/core/rules/events";
@@ -14,8 +14,8 @@ import { routeStepOk } from "../src/core/rules/pathfind";
 import { cloneState, makeContext, memberById } from "../src/core/state";
 import type { Character, ChestState, Command, GameEvent, GameState } from "../src/core/types";
 import { allInputs, dataWith, dived, eventsOf, exec, expectRejected, kindsOf, withBattle } from "./helpers/battle";
-import { data, expectKnownStringKeys, expectStateInvariants, loadFreshData, withChar } from "./helpers/core";
-import { withRng } from "./helpers/dungeon";
+import { data, expectKnownStringKeys, expectStateInvariants, loadFreshData, newGame, withChar } from "./helpers/core";
+import { findSituation, withRng } from "./helpers/dungeon";
 
 const OPEN: Command = { type: "chest.open" };
 const LEAVE: Command = { type: "chest.leave" };
@@ -1162,5 +1162,152 @@ describe("EV-70〜76 職業の掛け合い", () => {
     const rd = exec(s, inspect("c3"), trig);
     expect(member(rd.state, "c3").life).toBe("dead");
     expect(kindsOf(rd.events)).not.toContain("message:rivalry.thief_chest.fail");
+  });
+});
+
+describe("DG-24 宝箱のセルに乗る（M11 の作業 7）", () => {
+  /** 品を引かず、衝動（cap 0）と職業の掛け合いを止め、遭遇率 0 のデータ（生成は実データと同じ） */
+  const D = chestData((x) => {
+    x.rivalries = [];
+    x.config.events.cap = 0;
+    for (const def of x.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+  });
+  const MOVE: Command = { type: "dungeon.move" };
+  const AROUND: Command = { type: "dungeon.turn", dir: "around" };
+  /** d01 1 階の遭遇表の敵の level の最大（IT-53 / DG-24） */
+  const LV1 = Math.max(...data.dungeons[0]!.encounterTable["1"]!.map((e) => data.monsters.find((m) => m.id === e.monster)!.level));
+
+  /** 宝箱のセル（pred で罠を選ぶ）へ open の辺で 1 歩で入れる立ち位置（シード 1 から順に探す） */
+  function atChest(pred: (trap: string | null) => boolean = () => true) {
+    const r = findSituation((c) => c.kind === "chest" && pred(c.chestTrapId));
+    return { ...r, s: withRng(r.state, 7), cell: cellAt(r.f, r.a.target.x, r.a.target.y) };
+  }
+
+  test("DG-24/CB-60 乗ると遭遇の d100 を振らずに箱を置く: moved → chestFound{cell} → chest.found.cell → chest.prompt。罠は生成の chestTrapId、危険度はその罠の値、Lv はその階の遭遇表の最大、inRoom は roomId", () => {
+    const { s, a, cell } = atChest((t) => t !== null);
+    const r = exec(s, MOVE, D);
+    expect(r.state.rng).toEqual(s.rng); // 遭遇の chance も衝動・掛け合いも引かない
+    expect(r.events).toEqual([
+      { kind: "moved", pos: a.target, facing: a.facing },
+      { kind: "chestFound", source: "cell" },
+      { kind: "message", key: "chest.found.cell" },
+      { kind: "message", key: "chest.prompt" },
+    ]);
+    expect(chestOf(r.state)).toEqual({
+      source: "cell",
+      cell: { floor: 1, x: a.target.x, y: a.target.y },
+      inRoom: cell.roomId !== null,
+      trapId: cell.chestTrapId,
+      danger: data.chestTraps.find((t) => t.id === cell.chestTrapId)!.danger,
+      level: LV1,
+      finding: null,
+      rivalry: null,
+    });
+    expect(chestView(r.state, D)!.source).toBe("cell");
+    expectStateInvariants(r.state);
+    // 箱がある間はほかのコマンドを断る（CB-60）
+    expectRejected(r.state, AROUND, "chest pending", D);
+  });
+
+  test("DG-24/CB-66 放っておいた箱は残る（clearedCells に入れない）。一歩出て戻るとまた見つかり、罠は同じ", () => {
+    const { s, a, cell } = atChest((t) => t !== null);
+    const found = exec(s, MOVE, D).state;
+    const left = exec(found, LEAVE, D);
+    expect(left.events).toEqual([
+      { kind: "message", key: "chest.left" },
+      { kind: "chestEnd", result: "left" },
+    ]);
+    expect(left.state.dive!.clearedCells).toEqual(s.dive!.clearedCells);
+    expect(cellAt(floorOf(left.state.dive!, D), a.target.x, a.target.y).kind).toBe("chest");
+    // 一歩出る（遭遇の chance を 1 回振る）→ 戻る（宝箱のセルなので振らない）
+    const out = exec(exec(left.state, AROUND, D).state, MOVE, D).state;
+    expect(chestOf(out)).toBeNull();
+    const back = exec(exec(out, AROUND, D).state, MOVE, D);
+    expect(kindsOf(back.events)).toContain("chestFound");
+    expect(chestOf(back.state)!.trapId).toBe(cell.chestTrapId);
+  });
+
+  test("DG-24/CB-64 disarmedChests にあるセルの箱は罠なしで置き、危険度は生成の罠の値を残す（IT-56）", () => {
+    const { s, a, cell } = atChest((t) => t !== null);
+    s.dive!.disarmedChests = [{ floor: 1, x: a.target.x, y: a.target.y }];
+    const r = exec(s, MOVE, D);
+    expect(chestOf(r.state)!.trapId).toBeNull();
+    expect(chestOf(r.state)!.danger).toBe(data.chestTraps.find((t) => t.id === cell.chestTrapId)!.danger);
+  });
+
+  test("DG-24/CB-65/DG-12/DG-13 開けた箱は clearedCells に入り、floorOf は部屋・通路（chestTrapId null）に戻す。視野（visibleChests）と地図（mapView の chest）から消え、踏み直すと遭遇判定に戻る", () => {
+    const { s, a, cell } = atChest();
+    s.dive!.disarmedChests = [{ floor: 1, x: a.target.x, y: a.target.y }]; // 罠なしで開ける
+    s.dive!.explored["1"] = [...new Set([...(s.dive!.explored["1"] ?? []), idx(floorOf(s.dive!, D), a.target.x, a.target.y)])].sort((p, q) => p - q);
+    // 開ける前: 正面（depth 1, lane 0）に箱が見え、地図の記号は chest
+    expect(visibleChests(s, D)).toContainEqual({ depth: 1, lane: 0 });
+    expect(mapView(s, D)!.cells.find((c) => c.x === a.target.x && c.y === a.target.y)!.kind).toBe("chest");
+    const found = exec(s, MOVE, D).state;
+    const r = exec(found, OPEN, D);
+    expect(r.events.at(-1)).toEqual({ kind: "chestEnd", result: "opened" });
+    expect(r.state.dive!.clearedCells).toContainEqual({ floor: 1, x: a.target.x, y: a.target.y });
+    const c2 = cellAt(floorOf(r.state.dive!, D), a.target.x, a.target.y);
+    expect(c2.kind).toBe(cell.roomId !== null ? "room" : "corridor");
+    expect(c2.chestTrapId).toBeNull();
+    expect(mapView(r.state, D)!.cells.find((c) => c.x === a.target.x && c.y === a.target.y)!.kind).toBe("plain");
+    // 一歩出て、振り返ると箱は見えない。踏み直すと遭遇の chance を 1 回振り、箱は出ない
+    const out = exec(exec(r.state, AROUND, D).state, MOVE, D).state;
+    const turned = exec(out, AROUND, D).state;
+    expect(visibleChests(turned, D)).not.toContainEqual({ depth: 1, lane: 0 });
+    const m = cloneRng(turned.rng);
+    chance(m, 0);
+    const back = exec(turned, MOVE, D);
+    expect(back.state.rng).toEqual(m);
+    expect(kindsOf(back.events)).not.toContain("chestFound");
+  });
+
+  test("DG-12/UI-72 visibleChests は視野（visibleCells と同じ視点・奥行き）のうち kind chest のセルの {depth, lane}（visibleCells の順）。at を渡すとその視点。dive が null なら []", () => {
+    let seen = 0;
+    for (let seed = 1; seed <= 3; seed++) {
+      const s0 = dived(seed);
+      const f = floorOf(s0.dive!, data);
+      for (let y = 0; y < f.height; y++) {
+        for (let x = 0; x < f.width; x++) {
+          for (const d of ["N", "E", "S", "W"] as const) {
+            const want = visibleCellsOf(f, { x, y }, d, data.config.dungeon.viewDepth)
+              .filter((v) => cellAt(f, v.x, v.y).kind === "chest")
+              .map((v) => ({ depth: v.depth, lane: v.lane }));
+            expect(visibleChests(s0, data, { floor: 1, pos: { x, y }, facing: d })).toEqual(want);
+            seen += want.length;
+          }
+        }
+      }
+    }
+    expect(seen).toBeGreaterThan(0);
+    expect(visibleChests(newGame(1), data)).toEqual([]);
+  });
+
+  test("DG-24/EV-16 宝箱のセルでも衝動判定をする（キリの d100 ≤ 29 なら chestImpulse{c3}）", () => {
+    const Di = chestData((x) => {
+      x.rivalries = [];
+      for (const def of x.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    });
+    const k = findK((m) => randInt(m, 1, 100) <= P_KIRI);
+    const { state } = atChest();
+    const r = exec(withRng(state, k), MOVE, Di);
+    expect(r.events.slice(1, 4)).toEqual([
+      { kind: "chestFound", source: "cell" },
+      { kind: "message", key: "chest.found.cell" },
+      { kind: "chestImpulse", actorId: "c3" },
+    ]);
+  });
+
+  test("UI-57 debug.warp chest: 開ける前の宝箱のセルの手前へ移ってそちらを向く（message debug.warp.chest）。前進で箱が見つかる。宝箱のセルが無ければ debug.warp.none", () => {
+    const s = dived(1);
+    const r = exec(s, { type: "debug.warp", to: "chest" }, D);
+    expect(kindsOf(r.events)).toEqual(["moved", "message:debug.warp.chest"]);
+    const f = floorOf(r.state.dive!, D);
+    const ahead = { x: r.state.dive!.pos.x + { N: 0, E: 1, S: 0, W: -1 }[r.state.dive!.facing], y: r.state.dive!.pos.y + { N: -1, E: 0, S: 1, W: 0 }[r.state.dive!.facing] };
+    expect(cellAt(f, ahead.x, ahead.y).kind).toBe("chest");
+    expect(kindsOf(exec(r.state, MOVE, D).events)).toContain("chestFound");
+    const none = chestData((x) => {
+      for (const def of x.dungeons) def.chestsPerFloor = [0, 0];
+    });
+    expect(kindsOf(exec(dived(1), { type: "debug.warp", to: "chest" }, none).events)).toEqual(["message:debug.warp.none"]);
   });
 });

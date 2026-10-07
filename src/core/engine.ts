@@ -363,7 +363,7 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
         return reject(state, "debug.warp", "not in dungeon");
       }
       const to = (command as { to?: unknown }).to;
-      if (to !== "event" && to !== "trap" && to !== "stairsDown") return reject(state, "debug.warp", "bad target");
+      if (to !== "event" && to !== "trap" && to !== "stairsDown" && to !== "chest") return reject(state, "debug.warp", "bad target");
       const ctx = makeContext(cloneState(state), data);
       warp(ctx, to);
       return finish(ctx);

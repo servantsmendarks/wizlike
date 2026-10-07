@@ -6,27 +6,44 @@ import type { GameData } from "../data/index";
 import { randInt } from "../rng";
 import { dungeonOf } from "../state";
 import type { Dive, Edge, Facing, Floor, Pos, RuleContext, VisibleCell } from "../types";
-import { cellAt, edgeOf, generateFloor, idx, inBounds, step, turnLeft, turnRight } from "./dungeon-gen";
+import { cellAt, type ChestGen, edgeOf, generateFloor, idx, inBounds, step, turnLeft, turnRight } from "./dungeon-gen";
 import { addExplored } from "./field";
 
 /**
+ * DG-23 / CB-61（M11）: 宝箱の罠の抽選の材料（generateFloor の chestGen と、ドロップの箱の rollChestTrap が使う）。
+ * noTrapChance は config.chest、weights はそのダンジョンの chestTrapDangerWeights、trapsByDanger は chest-traps.json を危険度 1..4 ごとにデータの順で
+ */
+export function chestGenOf(data: GameData, dungeonId: string): ChestGen {
+  const def = dungeonOf(data, dungeonId);
+  return {
+    noTrapChance: data.config.chest.noTrapChance,
+    weights: def.chestTrapDangerWeights,
+    trapsByDanger: def.chestTrapDangerWeights.map((_, i) => data.chestTraps.filter((t) => t.danger === i + 1).map((t) => t.id)),
+  };
+}
+
+/**
  * 潜行中の階の実効の構造。generateDive(...)[floorNo-1] に、その階の
- * clearedCells（kind を roomId !== null ? "room" : "corridor" に、eventId と trapId を null に）を重ねる。
+ * clearedCells（kind を roomId !== null ? "room" : "corridor" に、eventId・trapId・chestTrapId を null に）を重ねる。
+ * 宝箱のセル（DG-23）は、開けた・転移で失ったものが clearedCells に入って消える。罠が無くなった箱（disarmedChests）は重ねない
+ * （chestTrapId は生成のまま。箱を置くとき DG-24 が disarmedChests を見て罠なしにし、危険度は生成の罠の値を残す）。
  * 最下層でボスを倒していれば（dive.bossDefeated）、ボスのセルを teleporter に重ねる（DG-32。前進で入ると街へ戻るかを尋ねる）。
  * 辺は生成のまま（扉は通り抜けても door。DG-10）。
  */
 export function floorOf(dive: Dive, data: GameData, floorNo: number = dive.floor): Floor {
   const def = dungeonOf(data, dive.dungeonId);
   if (!Number.isInteger(floorNo) || floorNo < 1 || floorNo > def.floors) throw new Error(`floorOf: bad floor ${floorNo}`);
+  const gen = chestGenOf(data, dive.dungeonId);
   // generateDive(...)[floorNo-1] と同じ。下の階は上の階に依存しない（DG-06 は上の階の stairsDown だけ）ので、floorNo までで止める
-  let f = generateFloor(def, data.config.dungeon, dive.diveSeed, 1, null);
-  for (let n = 2; n <= floorNo; n++) f = generateFloor(def, data.config.dungeon, dive.diveSeed, n, f.stairsDown);
+  let f = generateFloor(def, data.config.dungeon, dive.diveSeed, 1, null, gen);
+  for (let n = 2; n <= floorNo; n++) f = generateFloor(def, data.config.dungeon, dive.diveSeed, n, f.stairsDown, gen);
   for (const c of dive.clearedCells) {
     if (c.floor !== floorNo) continue;
     const cell = cellAt(f, c.x, c.y);
     cell.kind = cell.roomId !== null ? "room" : "corridor";
     cell.eventId = null;
     cell.trapId = null;
+    cell.chestTrapId = null;
   }
   if (floorNo === def.floors && dive.bossDefeated && f.boss !== null) cellAt(f, f.boss.x, f.boss.y).kind = "teleporter";
   return f;

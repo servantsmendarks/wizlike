@@ -133,7 +133,7 @@ export type Progress = {
 /** DG-04: 辺の種別 */
 export type Edge = "wall" | "door" | "open";
 /** DG-04: セル種別 */
-export type CellKind = "corridor" | "room" | "stairsUp" | "stairsDown" | "boss" | "teleporter" | "event" | "trap";
+export type CellKind = "corridor" | "room" | "stairsUp" | "stairsDown" | "boss" | "teleporter" | "event" | "trap" | "chest";
 /**
  * 生成結果のセル 1 つ。4 辺は各セルが持ち、隣のセルと同じ値を二重に持つ（DG-04 の文面どおり）。
  * 辺の書き込みは必ず dungeon-gen.ts の setEdge（両側を同時に書く）を通す。
@@ -150,6 +150,11 @@ export type Cell = {
   eventId: string | null;
   /** kind が trap のときだけ罠の id。それ以外は null（DG-20） */
   trapId: TrapId | null;
+  /**
+   * M11（DG-04 / DG-23）: kind が chest のときだけ意味を持つ、生成時に引いた宝箱の罠（chest-traps.json の id。罠なしは null）。
+   * それ以外の kind では null（floorOf が処理済みのセルを戻すときも null にする）
+   */
+  chestTrapId: string | null;
 };
 export type Room = { x: number; y: number; w: number; h: number };
 /** 1 階分の生成結果。cells は行優先（添字 = y * width + x） */
@@ -270,8 +275,11 @@ export type VisibleCell = {
   right: Edge;
   stairs: "up" | "down" | null;
 };
-/** UI-24 の記号。察知した罠（dive.knownTraps。M5.5）は trap。察知していない罠・イベント・ボス・部屋・通路はすべて plain（地図で明かさない） */
-export type MapCellKind = "plain" | "stairsUp" | "stairsDown" | "trap";
+/**
+ * UI-24 の記号。察知した罠（dive.knownTraps。M5.5）は trap。開ける前の宝箱のセル（DG-23。M11）は chest。
+ * 察知していない罠・イベント・ボス・部屋・通路はすべて plain（地図で明かさない）
+ */
+export type MapCellKind = "plain" | "stairsUp" | "stairsDown" | "trap" | "chest";
 /** 辺は絶対方位（扉は通り抜けた後も door。DG-10） */
 export type MapCell = { x: number; y: number; kind: MapCellKind; n: Edge; e: Edge; s: Edge; w: Edge };
 /** DG-13 / UI-24。cells は探索済みセルだけ（添字の昇順） */
@@ -480,7 +488,7 @@ export type Command =
   /** UI-57（開発用、M5）: リーダー以外の alive の SAN を 1 段下げる（境の 1 つ下、錯乱の次は 0）。保留中も受け付ける。乱数は使わない */
   | { type: "debug.sanDown" }
   /** UI-57（開発用、M5）: その階のイベント・罠・下り階段のセルの手前へ移り、そちらを向く。行き先が無ければ message だけ。乱数は使わない */
-  | { type: "debug.warp"; to: "event" | "trap" | "stairsDown" }
+  | { type: "debug.warp"; to: "event" | "trap" | "stairsDown" | "chest" }
   /** UI-57（開発用、M5.5）: adventureTurns に config.town.tavernEventTurns を足す。party が空（title）だけ rejected no party。保留中・戦闘中・街も受け付ける。乱数は使わない */
   | { type: "debug.addTurns" }
   /** UI-57（開発用、M7）: alive の全員の SAN を sanCapOf + 10 にする（士気が無くても）。party が空（title）だけ rejected no party。保留中・戦闘中・街も受け付ける。乱数は使わない */

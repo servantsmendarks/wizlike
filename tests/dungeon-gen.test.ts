@@ -23,16 +23,19 @@ import {
   turnRight,
 } from "../src/core/rules/dungeon-gen";
 import type { CellKind, Floor } from "../src/core/types";
+import { chestGenOf } from "../src/core/rules/floor";
 import { data } from "./helpers/core";
 
 const SEEDS = Array.from({ length: 200 }, (_, i) => i + 1);
 const CFG: Config["dungeon"] = data.config.dungeon;
 const DEFS: DungeonDef[] = ["d01", "d02"].map((id) => data.dungeons.find((d) => d.id === id)!);
-const KINDS: readonly CellKind[] = ["corridor", "room", "stairsUp", "stairsDown", "boss", "teleporter", "event", "trap"];
+const KINDS: readonly CellKind[] = ["corridor", "room", "stairsUp", "stairsDown", "boss", "teleporter", "event", "trap", "chest"];
+/** DG-23（M11）: 宝箱の罠の抽選の材料（id から実データで組む。盤の寸法を変えた def も id は d01 / d02 のまま） */
+const GEN = (def: DungeonDef) => chestGenOf(data, def.id);
 
 /** d01/d02 × 200 シードの生成結果（テスト間で共有。読むだけ） */
 const ALL: { def: DungeonDef; seed: number; floors: Floor[] }[] = [];
-for (const def of DEFS) for (const seed of SEEDS) ALL.push({ def, seed, floors: generateDive(def, CFG, seed) });
+for (const def of DEFS) for (const seed of SEEDS) ALL.push({ def, seed, floors: generateDive(def, CFG, seed, GEN(def)) });
 
 function* eachFloor(): Generator<{ def: DungeonDef; seed: number; f: Floor; floors: Floor[] }> {
   for (const { def, seed, floors } of ALL) for (const f of floors) yield { def, seed, f, floors };
@@ -98,7 +101,7 @@ describe("dungeon-gen: 幾何の補助", () => {
   });
 
   test("DG-04 setEdge は両側を同時に書き、盤の外へは書かない。cellAt は盤外で Error", () => {
-    const f = generateFloor({ ...DEFS[0]!, width: 5, height: 5, rooms: [0, 0], floors: 1, events: [], traps: [] }, CFG, 1, 1, null);
+    const f = generateFloor({ ...DEFS[0]!, width: 5, height: 5, rooms: [0, 0], floors: 1, events: [], traps: [] }, CFG, 1, 1, null, GEN(DEFS[0]!));
     setEdge(f, 2, 2, "E", "door");
     expect(cellAt(f, 2, 2).e).toBe("door");
     expect(cellAt(f, 3, 2).w).toBe("door");
@@ -137,11 +140,16 @@ describe("dungeon-gen: d01/d02 × 200 シード × 全階", () => {
     }
   });
 
-  test("DG-04 kind は 8 種のどれか。eventId は kind=event のときだけ、trapId は kind=trap のときだけ非 null", () => {
+  // M11（DG-04 改）: kind に chest を足して 9 種（旧 8 種）。chestTrapId は kind=chest のときだけ非 null になりうる（罠なしの箱は null）
+  test("DG-04 kind は 9 種のどれか。eventId は kind=event のときだけ、trapId は kind=trap のときだけ非 null、chestTrapId は kind=chest 以外では null", () => {
     const bad: string[] = [];
     for (const { def, seed, f } of eachFloor()) {
       f.cells.forEach((c, i) => {
-        const ok = KINDS.includes(c.kind) && (c.eventId !== null) === (c.kind === "event") && (c.trapId !== null) === (c.kind === "trap");
+        const ok =
+          KINDS.includes(c.kind) &&
+          (c.eventId !== null) === (c.kind === "event") &&
+          (c.trapId !== null) === (c.kind === "trap") &&
+          (c.kind === "chest" || c.chestTrapId === null);
         if (!ok) bad.push(`${def.id} seed ${seed} floor ${f.floor} cell ${i}`);
       });
     }
@@ -236,7 +244,7 @@ describe("dungeon-gen: d01/d02 × 200 シード × 全階", () => {
     for (const { def, seed, f } of eachFloor()) {
       const where = `${def.id} seed ${seed} floor ${f.floor}`;
       // ループ化の前（部屋・迷路・扉）までは乱数の消費が同じなので、[0,0] で作った階の行き止まりがループ化の直前の行き止まり
-      const f0 = generateFloor(def, NO_BRAID, seed, f.floor, f.floor === 1 ? null : f.stairsUp);
+      const f0 = generateFloor(def, NO_BRAID, seed, f.floor, f.floor === 1 ? null : f.stairsUp, GEN(def));
       const t = treeCounts(f);
       const t0 = treeCounts(f0);
       if (t.doors !== 0 || t0.doors !== 0) bad.push(`${where}: door between corridors`);
@@ -275,7 +283,7 @@ describe("dungeon-gen: d01/d02 × 200 シード × 全階", () => {
     const straightCells = (bias: number): number => {
       let n = 0;
       for (const seed of SEEDS.slice(0, 50)) {
-        for (const f of generateDive(DEFS[0]!, { ...NO_BRAID, straightBias: bias }, seed)) {
+        for (const f of generateDive(DEFS[0]!, { ...NO_BRAID, straightBias: bias }, seed, GEN(DEFS[0]!))) {
           for (const c of f.cells) {
             if (c.roomId !== null) continue;
             const open = FACINGS.filter((d) => isPassable(edgeOf(c, d))).join("");
@@ -368,12 +376,12 @@ describe("dungeon-gen: 決定性と境界", () => {
   test("DG-03 決定性: 同じ diveSeed で generateDive は deep-equal。JSON 往復でも toEqual。generateFloor(…, 2, floors[0].stairsDown) を単独で呼んでも generateDive の [1] と等しい", () => {
     for (const def of DEFS) {
       for (const seed of [1, 7, 12345, 0xffffffff]) {
-        const a = generateDive(def, CFG, seed);
-        const b = generateDive(def, CFG, seed);
+        const a = generateDive(def, CFG, seed, GEN(def));
+        const b = generateDive(def, CFG, seed, GEN(def));
         expect(a).toEqual(b);
         expect(JSON.parse(JSON.stringify(a))).toEqual(a);
-        expect(generateFloor(def, CFG, seed, 2, a[0]!.stairsDown)).toEqual(a[1]);
-        expect(generateFloor(def, CFG, seed, 1, null)).toEqual(a[0]);
+        expect(generateFloor(def, CFG, seed, 2, a[0]!.stairsDown, GEN(def))).toEqual(a[1]);
+        expect(generateFloor(def, CFG, seed, 1, null, GEN(def))).toEqual(a[0]);
       }
     }
   });
@@ -387,8 +395,8 @@ describe("dungeon-gen: 決定性と境界", () => {
       let equal = 0;
       for (let seed = 1; seed <= 20; seed++) {
         const want = randInt(createRng(floorSeed(seed, 1)), rmin, rmax);
-        expect(generateDive(def, small, seed)[0]!.rooms.length).toBe(want);
-        const n = generateDive(def, CFG, seed)[0]!.rooms.length;
+        expect(generateDive(def, small, seed, GEN(def))[0]!.rooms.length).toBe(want);
+        const n = generateDive(def, CFG, seed, GEN(def))[0]!.rooms.length;
         expect(n).toBeLessThanOrEqual(want);
         if (n === want) equal += 1;
       }
@@ -397,7 +405,7 @@ describe("dungeon-gen: 決定性と境界", () => {
   });
 
   test("DG-03 回帰: d01・diveSeed 12345 の 1 階の stairsUp・stairsDown・rooms.length と 2 階の boss", () => {
-    const fs = generateDive(DEFS[0]!, CFG, 12345);
+    const fs = generateDive(DEFS[0]!, CFG, 12345, GEN(DEFS[0]!));
     expect({
       up: fs[0]!.stairsUp,
       down: fs[0]!.stairsDown,
@@ -417,25 +425,25 @@ describe("dungeon-gen: 決定性と境界", () => {
         [big, CFG],
         [big, hugeRooms],
       ] as const) {
-        const fs = generateDive(def, cfg, seed);
+        const fs = generateDive(def, cfg, seed, GEN(def));
         for (const f of fs) {
           expect(checkEdges(f)).toEqual([]);
           expect(distancesFrom(f, f.stairsUp).every((d) => d >= 0)).toBe(true);
         }
       }
-      expect(generateDive(tiny, CFG, seed)[0]!.rooms).toEqual([]);
-      expect(generateDive(big, hugeRooms, seed)[0]!.rooms).toEqual([]);
+      expect(generateDive(tiny, CFG, seed, GEN(tiny))[0]!.rooms).toEqual([]);
+      expect(generateDive(big, hugeRooms, seed, GEN(big))[0]!.rooms).toEqual([]);
     }
   });
 
   test("DG-22 置き場所の候補が足りずにイベントを置けない盤（5×5 にイベント 30 個）は Error。罠の不足は置ける分だけ置いて続ける", () => {
     const events = Array.from({ length: 30 }, (_, i) => `ev${i}`);
     const crowded: DungeonDef = { ...DEFS[0]!, width: 5, height: 5, rooms: [0, 0], floors: 1, events };
-    expect(() => generateFloor(crowded, CFG, 1, 1, null)).toThrow(/no cell for event/);
+    expect(() => generateFloor(crowded, CFG, 1, 1, null, GEN(crowded))).toThrow(/no cell for event/);
     const manyTraps: DungeonDef = { ...DEFS[0]!, width: 5, height: 5, rooms: [0, 0], floors: 1, events: [], trapsPerFloor: [30, 30] };
     let total = 0;
     for (const seed of SEEDS) {
-      const f = generateFloor(manyTraps, CFG, seed, 1, null);
+      const f = generateFloor(manyTraps, CFG, seed, 1, null, GEN(manyTraps));
       const n = f.cells.filter((c) => c.kind === "trap").length;
       expect(n).toBeLessThan(30);
       total += n;
@@ -451,7 +459,7 @@ describe("dungeon-gen: 決定性と境界", () => {
     const cfg: Config["dungeon"] = { ...CFG, roomSize: [3, 3] };
     let firstFailed = 0;
     for (const seed of SEEDS) {
-      const f = generateFloor(def, cfg, seed, 1, null);
+      const f = generateFloor(def, cfg, seed, 1, null, GEN(def));
       expect(f.rooms.length).toBe(2);
       // 最初の配置（want を引いた直後の 1 つ目の部屋）が中央寄りだった数を数える
       const rng = createRng(floorSeed(seed, 1));
@@ -478,5 +486,93 @@ describe("dungeon-gen: 決定性と境界", () => {
         }
       }
     }
+  });
+});
+
+describe("dungeon-gen: 宝箱のセル（DG-23。M11）", () => {
+  /** 宝箱のセルの位置（添字の昇順）と罠 */
+  const chestsOf = (f: Floor): { i: number; trap: string | null }[] =>
+    f.cells.flatMap((c, i) => (c.kind === "chest" ? [{ i, trap: c.chestTrapId }] : []));
+
+  test("DG-23 個数は chestsPerFloor（[1,3]）の範囲で、ボスの階にも置く。置き場所は行き止まりか部屋の中（階段・ボス・イベント・罠と重ならない）。罠は chest-traps.json の id か null で、危険度は chestTrapMaxDanger 以下（d01・d02 × 200 シード）", () => {
+    const trapDanger = new Map(data.chestTraps.map((t) => [t.id, t.danger]));
+    const seen = new Map<string, Set<string>>();
+    for (const { def, seed, f } of eachFloor()) {
+      const where = `${def.id} seed ${seed} floor ${f.floor}`;
+      const cs = chestsOf(f);
+      expect(cs.length, where).toBeGreaterThanOrEqual(def.chestsPerFloor[0]);
+      expect(cs.length, where).toBeLessThanOrEqual(def.chestsPerFloor[1]);
+      for (const { i, trap } of cs) {
+        const x = i % f.width;
+        const y = Math.floor(i / f.width);
+        const c = cellAt(f, x, y);
+        expect(c.roomId !== null || isDeadEnd(f, x, y), where).toBe(true);
+        expect(c.eventId).toBeNull();
+        expect(c.trapId).toBeNull();
+        if (trap !== null) {
+          expect(trapDanger.get(trap), `${where} ${trap}`).toBeLessThanOrEqual(def.chestTrapMaxDanger);
+          expect(def.chestTrapDangerWeights[trapDanger.get(trap)! - 1]).toBeGreaterThan(0);
+        }
+        const set = seen.get(def.id) ?? new Set<string>();
+        set.add(String(trap));
+        seen.set(def.id, set);
+      }
+    }
+    // 罠なし（noTrapChance 30）と、上限までの各危険度が実際に出る
+    for (const def of DEFS) {
+      const s = seen.get(def.id)!;
+      expect(s.has("null"), def.id).toBe(true);
+      for (let d = 1; d <= def.chestTrapMaxDanger; d++) {
+        expect(data.chestTraps.some((t) => t.danger === d && s.has(t.id)), `${def.id} danger ${d}`).toBe(true);
+      }
+    }
+  });
+
+  test("DG-23 (8) は (7) までの生成を変えない: chestsPerFloor [0,0] なら宝箱のセルは無く、[1,3] の階の宝箱のセルを部屋・通路に戻したものと一致する（既存の回帰値はそのまま）", () => {
+    for (const def of DEFS) {
+      const none: DungeonDef = { ...def, chestsPerFloor: [0, 0] };
+      for (const seed of SEEDS.slice(0, 50)) {
+        const a = generateDive(def, CFG, seed, GEN(def));
+        const b = generateDive(none, CFG, seed, GEN(none));
+        a.forEach((f, n) => {
+          expect(chestsOf(b[n]!)).toEqual([]);
+          const back = structuredClone(f);
+          for (const c of back.cells) {
+            if (c.kind !== "chest") continue;
+            c.kind = c.roomId !== null ? "room" : "corridor";
+            c.chestTrapId = null;
+          }
+          expect(back, `${def.id} seed ${seed} floor ${n + 1}`).toEqual(b[n]);
+        });
+      }
+    }
+  });
+
+  test("DG-23 消費順: 個数 randInt(chestsPerFloor) の 1 回の後に、(7) の残りの候補の先頭から箱ごとに CB-61 の罠。個数だけを変えると、少ない方の箱は多い方の箱の先頭と同じ位置・同じ罠（[1,1] ⊂ [2,2] ⊂ [3,3]）", () => {
+    const with_ = (n: number): DungeonDef => ({ ...DEFS[1]!, chestsPerFloor: [n, n] });
+    let differs = 0;
+    for (const seed of SEEDS.slice(0, 50)) {
+      const [f1, f2, f3] = [1, 2, 3].map((n) => generateFloor(with_(n), CFG, seed, 1, null, GEN(DEFS[1]!)));
+      const c1 = chestsOf(f1!);
+      const c2 = chestsOf(f2!);
+      const c3 = chestsOf(f3!);
+      expect([c1.length, c2.length, c3.length]).toEqual([1, 2, 3]);
+      for (const c of c1) expect(c2).toContainEqual(c);
+      for (const c of c2) expect(c3).toContainEqual(c);
+      if (c3[0]!.trap !== c3[1]!.trap || c3[1]!.trap !== c3[2]!.trap) differs += 1;
+    }
+    expect(differs).toBeGreaterThan(0);
+  });
+
+  test("DG-23/CB-61 罠の抽選の材料は chestGen: noTrapChance 100 なら全部罠なし。noTrapChance 0・重み [0,1,0,0] なら全部が危険度 2 の罠（データの順から randInt）", () => {
+    const d2 = data.chestTraps.filter((t) => t.danger === 2).map((t) => t.id);
+    const allNull = { ...GEN(DEFS[0]!), noTrapChance: 100 };
+    const onlyTwo = { ...GEN(DEFS[0]!), noTrapChance: 0, weights: [0, 1, 0, 0] };
+    const got = new Set<string | null>();
+    for (const seed of SEEDS.slice(0, 50)) {
+      for (const f of generateDive(DEFS[0]!, CFG, seed, allNull)) for (const c of chestsOf(f)) expect(c.trap).toBeNull();
+      for (const f of generateDive(DEFS[0]!, CFG, seed, onlyTwo)) for (const c of chestsOf(f)) got.add(c.trap);
+    }
+    expect([...got].sort()).toEqual([...d2].sort());
   });
 });

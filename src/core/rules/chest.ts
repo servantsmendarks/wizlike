@@ -5,6 +5,7 @@
 //
 // 乱数の消費順（state.rng。テストの鏡で固定する）:
 //   勝利（CB-51 / CB-61）: chance(chestPct) →（当たれば）[chance(noTrapChance) →（罠ありなら）weightedIndex(危険度の重み) → randInt(その危険度の罠)]
+//   宝箱のセル（DG-24。findCellChest）: 罠は生成時に階の rng で引いてある（DG-23）ので、ここでは引かずに「見つけた」へ進む
 //   見つけた（presentChest。衝動あり）: [EV-16 衝動: 対象者（盗賊）ごとに並び順で（錯乱なら randInt(0,3)）→（p > 0 なら）d100]
 //     →（行動者がいて制止者がいれば）[EV-25 制止: 1d10 制止者 → 1d10 行動者] →（開けるなら）[開ける]
 //     →（箱が残り戦闘中でなければ）[EV-71 掛け合い: 対象が 2 人以上なら chance(d100) →（発生すれば）対象者ごとに並び順で contest.dice]
@@ -15,14 +16,15 @@
 //     status は並び順に chance 1 回。既にかかっている者は振らない。san は乱数なし。alarm は遭遇の編成と開始（CB-03 / CB-04。startTableEncounter と同じ順）、
 //     teleport は行き先の randInt（DG-25））
 import type { ChestTrapDef, GameData, RivalryDef } from "../data/index";
-import { chance, randInt, rollDice, weightedIndex } from "../rng";
+import { chance, randInt, rollDice } from "../rng";
 import { classOf, dungeonOf, memberById, personalityOf } from "../state";
-import type { Character, ChestState, ChestView, DiceRow, Dive, GameState, RuleContext } from "../types";
+import type { Cell, Character, ChestState, ChestView, DiceRow, Dive, GameState, Pos, RuleContext } from "../types";
 import { canAct, partyGoldLuck, withGoldLuck } from "./combat-calc";
+import { drawChestTrap } from "./dungeon-gen";
 import { effectiveStats, equipStats } from "./equip-stats";
 import { decideImpulse, pickStopper, rollRestrain } from "./events";
 import { aliveMembers, damageMembers, gainGold } from "./field";
-import { teleportParty } from "./floor";
+import { chestGenOf, teleportParty } from "./floor";
 import { rollChestItems } from "./loot";
 import { applySanValue, gainSan, loseSan } from "./san";
 import { tryInflictStatus } from "./status";
@@ -62,12 +64,14 @@ function trapName(data: GameData, id: string): string {
  * その危険度の罠（データの順）から randInt で 1 つ
  */
 export function rollChestTrap(rng: GameState["rng"], data: GameData, dungeonId: string): { trapId: string | null; danger: number } {
-  if (chance(rng, data.config.chest.noTrapChance)) return { trapId: null, danger: 0 };
-  const danger = weightedIndex(rng, dungeonOf(data, dungeonId).chestTrapDangerWeights) + 1;
-  const list = data.chestTraps.filter((t) => t.danger === danger);
-  const t = list[randInt(rng, 0, list.length - 1)];
-  if (t === undefined) throw new Error(`rollChestTrap: no trap of danger ${danger}`);
-  return { trapId: t.id, danger };
+  // 宝箱のセルの生成（DG-23。階の rng）と同じ関数で引く（M11 の作業 7 で dungeon-gen.ts の drawChestTrap に寄せた。順は不変）
+  return drawChestTrap(rng, chestGenOf(data, dungeonId));
+}
+
+/** IT-53 / DG-24: 宝箱のセル（と debug.chest）の中身の Lv。その階の encounterTable に載る敵の level の最大（表が空なら 1） */
+export function floorChestLevel(data: GameData, dungeonId: string, floor: number): number {
+  const table = dungeonOf(data, dungeonId).encounterTable[String(floor)] ?? [];
+  return Math.max(1, ...table.map((e) => data.monsters.find((m) => m.id === e.monster)?.level ?? 1));
 }
 
 function signed(n: number): string {
@@ -140,6 +144,32 @@ export function rollDropChest(ctx: RuleContext, inRoom: boolean, level: number):
   const t = rollChestTrap(state.rng, data, dive.dungeonId);
   dive.chest = { source: "drop", cell: null, inRoom, trapId: t.trapId, danger: t.danger, level, finding: null, rivalry: null };
   return true;
+}
+
+/**
+ * DG-24（M11）: 宝箱のセルに乗った。dive.chest に宝箱のセルの箱を置いて presentChest（衝動あり）を呼ぶ。
+ * 罠は生成時の chestTrapId（disarmedChests にあれば罠なし）、危険度は生成時の罠の値（解除した箱でも残す。IT-56）、
+ * 中身の Lv は floorChestLevel、inRoom は roomId !== null。cell は dive.floor の実効の構造のセル（kind chest）、pos はその位置。
+ * 乱数はここでは引かない（presentChest の衝動・制止・掛け合いが引く）
+ */
+export function findCellChest(ctx: RuleContext, cell: Cell, pos: Pos, startAlarm: StartAlarm): void {
+  const { state, data } = ctx;
+  const dive = requireDive(state);
+  if (cell.kind !== "chest") throw new Error("findCellChest: not a chest cell");
+  const ref = { floor: dive.floor, x: pos.x, y: pos.y };
+  const disarmed = dive.disarmedChests.some((c) => c.floor === ref.floor && c.x === ref.x && c.y === ref.y);
+  const danger = cell.chestTrapId === null ? 0 : chestTrapOf(data, cell.chestTrapId).danger;
+  dive.chest = {
+    source: "cell",
+    cell: ref,
+    inRoom: cell.roomId !== null,
+    trapId: disarmed ? null : cell.chestTrapId,
+    danger,
+    level: floorChestLevel(data, dive.dungeonId, dive.floor),
+    finding: null,
+    rivalry: null,
+  };
+  presentChest(ctx, { impulse: true, startAlarm });
 }
 
 /** presentChest の指定。impulse が偽なら衝動判定（EV-16）も職業の掛け合い（EV-71）もしない（debug.chest。乱数を使わない） */
@@ -516,8 +546,7 @@ export function leaveChest(ctx: RuleContext): void {
 export function placeDebugChest(ctx: RuleContext, trapId: string | null, inRoom: boolean): void {
   const { state, data } = ctx;
   const dive = requireDive(state);
-  const table = dungeonOf(data, dive.dungeonId).encounterTable[String(dive.floor)] ?? [];
-  const level = Math.max(1, ...table.map((e) => data.monsters.find((m) => m.id === e.monster)?.level ?? 1));
+  const level = floorChestLevel(data, dive.dungeonId, dive.floor);
   const danger = trapId === null ? 0 : chestTrapOf(data, trapId).danger;
   dive.chest = { source: "drop", cell: null, inRoom, trapId, danger, level, finding: null, rivalry: null };
   presentChest(ctx, { impulse: false });

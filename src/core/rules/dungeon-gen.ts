@@ -1,4 +1,4 @@
-// 迷宮の構造の生成（DG-02〜06, DG-20, DG-22）。RuleContext を取らない純粋関数で、state.rng には触れない。
+// 迷宮の構造の生成（DG-02〜06, DG-20, DG-22, DG-23）。RuleContext を取らない純粋関数で、state.rng には触れない。
 // 階 n の乱数は createRng(floorSeed(diveSeed, n)) だけから作る（DG-03）。キャッシュもモジュールの状態も持たない。
 //
 // generateFloor の乱数の消費順（この順を変えると同じ diveSeed から別の迷宮になる。tests/dungeon-gen.test.ts の回帰値も落ちる）:
@@ -16,8 +16,11 @@
 //   (6) 下り階段 / ボス: BFS 距離が最大のセルから randInt(0, far-1) を 1 回。
 //   (7) イベントと罠: 候補の shuffleInPlace（i = len-1..1 で randInt(0, i)）、罠の個数 randInt(trapsPerFloor) を 1 回、
 //       罠ごとに種類 randInt(0, traps-1)（traps が空なら引かない）。
+//   (8) 宝箱のセル（DG-23。M11）: 個数 randInt(chestsPerFloor) を 1 回（[0,0] でも引く）、(7) の残りの候補の先頭から置く箱ごとに
+//       drawChestTrap（chance(noTrapChance) →（罠ありなら）weightedIndex(危険度の重み) → randInt(その危険度の罠)。CB-61 と同じ順）。
+//       候補が尽きたら、その分は置かず罠も引かない。(7) までの消費は変えない（既存の回帰値はそのまま）。
 import type { Config, DungeonDef } from "../data/index";
-import { createRng, nextFloat, randInt, type RngState } from "../rng";
+import { chance, createRng, nextFloat, randInt, weightedIndex, type RngState } from "../rng";
 import type { Cell, Edge, Facing, Floor, Pos, Room } from "../types";
 
 /** 時計回り。randInt(0,3) の添字と対応する */
@@ -355,8 +358,38 @@ function posOf(f: Floor, i: number): Pos {
   return { x, y: (i - x) / f.width };
 }
 
-/** 1 階分を生成する。upPos は 2 階以降の上り階段の座標（前の階の stairsDown。DG-06）、1 階は null */
-export function generateFloor(def: DungeonDef, cfg: Config["dungeon"], diveSeed: number, floor: number, upPos: Pos | null): Floor {
+/**
+ * DG-23 / CB-61（M11）: 宝箱の罠の抽選の材料。組み立ては floor.ts の chestGenOf(data, dungeonId) の 1 か所。
+ * - noTrapChance: config.chest.noTrapChance
+ * - weights: dungeons[].chestTrapDangerWeights（危険度 1..4。上限より上の段は 0）
+ * - trapsByDanger: 危険度 d の罠の id（chest-traps.json のデータの順）を [d − 1] に
+ */
+export type ChestGen = { noTrapChance: number; weights: readonly number[]; trapsByDanger: readonly (readonly string[])[] };
+
+/**
+ * CB-61: 宝箱の罠の抽選（ドロップの箱は state.rng、宝箱のセルは階の rng）。chance(noTrapChance) が当たれば罠なし（危険度 0）。
+ * 外れたら weightedIndex(weights) で危険度、その危険度の罠から randInt で 1 つ
+ */
+export function drawChestTrap(rng: RngState, gen: ChestGen): { trapId: string | null; danger: number } {
+  if (chance(rng, gen.noTrapChance)) return { trapId: null, danger: 0 };
+  const di = weightedIndex(rng, gen.weights);
+  const list = gen.trapsByDanger[di] ?? [];
+  if (list.length === 0) throw new Error(`drawChestTrap: no trap of danger ${di + 1}`);
+  return { trapId: list[randInt(rng, 0, list.length - 1)]!, danger: di + 1 };
+}
+
+/**
+ * 1 階分を生成する。upPos は 2 階以降の上り階段の座標（前の階の stairsDown。DG-06）、1 階は null。
+ * chestGen は宝箱のセルの罠の抽選の材料（DG-23。個数は def.chestsPerFloor）
+ */
+export function generateFloor(
+  def: DungeonDef,
+  cfg: Config["dungeon"],
+  diveSeed: number,
+  floor: number,
+  upPos: Pos | null,
+  chestGen: ChestGen,
+): Floor {
   const rng = createRng(floorSeed(diveSeed, floor));
   const W = def.width;
   const H = def.height;
@@ -364,7 +397,7 @@ export function generateFloor(def: DungeonDef, cfg: Config["dungeon"], diveSeed:
   if (!Number.isInteger(floor) || floor < 1 || floor > def.floors) throw new Error(`generateFloor: bad floor ${floor}`);
   const cells: Cell[] = [];
   for (let i = 0; i < W * H; i++) {
-    cells.push({ kind: "corridor", n: "wall", e: "wall", s: "wall", w: "wall", roomId: null, eventId: null, trapId: null });
+    cells.push({ kind: "corridor", n: "wall", e: "wall", s: "wall", w: "wall", roomId: null, eventId: null, trapId: null, chestTrapId: null });
   }
   const f: Floor = { floor, width: W, height: H, cells, rooms: [], stairsUp: { x: 0, y: 0 }, stairsDown: null, boss: null };
   const [rmin, rmax] = def.rooms ?? cfg.defaultRooms;
@@ -436,17 +469,26 @@ export function generateFloor(def: DungeonDef, cfg: Config["dungeon"], diveSeed:
     c.trapId = t;
   }
 
+  // (8) 宝箱のセル（DG-23。M11）。ボスの階も対象。候補が尽きた分は置かない（罠も引かない）
+  const nChests = randInt(rng, def.chestsPerFloor[0], def.chestsPerFloor[1]);
+  for (let i = 0; i < nChests; i++) {
+    const c = cand.shift();
+    if (c === undefined) break;
+    c.kind = "chest";
+    c.chestTrapId = drawChestTrap(rng, chestGen).trapId;
+  }
+
   const bad = checkEdges(f);
   if (bad.length > 0) throw new Error(`generateFloor: inconsistent edges: ${bad.slice(0, 5).join("; ")}`);
   return f;
 }
 
 /** 1..floors を順に生成する。階 n の upPos は階 n-1 の stairsDown */
-export function generateDive(def: DungeonDef, cfg: Config["dungeon"], diveSeed: number): Floor[] {
+export function generateDive(def: DungeonDef, cfg: Config["dungeon"], diveSeed: number, chestGen: ChestGen): Floor[] {
   const out: Floor[] = [];
   let up: Pos | null = null;
   for (let n = 1; n <= def.floors; n++) {
-    const f = generateFloor(def, cfg, diveSeed, n, up);
+    const f = generateFloor(def, cfg, diveSeed, n, up, chestGen);
     out.push(f);
     up = f.stairsDown;
   }

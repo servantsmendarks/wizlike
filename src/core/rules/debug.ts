@@ -64,7 +64,7 @@ export function sanOver(ctx: RuleContext): void {
  * debug.warp（M5）: warpTarget の位置へ移り、目標を向く。行き先が無ければ message debug.warp.none だけ（state は変えない）。
  * あれば pos / facing を書き換え → 視野を explored に足す → moved → message debug.warp.<to>。遭遇・毒・罠は起こさない
  */
-export function warp(ctx: RuleContext, to: "event" | "trap" | "stairsDown"): void {
+export function warp(ctx: RuleContext, to: "event" | "trap" | "stairsDown" | "chest"): void {
   const { state, data } = ctx;
   const dive = state.dive;
   if (dive === null) throw new Error("warp: not in dungeon");
