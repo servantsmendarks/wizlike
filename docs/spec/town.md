@@ -58,7 +58,7 @@
   - wipes: 全滅処理（`wipe.ts` performWipe）。
   - 戦績の画面の値は core の `endingRecordView(state, data)`（`EndingRecord`）: 上の 5 項目、経過 `turns`（`adventureTurns`。TW-12）、敵の図鑑（`bestiary` のうち `identified` が真の種類 / `data.monsters` の数。遭遇しただけの未鑑定は数えない。宿の噂話 TW-15 で鑑定した分は入る）、品の図鑑（`uniqueBook` のキー数 / `data.uniques` の数）。state を変えない。
   - 酒場の「戦績」（U-2）を出すかは `townMenu().canShowRecord`（= `progress.conquered`。DG-36）。
-- TW-36 開始の語り（M12.5。2026-10-09）: `game.new`（おすすめ・自分で作るの両方。CH-05 / CH-06）は `screen{town}` の後に、message `opening.speech.1`、`opening.speech.2`、… を `strings.json` に続き番号のキーがある限り順に出す（1 から数え、途切れた先は使わない。行の数はコードに持たず、データで決まる。差し込みは無い）。`opening.speech.1` は読み込み時の必須キー（無ければ起動を止める）で、2 行目以降は任意。乱数は使わない。語るのは一度だけ（`game.new` は 1 ゲームに 1 回しか通らないので、「一度だけ」の state の欄は持たない）。`town.enter` の語り・SAN の回復・救済の判定はしない（TW-30 のまま）。表示は街の会話の箱（UI-47。route が town なので narrator が箱に振り分ける。`screen{town}` の後に来るので carry ではない）。ログ（UI-46）には入る。語りの途中で再読み込みしても出し直さない（SV-50）。音の cue は無い。
+- TW-36 開始の語り（M12.5。2026-10-09）: `game.new`（おすすめ・自分で作るの両方。CH-05 / CH-06）は `screen{town}` の後に、message `opening.speech.1`、`opening.speech.2`、… を `strings.json` に続き番号のキーがある限り順に出す（1 から数え、途切れた先は使わない。行の数はコードに持たず、データで決まる。差し込みは無い）。`opening.speech.1` は読み込み時の必須キー（無ければ起動を止める）で、2 行目以降は任意。乱数は使わない。語るのは一度だけ（`game.new` は 1 ゲームに 1 回しか通らないので、「一度だけ」の state の欄は持たない）。`town.enter` の語り・SAN の回復・救済の判定はしない（TW-30 のまま）。表示は街の会話の箱（UI-47。route が town なので narrator が箱に振り分ける。`screen{town}` の後に来るので carry ではない）。語りの間の街の画面（帯・ヘッダー・街の絵）は `screen{town}` の時点で最終 state で描く（UI-52 の所持金の例外）。ログ（UI-46）には入る。語りの途中で再読み込みしても出し直さない（SV-50）。音の cue は無い。
 
 ## 2. 全滅処理
 
