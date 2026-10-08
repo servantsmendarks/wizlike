@@ -305,6 +305,8 @@ export function createPlayer(deps: PlayerDeps): Player {
   let carry: string[] = [];
   /** UI-73（M12）: この再生で受けた ending の record（再生の終わりに ending.show へ渡す） */
   let endingRecord: EndingRecord | null = null;
+  /** UI-73（M12。未定-35）: この再生で wipe を受けたか（全滅の経路では結末の語りの後で待たない）。再生の開始で偽に戻す */
+  let wipeSeen = false;
 
   const isSkip = (): boolean => deps.settings().skipAnimations || rushed || beatRush;
   /** UI-47（M10.5）: 拍の外で、判定の箱を会話の箱と一緒に消すか（deps.message.keepsDice） */
@@ -523,12 +525,16 @@ export function createPlayer(deps: PlayerDeps): Player {
       // UI-56: 内訳の overlay を開き、待たずに先へ（後続の街に入る処理は overlay の下で再生する）。
       // 拍の中で受けたときの待ちと拍の外への切り替えは play のループ（screen の leave と同じ所）でする
       cx.skip = isSkip();
+      wipeSeen = true;
       deps.wipe.show(ev.penalty);
     },
     async ending(ev, cx) {
-      // UI-73（M12）: 預かるだけ。戦績の画面は再生の終わりに開く（締めの語りを迷宮の窓・会話の箱で先に読ませる）
+      // UI-73（M12）: 預かるだけ。戦績の画面は再生の終わりに開く（締めの語りを迷宮の窓・会話の箱で先に読ませる）。
+      // 未定-35（2026-10-08）: ending は締めの語りの最後の行の直後に来る。ここで ▼ を出してタップを 1 回待つ（演出スキップでも待つ。§3-9）。
+      // 全滅の経路（この再生で wipe を受けた）は窓が内訳に覆われ「街へ」が別にあるので待たない
       cx.skip = isSkip();
       endingRecord = ev.record;
+      if (!wipeSeen) await waitTap();
     },
     async battleEnd(_ev, cx) {
       cx.skip = isSkip();
@@ -605,6 +611,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       taps = 0;
       marked = false;
       endingRecord = null;
+      wipeSeen = false;
       leaveBeats();
       soundStart();
       const cx: PlayCx = { cursor: cursorOfDive(before), skip: isSkip(), screen: before.screen };

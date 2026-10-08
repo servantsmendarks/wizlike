@@ -477,7 +477,7 @@ export function createApp(o: {
     },
     wipe: { show: (p) => openWipe(p) },
     // UI-73（M12）: 戦績は再生の終わりに開く（全滅の内訳が開いていれば「街へ」の後）
-    ending: { show: (r) => openEnding(r) },
+    ending: { show: (r) => openEnding(r, true) },
     penaltyTable: play.penaltyTable,
     battleEnded: () => onBattleEnded(),
     inputClosed: () => lowerInput(),
@@ -1945,15 +1945,17 @@ export function createApp(o: {
     if (endingQueued !== null) {
       const r = endingQueued;
       endingQueued = null;
-      openEnding(r);
+      openEnding(r, true);
     }
   };
 
   /**
    * UI-73（M12）: 戦績の画面を開く（再生の終わりの ending.show と、酒場の「戦績」）。値は core の EndingRecord だけで描く。
-   * 全滅の内訳が開いていれば預かり、「街へ」（closeWipe）の後に開く
+   * 全滅の内訳が開いていれば預かり、「街へ」（closeWipe）の後に開く。
+   * 未定-33（2026-10-08）: read は結末の経路（再生の終わり・「街へ」の後）。開いた時点で締めの語りを読了扱いにし、会話の箱の控えを解いて閉じる
+   * （戦績の下の 3 行の箱は空。閉じた後に街の箱に出し直さない）。酒場の「戦績」は read 偽（箱の中身を壊さない）
    */
-  const openEnding = (r: EndingRecord): void => {
+  const openEnding = (r: EndingRecord, read = false): void => {
     if (overlay === "wipe") {
       endingQueued = r;
       return;
@@ -1962,6 +1964,7 @@ export function createApp(o: {
     if (overlay === "camp") closeCamp(false);
     if (overlay === "history") closeHistory();
     repeater.release();
+    if (read) play.talk.flush();
     overlay = "ending";
     play.ending.render(formatEndingRecord(r, strings));
     play.showEnding(true);

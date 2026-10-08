@@ -2614,4 +2614,75 @@ describe("UI-73 戦績の画面の再生（M12）", () => {
     expect(names(log).filter((m) => ["wipe.show", "screens.sync", "ending.show"].includes(m))).toEqual(["wipe.show", "screens.sync", "ending.show"]);
     vi.useRealTimers();
   });
+
+  for (const skipAnimations of [false, true]) {
+    test(`UI-73/UI-45（未定-35）帰還の列: 締めの語りの最後の行の後（ending）で ▼ を出し（演出スキップ ${skipAnimations ? "ON でも待ち、点滅だけ省く" : "OFF は点滅"}）、Player.tap() で解くまで街の画面・sync・戦績を出さない`, async () => {
+      const { deps, log } = fakeDeps({ skipAnimations });
+      delete deps.beat; // 既定の掛け金（Player.tap() が解く）
+      const events: GameEvent[] = [
+        { kind: "message", key: "town.enter" },
+        { kind: "message", key: "ending.speech.1" },
+        { kind: "message", key: "ending.speech.2" },
+        { kind: "message", key: "ending.speech.3" },
+        { kind: "ending", record },
+        { kind: "sanChanged", id: "c1", delta: 1, san: 10 },
+        { kind: "screen", to: "town" },
+      ];
+      const player = createPlayer(deps);
+      let done = false;
+      const p = player.play(events, stateWith(diveAt(1, 1, "N")), stateWith(null)).then(() => {
+        done = true;
+      });
+      const waiting = (): boolean => {
+        const last = log.map((e) => e.m).lastIndexOf("message.say");
+        return last >= 0 && log.slice(last).some((e) => e.m === "message.setMore" && e.a.length === 2 && e.a[0] === true);
+      };
+      for (let i = 0; i < 1000 && !waiting(); i++) await Promise.resolve();
+      expect(waiting()).toBe(true);
+      // ▼ は最後の行（speech.3）の後。点滅は演出スキップ OFF のときだけ
+      expect(log.filter((e) => e.m === "message.say")).toHaveLength(4);
+      expect(log.filter((e) => e.m === "message.setMore" && e.a.length === 2).at(-1)?.a).toEqual([true, !skipAnimations]);
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+      expect(done).toBe(false);
+      expect(names(log)).not.toContain("party.setSan");
+      expect(names(log)).not.toContain("screens.show");
+      expect(names(log)).not.toContain("screens.sync");
+      expect(names(log)).not.toContain("ending.show");
+      player.tap();
+      await p;
+      const ms = names(log).filter((m) => ["party.setSan", "screens.show", "screens.sync", "ending.show"].includes(m));
+      expect(ms).toEqual(["party.setSan", "screens.show", "screens.sync", "ending.show"]);
+      expect(log.filter((e) => e.m === "ending.show")).toEqual([{ m: "ending.show", a: [record] }]);
+    });
+  }
+
+  test("UI-73/UI-56（未定-35）全滅の列（wipe → town.enter → speech → ending → screen）では ending で待たない（beat.waitTap も setMore(true, blink) も出ない。演出スキップの真偽とも）", async () => {
+    for (const skipAnimations of [false, true]) {
+      const { deps, log } = fakeDeps({ skipAnimations });
+      const events: GameEvent[] = [
+        { kind: "wipe", penalty },
+        { kind: "message", key: "town.enter" },
+        { kind: "message", key: "ending.speech.1" },
+        { kind: "ending", record },
+        { kind: "screen", to: "town" },
+      ];
+      await createPlayer(deps).play(events, stateWith(diveAt(1, 1, "N")), stateWith(null));
+      expect(names(log), String(skipAnimations)).not.toContain("beat.waitTap");
+      expect(log.some((e) => e.m === "message.setMore" && e.a.length === 2 && e.a[0] === true), String(skipAnimations)).toBe(false);
+      expect(names(log).filter((m) => ["wipe.show", "screens.sync", "ending.show"].includes(m))).toEqual(["wipe.show", "screens.sync", "ending.show"]);
+    }
+  });
+
+  test("UI-73（未定-35）wipe を受けた印は再生の開始で消える（全滅の再生の次の帰還の再生では ending で待つ）", async () => {
+    const { deps, log } = fakeDeps({ skipAnimations: true });
+    const player = createPlayer(deps);
+    await player.play([{ kind: "wipe", penalty }, { kind: "screen", to: "town" }], stateWith(diveAt(1, 1, "N")), stateWith(null));
+    expect(names(log)).not.toContain("beat.waitTap");
+    await player.play(
+      [{ kind: "message", key: "ending.speech.1" }, { kind: "ending", record }, { kind: "screen", to: "town" }],
+      stateWith(diveAt(1, 1, "N")),
+      stateWith(null),
+    );
+    expect(names(log).filter((m) => m === "beat.waitTap")).toEqual(["beat.waitTap"]);
+  });
 });

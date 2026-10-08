@@ -849,15 +849,18 @@ describe("入力と Command", () => {
     expect(app).toContain("onTap(play.talk.el, () => tapTalk());");
   });
 
-  test("UI-73/UI-56/SV-50/TW-35（M12）戦績の画面: 再生の終わりの ending.show と酒場の「戦績」（core の endingRecordView）で openEnding。全滅の内訳が開いていれば預かり、「街へ」（closeWipe）の直後に開く。操作領域は「閉じる」（ending.dismiss）。再開では出さず、預かりも捨てる（ソースの検査）", () => {
+  test("UI-73/UI-56/SV-50/TW-35（M12）戦績の画面: 再生の終わりの ending.show と酒場の「戦績」（core の endingRecordView）で openEnding。全滅の内訳が開いていれば預かり、「街へ」（closeWipe）の直後に開く。操作領域は「閉じる」（ending.dismiss）。再開では出さず、預かりも捨てる。結末の経路（再生の終わり・「街へ」の後）だけ開く時点で会話の箱を flush する（未定-33。ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
-    expect(app).toContain("ending: { show: (r) => openEnding(r) },");
+    expect(app).toContain("ending: { show: (r) => openEnding(r, true) },");
     expect(app).toMatch(/case "record":\s*openEnding\(endingRecordView\(state, data\)\);\s*return;/);
-    const open = /const openEnding = \(r: EndingRecord\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    const open = /const openEnding = \(r: EndingRecord, read = false\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(open).toMatch(/if \(overlay === "wipe"\) \{\s*endingQueued = r;\s*return;\s*\}/);
-    expect(open).toMatch(/overlay = "ending";\s*play\.ending\.render\(formatEndingRecord\(r, strings\)\);\s*play\.showEnding\(true\);\s*syncControls\(\);/);
+    // 未定-33（2026-10-08）: 結末の経路（read）だけ、overlay を ending にする直前に会話の箱の控えを解いて閉じる（読了扱い）。酒場の「戦績」は read 偽
+    expect(open).not.toBe("");
+    expect(open).toMatch(/if \(read\) play\.talk\.flush\(\);\s*overlay = "ending";\s*play\.ending\.render\(formatEndingRecord\(r, strings\)\);\s*play\.showEnding\(true\);\s*syncControls\(\);/);
+    expect(open.match(/play\.talk\./g)).toHaveLength(1);
     const closeW = /const closeWipe = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
-    expect(closeW).toMatch(/syncControls\(\);\s*if \(endingQueued !== null\) \{\s*const r = endingQueued;\s*endingQueued = null;\s*openEnding\(r\);\s*\}/);
+    expect(closeW).toMatch(/syncControls\(\);\s*if \(endingQueued !== null\) \{\s*const r = endingQueued;\s*endingQueued = null;\s*openEnding\(r, true\);\s*\}/);
     const closeE = /const closeEnding = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(closeE).toMatch(/overlay = null;\s*play\.showEnding\(false\);\s*syncControls\(\);/);
     expect(closeE).not.toContain("play.talk.");
