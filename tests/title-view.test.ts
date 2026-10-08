@@ -4,6 +4,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { createFileButton, downloadText, exportFileName } from "../src/presenter/file-io";
 import { tapSpecOf } from "../src/presenter/input/tap";
 import { TITLE_HINT, TITLE_PICTURE } from "../src/presenter/layout";
+import { formatMessage } from "../src/presenter/views/message";
+import { textUnits } from "../src/presenter/views/party-band";
 import { TOWN_PICTURE_IDS } from "../src/presenter/views/town-picture";
 import { buildRecord } from "../src/save/record";
 import { createSaveService } from "../src/save/saves";
@@ -49,7 +51,7 @@ async function sampleList(): Promise<GameListEntry[]> {
   return r.entries;
 }
 
-describe("タイトルの一覧（UI-50 / SV-12）", () => {
+describe("タイトルの一覧（UI-50 / SV-12 / SV-21）", () => {
   test("UI-50/SV-12 list は一覧の行（updatedAt の降順）→ 新しく始める → 設定 → 読み込み の 1 本のリスト", async () => {
     const list = await sampleList();
     expect(list.map((e) => [e.gameId, e.status])).toEqual([
@@ -101,6 +103,36 @@ describe("タイトルの一覧（UI-50 / SV-12）", () => {
     expect(titleNotice(LIST, list, SIZE, S)).toBe("");
     expect(titleNotice({ kind: "game", gameId: "b" }, list, SIZE, S)).toBe(`${LEADER}　生存4/6　踏破1`);
     expect(titleNotice({ kind: "game", gameId: "d" }, list, SIZE, S)).toBe(S["title.rowBroken"]);
+  });
+
+  test("UI-50/SV-21（M12）制覇した記録は 1 行目を title.rowConquered で描く（新しすぎる版も同じ）。制覇していない・古い記録は title.row のまま", async () => {
+    const mem = createMemoryBackend();
+    const won = newGame(1);
+    won.progress.clearedDungeons = ["d01", "d02", "d03"];
+    won.progress.conquered = true;
+    await mem.put(buildRecord("w", 9, T2, SCHEMA, won));
+    await mem.put(buildRecord("n", 3, T1, SCHEMA + 1, won));
+    // M12 より前の記録（summary に conquered が無い）
+    const old = buildRecord("o", 2, T1 - 1000, SCHEMA, newGame(1));
+    const { conquered: _drop, ...oldSummary } = old.summary;
+    mem.raw("o", { ...old, summary: oldSummary });
+    const saves = createSaveService({ backend: mem, now: () => 0, newId: () => "z", schemaVersion: SCHEMA, maxGames: data.config.save.maxGames });
+    const r = await saves.list();
+    if (!r.ok) throw new Error("list failed");
+    const [w, n, o] = r.entries;
+    expect([w!.gameId, n!.gameId, o!.gameId]).toEqual(["w", "n", "o"]);
+    expect(titleRowLabels(w!, SIZE, S)).toEqual([`${LEADER}　生存6/6　踏破3　制覇`, "2026/12/31 23:59"]);
+    expect(titleRowLabels(n!, SIZE, S)).toEqual([`${LEADER}　生存6/6　踏破3　制覇`, S["title.rowTooNew"]]);
+    expect(titleRowLabels(o!, SIZE, S)).toEqual([`${LEADER}　生存6/6　踏破0`, "2026/01/05 03:07"]);
+    expect(titleNotice({ kind: "game", gameId: "w" }, r.entries, SIZE, S)).toBe(`${LEADER}　生存6/6　踏破3　制覇`);
+  });
+
+  test("UI-50（M12）制覇の行は最大の値（6 字の名前・生存 6/6・踏破 99）でも一覧の行の幅 224px（全角 8px で 28 字 = 56 単位）に収まる", () => {
+    const S6 = "アアアアアア";
+    expect(S6.length).toBe(data.config.creation.nameMaxLength);
+    const line = formatMessage(S["title.rowConquered"]!, { leader: S6, alive: SIZE, size: SIZE, cleared: 99 });
+    expect(line.endsWith("制覇")).toBe(true);
+    expect(textUnits(line)).toBeLessThanOrEqual(56);
   });
 });
 

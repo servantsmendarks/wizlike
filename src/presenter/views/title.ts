@@ -152,12 +152,13 @@ const tr = (strings: Strings, k: string): string => strings[k] ?? k;
 
 /**
  * SV-12: 一覧の行の 2 行。1 行目 リーダー名・生存 n/size・踏破数、2 行目 最終更新日時。
- * 新しすぎる版は 2 行目を title.rowTooNew にする。壊れた記録は summary が空の仮の値なので、1 行目を title.rowBroken、2 行目を空にする
+ * 新しすぎる版は 2 行目を title.rowTooNew にする。壊れた記録は summary が空の仮の値なので、1 行目を title.rowBroken、2 行目を空にする。
+ * UI-50 / SV-21（M12）: summary.conquered（progress.conquered の写し。判定は core）が真なら 1 行目を title.rowConquered で描く
  */
 export function titleRowLabels(entry: GameListEntry, size: number, strings: Strings): [string, string] {
   if (entry.status === "broken") return [tr(strings, "title.rowBroken"), ""];
   const s = entry.summary;
-  const line1 = formatMessage(tr(strings, "title.row"), { leader: s.leaderName, alive: s.aliveCount, size, cleared: s.clearedCount });
+  const line1 = formatMessage(tr(strings, s.conquered ? "title.rowConquered" : "title.row"), { leader: s.leaderName, alive: s.aliveCount, size, cleared: s.clearedCount });
   if (entry.status === "tooNew") return [line1, tr(strings, "title.rowTooNew")];
   return [line1, formatMessage(tr(strings, "title.rowDate"), formatUpdatedAt(entry.updatedAt))];
 }

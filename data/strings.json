@@ -10,6 +10,7 @@
   "title.heading": "卓上迷宮",
   "title.settings": "設定",
   "title.row": "{leader}　生存{alive}/{size}　踏破{cleared}",
+  "title.rowConquered": "{leader}　生存{alive}/{size}　踏破{cleared}　制覇",
   "title.rowDate": "{y}/{mo}/{d} {hh}:{mm}",
   "title.rowBroken": "（読めない記録）",
   "title.rowTooNew": "（新しい版の記録）",
