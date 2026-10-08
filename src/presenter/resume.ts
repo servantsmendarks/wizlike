@@ -32,6 +32,18 @@ export function routeOfScreen(s: Screen): "town" | "dungeon" | "battle" | null {
   }
 }
 
+/** app.ts の Route と同じ値（app を import しないための写し） */
+type AppRoute = "title" | "creation" | "custom" | "town" | "dungeon" | "battle";
+
+/**
+ * TW-36（M12.5。純粋）: 再生中の screen で route が from → to に変わるとき、街の静的な部分（帯・ヘッダー・街の絵）を最終 state で
+ * 先に描くか。作成（creation / custom）から town へ入るとき（game.new）だけ真。game.new は screen{town} の後に開始の語りが続くので、
+ * 再生の最後の sync を待つと語りの間の街が描かれていない。帰還・全滅は screen{town} が再生の最後なので今までどおり sync に任せる
+ */
+export function paintsTownStill(from: AppRoute, to: AppRoute): boolean {
+  return to === "town" && (from === "creation" || from === "custom");
+}
+
 export function resumePlan(st: GameState, data: GameData): ResumePlan {
   // 読み込みの形の検査（src/save/migrate.ts）で town / dungeon / battle / event に限られている
   const route = routeOfScreen(st.screen);

@@ -82,7 +82,7 @@ import {
   type SoundContext,
   type SoundOrder,
 } from "./sound-cues";
-import { resumePlan, routeOfScreen } from "./resume";
+import { paintsTownStill, resumePlan, routeOfScreen } from "./resume";
 import { createRunGate } from "./run-gate";
 import { defaultSettings, type SettingsStore } from "./settings";
 import type { StageLayout, StageLayoutInput } from "./stage";
@@ -473,7 +473,11 @@ export function createApp(o: {
     battle: play.battle,
     dice: play.dice,
     screens: {
-      show: (to: Screen, _st, carry) => onScreen(to, carry ?? []),
+      show: (to: Screen, st, carry) => {
+        const from = route;
+        onScreen(to, carry ?? []);
+        if (paintsTownStill(from, route)) paintTownStill(st);
+      },
       sync: (st) => sync(st),
     },
     wipe: { show: (p) => openWipe(p) },
@@ -556,6 +560,17 @@ export function createApp(o: {
     if (r === "town" && from !== "town" && carry.length > 0 && !talked) void play.talk.replay(carry, store.get().skipAnimations);
     // 操作は再生の最後の sync で出し直す
     if (r !== "title") play.controls.setMode("none");
+  };
+
+  /**
+   * TW-36（M12.5）: game.new の screen{town} の時点で、街の静的な部分（帯・ヘッダー・街の絵）を最終 state で描く（開始の語りの間、
+   * 前のゲームの残りや空の画面のまま箱だけが進まないように）。操作（一覧）と曲は再生の最後の sync のまま（UI-44）。冪等
+   */
+  const paintTownStill = (st: GameState): void => {
+    play.party.render(st.party);
+    const menu = townMenu(st, data);
+    if (menu !== null) play.header.setText(townHeader(menu, strings, townPage));
+    play.setTownPicture(townFacility(townPage));
   };
 
   /** state を描く（再生の最後に 1 回） */

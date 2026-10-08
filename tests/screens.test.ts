@@ -13,6 +13,7 @@ import { formatPartyRow, PARTY_COLUMNS, PARTY_NAME_UNITS } from "../src/presente
 import { textUnits } from "../src/presenter/views/party-band";
 import { sanStage } from "../src/core/rules/san";
 import { createRunGate } from "../src/presenter/run-gate";
+import { paintsTownStill } from "../src/presenter/resume";
 import type { Command, GameEvent } from "../src/core/types";
 import { data, newGame } from "./helpers/core";
 
@@ -818,7 +819,8 @@ describe("入力と Command", () => {
     // flush は showRoute の前（route が変わる前）、replay は後
     expect(onScreen.indexOf("play.talk.flush()")).toBeLessThan(onScreen.indexOf("showRoute(r)"));
     expect(onScreen.indexOf("play.talk.replay(")).toBeGreaterThan(onScreen.indexOf("showRoute(r)"));
-    expect(app).toContain("show: (to: Screen, _st, carry) => onScreen(to, carry ?? []),");
+    // M12.5（TW-36）: show は onScreen の後に作成から街へ入るときだけ paintTownStill（以前の期待値は show: (to: Screen, _st, carry) => onScreen(to, carry ?? []),）
+    expect(app).toMatch(/show: \(to: Screen, st, carry\) => \{\s*const from = route;\s*onScreen\(to, carry \?\? \[\]\);/);
     const resume = /const resume = \(st: GameState\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(resume).toContain("play.talk.clear();");
     // 再開の語りは showRoute の後（route が決まってから振り分ける）
@@ -986,5 +988,29 @@ describe("再生中の入力（UI-44）", () => {
     expect(await failing.run(1)).toBeNull();
     expect(errors).toHaveLength(1);
     expect(failing.busy()).toBe(false);
+  });
+});
+
+describe("TW-36 開始の語りの間の街の画面（M12.5）", () => {
+  test("TW-36 paintsTownStill: 作成（creation / custom）から town へ切り替わるときだけ真。帰還・全滅（dungeon / battle → town）、街の中、他の画面へは偽", () => {
+    expect(paintsTownStill("creation", "town")).toBe(true);
+    expect(paintsTownStill("custom", "town")).toBe(true);
+    for (const from of ["title", "town", "dungeon", "battle"] as const) expect(paintsTownStill(from, "town"), from).toBe(false);
+    for (const to of ["title", "dungeon", "battle"] as const) {
+      expect(paintsTownStill("creation", to), to).toBe(false);
+      expect(paintsTownStill("custom", to), to).toBe(false);
+    }
+  });
+
+  test("TW-36 game.new の語りの間、街の画面が最終 state で描かれている: screens.show は onScreen の後、作成から街へ入ったときだけ paintTownStill(st) で帯・ヘッダー・街の絵を描く。操作（一覧）は出さない（UI-44。再生の最後の sync のまま。ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const show = /show: \(to: Screen, st, carry\) => \{([\s\S]*?)\n {6}\},/.exec(app)?.[1] ?? "";
+    expect(show).toMatch(/const from = route;\s*onScreen\(to, carry \?\? \[\]\);\s*if \(paintsTownStill\(from, route\)\) paintTownStill\(st\);/);
+    const still = /const paintTownStill = \(st: GameState\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(still).toContain("play.party.render(st.party);");
+    expect(still).toContain("const menu = townMenu(st, data);");
+    expect(still).toContain("if (menu !== null) play.header.setText(townHeader(menu, strings, townPage));");
+    expect(still).toContain("play.setTownPicture(townFacility(townPage));");
+    expect(still).not.toMatch(/syncControls|controls\.|setScene/);
   });
 });
