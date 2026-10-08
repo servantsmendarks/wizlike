@@ -1261,6 +1261,44 @@ describe("EV-70〜76 職業の掛け合い", () => {
     ]);
   });
 
+  test("EV-76/U-7 警報に勝って同じ箱に戻れば続けて数える（戻った時点では出さず、もう一度失敗して開けると text.fail 1 回と SAN −3×2）", () => {
+    const dW = chestData((x) => {
+      x.config.events.cap = 0;
+      x.config.chest.inspect.min = x.config.chest.inspect.max = 0;
+      x.config.chest.triggerChance = 0;
+      x.config.chest.wrongNameChance = 0;
+      x.config.combat.hitMin = x.config.combat.hitMax = 100;
+      x.config.combat.chestChance = x.config.combat.chestChanceCorridor = 0;
+    });
+    const s1 = exec(owned("alarm", dW), inspect("c3"), dW).state;
+    expect(chestOf(s1)!.rivalryFails).toBe(1);
+    const s0 = exec(s1, OPEN, dW).state;
+    expect(s0.battle).not.toBeNull();
+    const s = withBattle(s0, [{ monsterId: "giant_rat", hps: [1], status: [["paralysis"]] }], {
+      origin: { kind: "alarm", inRoom: false },
+      identified: ["giant_rat"],
+      inputs: allInputs(s0, { type: "defend" }, { c1: { type: "attack", group: 0 } }),
+    });
+    const won = exec(s, { type: "battle.resolve" }, dW);
+    expect(eventsOf(won.events, "battleEnd")).toEqual([{ kind: "battleEnd", result: "win" }]);
+    expect(won.state.battle).toBeNull();
+    expect(kindsOf(won.events)).not.toContain("message:rivalry.thief_chest.fail");
+    expect(won.events.at(-1)).toEqual({ kind: "message", key: "chest.prompt" });
+    expect(chestOf(won.state)!.rivalryFails).toBe(1);
+    expectStateInvariants(won.state);
+    const s2 = exec(won.state, inspect("c3"), dW).state;
+    expect(chestOf(s2)!.rivalryFails).toBe(2);
+    const san = member(s2, "c3").san;
+    const r = exec(s2, OPEN, dW);
+    expect(eventsOf(r.events, "message").filter((e) => e.key === "rivalry.thief_chest.fail")).toHaveLength(1);
+    expect(r.events.slice(-3)).toEqual([
+      { kind: "chestEnd", result: "opened" },
+      { kind: "message", key: "rivalry.thief_chest.fail", params: { name: "キリ" } },
+      { kind: "sanChanged", id: "c3", delta: -6, san: san - 6 },
+    ]);
+    expect(chestOf(r.state)).toBeNull();
+  });
+
   test("EV-76/U-7 転移で箱を失ったときは chestEnd lost の直後（moved の前）にまとめて出す", () => {
     const tp = chestData((x) => {
       x.config.events.cap = 0;
