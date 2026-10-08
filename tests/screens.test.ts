@@ -448,7 +448,11 @@ describe("入力と Command", () => {
     expect(app).toMatch(/onWarp: \(to\) => guard\(\(\) => debugCommand\(\{ type: "debug\.warp", to \}\)\)/);
     const body = /const debugCommand = \(cmd: Command\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     // M6: 設定画面の上から開いた debug パネルなら、設定画面も閉じてから送る（closeDebugForCommand。UI-57）
-    expect(body).toMatch(/if \(route !== "dungeon"\) return;\s*closeDebugForCommand\(\);\s*void run\(cmd\);/);
+    // M11 レビュー R2（2026-10-08）: debug.chest{present: true} は衝動で開けて警報になると同じ execute の中で戦闘に入るので、
+    // 宝箱の操作・前進と同じく run の後に route が battle なら kickBattle する（以前の期待は `void run(cmd);` だけ）
+    expect(body).toMatch(
+      /if \(route !== "dungeon"\) return;\s*closeDebugForCommand\(\);\s*void run\(cmd\)\.then\(\(r\) => \{\s*if \(r !== null && !r\.rejected && route === "battle"\) kickBattle\(\);\s*\}\);/,
+    );
   });
 
   test("UI-57 debug パネルのターン+（M5.5）は、街・迷宮・戦闘のときだけパネルを閉じてから debug.addTurns を送る。ラベルの n は config.town.tavernEventTurns（ソースの検査）", () => {

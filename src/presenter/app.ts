@@ -1809,11 +1809,15 @@ export function createApp(o: {
   /**
    * UI-57（開発用、M5）: 「SAN段↓」「イベント」「罠の前」「階段前」。迷宮のときだけ、パネルを閉じてから送る
    * （受け付けるかは core が決める。選択を待つ間の debug.warp は rejected になり、何も起きない）
+   * M11: debug.chest{present: true} は衝動で開けて警報になると同じ execute の中で戦闘に入る。入力が要らない状態でも
+   * 連鎖を始める（宝箱の操作・前進と同じ。レビュー A-A-1 / R2）
    */
   const debugCommand = (cmd: Command): void => {
     if (route !== "dungeon") return;
     closeDebugForCommand();
-    void run(cmd);
+    void run(cmd).then((r) => {
+      if (r !== null && !r.rejected && route === "battle") kickBattle();
+    });
   };
 
   const closeDebug = (): void => {
