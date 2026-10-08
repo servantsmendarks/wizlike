@@ -3,6 +3,7 @@ import { createInitialState, execute } from "../src/core/engine";
 import { createRng } from "../src/core/rng";
 import {
   baseOf,
+  classOf,
   cloneState,
   createItemInstance,
   destroyItemInstance,
@@ -34,6 +35,8 @@ import {
 import { dataWith, dived, withBattle } from "./helpers/battle";
 import { approaches, findSituation, placeAt } from "./helpers/dungeon";
 import { cursedDagger } from "./helpers/items";
+import { DEBUG_LEVEL_MAX, DEBUG_LEVELS } from "../src/core/rules/debug";
+import { expFor, levelUpOnce } from "../src/core/rules/growth";
 
 const gameNew = (members = defaultMembers()): Command => ({ type: "game.new", party: { members } });
 
@@ -836,6 +839,111 @@ describe("UI-57 debug.giveCursed（開発用、M10）", () => {
     const r = execute(t, WEAR, data);
     expect(r.state).toBe(t);
     expect(r.events).toEqual([{ kind: "rejected", command: "debug.giveCursed", reason: "no party" }]);
+  });
+});
+
+describe("UI-57 debug.levels（開発用、M12。U-6）", () => {
+  const LV = (level: number): Command => ({ type: "debug.levels", level });
+
+  test("UI-57/CH-61/CH-63 debug.levels{5} は alive の全員の exp を expFor(5) にして Lv5 まで上げる（HP のダイスと初到達の習得判定は宿と同じ順で state.rng、能力値の成長は無し）。dead は触らない。変わった者ごとに levelUp 1 件（合計の増分・statGains 空）と debug.levels.member、最後に debug.levels{level}", () => {
+    const s = withChar(newGame(3), 2, { life: "dead", hp: 0 });
+    const before = JSON.stringify(s);
+    const r = execute(s, LV(5), data);
+    expect(JSON.stringify(s)).toBe(before);
+    expectStateInvariants(r.state);
+    expectKnownStringKeys(r.events);
+    // 鏡: 同じ state から levelUpOnce(statGrowth 偽) を並び順に 1 段ずつ回したものと一致する（乱数の順も同じ）
+    const mirror = makeContext(cloneState(s), data);
+    for (const ch of mirror.state.party) {
+      if (ch.life !== "alive") continue;
+      ch.exp = expFor(5, classOf(data, ch.classId), data.config);
+      while (ch.level < 5) levelUpOnce(mirror, ch, false);
+    }
+    expect(r.state.party).toEqual(mirror.state.party);
+    expect(r.state.rng).toEqual(mirror.state.rng);
+    expect(r.state.rng).not.toEqual(s.rng);
+    const expected: GameEvent[] = [];
+    s.party.forEach((b, i) => {
+      const a = r.state.party[i]!;
+      if (b.life !== "alive") {
+        expect(a).toEqual(b);
+        return;
+      }
+      expect(a.level).toBe(5);
+      expect(a.exp).toBe(expFor(5, classOf(data, a.classId), data.config));
+      expect(a.stats).toEqual(b.stats); // CH-61 の成長は無し
+      expect(a.levelHistory.map((h) => h.level)).toEqual([2, 3, 4, 5]);
+      expect(a.maxLevelReached[a.classId]).toBe(5);
+      const hpGain = a.levelHistory.reduce((n, h) => n + h.hpGain, 0);
+      const mpGain = a.levelHistory.reduce((n, h) => n + h.mpGain, 0);
+      expect(a.hpMax).toBe(b.hpMax + hpGain);
+      expect(a.mpMax).toBe(b.mpMax + mpGain);
+      expect(a.knownSpells.slice(0, b.knownSpells.length)).toEqual(b.knownSpells);
+      expected.push({ kind: "levelUp", id: a.id, level: 5, hpGain, mpGain, hpMax: a.hpMax, mpMax: a.mpMax, hp: a.hp, mp: a.mp, statGains: [] });
+      expected.push({ kind: "message", key: "debug.levels.member", params: { name: a.name, from: 1, to: 5, learned: a.knownSpells.length - b.knownSpells.length } });
+    });
+    expected.push({ kind: "message", key: "debug.levels", params: { level: 5 } });
+    expect(r.events).toEqual(expected);
+    // 呪文を使う職業の誰かは覚えている（習得判定が走った）
+    expect(r.state.party.some((c, i) => c.knownSpells.length > s.party[i]!.knownSpells.length)).toBe(true);
+  });
+
+  test("UI-57/CH-62/CH-63 debug.levels で下げるときは exp を expFor(level) にして levelDownWhileBelow（乱数なし、levelDown 1 件、maxLevelReached は残る）。同じ Lv なら exp だけ揃えて events は debug.levels だけ。上げ直しでは習得判定をしない", () => {
+    const up = execute(newGame(3), LV(5), data).state;
+    const down = execute(up, LV(2), data);
+    expectStateInvariants(down.state);
+    expect(down.state.rng).toEqual(up.rng);
+    const ev: GameEvent[] = [];
+    up.party.forEach((b, i) => {
+      const a = down.state.party[i]!;
+      expect(a.level).toBe(2);
+      expect(a.exp).toBe(expFor(2, classOf(data, a.classId), data.config));
+      expect(a.levelHistory).toEqual(b.levelHistory.slice(0, 1));
+      expect(a.maxLevelReached).toEqual(b.maxLevelReached);
+      expect(a.knownSpells).toEqual(b.knownSpells);
+      ev.push({ kind: "levelDown", id: a.id, level: 2, hpMax: a.hpMax, mpMax: a.mpMax, hp: a.hp, mp: a.mp });
+      ev.push({ kind: "message", key: "debug.levels.member", params: { name: a.name, from: 5, to: 2, learned: 0 } });
+    });
+    ev.push({ kind: "message", key: "debug.levels", params: { level: 2 } });
+    expect(down.events).toEqual(ev);
+
+    const same = execute(down.state, LV(2), data);
+    expect(same.events).toEqual([{ kind: "message", key: "debug.levels", params: { level: 2 } }]);
+    expect(same.state.party).toEqual(down.state.party);
+
+    const again = execute(down.state, LV(5), data);
+    expect(again.state.party.map((c) => c.knownSpells)).toEqual(down.state.party.map((c) => c.knownSpells));
+    expect(again.state.party.map((c) => c.level)).toEqual([5, 5, 5, 5, 5, 5]);
+  });
+
+  test("UI-57 debug.levels は迷宮の戦闘外も受け付け、title は no party・戦闘中は in battle・Lv が 1〜DEBUG_LEVEL_MAX の整数でなければ bad level・保留中は choice pending（どれも同じ参照）", () => {
+    const d = execute(dived(1), LV(DEBUG_LEVEL_MAX), data);
+    expect(d.events.at(-1)).toEqual({ kind: "message", key: "debug.levels", params: { level: DEBUG_LEVEL_MAX } });
+    expect(d.state.party.every((c) => c.level === DEBUG_LEVEL_MAX)).toBe(true);
+    expect(d.state.screen).toBe("dungeon");
+    expect(DEBUG_LEVELS.every((n) => Number.isInteger(n) && n >= 1 && n <= DEBUG_LEVEL_MAX)).toBe(true);
+
+    const t = createInitialState(1, data);
+    const battle = withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }]);
+    const pending: GameState = {
+      ...dived(1),
+      pendingChoice: { kind: "stairs", promptKey: "dungeon.stairsDown", options: [{ id: "stay", labelKey: "dungeon.choice.stay" }] },
+    };
+    const town = newGame(1);
+    const cases: [GameState, Command, string][] = [
+      [t, LV(5), "no party"],
+      [battle, LV(5), "in battle"],
+      [pending, LV(5), "choice pending"],
+      [town, LV(0), "bad level"],
+      [town, LV(DEBUG_LEVEL_MAX + 1), "bad level"],
+      [town, LV(2.5), "bad level"],
+      [town, { type: "debug.levels", level: "5" } as unknown as Command, "bad level"],
+    ];
+    for (const [s, cmd, reason] of cases) {
+      const r = execute(s, cmd, data);
+      expect(r.state, reason).toBe(s);
+      expect(r.events, reason).toEqual([{ kind: "rejected", command: "debug.levels", reason }]);
+    }
   });
 });
 

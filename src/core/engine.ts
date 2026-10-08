@@ -33,7 +33,7 @@ import {
 } from "./rules/camp";
 import { startNewGame, validatePartySetup } from "./rules/creation";
 import { checkChest, disarmChest, inspectChest, leaveChest, openChest } from "./rules/chest";
-import { addTurns, debugChest, giveCursed, hpOne, sanDown, sanOver, warp } from "./rules/debug";
+import { addTurns, DEBUG_LEVEL_MAX, debugChest, giveCursed, hpOne, sanDown, sanOver, setLevels, warp } from "./rules/debug";
 import { checkEnter, chooseOption, enterDungeon, moveForward, turn } from "./rules/dungeon";
 import { checkUseItem, useItemInField } from "./rules/items";
 import { checkShop, doShop } from "./rules/shop";
@@ -367,6 +367,18 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       if (to !== "event" && to !== "trap" && to !== "stairsDown" && to !== "chest") return reject(state, "debug.warp", "bad target");
       const ctx = makeContext(cloneState(state), data);
       warp(ctx, to);
+      return finish(ctx);
+    }
+    case "debug.levels": {
+      // UI-57（開発用、M12。U-6）: 街・迷宮の戦闘外・保留なし・箱なし（E3 と CB-60 の門の後）だけ
+      if (state.party.length === 0) return reject(state, "debug.levels", "no party");
+      if (state.battle !== null) return reject(state, "debug.levels", "in battle");
+      const level = (command as { level?: unknown }).level;
+      if (typeof level !== "number" || !Number.isInteger(level) || level < 1 || level > DEBUG_LEVEL_MAX) {
+        return reject(state, "debug.levels", "bad level");
+      }
+      const ctx = makeContext(cloneState(state), data);
+      setLevels(ctx, level);
       return finish(ctx);
     }
     case "debug.chest": {

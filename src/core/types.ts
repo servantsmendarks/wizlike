@@ -553,6 +553,12 @@ export type Command =
    * present が真なら、置いた箱で勝利の後と同じ衝動・制止（EV-16 / EV-25）と職業の掛け合い（EV-71）を行う（state.rng を使う。M11 の実機の確認用）
    */
   | { type: "debug.chest"; trapId: string | null; present?: boolean }
+  /**
+   * UI-57（開発用、M12。U-6）: life alive の全員の exp を expFor(level) にして level を合わせる（HP / MP の最大値・levelHistory・習得は宿と同じ。
+   * 能力値の成長 CH-61 はしない）。level は 1〜DEBUG_LEVEL_MAX の整数（それ以外は rejected bad level）。party が空（title）は rejected no party、
+   * 戦闘中は rejected in battle、保留中・箱がある間は E3 / CB-60 の門で rejected。上げる段の HP のダイスと習得判定に state.rng を使う
+   */
+  | { type: "debug.levels"; level: number }
   /** CB-63（M11）: memberId（行動可能な者。リーダーも可）が箱を調べる。何度でもできる */
   | { type: "chest.inspect"; memberId: string }
   /** CB-64（M11）: memberId（行動可能な者）が、罠の名前（chest-traps.json の id）を宣言して解除する */

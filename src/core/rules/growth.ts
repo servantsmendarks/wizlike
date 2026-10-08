@@ -98,8 +98,9 @@ export function rollStatGains(ctx: RuleContext, ch: Character): StatKey[] {
 /**
  * CH-61/63: 1 段上げる。乱数の順は HP のダイス → 能力値 6 回（全体の最高到達レベルを超えたときだけ。U5）→ 習得判定（今の職業で初到達のときだけ）。
  * HP・MP の増分は能力値を上げる前の値で求める。語りは levelUp → hpUp → mpUp（mpGain > 0）→ statUp.{stat}（上がったものだけ）。
+ * statGrowth が偽なら能力値の判定（CH-61）をしない（乱数も引かない）。UI-57 の debug.levels（M12。U-6）だけが偽で呼ぶ。
  */
-export function levelUpOnce(ctx: RuleContext, ch: Character): LevelRecord {
+export function levelUpOnce(ctx: RuleContext, ch: Character, statGrowth = true): LevelRecord {
   const { data, events } = ctx;
   const cfg = data.config;
   const cls = classOf(data, ch.classId);
@@ -107,7 +108,7 @@ export function levelUpOnce(ctx: RuleContext, ch: Character): LevelRecord {
   const hpGain = rollHpGain(ctx, ch);
   const mpGain = mpGainFor(cls, effectiveStats(ctx.state, data, ch), cfg); // CH-13
   const before = { ...ch.stats };
-  const statGains = level > peakLevelReached(ch) ? rollStatGains(ctx, ch) : [];
+  const statGains = statGrowth && level > peakLevelReached(ch) ? rollStatGains(ctx, ch) : [];
 
   ch.level = level;
   ch.hpMax += hpGain;
