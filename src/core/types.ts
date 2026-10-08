@@ -962,6 +962,11 @@ export type GameEvent =
   | { kind: "section" }
   | { kind: "wipe"; penalty: PenaltyResult }
   /**
+   * TW-34（M12）: 結末の戦績。全ダンジョン制覇（DG-36）の後に初めて街に着いたとき、締めの語り（ending.speech.1..N）の直後に 1 回。
+   * record は core の endingRecordView の値（表示層は state を掘らずにこれだけで描く）
+   */
+  | { kind: "ending"; record: EndingRecord }
+  /**
    * TW-22 / UI-56（M5.5）: 全滅の出目の表。title は見出し、rows は penalty-table.json の帯の順に 1 行ずつ（strings のキーと埋め込み値。core が作る）。
    * 2d10 の dice の直前に hit null で 1 回、dice の直後に hit = 当たった帯の添字（PenaltyResult.bandIndex と同じ）で 1 回出す
    */

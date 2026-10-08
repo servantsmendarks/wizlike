@@ -82,7 +82,7 @@ import { equipStats, hasSkill, hpMaxOf, skillTotal, spellCost } from "./equip-st
 import { loseSan, sanCapOf, sanStage } from "./san";
 import { raiseShopLevel } from "./shop";
 import { performWipe } from "./wipe";
-import { bumpTally } from "./progress";
+import { bumpTally, isConquered } from "./progress";
 
 /**
  * CB-55 の拍を出すかどうか。テストで「拍を入れない場合」と比べる（不変条件 (c)）ためだけのスイッチで、
@@ -1067,6 +1067,12 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
       if (firstClear) {
         state.progress.clearedDungeons.push(def.id);
         ctx.events.push({ kind: "message", key: "battle.dungeonCleared" });
+        // DG-36（M12）: 最後のダンジョンの初回の踏破で全ダンジョン制覇。conquered は落とさない。結末は街に着いたとき（TW-34。arriveTown）
+        if (!state.progress.conquered && isConquered(state.progress, data)) {
+          state.progress.conquered = true;
+          state.progress.endingPending = true;
+          ctx.events.push({ kind: "message", key: "battle.allCleared" });
+        }
       }
       const next = def.onClear.unlockDungeon;
       if (next !== null && !state.progress.unlockedDungeons.includes(next)) {

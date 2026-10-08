@@ -43,15 +43,18 @@ function json<T>(x: T): T {
 }
 
 describe("SV-21 summarize / buildRecord / checkStoredRecord", () => {
-  test("SV-21 summarize: leaderName は isLeader の者、clearedCount は clearedDungeons の数、aliveCount は life alive の人数", () => {
+  test("SV-21 summarize: leaderName は isLeader の者、clearedCount は clearedDungeons の数、aliveCount は life alive の人数、conquered は progress.conquered（M12）", () => {
     const s0 = newGame(1);
     const leader = s0.party.find((c) => c.isLeader)!;
-    expect(summarize(s0)).toEqual({ leaderName: leader.name, clearedCount: 0, aliveCount: 6 });
+    expect(summarize(s0)).toEqual({ leaderName: leader.name, clearedCount: 0, aliveCount: 6, conquered: false });
 
     let s = withChar(s0, 2, { life: "dead" });
     s = withChar(s, 4, { life: "ash" });
     s.progress.clearedDungeons = ["d01", "d02"];
-    expect(summarize(s)).toEqual({ leaderName: leader.name, clearedCount: 2, aliveCount: 4 });
+    expect(summarize(s)).toEqual({ leaderName: leader.name, clearedCount: 2, aliveCount: 4, conquered: false });
+    s.progress.clearedDungeons = ["d01", "d02", "d03"];
+    s.progress.conquered = true;
+    expect(summarize(s)).toEqual({ leaderName: leader.name, clearedCount: 3, aliveCount: 4, conquered: true });
 
     // リーダーが居なければ ""（形の上の保険）
     const noLeader = cloneState(s0);
@@ -63,7 +66,7 @@ describe("SV-21 summarize / buildRecord / checkStoredRecord", () => {
     const s = newGame(1);
     const r = buildRecord("g1", 3, 12345, SCHEMA, s);
     expect(Object.keys(r).sort()).toEqual(["gameId", "schemaVersion", "state", "summary", "turn", "updatedAt"]);
-    expect(Object.keys(r.summary).sort()).toEqual(["aliveCount", "clearedCount", "leaderName"]);
+    expect(Object.keys(r.summary).sort()).toEqual(["aliveCount", "clearedCount", "conquered", "leaderName"]);
     expect(r.state).toBe(s);
     expect(r).toMatchObject({ gameId: "g1", turn: 3, updatedAt: 12345, schemaVersion: SCHEMA });
     expect(json(r)).toStrictEqual(r);
@@ -89,11 +92,26 @@ describe("SV-21 summarize / buildRecord / checkStoredRecord", () => {
       { ...good, summary: { ...good.summary, leaderName: 1 } },
       { ...good, summary: { ...good.summary, clearedCount: -1 } },
       { ...good, summary: { ...good.summary, aliveCount: "6" } },
+      { ...good, summary: { ...good.summary, conquered: "true" } }, // SV-21（M12）: 真偽値でない conquered は壊れた記録
+      { ...good, summary: { ...good.summary, conquered: null } },
+      { ...good, summary: { ...good.summary, conquered: 1 } },
       { ...good, state: null },
       { ...good, state: [] },
       { ...good, state: "{}" },
     ];
     for (const b of bad) expect(checkStoredRecord(b), JSON.stringify(b)?.slice(0, 80)).toBeNull();
+  });
+
+  test("SV-21 checkStoredRecord（M12）: summary.conquered の無い古い記録は false で読め、真偽値はそのまま", () => {
+    const won = cloneState(newGame(1));
+    won.progress.conquered = true;
+    const good = json(buildRecord("g1", 2, 99.5, SCHEMA, won));
+    expect(good.summary.conquered).toBe(true);
+    expect(checkStoredRecord(good)!.summary.conquered).toBe(true);
+    const { conquered: _drop, ...old } = good.summary;
+    const r = checkStoredRecord({ ...good, summary: old });
+    expect(r).not.toBeNull();
+    expect(r!.summary).toEqual({ ...old, conquered: false });
   });
 });
 
@@ -810,14 +828,14 @@ describe("SV-11 SV-12 一覧と上限", () => {
       gameId: "c",
       turn: 1,
       updatedAt: 500,
-      summary: { leaderName: leader, clearedCount: 0, aliveCount: 6 },
+      summary: { leaderName: leader, clearedCount: 0, aliveCount: 6, conquered: false },
       status: "ok",
     });
     expect(r.entries[4]).toEqual({
       gameId: "e",
       turn: 0,
       updatedAt: 0,
-      summary: { leaderName: "", clearedCount: 0, aliveCount: 0 },
+      summary: { leaderName: "", clearedCount: 0, aliveCount: 0, conquered: false },
       status: "broken",
     });
   });

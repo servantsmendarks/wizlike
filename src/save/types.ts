@@ -1,8 +1,8 @@
 // セーブの型（SV-20〜23）。core からは import type だけ。DOM の型は使ってよい。
 import type { GameState } from "../core/types";
 
-/** SV-21 */
-export type SaveSummary = { leaderName: string; clearedCount: number; aliveCount: number };
+/** SV-21。conquered（M12）は progress.conquered の写し（タイトルの一覧の「制覇」の印。UI-50） */
+export type SaveSummary = { leaderName: string; clearedCount: number; aliveCount: number; conquered: boolean };
 
 /** SV-21。games ストアの 1 レコード（キー gameId） */
 export type GameRecord = {

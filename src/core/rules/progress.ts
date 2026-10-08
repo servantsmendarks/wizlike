@@ -1,6 +1,6 @@
-// 進行の通算（TW-35。M12）: 戦績の集計（tally）と、戦績の画面の値（endingRecordView）。純粋。乱数を使わない。
+// 進行の通算（TW-35。M12）: 戦績の集計（tally）と、戦績の画面の値（endingRecordView）、全ダンジョン制覇の判定（DG-36。isConquered）。純粋。乱数を使わない。
 import type { GameData } from "../data/index";
-import type { EndingRecord, GameState, Tally } from "../types";
+import type { EndingRecord, GameState, Progress, Tally } from "../types";
 
 /** TW-35: 戦績の通算の 1 項目を 1 足す。呼ぶ所は各項目 1 か所に寄せる（types.ts の Tally の注を参照） */
 export function bumpTally(state: GameState, key: keyof Tally): void {
@@ -24,4 +24,12 @@ export function endingRecordView(state: GameState, data: GameData): EndingRecord
     bestiary: { known: Object.values(state.bestiary).filter((e) => e.identified).length, total: data.monsters.length },
     uniques: { known: Object.keys(state.uniqueBook).length, total: data.uniques.length },
   };
+}
+
+/**
+ * DG-36（M12）: 全ダンジョン制覇か。data.dungeons のうち準備中（placeholder。DG-35）でないものが、すべて clearedDungeons に入っていれば真。
+ * 立てる所は combat.ts の初回の踏破（clearedDungeons.push の直後）。後でダンジョンの枠が増えても data から判定する
+ */
+export function isConquered(progress: Progress, data: GameData): boolean {
+  return data.dungeons.every((d) => d.placeholder === true || progress.clearedDungeons.includes(d.id));
 }

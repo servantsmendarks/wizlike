@@ -2,12 +2,13 @@
 import type { GameState } from "../core/types";
 import type { GameRecord, SaveSummary, StoredRecord } from "./types";
 
-/** SV-21: 一覧表示用の要約。leaderName は isLeader の者の名前（いなければ ""） */
+/** SV-21: 一覧表示用の要約。leaderName は isLeader の者の名前（いなければ ""）。conquered は progress.conquered（M12。DG-36） */
 export function summarize(state: GameState): SaveSummary {
   return {
     leaderName: state.party.find((c) => c.isLeader)?.name ?? "",
     clearedCount: state.progress.clearedDungeons.length,
     aliveCount: state.party.filter((c) => c.life === "alive").length,
+    conquered: state.progress.conquered,
   };
 }
 
@@ -37,7 +38,10 @@ function isPositiveInt(x: unknown): x is number {
   return typeof x === "number" && Number.isInteger(x) && x >= 1;
 }
 
-/** 保存先から読んだ値がレコードの形か（state の中身は見ない）。違えば null */
+/**
+ * 保存先から読んだ値がレコードの形か（state の中身は見ない）。違えば null。
+ * summary.conquered（SV-21。M12）: 欄が無い（M12 より前の記録）は false、真偽値はそのまま、それ以外の型は壊れた記録（null）
+ */
 export function checkStoredRecord(raw: unknown): StoredRecord | null {
   if (!isPlainObject(raw)) return null;
   const { gameId, schemaVersion, turn, updatedAt, summary, state } = raw;
@@ -47,6 +51,8 @@ export function checkStoredRecord(raw: unknown): StoredRecord | null {
   if (!isPlainObject(summary)) return null;
   const { leaderName, clearedCount, aliveCount } = summary;
   if (typeof leaderName !== "string" || !isCount(clearedCount) || !isCount(aliveCount)) return null;
+  const conquered = summary["conquered"] === undefined ? false : summary["conquered"];
+  if (typeof conquered !== "boolean") return null;
   if (!isPlainObject(state)) return null;
-  return { gameId, schemaVersion, turn, updatedAt, summary: { leaderName, clearedCount, aliveCount }, state };
+  return { gameId, schemaVersion, turn, updatedAt, summary: { leaderName, clearedCount, aliveCount, conquered }, state };
 }

@@ -210,7 +210,7 @@ function gossip(ctx: RuleContext, dungeonId: string): void {
 
 /**
  * DG-03: 入場。乱数は diveSeed の nextUint32 → （TW-15 の噂話。士気の gossip が真で候補があるときだけ）randInt の順。
- * イベントは screen{dungeon} → dungeon.enter →（噂話）dungeon.gossip
+ * イベントは screen{dungeon} → dungeon.enter →（DG-37。初回入場で enterSpeech を持つときだけ）その語り →（噂話）dungeon.gossip
  */
 export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
   const { state, data } = ctx;
@@ -238,12 +238,15 @@ export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
   state.dive = dive;
   bumpTally(state, "dives"); // TW-35（M12）: 潜行の開始
   // DG-37（M12）: 初回入場の記録。初回の語り（enterSpeech）は、この push の前の includes で判定する
-  if (!state.progress.enteredDungeons.includes(dungeonId)) state.progress.enteredDungeons.push(dungeonId);
+  const first = !state.progress.enteredDungeons.includes(dungeonId);
+  if (first) state.progress.enteredDungeons.push(dungeonId);
   state.townVisit = null; // TW-32: 来訪の終わり（救済の申し出も下ろす）
   state.screen = "dungeon";
   explore(ctx, dive, f);
   ctx.events.push({ kind: "screen", to: "dungeon", dungeonId: dive.dungeonId });
   ctx.events.push({ kind: "message", key: "dungeon.enter", params: { dungeon: def.name } });
+  // DG-37（M12。U-5）: そのダンジョンに初めて入るときだけ、enterSpeech の GM の一行（入場の語りの後、噂話の前）
+  if (first && def.enterSpeech !== undefined) ctx.events.push({ kind: "message", key: def.enterSpeech });
   gossip(ctx, dungeonId);
 }
 

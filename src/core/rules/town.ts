@@ -18,7 +18,7 @@ import { capSan, overSan, restoreSan } from "./san";
 import { shopMenu } from "./shop";
 import { storageMenu } from "./storage";
 import { upgradeMenu } from "./upgrade";
-import { bumpTally } from "./progress";
+import { bumpTally, endingRecordView } from "./progress";
 
 export type TempleService = "resurrect" | "cure" | "uncurse";
 /** 帰還の語りのキー（DG-30: 帰還の糸 / DG-06: 徒歩 / DG-32: テレポーター / MG-40: 帰還の呪文） */
@@ -81,9 +81,22 @@ export function mercyEligible(state: GameState, data: GameData): boolean {
 }
 
 /**
+ * TW-34（M12）: 結末の語り。GM の締めの語り ending.speech.1, 2, … を data.strings に続き番号のキーがある限り（途切れた先は使わない。
+ * 行の数はコードに持たない。ending.speech.1 は検証で必須）→ GameEvent ending（endingRecordView）→ endingPending を落とす。乱数は使わない
+ */
+function tellEnding(ctx: RuleContext): void {
+  const { state, data } = ctx;
+  for (let n = 1; data.strings[`ending.speech.${n}`] !== undefined; n++) {
+    ctx.events.push({ kind: "message", key: `ending.speech.${n}` });
+  }
+  ctx.events.push({ kind: "ending", record: endingRecordView(state, data) });
+  state.progress.endingPending = false;
+}
+
+/**
  * 街に入る処理（TW-02, TW-26, TW-30。仕様の「town.enter と同じ処理」の実体。town.enter コマンドは受け付けない）。
  * 呼び出し側が dive / battle / pendingChoice を null にしてある前提。乱数は使わない。
- * 順: screen と townVisit → message town.enter → SAN の回復（life を問わず並び順）→ 救済の判定（town.mercy.offer）→ screen{town}
+ * 順: screen と townVisit → message town.enter →（TW-34。endingPending のときだけ）結末 → SAN の回復（life を問わず並び順）→ 救済の判定（town.mercy.offer）→ screen{town}
  */
 export function arriveTown(ctx: RuleContext): void {
   const { state, data } = ctx;
@@ -94,6 +107,7 @@ export function arriveTown(ctx: RuleContext): void {
   state.townVisit = { mercyOffered: false };
   state.morale = null; // TW-15: 士気は次に街に入るまで
   ctx.events.push({ kind: "message", key: "town.enter" });
+  if (state.progress.endingPending) tellEnding(ctx);
   if (data.config.san.restoreOnTown) {
     for (const ch of state.party) restoreSan(ctx, ch);
   } else {

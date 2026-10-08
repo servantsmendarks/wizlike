@@ -14,9 +14,10 @@ import {
   step,
 } from "../src/core/rules/dungeon-gen";
 import { chestGenOf, floorOf, gossipCandidates, mapView, visibleCells, visibleCellsOf, visibleKnownTraps } from "../src/core/rules/dungeon";
+import { isConquered } from "../src/core/rules/progress";
 import { addIndex, removeIndex } from "../src/core/rules/field";
 import { battleMenu } from "../src/core/rules/combat";
-import { townMenu } from "../src/core/rules/town";
+import { returnToTown, townMenu } from "../src/core/rules/town";
 import { groupViews } from "../src/core/rules/combat-calc";
 import { withBattle } from "./helpers/battle";
 import { offerExit, offerStairs, offerTeleporter, offerTrap, STAY_CHOICE_ID } from "../src/core/rules/choices";
@@ -191,6 +192,43 @@ describe("dungeon.enter", () => {
     const r2 = run(s2, { type: "dungeon.enter", dungeonId: "d02" });
     expect(r2.state.dive!.dungeonId).toBe("d02");
     expect(r2.events[1]).toEqual({ kind: "message", key: "dungeon.enter", params: { dungeon: "沈んだ聖堂" } });
+  });
+
+  test("DG-37 enterSpeech: d03 に初めて入るときだけ dungeon.enter の直後に GM の一行（dungeon.enterSpeech.d03）。2 回目・欄の無い d01 では語らない。乱数は増やさない", () => {
+    const s = cloneState(newGame(1));
+    s.progress.unlockedDungeons = ["d01", "d02", "d03"];
+    const mirror = cloneRng(s.rng);
+    nextUint32(mirror);
+    const r = run(s, { type: "dungeon.enter", dungeonId: "d03" });
+    expect(r.events).toEqual([
+      { kind: "screen", to: "dungeon", dungeonId: "d03" },
+      { kind: "message", key: "dungeon.enter", params: { dungeon: "灰の地下墓所" } },
+      { kind: "message", key: "dungeon.enterSpeech.d03" },
+    ]);
+    expectKnownStringKeys(r.events);
+    expect(r.state.rng).toEqual(mirror);
+    expect(r.state.progress.enteredDungeons).toEqual(["d03"]);
+    // 街へ戻って入り直すと語らない
+    const ctx = makeContext(cloneState(r.state), data);
+    returnToTown(ctx, "dungeon.return");
+    const again = run(ctx.state, { type: "dungeon.enter", dungeonId: "d03" });
+    expect(again.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["screen", "dungeon.enter"]);
+    // 欄の無い d01 は初回でも語らない
+    expect(run(s, ENTER_D01).events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["screen", "dungeon.enter"]);
+    // v6 からの移行などで enteredDungeons に既にあれば初回ではない
+    const known = cloneState(s);
+    known.progress.enteredDungeons = ["d03"];
+    expect(run(known, { type: "dungeon.enter", dungeonId: "d03" }).events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual([
+      "screen",
+      "dungeon.enter",
+    ]);
+  });
+
+  test("DG-37/TW-15 初回入場の語りは噂話（dungeon.gossip）より前", () => {
+    const s = cloneState(execute(newGame(1), { type: "town.inn", rank: 2 }, data).state);
+    s.progress.unlockedDungeons = ["d01", "d02", "d03"];
+    const r = run(s, { type: "dungeon.enter", dungeonId: "d03" });
+    expect(r.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["screen", "dungeon.enter", "dungeon.enterSpeech.d03", "dungeon.gossip"]);
   });
 });
 
@@ -1568,6 +1606,67 @@ describe("ボス（DG-31〜33, DG-01）", () => {
     expect(r.state.dive!.bossDefeated).toBe(true);
     // DG-31 / IT-50: 再撃破でも戦利品を引く（d01_boss は 100% × 1 回）
     expect(ks.filter((k) => k === "message:item.found")).toHaveLength(1);
+  });
+
+  /** d01・d02 を踏破済みで d03 に入り、4F のボスの手前に置いた state（DG-36 の最後の踏破） */
+  const atD03Boss = (patch?: (s: GameState) => void) =>
+    findSituation((c) => c.kind === "boss", {
+      floor: 4,
+      base: (seed) => {
+        const s = cloneState(newGame(seed));
+        s.progress.unlockedDungeons = ["d01", "d02", "d03"];
+        s.progress.clearedDungeons = ["d01", "d02"];
+        s.progress.enteredDungeons = ["d01", "d02"];
+        patch?.(s);
+        return execute(s, { type: "dungeon.enter", dungeonId: "d03" }, data).state;
+      },
+    });
+
+  test("DG-36 最後のダンジョン（d03）の初回の踏破で conquered と endingPending を立て、battle.allCleared を踏破の語りの直後（戦利品・流通レベルの前）に 1 回だけ語る", () => {
+    const fought = run(atD03Boss().state, MOVE, D0).state;
+    expect(fought.battle!.origin).toEqual({ kind: "boss" });
+    expect(fought.progress).toMatchObject({ conquered: false, endingPending: false });
+    const r = defeatBoss(fought);
+    expectKnownStringKeys(r.events);
+    const all = kinds(r.events);
+    const ks = all.slice(all.indexOf("message:battle.bossDefeated")).filter((k) => k.startsWith("message:"));
+    expect(ks.filter((k) => k === "message:battle.allCleared")).toHaveLength(1);
+    const iAll = ks.indexOf("message:battle.allCleared");
+    expect(ks.slice(0, iAll + 1)).toEqual(["message:battle.bossDefeated", "message:battle.dungeonCleared", "message:battle.allCleared"]);
+    expect(ks.indexOf("message:item.found")).toBeGreaterThan(iAll);
+    expect(ks.indexOf("message:dungeon.shopLevel")).toBeGreaterThan(ks.indexOf("message:item.found")); // U-1: d03 の初回踏破で流通 Lv 6
+    expect(ks.at(-1)).toBe("message:dungeon.teleporter");
+    expect(r.state.progress).toMatchObject({ clearedDungeons: ["d01", "d02", "d03"], conquered: true, endingPending: true, shopLevel: 6 });
+    expect(r.events.some((e) => e.kind === "ending")).toBe(false); // 結末は街に着いたとき（TW-34）
+    expectStateInvariants(r.state);
+  });
+
+  test("DG-36 最後でないダンジョン（d01）の初回の踏破では立てず語らない。準備中の枠（DG-35）は数えない", () => {
+    const r = defeatBoss(run(atBoss().state, MOVE, D0).state);
+    expect(kinds(r.events)).toContain("message:battle.dungeonCleared");
+    expect(kinds(r.events)).not.toContain("message:battle.allCleared");
+    expect(r.state.progress).toMatchObject({ conquered: false, endingPending: false });
+    // 準備中の d04 を足した合成データでも、d03 の踏破で制覇になる
+    const dp = loadDataWithPlaceholder();
+    const s = cloneState(newGame(1));
+    s.progress.clearedDungeons = ["d01", "d02", "d03"];
+    expect(isConquered(s.progress, dp)).toBe(true);
+    s.progress.clearedDungeons = ["d01", "d03"];
+    expect(isConquered(s.progress, dp)).toBe(false);
+  });
+
+  test("DG-36/DG-33 制覇の後の d03 の再撃破では、conquered は真のまま、endingPending を立て直さず、allCleared も語らない", () => {
+    const sit = atD03Boss((s) => {
+      s.progress.clearedDungeons.push("d03");
+      s.progress.enteredDungeons.push("d03");
+      s.progress.conquered = true;
+    });
+    const r = defeatBoss(run(sit.state, MOVE, D0).state);
+    const ks = kinds(r.events);
+    expect(ks).toContain("message:battle.bossDefeated");
+    expect(ks).not.toContain("message:battle.dungeonCleared");
+    expect(ks).not.toContain("message:battle.allCleared");
+    expect(r.state.progress).toMatchObject({ clearedDungeons: ["d01", "d02", "d03"], conquered: true, endingPending: false });
   });
 
   test("DG-31/IT-50 ボスの戦利品: 勝つと drops.boss の表（d01_boss。100% × 1 回）から 1 品。未鑑定・foundIn d01・台帳。ボスの語り（解放）の後、screen dungeon とテレポーターの申し出の前。Lv はボスの level 4 ± 1（ユニークなら 0）", () => {

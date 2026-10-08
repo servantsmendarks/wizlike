@@ -58,7 +58,7 @@ export function createSaveService(deps: SaveDeps): SaveService {
             gameId: id,
             turn: 0,
             updatedAt: 0,
-            summary: { leaderName: "", clearedCount: 0, aliveCount: 0 },
+            summary: { leaderName: "", clearedCount: 0, aliveCount: 0, conquered: false },
             status: "broken",
           });
         }

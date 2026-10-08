@@ -76,6 +76,10 @@
   "common.cancel": "やめる",
 
   "town.enter": "街に戻った。喧騒が正気を呼び戻す。",
+  "ending.speech.1": "GM が最後の頁をめくり、静かに閉じた。「……これで、すべての迷宮が地図になった。」",
+  "ending.speech.2": "卓のあちこちで長い息が漏れる。転がったままのダイスを、誰も片付けようとしない。",
+  "ending.speech.3": "「長い卓だったね。灰になった者も、戻ってきた者も、みんなよく潜った。」",
+  "ending.speech.4": "「今夜はここまで。でも、この世界はまだ続く。潜りたくなったら、いつでもどうぞ。」",
   "town.inn.intro": "宿の主人が鍵を並べる。",
   "town.inn.stay": "{room}に泊まった。（{cost}G）",
   "town.inn.morale": "個室でゆっくり休んだ。一行の士気が上がっている。",
@@ -600,6 +604,7 @@
   "book.rarity.legendary": "伝説",
   "battle.bossDefeated": "{boss}は崩れ落ちた。",
   "battle.dungeonCleared": "この迷宮を踏破した。",
+  "battle.allCleared": "最後の迷宮が、地図の上で閉じた。",
   "battle.wipe": "一行は全員動けなくなった……。",
   "dungeon.unlocked": "{dungeon}への道が開いた。",
   "dungeon.shopLevel": "街の店に新しい品が並ぶらしい。",

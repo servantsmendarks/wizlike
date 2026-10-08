@@ -1655,3 +1655,104 @@ describe("TW-35 戦績の通算（tally。M12）", () => {
     expect(townMenu(c, data)!.canShowRecord).toBe(true);
   });
 });
+
+describe("TW-34 結末の語り（M12）", () => {
+  const RETURN_KEYS = ["dungeon.return", "dungeon.exit", "dungeon.teleport", "dungeon.returnSpell"] as const;
+  const SPEECH = ["ending.speech.1", "ending.speech.2", "ending.speech.3", "ending.speech.4"];
+  /** 制覇の直後（conquered・endingPending が真）の潜行中の state。c2〜c6 は dead、所持金 0（救済の申し出が出る）、c1 の SAN 40 */
+  function conqueredDiving(): GameState {
+    const s = diving({ c1: { san: 40 }, c2: DEAD, c3: DEAD, c4: DEAD, c5: DEAD, c6: DEAD }, 0);
+    s.progress.clearedDungeons = ["d01", "d02", "d03"];
+    s.progress.unlockedDungeons = ["d01", "d02", "d03"];
+    s.progress.conquered = true;
+    s.progress.endingPending = true;
+    s.tally = { dives: 9, battles: 40, deaths: 5, ashes: 1, wipes: 2 };
+    s.adventureTurns = 777;
+    s.bestiary = { giant_rat: { kills: 3, identified: true } };
+    return s;
+  }
+  const keyOf = (e: GameEvent): string => (e.kind === "message" ? e.key : e.kind);
+
+  test("TW-34 帰還 4 種（糸・徒歩・テレポーター・呪文）: town.enter → ending.speech.1..4 → ending{record} → SAN → 救済 → screen town。endingPending を落とし、conquered は残す。乱数なし", () => {
+    for (const key of RETURN_KEYS) {
+      const s = conqueredDiving();
+      const ctx = ctxFor(s);
+      returnToTown(ctx, key);
+      expect(ctx.events.map(keyOf), key).toEqual([key, "town.enter", ...SPEECH, "ending", "sanChanged", "town.mercy.offer", "screen"]);
+      expectKnownStringKeys(ctx.events);
+      const ending = ctx.events.find((e) => e.kind === "ending");
+      expect(ending, key).toEqual({ kind: "ending", record: endingRecordView(ctx.state, data) });
+      expect(ending, key).toEqual({
+        kind: "ending",
+        record: { dives: 9, battles: 40, deaths: 5, ashes: 1, wipes: 2, turns: 777, bestiary: { known: 1, total: 20 }, uniques: { known: 0, total: 14 } },
+      });
+      expect(ctx.state.progress, key).toMatchObject({ conquered: true, endingPending: false });
+      expect(ctx.state.rng, key).toEqual(s.rng);
+      expectStateInvariants(ctx.state);
+    }
+  });
+
+  test("TW-34 全滅で街に着いたときも wipe の後の town.enter の直後に語り、ending を出す", () => {
+    const s = cloneState(conqueredDiving());
+    for (const c of s.party) c.status = ["stone"];
+    const r = ok(s, { type: "dungeon.turn", dir: "left" });
+    const ks = r.events.map(keyOf);
+    const iEnter = ks.indexOf("town.enter");
+    expect(ks.indexOf("wipe")).toBeGreaterThanOrEqual(0);
+    expect(ks.indexOf("wipe")).toBeLessThan(iEnter);
+    expect(ks.slice(iEnter, iEnter + 6)).toEqual(["town.enter", ...SPEECH, "ending"]);
+    expect(ks.at(-1)).toBe("screen");
+    expect(ks.filter((k) => k === "ending")).toHaveLength(1);
+    const ending = r.events.find((e) => e.kind === "ending");
+    expect(ending).toEqual({ kind: "ending", record: endingRecordView(r.state, data) });
+    expect(r.state.tally.wipes).toBe(3); // 全滅を数えた後の値で語る
+    expect(r.state.progress).toMatchObject({ conquered: true, endingPending: false });
+  });
+
+  test("TW-34/DG-33 語るのは一度だけ: 次の帰還では出ない。制覇の後も d01〜d03 に再入場できる", () => {
+    const ctx = ctxFor(conqueredDiving());
+    returnToTown(ctx, "dungeon.teleport");
+    let s = ctx.state;
+    for (const id of ["d03", "d01", "d02"]) {
+      const healed = cloneState(s);
+      for (const c of healed.party) Object.assign(c, { life: "alive", hp: c.hpMax });
+      const entered = ok(healed, { type: "dungeon.enter", dungeonId: id });
+      expect(entered.state.dive!.dungeonId).toBe(id);
+      const c2 = ctxFor(entered.state);
+      returnToTown(c2, "dungeon.return");
+      const ks = c2.events.map(keyOf);
+      expect(ks.some((k) => k.startsWith("ending"))).toBe(false);
+      s = c2.state;
+    }
+    expect(s.progress).toMatchObject({ conquered: true, endingPending: false });
+  });
+
+  test("TW-34 行の数は strings の続き番号で決まる: 2 行・6 行に差し替えるとそれに従い、途切れた先（3 が無ければ 4 以降）は使わない", () => {
+    const cases: [string[], string[]][] = [
+      [["ending.speech.3", "ending.speech.4"], SPEECH.slice(0, 2)],
+      [["ending.speech.3"], SPEECH.slice(0, 2)],
+      [[], SPEECH],
+    ];
+    for (const [drop, want] of cases) {
+      const d = loadFreshData();
+      for (const k of drop) delete (d.strings as Record<string, string>)[k];
+      const ctx = makeContext(conqueredDiving(), d);
+      returnToTown(ctx, "dungeon.return");
+      expect(ctx.events.map(keyOf).filter((k) => k.startsWith("ending")), drop.join(",")).toEqual([...want, "ending"]);
+    }
+    const six = loadFreshData();
+    (six.strings as Record<string, string>)["ending.speech.5"] = "五";
+    (six.strings as Record<string, string>)["ending.speech.6"] = "六";
+    const ctx = makeContext(conqueredDiving(), six);
+    returnToTown(ctx, "dungeon.return");
+    expect(ctx.events.map(keyOf).filter((k) => k.startsWith("ending"))).toEqual([...SPEECH, "ending.speech.5", "ending.speech.6", "ending"]);
+  });
+
+  test("TW-34 endingPending が偽なら（conquered が真でも）語らない", () => {
+    const s = conqueredDiving();
+    s.progress.endingPending = false;
+    const ctx = ctxFor(s);
+    returnToTown(ctx, "dungeon.return");
+    expect(ctx.events.map(keyOf)).toEqual(["dungeon.return", "town.enter", "sanChanged", "town.mercy.offer", "screen"]);
+  });
+});

@@ -1578,6 +1578,13 @@ describe("data: strings.json", () => {
     expectIssue((r) => (r.strings["item.plus"] = " +{level}"), "strings.json", "item.plus: IT-11: must have exactly one placeholder {n} (found {level})");
     expectIssue((r) => (r.strings["item.plus"] = "+"), "strings.json", "item.plus: IT-11: must have exactly one placeholder {n} (found none)");
   });
+  test("data: TW-34 結末の締めの語りの 1 行目 ending.speech.1 は必須（2 行目以降は任意。続き番号の数はデータで決まる）", () => {
+    expectIssue((r) => delete r.strings["ending.speech.1"], "strings.json", "ending.speech.1");
+    expect(issuesOf((r) => {
+      delete r.strings["ending.speech.3"];
+      delete r.strings["ending.speech.4"];
+    })).toEqual([]);
+  });
 });
 
 describe("data: エラー報告", () => {

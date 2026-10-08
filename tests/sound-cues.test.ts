@@ -56,6 +56,16 @@ describe("UI-66 soundsFor", () => {
     ["ほかの message は無し", { kind: "message", key: "town.inn.title" }, []],
     ["blocked（壁）で wall", { kind: "blocked" }, [{ type: "sfx", name: "wall" }]],
     ["ボス撃破の語りで clear", { kind: "message", key: "battle.bossDefeated", params: { boss: "x" } }, [{ type: "jingle", name: "clear" }]],
+    ["UI-63/TW-34 結末の締めの語りの 1 行目で clear（M12）", { kind: "message", key: "ending.speech.1" }, [{ type: "jingle", name: "clear" }]],
+    ["TW-34 締めの語りの 2 行目以降は無し", { kind: "message", key: "ending.speech.2" }, []],
+    [
+      "TW-34 戦績の出来事（ending）は無し",
+      {
+        kind: "ending",
+        record: { dives: 1, battles: 1, deaths: 0, ashes: 0, wipes: 0, turns: 1, bestiary: { known: 0, total: 1 }, uniques: { known: 0, total: 1 } },
+      },
+      [],
+    ],
     [
       "司教の鑑定で identify",
       { kind: "message", key: "camp.identified", params: { name: "a", old: "b", item: "c", rarity: "rare" } },

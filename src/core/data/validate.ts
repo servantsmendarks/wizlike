@@ -1525,6 +1525,8 @@ function validateStrings(ctx: Ctx, v: unknown, ix: Index): void {
   // IT-11: core の itemDisplayName が希少度の接頭辞と Lv の書式を引く（通常は接頭辞なし）。item.plus は {n} だけを差し込む
   for (const r of RARITY_IDS) if (r !== "normal") strKey(ctx, "", `item.rarity.${r}`, ix);
   strKey(ctx, "", "item.plus", ix);
+  // TW-34（M12）: 結末の締めの語りは ending.speech.1 から続き番号のある限り（core の tellEnding）。1 行目は必須
+  strKey(ctx, "", "ending.speech.1", ix);
   const plus = ix.stringText.get("item.plus");
   if (plus !== undefined) {
     const ph = [...plus.matchAll(PLACEHOLDER_RE)].map((m) => m[0]);

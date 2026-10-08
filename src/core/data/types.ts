@@ -684,7 +684,7 @@ export type DungeonDef = {
   boss: { monster: string };
   /** UI-63（M8。2026-10-06）: このダンジョンの迷宮の曲（audio.json の music.songs）。省略は audio.json の screenSongs.dungeon */
   song?: string;
-  /** DG-37（M12。U-5）: 初回入場の GM の一行（strings のキー。プレースホルダーなし）。省略は語らない。語る経路は core（M12 #2b） */
+  /** DG-37（M12。U-5）: 初回入場の GM の一行（strings のキー。プレースホルダーなし）。省略は語らない。初回入場で dungeon.enter の直後に語る（rules/dungeon.ts enterDungeon） */
   enterSpeech?: string;
   events: string[];
   traps: TrapId[];
