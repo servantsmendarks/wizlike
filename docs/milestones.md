@@ -440,7 +440,7 @@ M2〜M5 の実機確認の結果（`docs/decisions.md` の 2026-10-04 の行）�
   3. 計測: `npm run balance`（200 シード）を #0（M12 前）と #8（M12）で回し、balance.md に並べる。d03 の潜行 1〜3 の全滅率（件数/分母）と 1 潜行あたりの死者、d03 に届いたシード数、d03 のボス戦の勝率を記録する。目安（d03 の潜行 1 でセオリー 5% 以下【仮】）を超えたら balance.md の調整の順で 1 項目ずつ直し、変更の記録に 1 行ずつ足す。d01・d02 の数字は計測(M12 前) と比べる。
   4. 工房への同期: 工房（make-assets）で `manifest_sync.py --project wizlike --dry-run` を実行し、新しい敵 6 体（ashcrown_lord は boss）と unknown_undead が追加に出て警告が無いことを確かめる（同期そのものはユーザー）。
   5. docs/checklist.md に M12 の確認観点（上の 2 の各項目）を足し、実機の結果で済・未を付ける。
-- 状態: #0 は済（2026-10-08。milestones の M12 の節・docs/balance.md の新設と計測(M12 前)・decisions の参照の行）。
+- 状態: #0 は済（2026-10-08。milestones の M12 の節・docs/balance.md の新設と計測(M12 前)・decisions の参照の行）。#1〜#9 も済（2026-10-08。HEAD 7cc7076 までのコミットと #9 の docs(M12)）。完了条件 4 は dry-run で確かめた（追加 7・更新 1・警告なし。decisions の 2026-10-08 docs(M12) の行。同期そのものはユーザー）。完了条件 5 は checklist に行を足した（状態は未）。残るのは実機(M12)（完了条件 2）。
 
 ## プロトタイプ後（参考、着手しない）
 
