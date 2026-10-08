@@ -391,10 +391,10 @@ describe("入力と Command", () => {
     const choose = /const chooseChest = \(ch: ChestChoice\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(choose).toMatch(/if \(ch\.kind === "back"\) \{\s*chestBack\(\);\s*return;\s*\}/);
     expect(choose).toMatch(/if \(ch\.kind === "page"\) \{\s*chestPage = ch\.page;\s*syncControls\(\);\s*return;\s*\}/);
-    // レビュー A-A-1 / A-A-3（2026-10-08）で送る前に場所のヘッダーへ戻し、警報の戦闘に入ったら kickBattle するよう直したので期待を書き直した
-    expect(choose).toMatch(
-      /chestPage = CHEST_MENU;\s*const d = state\.dive;\s*if \(d !== null\) showHeaderAt\(state, \{ floor: d\.floor, pos: d\.pos, facing: d\.facing \}\);\s*void run\(ch\.command\)\.then\(\(r\) => \{/,
-    );
+    // レビュー A-A-1 / A-A-3（2026-10-08）で送る前に場所のヘッダーへ戻し、警報の戦闘に入ったら kickBattle するよう直したので期待を書き直した。
+    // 未定-29（2026-10-08）: 送る前に段を menu にしてすぐ syncControls で描き直す（最初の段の一覧と場所のヘッダー。再生の間に人・罠の一覧を残さない）。
+    // 以前の期待値は showHeaderAt だけを直に呼ぶ形（一覧は再生の最後の sync まで古いまま）
+    expect(choose).toMatch(/chestPage = CHEST_MENU;\s*syncControls\(\);\s*void run\(ch\.command\)\.then\(\(r\) => \{/);
     // 警報（CB-67）は箱の操作の execute の中で戦闘に入る。入力が要らない状態（全員が眠っている等。battleMenu の ready）でも連鎖を始める（前進・自動歩行と同じ形）
     expect(choose).toMatch(/if \(r !== null && !r\.rejected && route === "battle"\) kickBattle\(\);\s*else if \(r !== null && r\.rejected && !isBusy\(\)\) syncControls\(\);/);
     const item = /const chestItem = \(e: ChestEntry\): ControlItem => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
