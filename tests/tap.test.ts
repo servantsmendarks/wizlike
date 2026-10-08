@@ -474,9 +474,9 @@ describe("attachStageInput", () => {
     const a = t.button("a");
     const input = new FakeNode("INPUT", t.stage);
     expect(t.stage.listeners["touchend"]?.[0]?.opt).toEqual({ passive: false });
-    expect(t.stage.emit("touchend", { target: a.btn }).prevented).toBe(true);
-    expect(t.stage.emit("touchend", { target: t.stage }).prevented).toBe(true);
-    expect(t.stage.emit("touchend", { target: input }).prevented).toBe(false);
+    expect(t.stage.emit("touchend", { target: a.btn, cancelable: true }).prevented).toBe(true);
+    expect(t.stage.emit("touchend", { target: t.stage, cancelable: true }).prevented).toBe(true);
+    expect(t.stage.emit("touchend", { target: input, cancelable: true }).prevented).toBe(false);
     // 入力欄の上の押下は追わない（onAnyPress も呼ばない）
     t.down(1, 40, 620, input);
     t.up(1, 40, 620);
@@ -509,7 +509,7 @@ describe("attachStageInput", () => {
     t.up(1, 40, 620);
     expect(t.out).toEqual(["press", "tap el"]);
     el.isConnected = false;
-    expect(el.emit("touchend", { target: el }).prevented).toBe(true);
+    expect(el.emit("touchend", { target: el, cancelable: true }).prevented).toBe(true);
     // マウスの押下では付けない
     const m = new FakeStage(0);
     m.parent = t.stage;
@@ -522,6 +522,36 @@ describe("attachStageInput", () => {
     input.parent = t.stage;
     t.down(3, 40, 620, input);
     expect(input.listeners["touchend"]).toBeUndefined();
+  });
+
+  test("UI-37 未定-32 cancelable が偽の touchend（スクロール中）では preventDefault を呼ばない（ステージと要素の両方）。cancelable が真なら今どおり止める（外れた要素でも合成の click・フォーカス移動を防ぐ UI-37 の意図は保つ）", () => {
+    const t = setup();
+    const a = t.button("a");
+    // ステージ: 偽では止めない、真では止める
+    expect(t.stage.emit("touchend", { target: a.btn, cancelable: false }).prevented).toBe(false);
+    expect(t.stage.emit("touchend", { target: t.stage, cancelable: false }).prevented).toBe(false);
+    expect(t.stage.emit("touchend", { target: a.btn, cancelable: true }).prevented).toBe(true);
+    // 要素: 偽では止めない
+    const el = new FakeStage(0);
+    el.tagName = "BUTTON";
+    el.parent = t.stage;
+    el.top = 600;
+    onTap(el as unknown as Element, () => t.out.push("tap el"));
+    t.down(1, 40, 620, el);
+    t.up(1, 40, 620);
+    el.isConnected = false;
+    expect(el.emit("touchend", { target: el, cancelable: false }).prevented).toBe(false);
+    // 要素: 真なら止める（外れた要素でも合成の click・フォーカス移動を止める。M6 の意図）
+    const el2 = new FakeStage(0);
+    el2.tagName = "BUTTON";
+    el2.parent = t.stage;
+    el2.top = 600;
+    onTap(el2 as unknown as Element, () => t.out.push("tap el2"));
+    t.down(2, 40, 620, el2);
+    t.up(2, 40, 620);
+    el2.isConnected = false;
+    expect(el2.emit("touchend", { target: el2, cancelable: true }).prevented).toBe(true);
+    expect(t.out).toEqual(["press", "tap el", "press", "tap el2"]);
   });
 
   test("UI-36 onTap は data-tap を付けて spec を登録し、関数だけでも登録できる。detach で全リスナーが外れる", () => {

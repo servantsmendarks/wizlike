@@ -10,6 +10,7 @@
 // - 名前の入力欄（INPUT / TEXTAREA）の上の押下は追わず、touchend の preventDefault もしない。入力欄の外を押したら入力欄の
 //   フォーカスを外す（touchend の preventDefault で合成のフォーカス移動が起きないため）。
 // - touchend は passive:false で受けて preventDefault する（UI-37: ダブルタップの拡大と、合成の click を止める）。
+//   cancelable が偽の touchend（スクロール中）は止められないので呼ばない（未定-32。呼ぶと Chrome が intervention の警告を出す）。
 // 純粋な部分（pressDown / pressMove / pressUp）を export して node 環境で試す。setTimeout は長押しの判定にだけ使う。
 // モジュールのトップレベルでは DOM に触れない。
 import { classifySwipe, inDeadZone, swipeAction, thresholdCss, type Action, type Dir } from "./swipe";
@@ -112,7 +113,7 @@ function setPressed(el: Element | null, on: boolean): void {
 }
 
 /**
- * UI-37（M6）: 押した要素そのものに、次の touchend を 1 回だけ preventDefault するリスナーを付ける。
+ * UI-37（M6）: 押した要素そのものに、次の touchend を 1 回だけ preventDefault するリスナーを付ける（cancelable のときだけ。未定-32）。
  * タップは pointerup で反応し、その場で画面を描き直すと押した要素が DOM から外れる。外れた要素の touchend はステージまで
  * 伝わらないので、ステージの touchend では止められず、合成の click とフォーカス移動が同じ位置に新しく出た要素
  * （名前の入力欄など）に入る。要素に直接付けたリスナーは、外れた後でも届く。
@@ -120,7 +121,9 @@ function setPressed(el: Element | null, on: boolean): void {
 function preventTouchEndOn(target: EventTarget | null): void {
   const t = target as { addEventListener?: (type: string, f: (e: Event) => void, opt?: AddEventListenerOptions) => void } | null;
   if (t === null || typeof t !== "object" || typeof t.addEventListener !== "function") return;
-  t.addEventListener("touchend", (ev) => ev.preventDefault(), { once: true, passive: false });
+  t.addEventListener("touchend", (ev) => {
+    if (ev.cancelable) ev.preventDefault();
+  }, { once: true, passive: false });
 }
 
 // ---------------------------------------------------------------------------
@@ -335,9 +338,9 @@ export function attachStageInput(stage: HTMLElement, o: StageInputOptions): Stag
     s.onTap({ lx: 0, ly: 0 });
   };
 
-  /** UI-37: 入力欄の上以外の touchend を止める（ダブルタップの拡大と、合成の click・フォーカス移動） */
-  const touchend = (e: { target: EventTarget | null; preventDefault(): void }): void => {
-    if (!isTextInput(e.target)) e.preventDefault();
+  /** UI-37: 入力欄の上以外の cancelable な touchend を止める（ダブルタップの拡大と、合成の click・フォーカス移動。未定-32） */
+  const touchend = (e: { target: EventTarget | null; cancelable: boolean; preventDefault(): void }): void => {
+    if (e.cancelable && !isTextInput(e.target)) e.preventDefault();
   };
 
   const on = (f: (e: never) => void): EventListener => f as unknown as EventListener;
