@@ -1591,6 +1591,18 @@ describe("data: strings.json", () => {
       for (const n of [2, 3, 4, 5]) delete r.strings[`opening.speech.${n}`];
     })).toEqual([]);
   });
+  test("data: UI-74 能力値の説明の文言（stat.short.<k>・stat.desc.<k> の 6 つずつ、custom.statReq / statReqNone / classReq）は必須", () => {
+    for (const k of ["str", "iq", "pie", "vit", "agi", "luk"]) {
+      expectIssue((r) => delete r.strings[`stat.short.${k}`], "strings.json", `stat.short.${k}`);
+      expectIssue((r) => delete r.strings[`stat.desc.${k}`], "strings.json", `stat.desc.${k}`);
+    }
+    for (const k of ["custom.statReq", "custom.statReqNone", "custom.classReq"]) expectIssue((r) => delete r.strings[k], "strings.json", k);
+  });
+  test("data: UI-74 stat.short.<k> は 1〜12 字（自分で作るの能力値の札の 2 行目。中身 118px ÷ 全角 8px = 14 字に余裕をみて）", () => {
+    expectIssue((r) => (r.strings["stat.short.agi"] = "あ".repeat(13)), "strings.json", "stat.short.agi: UI-74: too long (13 > 12)");
+    expectIssue((r) => (r.strings["stat.short.str"] = ""), "strings.json", "stat.short.str: expected non-empty string");
+    expect(issuesOf((r) => (r.strings["stat.short.luk"] = "あ".repeat(12)))).toEqual([]);
+  });
 });
 
 describe("data: エラー報告", () => {

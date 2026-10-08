@@ -21,6 +21,7 @@ import {
   CUSTOM_NAME_BUTTONS,
   CUSTOM_NAME_ERROR,
   CUSTOM_REMAINING,
+  CUSTOM_STAT_DESC,
   CUSTOM_SUMMARY,
   customRow,
   customStatRow,
@@ -28,6 +29,7 @@ import {
 } from "../layout";
 import { defaultPersonalities, personalityLabel, type PersonalityChoice } from "./creation";
 import { formatMessage } from "./message";
+import { WRAP_STYLE } from "./wrap";
 
 export type CustomStepId = "race" | "stats" | "class" | "personality" | "name" | "confirm";
 
@@ -44,12 +46,15 @@ export type CustomMemberDraft = {
   name: string;
 };
 
-export type CustomDraft = { index: number; step: CustomStepId; members: CustomMemberDraft[] };
+/** statKey: UI-74 の能力値の段で選択中の能力値（説明の欄に出す。表示だけの値） */
+export type CustomDraft = { index: number; step: CustomStepId; members: CustomMemberDraft[]; statKey: StatKey };
 
 export type CustomChoice =
   | { kind: "race"; raceId: string }
   | { kind: "inc"; key: StatKey }
   | { kind: "dec"; key: StatKey }
+  /** UI-74: 能力値の段でその能力値を選ぶ（説明の欄に出す） */
+  | { kind: "select"; key: StatKey }
   | { kind: "reroll" }
   | { kind: "class"; classId: string }
   | { kind: "personality"; value: PersonalityChoice }
@@ -84,14 +89,14 @@ export function initialDraft(data: GameData): CustomDraft {
       name: data.config.prototypeParty.members[i]?.defaultName ?? "",
     });
   }
-  return { index: 0, step: "race", members };
+  return { index: 0, step: "race", members, statKey: "str" };
 }
 
 const raceBase = (data: GameData, raceId: string): StatBlock | null => data.races.find((r) => r.id === raceId)?.baseStats ?? null;
 
 function withMember(d: CustomDraft, patch: Partial<CustomMemberDraft>, step: CustomStepId, index = d.index): CustomDraft {
   const members = d.members.map((m, i) => (i === d.index ? { ...m, ...patch } : m));
-  return { index, step, members };
+  return { ...d, index, step, members };
 }
 
 const same = (d: CustomDraft): CustomResult => ({ kind: "draft", draft: d });
@@ -133,14 +138,19 @@ export function customStep(d: CustomDraft, c: CustomChoice, data: GameData, rng:
       const base = raceBase(data, c.raceId);
       if (base === null) return same(d);
       // 同じ種族を選び直したら配分と職業を残す（戻ってきてそのまま進むため）。違う種族なら基礎値から振り直す（CH-11）
-      if (m.raceId === c.raceId && m.stats !== null) return { kind: "draft", draft: { ...d, step: "stats" } };
-      return { kind: "draft", draft: withMember(d, { raceId: c.raceId, stats: { ...base }, ...bonusOf(rollBonusParts(rng, data.config.creation)), classId: null }, "stats") };
+      // UI-74: 種族を選んで能力値の段に入るときは選択を力に戻す
+      if (m.raceId === c.raceId && m.stats !== null) return { kind: "draft", draft: { ...d, step: "stats", statKey: "str" } };
+      const fresh = withMember(d, { raceId: c.raceId, stats: { ...base }, ...bonusOf(rollBonusParts(rng, data.config.creation)), classId: null }, "stats");
+      return { kind: "draft", draft: { ...fresh, statKey: "str" } };
     }
     case "stats": {
       if (m.raceId === null || m.stats === null) return same(d);
+      if (c.kind === "select") return c.key === d.statKey ? same(d) : { kind: "draft", draft: { ...d, statKey: c.key } };
       if (c.kind === "inc" || c.kind === "dec") {
+        // UI-74: 押した能力値を選択にする（増減できなかったときも）
         const next = adjustStat(m.raceId, m.stats, m.bonus, c.key, c.kind === "inc" ? 1 : -1, data);
-        return next === m.stats ? same(d) : { kind: "draft", draft: withMember(d, { stats: next }, "stats") };
+        const sel: CustomDraft = { ...d, statKey: c.key };
+        return next === m.stats ? same(sel) : { kind: "draft", draft: withMember(sel, { stats: next }, "stats") };
       }
       if (c.kind === "reroll") {
         const base = raceBase(data, m.raceId);
@@ -203,7 +213,8 @@ export function buildCustomSetup(d: CustomDraft): CustomPartySetup | null {
 /** 一覧の 1 行（種族・職業・性格）。2 行（名前と説明・基礎値・条件）。dim は選べない（押しても何もしない）、selected は今の値 */
 export type CustomRowView = { lines: [string, string]; choice: CustomChoice; dim: boolean; selected: boolean };
 
-export type CustomStatView = { label: string; value: number; canInc: boolean; canDec: boolean; key: StatKey };
+/** short: UI-74 の札の 2 行目（stat.short.<k>）。selected: 選択中の能力値 */
+export type CustomStatView = { label: string; short: string; value: number; canInc: boolean; canDec: boolean; key: StatKey; selected: boolean };
 
 export type CustomButton = { label: string; choice: CustomChoice; dim: boolean };
 
@@ -212,8 +223,8 @@ export type CustomView = {
   summary: string;
   /** 種族・職業・性格の段の行（それ以外の段は []） */
   rows: CustomRowView[];
-  /** 能力値の段の 6 行（それ以外は null） */
-  stats: { rows: CustomStatView[]; remaining: string } | null;
+  /** 能力値の段の 6 行と残り。desc・req は UI-74 の説明の欄（選択中の能力値の説明と職業の条件）。それ以外の段は null */
+  stats: { rows: CustomStatView[]; remaining: string; desc: string; req: string } | null;
   /** 名前の段の入力欄の値（それ以外は null） */
   name: string | null;
   /** 確認の段の 6 行（それ以外は []） */
@@ -231,6 +242,18 @@ function statPairs(stats: Partial<StatBlock>, strings: Strings): string {
     const v = stats[k];
     return v === undefined ? [] : [formatMessage(tr(strings, "custom.statPair"), { label: tr(strings, `stat.${k}`), value: v })];
   }).join(" ");
+}
+
+/**
+ * UI-74: 能力値 k を条件に持つ職業を classes.json の順に custom.classReq で並べ、半角空白でつないで custom.statReq に差し込む
+ * （無ければ custom.statReqNone）。満たしているかは比べない（UI-35）
+ */
+function statRequirement(k: StatKey, data: GameData, strings: Strings): string {
+  const list = data.classes.flatMap((c) => {
+    const v = c.requirements[k];
+    return v === undefined ? [] : [formatMessage(tr(strings, "custom.classReq"), { cls: c.name, value: v })];
+  });
+  return list.length === 0 ? tr(strings, "custom.statReqNone") : formatMessage(tr(strings, "custom.statReq"), { list: list.join(" ") });
 }
 
 /** CH-11 / UI-62: ボーナスの内訳の文（7+2、当たりは 7+2+10）。値は core の rollBonusParts のまま並べる（big は外れなら 0 で、0 の項は書かない） */
@@ -281,8 +304,18 @@ export function customView(d: CustomDraft, data: GameData, strings: Strings): Cu
       if (m.raceId === null || m.stats === null) break;
       const a = statAllocation(m.raceId, m.stats, m.bonus, data);
       view.stats = {
-        rows: a.rows.map((r) => ({ key: r.key, label: tr(strings, `stat.${r.key}`), value: r.value, canInc: r.canInc, canDec: r.canDec })),
+        rows: a.rows.map((r) => ({
+          key: r.key,
+          label: tr(strings, `stat.${r.key}`),
+          short: tr(strings, `stat.short.${r.key}`),
+          value: r.value,
+          canInc: r.canInc,
+          canDec: r.canDec,
+          selected: r.key === d.statKey,
+        })),
         remaining: formatMessage(tr(strings, "custom.remaining"), { remaining: a.remaining, bonus: a.bonus, detail: bonusDetail(m.bonusParts, strings) }),
+        desc: tr(strings, `stat.desc.${d.statKey}`),
+        req: statRequirement(d.statKey, data, strings),
       };
       view.buttons.a = { label: tr(strings, "custom.reroll"), choice: { kind: "reroll" }, dim: false };
       view.buttons.b = { label: tr(strings, "custom.next"), choice: { kind: "next" }, dim: !a.complete };
@@ -342,13 +375,18 @@ export function customView(d: CustomDraft, data: GameData, strings: Strings): Cu
 }
 
 /**
- * UI-33 / UI-62: キー（Action）→ 選ぶもの。Esc → 戻る。数字 n → 一覧の段の n 番目の行（選べない行は null）。
+ * UI-33 / UI-62: キー（Action）→ 選ぶもの。Esc → 戻る。数字 n → 一覧の段の n 番目の行（選べない行は null）、
+ * 能力値の段では n 番目の能力値の選択（UI-74）。
  * Enter → 一覧の段は先頭の選べる行、能力値の段は 次へ、名前の段は今の入力（name）で次へ、確認の段は 始める。該当なしは null
  */
 export function customKeyChoice(a: Action, view: CustomView, step: CustomStepId, name: string): CustomChoice | null {
   if (a === "back") return { kind: "back" };
   if (step === "name") return a === "confirm" ? { kind: "name", name } : null;
   if (typeof a === "object") {
+    if (view.stats !== null) {
+      const s = view.stats.rows[a.menu];
+      return s === undefined ? null : { kind: "select", key: s.key };
+    }
     const r = view.rows[a.menu];
     return r === undefined || r.dim ? null : r.choice;
   }
@@ -429,6 +467,13 @@ export function createCustomCreationScreen(o: { onChoice(c: CustomChoice): void 
   place(remaining, CUSTOM_REMAINING);
   el.appendChild(remaining);
 
+  // UI-74: 能力値の段の説明の欄（選択中の能力値の説明と職業の条件。禁則で折り返す）
+  const statDesc = document.createElement("div");
+  statDesc.className = "custom-stat-desc";
+  place(statDesc, CUSTOM_STAT_DESC);
+  Object.assign(statDesc.style, { ...WRAP_STYLE, overflow: "hidden" });
+  el.appendChild(statDesc);
+
   const error = document.createElement("div");
   error.className = "creation-error";
   place(error, CUSTOM_ERROR);
@@ -451,6 +496,15 @@ export function createCustomCreationScreen(o: { onChoice(c: CustomChoice): void 
     return b;
   };
 
+  /** 一覧の行・能力値の札の 2 行の button の形。selected は accent 色 */
+  const twoLine = (b: HTMLElement, selected: boolean): void => {
+    Object.assign(b.style, { whiteSpace: "pre", textAlign: "left", lineHeight: "14px", paddingLeft: "4px", boxSizing: "border-box", overflow: "hidden" });
+    if (selected) {
+      b.style.color = "var(--c-accent)";
+      b.style.borderColor = "var(--c-accent)";
+    }
+  };
+
   let lastStepHadName = false;
 
   return {
@@ -463,20 +517,15 @@ export function createCustomCreationScreen(o: { onChoice(c: CustomChoice): void 
       const kids: HTMLElement[] = [];
       view.rows.forEach((row, i) => {
         const b = button(row.lines.join("\n"), customRow(i), row.dim, () => o.onChoice(row.choice));
-        Object.assign(b.style, { whiteSpace: "pre", textAlign: "left", lineHeight: "14px", paddingLeft: "4px", boxSizing: "border-box", overflow: "hidden" });
-        if (row.selected && !row.dim) {
-          b.style.color = "var(--c-accent)";
-          b.style.borderColor = "var(--c-accent)";
-        }
+        twoLine(b, row.selected && !row.dim);
         kids.push(b);
       });
       if (view.stats !== null) {
         view.stats.rows.forEach((s, i) => {
           const r = customStatRow(i);
-          const lab = document.createElement("div");
-          lab.className = "custom-stat-label";
-          lab.textContent = s.label;
-          place(lab, r.label);
+          // UI-74: 名前の欄は 2 行の札（名前と短い説明）。押すとその能力値を選ぶ
+          const lab = button(`${s.label}\n${s.short}`, r.label, false, () => o.onChoice({ kind: "select", key: s.key }));
+          twoLine(lab, s.selected);
           kids.push(lab);
           kids.push(button("-", r.minus, !s.canDec, () => o.onChoice({ kind: "dec", key: s.key })));
           const v = document.createElement("div");
@@ -498,6 +547,8 @@ export function createCustomCreationScreen(o: { onChoice(c: CustomChoice): void 
 
       remaining.textContent = view.stats?.remaining ?? "";
       remaining.style.display = view.stats === null ? "none" : "";
+      statDesc.textContent = view.stats === null ? "" : `${view.stats.desc}\n${view.stats.req}`;
+      statDesc.style.display = view.stats === null ? "none" : "";
 
       if (view.name !== null) {
         // 名前の段に入ったときだけ下書きの名前を入れる（打っている途中の値を描き直しで消さない）
@@ -525,7 +576,8 @@ export function createCustomCreationScreen(o: { onChoice(c: CustomChoice): void 
       buttons.replaceChildren(...bs);
 
       place(error, rects.error);
-      const text = err ?? view.notice;
+      // UI-74: 能力値の段は誤りの欄を使わない（説明の欄と重なる）
+      const text = view.stats !== null ? null : (err ?? view.notice);
       error.textContent = text ?? "";
       error.style.visibility = text === null ? "hidden" : "visible";
     },

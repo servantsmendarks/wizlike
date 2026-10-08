@@ -221,7 +221,6 @@ body {
 }
 
 .custom-summary,
-.custom-stat-label,
 .custom-stat-value,
 .custom-remaining,
 .custom-confirm-row {
@@ -229,11 +228,20 @@ body {
   overflow: hidden;
 }
 
-.custom-stat-label,
 .custom-stat-value,
-.custom-remaining,
 .custom-confirm-row {
   line-height: 32px;
+}
+
+/* UI-74（M12.5）: 残りの行は 1 行（高さ 12）。能力値の名前の欄は 2 行の札（button。views の twoLine） */
+.custom-remaining {
+  line-height: 12px;
+}
+
+/* UI-74（M12.5）: 能力値の説明の欄（4 行 × 10px。折り返しは views の WRAP_STYLE） */
+.custom-stat-desc {
+  line-height: 10px;
+  color: var(--c-text);
 }
 
 .custom-stat-value {

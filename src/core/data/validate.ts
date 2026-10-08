@@ -1507,6 +1507,9 @@ function validateTavern(ctx: Ctx, v: unknown, ix: Index): void {
 
 // ---- strings.json ----
 
+/** UI-74（M12.5）: 能力値の札の 2 行目（stat.short.<k>）の字数の上限。札の中身 118px ÷ 全角 8px = 14 字に余裕をみて（表示の都合。【仮】ではない） */
+const STAT_SHORT_MAX = 12;
+
 const PLACEHOLDER_RE = /\{[A-Za-z_][A-Za-z0-9_]*\}/g;
 
 function validateStrings(ctx: Ctx, v: unknown, ix: Index): void {
@@ -1529,6 +1532,14 @@ function validateStrings(ctx: Ctx, v: unknown, ix: Index): void {
   strKey(ctx, "", "ending.speech.1", ix);
   // TW-36（M12.5）: 開始の語りは opening.speech.1 から続き番号のある限り（core の startNewGame）。1 行目は必須
   strKey(ctx, "", "opening.speech.1", ix);
+  // UI-74（M12.5）: 自分で作るの能力値の段の札（stat.short.<k>。1〜STAT_SHORT_MAX 字）と説明の欄（stat.desc.<k>・職業の条件）
+  for (const k of STAT_KEYS) {
+    strKey(ctx, "", `stat.short.${k}`, ix);
+    strKey(ctx, "", `stat.desc.${k}`, ix);
+    const short = ix.stringText.get(`stat.short.${k}`);
+    if (short !== undefined && [...short].length > STAT_SHORT_MAX) report(ctx, `stat.short.${k}`, `UI-74: too long (${[...short].length} > ${STAT_SHORT_MAX})`);
+  }
+  for (const k of ["custom.statReq", "custom.statReqNone", "custom.classReq"]) strKey(ctx, "", k, ix);
   const plus = ix.stringText.get("item.plus");
   if (plus !== undefined) {
     const ph = [...plus.matchAll(PLACEHOLDER_RE)].map((m) => m[0]);

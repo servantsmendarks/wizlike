@@ -5,7 +5,16 @@ import { STAT_KEYS, type StatKey } from "../src/core/data";
 import { execute, createInitialState } from "../src/core/engine";
 import { cloneRng, createRng, type RngState } from "../src/core/rng";
 import { rollBonus, rollBonusParts, statAllocation } from "../src/core/rules/creation";
-import { CUSTOM_BUTTONS, CUSTOM_ERROR, CUSTOM_NAME, TOUCH_MIN_LOGICAL, type Rect } from "../src/presenter/layout";
+import {
+  CUSTOM_BUTTONS,
+  CUSTOM_ERROR,
+  CUSTOM_NAME,
+  CUSTOM_REMAINING,
+  CUSTOM_STAT_DESC,
+  customStatRow,
+  TOUCH_MIN_LOGICAL,
+  type Rect,
+} from "../src/presenter/layout";
 import {
   buildCustomSetup,
   customButtonRects,
@@ -18,6 +27,7 @@ import {
   type CustomResult,
 } from "../src/presenter/views/custom-creation";
 import { data, gameNewEvents } from "./helpers/core";
+import { kinsokuLines } from "./helpers/wrap";
 
 const S = data.strings;
 
@@ -313,7 +323,8 @@ describe("自分で作る（UI-62 / CH-06）", () => {
     expect(customKeyChoice("forward", v0, "race", "")).toBeNull();
     let d = step(d0, { kind: "race", raceId: "human" }, rng);
     expect(customKeyChoice("confirm", customView(d, data, S), "stats", "")).toBeNull(); // 次へが dim
-    expect(customKeyChoice({ menu: 0 }, customView(d, data, S), "stats", "")).toBeNull();
+    // UI-74（M12.5）: 能力値の段の数字 1〜6 はその行の選択（M5.5 では null だった）
+    expect(customKeyChoice({ menu: 0 }, customView(d, data, S), "stats", "")).toEqual({ kind: "select", key: "str" });
     d = spendAll(d, rng, ["str", "vit", "iq", "pie", "agi", "luk"]);
     expect(customKeyChoice("confirm", customView(d, data, S), "stats", "")).toEqual({ kind: "next" });
     d = step(d, { kind: "next" }, rng);
@@ -409,5 +420,123 @@ describe("自分で作る（UI-62 / CH-06）", () => {
     ]) {
       expect(S[k], k).toBeTypeOf("string");
     }
+  });
+});
+
+describe("能力値の説明（UI-74。M12.5）", () => {
+  const ov = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  const stats = (seed = 5) => step(initialDraft(data), { kind: "race", raceId: "human" }, createRng(seed));
+
+  test("UI-74 選択の初期値は力（statKey str）。種族を選んで能力値の段に入るときも力に戻る（同じ種族の選び直しでも）。職業から戻ったときは残す", () => {
+    const rng = createRng(2);
+    expect(initialDraft(data).statKey).toBe("str");
+    let d = stats();
+    expect(d.statKey).toBe("str");
+    d = step(d, { kind: "select", key: "agi" }, rng);
+    expect(d.statKey).toBe("agi");
+    // 種族へ戻って別の種族 → 力
+    expect(step(step(d, { kind: "back" }, rng), { kind: "race", raceId: "elf" }, rng).statKey).toBe("str");
+    // 種族へ戻って同じ種族（配分は残る）→ 力
+    const same = step(step(d, { kind: "back" }, rng), { kind: "race", raceId: "human" }, rng);
+    expect(same.step).toBe("stats");
+    expect(same.statKey).toBe("str");
+    // 職業から戻ったときは残す
+    let e = spendAll(stats(), rng);
+    e = step(e, { kind: "select", key: "pie" }, rng);
+    e = step(e, { kind: "next" }, rng);
+    expect(e.step).toBe("class");
+    expect(step(e, { kind: "back" }, rng).statKey).toBe("pie");
+  });
+
+  test("UI-74 [+]/[-]（inc / dec）を押した能力値が選択になる（増減できなかったときも）。select はその能力値を選ぶ。能力値の段以外の select は何もしない", () => {
+    const rng = createRng(3);
+    let d = stats();
+    d = step(d, { kind: "inc", key: "vit" }, rng);
+    expect(d.statKey).toBe("vit");
+    expect(d.members[0]!.stats!.vit).toBe(data.races.find((r) => r.id === "human")!.baseStats.vit + 1);
+    d = step(d, { kind: "dec", key: "luk" }, rng); // 基礎値より下げられない → 値は変わらず選択だけ移る
+    expect(d.statKey).toBe("luk");
+    expect(d.members[0]!.stats).toEqual({ ...data.races.find((r) => r.id === "human")!.baseStats, vit: data.races.find((r) => r.id === "human")!.baseStats.vit + 1 });
+    for (const k of STAT_KEYS) expect(step(d, { kind: "select", key: k }, rng).statKey).toBe(k);
+    // 能力値の段以外（種族の段）は同じ下書き
+    const d0 = initialDraft(data);
+    expect(customStep(d0, { kind: "select", key: "agi" }, data, rng)).toEqual({ kind: "draft", draft: d0 });
+  });
+
+  test("UI-74 キー: 能力値の段の数字 1〜6 はその行の選択（select）。7 以上は null。Enter は次へ・Esc は戻るのまま", () => {
+    const d = stats();
+    const v = customView(d, data, S);
+    STAT_KEYS.forEach((k, i) => expect(customKeyChoice({ menu: i }, v, "stats", "")).toEqual({ kind: "select", key: k }));
+    expect(customKeyChoice({ menu: 6 }, v, "stats", "")).toBeNull();
+    expect(customKeyChoice("back", v, "stats", "")).toEqual({ kind: "back" });
+    expect(customKeyChoice("confirm", v, "stats", "")).toBeNull(); // 残りがあるので 次へ は dim
+  });
+
+  test("UI-74 customView の能力値の行に短い説明（stat.short.<k>）と選択中の印。説明の欄は選択中の stat.desc.<k> と職業の条件（classes.json の順、custom.classReq を半角空白でつなぐ）", () => {
+    const d = step(stats(), { kind: "select", key: "iq" }, createRng(1));
+    const v = customView(d, data, S);
+    expect(v.stats!.rows.map((r) => r.short)).toEqual(STAT_KEYS.map((k) => S[`stat.short.${k}`]));
+    expect(v.stats!.rows.map((r) => r.selected)).toEqual([false, true, false, false, false, false]);
+    expect(v.stats!.desc).toBe(S["stat.desc.iq"]);
+    expect(v.stats!.req).toBe("職業の条件　魔術師11 侍11 君主12 司教12");
+    expect(customView(stats(), data, S).stats!.req).toBe("職業の条件　戦士11 侍15 君主15");
+    expect(customView(step(stats(), { kind: "select", key: "luk" }, createRng(1)), data, S).stats!.req).toBe("職業の条件　君主15");
+    // ほかの段は stats が null（説明の欄は出ない）
+    expect(customView(initialDraft(data), data, S).stats).toBeNull();
+  });
+
+  test("UI-74 その能力値を要求する職業が無いときは custom.statReqNone（合成データ: 君主の運の条件を外す）。判定はしない（満たしているかは比べない）", () => {
+    const syn = {
+      ...data,
+      classes: data.classes.map((c) => {
+        if (c.id !== "lord") return c;
+        const { luk: _luk, ...rest } = c.requirements;
+        return { ...c, requirements: rest };
+      }),
+    };
+    const d = draftOf(customStep(stats(), { kind: "select", key: "luk" }, syn, createRng(1)));
+    expect(customView(d, syn, S).stats!.req).toBe(S["custom.statReqNone"]);
+    expect(S["custom.statReqNone"]).toBe("職業の条件は無い");
+    // 力 8 の人間でも戦士11 をそのまま並べる（足りているかで文は変わらない）
+    expect(customView(stats(), syn, S).stats!.req).toBe("職業の条件　戦士11 侍15 君主15");
+  });
+
+  test("UI-74 実データの 6 能力値で、説明の欄（232px = 全角 29 字）の desc は 2 行以内、職業の条件は 2 行以内、合わせて 4 行以内（禁則の折り返し）。札の短い説明は 12 字以内", () => {
+    for (const k of STAT_KEYS) {
+      const v = customView(step(stats(), { kind: "select", key: k }, createRng(1)), data, S).stats!;
+      const dl = kinsokuLines(v.desc, 29).length;
+      const rl = kinsokuLines(v.req, 29).length;
+      expect(dl, k).toBeLessThanOrEqual(2);
+      expect(rl, k).toBeLessThanOrEqual(2);
+      expect(dl + rl, k).toBeLessThanOrEqual(Math.floor(CUSTOM_STAT_DESC.h / 10));
+      expect([...v.rows.find((r) => r.key === k)!.short].length, k).toBeLessThanOrEqual(12);
+    }
+  });
+
+  test("UI-74 矩形: 札（名前の欄）は押せる大きさ（一辺 30 以上）。残りの行は高さ 12。説明の欄 y254..295 は 6 行・残りの行・下のボタンと重ならず、ステージの中", () => {
+    for (let i = 0; i < 6; i++) {
+      const r = customStatRow(i);
+      expect(Math.min(r.label.w, r.label.h)).toBeGreaterThanOrEqual(TOUCH_MIN_LOGICAL);
+      for (const x of [r.label, r.minus, r.value, r.plus]) {
+        expect(ov(x, CUSTOM_STAT_DESC)).toBe(false);
+        expect(ov(x, CUSTOM_REMAINING)).toBe(false);
+      }
+    }
+    expect(CUSTOM_REMAINING.h).toBe(12);
+    expect(CUSTOM_STAT_DESC).toEqual({ x: 4, y: 254, w: 232, h: 42 });
+    expect(ov(CUSTOM_REMAINING, CUSTOM_STAT_DESC)).toBe(false);
+    for (const b of [CUSTOM_BUTTONS.a, CUSTOM_BUTTONS.b, CUSTOM_BUTTONS.c]) {
+      expect(ov(b, CUSTOM_STAT_DESC)).toBe(false);
+      expect(ov(b, CUSTOM_REMAINING)).toBe(false);
+    }
+    expect(CUSTOM_STAT_DESC.x + CUSTOM_STAT_DESC.w).toBeLessThanOrEqual(data.config.stage.width);
+  });
+
+  test("UI-74 能力値の説明の文言が strings にある", () => {
+    for (const k of STAT_KEYS) {
+      expect(S[`stat.short.${k}`], k).toBeTypeOf("string");
+      expect(S[`stat.desc.${k}`], k).toBeTypeOf("string");
+    }
+    for (const k of ["custom.statReq", "custom.statReqNone", "custom.classReq"]) expect(S[k], k).toBeTypeOf("string");
   });
 });

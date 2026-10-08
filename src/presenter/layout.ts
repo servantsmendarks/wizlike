@@ -493,7 +493,10 @@ export function customRow(i: number): Rect {
   return { x: 8, y: 34 + 34 * i, w: 224, h: 32 };
 }
 
-/** 能力値の行 i（0..5。y = 34 + 34i）。名前 [-] 値 [+]（debugRow と同じ横の割り付け） */
+/**
+ * 能力値の行 i（0..5。y = 34 + 34i）。名前 [-] 値 [+]（debugRow と同じ横の割り付け）。
+ * UI-74（M12.5）: 名前の欄は 2 行の札（能力値の名前と短い説明）で押せる（押すとその能力値を選ぶ）
+ */
 export function customStatRow(i: number): { label: Rect; minus: Rect; value: Rect; plus: Rect } {
   const y = 34 + 34 * i;
   return {
@@ -504,8 +507,10 @@ export function customStatRow(i: number): { label: Rect; minus: Rect; value: Rec
   };
 }
 
-/** 能力値の段の「残り」の行（押せない） */
-export const CUSTOM_REMAINING: Rect = { x: 8, y: 240, w: 224, h: 32 };
+/** 能力値の段の「残り」の行（押せない。1 行。UI-74 で高さ 32 → 12【仮】） */
+export const CUSTOM_REMAINING: Rect = { x: 8, y: 240, w: 224, h: 12 };
+/** UI-74（M12.5）: 能力値の段の説明の欄（押せない。選択中の能力値の説明 2 行と職業の条件。4 行 × 10px【仮】）。誤りの欄（y276）と重なるが、能力値の段では誤りの欄を使わない */
+export const CUSTOM_STAT_DESC: Rect = { x: 4, y: 254, w: 232, h: 42 };
 /** 名前の入力欄（見た目の大きさ。DOM は 2 倍で作って scale(0.5)） */
 export const CUSTOM_NAME: Rect = { x: 8, y: 34, w: 224, h: 32 };
 /** 誤りの欄（押せない） */
