@@ -1397,6 +1397,21 @@ describe("SV-04 v5 → v6 の移行（M11。CB-60）", () => {
     expect(bad((_d, x) => (x["pendingChoice"] = { kind: "stairs", promptKey: "k", options: [] }))).toBe(false); // B4
   });
 
+  test("SV-04/DG-24 D-2: dive.judgedChests は省略可能（schemaVersion 6 のまま足した欄）。無い・CellRef の配列なら通り、型が違えば broken", () => {
+    const s = chestState();
+    const bad = (f: (dive: Record<string, unknown>) => void): boolean => {
+      const x = json(s) as unknown as Record<string, unknown>;
+      f(x["dive"] as Record<string, unknown>);
+      return isGameStateShape(x);
+    };
+    expect(bad((d) => delete d["judgedChests"])).toBe(true);
+    expect(bad((d) => (d["judgedChests"] = []))).toBe(true);
+    expect(bad((d) => (d["judgedChests"] = [{ floor: 1, x: 2, y: 3 }]))).toBe(true);
+    expect(bad((d) => (d["judgedChests"] = [{ floor: 1, x: 2 }]))).toBe(false);
+    expect(bad((d) => (d["judgedChests"] = null))).toBe(false);
+    expect(bad((d) => (d["judgedChests"] = "x"))).toBe(false);
+  });
+
   test("SV-04/SV-50 箱の選択中に保存したレコードは、続きからで同じ箱の操作に戻る（chest.open を受け付ける）", async () => {
     const mem = createMemoryBackend();
     const svc = service(mem);

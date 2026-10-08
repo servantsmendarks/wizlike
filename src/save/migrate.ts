@@ -209,6 +209,7 @@ function isChestShape(x: unknown): boolean {
  * 今の職業の欄がある（isCharacterShape。Character の欄の最初の検査）。
  * schemaVersion 6（M11。CB-60）: dive がオブジェクトなら chest が null か ChestState の形（isChestShape）、disarmedChests が CellRef の配列。
  * dive.chest が非 null なら pendingChoice は null。
+ * 同じ版に後から足した省略可能な欄（M11。D-2）: dive.judgedChests は無いか CellRef の配列。
  */
 export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(x)) return false;
@@ -228,6 +229,8 @@ export function isGameStateShape(x: unknown): x is GameState {
     if (!isChestShape(dive["chest"])) return false;
     const dc = dive["disarmedChests"];
     if (!Array.isArray(dc) || !dc.every(isCellRefShape)) return false;
+    const jc = dive["judgedChests"];
+    if (jc !== undefined && !(Array.isArray(jc) && jc.every(isCellRefShape))) return false;
     if (dive["chest"] !== null && x["pendingChoice"] !== null) return false;
   }
   if (!isMoraleShape(x["morale"])) return false;

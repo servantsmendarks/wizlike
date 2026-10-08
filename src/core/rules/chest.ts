@@ -6,6 +6,7 @@
 // 乱数の消費順（state.rng。テストの鏡で固定する）:
 //   勝利（CB-51 / CB-61）: chance(chestPct) →（当たれば）[chance(noTrapChance) →（罠ありなら）weightedIndex(危険度の重み) → randInt(その危険度の罠)]
 //   宝箱のセル（DG-24。findCellChest）: 罠は生成時に階の rng で引いてある（DG-23）ので、ここでは引かずに「見つけた」へ進む
+//     （一度判定したセル（judgedChests。D-2）は衝動なしの「見つけた」。乱数なし）
 //   見つけた（presentChest。衝動あり）: [EV-16 衝動: 対象者（盗賊）ごとに並び順で（錯乱なら randInt(0,3)）→（p > 0 なら）d100]
 //     →（行動者がいて制止者がいれば）[EV-25 制止: 1d10 制止者 → 1d10 行動者] →（開けるなら）[開ける]
 //     →（箱が残り戦闘中でなければ）[EV-71 掛け合い: 対象が 2 人以上なら chance(d100) →（発生すれば）対象者ごとに並び順で contest.dice]
@@ -150,7 +151,8 @@ export function rollDropChest(ctx: RuleContext, inRoom: boolean, level: number):
  * DG-24（M11）: 宝箱のセルに乗った。dive.chest に宝箱のセルの箱を置いて presentChest（衝動あり）を呼ぶ。
  * 罠は生成時の chestTrapId（disarmedChests にあれば罠なし）、危険度は生成時の罠の値（解除した箱でも残す。IT-56）、
  * 中身の Lv は floorChestLevel、inRoom は roomId !== null。cell は dive.floor の実効の構造のセル（kind chest）、pos はその位置。
- * 乱数はここでは引かない（presentChest の衝動・制止・掛け合いが引く）
+ * 乱数はここでは引かない（presentChest の衝動・制止・掛け合いが引く）。
+ * D-2: そのセルが dive.judgedChests にあれば presentChest（衝動なし。乱数なし）。無ければ judgedChests の末尾に入れてから衝動ありで呼ぶ
  */
 export function findCellChest(ctx: RuleContext, cell: Cell, pos: Pos, startAlarm: StartAlarm): void {
   const { state, data } = ctx;
@@ -169,6 +171,13 @@ export function findCellChest(ctx: RuleContext, cell: Cell, pos: Pos, startAlarm
     finding: null,
     rivalry: null,
   };
+  // D-2（2026-10-08）: 一度判定したセル（judgedChests）は衝動・制止・掛け合いを省く（乱数を引かない）。初めてなら記録して判定する
+  const judged = dive.judgedChests ?? [];
+  if (judged.some((c) => c.floor === ref.floor && c.x === ref.x && c.y === ref.y)) {
+    presentChest(ctx, { impulse: false });
+    return;
+  }
+  dive.judgedChests = [...judged, { ...ref }];
   presentChest(ctx, { impulse: true, startAlarm });
 }
 

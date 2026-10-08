@@ -1357,6 +1357,74 @@ describe("DG-24 宝箱のセルに乗る（M11 の作業 7）", () => {
     ]);
   });
 
+  test("DG-24/EV-16/EV-71 D-2: 一度判定した宝箱のセルは dive.judgedChests に入り、放っておいて踏み直すと衝動・制止・掛け合いを省く（d100 を振らず SAN も増えない。chestFound → chest.found.cell → chest.prompt。finding / rivalry は null）", () => {
+    const Di = chestData((x) => {
+      for (const def of x.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    });
+    // キリの衝動 → フィンの制止が成功（SAN +）→ 掛け合いが発生する出目
+    const k = findK((m) => rollDie(m, 100) <= P_KIRI && 9 + rollDie(m, 10) >= 15 + rollDie(m, 10) && chance(m, 50));
+    const { state, a } = atChest();
+    const ref = { floor: 1, x: a.target.x, y: a.target.y };
+    const s = withRng(state, k);
+    expect(s.dive!.judgedChests ?? []).toEqual([]);
+    const first = exec(s, MOVE, Di);
+    expect(kindsOf(first.events)).toContain("chestImpulse");
+    expect(kindsOf(first.events)).toContain("message:event.stop.success");
+    expect(kindsOf(first.events)).toContain("message:rivalry.thief_chest.start");
+    expect(first.state.dive!.judgedChests).toEqual([ref]);
+    expectStateInvariants(first.state);
+    const left = exec(first.state, LEAVE, Di).state;
+    expect(left.dive!.judgedChests).toEqual([ref]);
+    const out = exec(exec(left, AROUND, Di).state, MOVE, Di).state;
+    // 踏み直す（同じ出目の rng にしても判定しない）
+    const turned = withRng(exec(out, AROUND, Di).state, k);
+    const back = exec(turned, MOVE, Di);
+    expect(back.state.rng).toEqual(turned.rng);
+    expect(back.events).toEqual([
+      { kind: "moved", pos: a.target, facing: a.facing },
+      { kind: "chestFound", source: "cell" },
+      { kind: "message", key: "chest.found.cell" },
+      { kind: "message", key: "chest.prompt" },
+    ]);
+    expect(eventsOf(back.events, "sanChanged")).toEqual([]);
+    expect(chestOf(back.state)!.finding).toBeNull();
+    expect(chestOf(back.state)!.rivalry).toBeNull();
+    expect(back.state.dive!.judgedChests).toEqual([ref]); // 重ねない
+    expectStateInvariants(back.state);
+  });
+
+  test("DG-24/EV-16 D-2: judgedChests にあるのが別のセル（別の階・別の位置）なら判定する。judgedChests の欄が無い（M11 の前の v6 の保存）なら空として扱う", () => {
+    const Di = chestData((x) => {
+      for (const def of x.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    });
+    const k = findK((m) => rollDie(m, 100) <= P_KIRI);
+    const { state, a } = atChest();
+    const s = withRng(state, k);
+    s.dive!.judgedChests = [
+      { floor: 2, x: a.target.x, y: a.target.y },
+      { floor: 1, x: a.target.x + 1, y: a.target.y },
+    ];
+    const r = exec(s, MOVE, Di);
+    expect(kindsOf(r.events)).toContain("chestImpulse");
+    expect(r.state.dive!.judgedChests).toHaveLength(3);
+    const s2 = withRng(state, k);
+    delete s2.dive!.judgedChests;
+    const r2 = exec(s2, MOVE, Di);
+    expect(kindsOf(r2.events)).toContain("chestImpulse");
+    expect(r2.state.dive!.judgedChests).toEqual([{ floor: 1, x: a.target.x, y: a.target.y }]);
+  });
+
+  test("DG-24 D-2: 開けた・失った宝箱のセルは clearedCells で部屋・通路に戻るので、judgedChests の記録は残っても使われない（踏み直しても箱は出ない）", () => {
+    const { s, a } = atChest();
+    s.dive!.disarmedChests = [{ floor: 1, x: a.target.x, y: a.target.y }];
+    const found = exec(s, MOVE, D).state;
+    const opened = exec(found, OPEN, D).state;
+    expect(opened.dive!.judgedChests).toEqual([{ floor: 1, x: a.target.x, y: a.target.y }]);
+    const out = exec(exec(opened, AROUND, D).state, MOVE, D).state;
+    const back = exec(exec(out, AROUND, D).state, MOVE, D);
+    expect(kindsOf(back.events)).not.toContain("chestFound");
+  });
+
   test("UI-57 debug.warp chest: 開ける前の宝箱のセルの手前へ移ってそちらを向く（message debug.warp.chest）。前進で箱が見つかる。宝箱のセルが無ければ debug.warp.none", () => {
     const s = dived(1);
     const r = exec(s, { type: "debug.warp", to: "chest" }, D);

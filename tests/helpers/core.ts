@@ -195,6 +195,11 @@ export function expectStateInvariants(state: GameState): void {
     expect(state.pendingChoice, "chest ⇒ pendingChoice null").toBeNull();
     expect(state.screen === "dungeon" || state.screen === "battle", `chest ⇒ screen dungeon / battle (${state.screen})`).toBe(true);
   }
+  // DG-24（M11。D-2）: 判定済みの宝箱のセルは重複なし
+  if (state.dive !== null && state.dive.judgedChests !== undefined) {
+    const keys = state.dive.judgedChests.map((c) => `${c.floor}:${c.x}:${c.y}`);
+    expect(new Set(keys).size, "judgedChests has no duplicates").toBe(keys.length);
+  }
   if (state.battle !== null) {
     expect(state.battle.origin.kind === "alarm", "in battle: origin alarm ⇔ chest (CB-67)").toBe(state.dive?.chest != null);
   }

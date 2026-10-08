@@ -205,6 +205,11 @@ export type Dive = {
   chest: ChestState | null;
   /** CB-64 / DG-24（M11。schemaVersion 6）: 罠が無くなった（解除の成功・作動）宝箱のセル。入場時 [] */
   disarmedChests: CellRef[];
+  /**
+   * DG-24 / EV-16（M11。D-2）: 衝動判定（EV-16 / EV-25）と職業の掛け合い（EV-71）を一度行った宝箱のセル。踏み直したら両方を省く。
+   * 重複なし。省略可能（schemaVersion 6 のまま足した欄。無ければ空として扱い、最初に判定したときに作る）
+   */
+  judgedChests?: CellRef[];
 };
 
 /**
