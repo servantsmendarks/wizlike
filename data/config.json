@@ -78,7 +78,7 @@
     "triggerChance": 10, "wrongNameChance": 50, "disarmFailTrigger": 50,
     "impulse": { "lure": { "treasure": 2, "unknown": 0, "danger": 1, "weak": 0 }, "stat": "agi", "impulseClasses": ["thief"] }
   },
-  "save": { "maxGames": 5, "schemaVersion": 6 },
+  "save": { "maxGames": 5, "schemaVersion": 7 },
   "input": { "swipeThresholdPx": 28, "holdRepeatMs": 250, "edgeDeadZonePx": 12 },
   "ui": {
     "textSpeedMs": 30, "diceStepMs": 300, "flashMs": 120, "shakeMs": 150, "viewFadeMs": 80,

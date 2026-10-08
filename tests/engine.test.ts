@@ -89,7 +89,7 @@ describe("engine: execute", () => {
     expect(JSON.parse(JSON.stringify(s0))).toEqual(s0);
   });
 
-  test("D3 createInitialState: screen title、party []、rng は createRng(seed) と同じ、gold 0、bank 0、nextItemSeq 1、dive と pendingChoice と battle は null、bestiary は {}、townVisit は null、adventureTurns・tavernEventMark は 0（TW-12）、morale は null（TW-15）、IT-10 warehouse / buyback は []・uniqueBook は {}・progress.shopLevel は 0（M7）", () => {
+  test("D3 createInitialState: screen title、party []、rng は createRng(seed) と同じ、gold 0、bank 0、nextItemSeq 1、dive と pendingChoice と battle は null、bestiary は {}、townVisit は null、adventureTurns・tavernEventMark は 0（TW-12）、morale は null（TW-15）、IT-10 warehouse / buyback は []・uniqueBook は {}・progress.shopLevel は 0（M7）、TW-35 tally は全部 0・progress の enteredDungeons []・conquered / endingPending false（M12）", () => {
     const s = createInitialState(42, data);
     expect(s).toEqual({
       screen: "title",
@@ -99,7 +99,7 @@ describe("engine: execute", () => {
       nextItemSeq: 1,
       gold: 0,
       bank: 0,
-      progress: { unlockedDungeons: [], clearedDungeons: [], shopLevel: 0 }, // IT-62（M7）
+      progress: { unlockedDungeons: [], clearedDungeons: [], shopLevel: 0, enteredDungeons: [], conquered: false, endingPending: false }, // IT-62（M7）、DG-37 / DG-36 / TW-34（M12）
       dive: null,
       pendingChoice: null,
       battle: null,
@@ -111,6 +111,7 @@ describe("engine: execute", () => {
       warehouse: [], // TW-16 / IT-64（M7）
       buyback: [], // IT-63（M7）
       uniqueBook: {}, // IT-66（M7）
+      tally: { dives: 0, battles: 0, deaths: 0, ashes: 0, wipes: 0 }, // TW-35（M12）
     });
     expect(() => createInitialState(1.5, data)).toThrow(RangeError);
   });

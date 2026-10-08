@@ -46,6 +46,14 @@
   - 判定順は wrong screen → bad action（形。catalysts が配列でない・多すぎる・重複）→ no such member → bad slot → slot empty → unique → bad catalyst（inventory に無い・装備でない・ユニーク・未鑑定）→ not enough gold。
   - 処理の順は 払う → 触媒を消す → 判定の箱（dice。label `dice.upgrade`{item}、行 `dice.row.roll`（base null、d100）、基準 `dice.upgrade.rule`{rate: p, great: q}（「成功率 p（うち大成功 q）」）、結果 `dice.upgrade.great` / `ok` / `ng`）→ Lv の変更 → `town.upgrade.great` / `ok` / `ng`{name, item}（item は変更後の表示名）。
   - 画面（UI）: キャラ → 部位 → 触媒（0〜3 個を選ぶ）→ 成功率と料金の表示 → 実行 → 判定の箱。成功率・大成功・料金・可否は core の問い合わせ（`upgradePreview`）の値を描き、表示層は計算しない（UI-35）。者ごとの部位（空き・ユニークは対象にできない）と触媒の候補は `townMenu.upgrade` の値を描く。
+- TW-35 戦績の通算（M12。SV-04 v7）: `GameState.tally` の 5 項目（`dives` / `battles` / `deaths` / `ashes` / `wipes`）。どれもゲーム単位の通算で、game.new で 0、全滅・帰還で戻さない。数える所は各項目 1 か所に寄せる（`rules/progress.ts` の `bumpTally`）。
+  - dives: 入場（`dungeon.enter` の成立。`rules/dungeon.ts` の enterDungeon）。
+  - battles: 戦闘の開始（`combat.ts` の startBattle。random・alarm・boss のすべて）。
+  - deaths: alive から dead になった瞬間（戦闘中の `combat.ts` allyDies と、戦闘外の `field.ts` damageMembers の 2 か所。core の `life = "dead"` の代入はこの 2 か所だけで、テストのソースの検査で見張る）。死者と灰は今の人数ではなく通算（2026-10-08 ユーザー確認）。
+  - ashes: 寺院の蘇生の失敗（dead → ash。`town.ts` rollResurrect）。
+  - wipes: 全滅処理（`wipe.ts` performWipe）。
+  - 戦績の画面の値は core の `endingRecordView(state, data)`（`EndingRecord`）: 上の 5 項目、経過 `turns`（`adventureTurns`。TW-12）、敵の図鑑（`bestiary` のうち `identified` が真の種類 / `data.monsters` の数。遭遇しただけの未鑑定は数えない。宿の噂話 TW-15 で鑑定した分は入る）、品の図鑑（`uniqueBook` のキー数 / `data.uniques` の数）。state を変えない。
+  - 酒場の「戦績」（U-2）を出すかは `townMenu().canShowRecord`（= `progress.conquered`。DG-36）。
 
 ## 2. 全滅処理
 

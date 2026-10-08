@@ -1655,6 +1655,25 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(member(out.state, "c1").life).toBe("dead");
   });
 
+  test("TW-35 戦闘中の死亡（allyDies）で tally.deaths が死者 1 人につき 1 増える。戦闘の開始は battles に数え済みで、ラウンドでは増えない", () => {
+    const d = dataWith({ combat: ALWAYS_HIT });
+    const s = setup([{ monsterId: "kobold", hps: [80] }], {
+      identified: ["kobold"],
+      patches: { c1: { hp: 1 }, c2: STONE, c3: STONE },
+      inputs: { c1: DEF, c4: DEF, c5: DEF, c6: DEF },
+    });
+    const before = s.tally; // withBattle は startBattle を通さないので battles は 0 のまま
+    expect(before).toEqual({ dives: 1, battles: 0, deaths: 0, ashes: 0, wipes: 0 });
+    const r = exec(s, RESOLVE, d);
+    const dead = r.events.filter((e) => e.kind === "lifeChanged" && e.life === "dead" && memberById(s, e.id) !== null);
+    expect(dead).toEqual([{ kind: "lifeChanged", id: "c1", life: "dead" }]);
+    expect(r.state.tally).toEqual({ ...before, deaths: 1 });
+    // 敵の死亡（lifeChanged dead の敵の id）は数えない
+    const win = exec(withBattle(dived(1), [{ monsterId: "kobold", hps: [1] }], { inputs: allInputs(dived(1), atk(0)) }), RESOLVE, d);
+    expect(win.events.some((e) => e.kind === "lifeChanged" && e.life === "dead")).toBe(true);
+    expect(win.state.tally.deaths).toBe(0);
+  });
+
   test("CB-54/CH-45 死亡した時点で状態異常をすべて外す: lifeChanged dead の直後に status の順で statusChanged off、その後に battle.dead。逃げた後も status は空", () => {
     // 2026-10-05 ユーザー決定で 95f5fef の「死亡しても状態異常は外さない」を撤回し、このテストを書き直した
     // （旧: 死者に poison が残り statusChanged を出さないことを固定していた）

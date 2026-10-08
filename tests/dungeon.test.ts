@@ -1079,6 +1079,15 @@ describe("罠（DG-20, DG-21, E4）", () => {
     expect(r.state.rng).toEqual(mirror);
   });
 
+  test("TW-35 罠（pit）の死亡で tally.deaths が 1 増える（戦闘外の死亡は field.ts damageMembers で数える）。前進そのものは dives・battles を増やさない", () => {
+    const { state } = atPit((s) => {
+      s.party[2]!.hp = 1;
+    });
+    const r = run(state, MOVE, DATA0);
+    expect(r.state.party[2]!.life).toBe("dead");
+    expect(r.state.tally).toEqual({ ...state.tally, deaths: state.tally.deaths + 1 });
+  });
+
   test("DG-20/CH-45 戦闘外の死亡でも状態異常をすべて外す: lifeChanged dead の直後に statusChanged off（status の順）、その後に dungeon.dead", () => {
     const { state } = atPit((s) => {
       s.party[2]!.hp = 1; // 1d4 は 1 以上なので必ず倒れる

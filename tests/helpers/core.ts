@@ -205,6 +205,8 @@ export function mirrorWipeRolls(m: RngState, unequipped: number, d: GameData = d
  * - dive.chest が非 null なら pendingChoice null、screen は dungeon か battle（M11。CB-60）
  * - 戦闘中は「origin が alarm ⇔ dive.chest が非 null」（M11。CB-67: 箱があるのは警報の戦闘だけで、警報の戦闘には必ず箱がある）
  * - gold は 0 以上の整数、各人の levelHistory.length === level − 1、各人の maxLevelReached[classId] ≥ level（CH-63）
+ * - tally の 5 欄は 0 以上の整数（TW-35。M12）。progress.enteredDungeons は重複なしで unlockedDungeons の部分集合、潜行中なら dive.dungeonId を含む（DG-37）。
+ *   endingPending ⇒ conquered（TW-34 / DG-36）
  * - JSON 往復で変わらない（CLAUDE.md §3-11）
  */
 export function expectStateInvariants(state: GameState): void {
@@ -253,7 +255,32 @@ export function expectStateInvariants(state: GameState): void {
   for (const ch of state.party) expect(ch.levelHistory, `levelHistory of ${ch.id}`).toHaveLength(ch.level - 1);
   // CH-63（SV-04 v5）: maxLevelReached は職業ごとの記録で、今の職業の欄は level 以上
   for (const ch of state.party) expect(ch.maxLevelReached[ch.classId] ?? 0, `maxLevelReached of ${ch.id}`).toBeGreaterThanOrEqual(ch.level);
+  // TW-35 / DG-37 / DG-36（M12。SV-04 v7）
+  for (const [k, v] of Object.entries(state.tally)) expect(Number.isInteger(v) && v >= 0, `tally.${k} ${v}`).toBe(true);
+  const entered = state.progress.enteredDungeons;
+  expect(new Set(entered).size, "enteredDungeons has no duplicates").toBe(entered.length);
+  for (const id of entered) expect(state.progress.unlockedDungeons, `entered ${id} is unlocked`).toContain(id);
+  if (state.dive !== null) expect(entered, "dive.dungeonId is entered").toContain(state.dive.dungeonId);
+  if (state.progress.endingPending) expect(state.progress.conquered, "endingPending ⇒ conquered").toBe(true);
   expect(JSON.parse(JSON.stringify(state))).toStrictEqual(state);
+}
+
+/**
+ * TW-35（M12）の不変条件: 1 回の execute での tally の増分が、同じ events の出来事の数と一致する。
+ * dives = message dungeon.enter の数、battles = screen{battle} の数、deaths = パーティの者（from.party の id）の lifeChanged dead の数、
+ * ashes = lifeChanged ash の数、wipes = wipe の数。減ることは無い
+ */
+export function expectTallyMatchesEvents(from: GameState, to: GameState, events: readonly GameEvent[]): void {
+  const ids = new Set(from.party.map((c) => c.id));
+  const count = (pred: (e: GameEvent) => boolean) => events.filter(pred).length;
+  const want = {
+    dives: from.tally.dives + count((e) => e.kind === "message" && e.key === "dungeon.enter"),
+    battles: from.tally.battles + count((e) => e.kind === "screen" && e.to === "battle"),
+    deaths: from.tally.deaths + count((e) => e.kind === "lifeChanged" && e.life === "dead" && ids.has(e.id)),
+    ashes: from.tally.ashes + count((e) => e.kind === "lifeChanged" && e.life === "ash"),
+    wipes: from.tally.wipes + count((e) => e.kind === "wipe"),
+  };
+  expect(to.tally, "tally matches events (TW-35)").toEqual(want);
 }
 
 /** 最初の randInt(1, 100) が pred を満たす最小のシード（鏡の rng で探す） */

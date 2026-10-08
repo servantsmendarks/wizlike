@@ -35,7 +35,7 @@ import { townMenu } from "../../src/core/rules/town";
 import { classOf, findBase, findItem, itemOf } from "../../src/core/state";
 import type { EquipSlot } from "../../src/core/data/index";
 import type { Command, Facing, Floor, GameEvent, GameState, ItemInstance, PartySetupMember, PenaltyResult, Pos } from "../../src/core/types";
-import { data, expectKnownStringKeys, expectStateInvariants, newGame } from "../helpers/core";
+import { data, expectKnownStringKeys, expectStateInvariants, expectTallyMatchesEvents, newGame } from "../helpers/core";
 
 const NEAR = 6; // 上り階段からの BFS 距離
 const STEP_CAP = 3000; // 1 回の潜行の歩数の上限
@@ -390,6 +390,7 @@ export class Campaign {
     this.countChestFlow(cmd, from, r.state, r.events);
     // 入力を積むだけの battle.input と向きを変えるだけの dungeon.turn は時間の都合で省く（decisions の H9 の行）
     if (cmd.type !== "battle.input" && cmd.type !== "dungeon.turn") expectStateInvariants(r.state);
+    expectTallyMatchesEvents(from, r.state, r.events); // TW-35（M12）
     expectKnownStringKeys(r.events);
     for (const e of r.events) if (e.kind === "message") this.keys.add(e.key);
     const w = r.events.find((e): e is Extract<GameEvent, { kind: "wipe" }> => e.kind === "wipe");

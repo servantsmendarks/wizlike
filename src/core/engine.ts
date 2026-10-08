@@ -57,7 +57,7 @@ export function createInitialState(seed: number, _data: GameData): GameState {
     nextItemSeq: 1,
     gold: 0,
     bank: 0,
-    progress: { unlockedDungeons: [], clearedDungeons: [], shopLevel: 0 },
+    progress: { unlockedDungeons: [], clearedDungeons: [], shopLevel: 0, enteredDungeons: [], conquered: false, endingPending: false },
     dive: null,
     pendingChoice: null,
     battle: null,
@@ -69,6 +69,7 @@ export function createInitialState(seed: number, _data: GameData): GameState {
     warehouse: [],
     buyback: [],
     uniqueBook: {},
+    tally: { dives: 0, battles: 0, deaths: 0, ashes: 0, wipes: 0 }, // TW-35（M12）
   };
 }
 

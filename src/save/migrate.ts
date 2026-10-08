@@ -95,12 +95,36 @@ export function migrateV5toV6(x: unknown): unknown {
 }
 
 /**
+ * SV-04 v6 → v7（M12。TW-35 / DG-36 / TW-34 / DG-37）: tally を全部 0 にし（過去の潜行・戦闘などの数は保存に残っていないので復元しない）、
+ * progress に conquered false・endingPending false（v6 では d03 が準備中で制覇できなかった）と enteredDungeons を足す。
+ * enteredDungeons は保存から分かる「入ったことのある」ダンジョン: clearedDungeons の文字列（その順）と、潜行中なら dive.dungeonId（重複は除く）。
+ * 引数は書き換えない（浅い複製。progress も複製する）。オブジェクトでなければそのまま返す（形の検査で broken）。progress がオブジェクトでなければ progress は変えない
+ */
+export function migrateV6toV7(x: unknown): unknown {
+  if (!isPlainObject(x)) return x;
+  const out: Record<string, unknown> = { ...x, tally: { dives: 0, battles: 0, deaths: 0, ashes: 0, wipes: 0 } };
+  const progress = x["progress"];
+  if (isPlainObject(progress)) {
+    const entered: string[] = [];
+    const add = (id: unknown): void => {
+      if (typeof id === "string" && !entered.includes(id)) entered.push(id);
+    };
+    const cleared = progress["clearedDungeons"];
+    if (Array.isArray(cleared)) cleared.forEach(add);
+    const dive = x["dive"];
+    if (isPlainObject(dive)) add(dive["dungeonId"]);
+    out["progress"] = { ...progress, enteredDungeons: entered, conquered: false, endingPending: false };
+  }
+  return out;
+}
+
+/**
  * 移行関数の列（MIGRATIONS[i] は版 i+1 → i+2）。v3 → v4 の流通レベルは dungeons の onClear.shopLevel から計算する（IT-80）。
  * アプリ（main.ts）は検証済みの data.dungeons を渡して SaveDeps.migrations にする
  */
 export function createMigrations(dungeons: readonly Pick<DungeonDef, "id" | "onClear">[]): readonly Migration[] {
   const table: ShopLevelTable = Object.fromEntries(dungeons.map((d) => [d.id, d.onClear.shopLevel]));
-  return [migrateV1toV2, migrateV2toV3, (x) => migrateV3toV4(x, table), migrateV4toV5, migrateV5toV6];
+  return [migrateV1toV2, migrateV2toV3, (x) => migrateV3toV4(x, table), migrateV4toV5, migrateV5toV6, migrateV6toV7];
 }
 
 /** 既定の移行関数の列（流通レベルの表が空なので v3 → v4 の shopLevel は 0）。アプリは createMigrations(data.dungeons) を使う */
@@ -125,6 +149,13 @@ const RARITIES: readonly unknown[] = ["normal", "fine", "rare", "legendary"];
 function isStringOrNull(x: unknown): boolean {
   return x === null || typeof x === "string";
 }
+
+/** TW-35（schemaVersion 7）: tally は 5 欄（dives / battles / deaths / ashes / wipes）がどれも 0 以上の安全な整数のプレーンなオブジェクト */
+function isTallyShape(x: unknown): boolean {
+  return isPlainObject(x) && TALLY_KEYS.every((k) => isTurnCount(x[k]));
+}
+
+const TALLY_KEYS = ["dives", "battles", "deaths", "ashes", "wipes"] as const;
 
 function isStringArray(x: unknown): boolean {
   return Array.isArray(x) && x.every((e) => typeof e === "string");
@@ -212,6 +243,8 @@ function isChestShape(x: unknown): boolean {
  * schemaVersion 6（M11。CB-60）: dive がオブジェクトなら chest が null か ChestState の形（isChestShape）、disarmedChests が CellRef の配列。
  * dive.chest が非 null なら pendingChoice は null。
  * 同じ版に後から足した省略可能な欄（M11。D-2 / U-7）: dive.judgedChests は無いか CellRef の配列、dive.chest.rivalryFails は無いか 0 以上の整数。
+ * schemaVersion 7（M12。TW-35 / DG-36 / TW-34 / DG-37）: tally が isTallyShape、progress.conquered / endingPending が真偽値、
+ * progress.enteredDungeons が文字列の配列。
  */
 export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(x)) return false;
@@ -242,6 +275,9 @@ export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(book) || !Object.values(book).every(isUniqueBookEntryShape)) return false;
   const progress = x["progress"];
   if (!isPlainObject(progress) || !isTurnCount(progress["shopLevel"])) return false;
+  if (typeof progress["conquered"] !== "boolean" || typeof progress["endingPending"] !== "boolean") return false;
+  if (!isStringArray(progress["enteredDungeons"])) return false;
+  if (!isTallyShape(x["tally"])) return false;
   if ((x["screen"] === "battle") !== (x["battle"] !== null)) return false;
   if ((x["screen"] === "town") !== (x["townVisit"] !== null)) return false;
   const pc = x["pendingChoice"];

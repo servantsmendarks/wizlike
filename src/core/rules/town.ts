@@ -18,6 +18,7 @@ import { capSan, overSan, restoreSan } from "./san";
 import { shopMenu } from "./shop";
 import { storageMenu } from "./storage";
 import { upgradeMenu } from "./upgrade";
+import { bumpTally } from "./progress";
 
 export type TempleService = "resurrect" | "cure" | "uncurse";
 /** 帰還の語りのキー（DG-30: 帰還の糸 / DG-06: 徒歩 / DG-32: テレポーター / MG-40: 帰還の呪文） */
@@ -316,6 +317,7 @@ export function rollResurrect(ctx: RuleContext, ch: Character): boolean {
     return true;
   }
   ch.life = "ash";
+  bumpTally(ctx.state, "ashes"); // TW-35（M12）
   ctx.events.push({ kind: "lifeChanged", id: ch.id, life: "ash" });
   clearAllStatus(ctx, ch); // CH-45（死亡で外れているはずだが、古い保存の死者に残っていても灰では持たない）
   return false;
@@ -400,6 +402,7 @@ export function townMenu(state: GameState, data: GameData): TownMenu | null {
     })),
     // TW-03（M5.5）: camp.ts を import しない（循環を作らない）ので、campMenu の identifiers と同じ条件をここで数える
     canIdentify: state.party.some((c) => canAct(c) && classOf(data, c.classId).abilities.includes("identify")),
+    canShowRecord: state.progress.conquered, // TW-35（M12。U-2）
   };
 }
 

@@ -82,6 +82,7 @@ import { equipStats, hasSkill, hpMaxOf, skillTotal, spellCost } from "./equip-st
 import { loseSan, sanCapOf, sanStage } from "./san";
 import { raiseShopLevel } from "./shop";
 import { performWipe } from "./wipe";
+import { bumpTally } from "./progress";
 
 /**
  * CB-55 の拍を出すかどうか。テストで「拍を入れない場合」と比べる（不変条件 (c)）ためだけのスイッチで、
@@ -200,6 +201,7 @@ export function startBattle(ctx: RuleContext, origin: BattleOrigin, specs: { mon
     if (state.bestiary[g.monsterId] === undefined) state.bestiary[g.monsterId] = { kills: 0, identified: false };
   }
   state.battle = { origin, round: 0, partySurprise: false, groups, inputs: {}, auto: false, acBonus: {} };
+  bumpTally(state, "battles"); // TW-35（M12）: 戦闘の開始（random・boss・alarm のすべてがここを通る）
   state.screen = "battle";
   ctx.events.push({ kind: "screen", to: "battle" });
   section(ctx, "system", () => {
@@ -916,6 +918,7 @@ function actEnemyUnit(ctx: RuleContext, g: number, u: number, defending: Readonl
 /** CB-54/CH-45: 戦闘中の死亡。状態異常をすべて外す。本人以外の生存者の SAN が減る */
 function allyDies(ctx: RuleContext, ch: Character): void {
   ch.life = "dead";
+  bumpTally(ctx.state, "deaths"); // TW-35（M12）
   ctx.events.push({ kind: "lifeChanged", id: ch.id, life: "dead" });
   clearAllStatus(ctx, ch);
   ctx.events.push({ kind: "message", key: "battle.dead", params: { target: ch.name } });

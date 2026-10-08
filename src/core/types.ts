@@ -125,6 +125,37 @@ export type Progress = {
   clearedDungeons: string[];
   /** IT-62（M7）: 店の流通レベル。game.new で 0 */
   shopLevel: number;
+  /**
+   * DG-37（M12。schemaVersion 7）: 一度でも入場（dungeon.enter の成立）したダンジョンの id（初めて入った順。重複なし）。game.new で []。
+   * 初回入場の語り（enterSpeech）の判定に使う。v6 からの移行では clearedDungeons と潜行中の dive.dungeonId から復元する
+   */
+  enteredDungeons: string[];
+  /** DG-36（M12。schemaVersion 7）: 全ダンジョン制覇。一度立てたら落とさない。game.new で false */
+  conquered: boolean;
+  /** TW-34（M12。schemaVersion 7）: 結末を街で語る予定。語ったら false。game.new で false */
+  endingPending: boolean;
+};
+
+/**
+ * TW-35（M12。schemaVersion 7）: 戦績の通算。ゲーム単位で永続（全滅・帰還で戻さない）。game.new で全部 0。
+ * 数える所は各項目 1 か所（rules/progress.ts bumpTally を呼ぶ）: dives は enterDungeon、battles は startBattle（random・boss・alarm）、
+ * deaths は alive → dead の 2 か所（combat.ts allyDies・field.ts damageMembers）、ashes は town.ts rollResurrect の失敗、wipes は wipe.ts performWipe
+ */
+export type Tally = { dives: number; battles: number; deaths: number; ashes: number; wipes: number };
+
+/**
+ * TW-35（M12）: 戦績の画面の値（rules/progress.ts endingRecordView）。turns は adventureTurns。
+ * bestiary.known は bestiary のうち identified が真の種類の数、total は data.monsters の数。uniques.known は uniqueBook のキー数、total は data.uniques の数
+ */
+export type EndingRecord = {
+  dives: number;
+  battles: number;
+  deaths: number;
+  ashes: number;
+  wipes: number;
+  turns: number;
+  bestiary: { known: number; total: number };
+  uniques: { known: number; total: number };
 };
 
 // ===================== 迷宮の構造（生成結果。GameState には入れない。DG-03 / E1） =====================
@@ -373,6 +404,8 @@ export type Morale = { rankId: string };
 // M5.5 で adventureTurns・tavernEventMark・dive.knownTraps を足して schemaVersion 2 にした（migrateV1toV2）。
 // M7 の A で morale を足して schemaVersion 3 にした（migrateV2toV3）。
 // M7 の B で ItemInstance の欄・warehouse・buyback・uniqueBook・progress.shopLevel を足して schemaVersion 4 にした（migrateV3toV4）。
+// M10 で maxLevelReached を職業ごとにして 5（migrateV4toV5）、M11 で dive.chest・disarmedChests を足して 6（migrateV5toV6）にした。
+// M12 で tally・progress.enteredDungeons / conquered / endingPending を足して schemaVersion 7 にした（migrateV6toV7）。
 // schemaVersion、turn、updatedAt、gameId は保存レコード側の欄（SV-21）で、ここには入れない。
 
 export type GameState = {
@@ -413,6 +446,8 @@ export type GameState = {
   buyback: string[];
   /** IT-66（M7）: 図鑑（ユニーク）。uniqueId → 記録。ゲーム単位で永続 */
   uniqueBook: Record<string, UniqueBookEntry>;
+  /** TW-35（M12。schemaVersion 7）: 戦績の通算。game.new で全部 0 */
+  tally: Tally;
 };
 
 // ===================== コマンド（CLAUDE.md §5） =====================
@@ -716,6 +751,8 @@ export type TownMenu = {
   dungeons: { id: string; name: string; canEnter: boolean; notReady: boolean }[];
   /** TW-03（M5.5）: 酒場の一覧に「鑑定」を出すか。abilities に identify を持ち canAct の者が 1 人以上（campMenu の identifiers.length > 0 と同値） */
   canIdentify: boolean;
+  /** TW-35（M12。U-2）: 酒場の一覧に「戦績」を出すか。progress.conquered と同値 */
+  canShowRecord: boolean;
 };
 
 /** rules/items.ts fieldItemMenu の道具 1 個 */

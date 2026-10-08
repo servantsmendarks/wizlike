@@ -77,7 +77,8 @@ describe("creation: game.new", () => {
     const s = newGame(1);
     expect(s.gold).toBe(300);
     expect(s.bank).toBe(0);
-    expect(s.progress).toEqual({ unlockedDungeons: ["d01"], clearedDungeons: [], shopLevel: 0 });
+    // M12: progress に enteredDungeons / conquered / endingPending を足した（SV-04 v7）
+    expect(s.progress).toEqual({ unlockedDungeons: ["d01"], clearedDungeons: [], shopLevel: 0, enteredDungeons: [], conquered: false, endingPending: false });
     expect([s.warehouse, s.buyback, s.uniqueBook]).toEqual([[], [], {}]);
   });
 

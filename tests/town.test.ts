@@ -8,6 +8,9 @@ import { STAT_KEYS, type StatKey } from "../src/core/data";
 import { createInitialState, execute } from "../src/core/engine";
 import { createRng, randInt, type RngState } from "../src/core/rng";
 import { checkEnter } from "../src/core/rules/dungeon";
+import { startAlarmEncounter, startBossEncounter, startRandomEncounter } from "../src/core/rules/combat";
+import { damageMembers } from "../src/core/rules/field";
+import { endingRecordView } from "../src/core/rules/progress";
 import { memberSheet } from "../src/core/rules/item-view";
 import { identifyFeeOf, sellPrice, shopPrice, shopSellPrice } from "../src/core/rules/shop";
 import { expFor } from "../src/core/rules/growth";
@@ -1515,5 +1518,140 @@ describe("TW-09 / CH-22 / CH-63（M10）転職（town.classChange）", () => {
     expect(s).toEqual(snap);
     expect(classChangeOptions(s, data, "c9")).toEqual([]);
     expect(classChangeOptions(diving(), data, "c1").every((o) => o.reason === "wrong screen")).toBe(true);
+  });
+});
+
+describe("TW-35 戦績の通算（tally。M12）", () => {
+  const ZERO = { dives: 0, battles: 0, deaths: 0, ashes: 0, wipes: 0 };
+  const ENTER = (dungeonId: string): Command => ({ type: "dungeon.enter", dungeonId });
+  /** 全員を石化にして（canAct 偽）迷宮の戦闘外のコマンドを 1 つ通し、全滅させる（TW-20。死者は出さない） */
+  function wipeOut(s: GameState): { state: GameState; events: GameEvent[] } {
+    const x = cloneState(s);
+    for (const c of x.party) c.status = ["stone"];
+    return ok(x, { type: "dungeon.turn", dir: "left" });
+  }
+
+  test("TW-35/DG-37 dives: dungeon.enter の成立ごとに 1 増え、全滅（wipes 1）・帰還で戻さない。enteredDungeons は初めて入った id だけを入った順に足す", () => {
+    const s0 = newGame(1);
+    expect(s0.tally).toEqual(ZERO);
+    expect(s0.progress.enteredDungeons).toEqual([]);
+    const s1 = ok(s0, ENTER("d01")).state;
+    expect(s1.tally).toEqual({ ...ZERO, dives: 1 });
+    expect(s1.progress.enteredDungeons).toEqual(["d01"]);
+    const w = wipeOut(s1);
+    expect(w.events.filter((e) => e.kind === "wipe")).toHaveLength(1);
+    expect(w.state.screen).toBe("town");
+    expect(w.state.tally).toEqual({ ...ZERO, dives: 1, wipes: 1 });
+    const s2 = ok(w.state, ENTER("d01")).state;
+    expect(s2.tally).toEqual({ ...ZERO, dives: 2, wipes: 1 });
+    expect(s2.progress.enteredDungeons).toEqual(["d01"]); // 2 回目は足さない
+    // 帰還で街に戻っても戻さない。d02 に初めて入ると足す
+    const back = cloneState(wipeOut(s2).state);
+    back.progress.unlockedDungeons.push("d02");
+    const s3 = ok(back, ENTER("d02")).state;
+    expect(s3.tally).toEqual({ ...ZERO, dives: 3, wipes: 2 });
+    expect(s3.progress.enteredDungeons).toEqual(["d01", "d02"]);
+    // 断られた入場は数えない
+    expectRejected(s3, ENTER("d01"), "wrong screen");
+    expectStateInvariants(s3);
+  });
+
+  test("TW-35 battles: startBattle を通る random・alarm・boss の遭遇がそれぞれ 1 ずつ増やす（ほかの欄は変えない）", () => {
+    const base = diving();
+    for (const start of [
+      (ctx: ReturnType<typeof ctxFor>) => startRandomEncounter(ctx, true),
+      (ctx: ReturnType<typeof ctxFor>) => startAlarmEncounter(ctx, false),
+      (ctx: ReturnType<typeof ctxFor>) => startBossEncounter(ctx),
+    ]) {
+      const ctx = ctxFor(cloneState(base));
+      start(ctx);
+      expect(ctx.events.filter((e) => e.kind === "screen" && e.to === "battle")).toHaveLength(1);
+      expect(ctx.state.tally).toEqual({ ...base.tally, battles: base.tally.battles + 1 });
+    }
+    expect(base.tally).toEqual({ ...ZERO, dives: 1 });
+  });
+
+  test("TW-35 deaths（戦闘外）: damageMembers で alive から dead になった人数だけ増える。既に dead の者・HP の残った者は数えない", () => {
+    const s = diving({ c3: { hp: 1 }, c5: { hp: 1 }, c6: { life: "dead", hp: 0 } });
+    for (const c of s.party) if (c.id !== "c3" && c.id !== "c5" && c.id !== "c6") c.hp = 100;
+    const ctx = ctxFor(s);
+    damageMembers(ctx, ctx.state.party, "1d4"); // 1d4 は 1 以上なので HP 1 の 2 人が倒れる
+    expect(ctx.events.filter((e) => e.kind === "lifeChanged")).toEqual([
+      { kind: "lifeChanged", id: "c3", life: "dead" },
+      { kind: "lifeChanged", id: "c5", life: "dead" },
+    ]);
+    expect(ctx.state.tally).toEqual({ ...ZERO, dives: 1, deaths: 2 });
+    damageMembers(ctx, ctx.state.party, "1d4"); // 死者には二度数えない
+    expect(ctx.state.tally.deaths).toBe(2);
+  });
+
+  test("TW-35 ashes: 寺院の蘇生の失敗（dead → ash）で 1 増え、成功では増えない。deaths は変えない", () => {
+    const fail = seedWithFirstD100((x) => x > 78);
+    const sf = town({ c2: DEAD });
+    sf.rng = createRng(fail.seed);
+    const rf = ok(sf, { type: "town.temple", memberId: "c2", service: "resurrect" });
+    expect(member(rf.state, "c2").life).toBe("ash");
+    expect(rf.state.tally).toEqual({ ...ZERO, ashes: 1 });
+    const okSeed = seedWithFirstD100((x) => x <= 78);
+    const so = town({ c2: DEAD });
+    so.rng = createRng(okSeed.seed);
+    expect(ok(so, { type: "town.temple", memberId: "c2", service: "resurrect" }).state.tally).toEqual(ZERO);
+  });
+
+  test("TW-35 ソースの検査: core の life の dead / ash への代入は、すべて同じ所で bumpTally を伴う（数える所を寄せる）", () => {
+    const sources = import.meta.glob("../src/core/**/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+    const sites: string[] = [];
+    for (const [path, src] of Object.entries(sources)) {
+      const lines = src.split("\n");
+      lines.forEach((line, i) => {
+        const m = /\.life = "(dead|ash)";/.exec(line);
+        if (m === null) return;
+        sites.push(`${path.replace(/^\.\.\//, "")}:${m[1]}`);
+        const near = lines.slice(i + 1, i + 3).join("\n");
+        expect(near, `${path}:${i + 1}`).toContain(`bumpTally(`);
+        expect(near, `${path}:${i + 1}`).toContain(m[1] === "dead" ? `"deaths"` : `"ashes"`);
+      });
+    }
+    expect(sites.sort()).toEqual(["src/core/rules/combat.ts:dead", "src/core/rules/field.ts:dead", "src/core/rules/town.ts:ash"]);
+    // 各項目を数える所（bumpTally の呼び出し）は 1 か所に寄せる（deaths だけ 2 か所）
+    const calls = Object.entries(sources).flatMap(([path, src]) =>
+      [...src.matchAll(/bumpTally\([^,]+, "(\w+)"\)/g)].map((m) => `${m[1]}@${path.replace(/^\.\.\/src\/core\/rules\//, "")}`),
+    );
+    expect(calls.sort()).toEqual(["ashes@town.ts", "battles@combat.ts", "deaths@combat.ts", "deaths@field.ts", "dives@dungeon.ts", "wipes@wipe.ts"]);
+  });
+
+  test("TW-35 endingRecordView: tally の 5 欄・経過（adventureTurns）・敵の図鑑（identified が真の種類 / data.monsters の数）・品の図鑑（uniqueBook のキー数 / data.uniques の数）。state を変えない", () => {
+    const s = cloneState(newGame(1));
+    s.tally = { dives: 7, battles: 31, deaths: 4, ashes: 1, wipes: 2 };
+    s.adventureTurns = 1234;
+    s.bestiary = {
+      giant_rat: { kills: 9, identified: true },
+      kobold: { kills: 3, identified: false }, // 遭遇しただけ（未鑑定）は数えない
+      slime: { kills: 0, identified: true }, // 宿の噂話で鑑定した分（kills 0）も数える
+    };
+    s.uniqueBook = { u1: { foundIn: "d01", bestRarity: "rare" }, u2: { foundIn: null, bestRarity: "legendary" } };
+    const snap = structuredClone(s);
+    expect(data.monsters).toHaveLength(20);
+    expect(data.uniques).toHaveLength(14);
+    expect(endingRecordView(s, data)).toEqual({
+      dives: 7,
+      battles: 31,
+      deaths: 4,
+      ashes: 1,
+      wipes: 2,
+      turns: 1234,
+      bestiary: { known: 2, total: 20 },
+      uniques: { known: 2, total: 14 },
+    });
+    expect(s).toEqual(snap);
+    expect(endingRecordView(newGame(1), data)).toEqual({ ...ZERO, turns: 0, bestiary: { known: 0, total: 20 }, uniques: { known: 0, total: 14 } });
+  });
+
+  test("TW-35（U-2）townMenu.canShowRecord は progress.conquered のときだけ真", () => {
+    const s = town();
+    expect(townMenu(s, data)!.canShowRecord).toBe(false);
+    const c = cloneState(s);
+    c.progress.conquered = true;
+    expect(townMenu(c, data)!.canShowRecord).toBe(true);
   });
 });

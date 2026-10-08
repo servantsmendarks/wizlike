@@ -16,6 +16,7 @@ import { levelDownWhileBelow } from "./growth";
 import { ceilRatio, floorRatio } from "./ratio";
 import { sellPrice } from "./shop";
 import { arriveTown } from "./town";
+import { bumpTally } from "./progress";
 
 /** TW-22: 出目 total が入る帯の添字。どの帯にも入らなければ Error（penalty-table.json は起動時に隙間なしを検証済み） */
 export function bandIndexFor(data: GameData, total: number): number {
@@ -106,6 +107,7 @@ export function performWipe(ctx: RuleContext): void {
   const leader = state.party.find((c) => c.isLeader);
   if (leader === undefined) throw new Error("performWipe: no leader");
   state.pendingChoice = null;
+  bumpTally(state, "wipes"); // TW-35（M12）
 
   // 1) 語り
   ctx.events.push({ kind: "message", key: "wipe.intro" });

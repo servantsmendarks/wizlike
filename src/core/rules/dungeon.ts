@@ -38,6 +38,7 @@ import { offerExit, offerStairs, offerTeleporter, offerTrap } from "./choices";
 import { equipStats } from "./equip-stats";
 import { chooseEventOption, startEvent } from "./events";
 import { addIndex, aliveMembers, damageMembers, removeIndex } from "./field";
+import { bumpTally } from "./progress";
 import { loseSan } from "./san";
 import { enterBlockReason, returnToTown } from "./town";
 
@@ -235,6 +236,9 @@ export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
     disarmedChests: [],
   };
   state.dive = dive;
+  bumpTally(state, "dives"); // TW-35（M12）: 潜行の開始
+  // DG-37（M12）: 初回入場の記録。初回の語り（enterSpeech）は、この push の前の includes で判定する
+  if (!state.progress.enteredDungeons.includes(dungeonId)) state.progress.enteredDungeons.push(dungeonId);
   state.townVisit = null; // TW-32: 来訪の終わり（救済の申し出も下ろす）
   state.screen = "dungeon";
   explore(ctx, dive, f);
