@@ -599,6 +599,14 @@ export const DEBUG_BUTTONS_M11 = {
   chestPresentNext: { x: 204, y: 105, w: 28, h: 18 },
 } as const satisfies Record<string, Rect>;
 
+/**
+ * debug パネルの 1 ページ目の「Lv={n}」（M12。開発用、UI-57。debug.levels{level}。U-6）: 1px の模様（x0..164・y0..36。4 ブロック）の右の
+ * x172・y4 の 60×30（右端 232 は SAN+10 と同じ、下端 34 は計測値の y42 より上）。1 段目・2 段目と計測値の右は空きが無いため
+ */
+export const DEBUG_BUTTONS_M12 = {
+  levels: { x: 172, y: 4, w: 60, h: 30 },
+} as const satisfies Record<string, Rect>;
+
 /** debug パネルの 2 ページ目（UI-57 のポインタの記録）: 題 y4、行 i は y16+10i（i=0..19、最後の行は y206..215）、x4・幅 232 */
 export const DEBUG_POINTER = { x: 4, w: 232, titleY: 4, rowY: 16, rowH: 10 } as const;
 

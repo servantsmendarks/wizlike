@@ -196,7 +196,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   // M10 UI-62 / CH-11: ボーナスの内訳（7+2、当たりは 7+2+10）と合計は core の rollBonusParts の値を描く
   "rules/creation": ["rollBonus", "rollBonusParts", "statAllocation", "adjustStat", "classOptions", "validCreationName"],
   // M7 UI-57: debug パネルの「SAN+{n}」のラベルの n（core が足す量の定数。値を表示に使うだけ）
-  "rules/debug": ["SAN_OVER_DEBUG"],
+  // M12 UI-57（U-6）: debug パネルの「Lv={n}」が巡回する目標の Lv の定数（値をラベルと送る引数に使うだけ。受け付けるかは core が決める）
+  "rules/debug": ["SAN_OVER_DEBUG", "DEBUG_LEVELS"],
   // M9.5 UI-66（2026-10-07）: 迷宮の確認の取り消し（やめる）の id の定数。cancel の音の印を付けるのに使うだけ
   "rules/choices": ["STAY_CHOICE_ID"],
   // M7 TW-17: 強化の確認の段の成功率・大成功・料金・可否は core の upgradePreview の値を描く
@@ -471,6 +472,14 @@ describe("入力と Command", () => {
     expect(app).toContain("sanOver: SAN_OVER_DEBUG,");
     const body = /const sanOverFromDebug = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(body).toMatch(/if \(route !== "town" && route !== "dungeon" && route !== "battle"\) return;\s*closeDebugForCommand\(\);\s*void run\(\{ type: "debug\.sanOver" \}\);/);
+  });
+
+  test("UI-57（M12。U-6）debug パネルの Lv={n} は、街・迷宮のときだけパネルを閉じてから debug.levels{level} を送る。巡回する Lv は core の DEBUG_LEVELS（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toMatch(/onLevels: \(level\) => guard\(\(\) => levelsFromDebug\(level\)\)/);
+    expect(app).toContain("levels: DEBUG_LEVELS,");
+    const body = /const levelsFromDebug = \(level: number\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(body).toMatch(/if \(route !== "town" && route !== "dungeon"\) return;\s*closeDebugForCommand\(\);\s*void run\(\{ type: "debug\.levels", level \}\);/);
   });
 
   test("UI-57（M6）設定画面の導線: タイトルの「設定」とヘッダーの設定ボタンは openSettings、F2 は debug パネルのトグル、debug パネルは設定画面を下に残し、debug のコマンドは両方を閉じてから送る（ソースの検査）", () => {

@@ -11,6 +11,8 @@
 // - DEBUG_BUTTONS_M11（SAN+10 の左。1 ページ目だけ）: 宝箱前・箱:{罠}（M11。debug.warp{chest} / debug.chest{trapId} を送るのは app。
 //   箱のボタンは押すたびにラベルの罠で送ってから次の罠へ巡回する）。呪いのボタンの下に 箱!:{罠}・次（debug.chest{trapId, present: true}。
 //   箱! は罠を進めずに送り（衝動が起きるまで同じ罠で試せる）、次 は箱! の罠だけを進める）
+// - DEBUG_BUTTONS_M12（1px の模様の右。1 ページ目だけ）: Lv={n}（M12。U-6。押すたびにラベルの Lv で debug.levels を送るのは app、
+//   ラベルは受け取った levels（core の DEBUG_LEVELS）を巡回する）
 // - 「ポインタ」で 2 ページ目（UI-57。直近 20 件のポインタイベント。input/pointer-log の記録を DEBUG_POINTER の 20 行に古い順）。
 //   2 ページ目ではボタンが「設定」に変わり、全員HP1・既定に戻すは出さない。開くたびに app が showSettings で 1 ページ目に戻す
 // 値を変えたら、その場で store.set を呼ぶ（保存とすぐの反映は store の購読者が行う）。
@@ -18,7 +20,7 @@
 import type { Strings } from "../../core/data/index";
 import { thresholdCss } from "../input/swipe";
 import { formatPointerRow, POINTER_LOG_MAX, type PointerEntry } from "../input/pointer-log";
-import { DEBUG_BUTTONS, DEBUG_BUTTONS_M10, DEBUG_BUTTONS_M11, DEBUG_BUTTONS_M5, DEBUG_BUTTONS_M7, DEBUG_POINTER, DEBUG_SWIPE_Y, debugRow, type Rect } from "../layout";
+import { DEBUG_BUTTONS, DEBUG_BUTTONS_M10, DEBUG_BUTTONS_M11, DEBUG_BUTTONS_M12, DEBUG_BUTTONS_M5, DEBUG_BUTTONS_M7, DEBUG_POINTER, DEBUG_SWIPE_Y, debugRow, type Rect } from "../layout";
 import type { Insets, StageLayout, StageLayoutInput } from "../stage";
 import { nextAutoBeat, nextInputMode, stepSetting, type NumericSettingKey, type Settings, type SettingsStore } from "../settings";
 import { formatMessage } from "./message";
@@ -179,6 +181,10 @@ export function createDebugPanel(o: {
   onChest(trapId: string | null, present: boolean): void;
   /** UI-57（M11）: 箱のボタンが巡回する罠（chest-traps.json の並び。name は strings の鍵）。巡回は 罠なし → 先頭 → … → 末尾 → 罠なし */
   chestTraps: readonly { id: string; name: string }[];
+  /** UI-57（M12。U-6）: 「Lv={n}」（debug.levels{level}。送れるかは app が決める） */
+  onLevels(level: number): void;
+  /** UI-57（M12）: Lv のボタンが巡回する目標（core の DEBUG_LEVELS を表示のためだけに受ける。空でないこと） */
+  levels: readonly number[];
   /** UI-57: 2 ページ目に出すポインタの記録（古い順。input/pointer-log の entries） */
   pointers(): readonly PointerEntry[];
 }): DebugPanel {
@@ -289,6 +295,17 @@ export function createDebugPanel(o: {
       presentButton.textContent = trapLabel("debug.chestPresentButton", presentIndex);
     }),
   );
+  // M12（U-6）: 1px の模様の右（DEBUG_BUTTONS_M12）。「Lv={n}」は今のラベルの Lv で onLevels を呼び、ラベルを次へ進める
+  // （levels の並びを巡回。パネルの局所の状態で保存しない。送れなかったときも進む。箱のボタンと同じ）
+  let levelIndex = 0;
+  const levelLabel = (): string => formatMessage(t("debug.levelsButton"), { level: o.levels[levelIndex] ?? 0 });
+  const levelsButton = shortButton(levelLabel(), DEBUG_BUTTONS_M12.levels, () => {
+    const level = o.levels[levelIndex];
+    levelIndex = (levelIndex + 1) % Math.max(1, o.levels.length);
+    levelsButton.textContent = levelLabel();
+    if (level !== undefined) o.onLevels(level);
+  });
+  page1.appendChild(levelsButton);
 
   // 2 ページ目（UI-57 のポインタの記録）: 題と 20 行（古い順）。描くのはページを切り替えたときだけ
   const page2 = document.createElement("div");

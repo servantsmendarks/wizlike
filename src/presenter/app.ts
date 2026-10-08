@@ -24,7 +24,7 @@ import { chestView } from "../core/rules/chest";
 import { battleMenu } from "../core/rules/combat";
 import { mapView, visibleCells, visibleChests, visibleKnownTraps } from "../core/rules/dungeon";
 import { campMenu, campSummary } from "../core/rules/camp";
-import { SAN_OVER_DEBUG } from "../core/rules/debug";
+import { DEBUG_LEVELS, SAN_OVER_DEBUG } from "../core/rules/debug";
 import { planRoute, routeStepOk } from "../core/rules/pathfind";
 import { STAY_CHOICE_ID } from "../core/rules/choices";
 import { equipPreview, itemDetail, memberSheet, spellInfo, uniqueBookView } from "../core/rules/item-view";
@@ -417,6 +417,8 @@ export function createApp(o: {
     // M11 UI-57: 「箱:{罠}」。迷宮のときだけパネルを閉じてから debug.chest を送る（受け付けるかは core が決める。箱がある間は rejected）
     onChest: (trapId, present) => guard(() => debugCommand(present ? { type: "debug.chest", trapId, present: true } : { type: "debug.chest", trapId })),
     chestTraps: data.chestTraps,
+    onLevels: (level) => guard(() => levelsFromDebug(level)),
+    levels: DEBUG_LEVELS,
     pointers: () => pointerLog.entries(),
   });
 
@@ -1825,6 +1827,16 @@ export function createApp(o: {
     if (route !== "town" && route !== "dungeon" && route !== "battle") return;
     closeDebugForCommand();
     void run({ type: "debug.giveCursed", wearable });
+  };
+
+  /**
+   * UI-57（開発用、M12。U-6）: 「Lv={n}」。街・迷宮のときだけ、パネルを閉じてから debug.levels を送る（受け付けるかは core が決める。
+   * 選択・宝箱を待つ間は rejected）。d01 → d02 → d03 の通しを実機で短くするためのもの
+   */
+  const levelsFromDebug = (level: number): void => {
+    if (route !== "town" && route !== "dungeon") return;
+    closeDebugForCommand();
+    void run({ type: "debug.levels", level });
   };
 
   /**
