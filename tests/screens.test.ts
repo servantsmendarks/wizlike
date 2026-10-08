@@ -338,7 +338,10 @@ describe("入力と Command", () => {
     expect(calls.some((l) => l.startsWith("slotsFor(visibleCells(st, data, at), visibleKnownTraps(st, data, at), visibleChests(st, data, at))"))).toBe(true);
     expect(calls.some((l) => l.startsWith("slotsFor(visibleCells(st, data), visibleKnownTraps(st, data), visibleChests(st, data))"))).toBe(true);
     expect(app).toMatch(/onWarp: \(to\) => guard\(\(\) => debugCommand\(\{ type: "debug\.warp", to \}\)\)/);
-    expect(app).toMatch(/onChest: \(trapId\) => guard\(\(\) => debugCommand\(\{ type: "debug\.chest", trapId \}\)\)/);
+    // 2026-10-08: 「箱!:{罠}」（present 真）を足したので、present の真偽で送るコマンドを分ける形に期待を書き直した（以前は (trapId) だけで {type, trapId}）
+    expect(app).toMatch(
+      /onChest: \(trapId, present\) => guard\(\(\) => debugCommand\(present \? \{ type: "debug\.chest", trapId, present: true \} : \{ type: "debug\.chest", trapId \}\)\)/,
+    );
     expect(app).toMatch(/chestTraps: data\.chestTraps/);
   });
 

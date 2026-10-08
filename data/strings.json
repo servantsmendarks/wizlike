@@ -786,6 +786,8 @@
   "debug.warpChestButton": "宝箱前",
   "debug.chestButton": "箱:{trap}",
   "debug.chestNone": "なし",
+  "debug.chestPresentButton": "箱!:{trap}",
+  "debug.chestPresentNext": "次",
   "debug.addTurnsButton": "ターン+{n}",
   "debug.sanOverButton": "SAN+{n}",
   "debug.addTurns": "（デバッグ）冒険のターンを{n}進めた（計{total}）。",

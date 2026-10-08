@@ -9,7 +9,8 @@
 // - DEBUG_BUTTONS_M7（計測値の右。1 ページ目だけ）: SAN+10（M7。ラベルは debug.sanOverButton{n}、debug.sanOver を送るのは app）
 // - DEBUG_BUTTONS_M10（SAN+10 の下。1 ページ目だけ）: 呪い:司可・呪い:司否（M10。debug.giveCursed{wearable: true / false} を送るのは app）
 // - DEBUG_BUTTONS_M11（SAN+10 の左。1 ページ目だけ）: 宝箱前・箱:{罠}（M11。debug.warp{chest} / debug.chest{trapId} を送るのは app。
-//   箱のボタンは押すたびにラベルの罠で送ってから次の罠へ巡回する）
+//   箱のボタンは押すたびにラベルの罠で送ってから次の罠へ巡回する）。呪いのボタンの下に 箱!:{罠}・次（debug.chest{trapId, present: true}。
+//   箱! は罠を進めずに送り（衝動が起きるまで同じ罠で試せる）、次 は箱! の罠だけを進める）
 // - 「ポインタ」で 2 ページ目（UI-57。直近 20 件のポインタイベント。input/pointer-log の記録を DEBUG_POINTER の 20 行に古い順）。
 //   2 ページ目ではボタンが「設定」に変わり、全員HP1・既定に戻すは出さない。開くたびに app が showSettings で 1 ページ目に戻す
 // 値を変えたら、その場で store.set を呼ぶ（保存とすぐの反映は store の購読者が行う）。
@@ -171,8 +172,11 @@ export function createDebugPanel(o: {
   sanOver: number;
   /** UI-57（M10）: 「呪い:司可」（true）「呪い:司否」（false）（debug.giveCursed。送れるかは app が決める） */
   onGiveCursed(wearable: boolean): void;
-  /** UI-57（M11）: 「箱:{罠}」（debug.chest{trapId}。null は罠なし。送れるかは app が決める） */
-  onChest(trapId: string | null): void;
+  /**
+   * UI-57（M11）: 「箱:{罠}」（present 偽。debug.chest{trapId}）と「箱!:{罠}」（present 真。debug.chest{trapId, present: true}。
+   * 衝動・制止・掛け合いを起こす）。null は罠なし。送れるかは app が決める
+   */
+  onChest(trapId: string | null, present: boolean): void;
   /** UI-57（M11）: 箱のボタンが巡回する罠（chest-traps.json の並び。name は strings の鍵）。巡回は 罠なし → 先頭 → … → 末尾 → 罠なし */
   chestTraps: readonly { id: string; name: string }[];
   /** UI-57: 2 ページ目に出すポインタの記録（古い順。input/pointer-log の entries） */
@@ -259,18 +263,32 @@ export function createDebugPanel(o: {
   page1.appendChild(shortButton(t("debug.warpChestButton"), DEBUG_BUTTONS_M11.warpChest, () => o.onWarp("chest")));
   const chestChoices: readonly (string | null)[] = [null, ...o.chestTraps.map((c) => c.id)];
   let chestIndex = 0;
-  const chestLabel = (): string => {
-    const id = chestChoices[chestIndex] ?? null;
+  const trapLabel = (key: string, index: number): string => {
+    const id = chestChoices[index] ?? null;
     const def = id === null ? undefined : o.chestTraps.find((c) => c.id === id);
-    return formatMessage(t("debug.chestButton"), { trap: def === undefined ? t("debug.chestNone") : t(def.name) });
+    return formatMessage(t(key), { trap: def === undefined ? t("debug.chestNone") : t(def.name) });
   };
+  const chestLabel = (): string => trapLabel("debug.chestButton", chestIndex);
   const chestButton = shortButton(chestLabel(), DEBUG_BUTTONS_M11.chest, () => {
     const id = chestChoices[chestIndex] ?? null;
     chestIndex = (chestIndex + 1) % chestChoices.length;
     chestButton.textContent = chestLabel();
-    o.onChest(id);
+    o.onChest(id, false);
   });
   page1.appendChild(chestButton);
+  // 2026-10-08: 「箱!:{罠}」は衝動・制止・掛け合いを起こす版（debug.chest{trapId, present: true}）。衝動は確率なので、同じ罠で
+  // 何度も試せるように押しても罠を進めない。罠は隣の「次」で進める（巡回は箱のボタンと同じ。箱のボタンとは別の局所の状態）
+  let presentIndex = 0;
+  const presentButton = shortButton(trapLabel("debug.chestPresentButton", presentIndex), DEBUG_BUTTONS_M11.chestPresent, () =>
+    o.onChest(chestChoices[presentIndex] ?? null, true),
+  );
+  page1.appendChild(presentButton);
+  page1.appendChild(
+    shortButton(t("debug.chestPresentNext"), DEBUG_BUTTONS_M11.chestPresentNext, () => {
+      presentIndex = (presentIndex + 1) % chestChoices.length;
+      presentButton.textContent = trapLabel("debug.chestPresentButton", presentIndex);
+    }),
+  );
 
   // 2 ページ目（UI-57 のポインタの記録）: 題と 20 行（古い順）。描くのはページを切り替えたときだけ
   const page2 = document.createElement("div");

@@ -246,6 +246,94 @@ describe("createDebugPanel", () => {
     expect(units(data.strings["debug.warpChestButton"]!)).toBeLessThanOrEqual(DEBUG_BUTTONS_M11.warpChest.w - 2);
   });
 
+  test("UI-57/EV-16/EV-71（M11。2026-10-08）呪いのボタンの下に「箱!:{罠}」と「次」（DEBUG_BUTTONS_M11.chestPresent / chestPresentNext）。箱! は罠を進めずに onChest(罠, true)、次 は箱! の罠だけを巡回し（なし → 8 種 → なし）送らない。箱のボタンの巡回とは別。計測値・呪い・設定の行と重ならない", () => {
+    vi.stubGlobal("document", { createElement: () => new FakeEl(), createElementNS: () => new FakeEl() });
+    const store = createSettingsStore(defaultSettings(data.config), () => {});
+    const calls: string[] = [];
+    const panel = createDebugPanel({
+      strings: data.strings,
+      store,
+      defaults: defaultSettings(data.config),
+      onClose: () => calls.push("close"),
+      onHpOne: () => calls.push("hpOne"),
+      onSanDown: () => calls.push("sanDown"),
+      onWarp: (to) => calls.push(`warp:${to}`),
+      onAddTurns: () => calls.push("addTurns"),
+      addTurns: 200,
+      onSanOver: () => calls.push("sanOver"),
+      sanOver: 10,
+      onGiveCursed: (wearable) => calls.push(`giveCursed:${wearable}`),
+      onChest: (trapId, present) => calls.push(`chest:${trapId}:${present}`),
+      chestTraps: data.chestTraps,
+      pointers: () => [],
+    });
+    const root = panel.el as unknown as FakeEl;
+    const [page1] = root.children.filter((c) => c.className === "debug-page") as [FakeEl];
+    const at = (r: { x: number; y: number }) => page1.children.find((c) => c.className === "ui-button" && c.style["left"] === `${r.x}px` && c.style["top"] === `${r.y}px`);
+    const shape = (b: FakeEl) => [b.style["left"], b.style["top"], b.style["width"], b.style["height"], b.style["lineHeight"]];
+    const box = (r: { x: number; y: number; w: number; h: number }) => [`${r.x}px`, `${r.y}px`, `${r.w}px`, `${r.h}px`, `${r.h - 2}px`];
+    const P = DEBUG_BUTTONS_M11.chestPresent;
+    const N = DEBUG_BUTTONS_M11.chestPresentNext;
+    const present = at(P)!;
+    const next = at(N)!;
+    expect(shape(present)).toEqual(box(P));
+    expect(shape(next)).toEqual(box(N));
+    expect(data.strings["debug.chestPresentNext"]).toBe("次");
+    expect(next.textContent).toBe("次");
+    const label = (k: string | null) => formatMessage(data.strings["debug.chestPresentButton"]!, { trap: k === null ? data.strings["debug.chestNone"]! : data.strings[`chest.trapName.${k}`]! });
+    expect(label(null)).toBe("箱!:なし");
+    expect(label("alarm")).toBe("箱!:警報");
+
+    // 箱! は押しても罠を進めない（同じ罠で何度でも）
+    expect(present.textContent).toBe(label(null));
+    tapSpecOf(present)!.onTap({ lx: 0, ly: 0 });
+    tapSpecOf(present)!.onTap({ lx: 0, ly: 0 });
+    expect(calls).toEqual(["chest:null:true", "chest:null:true"]);
+    expect(present.textContent).toBe(label(null));
+
+    // 次 は箱! の罠だけを巡回し、送らない
+    const order = [null, ...data.chestTraps.map((c) => c.id), null];
+    calls.length = 0;
+    for (let i = 0; i < 9; i++) {
+      expect(present.textContent, `${i}`).toBe(label(order[i]!));
+      tapSpecOf(next)!.onTap({ lx: 0, ly: 0 });
+      expect(present.textContent, `${i}`).toBe(label(order[i + 1]!));
+    }
+    expect(calls).toEqual([]);
+    // 警報まで進めて送る
+    const alarmAt = order.indexOf("alarm");
+    for (let i = 0; i < alarmAt; i++) tapSpecOf(next)!.onTap({ lx: 0, ly: 0 });
+    tapSpecOf(present)!.onTap({ lx: 0, ly: 0 });
+    tapSpecOf(present)!.onTap({ lx: 0, ly: 0 });
+    expect(calls).toEqual(["chest:alarm:true", "chest:alarm:true"]);
+
+    // 箱のボタン（present 偽）は自分の巡回のまま。箱! の巡回に影響しない
+    const chest = at(DEBUG_BUTTONS_M11.chest)!;
+    calls.length = 0;
+    tapSpecOf(chest)!.onTap({ lx: 0, ly: 0 });
+    expect(calls).toEqual(["chest:null:false"]);
+    expect(present.textContent).toBe(label("alarm"));
+    expect(root.children.includes(present)).toBe(false);
+    expect(root.children.includes(next)).toBe(false);
+
+    // 置き場: 計測値の長い行（31 字 = 124px、右端 128）より右、呪いのボタンの下、設定の行 0 の上、ステージの右端の内側。互いに重ならない
+    for (const r of [P, N]) {
+      expect(r.x).toBeGreaterThanOrEqual(4 + 31 * 4);
+      expect(r.y).toBeGreaterThanOrEqual(DEBUG_BUTTONS_M10.giveCursedWear.y + DEBUG_BUTTONS_M10.giveCursedWear.h);
+      expect(r.y + r.h).toBeLessThanOrEqual(debugRow(0).label.y);
+      expect(r.x + r.w).toBeLessThanOrEqual(236);
+      // UI-10 の 12 論理 px 以上（TOUCH_MIN_LOGICAL は開発用の例外）
+      expect(Math.min(r.w, r.h)).toBeGreaterThanOrEqual(12);
+    }
+    expect(P.x + P.w).toBeLessThanOrEqual(N.x);
+    // 最長のラベル（全角 8px・半角 4px）が内側の幅に入る
+    const units = (s: string) => [...s].reduce((n, c) => n + (c.charCodeAt(0) < 0x80 ? 4 : 8), 0);
+    const longest = Math.max(...order.map((k) => units(label(k))));
+    expect(longest).toBe(48);
+    expect(longest).toBeLessThanOrEqual(P.w - 2);
+    expect(units(data.strings["debug.chestPresentNext"]!)).toBeLessThanOrEqual(N.w - 2);
+  });
+
   test("UI-57 1 ページ目の 2 段目（y376 の 44×22 ×5。M5・M5.5）: SAN段↓・イベント・罠の前・階段前・ターン+{n}。押すと onSanDown / onWarp(event|trap|stairsDown) / onAddTurns。1 ページ目の子なので 2 ページ目では見えない。line-height は内側の高さ（h−2）", () => {
     const created: FakeEl[] = [];
     vi.stubGlobal("document", {

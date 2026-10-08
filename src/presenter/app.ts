@@ -410,7 +410,7 @@ export function createApp(o: {
     sanOver: SAN_OVER_DEBUG,
     onGiveCursed: (wearable) => guard(() => giveCursedFromDebug(wearable)),
     // M11 UI-57: 「箱:{罠}」。迷宮のときだけパネルを閉じてから debug.chest を送る（受け付けるかは core が決める。箱がある間は rejected）
-    onChest: (trapId) => guard(() => debugCommand({ type: "debug.chest", trapId })),
+    onChest: (trapId, present) => guard(() => debugCommand(present ? { type: "debug.chest", trapId, present: true } : { type: "debug.chest", trapId })),
     chestTraps: data.chestTraps,
     pointers: () => pointerLog.entries(),
   });

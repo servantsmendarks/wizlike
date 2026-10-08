@@ -585,11 +585,18 @@ export const DEBUG_BUTTONS_M10 = {
  * debug パネルの 1 ページ目の「宝箱前」と「箱:{罠}」（M11。開発用、UI-57。debug.warp{chest} / debug.chest{trapId}）:
  * SAN+10 の左の y42 の高さ 30 に、x96 の幅 36 と x134 の幅 52（右端 186、SAN+10 の x188 の 2 左）。
  * 計測値の 0〜2 行目（y42..71）は「deviceScale 1.7143」の 18 字（72px、右端 76）までなので重ならない。
- * 箱のボタンは最長の「箱:麻痺ガス」（全角 5 字 + 半角 1 字 = 44px）が内側の幅 50 に入る
+ * 箱のボタンは最長の「箱:麻痺ガス」（全角 5 字 + 半角 1 字 = 44px）が内側の幅 50 に入る。
+ * 2026-10-08（ユーザーの指示「debug の衝動・掛け合いを起こす引数」）: 「箱!:{罠}」（debug.chest{trapId, present: true}）と
+ * その罠を進める「次」を、呪いのボタンの下（y104）と設定の行 0（y124）の間の y105 の高さ 18 に x142 の幅 60・x204 の幅 28 で置く
+ * （右端 232。計測値の 6〜7 行目（y102..121）は「stage pos   12.3457, 45.6789」の 28 字（112px、右端 116）までなので重ならない）。
+ * 高さ 18 は UI-10 の 12 論理 px 以上（Pixel 3a で約 26 CSS px）で、TOUCH_MIN_LOGICAL は満たさない（M5 の 2 段目と同じ開発用の例外）。
+ * 「箱!:麻痺ガス」は 48px で内側の幅 58 に入る
  */
 export const DEBUG_BUTTONS_M11 = {
   warpChest: { x: 96, y: 42, w: 36, h: 30 },
   chest: { x: 134, y: 42, w: 52, h: 30 },
+  chestPresent: { x: 142, y: 105, w: 60, h: 18 },
+  chestPresentNext: { x: 204, y: 105, w: 28, h: 18 },
 } as const satisfies Record<string, Rect>;
 
 /** debug パネルの 2 ページ目（UI-57 のポインタの記録）: 題 y4、行 i は y16+10i（i=0..19、最後の行は y206..215）、x4・幅 232 */
