@@ -1,13 +1,13 @@
 // H9 バランスの煙テスト（既定の npm test）: 200 シードの計測（npm run balance、tests/balance/campaign.sim.ts）と同じボットを
 // 5 シード × 潜行 2 回だけ回し、不変条件（rejected が出ない、state の不変条件、全滅の内訳 = 差分、DG-43 など）だけを確かめる。
-// M9: 進行ボット（d01 の 2 階とボス、d01 の踏破の後の d02）の煙テストを足した（数字は見ない）。
+// M9: 進行ボット（d01 の 2 階とボス、d01 の踏破の後の d02）の煙テストを足した（数字は見ない）。M12: 進行ボットは d01 → d02 → d03 の順に最下層のボスまで潜る。
 import { describe, expect, test } from "vitest";
 import { execute } from "../src/core/engine";
 import { townMenu } from "../src/core/rules/town";
 import { data, expectStateInvariants } from "./helpers/core";
 import { chestRate } from "../src/core/rules/chest";
 import type { Command, GameState } from "../src/core/types";
-import { BOTS, Campaign, D02_DIVES, DISARM_TRIES, PROGRESS_BOT, PROGRESS_DIVES, progressReport, report, runCampaigns } from "./balance/bot";
+import { BOTS, BOSS_LEVELS, Campaign, D03_DIVES, DESCEND_LEVELS, DISARM_TRIES, levelFor, PROGRESS_BOT, PROGRESS_DIVES, progressReport, report, runCampaigns } from "./balance/bot";
 
 const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0);
 
@@ -42,7 +42,7 @@ describe("バランス（H9 煙テスト）", () => {
   }, 60_000);
 
   test("H9/M9 進行ボットの煙テスト: 降りる・ボスの条件の level を 1 にすると、d01 の 1 階で下り階段へ歩いて 2 階に降り、ボスへ向かう（3 シード × 2 潜行）", () => {
-    const kind = { ...PROGRESS_BOT, label: "進行（L1）", descendLevel: 1, bossLevel: 1 };
+    const kind = { ...PROGRESS_BOT, label: "進行（L1）", descendLevel: { d01: 1 }, bossLevel: { d01: 1 } };
     const { results, keys } = runCampaigns(kind, 3, 2);
     expect(keys.has("dungeon.descend")).toBe(true);
     const ds = results.flatMap((r) => r.dives);
@@ -55,7 +55,8 @@ describe("バランス（H9 煙テスト）", () => {
 
   // ユーザーの判断 2（2026-10-06）で逃走をやめたらシード 4 が 15 潜行で踏破しなくなったので、踏破するシード 2 に替えた。
   // M11 の作業 6（宝箱の衝動 EV-16 と職業の掛け合い EV-71 で勝利の後の乱数の消費が変わった）でシード 2 が踏破しなくなったので、踏破するシード 4 に戻した
-  test("H9/M9 進行ボットの煙テスト: シード 4 は d01 のボスを倒してテレポーターで帰り、その後は d02 に D02_DIVES 回潜って終わる（ボスへの経路の煙。データが変わってシード 4 が踏破しなくなったら、踏破するシードに替える）", () => {
+  // M12: 進行ボットが d03 まで潜るようになった（設計書 §4-1）。シード 4 は 40 潜行の上限の中で d01・d02 を踏破して d03 に 3 回潜る（実行して確かめた）
+  test("H9/M9/M12 進行ボットの煙テスト: シード 4 は d01 のボスを倒してテレポーターで帰り、d02 を最下層 3 階のボスまで踏破し、その後は d03 に D03_DIVES 回潜って終わる（ボスへの経路の煙。データが変わってシード 4 が踏破しなくなったら、踏破するシードに替える）", () => {
     const c = new Campaign(4, PROGRESS_BOT);
     const r = c.campaign(PROGRESS_DIVES);
     const k = r.dives.findIndex((d) => d.bossWin);
@@ -64,8 +65,17 @@ describe("バランス（H9 煙テスト）", () => {
     expect(r.dives[k]!.bossFight).toBe(true);
     expect(r.dives[k]!.deepestFloor).toBe(2);
     expect(r.dives.slice(0, k + 1).every((d) => d.dungeonId === "d01")).toBe(true);
-    expect(r.dives.slice(k + 1).map((d) => d.dungeonId)).toEqual(Array.from({ length: D02_DIVES }, () => "d02"));
-    expect(c.state.progress.clearedDungeons).toContain("d01");
+    // d01 の踏破の後は d02 の踏破まで d02、その後は d03 に D03_DIVES 回
+    const k2 = r.dives.findIndex((d) => d.dungeonId === "d02" && d.bossWin);
+    expect(k2).toBeGreaterThan(k);
+    expect(r.dives[k2]!.method).toBe("teleport");
+    expect(r.dives[k2]!.deepestFloor).toBe(3);
+    expect(r.dives.slice(k + 1, k2 + 1).every((d) => d.dungeonId === "d02")).toBe(true);
+    expect(r.dives.slice(k2 + 1).map((d) => d.dungeonId)).toEqual(Array.from({ length: D03_DIVES }, () => "d03"));
+    expect(c.state.progress.clearedDungeons).toEqual(expect.arrayContaining(["d01", "d02"]));
+    expect(c.state.progress.shopLevel).toBe(4);
+    expect(progressReport([r])).toContain("d03 の潜行 1:");
+    expect(progressReport([r])).toContain("d03 に届いたシード: 1/1");
     expectStateInvariants(c.state);
     // M9-装備: d01 の踏破で流通レベル 2 になり、その帰還の街で後衛の魔術師（エル）に投げナイフを買い与える
     expect(r.dives[k]!.rangedBought).toBe(1);
@@ -148,6 +158,41 @@ describe("バランス（H9 煙テスト）", () => {
     expect(c.state.screen).toBe("town");
     expectStateInvariants(c.state);
   }, 60_000);
+
+  test("H9/M12 進行ボット: d01・d02 を踏破済みの state からは d03 に潜り、d03 に D03_DIVES 回潜ったら（上限が残っていても）終える", () => {
+    const c = new Campaign(1, PROGRESS_BOT);
+    c.state.progress.clearedDungeons.push("d01", "d02");
+    c.state.progress.unlockedDungeons.push("d02", "d03");
+    c.run({ type: "debug.levels", level: 9 }); // d03 の 1 階で全滅し続けないように（降りる L8・ボス L9 も満たす）
+    c.state.gold = 20000;
+    const r = c.campaign(10);
+    expect(r.aborted).toBe(false);
+    expect(r.dives.map((d) => d.dungeonId)).toEqual(Array.from({ length: D03_DIVES }, () => "d03"));
+    expect(r.dives[0]!.startMinLevel).toBe(9);
+    expect(Math.max(...r.dives.map((d) => d.deepestFloor))).toBeGreaterThanOrEqual(2); // 条件を満たすので下り階段へ向かう
+    expect(c.state.screen).toBe("town");
+    expectStateInvariants(c.state);
+  }, 60_000);
+
+  test("H9/M12 進行ボット: 降りる・ボスに挑む条件の level はダンジョンごと（DESCEND_LEVELS / BOSS_LEVELS。BotKind の上書きは書いたダンジョンだけ）", () => {
+    expect(DESCEND_LEVELS).toEqual({ d01: 3, d02: 6, d03: 8 });
+    expect(BOSS_LEVELS).toEqual({ d01: 4, d02: 7, d03: 9 });
+    const l1 = { ...PROGRESS_BOT, descendLevel: { d01: 1 } };
+    expect(levelFor(l1, "descend", "d01")).toBe(1);
+    expect(levelFor(l1, "descend", "d03")).toBe(8);
+    expect(levelFor(l1, "boss", "d01")).toBe(4);
+    expect(() => levelFor(PROGRESS_BOT, "descend", "d99")).toThrow();
+    const c = new Campaign(1, PROGRESS_BOT);
+    c.dungeonId = "d03";
+    c.state.party.forEach((x) => (x.level = 7));
+    expect(c.descendReady()).toBe(false);
+    expect(c.levelsOk("descend")).toBe(false);
+    c.state.party.forEach((x) => (x.level = 8));
+    expect(c.descendReady()).toBe(true);
+    expect(c.bossReady()).toBe(false); // ボスは L9
+    c.dungeonId = "d01";
+    expect(c.bossReady()).toBe(true); // d01 のボスは L4（HP は満タン）
+  });
   test("H9/M11 CB-67 ボットは警報の箱を開けると警報の戦闘を戦い、勝って同じ箱に戻ったらもう一度開けて中身を得る（resolveChest → fight → resolveChest のループ）", () => {
     const c = new Campaign(1, PROGRESS_BOT);
     c.state = execute(c.state, { type: "dungeon.enter", dungeonId: "d01" }, data).state;

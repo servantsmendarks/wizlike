@@ -6,13 +6,17 @@
 // M9: 進行ボット（d01 の 2 階とボス、d01 の踏破の後の d02。tests/balance/bot.ts の PROGRESS_BOT）を足した。
 // 環境変数 BALANCE_BOTS=f1 で旧ルート（4 戦固定・セオリー）だけ、BALANCE_BOTS=progress で進行ボットだけを回す。未設定なら両方。
 // BALANCE_DESCEND_LEVEL=<正の整数> で進行ボットの降りる条件の level を替える（既定は bot.ts の DESCEND_LEVEL = 3 で、これを公式の数字とする。
-// 1 なら d01 の 1 階で必ず降りる。その数字は参考として残す比較用）。
+// 1 なら d01 の 1 階で必ず降りる。その数字は参考として残す比較用）。M12 から d02・d03 の level は bot.ts の DESCEND_LEVELS / BOSS_LEVELS のまま（替えるのは d01 だけ）。
+// M12: 進行ボットは d01 → d02 → d03 の順に踏破し、d03 に D03_DIVES 回潜ったら終える（最大 PROGRESS_DIVES 潜行）。BALANCE_SEEDS でシード数を替えられる。
 import { describe, expect, test } from "vitest";
 import type { PartySetupMember } from "../../src/core/types";
 import { defaultMembers } from "../helpers/core";
-import { BOTS, PROGRESS_BOT, PROGRESS_DIVES, progressReport, report, runCampaigns, type BotKind } from "./bot";
+import { BOTS, D03_DIVES, PROGRESS_BOT, PROGRESS_DIVES, progressReport, report, runCampaigns, type BotKind } from "./bot";
 
-const SEEDS = 200;
+// M12（設計書 §4-2）: BALANCE_SEEDS=<正の整数> でシード数を替える（既定 200。目安の境目で 400 に増やして取り直す用）
+const seedsEnv: unknown = import.meta.env["BALANCE_SEEDS"];
+if (seedsEnv !== undefined && seedsEnv !== "" && !/^[1-9][0-9]*$/.test(String(seedsEnv))) throw new Error(`BALANCE_SEEDS: expected a positive integer, got ${String(seedsEnv)}`);
+const SEEDS = seedsEnv === undefined || seedsEnv === "" ? 200 : Number(seedsEnv);
 const DIVES = 5;
 
 const mode: unknown = import.meta.env["BALANCE_PERSONALITIES"];
@@ -29,7 +33,7 @@ const runProgress = bots !== "f1";
 const descend: unknown = import.meta.env["BALANCE_DESCEND_LEVEL"];
 if (descend !== undefined && descend !== "" && !/^[1-9][0-9]*$/.test(String(descend))) throw new Error(`BALANCE_DESCEND_LEVEL: expected a positive integer, got ${String(descend)}`);
 const progressBot: BotKind =
-  descend === undefined || descend === "" ? PROGRESS_BOT : { ...PROGRESS_BOT, label: `${PROGRESS_BOT.label}（降りる L${String(descend)}）`, descendLevel: Number(descend) };
+  descend === undefined || descend === "" ? PROGRESS_BOT : { ...PROGRESS_BOT, label: `${PROGRESS_BOT.label}（d01 の降りる L${String(descend)}）`, descendLevel: { d01: Number(descend) } };
 
 describe("バランス（H9 計測）", () => {
   for (const kind of runF1 ? BOTS : []) {
@@ -41,7 +45,7 @@ describe("バランス（H9 計測）", () => {
     }, 600_000);
   }
   if (runProgress) {
-    test(`H9/M9 バランス: ${progressBot.label}ボットで d01 の 2 階とボス、踏破の後は d02 の 1 階（最大 ${PROGRESS_DIVES} 潜行 × ${SEEDS} シード。数字は出力するだけで、合否は不変条件）`, () => {
+    test(`H9/M9/M12 バランス: ${progressBot.label}ボットで d01・d02・d03 を順に踏破し、d03 に ${D03_DIVES} 潜行（最大 ${PROGRESS_DIVES} 潜行 × ${SEEDS} シード。数字は出力するだけで、合否は不変条件）`, () => {
       const { results, keys } = runCampaigns(progressBot, SEEDS, PROGRESS_DIVES, members);
       for (const k of ["battle.encounter", "battle.win", "town.enter", "dungeon.descend"]) expect(keys.has(k), k).toBe(true);
       if (members !== undefined) console.log(`編成: リーダー以外の 5 人が普通（BALANCE_PERSONALITIES=normal）`);
