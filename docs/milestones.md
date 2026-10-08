@@ -402,6 +402,46 @@ M2〜M5 の実機確認の結果（`docs/decisions.md` の 2026-10-04 の行）�
   - 2026-10-08 実機(M11-閉)（HEAD bdacd64 の本番ビルド、Pixel 3a 縦持ち。decisions の 2026-10-08 実機(M11-閉) の行。画像は scratchpad の m11-dev2/）: 対象 8 項目で fail 0。未定-29 の修正・U-7 (b)・D-2 (a)・制止の成功・箱! の衝動から警報・転移と、前回の【未】のうち通路の箱・調べるの 10% の作動・正しい名前の解除の失敗の作動・ON の掛け合いの箱・転移のフェードが pass。完了条件 1・3・4 は済（3 の D-1 は数値を触らず記録し、遊んだ感触の後に判断）、2 は U-6 の `at`（本物の勝利の後に衝動で警報・転移）だけが not-checked。
 - 【2026-10-08 閉じた】ユーザーの指示「未定-29 の修正と debug の衝動・掛け合いを起こす引数を入れ、未確認の流れを実機で見てから M11 を閉じる」に照らし、未確認の流れを実機で見て fail と新しい【高】が無いので M11 を閉じた。持ち越し: 本物の勝利の後に衝動で警報・転移になる流れ（U-6 の `at` の視点。checklist §5 の未の行）、D-1（数値は触らず記録。触るなら 爆弾 1d6 → 1d4 が先、lure 2 → 1 は最後）、未定-31・32（新しい【低】）と未定-26〜28（checklist の【未定】の一覧）。
 
+## M12 d03 と結末
+
+ユーザーの指示（2026-10-08）の 1〜5 と、設計の未決へのユーザーの判断（2026-10-08。U-1〜U-6）。準備中の d03 を本物のダンジョンにし、d03 のボスの撃破で「全ダンジョン制覇」になって街で GM が卓を締める。数値の帳簿を docs/balance.md に移す。設計は scratchpad の m12-design.md（§1 d03・§2 結末・§3 balance.md・§4 計測・§5 未定-32・§6 工房への同期・§7 仕様の文・§8 テスト・§9 実機の手順・§10 作業の分割）。設計書と判断が食い違う所は判断が優先する（U-4 の色、U-5 の enterSpeech）。判断の要点は decisions の 2026-10-08 docs(M12) の行。仕様は dungeon.md の DG-35 / DG-36、combat.md の CB-05、items.md の IT-51 / IT-62、town.md の TW-11 / TW-34 / TW-35、save.md の SV-04（schemaVersion 7）/ SV-21、ui.md の UI-37 / UI-50 / UI-63 / UI-73。
+
+- 範囲:
+  - 1 d03 灰の地下墓所（DG-02 / DG-35 / CB-03 / CB-05 / IT-51）: 準備中の印を外し、4 階【仮】。死者の系統を中心に敵 6 種（ボス 1 を含む、Lv 5〜7。id と名前はオリジナル）、未鑑定の系統「死者」（undead）を追加。固有の出現表・ドロップ表、宝箱の罠は危険度 4 まで（`chestTrapMaxDanger` 4。転移・呪詛が普通の遊びで出る）。既存の死者の系統は移さない。
+    - U-1: d03 の初回撃破で流通レベルを 6 に上げる（`onClear.shopLevel` 6）。shopMinLevel 6 のベース 4 種とユニーク 2 種を足す（IT-62）。
+    - U-3: d03 の曲は当面 dungeon2。工房に dungeon3 を提案する（decisions の「工房への提案(M12)」）。
+    - U-4: 敵と系統の名前は設計書の案のまま。未鑑定の系統「何かの亡者」の代わりの色は、設計書の lightGreen ではなくパレットの薄い黄土（骨の色、#FCE0A8 相当。src/presenter/palette.ts にある色から最も近いもの。無ければ palette に足す）。spirit の緑・construct の白と区別するため。
+    - U-5: `dungeons[].enterSpeech`（任意の欄。strings のキー）を足し、d03 にだけ初回入場の GM の一行を入れる。d01・d02 は空（欄なし）。
+  - 2 結末（DG-36 / TW-34 / TW-35 / UI-73 / UI-50 / SV-21）: d03 のボス撃破で `progress.conquered`（全ダンジョン制覇。落とさない）を立て、街に戻ったとき（帰還 4 種と全滅のすべて）GM が卓を締める語り（strings の `ending.speech.1` から続き番号のある限り）と戦績の画面（潜行回数・戦闘数・死者と灰の数・全滅回数・経過したターン・図鑑の埋まり具合）を出す。clear のジングルを `ending.speech.1` で鳴らす。以後もそのゲームは遊べる（再入場・ファーミング・図鑑。結末は二度と出ない）。タイトルのゲーム一覧に「制覇」の印。
+    - 読みの確認（ユーザー確認済み）: 死者と灰の数は通算（`tally`）。図鑑の埋まり具合の敵は図鑑の鑑定済み（identified）の種類。
+    - U-2: 酒場に「戦績」の行を足して再表示できる（出すかは core の `townMenu.canShowRecord`）。
+    - 保存は schemaVersion 7（`tally` の 5 欄、`progress.conquered` / `endingPending`。v6 → v7 の移行）。
+  - 3 バランス帳: docs/balance.md を新設し、M7・M9・M11 の基準値を 1 表に並べる。以後の数値の変更は「日付・項目・前 → 後・計測の前後・感触」の 1 行ずつで追記し、decisions からは参照だけにする。data の個別の数値（敵・ドロップ・d03 の表）の【仮】も balance.md に書き、decisions には参照の行だけを書く。
+  - 4 計測: 進行ボットを d03 まで潜らせ、d03 の潜行 1〜3 の全滅率と死者を記録する。目安は d03 の潜行 1 でセオリーの全滅率 5% 以下【仮】（件数/分母で見る。境目 4〜7% ならシード 400 で 1 回だけ取り直す。調整の順は balance.md）。
+  - 5 未定-32（UI-37）: touchend の preventDefault を cancelable のときだけ呼ぶ。
+  - U-6: 実機の短縮用に開発用の `debug.levels`（生きている全員を所定の Lv まで上げる。乱数は state.rng）を足す。ボスの手前へは既存の `debug.warp{to:"stairsDown"}` を使う。
+- 作業の順（設計書 §10 に U-5 の enterSpeech を足したもの。各コミット単体で typecheck と test が通る。仕様の文・データ・テストは同じコミット）:
+  - #0 `docs(M12)`: milestones に M12 の節、docs/balance.md の新設（基準値の表・計測(M12 前) の列・目安と調整の順）、decisions の参照の行。ボットを変える前に balance を 1 回回す。
+  - #1 `presenter(M12)`: UI-37 touchend は cancelable のときだけ止める（未定-32）。tap.ts・テスト・ui.md・checklist。
+  - #2 `data(M12)`: DG-35 / DG-02 / CB-05 / IT-51 d03 灰の地下墓所（系統 undead と U-4 の色・敵 6 種・出現表・ドロップ表・ベース 4・ユニーク 2・song dungeon2）。準備中の検査を合成データへ移すテスト群、DG-35 の文、balance.md のコンテンツの数値の節、decisions の【仮】の参照の行。
+  - #2b `core(M12)`: U-5 `dungeons[].enterSpeech`（任意。検証は strings にあるキー）。初回入場（その dungeonId に初めて入るとき）だけ `dungeon.enter` の後に語る。d03 にだけ文を入れ、d01・d02 は欄なし。dungeon.md の文とテスト。
+  - #3 `core(M12)`: SV-04 schemaVersion 7、TW-35 戦績の通算（types・初期値・移行・形の検査・endingRecordView・townMenu.canShowRecord）。
+  - #4 `core(M12)`: DG-36 全ダンジョン制覇と TW-34 結末の語り（GameEvent `ending`、`ending.speech.N`、strings の必須キー、audio.json の cue）。
+  - #5 `presenter(M12)`: UI-73 戦績の画面（overlay ending、再生の終わりで開く、wipe の後の順番待ち、酒場の「戦績」）。
+  - #6 `presenter(M12)`: UI-50 / SV-21 タイトルの「制覇」の印。
+  - #7 `core(M12)`: `debug.levels`（U-6）。
+  - #8 `test(M12)`: 進行ボットを d03 まで（tests/balance）。計測(M12)、balance.md の「M12」の列と変更の記録の行。
+  - #9 `docs(M12)`: checklist の M12 の行、工房への提案、`manifest_sync.py --dry-run` の結果。
+  - 実機(M12) の後、docs で閉じる。
+  - 依存: #2 → #2b・#3・#4・#8、#3 → #4、#4 → #5・#6、#2・#7 → 実機。
+- 完了条件:
+  1. `npm test`・`npm run typecheck`・`npm run build` が通る。新しいルールの ID（上の仕様の一覧）がテスト名に入り、新しい振る舞いのテストは直す前に落ちることを確かめてある。既存テストの期待値を変えたものは理由を decisions に書く。
+  2. Android 実機（adb で URL を `am start` で開く。Chrome の UI をタップしない）で、d01 → d02 → d03 のボス撃破 → 結末の語りと戦績 → 以後の再入場まで通る（設計書 §9 の手順。`debug.levels` と既存の warp で短縮してよい）。あわせて: d03 の初回入場の GM の一行（U-5）、未鑑定「何かの亡者」の薄い黄土の矩形（U-4）、締めの語りを戦績に覆われる前に読み終えられること、clear のジングル、酒場の「戦績」の再表示、タイトルの「制覇」、全滅で帰ったときの結末の順、再読み込みで戦績が出直さないこと、演出スキップ ON で待ちなく流れること、未定-32 の警告が出ないこと。
+  3. 計測: `npm run balance`（200 シード）を #0（M12 前）と #8（M12）で回し、balance.md に並べる。d03 の潜行 1〜3 の全滅率（件数/分母）と 1 潜行あたりの死者、d03 に届いたシード数、d03 のボス戦の勝率を記録する。目安（d03 の潜行 1 でセオリー 5% 以下【仮】）を超えたら balance.md の調整の順で 1 項目ずつ直し、変更の記録に 1 行ずつ足す。d01・d02 の数字は計測(M12 前) と比べる。
+  4. 工房への同期: 工房（make-assets）で `manifest_sync.py --project wizlike --dry-run` を実行し、新しい敵 6 体（ashcrown_lord は boss）と unknown_undead が追加に出て警告が無いことを確かめる（同期そのものはユーザー）。
+  5. docs/checklist.md に M12 の確認観点（上の 2 の各項目）を足し、実機の結果で済・未を付ける。
+- 状態: #0 は済（2026-10-08。milestones の M12 の節・docs/balance.md の新設と計測(M12 前)・decisions の参照の行）。
+
 ## プロトタイプ後（参考、着手しない）
 
 - 訓練所、銀行の金の預け入れ・引き出し（闇魔術と店の消耗品の購入は M4 の範囲に入れた。酒場の並び順変更は M4.5 に移した。キャラ作成の全工程（種族・職業・能力値配分）は M5.5 に移した。店の売却・買い戻し・鑑定と、店の装備（在庫制は流通レベルに置き換え）、銀行に併設の倉庫は M7 に移した）。
