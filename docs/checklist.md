@@ -329,7 +329,7 @@
 | ジングルと場面の曲 | encounter → 戦闘の曲、victory・inn・clear・wipe の後に場面の曲 | 2026-10-07 実機(M9.5-暖機2)・実機(M8-素材)（encounter → battle1）。inn・victory・wipe・clear は 2026-10-06 実機(M8-音の対応) | 済 |
 | ボスの曲 | 通常の戦闘は battle1、ボスは battle2 | 2026-10-07 実機(M9.5-暖機2) | 済 |
 | dungeon2 の曲 | d02 に入ると dungeon2 | 2026-10-07 実機(M8-素材)（d02 が開かず not-checked） | 未 |
-| dungeon3 の曲 | d03 に入ると SONG dungeon3（4F まで同じ曲。U-3 の当面の dungeon2 は解消） | 2026-10-08 工房の受け渡し（未確認） | 未 |
+| dungeon3 の曲 | d03 に入ると SONG dungeon3（4F まで同じ曲。U-3 の当面の dungeon2 は解消） | 2026-10-08 実機(M12-素材)（街から入る・続きから再開・再入場のどれも SONG dungeon3。ログの SONG は dungeon3 12 回・dungeon2 0 回。耳では聞いていない） | 済（耳は未） |
 | rare のジングル | 伝説の品を鑑定する | 2026-10-06 実機(M8-音の対応)（not-checked） | 未 |
 | リロードでその場面の曲（M8 の 7） | 戦闘の画面・街で開き直して最初のタップでその曲 | 2026-10-06 実機(M8-音の対応) | 済 |
 | 音量（UI-57 / SV-24） | 曲・効果音 0〜10、0 で無音、上げると頭から、localStorage に残る。sfx の gain は 0.3 × 段 / 10 | 2026-10-07 実機(M8-素材)（効果音）、2026-10-06 実機(M8-音の対応)（曲） | 済 |
@@ -384,8 +384,8 @@
 | 施設の絵が無いとき | 黒、/town/ の要求 0 | 2026-10-06 実機(M8.5)（2 回目） | 済 |
 | 縦方向の 1 画素の継ぎ目 | 絵の上端が端末の画素 423 から始まり 1 行が 5 画素になる | 2026-10-07 実機(M8-絵)（B11） | 未定-14 |
 | 差し替えの間の一瞬の黒 | 施設を切り替えるたびに load まで非表示 | 2026-10-07 実機(M8-絵)（B12。not-checked） | 未定-15 |
-| M12 d03 の敵の絵 6 体 | ash_shambler・cinder_crow・candle_mourner・urn_bearer・grave_sentinel が 48×48、ashcrown_lord（ボス）が 96×96 で、出会ったときに pixelated で出る（public/sprites にある） | 2026-10-08 工房の受け渡し（未確認） | 未 |
-| M12 未鑑定「何かの亡者」の絵 | unknown_undead.png が届いたので、d03 の死者が未鑑定のときは薄い黄土の矩形ではなく絵で出る。candle_mourner（8 番）と unknown_winged（12 番）の差し替えも | 2026-10-08 工房の受け渡し（未確認） | 未 |
+| M12 d03 の敵の絵 6 体 | ash_shambler・cinder_crow・candle_mourner・urn_bearer・grave_sentinel が 48×48、ashcrown_lord（ボス）が 96×96 で、出会ったときに pixelated で出る（public/sprites にある） | 2026-10-08 実機(M12-素材)（ash_shambler・cinder_crow・candle_mourner・urn_bearer は鑑定の後に本名の <img>（naturalWidth 48、complete=true）。grave_sentinel とボス ashcrown_lord は鑑定される前に倒したので遭遇の画面では「何かの亡者」の絵のまま。同じ origin の PNG の読み込みでは grave_sentinel 48×48・ashcrown_lord 96×96） | 一部済（grave_sentinel・ashcrown_lord の本名の絵は未） |
+| M12 未鑑定「何かの亡者」の絵 | unknown_undead.png が届いたので、d03 の死者が未鑑定のときは薄い黄土の矩形ではなく絵で出る。candle_mourner（8 番）と unknown_winged（12 番）の差し替えも | 2026-10-08 実機(M12-素材)（死者 5 種（ボスを含む）の未鑑定はすべて「何かの亡者」+ unknown_undead.png（naturalWidth 48）で、薄い黄土の矩形は一度も出ない。ボスは 96 の枠に 2 倍で出る（UI-60 の整数倍。boss-enc.png）。cinder_crow の未鑑定は「羽ばたく何か」+ unknown_winged.png。candle_mourner は 8 番の PNG が読めて鑑定で切り替わる） | 済 |
 
 ## 13. 性能（鳴り始め・タップの遅れ・longtask）
 
