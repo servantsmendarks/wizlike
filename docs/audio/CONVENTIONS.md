@@ -1,4 +1,4 @@
-> 出典: make-assets の projects/wizlike/CONVENTIONS.md（37d013f、2026-10-06 に複製）。工房の版が正。変更は工房から提案として来る。
+> 出典: make-assets の projects/wizlike/CONVENTIONS.md（ace70c3、2026-10-08 に複製）。工房の版が正。変更は工房から提案として来る。
 
 # wizlike 音源と MIDI の取り決め（CONVENTIONS）
 
@@ -77,7 +77,7 @@
   - ジングル（`jingles`）: `loop: none`。曲末に `end` を置き、ループの目印は置かない。
 - 長さ: 全トラックの終端（End of Track）を曲末（bars × 1 小節の長さ）に置く。MIDI の長さ = 小節数。曲末を越える音は置かない。
 - 1 ファイル 1 曲。ファイル名は場面名（`project.json` の `music.songs` と `music.jingles`）。
-  - 曲（11）: `title.mid`、`town.mid`、`dungeon1.mid`、`dungeon2.mid`、`camp.mid`、`battle1.mid`、`battle2.mid`（ボス）、`tavern.mid`、`shop.mid`、`temple.mid`、`dark.mid`。tavern・shop・temple・dark は town の編曲違い（town の動機を使う。`music.arrangements`）。ダンジョンの曲は `dungeon1`、`dungeon2`、… と番号で増やす。
+  - 曲（12）: `title.mid`、`town.mid`、`dungeon1.mid`、`dungeon2.mid`、`dungeon3.mid`、`camp.mid`、`battle1.mid`、`battle2.mid`（ボス）、`tavern.mid`、`shop.mid`、`temple.mid`、`dark.mid`。tavern・shop・temple・dark は town の編曲違い（town の動機を使う。`music.arrangements`）。ダンジョンの曲は `dungeon1`、`dungeon2`、… と番号で増やす。
   - ジングル（7）: `encounter.mid`、`victory.mid`、`wipe.mid`、`levelup.mid`、`inn.mid`、`clear.mid`（ダンジョン制覇）、`rare.mid`（伝説品の入手）。
 
 ## 3. 音符リストのテキスト形式（LLM が書く形）
@@ -190,7 +190,7 @@ scale: D minor
 - 版は ZzFX 1.3.2 に固定。出典: npm の `zzfx@1.3.2`（1.3 系の最新、2025-09-17 公開、tarball の sha1 `e3cee96e5405b05cfd641727e291804a5082220d`）、https://github.com/KilledByAPixel/ZzFX 。MIT ライセンス。
 - `params` は 21 個以下。`null` と末尾の省略は既定値（JS の `[,,925]` は `[null, null, 925]` と書く）。
   - ZzFX が既定値に置き換えるのは `undefined` だけで、`null` は 0 として計算される。読む側は `null` を `undefined` に変えてから `zzfx(...params)` に渡す（§7）。
-- 名前は `project.json` の `sfx.names`: ok、cancel、hit、miss、damage、spell、door、stairs、trap、wall、heal、chest、gold、dice、death、flee、san、identify、upgrade_ok、upgrade_fail、teleport、stop の 22 個。wipe、levelup、encounter、victory、inn、clear、rare は効果音ではなくジングル（曲）。
+- 名前は `project.json` の `sfx.names`: ok、cancel、hit、miss、damage、spell、door、stairs、trap、wall、heal、chest、gold、dice、death、flee、san、identify、upgrade_ok、upgrade_fail、teleport、stop、learn、ailment、tent、page の 26 個（learn = 呪文の習得、ailment = 毒・麻痺・睡眠・石化を受ける、tent = 迷宮のキャンプを開く、page = 会話の箱の送り）。wipe、levelup、encounter、victory、inn、clear、rare は効果音ではなくジングル（曲）。
 - 全体の音量 `ZZFX.volume` = 0.3、サンプリングレート 44100。
   - `zzfx()` で鳴らすと 0.3 が 2 回掛かる（`buildSamples` の中と、`playSamples` の GainNode）。実効は 0.3 × 0.3 = 0.09。`sfx_render.py` の WAV は既定でこれに揃える（`--no-play-gain` なら `buildSamples` の出力のまま）。
 - `sfx_render.py` は 1.3.2 のアルゴリズムの Python 移植。randomness は固定の乱数の種で再現する（既定は種 0）。ゲームでは毎回ゆらぐので、試聴の WAV と完全には同じにならない。

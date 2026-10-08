@@ -105,7 +105,7 @@
     },
     "groupCountWeights": { "1": [50, 35, 12, 3], "2": [45, 35, 15, 5], "3": [40, 35, 18, 7], "4": [40, 35, 18, 7] },
     "boss": { "monster": "ashcrown_lord" },
-    "song": "dungeon2",
+    "song": "dungeon3",
     "enterSpeech": "dungeon.enterSpeech.d03",
     "events": ["wounded_adventurer", "pinned_pilgrim", "abandoned_sack"],
     "traps": ["pit", "spinner", "teleport"],

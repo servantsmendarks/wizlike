@@ -646,8 +646,8 @@ describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
   const F = "audio.json";
   test("data: UI-63 / UI-65 / UI-66 実データが通る（工房の project.json の名前の写しと、ゲーム側が足した名前）", () => {
     const d = loadGameData(rawData());
-    // 工房の project.json（2026-10-06）の 11 曲と同じ（ボスの曲 boss の提案はユーザーの判断 4（2026-10-06）で取り下げ。ボスは battle2）
-    expect(d.audio.music.songs).toEqual(["title", "town", "dungeon1", "dungeon2", "camp", "battle1", "battle2", "tavern", "shop", "temple", "dark"]);
+    // 工房の project.json（2026-10-08、dungeon3 を追加）の 12 曲と同じ（ボスの曲 boss の提案はユーザーの判断 4（2026-10-06）で取り下げ。ボスは battle2）
+    expect(d.audio.music.songs).toEqual(["title", "town", "dungeon1", "dungeon2", "dungeon3", "camp", "battle1", "battle2", "tavern", "shop", "temple", "dark"]);
     expect(d.audio.music.jingles).toEqual(["encounter", "victory", "wipe", "levelup", "inn", "clear", "rare"]);
     expect(d.audio.music.noteRange).toEqual([36, 96]);
     // 工房の 22 + learn・ailment・tent・page（工房への提案）
@@ -666,7 +666,7 @@ describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
     expect(d.dungeons.map((x) => [x.id, x.song])).toEqual([
       ["d01", "dungeon1"],
       ["d02", "dungeon2"],
-      ["d03", "dungeon2"], // M12（U-3）: 工房に dungeon3 が来るまで dungeon2
+      ["d03", "dungeon3"], // M12（U-3）: 当面の dungeon2 → 2026-10-08 に工房から dungeon3 が届いた
     ]);
   });
   test("data: UI-63 screenSongs のキーの一覧 AUDIO_SCREENS は core/types の Screen と同じ値", () => {
@@ -676,9 +676,9 @@ describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
   });
   test("data: UI-63 songs と jingles は名前の配列で全体で重複しない", () => {
     expectIssue((r) => r.audio.music.jingles.push("town"), F, 'music.jingles[7]: UI-63: duplicate name "town"');
-    // 添字は実データの songs が 11 曲（判断 4 で boss を消した）になったので [11]
-    expectIssue((r) => r.audio.music.songs.push("title"), F, 'music.songs[11]: UI-63: duplicate name "title"');
-    expectIssue((r) => r.audio.music.songs.push("Boss 2"), F, "music.songs[11]: UI-63: name must match");
+    // 添字は実データの songs が 12 曲（判断 4 で boss を消して 11 曲、2026-10-08 に dungeon3 を足して 12 曲）なので [12]
+    expectIssue((r) => r.audio.music.songs.push("title"), F, 'music.songs[12]: UI-63: duplicate name "title"');
+    expectIssue((r) => r.audio.music.songs.push("Boss 2"), F, "music.songs[12]: UI-63: name must match");
     expectIssue((r) => r.audio.sfx.names.push("ok"), F, 'sfx.names[26]: UI-65: duplicate name "ok"');
   });
   test("data: UI-63 noteRange は 0 <= lo <= hi <= 127 の整数", () => {
@@ -1828,12 +1828,12 @@ describe("data: DG-35 準備中のダンジョン（M9。M12 から合成デー�
 
 describe("data: d03 灰の地下墓所（M12）", () => {
   const D03_MONSTERS = ["ash_shambler", "cinder_crow", "candle_mourner", "urn_bearer", "grave_sentinel", "ashcrown_lord"];
-  test("data: DG-02/DG-35 d03 は準備中でない 4 階・20×20・部屋 [4,7]。最後のダンジョン（次を開かない）で、曲は dungeon2（U-3）、イベント 3 つ・床の罠 3 種は既存のもの", () => {
+  test("data: DG-02/DG-35 d03 は準備中でない 4 階・20×20・部屋 [4,7]。最後のダンジョン（次を開かない）で、曲は dungeon3（U-3 の当面の dungeon2 は 2026-10-08 に解消）、イベント 3 つ・床の罠 3 種は既存のもの", () => {
     const d = loadGameData(rawData()).dungeons.find((x) => x.id === "d03")!;
     expect([d.placeholder, d.floors, d.width, d.height, d.rooms, d.unlock, d.onClear]).toEqual([
       undefined, 4, 20, 20, [4, 7], "d02", { unlockDungeon: null, shopLevel: 6 },
     ]);
-    expect(d.song).toBe("dungeon2");
+    expect(d.song).toBe("dungeon3");
     expect(d.events).toEqual(["wounded_adventurer", "pinned_pilgrim", "abandoned_sack"]);
     expect([d.traps, d.trapsPerFloor]).toEqual([["pit", "spinner", "teleport"], [2, 4]]);
     expect(Object.keys(d.encounterTable)).toEqual(["1", "2", "3", "4"]);

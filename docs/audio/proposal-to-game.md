@@ -1,4 +1,4 @@
-> 出典: make-assets の projects/wizlike/docs/proposal-to-game.md（37d013f、2026-10-06 に複製）。工房の版が正。変更は工房から提案として来る。
+> 出典: make-assets の projects/wizlike/docs/proposal-to-game.md（ace70c3、2026-10-08 に複製）。工房の版が正。変更は工房から提案として来る。
 
 # ゲーム側への提案（wizlike）
 
@@ -88,3 +88,26 @@ Shin の決定で、工房の音の一覧を次のように確定した（工房
 - `cues` に新しい効果音とジングルの契機を足す（例: 遭遇で `encounter`、ダンジョン制覇で `clear`、伝説品の入手で `rare`、攻撃の空振りで `miss`、壁にぶつかったら `wall` など。契機のイベント名はゲーム側の定義に従う）。
 
 工房は `audio.json` が変わるまで、曲と効果音の export は行わない（今の `audio.json` のままだと名前が合わずビルドの検証で止まるため）。
+
+## 2026-10-07 追記（効果音 4 つの受け入れ）
+
+ゲーム側が `data/audio.json` の `sfx.names` に先に足した 4 つ（ゲームの `docs/decisions.md` の工房への提案 (2)）を工房でも受け入れ、効果音は 22 → 26 になった（Shin の指示「効果音 26 個」）。並びは `audio.json` と同じ。
+
+- `learn`: 呪文の習得。
+- `ailment`: 毒・麻痺・睡眠・石化を受ける。
+- `tent`: 迷宮のキャンプを開く。
+- `page`: 会話の箱の送り。
+
+工房の `projects/wizlike/project.json` の `sfx.names` と `CONVENTIONS.md` §6 を 26 にした。パラメータの JSON（`music/sfx/params/<name>.json`）はこれから作る。届くまでゲーム側は今どおり無音。
+
+## 2026-10-08 追記（曲 dungeon3 の受け入れのお願い）
+
+工房で曲 `dungeon3`（3 つ目の迷宮「灰の地下墓所」を歩く間のループ。Eb harmonic minor、テンポ 60、4/4、16 小節、loop 1-16）を採用した（Shin の決定「dungeon3 は採用で良いです。」）。工房の `projects/wizlike/project.json` の `music.songs` と `CONVENTIONS.md` §2 の曲の一覧を 11 → 12 にした（`dungeon2` の次に `dungeon3`）。
+
+ゲーム側にお願いしたい変更:
+
+- `data/audio.json` の `music.songs` に `dungeon3` を足す。
+- `data/dungeons.json` の d03 の `song` を `dungeon2` → `dungeon3` に。
+- `docs/audio/CONVENTIONS.md`（工房の `CONVENTIONS.md` の写し）を更新する（§2 の曲の一覧と数）。
+
+それまでは、工房の `tools/export.py` の事前検査（ゲームの `data/audio.json` との照合）が `dungeon3` で ERROR になり、export は何もコピーせずに止まる。

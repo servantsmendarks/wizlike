@@ -1,6 +1,6 @@
 {
   "music": {
-    "songs": ["title", "town", "dungeon1", "dungeon2", "camp", "battle1", "battle2", "tavern", "shop", "temple", "dark"],
+    "songs": ["title", "town", "dungeon1", "dungeon2", "dungeon3", "camp", "battle1", "battle2", "tavern", "shop", "temple", "dark"],
     "jingles": ["encounter", "victory", "wipe", "levelup", "inn", "clear", "rare"],
     "noteRange": [36, 96]
   },

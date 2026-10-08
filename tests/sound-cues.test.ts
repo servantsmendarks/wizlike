@@ -171,8 +171,8 @@ describe("UI-66 soundsFor", () => {
     expect(soundsFor({ kind: "screen", to: "town" }, data)).toEqual([{ type: "song", name: "town" }]);
     expect(soundsFor({ kind: "screen", to: "dungeon", dungeonId: "d01" }, data)).toEqual([{ type: "song", name: "dungeon1" }]);
     expect(soundsFor({ kind: "screen", to: "dungeon", dungeonId: "d02" }, data)).toEqual([{ type: "song", name: "dungeon2" }]);
-    // M12（U-3）: d03 は工房に dungeon3 が来るまで dungeon2
-    expect(soundsFor({ kind: "screen", to: "dungeon", dungeonId: "d03" }, data)).toEqual([{ type: "song", name: "dungeon2" }]);
+    // M12（U-3）: d03 は当面 dungeon2 → 2026-10-08 に工房から dungeon3 が届いた
+    expect(soundsFor({ kind: "screen", to: "dungeon", dungeonId: "d03" }, data)).toEqual([{ type: "song", name: "dungeon3" }]);
     // song の無いダンジョンは screenSongs.dungeon（M9 までは準備中の d03 で確かめていた。M12 から song を消した合成データ）
     const noSong = loadFreshData();
     delete noSong.dungeons.find((x) => x.id === "d03")!.song;
