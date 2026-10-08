@@ -33,7 +33,7 @@
 3. 乱数は `src/core/rng.ts` のシード付き乱数のみ。ダンジョン生成、ダイス、判定はすべてこれを通す。`Math.random` を core で使ったらバグ。
 4. `src/presenter/` はゲームロジックを持たない。`state` を描き、`events` を順に再生（アニメーション）するだけ。判定・計算・分岐をここに書かない。「表示のためだけの計算」（座標、色）は可。
 5. コンテンツ（種族・職業・呪文・敵・アイテム・性格・ペナルティ表・ダンジョン・イベント・文言）は `data/*.json` が正。コードにハードコードしない。JSON は読み込み時に検証し、不正なら起動を止める。
-6. 調整用の数値は `data/config.json`。仕様書で【仮】が付いた数値は必ずここに置く。敵・アイテム・呪文など `data/*.json` のコンテンツの個別の数値は暫定扱いで、【仮】の印は `docs/decisions.md` にだけ残す（§7-3）。
+6. 調整用の数値は `data/config.json`。仕様書で【仮】が付いた数値は必ずここに置く。敵・アイテム・呪文など `data/*.json` のコンテンツの個別の数値は暫定扱いで、【仮】の印は `docs/balance.md` の「コンテンツの数値」にだけ残し、`docs/decisions.md` には参照だけを書く（§7-3。2026-10-08 M12 から。それより前の分は decisions にある）。
 7. `docs/spec/*.md` の各ルールには ID がある（例: `CB-21`）。ルールを実装したら、その ID をテスト名に含むテストを書く。
 8. オートセーブは「状態を変えるコマンドの直後」に表示層が呼ぶ。手動セーブ・ロードの UI は作らない。
 9. 演出スキップ設定を必ず尊重する。演出スキップが省くのはフラッシュ・揺れ・ダイスの動き・文字送り。手動のタップ待ちとオートの拍の間隔（`settings.autoBeatMs`）は演出ではないので省かない。
@@ -48,6 +48,7 @@ docs/
   decisions.md          決定の記録（追記のみ。消さない）
   milestones.md         作業の順番と完了条件
   checklist.md          実機で確かめてきた観点の一覧（decisions の実機の記録から起こす。次の実機確認の手順）
+  balance.md            数値の帳簿（基準値の表、計測、数値の変更の記録、コンテンツの数値の【仮】。decisions からは参照だけ）
   spec/
     character.md  magic.md  combat.md  dungeon.md  town.md  events.md  save.md  ui.md  items.md
   audio/                工房（make-assets）の取り決めの複製。工房の版が正
@@ -158,7 +159,7 @@ export function execute(
 ```
 npm run dev        開発サーバー（LAN 公開して実機で確認する: vite --host）
 npm test           Vitest（watch なし）
-npm run balance    バランスのシミュレーション（200 シード。数分かかる）
+npm run balance    バランスのシミュレーション（200 シード。約 18 分かかる。結果は docs/balance.md に記録する）
 npm run typecheck  tsc --noEmit
 npm run build      本番ビルド（dist/）
 npm run preview    ビルド結果の確認
@@ -170,7 +171,7 @@ npm run preview    ビルド結果の確認
 
 1. 着手前に `docs/decisions.md` と、その作業に関係する `docs/spec/*.md` を読む。仕様 ID を確認してから書く。
 2. `docs/milestones.md` の順に進める。マイルストーンをまたぐ実装は先にやらない。
-3. 仕様が沈黙している点は、いちばん単純な解釈を選んで実装し、`docs/decisions.md` の「実装中の判断」に日付付きで一行書く。数値が必要なら `data/config.json` に置き、仕様書のその箇所に【仮】を付ける。ただし `data/*.json` のコンテンツ（敵・アイテム・呪文など）の個別の数値は、仕様書に【仮】を付けず `docs/decisions.md` にだけ書く。質問して止まらない。
+3. 仕様が沈黙している点は、いちばん単純な解釈を選んで実装し、`docs/decisions.md` の「実装中の判断」に日付付きで一行書く。数値が必要なら `data/config.json` に置き、仕様書のその箇所に【仮】を付ける。ただし `data/*.json` のコンテンツ（敵・アイテム・呪文など）の個別の数値は、仕様書に【仮】を付けず `docs/balance.md` の「コンテンツの数値」に書き、`docs/decisions.md` には参照の一行だけを書く。質問して止まらない。
 4. 仕様と衝突する実装をしたくなったら、実装せずに `docs/decisions.md` に「衝突」として書き、代替案を添える。
 5. コンテンツはデータで増やす。敵やアイテムを増やすときにコードを触ったら設計ミスを疑う。
 6. core のルールは必ずテストと一緒に書く。シードを固定し、期待する出目と結果を明示する。
