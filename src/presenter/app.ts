@@ -76,6 +76,7 @@ import {
   resumeSoundContext,
   songAt,
   soundsFor,
+  startSoundBeat,
   startSoundPlayback,
   townSong,
   type SoundContext,
@@ -489,8 +490,9 @@ export function createApp(o: {
       soundCtx = nextSoundContext(ev, data, soundCtx);
     },
     // UI-66（2026-10-07）: 同じ拍の中で同じ効果音は 1 回だけ。再生の開始（と beat）で記録を空にする
-    soundStart: () => {
-      soundCtx = startSoundPlayback(soundCtx);
+    // UI-66（2026-10-08 未定-36）: 全滅の印（wiped）を下ろすのは再生の開始だけ。街の文ごとは効果音の記録だけ
+    soundStart: (at) => {
+      soundCtx = at === "playback" ? startSoundPlayback(soundCtx) : startSoundBeat(soundCtx);
     },
   });
 

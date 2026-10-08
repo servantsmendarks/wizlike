@@ -16,7 +16,7 @@ import { startBattle } from "../src/core/rules/combat";
 import { execute } from "../src/core/engine";
 import { ALWAYS_HIT, allInputs, dataWith, dived, withBattle } from "./helpers/battle";
 import { atEvent, dataEvents } from "./helpers/events";
-import { INITIAL_SOUND_CONTEXT, nextSoundContext, soundsFor, startSoundPlayback, type SoundContext } from "../src/presenter/sound-cues";
+import { INITIAL_SOUND_CONTEXT, nextSoundContext, soundsFor, startSoundBeat, startSoundPlayback, type SoundContext } from "../src/presenter/sound-cues";
 
 /** UI-47（M10.5）: 街の会話の箱の矩形（行数と 1 行の単位） */
 const T = townLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size);
@@ -1436,13 +1436,15 @@ describe("UI-66 playback の音の契機", () => {
   test("UI-66（2026-10-07）deps.soundStart は再生の開始に 1 回、最初の deps.sound より前に呼ばれる（同じ拍の効果音の記録を空にする契機）", async () => {
     const { deps, log } = fakeDeps({ skipAnimations: true });
     deps.sound = (ev) => log.push({ m: `sound:${ev.kind}`, a: [] });
-    deps.soundStart = () => log.push({ m: "soundStart", a: [] });
+    deps.soundStart = (at) => log.push({ m: "soundStart", a: [at] });
     const s = stateWith(diveAt(3, 3, "N"));
     const p = createPlayer(deps);
     await p.play([{ kind: "blocked" }, { kind: "beat", phase: "system", auto: true }, { kind: "blocked" }], s, s);
     await p.play([{ kind: "blocked" }], s, s);
     const seq = names(log).filter((m) => m === "soundStart" || m.startsWith("sound:"));
     expect(seq).toEqual(["soundStart", "sound:blocked", "sound:beat", "sound:blocked", "soundStart", "sound:blocked"]);
+    // 2026-10-08（未定-36）: 再生の開始は at "playback"（全滅の印を下ろすのはここだけ）
+    expect(log.filter((e) => e.m === "soundStart").map((e) => e.a)).toEqual([["playback"], ["playback"]]);
   });
 
   test("UI-66 deps.sound が例外を投げても再生は続く", async () => {
@@ -1975,8 +1977,8 @@ describe("UI-66（未定-21。2026-10-07）街の再生は文（message）ごと
   const wire = (deps: PlayerDeps): string[] => {
     let ctx: SoundContext = INITIAL_SOUND_CONTEXT;
     const heard: string[] = [];
-    deps.soundStart = () => {
-      ctx = startSoundPlayback(ctx);
+    deps.soundStart = (at) => {
+      ctx = at === "playback" ? startSoundPlayback(ctx) : startSoundBeat(ctx);
     };
     deps.sound = (ev) => {
       for (const x of soundsFor(ev, data, ctx)) if (x.type === "sfx") heard.push(x.name);
@@ -2269,7 +2271,7 @@ describe("UI-40/UI-47（M10.5 追補 2・未定-23）演出スキップ ON の�
     const run = async (withInline: boolean): Promise<string[]> => {
       const { deps, log } = box(true);
       if (!withInline) delete deps.message.aside;
-      deps.soundStart = () => log.push({ m: "soundStart", a: [] });
+      deps.soundStart = (at) => log.push({ m: "soundStart", a: [at] });
       deps.sound = (ev) => log.push({ m: `sound:${ev.kind}`, a: [] });
       const hold = deps.message.hold!;
       deps.message.hold = () => {
@@ -2282,6 +2284,11 @@ describe("UI-40/UI-47（M10.5 追補 2・未定-23）演出スキップ ON の�
     const a = await run(true);
     expect(a).toEqual(await run(false));
     expect(a).toEqual(["soundStart", "hold", "soundStart", "sound:message", "sound:dice", "dice.show", "hold", "soundStart", "sound:message"]);
+    // 2026-10-08（未定-36）: 再生の開始だけ "playback"、街の文ごとは "beat"（全滅の印を下ろさない）
+    const { deps, log } = box(true);
+    deps.soundStart = (at) => log.push({ m: "soundStart", a: [at] });
+    await createPlayer(deps).play(learnEvents, stateWith(null), stateWith(null));
+    expect(log.filter((e) => e.m === "soundStart").map((e) => e.a[0])).toEqual(["playback", "beat", "beat"]);
   });
 });
 

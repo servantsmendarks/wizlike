@@ -47,7 +47,7 @@
   - 処理の順は 払う → 触媒を消す → 判定の箱（dice。label `dice.upgrade`{item}、行 `dice.row.roll`（base null、d100）、基準 `dice.upgrade.rule`{rate: p, great: q}（「成功率 p（うち大成功 q）」）、結果 `dice.upgrade.great` / `ok` / `ng`）→ Lv の変更 → `town.upgrade.great` / `ok` / `ng`{name, item}（item は変更後の表示名）。
   - 画面（UI）: キャラ → 部位 → 触媒（0〜3 個を選ぶ）→ 成功率と料金の表示 → 実行 → 判定の箱。成功率・大成功・料金・可否は core の問い合わせ（`upgradePreview`）の値を描き、表示層は計算しない（UI-35）。者ごとの部位（空き・ユニークは対象にできない）と触媒の候補は `townMenu.upgrade` の値を描く。
 - TW-34 結末の語り（M12。2026-10-08）: 街に着いたとき（`town.enter` と同じ処理。帰還の糸・徒歩・テレポーター・帰還呪文と全滅のすべて）、`progress.endingPending`（DG-36）が真なら、message `town.enter` の直後、SAN の回復（TW-02）と救済の判定（TW-30）の前に、次を出して `endingPending` を偽にする。乱数は使わない。
-  - GM の締めの語り: message `ending.speech.1`、`ending.speech.2`、… を `strings.json` に続き番号のキーがある限り（1 から数え、途切れた先は使わない。行の数はコードに持たない）。`ending.speech.1` は読み込み時の必須キー（無ければ起動を止める）。`ending.speech.1` で clear のジングルが鳴る（UI-66）。
+  - GM の締めの語り: message `ending.speech.1`、`ending.speech.2`、… を `strings.json` に続き番号のキーがある限り（1 から数え、途切れた先は使わない。行の数はコードに持たない）。`ending.speech.1` は読み込み時の必須キー（無ければ起動を止める）。`ending.speech.1` で clear のジングルが鳴る（UI-66）。例外: 全滅の経路で結末に入るとき（同じ再生で全滅の `wipe` が先に出た）は clear を鳴らさず、全滅のジングルだけ（2026-10-08 未定-36。Shin の判断。表示層の音の状態で決め、core の出来事と data の cues は変えない）。
   - GameEvent `{ kind: "ending", record: EndingRecord }`: 戦績の値（TW-35 の `endingRecordView`。全滅で着いたときは全滅を数えた後の値）。表示層はこれだけで戦績を描き、state を掘らない。
   - 語るのは一度だけ（`endingPending` を落とすので、次の帰還では出ない）。`conquered` は残る。
 - TW-35 戦績の通算（M12。SV-04 v7）: `GameState.tally` の 5 項目（`dives` / `battles` / `deaths` / `ashes` / `wipes`）。どれもゲーム単位の通算で、game.new で 0、全滅・帰還で戻さない。数える所は各項目 1 か所に寄せる（`rules/progress.ts` の `bumpTally`）。

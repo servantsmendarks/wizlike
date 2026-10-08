@@ -678,7 +678,8 @@ describe("入力と Command", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     expect(app).toMatch(/sound: \(ev\) => \{\s*for \(const x of soundsFor\(ev, data, soundCtx\)\) playOrder\(x\);\s*soundCtx = nextSoundContext\(ev, data, soundCtx\);\s*\},/);
     // UI-66（2026-10-07）: 同じ拍の中で同じ効果音は 1 回だけ。再生の開始で記録を空にする
-    expect(app).toMatch(/soundStart: \(\) => \{\s*soundCtx = startSoundPlayback\(soundCtx\);\s*\},/);
+    // 2026-10-08（未定-36）: 全滅の印は再生の開始だけで下ろす（街の文ごとは startSoundBeat）
+    expect(app).toMatch(/soundStart: \(at\) => \{\s*soundCtx = at === "playback" \? startSoundPlayback\(soundCtx\) : startSoundBeat\(soundCtx\);\s*\},/);
     expect(app).toMatch(/if \(x\.type === "song"\) setScene\(x\.name\);/);
     expect(app).toMatch(/play\.setTownPicture\(townFacility\(townPage\)\);\s*const song = townSong\(townFacility\(townPage\), data\);\s*if \(song !== undefined\) setScene\(song\);/);
     const open = /const openCamp = \([\s\S]*?\n {2}\};/.exec(app)?.[0] ?? "";

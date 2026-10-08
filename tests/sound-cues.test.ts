@@ -13,6 +13,7 @@ import {
   sceneSong,
   songAt,
   soundsFor,
+  startSoundBeat,
   startSoundPlayback,
   townSong,
   type SoundContext,
@@ -23,7 +24,7 @@ import { data, loadFreshData } from "./helpers/core";
 const group = (monsterId: string, index = 0): EnemyGroupView => ({ index, monsterId, name: monsterId, identified: true, count: 1 });
 const bossId = data.monsters.find((m) => m.special.boss === true)?.id ?? "";
 const normalId = data.monsters.find((m) => m.special.boss !== true)?.id ?? "";
-const BOSS_CTX: SoundContext = { boss: true, encounters: 0, beatSfx: [] };
+const BOSS_CTX: SoundContext = { boss: true, encounters: 0, beatSfx: [], wiped: false };
 
 describe("UI-66 soundsFor", () => {
   const cases: [string, GameEvent, ReturnType<typeof soundsFor>][] = [
@@ -144,10 +145,10 @@ describe("UI-66 soundsFor", () => {
     expect(soundsFor({ kind: "screen", to: "battle" }, data)).toEqual([]);
     const enc = (groups: EnemyGroupView[]): GameEvent => ({ kind: "encounter", groups });
     const jingle = { type: "jingle", name: "encounter" };
-    expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 0, beatSfx: [] })).toEqual([jingle, { type: "song", name: "battle1" }]);
-    expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 1, beatSfx: [] })).toEqual([jingle, { type: "song", name: "battle1" }]);
-    expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 2, beatSfx: [] })).toEqual([jingle, { type: "song", name: "battle1" }]);
-    expect(soundsFor(enc([group(normalId), group(bossId, 1)]), data, { boss: false, encounters: 1, beatSfx: [] })).toEqual([jingle, { type: "song", name: "battle2" }]);
+    expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 0, beatSfx: [], wiped: false })).toEqual([jingle, { type: "song", name: "battle1" }]);
+    expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 1, beatSfx: [], wiped: false })).toEqual([jingle, { type: "song", name: "battle1" }]);
+    expect(soundsFor(enc([group(normalId)]), data, { boss: false, encounters: 2, beatSfx: [], wiped: false })).toEqual([jingle, { type: "song", name: "battle1" }]);
+    expect(soundsFor(enc([group(normalId), group(bossId, 1)]), data, { boss: false, encounters: 1, beatSfx: [], wiped: false })).toEqual([jingle, { type: "song", name: "battle2" }]);
   });
 
   it("UI-63 nextSoundContext: ボスのいない遭遇を数え、ボスかを覚える。ほかの出来事では変えない", () => {
@@ -162,7 +163,7 @@ describe("UI-66 soundsFor", () => {
     }
     // 巡回（今の battleSongs は battle1 だけ。ボス戦は battle2 で、数えない）
     expect(songs).toEqual(["battle1", "battle1", "battle2", "battle1"]);
-    expect(ctx).toEqual({ boss: false, encounters: 3, beatSfx: [] });
+    expect(ctx).toEqual({ boss: false, encounters: 3, beatSfx: [], wiped: false });
     expect(nextSoundContext({ kind: "battleEnd", result: "win" }, data, ctx)).toBe(ctx);
   });
 
@@ -266,8 +267,8 @@ describe("UI-63 / SV-50 songAt と resumeSoundContext（screen イベントの�
   });
 
   it("UI-63 resumeSoundContext: 戦闘中の続きからはその戦闘を 1 つ目の遭遇として数える（次は battleSongs の 2 番目。今は 1 曲なので battle1）。ボス戦は数えずボスを覚える", () => {
-    expect(resumeSoundContext("battle", [normalId], data)).toEqual({ boss: false, encounters: 1, beatSfx: [] });
-    expect(resumeSoundContext("battle", [bossId], data)).toEqual({ boss: true, encounters: 0, beatSfx: [] });
+    expect(resumeSoundContext("battle", [normalId], data)).toEqual({ boss: false, encounters: 1, beatSfx: [], wiped: false });
+    expect(resumeSoundContext("battle", [bossId], data)).toEqual({ boss: true, encounters: 0, beatSfx: [], wiped: false });
     expect(resumeSoundContext("dungeon", [], data)).toEqual(INITIAL_SOUND_CONTEXT);
     const next = soundsFor({ kind: "encounter", groups: [group(normalId)] }, data, resumeSoundContext("battle", [normalId], data));
     expect(next).toContainEqual({ type: "song", name: "battle1" });
@@ -328,5 +329,50 @@ describe("UI-66（2026-10-07）同じ拍の中で同じ効果音は 1 回だけ"
     const r = run([enc, beat, enc]);
     expect(r.ctx.encounters).toBe(2);
     expect(r.ctx.boss).toBe(false);
+  });
+});
+
+describe("UI-66 / TW-34（M12。2026-10-08 未定-36）全滅の経路で結末に入るときは clear のジングルを鳴らさない", () => {
+  const wipe = { kind: "wipe", penalty: {} } as unknown as GameEvent;
+  const speech1: GameEvent = { kind: "message", key: "ending.speech.1" };
+  const san: GameEvent = { kind: "sanChanged", id: "c1", delta: -2, san: 40 };
+  const townScreen: GameEvent = { kind: "screen", to: "town" };
+  const beat: GameEvent = { kind: "beat", phase: "system", auto: false };
+  /** app と同じ結線で 1 回の再生を通し、鳴らしたもの（jingle: / sfx / song:）を集める */
+  const run = (events: readonly GameEvent[], start: SoundContext = INITIAL_SOUND_CONTEXT): { heard: string[]; ctx: SoundContext } => {
+    let ctx = startSoundPlayback(start);
+    const heard: string[] = [];
+    for (const ev of events) {
+      for (const x of soundsFor(ev, data, ctx)) heard.push(x.type === "sfx" ? x.name : `${x.type}:${x.name ?? ""}`);
+      ctx = nextSoundContext(ev, data, ctx);
+    }
+    return { heard, ctx };
+  };
+
+  it("TW-34/UI-66 wipe の後の ending.speech.1 ではジングルを返さない（全滅のジングル wipe だけ）。曲と効果音は今どおり返る", () => {
+    const r = run([wipe, { kind: "message", key: "town.enter" }, speech1, san, townScreen]);
+    expect(r.heard).toEqual(["jingle:wipe", "san", "song:town"]);
+    expect(r.ctx.wiped).toBe(true);
+    const ctx = nextSoundContext(wipe, data, INITIAL_SOUND_CONTEXT);
+    expect(soundsFor(speech1, data, ctx)).toEqual([]);
+    expect(soundsFor(san, data, ctx)).toEqual([{ type: "sfx", name: "san" }]);
+    expect(soundsFor(townScreen, data, ctx)).toEqual([{ type: "song", name: "town" }]);
+  });
+
+  it("TW-34/UI-66 wipe の無い再生では ending.speech.1 で clear（今までどおり）", () => {
+    expect(run([{ kind: "message", key: "town.enter" }, speech1, townScreen]).heard).toEqual(["jingle:clear", "song:town"]);
+  });
+
+  it("UI-66 全滅の印は再生の開始（startSoundPlayback）で消え、拍（beat）と街の文ごと（startSoundBeat）では消えない", () => {
+    const wiped = nextSoundContext(wipe, data, INITIAL_SOUND_CONTEXT);
+    expect(wiped.wiped).toBe(true);
+    expect(nextSoundContext(beat, data, wiped).wiped).toBe(true);
+    expect(startSoundBeat(wiped).wiped).toBe(true);
+    expect(startSoundBeat({ ...wiped, beatSfx: ["san"] })).toEqual({ ...wiped, beatSfx: [] });
+    expect(startSoundPlayback(wiped).wiped).toBe(false);
+    // 拍をまたいでもジングルは返さない。次の再生では clear が鳴る
+    expect(run([wipe, beat, speech1]).heard).toEqual(["jingle:wipe"]);
+    const first = run([wipe]);
+    expect(run([speech1], first.ctx).heard).toEqual(["jingle:clear"]);
   });
 });

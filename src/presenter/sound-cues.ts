@@ -24,13 +24,25 @@ export type SoundContext = {
    * 同じ名前の効果音は 2 回目以降を鳴らさない（全員の SAN の減少で san が 6 回重なるなど）。ジングルと曲は対象外
    */
   beatSfx: readonly string[];
+  /**
+   * UI-66 / TW-34（M12。2026-10-08 未定-36）: この再生で全滅（wipe の出来事。全滅のジングル）を出した。
+   * 立っている間はジングルを返さない（全滅の経路で結末に入るときの ending.speech.1 の clear が全滅のジングルを置き換えないように）。
+   * 消すのは再生の開始（startSoundPlayback）だけで、拍（beat）と街の文ごと（startSoundBeat）では消さない
+   */
+  wiped: boolean;
 };
 
-export const INITIAL_SOUND_CONTEXT: SoundContext = { boss: false, encounters: 0, beatSfx: [] };
+export const INITIAL_SOUND_CONTEXT: SoundContext = { boss: false, encounters: 0, beatSfx: [], wiped: false };
 
-/** UI-66（2026-10-07）: 再生の開始と拍（beat）で、同じ拍の効果音の記録を空にする */
-export function startSoundPlayback(ctx: SoundContext): SoundContext {
+/** UI-66（2026-10-07）: 拍（beat）と街の文ごとに、同じ拍の効果音の記録を空にする（全滅の印 wiped は残す） */
+export function startSoundBeat(ctx: SoundContext): SoundContext {
   return ctx.beatSfx.length === 0 ? ctx : { ...ctx, beatSfx: [] };
+}
+
+/** UI-66（2026-10-07）: 再生の開始で、同じ拍の効果音の記録を空にする。2026-10-08（未定-36）から全滅の印 wiped も下ろす */
+export function startSoundPlayback(ctx: SoundContext): SoundContext {
+  const beat = startSoundBeat(ctx);
+  return beat.wiped ? { ...beat, wiped: false } : beat;
 }
 
 /** 場面の曲を選ぶのに要る値。monsterIds は戦闘の敵、dungeonId は迷宮、battleIndex は battleSongs の何番目か */
@@ -91,7 +103,7 @@ export function songAt(screen: Screen, data: CueData, opts: SceneOpts = {}): str
 export function resumeSoundContext(screen: Screen, monsterIds: readonly string[], data: CueData): SoundContext {
   if (screen !== "battle") return INITIAL_SOUND_CONTEXT;
   const boss = hasBoss(monsterIds, data);
-  return { boss, encounters: boss ? 0 : 1, beatSfx: [] };
+  return { boss, encounters: boss ? 0 : 1, beatSfx: [], wiped: false };
 }
 
 const side = (id: string): "enemy" | "party" => (enemyGroupOfId(id) !== null ? "enemy" : "party");
@@ -139,7 +151,8 @@ function matches(cue: SoundCue, ev: GameEvent, ctx: SoundContext): boolean {
  * UI-66: GameEvent 1 件 → 鳴らすもの。audio.json の cues を上から見て当たったものすべて。
  * screen は場面の曲（battle は何も求めない。直後の encounter で決める）。
  * encounter は cues（遭遇のジングル）の後に戦闘の曲（ジングルが鳴り終わってから始まる。UI-63 の再生機）。
- * 効果音は、同じ拍で既に鳴らした名前（ctx.beatSfx）と、この出来事で既に返した名前を除く（2026-10-07）
+ * 効果音は、同じ拍で既に鳴らした名前（ctx.beatSfx）と、この出来事で既に返した名前を除く（2026-10-07）。
+ * ジングルは、この再生で全滅を出した後（ctx.wiped）は返さない（2026-10-08 未定-36。曲と効果音は今どおり）
  */
 export function soundsFor(ev: GameEvent, data: CueData, ctx: SoundContext = INITIAL_SOUND_CONTEXT): SoundOrder[] {
   if (ev.kind === "screen") {
@@ -154,7 +167,7 @@ export function soundsFor(ev: GameEvent, data: CueData, ctx: SoundContext = INIT
       const name = cue.sfx;
       if (!ctx.beatSfx.includes(name) && !out.some((x) => x.type === "sfx" && x.name === name)) out.push({ type: "sfx", name });
     }
-    else if (cue.jingle !== undefined) out.push({ type: "jingle", name: cue.jingle });
+    else if (cue.jingle !== undefined && !ctx.wiped) out.push({ type: "jingle", name: cue.jingle });
   }
   if (ev.kind === "encounter") {
     const name = battleSong(
@@ -169,12 +182,14 @@ export function soundsFor(ev: GameEvent, data: CueData, ctx: SoundContext = INIT
 
 /**
  * UI-63 / UI-66: 出来事の後の音の状態。encounter でボスかを覚え、ボスのいない遭遇を数える。
- * beat で同じ拍の効果音の記録を空にし、それ以外はこの出来事で鳴らした効果音（soundsFor の sfx）を足す（2026-10-07）
+ * beat で同じ拍の効果音の記録を空にし、それ以外はこの出来事で鳴らした効果音（soundsFor の sfx）を足す（2026-10-07）。
+ * wipe で全滅の印を立てる（2026-10-08 未定-36。beat では消さない）
  */
 export function nextSoundContext(ev: GameEvent, data: CueData, ctx: SoundContext): SoundContext {
-  if (ev.kind === "beat") return startSoundPlayback(ctx);
+  if (ev.kind === "beat") return startSoundBeat(ctx);
   const heard = soundsFor(ev, data, ctx).flatMap((x) => (x.type === "sfx" ? [x.name] : []));
   let next = heard.length === 0 ? ctx : { ...ctx, beatSfx: [...ctx.beatSfx, ...heard] };
+  if (ev.kind === "wipe" && !next.wiped) next = { ...next, wiped: true };
   if (ev.kind === "encounter") {
     const boss = hasBoss(
       ev.groups.map((g) => g.monsterId),
