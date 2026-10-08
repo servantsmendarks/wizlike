@@ -181,7 +181,10 @@ export function findCellChest(ctx: RuleContext, cell: Cell, pos: Pos, startAlarm
   presentChest(ctx, { impulse: true, startAlarm });
 }
 
-/** presentChest の指定。impulse が偽なら衝動判定（EV-16）も職業の掛け合い（EV-71）もしない（debug.chest。乱数を使わない） */
+/**
+ * presentChest の指定。impulse が偽なら衝動判定（EV-16）も職業の掛け合い（EV-71）もしない（乱数を使わない。debug.chest の present 偽・省略と、
+ * 一度判定した宝箱のセル（DG-24 の judgedChests））
+ */
 export type PresentChestOptions = { impulse: false } | { impulse: true; startAlarm: StartAlarm };
 
 /**
@@ -566,15 +569,16 @@ export function leaveChest(ctx: RuleContext): void {
 
 /**
  * UI-57（開発用、M11）: 今の位置にドロップの箱を置く（trapId は null か chest-traps.json の id。危険度はその罠の値）。
- * inRoom は呼び出し側が渡す（今のセルの roomId !== null）。level はその階の遭遇表の敵の level の最大。presentChest まで行う。乱数は使わない
+ * inRoom は呼び出し側が渡す（今のセルの roomId !== null）。level はその階の遭遇表の敵の level の最大。presentChest まで行う。
+ * startAlarm が null なら衝動なし（乱数は使わない）。非 null なら presentChest{impulse: true}（衝動・制止・掛け合い。state.rng を使う。debug.chest{present: true}）
  */
-export function placeDebugChest(ctx: RuleContext, trapId: string | null, inRoom: boolean): void {
+export function placeDebugChest(ctx: RuleContext, trapId: string | null, inRoom: boolean, startAlarm: StartAlarm | null = null): void {
   const { state, data } = ctx;
   const dive = requireDive(state);
   const level = floorChestLevel(data, dive.dungeonId, dive.floor);
   const danger = trapId === null ? 0 : chestTrapOf(data, trapId).danger;
   dive.chest = { source: "drop", cell: null, inRoom, trapId, danger, level, finding: null, rivalry: null };
-  presentChest(ctx, { impulse: false });
+  presentChest(ctx, startAlarm === null ? { impulse: false } : { impulse: true, startAlarm });
 }
 
 // ---------------------------------------------------------------------------

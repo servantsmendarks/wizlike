@@ -1,9 +1,9 @@
 // UI-57（開発用）: debug パネルのコマンド。全滅の流れ（M4 の実機の結果、ユーザー指示）と、
-// M5 の性格・イベント・SAN を実機で確かめるためのもの。乱数は使わない。
+// M5 の性格・イベント・SAN を実機で確かめるためのもの。乱数は使わない（例外は debug.chest{present: true}。衝動・制止・掛け合いが state.rng を使う）。
 import { optionAppliesTo, optionKindOf } from "../data/index";
 import { createItemInstance, itemDisplayName, slotsUsed } from "../state";
 import type { RuleContext } from "../types";
-import { placeDebugChest } from "./chest";
+import { placeDebugChest, type StartAlarm } from "./chest";
 import { cellAt } from "./dungeon-gen";
 import { floorOf, markExplored, warpTarget } from "./dungeon";
 import { loseSan, overSan, sanCapOf, sanJustBelow, sanStage } from "./san";
@@ -133,11 +133,12 @@ export function giveCursed(ctx: RuleContext, wearable: boolean): void {
 
 /**
  * debug.chest（M11）: 今の位置にドロップの宝箱を置く（罠は trapId。null は罠なし）。U-1 の確認用（危険度 3〜4 の罠は普通の遊びで出にくい）。
- * inRoom は今のセルの roomId !== null。chestFound → chest.found.drop → chest.prompt。衝動判定はしない。乱数は使わない
+ * inRoom は今のセルの roomId !== null。chestFound → chest.found.drop → chest.prompt。
+ * startAlarm が null（present が偽・省略）なら衝動判定はせず乱数も使わない。非 null（present が真）なら衝動・制止・掛け合いを行う（state.rng を使う）
  */
-export function debugChest(ctx: RuleContext, trapId: string | null): void {
+export function debugChest(ctx: RuleContext, trapId: string | null, startAlarm: StartAlarm | null = null): void {
   const dive = ctx.state.dive;
   if (dive === null) throw new Error("debugChest: not in dungeon");
   const cell = cellAt(floorOf(dive, ctx.data), dive.pos.x, dive.pos.y);
-  placeDebugChest(ctx, trapId, cell.roomId !== null);
+  placeDebugChest(ctx, trapId, cell.roomId !== null, startAlarm);
 }

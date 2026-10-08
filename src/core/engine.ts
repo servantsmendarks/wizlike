@@ -377,8 +377,11 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       if (trapId !== null && (typeof trapId !== "string" || !data.chestTraps.some((t) => t.id === trapId))) {
         return reject(state, "debug.chest", "unknown trap");
       }
+      const present = (command as { present?: unknown }).present;
+      if (present !== undefined && typeof present !== "boolean") return reject(state, "debug.chest", "bad present");
       const ctx = makeContext(cloneState(state), data);
-      debugChest(ctx, trapId);
+      // present が真なら衝動・制止・掛け合いを行う（衝動で開けて警報になりうるので startAlarmEncounter を渡す）
+      debugChest(ctx, trapId, present === true ? startAlarmEncounter : null);
       return finish(ctx);
     }
     case "chest.inspect":

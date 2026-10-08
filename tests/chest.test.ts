@@ -66,6 +66,27 @@ describe("CB-60 箱の状態と受け付け", () => {
     expectRejected(s0, { type: "debug.chest", trapId: "pit" } as Command, "unknown trap"); // 床の罠の id 空間とは別
   });
 
+  test("UI-57/EV-16/EV-71 debug.chest{present: true}: 置いた箱で勝利の後と同じ衝動・制止・掛け合いを行う（state.rng を使う。events と乱数は presentChest{impulse} と同じ）。present が偽・省略なら今までどおり乱数なし。真偽でなければ rejected bad present", () => {
+    for (const k of [
+      findK((m) => rollDie(m, 100) <= P_KIRI && 9 + rollDie(m, 10) >= 15 + rollDie(m, 10) && chance(m, 50)), // 衝動 → 制止の成功 → 掛け合い
+      findK((m) => rollDie(m, 100) > P_KIRI && chance(m, 50)), // 衝動なし → 掛け合い
+      findK((m) => rollDie(m, 100) <= P_KIRI && 9 + rollDie(m, 10) < 15 + rollDie(m, 10)), // 衝動で開ける（警報の戦闘）
+    ]) {
+      const s0 = withRng(dived(1), k);
+      const r = exec(s0, { type: "debug.chest", trapId: "alarm", present: true });
+      const placed = exec(s0, { type: "debug.chest", trapId: "alarm" });
+      expect(placed.state.rng).toEqual(s0.rng);
+      const want = present(placed.state, data);
+      expect(r.events).toEqual(want.events);
+      expect(r.state).toEqual(want.state);
+      expect(r.state.rng).not.toEqual(s0.rng);
+      expectStateInvariants(r.state);
+    }
+    const s0 = dived(1);
+    expect(exec(s0, { type: "debug.chest", trapId: "bomb", present: false })).toEqual(exec(s0, { type: "debug.chest", trapId: "bomb" }));
+    expectRejected(s0, { type: "debug.chest", trapId: "bomb", present: 1 } as unknown as Command, "bad present");
+  });
+
   test("CB-60 箱がある間は chest.* 以外を rejected chest pending（debug.warp / debug.chest も）。E3 より前の debug（hpOne / sanDown）は通る。箱が無ければ chest.* は no chest", () => {
     const s = withChest("crossbow");
     for (const cmd of [

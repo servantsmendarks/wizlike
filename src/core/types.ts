@@ -514,9 +514,10 @@ export type Command =
   | { type: "debug.giveCursed"; wearable: boolean }
   /**
    * UI-57（開発用、M11）: 今の位置にドロップの宝箱を出す（罠を指定する。null は罠なし。U-1 の確認用）。迷宮の戦闘外・保留なし・箱なしのときだけ。
-   * 危険度は罠の値、中身の Lv はその階の遭遇表の敵の level の最大。乱数は使わない（衝動判定もしない）
+   * 危険度は罠の値、中身の Lv はその階の遭遇表の敵の level の最大。present が偽・省略なら乱数は使わない（衝動判定もしない）。
+   * present が真なら、置いた箱で勝利の後と同じ衝動・制止（EV-16 / EV-25）と職業の掛け合い（EV-71）を行う（state.rng を使う。M11 の実機の確認用）
    */
-  | { type: "debug.chest"; trapId: string | null }
+  | { type: "debug.chest"; trapId: string | null; present?: boolean }
   /** CB-63（M11）: memberId（行動可能な者。リーダーも可）が箱を調べる。何度でもできる */
   | { type: "chest.inspect"; memberId: string }
   /** CB-64（M11）: memberId（行動可能な者）が、罠の名前（chest-traps.json の id）を宣言して解除する */
