@@ -119,6 +119,13 @@ describe("controls", () => {
     expect(talkBlocksStage("dungeon", null, false)).toBe(false);
   });
 
+  test("UI-47/UI-73（M12）戦績の画面の間（街の route・overlay ending）も全滅の内訳と同じ: 下の 3 行の箱（締めの語り）のタップは受け、ステージのほかのタップは奪わない（「閉じる」は 1 回で効く）", () => {
+    expect(talkTakesTap("town", "ending", false)).toBe(true);
+    expect(talkBlocksStage("town", "ending", false)).toBe(false);
+    expect(talkTakesTap("dungeon", "ending", false)).toBe(false);
+    expect(shouldReleaseHold("dungeon", "ending", false)).toBe(true);
+  });
+
   test("UI-54/UI-36 戦闘の枠（member の配置）: disabled は dim 色で、タップでも select でも onSelect を呼ばない。select は battle モードの枠を選ぶ", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);

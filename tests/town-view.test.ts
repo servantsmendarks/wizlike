@@ -8,7 +8,8 @@ import { classChangeOptions, townMenu } from "../src/core/rules/town";
 import { execute } from "../src/core/engine";
 import { upgradePreview } from "../src/core/rules/upgrade";
 import { cloneState, createItemInstance } from "../src/core/state";
-import type { Character, GameState, TownMenu } from "../src/core/types";
+import type { Character, EndingRecord, GameState, TownMenu } from "../src/core/types";
+import { endingKeyAction, formatEndingRecord } from "../src/presenter/views/ending";
 import {
   samePage,
   TOWN_INTRO_DEDUP,
@@ -28,7 +29,7 @@ import {
   type TownPage,
 } from "../src/presenter/views/town";
 import { formatMessage } from "../src/presenter/views/message";
-import { regions, TOWN_GRID_LABEL_MAX, townLayout } from "../src/presenter/layout";
+import { dungeonLayout, regions, TOWN_GRID_LABEL_MAX, townLayout } from "../src/presenter/layout";
 import { data, loadDataWithPlaceholder, newGame, PLACEHOLDER_DUNGEON_NAME } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
 import { kinsokuLines } from "./helpers/wrap";
@@ -906,5 +907,61 @@ describe("TW-09/CH-22 転職（酒場の「GMに申し出る」。M10）", () =>
       S["town.classChange.intro"]!,
     ];
     for (const l of lines) expect(kinsokuLines(l, 28).length, l).toBeLessThanOrEqual(3);
+  });
+});
+
+describe("UI-73 戦績の画面（M12。views/ending.ts の純粋な部分）", () => {
+  const record: EndingRecord = {
+    dives: 12,
+    battles: 80,
+    deaths: 5,
+    ashes: 1,
+    wipes: 2,
+    turns: 4321,
+    bestiary: { known: 15, total: 20 },
+    uniques: { known: 3, total: 14 },
+  };
+
+  test("UI-73/TW-35 formatEndingRecord: 見出し → 潜行 → 戦闘 → 死者 → 灰 → 全滅 → 経過 → 敵の図鑑 → 品の図鑑（record の値だけで描く）。どの行も 1 行（全角 26 字）に収まる", () => {
+    const lines = formatEndingRecord(record, S);
+    expect(lines).toEqual([
+      "戦績",
+      "潜行　12回",
+      "戦闘　80回",
+      "死者　5人",
+      "灰　1人",
+      "全滅　2回",
+      "経過　4321ターン",
+      "敵の図鑑　15/20",
+      "品の図鑑　3/14",
+    ]);
+    for (const l of lines) expect(kinsokuLines(l, 26), l).toHaveLength(1);
+    // 9 行（行の高さ 10）は全滅の内訳と同じ矩形に収まる（スクロールしない）
+    const w = dungeonLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size).wipe;
+    expect(lines.length * 10 + 2 * 4 + 2).toBeLessThanOrEqual(w.h);
+  });
+
+  test("UI-73/UI-33 endingKeyAction: Enter / Esc / 1 は閉じる。↑↓ は下の会話の箱が開いているときだけ 3 行ずつ読み返す。ほかのキーは何もしない", () => {
+    for (const a of ["back", "confirm", { menu: 0 }] as const) expect(endingKeyAction(a, false)).toBe("close");
+    expect(endingKeyAction("forward", true)).toBe("scrollUp");
+    expect(endingKeyAction("around", true)).toBe("scrollDown");
+    expect(endingKeyAction("forward", false)).toBeNull();
+    expect(endingKeyAction("around", false)).toBeNull();
+    expect(endingKeyAction({ menu: 1 }, true)).toBeNull();
+    expect(endingKeyAction("left", true)).toBeNull();
+  });
+
+  test("UI-73/UI-52/TW-35 酒場の「戦績」は townMenu.canShowRecord のときだけ、GMに申し出るの後（救済の行・戻るの前）に出る（U-2）", () => {
+    const off = townEntries("tavern", menuOf(town()), S);
+    expect(off.some((e) => e.kind === "record")).toBe(false);
+    const s = town();
+    s.progress = { ...s.progress, conquered: true };
+    const m = menuOf(s);
+    expect(m.canShowRecord).toBe(true);
+    const on = townEntries("tavern", m, S);
+    const i = on.findIndex((e) => e.kind === "page" && e.to === "classChange");
+    expect(on[i + 1]).toEqual({ kind: "record", label: "戦績" });
+    expect(on.at(-1)).toEqual(back);
+    expect(S["ending.dismiss"]).toBe("閉じる");
   });
 });

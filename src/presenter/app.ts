@@ -30,10 +30,11 @@ import { STAY_CHOICE_ID } from "../core/rules/choices";
 import { equipPreview, itemDetail, memberSheet, spellInfo, uniqueBookView } from "../core/rules/item-view";
 import { sanStage } from "../core/rules/san";
 import { fieldItemMenu } from "../core/rules/items";
+import { endingRecordView } from "../core/rules/progress";
 import { classChangeOptions, townMenu } from "../core/rules/town";
 import { upgradePreview } from "../core/rules/upgrade";
 import { dungeonOf, itemDisplayName } from "../core/state";
-import type { BattleMenu, Command, GameState, PenaltyResult, Pos, Screen, UpgradePreview, ViewPoint } from "../core/types";
+import type { BattleMenu, Command, EndingRecord, GameState, PenaltyResult, Pos, Screen, UpgradePreview, ViewPoint } from "../core/types";
 import type { GameListEntry, ImportPlan, SaveService } from "../save/types";
 import { downloadText, exportFileName } from "./file-io";
 import { closesInput, runChain, type ChainDeps } from "./auto-chain";
@@ -128,6 +129,7 @@ import { formatMessage } from "./views/message";
 import { createSaveBanner } from "./views/save-banner";
 import { createUpdateNotice } from "./views/update-notice";
 import { createTitleScreen, titleEntries, titleHint, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
+import { endingKeyAction, formatEndingRecord } from "./views/ending";
 import { formatWipeSummary, wipeKeyAction } from "./views/wipe";
 import { createNarrator, TALK_KEY_LINES } from "./views/talk";
 import {
@@ -147,7 +149,7 @@ import {
 } from "./views/town";
 
 export type Route = "title" | "creation" | "custom" | "town" | "dungeon" | "battle";
-export type Overlay = null | "map" | "debug" | "camp" | "wipe" | "history" | "settings";
+export type Overlay = null | "map" | "debug" | "camp" | "wipe" | "ending" | "history" | "settings";
 
 export type App = {
   onLayout(layout: StageLayout, input: StageLayoutInput): void;
@@ -168,11 +170,12 @@ export function shouldReleaseHold(route: Route, overlay: Overlay, hasPendingChoi
 /**
  * UI-47: 会話の箱そのもの（と施設の絵）のタップを受けるか（再生の外。app の tapTalk）。箱を受ける画面（街・キャラクター画面）で、
  * 箱より上の overlay（履歴・設定など）が無いとき。酒場のキャンプ（camp）は箱がパネルの上に描かれるので受ける。
- * 全滅の内訳（wipe）の間の街は、箱が内訳の下・「街へ」の上に出る（UI-56。M10.5 追補 2・未定-25）ので受ける
+ * 全滅の内訳（wipe）の間の街は、箱が内訳の下・「街へ」の上に出る（UI-56。M10.5 追補 2・未定-25）ので受ける。
+ * 戦績の画面（ending。UI-73。M12）の間の街も同じ（箱は戦績の下・「閉じる」の上で、締めの語りを読む）
  */
 export function talkTakesTap(route: Route, overlay: Overlay, characterOpen: boolean): boolean {
   if (route !== "town" && !characterOpen) return false;
-  return overlay === null || overlay === "camp" || (overlay === "wipe" && route === "town");
+  return overlay === null || overlay === "camp" || ((overlay === "wipe" || overlay === "ending") && route === "town");
 }
 
 /**
@@ -241,9 +244,11 @@ export function createApp(o: {
   let stopRequested = false;
   /** オートの連鎖（runChain）の途中か。段の間（1 フレーム譲る間）は門が空くので別に持つ */
   let chaining = false;
-  /** debug パネルの下に残している overlay（全滅の内訳か設定画面。閉じたら戻す） */
+  /** UI-73（M12）: 全滅の内訳が開いている間に届いた戦績（「街へ」で内訳を閉じた直後に開く） */
+  let endingQueued: EndingRecord | null = null;
+  /** debug パネルの下に残している overlay（全滅の内訳・戦績の画面か設定画面。閉じたら戻す） */
   let underDebug: Overlay = null;
-  /** UI-57: 設定画面の下に残している overlay（全滅の内訳だけ。閉じたら戻す） */
+  /** UI-57: 設定画面の下に残している overlay（全滅の内訳か戦績の画面だけ。閉じたら戻す） */
   let underSettings: Overlay = null;
   /** UI-57: 設定画面の案内の欄の上書き（書き出しの結果）。null なら settingsFileHint */
   let settingsNotice: string | null = null;
@@ -469,6 +474,8 @@ export function createApp(o: {
       sync: (st) => sync(st),
     },
     wipe: { show: (p) => openWipe(p) },
+    // UI-73（M12）: 戦績は再生の終わりに開く（全滅の内訳が開いていれば「街へ」の後）
+    ending: { show: (r) => openEnding(r) },
     penaltyTable: play.penaltyTable,
     battleEnded: () => onBattleEnded(),
     inputClosed: () => lowerInput(),
@@ -684,6 +691,10 @@ export function createApp(o: {
             // TW-13: 見回す。screen イベントは来ないので酒場のページのまま（再生の最後の sync で一覧を描き直す）
             void run({ type: "town.lookAround" });
             return;
+          case "record":
+            // TW-35 / UI-73（M12。U-2）: 酒場の「戦績」。値は core の endingRecordView（状態を変えないのでコマンドにしない）
+            openEnding(endingRecordView(state, data));
+            return;
           case "camp":
             // TW-03: 酒場の状態（キャラクター画面）・並び順・図鑑はキャンプと同じ部品で開く（戻る・やめるで酒場の一覧へ戻る）
             openCamp("tavern", e.open);
@@ -818,6 +829,13 @@ export function createApp(o: {
       // UI-56: 全滅の内訳の間は操作領域に「街へ」だけ（route の判定より先に見る）
       clearFocus();
       c.setCloseLabel(t("wipe.toTown"));
+      c.setMode("close");
+      return;
+    }
+    if (overlay === "ending") {
+      // UI-73（M12）: 戦績の画面の間は操作領域に「閉じる」（ending.dismiss）だけ
+      clearFocus();
+      c.setCloseLabel(t("ending.dismiss"));
       c.setMode("close");
       return;
     }
@@ -1588,6 +1606,9 @@ export function createApp(o: {
     play.showMap(false);
     play.showCamp(false);
     play.showWipe(false);
+    // UI-73（M12）: 戦績の画面も再開では出さない（endingPending は語った後に落として保存済み。酒場の「戦績」で見直せる）
+    play.showEnding(false);
+    endingQueued = null;
     play.showHistory(false);
     // 読み込みを待つ間に F2 で開いた debug パネルも閉じる（overlay を null にするので、残すと閉じられなくなる）
     debug.el.style.display = "none";
@@ -1685,7 +1706,7 @@ export function createApp(o: {
     if (overlay === "map") closeMap();
     if (overlay === "history") closeHistory();
     // 全滅の内訳と設定画面は閉じずに debug パネルの下に残す（閉じたら戻す。UI-57 の「開発用」）
-    underDebug = overlay === "wipe" || overlay === "settings" ? overlay : null;
+    underDebug = overlay === "wipe" || overlay === "ending" || overlay === "settings" ? overlay : null;
     repeater.release();
     overlay = "debug";
     debug.showSettings();
@@ -1716,7 +1737,7 @@ export function createApp(o: {
     if (overlay === "camp") closeCamp(false);
     if (overlay === "map") closeMap();
     if (overlay === "history") closeHistory();
-    underSettings = overlay === "wipe" ? "wipe" : null;
+    underSettings = overlay === "wipe" || overlay === "ending" ? overlay : null;
     repeater.release();
     overlay = "settings";
     settingsNotice = null;
@@ -1908,6 +1929,39 @@ export function createApp(o: {
     overlay = null;
     play.showWipe(false);
     syncControls();
+    // UI-73（M12）: 全滅で帰って結末を語ったときは、内訳を閉じた直後に戦績を開く
+    if (endingQueued !== null) {
+      const r = endingQueued;
+      endingQueued = null;
+      openEnding(r);
+    }
+  };
+
+  /**
+   * UI-73（M12）: 戦績の画面を開く（再生の終わりの ending.show と、酒場の「戦績」）。値は core の EndingRecord だけで描く。
+   * 全滅の内訳が開いていれば預かり、「街へ」（closeWipe）の後に開く
+   */
+  const openEnding = (r: EndingRecord): void => {
+    if (overlay === "wipe") {
+      endingQueued = r;
+      return;
+    }
+    if (overlay === "map") closeMap();
+    if (overlay === "camp") closeCamp(false);
+    if (overlay === "history") closeHistory();
+    repeater.release();
+    overlay = "ending";
+    play.ending.render(formatEndingRecord(r, strings));
+    play.showEnding(true);
+    syncControls();
+  };
+
+  /** UI-73: 「閉じる」で戦績を閉じて街のメニューに戻る（会話の箱は打ち切らない） */
+  const closeEnding = (): void => {
+    if (overlay !== "ending") return;
+    overlay = null;
+    play.showEnding(false);
+    syncControls();
   };
 
   /**
@@ -1936,6 +1990,7 @@ export function createApp(o: {
   const closeOverlay = (): void => {
     if (overlay === "map") closeMap();
     else if (overlay === "wipe") closeWipe();
+    else if (overlay === "ending") closeEnding();
     else if (overlay === "history") closeHistory();
   };
 
@@ -2001,6 +2056,13 @@ export function createApp(o: {
       // UI-33 / UI-56: Enter / Esc / 1 で街へ。内訳の下の会話の箱が開いていれば ↑↓ で 3 行ずつ読み返す
       const k = wipeKeyAction(a, route === "town" && play.talk.isOpen());
       if (k === "toTown") closeWipe();
+      else if (k !== null) play.talk.scrollBy(k === "scrollUp" ? -TALK_KEY_LINES : TALK_KEY_LINES);
+      return;
+    }
+    if (overlay === "ending") {
+      // UI-33 / UI-73（M12）: Enter / Esc / 1 で閉じる。下の会話の箱が開いていれば ↑↓ で 3 行ずつ読み返す
+      const k = endingKeyAction(a, route === "town" && play.talk.isOpen());
+      if (k === "close") closeEnding();
       else if (k !== null) play.talk.scrollBy(k === "scrollUp" ? -TALK_KEY_LINES : TALK_KEY_LINES);
       return;
     }

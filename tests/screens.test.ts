@@ -203,6 +203,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   "rules/upgrade": ["upgradePreview"],
   // M11 UI-70 / SV-50: 宝箱の操作を出すか（と続きからの chest.prompt）は core の chestView の値（null でなければ箱が残っていて戦闘中・保留中でない）
   "rules/chest": ["chestView"],
+  // M12 UI-73 / TW-35（U-2）: 酒場の「戦績」は core の endingRecordView の値を描く（ending イベントの record と同じ関数。状態を変えない）
+  "rules/progress": ["endingRecordView"],
   rng: ["createRng"],
   // 能力値の並び（CH-10）。列挙の定数
   "data/index": ["STAT_KEYS"],
@@ -478,7 +480,8 @@ describe("入力と Command", () => {
     expect(app).not.toMatch(/onSettings: \(\) => guard\(\(\) => openDebug\(\)\)/);
     expect(app).toMatch(/if \(a === "debug"\) \{\s*if \(overlay === "debug"\) closeDebug\(\);\s*else openDebug\(\);/);
     const openDebug = /const openDebug = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
-    expect(openDebug).toMatch(/underDebug = overlay === "wipe" \|\| overlay === "settings" \? overlay : null;/);
+    // M12（UI-73）: 戦績の画面（ending）も全滅の内訳と同じく debug パネルの下に残す（以前の期待値は wipe と settings だけ）
+    expect(openDebug).toMatch(/underDebug = overlay === "wipe" \|\| overlay === "ending" \|\| overlay === "settings" \? overlay : null;/);
     const closeDebug = /const closeDebug = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(closeDebug).toMatch(/overlay = underDebug;/);
     const forCmd = /const closeDebugForCommand = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
@@ -580,7 +583,8 @@ describe("入力と Command", () => {
     // パーティ欄はその後（キャラクター画面の間は隠す）、操作はその後。会話の箱（UI-47）は M10.5 で操作の後に移した（操作の欄に被せる。
     // 以前は判定の箱の層の直後・パーティ欄の前）
     expect(dungeon).toContain(
-      "el.append(viewBox, header.el, message.el, band.el, camp.el, diceLayer, panel.el, controls.el, talk.el, map.el, wipe.el, history.el);",
+      // M12（UI-73）: 戦績の画面（ending.el）は全滅の内訳の後・履歴の前（以前の期待値は ending.el なし）
+      "el.append(viewBox, header.el, message.el, band.el, camp.el, diceLayer, panel.el, controls.el, talk.el, map.el, wipe.el, ending.el, history.el);",
     );
     // 街とキャラクター画面ではメッセージ窓と 64 のパーティ欄を隠す。街では帯とヘッダーのログを出す。
     // 2026-10-07（B-B-5）: 隠す処理は export の applyPanels に切り出し、振る舞いは dungeon-view.test の偽の要素で確かめる。ここは結線だけ
@@ -588,7 +592,8 @@ describe("入力と Command", () => {
     // M10.5 追補 2（未定-25）: 全滅の内訳が出ている間（wipeOpen）は内訳の下の 3 行の箱。setTalkCompact(on) を setTalkRect(kind) にした
     //（以前の期待値は wipeOpen なし・setTalkCompact: (on) => talk.setCompact(on)）。内訳の出し入れ（showWipe）で出し直す
     expect(dungeon).toMatch(
-      /const syncPanels = \(\): void =>\s*applyPanels\(\s*mode,\s*characterOpen,\s*wipeOpen,\s*\{ message: message\.el, panel: panel\.el, setDiceBottom: \(b\) => dice\.setBottom\(b\), setTalkRect: \(k\) => talk\.setRect\(k\) \},\s*\{ town: tl\.diceBottom, compact: tl\.diceBottomCompact \},\s*\);/,
+      // M12（UI-73）: 戦績の画面の間（endingOpen）も内訳の下の 3 行の箱（以前の期待値は wipeOpen だけ）
+      /const syncPanels = \(\): void =>\s*applyPanels\(\s*mode,\s*characterOpen,\s*wipeOpen \|\| endingOpen,\s*\{ message: message\.el, panel: panel\.el, setDiceBottom: \(b\) => dice\.setBottom\(b\), setTalkRect: \(k\) => talk\.setRect\(k\) \},\s*\{ town: tl\.diceBottom, compact: tl\.diceBottomCompact \},\s*\);/,
     );
     expect(dungeon).toMatch(/showWipe\(on: boolean\): void \{[\s\S]*?wipeOpen = on;\s*syncPanels\(\);\s*\}/);
     expect(dungeon).toContain('band.el.style.display = town ? "" : "none";');
@@ -833,6 +838,29 @@ describe("入力と Command", () => {
     expect(resume).toMatch(/overlay = null;[\s\S]*play\.showWipe\(false\);/);
     expect(resume.indexOf("play.showWipe(false);")).toBeLessThan(resume.indexOf("narrator.say("));
     expect(app).toContain("onTap(play.talk.el, () => tapTalk());");
+  });
+
+  test("UI-73/UI-56/SV-50/TW-35（M12）戦績の画面: 再生の終わりの ending.show と酒場の「戦績」（core の endingRecordView）で openEnding。全滅の内訳が開いていれば預かり、「街へ」（closeWipe）の直後に開く。操作領域は「閉じる」（ending.dismiss）。再開では出さず、預かりも捨てる（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toContain("ending: { show: (r) => openEnding(r) },");
+    expect(app).toMatch(/case "record":\s*openEnding\(endingRecordView\(state, data\)\);\s*return;/);
+    const open = /const openEnding = \(r: EndingRecord\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(open).toMatch(/if \(overlay === "wipe"\) \{\s*endingQueued = r;\s*return;\s*\}/);
+    expect(open).toMatch(/overlay = "ending";\s*play\.ending\.render\(formatEndingRecord\(r, strings\)\);\s*play\.showEnding\(true\);\s*syncControls\(\);/);
+    const closeW = /const closeWipe = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(closeW).toMatch(/syncControls\(\);\s*if \(endingQueued !== null\) \{\s*const r = endingQueued;\s*endingQueued = null;\s*openEnding\(r\);\s*\}/);
+    const closeE = /const closeEnding = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(closeE).toMatch(/overlay = null;\s*play\.showEnding\(false\);\s*syncControls\(\);/);
+    expect(closeE).not.toContain("play.talk.");
+    const sync = /const syncControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(sync).toMatch(/if \(overlay === "ending"\) \{\s*clearFocus\(\);\s*c\.setCloseLabel\(t\("ending\.dismiss"\)\);\s*c\.setMode\("close"\);\s*return;\s*\}/);
+    expect(app).toMatch(/else if \(overlay === "ending"\) closeEnding\(\);/);
+    expect(app).toMatch(/if \(overlay === "ending"\) \{\s*const k = endingKeyAction\(a, route === "town" && play\.talk\.isOpen\(\)\);\s*if \(k === "close"\) closeEnding\(\);/);
+    const resume = /const resume = \(st: GameState\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(resume).toMatch(/play\.showEnding\(false\);\s*endingQueued = null;/);
+    const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
+    expect(dungeon).toContain("const ending = createEndingView(lay.wipe, o.strings);");
+    expect(dungeon).toMatch(/showEnding\(on: boolean\): void \{[\s\S]*?endingOpen = on;\s*syncPanels\(\);\s*\}/);
   });
 
   test("UI-47/UI-59（M10。2026-10-07 A-A2）キャンプの項目（と peek の dim の行）は、街かキャラクター画面なら会話の箱を打ち切ってから動く。Esc も campKeyIndex → select でこの onSelect を通る（ソースの検査）", () => {

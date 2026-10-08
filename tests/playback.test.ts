@@ -9,7 +9,7 @@ import { textUnits } from "../src/presenter/views/party-band";
 import { STAT_KEYS } from "../src/core/data/index";
 import type { PenaltyTableText } from "../src/presenter/views/penalty-table";
 import type { Settings } from "../src/presenter/settings";
-import type { Dive, EnemyGroupView, GameEvent, GameState, PenaltyResult, ViewPoint } from "../src/core/types";
+import type { Dive, EndingRecord, EnemyGroupView, GameEvent, GameState, PenaltyResult, ViewPoint } from "../src/core/types";
 import { data, expectKnownStringKeys, loadFreshData, newGame, withChar } from "./helpers/core";
 import { cloneState, createItemInstance, makeContext } from "../src/core/state";
 import { startBattle } from "../src/core/rules/combat";
@@ -122,6 +122,7 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
     },
     screens: { show: (to) => rec("screens.show")(to), sync: (st) => log.push({ m: "screens.sync", a: [st] }) },
     wipe: { show: (p) => rec("wipe.show")(p) },
+    ending: { show: (r) => rec("ending.show")(r) },
     penaltyTable: { show: (v) => rec("penaltyTable.show")(v), hide: rec("penaltyTable.hide") },
     battleEnded: rec("battleEnded"),
     inputClosed: rec("inputClosed"),
@@ -2535,5 +2536,82 @@ describe("UI-70/UI-71 宝箱の判定の箱と衝動の流れの再生（M11 作
       ["c3", false],
       [null, false],
     ]);
+  });
+});
+
+describe("UI-73 戦績の画面の再生（M12）", () => {
+  const record: EndingRecord = {
+    dives: 12,
+    battles: 80,
+    deaths: 5,
+    ashes: 1,
+    wipes: 2,
+    turns: 4321,
+    bestiary: { known: 15, total: 20 },
+    uniques: { known: 3, total: 14 },
+  };
+  const penalty: PenaltyResult = {
+    dice: [3, 4],
+    total: 7,
+    bandIndex: 2,
+    ledgerGold: 0,
+    ledgerItems: [],
+    goldLost: 60,
+    itemsLost: [],
+    expLost: [],
+    revived: [],
+    leaderRule: true,
+  };
+
+  test("UI-73/TW-34 ending は record を預かるだけで、締めの語りと街の画面の後、再生の終わり（screens.sync の後）に ending.show を 1 回（record をそのまま）呼ぶ（演出スキップの真偽とも）", async () => {
+    for (const skipAnimations of [false, true]) {
+      vi.useFakeTimers();
+      const { deps, log } = fakeDeps({ skipAnimations });
+      const events: GameEvent[] = [
+        { kind: "message", key: "town.enter" },
+        { kind: "message", key: "ending.speech.1" },
+        { kind: "message", key: "ending.speech.2" },
+        { kind: "ending", record },
+        { kind: "screen", to: "town" },
+      ];
+      const p = createPlayer(deps).play(events, stateWith(diveAt(1, 1, "N")), stateWith(null));
+      await vi.runAllTimersAsync();
+      await p;
+      expect(log.filter((e) => e.m === "ending.show"), String(skipAnimations)).toEqual([{ m: "ending.show", a: [record] }]);
+      const ms = names(log).filter((m) => ["message.say", "screens.show", "screens.sync", "ending.show"].includes(m));
+      expect(ms, String(skipAnimations)).toEqual(["message.say", "message.say", "message.say", "screens.show", "screens.sync", "ending.show"]);
+      vi.useRealTimers();
+    }
+  });
+
+  test("UI-73 ending の無い再生では ending.show を呼ばない。次の再生に前の record を持ち越さない", async () => {
+    vi.useFakeTimers();
+    const { deps, log } = fakeDeps({ skipAnimations: true });
+    const player = createPlayer(deps);
+    const first = player.play([{ kind: "ending", record }, { kind: "screen", to: "town" }], stateWith(diveAt(1, 1, "N")), stateWith(null));
+    await vi.runAllTimersAsync();
+    await first;
+    const second = player.play([{ kind: "message", key: "town.enter" }], stateWith(null), stateWith(null));
+    await vi.runAllTimersAsync();
+    await second;
+    expect(names(log).filter((m) => m === "ending.show")).toEqual(["ending.show"]);
+    vi.useRealTimers();
+  });
+
+  test("UI-73/UI-56 全滅で帰って結末を語る列: 内訳（wipe.show）が先に開き、戦績（ending.show）は再生の終わり（内訳を閉じた後に開くかは app が決める）", async () => {
+    vi.useFakeTimers();
+    const { deps, log } = fakeDeps({ skipAnimations: true });
+    const events: GameEvent[] = [
+      { kind: "wipe", penalty },
+      { kind: "message", key: "town.enter" },
+      { kind: "message", key: "ending.speech.1" },
+      { kind: "ending", record },
+      { kind: "screen", to: "town" },
+    ];
+    const p = createPlayer(deps).play(events, stateWith(diveAt(1, 1, "N")), stateWith(null));
+    await vi.runAllTimersAsync();
+    await p;
+    expect(names(log).filter((m) => ["wipe.show", "screens.sync", "ending.show"].includes(m))).toEqual(["wipe.show", "screens.sync", "ending.show"]);
+    vi.useRealTimers();
   });
 });

@@ -14,6 +14,7 @@
 //   その拍の手動の待ちのタップとして持ち越す（tapAhead。待ちの前に message / dice / penaltyTable が来たら取り消す）。
 // - 全滅（UI-56）: 拍の中の wipe は、開く前に最後の拍を読ませ（上の待ち）、拍の外に出てから内訳の overlay を開く。
 //   拍の外の wipe（戦闘外の全滅）も、開く前に全滅の 2d10 の箱を出したままタップを 1 回待つ。
+// - 戦績（UI-73。M12）: ending は record を預かるだけにし、再生の終わり（screens.sync の後）に ending.show で開く（締めの語りを先に読ませる）。
 //   全滅の 2d10（label が WIPE_DICE_KEY）の箱は、その後の message 以外のイベント（復活の lifeChanged など）でも消さず、wipe の待ちの後に消す。
 //   開いた後は入力を待たずに続ける（後続の screen town でも待たない）。
 //   出目の表（penaltyTable、M5.5）: 2d10 の前の hit null で表を出し、入力の UI を下げてからタップを 1 回待つ（演出スキップでも待つ。§3-9）。
@@ -50,7 +51,7 @@
 //   空にするのは表示だけで、全文の履歴（UI-46）は残る。戦闘中の beat では空にしない。
 // 具体的な views は import しない（純粋な enemyGroupOfId / formatMessage / formatDiceSummary だけ）。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, StatusId, Strings } from "../core/data/index";
-import type { EnemyGroupView, GameEvent, GameEventKind, GameState, Life, PenaltyResult, Screen, ViewPoint } from "../core/types";
+import type { EndingRecord, EnemyGroupView, GameEvent, GameEventKind, GameState, Life, PenaltyResult, Screen, ViewPoint } from "../core/types";
 import type { Settings } from "./settings";
 import { enemyGroupOfId } from "./views/battle";
 import { formatDiceInline, formatDiceSummary, type DiceEvent } from "./views/dice";
@@ -144,6 +145,11 @@ export type PlayerDeps = {
   screens: { show(to: Screen, state: GameState, carry?: readonly string[]): void; sync(state: GameState): void };
   /** UI-56 の全滅の内訳の overlay を開く（入力は待たない。閉じるのは app） */
   wipe: { show(p: PenaltyResult): void };
+  /**
+   * UI-73（M12）の戦績の画面を開く。ending を受けた再生の終わり（screens.sync の後）に 1 回呼ぶ（入力は待たない）。
+   * 全滅の内訳が開いていれば、開く時機（内訳を閉じた後）は app が決める
+   */
+  ending: { show(r: EndingRecord): void };
   /** UI-56（M5.5）の全滅の出目の表（views/penalty-table.ts）。show は描き直しも兼ねる */
   penaltyTable: { show(v: PenaltyTableText): void; hide(): void };
   /** UI-44 / UI-54: battleEnd を再生した（戦闘の入力の UI を下げる。続きの再生の間は出さない） */
@@ -297,6 +303,8 @@ export function createPlayer(deps: PlayerDeps): Player {
   let marked = false;
   /** UI-47: 今の screen{town} の前の語り（townCarry。screen ハンドラが screens.show に渡す） */
   let carry: string[] = [];
+  /** UI-73（M12）: この再生で受けた ending の record（再生の終わりに ending.show へ渡す） */
+  let endingRecord: EndingRecord | null = null;
 
   const isSkip = (): boolean => deps.settings().skipAnimations || rushed || beatRush;
   /** UI-47（M10.5）: 拍の外で、判定の箱を会話の箱と一緒に消すか（deps.message.keepsDice） */
@@ -517,6 +525,11 @@ export function createPlayer(deps: PlayerDeps): Player {
       cx.skip = isSkip();
       deps.wipe.show(ev.penalty);
     },
+    async ending(ev, cx) {
+      // UI-73（M12）: 預かるだけ。戦績の画面は再生の終わりに開く（締めの語りを迷宮の窓・会話の箱で先に読ませる）
+      cx.skip = isSkip();
+      endingRecord = ev.record;
+    },
     async battleEnd(_ev, cx) {
       cx.skip = isSkip();
       hideDice();
@@ -591,6 +604,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       rushed = false;
       taps = 0;
       marked = false;
+      endingRecord = null;
       leaveBeats();
       soundStart();
       const cx: PlayCx = { cursor: cursorOfDive(before), skip: isSkip(), screen: before.screen };
@@ -683,6 +697,11 @@ export function createPlayer(deps: PlayerDeps): Player {
         marked = false;
       }
       deps.screens.sync(finalState);
+      if (endingRecord !== null) {
+        const r = endingRecord;
+        endingRecord = null;
+        deps.ending.show(r);
+      }
     },
     tap(): void {
       if (waitingTap) {

@@ -31,6 +31,7 @@ import { createPartyPanel, type MaxOf, type PartyPanel, type StageOf } from "./p
 import { createPartyBand, type PartyBand } from "./party-band";
 import { createTalkBox, type TalkBox, type TalkRectKind } from "./talk";
 import { createTownPicture } from "./town-picture";
+import { createEndingView } from "./ending";
 import { createWipeView, type WipeView } from "./wipe";
 
 export type PlayMode = "town" | "dungeon" | "battle";
@@ -60,6 +61,8 @@ export type DungeonScreen = {
   camp: CampView;
   /** UI-56 の全滅の内訳の overlay（地図と同じ範囲） */
   wipe: WipeView;
+  /** UI-73（M12）の戦績の画面（全滅の内訳と同じ範囲・同じ部品） */
+  ending: WipeView;
   /** UI-46 の履歴の画面（地図と同じ範囲） */
   history: HistoryView;
   /** town ならビューは施設の絵（UI-61）で、メッセージ窓とパーティ欄を隠して帯とログのボタンを出す。dungeon なら線画、battle なら敵グループ */
@@ -79,6 +82,8 @@ export type DungeonScreen = {
   setCharacterOpen(on: boolean): void;
   /** UI-56 の全滅の内訳の overlay の表示 */
   showWipe(on: boolean): void;
+  /** UI-73（M12）の戦績の画面の表示（会話の箱は全滅の内訳と同じく下の 3 行の箱） */
+  showEnding(on: boolean): void;
   /** UI-46 の履歴の画面の表示 */
   showHistory(on: boolean): void;
   /** UI-37: スワイプを受ける間は画面に class swipe-on を付ける（touch-action: none） */
@@ -276,6 +281,10 @@ export function createDungeonScreen(o: {
   const wipe = createWipeView(lay.wipe, o.strings);
   wipe.el.style.display = "none";
 
+  // 戦績の画面（UI-73。M12）も同じ範囲
+  const ending = createEndingView(lay.wipe, o.strings);
+  ending.el.style.display = "none";
+
   // 履歴（UI-46）も同じ範囲
   const history = createHistoryView(lay.history, o.strings);
   history.el.style.display = "none";
@@ -297,11 +306,13 @@ export function createDungeonScreen(o: {
     cleared: () => dice.hide(),
   });
 
-  el.append(viewBox, header.el, message.el, band.el, camp.el, diceLayer, panel.el, controls.el, talk.el, map.el, wipe.el, history.el);
+  el.append(viewBox, header.el, message.el, band.el, camp.el, diceLayer, panel.el, controls.el, talk.el, map.el, wipe.el, ending.el, history.el);
 
   let mode: PlayMode = "dungeon";
   let characterOpen = false;
   let wipeOpen = false;
+  /** UI-73（M12）: 戦績の画面が出ているか（会話の箱は全滅の内訳と同じ下の 3 行の箱） */
+  let endingOpen = false;
   /**
    * メッセージ窓・パーティ欄・判定の箱の下端（街かキャラクター画面なら窓と欄を隠し、箱は会話の箱の上）。
    * UI-13: 街はメッセージ窓とパーティ欄を置かず、帯とヘッダーのログを出す。UI-59（M10）: キャラクター画面の間も隠す
@@ -310,7 +321,7 @@ export function createDungeonScreen(o: {
     applyPanels(
       mode,
       characterOpen,
-      wipeOpen,
+      wipeOpen || endingOpen,
       { message: message.el, panel: panel.el, setDiceBottom: (b) => dice.setBottom(b), setTalkRect: (k) => talk.setRect(k) },
       { town: tl.diceBottom, compact: tl.diceBottomCompact },
     );
@@ -331,6 +342,7 @@ export function createDungeonScreen(o: {
     penaltyTable,
     camp,
     wipe,
+    ending,
     history,
     setMode(m: PlayMode): void {
       mode = m;
@@ -381,6 +393,12 @@ export function createDungeonScreen(o: {
       if (on) wipe.refresh();
       // UI-47 / UI-56（M10.5 追補 2・未定-25）: 内訳の間の会話の箱は内訳の下・「街へ」の上。閉じたら（「街へ」・再開）街の広い箱に戻す
       wipeOpen = on;
+      syncPanels();
+    },
+    showEnding(on: boolean): void {
+      ending.el.style.display = on ? "" : "none";
+      if (on) ending.refresh();
+      endingOpen = on;
       syncPanels();
     },
     showHistory(on: boolean): void {
