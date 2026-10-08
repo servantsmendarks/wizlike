@@ -10,10 +10,10 @@ import { STAT_KEYS } from "../src/core/data/index";
 import type { PenaltyTableText } from "../src/presenter/views/penalty-table";
 import type { Settings } from "../src/presenter/settings";
 import type { Dive, EndingRecord, EnemyGroupView, GameEvent, GameState, PenaltyResult, ViewPoint } from "../src/core/types";
-import { data, expectKnownStringKeys, loadFreshData, newGame, withChar } from "./helpers/core";
+import { data, defaultMembers, expectKnownStringKeys, loadFreshData, newGame, withChar } from "./helpers/core";
 import { cloneState, createItemInstance, makeContext } from "../src/core/state";
 import { startBattle } from "../src/core/rules/combat";
-import { execute } from "../src/core/engine";
+import { createInitialState, execute } from "../src/core/engine";
 import { ALWAYS_HIT, allInputs, dataWith, dived, withBattle } from "./helpers/battle";
 import { atEvent, dataEvents } from "./helpers/events";
 import { INITIAL_SOUND_CONTEXT, nextSoundContext, soundsFor, startSoundBeat, startSoundPlayback, type SoundContext } from "../src/presenter/sound-cues";
@@ -1516,6 +1516,29 @@ describe("UI-47 街の会話の箱と再生", () => {
     };
     await createPlayer(deps).play([{ kind: "screen", to: "dungeon" }], stateWith(null), base);
     expect(shown2).toEqual([{ to: "dungeon", n: 0 }]);
+  });
+
+  test("TW-36 game.new の再生（core の実際の列）: screens.show(town) の後に opening.speech.1..N を message.say で順に語る。carry は空（skip の真偽の両方）", async () => {
+    const before = createInitialState(1, data);
+    const r = execute(before, { type: "game.new", party: { members: defaultMembers() } }, data);
+    const n = r.events.filter((e) => e.kind === "message").length;
+    expect(n).toBeGreaterThan(0);
+    expect(r.events[0]).toEqual({ kind: "screen", to: "town" });
+    for (const skipAnimations of [false, true]) {
+      const { deps, log } = fakeDeps({ skipAnimations });
+      const carries: Array<readonly string[] | undefined> = [];
+      deps.screens.show = (to, _st, carry) => {
+        log.push({ m: "screens.show", a: [to] });
+        carries.push(carry);
+      };
+      await createPlayer(deps).play(r.events, before, r.state);
+      const seq = log.filter((e) => e.m === "screens.show" || e.m === "message.say");
+      expect(seq.map((e) => e.m)).toEqual(["screens.show", ...Array<string>(n).fill("message.say")]);
+      expect(seq.slice(1).map((e) => e.a)).toEqual(
+        Array.from({ length: n }, (_, i) => [data.strings[`opening.speech.${i + 1}`], skipAnimations]),
+      );
+      expect(carries).toEqual([[]]);
+    }
   });
 
   // M10.5: 文を溜めるので、持ち越しの 2 文は 1 回で出る（以前の期待値は「1 文目が ▼ で待ち、タップで 2 文目」）

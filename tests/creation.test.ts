@@ -18,7 +18,7 @@ import {
 import { initialHpMax, mpGainFor } from "../src/core/rules/growth";
 import { slotsUsed } from "../src/core/state";
 import type { Command, CustomMember, PartySetupMember } from "../src/core/types";
-import { data, defaultMembers, newGame } from "./helpers/core";
+import { data, defaultMembers, expectKnownStringKeys, gameNewEvents, loadFreshData, newGame } from "./helpers/core";
 
 const protos = data.config.prototypeParty.members;
 
@@ -410,7 +410,7 @@ describe("creation: 自分で作る（CH-06 / CH-11 / CH-21 / CH-24）", () => {
     const s0 = createInitialState(1, data);
     const r = execute(s0, { type: "game.new", party: { kind: "custom", members: ms } }, data);
     const s = r.state;
-    expect(r.events).toEqual([{ kind: "screen", to: "town" }]);
+    expect(r.events).toEqual(gameNewEvents()); // TW-36（M12.5）: screen{town} の後に開始の語り
     expect(s.screen).toBe("town");
     expect(s.gold).toBe(300);
     expect(s.rng).toEqual(createRng(1)); // random が無ければ乱数を使わない
@@ -493,5 +493,43 @@ describe("creation: 自分で作る（CH-06 / CH-11 / CH-21 / CH-24）", () => {
     expect(customReason(withCustom(0, { stats: { ...st, str: 11 } }))).toBeNull();
     // 簡易作成の形は今のまま（kind が無い）
     expect(validatePartySetup({ members: defaultMembers() }, data)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------- TW-36 開始の語り（M12.5）
+
+describe("creation: TW-36 開始の語り", () => {
+  const OPENING = ["opening.speech.1", "opening.speech.2", "opening.speech.3", "opening.speech.4", "opening.speech.5"];
+  const keyOf = (e: { kind: string; key?: string }): string => (e.kind === "message" ? e.key! : e.kind);
+  const quick = (d = data) => execute(createInitialState(1, d), { type: "game.new", party: { members: defaultMembers() } }, d);
+  const custom = (d = data) => execute(createInitialState(1, d), { type: "game.new", party: { kind: "custom", members: customMembers() } }, d);
+
+  test("TW-36 game.new（おすすめ・自分で作るの両方）は screen{town} の後に opening.speech.1..5 を順に message で出す（差し込みなし。キーは strings に実在）", () => {
+    for (const r of [quick(), custom()]) {
+      expect(r.events).toEqual([{ kind: "screen", to: "town" }, ...OPENING.map((key) => ({ kind: "message", key }))]);
+      expectKnownStringKeys(r.events);
+    }
+  });
+
+  test("TW-36 開始の語りは乱数を使わない（random の性格が無ければ state.rng は createRng(seed) のまま）", () => {
+    expect(quick().state.rng).toEqual(createRng(1));
+    expect(custom().state.rng).toEqual(createRng(1));
+  });
+
+  test("TW-36 行の数は strings の続き番号で決まる: 2 行・7 行に差し替えるとそれに従い、途切れた先（3 が無ければ 4 以降）は使わない", () => {
+    const cases: [string[], string[]][] = [
+      [["opening.speech.3", "opening.speech.4", "opening.speech.5"], OPENING.slice(0, 2)],
+      [["opening.speech.3"], OPENING.slice(0, 2)],
+      [[], OPENING],
+    ];
+    for (const [drop, want] of cases) {
+      const d = loadFreshData();
+      for (const k of drop) delete (d.strings as Record<string, string>)[k];
+      expect(quick(d).events.map(keyOf), drop.join(",")).toEqual(["screen", ...want]);
+    }
+    const seven = loadFreshData();
+    (seven.strings as Record<string, string>)["opening.speech.6"] = "六";
+    (seven.strings as Record<string, string>)["opening.speech.7"] = "七";
+    expect(custom(seven).events.map(keyOf)).toEqual(["screen", ...OPENING, "opening.speech.6", "opening.speech.7"]);
   });
 });

@@ -1585,6 +1585,12 @@ describe("data: strings.json", () => {
       delete r.strings["ending.speech.4"];
     })).toEqual([]);
   });
+  test("data: TW-36 開始の語りの 1 行目 opening.speech.1 は必須（2 行目以降は任意。続き番号の数はデータで決まる）", () => {
+    expectIssue((r) => delete r.strings["opening.speech.1"], "strings.json", "opening.speech.1");
+    expect(issuesOf((r) => {
+      for (const n of [2, 3, 4, 5]) delete r.strings[`opening.speech.${n}`];
+    })).toEqual([]);
+  });
 });
 
 describe("data: エラー報告", () => {

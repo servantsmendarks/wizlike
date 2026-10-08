@@ -1527,6 +1527,8 @@ function validateStrings(ctx: Ctx, v: unknown, ix: Index): void {
   strKey(ctx, "", "item.plus", ix);
   // TW-34（M12）: 結末の締めの語りは ending.speech.1 から続き番号のある限り（core の tellEnding）。1 行目は必須
   strKey(ctx, "", "ending.speech.1", ix);
+  // TW-36（M12.5）: 開始の語りは opening.speech.1 から続き番号のある限り（core の startNewGame）。1 行目は必須
+  strKey(ctx, "", "opening.speech.1", ix);
   const plus = ix.stringText.get("item.plus");
   if (plus !== undefined) {
     const ph = [...plus.matchAll(PLACEHOLDER_RE)].map((m) => m[0]);

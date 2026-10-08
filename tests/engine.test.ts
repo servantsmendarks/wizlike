@@ -27,6 +27,7 @@ import {
   defaultMembers,
   expectKnownStringKeys,
   expectStateInvariants,
+  gameNewEvents,
   loadFreshData,
   newGame,
   stringKeysOf,
@@ -52,7 +53,7 @@ describe("engine: execute", () => {
     const s0 = deepFreeze(createInitialState(1, frozenData));
     const before = JSON.stringify(s0);
     const r = execute(s0, gameNew(randomMembers()), frozenData);
-    expect(r.events).toEqual([{ kind: "screen", to: "town" }]);
+    expect(r.events).toEqual(gameNewEvents(frozenData)); // TW-36（M12.5）: screen{town} の後に開始の語り
     expect(JSON.stringify(s0)).toBe(before);
     expect(r.state).not.toBe(s0);
     // rejected の場合
@@ -282,10 +283,11 @@ describe("engine: execute", () => {
     expect(s.dive).toBeNull();
   });
 
-  test("D3 game.new で screen は town、events は [{kind:\"screen\",to:\"town\"}] だけ", () => {
+  test("D3/TW-36 game.new で screen は town、events は [{kind:\"screen\",to:\"town\"}] と、その後の開始の語り（opening.speech.N）だけ（town.enter は出さない）", () => {
     const r = execute(createInitialState(1, data), gameNew(), data);
     expect(r.state.screen).toBe("town");
-    expect(r.events).toEqual([{ kind: "screen", to: "town" }]);
+    expect(r.events).toEqual(gameNewEvents());
+    expect(r.events.length).toBeGreaterThan(1);
   });
 
   test("TW-30 game.new は townVisit を {mercyOffered:false} にし（town.enter と救済の判定はしない）、dungeon.enter で null に戻す", () => {

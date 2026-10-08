@@ -165,6 +165,13 @@ export function withChar(state: GameState, idx: number, patch: Partial<Character
   return s;
 }
 
+/** TW-36（M12.5）: game.new の events（screen{town} の後に、d.strings の opening.speech.1.. を続き番号のある限り message で）。 */
+export function gameNewEvents(d: GameData = data): GameEvent[] {
+  const out: GameEvent[] = [{ kind: "screen", to: "town" }];
+  for (let n = 1; d.strings[`opening.speech.${n}`] !== undefined; n++) out.push({ kind: "message", key: `opening.speech.${n}` });
+  return out;
+}
+
 /** events に出てくる文字列キー（message の key、dice の label → rows[].label → rule → result の key）を、出てきた順に返す。 */
 export function stringKeysOf(events: readonly GameEvent[]): string[] {
   const keys: string[] = [];

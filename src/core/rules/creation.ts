@@ -335,4 +335,9 @@ export function startNewGame(ctx: RuleContext, setup: PartySetup): void {
   state.screen = "town";
   state.townVisit = { mercyOffered: false }; // TW-30: game.new は town.enter をしない（救済の判定もしない）
   ctx.events.push({ kind: "screen", to: "town" });
+  // TW-36（M12.5）: 開始の語り。screen{town} の後に opening.speech.1, 2, … を data.strings に続き番号のキーがある限り（途切れた先は使わない。
+  // 行の数はコードに持たない。opening.speech.1 は検証で必須）。乱数は使わない。game.new は 1 ゲームに 1 回なので「一度だけ」の欄は持たない
+  for (let n = 1; data.strings[`opening.speech.${n}`] !== undefined; n++) {
+    ctx.events.push({ kind: "message", key: `opening.speech.${n}` });
+  }
 }

@@ -965,3 +965,13 @@ describe("UI-73 戦績の画面（M12。views/ending.ts の純粋な部分）", 
     expect(S["ending.dismiss"]).toBe("閉じる");
   });
 });
+
+describe("TW-36 開始の語り（M12.5）の文の長さ", () => {
+  test("TW-36 opening.speech.1..N は会話の箱の 1 行 28 字で 2 行以内（禁則つき）。1 行目はある", () => {
+    expect(S["opening.speech.1"]).toBeDefined();
+    for (let n = 1; S[`opening.speech.${n}`] !== undefined; n++) {
+      const t = S[`opening.speech.${n}`]!;
+      expect(kinsokuLines(t, 28).length, `${n}: ${t}`).toBeLessThanOrEqual(2);
+    }
+  });
+});

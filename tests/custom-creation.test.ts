@@ -17,7 +17,7 @@ import {
   type CustomDraft,
   type CustomResult,
 } from "../src/presenter/views/custom-creation";
-import { data } from "./helpers/core";
+import { data, gameNewEvents } from "./helpers/core";
 
 const S = data.strings;
 
@@ -93,7 +93,7 @@ describe("自分で作る（UI-62 / CH-06）", () => {
     expect(r.setup.members.map((m) => m.personality)).toEqual([null, "cautious", "cautious", "cautious", "cautious", "cautious"]);
     expect(r.setup.members.every((m) => m.raceId === "human" && m.classId === "fighter")).toBe(true);
     const g = execute(createInitialState(1, data), { type: "game.new", party: r.setup }, data);
-    expect(g.events).toEqual([{ kind: "screen", to: "town" }]);
+    expect(g.events).toEqual(gameNewEvents()); // TW-36（M12.5）: screen{town} の後に開始の語り
     expect(g.state.party.map((c) => c.name)).toEqual(names);
     expect(bonuses.every((b) => b >= 8)).toBe(true);
   });
