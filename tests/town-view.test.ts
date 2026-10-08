@@ -29,7 +29,7 @@ import {
 } from "../src/presenter/views/town";
 import { formatMessage } from "../src/presenter/views/message";
 import { regions, TOWN_GRID_LABEL_MAX, townLayout } from "../src/presenter/layout";
-import { data, newGame } from "./helpers/core";
+import { data, loadDataWithPlaceholder, newGame, PLACEHOLDER_DUNGEON_NAME } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
 import { kinsokuLines } from "./helpers/wrap";
 
@@ -533,14 +533,19 @@ describe("UI-52 街のページ", () => {
     expect(townEntries("gate", menuOf(allDead), S)).toEqual([{ kind: "enter", dungeonId: "d01", label: d01, disabled: true, notReady: null }, back]);
   });
 
-  test("UI-52/DG-35/TW-11 迷宮の入口の準備中の行は town.gate.notReady のラベルで dim、押したときの理由の文 town.gate.notReadyReason を持つ（M9）", () => {
+  test("UI-52/DG-35/TW-11 迷宮の入口の準備中の行は town.gate.notReady のラベルで dim、押したときの理由の文 town.gate.notReadyReason を持つ（M9。M12 から合成データの d04）", () => {
     const s = town();
-    s.progress.unlockedDungeons.push("d02", "d03");
-    expect(townEntries("gate", menuOf(s), S)).toEqual([
+    s.progress.unlockedDungeons.push("d02", "d03", "d04");
+    const m = townMenu(s, loadDataWithPlaceholder());
+    if (m === null) throw new Error("not in town");
+    const P = PLACEHOLDER_DUNGEON_NAME;
+    expect(townEntries("gate", m, S)).toEqual([
       { kind: "enter", dungeonId: "d01", label: "試しの坑道", disabled: false, notReady: null },
       { kind: "enter", dungeonId: "d02", label: "沈んだ聖堂", disabled: false, notReady: null },
+      // M12: 実データの d03 は本物になったので普通の行
+      { kind: "enter", dungeonId: "d03", label: "灰の地下墓所", disabled: false, notReady: null },
       // UI-52 / TW-11（M9 実機 B2）: 押したときに会話の箱へ出す理由の 1 文（準備中かは core の notReady）
-      { kind: "enter", dungeonId: "d03", label: "灰の地下墓所（準備中）", disabled: true, notReady: "灰の地下墓所はまだ道が開いていない。" },
+      { kind: "enter", dungeonId: "d04", label: `${P}（準備中）`, disabled: true, notReady: `${P}はまだ道が開いていない。` },
       back,
     ]);
   });

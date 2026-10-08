@@ -26,7 +26,7 @@ export type LureWeights = Record<LureTag, number>;
 export const SPELL_TARGETS = ["enemy", "enemyGroup", "allEnemies", "ally", "party", "self", "none"] as const;
 export type SpellTarget = (typeof SPELL_TARGETS)[number];
 
-export const PLACEHOLDER_COLORS = ["white", "gray", "dim", "lightGreen", "darkGreen", "red", "orange", "sky", "yellow", "violet", "teal"] as const;
+export const PLACEHOLDER_COLORS = ["white", "gray", "dim", "lightGreen", "darkGreen", "red", "orange", "sky", "yellow", "violet", "teal", "bone"] as const;
 export type PlaceholderColor = (typeof PLACEHOLDER_COLORS)[number];
 
 export const PERSONALITY_IDS = ["cautious", "reckless", "greedy", "normal"] as const;
@@ -684,6 +684,8 @@ export type DungeonDef = {
   boss: { monster: string };
   /** UI-63（M8。2026-10-06）: このダンジョンの迷宮の曲（audio.json の music.songs）。省略は audio.json の screenSongs.dungeon */
   song?: string;
+  /** DG-37（M12。U-5）: 初回入場の GM の一行（strings のキー。プレースホルダーなし）。省略は語らない。語る経路は core（M12 #2b） */
+  enterSpeech?: string;
   events: string[];
   traps: TrapId[];
   trapsPerFloor: [number, number];

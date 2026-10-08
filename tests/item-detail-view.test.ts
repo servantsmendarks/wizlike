@@ -9,6 +9,7 @@ import type { GameState } from "../src/core/types";
 import { campEntries, campFirstPage, campHeader, campPanel, campRepair, campStep, createCampView, type CampInput } from "../src/presenter/views/camp";
 import { chunkDescription, DESCRIPTION_CHARS, formatBook, formatEquipPreview, formatItemDetail } from "../src/presenter/views/item-detail";
 import { formatSpellInfo } from "../src/presenter/views/spell-info";
+import { CHARACTER_LINES } from "../src/presenter/layout";
 import { dived } from "./helpers/battle";
 import { data, newGame } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
@@ -183,7 +184,9 @@ describe("IT-66 formatBook（図鑑）", () => {
     expect(at("dawn_flint_staff")).toEqual({ text: `夜明けの火打ち杖　${d01}　希少`, tone: "normal" });
     expect(at("alarm_bell_helm")).toEqual({ text: "早鐘の兜　―　通常", tone: "normal" });
     expect(at("twin_tongue_dagger")).toEqual({ text: "？？？", tone: "dim" });
-    expect(p.lines.length).toBeLessThanOrEqual(13);
+    // 図鑑は tall のパネル（layout.character。CHARACTER_LINES 行）に出すので、見出しの 1 行を除いた行数に収まる。
+    // M7 の 13 行（ビュー領域 150px）は図鑑を広げる前の上限で、M12 でユニークが 14 種になったので広げた後の上限に直した
+    expect(p.lines.length).toBeLessThanOrEqual(CHARACTER_LINES - 1);
   });
 });
 

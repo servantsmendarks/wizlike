@@ -70,5 +70,17 @@
     "damage": "1d4+1",
     "skill": { "type": "extraAttack", "value": 1 }, "optionTier": 2, "price": 1300,
     "description": "鴎の羽根を柄に巻いた投げナイフの束。一本投げると、群れのようにもう一本が後を追う。"
+  },
+  {
+    "id": "mourner_veil", "name": "弔いの面紗", "base": "warded_robe",
+    "ac": -4,
+    "skill": { "type": "mpCostDown", "value": 1 }, "optionTier": 3, "price": 2000,
+    "description": "喪の女が顔に掛けていた黒い薄布。透かして見ると、亡者の灯が揺れて見えない。"
+  },
+  {
+    "id": "sentinel_blade", "name": "墓守の両手剣", "base": "heavy_blade",
+    "damage": "2d6+1",
+    "skill": { "type": "extraAttack", "value": 1 }, "optionTier": 3, "price": 2600,
+    "description": "錆びた墓守が休まず振るっていた剣。持ち主が変わっても、腕が勝手に二度振るう。"
   }
 ]

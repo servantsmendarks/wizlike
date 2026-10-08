@@ -98,3 +98,68 @@ M12 前と M11 のログ（balance-m12-before.log と balance-m11-fix.log）は�
 ## コンテンツの数値（【仮】）
 
 M12 の data のコミット（d03）で、d03 の敵 6 種・出現表・groupCountWeights・ドロップ表・floors・ベース 4 種とユニーク 2 種の数値と、ボットの階ごとの level をここに書く。
+
+### M12 の d03 の数値（2026-10-08。data(M12)。どれも【仮】）
+
+設計は scratchpad の m12-design.md §1。値は data/*.json が正で、この表はその写し（変えたら変更の記録に 1 行足し、ここも直す）。
+
+d03 灰の地下墓所（dungeons.json）:
+
+| 欄 | 値 |
+|---|---|
+| floors / width × height / rooms | 4 / 20×20 / [4, 7] |
+| encounterRate（room / corridor） | 0.14 / 0.06（d02 と同じ） |
+| groupCountWeights | 1F [50,35,12,3]、2F [45,35,15,5]、3F [40,35,18,7]、4F [40,35,18,7]（1 戦あたりのグループ数の期待値 1.68 / 1.80 / 1.92 / 1.92） |
+| trapsPerFloor（pit・spinner・teleport） | [2, 4]（d02 と同じ） |
+| chestsPerFloor / chestTrapMaxDanger / chestTrapDangerWeights | [1, 3] / 4 / [30, 30, 25, 15] |
+| onClear.shopLevel | 6（U-1） |
+
+出現表（encounterTable。重み）:
+
+| 階 | 表 |
+|---|---|
+| 1F | ash_shambler 3, cinder_crow 3, choir_wraith 2, font_mire 2, stone_gazer 1 |
+| 2F | ash_shambler 3, cinder_crow 3, candle_mourner 3, choir_wraith 2, stone_gazer 1 |
+| 3F | ash_shambler 2, cinder_crow 2, candle_mourner 3, urn_bearer 3, grave_sentinel 1 |
+| 4F | ash_shambler 2, candle_mourner 2, urn_bearer 3, grave_sentinel 3 |
+
+敵 6 種（monsters.json）。「1 グループの期待値」は groupSize の平均 × 1 ラウンドに全攻撃が当たったときのダメージの和（命中率は入れない）:
+
+| id | 名前 | 系統 | Lv | hp | AC | agi | 攻撃 | special / resist | exp | gold | groupSize | 1 グループの期待値 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ash_shambler | 灰まみれの骸 | undead | 5 | 4d8 | 6 | 5 | 1d6 麻痺 10% | undead / sleep | 170 | 0 | 1d3+1 | 10.5 |
+| cinder_crow | 燠火の鴉 | winged | 5 | 2d8 | 5 | 16 | 1d6 | flying / なし | 140 | 0 | 1d3+1 | 10.5 |
+| candle_mourner | 弔い蝋燭の女 | undead | 6 | 3d8 | 3 | 12 | 1d4 sanDrain 6 [fear] / 1d3 眠り 25% | undead / sleep・poison・paralysis | 280 | 0 | 1d2 | 6.75 + SAN |
+| urn_bearer | 骨壺運び | undead | 6 | 5d8 | 4 | 7 | 1d10 / 1d4 毒 30% | undead / sleep | 300 | 3d10+5 | 1d2 | 12 |
+| grave_sentinel | 錆びた墓守 | undead | 7 | 6d10 | 1 | 10 | 1d10 / 1d10 | undead / sleep・paralysis | 520 | 4d10+10 | 1 | 11 |
+| ashcrown_lord | 灰冠の墓所主（ボス） | undead | 7 | 10d8+30 | 1 | 10 | 2d8 / 1d6 sanDrain 8 [fear] / 1d4 麻痺 15% | boss・undead / sleep・poison・paralysis・stone | 1600 | 10d10+60 | 1 | 15 + SAN |
+
+比べる段（既存）: d02 1F の drowned_acolyte 8.75、d02 2F の font_mire 9、d02 3F の stone_gazer 7、d02 のボス sunken_bishop 9.5 + SAN。
+
+ドロップ表（drops.json）:
+
+| 表 | itemChance | rolls | 中身（重み） |
+|---|---|---|---|
+| d03_f1 | 60 | 1 | halberd 2, long_bow 3, sigil_staff 1, chain_mail 2, plate_armor 2, great_helm 2, iron_gloves 2, iron_shield 2, charm 2, choir_robe（ユニーク）1, tome_lightning 1 |
+| d03_f2 | 60 | 1 | d03_f1 と同じ段 + abbot_sigil_staff（ユニーク）1, tome_sanctuary_hymn 1 |
+| d03_f3 | 65 | 1 | halberd 2, long_bow 2, sigil_staff 2, plate_armor 3, great_helm 2, iron_gloves 2, charm 2, heavy_blade 1, horn_bow 1, elder_staff 1, mourner_veil（ユニーク）1, tome_ash_gale 1 |
+| d03_f4 | 70 | 1 | plate_armor 2, great_helm 2, iron_gloves 2, charm 2, heavy_blade 2, horn_bow 2, elder_staff 2, blackiron_plate 1, mourner_veil（ユニーク）1, sentinel_blade（ユニーク）1, tome_ash_gale 1, tome_sanctuary_hymn 1 |
+| d03_boss | 100 | 2 | heavy_blade 2, horn_bow 2, elder_staff 2, blackiron_plate 2, sentinel_blade（ユニーク）2, mourner_veil（ユニーク）2, tome_ash_gale 1, tome_sanctuary_hymn 1 |
+
+ベース 4 種（equipment-bases.json。shopMinLevel 6）:
+
+| id | 名前 | 部位 | 性能 | 職業 | price |
+|---|---|---|---|---|---|
+| heavy_blade | 重剣 | weapon | 1d10+1 | fighter・samurai・lord | 1500 |
+| horn_bow | 角弓 | weapon（ranged） | 1d10 | fighter・thief・samurai・lord | 1400 |
+| elder_staff | 古樹の杖 | weapon（caster） | 1d6、magicPower 3 | 全職 | 1800 |
+| blackiron_plate | 黒鉄の鎧 | armor | ac −7 | fighter・samurai・lord | 2500 |
+
+ユニーク 2 種（uniques.json）:
+
+| id | 名前 | base | 性能 | skill | optionTier | price |
+|---|---|---|---|---|---|---|
+| mourner_veil | 弔いの面紗 | warded_robe | ac −4 | mpCostDown 1 | 3 | 2000 |
+| sentinel_blade | 墓守の両手剣 | heavy_blade | 2d6+1 | extraAttack 1 | 3 | 2600 |
+
+ボットの階ごとの level（d03 の降りる level・ボス戦の level）は、進行ボットを d03 まで潜らせる作業（M12 の #8）でここに書く。

@@ -32,6 +32,7 @@ import {
   type RawGameData,
 } from "../src/core/data";
 import { createRng, isDiceExpr, rollDice } from "../src/core/rng";
+import { addPlaceholderDungeon, loadDataWithPlaceholder } from "./helpers/core";
 
 // 生データを書き換えるテスト用。JSON なので any で自由に壊す。
 type Mutable = { [K in keyof RawGameData]: any };
@@ -88,11 +89,11 @@ describe("data: 実データ", () => {
     expect(data.races).toHaveLength(5);
     expect(data.classes).toHaveLength(7);
     expect(data.spells).toHaveLength(14); // M9: 4 つ（MG-45〜48）を末尾に追加
-    expect(data.monsters).toHaveLength(14); // M9: 8 種を追加
+    expect(data.monsters).toHaveLength(20); // M9: 8 種を追加。M12: d03 の 6 種
     expect(data.items).toHaveLength(6); // M7 の B2: 消耗品 3・魔法書 1（装備は equipment-bases.json。IT-01）。M9 で魔法書 2 冊
     expect(data.personalities.map((p) => p.id).sort()).toEqual(["cautious", "greedy", "normal", "reckless"]);
     expect(data.penaltyTable.bands).toHaveLength(7);
-    expect(data.dungeons.map((d) => d.id)).toEqual(["d01", "d02", "d03"]); // d03 は準備中の枠（DG-35。M9）
+    expect(data.dungeons.map((d) => d.id)).toEqual(["d01", "d02", "d03"]); // d03 は M9 の準備中の枠（DG-35）から M12 で本物になった
     expect(data.events).toHaveLength(6); // M9: EV-53〜55 を追加
     expect(data.chestTraps.map((t) => t.id)).toEqual(["poison_needle", "crossbow", "bomb", "poison_gas", "paralysis_gas", "alarm", "teleport", "curse"]); // M11（CB-62）
     expect(data.rivalries.map((x) => x.id)).toEqual(["thief_chest"]); // M11（EV-70）
@@ -665,7 +666,7 @@ describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
     expect(d.dungeons.map((x) => [x.id, x.song])).toEqual([
       ["d01", "dungeon1"],
       ["d02", "dungeon2"],
-      ["d03", undefined],
+      ["d03", "dungeon2"], // M12（U-3）: 工房に dungeon3 が来るまで dungeon2
     ]);
   });
   test("data: UI-63 screenSongs のキーの一覧 AUDIO_SCREENS は core/types の Screen と同じ値", () => {
@@ -881,7 +882,7 @@ describe("data: monsters.json", () => {
 
 describe("data: unknown-kinds.json（CB-05 / UI-60。M7）", () => {
   const F = "unknown-kinds.json";
-  test("data: CB-05/UI-60 実データは 6 系統（beast / humanoid / spirit / construct / winged / ooze）、sprite は unknown_<id>、色は系統ごとに別", () => {
+  test("data: CB-05/UI-60 実データは 7 系統（beast / humanoid / spirit / construct / winged / ooze / undead）、sprite は unknown_<id>、色は系統ごとに別", () => {
     const d = loadGameData(rawData());
     expect(d.unknownKinds.map((k) => [k.id, k.name, k.sprite])).toEqual([
       ["beast", "何かの獣", "unknown_beast"],
@@ -890,6 +891,7 @@ describe("data: unknown-kinds.json（CB-05 / UI-60。M7）", () => {
       ["construct", "動く何か", "unknown_construct"],
       ["winged", "羽ばたく何か", "unknown_winged"],
       ["ooze", "ぬめる何か", "unknown_ooze"],
+      ["undead", "何かの亡者", "unknown_undead"], // M12
     ]);
     expect(new Set(d.unknownKinds.map((k) => k.placeholderColor)).size).toBe(d.unknownKinds.length);
     // UI-54: 名前は全角 8 字以内（ラベルの 2 行に収まる。battle-view.test.ts で幅を確かめる）
@@ -911,6 +913,18 @@ describe("data: unknown-kinds.json（CB-05 / UI-60。M7）", () => {
     expect(d.unknownKinds.filter((k) => k.id === "winged" || k.id === "ooze").map((k) => [k.id, k.placeholderColor])).toEqual([
       ["winged", "violet"],
       ["ooze", "teal"],
+    ]);
+  });
+  test("data: CB-05/UI-60 系統 undead「何かの亡者」（M12）は薄い黄土 bone（#FCE0A8。U-4）で、spirit の緑・construct の白と違う。所属は d03 の死者 5 種だけ（既存の死者の系統は移さない）", () => {
+    const d = loadGameData(rawData());
+    const color = (id: string): string => d.unknownKinds.find((k) => k.id === id)!.placeholderColor;
+    expect([color("undead"), color("spirit"), color("construct")]).toEqual(["bone", "darkGreen", "white"]); // 色の値は palette.test.ts
+    expect(d.monsters.filter((m) => m.unknownKind === "undead").map((m) => m.id)).toEqual([
+      "ash_shambler", "candle_mourner", "urn_bearer", "grave_sentinel", "ashcrown_lord",
+    ]);
+    // 既存の死者（M6〜M9）の系統はそのまま
+    expect(["rotting_corpse", "drowned_acolyte", "sunken_bishop", "whispering_shadow", "choir_wraith"].map((id) => d.monsters.find((m) => m.id === id)!.unknownKind)).toEqual([
+      "humanoid", "humanoid", "humanoid", "spirit", "spirit",
     ]);
   });
 });
@@ -940,11 +954,28 @@ describe("data: items.json", () => {
 });
 
 describe("data: equipment-bases.json（IT-02。M7）", () => {
-  test("data: IT-02 実データの汎用ベース 26 種（武器 12・防具 5・盾 2・兜 4・小手 2・装飾 1。M9 で 12 種を足した）", () => {
+  test("data: IT-02 実データの汎用ベース 30 種（武器 15・防具 6・盾 2・兜 4・小手 2・装飾 1。M9 で 12 種、M12 で 4 種を足した）", () => {
     const d = loadGameData(rawData());
-    expect(d.equipmentBases).toHaveLength(26);
+    expect(d.equipmentBases).toHaveLength(30);
     const count = (slot: string): number => d.equipmentBases.filter((b) => b.slot === slot).length;
-    expect(["weapon", "armor", "shield", "helm", "gauntlet", "accessory"].map(count)).toEqual([12, 5, 2, 4, 2, 1]);
+    expect(["weapon", "armor", "shield", "helm", "gauntlet", "accessory"].map(count)).toEqual([15, 6, 2, 4, 2, 1]);
+  });
+  test("data: IT-62/IT-02/IT-25/IT-22 M12 のベース 4 種は shopMinLevel 6（d03 の踏破の流通レベル 6 で並ぶ。U-1）。重剣・角弓（ranged）・古樹の杖（caster、magicPower 3）・黒鉄の鎧（ac −7）", () => {
+    const d = loadGameData(rawData());
+    const M12 = ["heavy_blade", "horn_bow", "elder_staff", "blackiron_plate"];
+    const got = M12.map((id) => {
+      const b = d.equipmentBases.find((x) => x.id === id)!;
+      return b.slot === "weapon" ? [id, b.damage, b.reach ?? "melee", b.caster, b.magicPower ?? 0, b.shopMinLevel] : [id, b.slot, b.ac, b.shopMinLevel];
+    });
+    expect(got).toEqual([
+      ["heavy_blade", "1d10+1", "melee", false, 0, 6],
+      ["horn_bow", "1d10", "ranged", false, 0, 6],
+      ["elder_staff", "1d6", "melee", true, 3, 6],
+      ["blackiron_plate", "armor", -7, 6],
+    ]);
+    // shopMinLevel 6 のベースはこの 4 種だけで、d03 の onClear.shopLevel（6）で初めて並ぶ（d02 の 4 では並ばない）
+    expect(d.equipmentBases.filter((b) => b.shopMinLevel === 6).map((b) => b.id)).toEqual(M12);
+    expect(Math.max(...d.equipmentBases.map((b) => b.shopMinLevel))).toBe(d.dungeons.find((x) => x.id === "d03")!.onClear.shopLevel);
   });
   test("data: IT-02/IT-25/CB-13/IT-22 M9 のベース 12 種: 長柄は reach long、投擲・弓は reach ranged、杖 2 種は caster で magicPower 1 / 2、shopMinLevel は 2 か 4（流通レベル）", () => {
     const d = loadGameData(rawData());
@@ -975,17 +1006,17 @@ describe("data: equipment-bases.json（IT-02。M7）", () => {
     expectIssue((r) => delete r.equipmentBases[1].damage, "equipment-bases.json", "[1].damage: missing required field");
     expectIssue((r) => delete r.equipmentBases[1].caster, "equipment-bases.json", "[1].caster: missing required field");
     expectIssue((r) => (r.equipmentBases[1].ac = 0), "equipment-bases.json", "[1].ac: unknown field");
-    expectIssue((r) => delete r.equipmentBases[12].ac, "equipment-bases.json", "[12].ac: missing required field");
-    expectIssue((r) => (r.equipmentBases[12].damage = "1d4"), "equipment-bases.json", "[12].damage: unknown field");
-    expectIssue((r) => (r.equipmentBases[12].reach = "melee"), "equipment-bases.json", "[12].reach: unknown field");
+    expectIssue((r) => delete r.equipmentBases[15].ac, "equipment-bases.json", "[15].ac: missing required field");
+    expectIssue((r) => (r.equipmentBases[15].damage = "1d4"), "equipment-bases.json", "[15].damage: unknown field");
+    expectIssue((r) => (r.equipmentBases[15].reach = "melee"), "equipment-bases.json", "[15].reach: unknown field");
     // IT-25（2026-10-06）: 前の ranged の欄は武器でも未知の欄。reach は melee / long / ranged だけ。省略は melee
     expectIssue((r) => (r.equipmentBases[1].ranged = true), "equipment-bases.json", "[1].ranged: unknown field");
     expectIssue((r) => (r.equipmentBases[1].reach = "far"), "equipment-bases.json", "[1].reach: expected one of");
     expect(issuesOf((r) => (r.equipmentBases[1].reach = "long"))).toEqual([]);
     expect(loadGameData(rawData()).equipmentBases.filter((b) => b.slot === "weapon" && b.reach === undefined).map((b) => b.id)).toEqual([
-      "dagger", "long_sword", "mace", "staff", "oak_staff", "sigil_staff",
+      "dagger", "long_sword", "mace", "staff", "oak_staff", "sigil_staff", "heavy_blade", "elder_staff", // M12: 重剣・古樹の杖
     ]);
-    expectIssue((r) => (r.equipmentBases[12].ac = 1.5), "equipment-bases.json", "[12].ac: expected integer");
+    expectIssue((r) => (r.equipmentBases[15].ac = 1.5), "equipment-bases.json", "[15].ac: expected integer");
     expectIssue((r) => (r.equipmentBases[0].slot = "ring"), "equipment-bases.json", "[0].slot: expected one of");
     expectIssue((r) => (r.equipmentBases[0].damage = "1x4"), "equipment-bases.json", "[0].damage: invalid dice expression");
   });
@@ -999,7 +1030,7 @@ describe("data: equipment-bases.json（IT-02。M7）", () => {
     expect(issuesOf((r) => (r.equipmentBases[5].magicPower = 3))).toEqual([]);
     expectIssue((r) => (r.equipmentBases[5].magicPower = -1), "equipment-bases.json", "[5].magicPower: expected integer >= 0");
     expectIssue((r) => (r.equipmentBases[1].magicPower = 1), "equipment-bases.json", "[1].magicPower: IT-22: magicPower is only for caster weapons");
-    expectIssue((r) => (r.equipmentBases[12].magicPower = 1), "equipment-bases.json", "[12].magicPower: unknown field");
+    expectIssue((r) => (r.equipmentBases[15].magicPower = 1), "equipment-bases.json", "[15].magicPower: unknown field");
   });
   test("data: IT-02 classes は実在の職業、price / shopMinLevel は 0 以上の整数、unidentifiedName は空でない、id は一意", () => {
     expectIssue((r) => r.equipmentBases[2].classes.push("ninja"), "equipment-bases.json", '[2].classes[5]: unknown class id "ninja"');
@@ -1012,8 +1043,8 @@ describe("data: equipment-bases.json（IT-02。M7）", () => {
     expectIssue((r) => (r.equipmentBases[1].id = "herb"), "equipment-bases.json", '[1].id: IT-10: base id "herb" overlaps an items.json id');
   });
   test("data: CB-20 防具類のベースの ac は整数（正の ac も可。負のオプションと同じく AC が悪化しうる）", () => {
-    expect(issuesOf((r) => (r.equipmentBases[12].ac = 2))).toEqual([]);
-    expectIssue((r) => (r.equipmentBases[12].ac = 1.5), "equipment-bases.json", "[12].ac: expected integer, got number");
+    expect(issuesOf((r) => (r.equipmentBases[15].ac = 2))).toEqual([]);
+    expectIssue((r) => (r.equipmentBases[15].ac = 1.5), "equipment-bases.json", "[15].ac: expected integer, got number");
   });
   test("data: IT-04 開始の装備（prototypeParty / classes[].start）は汎用ベース表の id（items.json に無い鎚矛も可）", () => {
     // ベルク（fighter）に鎚矛。items.json には無く、ベース表にだけある
@@ -1101,14 +1132,21 @@ describe("data: item-options.json（IT-33 / IT-34。M7）", () => {
 });
 
 describe("data: uniques.json（IT-03 / IT-40。M7）", () => {
-  test("data: IT-03 実データのユニーク 12 種（M9 で 4 種）。M9 の固有スキルは既存の 9 種から", () => {
+  test("data: IT-03 実データのユニーク 14 種（M9 で 4 種、M12 で 2 種）。M9・M12 の固有スキルは既存の 9 種から", () => {
     const d = loadGameData(rawData());
-    expect(d.uniques).toHaveLength(12);
+    expect(d.uniques).toHaveLength(14);
     expect(d.uniques.slice(8).map((u) => [u.id, u.base, u.skill.type, u.skill.value])).toEqual([
       ["tidewalker_spear", "spear", "walkRegen", 5],
       ["choir_robe", "warded_robe", "fearImmune", 0],
       ["abbot_sigil_staff", "sigil_staff", "mpCostDown", 2],
       ["gull_flock_knives", "throwing_knives", "extraAttack", 1],
+      // M12: 弔いの面紗（眠りへの耐性の種類は無いので mpCostDown 1。choir_robe の fearImmune と重ねない）・墓守の両手剣（M12 のベース heavy_blade）
+      ["mourner_veil", "warded_robe", "mpCostDown", 1],
+      ["sentinel_blade", "heavy_blade", "extraAttack", 1],
+    ]);
+    expect(d.uniques.slice(12).map((u) => [u.id, u.ac ?? u.damage, u.optionTier, u.price])).toEqual([
+      ["mourner_veil", -4, 3, 2000],
+      ["sentinel_blade", "2d6+1", 3, 2600],
     ]);
   });
   test("data: IT-03 base は実在のベース。武器なら damage（caster なら magicPower も）、それ以外は ac", () => {
@@ -1140,17 +1178,27 @@ describe("data: uniques.json（IT-03 / IT-40。M7）", () => {
 });
 
 describe("data: drops.json（IT-50〜53。M7）", () => {
-  test("data: IT-55 魔法書（M9）は d02 の 3 階の表（讃歌、低い重み 1）と d02 のボスの表（灰嵐、重み 2）にだけある", () => {
+  test("data: IT-55 魔法書（M9）は d02 の 3 階の表（讃歌、低い重み 1）と d02 のボスの表（灰嵐、重み 2）、M12 は d03 の各表（既存の 3 冊を重み 1。新しい魔法書は無い）にある", () => {
     const d = loadGameData(rawData());
     const books = d.drops.tables.flatMap((t) => t.entries.flatMap((e) => ("item" in e ? [[t.id, e.item, e.weight]] : [])));
     expect(books).toEqual([
       ["d02_f3", "tome_sanctuary_hymn", 1],
       ["d02_boss", "tome_ash_gale", 2],
+      ["d03_f1", "tome_lightning", 1],
+      ["d03_f2", "tome_lightning", 1],
+      ["d03_f2", "tome_sanctuary_hymn", 1],
+      ["d03_f3", "tome_ash_gale", 1],
+      ["d03_f4", "tome_ash_gale", 1],
+      ["d03_f4", "tome_sanctuary_hymn", 1],
+      ["d03_boss", "tome_ash_gale", 1],
+      ["d03_boss", "tome_sanctuary_hymn", 1],
     ]);
   });
-  test("data: IT-51 実データの表 7 つ。12 種のユニークはどれかの表に入る", () => {
+  test("data: IT-51 実データの表 12（M12 で d03 の 5 つ）。14 種のユニークはどれかの表に入る", () => {
     const d = loadGameData(rawData());
-    expect(d.drops.tables.map((t) => t.id)).toEqual(["d01_f1", "d01_f2", "d01_boss", "d02_f1", "d02_f2", "d02_f3", "d02_boss"]);
+    expect(d.drops.tables.map((t) => t.id)).toEqual([
+      "d01_f1", "d01_f2", "d01_boss", "d02_f1", "d02_f2", "d02_f3", "d02_boss", "d03_f1", "d03_f2", "d03_f3", "d03_f4", "d03_boss",
+    ]);
     const inTables = new Set(d.drops.tables.flatMap((t) => t.entries.flatMap((e) => ("unique" in e ? [e.unique] : []))));
     expect([...inTables].sort()).toEqual(d.uniques.map((u) => u.id).sort());
   });
@@ -1240,8 +1288,8 @@ describe("data: dungeons.json", () => {
       ]),
     );
   });
-  test("data: IT-62 onClear.shopLevel は 0 以上の整数（d01 2 / d02 4【仮】）。TW-06 の onClear.shopStock は廃止したので未知の欄として止める（M7 の B7）", () => {
-    expect(loadGameData(rawData()).dungeons.map((d) => d.onClear.shopLevel)).toEqual([2, 4, 4]); // d03（準備中。M9）は 4
+  test("data: IT-62 onClear.shopLevel は 0 以上の整数（d01 2 / d02 4 / d03 6【仮】）。TW-06 の onClear.shopStock は廃止したので未知の欄として止める（M7 の B7）", () => {
+    expect(loadGameData(rawData()).dungeons.map((d) => d.onClear.shopLevel)).toEqual([2, 4, 6]); // M12: d03 は 6（U-1。M9 の準備中の枠では 4）
     expectIssue((r) => delete r.dungeons[0].onClear.shopLevel, "dungeons.json", "[0].onClear.shopLevel: missing required field");
     expectIssue((r) => (r.dungeons[0].onClear.shopLevel = -1), "dungeons.json", "[0].onClear.shopLevel: expected integer >= 0");
     expect(loadGameData(rawData()).dungeons.some((d) => "shopStock" in d.onClear)).toBe(false);
@@ -1568,7 +1616,7 @@ describe("data: エラー報告", () => {
   });
 
   test("data: 問題が多いときメッセージは先頭だけで、issues は全件", () => {
-    // 14 体 × 2 フィールド = 28 件（M9 で 8 種を追加）
+    // 20 体 × 2 フィールド = 40 件（M9 で 8 種、M12 で 6 種を追加）
     const r = rawData();
     for (const m of r.monsters) {
       m.hp = 0;
@@ -1580,9 +1628,9 @@ describe("data: エラー報告", () => {
     } catch (e) {
       err = e as GameDataError;
     }
-    expect(err?.issues).toHaveLength(28);
-    expect(err?.message).toContain("28 issue(s)");
-    expect(err?.message).toContain("... and 18 more");
+    expect(err?.issues).toHaveLength(40);
+    expect(err?.message).toContain("40 issue(s)");
+    expect(err?.message).toContain("... and 30 more");
     expect(err?.message).not.toContain("monsters.json: [5].gold");
   });
 
@@ -1721,8 +1769,8 @@ describe("data: M9 の敵（工房の同期）とボス（DG-31）", () => {
     }
     expect(ms.filter((m) => m.special.boss === true).map((m) => m.id)).toEqual(["sunken_bishop"]);
     expect(ms.filter((m) => m.special.flying === true).map((m) => m.id)).toEqual(["dusk_bat", "glass_moth"]);
-    // 工房の unknown_<kind> の合成（所属 2 種以上）: winged と ooze はちょうど 2 種
-    for (const k of ["winged", "ooze"]) expect(d.monsters.filter((m) => m.unknownKind === k), k).toHaveLength(2);
+    // 工房の unknown_<kind> の合成（所属 2 種以上）: ooze は 2 種、winged は M12 の燠火の鴉で 3 種、undead（M12）は 5 種
+    expect((["winged", "ooze", "undead"] as const).map((k) => d.monsters.filter((m) => m.unknownKind === k).length)).toEqual([3, 2, 5]);
     // d02 のボスは沈鐘の大司祭
     expect(d.dungeons.find((x) => x.id === "d02")!.boss.monster).toBe("sunken_bishop");
   });
@@ -1732,24 +1780,137 @@ describe("data: M9 の敵（工房の同期）とボス（DG-31）", () => {
   });
 });
 
-describe("data: DG-35 準備中のダンジョン（M9）", () => {
-  test("data: DG-35 placeholder は末尾・floors 1・unlockDungeon null。d03 は準備中で、drops の chest / boss は d02 の表を参照", () => {
+describe("data: DG-35 準備中のダンジョン（M9。M12 から合成データ）", () => {
+  test("data: DG-35 実データには準備中の枠が無い（M12 で d03 が本物になった）。合成データの準備中の枠 d04 は検証を通る", () => {
     const d = loadGameData(rawData());
     expect(d.dungeons.map((x) => [x.id, x.placeholder === true])).toEqual([
       ["d01", false],
       ["d02", false],
-      ["d03", true],
+      ["d03", false],
     ]);
-    expect(d.dungeons[1]!.onClear.unlockDungeon).toBe("d03");
-    expect(d.drops.chest["d03"]).toEqual({ "1": "d02_f3" });
-    expect(d.drops.boss["d03"]).toBe("d02_boss");
-    expectIssue((r) => (r.dungeons[2].placeholder = "yes"), "dungeons.json", "[2].placeholder: expected boolean");
-    expectIssue((r) => (r.dungeons[2].floors = 2), "dungeons.json", "[2].floors: DG-35: a placeholder dungeon must have floors 1");
-    expectIssue((r) => (r.dungeons[2].onClear.unlockDungeon = "d01"), "dungeons.json", "[2].onClear.unlockDungeon: DG-35: a placeholder dungeon cannot unlock another");
-    // 準備中の後ろに遊べるダンジョンは置けない（d02 を準備中・d03 を遊べるにする）
-    expectIssue((r) => ((r.dungeons[1].placeholder = true), (r.dungeons[2].placeholder = false)), "dungeons.json", "[2]: DG-35: a playable dungeon cannot follow a placeholder");
+    expect(d.dungeons[2]!.onClear.unlockDungeon).toBeNull();
+    expect(issuesOf(addPlaceholderDungeon)).toEqual([]);
+    const p = loadDataWithPlaceholder();
+    expect(p.dungeons.map((x) => [x.id, x.placeholder === true])).toEqual([
+      ["d01", false],
+      ["d02", false],
+      ["d03", false],
+      ["d04", true],
+    ]);
+    expect(p.dungeons[2]!.onClear.unlockDungeon).toBe("d04");
+  });
+  test("data: DG-35 placeholder は末尾・floors 1・unlockDungeon null（合成データの d04）。準備中でも drops の chest / boss は要る", () => {
+    const withD04 = (mutate: (r: Mutable) => void) => (r: Mutable) => {
+      addPlaceholderDungeon(r);
+      mutate(r);
+    };
+    expectIssue(withD04((r) => (r.dungeons[3].placeholder = "yes")), "dungeons.json", "[3].placeholder: expected boolean");
+    expectIssue(withD04((r) => (r.dungeons[3].floors = 2)), "dungeons.json", "[3].floors: DG-35: a placeholder dungeon must have floors 1");
+    expectIssue(withD04((r) => (r.dungeons[3].onClear.unlockDungeon = "d01")), "dungeons.json", "[3].onClear.unlockDungeon: DG-35: a placeholder dungeon cannot unlock another");
+    // 準備中の後ろに遊べるダンジョンは置けない（d03 を準備中・d04 を遊べるにする）
+    expectIssue(
+      withD04((r) => ((r.dungeons[2].placeholder = true), (r.dungeons[3].placeholder = false))),
+      "dungeons.json",
+      "[3]: DG-35: a playable dungeon cannot follow a placeholder",
+    );
     // 準備中でも drops の表は要る（IT-51）
-    expectIssue((r) => delete r.drops.chest.d03, "drops.json", "chest.d03: missing required field");
-    expectIssue((r) => delete r.drops.boss.d03, "drops.json", "boss.d03: missing required field");
+    expectIssue(withD04((r) => delete r.drops.chest.d04), "drops.json", "chest.d04: missing required field");
+    expectIssue(withD04((r) => delete r.drops.boss.d04), "drops.json", "boss.d04: missing required field");
+  });
+});
+
+describe("data: d03 灰の地下墓所（M12）", () => {
+  const D03_MONSTERS = ["ash_shambler", "cinder_crow", "candle_mourner", "urn_bearer", "grave_sentinel", "ashcrown_lord"];
+  test("data: DG-02/DG-35 d03 は準備中でない 4 階・20×20・部屋 [4,7]。最後のダンジョン（次を開かない）で、曲は dungeon2（U-3）、イベント 3 つ・床の罠 3 種は既存のもの", () => {
+    const d = loadGameData(rawData()).dungeons.find((x) => x.id === "d03")!;
+    expect([d.placeholder, d.floors, d.width, d.height, d.rooms, d.unlock, d.onClear]).toEqual([
+      undefined, 4, 20, 20, [4, 7], "d02", { unlockDungeon: null, shopLevel: 6 },
+    ]);
+    expect(d.song).toBe("dungeon2");
+    expect(d.events).toEqual(["wounded_adventurer", "pinned_pilgrim", "abandoned_sack"]);
+    expect([d.traps, d.trapsPerFloor]).toEqual([["pit", "spinner", "teleport"], [2, 4]]);
+    expect(Object.keys(d.encounterTable)).toEqual(["1", "2", "3", "4"]);
+    expect(Object.keys(d.groupCountWeights)).toEqual(["1", "2", "3", "4"]);
+  });
+  test("data: CB-03 d03 の出現表は実在の敵で、Lv は 4〜7（1F は d02 の 2〜3 階の敵を残す）。ボスは出現表に入らない。M12 の 5 種（ボスを除く）はどれかの階に出る", () => {
+    const g = loadGameData(rawData());
+    const d = g.dungeons.find((x) => x.id === "d03")!;
+    const level = (id: string): number => g.monsters.find((m) => m.id === id)!.level;
+    const all = Object.values(d.encounterTable).flat();
+    for (const e of all) expect(level(e.monster), e.monster).toBeGreaterThanOrEqual(4);
+    for (const e of all) expect(level(e.monster), e.monster).toBeLessThanOrEqual(7);
+    expect(all.some((e) => e.monster === d.boss.monster)).toBe(false);
+    expect(new Set(all.map((e) => e.monster))).toEqual(new Set([...D03_MONSTERS.slice(0, 5), "choir_wraith", "font_mire", "stone_gazer"]));
+    // 1F の主力 ash_shambler・cinder_crow、4F の壁 grave_sentinel
+    expect(d.encounterTable["1"]!.map((e) => [e.monster, e.weight])).toEqual([
+      ["ash_shambler", 3], ["cinder_crow", 3], ["choir_wraith", 2], ["font_mire", 2], ["stone_gazer", 1],
+    ]);
+    expect(d.encounterTable["4"]!.map((e) => [e.monster, e.weight])).toEqual([
+      ["ash_shambler", 2], ["candle_mourner", 2], ["urn_bearer", 3], ["grave_sentinel", 3],
+    ]);
+    expect(d.groupCountWeights).toEqual({ "1": [50, 35, 12, 3], "2": [45, 35, 15, 5], "3": [40, 35, 18, 7], "4": [40, 35, 18, 7] });
+  });
+  test("data: DG-31/CB-05 d03 の敵 6 種: sprite は id、Lv 5〜7、名前は 7 字以内、ボスは灰冠の墓所主（special.boss・tags boss・全耐性）。系統は undead（鴉だけ winged、飛行）", () => {
+    const g = loadGameData(rawData());
+    const ms = D03_MONSTERS.map((id) => g.monsters.find((m) => m.id === id)!);
+    for (const m of ms) {
+      expect(m.sprite, m.id).toBe(m.id);
+      expect(m.level, m.id).toBeGreaterThanOrEqual(5);
+      expect(m.level, m.id).toBeLessThanOrEqual(7);
+      expect([...m.name].length, m.id).toBeLessThanOrEqual(7);
+      expect(m.description.length, m.id).toBeGreaterThan(0);
+      expect(m.tags.includes("boss"), m.id).toBe(m.special.boss === true);
+    }
+    expect(ms.map((m) => [m.id, m.name, m.unknownKind, m.level])).toEqual([
+      ["ash_shambler", "灰まみれの骸", "undead", 5],
+      ["cinder_crow", "燠火の鴉", "winged", 5],
+      ["candle_mourner", "弔い蝋燭の女", "undead", 6],
+      ["urn_bearer", "骨壺運び", "undead", 6],
+      ["grave_sentinel", "錆びた墓守", "undead", 7],
+      ["ashcrown_lord", "灰冠の墓所主", "undead", 7],
+    ]);
+    expect(ms.filter((m) => m.special.flying === true).map((m) => m.id)).toEqual(["cinder_crow"]);
+    expect(ms.filter((m) => m.special.undead === true).map((m) => m.id)).toEqual(D03_MONSTERS.filter((id) => id !== "cinder_crow"));
+    const d03 = g.dungeons.find((x) => x.id === "d03")!;
+    expect(d03.boss.monster).toBe("ashcrown_lord");
+    const boss = ms[5]!;
+    expect(boss.special.boss).toBe(true);
+    expect(boss.resist).toEqual({ sleep: true, poison: true, paralysis: true, stone: true });
+    // 石化への耐性はボスだけ
+    expect(ms.filter((m) => m.resist.stone === true).map((m) => m.id)).toEqual(["ashcrown_lord"]);
+  });
+  test("data: IT-51/CB-61 d03 の宝箱は階ごとに d03_f1〜f4、ボスは d03_boss。罠の危険度は 4 まで（重みは 4 個）", () => {
+    const g = loadGameData(rawData());
+    expect(g.drops.chest["d03"]).toEqual({ "1": "d03_f1", "2": "d03_f2", "3": "d03_f3", "4": "d03_f4" });
+    expect(g.drops.boss["d03"]).toBe("d03_boss");
+    expect(["d03_f1", "d03_f2", "d03_f3", "d03_f4", "d03_boss"].map((id) => {
+      const t = g.drops.tables.find((x) => x.id === id)!;
+      return [id, t.itemChance, t.rolls];
+    })).toEqual([
+      ["d03_f1", 60, 1], ["d03_f2", 60, 1], ["d03_f3", 65, 1], ["d03_f4", 70, 1], ["d03_boss", 100, 2],
+    ]);
+    // M12 のベース 4 種とユニーク 2 種は d03 の 3 階以降とボスの表にだけある
+    const NEW = new Set(["heavy_blade", "horn_bow", "elder_staff", "blackiron_plate", "mourner_veil", "sentinel_blade"]);
+    const withNew = g.drops.tables.filter((t) => t.entries.some((e) => NEW.has("base" in e ? e.base : "unique" in e ? e.unique : ""))).map((t) => t.id);
+    expect(withNew).toEqual(["d03_f3", "d03_f4", "d03_boss"]);
+    const d = g.dungeons.find((x) => x.id === "d03")!;
+    expect([d.chestsPerFloor, d.chestTrapMaxDanger, d.chestTrapDangerWeights]).toEqual([[1, 3], 4, [30, 30, 25, 15]]);
+    expectIssue((r) => (r.dungeons[2].chestTrapDangerWeights = [30, 30, 25]), "dungeons.json", "[2].chestTrapDangerWeights: CB-61: expected 4 weights");
+    expectIssue((r) => delete r.drops.chest.d03["4"], "drops.json", "chest.d03.4: missing required field");
+    expectIssue((r) => (r.drops.chest.d03["5"] = "d03_f4"), "drops.json", "chest.d03.5: IT-51: floor key must be 1..4");
+    expectIssue((r) => delete r.dungeons[2].encounterTable["4"], "dungeons.json", "[2].encounterTable.4: missing required field");
+  });
+  test("data: DG-37 enterSpeech（U-5）は任意で d03 にだけあり、strings にあるキーでプレースホルダーを持たない。無いキー・プレースホルダー付きは起動を止める", () => {
+    const g = loadGameData(rawData());
+    expect(g.dungeons.map((x) => [x.id, x.enterSpeech])).toEqual([
+      ["d01", undefined],
+      ["d02", undefined],
+      ["d03", "dungeon.enterSpeech.d03"],
+    ]);
+    expect(g.strings["dungeon.enterSpeech.d03"]!.length).toBeGreaterThan(0);
+    expectIssue((r) => (r.dungeons[2].enterSpeech = "dungeon.enterSpeech.nope"), "dungeons.json", '[2].enterSpeech: unknown strings.json key "dungeon.enterSpeech.nope"');
+    expectIssue((r) => (r.dungeons[2].enterSpeech = 1), "dungeons.json", "[2].enterSpeech: expected");
+    expectIssue((r) => (r.dungeons[0].enterSpeech = "dungeon.enter"), "dungeons.json", '[0].enterSpeech: DG-37: strings "dungeon.enter" must not have placeholders (found {dungeon})');
+    expect(issuesOf((r) => (r.dungeons[0].enterSpeech = "dungeon.enterSpeech.d03"))).toEqual([]);
   });
 });

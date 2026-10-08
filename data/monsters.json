@@ -121,5 +121,59 @@
     "special": { "boss": true, "undead": true }, "resist": { "sleep": true, "poison": true, "paralysis": true, "stone": true },
     "tags": ["undead", "fear", "boss"],
     "description": "緑青の浮いた大きな鐘を背負う、水に沈んだ聖堂の主。藻の絡む紫の祭服をまとい、鐘の音で正気を打ち砕く。"
+  },
+  {
+    "id": "ash_shambler", "name": "灰まみれの骸", "unknownKind": "undead",
+    "sprite": "ash_shambler", "level": 5, "hp": "4d8", "ac": 6, "agi": 5,
+    "attacks": [ { "dice": "1d6", "status": "paralysis", "chance": 10 } ],
+    "exp": 170, "gold": "0", "groupSize": "1d3+1",
+    "special": { "undead": true }, "resist": { "sleep": true },
+    "tags": ["undead"],
+    "description": "頭から足まで白い灰を被った、骨と皮だけの死体。棺から這い出たまま、乾いた指で掴みかかってくる。"
+  },
+  {
+    "id": "cinder_crow", "name": "燠火の鴉", "unknownKind": "winged",
+    "sprite": "cinder_crow", "level": 5, "hp": "2d8", "ac": 5, "agi": 16,
+    "attacks": [ { "dice": "1d6" } ],
+    "exp": 140, "gold": "0", "groupSize": "1d3+1",
+    "special": { "flying": true }, "resist": {},
+    "tags": ["beast", "flying"],
+    "description": "羽の縁が燠火のように赤く光る、黒い大鴉。火の粉を散らして宙を舞い、刃の届かない高さから突いてくる。"
+  },
+  {
+    "id": "candle_mourner", "name": "弔い蝋燭の女", "unknownKind": "undead",
+    "sprite": "candle_mourner", "level": 6, "hp": "3d8", "ac": 3, "agi": 12,
+    "attacks": [ { "dice": "1d4", "sanDrain": 6, "tags": ["fear"] }, { "dice": "1d3", "status": "sleep", "chance": 25 } ],
+    "exp": 280, "gold": "0", "groupSize": "1d2",
+    "special": { "undead": true }, "resist": { "sleep": true, "poison": true, "paralysis": true },
+    "tags": ["undead", "fear"],
+    "description": "頭に蝋燭を立てた、黒い喪服の痩せた女の亡霊。すすり泣く声と揺れる灯が、正気と眠気を奪う。"
+  },
+  {
+    "id": "urn_bearer", "name": "骨壺運び", "unknownKind": "undead",
+    "sprite": "urn_bearer", "level": 6, "hp": "5d8", "ac": 4, "agi": 7,
+    "attacks": [ { "dice": "1d10" }, { "dice": "1d4", "status": "poison", "chance": 30 } ],
+    "exp": 300, "gold": "3d10+5", "groupSize": "1d2",
+    "special": { "undead": true }, "resist": { "sleep": true },
+    "tags": ["undead"],
+    "description": "背丈ほどの骨壺を背負った、腰の曲がった死体。壺から舞う灰を吸うと、体の内側から毒が回る。"
+  },
+  {
+    "id": "grave_sentinel", "name": "錆びた墓守", "unknownKind": "undead",
+    "sprite": "grave_sentinel", "level": 7, "hp": "6d10", "ac": 1, "agi": 10,
+    "attacks": [ { "dice": "1d10" }, { "dice": "1d10" } ],
+    "exp": 520, "gold": "4d10+10", "groupSize": "1",
+    "special": { "undead": true }, "resist": { "sleep": true, "paralysis": true },
+    "tags": ["undead"],
+    "description": "錆びた黒い全身鎧に、空の兜の奥で青い火が灯る墓守。両手の剣を休まず振るう。"
+  },
+  {
+    "id": "ashcrown_lord", "name": "灰冠の墓所主", "unknownKind": "undead",
+    "sprite": "ashcrown_lord", "level": 7, "hp": "10d8+30", "ac": 1, "agi": 10,
+    "attacks": [ { "dice": "2d8" }, { "dice": "1d6", "sanDrain": 8, "tags": ["fear"] }, { "dice": "1d4", "status": "paralysis", "chance": 15 } ],
+    "exp": 1600, "gold": "10d10+60", "groupSize": "1",
+    "special": { "boss": true, "undead": true }, "resist": { "sleep": true, "poison": true, "paralysis": true, "stone": true },
+    "tags": ["undead", "fear", "boss"],
+    "description": "灰で固めた冠を戴き、ぼろの白い弔衣を引きずる、背の高い骸の王。開いた口から灰が絶えずこぼれる。"
   }
 ]

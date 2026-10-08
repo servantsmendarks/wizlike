@@ -231,6 +231,7 @@
   "town.temple.none": "その必要がある者はいない。",
 
   "dungeon.enter": "{dungeon}へ潜る。地図は白紙だ。",
+  "dungeon.enterSpeech.d03": "GM が声を落とした。「ここが最後の迷宮だ。灰の匂いがするだろう？」",
   "dungeon.gossip": "宿で聞いた噂を思い出す。{monster}が出るらしい。",
   "dungeon.blocked": "壁だ。",
   "dungeon.door": "扉を押し開けた。",

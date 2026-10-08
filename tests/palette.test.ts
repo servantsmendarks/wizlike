@@ -28,6 +28,11 @@ describe("palette", () => {
     expect([...PLACEHOLDER_COLORS].sort()).toEqual(Object.keys(PALETTE).filter((k) => k !== "black").sort());
   });
 
+  test("UI-04/UI-60 bone（M12。U-4）は薄い黄土 #FCE0A8（工房の fc54 の色）で、spirit の darkGreen・construct の white・線画の lightGreen と違う", () => {
+    expect(PALETTE.bone).toBe("#FCE0A8");
+    expect(new Set([PALETTE.bone, PALETTE.darkGreen, PALETTE.white, PALETTE.lightGreen]).size).toBe(4);
+  });
+
   test("UI-13（M8.5）帯の役 status / san はパレットの既存の色（orange / sky）で、死亡 danger・灰 dim・正常 text と互いに違う", () => {
     expect(ROLES.status).toBe("orange");
     expect(ROLES.san).toBe("sky");

@@ -1145,6 +1145,15 @@ function validateDungeons(ctx: Ctx, v: unknown, ix: Index): void {
         if (s !== undefined && !ix.songs.has(s)) report(c, p, `UI-63: unknown song ${JSON.stringify(s)}`);
         return s;
       }),
+      // DG-37（M12。U-5）: 初回入場の GM の一行。strings にあるキーで、プレースホルダーを持たない
+      enterSpeech: opt((c, p, x) => {
+        const s = str(c, p, x);
+        if (s === undefined) return s;
+        strKey(c, p, s, ix);
+        const ph = [...(ix.stringText.get(s) ?? "").matchAll(PLACEHOLDER_RE)].map((m) => m[0]);
+        if (ph.length > 0) report(c, p, `DG-37: strings ${JSON.stringify(s)} must not have placeholders (found ${ph.join(" ")})`);
+        return s;
+      }),
       events: L(refField(ix.events, "event")),
       traps: L((c, p, x) => {
         const t = oneOf(c, p, x, TRAP_IDS);

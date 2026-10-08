@@ -1690,7 +1690,7 @@ describe("網羅（完了条件「6 種と戦える」、敵の id、battleMenu�
       data.dungeons.flatMap((d) => [...Object.values(d.encounterTable).flatMap((t) => t.filter((e) => e.weight > 0).map((e) => e.monster)), d.boss.monster]),
     );
     expect([...all].sort()).toEqual(data.monsters.map((m) => m.id).sort());
-    expect(data.monsters).toHaveLength(14);
+    expect(data.monsters).toHaveLength(20); // M12: d03 の 6 種
   });
 
   test.each(data.monsters.map((m) => m.id))("完了条件「6 種と戦える」%s: 1 グループで戦闘を始め、オートで battleEnd（win か wipe）まで例外なく回る。敵の id は e{g}-{u}", (monsterId) => {

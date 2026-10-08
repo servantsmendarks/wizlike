@@ -68,16 +68,63 @@
         { "unique": "abbot_sigil_staff", "weight": 2 }, { "unique": "choir_robe", "weight": 1 }, { "unique": "dawn_flint_staff", "weight": 1 },
         { "item": "tome_ash_gale", "weight": 2 }
       ]
+    },
+    {
+      "id": "d03_f1", "itemChance": 60, "rolls": 1,
+      "entries": [
+        { "base": "halberd", "weight": 2 }, { "base": "long_bow", "weight": 3 }, { "base": "sigil_staff", "weight": 1 },
+        { "base": "chain_mail", "weight": 2 }, { "base": "plate_armor", "weight": 2 },
+        { "base": "great_helm", "weight": 2 }, { "base": "iron_gloves", "weight": 2 }, { "base": "iron_shield", "weight": 2 }, { "base": "charm", "weight": 2 },
+        { "unique": "choir_robe", "weight": 1 },
+        { "item": "tome_lightning", "weight": 1 }
+      ]
+    },
+    {
+      "id": "d03_f2", "itemChance": 60, "rolls": 1,
+      "entries": [
+        { "base": "halberd", "weight": 2 }, { "base": "long_bow", "weight": 3 }, { "base": "sigil_staff", "weight": 1 },
+        { "base": "chain_mail", "weight": 2 }, { "base": "plate_armor", "weight": 2 },
+        { "base": "great_helm", "weight": 2 }, { "base": "iron_gloves", "weight": 2 }, { "base": "iron_shield", "weight": 2 }, { "base": "charm", "weight": 2 },
+        { "unique": "choir_robe", "weight": 1 }, { "unique": "abbot_sigil_staff", "weight": 1 },
+        { "item": "tome_lightning", "weight": 1 }, { "item": "tome_sanctuary_hymn", "weight": 1 }
+      ]
+    },
+    {
+      "id": "d03_f3", "itemChance": 65, "rolls": 1,
+      "entries": [
+        { "base": "halberd", "weight": 2 }, { "base": "long_bow", "weight": 2 }, { "base": "sigil_staff", "weight": 2 },
+        { "base": "plate_armor", "weight": 3 }, { "base": "great_helm", "weight": 2 }, { "base": "iron_gloves", "weight": 2 }, { "base": "charm", "weight": 2 },
+        { "base": "heavy_blade", "weight": 1 }, { "base": "horn_bow", "weight": 1 }, { "base": "elder_staff", "weight": 1 },
+        { "unique": "mourner_veil", "weight": 1 },
+        { "item": "tome_ash_gale", "weight": 1 }
+      ]
+    },
+    {
+      "id": "d03_f4", "itemChance": 70, "rolls": 1,
+      "entries": [
+        { "base": "plate_armor", "weight": 2 }, { "base": "great_helm", "weight": 2 }, { "base": "iron_gloves", "weight": 2 }, { "base": "charm", "weight": 2 },
+        { "base": "heavy_blade", "weight": 2 }, { "base": "horn_bow", "weight": 2 }, { "base": "elder_staff", "weight": 2 }, { "base": "blackiron_plate", "weight": 1 },
+        { "unique": "mourner_veil", "weight": 1 }, { "unique": "sentinel_blade", "weight": 1 },
+        { "item": "tome_ash_gale", "weight": 1 }, { "item": "tome_sanctuary_hymn", "weight": 1 }
+      ]
+    },
+    {
+      "id": "d03_boss", "itemChance": 100, "rolls": 2,
+      "entries": [
+        { "base": "heavy_blade", "weight": 2 }, { "base": "horn_bow", "weight": 2 }, { "base": "elder_staff", "weight": 2 }, { "base": "blackiron_plate", "weight": 2 },
+        { "unique": "sentinel_blade", "weight": 2 }, { "unique": "mourner_veil", "weight": 2 },
+        { "item": "tome_ash_gale", "weight": 1 }, { "item": "tome_sanctuary_hymn", "weight": 1 }
+      ]
     }
   ],
   "chest": {
     "d01": { "1": "d01_f1", "2": "d01_f2" },
     "d02": { "1": "d02_f1", "2": "d02_f2", "3": "d02_f3" },
-    "d03": { "1": "d02_f3" }
+    "d03": { "1": "d03_f1", "2": "d03_f2", "3": "d03_f3", "4": "d03_f4" }
   },
   "boss": {
     "d01": "d01_boss",
     "d02": "d02_boss",
-    "d03": "d02_boss"
+    "d03": "d03_boss"
   }
 }

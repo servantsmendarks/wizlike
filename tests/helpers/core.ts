@@ -61,6 +61,45 @@ export function loadFreshData(): GameData {
 /** 共有の実データ。書き換えないこと。 */
 export const data: GameData = loadFreshData();
 
+/** DG-35 の合成データで足す準備中のダンジョンの名前 */
+export const PLACEHOLDER_DUNGEON_NAME = "未完の迷宮";
+
+/**
+ * DG-35（M12）: 生データ（JSON）の末尾に準備中の枠 d04 を足す（書き換える）。M12 で d03 が本物になり実データに準備中の枠が無くなったので、
+ * 準備中の規則と検証のテストはこの合成データで書く。d03 が d04 を開き、d04 は 1 階・次を開かない。表は d03 の 4 階とボスの表を参照する
+ */
+// 生データは JSON なので any で書き換える
+export function addPlaceholderDungeon(raw: { dungeons: any; drops: any }): void {
+  const d03 = raw.dungeons[raw.dungeons.length - 1];
+  d03.onClear.unlockDungeon = "d04";
+  raw.dungeons.push({
+    id: "d04", name: PLACEHOLDER_DUNGEON_NAME, placeholder: true,
+    floors: 1, width: 20, height: 20, rooms: [4, 7],
+    unlock: d03.id,
+    encounterRate: structuredClone(d03.encounterRate),
+    encounterTable: { "1": structuredClone(d03.encounterTable["4"]) },
+    groupCountWeights: { "1": structuredClone(d03.groupCountWeights["4"]) },
+    boss: structuredClone(d03.boss),
+    events: [], traps: [], trapsPerFloor: [0, 0],
+    chestsPerFloor: [1, 3], chestTrapMaxDanger: 4, chestTrapDangerWeights: [30, 30, 25, 15],
+    teleporterFloors: [],
+    onClear: { unlockDungeon: null, shopLevel: d03.onClear.shopLevel },
+    description: "準備中。",
+  });
+  raw.drops.chest.d04 = { "1": raw.drops.chest[d03.id]["4"] };
+  raw.drops.boss.d04 = raw.drops.boss[d03.id];
+}
+
+/** DG-35（M12）: 実データの末尾に準備中の枠 d04 を足したデータ（addPlaceholderDungeon） */
+export function loadDataWithPlaceholder(): GameData {
+  const raw = structuredClone({
+    config, races, classes, spells, monsters, unknownKinds, items, equipmentBases, itemOptions, uniques, drops,
+    personalities, penaltyTable, dungeons, events, tavern, chestTraps, rivalries, strings, wavetables, audio,
+  });
+  addPlaceholderDungeon(raw);
+  return loadGameData(raw);
+}
+
 /**
  * CH-64 のルールのテスト（レベルの上げ下げの手計算・鏡の rng）で使う expBase。実データの config.growth.expBase は調整値【仮】なので、
  * ルールのテストはこの値に固定したデータ（loadRuleData）で書き、調整のたびに期待値を作り直さないようにする。

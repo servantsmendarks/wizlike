@@ -224,7 +224,15 @@ describe("勝敗", () => {
       font_mire: "ooze",
       stone_gazer: "construct",
       sunken_bishop: "humanoid",
+      // M12（2026-10-08）: d03。新しい死者だけ系統 undead（既存の死者は移さない）、鴉は winged
+      ash_shambler: "undead",
+      cinder_crow: "winged",
+      candle_mourner: "undead",
+      urn_bearer: "undead",
+      grave_sentinel: "undead",
+      ashcrown_lord: "undead",
     });
+    expect(kindName("urn_bearer")).toBe("何かの亡者");
     expect(kindName("dusk_bat")).toBe("羽ばたく何か");
     expect(kindName("font_mire")).toBe("ぬめる何か");
     expect(kindName("giant_rat")).toBe("何かの獣");

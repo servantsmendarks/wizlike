@@ -22,7 +22,19 @@ import { withBattle } from "./helpers/battle";
 import { offerExit, offerStairs, offerTeleporter, offerTrap, STAY_CHOICE_ID } from "../src/core/rules/choices";
 import { cloneState, createItemInstance, dungeonOf, makeContext, monsterOf } from "../src/core/state";
 import type { Cell, Command, Facing, Floor, GameEvent, GameState } from "../src/core/types";
-import { data, deepFreeze, expectKnownStringKeys, expectStateInvariants, loadFreshData, mirrorWipeRolls, newGame, noAmbushAvoid, noTrapDetect } from "./helpers/core";
+import {
+  data,
+  deepFreeze,
+  expectKnownStringKeys,
+  expectStateInvariants,
+  loadDataWithPlaceholder,
+  loadFreshData,
+  mirrorWipeRolls,
+  newGame,
+  noAmbushAvoid,
+  noTrapDetect,
+  PLACEHOLDER_DUNGEON_NAME,
+} from "./helpers/core";
 import { approaches, dataWithRate, ENTER_D01, enterD01, findSituation, MOVE, placeAt, run, withRng } from "./helpers/dungeon";
 
 // ---------------------------------------------------------------------------
@@ -1963,25 +1975,52 @@ describe("冒険のターン数（TW-12。M5.5）", () => {
   });
 });
 
-describe("準備中のダンジョン d03（DG-35。M9）", () => {
-  test("TW-11/DG-35 d03 は unlocked でも rejected not ready（state と rng は変わらない）、townMenu の notReady は真で canEnter は偽", () => {
+describe("準備中のダンジョン（DG-35。M9。M12 から合成データの d04）と d03（M12）", () => {
+  test("TW-11/DG-35 準備中の d04（合成データ）は unlocked でも rejected not ready（state と rng は変わらない）、townMenu の notReady は真で canEnter は偽", () => {
+    const pd = loadDataWithPlaceholder();
     const s = cloneState(newGame(1));
-    s.progress.unlockedDungeons.push("d02", "d03");
+    s.progress.unlockedDungeons.push("d02", "d03", "d04");
     const rng = cloneRng(s.rng);
-    const r = execute(s, { type: "dungeon.enter", dungeonId: "d03" }, data);
+    const r = execute(s, { type: "dungeon.enter", dungeonId: "d04" }, pd);
     expect(r.state).toBe(s);
     expect(r.events).toEqual([{ kind: "rejected", command: "dungeon.enter", reason: "not ready" }]);
     expect(s.rng).toEqual(rng);
-    expect(townMenu(s, data)!.dungeons).toEqual([
+    expect(townMenu(s, pd)!.dungeons).toEqual([
       { id: "d01", name: "試しの坑道", canEnter: true, notReady: false },
       { id: "d02", name: "沈んだ聖堂", canEnter: true, notReady: false },
-      { id: "d03", name: "灰の地下墓所", canEnter: false, notReady: true },
+      { id: "d03", name: "灰の地下墓所", canEnter: true, notReady: false },
+      { id: "d04", name: PLACEHOLDER_DUNGEON_NAME, canEnter: false, notReady: true },
     ]);
     // 未開放なら not unlocked が先
     const t = newGame(1);
-    expect(execute(t, { type: "dungeon.enter", dungeonId: "d03" }, data).events).toEqual([
+    expect(execute(t, { type: "dungeon.enter", dungeonId: "d04" }, pd).events).toEqual([
       { kind: "rejected", command: "dungeon.enter", reason: "not unlocked" },
     ]);
+  });
+
+  test("DG-01/DG-35/TW-11 M12: 実データの d03 は準備中でない。開放済みなら入れて 1 階に立つ（townMenu の notReady は偽）", () => {
+    const s = cloneState(newGame(1));
+    s.progress.unlockedDungeons.push("d02", "d03");
+    expect(townMenu(s, data)!.dungeons.find((x) => x.id === "d03")).toEqual({ id: "d03", name: "灰の地下墓所", canEnter: true, notReady: false });
+    const r = run(s, { type: "dungeon.enter", dungeonId: "d03" }, data);
+    expect(r.state.dive!.dungeonId).toBe("d03");
+    expect(r.state.dive!.floor).toBe(1);
+    expect(r.events).toContainEqual({ kind: "message", key: "dungeon.enter", params: { dungeon: "灰の地下墓所" } });
+  });
+
+  test("DG-02/DG-31 M12: d03 は 4 階で、ボス（灰冠の墓所主）は最下層の 4 階のボスのセルで戦う", () => {
+    const base = (seed: number) => {
+      const s = cloneState(newGame(seed));
+      s.progress.unlockedDungeons.push("d02", "d03");
+      s.progress.clearedDungeons.push("d01", "d02");
+      return execute(s, { type: "dungeon.enter", dungeonId: "d03" }, data).state;
+    };
+    const s0 = base(1);
+    expect([1, 2, 3].map((n) => floorOf(s0.dive!, data, n).cells.some((c) => c.kind === "boss"))).toEqual([false, false, false]);
+    const { state } = findSituation((c) => c.kind === "boss", { floor: 4, base });
+    const fought = run(state, MOVE, dataEnc(0, 0)).state;
+    expect(fought.screen).toBe("battle");
+    expect(fought.battle!.groups.map((g) => g.monsterId)).toEqual(["ashcrown_lord"]);
   });
 
   test("DG-32/DG-35 d02 のボス（沈鐘の大司祭）を初めて倒すと撃破の語りは沈鐘の大司祭の名前で、d03 が開く（dungeon.unlocked）。clearedDungeons に d02、流通レベル 4", () => {

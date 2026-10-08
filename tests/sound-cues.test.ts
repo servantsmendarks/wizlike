@@ -18,7 +18,7 @@ import {
   type SoundContext,
 } from "../src/presenter/sound-cues";
 import { TOWN_PICTURE_IDS } from "../src/presenter/views/town-picture";
-import { data } from "./helpers/core";
+import { data, loadFreshData } from "./helpers/core";
 
 const group = (monsterId: string, index = 0): EnemyGroupView => ({ index, monsterId, name: monsterId, identified: true, count: 1 });
 const bossId = data.monsters.find((m) => m.special.boss === true)?.id ?? "";
@@ -160,7 +160,12 @@ describe("UI-66 soundsFor", () => {
     expect(soundsFor({ kind: "screen", to: "town" }, data)).toEqual([{ type: "song", name: "town" }]);
     expect(soundsFor({ kind: "screen", to: "dungeon", dungeonId: "d01" }, data)).toEqual([{ type: "song", name: "dungeon1" }]);
     expect(soundsFor({ kind: "screen", to: "dungeon", dungeonId: "d02" }, data)).toEqual([{ type: "song", name: "dungeon2" }]);
-    expect(soundsFor({ kind: "screen", to: "dungeon", dungeonId: "d03" }, data)).toEqual([{ type: "song", name: "dungeon1" }]);
+    // M12（U-3）: d03 は工房に dungeon3 が来るまで dungeon2
+    expect(soundsFor({ kind: "screen", to: "dungeon", dungeonId: "d03" }, data)).toEqual([{ type: "song", name: "dungeon2" }]);
+    // song の無いダンジョンは screenSongs.dungeon（M9 までは準備中の d03 で確かめていた。M12 から song を消した合成データ）
+    const noSong = loadFreshData();
+    delete noSong.dungeons.find((x) => x.id === "d03")!.song;
+    expect(soundsFor({ kind: "screen", to: "dungeon", dungeonId: "d03" }, noSong)).toEqual([{ type: "song", name: "dungeon1" }]);
     expect(soundsFor({ kind: "screen", to: "dungeon" }, data)).toEqual([{ type: "song", name: "dungeon1" }]);
     expect(soundsFor({ kind: "screen", to: "title" }, data)).toEqual([{ type: "song", name: "title" }]);
     expect(soundsFor({ kind: "screen", to: "event" }, data)).toEqual([]);

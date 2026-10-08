@@ -70,26 +70,49 @@
     "description": "水底に沈んだ古い聖堂。歌う亡霊がさまよい、最下層では鐘を背負った大司祭が待つ。"
   },
   {
-    "id": "d03", "name": "灰の地下墓所", "placeholder": true,
-    "floors": 1, "width": 20, "height": 20, "rooms": [3, 6],
+    "id": "d03", "name": "灰の地下墓所",
+    "floors": 4, "width": 20, "height": 20, "rooms": [4, 7],
     "unlock": "d02",
     "encounterRate": { "room": 0.14, "corridor": 0.06 },
     "encounterTable": {
       "1": [
-        { "monster": "drowned_acolyte", "weight": 2 },
-        { "monster": "choir_wraith", "weight": 3 },
-        { "monster": "font_mire", "weight": 3 },
-        { "monster": "stone_gazer", "weight": 2 }
+        { "monster": "ash_shambler", "weight": 3 },
+        { "monster": "cinder_crow", "weight": 3 },
+        { "monster": "choir_wraith", "weight": 2 },
+        { "monster": "font_mire", "weight": 2 },
+        { "monster": "stone_gazer", "weight": 1 }
+      ],
+      "2": [
+        { "monster": "ash_shambler", "weight": 3 },
+        { "monster": "cinder_crow", "weight": 3 },
+        { "monster": "candle_mourner", "weight": 3 },
+        { "monster": "choir_wraith", "weight": 2 },
+        { "monster": "stone_gazer", "weight": 1 }
+      ],
+      "3": [
+        { "monster": "ash_shambler", "weight": 2 },
+        { "monster": "cinder_crow", "weight": 2 },
+        { "monster": "candle_mourner", "weight": 3 },
+        { "monster": "urn_bearer", "weight": 3 },
+        { "monster": "grave_sentinel", "weight": 1 }
+      ],
+      "4": [
+        { "monster": "ash_shambler", "weight": 2 },
+        { "monster": "candle_mourner", "weight": 2 },
+        { "monster": "urn_bearer", "weight": 3 },
+        { "monster": "grave_sentinel", "weight": 3 }
       ]
     },
-    "groupCountWeights": { "1": [40, 35, 18, 7] },
-    "boss": { "monster": "sunken_bishop" },
-    "events": [],
-    "traps": [],
-    "trapsPerFloor": [0, 0],
+    "groupCountWeights": { "1": [50, 35, 12, 3], "2": [45, 35, 15, 5], "3": [40, 35, 18, 7], "4": [40, 35, 18, 7] },
+    "boss": { "monster": "ashcrown_lord" },
+    "song": "dungeon2",
+    "enterSpeech": "dungeon.enterSpeech.d03",
+    "events": ["wounded_adventurer", "pinned_pilgrim", "abandoned_sack"],
+    "traps": ["pit", "spinner", "teleport"],
+    "trapsPerFloor": [2, 4],
     "chestsPerFloor": [1, 3], "chestTrapMaxDanger": 4, "chestTrapDangerWeights": [30, 30, 25, 15],
     "teleporterFloors": [],
-    "onClear": { "unlockDungeon": null, "shopLevel": 4 },
-    "description": "準備中。灰に埋もれた地下墓所。まだ誰も降りた者がいない。"
+    "onClear": { "unlockDungeon": null, "shopLevel": 6 },
+    "description": "灰を被った棺が幾重にも積まれた、古い弔いの地下。燭台の火はまだ消えていない。"
   }
 ]

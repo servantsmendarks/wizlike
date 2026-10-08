@@ -4,5 +4,6 @@
   { "id": "spirit", "name": "声だけの何か", "sprite": "unknown_spirit", "placeholderColor": "darkGreen" },
   { "id": "construct", "name": "動く何か", "sprite": "unknown_construct", "placeholderColor": "white" },
   { "id": "winged", "name": "羽ばたく何か", "sprite": "unknown_winged", "placeholderColor": "violet" },
-  { "id": "ooze", "name": "ぬめる何か", "sprite": "unknown_ooze", "placeholderColor": "teal" }
+  { "id": "ooze", "name": "ぬめる何か", "sprite": "unknown_ooze", "placeholderColor": "teal" },
+  { "id": "undead", "name": "何かの亡者", "sprite": "unknown_undead", "placeholderColor": "bone" }
 ]
