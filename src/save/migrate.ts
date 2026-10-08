@@ -192,6 +192,8 @@ function isChestShape(x: unknown): boolean {
   if (f !== null && !(isPlainObject(f) && isStringOrNull(f["trapId"]))) return false;
   const r = x["rivalry"];
   if (r !== null && !(isPlainObject(r) && typeof r["id"] === "string" && typeof r["ownerId"] === "string")) return false;
+  // 同じ版に後から足した省略可能な欄（U-7 (b)）: rivalryFails は無いか 0 以上の整数
+  if (x["rivalryFails"] !== undefined && !isTurnCount(x["rivalryFails"])) return false;
   return true;
 }
 
@@ -209,7 +211,7 @@ function isChestShape(x: unknown): boolean {
  * 今の職業の欄がある（isCharacterShape。Character の欄の最初の検査）。
  * schemaVersion 6（M11。CB-60）: dive がオブジェクトなら chest が null か ChestState の形（isChestShape）、disarmedChests が CellRef の配列。
  * dive.chest が非 null なら pendingChoice は null。
- * 同じ版に後から足した省略可能な欄（M11。D-2）: dive.judgedChests は無いか CellRef の配列。
+ * 同じ版に後から足した省略可能な欄（M11。D-2 / U-7）: dive.judgedChests は無いか CellRef の配列、dive.chest.rivalryFails は無いか 0 以上の整数。
  */
 export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(x)) return false;

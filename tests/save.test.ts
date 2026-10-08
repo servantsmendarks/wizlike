@@ -1412,6 +1412,23 @@ describe("SV-04 v5 → v6 の移行（M11。CB-60）", () => {
     expect(bad((d) => (d["judgedChests"] = "x"))).toBe(false);
   });
 
+  test("SV-04/EV-76 U-7: dive.chest.rivalryFails は省略可能（schemaVersion 6 のまま足した欄）。無い・0 以上の整数なら通り、型が違えば broken", () => {
+    const s = chestState();
+    const bad = (v: unknown): boolean => {
+      const x = json(s) as unknown as Record<string, unknown>;
+      const chest = (x["dive"] as Record<string, unknown>)["chest"] as Record<string, unknown>;
+      if (v === undefined) delete chest["rivalryFails"];
+      else chest["rivalryFails"] = v;
+      return isGameStateShape(x);
+    };
+    expect(bad(undefined)).toBe(true);
+    expect(bad(2)).toBe(true);
+    expect(bad(-1)).toBe(false);
+    expect(bad(1.5)).toBe(false);
+    expect(bad("1")).toBe(false);
+    expect(bad(null)).toBe(false);
+  });
+
   test("SV-04/SV-50 箱の選択中に保存したレコードは、続きからで同じ箱の操作に戻る（chest.open を受け付ける）", async () => {
     const mem = createMemoryBackend();
     const svc = service(mem);

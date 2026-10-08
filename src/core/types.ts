@@ -221,6 +221,7 @@ export type Dive = {
  * - level: 中身の Lv（IT-53）
  * - finding: 最後の「調べる」で GM が告げた名前（偽りもありうる）。{ trapId: null } は「罠は無さそう」、null は未調査か不明。解除に成功したら { trapId: null }
  * - rivalry: 職業の掛け合い（EV-70〜76）の担当。発生していなければ null
+ * - rivalryFails: 担当の調べるの失敗の数（EV-76。片付いた時点で清算する）
  */
 export type ChestState = {
   source: "drop" | "cell";
@@ -231,6 +232,11 @@ export type ChestState = {
   level: number;
   finding: { trapId: string | null } | null;
   rivalry: { id: string; ownerId: string } | null;
+  /**
+   * EV-76（U-7 (b)。2026-10-08）: 担当がこの箱の調べるに失敗した回数（まだ語っていない分）。箱が片付いた時点でまとめて SAN に効かせる。
+   * 省略可能（schemaVersion 6 のまま足した欄）。無ければ 0。あれば 1 以上で、rivalry は非 null
+   */
+  rivalryFails?: number;
 };
 
 // ===================== 保留中の選択（E3） =====================

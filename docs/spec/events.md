@@ -92,7 +92,7 @@
 - EV-73 語りと判定の箱: 文言は `text.start`（差し込み `{a}` `{b}`）・`text.win`（`{winner}` `{loser}`）・`text.fail`（`{name}`）の strings キー。ほかの差し込みは検証で止める。順は message `text.start`{a, b}（対象者の先頭の 2 人）→ 判定の箱 → message `text.win`{winner, loser}（loser は負けた者の先頭。文言は 2 人を前提に書く）→ 負けの SAN（EV-74）。判定の箱は `dice{label: dice.rivalry, rows, rule: dice.rivalry.rule, result: dice.rivalry.win{winner}}` で、行は対象者ごとに 1 行（並び順。label `dice.rivalry.member`{name と contest.stats の各能力値}、base は能力値の合計、dice は contest.dice の出目、total は合計）。担当は箱に `rivalry{id, ownerId}` として残す（箱が片付けば消える。放っておいた宝箱のセルを踏み直すと担当のいない新しい箱になり、掛け合いはやり直さない。D-2）。
 - EV-74 負けた者それぞれに SAN −`loserSan`（耐性なし。並び順）。
 - EV-75 担当者がその箱を調べる（CB-63）ときだけ、成功率に `bonus.inspect` を足す（clamp の前）。判定の箱には `chest.row.rivalry`{v} の行を罠の勘の行の後に置き、危険度を引く前の値（`chest.row.subtotal`）に含める。ほかのメンバーの調べると解除（CB-64）には効かない。
-- EV-76 担当者が調べるに失敗するたびに、その調べるの語りと効果（偽りの名前・不明・作動）の後に `text.fail`{name} を語り、担当者の SAN −`failSan`（耐性なし。乱数なし）。担当者が生きていない（作動で死んだ）とき、作動が警報で戦闘に入った（または全滅処理に入った）ときは出さない。成功では出さない。
+- EV-76 担当者が調べるに失敗するたびに（偽りの名前・不明・作動のどれでも。成功は数えない）、箱の `rivalryFails`（省略可能。無ければ 0）を 1 増やす。その場では語らず SAN も減らさない（U-2 の伏せた結果を漏らさないため。U-7 (b)）。箱が片付いた時点（開けた・放っておいた・失った（転移・警報の戦闘から逃げた）。`chestEnd` の直後、転移なら `moved` の前）に、`rivalryFails` が 1 以上なら `text.fail`{name} を 1 回語り、担当者の SAN −`failSan` × `rivalryFails`（耐性なし。乱数なし）。その時点で担当者が生きていない（life が alive でない）とき、戦闘中のとき、行動可能な者がいない（全滅処理に入る）ときは出さない。警報の戦闘の間は持ち越し、勝って同じ箱に戻れば続けて数える。全滅処理で箱が消えたときは出さない。
 - 乱数の順（`state.rng`）: 宝箱の衝動と制止（EV-16 / EV-25）の乱数の後に（衝動で開けたときは判定しない）、[対象が 2 人以上なら d100（chance）] →[発生すれば対象者ごとに並び順で contest.dice]。対象が 1 人以下なら何も引かない。
 
 `data/rivalries.json`

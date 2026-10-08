@@ -194,6 +194,12 @@ export function expectStateInvariants(state: GameState): void {
   if (state.dive !== null && state.dive.chest !== null) {
     expect(state.pendingChoice, "chest ⇒ pendingChoice null").toBeNull();
     expect(state.screen === "dungeon" || state.screen === "battle", `chest ⇒ screen dungeon / battle (${state.screen})`).toBe(true);
+    // EV-76（U-7 (b)）: 清算前の担当の失敗の数があれば 1 以上で、担当がいる
+    const fails = state.dive.chest.rivalryFails;
+    if (fails !== undefined) {
+      expect(Number.isInteger(fails) && fails >= 1, `rivalryFails ${fails}`).toBe(true);
+      expect(state.dive.chest.rivalry, "rivalryFails ⇒ rivalry").not.toBeNull();
+    }
   }
   // DG-24（M11。D-2）: 判定済みの宝箱のセルは重複なし
   if (state.dive !== null && state.dive.judgedChests !== undefined) {

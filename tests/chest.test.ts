@@ -1151,60 +1151,146 @@ describe("EV-70〜76 職業の掛け合い", () => {
     expect(rowsOf(exec(s, disarm("c3", "crossbow"), D))).not.toContain("chest.row.rivalry");
   });
 
-  test("EV-76 担当が調べるに失敗するたびに、その語りの後に text.fail{name} と SAN −3（乱数なし）。成功・担当でない人は無し。作動で担当が死んだら無し", () => {
-    const fail = chestData((x) => {
+  // U-7 (b)（2026-10-08）: 担当の失敗は即時に語らず、箱が片付いた時点（chestEnd の直後）に「失敗の回数 × SAN −3、語り 1 回」でまとめて出す
+  /** 担当（キリ）の調べるが必ず失敗し、作動も偽りの名前も無い（不明）データ。衝動は止める */
+  const FAIL = chestData((x) => {
+    x.config.events.cap = 0;
+    x.config.chest.inspect.min = x.config.chest.inspect.max = 0;
+    x.config.chest.triggerChance = 0;
+    x.config.chest.wrongNameChance = 0;
+  });
+  /** 罠なしの箱（rng 2）にキリが担当の掛け合いを載せた state */
+  const owned = (trapId: string | null = null, d: GameData = FAIL): GameState => {
+    const s = withChest(trapId, 2, 1, d);
+    s.dive!.chest!.rivalry = { id: "thief_chest", ownerId: "c3" };
+    return s;
+  };
+
+  test("EV-76/U-7 担当が調べるに失敗しても、その場では text.fail も SAN −3 も出さない（失敗の数を chest.rivalryFails に数える。乱数は調べるの 2 回だけ）。成功・担当でない人は数えない", () => {
+    const s = owned();
+    const m = cloneRng(s.rng);
+    randInt(m, 1, 100);
+    randInt(m, 1, 100);
+    const r = exec(s, inspect("c3"), FAIL);
+    expect(r.state.rng).toEqual(m);
+    expect(r.events.slice(1)).toEqual([
+      { kind: "message", key: "chest.inspect.unknown" },
+      { kind: "message", key: "chest.prompt" },
+    ]);
+    expect(chestOf(r.state)!.rivalryFails).toBe(1);
+    expectStateInvariants(r.state);
+    const r2 = exec(r.state, inspect("c3"), FAIL);
+    expect(eventsOf(r2.events, "sanChanged")).toEqual([]);
+    expect(chestOf(r2.state)!.rivalryFails).toBe(2);
+    // 担当でない人の失敗・担当の成功は数えない
+    expect(chestOf(exec(s, inspect("c6"), FAIL).state)!.rivalryFails).toBeUndefined();
+    const ok = chestData((x) => (x.config.chest.inspect.min = x.config.chest.inspect.max = 100));
+    expect(chestOf(exec(s, inspect("c3"), ok).state)!.rivalryFails).toBeUndefined();
+  });
+
+  test("EV-76/U-7 開けて片付いたとき、chestEnd の直後に text.fail{name} を 1 回と SAN −(3 × 失敗の回数)（耐性なし。乱数なし）", () => {
+    const s2 = exec(exec(owned(), inspect("c3"), FAIL).state, inspect("c3"), FAIL).state;
+    const r = exec(s2, OPEN, FAIL);
+    expect(kindsOf(r.events)).toEqual([
+      "message:chest.open.gold",
+      ...kindsOf(r.events).slice(1, kindsOf(r.events).indexOf("chestEnd")),
+      "chestEnd",
+      "message:rivalry.thief_chest.fail",
+      "sanChanged",
+    ]);
+    expect(r.events.slice(-2)).toEqual([
+      { kind: "message", key: "rivalry.thief_chest.fail", params: { name: "キリ" } },
+      { kind: "sanChanged", id: "c3", delta: -6, san: 94 },
+    ]);
+    expect(chestOf(r.state)).toBeNull();
+    expectStateInvariants(r.state);
+    // 失敗が無ければ何も出ない
+    expect(kindsOf(exec(owned(), OPEN, FAIL).events)).not.toContain("message:rivalry.thief_chest.fail");
+  });
+
+  test("EV-76/U-7 放っておいたときも chest.left → chestEnd left → text.fail → SAN −3", () => {
+    const s1 = exec(owned(), inspect("c3"), FAIL).state;
+    const r = exec(s1, LEAVE, FAIL);
+    expect(r.events).toEqual([
+      { kind: "message", key: "chest.left" },
+      { kind: "chestEnd", result: "left" },
+      { kind: "message", key: "rivalry.thief_chest.fail", params: { name: "キリ" } },
+      { kind: "sanChanged", id: "c3", delta: -3, san: 97 },
+    ]);
+  });
+
+  test("EV-76/U-7 警報の戦闘の間は持ち越し、逃げて箱を失ったとき chest.fled → chestEnd lost → text.fail → SAN −3（警報で戦闘に入った時点では出さない）", () => {
+    const s1 = exec(owned("alarm"), inspect("c3"), FAIL).state;
+    expect(chestOf(s1)!.rivalryFails).toBe(1);
+    const inBattle = exec(s1, OPEN, FAIL);
+    expect(inBattle.state.battle).not.toBeNull();
+    expect(kindsOf(inBattle.events)).not.toContain("message:rivalry.thief_chest.fail");
+    expect(chestOf(inBattle.state)!.rivalryFails).toBe(1);
+    const dF = chestData((x) => {
+      x.config.events.cap = 0;
+      x.config.combat.fleeBase = 1000;
+    });
+    const r = exec(inBattle.state, { type: "battle.flee" }, dF);
+    const iFled = r.events.findIndex((e) => e.kind === "message" && e.key === "chest.fled");
+    expect(r.events.slice(iFled)).toEqual([
+      { kind: "message", key: "chest.fled" },
+      { kind: "chestEnd", result: "lost" },
+      { kind: "message", key: "rivalry.thief_chest.fail", params: { name: "キリ" } },
+      { kind: "sanChanged", id: "c3", delta: -3, san: member(inBattle.state, "c3").san - 3 },
+    ]);
+  });
+
+  test("EV-76/U-7 転移で箱を失ったときは chestEnd lost の直後（moved の前）にまとめて出す", () => {
+    const tp = chestData((x) => {
       x.config.events.cap = 0;
       x.config.chest.inspect.min = x.config.chest.inspect.max = 0;
       x.config.chest.triggerChance = 0;
       x.config.chest.wrongNameChance = 0;
     });
-    const s = withChest("crossbow", 2, 1, fail);
-    s.dive!.chest!.rivalry = { id: "thief_chest", ownerId: "c3" };
-    const m = cloneRng(s.rng);
-    randInt(m, 1, 100);
-    randInt(m, 1, 100);
-    const r = exec(s, inspect("c3"), fail);
-    expect(r.state.rng).toEqual(m);
-    expect(r.events.slice(1)).toEqual([
-      { kind: "message", key: "chest.inspect.unknown" },
-      { kind: "message", key: "rivalry.thief_chest.fail", params: { name: "キリ" } },
-      { kind: "sanChanged", id: "c3", delta: -3, san: 97 },
-      { kind: "message", key: "chest.prompt" },
-    ]);
-    // 2 回目の失敗でも
-    expect(eventsOf(exec(r.state, inspect("c3"), fail).events, "sanChanged")).toEqual([{ kind: "sanChanged", id: "c3", delta: -3, san: 94 }]);
-    // 担当でない人
-    expect(kindsOf(exec(s, inspect("c6"), fail).events)).not.toContain("message:rivalry.thief_chest.fail");
-    // 成功
-    const ok = chestData((x) => (x.config.chest.inspect.min = x.config.chest.inspect.max = 100));
-    expect(kindsOf(exec(s, inspect("c3"), ok).events)).not.toContain("message:rivalry.thief_chest.fail");
-    // 作動（石弓を 50 点にする）で担当が死ぬ
+    const s1 = exec(owned("teleport", tp), inspect("c3"), tp).state;
+    const r = exec(s1, OPEN, tp);
+    const ks = kindsOf(r.events);
+    const iEnd = ks.indexOf("chestEnd");
+    expect(ks.slice(iEnd, iEnd + 3)).toEqual(["chestEnd", "message:rivalry.thief_chest.fail", "sanChanged"]);
+    expect(ks.indexOf("moved")).toBeGreaterThan(iEnd + 2);
+  });
+
+  test("EV-76/U-7 片付いた時点で担当が生きていなければ出さない（失敗の作動で死んだ）", () => {
     const trig = chestData((x) => {
+      x.config.events.cap = 0;
       x.config.chest.inspect.min = x.config.chest.inspect.max = 0;
       x.config.chest.triggerChance = 100;
       x.chestTraps.find((t) => t.id === "crossbow")!.effect = { kind: "damage", target: "one", dice: "50" };
     });
-    const rd = exec(s, inspect("c3"), trig);
+    const rd = exec(owned("crossbow", trig), inspect("c3"), trig);
     expect(member(rd.state, "c3").life).toBe("dead");
-    expect(kindsOf(rd.events)).not.toContain("message:rivalry.thief_chest.fail");
+    expect(chestOf(rd.state)!.rivalryFails).toBe(1);
+    const r = exec(rd.state, LEAVE, trig);
+    expect(kindsOf(r.events)).toEqual(["message:chest.left", "chestEnd"]);
   });
 
-  test("EV-76 担当の失敗の作動で全員が行動不能（麻痺ガス）になれば、全滅処理に入るので text.fail と SAN −3 は出さない", () => {
+  test("EV-76/U-7 全滅処理に入るなら出さない: 失敗の作動で全員が行動不能（麻痺ガス）なら箱は片付かずに全滅処理へ。開けた罠で全員が行動不能になって片付いたときも出さない", () => {
     const allPara = chestData((x) => {
       x.config.events.cap = 0;
       x.config.chest.inspect.min = x.config.chest.inspect.max = 0;
       x.config.chest.triggerChance = 100;
       x.chestTraps.find((t) => t.id === "paralysis_gas")!.effect = { kind: "status", target: "all", status: "paralysis", chance: 1000 };
     });
-    const s = withChest("paralysis_gas", 2, 1, allPara);
-    s.dive!.chest!.rivalry = { id: "thief_chest", ownerId: "c3" };
-    const r = exec(s, inspect("c3"), allPara);
+    const r = exec(owned("paralysis_gas", allPara), inspect("c3"), allPara);
     const ks = kindsOf(r.events);
     expect(ks).toContain("chestTrap");
     expect(eventsOf(r.events, "statusChanged").filter((e) => e.status === "paralysis" && e.on)).toHaveLength(6);
     expect(ks).toContain("wipe");
     expect(ks).not.toContain("message:rivalry.thief_chest.fail");
     expect(ks.slice(0, ks.indexOf("wipe"))).not.toContain("sanChanged");
+    // 失敗を 1 回数えた箱を開けて、麻痺ガスで全員が行動不能になる
+    const s1 = exec(owned("paralysis_gas"), inspect("c3"), FAIL).state;
+    const ro = exec(s1, OPEN, allPara);
+    const ko = kindsOf(ro.events);
+    expect(ko).toContain("chestEnd");
+    expect(ko).toContain("wipe");
+    expect(ko).not.toContain("message:rivalry.thief_chest.fail");
+    expect(ko.slice(0, ko.indexOf("wipe"))).not.toContain("sanChanged");
   });
 });
 

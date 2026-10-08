@@ -304,13 +304,17 @@ export function abandonChest(ctx: RuleContext): void {
   endChest(ctx, chest.cell === null ? "lost" : "left");
 }
 
-/** 箱を片付ける（dive.chest = null。セルの箱で opened / lost なら clearedCells に入れる）→ chestEnd{result} */
+/**
+ * 箱を片付ける（dive.chest = null。セルの箱で opened / lost なら clearedCells に入れる）→ chestEnd{result} →
+ * 担当の失敗の清算（EV-76。settleRivalryFails）
+ */
 function endChest(ctx: RuleContext, result: "opened" | "left" | "lost"): void {
   const dive = requireDive(ctx.state);
   const chest = requireChest(ctx.state);
   dive.chest = null;
   if (chest.cell !== null && result !== "left") dive.clearedCells.push({ ...chest.cell });
   ctx.events.push({ kind: "chestEnd", result });
+  settleRivalryFails(ctx, chest);
 }
 
 /** 罠が無くなった（解除・作動）。trapId = null、セルの箱なら disarmedChests に入れる（重複なし） */
@@ -426,7 +430,8 @@ export function checkChest(state: GameState, data: GameData, cmd: { type: string
  * 失敗なら 2 回目の d100: 1〜triggerChance は作動（作動させた人は調べた人。罠なしの箱なら何も起きず「分からない」）、
  * 続く wrongNameChance の幅は本当の罠以外（罠なしなら全種）から randInt で別の名前を告げる（成功と同じ文）、残りは chest.inspect.unknown。
  * 判定の箱は U-2 (1): 調べる人の力の内訳と危険度を引く前の値だけを出し、危険度・出目・結果は伏せる（hidden）。結果の文は箱の後の語り。
- * 告げた結果は chest.finding（不明・作動は null）
+ * 告げた結果は chest.finding（不明・作動は null）。
+ * 掛け合いの担当（EV-75）が失敗したら chest.rivalryFails を 1 増やす（語りと SAN は箱が片付いた時点。EV-76 / U-7 (b)）
  */
 export function inspectChest(ctx: RuleContext, memberId: string, startAlarm: StartAlarm): void {
   const { state, data } = ctx;
@@ -458,6 +463,8 @@ export function inspectChest(ctx: RuleContext, memberId: string, startAlarm: Sta
   if (roll <= r.rate) {
     tell(chest.trapId);
   } else {
+    // EV-76（U-7 (b)）: 担当の失敗はここでは語らず数えるだけ（作動の前に数える。清算は箱が片付いた時点の endChest）
+    if (riv !== null) chest.rivalryFails = (chest.rivalryFails ?? 0) + 1;
     const cfg = data.config.chest;
     const r2 = randInt(state.rng, 1, 100);
     if (r2 <= cfg.triggerChance) {
@@ -474,14 +481,23 @@ export function inspectChest(ctx: RuleContext, memberId: string, startAlarm: Sta
     } else {
       unknown();
     }
-    // EV-76: 担当の失敗は、この調べるの語りと効果の後に text.fail{name} と SAN −failSan（耐性なし。乱数なし）。
-    // 担当が生きていなければ、また警報で戦闘に入った（全滅処理に入った）ときは出さない
-    if (riv !== null && ch.life === "alive" && state.battle === null && state.dive !== null && state.party.some(canAct)) {
-      ctx.events.push({ kind: "message", key: riv.text.fail, params: { name: ch.name } });
-      applySanValue(ctx, ch, -riv.failSan);
-    }
   }
   promptIfPending(ctx);
+}
+
+/**
+ * EV-76（U-7 (b)）: 担当の失敗の清算。endChest が chestEnd の直後に呼ぶ。rivalryFails が 1 以上で、担当が生きていて（life alive）、
+ * 戦闘中でなく、行動可能な者がいれば（全滅処理に入らなければ）message text.fail{name} を 1 回と、担当の SAN −failSan × 回数（耐性なし。乱数なし）
+ */
+function settleRivalryFails(ctx: RuleContext, chest: ChestState): void {
+  const { state, data } = ctx;
+  const n = chest.rivalryFails ?? 0;
+  if (n === 0 || chest.rivalry === null) return;
+  const owner = memberById(state, chest.rivalry.ownerId);
+  if (owner === null || owner.life !== "alive" || state.battle !== null || !state.party.some(canAct)) return;
+  const riv = rivalryOf(data, chest.rivalry.id);
+  ctx.events.push({ kind: "message", key: riv.text.fail, params: { name: owner.name } });
+  applySanValue(ctx, owner, -riv.failSan * n);
 }
 
 /**
