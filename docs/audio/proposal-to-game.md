@@ -1,4 +1,4 @@
-> 出典: make-assets の projects/wizlike/docs/proposal-to-game.md（ace70c3、2026-10-08 に複製）。工房の版が正。変更は工房から提案として来る。
+> 出典: make-assets の projects/wizlike/docs/proposal-to-game.md（053c2d0、2026-10-09 に複製）。工房の版が正。変更は工房から提案として来る。
 
 # ゲーム側への提案（wizlike）
 
@@ -111,3 +111,63 @@ Shin の決定で、工房の音の一覧を次のように確定した（工房
 - `docs/audio/CONVENTIONS.md`（工房の `CONVENTIONS.md` の写し）を更新する（§2 の曲の一覧と数）。
 
 それまでは、工房の `tools/export.py` の事前検査（ゲームの `data/audio.json` との照合）が `dungeon3` で ERROR になり、export は何もコピーせずに止まる。
+
+## 2026-10-09 追記（迷宮に入るとき・出るときに stairs を鳴らす）
+
+Shin の要望（原文）: 「迷宮に入るとき、出るときは階段の音の方がいいかな。これはゲーム本体の方に伝える内容ですね。」
+
+工房で今のゲームのコードを読んで確かめた、今鳴っている音（実機では鳴らしていない）:
+
+- `stairs` が鳴るのは `data/audio.json:28` の `{ "event": "floorChanged", "sfx": "stairs" }` だけ。`floorChanged` を出すのは迷宮の中で階を移る 2 か所（`src/core/rules/dungeon.ts:478` の降りる、`:490` の上る）だけなので、迷宮に入るとき・出るときは `stairs` は鳴らない。
+- 入るとき:
+  - 施設メニューの「迷宮へ」（`src/presenter/views/town.ts:225`）で `door`（`ui.facility`。`src/presenter/app.ts:675-676`、`data/audio.json:59`）。
+  - 門のページで迷宮の行（kind `enter`、`views/town.ts:302-315`）を選ぶと `ok`（sound の指定なし。`src/presenter/views/controls.ts:358-364`、`app.ts:721-722`）。
+  - 続く `dungeon.enter` の再生（`dungeon.ts:244-250`: screen → message `dungeon.enter` → 初回の enterSpeech → 噂話）には cue がなく、効果音はない。`screen` は曲の切り替えだけ（`src/presenter/sound-cues.ts:157-162`。cue にできる event に `screen` はない。`src/core/data/types.ts:857-876`）。
+- 歩いて出るとき:
+  - 1 階の上り階段に入ると確認（message `dungeon.stairsUp`「上りの階段だ。地上へ戻るか？」。`dungeon.ts:326-338`、`src/core/rules/choices.ts:26-28`）。この時点は無音。
+  - 「地上へ戻る」（exit）で `ok`、「やめる」（stay）で `cancel`（`app.ts:912-917`）。
+  - exit の再生（`dungeon.ts:466-468` → `src/core/rules/town.ts:127-135` returnToTown（message `dungeon.exit`「階段を上り、地上へ出た。」）→ `town.ts:101-121` arriveTown）には cue がなく、効果音はない（town の曲に替わるだけ）。
+- ほかの帰り方（参考）: テレポーターは `ok` のあと `teleport`（`audio.json:51` の message `dungeon.teleport`）。帰還の呪文（`src/core/rules/camp.ts:119-138`）と帰還の糸（`src/core/rules/items.ts:64-84`）は最後の項目の `ok` だけ。全滅（`src/core/rules/wipe.ts:101-218`）は `dice`・ジングル `wipe` など。
+
+お願いしたいこと:
+
+- 門から迷宮に入るときと、1 階の上り階段から歩いて地上へ出るときに `stairs` を鳴らす。
+
+ゲーム側で決めるか、Shin に確かめてほしい点（工房はゲームのデータ形式・実装を決めない）:
+
+- 選んだ行の `ok` と `stairs` を重ねるか、`ok` の代わりに `stairs` にするか。
+- 歩いて出る以外の帰り方（帰還の呪文・帰還の糸・テレポーター・全滅）にも鳴らすか（テレポーターは今 `teleport` が鳴る）。
+- 鳴らす場所（例: `cues` に message の key 条件 `dungeon.enter`・`dungeon.exit` を足す、または門の行に操作の音を足す。`ui` の型は 5 つのキーに固定なので、後者は型の変更が要る）。
+
+あわせて: 効果音 `door` は工房で作り直し中（試しの版、Shin の試聴待ち）。採用したら受け渡しで `assets/sfx/door.json` が変わり、迷宮の扉（message `dungeon.door`）と施設に入る音（`ui.facility`）の両方が変わる。
+
+## 2026-10-09 追記（効果音の差し替え）
+
+工房で効果音 `door` と `hit` を差し替えた（Shin の決定「doorは v4a にしましょうか。hit も v3a がいいですね。」）。受け渡しはまだ（Shin の指示待ち）。次の受け渡しで `assets/sfx/door.json` と `assets/sfx/hit.json` が変わる。ゲーム側のデータ形式・cue の変更は要らない。
+
+- `door`: 細いパルスのクリックの連なり、40 → 60 Hz に上がる、0.27 秒。迷宮の扉（message `dungeon.door`。`data/audio.json:27`）と施設に入る音（`ui.facility`。`data/audio.json:59`）の両方が変わる。
+- `hit`: ノイズを 1200 Hz 相当（37 サンプルごと）で保持した音、0.08 秒。味方の通常攻撃が敵に当たったとき（`data/audio.json:24`）。
+
+## 2026-10-09 追記（効果音 stairs の差し替え）
+
+工房で効果音 `stairs` を差し替えた（Shin の決定「階段も音は軽いが v3 で」）。受け渡しはまだ（Shin の指示待ち）。次の受け渡しで `assets/sfx/stairs.json` が変わる。ゲーム側のデータ形式・cue の変更は要らない。
+
+- `stairs`: ノイズの 3 歩（0.1 秒ごとに繰り返し）、下がる、0.3 秒。迷宮の階段で降りる・上るとき（event `floorChanged`。`data/audio.json:28`）。上の「迷宮の出入りに `stairs` を鳴らす」お願いの音もこれになる。
+
+## 2026-10-09 追記（効果音 stairs・damage の差し替え）
+
+工房で効果音 `stairs` と `damage` を差し替えた（Shin の決定「階段はv4bがいいです。ダメージもv4bにしましょう」）。受け渡しはまだ（Shin の指示待ち）。次の受け渡しで `assets/sfx/stairs.json` と `assets/sfx/damage.json` が変わる。ゲーム側のデータ形式・cue の変更は要らない。
+
+- `stairs`: 直前の追記（v3）を v4b に置き換える。ノイズの 3 歩（0.1 秒ごとに繰り返し）、下がる、0.3 秒、1000 Hz を境に高い音を削る（低域通過）。迷宮の階段で降りる・上るとき（event `floorChanged`。`data/audio.json:28`）。上の「迷宮の出入りに `stairs` を鳴らす」お願いの音もこれになる。
+- `damage`: ノイズを 37 サンプルごと（1191.9 Hz 相当）に保持（bitCrush）した音、下がる、0.15 秒。味方の HP が減るとき（`{hpChanged, target: party, loss: true}`。`data/audio.json:25`）。
+
+## 2026-10-09 追記（効果音 4 つの受け渡し）
+
+工房の `tools/export.py --project wizlike` で、効果音 `door`・`hit`・`stairs`・`damage` を `assets/sfx/` に渡した（2026-10-09。Shin の指示「受け渡しはこちらのプロジェクトでやっていましたっけ？であればしていただいても良いですが」）。ゲームのリポジトリでは未コミット（`git status --short` で `assets/sfx/damage.json`・`door.json`・`hit.json`・`stairs.json` の 4 件が変更になっている。コミットはゲーム側で行う）。直前までの 3 つの追記（効果音の差し替え、`stairs` の差し替え、`stairs`・`damage` の差し替え）にあった「受け渡しはまだ（Shin の指示待ち）」は、これで済み。ゲーム側のデータ形式・cue の変更は要らない。
+
+- `door`（v4a）: `data/audio.json:27`（message `dungeon.door`）と `data/audio.json:59`（`ui.facility`）。
+- `hit`（v3a）: `data/audio.json:24`（`{attack, hit: true, target: enemy}`）。
+- `stairs`（v4b）: `data/audio.json:28`（event `floorChanged`）。
+- `damage`（v4b）: `data/audio.json:25`（`{hpChanged, target: party, loss: true}`）。
+
+「迷宮に入るとき・出るときに `stairs` を鳴らす」お願い（上の「2026-10-09 追記（迷宮に入るとき・出るときに stairs を鳴らす）」）は変わらず未決。
