@@ -182,7 +182,7 @@ describe("data: config.json", () => {
   test("data: UI-75【仮】config.measure は計測用の拍の長さ（ms）で 11 欄とも正の整数", () => {
     const d = loadGameData(rawData());
     expect(d.config.measure).toEqual({
-      stepMs: 135, turnMs: 136, encounterMs: 2660, actionMs: 1913, battleEndMs: 1103, chestCheckMs: 1359,
+      stepMs: 135, turnMs: 136, encounterMs: 2660, actionMs: 1643, battleEndMs: 1103, chestCheckMs: 1359,
       chestOpenMs: 773, threadMs: 1887, sellMs: 864, identifyMs: 1238, innMs: 616,
     });
     expectIssue((r) => delete r.config.measure.actionMs, "config.json", "measure.actionMs: missing required field");
