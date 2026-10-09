@@ -39,8 +39,8 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 
 ## 4. 希少度・呪い・オプション
 
-- IT-30 希少度は 4 段階で、オプションの個数は 通常 0 / 上質 1 / 希少 2 / 伝説 3（`config.items.rarities[].options`）。ドロップのたびに `config.items.rarities[].weight`（通常 75 / 上質 18 / 希少 6 / 伝説 1）【仮】の重みで引く。ユニークも同じ判定を受ける（同じユニークでも当たり外れがある）。店で買う汎用装備は常に通常。
-- IT-31 宝箱（CB-52）の品は、行動可能（CH-44）な味方の性格の `benefits.chestQuality`（強欲 1）の最大（合計しない）だけ、引いた希少度を上げる（伝説で止まる。乱数は使わない）。ボスの戦利品には効かない。CB-52 の旧文「1 段階上の表を引く」はこれで置き換える。
+- IT-30 希少度は 4 段階で、オプションの個数は 通常 0 / 上質 1 / 希少 2 / 伝説 3（`config.items.rarities[].options`）。ドロップのたびに `config.items.rarities[].weight`（通常 72 / 上質 20 / 希少 7 / 伝説 1）【仮】の重みで引く（M14 で 75 / 18 / 6 / 1 から変えた）。ユニークも同じ判定を受ける（同じユニークでも当たり外れがある）。店で買う汎用装備は常に通常。
+- IT-31 宝箱（CB-52）の品は、行動可能（CH-44）な味方の性格の `benefits.chestQuality`（強欲 35）の最大（合計しない）を確率（%）として、危険度の上振れ（IT-56）の後に `chance(chestQuality)` を 1 回振り、当たれば希少度を 1 段上げる（伝説で止まる）。chestQuality が 0（強欲が行動不能・いない）なら振らない。ボスの戦利品には効かない（振らない）。CB-52 の旧文「1 段階上の表を引く」はこれで置き換える。（M13 までは chestQuality は上げる段数（強欲 1）で、乱数を使わずに足していた。M14 で確率に変えた）
 - IT-32 呪い: ドロップのたびに `config.items.curseChance`（8）%【仮】で呪われる（ユニークも同じ。店の品は呪われない）。呪われた品は、希少度の個数より 1 つ多くオプションを持ち、最後に引いた 1 つの値の符号を反転する（負の効果）。呪われた品は装備すると外せず（CH-73）、寺院の解呪（TW-07）で失う。呪いと負のオプションは鑑定するまで見えない（IT-12）。
 - IT-33 オプションは `data/item-options.json`（オプション表）から、重み `weight` で、同じ実体の中で重複しないように引く。値は段階 `tier`（1〜3）の値 `values[tier − 1]`。段階は汎用装備なら min(3, 1 + floor(Lv ÷ `config.items.optionTierStep`（4）))【仮】（Lv0〜3 は 1、4〜7 は 2、8 以上は 3）、ユニークは `uniques[].optionTier` の固定値。生成した後でレベルが変わってもオプションは変わらない（TW-17）。引く母集団は、オプション表のうちその品の品種に付けられるもの（IT-36。M10）。
 - IT-34 オプションの効果（装備中の品のものだけを、全部位の分を足して使う。鑑定の有無に関係なく効く）【仮】:
@@ -81,10 +81,10 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 
 - IT-50 ドロップ元は 宝箱（CB-52 / CB-65。M11 から開けたときに配る。ランダム遭遇の勝利時に、部屋のセルなら `config.combat.chestChance`（60）%【仮】、通路のセルなら `config.combat.chestChanceCorridor`（15）%【仮】。2026-10-05 に通路を足した）と ボスの戦利品（DG-31。ボスに勝つたび。再撃破でも）の 2 つ。どちらも `data/drops.json`（ドロップ表）を引く。宝箱の金（`config.combat.chestGoldDice`）は今のまま出し、品はその後に引く。ボスの戦利品はボスの語り（`battle.bossDefeated`・初回の `battle.dungeonCleared`・`dungeon.unlocked`）の後、`screen`{dungeon} とテレポーターの申し出（DG-32）の前に引く。
 - IT-51 ドロップ表 `drops.json` は `tables`（表の配列）・`chest`（ダンジョン id → 階番号の文字列 → 表の id）・`boss`（ダンジョン id → 表の id）を持つ。表は `{ id, itemChance, rolls, entries }` で、`entries` の各要素は `{ base, weight }` か `{ unique, weight }` か `{ item, weight }`（魔法書。IT-55。M9）のどれか 1 つ。`rolls` 回だけ、`itemChance` % で 1 品を引く（rolls 回とも独立）。M12（2026-10-08）: d03 は階ごとの表 `d03_f1`〜`d03_f4` とボスの表 `d03_boss`（M9〜M11 の準備中の d03 は d02 の表を参照していた）。M12 のベース 4 種（IT-62）とユニーク 2 種（弔いの面紗・墓守の両手剣）は d03 の 3 階以降とボスの表にだけ入れ、魔法書は既存の 3 冊を d03 の各表に入れる。各表の itemChance・重みは docs/balance.md の「コンテンツの数値」。
-- IT-52 1 品の生成と乱数の順: chance(itemChance) → weightedIndex(entries) →（魔法書の項目ならここで終わり。IT-55）→（汎用なら）Lv の randInt(−`config.items.dropLevelSpread`（1）, +spread) → weightedIndex(rarities) →（宝箱の危険度が正なら）chance(危険度 × `config.chest.rarityUpPerDanger`)（IT-56。M11）→ chance(curseChance) → オプションの個数（IT-30 / IT-32）だけ weightedIndex（オプション表のうちその品の品種に付けられるもの（IT-36）から、既に引いたものを除いた残り。乱数の回数は品種で変わらない）。宝箱の chestQuality（IT-31）は希少度を引いた直後に足す（乱数なし）。
+- IT-52 1 品の生成と乱数の順: chance(itemChance) → weightedIndex(entries) →（魔法書の項目ならここで終わり。IT-55）→（汎用なら）Lv の randInt(−`config.items.dropLevelSpread`（1）, +spread) → weightedIndex(rarities) →（宝箱の危険度が正なら）chance(危険度 × `config.chest.rarityUpPerDanger`)（IT-56。M11）→（宝箱の chestQuality が正なら）chance(chestQuality)（IT-31。M14）→ chance(curseChance) → オプションの個数（IT-30 / IT-32）だけ weightedIndex（オプション表のうちその品の品種に付けられるもの（IT-36）から、既に引いたものを除いた残り。乱数の回数は品種で変わらない）。（M13 までは chestQuality を希少度を引いた直後に乱数なしで足していた）
 - IT-53 ドロップの Lv = 落とした敵の Lv（`monsters[].level`）± spread、最低 1【仮】。宝箱の「落とした敵」はその戦闘で倒した敵のうち `level` が最大の種類（M11: 見つけた時点で箱の `level` に入れ、開けたときに使う）。ボスはボスの `level`。
 - IT-54 生成した品は未鑑定（IT-13）で、並び順に最初に所持枠（CH-71）が空いている者（life を問わない）の inventory の末尾に入れ、潜行台帳（DG-40）に入れる。誰も空いていなければ置いていく（`item.leftBehind`{item}。品は作らないので item はベースの `unidentifiedName`。乱数は引いた分を消費したまま）。語りは `item.found`{name, item}（item は未鑑定の表示名）。
-- IT-56 宝箱の上振れ（M11）: 宝箱の品は、希少度を重みで引いた直後に、箱の危険度（見つけた時点の値。CB-60。解除・作動しても残す）が正なら `chance(危険度 × config.chest.rarityUpPerDanger)`（15）%【仮】を 1 回振り、当たれば 1 段上げる。その上に強欲の chestQuality（IT-31）を足し、伝説で止める。危険度 0（罠なしの箱・ボスの戦利品）と魔法書の項目（IT-55）では振らない。
+- IT-56 宝箱の上振れ（M11）: 宝箱の品は、希少度を重みで引いた直後に、箱の危険度（見つけた時点の値。CB-60。解除・作動しても残す）が正なら `chance(危険度 × config.chest.rarityUpPerDanger)`（15）%【仮】を 1 回振り、当たれば 1 段上げる。その後に強欲の chestQuality（IT-31）の chance を振り（M14。当たれば 1 段）、伝説で止める。危険度 0（罠なしの箱・ボスの戦利品）と魔法書の項目（IT-55）では振らない。
 - IT-55 ドロップ表の魔法書の項目（M9）: `{ item, weight }` の `item` は `items.json` の id で、`type` が `book` のものだけ（読み込み時に止める）。引いた品は Lv0・通常・オプションなし・呪いなし・`uniqueId` null・**鑑定済み**で生まれる（隠す中身が無いため。IT-13 の例外）。乱数は weightedIndex(entries) の後に何も引かない（Lv・希少度・呪い・オプションを引かない）。所持枠（IT-54）が空いていなければ置いていき、語り `item.leftBehind` の item は品の `name`。
 
 ## 7. 経済と施設
@@ -142,7 +142,7 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 ```
 
 `config.items`（M7 の B3 で config.json に入れた。検証は rarities の順と件数・重みの合計 > 0・個数 0〜3、optionSellValue 3 件、*LvPer* と optionTierStep は正の整数）【仮】:
-`rarities`（`[{ id, weight, options }]` 通常 75/0・上質 18/1・希少 6/2・伝説 1/3）、`curseChance` 8、`optionTierStep` 4、`dropLevelSpread` 1、`weaponLvPerDamage` 2、`armorLvPerAc` 3、`casterLvPerPower` 2、`levelPriceRatio` 0.5、`optionSellValue` [20, 40, 80]、`warehouseSlots` 40。`config.economy` に `upgradeBase` 50・`upgradeRateBase` 10・`upgradeRatePerCatalyst` 30・`upgradeDecay` 0.66・`upgradeMaxCatalysts` 3（TW-17）。`config.combat.acMin` は削除（IT-24）。`dungeons[].onClear` は `shopStock` を `shopLevel` に置き換える。
+`rarities`（`[{ id, weight, options }]` 通常 72/0・上質 20/1・希少 7/2・伝説 1/3。M14 で重みを 75/18/6/1 から変えた）、`curseChance` 8、`optionTierStep` 4、`dropLevelSpread` 1、`weaponLvPerDamage` 2、`armorLvPerAc` 3、`casterLvPerPower` 2、`levelPriceRatio` 0.5、`optionSellValue` [20, 40, 80]、`warehouseSlots` 40。`config.economy` に `upgradeBase` 50・`upgradeRateBase` 10・`upgradeRatePerCatalyst` 30・`upgradeDecay` 0.66・`upgradeMaxCatalysts` 3（TW-17）。`config.combat.acMin` は削除（IT-24）。`dungeons[].onClear` は `shopStock` を `shopLevel` に置き換える。
 
 ## 11. 未決（ユーザーに確認すること。2026-10-05）
 

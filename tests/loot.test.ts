@@ -36,14 +36,17 @@ const OPTION_WEIGHTS = poolOf("weapon").map((x) => x.weight);
 
 describe("IT-52 1 品の生成と乱数の順", () => {
   test("IT-52 汎用: weightedIndex(entries) → randInt(−spread, +spread) → weightedIndex(rarities) → chance(curse) → オプションの個数だけ weightedIndex（残りの重み）。鏡の rng", () => {
-    // 実データの希少度の重み 75/18/6/1 と呪い 8% のまま、上質以上が出るシードを探して 1 品をちょうど作る
+    // 実データの希少度の重み（M14 から 72/20/7/1。data から取る）と呪い 8% のまま、上質以上が出るシードを探して 1 品をちょうど作る
     for (let seed = 1; seed < 400; seed++) {
       const s = dived(seed);
       const m = cloneRng(s.rng);
       const entries: DropEntry[] = [{ base: "dagger", weight: 2 }, { base: "long_sword", weight: 3 }];
       const ei = weightedIndex(m, [2, 3]);
       const delta = randInt(m, -1, 1);
-      const ri = weightedIndex(m, [75, 18, 6, 1]);
+      const ri = weightedIndex(
+        m,
+        data.config.items.rarities.map((r) => r.weight),
+      );
       const cursed = chance(m, 8);
       const n = [0, 1, 2, 3][ri]! + (cursed ? 1 : 0);
       if (n < 2) continue;
@@ -159,20 +162,60 @@ describe("IT-30〜33 希少度・chestQuality・呪い・オプション", () =>
     expect(counts).toEqual([0, 1, 2, 3]);
   });
 
-  test("IT-31 quality は引いた希少度を段数だけ上げ、伝説で止める（乱数なし）", () => {
-    expect(rollItemSpec(dived(5), lootData({ rarity: "normal" }), SWORD, 3, 1, "d01").rarity).toBe("fine");
-    expect(rollItemSpec(dived(5), lootData({ rarity: "fine" }), SWORD, 3, 2, "d01").rarity).toBe("legendary");
-    expect(rollItemSpec(dived(5), lootData({ rarity: "legendary" }), SWORD, 3, 1, "d01").rarity).toBe("legendary");
-    // 乱数の消費は quality に依存しない（上げた先の個数のオプションを引く分だけ違う: 通常+1 → 上質で 1 個）
+  test("IT-31 quality は 1 段上げる確率（%）: 危険度の上振れの後に chance(quality) を 1 回（当たれば 1 段）、伝説で止める。quality 0 では振らない（M14）", () => {
+    // quality 100 は必ず 1 段（chance は 100 でも 1 回消費する）
+    expect(rollItemSpec(dived(5), lootData({ rarity: "normal" }), SWORD, 3, 100, "d01").rarity).toBe("fine");
+    expect(rollItemSpec(dived(5), lootData({ rarity: "rare" }), SWORD, 3, 100, "d01").rarity).toBe("legendary");
+    expect(rollItemSpec(dived(5), lootData({ rarity: "legendary" }), SWORD, 3, 100, "d01").rarity).toBe("legendary");
     const a = dived(5);
     const m = cloneRng(a.rng);
     weightedIndex(m, [1]);
     randInt(m, -1, 1);
     weightedIndex(m, ONLY.normal);
+    chance(m, 100);
     chance(m, 0);
     weightedIndex(m, OPTION_WEIGHTS);
-    rollItemSpec(a, lootData({ rarity: "normal" }), SWORD, 3, 1, "d01");
+    rollItemSpec(a, lootData({ rarity: "normal" }), SWORD, 3, 100, "d01");
     expect(a.rng).toEqual(m);
+    // quality 0 は chance を振らない（引数 0 と、quality の chance を抜いた鏡が一致する）
+    const z = dived(5);
+    const mz = cloneRng(z.rng);
+    weightedIndex(mz, [1]);
+    randInt(mz, -1, 1);
+    weightedIndex(mz, ONLY.normal);
+    chance(mz, 0);
+    expect(rollItemSpec(z, lootData({ rarity: "normal" }), SWORD, 3, 0, "d01").rarity).toBe("normal");
+    expect(z.rng).toEqual(mz);
+  });
+
+  test("IT-31 強欲の chestQuality 35: 危険度の上振れ → chance(35) の順で、当たれば 1 段（鏡の rng）。当たり・外れの両方が出る", () => {
+    expect(data.personalities.find((p) => p.id === "greedy")!.benefits.chestQuality).toBe(35);
+    const seen = new Set<string>();
+    for (let seed = 1; seed <= 60; seed++) {
+      const a = dived(seed);
+      const m = cloneRng(a.rng);
+      weightedIndex(m, [1]);
+      randInt(m, -1, 1);
+      weightedIndex(m, ONLY.normal);
+      const up = chance(m, 15); // 危険度 1 × 15
+      const greed = chance(m, 35);
+      chance(m, 0);
+      const n = (up ? 1 : 0) + (greed ? 1 : 0); // 上げた段数 = オプションの個数（通常から）
+      const pool = poolOf("weapon");
+      for (let i = 0; i < n; i++)
+        pool.splice(
+          weightedIndex(
+            m,
+            pool.map((x) => x.weight),
+          ),
+          1,
+        );
+      const spec = rollItemSpec(a, lootData({ rarity: "normal" }), SWORD, 3, 35, "d01", 1);
+      expect(spec.rarity, `seed ${seed}`).toBe(["normal", "fine", "rare"][n]);
+      expect(a.rng, `seed ${seed}`).toEqual(m);
+      seen.add(`${up}/${greed}`);
+    }
+    expect(seen.has("false/true") && seen.has("false/false")).toBe(true);
   });
 
   test("IT-56 宝箱の危険度の上振れ: 希少度を引いた直後に chance(危険度 × rarityUpPerDanger) を 1 回（当たれば 1 段）。危険度 0 では振らない（鏡の rng）", () => {
@@ -201,8 +244,8 @@ describe("IT-30〜33 希少度・chestQuality・呪い・オプション", () =>
     expect(b.rng).toEqual(c.rng);
   });
 
-  test("IT-56 上振れの上に chestQuality を足し、伝説で止める。魔法書の項目では振らない", () => {
-    // 危険度 4（60%）が当たるシードと外れるシードで、上質 + quality 1 は 当たり → 伝説、外れ → 希少
+  test("IT-56 上振れの後に chestQuality の chance を振り、伝説で止める。魔法書の項目では振らない", () => {
+    // 危険度 4（60%）が当たるシードと外れるシードで、上質 + quality 100（必ず 1 段）は 当たり → 伝説、外れ → 希少
     let hit = false;
     let miss = false;
     for (let seed = 1; seed <= 40 && !(hit && miss); seed++) {
@@ -212,26 +255,27 @@ describe("IT-30〜33 希少度・chestQuality・呪い・オプション", () =>
       randInt(m, -1, 1);
       weightedIndex(m, ONLY.fine);
       const up = chance(m, 60);
-      const spec = rollItemSpec(a, lootData({ rarity: "fine" }), SWORD, 3, 1, "d01", 4);
+      chance(m, 100);
+      const spec = rollItemSpec(a, lootData({ rarity: "fine" }), SWORD, 3, 100, "d01", 4);
       expect(spec.rarity, `seed ${seed}`).toBe(up ? "legendary" : "rare");
       if (up) hit = true;
       else miss = true;
     }
     expect([hit, miss]).toEqual([true, true]);
     // 伝説はそれ以上上がらない
-    expect(rollItemSpec(dived(5), lootData({ rarity: "legendary" }), SWORD, 3, 1, "d01", 4).rarity).toBe("legendary");
+    expect(rollItemSpec(dived(5), lootData({ rarity: "legendary" }), SWORD, 3, 100, "d01", 4).rarity).toBe("legendary");
     // 魔法書（IT-55）: weightedIndex(entries) の後に何も引かない
     const book = dived(5);
     const mb = cloneRng(book.rng);
     weightedIndex(mb, [1]);
-    expect(rollItemSpec(book, data, [{ item: "tome_lightning", weight: 1 }], 3, 0, "d02", 4).rarity).toBe("normal");
+    expect(rollItemSpec(book, data, [{ item: "tome_lightning", weight: 1 }], 3, 100, "d02", 4).rarity).toBe("normal");
     expect(book.rng).toEqual(mb);
   });
 
-  test("IT-31 partyChestQuality は行動可能な味方の benefits.chestQuality の最大（強欲 1）。強欲が行動不能・死亡なら 0。リーダーは 0", () => {
+  test("IT-31 partyChestQuality は行動可能な味方の benefits.chestQuality の最大（強欲 35。M14）。強欲が行動不能・死亡なら 0。リーダーは 0", () => {
     const s = dived(1);
     expect(member(s, "c4").personality).toBe("greedy");
-    expect(partyChestQuality(s, data)).toBe(1);
+    expect(partyChestQuality(s, data)).toBe(35);
     const para = cloneState(s);
     member(para, "c4").status = ["paralysis"];
     expect(partyChestQuality(para, data)).toBe(0);
@@ -239,10 +283,10 @@ describe("IT-30〜33 希少度・chestQuality・呪い・オプション", () =>
     member(dead, "c4").life = "dead";
     member(dead, "c4").hp = 0;
     expect(partyChestQuality(dead, data)).toBe(0);
-    // 合計しない: 強欲が 2 人でも 1
+    // 合計しない: 強欲が 2 人でも 35
     const two = cloneState(s);
     member(two, "c5").personality = "greedy";
-    expect(partyChestQuality(two, data)).toBe(1);
+    expect(partyChestQuality(two, data)).toBe(35);
   });
 
   test("IT-32 呪われた品は個数 +1 で、最後に引いた 1 つだけ値が負。通常なら負のオプション 1 つだけ", () => {

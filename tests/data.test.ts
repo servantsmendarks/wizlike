@@ -306,11 +306,11 @@ describe("data: config.json", () => {
     expect(config.combat).not.toHaveProperty("acMin");
     expectIssue((r) => (r.config.combat.acMin = -10), "config.json", "combat.acMin: unknown field");
   });
-  test("data: IT-30 config.items.rarities は normal / fine / rare / legendary の順で 4 件（75 / 18 / 6 / 1、個数 0〜3【仮】）", () => {
+  test("data: IT-30 config.items.rarities は normal / fine / rare / legendary の順で 4 件（72 / 20 / 7 / 1（M14）、個数 0〜3【仮】）", () => {
     expect(config.items.rarities.map((r) => [r.id, r.weight, r.options])).toEqual([
-      ["normal", 75, 0],
-      ["fine", 18, 1],
-      ["rare", 6, 2],
+      ["normal", 72, 0],
+      ["fine", 20, 1],
+      ["rare", 7, 2],
       ["legendary", 1, 3],
     ]);
     expectIssue((r) => r.config.items.rarities.pop(), "config.json", "items.rarities: IT-30: expected 4 rarities");
@@ -1259,6 +1259,16 @@ describe("data: personalities.json", () => {
   test("data: EV-41 普通は恩恵も耐性も持たない", () => {
     expectIssue((r) => (r.personalities[3].benefits.damage = 1), "personalities.json", "EV-41");
     expectIssue((r) => (r.personalities[3].san.fearLossMul = 0.5), "personalities.json", "EV-41");
+  });
+  test("data: IT-31 benefits.chestQuality は 1 段上げる確率 0..100（M14。強欲 35【仮】、ほかは 0）", () => {
+    expect(personalities.map((p) => [p.id, p.benefits.chestQuality])).toEqual([
+      ["cautious", 0],
+      ["reckless", 0],
+      ["greedy", 35],
+      ["normal", 0],
+    ]);
+    expectIssue((r) => (r.personalities[2].benefits.chestQuality = 101), "personalities.json", "[2].benefits.chestQuality: expected integer in 0..100");
+    expect(issuesOf((r) => (r.personalities[2].benefits.chestQuality = 100))).toEqual([]);
   });
   test("data: UI-62 性格の短い説明 shortDescription は 1〜27 字（自分で作るの行の 2 行目。中身 218px ÷ 全角 8px）", () => {
     expectIssue((r) => (r.personalities[0].shortDescription = "あ".repeat(28)), "personalities.json", "[0].shortDescription: UI-62: too long (28 > 27)");

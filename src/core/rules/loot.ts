@@ -3,7 +3,8 @@
 // 純粋（乱数は state.rng だけ）。combat.ts の勝利の処理から呼ぶ。
 //
 // 乱数の消費順（1 品。IT-52）: chance(itemChance) →（当たれば）weightedIndex(entries) →（汎用なら）randInt(−spread, +spread)
-//   → weightedIndex(rarities) →（宝箱の危険度が正なら）chance(危険度 × rarityUpPerDanger)（IT-56。M11）→ chance(curseChance) → オプションの個数だけ weightedIndex(残りのオプションの weight)。
+//   → weightedIndex(rarities) →（宝箱の危険度が正なら）chance(危険度 × rarityUpPerDanger)（IT-56。M11）
+//   →（宝箱の chestQuality が正なら）chance(chestQuality)（IT-31。M14）→ chance(curseChance) → オプションの個数だけ weightedIndex(残りのオプションの weight)。
 //   オプションの母集団はその品の品種に付けられるもの（IT-36）で、引く回数は品種に依存しない。
 //   外れならその品はそこで終わり。表の rolls 回くり返す。置いていく品（IT-54）も乱数は同じだけ消費する。
 //   魔法書の項目（IT-55）は weightedIndex(entries) で終わる。
@@ -20,7 +21,7 @@ export function genericOptionTier(level: number, data: GameData): 1 | 2 | 3 {
   return Math.min(3, 1 + Math.floor(level / data.config.items.optionTierStep)) as 1 | 2 | 3;
 }
 
-/** IT-31: 行動可能（CH-44）な味方の性格の benefits.chestQuality の最大（合計しない。リーダー・該当なしは 0） */
+/** IT-31: 行動可能（CH-44）な味方の性格の benefits.chestQuality（希少度を 1 段上げる確率 %。M14）の最大（合計しない。リーダー・該当なしは 0） */
 export function partyChestQuality(state: GameState, data: GameData): number {
   let q = 0;
   for (const ch of state.party) {
@@ -36,7 +37,7 @@ export function partyChestQuality(state: GameState, data: GameData): number {
  * 汎用は Lv = max(1, dropLevel + randInt(−spread, +spread))、ユニークは Lv0 で段階は optionTier。
  * 魔法書（IT-55）は weightedIndex(entries) の後に乱数を引かず、鑑定済みの Lv0・通常で返す。
  * 希少度は重みで引いた直後に、danger > 0 なら chance(danger × chest.rarityUpPerDanger) で 1 段上げ（IT-56。M11。danger 0 では振らない）、
- * さらに quality 段だけ上げ（乱数なし）、伝説で止める。呪われたら個数 +1 で、最後の 1 つの値を負にする。
+ * さらに quality > 0 なら chance(quality) を 1 回振って当たれば 1 段上げ（IT-31。M14。quality 0 では振らない）、伝説で止める。呪われたら個数 +1 で、最後の 1 つの値を負にする。
  */
 export function rollItemSpec(
   state: GameState,
@@ -73,7 +74,9 @@ export function rollItemSpec(
   );
   // IT-56（M11）: 宝箱の危険度の上振れ。危険度 0（罠なし・ボスの品）では chance を振らない（B2）
   const up = danger > 0 && chance(state.rng, danger * data.config.chest.rarityUpPerDanger) ? 1 : 0;
-  const rIdx = Math.min(cfg.rarities.length - 1, drawn + up + Math.max(0, quality));
+  // IT-31（M14）: 強欲の chestQuality は 1 段上げる確率（%）。0（宝箱以外・強欲なし）では chance を振らない
+  const greed = quality > 0 && chance(state.rng, quality) ? 1 : 0;
+  const rIdx = Math.min(cfg.rarities.length - 1, drawn + up + greed);
   const rarity = cfg.rarities[rIdx]!;
   const cursed = chance(state.rng, cfg.curseChance);
   const count = rarity.options + (cursed ? 1 : 0);

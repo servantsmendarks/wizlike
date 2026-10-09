@@ -52,9 +52,9 @@
   },
   "items": {
     "rarities": [
-      { "id": "normal", "weight": 75, "options": 0 },
-      { "id": "fine", "weight": 18, "options": 1 },
-      { "id": "rare", "weight": 6, "options": 2 },
+      { "id": "normal", "weight": 72, "options": 0 },
+      { "id": "fine", "weight": 20, "options": 1 },
+      { "id": "rare", "weight": 7, "options": 2 },
       { "id": "legendary", "weight": 1, "options": 3 }
     ],
     "curseChance": 8, "optionTierStep": 4, "dropLevelSpread": 1,

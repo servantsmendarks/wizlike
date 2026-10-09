@@ -1044,7 +1044,7 @@ function validatePersonalities(ctx: Ctx, v: unknown): void {
         ambushAvoid: I(PERCENT),
         initiative: I(),
         damage: I(),
-        chestQuality: I(NON_NEG),
+        chestQuality: I(PERCENT), // IT-31（M14）: 1 段上げる確率
         hiddenTreasure: I(PERCENT),
       }),
       san: F({
