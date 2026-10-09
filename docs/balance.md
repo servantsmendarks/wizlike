@@ -8,7 +8,7 @@
 - M13 の農夫ボット（ハクスラの計測）は tests/balance/farm-*.sim.ts の 9 本（場所 × Lv。共通は tests/balance/farm.ts）で、`BALANCE_BOTS=farm npm run balance` で回す（BALANCE_BOTS=farm では campaign.sim.ts の 3 ボットは回らない。未設定なら全部回る）。
 - 率は必ず「x.x%（件数/分母）」で書く。分母の小さい率は 1 件で大きく動くので、件数を見て判断する。
 - 欠けているセル（その時点で集計が無い・ボットが無い）は「—」。
-- 数値を変えたら「数値の変更の記録」に 1 行足す。1 つの変更を 1 行にし、前後の計測の名前（基準値の表の列か、decisions の計測の行の名前）と感触を書く。1 回の調整で変えるのは 1 項目だけにする（M14 はユーザーの指示で例外。複数項目を 1 回で変え、記録は項目ごとに 1 行。「目安と調整の順（M14）」）。
+- 数値を変えたら「数値の変更の記録」に 1 行足す。1 つの変更を 1 行にし、前後の計測の名前（基準値の表の列か、decisions の計測の行の名前）と感触を書く。1 回の調整で変えるのは 1 項目だけにする（M14 はユーザーの指示で例外。複数項目を 1 回で変え、記録は項目ごとに 1 行。「目安と調整の順（M14）」。M15 も同じ例外。「目安と調整の順（M15）」）。
 - data の個別の数値（敵・アイテム・ドロップ・ダンジョンの表）の【仮】の値はこのファイルの「コンテンツの数値」に書く。config.json の【仮】は今までどおり仕様書に付ける（CLAUDE.md §3-6）。
 - 基準値の表の列は追記だけで、過去の列は直さない。
 
@@ -646,7 +646,7 @@ drops.json の表から出した期待値で、計測ではない（農夫ボッ
 | 2026-10-09 | 強欲の chestQuality（personalities.json。IT-31） | 35 → 25（%） | 計測(M14) | 計測(M15) | （計測(M15) の後に書く） |
 | 2026-10-09 | 危険度の上振れ（config.chest.rarityUpPerDanger。IT-56） | 15 → 10（%/段） | 計測(M14) | 計測(M15) | （計測(M15) の後に書く） |
 | 2026-10-09 | 伝説の条件（config.items.legendaryMinDanger。IT-56）新設 | 無し（どの品も伝説まで）→ 危険度 3 以上の箱とボスの戦利品（危険度 3 として振る）だけ。ほかは希少で止まる | 計測(M14) | 計測(M15) | （計測(M15) の後に書く） |
-| 2026-10-09 | 箱の出る率（config.combat.chestChance / chestChanceCorridor。CB-52 / IT-50） | 部屋 60 → 45、通路 15 → 10 | 計測(M14) | 計測(M15) | （計測(M15) の後に書く） |
+| 2026-10-09 | 箱の出る率（config.combat.chestChance / chestChanceCorridor。CB-51 / IT-50） | 部屋 60 → 45、通路 15 → 10 | 計測(M14) | 計測(M15) | （計測(M15) の後に書く） |
 
 ## 目安と調整の順（M12）
 
@@ -818,7 +818,7 @@ tests/balance/farm.ts と tests/balance/bot.ts（route "farm"）。設計は scr
 
 | 欄 | 値 |
 |---|---|
-| 強欲の benefits.chestQuality（personalities.json。IT-31） | 35（宝箱の品の希少度を 1 段上げる確率 %。M13 までは段数 1） |
+| 強欲の benefits.chestQuality（personalities.json。IT-31） | 35（宝箱の品の希少度を 1 段上げる確率 %。M13 までは段数 1。M15 で 25 に変えた。「### M15 の数値」） |
 | d01 の floorLevels（dungeons.json。DG-38） | [1, 2]（1 階・2 階の基準 Lv。品の Lv = max(敵 Lv, これ) + 0〜2。IT-53） |
 | d02 の floorLevels | [3, 4, 5] |
 | d03 の floorLevels | [5, 6, 6, 7] |

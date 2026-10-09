@@ -94,6 +94,7 @@ export function rollItemSpec(
   const greed = quality > 0 && chance(state.rng, quality) ? 1 : 0;
   // IT-56（M15）: 伝説まで上がれるのは危険度 legendaryMinDanger 以上の箱（とその扱いで振るボスの戦利品）だけ。それ以外は希少で止める。
   // 上限は乱数を引かない（chance は上限に関係なく上で引いている）。基礎の重みで伝説を引いた場合も上限で希少に下がる
+  // rarities は「最後が伝説、その一つ前が希少」の並びが前提（validate の IT-30 の検査が 4 件・順序固定を保証する）
   const maxIdx = danger >= cfg.legendaryMinDanger ? cfg.rarities.length - 1 : cfg.rarities.length - 2;
   const rIdx = Math.min(maxIdx, drawn + up + greed);
   const rarity = cfg.rarities[rIdx]!;
