@@ -78,7 +78,7 @@ import { applyAllyEffect } from "./effects";
 import { clearAllStatus, gainGold } from "./field";
 import { abandonChest, presentChest, returnToChest, rollDropChest } from "./chest";
 import { tryInflictStatus } from "./status";
-import { rollBossItems } from "./loot";
+import { rollBossItems, rollDirectDrops } from "./loot";
 import { equipStats, hasSkill, hpMaxOf, skillTotal, spellCost } from "./equip-stats";
 import { loseSan, sanCapOf, sanStage } from "./san";
 import { raiseShopLevel } from "./shop";
@@ -1123,6 +1123,8 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
     const luck = partyGoldLuck(state, data);
     const gold = withGoldLuck(rolled, luck);
     if (gold > 0) gainGold(ctx, gold, { key: "battle.gold", params: { gold } }); // CH-52: 強欲の treasureGain もここ
+    // CB-57 / IT-57（M14）: 敵の種類ごとの直接ドロップ（グループごとに chance）。宝箱の判定とボスの語り・戦利品の前
+    rollDirectDrops(ctx);
     if (b.origin.kind === "random") {
       // CB-51 / CB-60: 宝箱の判定と罠の抽選は chest.ts（ボス戦では判定しない）。箱を置くだけで、語りは screen{dungeon} の後（presentChest）。
       // IT-53: Lv はこの戦闘で倒した種類の level の最大

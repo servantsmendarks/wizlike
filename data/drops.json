@@ -126,5 +126,15 @@
     "d01": "d01_boss",
     "d02": "d02_boss",
     "d03": "d03_boss"
+  },
+  "direct": {
+    "kinds": {
+      "humanoid": ["weapon", "armor"],
+      "undead": ["accessory", "book"],
+      "beast": ["consumable", "gold"],
+      "construct": ["armor"],
+      "spirit": ["book", "accessory"]
+    },
+    "consumables": [ { "item": "herb", "weight": 3 }, { "item": "antidote_herb", "weight": 2 }, { "item": "return_thread", "weight": 1 } ]
   }
 }

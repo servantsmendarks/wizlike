@@ -9,6 +9,7 @@ import { chance, cloneRng, randInt, rollDice, rollDie, weightedIndex, type RngSt
 import { allyAc, canAct, hitPercent, reachHitBonus, statusPercent } from "../src/core/rules/combat-calc";
 import { autoInput } from "../src/core/rules/combat-plan";
 import { battleMenu, beatSwitchForTests, startBattle, startRandomEncounter } from "../src/core/rules/combat";
+import { rollDirectDrops } from "../src/core/rules/loot";
 import { cloneState, createItemInstance, makeContext, memberById, monsterOf } from "../src/core/state";
 import type { BattleAction, Character, Command, GameEvent, GameState, ItemOptionRoll } from "../src/core/types";
 import {
@@ -26,7 +27,7 @@ import {
   type BattleOpts,
   type GroupSpec,
 } from "./helpers/battle";
-import { data, expectKnownStringKeys, noAmbushAvoid, noBenefits, noSanOverride } from "./helpers/core";
+import { data, expectKnownStringKeys, expectStateInvariants, noAmbushAvoid, noBenefits, noSanOverride } from "./helpers/core";
 
 const RESOLVE: Command = { type: "battle.resolve" };
 const DEF: BattleAction = { type: "defend" };
@@ -1015,6 +1016,7 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
     chance(m, 100);
     rollDice(m, "1d8");
     rollDice(m, "1d4");
+    chance(m, 0); // CB-57（M14）: 直接ドロップの判定（dataWith の既定 0 で外れ）
     chance(m, 0); // CB-51: 通路の遭遇の宝箱の判定（chestChanceCorridor 0 で外れ）
     const k = exec(kill, RESOLVE, dataWith({ combat: { ...base, sleepWakeChance: 100, chestChanceCorridor: 0 } }));
     expect(k.state.rng).toEqual(m);
@@ -1116,6 +1118,7 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
     chance(m, 100);
     rollDice(m, "1d8");
     rollDice(m, "1d4"); // 金
+    chance(m, 0); // CB-57（M14）: 直接ドロップの判定（dataWith の既定 0 で外れ）
     chance(m, 0); // CB-51: 通路の遭遇の宝箱の判定（外れ）
     const rw = exec(win, RESOLVE, dw);
     expect(rw.state.rng).toEqual(m);
@@ -1445,6 +1448,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     chance(m, 100);
     rollDice(m, "1d8");
     const gold = rollDice(m, "1d4+1").total + rollDice(m, "1d4+1").total; // giant_rat の gold【仮】
+    chance(m, 0); // CB-57（M14）: 直接ドロップの判定（dataWith の既定 0 で外れ）
     chance(m, 0); // CB-51: 通路の遭遇の宝箱の判定（外れ）
     const r = exec(s, RESOLVE, d);
     expect(r.state.rng).toEqual(m);
@@ -1484,6 +1488,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     rolls(m, 6);
     chance(m, 100);
     rollDice(m, "1d8");
+    chance(m, 0); // CB-57（M14）: 直接ドロップの判定（dataWith の既定 0 で外れ）
     chance(m, 100); // CB-51
     chance(m, 100); // CB-61: 罠なし
     const r = exec(room, RESOLVE, d);
@@ -1512,6 +1517,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     rolls(m2, 6);
     chance(m2, 100);
     rollDice(m2, "1d8");
+    chance(m2, 0); // CB-57（M14）: 直接ドロップの判定（dataWith の既定 0 で外れ）
     chance(m2, 0);
     const rc = exec(corr, RESOLVE, dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100, chestChanceCorridor: 0 } }, noItems));
     expect(rc.state.rng).toEqual(m2);
@@ -1523,6 +1529,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     rolls(m3, 6);
     chance(m3, 100);
     rollDice(m3, "1d8");
+    chance(m3, 0); // CB-57（M14）: 直接ドロップの判定（dataWith の既定 0 で外れ）
     chance(m3, 100);
     chance(m3, 100);
     const r3 = exec(corr2, RESOLVE, dataWith({ combat: { ...ALWAYS_HIT, chestChance: 0, chestChanceCorridor: 100 } }, noItems));
@@ -1531,13 +1538,13 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     // ボス戦では判定しない（乱数も使わない）は tests/dungeon.test.ts の DG-31
   });
 
-  test("CB-51/CB-60【仮】宝箱の既定の確率: 部屋 chestChance 60・通路 chestChanceCorridor 15。勝利の金の後の chance 1 回の出目で決まる（鏡の rng、シード 1〜20）", () => {
+  test("CB-51/CB-60【仮】宝箱の既定の確率: 部屋 chestChance 60・通路 chestChanceCorridor 15。勝利の金と直接ドロップ（CB-57）の後の chance 1 回の出目で決まる（鏡の rng、シード 1〜30）", () => {
     expect(data.config.combat.chestChance).toBe(60);
     expect(data.config.combat.chestChanceCorridor).toBe(15);
     // M11（B8）: dataWith は既定で宝箱の判定を 0 にするので、実データの値を戻す
     const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 60, chestChanceCorridor: 15 } }, noChestImpulse);
     const seen = { room: [0, 0], corridor: [0, 0] };
-    for (let seed = 1; seed <= 20; seed++) {
+    for (let seed = 1; seed <= 30; seed++) {
       for (const inRoom of [true, false]) {
         const s = setup([{ monsterId: "rotting_corpse", hps: [1], status: [["paralysis"]] }], {
           seed,
@@ -1549,6 +1556,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
         rolls(m, 6);
         chance(m, 100);
         rollDice(m, "1d8");
+        chance(m, 0); // CB-57（M14）: 直接ドロップの判定（dataWith の既定 0 で外れ）
         const want = randInt(m, 1, 100) <= (inRoom ? 60 : 15);
         const r = exec(s, RESOLVE, d);
         expect(kindsOf(r.events).includes("chestFound"), `seed ${seed} inRoom ${String(inRoom)}`).toBe(want);
@@ -1556,9 +1564,136 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
         seen[inRoom ? "room" : "corridor"][want ? 1 : 0]! += 1;
       }
     }
-    // 20 シードで部屋・通路とも、出る場合と出ない場合の両方を通る
+    // 30 シードで部屋・通路とも、出る場合と出ない場合の両方を通る（M14: 直接ドロップの chance で出目がずれ、20 では通路が出なくなった）
     expect(seen.room.every((n) => n > 0)).toBe(true);
     expect(seen.corridor.every((n) => n > 0)).toBe(true);
+  });
+
+  // ---- CB-57 / IT-57（M14）: 敵の種類ごとの直接ドロップ ----
+
+  /** 直接ドロップを必ず起こし（directDropChance 100）、d01 1 階の宝箱の表を entries に、品の希少度・呪い・Lv の上乗せを固定したデータ */
+  const directData = (kinds: Partial<GameData["drops"]["direct"]["kinds"]>, entries?: GameData["drops"]["tables"][number]["entries"]) =>
+    dataWith({ combat: { ...ALWAYS_HIT, directDropChance: 100 } }, (x) => {
+      Object.assign(x.drops.direct.kinds, kinds);
+      if (entries !== undefined) x.drops.tables.find((t) => t.id === "d01_f1")!.entries = entries;
+      x.config.items.rarities = x.config.items.rarities.map((r, i) => ({ ...r, weight: i === 0 ? 1 : 0 })); // 通常だけ（オプション 0）
+      x.config.items.curseChance = 0;
+      x.config.items.dropLevelUpWeights = [1]; // 上乗せ 0
+    });
+  const killOne = (monsterId: string) => {
+    const s = setup([{ monsterId, hps: [1], status: [["paralysis"]] }], { identified: [monsterId] });
+    s.battle!.inputs["c1"] = atk(0);
+    return s;
+  };
+
+  test("CB-57/IT-57 直接ドロップ（武器）: battle.exp → battle.gold → battle.drop{name} → item.found。乱数は金の後に chance(directDropChance) → 種別 1 つなら randInt なし → IT-52（quality 0・danger 0）→ 宝箱の判定（鏡の rng）", () => {
+    // コボルド（humanoid）。種別を weapon だけにし、母集団は d01 1 階の宝箱の表の部位 weapon（短剣）だけ（革鎧は部位が違うので外れる）
+    const d = directData({ humanoid: ["weapon"] }, [
+      { base: "dagger", weight: 1 },
+      { base: "leather_armor", weight: 5 },
+    ]);
+    const s = killOne("kobold");
+    const m = cloneRng(s.rng);
+    rolls(m, 6);
+    chance(m, 100);
+    rollDice(m, "1d8");
+    const gold = rollDice(m, "3d6").total; // コボルドの gold
+    chance(m, 100); // CB-57: 直接ドロップの判定（グループ 0）
+    weightedIndex(m, [1]); // IT-52: 母集団（短剣だけ）
+    weightedIndex(m, [1]); // IT-53: Lv の上乗せ
+    weightedIndex(m, [1, 0, 0, 0]); // IT-30: 希少度
+    chance(m, 0); // IT-32: 呪い
+    chance(m, 0); // CB-51: 通路の遭遇の宝箱の判定（外れ）
+    const r = exec(s, RESOLVE, d);
+    expect(r.state.rng).toEqual(m);
+    const ks = kindsOf(r.events);
+    const i = ks.indexOf("message:battle.exp");
+    expect(ks.slice(i, i + 4)).toEqual(["message:battle.exp", "message:battle.gold", "message:battle.drop", "message:item.found"]);
+    expect(ks.indexOf("message:item.found")).toBeLessThan(ks.indexOf("screen"));
+    expect(r.events).toContainEqual({ kind: "message", key: "battle.drop", params: { name: "コボルド" } });
+    expect(r.state.gold).toBe(s.gold + gold);
+    const id = r.state.dive!.ledger.items.at(-1)!;
+    expect(r.state.dive!.ledger.items).toEqual([...s.dive!.ledger.items, id]);
+    // Lv の基準 = max(コボルドの level 1, d01 1 階の基準 Lv 1)（IT-53 / DG-38）+ 上乗せ 0。未鑑定（IT-13）
+    expect(r.state.items[id]).toMatchObject({ itemId: "dagger", level: 1, rarity: "normal", options: [], uniqueId: null, identified: false, cursed: false, foundIn: "d01" });
+    expect(r.state.party.some((c) => c.inventory.includes(id))).toBe(true);
+    expectStateInvariants(r.state);
+  });
+
+  test("CB-57/IT-57 母集団が空なら何も落とさない（乱数は chance と種別の randInt だけ）。chance が外れれば種別を引かない", () => {
+    // 腐った死体（undead: 装飾・魔法書）。d01 1 階の宝箱の表には装飾も魔法書も無い
+    expect(data.drops.direct.kinds.undead).toEqual(["accessory", "book"]);
+    const d = directData({});
+    const s = killOne("rotting_corpse");
+    const m = cloneRng(s.rng);
+    rolls(m, 6);
+    chance(m, 100);
+    rollDice(m, "1d8"); // 腐った死体の gold は "0"（乱数なし）
+    chance(m, 100); // CB-57
+    randInt(m, 0, 1); // 種別が 2 つ
+    chance(m, 0); // CB-51: 宝箱の判定
+    const r = exec(s, RESOLVE, d);
+    expect(r.state.rng).toEqual(m);
+    expect(kindsOf(r.events).filter((k) => k === "message:battle.drop" || k === "message:item.found" || k === "message:item.leftBehind")).toEqual([]);
+    expect(r.state.dive!.ledger.items).toEqual(s.dive!.ledger.items);
+    // 外れ（directDropChance 0）: chance の 1 回だけ
+    const m2 = cloneRng(s.rng);
+    rolls(m2, 6);
+    chance(m2, 100);
+    rollDice(m2, "1d8");
+    chance(m2, 0);
+    chance(m2, 0);
+    const r2 = exec(s, RESOLVE, dataWith({ combat: { ...ALWAYS_HIT, directDropChance: 0 } }));
+    expect(r2.state.rng).toEqual(m2);
+  });
+
+  test("CB-57/IT-57/CH-52 金の種別: rollDice(directDropGoldDice) を battle.dropGold{name, gold} で state.gold と ledger.gold へ（敵の gold のダイスは使わない）", () => {
+    expect(data.config.combat.directDropChance).toBe(10);
+    expect(data.config.combat.directDropGoldDice).toBe("2d10");
+    const d = directData({ beast: ["gold"] });
+    const s = killOne("giant_rat");
+    const m = cloneRng(s.rng);
+    rolls(m, 6);
+    chance(m, 100);
+    rollDice(m, "1d8");
+    const gold = rollDice(m, "1d4+1").total; // 大ネズミの gold
+    chance(m, 100); // CB-57
+    const drop = rollDice(m, "2d10").total;
+    chance(m, 0); // CB-51
+    const r = exec(s, RESOLVE, d);
+    expect(r.state.rng).toEqual(m);
+    const ks = kindsOf(r.events);
+    const i = ks.indexOf("message:battle.gold");
+    expect(ks[i + 1]).toBe("message:battle.dropGold");
+    expect(r.events).toContainEqual({ kind: "message", key: "battle.dropGold", params: { name: "大ネズミ", gold: drop } });
+    expect(r.state.gold).toBe(s.gold + gold + drop);
+    expect(r.state.dive!.ledger.gold).toBe(gold + drop);
+    expect(ks).not.toContain("message:battle.drop");
+  });
+
+  test("CB-57/IT-57/IT-13 消耗品の種別: weightedIndex(direct.consumables) の品を鑑定済み・Lv0・通常で配る。複数のグループは添字順に 1 回ずつ判定し、名前は未鑑定なら系統の名前", () => {
+    const d = directData({ beast: ["consumable"], humanoid: ["consumable"] });
+    const weights = d.drops.direct.consumables.map((c) => c.weight);
+    const s = setup([
+      { monsterId: "giant_rat", hps: [0] },
+      { monsterId: "kobold", hps: [0] },
+    ], { identified: ["giant_rat"] });
+    const m = cloneRng(s.rng);
+    const ctx = makeContext(cloneState(s), d);
+    rollDirectDrops(ctx);
+    chance(m, 100);
+    const k0 = weightedIndex(m, weights);
+    chance(m, 100);
+    const k1 = weightedIndex(m, weights);
+    expect(ctx.state.rng).toEqual(m);
+    expect(kindsOf(ctx.events)).toEqual(["message:battle.drop", "message:item.found", "message:battle.drop", "message:item.found"]);
+    expect(ctx.events[0]).toEqual({ kind: "message", key: "battle.drop", params: { name: "大ネズミ" } });
+    const kobold = monsterOf(d, "kobold");
+    expect(ctx.events[2]).toEqual({ kind: "message", key: "battle.drop", params: { name: d.unknownKinds.find((u) => u.id === kobold.unknownKind)!.name } });
+    const ids = ctx.state.dive!.ledger.items.slice(-2);
+    expect(ids.map((id) => ctx.state.items[id]!.itemId)).toEqual([d.drops.direct.consumables[k0]!.item, d.drops.direct.consumables[k1]!.item]);
+    for (const id of ids)
+      expect(ctx.state.items[id]).toMatchObject({ identified: true, level: 0, rarity: "normal", options: [], uniqueId: null, cursed: false, foundIn: "d01" });
   });
 
   test("CH-52/A8 強欲の treasureGain: 戦闘の金・宝箱の金ごとに、金のメッセージの直後で強欲（ドナ c4）の SAN +2。死者・虚脱・金 0 では増えない", () => {

@@ -58,8 +58,9 @@ describe("バランス（H9 煙テスト）", () => {
   // M11 の作業 6（宝箱の衝動 EV-16 と職業の掛け合い EV-71 で勝利の後の乱数の消費が変わった）でシード 2 が踏破しなくなったので、踏破するシード 4 に戻した
   // M12: 進行ボットが d03 まで潜るようになった（設計書 §4-1）。シード 4 は 40 潜行の上限の中で d01・d02 を踏破して d03 に 3 回潜る（実行して確かめた）
   // M14: 希少度の重みと強欲の chestQuality（IT-30 / IT-31）を変えて宝箱の品の乱数が変わり、シード 4 が d02 を踏破しなくなったので、踏破するシード 2 に替えた（1〜3 が条件を満たすことを実行して確かめた）
-  test("H9/M9/M12 進行ボットの煙テスト: シード 2 は d01 のボスを倒してテレポーターで帰り、d02 を最下層 3 階のボスまで踏破し、その後は d03 に D03_DIVES 回潜って終わる（ボスへの経路の煙。データが変わってシード 2 が踏破しなくなったら、踏破するシードに替える）", () => {
-    const c = new Campaign(2, PROGRESS_BOT);
+  // M14: 敵の直接ドロップ（CB-57。勝利でグループごとに chance）で勝利の後の乱数が変わり、シード 2 が d03 に D03_DIVES 回潜らなくなったので、シード 1 に替えた（1・4・6 が条件を満たし、3・5 は満たさないことを実行して確かめた）
+  test("H9/M9/M12 進行ボットの煙テスト: シード 1 は d01 のボスを倒してテレポーターで帰り、d02 を最下層 3 階のボスまで踏破し、その後は d03 に D03_DIVES 回潜って終わる（ボスへの経路の煙。データが変わってシード 1 が踏破しなくなったら、踏破するシードに替える）", () => {
+    const c = new Campaign(1, PROGRESS_BOT);
     const r = c.campaign(PROGRESS_DIVES);
     const k = r.dives.findIndex((d) => d.bossWin);
     expect(k).toBeGreaterThanOrEqual(0);
@@ -90,7 +91,7 @@ describe("バランス（H9 煙テスト）", () => {
   }, 60_000);
 
   test("H9/M9 M9-装備: 防具の更新の予備費は、並び 6 人全員（生死を問わない）の平均 level × templeCostPerLevel（1 人分の蘇生費。小数のまま掛けて切り捨て。ユーザーの判断 1）", () => {
-    const c = new Campaign(1, PROGRESS_BOT);
+    const c = new Campaign(6, PROGRESS_BOT);
     const per = data.config.economy.templeCostPerLevel;
     const setLevels = (ls: number[]) => ls.forEach((l, i) => (c.state.party[i]!.level = l));
     setLevels([1, 1, 1, 1, 1, 1]);
@@ -104,7 +105,7 @@ describe("バランス（H9 煙テスト）", () => {
   });
 
   test("H9/M9 M9-装備: 所持金が「投げナイフ + 予備費 + 鎖帷子」ちょうどなら、エルに投げナイフを買った後、アルドの鎧を鎖帷子に替えられる（予備費を超える分を装備に回す。ユーザーの判断 1）", () => {
-    const c = new Campaign(1, PROGRESS_BOT);
+    const c = new Campaign(6, PROGRESS_BOT);
     c.state.progress.shopLevel = 2;
     const shop = townMenu(c.state, data)!.shop.equipment;
     const knives = shop.find((x) => x.itemId === "throwing_knives")!.price;
@@ -121,7 +122,7 @@ describe("バランス（H9 煙テスト）", () => {
   });
 
   test("H9/M9 M9-装備: 所持金 5000・流通レベル 2 で 1 潜行すると、街で前衛の防具を流通レベルの品に替え（実効の AC が下がるものだけ）、後衛に ranged を買い、予備費（平均 level の 1 人分の蘇生費）を残す", () => {
-    const c = new Campaign(1, PROGRESS_BOT);
+    const c = new Campaign(6, PROGRESS_BOT);
     c.state.gold = 5000;
     c.state.progress.shopLevel = 2;
     const r = c.campaign(1);
@@ -150,7 +151,7 @@ describe("バランス（H9 煙テスト）", () => {
   }, 60_000);
 
   test("H9/M9 進行ボットの煙テスト: d01 を踏破済み（clearedDungeons・unlockedDungeons に d02）の state からは d02 の 1 階に 1 潜行する", () => {
-    const c = new Campaign(1, PROGRESS_BOT);
+    const c = new Campaign(6, PROGRESS_BOT);
     c.state.progress.clearedDungeons.push("d01");
     c.state.progress.unlockedDungeons.push("d02");
     const r = c.campaign(1);
@@ -162,7 +163,7 @@ describe("バランス（H9 煙テスト）", () => {
   }, 60_000);
 
   test("H9/M12 進行ボット: d01・d02 を踏破済みの state からは d03 に潜り、d03 に D03_DIVES 回潜ったら（上限が残っていても）終える", () => {
-    const c = new Campaign(1, PROGRESS_BOT);
+    const c = new Campaign(6, PROGRESS_BOT);
     c.state.progress.clearedDungeons.push("d01", "d02");
     c.state.progress.unlockedDungeons.push("d02", "d03");
     c.run({ type: "debug.levels", level: 9 }); // d03 の 1 階で全滅し続けないように（降りる L8・ボス L9 も満たす）
@@ -184,7 +185,7 @@ describe("バランス（H9 煙テスト）", () => {
     expect(levelFor(l1, "descend", "d03")).toBe(8);
     expect(levelFor(l1, "boss", "d01")).toBe(4);
     expect(() => levelFor(PROGRESS_BOT, "descend", "d99")).toThrow();
-    const c = new Campaign(1, PROGRESS_BOT);
+    const c = new Campaign(6, PROGRESS_BOT);
     c.dungeonId = "d03";
     c.state.party.forEach((x) => (x.level = 7));
     expect(c.descendReady()).toBe(false);
@@ -196,7 +197,7 @@ describe("バランス（H9 煙テスト）", () => {
     expect(c.bossReady()).toBe(true); // d01 のボスは L4（HP は満タン）
   });
   test("H9/M11 CB-67 ボットは警報の箱を開けると警報の戦闘を戦い、勝って同じ箱に戻ったらもう一度開けて中身を得る（resolveChest → fight → resolveChest のループ）", () => {
-    const c = new Campaign(1, PROGRESS_BOT);
+    const c = new Campaign(6, PROGRESS_BOT);
     c.state = execute(c.state, { type: "dungeon.enter", dungeonId: "d01" }, data).state;
     c.state = execute(c.state, { type: "debug.chest", trapId: "alarm" }, data).state;
     expect(c.state.dive!.chest).not.toBeNull();
@@ -315,7 +316,7 @@ describe("バランス（H9 煙テスト）", () => {
   }, 60_000);
 
   test("H9/M11 TW-07 ボットは寺院で麻痺の者も治す（宝箱の麻痺ガス）", () => {
-    const c = new Campaign(1, PROGRESS_BOT);
+    const c = new Campaign(6, PROGRESS_BOT);
     c.state.gold = 5000;
     c.state.party[1]!.status.push("paralysis");
     const rec = { cureCount: 0, cureCost: 0, cureUnpaid: 0 } as unknown as Parameters<Campaign["cureAtTemple"]>[0];
@@ -337,7 +338,7 @@ describe("バランス（H9 煙テスト）", () => {
     expect(progressReport(results)).toContain("M11-宝箱【d01 の潜行（踏破まで）】");
   }, 60_000);
 
-  test("M13 農夫ボットの煙テスト: 農夫 Lv5 d01 1F を 2 シード × 1 潜行。開始時の最小 level 5、帰った理由（farmEnd）か method が決まり、推定の実時間 > 0、拾った品の合計 = 宝箱の品、不変条件が崩れない", () => {
+  test("M13 農夫ボットの煙テスト: 農夫 Lv5 d01 1F を 2 シード × 1 潜行。開始時の最小 level 5、帰った理由（farmEnd）か method が決まり、推定の実時間 > 0、拾った品の合計 = 宝箱の品 + 直接ドロップの品、不変条件が崩れない", () => {
     const kind = farmBot(5, "d01", 1);
     const { results, keys } = runCampaigns(kind, 2, 1);
     expect(results).toHaveLength(2);
@@ -348,7 +349,7 @@ describe("バランス（H9 煙テスト）", () => {
       expect(d.estDungeonMs).toBeGreaterThan(0);
       expect(d.estTownMs).toBeGreaterThan(0); // 少なくとも宿
       expect(d.beats.steps).toBe(d.steps);
-      expect(sum(Object.values(d.found))).toBe(d.chestItems); // 農夫はボスと戦わないので、拾った品はすべて宝箱の品
+      expect(sum(Object.values(d.found))).toBe(d.chestItems + d.dropItems); // 農夫はボスと戦わないので、拾った品は宝箱の品と直接ドロップ（M14。CB-57）の品
       expect(d.netProfit).toBe(d.goldAfterSell - d.goldBefore);
     }
     expect(keys.has("battle.encounter")).toBe(true);

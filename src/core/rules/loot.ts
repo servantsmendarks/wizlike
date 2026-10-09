@@ -1,4 +1,4 @@
-// ドロップ（items.md IT-50〜54。M7 の B5）: 宝箱（CB-52）とボスの戦利品（DG-31）の品を drops.json の表から引き、
+// ドロップ（items.md IT-50〜54・IT-57。M7 の B5）: 宝箱（CB-52）・ボスの戦利品（DG-31）・敵の直接ドロップ（CB-57。M14）の品を drops.json の表から引き、
 // 希少度（IT-30）・chestQuality（IT-31）・呪い（IT-32）・オプション（IT-33）を決めて、所持枠の空いている者に配る（IT-54）。
 // 純粋（乱数は state.rng だけ）。combat.ts の勝利の処理から呼ぶ。
 //
@@ -10,13 +10,14 @@
 //   オプションの母集団はその品の品種に付けられるもの（IT-36）で、引く回数は品種に依存しない。
 //   置いていく品（IT-54）も乱数は同じだけ消費する。
 //   魔法書の項目（IT-55）は weightedIndex(entries) で終わる。
-import type { DropEntry, GameData } from "../data/index";
+import type { DropCategory, DropEntry, GameData } from "../data/index";
 import { optionAppliesTo, optionKindOf } from "../data/index";
-import { chance, weightedIndex } from "../rng";
+import { chance, randInt, rollDice, weightedIndex } from "../rng";
 import type { ItemInstanceSpec } from "../state";
-import { baseOf, createItemInstance, dropTableOf, dungeonOf, findBase, itemDisplayName, itemOf, personalityOf, uniqueOf, slotsUsed } from "../state";
+import { baseOf, createItemInstance, dropTableOf, dungeonOf, findBase, itemDisplayName, itemOf, monsterOf, personalityOf, uniqueOf, slotsUsed } from "../state";
 import type { GameState, ItemOptionRoll, RuleContext } from "../types";
-import { canAct } from "./combat-calc";
+import { canAct, groupName } from "./combat-calc";
+import { gainGold } from "./field";
 
 /** IT-33: 汎用装備のオプションの段階 = min(3, 1 + floor(Lv ÷ optionTierStep)) */
 export function genericOptionTier(level: number, data: GameData): 1 | 2 | 3 {
@@ -174,4 +175,69 @@ export function rollBossItems(ctx: RuleContext, dungeonId: string, bossLevel: nu
   if (tableId === undefined) throw new Error(`no boss drop table: ${dungeonId}`);
   const base = dropLevelBase(ctx.data, dungeonId, dungeonOf(ctx.data, dungeonId).floors, bossLevel);
   rollBossTable(ctx, tableId, base, dungeonId);
+}
+
+/** CB-57 / IT-57（M14）: 種別 weapon / armor / accessory の部位（armor は胴・盾・兜・小手） */
+const CATEGORY_SLOTS: Record<"weapon" | "armor" | "accessory", readonly string[]> = {
+  weapon: ["weapon"],
+  armor: ["armor", "shield", "helm", "gauntlet"],
+  accessory: ["accessory"],
+};
+
+/**
+ * CB-57 / IT-57（M14）: 直接ドロップの装備・魔法書の母集団 = その階の宝箱の表（drops.chest[dungeonId][floor]）の項目を種別で絞ったもの。
+ * book は { item }（魔法書）、weapon / armor / accessory は { base } と { unique }（uniques[].base）のうち部位が合うもの
+ */
+export function directDropPool(data: GameData, dungeonId: string, floor: number, category: "weapon" | "armor" | "accessory" | "book"): DropEntry[] {
+  const tableId = data.drops.chest[dungeonId]?.[String(floor)];
+  if (tableId === undefined) throw new Error(`no chest drop table: ${dungeonId} / ${floor}`);
+  const entries = dropTableOf(data, tableId).entries;
+  if (category === "book") return entries.filter((e) => "item" in e);
+  const slots = CATEGORY_SLOTS[category];
+  return entries.filter((e) => {
+    if ("item" in e) return false;
+    const baseId = "unique" in e ? uniqueOf(data, e.unique).base : e.base;
+    return slots.includes(baseOf(data, baseId).slot);
+  });
+}
+
+/**
+ * CB-57 / IT-57（M14）: 勝利の直接ドロップ。battle.gold の後・宝箱の判定とボスの戦利品の前に、b.groups の添字順に:
+ * chance(combat.directDropChance)（グループごとに必ず 1 回）→（当たれば）種別 = direct.kinds[dropKind] から（長さ 2 以上のときだけ randInt(0, 長さ − 1)）→
+ * gold: rollDice(directDropGoldDice)（0 未満にしない。正なら gainGold で battle.dropGold）/
+ * consumable: weightedIndex(direct.consumables) → battle.drop → placeFoundItem（鑑定済み・Lv0・通常）/
+ * book・weapon・armor・accessory: 母集団（directDropPool）が空なら何もしない（乱数も引かない）。あれば rollItemSpec（quality 0・danger 0、
+ * Lv の基準は dropLevelBase(潜行の階, その種類の level)）→ battle.drop → placeFoundItem。name は groupName（鑑定済みなら名前、未鑑定なら系統）
+ */
+export function rollDirectDrops(ctx: RuleContext): void {
+  const { state, data } = ctx;
+  const b = state.battle;
+  const dive = state.dive;
+  if (b === null || dive === null) throw new Error("rollDirectDrops: no battle or dive");
+  const cfg = data.config.combat;
+  for (let g = 0; g < b.groups.length; g++) {
+    if (!chance(state.rng, cfg.directDropChance)) continue;
+    const m = monsterOf(data, b.groups[g]!.monsterId);
+    const cats = data.drops.direct.kinds[m.dropKind];
+    const cat: DropCategory = cats.length >= 2 ? cats[randInt(state.rng, 0, cats.length - 1)]! : cats[0]!;
+    const name = groupName(state, data, g);
+    if (cat === "gold") {
+      const gold = Math.max(0, rollDice(state.rng, cfg.directDropGoldDice).total);
+      if (gold > 0) gainGold(ctx, gold, { key: "battle.dropGold", params: { name, gold } }); // CH-52: 強欲の treasureGain もここ
+      continue;
+    }
+    let spec: ItemInstanceSpec;
+    if (cat === "consumable") {
+      const list = data.drops.direct.consumables;
+      const itemId = list[weightedIndex(state.rng, list.map((e) => e.weight))]!.item;
+      spec = { itemId, identified: true, level: 0, rarity: "normal", options: [], uniqueId: null, cursed: false, foundIn: dive.dungeonId };
+    } else {
+      const pool = directDropPool(data, dive.dungeonId, dive.floor, cat);
+      if (pool.length === 0) continue;
+      const base = dropLevelBase(data, dive.dungeonId, dive.floor, m.level);
+      spec = rollItemSpec(state, data, pool, base, 0, dive.dungeonId, 0);
+    }
+    ctx.events.push({ kind: "message", key: "battle.drop", params: { name } });
+    placeFoundItem(ctx, spec);
+  }
 }

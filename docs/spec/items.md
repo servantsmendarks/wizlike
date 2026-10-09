@@ -26,7 +26,7 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
   - GameState に入れる値なので省略可能な欄は持たない（無いは null か空配列）。
 - IT-11 表示名（§11 の Q11 は既定の案で確定: core の `itemDisplayName` が strings の `item.rarity.<rarity>` と `item.plus`（{n} を 1 つだけ持つ。どちらも読み込み時の検証で必須）を引いて組む）: 鑑定済みなら「希少度の接頭辞 + 名前 + Lv」。接頭辞は 通常 なし / 上質「上質な」/ 希少「希少な」/ 伝説「伝説の」（strings の `item.rarity.<rarity>`）。名前はユニークならユニークの名前、それ以外はベースの名前。Lv は汎用装備で 1 以上のときだけ「 +N」（例「上質な長剣 +5」）。オプション・呪い・固有スキルは名前に出さず、詳細の画面（UI-59 の装備の行から開く）に出す。
 - IT-12 未鑑定（CH-72）の実体は、ベースの `unidentifiedName`（例「剣？」）だけを出す（希少度・Lv・ユニークかどうか・オプション・呪いは見せない）。司教の鑑定（CH-77）は、司教の職業の能力（格の感知）として未鑑定品の格（希少度とユニークかどうか）を鑑定の前に感じ取り、それが成功率と判定の箱の内訳の減点に表れる（2026-10-07 ユーザー承認）。店の鑑定（IT-65）は格を漏らさない（鑑定料から中身を推測させない）。未鑑定の品は装備できない（CH-72 / CH-76 のまま。§11 の Q2【衝突】があるので【仮】）。鑑定すると希少度・Lv・オプション・呪い・ユニークの名前と固有スキルが分かる。鑑定は司教（CH-77。M10 から MP 1 で確率。失敗し、品が呪われていれば取り憑くことがある）か店（IT-65。有料・必ず成功）。未鑑定のままでも店で売れる（見た目の品種の売値。IT-61）。
-- IT-13 ドロップ（IT-50）の品は未鑑定で生まれる（魔法書は例外で鑑定済み。IT-55）。店で買った品・買い戻した品・初期装備は鑑定済み。
+- IT-13 ドロップ（IT-50）の品は未鑑定で生まれる（魔法書は例外で鑑定済み。IT-55。直接ドロップの消耗品も例外で鑑定済み。IT-57。M14）。店で買った品・買い戻した品・初期装備は鑑定済み。
 
 ## 3. レベルの効果
 
@@ -79,13 +79,14 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 
 ## 6. 入手（ドロップ）
 
-- IT-50 ドロップ元は 宝箱（CB-52 / CB-65。M11 から開けたときに配る。ランダム遭遇の勝利時に、部屋のセルなら `config.combat.chestChance`（60）%【仮】、通路のセルなら `config.combat.chestChanceCorridor`（15）%【仮】。2026-10-05 に通路を足した）と ボスの戦利品（DG-31。ボスに勝つたび。再撃破でも）の 2 つ。どちらも `data/drops.json`（ドロップ表）を引く。宝箱の金（`config.combat.chestGoldDice`）は今のまま出し、品はその後に引く（宝箱の品の個数は IT-51。M14 から 1 個 + 2 個目の確率）。ボスの戦利品はボスの語り（`battle.bossDefeated`・初回の `battle.dungeonCleared`・`dungeon.unlocked`）の後、`screen`{dungeon} とテレポーターの申し出（DG-32）の前に引く。
+- IT-50 ドロップ元は 宝箱（CB-52 / CB-65。M11 から開けたときに配る。ランダム遭遇の勝利時に、部屋のセルなら `config.combat.chestChance`（60）%【仮】、通路のセルなら `config.combat.chestChanceCorridor`（15）%【仮】。2026-10-05 に通路を足した）と ボスの戦利品（DG-31。ボスに勝つたび。再撃破でも）と 敵の直接ドロップ（CB-57 / IT-57。M14。勝利でグループごとに `config.combat.directDropChance`（10）%【仮】）の 3 つ（M13 までは前の 2 つ）。どれも `data/drops.json`（ドロップ表）を引く（直接ドロップの装備・魔法書はその階の宝箱の表を種別で絞った母集団、消耗品は `direct.consumables`。IT-57）。宝箱の金（`config.combat.chestGoldDice`）は今のまま出し、品はその後に引く（宝箱の品の個数は IT-51。M14 から 1 個 + 2 個目の確率）。ボスの戦利品はボスの語り（`battle.bossDefeated`・初回の `battle.dungeonCleared`・`dungeon.unlocked`）の後、`screen`{dungeon} とテレポーターの申し出（DG-32）の前に引く。
 - IT-51 ドロップ表 `drops.json` は `tables`（表の配列）・`chest`（ダンジョン id → 階番号の文字列 → 表の id）・`boss`（ダンジョン id → 表の id）を持つ。表は `{ id, itemChance?, rolls?, entries }` で、`entries` の各要素は `{ base, weight }` か `{ unique, weight }` か `{ item, weight }`（魔法書。IT-55。M9）のどれか 1 つ。ボスの表（`boss` が参照する表）は `itemChance`・`rolls` を必ず持ち、`rolls` 回だけ、`itemChance` % で 1 品を引く（rolls 回とも独立）。宝箱の表（`chest` が参照する表）は M14（2026-10-09）から `itemChance`・`rolls` を持たない（あれば起動を止める。無いボスの表も止める）。宝箱の品の個数は 1 個 + 2 個目の確率 min(100, `config.chest.secondItemChance`（50）+ `config.chest.secondItemPerDanger`（15）× 箱の危険度）%【仮】で、chance は 100 でも 1 回引く（CB-65。3 個目は無い。M13 までは宝箱の表も itemChance 40〜70 × rolls 1）。M12（2026-10-08）: d03 は階ごとの表 `d03_f1`〜`d03_f4` とボスの表 `d03_boss`（M9〜M11 の準備中の d03 は d02 の表を参照していた）。M12 のベース 4 種（IT-62）とユニーク 2 種（弔いの面紗・墓守の両手剣）は d03 の 3 階以降とボスの表にだけ入れ、魔法書は既存の 3 冊を d03 の各表に入れる。各表の itemChance（ボスの表）・重みは docs/balance.md の「コンテンツの数値」。
 - IT-52 1 品の生成と乱数の順: 個数の判定（宝箱は品の前に 2 個目の chance を 1 回。ボスの表は各回の chance(itemChance)。IT-51）→ 品ごとに weightedIndex(entries) →（魔法書の項目ならここで終わり。IT-55）→（汎用なら）Lv の上乗せ weightedIndex(`config.items.dropLevelUpWeights`)（IT-53。M14。M13 までは randInt(−dropLevelSpread, +spread)）→ weightedIndex(rarities) →（宝箱の危険度が正なら）chance(危険度 × `config.chest.rarityUpPerDanger`)（IT-56。M11）→（宝箱の chestQuality が正なら）chance(chestQuality)（IT-31。M14）→ chance(curseChance) → オプションの個数（IT-30 / IT-32）だけ weightedIndex（オプション表のうちその品の品種に付けられるもの（IT-36）から、既に引いたものを除いた残り。乱数の回数は品種で変わらない）。（M13 までは chestQuality を希少度を引いた直後に乱数なしで足していた）
 - IT-53 ドロップの Lv（M14 で書き換え）= max(落とした敵の Lv（`monsters[].level`）, その階の基準 Lv（`dungeons[].floorLevels`。DG-38）) + 上乗せ。上乗せは 0〜2 を `config.items.dropLevelUpWeights`（[60, 30, 10]。添字が上乗せの Lv）【仮】の重みで 1 回引く（weightedIndex）。どちらの Lv も 1 以上なので下限の但し書きは要らない。ユニーク（Lv0）と魔法書（IT-55）は対象外。宝箱の「落とした敵」はその戦闘で倒した敵のうち `level` が最大の種類（M11: 見つけた時点で箱の `level` に入れ、開けたときに使う。宝箱のセルはその階の遭遇表の敵の level の最大。DG-24）で、階は潜行中の階。ボスはボスの `level` と最下層（`floors`）の基準 Lv。core は `rules/loot.ts` の `dropLevelBase(data, dungeonId, floor, enemyLevel)` で基準を出す。（M13 までは 敵の Lv ± `config.items.dropLevelSpread`（1）、最低 1）
 - IT-54 生成した品は未鑑定（IT-13）で、並び順に最初に所持枠（CH-71）が空いている者（life を問わない）の inventory の末尾に入れ、潜行台帳（DG-40）に入れる。誰も空いていなければ置いていく（`item.leftBehind`{item}。品は作らないので item はベースの `unidentifiedName`。乱数は引いた分を消費したまま）。語りは `item.found`{name, item}（item は未鑑定の表示名）。
 - IT-56 宝箱の上振れ（M11）: 宝箱の品は、希少度を重みで引いた直後に、箱の危険度（見つけた時点の値。CB-60。解除・作動しても残す）が正なら `chance(危険度 × config.chest.rarityUpPerDanger)`（15）%【仮】を 1 回振り、当たれば 1 段上げる。その後に強欲の chestQuality（IT-31）の chance を振り（M14。当たれば 1 段）、伝説で止める。危険度 0（罠なしの箱・ボスの戦利品）と魔法書の項目（IT-55）では振らない。
 - IT-55 ドロップ表の魔法書の項目（M9）: `{ item, weight }` の `item` は `items.json` の id で、`type` が `book` のものだけ（読み込み時に止める）。引いた品は Lv0・通常・オプションなし・呪いなし・`uniqueId` null・**鑑定済み**で生まれる（隠す中身が無いため。IT-13 の例外）。乱数は weightedIndex(entries) の後に何も引かない（Lv・希少度・呪い・オプションを引かない）。所持枠（IT-54）が空いていなければ置いていき、語り `item.leftBehind` の item は品の `name`。
+- IT-57 敵の直接ドロップ（M14。2026-10-09。CB-57）: 敵ごとの `monsters[].dropKind`（必須。DROP_KINDS: `humanoid` / `undead` / `beast` / `construct` / `spirit`）で、`drops.json` の `direct.kinds[dropKind]` の種別の組（DROP_CATEGORIES: `weapon` / `armor` / `accessory` / `book` / `consumable` / `gold`）が決まる【仮】（humanoid 武器・防具 / undead 装飾・魔法書 / beast 消耗品・金 / construct 防具 / spirit 魔法書・装飾）。母集団: weapon・armor（部位 armor / shield / helm / gauntlet）・accessory はその階の宝箱の表（`drops.chest[ダンジョン][階]`）の `{ base }`・`{ unique }` の項目のうち部位（ユニークは `uniques[].base` の部位）が合うもの、book はその表の `{ item }`（魔法書）の項目、consumable は `direct.consumables`（`items.json` の消耗品と重み）、gold は `config.combat.directDropGoldDice`（2d10）【仮】の金（敵の `gold` のダイスは使わない）。母集団が空なら何も落とさない（d01 1 階の undead の装飾・魔法書など）。装備と魔法書は IT-52 の順で引き（`chestQuality` と危険度は効かない。0）、Lv の基準は max(その敵の level, 潜行の今の階の基準 Lv)（IT-53 / DG-38）、未鑑定（IT-13。魔法書は鑑定済み）。消耗品は鑑定済み・Lv0・通常・オプションなし・呪いなしで、乱数は weightedIndex の 1 回。配り方は IT-54。判定の確率・乱数の順・語りは CB-57。
 
 ## 7. 経済と施設
 
@@ -139,11 +140,15 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
                              { "item": "tome_sanctuary_hymn", "weight": 1 } ] },   // item は魔法書だけ（IT-55）
                { "id": "d01_boss", "itemChance": 100, "rolls": 1, "entries": [ … ] } ],   // ボスの表は必須
   "chest": { "d01": { "1": "d01_f1", "2": "d01_f2" } },
-  "boss":  { "d01": "d01_boss" } }
+  "boss":  { "d01": "d01_boss" },
+  "direct": { "kinds": { "humanoid": ["weapon", "armor"], "undead": ["accessory", "book"], "beast": ["consumable", "gold"],   // IT-57（M14）
+                         "construct": ["armor"], "spirit": ["book", "accessory"] },                                       // DROP_KINDS の全部。空でなく重複なし
+              "consumables": [ { "item": "herb", "weight": 3 }, { "item": "antidote_herb", "weight": 2 }, { "item": "return_thread", "weight": 1 } ] } }   // 消耗品だけ。重みの合計 > 0
 ```
+`data/monsters.json` の各敵に `"dropKind": "beast"`（必須。DROP_KINDS のどれか。IT-57。M14）。
 
 `config.items`（M7 の B3 で config.json に入れた。検証は rarities の順と件数・重みの合計 > 0・個数 0〜3、optionSellValue 3 件、*LvPer* と optionTierStep は正の整数）【仮】:
-`rarities`（`[{ id, weight, options }]` 通常 72/0・上質 20/1・希少 7/2・伝説 1/3。M14 で重みを 75/18/6/1 から変えた）、`curseChance` 8、`optionTierStep` 4、`dropLevelUpWeights` [60, 30, 10]（IT-53。M14 で `dropLevelSpread` 1 を置き換えた）、`weaponLvPerDamage` 2、`armorLvPerAc` 3、`casterLvPerPower` 2、`levelPriceRatio` 0.5、`optionSellValue` [20, 40, 80]、`warehouseSlots` 40。`config.economy` に `upgradeBase` 50・`upgradeRateBase` 10・`upgradeRatePerCatalyst` 30・`upgradeDecay` 0.66・`upgradeMaxCatalysts` 3（TW-17）。`config.chest` に `secondItemChance` 50・`secondItemPerDanger` 15（IT-51 / CB-65。宝箱の 2 個目の確率。M14）。`config.combat.acMin` は削除（IT-24）。`dungeons[].onClear` は `shopStock` を `shopLevel` に置き換える。
+`rarities`（`[{ id, weight, options }]` 通常 72/0・上質 20/1・希少 7/2・伝説 1/3。M14 で重みを 75/18/6/1 から変えた）、`curseChance` 8、`optionTierStep` 4、`dropLevelUpWeights` [60, 30, 10]（IT-53。M14 で `dropLevelSpread` 1 を置き換えた）、`weaponLvPerDamage` 2、`armorLvPerAc` 3、`casterLvPerPower` 2、`levelPriceRatio` 0.5、`optionSellValue` [20, 40, 80]、`warehouseSlots` 40。`config.economy` に `upgradeBase` 50・`upgradeRateBase` 10・`upgradeRatePerCatalyst` 30・`upgradeDecay` 0.66・`upgradeMaxCatalysts` 3（TW-17）。`config.chest` に `secondItemChance` 50・`secondItemPerDanger` 15（IT-51 / CB-65。宝箱の 2 個目の確率。M14）。`config.combat` に `directDropChance` 10（%。0〜100）・`directDropGoldDice` "2d10"（ダイス記法）（CB-57 / IT-57。直接ドロップ。M14）。`config.combat.acMin` は削除（IT-24）。`dungeons[].onClear` は `shopStock` を `shopLevel` に置き換える。
 
 ## 11. 未決（ユーザーに確認すること。2026-10-05）
 

@@ -37,6 +37,8 @@ import {
   CUE_TARGETS,
   CURABLE_STATUS_IDS,
   DATA_FILES,
+  DROP_CATEGORIES,
+  DROP_KINDS,
   EQUIP_SLOTS,
   EVENT_KINDS,
   ITEM_TYPES,
@@ -330,6 +332,8 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       flyingHit: F(Object.fromEntries(WEAPON_REACHES.map((k) => [k, I()]))), // CB-26【仮】
       rangedHitAgiMul: I(), // CB-21【仮】
       rangedHitLukPivot: I(), // CB-21【仮】
+      directDropChance: I(PERCENT), // CB-57（M14）【仮】
+      directDropGoldDice: D, // CB-57（M14）【仮】
     }),
     san: F({
       max: I(POS_INT),
@@ -757,6 +761,7 @@ function validateMonsters(ctx: Ctx, v: unknown, ix: Index): void {
       special: F({ undead: opt(B), boss: opt(B), flying: opt(B) }), // flying: CB-26（M9）
       resist: F(Object.fromEntries(STATUS_IDS.map((k) => [k, opt(B)]))),
       tags: L(S),
+      dropKind: E(DROP_KINDS), // CB-57 / IT-57（M14）: 必須
       description: S,
     }),
   )(ctx, "", v);
@@ -991,8 +996,27 @@ function validateDrops(ctx: Ctx, v: unknown, ix: Index): void {
     tables: L(F({ id: S, itemChance: opt(I(PERCENT)), rolls: opt(I(POS_INT)), entries: L(entry, 1) }), 1),
     chest: (c, p, x) => obj(c, p, x, null),
     boss: (c, p, x) => obj(c, p, x, null),
+    // CB-57 / IT-57（M14）: 直接ドロップ。kinds は DROP_KINDS の全部に空でない種別の組、consumables は消耗品と重み
+    direct: F({
+      kinds: F(Object.fromEntries(DROP_KINDS.map((k) => [k, L(E(DROP_CATEGORIES), 1)]))),
+      consumables: L(F({ item: refTo(ix.items, "item"), weight: I(NON_NEG) }), 1),
+    }),
   });
   if (t === undefined) return;
+  const kinds = objOf(get(t.direct, "kinds"));
+  if (kinds !== undefined)
+    for (const k of DROP_KINDS) {
+      const cats = arrOf(kinds[k]);
+      if (new Set(cats).size !== cats.length) report(ctx, at(at("direct", "kinds"), k), "IT-57: categories must not repeat");
+    }
+  const consumables = arrOf(get(t.direct, "consumables"));
+  consumables.forEach((e, i) => {
+    const itemId = strOf(get(e, "item"));
+    const it = itemId === undefined ? undefined : ix.items.get(itemId);
+    if (it !== undefined && it.type !== "consumable") report(ctx, at(at(at("direct", "consumables"), i), "item"), "IT-57: item must be a consumable");
+  });
+  if (consumables.length > 0 && consumables.reduce((a: number, e) => a + (intOf(get(e, "weight")) ?? 0), 0) <= 0)
+    report(ctx, at("direct", "consumables"), "IT-57: total weight must be positive");
   const tables = arrOf(t.tables);
   uniqueIds(ctx, "tables", tables);
   const tableRef = refTo(byId(tables), "drop table");

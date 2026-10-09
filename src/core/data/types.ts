@@ -190,6 +190,10 @@ export type Config = {
     rangedHitAgiMul: number;
     /** CB-21【仮】: reach ranged の命中率に (自分の luk − この値) を足す */
     rangedHitLukPivot: number;
+    /** CB-57（M14）【仮】: 勝利でグループごとに直接ドロップが起きる確率（%） */
+    directDropChance: number;
+    /** CB-57（M14）【仮】: 直接ドロップの金の種別の額（ダイス記法。敵の gold は使わない） */
+    directDropGoldDice: string;
   };
   san: {
     max: number;
@@ -425,6 +429,14 @@ export type MonsterAttack = {
   tags?: string[];
 };
 
+/** CB-57 / IT-57（M14）: 敵の種類（直接ドロップの種別の組を決める） */
+export const DROP_KINDS = ["humanoid", "undead", "beast", "construct", "spirit"] as const;
+export type DropKind = (typeof DROP_KINDS)[number];
+
+/** CB-57 / IT-57（M14）: 直接ドロップの種別。armor は部位 armor / shield / helm / gauntlet、book は魔法書、consumable は direct.consumables、gold は金 */
+export const DROP_CATEGORIES = ["weapon", "armor", "accessory", "book", "consumable", "gold"] as const;
+export type DropCategory = (typeof DROP_CATEGORIES)[number];
+
 export type Monster = {
   id: string;
   name: string;
@@ -443,6 +455,8 @@ export type Monster = {
   special: { undead?: boolean; boss?: boolean; flying?: boolean };
   resist: Partial<Record<StatusId, boolean>>;
   tags: string[];
+  /** CB-57 / IT-57（M14）: 直接ドロップの種類（drops.json の direct.kinds のキー） */
+  dropKind: DropKind;
   description: string;
 };
 
@@ -638,6 +652,14 @@ export type Drops = {
   chest: Record<string, Record<string, string>>;
   /** ダンジョン id → 表の id（全ダンジョン） */
   boss: Record<string, string>;
+  /**
+   * CB-57 / IT-57（M14）: 敵の直接ドロップ。kinds は敵の種類 → 種別の組（DROP_KINDS の全部。空でなく重複なし）。
+   * consumables は消耗品の種別の母集団（items.json の type consumable と重み）。装備・魔法書の母集団はその階の宝箱の表（chest）
+   */
+  direct: {
+    kinds: Record<DropKind, DropCategory[]>;
+    consumables: { item: string; weight: number }[];
+  };
 };
 
 // ---- personalities.json ----

@@ -340,6 +340,7 @@ drops.json の表から出した期待値で、計測ではない（農夫ボッ
 | 2026-10-09 | 階の基準 Lv（dungeons[].floorLevels。DG-38）新設 | —（無し）→ d01 1,2 / d02 3,4,5 / d03 5,6,6,7 | 計測(M13) | 計測(M14) | （計測(M14) の後に書く） |
 | 2026-10-09 | 品の Lv の式（IT-53。config.items.dropLevelSpread → dropLevelUpWeights） | 敵 Lv ± 1 → max(敵 Lv, 階の基準 Lv) + 0〜2（60/30/10） | 計測(M13) | 計測(M14) | （計測(M14) の後に書く） |
 | 2026-10-09 | 宝箱の中身の個数（CB-65 / IT-51。drops.json の itemChance / rolls → config.chest.secondItemChance / secondItemPerDanger） | itemChance 40〜70% × rolls 1 → 1 個 + 50%（+15%/危険度）で 2 個目 | 計測(M13) | 計測(M14) | （計測(M14) の後に書く） |
+| 2026-10-09 | 敵の種類ごとの直接ドロップ（CB-57 / IT-57。monsters[].dropKind・drops.direct・config.combat.directDropChance / directDropGoldDice）新設 | 無し → グループ撃破ごとに 10%（金の種別は 2d10） | 計測(M13) | 計測(M14) | （計測(M14) の後に書く） |
 
 ## 目安と調整の順（M12）
 
@@ -479,3 +480,32 @@ tests/balance/farm.ts と tests/balance/bot.ts（route "farm"）。設計は scr
 | d02 の floorLevels | [3, 4, 5] |
 | d03 の floorLevels | [5, 6, 6, 7] |
 | 宝箱の表（drops.json の d01_f1・d01_f2・d02_f1〜f3・d03_f1〜f4。IT-51） | itemChance / rolls を廃止（M13 までは 40〜70 × 1。個数は config.chest.secondItemChance 50・secondItemPerDanger 15。CB-65）。ボスの表は 100 × 1〜2 のまま（d01_boss 100 × 1、d02_boss・d03_boss 100 × 2） |
+| config.combat.directDropChance（CB-57） | 10（勝利でグループごとに直接ドロップが起きる確率 %） |
+| config.combat.directDropGoldDice（CB-57） | "2d10"（金の種別の額。敵の gold のダイスは使わない） |
+| drops.json の direct.kinds（IT-57） | humanoid 武器・防具 / undead 装飾・魔法書 / beast 消耗品・金 / construct 防具 / spirit 魔法書・装飾（防具は部位 armor・shield・helm・gauntlet。装備と魔法書の母集団はその階の宝箱の表を種別で絞ったもの） |
+| drops.json の direct.consumables（IT-57） | 薬草 herb 3・解毒草 antidote_herb 2・帰還の糸 return_thread 1（重み） |
+
+monsters[].dropKind（monsters.json。IT-57。20 種）。割り当ては設計書 §3b（タグ monsters[].tags と未鑑定の系統から）: タグ beast・flying・ooze・insect の獣・虫・粘体 → beast、humanoid だけ → humanoid、construct → construct、未鑑定の系統が spirit の霊（囁く影・歌う亡霊）と弔い蝋燭の女 → spirit、ほかの undead（溺れた侍祭のように humanoid と両方のもの、fear を持つボス 2 体を含む）→ undead。
+
+| 敵（id） | タグ | dropKind |
+|---|---|---|
+| giant_rat（大ネズミ） | beast | beast |
+| kobold（コボルド） | humanoid | humanoid |
+| giant_spider（大蜘蛛） | beast | beast |
+| rotting_corpse（腐った死体） | undead | undead |
+| whispering_shadow（囁く影） | fear, undead | spirit |
+| gatekeeper_armor（門番の甲冑） | construct, boss | construct |
+| dusk_bat（宵闇コウモリ） | beast, flying | beast |
+| drowsy_slime（眠り粘体） | ooze | beast |
+| drowned_acolyte（溺れた侍祭） | undead, humanoid | undead |
+| glass_moth（色硝子の蛾） | insect, flying | beast |
+| choir_wraith（歌う亡霊） | fear, undead | spirit |
+| font_mire（濁り聖水） | ooze | beast |
+| stone_gazer（石睨みの像） | construct | construct |
+| sunken_bishop（沈鐘の大司祭） | undead, fear, boss | undead |
+| ash_shambler（灰まみれの骸） | undead | undead |
+| cinder_crow（燠火の鴉） | beast, flying | beast |
+| candle_mourner（弔い蝋燭の女） | undead, fear | spirit |
+| urn_bearer（骨壺運び） | undead | undead |
+| grave_sentinel（錆びた墓守） | undead | undead |
+| ashcrown_lord（灰冠の墓所主） | undead, fear, boss | undead |

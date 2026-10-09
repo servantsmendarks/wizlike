@@ -26,7 +26,8 @@
     "autoInterrupt": { "hpRatio": 0.3 },
     "autoDefendHpRatio": 0.5,
     "flyingHit": { "melee": -30, "long": -15, "ranged": 0 },
-    "rangedHitAgiMul": 2, "rangedHitLukPivot": 10
+    "rangedHitAgiMul": 2, "rangedHitLukPivot": 10,
+    "directDropChance": 10, "directDropGoldDice": "2d10"
   },
   "san": {
     "max": 100,

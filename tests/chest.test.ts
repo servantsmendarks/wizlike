@@ -33,6 +33,7 @@ function chestData(mut?: (d: GameData) => void): GameData {
   const d = loadFreshData();
   d.config.chest.secondItemChance = 0;
   d.config.chest.secondItemPerDanger = 0;
+  d.config.combat.directDropChance = 0; // CB-57（M14）: 勝利の直接ドロップはグループごとに chance(0) を 1 回引いて外れる（品も語りも出ない）
   const chestTables = new Set(Object.values(d.drops.chest).flatMap((f) => Object.values(f)));
   for (const t of d.drops.tables) if (chestTables.has(t.id)) t.entries = [{ item: CHEST_BOOK, weight: 1 }];
   mut?.(d);
@@ -351,6 +352,7 @@ describe("CB-67 警報の戦闘", () => {
     const r = exec(s, { type: "battle.resolve" }, d);
     expect(eventsOf(r.events, "battleEnd")).toEqual([{ kind: "battleEnd", result: "win" }]);
     // 同じ戦闘を origin random（箱なし）で解くと、宝箱の chance の 1 回だけ多く引く
+    // （CB-57（M14）の直接ドロップの chance はどちらも金の後にグループ数（ここでは 1）だけ引くので差に出ない）
     const sr = cloneState(s);
     sr.battle!.origin = { kind: "random", inRoom: true };
     sr.dive!.chest = null;

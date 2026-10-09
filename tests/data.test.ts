@@ -1251,6 +1251,43 @@ describe("data: drops.json（IT-50〜53。M7）", () => {
     expectIssue((r) => (r.drops.tables[0].entries[0] = { item: "herb", weight: 1 }), "drops.json", "tables[0].entries[0].item: IT-55: item must be a book");
     expectIssue((r) => (r.drops.tables[0].entries[0] = { item: "grimoire", weight: 1 }), "drops.json", 'tables[0].entries[0].item: unknown item id "grimoire"');
   });
+  test("data: CB-57/IT-57 直接ドロップ（M14）: monsters[].dropKind は必須で DROP_KINDS のどれか。drops.direct.kinds は全種類に空でなく重複のない種別、consumables は消耗品で重みの合計 > 0", () => {
+    const d = loadGameData(rawData());
+    expect(Object.fromEntries(d.monsters.map((m) => [m.id, m.dropKind]))).toEqual({
+      giant_rat: "beast", kobold: "humanoid", giant_spider: "beast", rotting_corpse: "undead", whispering_shadow: "spirit",
+      gatekeeper_armor: "construct", dusk_bat: "beast", drowsy_slime: "beast", drowned_acolyte: "undead", glass_moth: "beast",
+      choir_wraith: "spirit", font_mire: "beast", stone_gazer: "construct", sunken_bishop: "undead", ash_shambler: "undead",
+      cinder_crow: "beast", candle_mourner: "spirit", urn_bearer: "undead", grave_sentinel: "undead", ashcrown_lord: "undead",
+    });
+    expect(d.drops.direct.kinds).toEqual({
+      humanoid: ["weapon", "armor"], undead: ["accessory", "book"], beast: ["consumable", "gold"], construct: ["armor"], spirit: ["book", "accessory"],
+    });
+    expect(d.drops.direct.consumables).toEqual([{ item: "herb", weight: 3 }, { item: "antidote_herb", weight: 2 }, { item: "return_thread", weight: 1 }]);
+    expectIssue((r) => delete r.monsters[0].dropKind, "monsters.json", "[0].dropKind: missing required field");
+    expectIssue((r) => (r.monsters[0].dropKind = "dragon"), "monsters.json", "[0].dropKind: expected one of");
+    expectIssue((r) => delete r.drops.direct, "drops.json", "direct: missing required field");
+    expectIssue((r) => delete r.drops.direct.kinds.spirit, "drops.json", "direct.kinds.spirit: missing required field");
+    expectIssue((r) => (r.drops.direct.kinds.dragon = ["gold"]), "drops.json", "direct.kinds.dragon: unknown field");
+    expectIssue((r) => (r.drops.direct.kinds.beast = []), "drops.json", "direct.kinds.beast: expected at least 1 element(s)");
+    expectIssue((r) => (r.drops.direct.kinds.beast = ["gold", "gem"]), "drops.json", "direct.kinds.beast[1]: expected one of");
+    expectIssue((r) => (r.drops.direct.kinds.beast = ["gold", "gold"]), "drops.json", "direct.kinds.beast: IT-57: categories must not repeat");
+    expectIssue((r) => (r.drops.direct.consumables[0].item = "tome_lightning"), "drops.json", "direct.consumables[0].item: IT-57: item must be a consumable");
+    expectIssue((r) => (r.drops.direct.consumables[0].item = "elixir"), "drops.json", 'direct.consumables[0].item: unknown item id "elixir"');
+    expectIssue((r) => (r.drops.direct.consumables = []), "drops.json", "direct.consumables: expected at least 1 element(s)");
+    expectIssue((r) => (r.drops.direct.consumables[0].weight = -1), "drops.json", "direct.consumables[0].weight: expected integer >= 0");
+    expectIssue((r) => {
+      for (const c of r.drops.direct.consumables) c.weight = 0;
+    }, "drops.json", "direct.consumables: IT-57: total weight must be positive");
+    expect(issuesOf((r) => (r.drops.direct.consumables[0].weight = 0))).toEqual([]);
+  });
+  test("data: CB-57 combat.directDropChance は 0..100、directDropGoldDice はダイス記法【仮】（M14）", () => {
+    const d = loadGameData(rawData());
+    expect([d.config.combat.directDropChance, d.config.combat.directDropGoldDice]).toEqual([10, "2d10"]);
+    expectIssue((r) => delete r.config.combat.directDropChance, "config.json", "combat.directDropChance: missing required field");
+    expectIssue((r) => (r.config.combat.directDropChance = 101), "config.json", "combat.directDropChance: expected integer in 0..100, got 101");
+    expectIssue((r) => (r.config.combat.directDropGoldDice = "2d"), "config.json", 'combat.directDropGoldDice: invalid dice expression "2d"');
+    expectIssue((r) => delete r.config.combat.directDropGoldDice, "config.json", "combat.directDropGoldDice: missing required field");
+  });
   test("data: IT-51 chest は全ダンジョンの全階（1..floors）に実在の表、boss は全ダンジョンに実在の表", () => {
     expectIssue((r) => delete r.drops.chest.d02, "drops.json", "chest.d02: missing required field");
     expectIssue((r) => delete r.drops.chest.d01["2"], "drops.json", "chest.d01.2: missing required field");

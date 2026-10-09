@@ -523,6 +523,8 @@
   "battle.win": "勝った。",
   "battle.exp": "{exp}の経験を得た。",
   "battle.gold": "{gold}の金を拾った。",
+  "battle.drop": "{name}は何かを落としていった。",
+  "battle.dropGold": "{name}の懐から{gold}の金がこぼれ落ちた。",
   "battle.autoOff": "オートを解いた。",
   "battle.autoReason.dead": "倒れた者がいる。",
   "battle.autoReason.hp": "危ない者がいる。",

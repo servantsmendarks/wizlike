@@ -1791,7 +1791,10 @@ describe("決定性と網羅", () => {
     expectKnownStringKeys(events, d1); // 300 歩のランダムウォーク（削除）が担っていた戦闘の語りのキーの網羅
     expect(kinds(events)).toContain("message:battle.win");
     expect(won.screen).toBe("dungeon");
-    const r1 = run(won, MOVE, DATA0);
+    // 戦闘で受けた毒（出目しだい。M14 で勝利の直接ドロップの chance が入り出目がずれた）は外して歩く（歩くたびの hpChanged を出さない）
+    const cured = cloneState(won);
+    for (const c of cured.party) c.status = c.status.filter((x) => x !== "poison");
+    const r1 = run(cured, MOVE, DATA0);
     expect(kinds(r1.events)).toEqual(["moved", "message:dungeon.stairsDown"]);
     const r2 = run(r1.state, { type: "event.choose", optionId: "descend" }, DATA0);
     expect(kinds(r2.events).slice(0, 2)).toEqual(["floorChanged", "message:dungeon.descend"]);

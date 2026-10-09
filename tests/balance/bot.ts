@@ -281,6 +281,9 @@ export type DiveRecord = {
   chestGold: number; // M7-宝箱: 宝箱の金の合計（chest.open.gold の gold。金運込み）
   chestItems: number; // M7-宝箱: 宝箱の品のうち所持枠に入った数（chest.open.gold の後の item.found）
   chestLeft: number; // M7-宝箱: 宝箱の品のうち所持枠が無くて置いていった数（chest.open.gold の後の item.leftBehind）
+  dropItems: number; // M14（CB-57）: 直接ドロップの品のうち所持枠に入った数（battle.drop の直後の item.found）
+  dropLeft: number; // M14（CB-57）: 直接ドロップの品のうち所持枠が無くて置いていった数（battle.drop の直後の item.leftBehind）
+  dropGold: number; // M14（CB-57）: 直接ドロップの金の合計（battle.dropGold の gold。強欲の SAN は別）
   deaths: DeathRecord[]; // M7-死因: この潜行中に dead になった延べ人数分（全滅の前に死んだ者も、全滅の処理で起こされる者も含む）
   ashInDive: number; // M7-死因: この潜行中に ash になった人数（今の規則では潜行中に灰になる経路は無いので 0 のはず。灰は寺院の蘇生の失敗だけ）
   encounterGroups: Record<string, number>; // M7-死因: 遭遇（encounter イベント）の敵グループの数（monsterId ごと）
@@ -321,7 +324,7 @@ export type DiveRecord = {
   estDungeonMs: number; // 推定の実時間（迷宮の分。§3）
   estTownMs: number; // 推定の実時間（街の分。§3）
   farmEnd: FarmEnd | null; // 農夫ボットが帰った理由（農夫以外・wipe / cap は null）
-  found: FoundTally; // 拾った品（item.found のすべて。宝箱とボスの品）の種類
+  found: FoundTally; // 拾った品（item.found のすべて。宝箱・ボス・直接ドロップ（M14）の品）の種類
   foundRarity: Record<string, number>; // そのうち汎用装備とユニークの希少度ごとの数
   foundGenericByLevel: Record<string, number>; // 汎用装備の Lv ごとの数（触媒になる品の Lv の分布）
   foundCursed: number; // 拾った品のうち呪われた品
@@ -448,6 +451,9 @@ export class Campaign {
   chestGold = 0;
   chestItems = 0;
   chestLeft = 0;
+  dropItems = 0; // M14（CB-57）
+  dropLeft = 0; // M14（CB-57）
+  dropGold = 0; // M14（CB-57）
   unpaidAtStart = 0;
   deaths: DeathRecord[] = [];
   ashInDive = 0;
@@ -504,6 +510,7 @@ export class Campaign {
     const r = execute(from, cmd, data);
     if (r.events[0]?.kind === "rejected") throw new Error(`seed ${this.seed}: ${JSON.stringify(cmd)} rejected: ${JSON.stringify(r.events[0])}`);
     this.countChest(from, r.events);
+    this.countDrops(r.events); // M14（CB-57）
     this.countDeaths(from, r.events);
     this.countImpulses(from, r.events);
     this.countChestFlow(cmd, from, r.state, r.events);
@@ -550,6 +557,27 @@ export class Campaign {
   }
 
   /**
+   * M14（CB-57）: 直接ドロップ。battle.drop の直後の item.found / item.leftBehind（その品）と battle.dropGold の gold を数える。
+   * battle.drop は勝利の battle.gold の後・宝箱の判定の前に出るので、chest.open.gold の後の品（countChest）とは重ならない
+   */
+  countDrops(events: GameEvent[]): void {
+    let pending = false;
+    for (const e of events) {
+      if (e.kind !== "message") continue;
+      if (e.key === "battle.drop") pending = true;
+      else if (e.key === "battle.dropGold") this.dropGold += Number(e.params!["gold"]);
+      else if (pending && e.key === "item.found") {
+        this.dropItems += 1;
+        pending = false;
+      } else if (pending && e.key === "item.leftBehind") {
+        this.dropLeft += 1;
+        pending = false;
+      }
+    }
+    if (pending) throw new Error(`seed ${this.seed}: battle.drop without item.found / item.leftBehind`);
+  }
+
+  /**
    * M13（設計書 §2-4）: 推定の実時間の拍を数える（コマンドの種類と events）。遭遇の敵の level（monsters.json）を体数で重み付けして足す。
    * 数えるだけで、既存のボットの判断・乱数・コマンド列には触れない
    */
@@ -576,7 +604,7 @@ export class Campaign {
   }
 
   /**
-   * M13（設計書 §2-4）: item.found（宝箱とボスの品。IT-54）ごとに、潜行台帳に増えた実体（迷宮の外なら state.items に増えた実体）の
+   * M13（設計書 §2-4）: item.found（宝箱・ボス・直接ドロップ（M14）の品。IT-54）ごとに、潜行台帳に増えた実体（迷宮の外なら state.items に増えた実体）の
    * 種類・希少度・Lv・呪いを数える。計測なので実体を覗く（ボットの判断には使わない）
    */
   countFound(from: GameState, to: GameState, events: GameEvent[]): void {
@@ -731,7 +759,7 @@ export class Campaign {
    * wipe では PenaltyResult の内訳 = state の差分（金、失った実体、EXP）。
    * M13: 内訳（performWipe）は全滅の時点の state に対するもので、勝利と同じ execute の衝動で開けた箱の罠で全滅すると（M11 作業 9 の countDeaths と同じ経路）、
    * その戦闘の EXP と金が入った後の値から引かれる。before はコマンド前なので、同じ execute の wipe より前の獲得を足して突き合わせる。
-   * 金の獲得は gainGold のメッセージ（battle.gold / chest.open.gold / event.gold）の params.gold の合計（gainGold が足した額そのもの）。
+   * 金の獲得は gainGold のメッセージ（battle.gold / battle.dropGold（M14。CB-57）/ chest.open.gold / event.gold）の params.gold の合計（gainGold が足した額そのもの）。
    * EXP の獲得は battle.exp の params.exp（share）× その時点で alive の人数。人数は before の life に、events の lifeChanged（味方の id のもの）を
    * 順に当てて出す（endBattleBody は battleEnd → battle.exp の間に life を変えないので、勝利の時点の alive と同じ）。
    * 獲得が無い従来の経路では、今までの検査（before − after = 内訳）と同じになる
@@ -743,7 +771,7 @@ export class Campaign {
     let expGained = 0;
     for (const e of events.slice(0, wi < 0 ? events.length : wi)) {
       if (e.kind === "lifeChanged" && life.has(e.id)) life.set(e.id, e.life);
-      else if (e.kind === "message" && (e.key === "battle.gold" || e.key === "chest.open.gold" || e.key === "event.gold")) {
+      else if (e.kind === "message" && (e.key === "battle.gold" || e.key === "battle.dropGold" || e.key === "chest.open.gold" || e.key === "event.gold")) {
         const g = Number(e.params?.["gold"]);
         if (!Number.isSafeInteger(g) || g < 0) throw new Error(`seed ${this.seed}: bad ${e.key} gold ${String(e.params?.["gold"])}`);
         goldGained += g;
@@ -1089,6 +1117,9 @@ export class Campaign {
     this.chestGold = 0;
     this.chestItems = 0;
     this.chestLeft = 0;
+    this.dropItems = 0;
+    this.dropLeft = 0;
+    this.dropGold = 0;
     this.deaths = [];
     this.ashInDive = 0;
     this.encounterGroups = {};
@@ -1622,6 +1653,9 @@ export class Campaign {
         chestGold: this.chestGold,
         chestItems: this.chestItems,
         chestLeft: this.chestLeft,
+        dropItems: this.dropItems,
+        dropLeft: this.dropLeft,
+        dropGold: this.dropGold,
         deaths: this.deaths,
         ashInDive: this.ashInDive,
         encounterGroups: this.encounterGroups,

@@ -5,6 +5,7 @@
     "attacks": [ { "dice": "1d3" } ],
     "exp": 12, "gold": "1d4+1", "groupSize": "1d3+1",
     "special": {}, "resist": {}, "tags": ["beast"],
+    "dropKind": "beast",
     "description": "群れで来る。数が多いが脆い。"
   },
   {
@@ -13,6 +14,7 @@
     "attacks": [ { "dice": "1d4" } ],
     "exp": 20, "gold": "3d6", "groupSize": "1d4",
     "special": {}, "resist": {}, "tags": ["humanoid"],
+    "dropKind": "humanoid",
     "description": "武器を持つ小鬼。金を持っている。"
   },
   {
@@ -21,6 +23,7 @@
     "attacks": [ { "dice": "1d4", "status": "poison", "chance": 20 } ],
     "exp": 45, "gold": "1d6+2", "groupSize": "1d3",
     "special": {}, "resist": {}, "tags": ["beast"],
+    "dropKind": "beast",
     "description": "噛まれると毒を受ける。"
   },
   {
@@ -30,6 +33,7 @@
     "exp": 60, "gold": "0", "groupSize": "1d4",
     "special": { "undead": true }, "resist": { "sleep": true },
     "tags": ["undead"],
+    "dropKind": "undead",
     "description": "触れられると体が動かなくなる。眠らない。"
   },
   {
@@ -39,6 +43,7 @@
     "exp": 80, "gold": "0", "groupSize": "1d2",
     "special": {}, "resist": { "sleep": true, "poison": true },
     "tags": ["fear", "undead"],
+    "dropKind": "spirit",
     "description": "傷は浅いが、正気を削っていく。"
   },
   {
@@ -48,6 +53,7 @@
     "exp": 400, "gold": "5d10+14", "groupSize": "1",
     "special": { "boss": true }, "resist": { "sleep": true, "poison": true, "paralysis": true },
     "tags": ["construct", "boss"],
+    "dropKind": "construct",
     "description": "最下層を守る。倒すと街への道が開く。"
   },
   {
@@ -57,6 +63,7 @@
     "exp": 50, "gold": "0", "groupSize": "1d4+1",
     "special": { "flying": true }, "resist": {},
     "tags": ["beast", "flying"],
+    "dropKind": "beast",
     "description": "子犬ほどの大きさの灰色のコウモリ。破れた膜の翼で宙を舞い、刃の届かない高さから噛みついてくる。"
   },
   {
@@ -66,6 +73,7 @@
     "exp": 65, "gold": "1d6", "groupSize": "1d2",
     "special": {}, "resist": { "sleep": true, "poison": true },
     "tags": ["ooze"],
+    "dropKind": "beast",
     "description": "腰の高さほどの薄紫色の粘体で、表面に甘い匂いの泡が浮く。泡を浴びると眠気に襲われる。"
   },
   {
@@ -75,6 +83,7 @@
     "exp": 70, "gold": "2d6+2", "groupSize": "1d4",
     "special": { "undead": true }, "resist": { "sleep": true },
     "tags": ["undead", "humanoid"],
+    "dropKind": "undead",
     "description": "水を吸って膨れた、青白い肌の若い聖職者の死体。濡れた灰色の法衣を引きずり、錆びた燭台を振るう。"
   },
   {
@@ -84,6 +93,7 @@
     "exp": 60, "gold": "0", "groupSize": "1d3+1",
     "special": { "flying": true }, "resist": {},
     "tags": ["insect", "flying"],
+    "dropKind": "beast",
     "description": "翅が赤と青の色硝子のように透ける、人の頭ほどの大きな蛾。宙を舞い、きらめく鱗粉で眠りを誘う。"
   },
   {
@@ -93,6 +103,7 @@
     "exp": 110, "gold": "0", "groupSize": "1d2",
     "special": { "undead": true }, "resist": { "sleep": true, "poison": true, "paralysis": true },
     "tags": ["fear", "undead"],
+    "dropKind": "spirit",
     "description": "上半身だけが床から立ち上る、白い聖歌隊の衣を着た顔の無い亡霊。細い歌声が正気を削る。"
   },
   {
@@ -102,6 +113,7 @@
     "exp": 120, "gold": "1d8", "groupSize": "1d2",
     "special": {}, "resist": { "sleep": true },
     "tags": ["ooze"],
+    "dropKind": "beast",
     "description": "洗礼盤からあふれ出た、苔色に濁った水の塊。触れた傷口から毒がしみ込む。"
   },
   {
@@ -111,6 +123,7 @@
     "exp": 260, "gold": "3d10", "groupSize": "1",
     "special": {}, "resist": { "sleep": true, "poison": true, "paralysis": true, "stone": true },
     "tags": ["construct"],
+    "dropKind": "construct",
     "description": "人の背丈ほどの、ひび割れた灰色の石の聖者像。開いた片目に睨まれると、体が石に変わり始める。"
   },
   {
@@ -120,6 +133,7 @@
     "exp": 900, "gold": "8d10+40", "groupSize": "1",
     "special": { "boss": true, "undead": true }, "resist": { "sleep": true, "poison": true, "paralysis": true, "stone": true },
     "tags": ["undead", "fear", "boss"],
+    "dropKind": "undead",
     "description": "緑青の浮いた大きな鐘を背負う、水に沈んだ聖堂の主。藻の絡む紫の祭服をまとい、鐘の音で正気を打ち砕く。"
   },
   {
@@ -129,6 +143,7 @@
     "exp": 170, "gold": "0", "groupSize": "1d3+1",
     "special": { "undead": true }, "resist": { "sleep": true },
     "tags": ["undead"],
+    "dropKind": "undead",
     "description": "頭から足まで白い灰を被った、骨と皮だけの死体。棺から這い出たまま、乾いた指で掴みかかってくる。"
   },
   {
@@ -138,6 +153,7 @@
     "exp": 140, "gold": "0", "groupSize": "1d3+1",
     "special": { "flying": true }, "resist": {},
     "tags": ["beast", "flying"],
+    "dropKind": "beast",
     "description": "羽の縁が燠火のように赤く光る、黒い大鴉。火の粉を散らして宙を舞い、刃の届かない高さから突いてくる。"
   },
   {
@@ -147,6 +163,7 @@
     "exp": 280, "gold": "0", "groupSize": "1d2",
     "special": { "undead": true }, "resist": { "sleep": true, "poison": true, "paralysis": true },
     "tags": ["undead", "fear"],
+    "dropKind": "spirit",
     "description": "頭に蝋燭を立てた、黒い喪服の痩せた女の亡霊。すすり泣く声と揺れる灯が、正気と眠気を奪う。"
   },
   {
@@ -156,6 +173,7 @@
     "exp": 300, "gold": "3d10+5", "groupSize": "1d2",
     "special": { "undead": true }, "resist": { "sleep": true },
     "tags": ["undead"],
+    "dropKind": "undead",
     "description": "背丈ほどの骨壺を背負った、腰の曲がった死体。壺から舞う灰を吸うと、体の内側から毒が回る。"
   },
   {
@@ -165,6 +183,7 @@
     "exp": 520, "gold": "4d10+10", "groupSize": "1",
     "special": { "undead": true }, "resist": { "sleep": true, "paralysis": true },
     "tags": ["undead"],
+    "dropKind": "undead",
     "description": "錆びた黒い全身鎧に、空の兜の奥で青い火が灯る墓守。両手の剣を休まず振るう。"
   },
   {
@@ -174,6 +193,7 @@
     "exp": 1600, "gold": "10d10+60", "groupSize": "1",
     "special": { "boss": true, "undead": true }, "resist": { "sleep": true, "poison": true, "paralysis": true, "stone": true },
     "tags": ["undead", "fear", "boss"],
+    "dropKind": "undead",
     "description": "灰で固めた冠を戴き、ぼろの白い弔衣を引きずる、背の高い骸の王。開いた口から灰が絶えずこぼれる。"
   }
 ]
