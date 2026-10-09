@@ -54,7 +54,9 @@
     { "event": "message", "key": "town.upgrade.ng", "sfx": "upgrade_fail" },
     { "event": "message", "key": "event.stop.success", "sfx": "stop" },
     { "event": "message", "key": "town.temple.cured", "sfx": "heal" },
-    { "event": "message", "key": "town.temple.resurrectOk", "sfx": "heal" }
+    { "event": "message", "key": "town.temple.resurrectOk", "sfx": "heal" },
+    { "event": "message", "key": "dungeon.enter", "sfx": "stairs" },
+    { "event": "message", "key": "dungeon.exit", "sfx": "stairs" }
   ],
   "ui": { "ok": "ok", "cancel": "cancel", "facility": "door", "camp": "tent", "talk": "page" }
 }
