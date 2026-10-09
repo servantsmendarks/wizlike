@@ -531,6 +531,41 @@ M2〜M5 の実機確認の結果（`docs/decisions.md` の 2026-10-04 の行）�
   4. 【済・2026-10-09】逆算と装備の追従の表（9 行）と、目安（1 時間で +2 段【仮】）との比較を balance.md に書いた。拾った品だけでは 9 通りのどれも 60 分に収まらない（d01 1 階は Lv4 以上の触媒が出ず揃わない、ほかは 71.3〜144.5 分）。data・config の調整値は変えていない（config.measure は計測用の値で、実機の値に差し替えたのは完了条件 2 のとおり）。
 - 状態: 閉じた（2026-10-09）。9 通りの計測が揃って完了条件 1〜4 が済。持ち越し: 量の調整の判断（ユーザー。候補は箱の中身の個数・敵ごとの直接ドロップ・所持枠か袋）、店で触媒（流通レベルの汎用装備）が買える件の扱い（量の調整と一緒に決める）、debug.levels の能力値が Lv1 のままである影響（育ったパーティでの取り直しをするか）、chestOpenMs（品ありの箱は 773 に近い可能性）の見直し。
 
+## M14 ハクスラの調整
+
+ユーザーの指示（2026-10-09）の 1〜6（原文）: 「M13 の結果を受けた調整（balance.md に 1 行ずつ）。順番は 1 → 2 → 3 → 再計測。」「1. 希少度の修正: 強欲の chestQuality を「35%（仮）で 1 段上げる」の確率に変更。基礎の重みを 通常 72 / 上質 20 / 希少 7 / 伝説 1（仮）に。箱の危険度の上振れ 15%/段は維持。目安: 既定の編成で 1 時間あたり 伝説 0.3〜0.5、希少 2 前後。」「2. 品の Lv: 「敵 Lv ±1」から「max(敵 Lv, 階の基準 Lv) + 0〜2（重み 60/30/10、仮）」に。階の基準 Lv は dungeons[].floorLevels に置く（d01: 1, 2 / d02: 3, 4, 5 / d03: 5, 6, 6, 7、仮）。」「3. 量: 箱の中身は 1 個 + 50% で 2 個目 + 危険度ごとに 15%（仮）。敵の種類ごとの直接ドロップを追加（グループ撃破ごとに 10%、仮。monsters[].dropKind: humanoid → 武器防具、undead → 装飾・魔法書、beast → 消耗品・金、construct → 防具、spirit → 魔法書・装飾）。」「4. 店の触媒は設計どおり維持（記録のみ）。」「5. 再計測: 農夫ボットを「能力値も Lv 相応に成長させた」編成で（debug.levels に成長の判定を含める）、chestOpenMs は品ありの箱の値（773）で取り直す。目安: d01 1F の 15 分で品 6 個以上、d01 2F の Lv5 で「1 時間で +2 段」、伝説 0.5/時以下、置いていった品と未鑑定売却の数を記録。」「6. 別軸（表示）: 戦闘の表示の圧縮 — 同じ行動者の複数回攻撃を 1 拍「n 回ヒット、合計 x」にまとめ、敵の同じグループの連続攻撃も 1 行に畳む。これだけ入れた状態で実機の actionMs を測り直し、config.measure を更新して 5 の推定に反映。」。計測(M13) の結果を受けて、希少度・品の Lv・量の 3 項目を 1 → 2 → 3 の順に変え、戦闘の表示を圧縮した上で実機の拍と農夫ボットを取り直す。設計は scratchpad の m14-design.md（§0 要点・§1 希少度・§2 品の Lv・§3 量・§4 店の触媒・§5 表示の圧縮・§6 項目 5 の準備・§7 実機(M14-拍)・§8 計測(M14)・§9 作業の順・§10 完了条件）。判断は decisions の 2026-10-09 docs(M14) の行。数字は balance.md の「計測(M14) ハクスラの調整」。
+
+- 範囲:
+  - 1 希少度（IT-30 / IT-31 / IT-52 / IT-56。【仮】）: config.items.rarities の重みを 通常 75 → 72・上質 18 → 20・希少 6 → 7・伝説 1 → 1 に。強欲の chestQuality（personalities.json）を「段数 1」から「1 段上げる確率 35%」に変える（危険度の上振れの後に 1 回だけ chance を引く。0 なら引かない。伝説で止める）。危険度の上振れ 15%/段は維持。ボスの戦利品と直接ドロップは chestQuality を使わない。
+  - 2 品の Lv（IT-53 / DG-38 新設。【仮】）: 汎用装備の Lv を「敵 Lv ±1」（dropLevelSpread）から「max(敵 Lv, 階の基準 Lv) + 0〜2」（config.items.dropLevelUpWeights [60, 30, 10]）に。階の基準 Lv は dungeons[].floorLevels（d01 [1, 2]、d02 [3, 4, 5]、d03 [5, 6, 6, 7]。長さは floors）。宝箱は箱の level（敵の Lv）と階、ボスは最下層とボスの Lv、直接ドロップはその種類の level と階。
+  - 3a 箱の中身（CB-65 / IT-51。【仮】）: 宝箱の品は 1 個 + 2 個目の確率 min(100, 50% + 15% × 危険度)（config.chest.secondItemChance・secondItemPerDanger。3 個目は無い）。宝箱の表の itemChance / rolls は廃止（ボスの表には残す）。乱数の順は 金 → 2 個目の chance → 品ごとに IT-52。
+  - 3b 敵の種類ごとの直接ドロップ（CB-57 / IT-57 新設。【仮】）: 勝利の金の後、宝箱の判定とボスの戦利品の前に、グループごとに chance(config.combat.directDropChance 10%)。monsters[].dropKind（humanoid / undead / beast / construct / spirit。全 20 種に必須）から drops.json の direct.kinds の種別（weapon / armor / accessory / book / consumable / gold）を引く。装備と魔法書の母集団はその階の宝箱の表を部位で絞ったもの（空なら何も落とさない）、消耗品は direct.consumables、金は config.combat.directDropGoldDice。語りは battle.drop / battle.dropGold（strings.json）。農夫ボットは直接ドロップの品・金・置いていった数を別に数える。
+  - 4 店の触媒: 設計どおり維持（記録のみ。decisions の 判断(M14) の行と balance.md の「目安と調整の順（M14）」）。
+  - 5 再計測の準備（CH-61 / UI-57）: debug.levels は CH-61 の能力値の成長の判定を含める（levelUpOnce の statGrowth 偽の呼び出しを無くす）。config.measure.chestOpenMs を品ありの箱の値 773 にする（434 → 773）。
+  - 6 戦闘の表示の圧縮（CB-23 / CB-24 / CB-55 / UI-45）: 味方の複数回攻撃は 1 つの result の拍にまとめ、2 回以上なら要約「{target}に{n}回ヒット、合計{damage}のダメージ。」など 1 行。撃破・覚醒は aftermath の拍に。敵は orderActors で連続する同じグループの個体を 1 つのまとまりにし、宣言 1 回・result 1 つ・aftermath 1 つ。core の語り（message と beat）で行い、表示層は変えない。乱数の消費順・最終の state・attack / hpChanged / lifeChanged などのイベントの中身は変えない。この状態で実機(M14-拍) の actionMs を取り直し config.measure を更新する。
+  - 再計測(M14): HEAD で `BALANCE_SEEDS=200 npm run balance`（3 ボット + 農夫 9 通り）。基準値の表に M14 の列、「計測(M14) ハクスラの調整」（場所ごとの表 × 3・逆算・装備の追従・ボスのユニーク・直接ドロップ・目安との比較・所見）、変更の記録の感触を埋める。
+- 作業の順（各コミット単体で typecheck と test が通る。仕様の文・データ・テストは同じコミット）:
+  - #0 `docs(M14)`: milestones の節、decisions の開始の行と 判断(M14)（店の触媒は維持）、balance.md の「目安と調整の順（M14）」。
+  - #1 `core(M14)`: 6 表示の圧縮。この sha の固定コピーで実機(M14-拍) を始める（#2〜#7 と並行）。
+  - #2 `core(M14)`: 1 希少度。
+  - #3 `core(M14)`: 2 品の Lv。
+  - #4 `core(M14)`: 3a 箱の中身。
+  - #5 `core(M14)`: 3b 直接ドロップ（bot.ts の対応を含む）。
+  - #6 `core(M14)`: 5 debug.levels の成長。
+  - #7 `data(M14)`: 5 chestOpenMs 773。
+  - レビュー → 修正。
+  - 実機(M14-拍)（固定コピーは #1 の sha。Pixel 3a。n ≥ 10 戦）。
+  - #8 `data(M14)`: config.measure.actionMs を実機(M14-拍) の値に（balance.md の変更の記録、decisions の 実機(M14-拍) の行、checklist の行）。
+  - 計測: `BALANCE_SEEDS=200 npm run balance`。ログは scratchpad の balance-m14-all.log。
+  - #9 `docs(M14)`: balance.md の計測(M14) の表、milestones の結果・状態、decisions の判断の行 → レビュー → 修正。
+- 完了条件:
+  1. `npm test`・`npm run typecheck`・`npm run build` が通る。新しい規則の ID（IT-31 / IT-53 / IT-57 / CB-57 / CB-65 / CB-55 / DG-38 / CH-61 の debug.levels）がテスト名にある。乱数の消費順の不変（表示の圧縮）と変更（希少度・Lv・箱・直接ドロップ）がテストで確かめてある。
+  2. 実機(M14-拍): actionMs が n ≥ 10 戦の実機の値で config.measure にある。
+  3. 計測(M14): 9 通り × 200 シード × 5 潜行と 3 ボットが不変条件を破らずに完走し、balance.md に表と目安との比較がある。
+  4. 数値の変更はすべて balance.md の変更の記録に 1 行ずつあり、decisions は理由と参照だけ。
+- 結果（2026-10-09）: （進行中）
+- 状態: 進行中（2026-10-09）。
+
 ## プロトタイプ後（参考、着手しない）
 
 - 訓練所、銀行の金の預け入れ・引き出し（闇魔術と店の消耗品の購入は M4 の範囲に入れた。酒場の並び順変更は M4.5 に移した。キャラ作成の全工程（種族・職業・能力値配分）は M5.5 に移した。店の売却・買い戻し・鑑定と、店の装備（在庫制は流通レベルに置き換え）、銀行に併設の倉庫は M7 に移した）。
