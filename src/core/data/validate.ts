@@ -387,6 +387,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
     // items.md §10（M7）【仮】
     items: F({
       rarities: L(F({ id: S, weight: I(NON_NEG), options: I({ min: 0, max: 3 }) }), 1), // IT-30（順と件数は下で検査）
+      legendaryMinDanger: I({ min: 1, max: 4 }), // IT-56（M15）
       curseChance: I(PERCENT), // IT-32
       optionTierStep: I(POS_INT), // IT-33
       dropLevelUpWeights: (c2, p, x) => {

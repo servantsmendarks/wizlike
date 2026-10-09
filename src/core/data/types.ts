@@ -64,6 +64,8 @@ export type RarityDef = { id: "normal" | "fine" | "rare" | "legendary"; weight: 
 export type ItemsConfig = {
   /** IT-30 */
   rarities: RarityDef[];
+  /** IT-56 / IT-31（M15）: 希少から伝説に上がれる宝箱の危険度の下限（整数 1〜4）。ボスの戦利品はこの危険度の箱として振る */
+  legendaryMinDanger: number;
   /** IT-32: 呪われる確率（%） */
   curseChance: number;
   /** IT-33: 汎用のオプションの段階 = min(3, 1 + floor(Lv ÷ これ)) */

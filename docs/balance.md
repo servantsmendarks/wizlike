@@ -642,6 +642,10 @@ drops.json の表から出した期待値で、計測ではない（農夫ボッ
 | 2026-10-09 | config.measure.actionMs（UI-75） | 1913 → 1643 | 計測(M13) | 計測(M14) | 実機(M14-拍) の中央値。n と範囲は計測(M14) の表。効きは他の変更と同時なので分けられない（計測(M13) との比較の表） |
 | 2026-10-09 | 宝箱の 2 個目の確率（config.chest.secondItemChance。CB-65 / IT-51） | 50 → 25 | 計測(M14) | 計測(M15) | （計測(M15) の後に書く） |
 | 2026-10-09 | 直接ドロップの確率（config.combat.directDropChance。CB-57 / IT-57） | 10 → 5 | 計測(M14) | 計測(M15) | （計測(M15) の後に書く） |
+| 2026-10-09 | 希少度の重み（config.items.rarities。IT-30） | 72/20/7/1 → 73/22/5/0 | 計測(M14) | 計測(M15) | （計測(M15) の後に書く） |
+| 2026-10-09 | 強欲の chestQuality（personalities.json。IT-31） | 35 → 25（%） | 計測(M14) | 計測(M15) | （計測(M15) の後に書く） |
+| 2026-10-09 | 危険度の上振れ（config.chest.rarityUpPerDanger。IT-56） | 15 → 10（%/段） | 計測(M14) | 計測(M15) | （計測(M15) の後に書く） |
+| 2026-10-09 | 伝説の条件（config.items.legendaryMinDanger。IT-56）新設 | 無し（どの品も伝説まで）→ 危険度 3 以上の箱とボスの戦利品（危険度 3 として振る）だけ。ほかは希少で止まる | 計測(M14) | 計測(M15) | （計測(M15) の後に書く） |
 
 ## 目安と調整の順（M12）
 
@@ -840,3 +844,12 @@ monsters[].dropKind（monsters.json。IT-57。20 種）。割り当ては設計�
 | urn_bearer（骨壺運び） | undead | undead |
 | grave_sentinel（錆びた墓守） | undead | undead |
 | ashcrown_lord（灰冠の墓所主） | undead, fear, boss | undead |
+
+### M15 の数値（2026-10-09。core(M15)。コンテンツの数値はどれも【仮】。config の値は仕様書の【仮】が正で、ここには参照だけを書く）
+
+設計は scratchpad の m15-design.md。値は data/*.json が正で、この表はその写し（変えたら変更の記録に 1 行足し、ここも直す）。M14 の数値の表の強欲の 35 はこの表で置き換える。
+
+| 欄 | 値 |
+|---|---|
+| 強欲の benefits.chestQuality（personalities.json。IT-31） | 25（宝箱の品の希少度を 1 段上げる確率 %。M14 は 35。伝説まで上がれるのは危険度 config.items.legendaryMinDanger 以上の箱だけ） |
+| config.items.rarities・config.chest.rarityUpPerDanger・config.items.legendaryMinDanger | config の値（参照のみ。値と【仮】は IT-30・IT-56） |

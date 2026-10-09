@@ -6,7 +6,9 @@
 //   ボスの表は rolls 回 × chance(itemChance)（外れならその回は品なし）。
 // 乱数の消費順（1 品。IT-52）: weightedIndex(entries) →（汎用なら）weightedIndex(dropLevelUpWeights)（IT-53。M14）
 //   → weightedIndex(rarities) →（宝箱の危険度が正なら）chance(危険度 × rarityUpPerDanger)（IT-56。M11）
-//   →（宝箱の chestQuality が正なら）chance(chestQuality)（IT-31。M14）→ chance(curseChance) → オプションの個数だけ weightedIndex(残りのオプションの weight)。
+//   →（宝箱の chestQuality が正なら）chance(chestQuality)（IT-31。M14）→ 上限で止める（乱数なし）→ chance(curseChance) → オプションの個数だけ weightedIndex(残りのオプションの weight)。
+//   上限（IT-56。M15）: 危険度が items.legendaryMinDanger 以上なら伝説、それ未満（直接ドロップは危険度 0）なら希少。
+//   ボスの戦利品は危険度 legendaryMinDanger の箱として振る（M15。M14 までは危険度 0 で上振れの chance を引かなかった）。
 //   オプションの母集団はその品の品種に付けられるもの（IT-36）で、引く回数は品種に依存しない。
 //   置いていく品（IT-54）も乱数は同じだけ消費する。
 //   魔法書の項目（IT-55）は weightedIndex(entries) で終わる。
@@ -50,7 +52,8 @@ export function dropLevelBase(data: GameData, dungeonId: string, floor: number, 
  * 汎用は Lv = levelBase（dropLevelBase の値）+ weightedIndex(dropLevelUpWeights)（M14。乱数 1 回）、ユニークは Lv0 で段階は optionTier。
  * 魔法書（IT-55）は weightedIndex(entries) の後に乱数を引かず、鑑定済みの Lv0・通常で返す。
  * 希少度は重みで引いた直後に、danger > 0 なら chance(danger × chest.rarityUpPerDanger) で 1 段上げ（IT-56。M11。danger 0 では振らない）、
- * さらに quality > 0 なら chance(quality) を 1 回振って当たれば 1 段上げ（IT-31。M14。quality 0 では振らない）、伝説で止める。呪われたら個数 +1 で、最後の 1 つの値を負にする。
+ * さらに quality > 0 なら chance(quality) を 1 回振って当たれば 1 段上げ（IT-31。M14。quality 0 では振らない）、
+ * danger >= items.legendaryMinDanger なら伝説で、それ未満なら希少で止める（IT-56。M15）。呪われたら個数 +1 で、最後の 1 つの値を負にする。
  */
 export function rollItemSpec(
   state: GameState,
@@ -89,7 +92,10 @@ export function rollItemSpec(
   const up = danger > 0 && chance(state.rng, danger * data.config.chest.rarityUpPerDanger) ? 1 : 0;
   // IT-31（M14）: 強欲の chestQuality は 1 段上げる確率（%）。0（宝箱以外・強欲なし）では chance を振らない
   const greed = quality > 0 && chance(state.rng, quality) ? 1 : 0;
-  const rIdx = Math.min(cfg.rarities.length - 1, drawn + up + greed);
+  // IT-56（M15）: 伝説まで上がれるのは危険度 legendaryMinDanger 以上の箱（とその扱いで振るボスの戦利品）だけ。それ以外は希少で止める。
+  // 上限は乱数を引かない（chance は上限に関係なく上で引いている）。基礎の重みで伝説を引いた場合も上限で希少に下がる
+  const maxIdx = danger >= cfg.legendaryMinDanger ? cfg.rarities.length - 1 : cfg.rarities.length - 2;
+  const rIdx = Math.min(maxIdx, drawn + up + greed);
   const rarity = cfg.rarities[rIdx]!;
   const cursed = chance(state.rng, cfg.curseChance);
   const count = rarity.options + (cursed ? 1 : 0);
@@ -136,7 +142,8 @@ export function placeFoundItem(ctx: RuleContext, spec: ItemInstanceSpec): boolea
 
 /**
  * IT-51 / IT-52: ボスの表を rolls 回だけ、itemChance % で 1 品を引いて配る（rolls 回とも独立）。levelBase は dropLevelBase の値（IT-53）。
- * quality（IT-31）・危険度（IT-56）は効かない（0）。宝箱の表は rollChestItems（itemChance / rolls を持たない。M14）
+ * quality（IT-31）は効かない（0）。危険度は items.legendaryMinDanger の箱として振る（IT-56。M15。上振れの chance を 1 回引き、伝説まで上がれる）。
+ * 宝箱の表は rollChestItems（itemChance / rolls を持たない。M14）
  */
 export function rollBossTable(ctx: RuleContext, tableId: string, levelBase: number, foundIn: string): void {
   const { state, data } = ctx;
@@ -144,7 +151,7 @@ export function rollBossTable(ctx: RuleContext, tableId: string, levelBase: numb
   if (t.rolls === undefined || t.itemChance === undefined) throw new Error(`boss drop table needs itemChance / rolls: ${tableId}`);
   for (let i = 0; i < t.rolls; i++) {
     if (!chance(state.rng, t.itemChance)) continue;
-    placeFoundItem(ctx, rollItemSpec(state, data, t.entries, levelBase, 0, foundIn, 0));
+    placeFoundItem(ctx, rollItemSpec(state, data, t.entries, levelBase, 0, foundIn, data.config.items.legendaryMinDanger));
   }
 }
 
@@ -169,7 +176,7 @@ export function rollChestItems(ctx: RuleContext, dungeonId: string, floor: numbe
   for (let i = 0; i < n; i++) placeFoundItem(ctx, rollItemSpec(state, data, entries, base, quality, dungeonId, danger));
 }
 
-/** DG-31 / IT-50: ボスの戦利品。表は drops.boss[dungeonId]、Lv の基準は max(ボスの level, 最下層の基準 Lv)（IT-53 / DG-38。M14）、chestQuality は効かない（IT-31） */
+/** DG-31 / IT-50: ボスの戦利品。表は drops.boss[dungeonId]、Lv の基準は max(ボスの level, 最下層の基準 Lv)（IT-53 / DG-38。M14）、chestQuality は効かない（IT-31）、危険度は legendaryMinDanger 扱い（IT-56。M15） */
 export function rollBossItems(ctx: RuleContext, dungeonId: string, bossLevel: number): void {
   const tableId = ctx.data.drops.boss[dungeonId];
   if (tableId === undefined) throw new Error(`no boss drop table: ${dungeonId}`);
@@ -206,7 +213,7 @@ export function directDropPool(data: GameData, dungeonId: string, floor: number,
  * chance(combat.directDropChance)（グループごとに必ず 1 回）→（当たれば）種別 = direct.kinds[dropKind] から（長さ 2 以上のときだけ randInt(0, 長さ − 1)）→
  * gold: rollDice(directDropGoldDice)（0 未満にしない。正なら gainGold で battle.dropGold）/
  * consumable: weightedIndex(direct.consumables) → battle.drop → placeFoundItem（鑑定済み・Lv0・通常）/
- * book・weapon・armor・accessory: 母集団（directDropPool）が空なら何もしない（乱数も引かない）。あれば rollItemSpec（quality 0・danger 0、
+ * book・weapon・armor・accessory: 母集団（directDropPool）が空なら何もしない（乱数も引かない）。あれば rollItemSpec（quality 0・danger 0。希少まで（IT-57。M15）、
  * Lv の基準は dropLevelBase(潜行の階, その種類の level)）→ battle.drop → placeFoundItem。name は groupName（鑑定済みなら名前、未鑑定なら系統）
  */
 export function rollDirectDrops(ctx: RuleContext): void {

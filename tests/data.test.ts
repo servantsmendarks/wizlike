@@ -263,7 +263,7 @@ describe("data: config.json", () => {
     const rate = { statPivot: 10, thiefBonus: 30, agiMul: 2, lukMul: 2, dangerMul: 10, min: 5, max: 95 };
     expect(d.config.chest).toEqual({
       noTrapChance: 30,
-      rarityUpPerDanger: 15,
+      rarityUpPerDanger: 10,
       secondItemChance: 25,
       secondItemPerDanger: 15,
       inspect: { base: 40, ...rate },
@@ -312,12 +312,12 @@ describe("data: config.json", () => {
     expect(config.combat).not.toHaveProperty("acMin");
     expectIssue((r) => (r.config.combat.acMin = -10), "config.json", "combat.acMin: unknown field");
   });
-  test("data: IT-30 config.items.rarities は normal / fine / rare / legendary の順で 4 件（72 / 20 / 7 / 1（M14）、個数 0〜3【仮】）", () => {
+  test("data: IT-30 config.items.rarities は normal / fine / rare / legendary の順で 4 件（73 / 22 / 5 / 0（M15。伝説の基礎の重みは 0）、個数 0〜3【仮】）", () => {
     expect(config.items.rarities.map((r) => [r.id, r.weight, r.options])).toEqual([
-      ["normal", 72, 0],
-      ["fine", 20, 1],
-      ["rare", 7, 2],
-      ["legendary", 1, 3],
+      ["normal", 73, 0],
+      ["fine", 22, 1],
+      ["rare", 5, 2],
+      ["legendary", 0, 3],
     ]);
     expectIssue((r) => r.config.items.rarities.pop(), "config.json", "items.rarities: IT-30: expected 4 rarities");
     expectIssue((r) => (r.config.items.rarities[0].id = "fine"), "config.json", "items.rarities[0].id: IT-30");
@@ -325,6 +325,15 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.items.rarities[3].options = 4), "config.json", "items.rarities[3].options");
     expectIssue((r) => (r.config.items.rarities[1].weight = -1), "config.json", "items.rarities[1].weight");
     expect(issuesOf((r) => (r.config.items.rarities[0].weight = 0))).toEqual([]);
+  });
+  test("data: IT-56 config.items.legendaryMinDanger は整数 1〜4（M15。3【仮】）。欠落・範囲外で止める", () => {
+    expect(config.items.legendaryMinDanger).toBe(3);
+    expectIssue((r) => delete r.config.items.legendaryMinDanger, "config.json", "items.legendaryMinDanger: missing required field");
+    expectIssue((r) => (r.config.items.legendaryMinDanger = 0), "config.json", "items.legendaryMinDanger: expected integer in 1..4, got 0");
+    expectIssue((r) => (r.config.items.legendaryMinDanger = 5), "config.json", "items.legendaryMinDanger: expected integer in 1..4, got 5");
+    expectIssue((r) => (r.config.items.legendaryMinDanger = 2.5), "config.json", "items.legendaryMinDanger: expected integer");
+    expect(issuesOf((r) => (r.config.items.legendaryMinDanger = 1))).toEqual([]);
+    expect(issuesOf((r) => (r.config.items.legendaryMinDanger = 4))).toEqual([]);
   });
   test("data: IT-20〜22・IT-32・IT-33・IT-53・IT-60〜64 config.items の数値【仮】と型", () => {
     const it = config.items;
@@ -1318,11 +1327,11 @@ describe("data: personalities.json", () => {
     expectIssue((r) => (r.personalities[3].benefits.damage = 1), "personalities.json", "EV-41");
     expectIssue((r) => (r.personalities[3].san.fearLossMul = 0.5), "personalities.json", "EV-41");
   });
-  test("data: IT-31 benefits.chestQuality は 1 段上げる確率 0..100（M14。強欲 35【仮】、ほかは 0）", () => {
+  test("data: IT-31 benefits.chestQuality は 1 段上げる確率 0..100（M14。強欲 25（M15。M14 は 35）、ほかは 0）", () => {
     expect(personalities.map((p) => [p.id, p.benefits.chestQuality])).toEqual([
       ["cautious", 0],
       ["reckless", 0],
-      ["greedy", 35],
+      ["greedy", 25],
       ["normal", 0],
     ]);
     expectIssue((r) => (r.personalities[2].benefits.chestQuality = 101), "personalities.json", "[2].benefits.chestQuality: expected integer in 0..100");

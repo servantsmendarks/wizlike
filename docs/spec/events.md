@@ -46,11 +46,11 @@
 |---|---|---|---|---|
 | 慎重 cautious | 0/0/0/1 | `trapDetect` +30%、`ambushAvoid` +20%、制止可 | 罠と仲間の負傷による減少 ×0.5 | HP 50% 未満で防御 |
 | 無鉄砲 reckless | 0/3/2/0 | `initiative` +2、`damage` +1 | `fear` タグの減少 ×0.5 | HP に関わらず攻撃 |
-| 強欲 greedy | 3/1/0/0 | `chestQuality` 35%、`hiddenTreasure` +15% | 財宝入手で +2 | 金の多いグループを狙う |
+| 強欲 greedy | 3/1/0/0 | `chestQuality` 25%、`hiddenTreasure` +15% | 財宝入手で +2 | 金の多いグループを狙う |
 | 普通 normal | 0/0/0/0 | なし | なし。SAN 50% 未満で指示無視 10% | 傾向なし |
 
 - EV-41 「普通」が最強にならないことを守る原則: 普通には恩恵も耐性も付けない。イベントには「衝動でしか良い結果が出ない」分岐を一定数入れる。普通は追い詰められる（SAN 低下）と真っ先に崩れる。
-- EV-42 慎重の `trapDetect` は DG-21 と CB-63 / CB-64（M11。宝箱の調べる・解除の成功率に足す。以前は CB-52）、`ambushAvoid` は CB-04、無鉄砲の `initiative` と `damage` は CB-11 と CB-22、強欲の `chestQuality` は CB-52（宝箱の品の希少度を 1 段上げる確率（%）として効かせる。IT-31。行動可能な者の最大。M7〜M13 は上げる段数（+1）で、M14 で確率 35% に変えた）、`hiddenTreasure` は【未定】（隠し財宝セルは未設計）。M7 のオプション `trapDetect`（IT-34）は性格の `trapDetect` に足す。
+- EV-42 慎重の `trapDetect` は DG-21 と CB-63 / CB-64（M11。宝箱の調べる・解除の成功率に足す。以前は CB-52）、`ambushAvoid` は CB-04、無鉄砲の `initiative` と `damage` は CB-11 と CB-22、強欲の `chestQuality` は CB-52（宝箱の品の希少度を 1 段上げる確率（%）として効かせる。IT-31。行動可能な者の最大。M7〜M13 は上げる段数（+1）で、M14 で確率 35% に、M15 で 25% に変えた。伝説まで上がれるのは危険度 `config.items.legendaryMinDanger` 以上の箱だけ。IT-56）、`hiddenTreasure` は【未定】（隠し財宝セルは未設計）。M7 のオプション `trapDetect`（IT-34）は性格の `trapDetect` に足す。
 - EV-43 仲間の死亡による SAN 減少（CH-51）は「仲間の負傷」の耐性の対象に含める。
 
 ## 6. プロトタイプのイベント

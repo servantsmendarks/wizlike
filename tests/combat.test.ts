@@ -4,6 +4,7 @@
 // 出目に依存させたくない検証は config を上書きした data（必中・必ず外れ・奇襲なし等）を使う。
 import { describe, expect, test } from "vitest";
 import type { GameData } from "../src/core/data";
+import { optionAppliesTo } from "../src/core/data";
 import { execute } from "../src/core/engine";
 import { chance, cloneRng, randInt, rollDice, rollDie, weightedIndex, type RngState } from "../src/core/rng";
 import { allyAc, canAct, hitPercent, reachHitBonus, statusPercent } from "../src/core/rules/combat-calc";
@@ -1618,6 +1619,36 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(r.state.items[id]).toMatchObject({ itemId: "dagger", level: 1, rarity: "normal", options: [], uniqueId: null, identified: false, cursed: false, foundIn: "d01" });
     expect(r.state.party.some((c) => c.inventory.includes(id))).toBe(true);
     expectStateInvariants(r.state);
+  });
+
+  test("IT-57 直接ドロップは希少で止まる（M15。危険度 0・quality 0 で振り、基礎の重みで伝説を引いても希少）。強欲が行動可能でも上がらない", () => {
+    // 希少度の重みを伝説だけにしたデータ。コボルド（humanoid）→ 武器（短剣）。強欲のドナ（c4）は行動可能
+    const d = directData({ humanoid: ["weapon"] }, [{ base: "dagger", weight: 1 }]);
+    d.config.items.rarities = d.config.items.rarities.map((r, i) => ({ ...r, weight: i === 3 ? 1 : 0 }));
+    const s = setup([{ monsterId: "kobold", hps: [0] }], { identified: ["kobold"] });
+    expect(memberById(s, "c4")!.personality).toBe("greedy");
+    const m = cloneRng(s.rng);
+    chance(m, 100); // CB-57
+    weightedIndex(m, [1]); // IT-52: 母集団（短剣だけ）
+    weightedIndex(m, [1]); // IT-53: Lv の上乗せ
+    weightedIndex(m, [0, 0, 0, 1]); // IT-30: 伝説を引く
+    chance(m, 0); // IT-32: 呪い（危険度 0・quality 0 なので上振れと強欲の chance は引かない）
+    const ctx = makeContext(cloneState(s), d);
+    rollDirectDrops(ctx);
+    const id = ctx.state.dive!.ledger.items.at(-1)!;
+    expect(ctx.state.items[id]).toMatchObject({ itemId: "dagger", rarity: "rare" });
+    expect(ctx.state.items[id]!.options).toHaveLength(2);
+    // 希少のオプション 2 個の分を鏡で引き、乱数の数が合うことを確かめる
+    const pool = d.itemOptions.options.filter((o) => optionAppliesTo(o, "weapon"));
+    for (let i = 0; i < 2; i++)
+      pool.splice(
+        weightedIndex(
+          m,
+          pool.map((o) => o.weight),
+        ),
+        1,
+      );
+    expect(ctx.state.rng).toEqual(m);
   });
 
   test("CB-57/IT-57 母集団が空なら何も落とさない（乱数は chance と種別の randInt だけ）。chance が外れれば種別を引かない", () => {

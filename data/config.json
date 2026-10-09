@@ -53,12 +53,12 @@
   },
   "items": {
     "rarities": [
-      { "id": "normal", "weight": 72, "options": 0 },
-      { "id": "fine", "weight": 20, "options": 1 },
-      { "id": "rare", "weight": 7, "options": 2 },
-      { "id": "legendary", "weight": 1, "options": 3 }
+      { "id": "normal", "weight": 73, "options": 0 },
+      { "id": "fine", "weight": 22, "options": 1 },
+      { "id": "rare", "weight": 5, "options": 2 },
+      { "id": "legendary", "weight": 0, "options": 3 }
     ],
-    "curseChance": 8, "optionTierStep": 4, "dropLevelUpWeights": [60, 30, 10],
+    "legendaryMinDanger": 3, "curseChance": 8, "optionTierStep": 4, "dropLevelUpWeights": [60, 30, 10],
     "weaponLvPerDamage": 2, "armorLvPerAc": 3, "casterLvPerPower": 2,
     "levelPriceRatio": 0.5, "optionSellValue": [20, 40, 80], "warehouseSlots": 40
   },
@@ -73,7 +73,7 @@
   },
   "events": { "lureMul": 12, "cap": 60, "floor": 0, "stopSanGain": 3, "confusedLureWeight": 2 },
   "chest": {
-    "noTrapChance": 30, "rarityUpPerDanger": 15, "secondItemChance": 25, "secondItemPerDanger": 15,
+    "noTrapChance": 30, "rarityUpPerDanger": 10, "secondItemChance": 25, "secondItemPerDanger": 15,
     "inspect": { "base": 40, "statPivot": 10, "thiefBonus": 30, "agiMul": 2, "lukMul": 2, "dangerMul": 10, "min": 5, "max": 95 },
     "disarm": { "base": 50, "statPivot": 10, "thiefBonus": 30, "agiMul": 2, "lukMul": 2, "dangerMul": 10, "min": 5, "max": 95 },
     "triggerChance": 10, "wrongNameChance": 50, "disarmFailTrigger": 50,
