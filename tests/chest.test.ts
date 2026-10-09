@@ -64,7 +64,7 @@ describe("CB-60 箱の状態と受け付け", () => {
     const lv = Math.max(...data.dungeons[0]!.encounterTable["1"]!.map((e) => data.monsters.find((m) => m.id === e.monster)!.level));
     expect(chestOf(r.state)).toEqual({ source: "drop", cell: null, inRoom: false, trapId: "bomb", danger: 2, level: lv, finding: null, rivalry: null });
     expect(r.events).toEqual([
-      { kind: "chestFound", source: "drop" },
+      { kind: "chestFound", source: "drop", danger: 2 },
       { kind: "message", key: "chest.found.drop" },
       { kind: "message", key: "chest.prompt" },
     ]);
@@ -364,7 +364,7 @@ describe("CB-67 警報の戦闘", () => {
     const iScreen = r.events.findIndex((e) => e.kind === "screen");
     expect(r.events.slice(iScreen)).toEqual([
       { kind: "screen", to: "dungeon", dungeonId: "d01", at: { pos: s.dive!.pos, facing: s.dive!.facing } },
-      { kind: "chestFound", source: "drop" },
+      { kind: "chestFound", source: "drop", danger: 3 },
       { kind: "message", key: "chest.afterAlarm" },
       { kind: "message", key: "chest.prompt" },
     ]);
@@ -834,7 +834,7 @@ describe("EV-16 / EV-25 宝箱の衝動と制止", () => {
     const r = present(s, D);
     expect(r.state.rng).toEqual(m);
     expect(r.events).toEqual([
-      { kind: "chestFound", source: "drop" },
+      { kind: "chestFound", source: "drop", danger: 1 },
       { kind: "message", key: "chest.found.drop" },
       { kind: "message", key: "chest.prompt" },
     ]);
@@ -873,7 +873,7 @@ describe("EV-16 / EV-25 宝箱の衝動と制止", () => {
     expect(r.state.rng).toEqual(m);
     const iGold = kindsOf(r.events).indexOf("message:chest.open.gold");
     expect(r.events.slice(0, iGold + 1)).toEqual([
-      { kind: "chestFound", source: "drop" },
+      { kind: "chestFound", source: "drop", danger: 1 },
       { kind: "message", key: "chest.found.drop" },
       { kind: "chestImpulse", actorId: "c3" },
       { kind: "message", key: "chest.impulse.actor", params: { actor: "キリ" } },
@@ -1087,7 +1087,7 @@ describe("EV-70〜76 職業の掛け合い", () => {
     const r = present(s, D);
     expect(r.state.rng).toEqual(m);
     expect(r.events).toEqual([
-      { kind: "chestFound", source: "drop" },
+      { kind: "chestFound", source: "drop", danger: 1 },
       { kind: "message", key: "chest.found.drop" },
       { kind: "message", key: "rivalry.thief_chest.start", params: { a: "キリ", b: "フィン" } },
       {
@@ -1406,7 +1406,7 @@ describe("DG-24 宝箱のセルに乗る（M11 の作業 7）", () => {
     expect(r.state.rng).toEqual(s.rng); // 遭遇の chance も衝動・掛け合いも引かない
     expect(r.events).toEqual([
       { kind: "moved", pos: a.target, facing: a.facing },
-      { kind: "chestFound", source: "cell" },
+      { kind: "chestFound", source: "cell", danger: 1 },
       { kind: "message", key: "chest.found.cell" },
       { kind: "message", key: "chest.prompt" },
     ]);
@@ -1508,7 +1508,7 @@ describe("DG-24 宝箱のセルに乗る（M11 の作業 7）", () => {
     const { state } = atChest();
     const r = exec(withRng(state, k), MOVE, Di);
     expect(r.events.slice(1, 4)).toEqual([
-      { kind: "chestFound", source: "cell" },
+      { kind: "chestFound", source: "cell", danger: 0 },
       { kind: "message", key: "chest.found.cell" },
       { kind: "chestImpulse", actorId: "c3" },
     ]);
@@ -1539,7 +1539,7 @@ describe("DG-24 宝箱のセルに乗る（M11 の作業 7）", () => {
     expect(back.state.rng).toEqual(turned.rng);
     expect(back.events).toEqual([
       { kind: "moved", pos: a.target, facing: a.facing },
-      { kind: "chestFound", source: "cell" },
+      { kind: "chestFound", source: "cell", danger: 0 },
       { kind: "message", key: "chest.found.cell" },
       { kind: "message", key: "chest.prompt" },
     ]);

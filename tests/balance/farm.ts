@@ -9,12 +9,16 @@ import { upgradeFee } from "../../src/core/rules/upgrade";
 import { slotsUsed } from "../../src/core/state";
 import { data } from "../helpers/core";
 import {
+  CHEST_DANGERS,
+  emptyRarityTally,
   fmt,
   mean,
   median,
   NEAR,
   pct,
   percentile,
+  rarityTally,
+  rarityTotal,
   returnOnDeath,
   returnOnFrontHp,
   runCampaigns,
@@ -23,6 +27,7 @@ import {
   type Campaign,
   type CampaignResult,
   type DiveRecord,
+  type RarityTally,
 } from "./bot";
 
 /** 【仮】推定の実時間（迷宮の分。UI-75 の config.measure で数えた値）がこの分に達したら帰る（テストの定数） */
@@ -119,6 +124,21 @@ export function farmReport(results: CampaignResult[], kind: BotKind): string {
   const rar = (r: string) => sum(all.map((d) => d.foundRarity[r] ?? 0));
   const rarTotal = sum(RARITIES.map(rar));
   row("希少度（汎用 + ユニーク）", RARITIES.map((r) => `${RARITY_LABEL[r]} ${pct(rar(r), rarTotal)}`).join("・"));
+  // M15（設計書 §3）: 出どころ別・箱の危険度別の希少度と、見つけた箱の危険度の内訳（件数）
+  const addUp = (ts: readonly RarityTally[]) => ts.reduce((a, t) => (RARITIES.forEach((r) => (a[r] += t[r])), a), emptyRarityTally());
+  const bySrc = (src: "chest" | "drop" | "boss") => addUp(all.map((d) => d.foundRarityBySource[src]));
+  const boss = bySrc("boss");
+  row(
+    "希少度 出どころ別（件数。宝箱 / 直接ドロップ。通常・上質・希少・伝説）",
+    `宝箱 ${rarityTally(bySrc("chest"))} / 直接ドロップ ${rarityTally(bySrc("drop"))}` + (rarityTotal(boss) > 0 ? ` / ボス ${rarityTally(boss)}` : ""),
+  );
+  const boxes = CHEST_DANGERS.map((dg) => sum(all.map((d) => d.chestsByDanger[dg] ?? 0)));
+  const boxTotal = sum(boxes);
+  row("見つけた箱の危険度の内訳（危険度 0〜4。割合（箱の数/見つけた箱の計））", CHEST_DANGERS.map((dg, i) => `${dg}: ${pct(boxes[i]!, boxTotal)}`).join("・"));
+  row(
+    "危険度別の希少度（宝箱の品。件数。通常・上質・希少・伝説）",
+    CHEST_DANGERS.map((dg) => `${dg}: ${rarityTally(addUp(all.map((d) => d.chestRarityByDanger[dg] ?? emptyRarityTally())))}`).join(" / "),
+  );
   const gen = sum(found("generic"));
   const lvCount = (lv: number, plus = false) => sum(all.map((d) => sum(Object.entries(d.foundGenericByLevel).filter(([k]) => (plus ? Number(k) >= lv : Number(k) === lv)).map(([, x]) => x))));
   row("汎用の Lv", [1, 2, 3, 4].map((lv) => `Lv${lv} ${pct(lvCount(lv), gen)}`).join("・") + `・Lv5+ ${pct(lvCount(5, true), gen)}`);

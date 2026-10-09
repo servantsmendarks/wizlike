@@ -189,13 +189,13 @@ export function findCellChest(ctx: RuleContext, cell: Cell, pos: Pos, startAlarm
 export type PresentChestOptions = { impulse: false } | { impulse: true; startAlarm: StartAlarm };
 
 /**
- * CB-60 / EV-16 / EV-25 / EV-71: 箱を見つけたことを語る。chestFound{source} → message chest.found.<source> →
+ * CB-60 / EV-16 / EV-25 / EV-71: 箱を見つけたことを語る。chestFound{source, danger} → message chest.found.<source> →
  * （impulse なら）衝動と制止（chestImpulse）。衝動で開けたら（中身・転移・警報のどれでも）ここで終わる（掛け合いも chest.prompt も無し）→
  * （impulse なら）職業の掛け合い（rollRivalry）→ chest.prompt（B5）
  */
 export function presentChest(ctx: RuleContext, opts: PresentChestOptions): void {
   const chest = requireChest(ctx.state);
-  ctx.events.push({ kind: "chestFound", source: chest.source });
+  ctx.events.push({ kind: "chestFound", source: chest.source, danger: chest.danger });
   ctx.events.push({ kind: "message", key: `chest.found.${chest.source}` });
   if (opts.impulse) {
     if (chestImpulse(ctx, opts.startAlarm)) return;
@@ -289,11 +289,11 @@ function rivalryOf(data: GameData, id: string): RivalryDef {
 }
 
 /**
- * CB-67: 警報の戦闘に勝って同じ箱に戻る。chestFound{source} → message chest.afterAlarm → chest.prompt（衝動判定・職業の掛け合いはしない）。乱数は使わない
+ * CB-67: 警報の戦闘に勝って同じ箱に戻る。chestFound{source, danger} → message chest.afterAlarm → chest.prompt（衝動判定・職業の掛け合いはしない）。乱数は使わない
  */
 export function returnToChest(ctx: RuleContext): void {
   const chest = requireChest(ctx.state);
-  ctx.events.push({ kind: "chestFound", source: chest.source });
+  ctx.events.push({ kind: "chestFound", source: chest.source, danger: chest.danger });
   ctx.events.push({ kind: "message", key: "chest.afterAlarm" });
   promptIfPending(ctx);
 }

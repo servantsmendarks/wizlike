@@ -2331,7 +2331,7 @@ describe("UI-70 宝箱の再生（M11 作業 4b）", () => {
     const at = { pos: { x: 1, y: 1 }, facing: "N" as const };
     const events: GameEvent[] = [
       { kind: "screen", to: "dungeon", dungeonId: "d01", at },
-      { kind: "chestFound", source: "drop" },
+      { kind: "chestFound", source: "drop", danger: 0 },
       msg("chest.found.drop"),
       { kind: "chestImpulse", actorId: "c3" },
       msg("chest.impulse.actor", { actor: "キリ" }),
@@ -2391,7 +2391,7 @@ describe("UI-70 宝箱の再生（M11 作業 4b）", () => {
     for (const skipAnimations of [false, true]) {
       const { deps, log } = fakeDeps({ skipAnimations });
       const events: GameEvent[] = [
-        { kind: "chestFound", source: "cell" },
+        { kind: "chestFound", source: "cell", danger: 0 },
         msg("chest.found.cell"),
         { kind: "chestImpulse", actorId: "c3" },
         msg("chest.impulse.actor", { actor: "キリ" }),
@@ -2408,7 +2408,7 @@ describe("UI-70 宝箱の再生（M11 作業 4b）", () => {
     }
     // chestFound だけ（衝動なし）でも操作を下げ、印は付けない
     const f = fakeDeps();
-    await createPlayer(f.deps).play([{ kind: "chestFound", source: "drop" }, msg("chest.found.drop"), msg("chest.prompt")], s(), s());
+    await createPlayer(f.deps).play([{ kind: "chestFound", source: "drop", danger: 0 }, msg("chest.found.drop"), msg("chest.prompt")], s(), s());
     expect(names(f.log)).toContain("eventStarted");
     expect(names(f.log)).not.toContain("party.markActor");
   });

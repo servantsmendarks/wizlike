@@ -1004,8 +1004,11 @@ export type GameEvent =
    * 同じ events の後で位置が変わりうる（宝箱の転移など）ので、表示層はあればこれで迷宮を描き、無ければ最終の state から描く
    */
   | { kind: "screen"; to: Screen; dungeonId?: string; at?: { pos: Pos; facing: Facing } }
-  /** CB-60（M11）: 宝箱を見つけた（dive.chest に置いた）。表示層は箱の操作を出す合図にする */
-  | { kind: "chestFound"; source: "drop" | "cell" }
+  /**
+   * CB-60（M11）: 宝箱を見つけた（dive.chest に置いた）。表示層は箱の操作を出す合図にする。
+   * danger は見つけた時点の箱の危険度（dive.chest.danger。M15。記録・集計用で、表示層は使わない）
+   */
+  | { kind: "chestFound"; source: "drop" | "cell"; danger: number }
   /**
    * CB-62（M11）: 宝箱の罠が作動した。続けて語り chest.trap.<trapId> と効果の hpChanged / statusChanged / sanChanged など。
    * actorId は作動させた人（調べる・解除の失敗はその人、開けるで target one の罠なら選ばれた人）。開けるで target one でない罠は null

@@ -5,10 +5,11 @@ import { describe, expect, test } from "vitest";
 import { execute } from "../src/core/engine";
 import { townMenu } from "../src/core/rules/town";
 import { data, expectStateInvariants } from "./helpers/core";
+import { findBase } from "../src/core/state";
 import { chestRate } from "../src/core/rules/chest";
 import type { Command, GameState } from "../src/core/types";
 import { farmBot, farmReport } from "./balance/farm";
-import { BOTS, BOSS_LEVELS, Campaign, D03_DIVES, DESCEND_LEVELS, DISARM_TRIES, levelFor, PROGRESS_BOT, PROGRESS_DIVES, progressReport, report, runCampaigns } from "./balance/bot";
+import { BOTS, BOSS_LEVELS, Campaign, D03_DIVES, DESCEND_LEVELS, DISARM_TRIES, FOUND_SOURCES, levelFor, PROGRESS_BOT, PROGRESS_DIVES, progressReport, rarityTotal, report, runCampaigns } from "./balance/bot";
 
 const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0);
 
@@ -79,6 +80,9 @@ describe("バランス（H9 煙テスト）", () => {
     expect(c.state.progress.shopLevel).toBe(4);
     expect(progressReport([r])).toContain("d03 の潜行 1:");
     expect(progressReport([r])).toContain("d03 に届いたシード: 1/1");
+    // M15（CB-60 / IT-56）: ボスの品は勝った潜行にだけあり、レポートに希少度の行が出る（伝説の条件の不変条件は countFound が例外で確かめる）
+    for (const d of r.dives) if (rarityTotal(d.foundRarityBySource.boss) > 0) expect(d.bossWin).toBe(true);
+    expect(progressReport([r])).toContain("ボスの品の希少度（汎用 + ユニーク。全潜行）: 通常 ");
     expectStateInvariants(c.state);
     // M9-装備: d01 の踏破で流通レベル 2 になり、その帰還の街で後衛の魔術師（エル）に投げナイフを買い与える
     expect(r.dives[k]!.rangedBought).toBe(1);
@@ -338,7 +342,7 @@ describe("バランス（H9 煙テスト）", () => {
     expect(progressReport(results)).toContain("M11-宝箱【d01 の潜行（踏破まで）】");
   }, 60_000);
 
-  test("M13 農夫ボットの煙テスト: 農夫 Lv5 d01 1F を 2 シード × 1 潜行。開始時の最小 level 5、帰った理由（farmEnd）か method が決まり、推定の実時間 > 0、拾った品の合計 = 宝箱の品 + 直接ドロップの品、不変条件が崩れない", () => {
+  test("M13/M15 農夫ボットの煙テスト: 農夫 Lv5 d01 1F を 2 シード × 1 潜行。開始時の最小 level 5、帰った理由（farmEnd）か method が決まり、推定の実時間 > 0、拾った品の合計 = 宝箱の品 + 直接ドロップの品、不変条件が崩れない。CB-60 / IT-56（M15）: 出どころ別の希少度の合計 = 希少度の合計、箱の危険度の内訳の合計 = 見つけた箱、d01 1F では伝説 0", () => {
     const kind = farmBot(5, "d01", 1);
     const { results, keys } = runCampaigns(kind, 2, 1);
     expect(results).toHaveLength(2);
@@ -351,9 +355,17 @@ describe("バランス（H9 煙テスト）", () => {
       expect(d.beats.steps).toBe(d.steps);
       expect(sum(Object.values(d.found))).toBe(d.chestItems + d.dropItems); // 農夫はボスと戦わないので、拾った品は宝箱の品と直接ドロップ（M14。CB-57）の品
       expect(d.netProfit).toBe(d.goldAfterSell - d.goldBefore);
+      // M15: 出どころ別の合計 = found（汎用 + ユニーク）の合計。農夫はボスと戦わない。d01 は危険度 3 以上の箱が出ないので伝説 0（IT-56）
+      expect(sum(FOUND_SOURCES.map((x) => rarityTotal(d.foundRarityBySource[x])))).toBe(d.found.generic + d.found.unique);
+      expect(rarityTotal(d.foundRarityBySource.boss)).toBe(0);
+      expect(sum(Object.values(d.chestsByDanger))).toBe(d.chestImpulse.found);
+      expect(d.foundRarity["legendary"] ?? 0).toBe(0);
+      expect((d.chestsByDanger[3] ?? 0) + (d.chestsByDanger[4] ?? 0)).toBe(0);
     }
     expect(keys.has("battle.encounter")).toBe(true);
-    expect(farmReport(results, kind)).toContain("## 農夫 Lv5 d01 1F（2 シード × 1 潜行）");
+    const rep = farmReport(results, kind);
+    expect(rep).toContain("## 農夫 Lv5 d01 1F（2 シード × 1 潜行）");
+    for (const k of ["希少度 出どころ別", "見つけた箱の危険度の内訳", "危険度別の希少度"]) expect(rep).toContain(k);
   }, 60_000);
 
   test("M13 農夫ボットの煙テスト: 農夫 Lv8 d02 1F は d01 を踏破済みの state（clearedDungeons・unlockedDungeons・shopLevel 2）にして d02 の 1 階だけを 1 潜行する", () => {
@@ -371,4 +383,33 @@ describe("バランス（H9 煙テスト）", () => {
     expect(c.state.screen).toBe("town");
     expectStateInvariants(c.state);
   }, 60_000);
+
+  test("M15 CB-60/IT-56/IT-57 集計の不変条件: ボットは item.found の出どころを直前の目印（battle.drop / chest.open.gold / battle.bossDefeated）で決め、伝説は危険度 legendaryMinDanger 以上の箱かボスからだけ（ほかは例外）。目印が無い item.found も例外", () => {
+    const c = new Campaign(1, PROGRESS_BOT);
+    const from = execute(c.state, { type: "dungeon.enter", dungeonId: "d01" }, data).state;
+    /** from に伝説（または rarity）の汎用装備を 1 つ拾った後の state */
+    const withFound = (rarity: "legendary" | "rare") => {
+      const to = structuredClone(from);
+      const src = Object.values(to.items).find((x) => x.uniqueId === null && findBase(data, x.itemId) !== null)!;
+      to.items["m15x"] = { ...structuredClone(src), id: "m15x", rarity };
+      to.dive!.ledger.items.push("m15x");
+      return to;
+    };
+    const found = { kind: "message", key: "item.found", params: { name: "x", item: "x" } } as const;
+    const msg = (key: string) => ({ kind: "message", key }) as const;
+    const chestAt = (danger: number) => [{ kind: "chestFound", source: "drop", danger } as const, msg("chest.found.drop"), msg("chest.open.gold")];
+    const min = data.config.items.legendaryMinDanger;
+    expect(() => c.countFound(from, withFound("legendary"), [msg("battle.drop"), found])).toThrow(/legendary .* from drop/);
+    expect(() => c.countFound(from, withFound("legendary"), [...chestAt(min - 1), found])).toThrow(/from chest danger/);
+    expect(() => c.countFound(from, withFound("rare"), [found])).toThrow(/without source/);
+    c.countFound(from, withFound("legendary"), [...chestAt(min), found]);
+    c.countFound(from, withFound("legendary"), [msg("battle.bossDefeated"), found]);
+    c.countFound(from, withFound("rare"), [msg("battle.drop"), found]);
+    expect(c.foundRarityBySource.chest.legendary).toBe(1);
+    expect(c.foundRarityBySource.boss.legendary).toBe(1);
+    expect(c.foundRarityBySource.drop.rare).toBe(1);
+    expect(c.chestRarityByDanger[min]!.legendary).toBe(1);
+    expect(c.chestsByDanger[min]).toBe(1);
+    expect(c.chestsByDanger[min - 1]).toBe(1); // 例外で止まった回も、見つけた箱は品より前に数えている
+  });
 });

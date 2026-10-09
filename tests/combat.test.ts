@@ -1499,7 +1499,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     const ks = kindsOf(r.events);
     const iScreen = ks.indexOf("screen");
     expect(ks.slice(iScreen + 1)).toEqual(["chestFound", "message:chest.found.drop", "message:chest.prompt"]);
-    expect(r.events).toContainEqual({ kind: "chestFound", source: "drop" });
+    expect(r.events).toContainEqual({ kind: "chestFound", source: "drop", danger: 0 });
     // chest.open（罠なし）: 金 chestGoldDice → 2 個目の chance(0) → 1 品目（魔法書。weightedIndex(entries) だけ）→ chestEnd opened
     const cg = rollDice(m, "2d10").total;
     chance(m, 0); // CB-65（M14）: 2 個目の chance。外れ

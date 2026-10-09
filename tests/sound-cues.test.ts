@@ -99,8 +99,8 @@ describe("UI-66 soundsFor", () => {
       [{ type: "sfx", name: "identify" }],
     ],
     // M11（CB-60）: 宝箱の契機は見つけたとき（chestFound。ドロップの箱と宝箱のセル）。中身の語り chest.open.gold では鳴らさない
-    ["宝箱（ドロップ）を見つけて chest", { kind: "chestFound", source: "drop" }, [{ type: "sfx", name: "chest" }]],
-    ["宝箱（セル）を見つけて chest", { kind: "chestFound", source: "cell" }, [{ type: "sfx", name: "chest" }]],
+    ["宝箱（ドロップ）を見つけて chest", { kind: "chestFound", source: "drop", danger: 0 }, [{ type: "sfx", name: "chest" }]],
+    ["宝箱（セル）を見つけて chest", { kind: "chestFound", source: "cell", danger: 0 }, [{ type: "sfx", name: "chest" }]],
     ["宝箱の中身の語りは無し", { kind: "message", key: "chest.open.gold", params: { gold: 3 } }, []],
     ["買うで gold", { kind: "message", key: "town.shop.bought" }, [{ type: "sfx", name: "gold" }]],
     ["売るで gold", { kind: "message", key: "town.shop.sold" }, [{ type: "sfx", name: "gold" }]],

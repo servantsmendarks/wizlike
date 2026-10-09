@@ -38,7 +38,7 @@ import { sellPrice } from "../../src/core/rules/shop";
 import { townMenu } from "../../src/core/rules/town";
 import { classOf, findBase, findItem, itemOf, monsterOf, slotsUsed } from "../../src/core/state";
 import type { EquipSlot } from "../../src/core/data/index";
-import type { Command, Facing, Floor, GameEvent, GameState, ItemInstance, PartySetupMember, PenaltyResult, Pos } from "../../src/core/types";
+import type { Command, Facing, Floor, GameEvent, GameState, ItemInstance, PartySetupMember, PenaltyResult, Pos, Rarity } from "../../src/core/types";
 import { data, expectKnownStringKeys, expectStateInvariants, expectTallyMatchesEvents, newGame } from "../helpers/core";
 
 export const NEAR = 6; // 上り階段からの BFS 距離
@@ -245,6 +245,23 @@ export type FarmEnd = "full" | "time" | "death" | "hp";
 /** M13: 拾った品（item.found の実体）の種類ごとの数 */
 export type FoundTally = { generic: number; unique: number; consumable: number; book: number };
 
+/** M15（設計書 §3）: 拾った品の出どころ（宝箱 / 直接ドロップ / ボスの戦利品） */
+export type FoundSource = "chest" | "drop" | "boss";
+export const FOUND_SOURCES: readonly FoundSource[] = ["chest", "drop", "boss"];
+/** M15: 希少度ごとの数 */
+export type RarityTally = Record<Rarity, number>;
+export const emptyRarityTally = (): RarityTally => ({ normal: 0, fine: 0, rare: 0, legendary: 0 });
+/** M15: 箱の危険度（0 = 罠なし 〜 chest-traps.json の危険度の最大） */
+export const CHEST_DANGERS: readonly number[] = Array.from({ length: Math.max(...data.chestTraps.map((t) => t.danger)) + 1 }, (_, i) => i);
+const emptyBySource = (): Record<FoundSource, RarityTally> => ({ chest: emptyRarityTally(), drop: emptyRarityTally(), boss: emptyRarityTally() });
+function emptyByDanger<T>(f: () => T): Record<number, T> {
+  return Object.fromEntries(CHEST_DANGERS.map((d) => [d, f()]));
+}
+/** M15: 希少度の数の合計 */
+export const rarityTotal = (t: RarityTally): number => t.normal + t.fine + t.rare + t.legendary;
+/** M15: 「通常 a・上質 b・希少 c・伝説 d（計 n 品）」 */
+export const rarityTally = (t: RarityTally): string => `通常 ${t.normal}・上質 ${t.fine}・希少 ${t.rare}・伝説 ${t.legendary}（${rarityTotal(t)} 品）`;
+
 /** 潜行 1 回分（潜行 → 街の手順）の記録 */
 export type DiveRecord = {
   method: Method;
@@ -326,6 +343,9 @@ export type DiveRecord = {
   farmEnd: FarmEnd | null; // 農夫ボットが帰った理由（農夫以外・wipe / cap は null）
   found: FoundTally; // 拾った品（item.found のすべて。宝箱・ボス・直接ドロップ（M14）の品）の種類
   foundRarity: Record<string, number>; // そのうち汎用装備とユニークの希少度ごとの数
+  foundRarityBySource: Record<FoundSource, RarityTally>; // M15: その出どころ別（合計は foundRarity と同じ。countFound の推定）
+  chestRarityByDanger: Record<number, RarityTally>; // M15: 宝箱の品（汎用装備とユニーク）の希少度を箱の危険度ごとに（キーは CHEST_DANGERS）
+  chestsByDanger: Record<number, number>; // M15: 見つけた箱の数を危険度ごとに（chest.found.<source> の直前の chestFound の danger。合計は chestImpulse.found）
   foundGenericByLevel: Record<string, number>; // 汎用装備の Lv ごとの数（触媒になる品の Lv の分布）
   foundCursed: number; // 拾った品のうち呪われた品
   soldUnique: number; // 鑑定済みのユニークを売った数（soldCount に含む）
@@ -483,6 +503,11 @@ export class Campaign {
   farmEnd: FarmEnd | null = null;
   found: FoundTally = { generic: 0, unique: 0, consumable: 0, book: 0 };
   foundRarity: Record<string, number> = {};
+  foundRarityBySource: Record<FoundSource, RarityTally> = emptyBySource(); // M15
+  chestRarityByDanger: Record<number, RarityTally> = emptyByDanger(emptyRarityTally); // M15
+  chestsByDanger: Record<number, number> = emptyByDanger(() => 0); // M15
+  /** M15: 今の箱の危険度（直近の chestFound の danger。chestEnd と潜行の開始で null）。宝箱の品に付ける */
+  chestDanger: number | null = null;
   foundGenericByLevel: Record<string, number> = {};
   foundCursed = 0;
   enemyLvSum = 0; // 遭遇の敵の level × 体数の合計
@@ -605,18 +630,56 @@ export class Campaign {
 
   /**
    * M13（設計書 §2-4）: item.found（宝箱・ボス・直接ドロップ（M14）の品。IT-54）ごとに、潜行台帳に増えた実体（迷宮の外なら state.items に増えた実体）の
-   * 種類・希少度・Lv・呪いを数える。計測なので実体を覗く（ボットの判断には使わない）
+   * 種類・希少度・Lv・呪いを数える。計測なので実体を覗く（ボットの判断には使わない）。
+   * M15（設計書 §3。CB-60 / IT-56）: 汎用装備とユニークの希少度を出どころ別・箱の危険度別にも数える。増えた id の k 番目は同じ events の k 番目の item.found
+   * （placeFoundItem が push と同時に出す）。出どころはその item.found の前方で最も近い目印で決める: message battle.drop → 直接ドロップ、
+   * message chest.open.gold → 宝箱（危険度は直近の chestFound の danger。前の execute の分は chestDanger に控えてあり、chestEnd で消す）、
+   * message battle.bossDefeated → ボス。目印が無ければ例外。不変条件: 伝説は「宝箱で危険度 ≥ config.items.legendaryMinDanger」かボスからだけ（破れば例外）。
+   * 見つけた箱（chest.found.<source> の直前の chestFound）の数も危険度ごとに数える
    */
   countFound(from: GameState, to: GameState, events: GameEvent[]): void {
     const n = events.filter((e) => e.kind === "message" && e.key === "item.found").length;
-    if (n === 0) return;
-    let ids: string[];
-    if (to.dive !== null) {
-      const before = new Set(from.dive?.ledger.items ?? []);
-      ids = to.dive.ledger.items.filter((id) => !before.has(id));
-    } else ids = Object.keys(to.items).filter((id) => from.items[id] === undefined);
-    if (ids.length !== n) throw new Error(`seed ${this.seed}: item.found ${n} but ${ids.length} new instances`);
-    for (const id of ids) {
+    let ids: string[] = [];
+    if (n > 0) {
+      if (to.dive !== null) {
+        const before = new Set(from.dive?.ledger.items ?? []);
+        ids = to.dive.ledger.items.filter((id) => !before.has(id));
+      } else ids = Object.keys(to.items).filter((id) => from.items[id] === undefined);
+      if (ids.length !== n) throw new Error(`seed ${this.seed}: item.found ${n} but ${ids.length} new instances`);
+    }
+    let source: FoundSource | null = null;
+    let k = 0;
+    let prev: GameEvent | null = null;
+    for (const e of events) {
+      const last = prev;
+      prev = e;
+      if (e.kind === "chestFound") {
+        this.chestDanger = e.danger;
+        continue;
+      }
+      if (e.kind === "chestEnd") {
+        this.chestDanger = null;
+        continue;
+      }
+      if (e.kind !== "message") continue;
+      if (e.key === "chest.found.drop" || e.key === "chest.found.cell") {
+        if (last?.kind !== "chestFound") throw new Error(`seed ${this.seed}: ${e.key} without chestFound just before`);
+        this.chestsByDanger[last.danger] = (this.chestsByDanger[last.danger] ?? 0) + 1;
+        continue;
+      }
+      if (e.key === "battle.drop") source = "drop";
+      else if (e.key === "battle.bossDefeated") source = "boss";
+      else if (e.key === "chest.open.gold") {
+        source = "chest";
+        const held = from.dive?.chest?.danger;
+        // 箱を run の外で置いた場合（煙テストが execute で直に debug.chest を送る）は chestFound を見ていないので、開ける前の dive.chest の危険度を使う
+        if (this.chestDanger === null) this.chestDanger = held ?? null;
+        if (this.chestDanger === null) throw new Error(`seed ${this.seed}: chest.open.gold without chestFound`);
+        if (held !== undefined && held !== this.chestDanger) throw new Error(`seed ${this.seed}: chestFound danger ${this.chestDanger} but dive.chest.danger ${held}`);
+      }
+      if (e.key !== "item.found") continue;
+      const id = ids[k++]!;
+      if (source === null) throw new Error(`seed ${this.seed}: item.found without source (battle.drop / chest.open.gold / battle.bossDefeated)`);
       const inst = to.items[id]!;
       if (inst.cursed) this.foundCursed += 1;
       if (inst.uniqueId !== null) this.found.unique += 1;
@@ -629,7 +692,13 @@ export class Campaign {
         else this.found.consumable += 1;
         continue;
       }
+      const danger = this.chestDanger;
+      // M15 不変条件（IT-56 / IT-57）: 伝説は危険度 legendaryMinDanger 以上の宝箱かボスの戦利品からだけ（数える前に見る）
+      const allowed = source === "boss" || (source === "chest" && danger !== null && danger >= data.config.items.legendaryMinDanger);
+      if (inst.rarity === "legendary" && !allowed) throw new Error(`seed ${this.seed}: legendary ${inst.itemId} from ${source}${source === "chest" ? ` danger ${String(danger)}` : ""}`);
       this.foundRarity[inst.rarity] = (this.foundRarity[inst.rarity] ?? 0) + 1;
+      this.foundRarityBySource[source][inst.rarity] += 1;
+      if (source === "chest" && danger !== null) (this.chestRarityByDanger[danger] ??= emptyRarityTally())[inst.rarity] += 1;
     }
   }
 
@@ -1134,6 +1203,10 @@ export class Campaign {
     this.farmEnd = null;
     this.found = { generic: 0, unique: 0, consumable: 0, book: 0 };
     this.foundRarity = {};
+    this.foundRarityBySource = emptyBySource(); // M15
+    this.chestRarityByDanger = emptyByDanger(emptyRarityTally);
+    this.chestsByDanger = emptyByDanger(() => 0);
+    this.chestDanger = null; // 全滅で終わった潜行の箱は chestEnd を出さずに消える
     this.foundGenericByLevel = {};
     this.foundCursed = 0;
     this.enemyLvSum = 0;
@@ -1715,6 +1788,9 @@ export class Campaign {
         farmEnd: method === "wipe" || method === "cap" ? null : this.farmEnd,
         found: this.found,
         foundRarity: this.foundRarity,
+        foundRarityBySource: this.foundRarityBySource,
+        chestRarityByDanger: this.chestRarityByDanger,
+        chestsByDanger: this.chestsByDanger,
         foundGenericByLevel: this.foundGenericByLevel,
         foundCursed: this.foundCursed,
         soldUnique: 0,
@@ -1727,6 +1803,14 @@ export class Campaign {
         goldAfterSell: 0,
       };
       rec.estDungeonMs = estDungeonMsOf(rec.beats); // 迷宮の分はここで締める（beats は街の手順の分も続けて数える）
+      // M15（設計書 §3）: 出どころ別の合計 = 希少度の合計、危険度別の箱の合計 = 見つけた箱（chest.found.<source>）の数
+      const rarSum = sum(Object.values(rec.foundRarity));
+      const bySrc = sum(FOUND_SOURCES.map((x) => rarityTotal(rec.foundRarityBySource[x])));
+      if (bySrc !== rarSum) throw new Error(`seed ${this.seed}: foundRarityBySource ${bySrc} but foundRarity ${rarSum}`);
+      const byDanger = sum(Object.values(rec.chestRarityByDanger).map(rarityTotal));
+      if (byDanger !== rarityTotal(rec.foundRarityBySource.chest)) throw new Error(`seed ${this.seed}: chestRarityByDanger ${byDanger} but chest ${rarityTotal(rec.foundRarityBySource.chest)}`);
+      const boxes = sum(Object.values(rec.chestsByDanger));
+      if (boxes !== rec.chestImpulse.found) throw new Error(`seed ${this.seed}: chestsByDanger ${boxes} but found ${rec.chestImpulse.found}`);
       this.mercy(rec);
       if (farm !== null) {
         // M13（設計書 §2-3）: 農夫の街の手順。救済 → 鑑定 → 装備の更新 → 売却（鑑定しない）→ 寺院 → 宿 → 店の補充（outfit はしない）
@@ -1912,6 +1996,16 @@ export function progressReport(results: CampaignResult[], kind: BotKind = PROGRE
       const ds = results.flatMap((r) => r.dives.filter((d) => d.dungeonId === id));
       return `${id} ${ds.filter((d) => d.levelHeld).length}/${ds.length}`;
     }).join(" / ")}`,
+  );
+  // M15（設計書 §3）: ボスの戦利品（汎用装備とユニーク）の希少度。全潜行とダンジョンごと
+  const bossRar = (ds: readonly DiveRecord[]) => {
+    const t = emptyRarityTally();
+    for (const d of ds) for (const r of Object.keys(t) as Rarity[]) t[r] += d.foundRarityBySource.boss[r];
+    return t;
+  };
+  const allDives = results.flatMap((r) => r.dives);
+  lines.push(
+    `ボスの品の希少度（汎用 + ユニーク。全潜行）: ${rarityTally(bossRar(allDives))} / ${PROGRESS_ROUTE.map((id) => `${id} ${rarityTally(bossRar(allDives.filter((d) => d.dungeonId === id)))}`).join("・")}`,
   );
   lines.push(...impulseReport(results.flatMap((r) => r.dives)));
   lines.push(...chestReport("d01 の潜行（踏破まで）", d01));
