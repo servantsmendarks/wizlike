@@ -435,6 +435,8 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
     chest: F({
       noTrapChance: I(PERCENT), // CB-61
       rarityUpPerDanger: I(PERCENT), // IT-56
+      secondItemChance: I(PERCENT), // CB-65 / IT-51（M14）
+      secondItemPerDanger: I(PERCENT), // CB-65 / IT-51（M14）
       inspect: chestRate, // CB-63
       disarm: chestRate, // CB-64
       triggerChance: I(PERCENT), // CB-63
@@ -986,7 +988,7 @@ function validateDrops(ctx: Ctx, v: unknown, ix: Index): void {
     return o;
   };
   const t = fields(ctx, "", v, {
-    tables: L(F({ id: S, itemChance: I(PERCENT), rolls: I(POS_INT), entries: L(entry, 1) }), 1),
+    tables: L(F({ id: S, itemChance: opt(I(PERCENT)), rolls: opt(I(POS_INT)), entries: L(entry, 1) }), 1),
     chest: (c, p, x) => obj(c, p, x, null),
     boss: (c, p, x) => obj(c, p, x, null),
   });
@@ -995,6 +997,20 @@ function validateDrops(ctx: Ctx, v: unknown, ix: Index): void {
   uniqueIds(ctx, "tables", tables);
   const tableRef = refTo(byId(tables), "drop table");
   const has = (o: Obj, k: string): boolean => Object.prototype.hasOwnProperty.call(o, k);
+  // IT-51（M14）: itemChance / rolls はボスの表に必須、宝箱の表には置かない（個数は config.chest。CB-65）
+  const tableIndex = (tid: unknown): number => tables.findIndex((x) => strOf(get(x, "id")) === strOf(tid));
+  const requireCount = (tid: unknown, path: string): void => {
+    const i = tableIndex(tid);
+    if (i < 0) return;
+    for (const k of ["itemChance", "rolls"])
+      if (get(tables[i], k) === undefined) report(ctx, at(at("tables", i), k), `IT-51: required for boss table (${path})`);
+  };
+  const forbidCount = (tid: unknown, path: string): void => {
+    const i = tableIndex(tid);
+    if (i < 0) return;
+    for (const k of ["itemChance", "rolls"])
+      if (get(tables[i], k) !== undefined) report(ctx, at(at("tables", i), k), `IT-51: not allowed in chest table (${path}; see config.chest.secondItemChance)`);
+  };
 
   // IT-51: chest は全ダンジョンの全階（"1".."floors"）に表を持つ
   const chest = objOf(t.chest);
@@ -1010,6 +1026,7 @@ function validateDrops(ctx: Ctx, v: unknown, ix: Index): void {
       for (const [k, tid] of Object.entries(fo)) {
         if (keys !== undefined && !keys.includes(k)) report(ctx, at(dp, k), `IT-51: floor key must be 1..${floors}`);
         tableRef(ctx, at(dp, k), tid);
+        forbidCount(tid, at(dp, k));
       }
       if (keys !== undefined) for (const k of keys) if (!has(fo, k)) report(ctx, at(dp, k), "missing required field");
     }
@@ -1022,6 +1039,7 @@ function validateDrops(ctx: Ctx, v: unknown, ix: Index): void {
       const dp = at("boss", dId);
       if (!ix.dungeons.has(dId)) report(ctx, dp, `unknown dungeon id ${JSON.stringify(dId)}`);
       tableRef(ctx, dp, tid);
+      requireCount(tid, dp);
     }
     for (const dId of ix.dungeons.keys()) if (!has(boss, dId)) report(ctx, at("boss", dId), "missing required field");
   }

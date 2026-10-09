@@ -82,7 +82,8 @@ export function bossUniqueExpectation(dungeonId: string): number {
   const t = data.drops.tables.find((x) => x.id === data.drops.boss[dungeonId])!;
   const total = sum(t.entries.map((e) => e.weight));
   const uniq = sum(t.entries.filter((e) => "unique" in e).map((e) => e.weight));
-  return (t.rolls * t.itemChance * uniq) / (100 * total);
+  // ボスの表は itemChance / rolls を必ず持つ（IT-51。M14 の検証）
+  return (t.rolls! * t.itemChance! * uniq) / (100 * total);
 }
 
 /** 1 回の console.log で出す Markdown（設計書 §2-5 の 1〜9） */

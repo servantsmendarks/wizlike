@@ -1,7 +1,7 @@
 {
   "tables": [
     {
-      "id": "d01_f1", "itemChance": 40, "rolls": 1,
+      "id": "d01_f1",
       "entries": [
         { "base": "dagger", "weight": 4 }, { "base": "staff", "weight": 3 }, { "base": "sling", "weight": 3 },
         { "base": "short_bow", "weight": 2 }, { "base": "long_sword", "weight": 2 },
@@ -11,7 +11,7 @@
       ]
     },
     {
-      "id": "d01_f2", "itemChance": 50, "rolls": 1,
+      "id": "d01_f2",
       "entries": [
         { "base": "dagger", "weight": 2 }, { "base": "staff", "weight": 2 }, { "base": "sling", "weight": 2 },
         { "base": "short_bow", "weight": 3 }, { "base": "long_sword", "weight": 3 }, { "base": "mace", "weight": 2 },
@@ -30,7 +30,7 @@
       ]
     },
     {
-      "id": "d02_f1", "itemChance": 50, "rolls": 1,
+      "id": "d02_f1",
       "entries": [
         { "base": "spear", "weight": 3 }, { "base": "throwing_knives", "weight": 3 }, { "base": "oak_staff", "weight": 2 },
         { "base": "long_sword", "weight": 2 }, { "base": "mace", "weight": 2 },
@@ -40,7 +40,7 @@
       ]
     },
     {
-      "id": "d02_f2", "itemChance": 55, "rolls": 1,
+      "id": "d02_f2",
       "entries": [
         { "base": "spear", "weight": 2 }, { "base": "throwing_knives", "weight": 2 }, { "base": "long_bow", "weight": 2 }, { "base": "oak_staff", "weight": 2 },
         { "base": "studded_leather", "weight": 2 }, { "base": "warded_robe", "weight": 2 }, { "base": "chain_mail", "weight": 3 },
@@ -51,7 +51,7 @@
       ]
     },
     {
-      "id": "d02_f3", "itemChance": 60, "rolls": 1,
+      "id": "d02_f3",
       "entries": [
         { "base": "halberd", "weight": 2 }, { "base": "long_bow", "weight": 3 }, { "base": "oak_staff", "weight": 2 }, { "base": "sigil_staff", "weight": 1 },
         { "base": "warded_robe", "weight": 2 }, { "base": "chain_mail", "weight": 3 }, { "base": "plate_armor", "weight": 1 },
@@ -70,7 +70,7 @@
       ]
     },
     {
-      "id": "d03_f1", "itemChance": 60, "rolls": 1,
+      "id": "d03_f1",
       "entries": [
         { "base": "halberd", "weight": 2 }, { "base": "long_bow", "weight": 3 }, { "base": "sigil_staff", "weight": 1 },
         { "base": "chain_mail", "weight": 2 }, { "base": "plate_armor", "weight": 2 },
@@ -80,7 +80,7 @@
       ]
     },
     {
-      "id": "d03_f2", "itemChance": 60, "rolls": 1,
+      "id": "d03_f2",
       "entries": [
         { "base": "halberd", "weight": 2 }, { "base": "long_bow", "weight": 3 }, { "base": "sigil_staff", "weight": 1 },
         { "base": "chain_mail", "weight": 2 }, { "base": "plate_armor", "weight": 2 },
@@ -90,7 +90,7 @@
       ]
     },
     {
-      "id": "d03_f3", "itemChance": 65, "rolls": 1,
+      "id": "d03_f3",
       "entries": [
         { "base": "halberd", "weight": 2 }, { "base": "long_bow", "weight": 2 }, { "base": "sigil_staff", "weight": 2 },
         { "base": "plate_armor", "weight": 3 }, { "base": "great_helm", "weight": 2 }, { "base": "iron_gloves", "weight": 2 }, { "base": "charm", "weight": 2 },
@@ -100,7 +100,7 @@
       ]
     },
     {
-      "id": "d03_f4", "itemChance": 70, "rolls": 1,
+      "id": "d03_f4",
       "entries": [
         { "base": "plate_armor", "weight": 2 }, { "base": "great_helm", "weight": 2 }, { "base": "iron_gloves", "weight": 2 }, { "base": "charm", "weight": 2 },
         { "base": "heavy_blade", "weight": 2 }, { "base": "horn_bow", "weight": 2 }, { "base": "elder_staff", "weight": 2 }, { "base": "blackiron_plate", "weight": 1 },

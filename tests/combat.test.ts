@@ -1468,10 +1468,13 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
       s.battle!.inputs["c1"] = atk(0);
       return s;
     };
-    // M7（IT-50 / IT-52）: 宝箱の金の後に品の chance(itemChance) を 1 回引く。ここでは金だけを見るので表の itemChance を 0 にする
-    // （品の生成は tests/loot.test.ts）。M11: 罠の抽選は noTrapChance 100 で chance 1 回（罠なし）に固定する（罠は tests/chest.test.ts）
+    // M14（CB-65 / IT-51）: 宝箱の金の後に 2 個目の chance → 品ごとに IT-52。ここでは金を見るので 2 個目を 0 に、宝箱の表を魔法書 1 冊にして
+    // 品の乱数を weightedIndex([1]) の 1 回に固定する（品の生成は tests/loot.test.ts）。M11: 罠の抽選は noTrapChance 100 で chance 1 回（罠なし）に固定する（罠は tests/chest.test.ts）
     const noItems = (x: GameData) => {
-      for (const t of x.drops.tables) t.itemChance = 0;
+      x.config.chest.secondItemChance = 0;
+      x.config.chest.secondItemPerDanger = 0;
+      const chestTables = new Set(Object.values(x.drops.chest).flatMap((f) => Object.values(f)));
+      for (const t of x.drops.tables) if (chestTables.has(t.id)) t.entries = [{ item: "tome_sanctuary_hymn", weight: 1 }];
       x.config.chest.noTrapChance = 100;
       noChestImpulse(x);
     };
@@ -1491,12 +1494,15 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     const iScreen = ks.indexOf("screen");
     expect(ks.slice(iScreen + 1)).toEqual(["chestFound", "message:chest.found.drop", "message:chest.prompt"]);
     expect(r.events).toContainEqual({ kind: "chestFound", source: "drop" });
-    // chest.open（罠なし）: 金 chestGoldDice → 品の chance → chestEnd opened
+    // chest.open（罠なし）: 金 chestGoldDice → 2 個目の chance(0) → 1 品目（魔法書。weightedIndex(entries) だけ）→ chestEnd opened
     const cg = rollDice(m, "2d10").total;
-    chance(m, 0); // d01 1 階の表（rolls 1）の品の chance。外れ
+    chance(m, 0); // CB-65（M14）: 2 個目の chance。外れ
+    weightedIndex(m, [1]); // 1 品目の entries
     const o = exec(r.state, { type: "chest.open" }, d);
     expect(o.state.rng).toEqual(m);
-    expect(o.events).toEqual([{ kind: "message", key: "chest.open.gold", params: { gold: cg } }, { kind: "chestEnd", result: "opened" }]);
+    expect(o.events[0]).toEqual({ kind: "message", key: "chest.open.gold", params: { gold: cg } });
+    expect(kindsOf(o.events)).toEqual(["message:chest.open.gold", "message:item.found", "chestEnd"]);
+    expect(o.events.at(-1)).toEqual({ kind: "chestEnd", result: "opened" });
     expect(o.state.gold).toBe(room.gold + cg);
     expect(o.state.dive!.ledger.gold).toBe(cg);
     expect(o.state.dive!.chest).toBeNull();

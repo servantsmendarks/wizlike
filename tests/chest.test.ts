@@ -23,10 +23,18 @@ const inspect = (memberId: string): Command => ({ type: "chest.inspect", memberI
 const disarm = (memberId: string, trapId: string): Command => ({ type: "chest.disarm", memberId, trapId });
 const member = (s: GameState, id: string): Character => memberById(s, id)!;
 
-/** 品を引かない（表の itemChance 0。chance は 1 回消費する）データ。mut でさらに書き換える */
+/** 宝箱の品を魔法書 1 冊に固定する本（IT-55。weightedIndex(entries) の後に乱数を引かない） */
+const CHEST_BOOK = "tome_sanctuary_hymn";
+/**
+ * 宝箱の中身を固定したデータ（CB-65 / IT-51。M14）: 2 個目の確率 0（chance は 1 回消費する）、宝箱の表の entries を魔法書 1 冊だけにする
+ * （weightedIndex([1]) を 1 回消費して item.found）。mut でさらに書き換える
+ */
 function chestData(mut?: (d: GameData) => void): GameData {
   const d = loadFreshData();
-  for (const t of d.drops.tables) t.itemChance = 0;
+  d.config.chest.secondItemChance = 0;
+  d.config.chest.secondItemPerDanger = 0;
+  const chestTables = new Set(Object.values(d.drops.chest).flatMap((f) => Object.values(f)));
+  for (const t of d.drops.tables) if (chestTables.has(t.id)) t.entries = [{ item: CHEST_BOOK, weight: 1 }];
   mut?.(d);
   return d;
 }
@@ -39,10 +47,11 @@ function withChest(trapId: string | null, k = 1, seed = 1, d: GameData = data): 
 
 const chestOf = (s: GameState): ChestState | null => s.dive!.chest;
 
-/** d01 1 階の中身（金 chestGoldDice → 表 d01_f1 の rolls 1 回の chance(itemChance 0)）の鏡。金を返す */
+/** chestData の中身（金 chestGoldDice → 2 個目の chance(0) → 1 品目の weightedIndex([1])（魔法書。以降は引かない））の鏡。金を返す */
 function mirrorContents(m: ReturnType<typeof createRng>, d: GameData): number {
   const g = Math.max(0, rollDice(m, d.config.combat.chestGoldDice).total);
   chance(m, 0);
+  weightedIndex(m, [1]);
   return g;
 }
 
@@ -754,6 +763,7 @@ describe("CB-65 / CB-66 開ける・放っておく", () => {
     // 強欲（ドナ）の treasureGain は SAN 100（上限）なので sanChanged は出ない
     expect(r.events).toEqual([
       { kind: "message", key: "chest.open.gold", params: { gold } },
+      { kind: "message", key: "item.found", params: { name: member(s, "c1").name, item: data.items.find((i) => i.id === CHEST_BOOK)!.name } },
       { kind: "chestEnd", result: "opened" },
     ]);
     expect(r.state.gold).toBe(s.gold + gold);

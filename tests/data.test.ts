@@ -264,6 +264,8 @@ describe("data: config.json", () => {
     expect(d.config.chest).toEqual({
       noTrapChance: 30,
       rarityUpPerDanger: 15,
+      secondItemChance: 50,
+      secondItemPerDanger: 15,
       inspect: { base: 40, ...rate },
       disarm: { base: 50, ...rate },
       triggerChance: 10,
@@ -276,6 +278,10 @@ describe("data: config.json", () => {
     expectIssue((r) => delete r.config.chest.noTrapChance, "config.json", "chest.noTrapChance: missing required field");
     expectIssue((r) => (r.config.chest.noTrapChance = 101), "config.json", "chest.noTrapChance: expected integer in 0..100, got 101");
     expectIssue((r) => (r.config.chest.rarityUpPerDanger = -1), "config.json", "chest.rarityUpPerDanger: expected integer in 0..100, got -1");
+    // CB-65 / IT-51（M14）: 2 個目の確率
+    expectIssue((r) => delete r.config.chest.secondItemChance, "config.json", "chest.secondItemChance: missing required field");
+    expectIssue((r) => (r.config.chest.secondItemChance = 101), "config.json", "chest.secondItemChance: expected integer in 0..100, got 101");
+    expectIssue((r) => (r.config.chest.secondItemPerDanger = -1), "config.json", "chest.secondItemPerDanger: expected integer in 0..100, got -1");
     expectIssue((r) => delete r.config.chest.inspect.thiefBonus, "config.json", "chest.inspect.thiefBonus: missing required field");
     expectIssue((r) => (r.config.chest.disarm.dangerMul = 1.5), "config.json", "chest.disarm.dangerMul: expected integer");
     expectIssue((r) => (r.config.chest.inspect.min = 96), "config.json", "chest.inspect.min: CB-63: min 96 > max 95");
@@ -1218,9 +1224,18 @@ describe("data: drops.json（IT-50〜53。M7）", () => {
     const inTables = new Set(d.drops.tables.flatMap((t) => t.entries.flatMap((e) => ("unique" in e ? [e.unique] : []))));
     expect([...inTables].sort()).toEqual(d.uniques.map((u) => u.id).sort());
   });
+  test("data: IT-51/CB-65 itemChance / rolls はボスの表に必須、宝箱の表には置けない（M14。宝箱の個数は config.chest.secondItemChance / secondItemPerDanger）", () => {
+    // tables[0] = d01_f1（chest.d01.1）、tables[2] = d01_boss（boss.d01）
+    expect(issuesOf(() => {})).toEqual([]);
+    expectIssue((r) => (r.drops.tables[0].rolls = 1), "drops.json", "tables[0].rolls: IT-51: not allowed in chest table (chest.d01.1");
+    expectIssue((r) => (r.drops.tables[0].itemChance = 40), "drops.json", "tables[0].itemChance: IT-51: not allowed in chest table (chest.d01.1");
+    expectIssue((r) => delete r.drops.tables[2].rolls, "drops.json", "tables[2].rolls: IT-51: required for boss table (boss.d01)");
+    expectIssue((r) => delete r.drops.tables[2].itemChance, "drops.json", "tables[2].itemChance: IT-51: required for boss table (boss.d01)");
+  });
   test("data: IT-51 表は itemChance 0..100、rolls ≥ 1、entries ≥ 1 で base / unique のどちらか一方（実在）と正の weight、id は一意", () => {
-    expectIssue((r) => (r.drops.tables[0].itemChance = 101), "drops.json", "tables[0].itemChance: expected integer in 0..100");
-    expectIssue((r) => (r.drops.tables[0].rolls = 0), "drops.json", "tables[0].rolls: expected integer >= 1");
+    // tables[2] は d01_boss（ボスの表。itemChance / rolls を持つ）
+    expectIssue((r) => (r.drops.tables[2].itemChance = 101), "drops.json", "tables[2].itemChance: expected integer in 0..100");
+    expectIssue((r) => (r.drops.tables[2].rolls = 0), "drops.json", "tables[2].rolls: expected integer >= 1");
     expectIssue((r) => (r.drops.tables[0].entries = []), "drops.json", "tables[0].entries: expected at least 1 element(s)");
     expectIssue((r) => (r.drops.tables[0].entries[0].unique = "twin_tongue_dagger"), "drops.json", "tables[0].entries[0]: IT-51: entry needs exactly one");
     expectIssue((r) => delete r.drops.tables[0].entries[0].base, "drops.json", "tables[0].entries[0]: IT-51: entry needs exactly one");
@@ -1946,7 +1961,8 @@ describe("data: d03 灰の地下墓所（M12）", () => {
       const t = g.drops.tables.find((x) => x.id === id)!;
       return [id, t.itemChance, t.rolls];
     })).toEqual([
-      ["d03_f1", 60, 1], ["d03_f2", 60, 1], ["d03_f3", 65, 1], ["d03_f4", 70, 1], ["d03_boss", 100, 2],
+      // M14（CB-65 / IT-51）: 宝箱の表は itemChance / rolls を持たない（個数は config.chest）
+      ["d03_f1", undefined, undefined], ["d03_f2", undefined, undefined], ["d03_f3", undefined, undefined], ["d03_f4", undefined, undefined], ["d03_boss", 100, 2],
     ]);
     // M12 のベース 4 種とユニーク 2 種は d03 の 3 階以降とボスの表にだけある
     const NEW = new Set(["heavy_blade", "horn_bow", "elder_staff", "blackiron_plate", "mourner_veil", "sentinel_blade"]);

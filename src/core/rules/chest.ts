@@ -12,7 +12,8 @@
 //     →（箱が残り戦闘中でなければ）[EV-71 掛け合い: 対象が 2 人以上なら chance(d100) →（発生すれば）対象者ごとに並び順で contest.dice]
 //   調べる（CB-63）: d100 →（失敗なら）d100 →（作動の段なら）[作動] /（偽りの名前の段なら）randInt(本当の罠以外)。担当の失敗（EV-76）は乱数なし
 //   解除（CB-64）: （名前が合えば）d100 →（失敗なら）chance(disarmFailTrigger) →（当たれば）[作動]。名前違いは乱数なしで [作動]
-//   開ける（CB-65）: （罠があれば）[作動] →（中身を得るなら）rollDice(chestGoldDice) → rollChestItems（IT-52 / IT-56）
+//   開ける（CB-65）: （罠があれば）[作動] →（中身を得るなら）rollDice(chestGoldDice) → rollChestItems
+//     （2 個目の chance(min(100, secondItemChance + secondItemPerDanger × 危険度))（IT-51。M14）→ 品ごとに IT-52 / IT-56）
 //   [作動]（CB-62）: （開けるで target one の罠なら、作動させた人の randInt(行動可能な者)）→ 効果のダイス（damage は並び順に 1 人 1 回、
 //     status は並び順に chance 1 回。既にかかっている者は振らない。san は乱数なし。alarm は遭遇の編成と開始（CB-03 / CB-04。startTableEncounter と同じ順）、
 //     teleport は行き先の randInt（DG-25））
@@ -394,8 +395,8 @@ function triggerTrap(ctx: RuleContext, actor: Character | null, startAlarm: Star
 
 /**
  * CB-65 / IT-50 / IT-53 / IT-56 / DG-40: 中身を配る。金 chestGoldDice（0 未満にしない）に、開けた時点の行動可能な味方の金運（IT-34）を掛け、
- * message chest.open.gold{gold}（0 でも出す。強欲の treasureGain は gainGold が乗せる）→ 品（drops.chest[dungeonId][floor]、Lv は箱の level、
- * 見つけた時点の危険度で上振れ）
+ * message chest.open.gold{gold}（0 でも出す。強欲の treasureGain は gainGold が乗せる）→ 品（drops.chest[dungeonId][floor]。1 個 + 2 個目の確率（IT-51。M14）、
+ * Lv の基準は箱の level と階の基準 Lv（IT-53）、見つけた時点の危険度で上振れ）
  */
 function grantChestContents(ctx: RuleContext, chest: ChestState): void {
   const { state, data } = ctx;

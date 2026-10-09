@@ -339,6 +339,7 @@ drops.json の表から出した期待値で、計測ではない（農夫ボッ
 | 2026-10-09 | 強欲の chestQuality（personalities.json。IT-31） | 段数 1（乱数なし）→ 35%（1 段上げる確率） | 計測(M13) | 計測(M14) | （計測(M14) の後に書く） |
 | 2026-10-09 | 階の基準 Lv（dungeons[].floorLevels。DG-38）新設 | —（無し）→ d01 1,2 / d02 3,4,5 / d03 5,6,6,7 | 計測(M13) | 計測(M14) | （計測(M14) の後に書く） |
 | 2026-10-09 | 品の Lv の式（IT-53。config.items.dropLevelSpread → dropLevelUpWeights） | 敵 Lv ± 1 → max(敵 Lv, 階の基準 Lv) + 0〜2（60/30/10） | 計測(M13) | 計測(M14) | （計測(M14) の後に書く） |
+| 2026-10-09 | 宝箱の中身の個数（CB-65 / IT-51。drops.json の itemChance / rolls → config.chest.secondItemChance / secondItemPerDanger） | itemChance 40〜70% × rolls 1 → 1 個 + 50%（+15%/危険度）で 2 個目 | 計測(M13) | 計測(M14) | （計測(M14) の後に書く） |
 
 ## 目安と調整の順（M12）
 
@@ -477,3 +478,4 @@ tests/balance/farm.ts と tests/balance/bot.ts（route "farm"）。設計は scr
 | d01 の floorLevels（dungeons.json。DG-38） | [1, 2]（1 階・2 階の基準 Lv。品の Lv = max(敵 Lv, これ) + 0〜2。IT-53） |
 | d02 の floorLevels | [3, 4, 5] |
 | d03 の floorLevels | [5, 6, 6, 7] |
+| 宝箱の表（drops.json の d01_f1・d01_f2・d02_f1〜f3・d03_f1〜f4。IT-51） | itemChance / rolls を廃止（M13 までは 40〜70 × 1。個数は config.chest.secondItemChance 50・secondItemPerDanger 15。CB-65）。ボスの表は 100 × 1〜2 のまま（d01_boss 100 × 1、d02_boss・d03_boss 100 × 2） |

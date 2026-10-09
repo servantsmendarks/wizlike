@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest";
 import type { DropEntry, GameData, ItemOption, OptionKind } from "../src/core/data";
 import { optionAppliesTo } from "../src/core/data";
 import { chance, cloneRng, weightedIndex } from "../src/core/rng";
-import { dropLevelBase, genericOptionTier, partyChestQuality, placeFoundItem, rollChestItems, rollDropTable, rollItemSpec } from "../src/core/rules/loot";
+import { chestItemCount, dropLevelBase, genericOptionTier, partyChestQuality, placeFoundItem, rollBossTable, rollChestItems, rollItemSpec } from "../src/core/rules/loot";
 import { cloneState, createItemInstance, makeContext, memberById } from "../src/core/state";
 import type { BattleAction, Character, Command, GameState } from "../src/core/types";
 import { ALWAYS_HIT, allInputs, dataWith, dived, exec, kindsOf, withBattle } from "./helpers/battle";
@@ -107,9 +107,9 @@ describe("IT-52 1 品の生成と乱数の順", () => {
     expect(sp2.options!.map((x) => x.tier)).toEqual([2]);
   });
 
-  test("IT-51 rolls 回とも独立に chance(itemChance)。外れた回はそれ以上引かない。表 d02_boss（100% × 2 回）で 2 品", () => {
+  test("IT-51 ボスの表: rolls 回とも独立に chance(itemChance)。外れた回はそれ以上引かない。表 d02_boss（100% × 2 回）で 2 品", () => {
     const d = lootData({ up: [1] });
-    const t = d.drops.tables.find((x) => x.id === "d01_f1")!;
+    const t = d.drops.tables.find((x) => x.id === "d01_boss")!;
     t.itemChance = 0;
     t.rolls = 3;
     const ctx = makeContext(cloneState(dived(1)), d);
@@ -117,14 +117,68 @@ describe("IT-52 1 品の生成と乱数の順", () => {
     chance(m, 0);
     chance(m, 0);
     chance(m, 0);
-    rollDropTable(ctx, "d01_f1", 3, 0, "d01");
+    rollBossTable(ctx, "d01_boss", 3, "d01");
     expect(ctx.state.rng).toEqual(m);
     expect(ctx.events).toEqual([]);
     const ctx2 = makeContext(cloneState(dived(1)), d);
-    rollDropTable(ctx2, "d02_boss", 4, 0, "d02");
+    rollBossTable(ctx2, "d02_boss", 4, "d02");
     expect(ctx2.events.filter((e) => e.kind === "message" && e.key === "item.found")).toHaveLength(2);
     expect(ctx2.state.dive!.ledger.items).toHaveLength(2);
     expectKnownStringKeys(ctx2.events, d);
+    // 宝箱の表は itemChance / rolls を持たない（M14。個数は CB-65 の chestItemCount）
+    for (const id of Object.values(data.drops.chest).flatMap((f) => Object.values(f))) {
+      const ct = data.drops.tables.find((x) => x.id === id)!;
+      expect([ct.itemChance, ct.rolls]).toEqual([undefined, undefined]);
+    }
+  });
+
+  test("CB-65/IT-51 宝箱の品の個数（M14）= 1 + chance(min(100, secondItemChance + secondItemPerDanger × 危険度))。chance は 100 でも 1 回引く。3 個目は無い", () => {
+    // 実データ（【仮】）: 50 + 15 × 危険度。危険度 0 → 50、2 → 80、4 → 110 → 100
+    expect([data.config.chest.secondItemChance, data.config.chest.secondItemPerDanger]).toEqual([50, 15]);
+    for (const [danger, p] of [
+      [0, 50],
+      [2, 80],
+      [4, 100],
+    ] as const) {
+      const seen = new Set<number>();
+      for (let seed = 1; seed < 40; seed++) {
+        const s = dived(seed);
+        const m = cloneRng(s.rng);
+        const want = 1 + (chance(m, p) ? 1 : 0);
+        expect(chestItemCount(s, data, danger)).toBe(want);
+        expect(s.rng).toEqual(m);
+        seen.add(want);
+      }
+      expect([...seen].sort()).toEqual(p === 100 ? [2] : [1, 2]);
+    }
+  });
+
+  test("CB-65/IT-51/IT-52 rollChestItems: 個数の chance → 品ごとに IT-52 の順。2 個目は同じ表・同じ Lv の基準・同じ危険度と chestQuality で引く", () => {
+    // 危険度 2（rarityUpPerDanger 15 × 2 = 30%）・強欲のドナ（chestQuality 35%）が行動可能。上乗せ [1]・希少度は通常に固定・呪い 0
+    const d = lootData({ rarity: "normal", up: [1], mut: (x) => (x.drops.tables.find((t) => t.id === "d01_f1")!.entries = SWORD) });
+    for (let seed = 1; seed < 60; seed++) {
+      const ctx = makeContext(cloneState(dived(seed)), d);
+      const m = cloneRng(ctx.state.rng);
+      const n = 1 + (chance(m, 50 + 15 * 2) ? 1 : 0);
+      // オプションの鏡を省くため、2 個とも上振れしない（通常・オプションなし）出目のシードを使う
+      let plain = n === 2;
+      for (let i = 0; i < n && plain; i++) {
+        weightedIndex(m, [1]); // entries
+        weightedIndex(m, [1]); // Lv の上乗せ（IT-53）
+        weightedIndex(m, ONLY.normal); // 希少度（IT-30）
+        if (chance(m, 30)) plain = false; // 危険度の上振れ（IT-56）
+        if (chance(m, 35)) plain = false; // 強欲の chestQuality（IT-31）
+        chance(m, 0); // 呪い（IT-32）
+      }
+      if (!plain) continue;
+      rollChestItems(ctx, "d01", 1, 1, 2);
+      expect(ctx.state.rng).toEqual(m);
+      expect(ctx.state.dive!.ledger.items).toHaveLength(2);
+      expect(ctx.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["item.found", "item.found"]);
+      for (const id of ctx.state.dive!.ledger.items) expect(ctx.state.items[id]).toMatchObject({ itemId: "long_sword", level: 1, rarity: "normal", foundIn: "d01" });
+      return;
+    }
+    throw new Error("no seed with two normal items");
   });
 });
 
@@ -161,8 +215,6 @@ describe("IT-53 / DG-38 ドロップの Lv（M14）", () => {
   test("IT-53/DG-38 宝箱の品の Lv: 敵 Lv1・階の基準 2（d01 2 階）なら基準 2（上乗せ [1] で Lv2）。敵 Lv が高ければ敵 Lv", () => {
     const d = lootData({ up: [1] });
     const t = d.drops.tables.find((x) => x.id === "d01_f2")!;
-    t.itemChance = 100;
-    t.rolls = 1;
     t.entries = SWORD;
     const ctx = makeContext(cloneState(dived(1)), d);
     rollChestItems(ctx, "d01", 2, 1, 0);
@@ -432,8 +484,8 @@ describe("IT-54 配る・置いていく", () => {
       const used = Object.values(ch.equipment).filter((x) => x !== null).length + ch.inventory.length;
       for (let i = used; i < data.config.inventory.slotsPerCharacter; i++) ch.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
     }
-    const d = lootData({ rarity: "normal", up: [1], mut: (x) => (x.drops.tables.find((t) => t.id === "d01_f1")!.entries = SWORD) });
-    d.drops.tables.find((t) => t.id === "d01_f1")!.itemChance = 100;
+    // ボスの表（itemChance 100 × rolls 1）で 1 品だけ引く
+    const d = lootData({ rarity: "normal", up: [1], mut: (x) => (x.drops.tables.find((t) => t.id === "d01_boss")!.entries = SWORD) });
     const ctx = makeContext(cloneState(s), d);
     const seq = ctx.state.nextItemSeq;
     const m = cloneRng(ctx.state.rng);
@@ -442,7 +494,7 @@ describe("IT-54 配る・置いていく", () => {
     weightedIndex(m, [1]); // IT-53（M14）: Lv の上乗せ（重み [1]）
     weightedIndex(m, ONLY.normal);
     chance(m, 0);
-    rollDropTable(ctx, "d01_f1", 2, 0, "d01");
+    rollBossTable(ctx, "d01_boss", 2, "d01");
     expect(ctx.state.rng).toEqual(m);
     expect(ctx.events).toEqual([{ kind: "message", key: "item.leftBehind", params: { item: "剣？" } }]);
     expect(ctx.state.nextItemSeq).toBe(seq);
@@ -453,12 +505,10 @@ describe("IT-54 配る・置いていく", () => {
 });
 
 describe("IT-55 ドロップ表の魔法書の項目（M9）", () => {
-  test("IT-55 魔法書の項目: chance → weightedIndex(entries) だけを引き（Lv・希少度・呪い・オプションの乱数を引かない）、Lv0・通常・オプションなし・呪いなし・鑑定済みで入る", () => {
+  test("IT-55 魔法書の項目: （ボスの表の）chance → weightedIndex(entries) だけを引き（Lv・希少度・呪い・オプションの乱数を引かない）、Lv0・通常・オプションなし・呪いなし・鑑定済みで入る", () => {
     // 実データの希少度の重みと呪い 8% のまま（引かないことを鏡で確かめる）
     const d = loadFreshData();
-    const t = d.drops.tables.find((x) => x.id === "d01_f1")!;
-    t.itemChance = 100;
-    t.rolls = 1;
+    const t = d.drops.tables.find((x) => x.id === "d01_boss")!; // ボスの表（itemChance 100 × rolls 1）
     t.entries = [
       { base: "dagger", weight: 1 },
       { item: "tome_lightning", weight: 3 },
@@ -469,7 +519,7 @@ describe("IT-55 ドロップ表の魔法書の項目（M9）", () => {
       chance(m, 100);
       if (weightedIndex(m, [1, 3]) !== 1) continue;
       const seq = ctx.state.nextItemSeq;
-      rollDropTable(ctx, "d01_f1", 5, 1, "d01");
+      rollBossTable(ctx, "d01_boss", 5, "d01");
       expect(ctx.state.rng).toEqual(m);
       const id = `i${seq}`;
       expect(ctx.state.items[id]).toEqual({
@@ -526,10 +576,9 @@ describe("CB-52 宝箱の品（IT-50 / IT-31 / IT-53）", () => {
       d.config.items.curseChance = 0;
       d.config.items.dropLevelUpWeights = [1]; // IT-53（M14）: 上乗せ 0 に固定
       d.config.chest.noTrapChance = 100; // M11: 罠なし（危険度 0 なので IT-56 の上振れも振らない）
-      for (const t of d.drops.tables) {
-        t.itemChance = 100;
-        t.entries = SWORD;
-      }
+      d.config.chest.secondItemChance = 0; // CB-65（M14）: 2 個目を出さない（chance(0) は 1 回引く）
+      d.config.chest.secondItemPerDanger = 0;
+      for (const t of d.drops.tables) t.entries = SWORD;
     });
   /** M11（CB-60 / CB-65）: 勝って箱を置き、chest.open で中身を得る。2 つの execute の events をつなげたもの */
   const winOpen = (s: GameState, d: GameData) => {

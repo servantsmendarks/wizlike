@@ -267,6 +267,10 @@ export type Config = {
     noTrapChance: number;
     /** IT-56: 危険度 1 あたりの希少度の 1 段の上振れの確率（%） */
     rarityUpPerDanger: number;
+    /** CB-65 / IT-51（M14）: 宝箱の 2 個目の品の基礎の確率（%） */
+    secondItemChance: number;
+    /** CB-65 / IT-51（M14）: 危険度 1 あたりの 2 個目の確率の加算（%。合計は 100 で止める） */
+    secondItemPerDanger: number;
     /** CB-63: 調べるの成功率の式の定数 */
     inspect: ChestRateConfig;
     /** CB-64: 解除の成功率の式の定数 */
@@ -622,7 +626,11 @@ export type UniqueDef = {
 /** IT-51: 汎用ベース・ユニーク・魔法書（items.json の type book。IT-55。M9）のどれか 1 つ */
 export type DropEntry = { base: string; weight: number } | { unique: string; weight: number } | { item: string; weight: number };
 
-export type DropTable = { id: string; itemChance: number; rolls: number; entries: DropEntry[] };
+/**
+ * IT-51: ドロップの表。itemChance（%）と rolls（回数）はボスの表（drops.boss が参照する表）にだけ置く（必須）。
+ * 宝箱の表（drops.chest が参照する表）には置かない（M14。個数は config.chest.secondItemChance / secondItemPerDanger。CB-65）
+ */
+export type DropTable = { id: string; itemChance?: number; rolls?: number; entries: DropEntry[] };
 
 export type Drops = {
   tables: DropTable[];
