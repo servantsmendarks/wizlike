@@ -89,7 +89,7 @@
     "musicVolume": 3, "sfxVolume": 2
   },
   "audio": { "musicGain": 0.3, "sfxGain": 0.3, "sampleRate": 44100, "prefetchBars": 2, "keepSongs": 2, "startLeadMs": 40, "warmupSeconds": 3 },
-  "measure": { "stepMs": 135, "turnMs": 136, "encounterMs": 2660, "actionMs": 1913, "battleEndMs": 1103, "chestCheckMs": 1359, "chestOpenMs": 434, "threadMs": 1887, "sellMs": 864, "identifyMs": 1238, "innMs": 616 },
+  "measure": { "stepMs": 135, "turnMs": 136, "encounterMs": 2660, "actionMs": 1913, "battleEndMs": 1103, "chestCheckMs": 1359, "chestOpenMs": 773, "threadMs": 1887, "sellMs": 864, "identifyMs": 1238, "innMs": 616 },
   "prototypeParty": {
     "startingGold": 300,
     "members": [

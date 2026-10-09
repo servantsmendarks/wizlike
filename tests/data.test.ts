@@ -183,7 +183,7 @@ describe("data: config.json", () => {
     const d = loadGameData(rawData());
     expect(d.config.measure).toEqual({
       stepMs: 135, turnMs: 136, encounterMs: 2660, actionMs: 1913, battleEndMs: 1103, chestCheckMs: 1359,
-      chestOpenMs: 434, threadMs: 1887, sellMs: 864, identifyMs: 1238, innMs: 616,
+      chestOpenMs: 773, threadMs: 1887, sellMs: 864, identifyMs: 1238, innMs: 616,
     });
     expectIssue((r) => delete r.config.measure.actionMs, "config.json", "measure.actionMs: missing required field");
     expectIssue((r) => (r.config.measure.stepMs = 0), "config.json", "measure.stepMs: expected integer >= 1, got 0");

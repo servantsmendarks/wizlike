@@ -341,6 +341,7 @@ drops.json の表から出した期待値で、計測ではない（農夫ボッ
 | 2026-10-09 | 品の Lv の式（IT-53。config.items.dropLevelSpread → dropLevelUpWeights） | 敵 Lv ± 1 → max(敵 Lv, 階の基準 Lv) + 0〜2（60/30/10） | 計測(M13) | 計測(M14) | （計測(M14) の後に書く） |
 | 2026-10-09 | 宝箱の中身の個数（CB-65 / IT-51。drops.json の itemChance / rolls → config.chest.secondItemChance / secondItemPerDanger） | itemChance 40〜70% × rolls 1 → 1 個 + 50%（+15%/危険度）で 2 個目 | 計測(M13) | 計測(M14) | （計測(M14) の後に書く） |
 | 2026-10-09 | 敵の種類ごとの直接ドロップ（CB-57 / IT-57。monsters[].dropKind・drops.direct・config.combat.directDropChance / directDropGoldDice）新設 | 無し → グループ撃破ごとに 10%（金の種別は 2d10） | 計測(M13) | 計測(M14) | （計測(M14) の後に書く） |
+| 2026-10-09 | config.measure.chestOpenMs（UI-75） | 434 → 773 | 計測(M13) | 計測(M14) | 実機(M13-拍) の品ありの箱の中央値（n 3、723〜812。計測(M13) の表）。金だけの箱の 434 は農夫ボットの箱に合わない |
 
 ## 目安と調整の順（M12）
 
