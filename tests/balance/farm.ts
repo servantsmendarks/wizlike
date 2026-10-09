@@ -103,6 +103,10 @@ export function farmReport(results: CampaignResult[], kind: BotKind): string {
   row("終わり方", ends.map((e) => `${e} ${pct(all.filter((d) => endOf(d) === e).length, n)}`).join("・") + (other > 0 ? `・その他 ${other}` : ""));
   row("全滅率", pct(all.filter((d) => d.method === "wipe").length, n));
   row("1 潜行あたりの死者", per(all.map((d) => d.deaths.length)));
+  // レビュー A 中-1: 目標の階に着かない潜行・HP が戻らないまま入ってすぐ帰る潜行を見えるようにする
+  row(`目標の階（${f.floor}F）に着いた潜行`, pct(all.filter((d) => d.deepestFloor >= f.floor).length, n));
+  row("潜行の後の宿が馬小屋に落ちた潜行（相部屋が払えない。次の潜行は HP が戻らないまま入る）", pct(all.filter((d) => d.innFallback).length, n));
+  row("0 戦で帰った潜行", `${all.filter((d) => d.battles === 0).length}（${pct(all.filter((d) => d.battles === 0).length, n)}）`);
   // 2. 推定の実時間と拍
   row("推定の実時間 迷宮（分。平均 / 中央値 / p10 / p90）", dist(all.map((d) => d.estDungeonMs / MIN)));
   row("推定の実時間 街（分）", dist(all.map((d) => d.estTownMs / MIN)));
@@ -125,7 +129,7 @@ export function farmReport(results: CampaignResult[], kind: BotKind): string {
   // 5. 純益と内訳
   row("純益 1 潜行（売却の直後の所持金 − 潜行の前。平均 / 中央値）", `${fmt(mean(all.map((d) => d.netProfit)))} / ${fmt(median(all.map((d) => d.netProfit)))}`);
   row(
-    "内訳 1 潜行あたり（箱の金 / 戦闘などの金（純益 − 箱の金 − 売却 + 鑑定料）/ 売却 / 鑑定料。純益の外: 宿 + 補充 / 寺院・闇魔術・治療）",
+    "内訳 1 潜行あたり（箱の金 / 戦闘などの金（純益 − 箱の金 − 売却 + 鑑定料。戦闘の金のほかに全滅で失う金と救済の金も入る）/ 売却 / 鑑定料。純益の外: 宿 + 補充 / 寺院・闇魔術・治療）",
     `${per(all.map((d) => d.chestGold))} / ${per(all.map((d) => d.netProfit - d.chestGold - d.soldGold + d.identifyCost))} / ${per(all.map((d) => d.soldGold))} / ${per(all.map((d) => d.identifyCost))}。${per(all.map((d) => d.innCost + d.shopCost))} / ${per(all.map((d) => d.templeCost + d.darkCost + d.cureCost))}`,
   );
   row("鑑定・売却（全潜行）", `鑑定 ${sum(all.map((d) => d.identifyCount))} 品・売却 ${sum(all.map((d) => d.soldCount))} 品（未鑑定のまま ${sum(all.map((d) => d.soldUnidCount))} 品・${sum(all.map((d) => d.soldUnidGold))}G）・ユニークの売却 ${sum(all.map((d) => d.soldUnique))} 品・${sum(all.map((d) => d.soldUniqueGold))}G`);
@@ -152,13 +156,14 @@ export function farmReport(results: CampaignResult[], kind: BotKind): string {
   const fin = (xs: number[]) => xs.filter((x) => Number.isFinite(x));
   const g1 = mean(fin(k1.map((d) => d.gearLvStart)));
   const gl = mean(fin(kl.map((d) => d.gearLvStart)));
-  const e = mean(fin(all.map((d) => d.enemyLvMean)));
-  row(`装備の追従（潜行 1 / 潜行 ${FARM_DIVES} の開始時の装備の平均 Lv。ユニークを除く）`, `${fmt(g1)} / ${fmt(gl)}（装備中のユニーク 潜行 ${FARM_DIVES} の開始時 計 ${sum(kl.map((d) => d.gearUniques))}）`);
-  row("敵の Lv（体数で重み付けした平均）・差（潜行 1 / 潜行 " + FARM_DIVES + " の装備 − 敵）", `${fmt(e)}・${fmt(g1 - e)} / ${fmt(gl - e)}`);
+  const e1 = mean(fin(k1.map((d) => d.enemyLvMean)));
+  const el = mean(fin(kl.map((d) => d.enemyLvMean)));
+  row(`装備の追従（潜行 1 / 潜行 ${FARM_DIVES} の開始時の装備の平均 Lv。ユニークを除く。潜行 1 は初期装備の Lv0 なのでいつも 0）`, `${fmt(g1)} / ${fmt(gl)}（装備中のユニーク 潜行 ${FARM_DIVES} の開始時 計 ${sum(kl.map((d) => d.gearUniques))}）`);
+  row(`敵の Lv（体数で重み付けした平均。潜行 1 / 潜行 ${FARM_DIVES}）・差（装備 − 敵。潜行 1 / 潜行 ${FARM_DIVES}）`, `${fmt(e1)} / ${fmt(el)}・${fmt(g1 - e1)} / ${fmt(gl - el)}`);
   row("拾った品を装備した数（全潜行）", String(sum(all.map((d) => d.lootEquipped))));
   // 9. ボスのユニーク（表の値。d01 1F Lv3 のレポートだけ）
   if (f.level === 3 && f.dungeonId === "d01" && f.floor === 1) {
-    row("ボス撃破あたりのユニーク（drops.json の表の期待値。計測ではない）", Object.keys(data.drops.boss).map((id) => `${id} ${fmt(Math.round(bossUniqueExpectation(id) * 100) / 100)}`).join("・"));
+    row("ボス撃破あたりのユニーク（drops.json の表の期待値。計測ではない）", Object.keys(data.drops.boss).map((id) => `${id} ${bossUniqueExpectation(id).toFixed(2)}`).join("・"));
   }
   return [
     `## 農夫 Lv${f.level} ${f.dungeonId} ${f.floor}F（${seeds} シード × ${dives} 潜行）`,
