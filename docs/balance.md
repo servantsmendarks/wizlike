@@ -463,7 +463,7 @@ tests/balance/farm.ts と tests/balance/bot.ts（route "farm"）。設計は scr
 | FARM_MINUTES | 20 | 推定の実時間（迷宮の分）がこの分に達したら帰る（帰る理由 time） |
 | FARM_DIVES | 5 | 1 シードあたりの潜行の回数 |
 | NEAR | 6 | 目標の階の上り階段からの BFS 距離（既存のボットと同じ） |
-| Lv × 場所 | Lv3・5・8 × d01 1F・d01 2F・d02 1F | debug.levels（UI-57）で作る。能力値は Lv1 のまま。d02 は d01 を踏破済み（shopLevel 2）の state にする |
+| Lv × 場所 | Lv3・5・8 × d01 1F・d01 2F・d02 1F | debug.levels（UI-57）で作る。能力値は Lv1 のまま（M14 から能力値も CH-61 の判定で上がる）。d02 は d01 を踏破済み（shopLevel 2）の state にする |
 | 鑑定 | 払える限り全部 | 未鑑定の装備品を見た目の売値の高い順に店で鑑定 |
 | 売却 | 鑑定しない | 装備していない装備品（ユニークも）を今の状態で売る |
 | 店の装備（outfit） | 無し | 消耗品の補充（糸 1・薬草 6・解毒草 2）だけ |

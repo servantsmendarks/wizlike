@@ -1250,7 +1250,7 @@ export class Campaign {
   }
 
   /**
-   * M13（設計書 §2-1）: 農夫ボットの準備（Campaign の作成の直後、街）。debug.levels（UI-57。能力値は Lv1 のまま、HP・MP・呪文だけ Lv 相応。
+   * M13（設計書 §2-1）: 農夫ボットの準備（Campaign の作成の直後、街）。debug.levels（UI-57。M13 は能力値は Lv1 のまま、HP・MP・呪文だけ Lv 相応。M14 から能力値も CH-61 の判定で上がる。
    * state.rng を消費する）で kind.farm.level にし、PROGRESS_ROUTE で目標のダンジョンより前のダンジョンを踏破済みにする
    * （combat.ts の初回クリアと同じ 3 点: clearedDungeons・unlockedDungeons・shopLevel。state を直接書く）
    */

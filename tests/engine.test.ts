@@ -847,19 +847,22 @@ describe("UI-57 debug.giveCursed（開発用、M10）", () => {
 describe("UI-57 debug.levels（開発用、M12。U-6）", () => {
   const LV = (level: number): Command => ({ type: "debug.levels", level });
 
-  test("UI-57/CH-61/CH-63 debug.levels{5} は alive の全員の exp を expFor(5) にして Lv5 まで上げる（HP のダイスと初到達の習得判定は宿と同じ順で state.rng、能力値の成長は無し）。dead は触らない。変わった者ごとに levelUp 1 件（合計の増分・statGains 空）と debug.levels.member、最後に debug.levels{level}", () => {
+  test("UI-57/CH-61/CH-63 debug.levels{5} は alive の全員の exp を expFor(5) にして Lv5 まで上げる（HP のダイス・能力値の成長 CH-61（M14）・初到達の習得判定は宿と同じ順で state.rng）。dead は触らない。変わった者ごとに levelUp 1 件（合計の増分・statGains は段ごとにつないだもの）と debug.levels.member、最後に debug.levels{level}", () => {
     const s = withChar(newGame(3), 2, { life: "dead", hp: 0 });
     const before = JSON.stringify(s);
     const r = execute(s, LV(5), data);
     expect(JSON.stringify(s)).toBe(before);
     expectStateInvariants(r.state);
     expectKnownStringKeys(r.events);
-    // 鏡: 同じ state から levelUpOnce(statGrowth 偽) を並び順に 1 段ずつ回したものと一致する（乱数の順も同じ）
+    // 鏡: 同じ state から levelUpOnce を並び順に 1 段ずつ回したものと一致する（乱数の順も同じ。M14 から能力値の成長も含む）
     const mirror = makeContext(cloneState(s), data);
+    const mirrorGains: Record<string, (keyof Character["stats"])[]> = {};
     for (const ch of mirror.state.party) {
       if (ch.life !== "alive") continue;
       ch.exp = expFor(5, classOf(data, ch.classId), data.config);
-      while (ch.level < 5) levelUpOnce(mirror, ch, false);
+      const mark = mirror.events.length;
+      while (ch.level < 5) levelUpOnce(mirror, ch);
+      mirrorGains[ch.id] = mirror.events.slice(mark).flatMap((e) => (e.kind === "levelUp" ? e.statGains : []));
     }
     expect(r.state.party).toEqual(mirror.state.party);
     expect(r.state.rng).toEqual(mirror.state.rng);
@@ -873,7 +876,8 @@ describe("UI-57 debug.levels（開発用、M12。U-6）", () => {
       }
       expect(a.level).toBe(5);
       expect(a.exp).toBe(expFor(5, classOf(data, a.classId), data.config));
-      expect(a.stats).toEqual(b.stats); // CH-61 の成長は無し
+      const gains = mirrorGains[a.id]!;
+      for (const k of Object.keys(b.stats) as (keyof typeof b.stats)[]) expect(a.stats[k]).toBe(b.stats[k] + gains.filter((g) => g === k).length); // CH-61（M14）
       expect(a.levelHistory.map((h) => h.level)).toEqual([2, 3, 4, 5]);
       expect(a.maxLevelReached[a.classId]).toBe(5);
       const hpGain = a.levelHistory.reduce((n, h) => n + h.hpGain, 0);
@@ -881,7 +885,7 @@ describe("UI-57 debug.levels（開発用、M12。U-6）", () => {
       expect(a.hpMax).toBe(b.hpMax + hpGain);
       expect(a.mpMax).toBe(b.mpMax + mpGain);
       expect(a.knownSpells.slice(0, b.knownSpells.length)).toEqual(b.knownSpells);
-      expected.push({ kind: "levelUp", id: a.id, level: 5, hpGain, mpGain, hpMax: a.hpMax, mpMax: a.mpMax, hp: a.hp, mp: a.mp, statGains: [] });
+      expected.push({ kind: "levelUp", id: a.id, level: 5, hpGain, mpGain, hpMax: a.hpMax, mpMax: a.mpMax, hp: a.hp, mp: a.mp, statGains: gains });
       expected.push({ kind: "message", key: "debug.levels.member", params: { name: a.name, from: 1, to: 5, learned: a.knownSpells.length - b.knownSpells.length } });
     });
     expected.push({ kind: "message", key: "debug.levels", params: { level: 5 } });

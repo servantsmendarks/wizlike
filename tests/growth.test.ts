@@ -20,6 +20,7 @@ import {
   rollHpGain,
   vitBonus,
 } from "../src/core/rules/growth";
+import { setLevels } from "../src/core/rules/debug";
 import { classOf, cloneState, makeContext } from "../src/core/state";
 import type { Character, GameEvent } from "../src/core/types";
 import { data as realData, expectKnownStringKeys, loadRuleData, newGame, withChar } from "./helpers/core";
@@ -468,6 +469,55 @@ describe("growth: 能力値の成長と内訳（CH-61、U5）", () => {
     expect(levelDownWhileBelow(ctx, ch)).toBe(1);
     expect(ch.level).toBe(1);
     expect(ch.stats).toEqual({ str: 16, iq: 7, pie: 10, vit: 15, agi: 6, luk: 6 });
+  });
+});
+
+describe("growth: debug.levels の能力値の成長（CH-61、UI-57。M14）", () => {
+  /** ベルクだけ alive（ほかは dead）の seed 1 の文脈。setLevels はベルクの分だけ乱数を引く */
+  function onlyBerk(patch: Partial<Character> = {}) {
+    const ctx = makeContext(cloneState(withChar(newGame(1), BERK, patch)), data);
+    ctx.state.party.forEach((c, i) => {
+      if (i !== BERK) c.life = "dead";
+    });
+    return { ctx, ch: ctx.state.party[BERK]! };
+  }
+  const STAT6: [number, number][] = [
+    [1, 100],
+    [1, 100],
+    [1, 100],
+    [1, 100],
+    [1, 100],
+    [1, 100],
+  ];
+
+  test("CH-61/UI-57 debug.levels{3} はベルクを宿と同じ判定で上げる: d10 → d100 × 6 → d10 → d100 × 6（段ごとに 6 回）。statGains は段ごとの上がった能力値を順につないだ [str, vit, str, agi]（重複あり）、素の能力値も上がる", () => {
+    const { ctx, ch } = onlyBerk();
+    setLevels(ctx, 3);
+    expect(ctx.state.rng).toEqual(rngAfter(1, [[1, 10], ...STAT6, [1, 10], ...STAT6]));
+    // seed 1: 1 段目 14, 92, 83, 7, 68, 51（力・生命力）、2 段目 16, 75, 26, 97, 9, 77（力・素早さ）。25 以下が当たり
+    expect(ch.stats).toEqual({ str: 17, iq: 7, pie: 10, vit: 15, agi: 7, luk: 6 });
+    expect(ch.level).toBe(3);
+    const hpGain = ch.levelHistory.reduce((n, h) => n + h.hpGain, 0);
+    expect(ctx.events).toEqual([
+      { kind: "levelUp", id: ch.id, level: 3, hpGain, mpGain: 0, hpMax: ch.hpMax, mpMax: 0, hp: ch.hp, mp: 0, statGains: ["str", "vit", "str", "agi"] },
+      { kind: "message", key: "debug.levels.member", params: { name: ch.name, from: 1, to: 3, learned: 0 } },
+      { kind: "message", key: "debug.levels", params: { level: 3 } },
+    ]);
+    expectKnownStringKeys(ctx.events);
+  });
+
+  test("CH-61/UI-57 debug.levels でも全体の最高到達レベル以下の段は判定しない: maxLevelReached { fighter: 2 } のベルクを L3 へ → d10 → d10 → d100 × 6（L3 の段だけ）", () => {
+    const { ctx, ch } = onlyBerk({ maxLevelReached: { fighter: 2 } });
+    const before = { ...ch.stats };
+    setLevels(ctx, 3);
+    const mirror = rngAfter(1, [[1, 10], [1, 10]]);
+    const rolls = STAT6.map(() => randInt(mirror, 1, 100));
+    expect(ctx.state.rng).toEqual(mirror);
+    const keys = ["str", "iq", "pie", "vit", "agi", "luk"] as const;
+    const gains = keys.filter((_, i) => rolls[i]! <= cfg.growth.statUpChance);
+    const lv = ctx.events.find((e) => e.kind === "levelUp");
+    expect(lv?.kind === "levelUp" ? lv.statGains : null).toEqual(gains);
+    for (const k of keys) expect(ch.stats[k]).toBe(before[k] + (gains.includes(k) ? 1 : 0));
   });
 });
 

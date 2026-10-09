@@ -1,6 +1,6 @@
 // UI-57（開発用）: debug パネルのコマンド。全滅の流れ（M4 の実機の結果、ユーザー指示）と、
-// M5 の性格・イベント・SAN を実機で確かめるためのもの。乱数は使わない（例外は debug.chest{present: true}。衝動・制止・掛け合いが state.rng を使う。M12 の debug.levels も HP のダイスと習得判定に state.rng を使う）。
-import { optionAppliesTo, optionKindOf } from "../data/index";
+// M5 の性格・イベント・SAN を実機で確かめるためのもの。乱数は使わない（例外は debug.chest{present: true}。衝動・制止・掛け合いが state.rng を使う。M12 の debug.levels も HP のダイスと習得判定に、M14 から能力値の成長 CH-61 にも state.rng を使う）。
+import { optionAppliesTo, optionKindOf, type StatKey } from "../data/index";
 import { classOf, createItemInstance, itemDisplayName, slotsUsed } from "../state";
 import type { RuleContext } from "../types";
 import { placeDebugChest, type StartAlarm } from "./chest";
@@ -144,9 +144,10 @@ export const DEBUG_LEVEL_MAX = 30;
 
 /**
  * debug.levels（M12。U-6）: 並び順に、life alive の者の exp を expFor(level) にし、level を合わせる。dead / ash は変えない。
- * 上げるときは growth の levelUpOnce を statGrowth 偽で 1 段ずつ（HP のダイスと、今の職業で初到達の段の習得判定（MG-20〜24）に state.rng を使う。
- * 能力値の成長 CH-61 はしない）。levelHistory・maxLevelReached は宿のレベルアップと同じに積む。下げるときは levelDownWhileBelow（CH-62。乱数なし）。
- * 途中の語り・ダイス・spellLearned は捨て、変わった者ごとに levelUp（hpGain / mpGain は合計、statGains は空）か levelDown を 1 件と
+ * 上げるときは growth の levelUpOnce を 1 段ずつ（宿と同じ。HP のダイス → 全体の最高到達レベルを超える段では能力値の成長 CH-61 の 6 回（M14）→
+ * 今の職業で初到達の段の習得判定（MG-20〜24）に state.rng を使う）。levelHistory・maxLevelReached は宿のレベルアップと同じに積む。
+ * 下げるときは levelDownWhileBelow（CH-62。乱数なし）。途中の語り・ダイス・spellLearned は捨て、変わった者ごとに levelUp（hpGain / mpGain は合計、
+ * statGains は段ごとに上がった能力値を順につないだ配列（重複あり。M14））か levelDown を 1 件と
  * message debug.levels.member{name, from, to, learned} を出す。最後に message debug.levels{level}（誰も変わらなくても出す）
  */
 export function setLevels(ctx: RuleContext, level: number): void {
@@ -160,16 +161,20 @@ export function setLevels(ctx: RuleContext, level: number): void {
     ch.exp = expFor(level, classOf(data, ch.classId), data.config);
     let hpGain = 0;
     let mpGain = 0;
+    const statGains: StatKey[] = [];
     while (ch.level < level) {
-      const rec = levelUpOnce(quiet, ch, false);
+      const mark = quiet.events.length;
+      const rec = levelUpOnce(quiet, ch);
       hpGain += rec.hpGain;
       mpGain += rec.mpGain;
+      // CH-61（M14）: その段の levelUp の statGains を順につなぐ
+      for (const e of quiet.events.slice(mark)) if (e.kind === "levelUp") statGains.push(...e.statGains);
     }
     levelDownWhileBelow(quiet, ch);
     if (ch.level === from) continue;
     const es = equipStats(state, data, ch); // CH-14: イベントの最大値は実効の値
     if (ch.level > from) {
-      ctx.events.push({ kind: "levelUp", id: ch.id, level: ch.level, hpGain, mpGain, hpMax: es.hpMax, mpMax: es.mpMax, hp: ch.hp, mp: ch.mp, statGains: [] });
+      ctx.events.push({ kind: "levelUp", id: ch.id, level: ch.level, hpGain, mpGain, hpMax: es.hpMax, mpMax: es.mpMax, hp: ch.hp, mp: ch.mp, statGains });
     } else {
       ctx.events.push({ kind: "levelDown", id: ch.id, level: ch.level, hpMax: es.hpMax, mpMax: es.mpMax, hp: ch.hp, mp: ch.mp });
     }
