@@ -4,8 +4,8 @@
 import { describe, expect, test } from "vitest";
 import type { DropEntry, GameData, ItemOption, OptionKind } from "../src/core/data";
 import { optionAppliesTo } from "../src/core/data";
-import { chance, cloneRng, randInt, weightedIndex } from "../src/core/rng";
-import { genericOptionTier, partyChestQuality, placeFoundItem, rollDropTable, rollItemSpec } from "../src/core/rules/loot";
+import { chance, cloneRng, weightedIndex } from "../src/core/rng";
+import { dropLevelBase, genericOptionTier, partyChestQuality, placeFoundItem, rollChestItems, rollDropTable, rollItemSpec } from "../src/core/rules/loot";
 import { cloneState, createItemInstance, makeContext, memberById } from "../src/core/state";
 import type { BattleAction, Character, Command, GameState } from "../src/core/types";
 import { ALWAYS_HIT, allInputs, dataWith, dived, exec, kindsOf, withBattle } from "./helpers/battle";
@@ -18,13 +18,13 @@ const SWORD: DropEntry[] = [{ base: "long_sword", weight: 1 }];
 /** 希少度の重み（normal / fine / rare / legendary）を 1 つだけ 1 にして、引く希少度を固定する */
 const ONLY = { normal: [1, 0, 0, 0], fine: [0, 1, 0, 0], rare: [0, 0, 1, 0], legendary: [0, 0, 0, 1] } as const;
 
-/** 希少度・呪い・振れ幅を固定したデータ（独立したコピー） */
-function lootData(o: { rarity?: keyof typeof ONLY; curse?: number; spread?: number; mut?: (d: GameData) => void } = {}): GameData {
+/** 希少度・呪い・Lv の上乗せの重み（IT-53。M14。[1] なら上乗せ 0 に固定）を固定したデータ（独立したコピー） */
+function lootData(o: { rarity?: keyof typeof ONLY; curse?: number; up?: number[]; mut?: (d: GameData) => void } = {}): GameData {
   const d = loadFreshData();
   const w = ONLY[o.rarity ?? "normal"];
   d.config.items.rarities.forEach((r, i) => (r.weight = w[i]!));
   d.config.items.curseChance = o.curse ?? 0;
-  if (o.spread !== undefined) d.config.items.dropLevelSpread = o.spread;
+  if (o.up !== undefined) d.config.items.dropLevelUpWeights = o.up;
   o.mut?.(d);
   return d;
 }
@@ -35,14 +35,14 @@ const poolOf = (kind: OptionKind): ItemOption[] => data.itemOptions.options.filt
 const OPTION_WEIGHTS = poolOf("weapon").map((x) => x.weight);
 
 describe("IT-52 1 品の生成と乱数の順", () => {
-  test("IT-52 汎用: weightedIndex(entries) → randInt(−spread, +spread) → weightedIndex(rarities) → chance(curse) → オプションの個数だけ weightedIndex（残りの重み）。鏡の rng", () => {
+  test("IT-52 汎用: weightedIndex(entries) → weightedIndex(dropLevelUpWeights)（M14）→ weightedIndex(rarities) → chance(curse) → オプションの個数だけ weightedIndex（残りの重み）。鏡の rng", () => {
     // 実データの希少度の重み（M14 から 72/20/7/1。data から取る）と呪い 8% のまま、上質以上が出るシードを探して 1 品をちょうど作る
     for (let seed = 1; seed < 400; seed++) {
       const s = dived(seed);
       const m = cloneRng(s.rng);
       const entries: DropEntry[] = [{ base: "dagger", weight: 2 }, { base: "long_sword", weight: 3 }];
       const ei = weightedIndex(m, [2, 3]);
-      const delta = randInt(m, -1, 1);
+      const up = weightedIndex(m, data.config.items.dropLevelUpWeights); // IT-53（M14）: 実データの重み [60, 30, 10]
       const ri = weightedIndex(
         m,
         data.config.items.rarities.map((r) => r.weight),
@@ -50,8 +50,8 @@ describe("IT-52 1 品の生成と乱数の順", () => {
       const cursed = chance(m, 8);
       const n = [0, 1, 2, 3][ri]! + (cursed ? 1 : 0);
       if (n < 2) continue;
-      const level = Math.max(1, 5 + delta);
-      const tier = level >= 4 ? 2 : 1; // IT-33: Lv4〜7 は段階 2
+      const level = 5 + up;
+      const tier = level >= 4 ? 2 : 1; // IT-33: Lv4〜7 は段階 2（5〜7）
       const pool = poolOf("weapon"); // 短剣・長剣は品種 weapon（IT-36）
       const want: { optionId: string; tier: number; value: number }[] = [];
       for (let i = 0; i < n; i++) {
@@ -80,7 +80,7 @@ describe("IT-52 1 品の生成と乱数の順", () => {
     throw new Error("no seed with 2+ options");
   });
 
-  test("IT-52 ユニーク: Lv の randInt を引かない（weightedIndex(entries) → weightedIndex(rarities) → chance(curse) → オプション）。itemId はベース、level 0、段階は optionTier", () => {
+  test("IT-52 ユニーク: Lv の上乗せ（weightedIndex(dropLevelUpWeights)）を引かない（weightedIndex(entries) → weightedIndex(rarities) → chance(curse) → オプション）。itemId はベース、level 0、段階は optionTier", () => {
     const d = lootData({ rarity: "fine" });
     const s = dived(3);
     const m = cloneRng(s.rng);
@@ -108,7 +108,7 @@ describe("IT-52 1 品の生成と乱数の順", () => {
   });
 
   test("IT-51 rolls 回とも独立に chance(itemChance)。外れた回はそれ以上引かない。表 d02_boss（100% × 2 回）で 2 品", () => {
-    const d = lootData({ spread: 0 });
+    const d = lootData({ up: [1] });
     const t = d.drops.tables.find((x) => x.id === "d01_f1")!;
     t.itemChance = 0;
     t.rolls = 3;
@@ -128,25 +128,48 @@ describe("IT-52 1 品の生成と乱数の順", () => {
   });
 });
 
-describe("IT-53 ドロップの Lv", () => {
-  test("IT-53 汎用の Lv = 敵の Lv + randInt(−spread, +spread)、最低 1。振れ幅 0 なら敵の Lv のまま（randInt(0, 0) は 1 回消費する）", () => {
-    const d = lootData({ spread: 0 });
+describe("IT-53 / DG-38 ドロップの Lv（M14）", () => {
+  test("IT-53/DG-38 dropLevelBase = max(敵の Lv, dungeons[].floorLevels[階 − 1])。乱数を引かない。階が無ければ throw", () => {
+    // 実データ（【仮】）: d01 [1, 2]・d02 [3, 4, 5]・d03 [5, 6, 6, 7]
+    expect(dropLevelBase(data, "d01", 1, 1)).toBe(1);
+    expect(dropLevelBase(data, "d01", 2, 1)).toBe(2); // 敵 Lv1・階の基準 2 → 2
+    expect(dropLevelBase(data, "d01", 2, 4)).toBe(4); // 敵のほうが高ければ敵
+    expect(dropLevelBase(data, "d02", 3, 4)).toBe(5);
+    expect(dropLevelBase(data, "d03", 4, 3)).toBe(7);
+    expect(() => dropLevelBase(data, "d01", 3, 1)).toThrow("no floor level");
+  });
+
+  test("IT-53 汎用の Lv = 基準 + weightedIndex(dropLevelUpWeights)（乱数 1 回。添字が上乗せ）。重みを 1 つに絞ると Lv が固定される", () => {
+    // 上乗せの重みを 1 つに絞る: [1] → +0、[0, 0, 1] → +2
     for (const lv of [1, 4, 7]) {
-      const s = dived(2);
-      expect(rollItemSpec(s, d, SWORD, lv, 0, "d01").level).toBe(lv);
+      expect(rollItemSpec(dived(2), lootData({ up: [1] }), SWORD, lv, 0, "d01").level).toBe(lv);
+      expect(rollItemSpec(dived(2), lootData({ up: [0, 0, 1] }), SWORD, lv, 0, "d01").level).toBe(lv + 2);
     }
-    // 振れ幅 1 で敵の Lv 1: 出目 −1 でも 1（最低 1）。出目ごとの Lv を鏡で数える
+    // 実データの重み [60, 30, 10]: 出目ごとの Lv を鏡で数え、上乗せ 0・1・2 がどれも出る
     const seen = new Set<number>();
-    for (let seed = 1; seed < 60; seed++) {
+    for (let seed = 1; seed < 80; seed++) {
       const s = dived(seed);
       const m = cloneRng(s.rng);
       weightedIndex(m, [1]);
-      const delta = randInt(m, -1, 1);
-      const got = rollItemSpec(s, lootData(), SWORD, 1, 0, "d01").level;
-      expect(got).toBe(delta === -1 ? 1 : 1 + delta);
-      seen.add(delta);
+      const up = weightedIndex(m, [60, 30, 10]);
+      expect(rollItemSpec(s, lootData(), SWORD, 2, 0, "d01").level).toBe(2 + up);
+      seen.add(up);
     }
-    expect([...seen].sort()).toEqual([-1, 0, 1]);
+    expect([...seen].sort()).toEqual([0, 1, 2]);
+  });
+
+  test("IT-53/DG-38 宝箱の品の Lv: 敵 Lv1・階の基準 2（d01 2 階）なら基準 2（上乗せ [1] で Lv2）。敵 Lv が高ければ敵 Lv", () => {
+    const d = lootData({ up: [1] });
+    const t = d.drops.tables.find((x) => x.id === "d01_f2")!;
+    t.itemChance = 100;
+    t.rolls = 1;
+    t.entries = SWORD;
+    const ctx = makeContext(cloneState(dived(1)), d);
+    rollChestItems(ctx, "d01", 2, 1, 0);
+    expect(ctx.state.items[ctx.state.dive!.ledger.items[0]!]!.level).toBe(2);
+    const ctx2 = makeContext(cloneState(dived(1)), d);
+    rollChestItems(ctx2, "d01", 2, 3, 0);
+    expect(ctx2.state.items[ctx2.state.dive!.ledger.items[0]!]!.level).toBe(3);
   });
 });
 
@@ -170,7 +193,7 @@ describe("IT-30〜33 希少度・chestQuality・呪い・オプション", () =>
     const a = dived(5);
     const m = cloneRng(a.rng);
     weightedIndex(m, [1]);
-    randInt(m, -1, 1);
+    weightedIndex(m, [60, 30, 10]); // IT-53（M14）: Lv の上乗せ
     weightedIndex(m, ONLY.normal);
     chance(m, 100);
     chance(m, 0);
@@ -181,7 +204,7 @@ describe("IT-30〜33 希少度・chestQuality・呪い・オプション", () =>
     const z = dived(5);
     const mz = cloneRng(z.rng);
     weightedIndex(mz, [1]);
-    randInt(mz, -1, 1);
+    weightedIndex(mz, [60, 30, 10]); // IT-53（M14）: Lv の上乗せ
     weightedIndex(mz, ONLY.normal);
     chance(mz, 0);
     expect(rollItemSpec(z, lootData({ rarity: "normal" }), SWORD, 3, 0, "d01").rarity).toBe("normal");
@@ -195,7 +218,7 @@ describe("IT-30〜33 希少度・chestQuality・呪い・オプション", () =>
       const a = dived(seed);
       const m = cloneRng(a.rng);
       weightedIndex(m, [1]);
-      randInt(m, -1, 1);
+      weightedIndex(m, [60, 30, 10]); // IT-53（M14）: Lv の上乗せ
       weightedIndex(m, ONLY.normal);
       const up = chance(m, 15); // 危険度 1 × 15
       const greed = chance(m, 35);
@@ -225,7 +248,7 @@ describe("IT-30〜33 希少度・chestQuality・呪い・オプション", () =>
       const a = dived(seed);
       const m = cloneRng(a.rng);
       weightedIndex(m, [1]);
-      randInt(m, -1, 1);
+      weightedIndex(m, [60, 30, 10]); // IT-53（M14）: Lv の上乗せ
       weightedIndex(m, ONLY.normal);
       const up = chance(m, 30); // 危険度 2 × 15
       chance(m, 0);
@@ -252,7 +275,7 @@ describe("IT-30〜33 希少度・chestQuality・呪い・オプション", () =>
       const a = dived(seed);
       const m = cloneRng(a.rng);
       weightedIndex(m, [1]);
-      randInt(m, -1, 1);
+      weightedIndex(m, [60, 30, 10]); // IT-53（M14）: Lv の上乗せ
       weightedIndex(m, ONLY.fine);
       const up = chance(m, 60);
       chance(m, 100);
@@ -306,8 +329,8 @@ describe("IT-30〜33 希少度・chestQuality・呪い・オプション", () =>
 
   test("IT-33 汎用の段階 = min(3, 1 + floor(Lv ÷ 4))（Lv0〜3 は 1、4〜7 は 2、8 以上は 3）。値は values[段階 − 1]", () => {
     expect([0, 3, 4, 7, 8, 20].map((lv) => genericOptionTier(lv, data))).toEqual([1, 1, 2, 2, 3, 3]);
-    // Lv 8（振れ幅 0）の上質の長剣: 段階 3 の値
-    const spec = rollItemSpec(dived(4), lootData({ rarity: "fine", spread: 0 }), SWORD, 8, 0, "d01");
+    // Lv 8（上乗せ 0）の上質の長剣: 段階 3 の値
+    const spec = rollItemSpec(dived(4), lootData({ rarity: "fine", up: [1] }), SWORD, 8, 0, "d01");
     const o = data.itemOptions.options.find((x) => x.id === spec.options![0]!.optionId)!;
     expect(spec.options).toEqual([{ optionId: o.id, tier: 3, value: o.values[2] }]);
   });
@@ -328,7 +351,7 @@ describe("IT-30〜33 希少度・chestQuality・呪い・オプション", () =>
     expect(poolOf("caster")).toHaveLength(22);
     expect(poolOf("caster").reduce((a, x) => a + x.weight, 0)).toBe(76);
     expect(OPTION_WEIGHTS.reduce((a, x) => a + x, 0)).toBe(72);
-    const d = lootData({ rarity: "rare", spread: 0 });
+    const d = lootData({ rarity: "rare", up: [1] });
     for (const [base, kind] of [
       ["staff", "caster"],
       ["charm", "accessory"],
@@ -338,7 +361,7 @@ describe("IT-30〜33 希少度・chestQuality・呪い・オプション", () =>
         const s = dived(seed);
         const m = cloneRng(s.rng);
         weightedIndex(m, [1]);
-        randInt(m, 0, 0);
+        weightedIndex(m, [1]); // IT-53（M14）: Lv の上乗せ（重み [1]）
         weightedIndex(m, ONLY.rare);
         chance(m, 0);
         const pool = poolOf(kind);
@@ -409,14 +432,14 @@ describe("IT-54 配る・置いていく", () => {
       const used = Object.values(ch.equipment).filter((x) => x !== null).length + ch.inventory.length;
       for (let i = used; i < data.config.inventory.slotsPerCharacter; i++) ch.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
     }
-    const d = lootData({ rarity: "normal", spread: 0, mut: (x) => (x.drops.tables.find((t) => t.id === "d01_f1")!.entries = SWORD) });
+    const d = lootData({ rarity: "normal", up: [1], mut: (x) => (x.drops.tables.find((t) => t.id === "d01_f1")!.entries = SWORD) });
     d.drops.tables.find((t) => t.id === "d01_f1")!.itemChance = 100;
     const ctx = makeContext(cloneState(s), d);
     const seq = ctx.state.nextItemSeq;
     const m = cloneRng(ctx.state.rng);
     chance(m, 100);
     weightedIndex(m, [1]);
-    randInt(m, 0, 0);
+    weightedIndex(m, [1]); // IT-53（M14）: Lv の上乗せ（重み [1]）
     weightedIndex(m, ONLY.normal);
     chance(m, 0);
     rollDropTable(ctx, "d01_f1", 2, 0, "d01");
@@ -501,7 +524,7 @@ describe("CB-52 宝箱の品（IT-50 / IT-31 / IT-53）", () => {
     dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100 } }, (d) => {
       d.config.items.rarities.forEach((r, i) => (r.weight = ONLY[rarity][i]!));
       d.config.items.curseChance = 0;
-      d.config.items.dropLevelSpread = 0;
+      d.config.items.dropLevelUpWeights = [1]; // IT-53（M14）: 上乗せ 0 に固定
       d.config.chest.noTrapChance = 100; // M11: 罠なし（危険度 0 なので IT-56 の上振れも振らない）
       for (const t of d.drops.tables) {
         t.itemChance = 100;
@@ -517,7 +540,7 @@ describe("CB-52 宝箱の品（IT-50 / IT-31 / IT-53）", () => {
   };
 
   test("CB-65/IT-13 宝箱を開けると金の後に、その階の表から品（未鑑定・foundIn 迷宮・台帳）。Lv は倒した種類の level の最大（IT-53）。強欲が行動可能なら希少度 +1", () => {
-    // 腐乱死体 level 2・大鼠 level 1 → Lv 2（振れ幅 0）。強欲のドナ（c4）が行動可能 → 通常 + 1 = 上質
+    // 腐乱死体 level 2・大鼠 level 1 → Lv 2（1 階の基準 Lv1 より高い。上乗せ 0）。強欲のドナ（c4）が行動可能 → 通常 + 1 = 上質
     const s = roomWin([{ monsterId: "giant_rat" }, { monsterId: "rotting_corpse" }]);
     const r = winOpen(s, chestData("normal"));
     const ks = kindsOf(r.events);

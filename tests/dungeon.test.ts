@@ -1669,7 +1669,7 @@ describe("ボス（DG-31〜33, DG-01）", () => {
     expect(r.state.progress).toMatchObject({ clearedDungeons: ["d01", "d02", "d03"], conquered: true, endingPending: false });
   });
 
-  test("DG-31/IT-50 ボスの戦利品: 勝つと drops.boss の表（d01_boss。100% × 1 回）から 1 品。未鑑定・foundIn d01・台帳。ボスの語り（解放）の後、screen dungeon とテレポーターの申し出の前。Lv はボスの level 4 ± 1（ユニークなら 0）", () => {
+  test("DG-31/IT-50 ボスの戦利品: 勝つと drops.boss の表（d01_boss。100% × 1 回）から 1 品。未鑑定・foundIn d01・台帳。ボスの語り（解放）の後、screen dungeon とテレポーターの申し出の前。Lv は max(ボスの level 4, 最下層の基準 Lv 2) + 0〜2（IT-53 / DG-38。M14。ユニークなら 0）", () => {
     const r = defeatBoss(run(atBoss().state, MOVE, D0).state);
     const ks = kinds(r.events);
     const iFound = ks.indexOf("message:item.found");
@@ -1682,7 +1682,7 @@ describe("ボス（DG-31〜33, DG-01）", () => {
     const table = data.drops.tables.find((t) => t.id === data.drops.boss["d01"])!;
     if (inst.uniqueId === null) {
       expect(table.entries.some((e) => "base" in e && e.base === inst.itemId)).toBe(true);
-      expect([3, 4, 5]).toContain(inst.level);
+      expect([4, 5, 6]).toContain(inst.level);
     } else {
       expect(table.entries.some((e) => "unique" in e && e.unique === inst.uniqueId)).toBe(true);
       expect(inst.level).toBe(0);

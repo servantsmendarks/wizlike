@@ -57,7 +57,7 @@
       { "id": "rare", "weight": 7, "options": 2 },
       { "id": "legendary", "weight": 1, "options": 3 }
     ],
-    "curseChance": 8, "optionTierStep": 4, "dropLevelSpread": 1,
+    "curseChance": 8, "optionTierStep": 4, "dropLevelUpWeights": [60, 30, 10],
     "weaponLvPerDamage": 2, "armorLvPerAc": 3, "casterLvPerPower": 2,
     "levelPriceRatio": 0.5, "optionSellValue": [20, 40, 80], "warehouseSlots": 40
   },

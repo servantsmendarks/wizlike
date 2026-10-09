@@ -322,7 +322,8 @@ describe("data: config.json", () => {
   });
   test("data: IT-20〜22・IT-32・IT-33・IT-53・IT-60〜64 config.items の数値【仮】と型", () => {
     const it = config.items;
-    expect([it.curseChance, it.optionTierStep, it.dropLevelSpread, it.weaponLvPerDamage, it.armorLvPerAc, it.casterLvPerPower]).toEqual([8, 4, 1, 2, 3, 2]);
+    expect([it.curseChance, it.optionTierStep, it.weaponLvPerDamage, it.armorLvPerAc, it.casterLvPerPower]).toEqual([8, 4, 2, 3, 2]);
+    expect(it.dropLevelUpWeights).toEqual([60, 30, 10]); // IT-53（M14）【仮】
     expect([it.levelPriceRatio, it.optionSellValue, it.warehouseSlots]).toEqual([0.5, [20, 40, 80], 40]);
     expectIssue((r) => delete r.config.items, "config.json", "items: missing required field");
     expectIssue((r) => (r.config.items.weaponLvPerDamage = 0), "config.json", "items.weaponLvPerDamage");
@@ -330,7 +331,12 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.items.casterLvPerPower = 0), "config.json", "items.casterLvPerPower");
     expectIssue((r) => (r.config.items.optionTierStep = 0), "config.json", "items.optionTierStep");
     expectIssue((r) => (r.config.items.curseChance = 101), "config.json", "items.curseChance");
-    expectIssue((r) => (r.config.items.dropLevelSpread = -1), "config.json", "items.dropLevelSpread");
+    // IT-53（M14）: 上乗せの重みは長さ 1 以上・非負の整数・合計 > 0。M13 までの dropLevelSpread は無くなった
+    expectIssue((r) => (r.config.items.dropLevelUpWeights = []), "config.json", "items.dropLevelUpWeights");
+    expectIssue((r) => (r.config.items.dropLevelUpWeights = [60, -1]), "config.json", "items.dropLevelUpWeights[1]");
+    expectIssue((r) => (r.config.items.dropLevelUpWeights = [0, 0]), "config.json", "items.dropLevelUpWeights: IT-53: weights must sum to > 0");
+    expectIssue((r) => (r.config.items.dropLevelSpread = 1), "config.json", "items.dropLevelSpread: unknown field");
+    expect(issuesOf((r) => (r.config.items.dropLevelUpWeights = [0, 1]))).toEqual([]);
     expectIssue((r) => (r.config.items.levelPriceRatio = -0.5), "config.json", "items.levelPriceRatio");
     expectIssue((r) => (r.config.items.optionSellValue = [20, 40]), "config.json", "items.optionSellValue: IT-61: expected 3 values");
     expectIssue((r) => (r.config.items.optionSellValue = [20, -1, 80]), "config.json", "items.optionSellValue[1]");
@@ -1333,6 +1339,14 @@ describe("data: dungeons.json", () => {
   test("data: DG-34 テレポーター階は floors 以下", () => {
     expectIssue((r) => (r.dungeons[0].teleporterFloors = [3]), "dungeons.json", "[0].teleporterFloors[0]: DG-34: floor 3 exceeds floors 2");
     expect(issuesOf((r) => (r.dungeons[0].teleporterFloors = [2]))).toEqual([]);
+  });
+  test("data: DG-38 floorLevels（M14【仮】）は d01 [1, 2]・d02 [3, 4, 5]・d03 [5, 6, 6, 7]。長さ ≠ floors・0 以下・欠落は起動を止める", () => {
+    expect(dungeons.map((d) => d.floorLevels)).toEqual([[1, 2], [3, 4, 5], [5, 6, 6, 7]]);
+    expectIssue((r) => (r.dungeons[0].floorLevels = [1]), "dungeons.json", "[0].floorLevels: DG-38: expected 2 levels (floors), got 1");
+    expectIssue((r) => (r.dungeons[0].floorLevels = [1, 2, 3]), "dungeons.json", "[0].floorLevels: DG-38: expected 2 levels (floors), got 3");
+    expectIssue((r) => (r.dungeons[1].floorLevels = [3, 0, 5]), "dungeons.json", "[1].floorLevels[1]");
+    expectIssue((r) => delete r.dungeons[2].floorLevels, "dungeons.json", "[2].floorLevels: missing required field");
+    expect(issuesOf((r) => (r.dungeons[0].floorLevels = [9, 1]))).toEqual([]);
   });
   test("data: DG-22 イベントは重複しない", () => {
     expectIssue((r) => r.dungeons[0].events.push("glowing_tablet"), "dungeons.json", "DG-22");

@@ -385,7 +385,14 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       rarities: L(F({ id: S, weight: I(NON_NEG), options: I({ min: 0, max: 3 }) }), 1), // IT-30（順と件数は下で検査）
       curseChance: I(PERCENT), // IT-32
       optionTierStep: I(POS_INT), // IT-33
-      dropLevelSpread: I(NON_NEG), // IT-53
+      dropLevelUpWeights: (c2, p, x) => {
+        // IT-53（M14）: 上乗せ 0..n−1 の重み。長さ 1 以上、非負の整数、合計 > 0
+        const a = L(I(NON_NEG), 1)(c2, p, x);
+        if (!Array.isArray(a)) return a;
+        const nums = a.filter((n): n is number => typeof n === "number");
+        if (nums.length === a.length && nums.reduce((s, n) => s + n, 0) <= 0) report(c2, p, "IT-53: weights must sum to > 0");
+        return a;
+      },
       weaponLvPerDamage: I(POS_INT), // IT-20
       armorLvPerAc: I(POS_INT), // IT-21
       casterLvPerPower: I(POS_INT), // IT-22
@@ -1144,6 +1151,7 @@ function validateDungeons(ctx: Ctx, v: unknown, ix: Index): void {
       name: S,
       placeholder: opt(B), // DG-35（M9）
       floors: I(POS_INT),
+      floorLevels: L(I(POS_INT), 1), // DG-38（M14）。長さは下で検査する
       width: I({ min: 5 }), // DG-02: 生成の前提（部屋が置ける寸法）
       height: I({ min: 5 }), // DG-02
       rooms: opt(pair(NON_NEG)), // DG-05: 省略時は config.dungeon.defaultRooms
@@ -1228,6 +1236,10 @@ function validateDungeons(ctx: Ctx, v: unknown, ix: Index): void {
     evs.forEach((e, j) => {
       if (typeof e === "string" && evs.indexOf(e) !== j) report(ctx, at(at(p, "events"), j), `DG-22: duplicate event ${JSON.stringify(e)}`);
     });
+    // DG-38（M14）: 階の基準 Lv は階ごとに 1 つ（長さ = floors）
+    const fl = d.floorLevels;
+    if (floors !== undefined && Array.isArray(fl) && fl.length !== floors)
+      report(ctx, at(p, "floorLevels"), `DG-38: expected ${floors} levels (floors), got ${fl.length}`);
     // DG-34: テレポーターの階
     if (floors !== undefined) {
       arrOf(d.teleporterFloors).forEach((f, j) => {

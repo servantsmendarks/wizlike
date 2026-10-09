@@ -74,7 +74,7 @@ export function addPlaceholderDungeon(raw: { dungeons: any; drops: any }): void 
   d03.onClear.unlockDungeon = "d04";
   raw.dungeons.push({
     id: "d04", name: PLACEHOLDER_DUNGEON_NAME, placeholder: true,
-    floors: 1, width: 20, height: 20, rooms: [4, 7],
+    floors: 1, floorLevels: [7], width: 20, height: 20, rooms: [4, 7], // floorLevels: DG-38（M14）
     unlock: d03.id,
     encounterRate: structuredClone(d03.encounterRate),
     encounterTable: { "1": structuredClone(d03.encounterTable["4"]) },

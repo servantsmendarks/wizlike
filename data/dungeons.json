@@ -2,6 +2,7 @@
   {
     "id": "d01", "name": "試しの坑道",
     "floors": 2, "width": 20, "height": 20, "rooms": [3, 6],
+    "floorLevels": [1, 2],
     "unlock": null,
     "encounterRate": { "room": 0.12, "corridor": 0.05 },
     "encounterTable": {
@@ -34,6 +35,7 @@
   {
     "id": "d02", "name": "沈んだ聖堂",
     "floors": 3, "width": 20, "height": 20, "rooms": [4, 7],
+    "floorLevels": [3, 4, 5],
     "unlock": "d01",
     "encounterRate": { "room": 0.14, "corridor": 0.06 },
     "encounterTable": {
@@ -72,6 +74,7 @@
   {
     "id": "d03", "name": "灰の地下墓所",
     "floors": 4, "width": 20, "height": 20, "rooms": [4, 7],
+    "floorLevels": [5, 6, 6, 7],
     "unlock": "d02",
     "encounterRate": { "room": 0.14, "corridor": 0.06 },
     "encounterTable": {

@@ -68,8 +68,8 @@ export type ItemsConfig = {
   curseChance: number;
   /** IT-33: 汎用のオプションの段階 = min(3, 1 + floor(Lv ÷ これ)) */
   optionTierStep: number;
-  /** IT-53: ドロップの Lv の振れ幅 */
-  dropLevelSpread: number;
+  /** IT-53（M14）: 汎用装備のドロップの Lv の上乗せ 0..n−1 の重み（添字が上乗せの Lv。長さ 1 以上、非負の整数、合計 > 0）。M13 までの dropLevelSpread（敵 Lv ± spread）の代わり */
+  dropLevelUpWeights: number[];
   /** IT-20: 武器のダメージ +floor(Lv ÷ これ) */
   weaponLvPerDamage: number;
   /** IT-21: 防具・盾・兜・小手の AC −floor(Lv ÷ これ) */
@@ -688,6 +688,8 @@ export type DungeonDef = {
   /** DG-35（M9）: 真なら「準備中」の枠。開放はされるが入場できない（配列の末尾の側・floors 1・onClear.unlockDungeon null） */
   placeholder?: boolean;
   floors: number;
+  /** DG-38（M14）: 階の基準 Lv（要素 i は i+1 階。長さ = floors、正の整数）。品の Lv の下限 max(敵 Lv, これ)（IT-53）【仮】 */
+  floorLevels: number[];
   width: number;
   height: number;
   /** DG-05: 部屋数 [min, max]。省略時は config.dungeon.defaultRooms */
