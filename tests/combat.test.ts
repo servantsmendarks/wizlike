@@ -2006,7 +2006,7 @@ describe("拍（CB-55）", () => {
     ]);
   });
 
-  test("CB-55 攻撃回数 2（戦士 Lv5）: declare は 1 回、result は振りごとに 2 回、覚醒した振りにだけ aftermath", () => {
+  test("CB-55/CB-23 攻撃回数 2（戦士 Lv5）: declare は 1 回、2 振りとも 1 つの result（要約 battle.hits）、覚醒は後の aftermath 1 つ（M14）", () => {
     const d = dataWith({ combat: { ...ALWAYS_HIT, sleepWakeChance: 100 } });
     const s = setup([{ monsterId: "giant_rat", hps: [50], status: [["sleep"]] }], {
       patches: { ...ONLY_C1, c1: { level: 5 } },
@@ -2017,10 +2017,11 @@ describe("拍（CB-55）", () => {
     expectBeatShape(r.events);
     expect(phasesOf(r.events)).toEqual([
       ["declare", ["message:battle.attackDeclare"]],
-      ["result", ["hpChanged", "attack", "message:battle.hit"]],
+      ["result", ["hpChanged", "attack", "hpChanged", "attack", "message:battle.hits"]],
       ["aftermath", ["statusChanged", "message:battle.wake"]],
-      ["result", ["hpChanged", "attack", "message:battle.hit"]],
     ]);
+    const dmg = eventsOf(r.events, "attack").map((e) => e.damage);
+    expect(r.events).toContainEqual({ kind: "message", key: "battle.hits", params: { target: "大ネズミ", n: 2, damage: dmg[0]! + dmg[1]! } });
   });
 
   test("CB-55 敵: declare（attackDeclare{グループ名}）→ 攻撃要素ごとに result（hpChanged → attack → battle.hit{味方の名前}）と aftermath（状態付与 / SAN 吸収）。防御は declare だけ", () => {
@@ -2161,7 +2162,8 @@ describe("拍（CB-55）", () => {
     const ph = phasesOf(amb.events);
     expect(ph[1]).toEqual(["system", ["dice", "message:battle.surpriseEnemy"]]);
     expect(ph[2]).toEqual(["declare", ["message:battle.attackDeclare"]]);
-    expect(ph.filter(([p]) => p === "declare")).toHaveLength(2);
+    // M14: 同じグループの 2 体は行動順で連続するので 1 つのまとまり（宣言は 1 回）
+    expect(ph.filter(([p]) => p === "declare")).toHaveLength(1);
   });
 
   test("CB-55/CB-04 取り消しの dice は先手の dice と別の system の拍（成功なら battle.ambushAvoided も同じ拍、失敗なら dice だけで続けて敵の declare）", () => {
@@ -2306,6 +2308,231 @@ describe("拍（CB-55）", () => {
   });
 });
 
+describe("戦闘の表示の圧縮（CB-55 / CB-23 / CB-24。M14）", () => {
+  // M14: 乱数の消費順・最終の state・attack / hpChanged / lifeChanged / statusChanged / sanChanged の中身は M13 と同じで、
+  // 変わるのは拍の区切りと message だけ。各テストは鏡の rng と、message を除いた列を手で数えた期待値で確かめる
+  const BIG = { hp: 100, hpMax: 100 };
+  // 前衛の 3 人が対象（CB-15）。アルド（c1）だけが防御で行動し（全員が行動不能だと全滅。防御なのでダメージは半分 CB-12）、
+  // ボブ・キリ（c2 / c3）は麻痺。後衛は麻痺（前衛に行動可能な者がいるので対象にならない）
+  const FRONT_BIG = { c1: BIG, c2: { ...PARA, ...BIG }, c3: { ...PARA, ...BIG }, c4: PARA, c5: PARA, c6: PARA };
+  const C1_DEF = { c1: DEF };
+  /** 防御中のアルドへのダメージ（CB-12/22） */
+  const dmgTo = (t: string, raw: number) => (t === "c1" ? Math.ceil(raw / 2) : raw);
+  /** 同じ agi の 2 体の行動順（1d10 の降順、同点は並び順。CB-11）。r は [アルド, 個体 0, 個体 1] の 1d10 */
+  const unitOrder = (r: number[]) => [0, 1].sort((x, y) => r[y + 1]! - r[x + 1]! || x - y);
+  /** 敵の agi を 1000 にして、敵が必ずアルドより先に動くようにする */
+  const fast =
+    (...ids: string[]) =>
+    (x: GameData): void => {
+      for (const id of ids) x.monsters.find((mm) => mm.id === id)!.agi = 1000;
+    };
+  const nonMessage = (events: readonly GameEvent[]) => events.filter((e) => e.kind !== "beat" && e.kind !== "message");
+
+  test("CB-55/CB-23 2 振りとも当たり: declare 1 つ → result 1 つ（hpChanged → attack ×2 → battle.hits{target, n 2, damage 合計}）→ 撃破は後の aftermath 1 つ。rng と state は鏡のとおり", () => {
+    const d = dataWith({ combat: ALWAYS_HIT });
+    const s = setup([{ monsterId: "giant_rat", hps: [1, 50], status: [["paralysis"], ["paralysis"]] }], {
+      patches: { ...ONLY_C1, c1: { level: 5 } },
+      inputs: { c1: atk(0) },
+      identified: ["giant_rat"],
+    });
+    const m = cloneRng(s.rng);
+    rolls(m, 1); // アルドだけ（麻痺のネズミは振らない）
+    chance(m, 100);
+    const d1 = rollDice(m, "1d8").total + 2;
+    chance(m, 100);
+    const d2 = rollDice(m, "1d8").total + 2;
+    const r = exec(s, RESOLVE, d);
+    expect(r.events).toEqual([
+      { kind: "beat", phase: "declare", auto: false },
+      { kind: "message", key: "battle.attackDeclare", params: { actor: "アルド" } },
+      { kind: "beat", phase: "result", auto: false },
+      { kind: "hpChanged", id: "e0-0", delta: -1, hp: 0 },
+      { kind: "attack", actorId: "c1", targetId: "e0-0", hit: true, damage: d1 },
+      { kind: "hpChanged", id: "e0-1", delta: -d2, hp: 50 - d2 },
+      { kind: "attack", actorId: "c1", targetId: "e0-1", hit: true, damage: d2 },
+      { kind: "message", key: "battle.hits", params: { target: "大ネズミ", n: 2, damage: d1 + d2 } },
+      { kind: "beat", phase: "aftermath", auto: false },
+      { kind: "lifeChanged", id: "e0-0", life: "dead" },
+      { kind: "message", key: "battle.dead", params: { target: "大ネズミ" } },
+    ]);
+    expect(r.state.rng).toEqual(m);
+    expect(r.state.battle!.groups[0]!.units.map((u) => u.hp)).toEqual([0, 50 - d2]);
+    expect(r.state.bestiary["giant_rat"]!.kills).toBe(s.bestiary["giant_rat"]!.kills + 1);
+  });
+
+  test("CB-55/CB-23 2 振りとも外れ: result 1 つに attack(false) ×2 → battle.missAll{target, n 2}。1 振り（Lv1）は M13 と同じ battle.miss", () => {
+    const d = dataWith({ combat: NEVER_HIT });
+    const mk = (level: number) =>
+      setup([{ monsterId: "giant_rat", hps: [50], status: [["paralysis"]] }], {
+        patches: { ...ONLY_C1, c1: { level } },
+        inputs: { c1: atk(0) },
+        identified: ["giant_rat"],
+      });
+    const s = mk(5);
+    const m = cloneRng(s.rng);
+    rolls(m, 1);
+    chance(m, 0);
+    chance(m, 0);
+    const r = exec(s, RESOLVE, d);
+    expect(r.events).toEqual([
+      { kind: "beat", phase: "declare", auto: false },
+      { kind: "message", key: "battle.attackDeclare", params: { actor: "アルド" } },
+      { kind: "beat", phase: "result", auto: false },
+      { kind: "attack", actorId: "c1", targetId: "e0-0", hit: false, damage: 0 },
+      { kind: "attack", actorId: "c1", targetId: "e0-0", hit: false, damage: 0 },
+      { kind: "message", key: "battle.missAll", params: { target: "大ネズミ", n: 2 } },
+    ]);
+    expect(r.state.rng).toEqual(m);
+    const one = exec(mk(1), RESOLVE, d);
+    expect(kindsOf(one.events).filter((k) => k.startsWith("message:"))).toEqual(["message:battle.attackDeclare", "message:battle.miss"]);
+  });
+
+  test("CB-55/CB-24 敵の同じグループ 2 体の連続: declare 1 回、result 1 つ。当たった対象が 1 人なら battle.hits、2 人以上なら battle.hitsMany{n, list}。全部外れなら battle.missAll / battle.missParty（鏡の rng）", () => {
+    const seen = new Set<string>();
+    for (const always of [true, false]) {
+      const d = dataWith({ combat: always ? ALWAYS_HIT : NEVER_HIT }, fast("kobold"));
+      for (let seed = 1; seed <= 12; seed++) {
+        // コボルド 2 体はドナより先に動くので行動順で必ず連続する
+        const s = setup([{ monsterId: "kobold", hps: [50, 50] }], { seed, patches: FRONT_BIG, inputs: C1_DEF, identified: ["kobold"] });
+        const ids = ["c1", "c2", "c3"];
+        const m = cloneRng(s.rng);
+        const order = unitOrder(rolls(m, 3)); // アルド → コボルド 2 体
+        const tries = order.map((k) => {
+          const t = ids[randInt(m, 0, 2)]!;
+          chance(m, always ? 100 : 0);
+          return { k, t, dmg: always ? dmgTo(t, Math.max(1, rollDice(m, "1d4").total)) : 0 };
+        });
+        const r = exec(s, RESOLVE, d);
+        expect(r.state.rng).toEqual(m);
+        const nameOf = (id: string) => member(s, id).name;
+        const a = tries[0]!;
+        const b = tries[1]!;
+        let summary: GameEvent;
+        if (always && a.t === b.t) summary = { kind: "message", key: "battle.hits", params: { target: nameOf(a.t), n: 2, damage: a.dmg + b.dmg } };
+        else if (always) summary = { kind: "message", key: "battle.hitsMany", params: { n: 2, list: `${nameOf(a.t)}に${a.dmg}、${nameOf(b.t)}に${b.dmg}` } };
+        else if (a.t === b.t) summary = { kind: "message", key: "battle.missAll", params: { target: nameOf(a.t), n: 2 } };
+        else summary = { kind: "message", key: "battle.missParty", params: { n: 2 } };
+        if (summary.kind === "message") seen.add(summary.key);
+        const hpAfter = (k: number) => 100 - tries.slice(0, k + 1).filter((x) => x.t === tries[k]!.t).reduce((acc, x) => acc + x.dmg, 0);
+        const body: GameEvent[] = tries.flatMap((x, i): GameEvent[] =>
+          always
+            ? [
+                { kind: "hpChanged", id: x.t, delta: -x.dmg, hp: hpAfter(i) },
+                { kind: "attack", actorId: `e0-${x.k}`, targetId: x.t, hit: true, damage: x.dmg },
+              ]
+            : [{ kind: "attack", actorId: `e0-${x.k}`, targetId: x.t, hit: false, damage: 0 }],
+        );
+        expect(r.events).toEqual([
+          { kind: "beat", phase: "declare", auto: false },
+          { kind: "message", key: "battle.attackDeclare", params: { actor: "コボルド" } },
+          { kind: "beat", phase: "result", auto: false },
+          ...body,
+          summary,
+          { kind: "beat", phase: "declare", auto: false },
+          { kind: "message", key: "battle.defend", params: { actor: nameOf("c1") } },
+        ]);
+        expectKnownStringKeys(r.events, d);
+      }
+    }
+    expect(seen).toEqual(new Set(["battle.hits", "battle.hitsMany", "battle.missAll", "battle.missParty"]));
+  });
+
+  test("CB-55/CB-24 別のグループが間に入れば別のまとまり（A0 → B0 → A1 は declare 3 回、A0 → A1 → B0 は 2 回）。1 体 1 要素のまとまりの要約は M13 と同じ battle.miss", () => {
+    const d = dataWith({ combat: NEVER_HIT }, fast("kobold", "giant_rat"));
+    const mk = (seed: number) =>
+      setup(
+        [
+          { monsterId: "kobold", hps: [50, 50] },
+          { monsterId: "giant_rat", hps: [50] },
+        ],
+        { seed, patches: FRONT_BIG, inputs: C1_DEF, identified: ["kobold", "giant_rat"] },
+      );
+    // 敵どうしの行動順（agi が同じなので 1d10 だけ。同点は並びの順。CB-11）。アルドは最後
+    const orderOf = (seed: number): string[] => {
+      const r = rolls(cloneRng(mk(seed).rng), 4).slice(1); // アルド → A0, A1, B0
+      return ["A0", "A1", "B0"]
+        .map((k, i) => ({ k, init: r[i]!, i }))
+        .sort((x, y) => y.init - x.init || x.i - y.i)
+        .map((x) => x.k);
+    };
+    const seeds = Array.from({ length: 60 }, (_, i) => i + 1);
+    const split = seeds.find((seed) => orderOf(seed)[1] === "B0");
+    const joined = seeds.find((seed) => orderOf(seed)[1] !== "B0");
+    expect(split).toBeDefined();
+    expect(joined).toBeDefined();
+    const run = (seed: number) => exec(mk(seed), RESOLVE, d);
+    const declaresOf = (seed: number) => phasesOf(run(seed).events).filter(([p]) => p === "declare");
+    expect(declaresOf(split!)).toHaveLength(3 + 1); // 敵 3 まとまり + アルドの防御
+    expect(declaresOf(joined!)).toHaveLength(2 + 1);
+    const misses = kindsOf(run(split!).events).filter((k) => k.startsWith("message:battle.miss"));
+    expect(misses).toEqual(["message:battle.miss", "message:battle.miss", "message:battle.miss"]);
+  });
+
+  test("CB-55/CB-24 不変条件: 大蜘蛛 2 体の毒（必ず付与）。result 1 つ → aftermath 1 つ（statusChanged と battle.status.poison をまとめて）。message を除いた列・rng・最終の state は手で数えたとおり（乱数の順は M13 と同じ）", () => {
+    const d = dataWith({ combat: ALWAYS_HIT }, (x) => {
+      x.monsters.find((mm) => mm.id === "giant_spider")!.attacks[0]!.chance = 1000;
+      fast("giant_spider")(x);
+    });
+    const seen = new Set<boolean>();
+    for (let seed = 1; seed <= 12; seed++) {
+      const s = setup([{ monsterId: "giant_spider", hps: [50, 50] }], { seed, patches: FRONT_BIG, inputs: C1_DEF, identified: ["giant_spider"] });
+      const ids = ["c1", "c2", "c3"];
+      const m = cloneRng(s.rng);
+      const order = unitOrder(rolls(m, 3)); // アルド → 大蜘蛛 2 体
+      // M13 と同じ乱数の順: 個体ごとに 対象 → 命中 → ダメージ →（まだ毒でなければ）付与
+      const poisoned = new Set<string>();
+      const hp: Record<string, number> = { c1: 100, c2: 100, c3: 100 };
+      const expected: GameEvent[] = [];
+      const after: GameEvent[] = [];
+      for (const k of order) {
+        const t = ids[randInt(m, 0, 2)]!;
+        chance(m, 100);
+        const dmg = dmgTo(t, Math.max(1, rollDice(m, "1d4").total));
+        hp[t] = hp[t]! - dmg;
+        expected.push({ kind: "hpChanged", id: t, delta: -dmg, hp: hp[t]! }, { kind: "attack", actorId: `e0-${k}`, targetId: t, hit: true, damage: dmg });
+        if (!poisoned.has(t)) {
+          chance(m, 100);
+          poisoned.add(t);
+          after.push({ kind: "statusChanged", id: t, status: "poison", on: true });
+        }
+      }
+      seen.add(poisoned.size === 2);
+      const r = exec(s, RESOLVE, d);
+      expect(r.state.rng).toEqual(m);
+      // 拍と message を除いた列: result の hpChanged / attack が先、aftermath の statusChanged が後（続くのはラウンドの終わりの毒）
+      expect(nonMessage(r.events).slice(0, expected.length + after.length)).toEqual([...expected, ...after]);
+      for (const id of ids) {
+        expect(member(r.state, id).status.includes("poison")).toBe(poisoned.has(id));
+        expect(member(r.state, id).hp).toBeLessThanOrEqual(hp[id]!); // 毒のダメージがあり得るので ≤
+      }
+      const ph = phasesOf(r.events);
+      expect(ph[0]).toEqual(["declare", ["message:battle.attackDeclare"]]);
+      expect(ph[1]![0]).toBe("result");
+      expect(ph[2]).toEqual(["aftermath", after.flatMap(() => ["statusChanged", "message:battle.status.poison"])]);
+      expect(ph[3]).toEqual(["declare", ["message:battle.defend"]]);
+      expect(ph.filter(([p]) => p === "declare")).toHaveLength(2);
+    }
+    expect(seen).toEqual(new Set([true, false]));
+  });
+
+  test("CB-55/CB-24 敵のまとまりの途中で全滅したら残りの個体は行動しない（対象の抽選もしない）。aftermath に死亡と他の生存者の SAN", () => {
+    // アルドだけが対象（他は石化）。HP 1 なのでコボルドの 1 体目の当たりで全滅し、2 体目は何もしない（コボルドはアルドより先に動く）
+    const s = setup([{ monsterId: "kobold", hps: [50, 50] }], {
+      patches: { ...STONE_BUT_C1, c1: { hp: 1 } },
+      inputs: { c1: DEF },
+      identified: ["kobold"],
+    });
+    const r = exec(s, RESOLVE, dataWith({ combat: ALWAYS_HIT }, fast("kobold")));
+    expect(eventsOf(r.events, "attack")).toHaveLength(1);
+    const ph = phasesOf(r.events);
+    expect(ph[0]).toEqual(["declare", ["message:battle.attackDeclare"]]);
+    expect(ph[1]).toEqual(["result", ["hpChanged", "attack", "message:battle.hit"]]);
+    expect(ph[2]![0]).toBe("aftermath");
+    expect(ph[2]![1].slice(0, 2)).toEqual(["lifeChanged", "message:battle.dead"]);
+    expect(ph[3]![1][0]).toBe("battleEnd");
+  });
+});
+
 describe("冒険のターン数（TW-12。M5.5）", () => {
   test("TW-12 battle.resolve・battle.repeat・逃走の失敗・敵の奇襲のラウンドでは battle.round と同じだけ増え、逃走の成功では増えない", () => {
     const base = (): GameState => {
@@ -2436,7 +2663,8 @@ describe("飛行（CB-26）", () => {
     const r = exec(s, RESOLVE, flyData(NEVER_HIT));
     expect(r.state.rng).toEqual(m);
     expect(eventsOf(r.events, "attack").map((e) => [e.actorId, e.hit])).toEqual([["c1", false], ["c1", false]]);
-    expect(kindsOf(r.events)).toContain("message:battle.miss");
+    // M14（CB-55）: 2 振りとも外れたら要約 battle.missAll{target, n: 2} の 1 件
+    expect(r.events).toContainEqual({ kind: "message", key: "battle.missAll", params: { target: "大ネズミ", n: 2 } });
     expect(data.strings["battle.outOfReach"]).toBeUndefined();
     // 必中なら飛行の相手にも近接でダメージ
     const r2 = exec(flyingRats(1, ONLY_C1, { c1: atk(0) }), RESOLVE, flyData(ALWAYS_HIT));

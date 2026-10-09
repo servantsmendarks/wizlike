@@ -31,6 +31,7 @@ import type {
   Dive,
   EnemyGroup,
   EnemyUnit,
+  GameEvent,
   GameState,
   RuleContext,
 } from "../types";
@@ -513,14 +514,23 @@ function runRound(ctx: RuleContext, who: { allies: boolean; enemies: boolean }):
       });
     });
   }
-  for (const { actor } of orderActors(entries)) {
+  const order = orderActors(entries);
+  for (let i = 0; i < order.length; i++) {
+    const actor = order[i]!.actor;
     if (actor.side === "ally") {
       const ch = requireMember(state, actor.plan.memberId);
       if (!canAct(ch)) continue; // CB-16
       applyAllyPlan(ctx, ch, actor.plan, sanMsg[ch.id] ?? null);
     } else {
-      if (!unitCanAct(unitAt(b, actor.g, actor.u))) continue; // CB-16
-      actEnemyUnit(ctx, actor.g, actor.u, defending);
+      // CB-55（M14）: 行動順で連続する同じグループの敵は 1 つのまとまり（味方か別のグループが間に入れば別のまとまり）
+      const us = [actor.u];
+      for (let nx = order[i + 1]?.actor; nx !== undefined && nx.side === "enemy" && nx.g === actor.g; nx = order[i + 1]?.actor) {
+        us.push(nx.u);
+        i += 1;
+      }
+      const can = us.filter((u) => unitCanAct(unitAt(b, actor.g, u))); // CB-16
+      if (can.length === 0) continue;
+      actEnemyGroup(ctx, actor.g, can, defending);
     }
     if (isVictory(b)) {
       endBattle(ctx, "win");
@@ -652,27 +662,33 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan, sanKey: 
       // CB-23 / IT-40: 固有スキル extraAttack は maxAttacks の後に足す（超えてよい）
       const times = attackCount(classOf(data, ch.classId), ch.level) + skillTotal(es, "extraAttack");
       const steal = skillTotal(es, "lifeSteal"); // IT-40
-      for (let k = 0; k < times; k++) {
-        const u = firstAliveUnit(grp);
-        if (u === null) break; // 他のグループへは振り替えない
-        const unit = unitAt(b, ga, u);
-        const targetId = enemyId(ga, u);
-        const target = groupName(state, data, ga);
-        let hit = false as boolean;
-        let next = 0 as number;
-        // CB-55: 振りごとに結果の拍
-        section(ctx, "result", () => {
-          hit = chance(state.rng, hitPercent(data.config, ch.level, m.ac, unit.status.includes("sleep"), hitBonus));
+      // CB-55 / CB-23（M14）: 全部の振りを 1 つの result の拍にまとめる。撃破・覚醒の state の更新と乱数は振りの位置のまま行い、
+      // その出来事（lifeChanged・battle.dead・鑑定・enemyGroups・statusChanged・battle.wake）は later に溜めて aftermath の拍 1 つで出す
+      const later: GameEvent[] = [];
+      const lctx: RuleContext = { state, data, events: later };
+      const target = groupName(state, data, ga); // 要約の名前は 1 振り目の時点のもの（宣言と同じ）
+      let swings = 0;
+      let hits = 0;
+      let total = 0;
+      let stolen = 0;
+      section(ctx, "result", () => {
+        for (let k = 0; k < times; k++) {
+          const u = firstAliveUnit(grp);
+          if (u === null) break; // 他のグループへは振り替えない
+          const unit = unitAt(b, ga, u);
+          const targetId = enemyId(ga, u);
+          swings += 1;
+          const hit = chance(state.rng, hitPercent(data.config, ch.level, m.ac, unit.status.includes("sleep"), hitBonus));
           if (!hit) {
             ctx.events.push({ kind: "attack", actorId: ch.id, targetId, hit: false, damage: 0 });
-            ctx.events.push({ kind: "message", key: "battle.miss", params: { target } });
-            return;
+            continue;
           }
           // CB-22: str は実効の値、レベルの効果とオプション damage（damageBonus）も足して最低 1
           const dmg = Math.max(1, rollDice(state.rng, dice).total + allyAttackBonus(data, ch, es));
-          next = damageUnit(ctx, ga, u, dmg);
+          const next = damageUnit(ctx, ga, u, dmg);
           ctx.events.push({ kind: "attack", actorId: ch.id, targetId, hit: true, damage: dmg });
-          ctx.events.push({ kind: "message", key: "battle.hit", params: { target, damage: dmg } });
+          hits += 1;
+          total += dmg;
           // IT-40 lifeSteal: 与えたダメージ（attack の damage）の value % を切り捨てで戻す。実効の hpMax で止め、増えなければ何も出さない
           if (steal > 0) {
             const hp = Math.min(es.hpMax, ch.hp + Math.floor((dmg * steal) / 100));
@@ -680,17 +696,25 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan, sanKey: 
               const gain = hp - ch.hp;
               ctx.events.push({ kind: "hpChanged", id: ch.id, delta: gain, hp });
               ch.hp = hp;
-              ctx.events.push({ kind: "message", key: "battle.lifeSteal", params: { name: actor, hp: gain } });
+              stolen += gain;
             }
           }
-        });
-        if (!hit) continue;
-        // 当たった振りのその後（撃破か覚醒。覚めなければ何も出ず拍も無い）
-        section(ctx, "aftermath", () => {
-          if (next === 0) killUnit(ctx, ga, u);
-          else wakeCheck(ctx, unit, targetId, target);
-        });
-      }
+          // 当たった振りのその後（撃破か覚醒）。出来事は later へ
+          if (next === 0) killUnit(lctx, ga, u);
+          else wakeCheck(lctx, unit, targetId, groupName(state, data, ga));
+        }
+        // 要約（M14）: 1 振りなら battle.hit / battle.miss、2 振り以上なら battle.hits / battle.missAll
+        if (swings === 1) {
+          if (hits === 1) ctx.events.push({ kind: "message", key: "battle.hit", params: { target, damage: total } });
+          else ctx.events.push({ kind: "message", key: "battle.miss", params: { target } });
+        } else if (hits > 0) {
+          ctx.events.push({ kind: "message", key: "battle.hits", params: { target, n: hits, damage: total } });
+        } else {
+          ctx.events.push({ kind: "message", key: "battle.missAll", params: { target, n: swings } });
+        }
+        if (stolen > 0) ctx.events.push({ kind: "message", key: "battle.lifeSteal", params: { name: actor, hp: stolen } });
+      });
+      section(ctx, "aftermath", () => ctx.events.push(...later));
       return;
     }
     case "cast": {
@@ -861,58 +885,105 @@ function applyEffect(ctx: RuleContext, effect: SpellEffect | BattleItem["effect"
   }
 }
 
-/** CB-15/24: 敵の個体の行動。攻撃要素ごとに対象を選び直す */
-function actEnemyUnit(ctx: RuleContext, g: number, u: number, defending: ReadonlySet<string>): void {
+/**
+ * CB-15/24・CB-55（M14）: 敵のまとまり（行動順で連続する同じグループ g の行動可能な個体 us）の行動。
+ * 宣言はまとまりに 1 回。個体ごと × 攻撃要素ごとに対象を選び直し、結果は 1 つの result の拍にまとめる。
+ * 死亡・覚醒・状態付与・SAN 吸収の state の更新と乱数は今の位置のまま行い、その出来事は later に溜めて aftermath の拍 1 つで出す。
+ * 個体の攻撃要素が終わるたびに全滅なら残りの個体は行動しない
+ */
+function actEnemyGroup(ctx: RuleContext, g: number, us: readonly number[], defending: ReadonlySet<string>): void {
   const { state, data } = ctx;
   const b = requireBattle(state);
   const m = monsterOf(data, groupAt(b, g).monsterId);
-  const actorId = enemyId(g, u);
-  // CB-55: 宣言は個体ごとに 1 回（攻撃要素のループの前）
   section(ctx, "declare", () => {
     ctx.events.push({ kind: "message", key: "battle.attackDeclare", params: { actor: groupName(state, data, g) } });
   });
-  for (const atk of m.attacks) {
-    let t = null as Character | null;
-    let hit = false as boolean;
-    // 攻撃要素ごとに結果の拍（対象の抽選と命中判定。対象がいなければ何も出ず拍も無い）
-    section(ctx, "result", () => {
-      const cands = enemyTargetIds(state, data);
-      if (cands.length === 0) return;
-      const tt = requireMember(state, cands[randInt(state.rng, 0, cands.length - 1)]!);
-      t = tt;
-      hit = chance(state.rng, hitPercent(data.config, m.level, allyAc(state, data, tt), tt.status.includes("sleep")));
-      if (!hit) {
-        ctx.events.push({ kind: "attack", actorId, targetId: tt.id, hit: false, damage: 0 });
-        ctx.events.push({ kind: "message", key: "battle.miss", params: { target: tt.name } });
-        return;
+  const later: GameEvent[] = [];
+  const lctx: RuleContext = { state, data, events: later };
+  // 攻撃の試み（対象がいた要素）。要約に使う
+  const tries: { id: string; name: string; hit: boolean; damage: number }[] = [];
+  section(ctx, "result", () => {
+    for (const u of us) {
+      const actorId = enemyId(g, u);
+      for (const atk of m.attacks) {
+        const cands = enemyTargetIds(state, data);
+        if (cands.length === 0) continue; // 対象がいなければ何も出さない
+        const tt = requireMember(state, cands[randInt(state.rng, 0, cands.length - 1)]!);
+        const hit = chance(state.rng, hitPercent(data.config, m.level, allyAc(state, data, tt), tt.status.includes("sleep")));
+        if (!hit) {
+          ctx.events.push({ kind: "attack", actorId, targetId: tt.id, hit: false, damage: 0 });
+          tries.push({ id: tt.id, name: tt.name, hit: false, damage: 0 });
+          continue;
+        }
+        let d = Math.max(1, rollDice(state.rng, atk.dice).total);
+        if (defending.has(tt.id)) d = Math.ceil(d / 2); // CB-12/22
+        const next = Math.max(0, tt.hp - d);
+        ctx.events.push({ kind: "hpChanged", id: tt.id, delta: next - tt.hp, hp: next });
+        tt.hp = next;
+        ctx.events.push({ kind: "attack", actorId, targetId: tt.id, hit: true, damage: d });
+        tries.push({ id: tt.id, name: tt.name, hit: true, damage: d });
+        // その後（出来事は later へ）: 死亡（と他の生存者の SAN）、または 覚醒 → 状態付与 → SAN 吸収
+        if (tt.hp === 0) {
+          allyDies(lctx, tt);
+          continue;
+        }
+        wakeCheck(lctx, tt, tt.id, tt.name);
+        if (atk.status !== undefined && !tt.status.includes(atk.status)) {
+          if (tryInflictStatus(lctx, tt, atk.status, atk.chance ?? 0))
+            later.push({ kind: "message", key: `battle.status.${atk.status}`, params: { target: tt.name } });
+        }
+        if (atk.sanDrain !== undefined) {
+          const c = loseSan(lctx, tt, atk.sanDrain, atk.tags ?? []); // CB-31: fear 耐性は san.ts が効かせる
+          if (c.delta !== 0) later.push({ kind: "message", key: "battle.sanDrain", params: { target: tt.name } });
+        }
       }
-      let d = Math.max(1, rollDice(state.rng, atk.dice).total);
-      if (defending.has(tt.id)) d = Math.ceil(d / 2); // CB-12/22
-      const next = Math.max(0, tt.hp - d);
-      ctx.events.push({ kind: "hpChanged", id: tt.id, delta: next - tt.hp, hp: next });
-      tt.hp = next;
-      ctx.events.push({ kind: "attack", actorId, targetId: tt.id, hit: true, damage: d });
-      ctx.events.push({ kind: "message", key: "battle.hit", params: { target: tt.name, damage: d } });
-    });
-    const tt = t;
-    if (tt === null || !hit) continue;
-    // その後の拍: 死亡（と他の生存者の SAN）、または 覚醒 → 状態付与 → SAN 吸収
-    section(ctx, "aftermath", () => {
-      if (tt.hp === 0) {
-        allyDies(ctx, tt);
-        return;
-      }
-      wakeCheck(ctx, tt, tt.id, tt.name);
-      if (atk.status !== undefined && !tt.status.includes(atk.status)) {
-        if (tryInflictStatus(ctx, tt, atk.status, atk.chance ?? 0))
-          ctx.events.push({ kind: "message", key: `battle.status.${atk.status}`, params: { target: tt.name } });
-      }
-      if (atk.sanDrain !== undefined) {
-        const c = loseSan(ctx, tt, atk.sanDrain, atk.tags ?? []); // CB-31: fear 耐性は san.ts が効かせる
-        if (c.delta !== 0) ctx.events.push({ kind: "message", key: "battle.sanDrain", params: { target: tt.name } });
-      }
-    });
+      if (isWipe(state)) break;
+    }
+    const msg = enemySummary(data, tries);
+    if (msg !== null) ctx.events.push(msg);
+  });
+  section(ctx, "aftermath", () => ctx.events.push(...later));
+}
+
+/**
+ * CB-55（M14）: 敵のまとまりの result の要約。試みが 1 回なら battle.hit / battle.miss（M13 までと同じ）。
+ * 2 回以上: 全部外れ → 対象 1 人なら battle.missAll{target, n}、2 人以上なら battle.missParty{n}。
+ * 当たりあり → 当たった対象が 1 人なら battle.hits{target, n, damage}、2 人以上なら battle.hitsMany{n, list}
+ * （list は当たった対象を最初に当たった順に battle.hitsItem{target, damage: その人の合計} を battle.hitsJoin でつないだ文字列）
+ */
+function enemySummary(data: GameData, tries: readonly { id: string; name: string; hit: boolean; damage: number }[]): GameEvent | null {
+  if (tries.length === 0) return null;
+  if (tries.length === 1) {
+    const t = tries[0]!;
+    return t.hit
+      ? { kind: "message", key: "battle.hit", params: { target: t.name, damage: t.damage } }
+      : { kind: "message", key: "battle.miss", params: { target: t.name } };
   }
+  const hits = tries.filter((t) => t.hit);
+  if (hits.length === 0) {
+    const ids = new Set(tries.map((t) => t.id));
+    return ids.size === 1
+      ? { kind: "message", key: "battle.missAll", params: { target: tries[0]!.name, n: tries.length } }
+      : { kind: "message", key: "battle.missParty", params: { n: tries.length } };
+  }
+  const sums: { id: string; name: string; damage: number }[] = [];
+  for (const t of hits) {
+    const s = sums.find((x) => x.id === t.id);
+    if (s === undefined) sums.push({ id: t.id, name: t.name, damage: t.damage });
+    else s.damage += t.damage;
+  }
+  if (sums.length === 1) return { kind: "message", key: "battle.hits", params: { target: sums[0]!.name, n: hits.length, damage: sums[0]!.damage } };
+  const list = sums
+    .map((x) => fillText(data, "battle.hitsItem", { target: x.name, damage: x.damage }))
+    .join(data.strings["battle.hitsJoin"] ?? "");
+  return { kind: "message", key: "battle.hitsMany", params: { n: hits.length, list } };
+}
+
+/** strings の文に {key} を差し込む（M14 の battle.hitsMany の list を組むためだけ。表示層の formatMessage と同じ規則） */
+function fillText(data: GameData, key: string, params: Record<string, string | number>): string {
+  let s = data.strings[key] ?? key;
+  for (const [k, v] of Object.entries(params)) s = s.split(`{${k}}`).join(String(v));
+  return s;
 }
 
 /** CB-54/CH-45: 戦闘中の死亡。状態異常をすべて外す。本人以外の生存者の SAN が減る */

@@ -759,6 +759,38 @@ describe("IT-40 固有スキル", () => {
     expect(r.state.rng).toEqual(m);
   });
 
+  test("CB-23/CB-55/IT-40 lifeSteal と extraAttack（M14）: 2 振りの吸収は本人の hpChanged を振りごとに出し、語りは要約 battle.hits の後に合計で 1 件", () => {
+    const d = dataWith({ combat: ALWAYS_HIT });
+    let both = 0;
+    for (let seed = 1; seed <= 16; seed++) {
+      const s = solo(seed, [50], (x) => {
+        equipNew(x, "c1", "weapon", { itemId: "dagger", uniqueId: "twin_tongue_dagger", identified: true });
+        equipNew(x, "c1", "gauntlet", { itemId: "leather_gloves", uniqueId: "bloodsucker_gloves", identified: true });
+        member(x, "c1").hp = 1;
+      });
+      const m = cloneRng(s.rng);
+      rolls(m, 6);
+      chance(m, 100);
+      const d1 = rollDice(m, "1d4").total + 2;
+      chance(m, 100);
+      const d2 = rollDice(m, "1d4").total + 2;
+      const g1 = Math.floor((d1 * 25) / 100);
+      const g2 = Math.floor((d2 * 25) / 100);
+      const r = exec(s, RESOLVE, d);
+      expect(r.state.rng).toEqual(m);
+      expect(eventsOf(r.events, "hpChanged").filter((e) => e.id === "c1").map((e) => e.delta)).toEqual([g1, g2].filter((g) => g > 0));
+      const msgs = r.events.filter((e): e is Extract<GameEvent, { kind: "message" }> => e.kind === "message" && e.key !== "battle.defend");
+      const tail: Extract<GameEvent, { kind: "message" }>[] = [
+        { kind: "message", key: "battle.hits", params: { target: "大ネズミ", n: 2, damage: d1 + d2 } },
+      ];
+      if (g1 + g2 > 0) tail.push({ kind: "message", key: "battle.lifeSteal", params: { name: "アルド", hp: g1 + g2 } });
+      expect(msgs.slice(1)).toEqual(tail);
+      expect(member(r.state, "c1").hp).toBe(1 + g1 + g2);
+      if (g1 > 0 && g2 > 0) both += 1;
+    }
+    expect(both).toBeGreaterThan(0);
+  });
+
   test("CB-13/IT-40 reachFromBack: 後衛（ドナ c4）でも影法師の剣なら近接攻撃できる", () => {
     const s = withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }]);
     expect(canStrike(s, data, member(s, "c4"))).toBe(false);
@@ -825,7 +857,7 @@ describe("IT-40 固有スキル", () => {
     ]);
   });
 
-  test("CB-22/IT-40 lifeSteal: 血吸いの小手（25%）で当たるたびに floor(ダメージ × 25 ÷ 100) を戻す（hpChanged → battle.lifeSteal。0 なら何も出さない。実効の hpMax で止める）", () => {
+  test("CB-22/IT-40 lifeSteal: 血吸いの小手（25%）で当たるたびに floor(ダメージ × 25 ÷ 100) を戻す（attack → hpChanged、要約の後に battle.lifeSteal。0 なら何も出さない。実効の hpMax で止める）", () => {
     const d = dataWith({ combat: ALWAYS_HIT });
     const seen = new Set<boolean>();
     for (let seed = 1; seed <= 16; seed++) {
@@ -839,11 +871,13 @@ describe("IT-40 固有スキル", () => {
       const dmg = rollDice(m, "1d8").total + 2;
       const gain = Math.floor((dmg * 25) / 100);
       const r = exec(s, RESOLVE, d);
-      const at = r.events.findIndex((e) => e.kind === "message" && e.key === "battle.hit");
-      const after = r.events.slice(at + 1, at + 3);
+      // M14（CB-55）: 本人の hpChanged は attack の直後、語りは要約（battle.hit）の後に 1 件
+      const at = r.events.findIndex((e) => e.kind === "attack");
+      const after = r.events.slice(at + 1, at + 4);
       if (gain > 0) {
         expect(after).toEqual([
           { kind: "hpChanged", id: "c1", delta: gain, hp: 5 + gain },
+          { kind: "message", key: "battle.hit", params: { target: "大ネズミ", damage: dmg } },
           { kind: "message", key: "battle.lifeSteal", params: { name: "アルド", hp: gain } },
         ]);
       } else {

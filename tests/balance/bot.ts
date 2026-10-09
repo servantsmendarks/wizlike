@@ -570,7 +570,7 @@ export class Campaign {
           this.enemyLvSum += monsterOf(data, g.monsterId).level * g.count;
           this.enemyUnits += g.count;
         }
-      } else if (e.kind === "beat" && e.phase === "declare") b.declares += 1;
+      } else if (e.kind === "beat" && e.phase === "declare") b.declares += 1; // M14（CB-55）: 敵は同じグループの連続する個体のまとまりに 1 つ
       else if (e.kind === "battleEnd" && e.result === "win") b.wins += 1;
     }
   }
