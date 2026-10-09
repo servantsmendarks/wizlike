@@ -7,6 +7,7 @@ import { townMenu } from "../src/core/rules/town";
 import { data, expectStateInvariants } from "./helpers/core";
 import { chestRate } from "../src/core/rules/chest";
 import type { Command, GameState } from "../src/core/types";
+import { farmBot, farmReport } from "./balance/farm";
 import { BOTS, BOSS_LEVELS, Campaign, D03_DIVES, DESCEND_LEVELS, DISARM_TRIES, levelFor, PROGRESS_BOT, PROGRESS_DIVES, progressReport, report, runCampaigns } from "./balance/bot";
 
 const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0);
@@ -333,5 +334,39 @@ describe("バランス（H9 煙テスト）", () => {
     expect(sum(ds.map((d) => d.chestFlow.inspects))).toBeGreaterThan(0);
     expect(report(BOTS[1]!, results, 3, 2)).toContain("M11-宝箱【全潜行】");
     expect(progressReport(results)).toContain("M11-宝箱【d01 の潜行（踏破まで）】");
+  }, 60_000);
+
+  test("M13 農夫ボットの煙テスト: 農夫 Lv5 d01 1F を 2 シード × 1 潜行。開始時の最小 level 5、帰った理由（farmEnd）か method が決まり、推定の実時間 > 0、拾った品の合計 = 宝箱の品、不変条件が崩れない", () => {
+    const kind = farmBot(5, "d01", 1);
+    const { results, keys } = runCampaigns(kind, 2, 1);
+    expect(results).toHaveLength(2);
+    for (const d of results.flatMap((r) => r.dives)) {
+      expect(d.startMinLevel).toBe(5);
+      expect(d.dungeonId).toBe("d01");
+      expect(d.farmEnd !== null || d.method === "wipe" || d.method === "cap").toBe(true);
+      expect(d.estDungeonMs).toBeGreaterThan(0);
+      expect(d.estTownMs).toBeGreaterThan(0); // 少なくとも宿
+      expect(d.beats.steps).toBe(d.steps);
+      expect(sum(Object.values(d.found))).toBe(d.chestItems); // 農夫はボスと戦わないので、拾った品はすべて宝箱の品
+      expect(d.netProfit).toBe(d.goldAfterSell - d.goldBefore);
+    }
+    expect(keys.has("battle.encounter")).toBe(true);
+    expect(farmReport(results, kind)).toContain("## 農夫 Lv5 d01 1F（2 シード × 1 潜行）");
+  }, 60_000);
+
+  test("M13 農夫ボットの煙テスト: 農夫 Lv8 d02 1F は d01 を踏破済みの state（clearedDungeons・unlockedDungeons・shopLevel 2）にして d02 の 1 階だけを 1 潜行する", () => {
+    const c = new Campaign(1, farmBot(8, "d02", 1));
+    c.prepareFarm();
+    expect(c.state.progress.clearedDungeons).toEqual(["d01"]);
+    expect(c.state.progress.unlockedDungeons).toContain("d02");
+    expect(c.state.progress.shopLevel).toBe(2);
+    expect(c.state.party.every((x) => x.level === 8)).toBe(true);
+    const r = c.campaign(1);
+    expect(r.aborted).toBe(false);
+    expect(r.dives).toHaveLength(1);
+    expect(r.dives[0]!.dungeonId).toBe("d02");
+    expect(r.dives[0]!.deepestFloor).toBe(1);
+    expect(c.state.screen).toBe("town");
+    expectStateInvariants(c.state);
   }, 60_000);
 });

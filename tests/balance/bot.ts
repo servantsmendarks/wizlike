@@ -27,7 +27,7 @@
 // 潜行の上限は PROGRESS_DIVES（15 → 40。d02 の踏破に何潜行かかるか分からないため）。
 import { expect } from "vitest";
 import { execute } from "../../src/core/engine";
-import { createRng, randInt, type RngState } from "../../src/core/rng";
+import { createRng, diceRange, parseDice, randInt, type RngState } from "../../src/core/rng";
 import { cellAt, edgeOf, FACINGS, isPassable, opposite, step, turnLeft, turnRight } from "../../src/core/rules/dungeon-gen";
 import { floorOf } from "../../src/core/rules/dungeon";
 import { fieldItemMenu } from "../../src/core/rules/items";
@@ -36,12 +36,12 @@ import { chestRate, chestView } from "../../src/core/rules/chest";
 import { equipStats, itemPower } from "../../src/core/rules/equip-stats";
 import { sellPrice } from "../../src/core/rules/shop";
 import { townMenu } from "../../src/core/rules/town";
-import { classOf, findBase, findItem, itemOf } from "../../src/core/state";
+import { classOf, findBase, findItem, itemOf, monsterOf, slotsUsed } from "../../src/core/state";
 import type { EquipSlot } from "../../src/core/data/index";
 import type { Command, Facing, Floor, GameEvent, GameState, ItemInstance, PartySetupMember, PenaltyResult, Pos } from "../../src/core/types";
 import { data, expectKnownStringKeys, expectStateInvariants, expectTallyMatchesEvents, newGame } from "../helpers/core";
 
-const NEAR = 6; // 上り階段からの BFS 距離
+export const NEAR = 6; // 上り階段からの BFS 距離
 const STEP_CAP = 3000; // 1 回の潜行の歩数の上限
 const BATTLE_ROUND_CAP = 300;
 const FRONT_ROW = data.config.party.frontRow; // 並び順の前衛の人数（frontDownAtStart の記録用。セオリーボットの帰還条件は CB-14 の frontLineIds を使う）
@@ -51,7 +51,7 @@ const INN_RANK = data.config.town.innRanks.findIndex((r) => r.id === "cheap"); /
 const START_GOLD = data.config.prototypeParty.startingGold;
 const HERB = "herb";
 const ANTIDOTE = "antidote_herb";
-const THREAD = "return_thread";
+export const THREAD = "return_thread";
 const THEORY_BATTLE_CAP = 8; // 【仮】M7-8戦: セオリーボットはこの潜行の戦闘がこの回数に達したら帰る（ユーザー指示。40 戦の潜行は実態と離れているため）
 const HERB_PRICE = itemOf(data, HERB).price;
 const ANTIDOTE_PRICE = itemOf(data, ANTIDOTE).price;
@@ -91,10 +91,12 @@ export const DISARM_TRIES = 5;
 export type BotKind = {
   label: string;
   shouldReturn: (c: Campaign) => boolean;
-  route?: "progress";
+  route?: "progress" | "farm";
   descendLevel?: Readonly<Record<string, number>>;
   bossLevel?: Readonly<Record<string, number>>;
   outfit?: boolean;
+  /** M13: route farm（農夫ボット）の Lv・ダンジョン・稼ぐ階（tests/balance/farm.ts の farmBot） */
+  farm?: { level: number; dungeonId: string; floor: number };
 };
 
 /** M12: kind のダンジョン dungeonId の降りる条件（descend）・ボスに挑む条件（boss）の level */
@@ -106,9 +108,18 @@ export function levelFor(kind: BotKind, which: "descend" | "boss", dungeonId: st
 
 /** セオリーボットの帰る条件（M9 の進行ボットも同じ規則を使う） */
 function theoryShouldReturn(c: Campaign): boolean {
-  const s = c.state;
   if (c.battles >= THEORY_BATTLE_CAP) return true; // M7-8戦（ユーザー指示）
-  if (s.party.some((x) => c.aliveAtStart.includes(x.id) && x.life !== "alive")) return true; // 潜行の開始時に alive だった者が dead / ash になった（ユーザー決定）
+  return returnOnDeath(c) || returnOnFrontHp(c);
+}
+
+/** 潜行の開始時に alive だった者が dead / ash になった（ユーザー決定。セオリーと M13 の農夫で共有） */
+export function returnOnDeath(c: Campaign): boolean {
+  return c.state.party.some((x) => c.aliveAtStart.includes(x.id) && x.life !== "alive");
+}
+
+/** CB-14 の前衛の HP の規則（セオリーと M13 の農夫で共有） */
+export function returnOnFrontHp(c: Campaign): boolean {
+  const s = c.state;
   // CB-14 の繰り上げ後の前衛（frontLineIds は state.party と config.party.frontRow だけを見るので、戦闘外の迷宮の state でも同じ規則で働く）。
   // そのうち life が alive の者（麻痺・石化・睡眠・SAN 0 も含む）だけで、HP の合計 × 2 < 最大 HP の合計なら帰る（ユーザー決定）。
   // 生存者が 0 人なら HP の規則では帰らない（その状況は上の「開始時に alive だった者が dead / ash」で帰る）。
@@ -187,8 +198,55 @@ const emptyChestFlow = (): ChestFlowTally => ({
   cellContents: 0,
 });
 
+/**
+ * M13（設計書 §2-4）: 推定の実時間（UI-75 の config.measure）に掛ける拍の数。コマンドの種類と events で数える。
+ * 迷宮の分は steps〜threads、街の分は identifies・sells・inns
+ */
+export type Beats = {
+  steps: number; // dungeon.move の送信数
+  turns: number; // dungeon.turn の送信数
+  encounters: number; // events の encounter
+  declares: number; // events の beat{phase: "declare"}（オートの 1 行動）
+  wins: number; // events の battleEnd{result: "win"}
+  chestChecks: number; // chest.inspect + chest.disarm の送信数
+  chestOpens: number; // chest.open の送信数
+  threads: number; // dungeon.useItem で帰還の糸の実体を使った数
+  identifies: number; // town.shop の identify
+  sells: number; // town.shop の sell
+  inns: number; // town.inn
+};
+
+export const emptyBeats = (): Beats => ({ steps: 0, turns: 0, encounters: 0, declares: 0, wins: 0, chestChecks: 0, chestOpens: 0, threads: 0, identifies: 0, sells: 0, inns: 0 });
+
+/** M13（設計書 §3）: 迷宮の分の推定の実時間（ms） */
+export function estDungeonMsOf(b: Beats): number {
+  const m = data.config.measure;
+  return (
+    b.steps * m.stepMs +
+    b.turns * m.turnMs +
+    b.encounters * m.encounterMs +
+    b.declares * m.actionMs +
+    b.wins * m.battleEndMs +
+    b.chestChecks * m.chestCheckMs +
+    b.chestOpens * m.chestOpenMs +
+    b.threads * m.threadMs
+  );
+}
+
+/** M13（設計書 §3）: 街の分の推定の実時間（ms） */
+export function estTownMsOf(b: Beats): number {
+  const m = data.config.measure;
+  return b.identifies * m.identifyMs + b.sells * m.sellMs + b.inns * m.innMs;
+}
+
+/** M13: 農夫ボットが帰った理由（farmShouldReturn。wipe / cap は method） */
+export type FarmEnd = "full" | "time" | "death" | "hp";
+
+/** M13: 拾った品（item.found の実体）の種類ごとの数 */
+export type FoundTally = { generic: number; unique: number; consumable: number; book: number };
+
 /** 潜行 1 回分（潜行 → 街の手順）の記録 */
-type DiveRecord = {
+export type DiveRecord = {
   method: Method;
   battles: number;
   steps: number;
@@ -258,6 +316,23 @@ type DiveRecord = {
   chestImpulse: ChestImpulseTally; // M11: 宝箱の衝動と職業の掛け合いの数
   impulses: Record<string, ImpulseTally>; // M11-EV: イベントの id ごとの衝動判定の数
   chestFlow: ChestFlowTally; // M11 作業 9: 宝箱の経路・作動・操作の数
+  // M13（設計書 §2-4。どのボットでも数えるが、判断に使うのは農夫だけ。既存のボットの数字には出さない）
+  beats: Beats; // 拍の数（迷宮の分は潜行中、街の分はこの潜行の後の街の手順）
+  estDungeonMs: number; // 推定の実時間（迷宮の分。§3）
+  estTownMs: number; // 推定の実時間（街の分。§3）
+  farmEnd: FarmEnd | null; // 農夫ボットが帰った理由（農夫以外・wipe / cap は null）
+  found: FoundTally; // 拾った品（item.found のすべて。宝箱とボスの品）の種類
+  foundRarity: Record<string, number>; // そのうち汎用装備とユニークの希少度ごとの数
+  foundGenericByLevel: Record<string, number>; // 汎用装備の Lv ごとの数（触媒になる品の Lv の分布）
+  foundCursed: number; // 拾った品のうち呪われた品
+  soldUnique: number; // 鑑定済みのユニークを売った数（soldCount に含む）
+  soldUniqueGold: number; // その売却収入
+  gearLvStart: number; // 潜行の開始時（入場の前）に全員が装備中の汎用装備の Lv の平均（ユニークを除く。無ければ NaN）
+  gearUniques: number; // 潜行の開始時に装備中のユニークの数
+  enemyLvMean: number; // この潜行の遭遇の敵の level の体数で重み付けした平均（遭遇が無ければ NaN）
+  lootEquipped: number; // 街で拾った品を装備した数（農夫の equipLoot）
+  netProfit: number; // 純益 = 売却の直後の所持金 − 潜行の前の所持金（農夫だけ。ほかは 0）
+  goldAfterSell: number; // 売却の直後の所持金（農夫だけ。ほかは 0）
 };
 
 export type CampaignResult = { seed: number; startAssets: number; dives: DiveRecord[]; aborted: boolean };
@@ -297,30 +372,30 @@ function turnFor(facing: Facing, dir: Facing): "left" | "right" | "around" | nul
   throw new Error("turnFor: unreachable");
 }
 
-function median(xs: readonly number[]): number {
+export function median(xs: readonly number[]): number {
   if (xs.length === 0) return NaN;
   const s = [...xs].sort((a, b) => a - b);
   const m = s.length >> 1;
   return s.length % 2 === 1 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
 }
 /** 最近傍順位の百分位（p は 0〜100） */
-function percentile(xs: readonly number[], p: number): number {
+export function percentile(xs: readonly number[], p: number): number {
   if (xs.length === 0) return NaN;
   const s = [...xs].sort((a, b) => a - b);
   return s[Math.min(s.length - 1, Math.max(0, Math.ceil((p / 100) * s.length) - 1))]!;
 }
-function mean(xs: readonly number[]): number {
+export function mean(xs: readonly number[]): number {
   return xs.length === 0 ? NaN : xs.reduce((a, b) => a + b, 0) / xs.length;
 }
-function sum(xs: readonly number[]): number {
+export function sum(xs: readonly number[]): number {
   return xs.reduce((a, b) => a + b, 0);
 }
-function fmt(x: number): string {
+export function fmt(x: number): string {
   if (Number.isNaN(x)) return "-";
   const r = Math.round(x * 10) / 10; // 浮動小数の誤差（110/200*100 = 55.00000000000001）で「55.0」にしない
   return Number.isInteger(r) ? String(r) : r.toFixed(1);
 }
-function pct(n: number, d: number): string {
+export function pct(n: number, d: number): string {
   return d === 0 ? "-" : `${fmt((n / d) * 100)}%（${n}/${d}）`;
 }
 /** 死者の階ごとの数（「1 階 3・2 階 1」。死者が無ければ空文字） */
@@ -328,7 +403,7 @@ function floorLabel(xs: readonly DeathRecord[]): string {
   const fs = [...new Set(xs.map((x) => x.floor))].sort((a, b) => a - b);
   return fs.map((f) => `${f} 階 ${xs.filter((x) => x.floor === f).length}`).join("・");
 }
-function stats(label: string, xs: readonly number[]): string {
+export function stats(label: string, xs: readonly number[]): string {
   return `${label}（n=${xs.length}）: 平均 ${fmt(mean(xs))} / 中央値 ${fmt(median(xs))} / p10 ${fmt(percentile(xs, 10))} / p90 ${fmt(percentile(xs, 90))}`;
 }
 
@@ -397,6 +472,17 @@ export class Campaign {
   dungeonId = "d01"; // M12: この潜行のダンジョン
   levelHeld = false; // M12（F10）
   startMinLevel = 1; // M12
+  // M13（設計書 §2-4。潜行ごとにリセット。beats は潜行の後の街の手順の分もこの潜行の記録に入る）
+  beats: Beats = emptyBeats();
+  farmEnd: FarmEnd | null = null;
+  found: FoundTally = { generic: 0, unique: 0, consumable: 0, book: 0 };
+  foundRarity: Record<string, number> = {};
+  foundGenericByLevel: Record<string, number> = {};
+  foundCursed = 0;
+  enemyLvSum = 0; // 遭遇の敵の level × 体数の合計
+  enemyUnits = 0; // 遭遇の敵の体数の合計
+  gearLvStart = NaN;
+  gearUniques = 0;
   /**
    * M7-宝箱「蘇生を払えずに潜った」の定義: 直前の街の手順（revive）で、dead の者の寺院の蘇生、または ash の者（蘇生に失敗して灰になった者を含む）の
    * 闇魔術の費用が、その時点の所持金で払えずに（townMenu の affordable が偽で）蘇生しなかった者の id。次の潜行の開始時に、そのうちまだ dead / ash の者が
@@ -421,6 +507,8 @@ export class Campaign {
     this.countDeaths(from, r.events);
     this.countImpulses(from, r.events);
     this.countChestFlow(cmd, from, r.state, r.events);
+    this.countBeats(cmd, from, r.events); // M13
+    this.countFound(from, r.state, r.events); // M13
     // 入力を積むだけの battle.input と向きを変えるだけの dungeon.turn は時間の都合で省く（decisions の H9 の行）
     if (cmd.type !== "battle.input" && cmd.type !== "dungeon.turn") expectStateInvariants(r.state);
     expectTallyMatchesEvents(from, r.state, r.events); // TW-35（M12）
@@ -459,6 +547,67 @@ export class Campaign {
       if (x.key === "item.found") this.chestItems += 1;
       else if (x.key === "item.leftBehind") this.chestLeft += 1;
     }
+  }
+
+  /**
+   * M13（設計書 §2-4）: 推定の実時間の拍を数える（コマンドの種類と events）。遭遇の敵の level（monsters.json）を体数で重み付けして足す。
+   * 数えるだけで、既存のボットの判断・乱数・コマンド列には触れない
+   */
+  countBeats(cmd: Command, from: GameState, events: GameEvent[]): void {
+    const b = this.beats;
+    if (cmd.type === "dungeon.move") b.steps += 1;
+    else if (cmd.type === "dungeon.turn") b.turns += 1;
+    else if (cmd.type === "chest.inspect" || cmd.type === "chest.disarm") b.chestChecks += 1;
+    else if (cmd.type === "chest.open") b.chestOpens += 1;
+    else if (cmd.type === "dungeon.useItem" && from.items[cmd.itemId]?.itemId === THREAD) b.threads += 1;
+    else if (cmd.type === "town.shop" && cmd.action.kind === "identify") b.identifies += 1;
+    else if (cmd.type === "town.shop" && cmd.action.kind === "sell") b.sells += 1;
+    else if (cmd.type === "town.inn") b.inns += 1;
+    for (const e of events) {
+      if (e.kind === "encounter") {
+        b.encounters += 1;
+        for (const g of e.groups) {
+          this.enemyLvSum += monsterOf(data, g.monsterId).level * g.count;
+          this.enemyUnits += g.count;
+        }
+      } else if (e.kind === "beat" && e.phase === "declare") b.declares += 1;
+      else if (e.kind === "battleEnd" && e.result === "win") b.wins += 1;
+    }
+  }
+
+  /**
+   * M13（設計書 §2-4）: item.found（宝箱とボスの品。IT-54）ごとに、潜行台帳に増えた実体（迷宮の外なら state.items に増えた実体）の
+   * 種類・希少度・Lv・呪いを数える。計測なので実体を覗く（ボットの判断には使わない）
+   */
+  countFound(from: GameState, to: GameState, events: GameEvent[]): void {
+    const n = events.filter((e) => e.kind === "message" && e.key === "item.found").length;
+    if (n === 0) return;
+    let ids: string[];
+    if (to.dive !== null) {
+      const before = new Set(from.dive?.ledger.items ?? []);
+      ids = to.dive.ledger.items.filter((id) => !before.has(id));
+    } else ids = Object.keys(to.items).filter((id) => from.items[id] === undefined);
+    if (ids.length !== n) throw new Error(`seed ${this.seed}: item.found ${n} but ${ids.length} new instances`);
+    for (const id of ids) {
+      const inst = to.items[id]!;
+      if (inst.cursed) this.foundCursed += 1;
+      if (inst.uniqueId !== null) this.found.unique += 1;
+      else if (findBase(data, inst.itemId) !== null) {
+        this.found.generic += 1;
+        this.foundGenericByLevel[inst.level] = (this.foundGenericByLevel[inst.level] ?? 0) + 1;
+      } else {
+        const t = itemOf(data, inst.itemId).type;
+        if (t === "book") this.found.book += 1;
+        else this.found.consumable += 1;
+        continue;
+      }
+      this.foundRarity[inst.rarity] = (this.foundRarity[inst.rarity] ?? 0) + 1;
+    }
+  }
+
+  /** M13: この潜行の迷宮の分の推定の実時間（ms。農夫の帰る判定に使う） */
+  estDungeonMs(): number {
+    return estDungeonMsOf(this.beats);
   }
 
   /**
@@ -917,6 +1066,25 @@ export class Campaign {
     this.chestImpulse = emptyChestImpulse();
     this.chestFlow = emptyChestFlow();
     this.chestMemo = null;
+    // M13
+    this.beats = emptyBeats();
+    this.farmEnd = null;
+    this.found = { generic: 0, unique: 0, consumable: 0, book: 0 };
+    this.foundRarity = {};
+    this.foundGenericByLevel = {};
+    this.foundCursed = 0;
+    this.enemyLvSum = 0;
+    this.enemyUnits = 0;
+    const gearLv: number[] = [];
+    this.gearUniques = 0;
+    for (const c of this.state.party)
+      for (const id of Object.values(c.equipment)) {
+        if (id === null) continue;
+        const inst = this.state.items[id]!;
+        if (inst.uniqueId !== null) this.gearUniques += 1;
+        else gearLv.push(inst.level);
+      }
+    this.gearLvStart = mean(gearLv);
     const down = this.state.party.filter((c) => c.life !== "alive").map((c) => c.id);
     expect(down.filter((id) => !this.unpaidLeft.includes(id))).toEqual([]); // 定義（unpaidLeft）のとおり、残った理由は所持金不足だけ
     this.unpaidAtStart = down.length;
@@ -925,7 +1093,7 @@ export class Campaign {
     this.run({ type: "dungeon.enter", dungeonId });
     // 1 階の構造はこの潜行の間変わらない（罠の発動は kind だけを変え、辺は変えない）ので、潜行ごとにキャッシュする
     this.setFloor();
-    const capped = this.kind.route === "progress" ? this.progressDungeon() : this.wanderHere() === true;
+    const capped = this.kind.route === "progress" ? this.progressDungeon() : this.kind.route === "farm" ? this.farmDungeon() : this.wanderHere() === true;
     if (this.inDungeon) {
       const b0 = this.battles;
       const m = this.goHome();
@@ -998,6 +1166,47 @@ export class Campaign {
       const r = this.walkTo(this.floor!.boss!, "wander");
       return r === "cap";
     }
+  }
+
+  /**
+   * M13（設計書 §2-2）: 農夫ボット。目標の階（kind.farm.floor）まで下り階段へ最短で歩いて降り（level の条件は見ない）、目標の階では
+   * 上り階段から BFS ≤ NEAR を歩く（wanderHere）。帰る判定は kind.shouldReturn（farmShouldReturn）。歩数の上限で止まったら true
+   */
+  farmDungeon(): boolean {
+    const target = this.kind.farm!.floor;
+    for (;;) {
+      if (!this.inDungeon) return false;
+      if (this.state.dive!.floor !== this.floorNo) this.setFloor();
+      if (this.floorNo < target) {
+        const r = this.walkTo(this.floor!.stairsDown!, "descend");
+        if (r === "floor") continue;
+        return r === "cap";
+      }
+      return this.wanderHere() === true;
+    }
+  }
+
+  /**
+   * M13（設計書 §2-1）: 農夫ボットの準備（Campaign の作成の直後、街）。debug.levels（UI-57。能力値は Lv1 のまま、HP・MP・呪文だけ Lv 相応。
+   * state.rng を消費する）で kind.farm.level にし、PROGRESS_ROUTE で目標のダンジョンより前のダンジョンを踏破済みにする
+   * （combat.ts の初回クリアと同じ 3 点: clearedDungeons・unlockedDungeons・shopLevel。state を直接書く）
+   */
+  prepareFarm(): void {
+    const f = this.kind.farm;
+    if (f === undefined) throw new Error("prepareFarm: not a farm bot");
+    this.run({ type: "debug.levels", level: f.level });
+    const route: readonly string[] = PROGRESS_ROUTE;
+    const i = route.indexOf(f.dungeonId);
+    if (i < 0) throw new Error(`prepareFarm: ${f.dungeonId} is not in PROGRESS_ROUTE`);
+    const p = this.state.progress;
+    for (const id of route.slice(0, i)) {
+      const d = data.dungeons.find((x) => x.id === id)!;
+      if (!p.clearedDungeons.includes(id)) p.clearedDungeons.push(id);
+      const next = d.onClear.unlockDungeon;
+      if (next !== null && !p.unlockedDungeons.includes(next)) p.unlockedDungeons.push(next);
+      p.shopLevel = Math.max(p.shopLevel, d.onClear.shopLevel);
+    }
+    expectStateInvariants(this.state);
   }
 
   life(id: string): "alive" | "dead" | "ash" {
@@ -1118,16 +1327,17 @@ export class Campaign {
    * 装備していない装備品を売る。未鑑定の品は「鑑定後の見込み売値 − 未鑑定売値 > 鑑定料」かつ鑑定料が払えるときだけ店で鑑定してから売り、
    * そうでなければ未鑑定のまま（見た目の品種の売値で）売る。見込み売値はボットが実体を覗いた本当の売値（core の sellPrice）で、
    * プレイヤーには分からない値なので、鑑定の判断としては最良の場合（上限）になる。ユニークも売る（買い戻しはしない）。
-   * 初期の所持品は消耗品だけなので、inventory の装備品は宝箱・ボスで拾った品だけ
+   * 初期の所持品は消耗品だけなので、inventory の装備品は宝箱・ボスで拾った品だけ。
+   * M13: opts.identify が偽（農夫）なら鑑定せず、今の状態（未鑑定なら見た目の品種の売値）で売る。既存の呼び出しは既定の真
    */
-  sellLoot(rec: DiveRecord): void {
+  sellLoot(rec: DiveRecord, opts: { identify: boolean } = { identify: true }): void {
     for (const c of this.state.party.map((x) => x.id)) {
       for (const id of [...this.state.party.find((x) => x.id === c)!.inventory]) {
         if (!this.isEquipment(id)) continue;
         const shop = townMenu(this.state, data)!.shop;
         const inst = this.state.items[id]!;
         let unid = !inst.identified;
-        if (unid) {
+        if (unid && opts.identify) {
           const idRow = shop.identify.items.find((x) => x.instanceId === id)!;
           const unidPrice = shop.sellable.find((m) => m.memberId === c)!.items.find((x) => x.instanceId === id)!.price;
           if (sellPrice(inst, data) - unidPrice > idRow.fee && idRow.affordable) {
@@ -1145,10 +1355,97 @@ export class Campaign {
         expect(this.state.gold - g).toBe(row.price);
         rec.soldCount += 1;
         rec.soldGold += row.price;
+        if (!unid && inst.uniqueId !== null) {
+          rec.soldUnique += 1; // M13（数えるだけ）
+          rec.soldUniqueGold += row.price;
+        }
         if (unid) {
           rec.soldUnidCount += 1;
           rec.soldUnidGold += row.price;
         }
+      }
+    }
+  }
+
+  /**
+   * M13（設計書 §2-3）: 農夫の鑑定。全員の inventory の未鑑定の装備品を、見た目の売値（shop.sellable の price）の高い順
+   * （同じなら並び順 × inventory の順）に、払える限り店で鑑定する（払えない品は飛ばして次を見る）
+   */
+  identifyLoot(rec: DiveRecord): void {
+    const shop = townMenu(this.state, data)!.shop;
+    const rows = shop.identify.items
+      .filter((r) => this.isEquipment(r.instanceId))
+      .map((r) => ({ ...r, price: shop.sellable.find((m) => m.memberId === r.memberId)!.items.find((x) => x.instanceId === r.instanceId)!.price }));
+    rows.sort((a, b) => b.price - a.price); // 安定ソート
+    for (const r of rows) {
+      if (this.state.gold < r.fee) continue;
+      const g = this.state.gold;
+      this.run({ type: "town.shop", action: { kind: "identify", memberId: r.memberId, instanceId: r.instanceId } });
+      expect(g - this.state.gold).toBe(r.fee);
+      expect(this.state.items[r.instanceId]!.identified).toBe(true);
+      rec.identifyCount += 1;
+      rec.identifyCost += r.fee;
+    }
+  }
+
+  /**
+   * M13（設計書 §2-3。ボットの方針で、ゲームの規則ではない）: new が cur（null は空の枠）より強いか。武器は caster と reach が同じものだけを比べ、
+   * 術者用でなければ ダイスの平均（(min + max) / 2）+ damageBonus（floor(Lv / weaponLvPerDamage)）、術者用は magicPower（+ floor(Lv / casterLvPerPower)）。
+   * 防具・盾・兜・小手は実効の AC（armorAc。小さいほど強い）、装飾は Lv。同値なら偽
+   */
+  stronger(neu: ItemInstance, cur: ItemInstance | null): boolean {
+    if (cur === null) return true;
+    const base = findBase(data, neu.itemId)!;
+    if (base.slot === "weapon") {
+      const a = itemPower(data, neu, base);
+      const b = itemPower(data, cur, findBase(data, cur.itemId)!);
+      if (a.kind !== "weapon" || b.kind !== "weapon") throw new Error("stronger: not a weapon");
+      if (a.caster !== b.caster || a.reach !== b.reach) return false;
+      if (a.caster) return a.magicPower > b.magicPower;
+      const avg = (dice: string, bonus: number) => {
+        const r = diceRange(parseDice(dice));
+        return (r.min + r.max) / 2 + bonus;
+      };
+      return avg(a.dice, a.damageBonus) > avg(b.dice, b.damageBonus);
+    }
+    if (base.slot === "accessory") return neu.level > cur.level;
+    return armorAc(neu) < armorAc(cur);
+  }
+
+  /**
+   * M13（設計書 §2-3）: 農夫の装備の更新。inventory にある鑑定済み・呪われていない・ユニークでない汎用装備を Lv の高い順（同じなら並び順 ×
+   * inventory の順）に見て、並び順で最初の「alive・行動可能・職業が使える・その部位の今の品が空か呪われていない・新しい品の方が強い（stronger）」者に
+   * 装備させる。持ち主が違えば party.give（相手に空きが無ければその者を飛ばす）の後 party.equip。外した品は inventory に戻る（sellLoot が売る）
+   */
+  equipLoot(rec: DiveRecord): void {
+    const slots = data.config.inventory.slotsPerCharacter;
+    const cands: { id: string; level: number }[] = [];
+    for (const c of this.state.party)
+      for (const id of c.inventory) {
+        const inst = this.state.items[id]!;
+        if (findBase(data, inst.itemId) !== null && inst.identified && !inst.cursed && inst.uniqueId === null) cands.push({ id, level: inst.level });
+      }
+    cands.sort((a, b) => b.level - a.level); // 安定ソート
+    for (const { id } of cands) {
+      const owner = this.state.party.find((c) => c.inventory.includes(id));
+      if (owner === undefined) continue;
+      const inst = this.state.items[id]!;
+      const base = findBase(data, inst.itemId)!;
+      for (const ch of this.state.party) {
+        if (ch.life !== "alive" || !canAct(ch)) continue;
+        if (base.classes.length > 0 && !base.classes.includes(ch.classId)) continue;
+        const curId = ch.equipment[base.slot];
+        const cur = curId === null ? null : this.state.items[curId]!;
+        if (cur !== null && cur.cursed) continue;
+        if (!this.stronger(inst, cur)) continue;
+        if (ch.id !== owner.id) {
+          if (slotsUsed(ch) >= slots) continue;
+          this.run({ type: "party.give", memberId: owner.id, instanceId: id, toId: ch.id });
+        }
+        this.run({ type: "party.equip", memberId: ch.id, instanceId: id });
+        expect(this.state.party.find((c) => c.id === ch.id)!.equipment[base.slot]).toBe(id);
+        rec.lootEquipped += 1;
+        break;
       }
     }
   }
@@ -1269,9 +1566,10 @@ export class Campaign {
   campaign(count: number): CampaignResult {
     const dives: DiveRecord[] = [];
     const progress = this.kind.route === "progress";
+    const farm = this.kind.route === "farm" ? this.kind.farm! : null; // M13
     const lastId = PROGRESS_ROUTE[PROGRESS_ROUTE.length - 1]!;
     for (let k = 0; k < count; k++) {
-      const dungeonId = progress ? (PROGRESS_ROUTE.find((id) => !this.state.progress.clearedDungeons.includes(id)) ?? lastId) : "d01";
+      const dungeonId = progress ? (PROGRESS_ROUTE.find((id) => !this.state.progress.clearedDungeons.includes(id)) ?? lastId) : farm !== null ? farm.dungeonId : "d01";
       if (progress && dives.filter((d) => d.dungeonId === lastId).length >= D03_DIVES) break;
       const goldBefore = this.state.gold;
       const method = this.dive(dungeonId);
@@ -1345,9 +1643,33 @@ export class Campaign {
         armorBoughtByLevel: {},
         outfitCost: 0,
         outfitSoldGold: 0,
+        beats: this.beats,
+        estDungeonMs: 0,
+        estTownMs: 0,
+        farmEnd: method === "wipe" || method === "cap" ? null : this.farmEnd,
+        found: this.found,
+        foundRarity: this.foundRarity,
+        foundGenericByLevel: this.foundGenericByLevel,
+        foundCursed: this.foundCursed,
+        soldUnique: 0,
+        soldUniqueGold: 0,
+        gearLvStart: this.gearLvStart,
+        gearUniques: this.gearUniques,
+        enemyLvMean: this.enemyUnits === 0 ? NaN : this.enemyLvSum / this.enemyUnits,
+        lootEquipped: 0,
+        netProfit: 0,
+        goldAfterSell: 0,
       };
+      rec.estDungeonMs = estDungeonMsOf(rec.beats); // 迷宮の分はここで締める（beats は街の手順の分も続けて数える）
       this.mercy(rec);
-      this.sellLoot(rec);
+      if (farm !== null) {
+        // M13（設計書 §2-3）: 農夫の街の手順。救済 → 鑑定 → 装備の更新 → 売却（鑑定しない）→ 寺院 → 宿 → 店の補充（outfit はしない）
+        this.identifyLoot(rec);
+        this.equipLoot(rec);
+        this.sellLoot(rec, { identify: false });
+        rec.goldAfterSell = this.state.gold;
+        rec.netProfit = this.state.gold - goldBefore;
+      } else this.sellLoot(rec);
       this.revive(rec);
       this.inn(rec);
       rec.allL2 = this.state.party.every((c) => c.life === "alive" && c.level >= 2);
@@ -1356,6 +1678,7 @@ export class Campaign {
       this.shop(rec);
       if (this.kind.outfit === true) this.outfit(rec); // M9-装備（消耗品の補充の後）
       rec.unsold = this.equipmentInHand();
+      rec.estTownMs = estTownMsOf(rec.beats);
       rec.goldAfter = this.state.gold;
       rec.assetsAfter = assetsOf(this.state);
       dives.push(rec);
@@ -1706,6 +2029,7 @@ export function runCampaigns(
   const keys = new Set<string>();
   for (let seed = 1; seed <= seeds; seed++) {
     const c = new Campaign(seed, kind, members);
+    if (kind.farm !== undefined) c.prepareFarm(); // M13
     const r = c.campaign(count);
     expect(c.state.screen).toBe("town");
     expectStateInvariants(c.state);
