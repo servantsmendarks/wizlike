@@ -1539,13 +1539,13 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     // ボス戦では判定しない（乱数も使わない）は tests/dungeon.test.ts の DG-31
   });
 
-  test("CB-51/CB-60【仮】宝箱の既定の確率: 部屋 chestChance 60・通路 chestChanceCorridor 15。勝利の金と直接ドロップ（CB-57）の後の chance 1 回の出目で決まる（鏡の rng、シード 1〜30）", () => {
-    expect(data.config.combat.chestChance).toBe(60);
-    expect(data.config.combat.chestChanceCorridor).toBe(15);
+  test("CB-51/CB-60【仮】宝箱の既定の確率: 部屋 chestChance 45・通路 chestChanceCorridor 10（M15 で 60・15 から）。勝利の金と直接ドロップ（CB-57）の後の chance 1 回の出目で決まる（鏡の rng、シード 1〜60）", () => {
+    expect(data.config.combat.chestChance).toBe(45);
+    expect(data.config.combat.chestChanceCorridor).toBe(10);
     // M11（B8）: dataWith は既定で宝箱の判定を 0 にするので、実データの値を戻す
-    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 60, chestChanceCorridor: 15 } }, noChestImpulse);
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 45, chestChanceCorridor: 10 } }, noChestImpulse);
     const seen = { room: [0, 0], corridor: [0, 0] };
-    for (let seed = 1; seed <= 30; seed++) {
+    for (let seed = 1; seed <= 60; seed++) {
       for (const inRoom of [true, false]) {
         const s = setup([{ monsterId: "rotting_corpse", hps: [1], status: [["paralysis"]] }], {
           seed,
@@ -1558,14 +1558,14 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
         chance(m, 100);
         rollDice(m, "1d8");
         chance(m, 0); // CB-57（M14）: 直接ドロップの判定（dataWith の既定 0 で外れ）
-        const want = randInt(m, 1, 100) <= (inRoom ? 60 : 15);
+        const want = randInt(m, 1, 100) <= (inRoom ? 45 : 10);
         const r = exec(s, RESOLVE, d);
         expect(kindsOf(r.events).includes("chestFound"), `seed ${seed} inRoom ${String(inRoom)}`).toBe(want);
         expect(r.state.dive!.chest !== null, `seed ${seed} inRoom ${String(inRoom)}`).toBe(want);
         seen[inRoom ? "room" : "corridor"][want ? 1 : 0]! += 1;
       }
     }
-    // 30 シードで部屋・通路とも、出る場合と出ない場合の両方を通る（M14: 直接ドロップの chance で出目がずれ、20 では通路が出なくなった）
+    // 60 シードで部屋・通路とも、出る場合と出ない場合の両方を通る（M14: 直接ドロップの chance で出目がずれ、20 では通路が出なくなった。M15: 通路 10% では 50 まで通路が出なかったので 60 にした）
     expect(seen.room.every((n) => n > 0)).toBe(true);
     expect(seen.corridor.every((n) => n > 0)).toBe(true);
   });
