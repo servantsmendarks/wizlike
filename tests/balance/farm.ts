@@ -137,7 +137,8 @@ export function farmReport(results: CampaignResult[], kind: BotKind): string {
   // 6. 1 時間あたり
   const hours = sum(all.map(totalMs)) / 3_600_000;
   row("1 時間あたり（推定の計の時間で割る）上質 / 希少 / 伝説", ["fine", "rare", "legendary"].map((r) => fmt(rar(r) / hours)).join(" / ") + `（計 ${fmt(hours)} 時間）`);
-  // 7. 逆算（Lv3 → Lv5。触媒 Lv3 以上 3 個 + Lv4 以上 3 個で成功 100%、料金 upgradeFee(3) + upgradeFee(4)）
+  // 7. 逆算（Lv3 → Lv5。触媒 Lv3 以上 3 個 + Lv4 以上 3 個で成功 100%、料金 upgradeFee(3) + upgradeFee(4)）。
+  // 1 段目と 2 段目の触媒は別々の 6 個で、Lv3 以上の数には Lv4 以上も入るので、1 項目は Lv3 以上 6 個（レビューの指摘 L-1）
   const fee = upgradeFee(3, data.config.economy) + upgradeFee(4, data.config.economy);
   const a3 = mean(lv3);
   const a4 = mean(lv4);
@@ -147,7 +148,7 @@ export function farmReport(results: CampaignResult[], kind: BotKind): string {
   const need = (parts: number[]) => (parts.some((x) => !Number.isFinite(x)) ? null : Math.max(...parts));
   const ceilDiv = (a: number, b: number) => (b > 0 ? Math.ceil(a / b) : Infinity);
   const show = (k: number | null) => (k === null || p <= 0 ? "—" : `${k} 潜行・推定 ${fmt(k * minPer)} 分（1 時間以内 ${k * minPer <= 60 ? "はい" : "いいえ"}）`);
-  row(`逆算 Lv3 → Lv5（触媒 Lv3 以上 3 + Lv4 以上 3・料金 ${fee}G）`, show(need([ceilDiv(3, a3), ceilDiv(3, a4), ceilDiv(fee, p)])));
+  row(`逆算 Lv3 → Lv5（触媒 Lv3 以上 6（うち Lv4 以上 3）・料金 ${fee}G）`, show(need([ceilDiv(6, a3), ceilDiv(3, a4), ceilDiv(fee, p)])));
   row(`（参考）Lv を問わない触媒 6 個・料金 ${fee}G`, show(need([ceilDiv(6, ag), ceilDiv(fee, p)])));
   row("目安", "1 時間の農作業で +2 段【仮】（上の逆算が 60 分以内か）");
   // 8. 装備の追従

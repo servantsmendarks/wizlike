@@ -517,7 +517,7 @@ export class Campaign {
     const w = r.events.find((e): e is Extract<GameEvent, { kind: "wipe" }> => e.kind === "wipe");
     if (w !== undefined) {
       this.wiped = w.penalty;
-      this.checkPenalty(from, r.state, w.penalty);
+      this.checkPenalty(from, r.state, w.penalty, r.events);
     }
     this.state = r.state;
     return r.state;
@@ -727,13 +727,45 @@ export class Campaign {
     }
   }
 
-  /** wipe では PenaltyResult の内訳 = state の差分（金、失った実体、EXP） */
-  checkPenalty(before: GameState, after: GameState, p: PenaltyResult): void {
-    expect(before.gold - after.gold).toBe(p.ledgerGold + p.goldLost);
+  /**
+   * wipe では PenaltyResult の内訳 = state の差分（金、失った実体、EXP）。
+   * M13: 内訳（performWipe）は全滅の時点の state に対するもので、勝利と同じ execute の衝動で開けた箱の罠で全滅すると（M11 作業 9 の countDeaths と同じ経路）、
+   * その戦闘の EXP と金が入った後の値から引かれる。before はコマンド前なので、同じ execute の wipe より前の獲得を足して突き合わせる。
+   * 金の獲得は gainGold のメッセージ（battle.gold / chest.open.gold / event.gold）の params.gold の合計（gainGold が足した額そのもの）。
+   * EXP の獲得は battle.exp の params.exp（share）× その時点で alive の人数。人数は before の life に、events の lifeChanged（味方の id のもの）を
+   * 順に当てて出す（endBattleBody は battleEnd → battle.exp の間に life を変えないので、勝利の時点の alive と同じ）。
+   * 獲得が無い従来の経路では、今までの検査（before − after = 内訳）と同じになる
+   */
+  checkPenalty(before: GameState, after: GameState, p: PenaltyResult, events: GameEvent[]): void {
+    const wi = events.findIndex((e) => e.kind === "wipe");
+    const life = new Map(before.party.map((c) => [c.id, c.life as string]));
+    let goldGained = 0;
+    let expGained = 0;
+    for (const e of events.slice(0, wi < 0 ? events.length : wi)) {
+      if (e.kind === "lifeChanged" && life.has(e.id)) life.set(e.id, e.life);
+      else if (e.kind === "message" && (e.key === "battle.gold" || e.key === "chest.open.gold" || e.key === "event.gold")) {
+        const g = Number(e.params?.["gold"]);
+        if (!Number.isSafeInteger(g) || g < 0) throw new Error(`seed ${this.seed}: bad ${e.key} gold ${String(e.params?.["gold"])}`);
+        goldGained += g;
+      } else if (e.kind === "message" && e.key === "battle.exp") {
+        const share = Number(e.params?.["exp"]);
+        if (!Number.isSafeInteger(share) || share < 0) throw new Error(`seed ${this.seed}: bad battle.exp ${String(e.params?.["exp"])}`);
+        expGained += share * [...life.values()].filter((l) => l === "alive").length;
+      }
+    }
+    expect(before.gold + goldGained - after.gold).toBe(p.ledgerGold + p.goldLost);
     for (const it of p.itemsLost) expect(after.items[it.instanceId]).toBeUndefined();
     for (const id of before.dive!.ledger.items) expect(after.items[id]).toBeUndefined();
+    // EXP: 内訳は全員分（並び順）で、after の exp = expBefore − lost。Σ expBefore − Σ before の exp = 同じ execute の獲得
+    expect(p.expLost.map((e) => e.id)).toEqual(after.party.map((c) => c.id));
+    for (const e of p.expLost) {
+      const ch = after.party.find((c) => c.id === e.id);
+      if (ch === undefined) throw new Error(`seed ${this.seed}: expLost ${e.id} not in party`);
+      expect(ch.exp).toBe(e.expBefore - e.lost);
+    }
     const s = (st: GameState) => st.party.reduce((a, c) => a + c.exp, 0);
-    expect(s(before) - s(after)).toBe(p.expLost.reduce((a, e) => a + e.lost, 0));
+    expect(p.expLost.reduce((a, e) => a + e.expBefore, 0) - s(before)).toBe(expGained);
+    expect(s(before) + expGained - s(after)).toBe(p.expLost.reduce((a, e) => a + e.lost, 0));
   }
 
   get inDungeon(): boolean {
