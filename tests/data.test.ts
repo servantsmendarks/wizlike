@@ -179,6 +179,16 @@ describe("data: config.json", () => {
     expectIssue((r) => delete r.config.classChange.fee, "config.json", "classChange.fee: missing required field");
     expectIssue((r) => (r.config.classChange.fee = -1), "config.json", "classChange.fee: expected integer >= 0, got -1");
   });
+  test("data: UI-75【仮】config.measure は計測用の拍の長さ（ms）で 11 欄とも正の整数", () => {
+    const d = loadGameData(rawData());
+    expect(d.config.measure).toEqual({
+      stepMs: 150, turnMs: 130, encounterMs: 2600, actionMs: 1400, battleEndMs: 800, chestCheckMs: 2300,
+      chestOpenMs: 1200, threadMs: 1500, sellMs: 900, identifyMs: 1100, innMs: 1300,
+    });
+    expectIssue((r) => delete r.config.measure.actionMs, "config.json", "measure.actionMs: missing required field");
+    expectIssue((r) => (r.config.measure.stepMs = 0), "config.json", "measure.stepMs: expected integer >= 1, got 0");
+    expectIssue((r) => (r.config.measure.innMs = 1.5), "config.json", "measure.innMs: expected integer >= 1, got number");
+  });
   test("data: CB-21/CB-26【仮】flyingHit は reach ごと（melee / long / ranged）の整数、rangedHitAgiMul・rangedHitLukPivot は整数", () => {
     const d = loadGameData(rawData());
     expect([d.config.combat.flyingHit, d.config.combat.rangedHitAgiMul, d.config.combat.rangedHitLukPivot]).toEqual([{ melee: -30, long: -15, ranged: 0 }, 2, 10]);

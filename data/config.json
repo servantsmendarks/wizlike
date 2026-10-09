@@ -88,6 +88,7 @@
     "musicVolume": 3, "sfxVolume": 2
   },
   "audio": { "musicGain": 0.3, "sfxGain": 0.3, "sampleRate": 44100, "prefetchBars": 2, "keepSongs": 2, "startLeadMs": 40, "warmupSeconds": 3 },
+  "measure": { "stepMs": 150, "turnMs": 130, "encounterMs": 2600, "actionMs": 1400, "battleEndMs": 800, "chestCheckMs": 2300, "chestOpenMs": 1200, "threadMs": 1500, "sellMs": 900, "identifyMs": 1100, "innMs": 1300 },
   "prototypeParty": {
     "startingGold": 300,
     "members": [

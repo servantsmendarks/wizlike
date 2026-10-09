@@ -460,6 +460,19 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       startLeadMs: I({ min: 0, max: 100 }), // UI-63（M9.5）【仮】上限は M9.5 の完了条件の 100ms
       warmupSeconds: N({ min: 0, max: 10 }), // UI-63（M9.5）【仮】3。0 なら暖機しない。上限は単純に 10
     }),
+    measure: F({
+      stepMs: I(POS_INT), // UI-75【仮】
+      turnMs: I(POS_INT), // UI-75【仮】
+      encounterMs: I(POS_INT), // UI-75【仮】
+      actionMs: I(POS_INT), // UI-75【仮】
+      battleEndMs: I(POS_INT), // UI-75【仮】
+      chestCheckMs: I(POS_INT), // UI-75【仮】
+      chestOpenMs: I(POS_INT), // UI-75【仮】
+      threadMs: I(POS_INT), // UI-75【仮】
+      sellMs: I(POS_INT), // UI-75【仮】
+      identifyMs: I(POS_INT), // UI-75【仮】
+      innMs: I(POS_INT), // UI-75【仮】
+    }), // UI-75（M13）計測用の拍の長さ。tests/balance だけが読む
     prototypeParty: F({ startingGold: I(NON_NEG), members: L(member) }),
   });
   if (c === undefined) return;

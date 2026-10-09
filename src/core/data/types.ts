@@ -321,6 +321,23 @@ export type Config = {
     /** UI-63（M9.5）: Web Worker の暖機で合成して捨てる固定のダミー区間の長さ（秒）【仮】3。0..10。0 なら暖機しない */
     warmupSeconds: number;
   };
+  /**
+   * UI-75【仮】（M13）: 計測用の拍の長さ（ms）。実機で測った値を置く。読むのは tests/balance の計測だけで、core と表示層は読まない。
+   * 各欄の 1 回の意味は docs/spec/ui.md の UI-75
+   */
+  measure: {
+    stepMs: number;
+    turnMs: number;
+    encounterMs: number;
+    actionMs: number;
+    battleEndMs: number;
+    chestCheckMs: number;
+    chestOpenMs: number;
+    threadMs: number;
+    sellMs: number;
+    identifyMs: number;
+    innMs: number;
+  };
   prototypeParty: { startingGold: number; members: PrototypeMember[] };
 };
 
