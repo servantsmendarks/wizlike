@@ -17,6 +17,7 @@ import {
   NEAR,
   pct,
   percentile,
+  placeLines,
   rarityTally,
   rarityTotal,
   returnOnDeath,
@@ -157,6 +158,11 @@ export function farmReport(results: CampaignResult[], kind: BotKind): string {
   // M14（CB-57）: 直接ドロップ。置いていった品は宝箱と直接ドロップの合計（内訳付き）
   row("直接ドロップ 1 潜行あたり（品 / 金）", `${per(all.map((d) => d.dropItems + d.dropLeft))}（うち置いていった ${per(all.map((d) => d.dropLeft))}）/ ${per(all.map((d) => d.dropGold))}G`);
   const left = all.map((d) => d.chestLeft + d.dropLeft);
+  // 確認(M15): 戦闘の場所（ランダム遭遇の勝利）とドロップの箱の率
+  for (const line of placeLines("全潜行", all)) {
+    const i = line.indexOf(": ");
+    row(line.slice(0, i), line.slice(i + 2));
+  }
   row("置いていった品（満杯）", `計 ${sum(left)}・1 潜行あたり ${per(left)}（宝箱 ${sum(all.map((d) => d.chestLeft))}・直接ドロップ ${sum(all.map((d) => d.dropLeft))}）`);
   // 6. 1 時間あたり
   const hours = sum(all.map(totalMs)) / 3_600_000;

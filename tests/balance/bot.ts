@@ -295,6 +295,12 @@ export type DiveRecord = {
   unpaidAtStart: number; // M7-宝箱: 潜行の開始時に、前の街の手順で蘇生（寺院・闇魔術）を払えずに残した dead / ash の人数（定義は Campaign.unpaidLeft）
   chests: number; // M7-宝箱: この潜行で中身を得た宝箱の数（M11: chest.open.gold の数）
   chestsCorridor: number; // M7-宝箱: そのうち通路（ChestState の inRoom が偽）の宝箱
+  // 確認(M15): ランダム遭遇の勝利（origin.kind === "random" の戦闘の battleEnd{win}。ドロップの箱の抽選が起きる戦闘）の場所別の数と、
+  // その勝利で置かれたドロップの箱（同じ execute の chest.found.drop。置かれた数で、開けたかは問わない）の場所別の数。場所は origin.inRoom
+  randomWinsRoom: number;
+  randomWinsCorridor: number;
+  dropChestsRoom: number;
+  dropChestsCorridor: number;
   chestGold: number; // M7-宝箱: 宝箱の金の合計（chest.open.gold の gold。金運込み）
   chestItems: number; // M7-宝箱: 宝箱の品のうち所持枠に入った数（chest.open.gold の後の item.found）
   chestLeft: number; // M7-宝箱: 宝箱の品のうち所持枠が無くて置いていった数（chest.open.gold の後の item.leftBehind）
@@ -468,6 +474,10 @@ export class Campaign {
   wiped: PenaltyResult | null = null;
   chests = 0;
   chestsCorridor = 0;
+  randomWinsRoom = 0; // 確認(M15)
+  randomWinsCorridor = 0;
+  dropChestsRoom = 0;
+  dropChestsCorridor = 0;
   chestGold = 0;
   chestItems = 0;
   chestLeft = 0;
@@ -536,6 +546,7 @@ export class Campaign {
     if (r.events[0]?.kind === "rejected") throw new Error(`seed ${this.seed}: ${JSON.stringify(cmd)} rejected: ${JSON.stringify(r.events[0])}`);
     this.countChest(from, r.events);
     this.countDrops(r.events); // M14（CB-57）
+    this.countBattlePlace(from, r.events); // 確認(M15)
     this.countDeaths(from, r.events);
     this.countImpulses(from, r.events);
     this.countChestFlow(cmd, from, r.state, r.events);
@@ -578,6 +589,24 @@ export class Campaign {
       if (x.kind !== "message") continue;
       if (x.key === "item.found") this.chestItems += 1;
       else if (x.key === "item.leftBehind") this.chestLeft += 1;
+    }
+  }
+
+  /**
+   * 確認(M15): ランダム遭遇の勝利を場所別（origin.inRoom）に数え、その勝利で置かれたドロップの箱（chest.found.drop）も場所別に数える。
+   * 勝利の見方は countBeats と同じ（battleEnd{win}）。数えるだけで、ボットの判断・乱数・コマンド列には触れない
+   */
+  countBattlePlace(from: GameState, events: GameEvent[]): void {
+    const origin = from.battle?.origin;
+    if (origin?.kind !== "random") return;
+    if (!events.some((e) => e.kind === "battleEnd" && e.result === "win")) return;
+    const dropped = events.some((e) => e.kind === "message" && e.key === "chest.found.drop");
+    if (origin.inRoom) {
+      this.randomWinsRoom += 1;
+      if (dropped) this.dropChestsRoom += 1;
+    } else {
+      this.randomWinsCorridor += 1;
+      if (dropped) this.dropChestsCorridor += 1;
     }
   }
 
@@ -1183,6 +1212,10 @@ export class Campaign {
     this.wiped = null;
     this.chests = 0;
     this.chestsCorridor = 0;
+    this.randomWinsRoom = 0;
+    this.randomWinsCorridor = 0;
+    this.dropChestsRoom = 0;
+    this.dropChestsCorridor = 0;
     this.chestGold = 0;
     this.chestItems = 0;
     this.chestLeft = 0;
@@ -1723,6 +1756,10 @@ export class Campaign {
         unpaidAtStart: this.unpaidAtStart,
         chests: this.chests,
         chestsCorridor: this.chestsCorridor,
+        randomWinsRoom: this.randomWinsRoom,
+        randomWinsCorridor: this.randomWinsCorridor,
+        dropChestsRoom: this.dropChestsRoom,
+        dropChestsCorridor: this.dropChestsCorridor,
         chestGold: this.chestGold,
         chestItems: this.chestItems,
         chestLeft: this.chestLeft,
@@ -1888,7 +1925,23 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
   lines.push(...curingReport(results, dives));
   lines.push(...impulseReport(results.flatMap((r) => r.dives)));
   lines.push(...chestReport("全潜行", all));
+  lines.push(...placeLines("全潜行", all));
   return lines.join("\n");
+}
+
+/**
+ * 確認(M15): ランダム遭遇の勝利の場所（部屋 / 通路）と、ドロップの箱の率（置かれた箱 / 勝利。CB-51 の chestChance / chestChanceCorridor の実測）。
+ * 箱は置かれた数（開けたかは問わない）。宝箱の「うち通路」は中身を得た数なので、通路の箱はそれ以上になる
+ */
+export function placeLines(label: string, ds: readonly DiveRecord[]): string[] {
+  const wr = sum(ds.map((d) => d.randomWinsRoom));
+  const wc = sum(ds.map((d) => d.randomWinsCorridor));
+  const cr = sum(ds.map((d) => d.dropChestsRoom));
+  const cc = sum(ds.map((d) => d.dropChestsCorridor));
+  return [
+    `戦闘の場所（ランダム遭遇の勝利。${label}）: 部屋 ${wr} / 通路 ${wc}`,
+    `ドロップの箱の率（${label}）: 部屋 ${pct(cr, wr)}（箱/戦闘） / 通路 ${pct(cc, wc)}（箱/戦闘） / 設定 部屋 ${data.config.combat.chestChance}%・通路 ${data.config.combat.chestChanceCorridor}%`,
+  ];
 }
 
 /**
@@ -2011,6 +2064,7 @@ export function progressReport(results: CampaignResult[], kind: BotKind = PROGRE
   lines.push(...chestReport("d01 の潜行（踏破まで）", d01));
   lines.push(...chestReport("d02 の潜行", results.flatMap((r) => r.dives.filter((d) => d.dungeonId === "d02"))));
   lines.push(...chestReport("d03 の潜行", d03));
+  lines.push(...placeLines("全潜行", allDives));
   return lines.join("\n");
 }
 
