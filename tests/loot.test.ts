@@ -133,19 +133,23 @@ describe("IT-52 1 品の生成と乱数の順", () => {
   });
 
   test("CB-65/IT-51 宝箱の品の個数（M14）= 1 + chance(min(100, secondItemChance + secondItemPerDanger × 危険度))。chance は 100 でも 1 回引く。3 個目は無い", () => {
-    // 実データ（【仮】）: 50 + 15 × 危険度。危険度 0 → 50、2 → 80、4 → 110 → 100
-    expect([data.config.chest.secondItemChance, data.config.chest.secondItemPerDanger]).toEqual([50, 15]);
-    for (const [danger, p] of [
-      [0, 50],
-      [2, 80],
-      [4, 100],
+    // 実データ（【仮】）: 25 + 15 × 危険度。危険度 0 → 25、2 → 55、4 → 85（M15。M14 は 50 + 15 × 危険度）
+    expect([data.config.chest.secondItemChance, data.config.chest.secondItemPerDanger]).toEqual([25, 15]);
+    // 上限 100 の確かめ（M15 の実データでは 100 に届かないので、M14 の値 50 に戻したデータで 50 + 15 × 4 = 110 → 100）
+    const d50 = loadFreshData();
+    d50.config.chest.secondItemChance = 50;
+    for (const [d, danger, p] of [
+      [data, 0, 25],
+      [data, 2, 55],
+      [data, 4, 85],
+      [d50, 4, 100],
     ] as const) {
       const seen = new Set<number>();
       for (let seed = 1; seed < 40; seed++) {
         const s = dived(seed);
         const m = cloneRng(s.rng);
         const want = 1 + (chance(m, p) ? 1 : 0);
-        expect(chestItemCount(s, data, danger)).toBe(want);
+        expect(chestItemCount(s, d, danger)).toBe(want);
         expect(s.rng).toEqual(m);
         seen.add(want);
       }
@@ -159,7 +163,7 @@ describe("IT-52 1 品の生成と乱数の順", () => {
     for (let seed = 1; seed < 60; seed++) {
       const ctx = makeContext(cloneState(dived(seed)), d);
       const m = cloneRng(ctx.state.rng);
-      const n = 1 + (chance(m, 50 + 15 * 2) ? 1 : 0);
+      const n = 1 + (chance(m, 25 + 15 * 2) ? 1 : 0);
       // オプションの鏡を省くため、2 個とも上振れしない（通常・オプションなし）出目のシードを使う
       let plain = n === 2;
       for (let i = 0; i < n && plain; i++) {

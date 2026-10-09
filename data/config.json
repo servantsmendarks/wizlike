@@ -27,7 +27,7 @@
     "autoDefendHpRatio": 0.5,
     "flyingHit": { "melee": -30, "long": -15, "ranged": 0 },
     "rangedHitAgiMul": 2, "rangedHitLukPivot": 10,
-    "directDropChance": 10, "directDropGoldDice": "2d10"
+    "directDropChance": 5, "directDropGoldDice": "2d10"
   },
   "san": {
     "max": 100,
@@ -73,7 +73,7 @@
   },
   "events": { "lureMul": 12, "cap": 60, "floor": 0, "stopSanGain": 3, "confusedLureWeight": 2 },
   "chest": {
-    "noTrapChance": 30, "rarityUpPerDanger": 15, "secondItemChance": 50, "secondItemPerDanger": 15,
+    "noTrapChance": 30, "rarityUpPerDanger": 15, "secondItemChance": 25, "secondItemPerDanger": 15,
     "inspect": { "base": 40, "statPivot": 10, "thiefBonus": 30, "agiMul": 2, "lukMul": 2, "dangerMul": 10, "min": 5, "max": 95 },
     "disarm": { "base": 50, "statPivot": 10, "thiefBonus": 30, "agiMul": 2, "lukMul": 2, "dangerMul": 10, "min": 5, "max": 95 },
     "triggerChance": 10, "wrongNameChance": 50, "disarmFailTrigger": 50,

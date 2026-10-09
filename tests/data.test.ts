@@ -264,7 +264,7 @@ describe("data: config.json", () => {
     expect(d.config.chest).toEqual({
       noTrapChance: 30,
       rarityUpPerDanger: 15,
-      secondItemChance: 50,
+      secondItemChance: 25,
       secondItemPerDanger: 15,
       inspect: { base: 40, ...rate },
       disarm: { base: 50, ...rate },
@@ -1282,7 +1282,7 @@ describe("data: drops.json（IT-50〜53。M7）", () => {
   });
   test("data: CB-57 combat.directDropChance は 0..100、directDropGoldDice はダイス記法【仮】（M14）", () => {
     const d = loadGameData(rawData());
-    expect([d.config.combat.directDropChance, d.config.combat.directDropGoldDice]).toEqual([10, "2d10"]);
+    expect([d.config.combat.directDropChance, d.config.combat.directDropGoldDice]).toEqual([5, "2d10"]);
     expectIssue((r) => delete r.config.combat.directDropChance, "config.json", "combat.directDropChance: missing required field");
     expectIssue((r) => (r.config.combat.directDropChance = 101), "config.json", "combat.directDropChance: expected integer in 0..100, got 101");
     expectIssue((r) => (r.config.combat.directDropGoldDice = "2d"), "config.json", 'combat.directDropGoldDice: invalid dice expression "2d"');

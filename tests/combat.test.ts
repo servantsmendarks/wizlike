@@ -1648,7 +1648,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
   });
 
   test("CB-57/IT-57/CH-52 金の種別: rollDice(directDropGoldDice) を battle.dropGold{name, gold} で state.gold と ledger.gold へ（敵の gold のダイスは使わない）", () => {
-    expect(data.config.combat.directDropChance).toBe(10);
+    expect(data.config.combat.directDropChance).toBe(5);
     expect(data.config.combat.directDropGoldDice).toBe("2d10");
     const d = directData({ beast: ["gold"] });
     const s = killOne("giant_rat");
