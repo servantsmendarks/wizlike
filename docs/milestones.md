@@ -554,7 +554,7 @@ M2〜M5 の実機確認の結果（`docs/decisions.md` の 2026-10-04 の行）�
   - #6 `core(M14)`: 5 debug.levels の成長。
   - #7 `data(M14)`: 5 chestOpenMs 773。
   - レビュー → 修正。
-  - 実機(M14-拍)（固定コピーは #1 の sha。Pixel 3a。n ≥ 10 戦）。
+  - 実機(M14-拍)（#1 の後から #2〜#7・レビューと並行。固定コピーは #1 の sha。Pixel 3a。n ≥ 10 戦）。
   - #8 `data(M14)`: config.measure.actionMs を実機(M14-拍) の値に（balance.md の変更の記録、decisions の 実機(M14-拍) の行、checklist の行）。
   - 計測: `BALANCE_SEEDS=200 npm run balance`。ログは scratchpad の balance-m14-all.log。
   - #9 `docs(M14)`: balance.md の計測(M14) の表、milestones の結果・状態、decisions の判断の行 → レビュー → 修正。

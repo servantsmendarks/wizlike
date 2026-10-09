@@ -37,7 +37,7 @@
 - DG-35 準備中のダンジョン（M9。2026-10-06）: `dungeons[].placeholder`（任意の真偽値。省略は偽）が真のダンジョンは「準備中」の枠。前のダンジョンのクリアで開放（DG-01 / DG-32）はされ `dungeon.unlocked` も語るが、入場はできない（rejected `not ready`。TW-11）。検証: 準備中の後ろに準備中でないダンジョンを置けない、`floors` は 1、`onClear.unlockDungeon` は null。他の欄（出現表・ボス・`drops.json` の chest / boss）は普通のダンジョンと同じに要る（中身は前のダンジョンの表を参照してよい）。M9〜M11 の d03（灰の地下墓所）がこれだった。M12（2026-10-08）で d03 は本物（4 階【仮】。固有の出現表（CB-03）・ドロップ表（IT-51）・ボス `ashcrown_lord`）になり、今のデータに準備中の枠は無い。規則と検証は次のダンジョンのために残し、テストは実データの末尾に準備中の d04 を足した合成データで確かめる。
 - DG-36 全ダンジョン制覇（M12。2026-10-08）: 準備中（DG-35）でない全ダンジョンが `progress.clearedDungeons` に入ったら制覇（core の `isConquered(progress, data)`。data から判定するので枠が増えても正しい）。ボスの初回の撃破（DG-32 の `clearedDungeons` への追加と `battle.dungeonCleared` の直後）で制覇になったら、`progress.conquered` と `progress.endingPending` を真にし、message `battle.allCleared` を 1 回語る（その後の開放・戦利品・流通レベル・テレポーターの申し出は今の順のまま）。`conquered` は一度立てたら落とさない。以後も全ダンジョンに再入場できる（DG-33）。再撃破では初回の撃破でないので、立て直さず語らない。結末の語りは街に着いたとき（TW-34）。乱数は使わない。
 - DG-37 入場の語り（M12。2026-10-08 ユーザー判断 U-5）: `dungeons[].enterSpeech`（任意。strings のキー）を持つダンジョンは、初回入場で GM の一行を語る。検証: strings にあるキーで、プレースホルダーを持たない（どちらも起動を止める）。今は d03 だけが持つ（`dungeon.enterSpeech.d03`。d01・d02 は欄なし）。語る時機: その dungeonId に初めて入るとき（下の `progress.enteredDungeons` に足す前に含まれていない）だけ、`dungeon.enter` の直後に message（キーは enterSpeech の値。params なし）を 1 件出す。宿の噂話（TW-15 の `dungeon.gossip`）より前。乱数は使わない（M12 core #4）。入場の記録は `progress.enteredDungeons`（M12 #3。SV-04 v7）: `dungeon.enter` が成立するたびに、その id が無ければ末尾に足す（初めて入った順。重複なし。game.new で []）。「初めて」は足す前に含まれていないこと。
-- DG-38 階の基準 Lv（M14。2026-10-09）: `dungeons[].floorLevels`（正の整数の配列。要素 i は i+1 階）は、その階で出る品の Lv の下限になる（IT-53: 品の Lv = max(敵の Lv, 階の基準 Lv) + 上乗せ）。値は d01 [1, 2]、d02 [3, 4, 5]、d03 [5, 6, 6, 7]【仮】（docs/balance.md の「コンテンツの数値」）。検証: 必須で、長さが `floors` と違う・1 未満の要素は起動を止める。乱数は使わない。
+- DG-38 階の基準 Lv（M14。2026-10-09）: `dungeons[].floorLevels`（正の整数の配列。要素 i は i+1 階）は、その階で出る品の Lv の下限になる（IT-53: 品の Lv = max(敵の Lv, 階の基準 Lv) + 上乗せ）。値は d01 [1, 2]、d02 [3, 4, 5]、d03 [5, 6, 6, 7]（コンテンツの数値。【仮】の印は docs/balance.md の「コンテンツの数値」）。検証: 必須で、長さが `floors` と違う・1 未満の要素は起動を止める。乱数は使わない。
 
 ## 5. 潜行台帳
 
@@ -53,7 +53,7 @@
 {
   "id": "d01", "name": "試しの坑道",
   "floors": 2, "width": 20, "height": 20, "rooms": [3, 6],  // rooms は任意。省略時は config.dungeon.defaultRooms（DG-05）
-  "floorLevels": [1, 2],                // M14: 階の基準 Lv（長さ = floors。品の Lv の下限。DG-38 / IT-53）【仮】
+  "floorLevels": [1, 2],                // M14: 階の基準 Lv（長さ = floors。品の Lv の下限。DG-38 / IT-53）
   "unlock": null,                       // 開放条件になるダンジョン id。null なら最初から
   "encounterRate": { "room": 0.12, "corridor": 0.05 },
   "encounterTable": { "1": [ { "monster": "giant_rat", "weight": 5 } ], "2": [ ... ] },  // 階ごとの出現表。出現する敵はこれだけで決まる（CB-03）

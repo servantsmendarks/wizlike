@@ -718,7 +718,7 @@ export type DungeonDef = {
   /** DG-35（M9）: 真なら「準備中」の枠。開放はされるが入場できない（配列の末尾の側・floors 1・onClear.unlockDungeon null） */
   placeholder?: boolean;
   floors: number;
-  /** DG-38（M14）: 階の基準 Lv（要素 i は i+1 階。長さ = floors、正の整数）。品の Lv の下限 max(敵 Lv, これ)（IT-53）【仮】 */
+  /** DG-38（M14）: 階の基準 Lv（要素 i は i+1 階。長さ = floors、正の整数）。品の Lv の下限 max(敵 Lv, これ)（IT-53）。値は docs/balance.md のコンテンツの数値 */
   floorLevels: number[];
   width: number;
   height: number;

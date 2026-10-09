@@ -8,7 +8,7 @@
 - M13 の農夫ボット（ハクスラの計測）は tests/balance/farm-*.sim.ts の 9 本（場所 × Lv。共通は tests/balance/farm.ts）で、`BALANCE_BOTS=farm npm run balance` で回す（BALANCE_BOTS=farm では campaign.sim.ts の 3 ボットは回らない。未設定なら全部回る）。
 - 率は必ず「x.x%（件数/分母）」で書く。分母の小さい率は 1 件で大きく動くので、件数を見て判断する。
 - 欠けているセル（その時点で集計が無い・ボットが無い）は「—」。
-- 数値を変えたら「数値の変更の記録」に 1 行足す。1 つの変更を 1 行にし、前後の計測の名前（基準値の表の列か、decisions の計測の行の名前）と感触を書く。1 回の調整で変えるのは 1 項目だけにする。
+- 数値を変えたら「数値の変更の記録」に 1 行足す。1 つの変更を 1 行にし、前後の計測の名前（基準値の表の列か、decisions の計測の行の名前）と感触を書く。1 回の調整で変えるのは 1 項目だけにする（M14 はユーザーの指示で例外。複数項目を 1 回で変え、記録は項目ごとに 1 行。「目安と調整の順（M14）」）。
 - data の個別の数値（敵・アイテム・ドロップ・ダンジョンの表）の【仮】の値はこのファイルの「コンテンツの数値」に書く。config.json の【仮】は今までどおり仕様書に付ける（CLAUDE.md §3-6）。
 - 基準値の表の列は追記だけで、過去の列は直さない。
 
@@ -470,7 +470,7 @@ tests/balance/farm.ts と tests/balance/bot.ts（route "farm"）。設計は scr
 | 店の装備（outfit） | 無し | 消耗品の補充（糸 1・薬草 6・解毒草 2）だけ |
 | 帰る理由 | full → time → death → hp の順 | full = 全員の所持枠が満杯、death・hp はセオリーと同じ（8 戦の上限は使わない） |
 
-### M14 の数値（2026-10-09。core(M14)。どれも【仮】）
+### M14 の数値（2026-10-09。core(M14)。コンテンツの数値はどれも【仮】。config の値は仕様書の【仮】が正で、ここには参照だけを書く）
 
 設計は scratchpad の m14-design.md。値は data/*.json が正で、この表はその写し（変えたら変更の記録に 1 行足し、ここも直す）。
 
@@ -480,9 +480,8 @@ tests/balance/farm.ts と tests/balance/bot.ts（route "farm"）。設計は scr
 | d01 の floorLevels（dungeons.json。DG-38） | [1, 2]（1 階・2 階の基準 Lv。品の Lv = max(敵 Lv, これ) + 0〜2。IT-53） |
 | d02 の floorLevels | [3, 4, 5] |
 | d03 の floorLevels | [5, 6, 6, 7] |
-| 宝箱の表（drops.json の d01_f1・d01_f2・d02_f1〜f3・d03_f1〜f4。IT-51） | itemChance / rolls を廃止（M13 までは 40〜70 × 1。個数は config.chest.secondItemChance 50・secondItemPerDanger 15。CB-65）。ボスの表は 100 × 1〜2 のまま（d01_boss 100 × 1、d02_boss・d03_boss 100 × 2） |
-| config.combat.directDropChance（CB-57） | 10（勝利でグループごとに直接ドロップが起きる確率 %） |
-| config.combat.directDropGoldDice（CB-57） | "2d10"（金の種別の額。敵の gold のダイスは使わない） |
+| 宝箱の表（drops.json の d01_f1・d01_f2・d02_f1〜f3・d03_f1〜f4。IT-51） | itemChance / rolls を廃止（M13 までは 40〜70 × 1。個数は config.chest.secondItemChance・secondItemPerDanger。値と【仮】は CB-65）。ボスの表は 100 × 1〜2 のまま（d01_boss 100 × 1、d02_boss・d03_boss 100 × 2） |
+| config.combat.directDropChance・directDropGoldDice | config の値（参照のみ。値と【仮】は CB-57） |
 | drops.json の direct.kinds（IT-57） | humanoid 武器・防具 / undead 装飾・魔法書 / beast 消耗品・金 / construct 防具 / spirit 魔法書・装飾（防具は部位 armor・shield・helm・gauntlet。装備と魔法書の母集団はその階の宝箱の表を種別で絞ったもの） |
 | drops.json の direct.consumables（IT-57） | 薬草 herb 3・解毒草 antidote_herb 2・帰還の糸 return_thread 1（重み） |
 
