@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { setEdge } from "../src/core/rules/dungeon-gen";
 import { visibleCellsOf } from "../src/core/rules/dungeon";
 import type { Cell, Edge, Floor, VisibleCell } from "../src/core/types";
-import { SLOT_IDS, SLOT_PATHS, slotsFor, type SlotId } from "../src/presenter/views/dungeon-geometry";
+import { EXIT_MARK_IDS, EXIT_MARK_PATHS, exitMarksFor, type ExitMarkId, SLOT_IDS, SLOT_PATHS, slotsFor, type SlotId } from "../src/presenter/views/dungeon-geometry";
 import { createDungeonSvg } from "../src/presenter/views/dungeon-svg";
 
 function cell(depth: number, lane: -1 | 0 | 1, front: Edge, left: Edge = "open", right: Edge = "open"): VisibleCell {
@@ -24,9 +24,9 @@ describe("slotsFor", () => {
     expect(sorted(slotsFor([cell(2, -1, "door"), cell(2, 1, "door")]))).toEqual(["lD2", "lF2", "rD2", "rF2"]);
   });
 
-  test("UI-20 左右が開いて列の front が wall なら lF と rF。lane ±1 の left/right は使わない", () => {
+  test("UI-20 左右が開いて列の front が wall なら lF と rF（開いた側の床線 cLO / cRO も。M16）。lane ±1 の left/right は使わない", () => {
     const cells = [cell(0, 0, "open"), cell(0, -1, "wall", "wall", "door"), cell(0, 1, "wall", "door", "wall"), cell(1, 0, "wall", "wall", "wall")];
-    expect(sorted(slotsFor(cells))).toEqual(["cF1", "cL1", "cR1", "lF0", "rF0"]);
+    expect(sorted(slotsFor(cells))).toEqual(["cF1", "cL1", "cLO0", "cR1", "cRO0", "lF0", "rF0"]);
   });
 
   test("UI-20 返らなかったセルは何も出ない、同じ d で cL と lF は同時に出ない、depth>3 は無視", () => {
@@ -42,15 +42,15 @@ describe("slotsFor", () => {
       expect(m.has(`cL${d}` as SlotId) && m.has(`lF${d}` as SlotId)).toBe(false);
       expect(m.has(`cR${d}` as SlotId) && m.has(`rF${d}` as SlotId)).toBe(false);
     }
-    expect(sorted(m)).toEqual(["cF1", "cL1", "cR0", "lF0", "rD1", "rF1"]);
+    expect(sorted(m)).toEqual(["cF1", "cL1", "cLO0", "cR0", "cRO1", "lF0", "rD1", "rF1"]);
   });
 
   test("UI-20 stairs が up / down のセルは、その列と奥行きの階段の記号（cSU/cSD、lSU/lSD、rSU/rSD）も出す。null なら出さない", () => {
     const st = (c: VisibleCell, s: VisibleCell["stairs"]): VisibleCell => ({ ...c, stairs: s });
-    expect(sorted(slotsFor([st(cell(0, 0, "open"), "up")]))).toEqual(["cSU0"]);
+    expect(sorted(slotsFor([st(cell(0, 0, "open"), "up")]))).toEqual(["cLO0", "cRO0", "cSU0"]);
     expect(sorted(slotsFor([st(cell(2, 0, "wall", "wall", "wall"), "down")]))).toEqual(["cF2", "cL2", "cR2", "cSD2"]);
     expect(sorted(slotsFor([st(cell(1, -1, "wall"), "down"), st(cell(3, 1, "open"), "up")]))).toEqual(["lF1", "lSD1", "rSU3"]);
-    expect(sorted(slotsFor([st(cell(0, 0, "open"), null)]))).toEqual([]);
+    expect(sorted(slotsFor([st(cell(0, 0, "open"), null)]))).toEqual(["cLO0", "cRO0"]);
     // depth が 0..3 の外は記号も出さない
     expect(slotsFor([st(cell(4, 0, "open"), "down")]).size).toBe(0);
   });
@@ -72,6 +72,46 @@ describe("slotsFor", () => {
     expect(sorted(slotsFor(cells, [{ depth: 0, lane: 0 }], [{ depth: 1, lane: 0 }]))).toEqual(["cC1", "cF1", "cL0", "cL1", "cR0", "cR1", "cT0"]);
     expect(sorted(slotsFor([], [], [{ depth: 0, lane: -1 }, { depth: 2, lane: 1 }, { depth: 3, lane: 0 }]))).toEqual(["cC3", "lC0", "rC2"]);
     expect(slotsFor([], [], [{ depth: 4, lane: 0 }, { depth: -1, lane: 1 }]).size).toBe(0);
+  });
+});
+
+describe("開口側の床線と開口の印（M16）", () => {
+  test("UI-20 床線 cLO / cRO は正面の列のセルの left / right が open のときだけ出る（wall・door では出ず、側壁 cL / cR と同時に出ない）。lane ±1 では出さない", () => {
+    for (const d of [0, 1, 2, 3]) {
+      expect(sorted(slotsFor([cell(d, 0, "wall", "open", "wall")])), `${d}`).toEqual([`cF${d}`, `cLO${d}`, `cR${d}`]);
+      expect(sorted(slotsFor([cell(d, 0, "wall", "wall", "open")])), `${d}`).toEqual([`cF${d}`, `cL${d}`, `cRO${d}`]);
+      expect(sorted(slotsFor([cell(d, 0, "wall", "door", "door")])), `${d}`).toEqual([`cF${d}`, `cL${d}`, `cLD${d}`, `cR${d}`, `cRD${d}`]);
+    }
+    for (const e of ["open", "wall", "door"] as const) {
+      for (const s of [slotsFor([cell(0, 0, "wall", e, e)])]) {
+        expect(s.has("cLO0") && s.has("cL0")).toBe(false);
+        expect(s.has("cRO0") && s.has("cR0")).toBe(false);
+        expect(s.has("cLO0")).toBe(e === "open");
+        expect(s.has("cRO0")).toBe(e === "open");
+      }
+    }
+    // 左右の列のセルの left / right が open でも床線は出さない
+    expect(sorted(slotsFor([cell(1, -1, "wall", "open", "open"), cell(1, 1, "wall", "open", "open")]))).toEqual(["lF1", "rF1"]);
+    // depth が 0..3 の外は出さない
+    expect(slotsFor([cell(4, 0, "open", "open", "open")]).size).toBe(0);
+  });
+
+  test("UI-20 UI-21 開口の印: 自分のセル（depth 0 / lane 0）の left / front / right を写す。open は xL / xF / xR、door は xLD / xFD / xRD、wall は出さない", () => {
+    const marks = (l: Edge, f: Edge, r: Edge): ExitMarkId[] => [...exitMarksFor([cell(0, 0, f, l, r)])].sort();
+    expect(marks("open", "open", "open")).toEqual(["xF", "xL", "xR"]);
+    expect(marks("wall", "wall", "wall")).toEqual([]);
+    expect(marks("door", "door", "door")).toEqual(["xFD", "xLD", "xRD"]);
+    expect(marks("open", "wall", "door")).toEqual(["xL", "xRD"]);
+    expect(marks("wall", "door", "open")).toEqual(["xFD", "xR"]);
+    // 1 つの辺につき印は高々 1 つ（open の印と door の印は同時に出ない）
+    for (const e of ["open", "wall", "door"] as const) {
+      const m = exitMarksFor([cell(0, 0, e, e, e)]);
+      for (const [o, dd] of [["xL", "xLD"], ["xF", "xFD"], ["xR", "xRD"]] as const) expect(m.has(o) && m.has(dd)).toBe(false);
+    }
+    // 奥のセルと左右の列のセルは使わない。自分のセルが無ければ空
+    expect(exitMarksFor([cell(1, 0, "open", "open", "open"), cell(0, -1, "open", "open", "open"), cell(0, 1, "door", "door", "door")]).size).toBe(0);
+    expect(exitMarksFor([]).size).toBe(0);
+    expect([...exitMarksFor([cell(1, 0, "open"), cell(0, 0, "wall", "door", "wall"), cell(0, -1, "wall")])]).toEqual(["xLD"]);
   });
 });
 
@@ -148,7 +188,7 @@ afterEach(() => {
 });
 
 describe("createDungeonSvg", () => {
-  test("UI-20 UI-22 UI-72 88 本（壁・扉と階段の記号・罠の印・宝箱の印）の path を 1 回だけ作り、viewBox 240×150、translate(0.5 0.5)・crispEdges・塗り無し", () => {
+  test("UI-20 UI-22 UI-72 96 本（壁・扉と階段の記号・罠の印・宝箱の印・開口側の床線）と開口の印 6 本の path を 1 回だけ作り、viewBox 240×150、translate(0.5 0.5)・crispEdges・塗り無し", () => {
     const log: string[] = [];
     const { created } = fakeDocument(log);
     const v = createDungeonSvg();
@@ -163,11 +203,12 @@ describe("createDungeonSvg", () => {
     expect(g.attrs["stroke-width"]).toBe("1");
     expect(g.attrs.fill).toBe("none");
     expect(g.attrs.stroke).toBe("var(--c-line)");
-    // M5.5 で罠の印 12 本を足して 64 → 76、M11 で宝箱の印 12 本を足して 76 → 88
-    expect(g.children).toHaveLength(88);
-    expect(g.children.map((p) => p.attrs["data-slot"])).toEqual([...SLOT_IDS]);
+    // M5.5 で罠の印 12 本を足して 64 → 76、M11 で宝箱の印 12 本を足して 76 → 88、M16 で床線 8 本を足して 96。開口の印 6 本（M16）はその後（いちばん上）
+    expect(g.children).toHaveLength(96 + 6);
+    expect(g.children.map((p) => p.attrs["data-slot"])).toEqual([...SLOT_IDS, ...EXIT_MARK_IDS]);
     for (const p of g.children) {
-      expect(p.attrs.d).toBe(SLOT_PATHS[p.attrs["data-slot"] as SlotId]);
+      const sid = p.attrs["data-slot"]!;
+      expect(p.attrs.d).toBe(sid in EXIT_MARK_PATHS ? EXIT_MARK_PATHS[sid as ExitMarkId] : SLOT_PATHS[sid as SlotId]);
       expect(p.attrs.visibility).toBe("hidden");
       // 階段の記号は地図と同じ色（--c-stairs）、罠の印は danger（M5.5）。ほかは g の線の色を継ぐ
       const id = p.attrs["data-slot"]!;
@@ -195,6 +236,24 @@ describe("createDungeonSvg", () => {
     const g = (v.el as unknown as FakeEl).children[0]!;
     const visible = g.children.filter((p) => p.attrs.visibility === "visible").map((p) => p.attrs["data-slot"]);
     expect(visible.sort()).toEqual(["cD0", "cF0", "cR0"]);
+  });
+
+  test("UI-20 UI-21 show の marks（開口の印。M16）も差分で切り替え、省くと印を消す。印の線の色は g を継ぐ", () => {
+    const log: string[] = [];
+    fakeDocument(log);
+    const v = createDungeonSvg();
+    const g = (v.el as unknown as FakeEl).children[0]!;
+    for (const p of g.children.filter((c) => c.attrs["data-slot"]! in EXIT_MARK_PATHS)) expect(p.attrs.stroke).toBeUndefined();
+    log.length = 0;
+    v.show(new Set<SlotId>(["cF0", "cLO0"]), new Set<ExitMarkId>(["xL", "xRD"]));
+    expect(log.sort()).toEqual(["vis cF0 visible", "vis cLO0 visible", "vis xL visible", "vis xRD visible"]);
+    log.length = 0;
+    // 左が扉に、右が壁に変わった
+    v.show(new Set<SlotId>(["cF0", "cL0", "cLD0"]), new Set<ExitMarkId>(["xLD"]));
+    expect(log.sort()).toEqual(["vis cL0 visible", "vis cLD0 visible", "vis cLO0 hidden", "vis xL hidden", "vis xLD visible", "vis xRD hidden"]);
+    log.length = 0;
+    v.show(new Set<SlotId>(["cF0", "cL0", "cLD0"]));
+    expect(log).toEqual(["vis xLD hidden"]);
   });
 
   test("UI-23 fade は 1→0（ms/2、steps(2,end)）→ apply → 0→1（ms/2）の順。fill を使わない", async () => {
@@ -245,7 +304,7 @@ describe("createDungeonSvg", () => {
 // 結合: core の visibleCellsOf（DG-12）→ slotsFor（UI-20）
 
 describe("visibleCellsOf と slotsFor の結合", () => {
-  test("UI-20/DG-12 手組みの 5×5: 通路 2 マス、d1 で左に開き、d2 の正面が扉なら {cL0,cR0,lF1,cR1,cF2,cD2,cL2,cR2}", () => {
+  test("UI-20/DG-12 手組みの 5×5: 通路 2 マス、d1 で左に開き、d2 の正面が扉なら {cL0,cR0,cLO1,lF1,cR1,cF2,cD2,cL2,cR2}、開口の印は xF", () => {
     const cells: Cell[] = [];
     for (let i = 0; i < 25; i++) cells.push({ kind: "corridor", n: "wall", e: "wall", s: "wall", w: "wall", roomId: null, eventId: null, trapId: null, chestTrapId: null });
     const f: Floor = { floor: 1, width: 5, height: 5, cells, rooms: [], stairsUp: { x: 2, y: 4 }, stairsDown: null, boss: null };
@@ -257,7 +316,9 @@ describe("visibleCellsOf と slotsFor の結合", () => {
     const vis = visibleCellsOf(f, { x: 2, y: 4 }, "N", 3);
     // d0: 自分 (2,4) は左右が壁。d1: (2,3) は左が開き、左の列 (1,3) の front は壁、右は壁。d2: (2,2) は正面が扉で、ここで止まる
     expect(vis.map((v) => `${v.depth}:${v.lane}:${v.x},${v.y}`)).toEqual(["0:0:2,4", "1:-1:1,3", "1:0:2,3", "2:0:2,2"]);
-    expect(sorted(slotsFor(vis))).toEqual(["cD2", "cF2", "cL0", "cL2", "cR0", "cR1", "cR2", "lF1"]);
+    expect(sorted(slotsFor(vis))).toEqual(["cD2", "cF2", "cL0", "cL2", "cLO1", "cR0", "cR1", "cR2", "lF1"]);
+    // 自分のセル (2,4) は前だけが開く（M16 の開口の印）
+    expect([...exitMarksFor(vis)]).toEqual(["xF"]);
   });
 
   test("UI-20/DG-12 手組みの 5×5: 2 マス先の下り階段と、左に開いた列の上り階段に記号が出る", () => {

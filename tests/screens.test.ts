@@ -349,6 +349,14 @@ describe("入力と Command", () => {
     expect(app).toMatch(/chestTraps: data\.chestTraps/);
   });
 
+  test("UI-20 UI-21 開口の印（M16）は slotsFor と同じ呼び出しの中で、同じ視点の visibleCells から exitMarksFor で作る（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const calls = app.match(/play\.view\.show\(.*$/gm) ?? [];
+    expect(calls).toHaveLength(2);
+    expect(calls.some((l) => l.includes("visibleChests(st, data, at)), exitMarksFor(visibleCells(st, data, at)))"))).toBe(true);
+    expect(calls.some((l) => l.includes("visibleChests(st, data)), exitMarksFor(visibleCells(st, data)))"))).toBe(true);
+  });
+
   test("UI-46 履歴の画面は表示してから描く（display:none の間は scrollHeight が 0 で、末尾へ送れない）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const openHistory = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";

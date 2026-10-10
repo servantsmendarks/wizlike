@@ -20,6 +20,11 @@
 // （正面の壁の下辺と交わらない）、下端は P_d.B より上。幅は奥ほど狭い（36・22・12・6）。左右の列は見えている床の三角形
 // （(P_d.L, P_{d+1}.B)・(P_{d+1}.L, P_{d+1}.B)・(P_d.L, P_d.B)）の中に収め（左端は P_d.L+1 以上、右下の角は側壁の下辺より上、
 // 上端は P_{d+1}.B より下）、右の列は左の鏡像。座標は手で置いた値で、テストは上の性質を確かめる。
+// 開口側の床線（M16。UI-20）: 正面の列のセルの左（右）の辺が open のとき、側壁の台形の下辺（P_d の左下 → P_{d+1} の左下）だけを描く
+// （cLO / cRO。床が横へ続く線。側壁 cL / cR とは同時に出ない）。
+// 開口の印（M16。UI-20 / UI-21）: 線画の下端（y 145〜149。床の印の最下端 y143 から 1px 空ける）に左・前・右の小さな印。
+// 自分のセル（depth 0 / lane 0）の left / front / right の Edge を写すだけ: open は向きの三角（◀ ▲ ▶）、door は小さな矩形、wall は描かない。
+// 左右の印は x = 239 − x の鏡像、前の印は自分自身と左右対称。
 import type { VisibleCell } from "../../core/types";
 
 /** UI-20（M5.5）: 視野の中の察知した罠（core の visibleKnownTraps の値） */
@@ -39,7 +44,7 @@ export const PLANES: readonly Plane[] = [
   { L: 110, R: 129, T: 69, B: 80 },
 ];
 
-/** cSU / cSD / lSU / lSD / rSU / rSD は階段の記号（U = 上り、D = 下り）。cT / lT / rT は察知した罠の印（M5.5）。cC / lC / rC は宝箱の印（M11）。ほかは壁と扉 */
+/** cSU / cSD / lSU / lSD / rSU / rSD は階段の記号（U = 上り、D = 下り）。cT / lT / rT は察知した罠の印（M5.5）。cC / lC / rC は宝箱の印（M11）。cLO / cRO は開口側の床線（M16）。ほかは壁と扉 */
 export type SlotPart =
   | "cSU"
   | "cSD"
@@ -53,6 +58,8 @@ export type SlotPart =
   | "cC"
   | "lC"
   | "rC"
+  | "cLO"
+  | "cRO"
   | "cF"
   | "cD"
   | "cL"
@@ -79,6 +86,8 @@ export const SLOT_PARTS: readonly SlotPart[] = [
   "cC",
   "lC",
   "rC",
+  "cLO",
+  "cRO",
   "cF",
   "cD",
   "cL",
@@ -110,7 +119,7 @@ export function isChestSlot(id: SlotId): boolean {
   return CHEST_PARTS.includes(id.slice(0, -1) as SlotPart);
 }
 
-/** 88 個（M5.5 で罠の印 12、M11 で宝箱の印 12 を足した）。描画順（後ろほど上）は、奥から手前、同じ奥行きでは床の印（階段・罠・宝箱）→ 壁 → 扉 */
+/** 96 個（M5.5 で罠の印 12、M11 で宝箱の印 12、M16 で開口側の床線 8 を足した）。描画順（後ろほど上）は、奥から手前、同じ奥行きでは床の印（階段・罠・宝箱）→ 床線 → 壁 → 扉 */
 export const SLOT_IDS: readonly SlotId[] = SLOT_DEPTHS.slice()
   .reverse()
   .flatMap((d) => SLOT_PARTS.map((p): SlotId => `${p}${d}`));
@@ -131,6 +140,9 @@ const TABLE: Readonly<Record<SlotPart, readonly [string, string, string, string]
   cC: ["M102 127H137V143H102Z M102 132H137", "M109 108H130V118H109Z M109 111H130", "M114 90H125V96H114Z M114 92H125", "M117 82H122V85H117Z"],
   lC: ["M4 126H22V135H4Z M4 129H22", "M44 101H62V110H44Z M44 104H62", "M82 88H90V92H82Z", "M101 81H105V83H101Z"],
   rC: ["M235 126H217V135H235Z M235 129H217", "M195 101H177V110H195Z M195 104H177", "M157 88H149V92H157Z", "M138 81H134V83H138Z"],
+  // 開口側の床線（側壁の台形の下辺と同じ。M16）
+  cLO: ["M0 149 L40 124", "M40 124 L80 99", "M80 99 L100 87", "M100 87 L110 80"],
+  cRO: ["M239 149 L199 124", "M199 124 L159 99", "M159 99 L139 87", "M139 87 L129 80"],
   // 正面の壁 = P_{d+1}
   cF: ["M40 25 H199 V124 H40 Z", "M80 50 H159 V99 H80 Z", "M100 62 H139 V87 H100 Z", "M110 69 H129 V80 H110 Z"],
   // 正面の扉（下辺は床なので描かない）
@@ -162,15 +174,18 @@ function isSlotDepth(d: number): d is SlotDepth {
 
 /**
  * 見えるセル（DG-12）から、見せる path の集合を作る。返ってこなかったセルは描かない（闇）。
- * lane 0: front / left / right の wall は壁、door は壁と扉。lane ±1: front だけを使う。depth が 0..3 の外は無視。
+ * lane 0: front / left / right の wall は壁、door は壁と扉。left / right が open なら開口側の床線（cLO / cRO。M16）。lane ±1: front だけを使う。depth が 0..3 の外は無視。
  * stairs が up / down なら、その列の階段の記号（cSU / cSD、lSU / lSD、rSU / rSD）も出す（UI-20）。
  * traps（core の visibleKnownTraps）の各セルには、その列の罠の印（cT / lT / rT）を出す。壁・階段とは独立。depth が 0..3 の外は無視（M5.5）。
  * chests（core の visibleChests）の各セルには、その列の宝箱の印（cC / lC / rC）を出す。罠と同じく独立で、depth が 0..3 の外は無視（M11。UI-72）。
  */
 export function slotsFor(cells: readonly VisibleCell[], traps: readonly TrapCell[] = [], chests: readonly ChestCell[] = []): Set<SlotId> {
   const out = new Set<SlotId>();
-  const put = (edge: VisibleCell["front"], wall: SlotPart, door: SlotPart, d: SlotDepth): void => {
-    if (edge === "open") return;
+  const put = (edge: VisibleCell["front"], wall: SlotPart, door: SlotPart, d: SlotDepth, open?: SlotPart): void => {
+    if (edge === "open") {
+      if (open !== undefined) out.add(`${open}${d}`);
+      return;
+    }
     out.add(`${wall}${d}`);
     if (edge === "door") out.add(`${door}${d}`);
   };
@@ -183,8 +198,8 @@ export function slotsFor(cells: readonly VisibleCell[], traps: readonly TrapCell
     }
     if (c.lane === 0) {
       put(c.front, "cF", "cD", d);
-      put(c.left, "cL", "cLD", d);
-      put(c.right, "cR", "cRD", d);
+      put(c.left, "cL", "cLD", d, "cLO");
+      put(c.right, "cR", "cRD", d, "cRO");
     } else if (c.lane === -1) {
       put(c.front, "lF", "lD", d);
     } else {
@@ -201,5 +216,39 @@ export function slotsFor(cells: readonly VisibleCell[], traps: readonly TrapCell
     if (!isSlotDepth(d)) continue;
     out.add(`${ch.lane === 0 ? "c" : ch.lane === -1 ? "l" : "r"}C${d}`);
   }
+  return out;
+}
+
+/** 開口の印（M16。UI-20 / UI-21）。xL / xF / xR は open の印（◀ ▲ ▶）、xLD / xFD / xRD は door の印（小さな矩形） */
+export type ExitMarkId = "xL" | "xF" | "xR" | "xLD" | "xFD" | "xRD";
+
+/** 描画順（すべてのスロットの後に置く） */
+export const EXIT_MARK_IDS: readonly ExitMarkId[] = ["xL", "xF", "xR", "xLD", "xFD", "xRD"];
+
+/** 線画の下端の y 145〜149。左は x100〜104、前は x117〜122、右は x135〜139（左右は鏡像） */
+export const EXIT_MARK_PATHS: Readonly<Record<ExitMarkId, string>> = {
+  xL: "M104 145 L100 147 L104 149 Z",
+  xF: "M117 149 L119 145 H120 L122 149 Z",
+  xR: "M135 145 L139 147 L135 149 Z",
+  xLD: "M100 145 H104 V149 H100 Z",
+  xFD: "M117 145 H122 V149 H117 Z",
+  xRD: "M139 145 H135 V149 H139 Z",
+};
+
+/**
+ * 自分のセル（depth 0 / lane 0）の left / front / right の Edge を写す（M16。UI-20 / UI-21）。open は xL / xF / xR、door は xLD / xFD / xRD、wall は何も出さない。
+ * 自分のセルが cells に無ければ空。判定はしない（どこが道かは core の Edge のまま）。
+ */
+export function exitMarksFor(cells: readonly VisibleCell[]): Set<ExitMarkId> {
+  const out = new Set<ExitMarkId>();
+  const me = cells.find((c) => c.depth === 0 && c.lane === 0);
+  if (me === undefined) return out;
+  const put = (edge: VisibleCell["front"], open: ExitMarkId, door: ExitMarkId): void => {
+    if (edge === "open") out.add(open);
+    else if (edge === "door") out.add(door);
+  };
+  put(me.left, "xL", "xLD");
+  put(me.front, "xF", "xFD");
+  put(me.right, "xR", "xRD");
   return out;
 }

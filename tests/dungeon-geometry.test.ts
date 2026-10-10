@@ -2,7 +2,7 @@
 // 側壁の扉は台形の横 1/4〜3/4。四捨五入で .5 は切り上げ）と階段の記号の比率（横線 3 本、f = 1/4, 1/2, 3/4、幅 3/4, 1/2, 1/4）から
 // 計算し直して突き合わせる。
 import { describe, expect, test } from "vitest";
-import { isChestSlot, isStairsSlot, isTrapSlot, PLANES, SLOT_DEPTHS, SLOT_IDS, SLOT_PATHS, type SlotId } from "../src/presenter/views/dungeon-geometry";
+import { EXIT_MARK_IDS, EXIT_MARK_PATHS, isChestSlot, isStairsSlot, isTrapSlot, PLANES, SLOT_DEPTHS, SLOT_IDS, SLOT_PATHS, type SlotId } from "../src/presenter/views/dungeon-geometry";
 
 type Pt = [number, number];
 type Cmd = { c: "M" | "L" | "H" | "V" | "Z"; n: number[] };
@@ -83,16 +83,85 @@ describe("dungeon-geometry", () => {
     }
   });
 
-  test("UI-20 UI-72 88 個（壁・扉 40 と階段の記号 24 と罠の印 12 と宝箱の印 12。M5.5 で 64 → 76、M11 で 76 → 88）の SlotId に空でない path があり、重複が無い", () => {
-    expect(SLOT_IDS).toHaveLength(88);
-    expect(new Set(SLOT_IDS).size).toBe(88);
+  test("UI-20 UI-72 96 個（壁・扉 40 と階段の記号 24 と罠の印 12 と宝箱の印 12 と開口側の床線 8。M5.5 で 64 → 76、M11 で 76 → 88、M16 で 88 → 96）の SlotId に空でない path があり、重複が無い", () => {
+    expect(SLOT_IDS).toHaveLength(96);
+    expect(new Set(SLOT_IDS).size).toBe(96);
+    expect(SLOT_IDS.filter((id) => /^c[LR]O[0-3]$/.test(id))).toHaveLength(8);
     expect(SLOT_IDS.filter(isStairsSlot)).toHaveLength(24);
     expect(SLOT_IDS.filter(isTrapSlot)).toHaveLength(12);
     expect(SLOT_IDS.filter(isChestSlot)).toHaveLength(12);
     expect(Object.keys(SLOT_PATHS).sort()).toEqual([...SLOT_IDS].sort());
     const ds = SLOT_IDS.map((id) => SLOT_PATHS[id]);
     for (const d of ds) expect(d.trim().length).toBeGreaterThan(0);
-    expect(new Set(ds).size).toBe(88);
+    expect(new Set(ds).size).toBe(96);
+  });
+
+  test("UI-20 描画順（M16）: 同じ奥行きでは床線 cLO / cRO は床の印（宝箱の印）の後・壁の前", () => {
+    for (const d of SLOT_DEPTHS) {
+      const i = (p: string) => SLOT_IDS.indexOf(`${p}${d}` as SlotId);
+      expect(i("rC"), `${d}`).toBeLessThan(i("cLO"));
+      expect(i("cLO")).toBeLessThan(i("cRO"));
+      expect(i("cRO")).toBeLessThan(i("cF"));
+      expect(i("cRO")).toBeLessThan(i("cL"));
+    }
+  });
+
+  test("UI-21 開口側の床線 cLO{d} / cRO{d} は側壁 cL{d} / cR{d} の下辺（P_d の下の角 → P_{d+1} の下の角）の 1 本", () => {
+    for (const d of SLOT_DEPTHS) {
+      const a = P(d);
+      const b = P(d + 1);
+      expect(points(path(`cLO${d}`))).toEqual([
+        [a.L, a.B],
+        [b.L, b.B],
+      ]);
+      expect(points(path(`cRO${d}`))).toEqual([
+        [a.R, a.B],
+        [b.R, b.B],
+      ]);
+      // 側壁の台形の頂点に含まれる（同じ線を引き直すだけ）
+      const wallL = points(path(`cL${d}`)).map((q) => q.join(","));
+      for (const q of points(path(`cLO${d}`))) expect(wallL).toContain(q.join(","));
+      expect(path(`cLO${d}`).includes("Z")).toBe(false);
+    }
+  });
+
+  test("UI-20 UI-21 開口の印（M16）: 6 本、座標は整数で線画の下端 y 145..149（床の印の最下端より 1px 以上下）、左右は鏡像、前は自分自身と左右対称、扉の印は矩形", () => {
+    expect(EXIT_MARK_IDS).toEqual(["xL", "xF", "xR", "xLD", "xFD", "xRD"]);
+    expect(Object.keys(EXIT_MARK_PATHS).sort()).toEqual([...EXIT_MARK_IDS].sort());
+    const floorMarkBottom = Math.max(
+      ...SLOT_IDS.filter((id) => isStairsSlot(id) || isTrapSlot(id) || isChestSlot(id)).map((id) => bbox(path(id)).y1),
+    );
+    expect(floorMarkBottom).toBe(143);
+    for (const id of EXIT_MARK_IDS) {
+      const d = EXIT_MARK_PATHS[id];
+      for (const [x, y] of points(d)) {
+        expect(Number.isInteger(x) && Number.isInteger(y), `${id} (${x},${y})`).toBe(true);
+        expect(x >= 0 && x <= 239 && y >= floorMarkBottom + 2 && y <= 149, `${id} (${x},${y})`).toBe(true);
+      }
+      expect(d.endsWith("Z"), id).toBe(true);
+    }
+    const norm = (d: string) => parse(d).map((x) => x.c + x.n.join(" ")).join(" ");
+    expect(mirror(EXIT_MARK_PATHS.xR)).toBe(norm(EXIT_MARK_PATHS.xL));
+    expect(mirror(EXIT_MARK_PATHS.xRD)).toBe(norm(EXIT_MARK_PATHS.xLD));
+    for (const id of ["xF", "xFD"] as const) {
+      const b = bbox(EXIT_MARK_PATHS[id]);
+      expect(b.x0 + b.x1, id).toBe(239);
+    }
+    // 向き: ◀ は左端が頂点 1 つ、▶ は右端が頂点 1 つ、▲ は上端が下端より狭い
+    const xs = (id: "xL" | "xR" | "xF") => points(EXIT_MARK_PATHS[id]);
+    expect(xs("xL").filter((q) => q[0] === bbox(EXIT_MARK_PATHS.xL).x0)).toHaveLength(1);
+    expect(xs("xR").filter((q) => q[0] === bbox(EXIT_MARK_PATHS.xR).x1)).toHaveLength(1);
+    const f = bbox(EXIT_MARK_PATHS.xF);
+    const top = xs("xF").filter((q) => q[1] === f.y0).map((q) => q[0]);
+    expect(Math.max(...top) - Math.min(...top)).toBeLessThan(f.x1 - f.x0);
+    // 扉の印は軸に沿った矩形（頂点 4 つ）で、同じ側の open の印と同じ外接矩形
+    for (const [o, dd] of [["xL", "xLD"], ["xF", "xFD"], ["xR", "xRD"]] as const) {
+      const p = points(EXIT_MARK_PATHS[dd]);
+      expect(p).toHaveLength(4);
+      expect(new Set(p.map((q) => q[0])).size).toBe(2);
+      expect(new Set(p.map((q) => q[1])).size).toBe(2);
+      expect(bbox(EXIT_MARK_PATHS[dd])).toEqual(bbox(EXIT_MARK_PATHS[o]));
+    }
   });
 
   test("UI-72 描画順: 同じ奥行きでは宝箱の印は罠の印の後・壁の前（床の印 → 壁 → 扉）", () => {
@@ -150,6 +219,7 @@ describe("dungeon-geometry", () => {
       ["rSD", "lSD"],
       ["rT", "lT"],
       ["rC", "lC"],
+      ["cRO", "cLO"],
     ];
     for (const [r, l] of pairs) {
       for (const d of SLOT_DEPTHS) {

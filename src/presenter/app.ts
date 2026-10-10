@@ -124,7 +124,7 @@ import { chunkDescription, formatBook, formatEquipPreview, formatItemDetail } fr
 import { formatSpellInfo } from "./views/spell-info";
 import { createDungeonScreen } from "./views/dungeon";
 import { mapTapAction } from "./views/map";
-import { slotsFor } from "./views/dungeon-geometry";
+import { exitMarksFor, slotsFor } from "./views/dungeon-geometry";
 import { battleTurnText, headerText } from "./views/header";
 import { formatMessage } from "./views/message";
 import { createSaveBanner } from "./views/save-banner";
@@ -463,8 +463,9 @@ export function createApp(o: {
     settings: () => store.get(),
     view: {
       fade: (ms, apply) => play.view.fade(ms, apply),
-      // UI-20: 察知した罠（visibleKnownTraps）は床の印。壁・階段と同じ視点で描く
-      showAt: (st, at) => play.view.show(slotsFor(visibleCells(st, data, at), visibleKnownTraps(st, data, at), visibleChests(st, data, at))),
+      // UI-20: 察知した罠（visibleKnownTraps）は床の印。壁・階段と同じ視点で描く。開口の印（M16）も同じ視野のセルから
+      showAt: (st, at) =>
+        play.view.show(slotsFor(visibleCells(st, data, at), visibleKnownTraps(st, data, at), visibleChests(st, data, at)), exitMarksFor(visibleCells(st, data, at))),
       shake: (ms) => play.shake(ms),
     },
     header: { showAt: showHeaderAt },
@@ -607,7 +608,7 @@ export function createApp(o: {
       const d = st.dive;
       if (d !== null) {
         showHeaderAt(st, { floor: d.floor, pos: d.pos, facing: d.facing });
-        play.view.show(slotsFor(visibleCells(st, data), visibleKnownTraps(st, data), visibleChests(st, data)));
+        play.view.show(slotsFor(visibleCells(st, data), visibleKnownTraps(st, data), visibleChests(st, data)), exitMarksFor(visibleCells(st, data)));
       }
     }
     syncControls();
