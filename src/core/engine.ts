@@ -34,7 +34,7 @@ import {
 import { startNewGame, validatePartySetup } from "./rules/creation";
 import { checkChest, disarmChest, inspectChest, leaveChest, openChest } from "./rules/chest";
 import { addTurns, DEBUG_LEVEL_MAX, debugChest, giveCursed, hpOne, sanDown, sanOver, setLevels, warp } from "./rules/debug";
-import { checkEnter, chooseOption, enterDungeon, moveForward, turn } from "./rules/dungeon";
+import { checkEnter, checkUseStairs, chooseOption, enterDungeon, moveForward, turn, useStairs } from "./rules/dungeon";
 import { checkUseItem, useItemInField } from "./rules/items";
 import { checkShop, doShop } from "./rules/shop";
 import { checkStorage, doStorage } from "./rules/storage";
@@ -164,6 +164,14 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       if (dir !== "left" && dir !== "right" && dir !== "around") return reject(state, "dungeon.turn", "bad dir");
       const ctx = makeContext(cloneState(state), data);
       turn(ctx, dir);
+      return finish(ctx);
+    }
+    case "dungeon.useStairs": {
+      // DG-44（M16）: 階段の上で確認を出す（保留中・宝箱の間は上の共通の門で rejected）
+      const r = checkUseStairs(state, data);
+      if (r !== null) return reject(state, "dungeon.useStairs", r);
+      const ctx = makeContext(cloneState(state), data);
+      useStairs(ctx);
       return finish(ctx);
     }
     case "dungeon.useItem": {

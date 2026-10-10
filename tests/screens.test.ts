@@ -170,7 +170,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   // decisions の UI-35 の行のとおり。floorOf / visibleCellsOf は Floor（kind・trapId・eventId）に触れるので許さない
   // M5.5 UI-20: 察知した罠の印は visibleKnownTraps（視野の中の knownTraps の {depth, lane}）
   // M11 UI-72: 宝箱の印は visibleChests（視野の中の開ける前の宝箱のセルの {depth, lane}。罠の有無は返さない）
-  "rules/dungeon": ["visibleCells", "mapView", "visibleKnownTraps", "visibleChests"],
+  // M16 DG-44 / UI-53: 階段のボタンを出すか・ラベルの種類は core の stairsHere の値（受け付けるかも同じ関数で core が決める）
+  "rules/dungeon": ["visibleCells", "mapView", "visibleKnownTraps", "visibleChests", "stairsHere"],
   // UI-59: キャンプの状態の装備名（鑑定を反映した表示名。CH-72）
   state: ["dungeonOf", "itemDisplayName"],
   // M3: 戦闘の入力の段階・オートの連鎖は battleMenu の値だけで決める（行動できるか・使えるか・揃ったかを core が返す）
@@ -728,6 +729,16 @@ describe("入力と Command", () => {
     expect(app).toContain('{ ...listItem(t("dungeon.menu.camp"), () => openCamp("camp")), sound: "camp" }');
     expect(app).toContain('...(townPage === "menu" && e.kind === "page" ? { sound: "facility" as const } : {}),');
     expect(app).toContain('talkAdvanced: () => playUi("talk"),');
+  });
+
+  test("DG-44 / UI-53（M16）迷宮のメニューの 3 つ目の階段のボタンは core の stairsHere の値で出し入れし、押すと dungeon.useStairs を送る（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const sync = /const syncControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(sync).toContain("const stairsKey = stairsButtonKey(stairsHere(state, data));");
+    expect(sync).toContain('...(stairsKey === null ? [] : [listItem(t(stairsKey), () => void run({ type: "dungeon.useStairs" }))]),');
+    // 保留中の選択（一覧）と宝箱の段は十字ボタンの段より先に返る（そのときは階段のボタンを出さない）
+    expect(sync.indexOf("const pc = state.pendingChoice;")).toBeLessThan(sync.indexOf("stairsButtonKey("));
+    expect(sync.indexOf("const chest = chestView(state, data);")).toBeLessThan(sync.indexOf("stairsButtonKey("));
   });
 
   test("UI-66（2026-10-07）戻る・やめるは位置に関わらず cancel の配線: 戦闘・キャンプ・街の項目は種類から back の印を付ける（ソースの検査）", () => {

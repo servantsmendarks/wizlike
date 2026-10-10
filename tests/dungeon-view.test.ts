@@ -460,3 +460,15 @@ describe("UI-59 キャラクター画面の層（placeDice / applyPanels）", ()
     expect([kindOf("battle", true), kindOf("dungeon", true), kindOf("town", true), kindOf("town", false)]).toEqual(["wipe", "wipe", "wipe", "town"]);
   });
 });
+
+describe("DG-44 / UI-53 階段のボタンの文言（M16）", () => {
+  test("DG-44 stairsButtonKey は core の stairsHere の値を写すだけ: exit / up / down は dungeon.stairs.<k>（strings にある）、null は出さない", async () => {
+    const { stairsButtonKey } = await import("../src/presenter/views/dungeon");
+    const { data } = await import("./helpers/core");
+    expect(stairsButtonKey(null)).toBeNull();
+    expect(stairsButtonKey("exit")).toBe("dungeon.stairs.exit");
+    expect(stairsButtonKey("up")).toBe("dungeon.stairs.up");
+    expect(stairsButtonKey("down")).toBe("dungeon.stairs.down");
+    for (const k of ["exit", "up", "down"] as const) expect(data.strings[stairsButtonKey(k)!]).toBeTypeOf("string");
+  });
+});

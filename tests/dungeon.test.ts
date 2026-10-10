@@ -13,13 +13,13 @@ import {
   setEdge,
   step,
 } from "../src/core/rules/dungeon-gen";
-import { chestGenOf, floorOf, gossipCandidates, mapView, visibleCells, visibleCellsOf, visibleKnownTraps } from "../src/core/rules/dungeon";
+import { chestGenOf, floorOf, gossipCandidates, mapView, stairsHere, visibleCells, visibleCellsOf, visibleKnownTraps } from "../src/core/rules/dungeon";
 import { isConquered } from "../src/core/rules/progress";
 import { addIndex, removeIndex } from "../src/core/rules/field";
 import { battleMenu } from "../src/core/rules/combat";
 import { returnToTown, townMenu } from "../src/core/rules/town";
 import { groupViews } from "../src/core/rules/combat-calc";
-import { withBattle } from "./helpers/battle";
+import { expectRejected, withBattle } from "./helpers/battle";
 import { offerExit, offerStairs, offerTeleporter, offerTrap, STAY_CHOICE_ID } from "../src/core/rules/choices";
 import { cloneState, createItemInstance, dungeonOf, makeContext, monsterOf } from "../src/core/state";
 import type { Cell, Command, Facing, Floor, GameEvent, GameState } from "../src/core/types";
@@ -2179,5 +2179,117 @@ describe("準備中のダンジョン（DG-35。M9。M12 から合成データ�
     expect(r.state.progress.clearedDungeons).toEqual(["d01", "d02"]);
     expect(r.state.progress.unlockedDungeons).toEqual(["d01", "d02", "d03"]);
     expect(r.state.progress.shopLevel).toBe(4);
+  });
+});
+
+describe("DG-44 階段のボタン（dungeon.useStairs。M16）", () => {
+  const USE: Command = { type: "dungeon.useStairs" };
+  const EXIT_PROMPT = {
+    kind: "stairs",
+    promptKey: "dungeon.stairsUp",
+    options: [
+      { id: "exit", labelKey: "dungeon.choice.exit" },
+      { id: "stay", labelKey: "dungeon.choice.stay" },
+    ],
+  };
+
+  test("DG-44/DG-14 入場の直後（1 階の上り階段の上）に押すと、前進で入ったときと同じ確認（exit / stay）と同じ key の message。位置・向き・乱数は変わらない。「やめる」の後も押せて、exit で街へ", () => {
+    const s0 = enterD01(1);
+    expect(stairsHere(s0, data)).toBe("exit");
+    const r1 = run(s0, USE);
+    expect(r1.events).toEqual([{ kind: "message", key: "dungeon.stairsUp" }]);
+    expect(r1.state.pendingChoice).toEqual(EXIT_PROMPT);
+    expect(r1.state.dive!.pos).toEqual(s0.dive!.pos);
+    expect(r1.state.dive!.facing).toBe(s0.dive!.facing);
+    expect(r1.state.rng).toEqual(s0.rng);
+    expect(r1.state.adventureTurns).toBe(s0.adventureTurns);
+    // 確認の間は出さない（一覧が出る）・押しても E3 の門で rejected
+    expect(stairsHere(r1.state, data)).toBeNull();
+    expectRejected(r1.state, USE, "choice pending");
+    // やめる → もう一度押せる
+    const rs = run(r1.state, { type: "event.choose", optionId: "stay" });
+    expect(rs.state.pendingChoice).toBeNull();
+    expect(stairsHere(rs.state, data)).toBe("exit");
+    const r2 = run(rs.state, USE);
+    expect(r2.events).toEqual([{ kind: "message", key: "dungeon.stairsUp" }]);
+    expect(r2.state.pendingChoice).toEqual(EXIT_PROMPT);
+    const rx = run(r2.state, { type: "event.choose", optionId: "exit" });
+    expect(rx.state.screen).toBe("town");
+    expect(rx.state.dive).toBeNull();
+  });
+
+  test("DG-44/DG-14 下り階段の上では descend / stay、降りた先（2 階の上り階段）では ascend / stay を出す。乱数なし", () => {
+    const { state } = findSituation((c) => c.kind === "stairsDown");
+    const atDown = run(run(state, MOVE, DATA0).state, { type: "event.choose", optionId: "stay" }, DATA0).state;
+    expect(stairsHere(atDown, DATA0)).toBe("down");
+    const rd = run(atDown, USE, DATA0);
+    expect(rd.events).toEqual([{ kind: "message", key: "dungeon.stairsDown" }]);
+    expect(rd.state.pendingChoice).toEqual({
+      kind: "stairs",
+      promptKey: "dungeon.stairsDown",
+      options: [
+        { id: "descend", labelKey: "dungeon.choice.descend" },
+        { id: "stay", labelKey: "dungeon.choice.stay" },
+      ],
+    });
+    expect(rd.state.rng).toEqual(atDown.rng);
+    const f2 = run(rd.state, { type: "event.choose", optionId: "descend" }, DATA0).state;
+    expect(f2.dive!.floor).toBe(2);
+    expect(stairsHere(f2, DATA0)).toBe("up");
+    const ru = run(f2, USE, DATA0);
+    expect(ru.events).toEqual([{ kind: "message", key: "dungeon.stairsUpFloor" }]);
+    expect(ru.state.pendingChoice).toEqual({
+      kind: "stairs",
+      promptKey: "dungeon.stairsUpFloor",
+      options: [
+        { id: "ascend", labelKey: "dungeon.choice.ascend" },
+        { id: "stay", labelKey: "dungeon.choice.stay" },
+      ],
+    });
+    expect(ru.state.rng).toEqual(f2.rng);
+  });
+
+  test("DG-44 受け付けない: 階段でないセル（not on stairs）・迷宮の外（not in dungeon）・戦闘中（not in dungeon）・行動可能な者がいない（no one can act）。どれも stairsHere は null", () => {
+    const s0 = enterD01(1);
+    const off = run(s0, MOVE, DATA0).state;
+    expect(off.pendingChoice).toBeNull();
+    expect(stairsHere(off, DATA0)).toBeNull();
+    expectRejected(off, USE, "not on stairs", DATA0);
+    const title = createInitialState(1, data);
+    expect(stairsHere(title, data)).toBeNull();
+    expectRejected(title, USE, "not in dungeon");
+    const battle = withBattle(s0, [{ monsterId: data.monsters[0]!.id, hps: [5] }]);
+    expect(stairsHere(battle, data)).toBeNull();
+    expectRejected(battle, USE, "not in dungeon");
+    const down = cloneState(s0);
+    for (const ch of down.party) {
+      ch.hp = 0;
+      ch.life = "dead";
+    }
+    expect(stairsHere(down, data)).toBeNull();
+    expectRejected(down, USE, "no one can act");
+  });
+
+  test("DG-44/DG-21 罠の察知で「引き返す」を選んで階段のセルに戻ったときは確認が出ないが、このボタンで上がれる", () => {
+    const s0 = enterD01(1);
+    const up = { ...s0.dive!.pos };
+    // 上り階段の隣（入場の向きの 1 歩先）で、罠の確認を待っている状態を組む（引き返すと向きの逆の隣 = 階段へ戻る）
+    const s = placeAt(s0, step(up, s0.dive!.facing), s0.dive!.facing);
+    s.pendingChoice = {
+      kind: "trap",
+      promptKey: "dungeon.trap.prompt",
+      options: [
+        { id: "retreat", labelKey: "dungeon.choice.retreat" },
+        { id: "proceed", labelKey: "dungeon.choice.proceed" },
+      ],
+    };
+    const rb = run(s, { type: "event.choose", optionId: "retreat" }, DATA0);
+    expect(rb.state.dive!.pos).toEqual(up);
+    expect(rb.state.pendingChoice).toBeNull();
+    expect(kinds(rb.events)).toEqual(["moved", "message:dungeon.trap.retreat"]);
+    expect(stairsHere(rb.state, DATA0)).toBe("exit");
+    const r = run(rb.state, USE, DATA0);
+    expect(r.events).toEqual([{ kind: "message", key: "dungeon.stairsUp" }]);
+    expect(r.state.pendingChoice).toEqual(EXIT_PROMPT);
   });
 });

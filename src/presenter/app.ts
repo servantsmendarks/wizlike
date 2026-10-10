@@ -22,7 +22,7 @@ import { execute, createInitialState } from "../core/engine";
 import { createRng, type RngState } from "../core/rng";
 import { chestView } from "../core/rules/chest";
 import { battleMenu } from "../core/rules/combat";
-import { mapView, visibleCells, visibleChests, visibleKnownTraps } from "../core/rules/dungeon";
+import { mapView, stairsHere, visibleCells, visibleChests, visibleKnownTraps } from "../core/rules/dungeon";
 import { campMenu, campSummary } from "../core/rules/camp";
 import { DEBUG_LEVELS, SAN_OVER_DEBUG } from "../core/rules/debug";
 import { planRoute, routeStepOk } from "../core/rules/pathfind";
@@ -122,7 +122,7 @@ import {
 import { formatCharacter, SLOT_ORDER } from "./views/detail";
 import { chunkDescription, formatBook, formatEquipPreview, formatItemDetail } from "./views/item-detail";
 import { formatSpellInfo } from "./views/spell-info";
-import { createDungeonScreen } from "./views/dungeon";
+import { createDungeonScreen, stairsButtonKey } from "./views/dungeon";
 import { mapTapAction } from "./views/map";
 import { exitMarksFor, slotsFor } from "./views/dungeon-geometry";
 import { battleTurnText, headerText } from "./views/header";
@@ -948,9 +948,14 @@ export function createApp(o: {
       c.setMode("none");
       return;
     }
-    // UI-53: [キャンプ][地図]
+    // UI-53: [キャンプ][地図]（M16 の DG-44: 階段の上にいる間は 3 つ目に [地上へ戻る / 階段を上る / 階段を下りる]。出すかは core の stairsHere）
     // UI-66（2026-10-06）: キャンプを開く項目は ok の代わりにキャンプの音
-    c.setMenu([{ ...listItem(t("dungeon.menu.camp"), () => openCamp("camp")), sound: "camp" }, listItem(t("dungeon.menu.map"), () => openMap())]);
+    const stairsKey = stairsButtonKey(stairsHere(state, data));
+    c.setMenu([
+      { ...listItem(t("dungeon.menu.camp"), () => openCamp("camp")), sound: "camp" },
+      listItem(t("dungeon.menu.map"), () => openMap()),
+      ...(stairsKey === null ? [] : [listItem(t(stairsKey), () => void run({ type: "dungeon.useStairs" }))]),
+    ]);
     c.setDpadVisible(s.inputMode !== "swipe");
     c.setMode("dpad");
   };

@@ -16,6 +16,7 @@
 import type { SpriteInfo } from "../../build/asset-types";
 import type { GameData, Strings } from "../../core/data/index";
 import type { Character, Pos } from "../../core/types";
+import type { StairsUse } from "../../core/rules/dungeon";
 import type { DungeonLayout, Regions, TownLayout } from "../layout";
 import { createBattleView, type BattleView } from "./battle";
 import { createCampView, type CampView } from "./camp";
@@ -35,6 +36,11 @@ import { createEndingView } from "./ending";
 import { createWipeView, type WipeView } from "./wipe";
 
 export type PlayMode = "town" | "dungeon" | "battle";
+
+/** DG-44 / UI-53（M16）: 階段のボタンの文言のキー。core の stairsHere の値を写すだけ（null ならボタンを出さない） */
+export function stairsButtonKey(k: StairsUse | null): string | null {
+  return k === null ? null : `dungeon.stairs.${k}`;
+}
 
 export type DungeonScreen = {
   el: HTMLElement;

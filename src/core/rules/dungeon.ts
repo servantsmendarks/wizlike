@@ -271,6 +271,49 @@ export function turn(ctx: RuleContext, dir: "left" | "right" | "around"): void {
 }
 
 // ---------------------------------------------------------------------------
+// 階段のボタン（DG-44。M16）。乱数は使わない
+
+/** DG-44: 今のセルの階段で出す確認の種類（1 階の上り = exit、2 階以降の上り = up、下り = down） */
+export type StairsUse = "exit" | "up" | "down";
+
+/**
+ * DG-44（M16）: dungeon.useStairs を受け付ける状態なら、出す確認の種類を返す。受け付けない状態なら null。
+ * 条件: screen dungeon・dive あり・戦闘中でない・保留中の選択（E3）も宝箱（CB-60）も無い・行動可能な者（CH-44）がいる・今のセルの実効の kind が
+ * stairsUp か stairsDown。表示層はこの値で「地上へ戻る / 階段を上る / 階段を下りる」のボタンを出す・隠す（判定は core）
+ */
+export function stairsHere(state: GameState, data: GameData): StairsUse | null {
+  const dive = state.dive;
+  if (state.screen !== "dungeon" || dive === null || state.battle !== null) return null;
+  if (state.pendingChoice !== null || dive.chest !== null) return null;
+  if (!state.party.some(canAct)) return null;
+  const kind = cellAt(floorOf(dive, data), dive.pos.x, dive.pos.y).kind;
+  if (kind === "stairsDown") return "down";
+  if (kind === "stairsUp") return dive.floor >= 2 ? "up" : "exit";
+  return null;
+}
+
+/**
+ * DG-44: dungeon.useStairs の受付の判定（engine が複製の前に呼ぶ。保留中・宝箱の門は engine の共通の門が先に見る）。
+ * 迷宮の外・戦闘中は not in dungeon、行動可能な者がいなければ no one can act、階段のセルでなければ not on stairs
+ */
+export function checkUseStairs(state: GameState, data: GameData): string | null {
+  if (state.screen !== "dungeon" || state.dive === null || state.battle !== null) return "not in dungeon";
+  if (!state.party.some(canAct)) return "no one can act";
+  return stairsHere(state, data) === null ? "not on stairs" : null;
+}
+
+/**
+ * DG-44: 階段の上で確認を出す。前進で階段のセルに入ったとき（continueStep。DG-14 / DG-06）と同じ確認
+ * （1 階の上りは offerExit、それ以外は offerStairs）。位置・向き・乱数・遭遇判定は変えない
+ */
+export function useStairs(ctx: RuleContext): void {
+  const k = stairsHere(ctx.state, ctx.data);
+  if (k === null) throw new Error("useStairs: not on usable stairs");
+  if (k === "exit") offerExit(ctx);
+  else offerStairs(ctx, k);
+}
+
+// ---------------------------------------------------------------------------
 // 前進（DG-10, DG-11, DG-13, DG-14, DG-20, DG-31, CB-01, CH-43）
 
 export function moveForward(ctx: RuleContext): void {

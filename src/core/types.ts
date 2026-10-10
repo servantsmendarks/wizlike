@@ -509,6 +509,11 @@ export type Command =
   | { type: "dungeon.move" }
   | { type: "dungeon.turn"; dir: "left" | "right" | "around" }
   /**
+   * DG-44（M16）: 今いる階段のセルで、前進で入ったときと同じ確認（1 階の上りは exit / stay、2 階以降の上りは ascend / stay、下りは descend / stay）を出す。
+   * 迷宮の戦闘外・保留なし・宝箱なし・行動可能な者がいるときだけ（core の stairsHere が非 null）。乱数は使わない
+   */
+  | { type: "dungeon.useStairs" }
+  /**
    * itemId は §5 の名前のまま。中身は ItemInstance.id（使う本人の inventory のもの。items.json の id ではない）。
    * targetId は effect.target === "ally" のときだけ必須、他では無視（dungeon.cast と同じ形。types.ts を正とする）
    */
