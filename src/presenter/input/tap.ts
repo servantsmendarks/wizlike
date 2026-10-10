@@ -7,6 +7,8 @@
 // - 前進ボタン（spec.hold）は、動かずに hold.ms() 押し続けたら onHoldStart、離したら onHoldEnd（onTap は呼ばない。UI-31）。
 // - 再生中（busy）のタップは、whileBusy の要素（オート解除）以外はすべて onBusyTap（player.tap()）に回す（UI-44 / UI-45）。
 // - 再生の外で会話の箱が文送りを待つ間（talkWaits。未定-19）は、押した要素によらずタップを onTalkTap（箱のタップ）に回す。
+// - ステージの外の余白（拡大の余り。outside に document を渡したときだけ）のタップは、ステージの押せない所のタップと同じに扱う
+//   （M16。テストプレイ 2026-10-09 C-1 #2: 会話の箱の下の余白を押しても進まなかった）。箱のタップ・再生中のタップにだけなる。
 // - 名前の入力欄（INPUT / TEXTAREA）の上の押下は追わず、touchend の preventDefault もしない。入力欄の外を押したら入力欄の
 //   フォーカスを外す（touchend の preventDefault で合成のフォーカス移動が起きないため）。
 // - touchend は passive:false で受けて preventDefault する（UI-37: ダブルタップの拡大と、合成の click を止める）。
@@ -151,6 +153,11 @@ export type StageInputOptions = {
   talkWaits?(): boolean;
   /** talkWaits の間のタップ（会話の箱のタップ） */
   onTalkTap?(): void;
+  /**
+   * UI-36 / UI-47（M16）: ステージの外の余白の押下も受ける先（document）。ここに届いた押下のうちステージの外で始まったものを、
+   * ステージの押せない所のタップと同じに扱う（talkWaits なら onTalkTap、再生中なら onBusyTap、それ以外は何もしない）。省略すると受けない
+   */
+  outside?: EventTarget;
   /**
    * どこかを押した瞬間（入力欄の上を除く）。地図のタップ移動の自動歩行を止めるのに使う（UI-25）。
    * true を返したら、その押下は捨てる（タップ・スワイプ・長押し・押下の見た目のどれにもしない）
@@ -343,8 +350,38 @@ export function attachStageInput(stage: HTMLElement, o: StageInputOptions): Stag
     if (e.cancelable && !isTextInput(e.target)) e.preventDefault();
   };
 
+  /** ステージの外の余白の押下（id と押した位置。CSS px） */
+  let out: { id: number; sx: number; sy: number } | null = null;
+  const inStage = (t: EventTarget | null): boolean => {
+    if (t === stage) return true;
+    const c = (stage as { contains?: (n: unknown) => boolean }).contains;
+    return typeof c === "function" && c.call(stage, t) === true;
+  };
+  const outDown = (e: Ev): void => {
+    out = null;
+    if (inStage(e.target) || e.isPrimary === false) return;
+    if (e.pointerType === "mouse" && e.button !== undefined && e.button !== 0) return;
+    if (o.onAnyPress?.() === true) return;
+    out = { id: e.pointerId, sx: e.clientX, sy: e.clientY };
+  };
+  const outUp = (e: Ev): void => {
+    const q = out;
+    out = null;
+    if (q === null || q.id !== e.pointerId) return;
+    // 閾値を越えて動いたらタップにしない（ステージの上と同じ）
+    if (classifySwipe(e.clientX - q.sx, e.clientY - q.sy, thresholdCss(o.threshold(), o.scale())) !== null) return;
+    if (talkWaits()) o.onTalkTap?.();
+    else if (o.busy()) o.onBusyTap();
+  };
+  const outCancel = (e: Ev): void => {
+    if (out !== null && out.id === e.pointerId) out = null;
+  };
+
   const on = (f: (e: never) => void): EventListener => f as unknown as EventListener;
   const passiveFalse: AddEventListenerOptions = { passive: false };
+  o.outside?.addEventListener("pointerdown", on(outDown));
+  o.outside?.addEventListener("pointerup", on(outUp));
+  o.outside?.addEventListener("pointercancel", on(outCancel));
   stage.addEventListener("pointerdown", on(down));
   stage.addEventListener("pointermove", on(move));
   stage.addEventListener("pointerup", on(up));
@@ -361,6 +398,10 @@ export function attachStageInput(stage: HTMLElement, o: StageInputOptions): Stag
     stage.removeEventListener("lostpointercapture", on(cancel));
     stage.removeEventListener("click", on(click));
     stage.removeEventListener("touchend", on(touchend), passiveFalse);
+    o.outside?.removeEventListener("pointerdown", on(outDown));
+    o.outside?.removeEventListener("pointerup", on(outUp));
+    o.outside?.removeEventListener("pointercancel", on(outCancel));
+    out = null;
   };
   return Object.assign(detach, { reset });
 }

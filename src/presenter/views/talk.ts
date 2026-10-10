@@ -9,6 +9,7 @@
 //   上・下に隠れた行があれば、右の余白の列に続きの印（scroll-marks.ts。点滅しない）を出す。
 //   say の Promise はその文の文字送りが終わったら解決する。溜める文の数は max（config.ui.messageHistory）まで（古い文から外す。全文はログ）。
 // - 最後の文の後（控えている文が無く、文字送りも終わった）は ▼ を出し、タップで箱を閉じる（言い終わったら消える）。
+//   広い箱の ▼ は最後の行の行末（文の直後の行内の箱。M16）。3 行の箱（compact・wipe）は文字領域の右下に固定（rect.more）。
 // - 区切り（M10.5 追補 2。core の section）: playback が ▼ のタップを待った後に clearPage で箱を空にして閉じる（文はログに残る）。続きは空の箱から。
 // - タップ（tap）: 文字送り中なら即表示、そうでなく開いていれば閉じる。
 //   rush は tap から「閉じる」を除いたもの（再生中のステージのタップ。playback の Player.tap → message.rush）。
@@ -282,6 +283,8 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
 
 /** UI-45 / UI-47: ▼ の点滅の 1 周期（ms。message.ts の MORE_BLINK_MS と同じ） */
 const MORE_BLINK_MS = 600;
+/** UI-47: ▼ の大きさ（論理 px。layout の MESSAGE_MORE と同じ 8） */
+const MORE_SIZE = 8;
 
 /** UI-47（M10.5 追補）: ↑↓ キーで動かす行数（履歴の画面と同じ 3 行） */
 export const TALK_KEY_LINES = 3;
@@ -360,22 +363,43 @@ export function createTalkBox(o: {
     flexDirection: "column",
     justifyContent: "flex-start",
   });
-  const line = document.createElement("div");
+  // 文の流れ（ブロック）の中に、文（行内の span）と行末の ▼（M16。行内の箱）を並べる
+  const flow = document.createElement("div");
+  flow.className = "talk-flow";
+  flow.style.flexShrink = "0";
+  const line = document.createElement("span");
   line.className = "talk-line";
-  line.style.flexShrink = "0";
-  body.appendChild(line);
+  flow.appendChild(line);
+  body.appendChild(flow);
   el.appendChild(body);
 
   const SVG_NS = "http://www.w3.org/2000/svg";
-  const more = document.createElementNS(SVG_NS, "svg");
-  more.setAttribute("viewBox", "0 0 8 8");
-  more.setAttribute("shape-rendering", "crispEdges");
-  Object.assign(more.style, { position: "absolute", visibility: "hidden" });
-  const tri = document.createElementNS(SVG_NS, "path");
-  tri.setAttribute("d", "M0 1 H8 L4 7 Z");
-  tri.setAttribute("fill", "var(--c-text)");
-  more.appendChild(tri);
-  el.appendChild(more);
+  const makeMore = (): SVGSVGElement => {
+    const m = document.createElementNS(SVG_NS, "svg");
+    m.setAttribute("viewBox", "0 0 8 8");
+    m.setAttribute("shape-rendering", "crispEdges");
+    m.setAttribute("width", String(MORE_SIZE));
+    m.setAttribute("height", String(MORE_SIZE));
+    const tri = document.createElementNS(SVG_NS, "path");
+    tri.setAttribute("d", "M0 1 H8 L4 7 Z");
+    tri.setAttribute("fill", "var(--c-text)");
+    m.appendChild(tri);
+    return m;
+  };
+  // UI-47（M16。テストプレイ 2026-10-09 A2・B3・C2）: 広い箱の ▼ は最後の行の行末（文の直後の行内の箱。
+  // 行に余地が無ければブラウザの折り返しで次の行の先頭）。行の高さ 10 の中に 8×8 を上 1px 空けて置く。出していない間は場所を取らない
+  const moreInline = makeMore();
+  moreInline.setAttribute("class", "talk-more");
+  Object.assign(moreInline.style, { display: "none", verticalAlign: "top", marginTop: "1px" });
+  flow.appendChild(moreInline);
+  // 3 行の箱（キャラクター画面・全滅の内訳）の ▼ は今までどおり文字領域の右下に固定（rect.more）
+  const moreFixed = makeMore();
+  Object.assign(moreFixed.style, { position: "absolute", visibility: "hidden" });
+  el.appendChild(moreFixed);
+  /** 今の矩形の種類（▼ の置き方を決める） */
+  let kind: TalkRectKind = "town";
+  /** 今の ▼ の状態（setRect で置き方を替えたときに出し直す） */
+  let moreState = { on: false, blink: false };
 
   /** 最新の行（下端）に追従するか。利用者が上へスクロールしている間は偽。箱を開き直すと真 */
   let follow = true;
@@ -455,14 +479,37 @@ export function createTalkBox(o: {
     const mr = rect.more;
     Object.assign(el.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
     Object.assign(body.style, { left: `${t.x - r.x - BORDER}px`, top: `${t.y - r.y - BORDER}px`, width: `${t.w}px`, height: `${t.h}px` });
-    more.setAttribute("width", String(mr.w));
-    more.setAttribute("height", String(mr.h));
-    Object.assign(more.style, { left: `${mr.x - r.x - BORDER}px`, top: `${mr.y - r.y - BORDER}px` });
+    moreFixed.setAttribute("width", String(mr.w));
+    moreFixed.setAttribute("height", String(mr.h));
+    Object.assign(moreFixed.style, { left: `${mr.x - r.x - BORDER}px`, top: `${mr.y - r.y - BORDER}px` });
     marks.place(talkMarkPos(rect));
   };
   place();
 
   let moreBlink: Animation | null = null;
+  /** ▼ を出し直す（広い箱は行末の ▼、3 行の箱は右下の ▼。もう一方は隠す） */
+  const showMore = (): void => {
+    const { on, blink } = moreState;
+    const inline = kind === "town";
+    moreInline.style.display = on && inline ? "inline-block" : "none";
+    moreFixed.style.visibility = on && !inline ? "visible" : "hidden";
+    moreBlink?.cancel();
+    moreBlink = null;
+    if (on && blink) {
+      moreBlink = (inline ? moreInline : moreFixed).animate(
+        [
+          { opacity: 1, offset: 0 },
+          { opacity: 1, offset: 0.5 },
+          { opacity: 0, offset: 0.5 },
+          { opacity: 0, offset: 1 },
+        ],
+        { duration: MORE_BLINK_MS, iterations: Infinity },
+      );
+    }
+    // 行末の ▼ が次の行に折り返すと文字領域が 1 行伸びるので、追従中なら下端を見せ直す
+    if (follow) toEnd();
+    marks.refresh();
+  };
   const model = createTalkModel({
     ...(o.advanced !== undefined ? { advanced: o.advanced } : {}),
     ...(o.cleared !== undefined ? { cleared: o.cleared } : {}),
@@ -490,31 +537,22 @@ export function createTalkBox(o: {
         marks.refresh();
       },
       more(on: boolean, blink: boolean): void {
-        more.style.visibility = on ? "visible" : "hidden";
-        moreBlink?.cancel();
-        moreBlink = null;
-        if (on && blink) {
-          moreBlink = more.animate(
-            [
-              { opacity: 1, offset: 0 },
-              { opacity: 1, offset: 0.5 },
-              { opacity: 0, offset: 0.5 },
-              { opacity: 0, offset: 1 },
-            ],
-            { duration: MORE_BLINK_MS, iterations: Infinity },
-          );
-        }
+        moreState = { on, blink };
+        showMore();
       },
     },
   });
   return {
     ...model,
     el,
-    setRect(kind: TalkRectKind): void {
-      const next = (kind === "compact" ? o.compact : kind === "wipe" ? o.wipe : undefined) ?? o.layout;
+    setRect(k: TalkRectKind): void {
+      const next = (k === "compact" ? o.compact : k === "wipe" ? o.wipe : undefined) ?? o.layout;
       if (next === rect) return;
       rect = next;
+      // 矩形が無く広い箱に代わったときも広い箱の置き方にする
+      kind = next === o.layout ? "town" : k;
       place();
+      showMore();
       if (follow) toEnd();
       marks.refresh();
     },

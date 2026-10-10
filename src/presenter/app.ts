@@ -2383,6 +2383,8 @@ export function createApp(o: {
         // 未定-19: 会話の箱が文送りを待つ間は、どこのタップも文送り
         talkWaits: () => talkWaits(),
         onTalkTap: () => tapTalk(),
+        // UI-36 / UI-47（M16）: ステージの外の余白のタップも、ステージの押せない所のタップと同じ（箱のタップ・再生中のタップ）
+        outside: document,
         // UI-25: 自動歩行中にどこかを押したら止め、その押下は捨てる
         onAnyPress: () => stopWalk(),
         onSwipe: (a) => onSwipe(a),

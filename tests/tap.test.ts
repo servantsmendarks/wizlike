@@ -602,6 +602,70 @@ describe("UI-47/UI-66（2026-10-07 未定-19）会話の箱が文送りを待つ
   });
 });
 
+describe("UI-36/UI-47（M16）ステージの外の余白のタップ", () => {
+  // テストプレイ 2026-10-09 C-1 #2: 店の入場の語りの ▼ の間に、会話の箱の下の余白（ステージの外）を押しても進まなかった。
+  // 入力はステージの要素だけで受けていたので、拡大の余り（縦持ちの上下の帯）の押下はどこにも届かなかった
+  const make = (waits: () => boolean) => {
+    const doc = new FakeStage(0);
+    const outer = new FakeNode("BODY");
+    const t = setup({ talkWaits: waits, onTalkTap: () => t.out.push("talkTap"), outside: doc as unknown as EventTarget });
+    const emit = (type: string, id: number, x: number, y: number, target: FakeNode) =>
+      doc.emit(type, { pointerId: id, clientX: x, clientY: y, target, pointerType: "touch", isPrimary: true });
+    return { t, doc, outer, emit };
+  };
+
+  test("UI-47 talkWaits の間にステージの外で動かずに離すと onTalkTap。閾値を越えて動いた・取り消された押下は何もしない", () => {
+    const { t, outer, emit } = make(() => true);
+    emit("pointerdown", 1, 195, 800, outer);
+    emit("pointerup", 1, 195, 800, outer);
+    expect(t.out).toEqual(["press", "talkTap"]);
+    t.out.length = 0;
+    // 閾値 28 × 倍率 2 = 56 CSS px 以上動いた
+    emit("pointerdown", 2, 195, 800, outer);
+    emit("pointerup", 2, 195, 860, outer);
+    emit("pointerdown", 3, 195, 800, outer);
+    emit("pointercancel", 3, 195, 800, outer);
+    emit("pointerup", 3, 195, 800, outer);
+    expect(t.out).toEqual(["press", "press"]);
+  });
+
+  test("UI-44/UI-36 ステージの外のタップは、再生中なら onBusyTap、どちらでもなければ何もしない（ステージの押せない所と同じ）", () => {
+    let waits = false;
+    const { t, outer, emit } = make(() => waits);
+    t.setBusy(true);
+    emit("pointerdown", 1, 195, 30, outer);
+    emit("pointerup", 1, 195, 30, outer);
+    t.setBusy(false);
+    emit("pointerdown", 2, 195, 30, outer);
+    emit("pointerup", 2, 195, 30, outer);
+    expect(t.out).toEqual(["press", "busyTap", "press"]);
+    waits = true;
+    t.out.length = 0;
+    emit("pointerdown", 3, 195, 30, outer);
+    emit("pointerup", 3, 195, 30, outer);
+    expect(t.out).toEqual(["press", "talkTap"]);
+  });
+
+  test("UI-36 ステージの中の押下（document まで伝わったもの）は外の扱いにしない（二重にならない）。detach で外の受け先も外す", () => {
+    const { t, doc, emit } = make(() => true);
+    const a = t.button("a");
+    // ステージの上の押下はステージで 1 回だけ箱のタップになり、document に伝わった同じ押下は数えない
+    t.down(1, 40, 620, a.inner);
+    emit("pointerdown", 1, 40, 620, a.inner);
+    t.up(1, 40, 620);
+    emit("pointerup", 1, 40, 620, a.inner);
+    expect(t.out).toEqual(["press", "talkTap"]);
+    expect(doc.count()).toBe(3);
+    t.detach();
+    expect(doc.count()).toBe(0);
+  });
+
+  test("UI-47 app はステージの外の受け先に document を渡す", () => {
+    const app = fs.readFileSync(new URL("../src/presenter/app.ts", import.meta.url), "utf8");
+    expect(app).toMatch(/attachStageInput\(stage, \{[\s\S]*?outside: document,[\s\S]*?\}\);/);
+  });
+});
+
 describe("UI-37 style.css の touch-action", () => {
   const css = STYLE_CSS.replace(/\/\*[\s\S]*?\*\//g, "");
   /** セレクタ（カンマ区切りの 1 つ）→ その規則の本文。同じセレクタが複数あれば連結 */

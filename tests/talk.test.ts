@@ -701,6 +701,67 @@ describe("UI-47 会話の箱（DOM）", () => {
     expect({ ...pos(el), display: el.style["display"], text: line.textContent }).toEqual({ left: "0px", top: "166px", width: "240px", height: "234px", display: "", text: "街に戻った。" });
   });
 
+  test("UI-47/UI-13（M16）広い箱の ▼ は最後の行の行末: 文（行内の span）の直後の行内の 8×8（上 1px 空けて行の上に揃える）。出していない間は場所を取らない。右下の固定の ▼ は使わない", async () => {
+    const created: FakeEl[] = [];
+    const animated: FakeEl[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => {
+        const e = new FakeEl();
+        created.push(e);
+        return e;
+      },
+      createElementNS: () => {
+        const e = new FakeEl();
+        e.animate = () => {
+          animated.push(e);
+          return { finished: Promise.resolve(), cancel() {} };
+        };
+        created.push(e);
+        return e;
+      },
+    });
+    const box = createTalkBox({ layout: T.talk, compact: T.talkCompact, wipe: T.talkWipe, strings: data.strings, speed: () => 0, blink: () => true, log: () => {} });
+    const flow = created.find((e) => e.className === "talk-flow")!;
+    const line = created.find((e) => e.className === "talk-line")!;
+    const [inline, fixed] = created.filter((e) => e.attrs["viewBox"] === "0 0 8 8");
+    // 文の流れの中で 文 → ▼ の順（▼ は文の末尾の字の右。行に余地が無ければブラウザの折り返しで次の行の先頭）
+    expect(flow.children).toEqual([line, inline]);
+    expect(inline!.attrs["class"]).toBe("talk-more");
+    expect({ w: inline!.attrs["width"], h: inline!.attrs["height"], va: inline!.style["verticalAlign"], mt: inline!.style["marginTop"], pos: inline!.style["position"] }).toEqual({ w: "8", h: "8", va: "top", mt: "1px", pos: undefined });
+    expect({ inline: inline!.style["display"], fixed: fixed!.style["visibility"] }).toEqual({ inline: "none", fixed: "hidden" });
+    await box.say("棚に薬と道具と武具が並んでいる。店主が帳場で待っている。", true);
+    // 最後の文の ▼（点滅）は行末の ▼。右下の固定の ▼ は隠したまま
+    expect({ inline: inline!.style["display"], fixed: fixed!.style["visibility"], animated: animated.map((e) => (e === inline ? "inline" : "other")) }).toEqual({ inline: "inline-block", fixed: "hidden", animated: ["inline"] });
+    box.tap();
+    expect({ inline: inline!.style["display"], fixed: fixed!.style["visibility"] }).toEqual({ inline: "none", fixed: "hidden" });
+  });
+
+  test("UI-47/UI-59/UI-56（M16）3 行の箱（compact・wipe）の ▼ は今までどおり文字領域の右下に固定。広い箱に戻すと行末の ▼ に戻る（出ている ▼ は置き方を替えて出し直す）", async () => {
+    const created: FakeEl[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => {
+        const e = new FakeEl();
+        created.push(e);
+        return e;
+      },
+      createElementNS: () => {
+        const e = new FakeEl();
+        created.push(e);
+        return e;
+      },
+    });
+    const box = createTalkBox({ layout: T.talk, compact: T.talkCompact, wipe: T.talkWipe, strings: data.strings, speed: () => 0, blink: () => false, log: () => {} });
+    const [inline, fixed] = created.filter((e) => e.attrs["viewBox"] === "0 0 8 8");
+    await box.say("一", true);
+    box.setRect("compact");
+    // ▼ x219..226・y153..160（枠 x2・y128 の内側 1px が原点 → 216, 24）
+    expect({ inline: inline!.style["display"], fixed: fixed!.style["visibility"], left: fixed!.style["left"], top: fixed!.style["top"], pos: fixed!.style["position"] }).toEqual({ inline: "none", fixed: "visible", left: "216px", top: "24px", pos: "absolute" });
+    box.setRect("wipe");
+    expect({ inline: inline!.style["display"], fixed: fixed!.style["visibility"] }).toEqual({ inline: "none", fixed: "visible" });
+    box.setRect("town");
+    expect({ inline: inline!.style["display"], fixed: fixed!.style["visibility"] }).toEqual({ inline: "inline-block", fixed: "hidden" });
+  });
+
   test("UI-47/UI-11（M10.5 追補）続きの印は右の余白の列に置く（広い箱 x230・y169 と y381、3 行の箱 x228・y131 と y153。字は strings の scroll.up / scroll.down、accent 色、押せない、点滅しない）", () => {
     const { box, up, down, pos } = make();
     expect(talkMarkPos(T.talk)).toEqual({ up: { x: 229, y: 2 }, down: { x: 229, y: 214 } });

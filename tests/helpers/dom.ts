@@ -44,6 +44,11 @@ export class FakeNode {
   getBoundingClientRect(): { left: number; top: number } {
     return { left: this.left, top: this.top };
   }
+  /** Node.contains: n が自分か子孫か（親をたどる） */
+  contains(n: unknown): boolean {
+    for (let x = n instanceof FakeNode ? n : null; x !== null; x = x.parent) if (x === this) return true;
+    return false;
+  }
   blur(): void {
     this.blurred++;
   }

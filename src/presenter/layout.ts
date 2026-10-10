@@ -341,7 +341,7 @@ export const TALK_MARK_GUTTER = 10;
 
 /**
  * UI-47: 枠 box の内側に文字領域（枠の内側から左 4・上下 2 の余白、右は続きの印の列 TALK_MARK_GUTTER、幅は TALK_TEXT_W まで）と
- * ▼（文字領域の右下）を置く。広い箱（w240）は 224 のまま、迷宮のキャラクター画面の 3 行の箱（w236）は 220
+ * ▼（文字領域の右下）を置く。M16 から広い箱の ▼ は最後の行の行末（views/talk.ts の行内の ▼）で、more を使うのは 3 行の箱だけ。広い箱（w240）は 224 のまま、迷宮のキャラクター画面の 3 行の箱（w236）は 220
  */
 function talkRect(box: Rect): TalkRect {
   const w = Math.min(TALK_TEXT_W, box.w - 2 - MESSAGE_PAD_X - TALK_MARK_GUTTER);
