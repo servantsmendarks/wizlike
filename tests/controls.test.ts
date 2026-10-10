@@ -217,6 +217,42 @@ describe("controls", () => {
     expect(heading.style["display"]).toBe("none");
   });
 
+  test("UI-13/UI-52/UI-10（M16）街の施設メニューの下の説明: setBattleMenu(town) の notes を townList.notes の行（x8・y300 から 15 ごと、幅 224）に 1 行ずつ出す。押せない（pointer-events none）。一覧・ほかの配置では隠す", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const T = townLayout(g, data.config.party.size);
+    const c = createControls({
+      region: g.controls,
+      layout: { ...L, townList: { heading: T.heading, area: T.list.area, rows: T.list.rows, grid: T.grid, notes: T.notes } },
+      strings: data.strings,
+      onAction: () => {},
+      hold: HOLD,
+      onClose: () => {},
+    });
+    const items = Array.from({ length: 6 }, (_, i) => ({ label: `f${i}`, onSelect: () => {} }));
+    const lines = Array.from({ length: 7 }, (_, i) => `n${i}`);
+    c.setBattleMenu(items, "town", { heading: "どこへ行く？", notes: lines });
+    c.setMode("battle");
+    const box = created.find((e) => e.className === "controls-town-notes")!;
+    expect(box.style["pointerEvents"]).toBe("none");
+    expect(box.style["display"]).toBe("");
+    // 行数（6）を超える分は捨てる。位置は操作領域の原点（y300）からの相対
+    expect(box.children.map((e) => [e["textContent"], e.style["left"], e.style["top"], e.style["width"], e.style["height"]])).toEqual(
+      Array.from({ length: 6 }, (_, i) => [`n${i}`, "8px", `${15 * i}px`, "224px", "15px"]),
+    );
+    expect(created.filter((e) => e.className === "controls-town-note").every((e) => tapSpecOf(e) === null)).toBe(true);
+    c.setList([{ label: "a", onSelect: () => {} }], { town: { heading: "何をする？" } });
+    c.setMode("list");
+    expect(box.style["display"]).toBe("none");
+    c.setBattleMenu(items, "camp");
+    c.setMode("battle");
+    expect(box.style["display"]).toBe("none");
+    c.setBattleMenu(items, "town", { heading: "どこへ行く？", notes: lines });
+    c.setMode("battle");
+    expect(box.style["display"]).toBe("");
+  });
+
   test("UI-54 setBattleMenu の配置: party は battleParty の 4 枠、member は battleMember の 5 枠に置き、枠数を超える分は捨てる", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);

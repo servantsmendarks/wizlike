@@ -26,6 +26,8 @@ import {
   TITLE_ROWS,
   TOUCH_EXCEPTIONS,
   TOUCH_MIN_LOGICAL,
+  TOWN_NOTE_LINE_H,
+  TOWN_NOTE_LINES,
   TOWN_ROW_H,
   townLayout,
   UPDATE_NOTICE,
@@ -457,7 +459,7 @@ describe("layout", () => {
     expect(inside(T.talk.text, T.talk.box)).toBe(true);
     expect(inside(T.talk.more, T.talk.text)).toBe(true);
     // 帯・見出し・一覧・施設メニュー・戻るは、会話の箱の下に入る（被せる）
-    for (const r of [T.band.row, T.heading, T.list.area, ...T.grid, T.back]) expect(inside(r, T.talk.box), JSON.stringify(r)).toBe(true);
+    for (const r of [T.band.row, T.heading, T.list.area, ...T.grid, ...T.notes, T.back]) expect(inside(r, T.talk.box), JSON.stringify(r)).toBe(true);
     expect(inside(T.talkCompact.box, T.picture)).toBe(true);
     // UI-40（M10.5）街の判定の箱の下端はビューの y148（ステージ y164。会話の箱の上 2 = 絵の下端の 2 上）。迷宮のキャラクター画面は y110
     expect(T.diceBottom).toBe(148);
@@ -544,6 +546,16 @@ describe("layout", () => {
       expect(r.w).toBe(r.h);
       expect(inside(r, rows), JSON.stringify(r)).toBe(true);
       for (const o of [T.heading, T.band.row, ...T.band.hits, T.picture, T.header.text]) expect(overlaps(r, o), JSON.stringify([r, o])).toBe(false);
+    }
+  });
+
+  test("UI-13/UI-52/UI-10（M16）townLayout の notes: 施設メニューの下の説明の 6 行を x8..231・y300..389（1 行 15）。グリッド・見出し・帯・絵と重ならず、ステージに収まる（押せない文字の行なので UI-10 の対象外）", () => {
+    expect(TOWN_NOTE_LINES).toBe(6);
+    expect(TOWN_NOTE_LINE_H).toBe(15);
+    expect(T.notes).toEqual(Array.from({ length: 6 }, (_, i) => ({ x: 8, y: 300 + 15 * i, w: 224, h: 15 })));
+    for (const r of T.notes) {
+      expect(inside(r, STAGE), JSON.stringify(r)).toBe(true);
+      for (const o of [...T.grid, T.heading, T.band.row, ...T.band.hits, T.picture, T.header.text]) expect(overlaps(r, o), JSON.stringify([r, o])).toBe(false);
     }
   });
 

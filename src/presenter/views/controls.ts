@@ -45,10 +45,10 @@ export type UiSound = keyof AudioData["ui"];
 export type BattleSlots = "party" | "member" | "camp" | "town";
 
 /**
- * UI-13（M8.5）: 街の一覧の見出し（1 行）と一覧（スクロールの欄と見える行）。grid は施設メニューの 6 枠（M10）。
+ * UI-13（M8.5）: 街の一覧の見出し（1 行）と一覧（スクロールの欄と見える行）。grid は施設メニューの 6 枠（M10）、notes はその下の説明の行（M16。省略時は出さない）。
  * ステージ座標。layout の townLayout
  */
-export type TownListLayout = { heading: Rect; area: Rect; rows: Rect[]; grid: Rect[] };
+export type TownListLayout = { heading: Rect; area: Rect; rows: Rect[]; grid: Rect[]; notes?: Rect[] };
 
 export type Controls = {
   el: HTMLElement;
@@ -72,9 +72,10 @@ export type Controls = {
   /**
    * UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠 / campGrid の 8 枠 / townList.grid の 6 枠）に並べる。
    * null は空き枠（何も置かない）。枠数を超える分は捨てる。
-   * town（UI-13 / UI-52。M10）なら、setList の town と同じ見出し（opts.heading。accent 色の 1 行。押せない）も出す
+   * town（UI-13 / UI-52。M10）なら、setList の town と同じ見出し（opts.heading。accent 色の 1 行。押せない）も出す。
+   * M16: town なら opts.notes を layout.townList.notes の行に 1 行ずつ出す（押せない文字の行。行数を超える分は捨てる）
    */
-  setBattleMenu(items: (ControlItem | null)[], slots: BattleSlots, opts?: { heading?: string }): void;
+  setBattleMenu(items: (ControlItem | null)[], slots: BattleSlots, opts?: { heading?: string; notes?: readonly string[] }): void;
   /**
    * UI-54: 一覧の i 行目を注目の見た目（枠線を accent 色。dim の行は dim のまま）にし、見える位置へ動かす。null で解除。
    * 一覧は作り直さない。scroll: false なら見える位置へは動かさない（ポインタで触れた行。タッチの途中で一覧が動かないように）
@@ -232,6 +233,7 @@ export function createControls(o: {
     grid: o.layout.campGrid.slice(0, 6),
   };
   const townRow = town.rows[0] ?? { ...town.area, h: first.h };
+  const NOTE_ROWS: readonly Rect[] = town.notes ?? [];
   let listTownOn = false;
   /** UI-11 / UI-13（M16）: 迷宮・戦闘の広い一覧の位置 */
   const wide = o.layout.listWide;
@@ -256,6 +258,13 @@ export function createControls(o: {
     pointerEvents: "none",
   });
   el.appendChild(heading);
+  /** UI-13 / UI-52（M16）: 施設メニューの下の説明の行（押せない。UI-10 の最小サイズの対象外） */
+  const notes = document.createElement("div");
+  notes.className = "controls-town-notes";
+  Object.assign(notes.style, { position: "absolute", left: "0", top: "0", pointerEvents: "none" });
+  el.appendChild(notes);
+  /** notes に出している行（同じなら作り直さない） */
+  let notesText: readonly string[] = [];
   const list = document.createElement("div");
   list.className = "controls-list";
   Object.assign(list.style, {
@@ -361,6 +370,7 @@ export function createControls(o: {
     setShown(list, mode === "list");
     setShown(listBack, mode === "list" && listBackOn);
     setShown(heading, (mode === "list" && listTownOn) || (mode === "battle" && battleTownOn));
+    setShown(notes, mode === "battle" && battleTownOn);
     setShown(close, mode === "close" || mode === "map");
     setShown(mapGo, mode === "map");
     setShown(battle, mode === "battle");
@@ -509,10 +519,37 @@ export function createControls(o: {
       if (listBackOn && i === listButtons.length - 1) return;
       if (b !== undefined && typeof b.scrollIntoView === "function") b.scrollIntoView({ block: "nearest" });
     },
-    setBattleMenu(items: (ControlItem | null)[], slots: BattleSlots, opts?: { heading?: string }): void {
+    setBattleMenu(items: (ControlItem | null)[], slots: BattleSlots, opts?: { heading?: string; notes?: readonly string[] }): void {
       const rects = BATTLE_SLOTS[slots];
       battleTownOn = slots === "town";
       if (battleTownOn && opts?.heading !== undefined && heading.textContent !== opts.heading) heading.textContent = opts.heading;
+      if (battleTownOn) {
+        const lines = (opts?.notes ?? []).slice(0, NOTE_ROWS.length);
+        const same = notesText.length === lines.length && lines.every((l, i) => notesText[i] === l);
+        if (!same) {
+          notesText = lines;
+          notes.replaceChildren(
+            ...lines.map((l, i) => {
+              const r = NOTE_ROWS[i]!;
+              const d = document.createElement("div");
+              d.className = "controls-town-note";
+              d.textContent = l;
+              Object.assign(d.style, {
+                position: "absolute",
+                left: `${r.x - origin.x}px`,
+                top: `${r.y - origin.y}px`,
+                width: `${r.w}px`,
+                height: `${r.h}px`,
+                lineHeight: `${r.h}px`,
+                color: "var(--c-text)",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+              });
+              return d;
+            }),
+          );
+        }
+      }
       battleItems = items.slice(0, rects.length);
       battle.replaceChildren();
       battleItems.forEach((it, i) => {

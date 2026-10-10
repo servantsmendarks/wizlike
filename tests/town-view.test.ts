@@ -20,6 +20,7 @@ import {
   townHeading,
   townHeadingText,
   townLowersInput,
+  townMenuNotes,
   townPageIntro,
   townParent,
   townPlace,
@@ -113,15 +114,40 @@ describe("UI-52 街のページ", () => {
     expect(long.some((l) => [...l].length > TOWN_GRID_LABEL_MAX)).toBe(true);
   });
 
-  test("UI-52/TW-04/TW-15 宿屋はランクの行（名前と料金。士気の立つ個室は末尾に「＋士気」）。払えないランクは disabled。末尾が戻る", () => {
+  test("UI-13/UI-52（M16）施設メニューの下の説明は枠の順に 6 行「{label}: {note}」。各行は全角 28 字以内で、行の数は townLayout の notes と同じ", () => {
+    const notes = townMenuNotes(S);
+    expect(notes).toEqual([
+      "酒場: 状態・転職・図鑑",
+      "宿屋: 休む・レベルアップ",
+      "寺院: 蘇生・治療",
+      "闇魔術: 灰から戻す・装備を鍛える",
+      "迷宮へ: 潜る",
+      "店: 売買・鑑定・倉庫",
+    ]);
+    // ラベルは施設メニューの枠と同じ文言（town.menu.<id>）
+    expect(notes.map((l) => l.split(":")[0])).toEqual(townEntries("menu", menuOf(town()), S).map((e) => e.label));
+    for (const l of notes) expect(kinsokuLines(l, 28), l).toHaveLength(1);
+    expect(notes).toHaveLength(townLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size).notes.length);
+  });
+
+  test("UI-52/TW-04/TW-15（M16）宿屋はランクの行（名前・料金・効果。士気の立つ個室は効果に「＋士気」）。払えないランクは disabled。末尾が戻る", () => {
     expect(townEntries("inn", menuOf(town({}, 50)), S)).toEqual([
-      { kind: "inn", rank: 0, label: "馬小屋　0G", disabled: false },
-      { kind: "inn", rank: 1, label: "相部屋　20G", disabled: false },
-      { kind: "inn", rank: 2, label: "個室　60G　＋士気", disabled: true },
+      { kind: "inn", rank: 0, label: "馬小屋　0G　MPのみ", disabled: false },
+      { kind: "inn", rank: 1, label: "相部屋　20G　HP・MP全回復", disabled: false },
+      { kind: "inn", rank: 2, label: "個室　60G　全回復＋士気", disabled: true },
       back,
     ]);
     // ちょうど払える額なら押せる
     expect(townEntries("inn", menuOf(town({}, 60)), S).filter((e) => e.kind === "inn" && e.disabled)).toEqual([]);
+  });
+
+  test("UI-52/TW-04/TW-15（M16）宿の効果の文は config.town.innRanks の id ごとに town.inn.effect.<id> があり、行は一覧の幅（全角 21 字）に収まる。キーは core の id から組み立てる", () => {
+    for (const r of data.config.town.innRanks) expect(S[`town.inn.effect.${r.id}`], r.id).toBeDefined();
+    for (const e of townEntries("inn", menuOf(town()), S)) expect(kinsokuLines(e.label, 21), e.label).toHaveLength(1);
+    // 効果の文はランクの id で引く（strings を差し替えれば行も変わる。表示層はランクを見て分岐しない）
+    const swapped = townEntries("inn", menuOf(town()), { ...S, "town.inn.effect.cheap": "効果X" });
+    expect(swapped[1]?.label).toBe("相部屋　20G　効果X");
+    expect(S["town.inn.moraleMark"]).toBeUndefined();
   });
 
   test("UI-52/TW-15 宿屋の語りは、士気がある間だけ town.inn.moraleNow を続けて出す", () => {
@@ -129,7 +155,10 @@ describe("UI-52 街のページ", () => {
     const stayed = cloneState(town());
     stayed.morale = { rankId: "good" };
     expect(townPageIntro("inn", menuOf(stayed))).toEqual(["town.inn.intro", "town.inn.moraleNow"]);
-    for (const k of ["town.inn.intro", "town.inn.moraleNow", "town.inn.moraleMark"]) expect(S[k], k).toBeDefined();
+    for (const k of ["town.inn.intro", "town.inn.moraleNow"]) expect(S[k], k).toBeDefined();
+    // M16（TW-15）: 宿の語りに士気の一言（会話の箱の 28 字 × 2 行以内）
+    expect(S["town.inn.intro"]).toContain("士気: 次の潜行で SAN と判定に補正");
+    expect(kinsokuLines(S["town.inn.intro"]!, 28).length).toBeLessThanOrEqual(2);
   });
 
   test("UI-52/TW-07 寺院はサービスの 3 項目と戻る。サービスの対象は行（名前と料金、払えなければ disabled）", () => {
@@ -345,7 +374,7 @@ describe("UI-52 街のページ", () => {
         expect(S[k], k).not.toContain("？");
       }
     }
-    expect(S["town.inn.intro"]).toBe("宿の主人が鍵を並べる。");
+    expect(S["town.inn.intro"]).toBe("宿の主人が鍵を並べる。（士気: 次の潜行で SAN と判定に補正）");
     expect(S["town.dungeonGate.intro"]).toBe("迷宮の入口。");
     expect(S["town.shop.sellIntro"]).toBe("鑑定していない品は、見た目どおりの値で引き取るそうだ。");
   });

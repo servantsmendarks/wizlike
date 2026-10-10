@@ -141,6 +141,7 @@ import {
   townHeader,
   townHeadingText,
   townLowersInput,
+  townMenuNotes,
   townPageIntro,
   townParent,
   townRepair,
@@ -902,7 +903,7 @@ export function createApp(o: {
       if (song !== undefined) setScene(song);
       // UI-13 / UI-52（M10）: 施設メニューは見出しと 48×48 の 3 列 × 2 段（戻るは無い。数字キーは行の順）
       if (townPage === "menu") {
-        c.setBattleMenu(items, "town", { heading });
+        c.setBattleMenu(items, "town", { heading, notes: townMenuNotes(strings) });
         c.setMode("battle");
         return;
       }

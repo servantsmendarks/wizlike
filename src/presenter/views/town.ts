@@ -201,6 +201,17 @@ export function townRepair(page: TownPage, menu: TownMenu): TownPage {
   return page;
 }
 
+/** UI-13 / UI-52（M16）: 施設メニューの 6 枠の strings の id（town.menu.<id> がラベル、town.menu.note.<id> が説明。枠の順） */
+const TOWN_MENU_IDS = ["tavern", "inn", "temple", "dark", "dungeon", "shop"] as const;
+
+/**
+ * UI-13 / UI-52（M16。設計 4-4）: 施設メニューの下の説明の 6 行（town.menu.noteRow「{label}: {note}」。枠の順）。
+ * 救済の申し出の間も同じ
+ */
+export function townMenuNotes(strings: Strings): string[] {
+  return TOWN_MENU_IDS.map((id) => s(strings, "town.menu.noteRow", { label: s(strings, `town.menu.${id}`), note: s(strings, `town.menu.note.${id}`) }));
+}
+
 /**
  * そのページのリストの項目（menu は 6 行で戻るは無い。それ以外は一覧で末尾が戻る）。
  * preview は { upConfirm } のときに app が core の upgradePreview で取った値（それ以外のページでは使わない）
@@ -268,11 +279,16 @@ export function townEntries(
     return [{ kind: "classChange", memberId: sel.memberId, classId: sel.classId, label: s(strings, "town.classChange.yes"), disabled: !ok }, back];
   }
   if (page === "inn") {
-    // TW-15（M7）: 士気の立つランク（core の townMenu の morale）は行の末尾に印（town.inn.moraleMark）
-    const rows = menu.inn.map((r): TownEntry => {
-      const row = s(strings, "town.inn.rank", { name: r.name, cost: r.cost });
-      return { kind: "inn", rank: r.rank, label: r.morale ? s(strings, "town.inn.moraleMark", { row }) : row, disabled: !r.affordable };
-    });
+    // TW-04 / TW-15（M16）: 行は名前・料金・効果（town.inn.effect.<ランクの id>。士気の立つランクは効果の文に「＋士気」を含む）。
+    // 表示層はランクで分岐せず、core の townMenu の id からキーを組み立てるだけ
+    const rows = menu.inn.map(
+      (r): TownEntry => ({
+        kind: "inn",
+        rank: r.rank,
+        label: s(strings, "town.inn.rank", { name: r.name, cost: r.cost, effect: s(strings, `town.inn.effect.${r.id}`) }),
+        disabled: !r.affordable,
+      }),
+    );
     return [...rows, back];
   }
   if (page === "temple") {

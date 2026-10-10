@@ -269,7 +269,7 @@ export function createDungeonScreen(o: {
   let listWide = false;
   const controls = createControls({
     region: r.controls,
-    layout: { ...lay, townList: { heading: tl.heading, area: tl.list.area, rows: tl.list.rows, grid: tl.grid } },
+    layout: { ...lay, townList: { heading: tl.heading, area: tl.list.area, rows: tl.list.rows, grid: tl.grid, notes: tl.notes } },
     strings: o.strings,
     onAction: o.onAction,
     hold: o.hold,

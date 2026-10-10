@@ -295,6 +295,13 @@ const TOWN_GRID_ROWS = 2;
 /** UI-13 / UI-52（M10。U3）: 施設メニューのラベルの字数の上限（8px の字で 48×48 の内側 46 に収まる。town-view.test で strings を検査する） */
 export const TOWN_GRID_LABEL_MAX = 4;
 /**
+ * UI-13 / UI-52（M16。設計 4-4）: 施設メニューの下の説明の 6 行（各施設の「{label}: {note}」。押せない文字の行）。
+ * グリッドの下端から TOWN_NOTE_GAP 空けて、見出しと同じ x・幅 224（全角 28 字）に 1 行 15 の 6 行（既定は y300..389）
+ */
+export const TOWN_NOTE_LINES = 6;
+export const TOWN_NOTE_LINE_H = 15;
+const TOWN_NOTE_GAP = 6;
+/**
  * UI-47（M10.5）: 街の会話の箱は絵の下端からステージの下端まで（帯・見出し・一覧・施設メニュー・戻るに被せる）。行数は矩形と行の高さから決める。
  * 迷宮のキャラクター画面の箱（compact）は M8.5 の 3 行のまま（行数と、箱の左右の余白・絵の下端との余白）
  */
@@ -357,11 +364,13 @@ export type TownLayout = {
   list: { area: Rect; rows: Rect[] };
   /** UI-13 / UI-52（M10）: 施設メニューの 6 枠（48×48 の 3 列 × 2 段。行の順に 酒場・宿屋・寺院 / 闇魔術・迷宮へ・店） */
   grid: Rect[];
+  /** UI-13 / UI-52（M16）: 施設メニューの下の説明の 6 行（x8..231・y300..389。押せない） */
+  notes: Rect[];
   /** UI-11 の固定の戻る（操作領域の x178・y54 の 56×40） */
   back: Rect;
 };
 
-/** UI-13: 街の画面の矩形（ステージ座標）。既定の regions では ヘッダー y0..15、絵 y16..165、帯 y166..175、見出し y178..187、一覧 y190..387（22×9 行）、施設メニューの 6 枠 x40/96/152・y190/246 の 48×48（M10）、戻る 178,354。
+/** UI-13: 街の画面の矩形（ステージ座標）。既定の regions では ヘッダー y0..15、絵 y16..165、帯 y166..175、見出し y178..187、一覧 y190..387（22×9 行）、施設メニューの 6 枠 x40/96/152・y190/246 の 48×48（M10）とその下の説明の 6 行 x8..231・y300..389（M16）、戻る 178,354。
  * 会話の箱（M10.5）は x0..239・y166..399（22 行。帯から戻るまでに被せる）、迷宮のキャラクター画面の箱は x2..237・y128..163（3 行）、全滅の内訳の間の箱は x2..237・y238..273（3 行。M10.5 追補 2） */
 export function townLayout(g: Regions, partySize: number): TownLayout {
   const h = g.header;
@@ -396,6 +405,13 @@ export function townLayout(g: Regions, partySize: number): TownLayout {
     w: TOWN_GRID_SIZE,
     h: TOWN_GRID_SIZE,
   }));
+  const gridBottom = Math.max(...grid.map((r) => r.y + r.h));
+  const notes = Array.from({ length: TOWN_NOTE_LINES }, (_, i): Rect => ({
+    x: TOWN_LIST_X,
+    y: gridBottom + TOWN_NOTE_GAP + TOWN_NOTE_LINE_H * i,
+    w: TOWN_HEADING_W,
+    h: TOWN_NOTE_LINE_H,
+  }));
   return {
     header: { text, log, settings },
     picture: { ...v },
@@ -408,6 +424,7 @@ export function townLayout(g: Regions, partySize: number): TownLayout {
     heading,
     list: { area, rows: Array.from({ length: count }, (_, i): Rect => ({ x: area.x, y: area.y + TOWN_ROW_H * i, w: area.w, h: TOWN_ROW_H })) },
     grid,
+    notes,
     back,
   };
 }
