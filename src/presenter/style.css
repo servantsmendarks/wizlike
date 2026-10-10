@@ -165,6 +165,7 @@ body {
 }
 
 .creation-num,
+.creation-abbr,
 .creation-leader {
   position: absolute;
   line-height: 32px;
@@ -177,7 +178,13 @@ body {
   color: var(--c-dim);
 }
 
-/* iOS の自動ズーム対策: font-size 16px の 2 倍の大きさで作り、scale(0.5) で 112×32 に見せる */
+/* UI-51（M16）: 職業の略称（押せない） */
+.creation-abbr {
+  color: var(--c-dim);
+  pointer-events: none;
+}
+
+/* iOS の自動ズーム対策: font-size 16px の 2 倍の大きさで作り、scale(0.5) で 80×32 に見せる */
 .creation-name {
   position: absolute;
   margin: 0;
@@ -201,6 +208,16 @@ body {
 
 .creation-name:focus {
   border-color: var(--c-accent);
+}
+
+/* UI-51（M16）: 説明の欄（押せない。エラーの欄と同じ場所で、エラーが出ている間は隠す） */
+.creation-note {
+  position: absolute;
+  white-space: pre-wrap;
+  word-break: normal;
+  line-break: strict;
+  overflow-wrap: anywhere;
+  pointer-events: none;
 }
 
 .creation-error {

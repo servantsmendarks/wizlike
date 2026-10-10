@@ -176,6 +176,11 @@ describe("layout", () => {
     // 押せない欄も画面の内側
     expect(inside(CREATION_ERROR, STAGE)).toBe(true);
     for (let i = 0; i < 6; i++) expect(inside(creationRow(i).label, STAGE)).toBe(true);
+    // UI-51（M16）: 職業の略称（押せない）も画面の内側で、押せる矩形（名前の欄・性格のボタン）と重ならない
+    for (let i = 0; i < 6; i++) {
+      expect(inside(creationRow(i).abbr, STAGE)).toBe(true);
+      for (const r of Object.values(SCREENS.creation!)) expect(overlaps(creationRow(i).abbr, r)).toBe(false);
+    }
     for (let i = 0; i < 6; i++) {
       expect(inside(debugRow(i).label, STAGE)).toBe(true);
       expect(inside(debugRow(i).value, STAGE)).toBe(true);

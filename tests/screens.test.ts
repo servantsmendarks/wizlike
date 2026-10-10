@@ -4,6 +4,9 @@ import { createInitialState, execute } from "../src/core/engine";
 import { validatePartySetup } from "../src/core/rules/creation";
 import {
   buildPartySetup,
+  creationClassAbbr,
+  creationInfoVisible,
+  creationNote,
   defaultPersonalities,
   nextPersonality,
   personalityLabel,
@@ -16,6 +19,8 @@ import { createRunGate } from "../src/presenter/run-gate";
 import { paintsTownStill } from "../src/presenter/resume";
 import type { Command, GameEvent } from "../src/core/types";
 import { data, newGame } from "./helpers/core";
+import { kinsokuLines } from "./helpers/wrap";
+import { CREATION_ERROR, CREATION_NOTE, creationRow } from "../src/presenter/layout";
 
 const ids = data.personalities.map((p) => p.id);
 /** UI-12: app と同じく core の sanStage で段を決める */
@@ -43,6 +48,48 @@ describe("簡易作成", () => {
     expect(personalityLabel("reckless", data, data.strings)).toBe(data.personalities[1]?.name);
     expect(personalityLabel("random", data, data.strings)).toBe(data.strings["creation.personality.random"]);
     expect(personalityLabel(null, data, data.strings)).toBe(data.strings["creation.leader"]);
+  });
+
+  test("UI-51 職業の略称（M16）: 行 i は config.prototypeParty.members[i].classId の classes[].abbr。名前の欄（幅 80）の右・性格のボタンの左に収まる", () => {
+    const members = data.config.prototypeParty.members;
+    const abbrs = members.map((_m, i) => creationClassAbbr(i, data));
+    expect(abbrs).toEqual(members.map((m) => data.classes.find((c) => c.id === m.classId)!.abbr));
+    expect(abbrs).toEqual(["WAR", "WAR", "THI", "PRI", "MAG", "THI"]);
+    expect(creationClassAbbr(99, data)).toBe("");
+    for (let i = 0; i < members.length; i++) {
+      const r = creationRow(i);
+      expect(r.name.w).toBe(80);
+      expect(r.abbr.x).toBeGreaterThanOrEqual(r.name.x + r.name.w);
+      expect(r.abbr.x + r.abbr.w).toBeLessThanOrEqual(r.personality.x);
+      // 美咲の半角 4px で略称が入る
+      expect(abbrs[i]!.length * 4).toBeLessThanOrEqual(r.abbr.w);
+    }
+  });
+
+  test("UI-51 説明の欄（M16）: 最初は creation.hint、性格を押した行はその性格の shortDescription、おまかせは creation.randomNote、リーダーの行は creation.leaderNote。どれも 28 字 × 2 行以内", () => {
+    const S = data.strings;
+    const ch = defaultPersonalities(ids, 6);
+    expect(creationNote(null, ch, data, S)).toBe("性格をタップで切り替える。説明はここに出る");
+    expect(creationNote(0, ch, data, S)).toBe("全滅しても必ず戻る、GM の相手役");
+    expect(creationNote(1, ch, data, S)).toBe(data.personalities.find((p) => p.id === "cautious")!.shortDescription);
+    // 押して切り替えた後の行の性格を引く（無鉄砲 → 強欲）
+    const ch2 = [...ch];
+    ch2[2] = nextPersonality(ch2[2]!, ids);
+    expect(creationNote(2, ch2, data, S)).toBe(data.personalities.find((p) => p.id === "greedy")!.shortDescription);
+    expect(creationNote(3, randomizePersonalities(ch), data, S)).toBe(S["creation.randomNote"]);
+    // 「ランダム」の後もリーダーの行はリーダーの一行
+    expect(creationNote(0, randomizePersonalities(ch), data, S)).toBe(S["creation.leaderNote"]);
+    const texts = [S["creation.hint"]!, S["creation.leaderNote"]!, S["creation.randomNote"]!, ...data.personalities.map((p) => p.shortDescription)];
+    for (const x of texts) expect(kinsokuLines(x, 28).length, x).toBeLessThanOrEqual(2);
+    // strings を差し替えると文も変わる（表示層に文を書いていない）
+    expect(creationNote(0, ch, data, { ...S, "creation.leaderNote": "X" })).toBe("X");
+  });
+
+  test("UI-51 説明の欄とエラーの欄は同じ場所（y240）で、エラーが出ている間はエラーを優先し、消えたら説明に戻す（M16）", () => {
+    expect(CREATION_NOTE).toEqual(CREATION_ERROR);
+    expect(CREATION_NOTE.y).toBe(240);
+    expect(creationInfoVisible(true)).toEqual({ error: true, note: false });
+    expect(creationInfoVisible(false)).toEqual({ error: false, note: true });
   });
 
   test("UI-51/CH-05 既定名と既定の性格で作った PartySetup を core が受け付け、空の名前は rejected（表示層は検査しない）", () => {

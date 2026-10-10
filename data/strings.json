@@ -32,6 +32,9 @@
   "creation.start": "始める",
   "creation.personality.random": "おまかせ",
   "creation.invalid": "名前は1〜{max}文字で決めてくれ。",
+  "creation.hint": "性格をタップで切り替える。説明はここに出る",
+  "creation.leaderNote": "全滅しても必ず戻る、GM の相手役",
+  "creation.randomNote": "おまかせ: 始めるときに性格が決まる。",
 
   "title.mode.quick": "おすすめで始める",
   "title.mode.custom": "自分で作る",

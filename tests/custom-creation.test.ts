@@ -108,6 +108,24 @@ describe("自分で作る（UI-62 / CH-06）", () => {
     expect(bonuses.every((b) => b >= 8)).toBe(true);
   });
 
+  test("UI-62/UI-51 1 人目（リーダー）の種族の段は、要約の行（見出しの下）に creation.leaderNote を出し、2 人目の種族の段と 1 人目の能力値の段には出さない（M16。B1）", () => {
+    const rng = createRng(5);
+    const d0 = initialDraft(data);
+    const v0 = customView(d0, data, S);
+    expect(S["creation.leaderNote"]).toBe("全滅しても必ず戻る、GM の相手役");
+    expect(v0.summary).toBe(S["creation.leaderNote"]);
+    // 要約の行は 1 行（幅 232 = 全角 29 字）
+    expect(kinsokuLines(v0.summary, 29)).toHaveLength(1);
+    // 種族を選んで戻っても、リーダーの種族の段は一行のまま
+    const st = step(d0, { kind: "race", raceId: "human" }, rng);
+    expect(customView(st, data, S).summary).toBe("人間");
+    expect(customView(step(st, { kind: "back" }, rng), data, S).summary).toBe(S["creation.leaderNote"]);
+    const d2 = makeOne(initialDraft(data), rng, "アキ");
+    expect(d2.index).toBe(1);
+    expect(d2.step).toBe("race");
+    expect(customView(d2, data, S).summary).not.toBe(S["creation.leaderNote"]);
+  });
+
   test("UI-62 リーダー（1 人目）は性格の段を飛ばす。戻るは名前 → 職業", () => {
     const rng = createRng(1);
     let d = step(initialDraft(data), { kind: "race", raceId: "human" }, rng);

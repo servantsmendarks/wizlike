@@ -290,6 +290,8 @@ export function customView(d: CustomDraft, data: GameData, strings: Strings): Cu
     if (d.index !== 0 && d.step === "name") parts.push(personalityLabel(m.personality, data, strings));
     view.summary = parts.filter((s) => s !== "").join(" ");
   }
+  // UI-62（M16。テストプレイ B1）: 1 人目（リーダー）の種族の段は、要約の行（見出しの下）にリーダーの一行（簡易作成と同じキー）
+  if (d.index === 0 && d.step === "race") view.summary = tr(strings, "creation.leaderNote");
 
   switch (d.step) {
     case "race":

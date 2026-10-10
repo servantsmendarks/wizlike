@@ -509,11 +509,16 @@ export const TITLE_BUTTONS: readonly Rect[] = [
 export const TITLE_HINT: Rect = { x: 8, y: 336, w: 224, h: 20 };
 
 /** 簡易作成（UI-51）の行 i（0..5）。番号のラベル、名前の入力欄、性格のボタン */
-export function creationRow(i: number): { name: Rect; personality: Rect; label: Rect } {
+/**
+ * 簡易作成の行 i（UI-51）。番号・名前の入力欄・職業の略称（押せない。M16 で名前の欄を 112 → 80 に縮めて空けた）・性格のボタン
+ * （リーダーは押せる札。押すと説明の欄に creation.leaderNote）
+ */
+export function creationRow(i: number): { name: Rect; personality: Rect; label: Rect; abbr: Rect } {
   const y = 34 + 34 * i;
   return {
     label: { x: 2, y, w: 8, h: 32 },
-    name: { x: 12, y, w: 112, h: 32 },
+    name: { x: 12, y, w: 80, h: 32 },
+    abbr: { x: 96, y, w: 28, h: 32 },
     personality: { x: 128, y, w: 110, h: 32 },
   };
 }
@@ -526,6 +531,8 @@ export const CREATION_BUTTONS = {
 
 /** 作成の入力エラーの表示欄（押せない） */
 export const CREATION_ERROR: Rect = { x: 4, y: 240, w: 232, h: 50 };
+/** UI-51（M16）: 説明の欄（押せない。最後に触った行の性格の説明かリーダーの一行）。エラーの欄と同じ場所で、エラーが出ている間は隠す */
+export const CREATION_NOTE: Rect = CREATION_ERROR;
 
 // ---- 自分で作る（UI-62。M5.5）。数値は【仮】。見出し → 要約 → 一覧の行（最大 7 行）か能力値の 6 行 → 残り → 誤り → ボタン 3 枠
 

@@ -3,12 +3,15 @@
 // - 性格のボタンは personalities の配列順 → "random"（おまかせ）→ 先頭、と巡回する。
 // - 「ランダム」はリーダー以外の性格を "random" にする（名前は変えない。乱数は core が引く。CH-30）。
 // - 名前の検査は core（validatePartySetup）が行う。表示層は rejected を受けて creation.invalid を出すだけ。
-// - 入力欄は iOS の自動ズームを避けるため、font-size 16px の 2 倍の大きさで作り、scale(0.5) で 112×32 に見せる。
+// - 入力欄は iOS の自動ズームを避けるため、font-size 16px の 2 倍の大きさで作り、scale(0.5) で 80×32 に見せる。
+// - M16: 名前の右に職業の略称（classes.json の abbr。config.prototypeParty.members[i].classId から）。y240 の説明の欄に、最後に
+//   触った行（性格のボタン・リーダーの札・名前の入力欄）の性格の shortDescription（リーダーは creation.leaderNote、おまかせは
+//   creation.randomNote。最初は creation.hint）。エラー（creation.invalid）が出ている間はエラーを優先して説明を隠す。
 // 純粋な部分（性格の巡回、PartySetup の組み立て）を export する。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, PersonalityId, Strings } from "../../core/data/index";
 import type { QuickPartySetup } from "../../core/types";
 import { formatMessage } from "./message";
-import { CREATION_BUTTONS, CREATION_ERROR, creationRow, type Rect } from "../layout";
+import { CREATION_BUTTONS, CREATION_ERROR, CREATION_NOTE, creationRow, type Rect } from "../layout";
 import { onTap } from "../input/tap";
 
 export type PersonalityChoice = PersonalityId | "random" | null;
@@ -38,6 +41,30 @@ export function personalityLabel(choice: PersonalityChoice, data: GameData, stri
   if (choice === null) return strings["creation.leader"] ?? "creation.leader";
   if (choice === "random") return strings["creation.personality.random"] ?? "creation.personality.random";
   return data.personalities.find((p) => p.id === choice)?.name ?? choice;
+}
+
+/** UI-51（M16）: 行 i の職業の略称（config.prototypeParty.members[i].classId の classes[].abbr。無ければ空） */
+export function creationClassAbbr(i: number, data: GameData): string {
+  const classId = data.config.prototypeParty.members[i]?.classId;
+  return data.classes.find((c) => c.id === classId)?.abbr ?? "";
+}
+
+/**
+ * UI-51（M16）: 説明の欄の文。row は最後に触った行（まだ触っていなければ null → creation.hint）。
+ * その行の性格が null（リーダー）なら creation.leaderNote、おまかせなら creation.randomNote、それ以外は personalities の shortDescription
+ */
+export function creationNote(row: number | null, choices: readonly PersonalityChoice[], data: GameData, strings: Strings): string {
+  const t = (k: string): string => strings[k] ?? k;
+  if (row === null) return t("creation.hint");
+  const c = choices[row];
+  if (c === null || row === 0) return t("creation.leaderNote");
+  if (c === undefined || c === "random") return t("creation.randomNote");
+  return data.personalities.find((p) => p.id === c)?.shortDescription ?? c;
+}
+
+/** UI-51（M16）: エラーと説明のどちらを見せるか。エラーが出ている間はエラーを優先する */
+export function creationInfoVisible(errorOn: boolean): { error: boolean; note: boolean } {
+  return { error: errorOn, note: !errorOn };
 }
 
 /** game.new に渡す PartySetup。名前の検査は core が行うので、そのまま詰める */
@@ -81,6 +108,8 @@ export function createCreationScreen(o: {
   const ids = o.data.personalities.map((p) => p.id);
 
   let choices: PersonalityChoice[] = defaultPersonalities(ids, size);
+  /** 最後に触った行（説明の欄に出す行。まだなら null） */
+  let touched: number | null = null;
 
   const el = document.createElement("div");
   el.className = "screen screen-creation";
@@ -121,20 +150,31 @@ export function createCreationScreen(o: {
     });
     // iOS がキーボードのためにページをずらしたままにしないよう、フォーカスが外れたら戻す
     input.addEventListener("focusout", () => window.scrollTo(0, 0));
+    // 名前の入力欄に触れたら、その行の説明を出す
+    input.addEventListener("focus", () => touch(i));
     el.appendChild(input);
     inputs.push(input);
 
+    const abbr = document.createElement("div");
+    abbr.className = "creation-abbr";
+    abbr.textContent = creationClassAbbr(i, o.data);
+    place(abbr, r.abbr);
+    el.appendChild(abbr);
+
     if (i === 0) {
+      // リーダーの札。押すと説明の欄にリーダーの一行（creation.leaderNote）
       const lab = document.createElement("div");
       lab.className = "creation-leader";
       place(lab, r.personality);
       lab.textContent = t("creation.leader");
+      onTap(lab, () => touch(0));
       el.appendChild(lab);
       persButtons.push(null);
     } else {
       const b = button("", r.personality, () => {
         choices[i] = nextPersonality(choices[i] ?? "random", ids);
         renderChoices();
+        touch(i);
       });
       el.appendChild(b);
       persButtons.push(b);
@@ -146,6 +186,23 @@ export function createCreationScreen(o: {
   place(error, CREATION_ERROR);
   error.textContent = formatMessage(t("creation.invalid"), { max: o.data.config.creation.nameMaxLength });
   el.appendChild(error);
+
+  const note = document.createElement("div");
+  note.className = "creation-note";
+  place(note, CREATION_NOTE);
+  el.appendChild(note);
+
+  let errorOn = false;
+  const renderInfo = (): void => {
+    const v = creationInfoVisible(errorOn);
+    error.style.visibility = v.error ? "visible" : "hidden";
+    note.style.visibility = v.note ? "visible" : "hidden";
+    note.textContent = creationNote(touched, choices, o.data, o.strings);
+  };
+  function touch(i: number): void {
+    touched = i;
+    renderInfo();
+  }
 
   const renderChoices = (): void => {
     persButtons.forEach((b, i) => {
@@ -159,13 +216,15 @@ export function createCreationScreen(o: {
     button(t("creation.random"), CREATION_BUTTONS.random, () => {
       choices = randomizePersonalities(choices);
       renderChoices();
+      renderInfo();
     }),
   );
   el.appendChild(button(t("creation.start"), CREATION_BUTTONS.start, () => o.onStart(setup())));
   el.appendChild(button(t("common.back"), CREATION_BUTTONS.back, () => o.onBack()));
 
   const showError = (on: boolean): void => {
-    error.style.visibility = on ? "visible" : "hidden";
+    errorOn = on;
+    renderInfo();
   };
 
   const reset = (): void => {
@@ -173,6 +232,7 @@ export function createCreationScreen(o: {
       x.value = members[i]?.defaultName ?? "";
     });
     choices = defaultPersonalities(ids, size);
+    touched = null;
     renderChoices();
     showError(false);
   };
