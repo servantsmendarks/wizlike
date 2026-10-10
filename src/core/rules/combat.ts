@@ -686,7 +686,7 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan, sanKey: 
       section(ctx, "result", () => {
         // CB-23（M16）: 対象の個体は 1 振り目の前に 1 回だけ選び（グループの先頭の生存個体。乱数なし）、全部の振りをそこへ向ける
         const u = firstAliveUnit(grp);
-        if (u === null) return; // 宣言でグループは生存を確かめているので来ない
+        if (u === null) throw new Error("CB-23: declared target group has no living unit"); // 不変条件: 宣言でグループの生存を確かめている
         const unit = unitAt(b, ga, u);
         const targetId = enemyId(ga, u);
         for (let k = 0; k < times; k++) {

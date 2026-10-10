@@ -677,12 +677,12 @@ export function upgradeItemName(plainName: string, level: number, strings: Strin
   return s(strings, "town.upgrade.itemLv", { name: plainName, level });
 }
 
-/** 一覧の行の幅（全角 21 字 = 42 単位。party-band の textUnits の単位） */
-const LIST_ROW_UNITS = 42;
+/** 一覧の行の文字の幅（158 = 168 − 余白 4×2 − 枠 1×2。全角 19.5 字 = 39 単位。party-band の textUnits の単位。UI-47） */
+const LIST_ROW_UNITS = 39;
 
 /**
  * TW-17 / IT-70（M16 の G-2）: 触媒の行「●{item} +{level}　{owner}」（town.upgrade.catOn / catOff・catRow・itemLv）。
- * 行が一覧の幅（全角 21 字）を超えるときは、持ち主の名前を先頭 2 字 + item.owner.short（「{name}…」）に縮める（表示のための計算）
+ * 行が一覧の行の文字の幅（39 単位 = 全角 19.5 字）を超えるときは、持ち主の名前を先頭 2 字 + item.owner.short（「{name}…」）に縮める（表示のための計算）
  */
 export function upgradeCatalystLabel(c: TownMenuUpgradeCatalyst, on: boolean, strings: Strings): string {
   const key = on ? "town.upgrade.catOn" : "town.upgrade.catOff";

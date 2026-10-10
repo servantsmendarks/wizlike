@@ -322,15 +322,15 @@ describe("UI-52 街のページ", () => {
     const sel = { memberId: "c1", slot: "weapon" as const, picked: [] as UpgradeCatalystRef[] };
     const rows = townEntries({ upCat: sel }, m, S).filter((e) => e.kind === "upPick");
     const item = `${S[`item.rarity.${longRarity}`]}${longBase.name} +12`;
-    // 今のデータの最悪（最も長い接頭辞 + 最も長いベースの名前 + 2 桁の Lv + 6 字の名前）は 21 字に収まるので縮めない
+    // 今のデータの最悪（最も長い接頭辞 + 最も長いベースの名前 + 2 桁の Lv + 6 字の名前）は行の文字の幅（39 単位）に収まるので縮めない
     expect(rows.map((e) => e.label)).toEqual([`○${item}　ろくもじのな`, "○短剣 +0　ろくもじのな"]);
-    for (const e of rows) expect(kinsokuLines(e.label, 21), e.label).toHaveLength(1);
-    // 21 字を超える行（名前の長いベースを足したデータを想定した値）は、持ち主の名前を先頭 2 字 +「…」に縮める
+    for (const e of rows) expect(textUnits(e.label), e.label).toBeLessThanOrEqual(39);
+    // 39 単位を超える行（名前の長いベースを足したデータを想定した値）は、持ち主の名前を先頭 2 字 +「…」に縮める
     const long = { instanceId: "i1", name: "とてもながいなまえのけん +12", plainName: "とてもながいなまえのけん", level: 12, ownerId: "c3", ownerName: "ろくもじのな" };
-    expect(textUnits(`○とてもながいなまえのけん +12　ろくもじのな`)).toBeGreaterThan(42);
+    expect(textUnits(`○とてもながいなまえのけん +12　ろくもじのな`)).toBeGreaterThan(39);
     expect(upgradeCatalystLabel(long, false, S)).toBe("○とてもながいなまえのけん +12　ろく…");
     expect(upgradeCatalystLabel(long, true, S)).toBe("●とてもながいなまえのけん +12　ろく…");
-    expect(kinsokuLines(upgradeCatalystLabel(long, false, S), 21)).toHaveLength(1);
+    expect(textUnits(upgradeCatalystLabel(long, false, S))).toBeLessThanOrEqual(39);
     // 文言の差し替え: item.owner.short・catRow・itemLv は strings から
     const S2 = { ...S, "item.owner.short": "{name}~", "town.upgrade.catRow": "{owner}：{item}", "town.upgrade.itemLv": "{name}+{level}" };
     expect(upgradeCatalystLabel(long, true, S2)).toBe("●ろく~：とてもながいなまえのけん+12");

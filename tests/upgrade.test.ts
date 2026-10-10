@@ -268,6 +268,8 @@ describe("TW-17 town.upgrade の判定と処理", () => {
     expectRejected(s, up([{ memberId: "c1" }]), "bad action");
     expectRejected(s, up([{ memberId: 1, instanceId: good }]), "bad action");
     expectRejected(s, up([null]), "bad action");
+    // M15 までの形（実体の id の文字列の配列）は組でないので拒む（up() の読み替えを通さずに送る）
+    expectRejected(s, { type: "town.upgrade", memberId: "c1", slot: "weapon", catalysts: [good] } as unknown as Command, "bad action");
     expectRejected(s, up(["a", "b", "c", "d"], "c9"), "bad action");
     expectRejected(s, up([good, good]), "bad action");
     expectRejected(s, up([ref(good), ref(good, "c2")]), "bad action");
