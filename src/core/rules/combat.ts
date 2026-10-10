@@ -11,7 +11,7 @@
 //     randomDefendChance → randInt）] → initiative（味方の計画の順 → ラウンド開始時に行動可能な敵の個体の g → u）
 //     → 行動順に各行動
 //   逃走（battle.flee）: d100 →（失敗なら）initiative（敵だけ）→ 敵の行動 → ラウンド終了
-//     味方の攻撃 1 振り: 命中 → [ダメージ] → [覚醒]
+//     味方の攻撃 1 振り: 命中 → [ダメージ] → [覚醒]（対象は 1 振り目の前に決めた 1 体で乱数なし。倒れたら残りの振りは引かない。CB-23）
 //     敵の攻撃要素: 対象 → 命中 → [ダメージ] → [覚醒] → [付与]
 //     呪文・道具: 個体ごとのダメージ（→ 覚醒）・付与、回復のダイス
 //   → ラウンド終了の鑑定（g 順）→（勝利なら）金（g→u）→ 宝箱 d100 →（当たれば）罠の抽選（chest.ts。CB-61。中身は開けたとき CB-65）
@@ -684,11 +684,12 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan, sanKey: 
       let total = 0;
       let stolen = 0;
       section(ctx, "result", () => {
+        // CB-23（M16）: 対象の個体は 1 振り目の前に 1 回だけ選び（グループの先頭の生存個体。乱数なし）、全部の振りをそこへ向ける
+        const u = firstAliveUnit(grp);
+        if (u === null) return; // 宣言でグループは生存を確かめているので来ない
+        const unit = unitAt(b, ga, u);
+        const targetId = enemyId(ga, u);
         for (let k = 0; k < times; k++) {
-          const u = firstAliveUnit(grp);
-          if (u === null) break; // 他のグループへは振り替えない
-          const unit = unitAt(b, ga, u);
-          const targetId = enemyId(ga, u);
           swings += 1;
           const hit = chance(state.rng, hitPercent(data.config, ch.level, m.ac, unit.status.includes("sleep"), hitBonus));
           if (!hit) {
@@ -712,8 +713,11 @@ function applyAllyPlan(ctx: RuleContext, ch: Character, plan: AllyPlan, sanKey: 
             }
           }
           // 当たった振りのその後（撃破か覚醒）。出来事は later へ
-          if (next === 0) killUnit(lctx, ga, u);
-          else wakeCheck(lctx, unit, targetId, groupName(state, data, ga));
+          if (next === 0) {
+            killUnit(lctx, ga, u);
+            break; // CB-23（M16）: 倒れたら残りの振りは行わない（乱数も引かない。同じグループの別の個体へは移さない）
+          }
+          wakeCheck(lctx, unit, targetId, groupName(state, data, ga));
         }
         // 要約（M14）: 1 振りなら battle.hit / battle.miss、2 振り以上なら battle.hits / battle.missAll
         if (swings === 1) {

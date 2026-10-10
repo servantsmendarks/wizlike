@@ -821,9 +821,9 @@ describe("命中とダメージ（CB-21〜25）", () => {
     expect(seen.has(1)).toBe(true); // 出目 1 で恩恵なしは最低 1 に切り上がる場合を含む
   });
 
-  test("CB-23/25 戦士 Lv5 は 2 振り。1 振り目で先頭の個体を倒すと 2 振り目は次の個体、グループが全滅したら打ち切る（他のグループへ移らない）", () => {
+  test("CB-23/25（M16）戦士 Lv5 は 2 振り。2 振りとも最初に選んだ個体（グループの先頭の生存個体）に向け、同じグループの別の個体へは移らない", () => {
     const d = dataWith({ combat: ALWAYS_HIT });
-    const s = solo(1, { c1: { level: 5 } }, [1, 50]);
+    const s = solo(1, { c1: { level: 5 } }, [50, 50]);
     const m = cloneRng(s.rng);
     rolls(m, 6);
     chance(m, 100);
@@ -833,9 +833,25 @@ describe("命中とダメージ（CB-21〜25）", () => {
     const r = exec(s, RESOLVE, d);
     expect(eventsOf(r.events, "attack")).toEqual([
       { kind: "attack", actorId: "c1", targetId: "e0-0", hit: true, damage: d1 },
-      { kind: "attack", actorId: "c1", targetId: "e0-1", hit: true, damage: d2 },
+      { kind: "attack", actorId: "c1", targetId: "e0-0", hit: true, damage: d2 },
     ]);
     expect(r.state.rng).toEqual(m);
+    expect(r.state.battle!.groups[0]!.units.map((u) => u.hp)).toEqual([50 - d1 - d2, 50]);
+  });
+
+  test("CB-23/25（M16）1 振り目で対象の個体が倒れたら 2 振り目は振らない（乱数を引かない。同じグループの次の個体にも、他のグループにも移らない）。要約は行った振りの数で battle.hit", () => {
+    const d = dataWith({ combat: ALWAYS_HIT });
+    const s = solo(1, { c1: { level: 5 } }, [1, 50]);
+    const m = cloneRng(s.rng);
+    rolls(m, 6);
+    chance(m, 100);
+    const d1 = rollDice(m, "1d8").total + 2;
+    const r = exec(s, RESOLVE, d);
+    expect(eventsOf(r.events, "attack")).toEqual([{ kind: "attack", actorId: "c1", targetId: "e0-0", hit: true, damage: d1 }]);
+    expect(r.state.rng).toEqual(m); // 2 振り目の命中とダメージの乱数は消費しない
+    expect(r.state.battle!.groups[0]!.units.map((u) => u.hp)).toEqual([0, 50]);
+    expect(r.events).toContainEqual({ kind: "message", key: "battle.hit", params: { target: "大ネズミ", damage: d1 } });
+    expect(kindsOf(r.events)).not.toContain("message:battle.hits");
     // 1 体だけのグループは 1 振り目で全滅 → 2 振り目は無い（もう 1 つのグループは無傷）
     const s2 = setup(
       [
@@ -848,6 +864,27 @@ describe("命中とダメージ（CB-21〜25）", () => {
     const r2 = exec(s2, RESOLVE, d);
     expect(eventsOf(r2.events, "attack").map((e) => e.targetId)).toEqual(["e0-0"]);
     expect(r2.state.battle!.groups[1]!.units[0]!.hp).toBe(50);
+  });
+
+  test("CB-23（M16）戦士 Lv10 は 3 振り。2 振り目で倒れたら 3 振り目は振らず、要約は battle.hits{n: 2（行った振りの数）, damage: 合計}", () => {
+    const d = dataWith({ combat: ALWAYS_HIT });
+    const s = solo(1, { c1: { level: 10 } }, [50, 50]);
+    const m = cloneRng(s.rng);
+    rolls(m, 6);
+    chance(m, 100);
+    const d1 = rollDice(m, "1d8").total + 2;
+    chance(m, 100);
+    const d2 = rollDice(m, "1d8").total + 2; // 3 以上なので残り 1 の個体は必ず倒れる
+    s.battle!.groups[0]!.units[0]!.hp = d1 + 1;
+    s.battle!.groups[0]!.units[0]!.hpMax = d1 + 1;
+    const r = exec(s, RESOLVE, d);
+    expect(eventsOf(r.events, "attack")).toEqual([
+      { kind: "attack", actorId: "c1", targetId: "e0-0", hit: true, damage: d1 },
+      { kind: "attack", actorId: "c1", targetId: "e0-0", hit: true, damage: d2 },
+    ]);
+    expect(r.state.rng).toEqual(m);
+    expect(r.state.battle!.groups[0]!.units.map((u) => u.hp)).toEqual([0, 50]);
+    expect(r.events).toContainEqual({ kind: "message", key: "battle.hits", params: { target: "大ネズミ", n: 2, damage: d1 + d2 } });
   });
 
   test("CB-24 門番の甲冑は攻撃要素 2 つで 2 回、要素ごとに対象を選び直す（鏡の rng）", () => {
@@ -1505,7 +1542,9 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
       identified: ["giant_rat"],
       patches: { c1: { level: 5 }, c6: DEAD },
     });
+    // CB-23（M16）: 2 振りは 1 体に向き、倒れたら残りを振らないので、2 体はアルドとベルク（どちらも長剣 1d8）が 1 体ずつ倒す
     s.battle!.inputs["c1"] = atk(0);
+    s.battle!.inputs["c2"] = atk(0);
     const m = cloneRng(s.rng);
     rolls(m, 5);
     chance(m, 100);
@@ -2593,9 +2632,9 @@ describe("戦闘の表示の圧縮（CB-55 / CB-23 / CB-24。M14）", () => {
     };
   const nonMessage = (events: readonly GameEvent[]) => events.filter((e) => e.kind !== "beat" && e.kind !== "message");
 
-  test("CB-55/CB-23 2 振りとも当たり: declare 1 つ → result 1 つ（hpChanged → attack ×2 → battle.hits{target, n 2, damage 合計}）→ 撃破は後の aftermath 1 つ。rng と state は鏡のとおり", () => {
+  test("CB-55/CB-23 2 振りとも当たり: declare 1 つ → result 1 つ（hpChanged → attack ×2 → battle.hits{target, n 2, damage 合計}）→ 撃破は後の aftermath 1 つ。2 振りとも同じ個体（M16）。rng と state は鏡のとおり", () => {
     const d = dataWith({ combat: ALWAYS_HIT });
-    const s = setup([{ monsterId: "giant_rat", hps: [1, 50], status: [["paralysis"], ["paralysis"]] }], {
+    const s = setup([{ monsterId: "giant_rat", hps: [50, 50], status: [["paralysis"], ["paralysis"]] }], {
       patches: { ...ONLY_C1, c1: { level: 5 } },
       inputs: { c1: atk(0) },
       identified: ["giant_rat"],
@@ -2605,23 +2644,26 @@ describe("戦闘の表示の圧縮（CB-55 / CB-23 / CB-24。M14）", () => {
     chance(m, 100);
     const d1 = rollDice(m, "1d8").total + 2;
     chance(m, 100);
-    const d2 = rollDice(m, "1d8").total + 2;
+    const d2 = rollDice(m, "1d8").total + 2; // 3 以上
+    // 1 振り目の後に残り 1 になる HP にして、2 振り目で倒す
+    s.battle!.groups[0]!.units[0]!.hp = d1 + 1;
+    s.battle!.groups[0]!.units[0]!.hpMax = d1 + 1;
     const r = exec(s, RESOLVE, d);
     expect(r.events).toEqual([
       { kind: "beat", phase: "declare", auto: false },
       { kind: "message", key: "battle.attackDeclare", params: { actor: "アルド" } },
       { kind: "beat", phase: "result", auto: false },
-      { kind: "hpChanged", id: "e0-0", delta: -1, hp: 0 },
+      { kind: "hpChanged", id: "e0-0", delta: -d1, hp: 1 },
       { kind: "attack", actorId: "c1", targetId: "e0-0", hit: true, damage: d1 },
-      { kind: "hpChanged", id: "e0-1", delta: -d2, hp: 50 - d2 },
-      { kind: "attack", actorId: "c1", targetId: "e0-1", hit: true, damage: d2 },
+      { kind: "hpChanged", id: "e0-0", delta: -1, hp: 0 },
+      { kind: "attack", actorId: "c1", targetId: "e0-0", hit: true, damage: d2 },
       { kind: "message", key: "battle.hits", params: { target: "大ネズミ", n: 2, damage: d1 + d2 } },
       { kind: "beat", phase: "aftermath", auto: false },
       { kind: "lifeChanged", id: "e0-0", life: "dead" },
       { kind: "message", key: "battle.dead", params: { target: "大ネズミ" } },
     ]);
     expect(r.state.rng).toEqual(m);
-    expect(r.state.battle!.groups[0]!.units.map((u) => u.hp)).toEqual([0, 50 - d2]);
+    expect(r.state.battle!.groups[0]!.units.map((u) => u.hp)).toEqual([0, 50]);
     expect(r.state.bestiary["giant_rat"]!.kills).toBe(s.bestiary["giant_rat"]!.kills + 1);
   });
 
