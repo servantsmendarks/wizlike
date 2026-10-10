@@ -94,6 +94,8 @@ export type TownEntry =
   | { kind: "look"; label: string }
   /** TW-35 / UI-73（M12。U-2）: 酒場の「戦績」（townMenu.canShowRecord のときだけ）。押すと戦績の画面（コマンドは送らない） */
   | { kind: "record"; label: string }
+  /** UI-77（M16）: 酒場の「用語」。押すと用語の一覧（UI-73 と同じ部品。コマンドは送らない。state を使わないので core の menu に項目を持たない） */
+  | { kind: "rules"; label: string }
   /** TW-17: 触媒の行。押すと選択の印を付け外しした { upCat } へ（語りは出さない）。3 個選んだ後の未選択の行は disabled */
   | { kind: "upPick"; to: TownPage; label: string; disabled: boolean }
   /** TW-17: 確認の「鍛える」。押すと town.upgrade（upgradePreview の block が null でなければ disabled） */
@@ -250,6 +252,8 @@ export function townEntries(
     camp.push({ kind: "page", to: "classChange", label: s(strings, "town.tavern.classChange") });
     // TW-35 / UI-73（M12。U-2）: 戦績は全ダンジョン制覇の後だけ（出すかは core の canShowRecord）。転職の後
     if (menu.canShowRecord) camp.push({ kind: "record", label: s(strings, "town.tavern.record") });
+    // UI-77（M16）: 用語は戦績の後・救済の行の前。いつも出す
+    camp.push({ kind: "rules", label: s(strings, "town.tavern.rules") });
     const rows = (menu.mercy ?? []).map((m): TownEntry => ({ kind: "mercy", memberId: m.memberId, label: s(strings, "town.tavern.mercyRow", { name: m.name }) }));
     return [...camp, ...rows, back];
   }

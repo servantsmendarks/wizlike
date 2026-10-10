@@ -10,6 +10,7 @@ import { upgradePreview } from "../src/core/rules/upgrade";
 import { cloneState, createItemInstance } from "../src/core/state";
 import type { Character, EndingRecord, GameState, TownMenu, UpgradeCatalystRef } from "../src/core/types";
 import { endingKeyAction, formatEndingRecord } from "../src/presenter/views/ending";
+import { formatRules } from "../src/presenter/views/rules";
 import {
   samePage,
   TOWN_INTRO_DEDUP,
@@ -536,6 +537,7 @@ describe("UI-52 街のページ", () => {
   // M5.5 で一覧を「見回す ＋ キャンプと同じ項目」に改めた（旧: 状態を見る・装備を替える・並び順を変える）。
   // M10（2026-10-07）: 呪文・道具・装備・鑑定はキャラクター画面（UI-59。状態から開く）の操作に移したので、酒場の一覧から外した
   // M10 TW-09: 図鑑の後に「GMに申し出る」（転職）を足した
+  // M16 UI-77: 転職の後に「用語」を足した（以前の期待値は用語なし）
   test("TW-01/TW-03/TW-13/UI-52/TW-31/IT-66/TW-09 酒場: 見回す → 状態・並び順 → 図鑑 → GMに申し出る → 救済の行（申し出の間だけ。dead / ash の者、リーダーも）→ 戻る", () => {
     const camp: TownEntry[] = [
       { kind: "look", label: "見回す" },
@@ -543,6 +545,7 @@ describe("UI-52 街のページ", () => {
       { kind: "camp", open: "order", label: "並び順" },
       { kind: "camp", open: "book", label: "図鑑" }, // IT-66（M7）: 図鑑は酒場の一覧（並び順の後）
       { kind: "page", to: "classChange", label: "転職（GMに申し出る）" }, // TW-09（M10）: 転職は図鑑の後
+      { kind: "rules", label: "用語" }, // UI-77（M16）: 用語は転職（と戦績）の後・救済の行の前
     ];
     expect(townEntries("tavern", menuOf(town()), S)).toEqual([...camp, back]);
     expect(townPageIntro("tavern", menuOf(town()))).toEqual(["town.tavern.intro"]);
@@ -598,7 +601,7 @@ describe("UI-52 街のページ", () => {
     const m = menuOf(s);
     expect(m.canIdentify).toBe(true);
     const e = townEntries("tavern", m, S);
-    expect(e.map((x) => x.kind)).toEqual(["look", "camp", "camp", "camp", "page", "mercy", "back"]);
+    expect(e.map((x) => x.kind)).toEqual(["look", "camp", "camp", "camp", "page", "rules", "mercy", "back"]); // UI-77（M16）で rules を足した
     for (const x of e) expect("disabled" in x, x.label).toBe(false);
   });
 
@@ -1078,6 +1081,57 @@ describe("UI-73 戦績の画面（M12。views/ending.ts の純粋な部分）", 
     expect(on[i + 1]).toEqual({ kind: "record", label: "戦績" });
     expect(on.at(-1)).toEqual(back);
     expect(S["ending.dismiss"]).toBe("閉じる");
+  });
+});
+
+describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」）", () => {
+  const lines = formatRules(S);
+  const body = lines.slice(1);
+  const head = (term: string): string | undefined => body.find((l) => l.startsWith(`${term}　`));
+
+  test("UI-77 formatRules: 見出し rules.title → rules.line.1..N（続き番号のある限り。途切れた先は使わない）。値は strings だけ", () => {
+    expect(lines[0]).toBe("用語");
+    expect(S["rules.line.1"]).toBeDefined();
+    const n = body.length;
+    expect(n).toBeGreaterThanOrEqual(10);
+    for (let i = 1; i <= n; i++) expect(body[i - 1]).toBe(S[`rules.line.${i}`]);
+    expect(S[`rules.line.${n + 1}`]).toBeUndefined();
+    // 続き番号が途切れた先のキーは使わない
+    expect(formatRules({ "rules.title": "t", "rules.line.1": "a", "rules.line.3": "c" })).toEqual(["t", "a"]);
+  });
+
+  test("UI-77 どの行も 1 行に収まる: 会話の箱の 1 行（全角 28 字）と、戦績と同じ部品の窓の幅（枠 1×2・左の余白 4・右の余白 4 と続きの印 8 を除く。折り返さず切れる）", () => {
+    const w = dungeonLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size).wipe;
+    const inner = w.w - 2 - 4 - 4 - 8;
+    for (const l of lines) {
+      expect(kinsokuLines(l, 28), l).toHaveLength(1);
+      expect(textUnits(l) * 4, l).toBeLessThanOrEqual(inner);
+    }
+  });
+
+  test("UI-77 中身: 職業の略称と名前（classes.json と同じ）、HP / MP / SAN（party.*）、SAN の段と状態の略称（party.san.* / party.status.*）、↑（town.band.mark.levelUp）、G、AC、灰、士気、未鑑定、触媒", () => {
+    for (const c of data.classes) expect(body.some((l) => l.includes(`${c.abbr} ${c.name}`)), c.id).toBe(true);
+    for (const k of ["party.hp", "party.mp", "party.san"]) expect(head(S[k]!), k).toBeDefined();
+    for (const st of ["uneasy", "confused", "broken"]) expect(head(S[`party.san.${st}`]!), st).toBeDefined();
+    for (const st of ["poison", "paralysis", "sleep", "stone"]) expect(head(S[`party.status.${st}`]!), st).toBeDefined();
+    expect(head(S["town.band.mark.levelUp"]!)).toContain("宿");
+    expect(S["town.header"]).toContain("{gold}G");
+    expect(head("G")).toContain("所持金");
+    expect(head("AC")).toContain("小さいほど");
+    for (const term of ["灰", "士気", "未鑑定", "触媒"]) expect(head(term), term).toBeDefined();
+  });
+
+  test("UI-77/UI-52/TW-03 酒場の「用語」は戦績の有無によらず出る。転職（と戦績）の後・救済の行と戻るの前。閉じるのキーは戦績と同じ（endingKeyAction）", () => {
+    const off = townEntries("tavern", menuOf(town()), S);
+    const i = off.findIndex((e) => e.kind === "page" && e.to === "classChange");
+    expect(off[i + 1]).toEqual({ kind: "rules", label: "用語" });
+    const s = town();
+    s.progress = { ...s.progress, conquered: true };
+    const on = townEntries("tavern", menuOf(s), S);
+    const j = on.findIndex((e) => e.kind === "record");
+    expect(on[j + 1]).toEqual({ kind: "rules", label: "用語" });
+    expect(on.at(-1)).toEqual(back);
+    for (const a of ["back", "confirm", { menu: 0 }] as const) expect(endingKeyAction(a, false)).toBe("close");
   });
 });
 

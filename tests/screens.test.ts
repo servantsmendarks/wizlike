@@ -1027,6 +1027,16 @@ describe("入力と Command", () => {
     expect(dungeon).toMatch(/showEnding\(on: boolean\): void \{[\s\S]*?endingOpen = on;\s*syncPanels\(\);\s*\}/);
   });
 
+  test("UI-77（M16）用語の一覧: 酒場の「用語」で openRules。戦績と同じ overlay ending・同じ部品（play.ending）に formatRules(strings) を描き、閉じる・キー・再開は戦績の経路のまま。コマンドは送らず会話の箱に触れない（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toMatch(/case "rules":\s*openRules\(\);\s*return;/);
+    const open = /const openRules = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(open).not.toBe("");
+    expect(open).toMatch(/if \(overlay !== null\) return;\s*repeater\.release\(\);\s*overlay = "ending";\s*play\.ending\.render\(formatRules\(strings\)\);\s*play\.showEnding\(true\);\s*syncControls\(\);/);
+    expect(open).not.toContain("play.talk.");
+    expect(open).not.toContain("run(");
+  });
+
   test("UI-47/UI-59（M10。2026-10-07 A-A2）キャンプの項目（と peek の dim の行）は、街かキャラクター画面なら会話の箱を打ち切ってから動く。Esc も campKeyIndex → select でこの onSelect を通る（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const sync = /const syncCampControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";

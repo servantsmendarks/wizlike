@@ -133,6 +133,7 @@ import { createSaveBanner } from "./views/save-banner";
 import { createUpdateNotice } from "./views/update-notice";
 import { createTitleScreen, titleEntries, titleHint, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
 import { endingKeyAction, formatEndingRecord } from "./views/ending";
+import { formatRules } from "./views/rules";
 import { formatWipeSummary, wipeKeyAction } from "./views/wipe";
 import { createNarrator, TALK_KEY_LINES } from "./views/talk";
 import {
@@ -729,6 +730,10 @@ export function createApp(o: {
           case "record":
             // TW-35 / UI-73（M12。U-2）: 酒場の「戦績」。値は core の endingRecordView（状態を変えないのでコマンドにしない）
             openEnding(endingRecordView(state, data));
+            return;
+          case "rules":
+            // UI-77（M16）: 酒場の「用語」。strings の rules.line.N を戦績と同じ部品で（状態を変えないのでコマンドにしない）
+            openRules();
             return;
           case "camp":
             // TW-03: 酒場の状態（キャラクター画面）・並び順・図鑑はキャンプと同じ部品で開く（戻る・やめるで酒場の一覧へ戻る）
@@ -2092,6 +2097,19 @@ export function createApp(o: {
     if (read) play.talk.flush();
     overlay = "ending";
     play.ending.render(formatEndingRecord(r, strings));
+    play.showEnding(true);
+    syncControls();
+  };
+
+  /**
+   * UI-77（M16）: 用語の一覧を開く（酒場の「用語」）。戦績の画面と同じ overlay ending・同じ部品に strings の行（formatRules）を描く。
+   * 閉じる（「閉じる」・Enter / Esc / 1）、debug パネルと設定画面の下に残すこと、再開で閉じることは戦績と同じ経路。会話の箱に触れない
+   */
+  const openRules = (): void => {
+    if (overlay !== null) return;
+    repeater.release();
+    overlay = "ending";
+    play.ending.render(formatRules(strings));
     play.showEnding(true);
     syncControls();
   };
