@@ -13,6 +13,7 @@ import type {
   CampInventoryKind,
   CampMember,
   CampMenu,
+  CampReturnItem,
   CampSummary,
   CampPlace,
   CampSpellView,
@@ -581,6 +582,7 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
         }),
         slotsUsed: slotsUsed(ch),
         slotsMax: data.config.inventory.slotsPerCharacter,
+        equipped: EQUIP_SLOTS.filter((slot) => ch.equipment[slot] !== null).length, // CH-71（M16）
         knownSpells: ch.knownSpells.flatMap((id) => {
           const sp = data.spells.find((s) => s.id === id);
           if (sp === undefined) return [];
@@ -627,18 +629,26 @@ function identifyView(
  * UI-53: キャンプの top のパネルの要約。迷宮のキャンプ（campPlace dungeon）のときだけ非 null。
  * 帰還の品は life を問わずパーティ全員の inventory の、効果 return の消耗品の個数（未鑑定も数える。装備は数えない）。
  * morale は宿の士気がある（TW-15。moraleOf が null でない）か。
+ * returnItem（M16。設計 4-8）は並び順 × inventory の順で、いま dungeon.useItem で使える最初の帰還の品。迷宮の戦闘外・保留なし
+ * （この関数が非 null の場所）での checkUseItem と同値: 持ち主が行動可能（CH-44）で、品の usableIn が battle でない。
+ * （items.ts は camp.ts を import するので、循環を作らないよう checkUseItem は呼ばずに同じ条件を書く。同値はテストで確かめる）
  */
 export function campSummary(state: GameState, data: GameData): CampSummary | null {
   if (campPlace(state) !== "dungeon") return null;
   const dive = state.dive;
   if (dive === null) return null;
   let returnItems = 0;
+  let returnItem: CampReturnItem | null = null;
   for (const ch of state.party) {
     for (const id of ch.inventory) {
       const inst = state.items[id];
       if (inst === undefined) continue;
       const item = findItem(data, inst.itemId);
-      if (item !== null && item.type === "consumable" && item.effect.type === "return") returnItems++;
+      if (item === null || item.type !== "consumable" || item.effect.type !== "return") continue;
+      returnItems++;
+      if (returnItem === null && canAct(ch) && item.usableIn !== "battle") {
+        returnItem = { memberId: ch.id, ownerName: ch.name, instanceId: id, name: itemDisplayName(state, data, id) };
+      }
     }
   }
   return {
@@ -648,6 +658,7 @@ export function campSummary(state: GameState, data: GameData): CampSummary | nul
     ledgerItems: dive.ledger.items.length,
     ledgerGold: dive.ledger.gold,
     returnItems,
+    returnItem,
     morale: moraleOf(state, data) !== null,
   };
 }

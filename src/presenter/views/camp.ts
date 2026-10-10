@@ -2,11 +2,11 @@
 // ページ（CampPage）を段にした純粋な状態機械と、パネルの DOM。
 // - 候補・押せるか・対象の要否は core の campMenu と fieldItemMenu の値だけで決める（UI-35）。送る Command は
 //   dungeon.cast / dungeon.useItem / party.equip / party.unequip / party.give / party.drop / party.reorder / party.identify。
-// - 迷宮のキャンプの top は [状態][並び順][空き][空き] / [空き][空き][空き][戻る] の 4×2 の枠（layout.campGrid。M10 で 道具・装備・呪文・鑑定 を
-//   キャラクター画面へ移した）。状態 → メンバー一覧（名前の 6 枠と [7] 戻る）→ 人 → キャラクター画面。
+// - 迷宮のキャンプの top は [状態][並び順][糸で帰る][空き] / [空き][空き][空き][戻る] の 4×2 の枠（layout.campGrid。M10 で 道具・装備・呪文・鑑定 を
+//   キャラクター画面へ移した。糸で帰るは M16 で、core の campSummary.returnItem があるときだけ。無ければ空き枠）。状態 → メンバー一覧（名前の 6 枠と [7] 戻る）→ 人 → キャラクター画面。
 // - キャラクター画面（UI-59。M10）は 1 人の全部（能力値・装備・所持品・習得呪文）を 1 画面に出し、操作は 4×2 の枠
 //   [装備][使う][渡す][捨てる] / [呪文][鑑定（鑑定できる職業の者だけ）][次の人][戻る]。その下の段（装備・使う・渡す・捨てる・呪文・鑑定）の
-//   やめるは同じ人のキャラクター画面へ。キャラクター画面の戻るは、キャンプはメンバー一覧、酒場は閉じる（酒場の一覧・帯を押した街のページへ）。
+//   やめるは同じ人のキャラクター画面へ。前後の人は ← → キー・左右スワイプ・ヘッダーの ◀ ▶ でも移る（M16。campCanCycle / campSwipeDir）。キャラクター画面の戻るは、キャンプはメンバー一覧、酒場は閉じる（酒場の一覧・帯を押した街のページへ）。
 // - 送った後も閉じずに、同じ者の段へ戻る（CampStep の after）。sync で campMenu を取り直し、campRepair で成り立たない段を直す。
 // - 帰還の糸（FieldItemView.isReturn）は送る前に確認の段（confirmReturn。戻る / やめる）を挟む。捨てるも確認の段（drop の confirm）を挟む。
 //   確認の段は表示層だけの値で、core の状態は確認まで変えない（保存しない）。
@@ -37,8 +37,11 @@ export type CampPage =
   | { kind: "equip"; stage: "detail"; memberId: string; slot: EquipSlot; instanceId: string }
   | { kind: "use"; stage: "item"; memberId: string }
   | { kind: "use"; stage: "target"; memberId: string; instanceId: string }
-  /** DG-30 / UI-53（M5.5）: 帰還の糸を使う前の確認 */
-  | { kind: "use"; stage: "confirmReturn"; memberId: string; instanceId: string }
+  /**
+   * DG-30 / UI-53（M5.5）: 帰還の糸を使う前の確認。from "top" は迷宮のキャンプの top の「糸で帰る」（M16。campSummary.returnItem）から
+   * 来たとき（キャラクター画面を開かず、やめるで top へ戻る）
+   */
+  | { kind: "use"; stage: "confirmReturn"; memberId: string; instanceId: string; from?: "top" }
   /** CH-78（M10）: 渡す品（page は所持品の頁） → 相手 */
   | { kind: "give"; stage: "item"; memberId: string; page: number }
   | { kind: "give"; stage: "to"; memberId: string; instanceId: string }
@@ -124,7 +127,24 @@ function s(strings: Strings, key: string, params?: Record<string, string | numbe
  * top・メンバー一覧・並び順・図鑑は偽
  */
 export function campCharacterOpen(page: CampPage): boolean {
+  if (page.kind === "use" && page.stage === "confirmReturn" && page.from === "top") return false; // M16: top の「糸で帰る」の確認
   return page.kind !== "top" && page.kind !== "members" && page.kind !== "order" && page.kind !== "book";
+}
+
+/**
+ * UI-59 / UI-33（M16。設計 4-9）: キャラクター画面で前後の人へ移れるか（ヘッダーの ◀ ▶ を出すか・左右スワイプを受けるか）。
+ * キャラクター画面そのもの（下の段ではない）で、パーティが 2 人以上のとき（「次の人」の枠の dim と同じ条件）
+ */
+export function campCanCycle(page: CampPage, m: CampInput): boolean {
+  return page.kind === "character" && m.menu.members.length > 1;
+}
+
+/**
+ * UI-30 / UI-59（M16）: キャラクター画面の左右スワイプの向き。指を左へ動かすと次の人（+1）、右へ動かすと前の人（−1）
+ * （頁をめくる向き。← / → キーと ◀ ▶ は前 / 次）。左右以外は null
+ */
+export function campSwipeDir(a: Action): 1 | -1 | null {
+  return a === "left" ? 1 : a === "right" ? -1 : null;
 }
 
 /** キャラクター画面とその下の段の人（それ以外は null） */
@@ -166,6 +186,7 @@ function cancelStep(host: CampHost, page: CampPage, m: CampInput): CampStep {
       return go({ kind: "equip", stage: "item", memberId: page.memberId, slot: page.slot });
     case "use":
       if (page.stage === "item") return go({ kind: "character", memberId: page.memberId });
+      if (page.stage === "confirmReturn" && page.from === "top") return go({ kind: "top" });
       return go({ kind: "use", stage: "item", memberId: page.memberId });
     case "give":
       if (page.stage === "item") return go({ kind: "character", memberId: page.memberId });
@@ -241,9 +262,13 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
   switch (page.kind) {
     case "top": {
       const open = (key: string, p: CampPage): CampEntry => ({ label: s(strings, key), disabled: false, choice: { kind: "open", page: p } });
+      // DG-30 / UI-53（M16。設計 4-8）: いま使える帰還の品があれば 3 つ目の枠に「糸で帰る」（どれを使うかは core の campSummary.returnItem）
+      const ret = m.summary?.returnItem ?? null;
+      const useReturn =
+        ret === null ? null : open("camp.useReturn", { kind: "use", stage: "confirmReturn", memberId: ret.memberId, instanceId: ret.instanceId, from: "top" });
       return {
         layout: "grid",
-        slots: [open("camp.status", { kind: "members" }), open("camp.order", { kind: "order", picked: null }), null, null, null, null, null, back],
+        slots: [open("camp.status", { kind: "members" }), open("camp.order", { kind: "order", picked: null }), useReturn, null, null, null, null, back],
       };
     }
     case "members":
@@ -467,7 +492,7 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
       const back: CampPage = { kind: "use", stage: "item", memberId: page.memberId };
       if (page.stage === "confirmReturn") {
         if (choice.kind !== "confirm") return stay;
-        return { kind: "send", command: { type: "dungeon.useItem", memberId: page.memberId, itemId: page.instanceId }, after: back };
+        return { kind: "send", command: { type: "dungeon.useItem", memberId: page.memberId, itemId: page.instanceId }, after: page.from === "top" ? { kind: "top" } : back };
       }
       if (page.stage === "item") {
         if (choice.kind !== "item") return stay;
@@ -635,7 +660,10 @@ export function campPanel(page: CampPage, m: CampInput, strings: Strings): CampP
       s(strings, "camp.summary.place", { dungeon: sum.dungeonName, floor: sum.floor }),
       s(strings, "camp.summary.gold", { gold: sum.gold }),
       s(strings, "camp.summary.ledger", { gold: sum.ledgerGold, items: sum.ledgerItems }),
-      s(strings, "camp.summary.return", { count: sum.returnItems }),
+      // DG-30 / UI-53（M16）: いま使える帰還の品があれば持ち主の名前を添える（core の returnItem。無ければ数だけ）
+      sum.returnItem === null
+        ? s(strings, "camp.summary.returnNoOwner", { count: sum.returnItems })
+        : s(strings, "camp.summary.return", { count: sum.returnItems, owner: sum.returnItem.ownerName }),
       ...(sum.morale ? [s(strings, "camp.summary.morale")] : []), // TW-15: 士気がある間だけ 5 行目
     ],
   };
@@ -661,6 +689,11 @@ export function campRepair(host: CampHost, page: CampPage, m: CampInput): CampPa
       return page;
     default:
       break;
+  }
+  if (page.kind === "use" && page.stage === "confirmReturn" && page.from === "top") {
+    // M16: top の「糸で帰る」の確認は、その品が使えなくなったら（消えた・持ち主が動けない）top へ
+    const it = m.items?.members.find((y) => y.id === page.memberId);
+    return it !== undefined && it.canAct && it.items.some((y) => y.instanceId === page.instanceId && y.usable) ? page : { kind: "top" };
   }
   const x = member(page.memberId);
   if (x === undefined) return lost();

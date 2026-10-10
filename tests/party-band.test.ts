@@ -4,7 +4,7 @@ import { sanStage } from "../src/core/rules/san";
 import type { Character } from "../src/core/types";
 import { tapSpecOf } from "../src/presenter/input/tap";
 import { dungeonLayout, regions, townLayout } from "../src/presenter/layout";
-import { createHeader } from "../src/presenter/views/header";
+import { createHeader, navTrianglePath } from "../src/presenter/views/header";
 import { bandCell, BAND_CELL_UNITS, createPartyBand, fitName, textUnits } from "../src/presenter/views/party-band";
 import { createTownPicture, townPictureUrl } from "../src/presenter/views/town-picture";
 import { data, newGame } from "./helpers/core";
@@ -111,6 +111,13 @@ function fakeDocument(): FakeEl[] {
     createElement(tag: string): FakeEl {
       const e = new FakeEl();
       e["tagName"] = tag.toUpperCase();
+      created.push(e);
+      return e;
+    },
+    // M16（UI-59）: ヘッダーの ◀ ▶ の三角は SVG
+    createElementNS(_ns: string, tag: string): FakeEl {
+      const e = new FakeEl();
+      e["tagName"] = tag;
       created.push(e);
       return e;
     },
@@ -292,5 +299,42 @@ describe("UI-13 帯の DOM・UI-61 施設の絵・ヘッダーのログ", () => 
     h.setTurn(null);
     expect(turn!.style["display"]).toBe("none");
     expect(text!.style["width"]).toBe("152px");
+  });
+
+  test("UI-59/UI-33（M16）createHeader: キャラクター画面の ◀（x0..23）▶（x136..159。ログの左）は setNav の間だけ出し、問いはその間（x28..131 の 104px）に中央寄せ。タップは onCycle(−1 / +1)", () => {
+    fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const dirs: number[] = [];
+    const h = createHeader({ strings: S, region: g.header, layout: L.header, onSettings: () => {}, onCycle: (d) => dirs.push(d) });
+    const kids = fake(h.el).children;
+    const text = kids[0]!;
+    const prev = kids.find((c) => c.className === "header-prev")!;
+    const next = kids.find((c) => c.className === "header-next")!;
+    expect(L.header.prev).toEqual({ x: 0, y: 0, w: 24, h: 16 });
+    expect(L.header.next).toEqual({ x: 136, y: 0, w: 24, h: 16 });
+    expect(L.header.navText).toEqual({ x: 28, y: 0, w: 104, h: 16 });
+    expect([prev.style["left"], prev.style["width"], prev.style["display"]]).toEqual(["0px", "24px", "none"]);
+    expect([next.style["left"], next.style["width"], next.style["display"]]).toEqual(["136px", "24px", "none"]);
+    // 三角は SVG の path（美咲フォントに ◀ ▶ が無い）
+    expect(prev.children[0]!["tagName"]).toBe("svg");
+    expect(prev.children[0]!.children[0]!["tagName"]).toBe("path");
+    h.setNav(true);
+    expect([prev.style["display"], next.style["display"]]).toEqual(["", ""]);
+    expect([text.style["left"], text.style["width"], text.style["textAlign"]]).toEqual(["28px", "104px", "center"]);
+    tapSpecOf(prev)!.onTap({ lx: 0, ly: 0 });
+    tapSpecOf(next)!.onTap({ lx: 0, ly: 0 });
+    expect(dirs).toEqual([-1, 1]);
+    h.setNav(false);
+    expect([prev.style["display"], next.style["display"]]).toEqual(["none", "none"]);
+    expect([text.style["left"], text.style["width"], text.style["textAlign"]]).toEqual(["4px", "152px", ""]);
+    // 「{name}の状態」は名前 6 字でも問いの幅に入る（全角 9 字 = 72px）
+    expect(textUnits(S["camp.prompt.status"]!.replace("{name}", "アルドリンド")) * 4).toBeLessThanOrEqual(L.header.navText.w);
+    expect(S["character.prev"]).toBe("前の人");
+  });
+
+  test("UI-59（M16）navTrianglePath: 22×14 の中央に 6×8 の三角。−1 は左向き、+1 は右向き", () => {
+    expect(navTrianglePath(22, 14, -1)).toBe("M14 3L8 7L14 11Z");
+    expect(navTrianglePath(22, 14, 1)).toBe("M8 3L14 7L8 11Z");
   });
 });

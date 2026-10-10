@@ -1028,7 +1028,7 @@ describe("UI-53/TW-03 campMenu", () => {
 });
 
 describe("UI-59（M10）campMenu のキャラクター画面の欄（inventory・slotsUsed・knownSpells・鑑定）", () => {
-  test("UI-59/CH-71 inventory は本人の inventory の順で品種と呪いの印（鑑定済みだけ）。slotsUsed は装備 + 所持品、slotsMax は config", () => {
+  test("UI-59/CH-71 inventory は本人の inventory の順で品種と呪いの印（鑑定済みだけ）。slotsUsed は装備 + 所持品、slotsMax は config、equipped は装備中の品の数（M16）", () => {
     let s = inTown();
     s = giveCursed(s, "c1", true).s; // i19 鑑定済みの呪われた短剣
     s = giveCursed(s, "c1", false).s; // i20 未鑑定の呪われた短剣
@@ -1042,6 +1042,7 @@ describe("UI-59（M10）campMenu のキャラクター画面の欄（inventory�
     ]);
     expect(c1.slotsUsed).toBe(3 + 4); // 長剣・革鎧・木の盾 + 所持品 4
     expect(c1.slotsMax).toBe(data.config.inventory.slotsPerCharacter);
+    expect(c1.equipped).toBe(3);
     expect(campMenu(s, data)!.members[1]!.inventory).toEqual([]); // ベルクは所持品なし
   });
 
@@ -1116,7 +1117,17 @@ describe("UI-53/DG-40 campSummary", () => {
     member(s, "c1").life = "dead";
     member(s, "c1").hp = 0;
     // 帰還の糸: c5 の初期の 1 本（config の初期装備）+ c1 に足した 1 本 = 2
-    expect(campSummary(s, data)).toEqual({ dungeonName: "試しの坑道", floor: 2, gold: 123, ledgerItems: 2, ledgerGold: 45, returnItems: 2, morale: false });
+    // returnItem（M16）: c1 は死亡で使えないので、次の c5 の i15
+    expect(campSummary(s, data)).toEqual({
+      dungeonName: "試しの坑道",
+      floor: 2,
+      gold: 123,
+      ledgerItems: 2,
+      ledgerGold: 45,
+      returnItems: 2,
+      returnItem: { memberId: "c5", ownerName: "エル", instanceId: "i15", name: "帰還の糸" },
+      morale: false,
+    });
   });
 
   test("UI-53/TW-15 宿の士気があれば morale が真（rankId がデータに無ければ偽）", () => {
@@ -1131,6 +1142,31 @@ describe("UI-53/DG-40 campSummary", () => {
     // c5 の初期の 1 本（鑑定済み）+ c2 に足した未鑑定の 1 本 = 2
     const u = give(inDungeon(), "c2", "return_thread", false);
     expect(campSummary(u.s, data)!.returnItems).toBe(2);
+  });
+
+  test("DG-30/UI-53（M16）returnItem は並び順 × inventory の順で、いま dungeon.useItem が受け付ける最初の帰還の品（持ち主が行動可能）。無ければ null", () => {
+    // 並び順で先の c2 に未鑑定の糸を足すと、c5 より先にそれ（名前は未鑑定の見た目）
+    const a = give(inDungeon(), "c2", "return_thread", false);
+    const ra = campSummary(a.s, data)!.returnItem!;
+    expect(ra).toEqual({ memberId: "c2", ownerName: "ベルク", instanceId: a.id, name: itemDisplayName(a.s, data, a.id) });
+    // c2 が眠り（行動不能）なら c5 の i15。c5 も石化なら null（数は 2 のまま）
+    const b = cloneState(a.s);
+    member(b, "c2").status = ["sleep"];
+    expect(campSummary(b, data)!.returnItem).toEqual({ memberId: "c5", ownerName: "エル", instanceId: "i15", name: "帰還の糸" });
+    member(b, "c5").status = ["stone"];
+    expect(campSummary(b, data)!.returnItem).toBeNull();
+    expect(campSummary(b, data)!.returnItems).toBe(2);
+    // 糸が 1 本も無ければ null
+    const none = inDungeon({ c5: { inventory: [] } });
+    expect(campSummary(none, data)!.returnItem).toBeNull();
+    // checkUseItem と同値（使えるものの先頭が returnItem）
+    for (const st of [a.s, b, none]) {
+      const firstOk =
+        st.party.flatMap((c) => c.inventory.filter((id) => st.items[id]?.itemId === "return_thread").map((id) => ({ c: c.id, id }))).find(
+          (x) => !execute(st, { type: "dungeon.useItem", memberId: x.c, itemId: x.id }, data).events.some((e) => e.kind === "rejected"),
+        ) ?? null;
+      expect(campSummary(st, data)!.returnItem?.instanceId ?? null).toBe(firstOk?.id ?? null);
+    }
   });
 
   test("UI-53 街・戦闘中・保留中・title では null", () => {

@@ -169,6 +169,8 @@ export function createDungeonScreen(o: {
   onSettings(): void;
   /** UI-46 / UI-13（M8.5。M16 から迷宮・戦闘でも）: ヘッダーのログ */
   onLog(): void;
+  /** UI-59（M16）: キャラクター画面のヘッダーの ◀（−1）/ ▶（+1） */
+  onCycle?(dir: 1 | -1): void;
   /** UI-13（M8.5）: 街の帯のタップ（その人の id） */
   onBand(memberId: string): void;
   /** 十字ボタンのタップ */
@@ -199,7 +201,7 @@ export function createDungeonScreen(o: {
   el.className = "screen screen-play";
 
   const tl = o.town;
-  const header = createHeader({ strings: o.strings, region: r.header, layout: lay.header, onSettings: o.onSettings, onLog: o.onLog });
+  const header = createHeader({ strings: o.strings, region: r.header, layout: lay.header, onSettings: o.onSettings, onLog: o.onLog, onCycle: (d) => o.onCycle?.(d) });
 
   // ビュー
   const viewBox = document.createElement("div");

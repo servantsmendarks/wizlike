@@ -112,6 +112,14 @@ const SCREENS: Record<string, Record<string, Rect>> = {
   battleMember: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.battleMember.map((r, i) => [`battleMember[${i}]`, r])) },
   battleList: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
   autoStop: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, autoStop: L.autoStop },
+  // UI-59（M16）キャラクター画面: ヘッダーの ◀ ▶・ログ・設定と、操作の 4×2 の枠
+  character: {
+    "header.prev": L.header.prev,
+    "header.next": L.header.next,
+    "header.log": HEADER_LOG,
+    "header.settings": HEADER_SETTINGS,
+    ...Object.fromEntries(L.campGrid.map((r, i) => [`campGrid[${i}]`, r])),
+  },
   // SV-42 更新の案内（どの画面の上にも出る）
   updateNotice: { "UPDATE_NOTICE.reload": UPDATE_NOTICE.reload, "UPDATE_NOTICE.close": UPDATE_NOTICE.close },
   // debug パネルは [-] [+] の行と toggle の行が別なので、それぞれの組で検査する
@@ -170,7 +178,9 @@ describe("layout", () => {
           expect(overlaps(entries[i]![1], entries[j]![1]), `${screen} ${entries[i]![0]} / ${entries[j]![0]}`).toBe(false);
     }
     // 例外はヘッダーの設定ボタン、M8.5 の街のログ・帯・一覧の行、M16 の迷宮・戦闘の広い一覧の行だけで、ヘッダーの 2 つはヘッダーの中に収まる
-    expect(TOUCH_EXCEPTIONS).toEqual(["header.settings", "header.log", "town.band", "town.list", "listWide"]);
+    // M16（UI-59）: キャラクター画面のヘッダーの ◀ ▶（header.prev / header.next。24×16）を足した
+    expect(TOUCH_EXCEPTIONS).toEqual(["header.settings", "header.log", "header.prev", "header.next", "town.band", "town.list", "listWide"]);
+    for (const k of ["prev", "next"] as const) expect(inside(L.header[k], regions(data.config.ui.layout, W).header), k).toBe(true);
     expect(inside(T.header.log, regions(data.config.ui.layout, W).header)).toBe(true);
     expect(inside(HEADER_SETTINGS, regions(data.config.ui.layout, W).header)).toBe(true);
     // 押せない欄も画面の内側
@@ -306,6 +316,10 @@ describe("layout", () => {
       log: { x: 160, y: 0, w: 40, h: 16 },
       settings: { x: 200, y: 0, w: 40, h: 16 },
       turn: { x: 108, y: 0, w: 48, h: 16 },
+      // UI-59（M16）: キャラクター画面の ◀ ▶ と、その間の問い
+      prev: { x: 0, y: 0, w: 24, h: 16 },
+      next: { x: 136, y: 0, w: 24, h: 16 },
+      navText: { x: 28, y: 0, w: 104, h: 16 },
     });
     expect(L.dpad).toEqual({
       forward: { x: 40, y: 300, w: 32, h: 32 },

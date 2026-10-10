@@ -60,7 +60,7 @@ export type CharacterDetail = {
   magicPower: string;
   /** 装備 6 枠（SLOT_ORDER の順）。item は表示名、空きは detail.equipNone */
   equipment: { slot: string; item: string }[];
-  /** UI-59（M10）: 所持品の見出し（character.inventoryHeading{used, max}。member が無ければ空） */
+  /** UI-59（M10）: 所持品の見出し（character.inventoryHeading{used, max, equipped}。equipped は M16 の CH-71。member が無ければ空） */
   inventoryHeading: string;
   /** UI-59（M10）: 所持品の枠（最大 CHARACTER_INVENTORY_CELLS） */
   inventory: CharacterCell[];
@@ -98,7 +98,7 @@ export function formatCharacter(
   strings: Strings,
   itemName: (instanceId: string) => string,
   sheet?: MemberSheet,
-  member?: Pick<CampMember, "inventory" | "slotsUsed" | "slotsMax" | "knownSpells">,
+  member?: Pick<CampMember, "inventory" | "slotsUsed" | "slotsMax" | "equipped" | "knownSpells">,
   view: { inventoryPage?: number; spellPage?: number } = {},
 ): CharacterDetail {
   const s = (key: string, params?: Record<string, string | number>): string => formatMessage(strings[key] ?? key, params);
@@ -137,7 +137,7 @@ export function formatCharacter(
       const id = ch.equipment[slot];
       return { slot: s(`detail.slot.${slot}`), item: id === null ? s("detail.equipNone") : itemName(id) };
     }),
-    inventoryHeading: member === undefined ? "" : s("character.inventoryHeading", { used: member.slotsUsed, max: member.slotsMax }),
+    inventoryHeading: member === undefined ? "" : s("character.inventoryHeading", { used: member.slotsUsed, max: member.slotsMax, equipped: member.equipped }),
     inventory:
       member === undefined ? [] : characterCells(member.inventory, CHARACTER_INVENTORY_CELLS, (x) => ({ text: x.name, dim: false }), more, view.inventoryPage),
     spellHeading: member === undefined ? "" : s("character.spellHeading"),

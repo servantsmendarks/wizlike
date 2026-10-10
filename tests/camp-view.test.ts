@@ -12,6 +12,7 @@ import { cloneState, createItemInstance } from "../src/core/state";
 import type { Character, Command, GameState } from "../src/core/types";
 import {
   CAMP_GRID_SLOTS,
+  campCanCycle,
   campCharacterOpen,
   campCycle,
   campEntries,
@@ -22,6 +23,7 @@ import {
   campRepair,
   campRows,
   campStep,
+  campSwipeDir,
   createCampView,
   type CampEntries,
   type CampEntry,
@@ -74,8 +76,8 @@ const labels = (xs: readonly (CampEntry | null)[]) => xs.map((x) => (x === null 
 const character = (memberId: string): CampPage => ({ kind: "character", memberId });
 
 describe("UI-53 キャンプの top（M10）", () => {
-  test("UI-53 top は 8 枠: 状態・並び順 / 空き 5 つ・戻る。見出しは camp.prompt.top。状態はメンバー一覧へ", () => {
-    const m = input(inDungeon({ c5: { classId: "bishop" } }));
+  test("UI-53 top は 8 枠: 状態・並び順 / 空き 5 つ・戻る（帰還の糸を使えなければ 3 つ目も空き）。見出しは camp.prompt.top。状態はメンバー一覧へ", () => {
+    const m = input(inDungeon({ c5: { classId: "bishop", inventory: [] } }));
     const e = grid(campEntries("camp", { kind: "top" }, m, S));
     expect(e).toHaveLength(CAMP_GRID_SLOTS);
     expect(labels(e)).toEqual(["状態", "並び順", null, null, null, null, null, "戻る"]);
@@ -194,6 +196,22 @@ describe("UI-59 キャラクター画面（M10）", () => {
     expect(campStep("camp", character("c6"), m, { kind: "nextMember" })).toEqual({ kind: "page", page: character("c1") });
     expect(campCycle({ kind: "members" }, m, 1)).toBeNull();
     expect(campCycle({ kind: "equip", stage: "slot", memberId: "c1" }, m, 1)).toBeNull();
+  });
+
+  test("UI-59/UI-33/UI-30（M16）前後の人は campCanCycle（キャラクター画面そのもので 2 人以上）の間だけ。スワイプは指を左へで次（+1）、右へで前（−1）、上下は null", () => {
+    const m = input(inDungeon());
+    expect(campCanCycle(character("c1"), m)).toBe(true);
+    for (const p of [{ kind: "top" }, { kind: "members" }, { kind: "equip", stage: "slot", memberId: "c1" }, { kind: "use", stage: "item", memberId: "c1" }, { kind: "order", picked: null }] satisfies CampPage[]) {
+      expect(campCanCycle(p, m), JSON.stringify(p)).toBe(false);
+    }
+    // 1 人だけなら出さない（「次の人」の枠の dim と同じ）
+    const one: CampInput = { ...m, menu: { ...m.menu, members: m.menu.members.slice(0, 1) } };
+    expect(campCanCycle(character("c1"), one)).toBe(false);
+    expect(grid(campEntries("camp", character("c1"), one, S))[6]!.disabled).toBe(true);
+    expect([campSwipeDir("left"), campSwipeDir("right"), campSwipeDir("forward"), campSwipeDir("around"), campSwipeDir("confirm")]).toEqual([1, -1, null, null, null]);
+    // スワイプの向きを campCycle に渡すと: c3 で指を左へ → c4、右へ → c2
+    expect(campCycle(character("c3"), m, campSwipeDir("left")!)).toEqual(character("c4"));
+    expect(campCycle(character("c3"), m, campSwipeDir("right")!)).toEqual(character("c2"));
   });
 
   test("UI-59 パネルはキャラクター画面（装備の品の段だけ focusSlot、呪文・渡す・捨てるの品の段は頁）。キャラクター画面の間は campCharacterOpen が真", () => {
@@ -731,7 +749,7 @@ describe("TW-03/UI-52 酒場とキャンプの共有（M10）", () => {
     expect(campPanel({ kind: "top" }, input(s), S)).toEqual({
       kind: "text",
       title: "キャンプ",
-      lines: ["試しの坑道　2F", "所持金　230G", "今回の収穫　30G・1品", "帰還の糸　1本"],
+      lines: ["試しの坑道　2F", "所持金　230G", "今回の収穫　30G・1品", "帰還の糸　1本（エル）"],
     });
     expect(campPanel({ kind: "members" }, input(s), S)).toEqual({ kind: "text", title: "キャンプ" });
     const town = input(inTown());
@@ -745,6 +763,45 @@ describe("TW-03/UI-52 酒場とキャンプの共有（M10）", () => {
     const p = campPanel({ kind: "top" }, input(s), S);
     expect(p.kind === "text" && p.lines).toHaveLength(5);
     expect(p.kind === "text" && p.lines?.[4]).toBe("宿の士気　あり");
+  });
+});
+
+describe("DG-30/UI-53（M16）top の「糸で帰る」", () => {
+  test("DG-30/UI-53 3 つ目の枠「糸で帰る」は core の returnItem の品の確認の段（from top）へ。やめるで top、確認で useItem を送って街へ。キャラクター画面は開かない", () => {
+    const s = inDungeon();
+    const m = input(s);
+    const e = grid(campEntries("camp", { kind: "top" }, m, S));
+    expect(labels(e)).toEqual(["状態", "並び順", "糸で帰る", null, null, null, null, "戻る"]);
+    const confirm: CampPage = { kind: "use", stage: "confirmReturn", memberId: "c5", instanceId: "i15", from: "top" };
+    expect(e[2]).toEqual({ label: "糸で帰る", disabled: false, choice: { kind: "open", page: confirm } });
+    expect(campStep("camp", { kind: "top" }, m, e[2]!.choice)).toEqual({ kind: "page", page: confirm });
+    expect(campCharacterOpen(confirm)).toBe(false);
+    expect(campPanel(confirm, m, S)).toEqual({ kind: "text", title: "キャンプ" });
+    expect(campHeader(confirm, m, S)).toBe("帰還の糸で街へ戻る？");
+    expect(rows(campEntries("camp", confirm, m, S))).toEqual([{ label: "糸を使う", disabled: false, choice: { kind: "confirm" } }, cancel]);
+    expect(campStep("camp", confirm, m, { kind: "cancel" })).toEqual({ kind: "page", page: { kind: "top" } });
+    const r = campStep("camp", confirm, m, { kind: "confirm" });
+    expect(r).toEqual({ kind: "send", command: { type: "dungeon.useItem", memberId: "c5", itemId: "i15" }, after: { kind: "top" } });
+    if (r.kind !== "send") throw new Error("not send");
+    expect(accepted(s, r.command).screen).toBe("town");
+    expect(campRepair("camp", confirm, m)).toBe(confirm);
+    // 持ち主が動けなくなった・品が消えたら top へ（キャラクター画面には行かない）
+    expect(campRepair("camp", confirm, input(inDungeon({ c5: { status: ["sleep"] } })))).toEqual({ kind: "top" });
+    expect(campRepair("camp", confirm, input(inDungeon({ c5: { inventory: [] } })))).toEqual({ kind: "top" });
+  });
+
+  test("DG-30/UI-53 使える帰還の品が無ければ 3 つ目は空き枠で、要約の行は持ち主なしの「帰還の糸　n本」（持ち主が動けない 1 本も数える）", () => {
+    const s = inDungeon({ c5: { status: ["sleep"] } });
+    const m = input(s);
+    expect(m.summary!.returnItem).toBeNull();
+    expect(grid(campEntries("camp", { kind: "top" }, m, S))[2]).toBeNull();
+    const p = campPanel({ kind: "top" }, m, S);
+    expect(p.kind === "text" && p.lines?.[3]).toBe("帰還の糸　1本");
+    const none = input(inDungeon({ c5: { inventory: [] } }));
+    const q = campPanel({ kind: "top" }, none, S);
+    expect(q.kind === "text" && q.lines?.[3]).toBe("帰還の糸　0本");
+    // 要約の行は名前 6 字でも 29 字以内（パネルの幅 232 = 全角 29 字）
+    expect(S["camp.summary.return"]!.replace("{count}", "12").replace("{owner}", "アルドリンド").length).toBeLessThanOrEqual(29);
   });
 });
 
@@ -772,7 +829,8 @@ describe("UI-33 campKeyIndex", () => {
     const m = input(inDungeon());
     const top = campEntries("camp", { kind: "top" }, m, S);
     expect(campKeyIndex({ menu: 0 }, top)).toBe(0);
-    expect(campKeyIndex({ menu: 2 }, top)).toBeNull();
+    expect(campKeyIndex({ menu: 2 }, top)).toBe(2); // M16: 糸で帰る（c5 の帰還の糸）
+    expect(campKeyIndex({ menu: 3 }, top)).toBeNull();
     expect(campKeyIndex({ menu: 7 }, top)).toBe(7);
     expect(campKeyIndex({ menu: 8 }, top)).toBeNull();
     expect(campKeyIndex("confirm", top)).toBe(0);
@@ -804,6 +862,10 @@ describe("UI-33 campKeyIndex", () => {
       "camp.identify.none",
       "camp.returnConfirm.prompt",
       "camp.returnConfirm.yes",
+      "camp.useReturn",
+      "camp.summary.return",
+      "camp.summary.returnNoOwner",
+      "character.prev",
       "camp.dropConfirm",
       "camp.dropYes",
       "camp.giveBlock.full",

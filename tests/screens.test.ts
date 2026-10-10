@@ -703,7 +703,8 @@ describe("入力と Command", () => {
 
   test("UI-13/UI-46（M16）迷宮・戦闘のヘッダーにもログ: createHeader は dungeonLayout の header（log を含む）だけを受け、街の矩形（town）は渡さない（ソースの検査）", () => {
     const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
-    expect(dungeon).toContain("createHeader({ strings: o.strings, region: r.header, layout: lay.header, onSettings: o.onSettings, onLog: o.onLog });");
+    // M16（UI-59）: ◀ ▶ の onCycle を足した
+    expect(dungeon).toContain("createHeader({ strings: o.strings, region: r.header, layout: lay.header, onSettings: o.onSettings, onLog: o.onLog, onCycle: (d) => o.onCycle?.(d) });");
     const header = stripComments(presenterRaw["../src/presenter/views/header.ts"]!);
     expect(header).toContain("const lg = o.layout.log;");
   });
@@ -895,7 +896,24 @@ describe("入力と Command", () => {
       /if \(overlay === "camp"\) \{\s*if \(a === "confirm" && \(route === "town" \|\| characterOpen\) && play\.talk\.isOpen\(\)\) \{\s*play\.talk\.tap\(\);\s*return;\s*\}\s*if \(\(a === "forward" \|\| a === "around"\)[^\n]*\n[\s\S]*?\}\s*const m = campInput\(\);/,
     );
     // 2026-10-07 レビュー: confirm と campInput の間に ↑↓ の読み返し（UI-33）を挟んだ（以前の期待値は confirm の直後が campInput）
-    expect(core).toMatch(/if \(a === "left" \|\| a === "right"\) \{\s*const next = campCycle\(campPage, m, a === "right" \? 1 : -1\);/);
+    // M16（UI-59）: ← / → は ◀ ▶・スワイプと同じ cycleCamp を通す（以前の期待値は campCycle を直接呼んで syncControls）
+    expect(core).toMatch(/if \(a === "left" \|\| a === "right"\) \{\s*cycleCamp\(a === "right" \? 1 : -1\);\s*return;\s*\}/);
+  });
+
+  test("UI-59/UI-30/UI-33（M16）キャラクター画面の前後の人: ← → キー・左右スワイプ・ヘッダーの ◀ ▶ はどれも cycleCamp（campCanCycle の間だけ。会話の箱を打ち切ってから）。スワイプはキャラクター画面でも受け、上下は捨てる（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const cycle = /const cycleCamp = \(dir: 1 \| -1\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(cycle).toMatch(/if \(m === null \|\| !campCanCycle\(campPage, m\)\) return;\s*const next = campCycle\(campPage, m, dir\);/);
+    expect(cycle).toContain("if (route === \"town\" || characterOpen) play.talk.flush();");
+    expect(app).toContain("onCycle: (dir) => guard(() => cycleCamp(dir)),");
+    expect(app).toMatch(/const swipeEnabled = \(\): boolean =>[\s\S]*?\|\|\s*campSwipeOn\(\);/);
+    const swipe = /const onSwipe = \(a: Action\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(swipe).toMatch(/if \(overlay === "camp"\) \{\s*const dir = campSwipeDir\(a\);\s*if \(dir !== null\) guard\(\(\) => cycleCamp\(dir\)\);\s*return;\s*\}\s*handleAction\(a\);/);
+    expect(app).toContain("onSwipe: (a) => onSwipe(a),");
+    // ヘッダーの ◀ ▶ は campCanCycle の間だけ出し、キャンプを閉じたら隠す
+    expect(app).toContain("play.header.setNav(campCanCycle(campPage, m));");
+    const close = /const closeCamp = \(resync: boolean, keepTalk = false\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(close).toContain("play.header.setNav(false);");
   });
 
   test("UI-68（M10）戦闘の呪文の説明は窓の showNote（履歴に残さない）: syncBattleControls が spellNote の段だけ core の spellInfo を出し、それ以外とオートでは hideNote。確定（送る）と入力の UI を下げるときも hideNote（ソースの検査）", () => {

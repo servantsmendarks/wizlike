@@ -3,6 +3,8 @@
 // 矩形は layout.ts の dungeonLayout（header.text / header.settings。設定ボタンは UI-10 の例外。F2 でも開ける）。
 // UI-13 / UI-46（M16）: 設定の左に「ログ」（header.log。UI-46 の履歴を開く。UI-10 の例外）を街・迷宮・戦闘で常に出す。文字領域はその左まで
 // （M8.5〜M15 は街だけで、setLogVisible で出し入れしていた）。戦闘のターン表示はログの左に置き、その間の問いは 100px（既定）。
+// UI-59 / UI-33（M16。設計 4-9）: キャラクター画面の間は、ヘッダーの左端に ◀（前の人）、ログの左に ▶（次の人）を出し（setNav）、
+// 問いはその間に中央寄せ。三角は美咲フォントに無いのでインライン SVG の path で描く。
 // el は region の位置と大きさに自分で置く。モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
 import type { Facing } from "../../core/types";
@@ -30,7 +32,16 @@ export type Header = {
   setText(s: string): void;
   /** UI-54: 戦闘のターン表示。null で隠し、文字領域の幅を戻す */
   setTurn(s: string | null): void;
+  /** UI-59（M16）: キャラクター画面の ◀ ▶ を出すか（出す間は問いを両者の間に中央寄せ） */
+  setNav(on: boolean): void;
 };
+
+/** UI-59（M16）: ◀ ▶ の三角の path（ボタンの中央に置く 8×8。dir -1 が左向き） */
+export function navTrianglePath(w: number, h: number, dir: 1 | -1): string {
+  const cx = Math.round(w / 2);
+  const cy = Math.round(h / 2);
+  return dir < 0 ? `M${cx + 3} ${cy - 4}L${cx - 3} ${cy}L${cx + 3} ${cy + 4}Z` : `M${cx - 3} ${cy - 4}L${cx + 3} ${cy}L${cx - 3} ${cy + 4}Z`;
+}
 
 export function createHeader(o: {
   strings: Strings;
@@ -40,6 +51,8 @@ export function createHeader(o: {
   onSettings(): void;
   /** UI-46 / UI-13（M8.5）: ログのボタン */
   onLog?(): void;
+  /** UI-59（M16）: キャラクター画面の ◀（−1）/ ▶（+1） */
+  onCycle?(dir: 1 | -1): void;
 }): Header {
   const r = o.region;
   const t = o.layout.text;
@@ -134,6 +147,48 @@ export function createHeader(o: {
   });
   onTap(logBtn, () => o.onLog?.());
   el.appendChild(logBtn);
+  // UI-59（M16）: ◀ ▶（既定は隠す。setNav）
+  const navButton = (rect: Rect, dir: 1 | -1): HTMLButtonElement => {
+    const key = dir < 0 ? "character.prev" : "character.next";
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = dir < 0 ? "header-prev" : "header-next";
+    b.setAttribute("aria-label", o.strings[key] ?? key);
+    Object.assign(b.style, {
+      position: "absolute",
+      left: `${rect.x - r.x}px`,
+      top: `${rect.y - r.y}px`,
+      width: `${rect.w}px`,
+      height: `${rect.h}px`,
+      margin: "0",
+      padding: "0",
+      border: "1px solid var(--c-frame)",
+      background: "var(--c-bg)",
+      color: "var(--c-text)",
+      display: "none",
+    });
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    // 枠線の内側（border-box なので 1px ずつ内側）
+    const iw = rect.w - 2;
+    const ih = rect.h - 2;
+    svg.setAttribute("width", String(iw));
+    svg.setAttribute("height", String(ih));
+    svg.setAttribute("viewBox", `0 0 ${iw} ${ih}`);
+    Object.assign(svg.style, { display: "block", pointerEvents: "none" });
+    const path = document.createElementNS(ns, "path");
+    path.setAttribute("d", navTrianglePath(iw, ih, dir));
+    path.setAttribute("fill", "currentColor");
+    svg.appendChild(path);
+    b.appendChild(svg);
+    onTap(b, () => o.onCycle?.(dir));
+    el.appendChild(b);
+    return b;
+  };
+  const prevBtn = navButton(o.layout.prev, -1);
+  const nextBtn = navButton(o.layout.next, 1);
+  const nt = o.layout.navText;
+
   let turnOn = false;
   /** 文字領域の幅（ログの左まで。戦闘のターン表示の間はさらにその左まで） */
   const textW = (): number => (turnOn ? t.w - tu.w - HEADER_TURN_GAP : t.w);
@@ -148,6 +203,13 @@ export function createHeader(o: {
       turn.style.display = s === null ? "none" : "";
       turnOn = s !== null;
       text.style.width = `${textW()}px`;
+    },
+    setNav(on: boolean): void {
+      prevBtn.style.display = on ? "" : "none";
+      nextBtn.style.display = on ? "" : "none";
+      text.style.left = `${(on ? nt.x : t.x) - r.x}px`;
+      text.style.width = `${on ? nt.w : textW()}px`;
+      text.style.textAlign = on ? "center" : "";
     },
   };
 }

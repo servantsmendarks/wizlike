@@ -375,7 +375,8 @@ describe("UI-59 キャラクター画面の配置（M10）", () => {
       el.children.filter((c) => c.className === cls).map((c) => [px(c.style["left"]) + 1, px(c.style["top"]) + 1, c.textContent]);
     expect(at("detail-name")).toEqual([[4, 4, "ドナ"]]);
     expect(el.children.find((c) => c.className === "detail-name")!.style["color"]).toBe("var(--c-accent)");
-    expect(at("detail-inventory-head")).toEqual([[4, 144, "所持品 8/8"]]);
+    // CH-71（M16）: 見出しに装備の数（ドナは装備 2）
+    expect(at("detail-inventory-head")).toEqual([[4, 144, "所持品 8/8（装備 2 を含む）"]]);
     const inv = at("detail-inventory");
     expect(inv).toHaveLength(6);
     expect(inv[0]).toEqual([4, 154, "解毒草"]);

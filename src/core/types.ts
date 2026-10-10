@@ -885,6 +885,8 @@ export type CampMember = {
   /** CH-71（M10）: 使用枠の数（装備 + 所持品。slotsUsed）と上限（config.inventory.slotsPerCharacter）。表示の数字だけ */
   slotsUsed: number;
   slotsMax: number;
+  /** CH-71（M16。設計 4-7）: 装備中の品の数（6 枠のうち空きでない枠。slotsUsed に含まれる分）。所持品の見出しの「装備 n を含む」 */
+  equipped: number;
   /**
    * UI-59 / UI-68（M10）: knownSpells の順で、data にある全習得呪文（戦闘専用も含む）。castable は spells（戦闘外で使える呪文）に
    * あって usable が真のとき（戦闘外で唱えられ MP が足りる）。説明は spellInfo
@@ -950,9 +952,17 @@ export type CampSummary = {
   ledgerItems: number;
   ledgerGold: number;
   returnItems: number;
+  /**
+   * DG-30 / UI-53（M16。設計 4-8）: いま使える帰還の品の最初の 1 つ（並び順 × inventory の順で、効果 return の消耗品のうち
+   * checkUseItem が受け付けるもの = 持ち主が行動可能（CH-44）で usableIn が battle でない）。無ければ null。
+   * memberId は持ち主（dungeon.useItem の memberId）、name は itemDisplayName（未鑑定なら見た目の名前）
+   */
+  returnItem: CampReturnItem | null;
   /** TW-15（M7）: 宿の士気がある（moraleOf が null でない） */
   morale: boolean;
 };
+/** DG-30 / UI-53（M16）: campSummary の returnItem */
+export type CampReturnItem = { memberId: string; ownerName: string; instanceId: string; name: string };
 
 /** strings.json のキーと埋め込み値。表示層は formatMessage(strings[key], params) で出す */
 export type TextRef = { key: string; params?: Record<string, string | number> };

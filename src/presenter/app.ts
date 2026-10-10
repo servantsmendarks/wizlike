@@ -102,6 +102,7 @@ import { createDebugPanel } from "./views/debug-panel";
 import { createSettingsScreen, settingsItems, settingsKeyIndex, type SettingsContext } from "./views/settings";
 import { isStandalone, type StandaloneEnv } from "./pwa-env";
 import {
+  campCanCycle,
   campCharacterOpen,
   campCycle,
   campEntries,
@@ -111,6 +112,7 @@ import {
   campPanel,
   campRepair,
   campStep,
+  campSwipeDir,
   type CampChoice,
   type CampOpen,
   type CampEntry,
@@ -371,6 +373,8 @@ export function createApp(o: {
     onSettings: () => guard(() => openSettings()),
     // UI-46 / UI-13（M8.5。M16 から迷宮・戦闘でも）: ヘッダーのログ（他の overlay があるとき・再生中は捨てる）
     onLog: () => guard(() => openHistory()),
+    // UI-59 / UI-33（M16）: キャラクター画面のヘッダーの ◀ ▶ で前後の人
+    onCycle: (dir) => guard(() => cycleCamp(dir)),
     // UI-13 / UI-59（M8.5）: 街の帯のタップでその人の状態
     onBand: (id) =>
       guard(() => {
@@ -850,12 +854,28 @@ export function createApp(o: {
    * SV-42 の更新の案内が出ていない）
    */
   const swipeEnabled = (): boolean =>
-    route === "dungeon" &&
-    overlay === null &&
-    fieldFree() &&
-    store.get().inputMode !== "buttons" &&
-    walking === null &&
-    !updateNotice.isOpen();
+    (route === "dungeon" && overlay === null && fieldFree() && store.get().inputMode !== "buttons" && walking === null && !updateNotice.isOpen()) ||
+    campSwipeOn();
+
+  /**
+   * UI-30 / UI-59（M16。設計 4-9）: キャラクター画面（街の酒場・帯からも、迷宮のキャンプからも）では左右スワイプで前後の人。
+   * inputMode は問わない（十字ボタンの代わりではないため）。SV-42 の更新の案内が出ている間は受けない
+   */
+  const campSwipeOn = (): boolean => {
+    if (overlay !== "camp" || updateNotice.isOpen()) return false;
+    const m = campInput();
+    return m !== null && campCanCycle(campPage, m);
+  };
+
+  /** UI-30 のスワイプ。キャラクター画面では左右だけを前後の人にする（上下は捨てる） */
+  const onSwipe = (a: Action): void => {
+    if (overlay === "camp") {
+      const dir = campSwipeDir(a);
+      if (dir !== null) guard(() => cycleCamp(dir));
+      return;
+    }
+    handleAction(a);
+  };
 
   /** 操作領域とスワイプの可否を、route / overlay / pendingChoice / inputMode から決める */
   const syncControls = (): void => {
@@ -1009,6 +1029,8 @@ export function createApp(o: {
     // UI-59（M10）: キャラクター画面の間はパーティ欄とメッセージ窓を隠し、判定の箱を上の層へ（パネルより先に切り替える）
     setCharacter(campCharacterOpen(campPage));
     play.header.setText(campHeader(campPage, m, strings));
+    // UI-59 / UI-33（M16）: キャラクター画面の間はヘッダーの名前の両側に ◀ ▶
+    play.header.setNav(campCanCycle(campPage, m));
     play.camp.render(campPanelView(campPage, m));
     const c = play.controls;
     const e = campEntries(campHost, campPage, m, strings);
@@ -1102,6 +1124,21 @@ export function createApp(o: {
       detail,
       focusSlot: p.focusSlot === null ? null : SLOT_ORDER.indexOf(p.focusSlot),
     };
+  };
+
+  /**
+   * UI-59 / UI-33 / UI-30（M16）: キャラクター画面で前後の人へ（← → キー・左右スワイプ・ヘッダーの ◀ ▶）。キャラクター画面でなければ何もしない。
+   * 項目と同じく、会話の箱を打ち切ってから動く
+   */
+  const cycleCamp = (dir: 1 | -1): void => {
+    if (overlay !== "camp") return;
+    const m = campInput();
+    if (m === null || !campCanCycle(campPage, m)) return;
+    const next = campCycle(campPage, m, dir);
+    if (next === null) return;
+    if (route === "town" || characterOpen) play.talk.flush();
+    campPage = next;
+    syncControls();
   };
 
   /** UI-53: キャンプの段で 1 つ選ぶ。送るときは閉じずに after の段にしてから送る（使えるかは core が決める。UI-35） */
@@ -1710,6 +1747,7 @@ export function createApp(o: {
     chestPage = CHEST_MENU;
     characterOpen = false;
     play.setCharacterOpen(false);
+    play.header.setNav(false);
     walking = null;
     walker.release();
     mapPick = null;
@@ -1985,6 +2023,7 @@ export function createApp(o: {
     if (overlay !== "camp") return;
     overlay = null;
     campPage = { kind: "top" };
+    play.header.setNav(false);
     setCharacter(false, keepTalk);
     play.showCamp(false);
     // UI-63: 迷宮のキャンプを閉じたら場面の曲（迷宮の曲。キャンプの間に場面が変わっていればその曲）に戻す
@@ -2196,13 +2235,9 @@ export function createApp(o: {
       // UI-33: 数字 n → n 番目の枠・行（空き枠は無視）、Enter → 先頭の押せる項目、Esc → やめる（top では戻る）
       const m = campInput();
       if (m === null) return;
-      // UI-59（M10）: キャラクター画面の ← / → は前後の人
+      // UI-59（M10）: キャラクター画面の ← / → は前後の人（M16 から ◀ ▶・スワイプと同じ cycleCamp）
       if (a === "left" || a === "right") {
-        const next = campCycle(campPage, m, a === "right" ? 1 : -1);
-        if (next !== null) {
-          campPage = next;
-          syncControls();
-        }
+        cycleCamp(a === "right" ? 1 : -1);
         return;
       }
       const k = campKeyIndex(a, campEntries(campHost, campPage, m, strings));
@@ -2350,7 +2385,7 @@ export function createApp(o: {
         onTalkTap: () => tapTalk(),
         // UI-25: 自動歩行中にどこかを押したら止め、その押下は捨てる
         onAnyPress: () => stopWalk(),
-        onSwipe: (a) => handleAction(a),
+        onSwipe: (a) => onSwipe(a),
         onSwipeRelease: () => repeater.release(),
         onDebugSwipe: (dx, dy, d) => debug.setSwipe(dx, dy, d),
       });
