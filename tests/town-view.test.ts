@@ -25,6 +25,7 @@ import {
   townParent,
   townPlace,
   townRepair,
+  shopPreviewText,
   type ClassChangeView,
   type TownEntry,
   type TownPage,
@@ -668,6 +669,46 @@ describe("UI-52 街のページ", () => {
     for (const k of ["town.shop.intro", "town.shop.whom", "town.shop.buyIntro", "town.shop.sellIntro", "town.shop.buybackIntro", "town.shop.identifyIntro", "town.storage.intro", "town.storage.whom"]) {
       expect(S[k], k).toBeDefined();
       expect(S[k], k).not.toContain("{");
+    }
+  });
+
+  test("TW-05 装備の品の持たせる者の行: core の canEquip に無い者（職業で装備できない者）は disabled で「（装備不可）」を添える。消耗品は添えない（M16）", () => {
+    // 初期のパーティ: c1 戦士・c2 戦士・c3 盗賊・c4 僧侶・c5 魔術師・c6 盗賊。長剣（戦士・侍・君主）は c1・c2 だけ
+    const m = menuOf(town({}, 1000));
+    const NG = S["town.shop.cannotEquip"]!;
+    expect(NG).toBe("（装備不可）");
+    expect(townEntries({ shop: "long_sword" }, m, S)).toEqual([
+      { kind: "buy", itemId: "long_sword", memberId: "c1", label: "アルド　空き 4 枠", disabled: false },
+      { kind: "buy", itemId: "long_sword", memberId: "c2", label: "ベルク　空き 6 枠", disabled: false },
+      { kind: "buy", itemId: "long_sword", memberId: "c3", label: `${m.shop.members[2]!.name}　空き ${m.shop.members[2]!.slotsFree} 枠${NG}`, disabled: true },
+      { kind: "buy", itemId: "long_sword", memberId: "c4", label: "ドナ　空き 5 枠（装備不可）", disabled: true },
+      { kind: "buy", itemId: "long_sword", memberId: "c5", label: "エル　空き 6 枠（装備不可）", disabled: true },
+      { kind: "buy", itemId: "long_sword", memberId: "c6", label: `${m.shop.members[5]!.name}　空き ${m.shop.members[5]!.slotsFree} 枠${NG}`, disabled: true },
+      back,
+    ]);
+    // 誰でも装備できる杖・消耗品は添えない
+    expect(townEntries({ shop: "staff" }, m, S).some((e) => e.kind === "buy" && (e.disabled || e.label.includes(NG)))).toBe(false);
+    expect(townEntries({ shop: "herb" }, m, S).some((e) => e.kind === "buy" && (e.disabled || e.label.includes(NG)))).toBe(false);
+    // 行は一覧の幅（全角 21 字）に収まる（名前 6 字・空き 2 桁でも）
+    expect(kinsokuLines(`ああああああ${formatMessage(S["town.shop.member"]!, { name: "", slots: 10 })}${NG}`, 21)).toHaveLength(1);
+  });
+
+  test("TW-05 品の性能の 1 文 shopPreviewText は core の preview を並べるだけ（該当しない項目は —、誰でもは「誰でも」）。どの流通レベルのどの品も 28 字 × 2 行以内（M16）", () => {
+    const s = town({}, 0);
+    expect(shopPreviewText("long_sword", menuOf(s), S)).toBe("長剣: 攻撃 1d8 / AC — / 魔法攻撃力 — / 装備: WAR・SAM・LOR");
+    expect(shopPreviewText("leather_armor", menuOf(s), S)).toBe("革鎧: 攻撃 — / AC -2 / 魔法攻撃力 — / 装備: 誰でも");
+    expect(shopPreviewText("herb", menuOf(s), S)).toBeNull();
+    s.progress.shopLevel = 2;
+    expect(shopPreviewText("staff", menuOf(s), S)).toBe("杖 +2: 攻撃 1d4 / AC — / 魔法攻撃力 1 / 装備: 誰でも");
+    // strings を差し替えれば文も変わる（表示層に文を書かない）
+    expect(shopPreviewText("staff", menuOf(s), { ...S, "town.shop.preview": "{name} Lv{level} {magic}" })).toBe("杖 +2 Lv2 1");
+    for (let lv = 0; lv <= 6; lv++) {
+      s.progress.shopLevel = lv;
+      const m = menuOf(s);
+      for (const e of m.shop.equipment) {
+        const text = shopPreviewText(e.itemId, m, S)!;
+        expect(kinsokuLines(text, 28).length, text).toBeLessThanOrEqual(2);
+      }
     }
   });
 

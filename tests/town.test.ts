@@ -12,7 +12,7 @@ import { startAlarmEncounter, startBossEncounter, startRandomEncounter } from ".
 import { damageMembers } from "../src/core/rules/field";
 import { endingRecordView } from "../src/core/rules/progress";
 import { memberSheet } from "../src/core/rules/item-view";
-import { identifyFeeOf, sellPrice, shopPrice, shopSellPrice } from "../src/core/rules/shop";
+import { identifyFeeOf, sellPrice, shopItemPreview, shopPrice, shopSellPrice } from "../src/core/rules/shop";
 import { expFor } from "../src/core/rules/growth";
 import { arriveTown, classChangeOptions, mercyEligible, resurrectCostOf, returnToTown, townMenu } from "../src/core/rules/town";
 import { cloneState, createItemInstance, makeContext } from "../src/core/state";
@@ -850,16 +850,17 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
       ],
       // shopLevel 0: shopMinLevel 0 のベース（equipment-bases.json の順）を Lv0 の基本額で
       equipment: [
-        { itemId: "dagger", name: "短剣", level: 0, price: 15, affordable: true },
-        { itemId: "long_sword", name: "長剣", level: 0, price: 100, affordable: true },
-        { itemId: "short_bow", name: "短弓", level: 0, price: 80, affordable: true },
-        { itemId: "sling", name: "投石紐", level: 0, price: 20, affordable: true },
-        { itemId: "staff", name: "杖", level: 0, price: 10, affordable: true },
-        { itemId: "leather_armor", name: "革鎧", level: 0, price: 50, affordable: true },
-        { itemId: "wooden_shield", name: "木の盾", level: 0, price: 40, affordable: true },
-        { itemId: "leather_cap", name: "革兜", level: 0, price: 30, affordable: true },
-        { itemId: "leather_gloves", name: "革小手", level: 0, price: 30, affordable: true },
-      ],
+        // TW-05（M16）: canEquip は職業で装備できる生きている者（c1 戦士・c2 戦士・c3 盗賊・c4 僧侶・c5 魔術師・c6 盗賊）、preview は shopItemPreview の値
+        { itemId: "dagger", name: "短剣", level: 0, price: 15, affordable: true, canEquip: ["c1", "c2", "c3", "c4", "c5", "c6"] },
+        { itemId: "long_sword", name: "長剣", level: 0, price: 100, affordable: true, canEquip: ["c1", "c2"] },
+        { itemId: "short_bow", name: "短弓", level: 0, price: 80, affordable: true, canEquip: ["c1", "c2", "c3", "c6"] },
+        { itemId: "sling", name: "投石紐", level: 0, price: 20, affordable: true, canEquip: ["c1", "c2", "c3", "c4", "c5", "c6"] },
+        { itemId: "staff", name: "杖", level: 0, price: 10, affordable: true, canEquip: ["c1", "c2", "c3", "c4", "c5", "c6"] },
+        { itemId: "leather_armor", name: "革鎧", level: 0, price: 50, affordable: true, canEquip: ["c1", "c2", "c3", "c4", "c5", "c6"] },
+        { itemId: "wooden_shield", name: "木の盾", level: 0, price: 40, affordable: true, canEquip: ["c1", "c2", "c4"] },
+        { itemId: "leather_cap", name: "革兜", level: 0, price: 30, affordable: true, canEquip: ["c1", "c2", "c3", "c4", "c5", "c6"] },
+        { itemId: "leather_gloves", name: "革小手", level: 0, price: 30, affordable: true, canEquip: ["c1", "c2", "c3", "c4", "c5", "c6"] },
+      ].map((e) => ({ ...e, preview: shopItemPreview(data, e.itemId, 0)! })),
       members: [
         { memberId: "c1", name: "アルド", slotsFree: 4 },
         { memberId: "c2", name: "ベルク", slotsFree: 6 },
@@ -940,6 +941,38 @@ describe("IT-62 流通レベルで並ぶベース（M9）", () => {
     const s = town({}, 0);
     s.progress.shopLevel = 4;
     expect(townMenu(s, data)!.shop.equipment.find((e) => e.itemId === "sigil_staff")).toMatchObject({ name: "刻印の杖 +4", level: 4, price: 1800 });
+  });
+});
+
+describe("TW-05 店の品の性能の下見と装備できる者（M16）", () => {
+  test("TW-05 shopItemPreview は合成の実体の itemPower（攻撃は Lv の分を合算したダイス、防具は AC、術者用の武器は魔法攻撃力）と装備できる職業の abbr", () => {
+    const ALL = ["WAR", "THI", "PRI", "MAG", "SAM", "LOR", "BIS"];
+    // 長剣: Lv0 は 1d8、Lv2 は floor(2 ÷ weaponLvPerDamage 2) = +1 で 1d8+1。装備は 戦士・侍・君主（classes.json の順）
+    expect(shopItemPreview(data, "long_sword", 0)).toEqual({ attack: "1d8", ac: null, magicPower: null, anyone: false, classes: ["WAR", "SAM", "LOR"] });
+    expect(shopItemPreview(data, "long_sword", 2)).toMatchObject({ attack: "1d8+1" });
+    // 投げナイフ 1d4+1 の Lv4: +2 を定数に合算して 1d4+3（「1d4+1+2」にしない）
+    expect(shopItemPreview(data, "throwing_knives", 4)).toMatchObject({ attack: "1d4+3", classes: ["WAR", "THI", "MAG", "SAM", "LOR", "BIS"] });
+    // 杖（術者用。classes 空 = 誰でも）: Lv2 は魔法攻撃力 0 + floor(2 ÷ casterLvPerPower 2) = 1、ダメージに Lv の分は乗らない
+    expect(shopItemPreview(data, "staff", 2)).toEqual({ attack: "1d4", ac: null, magicPower: 1, anyone: true, classes: ALL });
+    // 鎖帷子 AC -4 の Lv3: −floor(3 ÷ armorLvPerAc 3) で -5。護符（装飾）は Lv で変わらず 0
+    expect(shopItemPreview(data, "chain_mail", 3)).toEqual({ attack: null, ac: -5, magicPower: null, anyone: false, classes: ["WAR", "PRI", "SAM", "LOR", "BIS"] });
+    expect(shopItemPreview(data, "charm", 3)).toMatchObject({ ac: 0, anyone: true });
+    // 消耗品は null
+    expect(shopItemPreview(data, "herb", 0)).toBeNull();
+  });
+
+  test("TW-05 townMenu.shop.equipment の preview は流通レベルの Lv の下見、canEquip は生きている者のうち職業で装備できる者（並び順）", () => {
+    // 初期のパーティ: c1 戦士・c2 戦士・c3 盗賊・c4 僧侶・c5 魔術師・c6 盗賊。c2 を dead にする（持たせる候補に出ない）
+    const s = town({ c2: { life: "dead", hp: 0 } }, 0);
+    s.progress.shopLevel = 2;
+    const eq = townMenu(s, data)!.shop.equipment;
+    const of = (id: string) => eq.find((e) => e.itemId === id)!;
+    expect(of("long_sword").preview).toEqual(shopItemPreview(data, "long_sword", 2));
+    expect(of("long_sword").canEquip).toEqual(["c1"]);
+    expect(of("mace").canEquip).toEqual(["c1", "c4"]);
+    expect(of("warded_robe").canEquip).toEqual(["c4", "c5"]);
+    expect(of("staff").canEquip).toEqual(["c1", "c3", "c4", "c5", "c6"]);
+    expect(of("chain_coif").canEquip).toEqual(["c3", "c5", "c6"]);
   });
 });
 

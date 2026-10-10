@@ -683,8 +683,26 @@ export type PenaltyResult = {
 export type TownMenuInnRank = { rank: number; id: string; name: string; cost: number; affordable: boolean; morale: boolean };
 export type TownMenuTempleRow = { memberId: string; name: string; cost: number; affordable: boolean };
 export type TownMenuShopItem = { itemId: string; name: string; price: number; affordable: boolean };
-/** IT-62: 流通レベルの汎用装備の売り物。name は表示名（「長剣 +2」）、level は progress.shopLevel、price は IT-60 の買値 */
-export type TownMenuShopEquipment = { itemId: string; name: string; level: number; price: number; affordable: boolean };
+/**
+ * TW-05（M16）: 店の汎用装備の性能の下見（rules/shop.ts shopItemPreview。鑑定済み・通常・オプションなしの Lv の実体を合成して itemPower を呼んだ値）。
+ * attack は武器のダメージのダイス（Lv の分を定数に合算した正規形。品の詳細の damageDice と同じ）で武器でなければ null、
+ * ac は防具類（盾・兜・小手・装飾を含む）の AC で武器なら null、magicPower は術者用の武器の魔法攻撃力でそれ以外は null。
+ * anyone はベースの classes が空（誰でも装備できる）、classes は装備できる職業の abbr（classes.json の順。anyone なら全職業）
+ */
+export type ShopItemPreview = { attack: string | null; ac: number | null; magicPower: number | null; anyone: boolean; classes: string[] };
+/**
+ * IT-62: 流通レベルの汎用装備の売り物。name は表示名（「長剣 +2」）、level は progress.shopLevel、price は IT-60 の買値。
+ * TW-05（M16）: preview は性能の下見、canEquip は持たせる候補（shop.members）のうち職業でこの品を装備できる者の id（並び順）
+ */
+export type TownMenuShopEquipment = {
+  itemId: string;
+  name: string;
+  level: number;
+  price: number;
+  affordable: boolean;
+  preview: ShopItemPreview;
+  canEquip: string[];
+};
 export type TownMenuShopMember = { memberId: string; name: string; slotsFree: number };
 /** IT-61: 売れる品 1 個（本人の inventory の品。未鑑定も売れる）。price は店での売値 shopSellPrice（未鑑定は見た目の品種の売値、name は未鑑定の名前） */
 export type TownMenuShopSellRow = { instanceId: string; name: string; price: number };

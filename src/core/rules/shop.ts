@@ -14,7 +14,9 @@ import {
   slotsUsed,
   uniqueOf,
 } from "../state";
-import type { Character, GameState, ItemInstance, RuleContext, ShopAction, TownMenu } from "../types";
+import { formatDice, parseDice } from "../rng";
+import type { Character, GameState, ItemInstance, RuleContext, ShopAction, ShopItemPreview, TownMenu } from "../types";
+import { itemPower } from "./equip-stats";
 import { floorRatio } from "./ratio";
 
 function inTown(state: GameState): boolean {
@@ -269,19 +271,52 @@ export function raiseShopLevel(ctx: RuleContext, level: number): void {
 // ---------------------------------------------------------------------------
 // 表示層向けの問い合わせ（純粋。state を変えない）
 
+/** TW-05（M16）: ベースを職業で装備できるか（classes が空なら誰でも。CH-76 の checkEquip の class cannot equip と同じ条件） */
+function classCanEquip(base: EquipmentBase, classId: string): boolean {
+  return base.classes.length === 0 || base.classes.includes(classId);
+}
+
+/**
+ * TW-05（M16）: 店の汎用装備の性能の下見。鑑定済み・通常・オプションなし・呪いなしの Lv level の実体を合成して itemPower（IT-20〜23）を呼ぶ。
+ * 武器の attack は Lv の分（damageBonus）をダイスの定数に合算した正規形（品の詳細の damageDice と同じ）。純粋。ベースでなければ null
+ */
+export function shopItemPreview(data: GameData, itemId: string, level: number): ShopItemPreview | null {
+  const base = findBase(data, itemId);
+  if (base === null) return null;
+  const inst: ItemInstance = { id: "", itemId, level, rarity: "normal", options: [], uniqueId: null, identified: true, cursed: false, foundIn: null };
+  const p = itemPower(data, inst, base);
+  const anyone = base.classes.length === 0;
+  const classes = data.classes.filter((c) => classCanEquip(base, c.id)).map((c) => c.abbr);
+  if (p.kind === "weapon") {
+    const spec = parseDice(p.dice);
+    const attack = formatDice({ ...spec, modifier: spec.modifier + p.damageBonus });
+    return { attack, ac: null, magicPower: p.caster ? p.magicPower : null, anyone, classes };
+  }
+  return { attack: null, ac: p.ac, magicPower: null, anyone, classes };
+}
+
 /** UI-52 の店のページの値（townMenu.shop） */
 export function shopMenu(state: GameState, data: GameData): TownMenu["shop"] {
   const gold = state.gold;
   const level = state.progress.shopLevel;
+  const alive = state.party.filter((ch) => ch.life === "alive");
   return {
     items: shopConsumables(data).map((it) => ({ itemId: it.id, name: it.name, price: it.price, affordable: gold >= it.price })),
     equipment: shopBases(state, data).map((b) => {
       const price = shopPrice(b, level, data);
-      return { itemId: b.id, name: equipmentDisplayName(data, b, level, "normal", null), level, price, affordable: gold >= price };
+      const preview = shopItemPreview(data, b.id, level);
+      if (preview === null) throw new Error(`shopMenu: unknown base ${b.id}`);
+      return {
+        itemId: b.id,
+        name: equipmentDisplayName(data, b, level, "normal", null),
+        level,
+        price,
+        affordable: gold >= price,
+        preview,
+        canEquip: alive.filter((ch) => classCanEquip(b, ch.classId)).map((ch) => ch.id),
+      };
     }),
-    members: state.party.flatMap((ch) =>
-      ch.life === "alive" ? [{ memberId: ch.id, name: ch.name, slotsFree: slotsFreeOf(ch, data) }] : [],
-    ),
+    members: alive.map((ch) => ({ memberId: ch.id, name: ch.name, slotsFree: slotsFreeOf(ch, data) })),
     sellable: state.party.map((ch) => ({
       memberId: ch.id,
       name: ch.name,

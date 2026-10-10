@@ -143,6 +143,7 @@ import {
   townLowersInput,
   townMenuNotes,
   townPageIntro,
+  shopPreviewText,
   townParent,
   townRepair,
   type ClassChangeView,
@@ -732,9 +733,14 @@ export function createApp(o: {
           case "enter":
             void run({ type: "dungeon.enter", dungeonId: e.dungeonId });
             return;
-          case "shopItem":
+          case "shopItem": {
+            // TW-05（M16）: 装備の品なら性能の 1 文（core の shopItemPreview）を語ってから持たせる者の一覧（見出し「誰に持たせる？」）
             goTownPage({ shop: e.itemId });
+            const m = townMenu(state, data);
+            const text = m === null ? null : shopPreviewText(e.itemId, m, strings);
+            if (text !== null) void narrator.say(text, store.get().skipAnimations);
             return;
+          }
           case "buy":
             // TW-05: 買った後も持たせる者の一覧にとどまる（再生の最後の sync で townMenu を取り直す）
             void run({ type: "town.shop", action: { kind: "buy", memberId: e.memberId, itemId: e.itemId } });

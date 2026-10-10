@@ -439,17 +439,21 @@ export function townEntries(
   }
   if ("shop" in page) {
     // TW-05: 持たせるメンバーの行（生きている者を並び順で。所持枠の空きが無い者・払えないときは disabled）
+    // M16（4-6）: 装備の品なら、core の canEquip に無い者（職業で装備できない者）も disabled にして「（装備不可）」を添える
     const itemId = page.shop;
     const affordable = [...menu.shop.items, ...menu.shop.equipment].find((r) => r.itemId === itemId)?.affordable ?? false;
-    const rows = menu.shop.members.map(
-      (m): TownEntry => ({
+    const canEquip = menu.shop.equipment.find((r) => r.itemId === itemId)?.canEquip ?? null;
+    const rows = menu.shop.members.map((m): TownEntry => {
+      const cannot = canEquip !== null && !canEquip.includes(m.memberId);
+      const label = s(strings, "town.shop.member", { name: m.name, slots: m.slotsFree });
+      return {
         kind: "buy",
         itemId,
         memberId: m.memberId,
-        label: s(strings, "town.shop.member", { name: m.name, slots: m.slotsFree }),
-        disabled: !affordable || m.slotsFree <= 0,
-      }),
-    );
+        label: cannot ? label + s(strings, "town.shop.cannotEquip") : label,
+        disabled: !affordable || m.slotsFree <= 0 || cannot,
+      };
+    });
     return [...rows, back];
   }
   if ("sell" in page) {
@@ -510,6 +514,26 @@ export function townEntries(
   );
   if (rows.length === 0) return [{ kind: "templeNone", label: s(strings, "town.temple.none") }, back];
   return [...rows, back];
+}
+
+/**
+ * TW-05（M16）: 店の汎用装備の品を押したときに会話の箱へ語る性能の 1 文（town.shop.preview）。値は core の shopItemPreview（menu の preview）を並べるだけ。
+ * 該当しない項目は town.shop.previewNone、誰でも装備できる品の職業は town.shop.previewAnyone、職業の abbr は town.shop.classSep でつなぐ。
+ * 消耗品（装備の売り物に無い id）は null
+ */
+export function shopPreviewText(itemId: string, menu: TownMenu, strings: Strings): string | null {
+  const r = menu.shop.equipment.find((x) => x.itemId === itemId);
+  if (r === undefined) return null;
+  const p = r.preview;
+  const none = s(strings, "town.shop.previewNone");
+  return s(strings, "town.shop.preview", {
+    name: r.name,
+    level: r.level,
+    attack: p.attack ?? none,
+    ac: p.ac ?? none,
+    magic: p.magicPower ?? none,
+    classes: p.anyone ? s(strings, "town.shop.previewAnyone") : p.classes.join(s(strings, "town.shop.classSep")),
+  });
 }
 
 /**
