@@ -5,7 +5,7 @@
 import type { GameEvent, PendingChoice, RouteCommand, RouteStep } from "../../core/types";
 
 export type Dir = "up" | "down" | "left" | "right";
-export type Action = "forward" | "left" | "right" | "around" | "map" | "back" | "confirm" | "debug" | { menu: number };
+export type Action = "forward" | "left" | "right" | "around" | "map" | "log" | "back" | "confirm" | "debug" | { menu: number };
 
 /**
  * UI-30: 閾値は論理 px で持ち、PointerEvent の座標（CSS px）と比べるためにステージの CSS 倍率を掛ける。
@@ -62,6 +62,9 @@ const KEY_TABLE: Readonly<Record<string, Action>> = {
   Escape: "back",
   m: "map",
   M: "map",
+  // UI-33 / UI-46（M16）: l は履歴（ヘッダーの「ログ」と同じ）
+  l: "log",
+  L: "log",
   F2: "debug",
 };
 

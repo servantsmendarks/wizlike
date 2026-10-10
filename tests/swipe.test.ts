@@ -163,7 +163,7 @@ describe("連打の可否とキーボード", () => {
     }
   });
 
-  test("UI-33 keyToAction の表どおり（Space は confirm）。repeat と input 上は null", () => {
+  test("UI-33/UI-46 keyToAction の表どおり（Space は confirm、l / L は log）。repeat と input 上は null", () => {
     const table: [string, Action][] = [
       ["ArrowUp", "forward"],
       ["ArrowLeft", "left"],
@@ -174,6 +174,9 @@ describe("連打の可否とキーボード", () => {
       ["Escape", "back"],
       ["m", "map"],
       ["M", "map"],
+      // UI-33 / UI-46（M16）: l は履歴（ヘッダーのログ）
+      ["l", "log"],
+      ["L", "log"],
       ["F2", "debug"],
       ["1", { menu: 0 }],
       ["5", { menu: 4 }],

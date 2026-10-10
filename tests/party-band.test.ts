@@ -257,24 +257,40 @@ describe("UI-13 帯の DOM・UI-61 施設の絵・ヘッダーのログ", () => 
     expect(fake(pic.el).children).toEqual([]);
   });
 
-  test("UI-13 createHeader: 街ではログのボタン（header.log の位置）を出し文字領域を 152 に縮め、隠すと 192 に戻す。ログのタップは onLog", () => {
+  // M16（UI-46）: 以前は「街ではログのボタンを出し文字領域を 152 に縮め、隠すと 192 に戻す」（setLogVisible）。ログは街・迷宮・戦闘で常に出す
+  test("UI-13 / UI-46（M16）createHeader: ログのボタン（header.log の位置）を常に出し、文字領域はその左までの 152。ログのタップは onLog", () => {
     fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);
     const L = dungeonLayout(g, data.config.party.size);
     let logs = 0;
-    const h = createHeader({ strings: S, region: g.header, layout: L.header, town: T.header, onSettings: () => {}, onLog: () => logs++ });
+    const h = createHeader({ strings: S, region: g.header, layout: L.header, onSettings: () => {}, onLog: () => logs++ });
     const [text, , settings, log] = fake(h.el).children;
     expect(settings!.className).toBe("header-settings");
     expect(log!.className).toBe("header-log");
     expect(log!.textContent).toBe("ログ");
-    expect([log!.style["left"], log!.style["width"], log!.style["height"], log!.style["display"]]).toEqual(["160px", "40px", "16px", "none"]);
-    h.setLogVisible(true);
-    expect(log!.style["display"]).toBe("");
+    expect([log!.style["left"], log!.style["width"], log!.style["height"], log!.style["display"]]).toEqual(["160px", "40px", "16px", undefined]);
     expect(text!.style["width"]).toBe("152px");
+    // 街のヘッダーと同じ位置（迷宮・戦闘・街で同じボタン）
+    expect(L.header.log).toEqual(T.header.log);
+    expect(L.header.text).toEqual(T.header.text);
     tapSpecOf(log!)!.onTap({ lx: 0, ly: 0 });
     expect(logs).toBe(1);
-    h.setLogVisible(false);
-    expect(text!.style["width"]).toBe("192px");
-    expect(log!.style["display"]).toBe("none");
+  });
+
+  test("UI-46 / UI-54（M16）createHeader: 戦闘のターン表示はログの左（x108..155 の 48px）で、その間の問いは 100px。ログは隠れない", () => {
+    fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const h = createHeader({ strings: S, region: g.header, layout: L.header, onSettings: () => {} });
+    const [text, turn, , log] = fake(h.el).children;
+    expect(turn!.className).toBe("header-turn");
+    expect([turn!.style["left"], turn!.style["width"]]).toEqual(["108px", "48px"]);
+    h.setTurn("第12ターン");
+    expect(turn!.style["display"]).toBe("");
+    expect(text!.style["width"]).toBe("100px");
+    expect(log!.style["display"]).toBe(undefined);
+    h.setTurn(null);
+    expect(turn!.style["display"]).toBe("none");
+    expect(text!.style["width"]).toBe("152px");
   });
 });

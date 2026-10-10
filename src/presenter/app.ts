@@ -367,7 +367,7 @@ export function createApp(o: {
     stageOf: (san, sanMax) => sanStage(san, sanMax, data.config),
     maxOf: (ch) => memberSheet(state, data, ch), // CH-14 / UI-12（M7）: 実効の hpMax / mpMax / sanMax（core の memberSheet）
     onSettings: () => guard(() => openSettings()),
-    // UI-46 / UI-13（M8.5）: 街のヘッダーのログ（他の overlay があるとき・再生中は捨てる）
+    // UI-46 / UI-13（M8.5。M16 から迷宮・戦闘でも）: ヘッダーのログ（他の overlay があるとき・再生中は捨てる）
     onLog: () => guard(() => openHistory()),
     // UI-13 / UI-59（M8.5）: 街の帯のタップでその人の状態
     onBand: (id) =>
@@ -2084,6 +2084,11 @@ export function createApp(o: {
   const handleActionCore = (a: Action): void => {
     // UI-25: 自動歩行中のキーは歩行を止めるだけ（その入力は捨てる）
     if (stopWalk()) return;
+    // UI-33 / UI-46（M16）: l はヘッダーの「ログ」と同じ（guard を通し、overlay が無いときだけ履歴を開く）
+    if (a === "log") {
+      guard(() => openHistory());
+      return;
+    }
     // UI-44 の例外: オート中の「オート解除」（Esc / Enter / 1）は再生中も予約として受ける
     if (route === "battle" && overlay === null && battleMenu(state, data)?.auto === true) {
       if (battleKeyChoice(a, "autoStop") === "stop") requestAutoStop();
@@ -2247,16 +2252,13 @@ export function createApp(o: {
   };
 
   /**
-   * UI-43 / UI-46: 再生の外のメッセージ窓のタップ（再生中のタップはステージが player.tap() に回す）。
-   * 文字送り中（街の「迷宮へ」の語りなど、run を通さない文）なら即表示、それ以外で overlay が無ければ履歴の画面を開く
+   * UI-43: 再生の外のメッセージ窓のタップ（再生中のタップはステージが player.tap() に回す）。
+   * 文字送り中（街の「迷宮へ」の語りなど、run を通さない文）なら即表示するだけ。
+   * UI-46（M16）: 履歴はヘッダーの「ログ」とキー l で開く（窓のタップでは開かない。再生の直後の余計なタップで開いていた）
    */
   const tapMessage = (): void => {
     if (isBusy() || chaining) return;
-    if (play.message.typing()) {
-      play.message.rush();
-      return;
-    }
-    if (overlay === null) openHistory();
+    if (play.message.typing()) play.message.rush();
   };
 
   /**

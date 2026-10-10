@@ -37,6 +37,8 @@ const N = data.config.party.size;
 /** 既定の config.ui.layout（16/150/70/64/100）での迷宮の画面の矩形 */
 const L = dungeonLayout(regions(data.config.ui.layout, W), N);
 const HEADER_SETTINGS = L.header.settings;
+/** UI-46（M16）: 迷宮・戦闘のヘッダーのログ（街と同じ位置） */
+const HEADER_LOG = L.header.log;
 /** UI-13（M8.5）: 既定の config での街の画面の矩形 */
 const T = townLayout(regions(data.config.ui.layout, W), N);
 /** 既定の config での SV-23 の帯 */
@@ -77,24 +79,26 @@ const SCREENS: Record<string, Record<string, Rect>> = {
   },
   // UI-11 末尾が戻る / やめるの一覧（街の各施設・キャンプと酒場の一覧の段・戦闘の呪文・道具・対象）: 幅 168 の行と、一覧の外の戻る
   listFixed: {
+    "header.log": HEADER_LOG,
     "header.settings": HEADER_SETTINGS,
     ...Object.fromEntries(L.listNarrow.map((r, i) => [`listNarrow[${i}]`, r])),
     listBack: L.listBack,
   },
   dungeon: {
+    "header.log": HEADER_LOG,
     "header.settings": HEADER_SETTINGS,
     ...Object.fromEntries(Object.entries(L.dpad).map(([k, r]) => [`dpad.${k}`, r])),
     ...Object.fromEntries(L.menu.map((r, i) => [`menu[${i}]`, r])),
   },
   // 選択肢（階段の確認）は迷宮の上で十字ボタンの代わりに list を出す
-  choice: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
+  choice: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
   // UI-25 地図: 閉じると移動
   map: { mapClose: L.mapClose, mapGo: L.mapGo },
   // UI-54 戦闘: パーティの選択の 4 枠、メンバーの 5 枠（対象などの一覧は list と同じ）、オート中は「オート解除」だけ
-  battleParty: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.battleParty.map((r, i) => [`battleParty[${i}]`, r])) },
-  battleMember: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.battleMember.map((r, i) => [`battleMember[${i}]`, r])) },
-  battleList: { "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
-  autoStop: { "header.settings": HEADER_SETTINGS, autoStop: L.autoStop },
+  battleParty: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.battleParty.map((r, i) => [`battleParty[${i}]`, r])) },
+  battleMember: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.battleMember.map((r, i) => [`battleMember[${i}]`, r])) },
+  battleList: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
+  autoStop: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, autoStop: L.autoStop },
   // SV-42 更新の案内（どの画面の上にも出る）
   updateNotice: { "UPDATE_NOTICE.reload": UPDATE_NOTICE.reload, "UPDATE_NOTICE.close": UPDATE_NOTICE.close },
   // debug パネルは [-] [+] の行と toggle の行が別なので、それぞれの組で検査する
@@ -261,21 +265,29 @@ describe("layout", () => {
       expect(inside(tu, d.header.text)).toBe(true);
       expect(tu.x + tu.w).toBe(d.header.text.x + d.header.text.w);
       expect(overlaps(tu, d.header.settings)).toBe(false);
+      // UI-46（M16）: ログのボタンとも重ならない
+      expect(overlaps(tu, d.header.log)).toBe(false);
       // ターン表示の間の問いの領域（text.w − HEADER_TURN_W − HEADER_TURN_GAP）は turn の左に HEADER_TURN_GAP 空く
       const shrunk = { ...d.header.text, w: d.header.text.w - HEADER_TURN_W - HEADER_TURN_GAP };
       expect(overlaps(shrunk, tu)).toBe(false);
       expect(tu.x - (shrunk.x + shrunk.w)).toBe(HEADER_TURN_GAP);
     }
-    // 既定の問いの最長（「{name}はどうする？」の 6 文字の名前で 12 字 = 96px）は縮めた 132px に収まる
+    // 既定の問いの最長（「{name}はどうする？」の 6 文字の名前で 12 字 = 96px）は縮めた 100px に収まる（M16 でログと並べた。以前は 132px）
+    expect(HEADER_TURN_W).toBe(48);
+    expect(L.header.text.w - HEADER_TURN_W - HEADER_TURN_GAP).toBe(100);
     expect(L.header.text.w - HEADER_TURN_W - HEADER_TURN_GAP).toBeGreaterThanOrEqual(96);
+    // 「第12ターン」（全角 5 字 = 40px）はターン表示に収まる
+    expect(HEADER_TURN_W).toBeGreaterThanOrEqual(40);
   });
 
   test("ui §2 既定の layout（16/150/70/64/100）での迷宮の画面の座標は M2 の定数と同じ", () => {
-    // turn は M5.5（UI-54）で足した（text の右端 x140..195 に右寄せ）
+    // turn は M5.5（UI-54）で足した。M16（UI-46）でログ x160..199 を足し、text は x4..155（152）、turn は 56 → 48 で x108..155
+    //（以前は text w192・turn x140 w56、log なし）
     expect(L.header).toEqual({
-      text: { x: 4, y: 0, w: 192, h: 16 },
+      text: { x: 4, y: 0, w: 152, h: 16 },
+      log: { x: 160, y: 0, w: 40, h: 16 },
       settings: { x: 200, y: 0, w: 40, h: 16 },
-      turn: { x: 140, y: 0, w: 56, h: 16 },
+      turn: { x: 108, y: 0, w: 48, h: 16 },
     });
     expect(L.dpad).toEqual({
       forward: { x: 40, y: 300, w: 32, h: 32 },
@@ -349,6 +361,7 @@ describe("layout", () => {
       // ヘッダー
       expect(inside(d.header.settings, g.header), tag).toBe(true);
       expect(inside(d.header.text, g.header), tag).toBe(true);
+      expect(inside(d.header.log, g.header), tag).toBe(true);
       expect(d.header.settings.h, tag).toBe(l.header);
       // 操作領域: 原点からの相対は既定と同じ
       for (const k of Object.keys(L.dpad) as Array<keyof typeof L.dpad>) expect(rel(d.dpad[k], g.controls), tag).toEqual(rel(L.dpad[k], base.controls));

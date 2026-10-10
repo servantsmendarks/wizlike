@@ -26,7 +26,7 @@ export function regions(l: Config["ui"]["layout"], width: number): Regions {
 export const TOUCH_MIN_LOGICAL = 30;
 
 /**
- * UI-10 の最小寸法を満たさなくてよい矩形の名前（dungeonLayout の header.settings、M8.5 の townLayout の header.log・
+ * UI-10 の最小寸法を満たさなくてよい矩形の名前（dungeonLayout の header.settings、header.log（M8.5 の townLayout。M16 から dungeonLayout にも）・
  * パーティの帯 town.band（40×22）・一覧の行 town.list（高さ 22）。添字付きの名前 "town.band[0]" なども含む）
  */
 export const TOUCH_EXCEPTIONS: readonly string[] = ["header.settings", "header.log", "town.band", "town.list"];
@@ -40,10 +40,12 @@ export function isTouchException(name: string): boolean {
 
 /** ヘッダーの設定ボタンの幅。右端に置き、高さはヘッダーの高さ（16 が上限なので UI-10 の例外。F2 でも開ける） */
 const HEADER_SETTINGS_W = 40;
+/** UI-13 / UI-46: ヘッダーのログのボタンの幅（設定の左に並べる。高さはヘッダー。UI-10 の例外 header.log。M16 から迷宮・戦闘でも） */
+const HEADER_LOG_W = 40;
 /** ヘッダーの文字の左右の余白 */
 const HEADER_TEXT_PAD = 4;
-/** UI-54（M5.5）: 戦闘のターン表示の幅。ヘッダーの文字領域の右端に右寄せで置く */
-export const HEADER_TURN_W = 56;
+/** UI-54（M5.5）: 戦闘のターン表示の幅。ヘッダーの文字領域の右端に右寄せで置く。M16（UI-46）でログと並べるため 56 → 48（「第12ターン」は 40px） */
+export const HEADER_TURN_W = 48;
 /** UI-54（M5.5）: ターン表示を出している間、問いの文字領域をターン表示の幅とこの間だけ縮める */
 export const HEADER_TURN_GAP = 4;
 
@@ -149,8 +151,11 @@ const MAP_TITLE_H = 12;
 const shift = (r: Rect, o: Rect): Rect => ({ x: o.x + r.x, y: o.y + r.y, w: r.w, h: r.h });
 
 export type DungeonLayout = {
-  /** text は問い・現在地の文字領域、turn は戦闘のターン表示（UI-54。text の右端に右寄せ、設定ボタンと重ならない） */
-  header: { text: Rect; settings: Rect; turn: Rect };
+  /**
+   * text は問い・現在地の文字領域（ログの左まで）、log はログのボタン（UI-46。M16 から迷宮・戦闘でも出す。街の townLayout と同じ位置）、
+   * turn は戦闘のターン表示（UI-54。text の右端に右寄せ、ログ・設定ボタンと重ならない）
+   */
+  header: { text: Rect; log: Rect; settings: Rect; turn: Rect };
   dpad: Record<DpadKey, Rect>;
   menu: Rect[];
   list: Rect[];
@@ -192,7 +197,9 @@ export type DungeonLayout = {
 export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
   const h = g.header;
   const settings: Rect = { x: h.x + h.w - HEADER_SETTINGS_W, y: h.y, w: HEADER_SETTINGS_W, h: h.h };
-  const text: Rect = { x: h.x + HEADER_TEXT_PAD, y: h.y, w: settings.x - h.x - 2 * HEADER_TEXT_PAD, h: h.h };
+  // UI-46（M16）: ログのボタンは設定の左（townLayout と同じ）。文字領域はその左まで（既定 x4..155 の 152）
+  const log: Rect = { x: settings.x - HEADER_LOG_W, y: h.y, w: HEADER_LOG_W, h: h.h };
+  const text: Rect = { x: h.x + HEADER_TEXT_PAD, y: h.y, w: log.x - h.x - 2 * HEADER_TEXT_PAD, h: h.h };
   const turn: Rect = { x: text.x + text.w - HEADER_TURN_W, y: text.y, w: HEADER_TURN_W, h: text.h };
 
   const c = g.controls;
@@ -214,7 +221,7 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
   const v = g.view;
   const overlay: Rect = { x: v.x, y: v.y, w: v.w, h: v.h + m.h };
   return {
-    header: { text, settings, turn },
+    header: { text, log, settings, turn },
     dpad,
     menu: MENU_SLOTS_REL.map((r) => shift(r, c)),
     list: LIST_ROWS_REL.map((r) => shift(r, c)),
@@ -246,8 +253,6 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
 
 // ---- 街の画面（UI-13。M8.5）。ヘッダー 16 / 施設の絵 150 / パーティの帯 10 / 見出し / 一覧 / 戻る。数値は【仮】（decisions 2026-10-06）
 
-/** UI-13: ヘッダーのログのボタンの幅（設定の左に並べる。高さはヘッダー。UI-10 の例外 header.log） */
-const HEADER_LOG_W = 40;
 /** UI-13: パーティの帯の高さ（1 行）と、押せる範囲の高さ（帯と見出しの行。UI-10 の例外 town.band） */
 export const TOWN_BAND_H = 10;
 const TOWN_BAND_HIT_H = 22;
@@ -402,6 +407,7 @@ export function layoutWarnings(g: Regions, l: DungeonLayout): string[] {
     if (!inside(r, g[region])) out.push(`ui.layout: ${name} does not fit in the ${region} region (height ${g[region].h})`);
   };
   check("header.settings", l.header.settings, "header");
+  check("header.log", l.header.log, "header");
   for (const [k, r] of Object.entries(l.dpad)) check(`dpad.${k}`, r, "controls");
   l.menu.forEach((r, i) => check(`menu[${i}]`, r, "controls"));
   l.list.forEach((r, i) => check(`list[${i}]`, r, "controls"));

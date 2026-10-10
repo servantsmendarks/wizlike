@@ -163,7 +163,7 @@ export function createDungeonScreen(o: {
   /** UI-12 / TW-15 / CH-14: パーティ欄の HP / MP / SAN の最大（core の memberSheet。省略は素の値） */
   maxOf?: MaxOf;
   onSettings(): void;
-  /** UI-46 / UI-13（M8.5）: 街のヘッダーのログ */
+  /** UI-46 / UI-13（M8.5。M16 から迷宮・戦闘でも）: ヘッダーのログ */
   onLog(): void;
   /** UI-13（M8.5）: 街の帯のタップ（その人の id） */
   onBand(memberId: string): void;
@@ -195,7 +195,7 @@ export function createDungeonScreen(o: {
   el.className = "screen screen-play";
 
   const tl = o.town;
-  const header = createHeader({ strings: o.strings, region: r.header, layout: lay.header, town: tl.header, onSettings: o.onSettings, onLog: o.onLog });
+  const header = createHeader({ strings: o.strings, region: r.header, layout: lay.header, onSettings: o.onSettings, onLog: o.onLog });
 
   // ビュー
   const viewBox = document.createElement("div");
@@ -360,7 +360,6 @@ export function createDungeonScreen(o: {
       townPic.el.style.display = town ? "" : "none";
       battle.el.style.display = m === "battle" ? "" : "none";
       band.el.style.display = town ? "" : "none";
-      header.setLogVisible(town);
       syncPanels();
     },
     setTownPicture(facility: string): void {

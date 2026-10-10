@@ -644,7 +644,32 @@ describe("入力と Command", () => {
     );
     expect(dungeon).toMatch(/showWipe\(on: boolean\): void \{[\s\S]*?wipeOpen = on;\s*syncPanels\(\);\s*\}/);
     expect(dungeon).toContain('band.el.style.display = town ? "" : "none";');
-    expect(dungeon).toContain("header.setLogVisible(town);");
+    // M16（UI-46）: ヘッダーのログは街・迷宮・戦闘で常に出す（以前の期待値は header.setLogVisible(town)。街だけ出していた）
+    expect(dungeon).not.toContain("setLogVisible");
+  });
+
+  test("UI-13/UI-46（M16）迷宮・戦闘のヘッダーにもログ: createHeader は dungeonLayout の header（log を含む）だけを受け、街の矩形（town）は渡さない（ソースの検査）", () => {
+    const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
+    expect(dungeon).toContain("createHeader({ strings: o.strings, region: r.header, layout: lay.header, onSettings: o.onSettings, onLog: o.onLog });");
+    const header = stripComments(presenterRaw["../src/presenter/views/header.ts"]!);
+    expect(header).toContain("const lg = o.layout.log;");
+  });
+
+  test("UI-43/UI-46/UI-33（M16）再生の外のメッセージ窓のタップは文字送り中の即表示だけで履歴を開かない。キー l（Action log）はヘッダーのログと同じく guard を通して openHistory（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const tap = /const tapMessage = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(tap).toContain("if (play.message.typing()) play.message.rush();");
+    expect(tap).not.toContain("openHistory");
+    expect(app).toContain("onTap(play.message.el, () => tapMessage());");
+    // 履歴を開く経路はヘッダーのログ（onLog）とキー l の 2 つだけ
+    expect(app.match(/guard\(\(\) => openHistory\(\)\)/g)).toHaveLength(2);
+    const core = /const handleActionCore = \(a: Action\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    // 自動歩行を止める処理の後・オートの戦闘の分岐の前（キーは guard が捨てる）
+    const stop = core.indexOf("if (stopWalk()) return;");
+    const log = core.indexOf('if (a === "log") {\n      guard(() => openHistory());\n      return;\n    }');
+    expect(stop).toBeGreaterThanOrEqual(0);
+    expect(log).toBeGreaterThan(stop);
+    expect(core.indexOf('route === "battle" && overlay === null')).toBeGreaterThan(log);
   });
 
   // M10: 帯のタップで開く人は campFirstPage の memberId で渡す（キャラクター画面 UI-59）
