@@ -76,7 +76,7 @@ export type Controls = {
    * 一覧は作り直さない。scroll: false なら見える位置へは動かさない（ポインタで触れた行。タッチの途中で一覧が動かないように）
    */
   setListFocus(i: number | null, opts?: { scroll?: boolean }): void;
-  /** UI-25: map モードの「移動」を押せるか（偽なら dim 色で、押しても onMapGo を呼ばない） */
+  /** UI-25: map モードの「移動」を押せるか（偽なら dim 色で、押しても onMapGo を呼ばず onMapGoDim を呼ぶ。M16） */
   setMapGo(enabled: boolean): void;
   /** close モードの唯一のボタンの文言（既定は common.close。全滅の内訳では wipe.toTown） */
   setCloseLabel(label: string): void;
@@ -149,6 +149,8 @@ export function createControls(o: {
   onClose(): void;
   /** UI-25: 地図の「移動」（押せるときだけ呼ぶ） */
   onMapGo?(): void;
+  /** UI-25（M16）: dim の「移動」を押した（select(1) を含む。app が題を map.pickFirst に替える） */
+  onMapGoDim?(): void;
   /**
    * UI-66（M8）: 決定・取り消しの音。disabled でない項目を選んだら ok、戻る・やめるの項目（ControlItem の back。固定の戻る（listBack）を含み、
    * 戦闘の枠の中でも同じ。2026-10-07）と「閉じる」なら cancel。
@@ -313,6 +315,7 @@ export function createControls(o: {
   paintMapGo();
   const pressMapGo = (): void => {
     if (mapGoOn) o.onMapGo?.();
+    else o.onMapGoDim?.();
   };
   onTap(mapGo, () => pressMapGo());
   el.appendChild(mapGo);

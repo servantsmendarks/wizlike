@@ -525,6 +525,34 @@ describe("入力と Command", () => {
     expect(body).toMatch(/finish: \(\) => endWalk\(\)/);
   });
 
+  test("UI-23/UI-25/UI-31（M16）自動歩行の手（walkQuick）と長押しの 2 歩目以降（holdQuick）は再生の view.quickStep で線画をフェードしない。歩行中は窓に「移動中」（showNote。履歴に入れない）を出し、endWalk で下げる（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toMatch(/quickStep: \(\) => walkQuick \|\| holdQuick,/);
+    const repeater = /const repeater = createHoldRepeater\(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(repeater).toMatch(/fire: async \(i\) => \{\s*holdQuick = i > 0;\s*try \{\s*return await forwardStep\(/);
+    expect(repeater).toMatch(/\} finally \{\s*holdQuick = false;\s*\}/);
+    const walker = /const walker = createHoldRepeater\(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(walker).toMatch(/walkQuick = true;\s*const go = await walkStep\(/);
+    expect(walker).toMatch(/\}\)\.finally\(\(\) => \{\s*walkQuick = false;\s*\}\);/);
+    // 途中の手の語りで下がったら出し直す
+    expect(walker).toMatch(/if \(go && walking === w && !play\.message\.noting\(\)\) showWalkingNote\(\);/);
+    const goPick = /const goMapPick = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(goPick).toMatch(/walking = \{ steps, i: 0 \};\s*showWalkingNote\(\);\s*syncControls\(\);\s*walker\.press\(\);/);
+    const end = /const endWalk = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(end).toMatch(/walking = null;\s*play\.message\.hideNote\(\);/);
+  });
+
+  test("UI-25（M16）選んでいないときの「移動」（dim のボタン・2 キー）は題の行を map.pickFirst に替えるだけ（歩き出さない）（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toMatch(/onMapGoDim: \(\) => guard\(\(\) => mapPickFirst\(\)\),/);
+    const body = /const mapPickFirst = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(body).toMatch(/if \(overlay !== "map" \|\| walking !== null \|\| mapPick !== null\) return;\s*play\.map\.setTitle\(t\("map\.pickFirst"\)\);/);
+    expect(app).toMatch(/a\.menu === 1\) \{\s*if \(mapPick !== null\) goMapPick\(\);\s*else mapPickFirst\(\);\s*\}/);
+    expect(data.strings["map.pickFirst"]).toBe("行き先のマスをタップ");
+    expect(data.strings["map.tapHint"]).toBe("探索済みのマスをタップすると、そこまで歩く");
+    expect(data.strings["dungeon.walking"]).toBe("移動中…（触れると止まる）");
+  });
+
   test("UI-44 再生中・連鎖の途中のオート解除は、core の状態に関係なく予約の表示（battle.autoStopping）にし、予約はオート中のときだけ立てる。連鎖の外はオート中のときだけ battle.auto off を送る", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const requestAutoStop = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
@@ -788,7 +816,9 @@ describe("入力と Command", () => {
     const lower = /const lowerInput = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(lower).toContain("play.message.hideNote();");
     // 窓の説明を出すのは app の戦闘の 1 か所だけ（キャンプの説明はキャラクター画面の呪文の枠に出す）
-    expect(app.match(/showNote\(/g)?.length).toBe(1);
+    // M16（UI-25）: ほかは自動歩行の「移動中」（showWalkingNote）の 1 か所だけ
+    expect(app.match(/showNote\(/g)?.length).toBe(2);
+    expect(app).toContain('const showWalkingNote = (): void => play.message.showNote([t("dungeon.walking")]);');
     // 2026-10-07（A-A3）: peek の行（MP 不足の呪文）は dim でも選べて、確認の段で説明を見る（キャンプと同じ）
     expect(sync).toContain("...(e.peek === true ? { onDisabled: () => guard(() => chooseBattle(e.choice)) } : {}),");
   });

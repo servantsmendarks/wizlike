@@ -284,6 +284,9 @@ export function attachReleaseOnHide(onRelease: () => void): () => void {
 
 export type HoldRepeater = { press(): void; release(): void };
 
+/** createHoldRepeater の fire に渡す、同じ押下の中で何回目の fire か（0 が押した直後の 1 回目。押し直すと 0 から） */
+export type HoldFireIndex = number;
+
 /**
  * UI-31: 前進の長押し。press で fire を 1 回呼び、その再生が終わって true が返り、まだ押されていれば
  * ms() 待ってから次の fire を呼ぶ（待ちは再生の終わりから数える）。false が返るか release で止まる。
@@ -291,8 +294,9 @@ export type HoldRepeater = { press(): void; release(): void };
  * fire が false で止まった（壁・扉・遭遇など）ときにまだ押されていれば、release まではその長押しの続きとみなし、
  * 重ねて届く press（2 本目の指、スワイプと十字ボタンの併用、repeat が偽で届くキーの自動リピートなど）を無視する。
  * 同じ長押しの中で壁に当たり直して「壁だ。」が何度も出ないようにするため。離して押し直せば新しい長押しとして動く。
+ * fire には同じ押下の中の回数（0 から）を渡す（UI-23 の M16: 長押しの 2 歩目以降は線画をフェードしない）。
  */
-export function createHoldRepeater(o: { ms(): number; fire(): Promise<boolean> }): HoldRepeater {
+export function createHoldRepeater(o: { ms(): number; fire(i: HoldFireIndex): Promise<boolean> }): HoldRepeater {
   let pressed = false;
   let running = false;
   /** fire が false で止まった後、まだ release されていない（同じ長押しの続き） */
@@ -312,11 +316,12 @@ export function createHoldRepeater(o: { ms(): number; fire(): Promise<boolean> }
 
   const loop = async (): Promise<void> => {
     running = true;
+    let i = 0;
     try {
       while (pressed) {
         let ok = false;
         try {
-          ok = await o.fire();
+          ok = await o.fire(i++);
         } catch {
           ok = false;
         }

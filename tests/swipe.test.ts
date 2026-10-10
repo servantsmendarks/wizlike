@@ -303,6 +303,32 @@ describe("長押しの連打", () => {
     expect(calls).toHaveLength(2);
   });
 
+  test("UI-31/UI-23（M16）fire には同じ押下の中の回数（0 から）を渡す。押し直すと 0 から（app は 1 以上の歩を線画のフェードなしで描く）", async () => {
+    vi.useFakeTimers();
+    const got: number[] = [];
+    const calls: ((ok: boolean) => void)[] = [];
+    const rep = createHoldRepeater({
+      ms: () => 250,
+      fire: (i) => {
+        got.push(i);
+        return new Promise<boolean>((res) => calls.push(res));
+      },
+    });
+    rep.press();
+    calls[0]!(true);
+    await flush();
+    await vi.advanceTimersByTimeAsync(250);
+    calls[1]!(true);
+    await flush();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(got).toEqual([0, 1, 2]);
+    rep.release();
+    calls[2]!(true);
+    await flush();
+    rep.press();
+    expect(got).toEqual([0, 1, 2, 0]);
+  });
+
   test("UI-31 release で止まる（待ちの途中でも、再生の途中でも）", async () => {
     vi.useFakeTimers();
     const a = harness();

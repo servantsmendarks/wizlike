@@ -522,6 +522,33 @@ describe("controls", () => {
     expect(went).toBe(2);
   });
 
+  test("UI-25（M16）dim の「移動」を押す（タップ・select(1)）と onMapGoDim を呼ぶ（onMapGo は呼ばない）。押せる間は onMapGoDim を呼ばない", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    let went = 0;
+    let dim = 0;
+    const c = createControls({
+      region: g.controls,
+      layout: L,
+      strings: data.strings,
+      onAction: () => {},
+      hold: HOLD,
+      onClose: () => {},
+      onMapGo: () => went++,
+      onMapGoDim: () => dim++,
+    });
+    const go = created.find((e) => e.className === "controls-map-go")!;
+    c.setMode("map");
+    go.tap();
+    c.select(1);
+    expect([went, dim]).toEqual([0, 2]);
+    c.setMapGo(true);
+    go.tap();
+    c.select(1);
+    expect([went, dim]).toEqual([2, 2]);
+  });
+
   test("UI-44/UI-54 オート解除: タップ（再生中も反応する whileBusy）と、autoStop モードの select(0) で onPress を呼ぶ。ラベルは setAutoStop で差し替わる。close は onClose", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);

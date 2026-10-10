@@ -172,6 +172,8 @@ export function createDungeonScreen(o: {
   onMapCell?(p: Pos): void;
   /** UI-25: 操作領域の地図の「移動」（選んでいるときだけ呼ぶ） */
   onMapGo?(): void;
+  /** UI-25（M16）: dim の「移動」を押した（選んでいないとき） */
+  onMapGoDim?(): void;
   /** UI-66（M8）: 操作領域の決定・取り消しの音（controls の onSound） */
   onSound?(k: UiSound): void;
   /** UI-66（2026-10-06）: 会話の箱の送り（次の文へ・閉じる）。即表示では呼ばない */
@@ -260,11 +262,12 @@ export function createDungeonScreen(o: {
     hold: o.hold,
     onClose: o.onClose,
     onMapGo: () => o.onMapGo?.(),
+    onMapGoDim: () => o.onMapGoDim?.(),
     onSound: (k) => o.onSound?.(k),
   });
 
   // 地図はビューの上端から、メッセージの下端まで（既定 240×220）
-  const map = createMapView(lay.map, (p) => o.onMapCell?.(p), o.data.config.ui.mapSnapPx);
+  const map = createMapView(lay.map, (p) => o.onMapCell?.(p), o.data.config.ui.mapSnapPx, o.strings);
   map.el.style.display = "none";
 
   // キャンプと酒場のパネル（UI-53）はビュー領域だけ（キャラクター画面と酒場の図鑑は layout.character に広げる。M8.5 / M10）

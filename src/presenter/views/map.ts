@@ -10,6 +10,8 @@
 // overlay はビューとメッセージの領域を合わせた範囲（layout.ts の dungeonLayout の map。既定 240×220、y16..235）。
 // el はその位置と大きさに自分で置く。内側: 題（map.title。既定 y0..11）、地図本体（map.area。既定 y12..219 に viewBox 0 0 240 208 の SVG）。
 // 座標は画素番号。床の塗りは素の座標、線と記号と現在位置は translate(0.5 0.5) の中で描く（crispEdges）。
+// M16（UI-24 / UI-25）: 盤の上の余白に題の 2 行目（map.tapHint。選んでいない間だけ）、盤の下の余白に凡例（map.legend.*。
+// 記号は盤と同じ path を cell 8 で描く）。位置は盤の大きさから mapNotes で決め、余白に入らなければ出さない。
 import type { Facing, MapView, Pos } from "../../core/types";
 import { onTap } from "../input/tap";
 import type { DungeonLayout } from "../layout";
@@ -115,6 +117,85 @@ export function playerTriangle(facing: Facing, cell: number): Array<[number, num
   });
 }
 
+/** 記号の path（セル原点 (px, py)、セルの大きさ cell）。盤（mapPaths）と凡例（mapLegendPaths）で同じものを使う */
+const stairsDownD = (px: number, py: number, cell: number): string =>
+  `M${px + sc(2, cell)} ${py + sc(3, cell)}L${px + sc(4, cell)} ${py + sc(5, cell)}L${px + sc(6, cell)} ${py + sc(3, cell)}`;
+const stairsUpD = (px: number, py: number, cell: number): string =>
+  `M${px + sc(2, cell)} ${py + sc(5, cell)}L${px + sc(4, cell)} ${py + sc(3, cell)}L${px + sc(6, cell)} ${py + sc(5, cell)}`;
+const trapD = (px: number, py: number, cell: number): string => {
+  const a = sc(2, cell);
+  const b = sc(6, cell);
+  return `M${px + a} ${py + a}L${px + b} ${py + b}M${px + b} ${py + a}L${px + a} ${py + b}`;
+};
+const chestD = (px: number, py: number, cell: number): string => {
+  const a = sc(2, cell);
+  const b = sc(6, cell);
+  return `M${px + a} ${py + a}H${px + b}V${py + b}H${px + a}Z`;
+};
+const playerD = (px: number, py: number, facing: Facing, cell: number): string =>
+  playerTriangle(facing, cell)
+    .map(([x, y], i) => `${i === 0 ? "M" : "L"}${px + x} ${py + y}`)
+    .join("") + "Z";
+
+/** UI-24（M16）: 凡例の項目（strings の map.legend.<key>）。2 行 × 3 列に、左上から行の順に並べる */
+export const MAP_LEGEND_KEYS = ["self", "up", "down", "chest", "trap", "wall"] as const;
+export type MapLegendKey = (typeof MAP_LEGEND_KEYS)[number];
+
+/** 題の 2 行目と凡例の行の高さ（メッセージ窓の行と同じ 10。8px の字） */
+const NOTE_LINE_H = 10;
+/** 凡例の 1 列の幅（記号 8 + 間 2 + 語。語は全角 7 字まで） */
+const LEGEND_COL_W = 72;
+const LEGEND_COLS = 3;
+/** 盤の上端・下端と、題の 2 行目・凡例の間（論理 px） */
+const NOTE_GAP = 2;
+
+export type MapNotes = {
+  /** 題の 2 行目（map.tapHint）の上端（地図本体の SVG の座標）。盤の上の余白に入らなければ null */
+  hintY: number | null;
+  /** 凡例の各項目の左上（記号の 8×8 の箱は (x, y+1)、語は x+10 から。地図本体の SVG の座標）。盤の下の余白に入らなければ null */
+  legend: Array<{ key: MapLegendKey; x: number; y: number }> | null;
+};
+
+/**
+ * UI-24 / UI-25（M16）: 題の 2 行目と凡例の位置。盤（mapLayout）の上の余白の先頭に 2 行目、盤の下端 + NOTE_GAP から凡例の 2 行。
+ * 盤の大きさで余白が変わるので盤から計算し、余白に入らない（盤と重なる・領域からはみ出す）ものは出さない。
+ * 例: 20×20 は盤 y23..183（area 240×208）で、2 行目 y0..9、凡例 y186..205
+ */
+export function mapNotes(w: number, h: number, area: { w: number; h: number }): MapNotes {
+  const lay = mapLayout(w, h, area);
+  const hintY = lay.oy >= NOTE_LINE_H + NOTE_GAP ? 0 : null;
+  const rows = Math.ceil(MAP_LEGEND_KEYS.length / LEGEND_COLS);
+  const top = lay.oy + h * lay.cell + 1 + NOTE_GAP;
+  const blockW = LEGEND_COL_W * LEGEND_COLS;
+  const fits = top + rows * NOTE_LINE_H <= area.h && blockW <= area.w;
+  const x0 = Math.floor((area.w - blockW) / 2);
+  const legend = fits
+    ? MAP_LEGEND_KEYS.map((key, i) => ({ key, x: x0 + (i % LEGEND_COLS) * LEGEND_COL_W, y: top + Math.floor(i / LEGEND_COLS) * NOTE_LINE_H }))
+    : null;
+  return { hintY, legend };
+}
+
+export type MapLegendPaths = { walls: string; stairs: string; traps: string; chests: string; player: string };
+
+/**
+ * UI-24（M16）: 凡例の記号。盤と同じ path（cell 8）を各項目の記号の箱 (x, y+1) に描く。
+ * self は北向きの現在位置、up / down は階段、chest は □、trap は ×、wall は箱の中ほどの横線 1 本（盤の壁の線と同じ色）
+ */
+export function mapLegendPaths(legend: NonNullable<MapNotes["legend"]>): MapLegendPaths {
+  const out: MapLegendPaths = { walls: "", stairs: "", traps: "", chests: "", player: "" };
+  for (const it of legend) {
+    const px = it.x;
+    const py = it.y + 1;
+    if (it.key === "self") out.player += playerD(px, py, "N", MAX_CELL);
+    else if (it.key === "up") out.stairs += stairsUpD(px, py, MAX_CELL);
+    else if (it.key === "down") out.stairs += stairsDownD(px, py, MAX_CELL);
+    else if (it.key === "chest") out.chests += chestD(px, py, MAX_CELL);
+    else if (it.key === "trap") out.traps += trapD(px, py, MAX_CELL);
+    else out.walls += `M${px} ${py + MAX_CELL / 2}H${px + MAX_CELL}`;
+  }
+  return out;
+}
+
 export type MapPaths = { floor: string; walls: string; stairs: string; traps: string; chests: string; player: string };
 
 /**
@@ -159,25 +240,13 @@ export function mapPaths(v: MapView, lay: MapLayout): MapPaths {
       walls.push(ed.d());
     }
 
-    if (c.kind === "stairsDown") {
-      stairs.push(`M${px + sc(2, cell)} ${py + sc(3, cell)}L${px + sc(4, cell)} ${py + sc(5, cell)}L${px + sc(6, cell)} ${py + sc(3, cell)}`);
-    } else if (c.kind === "stairsUp") {
-      stairs.push(`M${px + sc(2, cell)} ${py + sc(5, cell)}L${px + sc(4, cell)} ${py + sc(3, cell)}L${px + sc(6, cell)} ${py + sc(5, cell)}`);
-    } else if (c.kind === "trap") {
-      const a = sc(2, cell);
-      const b = sc(6, cell);
-      traps.push(`M${px + a} ${py + a}L${px + b} ${py + b}M${px + b} ${py + a}L${px + a} ${py + b}`);
-    } else if (c.kind === "chest") {
-      const a = sc(2, cell);
-      const b = sc(6, cell);
-      chests.push(`M${px + a} ${py + a}H${px + b}V${py + b}H${px + a}Z`);
-    }
+    if (c.kind === "stairsDown") stairs.push(stairsDownD(px, py, cell));
+    else if (c.kind === "stairsUp") stairs.push(stairsUpD(px, py, cell));
+    else if (c.kind === "trap") traps.push(trapD(px, py, cell));
+    else if (c.kind === "chest") chests.push(chestD(px, py, cell));
   }
 
-  const ppx = ox + v.pos.x * cell;
-  const ppy = oy + v.pos.y * cell;
-  const tri = playerTriangle(v.facing, cell);
-  const player = tri.map(([x, y], i) => `${i === 0 ? "M" : "L"}${ppx + x} ${ppy + y}`).join("") + "Z";
+  const player = playerD(ox + v.pos.x * cell, oy + v.pos.y * cell, v.facing, cell);
 
   return { floor: floor.join(""), walls: walls.join(""), stairs: stairs.join(""), traps: traps.join(""), chests: chests.join(""), player };
 }
@@ -187,15 +256,23 @@ export type MapViewEl = {
   render(v: MapView, title: string): void;
   /** UI-25: 題の行だけを差し替える（経路が無いときの「道が分からない。」。次の render で戻る） */
   setTitle(title: string): void;
-  /** UI-25: 選んだセルの枠（null で消す）。blink なら点滅、偽なら静的な枠だけ（演出スキップ） */
+  /**
+   * UI-25: 選んだセルの枠（null で消す）。blink なら点滅、偽なら静的な枠だけ（演出スキップ）。
+   * 題の 2 行目（map.tapHint。M16）は選んでいない間だけ出す
+   */
   setPick(p: Pos | null, blink: boolean): void;
 };
 
 /**
  * onCell は地図本体のタップ（UI-25）。探索済みのセルの中心から snapPx 以内のタップだけを、一番近いセルに吸着させて呼ぶ
- * （範囲外のタップでは呼ばない）
+ * （範囲外のタップでは呼ばない）。strings は題の 2 行目（map.tapHint）と凡例の語（map.legend.*）を引く（M16）
  */
-export function createMapView(lay: DungeonLayout["map"], onCell: ((p: Pos) => void) | undefined, snapPx: number): MapViewEl {
+export function createMapView(
+  lay: DungeonLayout["map"],
+  onCell: ((p: Pos) => void) | undefined,
+  snapPx: number,
+  strings: Readonly<Record<string, string>>,
+): MapViewEl {
   const SVG_NS = "http://www.w3.org/2000/svg";
   const { overlay, title: tr, area } = lay;
   const el = document.createElement("div");
@@ -252,8 +329,66 @@ export function createMapView(lay: DungeonLayout["map"], onCell: ((p: Pos) => vo
   // 現在位置は階段・罠より後に描く
   const playerPath = path({ fill: "var(--c-player)", stroke: "none" });
   // UI-25: 選んだセルの枠（壁と現在位置の上に描く）
-  const pickPath = path({ fill: "none", stroke: "var(--c-accent)", "stroke-width": "1", d: "" });
+  const pickPath = path({ class: "map-pick", fill: "none", stroke: "var(--c-accent)", "stroke-width": "1", d: "" });
   g.append(wallPath, stairsPath, trapsPath, chestsPath, playerPath, pickPath);
+
+  // UI-24（M16）: 凡例の記号（盤と同じ色と path。盤の下の余白）。語は el の上の div（タップは地図本体に通す）
+  const legendWalls = path({ fill: "none", stroke: "var(--c-line)", "stroke-width": "1" });
+  const legendStairs = path({ fill: "none", stroke: "var(--c-stairs)", "stroke-width": "1" });
+  const legendTraps = path({ fill: "none", stroke: "var(--c-danger)", "stroke-width": "1" });
+  const legendChests = path({ fill: "none", stroke: "var(--c-accent)", "stroke-width": "1" });
+  const legendPlayer = path({ fill: "var(--c-player)", stroke: "none" });
+  const legendG = document.createElementNS(SVG_NS, "g");
+  legendG.setAttribute("class", "map-legend");
+  legendG.append(legendWalls, legendStairs, legendTraps, legendChests, legendPlayer);
+  g.appendChild(legendG);
+  const ax = area.x - overlay.x;
+  const ay = area.y - overlay.y;
+  const note = (className: string): HTMLDivElement => {
+    const d = document.createElement("div");
+    d.className = className;
+    Object.assign(d.style, { position: "absolute", height: `${NOTE_LINE_H}px`, lineHeight: `${NOTE_LINE_H}px`, whiteSpace: "nowrap", overflow: "hidden", pointerEvents: "none" });
+    return d;
+  };
+  // UI-25（M16）: 題の 2 行目（盤の上の余白の先頭。選んでいない間だけ）
+  const hint = note("map-hint");
+  Object.assign(hint.style, { left: `${ax}px`, width: `${area.w}px`, textAlign: "center", display: "none" });
+  hint.textContent = strings["map.tapHint"] ?? "";
+  el.appendChild(hint);
+  let hintY: number | null = null;
+  const paintHint = (picked: boolean): void => {
+    if (hintY === null || picked) {
+      hint.style.display = "none";
+      return;
+    }
+    hint.style.top = `${ay + hintY}px`;
+    hint.style.display = "";
+  };
+  const legendLabels = MAP_LEGEND_KEYS.map((key) => {
+    const d = note("map-legend-label");
+    Object.assign(d.style, { width: `${LEGEND_COL_W - (MAX_CELL + 2)}px`, display: "none" });
+    d.textContent = strings[`map.legend.${key}`] ?? "";
+    el.appendChild(d);
+    return d;
+  });
+  const paintLegend = (legend: MapNotes["legend"]): void => {
+    const p = legend === null ? { walls: "", stairs: "", traps: "", chests: "", player: "" } : mapLegendPaths(legend);
+    legendWalls.setAttribute("d", p.walls);
+    legendStairs.setAttribute("d", p.stairs);
+    legendTraps.setAttribute("d", p.traps);
+    legendChests.setAttribute("d", p.chests);
+    legendPlayer.setAttribute("d", p.player);
+    legendLabels.forEach((d, i) => {
+      const it = legend?.[i];
+      if (it === undefined) {
+        d.style.display = "none";
+        return;
+      }
+      d.style.left = `${ax + it.x + MAX_CELL + 2}px`;
+      d.style.top = `${ay + it.y}px`;
+      d.style.display = "";
+    });
+  };
   let blinking: Animation | null = null;
   const stopBlink = (): void => {
     if (blinking !== null) blinking.cancel();
@@ -277,8 +412,10 @@ export function createMapView(lay: DungeonLayout["map"], onCell: ((p: Pos) => vo
       stopBlink();
       if (p === null || shown === null) {
         pickPath.setAttribute("d", "");
+        paintHint(false);
         return;
       }
+      paintHint(true);
       pickPath.setAttribute("d", mapPickPath(p, mapLayout(shown.width, shown.height, area)));
       if (!blink) return;
       blinking = pickPath.animate(
@@ -304,6 +441,11 @@ export function createMapView(lay: DungeonLayout["map"], onCell: ((p: Pos) => vo
       trapsPath.setAttribute("d", p.traps);
       chestsPath.setAttribute("d", p.chests);
       playerPath.setAttribute("d", p.player);
+      // M16: 題の 2 行目と凡例（盤の大きさから。余白に入らなければ出さない）
+      const notes = mapNotes(v.width, v.height, area);
+      hintY = notes.hintY;
+      paintHint(false);
+      paintLegend(notes.legend);
     },
   };
 }

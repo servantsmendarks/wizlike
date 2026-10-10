@@ -268,6 +268,10 @@ export function createApp(o: {
   let mapPick: Pos | null = null;
   /** UI-25: 地図の題（経路が無いときの「道が分からない。」から戻すため） */
   let mapTitle = "";
+  /** UI-23（M16）: 自動歩行の 1 手を送って再生している間（線画をフェードしない） */
+  let walkQuick = false;
+  /** UI-23（M16）: 長押しの 2 歩目以降を送って再生している間（線画をフェードしない） */
+  let holdQuick = false;
 
   const scale = (): number => layout?.scale ?? 1;
 
@@ -384,6 +388,7 @@ export function createApp(o: {
     onPick: (g) => guard(() => chooseBattle({ kind: "group", index: g })),
     onMapCell: (p) => guard(() => tapMapCell(p)),
     onMapGo: () => guard(() => goMapPick()),
+    onMapGoDim: () => guard(() => mapPickFirst()),
     onSound: (k) => playUi(k),
     // UI-66（2026-10-06）: 会話の箱の送り
     talkAdvanced: () => playUi("talk"),
@@ -463,6 +468,8 @@ export function createApp(o: {
     settings: () => store.get(),
     view: {
       fade: (ms, apply) => play.view.fade(ms, apply),
+      // UI-23（M16）: 自動歩行の手と長押しの 2 歩目以降は、歩行・旋回の描き直しをフェードしない
+      quickStep: () => walkQuick || holdQuick,
       // UI-20: 察知した罠（visibleKnownTraps）は床の印。壁・階段と同じ視点で描く。開口の印（M16）も同じ視野のセルから
       showAt: (st, at) =>
         play.view.show(slotsFor(visibleCells(st, data, at), visibleKnownTraps(st, data, at), visibleChests(st, data, at)), exitMarksFor(visibleCells(st, data, at))),
@@ -1315,18 +1322,25 @@ export function createApp(o: {
   /** UI-31: 前進の長押し。1 歩ごとに再生の終わりを待ち、[moved] の後が hpChanged だけのときに続ける（canRepeat） */
   const repeater = createHoldRepeater({
     ms: () => store.get().holdRepeatMs,
-    fire: () =>
-      forwardStep({
-        ready: () => route === "dungeon" && overlay === null && fieldFree(),
-        move: () =>
-          run({ type: "dungeon.move" }).then((r) => {
-            // CB-01 の遭遇。敵の奇襲の後などで入力が要らない状態なら、そのまま連鎖で進める
-            if (r !== null && !r.rejected && route === "battle") kickBattle();
-            return r;
-          }),
-        pending: () => state.pendingChoice,
-        overlayOpen: () => overlay !== null,
-      }),
+    fire: async (i) => {
+      // UI-23（M16）: 2 歩目以降（連打の続き）は線画をフェードしない。1 歩目（短い押下・キーの 1 回）は今どおり
+      holdQuick = i > 0;
+      try {
+        return await forwardStep({
+          ready: () => route === "dungeon" && overlay === null && fieldFree(),
+          move: () =>
+            run({ type: "dungeon.move" }).then((r) => {
+              // CB-01 の遭遇。敵の奇襲の後などで入力が要らない状態なら、そのまま連鎖で進める
+              if (r !== null && !r.rejected && route === "battle") kickBattle();
+              return r;
+            }),
+          pending: () => state.pendingChoice,
+          overlayOpen: () => overlay !== null,
+        });
+      } finally {
+        holdQuick = false;
+      }
+    },
   });
 
   /**
@@ -1337,6 +1351,8 @@ export function createApp(o: {
     ms: () => store.get().holdRepeatMs,
     fire: async () => {
       const w = walking;
+      // UI-23（M16）: 自動歩行の手（止まる手・最後の手を含む）は線画をフェードしない
+      walkQuick = true;
       const go = await walkStep({
         walk: () => walking,
         ready: () => route === "dungeon" && overlay === null && fieldFree(),
@@ -1349,17 +1365,28 @@ export function createApp(o: {
           }),
         ok: (s, events) => routeStepOk(s, events, state),
         finish: () => endWalk(),
+      }).finally(() => {
+        walkQuick = false;
       });
       // 止められた（stopWalk 済み）なら何もしない。歩き終えた・止まったなら片付ける
       if (!go && walking === w) endWalk();
+      // UI-25（M16）: 途中の手の語り（扉など）で「移動中」が下がっていたら出し直す
+      if (go && walking === w && !play.message.noting()) showWalkingNote();
       return go;
     },
   });
 
-  /** 自動歩行を終える（swipe-on などを戻す） */
+  /**
+   * UI-25（M16）: 自動歩行の間、メッセージ窓に「移動中…（触れると止まる）」を出す。UI-68 の説明と同じ showNote で、
+   * 窓の行を退避して出し、履歴（UI-46）には入れない。止まったら endWalk が hideNote で戻す
+   */
+  const showWalkingNote = (): void => play.message.showNote([t("dungeon.walking")]);
+
+  /** 自動歩行を終える（swipe-on などを戻す。「移動中」を下げる） */
   const endWalk = (): void => {
     if (walking === null) return;
     walking = null;
+    play.message.hideNote();
     walker.release();
     if (!isBusy() && !chaining) syncControls();
   };
@@ -1409,8 +1436,15 @@ export function createApp(o: {
     if (steps === null || steps.length === 0) return;
     closeMap();
     walking = { steps, i: 0 };
+    showWalkingNote();
     syncControls();
     walker.press();
+  };
+
+  /** UI-25（M16）: 選んでいないときの「移動」（dim のボタン・2 キー）。題の行を「行き先のマスをタップ」に替える（次の選択・render で戻る） */
+  const mapPickFirst = (): void => {
+    if (overlay !== "map" || walking !== null || mapPick !== null) return;
+    play.map.setTitle(t("map.pickFirst"));
   };
 
   /** 再生中のボタンは何もしない（UI-44）。自動歩行中も同じ（UI-25） */
@@ -2081,7 +2115,10 @@ export function createApp(o: {
       if (a === "confirm") {
         if (mapPick !== null) goMapPick();
         else closeMap();
-      } else if (typeof a === "object" && a.menu === 1) goMapPick();
+      } else if (typeof a === "object" && a.menu === 1) {
+        if (mapPick !== null) goMapPick();
+        else mapPickFirst();
+      }
       else if (a === "back" || a === "map" || (typeof a === "object" && a.menu === 0)) closeMap();
       return;
     }

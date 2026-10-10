@@ -206,6 +206,31 @@ describe("UI-41 playback", () => {
     expect(log.filter((e) => e.m === "message.say").map((e) => e.a[1])).toEqual([false]);
   });
 
+  test("UI-23/UI-25/UI-31（M16）view.quickStep が真の間は moved / turned の描き直しを 0ms にする（戦闘への切り替えのフェードは viewFadeMs のまま）。省略・偽なら viewFadeMs", async () => {
+    let quick = true;
+    const { deps, log } = fakeDeps({ skipAnimations: false });
+    deps.view.quickStep = () => quick;
+    const before = stateWith(diveAt(3, 3, "N"));
+    await createPlayer(deps).play(
+      [
+        { kind: "moved", pos: { x: 3, y: 2 }, facing: "N" },
+        { kind: "turned", facing: "E" },
+        { kind: "screen", to: "battle" },
+      ],
+      before,
+      { ...before, screen: "battle" },
+    );
+    const ms = data.config.ui.viewFadeMs;
+    expect(ms).toBeGreaterThan(0);
+    expect(log.filter((e) => e.m === "view.fade").map((e) => e.a[0])).toEqual([0, 0, ms]);
+    // 線画は差し替わる（showAt は 2 回）
+    expect(log.filter((e) => e.m === "view.showAt")).toHaveLength(2);
+    quick = false;
+    log.length = 0;
+    await createPlayer(deps).play([{ kind: "moved", pos: { x: 3, y: 2 }, facing: "N" }], before, before);
+    expect(log.filter((e) => e.m === "view.fade").map((e) => e.a[0])).toEqual([ms]);
+  });
+
   test("UI-41 kind ごとのメソッドがイベントの順に呼ばれる", async () => {
     const { deps, log } = fakeDeps();
     const before = stateWith(null);

@@ -70,6 +70,11 @@ export type PlayerDeps = {
     showAt(state: GameState, at: ViewPoint): void;
     /** UI-42 の全体攻撃の揺れ */
     shake(ms: number): Promise<void>;
+    /**
+     * UI-23（M16）: 歩行・旋回の描き直しをフェードしない手か（地図の自動歩行 UI-25 の手と、長押しの前進 UI-31 の 2 歩目以降）。
+     * 真なら moved / turned / floorChanged の描き直しは 0ms（線画を消さずに差し替える）。戦闘への切り替えのフェードは対象外。省略は偽
+     */
+    quickStep?(): boolean;
   };
   header: { showAt(state: GameState, at: ViewPoint): void };
   message: {
@@ -332,12 +337,12 @@ export function createPlayer(deps: PlayerDeps): Player {
   const ui = deps.data.config.ui;
   const msOf = (cx: PlayCx, ms: number): number => (cx.skip ? 0 : ms);
 
-  /** ビューとヘッダーを cursor の視点でフェードしながら描き直す（UI-23） */
+  /** ビューとヘッダーを cursor の視点でフェードしながら描き直す（UI-23。自動歩行・長押しの手は 0ms） */
   const redraw = (cx: PlayCx, finalState: GameState): Promise<void> => {
     const c = cx.cursor;
     if (c === null) return Promise.resolve();
     const at = copyCursor(c);
-    const ms = cx.skip ? 0 : deps.data.config.ui.viewFadeMs;
+    const ms = cx.skip || deps.view.quickStep?.() === true ? 0 : deps.data.config.ui.viewFadeMs;
     return deps.view.fade(ms, () => {
       deps.view.showAt(finalState, at);
       deps.header.showAt(finalState, at);

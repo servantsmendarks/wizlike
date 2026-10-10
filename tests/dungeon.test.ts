@@ -122,6 +122,10 @@ function makeFloor(w: number, h: number): Floor {
 // ---------------------------------------------------------------------------
 
 describe("dungeon.enter", () => {
+  test("DG-03（M16）入場の語り dungeon.enter は毎回同じ文で、{dungeon} を持ち、潜るたびに形が変わること・地図が毎回白紙であることを語る", () => {
+    expect(data.strings["dungeon.enter"]).toBe("{dungeon}へ潜る。迷宮は潜るたびに形を変える。地図は毎回白紙だ。");
+  });
+
   test("DG-03/DG-40/TW-11 dungeon.enter: screen dungeon、dive の全欄、events は [screen dungeon, message dungeon.enter {dungeon:'試しの坑道'}, （DG-37/UI-76 ゲームで最初の入場）message hint.dungeonFirst]", () => {
     const s0 = newGame(1);
     const r = run(s0, ENTER_D01);
