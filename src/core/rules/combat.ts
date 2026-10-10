@@ -95,10 +95,10 @@ export const beatSwitchForTests = { enabled: true };
 
 /**
  * CB-55: fn が出したイベントの前に beat{phase, auto} を 1 件差し込む。fn が何も出さなければ拍も出さない。
- * auto は区切りを始めた時点の state.battle.auto（battle が null なら false）。乱数は引かない。入れ子にしない。
+ * auto は区切りを始めた時点の state.battle.auto（battle が null なら false。manual なら常に false）。乱数は引かない。入れ子にしない。
  */
-function section(ctx: RuleContext, phase: BeatPhase, fn: () => void): void {
-  const auto = ctx.state.battle?.auto ?? false;
+function section(ctx: RuleContext, phase: BeatPhase, fn: () => void, manual = false): void {
+  const auto = manual ? false : (ctx.state.battle?.auto ?? false);
   const at = ctx.events.length;
   fn();
   if (beatSwitchForTests.enabled && ctx.events.length > at) ctx.events.splice(at, 0, { kind: "beat", phase, auto });
@@ -1101,8 +1101,9 @@ export function tickPoisonStep(ctx: RuleContext): void {
 
 /** 戦闘の終わり（CB-50/51/53、DG-31〜33） */
 function endBattle(ctx: RuleContext, result: "win" | "flee" | "wipe"): void {
-  // CB-55: 戦闘の終わりを system の拍 1 つで包む。戦闘の中で起きた全滅では、全滅処理（TW-20〜26）をもう 1 つの system の拍で包む
-  section(ctx, "system", () => endBattleBody(ctx, result));
+  // CB-55: 戦闘の終わりを system の拍 1 つで包む。戦闘の中で起きた全滅では、全滅処理（TW-20〜26）をもう 1 つの system の拍で包む。
+  // M16: 戦闘の終わりの拍は常に手動（auto false。オートでも結果を読ませてから迷宮へ戻る）
+  section(ctx, "system", () => endBattleBody(ctx, result), true);
   if (result === "wipe") section(ctx, "system", () => performWipe(ctx));
 }
 
@@ -1135,7 +1136,10 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
     if (b.origin.kind === "random") {
       // CB-51 / CB-60: 宝箱の判定と罠の抽選は chest.ts（ボス戦では判定しない）。箱を置くだけで、語りは screen{dungeon} の後（presentChest）。
       // IT-53: Lv はこの戦闘で倒した種類の level の最大
-      rollDropChest(ctx, b.origin.inRoom, Math.max(...b.groups.map((g) => monsterOf(data, g.monsterId).level)));
+      // CB-60（M16）: 箱を置いたら、迷宮に戻る前に戦闘の結果として予告する（battle.chestLeft。乱数なし）
+      if (rollDropChest(ctx, b.origin.inRoom, Math.max(...b.groups.map((g) => monsterOf(data, g.monsterId).level)))) {
+        ctx.events.push({ kind: "message", key: "battle.chestLeft" });
+      }
     }
     if (b.origin.kind === "boss") {
       const dive = requireDive(state);

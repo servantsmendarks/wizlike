@@ -11,7 +11,7 @@
 // - tap(): タップ待ちなら解く。拍の中なら今の拍の残りを即時にする（拍は飛ばさない）。拍の外なら UI-43
 //   （1 回目は今の文の即表示、同じ再生の中の 2 回目で残りをすべて即時）。
 //   拍の中で見せる残りが無い（文字送り中でなく、出ているダイスが最終の段まで描けている）ときのタップは、
-//   その拍の手動の待ちのタップとして持ち越す（tapAhead。待ちの前に message / dice / penaltyTable が来たら取り消す）。
+//   その拍の手動の待ちのタップとして持ち越す（tapAhead。待ちの前に message / dice / penaltyTable が来たら取り消す。戦闘の外への screen と wipe の前の待ち（leave）では使わない）。
 // - 全滅（UI-56）: 拍の中の wipe は、開く前に最後の拍を読ませ（上の待ち）、拍の外に出てから内訳の overlay を開く。
 //   拍の外の wipe（戦闘外の全滅）も、開く前に全滅の 2d10 の箱を出したままタップを 1 回待つ。
 // - 戦績（UI-73。M12）: ending は record を預かるだけにし、再生の終わり（screens.sync の後）に ending.show で開く（締めの語りを先に読ませる）。
@@ -584,7 +584,8 @@ export function createPlayer(deps: PlayerDeps): Player {
     const ahead = tapAhead;
     tapAhead = false;
     if (w === "tap") {
-      if (ahead) return;
+      // leave（戦闘の外への screen の前）は先取りのタップを使わない（連打で結果を素通りしない）
+      if (ahead && at !== "leave") return;
       await waitTap();
     } else if (w === "timed") {
       await deps.message.waitMs(deps.settings().autoBeatMs);

@@ -1499,6 +1499,8 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     const ks = kindsOf(r.events);
     const iScreen = ks.indexOf("screen");
     expect(ks.slice(iScreen + 1)).toEqual(["chestFound", "message:chest.found.drop", "message:chest.prompt"]);
+    // CB-60（M16）: 箱を置いたら戦闘の結果の最後（screen dungeon の前）に予告の一文。乱数の順は上の鏡のまま（rollDropChest の位置は同じ）
+    expect(ks.slice(ks.indexOf("battleEnd"), iScreen + 1)).toEqual(["battleEnd", "message:battle.win", "message:battle.exp", "message:battle.chestLeft", "screen"]);
     expect(r.events).toContainEqual({ kind: "chestFound", source: "drop", danger: 0 });
     // chest.open（罠なし）: 金 chestGoldDice → 2 個目の chance(0) → 1 品目（魔法書。weightedIndex(entries) だけ）→ chestEnd opened
     const cg = rollDice(m, "2d10").total;
@@ -1524,6 +1526,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(rc.state.rng).toEqual(m2);
     expect(rc.state.dive!.chest).toBeNull();
     expect(kindsOf(rc.events)).not.toContain("chestFound");
+    expect(kindsOf(rc.events)).not.toContain("message:battle.chestLeft");
     // 通路: chestChanceCorridor 100 なら部屋と同じ手順（部屋の chestChance 0 は効かない）。inRoom は偽
     const corr2 = mk({ kind: "random", inRoom: false });
     const m3 = cloneRng(corr2.rng);
@@ -1562,6 +1565,10 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
         const r = exec(s, RESOLVE, d);
         expect(kindsOf(r.events).includes("chestFound"), `seed ${seed} inRoom ${String(inRoom)}`).toBe(want);
         expect(r.state.dive!.chest !== null, `seed ${seed} inRoom ${String(inRoom)}`).toBe(want);
+        // CB-60（M16）: 予告の一文は箱を置いたときだけ、screen dungeon の前
+        const ks = kindsOf(r.events);
+        expect(ks.includes("message:battle.chestLeft"), `seed ${seed} inRoom ${String(inRoom)}`).toBe(want);
+        if (want) expect(ks.indexOf("message:battle.chestLeft")).toBeLessThan(ks.indexOf("screen"));
         seen[inRoom ? "room" : "corridor"][want ? 1 : 0]! += 1;
       }
     }
@@ -2410,6 +2417,25 @@ describe("拍（CB-55）", () => {
     expect(last.body.slice(-2)).toEqual(["message:battle.autoOff", "message:battle.autoReason.status"]);
   });
 
+  test("CB-55（M16）戦闘の終わりの拍は常に auto false: オート中の勝利でも battleEnd の system の拍は手動、それより前の拍は auto true。手動の勝利・逃走も false", () => {
+    const d = dataWith({ combat: ALWAYS_HIT });
+    const s = setup([{ monsterId: "giant_rat", hps: [1], status: [["paralysis"]] }], { identified: ["giant_rat"], auto: true, inputs: {} });
+    const r = exec(s, RESOLVE, d);
+    expect(r.state.battle).toBeNull();
+    const segs = segmentsOf(r.events).segs;
+    const end = segs.find((g) => g.body.includes("battleEnd"))!;
+    expect(end.beat).toEqual({ kind: "beat", phase: "system", auto: false });
+    expect(end.body.slice(0, 2)).toEqual(["battleEnd", "message:battle.win"]);
+    expect(end.body.at(-1)).toBe("screen");
+    const before = segs.slice(0, segs.indexOf(end));
+    expect(before.length).toBeGreaterThan(0);
+    expect(before.every((g) => g.beat.auto)).toBe(true);
+    // 手動の逃走（オート中は flee を受けない）でも false
+    const f = setup([{ monsterId: "giant_rat", hps: [50], status: [["paralysis"]] }], { patches: ONLY_C1, identified: ["giant_rat"] });
+    const ok = exec(f, FLEE, dataWith({ combat: { fleeBase: 1000 } }));
+    expect(segmentsOf(ok.events).segs.at(-1)!.beat).toEqual({ kind: "beat", phase: "system", auto: false });
+  });
+
   test("CB-55 不変条件: (a) 戦闘の外の迷宮・戦闘外の全滅には拍が無い (b) 拍は連続せず末尾に無い (c) 拍を取り除いた列・最終の state と rng は拍を入れない場合と同じ（30 シード × 遭遇から決着まで）", () => {
     const LOW_SAN = { c1: { san: 20 }, c2: { san: 20 }, c3: { san: 20 }, c4: { san: 20 }, c5: { san: 20 }, c6: { san: 20 } };
     const run = (enabled: boolean, seed: number, low = false) => {
@@ -2445,6 +2471,8 @@ describe("拍（CB-55）", () => {
         expectBeatShape(evs);
         expectKnownStringKeys(evs);
         if (eventsOf(evs, "beat").length > 0) withBeats += 1;
+        // M16: battleEnd を含む拍は常に手動（オートで戦い抜いた終わりでも）
+        for (const g of segmentsOf(evs).segs) if (g.body.includes("battleEnd")) expect(g.beat.auto).toBe(false);
       }
     }
     expect(withBeats).toBeGreaterThan(30);
