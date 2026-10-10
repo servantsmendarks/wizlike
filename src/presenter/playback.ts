@@ -8,6 +8,7 @@
 //   手動（beat.auto 偽）はタップ待ち（beat.waitTap、続きの三角を点滅）、オートは message.waitMs(settings().autoBeatMs)。
 //   戦闘の外への screen と全滅の wipe の前でも同じ待ちをする。再生の終わりは、オートなら待ち、手動ならダイスが出ているときだけ待つ（beatWait）。
 //   手動かオートかは beat.auto だけで決める（state から推測しない）。拍の外（迷宮・街）は待たない。
+//   設定「再生の進め方」が自動で流す（beatAdvance timed。UI-57。M16）なら、手動の待ちも autoBeatMs の待ちにする（leave はタップのまま。beatAdvanceWait）。
 // - tap(): タップ待ちなら解く。拍の中なら今の拍の残りを即時にする（拍は飛ばさない）。拍の外なら UI-43
 //   （1 回目は今の文の即表示、同じ再生の中の 2 回目で残りをすべて即時）。
 //   拍の中で見せる残りが無い（文字送り中でなく、出ているダイスが最終の段まで描けている）ときのタップは、
@@ -228,6 +229,16 @@ export function beatWait(o: { mode: BeatMode | null; pending: boolean; diceShown
   if (o.mode === null || !o.pending) return null;
   if (o.at === "end" && o.mode === "tap" && !o.diceShown) return null;
   return o.mode;
+}
+
+/**
+ * UI-45 / UI-57（M16、純粋）: 設定「再生の進め方」を拍の待ち方に当てる。advance が timed なら、拍の手動の待ち（tap）を
+ * autoBeatMs の待ち（timed）にする。ただし戦闘の外へ出る前（leave。戦闘の外への screen と全滅の wipe の前）はタップのまま。
+ * 拍の外のタップ待ち（制止の箱・区切り・出目の表・結末・戦闘外の全滅）は waitBeat を通らないので、この設定の対象外
+ */
+export function beatAdvanceWait(w: BeatMode | null, at: "beat" | "leave" | "end", advance: "tap" | "timed"): BeatMode | null {
+  if (w === "tap" && advance === "timed" && at !== "leave") return "timed";
+  return w;
 }
 
 /** UI-45: タップ待ちの掛け金。waitTap の Promise は次の release で解決する（待っていない間の release は何もしない） */
@@ -580,7 +591,7 @@ export function createPlayer(deps: PlayerDeps): Player {
 
   /** UI-45: at の位置で待つ（beatWait が null なら待たない）。手動は続きの三角を点滅させてタップを待つ */
   const waitBeat = async (at: "beat" | "leave" | "end"): Promise<void> => {
-    const w = beatWait({ mode, pending, diceShown, at });
+    const w = beatAdvanceWait(beatWait({ mode, pending, diceShown, at }), at, deps.settings().beatAdvance);
     const ahead = tapAhead;
     tapAhead = false;
     if (w === "tap") {

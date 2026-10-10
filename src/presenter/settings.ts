@@ -6,6 +6,10 @@ import type { Config } from "../core/data/index";
 export type InputMode = "swipe" | "buttons" | "both";
 export const INPUT_MODES: readonly InputMode[] = ["swipe", "buttons", "both"];
 
+/** UI-57 / UI-45（M16）: 再生の進め方。tap = 拍の手動の待ちはタップで送る、timed = 拍の手動の待ちも autoBeatMs で自動に流す */
+export type BeatAdvance = "tap" | "timed";
+export const BEAT_ADVANCES: readonly BeatAdvance[] = ["tap", "timed"];
+
 export type Settings = {
   /**
    * UI-41: 省くのは文字送り・ダイスの動き・点滅・被弾のフラッシュ・揺れ・撃破のフェード・ビューのフェードだけ。
@@ -22,6 +26,8 @@ export type Settings = {
   holdRepeatMs: number;
   /** UI-45: オートの拍の待ち（ms）。AUTO_BEAT_CHOICES のどれか */
   autoBeatMs: number;
+  /** UI-57 / UI-45（M16）: 再生の進め方（既定 tap） */
+  beatAdvance: BeatAdvance;
   /** UI-57 / UI-63（M8）: 曲の音量の段（VOLUME_CHOICES。0 なら鳴らさない） */
   musicVolume: number;
   /** UI-57 / UI-65（M8）: 効果音の音量の段（VOLUME_CHOICES。0 なら鳴らさない） */
@@ -111,12 +117,13 @@ function normalize(src: Record<string, unknown>, fallback: Settings): Settings {
     swipeThreshold: num("swipeThreshold"),
     holdRepeatMs: num("holdRepeatMs"),
     autoBeatMs: isAutoBeat(src.autoBeatMs) ? src.autoBeatMs : fallback.autoBeatMs,
+    beatAdvance: typeof src.beatAdvance === "string" && (BEAT_ADVANCES as readonly string[]).includes(src.beatAdvance) ? (src.beatAdvance as BeatAdvance) : fallback.beatAdvance,
     musicVolume: isVolume(src.musicVolume) ? src.musicVolume : fallback.musicVolume,
     sfxVolume: isVolume(src.sfxVolume) ? src.sfxVolume : fallback.sfxVolume,
   };
 }
 
-/** config の値を範囲に丸めたもの。inputMode は both、skipAnimations は false、autoBeatMs は config.ui.autoBeatMs を選択肢に寄せたもの */
+/** config の値を範囲に丸めたもの。inputMode は both、skipAnimations は false、beatAdvance は tap、autoBeatMs は config.ui.autoBeatMs を選択肢に寄せたもの */
 export function defaultSettings(config: Config): Settings {
   return {
     skipAnimations: false,
@@ -125,6 +132,7 @@ export function defaultSettings(config: Config): Settings {
     swipeThreshold: clampTo("swipeThreshold", config.input.swipeThresholdPx),
     holdRepeatMs: clampTo("holdRepeatMs", config.input.holdRepeatMs),
     autoBeatMs: snapAutoBeat(config.ui.autoBeatMs),
+    beatAdvance: "tap",
     musicVolume: clampVolume(config.ui.musicVolume),
     sfxVolume: clampVolume(config.ui.sfxVolume),
   };
@@ -150,6 +158,7 @@ export function serializeSettings(s: Settings): string {
     textSpeed: s.textSpeed,
     inputMode: s.inputMode,
     autoBeatMs: s.autoBeatMs,
+    beatAdvance: s.beatAdvance,
     swipeThreshold: s.swipeThreshold,
     holdRepeatMs: s.holdRepeatMs,
     musicVolume: s.musicVolume,
@@ -160,6 +169,11 @@ export function serializeSettings(s: Settings): string {
 /** 数値の設定を 1 刻み増減する（範囲で止まる） */
 export function stepSetting(s: Settings, key: NumericSettingKey, dir: 1 | -1): Settings {
   return { ...s, [key]: clampTo(key, s[key] + dir * SETTING_RANGES[key].step) };
+}
+
+/** UI-57（M16）: tap → timed → tap */
+export function nextBeatAdvance(b: BeatAdvance): BeatAdvance {
+  return b === "tap" ? "timed" : "tap";
 }
 
 /** swipe → buttons → both → swipe */

@@ -29,18 +29,20 @@ const PLAY: SettingsContext = { canExport: true, canImport: false, where: "play"
 const NONE: SettingsContext = { canExport: false, canImport: false, where: "none", standalone: false };
 
 describe("設定画面の純粋な部分（UI-57）", () => {
-  test("UI-57 settingsRows: 4 行（演出スキップ 入/切、文字速度 即時 / {ms}ms、オートの速さ {ms}ms、入力 両方など）", () => {
-    const rows = settingsRows({ ...D, skipAnimations: false, textSpeed: 30, autoBeatMs: 400, inputMode: "both" }, S);
-    expect(rows.map((r) => r.key)).toEqual(["skipAnimations", "textSpeed", "autoBeatMs", "inputMode"]);
-    expect([...SETTINGS_ROW_KEYS]).toEqual(["skipAnimations", "textSpeed", "autoBeatMs", "inputMode"]);
+  test("UI-57 settingsRows: 5 行（演出スキップ 入/切、文字速度 即時 / {ms}ms、オートの速さ {ms}ms、入力 両方など、再生の進め方 タップで送る / 自動で流す（M16））", () => {
+    const rows = settingsRows({ ...D, skipAnimations: false, textSpeed: 30, autoBeatMs: 400, inputMode: "both", beatAdvance: "tap" }, S);
+    expect(rows.map((r) => r.key)).toEqual(["skipAnimations", "textSpeed", "autoBeatMs", "inputMode", "beatAdvance"]);
+    expect([...SETTINGS_ROW_KEYS]).toEqual(["skipAnimations", "textSpeed", "autoBeatMs", "inputMode", "beatAdvance"]);
     expect(rows).toEqual([
       { key: "skipAnimations", label: S["settings.skipAnimations"], value: S["settings.off"] },
       { key: "textSpeed", label: S["settings.textSpeed"], value: "30ms" },
       { key: "autoBeatMs", label: S["settings.autoBeatMs"], value: "400ms" },
       { key: "inputMode", label: S["settings.inputMode"], value: S["settings.inputMode.both"] },
+      { key: "beatAdvance", label: S["settings.beatAdvance"], value: S["settings.beatAdvance.tap"] },
     ]);
-    const on = settingsRows({ ...D, skipAnimations: true, textSpeed: 0, autoBeatMs: 200, inputMode: "swipe" }, S);
-    expect(on.map((r) => r.value)).toEqual([S["settings.on"], S["settings.textSpeed.instant"], "200ms", S["settings.inputMode.swipe"]]);
+    expect([S["settings.beatAdvance"], S["settings.beatAdvance.tap"], S["settings.beatAdvance.timed"]]).toEqual(["再生の進め方", "タップで送る", "自動で流す"]);
+    const on = settingsRows({ ...D, skipAnimations: true, textSpeed: 0, autoBeatMs: 200, inputMode: "swipe", beatAdvance: "timed" }, S);
+    expect(on.map((r) => r.value)).toEqual([S["settings.on"], S["settings.textSpeed.instant"], "200ms", S["settings.inputMode.swipe"], S["settings.beatAdvance.timed"]]);
     // debug パネルの -/+ で入れた選択肢に無い値（50）もそのまま出す
     expect(settingsRows({ ...D, textSpeed: 50 }, S)[1]?.value).toBe("50ms");
   });
@@ -61,9 +63,11 @@ describe("設定画面の純粋な部分（UI-57）", () => {
       { inputMode: "both" },
       { inputMode: "swipe" },
     ]);
+    expect(settingsToggle({ ...D, beatAdvance: "tap" }, "beatAdvance")).toEqual({ beatAdvance: "timed" });
+    expect(settingsToggle({ ...D, beatAdvance: "timed" }, "beatAdvance")).toEqual({ beatAdvance: "tap" });
   });
 
-  test("UI-57/SV-31 settingsItems: title は 書き出し dim・読み込み 可、play は 書き出し 可・読み込み dim、none は両方 dim。並びは 4 行 → 曲 → 効果音 → 書き出し → 読み込み → 開発用 → 閉じる", () => {
+  test("UI-57/SV-31 settingsItems: title は 書き出し dim・読み込み 可、play は 書き出し 可・読み込み dim、none は両方 dim。並びは 5 行 → 曲 → 効果音 → 書き出し → 読み込み → 開発用 → 閉じる", () => {
     const rows = [
       ...SETTINGS_ROW_KEYS.map((key) => ({ kind: "row", key })),
       { kind: "volume", key: "musicVolume" },
@@ -74,31 +78,34 @@ describe("設定画面の純粋な部分（UI-57）", () => {
     expect(settingsItems(PLAY)).toEqual([...rows, { kind: "export", disabled: false }, { kind: "import", disabled: true }, { kind: "debug" }, { kind: "close" }]);
     expect(settingsItems(NONE)).toEqual([...rows, { kind: "export", disabled: true }, { kind: "import", disabled: true }, { kind: "debug" }, { kind: "close" }]);
     // 遊んでいる途中でも current が無ければ（canExport 偽）書き出しは dim
-    expect(settingsItems({ ...PLAY, canExport: false })[6]).toEqual({ kind: "export", disabled: true });
+    expect(settingsItems({ ...PLAY, canExport: false })[7]).toEqual({ kind: "export", disabled: true });
     // 案内の欄の既定の文
     expect(settingsFileHint(TITLE, S)).toBe(S["settings.fileHintTitle"]);
     expect(settingsFileHint(PLAY, S)).toBe(S["settings.fileHintPlay"]);
     expect(settingsFileHint(NONE, S)).toBe(S["settings.fileHintNone"]);
   });
 
-  test("UI-33 settingsKeyIndex: 数字 n → n 番目（5・6 が曲・効果音、7 が書き出し）、dim は null、Esc / Enter → 閉じる（10 番目なので数字では届かない）、範囲外は null", () => {
+  test("UI-33 settingsKeyIndex: 数字 n → n 番目（5 が再生の進め方、6・7 が曲・効果音、8 が書き出し、9 が読み込み）、dim は null、Esc / Enter → 閉じる（11 番目。開発用は 10 番目で数字では届かない）、範囲外は null", () => {
     const play = settingsItems(PLAY);
+    expect(play).toHaveLength(11);
     expect(settingsKeyIndex({ menu: 0 }, play)).toBe(0);
     expect(settingsKeyIndex({ menu: 3 }, play)).toBe(3);
-    expect(settingsKeyIndex({ menu: 4 }, play)).toBe(4); // 曲
-    expect(play[4]).toEqual({ kind: "volume", key: "musicVolume" });
-    expect(settingsKeyIndex({ menu: 5 }, play)).toBe(5); // 効果音
-    expect(play[5]).toEqual({ kind: "volume", key: "sfxVolume" });
-    expect(settingsKeyIndex({ menu: 6 }, play)).toBe(6); // 書き出し（可）
-    expect(settingsKeyIndex({ menu: 7 }, play)).toBeNull(); // 読み込み（dim）
-    expect(settingsKeyIndex({ menu: 8 }, play)).toBe(8); // 開発用（数字キー 9）
-    expect(settingsKeyIndex({ menu: 9 }, play)).toBe(9); // 閉じる
-    expect(settingsKeyIndex({ menu: 10 }, play)).toBeNull();
-    expect(settingsKeyIndex("back", play)).toBe(9);
-    expect(settingsKeyIndex("confirm", play)).toBe(9);
+    expect(settingsKeyIndex({ menu: 4 }, play)).toBe(4); // 再生の進め方（数字キー 5）
+    expect(play[4]).toEqual({ kind: "row", key: "beatAdvance" });
+    expect(settingsKeyIndex({ menu: 5 }, play)).toBe(5); // 曲
+    expect(play[5]).toEqual({ kind: "volume", key: "musicVolume" });
+    expect(settingsKeyIndex({ menu: 6 }, play)).toBe(6); // 効果音
+    expect(play[6]).toEqual({ kind: "volume", key: "sfxVolume" });
+    expect(settingsKeyIndex({ menu: 7 }, play)).toBe(7); // 書き出し（可）
+    expect(settingsKeyIndex({ menu: 8 }, play)).toBeNull(); // 読み込み（dim。数字キー 9）
+    expect(play[9]).toEqual({ kind: "debug" }); // 開発用（10 番目。F2 で開く）
+    expect(settingsKeyIndex({ menu: 10 }, play)).toBe(10); // 閉じる
+    expect(settingsKeyIndex({ menu: 11 }, play)).toBeNull();
+    expect(settingsKeyIndex("back", play)).toBe(10);
+    expect(settingsKeyIndex("confirm", play)).toBe(10);
     const title = settingsItems(TITLE);
-    expect(settingsKeyIndex({ menu: 6 }, title)).toBeNull();
-    expect(settingsKeyIndex({ menu: 7 }, title)).toBe(7);
+    expect(settingsKeyIndex({ menu: 7 }, title)).toBeNull();
+    expect(settingsKeyIndex({ menu: 8 }, title)).toBe(8);
     for (const a of ["forward", "left", "right", "around", "map", "debug"] as const) expect(settingsKeyIndex(a, play), a).toBeNull();
   });
 
@@ -109,12 +116,13 @@ describe("設定画面の純粋な部分（UI-57）", () => {
     expect(L.close).toEqual({ x: 178, y: 354, w: 56, h: 40 });
     expect(L.debug).toEqual({ x: 4, y: 354, w: 80, h: 40 });
     expect(L.heading).toEqual({ x: 4, y: 4, w: 232, h: 12 });
-    expect(L.rows).toEqual([0, 1, 2, 3].map((i) => ({ label: { x: 4, y: 20 + 34 * i, w: 128, h: 32 }, toggle: { x: 136, y: 20 + 34 * i, w: 100, h: 32 } })));
-    expect(L.volume).toEqual({ label: { x: 4, y: 156, w: 64, h: 32 }, music: { x: 72, y: 156, w: 80, h: 32 }, sfx: { x: 156, y: 156, w: 80, h: 32 } });
-    expect(L.exportButton).toEqual({ x: 8, y: 192, w: 108, h: 32 });
-    expect(L.importButton).toEqual({ x: 124, y: 192, w: 108, h: 32 });
-    expect(L.notice).toEqual({ x: 4, y: 228, w: 232, h: 20 });
-    expect(L.install).toEqual({ x: 4, y: 252, w: 232, h: 98 });
+    // M16: 5 行（y20+34i、i=0..4）。音量 y190、書き出し・読み込み y224、案内 y258（1 行）、ホーム画面の案内 y270..349（8 行）
+    expect(L.rows).toEqual([0, 1, 2, 3, 4].map((i) => ({ label: { x: 4, y: 20 + 34 * i, w: 128, h: 32 }, toggle: { x: 136, y: 20 + 34 * i, w: 100, h: 32 } })));
+    expect(L.volume).toEqual({ label: { x: 4, y: 190, w: 64, h: 32 }, music: { x: 72, y: 190, w: 80, h: 32 }, sfx: { x: 156, y: 190, w: 80, h: 32 } });
+    expect(L.exportButton).toEqual({ x: 8, y: 224, w: 108, h: 32 });
+    expect(L.importButton).toEqual({ x: 124, y: 224, w: 108, h: 32 });
+    expect(L.notice).toEqual({ x: 4, y: 258, w: 232, h: 10 });
+    expect(L.install).toEqual({ x: 4, y: 270, w: 232, h: 80 });
     const inside = (r: Rect): boolean => r.x >= 0 && r.y >= 0 && r.x + r.w <= W && r.y + r.h <= H;
     const overlaps = (a: Rect, b: Rect): boolean => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
     const pressable: Array<[string, Rect]> = [
@@ -143,7 +151,7 @@ describe("設定画面の純粋な部分（UI-57）", () => {
     expect(settingsLayout(g2).close).toEqual({ x: 178, y: 290 + 54, w: 56, h: 40 });
   });
 
-  test("UI-57 設定画面の文言が strings にある（案内の欄は 2 行 = 全角 56 字以内）", () => {
+  test("UI-57 設定画面の文言が strings にある（案内の欄は 1 行 = 29 字で折り返して 1 行。M16 で 2 行から縮めた）", () => {
     for (const k of [
       "settings.title",
       "settings.textSpeed.instant",
@@ -157,6 +165,9 @@ describe("設定画面の純粋な部分（UI-57）", () => {
       "settings.textSpeed",
       "settings.autoBeatMs",
       "settings.inputMode",
+      "settings.beatAdvance",
+      "settings.beatAdvance.tap",
+      "settings.beatAdvance.timed",
       "settings.volume",
       "settings.volume.music",
       "settings.volume.sfx",
@@ -167,7 +178,7 @@ describe("設定画面の純粋な部分（UI-57）", () => {
       expect(S[k], k).toBeTypeOf("string");
     }
     for (const k of ["settings.fileHintTitle", "settings.fileHintPlay", "settings.fileHintNone", "settings.exportDone", "settings.exportFailed"]) {
-      expect([...S[k]!].length, k).toBeLessThanOrEqual(56);
+      expect(kinsokuLines(S[k]!, 29), k).toHaveLength(1);
     }
   });
 });
@@ -246,9 +257,9 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
     view.render(PLAY, null);
     // 見出し
     expect(root.children.some((c) => c.textContent === S["settings.title"])).toBe(true);
-    // 4 行の値
+    // 5 行の値
     const toggles = L.rows.map((r) => buttonAt(r.toggle));
-    expect(toggles.map((b) => b.textContent)).toEqual([S["settings.off"], "30ms", "400ms", S["settings.inputMode.both"]]);
+    expect(toggles.map((b) => b.textContent)).toEqual([S["settings.off"], "30ms", "400ms", S["settings.inputMode.both"], S["settings.beatAdvance.tap"]]);
     for (const b of toggles) expect(tapSpecOf(b)).not.toBeNull();
     // 文字速度 30 → 60（store.set → persist。値の描き直しは app の store 購読者が refresh を呼ぶ）
     tap(toggles[1]!);
@@ -265,6 +276,11 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
     expect(store.get().autoBeatMs).toBe(600);
     tap(toggles[3]!);
     expect(store.get().inputMode).toBe("swipe");
+    tap(toggles[4]!);
+    expect(store.get().beatAdvance).toBe("timed");
+    expect(persisted.at(-1)?.beatAdvance).toBe("timed");
+    view.refresh();
+    expect(toggles[4]!.textContent).toBe(S["settings.beatAdvance.timed"]);
     // 書き出し（play では押せる）・開発用・閉じる
     const exp = buttonAt(L.exportButton);
     expect(exp.textContent).toBe(S["title.export"]);
@@ -340,21 +356,23 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
     const input = buttonAt(L.importButton).children.find((c) => c.tagName === "INPUT")!;
     view.select(1);
     expect(store.get().textSpeed).toBe(60);
-    view.select(4); // 曲
+    view.select(4); // 再生の進め方
+    expect(store.get().beatAdvance).toBe("timed");
+    view.select(5); // 曲
     expect(store.get().musicVolume).toBe(D.musicVolume + 1);
-    view.select(5); // 効果音
+    view.select(6); // 効果音
     expect(store.get().sfxVolume).toBe(D.sfxVolume + 1);
-    view.select(6); // 書き出し（title では dim）
+    view.select(7); // 書き出し（title では dim）
     expect(calls).toEqual([]);
-    view.select(7); // 読み込み
+    view.select(8); // 読み込み
     expect(input.clicks).toBe(1);
-    view.select(8);
     view.select(9);
+    view.select(10);
     view.select(99);
     expect(calls).toEqual(["debug", "close"]);
     view.render(PLAY, null);
-    view.select(6);
-    view.select(7); // 読み込み（play では dim）
+    view.select(7);
+    view.select(8); // 読み込み（play では dim）
     expect(calls).toEqual(["debug", "close", "export"]);
     expect(input.clicks).toBe(1);
   });
@@ -403,7 +421,7 @@ describe("ホーム画面への追加の案内（SV-40）", () => {
     });
     const root = view.el as unknown as FakeEl;
     const install = root.children.find((c) => c.className === "settings-install")!;
-    expect([install.style["left"], install.style["top"], install.style["width"], install.style["height"]]).toEqual(["4px", "252px", "232px", "98px"]);
+    expect([install.style["left"], install.style["top"], install.style["width"], install.style["height"]]).toEqual(["4px", "270px", "232px", "80px"]);
     view.render(TITLE, null);
     expect(install.children.map((c) => c.textContent)).toEqual(installGuideLines(false, S));
     expect(install.children[0]!.style["color"]).toBe("var(--c-accent)");

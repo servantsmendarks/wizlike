@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { beatWait, createPlayer, createTapLatch, townCarry, type PlayerDeps } from "../src/presenter/playback";
+import { beatAdvanceWait, beatWait, createPlayer, createTapLatch, townCarry, type PlayerDeps } from "../src/presenter/playback";
 import { createNarrator, createTalkModel } from "../src/presenter/views/talk";
 import { regions, townLayout } from "../src/presenter/layout";
 import { returnToTown } from "../src/core/rules/town";
@@ -55,7 +55,7 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
     (...a: unknown[]): void => {
       log.push({ m, a: JSON.parse(JSON.stringify(a)) as unknown[] });
     };
-  const s: Settings = { skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400, musicVolume: 7, sfxVolume: 7, ...settings };
+  const s: Settings = { skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400, beatAdvance: "tap", musicVolume: 7, sfxVolume: 7, ...settings };
   const deps: PlayerDeps = {
     data,
     strings: data.strings,
@@ -977,6 +977,60 @@ describe("UI-45 拍の再生", () => {
     await b.flush();
     expect(b.isDone()).toBe(true);
     await b.p;
+  });
+
+  test("UI-45/UI-57（M16）beatAdvanceWait: 再生の進め方が timed なら手動の待ち（tap）を timed に。leave（戦闘の外への screen と wipe の前）はタップのまま。tap の設定・待たない・オートの待ちは変えない", () => {
+    for (const at of ["beat", "end"] as const) {
+      expect(beatAdvanceWait("tap", at, "timed")).toBe("timed");
+      expect(beatAdvanceWait("tap", at, "tap")).toBe("tap");
+    }
+    expect(beatAdvanceWait("tap", "leave", "timed")).toBe("tap");
+    for (const at of ["beat", "leave", "end"] as const) {
+      for (const adv of ["tap", "timed"] as const) {
+        expect(beatAdvanceWait(null, at, adv)).toBeNull();
+        expect(beatAdvanceWait("timed", at, adv)).toBe("timed");
+      }
+    }
+  });
+
+  test("UI-45/UI-57（M16）再生の進め方が自動で流す（beatAdvance timed）なら、手動の拍の待ちと再生の終わりのダイスの待ちは waitMs(autoBeatMs)、戦闘の外への screen の前はタップを待つ", async () => {
+    vi.useFakeTimers();
+    const s = battleState();
+    const events: GameEvent[] = [
+      beat("declare", false),
+      msg("battle.attackDeclare", { actor: "A" }),
+      beat("result", false),
+      msg("battle.miss", { target: "A" }),
+      beat("system", false),
+      { kind: "battleEnd", result: "win" },
+      msg("battle.win"),
+      { kind: "screen", to: "dungeon" },
+    ];
+    expectKnownStringKeys(events);
+    const { deps, log } = fakeDeps({ beatAdvance: "timed", autoBeatMs: 600 });
+    await createPlayer(deps).play(events, s, stateWith(diveAt(1, 1, "N")));
+    expect(vi.getTimerCount()).toBe(0);
+    expect(waits(log)).toEqual([
+      say("battle.attackDeclare", { actor: "A" }),
+      "waitMs 600",
+      say("battle.miss", { target: "A" }),
+      "waitMs 600",
+      say("battle.win"),
+      "beat.waitTap",
+      "screens.show",
+      "screens.sync",
+    ]);
+    // 自動の待ちでは続きの三角を出さない（leave のタップ待ちだけ）
+    expect(log.filter((e) => e.m === "message.setMore" && e.a[0] === true)).toHaveLength(1);
+    // 再生の終わりのダイスの待ち（遭遇の先手判定）も自動
+    const f2 = fakeDeps({ beatAdvance: "timed" });
+    await createPlayer(f2.deps).play([beat("system", false), INITIATIVE], s, s);
+    expect(waits(f2.log)).toEqual(["dice.show", "waitMs 400", "dice.hide", "screens.sync"]);
+    // 全滅の wipe の前（leave）もタップのまま
+    const f3 = fakeDeps({ beatAdvance: "timed" });
+    await createPlayer(f3.deps).play([beat("system", false), msg("battle.win"), { kind: "screen", to: "town" }], s, stateWith(null));
+    expect(waits(f3.log)).toEqual([say("battle.win"), "beat.waitTap", "screens.show", "screens.sync"]);
+    vi.useRealTimers();
   });
 
   test("UI-45/UI-40 再生の終わり: 手動はダイスが出ているときだけ待つ（遭遇の先手判定）。拍の待ちの後で dice.hide を呼ぶ", async () => {

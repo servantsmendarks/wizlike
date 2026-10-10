@@ -627,13 +627,13 @@ export const DEBUG_POINTER = { x: 4, w: 232, titleY: 4, rowY: 16, rowH: 10 } as 
 export type SettingsLayout = {
   /** 見出し（押せない） */
   heading: Rect;
-  /** i=0..3（演出スキップ・文字速度・オートの速さ・入力）。label は押せない、toggle は押せる */
+  /** i=0..4（演出スキップ・文字速度・オートの速さ・入力・再生の進め方（M16））。label は押せない、toggle は押せる */
   rows: readonly { label: Rect; toggle: Rect }[];
   /** UI-57（M8）: 音量の 1 行。label は押せない、music・sfx は押せる（0〜10 を巡回） */
   volume: { label: Rect; music: Rect; sfx: Rect };
   exportButton: Rect;
   importButton: Rect;
-  /** 書き出し・読み込みの案内の欄（2 行。押せない） */
+  /** 書き出し・読み込みの案内の欄（1 行。M16 で 2 行から縮めた。押せない） */
   notice: Rect;
   /** ホーム画面への追加の案内（SV-40。押せない）。下端は閉じるの 4 上 */
   install: Rect;
@@ -643,17 +643,21 @@ export type SettingsLayout = {
   close: Rect;
 };
 
-/** UI-57: 設定画面の配置。既定の regions では 閉じる 178,354（56×40）、開発用 4,354（80×40）、音量の行 y156（M8）、ホーム画面の案内 y252..349 */
+/**
+ * UI-57: 設定画面の配置。既定の regions では 閉じる 178,354（56×40）、開発用 4,354（80×40）。
+ * M16 で 5 行目（再生の進め方）を足し、音量の行 y190、書き出し・読み込み y224、案内 y258（1 行）、ホーム画面の案内 y270..349（8 行）。
+ * 行・音量・書き出しの間は 2px（M8 までは音量の後と書き出しの後が 4px、案内は 2 行）
+ */
 export function settingsLayout(g: Regions): SettingsLayout {
   const close: Rect = { x: g.controls.x + LIST_BACK_REL.x, y: g.controls.y + LIST_BACK_REL.y, w: LIST_BACK_REL.w, h: LIST_BACK_REL.h };
-  const installY = 252;
+  const installY = 270;
   return {
     heading: { x: 4, y: 4, w: 232, h: 12 },
-    rows: [0, 1, 2, 3].map((i) => ({ label: { x: 4, y: 20 + 34 * i, w: 128, h: 32 }, toggle: { x: 136, y: 20 + 34 * i, w: 100, h: 32 } })),
-    volume: { label: { x: 4, y: 156, w: 64, h: 32 }, music: { x: 72, y: 156, w: 80, h: 32 }, sfx: { x: 156, y: 156, w: 80, h: 32 } },
-    exportButton: { x: 8, y: 192, w: 108, h: 32 },
-    importButton: { x: 124, y: 192, w: 108, h: 32 },
-    notice: { x: 4, y: 228, w: 232, h: 20 },
+    rows: [0, 1, 2, 3, 4].map((i) => ({ label: { x: 4, y: 20 + 34 * i, w: 128, h: 32 }, toggle: { x: 136, y: 20 + 34 * i, w: 100, h: 32 } })),
+    volume: { label: { x: 4, y: 190, w: 64, h: 32 }, music: { x: 72, y: 190, w: 80, h: 32 }, sfx: { x: 156, y: 190, w: 80, h: 32 } },
+    exportButton: { x: 8, y: 224, w: 108, h: 32 },
+    importButton: { x: 124, y: 224, w: 108, h: 32 },
+    notice: { x: 4, y: 258, w: 232, h: 10 },
     install: { x: 4, y: installY, w: 232, h: close.y - 4 - installY },
     debug: { x: 4, y: close.y, w: 80, h: close.h },
     close,

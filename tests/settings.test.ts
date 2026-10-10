@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   AUTO_BEAT_CHOICES,
+  BEAT_ADVANCES,
   createSettingsStore,
   defaultSettings,
   loadSettings,
   nextAutoBeat,
+  nextBeatAdvance,
   nextInputMode,
   parseSettings,
   saveSettings,
@@ -30,7 +32,7 @@ afterEach(() => {
 
 describe("settings", () => {
   test("SV-24 defaultSettings は config から取る（28/250/30/both/false/400）", () => {
-    expect(D).toEqual({ skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400, musicVolume: 3, sfxVolume: 2 });
+    expect(D).toEqual({ skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400, beatAdvance: "tap", musicVolume: 3, sfxVolume: 2 });
     expect(D.swipeThreshold).toBe(data.config.input.swipeThresholdPx);
     expect(D.holdRepeatMs).toBe(data.config.input.holdRepeatMs);
     expect(D.textSpeed).toBe(data.config.ui.textSpeedMs);
@@ -63,9 +65,9 @@ describe("settings", () => {
     });
     // 未知のキーは捨てる
     const p = parseSettings(JSON.stringify({ ...D, volume: 3, extra: true }), D);
-    expect(Object.keys(p).sort()).toEqual(["autoBeatMs", "holdRepeatMs", "inputMode", "musicVolume", "sfxVolume", "skipAnimations", "swipeThreshold", "textSpeed"]);
+    expect(Object.keys(p).sort()).toEqual(["autoBeatMs", "beatAdvance", "holdRepeatMs", "inputMode", "musicVolume", "sfxVolume", "skipAnimations", "swipeThreshold", "textSpeed"]);
     // 往復
-    const s: Settings = { skipAnimations: true, textSpeed: 0, inputMode: "swipe", swipeThreshold: 40, holdRepeatMs: 500, autoBeatMs: 600, musicVolume: 0, sfxVolume: 10 };
+    const s: Settings = { skipAnimations: true, textSpeed: 0, inputMode: "swipe", swipeThreshold: 40, holdRepeatMs: 500, autoBeatMs: 600, beatAdvance: "timed", musicVolume: 0, sfxVolume: 10 };
     expect(parseSettings(serializeSettings(s), D)).toEqual(s);
     // 返り値は defaults と別のオブジェクト
     expect(parseSettings(null, D)).not.toBe(D);
@@ -191,6 +193,7 @@ describe("UI-45 オートの拍の速さ", () => {
       "textSpeed",
       "inputMode",
       "autoBeatMs",
+      "beatAdvance",
       "swipeThreshold",
       "holdRepeatMs",
       "musicVolume",
@@ -202,6 +205,30 @@ describe("UI-45 オートの拍の速さ", () => {
     expect(st.get().autoBeatMs).toBe(400);
     st.set({ autoBeatMs: nextAutoBeat(st.get().autoBeatMs) });
     expect(st.get().autoBeatMs).toBe(600);
+  });
+});
+
+describe("SV-24 / UI-57 再生の進め方（beatAdvance。M16）", () => {
+  test("SV-24 beatAdvance: 既定は tap。無い（M15 までの保存）・選択肢に無い・型違いなら既定値。serialize では autoBeatMs の直後に置き、往復で戻る。nextBeatAdvance は tap ⇄ timed", () => {
+    expect(D.beatAdvance).toBe("tap");
+    expect([...BEAT_ADVANCES]).toEqual(["tap", "timed"]);
+    const { beatAdvance: _omit, ...old } = D;
+    expect(parseSettings(JSON.stringify(old), D)).toEqual(D);
+    for (const bad of ["auto", "", 1, null, true, ["timed"]]) {
+      expect(parseSettings(JSON.stringify({ ...D, beatAdvance: bad }), D).beatAdvance, JSON.stringify(bad)).toBe("tap");
+    }
+    expect(parseSettings(JSON.stringify({ ...D, beatAdvance: "timed" }), D).beatAdvance).toBe("timed");
+    const keys = Object.keys(JSON.parse(serializeSettings(D)) as object);
+    expect(keys.indexOf("beatAdvance")).toBe(keys.indexOf("autoBeatMs") + 1);
+    expect(parseSettings(serializeSettings({ ...D, beatAdvance: "timed" }), D)).toEqual({ ...D, beatAdvance: "timed" });
+    expect(nextBeatAdvance("tap")).toBe("timed");
+    expect(nextBeatAdvance("timed")).toBe("tap");
+    // store の set でも不正な値は今の値のまま
+    const st = createSettingsStore(D, () => {});
+    st.set({ beatAdvance: "fast" as never });
+    expect(st.get().beatAdvance).toBe("tap");
+    st.set({ beatAdvance: "timed" });
+    expect(st.get().beatAdvance).toBe("timed");
   });
 });
 
