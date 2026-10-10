@@ -410,9 +410,12 @@ describe("入力と Command", () => {
     // レビュー A-A-1 / A-A-3（2026-10-08）で送る前に場所のヘッダーへ戻し、警報の戦闘に入ったら kickBattle するよう直したので期待を書き直した。
     // 未定-29（2026-10-08）: 送る前に段を menu にしてすぐ syncControls で描き直す（最初の段の一覧と場所のヘッダー。再生の間に人・罠の一覧を残さない）。
     // 以前の期待値は showHeaderAt だけを直に呼ぶ形（一覧は再生の最後の sync まで古いまま）
-    expect(choose).toMatch(/chestPage = CHEST_MENU;\s*syncControls\(\);\s*void run\(ch\.command\)\.then\(\(r\) => \{/);
+    // M16（UI-44 / UI-70。2026-10-11）: 描き直した直後に操作領域を下げてから送る（判定の箱の待ちに一覧を押させない）。
+    // 以前の期待値は syncControls の直後に void run（一覧は再生の間も見えたまま）、rejected だけ描き直す
+    expect(choose).toMatch(/chestPage = CHEST_MENU;\s*syncControls\(\);\s*play\.controls\.setMode\("none"\);\s*void run\(ch\.command\)\.then\(\(r\) => \{/);
     // 警報（CB-67）は箱の操作の execute の中で戦闘に入る。入力が要らない状態（全員が眠っている等。battleMenu の ready）でも連鎖を始める（前進・自動歩行と同じ形）
-    expect(choose).toMatch(/if \(r !== null && !r\.rejected && route === "battle"\) kickBattle\(\);\s*else if \(r !== null && r\.rejected && !isBusy\(\)\) syncControls\(\);/);
+    // rejected と例外（null）は再生も sync も無いので、下げた操作をその場で出し直す
+    expect(choose).toMatch(/if \(r !== null && !r\.rejected && route === "battle"\) kickBattle\(\);\s*else if \(\(r === null \|\| r\.rejected\) && !isBusy\(\)\) syncControls\(\);/);
     const item = /const chestItem = \(e: ChestEntry\): ControlItem => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(item).toMatch(/back: e\.choice\.kind === "back",/);
     expect(item).toMatch(/onDisabled: \(\) => guard\(\(\) => void narrator\.say\(reason, store\.get\(\)\.skipAnimations\)\)/);
@@ -1017,6 +1020,12 @@ describe("入力と Command", () => {
 });
 
 describe("再生中の入力（UI-44）", () => {
+  test("UI-44/UI-70（M16）判定の箱の待ちの holdStarted は操作領域を下げる（eventStarted と同じ形。ヘッダーは触らない）。出し直すのは再生の最後の sync（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toMatch(/holdStarted: \(\) => play\.controls\.setMode\("none"\),/);
+    expect(app).toMatch(/sync: \(st\) => sync\(st\),/);
+  });
+
   test("UI-44 再生中に送ったコマンドは捨てられ（null）、execute は 1 回だけ呼ばれる。再生が終われば次を受け付け、例外の後も門は開く", async () => {
     let state = execute(newGame(3), { type: "dungeon.enter", dungeonId: "d01" }, data).state;
     let calls = 0;

@@ -38,6 +38,7 @@
 //   他の拍の外の箱（dice.learn など）は待たない。
 // - 宝箱（UI-70。M11）: chestFound は迷宮の操作を下げ（音は sound）、chestImpulse は eventStarted と同じ印。chestTrap / chestEnd は何もしない。
 //   宝箱の判定の箱（調べる・解除・掛け合い）は制止の箱と同じくタップを待つ（HOLD_DICE_KEYS）。
+//   M16（UI-44 / UI-70）: HOLD_DICE_KEYS の箱のタップ待ちに入る直前に deps.holdStarted() で操作を下げる（再生の最後の sync で戻る）。
 //   勝利・逃走の screen{dungeon} に at があれば、最終の dive ではなくその位置と向きで視点を作る（衝動の転移は続く moved で移る。A2）。
 // - 街（UI-47。M8.5。M10.5 で溜める形に）: message の表示先（迷宮の窓か街の会話の箱）は結線側の deps.message が決める。
 //   会話の箱は文を溜め続けてスクロールする（M10.5 追補のログ形式。拍の外のタップは message.rush に行き、文字送り中なら即表示）。
@@ -164,6 +165,11 @@ export type PlayerDeps = {
   inputClosed(): void;
   /** UI-55: eventStarted を再生した（十字ボタンなど迷宮の操作を下げる。続きの再生の間は出さない） */
   eventStarted(): void;
+  /**
+   * UI-44 / UI-70（M16）: 判定の箱（HOLD_DICE_KEYS。制止・宝箱の調べる・解除・掛け合い・強化・鑑定）のタップ待ちに入る直前に呼ぶ。
+   * 待ちの間は操作の欄を下げる（見えたままのボタンを押すと、そのタップが箱を閉じるだけになるため。B12）。再生の最後の sync で出し直す
+   */
+  holdStarted(): void;
   /**
    * UI-66（M8）: 各イベントのハンドラの前（拍・全滅の待ちの後）に 1 回ずつ呼ぶ。何を鳴らすかは呼ばれた側（sound-cues.ts）が決める。
    * 演出スキップでも同じに呼ぶ。例外は console.warn にとどめて再生を続ける。省略すると無音
@@ -647,6 +653,8 @@ export function createPlayer(deps: PlayerDeps): Player {
           if (ev.kind === "screen" && ev.to === "town") carry = townCarry(events, idx, deps.strings);
           if (hold === "afterMessage" || (hold === "awaitMessage" && ev.kind !== "message" && ev.kind !== "dice")) {
             // 制止の箱を出したまま、続く message を 1 件出した後（先に別のイベントが来たらその前）でタップを 1 回待ち、待ちの後に消す
+            // UI-44 / UI-70（M16）: 待ちの間は操作を下げる
+            deps.holdStarted();
             await waitTap();
             hideDice();
             hold = null;
@@ -705,6 +713,7 @@ export function createPlayer(deps: PlayerDeps): Player {
           // UI-47（M10.5）: 会話の箱に語る間（keepsDice。街の強化・鑑定）は、この待ちを会話の箱の最後の ▼ に任せる
           // （見た目が同じ ▼ のタップが 2 回続かないように。閉じるタップの cleared で判定の箱が消える）
           if (!keepDice()) {
+            deps.holdStarted();
             await waitTap();
             hideDice();
           }

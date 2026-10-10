@@ -496,6 +496,8 @@ export function createApp(o: {
     inputClosed: () => lowerInput(),
     // UI-55: イベントの再生の間は十字ボタン（迷宮の操作）を下げる。再生の最後の sync で出し直す
     eventStarted: () => play.controls.setMode("none"),
+    // UI-44 / UI-70（M16）: 判定の箱のタップ待ちの間は操作を下げる（見えたままのボタンの押下が箱を閉じるだけにならないように）。再生の最後の sync で出し直す
+    holdStarted: () => play.controls.setMode("none"),
     // UI-66: 出来事と曲・効果音の対応（data/audio.json）。screen と encounter は場面の曲
     sound: (ev) => {
       for (const x of soundsFor(ev, data, soundCtx)) playOrder(x);
@@ -817,11 +819,14 @@ export function createApp(o: {
     // レビュー A-A-3・未定-29）。再生中の一覧の押下は guard が捨てる
     chestPage = CHEST_MENU;
     syncControls();
+    // UI-44 / UI-70（M16）: 送った後の再生の間は操作を下げる（強化と同じ。判定の箱の待ちに一覧のボタンを押させない）。
+    // 受け付けたら再生の最後の sync で、rejected なら下の syncControls で出し直す
+    play.controls.setMode("none");
     void run(ch.command).then((r) => {
       // 警報（CB-67）は箱の操作の execute の中で戦闘に入る。入力が要らない状態（全員が眠っている等）でも連鎖を始める（前進・自動歩行と同じ。レビュー A-A-1）
       if (r !== null && !r.rejected && route === "battle") kickBattle();
-      // rejected は再生も sync も無いので、ここで描き直す
-      else if (r !== null && r.rejected && !isBusy()) syncControls();
+      // rejected（と例外の null）は再生も sync も無いので、ここで描き直す（送る前に下げた操作を出し直す）
+      else if ((r === null || r.rejected) && !isBusy()) syncControls();
     });
   };
 

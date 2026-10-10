@@ -127,6 +127,7 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
     battleEnded: rec("battleEnded"),
     inputClosed: rec("inputClosed"),
     eventStarted: rec("eventStarted"),
+    holdStarted: rec("holdStarted"),
     beat: {
       waitTap() {
         log.push({ m: "beat.waitTap", a: [] });
@@ -2537,6 +2538,55 @@ describe("UI-70 宝箱の再生（M11 作業 4b）", () => {
         expect(span(log), `${key} ${skipAnimations}`).toEqual(["dice.show", say("chest.disarm.ok"), "beat.waitTap", "dice.hide", say("chest.prompt")]);
       }
     }
+  });
+
+  test("UI-44/UI-70（M16）判定の箱（HOLD_DICE_KEYS）のタップ待ちに入る直前に holdStarted を 1 回（操作を下げる）。列の途中でも終わりでも、演出スキップでも。再生の最後に sync", async () => {
+    const keys = ["dice.restrain", "dice.upgrade", "dice.identify", "dice.chestInspect", "dice.chestDisarm", "dice.rivalry"];
+    const pick = (log: Log): string[] => names(log).filter((m) => ["dice.show", "holdStarted", "beat.waitTap", "dice.hide", "screens.sync"].includes(m));
+    for (const key of keys) {
+      for (const skipAnimations of [false, true]) {
+        // 列の途中（成否の語りの後に問いが続く）
+        const a = fakeDeps({ skipAnimations });
+        await createPlayer(a.deps).play([rollDiceEv(key, [42], 42, "dice.chestDisarm.ok"), msg("chest.disarm.ok"), msg("chest.prompt")], s(), s());
+        expect(pick(a.log), `${key} ${skipAnimations} 途中`).toEqual(["dice.show", "holdStarted", "beat.waitTap", "dice.hide", "screens.sync"]);
+        // 列の終わり（成否の語りが最後の文）
+        const b = fakeDeps({ skipAnimations });
+        await createPlayer(b.deps).play([rollDiceEv(key, [42], 42, "dice.chestDisarm.ok"), msg("chest.disarm.ok")], s(), s());
+        expect(pick(b.log), `${key} ${skipAnimations} 終わり`).toEqual(["dice.show", "holdStarted", "beat.waitTap", "dice.hide", "screens.sync"]);
+      }
+    }
+    // 待たない箱（dice.learn）と、箱の無い列では呼ばない
+    const c = fakeDeps({});
+    await createPlayer(c.deps).play([rollDiceEv("dice.learn", [12], 12, "dice.learn.ok"), msg("chest.prompt")], s(), s());
+    expect(names(c.log)).not.toContain("holdStarted");
+    // 街の会話の箱（keepsDice）で列の終わりの待ちを ▼ に任せるときは、待ちが無いので呼ばない
+    const d = fakeDeps({});
+    d.deps.message.keepsDice = () => true;
+    await createPlayer(d.deps).play([rollDiceEv("dice.upgrade", [42], 42, "dice.chestDisarm.ok"), msg("chest.disarm.ok")], s(), s());
+    expect(names(d.log)).not.toContain("holdStarted");
+    expect(names(d.log)).not.toContain("beat.waitTap");
+  });
+
+  test("UI-44/UI-70（M16）実際のタップ: holdStarted の後はタップまで待ち、タップで箱が消えて再生が終わり、sync（操作を出し直す）が最後に来る", async () => {
+    const { deps, log } = fakeDeps({});
+    delete deps.beat; // 既定の掛け金（Player.tap() が解く）
+    const player = createPlayer(deps);
+    let done = false;
+    const p = player.play([rollDiceEv("dice.chestInspect", [42], 42, "dice.chestDisarm.ok"), msg("chest.disarm.ok"), msg("chest.prompt")], s(), s()).then(() => {
+      done = true;
+    });
+    for (let i = 0; i < 1000 && !names(log).includes("holdStarted"); i++) await Promise.resolve();
+    for (let i = 0; i < 50; i++) await Promise.resolve();
+    expect(names(log)).toContain("holdStarted");
+    expect(done).toBe(false);
+    expect(names(log)).not.toContain("screens.sync");
+    expect(names(log)).not.toContain("dice.hide");
+    player.tap();
+    await p;
+    const ms = names(log);
+    expect(ms.indexOf("holdStarted")).toBeLessThan(ms.indexOf("dice.hide"));
+    expect(ms.filter((m) => m === "holdStarted")).toHaveLength(1);
+    expect(ms[ms.length - 1]).toBe("screens.sync");
   });
 
   test("UI-70 chestTrap・chestEnd は表示を変えない（語りは message、移動は moved で来る）", async () => {
