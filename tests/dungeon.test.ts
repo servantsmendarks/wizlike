@@ -122,7 +122,7 @@ function makeFloor(w: number, h: number): Floor {
 // ---------------------------------------------------------------------------
 
 describe("dungeon.enter", () => {
-  test("DG-03/DG-40/TW-11 dungeon.enter: screen dungeon、dive の全欄、events は [screen dungeon, message dungeon.enter {dungeon:'試しの坑道'}]", () => {
+  test("DG-03/DG-40/TW-11 dungeon.enter: screen dungeon、dive の全欄、events は [screen dungeon, message dungeon.enter {dungeon:'試しの坑道'}, （DG-37/UI-76 ゲームで最初の入場）message hint.dungeonFirst]", () => {
     const s0 = newGame(1);
     const r = run(s0, ENTER_D01);
     const dive = r.state.dive!;
@@ -152,7 +152,9 @@ describe("dungeon.enter", () => {
     expect(r.events).toEqual([
       { kind: "screen", to: "dungeon", dungeonId: "d01" },
       { kind: "message", key: "dungeon.enter", params: { dungeon: "試しの坑道" } },
+      { kind: "message", key: "hint.dungeonFirst" }, // UI-76（M16）
     ]);
+    expect(r.state.progress.hints).toEqual(["dungeonFirst"]);
   });
 
   test("DG-03 dungeon.enter は state.rng を nextUint32 ちょうど 1 回だけ進め、diveSeed はその値", () => {
@@ -203,6 +205,7 @@ describe("dungeon.enter", () => {
     expect(r.events).toEqual([
       { kind: "screen", to: "dungeon", dungeonId: "d03" },
       { kind: "message", key: "dungeon.enter", params: { dungeon: "灰の地下墓所" } },
+      { kind: "message", key: "hint.dungeonFirst" }, // UI-76（M16）: ゲームで最初の入場の一言は enterSpeech の前
       { kind: "message", key: "dungeon.enterSpeech.d03" },
     ]);
     expectKnownStringKeys(r.events);
@@ -213,8 +216,8 @@ describe("dungeon.enter", () => {
     returnToTown(ctx, "dungeon.return");
     const again = run(ctx.state, { type: "dungeon.enter", dungeonId: "d03" });
     expect(again.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["screen", "dungeon.enter"]);
-    // 欄の無い d01 は初回でも語らない
-    expect(run(s, ENTER_D01).events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["screen", "dungeon.enter"]);
+    // 欄の無い d01 は初回でも語らない（ゲームで最初の入場なので UI-76 の一言だけ出る）
+    expect(run(s, ENTER_D01).events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["screen", "dungeon.enter", "hint.dungeonFirst"]);
     // v6 からの移行などで enteredDungeons に既にあれば初回ではない
     const known = cloneState(s);
     known.progress.enteredDungeons = ["d03"];
@@ -228,7 +231,13 @@ describe("dungeon.enter", () => {
     const s = cloneState(execute(newGame(1), { type: "town.inn", rank: 2 }, data).state);
     s.progress.unlockedDungeons = ["d01", "d02", "d03"];
     const r = run(s, { type: "dungeon.enter", dungeonId: "d03" });
-    expect(r.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["screen", "dungeon.enter", "dungeon.enterSpeech.d03", "dungeon.gossip"]);
+    expect(r.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual([
+      "screen",
+      "dungeon.enter",
+      "hint.dungeonFirst", // UI-76（M16）
+      "dungeon.enterSpeech.d03",
+      "dungeon.gossip",
+    ]);
   });
 });
 
@@ -297,6 +306,7 @@ describe("TW-15 宿の主人の噂話（M7）", () => {
       expect(r.events, String(seed)).toEqual([
         { kind: "screen", to: "dungeon", dungeonId: "d01" },
         { kind: "message", key: "dungeon.enter", params: { dungeon: "試しの坑道" } },
+        { kind: "message", key: "hint.dungeonFirst" }, // UI-76（M16）: 噂話の前
         { kind: "message", key: "dungeon.gossip", params: { monster: monsterOf(data, id).name } },
       ]);
       expect(r.state.morale).toEqual({ rankId: "good" }); // 迷宮の中でも士気は残る（使った印は持たない）
@@ -335,7 +345,7 @@ describe("TW-15 宿の主人の噂話（M7）", () => {
     nextUint32(m2);
     const r2 = run(all, ENTER_D01);
     expect(r2.state.rng).toEqual(m2);
-    expect(r2.events.map((e) => e.kind)).toEqual(["screen", "message"]);
+    expect(r2.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["screen", "dungeon.enter", "hint.dungeonFirst"]);
     expect(r2.state.bestiary).toEqual(all.bestiary);
   });
 
@@ -353,7 +363,7 @@ describe("TW-15 宿の主人の噂話（M7）", () => {
     nextUint32(m2);
     const r2 = run(s, ENTER_D01, d);
     expect(r2.state.rng).toEqual(m2);
-    expect(r2.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["screen", "dungeon.enter"]);
+    expect(r2.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["screen", "dungeon.enter", "hint.dungeonFirst"]);
   });
 });
 

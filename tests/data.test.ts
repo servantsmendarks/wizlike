@@ -1686,6 +1686,12 @@ describe("data: strings.json", () => {
       for (const n of [2, 3, 4, 5]) delete r.strings[`opening.speech.${n}`];
     })).toEqual([]);
   });
+  test("data: UI-76 一度きりの GM の一言 hint.dungeonFirst / hint.sanUnknown / hint.levelUpMark は必須で、差し込みを持たない（M16）", () => {
+    for (const id of ["dungeonFirst", "sanUnknown", "levelUpMark"]) {
+      expectIssue((r) => delete r.strings[`hint.${id}`], "strings.json", `hint.${id}`);
+      expectIssue((r) => (r.strings[`hint.${id}`] = "{name}は覚えた。"), "strings.json", "UI-76");
+    }
+  });
   test("data: UI-74 能力値の説明の文言（stat.short.<k>・stat.desc.<k> の 6 つずつ、custom.statReq / statReqNone / classReq）は必須", () => {
     for (const k of ["str", "iq", "pie", "vit", "agi", "luk"]) {
       expectIssue((r) => delete r.strings[`stat.short.${k}`], "strings.json", `stat.short.${k}`);

@@ -5,7 +5,7 @@ import { cloneState } from "../src/core/state";
 import type { BattleAction, Command, GameState } from "../src/core/types";
 import { DB_NAME, DB_VERSION, openIdbBackend, STORE_GAMES, STORE_SETTINGS } from "../src/save/db";
 import { newGameId } from "../src/save/id";
-import { createMigrations, isGameStateShape, migrateState, migrateV4toV5, migrateV5toV6, migrateV6toV7, MIGRATIONS } from "../src/save/migrate";
+import { createMigrations, isGameStateShape, migrateState, migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, MIGRATIONS } from "../src/save/migrate";
 import { buildRecord, checkStoredRecord, summarize } from "../src/save/record";
 import { createSaveService } from "../src/save/saves";
 import { buildExportFile, parseExportFile, serializeExportFile } from "../src/save/transfer";
@@ -13,7 +13,7 @@ import type { GameRecord, GameStoreBackend, ImportPlan, Migration, SaveDeps } fr
 import { dived, exec, withBattle } from "./helpers/battle";
 import { data, expectKnownStringKeys, loadFreshData, newGame, withChar } from "./helpers/core";
 import { atEvent } from "./helpers/events";
-import { asMigratedToV7, createMemoryBackend, toV3, toV4, toV5, toV6 } from "./helpers/save";
+import { asMigratedToV7, asMigratedToV8, createMemoryBackend, toV3, toV4, toV5, toV6, toV7 } from "./helpers/save";
 import mainSrc from "../src/main.ts?raw";
 
 const SCHEMA = data.config.save.schemaVersion;
@@ -233,7 +233,7 @@ describe("SV-04 v1 → v2 の移行（M5.5）", () => {
   }
 
   test("SV-04 v1 の保存（adventureTurns・tavernEventMark・knownTraps が無い）は v2 へ移行して 0 / 0 / {} が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(7); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7
+    expect(SCHEMA).toBe(8); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -319,7 +319,7 @@ describe("SV-04 v2 → v3 の移行（M7 の A）", () => {
   }
 
   test("SV-04/TW-15 v2 の保存（morale が無い）は v3 へ移行して morale null が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(7); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7
+    expect(SCHEMA).toBe(8); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -396,8 +396,8 @@ describe("SV-04 v3 → v4 の移行（M7 の B。IT-80）", () => {
   const MIG = createMigrations(data.dungeons);
 
   test("SV-04/IT-80 v3 の保存は v4 へ移行し、各実体に Lv0・通常・オプションなし・ユニークでない・呪いなし・foundIn null、warehouse []・buyback []・uniqueBook {} が入る。街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(7); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7
-    expect(MIGRATIONS).toHaveLength(6); // M10（CH-63）で v4 → v5、M11（CB-60）で v5 → v6、M12（TW-35）で v6 → v7 を足した
+    expect(SCHEMA).toBe(8); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8
+    expect(MIGRATIONS).toHaveLength(7); // M10（CH-63）で v4 → v5、M11（CB-60）で v5 → v6、M12（TW-35）で v6 → v7、M16（UI-76）で v7 → v8 を足した
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -533,8 +533,8 @@ describe("SV-04 v4 → v5 の移行（M10。CH-63）", () => {
     return execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state;
   }
   test("SV-04/CH-63 v4 の保存（maxLevelReached が数）は v5 へ移行して今の職業の記録 { [classId]: n } になり、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(7); // M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7
-    expect(MIGRATIONS).toHaveLength(6);
+    expect(SCHEMA).toBe(8); // M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8
+    expect(MIGRATIONS).toHaveLength(7);
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -1362,8 +1362,8 @@ describe("SV-04 v5 → v6 の移行（M11。CB-60）", () => {
   }
 
   test("SV-04/CB-60 v5 の保存（dive に chest・disarmedChests が無い）は v6 へ移行して chest null・disarmedChests [] が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(7); // M12（TW-35）で 6 → 7
-    expect(MIGRATIONS).toHaveLength(6);
+    expect(SCHEMA).toBe(8); // M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8
+    expect(MIGRATIONS).toHaveLength(7);
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -1469,8 +1469,8 @@ describe("SV-04 v6 → v7 の移行（M12。TW-35 / DG-36 / TW-34 / DG-37）", (
   }
 
   test("SV-04/TW-35 v6 の保存（tally・progress の 3 欄が無い）は v7 へ移行して tally 0・conquered false・endingPending false・enteredDungeons（clearedDungeons と潜行中の dungeonId）が入り、街・迷宮・戦闘・イベント待ち・箱のどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(7);
-    expect(MIGRATIONS).toHaveLength(6);
+    expect(SCHEMA).toBe(8); // M16（UI-76）で 7 → 8
+    expect(MIGRATIONS).toHaveLength(7);
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -1570,5 +1570,92 @@ describe("SV-04 v6 → v7 の移行（M12。TW-35 / DG-36 / TW-34 / DG-37）", (
     const x = cloneState(r.state);
     for (const c of x.party) c.status = ["stone"];
     expect(exec(x, { type: "dungeon.turn", dir: "left" }).state.tally.wipes).toBe(1);
+  });
+});
+
+describe("SV-04 v7 → v8 の移行（M16。UI-76）", () => {
+  function eventState(): GameState {
+    const d = loadFreshData();
+    d.config.events.cap = 0;
+    for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    return execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state;
+  }
+
+  test("SV-04/UI-76 v7 の保存（progress.hints が無い）は v8 へ移行して hints [] が入り、街・迷宮・戦闘・イベント待ち・箱のどれでも形の検査を通る。引数は書き換えない", () => {
+    expect(SCHEMA).toBe(8);
+    expect(MIGRATIONS).toHaveLength(7);
+    const cases: Array<[string, GameState]> = [
+      ["town", newGame(1)],
+      ["dungeon", dived(1)],
+      ["battle", withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }])],
+      ["event", eventState()],
+      ["chest", exec(dived(1), { type: "debug.chest", trapId: "bomb" }).state],
+    ];
+    expect(dived(1).progress.hints).toEqual(["dungeonFirst"]); // 迷宮の state は一言を出した後（移行では復元しない）
+    for (const [name, s] of cases) {
+      const v7 = toV7(s);
+      const before = json(v7);
+      expect(isGameStateShape(v7), name).toBe(false); // v7 のままでは v8 の形の検査を通らない
+      const r = migrateState(v7, 7, SCHEMA);
+      expect(r.ok, name).toBe(true);
+      if (!r.ok) continue;
+      expect(r.fromVersion).toBe(7);
+      expect(r.state, name).toEqual(asMigratedToV8(s));
+      expect(r.state.progress.hints, name).toEqual([]);
+      expect(v7, name).toEqual(before); // 引数は書き換えない
+    }
+    // 単体: オブジェクトでなければそのまま。progress がオブジェクトでなければ progress は変えない（形の検査で broken）
+    expect(MIGRATIONS[6]!("x")).toBe("x");
+    expect(MIGRATIONS[6]!(null)).toBe(null);
+    expect(migrateV7toV8({ progress: "x" })).toEqual({ progress: "x" });
+    const arg = { progress: { shopLevel: 2 }, gold: 5 };
+    expect(migrateV7toV8(arg)).toEqual({ progress: { shopLevel: 2, hints: [] }, gold: 5 });
+    expect(arg).toEqual({ progress: { shopLevel: 2 }, gold: 5 });
+  });
+
+  test("SV-04/UI-76 v1 の保存も v1 → … → v8 の順に移行して、hints [] の今の state と同じになる", () => {
+    const s = dived(1);
+    const v1 = toV3(s);
+    delete v1["adventureTurns"];
+    delete v1["tavernEventMark"];
+    delete v1["morale"];
+    delete (v1["dive"] as Record<string, unknown>)["knownTraps"];
+    const r = migrateState(v1, 1, SCHEMA, createMigrations(data.dungeons));
+    const want = asMigratedToV7(s);
+    want.adventureTurns = 0;
+    want.dive!.knownTraps = {};
+    expect(want.progress.hints).toEqual([]);
+    expect(r.ok && r.state).toEqual(want);
+  });
+
+  test("SV-04/UI-76 形の検査: progress.hints が無い・配列でない・文字列でない要素を持つ v8 は broken。空配列と文字列の配列は通る", () => {
+    const s = dived(1);
+    const bad = (f: (progress: Record<string, unknown>) => void): boolean => {
+      const x = json(s) as unknown as Record<string, unknown>;
+      f(x["progress"] as Record<string, unknown>);
+      return isGameStateShape(x);
+    };
+    expect(bad(() => {})).toBe(true);
+    expect(bad((p) => delete p["hints"])).toBe(false);
+    expect(bad((p) => (p["hints"] = null))).toBe(false);
+    expect(bad((p) => (p["hints"] = "dungeonFirst"))).toBe(false);
+    expect(bad((p) => (p["hints"] = ["dungeonFirst", 1]))).toBe(false);
+    expect(bad((p) => (p["hints"] = []))).toBe(true);
+    expect(bad((p) => (p["hints"] = ["dungeonFirst", "sanUnknown", "levelUpMark"]))).toBe(true);
+  });
+
+  test("SV-04/SV-50 v7 のレコードを保存先（メモリ）に置くと、一覧で ok、続きからで読めて hints [] から（一言はもう一度出る）", async () => {
+    const mem = createMemoryBackend();
+    const svc = service(mem);
+    const s = newGame(1);
+    mem.raw("g1", { ...buildRecord("g1", 4, 999, 7, s), state: toV7(s) });
+    const l = await svc.list();
+    expect(l.ok && l.entries.map((e) => [e.gameId, e.status])).toEqual([["g1", "ok"]]);
+    const r = await svc.load("g1");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.progress.hints).toEqual([]);
+    const entered = exec(r.state, { type: "dungeon.enter", dungeonId: "d01" });
+    expect(entered.events).toContainEqual({ kind: "message", key: "hint.dungeonFirst" });
   });
 });

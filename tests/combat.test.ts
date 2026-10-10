@@ -2321,7 +2321,8 @@ describe("拍（CB-55）", () => {
     expectBeatShape(ctx.events);
     expect(segmentsOf(ctx.events).head).toEqual(["screen"]);
     expect(phasesOf(ctx.events)).toEqual([
-      ["system", ["encounter", "message:battle.encounter", "message:battle.unidentified", ...Array(6).fill("sanChanged")]],
+      // UI-76（M16）: このゲームで初めての未鑑定なので、battle.unidentified の直後に hint.sanUnknown（一度きり）
+      ["system", ["encounter", "message:battle.encounter", "message:battle.unidentified", "message:hint.sanUnknown", ...Array(6).fill("sanChanged")]],
       ["system", ["dice"]],
     ]);
     // 敵の奇襲（agi 1000）。noAmbushAvoid: 取り消し（A1）の拍は CB-55/CB-04 のテストで見る

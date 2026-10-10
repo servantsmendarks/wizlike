@@ -133,7 +133,11 @@ export type Progress = {
   /** DG-36（M12。schemaVersion 7）: 全ダンジョン制覇。一度立てたら落とさない。game.new で false */
   conquered: boolean;
   /** TW-34（M12。schemaVersion 7）: 結末を街で語る予定。語ったら false。game.new で false */
-  endingPending: boolean;
+  endingPending: boolean;  /**
+   * UI-76（M16。schemaVersion 8）: 出した一度きりの GM の一言のキー（hint.* の * の部分。順不同、重複なし）。game.new で []。
+   * 積むのは rules/hints.ts tellHintOnce だけ。v7 からの移行では []（既存の記録では一言がもう一度出る）
+   */
+  hints: string[];
 };
 
 /**

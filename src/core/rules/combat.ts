@@ -83,6 +83,8 @@ import { equipStats, hasSkill, hpMaxOf, skillTotal, spellCost } from "./equip-st
 import { loseSan, sanCapOf, sanStage } from "./san";
 import { raiseShopLevel } from "./shop";
 import { performWipe } from "./wipe";
+import { levelUpReady } from "./growth";
+import { tellHintOnce } from "./hints";
 import { bumpTally, isConquered } from "./progress";
 
 /**
@@ -184,7 +186,8 @@ export function startBossEncounter(ctx: RuleContext): void {
 
 /**
  * 戦闘を始める（テストからも使う。表示層には開かない）。
- * HP（g→u）→ 図鑑のキー → battle と screen → encounter → CB-06 の SAN → 全滅の確認 → CB-04 の先手判定。
+ * HP（g→u）→ 図鑑のキー → battle と screen → encounter → CB-06 の SAN（battle.unidentified →（UI-76。初回だけ）hint.sanUnknown → sanChanged）
+ * → 全滅の確認 → CB-04 の先手判定。
  */
 export function startBattle(ctx: RuleContext, origin: BattleOrigin, specs: { monsterId: string; count: number }[]): void {
   const { state, data } = ctx;
@@ -224,6 +227,7 @@ export function startBattle(ctx: RuleContext, origin: BattleOrigin, specs: { mon
     const k = groups.filter((g) => !isIdentified(state, g.monsterId)).length;
     if (k > 0) {
       ctx.events.push({ kind: "message", key: "battle.unidentified" });
+      tellHintOnce(ctx, "sanUnknown"); // CB-06 / UI-76（M16）: 初めてのときだけ、SAN が減る理由の一言（sanChanged の前）
       for (const ch of state.party) {
         if (ch.life === "alive") loseSan(ctx, ch, k * cfg.san.unidentifiedGroup, []);
       }
@@ -1112,8 +1116,11 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
     for (const grp of b.groups) total += monsterOf(data, grp.monsterId).exp * grp.units.length;
     const alive = state.party.filter((c) => c.life === "alive");
     const share = expShare(total, alive.length);
+    const readyBefore = alive.map((ch) => levelUpReady(ch, data));
     for (const ch of alive) ch.exp += share;
     ctx.events.push({ kind: "message", key: "battle.exp", params: { exp: share } });
+    // CH-80 / UI-76（M16）: この経験値で↑（レベルアップ可）が偽 → 真になった者が 1 人でもいれば、印の一言（一度きり。battle.exp の直後）
+    if (alive.some((ch, i) => !readyBefore[i] && levelUpReady(ch, data))) tellHintOnce(ctx, "levelUpMark");
     let rolled = 0;
     for (const grp of b.groups) {
       const m = monsterOf(data, grp.monsterId);

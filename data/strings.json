@@ -255,6 +255,9 @@
   "town.temple.none": "その必要がある者はいない。",
 
   "dungeon.enter": "{dungeon}へ潜る。地図は白紙だ。",
+  "hint.dungeonFirst": "奥へ伸びる線が道、正面の四角は壁。床の線が横へ伸びる側に口がある。",
+  "hint.sanUnknown": "正体の分からない敵に会うと正気が削れる。鑑定すれば減らない。",
+  "hint.levelUpMark": "名前の横の↑は、宿で上がれる印だ。",
   "dungeon.enterSpeech.d03": "GM が声を落とした。「ここが最後の迷宮だ。灰の匂いがするだろう？」",
   "dungeon.gossip": "宿で聞いた噂を思い出す。{monster}が出るらしい。",
   "dungeon.blocked": "壁だ。",

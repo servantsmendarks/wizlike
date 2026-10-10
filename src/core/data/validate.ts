@@ -55,6 +55,7 @@ import {
   SPELL_TARGETS,
   STAT_KEYS,
   STATUS_IDS,
+  HINT_IDS,
   TRAP_IDS,
   USABLE_IN,
   VALUELESS_SKILL_TYPES,
@@ -1608,6 +1609,11 @@ function validateStrings(ctx: Ctx, v: unknown, ix: Index): void {
     if (short !== undefined && [...short].length > STAT_SHORT_MAX) report(ctx, `stat.short.${k}`, `UI-74: too long (${[...short].length} > ${STAT_SHORT_MAX})`);
   }
   for (const k of ["custom.statReq", "custom.statReqNone", "custom.classReq"]) strKey(ctx, "", k, ix);
+  // UI-76（M16）: 一度きりの GM の一言（core の tellHintOnce が hint.<id> を params なしで出す）。差し込みを持たない
+  for (const id of HINT_IDS) {
+    strKey(ctx, "", `hint.${id}`, ix);
+    onlyPlaceholders(ctx, `hint.${id}`, `hint.${id}`, [], "UI-76", ix);
+  }
   const plus = ix.stringText.get("item.plus");
   if (plus !== undefined) {
     const ph = [...plus.matchAll(PLACEHOLDER_RE)].map((m) => m[0]);

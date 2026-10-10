@@ -133,8 +133,8 @@ describe("SV-33 parseExportFile", () => {
     expect(parseExportFile(fileText({ checksum: sum }, s), SCHEMA).ok).toBe(true);
   });
 
-  test("SV-33/SV-04 parseExportFile: v1 の state（adventureTurns 無し）のファイルは今の版（v7）へ移行して通り、形の検査に落ちる state（party 空）は broken", () => {
-    expect(SCHEMA).toBe(7); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7
+  test("SV-33/SV-04 parseExportFile: v1 の state（adventureTurns 無し）のファイルは今の版（v8）へ移行して通り、形の検査に落ちる state（party 空）は broken", () => {
+    expect(SCHEMA).toBe(8); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8
     const v1 = toV1(newGame(1));
     const r = parseExportFile(fileText({ schemaVersion: 1 }, v1), SCHEMA);
     expect(r.ok).toBe(true);

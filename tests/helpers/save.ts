@@ -56,11 +56,30 @@ export function createMemoryBackend(opts: { fail?: FailSpec } = {}): MemoryBacke
 }
 
 /**
- * 今の state（schemaVersion 7）から M12 の欄（TW-35 の tally、progress の enteredDungeons / conquered / endingPending）を消した v6 の形
- * （JSON の複製。引数は書き換えない）
+ * 今の state（schemaVersion 8）から M16 の欄（UI-76 の progress.hints）を消した v7 の形（JSON の複製。引数は書き換えない）
+ */
+export function toV7(s: GameState): Record<string, unknown> {
+  const v7 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+  delete (v7["progress"] as Record<string, unknown>)["hints"];
+  return v7;
+}
+
+/**
+ * SV-04 v7 → v8（M16。UI-76）の移行で s から作った v7 以前の保存が行き着く state（JSON の複製）: progress.hints は []（出した一言は復元しない）。
+ * ほかの欄は s のまま
+ */
+export function asMigratedToV8(s: GameState): GameState {
+  const m = JSON.parse(JSON.stringify(s)) as GameState;
+  m.progress = { ...m.progress, hints: [] };
+  return m;
+}
+
+/**
+ * 今の state から M16 の欄と M12 の欄（TW-35 の tally、progress の enteredDungeons / conquered / endingPending）を消した v6 の形
+ * （toV7 を通した JSON の複製。引数は書き換えない）
  */
 export function toV6(s: GameState): Record<string, unknown> {
-  const v6 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+  const v6 = toV7(s);
   delete v6["tally"];
   const progress = v6["progress"] as Record<string, unknown>;
   delete progress["enteredDungeons"];
@@ -71,10 +90,11 @@ export function toV6(s: GameState): Record<string, unknown> {
 
 /**
  * SV-04 v6 → v7（M12）の移行で s から作った古い版の保存が行き着く state（JSON の複製）: tally は全部 0（過去の数は復元しない）、
- * conquered / endingPending は false、enteredDungeons は clearedDungeons と潜行中の dive.dungeonId（重複なし）。ほかの欄は s のまま
+ * conquered / endingPending は false、enteredDungeons は clearedDungeons と潜行中の dive.dungeonId（重複なし）。
+ * その後の v7 → v8（M16）も通るので progress.hints は []（asMigratedToV8）。ほかの欄は s のまま
  */
 export function asMigratedToV7(s: GameState): GameState {
-  const m = JSON.parse(JSON.stringify(s)) as GameState;
+  const m = asMigratedToV8(s);
   m.tally = { dives: 0, battles: 0, deaths: 0, ashes: 0, wipes: 0 };
   const entered = [...new Set([...s.progress.clearedDungeons, ...(s.dive === null ? [] : [s.dive.dungeonId])])];
   m.progress = { ...m.progress, enteredDungeons: entered, conquered: false, endingPending: false };

@@ -102,7 +102,7 @@ M7 で、装備品の分類（汎用 / ユニーク）・実体の形・レベ�
 - CH-79 捨てる（M10。2026-10-07 ユーザー指示）: `party.drop {memberId, instanceId}`。受け付けは CH-78 と同じ。
   - 判定順: wrong screen → no such member → item not in inventory。本人の life と行動の可否は問わない（U6）。呪われた品・未鑑定の品も捨てられる（装備中の品は対象外なので、取り憑いた品は捨てられない）。
   - 処理: `camp.dropped{name, item}` → 品の実体を消す（潜行中なら潜行台帳からも消える。DG-41）。図鑑（IT-66）は消さない。乱数は使わない。確認は表示層が出す（core は確認を持たない）。
-- CH-80 レベルアップ可（M10。2026-10-07 ユーザー指示・判断 U9）: メンバーが「レベルアップ可」なのは、`life` が `alive` で、かつ `exp ≥ expFor(level + 1)`（CH-64）のとき。宿（TW-04 / CH-61）が上げる者と同じ条件（宿は alive の者だけを上げる）。死亡・灰の者は exp が足りても可にしない（U9）。処理は今どおり宿屋だけで、レベルの上限は無い。
+- CH-80 レベルアップ可（M10。2026-10-07 ユーザー指示・判断 U9）: メンバーが「レベルアップ可」なのは、`life` が `alive` で、かつ `exp ≥ expFor(level + 1)`（CH-64）のとき。宿（TW-04 / CH-61）が上げる者と同じ条件（宿は alive の者だけを上げる）。死亡・灰の者は exp が足りても可にしない（U9）。処理は今どおり宿屋だけで、レベルの上限は無い。（M16。UI-76）戦闘の勝利で経験値を足したとき（CB-50）、その前にレベルアップ可でなく、足した後にレベルアップ可になった者が 1 人でもいれば、message `battle.exp` の直後に一度きりの GM の一言 `hint.levelUpMark`（名前の横の↑の意味。ゲームで 1 回）を出す。レベルアップの語りは宿のまま。乱数は使わない。
   - 次のレベルまでの残りは `max(0, expFor(level + 1) − exp)`（life を問わない）。
   - 表示の段 `levelUpView` は 3 値: `ready`（可）/ `next`（残りが 1 以上）/ `blocked`（残りが 0 だが alive でない。蘇生すれば `ready`）。
   - 値は core の `memberSheet`（UI-35 の許可リストの既存の問い合わせ）の `expNext`（`expFor(level + 1)`）・`expToNext`（残り）・`canLevelUp`（可。`levelUpView === "ready"` と同じ）・`levelUpView`。state に欄は足さない（exp・level・life から求める）。
