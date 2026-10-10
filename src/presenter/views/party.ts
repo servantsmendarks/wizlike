@@ -9,6 +9,8 @@
 // UI-55: markActor（衝動の行動者の名前を accent 色、行を点滅。render で消える）。
 // UI-69（M10）: Lv UP 可（maxOf の canLevelUp = core の memberSheet。CH-80）の者は名前を 12 − 2 単位に切って↑を付ける。再生中の setter は触れず、sync の render で直る。
 // UI-12（M7）: HP / MP / SAN の最大は maxOf（app が core の memberSheet の実効の値を渡す。CH-14）。SAN が最大を超えている間（士気の超過。TW-15）は SAN の値を accent 色。
+// UI-54 / CB-14（M16。2026-10-11 の設計 2-5）: 行 frontRow（config.party.frontRow）の上に 1px の区切り線（dim 色。前衛と後衛の境）。
+//   線は並び順で固定で、CB-14 の繰り上げ（前衛が全員行動不能のとき後衛を前衛として扱う）は反映しない。行の後ろに足すので children[i] は行 i のまま。
 // el は region の位置と大きさに自分で置く。モジュールのトップレベルでは DOM に触れない。
 import type { ClassDef, StatusId, Strings } from "../../core/data/index";
 import type { SanStage } from "../../core/rules/san";
@@ -159,12 +161,14 @@ export function createPartyPanel(o: {
   classes: readonly ClassDef[];
   region: Rect;
   rows: readonly Rect[];
+  /** UI-54 / CB-14（M16）: 前衛の人数（config.party.frontRow）。この行の上に区切り線を引く */
+  frontRow: number;
   /** UI-12: SAN の段（app が core の sanStage を渡す） */
   stageOf: StageOf;
   /** UI-12 / TW-15 / CH-14: HP / MP / SAN の最大（app が core の memberSheet を渡す。省略は素の値） */
   maxOf?: MaxOf;
 }): PartyPanel {
-  const { strings, classes, region, rows, stageOf } = o;
+  const { strings, classes, region, rows, stageOf, frontRow } = o;
   const maxOf: MaxOf = o.maxOf ?? ((ch) => ch);
   const el = document.createElement("div");
   el.className = "party-panel";
@@ -271,6 +275,20 @@ export function createPartyPanel(o: {
         showSan(row);
         byId.set(ch.id, row);
       });
+      // UI-54 / CB-14: 前衛と後衛の区切り線（後衛の行があるときだけ。行 frontRow の上端の 1px 上 = 前の行の下端の余白）
+      if (frontRow > 0 && party.length > frontRow) {
+        const divider = document.createElement("div");
+        divider.className = "party-divider";
+        Object.assign(divider.style, {
+          position: "absolute",
+          left: "0px",
+          top: `${rowTop(frontRow) - 1}px`,
+          width: `${region.w}px`,
+          height: "1px",
+          background: "var(--c-dim)",
+        });
+        el.appendChild(divider);
+      }
       paintActive();
     },
     setHp(id: string, hp: number): void {

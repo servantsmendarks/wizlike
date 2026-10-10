@@ -157,6 +157,7 @@ describe("UI-59/UI-12 士気の SAN の超過（TW-15。M7）", () => {
       classes: data.classes,
       region: { x: 0, y: 0, w: 240, h: 64 },
       rows: [],
+      frontRow: data.config.party.frontRow,
       stageOf: (san, sanMax) => sanStage(san, sanMax, data.config),
       maxOf: (ch) => memberSheet(s, data, ch), // CH-14: core の memberSheet（M7 の B10 で sanCapOf から替えた。sanMax は同じ値）
     });
@@ -174,6 +175,53 @@ describe("UI-59/UI-12 士気の SAN の超過（TW-15。M7）", () => {
     const line0 = (panel.el as unknown as FakeEl).children[0]!;
     const cell = line0.children.find((c) => c.textContent === "99")!;
     expect(cell.style["color"]).toBe("");
+  });
+});
+
+describe("UI-54/CB-14 パーティ欄の前衛と後衛の区切り線（M16）", () => {
+  const mk = (rows: readonly { x: number; y: number; w: number; h: number }[], region = { x: 0, y: 0, w: 240, h: 64 }) =>
+    createPartyPanel({
+      strings: S,
+      classes: data.classes,
+      region,
+      rows,
+      frontRow: data.config.party.frontRow,
+      stageOf: (san, sanMax) => sanStage(san, sanMax, data.config),
+    });
+
+  test("UI-54/CB-14 行 frontRow（3）の上に 1px の dim 色の線。行の後ろに足すので children[0..5] は行のまま。既定の配置では領域内の y31（行 2 の下端の余白）", () => {
+    vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const l = dungeonLayout(g, data.config.party.size);
+    const panel = mk(l.partyRows, g.party);
+    const s = newGame(1);
+    panel.render(s.party);
+    const kids = (panel.el as unknown as FakeEl).children;
+    expect(data.config.party.frontRow).toBe(3);
+    expect(kids.length).toBe(s.party.length + 1);
+    expect(kids.slice(0, 6).every((k) => k.className === "party-row")).toBe(true);
+    const div = kids[6]!;
+    expect(div.className).toBe("party-divider");
+    // 行 3 の top（領域内）− 1。既定の行は y2+10i なので 31
+    expect(l.partyRows[3]!.y - g.party.y).toBe(32);
+    expect([div.style["top"], div.style["height"], div.style["width"], div.style["background"]]).toEqual(["31px", "1px", "240px", "var(--c-dim)"]);
+    // 線は行 2（y22..31）の文字の下の余白に重なり、行 3 の上端（y32）には掛からない
+    expect(Number(kids[2]!.style["top"]!.replace("px", "")) + 10 - 1).toBe(31);
+    expect(kids[3]!.style["top"]).toBe("32px");
+  });
+
+  test("UI-54/CB-14 線は並び順で固定（前衛 3 人が全員行動不能で後衛が繰り上がっても位置は変わらない）。後衛の行が無ければ引かない。render のたびに 1 本だけ", () => {
+    vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const panel = mk(dungeonLayout(g, data.config.party.size).partyRows, g.party);
+    const s = newGame(1);
+    const downed = s.party.map((c, i) => (i < 3 ? { ...c, life: "dead" as const } : c));
+    panel.render(downed);
+    panel.render(downed);
+    const dividers = (panel.el as unknown as FakeEl).children.filter((k) => k.className === "party-divider");
+    expect(dividers.map((d) => d.style["top"])).toEqual(["31px"]);
+    panel.render(s.party.slice(0, 3));
+    expect((panel.el as unknown as FakeEl).children.filter((k) => k.className === "party-divider")).toEqual([]);
   });
 });
 
@@ -268,6 +316,7 @@ describe("UI-59/CH-13/CH-14/CB-20/MG-33 状態の実効の値（M7）", () => {
       classes: data.classes,
       region: { x: 0, y: 0, w: 240, h: 64 },
       rows: [],
+      frontRow: data.config.party.frontRow,
       stageOf: (san, sanMax) => sanStage(san, sanMax, data.config),
       maxOf: (ch) => memberSheet(s, data, ch),
     });

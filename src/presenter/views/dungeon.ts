@@ -224,6 +224,7 @@ export function createDungeonScreen(o: {
     classes: o.data.classes,
     region: r.party,
     rows: lay.partyRows,
+    frontRow: o.data.config.party.frontRow,
     stageOf: o.stageOf,
     ...(o.maxOf !== undefined ? { maxOf: o.maxOf } : {}),
   });

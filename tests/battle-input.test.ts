@@ -185,11 +185,35 @@ describe("UI-54 入力の段階", () => {
       t("common.back"),
     ]);
     expect(e1.map((e) => e.disabled)).toEqual([false, true, false, true, false]);
-    expect(entries(m, mem("c5"), S).map((e) => e.disabled)).toEqual([false, false, false, true, false]);
-    expect(entries(m, mem("c6"), S).map((e) => e.disabled)).toEqual([false, true, false, false, false]);
+    // M16（UI-54 / CB-13）: c5・c6 は canStrike 偽なので攻撃も dim（M15 までは [false, …]）
+    expect(entries(m, mem("c5"), S).map((e) => e.disabled)).toEqual([true, false, false, true, false]);
+    expect(entries(m, mem("c6"), S).map((e) => e.disabled)).toEqual([true, true, false, false, false]);
     // 知らないメンバーは []
     expect(entries(m, mem("c9"), S)).toEqual([]);
     expect(step(m, mem("c9"), mc("attack"))).toEqual({ cursor: mem("c9"), send: null });
+  });
+
+  test("UI-54/CB-13 届かない者（canStrike 偽）の攻撃は dim で「攻撃(届かず)」、押しても段は変わらず送らない。canStrike 真なら「攻撃」で押せる", () => {
+    const m = menu();
+    const e4 = entries(m, mem("c4"), S);
+    expect(t("battle.cmd.attackNoReach")).toBe("攻撃(届かず)");
+    expect(e4[0]).toEqual({ label: t("battle.cmd.attackNoReach"), disabled: true, choice: { kind: "member", cmd: "attack" } });
+    // 他の枠は今までどおり（c4 は呪文・道具なしで dim、防御・戻るは押せる）
+    expect(e4.slice(1).map((e) => [e.label, e.disabled])).toEqual([
+      [t("battle.cmd.spell"), true],
+      [t("battle.cmd.defend"), false],
+      [t("battle.cmd.item"), true],
+      [t("common.back"), false],
+    ]);
+    expect(step(m, mem("c4"), mc("attack"))).toEqual({ cursor: mem("c4"), send: null });
+    // 防御は押せる（CB-13 の置き換えと同じ結果を自分で選べる）
+    expect(step(m, mem("c4"), mc("defend")).send).toEqual({ type: "battle.input", memberId: "c4", action: { type: "defend" } });
+    // canStrike 真（前衛 c1）は「攻撃」で押せる
+    expect(entries(m, mem("c1"), S)[0]).toEqual({ label: t("battle.cmd.attack"), disabled: false, choice: { kind: "member", cmd: "attack" } });
+    // 同じ c4 でも canStrike 真なら「攻撃」で、敵の一覧へ進む
+    const reach = { ...m, members: m.members.map((x) => (x.id === "c4" ? { ...x, canStrike: true } : x)) };
+    expect(entries(reach, mem("c4"), S)[0]).toEqual({ label: t("battle.cmd.attack"), disabled: false, choice: { kind: "member", cmd: "attack" } });
+    expect(step(reach, mem("c4"), mc("attack")).cursor).toEqual(tgt("enemy", "c4", { kind: "attack" }));
   });
 
   test("UI-54/CB-12 攻撃 → 敵の一覧（体数 0 は出さない、番号は生存グループの順）→ battle.input attack", () => {
@@ -362,8 +386,9 @@ describe("UI-54 入力の段階", () => {
     // 前が防御・未入力なら 0
     expect(step(withInput(m, { c1: { type: "defend" } }), mem("c2"), mc("attack")).cursor).toEqual(tgt("enemy", "c2", atk, 0));
     expect(step(m, mem("c2"), mc("attack")).cursor).toEqual(tgt("enemy", "c2", atk, 0));
-    // c4 の前は麻痺の c3 を飛ばして c2
-    expect(step(withInput(m, { c2: { type: "attack", group: 2 } }), mem("c4"), mc("attack")).cursor).toEqual(tgt("enemy", "c4", atk, 1));
+    // c4 の前は麻痺の c3 を飛ばして c2（M16: 攻撃が dim にならないよう c4 を届く者にする。UI-54 / CB-13）
+    const m4 = { ...m, members: m.members.map((x) => (x.id === "c4" ? { ...x, canStrike: true } : x)) };
+    expect(step(withInput(m4, { c2: { type: "attack", group: 2 } }), mem("c4"), mc("attack")).cursor).toEqual(tgt("enemy", "c4", atk, 1));
     // 呪文の敵の対象も同じ（c5 の前は c4。cast の target の group）
     const m5 = withInput(m, { c4: { type: "cast", spellId: "x", target: { side: "enemy", group: 2 } } });
     expect(step(m5, list("spell", "c5"), { kind: "spell", spellId: "fire_arrow" }).cursor).toEqual(

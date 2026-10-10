@@ -671,6 +671,7 @@
   "battle.cmd.fight": "戦う",
   "battle.cmd.repeat": "前回と同じ",
   "battle.cmd.attack": "攻撃",
+  "battle.cmd.attackNoReach": "攻撃(届かず)",
   "battle.cmd.spell": "呪文",
   "battle.cmd.defend": "防御",
   "battle.cmd.item": "道具",

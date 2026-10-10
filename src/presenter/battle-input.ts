@@ -3,6 +3,7 @@
 // - party はラウンドの始めのパーティの選択（2 列 × 2 段: 戦う・前回と同じ / 逃げる・オート）。前回と同じは battle.repeat、
 //   逃げるは battle.flee、オートは battle.auto on を送る。戦うで先頭の行動可能なメンバーの member へ。
 // - member は 5 枠（上段 攻撃・呪文・防御・道具、下段の右端 戻る）。戻るは並び順で前の行動可能なメンバー、先頭なら party。
+//   攻撃は canStrike が偽なら dim で「攻撃(届かず)」（M16。CB-13）。
 // - spell / item / enemy / ally は一覧で、末尾が「戻る」（親の段へ）。enemy / ally は注目（focus。一覧の添字）を持つ。
 // - UI-68（M10）/ U4: 呪文を選ぶと、対象を選ぶ呪文（enemy / enemyGroup / ally）は対象の段へ、対象を選ばない呪文（allEnemies / party / self / none）と、
 //   体数 1 以上の敵グループが 1 つだけのときの敵の呪文は確認の段 spellConfirm（[唱える][戻る]）へ進む（説明を読む 1 タップ。対象の有無で手数を揃える）。
@@ -98,7 +99,11 @@ function partyDisabled(menu: BattleMenu, cmd: PartyCmd): boolean {
   return cmd === "flee" && !menu.canFlee;
 }
 
+/**
+ * UI-54 / CB-13（M16。2026-10-11 の設計 2-5）: 攻撃は core の canStrike が偽（後衛で届かない）なら dim（表示では選べない。core は受け付けて防御に置き換える）
+ */
 function memberDisabled(m: BattleMenuMember, cmd: MemberCmd): boolean {
+  if (cmd === "attack") return !m.canStrike;
   if (cmd === "spell") return m.spells.length === 0;
   if (cmd === "item") return m.items.length === 0;
   return false;
@@ -144,7 +149,8 @@ export function entries(menu: BattleMenu, cursor: InputCursor, strings: Strings)
   switch (cursor.stage) {
     case "member":
       return MEMBER_CMDS.map((cmd) => ({
-        label: s(cmd === "back" ? "common.back" : `battle.cmd.${cmd}`),
+        // UI-54 / CB-13: 届かない者の攻撃は「攻撃(届かず)」（battle.cmd.attackNoReach。56px の枠に収まる 48px）
+        label: s(cmd === "back" ? "common.back" : cmd === "attack" && !m.canStrike ? "battle.cmd.attackNoReach" : `battle.cmd.${cmd}`),
         disabled: memberDisabled(m, cmd),
         choice: { kind: "member", cmd },
       }));
