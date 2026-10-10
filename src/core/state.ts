@@ -212,10 +212,18 @@ export function itemDisplayName(state: GameState, data: GameData, instanceId: st
  * 希少度の接頭辞 + 名前（ユニークならユニークの名前）+ Lv（汎用で 1 以上のときだけ item.plus）
  */
 export function equipmentDisplayName(data: GameData, base: EquipmentBase, level: number, rarity: Rarity, uniqueId: string | null): string {
-  const prefix = rarity === "normal" ? "" : (data.strings[`item.rarity.${rarity}`] ?? "");
-  if (uniqueId !== null) return prefix + uniqueOf(data, uniqueId).name;
+  if (uniqueId !== null) return equipmentPlainName(data, base, rarity, uniqueId);
   const plus = level >= 1 ? (data.strings["item.plus"] ?? "").replace("{n}", String(level)) : "";
-  return prefix + base.name + plus;
+  return equipmentPlainName(data, base, rarity, uniqueId) + plus;
+}
+
+/**
+ * IT-11 / TW-17（M16）: 鑑定済みの装備の表示名から Lv（item.plus）を除いたもの（希少度の接頭辞 + 名前。ユニークならユニークの名前）。
+ * 強化の画面が Lv を常に「+N」で出すための部品（townMenu.upgrade の plainName）
+ */
+export function equipmentPlainName(data: GameData, base: EquipmentBase, rarity: Rarity, uniqueId: string | null): string {
+  const prefix = rarity === "normal" ? "" : (data.strings[`item.rarity.${rarity}`] ?? "");
+  return prefix + (uniqueId !== null ? uniqueOf(data, uniqueId).name : base.name);
 }
 
 /** IT-30 の希少度の順（後ろほど良い。IT-66 の bestRarity の比較に使う） */

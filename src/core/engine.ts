@@ -45,7 +45,7 @@ import { checkLookAround, lookAround } from "./rules/tavern";
 import { checkUpgrade, doUpgrade } from "./rules/upgrade";
 import { wipeIfNoneCanAct } from "./rules/wipe";
 import { cloneState, makeContext } from "./state";
-import type { BattleAction, Command, ExecuteResult, GameState, RuleContext, ShopAction } from "./types";
+import type { BattleAction, Command, ExecuteResult, GameState, RuleContext, ShopAction, UpgradeCatalystRef } from "./types";
 
 /** ゲーム開始前の状態（D3）。整数でない seed は createRng の RangeError をそのまま投げる。 */
 export function createInitialState(seed: number, _data: GameData): GameState {
@@ -307,7 +307,7 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       const r = checkUpgrade(state, c.memberId, c.slot, c.catalysts, data);
       if (r !== null) return reject(state, "town.upgrade", r);
       const ctx = makeContext(cloneState(state), data);
-      doUpgrade(ctx, c.memberId as string, c.slot as EquipSlot, c.catalysts as string[]);
+      doUpgrade(ctx, c.memberId as string, c.slot as EquipSlot, c.catalysts as UpgradeCatalystRef[]);
       return finish(ctx);
     }
     case "dungeon.cast": {

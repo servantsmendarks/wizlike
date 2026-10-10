@@ -500,10 +500,10 @@ export type Command =
   /** TW-16 / IT-64（M7）: 倉庫。deposit は本人の inventory の実体を warehouse へ、withdraw は warehouse の実体を本人の inventory へ。乱数は使わない */
   | { type: "town.storage"; action: "deposit" | "withdraw"; memberId: string; instanceId: string }
   /**
-   * TW-17（M7）: 闇魔術の強化。本人の equipment[slot] の汎用装備を、本人の inventory の鑑定済みの汎用装備（catalysts。0〜upgradeMaxCatalysts 個、
-   * 重複なし。成否に関わらず消える）を触媒に d100 で鍛える。乱数は d100 の 1 回
+   * TW-17（M7）: 闇魔術の強化。本人の equipment[slot] の汎用装備を、パーティの誰かの inventory の鑑定済みの汎用装備（catalysts。0〜upgradeMaxCatalysts 個、
+   * 重複なし。成否に関わらず持ち主の inventory から消える。M16 で本人だけから全員に広げ、持ち主と実体の組にした）を触媒に d100 で鍛える。乱数は d100 の 1 回
    */
-  | { type: "town.upgrade"; memberId: string; slot: EquipSlot; catalysts: string[] }
+  | { type: "town.upgrade"; memberId: string; slot: EquipSlot; catalysts: UpgradeCatalystRef[] }
   /** TW-13（M5.5）: 酒場で見回す。街（screen town・dive null）だけ。乱数を使う */
   | { type: "town.lookAround" }
   | { type: "dungeon.enter"; dungeonId: string }
@@ -716,9 +716,22 @@ export type TownMenuStorageRow = { instanceId: string; name: string };
  * TW-17: 強化の部位 1 つ（EQUIP_SLOTS の順）。block は null なら対象にできる、"slot empty"（空き）/ "unique"（ユニーク）。
  * name は表示名（空きなら null）、level は実体の level（空きなら 0）
  */
-export type TownMenuUpgradeSlot = { slot: EquipSlot; instanceId: string | null; name: string | null; level: number; block: string | null };
-/** TW-17: 触媒の候補 1 個（本人の inventory の鑑定済みの汎用装備。inventory の順）。name は表示名 */
-export type TownMenuUpgradeCatalyst = { instanceId: string; name: string; level: number };
+export type TownMenuUpgradeSlot = {
+  slot: EquipSlot;
+  instanceId: string | null;
+  name: string | null;
+  /** M16（4-5）: 表示名から Lv を除いたもの（equipmentPlainName。空きなら null）。強化の画面は「{plainName} +{level}」で出す */
+  plainName: string | null;
+  level: number;
+  block: string | null;
+};
+/**
+ * TW-17: 触媒の候補 1 個（パーティ全員の inventory の鑑定済みの汎用装備。メンバーの並び順 → inventory の順。M16 で本人だけから全員に広げた）。
+ * name は表示名、plainName は Lv を除いた名前（equipmentPlainName）、ownerId / ownerName は持ち主
+ */
+export type TownMenuUpgradeCatalyst = { instanceId: string; name: string; plainName: string; level: number; ownerId: string; ownerName: string };
+/** TW-17（M16）: town.upgrade の触媒 1 個の指定（持ち主と実体）。消費は持ち主の inventory から */
+export type UpgradeCatalystRef = { memberId: string; instanceId: string };
 /** TW-17: 1 人分。canUpgrade は block が null の部位が 1 つ以上あるか */
 export type TownMenuUpgradeMember = {
   memberId: string;

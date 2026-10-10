@@ -8,7 +8,7 @@ import { classChangeOptions, townMenu } from "../src/core/rules/town";
 import { execute } from "../src/core/engine";
 import { upgradePreview } from "../src/core/rules/upgrade";
 import { cloneState, createItemInstance } from "../src/core/state";
-import type { Character, EndingRecord, GameState, TownMenu } from "../src/core/types";
+import type { Character, EndingRecord, GameState, TownMenu, UpgradeCatalystRef } from "../src/core/types";
 import { endingKeyAction, formatEndingRecord } from "../src/presenter/views/ending";
 import {
   samePage,
@@ -26,11 +26,14 @@ import {
   townPlace,
   townRepair,
   shopPreviewText,
+  upgradeCatalystLabel,
+  upgradeItemName,
   type ClassChangeView,
   type TownEntry,
   type TownPage,
 } from "../src/presenter/views/town";
 import { formatMessage } from "../src/presenter/views/message";
+import { textUnits } from "../src/presenter/views/party-band";
 import { dungeonLayout, regions, TOWN_GRID_LABEL_MAX, townLayout } from "../src/presenter/layout";
 import { data, loadDataWithPlaceholder, newGame, PLACEHOLDER_DUNGEON_NAME } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
@@ -241,15 +244,16 @@ describe("UI-52 街のページ", () => {
     expect(townPageIntro("upgrade", m)).toEqual(["town.upgrade.intro"]);
   });
 
-  test("UI-52/TW-17 部位の段: EQUIP_SLOTS の順に「部位　品名」、空きは「部位　（なし）」で disabled。押すと触媒の段（選択なし）", () => {
+  // M16（4-5）: 強化の画面の品の名前は Lv を常に「+N」で出す（town.upgrade.itemLv。Lv0 も「革鎧 +0」）
+  test("UI-52/TW-17/IT-11 部位の段: EQUIP_SLOTS の順に「部位　品名 +N」（Lv0 も +0）、空きは「部位　（なし）」で disabled。押すと触媒の段（選択なし）", () => {
     const s = town();
     s.items[s.party[0]!.equipment.weapon!]!.level = 3;
     const m = menuOf(s);
     const page = { upSlot: "c1" };
     expect(townEntries(page, m, S)).toEqual([
       { kind: "pick", to: { upCat: { memberId: "c1", slot: "weapon", picked: [] } }, label: "武器　長剣 +3", disabled: false },
-      { kind: "pick", to: { upCat: { memberId: "c1", slot: "armor", picked: [] } }, label: "防具　革鎧", disabled: false },
-      { kind: "pick", to: { upCat: { memberId: "c1", slot: "shield", picked: [] } }, label: "盾　木の盾", disabled: false },
+      { kind: "pick", to: { upCat: { memberId: "c1", slot: "armor", picked: [] } }, label: "防具　革鎧 +0", disabled: false },
+      { kind: "pick", to: { upCat: { memberId: "c1", slot: "shield", picked: [] } }, label: "盾　木の盾 +0", disabled: false },
       { kind: "pick", to: { upCat: { memberId: "c1", slot: "helm", picked: [] } }, label: "兜　（なし）", disabled: true },
       { kind: "pick", to: { upCat: { memberId: "c1", slot: "gauntlet", picked: [] } }, label: "小手　（なし）", disabled: true },
       { kind: "pick", to: { upCat: { memberId: "c1", slot: "accessory", picked: [] } }, label: "装飾　（なし）", disabled: true },
@@ -259,7 +263,8 @@ describe("UI-52 街のページ", () => {
     expect(townPageIntro(page, m)).toEqual([]);
   });
 
-  test("UI-52/TW-17 触媒の段: 鑑定済みの汎用装備に ○ / ● の印。押すと付け外し、maxCatalysts（3）個選ぶと未選択は disabled。決める → 確認の段", () => {
+  // M16（4-5・G-2）: 行は「○{品} +{Lv}　{持ち主}」。選択は持ち主と実体の組
+  test("UI-52/TW-17/IT-70 触媒の段: 鑑定済みの汎用装備に ○ / ● の印と持ち主の名前。押すと付け外し、maxCatalysts（3）個選ぶと未選択は disabled。決める → 確認の段", () => {
     const s = town();
     const add = (level: number, identified = true): string => {
       const id = createItemInstance(s, { itemId: "dagger", level, identified });
@@ -269,30 +274,68 @@ describe("UI-52 街のページ", () => {
     const [a, b, c, d] = [add(1), add(0), add(2), add(0)];
     add(0, false); // 未鑑定は候補に出ない
     const m = menuOf(s);
-    const sel = { memberId: "c1", slot: "weapon" as const, picked: [] as string[] };
+    const sel = { memberId: "c1", slot: "weapon" as const, picked: [] as UpgradeCatalystRef[] };
+    const r1 = (id: string): UpgradeCatalystRef => ({ memberId: "c1", instanceId: id });
+    const [ra, rb, rc, rd] = [r1(a), r1(b), r1(c), r1(d)];
     const e0 = townEntries({ upCat: sel }, m, S);
     expect(e0).toEqual([
-      { kind: "upPick", to: { upCat: { ...sel, picked: [a] } }, label: "○短剣 +1", disabled: false },
-      { kind: "upPick", to: { upCat: { ...sel, picked: [b] } }, label: "○短剣", disabled: false },
-      { kind: "upPick", to: { upCat: { ...sel, picked: [c] } }, label: "○短剣 +2", disabled: false },
-      { kind: "upPick", to: { upCat: { ...sel, picked: [d] } }, label: "○短剣", disabled: false },
+      { kind: "upPick", to: { upCat: { ...sel, picked: [ra] } }, label: "○短剣 +1　アルド", disabled: false },
+      { kind: "upPick", to: { upCat: { ...sel, picked: [rb] } }, label: "○短剣 +0　アルド", disabled: false },
+      { kind: "upPick", to: { upCat: { ...sel, picked: [rc] } }, label: "○短剣 +2　アルド", disabled: false },
+      { kind: "upPick", to: { upCat: { ...sel, picked: [rd] } }, label: "○短剣 +0　アルド", disabled: false },
       { kind: "page", to: { upConfirm: sel }, label: "決める" },
       back,
     ]);
     // c → a → b の順に 3 個選んだ: 印が付き、外すと選んだ順のまま 1 個抜ける。未選択の d は disabled
-    const full = { ...sel, picked: [c, a, b] };
+    const full = { ...sel, picked: [rc, ra, rb] };
     const e3 = townEntries({ upCat: full }, m, S);
-    expect(e3[0]).toEqual({ kind: "upPick", to: { upCat: { ...sel, picked: [c, b] } }, label: "●短剣 +1", disabled: false });
-    expect(e3[3]).toEqual({ kind: "upPick", to: { upCat: { ...sel, picked: [c, a, b, d] } }, label: "○短剣", disabled: true });
+    expect(e3[0]).toEqual({ kind: "upPick", to: { upCat: { ...sel, picked: [rc, rb] } }, label: "●短剣 +1　アルド", disabled: false });
+    expect(e3[3]).toEqual({ kind: "upPick", to: { upCat: { ...sel, picked: [rc, ra, rb, rd] } }, label: "○短剣 +0　アルド", disabled: true });
     expect(e3[4]).toEqual({ kind: "page", to: { upConfirm: full }, label: "決める" });
     expect(townParent({ upCat: full })).toEqual({ upSlot: "c1" });
     expect(townPageIntro({ upCat: full }, m)).toEqual([]);
+    // M16（G-2）: 他の者の段でも同じ候補（c1 の品）が出る
+    expect(townEntries({ upCat: { ...sel, memberId: "c2" } }, m, S)[0]).toEqual({
+      kind: "upPick",
+      to: { upCat: { ...sel, memberId: "c2", picked: [ra] } },
+      label: "○短剣 +1　アルド",
+      disabled: false,
+    });
     // 候補が無ければ空の行 → 決める → 戻る（触媒なしでも鍛えられる）
-    expect(townEntries({ upCat: { ...sel, memberId: "c2" } }, m, S)).toEqual([
+    const none = menuOf(town());
+    expect(townEntries({ upCat: { ...sel, memberId: "c2" } }, none, S)).toEqual([
       { kind: "empty", label: "触媒にできる物がない", disabled: true },
       { kind: "page", to: { upConfirm: { ...sel, memberId: "c2" } }, label: "決める" },
       back,
     ]);
+  });
+
+  test("UI-52/TW-17/IT-70 M16（G-2）触媒の行が一覧の幅（全角 21 字）を超えるときは、持ち主の名前を先頭 2 字 +「…」（item.owner.short）に縮める。IT-11 の表示名は変えない", () => {
+    const s = town({ c3: { name: "ろくもじのな" } });
+    const longBase = [...data.equipmentBases].sort((x, y) => Array.from(y.name).length - Array.from(x.name).length)[0]!;
+    const longRarity = (["fine", "rare", "legendary"] as ("fine" | "rare" | "legendary")[]).sort((x, y) => Array.from(S[`item.rarity.${y}`]!).length - Array.from(S[`item.rarity.${x}`]!).length)[0]!;
+    const big = createItemInstance(s, { itemId: longBase.id, level: 12, rarity: longRarity, identified: true });
+    const small = createItemInstance(s, { itemId: "dagger", level: 0, identified: true });
+    s.party[2]!.inventory.push(big, small);
+    const m = menuOf(s);
+    const sel = { memberId: "c1", slot: "weapon" as const, picked: [] as UpgradeCatalystRef[] };
+    const rows = townEntries({ upCat: sel }, m, S).filter((e) => e.kind === "upPick");
+    const item = `${S[`item.rarity.${longRarity}`]}${longBase.name} +12`;
+    // 今のデータの最悪（最も長い接頭辞 + 最も長いベースの名前 + 2 桁の Lv + 6 字の名前）は 21 字に収まるので縮めない
+    expect(rows.map((e) => e.label)).toEqual([`○${item}　ろくもじのな`, "○短剣 +0　ろくもじのな"]);
+    for (const e of rows) expect(kinsokuLines(e.label, 21), e.label).toHaveLength(1);
+    // 21 字を超える行（名前の長いベースを足したデータを想定した値）は、持ち主の名前を先頭 2 字 +「…」に縮める
+    const long = { instanceId: "i1", name: "とてもながいなまえのけん +12", plainName: "とてもながいなまえのけん", level: 12, ownerId: "c3", ownerName: "ろくもじのな" };
+    expect(textUnits(`○とてもながいなまえのけん +12　ろくもじのな`)).toBeGreaterThan(42);
+    expect(upgradeCatalystLabel(long, false, S)).toBe("○とてもながいなまえのけん +12　ろく…");
+    expect(upgradeCatalystLabel(long, true, S)).toBe("●とてもながいなまえのけん +12　ろく…");
+    expect(kinsokuLines(upgradeCatalystLabel(long, false, S), 21)).toHaveLength(1);
+    // 文言の差し替え: item.owner.short・catRow・itemLv は strings から
+    const S2 = { ...S, "item.owner.short": "{name}~", "town.upgrade.catRow": "{owner}：{item}", "town.upgrade.itemLv": "{name}+{level}" };
+    expect(upgradeCatalystLabel(long, true, S2)).toBe("●ろく~：とてもながいなまえのけん+12");
+    // 表示名（IT-11）は Lv0 で +0 を付けないまま
+    expect(m.upgrade.members[0]!.catalysts[1]!.name).toBe("短剣");
+    expect(upgradeItemName("短剣", 0, S)).toBe("短剣 +0");
   });
 
   // 2026-10-07（M10.5 追補・未定-22）: 確認の段は会話の箱で語らず、問いを見出しに出し、対象と触媒の数を答えのボタンのラベルに出す。
@@ -303,11 +346,11 @@ describe("UI-52 街のページ", () => {
     const cat = createItemInstance(s, { itemId: "dagger", level: 0, identified: true });
     s.party[0]!.inventory.push(cat);
     const m = menuOf(s);
-    const sel = { memberId: "c1", slot: "weapon" as const, picked: [cat] };
-    const p = upgradePreview(s, data, "c1", "weapon", [cat]);
+    const sel = { memberId: "c1", slot: "weapon" as const, picked: [{ memberId: "c1", instanceId: cat }] };
+    const p = upgradePreview(s, data, "c1", "weapon", sel.picked);
     expect(p).toEqual({ rate: 29, great: 2, fee: 100, affordable: true, block: null });
     expect(townEntries({ upConfirm: sel }, m, S, p)).toEqual([
-      { kind: "upgrade", memberId: "c1", slot: "weapon", catalysts: [cat], label: "長剣 +1を鍛える（触媒 1）", disabled: false },
+      { kind: "upgrade", memberId: "c1", slot: "weapon", catalysts: [{ memberId: "c1", instanceId: cat }], label: "長剣 +1を鍛える（触媒 1）", disabled: false },
       back,
     ]);
     expect(townHeadingText({ upConfirm: sel }, m, S, p)).toBe("成功率 29%（大成功 2%）料金 100G。鍛えるか？");
@@ -317,7 +360,7 @@ describe("UI-52 街のページ", () => {
     // 払えない: 鍛えるは disabled、見出しの問いを「所持金が足りない。」に替える
     const poor = cloneState(s);
     poor.gold = 99;
-    const pp = upgradePreview(poor, data, "c1", "weapon", [cat]);
+    const pp = upgradePreview(poor, data, "c1", "weapon", sel.picked);
     expect(townEntries({ upConfirm: sel }, menuOf(poor), S, pp)[0]).toMatchObject({ kind: "upgrade", disabled: true });
     expect(townHeadingText({ upConfirm: sel }, menuOf(poor), S, pp)).toBe("成功率 29%（大成功 2%）料金 100G。金が足りない。");
     // preview が無い（対象が決まらない）なら押せず、見出しは値の無い問い
@@ -455,8 +498,8 @@ describe("UI-52 街のページ", () => {
     const cat = createItemInstance(s, { itemId: "dagger", level: 0, identified: true });
     s.party[0]!.inventory.push(cat);
     const m = menuOf(s);
-    const sel = { memberId: "c1", slot: "weapon" as const, picked: [cat] };
-    const confirm = townEntries({ upConfirm: sel }, m, S, upgradePreview(s, data, "c1", "weapon", [cat]));
+    const sel = { memberId: "c1", slot: "weapon" as const, picked: [{ memberId: "c1", instanceId: cat }] };
+    const confirm = townEntries({ upConfirm: sel }, m, S, upgradePreview(s, data, "c1", "weapon", sel.picked));
     expect(confirm.map((e) => [e.kind, townLowersInput(e)])).toEqual([
       ["upgrade", true],
       ["back", false],
@@ -478,13 +521,15 @@ describe("UI-52 街のページ", () => {
     const cat = createItemInstance(s, { itemId: "dagger", identified: true });
     s.party[0]!.inventory.push(cat);
     const m = menuOf(s);
-    const sel = { memberId: "c1", slot: "weapon" as const, picked: [cat] };
+    const rc = { memberId: "c1", instanceId: cat };
+    const sel = { memberId: "c1", slot: "weapon" as const, picked: [rc] };
     expect(townRepair({ upCat: sel }, m)).toEqual({ upCat: sel });
-    expect(townRepair({ upConfirm: { ...sel, picked: ["i999", cat] } }, m)).toEqual({ upConfirm: sel });
+    // 消えた品・持ち主の違う組は外す
+    expect(townRepair({ upConfirm: { ...sel, picked: [{ memberId: "c1", instanceId: "i999" }, rc, { memberId: "c2", instanceId: cat }] } }, m)).toEqual({ upConfirm: sel });
     expect(townRepair({ upCat: { ...sel, slot: "helm" } }, m)).toEqual({ upSlot: "c1" });
     expect(townRepair({ upCat: { ...sel, memberId: "c9" } }, m)).toBe("upgrade");
     expect(townRepair({ upSlot: "c9" }, m)).toBe("upgrade");
-    expect(samePage({ upCat: sel }, { upCat: { ...sel, picked: [cat] } })).toBe(true);
+    expect(samePage({ upCat: sel }, { upCat: { ...sel, picked: [{ memberId: "c1", instanceId: cat }] } })).toBe(true);
     expect(samePage({ upCat: sel }, { upCat: { ...sel, picked: [] } })).toBe(false);
   });
 

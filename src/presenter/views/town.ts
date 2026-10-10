@@ -7,10 +7,11 @@
 // M7: 店は最初に 買う / 売る / 買い戻す / 鑑定 / 倉庫 / 戻る の一覧。倉庫（TW-16）の入口は店の一覧の中（items.md §11 の Q9 の既定。銀行を作る段で移す）。
 import type { EquipSlot, Strings } from "../../core/data/index";
 import type { ClassChangeOption } from "../../core/rules/town";
-import type { TownMenu, UpgradePreview } from "../../core/types";
+import type { TownMenu, TownMenuUpgradeCatalyst, UpgradeCatalystRef, UpgradePreview } from "../../core/types";
 import type { CampOpen } from "./camp";
 import { STAT_ORDER } from "./detail";
 import { formatMessage } from "./message";
+import { textUnits } from "./party-band";
 
 export type TempleService = "resurrect" | "cure" | "uncurse";
 /**
@@ -53,7 +54,7 @@ export type TownPage =
   | { ccClass: string }
   | { ccConfirm: ClassChangeSel };
 /** TW-17: 強化の選択中の対象（本人・部位）と触媒 */
-export type UpgradeSel = { memberId: string; slot: EquipSlot; picked: string[] };
+export type UpgradeSel = { memberId: string; slot: EquipSlot; picked: UpgradeCatalystRef[] };
 /** TW-09（M10）: 転職の確認の対象（者と転職先） */
 export type ClassChangeSel = { memberId: string; classId: string };
 /**
@@ -96,7 +97,7 @@ export type TownEntry =
   /** TW-17: 触媒の行。押すと選択の印を付け外しした { upCat } へ（語りは出さない）。3 個選んだ後の未選択の行は disabled */
   | { kind: "upPick"; to: TownPage; label: string; disabled: boolean }
   /** TW-17: 確認の「鍛える」。押すと town.upgrade（upgradePreview の block が null でなければ disabled） */
-  | { kind: "upgrade"; memberId: string; slot: EquipSlot; catalysts: string[]; label: string; disabled: boolean }
+  | { kind: "upgrade"; memberId: string; slot: EquipSlot; catalysts: UpgradeCatalystRef[]; label: string; disabled: boolean }
   /** TW-03 / UI-52: 酒場の状態（キャラクター画面 UI-59）・並び順・図鑑。押すとキャンプと同じ部品（views/camp.ts）をその段で開く */
   | { kind: "camp"; open: CampOpen; label: string }
   /**
@@ -194,7 +195,7 @@ export function townRepair(page: TownPage, menu: TownMenu): TownPage {
     const m = menu.upgrade.members.find((x) => x.memberId === sel.memberId);
     if (m === undefined) return "upgrade";
     if (m.slots.find((x) => x.slot === sel.slot)?.block !== null) return { upSlot: sel.memberId };
-    const picked = sel.picked.filter((id) => m.catalysts.some((c) => c.instanceId === id));
+    const picked = sel.picked.filter((r) => m.catalysts.some((c) => c.instanceId === r.instanceId && c.ownerId === r.memberId));
     if (picked.length === sel.picked.length) return page;
     return "upCat" in page ? { upCat: { ...sel, picked } } : { upConfirm: { ...sel, picked } };
   }
@@ -399,23 +400,25 @@ export function townEntries(
     const m = menu.upgrade.members.find((x) => x.memberId === memberId);
     const rows = (m?.slots ?? []).map((x): TownEntry => {
       const slot = s(strings, `detail.slot.${x.slot}`);
-      const label = x.name === null ? s(strings, "town.upgrade.slotEmpty", { slot }) : s(strings, "town.upgrade.slotRow", { slot, item: x.name });
+      // M16（4-5）: 強化の画面では Lv を常に「+N」で出す（town.upgrade.itemLv。IT-11 の表示名は変えない）
+      const label =
+        x.plainName === null ? s(strings, "town.upgrade.slotEmpty", { slot }) : s(strings, "town.upgrade.slotRow", { slot, item: upgradeItemName(x.plainName, x.level, strings) });
       return { kind: "pick", to: { upCat: { memberId, slot: x.slot, picked: [] } }, label, disabled: x.block !== null };
     });
     return [...rows, back];
   }
   if ("upCat" in page) {
-    // TW-17: 触媒の候補（本人の鑑定済みの汎用装備）。押すと印を付け外し（maxCatalysts 個まで）→ 決める → 戻る
+    // TW-17: 触媒の候補（パーティ全員の鑑定済みの汎用装備。M16 の G-2 で持ち主の名前を添える）。押すと印を付け外し（maxCatalysts 個まで）→ 決める → 戻る
     const sel = page.upCat;
     const m = menu.upgrade.members.find((x) => x.memberId === sel.memberId);
     const full = sel.picked.length >= menu.upgrade.maxCatalysts;
     const rows = (m?.catalysts ?? []).map((c): TownEntry => {
-      const on = sel.picked.includes(c.instanceId);
-      const picked = on ? sel.picked.filter((id) => id !== c.instanceId) : [...sel.picked, c.instanceId];
+      const on = sel.picked.some((r) => r.instanceId === c.instanceId);
+      const picked = on ? sel.picked.filter((r) => r.instanceId !== c.instanceId) : [...sel.picked, { memberId: c.ownerId, instanceId: c.instanceId }];
       return {
         kind: "upPick",
         to: { upCat: { ...sel, picked } },
-        label: s(strings, on ? "town.upgrade.catOn" : "town.upgrade.catOff", { name: c.name }),
+        label: upgradeCatalystLabel(c, on, strings),
         disabled: !on && full,
       };
     });
@@ -431,7 +434,7 @@ export function townEntries(
         memberId: sel.memberId,
         slot: sel.slot,
         catalysts: [...sel.picked],
-        label: s(strings, "town.upgrade.do", { item: upgradeTarget(menu, sel), count: sel.picked.length }),
+        label: s(strings, "town.upgrade.do", { item: upgradeTarget(menu, sel, strings), count: sel.picked.length }),
         disabled: preview === null || preview.block !== null,
       },
       back,
@@ -660,8 +663,30 @@ export function townFreshIntro(texts: readonly string[], recent: readonly string
 }
 
 /** TW-17: 確認の段の対象の品名（townMenu.upgrade の部位の name。見つからなければ空） */
-function upgradeTarget(menu: TownMenu, sel: UpgradeSel): string {
-  return menu.upgrade.members.find((m) => m.memberId === sel.memberId)?.slots.find((x) => x.slot === sel.slot)?.name ?? "";
+function upgradeTarget(menu: TownMenu, sel: UpgradeSel, strings: Strings): string {
+  const x = menu.upgrade.members.find((m) => m.memberId === sel.memberId)?.slots.find((y) => y.slot === sel.slot);
+  return x === undefined || x.plainName === null ? "" : upgradeItemName(x.plainName, x.level, strings);
+}
+
+/** M16（4-5）: 強化の画面の品の名前。Lv を常に出す「{name} +{level}」（town.upgrade.itemLv。Lv0 でも「長剣 +0」） */
+export function upgradeItemName(plainName: string, level: number, strings: Strings): string {
+  return s(strings, "town.upgrade.itemLv", { name: plainName, level });
+}
+
+/** 一覧の行の幅（全角 21 字 = 42 単位。party-band の textUnits の単位） */
+const LIST_ROW_UNITS = 42;
+
+/**
+ * TW-17 / IT-70（M16 の G-2）: 触媒の行「●{item} +{level}　{owner}」（town.upgrade.catOn / catOff・catRow・itemLv）。
+ * 行が一覧の幅（全角 21 字）を超えるときは、持ち主の名前を先頭 2 字 + item.owner.short（「{name}…」）に縮める（表示のための計算）
+ */
+export function upgradeCatalystLabel(c: TownMenuUpgradeCatalyst, on: boolean, strings: Strings): string {
+  const key = on ? "town.upgrade.catOn" : "town.upgrade.catOff";
+  const item = upgradeItemName(c.plainName, c.level, strings);
+  const row = (owner: string): string => s(strings, key, { name: s(strings, "town.upgrade.catRow", { item, owner }) });
+  const full = row(c.ownerName);
+  if (textUnits(full) <= LIST_ROW_UNITS) return full;
+  return row(s(strings, "item.owner.short", { name: Array.from(c.ownerName).slice(0, 2).join("") }));
 }
 
 /**

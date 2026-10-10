@@ -1,4 +1,5 @@
 // 闇魔術の強化（TW-17 / IT-70。M7 の C）。rules/upgrade.ts と engine の town.upgrade の配線、townMenu.upgrade。
+// M16（G-2）: 触媒は {memberId, instanceId} の組でパーティ全員の inventory から。up() は文字列を c1 の品の組に読み替える。
 // 既定のパーティ（newGame）: c1 アルド（武器 長剣・防具 革鎧・盾 木の盾、所持品 薬草）、c2 ベルク（長剣・鎖帷子）。所持金は town() で決める。
 // config.economy: upgradeBase 50・upgradeRateBase 10・upgradeRatePerCatalyst 30・upgradeDecay 0.66・upgradeMaxCatalysts 3【仮】。
 // 出目は seedWithFirstD100 で「最初の randInt(1, 100) がその値になる種」を探して state.rng に入れる（鏡の rng で同じ 1 回を引いて比べる）。
@@ -8,7 +9,7 @@ import { createRng, randInt } from "../src/core/rng";
 import { townMenu } from "../src/core/rules/town";
 import { checkUpgrade, upgradeFee, upgradeGreat, upgradePreview, upgradeRate } from "../src/core/rules/upgrade";
 import { cloneState, createItemInstance } from "../src/core/state";
-import type { Character, Command, GameEvent, GameState, ItemInstance } from "../src/core/types";
+import type { Character, Command, GameEvent, GameState, ItemInstance, UpgradeCatalystRef } from "../src/core/types";
 import { data, expectKnownStringKeys, expectStateInvariants, loadFreshData, newGame, seedWithFirstD100 } from "./helpers/core";
 
 const E = data.config.economy;
@@ -62,8 +63,18 @@ function expectRejected(s: GameState, cmd: Command, reason: string): void {
   expect(s.rng).toEqual(rng);
 }
 
-const up = (catalysts: string[], memberId = "c1", slot = "weapon"): Command =>
-  ({ type: "town.upgrade", memberId, slot, catalysts }) as Command;
+/** 触媒の指定（持ち主と実体）。既定の持ち主は c1 */
+const ref = (instanceId: string, memberId = "c1"): UpgradeCatalystRef => ({ memberId, instanceId });
+const refs = (ids: string[], memberId = "c1"): UpgradeCatalystRef[] => ids.map((id) => ref(id, memberId));
+
+/** catalysts の文字列は c1 の品の組に読み替える（配列でない・文字列でも組でもない要素はそのまま。bad action の検査用） */
+const up = (catalysts: unknown, memberId = "c1", slot = "weapon"): Command =>
+  ({
+    type: "town.upgrade",
+    memberId,
+    slot,
+    catalysts: Array.isArray(catalysts) ? catalysts.map((x: unknown) => (typeof x === "string" ? ref(x) : x)) : catalysts,
+  }) as unknown as Command;
 
 // ---------------------------------------------------------------------------
 
@@ -167,7 +178,8 @@ describe("TW-17 town.upgrade の判定と処理", () => {
     expect(r.state.rng).toEqual(mirror);
   });
 
-  test("TW-17 Lv0 で失敗しても 0 のまま。触媒なしでも料金（50）は取る（p 10・q 1、出目 11）", () => {
+  // M16（4-5）: Lv0 の失敗の語りは ng ではなく ngFloor「鍛えそこねた。+0 なのでこれ以上は鈍らない。」（判定の箱の結果は ng のまま）
+  test("TW-17 Lv0 で失敗しても 0 のまま、語りは town.upgrade.ngFloor。触媒なしでも料金（50）は取る（p 10・q 1、出目 11）", () => {
     const s = town(1000, 0);
     withFirstRoll(s, 11);
     const r = ok(s, up([]));
@@ -181,8 +193,20 @@ describe("TW-17 town.upgrade の判定と処理", () => {
         rule: { key: "dice.upgrade.rule", params: { rate: 10, great: 1 } },
         result: { key: "dice.upgrade.ng" },
       },
-      { kind: "message", key: "town.upgrade.ng", params: { name: "アルド", item: "長剣" } },
+      { kind: "message", key: "town.upgrade.ngFloor", params: { name: "アルド", item: "長剣" } },
     ]);
+  });
+
+  test("TW-17 M16 ngFloor は強化前が Lv0 の失敗だけ（Lv1 の失敗で Lv0 になるときは今の ng。Lv0 の成功は ok）", () => {
+    const msg = (lv: number, roll: number): GameEvent | undefined => {
+      const s = town(1000, lv);
+      withFirstRoll(s, roll);
+      return ok(s, up([])).events[1];
+    };
+    expect(msg(1, 11)).toEqual({ kind: "message", key: "town.upgrade.ng", params: { name: "アルド", item: "長剣" } });
+    expect(msg(0, 2)).toEqual({ kind: "message", key: "town.upgrade.ok", params: { name: "アルド", item: "長剣 +1" } });
+    expect(msg(0, 100)).toMatchObject({ key: "town.upgrade.ngFloor" });
+    expect(data.strings["town.upgrade.ngFloor"]).toBe("鍛えそこねた。+0 なのでこれ以上は鈍らない。");
   });
 
   test("TW-17 判定は表示している整数の成功率と比べる（p 29.8 → 29: 出目 29 は成功、30 は失敗）", () => {
@@ -238,11 +262,15 @@ describe("TW-17 town.upgrade の判定と処理", () => {
     // wrong screen（迷宮の中）
     const diving = cloneState(execute(newGame(1), { type: "dungeon.enter", dungeonId: "d01" }, data).state);
     expectRejected(diving, up([]), "wrong screen");
-    // bad action: 配列でない・文字列でない・多すぎる・重複。no such member より先
-    expectRejected(s, up("x" as unknown as string[]), "bad action");
-    expectRejected(s, up([1 as unknown as string]), "bad action");
+    // bad action: 配列でない・組でない（数・文字列だけの組・欄の欠け）・多すぎる・重複（持ち主が違っても同じ実体）。no such member より先
+    expectRejected(s, up("x"), "bad action");
+    expectRejected(s, up([1]), "bad action");
+    expectRejected(s, up([{ memberId: "c1" }]), "bad action");
+    expectRejected(s, up([{ memberId: 1, instanceId: good }]), "bad action");
+    expectRejected(s, up([null]), "bad action");
     expectRejected(s, up(["a", "b", "c", "d"], "c9"), "bad action");
     expectRejected(s, up([good, good]), "bad action");
+    expectRejected(s, up([ref(good), ref(good, "c2")]), "bad action");
     expectRejected(s, up([], "c9"), "no such member");
     expectRejected(s, up([], 3 as unknown as string), "no such member");
     expectRejected(s, up([], "c1", "foo"), "bad slot");
@@ -251,12 +279,17 @@ describe("TW-17 town.upgrade の判定と処理", () => {
     const su = cloneState(s);
     su.items[target]!.uniqueId = "shadowfolk_sword";
     expectRejected(su, up([]), "unique");
-    // bad catalyst: 未鑑定・ユニーク・他人の品・消耗品・装備中の品（対象そのもの）・存在しない id。not enough gold より先
+    // bad catalyst: 未鑑定・ユニーク・持ち主の違う指定（c2 の品を c1 の品として）・消耗品・装備中の品（対象そのもの）・存在しない id。not enough gold より先
     for (const id of [unid, uniq, others, herb, target, "i999"]) expectRejected(s, up([id]), "bad catalyst");
+    // M16（G-2）: 持ち主の inventory に無い（c1 の品を c2 の品として）・持ち主がいない
+    expectRejected(s, up([ref(good, "c2")]), "bad catalyst");
+    expectRejected(s, up([ref(good, "c9")]), "bad catalyst");
+    expectRejected(s, up([ref(others, "c2")]), "not enough gold");
     expectRejected(s, up([good]), "not enough gold");
     const rich = cloneState(s);
     rich.gold = 150;
-    expect(checkUpgrade(rich, "c1", "weapon", [good], data)).toBeNull();
+    expect(checkUpgrade(rich, "c1", "weapon", [ref(good)], data)).toBeNull();
+    expect(checkUpgrade(rich, "c1", "weapon", [ref(good), ref(others, "c2")], data)).toBeNull();
   });
 });
 
@@ -264,7 +297,7 @@ describe("TW-17 upgradePreview と townMenu.upgrade（表示層向けの問い�
   test("TW-17 upgradePreview は town.upgrade の dice の rate / great と料金に一致し、block は checkUpgrade と同じ", () => {
     const s = town(1000, 4);
     const cats = [give(s, "c1", { itemId: "long_sword", level: 4 }), give(s, "c1", { itemId: "dagger", level: 3 }), give(s, "c1", { itemId: "dagger", level: 0 })];
-    const p = upgradePreview(s, data, "c1", "weapon", cats);
+    const p = upgradePreview(s, data, "c1", "weapon", refs(cats));
     expect(p).toEqual({ rate: 65, great: 6, fee: 250, affordable: true, block: null });
     withFirstRoll(s, 50);
     const r = ok(s, up(cats));
@@ -277,7 +310,7 @@ describe("TW-17 upgradePreview と townMenu.upgrade（表示層向けの問い�
     const s = town(100, 2);
     const unid = give(s, "c1", { itemId: "dagger", identified: false });
     expect(upgradePreview(s, data, "c1", "weapon", [])).toEqual({ rate: 10, great: 1, fee: 150, affordable: false, block: "not enough gold" });
-    expect(upgradePreview(s, data, "c1", "weapon", [unid])).toEqual({ rate: 10, great: 1, fee: 150, affordable: false, block: "bad catalyst" });
+    expect(upgradePreview(s, data, "c1", "weapon", [ref(unid)])).toEqual({ rate: 10, great: 1, fee: 150, affordable: false, block: "bad catalyst" });
     expect(upgradePreview(s, data, "c1", "helm", [])).toBeNull();
     expect(upgradePreview(s, data, "c9", "weapon", [])).toBeNull();
   });
@@ -292,19 +325,76 @@ describe("TW-17 upgradePreview と townMenu.upgrade（表示層向けの問い�
     expect(m.members.map((x) => x.memberId)).toEqual(["c1", "c2", "c3", "c4", "c5", "c6"]);
     const c1 = m.members[0]!;
     expect(c1.canUpgrade).toBe(true);
-    expect(c1.slots.map((x) => [x.slot, x.name, x.level, x.block])).toEqual([
-      ["weapon", "長剣 +3", 3, null],
-      ["armor", "革鎧", 0, null],
-      ["shield", "木の盾", 0, null],
-      ["helm", null, 0, "slot empty"],
-      ["gauntlet", null, 0, "slot empty"],
-      ["accessory", null, 0, "slot empty"],
+    // M16（4-5）: plainName は表示名から Lv を除いたもの（name は IT-11 のまま）
+    expect(c1.slots.map((x) => [x.slot, x.name, x.plainName, x.level, x.block])).toEqual([
+      ["weapon", "長剣 +3", "長剣", 3, null],
+      ["armor", "革鎧", "革鎧", 0, null],
+      ["shield", "木の盾", "木の盾", 0, null],
+      ["helm", null, null, 0, "slot empty"],
+      ["gauntlet", null, null, 0, "slot empty"],
+      ["accessory", null, null, 0, "slot empty"],
     ]);
-    expect(c1.catalysts).toEqual([{ instanceId: a, name: "短剣 +1", level: 1 }]);
+    expect(c1.catalysts).toEqual([{ instanceId: a, name: "短剣 +1", plainName: "短剣", level: 1, ownerId: "c1", ownerName: "アルド" }]);
     // ユニークだけを装備した者は canUpgrade 偽
     const s2 = cloneState(s);
     const c5 = member(s2, "c5"); // 魔術師（杖だけ）
     s2.items[c5.equipment.weapon!]!.uniqueId = "dawn_flint_staff";
     expect(townMenu(s2, data)!.upgrade.members[4]!.canUpgrade).toBe(false);
+  });
+});
+
+describe("TW-17 / IT-70 M16（G-2）触媒はパーティ全員の所持品から", () => {
+  const S = data.strings;
+
+  test("TW-17/IT-70 M16 触媒の候補は全員の inventory（メンバーの並び順 → inventory の順）で、持ち主の id と名前を持つ。どの者の段でも同じ。装備中の品（鍛える対象そのもの）は出ない", () => {
+    const s = town(1000, 0);
+    const x = give(s, "c3", { itemId: "dagger", level: 2 });
+    const y = give(s, "c1", { itemId: "long_sword", level: 0, rarity: "fine" });
+    const z = give(s, "c3", { itemId: "dagger", level: 0 });
+    const w = give(s, "c6", { itemId: "dagger", level: 1 });
+    const m = townMenu(s, data)!.upgrade;
+    const expected = [
+      { instanceId: y, name: "上質な長剣", plainName: "上質な長剣", level: 0, ownerId: "c1", ownerName: "アルド" },
+      { instanceId: x, name: "短剣 +2", plainName: "短剣", level: 2, ownerId: "c3", ownerName: "キリ" },
+      { instanceId: z, name: "短剣", plainName: "短剣", level: 0, ownerId: "c3", ownerName: "キリ" },
+      { instanceId: w, name: "短剣 +1", plainName: "短剣", level: 1, ownerId: "c6", ownerName: "フィン" },
+    ];
+    for (const mm of m.members) expect(mm.catalysts, mm.memberId).toEqual(expected);
+    // 装備中の品（全員の equipment）は候補に出ない
+    const equipped = s.party.flatMap((c) => Object.values(c.equipment).filter((id): id is string => id !== null));
+    expect(equipped.length).toBeGreaterThan(0);
+    for (const id of equipped) expect(m.members[0]!.catalysts.some((c) => c.instanceId === id)).toBe(false);
+    expect(S["item.owner.short"]).toBe("{name}…");
+  });
+
+  test("TW-17/IT-70 M16 他人の品を触媒にすると、持ち主の inventory から消える（鍛える本人の所持品は変わらない）。成功率は自分の品と同じ式", () => {
+    const s = town(1000, 2);
+    const cat = give(s, "c2", { itemId: "long_sword", level: 2 });
+    const before1 = [...member(s, "c1").inventory];
+    const before2 = member(s, "c2").inventory.filter((id) => id !== cat);
+    expect(upgradePreview(s, data, "c1", "weapon", [ref(cat, "c2")])).toEqual({ rate: 40, great: 4, fee: 150, affordable: true, block: null });
+    withFirstRoll(s, 5);
+    const r = ok(s, up([ref(cat, "c2")]));
+    expect(r.events[1]).toEqual({ kind: "message", key: "town.upgrade.ok", params: { name: "アルド", item: "長剣 +3" } });
+    expect(r.state.items[cat]).toBeUndefined();
+    expect(member(r.state, "c2").inventory).toEqual(before2);
+    expect(member(r.state, "c1").inventory).toEqual(before1);
+    expect(weaponOf(r.state, "c1").level).toBe(3);
+  });
+
+  test("TW-17/IT-70 M16 持ち主の life は問わない（灰の者の品も触媒にできる）。3 人の品を 1 個ずつ混ぜて使える", () => {
+    const s = town(1000, 0);
+    const a = give(s, "c1", { itemId: "dagger" });
+    const b = give(s, "c4", { itemId: "dagger" });
+    const c = give(s, "c5", { itemId: "dagger" });
+    member(s, "c4").life = "ash";
+    member(s, "c4").hp = 0;
+    withFirstRoll(s, 50);
+    const r = ok(s, up([ref(a), ref(b, "c4"), ref(c, "c5")]));
+    const d = r.events[0];
+    expect(d?.kind === "dice" && d.rule.params).toEqual({ rate: 100, great: 10 });
+    for (const id of [a, b, c]) expect(r.state.items[id]).toBeUndefined();
+    expect(member(r.state, "c4").inventory).not.toContain(b);
+    expect(member(r.state, "c5").inventory).not.toContain(c);
   });
 });
