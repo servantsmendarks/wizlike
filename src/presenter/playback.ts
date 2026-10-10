@@ -13,6 +13,7 @@
 //   （1 回目は今の文の即表示、同じ再生の中の 2 回目で残りをすべて即時）。
 //   拍の中で見せる残りが無い（文字送り中でなく、出ているダイスが最終の段まで描けている）ときのタップは、
 //   その拍の手動の待ちのタップとして持ち越す（tapAhead。待ちの前に message / dice / penaltyTable が来たら取り消す。戦闘の外への screen と wipe の前の待ち（leave）では使わない）。
+//   battleEnd の拍の後に続く拍（戦闘の中の全滅の全滅処理）の前の待ちも leave と同じ扱い（endedInBeat。CB-55。M16）。
 // - 全滅（UI-56）: 拍の中の wipe は、開く前に最後の拍を読ませ（上の待ち）、拍の外に出てから内訳の overlay を開く。
 //   拍の外の wipe（戦闘外の全滅）も、開く前に全滅の 2d10 の箱を出したままタップを 1 回待つ。
 // - 戦績（UI-73。M12）: ending は record を預かるだけにし、再生の終わり（screens.sync の後）に ending.show で開く（締めの語りを先に読ませる）。
@@ -322,6 +323,11 @@ export function createPlayer(deps: PlayerDeps): Player {
    * 待ちの前に新しく読ませるもの（message / dice / penaltyTable）が来たら取り消す
    */
   let tapAhead = false;
+  /**
+   * CB-55 / UI-45（M16。レビューの指摘）: 今の拍で battleEnd を再生した。戦闘の中の全滅では、その拍の後に全滅処理の拍が続くので、
+   * 次の拍の前の待ちも戦闘の外へ出る前（leave）と同じ扱いにする（先取りのタップを使わず、再生の進め方が自動でもタップで送る）
+   */
+  let endedInBeat = false;
   /** UI-55: この再生で衝動の行動者に印を付けたか（再生の終わりで外す） */
   let marked = false;
   /** UI-47: 今の screen{town} の前の語り（townCarry。screen ハンドラが screens.show に渡す） */
@@ -562,6 +568,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     async battleEnd(_ev, cx) {
       cx.skip = isSkip();
       hideDice();
+      if (mode !== null) endedInBeat = true;
       deps.battleEnded();
     },
     async eventStarted(ev, cx) {
@@ -627,6 +634,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     pending = false;
     beatRush = false;
     tapAhead = false;
+    endedInBeat = false;
   };
 
   return {
@@ -667,7 +675,9 @@ export function createPlayer(deps: PlayerDeps): Player {
           }
           if (ev.kind === "beat") {
             // UI-45: 次の拍の前で待ち、待った後にダイスを消してから拍に入る
-            await waitBeat("beat");
+            // CB-55（M16）: battleEnd の拍の後（戦闘の中の全滅で全滅処理の拍が続く）は leave と同じ待ち
+            await waitBeat(endedInBeat ? "leave" : "beat");
+            endedInBeat = false;
             hideDice();
             sound(ev);
             mode = ev.auto ? "timed" : "tap";

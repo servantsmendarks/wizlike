@@ -279,7 +279,7 @@ export type StairsUse = "exit" | "up" | "down";
 /**
  * DG-44（M16）: dungeon.useStairs を受け付ける状態なら、出す確認の種類を返す。受け付けない状態なら null。
  * 条件: screen dungeon・dive あり・戦闘中でない・保留中の選択（E3）も宝箱（CB-60）も無い・行動可能な者（CH-44）がいる・今のセルの実効の kind が
- * stairsUp か stairsDown。表示層はこの値で「地上へ戻る / 階段を上る / 階段を下りる」のボタンを出す・隠す（判定は core）
+ * stairsUp か stairsDown。表示層はこの値で「地上へ戻る / 階段を上る / 階段を降りる」のボタンを出す・隠す（判定は core）
  */
 export function stairsHere(state: GameState, data: GameData): StairsUse | null {
   const dive = state.dive;

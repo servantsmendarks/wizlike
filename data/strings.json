@@ -389,7 +389,7 @@
   "dungeon.menu.camp": "キャンプ",
   "dungeon.stairs.exit": "地上へ戻る",
   "dungeon.stairs.up": "階段を上る",
-  "dungeon.stairs.down": "階段を下りる",
+  "dungeon.stairs.down": "階段を降りる",
   "dungeon.items.which": "{name}の道具",
   "dungeon.items.target": "誰に使う？",
   "dungeon.items.allyRow": "{name}　{hp}/{hpMax}",

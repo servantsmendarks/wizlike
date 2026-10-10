@@ -1034,6 +1034,66 @@ describe("UI-45 拍の再生", () => {
     vi.useRealTimers();
   });
 
+  test("CB-55/UI-45/UI-57（M16）戦闘の中の全滅: battleEnd の拍の後（全滅処理の拍の前）の待ちも leave と同じ。再生の進め方が自動でもタップで送り、先取りのタップでは素通りしない", async () => {
+    const wipePenalty: PenaltyResult = {
+      dice: [3, 4],
+      total: 7,
+      bandIndex: 2,
+      ledgerGold: 0,
+      ledgerItems: [],
+      goldLost: 60,
+      itemsLost: [],
+      expLost: [],
+      revived: [],
+      leaderRule: true,
+    };
+    const events: GameEvent[] = [
+      beat("system", false),
+      { kind: "battleEnd", result: "wipe" },
+      msg("battle.wipe"),
+      beat("system", false),
+      msg("wipe.intro"),
+      { kind: "wipe", penalty: wipePenalty },
+      { kind: "screen", to: "town" },
+    ];
+    expectKnownStringKeys(events);
+    // 自動で流す（timed）でも、battleEnd の拍の後と wipe の前はタップ待ち
+    const { deps, log } = fakeDeps({ beatAdvance: "timed" });
+    await createPlayer(deps).play(events, battleState(), stateWith(null));
+    expect(waits(log).slice(0, 4)).toEqual([say("battle.wipe"), "beat.waitTap", say("wipe.intro"), "beat.waitTap"]);
+    expect(names(log)).not.toContain("message.waitMs");
+    // 比べる: battleEnd の無い拍の後は今までどおり自動の待ち
+    const f2 = fakeDeps({ beatAdvance: "timed" });
+    await createPlayer(f2.deps).play([beat("system", false), msg("battle.win"), beat("system", false), msg("battle.exp", { exp: 3 })], battleState(), battleState());
+    expect(waits(f2.log)).toEqual([say("battle.win"), "waitMs 400", say("battle.exp", { exp: 3 }), "screens.sync"]);
+    // 文を出し終えた後のタップ（先取り）があっても、battleEnd の拍の後で新しいタップまで止まる
+    const f3 = fakeDeps();
+    delete f3.deps.beat; // 既定の掛け金（Player.tap() が解く）
+    const player = createPlayer(f3.deps);
+    const sayFn = f3.deps.message.say;
+    f3.deps.message.say = async (text, instant) => {
+      await sayFn(text, instant);
+      player.tap();
+    };
+    let done = false;
+    const p = player.play(events, battleState(), stateWith(null)).then(() => {
+      done = true;
+    });
+    const flush = async (): Promise<void> => {
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+    };
+    await flush();
+    expect(done).toBe(false);
+    expect(names(f3.log).filter((m) => m === "message.say")).toHaveLength(1);
+    player.tap();
+    await flush();
+    expect(names(f3.log).filter((m) => m === "message.say")).toHaveLength(2);
+    expect(names(f3.log)).not.toContain("wipe.show");
+    player.tap();
+    await p;
+    expect(names(f3.log)).toContain("wipe.show");
+  });
+
   test("UI-45/UI-40 再生の終わり: 手動はダイスが出ているときだけ待つ（遭遇の先手判定）。拍の待ちの後で dice.hide を呼ぶ", async () => {
     const { deps, log } = fakeDeps();
     const s = battleState();
