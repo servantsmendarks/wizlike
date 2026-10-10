@@ -95,8 +95,11 @@ function liveGroups(menu: BattleMenu): BattleMenu["groups"] {
   return menu.groups.filter((g) => g.count > 0);
 }
 
+/** CB-02: 逃げられない戦闘の逃げる。CB-12/40（M16）: core の canRepeat が偽なら前回と同じ */
 function partyDisabled(menu: BattleMenu, cmd: PartyCmd): boolean {
-  return cmd === "flee" && !menu.canFlee;
+  if (cmd === "flee") return !menu.canFlee;
+  if (cmd === "repeat") return !menu.canRepeat;
+  return false;
 }
 
 /**

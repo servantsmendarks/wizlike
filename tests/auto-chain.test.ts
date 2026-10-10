@@ -4,7 +4,7 @@ import type { BattleMenu, Command } from "../src/core/types";
 import { chainDecision, closesInput, runChain, type ChainStep } from "../src/presenter/auto-chain";
 
 function menu(o: Partial<BattleMenu> = {}): BattleMenu {
-  return { round: 1, auto: false, canFlee: true, ready: false, pending: [], groups: [], members: [], allies: [], ...o };
+  return { round: 1, auto: false, canFlee: true, canRepeat: true, ready: false, pending: [], groups: [], members: [], allies: [], ...o };
 }
 
 describe("CB-43/UI-54 chainDecision", () => {

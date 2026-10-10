@@ -64,6 +64,7 @@ function menu(o: Partial<BattleMenu> = {}): BattleMenu {
     round: 1,
     auto: false,
     canFlee: true,
+    canRepeat: true,
     ready: false,
     pending: ["c1", "c2", "c4", "c5", "c6"],
     groups: [
@@ -152,6 +153,17 @@ describe("UI-54 入力の段階", () => {
     expect(entries(menu(), PARTY, S).map((e) => e.disabled)).toEqual([false, false, false, false]);
     expect(entries(menu({ canFlee: false }), PARTY, S).map((e) => e.disabled)).toEqual([false, false, true, false]);
     expect(entries(menu(), PARTY, S).map((e) => e.choice)).toEqual([pc("fight"), pc("repeat"), pc("flee"), pc("auto")]);
+  });
+
+  test("UI-54/CB-12/CB-40 core の canRepeat が偽（この戦闘でまだ手入力が無い）なら前回と同じは dim で、押しても送らない", () => {
+    const m = menu({ canRepeat: false });
+    expect(entries(m, PARTY, S).map((e) => e.disabled)).toEqual([false, true, false, false]);
+    expect(entries(m, PARTY, S)[1]!.label).toBe(t("battle.cmd.repeat"));
+    expect(step(m, PARTY, pc("repeat"))).toEqual({ cursor: PARTY, send: null });
+    // 他の選択は今までどおり
+    expect(step(m, PARTY, pc("fight"))).toEqual({ cursor: mem("c1"), send: null });
+    expect(step(m, PARTY, pc("auto"))).toEqual({ cursor: PARTY, send: { type: "battle.auto", on: true } });
+    expect(step(menu({ canRepeat: true }), PARTY, pc("repeat"))).toEqual({ cursor: PARTY, send: { type: "battle.repeat" } });
   });
 
   test("UI-54/CB-12/CB-50 戦う → 先頭の行動可能なメンバーの member。前回と同じ → battle.repeat、逃げる → battle.flee、オート → battle.auto on", () => {

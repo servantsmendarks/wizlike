@@ -186,12 +186,14 @@ export function startBossEncounter(ctx: RuleContext): void {
 
 /**
  * 戦闘を始める（テストからも使う。表示層には開かない）。
+ * CB-40（M16）: 最初に全員の lastBattleInput を null にする（乱数なし。出来事なし。同じ戦闘の中だけ前のラウンドの手入力を繰り返す）。
  * HP（g→u）→ 図鑑のキー → battle と screen → encounter → CB-06 の SAN（battle.unidentified →（UI-76。初回だけ）hint.sanUnknown → sanChanged）
  * → 全滅の確認 → CB-04 の先手判定。
  */
 export function startBattle(ctx: RuleContext, origin: BattleOrigin, specs: { monsterId: string; count: number }[]): void {
   const { state, data } = ctx;
   const cfg = data.config;
+  for (const ch of state.party) ch.lastBattleInput = null; // CB-40（M16）
   const groups: EnemyGroup[] = specs.map((sp) => {
     const m = monsterOf(data, sp.monsterId);
     const units: EnemyUnit[] = [];
@@ -411,10 +413,16 @@ export function checkFlee(state: GameState): string | null {
   return null;
 }
 
+/** CB-12/40（M16）: 「前回と同じ」を使えるか = 行動可能な者に lastBattleInput が 1 人でもある（BattleMenu.canRepeat と checkRepeat が共有する） */
+function canRepeatOf(state: GameState): boolean {
+  return state.party.some((c) => canAct(c) && c.lastBattleInput !== null);
+}
+
 /** battle.repeat を受け付けない理由（CB-12/40。state.battle が非 null の前提） */
 export function checkRepeat(state: GameState): string | null {
   const b = requireBattle(state);
   if (b.auto) return "auto on";
+  if (!canRepeatOf(state)) return "no last input";
   return null;
 }
 
@@ -1243,6 +1251,7 @@ export function battleMenu(state: GameState, data: GameData): BattleMenu | null 
     round: b.round,
     auto: b.auto,
     canFlee: canFleeOf(b),
+    canRepeat: canRepeatOf(state),
     ready: checkResolve(state, data) === null,
     pending: b.auto ? [] : members.filter((m) => m.canAct && m.input === null).map((m) => m.id),
     groups: groupViews(state, data),

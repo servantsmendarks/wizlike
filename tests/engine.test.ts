@@ -486,6 +486,7 @@ describe("UI-57 debug.hpOne（開発用）", () => {
     const d = dataWith({ combat: { hitMin: 100, hitMax: 100 } });
     const s0 = withBattle(dived(1), [{ monsterId: "kobold", hps: [999] }, { monsterId: "kobold", hps: [999] }, { monsterId: "kobold", hps: [999] }]);
     let s = execute(s0, HP_ONE, d).state;
+    for (const c of s.party) c.lastBattleInput = { type: "attack", group: 0 }; // CB-40/CB-12（M16）: 前回と同じは手入力があるときだけ（誰が倒れても残るよう全員）
     expect(s.party.every((c) => c.hp === 1)).toBe(true);
     let wiped = false;
     // 「前回と同じ」（オート入力の規則で 1 ラウンド解決）を戦闘が終わるまで送る

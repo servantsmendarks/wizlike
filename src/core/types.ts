@@ -112,7 +112,7 @@ export type Character = {
   equipment: Record<EquipSlot, string | null>;
   /** CH-71: 装備していない所持品の ItemInstance.id。使用枠 = 装備数 + inventory.length */
   inventory: string[];
-  /** CB-40。M3 で使う */
+  /** CB-40。手入力の最後の行動。戦闘の開始で null に戻る（M16） */
   lastBattleInput: BattleAction | null;
 };
 
@@ -623,6 +623,8 @@ export type BattleMenu = {
   auto: boolean;
   /** CB-02: origin が random か alarm のときだけ真 */
   canFlee: boolean;
+  /** CB-12/40（M16）: 行動可能な者に lastBattleInput が 1 人でもあれば真。偽なら battle.repeat は rejected（no last input） */
+  canRepeat: boolean;
   /** battle.resolve を受け付けるか（checkResolve(state, data) === null と同値） */
   ready: boolean;
   /** 行動可能で未入力のメンバーの id（並び順）。オート中は [] */

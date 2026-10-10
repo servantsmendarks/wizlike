@@ -1314,7 +1314,7 @@ describe("オート（CB-40〜43、F2）", () => {
     const s = setup([{ monsterId: "giant_rat", hps: [200] }], {
       identified: ["giant_rat"],
       inputs: {},
-      patches: { c1: { hp: 30, hpMax: 100 }, c2: STONE, c3: STONE },
+      patches: { c1: { hp: 30, hpMax: 100, lastBattleInput: atk(0) }, c2: STONE, c3: STONE }, // CB-12/40（M16）: 前回の手入力が要る
     });
     const r = exec(s, REPEAT, d);
     expect(member(r.state, "c1").hp).toBeLessThan(30); // CB-43 の hp 条件の遷移は起きている
@@ -1347,28 +1347,92 @@ describe("オート（CB-40〜43、F2）", () => {
     expect(member(r.state, "c2").lastBattleInput).toEqual(atk(0));
   });
 
-  test("CB-12/CB-40 battle.repeat は行動可能な味方 0 人（麻痺と睡眠だけ）でも受け付け、battle.resolve と同じ events・rng・battle になる", () => {
-    // battle.flee（no actor で rejected）と違い、repeat は auto だけを拒否する（decisions の Y1）
+  test("CB-12/CB-40 battle.repeat は行動可能な味方 0 人（麻痺と睡眠だけ）なら canRepeat 偽で rejected no last input（行動不能の者の lastBattleInput は数えない。M16 で Y1 を改めた）。battle.resolve は受け付ける", () => {
     const s = setup([{ monsterId: "giant_rat", hps: [50] }], {
       identified: ["giant_rat"],
       inputs: {},
-      patches: { c1: { status: ["sleep"] }, c2: PARA, c3: PARA, c4: PARA, c5: PARA, c6: PARA },
+      patches: {
+        c1: { status: ["sleep"], lastBattleInput: atk(0) },
+        c2: { ...PARA, lastBattleInput: DEF },
+        c3: PARA,
+        c4: PARA,
+        c5: PARA,
+        c6: PARA,
+      },
     });
-    const got = exec(s, REPEAT);
-    expect(got.events[0]?.kind).not.toBe("rejected");
+    expect(battleMenu(s, data)!.canRepeat).toBe(false);
+    expectRejected(s, REPEAT, "no last input");
     const want = exec(cloneState(s), RESOLVE);
     expect(want.events[0]?.kind).not.toBe("rejected");
-    expect(got.events).toEqual(want.events);
-    expect(got.state.rng).toEqual(want.state.rng);
-    expect(got.state.battle).toEqual(want.state.battle);
     // 味方は誰も行動しない（敵だけのラウンド）
-    expect(eventsOf(got.events, "attack").every((e) => e.actorId.startsWith("e"))).toBe(true);
+    expect(eventsOf(want.events, "attack").every((e) => e.actorId.startsWith("e"))).toBe(true);
+  });
+
+  test("CB-12/CB-40 BattleMenu.canRepeat は行動可能な者に lastBattleInput が 1 人でもあれば真。偽なら battle.repeat は rejected no last input（オート中は auto on が先）", () => {
+    const none = setup([{ monsterId: "giant_rat", hps: [50] }], { identified: ["giant_rat"], inputs: {} });
+    expect(none.party.every((c) => c.lastBattleInput === null)).toBe(true);
+    expect(battleMenu(none, data)!.canRepeat).toBe(false);
+    expectRejected(none, REPEAT, "no last input");
+    const one = setup([{ monsterId: "giant_rat", hps: [50] }], { identified: ["giant_rat"], inputs: {}, patches: { c6: { lastBattleInput: DEF } } });
+    expect(battleMenu(one, data)!.canRepeat).toBe(true);
+    expect(exec(one, REPEAT).events[0]?.kind).not.toBe("rejected");
+    // 持っているのが行動不能の者だけなら偽
+    const para = setup([{ monsterId: "giant_rat", hps: [50] }], { identified: ["giant_rat"], inputs: {}, patches: { c6: { ...PARA, lastBattleInput: DEF } } });
+    expect(battleMenu(para, data)!.canRepeat).toBe(false);
+    expectRejected(para, REPEAT, "no last input");
+    const auto = setup([{ monsterId: "giant_rat", hps: [50] }], { identified: ["giant_rat"], inputs: {}, auto: true });
+    expectRejected(auto, REPEAT, "auto on");
+  });
+
+  test("CB-40 戦闘の開始（startBattle）で全員の lastBattleInput を null にする（攻撃・防御・呪文・道具のすべて）。乱数も出来事も、元から null の state と同じ", () => {
+    const d = dataWith({ combat: { surpriseDiff: 1000 } });
+    const spec = [{ monsterId: "kobold", count: 2 }];
+    const s0 = patchParty(dived(1), {
+      c1: { lastBattleInput: atk(1) },
+      c2: { lastBattleInput: DEF },
+      c5: { lastBattleInput: { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 0 } } },
+      c6: { lastBattleInput: { type: "item", instanceId: "i1", target: { side: "ally", memberId: "c1" } } },
+    });
+    const plain = patchParty(dived(1), {});
+    expect(plain.party.every((c) => c.lastBattleInput === null)).toBe(true);
+    const a = runCtx(s0, d, (c) => startBattle(c, { kind: "random", inRoom: false }, spec));
+    const b = runCtx(plain, d, (c) => startBattle(c, { kind: "random", inRoom: false }, spec));
+    expect(a.state.party.map((c) => c.lastBattleInput)).toEqual([null, null, null, null, null, null]);
+    expect(a.events).toEqual(b.events);
+    expect(a.state).toEqual(b.state);
+    expect(battleMenu(a.state, d)!.canRepeat).toBe(false);
+    expectRejected(a.state, REPEAT, "no last input", d);
+  });
+
+  test("CB-40/CB-12 同じ戦闘のラウンド 2 では前のラウンドの手入力を繰り返す（ラウンドの解決では消えない。canRepeat が真になる）", () => {
+    const d = dataWith({ combat: { surpriseDiff: 1000 } });
+    const ctx = runCtx(dived(1), d, (c) => startBattle(c, { kind: "random", inRoom: false }, [{ monsterId: "kobold", count: 2 }]));
+    let s = ctx.state;
+    for (const u of s.battle!.groups[0]!.units) {
+      u.hp = 500;
+      u.hpMax = 500;
+    }
+    expect(battleMenu(s, d)!.canRepeat).toBe(false);
+    s = exec(s, input("c1", atk(0)), d).state;
+    expect(battleMenu(s, d)!.canRepeat).toBe(true); // 手入力の直後から真
+    for (const c of s.party) if (c.id !== "c1" && canAct(c)) s = exec(s, input(c.id, DEF), d).state;
+    const r1 = exec(s, RESOLVE, d);
+    expect(r1.state.battle).not.toBeNull();
+    expect(r1.state.battle!.round).toBe(1);
+    expect(member(r1.state, "c1").lastBattleInput).toEqual(atk(0));
+    expect(battleMenu(r1.state, d)!.canRepeat).toBe(true);
+    expect(autoInput(r1.state, d, member(r1.state, "c1"))).toEqual(atk(0));
+    const r2 = exec(r1.state, REPEAT, d);
+    expect(r2.events[0]?.kind).not.toBe("rejected");
+    expect(r2.state.battle!.round).toBe(2);
+    expect(eventsOf(r2.events, "attack").some((e) => e.actorId === "c1")).toBe(true);
   });
 
   test("CB-04/CB-12 battle.repeat でも味方の奇襲のラウンドでは敵が行動しない（消費して false に戻る）", () => {
     const d = dataWith({ combat: { surpriseDiff: -1000, ...ALWAYS_HIT } });
     const ctx = runCtx(dived(1), d, (c) => startBattle(c, { kind: "random", inRoom: false }, [{ monsterId: "kobold", count: 2 }]));
     expect(ctx.state.battle!.partySurprise).toBe(true);
+    member(ctx.state, "c1").lastBattleInput = atk(0); // CB-40（M16）: 開始で消えるので、この戦闘の手入力があったことにする
     const r = exec(ctx.state, REPEAT, d);
     expect(eventsOf(r.events, "attack").filter((e) => e.actorId.startsWith("e"))).toEqual([]);
     expect(eventsOf(r.events, "attack").some((e) => e.actorId.startsWith("c"))).toBe(true);
@@ -1967,7 +2031,7 @@ describe("網羅（完了条件「6 種と戦える」、敵の id、battleMenu�
     ["battle.repeat", REPEAT, false],
     ["battle.flee", FLEE, false],
   ] as const)("§3-2 決定性: %s を同じ state で 2 回呼ぶと deep-equal、引数の state を書き換えない、JSON 往復で変わらない", (_name, cmd, auto) => {
-    const s = setup([{ monsterId: "giant_rat", hps: [5, 5] }, { monsterId: "kobold", hps: [4] }], { inputs: {}, auto });
+    const s = setup([{ monsterId: "giant_rat", hps: [5, 5] }, { monsterId: "kobold", hps: [4] }], { inputs: {}, auto, patches: { c1: { lastBattleInput: atk(0) } } });
     const before = JSON.stringify(s);
     const a = execute(s, cmd, data);
     const b = execute(s, cmd, data);
@@ -2398,7 +2462,7 @@ describe("拍（CB-55）", () => {
 
   test("CB-55 auto: battle.auto on の resolve の拍はすべて auto true、battle.repeat は false。ラウンドの終わりでオートが解除されるときは、その system の拍が true", () => {
     const d = dataWith({ combat: ALWAYS_HIT });
-    const s = setup([{ monsterId: "giant_rat", hps: [50, 50] }], { identified: ["giant_rat"] });
+    const s = setup([{ monsterId: "giant_rat", hps: [50, 50] }], { identified: ["giant_rat"], patches: { c1: { lastBattleInput: atk(0) } } });
     const on = exec(exec(s, AUTO_ON, d).state, RESOLVE, d);
     const beats = eventsOf(on.events, "beat");
     expect(beats.length).toBeGreaterThan(0);
@@ -2737,7 +2801,7 @@ describe("戦闘の表示の圧縮（CB-55 / CB-23 / CB-24。M14）", () => {
 describe("冒険のターン数（TW-12。M5.5）", () => {
   test("TW-12 battle.resolve・battle.repeat・逃走の失敗・敵の奇襲のラウンドでは battle.round と同じだけ増え、逃走の成功では増えない", () => {
     const base = (): GameState => {
-      const s = setup([{ monsterId: "giant_rat", hps: [500] }], { identified: ["giant_rat"] });
+      const s = setup([{ monsterId: "giant_rat", hps: [500] }], { identified: ["giant_rat"], patches: { c1: { lastBattleInput: DEF } } });
       s.adventureTurns = 10;
       return s;
     };

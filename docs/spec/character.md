@@ -137,3 +137,4 @@ M7 で、装備品の分類（汎用 / ユニーク）・実体の形・レベ�
 `id, name, raceId, classId, personality (PersonalityId | null), isLeader, stats, level, exp, maxLevelReached, levelHistory[], hp, hpMax, mp, mpMax, san, sanMax, life, status[], knownSpells[], equipment{slot: itemInstanceId}, inventory[itemInstanceId], lastBattleInput`
 `maxLevelReached` は職業ごとの記録 `{ [classId]: レベル }`（CH-63。M10）。
 `equipment` は 6 スロットのキーをすべて持ち、空きは null。アイテムは実体の id（`GameState.items`）で持つ。
+`lastBattleInput` はその戦闘で最後に手入力した行動（CB-40）。戦闘の開始で null に戻る（M16）。
