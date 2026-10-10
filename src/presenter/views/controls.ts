@@ -7,6 +7,8 @@
 // M10.5 追補（未定-24）: 一覧の左の 8px の列に続きの印（scroll-marks.ts。上端の行の左・下端の行の左）を出す。
 // M8.5: 街の一覧（setList の town。UI-13）は、見出しと一覧を操作領域の外の townLayout の位置（帯の下。y178..387）に置く（負の top）。
 // M10: 街の施設メニュー（setBattleMenu の town。UI-13 / UI-52）は、見出しと 48×48 の 3 列 × 2 段を同じく townLayout の位置に置く。
+// M16: 迷宮・戦闘の広い一覧（setList の wide。UI-11 / UI-13）は、一覧を layout.listWide の位置（パーティ欄の上端から。22px の行）に置き、
+//   出ている間は onWideChange(true) で知らせる（dungeon.ts がパーティ欄を隠す）。固定の戻るは listBack のまま。
 // Action から Command への変換と長押しの連打は呼び出し側（app）が持つ。表示層は前進できるかを判定しない（UI-35）。
 // モジュールのトップレベルでは DOM に触れない。
 import type { AudioData, Strings } from "../../core/data/index";
@@ -62,9 +64,11 @@ export type Controls = {
    * 添字（select・setListFocus・数字キー）は fixedLast によらず items の順（末尾が戻る / やめる）。
    * fixedLastCancel が false なら、固定した末尾は戻る / やめるではない項目として扱い、取り消しの音にしない（UI-70 の宝箱の最初の段の [放っておく]。既定は true）。
    * town（M8.5。UI-13 の街の一覧）なら、見出し（town.heading。accent 色の 1 行。押せない）と一覧を layout.townList の位置に置く
-   * （行の高さは townList の行、幅は 168。固定の戻るは listBack のまま）
+   * （行の高さは townList の行、幅は 168。固定の戻るは listBack のまま）。
+   * wide（M16。UI-11 / UI-13 の迷宮・戦闘の広い一覧）なら、一覧を layout.listWide の位置に置く（行の高さ 22、幅は fixedLast なら 168・無ければ 224。
+   * 固定の戻るは listBack のまま）。list モードで出ている間は onWideChange(true)
    */
-  setList(items: ControlItem[], opts?: { fixedLast?: boolean; fixedLastCancel?: boolean; town?: { heading: string } }): void;
+  setList(items: ControlItem[], opts?: { fixedLast?: boolean; fixedLastCancel?: boolean; town?: { heading: string }; wide?: boolean }): void;
   /**
    * UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠 / campGrid の 8 枠 / townList.grid の 6 枠）に並べる。
    * null は空き枠（何も置かない）。枠数を超える分は捨てる。
@@ -120,9 +124,9 @@ function buttonStyle(b: HTMLElement, r: Rect, origin: Rect): void {
   });
 }
 
-/** UI-36（M7）: 一覧の行の見た目を決める値の印（文言・dim・注目の有無・固定の戻るか・行の幅と高さ・街の一覧か） */
-function listRowSig(it: ControlItem, isBack: boolean, w: number, h: number, town: boolean): string {
-  return JSON.stringify([it.label, it.disabled === true, it.onFocus !== undefined, isBack, w, h, town]);
+/** UI-36（M7）: 一覧の行の見た目を決める値の印（文言・dim・注目の有無・固定の戻るか・行の幅と高さ・街の一覧か・広い一覧か） */
+function listRowSig(it: ControlItem, isBack: boolean, w: number, h: number, town: boolean, wide: boolean): string {
+  return JSON.stringify([it.label, it.disabled === true, it.onFocus !== undefined, isBack, w, h, town, wide]);
 }
 
 function sameSigs(a: readonly string[], b: readonly string[]): boolean {
@@ -139,7 +143,7 @@ function setShown(el: HTMLElement, on: boolean): void {
  */
 export function createControls(o: {
   region: Rect;
-  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "listNarrow" | "listBack" | "mapClose" | "mapGo" | "battleParty" | "battleMember" | "autoStop" | "campGrid"> & {
+  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "listNarrow" | "listBack" | "listWide" | "mapClose" | "mapGo" | "battleParty" | "battleMember" | "autoStop" | "campGrid"> & {
     /** UI-13（M8.5）: 街の一覧の位置（省略時は街の一覧も layout.list の位置） */
     townList?: TownListLayout;
   };
@@ -157,6 +161,8 @@ export function createControls(o: {
    * 十字ボタン・地図の「移動」・オート解除では鳴らさない。省略すると無音
    */
   onSound?(k: UiSound): void;
+  /** UI-11 / UI-13（M16）: 広い一覧（setList の wide）が list モードで出た（true）・引っ込んだ（false）。変わったときだけ呼ぶ */
+  onWideChange?(on: boolean): void;
 }): Controls {
   const s = (key: string): string => o.strings[key] ?? key;
   const origin = o.region;
@@ -227,6 +233,12 @@ export function createControls(o: {
   };
   const townRow = town.rows[0] ?? { ...town.area, h: first.h };
   let listTownOn = false;
+  /** UI-11 / UI-13（M16）: 迷宮・戦闘の広い一覧の位置 */
+  const wide = o.layout.listWide;
+  const wideRow = wide.rows[0] ?? { ...wide.area, h: first.h };
+  let listWideOn = false;
+  /** onWideChange に最後に知らせた値 */
+  let wideShown = false;
   /** UI-13（M8.5）: 街の一覧の見出し（押せない 1 行。accent 色） */
   const heading = document.createElement("div");
   heading.className = "controls-list-heading";
@@ -256,15 +268,18 @@ export function createControls(o: {
     overflowX: "hidden",
   });
   el.appendChild(list);
-  /** 一覧の容器の矩形（ステージ座標）。on なら街の位置（townList.area） */
-  const listRect = (on: boolean): Rect => (on ? town.area : { x: first.x, y: first.y, w: first.w, h: last.y + last.h - first.y });
+  /** 一覧の位置: normal は layout.list、town は街（townList.area）、wide は迷宮・戦闘の広い一覧（listWide.area） */
+  type ListPlace = "normal" | "town" | "wide";
+  /** 一覧の容器の矩形（ステージ座標） */
+  const listRect = (at: ListPlace): Rect =>
+    at === "town" ? town.area : at === "wide" ? wide.area : { x: first.x, y: first.y, w: first.w, h: last.y + last.h - first.y };
   /** 一覧の続きの印の位置（操作領域の原点からの座標） */
-  const listMarkPos = (on: boolean) => {
-    const r = listRect(on);
+  const listMarkPos = (at: ListPlace) => {
+    const r = listRect(at);
     return marksLeftOf({ x: r.x - origin.x, y: r.y - origin.y, h: r.h });
   };
   // UI-11（M10.5 追補）: 一覧の続きの印
-  const listMarks = attachScrollMarks({ scroller: list, host: el, strings: o.strings, pos: listMarkPos(false) });
+  const listMarks = attachScrollMarks({ scroller: list, host: el, strings: o.strings, pos: listMarkPos("normal") });
   let listItems: ControlItem[] = [];
   /** 行の要素（fixedLast なら末尾は listBack のボタン）。添字は listItems と同じ */
   let listButtons: HTMLElement[] = [];
@@ -279,11 +294,11 @@ export function createControls(o: {
   const listBack = document.createElement("div");
   listBack.className = "controls-list-back";
   el.appendChild(listBack);
-  /** 一覧の容器を通常（layout.list）か街の位置（townList.area）に置く */
-  const placeList = (on: boolean): void => {
-    const r = listRect(on);
+  /** 一覧の容器を通常（layout.list）・街（townList.area）・広い一覧（listWide.area）の位置に置く */
+  const placeList = (at: ListPlace): void => {
+    const r = listRect(at);
     Object.assign(list.style, { left: `${r.x - origin.x}px`, top: `${r.y - origin.y}px`, height: `${r.h}px` });
-    listMarks.place(listMarkPos(on));
+    listMarks.place(listMarkPos(at));
   };
 
   // ---- 地図の「閉じる」
@@ -350,6 +365,12 @@ export function createControls(o: {
     setShown(mapGo, mode === "map");
     setShown(battle, mode === "battle");
     setShown(autoStop, mode === "autoStop");
+    // UI-11 / UI-13（M16）: 広い一覧が出ている間はパーティ欄を隠す（呼び出し側）。変わったときだけ知らせる
+    const wideNow = mode === "list" && listWideOn;
+    if (wideNow !== wideShown) {
+      wideShown = wideNow;
+      o.onWideChange?.(wideNow);
+    }
     // UI-11（M10.5 追補）: 一覧を出し入れした・中身を替えた後の続きの印（隠れている一覧は寸法が 0 で印も消える）
     listMarks.refresh();
   };
@@ -406,19 +427,22 @@ export function createControls(o: {
         menu.appendChild(b);
       });
     },
-    setList(items: ControlItem[], opts?: { fixedLast?: boolean; fixedLastCancel?: boolean; town?: { heading: string } }): void {
+    setList(items: ControlItem[], opts?: { fixedLast?: boolean; fixedLastCancel?: boolean; town?: { heading: string }; wide?: boolean }): void {
       const fixed = opts?.fixedLast === true && items.length > 0;
       listBackCancel = opts?.fixedLastCancel !== false;
       const townOn = opts?.town !== undefined;
-      // UI-13: 街の一覧は戻るの有無によらず幅 168（townList.area の幅）
-      const rowW = townOn ? town.area.w : fixed ? narrow.w : first.w;
-      const rowH = townOn ? townRow.h : first.h;
+      // UI-11 / UI-13（M16）: 広い一覧（街の一覧が優先）
+      const wideOn = !townOn && opts?.wide === true;
+      // UI-13: 街の一覧は戻るの有無によらず幅 168（townList.area の幅）。広い一覧は通常の一覧と同じ幅（固定の戻るがあれば 168）
+      const rowW = townOn ? town.area.w : fixed ? narrow.w : wideOn ? wide.area.w : first.w;
+      const rowH = townOn ? townRow.h : wideOn ? wideRow.h : first.h;
       if (opts?.town !== undefined && heading.textContent !== opts.town.heading) heading.textContent = opts.town.heading;
-      const sigs = items.map((it, k) => listRowSig(it, fixed && k === items.length - 1, rowW, rowH, townOn));
+      const sigs = items.map((it, k) => listRowSig(it, fixed && k === items.length - 1, rowW, rowH, townOn, wideOn));
       listItems = items.slice();
       list.scrollTop = 0;
       listTownOn = townOn;
-      placeList(listTownOn);
+      listWideOn = wideOn;
+      placeList(townOn ? "town" : wideOn ? "wide" : "normal");
       if (sameSigs(sigs, listSigs)) {
         // UI-36 / UI-44（M7）: 行がすべて同じ（文言・dim・注目の有無・位置）なら要素を作り直さず、押したときの項目だけ替える。
         // 再生の終わりの描き直しで、再生中に押し始めて後で離した行（宿の後の戻るなど）が DOM から外れて捨てられないように

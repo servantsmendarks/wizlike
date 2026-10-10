@@ -459,6 +459,26 @@ describe("UI-59 キャラクター画面の層（placeDice / applyPanels）", ()
     // 全滅の列: 内訳が開く（迷宮・戦闘の route の間）→ screen{town} で街の route（carry を箱に出す）→「街へ」で閉じる
     expect([kindOf("battle", true), kindOf("dungeon", true), kindOf("town", true), kindOf("town", false)]).toEqual(["wipe", "wipe", "wipe", "town"]);
   });
+
+  test("UI-11/UI-13（M16）広い一覧（listWide）が出ている間は迷宮・戦闘でもパーティ欄だけを隠す（メッセージ窓は出したまま。呪文の説明 UI-68）。判定の箱の下端と会話の箱は変えない。閉じれば戻す", async () => {
+    const { applyPanels } = await import("../src/presenter/views/dungeon");
+    const { DICE_BOX_BOTTOM } = await import("../src/presenter/views/dice");
+    const B = { town: 94, compact: 57 };
+    for (const mode of ["dungeon", "battle"] as const) {
+      const message = new LayerEl("message");
+      const panel = new LayerEl("panel");
+      let bottom = -1;
+      let rect: string | null = null;
+      const p = { message, panel, setDiceBottom: (b: number) => (bottom = b), setTalkRect: (k: string) => (rect = k) };
+      applyPanels(mode, false, false, p, B, true);
+      expect([message.style.display, panel.style.display, bottom, rect]).toEqual(["", "none", DICE_BOX_BOTTOM, "compact"]);
+      applyPanels(mode, false, false, p, B, false);
+      expect([message.style.display, panel.style.display]).toEqual(["", ""]);
+      // 省略は偽（今までどおり）
+      applyPanels(mode, false, false, p, B);
+      expect(panel.style.display).toBe("");
+    }
+  });
 });
 
 describe("DG-44 / UI-53 階段のボタンの文言（M16）", () => {

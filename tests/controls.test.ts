@@ -466,6 +466,63 @@ describe("controls", () => {
     expect(heading.style["display"]).toBe("none");
   });
 
+  test("UI-11/UI-13/UI-10（M16）setList(wide) は一覧を listWide の位置（x8・y238。操作領域の原点 y300 から −62）の高さ 154（22 × 7 行）に置く。7 件までは欄に収まり、8 件目からは縦スクロール。行は onTap で押せる（tapSpecOf）。固定の戻るは listBack のまま、固定しない一覧は幅 224。wide なしで元の位置に戻す", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const wides: boolean[] = [];
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, hold: HOLD, onClose: () => {}, onWideChange: (on) => wides.push(on) });
+    const list = created.find((e) => e.className === "controls-list")!;
+    const holder = created.find((e) => e.className === "controls-list-back")!;
+    const picked: number[] = [];
+    const rows = (n: number) => Array.from({ length: n }, (_, i) => ({ label: `r${i}`, onSelect: () => picked.push(i) }));
+    // 7 件（と固定の戻る）: 欄の高さ 154 に 22px の行が 7 つちょうど収まる
+    c.setList([...rows(7), { label: "back", onSelect: () => picked.push(99) }], { fixedLast: true, wide: true });
+    c.setMode("list");
+    expect([list.style["left"], list.style["top"], list.style["width"], list.style["height"], list.style["overflowY"]]).toEqual(["8px", "-62px", "168px", "154px", "auto"]);
+    expect(list.children.map((e) => e.style["height"])).toEqual(Array.from({ length: 7 }, () => "22px"));
+    expect(list.children.map((e) => e.style["width"])).toEqual(Array.from({ length: 7 }, () => "168px"));
+    expect(7 * 22).toBeLessThanOrEqual(parseInt(list.style["height"]!, 10));
+    // 固定の戻るは今までと同じ操作領域の x178・y54（56×40）
+    expect(holder.children.map((e) => [e["textContent"], e.style["left"], e.style["top"]])).toEqual([["back", "178px", "54px"]]);
+    // 行は onTap で押せる（UI-36）。添字・数字キーは items の順
+    for (const b of list.children) expect(tapSpecOf(b)).not.toBeNull();
+    list.children[6]!.tap();
+    c.select(7);
+    expect(picked).toEqual([6, 99]);
+    // 出ている間は onWideChange(true)（パーティ欄を隠す）
+    expect(wides).toEqual([true]);
+    // 8 件: 中身（22 × 8 = 176）が欄（154）を超えるので縦スクロール（UI-11）
+    c.setList([...rows(8), { label: "back", onSelect: () => {} }], { fixedLast: true, wide: true });
+    expect(list.children).toHaveLength(8);
+    expect(8 * 22).toBeGreaterThan(parseInt(list.style["height"]!, 10));
+    expect(list.style["overflowY"]).toBe("auto");
+    // 固定しない一覧（保留中の選択）は幅 224
+    c.setList(rows(2), { wide: true });
+    expect([list.style["top"], list.style["width"], list.style["height"]]).toEqual(["-62px", "224px", "154px"]);
+    expect(list.children.map((e) => e.style["width"])).toEqual(["224px", "224px"]);
+    expect(holder.style["display"]).toBe("none");
+    expect(wides).toEqual([true]);
+    // 一覧以外のモードにすると onWideChange(false)（パーティ欄を戻す）。出し直すと再び true
+    c.setMode("none");
+    c.setMode("list");
+    c.setMode("battle");
+    expect(wides).toEqual([true, false, true, false]);
+    // wide なし（キャンプの一覧など）は元の位置（layout.list: x8・y302・高さ 96、行 32px）で、onWideChange は呼ばない
+    c.setList([{ label: "a", onSelect: () => {} }, { label: "back", onSelect: () => {} }], { fixedLast: true });
+    c.setMode("list");
+    expect([list.style["left"], list.style["top"], list.style["width"], list.style["height"]]).toEqual(["8px", "2px", "168px", "96px"]);
+    expect(list.children.map((e) => e.style["height"])).toEqual(["32px"]);
+    expect(wides).toEqual([true, false, true, false]);
+    // 出ている一覧を wide に替えると true、wide でない一覧に替えると false
+    c.setList(rows(3), { wide: true });
+    c.setList(rows(3));
+    expect(wides).toEqual([true, false, true, false, true, false]);
+    // 街の一覧（town）が優先（wide を付けても街の位置。パーティ欄は街では元から無い）
+    c.setList(rows(3), { town: { heading: "h" }, wide: true });
+    expect(wides).toEqual([true, false, true, false, true, false]);
+  });
+
   test("UI-11 一覧は出すたびに先頭から: setMode(\"list\") で一覧の scrollTop を 0 にする（表示した後にも戻す）", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);

@@ -143,7 +143,7 @@ describe("UI-11（M10.5 追補）各窓の続きの印", () => {
   const TL = townLayout(g, data.config.party.size);
   const HOLD = { ms: () => 250, onHoldStart: () => {}, onHoldEnd: () => {} };
 
-  test("UI-11 操作領域の一覧（迷宮・戦闘・キャンプ・街）: 一覧の左の 8px の列（x0）に印。迷宮は y302 と y389、街は y190 と y380。行が収まれば出さず、スクロールで出入りし、一覧を隠すと消える", () => {
+  test("UI-11 操作領域の一覧（迷宮・戦闘・キャンプ・街）: 一覧の左の 8px の列（x0）に印。迷宮は y302 と y389、街は y190 と y380、迷宮・戦闘の広い一覧（M16。UI-13）は y238 と y384。行が収まれば出さず、スクロールで出入りし、一覧を隠すと消える", () => {
     const created = fakeDocument();
     const c = createControls({
       region: g.controls,
@@ -193,6 +193,19 @@ describe("UI-11（M10.5 追補）各窓の続きの印", () => {
     expect([at(up), at(down)]).toEqual([
       ["0px", "-110px"],
       ["0px", "80px"],
+    ]);
+    expect(vis(up, down)).toEqual({ up: "hidden", down: "visible" });
+    // M16（UI-11 / UI-13）: 迷宮・戦闘の広い一覧（x8・y238・高さ 154）→ 印 x0・y238 / y384（原点 y300 から −62 / 84）。8 件で下に印
+    list.viewH = 154;
+    list.contentH = 22 * 8;
+    c.setList(
+      Array.from({ length: 9 }, (_, i) => ({ label: `w${i}`, onSelect: () => {} })),
+      { fixedLast: true, wide: true },
+    );
+    c.setMode("list");
+    expect([at(up), at(down)]).toEqual([
+      ["0px", "-62px"],
+      ["0px", "84px"],
     ]);
     expect(vis(up, down)).toEqual({ up: "hidden", down: "visible" });
   });

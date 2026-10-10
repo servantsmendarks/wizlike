@@ -9,6 +9,8 @@
 //   キャラクター画面（UI-59。M10）と図鑑（IT-66。酒場だけ）は layout.character（ビューの上端から操作領域の上端まで）に広げるので、DOM では帯の後に置く。
 //   キャラクター画面の間（setCharacterOpen）は、パーティ欄とメッセージ窓を隠し（パーティ欄はキャンプより上の層なので、隠さないと覆う）、
 //   判定の箱をキャンプより上・会話の箱より下の層（diceLayer。ビューと同じ位置・寸法、押せない）へ移して会話の箱の上（townLayout の diceBottom）に出す。
+// - 迷宮・戦闘の広い一覧（UI-11 / UI-13。M16）: controls の setList の wide が出ている間（onWideChange）は、パーティ欄を隠す
+//   （一覧がパーティ欄の上端から操作領域の下端までを使う）。線画・敵の絵・メッセージ窓（呪文の説明 UI-68）は見えたまま。
 // - 戦闘（UI-54）: ビューの中に敵グループの層（views/battle.ts）を重ね、battle の間は線画・街の絵を隠す。
 //   ダイスの overlay（views/dice.ts、UI-40）はビューの中のいちばん上（モードを問わない）。全体攻撃の揺れ（UI-42）はビュー全体の translate。
 // 各部品の位置と大きさは、config.ui.layout から作った regions と dungeonLayout（layout.ts）から決める。
@@ -120,7 +122,8 @@ export type Displayed = { style: { display: string } };
  * UI-13 / UI-59 / UI-40（M10。M10.5）: メッセージ窓・パーティ欄・判定の箱の下端・会話の箱の大きさ。街かキャラクター画面なら窓と欄を隠し、
  * 判定の箱の下端を会話の箱の上に上げる（街は絵の下端の上 diceBottom.town、迷宮のキャラクター画面は 3 行の箱の上 diceBottom.compact）。
  * それ以外は窓と欄を出し、箱は迷宮の下端（DICE_BOX_BOTTOM）。会話の箱は街の外（迷宮のキャラクター画面）では 3 行の箱（compact）。
- * 全滅の内訳（UI-56）が出ている間は、街でも内訳の下・「街へ」の上の 3 行の箱（wipe。M10.5 追補 2・未定-25。広い箱は「街へ」を覆う）
+ * 全滅の内訳（UI-56）が出ている間は、街でも内訳の下・「街へ」の上の 3 行の箱（wipe。M10.5 追補 2・未定-25。広い箱は「街へ」を覆う）。
+ * listWide（M16。UI-11 / UI-13 の迷宮・戦闘の広い一覧が出ている）ならパーティ欄だけを隠す（メッセージ窓は出したまま）
  */
 export function applyPanels(
   mode: PlayMode,
@@ -128,10 +131,11 @@ export function applyPanels(
   wipeOpen: boolean,
   p: { message: Displayed; panel: Displayed; setDiceBottom(bottom: number): void; setTalkRect?(kind: TalkRectKind): void },
   diceBottom: { town: number; compact: number },
+  listWide = false,
 ): void {
   const hide = mode === "town" || characterOpen;
   p.message.style.display = hide ? "none" : "";
-  p.panel.style.display = hide ? "none" : "";
+  p.panel.style.display = hide || listWide ? "none" : "";
   p.setDiceBottom(mode === "town" ? diceBottom.town : characterOpen ? diceBottom.compact : DICE_BOX_BOTTOM);
   p.setTalkRect?.(wipeOpen ? "wipe" : mode === "town" ? "town" : "compact");
 }
@@ -261,6 +265,8 @@ export function createDungeonScreen(o: {
     },
   };
 
+  /** UI-11 / UI-13（M16）: 迷宮・戦闘の広い一覧が出ているか（controls の onWideChange。出ている間はパーティ欄を隠す） */
+  let listWide = false;
   const controls = createControls({
     region: r.controls,
     layout: { ...lay, townList: { heading: tl.heading, area: tl.list.area, rows: tl.list.rows, grid: tl.grid } },
@@ -271,6 +277,11 @@ export function createDungeonScreen(o: {
     onMapGo: () => o.onMapGo?.(),
     onMapGoDim: () => o.onMapGoDim?.(),
     onSound: (k) => o.onSound?.(k),
+    // UI-11 / UI-13（M16）: 広い一覧が出ている間はパーティ欄を隠す
+    onWideChange: (on) => {
+      listWide = on;
+      syncPanels();
+    },
   });
 
   // 地図はビューの上端から、メッセージの下端まで（既定 240×220）
@@ -334,6 +345,7 @@ export function createDungeonScreen(o: {
       wipeOpen || endingOpen,
       { message: message.el, panel: panel.el, setDiceBottom: (b) => dice.setBottom(b), setTalkRect: (k) => talk.setRect(k) },
       { town: tl.diceBottom, compact: tl.diceBottomCompact },
+      listWide,
     );
 
   return {

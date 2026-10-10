@@ -392,7 +392,8 @@ describe("入力と Command", () => {
     expect(branch).toMatch(/if \(heading !== null\) play\.header\.setText\(heading\);/);
     // レビュー A-A-2（2026-10-08）: 最初の段の 4 件目 [放っておく] も一覧の外に固定する（音は取り消しにしない）ようにしたので期待を書き直した
     expect(branch).toMatch(/const lastBack = ents\[ents\.length - 1\]\?\.choice\.kind === "back";/);
-    expect(branch).toMatch(/c\.setList\(ents\.map\(chestItem\), \{ fixedLast: lastBack \|\| chestPage\.kind === "menu", fixedLastCancel: lastBack \}\);/);
+    // M16（UI-11 / UI-13）: 宝箱の段は広い一覧（wide。パーティ欄を隠す）。以前の期待値は wide なし
+    expect(branch).toMatch(/c\.setList\(ents\.map\(chestItem\), \{ fixedLast: lastBack \|\| chestPage\.kind === "menu", fixedLastCancel: lastBack, wide: true \}\);/);
     expect(branch).toMatch(/c\.setMode\("list"\);\s*return;/);
     // 4b の直書きは残っていない
     expect(branch).not.toMatch(/chest\.menu\.open/);
@@ -643,8 +644,10 @@ describe("入力と Command", () => {
     //（以前の期待値は wipeOpen なし・setTalkCompact: (on) => talk.setCompact(on)）。内訳の出し入れ（showWipe）で出し直す
     expect(dungeon).toMatch(
       // M12（UI-73）: 戦績の画面の間（endingOpen）も内訳の下の 3 行の箱（以前の期待値は wipeOpen だけ）
-      /const syncPanels = \(\): void =>\s*applyPanels\(\s*mode,\s*characterOpen,\s*wipeOpen \|\| endingOpen,\s*\{ message: message\.el, panel: panel\.el, setDiceBottom: \(b\) => dice\.setBottom\(b\), setTalkRect: \(k\) => talk\.setRect\(k\) \},\s*\{ town: tl\.diceBottom, compact: tl\.diceBottomCompact \},\s*\);/,
+      /const syncPanels = \(\): void =>\s*applyPanels\(\s*mode,\s*characterOpen,\s*wipeOpen \|\| endingOpen,\s*\{ message: message\.el, panel: panel\.el, setDiceBottom: \(b\) => dice\.setBottom\(b\), setTalkRect: \(k\) => talk\.setRect\(k\) \},\s*\{ town: tl\.diceBottom, compact: tl\.diceBottomCompact \},\s*listWide,\s*\);/,
     );
+    // M16（UI-11 / UI-13）: 広い一覧が出ている間（controls の onWideChange）はパーティ欄を隠す（以前の期待値は listWide の引数なし）
+    expect(dungeon).toMatch(/onWideChange: \(on\) => \{\s*listWide = on;\s*syncPanels\(\);\s*\}/);
     expect(dungeon).toMatch(/showWipe\(on: boolean\): void \{[\s\S]*?wipeOpen = on;\s*syncPanels\(\);\s*\}/);
     expect(dungeon).toContain('band.el.style.display = town ? "" : "none";');
     // M16（UI-46）: ヘッダーのログは街・迷宮・戦闘で常に出す（以前の期待値は header.setLogVisible(town)。街だけ出していた）
@@ -778,9 +781,13 @@ describe("入力と Command", () => {
     const town = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
     expect(town).toContain('back: e.kind === "back",');
     // 迷宮の確認（階段・地上への出口・テレポーター）の「やめる」は core が固定で入れる STAY（id は STAY_CHOICE_ID）。罠の「引き返す」は対象外
-    expect(app).toContain(
-      'c.setList(pc.options.map((op) => ({ ...listItem(t(op.labelKey), () => void run({ type: "event.choose", optionId: op.id })), back: op.id === STAY_CHOICE_ID })));',
+    // M16（UI-11 / UI-13）: 広い一覧（wide）にし、送る処理は choosePending（再生の間は下げる）に切り出した（以前の期待値は () => void run(...) を直書き・wide なし）
+    expect(app).toMatch(
+      /c\.setList\(\s*pc\.options\.map\(\(op\) => \(\{ \.\.\.listItem\(t\(op\.labelKey\), \(\) => choosePending\(op\.id\)\), back: op\.id === STAY_CHOICE_ID \}\)\),\s*\{ wide: true \},\s*\);/,
     );
+    const pending = /const choosePending = \(optionId: string\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(pending).toMatch(/play\.controls\.setMode\("none"\);\s*void run\(\{ type: "event\.choose", optionId \}\)/);
+    expect(pending).toContain("if ((r === null || r.rejected) && !isBusy()) syncControls();");
   });
 
   test("UI-52/TW-11（M9 実機 B2）準備中の迷宮の行（townEntries の notReady）を押すと、会話の箱を打ち切ってから理由の文を会話の箱に出す（ソースの検査）", () => {

@@ -27,9 +27,9 @@ export const TOUCH_MIN_LOGICAL = 30;
 
 /**
  * UI-10 の最小寸法を満たさなくてよい矩形の名前（dungeonLayout の header.settings、header.log（M8.5 の townLayout。M16 から dungeonLayout にも）・
- * パーティの帯 town.band（40×22）・一覧の行 town.list（高さ 22）。添字付きの名前 "town.band[0]" なども含む）
+ * パーティの帯 town.band（40×22）・一覧の行 town.list（高さ 22）・迷宮と戦闘の広い一覧の行 listWide（高さ 22。M16）。添字付きの名前 "town.band[0]" なども含む）
  */
-export const TOUCH_EXCEPTIONS: readonly string[] = ["header.settings", "header.log", "town.band", "town.list"];
+export const TOUCH_EXCEPTIONS: readonly string[] = ["header.settings", "header.log", "town.band", "town.list", "listWide"];
 
 /** UI-10: name が TOUCH_EXCEPTIONS の名前そのものか、その添字付き（"town.band[2]"） */
 export function isTouchException(name: string): boolean {
@@ -141,6 +141,10 @@ const MESSAGE_MORE = 8;
 export const CHARACTER_LINES = 27;
 export const CHARACTER_MIN_HEIGHT = 4 + MESSAGE_LINE_H * CHARACTER_LINES;
 
+/** UI-11 / UI-13（M16）: 迷宮・戦闘の広い一覧の行の高さ（街の一覧 TOWN_ROW_H と同じ 22。UI-10 の例外 listWide）と、パーティ欄の上端との間 */
+export const LIST_WIDE_ROW_H = 22;
+const LIST_WIDE_TOP = 2;
+
 /** パーティ欄（ui §2）。1 行 10px、上の余白は 2px（入らなければ詰める） */
 export const PARTY_ROW_H = 10;
 const PARTY_ROW_TOP = 2;
@@ -163,6 +167,13 @@ export type DungeonLayout = {
   listNarrow: Rect[];
   /** UI-11 一覧の外に固定する戻る / やめる（battleMember[4] と同じ矩形） */
   listBack: Rect;
+  /**
+   * UI-11 / UI-13（M16。設計 2-7）: 迷宮・戦闘の広い一覧（戦闘の呪文・道具・確認・対象、迷宮の保留中の選択・宝箱の段）。
+   * パーティ欄の上端 + 2 から操作領域の下端までに 22px の行（UI-10 の例外 listWide）を入るだけ（既定 x8..231・y238..391 の 7 行）。
+   * area と rows の幅は list と同じ 224 で、末尾を固定する一覧（fixedLast）は listNarrow と同じ幅 168 にして listBack と並べる。
+   * 開いている間はパーティ欄を隠す（dungeon.ts の applyPanels）
+   */
+  listWide: { area: Rect; rows: Rect[] };
   mapClose: Rect;
   /** UI-25 地図の「移動」（mapClose の真下） */
   mapGo: Rect;
@@ -220,6 +231,11 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
 
   const v = g.view;
   const overlay: Rect = { x: v.x, y: v.y, w: v.w, h: v.h + m.h };
+  // UI-11 / UI-13（M16）: 広い一覧はパーティ欄の上端 + 2 から操作領域の下端まで（x と幅は list の先頭の行と同じ）
+  const wideTop = p.y + LIST_WIDE_TOP;
+  const wideCount = Math.max(1, Math.floor((c.y + c.h - wideTop) / LIST_WIDE_ROW_H));
+  const list0 = shift(LIST_ROWS_REL[0]!, c);
+  const wideArea: Rect = { x: list0.x, y: wideTop, w: list0.w, h: wideCount * LIST_WIDE_ROW_H };
   return {
     header: { text, log, settings, turn },
     dpad,
@@ -227,6 +243,10 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
     list: LIST_ROWS_REL.map((r) => shift(r, c)),
     listNarrow: LIST_NARROW_REL.map((r) => shift(r, c)),
     listBack: shift(LIST_BACK_REL, c),
+    listWide: {
+      area: wideArea,
+      rows: Array.from({ length: wideCount }, (_, i): Rect => ({ x: wideArea.x, y: wideArea.y + LIST_WIDE_ROW_H * i, w: wideArea.w, h: LIST_WIDE_ROW_H })),
+    },
     mapClose: shift(MAP_CLOSE_REL, c),
     mapGo: shift(MAP_GO_REL, c),
     battleParty: BATTLE_PARTY_REL.map((r) => shift(r, c)),
@@ -413,6 +433,9 @@ export function layoutWarnings(g: Regions, l: DungeonLayout): string[] {
   l.list.forEach((r, i) => check(`list[${i}]`, r, "controls"));
   l.listNarrow.forEach((r, i) => check(`listNarrow[${i}]`, r, "controls"));
   check("listBack", l.listBack, "controls");
+  // UI-11 / UI-13（M16）: 広い一覧はパーティ欄と操作領域を合わせた範囲に収まる
+  const wideRegion: Rect = { x: g.party.x, y: g.party.y, w: g.party.w, h: g.controls.y + g.controls.h - g.party.y };
+  if (!inside(l.listWide.area, wideRegion)) out.push(`ui.layout: listWide does not fit in the party and controls regions`);
   check("mapClose", l.mapClose, "controls");
   check("mapGo", l.mapGo, "controls");
   l.battleParty.forEach((r, i) => check(`battleParty[${i}]`, r, "controls"));

@@ -925,7 +925,11 @@ export function createApp(o: {
     const pc = state.pendingChoice;
     if (pc !== null) {
       // UI-66（2026-10-07）: 階段・出口・テレポーターの確認の「やめる」（STAY）は位置に関わらず cancel の音。罠の「引き返す」は対象外
-      c.setList(pc.options.map((op) => ({ ...listItem(t(op.labelKey), () => void run({ type: "event.choose", optionId: op.id })), back: op.id === STAY_CHOICE_ID })));
+      // UI-11 / UI-13（M16）: 広い一覧（パーティ欄を隠す）。送ったら再生の間は下げてパーティ欄を戻す（rejected なら出し直す）
+      c.setList(
+        pc.options.map((op) => ({ ...listItem(t(op.labelKey), () => choosePending(op.id)), back: op.id === STAY_CHOICE_ID })),
+        { wide: true },
+      );
       c.setMode("list");
       return;
     }
@@ -943,7 +947,8 @@ export function createApp(o: {
       // UI-11: 人と罠の段の末尾の戻るは一覧の外に固定する。
       // UI-70: 最初の段の 4 件目 [放っておく] も同じ位置に固定し、3 行の一覧からはみ出さないようにする（戻るではないので音は取り消しにしない）
       const lastBack = ents[ents.length - 1]?.choice.kind === "back";
-      c.setList(ents.map(chestItem), { fixedLast: lastBack || chestPage.kind === "menu", fixedLastCancel: lastBack });
+      // UI-11 / UI-13（M16）: 広い一覧（パーティ欄を隠す。送る前に chooseChest が下げる）
+      c.setList(ents.map(chestItem), { fixedLast: lastBack || chestPage.kind === "menu", fixedLastCancel: lastBack, wide: true });
       c.setMode("list");
       return;
     }
@@ -963,6 +968,17 @@ export function createApp(o: {
     ]);
     c.setDpadVisible(s.inputMode !== "swipe");
     c.setMode("dpad");
+  };
+
+  /**
+   * 迷宮の保留中の選択（階段・出口・テレポーター・罠・イベント）を送る。UI-11 / UI-13（M16）: 広い一覧はパーティ欄を隠すので、
+   * 送ったら再生の間は操作を下げてパーティ欄を戻す（宝箱の送信と同じ）。受け付けたら再生の最後の sync で、rejected なら下で出し直す
+   */
+  const choosePending = (optionId: string): void => {
+    play.controls.setMode("none");
+    void run({ type: "event.choose", optionId }).then((r) => {
+      if ((r === null || r.rejected) && !isBusy()) syncControls();
+    });
   };
 
   /** キャンプの値（campMenu と、迷宮なら fieldItemMenu・campSummary）。キャンプを開けない状態なら null */
@@ -1162,7 +1178,8 @@ export function createApp(o: {
       c.setMode("battle");
     } else {
       // UI-11: 末尾の戻るは一覧の外に固定する（添字は変わらないので focus の末尾は戻る）
-      c.setList(items, { fixedLast: ents[ents.length - 1]?.choice.kind === "back" });
+      // UI-11 / UI-13（M16）: 呪文・道具・確認・対象は広い一覧（パーティ欄を隠す。味方の対象の行は HP を出す）
+      c.setList(items, { fixedLast: ents[ents.length - 1]?.choice.kind === "back", wide: true });
       c.setMode("list");
       c.setListFocus(targeting ? cur.focus : null);
     }

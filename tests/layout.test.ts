@@ -13,6 +13,7 @@ import {
   HEADER_TURN_GAP,
   HEADER_TURN_W,
   layoutWarnings,
+  LIST_WIDE_ROW_H,
   regions,
   saveBannerRect,
   isTouchException,
@@ -25,6 +26,7 @@ import {
   TITLE_ROWS,
   TOUCH_EXCEPTIONS,
   TOUCH_MIN_LOGICAL,
+  TOWN_ROW_H,
   townLayout,
   UPDATE_NOTICE,
   type Rect,
@@ -90,7 +92,16 @@ const SCREENS: Record<string, Record<string, Rect>> = {
     ...Object.fromEntries(Object.entries(L.dpad).map(([k, r]) => [`dpad.${k}`, r])),
     ...Object.fromEntries(L.menu.map((r, i) => [`menu[${i}]`, r])),
   },
-  // 選択肢（階段の確認）は迷宮の上で十字ボタンの代わりに list を出す
+  // UI-11 / UI-13（M16）迷宮・戦闘の広い一覧: 末尾を固定する一覧（戦闘の呪文・道具・確認・対象、宝箱の段）は幅 168 の 22px の行と固定の戻る、
+  // 固定しない一覧（保留中の選択）は幅 224 の行。行は UI-10 の例外 listWide
+  listWideFixed: {
+    "header.log": HEADER_LOG,
+    "header.settings": HEADER_SETTINGS,
+    ...Object.fromEntries(L.listWide.rows.map((r, i) => [`listWide[${i}]`, { ...r, w: L.listNarrow[0]!.w }])),
+    listBack: L.listBack,
+  },
+  listWideChoice: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.listWide.rows.map((r, i) => [`listWide[${i}]`, r])) },
+  // 選択肢（階段の確認）は迷宮の上で十字ボタンの代わりに list を出す（M16 からは listWideChoice の位置）
   choice: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
   // UI-25 地図: 閉じると移動
   map: { mapClose: L.mapClose, mapGo: L.mapGo },
@@ -156,8 +167,8 @@ describe("layout", () => {
         for (let j = i + 1; j < entries.length; j++)
           expect(overlaps(entries[i]![1], entries[j]![1]), `${screen} ${entries[i]![0]} / ${entries[j]![0]}`).toBe(false);
     }
-    // 例外はヘッダーの設定ボタン、M8.5 の街のログ・帯・一覧の行だけで、ヘッダーの 2 つはヘッダーの中に収まる
-    expect(TOUCH_EXCEPTIONS).toEqual(["header.settings", "header.log", "town.band", "town.list"]);
+    // 例外はヘッダーの設定ボタン、M8.5 の街のログ・帯・一覧の行、M16 の迷宮・戦闘の広い一覧の行だけで、ヘッダーの 2 つはヘッダーの中に収まる
+    expect(TOUCH_EXCEPTIONS).toEqual(["header.settings", "header.log", "town.band", "town.list", "listWide"]);
     expect(inside(T.header.log, regions(data.config.ui.layout, W).header)).toBe(true);
     expect(inside(HEADER_SETTINGS, regions(data.config.ui.layout, W).header)).toBe(true);
     // 押せない欄も画面の内側
@@ -479,6 +490,30 @@ describe("layout", () => {
     for (const r of T.list.rows) expect(inside(r, T.list.area)).toBe(true);
     // 行は UI-10 の 12 論理 px 以上（TOUCH_MIN_LOGICAL の例外 town.list）
     expect(Math.min(...T.list.rows.map((r) => r.h))).toBeGreaterThanOrEqual(12);
+  });
+
+  test("UI-11/UI-13/UI-10（M16）迷宮・戦闘の広い一覧 listWide: パーティ欄の上端 + 2 から操作領域の下端まで（x8..231・y238..391）に 22px × 7 行。幅は list と同じ 224（固定の戻るは listBack のまま、行を 168 にすると重ならない）。線画・メッセージ窓と重ならない", () => {
+    const g = regions(data.config.ui.layout, W);
+    expect(LIST_WIDE_ROW_H).toBe(22);
+    expect(L.listWide.area).toEqual({ x: 8, y: 238, w: 224, h: 154 });
+    expect(L.listWide.rows).toHaveLength(7);
+    expect(L.listWide.rows).toEqual(Array.from({ length: 7 }, (_, i) => ({ x: 8, y: 238 + 22 * i, w: 224, h: 22 })));
+    for (const r of L.listWide.rows) expect(inside(r, L.listWide.area)).toBe(true);
+    // パーティ欄と操作領域を合わせた範囲に収まり、ビュー（線画・敵の絵）とメッセージ窓（呪文の説明 UI-68）には掛からない
+    expect(L.listWide.area.y).toBeGreaterThanOrEqual(g.party.y);
+    expect(L.listWide.area.y + L.listWide.area.h).toBeLessThanOrEqual(g.controls.y + g.controls.h);
+    expect(overlaps(L.listWide.area, g.view)).toBe(false);
+    expect(overlaps(L.listWide.area, g.message)).toBe(false);
+    // 幅 168（固定の戻るがある一覧）の欄は固定の戻る（x178..233・y354..393）と重ならない。幅 224 は戻るの無い一覧だけ
+    expect(overlaps({ ...L.listWide.area, w: L.listNarrow[0]!.w }, L.listBack)).toBe(false);
+    expect(L.listWide.area.x).toBe(L.list[0]!.x);
+    expect(L.listWide.area.w).toBe(L.list[0]!.w);
+    // UI-10: 行は 12 論理 px 以上（TOUCH_MIN_LOGICAL を満たさない例外 listWide。街の一覧 town.list と同じ 22）
+    expect(isTouchException("listWide[0]")).toBe(true);
+    expect(Math.min(...L.listWide.rows.map((r) => r.h))).toBeGreaterThanOrEqual(12);
+    expect(LIST_WIDE_ROW_H).toBe(TOWN_ROW_H);
+    // 既定の layout では警告なし
+    expect(layoutWarnings(g, L)).toEqual([]);
   });
 
   // 2026-10-07 未定-25: 全滅の内訳の間は、広い箱（y166..399）が内訳の下からはみ出して「街へ」を覆い、タッチで抜けられなかった
