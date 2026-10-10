@@ -371,7 +371,7 @@ describe("UI-59/UI-53 使う（M4 の道具の段をキャラクター画面の�
       expect(campStep(host, confirm, m, { kind: "cancel" })).toEqual({ kind: "page", page: itemPage });
       expect(campStep(host, confirm, m, { kind: "item", instanceId: "i15" })).toEqual({ kind: "page", page: confirm });
     }
-    expect(rows(campEntries("camp", confirm, m, S))).toEqual([{ label: "戻る", disabled: false, choice: { kind: "confirm" } }, cancel]);
+    expect(rows(campEntries("camp", confirm, m, S))).toEqual([{ label: "糸を使う", disabled: false, choice: { kind: "confirm" } }, cancel]);
     expect(campHeader(confirm, m, S)).toBe("帰還の糸で街へ戻る？");
     const r = campStep("camp", confirm, m, { kind: "confirm" });
     expect(r).toEqual({ kind: "send", command: { type: "dungeon.useItem", memberId: "c5", itemId: "i15" }, after: itemPage });

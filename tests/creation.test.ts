@@ -500,12 +500,12 @@ describe("creation: 自分で作る（CH-06 / CH-11 / CH-21 / CH-24）", () => {
 // ---------------------------------------------------------------- TW-36 開始の語り（M12.5）
 
 describe("creation: TW-36 開始の語り", () => {
-  const OPENING = ["opening.speech.1", "opening.speech.2", "opening.speech.3", "opening.speech.4", "opening.speech.5"];
+  const OPENING = ["opening.speech.1", "opening.speech.2", "opening.speech.3", "opening.speech.4", "opening.speech.5", "opening.speech.6"];
   const keyOf = (e: { kind: string; key?: string }): string => (e.kind === "message" ? e.key! : e.kind);
   const quick = (d = data) => execute(createInitialState(1, d), { type: "game.new", party: { members: defaultMembers() } }, d);
   const custom = (d = data) => execute(createInitialState(1, d), { type: "game.new", party: { kind: "custom", members: customMembers() } }, d);
 
-  test("TW-36 game.new（おすすめ・自分で作るの両方）は screen{town} の後に opening.speech.1..5 を順に message で出す（差し込みなし。キーは strings に実在）", () => {
+  test("TW-36 game.new（おすすめ・自分で作るの両方）は screen{town} の後に opening.speech.1..6 を順に（M16 で 5 → 6 文） message で出す（差し込みなし。キーは strings に実在）", () => {
     for (const r of [quick(), custom()]) {
       expect(r.events).toEqual([{ kind: "screen", to: "town" }, ...OPENING.map((key) => ({ kind: "message", key }))]);
       expectKnownStringKeys(r.events);
@@ -517,7 +517,7 @@ describe("creation: TW-36 開始の語り", () => {
     expect(custom().state.rng).toEqual(createRng(1));
   });
 
-  test("TW-36 行の数は strings の続き番号で決まる: 2 行・7 行に差し替えるとそれに従い、途切れた先（3 が無ければ 4 以降）は使わない", () => {
+  test("TW-36 行の数は strings の続き番号で決まる: 2 行・8 行に差し替えるとそれに従い、途切れた先（3 が無ければ 4 以降）は使わない", () => {
     const cases: [string[], string[]][] = [
       [["opening.speech.3", "opening.speech.4", "opening.speech.5"], OPENING.slice(0, 2)],
       [["opening.speech.3"], OPENING.slice(0, 2)],
@@ -528,9 +528,9 @@ describe("creation: TW-36 開始の語り", () => {
       for (const k of drop) delete (d.strings as Record<string, string>)[k];
       expect(quick(d).events.map(keyOf), drop.join(",")).toEqual(["screen", ...want]);
     }
-    const seven = loadFreshData();
-    (seven.strings as Record<string, string>)["opening.speech.6"] = "六";
-    (seven.strings as Record<string, string>)["opening.speech.7"] = "七";
-    expect(custom(seven).events.map(keyOf)).toEqual(["screen", ...OPENING, "opening.speech.6", "opening.speech.7"]);
+    const eight = loadFreshData();
+    (eight.strings as Record<string, string>)["opening.speech.7"] = "七";
+    (eight.strings as Record<string, string>)["opening.speech.8"] = "八";
+    expect(custom(eight).events.map(keyOf)).toEqual(["screen", ...OPENING, "opening.speech.7", "opening.speech.8"]);
   });
 });

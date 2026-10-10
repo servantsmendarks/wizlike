@@ -44,8 +44,8 @@
   - Lv0 の失敗は Lv0 のまま、語りは同じ `town.upgrade.ng`（「鍛えそこねた。{name}の手に{item}が戻る。」。item は変更後の表示名なので Lv の増減はそこに出る）。
   - 料金 = `config.economy.upgradeBase`（50）× (対象Lv + 1)【仮】。触媒なしでも取る。所持金から払う（銀行は使わない）。
   - 判定順は wrong screen → bad action（形。catalysts が配列でない・多すぎる・重複）→ no such member → bad slot → slot empty → unique → bad catalyst（inventory に無い・装備でない・ユニーク・未鑑定）→ not enough gold。
-  - 処理の順は 払う → 触媒を消す → 判定の箱（dice。label `dice.upgrade`{item}、行 `dice.row.roll`（base null、d100）、基準 `dice.upgrade.rule`{rate: p, great: q}（「成功率 p（うち大成功 q）」）、結果 `dice.upgrade.great` / `ok` / `ng`）→ Lv の変更 → `town.upgrade.great` / `ok` / `ng`{name, item}（item は変更後の表示名）。
-  - 画面（UI）: キャラ → 部位 → 触媒（0〜3 個を選ぶ）→ 成功率と料金の表示 → 実行 → 判定の箱。成功率・大成功・料金・可否は core の問い合わせ（`upgradePreview`）の値を描き、表示層は計算しない（UI-35）。者ごとの部位（空き・ユニークは対象にできない）と触媒の候補は `townMenu.upgrade` の値を描く。
+  - 処理の順は 払う → 触媒を消す → 判定の箱（dice。label `dice.upgrade`{item}、行 `dice.row.roll`（base null、d100）、基準 `dice.upgrade.rule`{rate: p, great: q}（「成功率 p%（うち大成功 q%）」。M16 で % を足した）、結果 `dice.upgrade.great` / `ok` / `ng`）→ Lv の変更 → `town.upgrade.great` / `ok` / `ng`{name, item}（item は変更後の表示名）。
+  - 画面（UI）: キャラ → 部位 → 触媒（0〜3 個を選ぶ）→ 成功率と料金の表示 → 実行 → 判定の箱。成功率・大成功・料金・可否は core の問い合わせ（`upgradePreview`）の値を描き、表示層は計算しない（UI-35）。者ごとの部位（空き・ユニークは対象にできない）と触媒の候補は `townMenu.upgrade` の値を描く。M16: 確認の段の成功率と大成功には % を付け（`town.upgrade.ask` / `askNoGold`）、触媒の段の見出しは「触媒を選べ（材料にする他の装備。無くてもよい）」（`town.upgrade.catalyst`）、語りに「触媒は同じ種類でなくてよい。」を足した（UI-52）。
 - TW-34 結末の語り（M12。2026-10-08）: 街に着いたとき（`town.enter` と同じ処理。帰還の糸・徒歩・テレポーター・帰還呪文と全滅のすべて）、`progress.endingPending`（DG-36）が真なら、message `town.enter` の直後、SAN の回復（TW-02）と救済の判定（TW-30）の前に、次を出して `endingPending` を偽にする。乱数は使わない。
   - GM の締めの語り: message `ending.speech.1`、`ending.speech.2`、… を `strings.json` に続き番号のキーがある限り（1 から数え、途切れた先は使わない。行の数はコードに持たない）。`ending.speech.1` は読み込み時の必須キー（無ければ起動を止める）。`ending.speech.1` で clear のジングルが鳴る（UI-66）。例外: 全滅の経路で結末に入るとき（同じ再生で全滅の `wipe` が先に出た）は clear を鳴らさず、全滅のジングルだけ（2026-10-08 未定-36。Shin の判断。表示層の音の状態で決め、core の出来事と data の cues は変えない）。
   - GameEvent `{ kind: "ending", record: EndingRecord }`: 戦績の値（TW-35 の `endingRecordView`。全滅で着いたときは全滅を数えた後の値）。表示層はこれだけで戦績を描き、state を掘らない。
@@ -58,7 +58,7 @@
   - wipes: 全滅処理（`wipe.ts` performWipe）。
   - 戦績の画面の値は core の `endingRecordView(state, data)`（`EndingRecord`）: 上の 5 項目、経過 `turns`（`adventureTurns`。TW-12）、敵の図鑑（`bestiary` のうち `identified` が真の種類 / `data.monsters` の数。遭遇しただけの未鑑定は数えない。宿の噂話 TW-15 で鑑定した分は入る）、品の図鑑（`uniqueBook` のキー数 / `data.uniques` の数）。state を変えない。
   - 酒場の「戦績」（U-2）を出すかは `townMenu().canShowRecord`（= `progress.conquered`。DG-36）。
-- TW-36 開始の語り（M12.5。2026-10-09）: `game.new`（おすすめ・自分で作るの両方。CH-05 / CH-06）は `screen{town}` の後に、message `opening.speech.1`、`opening.speech.2`、… を `strings.json` に続き番号のキーがある限り順に出す（1 から数え、途切れた先は使わない。行の数はコードに持たず、データで決まる。差し込みは無い）。`opening.speech.1` は読み込み時の必須キー（無ければ起動を止める）で、2 行目以降は任意。乱数は使わない。語るのは一度だけ（`game.new` は 1 ゲームに 1 回しか通らないので、「一度だけ」の state の欄は持たない）。`town.enter` の語り・SAN の回復・救済の判定はしない（TW-30 のまま）。表示は街の会話の箱（UI-47。route が town なので narrator が箱に振り分ける。`screen{town}` の後に来るので carry ではない）。語りの間の街の画面（帯・ヘッダー・街の絵）は `screen{town}` の時点で最終 state で描く（UI-52 の所持金の例外）。ログ（UI-46）には入る。語りの途中で再読み込みしても出し直さない（SV-50）。音の cue は無い。
+- TW-36 開始の語り（M12.5。2026-10-09）: `game.new`（おすすめ・自分で作るの両方。CH-05 / CH-06）は `screen{town}` の後に、message `opening.speech.1`、`opening.speech.2`、… を `strings.json` に続き番号のキーがある限り順に出す（1 から数え、途切れた先は使わない。行の数はコードに持たず、データで決まる。差し込みは無い）。`opening.speech.1` は読み込み時の必須キー（無ければ起動を止める）で、2 行目以降は任意。乱数は使わない。語るのは一度だけ（`game.new` は 1 ゲームに 1 回しか通らないので、「一度だけ」の state の欄は持たない）。`town.enter` の語り・SAN の回復・救済の判定はしない（TW-30 のまま）。表示は街の会話の箱（UI-47。route が town なので narrator が箱に振り分ける。`screen{town}` の後に来るので carry ではない）。語りの間の街の画面（帯・ヘッダー・街の絵）は `screen{town}` の時点で最終 state で描く（UI-52 の所持金の例外）。ログ（UI-46）には入る。語りの途中で再読み込みしても出し直さない（SV-50）。音の cue は無い。M16（2026-10-11。テストプレイ v1 の C14 / C22）で文を差し替えた: 6 文（雰囲気、迷宮の遊び方、施設の役割「宿屋で休み、寺院で蘇生、店で売買と鑑定、闇魔術で灰から戻し装備を鍛える」、セオリー「まずは階段の近くで戦い、無理せず戻れ」、拾い物は敵が残す宝箱から出る、締め）。施設の語は `town.menu.*` のラベルと揃える。コードは変えていない。
 
 ## 2. 全滅処理
 

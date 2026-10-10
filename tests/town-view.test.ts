@@ -280,7 +280,7 @@ describe("UI-52 街のページ", () => {
       { kind: "upgrade", memberId: "c1", slot: "weapon", catalysts: [cat], label: "長剣 +1を鍛える（触媒 1）", disabled: false },
       back,
     ]);
-    expect(townHeadingText({ upConfirm: sel }, m, S, p)).toBe("成功率 29（大成功 2）料金 100G。鍛えるか？");
+    expect(townHeadingText({ upConfirm: sel }, m, S, p)).toBe("成功率 29%（大成功 2%）料金 100G。鍛えるか？");
     // 問いは見出しに出すので、会話の箱（広い箱は答えのボタンを覆う）で語らない
     expect(townPageIntro({ upConfirm: sel }, m)).toEqual([]);
     expect(townParent({ upConfirm: sel })).toEqual({ upCat: sel });
@@ -289,7 +289,7 @@ describe("UI-52 街のページ", () => {
     poor.gold = 99;
     const pp = upgradePreview(poor, data, "c1", "weapon", [cat]);
     expect(townEntries({ upConfirm: sel }, menuOf(poor), S, pp)[0]).toMatchObject({ kind: "upgrade", disabled: true });
-    expect(townHeadingText({ upConfirm: sel }, menuOf(poor), S, pp)).toBe("成功率 29（大成功 2）料金 100G。所持金が足りない。");
+    expect(townHeadingText({ upConfirm: sel }, menuOf(poor), S, pp)).toBe("成功率 29%（大成功 2%）料金 100G。金が足りない。");
     // preview が無い（対象が決まらない）なら押せず、見出しは値の無い問い
     expect(townEntries({ upConfirm: sel }, m, S, null)[0]).toMatchObject({ disabled: true });
     expect(townHeadingText({ upConfirm: sel }, m, S, null)).toBe(S["town.ask.upConfirm"]);
@@ -467,7 +467,7 @@ describe("UI-52 街のページ", () => {
       { kind: "camp", open: "status", label: "状態" },
       { kind: "camp", open: "order", label: "並び順" },
       { kind: "camp", open: "book", label: "図鑑" }, // IT-66（M7）: 図鑑は酒場の一覧（並び順の後）
-      { kind: "page", to: "classChange", label: "GMに申し出る" }, // TW-09（M10）: 転職は図鑑の後
+      { kind: "page", to: "classChange", label: "転職（GMに申し出る）" }, // TW-09（M10）: 転職は図鑑の後
     ];
     expect(townEntries("tavern", menuOf(town()), S)).toEqual([...camp, back]);
     expect(townPageIntro("tavern", menuOf(town()))).toEqual(["town.tavern.intro"]);
@@ -624,11 +624,11 @@ describe("UI-52 街のページ", () => {
     for (let i = 0; i < 5; i++) s.party[5]!.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
     const m = menuOf(s);
     expect(townEntries({ shop: "herb" }, m, S)).toEqual([
-      { kind: "buy", itemId: "herb", memberId: "c1", label: "アルド　空き4", disabled: false },
-      { kind: "buy", itemId: "herb", memberId: "c2", label: "ベルク　空き6", disabled: false },
-      { kind: "buy", itemId: "herb", memberId: "c4", label: "ドナ　空き5", disabled: false },
-      { kind: "buy", itemId: "herb", memberId: "c5", label: "エル　空き6", disabled: false },
-      { kind: "buy", itemId: "herb", memberId: "c6", label: "フィン　空き0", disabled: true },
+      { kind: "buy", itemId: "herb", memberId: "c1", label: "アルド　空き 4 枠", disabled: false },
+      { kind: "buy", itemId: "herb", memberId: "c2", label: "ベルク　空き 6 枠", disabled: false },
+      { kind: "buy", itemId: "herb", memberId: "c4", label: "ドナ　空き 5 枠", disabled: false },
+      { kind: "buy", itemId: "herb", memberId: "c5", label: "エル　空き 6 枠", disabled: false },
+      { kind: "buy", itemId: "herb", memberId: "c6", label: "フィン　空き 0 枠", disabled: true },
       back,
     ]);
     // 払えない品（10G で帰還の糸 50G・長剣 100G）は全員 disabled。杖（10G）は空きのある 4 人が押せる
@@ -688,11 +688,11 @@ describe("UI-52 街のページ", () => {
       back,
     ]);
     expect(townEntries({ buyback: twin }, m, S)).toEqual([
-      { kind: "buyback", memberId: "c1", instanceId: twin, label: "アルド　空き4", disabled: false },
-      { kind: "buyback", memberId: "c2", instanceId: twin, label: "ベルク　空き6", disabled: false },
-      { kind: "buyback", memberId: "c4", instanceId: twin, label: "ドナ　空き5", disabled: false },
-      { kind: "buyback", memberId: "c5", instanceId: twin, label: "エル　空き6", disabled: false },
-      { kind: "buyback", memberId: "c6", instanceId: twin, label: "フィン　空き5", disabled: false },
+      { kind: "buyback", memberId: "c1", instanceId: twin, label: "アルド　空き 4 枠", disabled: false },
+      { kind: "buyback", memberId: "c2", instanceId: twin, label: "ベルク　空き 6 枠", disabled: false },
+      { kind: "buyback", memberId: "c4", instanceId: twin, label: "ドナ　空き 5 枠", disabled: false },
+      { kind: "buyback", memberId: "c5", instanceId: twin, label: "エル　空き 6 枠", disabled: false },
+      { kind: "buyback", memberId: "c6", instanceId: twin, label: "フィン　空き 5 枠", disabled: false },
       back,
     ]);
     expect(townEntries({ buyback: sword }, m, S).filter((e) => e.kind === "buyback").every((e) => e.kind === "buyback" && e.disabled)).toBe(true);

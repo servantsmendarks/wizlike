@@ -6,8 +6,8 @@
     "benefits": { "trapDetect": 30, "ambushAvoid": 20, "initiative": 0, "damage": 0, "chestQuality": 0, "hiddenTreasure": 0 },
     "san": { "trapLossMul": 0.5, "allyInjuryLossMul": 0.5, "fearLossMul": 1.0, "treasureGain": 0, "disobeyBelowHalf": 0 },
     "autoBattle": "defendBelowHalf",
-    "description": "罠に気づき、奇襲を避け、仲間の暴走を止める。",
-    "shortDescription": "罠に気づき、奇襲を避け、仲間の暴走を止める。"
+    "description": "罠に気づきやすく、奇襲を受けにくい。仲間が勝手に動くのを止める。",
+    "shortDescription": "罠に気づき、奇襲を避け、仲間が勝手に動くのを止める。"
   },
   {
     "id": "reckless", "name": "無鉄砲",
@@ -16,8 +16,8 @@
     "benefits": { "trapDetect": 0, "ambushAvoid": 0, "initiative": 2, "damage": 1, "chestQuality": 0, "hiddenTreasure": 0 },
     "san": { "trapLossMul": 1.0, "allyInjuryLossMul": 1.0, "fearLossMul": 0.5, "treasureGain": 0, "disobeyBelowHalf": 0 },
     "autoBattle": "alwaysAttack",
-    "description": "先に動き、強く殴り、恐怖に強い。未知のものに手を出す。",
-    "shortDescription": "先に動き、強く殴り、恐怖に強い。未知のものに手を出す。"
+    "description": "先に動き、強く殴り、恐怖に強い。知らない物にすぐ手を出す。",
+    "shortDescription": "先に動き、強く殴り、恐怖に強い。知らない物に手を出す。"
   },
   {
     "id": "greedy", "name": "強欲",
@@ -26,8 +26,8 @@
     "benefits": { "trapDetect": 0, "ambushAvoid": 0, "initiative": 0, "damage": 0, "chestQuality": 25, "hiddenTreasure": 15 },
     "san": { "trapLossMul": 1.0, "allyInjuryLossMul": 1.0, "fearLossMul": 1.0, "treasureGain": 2, "disobeyBelowHalf": 0 },
     "autoBattle": "targetRichest",
-    "description": "財宝を見つけ、良い物を引き、金で正気を保つ。宝に手を出す。",
-    "shortDescription": "財宝と良い物を引き、金で正気を保つ。宝に手を出す。"
+    "description": "良い宝を引き、金を手にすると正気（SAN）が戻る。宝を見ると飛びつく。",
+    "shortDescription": "良い宝を引き、金で正気（SAN）が戻る。宝に飛びつく。"
   },
   {
     "id": "normal", "name": "普通",
@@ -36,7 +36,7 @@
     "benefits": { "trapDetect": 0, "ambushAvoid": 0, "initiative": 0, "damage": 0, "chestQuality": 0, "hiddenTreasure": 0 },
     "san": { "trapLossMul": 1.0, "allyInjuryLossMul": 1.0, "fearLossMul": 1.0, "treasureGain": 0, "disobeyBelowHalf": 10 },
     "autoBattle": "none",
-    "description": "リーダーに従う。恩恵も耐性もなく、追い詰められると真っ先に崩れる。",
-    "shortDescription": "リーダーに従うが、恩恵も耐性もなく真っ先に崩れる。"
+    "description": "特別な強みは無いが、言うことを聞く。正気（SAN）が半分を切ると、ときどき逆らう。",
+    "shortDescription": "特別な強みは無いが言うことを聞く。正気が減ると逆らう。"
   }
 ]
