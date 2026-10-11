@@ -7,6 +7,8 @@ import type { GameData } from "../src/core/data";
 import { execute } from "../src/core/engine";
 import { chance, cloneRng, createRng, randInt, rollDice } from "../src/core/rng";
 import { campMenu, campSummary, checkCast, checkEquip, checkIdentify, checkUnequip, identifyChance } from "../src/core/rules/camp";
+import { itemActions } from "../src/core/rules/item-actions";
+import { fieldItemMenu } from "../src/core/rules/items";
 import { frontLineIds } from "../src/core/rules/combat-calc";
 import { resurrectRate, townMenu } from "../src/core/rules/town";
 import { cloneState, createItemInstance, itemDisplayName, slotsMaxOf } from "../src/core/state";
@@ -1251,5 +1253,133 @@ describe("CH-71（M17）所持枠の素の力の補正（config.inventory.strBon
     c1.inventory.push(createItemInstance(r.state, { itemId: "herb", identified: true }));
     const again = execute(r.state, { type: "party.give", memberId: "c1", instanceId: c1.inventory.at(-1)!, toId: "c2" }, data);
     expect(again.events).toEqual([{ kind: "rejected", command: "party.give", reason: "target full" }]);
+  });
+});
+
+describe("UI-80（M20）itemActions 品に当てはまる操作とできない理由", () => {
+  const acts = (s: GameState, memberId: string, instanceId: string) => itemActions(s, data, memberId, instanceId)?.actions ?? null;
+
+  test("UI-80/CH-76 装備中の品は 外す だけ（呪われていれば cursed）。equippedSlot と slot は枠、identifier は null", () => {
+    const s = inDungeon();
+    expect(itemActions(s, data, "c1", "i1")).toEqual({
+      memberId: "c1",
+      instanceId: "i1",
+      name: "長剣",
+      equippedSlot: "weapon",
+      slot: "weapon",
+      actions: [{ action: "unequip", block: null }],
+      identifier: null,
+    });
+    const g = giveCursed(s, "c3", true);
+    const t = ok(g.s, { type: "party.equip", memberId: "c3", instanceId: g.id }).state;
+    expect(acts(t, "c3", g.id)).toEqual([{ action: "unequip", block: "cursed" }]);
+    // 死亡・灰の者も呪われていなければ外せる（CH-76/U6）
+    expect(acts(patched(s, { c1: { life: "dead", hp: 0 } }), "c1", "i1")).toEqual([{ action: "unequip", block: null }]);
+  });
+
+  test("UI-80/CH-76/CH-78/CH-79 所持品の装備品は 装備する → 渡す → 捨てる。装備する の理由は checkEquip（class / unidentified / cannotAct / cursedSlot）で campMenu の equipCandidates と同じ", () => {
+    let s = inDungeon();
+    const sword = give(s, "c5", "long_sword");
+    s = sword.s;
+    const dag = give(s, "c3", "dagger", false);
+    s = dag.s;
+    expect(itemActions(s, data, "c5", sword.id)).toMatchObject({ equippedSlot: null, slot: "weapon", identifier: null });
+    expect(acts(s, "c5", sword.id)).toEqual([
+      { action: "equip", block: "class" },
+      { action: "give", block: null },
+      { action: "drop", block: null },
+    ]);
+    // 未鑑定（パーティに司教がいないので鑑定は出さない）
+    expect(acts(s, "c3", dag.id)).toEqual([
+      { action: "equip", block: "unidentified" },
+      { action: "give", block: null },
+      { action: "drop", block: null },
+    ]);
+    expect(acts(patched(s, { c3: { status: ["sleep"] } }), "c3", "i10")![0]).toEqual({ action: "use", block: "cannotAct" });
+    const sh = give(s, "c1", "iron_shield");
+    expect(acts(sh.s, "c1", sh.id)![0]).toEqual({ action: "equip", block: null });
+    const cur = giveCursed(sh.s, "c1", true);
+    const t = give(ok(cur.s, { type: "party.equip", memberId: "c1", instanceId: cur.id }).state, "c1", "dagger");
+    expect(acts(t.s, "c1", t.id)![0]).toEqual({ action: "equip", block: "cursedSlot" });
+    // campMenu の equipCandidates の block と同じ
+    for (const st of [s, t.s, patched(s, { c3: { status: ["sleep"] } })]) {
+      for (const m of campMenu(st, data)!.members) {
+        for (const c of m.equipCandidates) expect(acts(st, m.id, c.instanceId)![0], `${m.id} ${c.instanceId}`).toEqual({ action: "equip", block: c.block });
+      }
+    }
+  });
+
+  test("UI-80/MG-25/DG-30 消耗品・魔法書は 使う → 渡す → 捨てる。使う の可否は fieldItemMenu の usable と同じ（帰還の糸は街で notHere、魔法書は cannotLearn / known）", () => {
+    const d = inDungeon();
+    expect(acts(d, "c1", "i4")).toEqual([
+      { action: "use", block: null },
+      { action: "give", block: null },
+      { action: "drop", block: null },
+    ]);
+    // 対象の満タンは品の行では見ない（全員が満タンでも null）
+    expect(acts(d, "c5", "i15")![0]).toEqual({ action: "use", block: null });
+    const t = inTown();
+    expect(acts(t, "c5", "i15")![0]).toEqual({ action: "use", block: "notHere" });
+    const tome = give(t, "c1", "tome_lightning");
+    expect(acts(tome.s, "c1", tome.id)![0]).toEqual({ action: "use", block: "cannotLearn" });
+    const mine = give(t, "c5", "tome_lightning");
+    expect(acts(mine.s, "c5", mine.id)![0]).toEqual({ action: "use", block: null });
+    const known = patched(mine.s, { c5: { knownSpells: ["fire_arrow", "sleep_mist", "lightning_tome"] } });
+    expect(acts(known, "c5", mine.id)![0]).toEqual({ action: "use", block: "known" });
+    for (const st of [d, t, known, patched(d, { c4: { status: ["sleep"] } })]) {
+      for (const m of fieldItemMenu(st, data)!.members) {
+        for (const it of m.items) expect(acts(st, m.id, it.instanceId)![0], `${m.id} ${it.instanceId}`).toEqual({ action: "use", block: it.usable ? null : expect.any(String) });
+      }
+    }
+  });
+
+  test("UI-80/CH-78 渡す は自分以外に受け取れる者（checkGive）がいなければ noReceiver。捨てる は常に送れる", () => {
+    let s = inTown();
+    for (const id of ["c2", "c3", "c4", "c5", "c6"]) s = fillSlots(s, id);
+    expect(acts(s, "c1", "i4")).toEqual([
+      { action: "use", block: null },
+      { action: "give", block: "noReceiver" },
+      { action: "drop", block: null },
+    ]);
+  });
+
+  test("UI-80/CH-77 鑑定 は未鑑定の所持品で、パーティに鑑定できる者がいるときだけ。鑑定する者は 持ち主 → 並び順 で checkIdentify が通る最初の者。rate は identifyChance", () => {
+    const base = bishopAt(inDungeon(), 13, 10); // 79
+    const g = give(base, "c3", "dagger", false);
+    const a = itemActions(g.s, data, "c3", g.id)!;
+    expect(a.actions.map((x) => x.action)).toEqual(["equip", "give", "drop", "identify"]);
+    expect(a.actions[3]).toEqual({ action: "identify", block: null });
+    expect(a.identifier).toEqual({ id: "c5", name: "エル", rate: 79 });
+    expect(a.identifier!.rate).toBe(identifyChance(g.s, data, "c5", g.id)!.rate);
+    // 鑑定済みの品には出さない
+    expect(acts(base, "c1", "i4")!.map((x) => x.action)).toEqual(["use", "give", "drop"]);
+    // MP 切れ・行動不能なら理由付き（鑑定する者はその司教のまま）
+    const noMp = itemActions(patched(g.s, { c5: { mp: 0 } }), data, "c3", g.id)!;
+    expect(noMp.actions[3]).toEqual({ action: "identify", block: "noMp" });
+    expect(noMp.identifier?.id).toBe("c5");
+    expect(acts(patched(g.s, { c5: { status: ["sleep"] } }), "c3", g.id)![3]).toEqual({ action: "identify", block: "cannotAct" });
+    // 持ち主が司教なら持ち主（2 人目の司教 c4 より先）。持ち主が MP 切れなら送れる c4
+    const two = patched(g.s, { c4: { classId: "bishop", maxLevelReached: { bishop: 1 }, mp: 5, mpMax: 5 } });
+    const own = give(two, "c5", "dagger", false);
+    expect(itemActions(own.s, data, "c5", own.id)!.identifier?.id).toBe("c5");
+    expect(itemActions(patched(own.s, { c5: { mp: 0 } }), data, "c5", own.id)!.identifier?.id).toBe("c4");
+    // 装備中の未鑑定の品（取り憑き）は 外す だけ
+    const eq = cloneState(g.s);
+    member(eq, "c3").inventory = member(eq, "c3").inventory.filter((x) => x !== g.id);
+    member(eq, "c3").equipment.weapon = g.id;
+    expect(acts(eq, "c3", g.id)).toEqual([{ action: "unequip", block: null }]);
+  });
+
+  test("UI-80 null: 戦闘中・保留中・title、人がいない、品がその人の装備にも所持品にも無い。state と乱数は変えない", () => {
+    const s = inDungeon();
+    expect(itemActions(battleOf(s), data, "c1", "i4")).toBeNull();
+    expect(itemActions(pending(s), data, "c1", "i4")).toBeNull();
+    expect(itemActions(createInitialState(1, data), data, "c1", "i4")).toBeNull();
+    expect(itemActions(s, data, "zz", "i4")).toBeNull();
+    expect(itemActions(s, data, "c1", "i10")).toBeNull(); // c3 の薬草
+    expect(itemActions(s, data, "c1", "zz")).toBeNull();
+    const before = JSON.stringify(s);
+    for (const m of s.party) for (const id of [...m.inventory, ...Object.values(m.equipment)]) if (id !== null) itemActions(s, data, m.id, id);
+    expect(JSON.stringify(s)).toBe(before);
   });
 });

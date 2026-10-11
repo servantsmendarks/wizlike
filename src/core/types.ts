@@ -1026,6 +1026,33 @@ export type CampMenu = {
   unidentified: CampIdentifyItem[];
 };
 
+/** UI-80（M20）: キャラクター画面で品を押したときの操作（rules/item-actions.ts の itemActions） */
+export type ItemActionKind = "equip" | "unequip" | "use" | "give" | "drop" | "identify";
+/**
+ * UI-80（M20）: 品の操作を送れない理由。表示層は strings の camp.itemReason.{block} で出す。
+ * equip は EquipBlock（checkEquip）、unequip は cursed（checkUnequip）、use は cannotAct / notHere / cannotLearn / known / noTarget（checkUseItem）、
+ * give は noReceiver（自分以外に受け取れる者がいない）、identify は cannotAct / noMp（鑑定する者の checkIdentify）
+ */
+export type ItemActionBlock = EquipBlock | "cursed" | "notHere" | "cannotLearn" | "known" | "noTarget" | "noReceiver" | "noMp";
+export type ItemActionView = { action: ItemActionKind; block: ItemActionBlock | null };
+/**
+ * UI-80（M20）: 1 つの品に当てはまる操作。state は変えず、乱数も引かない。
+ * actions の順は 装備する／外す → 使う → 渡す → 捨てる → 鑑定（当てはまらない操作は入れない）
+ */
+export type ItemActions = {
+  memberId: string;
+  instanceId: string;
+  /** itemDisplayName（未鑑定なら見た目の名前） */
+  name: string;
+  /** 装備中ならその枠。所持品なら null */
+  equippedSlot: EquipSlot | null;
+  /** 装備品なら部位（ベースの slot）。消耗品・魔法書なら null */
+  slot: EquipSlot | null;
+  actions: ItemActionView[];
+  /** identify があるとき、鑑定する者と成功率（identifyChance の rate）。無ければ null */
+  identifier: { id: string; name: string; rate: number } | null;
+};
+
 /**
  * UI-53: キャンプの top のパネルの要約。rules/camp.ts の campSummary(state, data)。迷宮のキャンプ（campPlace dungeon）のときだけ非 null。
  * gold は state.gold（台帳の金を含む）。ledgerItems / ledgerGold は潜行台帳（DG-40）。

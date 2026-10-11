@@ -355,6 +355,13 @@
   - パネル（layout.character に広げる。名品の図鑑と同じ範囲）: 見出し `bestiary.title`「敵の図鑑　{known}/{total}」（accent）。左の列（x4・幅 128）に名前の一覧（10px の行。選んでいる敵の行は accent。M19（D-7。テストプレイ v3 A-3 #27）から行は `bestiary.row`「{name}（{unknown}）」で、正体の分からないときの呼び名を併記する（例「コボルド（人の形をした影）」）。最悪の値（最長の名前 + 系統の name の上限 8 字）で全角 16 字 = 128px に収まる。絵の下の名前は本名だけ）。右の枠（x136 y14 の 96 角）に選んでいる敵の絵を、戦闘と同じ `chooseSprite`（UI-60。ビルド時の一覧にあるものだけ、整数倍、縮小しない）で中央に出す（48 角の絵は 2 倍、96 角のボスは等倍）。一覧に無い・読めない絵は戦闘と同じ塗りの矩形（`enemyFill`）。枠の下の 2 行に名前（accent）と `bestiary.kills`「倒した数 {kills}」。1 体もいなければ見出しと `bestiary.none`（dim）の 1 行だけ。名前の一覧が見える行数（27 行。今は 20 種）を越えたら、選んでいる敵が見える範囲へ一覧をずらす（表示だけの計算）。
   - 操作: 2 体以上なら [次の敵]（`bestiary.next`）[前の敵]（`bestiary.prev`）とやめる。最後・最初の敵で dim。1 体以下はやめるだけ。最初は先頭（monsters.json の順で最初の識別済みの敵）を選ぶ。
   - 絵を並べず 1 体ずつにした理由: 実寸（48 角と 96 角）の絵を 20 種並べるとパネル（240×284）に 1 画面で収まらない（設計 5-5 の「収まらなければ文字の一覧に絵を 1 つ添える形」）。
+- UI-80 品を押して詳細と操作（M20。2026-10-12。テストプレイ第 4 回の C-4 #9・#10、確認の返答 §3 の代案）: キャラクター画面（UI-59）の所持品のマスと装備の行を押すと、その品の詳細と、その品に当てはまる操作を出す。
+  - 値は core の `itemActions(state, data, memberId, instanceId)`（`rules/item-actions.ts`。純粋。乱数を引かない）: `{ memberId, instanceId, name, equippedSlot, slot, actions[{ action, block }], identifier }`。campPlace が null（戦闘中・保留中・title）、人がいない、品がその人の装備にも所持品にも無いなら null。
+    - 装備中の品: 外す（`unequip`。呪われていれば `cursed`。checkUnequip）だけ。
+    - 所持品の装備品: 装備する（`equip`。理由は checkEquip の EquipBlock = cannotAct / unidentified / class / cursedSlot。campMenu の equipCandidates の block と同じ）→ 渡す → 捨てる →（未鑑定なら）鑑定。
+    - 所持品の消耗品・魔法書: 使う（`use`。checkUseItem の理由 cannotAct / notHere（街の帰還の糸）/ cannotLearn / known（魔法書）/ noTarget。対象の要る品は先頭の生存者を仮の対象にし、対象の満タンは見ない。fieldItemMenu の usable と同じ）→ 渡す → 捨てる →（未鑑定なら）鑑定。
+    - 渡す（`give`）: 自分以外に checkGive が通る者がいなければ `noReceiver`。捨てる（`drop`）: 常に送れる。
+    - 鑑定（`identify`）: 品が未鑑定の所持品で、パーティに鑑定できる職業の者がいるときだけ。鑑定する者は 持ち主 → 並び順 の順で checkIdentify が通る最初の者（誰も通らなければ同じ順の最初の者で、理由は cannotAct / noMp）。`identifier` はその者と成功率（identifyChance の rate）。
 
 
 ## 7. 素材
