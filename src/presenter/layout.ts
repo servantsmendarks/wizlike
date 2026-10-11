@@ -555,7 +555,7 @@ export const TITLE_HINT: Rect = { x: 8, y: 336, w: 224, h: 20 };
 
 /** 簡易作成（UI-51）の行 i（0..5）。番号のラベル、名前の入力欄、性格のボタン */
 /**
- * 簡易作成の行 i（UI-51）。番号・名前の入力欄・職業の略称（押せない。M16 で名前の欄を 112 → 80 に縮めて空けた）・性格のボタン
+ * 簡易作成の行 i（UI-51）。番号・名前の入力欄・職業の略称（M16 で名前の欄を 112 → 80 に縮めて空けた。M20 から押せる。押すと説明の欄に職業の説明）・性格のボタン
  * （リーダーは押せる札。押すと説明の欄に creation.leaderNote）
  */
 export function creationRow(i: number): { name: Rect; personality: Rect; label: Rect; abbr: Rect } {
@@ -563,7 +563,8 @@ export function creationRow(i: number): { name: Rect; personality: Rect; label: 
   return {
     label: { x: 2, y, w: 8, h: 32 },
     name: { x: 12, y, w: 80, h: 32 },
-    abbr: { x: 96, y, w: 28, h: 32 },
+    // M20（D-8）: 押せるので UI-10 の一辺 30 以上に広げた（x96・幅 28 → x94・幅 32。名前の欄・性格のボタンとは 2px 空ける）
+    abbr: { x: 94, y, w: 32, h: 32 },
     personality: { x: 128, y, w: 110, h: 32 },
   };
 }

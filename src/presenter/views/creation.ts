@@ -11,6 +11,9 @@
 //   「ランダム」は行ではないのでエラーを消さない。
 // - M18（設計 5-10）: 性格のボタンは 1 回目のタップで今の性格の説明を出すだけで、その行の説明が出ているとき（2 回目）に
 //   切り替える（creationPersonalityTap）。
+// - M20（D-8。テストプレイ v4 の A-4 #1）: 職業の略称も押せる（creationRow の abbr の矩形）。押すと説明の欄にその職業の
+//   classes.json の description（creationNote の classRow）。行に触れたのと同じくエラーは消す。性格のボタンの説明の行
+//   （touched）は外すので、次に性格のボタンを押すと 1 回目（説明だけ）になる（creationClassTap）。
 // 純粋な部分（性格の巡回、PartySetup の組み立て）を export する。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, PersonalityId, Strings } from "../../core/data/index";
 import type { QuickPartySetup } from "../../core/types";
@@ -57,8 +60,19 @@ export function creationClassAbbr(i: number, data: GameData): string {
  * UI-51（M16）: 説明の欄の文。row は最後に触った行（まだ触っていなければ null → creation.hint）。
  * その行の性格が null（リーダー）なら creation.leaderNote、おまかせなら creation.randomNote、それ以外は personalities の shortDescription
  */
-export function creationNote(row: number | null, choices: readonly PersonalityChoice[], data: GameData, strings: Strings): string {
+export function creationNote(
+  row: number | null,
+  choices: readonly PersonalityChoice[],
+  data: GameData,
+  strings: Strings,
+  classRow: number | null = null,
+): string {
   const t = (k: string): string => strings[k] ?? k;
+  // M20（D-8）: 最後に押したのが職業の略称なら、その行の職業の description
+  if (classRow !== null) {
+    const classId = data.config.prototypeParty.members[classRow]?.classId;
+    return data.classes.find((c) => c.id === classId)?.description ?? "";
+  }
   if (row === null) return t("creation.hint");
   const c = choices[row];
   if (c === null || row === 0) return t("creation.leaderNote");
@@ -74,6 +88,14 @@ export function creationInfoVisible(errorOn: boolean): { error: boolean; note: b
 /** UI-51（M16 追補 H-1）: 行 i に触れたときの説明の欄の状態。触れた行を覚え、エラーは消す（説明に戻す） */
 export function creationTouch(row: number): { touched: number; errorOn: boolean } {
   return { touched: row, errorOn: false };
+}
+
+/**
+ * UI-51（M20。D-8）: 行 i の職業の略称を押したときの説明の欄の状態。職業の説明（classRow）を出し、エラーは消し、
+ * 性格の説明の行（touched）は外す（次の性格のボタンは 1 回目）
+ */
+export function creationClassTap(row: number): { touched: null; classRow: number; errorOn: boolean } {
+  return { touched: null, classRow: row, errorOn: false };
 }
 
 /**
@@ -127,6 +149,8 @@ export function createCreationScreen(o: {
   let choices: PersonalityChoice[] = defaultPersonalities(ids, size);
   /** 最後に触った行（説明の欄に出す行。まだなら null） */
   let touched: number | null = null;
+  /** M20（D-8）: 最後に押したのが職業の略称なら、その行（説明の欄に職業の説明。行に触れたら null） */
+  let classRow: number | null = null;
 
   const el = document.createElement("div");
   el.className = "screen screen-creation";
@@ -176,6 +200,11 @@ export function createCreationScreen(o: {
     abbr.className = "creation-abbr";
     abbr.textContent = creationClassAbbr(i, o.data);
     place(abbr, r.abbr);
+    // M20（D-8）: 略称を押すと説明の欄にその職業の description
+    onTap(abbr, () => {
+      ({ touched, classRow, errorOn } = creationClassTap(i));
+      renderInfo();
+    });
     el.appendChild(abbr);
 
     if (i === 0) {
@@ -216,10 +245,11 @@ export function createCreationScreen(o: {
     const v = creationInfoVisible(errorOn);
     error.style.visibility = v.error ? "visible" : "hidden";
     note.style.visibility = v.note ? "visible" : "hidden";
-    note.textContent = creationNote(touched, choices, o.data, o.strings);
+    note.textContent = creationNote(touched, choices, o.data, o.strings, classRow);
   };
   function touch(i: number): void {
     ({ touched, errorOn } = creationTouch(i));
+    classRow = null;
     renderInfo();
   }
 
@@ -252,6 +282,7 @@ export function createCreationScreen(o: {
     });
     choices = defaultPersonalities(ids, size);
     touched = null;
+    classRow = null;
     renderChoices();
     showError(false);
   };

@@ -187,10 +187,9 @@ body {
   color: var(--c-dim);
 }
 
-/* UI-51（M16）: 職業の略称（押せない） */
+/* UI-51（M16）: 職業の略称。M20（D-8）から押せる（説明の欄に職業の説明）。色はリーダーの札と同じ dim */
 .creation-abbr {
   color: var(--c-dim);
-  pointer-events: none;
 }
 
 /* iOS の自動ズーム対策: font-size 16px の 2 倍の大きさで作り、scale(0.5) で 80×32 に見せる */

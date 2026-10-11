@@ -5,6 +5,7 @@ import { validatePartySetup } from "../src/core/rules/creation";
 import {
   buildPartySetup,
   creationClassAbbr,
+  creationClassTap,
   creationInfoVisible,
   creationNote,
   creationPersonalityTap,
@@ -86,6 +87,32 @@ describe("簡易作成", () => {
     for (const x of texts) expect(kinsokuLines(x, 28).length, x).toBeLessThanOrEqual(2);
     // strings を差し替えると文も変わる（表示層に文を書いていない）
     expect(creationNote(0, ch, data, { ...S, "creation.leaderNote": "X" })).toBe("X");
+  });
+
+  test("UI-51 職業の略称を押すと説明の欄に職業の説明（M20。D-8）: classes.json の description。エラーは消し、性格のボタンは次が 1 回目。どの職業の説明も 28 字 × 2 行以内", () => {
+    const S = data.strings;
+    const ch = defaultPersonalities(ids, 6);
+    const members = data.config.prototypeParty.members;
+    for (let i = 0; i < members.length; i++) {
+      const tap = creationClassTap(i);
+      expect(tap).toEqual({ touched: null, classRow: i, errorOn: false });
+      expect(creationNote(tap.touched, ch, data, S, tap.classRow)).toBe(data.classes.find((c) => c.id === members[i]!.classId)!.description);
+      expect(creationInfoVisible(tap.errorOn)).toEqual({ error: false, note: true });
+    }
+    // 行 2（盗賊）
+    expect(creationNote(null, ch, data, S, 2)).toBe("宝箱の罠を解除できる。弓を使えば後衛からも戦える。");
+    // classRow が null なら今までどおり
+    expect(creationNote(1, ch, data, S, null)).toBe(data.personalities.find((p) => p.id === "cautious")!.shortDescription);
+    // 略称の後の性格のボタンは 1 回目（切り替えない）
+    expect(creationPersonalityTap(creationClassTap(1).touched, 1)).toEqual({ switch: false });
+    for (const c of data.classes) expect(kinsokuLines(c.description, 28).length, c.id).toBeLessThanOrEqual(2);
+    // 画面の配線: 略称は onTap で creationClassTap、行に触れたら職業の説明を外す
+    const src = creationSource.replace(/\r\n/g, "\n");
+    expect(src).toContain("onTap(abbr, () => {");
+    expect(src).toContain("({ touched, classRow, errorOn } = creationClassTap(i));");
+    const touchBody = /function touch\(i: number\): void \{\n([\s\S]*?)\n  \}/.exec(src)?.[1] ?? "";
+    expect(touchBody).toContain("classRow = null;");
+    expect(src).toContain("creationNote(touched, choices, o.data, o.strings, classRow)");
   });
 
   test("UI-51 説明の欄とエラーの欄は同じ場所（y240）で、エラーが出ている間はエラーを優先し、消えたら説明に戻す（M16）", () => {

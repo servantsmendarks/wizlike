@@ -61,6 +61,8 @@ const SCREENS: Record<string, Record<string, Rect>> = {
       [0, 1, 2, 3, 4, 5].flatMap((i) => [
         [`creationRow(${i}).name`, creationRow(i).name],
         [`creationRow(${i}).personality`, creationRow(i).personality],
+        // M20（D-8。UI-51）: 職業の略称は押せる（説明の欄に職業の説明）
+        [`creationRow(${i}).abbr`, creationRow(i).abbr],
       ]),
     ),
     "CREATION_BUTTONS.random": CREATION_BUTTONS.random,
@@ -189,11 +191,9 @@ describe("layout", () => {
     // 押せない欄も画面の内側
     expect(inside(CREATION_ERROR, STAGE)).toBe(true);
     for (let i = 0; i < 6; i++) expect(inside(creationRow(i).label, STAGE)).toBe(true);
-    // UI-51（M16）: 職業の略称（押せない）も画面の内側で、押せる矩形（名前の欄・性格のボタン）と重ならない
-    for (let i = 0; i < 6; i++) {
-      expect(inside(creationRow(i).abbr, STAGE)).toBe(true);
-      for (const r of Object.values(SCREENS.creation!)) expect(overlaps(creationRow(i).abbr, r)).toBe(false);
-    }
+    // UI-51（M16）: 職業の略称も画面の内側。M20（D-8）から押せるので SCREENS.creation に入れ、一辺 30 以上と重ならないことは上のテストで見る
+    for (let i = 0; i < 6; i++) expect(inside(creationRow(i).abbr, STAGE)).toBe(true);
+    expect(creationRow(0).abbr).toEqual({ x: 94, y: 34, w: 32, h: 32 });
     for (let i = 0; i < 6; i++) {
       expect(inside(debugRow(i).label, STAGE)).toBe(true);
       expect(inside(debugRow(i).value, STAGE)).toBe(true);
