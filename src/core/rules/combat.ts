@@ -545,6 +545,7 @@ function runRound(ctx: RuleContext, who: { allies: boolean; enemies: boolean }):
       actEnemyGroup(ctx, actor.g, can, defending);
     }
     if (isVictory(b)) {
+      noEnemyLeft(ctx, order.slice(i + 1).map((e) => e.actor));
       endBattle(ctx, "win");
       return true;
     }
@@ -555,6 +556,27 @@ function runRound(ctx: RuleContext, who: { allies: boolean; enemies: boolean }):
   }
   return false;
 }
+
+/**
+ * CB-51 / CB-55（M18）: 勝利で打ち切ったとき、まだ行動していない行動可能な味方のうち、攻撃か敵を対象にする呪文
+ * （target が enemy / enemyGroup / allEnemies）を選んでいた者に、行動順で message `battle.noEnemyLeft`{name} を 1 行ずつ出す。
+ * まとめて beat{aftermath} 1 つ。防御・道具・味方への呪文は出さない。乱数は引かない
+ */
+function noEnemyLeft(ctx: RuleContext, rest: readonly Actor[]): void {
+  const { state, data } = ctx;
+  section(ctx, "aftermath", () => {
+    for (const a of rest) {
+      if (a.side !== "ally") continue;
+      const ch = requireMember(state, a.plan.memberId);
+      if (!canAct(ch)) continue;
+      const p = a.plan;
+      const offensive = p.kind === "attack" || (p.kind === "cast" && ENEMY_SPELL_TARGETS.includes(spellOf(data, p.spellId).target));
+      if (offensive) ctx.events.push({ kind: "message", key: "battle.noEnemyLeft", params: { name: ch.name } });
+    }
+  });
+}
+
+const ENEMY_SPELL_TARGETS: readonly string[] = ["enemy", "enemyGroup", "allEnemies"];
 
 type SanOverrideKey = "battle.disobey" | "battle.confused";
 
@@ -965,7 +987,7 @@ function actEnemyGroup(ctx: RuleContext, g: number, us: readonly number[], defen
  * CB-55（M14）: 敵のまとまりの result の要約。試みが 1 回なら battle.hit / battle.miss（M13 までと同じ）。
  * 2 回以上: 全部外れ → 対象 1 人なら battle.missAll{target, n}、2 人以上なら battle.missParty{n}。
  * 当たりあり → 当たった対象が 1 人なら battle.hits{target, n, damage}、2 人以上なら battle.hitsMany{n, list}
- * （list は当たった対象を最初に当たった順に battle.hitsItem{target, damage: その人の合計} を battle.hitsJoin でつないだ文字列）
+ * （list は当たった対象を最初に当たった順に battle.hitsItem{target, damage: その人の合計}（その人に 2 回以上なら battle.hitsItemN{target, n, damage}。M18）を battle.hitsJoin でつないだ文字列）
  */
 function enemySummary(data: GameData, tries: readonly { id: string; name: string; hit: boolean; damage: number }[]): GameEvent | null {
   if (tries.length === 0) return null;
@@ -982,15 +1004,23 @@ function enemySummary(data: GameData, tries: readonly { id: string; name: string
       ? { kind: "message", key: "battle.missAll", params: { target: tries[0]!.name, n: tries.length } }
       : { kind: "message", key: "battle.missParty", params: { n: tries.length } };
   }
-  const sums: { id: string; name: string; damage: number }[] = [];
+  const sums: { id: string; name: string; damage: number; n: number }[] = [];
   for (const t of hits) {
     const s = sums.find((x) => x.id === t.id);
-    if (s === undefined) sums.push({ id: t.id, name: t.name, damage: t.damage });
-    else s.damage += t.damage;
+    if (s === undefined) sums.push({ id: t.id, name: t.name, damage: t.damage, n: 1 });
+    else {
+      s.damage += t.damage;
+      s.n += 1;
+    }
   }
   if (sums.length === 1) return { kind: "message", key: "battle.hits", params: { target: sums[0]!.name, n: hits.length, damage: sums[0]!.damage } };
+  // CB-24（M18）: その人に 2 回以上当たったときだけ battle.hitsItemN{target, n, damage}（1 回なら battle.hitsItem）
   const list = sums
-    .map((x) => fillText(data, "battle.hitsItem", { target: x.name, damage: x.damage }))
+    .map((x) =>
+      x.n >= 2
+        ? fillText(data, "battle.hitsItemN", { target: x.name, n: x.n, damage: x.damage })
+        : fillText(data, "battle.hitsItem", { target: x.name, damage: x.damage }),
+    )
     .join(data.strings["battle.hitsJoin"] ?? "");
   return { kind: "message", key: "battle.hitsMany", params: { n: hits.length, list } };
 }

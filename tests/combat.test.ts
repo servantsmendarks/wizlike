@@ -3105,3 +3105,113 @@ describe("飛行（CB-26）", () => {
     }
   });
 });
+
+describe("勝利の打ち切りと要約の回数（CB-51 / CB-55 / CB-24。M18）", () => {
+  test("CB-51/CB-55 勝利で打ち切ったとき、まだ行動していない味方のうち攻撃・敵への呪文を選んでいた者に battle.noEnemyLeft{name} を行動順で 1 行ずつ（beat{aftermath} 1 つ。防御・味方への呪文は出さない）。乱数・state は全員が防御のときと同じ", () => {
+    const d = dataWith({ combat: ALWAYS_HIT }, (x) => {
+      noBenefits(x);
+      noSanOverride(x);
+    });
+    const base = dived(1);
+    const agi: Record<string, number> = { c1: 1000, c5: 600, c2: 500, c3: 400, c4: 300, c6: 100 };
+    const patches: Record<string, Partial<Character>> = {};
+    for (const c of base.party) patches[c.id] = { stats: { ...c.stats, agi: agi[c.id]! }, level: 1 };
+    patches["c4"] = { ...patches["c4"], knownSpells: ["heal"], mp: 10, mpMax: 10 };
+    patches["c5"] = { ...patches["c5"], knownSpells: ["fire_arrow"], mp: 10, mpMax: 10 };
+    const groups: GroupSpec[] = [{ monsterId: "giant_rat", hps: [1], status: [["paralysis"]] }];
+    const mk = (inputs: Record<string, BattleAction>) => setup(groups, { patches, inputs, identified: ["giant_rat"] });
+    const chosen: Record<string, BattleAction> = {
+      c1: atk(0),
+      c2: atk(0),
+      c3: DEF,
+      c4: { type: "cast", spellId: "heal", target: { side: "ally", memberId: "c1" } },
+      c5: { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 0 } },
+      c6: atk(0), // 後衛だが届く武器（canStrike）なので攻撃の扱い
+    };
+    const r = exec(mk(chosen), RESOLVE, d);
+    const plain = exec(mk({ c1: atk(0), c2: DEF, c3: DEF, c4: DEF, c5: DEF, c6: DEF }), RESOLVE, d);
+    const name = (id: string) => member(base, id).name;
+    // 撃破の aftermath の後、戦闘の終わりの beat{system} の前に 1 つの拍
+    const at = r.events.findIndex((e) => e.kind === "message" && e.key === "battle.noEnemyLeft");
+    expect(at).toBeGreaterThan(0);
+    expect(r.events.slice(at - 1, at + 4)).toEqual([
+      { kind: "beat", phase: "aftermath", auto: false },
+      { kind: "message", key: "battle.noEnemyLeft", params: { name: name("c5") } },
+      { kind: "message", key: "battle.noEnemyLeft", params: { name: name("c2") } },
+      { kind: "message", key: "battle.noEnemyLeft", params: { name: name("c6") } },
+      { kind: "beat", phase: "system", auto: false },
+    ]);
+    expect(r.events[at + 4]).toEqual({ kind: "battleEnd", result: "win" });
+    expect(r.events.filter((e) => e.kind === "message" && e.key === "battle.noEnemyLeft")).toHaveLength(3);
+    // 行を除けば全員が防御のときと同じ列・乱数・パーティ（乱数を引かない）
+    const strip = (es: readonly GameEvent[]) => es.filter((e) => !(e.kind === "message" && e.key === "battle.noEnemyLeft"));
+    expect(strip(r.events).filter((e, i, a) => !(e.kind === "beat" && a[i + 1]?.kind === "beat"))).toEqual(plain.events);
+    expect(r.state.rng).toEqual(plain.state.rng);
+    expect(r.state.party.map((c) => [c.hp, c.mp, c.exp])).toEqual(plain.state.party.map((c) => [c.hp, c.mp, c.exp]));
+    expect(plain.events.some((e) => e.kind === "message" && e.key === "battle.noEnemyLeft")).toBe(false);
+    // 文言の長さ（UI-76 の窓: 28 字 × 2 行）。名前は最悪の 6 字
+    const line = d.strings["battle.noEnemyLeft"]!.split("{name}").join("あいうえおか");
+    expect(line.length).toBeLessThanOrEqual(28);
+  });
+
+  test("CB-51/CB-55 行動可能でない者（麻痺）と、勝利の時点で行動を終えていた者には出さない", () => {
+    const d = dataWith({ combat: ALWAYS_HIT }, (x) => {
+      noBenefits(x);
+      noSanOverride(x);
+    });
+    const base = dived(1);
+    const agi: Record<string, number> = { c2: 1000, c1: 500, c3: 100 };
+    const patches: Record<string, Partial<Character>> = { c4: PARA, c5: PARA, c6: PARA };
+    for (const id of ["c1", "c2", "c3"]) patches[id] = { stats: { ...member(base, id).stats, agi: agi[id]! }, level: 1 };
+    patches["c3"] = { ...patches["c3"], ...PARA };
+    // c2（先に動く・外れない攻撃）は大ネズミ 2 体の 1 体目、c1 が 2 体目を倒して勝つ。c3 は麻痺
+    const s = setup([{ monsterId: "giant_rat", hps: [1, 1], status: [["paralysis"], ["paralysis"]] }], {
+      patches,
+      inputs: { c1: atk(0), c2: atk(0), c3: atk(0) },
+      identified: ["giant_rat"],
+    });
+    const r = exec(s, RESOLVE, d);
+    expect(eventsOf(r.events, "battleEnd")).toEqual([{ kind: "battleEnd", result: "win" }]);
+    expect(r.events.some((e) => e.kind === "message" && e.key === "battle.noEnemyLeft")).toBe(false);
+  });
+
+  test("CB-24 敵の要約の list: その人に 2 回以上当たったときだけ battle.hitsItemN{target, n, damage}（1 回なら battle.hitsItem）。n は当たりの総数のまま（集計の抜けではない。鏡の rng）", () => {
+    const d = dataWith({ combat: ALWAYS_HIT }, (x) => {
+      x.monsters.find((mm) => mm.id === "kobold")!.agi = 1000;
+    });
+    const BIG = { hp: 100, hpMax: 100 };
+    const patches = { c1: BIG, c2: { ...PARA, ...BIG }, c3: { ...PARA, ...BIG }, c4: PARA, c5: PARA, c6: PARA };
+    const dmgTo = (t: string, raw: number) => (t === "c1" ? Math.ceil(raw / 2) : raw);
+    let found = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const s = setup([{ monsterId: "kobold", hps: [50, 50, 50] }], { seed, patches, inputs: { c1: DEF }, identified: ["kobold"] });
+      const ids = ["c1", "c2", "c3"];
+      const m = cloneRng(s.rng);
+      const r0 = rolls(m, 4); // アルド → コボルド 3 体
+      const order = [0, 1, 2].sort((x, y) => r0[y + 1]! - r0[x + 1]! || x - y);
+      const tries = order.map(() => {
+        const t = ids[randInt(m, 0, 2)]!;
+        chance(m, 100);
+        return { t, dmg: dmgTo(t, Math.max(1, rollDice(m, "1d4").total)) };
+      });
+      const r = exec(s, RESOLVE, d);
+      expect(r.state.rng).toEqual(m);
+      const sums: { t: string; n: number; dmg: number }[] = [];
+      for (const x of tries) {
+        const e = sums.find((y) => y.t === x.t);
+        if (e === undefined) sums.push({ t: x.t, n: 1, dmg: x.dmg });
+        else {
+          e.n += 1;
+          e.dmg += x.dmg;
+        }
+      }
+      if (sums.length !== 2) continue;
+      found += 1;
+      const nameOf = (id: string) => member(s, id).name;
+      const list = sums.map((x) => (x.n >= 2 ? `${nameOf(x.t)}に${x.n}回で${x.dmg}` : `${nameOf(x.t)}に${x.dmg}`)).join("、");
+      expect(r.events).toContainEqual({ kind: "message", key: "battle.hitsMany", params: { n: 3, list } });
+      expect(list).toContain("回で");
+    }
+    expect(found).toBeGreaterThan(0);
+  });
+});
