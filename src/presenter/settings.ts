@@ -123,7 +123,7 @@ function normalize(src: Record<string, unknown>, fallback: Settings): Settings {
   };
 }
 
-/** config の値を範囲に丸めたもの。inputMode は both、skipAnimations は false、beatAdvance は tap、autoBeatMs は config.ui.autoBeatMs を選択肢に寄せたもの */
+/** config の値を範囲に丸めたもの。inputMode は both、skipAnimations は false、beatAdvance は timed（M18。保存の無い人にだけ効く。保存の値は書き換えない）、autoBeatMs は config.ui.autoBeatMs を選択肢に寄せたもの */
 export function defaultSettings(config: Config): Settings {
   return {
     skipAnimations: false,
@@ -132,7 +132,7 @@ export function defaultSettings(config: Config): Settings {
     swipeThreshold: clampTo("swipeThreshold", config.input.swipeThresholdPx),
     holdRepeatMs: clampTo("holdRepeatMs", config.input.holdRepeatMs),
     autoBeatMs: snapAutoBeat(config.ui.autoBeatMs),
-    beatAdvance: "tap",
+    beatAdvance: "timed",
     musicVolume: clampVolume(config.ui.musicVolume),
     sfxVolume: clampVolume(config.ui.sfxVolume),
   };

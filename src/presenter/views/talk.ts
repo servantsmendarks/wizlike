@@ -573,6 +573,8 @@ export type Narration = {
   typing(): boolean;
   log(text: string): void;
   waitMs(ms: number): Promise<void>;
+  /** UI-45（M18）: 進行中の waitMs を今すぐ解決する。省略すると何もしない */
+  cutWait?(): void;
   /** UI-47 / UI-66（M10.5）: 語った文の後の出来事の前の待ち（TalkModel.hold。前の文の文字送りの終わりまで）。メッセージ窓には無い（待たない） */
   hold?(): Promise<void>;
   /** UI-40 / UI-47（M10.5）: 判定の箱を会話の箱と一緒に消すか（街なら真。消すのは箱の cleared）。省略すると偽 */
@@ -613,6 +615,7 @@ export function createNarrator(o: {
     typing: () => to().typing(),
     log: (text) => o.window.log(text),
     waitMs: (ms) => o.window.waitMs(ms),
+    cutWait: () => o.window.cutWait?.(),
     // 街なら会話の箱の hold。メッセージ窓（迷宮・戦闘）は待たない（拍の待ちは playback の beat が受け持つ）
     hold: () => (o.town() ? (o.talk.hold?.() ?? Promise.resolve()) : Promise.resolve()),
     keepsDice: () => o.town(),

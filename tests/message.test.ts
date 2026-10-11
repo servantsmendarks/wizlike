@@ -170,6 +170,54 @@ describe("MessageWindow", () => {
     expect(box.children).toEqual([]);
   });
 
+  test("UI-45（M18）cutWait は進行中の waitMs の animation を finish して解決させる。待っていなければ何もしない", async () => {
+    const created: FakeEl[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => {
+        const e = new FakeEl();
+        created.push(e);
+        return e;
+      },
+      createElementNS: () => new FakeEl(),
+    });
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const w = createMessageWindow({ speed: () => 0, historyMax: 15, region: g.message, layout: L.message });
+    const clock = created.find((e) => e.style["width"] === "1px" && e.style["height"] === "1px")!;
+    let finishes = 0;
+    const durations: number[] = [];
+    clock.animate = ((_k: unknown, o: { duration: number }) => {
+      durations.push(o.duration);
+      let resolve: () => void = () => {};
+      const finished = new Promise<void>((r) => {
+        resolve = r;
+      });
+      return {
+        finished,
+        cancel() {},
+        finish() {
+          finishes++;
+          resolve();
+        },
+      };
+    }) as unknown as FakeEl["animate"];
+    w.cutWait(); // 待っていない
+    expect(finishes).toBe(0);
+    let done = false;
+    const p = w.waitMs(600).then(() => {
+      done = true;
+    });
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(done).toBe(false);
+    expect(durations).toEqual([600]);
+    w.cutWait();
+    await p;
+    expect(done).toBe(true);
+    expect(finishes).toBe(1);
+    w.cutWait(); // 解決した後は何もしない
+    expect(finishes).toBe(1);
+  });
+
   test("UI-47（M8.5）clearView は窓の DOM の行だけを消し、全文の履歴（history）は残す。その後の say は空の窓に足す", async () => {
     const created: FakeEl[] = [];
     vi.stubGlobal("document", {

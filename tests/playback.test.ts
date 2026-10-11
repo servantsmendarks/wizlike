@@ -1035,6 +1035,90 @@ describe("UI-45 拍の再生", () => {
     vi.useRealTimers();
   });
 
+  test("UI-45/UI-57（M18）timed の待ちの最中のタップは残りの待ちを飛ばして次の拍へ（message.cutWait を呼ぶ）。先取りのタップでは飛ばさない。leave の timed の待ち（オートの戦闘の外への screen の前）は飛ばさない", async () => {
+    /** waitMs は外から解くまで解決しない（resolvers に溜める） */
+    const run = (events: GameEvent[], after: GameState, settings: Partial<Settings>, tapAfterSay: boolean) => {
+      const { deps, log } = fakeDeps(settings);
+      const resolvers: (() => void)[] = [];
+      deps.message.waitMs = (ms) => {
+        log.push({ m: "message.waitMs", a: [ms] });
+        return new Promise<void>((r) => resolvers.push(r));
+      };
+      deps.message.cutWait = () => log.push({ m: "message.cutWait", a: [] });
+      const player = createPlayer(deps);
+      if (tapAfterSay) {
+        const sayFn = deps.message.say;
+        deps.message.say = async (text, instant) => {
+          await sayFn(text, instant);
+          player.tap(); // 文を出し終えた後のタップ（先取り）
+        };
+      }
+      let done = false;
+      const p = player.play(events, battleState(), after).then(() => {
+        done = true;
+      });
+      const flush = async (): Promise<void> => {
+        for (let i = 0; i < 20; i++) await Promise.resolve();
+      };
+      return { log, player, p, flush, resolvers, isDone: () => done };
+    };
+    const seq = (m: { m: string; a: unknown[] }) => (m.m === "message.waitMs" ? `waitMs ${String(m.a[0])}` : m.m === "message.say" ? `say ${String(m.a[0])}` : m.m);
+    const pick = (log: Log) => log.filter((e) => ["message.waitMs", "message.cutWait", "message.say", "beat.waitTap", "screens.show"].includes(e.m)).map(seq);
+    const events: GameEvent[] = [
+      beat("declare", false),
+      msg("battle.attackDeclare", { actor: "A" }),
+      beat("result", false),
+      msg("battle.miss", { target: "A" }),
+      beat("system", false),
+      { kind: "battleEnd", result: "win" },
+      msg("battle.win"),
+      { kind: "screen", to: "dungeon" },
+    ];
+    expectKnownStringKeys(events);
+    const declare = say("battle.attackDeclare", { actor: "A" });
+    const miss = say("battle.miss", { target: "A" });
+    // 自動で流す（M18 から既定。既定値そのものは settings.test）: 待ちの最中のタップで次の拍へ
+    const a = run(events, stateWith(diveAt(1, 1, "N")), { beatAdvance: "timed" }, false);
+    await a.flush();
+    expect(pick(a.log)).toEqual([declare, "waitMs 400"]);
+    expect(a.isDone()).toBe(false);
+    a.player.tap();
+    await a.flush();
+    expect(pick(a.log)).toEqual([declare, "waitMs 400", "message.cutWait", miss, "waitMs 400"]);
+    a.player.tap();
+    await a.p;
+    // leave（戦闘の外への screen の前）は今までどおりタップ待ち（偽の掛け金はすぐ解く）
+    expect(pick(a.log)).toEqual([declare, "waitMs 400", "message.cutWait", miss, "waitMs 400", "message.cutWait", say("battle.win"), "beat.waitTap", "screens.show"]);
+    // 待ちの最中は続きの三角を出さない（leave のタップ待ちだけ）
+    expect(a.log.filter((e) => e.m === "message.setMore" && e.a[0] === true)).toHaveLength(1);
+    // 先取りのタップ（文の後・待ちの前）では待ちを飛ばさない
+    const b = run(events, stateWith(diveAt(1, 1, "N")), { beatAdvance: "timed" }, true);
+    await b.flush();
+    expect(pick(b.log)).toEqual([declare, "waitMs 400"]);
+    expect(b.isDone()).toBe(false);
+    b.resolvers.shift()!();
+    await b.flush();
+    expect(pick(b.log)).toEqual([declare, "waitMs 400", miss, "waitMs 400"]);
+    b.resolvers.shift()!();
+    await b.p;
+    expect(names(b.log)).not.toContain("message.cutWait");
+    // オートの戦闘: 拍の前の待ちは飛ばせるが、戦闘の外への screen の前（leave）の timed の待ちは飛ばさない
+    const auto: GameEvent[] = [beat("declare", true), msg("battle.attackDeclare", { actor: "A" }), beat("system", true), msg("battle.win"), { kind: "screen", to: "dungeon" }];
+    const c = run(auto, stateWith(diveAt(1, 1, "N")), { beatAdvance: "tap" }, false);
+    await c.flush();
+    c.player.tap();
+    await c.flush();
+    expect(pick(c.log)).toEqual([declare, "waitMs 400", "message.cutWait", say("battle.win"), "waitMs 400"]);
+    c.player.tap();
+    c.player.tap();
+    await c.flush();
+    expect(c.isDone()).toBe(false);
+    expect(pick(c.log).filter((m) => m === "message.cutWait")).toHaveLength(1);
+    c.resolvers.at(-1)!();
+    await c.p;
+    expect(pick(c.log).at(-1)).toBe("screens.show");
+  });
+
   test("CB-55/UI-45/UI-57（M16）戦闘の中の全滅: battleEnd の拍の後（全滅処理の拍の前）の待ちも leave と同じ。再生の進め方が自動でもタップで送り、先取りのタップでは素通りしない", async () => {
     const wipePenalty: PenaltyResult = {
       dice: [3, 4],

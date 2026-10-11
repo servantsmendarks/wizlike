@@ -8,8 +8,10 @@
 //   手動（beat.auto 偽）はタップ待ち（beat.waitTap、続きの三角を点滅）、オートは message.waitMs(settings().autoBeatMs)。
 //   戦闘の外への screen と全滅の wipe の前でも同じ待ちをする。再生の終わりは、オートなら待ち、手動ならダイスが出ているときだけ待つ（beatWait）。
 //   手動かオートかは beat.auto だけで決める（state から推測しない）。拍の外（迷宮・街）は待たない。
-//   設定「再生の進め方」が自動で流す（beatAdvance timed。UI-57。M16）なら、手動の待ちも autoBeatMs の待ちにする（leave はタップのまま。beatAdvanceWait）。
-// - tap(): タップ待ちなら解く。拍の中なら今の拍の残りを即時にする（拍は飛ばさない）。拍の外なら UI-43
+//   設定「再生の進め方」が自動で流す（beatAdvance timed。UI-57。M16。M18 から既定）なら、手動の待ちも autoBeatMs の待ちにする（leave はタップのまま。beatAdvanceWait）。
+//   M18: 次の拍の前と再生の終わりの timed の待ち（オートの拍を含む）の最中のタップは、残りの待ちを飛ばして次へ進む（cutTimed。先取りのタップは使わない）。
+//   leave の timed の待ち（オート戦闘の戦闘の外への screen の前）は飛ばさない（連打で結果を素通りしない）。
+// - tap(): タップ待ちなら解く。飛ばせる timed の待ちなら残りを飛ばす（M18）。拍の中なら今の拍の残りを即時にする（拍は飛ばさない）。拍の外なら UI-43
 //   （1 回目は今の文の即表示、同じ再生の中の 2 回目で残りをすべて即時）。
 //   拍の中で見せる残りが無い（文字送り中でなく、出ているダイスが最終の段まで描けている）ときのタップは、
 //   その拍の手動の待ちのタップとして持ち越す（tapAhead。待ちの前に message / dice / penaltyTable が来たら取り消す。戦闘の外への screen と wipe の前の待ち（leave）では使わない）。
@@ -118,6 +120,8 @@ export type PlayerDeps = {
     aside?(lines: readonly string[]): Promise<void>;
     /** UI-45: オートの拍の待ち（WAAPI の animation.finished で測る） */
     waitMs(ms: number): Promise<void>;
+    /** UI-45（M18）: 進行中の waitMs を今すぐ解決する（timed の待ちの間のタップ）。省略すると何もしない（待ちは playback 側で打ち切る） */
+    cutWait?(): void;
   };
   party: {
     setHp(id: string, hp: number): void;
@@ -222,7 +226,7 @@ export type Handlers = {
 
 export type Player = {
   play(events: readonly GameEvent[], before: GameState, finalState: GameState): Promise<void>;
-  /** タップ待ちなら解く。拍の中なら今の拍の残りを即時にする。拍の外なら UI-43（1 回目で今の文、2 回目で残りすべて） */
+  /** タップ待ちなら解く。timed の待ち（leave 以外）なら残りを飛ばす（M18）。拍の中なら今の拍の残りを即時にする。拍の外なら UI-43（1 回目で今の文、2 回目で残りすべて） */
   tap(): void;
 };
 
@@ -320,6 +324,8 @@ export function createPlayer(deps: PlayerDeps): Player {
   let beatRush = false;
   /** タップ待ちの最中か */
   let waitingTap = false;
+  /** UI-45（M18）: 飛ばせる timed の待ちの最中なら、その待ちを打ち切る関数（待っていなければ null） */
+  let cutTimed: (() => void) | null = null;
   /**
    * UI-45: 拍の中で見せる残りが無いときに受けたタップ。この拍の手動の待ちのタップとして使う。
    * 待ちの前に新しく読ませるもの（message / dice / penaltyTable）が来たら取り消す
@@ -628,7 +634,30 @@ export function createPlayer(deps: PlayerDeps): Player {
       if (ahead && at !== "leave") return;
       await waitTap();
     } else if (w === "timed") {
-      await deps.message.waitMs(deps.settings().autoBeatMs);
+      // M18: 次の拍の前と再生の終わりの待ちは、待ちの間のタップで打ち切る（leave は打ち切らない）
+      await waitTimed(deps.settings().autoBeatMs, at !== "leave");
+    }
+  };
+
+  /** UI-45: autoBeatMs の待ち。cuttable なら待ちの間のタップ（tap()）で残りを飛ばす（message.cutWait で時計も止める） */
+  const waitTimed = async (ms: number, cuttable: boolean): Promise<void> => {
+    if (!cuttable) {
+      await deps.message.waitMs(ms);
+      return;
+    }
+    let cut: () => void = () => {};
+    const tapped = new Promise<void>((resolve) => {
+      cut = resolve;
+    });
+    cutTimed = () => {
+      cutTimed = null;
+      deps.message.cutWait?.();
+      cut();
+    };
+    try {
+      await Promise.race([deps.message.waitMs(ms), tapped]);
+    } finally {
+      cutTimed = null;
     }
   };
 
@@ -766,6 +795,11 @@ export function createPlayer(deps: PlayerDeps): Player {
     tap(): void {
       if (waitingTap) {
         latch.release();
+        return;
+      }
+      if (cutTimed !== null) {
+        // UI-45（M18）: timed の待ちの最中: 残りの待ちを飛ばして次の拍へ（先取りのタップにはしない）
+        cutTimed();
         return;
       }
       if (mode !== null) {

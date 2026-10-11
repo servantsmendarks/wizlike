@@ -61,6 +61,8 @@ export type MessageWindow = {
    * setTimeout は使わない。ms が 0 以下なら即座に解決する。cancel されても先へ進む
    */
   waitMs(ms: number): Promise<void>;
+  /** UI-45（M18）: 進行中の waitMs を今すぐ解決する（animation.finish()。待っていなければ何もしない） */
+  cutWait(): void;
   /** 履歴をすべて消す。文字送り中なら完了扱いで解決する */
   clear(): void;
   /** UI-47（M8.5）: 窓の表示（DOM の行）だけを空にし、全文の履歴は残す。文字送り中なら完了扱いで解決する */
@@ -148,6 +150,8 @@ export function createMessageWindow(o: {
   const clock = document.createElement("div");
   Object.assign(clock.style, { position: "absolute", left: "0px", top: "0px", width: "1px", height: "1px", opacity: "0", pointerEvents: "none" });
   el.appendChild(clock);
+  /** UI-45（M18）: 進行中の waitMs の animation（cutWait で finish する） */
+  let waiting: Animation | null = null;
 
   /** 進行中の文字送り。rush / clear で即座に完了させる */
   let current: { finish(): void } | null = null;
@@ -245,11 +249,18 @@ export function createMessageWindow(o: {
     },
     async waitMs(ms: number): Promise<void> {
       if (!(ms > 0)) return;
+      const a = clock.animate([{ opacity: 0 }, { opacity: 0 }], { duration: ms });
+      waiting = a;
       try {
-        await clock.animate([{ opacity: 0 }, { opacity: 0 }], { duration: ms }).finished;
+        await a.finished;
       } catch {
         // cancel。そのまま先へ進む
+      } finally {
+        if (waiting === a) waiting = null;
       }
+    },
+    cutWait(): void {
+      waiting?.finish();
     },
     clear(): void {
       current?.finish();

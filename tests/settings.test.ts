@@ -32,7 +32,7 @@ afterEach(() => {
 
 describe("settings", () => {
   test("SV-24 defaultSettings は config から取る（28/250/30/both/false/400）", () => {
-    expect(D).toEqual({ skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400, beatAdvance: "tap", musicVolume: 3, sfxVolume: 2 });
+    expect(D).toEqual({ skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400, beatAdvance: "timed", musicVolume: 3, sfxVolume: 2 });
     expect(D.swipeThreshold).toBe(data.config.input.swipeThresholdPx);
     expect(D.holdRepeatMs).toBe(data.config.input.holdRepeatMs);
     expect(D.textSpeed).toBe(data.config.ui.textSpeedMs);
@@ -209,13 +209,13 @@ describe("UI-45 オートの拍の速さ", () => {
 });
 
 describe("SV-24 / UI-57 再生の進め方（beatAdvance。M16）", () => {
-  test("SV-24 beatAdvance: 既定は tap。無い（M15 までの保存）・選択肢に無い・型違いなら既定値。serialize では autoBeatMs の直後に置き、往復で戻る。nextBeatAdvance は tap ⇄ timed", () => {
-    expect(D.beatAdvance).toBe("tap");
+  test("SV-24 beatAdvance: 既定は timed（M18）。無い（M15 までの保存）・選択肢に無い・型違いなら既定値。serialize では autoBeatMs の直後に置き、往復で戻る。nextBeatAdvance は tap ⇄ timed", () => {
+    expect(D.beatAdvance).toBe("timed");
     expect([...BEAT_ADVANCES]).toEqual(["tap", "timed"]);
     const { beatAdvance: _omit, ...old } = D;
     expect(parseSettings(JSON.stringify(old), D)).toEqual(D);
     for (const bad of ["auto", "", 1, null, true, ["timed"]]) {
-      expect(parseSettings(JSON.stringify({ ...D, beatAdvance: bad }), D).beatAdvance, JSON.stringify(bad)).toBe("tap");
+      expect(parseSettings(JSON.stringify({ ...D, beatAdvance: bad }), D).beatAdvance, JSON.stringify(bad)).toBe("timed");
     }
     expect(parseSettings(JSON.stringify({ ...D, beatAdvance: "timed" }), D).beatAdvance).toBe("timed");
     const keys = Object.keys(JSON.parse(serializeSettings(D)) as object);
@@ -226,9 +226,20 @@ describe("SV-24 / UI-57 再生の進め方（beatAdvance。M16）", () => {
     // store の set でも不正な値は今の値のまま
     const st = createSettingsStore(D, () => {});
     st.set({ beatAdvance: "fast" as never });
-    expect(st.get().beatAdvance).toBe("tap");
-    st.set({ beatAdvance: "timed" });
     expect(st.get().beatAdvance).toBe("timed");
+    st.set({ beatAdvance: "tap" });
+    expect(st.get().beatAdvance).toBe("tap");
+  });
+
+  test("SV-24/UI-57（M18）既定を timed に変えても、保存にある tap（M16〜M17 で設定を触った人）はそのまま tap。保存の無い人・欄の無い保存は timed", () => {
+    const savedTap = serializeSettings({ ...D, beatAdvance: "tap" });
+    expect(parseSettings(savedTap, D).beatAdvance).toBe("tap");
+    const st = createSettingsStore(parseSettings(savedTap, D), () => {});
+    st.set({ textSpeed: 60 }); // ほかの設定を変えても書き換えない
+    expect(st.get().beatAdvance).toBe("tap");
+    expect(parseSettings(null, D).beatAdvance).toBe("timed");
+    const { beatAdvance: _omit, ...old } = D;
+    expect(parseSettings(JSON.stringify({ ...old }), D).beatAdvance).toBe("timed");
   });
 });
 

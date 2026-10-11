@@ -259,7 +259,7 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
     expect(root.children.some((c) => c.textContent === S["settings.title"])).toBe(true);
     // 5 行の値
     const toggles = L.rows.map((r) => buttonAt(r.toggle));
-    expect(toggles.map((b) => b.textContent)).toEqual([S["settings.off"], "30ms", "400ms", S["settings.inputMode.both"], S["settings.beatAdvance.tap"]]);
+    expect(toggles.map((b) => b.textContent)).toEqual([S["settings.off"], "30ms", "400ms", S["settings.inputMode.both"], S["settings.beatAdvance.timed"]]);
     for (const b of toggles) expect(tapSpecOf(b)).not.toBeNull();
     // 文字速度 30 → 60（store.set → persist。値の描き直しは app の store 購読者が refresh を呼ぶ）
     tap(toggles[1]!);
@@ -276,11 +276,11 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
     expect(store.get().autoBeatMs).toBe(600);
     tap(toggles[3]!);
     expect(store.get().inputMode).toBe("swipe");
-    tap(toggles[4]!);
-    expect(store.get().beatAdvance).toBe("timed");
-    expect(persisted.at(-1)?.beatAdvance).toBe("timed");
+    tap(toggles[4]!); // M18: 既定は timed。押すと tap
+    expect(store.get().beatAdvance).toBe("tap");
+    expect(persisted.at(-1)?.beatAdvance).toBe("tap");
     view.refresh();
-    expect(toggles[4]!.textContent).toBe(S["settings.beatAdvance.timed"]);
+    expect(toggles[4]!.textContent).toBe(S["settings.beatAdvance.tap"]);
     // 書き出し（play では押せる）・開発用・閉じる
     const exp = buttonAt(L.exportButton);
     expect(exp.textContent).toBe(S["title.export"]);
@@ -356,8 +356,8 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
     const input = buttonAt(L.importButton).children.find((c) => c.tagName === "INPUT")!;
     view.select(1);
     expect(store.get().textSpeed).toBe(60);
-    view.select(4); // 再生の進め方
-    expect(store.get().beatAdvance).toBe("timed");
+    view.select(4); // 再生の進め方（M18: 既定 timed → tap）
+    expect(store.get().beatAdvance).toBe("tap");
     view.select(5); // 曲
     expect(store.get().musicVolume).toBe(D.musicVolume + 1);
     view.select(6); // 効果音
