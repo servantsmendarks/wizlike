@@ -60,7 +60,7 @@
       { "id": "legendary", "weight": 0, "options": 3 }
     ],
     "legendaryMinDanger": 3, "curseChance": 8, "optionTierStep": 4, "dropLevelUpWeights": [60, 30, 10],
-    "weaponLvPerDamage": 2, "armorLvPerAc": 3, "casterLvPerPower": 2,
+    "weaponLvPerDamage": 1, "armorLvPerAc": 2, "casterLvPerPower": 1,
     "levelPriceRatio": 0.5, "optionSellValue": [20, 40, 80], "warehouseSlots": 40
   },
   "bank": { "amounts": [100, 1000] },

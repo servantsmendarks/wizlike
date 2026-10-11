@@ -948,14 +948,14 @@ describe("IT-62 流通レベルで並ぶベース（M9）", () => {
 describe("TW-05 店の品の性能の下見と装備できる者（M16）", () => {
   test("TW-05 shopItemPreview は合成の実体の itemPower（攻撃は Lv の分を合算したダイス、防具は AC、術者用の武器は魔法攻撃力）と装備できる職業の abbr", () => {
     const ALL = ["WAR", "THI", "PRI", "MAG", "SAM", "LOR", "BIS"];
-    // 長剣: Lv0 は 1d8、Lv2 は floor(2 ÷ weaponLvPerDamage 2) = +1 で 1d8+1。装備は 戦士・侍・君主（classes.json の順）
+    // 長剣: Lv0 は 1d8、Lv2 は floor(2 ÷ weaponLvPerDamage 1) = +2 で 1d8+2（M18）。装備は 戦士・侍・君主（classes.json の順）
     expect(shopItemPreview(data, "long_sword", 0)).toEqual({ attack: "1d8", ac: null, magicPower: null, anyone: false, classes: ["WAR", "SAM", "LOR"] });
-    expect(shopItemPreview(data, "long_sword", 2)).toMatchObject({ attack: "1d8+1" });
-    // 投げナイフ 1d4+1 の Lv4: +2 を定数に合算して 1d4+3（「1d4+1+2」にしない）
-    expect(shopItemPreview(data, "throwing_knives", 4)).toMatchObject({ attack: "1d4+3", classes: ["WAR", "THI", "MAG", "SAM", "LOR", "BIS"] });
-    // 杖（術者用。classes 空 = 誰でも）: Lv2 は魔法攻撃力 0 + floor(2 ÷ casterLvPerPower 2) = 1、ダメージに Lv の分は乗らない
-    expect(shopItemPreview(data, "staff", 2)).toEqual({ attack: "1d4", ac: null, magicPower: 1, anyone: true, classes: ALL });
-    // 鎖帷子 AC -4 の Lv3: −floor(3 ÷ armorLvPerAc 3) で -5。護符（装飾）は Lv で変わらず 0
+    expect(shopItemPreview(data, "long_sword", 2)).toMatchObject({ attack: "1d8+2" });
+    // 投げナイフ 1d4+1 の Lv4: +4 を定数に合算して 1d4+5（「1d4+1+4」にしない）
+    expect(shopItemPreview(data, "throwing_knives", 4)).toMatchObject({ attack: "1d4+5", classes: ["WAR", "THI", "MAG", "SAM", "LOR", "BIS"] });
+    // 杖（術者用。classes 空 = 誰でも）: Lv2 は魔法攻撃力 0 + floor(2 ÷ casterLvPerPower 1) = 2、ダメージに Lv の分は乗らない
+    expect(shopItemPreview(data, "staff", 2)).toEqual({ attack: "1d4", ac: null, magicPower: 2, anyone: true, classes: ALL });
+    // 鎖帷子 AC -4 の Lv3: −floor(3 ÷ armorLvPerAc 2) で -5。護符（装飾）は Lv で変わらず 0
     expect(shopItemPreview(data, "chain_mail", 3)).toEqual({ attack: null, ac: -5, magicPower: null, anyone: false, classes: ["WAR", "PRI", "SAM", "LOR", "BIS"] });
     expect(shopItemPreview(data, "charm", 3)).toMatchObject({ ac: 0, anyone: true });
     // 消耗品は null

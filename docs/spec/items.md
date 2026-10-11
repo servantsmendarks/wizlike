@@ -30,9 +30,9 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 
 ## 3. レベルの効果
 
-- IT-20 武器（`slot` が weapon で `caster` でないもの）の汎用装備は、ダメージ +floor(Lv ÷ `config.items.weaponLvPerDamage`（2）)【仮】（CB-22）。
-- IT-21 防具・盾・兜・小手（armor / shield / helm / gauntlet）の汎用装備は、AC −floor(Lv ÷ `config.items.armorLvPerAc`（3）)【仮】（CB-20）。
-- IT-22 術者用武器（ベースの `caster: true`。杖など）の汎用装備は、ダメージは増えず、魔法攻撃力 = ベースの `magicPower` + floor(Lv ÷ `config.items.casterLvPerPower`（2）)【仮】（MG-33）。ベースの `magicPower`（M9。0 以上の整数）は任意で、省略は 0。`caster` が偽の武器には書けない（読み込み時に止める）。上位の杖はこの値で表す（店では Lv = 流通レベルで売るので、Lv だけでは杖の段差が出ないため）。ユニークはベースの値を使わず `uniques[].magicPower`（IT-03）。
+- IT-20 武器（`slot` が weapon で `caster` でないもの）の汎用装備は、ダメージ +floor(Lv ÷ `config.items.weaponLvPerDamage`（1）)【仮】（M18 で 2 から）（CB-22）。
+- IT-21 防具・盾・兜・小手（armor / shield / helm / gauntlet）の汎用装備は、AC −floor(Lv ÷ `config.items.armorLvPerAc`（2）)【仮】（M18 で 3 から）（CB-20）。
+- IT-22 術者用武器（ベースの `caster: true`。杖など）の汎用装備は、ダメージは増えず、魔法攻撃力 = ベースの `magicPower` + floor(Lv ÷ `config.items.casterLvPerPower`（1）)【仮】（M18 で 2 から）（MG-33）。ベースの `magicPower`（M9。0 以上の整数）は任意で、省略は 0。`caster` が偽の武器には書けない（読み込み時に止める）。上位の杖はこの値で表す（店では Lv = 流通レベルで売るので、Lv だけでは杖の段差が出ないため）。ユニークはベースの値を使わず `uniques[].magicPower`（IT-03）。
 - IT-23 装飾（accessory）のレベルは、オプションの段階（IT-33）と値段（IT-60 / 61）にだけ効く。
 - IT-24 AC の下限（`config.combat.acMin` −10）は M7 で撤廃し、命中率の `hitMin`〜`hitMax`（5〜95%）のクランプに任せる（CB-20 / CB-21）。
 - IT-25 武器の届き方（2026-10-06）: 武器のベースは任意の `reach` を持つ。`melee`（近接。省略時の既定）/ `long`（長柄。長槍・斧槍。後衛から使える）/ `ranged`（飛び道具。弓・投石紐・投げナイフ。後衛から使える）。前の `ranged: true` はこの `ranged` に統合し、`ranged` の欄は消した（残っていれば読み込み時に未知の欄として止める）。術者用武器（IT-22）の `reach` は `melee` だけ（`long` / `ranged` は止める）。ユニークはベースの `reach` を継ぐ（IT-03）。効き目: 後衛から攻撃できるか（CB-13）、`ranged` の命中の式（CB-21）、飛行への命中の補正（CB-26）。品の詳細は `long` に「長柄。後列から届く」、`ranged` に「飛び道具。後列から届く」を出す（UI-59 の品の詳細）。
@@ -150,7 +150,7 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 `data/monsters.json` の各敵に `"dropKind": "beast"`（必須。DROP_KINDS のどれか。IT-57。M14）。
 
 `config.items`（M7 の B3 で config.json に入れた。検証は rarities の順と件数・重みの合計 > 0・個数 0〜3、optionSellValue 3 件、*LvPer* と optionTierStep は正の整数、legendaryMinDanger は整数 1〜4）【仮】:
-`rarities`（`[{ id, weight, options }]` 通常 73/0・上質 22/1・希少 5/2・伝説 0/3。M14 で重みを 75/18/6/1 から、M15 で 72/20/7/1 から変えた）、`legendaryMinDanger` 3（IT-56。伝説に上がれる箱の危険度の下限。ボスの戦利品はこの危険度で振る。M15）、`curseChance` 8、`optionTierStep` 4、`dropLevelUpWeights` [60, 30, 10]（IT-53。M14 で `dropLevelSpread` 1 を置き換えた）、`weaponLvPerDamage` 2、`armorLvPerAc` 3、`casterLvPerPower` 2、`levelPriceRatio` 0.5、`optionSellValue` [20, 40, 80]、`warehouseSlots` 40。`config.economy` に `upgradeBase` 50・`upgradeRateBase` 10・`upgradeRatePerCatalyst` 30・`upgradeDecay` 0.66・`upgradeMaxCatalysts` 3（TW-17）。`config.chest` に `secondItemChance` 25・`secondItemPerDanger` 15（IT-51 / CB-65。宝箱の 2 個目の確率。M14）、`rarityUpPerDanger` 10（IT-56。M15 で 15 から）。`config.combat` に `directDropChance` 5（%。0〜100）・`directDropGoldDice` "2d10"（ダイス記法）（CB-57 / IT-57。直接ドロップ。M14）。`config.combat.acMin` は削除（IT-24）。`dungeons[].onClear` は `shopStock` を `shopLevel` に置き換える。
+`rarities`（`[{ id, weight, options }]` 通常 73/0・上質 22/1・希少 5/2・伝説 0/3。M14 で重みを 75/18/6/1 から、M15 で 72/20/7/1 から変えた）、`legendaryMinDanger` 3（IT-56。伝説に上がれる箱の危険度の下限。ボスの戦利品はこの危険度で振る。M15）、`curseChance` 8、`optionTierStep` 4、`dropLevelUpWeights` [60, 30, 10]（IT-53。M14 で `dropLevelSpread` 1 を置き換えた）、`weaponLvPerDamage` 1、`armorLvPerAc` 2、`casterLvPerPower` 1（M18 で 2・3・2 から）、`levelPriceRatio` 0.5、`optionSellValue` [20, 40, 80]、`warehouseSlots` 40。`config.economy` に `upgradeBase` 50・`upgradeRateBase` 10・`upgradeRatePerCatalyst` 30・`upgradeDecay` 0.66・`upgradeMaxCatalysts` 3（TW-17）。`config.chest` に `secondItemChance` 25・`secondItemPerDanger` 15（IT-51 / CB-65。宝箱の 2 個目の確率。M14）、`rarityUpPerDanger` 10（IT-56。M15 で 15 から）。`config.combat` に `directDropChance` 5（%。0〜100）・`directDropGoldDice` "2d10"（ダイス記法）（CB-57 / IT-57。直接ドロップ。M14）。`config.combat.acMin` は削除（IT-24）。`dungeons[].onClear` は `shopStock` を `shopLevel` に置き換える。
 
 ## 11. 未決（ユーザーに確認すること。2026-10-05）
 

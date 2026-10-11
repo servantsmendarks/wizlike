@@ -3083,7 +3083,7 @@ describe("飛行（CB-26）", () => {
           inputs: { c5: { type: "cast", spellId: "ash_gale", target: { side: "none" } } },
         },
       );
-      // エルの武器を杖 Lv4（魔法攻撃力 2）にする
+      // エルの武器を杖 Lv4（魔法攻撃力 4。IT-22 の floor(4 ÷ 1)）にする
       const el = memberById(s, "c5")!;
       const old = el.equipment.weapon;
       if (old !== null) delete s.items[old];
@@ -3091,7 +3091,7 @@ describe("飛行（CB-26）", () => {
       const m = cloneRng(s.rng);
       rolls(m, 1); // initiative はエルだけ（麻痺の敵は振らない）
       // 飛行のネズミ 2 体、コボルト 1 体（倒れている e1-1 は振らない）の順に 4d6
-      const expected = [0, 1, 2].map(() => rollDice(m, "4d6").total + 2);
+      const expected = [0, 1, 2].map(() => rollDice(m, "4d6").total + 4);
       const r = exec(s, RESOLVE, d);
       expect(eventsOf(r.events, "spell")).toEqual([{ kind: "spell", actorId: "c5", spellId: "ash_gale", targets: ["e0-0", "e0-1", "e1-0"] }]);
       expect(eventsOf(r.events, "hpChanged").map((e) => [e.id, -e.delta])).toEqual([

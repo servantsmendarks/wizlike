@@ -48,7 +48,7 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
       lines: [
         { text: "武器　Lv5", tone: "normal" },
         { text: "希少度 希少", tone: "normal" },
-        { text: "ダメージ 1d8+2", tone: "normal" },
+        { text: "ダメージ 1d8+5", tone: "normal" },
         { text: "命中 +10%", tone: "normal" },
         { text: "AC -1", tone: "normal" },
         { text: "売値 255G", tone: "normal" }, // floor(100 × 0.5 × 3.5) = 175 + 40 × 2
@@ -62,9 +62,9 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
     const staff = createItemInstance(s, { itemId: "staff", identified: true });
     const bow = createItemInstance(s, { itemId: "short_bow", level: 2, identified: true });
     const spear = createItemInstance(s, { itemId: "spear", identified: true });
-    expect(formatItemDetail(detailOf(s, armor), S).lines.map((l) => l.text)).toEqual(["防具　Lv6", "希少度 通常", "AC -4", "売値 100G"]); // floor(50 × 0.5 × 4) = 100
+    expect(formatItemDetail(detailOf(s, armor), S).lines.map((l) => l.text)).toEqual(["防具　Lv6", "希少度 通常", "AC -5", "売値 100G"]); // floor(50 × 0.5 × 4) = 100
     expect(formatItemDetail(detailOf(s, staff), S).lines.map((l) => l.text)).toEqual(["武器　Lv0", "希少度 通常", "ダメージ 1d4", "魔法攻撃力 0", "売値 5G"]);
-    expect(formatItemDetail(detailOf(s, bow), S).lines.map((l) => l.text)).toEqual(["武器　Lv2", "希少度 通常", "ダメージ 1d6+1", "飛び道具。後列から届く", "売値 80G"]); // floor(80 × 0.5 × 2) = 80
+    expect(formatItemDetail(detailOf(s, bow), S).lines.map((l) => l.text)).toEqual(["武器　Lv2", "希少度 通常", "ダメージ 1d6+2", "飛び道具。後列から届く", "売値 80G"]); // floor(80 × 0.5 × 2) = 80
     // IT-25: 長柄（reach long）
     expect(formatItemDetail(detailOf(s, spear), S).lines.map((l) => l.text)).toEqual(["武器　Lv0", "希少度 通常", "ダメージ 1d6", "長柄。後列から届く", "売値 75G"]);
     // 上質・伝説の語（book.rarity.fine / legendary）
@@ -79,7 +79,7 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
     const staff = createItemInstance(s, { itemId: "oak_staff", level: 2, rarity: "fine", options: [{ optionId: "magic_power", tier: 1, value: 2 }], identified: true });
     const charm = createItemInstance(s, { itemId: "charm", rarity: "fine", options: [{ optionId: "magic_power", tier: 1, value: 1 }], identified: true });
     const staffLines = formatItemDetail(detailOf(s, staff), S).lines.map((l) => l.text);
-    expect(staffLines.slice(0, 5)).toEqual(["武器　Lv2", "希少度 上質", "ダメージ 1d6", "魔法攻撃力 2", "魔法攻撃力 +2"]); // 樫の杖 1 + floor(2/2)
+    expect(staffLines.slice(0, 5)).toEqual(["武器　Lv2", "希少度 上質", "ダメージ 1d6", "魔法攻撃力 3", "魔法攻撃力 +2"]); // 樫の杖 1 + floor(2/1)
     expect(formatItemDetail(detailOf(s, charm), S).lines.map((l) => l.text).slice(0, 4)).toEqual(["装飾　Lv0", "希少度 上質", "AC 0", "魔法攻撃力 +1"]);
   });
 
@@ -160,14 +160,14 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
       if (detail === null) throw new Error("no item");
       return formatItemDetail(detail, S).lines.find((l) => l.text.startsWith("ダメージ "))?.text;
     };
-    expect(damageLine(data, "throwing_knives", 2)).toBe("ダメージ 1d4+2"); // 1d4+1、Lv2 → +1
+    expect(damageLine(data, "throwing_knives", 2)).toBe("ダメージ 1d4+3"); // 1d4+1、Lv2 → +2（M18）
     expect(damageLine(data, "throwing_knives", 0)).toBe("ダメージ 1d4+1");
-    expect(damageLine(data, "dagger", 4)).toBe("ダメージ 1d4+2"); // 1d4、Lv4 → +2
+    expect(damageLine(data, "dagger", 4)).toBe("ダメージ 1d4+4"); // 1d4、Lv4 → +4
     knivesBase.damage = "1d4-1";
-    expect(damageLine(neg, "throwing_knives", 2)).toBe("ダメージ 1d4"); // 合計 0 は定数を出さない
+    expect(damageLine(neg, "throwing_knives", 1)).toBe("ダメージ 1d4"); // 合計 0 は定数を出さない
     knivesBase.damage = "1d4-2";
     expect(damageLine(neg, "throwing_knives", 0)).toBe("ダメージ 1d4-2"); // 負は「-」
-    expect(damageLine(neg, "throwing_knives", 2)).toBe("ダメージ 1d4-1");
+    expect(damageLine(neg, "throwing_knives", 1)).toBe("ダメージ 1d4-1");
   });
 });
 

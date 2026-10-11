@@ -807,9 +807,9 @@ describe("UI-52 街のページ", () => {
     expect(shopPreviewText("leather_armor", menuOf(s), S)).toBe("革鎧: 攻撃 — / AC -2 / 魔法攻撃力 — / 装備: 誰でも");
     expect(shopPreviewText("herb", menuOf(s), S)).toBeNull();
     s.progress.shopLevel = 2;
-    expect(shopPreviewText("staff", menuOf(s), S)).toBe("杖 +2: 攻撃 1d4 / AC — / 魔法攻撃力 1 / 装備: 誰でも");
+    expect(shopPreviewText("staff", menuOf(s), S)).toBe("杖 +2: 攻撃 1d4 / AC — / 魔法攻撃力 2 / 装備: 誰でも");
     // strings を差し替えれば文も変わる（表示層に文を書かない）
-    expect(shopPreviewText("staff", menuOf(s), { ...S, "town.shop.preview": "{name} Lv{level} {magic}" })).toBe("杖 +2 Lv2 1");
+    expect(shopPreviewText("staff", menuOf(s), { ...S, "town.shop.preview": "{name} Lv{level} {magic}" })).toBe("杖 +2 Lv2 2");
     for (let lv = 0; lv <= 6; lv++) {
       s.progress.shopLevel = lv;
       const m = menuOf(s);

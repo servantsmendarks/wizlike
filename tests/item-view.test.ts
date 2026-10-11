@@ -15,7 +15,7 @@ const town = (): GameState => cloneState(newGame(1));
 const member = (s: GameState, id: string): Character => memberById(s, id)!;
 
 describe("UI-59/IT-11/IT-12 itemDetail（品の詳細）", () => {
-  test("IT-11/IT-20/IT-34/IT-61 鑑定済みの汎用武器: 表示名・部位・Lv・希少度・性能（Lv5 の長剣はダメージ +floor(5/2) = 2）・オプション（ac は −値）・売値", () => {
+  test("IT-11/IT-20/IT-34/IT-61 鑑定済みの汎用武器: 表示名・部位・Lv・希少度・性能（Lv5 の長剣はダメージ +floor(5/1) = 5。M18）・オプション（ac は −値）・売値", () => {
     const s = town();
     const id = createItemInstance(s, {
       itemId: "long_sword",
@@ -36,8 +36,8 @@ describe("UI-59/IT-11/IT-12 itemDetail（品の詳細）", () => {
       level: 5,
       rarity: "rare",
       unique: false,
-      power: { kind: "weapon", dice: "1d8", damageBonus: 2, magicPower: 0, reach: "melee", caster: false },
-      damageDice: "1d8+2", // 2026-10-06（実機(M9-飛行) B3）: 表示用のダイス（定数と Lv の分を合算）の項目を足した
+      power: { kind: "weapon", dice: "1d8", damageBonus: 5, magicPower: 0, reach: "melee", caster: false },
+      damageDice: "1d8+5", // 2026-10-06（実機(M9-飛行) B3）: 表示用のダイス（定数と Lv の分を合算）の項目を足した
       options: [
         { name: "力", value: 2, unit: "", bad: false },
         { name: "AC", value: -1, unit: "", bad: false },
@@ -50,16 +50,16 @@ describe("UI-59/IT-11/IT-12 itemDetail（品の詳細）", () => {
     });
   });
 
-  test("IT-21/IT-22/IT-23 性能: 汎用の防具は ac − floor(Lv/3)、装飾は Lv の効果なし、術者用武器は魔法攻撃力 floor(Lv/2) でダメージ +0", () => {
+  test("IT-21/IT-22/IT-23 性能: 汎用の防具は ac − floor(Lv/2)、装飾は Lv の効果なし、術者用武器は魔法攻撃力 floor(Lv/1) でダメージ +0（M18）", () => {
     const s = town();
     const armor = createItemInstance(s, { itemId: "leather_armor", level: 6, identified: true });
     const charm = createItemInstance(s, { itemId: "charm", level: 6, identified: true });
     const staff = createItemInstance(s, { itemId: "staff", level: 5, identified: true });
     const bow = createItemInstance(s, { itemId: "short_bow", level: 3, identified: true });
-    expect(itemDetail(s, data, armor)!.power).toEqual({ kind: "armor", ac: -4 }); // −2 − floor(6/3)
+    expect(itemDetail(s, data, armor)!.power).toEqual({ kind: "armor", ac: -5 }); // −2 − floor(6/2)
     expect(itemDetail(s, data, charm)!.power).toEqual({ kind: "armor", ac: 0 });
-    expect(itemDetail(s, data, staff)!.power).toEqual({ kind: "weapon", dice: "1d4", damageBonus: 0, magicPower: 2, reach: "melee", caster: true });
-    expect(itemDetail(s, data, bow)!.power).toEqual({ kind: "weapon", dice: "1d6", damageBonus: 1, magicPower: 0, reach: "ranged", caster: false });
+    expect(itemDetail(s, data, staff)!.power).toEqual({ kind: "weapon", dice: "1d4", damageBonus: 0, magicPower: 5, reach: "melee", caster: true });
+    expect(itemDetail(s, data, bow)!.power).toEqual({ kind: "weapon", dice: "1d6", damageBonus: 3, magicPower: 0, reach: "ranged", caster: false });
     expect(itemDetail(s, data, armor)!.name).toBe("革鎧 +6");
     expect(itemDetail(s, data, armor)!.level).toBe(6);
   });
@@ -140,7 +140,7 @@ describe("UI-59/IT-11/IT-12 itemDetail（品の詳細）", () => {
     const s = town();
     const knives = createItemInstance(s, { itemId: "throwing_knives", level: 2, identified: true });
     const armor = createItemInstance(s, { itemId: "leather_armor", level: 6, identified: true });
-    expect(itemDetail(s, data, knives)).toMatchObject({ power: { kind: "weapon", dice: "1d4+1", damageBonus: 1 }, damageDice: "1d4+2" });
+    expect(itemDetail(s, data, knives)).toMatchObject({ power: { kind: "weapon", dice: "1d4+1", damageBonus: 2 }, damageDice: "1d4+3" });
     expect(itemDetail(s, data, armor)!.damageDice).toBeNull();
   });
 });
@@ -151,7 +151,7 @@ describe("UI-59/CH-13/CH-14/MG-33 memberSheet（状態の実効の値）", () =>
     const c1 = member(s, "c1");
     // 装備を外してから付け直す（初期装備の実体は残っても参照されないので equipStats は見ない）
     c1.equipment = { weapon: null, armor: null, shield: null, helm: null, gauntlet: null, accessory: null };
-    c1.equipment.weapon = createItemInstance(s, { itemId: "staff", level: 5, identified: true }); // 魔法攻撃力 floor(5/2) = 2
+    c1.equipment.weapon = createItemInstance(s, { itemId: "staff", level: 5, identified: true }); // 魔法攻撃力 floor(5/1) = 5
     c1.equipment.armor = createItemInstance(s, { itemId: "leather_armor", level: 3, identified: true }); // −2 − 1 = −3
     c1.equipment.helm = createItemInstance(s, { itemId: "leather_cap", uniqueId: "alarm_bell_helm", identified: true }); // −2
     c1.equipment.accessory = createItemInstance(s, {
@@ -173,7 +173,7 @@ describe("UI-59/CH-13/CH-14/MG-33 memberSheet（状態の実効の値）", () =>
     expect(sheet.sanMax).toBe(c1.sanMax + 10);
     expect(sheet.ac).toBe(data.config.combat.acBase - 3 - 2 - 1);
     expect(sheet.ac).toBe(4);
-    expect(sheet.magicPower).toBe(2);
+    expect(sheet.magicPower).toBe(5);
     // equipStats と同じ値を写している
     const es = equipStats(s, data, c1);
     expect(sheet).toMatchObject({ stats: es.stats, hpMax: es.hpMax, mpMax: es.mpMax, sanMax: es.sanMax, magicPower: es.magicPower });
@@ -185,8 +185,8 @@ describe("UI-59/CH-13/CH-14/MG-33 memberSheet（状態の実効の値）", () =>
     c1.stats.str = 14; // 力補正 floor((14 − 10) / 2) = 2
     c1.personality = "reckless"; // EV-42: 無鉄砲の benefits.damage = 1
     c1.equipment.weapon = createItemInstance(s, { itemId: "long_sword", level: 4, options: [{ optionId: "damage", tier: 1, value: 1 }], identified: true });
-    // 2 + 1 + floor(4 ÷ weaponLvPerDamage 2) = 2 + オプション 1 → 6
-    expect(memberSheet(s, data, c1)).toMatchObject({ attackDice: "1d8", attackBonus: 6 });
+    // 2 + 1 + floor(4 ÷ weaponLvPerDamage 1) = 4 + オプション 1 → 8
+    expect(memberSheet(s, data, c1)).toMatchObject({ attackDice: "1d8", attackBonus: 8 });
     // 素手（combat.unarmedDice 1d2）・力 9（floor(−1 ÷ 2) = −1）・性格なし（リーダーと同じ 0）→ 1d2 と −1（最低 1 の丸めは攻撃の出目の側）
     c1.equipment.weapon = null;
     c1.stats.str = 9;
@@ -201,10 +201,10 @@ describe("UI-59/CH-13/CH-14/MG-33 memberSheet（状態の実効の値）", () =>
     c1.stats.str = 14; // 力補正 2
     c1.personality = "reckless"; // 恩恵 damage 1
     c1.equipment.weapon = createItemInstance(s, { itemId: "throwing_knives", level: 2, options: [{ optionId: "damage", tier: 1, value: 1 }], identified: true });
-    // 1d4+1 の定数 1 + 2 + 1 + Lv2 の 1 + オプション 1 = 6。足し分は 5（attackDice / attackBonus は今までどおり）
-    expect(memberSheet(s, data, c1)).toMatchObject({ attackDice: "1d4+1", attackBonus: 5, attackDamageDice: "1d4+6" });
+    // 1d4+1 の定数 1 + 2 + 1 + Lv2 の 2 + オプション 1 = 7。足し分は 6（attackDice / attackBonus は今までどおり）
+    expect(memberSheet(s, data, c1)).toMatchObject({ attackDice: "1d4+1", attackBonus: 6, attackDamageDice: "1d4+7" });
     // 品の詳細（判断 7 (a)）はオプションを足さない
-    expect(itemDetail(s, data, c1.equipment.weapon)?.damageDice).toBe("1d4+2");
+    expect(itemDetail(s, data, c1.equipment.weapon)?.damageDice).toBe("1d4+3");
     c1.equipment.weapon = null;
     c1.stats.str = 10;
     c1.personality = null;
@@ -270,13 +270,13 @@ describe("UI-67 equipPreview（装備の差分）", () => {
     expect(p.attack.changed).toBe(false);
   });
 
-  test("UI-67/IT-34/MG-33 外す（instanceId null）と魔法攻撃力: 杖 Lv4（floor(4/2) = 2）を外すと 2 → 0。オプション magic_power +2 の護符を着けると 0 → 2", () => {
+  test("UI-67/IT-34/MG-33 外す（instanceId null）と魔法攻撃力: 杖 Lv4（floor(4/1) = 4）を外すと 4 → 0。オプション magic_power +2 の護符を着けると 0 → 2", () => {
     const s = town();
     const c5 = member(s, "c5");
     const staff = createItemInstance(s, { itemId: "staff", level: 4, identified: true });
     c5.equipment.weapon = staff;
     const off = equipPreview(s, data, "c5", "weapon", null)!;
-    expect(off.magicPower).toEqual({ from: 2, to: 0, changed: true });
+    expect(off.magicPower).toEqual({ from: 4, to: 0, changed: true });
     expect(off.magicPower.to).toBe(sheetAfter(s, { type: "party.unequip", memberId: "c5", slot: "weapon" }, "c5").magicPower);
     expect(off.cursedWarning).toBe(false);
     const charm = createItemInstance(s, { itemId: "charm", options: [{ optionId: "magic_power", tier: 2, value: 2 }], identified: true });

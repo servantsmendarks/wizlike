@@ -61,8 +61,9 @@ describe("バランス（H9 煙テスト）", () => {
   // M14: 希少度の重みと強欲の chestQuality（IT-30 / IT-31）を変えて宝箱の品の乱数が変わり、シード 4 が d02 を踏破しなくなったので、踏破するシード 2 に替えた（1〜3 が条件を満たすことを実行して確かめた）
   // M14: 敵の直接ドロップ（CB-57。勝利でグループごとに chance）で勝利の後の乱数が変わり、シード 2 が d03 に D03_DIVES 回潜らなくなったので、シード 1 に替えた（1・4・6 が条件を満たし、3・5 は満たさないことを実行して確かめた）
   // M17: 所持枠に素の力の補正（CH-71。アルド・ベルクが 9 枠）が入って拾う品と売る品が変わり、シード 1 が d02 を踏破しなくなったので、シード 2 に替えた（2〜8 が条件を満たすことを実行して確かめた）
-  test("H9/M9/M12 進行ボットの煙テスト: シード 2 は d01 のボスを倒してテレポーターで帰り、d02 を最下層 3 階のボスまで踏破し、その後は d03 に D03_DIVES 回潜って終わる（ボスへの経路の煙。データが変わってシード 2 が踏破しなくなったら、踏破するシードに替える）", () => {
-    const c = new Campaign(2, PROGRESS_BOT);
+  // M18: 装備の Lv の効果（IT-20〜22）を 2・3・2 から 1・2・1 に変えて戦闘と買い物が変わり、シード 2 が d02 を踏破しなくなったので、シード 1 に替えた（1・3〜6・8〜10 が条件を満たし、2・7 は満たさないことを実行して確かめた）
+  test("H9/M9/M12 進行ボットの煙テスト: シード 1 は d01 のボスを倒してテレポーターで帰り、d02 を最下層 3 階のボスまで踏破し、その後は d03 に D03_DIVES 回潜って終わる（ボスへの経路の煙。データが変わってシード 1 が踏破しなくなったら、踏破するシードに替える）", () => {
+    const c = new Campaign(1, PROGRESS_BOT);
     const r = c.campaign(PROGRESS_DIVES);
     const k = r.dives.findIndex((d) => d.bossWin);
     expect(k).toBeGreaterThanOrEqual(0);
@@ -139,17 +140,17 @@ describe("バランス（H9 煙テスト）", () => {
     };
     // アルド（戦士）: 革鎧 → 鎖帷子、木の盾 → 鉄の盾、空の兜 → 鉄兜、空の小手 → 革小手（鉄の小手は流通レベル 4）
     expect([eq(0, "armor"), eq(0, "shield"), eq(0, "helm"), eq(0, "gauntlet")]).toEqual(["chain_mail+2", "iron_shield+2", "iron_helm+2", "leather_gloves+2"]);
-    // ベルク（戦士）: 鎖帷子 +0 は AC が同じなので替えない
-    expect(eq(1, "armor")).toBe("chain_mail+0");
+    // ベルク（戦士）: 鎖帷子 +0 → 鎖帷子 +2（M18 で armorLvPerAc 2 になり +2 は AC が 1 下がるので替える。M17 までは 3 で AC が同じなので替えなかった）
+    expect(eq(1, "armor")).toBe("chain_mail+2");
     // キリ（盗賊）: 革鎧 → 鋲打ち革鎧、革兜 → 鎖頭巾、盾は使えない
     expect([eq(2, "armor"), eq(2, "shield"), eq(2, "helm")]).toEqual(["studded_leather+2", null, "chain_coif+2"]);
     // 後衛: 僧侶（ドナ）は投げナイフも短弓も使えない、魔術師（エル）は投げナイフ、短弓のフィンはそのまま
     expect([eq(3, "weapon"), eq(4, "weapon"), eq(5, "weapon")]).toEqual(["staff+0", "throwing_knives+2", "short_bow+0"]);
     expect(d.rangedBought).toBe(1);
-    // アルド 4・ベルク 3（盾・兜・小手）・キリ 3（鎧・兜・小手）。予備費を判断 1 の平均 level の 1 人分に替えても 10 のまま
-    // （所持金 5000 なら旧予備費（最大 level × 2 人分）でも 10 品すべて払えていたので、予備費を下げても買う品は増えない）
-    expect(d.armorBought).toBe(10);
-    expect(d.armorBoughtByLevel).toEqual({ 2: 10 }); // すべて流通レベル 2 の品
+    // アルド 4・ベルク 4（鎧・盾・兜・小手。M18 で鎧が加わった）・キリ 3（鎧・兜・小手）。予備費を判断 1 の平均 level の 1 人分に替えても数は変わらない
+    // （所持金 5000 なら旧予備費（最大 level × 2 人分）でもすべて払えていたので、予備費を下げても買う品は増えない）
+    expect(d.armorBought).toBe(11);
+    expect(d.armorBoughtByLevel).toEqual({ 2: 11 }); // すべて流通レベル 2 の品
     expect(d.unsold).toBe(0); // 外した品は売った
     expect(c.state.gold).toBeGreaterThanOrEqual(c.reviveCost());
     expectStateInvariants(c.state);

@@ -56,7 +56,7 @@ function bare(s: GameState, memberId: string): void {
 }
 
 describe("IT-20〜23 レベルの効果（equipStats）", () => {
-  test("IT-20 汎用の武器（長剣）のダメージ +floor(Lv ÷ 2): Lv 0/1/2/3/5/6 → 0/0/1/1/2/3。ダイスはベースの 1d8、魔法攻撃力は 0", () => {
+  test("IT-20 汎用の武器（長剣）のダメージ +floor(Lv ÷ 1)（M18）: Lv 0/1/2/3/5/6 → 0/1/2/3/5/6。ダイスはベースの 1d8、魔法攻撃力は 0", () => {
     const got = [0, 1, 2, 3, 5, 6].map((level) => {
       const s = newGame(1);
       equipNew(s, "c1", "weapon", { itemId: "long_sword", identified: true, level });
@@ -65,15 +65,15 @@ describe("IT-20〜23 レベルの効果（equipStats）", () => {
     });
     expect(got).toEqual([
       [0, 0, "1d8"],
-      [0, 0, "1d8"],
-      [1, 0, "1d8"],
       [1, 0, "1d8"],
       [2, 0, "1d8"],
       [3, 0, "1d8"],
+      [5, 0, "1d8"],
+      [6, 0, "1d8"],
     ]);
   });
 
-  test("IT-22 術者用武器（杖）の魔法攻撃力 +floor(Lv ÷ 2): Lv 0/1/2/3/5 → 0/0/1/1/2。ダメージは増えない（damageBonus 0）", () => {
+  test("IT-22 術者用武器（杖）の魔法攻撃力 +floor(Lv ÷ 1)（M18）: Lv 0/1/2/3/5 → 0/1/2/3/5。ダメージは増えない（damageBonus 0）", () => {
     const got = [0, 1, 2, 3, 5].map((level) => {
       const s = newGame(1);
       equipNew(s, "c5", "weapon", { itemId: "staff", identified: true, level });
@@ -82,14 +82,14 @@ describe("IT-20〜23 レベルの効果（equipStats）", () => {
     });
     expect(got).toEqual([
       [0, 0],
-      [0, 0],
-      [1, 0],
       [1, 0],
       [2, 0],
+      [3, 0],
+      [5, 0],
     ]);
   });
 
-  test("IT-22 汎用の術者用武器の魔法攻撃力 = ベースの magicPower + floor(Lv ÷ 2)（M9）: 杖に magicPower 2 を足すと Lv 0/1/2/5 → 2/2/3/4。ユニークはベースの値を使わない", () => {
+  test("IT-22 汎用の術者用武器の魔法攻撃力 = ベースの magicPower + floor(Lv ÷ 1)（M9。M18 で ÷ 2 から）: 杖に magicPower 2 を足すと Lv 0/1/2/5 → 2/3/4/7。ユニークはベースの値を使わない", () => {
     const d = loadFreshData();
     const staff = d.equipmentBases.find((b) => b.id === "staff")!;
     if (staff.slot !== "weapon") throw new Error("staff is a weapon");
@@ -102,9 +102,9 @@ describe("IT-20〜23 レベルの効果（equipStats）", () => {
     });
     expect(got).toEqual([
       [2, 0],
-      [2, 0],
       [3, 0],
       [4, 0],
+      [7, 0],
     ]);
     // 夜明けの火打ち杖（ユニークの magicPower 2）はベースの 2 を足さない
     const s = newGame(1);
@@ -112,26 +112,26 @@ describe("IT-20〜23 レベルの効果（equipStats）", () => {
     expect(equipStats(s, d, member(s, "c5")).magicPower).toBe(2);
   });
 
-  test("IT-22 実データの上位の杖（M9）: 樫の杖（magicPower 1）Lv0 → 1・Lv2 → 2、刻印の杖（2）Lv4 → 4。院長の刻印杖（ユニーク 3）は 3", () => {
+  test("IT-22 実データの上位の杖（M9）: 樫の杖（magicPower 1）Lv0 → 1・Lv2 → 3、刻印の杖（2）Lv4 → 6。院長の刻印杖（ユニーク 3）は 3", () => {
     const mp = (itemId: string, level: number, uniqueId?: string): number => {
       const s = newGame(1);
       equipNew(s, "c5", "weapon", { itemId, identified: true, level, ...(uniqueId === undefined ? {} : { uniqueId }) });
       return equipStats(s, data, member(s, "c5")).magicPower;
     };
-    expect([mp("oak_staff", 0), mp("oak_staff", 2), mp("sigil_staff", 4), mp("sigil_staff", 0, "abbot_sigil_staff")]).toEqual([1, 2, 4, 3]);
+    expect([mp("oak_staff", 0), mp("oak_staff", 2), mp("sigil_staff", 4), mp("sigil_staff", 0, "abbot_sigil_staff")]).toEqual([1, 3, 6, 3]);
   });
 
-  test("IT-21 防具・盾・兜・小手の AC −floor(Lv ÷ 3): 革鎧（−2）の Lv 0/2/3/5/6 → −2/−2/−3/−3/−4。IT-23 装飾（護符 0）は Lv 9 でも 0", () => {
+  test("IT-21 防具・盾・兜・小手の AC −floor(Lv ÷ 2)（M18）: 革鎧（−2）の Lv 0/2/3/5/6 → −2/−3/−3/−4/−5。IT-23 装飾（護符 0）は Lv 9 でも 0", () => {
     const acOf = (slot: EquipSlot, itemId: string, level: number): number => {
       const s = newGame(1);
       bare(s, "c1");
       equipNew(s, "c1", slot, { itemId, identified: true, level });
       return equipStats(s, data, member(s, "c1")).acEquip;
     };
-    expect([0, 2, 3, 5, 6].map((lv) => acOf("armor", "leather_armor", lv))).toEqual([-2, -2, -3, -3, -4]);
+    expect([0, 2, 3, 5, 6].map((lv) => acOf("armor", "leather_armor", lv))).toEqual([-2, -3, -3, -4, -5]);
     expect(acOf("shield", "wooden_shield", 3)).toBe(-2);
-    expect(acOf("helm", "leather_cap", 6)).toBe(-3);
-    expect(acOf("gauntlet", "leather_gloves", 9)).toBe(-4);
+    expect(acOf("helm", "leather_cap", 6)).toBe(-4);
+    expect(acOf("gauntlet", "leather_gloves", 9)).toBe(-5);
     expect(acOf("accessory", "charm", 9)).toBe(0);
   });
 
@@ -322,7 +322,7 @@ function solo(seed: number, hps = [50], mut?: (s: GameState) => void): GameState
 }
 
 describe("戦闘の読み替え（CB-11 / 21 / 22 / 30 / 31 / 05 / 42 / 51）", () => {
-  test("CB-22/IT-20/IT-34 アルドの攻撃: 長剣 Lv4（+2）とオプション damage +1 で 1d8 + 力補正 2 + 3（鏡の rng。initiative のオプションは乱数を変えない）", () => {
+  test("CB-22/IT-20/IT-34 アルドの攻撃: 長剣 Lv4（+4）とオプション damage +1 で 1d8 + 力補正 2 + 5（鏡の rng。initiative のオプションは乱数を変えない）", () => {
     const d = dataWith({ combat: ALWAYS_HIT });
     for (let seed = 1; seed <= 6; seed++) {
       const s = solo(seed, [50], (x) =>
@@ -331,7 +331,7 @@ describe("戦闘の読み替え（CB-11 / 21 / 22 / 30 / 31 / 05 / 42 / 51）", 
       const m = cloneRng(s.rng);
       rolls(m, 6); // 味方 6 人の initiative（麻痺のネズミは振らない）
       chance(m, 100);
-      const dmg = rollDice(m, "1d8").total + 2 + 2 + 1;
+      const dmg = rollDice(m, "1d8").total + 2 + 4 + 1;
       const r = exec(s, RESOLVE, d);
       expect(eventsOf(r.events, "attack")).toEqual([{ kind: "attack", actorId: "c1", targetId: "e0-0", hit: true, damage: dmg }]);
       expect(r.state.rng).toEqual(m);
@@ -473,7 +473,7 @@ describe("戦闘の読み替え（CB-11 / 21 / 22 / 30 / 31 / 05 / 42 / 51）", 
 });
 
 describe("MG-33 魔法攻撃力", () => {
-  test("MG-33 戦闘の damage の呪文: エルの杖 Lv4（魔法攻撃力 2）で出目 + 2（同じシードの Lv0 との差。乱数の消費は同じ）", () => {
+  test("MG-33 戦闘の damage の呪文: エルの杖 Lv4（魔法攻撃力 4）で出目 + 4（同じシードの Lv0 との差。乱数の消費は同じ）", () => {
     for (let seed = 1; seed <= 6; seed++) {
       const at = (level: number): ReturnType<typeof exec> => {
         const s0 = dived(seed);
@@ -488,7 +488,7 @@ describe("MG-33 魔法攻撃力", () => {
       const dmgOf = (r: ReturnType<typeof exec>): number => eventsOf(r.events, "hpChanged").find((e) => e.id === "e0-0")!.delta;
       const lv0 = at(0);
       const lv4 = at(4);
-      expect(dmgOf(lv4)).toBe(dmgOf(lv0) - 2);
+      expect(dmgOf(lv4)).toBe(dmgOf(lv0) - 4);
       expect(lv4.state.rng).toEqual(lv0.state.rng);
     }
   });
@@ -518,7 +518,7 @@ describe("MG-33 魔法攻撃力", () => {
     }
   });
 
-  test("IT-34/MG-33 オプション魔法攻撃力（M10）: 護符 +2 で 0 → 2、樫の杖 Lv2（1 + 1）+ 護符 +3 で 5、院長の刻印杖（3）+ 護符 +1 で 4。戦士にも値は立つ", () => {
+  test("IT-34/MG-33 オプション魔法攻撃力（M10）: 護符 +2 で 0 → 2、樫の杖 Lv2（1 + 2）+ 護符 +3 で 6、院長の刻印杖（3）+ 護符 +1 で 4。戦士にも値は立つ", () => {
     const mp = (memberId: string, setup: (s: GameState) => void): number => {
       const s = newGame(1);
       bare(s, memberId);
@@ -532,7 +532,7 @@ describe("MG-33 魔法攻撃力", () => {
         equipNew(s, "c5", "weapon", { itemId: "oak_staff", identified: true, level: 2 });
         equipNew(s, "c5", "accessory", { itemId: "charm", identified: true, options: [opt("magic_power", 3, 3)] });
       }),
-    ).toBe(5);
+    ).toBe(6);
     expect(
       mp("c5", (s) => {
         equipNew(s, "c5", "weapon", { itemId: "sigil_staff", uniqueId: "abbot_sigil_staff", identified: true });
@@ -545,7 +545,7 @@ describe("MG-33 魔法攻撃力", () => {
     expect(mp("c1", (s) => equipNew(s, "c1", "accessory", { itemId: "charm", identified: true, options: [opt("magic_power", 2, 2)] }))).toBe(2);
   });
 
-  test("IT-34/MG-33 魔法攻撃力の合計は 0 未満にしない: 呪いの −3 の護符だけなら 0、樫の杖 Lv2（2）+ 護符 −3 でも 0、刻印の杖（2）Lv4（+2）+ −3 で 1", () => {
+  test("IT-34/MG-33 魔法攻撃力の合計は 0 未満にしない: 呪いの −3 の護符だけなら 0、樫の杖 Lv2（3）+ 護符 −3 でも 0、刻印の杖（2）Lv4（+4）+ −3 で 3", () => {
     const mp = (setup: (s: GameState) => void): number => {
       const s = newGame(1);
       bare(s, "c5");
@@ -565,7 +565,7 @@ describe("MG-33 魔法攻撃力", () => {
         equipNew(s, "c5", "weapon", { itemId: "sigil_staff", identified: true, level: 4 });
         cursedCharm(s);
       }),
-    ).toBe(1);
+    ).toBe(3);
   });
 
   test("MG-33 オプション魔法攻撃力（M10）も火矢のダメージに足される: エルの護符 +2 で出目 + 2（同じシードの護符なしとの差。乱数の消費は同じ）", () => {
@@ -605,7 +605,7 @@ describe("MG-33 魔法攻撃力", () => {
     expect(up.rng).toEqual(plain.rng);
   });
 
-  test("MG-33 戦闘外の heal（dungeon.cast）: ドナの杖 Lv2（+1）で回復量 + 1、実効の hpMax（オプション hp_max）で止める。道具（薬草）には足さない", () => {
+  test("MG-33 戦闘外の heal（dungeon.cast）: ドナの杖 Lv2（+2）で回復量 + 2、実効の hpMax（オプション hp_max）で止める。道具（薬草）には足さない", () => {
     const heal = (level: number, hp: number, hpMaxOpt: number, cmd: "cast" | "herb"): { amount: number; hp: number } => {
       const s = newGame(5);
       equipNew(s, "c4", "weapon", { itemId: "staff", identified: true, level });
@@ -622,7 +622,7 @@ describe("MG-33 魔法攻撃力", () => {
       return { amount: m.params!["amount"] as number, hp: member(r.state, "c1").hp };
     };
     const base = heal(0, 1, 0, "cast").amount;
-    expect(heal(2, 1, 0, "cast").amount).toBe(base + 1);
+    expect(heal(2, 1, 0, "cast").amount).toBe(base + 2);
     expect(heal(8, 1, 0, "herb").amount).toBe(heal(0, 1, 0, "herb").amount);
     // アルド hpMax 15 + 10 = 25 まで回復する（素の 15 を超える）
     expect(heal(2, 24, 10, "cast")).toEqual({ amount: 1, hp: 25 });

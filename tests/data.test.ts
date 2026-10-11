@@ -337,7 +337,7 @@ describe("data: config.json", () => {
   });
   test("data: IT-20〜22・IT-32・IT-33・IT-53・IT-60〜64 config.items の数値【仮】と型", () => {
     const it = config.items;
-    expect([it.curseChance, it.optionTierStep, it.weaponLvPerDamage, it.armorLvPerAc, it.casterLvPerPower]).toEqual([8, 4, 2, 3, 2]);
+    expect([it.curseChance, it.optionTierStep, it.weaponLvPerDamage, it.armorLvPerAc, it.casterLvPerPower]).toEqual([8, 4, 1, 2, 1]);
     expect(it.dropLevelUpWeights).toEqual([60, 30, 10]); // IT-53（M14）【仮】
     expect([it.levelPriceRatio, it.optionSellValue, it.warehouseSlots]).toEqual([0.5, [20, 40, 80], 40]);
     expectIssue((r) => delete r.config.items, "config.json", "items: missing required field");

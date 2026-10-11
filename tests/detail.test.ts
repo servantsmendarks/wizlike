@@ -247,7 +247,7 @@ function equippedAld(): GameState {
 }
 
 describe("UI-59/CH-13/CH-14/CB-20/MG-33 状態の実効の値（M7）", () => {
-  test("UI-59/CH-13/CH-14/CB-20/MG-33 formatCharacter は core の memberSheet の値を出す: 能力値（力 16）・HP の最大 21・SAN の最大 110・AC 4・魔法攻撃力 2。sheet が無ければ素の値で AC と魔法攻撃力は空", () => {
+  test("UI-59/CH-13/CH-14/CB-20/MG-33 formatCharacter は core の memberSheet の値を出す: 能力値（力 16）・HP の最大 21・SAN の最大 110・AC 4・魔法攻撃力 5。sheet が無ければ素の値で AC と魔法攻撃力は空", () => {
     const s = equippedAld();
     const ch = s.party[0]!;
     const d = formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch));
@@ -256,7 +256,7 @@ describe("UI-59/CH-13/CH-14/CB-20/MG-33 状態の実効の値（M7）", () => {
     expect(d.san).toBe(`SAN ${ch.san}/110`);
     // AC = acBase 10 − 3 − 2 − 1 = 4
     expect(d.ac).toBe("AC 4");
-    expect(d.magicPower).toBe("魔法攻撃力 2");
+    expect(d.magicPower).toBe("魔法攻撃力 5");
     // CB-22: 杖 1d4（術者用なので Lv の効果は足さない）+ 力 16 の補正 3 + リーダーの性格恩恵 0 → 攻撃 1d4+3
     expect(d.attack).toBe("攻撃 1d4+3");
     const raw = formatCharacter(ch, data, S, nameOf(s));
@@ -281,11 +281,13 @@ describe("UI-59/CH-13/CH-14/CB-20/MG-33 状態の実効の値（M7）", () => {
     const ch = s.party[0]!;
     ch.stats.str = 14; // 力補正 2、リーダー（恩恵 0）
     ch.equipment.weapon = createItemInstance(s, { itemId: "throwing_knives", level: 2, options: [{ optionId: "damage", tier: 1, value: 1 }], identified: true });
-    // 投げナイフ 1d4+1 + 力 2 + Lv2 の 1 + オプション 1 → 1d4+5
-    expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d4+5");
-    ch.stats.str = 6; // 力補正 −2 → 1d4+1 − 2 + 1 + 1 = 1d4+1
-    expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d4+1");
-    ch.stats.str = 2; // 力補正 −4 → 合計 −1
+    // 投げナイフ 1d4+1 + 力 2 + Lv2 の 2 + オプション 1 → 1d4+6（M18 で Lv の分が 1 → 2）
+    expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d4+6");
+    ch.stats.str = 6; // 力補正 −2 → 1d4+1 − 2 + 2 + 1 = 1d4+2
+    expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d4+2");
+    ch.stats.str = 2; // 力補正 −4 → 合計 0 は定数を省く
+    expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d4");
+    ch.stats.str = 0; // 力補正 −5 → 合計 −1
     expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d4-1");
   });
 
@@ -304,7 +306,7 @@ describe("UI-59/CH-13/CH-14/CB-20/MG-33 状態の実効の値（M7）", () => {
     };
     expect(at("detail-attack")).toEqual([4, 74, "攻撃 1d4+3"]);
     expect(at("detail-ac")).toEqual([84, 74, "AC 4"]);
-    expect(at("detail-magic-power")).toEqual([164, 74, "魔法攻撃力 2"]);
+    expect(at("detail-magic-power")).toEqual([164, 74, "魔法攻撃力 5"]);
   });
 
   test("UI-12/CH-14/CH-53 パーティ欄: HP / MP / SAN の最大と SAN の段は maxOf（core の memberSheet）の値。最大SAN +10 で SAN 54 は 110 の半分未満なので不安", () => {
