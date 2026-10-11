@@ -652,6 +652,16 @@ export type BattleMenuMember = {
   row: "front" | "back";
   spells: BattleMenuSpell[];
   items: BattleMenuItem[];
+  /**
+   * UI-54 / CB-12（M20。設計 D-2）: spells が空の理由。knownSpells が空なら none、知っていても戦闘で使える呪文
+   * （battleSpellUsable）が無ければ unusable、spells が空でなければ null（表示層は dim の行の理由の文を選ぶだけ）
+   */
+  spellBlock: "none" | "unusable" | null;
+  /**
+   * UI-54 / CB-12（M20。設計 D-2）: items が空の理由。inventory に道具（items.json の品 = 消耗品・魔法書。装備は数えない）が
+   * 1 つも無ければ none、道具はあるが戦闘で使えるもの（battleItemUsable）が無ければ fieldOnly、items が空でなければ null
+   */
+  itemBlock: "none" | "fieldOnly" | null;
 };
 export type BattleMenu = {
   round: number;

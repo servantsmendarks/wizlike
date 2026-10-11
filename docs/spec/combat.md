@@ -23,6 +23,7 @@
     - 呪文 `cast`（呪文と対象）
     - 防御 `defend`（そのラウンドは被ダメージ半減）
     - 道具 `item`
+    - M20（設計 D-2）: core の `battleMenu` は、呪文・道具の一覧が空の理由を `spellBlock`（`knownSpells` が空なら `none`、戦闘で使える呪文が無ければ `unusable`）と `itemBlock`（`inventory` に装備でない品が無ければ `none`、あっても戦闘で使えるものが無ければ `fieldOnly`）で返す。一覧が空でなければ `null`。乱数を引かない（表示は UI-54）。
   - 「前回と同じ」は `battle.repeat`。行動可能な全員の入力を CB-40〜42・CB-46 のオート入力の規則で作り、そのラウンドを 1 回だけ解決する。オートは ON にしないので CB-43 は効かない。`lastBattleInput` は変えない。
     - M16（2026-10-11）: 行動可能な者に `lastBattleInput` が 1 人でもあるときだけ使える（core の `BattleMenu.canRepeat`）。無ければ `battle.repeat` は rejected（`no last input`。オート中は `auto on` が先）。CB-40 で戦闘の開始に消えるので、「この戦闘で手入力したラウンドがあるまで使えない」になる。行動可能な味方が 0 人のときも使えない（`battle.resolve` は受け付ける）。
   - 「逃げる」は `battle.flee`。パーティの行動として、入力済みの行動を捨て、すぐに CB-50 の逃走判定をする。

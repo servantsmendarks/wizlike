@@ -125,6 +125,16 @@ function memberDisabled(m: BattleMenuMember, cmd: MemberCmd): boolean {
   return false;
 }
 
+/**
+ * UI-54 / CB-12（M20。設計 D-2）: 呪文・道具の dim の理由の文のキー。core の spellBlock / itemBlock をキーに写すだけ（判定はしない）。
+ * 理由が無ければ null
+ */
+function blockReason(m: BattleMenuMember, cmd: MemberCmd): string | null {
+  if (cmd === "spell" && m.spellBlock !== null) return m.spellBlock === "none" ? "battle.reason.spellNone" : "battle.reason.spellUnusable";
+  if (cmd === "item" && m.itemBlock !== null) return m.itemBlock === "none" ? "battle.reason.itemNone" : "battle.reason.itemFieldOnly";
+  return null;
+}
+
 /** enemy / ally の段の選択肢（文言なし。末尾は戻る） */
 function targetChoices(menu: BattleMenu, stage: "enemy" | "ally"): Choice[] {
   const rows: Choice[] =
@@ -171,13 +181,14 @@ export function entries(menu: BattleMenu, cursor: InputCursor, strings: Strings)
     case "member":
       return MEMBER_CMDS.map((cmd): MenuEntry => {
         const noReach = cmd === "attack" && !m.canStrike;
+        const reason = noReach ? "battle.reason.noReach" : blockReason(m, cmd);
         return {
           // UI-54 / CB-13: 届かない者の攻撃は「攻撃(届かず)」（battle.cmd.attackNoReach。56px の枠に収まる 48px）
           label: s(cmd === "back" ? "common.back" : noReach ? "battle.cmd.attackNoReach" : `battle.cmd.${cmd}`),
           disabled: memberDisabled(m, cmd),
           choice: { kind: "member", cmd },
-          // UI-54（M18。設計 4-6）: 押すと理由を窓に出す（段は変えない。送らない）
-          ...(noReach ? { reason: s("battle.reason.noReach") } : {}),
+          // UI-54（M18。設計 4-6）: 押すと理由を窓に出す（段は変えない。送らない）。M20（D-2）: 呪文・道具の dim も core の spellBlock / itemBlock で理由を出す
+          ...(reason !== null ? { reason: s(reason) } : {}),
         };
       });
     case "spell":

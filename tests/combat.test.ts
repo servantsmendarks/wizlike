@@ -2223,6 +2223,38 @@ describe("網羅（完了条件「6 種と戦える」、敵の id、battleMenu�
     expect(battleMenu(dived(1), data)).toBeNull();
   });
 
+  test("UI-54/CB-12（M20。設計 D-2）battleMenu の spellBlock / itemBlock: 呪文を知らない none・戦闘で使える呪文が無い unusable・道具（装備でない品）が無い none・戦闘で使える道具が無い fieldOnly・一覧が空でなければ null。乱数を引かない", () => {
+    const s0 = dived(1);
+    const herb = Object.keys(s0.items).find((k) => s0.items[k]!.itemId === "herb")!;
+    const thread = Object.keys(s0.items).find((k) => s0.items[k]!.itemId === "return_thread")!;
+    expect(herb).toBeDefined();
+    expect(thread).toBeDefined();
+    const s = setup([{ monsterId: "giant_rat", hps: [5] }], {
+      inputs: {},
+      patches: {
+        c1: { knownSpells: [], inventory: [] },
+        c2: { knownSpells: ["return", "resurrect"], inventory: [thread] }, // どちらも usableIn field
+        c5: { knownSpells: ["fire_arrow", "return"], inventory: [herb, thread] },
+      },
+    });
+    const before = JSON.stringify(s);
+    const menu = battleMenu(s, data)!;
+    const by = (id: string) => menu.members.find((x) => x.id === id)!;
+    expect([by("c1").spellBlock, by("c1").itemBlock]).toEqual(["none", "none"]);
+    expect([by("c2").spells, by("c2").items]).toEqual([[], []]);
+    expect([by("c2").spellBlock, by("c2").itemBlock]).toEqual(["unusable", "fieldOnly"]);
+    expect(by("c5").spells.map((x) => x.spellId)).toEqual(["fire_arrow"]);
+    expect(by("c5").items.map((x) => x.itemId)).toEqual(["herb"]);
+    expect([by("c5").spellBlock, by("c5").itemBlock]).toEqual([null, null]);
+    // 装備だけを持つ者は「道具を持っていない」（装備は道具に数えない）
+    const equipId = Object.keys(s.items).find((k) => !["herb", "antidote_herb", "return_thread"].includes(s.items[k]!.itemId) && !s.items[k]!.itemId.startsWith("tome_"));
+    expect(equipId).toBeDefined();
+    const eq = setup([{ monsterId: "giant_rat", hps: [5] }], { inputs: {}, patches: { c1: { inventory: [equipId!] } } });
+    expect(battleMenu(eq, data)!.members[0]!.itemBlock).toBe("none");
+    // state（rng を含む）を書き換えない
+    expect(JSON.stringify(s)).toBe(before);
+  });
+
   test("UI-54（M18。設計 4-6）battleMenu の row: 並び順の添字が config.party.frontRow 未満なら front、ほかは back（行動不能・死亡でも並び順のまま。CB-14 の繰り上げは反映しない）。乱数を引かない", () => {
     const s = setup([{ monsterId: "giant_rat", hps: [5] }], { inputs: {}, patches: { c1: PARA, c2: PARA, c3: DEAD } });
     const before = JSON.stringify(s);

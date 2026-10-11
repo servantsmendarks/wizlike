@@ -33,8 +33,23 @@ const t = (k: string, p?: Record<string, string | number>): string => {
   return formatMessage(tpl, p);
 };
 
+/** spellBlock / itemBlock は省けば spells / items が空のとき none、空でなければ null（M20。D-2） */
 function member(id: string, o: Partial<BattleMenuMember> = {}): BattleMenuMember {
-  return { id, name: `N${id}`, canAct: true, input: null, canStrike: true, row: "front", spells: [], items: [], ...o };
+  const spells = o.spells ?? [];
+  const items = o.items ?? [];
+  return {
+    id,
+    name: `N${id}`,
+    canAct: true,
+    input: null,
+    canStrike: true,
+    row: "front",
+    spells,
+    items,
+    spellBlock: spells.length > 0 ? null : "none",
+    itemBlock: items.length > 0 ? null : "none",
+    ...o,
+  };
 }
 
 /** 6 人。c3 は麻痺（canAct 偽）、c5 は呪文、c6 は道具を持つ。グループ 0 は全滅、1 と 2 が生存 */
@@ -261,14 +276,53 @@ describe("UI-54 入力の段階", () => {
       const es = entries(m, mem(id), S);
       expect(es[0]!.reason, id).toBe(t("battle.reason.noReach"));
       expect(es[0]!.peek, id).toBeUndefined();
-      expect(es.slice(1).every((e) => e.reason === undefined), id).toBe(true);
+      // M20（D-2）: 以前は「他の枠には reason が無い」（es.slice(1).every(reason === undefined)）。今は呪文・道具の dim に理由が付く（下の UI-54/CB-12 のテスト）。
+      // 防御・戻ると、押せる呪文・道具の枠には今も理由が無い
+      expect([es[2]!, es[4]!].every((e) => e.reason === undefined), id).toBe(true);
+      expect(es.filter((e) => !e.disabled).every((e) => e.reason === undefined), id).toBe(true);
     }
-    expect(entries(m, mem("c1"), S).every((e) => e.reason === undefined)).toBe(true);
+    // 届く者（c1）の攻撃・防御・戻るには理由が無い（c1 は呪文・道具を持たないので、その 2 つは D-2 の理由が付く）
+    const e1 = entries(m, mem("c1"), S);
+    expect([e1[0]!, e1[2]!, e1[4]!].every((e) => e.reason === undefined)).toBe(true);
     for (const cur of [PARTY, list("spell", "c5"), list("item", "c6"), tgt("enemy", "c1", { kind: "attack" }), tgt("ally", "c5", { kind: "cast", spellId: "heal" })]) {
       expect(entries(m, cur, S).every((e) => e.reason === undefined)).toBe(true);
     }
     // 押しても段は変わらず送らない（reason は表示層が窓に出すだけ）
     expect(step(m, mem("c4"), mc("attack"))).toEqual({ cursor: mem("c4"), send: null });
+  });
+
+  test("UI-54/CB-12（M20。設計 D-2）呪文・道具の dim の理由: core の spellBlock / itemBlock を battle.reason.spellNone / spellUnusable / itemNone / itemFieldOnly に写す。押しても段は変わらず送らない。null（押せる）なら理由なし。文は窓の 28 字 × 2 行に収まる", () => {
+    expect(t("battle.reason.spellNone")).toBe("呪文を知らない。");
+    expect(t("battle.reason.spellUnusable")).toBe("戦闘で使える呪文が無い。");
+    expect(t("battle.reason.itemNone")).toBe("道具を持っていない。");
+    expect(t("battle.reason.itemFieldOnly")).toBe("戦闘中に使える道具が無い。");
+    for (const k of ["spellNone", "spellUnusable", "itemNone", "itemFieldOnly"]) {
+      expect(kinsokuLines(t(`battle.reason.${k}`), 28).length, k).toBeLessThanOrEqual(2);
+    }
+    const base = menu();
+    const cases: [BattleMenuMember["spellBlock"], BattleMenuMember["itemBlock"], string, string][] = [
+      ["none", "none", "battle.reason.spellNone", "battle.reason.itemNone"],
+      ["unusable", "fieldOnly", "battle.reason.spellUnusable", "battle.reason.itemFieldOnly"],
+    ];
+    for (const [spellBlock, itemBlock, sk, ik] of cases) {
+      const m = { ...base, members: base.members.map((x) => (x.id === "c1" ? { ...x, spellBlock, itemBlock } : x)) };
+      const es = entries(m, mem("c1"), S);
+      expect(es[1], sk).toEqual({ label: t("battle.cmd.spell"), disabled: true, choice: { kind: "member", cmd: "spell" }, reason: t(sk) });
+      expect(es[3], ik).toEqual({ label: t("battle.cmd.item"), disabled: true, choice: { kind: "member", cmd: "item" }, reason: t(ik) });
+      expect(step(m, mem("c1"), mc("spell"))).toEqual({ cursor: mem("c1"), send: null });
+      expect(step(m, mem("c1"), mc("item"))).toEqual({ cursor: mem("c1"), send: null });
+    }
+    // 押せる呪文（c5）・道具（c6）の枠には理由が無い
+    expect(entries(base, mem("c5"), S)[1]).toEqual({ label: t("battle.cmd.spell"), disabled: false, choice: { kind: "member", cmd: "spell" } });
+    expect(entries(base, mem("c6"), S)[3]).toEqual({ label: t("battle.cmd.item"), disabled: false, choice: { kind: "member", cmd: "item" } });
+    // 届かない攻撃の理由（noReach）は今までどおり（c4 は攻撃・呪文・道具の 3 つに理由）
+    expect(entries(base, mem("c4"), S).map((e) => e.reason)).toEqual([
+      t("battle.reason.noReach"),
+      t("battle.reason.spellNone"),
+      undefined,
+      t("battle.reason.itemNone"),
+      undefined,
+    ]);
   });
 
   test("UI-54（M18。設計 4-6 / D1）入力の問い battlePrompt: member の段は「{name}（前衛 / 後衛）は？」（core の row）。他の段は今の問いに名前だけ。6 字の名前でもターン表示の間の 100px に収まる", () => {

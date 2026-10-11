@@ -1263,14 +1263,18 @@ export function battleMenu(state: GameState, data: GameData): BattleMenu | null 
         const mp = spellCost(state, data, ch, s); // MG-30 / IT-40
         return { spellId: s.id, name: s.name, mp, target: s.target, usable: ch.mp >= mp };
       });
+    let hasTool = false; // UI-54 / CB-12（M20。D-2）: 装備でない品（消耗品・魔法書）を 1 つでも持つか
     const items = ch.inventory.flatMap((instanceId) => {
       const inst = state.items[instanceId];
       if (inst === undefined) return [];
       const item = findItem(data, inst.itemId); // 装備は null（一覧に出さない）
+      if (item !== null) hasTool = true;
       if (!battleItemUsable(item)) return [];
       const name = itemDisplayName(state, data, instanceId);
       return [{ instanceId, itemId: item.id, name, target: item.effect.target }];
     });
+    const spellBlock = spells.length > 0 ? null : ch.knownSpells.length === 0 ? ("none" as const) : ("unusable" as const);
+    const itemBlock = items.length > 0 ? null : hasTool ? ("fieldOnly" as const) : ("none" as const);
     const input = b.inputs[ch.id];
     return {
       id: ch.id,
@@ -1281,6 +1285,8 @@ export function battleMenu(state: GameState, data: GameData): BattleMenu | null 
       row: i < frontRow ? ("front" as const) : ("back" as const),
       spells,
       items,
+      spellBlock,
+      itemBlock,
     };
   });
   return {
