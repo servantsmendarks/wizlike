@@ -1017,9 +1017,11 @@ export function townHeadingText(
 
 /**
  * TW-04 / UI-52（M18 5-3）: 見出しの 2 行目（無ければ null）。宿屋の一覧だけ、一行の HP / MP の合計と宿で上がる人数
- * （core の townMenu.innParty の値を入れるだけ）。M20 D-6: 括弧に最短の者の名前と残り exp（全員上がるなら「全員」）
+ * （core の townMenu.innParty の値を入れるだけ）。M20 D-6: 括弧に最短の者の名前と残り exp（全員上がるなら「全員」）。
+ * TW-17（M20 D-7）: 強化の触媒の段（{ upCat }）は core の upgradePreview の料金で「料金 {fee}G」（town.upgrade.feeSub。preview が null なら null）
  */
-export function townHeadingSub(page: TownPage, menu: TownMenu, strings: Strings): string | null {
+export function townHeadingSub(page: TownPage, menu: TownMenu, strings: Strings, preview: UpgradePreview | null = null): string | null {
+  if (typeof page === "object" && "upCat" in page) return preview === null ? null : s(strings, "town.upgrade.feeSub", { fee: preview.fee });
   if (page !== "inn") return null;
   const p = menu.innParty;
   const base = { hp: p.hp, hpMax: p.hpMax, mp: p.mp, mpMax: p.mpMax, n: p.levelUpReady };

@@ -867,7 +867,7 @@ describe("入力と Command", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     expect(app).toContain("const heading = townHeadingText(townPage, menu, strings, previewOf(townPage), classChangeOf(townPage));");
     // TW-04（M18 5-3）: 見出しの 2 行目（宿屋の一行の合計。townHeadingSub。宿屋以外は null）も渡す
-    expect(app).toContain("const sub = townHeadingSub(townPage, menu, strings);");
+    expect(app).toContain("const sub = townHeadingSub(townPage, menu, strings, previewOf(townPage));");
     expect(app).toContain('c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading, sub } });');
     expect(app).toMatch(
       /if \(townPage === "menu"\) \{\s*c\.setBattleMenu\(items, "town", \{ heading, notes: townMenuNotes\(strings\) \}\);\s*c\.setMode\("battle"\);\s*return;\s*\}/,

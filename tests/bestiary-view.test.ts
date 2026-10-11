@@ -89,11 +89,11 @@ describe("UI-79 酒場の敵の図鑑の段（純粋な状態機械）", () => {
 });
 
 describe("UI-79 formatBestiary", () => {
-  test("UI-79 見出しは「敵の図鑑　{known}/{total}」（分母は正体の分からない敵を含む全種類）。行は名前と正体の分からないときの呼び名（M19。D-7）で focus の行に印、絵の下は名前と倒した数", () => {
+  test("UI-79 見出しは「敵の図鑑 {known}/{total}（正体の分かった敵だけ）」（M20 D-7。分母は正体の分からない敵を含む全種類）。行は名前と正体の分からないときの呼び名（M19。D-7）で focus の行に印、絵の下は名前と倒した数", () => {
     const p = formatBestiary(bestiaryView(known(), data), 1, S);
     expect(p).toEqual({
       kind: "bestiary",
-      title: `敵の図鑑　2/${data.monsters.length}`,
+      title: `敵の図鑑 2/${data.monsters.length}（正体の分かった敵だけ）`,
       rows: [
         { text: `${nameOf("giant_rat")}（何かの獣）`, focused: false },
         { text: "コボルド（人の形をした影）", focused: true },
@@ -109,7 +109,7 @@ describe("UI-79 formatBestiary", () => {
 
   test("UI-79 1 体もいなければ bestiary.none の 1 行（dim で描く）と見出しだけ。絵は無い", () => {
     const p = formatBestiary(bestiaryView(town(), data), 0, S);
-    expect(p.title).toBe(`敵の図鑑　0/${data.monsters.length}`);
+    expect(p.title).toBe(`敵の図鑑 0/${data.monsters.length}（正体の分かった敵だけ）`);
     expect(p.rows).toEqual([]);
     expect(p.empty).toBe(S["bestiary.none"]);
     expect(p.pick).toBeNull();
@@ -187,7 +187,7 @@ describe("UI-79 敵の図鑑のパネルの DOM", () => {
     expect([el.style["top"], el.style["height"]]).toEqual(["16px", "284px"]);
     const texts = el.children.filter((c) => c.className !== "camp-bestiary-picture").map((c) => [c.className, c.textContent, c.style["top"], c.style["left"], c.style["color"]]);
     expect(texts).toEqual([
-      ["camp-title", `敵の図鑑　2/${data.monsters.length}`, "4px", "4px", "var(--c-accent)"],
+      ["camp-title", `敵の図鑑 2/${data.monsters.length}（正体の分かった敵だけ）`, "4px", "4px", "var(--c-accent)"],
       ["camp-bestiary-row", `${nameOf("giant_rat")}（何かの獣）`, "14px", "4px", undefined],
       ["camp-bestiary-row", "コボルド（人の形をした影）", "24px", "4px", "var(--c-accent)"],
       ["camp-bestiary-name", nameOf("kobold"), "114px", "136px", "var(--c-accent)"],
@@ -228,7 +228,7 @@ describe("UI-79 敵の図鑑のパネルの DOM", () => {
     expect(pic().style["background"]).toBe(PALETTE[enemyFill(data, "kobold", true)]);
     v.render(formatBestiary(bestiaryView(town(), data), 0, S));
     expect(el.children.map((c) => [c.textContent, c.style["color"]])).toEqual([
-      [`敵の図鑑　0/${data.monsters.length}`, "var(--c-accent)"],
+      [`敵の図鑑 0/${data.monsters.length}（正体の分かった敵だけ）`, "var(--c-accent)"],
       [S["bestiary.none"], "var(--c-dim)"],
     ]);
   });

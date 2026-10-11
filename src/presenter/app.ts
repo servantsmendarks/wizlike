@@ -1039,8 +1039,8 @@ export function createApp(o: {
         return;
       }
       // UI-13: 見出し（段の問い。ログに残さない）と一覧。UI-11: 末尾の戻るは一覧の外に固定する。
-      // TW-04（M18 5-3）: 宿屋は見出しの 2 行目に一行の HP / MP の合計と宿で上がる人数（townHeadingSub）
-      const sub = townHeadingSub(townPage, menu, strings);
+      // TW-04（M18 5-3）: 宿屋は見出しの 2 行目に一行の HP / MP の合計と宿で上がる人数（townHeadingSub）。TW-17（M20 D-7）: 触媒の段は料金
+      const sub = townHeadingSub(townPage, menu, strings, previewOf(townPage));
       c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading, sub } });
       c.setMode("list");
       return;

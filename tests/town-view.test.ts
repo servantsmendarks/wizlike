@@ -446,6 +446,41 @@ describe("UI-52 街のページ", () => {
     expect(townHeadingText({ upCat: { ...sel, picked: [a!] } }, m, S2, upgradePreview(s, data, "c1", "weapon", [a!]))).toBe("1:29/2");
   });
 
+  test("TW-17/UI-52 M20（D-7）触媒の段の見出しの 2 行目（townHeadingSub）は core の upgradePreview の料金で「料金 {fee}G」（town.upgrade.feeSub。触媒の数によらない）。preview が無ければ null。最悪の値でも 28 字", () => {
+    const s = town({}, 300);
+    s.items[s.party[0]!.equipment.weapon!]!.level = 1;
+    const id = createItemInstance(s, { itemId: "dagger", level: 0, identified: true });
+    s.party[0]!.inventory.push(id);
+    const ref = { memberId: "c1", instanceId: id } as UpgradeCatalystRef;
+    const m = menuOf(s);
+    const sel = { memberId: "c1", slot: "weapon" as const, picked: [] as UpgradeCatalystRef[] };
+    const fee = data.config.economy.upgradeBase * 2; // 対象の Lv1 → upgradeBase × (1 + 1)
+    for (const picked of [[], [ref]]) {
+      const pv = upgradePreview(s, data, "c1", "weapon", picked)!;
+      expect(pv.fee).toBe(fee);
+      expect(townHeadingSub({ upCat: { ...sel, picked } }, m, S, pv)).toBe(`料金 ${fee}G`);
+    }
+    expect(townHeadingSub({ upCat: sel }, m, S, null)).toBeNull();
+    // 確認の段・ほかの段には 2 行目を出さない（宿屋は D-6 の文）
+    expect(townHeadingSub({ upConfirm: sel }, m, S, upgradePreview(s, data, "c1", "weapon", []))).toBeNull();
+    expect(townHeadingSub("dark", m, S, upgradePreview(s, data, "c1", "weapon", []))).toBeNull();
+    expect(kinsokuLines(formatMessage(S["town.upgrade.feeSub"]!, { fee: 9999999 }), 28)).toHaveLength(1);
+    expect(townHeadingSub({ upCat: sel }, m, { ...S, "town.upgrade.feeSub": "<{fee}>" }, upgradePreview(s, data, "c1", "weapon", []))).toBe(`<${fee}>`);
+  });
+
+  test("TW-05/IT-63 M20（D-7）買い戻すの見出しは「どれを買い戻す？（名品だけ）」（town.ask.buyback）で 28 字に収まる", () => {
+    expect(townHeading("shopBuyback")).toBe("town.ask.buyback");
+    expect(S["town.ask.buyback"]).toBe("どれを買い戻す？（名品だけ）");
+    expect(kinsokuLines(S["town.ask.buyback"]!, 28)).toHaveLength(1);
+  });
+
+  test("UI-77/IT-30 M20（D-7）用語の希少度の行はオプションの個数（config.items.rarities の options。上質 1・希少 2・伝説 3）を言う", () => {
+    const l = splitRuleLine(S["rules.line.52"]!);
+    expect(l).toEqual({ term: "希少度", desc: "品の格。上質 1・希少 2・伝説 3 のオプション" });
+    const n = Object.fromEntries(data.config.items.rarities.map((r) => [r.id, r.options]));
+    expect([n["fine"], n["rare"], n["legendary"]]).toEqual([1, 2, 3]);
+  });
+
   test("TW-17/UI-52 M19（C-1）候補が無い触媒の段に入るときは、候補に出ない理由（town.upgrade.catNoneWhy）を語る（候補があれば語らない）。語り town.upgrade.intro は触媒が成否によらず消えると言う。どちらも会話の箱の 2 行（28 字 × 2）", () => {
     const sel = { memberId: "c1", slot: "weapon" as const, picked: [] as UpgradeCatalystRef[] };
     expect(townPageIntro({ upCat: sel }, menuOf(town()))).toEqual(["town.upgrade.catNoneWhy"]);
@@ -1960,7 +1995,10 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     // 中身の要点（数値の設定を書かない言い方。説明は用語の中で閉じる）
     expect(head("d")).toContain("2d10");
     expect(head("先手")).toContain(S["dice.initiative.enemy"]!);
-    expect(head("希少度")).toContain(["normal", "fine", "rare", "legendary"].map((r) => S[`book.rarity.${r}`]!).join("・"));
+    // M20（D-7）: 希少度の行は語（book.rarity.*）とオプションの個数（config.items.rarities の options）。通常（0 個）は書かない
+    expect(head("希少度")).toContain(
+      data.config.items.rarities.filter((r) => r.options > 0).map((r) => `${S[`book.rarity.${r.id}`]!} ${r.options}`).join("・"),
+    );
     expect(head("大成功")).toContain("+N");
     expect(head("名品")).toContain("図鑑");
     const meihin = body.indexOf(body.find((l) => typeof l !== "string" && l.term === "名品")!);
