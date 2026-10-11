@@ -14,6 +14,7 @@ import {
   type StageInputOptions,
   type TapPoint,
 } from "../src/presenter/input/tap";
+import { statHoldSpec } from "../src/presenter/views/custom-creation";
 import { data } from "./helpers/core";
 import { FakeNode, FakeStage } from "./helpers/dom";
 
@@ -689,5 +690,45 @@ describe("UI-37 style.css の touch-action", () => {
     // 読めている（規則が 20 以上ある）。撤去したスワイプの層は残っていない
     expect(rules.size).toBeGreaterThan(20);
     expect(css).not.toContain(".play-swipe");
+  });
+});
+
+describe("UI-62（M19 D-6）能力値の「+」の長押し", () => {
+  test("UI-62 「+」（statHoldSpec）: 短く離すと 1 回。動かずに ms 押し続けるとすぐ 1 回・以後 ms おきに増やし、増やせなくなったら止まる。離すと止まりタップにしない", async () => {
+    vi.useFakeTimers();
+    const t = setup();
+    let left = 5;
+    const plus = t.button(
+      "plus",
+      statHoldSpec({
+        ms: () => 250,
+        can: () => left > 0,
+        step: () => {
+          left--;
+          t.out.push(`inc ${left}`);
+        },
+      }),
+    );
+    t.down(1, 40, 620, plus.btn);
+    await vi.advanceTimersByTimeAsync(100);
+    t.up(1, 40, 620);
+    expect(t.out).toEqual(["press", "inc 4"]);
+    t.out.length = 0;
+    t.down(2, 40, 620, plus.inner);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(t.out).toEqual(["press", "inc 3"]);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(t.out).toEqual(["press", "inc 3", "inc 2"]);
+    t.up(2, 40, 620);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(t.out).toEqual(["press", "inc 3", "inc 2"]);
+    // 押し直して最後まで: 0 で止まり、離すまで何もしない
+    t.out.length = 0;
+    t.down(3, 40, 620, plus.btn);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(t.out).toEqual(["press", "inc 1", "inc 0"]);
+    expect(vi.getTimerCount()).toBe(0);
+    t.up(3, 40, 620);
+    expect(t.out).toEqual(["press", "inc 1", "inc 0"]);
   });
 });

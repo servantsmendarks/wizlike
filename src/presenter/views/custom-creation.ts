@@ -11,8 +11,8 @@ import { STAT_KEYS } from "../../core/data/index";
 import type { RngState } from "../../core/rng";
 import { adjustStat, classOptions, rollBonusParts, statAllocation, validCreationName, type BonusParts } from "../../core/rules/creation";
 import type { CustomPartySetup } from "../../core/types";
-import type { Action } from "../input/swipe";
-import { onTap } from "../input/tap";
+import { createHoldRepeater, type Action } from "../input/swipe";
+import { onTap, type TapSpec } from "../input/tap";
 import {
   CUSTOM_BUTTONS,
   CUSTOM_ERROR,
@@ -406,6 +406,38 @@ export function customButtonRects(nameStep: boolean): { a: Rect; b: Rect; c: Rec
 
 // ---------------------------------------------------------------- DOM
 
+/**
+ * UI-62（M19 D-6）: 能力値の「+」「−」の押し方。短く離すと 1 回（can が偽なら何もしない）。動かずに ms() 押し続けると
+ * 前進の長押し（UI-31）と同じ createHoldRepeater で、すぐ 1 回、以後 ms() おきに step を送り、can が偽になったら
+ * （残りが 0・基礎値まで戻した）止まる。離すまでは続きとみなす。可否は core の statAllocation の値（can）だけで見る
+ */
+export function statHoldSpec(o: { ms(): number; can(): boolean; step(): void }): TapSpec {
+  const r = createHoldRepeater({
+    ms: o.ms,
+    fire: async () => {
+      if (!o.can()) return false;
+      o.step();
+      return o.can();
+    },
+  });
+  return {
+    onTap: () => {
+      if (o.can()) o.step();
+    },
+    hold: { ms: o.ms, onHoldStart: () => r.press(), onHoldEnd: () => r.release() },
+  };
+}
+
+/**
+ * UI-62（M19 D-6）: 子の並びが同じ要素の同じ順か。同じなら replaceChildren しない（押している「+」を DOM から外さない。
+ * 外すと touch の pointerup が外れた要素に届いてステージまで伝わらず、長押しが終わらないことがある）
+ */
+export function sameChildren(current: ArrayLike<unknown>, next: readonly unknown[]): boolean {
+  if (current.length !== next.length) return false;
+  for (let i = 0; i < next.length; i++) if (current[i] !== next[i]) return false;
+  return true;
+}
+
 export type CustomCreationScreen = {
   el: HTMLElement;
   /** 下書きを描き直す。error は誤りの欄の文（null なら隠す） */
@@ -423,7 +455,8 @@ function dimStyle(b: HTMLElement, dim: boolean): void {
   b.style.borderColor = dim ? "var(--c-dim)" : "";
 }
 
-export function createCustomCreationScreen(o: { onChoice(c: CustomChoice): void }): CustomCreationScreen {
+/** holdMs: 「+」「−」の長押しの判定と連打の間隔（settings.holdRepeatMs。前進の長押しと同じ） */
+export function createCustomCreationScreen(o: { onChoice(c: CustomChoice): void; holdMs(): number }): CustomCreationScreen {
   const el = document.createElement("div");
   el.className = "screen screen-custom";
 
@@ -484,18 +517,51 @@ export function createCustomCreationScreen(o: { onChoice(c: CustomChoice): void 
   const buttons = document.createElement("div");
   el.appendChild(buttons);
 
-  const button = (text: string, r: Rect, dim: boolean, onClick: () => void): HTMLButtonElement => {
+  const plainButton = (): HTMLButtonElement => {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "ui-button";
-    b.textContent = text;
-    place(b, r);
+    return b;
+  };
+
+  const setDim = (b: HTMLElement, dim: boolean): void => {
     dimStyle(b, dim);
     if (dim) b.setAttribute("aria-disabled", "true");
+    else b.removeAttribute("aria-disabled");
+  };
+
+  const button = (text: string, r: Rect, dim: boolean, onClick: () => void): HTMLButtonElement => {
+    const b = plainButton();
+    b.textContent = text;
+    place(b, r);
+    setDim(b, dim);
     onTap(b, () => {
       if (!dim) onClick();
     });
     return b;
+  };
+
+  // UI-62（M19 D-6）: 能力値の段の札・「−」・値・「+」は能力値ごとに 1 回だけ作って使い回す（描き直しで押している「+」を
+  // 作り直さない）。押したときの可否は最後に描いた値（statNow）で見る
+  type StatEls = { label: HTMLButtonElement; minus: HTMLButtonElement; value: HTMLDivElement; plus: HTMLButtonElement };
+  const statEls = new Map<StatKey, StatEls>();
+  let statNow = new Map<StatKey, CustomStatView>();
+  const statElsOf = (key: StatKey): StatEls => {
+    const had = statEls.get(key);
+    if (had !== undefined) return had;
+    const label = plainButton();
+    onTap(label, () => o.onChoice({ kind: "select", key }));
+    const minus = plainButton();
+    minus.textContent = "-";
+    onTap(minus, statHoldSpec({ ms: o.holdMs, can: () => statNow.get(key)?.canDec === true, step: () => o.onChoice({ kind: "dec", key }) }));
+    const value = document.createElement("div");
+    value.className = "custom-stat-value";
+    const plus = plainButton();
+    plus.textContent = "+";
+    onTap(plus, statHoldSpec({ ms: o.holdMs, can: () => statNow.get(key)?.canInc === true, step: () => o.onChoice({ kind: "inc", key }) }));
+    const els: StatEls = { label, minus, value, plus };
+    statEls.set(key, els);
+    return els;
   };
 
   /** 一覧の行・能力値の札の 2 行の button の形。selected は accent 色 */
@@ -522,20 +588,23 @@ export function createCustomCreationScreen(o: { onChoice(c: CustomChoice): void 
         twoLine(b, row.selected && !row.dim);
         kids.push(b);
       });
+      statNow = new Map((view.stats?.rows ?? []).map((s) => [s.key, s]));
       if (view.stats !== null) {
         view.stats.rows.forEach((s, i) => {
           const r = customStatRow(i);
+          const e = statElsOf(s.key);
           // UI-74: 名前の欄は 2 行の札（名前と短い説明）。押すとその能力値を選ぶ
-          const lab = button(`${s.label}\n${s.short}`, r.label, false, () => o.onChoice({ kind: "select", key: s.key }));
-          twoLine(lab, s.selected);
-          kids.push(lab);
-          kids.push(button("-", r.minus, !s.canDec, () => o.onChoice({ kind: "dec", key: s.key })));
-          const v = document.createElement("div");
-          v.className = "custom-stat-value";
-          v.textContent = String(s.value);
-          place(v, r.value);
-          kids.push(v);
-          kids.push(button("+", r.plus, !s.canInc, () => o.onChoice({ kind: "inc", key: s.key })));
+          e.label.textContent = `${s.label}\n${s.short}`;
+          place(e.label, r.label);
+          setDim(e.label, false);
+          twoLine(e.label, s.selected);
+          place(e.minus, r.minus);
+          setDim(e.minus, !s.canDec);
+          e.value.textContent = String(s.value);
+          place(e.value, r.value);
+          place(e.plus, r.plus);
+          setDim(e.plus, !s.canInc);
+          kids.push(e.label, e.minus, e.value, e.plus);
         });
       }
       view.confirm.forEach((line, i) => {
@@ -545,7 +614,8 @@ export function createCustomCreationScreen(o: { onChoice(c: CustomChoice): void 
         place(d, customRow(i));
         kids.push(d);
       });
-      body.replaceChildren(...kids);
+      // UI-62（M19 D-6）: 能力値の段の描き直し（同じ要素の同じ並び）では入れ替えない
+      if (!sameChildren(body.children, kids)) body.replaceChildren(...kids);
 
       remaining.textContent = view.stats?.remaining ?? "";
       remaining.style.display = view.stats === null ? "none" : "";

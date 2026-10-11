@@ -359,7 +359,8 @@ export function createApp(o: {
   });
 
   // UI-62（M5.5）: 自分で作る。下書きと作成中の乱数は表示層だけの値で保存しない（SV-50。リロードするとタイトルから）
-  const custom = createCustomCreationScreen({ onChoice: (c) => guard(() => chooseCustom(c)) });
+  // UI-62（M19 D-6）: 能力値の「+」「−」の長押しは前進の長押し（UI-31）と同じ holdRepeatMs
+  const custom = createCustomCreationScreen({ onChoice: (c) => guard(() => chooseCustom(c)), holdMs: () => store.get().holdRepeatMs });
   let customDraft: CustomDraft = initialDraft(data);
   /** CH-06: 作成中の乱数（CH-11 のボーナス）。goCustom のたびに crypto.getRandomValues の種で作り直す */
   let customRng: RngState = createRng(1);

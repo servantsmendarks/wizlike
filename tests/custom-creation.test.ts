@@ -1,6 +1,6 @@
 // 自分で作る（UI-62 / CH-06。M5.5）の純粋な部分: 下書きの状態機械、描く内容、キー。
 // 作成中の乱数は固定の種の RngState を渡し、鏡の rng（cloneRng して rollBonus を同じ順に引く）で期待値を作る。
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { STAT_KEYS, type StatKey } from "../src/core/data";
 import { execute, createInitialState } from "../src/core/engine";
 import { cloneRng, createRng, type RngState } from "../src/core/rng";
@@ -22,6 +22,8 @@ import {
   customStep,
   customView,
   initialDraft,
+  sameChildren,
+  statHoldSpec,
   type CustomChoice,
   type CustomDraft,
   type CustomResult,
@@ -29,6 +31,10 @@ import {
 import { data, gameNewEvents } from "./helpers/core";
 import { kinsokuLines } from "./helpers/wrap";
 import { textUnits } from "../src/presenter/views/party-band";
+
+// 配線の文字列検査は node の fs で読む（@types/node は入れていないので型は手で書く。tap.test と同じ）
+const FS_MODULE = "node:fs";
+const fs = (await import(/* @vite-ignore */ FS_MODULE)) as { readFileSync(p: URL, enc: "utf8"): string };
 
 const S = data.strings;
 
@@ -564,5 +570,96 @@ describe("能力値の説明（UI-74。M12.5）", () => {
       expect(S[`stat.desc.${k}`], k).toBeTypeOf("string");
     }
     for (const k of ["custom.statReq", "custom.statReqNone", "custom.classReq"]) expect(S[k], k).toBeTypeOf("string");
+  });
+});
+
+describe("能力値の「+」「−」の長押し（UI-62。M19 D-6）", () => {
+  afterEach(() => vi.useRealTimers());
+  const rowOf = (d: CustomDraft, k: StatKey) => {
+    const m = d.members[d.index]!;
+    return statAllocation(m.raceId!, m.stats!, m.bonus, data).rows.find((r) => r.key === k)!;
+  };
+  const remainingOf = (d: CustomDraft) => {
+    const m = d.members[d.index]!;
+    return statAllocation(m.raceId!, m.stats!, m.bonus, data).remaining;
+  };
+
+  test("UI-62 statHoldSpec の「+」: 短く離すと 1 回。長押しは始めにすぐ 1 回、以後 ms おきに 1 回、増やせなくなったら止まる。離した後のタップは何もしない", async () => {
+    vi.useFakeTimers();
+    const rng = createRng(1);
+    let d = step(initialDraft(data), { kind: "race", raceId: "human" }, createRng(5));
+    const limit = Math.min(remainingOf(d), 18 - rowOf(d, "str").value);
+    expect(limit).toBeGreaterThanOrEqual(4);
+    let n = 0;
+    const spec = statHoldSpec({
+      ms: () => 250,
+      can: () => rowOf(d, "str").canInc,
+      step: () => {
+        n++;
+        d = step(d, { kind: "inc", key: "str" }, rng);
+      },
+    });
+    spec.onTap({ lx: 0, ly: 0 });
+    expect(n).toBe(1);
+    spec.hold!.onHoldStart();
+    expect(n).toBe(2);
+    await vi.advanceTimersByTimeAsync(249);
+    expect(n).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(n).toBe(3);
+    await vi.advanceTimersByTimeAsync(250 * 40);
+    expect(n).toBe(limit);
+    expect(rowOf(d, "str").canInc).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    spec.hold!.onHoldEnd();
+    spec.onTap({ lx: 0, ly: 0 });
+    expect(n).toBe(limit);
+  });
+
+  test("UI-62 statHoldSpec の「−」: 離すとその場で止まる。押し直すと新しい長押し。基礎値まで戻したら止まる", async () => {
+    vi.useFakeTimers();
+    const rng = createRng(1);
+    let d = step(initialDraft(data), { kind: "race", raceId: "human" }, createRng(5));
+    for (let i = 0; i < 4; i++) d = step(d, { kind: "inc", key: "str" }, rng);
+    const base = data.races.find((r) => r.id === "human")!.baseStats.str;
+    expect(rowOf(d, "str").value).toBe(base + 4);
+    const spec = statHoldSpec({
+      ms: () => 250,
+      can: () => rowOf(d, "str").canDec,
+      step: () => {
+        d = step(d, { kind: "dec", key: "str" }, rng);
+      },
+    });
+    spec.hold!.onHoldStart();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(rowOf(d, "str").value).toBe(base + 2);
+    spec.hold!.onHoldEnd();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(rowOf(d, "str").value).toBe(base + 2);
+    spec.hold!.onHoldStart();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(rowOf(d, "str").value).toBe(base);
+    expect(rowOf(d, "str").canDec).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    spec.hold!.onHoldEnd();
+  });
+
+  test("UI-62 sameChildren: 同じ要素が同じ順なら真（描き直しで入れ替えない）。数・順・要素が違えば偽", () => {
+    const a = {};
+    const b = {};
+    expect(sameChildren([a, b], [a, b])).toBe(true);
+    expect(sameChildren([], [])).toBe(true);
+    expect(sameChildren([a, b], [b, a])).toBe(false);
+    expect(sameChildren([a], [a, b])).toBe(false);
+    expect(sameChildren([a, b], [a, {}])).toBe(false);
+  });
+
+  test("UI-62 配線: 「+」「−」は statHoldSpec（能力値ごとに使い回す要素）、能力値の段の描き直しは sameChildren で入れ替えを省く。app は holdRepeatMs を渡す", () => {
+    const src = fs.readFileSync(new URL("../src/presenter/views/custom-creation.ts", import.meta.url), "utf8");
+    expect(src).toMatch(/onTap\(minus, statHoldSpec\(\{[^\n]*canDec[^\n]*kind: "dec"/);
+    expect(src).toMatch(/onTap\(plus, statHoldSpec\(\{[^\n]*canInc[^\n]*kind: "inc"/);
+    expect(src).toMatch(/if \(!sameChildren\(body\.children, kids\)\) body\.replaceChildren\(\.\.\.kids\);/);
+    const app = fs.readFileSync(new URL("../src/presenter/app.ts", import.meta.url), "utf8");
+    expect(app).toMatch(/createCustomCreationScreen\(\{[^\n]*holdMs: \(\) => store\.get\(\)\.holdRepeatMs/);
   });
 });
