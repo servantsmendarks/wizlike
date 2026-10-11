@@ -352,6 +352,39 @@ describe("TW-17 upgradePreview と townMenu.upgrade（表示層向けの問い�
     expect(JSON.stringify(s.rng)).toBe(rng);
   });
 
+  test("TW-17 M18（5-13）upgradePreview の nextChangeAt: kind の値が前後で同じときだけ、次に値が変わる Lv までの段数とその値（防具 Lv0・Lv2 は +2 で変わる）。値が変わる・kind が null なら null。乱数を引かない", () => {
+    const s = town(0, 3);
+    const rng = JSON.stringify(s.rng);
+    // 武器（weaponLvPerDamage 1）は毎段変わる
+    expect(upgradePreview(s, data, "c1", "weapon", [])!.nextChangeAt).toBeNull();
+    // 防具（革鎧 AC -2。armorLvPerAc 2）: Lv0 → 1 は -2 のまま、+2（Lv2）で -3
+    const armor = s.items[member(s, "c1").equipment.armor!]!;
+    armor.level = 0;
+    const a0 = upgradePreview(s, data, "c1", "armor", [])!;
+    expect([a0.before.ac, a0.after.ac]).toEqual([-2, -2]);
+    expect(a0.nextChangeAt).toEqual({ levels: 2, value: "-3" });
+    armor.level = 1;
+    expect(upgradePreview(s, data, "c1", "armor", [])!.nextChangeAt).toBeNull();
+    armor.level = 2;
+    expect(upgradePreview(s, data, "c1", "armor", [])!.nextChangeAt).toEqual({ levels: 2, value: "-4" });
+    // 除数を 3 にすると Lv0 は +3 で変わる（config の値を読む）
+    const d3 = { ...data, config: { ...data.config, items: { ...data.config.items, armorLvPerAc: 3 } } };
+    armor.level = 0;
+    expect(upgradePreview(s, d3, "c1", "armor", [])!.nextChangeAt).toEqual({ levels: 3, value: "-3" });
+    armor.level = 2;
+    expect(upgradePreview(s, d3, "c1", "armor", [])!.nextChangeAt).toBeNull();
+    // 装飾（kind null）は前後が同じでも null
+    const charm = createItemInstance(s, { itemId: "charm", level: 0, identified: true });
+    member(s, "c1").equipment.accessory = charm;
+    const c = upgradePreview(s, data, "c1", "accessory", [])!;
+    expect([c.kind, c.nextChangeAt]).toEqual([null, null]);
+    // 未鑑定の対象（kind null）も null
+    armor.level = 0;
+    armor.identified = false;
+    expect(upgradePreview(s, data, "c1", "armor", [])!.nextChangeAt).toBeNull();
+    expect(JSON.stringify(s.rng)).toBe(rng);
+  });
+
   test("TW-17 IT-12 M18 upgradePreview: 未鑑定の対象（呪いで外せずに着けている品）は kind を null にして前後を語らない（品の中身を見せない）", () => {
     const s = town(1000, 3);
     s.items[member(s, "c1").equipment.weapon!]!.identified = false;

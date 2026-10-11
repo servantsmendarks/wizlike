@@ -8,7 +8,7 @@ import type { Config, EquipSlot, GameData } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
 import { randInt } from "../rng";
 import { destroyItemInstance, equipmentPlainName, findBase, itemDisplayName, memberById } from "../state";
-import type { Character, GameState, ItemInstance, RuleContext, TownMenu, TownMenuUpgradeCatalyst, UpgradeCatalystRef, UpgradePreview, UpgradePreviewKind } from "../types";
+import type { Character, GameState, ItemInstance, ItemPreview, RuleContext, TownMenu, TownMenuUpgradeCatalyst, UpgradeCatalystRef, UpgradePreview, UpgradePreviewKind } from "../types";
 import { shopItemPreview } from "./shop";
 
 type EconomyConfig = Config["economy"];
@@ -166,7 +166,37 @@ export function upgradePreview(
   // M18（3-3）: 前後の性能の下見。対象は汎用装備（ユニークは上で null）なので、同じベース・同じ Lv の合成の実体と itemPower が同じ（希少度・オプション・呪いは itemPower に効かない）
   const before = shopItemPreview(data, target.itemId, target.level)!;
   const after = shopItemPreview(data, target.itemId, target.level + 1)!;
-  return { rate, great: upgradeGreat(rate), fee, affordable: state.gold >= fee, block, kind: upgradePreviewKind(data, target), before, after };
+  const kind = upgradePreviewKind(data, target);
+  const nextChangeAt = kind === null ? null : upgradeNextChange(data, target, kind, before, after);
+  return { rate, great: upgradeGreat(rate), fee, affordable: state.gold >= fee, block, kind, before, after, nextChangeAt };
+}
+
+/** M18（5-13）: ItemPreview の kind の項目の値（文字列。AC・魔法攻撃力は数を文字列に）。該当しなければ null */
+function previewValue(p: ItemPreview, kind: UpgradePreviewKind): string | null {
+  const v = kind === "attack" ? p.attack : kind === "ac" ? p.ac : p.magicPower;
+  return v === null ? null : String(v);
+}
+
+/**
+ * M18（5-13）: before と after の kind の値が同じとき、次に値が変わる Lv までの段数（今の Lv からの差）とそのときの値。違えば null。
+ * 値は floor(Lv ÷ 除数) で変わる（IT-20〜22）ので、今の Lv から除数の段までに必ず変わる。そこまでに変わらなければ null
+ */
+function upgradeNextChange(
+  data: GameData,
+  target: ItemInstance,
+  kind: UpgradePreviewKind,
+  before: ItemPreview,
+  after: ItemPreview,
+): UpgradePreview["nextChangeAt"] {
+  const now = previewValue(before, kind);
+  if (now === null || previewValue(after, kind) !== now) return null;
+  const it = data.config.items;
+  const span = kind === "attack" ? it.weaponLvPerDamage : kind === "ac" ? it.armorLvPerAc : it.casterLvPerPower;
+  for (let levels = 2; levels <= span; levels++) {
+    const value = previewValue(shopItemPreview(data, target.itemId, target.level + levels)!, kind);
+    if (value !== null && value !== now) return { levels, value };
+  }
+  return null;
 }
 
 /** M18（3-3）: 確認の段で語る前後の項目。術者用武器は magic（IT-22）、ほかの武器は attack（IT-20）、装飾は Lv で数値が変わらないので null（IT-23）、ほかは ac（IT-21）。未鑑定の対象（取り憑かれて着けている品）は中身を見せない（IT-12）ので null */

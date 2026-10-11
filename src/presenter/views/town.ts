@@ -816,7 +816,8 @@ function upgradeTarget(menu: TownMenu, sel: UpgradeSel, strings: Strings): strin
 
 /**
  * TW-17（M18 3-3）: 確認の段に入るときに会話の箱で語る前後の 1 文「成功で {kind} {before} → {after}」（town.upgrade.preview。kind は town.upgrade.kind.*）。
- * 値は core の upgradePreview の kind と before / after の該当の項目（攻撃は attack、AC は ac、魔法攻撃力は magicPower）。preview か kind が null なら null（語らない）
+ * 値は core の upgradePreview の kind と before / after の該当の項目（攻撃は attack、AC は ac、魔法攻撃力は magicPower）。preview か kind が null なら null（語らない）。
+ * M18（5-13）: core の nextChangeAt が null でない（前後が同じ）なら town.upgrade.previewSame「成功で {kind} は変わらない（+{n} で {next}）」
  */
 export function upgradePreviewText(preview: UpgradePreview | null, strings: Strings): string | null {
   if (preview === null || preview.kind === null) return null;
@@ -825,7 +826,11 @@ export function upgradePreviewText(preview: UpgradePreview | null, strings: Stri
   const before = pick(preview.before);
   const after = pick(preview.after);
   if (before === null || after === null) return null;
-  return s(strings, "town.upgrade.preview", { kind: s(strings, `town.upgrade.kind.${k}`), before, after });
+  const kind = s(strings, `town.upgrade.kind.${k}`);
+  // M18（5-13）: 前後が同じなら（core の nextChangeAt があるとき）「成功で {kind} は変わらない（+{n} で {next}）」
+  const next = preview.nextChangeAt;
+  if (next !== null) return s(strings, "town.upgrade.previewSame", { kind, n: next.levels, next: next.value });
+  return s(strings, "town.upgrade.preview", { kind, before, after });
 }
 
 /** M16（4-5）: 強化の画面の品の名前。Lv を常に出す「{name} +{level}」（town.upgrade.itemLv。Lv0 でも「長剣 +0」） */

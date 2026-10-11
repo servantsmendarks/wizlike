@@ -885,6 +885,42 @@ describe("UI-52 街のページ", () => {
     expect(n).toBeGreaterThan(0);
   });
 
+  test("TW-17 M18（5-13）前後が同じ値のときは upgradePreviewText が town.upgrade.previewSame「成功で {kind} は変わらない（+{n} で {next}）」（core の nextChangeAt を埋めるだけ）。どのベースの Lv0〜20 でも 28 字 × 2 行以内", () => {
+    expect(S["town.upgrade.previewSame"]).toBe("成功で {kind} は変わらない（+{n} で {next}）");
+    const s = town({}, 0);
+    const c1 = s.party[0]!;
+    s.items[c1.equipment.armor!]!.level = 0;
+    expect(upgradePreviewText(upgradePreview(s, data, "c1", "armor", []), S)).toBe("成功で AC は変わらない（+2 で -3）");
+    s.items[c1.equipment.armor!]!.level = 1;
+    expect(upgradePreviewText(upgradePreview(s, data, "c1", "armor", []), S)).toBe("成功で AC -2 → -3");
+    // 表示層は値を比べない: nextChangeAt があればその値で語る（除数 3 の Lv0 → +3）
+    const d3 = { ...data, config: { ...data.config, items: { ...data.config.items, armorLvPerAc: 3 } } };
+    s.items[c1.equipment.armor!]!.level = 0;
+    expect(upgradePreviewText(upgradePreview(s, d3, "c1", "armor", []), S)).toBe("成功で AC は変わらない（+3 で -3）");
+    // 最悪の値: どのベースの Lv0〜20 でも、同じ値のときは previewSame、28 字 × 2 行以内（大きい除数 9 も見る）
+    const d9 = { ...data, config: { ...data.config, items: { ...data.config.items, weaponLvPerDamage: 9, armorLvPerAc: 9, casterLvPerPower: 9 } } };
+    let same = 0;
+    for (const dd of [data, d9]) {
+      for (const b of data.equipmentBases) {
+        if (b.slot === "accessory") continue;
+        for (let lv = 0; lv <= 20; lv++) {
+          const id = createItemInstance(s, { itemId: b.id, level: lv, rarity: "legendary", identified: true });
+          c1.equipment[b.slot] = id;
+          const p = upgradePreview(s, dd, "c1", b.slot, [])!;
+          const text = upgradePreviewText(p, S)!;
+          expect(text, b.id).not.toBeNull();
+          expect(text, text).not.toMatch(/\{/);
+          if (p.nextChangeAt !== null) {
+            same++;
+            expect(text).toMatch(/は変わらない（\+\d+ で /);
+          }
+          expect(kinsokuLines(text, 28).length, text).toBeLessThanOrEqual(2);
+        }
+      }
+    }
+    expect(same).toBeGreaterThan(0);
+  });
+
   test("TW-05/UI-52 装備できない理由の 1 文 shopCannotEquipText は core の preview.classes をつなぐだけ（誰でも・消耗品は null）。名前 6 字・どの品・職業 6 つでも 28 字 × 2 行以内（M16 追補 H-4）", () => {
     const s = town({}, 0);
     expect(S["town.shop.cannotEquipWhy"]).toBe("{name}は{item}を装備できない。{classes}向けの品だ。");

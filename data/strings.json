@@ -244,6 +244,7 @@
   "town.upgrade.askNoGold": "成功率 {rate}%（大成功 {great}%）料金 {fee}G。金が足りない。",
   "town.upgrade.do": "{item}を鍛える（触媒 {count}）",
   "town.upgrade.preview": "成功で {kind} {before} → {after}",
+  "town.upgrade.previewSame": "成功で {kind} は変わらない（+{n} で {next}）",
   "town.upgrade.kind.attack": "攻撃",
   "town.upgrade.kind.ac": "AC",
   "town.upgrade.kind.magic": "魔法攻撃力",
