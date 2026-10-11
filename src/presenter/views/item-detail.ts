@@ -70,7 +70,8 @@ export function formatItemDetail(d: ItemDetail, strings: Strings): PanelLines {
  * UI-67（M10）: 装備の差分の行（品の詳細の下に足す）。値は core の equipPreview だけ（UI-35）。
  * 呪いの警告（cursedWarning。鑑定済みの呪われた品）があれば先頭に camp.equipCursedWarn（danger）、続けて
  * equip.diffAc / equip.diffAttack / equip.diffMagic の 3 行（変わらない行も出す。core の changed が真の行は accent。良し悪しの色分けはしない）。
- * M19（C-3）: 各行の末尾に core の verdict の印（equip.mark.better「▲」/ worse「▼」/ same「－」）を添える
+ * M19（C-3）: 各行の末尾に core の verdict の印（equip.mark.better「▲」/ worse「▼」/ same「－」）を添える。
+ * M20（D-7 のレビューの修正）: 続けて、外れる今の装備のオプション（core の lostOptions）を 1 つ 1 行 equip.diffOptionLost「外れる {name} {value}{unit}」（danger）
  */
 export function formatEquipPreview(p: EquipPreview, strings: Strings): PanelLine[] {
   const row = <T extends string | number>(key: string, l: EquipPreviewLine<T>): PanelLine => ({
@@ -82,6 +83,7 @@ export function formatEquipPreview(p: EquipPreview, strings: Strings): PanelLine
     row("equip.diffAc", p.ac),
     row("equip.diffAttack", p.attack),
     row("equip.diffMagic", p.magicPower),
+    ...p.lostOptions.map((o): PanelLine => ({ text: s(strings, "equip.diffOptionLost", { name: o.name, value: signed(o.value), unit: o.unit }), tone: "danger" })),
   ];
 }
 

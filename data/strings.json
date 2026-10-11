@@ -522,6 +522,7 @@
   "equip.diffAc": "AC {from} → {to} {mark}",
   "equip.diffAttack": "攻撃 {from} → {to} {mark}",
   "equip.diffMagic": "魔法攻撃力 {from} → {to} {mark}",
+  "equip.diffOptionLost": "外れる {name} {value}{unit}",
   "equip.mark.better": "▲",
   "equip.mark.worse": "▼",
   "equip.mark.same": "－",

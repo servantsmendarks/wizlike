@@ -1735,7 +1735,9 @@ export function createApp(o: {
    */
   const pressLog = (): void => {
     if (walking === null && player.waitingLeave()) {
-      openHistory();
+      // ほかの overlay が開いていれば履歴は開けないので、押下を捨てずに拍のタップにする（レビュー A 低-4）
+      if (overlay !== null && overlay !== "history") player.tap();
+      else openHistory();
       return;
     }
     if (isBusy() || chaining) {

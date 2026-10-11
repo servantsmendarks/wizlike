@@ -5,6 +5,7 @@ import type { Character } from "../src/core/types";
 import { tapSpecOf } from "../src/presenter/input/tap";
 import { dungeonLayout, regions, townLayout } from "../src/presenter/layout";
 import { createHeader, navTrianglePath } from "../src/presenter/views/header";
+import { createPartyPanel } from "../src/presenter/views/party";
 import { bandCell, BAND_CELL_UNITS, createPartyBand, fitName, textUnits } from "../src/presenter/views/party-band";
 import { createTownPicture, townPictureUrl } from "../src/presenter/views/town-picture";
 import { data, newGame } from "./helpers/core";
@@ -218,6 +219,25 @@ describe("UI-13 帯の DOM・UI-61 施設の絵・ヘッダーのログ", () => 
     });
     plain.render(party);
     expect(fake(plain.el).children[0]!.children[0]!.textContent).toBe(party[0]!.name);
+  });
+
+  test("UI-69/CH-80（M20 D-8）createPartyPanel の setLevelUp: 再生中にその人の名前のセルだけを「名前↑」に描き直す（false で戻す。知らない id は何もしない）", () => {
+    const created = fakeDocument();
+    const R = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(R, data.config.party.size);
+    const panel = createPartyPanel({ strings: S, classes: data.classes, region: R.party, rows: L.partyRows, frontRow: data.config.party.frontRow, stageOf: (san, max) => sanStage(san, max, data.config) });
+    const party = newGame(1).party;
+    panel.render(party);
+    const nameCell = created.find((e) => e.textContent === party[0]!.name)!;
+    expect(nameCell).toBeDefined();
+    const others = created.filter((e) => e !== nameCell).map((e) => e.textContent);
+    panel.setLevelUp(party[0]!.id, true);
+    expect(nameCell.textContent).toBe(`${party[0]!.name}↑`);
+    expect(created.filter((e) => e !== nameCell).map((e) => e.textContent)).toEqual(others);
+    panel.setLevelUp(party[0]!.id, false);
+    expect(nameCell.textContent).toBe(party[0]!.name);
+    panel.setLevelUp("nobody", true);
+    expect(created.filter((e) => e !== nameCell).map((e) => e.textContent)).toEqual(others);
   });
 
   test("UI-13 帯の押せる範囲は見出しの行を含み、一覧の行と重ならない。帯のセルは button（Chrome のタッチ位置の補正で下の一覧の行に押下を取られない。B1）", () => {

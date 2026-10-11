@@ -150,9 +150,9 @@ export function formatCharacter(
     mp: s("detail.mp", { mp: ch.mp, mpMax: sheet?.mpMax ?? ch.mpMax }),
     san: s("detail.san", { san: ch.san, sanMax: sanCap }),
     sanOver: ch.san > sanCap,
-    // M20 D-6（UI-59 / TW-15）: 宿の士気がある間は生きている者の状態の行の末尾に「士気」（sheet の morale。life alive だけ）
+    // M20 D-6（UI-59 / TW-15）: 宿の士気がある間は生きている者の状態の行の末尾に「士気」（core の sheet の morale。生きている者だけが真）
     status: s("detail.status", {
-      status: [cond === "" ? s("detail.statusOk") : cond, ...(sheet?.morale === true && ch.life === "alive" ? [s("detail.statusMorale")] : [])].join(" "),
+      status: [cond === "" ? s("detail.statusOk") : cond, ...(sheet?.morale === true ? [s("detail.statusMorale")] : [])].join(" "),
     }),
     stats: STAT_ORDER.map((k) => {
       const label = s(`stat.${k}`);

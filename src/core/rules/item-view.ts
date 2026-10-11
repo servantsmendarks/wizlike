@@ -123,7 +123,7 @@ export type MemberSheet = {
    * blocked = 残りが 0 だが alive でない（死亡・灰。U9。蘇生すれば ready）
    */
   levelUpView: LevelUpView;
-  /** TW-15 / UI-59（M20 D-6）: 宿の士気がある（moraleOf が null でない）。一行の値なので life を問わない */
+  /** TW-15 / UI-59（M20 D-6）: 宿の士気がある（moraleOf が null でない）かつ ch が生きている（life alive。状態の行の「士気」はこれだけを見る） */
   morale: boolean;
 };
 export type LevelUpView = "ready" | "next" | "blocked";
@@ -140,7 +140,7 @@ export function memberSheet(state: GameState, data: GameData, ch: Character): Me
     expToNext,
     canLevelUp,
     levelUpView: canLevelUp ? "ready" : expToNext > 0 ? "next" : "blocked",
-    morale: moraleOf(state, data) !== null,
+    morale: moraleOf(state, data) !== null && ch.life === "alive",
     stats: es.stats,
     hpMax: es.hpMax,
     mpMax: es.mpMax,
@@ -171,12 +171,15 @@ export type EquipVerdict = "better" | "worse" | "same";
 /**
  * UI-67（M10）: 装備の差分。ac / magicPower は memberSheet の ac / magicPower、attack は memberSheet の attackDamageDice。
  * cursedWarning は装備しようとする品が鑑定済みかつ呪われているとき真（呪いの警告。未鑑定は CH-76 で装備できないので出ない。外すときは偽）
+ * lostOptions（M20 D-7 のレビューの修正）は、装備するときに枠から外れる今の装備のオプション（鑑定済みのときだけ。detailOptions の形。
+ * 外すとき・枠が空・未鑑定は []。外す品そのもののオプションは品の詳細に出ているので重ねない）
  */
 export type EquipPreview = {
   ac: EquipPreviewLine<number>;
   attack: EquipPreviewLine<string>;
   magicPower: EquipPreviewLine<number>;
   cursedWarning: boolean;
+  lostOptions: ItemDetailOption[];
 };
 
 /** ダイスの期待値の 2 倍（整数で比べるため）: count × (sides + 1) + 2 × modifier */
@@ -223,11 +226,14 @@ export function equipPreview(state: GameState, data: GameData, memberId: string,
   const before = memberSheet(state, data, ch);
   const after = memberSheet(copy, data, memberById(copy, memberId)!);
   const inst = instanceId === null ? undefined : state.items[instanceId];
+  const curId = ch.equipment[slot];
+  const cur = instanceId === null || curId === null || curId === instanceId ? undefined : state.items[curId];
   return {
     ac: acLine(before.ac, after.ac),
     attack: attackLine(before.attackDamageDice, after.attackDamageDice),
     magicPower: magicLine(before.magicPower, after.magicPower),
     cursedWarning: inst !== undefined && inst.identified && inst.cursed,
+    lostOptions: cur !== undefined && cur.identified ? detailOptions(data, cur) : [],
   };
 }
 

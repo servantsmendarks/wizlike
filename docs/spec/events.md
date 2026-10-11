@@ -56,7 +56,7 @@
 - EV-43 仲間の死亡による SAN 減少（CH-51）は「仲間の負傷」の耐性の対象に含める。
 - EV-44 性格の恩恵・耐性が効いた瞬間の一言（M18）。core が message を出す。乱数は引かず、既存の乱数の消費順は変えない。
   - 強欲の金（CH-52）: 財宝入手で SAN が実際に増えた強欲の者ごとに、`sanChanged` の直前に `trait.greedyGold`{name}。順は金の message → 一言 → `sanChanged`。上限・士気の超過中・虚脱で増えなければ出さない。
-  - 強欲の良い宝（IT-31）: 宝箱の品で chestQuality の chance が当たり、それで希少度が実際に 1 段上がったとき（上限で止まって変わらなければ出さない）、その品の message（`item.found` / `item.leftBehind`）の直前に `trait.greedyLuck`{name}。name は chestQuality の元になった者（行動可能で、性格の chestQuality がその最大に等しい者のうち並び順の先頭）。
+  - 強欲の良い宝（IT-31）: 宝箱の品で chestQuality の chance が当たり、それで希少度が実際に 1 段上がったとき（上限で止まって変わらなければ出さない）、その品の message（`item.found` / `item.leftBehind`）の直前に `trait.greedyLuck`{name}。name は chestQuality の元になった者（行動可能で、性格の chestQuality がその最大に等しい者のうち並び順の先頭）。M20（IT-54 の拾った品のまとめ）: まとめは直前の出来事だけを見るので、一言が付いた品の次の品が同じ人・同じ表示名で一言が付かなければ、2 つの文は `item.foundN` にまとまり、一言はまとめた文の前に残る。次の品にも一言が付けば、一言が間に挟まるのでまとめない。
   - 耐性（CH-54）: 性格の倍率で実際の減少（SAN の残りで頭打ちにした量）が倍率 1 のときより小さくなり、0 でないとき、`sanChanged` の直前に一言。fear の倍率が 1 未満なら `trait.recklessFear`{name}、そうでなく trap・allyInjury の倍率が 1 未満なら `trait.cautiousCalm`{name}。減る量が 0 に丸まったとき（例: 元が 1 で半減）は `sanChanged` が出ないので一言も出さない。戦闘の SAN 吸収（CB-31）では aftermath の拍で 一言 → `sanChanged` → `battle.sanDrain` の順。
   - 慎重の不意打ちの回避（`battle.ambushAvoided`。CB-04）・罠の察知（`dungeon.trap.detected`。DG-21）・制止（EV-20 / EV-21 の文）、普通の逆らう（`battle.disobey`）は既存の文で足りるので足さない。無鉄砲の `initiative` と `damage`（CB-11 / CB-22）は毎回の恒常の補正で、効いた瞬間が無いので一言にしない。
 

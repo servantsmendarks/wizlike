@@ -980,7 +980,8 @@ describe("入力と Command", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const press = /const pressLog = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     // leave の待ち（自動歩行の外）なら開く。それ以外の再生中・連鎖の途中は拍のタップ（履歴の間は何もしない）。再生の外は guard
-    expect(press).toMatch(/if \(walking === null && player\.waitingLeave\(\)\) \{\s*openHistory\(\);\s*return;\s*\}/);
+    // ほかの overlay が開いていれば押下を捨てずに拍のタップ（群 D のレビュー A 低-4）
+    expect(press).toMatch(/if \(walking === null && player\.waitingLeave\(\)\) \{\s*if \(overlay !== null && overlay !== "history"\) player\.tap\(\);\s*else openHistory\(\);\s*return;\s*\}/);
     expect(press).toMatch(/if \(isBusy\(\) \|\| chaining\) \{\s*if \(overlay !== "history"\) player\.tap\(\);\s*return;\s*\}\s*guard\(\(\) => openHistory\(\)\);/);
     expect(app).toContain('const historyInPlay = (): boolean => overlay === "history" && (isBusy() || chaining);');
     // 履歴の間はステージのタップを拍のタップにしない（busy を偽にして、押した要素の onTap に回す）

@@ -338,6 +338,43 @@ describe("UI-67 formatEquipPreview（装備の差分）", () => {
   });
 });
 
+// M20（D-7 のレビューの修正）: 装備の差分に、外れる今の装備のオプションの行
+describe("UI-67 装備の差分の外れるオプション（core の lostOptions）", () => {
+  test("UI-67 M20 装備するときは枠から外れる今の装備（鑑定済み）のオプションを 1 つ 1 行「外れる {name} {value}{unit}」（danger）で差分の下に。外すとき・未鑑定は出さない", () => {
+    const s = town();
+    const armor = s.party[0]!.equipment.armor!;
+    s.items[armor] = { ...s.items[armor]!, identified: true, options: [{ optionId: "hit", tier: 1, value: 5 }, { optionId: "fear_loss", tier: 1, value: -30 }] };
+    const mail = createItemInstance(s, { itemId: "chain_mail", identified: true });
+    s.party[0]!.inventory.push(mail);
+    const p = equipPreview(s, data, "c1", "armor", mail)!;
+    expect(p.lostOptions).toEqual([
+      { name: "命中", value: 5, unit: "%", bad: false },
+      { name: "恐怖への耐性", value: -30, unit: "%", bad: true },
+    ]);
+    expect(formatEquipPreview(p, S).slice(3)).toEqual([
+      { text: "外れる 命中 +5%", tone: "danger" },
+      { text: "外れる 恐怖への耐性 -30%", tone: "danger" },
+    ]);
+    // 外すときは品の詳細にその品のオプションが出ているので重ねない
+    expect(equipPreview(s, data, "c1", "armor", null)!.lostOptions).toEqual([]);
+    // 今の装備が未鑑定ならオプションは分からない
+    s.items[armor] = { ...s.items[armor]!, identified: false };
+    expect(equipPreview(s, data, "c1", "armor", mail)!.lostOptions).toEqual([]);
+  });
+
+  test("UI-67 M20 外れるオプションの行は最悪の値（どのオプションも最大の段の負の値）でも 28 字に収まり、詳細 13 行 + 警告 + 3 行 + 4 行でも tall のパネルに収まる", () => {
+    for (const o of data.itemOptions.options) {
+      const v = -Math.max(...o.values.map(Math.abs));
+      const text = formatEquipPreview(
+        { ac: { from: 0, to: 0, changed: false, verdict: "same" }, attack: { from: "1d2", to: "1d2", changed: false, verdict: "same" }, magicPower: { from: 0, to: 0, changed: false, verdict: "same" }, cursedWarning: false, lostOptions: [{ name: o.name, value: v, unit: o.unit, bad: true }] },
+        S,
+      )[3]!.text;
+      expect(Array.from(text).length, text).toBeLessThanOrEqual(DESCRIPTION_CHARS);
+    }
+    expect(13 + 1 + 3 + 4).toBeLessThanOrEqual(CHARACTER_LINES - 1);
+  });
+});
+
 describe("UI-68 formatSpellInfo（呪文の説明）", () => {
   test("UI-68 4 行: 「{name}　MP {mp}」・対象・場面・効果の文（spells.json の description）", () => {
     const s = town();

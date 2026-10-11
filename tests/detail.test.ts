@@ -157,6 +157,7 @@ describe("UI-59/UI-12 士気の SAN の超過（TW-15。M7）", () => {
     const poisoned = { ...s.party[0]!, status: ["poison", "sleep"] as GameState["party"][number]["status"] };
     expect(formatCharacter(poisoned, data, S, nameOf(s), memberSheet(s, data, poisoned)).status).toBe(t("detail.status", { status: "毒 眠 士気" }));
     const dead = { ...s.party[0]!, life: "dead" as const, hp: 0 };
+    expect(memberSheet(s, data, dead).morale).toBe(false); // 生きている者だけ（core で決める）
     expect(formatCharacter(dead, data, S, nameOf(s), memberSheet(s, data, dead)).status).toBe(t("detail.status", { status: t("party.life.dead") }));
     expect(formatCharacter(s.party[0]!, data, S, nameOf(s)).status).toBe(t("detail.status", { status: "正常" }));
     // 最悪: 状態異常 4 つ（石化・麻痺・眠り・毒）と SAN の段と士気
