@@ -5,7 +5,7 @@ import { describe, expect, test } from "vitest";
 import type { DropEntry, GameData, ItemOption, OptionKind } from "../src/core/data";
 import { optionAppliesTo } from "../src/core/data";
 import { chance, cloneRng, weightedIndex } from "../src/core/rng";
-import { chestItemCount, dropLevelBase, genericOptionTier, partyChestQuality, placeFoundItem, rollBossTable, rollChestItems, rollItemSpec } from "../src/core/rules/loot";
+import { chestItemCount, chestQualitySource, dropLevelBase, genericOptionTier, partyChestQuality, placeFoundItem, rollBossTable, rollChestItems, rollItemSpec } from "../src/core/rules/loot";
 import { cloneState, createItemInstance, makeContext, memberById, slotsMaxOf } from "../src/core/state";
 import type { BattleAction, Character, Command, GameState } from "../src/core/types";
 import { ALWAYS_HIT, allInputs, dataWith, dived, exec, kindsOf, withBattle } from "./helpers/battle";
@@ -755,5 +755,83 @@ describe("CB-52 宝箱の品（IT-50 / IT-31 / IT-53）", () => {
     const id = r.state.dive!.ledger.items[0]!;
     expect(r.state.items[id]).toMatchObject({ itemId: "long_sword", level: 2, identified: false, foundIn: "d01" });
     expectStateInvariants(r.state);
+  });
+});
+
+describe("EV-44 強欲の良い宝の一言（M18）", () => {
+  /** 宝箱の表を長剣 1 つに、2 個目を 0% に、希少度・呪い・上乗せを固定し、強欲の chestQuality を q にしたデータ */
+  const greedData = (rarity: keyof typeof ONLY, q: number) =>
+    lootData({
+      rarity,
+      up: [1],
+      mut: (x) => {
+        x.drops.tables.find((t) => t.id === "d01_f1")!.entries = SWORD;
+        x.config.chest.secondItemChance = 0;
+        x.personalities.find((p) => p.id === "greedy")!.benefits.chestQuality = q;
+      },
+    });
+  const keys = (evs: readonly { kind: string; key?: string }[]) => evs.map((e) => (e.kind === "message" ? e.key : e.kind));
+  const luck = (name: string) => ({ kind: "message", key: "trait.greedyLuck", params: { name } });
+
+  test("EV-44/IT-31 強欲の chance が当たって希少度が上がったら、品の message の直前に trait.greedyLuck{強欲の者}。乱数は今の順のまま（鏡の rng）", () => {
+    const d = greedData("normal", 100);
+    const ctx = makeContext(cloneState(dived(1)), d);
+    const m = cloneRng(ctx.state.rng);
+    chance(m, 0); // 2 個目
+    weightedIndex(m, [1]); // entries
+    weightedIndex(m, [1]); // Lv の上乗せ
+    weightedIndex(m, ONLY.normal); // 希少度（危険度 0 なので上振れは振らない）
+    chance(m, 100); // 強欲（IT-31）
+    chance(m, 0); // 呪い
+    weightedIndex(m, OPTION_WEIGHTS); // 上質のオプション 1 個
+    rollChestItems(ctx, "d01", 1, 1, 0);
+    expect(ctx.state.rng).toEqual(m);
+    expect(ctx.events[0]).toEqual(luck(member(ctx.state, "c4").name));
+    expect(keys(ctx.events)).toEqual(["trait.greedyLuck", "item.found"]);
+    expect(ctx.state.items[ctx.state.dive!.ledger.items[0]!]!.rarity).toBe("fine");
+    expectKnownStringKeys(ctx.events as never);
+  });
+
+  test("EV-44/IT-31 外れ・強欲がいない（行動不能）・上限で止まって上がらないときは出ない。当たり外れの両方を実データの 25% で確かめる", () => {
+    const seen = new Set<boolean>();
+    for (let seed = 1; seed < 40; seed++) {
+      const d = greedData("normal", 25);
+      const ctx = makeContext(cloneState(dived(seed)), d);
+      const m = cloneRng(ctx.state.rng);
+      chance(m, 0);
+      weightedIndex(m, [1]);
+      weightedIndex(m, [1]);
+      weightedIndex(m, ONLY.normal);
+      const hit = chance(m, 25);
+      rollChestItems(ctx, "d01", 1, 1, 0);
+      expect(keys(ctx.events)).toEqual(hit ? ["trait.greedyLuck", "item.found"] : ["item.found"]);
+      seen.add(hit);
+    }
+    expect([...seen].sort()).toEqual([false, true]);
+    // 強欲が麻痺（chestQuality 0。chance を振らない）
+    const para = cloneState(dived(1));
+    member(para, "c4").status = ["paralysis"];
+    const c1 = makeContext(para, greedData("normal", 100));
+    rollChestItems(c1, "d01", 1, 1, 0);
+    expect(keys(c1.events)).toEqual(["item.found"]);
+    // 希少を引いた危険度 0 の箱: 当たっても上限（希少）で止まるので出ない
+    const c2 = makeContext(cloneState(dived(1)), greedData("rare", 100));
+    rollChestItems(c2, "d01", 1, 1, 0);
+    expect(keys(c2.events)).toEqual(["item.found"]);
+    expect(c2.state.items[c2.state.dive!.ledger.items[0]!]!.rarity).toBe("rare");
+  });
+
+  test("EV-44 chestQualitySource: 行動可能で chestQuality が最大の者のうち並び順の先頭。quality 0 なら null", () => {
+    const s = dived(1);
+    expect(chestQualitySource(s, data)?.id).toBe("c4");
+    const two = cloneState(s);
+    member(two, "c5").personality = "greedy";
+    expect(chestQualitySource(two, data)?.id).toBe("c4");
+    member(two, "c4").status = ["paralysis"];
+    expect(chestQualitySource(two, data)?.id).toBe("c5");
+    member(two, "c5").life = "dead";
+    expect(chestQualitySource(two, data)).toBeNull();
+    // 名前 6 字・最長の名でも 28 字 × 2 行に収まる（1 行 28 字以内）
+    expect([...data.strings["trait.greedyLuck"]!.replace("{name}", "ああああああ")].length).toBeLessThanOrEqual(28);
   });
 });

@@ -1031,6 +1031,26 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
     expect(battleMenu(reck.state, d)!.members[2]!.canAct).toBe(false);
   });
 
+  test("EV-44/CB-31 無鉄砲の fear の半減が効いた SAN 吸収は aftermath で trait.recklessFear → sanChanged → battle.sanDrain。半減しても減り方が同じ（SAN 2）なら出ない", () => {
+    const d = dataWith({ combat: ALWAYS_HIT }, noSanOverride);
+    const shadow = (patches: Record<string, Partial<Character>>) =>
+      setup([{ monsterId: "whispering_shadow", hps: [50] }], {
+        identified: ["whispering_shadow"],
+        patches,
+        inputs: { c3: DEF, c4: DEF, c5: DEF, c6: DEF },
+      });
+    const r = exec(shadow({ c1: STONE, c2: STONE }), RESOLVE, d);
+    const ks = kindsOf(r.events);
+    const i = r.events.findIndex((e) => e.kind === "sanChanged" && e.id === "c3");
+    expect(r.events[i]).toEqual({ kind: "sanChanged", id: "c3", delta: -2, san: 98 });
+    expect(r.events[i - 1]).toEqual({ kind: "message", key: "trait.recklessFear", params: { name: member(r.state, "c3").name } });
+    expect(ks[i + 1]).toBe("message:battle.sanDrain");
+    // 乱数の消費は一言の有無で変わらない（SAN 2 の同じ戦闘と同じ rng）
+    const low = exec(shadow({ c1: STONE, c2: STONE, c3: { san: 2 } }), RESOLVE, d);
+    expect(kindsOf(low.events)).not.toContain("message:trait.recklessFear");
+    expect(low.state.rng).toEqual(r.state.rng);
+  });
+
   test("CB-32 睡眠中の敵への命中 +sleepHitBonus、被弾で覚醒判定（覚めたら statusChanged off と battle.wake）。倒したら判定しない", () => {
     // 命中率の基礎を 0 にして、睡眠の補正だけで命中させる
     const base = { hitMin: 0, hitMax: 100, hitBase: -41, sleepHitBonus: 100 };
@@ -1788,7 +1808,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(r2.state.rng).toEqual(m2);
   });
 
-  test("CB-57/IT-57/CH-52 金の種別: rollDice(directDropGoldDice) を battle.dropGold{name, gold} で state.gold と ledger.gold へ（敵の gold のダイスは使わない）", () => {
+  test("CB-57/IT-57/CH-52/EV-44 金の種別: rollDice(directDropGoldDice) を battle.dropGold{name, gold} で state.gold と ledger.gold へ（敵の gold のダイスは使わない）", () => {
     expect(data.config.combat.directDropChance).toBe(5);
     expect(data.config.combat.directDropGoldDice).toBe("2d10");
     const d = directData({ beast: ["gold"] });
@@ -1810,6 +1830,15 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(r.state.gold).toBe(s.gold + gold + drop);
     expect(r.state.dive!.ledger.gold).toBe(gold + drop);
     expect(ks).not.toContain("message:battle.drop");
+    // EV-44（M18）: 強欲（ドナ）が SAN 50 なら battle.gold・battle.dropGold のそれぞれの後に trait.greedyGold → sanChanged。乱数は同じ
+    const s2 = cloneState(s);
+    member(s2, "c4").san = 50;
+    const r2 = exec(s2, RESOLVE, d);
+    expect(r2.state.rng).toEqual(m);
+    const ks2 = kindsOf(r2.events);
+    const j = ks2.indexOf("message:battle.dropGold");
+    expect(ks2.slice(j, j + 3)).toEqual(["message:battle.dropGold", "message:trait.greedyGold", "sanChanged"]);
+    expect(ks2.filter((k) => k === "message:trait.greedyGold")).toHaveLength(2);
   });
 
   test("CB-57/IT-57/IT-13 消耗品の種別: weightedIndex(direct.consumables) の品を鑑定済み・Lv0・通常で配る。複数のグループは添字順に 1 回ずつ判定し、名前は未鑑定なら系統の名前", () => {
@@ -1837,7 +1866,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
       expect(ctx.state.items[id]).toMatchObject({ identified: true, level: 0, rarity: "normal", options: [], uniqueId: null, cursed: false, foundIn: "d01" });
   });
 
-  test("CH-52/A8 強欲の treasureGain: 戦闘の金・宝箱の金ごとに、金のメッセージの直後で強欲（ドナ c4）の SAN +2。死者・虚脱・金 0 では増えない", () => {
+  test("CH-52/A8/EV-44 強欲の treasureGain: 戦闘の金・宝箱の金ごとに、金のメッセージの直後で強欲（ドナ c4）の trait.greedyGold と SAN +2。死者・虚脱・金 0 では増えない", () => {
     // M11: 宝箱の金は chest.open で配る（CB-65）。罠なしに固定する
     const noTrap = (x: GameData) => {
       x.config.chest.noTrapChance = 100;
@@ -1863,12 +1892,19 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     const ks = kindsOf(r.events);
     const iGold = ks.indexOf("message:battle.gold");
     const iChest = ks.indexOf("message:chest.open.gold");
-    expect(r.events[iGold + 1]).toEqual({ kind: "sanChanged", id: "c4", delta: 2, san: 52 });
-    expect(r.events[iChest + 1]).toEqual({ kind: "sanChanged", id: "c4", delta: 2, san: 54 });
+    // EV-44（M18）: 金の message → trait.greedyGold → sanChanged
+    const greedy = { kind: "message", key: "trait.greedyGold", params: { name: "ドナ" } };
+    expect(r.events[iGold + 1]).toEqual(greedy);
+    expect(r.events[iGold + 2]).toEqual({ kind: "sanChanged", id: "c4", delta: 2, san: 52 });
+    expect(r.events[iChest + 1]).toEqual(greedy);
+    expect(r.events[iChest + 2]).toEqual({ kind: "sanChanged", id: "c4", delta: 2, san: 54 });
     expect(eventsOf(r.events, "sanChanged")).toHaveLength(2); // 強欲以外（treasureGain 0）は増えない
     expect(member(r.state, "c4").san).toBe(54);
-    // SAN 100（上限）なら sanChanged は出ない（delta 0）
-    expect(eventsOf(winAndOpen(mk({}), d).events, "sanChanged")).toEqual([]);
+    expect(r.state.rng).toEqual(winAndOpen(mk({}), d).state.rng); // EV-44: 一言の有無で乱数の消費は変わらない
+    // SAN 100（上限）なら sanChanged は出ない（delta 0）。EV-44 の一言も出ない
+    const full = winAndOpen(mk({}), d).events;
+    expect(eventsOf(full, "sanChanged")).toEqual([]);
+    expect(kindsOf(full)).not.toContain("message:trait.greedyGold");
     // 死んだ強欲・虚脱（SAN 0）の強欲は増えない
     expect(member(winAndOpen(mk({ c4: { ...DEAD, san: 50 } }), d).state, "c4").san).toBe(50);
     expect(member(winAndOpen(mk({ c4: { san: 0 } }), d).state, "c4").san).toBe(0);

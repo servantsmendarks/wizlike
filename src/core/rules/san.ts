@@ -102,13 +102,32 @@ function assertSanAmount(amount: number): void {
 /**
  * CH-51/54: 減少。amount は 0 以上（負や非有限は Error）。tags は攻撃の tags や ["allyInjury"]。
  * M7: fear のタグの減少には装備者のオプション fearLoss（IT-34）を掛け、固有スキル fearImmune（IT-40）の装備者は 0 にする（CB-31）
+ * EV-44（M18）: 性格の倍率で実際の減少（SAN の残りで頭打ち）が倍率 1 のときより小さくなり、0 でないなら、sanChanged の直前に
+ * message trait.recklessFear / trait.cautiousCalm{name}（traitLossKey）
  */
 export function loseSan(ctx: RuleContext, ch: Character, amount: number, tags: readonly string[] = []): SanChange {
   assertSanAmount(amount);
   const p = personalityOf(ctx.data, ch.personality);
   const es = equipStats(ctx.state, ctx.data, ch);
-  const loss = tags.includes("fear") && hasSkill(es, "fearImmune") ? 0 : sanLossAmount(amount, p, tags, es.fearLossPct);
-  return setSan(ctx, ch, ch.san - loss, Math.max(sanCapOf(ctx.state, ctx.data, ch), ch.san));
+  const immune = tags.includes("fear") && hasSkill(es, "fearImmune");
+  const loss = immune ? 0 : sanLossAmount(amount, p, tags, es.fearLossPct);
+  // EV-44（M18）: 性格の耐性で実際に減る量が小さくなったときだけ、sanChanged の直前に一言（乱数なし。減る量が 0 なら出さない）
+  const plain = immune ? 0 : sanLossAmount(amount, null, tags, es.fearLossPct);
+  const at = ctx.events.length;
+  const r = setSan(ctx, ch, ch.san - loss, Math.max(sanCapOf(ctx.state, ctx.data, ch), ch.san));
+  const key = r.delta < 0 && p !== null && -r.delta < Math.min(r.from, plain) ? traitLossKey(p, tags) : null;
+  if (key !== null) ctx.events.splice(at, 0, { kind: "message", key, params: { name: ch.name } });
+  return r;
+}
+
+/**
+ * EV-44（M18）: 耐性の一言の strings キー。fear の倍率が 1 未満なら trait.recklessFear、
+ * そうでなく trap・allyInjury の倍率が 1 未満なら trait.cautiousCalm。どれも 1 以上なら null
+ */
+function traitLossKey(p: Personality, tags: readonly string[]): string | null {
+  if (tags.includes("fear") && p.san.fearLossMul < 1) return "trait.recklessFear";
+  if ((tags.includes("trap") && p.san.trapLossMul < 1) || (tags.includes("allyInjury") && p.san.allyInjuryLossMul < 1)) return "trait.cautiousCalm";
+  return null;
 }
 
 /**
@@ -136,12 +155,16 @@ export function applySanValue(ctx: RuleContext, ch: Character, value: number): S
 /**
  * CH-52 / A8: 財宝入手（迷宮で金を得た 1 回）。並び順に、life alive かつ san > 0 で
  * personality.san.treasureGain > 0 の者へ gainSan(treasureGain)。乱数なし。
+ * EV-44（M18）: 増えた者ごとに sanChanged の直前に message trait.greedyGold{name}（上限・超過中で増えなければ出さない）
  */
 export function gainTreasureSan(ctx: RuleContext): void {
   for (const ch of ctx.state.party) {
     if (ch.life !== "alive" || ch.san <= 0) continue;
     const g = personalityOf(ctx.data, ch.personality)?.san.treasureGain ?? 0;
-    if (g > 0) gainSan(ctx, ch, g);
+    if (g <= 0) continue;
+    // EV-44（M18）: 実際に増えたときだけ、sanChanged の直前に trait.greedyGold{name}
+    const at = ctx.events.length;
+    if (gainSan(ctx, ch, g).delta > 0) ctx.events.splice(at, 0, { kind: "message", key: "trait.greedyGold", params: { name: ch.name } });
   }
 }
 

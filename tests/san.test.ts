@@ -3,6 +3,7 @@ import {
   applySanValue,
   capSan,
   gainSan,
+  gainTreasureSan,
   loseSan,
   overSan,
   restoreSan,
@@ -19,6 +20,7 @@ import { ctxFor, data, expectKnownStringKeys, newGame, withChar } from "./helper
 const LEADER = 0;
 const CAUTIOUS = 1;
 const RECKLESS = 2;
+const GREEDY = 3;
 const NORMAL = 4;
 const cfg = data.config;
 const P = {
@@ -284,5 +286,87 @@ describe("san: 士気の超過（TW-15 / CH-50 / CH-52、M7）", () => {
       { kind: "sanChanged", id: ch.id, delta: -10, san: 100 },
       { kind: "sanChanged", id: ch.id, delta: -7, san: 100 },
     ]);
+  });
+});
+
+describe("san: 性格の恩恵・耐性が効いた瞬間の一言（EV-44、M18）", () => {
+  const msg = (key: string, name: string) => ({ kind: "message", key, params: { name } });
+
+  test("EV-44/CH-54 無鉄砲の fear の半減が効いたら sanChanged の直前に trait.recklessFear。0 に丸まったら一言も sanChanged も出ない", () => {
+    const ctx = ctxFor(newGame(1));
+    const ch = ctx.state.party[RECKLESS]!;
+    loseSan(ctx, ch, 4, ["fear"]);
+    expect(ctx.events).toEqual([msg("trait.recklessFear", ch.name), { kind: "sanChanged", id: ch.id, delta: -2, san: 98 }]);
+    ctx.events.length = 0;
+    expect(loseSan(ctx, ch, 1, ["fear"]).delta).toBe(0); // 1 × 0.5 → 0
+    expect(ctx.events).toEqual([]);
+    // fear と trap が重なっても fear の一言（無鉄砲は trap の倍率 1）
+    loseSan(ctx, ch, 4, ["fear", "trap"]);
+    expect(ctx.events[0]).toEqual(msg("trait.recklessFear", ch.name));
+    // 無鉄砲の trap・allyInjury、タグなしは倍率 1 なので出ない
+    ctx.events.length = 0;
+    loseSan(ctx, ch, 4, ["trap"]);
+    loseSan(ctx, ch, 4, ["allyInjury"]);
+    loseSan(ctx, ch, 4);
+    expect(ctx.events.map((e) => e.kind)).toEqual(["sanChanged", "sanChanged", "sanChanged"]);
+  });
+
+  test("EV-44/CH-54/EV-43 慎重の trap・allyInjury の半減が効いたら trait.cautiousCalm。fear・タグなしでは出ない", () => {
+    const ctx = ctxFor(newGame(1));
+    const ch = ctx.state.party[CAUTIOUS]!;
+    loseSan(ctx, ch, 3, ["trap"]);
+    loseSan(ctx, ch, 10, ["allyInjury"]);
+    loseSan(ctx, ch, 9, ["allyInjury", "trap"]);
+    expect(ctx.events).toEqual([
+      msg("trait.cautiousCalm", ch.name),
+      { kind: "sanChanged", id: ch.id, delta: -1, san: 99 },
+      msg("trait.cautiousCalm", ch.name),
+      { kind: "sanChanged", id: ch.id, delta: -5, san: 94 },
+      msg("trait.cautiousCalm", ch.name),
+      { kind: "sanChanged", id: ch.id, delta: -2, san: 92 },
+    ]);
+    ctx.events.length = 0;
+    loseSan(ctx, ch, 4, ["fear"]);
+    loseSan(ctx, ch, 4);
+    loseSan(ctx, ch, 1, ["trap"]); // 0 に丸まる
+    expect(ctx.events.map((e) => e.kind)).toEqual(["sanChanged", "sanChanged"]);
+  });
+
+  test("EV-44 普通・強欲・リーダーは耐性が無いので出ない。SAN の残りで頭打ちになり倍率 1 と同じ減り方なら出ない", () => {
+    const ctx = ctxFor(newGame(1));
+    for (const i of [LEADER, GREEDY, NORMAL]) for (const t of [["fear"], ["trap"], ["allyInjury"]]) loseSan(ctx, ctx.state.party[i]!, 4, t);
+    expect(ctx.events.every((e) => e.kind === "sanChanged")).toBe(true);
+    // 無鉄砲の SAN 2 に fear 4: 半減しても 2 減って 0（倍率 1 でも 2 減る）ので一言なし。SAN 3 なら 2 減って違いが出るので出す
+    const c2 = ctxFor(stateWith(RECKLESS, 2));
+    loseSan(c2, c2.state.party[RECKLESS]!, 4, ["fear"]);
+    expect(c2.events.filter((e) => e.kind === "message").map((e) => (e.kind === "message" ? e.key : ""))).toEqual(["san.broken"]);
+    const c3 = ctxFor(stateWith(RECKLESS, 3));
+    loseSan(c3, c3.state.party[RECKLESS]!, 4, ["fear"]);
+    expect(c3.events[0]).toEqual(msg("trait.recklessFear", c3.state.party[RECKLESS]!.name));
+  });
+
+  test("EV-44/CH-52 強欲の treasureGain が増えたら sanChanged の直前に trait.greedyGold。上限・虚脱で増えなければ出ない。rng を消費しない", () => {
+    const ctx = ctxFor(stateWith(GREEDY, 50));
+    const rng0 = JSON.stringify(ctx.state.rng);
+    const ch = ctx.state.party[GREEDY]!;
+    gainTreasureSan(ctx);
+    expect(ctx.events).toEqual([msg("trait.greedyGold", ch.name), { kind: "sanChanged", id: ch.id, delta: 2, san: 52 }]);
+    for (const san of [100, 0]) {
+      const c = ctxFor(stateWith(GREEDY, san));
+      gainTreasureSan(c);
+      expect(c.events).toEqual([]);
+    }
+    loseSan(ctx, ctx.state.party[RECKLESS]!, 4, ["fear"]);
+    loseSan(ctx, ctx.state.party[CAUTIOUS]!, 4, ["trap"]);
+    expect(JSON.stringify(ctx.state.rng)).toBe(rng0);
+    expectKnownStringKeys(ctx.events);
+  });
+
+  test("EV-44 4 つの文は名前 6 字で会話の箱 28 字 × 2 行に収まる（1 行に収まる長さ）", () => {
+    for (const k of ["trait.greedyGold", "trait.greedyLuck", "trait.recklessFear", "trait.cautiousCalm"]) {
+      const t = data.strings[k]!.replace("{name}", "ああああああ");
+      expect(t.includes("{"), k).toBe(false);
+      expect([...t].length, k).toBeLessThanOrEqual(28);
+    }
   });
 });

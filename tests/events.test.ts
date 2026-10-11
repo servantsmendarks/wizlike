@@ -572,8 +572,10 @@ describe("衝動の実行（EV-23, EV-24, EV-30）", () => {
       { kind: "message", key: "event.abandoned_sack.impulse", params: { actor: name } },
       { kind: "message", key: "event.abandoned_sack.good", params: { actor: name } },
       { kind: "message", key: "event.gold", params: { gold: g1 } },
+      { kind: "message", key: "trait.greedyGold", params: { name: "ドナ" } }, // EV-44（M18）
       { kind: "sanChanged", id: "c4", delta: 2, san: 82 },
       { kind: "message", key: "event.gold", params: { gold: g2 } },
+      { kind: "message", key: "trait.greedyGold", params: { name: "ドナ" } }, // EV-44（M18）
       { kind: "sanChanged", id: "c4", delta: 2, san: 84 },
     ]);
     expect(ctx2.state.gold).toBe(s2.gold + g1 + g2);
@@ -606,6 +608,7 @@ describe("衝動の実行（EV-23, EV-24, EV-30）", () => {
       { kind: "message", key: "event.glowing_tablet.impulse", params: { actor: "キリ" } },
       { kind: "message", key: "event.glowing_tablet.neutral", params: { actor: "キリ" } },
       { kind: "message", key: "event.gold", params: { gold: g } },
+      { kind: "message", key: "trait.greedyGold", params: { name: "ドナ" } }, // EV-44（M18）
       { kind: "sanChanged", id: "c4", delta: 2, san: 82 },
     ]);
     expect(ctxN.state.rng).toEqual(mn);
@@ -722,7 +725,11 @@ describe("効果（EV-32）", () => {
       { kind: "hpChanged", id: "c3", delta: -1, hp: 0 },
       { kind: "lifeChanged", id: "c3", life: "dead" },
       { kind: "message", key: "dungeon.dead", params: { name: "キリ" } },
-      ...others.map((c) => ({ kind: "sanChanged", id: c.id, delta: -ally(c), san: 100 - ally(c) })),
+      // EV-44（M18）: 慎重の allyInjury の半減が効いた者は sanChanged の直前に trait.cautiousCalm
+      ...others.flatMap((c) => [
+        ...(c.personality === "cautious" ? [{ kind: "message", key: "trait.cautiousCalm", params: { name: c.name } }] : []),
+        { kind: "sanChanged", id: c.id, delta: -ally(c), san: 100 - ally(c) },
+      ]),
     ]);
     expect(r).toBeGreaterThanOrEqual(1);
     expect(ctx.state.rng).toEqual(m);
@@ -925,6 +932,7 @@ describe("イベントのセル（DG-22, EV-13, EV-33）", () => {
       { kind: "screen", to: "dungeon", dungeonId: "d01" },
       { kind: "message", key: "event.abandoned_sack.search" },
       { kind: "message", key: "event.gold", params: { gold: g } },
+      { kind: "message", key: "trait.greedyGold", params: { name: "ドナ" } }, // EV-44（M18）
       { kind: "sanChanged", id: "c4", delta: 2, san: 52 },
     ]);
     expect(r3.state.rng).toEqual(m);
@@ -1024,7 +1032,7 @@ describe("イベントのセル（DG-22, EV-13, EV-33）", () => {
     expect(ok.state.screen).toBe("event");
   });
 
-  test("CH-52/A8 イベントの金ごとに強欲 +2（宝袋の search）。ドナが死亡・虚脱なら増えない", () => {
+  test("CH-52/A8/EV-44 イベントの金ごとに強欲 +2（宝袋の search。直前に trait.greedyGold）。ドナが死亡・虚脱なら増えず一言も出ない", () => {
     const sk = atEvent(SACK);
     const cases: [string, Partial<Character>, GameEvent[]][] = [
       ["SAN 50", { san: 50 }, [{ kind: "sanChanged", id: "c4", delta: 2, san: 52 }]],
@@ -1035,6 +1043,11 @@ describe("イベントのセル（DG-22, EV-13, EV-33）", () => {
       const s1 = run(patch(sk.state, 3, p), MOVE, calm()).state;
       const r = run(s1, { type: "event.choose", optionId: "search" }, calm());
       expect(r.events.filter((e) => e.kind === "sanChanged"), name).toEqual(want);
+      // EV-44（M18）: 増えたときだけ event.gold → trait.greedyGold → sanChanged
+      const ks = r.events.map((e) => (e.kind === "message" ? `message:${e.key}` : e.kind));
+      const i = ks.indexOf("message:event.gold");
+      if (want.length > 0) expect(ks.slice(i, i + 3), name).toEqual(["message:event.gold", "message:trait.greedyGold", "sanChanged"]);
+      else expect(ks, name).not.toContain("message:trait.greedyGold");
     }
   });
 
@@ -1143,8 +1156,10 @@ describe("M9 のイベント（EV-53〜55, DG-22）", () => {
       { kind: "message", key: "event.sunken_offering_box.impulse", params: { actor: "ドナ" } },
       { kind: "message", key: "event.sunken_offering_box.good", params: { actor: "ドナ" } },
       { kind: "message", key: "event.gold", params: { gold: g1 } },
+      { kind: "message", key: "trait.greedyGold", params: { name: "ドナ" } }, // EV-44（M18）
       { kind: "sanChanged", id: "c4", delta: 2, san: 82 },
       { kind: "message", key: "event.gold", params: { gold: g2 } },
+      { kind: "message", key: "trait.greedyGold", params: { name: "ドナ" } }, // EV-44（M18）
       { kind: "sanChanged", id: "c4", delta: 2, san: 84 },
     ]);
     expect(ctx.state.gold).toBe(s.gold + g1 + g2);
@@ -1179,6 +1194,7 @@ describe("M9 のイベント（EV-53〜55, DG-22）", () => {
       { kind: "screen", to: "dungeon", dungeonId: "d02" },
       { kind: "message", key: "event.sunken_offering_box.pry" },
       { kind: "message", key: "event.gold", params: { gold: g } },
+      { kind: "message", key: "trait.greedyGold", params: { name: "ドナ" } }, // EV-44（M18）
       { kind: "sanChanged", id: "c4", delta: 2, san: 52 },
     ]);
     expect(r.state.rng).toEqual(m);
@@ -1253,6 +1269,7 @@ describe("M9 のイベント（EV-53〜55, DG-22）", () => {
       { kind: "message", key: "event.pinned_pilgrim.impulse", params: { actor: "ベルク" } },
       { kind: "message", key: "event.pinned_pilgrim.good", params: { actor: "ベルク" } },
       { kind: "message", key: "event.gold", params: { gold: g } },
+      { kind: "message", key: "trait.greedyGold", params: { name: "ドナ" } }, // EV-44（M18）
       { kind: "sanChanged", id: "c4", delta: 2, san: 82 }, // 強欲の財宝入手（CH-52）
       { kind: "sanChanged", id: "c2", delta: 4, san: 84 },
     ]);

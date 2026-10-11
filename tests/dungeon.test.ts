@@ -23,7 +23,7 @@ import { groupViews } from "../src/core/rules/combat-calc";
 import { expectRejected, withBattle } from "./helpers/battle";
 import { offerExit, offerStairs, offerTeleporter, offerTrap, STAY_CHOICE_ID } from "../src/core/rules/choices";
 import { cloneState, createItemInstance, dungeonOf, makeContext, monsterOf } from "../src/core/state";
-import type { Cell, Command, Facing, Floor, GameEvent, GameState } from "../src/core/types";
+import type { Cell, Character, Command, Facing, Floor, GameEvent, GameState } from "../src/core/types";
 import {
   data,
   deepFreeze,
@@ -111,6 +111,11 @@ function expectExploredCovers(s: GameState, d: GameData = data): void {
 function trapLoss(s: GameState, id: string): number {
   const ch = s.party.find((c) => c.id === id)!;
   return ch.personality === "cautious" ? 1 : data.config.san.trap;
+}
+
+/** EV-44（M18）: 慎重の耐性（trap / allyInjury の半減）が効いた者の sanChanged の直前の一言 */
+function calm(c: Character): GameEvent[] {
+  return c.personality === "cautious" ? [{ kind: "message", key: "trait.cautiousCalm", params: { name: c.name } }] : [];
 }
 
 // 手組みの Floor（全セル corridor、全辺 wall）
@@ -1182,7 +1187,7 @@ describe("罠（DG-20, DG-21, E4）", () => {
       { kind: "moved", pos: a.target, facing: a.facing },
       { kind: "message", key: "dungeon.trap.pit" },
       ...alive.map((c, i) => ({ kind: "hpChanged", id: c.id, delta: -rolls[i]!, hp: 30 - rolls[i]! })),
-      ...alive.map((c) => ({ kind: "sanChanged", id: c.id, delta: -trapLoss(state, c.id), san: c.san - trapLoss(state, c.id) })),
+      ...alive.flatMap((c) => [...calm(c), { kind: "sanChanged", id: c.id, delta: -trapLoss(state, c.id), san: c.san - trapLoss(state, c.id) }]),
     ]);
     // リーダー −3、慎重（c2）−1、無鉄砲・強欲・普通 −3
     expect(alive.map((c) => trapLoss(state, c.id))).toEqual([3, 1, 3, 3, 3]);
@@ -1208,8 +1213,8 @@ describe("罠（DG-20, DG-21, E4）", () => {
       ...state.party.map((c, i) => ({ kind: "hpChanged", id: c.id, delta: -(c.hp - Math.max(0, c.hp - rolls[i]!)), hp: Math.max(0, c.hp - rolls[i]!) })),
       { kind: "lifeChanged", id: victim.id, life: "dead" },
       { kind: "message", key: "dungeon.dead", params: { name: victim.name } },
-      ...others.map((c) => ({ kind: "sanChanged", id: c.id, delta: -ally(c.id), san: c.san - ally(c.id) })),
-      ...others.map((c) => ({ kind: "sanChanged", id: c.id, delta: -trapLoss(state, c.id), san: c.san - ally(c.id) - trapLoss(state, c.id) })),
+      ...others.flatMap((c) => [...calm(c), { kind: "sanChanged", id: c.id, delta: -ally(c.id), san: c.san - ally(c.id) }]),
+      ...others.flatMap((c) => [...calm(c), { kind: "sanChanged", id: c.id, delta: -trapLoss(state, c.id), san: c.san - ally(c.id) - trapLoss(state, c.id) }]),
     ]);
     expect(r.state.party[2]!.life).toBe("dead");
     expect(r.state.party[2]!.san).toBe(victim.san);
@@ -1343,7 +1348,7 @@ describe("罠（DG-20, DG-21, E4）", () => {
         { kind: "moved", pos: a.target, facing: a.facing },
         { kind: "message", key: "dungeon.trap.spinner" },
         { kind: "turned", facing },
-        ...state.party.map((c) => ({ kind: "sanChanged", id: c.id, delta: -trapLoss(state, c.id), san: c.san - trapLoss(state, c.id) })),
+        ...state.party.flatMap((c) => [...calm(c), { kind: "sanChanged", id: c.id, delta: -trapLoss(state, c.id), san: c.san - trapLoss(state, c.id) }]),
       ]);
       expect(r.state.dive!.facing).toBe(facing);
       expect(r.state.rng).toEqual(mirror);
@@ -1451,7 +1456,7 @@ describe("罠（DG-20, DG-21, E4）", () => {
     expect(r2.events).toEqual([
       { kind: "message", key: "dungeon.trap.pit" },
       ...state.party.map((c, i) => ({ kind: "hpChanged", id: c.id, delta: -rolls[i]!, hp: 30 - rolls[i]! })),
-      ...state.party.map((c) => ({ kind: "sanChanged", id: c.id, delta: -trapLoss(state, c.id), san: c.san - trapLoss(state, c.id) })),
+      ...state.party.flatMap((c) => [...calm(c), { kind: "sanChanged", id: c.id, delta: -trapLoss(state, c.id), san: c.san - trapLoss(state, c.id) }]),
     ]);
     expect(r2.state.rng).toEqual(mirror);
     expect(r2.state.pendingChoice).toBeNull();
@@ -1461,10 +1466,11 @@ describe("罠（DG-20, DG-21, E4）", () => {
     const r3 = run(r1.state, { type: "event.choose", optionId: "proceed" }, dataEnc(1, 1));
     const ks = kinds(r3.events);
     const n = state.party.length;
-    expect(ks.slice(0, 1 + 2 * n + 1)).toEqual([
+    const nCalm = state.party.filter((c) => c.personality === "cautious").length; // EV-44（M18）: 慎重の一言
+    expect(ks.slice(0, 1 + 2 * n + nCalm + 1)).toEqual([
       "message:dungeon.trap.pit",
       ...Array<string>(n).fill("hpChanged"),
-      ...Array<string>(n).fill("sanChanged"),
+      ...state.party.flatMap((c) => [...calm(c).map(() => "message:trait.cautiousCalm"), "sanChanged"]),
       "screen", // 罠の SAN の後に遭遇（screen{battle}）
     ]);
     expect(ks).toContain("message:battle.encounter");

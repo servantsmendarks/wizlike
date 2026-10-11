@@ -267,7 +267,7 @@ describe("CB-62 罠の効果（開けて作動させる）", () => {
     }
   });
 
-  test("CB-62 呪詛: 生存者全員の SAN −8（trap の耐性: 慎重は −4）。乱数なし", () => {
+  test("CB-62/EV-44 呪詛: 生存者全員の SAN −8（trap の耐性: 慎重は −4。その直前に trait.cautiousCalm）。乱数なし", () => {
     const s = withChest("curse", 5, 1, D);
     const m = cloneRng(s.rng);
     mirrorContents(m, D);
@@ -282,8 +282,16 @@ describe("CB-62 罠の効果（開けて作動させる）", () => {
       ["c5", -8],
       ["c6", -4],
     ]);
-    // 中身の金で強欲（ドナ）の treasureGain +2（呪詛の後なので上限の下）
-    expect(r.events[iGold + 1]).toEqual({ kind: "sanChanged", id: "c4", delta: 2, san: 94 });
+    // EV-44（M18）: 慎重（c2 ベルク・c6 フィン）の半減が効いた sanChanged の直前に trait.cautiousCalm
+    const pre = r.events.slice(0, iGold);
+    for (const [id, name] of [["c2", "ベルク"], ["c6", "フィン"]] as const) {
+      const i = pre.findIndex((e) => e.kind === "sanChanged" && e.id === id);
+      expect(pre[i - 1]).toEqual({ kind: "message", key: "trait.cautiousCalm", params: { name } });
+    }
+    expect(kindsOf(pre).filter((k) => k.startsWith("message:trait."))).toHaveLength(2);
+    // 中身の金で強欲（ドナ）の treasureGain +2（呪詛の後なので上限の下）。EV-44: 金の message → trait.greedyGold → sanChanged
+    expect(r.events[iGold + 1]).toEqual({ kind: "message", key: "trait.greedyGold", params: { name: "ドナ" } });
+    expect(r.events[iGold + 2]).toEqual({ kind: "sanChanged", id: "c4", delta: 2, san: 94 });
   });
 
   test("CB-62/TW-20 罠で全員が行動不能になると中身を得ずに全滅処理（finish の wipeIfNoneCanAct）", () => {

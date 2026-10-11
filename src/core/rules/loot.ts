@@ -17,7 +17,7 @@ import { optionAppliesTo, optionKindOf } from "../data/index";
 import { chance, randInt, rollDice, weightedIndex } from "../rng";
 import type { ItemInstanceSpec } from "../state";
 import { baseOf, createItemInstance, dropTableOf, dungeonOf, findBase, itemDisplayName, itemOf, monsterOf, personalityOf, uniqueOf, slotsMaxOf, slotsUsed } from "../state";
-import type { GameState, ItemOptionRoll, RuleContext } from "../types";
+import type { Character, GameState, ItemOptionRoll, RuleContext } from "../types";
 import { canAct, groupName } from "./combat-calc";
 import { gainGold } from "./field";
 
@@ -48,6 +48,15 @@ export function dropLevelBase(data: GameData, dungeonId: string, floor: number, 
 }
 
 /**
+ * EV-44（M18）: partyChestQuality の元になった者（行動可能で、性格の chestQuality がその最大に等しい者のうち並び順の先頭）。quality が 0 なら null
+ */
+export function chestQualitySource(state: GameState, data: GameData): Character | null {
+  const q = partyChestQuality(state, data);
+  if (q <= 0) return null;
+  return state.party.find((ch) => canAct(ch) && personalityOf(data, ch.personality)?.benefits.chestQuality === q) ?? null;
+}
+
+/**
  * IT-52 / IT-53 / IT-30〜33: entries から 1 品の中身を引く（個数の判定（宝箱の 2 個目の chance・ボスの表の chance(itemChance)）は呼び出し側）。未鑑定（IT-13）。
  * 汎用は Lv = levelBase（dropLevelBase の値）+ weightedIndex(dropLevelUpWeights)（M14。乱数 1 回）、ユニークは Lv0 で段階は optionTier。
  * 魔法書（IT-55）は weightedIndex(entries) の後に乱数を引かず、鑑定済みの Lv0・通常で返す。
@@ -64,11 +73,26 @@ export function rollItemSpec(
   foundIn: string,
   danger = 0,
 ): ItemInstanceSpec {
+  return rollItemSpecDetail(state, data, entries, levelBase, quality, foundIn, danger).spec;
+}
+
+/**
+ * rollItemSpec の本体。greedRaised は EV-44（M18）の印: 強欲の chance(quality) が当たり、かつそれで希少度が実際に 1 段上がった（上限で止まらなかった）
+ */
+function rollItemSpecDetail(
+  state: GameState,
+  data: GameData,
+  entries: readonly DropEntry[],
+  levelBase: number,
+  quality: number,
+  foundIn: string,
+  danger: number,
+): { spec: ItemInstanceSpec; greedRaised: boolean } {
   const cfg = data.config.items;
   const entry = entries[weightedIndex(state.rng, entries.map((e) => e.weight))]!;
   // IT-55（M9）: 魔法書の項目は Lv0・通常・オプションなし・呪いなし・鑑定済みで、以降の乱数を引かない
   if ("item" in entry)
-    return { itemId: entry.item, identified: true, level: 0, rarity: "normal", options: [], uniqueId: null, cursed: false, foundIn };
+    return { spec: { itemId: entry.item, identified: true, level: 0, rarity: "normal", options: [], uniqueId: null, cursed: false, foundIn }, greedRaised: false };
   let itemId: string;
   let uniqueId: string | null = null;
   let level = 0;
@@ -97,6 +121,7 @@ export function rollItemSpec(
   // rarities は「最後が伝説、その一つ前が希少」の並びが前提（validate の IT-30 の検査が 4 件・順序固定を保証する）
   const maxIdx = danger >= cfg.legendaryMinDanger ? cfg.rarities.length - 1 : cfg.rarities.length - 2;
   const rIdx = Math.min(maxIdx, drawn + up + greed);
+  const greedRaised = greed > 0 && rIdx > Math.min(maxIdx, drawn + up);
   const rarity = cfg.rarities[rIdx]!;
   const cursed = chance(state.rng, cfg.curseChance);
   const count = rarity.options + (cursed ? 1 : 0);
@@ -116,7 +141,7 @@ export function rollItemSpec(
     const last = options[options.length - 1]!;
     last.value = -last.value;
   }
-  return { itemId, identified: false, level, rarity: rarity.id, options, uniqueId, cursed, foundIn };
+  return { spec: { itemId, identified: false, level, rarity: rarity.id, options, uniqueId, cursed, foundIn }, greedRaised };
 }
 
 /**
@@ -172,9 +197,15 @@ export function rollChestItems(ctx: RuleContext, dungeonId: string, floor: numbe
   const { state, data } = ctx;
   const base = dropLevelBase(data, dungeonId, floor, enemyLevel);
   const quality = partyChestQuality(state, data);
+  const greedy = chestQualitySource(state, data);
   const entries = dropTableOf(data, tableId).entries;
   const n = chestItemCount(state, data, danger);
-  for (let i = 0; i < n; i++) placeFoundItem(ctx, rollItemSpec(state, data, entries, base, quality, dungeonId, danger));
+  for (let i = 0; i < n; i++) {
+    const { spec, greedRaised } = rollItemSpecDetail(state, data, entries, base, quality, dungeonId, danger);
+    // EV-44（M18）: 強欲の当たりで希少度が上がった品は、品の message の直前に trait.greedyLuck{name}（乱数なし）
+    if (greedRaised && greedy !== null) ctx.events.push({ kind: "message", key: "trait.greedyLuck", params: { name: greedy.name } });
+    placeFoundItem(ctx, spec);
+  }
 }
 
 /** DG-31 / IT-50: ボスの戦利品。表は drops.boss[dungeonId]、Lv の基準は max(ボスの level, 最下層の基準 Lv)（IT-53 / DG-38。M14）、chestQuality は効かない（IT-31）、危険度は legendaryMinDanger 扱い（IT-56。M15） */

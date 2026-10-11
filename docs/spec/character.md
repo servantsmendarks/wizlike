@@ -51,13 +51,13 @@
 
 - CH-50 各キャラクターは `san`（現在値）と `sanMax`（100【仮】）を持つ。SAN は 0..sanMax に収める。M7: 宿の士気（TW-15）の `sanOver` の間だけ、sanMax を超えてよい（上限は実効の sanMax（CH-14）+ sanOver。街に入ると sanMax に丸める）。
 - CH-51 減少の契機と量（`config.san`）【仮】: 階を降りる −5（その潜行で初めて到達した階に降りたときだけ。上って降り直しても減らず、再入場で数え直す。DG-14）、未鑑定の敵グループとの遭遇 −2/グループ、仲間の死亡 −10（本人以外の生存者全員）、敵の SAN 攻撃（CB-31）、イベント。罠の発動時は、生存メンバー（`life` が `alive`）全員の SAN が `config.san.trap`（3）【仮】減る。慎重の `trapLossMul`（CH-54）が効く。罠を察知して回避した場合（DG-21 で「引き返す」を選んだ場合）は減らない。察知しても「進む」を選べば罠は発動し、SAN も減る。辺りを探る（DG-45。M18）の 1 回ごとに、生存メンバー全員の SAN が `config.san.search`（1）【仮】減る（タグなし。性格の倍率は効かない）。
-- CH-52 回復: 街に戻ると全回復【仮】（TW-02）。迷宮内では性格の恩恵（EV-22、EV-23、強欲の treasureGain）とイベントだけ。強欲の treasureGain の「財宝入手」は迷宮で金を得た 1 回（戦闘の金 > 0、宝箱の金 > 0、イベントの gold 効果 > 0。M5）で、そのたびに life が alive かつ SAN > 0 の強欲の各人が +treasureGain。金のメッセージの直後に増える。M7: どの回復も sanMax で止まり、SAN が sanMax 以上（士気の超過中）なら増えない（超過分は回復で戻らない。TW-15）。
+- CH-52 回復: 街に戻ると全回復【仮】（TW-02）。迷宮内では性格の恩恵（EV-22、EV-23、強欲の treasureGain）とイベントだけ。強欲の treasureGain の「財宝入手」は迷宮で金を得た 1 回（戦闘の金 > 0、宝箱の金 > 0、イベントの gold 効果 > 0。M5）で、そのたびに life が alive かつ SAN > 0 の強欲の各人が +treasureGain。金のメッセージの直後に増える（M18: 増えたときは金のメッセージと増加の間に一言 `trait.greedyGold`。EV-44）。M7: どの回復も sanMax で止まり、SAN が sanMax 以上（士気の超過中）なら増えない（超過分は回復で戻らない。TW-15）。
 - CH-53 閾値（割合は `sanMax` 比）【仮】:
   - 50% 未満「不安」（`san < sanMax × config.san.uneasyRatio`）: 戦闘の各行動が 10% の確率で性格傾向の行動に置き換わる（普通は「防御」または対象ランダムの攻撃）。確率は性格の `san.disobeyBelowHalf` が正ならその値（普通 10）、でなければ `config.san.uneasyChance`（10）【仮】。「防御」または対象ランダムの攻撃で防御を選ぶ確率は `config.san.randomDefendChance`（50）【仮】。中身は CB-45。
   - 25% 未満「錯乱」（`san < sanMax × config.san.confusedRatio`）: 戦闘の各行動が 50% の確率でランダム（防御または対象ランダムの攻撃。CB-45）になる。普通も衝動判定に乗る（EV-14）。
   - 0「虚脱」（`san = 0`）: 行動不能（CH-44）。街に戻るまで回復しない。
   - 段は排他で、下の段が優先。虚脱中は SAN が増えず、TW-02 でだけ戻る。
-- CH-54 性格による耐性は `personalities.json` の `san` 節（例: 無鉄砲は `fear` タグの減少を半減）。普通は耐性を持たない。減少量に、減少源のタグ（`fear` → fearLossMul、仲間の死亡 `allyInjury` → allyInjuryLossMul、罠 `trap` → trapLossMul）の倍率を掛け合わせ、最後に 1 回切り捨てる。リーダーは倍率 1。階を降りる減少、未鑑定の敵との遭遇、イベントの san 効果には耐性を掛けない。
+- CH-54 性格による耐性は `personalities.json` の `san` 節（例: 無鉄砲は `fear` タグの減少を半減）。普通は耐性を持たない。減少量に、減少源のタグ（`fear` → fearLossMul、仲間の死亡 `allyInjury` → allyInjuryLossMul、罠 `trap` → trapLossMul）の倍率を掛け合わせ、最後に 1 回切り捨てる。リーダーは倍率 1。階を降りる減少、未鑑定の敵との遭遇、イベントの san 効果には耐性を掛けない。耐性で実際の減少が小さくなったときは一言を出す（M18。EV-44）。
 
 ## 7. 成長
 

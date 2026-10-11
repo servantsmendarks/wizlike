@@ -973,6 +973,11 @@
   "san.confused": "{name}は錯乱した。",
   "san.broken": "{name}は動けなくなった。",
 
+  "trait.greedyGold": "{name}は金を手にして正気を取り戻した。",
+  "trait.greedyLuck": "{name}の欲が、良い品を引き寄せた。",
+  "trait.recklessFear": "{name}は恐怖に動じない。",
+  "trait.cautiousCalm": "{name}は取り乱さなかった。",
+
   "save.failed": "保存できない。ゲームは続けられるが、進行は残らない。",
   "save.failedBanner": "保存できない（進行は残らない）",
   "save.importOld": "古いデータだ。進行が巻き戻る。",
