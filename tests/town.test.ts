@@ -14,6 +14,7 @@ import { endingRecordView } from "../src/core/rules/progress";
 import { memberSheet } from "../src/core/rules/item-view";
 import { identifyFeeOf, sellPrice, shopItemPreview, shopPrice, shopSellPrice } from "../src/core/rules/shop";
 import { expFor } from "../src/core/rules/growth";
+import { settleOverflow } from "../src/core/rules/storage";
 import { arriveTown, classChangeOptions, mercyEligible, resurrectCostOf, returnToTown, townMenu } from "../src/core/rules/town";
 import { cloneState, createItemInstance, makeContext } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState } from "../src/core/types";
@@ -1366,6 +1367,115 @@ describe("TW-16/IT-64 倉庫（town.storage。M7）", () => {
         { memberId: "c6", name: "フィン", slotsFree: 5, items: [{ instanceId: "i18", name: "薬草" }] },
       ],
     });
+  });
+});
+
+describe("CH-71b（M17）溢れの保険（settleOverflow）", () => {
+  const coreSources = import.meta.glob("../src/core/**/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+  /** アルド（装備 3・所持 [i4]）の素の力を 3（上限 8）にし、薬草を n 個足したもの。使用枠 = 4 + n */
+  const overflowed = (s: GameState, n: number): GameState => {
+    const t = cloneState(s);
+    const c = member(t, "c1");
+    c.stats = { ...c.stats, str: 3 };
+    for (let i = 0; i < n; i++) c.inventory.push(createItemInstance(t, { itemId: "herb", identified: true }));
+    return t;
+  };
+  /** パーティの所持（装備 + inventory）と倉庫の品の数 */
+  const itemCount = (s: GameState): number =>
+    s.warehouse.length + s.party.reduce((n, c) => n + c.inventory.length + Object.values(c.equipment).filter((x) => x !== null).length, 0);
+
+  test("CH-71b 街: inventory の末尾から倉庫の末尾へ 1 品ずつ移し、品ごとに town.storage.autoDeposited{name, item}。溢れが無くなったら止める。品は消えない・乱数なし", () => {
+    const s = overflowed(town(), 6); // 使用枠 10・上限 8 → 溢れ 2
+    const c0 = member(s, "c1");
+    const last2 = c0.inventory.slice(-2);
+    const ctx = ctxFor(s);
+    settleOverflow(ctx, "c1");
+    const c = member(ctx.state, "c1");
+    expect(c.inventory).toEqual(c0.inventory.slice(0, -2));
+    expect(ctx.state.warehouse).toEqual([last2[1], last2[0]]);
+    expect(c.equipment).toEqual(c0.equipment);
+    expect(ctx.events).toEqual([
+      { kind: "message", key: "town.storage.autoDeposited", params: { name: "アルド", item: "薬草" } },
+      { kind: "message", key: "town.storage.autoDeposited", params: { name: "アルド", item: "薬草" } },
+    ]);
+    expectKnownStringKeys(ctx.events);
+    expect(itemCount(ctx.state)).toBe(itemCount(s));
+    expect(ctx.state.rng).toEqual(s.rng);
+    expectStateInvariants(ctx.state);
+    // 溢れていない者・溢れの無くなった者には何もしない
+    const again = ctxFor(ctx.state);
+    for (const ch of again.state.party) settleOverflow(again, ch.id);
+    expect(again.events).toEqual([]);
+  });
+
+  test("CH-71b 倉庫が満杯になったら止め、残りは持たせたまま inventory.overflow{name, over}（品は消さない。溢れている間は空き 0）", () => {
+    const s = overflowed(town(), 6); // 溢れ 2
+    for (let i = 0; i < 39; i++) s.warehouse.push(createItemInstance(s, { itemId: "herb", identified: true }));
+    const ctx = ctxFor(s);
+    settleOverflow(ctx, "c1");
+    expect(ctx.state.warehouse).toHaveLength(40);
+    expect(member(ctx.state, "c1").inventory).toHaveLength(member(s, "c1").inventory.length - 1);
+    expect(ctx.events).toEqual([
+      { kind: "message", key: "town.storage.autoDeposited", params: { name: "アルド", item: "薬草" } },
+      { kind: "message", key: "inventory.overflow", params: { name: "アルド", over: 1 } },
+    ]);
+    expectKnownStringKeys(ctx.events);
+    expect(itemCount(ctx.state)).toBe(itemCount(s));
+    expect(townMenu(ctx.state, data)?.shop.members.find((m) => m.memberId === "c1")?.slotsFree).toBe(0);
+  });
+
+  test("CH-71b 街に入る処理（TW-02）: SAN の回復の後・街の画面の前に全員へ。帰還で溢れた品が倉庫へ移る", () => {
+    const d = overflowed(diving(), 5); // 溢れ 1
+    const ctx = ctxFor(d);
+    returnToTown(ctx, "dungeon.exit");
+    const keys = ctx.events.map((e) => (e.kind === "message" ? e.key : e.kind));
+    const i = keys.indexOf("town.storage.autoDeposited");
+    expect(i).toBeGreaterThan(keys.indexOf("town.enter"));
+    expect(i).toBeLessThan(keys.lastIndexOf("screen"));
+    expect(keys.filter((k) => k === "town.storage.autoDeposited")).toHaveLength(1);
+    expect(ctx.state.warehouse).toHaveLength(1);
+    expect(itemCount(ctx.state)).toBe(itemCount(d));
+  });
+
+  test("CH-71b 転職（TW-09）の最後に本人へ。外した品が末尾に入った後なので、末尾の盾から預ける", () => {
+    const s = overflowed(town(), 5); // 使用枠 9・上限 8 → 溢れ 1
+    const c1 = member(s, "c1");
+    c1.stats = { ...c1.stats, iq: 14 };
+    const shield = c1.equipment.shield!;
+    const r = ok(s, { type: "town.classChange", memberId: "c1", classId: "mage" });
+    expect(r.state.warehouse).toEqual([shield]);
+    expect(r.events.at(-1)).toEqual({ kind: "message", key: "town.storage.autoDeposited", params: { name: "アルド", item: "木の盾" } });
+    expect(itemCount(r.state)).toBe(itemCount(s));
+  });
+
+  test("CH-71b 迷宮の中では何もしない（倉庫は街だけ）。迷宮のコマンドでも預けない", () => {
+    const d = overflowed(diving(), 6);
+    const ctx = ctxFor(d);
+    settleOverflow(ctx, "c1");
+    expect(ctx.events).toEqual([]);
+    expect(ctx.state).toEqual(d);
+    for (const cmd of [{ type: "dungeon.turn", dir: "left" }, { type: "dungeon.move" }] as Command[]) {
+      const r = execute(d, cmd, data);
+      expect(r.events.some((e) => e.kind === "message" && (e.key === "town.storage.autoDeposited" || e.key === "inventory.overflow"))).toBe(false);
+      expect(r.state.warehouse).toEqual([]);
+    }
+  });
+
+  test("CH-71b 素の能力値を減らす core の経路が無い（ソースの検査）: 作成の後に stats へ書き込むのは growth.ts の +1 だけ", () => {
+    const write = /\.stats\b(\s*\.\s*\w+|\s*\[[^\]]*\])?\s*(=(?!=)|\+=|-=|\*=|\/=|\+\+|--)|=\s*[\w.]+\.stats\s*;|Object\.assign\(\s*[\w.]*stats\b/g;
+    const hits: string[] = [];
+    for (const [path, src] of Object.entries(coreSources)) {
+      src.split("\n").forEach((line) => {
+        const t = line.trim();
+        if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) return;
+        const code = line.replace(/\/\/.*$/, "");
+        const n = [...code.matchAll(write)].length;
+        for (let i = 0; i < n; i++) hits.push(`${path.replace("../src/core/", "")}: ${code.trim()}`);
+      });
+    }
+    expect(hits).toEqual(["rules/growth.ts: ch.stats[key] += 1;"]);
+    // 成長は上げるだけ（statCap まで +1）
+    expect(coreSources["../src/core/rules/growth.ts"]).toMatch(/if \(hit && ch\.stats\[key\] < g\.statCap\) \{\s*ch\.stats\[key\] \+= 1;/);
   });
 });
 

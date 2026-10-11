@@ -16,7 +16,7 @@ import { ceilRatio } from "./ratio";
 import { clearAllStatus } from "./field";
 import { capSan, overSan, restoreSan } from "./san";
 import { shopMenu } from "./shop";
-import { storageMenu } from "./storage";
+import { settleOverflow, storageMenu } from "./storage";
 import { upgradeMenu } from "./upgrade";
 import { bumpTally, endingRecordView } from "./progress";
 
@@ -96,7 +96,7 @@ function tellEnding(ctx: RuleContext): void {
 /**
  * 街に入る処理（TW-02, TW-26, TW-30。仕様の「town.enter と同じ処理」の実体。town.enter コマンドは受け付けない）。
  * 呼び出し側が dive / battle / pendingChoice を null にしてある前提。乱数は使わない。
- * 順: screen と townVisit → message town.enter →（TW-34。endingPending のときだけ）結末 → SAN の回復（life を問わず並び順）→ 救済の判定（town.mercy.offer）→ screen{town}
+ * 順: screen と townVisit → message town.enter →（TW-34。endingPending のときだけ）結末 → SAN の回復（life を問わず並び順）→ 溢れの保険（CH-71b。並び順）→ 救済の判定（town.mercy.offer）→ screen{town}
  */
 export function arriveTown(ctx: RuleContext): void {
   const { state, data } = ctx;
@@ -113,6 +113,7 @@ export function arriveTown(ctx: RuleContext): void {
   } else {
     for (const ch of state.party) capSan(ctx, ch); // TW-02 / TW-15: 回復しない設定でも士気の超過分は丸める
   }
+  for (const ch of state.party) settleOverflow(ctx, ch.id); // CH-71b: 溢れの保険（今の規則では起きない）
   if (mercyEligible(state, data)) {
     state.townVisit.mercyOffered = true;
     ctx.events.push({ kind: "message", key: "town.mercy.offer" });
@@ -477,7 +478,7 @@ export function classChangeOptions(state: GameState, data: GameData, memberId: s
  * → 新しい職業で装備できない品（CH-75。呪われた品は残す）を EQUIP_SLOTS の順に外して inventory の末尾へ（message camp.unequipped）
  * → mpMax（素）を新しい職業の L1 の値（mpGainFor。外した後の実効の能力値）にする → clampToMax（U2: mp を上限に丸める。mpChanged）
  * → 新しい職業に初めてなるとき（maxLevelReached に欄が無い）だけ、start.knownSpells のうち未習得のものを data の順に足す
- *   （spellLearned via classChange と town.inn.learned）と maxLevelReached[新職業] = 1。
+ *   （spellLearned via classChange と town.inn.learned）と maxLevelReached[新職業] = 1 → 溢れの保険（CH-71b。本人。能力値は変えないので何も起きない）。
  * hp・hpMax・能力値・SAN・状態・knownSpells（足す分を除く）・ほかの職業の maxLevelReached は変えない
  */
 export function changeClass(ctx: RuleContext, memberId: string, classId: string): void {
@@ -514,4 +515,5 @@ export function changeClass(ctx: RuleContext, memberId: string, classId: string)
     }
     ch.maxLevelReached[cls.id] = 1;
   }
+  settleOverflow(ctx, ch.id); // CH-71b: 能力値は変えないので実際は何も起きない（保険）
 }

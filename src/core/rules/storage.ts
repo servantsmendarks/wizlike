@@ -1,7 +1,7 @@
 // 倉庫（TW-16 / IT-64。M7）。街（screen town・dive null）でだけ、本人の inventory と GameState.warehouse の間で実体を移す。
 // 実体は作らず消さない（id も中身もそのまま）。乱数は使わない。倉庫の品は全滅（TW-21 / TW-22）の対象外（wipe.ts は party の所持品だけを見る）。
 import type { GameData } from "../data/index";
-import { itemDisplayName, memberById } from "../state";
+import { itemDisplayName, memberById, slotsMaxOf, slotsUsed } from "../state";
 import type { GameState, RuleContext, TownMenu } from "../types";
 import { slotsFreeOf } from "./shop";
 
@@ -47,6 +47,28 @@ export function doStorage(ctx: RuleContext, action: StorageAction, memberId: str
     ch.inventory.push(instanceId);
     ctx.events.push({ kind: "message", key: "town.storage.withdrawn", params: { name: ch.name, item } });
   }
+}
+
+/**
+ * CH-71b 溢れの保険（M17）。溢れ = slotsUsed − slotsMaxOf が正。素の力だけで枠を決めるので今の規則では起きない（保険）。
+ * 街（screen town・dive null）でだけ動く（迷宮の中では何もしない）。倉庫に空きがある間、inventory の末尾から 1 品ずつ warehouse の末尾へ移し、
+ * 1 品ごとに message town.storage.autoDeposited{name, item}。倉庫が満杯で溢れが残れば message inventory.overflow{name, over}（品は消さない）。
+ * 装備中の品は動かさない（inventory が尽きたらそこで止める）。乱数は使わない。呼ぶのは arriveTown（全員）と changeClass（本人）
+ */
+export function settleOverflow(ctx: RuleContext, memberId: string): void {
+  const { state, data } = ctx;
+  if (state.screen !== "town" || state.dive !== null) return;
+  const ch = memberById(state, memberId);
+  if (ch === null) throw new Error(`settleOverflow: unknown member ${memberId}`);
+  const capacity = data.config.items.warehouseSlots;
+  while (slotsUsed(ch) > slotsMaxOf(ch, data) && ch.inventory.length > 0 && state.warehouse.length < capacity) {
+    const id = ch.inventory[ch.inventory.length - 1] as string;
+    ch.inventory = ch.inventory.slice(0, -1);
+    state.warehouse.push(id);
+    ctx.events.push({ kind: "message", key: "town.storage.autoDeposited", params: { name: ch.name, item: itemDisplayName(state, data, id) } });
+  }
+  const over = slotsUsed(ch) - slotsMaxOf(ch, data);
+  if (over > 0) ctx.events.push({ kind: "message", key: "inventory.overflow", params: { name: ch.name, over } });
 }
 
 /** UI-52 の倉庫のページの値（townMenu.storage。純粋） */
