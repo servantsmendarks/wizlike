@@ -2,7 +2,7 @@
 // - 列は幅 56・間 4 で中央寄せ。絵の代わりの色付き矩形は 48×48（列内 x+4、y8..55）、1 グループだけなら 64×64（y2..65）。
 // - 絵の下のラベルは注目の枠のすぐ下の 2 行（y58..77、1 グループなら y68..87。3 行目以降は line-clamp で「…」）。
 //   幅は 2 グループ以上なら注目の枠と同じ 52（隣と 8px 空ける）、1 グループなら列の箱の 56。
-//   戦闘で出る判定の箱（UI-40。上端 y88 以下にはならない）と重ならない位置（battle.groupLabel「{n} {name} ×{count}」。
+//   戦闘で出る判定の箱（UI-40。上端 y88 以下にはならない）と重ならない位置（battle.groupLabel「{no}{name} ×{count}」。no は ①〜⑩（M18）。
 //   n は対象の一覧と同じ番号 = battle-input の targetNumber、name は core が選んだ表示名をそのまま）。列の区切り線や列の枠は描かない。
 // - 体数 0 の列は詰めずに visibility hidden（グループの添字は戦闘中に詰めない。CB-42）。
 // - 対象の選択中は focus で、注目しているグループの絵の周り（focusFrame）に枠を出し、点滅させる（Element.animate の
@@ -18,7 +18,7 @@
 import type { SpriteInfo } from "../../build/asset-types";
 import type { GameData, Strings } from "../../core/data/index";
 import type { EnemyGroupView } from "../../core/types";
-import { targetNumber } from "../battle-input";
+import { groupNo, targetNumber } from "../battle-input";
 import type { Rect } from "../layout";
 import { ENEMY_FILLS, PALETTE, type PaletteName } from "../palette";
 import { chooseSprite, isBossMonster } from "../sprites";
@@ -108,9 +108,9 @@ export function enemyGroupOfId(id: string): number | null {
   return m === null ? null : Number(m[1]);
 }
 
-/** UI-54: 絵の下のラベル（battle.groupLabel）。n は対象の一覧と同じ番号（targetNumber） */
+/** UI-54: 絵の下のラベル（battle.groupLabel）。n は対象の一覧と同じ番号（targetNumber）。M18: 文には丸数字の no（groupNo）を出す */
 export function groupLabel(view: Pick<EnemyGroupView, "name" | "count">, n: number, strings: Strings): string {
-  return formatMessage(strings["battle.groupLabel"] ?? "battle.groupLabel", { n, name: view.name, count: view.count });
+  return formatMessage(strings["battle.groupLabel"] ?? "battle.groupLabel", { n, no: groupNo(n, strings), name: view.name, count: view.count });
 }
 
 /** UI-54: 注目の枠の矩形。絵の矩形を上下左右に FRAME_PAD ずつ広げる（48 → 52、64 → 68） */

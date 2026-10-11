@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { dungeonLayout, MESSAGE_LINE_H, regions } from "../src/presenter/layout";
-import { createMessageWindow, formatMessage, trimHistory, typewriterSteps } from "../src/presenter/views/message";
+import { createMessageWindow, formatMessage, MORE_BLINK_KEYFRAMES, MORE_BLINK_MIN_OPACITY, MORE_BLINK_MS, trimHistory, typewriterSteps } from "../src/presenter/views/message";
 import { createHistoryView, HISTORY_LINE_H } from "../src/presenter/views/history";
 import { battleTurnText, headerText } from "../src/presenter/views/header";
 import { formatPartyRow } from "../src/presenter/views/party";
@@ -457,5 +457,48 @@ describe("UI-68 MessageWindow の説明（showNote / hideNote。M10）", () => {
     w.clear();
     w.hideNote();
     expect(texts()).toEqual([]);
+  });
+});
+
+describe("UI-43 ▼ の点滅（M18。設計 2-4）", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("UI-43（M18）▼ の点滅の暗い側は不透明度 0.35（0 にしない。いつ撮っても ▼ が見える）。keyframes は 1（前半）→ 0.35（後半）、周期 600ms の繰り返し", () => {
+    expect(MORE_BLINK_MIN_OPACITY).toBe(0.35);
+    expect(MORE_BLINK_KEYFRAMES).toEqual([
+      { opacity: 1, offset: 0 },
+      { opacity: 1, offset: 0.5 },
+      { opacity: 0.35, offset: 0.5 },
+      { opacity: 0.35, offset: 1 },
+    ]);
+    // どの keyframe も見える（0 より大きい）
+    for (const k of MORE_BLINK_KEYFRAMES) expect(Number(k.opacity)).toBeGreaterThan(0);
+    // setMore(true, true) が実際にこの keyframes で animate する。blink 偽では animate しない
+    const calls: Array<{ el: FakeEl; frames: unknown; opts: unknown }> = [];
+    const svgs: FakeEl[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => new FakeEl(),
+      createElementNS: () => {
+        const e = new FakeEl();
+        e.animate = ((frames: unknown, opts: unknown) => {
+          calls.push({ el: e, frames, opts });
+          return { finished: Promise.resolve(), cancel() {} };
+        }) as unknown as FakeEl["animate"];
+        svgs.push(e);
+        return e;
+      },
+    });
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const w = createMessageWindow({ speed: () => 0, historyMax: 15, region: g.message, layout: L.message });
+    w.setMore(true, false);
+    expect(calls).toEqual([]);
+    w.setMore(true, true);
+    expect(calls.map((c) => ({ frames: c.frames, opts: c.opts }))).toEqual([
+      { frames: [...MORE_BLINK_KEYFRAMES], opts: { duration: MORE_BLINK_MS, iterations: Infinity } },
+    ]);
+    expect(svgs[0]).toBe(calls[0]!.el);
   });
 });

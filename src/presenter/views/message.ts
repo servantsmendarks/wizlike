@@ -42,7 +42,21 @@ export function trimHistory<T>(items: readonly T[], max: number): T[] {
 }
 
 /** UI-45: タップ待ちの続きの三角の点滅の 1 周期（ms。表示層のコード定数。battle.ts の FOCUS_BLINK_MS と同じ扱い） */
-const MORE_BLINK_MS = 600;
+export const MORE_BLINK_MS = 600;
+
+/**
+ * UI-43（M18。設計 2-4）: ▼ の点滅の暗い側の不透明度。0 だと周期の半分は ▼ が見えず、その瞬間の写真が「▼ が無い」に見えた（C-2 #10 / #7）。
+ * いつ見ても（撮っても）▼ が残るように 0.35 にする（表示層のコード定数）
+ */
+export const MORE_BLINK_MIN_OPACITY = 0.35;
+
+/** UI-43 / UI-47: ▼ の点滅の keyframes（半周期ずつ 1 → MORE_BLINK_MIN_OPACITY。メッセージ窓と会話の箱で共通） */
+export const MORE_BLINK_KEYFRAMES: readonly Keyframe[] = [
+  { opacity: 1, offset: 0 },
+  { opacity: 1, offset: 0.5 },
+  { opacity: MORE_BLINK_MIN_OPACITY, offset: 0.5 },
+  { opacity: MORE_BLINK_MIN_OPACITY, offset: 1 },
+];
 
 export type MessageWindow = {
   el: HTMLElement;
@@ -296,15 +310,7 @@ export function createMessageWindow(o: {
       moreBlink?.cancel();
       moreBlink = null;
       if (on && blink) {
-        moreBlink = more.animate(
-          [
-            { opacity: 1, offset: 0 },
-            { opacity: 1, offset: 0.5 },
-            { opacity: 0, offset: 0.5 },
-            { opacity: 0, offset: 1 },
-          ],
-          { duration: MORE_BLINK_MS, iterations: Infinity },
-        );
+        moreBlink = more.animate([...MORE_BLINK_KEYFRAMES], { duration: MORE_BLINK_MS, iterations: Infinity });
       }
     },
   };

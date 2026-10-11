@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { regions, TALK_MARK_GUTTER, townLayout } from "../src/presenter/layout";
 import { SCROLL_MARK_SIZE } from "../src/presenter/views/scroll-marks";
 import { createNarrator, createTalkBox, createTalkModel, talkMarkPos, TALK_KEY_LINES, type Narration, type TalkSink } from "../src/presenter/views/talk";
-import { formatMessage } from "../src/presenter/views/message";
+import { formatMessage, MORE_BLINK_KEYFRAMES, MORE_BLINK_MS } from "../src/presenter/views/message";
 import { WRAP_STYLE } from "../src/presenter/views/wrap";
 import { STAT_KEYS } from "../src/core/data/index";
 import { townMenu } from "../src/core/rules/town";
@@ -704,6 +704,7 @@ describe("UI-47 会話の箱（DOM）", () => {
   test("UI-47/UI-13（M16）広い箱の ▼ は最後の行の行末: 文（行内の span）の直後の行内の 8×8（上 1px 空けて行の上に揃える）。出していない間は場所を取らない。右下の固定の ▼ は使わない", async () => {
     const created: FakeEl[] = [];
     const animated: FakeEl[] = [];
+    const frames: unknown[] = [];
     vi.stubGlobal("document", {
       createElement: () => {
         const e = new FakeEl();
@@ -712,10 +713,11 @@ describe("UI-47 会話の箱（DOM）", () => {
       },
       createElementNS: () => {
         const e = new FakeEl();
-        e.animate = () => {
+        e.animate = ((k: unknown, o: unknown) => {
           animated.push(e);
+          frames.push({ k, o });
           return { finished: Promise.resolve(), cancel() {} };
-        };
+        }) as unknown as FakeEl["animate"];
         created.push(e);
         return e;
       },
@@ -732,6 +734,8 @@ describe("UI-47 会話の箱（DOM）", () => {
     await box.say("棚に薬と道具と武具が並んでいる。店主が帳場で待っている。", true);
     // 最後の文の ▼（点滅）は行末の ▼。右下の固定の ▼ は隠したまま
     expect({ inline: inline!.style["display"], fixed: fixed!.style["visibility"], animated: animated.map((e) => (e === inline ? "inline" : "other")) }).toEqual({ inline: "inline-block", fixed: "hidden", animated: ["inline"] });
+    // UI-43 / UI-47（M18。設計 2-4）: 点滅はメッセージ窓と同じ keyframes（暗い側も不透明度 0.35）
+    expect(frames).toEqual([{ k: [...MORE_BLINK_KEYFRAMES], o: { duration: MORE_BLINK_MS, iterations: Infinity } }]);
     box.tap();
     expect({ inline: inline!.style["display"], fixed: fixed!.style["visibility"] }).toEqual({ inline: "none", fixed: "hidden" });
   });

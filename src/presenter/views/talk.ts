@@ -30,7 +30,7 @@
 // 文字送りの setTimeout は DOM の層だけが使う（CLAUDE.md §2 の文字送りの例外）。モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
 import type { TalkRect } from "../layout";
-import { typewriterSteps } from "./message";
+import { MORE_BLINK_KEYFRAMES, MORE_BLINK_MS, typewriterSteps } from "./message";
 import { attachScrollMarks, marksAt, SCROLL_MARK_SIZE, scrolledToEnd, type ScrollMarkPos } from "./scroll-marks";
 import { WRAP_STYLE } from "./wrap";
 
@@ -281,8 +281,6 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
   };
 }
 
-/** UI-45 / UI-47: ▼ の点滅の 1 周期（ms。message.ts の MORE_BLINK_MS と同じ） */
-const MORE_BLINK_MS = 600;
 /** UI-47: ▼ の大きさ（論理 px。layout の MESSAGE_MORE と同じ 8） */
 const MORE_SIZE = 8;
 
@@ -496,15 +494,8 @@ export function createTalkBox(o: {
     moreBlink?.cancel();
     moreBlink = null;
     if (on && blink) {
-      moreBlink = (inline ? moreInline : moreFixed).animate(
-        [
-          { opacity: 1, offset: 0 },
-          { opacity: 1, offset: 0.5 },
-          { opacity: 0, offset: 0.5 },
-          { opacity: 0, offset: 1 },
-        ],
-        { duration: MORE_BLINK_MS, iterations: Infinity },
-      );
+      // UI-43 / UI-47（M18）: 点滅の keyframes はメッセージ窓と共通（暗い側も MORE_BLINK_MIN_OPACITY で見える）
+      moreBlink = (inline ? moreInline : moreFixed).animate([...MORE_BLINK_KEYFRAMES], { duration: MORE_BLINK_MS, iterations: Infinity });
     }
     // 行末の ▼ が次の行に折り返すと文字領域が 1 行伸びるので、追従中なら下端を見せ直す
     if (follow) toEnd();

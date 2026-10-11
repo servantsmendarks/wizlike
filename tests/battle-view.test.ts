@@ -129,10 +129,12 @@ describe("UI-54 敵グループの列", () => {
     for (const id of ["c1", "c6", "e", "e1", "e1-", "-1-2", "xe1-2", "e1-2x", ""]) expect(enemyGroupOfId(id), id).toBeNull();
   });
 
-  test("UI-54 groupLabel は battle.groupLabel「{n} {name} ×{count}」。旧 battle.groupCount は無い", () => {
-    expect(data.strings["battle.groupLabel"]).toBe("{n} {name} ×{count}");
-    expect(groupLabel({ name: "人の形をした影", count: 3 }, 1, data.strings)).toBe("1 人の形をした影 ×3");
-    expect(groupLabel({ name: "N", count: 2 }, 4, data.strings)).toBe(formatMessage(data.strings["battle.groupLabel"]!, { n: 4, name: "N", count: 2 }));
+  // M18（設計 2-5）: 以前の期待値は「{n} {name} ×{count}」（"1 人の形をした影 ×3"）
+  test("UI-54（M18）groupLabel は battle.groupLabel「{no}{name} ×{count}」。no は battle.groupNo の n 番目の丸数字。旧 battle.groupCount は無い", () => {
+    expect(data.strings["battle.groupLabel"]).toBe("{no}{name} ×{count}");
+    expect(groupLabel({ name: "人の形をした影", count: 3 }, 1, data.strings)).toBe("①人の形をした影 ×3");
+    expect(groupLabel({ name: "N", count: 2 }, 4, data.strings)).toBe(formatMessage(data.strings["battle.groupLabel"]!, { no: "④", name: "N", count: 2 }));
+    expect(groupLabel({ name: "N", count: 2 }, 10, data.strings)).toBe("⑩N ×2");
     expect(Object.prototype.hasOwnProperty.call(data.strings, "battle.groupCount")).toBe(false);
   });
 
@@ -157,8 +159,8 @@ describe("UI-54 敵グループの列", () => {
       }
       return n;
     };
-    expect(lines("1 コボルド ×2", 56)).toBe(1);
-    expect(lines("1 コボルド ×2", 52)).toBe(2);
+    expect(lines("①コボルド ×2", 56)).toBe(1);
+    expect(lines("①コボルド ×2", 52)).toBe(2);
     for (let n = 1; n <= data.config.combat.maxEnemyGroups; n++) {
       const width = groupLabelRects(n, VIEW_W)[0]!.w;
       for (const m of data.monsters) {
@@ -322,13 +324,13 @@ describe("UI-54 戦闘のビュー（DOM）", () => {
       groupLabel(GROUPS[1]!, targetNumber(GROUPS, 1)!, data.strings),
       "",
     ]);
-    expect(byClass("battle-group-label")[1]!.textContent).toBe("2 コボルド ×3");
+    expect(byClass("battle-group-label")[1]!.textContent).toBe("②コボルド ×3");
     expect(boxes.map((b) => b.style["visibility"])).toEqual(["visible", "visible", "hidden"]);
     v.focus(1, true);
     for (const b of boxes) expect(b.style["outline"] ?? "").toBe("");
   });
 
-  test("UI-54/CB-05 同じ系統の別の種類が 2 グループいても、ラベルはグループの番号で区別できる（「1 人の形をした影 ×2」「2 人の形をした影 ×3」）", () => {
+  test("UI-54/CB-05 同じ系統の別の種類が 2 グループいても、ラベルはグループの番号で区別できる（M18: 「①人の形をした影 ×2」「②人の形をした影 ×3」）", () => {
     const gs: EnemyGroupView[] = [
       { index: 0, monsterId: "kobold", name: "人の形をした影", identified: false, count: 2 },
       { index: 1, monsterId: "rotting_corpse", name: "人の形をした影", identified: false, count: 3 },
@@ -336,8 +338,8 @@ describe("UI-54 戦闘のビュー（DOM）", () => {
     const created = fakeDocument();
     createBattleView(data, data.strings, VIEW_W, 150).setGroups(gs);
     expect(created.filter((e) => e.className === "battle-group-label").map((l) => l.textContent)).toEqual([
-      "1 人の形をした影 ×2",
-      "2 人の形をした影 ×3",
+      "①人の形をした影 ×2",
+      "②人の形をした影 ×3",
     ]);
   });
 
@@ -461,10 +463,10 @@ describe("UI-54 戦闘のビュー（DOM）", () => {
     const { v, byClass } = setup();
     await v.removeOne(0, 0);
     const labels = byClass("battle-group-label");
-    expect(labels[1]!.textContent).toBe("1 コボルド ×3");
+    expect(labels[1]!.textContent).toBe("①コボルド ×3");
     expect(byClass("battle-group")[0]!.style["visibility"]).toBe("hidden");
     await v.removeOne(1, 0);
-    expect(labels[1]!.textContent).toBe("1 コボルド ×2");
+    expect(labels[1]!.textContent).toBe("①コボルド ×2");
   });
 
   test("UI-54 focus(g, true) は g の絵の枠を出し、iterations: Infinity で点滅させる。切り替え・解除・setGroups・clear で前の点滅を cancel", () => {

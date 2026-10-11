@@ -12,6 +12,7 @@ import {
   nextCursor,
   setFocus,
   spellNote,
+  groupNo,
   step,
   targetNumber,
   type Choice,
@@ -106,6 +107,7 @@ describe("UI-54 入力の段階", () => {
       ...["party", "member", "spell", "item", "enemy", "ally", "spellConfirm"].map((p) => `battle.prompt.${p}`),
       "spell.info.cast",
       "battle.targetGroup",
+      "battle.groupNo",
       "battle.targetAlly",
       "battle.spellRow",
       "battle.autoOn",
@@ -155,10 +157,26 @@ describe("UI-54 入力の段階", () => {
     expect(entries(menu(), PARTY, S).map((e) => e.choice)).toEqual([pc("fight"), pc("repeat"), pc("flee"), pc("auto")]);
   });
 
-  test("UI-54/CB-12/CB-40 core の canRepeat が偽（この戦闘でまだ手入力が無い）なら前回と同じは dim で、押しても送らない", () => {
+  // M18（設計 2-6）: 以前は 4 件のまま「前回と同じ」を dim にしていた（disabled が [false, true, false, false]）
+  test("UI-54/CB-12/CB-40（M18）core の canRepeat が偽（この戦闘でまだ手入力が無い）なら前回と同じは出さない（3 件に詰める）。押しても送らない", () => {
     const m = menu({ canRepeat: false });
-    expect(entries(m, PARTY, S).map((e) => e.disabled)).toEqual([false, true, false, false]);
-    expect(entries(m, PARTY, S)[1]!.label).toBe(t("battle.cmd.repeat"));
+    expect(entries(m, PARTY, S).map((e) => e.choice)).toEqual([pc("fight"), pc("flee"), pc("auto")]);
+    expect(entries(m, PARTY, S).map((e) => e.label)).toEqual([t("battle.cmd.fight"), t("battle.cmd.flee"), t("battle.cmd.auto")]);
+    expect(entries(m, PARTY, S).map((e) => e.disabled)).toEqual([false, false, false]);
+    // 逃げられない戦闘でも 3 件（逃げるは dim のまま残す）
+    expect(entries(menu({ canRepeat: false, canFlee: false }), PARTY, S).map((e) => [e.choice, e.disabled])).toEqual([
+      [pc("fight"), false],
+      [pc("flee"), true],
+      [pc("auto"), false],
+    ]);
+    // 真なら 4 件で、前回と同じは押せる
+    expect(entries(menu({ canRepeat: true }), PARTY, S).map((e) => [e.choice, e.disabled])).toEqual([
+      [pc("fight"), false],
+      [pc("repeat"), false],
+      [pc("flee"), false],
+      [pc("auto"), false],
+    ]);
+    // 一覧に無くても、届いた repeat の選択は送らない
     expect(step(m, PARTY, pc("repeat"))).toEqual({ cursor: PARTY, send: null });
     // 他の選択は今までどおり
     expect(step(m, PARTY, pc("fight"))).toEqual({ cursor: mem("c1"), send: null });
@@ -234,8 +252,8 @@ describe("UI-54 入力の段階", () => {
     expect(a).toEqual({ cursor: tgt("enemy", "c1", { kind: "attack" }), send: null });
     const rows = entries(m, a.cursor, S);
     expect(rows.map((e) => e.label)).toEqual([
-      t("battle.targetGroup", { n: 1, name: "コボルド", count: 3 }),
-      t("battle.targetGroup", { n: 2, name: "何かの獣", count: 1 }),
+      t("battle.targetGroup", { no: "①", name: "コボルド", count: 3 }),
+      t("battle.targetGroup", { no: "②", name: "何かの獣", count: 1 }),
       t("common.back"),
     ]);
     expect(rows.map((e) => e.choice)).toEqual([{ kind: "group", index: 1 }, { kind: "group", index: 2 }, { kind: "back" }]);
@@ -529,5 +547,31 @@ describe("UI-68 呪文の確認の段と説明（M10）", () => {
     expect(spellNote({ stage: "spell", memberId: "c5" })).toBeNull();
     expect(spellNote(mem("c5"))).toBeNull();
     expect(spellNote({ stage: "party" })).toBeNull();
+  });
+});
+
+describe("UI-54 グループの番号の字（M18。設計 2-5）", () => {
+  test("UI-54（M18）battle.groupNo は ①〜⑩ の 10 字。groupNo は n 番目の字（1 始まり）、範囲外・整数でない n は数字のまま", () => {
+    expect(S["battle.groupNo"]).toBe("①②③④⑤⑥⑦⑧⑨⑩");
+    expect([...S["battle.groupNo"]!].length).toBe(10);
+    expect([1, 2, 3, 4, 10].map((n) => groupNo(n, S))).toEqual(["①", "②", "③", "④", "⑩"]);
+    expect([11, 0, -1, 1.5].map((n) => groupNo(n, S))).toEqual(["11", "0", "-1", "1.5"]);
+    // strings に無ければ数字のまま
+    expect(groupNo(2, {})).toBe("2");
+    // 戦闘のグループの数の上限まで丸数字がある
+    expect(data.config.combat.maxEnemyGroups).toBeLessThanOrEqual(10);
+  });
+
+  test("UI-54（M18）対象の一覧の行は battle.targetGroup「{no} {name} {count}体」。番号は生存グループの順の丸数字で、21 字以内（名前が最長・体数が上限でも）", () => {
+    expect(S["battle.targetGroup"]).toBe("{no} {name} {count}体");
+    const m = menu();
+    const rows = entries(m, tgt("enemy", "c1", { kind: "attack" }), S);
+    expect(rows[0]!.label).toBe("① コボルド 3体");
+    expect(rows[1]!.label).toBe("② 何かの獣 1体");
+    const names = data.monsters.flatMap((x) => [x.name, data.unknownKinds.find((k) => k.id === x.unknownKind)!.name]);
+    for (const name of names) {
+      const line = formatMessage(S["battle.targetGroup"]!, { no: groupNo(data.config.combat.maxEnemyGroups, S), name, count: data.config.combat.maxPerGroup });
+      expect([...line].length, line).toBeLessThanOrEqual(21);
+    }
   });
 });
