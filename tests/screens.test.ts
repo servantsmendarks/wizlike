@@ -864,9 +864,24 @@ describe("入力と Command", () => {
     const item = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
     expect(item).toContain("...notReadyReason(e),");
     const fn = /const notReadyReason = \(e: TownEntry\): Pick<ControlItem, "onDisabled"> => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
-    // TW-09（M10）: 転職先の dim の行（ccClass の reason）も同じ経路で語る
-    expect(fn).toContain('const reason = e.kind === "enter" ? e.notReady : e.kind === "ccClass" ? e.reason : null;');
-    expect(fn).toMatch(/onDisabled: \(\) =>\s*guard\(\(\) => \{\s*play\.talk\.flush\(\);\s*void narrator\.say\(reason, store\.get\(\)\.skipAnimations\);\s*\}\),/);
+    // TW-09（M10）: 転職先の dim の行（ccClass の reason）も同じ経路で語る。TW-05（M16 追補 H-4）: 店の装備できない者の行（buy の reason）も
+    expect(fn).toContain('const reason = e.kind === "enter" ? e.notReady : e.kind === "ccClass" || e.kind === "buy" ? e.reason : null;');
+    expect(fn).toMatch(
+      /onDisabled: \(\) =>\s*guard\(\(\) => \{\s*play\.talk\.flush\(\);\s*void narrator\.say\(reason, store\.get\(\)\.skipAnimations\);\s*if \(e\.kind === "buy"\) goTownPage\("shopBuy"\);\s*\}\),/,
+    );
+  });
+
+  test("TW-05/UI-52（M16 追補 H-4）店の装備できない者の行は押すと command を送らず理由を語り、「誰に持たせる？」に戻らず品の一覧（shopBuy）へ戻る（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const fn = /const notReadyReason = \(e: TownEntry\): Pick<ControlItem, "onDisabled"> => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    // 理由の経路は run（command）を呼ばない。語りを積んでから品の一覧へ移る（語りの順は理由 → shopBuy の入場の語り）
+    expect(fn).not.toContain("run(");
+    expect(fn.indexOf("narrator.say(reason")).toBeLessThan(fn.indexOf('goTownPage("shopBuy")'));
+    // buy を送るのは onSelect の case "buy" だけで、disabled の行では onSelect は呼ばれない（controls の pick）
+    const item = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(item).toContain('disabled: "disabled" in e ? e.disabled : false,');
+    const controls = stripComments(presenterRaw["../src/presenter/views/controls.ts"]!);
+    expect(controls).toMatch(/if \(it\.disabled === true\) \{\s*it\.onDisabled\?\.\(\);\s*return;\s*\}/);
   });
 
   test("UI-47（M8.5）一覧・戻る・数字（townItem）と Esc は会話を打ち切ってから動き、Enter は会話の箱が開いていれば箱のタップ。箱と施設の絵のタップは再生の外・overlay なし（キャンプは除く）の街で talk.tap（ソースの検査）", () => {

@@ -78,8 +78,12 @@ export type TownEntry =
   | { kind: "enter"; dungeonId: string; label: string; disabled: boolean; notReady: string | null }
   /** TW-05: 店の売り物の行（名前と価格。払えなければ disabled）。押すと { shop: itemId } のページへ */
   | { kind: "shopItem"; itemId: string; label: string; disabled: boolean }
-  /** TW-05: 持たせるメンバーの行（名前と所持枠の空き。空きが無いか払えなければ disabled）。押すと town.shop の buy */
-  | { kind: "buy"; itemId: string; memberId: string; label: string; disabled: boolean }
+  /**
+   * TW-05: 持たせるメンバーの行（名前と所持枠の空き。空きが無いか払えなければ disabled）。押すと town.shop の buy。
+   * M16 追補 H-4: 職業で装備できない者（core の canEquip に無い者）は disabled で、reason（理由の文。shopCannotEquipText）を持つ。
+   * 押すと command を送らず reason を語って品の一覧（shopBuy）へ戻る。装備できる者・消耗品の行は null
+   */
+  | { kind: "buy"; itemId: string; memberId: string; label: string; disabled: boolean; reason: string | null }
   /** IT-61: 売る品の行（名前と売値）。押すと town.shop の sell */
   | { kind: "sell"; memberId: string; instanceId: string; label: string; disabled: boolean }
   /** IT-63: 買い戻した品を持たせる者の行。押すと town.shop の buyback */
@@ -446,7 +450,8 @@ export function townEntries(
   }
   if ("shop" in page) {
     // TW-05: 持たせるメンバーの行（生きている者を並び順で。所持枠の空きが無い者・払えないときは disabled）
-    // M16（4-6）: 装備の品なら、core の canEquip に無い者（職業で装備できない者）も disabled にして「（装備不可）」を添える
+    // M16（4-6）: 装備の品なら、core の canEquip に無い者（職業で装備できない者）も disabled にして「（装備不可）」を添える。
+    // M16 追補 H-4: その行は押すと理由（reason）を語る（UI-52 の dim の行の理由と同じ作法。app の onDisabled）
     const itemId = page.shop;
     const affordable = [...menu.shop.items, ...menu.shop.equipment].find((r) => r.itemId === itemId)?.affordable ?? false;
     const canEquip = menu.shop.equipment.find((r) => r.itemId === itemId)?.canEquip ?? null;
@@ -459,6 +464,7 @@ export function townEntries(
         memberId: m.memberId,
         label: cannot ? label + s(strings, "town.shop.cannotEquip") : label,
         disabled: !affordable || m.slotsFree <= 0 || cannot,
+        reason: cannot ? shopCannotEquipText(itemId, m.name, menu, strings) : null,
       };
     });
     return [...rows, back];
@@ -541,6 +547,16 @@ export function shopPreviewText(itemId: string, menu: TownMenu, strings: Strings
     magic: p.magicPower ?? none,
     classes: p.anyone ? s(strings, "town.shop.previewAnyone") : p.classes.join(s(strings, "town.shop.classSep")),
   });
+}
+
+/**
+ * TW-05（M16 追補 H-4）: 装備できない者の行を押したときの理由の 1 文 `town.shop.cannotEquipWhy`{name, item, classes}。
+ * classes は core の preview.classes を `town.shop.classSep` でつなぐだけ。装備の品でない・誰でも装備できる品は null
+ */
+export function shopCannotEquipText(itemId: string, name: string, menu: TownMenu, strings: Strings): string | null {
+  const r = menu.shop.equipment.find((x) => x.itemId === itemId);
+  if (r === undefined || r.preview.anyone) return null;
+  return s(strings, "town.shop.cannotEquipWhy", { name, item: r.name, classes: r.preview.classes.join(s(strings, "town.shop.classSep")) });
 }
 
 /**

@@ -677,13 +677,15 @@ export function createApp(o: {
    */
   const notReadyReason = (e: TownEntry): Pick<ControlItem, "onDisabled"> => {
     // TW-09（M10）: 転職先の dim の行も同じく理由の 1 文（理由は core の classChangeOptions から views/town が作る）
-    const reason = e.kind === "enter" ? e.notReady : e.kind === "ccClass" ? e.reason : null;
+    // TW-05（M16 追補 H-4）: 装備できない者の行も理由の 1 文（command は送らない）。語ってから「誰に持たせる？」に戻らず品の一覧（shopBuy）へ
+    const reason = e.kind === "enter" ? e.notReady : e.kind === "ccClass" || e.kind === "buy" ? e.reason : null;
     if (reason === null) return {};
     return {
       onDisabled: () =>
         guard(() => {
           play.talk.flush();
           void narrator.say(reason, store.get().skipAnimations);
+          if (e.kind === "buy") goTownPage("shopBuy");
         }),
     };
   };

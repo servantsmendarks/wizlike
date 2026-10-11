@@ -27,6 +27,7 @@ import {
   townParent,
   townPlace,
   townRepair,
+  shopCannotEquipText,
   shopPreviewText,
   upgradeCatalystLabel,
   upgradeItemName,
@@ -703,11 +704,11 @@ describe("UI-52 街のページ", () => {
     for (let i = 0; i < 5; i++) s.party[5]!.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
     const m = menuOf(s);
     expect(townEntries({ shop: "herb" }, m, S)).toEqual([
-      { kind: "buy", itemId: "herb", memberId: "c1", label: "アルド　空き 4 枠", disabled: false },
-      { kind: "buy", itemId: "herb", memberId: "c2", label: "ベルク　空き 6 枠", disabled: false },
-      { kind: "buy", itemId: "herb", memberId: "c4", label: "ドナ　空き 5 枠", disabled: false },
-      { kind: "buy", itemId: "herb", memberId: "c5", label: "エル　空き 6 枠", disabled: false },
-      { kind: "buy", itemId: "herb", memberId: "c6", label: "フィン　空き 0 枠", disabled: true },
+      { kind: "buy", itemId: "herb", memberId: "c1", label: "アルド　空き 4 枠", disabled: false, reason: null },
+      { kind: "buy", itemId: "herb", memberId: "c2", label: "ベルク　空き 6 枠", disabled: false, reason: null },
+      { kind: "buy", itemId: "herb", memberId: "c4", label: "ドナ　空き 5 枠", disabled: false, reason: null },
+      { kind: "buy", itemId: "herb", memberId: "c5", label: "エル　空き 6 枠", disabled: false, reason: null },
+      { kind: "buy", itemId: "herb", memberId: "c6", label: "フィン　空き 0 枠", disabled: true, reason: null },
       back,
     ]);
     // 払えない品（10G で帰還の糸 50G・長剣 100G）は全員 disabled。杖（10G）は空きのある 4 人が押せる
@@ -721,23 +722,28 @@ describe("UI-52 街のページ", () => {
     }
   });
 
-  test("TW-05 装備の品の持たせる者の行: core の canEquip に無い者（職業で装備できない者）は disabled で「（装備不可）」を添える。消耗品は添えない（M16）", () => {
+  test("TW-05/UI-52 装備の品の持たせる者の行: core の canEquip に無い者（職業で装備できない者）は disabled で「（装備不可）」を添え、押したときの理由 reason を持つ。消耗品は添えない（M16・追補 H-4）", () => {
     // 初期のパーティ: c1 戦士・c2 戦士・c3 盗賊・c4 僧侶・c5 魔術師・c6 盗賊。長剣（戦士・侍・君主）は c1・c2 だけ
     const m = menuOf(town({}, 1000));
     const NG = S["town.shop.cannotEquip"]!;
     expect(NG).toBe("（装備不可）");
+    const why = (name: string): string => `${name}は長剣を装備できない。WAR・SAM・LOR向けの品だ。`;
     expect(townEntries({ shop: "long_sword" }, m, S)).toEqual([
-      { kind: "buy", itemId: "long_sword", memberId: "c1", label: "アルド　空き 4 枠", disabled: false },
-      { kind: "buy", itemId: "long_sword", memberId: "c2", label: "ベルク　空き 6 枠", disabled: false },
-      { kind: "buy", itemId: "long_sword", memberId: "c3", label: `${m.shop.members[2]!.name}　空き ${m.shop.members[2]!.slotsFree} 枠${NG}`, disabled: true },
-      { kind: "buy", itemId: "long_sword", memberId: "c4", label: "ドナ　空き 5 枠（装備不可）", disabled: true },
-      { kind: "buy", itemId: "long_sword", memberId: "c5", label: "エル　空き 6 枠（装備不可）", disabled: true },
-      { kind: "buy", itemId: "long_sword", memberId: "c6", label: `${m.shop.members[5]!.name}　空き ${m.shop.members[5]!.slotsFree} 枠${NG}`, disabled: true },
+      { kind: "buy", itemId: "long_sword", memberId: "c1", label: "アルド　空き 4 枠", disabled: false, reason: null },
+      { kind: "buy", itemId: "long_sword", memberId: "c2", label: "ベルク　空き 6 枠", disabled: false, reason: null },
+      { kind: "buy", itemId: "long_sword", memberId: "c3", label: `${m.shop.members[2]!.name}　空き ${m.shop.members[2]!.slotsFree} 枠${NG}`, disabled: true, reason: why(m.shop.members[2]!.name) },
+      { kind: "buy", itemId: "long_sword", memberId: "c4", label: "ドナ　空き 5 枠（装備不可）", disabled: true, reason: why("ドナ") },
+      { kind: "buy", itemId: "long_sword", memberId: "c5", label: "エル　空き 6 枠（装備不可）", disabled: true, reason: why("エル") },
+      { kind: "buy", itemId: "long_sword", memberId: "c6", label: `${m.shop.members[5]!.name}　空き ${m.shop.members[5]!.slotsFree} 枠${NG}`, disabled: true, reason: why(m.shop.members[5]!.name) },
       back,
     ]);
-    // 誰でも装備できる杖・消耗品は添えない
-    expect(townEntries({ shop: "staff" }, m, S).some((e) => e.kind === "buy" && (e.disabled || e.label.includes(NG)))).toBe(false);
-    expect(townEntries({ shop: "herb" }, m, S).some((e) => e.kind === "buy" && (e.disabled || e.label.includes(NG)))).toBe(false);
+    // 誰でも装備できる杖・消耗品は添えない（reason も null）
+    expect(townEntries({ shop: "staff" }, m, S).some((e) => e.kind === "buy" && (e.disabled || e.label.includes(NG) || e.reason !== null))).toBe(false);
+    expect(townEntries({ shop: "herb" }, m, S).some((e) => e.kind === "buy" && (e.disabled || e.label.includes(NG) || e.reason !== null))).toBe(false);
+    // 払えないときも、装備できない者の行は理由を持つ（押すと職業の理由を語る）。装備できる者は払えない dim で理由なし
+    const poor = townEntries({ shop: "long_sword" }, menuOf(town({}, 10)), S).filter((e) => e.kind === "buy");
+    expect(poor.every((e) => e.kind === "buy" && e.disabled)).toBe(true);
+    expect(poor.map((e) => e.kind === "buy" && e.reason !== null)).toEqual([false, false, true, true, true, true]);
     // 行は一覧の幅（全角 21 字）に収まる（名前 6 字・空き 2 桁でも）
     expect(kinsokuLines(`ああああああ${formatMessage(S["town.shop.member"]!, { name: "", slots: 10 })}${NG}`, 21)).toHaveLength(1);
   });
@@ -757,6 +763,28 @@ describe("UI-52 街のページ", () => {
       for (const e of m.shop.equipment) {
         const text = shopPreviewText(e.itemId, m, S)!;
         expect(kinsokuLines(text, 28).length, text).toBeLessThanOrEqual(2);
+      }
+    }
+  });
+
+  test("TW-05/UI-52 装備できない理由の 1 文 shopCannotEquipText は core の preview.classes をつなぐだけ（誰でも・消耗品は null）。名前 6 字・どの品・職業 6 つでも 28 字 × 2 行以内（M16 追補 H-4）", () => {
+    const s = town({}, 0);
+    expect(S["town.shop.cannotEquipWhy"]).toBe("{name}は{item}を装備できない。{classes}向けの品だ。");
+    expect(shopCannotEquipText("long_sword", "ドナ", menuOf(s), S)).toBe("ドナは長剣を装備できない。WAR・SAM・LOR向けの品だ。");
+    expect(shopCannotEquipText("leather_armor", "ドナ", menuOf(s), S)).toBeNull();
+    expect(shopCannotEquipText("herb", "ドナ", menuOf(s), S)).toBeNull();
+    // strings を差し替えれば文も変わる（表示層に文を書かない）
+    expect(shopCannotEquipText("long_sword", "ドナ", menuOf(s), { ...S, "town.shop.cannotEquipWhy": "{classes}/{item}/{name}", "town.shop.classSep": "," })).toBe("WAR,SAM,LOR/長剣/ドナ");
+    // 職業の最悪（誰でもでない最大の 6 つ = 7 職業 - 1）
+    const worst = data.classes.slice(0, data.classes.length - 1).map((c) => c.abbr).join(S["town.shop.classSep"]!);
+    for (let lv = 0; lv <= 6; lv++) {
+      s.progress.shopLevel = lv;
+      const m = menuOf(s);
+      for (const e of m.shop.equipment) {
+        const text = shopCannotEquipText(e.itemId, "ああああああ", m, S);
+        if (text !== null) expect(kinsokuLines(text, 28).length, text).toBeLessThanOrEqual(2);
+        const worstText = formatMessage(S["town.shop.cannotEquipWhy"]!, { name: "ああああああ", item: e.name, classes: worst });
+        expect(kinsokuLines(worstText, 28).length, worstText).toBeLessThanOrEqual(2);
       }
     }
   });

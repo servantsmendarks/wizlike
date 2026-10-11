@@ -164,6 +164,7 @@
   "town.shop.row": "{name}　{cost}G",
   "town.shop.member": "{name}　空き {slots} 枠",
   "town.shop.cannotEquip": "（装備不可）",
+  "town.shop.cannotEquipWhy": "{name}は{item}を装備できない。{classes}向けの品だ。",
   "town.shop.preview": "{name}: 攻撃 {attack} / AC {ac} / 魔法攻撃力 {magic} / 装備: {classes}",
   "town.shop.previewNone": "—",
   "town.shop.previewAnyone": "誰でも",
