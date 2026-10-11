@@ -893,6 +893,17 @@ describe("入力と Command", () => {
     expect(body.indexOf("closeCamp(true);")).toBeLessThan(body.indexOf("void run(r.command)"));
   });
 
+  test("UI-53 / MG-44（M18）top の「呪文」から送るとき、後の段がキャラクター画面を閉じるなら送る前に描き直す（語りをメッセージ窓へ。ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const choose = /const chooseCamp = \(choice: CampChoice\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    const i = choose.lastIndexOf("campPage = r.after;");
+    expect(i).toBeGreaterThan(0);
+    const body = choose.slice(i);
+    const redraw = body.indexOf("if (characterOpen && !campCharacterOpen(campPage)) syncControls();");
+    expect(redraw).toBeGreaterThan(0);
+    expect(redraw).toBeLessThan(body.indexOf("void run(r.command)"));
+  });
+
   test("UI-66（2026-10-07）戻る・やめるは位置に関わらず cancel の配線: 戦闘・キャンプ・街の項目は種類から back の印を付ける（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const battle = /const syncBattleControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";

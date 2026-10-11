@@ -2,9 +2,11 @@
 // ページ（CampPage）を段にした純粋な状態機械と、パネルの DOM。
 // - 候補・押せるか・対象の要否は core の campMenu と fieldItemMenu の値だけで決める（UI-35）。送る Command は
 //   dungeon.cast / dungeon.useItem / party.equip / party.unequip / party.give / party.drop / party.reorder / party.identify。
-// - 迷宮のキャンプの top は [状態][並び順][糸で帰る][辺りを探る] / [空き][空き][空き][戻る] の 4×2 の枠（layout.campGrid。M10 で 道具・装備・呪文・鑑定 を
+// - 迷宮のキャンプの top は [状態][並び順][糸で帰る][辺りを探る] / [呪文][空き][空き][戻る] の 4×2 の枠（layout.campGrid。M10 で 道具・装備・呪文・鑑定 を
 //   キャラクター画面へ移した。糸で帰るは M16 で、core の campSummary.returnItem があるときだけ。無ければ空き枠。辺りを探るは M18 で、
 //   押すとキャンプを閉じて dungeon.search を送る（CampStep の closeSend））。状態 → メンバー一覧（名前の 6 枠と [7] 戻る）→ 人 → キャラクター画面。
+// - M18（設計 5-1）: top の 5 つ目の「呪文」は 術者（spellWho。唱えられる呪文の無い者は dim）→ 呪文の段（from "top"。キャラクター画面の呪文の段と同じ）
+//   → 説明 → 対象 → dungeon.cast → top。from "top" の呪文の一覧のやめるは術者の段へ（説明・対象のやめるは今どおり 1 つ上の段）。
 // - キャラクター画面（UI-59。M10）は 1 人の全部（能力値・装備・所持品・習得呪文）を 1 画面に出し、操作は 4×2 の枠
 //   [装備][使う][渡す][捨てる] / [呪文][鑑定（鑑定できる職業の者だけ）][次の人][戻る]。その下の段（装備・使う・渡す・捨てる・呪文・鑑定）の
 //   やめるは同じ人のキャラクター画面へ。前後の人は ← → キー・左右スワイプ・ヘッダーの ◀ ▶ でも移る（M16。campCanCycle / campSwipeDir）。キャラクター画面の戻るは、キャンプはメンバー一覧、酒場は閉じる（酒場の一覧・帯を押した街のページへ）。
@@ -30,6 +32,8 @@ export type CampPage =
   | { kind: "top" }
   /** UI-53（M10）: キャンプの「状態」のメンバー一覧（名前の 6 枠と [7] 戻る） */
   | { kind: "members" }
+  /** UI-53 / MG-44（M18。設計 5-1）: top の「呪文」の術者（名前の 6 枠と [7] やめる。唱えられる呪文の無い者は dim） */
+  | { kind: "spellWho" }
   /** UI-59（M10）: キャラクター画面 */
   | { kind: "character"; memberId: string }
   | { kind: "equip"; stage: "slot"; memberId: string }
@@ -49,10 +53,13 @@ export type CampPage =
   /** CH-79（M10）: 捨てる品（page は所持品の頁） → 確認 */
   | { kind: "drop"; stage: "item"; memberId: string; page: number }
   | { kind: "drop"; stage: "confirm"; memberId: string; instanceId: string }
-  /** MG-44（M10 で キャラクター画面の下へ）: 習得呪文の一覧（page は呪文の頁）→ 説明（UI-68。[唱える][やめる]）→ 対象 */
-  | { kind: "spell"; stage: "spell"; memberId: string; page: number }
-  | { kind: "spell"; stage: "info"; memberId: string; spellId: string }
-  | { kind: "spell"; stage: "target"; memberId: string; spellId: string }
+  /**
+   * MG-44（M10 で キャラクター画面の下へ）: 習得呪文の一覧（page は呪文の頁）→ 説明（UI-68。[唱える][やめる]）→ 対象。
+   * from "top" は top の「呪文」の術者の段から来たとき（M18。設計 5-1。一覧のやめるで術者の段へ、送った後は top へ）
+   */
+  | { kind: "spell"; stage: "spell"; memberId: string; page: number; from?: "top" }
+  | { kind: "spell"; stage: "info"; memberId: string; spellId: string; from?: "top" }
+  | { kind: "spell"; stage: "target"; memberId: string; spellId: string; from?: "top" }
   /** CH-77（M10 で キャラクター画面の下へ）: memberId は鑑定する者。品はパーティ全員の未鑑定品 */
   | { kind: "identify"; memberId: string }
   | { kind: "order"; picked: string | null }
@@ -136,7 +143,7 @@ function s(strings: Strings, key: string, params?: Record<string, string | numbe
  */
 export function campCharacterOpen(page: CampPage): boolean {
   if (page.kind === "use" && page.stage === "confirmReturn" && page.from === "top") return false; // M16: top の「糸で帰る」の確認
-  return page.kind !== "top" && page.kind !== "members" && page.kind !== "order" && page.kind !== "book";
+  return page.kind !== "top" && page.kind !== "members" && page.kind !== "spellWho" && page.kind !== "order" && page.kind !== "book";
 }
 
 /**
@@ -182,6 +189,7 @@ function cancelStep(host: CampHost, page: CampPage, m: CampInput): CampStep {
     case "top":
       return { kind: "close" };
     case "members":
+    case "spellWho":
       return host === "camp" ? go({ kind: "top" }) : { kind: "close" };
     case "character":
       return host === "camp" ? go({ kind: "members" }) : { kind: "close" };
@@ -203,9 +211,10 @@ function cancelStep(host: CampHost, page: CampPage, m: CampInput): CampStep {
       if (page.stage === "item") return go({ kind: "character", memberId: page.memberId });
       return go({ kind: "drop", stage: "item", memberId: page.memberId, page: inventoryPageOf(m, page.memberId, page.instanceId) });
     case "spell":
-      if (page.stage === "spell") return go({ kind: "character", memberId: page.memberId });
-      if (page.stage === "info") return go(spellListPage(m, page.memberId, page.spellId));
-      return go({ kind: "spell", stage: "info", memberId: page.memberId, spellId: page.spellId });
+      // M18（設計 5-1）: top の「呪文」から来た一覧のやめるは術者の段へ
+      if (page.stage === "spell") return go(page.from === "top" ? { kind: "spellWho" } : { kind: "character", memberId: page.memberId });
+      if (page.stage === "info") return go(spellListPage(m, page.memberId, page.spellId, page.from));
+      return go({ kind: "spell", stage: "info", memberId: page.memberId, spellId: page.spellId, ...fromTop(page.from) });
     case "identify":
       return go({ kind: "character", memberId: page.memberId });
   }
@@ -228,9 +237,17 @@ function spellPageOf(m: CampInput, memberId: string, spellId: string): number {
   const i = memberOf(m, memberId)?.knownSpells.findIndex((x) => x.spellId === spellId) ?? -1;
   return i < 0 ? 0 : Math.floor(i / CHARACTER_SPELL_CELLS);
 }
-/** 呪文の一覧の段（spellId が載る頁） */
-function spellListPage(m: CampInput, memberId: string, spellId: string): CampPage {
-  return { kind: "spell", stage: "spell", memberId, page: spellPageOf(m, memberId, spellId) };
+/** 呪文の段の from（M18。top の「呪文」から来たときだけ付ける） */
+function fromTop(from: "top" | undefined): { from?: "top" } {
+  return from === "top" ? { from } : {};
+}
+/** 呪文の一覧の段（spellId が載る頁。from は top の「呪文」から来たとき） */
+function spellListPage(m: CampInput, memberId: string, spellId: string, from?: "top"): CampPage {
+  return { kind: "spell", stage: "spell", memberId, page: spellPageOf(m, memberId, spellId), ...fromTop(from) };
+}
+/** UI-53 / MG-44（M18。設計 5-1）: 戦闘外でいま唱えられる呪文（core の knownSpells の castable）を 1 つ以上持つか */
+function hasCastable(m: CampInput, memberId: string): boolean {
+  return memberOf(m, memberId)?.knownSpells.some((x) => x.castable) ?? false;
 }
 
 /** 名前の 6 枠と [7] やめる / 戻る（disabled は dim） */
@@ -278,11 +295,15 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
       const search: CampEntry | null = m.summary === null ? null : { label: s(strings, "camp.search"), disabled: false, choice: { kind: "search" } };
       return {
         layout: "grid",
-        slots: [open("camp.status", { kind: "members" }), open("camp.order", { kind: "order", picked: null }), useReturn, search, null, null, null, back],
+        // UI-53 / MG-44（M18。設計 5-1）: 5 つ目の枠に「呪文」（術者の段へ）
+        slots: [open("camp.status", { kind: "members" }), open("camp.order", { kind: "order", picked: null }), useReturn, search, open("camp.spell", { kind: "spellWho" }), null, null, back],
       };
     }
     case "members":
       return memberGrid(m, () => false, back);
+    case "spellWho":
+      // M18（設計 5-1）: いま唱えられる呪文（castable）の無い者は dim
+      return memberGrid(m, (id) => !hasCastable(m, id), cancel);
     case "character": {
       const x = memberOf(m, page.memberId);
       const it = m.items?.members.find((y) => y.id === page.memberId);
@@ -467,6 +488,10 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
       return choice.kind === "open" ? go(choice.page) : stay;
     case "members":
       return choice.kind === "member" ? go({ kind: "character", memberId: choice.memberId }) : stay;
+    case "spellWho":
+      // M18（設計 5-1）: 唱えられる呪文のある者だけ、その人の呪文の段（from top）へ
+      if (choice.kind !== "member" || !hasCastable(m, choice.memberId)) return stay;
+      return go({ kind: "spell", stage: "spell", memberId: choice.memberId, page: 0, from: "top" });
     case "character": {
       if (choice.kind === "nextMember") return go(campCycle(page, m, 1) ?? page);
       if (choice.kind !== "action") return stay;
@@ -550,22 +575,23 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
         if (choice.kind !== "spell") return stay;
         // UI-68（M10）: 習得呪文なら（戦闘専用・MP の足りない呪文も）説明の段へ
         if (!(x?.knownSpells.some((y) => y.spellId === choice.spellId) ?? false)) return stay;
-        return go({ kind: "spell", stage: "info", memberId: page.memberId, spellId: choice.spellId });
+        return go({ kind: "spell", stage: "info", memberId: page.memberId, spellId: choice.spellId, ...fromTop(page.from) });
       }
       if (page.stage === "info") {
         if (choice.kind !== "confirm") return stay;
         // 戦闘外で唱えられる呪文（knownSpells の castable、対象は campMenu の spells）だけ先へ進む
         const sp = x?.spells.find((y) => y.spellId === page.spellId);
         if (sp === undefined || !(x?.knownSpells.find((y) => y.spellId === page.spellId)?.castable ?? false)) return stay;
-        const list = spellListPage(m, page.memberId, sp.spellId);
-        if (sp.target === "none") return { kind: "send", command: { type: "dungeon.cast", memberId: page.memberId, spellId: sp.spellId }, after: list };
-        return go({ kind: "spell", stage: "target", memberId: page.memberId, spellId: sp.spellId });
+        // M18（設計 5-1）: top の「呪文」から来たときは送った後に top へ戻る
+        const after: CampPage = page.from === "top" ? { kind: "top" } : spellListPage(m, page.memberId, sp.spellId);
+        if (sp.target === "none") return { kind: "send", command: { type: "dungeon.cast", memberId: page.memberId, spellId: sp.spellId }, after };
+        return go({ kind: "spell", stage: "target", memberId: page.memberId, spellId: sp.spellId, ...fromTop(page.from) });
       }
       if (choice.kind !== "target") return stay;
       return {
         kind: "send",
         command: { type: "dungeon.cast", memberId: page.memberId, spellId: page.spellId, targetId: choice.targetId },
-        after: spellListPage(m, page.memberId, page.spellId),
+        after: page.from === "top" ? { kind: "top" } : spellListPage(m, page.memberId, page.spellId),
       };
     }
     case "identify":
@@ -596,6 +622,8 @@ export function campHeader(page: CampPage, m: CampInput, strings: Strings): stri
       return s(strings, "camp.prompt.top");
     case "members":
       return s(strings, "camp.prompt.members");
+    case "spellWho":
+      return s(strings, "camp.prompt.spellWho");
     case "character":
       return s(strings, "camp.prompt.status", { name: nameOf(m, page.memberId) });
     case "equip":
@@ -693,6 +721,7 @@ export function campRepair(host: CampHost, page: CampPage, m: CampInput): CampPa
     case "top":
       return host === "camp" ? page : campFirstPage("tavern", "order", menu);
     case "members":
+    case "spellWho":
       return host === "camp" ? page : campFirstPage("tavern", "status", menu);
     case "order":
       return page.picked === null || member(page.picked) !== undefined ? page : { kind: "order", picked: null };
@@ -707,7 +736,8 @@ export function campRepair(host: CampHost, page: CampPage, m: CampInput): CampPa
     return it !== undefined && it.canAct && it.items.some((y) => y.instanceId === page.instanceId && y.usable) ? page : { kind: "top" };
   }
   const x = member(page.memberId);
-  if (x === undefined) return lost();
+  // M18（設計 5-1）: top の「呪文」から来た段で人がいなくなったら術者の段へ
+  if (x === undefined) return page.kind === "spell" && page.from === "top" && host === "camp" ? { kind: "spellWho" } : lost();
   const character: CampPage = { kind: "character", memberId: page.memberId };
   switch (page.kind) {
     case "character":
@@ -742,9 +772,9 @@ export function campRepair(host: CampHost, page: CampPage, m: CampInput): CampPa
         return page.page > last ? { ...page, page: last } : page;
       }
       // UI-68（M10）: 説明の段は、その呪文を覚えている間は成り立つ（唱えられなければ「唱える」が dim）
-      if (page.stage === "info") return x.knownSpells.some((y) => y.spellId === page.spellId) ? page : spellListPage(m, page.memberId, page.spellId);
+      if (page.stage === "info") return x.knownSpells.some((y) => y.spellId === page.spellId) ? page : spellListPage(m, page.memberId, page.spellId, page.from);
       // 対象の段で、その呪文が使えなくなった（MP 切れ・行動不能）→ 同じ者の呪文の一覧
-      return x.spells.some((y) => y.spellId === page.spellId && y.usable) ? page : spellListPage(m, page.memberId, page.spellId);
+      return x.spells.some((y) => y.spellId === page.spellId && y.usable) ? page : spellListPage(m, page.memberId, page.spellId, page.from);
     }
     case "identify":
       return x.identifyBlock === "cannotIdentify" ? character : page;

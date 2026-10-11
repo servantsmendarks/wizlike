@@ -77,11 +77,11 @@ const labels = (xs: readonly (CampEntry | null)[]) => xs.map((x) => (x === null 
 const character = (memberId: string): CampPage => ({ kind: "character", memberId });
 
 describe("UI-53 キャンプの top（M10）", () => {
-  test("UI-53 top は 8 枠: 状態・並び順・空き・辺りを探る / 空き 3 つ・戻る（帰還の糸を使えなければ 3 つ目は空き。M18 で 4 つ目に辺りを探る）。見出しは camp.prompt.top。状態はメンバー一覧へ", () => {
+  test("UI-53 top は 8 枠: 状態・並び順・空き・辺りを探る / 呪文・空き 2 つ・戻る（帰還の糸を使えなければ 3 つ目は空き。M18 で 4 つ目に辺りを探る、5 つ目に呪文）。見出しは camp.prompt.top。状態はメンバー一覧へ", () => {
     const m = input(inDungeon({ c5: { classId: "bishop", inventory: [] } }));
     const e = grid(campEntries("camp", { kind: "top" }, m, S));
     expect(e).toHaveLength(CAMP_GRID_SLOTS);
-    expect(labels(e)).toEqual(["状態", "並び順", null, "辺りを探る", null, null, null, "戻る"]);
+    expect(labels(e)).toEqual(["状態", "並び順", null, "辺りを探る", "呪文", null, null, "戻る"]);
     expect(e[7]!.choice).toEqual({ kind: "cancel" });
     expect(campHeader({ kind: "top" }, m, S)).toBe("キャンプ　どうする？");
     expect(campStep("camp", { kind: "top" }, m, { kind: "cancel" })).toEqual({ kind: "close" });
@@ -772,7 +772,7 @@ describe("DG-30/UI-53（M16）top の「糸で帰る」", () => {
     const s = inDungeon();
     const m = input(s);
     const e = grid(campEntries("camp", { kind: "top" }, m, S));
-    expect(labels(e)).toEqual(["状態", "並び順", "糸で帰る", "辺りを探る", null, null, null, "戻る"]);
+    expect(labels(e)).toEqual(["状態", "並び順", "糸で帰る", "辺りを探る", "呪文", null, null, "戻る"]);
     const confirm: CampPage = { kind: "use", stage: "confirmReturn", memberId: "c5", instanceId: "i15", from: "top" };
     expect(e[2]).toEqual({ label: "糸で帰る", disabled: false, choice: { kind: "open", page: confirm } });
     expect(campStep("camp", { kind: "top" }, m, e[2]!.choice)).toEqual({ kind: "page", page: confirm });
@@ -829,6 +829,88 @@ describe("DG-45/UI-53（M18）top の「辺りを探る」", () => {
   });
 });
 
+describe("UI-53/MG-44（M18）top の「呪文」", () => {
+  test("UI-53/MG-44 top の 5 つ目の枠は「呪文」で術者の段へ。術者の段は名前の 6 枠と [7] やめる（いま唱えられる呪文（castable）の無い者は dim で、押しても進まない）。見出しは camp.prompt.spellWho。やめるで top", () => {
+    const s = inDungeon({ c1: { hp: 1 } });
+    const m = input(s);
+    const e = grid(campEntries("camp", { kind: "top" }, m, S));
+    expect(e[4]).toEqual({ label: "呪文", disabled: false, choice: { kind: "open", page: { kind: "spellWho" } } });
+    const who: CampPage = { kind: "spellWho" };
+    expect(campStep("camp", { kind: "top" }, m, e[4]!.choice)).toEqual({ kind: "page", page: who });
+    // ドナ（治癒）だけ押せる。エルの呪文は戦闘専用で dim、戦士・盗賊は呪文が無く dim
+    const g = grid(campEntries("camp", who, m, S));
+    expect(g.map((x) => (x === null ? null : [x.label, x.disabled]))).toEqual([
+      ["アルド", true],
+      ["ベルク", true],
+      ["キリ", true],
+      ["ドナ", false],
+      ["エル", true],
+      ["フィン", true],
+      null,
+      ["やめる", false],
+    ]);
+    expect(g[7]).toEqual(cancel);
+    expect(campHeader(who, m, S)).toBe("誰が唱える？");
+    expect(campPanel(who, m, S)).toEqual({ kind: "text", title: "キャンプ" });
+    expect(campCharacterOpen(who)).toBe(false);
+    expect(campStep("camp", who, m, { kind: "cancel" })).toEqual({ kind: "page", page: { kind: "top" } });
+    expect(campStep("camp", who, m, g[4]!.choice)).toEqual({ kind: "page", page: who });
+    expect(campStep("camp", who, m, g[3]!.choice)).toEqual({ kind: "page", page: { kind: "spell", stage: "spell", memberId: "c4", page: 0, from: "top" } });
+    // MP が足りなければ（castable 偽）ドナも dim
+    const m0 = input(patched(s, { c4: { mp: 0 } }));
+    expect(grid(campEntries("camp", who, m0, S))[3]!.disabled).toBe(true);
+    expect(campStep("camp", who, m0, { kind: "member", memberId: "c4" })).toEqual({ kind: "page", page: who });
+    // ラベルは 56×40 の枠に収まる
+    expect([...S["camp.spell"]!].length * 8).toBeLessThanOrEqual(56 - 4);
+    expect([...S["camp.prompt.spellWho"]!].length).toBeLessThanOrEqual(28);
+  });
+
+  test("UI-53/MG-44 術者の後は既存の呪文の段（from top）: 一覧 → 説明 → 対象 → dungeon.cast を送って top へ。やめるは 対象 → 説明 → 一覧 → 術者。パネルはキャラクター画面", () => {
+    const s = inDungeon({ c1: { hp: 1 } });
+    const m = input(s);
+    const sp: CampPage = { kind: "spell", stage: "spell", memberId: "c4", page: 0, from: "top" };
+    const info: CampPage = { kind: "spell", stage: "info", memberId: "c4", spellId: "heal", from: "top" };
+    const tgt: CampPage = { kind: "spell", stage: "target", memberId: "c4", spellId: "heal", from: "top" };
+    expect(rows(campEntries("camp", sp, m, S))).toEqual([{ label: "治癒  MP2", disabled: false, choice: { kind: "spell", spellId: "heal" }, peek: true }, cancel]);
+    expect(campHeader(sp, m, S)).toBe("ドナの呪文");
+    expect(campCharacterOpen(sp)).toBe(true);
+    expect(campPanel(sp, m, S)).toEqual({ kind: "character", memberId: "c4", focusSlot: null, spellPage: 0 });
+    expect(campStep("camp", sp, m, { kind: "spell", spellId: "heal" })).toEqual({ kind: "page", page: info });
+    expect(campStep("camp", info, m, { kind: "confirm" })).toEqual({ kind: "page", page: tgt });
+    expect(campHeader(tgt, m, S)).toBe("誰に唱える？");
+    const r = campStep("camp", tgt, m, { kind: "target", targetId: "c1" });
+    expect(r).toEqual({ kind: "send", command: { type: "dungeon.cast", memberId: "c4", spellId: "heal", targetId: "c1" }, after: { kind: "top" } });
+    if (r.kind !== "send") throw new Error("not send");
+    const after = accepted(s, r.command);
+    expect(after.party[0]!.hp).toBeGreaterThan(1);
+    expect(campCharacterOpen(r.after)).toBe(false);
+    // やめるの行き先
+    expect(campStep("camp", tgt, m, { kind: "cancel" })).toEqual({ kind: "page", page: info });
+    expect(campStep("camp", info, m, { kind: "cancel" })).toEqual({ kind: "page", page: sp });
+    expect(campStep("camp", sp, m, { kind: "cancel" })).toEqual({ kind: "page", page: { kind: "spellWho" } });
+  });
+
+  test("MG-40/UI-53 top の「呪文」から帰還（対象なし）は説明の段の唱えるで送り、送った後は top（core が受け付けて街へ）", () => {
+    const s = inDungeon({ c4: { knownSpells: ["heal", "return"], mp: 30 } });
+    const m = input(s);
+    const info: CampPage = { kind: "spell", stage: "info", memberId: "c4", spellId: "return", from: "top" };
+    const r = campStep("camp", info, m, { kind: "confirm" });
+    expect(r).toEqual({ kind: "send", command: { type: "dungeon.cast", memberId: "c4", spellId: "return" }, after: { kind: "top" } });
+    if (r.kind !== "send") throw new Error("not send");
+    expect(accepted(s, r.command).screen).toBe("town");
+  });
+
+  test("UI-53 from top の段の campRepair: 唱えられなくなったら同じ者の一覧（from top のまま）、人がいなくなったら術者の段。術者の段はキャンプではそのまま", () => {
+    const s = inDungeon();
+    const tgt: CampPage = { kind: "spell", stage: "target", memberId: "c4", spellId: "heal", from: "top" };
+    expect(campRepair("camp", tgt, input(patched(s, { c4: { mp: 0 } })))).toEqual({ kind: "spell", stage: "spell", memberId: "c4", page: 0, from: "top" });
+    const info: CampPage = { kind: "spell", stage: "info", memberId: "c4", spellId: "heal", from: "top" };
+    expect(campRepair("camp", info, input(patched(s, { c4: { knownSpells: [] } })))).toEqual({ kind: "spell", stage: "spell", memberId: "c4", page: 0, from: "top" });
+    expect(campRepair("camp", { kind: "spell", stage: "spell", memberId: "zz", page: 0, from: "top" }, input(s))).toEqual({ kind: "spellWho" });
+    expect(campRepair("camp", { kind: "spellWho" }, input(s))).toEqual({ kind: "spellWho" });
+  });
+});
+
 describe("UI-53 campRepair", () => {
   test("UI-53/UI-59 人がいなくなった段はキャンプならメンバー一覧、酒場なら先頭の者のキャラクター画面。行動できなくなっても装備の段はそのまま（U6）", () => {
     const m = input(inDungeon());
@@ -855,7 +937,8 @@ describe("UI-33 campKeyIndex", () => {
     expect(campKeyIndex({ menu: 0 }, top)).toBe(0);
     expect(campKeyIndex({ menu: 2 }, top)).toBe(2); // M16: 糸で帰る（c5 の帰還の糸）
     expect(campKeyIndex({ menu: 3 }, top)).toBe(3); // M18: 辺りを探る（キー 4）
-    expect(campKeyIndex({ menu: 4 }, top)).toBeNull();
+    expect(campKeyIndex({ menu: 4 }, top)).toBe(4); // M18: 呪文（キー 5）
+    expect(campKeyIndex({ menu: 5 }, top)).toBeNull();
     expect(campKeyIndex({ menu: 7 }, top)).toBe(7);
     expect(campKeyIndex({ menu: 8 }, top)).toBeNull();
     expect(campKeyIndex("confirm", top)).toBe(0);
@@ -875,7 +958,8 @@ describe("UI-33 campKeyIndex", () => {
       "camp.status",
       "camp.order",
       "camp.book",
-      ...["top", "members", "status", "spellWhich", "spellTarget", "spellDead", "equipSlot", "equipItem", "order", "orderSecond", "identifyWhich", "giveWhich", "giveTo", "dropWhich"].map(
+      "camp.spell",
+      ...["top", "members", "spellWho", "status", "spellWhich", "spellTarget", "spellDead", "equipSlot", "equipItem", "order", "orderSecond", "identifyWhich", "giveWhich", "giveTo", "dropWhich"].map(
         (x) => `camp.prompt.${x}`,
       ),
       ...["equip", "use", "give", "drop", "spell", "identify", "next", "pageNext", "pagePrev"].map((x) => `character.${x}`),
@@ -906,7 +990,8 @@ describe("UI-33 campKeyIndex", () => {
     ]) {
       expect(Object.prototype.hasOwnProperty.call(S, k), k).toBe(true);
     }
-    for (const k of ["camp.spell", "camp.item", "camp.equip", "camp.identify", "camp.prompt.spellWho", "camp.prompt.equipWho", "camp.prompt.identifyWho", "dungeon.items.who", "dungeon.menu.items"]) {
+    // M18（設計 5-1）: camp.spell と camp.prompt.spellWho は top の「呪文」で戻した
+    for (const k of ["camp.item", "camp.equip", "camp.identify", "camp.prompt.equipWho", "camp.prompt.identifyWho", "dungeon.items.who", "dungeon.menu.items"]) {
       expect(Object.prototype.hasOwnProperty.call(S, k), k).toBe(false);
     }
   });

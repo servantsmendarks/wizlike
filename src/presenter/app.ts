@@ -1217,6 +1217,9 @@ export function createApp(o: {
       return;
     }
     campPage = r.after;
+    // UI-53 / MG-44（M18。設計 5-1）: top の「呪文」から唱えると送った後の段は top（キャラクター画面を閉じる段）。送る前に描き直して
+    // キャラクター画面を閉じ、結果の語りを会話の箱ではなくメッセージ窓に出す（閉じるときの箱の打ち切りで結果が消えないように）
+    if (characterOpen && !campCharacterOpen(campPage)) syncControls();
     void run(r.command).then((res) => {
       // rejected は再生も sync も無いので、ここで描き直す
       if (res !== null && res.rejected && !isBusy()) syncControls();
