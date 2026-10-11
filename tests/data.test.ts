@@ -1370,6 +1370,13 @@ describe("data: drops.json（IT-50〜53。M7）", () => {
     expectIssue((r) => (r.config.combat.directDropGoldDice = "2d"), "config.json", 'combat.directDropGoldDice: invalid dice expression "2d"');
     expectIssue((r) => delete r.config.combat.directDropGoldDice, "config.json", "combat.directDropGoldDice: missing required field");
   });
+  test("data: CB-51/CB-51b combat.chestChance・chestChanceCorridor・chestPity は 0..100【仮】（M20 で 20・15・15）", () => {
+    const d = loadGameData(rawData());
+    expect([d.config.combat.chestChance, d.config.combat.chestChanceCorridor, d.config.combat.chestPity]).toEqual([20, 15, 15]);
+    expectIssue((r) => delete r.config.combat.chestPity, "config.json", "combat.chestPity: missing required field");
+    expectIssue((r) => (r.config.combat.chestPity = 101), "config.json", "combat.chestPity: expected integer in 0..100, got 101");
+    expectIssue((r) => (r.config.combat.chestPity = 1.5), "config.json", "combat.chestPity: expected integer in 0..100, got number");
+  });
   test("data: IT-51 chest は全ダンジョンの全階（1..floors）に実在の表、boss は全ダンジョンに実在の表", () => {
     expectIssue((r) => delete r.drops.chest.d02, "drops.json", "chest.d02: missing required field");
     expectIssue((r) => delete r.drops.chest.d01["2"], "drops.json", "chest.d01.2: missing required field");

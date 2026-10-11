@@ -271,6 +271,7 @@ function isChestShape(x: unknown): boolean {
  * progress.enteredDungeons が文字列の配列。
  * schemaVersion 8（M16。UI-76）: progress.hints が文字列の配列。
  * schemaVersion 9（M18。DG-46）: dive がオブジェクトなら floorSteps が 0 以上の安全な整数。
+ * 同じ版に後から足した省略可能な欄（M20。CB-51b）: dive.noChestStreak は無いか 0 以上の安全な整数。
  */
 export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(x)) return false;
@@ -292,6 +293,8 @@ export function isGameStateShape(x: unknown): x is GameState {
     if (!Array.isArray(dc) || !dc.every(isCellRefShape)) return false;
     const jc = dive["judgedChests"];
     if (jc !== undefined && !(Array.isArray(jc) && jc.every(isCellRefShape))) return false;
+    const ns = dive["noChestStreak"]; // CB-51b（M20）: 省略可能
+    if (ns !== undefined && !isTurnCount(ns)) return false;
     if (dive["chest"] !== null && x["pendingChoice"] !== null) return false;
     if (!isTurnCount(dive["floorSteps"])) return false;
   }

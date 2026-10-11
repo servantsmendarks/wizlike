@@ -189,6 +189,8 @@ export type Config = {
     chestChance: number;
     /** CB-51 / CB-52【仮】: 通路のセル（部屋でないセル）のランダム遭遇に勝ったときの宝箱の確率（%） */
     chestChanceCorridor: number;
+    /** CB-51b（M20）【仮】: ドロップの箱が出なかったランダム遭遇の勝利が続いた回数（dive.noChestStreak）1 回ごとに、次の判定の率に足す %（上限は 100） */
+    chestPity: number;
     /** CB-52【仮】: M3 の仮実装の宝箱の金のダイス */
     chestGoldDice: string;
     unarmedDice: string;

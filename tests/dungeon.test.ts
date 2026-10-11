@@ -132,7 +132,7 @@ describe("dungeon.enter", () => {
     expect(data.strings["dungeon.enter"]).toBe("{dungeon}へ潜る。迷宮は潜るたびに形を変える。地図は毎回白紙だ。");
   });
 
-  test("DG-03/DG-40/TW-11 dungeon.enter: screen dungeon、dive の全欄、events は [screen dungeon, message dungeon.enter {dungeon:'試しの坑道'}, （DG-37/UI-76 ゲームで最初の入場）message hint.dungeonFirst, （UI-76 M18）message hint.dungeonTerms]", () => {
+  test("DG-03/DG-40/TW-11/CB-51b dungeon.enter: screen dungeon、dive の全欄（CB-51b（M20）noChestStreak は入場で 0）、events は [screen dungeon, message dungeon.enter {dungeon:'試しの坑道'}, （DG-37/UI-76 ゲームで最初の入場）message hint.dungeonFirst, （UI-76 M18）message hint.dungeonTerms]", () => {
     const s0 = newGame(1);
     const r = run(s0, ENTER_D01);
     const dive = r.state.dive!;
@@ -157,6 +157,7 @@ describe("dungeon.enter", () => {
       ledger: { items: [], gold: 0 },
       chest: null, // CB-60（M11）
       disarmedChests: [],
+      noChestStreak: 0, // CB-51b（M20）
     });
     expect(Object.keys(dive.explored)).toEqual(["1"]);
     expectExploredCovers(r.state);

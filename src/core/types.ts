@@ -251,6 +251,11 @@ export type Dive = {
    * 重複なし。省略可能（schemaVersion 6 のまま足した欄。無ければ空として扱い、最初に判定したときに作る）
    */
   judgedChests?: CellRef[];
+  /**
+   * CB-51b（M20）: ランダム遭遇の勝利でドロップの箱が出なかった連続の回数（出たら 0）。入場時 0。
+   * 省略可能（schemaVersion 9 のまま足した欄。無ければ 0 として扱う）
+   */
+  noChestStreak?: number;
 };
 
 /**

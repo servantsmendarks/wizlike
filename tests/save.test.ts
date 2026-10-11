@@ -1430,6 +1430,24 @@ describe("SV-04 v5 → v6 の移行（M11。CB-60）", () => {
     expect(bad((d) => (d["judgedChests"] = "x"))).toBe(false);
   });
 
+  test("SV-04/CB-51b（M20）: dive.noChestStreak は省略可能（schemaVersion 9 のまま足した欄）。無い・0 以上の安全な整数なら通り、型が違えば broken", () => {
+    const s = chestState();
+    const ok = (v: unknown): boolean => {
+      const x = json(s) as unknown as Record<string, unknown>;
+      const dive = x["dive"] as Record<string, unknown>;
+      if (v === undefined) delete dive["noChestStreak"];
+      else dive["noChestStreak"] = v;
+      return isGameStateShape(x);
+    };
+    expect(ok(undefined)).toBe(true);
+    expect(ok(0)).toBe(true);
+    expect(ok(7)).toBe(true);
+    expect(ok(-1)).toBe(false);
+    expect(ok(1.5)).toBe(false);
+    expect(ok(null)).toBe(false);
+    expect(ok("3")).toBe(false);
+  });
+
   test("SV-04/EV-76 U-7: dive.chest.rivalryFails は省略可能（schemaVersion 6 のまま足した欄）。無い・0 以上の整数なら通り、型が違えば broken", () => {
     const s = chestState();
     const bad = (v: unknown): boolean => {

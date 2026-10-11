@@ -334,6 +334,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       fleeAgiMul: I(),
       chestChance: I(PERCENT), // CB-51 / CB-52【仮】部屋
       chestChanceCorridor: I(PERCENT), // CB-51 / CB-52【仮】通路
+      chestPity: I(PERCENT), // CB-51b（M20）【仮】救済
       chestGoldDice: D, // CB-52【仮】（M3 の仮実装）
       unarmedDice: D,
       autoInterrupt: F({ hpRatio: N(RATIO) }),

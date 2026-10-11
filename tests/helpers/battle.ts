@@ -62,6 +62,7 @@ export function dataWith(
   const d = loadFreshData();
   d.config.combat.chestChance = 0;
   d.config.combat.chestChanceCorridor = 0;
+  d.config.combat.chestPity = 0; // CB-51b（M20）: 救済も 0（chestChance 0 なら箱は出ない、のまま）
   d.config.combat.directDropChance = 0;
   Object.assign(d.config.combat, patch.combat ?? {});
   Object.assign(d.config.san, patch.san ?? {});
