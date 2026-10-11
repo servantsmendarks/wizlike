@@ -87,8 +87,12 @@ class FakeEl {
   textContent = "";
   children: FakeEl[] = [];
   listeners = new Map<string, Array<() => void>>();
+  /** setAttribute の値（M16 追補 H-2: ◀ ▶ の SVG の寸法と path を確かめる） */
+  attrs: Record<string, string> = {};
   [k: string]: unknown;
-  setAttribute(): void {}
+  setAttribute(k: string, v: string): void {
+    this.attrs[k] = v;
+  }
   appendChild(c: FakeEl): FakeEl {
     this.children.push(c);
     return c;
@@ -311,14 +315,15 @@ describe("UI-13 帯の DOM・UI-61 施設の絵・ヘッダーのログ", () => 
     const text = kids[0]!;
     const prev = kids.find((c) => c.className === "header-prev")!;
     const next = kids.find((c) => c.className === "header-next")!;
-    expect(L.header.prev).toEqual({ x: 0, y: 0, w: 24, h: 16 });
-    expect(L.header.next).toEqual({ x: 136, y: 0, w: 24, h: 16 });
+    // 追補 H-2: 押せる矩形は 24×32、見た目の枠は 24×16
+    expect(L.header.prev).toEqual({ x: 0, y: 0, w: 24, h: 32 });
+    expect(L.header.next).toEqual({ x: 136, y: 0, w: 24, h: 32 });
     expect(L.header.navText).toEqual({ x: 28, y: 0, w: 104, h: 16 });
     expect([prev.style["left"], prev.style["width"], prev.style["display"]]).toEqual(["0px", "24px", "none"]);
     expect([next.style["left"], next.style["width"], next.style["display"]]).toEqual(["136px", "24px", "none"]);
-    // 三角は SVG の path（美咲フォントに ◀ ▶ が無い）
-    expect(prev.children[0]!["tagName"]).toBe("svg");
-    expect(prev.children[0]!.children[0]!["tagName"]).toBe("path");
+    // 三角は SVG の path（美咲フォントに ◀ ▶ が無い）。ボタンの中の見た目の枠の中に置く
+    expect(prev.children[0]!.children[0]!["tagName"]).toBe("svg");
+    expect(prev.children[0]!.children[0]!.children[0]!["tagName"]).toBe("path");
     h.setNav(true);
     expect([prev.style["display"], next.style["display"]]).toEqual(["", ""]);
     expect([text.style["left"], text.style["width"], text.style["textAlign"]]).toEqual(["28px", "104px", "center"]);
@@ -331,6 +336,39 @@ describe("UI-13 帯の DOM・UI-61 施設の絵・ヘッダーのログ", () => 
     // 「{name}の状態」は名前 6 字でも問いの幅に入る（全角 9 字 = 72px）
     expect(textUnits(S["camp.prompt.status"]!.replace("{name}", "アルドリンド")) * 4).toBeLessThanOrEqual(L.header.navText.w);
     expect(S["character.prev"]).toBe("前の人");
+  });
+
+  test("UI-59 / UI-10（M16 追補 H-2）createHeader: ◀ ▶ のボタン（押せる矩形）は透明の 24×32 で z-index 1、見た目の枠は上 16（枠線と地の色）で、三角の path はその中", () => {
+    fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const h = createHeader({ strings: S, region: g.header, layout: L.header, onSettings: () => {} });
+    const kids = fake(h.el).children;
+    for (const cls of ["header-prev", "header-next"]) {
+      const b = kids.find((c) => c.className === cls)!;
+      expect([b.style["top"], b.style["width"], b.style["height"]], cls).toEqual(["0px", "24px", "32px"]);
+      expect([b.style["border"], b.style["background"], b.style["zIndex"]], cls).toEqual(["0", "transparent", "1"]);
+      const mark = b.children[0]!;
+      expect(mark.className, cls).toBe("header-nav-mark");
+      expect([mark.style["left"], mark.style["top"], mark.style["width"], mark.style["height"]], cls).toEqual(["0px", "0px", "24px", "16px"]);
+      expect([mark.style["border"], mark.style["background"], mark.style["boxSizing"], mark.style["pointerEvents"]], cls).toEqual([
+        "1px solid var(--c-frame)",
+        "var(--c-bg)",
+        "border-box",
+        "none",
+      ]);
+      // SVG は枠線の内側の 22×14。三角の path（y3..11）は枠の内側 = ヘッダーの帯の上 16 の中
+      const svg = mark.children[0]!;
+      expect([svg.attrs["width"], svg.attrs["height"]], cls).toEqual(["22", "14"]);
+      const d = svg.children[0]!.attrs["d"]!;
+      expect(d, cls).toBe(navTrianglePath(22, 14, cls === "header-prev" ? -1 : 1));
+      const ys = [...d.matchAll(/[ML](\d+) (\d+)/g)].map((m) => Number(m[2]));
+      for (const y of ys) expect(y + 1, cls).toBeLessThan(16);
+    }
+    // 押している間は枠だけ反転する（ボタンの透明の下 16 を塗らない）
+    const css = fs.readFileSync(new URL("../src/presenter/style.css", import.meta.url), "utf8");
+    expect(css).toContain("#stage button.header-prev.is-pressed");
+    expect(css).toContain("#stage button.is-pressed > .header-nav-mark");
   });
 
   test("UI-59（M16）navTrianglePath: 22×14 の中央に 6×8 の三角。−1 は左向き、+1 は右向き", () => {

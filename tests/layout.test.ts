@@ -178,9 +178,10 @@ describe("layout", () => {
           expect(overlaps(entries[i]![1], entries[j]![1]), `${screen} ${entries[i]![0]} / ${entries[j]![0]}`).toBe(false);
     }
     // 例外はヘッダーの設定ボタン、M8.5 の街のログ・帯・一覧の行、M16 の迷宮・戦闘の広い一覧の行だけで、ヘッダーの 2 つはヘッダーの中に収まる
-    // M16（UI-59）: キャラクター画面のヘッダーの ◀ ▶（header.prev / header.next。24×16）を足した
+    // M16（UI-59）: キャラクター画面のヘッダーの ◀ ▶（header.prev / header.next）を足した。追補 H-2 から押せる矩形は 24×32（幅 24 < 30 なので例外のまま）で、
+    // 見た目の枠（prevMark / nextMark）がヘッダーの中に収まる
     expect(TOUCH_EXCEPTIONS).toEqual(["header.settings", "header.log", "header.prev", "header.next", "town.band", "town.list", "listWide"]);
-    for (const k of ["prev", "next"] as const) expect(inside(L.header[k], regions(data.config.ui.layout, W).header), k).toBe(true);
+    for (const k of ["prevMark", "nextMark"] as const) expect(inside(L.header[k], regions(data.config.ui.layout, W).header), k).toBe(true);
     expect(inside(T.header.log, regions(data.config.ui.layout, W).header)).toBe(true);
     expect(inside(HEADER_SETTINGS, regions(data.config.ui.layout, W).header)).toBe(true);
     // 押せない欄も画面の内側
@@ -316,9 +317,11 @@ describe("layout", () => {
       log: { x: 160, y: 0, w: 40, h: 16 },
       settings: { x: 200, y: 0, w: 40, h: 16 },
       turn: { x: 108, y: 0, w: 48, h: 16 },
-      // UI-59（M16）: キャラクター画面の ◀ ▶ と、その間の問い
-      prev: { x: 0, y: 0, w: 24, h: 16 },
-      next: { x: 136, y: 0, w: 24, h: 16 },
+      // UI-59（M16）: キャラクター画面の ◀ ▶ と、その間の問い。追補 H-2 から押せる矩形は 24×32、見た目の枠は 24×16
+      prev: { x: 0, y: 0, w: 24, h: 32 },
+      next: { x: 136, y: 0, w: 24, h: 32 },
+      prevMark: { x: 0, y: 0, w: 24, h: 16 },
+      nextMark: { x: 136, y: 0, w: 24, h: 16 },
       navText: { x: 28, y: 0, w: 104, h: 16 },
     });
     expect(L.dpad).toEqual({
@@ -586,6 +589,32 @@ describe("layout", () => {
     expect(layoutWarnings(g2, dungeonLayout(g2, N))).toEqual([
       "ui.layout: character panel (height 227) is lower than 274",
       "ui.layout: message region (height 13) has no text line",
+    ]);
+  });
+
+  test("UI-59 / UI-10（M16 追補 H-2）キャラクター画面の ◀ ▶ の押せる矩形は 24×32（y0..31）で、見た目の枠はヘッダーの帯の 24×16。y16..31 は押せない名前の行だけ", () => {
+    const g = regions(data.config.ui.layout, W);
+    for (const k of ["prev", "next"] as const) {
+      const hit = L.header[k];
+      const mark = L.header[k === "prev" ? "prevMark" : "nextMark"];
+      expect([hit.w, hit.h], k).toEqual([24, 32]);
+      expect(hit.y, k).toBe(0);
+      expect(inside(hit, STAGE), k).toBe(true);
+      // 見た目の枠は押せる矩形の上 16（x と幅は同じ）で、ヘッダーの帯の中
+      expect(mark, k).toEqual({ x: hit.x, y: hit.y, w: 24, h: g.header.h });
+      expect(inside(mark, hit) && inside(mark, g.header), k).toBe(true);
+      // はみ出した下 16 はキャラクター画面のパネル（layout.character）の上端の行（行 0 の名前。押せない文字）で、操作の枠・会話の 3 行の箱に重ならない
+      const below: Rect = { x: hit.x, y: g.header.y + g.header.h, w: hit.w, h: hit.h - g.header.h };
+      expect(inside(below, L.character), k).toBe(true);
+      for (const r of [...L.campGrid, ...L.list, L.listBack, T.talkCompact.box]) expect(overlaps(hit, r), `${k} ${JSON.stringify(r)}`).toBe(false);
+      // ヘッダーの文字（問い）・ログ・設定にも重ならない
+      for (const r of [L.header.navText, L.header.log, L.header.settings]) expect(overlaps(hit, r), `${k} ${JSON.stringify(r)}`).toBe(false);
+    }
+    expect(overlaps(L.header.prev, L.header.next)).toBe(false);
+    // ヘッダーとキャラクター画面に収まらなければ layoutWarnings（押せる矩形は header の領域ではなく、操作領域の上端までで見る）
+    expect(layoutWarnings(g, L)).toEqual([]);
+    expect(layoutWarnings(g, { ...L, header: { ...L.header, next: { ...L.header.next, y: 280 } } })).toEqual([
+      "ui.layout: header.next does not fit in the header and character regions",
     ]);
   });
 

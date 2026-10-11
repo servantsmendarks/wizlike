@@ -91,6 +91,15 @@ body {
   background: transparent !important;
 }
 
+/* UI-59（M16 追補 H-2）: キャラクター画面の ◀ ▶ は透明の 24×32 のボタンの上 16 に枠（.header-nav-mark）を描く。押している間は枠だけを反転する */
+#stage button.header-prev.is-pressed,
+#stage button.header-next.is-pressed {
+  background: transparent !important;
+}
+#stage button.is-pressed > .header-nav-mark {
+  background: var(--c-text) !important;
+}
+
 /* UI-02: safe area 計測用の不可視プローブ。padding を getComputedStyle で読む */
 .stage-safe-area-probe {
   position: fixed;

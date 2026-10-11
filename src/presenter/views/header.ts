@@ -5,6 +5,9 @@
 // （M8.5〜M15 は街だけで、setLogVisible で出し入れしていた）。戦闘のターン表示はログの左に置き、その間の問いは 100px（既定）。
 // UI-59 / UI-33（M16。設計 4-9）: キャラクター画面の間は、ヘッダーの左端に ◀（前の人）、ログの左に ▶（次の人）を出し（setNav）、
 // 問いはその間に中央寄せ。三角は美咲フォントに無いのでインライン SVG の path で描く。
+// M16 追補 H-2（2026-10-11 ユーザーの判断）: ◀ ▶ の見た目（枠と三角。layout の prevMark / nextMark = ヘッダーの帯の 24×16）はそのままで、
+// 押せるボタン（prev / next）は透明の 24×32 にしてヘッダーの下へはみ出させる。DOM で後に置くキャンプのパネルに覆われないよう z-index 1
+// （出すのはキャラクター画面の間だけで、その間に上の層に来る overlay は無い。設定はキャンプを閉じてから開く）。
 // el は region の位置と大きさに自分で置く。モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
 import type { Facing } from "../../core/types";
@@ -147,8 +150,8 @@ export function createHeader(o: {
   });
   onTap(logBtn, () => o.onLog?.());
   el.appendChild(logBtn);
-  // UI-59（M16）: ◀ ▶（既定は隠す。setNav）
-  const navButton = (rect: Rect, dir: 1 | -1): HTMLButtonElement => {
+  // UI-59（M16）: ◀ ▶（既定は隠す。setNav）。ボタンは押せる矩形（透明）、その中に見た目の枠（mark）と三角
+  const navButton = (rect: Rect, mark: Rect, dir: 1 | -1): HTMLButtonElement => {
     const key = dir < 0 ? "character.prev" : "character.next";
     const b = document.createElement("button");
     b.type = "button";
@@ -162,16 +165,30 @@ export function createHeader(o: {
       height: `${rect.h}px`,
       margin: "0",
       padding: "0",
+      border: "0",
+      background: "transparent",
+      color: "var(--c-text)",
+      zIndex: "1",
+      display: "none",
+    });
+    const box = document.createElement("div");
+    box.className = "header-nav-mark";
+    Object.assign(box.style, {
+      position: "absolute",
+      left: `${mark.x - rect.x}px`,
+      top: `${mark.y - rect.y}px`,
+      width: `${mark.w}px`,
+      height: `${mark.h}px`,
+      boxSizing: "border-box",
       border: "1px solid var(--c-frame)",
       background: "var(--c-bg)",
-      color: "var(--c-text)",
-      display: "none",
+      pointerEvents: "none",
     });
     const ns = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(ns, "svg");
     // 枠線の内側（border-box なので 1px ずつ内側）
-    const iw = rect.w - 2;
-    const ih = rect.h - 2;
+    const iw = mark.w - 2;
+    const ih = mark.h - 2;
     svg.setAttribute("width", String(iw));
     svg.setAttribute("height", String(ih));
     svg.setAttribute("viewBox", `0 0 ${iw} ${ih}`);
@@ -180,13 +197,14 @@ export function createHeader(o: {
     path.setAttribute("d", navTrianglePath(iw, ih, dir));
     path.setAttribute("fill", "currentColor");
     svg.appendChild(path);
-    b.appendChild(svg);
+    box.appendChild(svg);
+    b.appendChild(box);
     onTap(b, () => o.onCycle?.(dir));
     el.appendChild(b);
     return b;
   };
-  const prevBtn = navButton(o.layout.prev, -1);
-  const nextBtn = navButton(o.layout.next, 1);
+  const prevBtn = navButton(o.layout.prev, o.layout.prevMark, -1);
+  const nextBtn = navButton(o.layout.next, o.layout.nextMark, 1);
   const nt = o.layout.navText;
 
   let turnOn = false;
