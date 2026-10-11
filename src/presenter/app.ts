@@ -2327,14 +2327,14 @@ export function createApp(o: {
       return;
     }
     if (overlay === "map") {
-      // UI-33: Esc / m / 1 で閉じる、2 で移動、Enter は選んでいれば移動・いなければ閉じる
+      // UI-33: Esc / m / 1 で閉じる、2 で移動、3 で凡例の開閉（M19）、Enter は選んでいれば移動・いなければ閉じる
       if (a === "confirm") {
         if (mapPick !== null) goMapPick();
         else closeMap();
       } else if (typeof a === "object" && a.menu === 1) {
         if (mapPick !== null) goMapPick();
         else mapPickFirst();
-      }
+      } else if (typeof a === "object" && a.menu === 2) play.controls.select(2);
       else if (a === "back" || a === "map" || (typeof a === "object" && a.menu === 0)) closeMap();
       return;
     }

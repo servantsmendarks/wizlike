@@ -1,5 +1,5 @@
 // UI-32 / UI-53 の操作領域（ui §2 の controls 領域）。十字ボタン（dpad）、メニュー（menu）、リスト（list）、
-// 地図の「閉じる」（mapClose）と「移動」（mapGo。map モード）、戦闘のパーティの選択 4 枠・メンバーの 5 枠・キャンプの 8 枠（battle）、オート中の「オート解除」（autoStop）を切り替えて出す。矩形は layout.ts の dungeonLayout のステージ座標で、region の原点を引いて置く。
+// 地図の「閉じる」（mapClose）と「移動」（mapGo）と「凡例」（mapLegend。M19。map モード）、戦闘のパーティの選択 4 枠・メンバーの 5 枠・キャンプの 8 枠（battle）、オート中の「オート解除」（autoStop）を切り替えて出す。矩形は layout.ts の dungeonLayout のステージ座標で、region の原点を引いて置く。
 // どのボタンも input/tap.ts の onTap で登録し、「動かずに離した」ときに反応する（UI-36。click は使わない）。
 // 前進ボタンだけは、動かずに hold.ms() 押し続けたら hold.onHoldStart（長押しの連打）、離したら hold.onHoldEnd（UI-31）。
 // 「オート解除」は再生中も反応する（whileBusy。UI-44 の例外）。
@@ -52,7 +52,7 @@ export type TownListLayout = { heading: Rect; area: Rect; rows: Rect[]; grid: Re
 
 export type Controls = {
   el: HTMLElement;
-  /** dpad = 十字ボタンとメニュー、list = リスト、close = 「閉じる」だけ、map = 地図の「閉じる」と「移動」（UI-25）、none = 何も出さない */
+  /** dpad = 十字ボタンとメニュー、list = リスト、close = 「閉じる」だけ、map = 地図の「閉じる」と「移動」（UI-25）と「凡例」（UI-24。M19）、none = 何も出さない */
   setMode(m: ControlsMode): void;
   /** inputMode が swipe なら十字ボタンを隠す（メニューは残す） */
   setDpadVisible(on: boolean): void;
@@ -90,7 +90,7 @@ export type Controls = {
   setAutoStop(label: string, onPress: () => void): void;
   /**
    * n 番目（0 始まり）を選ぶ。dpad ではメニュー、list ではリスト、battle では戦闘の枠、close / autoStop では 0 が唯一のボタン、
-   * map では 0 が閉じる・1 が移動。
+   * map では 0 が閉じる・1 が移動・2 が凡例（M19）。
    * 範囲外と disabled は何もしない
    */
   select(n: number): void;
@@ -145,7 +145,7 @@ function setShown(el: HTMLElement, on: boolean): void {
  */
 export function createControls(o: {
   region: Rect;
-  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "listNarrow" | "listBack" | "listWide" | "mapClose" | "mapGo" | "battleParty" | "battleMember" | "autoStop" | "campGrid"> & {
+  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "listNarrow" | "listBack" | "listWide" | "mapClose" | "mapGo" | "mapLegend" | "battleParty" | "battleMember" | "autoStop" | "campGrid"> & {
     /** UI-13（M8.5）: 街の一覧の位置（省略時は街の一覧も layout.list の位置） */
     townList?: TownListLayout;
   };
@@ -157,6 +157,8 @@ export function createControls(o: {
   onMapGo?(): void;
   /** UI-25（M16）: dim の「移動」を押した（select(1) を含む。app が題を map.pickFirst に替える） */
   onMapGoDim?(): void;
+  /** UI-24（M19）: 地図の「凡例」を押した（select(2) を含む）。凡例を開閉し、開いたら真を返す（表示だけ。dungeon.ts が地図の部品へつなぐ） */
+  onMapLegend?(): boolean;
   /**
    * UI-66（M8）: 決定・取り消しの音。disabled でない項目を選んだら ok、戻る・やめるの項目（ControlItem の back。固定の戻る（listBack）を含み、
    * 戦闘の枠の中でも同じ。2026-10-07）と「閉じる」なら cancel。
@@ -359,6 +361,22 @@ export function createControls(o: {
   onTap(mapGo, () => pressMapGo());
   el.appendChild(mapGo);
 
+  // ---- 地図の「凡例」（UI-24。M19。map モードで閉じるの右隣）。開いている間は文字と枠を accent にする。音は鳴らさない（表示の切り替えだけ）
+  const mapLegend = document.createElement("button");
+  mapLegend.type = "button";
+  mapLegend.className = "controls-map-legend";
+  mapLegend.textContent = s("map.legend");
+  buttonStyle(mapLegend, o.layout.mapLegend, origin);
+  const pressMapLegend = (): void => {
+    const on = o.onMapLegend?.() === true;
+    mapLegend.style.color = on ? "var(--c-accent)" : "var(--c-text)";
+    mapLegend.style.borderColor = on ? "var(--c-accent)" : "var(--c-frame)";
+    mapLegend.setAttribute("aria-pressed", on ? "true" : "false");
+  };
+  mapLegend.setAttribute("aria-pressed", "false");
+  onTap(mapLegend, () => pressMapLegend());
+  el.appendChild(mapLegend);
+
   // ---- 戦闘の枠（layout.battleParty / battleMember）
   const battle = document.createElement("div");
   battle.className = "controls-battle";
@@ -389,6 +407,7 @@ export function createControls(o: {
     setShown(notes, mode === "battle" && battleTownOn);
     setShown(close, mode === "close" || mode === "map");
     setShown(mapGo, mode === "map");
+    setShown(mapLegend, mode === "map");
     setShown(battle, mode === "battle");
     setShown(autoStop, mode === "autoStop");
     // UI-11 / UI-13（M16）: 広い一覧が出ている間はパーティ欄を隠す（呼び出し側）。変わったときだけ知らせる
@@ -606,6 +625,7 @@ export function createControls(o: {
       else if (mode === "battle") at(battleItems);
       else if ((mode === "close" || mode === "map") && n === 0) closeNow();
       else if (mode === "map" && n === 1) pressMapGo();
+      else if (mode === "map" && n === 2) pressMapLegend();
       else if (mode === "autoStop" && n === 0) autoStopPress();
     },
   };

@@ -653,6 +653,51 @@ describe("controls", () => {
     expect(went).toBe(2);
   });
 
+  test("UI-24（M19）map モードは閉じるの右隣に「凡例」（mapLegend）。タップと select(2) で onMapLegend を呼び、開いている間は文字と枠を accent。音は鳴らさない。map 以外のモードでは出さない", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    let open = false;
+    let calls = 0;
+    const sounds: string[] = [];
+    const c = createControls({
+      region: g.controls,
+      layout: L,
+      strings: data.strings,
+      onAction: () => {},
+      hold: HOLD,
+      onClose: () => {},
+      onMapLegend: () => {
+        calls++;
+        open = !open;
+        return open;
+      },
+      onSound: (k) => sounds.push(k),
+    });
+    const legend = created.find((e) => e.className === "controls-map-legend")!;
+    expect(legend["textContent"]).toBe(data.strings["map.legend"]);
+    expect(legend.style).toMatchObject({ left: `${L.mapLegend.x - g.controls.x}px`, top: `${L.mapLegend.y - g.controls.y}px`, width: "52px", height: "32px" });
+    c.setMode("map");
+    expect(legend.style["display"]).toBe("");
+    legend.tap();
+    expect(calls).toBe(1);
+    expect(legend.style["color"]).toBe("var(--c-accent)");
+    expect(legend.style["borderColor"]).toBe("var(--c-accent)");
+    c.select(2);
+    expect(calls).toBe(2);
+    expect(legend.style["color"]).toBe("var(--c-text)");
+    expect(legend.style["borderColor"]).toBe("var(--c-frame)");
+    expect(sounds).toEqual([]);
+    for (const m of ["dpad", "list", "close", "battle", "autoStop", "none"] as const) {
+      c.setMode(m);
+      expect(legend.style["display"], m).toBe("none");
+    }
+    // close モードの select(2) は何もしない
+    c.setMode("close");
+    c.select(2);
+    expect(calls).toBe(2);
+  });
+
   test("UI-25（M16）dim の「移動」を押す（タップ・select(1)）と onMapGoDim を呼ぶ（onMapGo は呼ばない）。押せる間は onMapGoDim を呼ばない", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);

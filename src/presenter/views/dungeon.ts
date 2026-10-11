@@ -4,7 +4,8 @@
 // 街の語りは会話の箱（UI-47。views/talk.ts）で、箱は閉じている間は見えない（setMode では出し入れしない。街を出るときは app が flush する）。
 // - ビュー: 線画の SVG（240×150）。スワイプはステージ全体で受ける（input/tap.ts。UI-30）。受ける間は画面に class swipe-on を付け、
 //   style.css で touch-action: none にする（ボタンの上で始めたスワイプがブラウザのパンにならないように。UI-37）。
-// - 地図（UI-24）と全滅の内訳（UI-56）と履歴（UI-46）: ビューとメッセージの領域（既定 y16..235）を覆う overlay。パーティ欄は見えたまま。
+// - 全滅の内訳（UI-56）と履歴（UI-46）: ビューとメッセージの領域（既定 y16..235）を覆う overlay。パーティ欄は見えたまま。
+//   地図（UI-24）は M19 からパーティ欄まで（既定 y16..299）を覆い、開いている間は広い一覧と同じくパーティ欄を隠す（applyPanels の listWide）。
 // - キャンプと酒場のパネル（UI-53。views/camp.ts）: ビュー領域だけを覆う。メッセージ窓とパーティ欄は見えたまま。
 //   キャラクター画面（UI-59。M10）と図鑑（IT-66。酒場だけ）は layout.character（ビューの上端から操作領域の上端まで）に広げるので、DOM では帯の後に置く。
 //   キャラクター画面の間（setCharacterOpen）は、パーティ欄とメッセージ窓を隠し（パーティ欄はキャンプより上の層なので、隠さないと覆う）、
@@ -269,6 +270,8 @@ export function createDungeonScreen(o: {
 
   /** UI-11 / UI-13（M16）: 迷宮・戦闘の広い一覧が出ているか（controls の onWideChange。出ている間はパーティ欄を隠す） */
   let listWide = false;
+  /** UI-24 / UI-13（M19）: 地図が出ているか（出ている間は広い一覧と同じくパーティ欄を隠す） */
+  let mapOpen = false;
   const controls = createControls({
     region: r.controls,
     layout: { ...lay, townList: { heading: tl.heading, area: tl.list.area, rows: tl.list.rows, grid: tl.grid, notes: tl.notes } },
@@ -278,6 +281,8 @@ export function createDungeonScreen(o: {
     onClose: o.onClose,
     onMapGo: () => o.onMapGo?.(),
     onMapGoDim: () => o.onMapGoDim?.(),
+    // UI-24（M19）: 凡例の開閉は地図の部品の表示だけ（app を通さない）
+    onMapLegend: () => map.toggleLegend(),
     onSound: (k) => o.onSound?.(k),
     // UI-11 / UI-13（M16）: 広い一覧が出ている間はパーティ欄を隠す
     onWideChange: (on) => {
@@ -286,7 +291,7 @@ export function createDungeonScreen(o: {
     },
   });
 
-  // 地図はビューの上端から、メッセージの下端まで（既定 240×220）
+  // 地図はビューの上端から、パーティ欄の下端まで（M19 から。既定 240×284）
   const map = createMapView(lay.map, (p) => o.onMapCell?.(p), o.data.config.ui.mapSnapPx, o.strings);
   map.el.style.display = "none";
 
@@ -348,7 +353,7 @@ export function createDungeonScreen(o: {
       wipeOpen || endingOpen,
       { message: message.el, panel: panel.el, setDiceBottom: (b) => dice.setBottom(b), setTalkRect: (k) => talk.setRect(k) },
       { town: tl.diceBottom, compact: tl.diceBottomCompact },
-      listWide,
+      listWide || mapOpen,
     );
 
   return {
@@ -401,6 +406,9 @@ export function createDungeonScreen(o: {
     },
     showMap(on: boolean): void {
       map.el.style.display = on ? "" : "none";
+      // UI-24 / UI-13（M19）: 地図の間はパーティ欄を隠す
+      mapOpen = on;
+      syncPanels();
     },
     showCamp(on: boolean): void {
       camp.el.style.display = on ? "" : "none";

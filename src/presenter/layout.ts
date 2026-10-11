@@ -98,6 +98,9 @@ const MAP_CLOSE_REL: Rect = { x: 60, y: 34, w: 120, h: 32 };
 /** 地図の「移動」ボタン（UI-25）。閉じるの真下に同じ幅で置く（下端 97）。操作領域からの相対 */
 const MAP_GO_REL: Rect = { x: 60, y: 66, w: 120, h: 32 };
 
+/** UI-24（M19）: 地図の「凡例」（開閉）。閉じるの右隣に置く（x184..235・y34..65）。操作領域からの相対 */
+const MAP_LEGEND_REL: Rect = { x: 184, y: 34, w: 52, h: 32 };
+
 /**
  * 戦闘のパーティの選択（UI-54）。2 列 × 2 段の 114×40（戦う・前回と同じ / 逃げる・オート）。
  * 操作領域からの相対（コードの定数で、config には置かない）
@@ -133,7 +136,7 @@ const AUTO_STOP_REL: Rect = { ...BATTLE_PARTY_REL[0]! };
 
 /** 操作領域の中身が収まる最小の高さ（相対矩形の下端の最大）。既定の layout では 98 */
 export const CONTROLS_MIN_HEIGHT = Math.max(
-  ...[...Object.values(DPAD_REL), ...MENU_SLOTS_REL, ...LIST_ROWS_REL, ...LIST_NARROW_REL, LIST_BACK_REL, MAP_CLOSE_REL, MAP_GO_REL, ...BATTLE_PARTY_REL, ...BATTLE_MEMBER_REL, ...CAMP_GRID_REL, AUTO_STOP_REL].map(
+  ...[...Object.values(DPAD_REL), ...MENU_SLOTS_REL, ...LIST_ROWS_REL, ...LIST_NARROW_REL, LIST_BACK_REL, MAP_CLOSE_REL, MAP_GO_REL, MAP_LEGEND_REL, ...BATTLE_PARTY_REL, ...BATTLE_MEMBER_REL, ...CAMP_GRID_REL, AUTO_STOP_REL].map(
     (r) => r.y + r.h,
   ),
 );
@@ -159,8 +162,10 @@ const LIST_WIDE_TOP = 2;
 export const PARTY_ROW_H = 10;
 const PARTY_ROW_TOP = 2;
 
-/** 地図の overlay（UI-24）の題の高さ。残りが地図本体 */
+/** 地図の overlay（UI-24）と履歴（UI-46）の題の高さ */
 const MAP_TITLE_H = 12;
+/** UI-24 / UI-78（M19）: 地図の題の下の注記の行（未踏の口の数と map.tapHint）の高さ。残りが地図本体 */
+const MAP_NOTE_H = 10;
 
 const shift = (r: Rect, o: Rect): Rect => ({ x: o.x + r.x, y: o.y + r.y, w: r.w, h: r.h });
 
@@ -191,6 +196,8 @@ export type DungeonLayout = {
   mapClose: Rect;
   /** UI-25 地図の「移動」（mapClose の真下） */
   mapGo: Rect;
+  /** UI-24（M19）: 地図の「凡例」（mapClose の右隣。押すたびに凡例を開閉する） */
+  mapLegend: Rect;
   /** 戦闘のパーティの選択の 4 枠（上段 0..1、下段 2..3） */
   battleParty: Rect[];
   /** 戦闘のメンバーの 5 枠（上段 0..3、下段の右端 4） */
@@ -203,8 +210,11 @@ export type DungeonLayout = {
   message: { text: Rect; lines: number; more: Rect };
   /** パーティ欄の行 0..partySize-1 */
   partyRows: Rect[];
-  /** overlay はビューとメッセージを合わせた範囲。title は題の行、area は地図本体（mapLayout に渡す寸法） */
-  map: { overlay: Rect; title: Rect; area: Rect };
+  /**
+   * UI-24 / UI-13（M19）: 地図の overlay はビュー・メッセージ・パーティ欄を合わせた範囲（既定 y16..299 の 240×284。開いている間はパーティ欄を隠す）。
+   * title は題の行（y16..27）、note はその下の注記の行（未踏の口の数と map.tapHint。y28..37）、area は地図本体（mapLayout に渡す寸法。y38..299 の 240×262）
+   */
+  map: { overlay: Rect; title: Rect; note: Rect; area: Rect };
   /** UI-53 キャンプと酒場のパネル（= ビュー領域。メッセージ窓とパーティ欄は見えたまま） */
   camp: Rect;
   /**
@@ -212,9 +222,9 @@ export type DungeonLayout = {
    * 開いている間はパーティ欄とメッセージ窓を隠す（dungeon.ts の setCharacterOpen）
    */
   character: Rect;
-  /** UI-56 の全滅の内訳の overlay。地図と同じくビューとメッセージを合わせた範囲 */
+  /** UI-56 の全滅の内訳の overlay。ビューとメッセージを合わせた範囲（M18 までの地図と同じ。M19 の地図はパーティ欄まで） */
   wipe: Rect;
-  /** UI-46 の履歴の画面。地図と同じ範囲で、title は題の行、list は縦スクロールの一覧 */
+  /** UI-46 の履歴の画面。全滅の内訳と同じ範囲で、title は題の行、list は縦スクロールの一覧 */
   history: { overlay: Rect; title: Rect; list: Rect };
 };
 
@@ -252,6 +262,8 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
 
   const v = g.view;
   const overlay: Rect = { x: v.x, y: v.y, w: v.w, h: v.h + m.h };
+  // UI-24 / UI-13（M19）: 地図はパーティ欄の下端（操作領域の上端）まで
+  const mapOverlay: Rect = { x: v.x, y: v.y, w: v.w, h: c.y - v.y };
   // UI-11 / UI-13（M16）: 広い一覧はパーティ欄の上端 + 2 から操作領域の下端まで（x と幅は list の先頭の行と同じ）
   const wideTop = p.y + LIST_WIDE_TOP;
   const wideCount = Math.max(1, Math.floor((c.y + c.h - wideTop) / LIST_WIDE_ROW_H));
@@ -270,6 +282,7 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
     },
     mapClose: shift(MAP_CLOSE_REL, c),
     mapGo: shift(MAP_GO_REL, c),
+    mapLegend: shift(MAP_LEGEND_REL, c),
     battleParty: BATTLE_PARTY_REL.map((r) => shift(r, c)),
     battleMember: BATTLE_MEMBER_REL.map((r) => shift(r, c)),
     autoStop: shift(AUTO_STOP_REL, c),
@@ -277,9 +290,10 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
     message: { text: mText, lines: Math.max(0, Math.floor(mText.h / MESSAGE_LINE_H)), more },
     partyRows,
     map: {
-      overlay,
-      title: { x: overlay.x, y: overlay.y, w: overlay.w, h: MAP_TITLE_H },
-      area: { x: overlay.x, y: overlay.y + MAP_TITLE_H, w: overlay.w, h: overlay.h - MAP_TITLE_H },
+      overlay: mapOverlay,
+      title: { x: mapOverlay.x, y: mapOverlay.y, w: mapOverlay.w, h: MAP_TITLE_H },
+      note: { x: mapOverlay.x, y: mapOverlay.y + MAP_TITLE_H, w: mapOverlay.w, h: MAP_NOTE_H },
+      area: { x: mapOverlay.x, y: mapOverlay.y + MAP_TITLE_H + MAP_NOTE_H, w: mapOverlay.w, h: mapOverlay.h - MAP_TITLE_H - MAP_NOTE_H },
     },
     camp: { ...v },
     character: { x: v.x, y: v.y, w: v.w, h: c.y - v.y },
@@ -483,6 +497,7 @@ export function layoutWarnings(g: Regions, l: DungeonLayout): string[] {
   if (!inside(l.listWide.area, wideRegion)) out.push(`ui.layout: listWide does not fit in the party and controls regions`);
   check("mapClose", l.mapClose, "controls");
   check("mapGo", l.mapGo, "controls");
+  check("mapLegend", l.mapLegend, "controls");
   l.battleParty.forEach((r, i) => check(`battleParty[${i}]`, r, "controls"));
   l.battleMember.forEach((r, i) => check(`battleMember[${i}]`, r, "controls"));
   check("autoStop", l.autoStop, "controls");

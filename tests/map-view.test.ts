@@ -12,6 +12,8 @@ import {
   MAP_PICK_BLINK_MS,
   mapLayout,
   mapLegendPaths,
+  mapFramePath,
+  mapNoteBothFit,
   mapNotes,
   mapPaths,
   mapPickPath,
@@ -23,8 +25,12 @@ import type { Edge, Facing, MapCell, MapView } from "../src/core/types";
 import { dungeonLayout, regions } from "../src/presenter/layout";
 import { data, newGame } from "./helpers/core";
 
-/** 既定の config.ui.layout での地図本体の寸法（240×208） */
+/** 既定の config.ui.layout での地図本体の寸法（M19 から 240×262。M18 までは 240×208） */
 const MAP_AREA = dungeonLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size).map.area;
+/** M18 までの 20×20 の配置（cell 8・ox 39・oy 23）。記号の形と吸着の規則を cell 8 の数で見るテストに使う（mapPaths・mapSnapCell は lay をそのまま使う） */
+const LAY8 = { cell: 8, ox: 39, oy: 23 } as const;
+/** cell 6 の配置（M18 までの 30×30）。8 基準の相対座標の丸めを見る */
+const LAY6 = { cell: 6, ox: 29, oy: 13 } as const;
 
 function cellOf(x: number, y: number, p: Partial<MapCell> = {}): MapCell {
   return { x, y, kind: "plain", n: "wall", e: "wall", s: "wall", w: "wall", exits: [], ...p };
@@ -57,12 +63,14 @@ function points(d: string): Array<[number, number]> {
 }
 
 describe("UI-24 地図", () => {
-  test("UI-24 mapLayout(20,20) = {cell 8, ox 39, oy 23} で、240×208 に収まる。mapLayout(30,30) = {6, 29, 13}", () => {
-    expect(MAP_AREA).toMatchObject({ w: 240, h: 208 });
-    // 20×20: cell = min(8, floor(239/20)=11, floor(207/20)=10) = 8。幅 20*8+1 = 161。ox = floor(79/2) = 39、oy = floor(47/2) = 23
-    expect(mapLayout(20, 20, MAP_AREA)).toEqual({ cell: 8, ox: 39, oy: 23 });
-    // 30×30: cell = min(8, 7, 6) = 6。幅 181。ox = floor(59/2) = 29、oy = floor(27/2) = 13
-    expect(mapLayout(30, 30, MAP_AREA)).toEqual({ cell: 6, ox: 29, oy: 13 });
+  test("UI-24（M19）mapLayout(20,20, 地図本体 240×262) = {cell 11, ox 9, oy 20}（盤 221×221）。mapLayout(30,30) = {7, 14, 25}。どの寸法でも領域に収まり cell ≤ 11", () => {
+    expect(MAP_AREA).toMatchObject({ w: 240, h: 262 });
+    // 20×20: cell = min(11, floor(239/20)=11, floor(261/20)=13) = 11。幅 20*11+1 = 221。ox = floor(19/2) = 9、oy = floor(41/2) = 20
+    expect(mapLayout(20, 20, MAP_AREA)).toEqual({ cell: 11, ox: 9, oy: 20 });
+    // 30×30: cell = min(11, 7, 8) = 7。幅 211。ox = floor(29/2) = 14、oy = floor(51/2) = 25
+    expect(mapLayout(30, 30, MAP_AREA)).toEqual({ cell: 7, ox: 14, oy: 25 });
+    // M18 までの地図本体 240×208 では 20×20 は cell 10（M18 の上限 8 を 11 に上げたので）
+    expect(mapLayout(20, 20, { w: 240, h: 208 }).cell).toBe(10);
     for (const [w, h] of [
       [5, 5],
       [20, 20],
@@ -76,62 +84,76 @@ describe("UI-24 地図", () => {
       // 右端と下端の線の画素番号が領域の内側
       expect(l.ox + w * l.cell).toBeLessThanOrEqual(MAP_AREA.w - 1);
       expect(l.oy + h * l.cell).toBeLessThanOrEqual(MAP_AREA.h - 1);
-      expect(l.cell).toBeLessThanOrEqual(8);
+      expect(l.cell).toBeLessThanOrEqual(11);
     }
   });
 
-  test("UI-24/UI-25/UI-72/UI-78（M16・M18）mapNotes: 20×20 は題の 2 行目が y0、3 行目（未踏の口）が y12..21（盤 y23 の上）、凡例が盤の下端の線 183 の 2px 下から 2 行 × 4 列（列幅 58。x 4・62・120・178、y 186・196）。順は MAP_LEGEND_KEYS", () => {
+  test("UI-24（M19）mapFramePath は盤の外周の枠線（外周の壁の線と同じ位置）。20×20 は (9,20) から 220 四方", () => {
+    const lay = mapLayout(20, 20, MAP_AREA);
+    expect(mapFramePath(20, 20, lay)).toBe("M9 20h220v220h-220Z");
+    expect(mapFramePath(30, 20, LAY6)).toBe("M29 13h180v120h-180Z");
+    // 外周の壁（(0,0) の北と西、(19,19) の南と東）は枠線の上に乗る
+    const segs = segments(mapPaths(view([cellOf(0, 0), cellOf(19, 19)]), lay).walls);
+    expect(segs).toContainEqual({ x1: 9, y1: 20, x2: 20, y2: 20 });
+    expect(segs).toContainEqual({ x1: 9, y1: 20, x2: 9, y2: 31 });
+    expect(segs).toContainEqual({ x1: 218, y1: 240, x2: 229, y2: 240 });
+    expect(segs).toContainEqual({ x1: 229, y1: 229, x2: 229, y2: 240 });
+  });
+
+  test("UI-24（M19）mapNotes: 凡例は盤の下端に重ねる。20×20 は盤の下端の線 240 の 2px 上を下端に 2 行 × 4 列（列幅 58。x 4・62・120・178、y 218・228）、地は x2..237・y216..239。順は MAP_LEGEND_KEYS", () => {
     expect(MAP_LEGEND_KEYS).toEqual(["self", "up", "down", "chest", "trap", "wall", "exit"]);
     expect(LEGEND_COL_W).toBe(58);
     const n = mapNotes(20, 20, MAP_AREA);
-    expect(n.hintY).toBe(0);
-    expect(n.unexploredY).toBe(12);
     expect(n.legend).toEqual([
-      { key: "self", x: 4, y: 186 },
-      { key: "up", x: 62, y: 186 },
-      { key: "down", x: 120, y: 186 },
-      { key: "chest", x: 178, y: 186 },
-      { key: "trap", x: 4, y: 196 },
-      { key: "wall", x: 62, y: 196 },
-      { key: "exit", x: 120, y: 196 },
+      { key: "self", x: 4, y: 218 },
+      { key: "up", x: 62, y: 218 },
+      { key: "down", x: 120, y: 218 },
+      { key: "chest", x: 178, y: 218 },
+      { key: "trap", x: 4, y: 228 },
+      { key: "wall", x: 62, y: 228 },
+      { key: "exit", x: 120, y: 228 },
     ]);
-    // 4 列 × 58 = 232 が 240 に収まる（左右 4px ずつ）
-    expect(178 + LEGEND_COL_W).toBeLessThanOrEqual(MAP_AREA.w - 4);
+    expect(n.legendBox).toEqual({ x: 2, y: 216, w: 236, h: 24 });
   });
 
-  test("UI-24/UI-72（M16）mapNotes は盤の大きさから計算し、20×20 以外でも盤と重ならず領域からはみ出さない。余白に入らなければ出さない（30×30 は凡例なし、題の 2 行目はあり）", () => {
-    // 30×30: cell 6、盤 y13..194。凡例は 196 から 2 行で 216 > 208 なので出さない。2 行目は y0..9 で盤の上端 13 より 2 以上上。
-    // 3 行目（UI-78）は y12..21 が盤と重なるので出さない
-    expect(mapNotes(30, 30, MAP_AREA)).toEqual({ hintY: 0, unexploredY: null, legend: null });
-    // 5×5: 盤 y83..123（下端の線 123）の 2px 下の 126 から
-    expect(mapNotes(5, 5, MAP_AREA).legend?.[0]).toEqual({ key: "self", x: 4, y: 126 });
+  test("UI-24（M19）mapNotes は盤の大きさから計算し、どの寸法でも凡例と地は地図本体の内側で、盤の下端の線より上。入らなければ（盤が低すぎる）出さない", () => {
     for (let w = 1; w <= 60; w++) {
-      for (const h of [1, 5, 10, 19, 20, 21, 22, 23, 24, 25, 26, 30, 40, 60]) {
+      for (const h of [1, 2, 3, 5, 10, 19, 20, 21, 22, 23, 24, 25, 26, 30, 40, 60]) {
         const l = mapLayout(w, h, MAP_AREA);
         const n = mapNotes(w, h, MAP_AREA);
-        const boardTop = l.oy;
         const boardBottom = l.oy + h * l.cell; // 下端の線の画素番号
-        if (n.hintY !== null) expect(n.hintY + 10).toBeLessThan(boardTop);
-        if (n.unexploredY !== null) {
-          expect(n.unexploredY + 10).toBeLessThan(boardTop);
-          expect(n.unexploredY).toBeGreaterThanOrEqual(12);
-        }
-        if (n.legend !== null) {
-          for (const it of n.legend) {
-            expect(it.y).toBeGreaterThan(boardBottom);
-            expect(it.y + 10).toBeLessThanOrEqual(MAP_AREA.h);
-            expect(it.x).toBeGreaterThanOrEqual(0);
-            expect(it.x + LEGEND_COL_W).toBeLessThanOrEqual(MAP_AREA.w);
-          }
+        expect(n.legend === null).toBe(n.legendBox === null);
+        if (n.legend === null || n.legendBox === null) continue;
+        const b = n.legendBox;
+        expect(b.x).toBeGreaterThanOrEqual(0);
+        expect(b.y).toBeGreaterThanOrEqual(0);
+        expect(b.x + b.w).toBeLessThanOrEqual(MAP_AREA.w);
+        expect(b.y + b.h).toBeLessThanOrEqual(boardBottom);
+        for (const it of n.legend) {
+          expect(it.y).toBeGreaterThanOrEqual(b.y);
+          expect(it.y + 10).toBeLessThanOrEqual(b.y + b.h);
+          expect(it.x).toBeGreaterThanOrEqual(b.x);
+          expect(it.x + LEGEND_COL_W).toBeLessThanOrEqual(b.x + b.w);
         }
       }
     }
-    // 20×20（今の 3 ダンジョン）は両方出る。21×21 から凡例が入らない（cell 8 のまま盤が 169 px）
+    // 地（24px）が地図本体に入らない（盤の下端の線が y22 未満）なら出さない
+    expect(mapNotes(1, 1, { w: 240, h: 20 })).toEqual({ legend: null, legendBox: null });
+    expect(mapNotes(4, 2, { w: 232, h: 262 })).toEqual({ legend: null, legendBox: null });
     expect(mapNotes(20, 20, MAP_AREA).legend).not.toBeNull();
-    expect(mapNotes(21, 21, MAP_AREA).legend).toBeNull();
-    // 盤が領域いっぱい（上の余白 12 未満）なら 2 行目も出さない
-    expect(mapLayout(23, 23, MAP_AREA).oy).toBeLessThan(12);
-    expect(mapNotes(23, 23, MAP_AREA).hintY).toBeNull();
+  });
+
+  test("UI-24/UI-25/UI-78（M19）mapNoteBothFit: 注記の行（幅 240、左右 4）に tapHint と「未踏の口 {n}」が間 8 で入るか。今の文は n が 3 けたまで入る", () => {
+    const hint = data.strings["map.tapHint"]!;
+    const un = (n: number): string => data.strings["map.unexplored"]!.replace("{n}", String(n));
+    expect(mapNoteBothFit(hint, un(0), MAP_AREA.w)).toBe(true);
+    expect(mapNoteBothFit(hint, un(999), MAP_AREA.w)).toBe(true);
+    // 境界: 単位 × 4 + 8 ≤ 232
+    expect(mapNoteBothFit("あ".repeat(28), "", 240)).toBe(true);
+    expect(mapNoteBothFit("あ".repeat(28), "1", 240)).toBe(false);
+    expect(mapNoteBothFit("あ".repeat(28), "1", 244)).toBe(true);
+    expect(mapNoteBothFit("あ".repeat(20), "1".repeat(16), 240)).toBe(true);
+    expect(mapNoteBothFit("あ".repeat(20), "1".repeat(17), 240)).toBe(false);
   });
 
   test("UI-24（M16）凡例の記号は盤と同じ path（cell 8）を記号の箱 (x, y+1) に描く。wall は箱の中ほどの横線", () => {
@@ -159,7 +181,7 @@ describe("UI-24 地図", () => {
   });
 
   test("UI-78（M18・M19）exits は口の辺の上に辺に沿った長さ 1 の点線 3 本（cell 8 で 1〜2・3.5〜4.5・6〜7）。door の辺は中央の 1 本だけ。4 方向、exits が空なら描かない。色は accent", () => {
-    const lay = mapLayout(20, 20, MAP_AREA);
+    const lay = LAY8;
     const px = lay.ox + 5 * 8;
     const py = lay.oy + 7 * 8;
     const p = mapPaths(view([cellOf(5, 7, { n: "open", e: "door", s: "open", w: "open", exits: ["n", "e", "s", "w"] })]), lay);
@@ -173,12 +195,14 @@ describe("UI-24 地図", () => {
     // cell 6 では端の 2 本を sc(1)=1 から（1〜2・4〜5）、中央は 2.5〜3.5
     expect(exitD(0, 10, "n", 6)).toBe("M1 10H2M2.5 10H3.5M4 10H5");
     expect(exitD(0, 10, "w", 6, true)).toBe("M0 12.5V13.5");
+    // cell 11（M19 の 20×20）では sc(1)=1 から（1〜2・9〜10）、中央は 5〜6
+    expect(exitD(0, 10, "n", 11)).toBe("M1 10H2M5 10H6M9 10H10");
   });
 
   test("UI-78（M19）点線の線分はすべて口のあるセルの矩形（辺を含む）の中にあり、ほかのセルの内側に入らない。辺の上に乗り、辺の両端（角）には届かない。door の 1 本は扉の線（両端 2px）と重ならない", () => {
     const lay = mapLayout(20, 20, MAP_AREA);
     const edges: Edge[] = ["open", "door"];
-    for (const cell of [8, 7, 6]) {
+    for (const cell of [11, 10, 8, 7, 6]) {
       const l = { ...lay, cell };
       for (const e of edges) {
         for (const d of ["n", "e", "s", "w"] as const) {
@@ -208,10 +232,10 @@ describe("UI-24 地図", () => {
   });
 
   test("UI-24 mapLayout は渡した領域の寸法に合わせる（ui §2 の区切りで地図本体の高さが変わる）", () => {
-    // 240×218（message 80）: 30×30 は cell = min(8, 7, floor(217/30)=7) = 7。幅 211。ox = floor(29/2) = 14、oy = floor(7/2) = 3
+    // 240×218: 30×30 は cell = min(11, 7, floor(217/30)=7) = 7。幅 211。ox = floor(29/2) = 14、oy = floor(7/2) = 3
     expect(mapLayout(30, 30, { w: 240, h: 218 })).toEqual({ cell: 7, ox: 14, oy: 3 });
-    // 240×202（message 64）: 20×20 は cell = min(8, 11, 10) = 8。高さ 161。oy = floor(41/2) = 20
-    expect(mapLayout(20, 20, { w: 240, h: 202 })).toEqual({ cell: 8, ox: 39, oy: 20 });
+    // 240×202: 20×20 は cell = min(11, 11, floor(201/20)=10) = 10。幅・高さ 201。ox = floor(39/2) = 19、oy = floor(1/2) = 0
+    expect(mapLayout(20, 20, { w: 240, h: 202 })).toEqual({ cell: 10, ox: 19, oy: 0 });
   });
 
   test("UI-24 wall の辺は全長、door の辺は中央 4px を空け、open は描かない", () => {
@@ -288,7 +312,7 @@ describe("UI-24 地図", () => {
   });
 
   test("UI-24 現在位置と階段の記号はセル原点からの相対で描く", () => {
-    const lay = mapLayout(20, 20, MAP_AREA);
+    const lay = LAY8;
     const v = view([cellOf(2, 3, { kind: "stairsDown" }), cellOf(3, 3, { kind: "stairsUp" })], { pos: { x: 2, y: 3 }, facing: "E" });
     const p = mapPaths(v, lay);
     const px = 39 + 2 * 8;
@@ -298,7 +322,7 @@ describe("UI-24 地図", () => {
   });
 
   test("UI-24 kind trap のセル（察知した罠）は traps に × の 2 本（cell 8 で M2 2L6 6M6 2L2 6 を原点に足したもの）を出し、stairs には出さない。plain・階段のセルは traps に出さない", () => {
-    const lay = mapLayout(20, 20, MAP_AREA);
+    const lay = LAY8;
     const v = view([cellOf(2, 3, { kind: "trap" }), cellOf(3, 3, { kind: "stairsDown" }), cellOf(4, 3)], { pos: { x: 4, y: 3 } });
     const p = mapPaths(v, lay);
     const px = 39 + 2 * 8;
@@ -308,14 +332,14 @@ describe("UI-24 地図", () => {
     expect(p.stairs).toBe(`M${px + 8 + 2} ${py + 3}L${px + 8 + 4} ${py + 5}L${px + 8 + 6} ${py + 3}`);
     expect(mapPaths(view([cellOf(2, 3), cellOf(3, 3, { kind: "stairsUp" })]), lay).traps).toBe("");
     // cell 6（30×30）でも 8 基準の相対座標を丸めて使う（sc(2)=2・sc(6)=5）
-    const lay6 = mapLayout(30, 30, MAP_AREA);
+    const lay6 = LAY6;
     const p6 = mapPaths(view([cellOf(0, 0, { kind: "trap" })], { width: 30, height: 30 }), lay6);
     const o = { x: lay6.ox, y: lay6.oy };
     expect(p6.traps).toBe(`M${o.x + 2} ${o.y + 2}L${o.x + 5} ${o.y + 5}M${o.x + 5} ${o.y + 2}L${o.x + 2} ${o.y + 5}`);
   });
 
   test("UI-72 kind chest のセル（開ける前の宝箱）は chests に □ の枠（cell 8 で M2 2H6V6H2Z を原点に足したもの）を出し、traps・stairs には出さない。ほかのセルは chests に出さない", () => {
-    const lay = mapLayout(20, 20, MAP_AREA);
+    const lay = LAY8;
     const v = view([cellOf(2, 3, { kind: "chest" }), cellOf(3, 3, { kind: "trap" }), cellOf(4, 3, { kind: "stairsUp" }), cellOf(5, 3)], { pos: { x: 5, y: 3 } });
     const p = mapPaths(v, lay);
     const px = 39 + 2 * 8;
@@ -325,14 +349,14 @@ describe("UI-24 地図", () => {
     expect(p.stairs).toBe(`M${px + 16 + 2} ${py + 5}L${px + 16 + 4} ${py + 3}L${px + 16 + 6} ${py + 5}`);
     expect(mapPaths(view([cellOf(2, 3), cellOf(3, 3, { kind: "trap" })]), lay).chests).toBe("");
     // cell 6（30×30）でも 8 基準の相対座標を丸めて使う（sc(2)=2・sc(6)=5）
-    const lay6 = mapLayout(30, 30, MAP_AREA);
+    const lay6 = LAY6;
     const p6 = mapPaths(view([cellOf(0, 0, { kind: "chest" })], { width: 30, height: 30 }), lay6);
     const o = { x: lay6.ox, y: lay6.oy };
     expect(p6.chests).toBe(`M${o.x + 2} ${o.y + 2}H${o.x + 5}V${o.y + 5}H${o.x + 2}Z`);
   });
 
   test("UI-24 cells に無いセルは描かない", () => {
-    const lay = mapLayout(20, 20, MAP_AREA);
+    const lay = LAY8;
     const v = view([cellOf(5, 7)], { pos: { x: 5, y: 7 } });
     const p = mapPaths(v, lay);
     const x0 = lay.ox + 5 * lay.cell;
@@ -418,10 +442,9 @@ describe("UI-24/DG-10 通り抜けた扉の地図（core の mapView との結�
 });
 
 describe("UI-25 地図のタップ（吸着）", () => {
-  // 20×20 は cell 8・ox 39・oy 23。セル (x, y) の中心は (43+8x, 27+8y)
+  // LAY8（M18 までの 20×20）は cell 8・ox 39・oy 23。セル (x, y) の中心は (43+8x, 27+8y)
   test("UI-25 mapSnapCell: 中心まで maxPx 以内の探索済みのセルのうち一番近いもの。同じ距離なら y、次に x の小さい方。境界ちょうどは含む", () => {
-    const lay = mapLayout(20, 20, MAP_AREA);
-    expect(lay).toEqual({ cell: 8, ox: 39, oy: 23 });
+    const lay = LAY8;
     const two = view([cellOf(0, 0), cellOf(1, 0)]);
     // (55,27): (1,0) の中心 (51,27) まで 4、(0,0) の中心 (43,27) まで 12 → (1,0)
     expect(mapSnapCell(two, lay, 55, 27, 12)).toEqual({ x: 1, y: 0 });
@@ -443,7 +466,7 @@ describe("UI-25 地図のタップ（吸着）", () => {
   });
 
   test("UI-25 mapSnapCell: 座標の換算の誤差（1e-9 程度）で片方がわずかに近くなっても、ほぼ同じ距離は同順位として y、次に x の小さい方を選ぶ。はっきり近い方（0.01px）は近い方", () => {
-    const lay = mapLayout(20, 20, MAP_AREA);
+    const lay = LAY8;
     // (11,5) と (11,6) の中心は (131,67)・(131,75)。実機の (131.5, 71) 相当に、(11,6) 寄りの誤差を足す
     const col = view([cellOf(11, 6), cellOf(11, 5)]);
     expect(mapSnapCell(col, lay, 131.5, 71 + 1e-9, 12)).toEqual({ x: 11, y: 5 });
@@ -456,7 +479,7 @@ describe("UI-25 地図のタップ（吸着）", () => {
   });
 
   test("UI-25 mapSnapCell は探索済みでないセルには吸着しない（すぐ上のセルが未探索なら、離れた探索済みのセルか null）", () => {
-    const lay = mapLayout(20, 20, MAP_AREA);
+    const lay = LAY8;
     // (5,5) の中心 (83,67) の真上をタップ。探索済みは (5,6)（中心 (83,75)、距離 8）だけ
     expect(mapSnapCell(view([cellOf(5, 6)]), lay, 83, 67, 12)).toEqual({ x: 5, y: 6 });
     // 探索済みが (5,7)（中心 (83,83)、距離 16）だけなら null
@@ -465,7 +488,7 @@ describe("UI-25 地図のタップ（吸着）", () => {
   });
 
   test("UI-25 mapSnapCell は mapPaths の床の正方形の内側の点を、すべての探索済みのセルの中からそのセルに吸着させる（30×30、cell 6）", () => {
-    const lay = mapLayout(30, 30, MAP_AREA);
+    const lay = LAY6;
     const cells: MapCell[] = [];
     for (let y = 10; y <= 12; y++) for (let x = 6; x <= 8; x++) cells.push(cellOf(x, y));
     const v = view(cells, { width: 30, height: 30 });
@@ -491,10 +514,14 @@ describe("UI-25 地図のタップ（吸着）", () => {
     expect(mapTapAction(null, b, [])).toBe("none");
   });
 
-  test("UI-25 mapPickPath は選んだセルの外形（壁の線と同じ位置の cell 角の正方形）", () => {
-    const lay = mapLayout(20, 20, MAP_AREA);
+  test("UI-25/UI-72（M19）mapPickPath は選んだセルの太さ 2px の枠（外側は壁の線と同じ位置の cell 角、内側はその 1px 内側）。宝箱の □（セルの内側の小さな 1px の四角）と形が違う", () => {
     // (5,12): px = 39+40 = 79、py = 23+96 = 119
-    expect(mapPickPath({ x: 5, y: 12 }, lay)).toBe("M79 119h8v8h-8Z");
+    expect(mapPickPath({ x: 5, y: 12 }, LAY8)).toBe("M79 119h8v8h-8ZM80 120h6v6h-6Z");
+    // M19 の 20×20（cell 11・ox 9・oy 20）: px = 9+55 = 64、py = 20+132 = 152
+    const lay = mapLayout(20, 20, MAP_AREA);
+    expect(mapPickPath({ x: 5, y: 12 }, lay)).toBe("M64 152h11v11h-11ZM65 153h9v9h-9Z");
+    // 宝箱の □ は (2,2)-(8,8)（cell 11 で sc(2)=3・sc(6)=8。3..8）で、選んだ枠（0..11 と 1..10）とは重ならない
+    expect(mapPaths(view([cellOf(5, 12, { kind: "chest" })]), lay).chests).toBe("M67 155H72V160H67Z");
   });
 });
 
@@ -590,17 +617,18 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     const m = createMapView(L.map, (p) => got.push(p), data.config.ui.mapSnapPx, data.strings);
     m.render(view([cellOf(0, 0), cellOf(1, 0)]), "t");
     const tap = tapSpecOf(svgs[0]!)!;
-    tap.onTap({ lx: 55, ly: 27 }); // (1,0) に距離 4
-    tap.onTap({ lx: 47, ly: 40 }); // (0,0) の中心 (43,27) から sqrt(16+169) ≈ 13.6、(1,0) からも同じ → 範囲外
-    tap.onTap({ lx: 63, ly: 27 }); // (1,0) の中心 (51,27) から 12 ちょうど
-    tap.onTap({ lx: 64, ly: 27 }); // 13 → 範囲外
+    // M19: 20×20 は cell 11・ox 9・oy 20。(0,0) の中心 (14.5,25.5)、(1,0) の中心 (25.5,25.5)
+    tap.onTap({ lx: 29.5, ly: 25.5 }); // (1,0) に距離 4
+    tap.onTap({ lx: 20, ly: 36.5 }); // どちらの中心からも sqrt(5.5² + 11²) ≈ 12.3 → 範囲外
+    tap.onTap({ lx: 37.5, ly: 25.5 }); // (1,0) の中心から 12 ちょうど
+    tap.onTap({ lx: 38.5, ly: 25.5 }); // 13 → 範囲外
     expect(got).toEqual([
       { x: 1, y: 0 },
       { x: 1, y: 0 },
     ]);
   });
 
-  test("UI-24/UI-25/UI-72/UI-78（M16・M18）render は凡例の語（map.legend.*）を記号の右に、題の 2 行目（map.tapHint）を選んでいない間だけ出す。setPick で隠し、null で戻す。凡例が入らない盤では語も記号も出さない", () => {
+  test("UI-24/UI-25/UI-78（M19）render は注記の行（題の下 y12..21）に tapHint を左寄せ（選んでいない間だけ）・「未踏の口 {n}」を右寄せ（選んでいる間も）で出し、盤の外周に dim の枠線を描く。凡例は閉じて始まり、toggleLegend で盤の下端に重ねて開閉する", () => {
     const { divs, paths } = fakeDocument();
     const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, data.strings);
     const hint = divs.find((d) => d.className === "map-hint")!;
@@ -608,41 +636,88 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     expect(hint.textContent).toBe(data.strings["map.tapHint"]);
     expect(labels.map((d) => d.textContent)).toEqual(MAP_LEGEND_KEYS.map((k) => data.strings[`map.legend.${k}`]));
     const unexplored = divs.find((d) => d.className === "map-unexplored")!;
-    expect(unexplored.style["pointerEvents"]).toBe("none");
     // タップは地図本体に通す
+    expect(unexplored.style["pointerEvents"]).toBe("none");
     expect(hint.style["pointerEvents"]).toBe("none");
     expect(labels.every((d) => d.style["pointerEvents"] === "none")).toBe(true);
+    // 注記の行は題の下（overlay の y12）。左右 4 の余白で、tapHint は左寄せ・未踏の口は右寄せ
+    const noteTop = `${L.map.note.y - L.map.overlay.y}px`;
+    expect(noteTop).toBe("12px");
+    expect([hint.style["top"], hint.style["left"], hint.style["width"], hint.style["textAlign"]]).toEqual([noteTop, "4px", "232px", "left"]);
+    expect([unexplored.style["top"], unexplored.style["left"], unexplored.style["width"], unexplored.style["textAlign"]]).toEqual([noteTop, "4px", "232px", "right"]);
     m.render(view([cellOf(0, 0), cellOf(1, 0)]), "t");
+    expect(hint.style["display"]).toBe("");
+    // UI-78（M18）: 「未踏の口 {n}」（n は MapView.unexploredExits。0 も数字のまま）
+    expect(unexplored.style["display"]).toBe("");
+    expect(unexplored.textContent).toBe("未踏の口 0");
+    // 外周の枠線（dim。壁の線の前に描く）
+    const frame = paths.find((p) => p.attrs["class"] === "map-frame")!;
+    expect(frame.attrs["d"]).toBe(mapFramePath(20, 20, mapLayout(20, 20, L.map.area)));
+    expect(frame.attrs["stroke"]).toBe("var(--c-dim)");
+    expect(frame.attrs["fill"]).toBe("none");
+    // 凡例は閉じて始まる（語も記号も地も出さない）
     const ay = L.map.area.y - L.map.overlay.y;
     const n = mapNotes(20, 20, L.map.area);
-    expect(hint.style["display"]).toBe("");
-    expect(hint.style["top"]).toBe(`${ay + n.hintY!}px`);
-    // UI-78（M18）: 3 行目「未踏の口 {n}」（n は MapView.unexploredExits。0 も数字のまま）
-    expect(unexplored.style["display"]).toBe("");
-    expect(unexplored.style["top"]).toBe(`${ay + 12}px`);
-    expect(unexplored.textContent).toBe("未踏の口 0");
+    const box = paths.find((p) => p.attrs["class"] === "map-legend-box")!;
+    const legendChest = paths.filter((p) => p.attrs["stroke"] === "var(--c-accent)" && p.attrs["class"] === undefined);
+    expect(m.legendOpen()).toBe(false);
+    expect(labels.every((d) => d.style["display"] === "none")).toBe(true);
+    expect(box.attrs["d"]).toBe("");
+    // 開く: 盤の下端に重ねた 2 行と半透明の地
+    expect(m.toggleLegend()).toBe(true);
+    expect(m.legendOpen()).toBe(true);
     expect(labels.map((d) => [d.style["display"], d.style["left"], d.style["top"]])).toEqual(n.legend!.map((it) => ["", `${it.x + 10}px`, `${ay + it.y}px`]));
-    const legendChest = paths.filter((p) => p.attrs["d"] === mapLegendPaths(n.legend!).chests);
-    expect(legendChest).toHaveLength(1);
-    expect(legendChest[0]!.attrs["stroke"]).toBe("var(--c-accent)");
+    expect(box.attrs["d"]).toBe("M2 216h236v24h-236Z");
+    expect(box.attrs["fill"]).toBe("var(--c-bg)");
+    expect(Number(box.attrs["fill-opacity"])).toBeLessThan(1);
+    expect(paths.filter((p) => p.attrs["d"] === mapLegendPaths(n.legend!).chests)).toHaveLength(1);
+    // 選ぶと tapHint は隠れ、未踏の口は出たまま。解くと戻る
     m.setPick({ x: 1, y: 0 }, false);
     expect(hint.style["display"]).toBe("none");
-    // 3 行目は選んでいる間も出す
     expect(unexplored.style["display"]).toBe("");
     m.setPick(null, false);
     expect(hint.style["display"]).toBe("");
-    // 点線（map-exits）と数
+    // 点線（map-exits）と数。描き直しても凡例は開いたまま（表示だけの値）
     m.render(view([cellOf(0, 0, { e: "open", exits: [] }), cellOf(1, 0, { w: "open", s: "door", e: "open", exits: ["e", "s"] })]), "t");
     expect(unexplored.textContent).toBe("未踏の口 2");
     const exitsEl = paths.find((p) => p.attrs["class"] === "map-exits")!;
     expect(exitsEl.attrs["stroke"]).toBe("var(--c-accent)");
     expect(exitsEl.attrs["d"]).toBe(mapPaths(view([cellOf(1, 0, { w: "open", s: "door", e: "open", exits: ["e", "s"] })]), mapLayout(20, 20, L.map.area)).exits);
-    // 30×30: 凡例は出さない（記号の path も空）。2 行目は出る。3 行目は盤と重なるので出さない
-    m.render(view([cellOf(0, 0)], { width: 30, height: 30 }), "t");
+    expect(m.legendOpen()).toBe(true);
+    expect(labels.filter((d) => d.style["display"] === "")).toHaveLength(MAP_LEGEND_KEYS.length);
+    // 閉じる: 語・記号・地を消す
+    expect(m.toggleLegend()).toBe(false);
     expect(labels.every((d) => d.style["display"] === "none")).toBe(true);
-    expect(legendChest[0]!.attrs["d"]).toBe("");
+    expect(box.attrs["d"]).toBe("");
+    expect(legendChest.length).toBeGreaterThan(0);
+  });
+
+  test("UI-25（M19）注記の行に tapHint と未踏の口の数が入らないときは、選んでいない間は tapHint だけ（未踏の口を隠す）。選んでいる間は未踏の口を出す", () => {
+    const { divs } = fakeDocument();
+    const long = { ...data.strings, "map.tapHint": "あ".repeat(28) };
+    const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, long);
+    const hint = divs.find((d) => d.className === "map-hint")!;
+    const unexplored = divs.find((d) => d.className === "map-unexplored")!;
+    m.render(view([cellOf(0, 0), cellOf(1, 0)]), "t");
     expect(hint.style["display"]).toBe("");
     expect(unexplored.style["display"]).toBe("none");
+    m.setPick({ x: 1, y: 0 }, false);
+    expect(hint.style["display"]).toBe("none");
+    expect(unexplored.style["display"]).toBe("");
+  });
+
+  test("UI-25/UI-72（M19）選んだセルの枠は text 色の 2px（mapPickPath の 2 重の線）で、宝箱の □（accent）と色も形も違う。凡例の地と記号は選んだ枠より上の層", () => {
+    const { svgs, paths } = fakeDocument();
+    createMapView(L.map, () => {}, data.config.ui.mapSnapPx, data.strings);
+    const pick = pickOf(paths);
+    expect(pick.attrs["stroke"]).toBe("var(--c-text)");
+    expect(pick.attrs["fill"]).toBe("none");
+    const top = svgs[0]!.children;
+    const g = top.find((c) => c.children.includes(pick))!;
+    const box = paths.find((p) => p.attrs["class"] === "map-legend-box")!;
+    const legend = top.find((c) => c.attrs["class"] === "map-legend")!;
+    expect(top.indexOf(g)).toBeLessThan(top.indexOf(box));
+    expect(top.indexOf(box)).toBeLessThan(top.indexOf(legend));
   });
 
   test("UI-25 setPick: blink なら枠を点滅（iterations Infinity・周期 MAP_PICK_BLINK_MS）。切り替え・null・render で cancel。blink 偽では animate を呼ばず枠だけ", () => {
@@ -652,14 +727,14 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     const pick = pickOf(paths);
     expect(pick.attrs["d"]).toBe("");
     m.setPick({ x: 5, y: 12 }, true);
-    expect(pick.attrs["d"]).toBe("M79 119h8v8h-8Z");
+    expect(pick.attrs["d"]).toBe("M64 152h11v11h-11ZM65 153h9v9h-9Z");
     expect(pick.anims).toHaveLength(1);
     expect(pick.anims[0]!.options).toEqual({ duration: MAP_PICK_BLINK_MS, iterations: Infinity });
     // 切り替え: 前の点滅を止めて新しい点滅
     m.setPick({ x: 0, y: 0 }, true);
     expect(pick.anims[0]!.cancelled).toBe(true);
     expect(pick.anims).toHaveLength(2);
-    expect(pick.attrs["d"]).toBe("M39 23h8v8h-8Z");
+    expect(pick.attrs["d"]).toBe("M9 20h11v11h-11ZM10 21h9v9h-9Z");
     // null: 止めて消す
     m.setPick(null, true);
     expect(pick.anims[1]!.cancelled).toBe(true);
@@ -671,7 +746,7 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     expect(pick.attrs["d"]).toBe("");
     // 演出スキップ（blink 偽）: 枠だけで animate を呼ばない
     m.setPick({ x: 0, y: 0 }, false);
-    expect(pick.attrs["d"]).toBe("M39 23h8v8h-8Z");
+    expect(pick.attrs["d"]).toBe("M9 20h11v11h-11ZM10 21h9v9h-9Z");
     expect(pick.anims).toHaveLength(3);
   });
 });
@@ -704,7 +779,8 @@ describe("UI-72 宝箱の印と転移の後の地図（core の state から）"
     const s1 = run(s0, { type: "dungeon.move" });
     expect(s1.dive!.chest).not.toBeNull();
     const v1 = mapView(s1, data)!;
-    const lay1 = mapLayout(v1.width, v1.height, MAP_AREA);
+    // 記号の位置は cell 8 の数で見る（LAY8。sc(2) = 2）
+    const lay1 = LAY8;
     const at = s1.dive!.pos;
     expect(mapPaths(v1, lay1).chests).toContain(`M${lay1.ox + at.x * lay1.cell + 2} ${lay1.oy + at.y * lay1.cell + 2}H`);
     expect(slotsFor(visibleCells(s1, data), visibleKnownTraps(s1, data), visibleChests(s1, data)).has("cC0")).toBe(true);
@@ -712,7 +788,7 @@ describe("UI-72 宝箱の印と転移の後の地図（core の state から）"
     expect(s2.dive!.chest).toBeNull();
     const v2 = mapView(s2, data)!;
     expect(v2.cells.find((c) => c.x === at.x && c.y === at.y)!.kind).toBe("plain");
-    expect(mapPaths(v2, mapLayout(v2.width, v2.height, MAP_AREA)).chests).not.toContain(`M${lay1.ox + at.x * lay1.cell + 2} ${lay1.oy + at.y * lay1.cell + 2}H`);
+    expect(mapPaths(v2, lay1).chests).not.toContain(`M${lay1.ox + at.x * lay1.cell + 2} ${lay1.oy + at.y * lay1.cell + 2}H`);
     expect([...slotsFor(visibleCells(s2, data), visibleKnownTraps(s2, data), visibleChests(s2, data))].filter((id) => id === "cC0")).toEqual([]);
   });
 

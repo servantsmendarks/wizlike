@@ -714,6 +714,8 @@ describe("入力と Command", () => {
     const body = /const mapPickFirst = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(body).toMatch(/if \(overlay !== "map" \|\| walking !== null \|\| mapPick !== null\) return;\s*play\.map\.setTitle\(t\("map\.pickFirst"\)\);/);
     expect(app).toMatch(/a\.menu === 1\) \{\s*if \(mapPick !== null\) goMapPick\(\);\s*else mapPickFirst\(\);\s*\}/);
+    // M19（UI-24 / UI-33）: 地図の間の 3 は「凡例」（controls の select(2)）
+    expect(app).toMatch(/\} else if \(typeof a === "object" && a\.menu === 2\) play\.controls\.select\(2\);/);
     expect(data.strings["map.pickFirst"]).toBe("行き先のマスをタップ");
     expect(data.strings["map.tapHint"]).toBe("探索済みのマスをタップすると、そこまで歩く");
     expect(data.strings["dungeon.walking"]).toBe("移動中…（触れると止まる）");
@@ -829,8 +831,12 @@ describe("入力と Command", () => {
     //（以前の期待値は wipeOpen なし・setTalkCompact: (on) => talk.setCompact(on)）。内訳の出し入れ（showWipe）で出し直す
     expect(dungeon).toMatch(
       // M12（UI-73）: 戦績の画面の間（endingOpen）も内訳の下の 3 行の箱（以前の期待値は wipeOpen だけ）
-      /const syncPanels = \(\): void =>\s*applyPanels\(\s*mode,\s*characterOpen,\s*wipeOpen \|\| endingOpen,\s*\{ message: message\.el, panel: panel\.el, setDiceBottom: \(b\) => dice\.setBottom\(b\), setTalkRect: \(k\) => talk\.setRect\(k\) \},\s*\{ town: tl\.diceBottom, compact: tl\.diceBottomCompact \},\s*listWide,\s*\);/,
+      /const syncPanels = \(\): void =>\s*applyPanels\(\s*mode,\s*characterOpen,\s*wipeOpen \|\| endingOpen,\s*\{ message: message\.el, panel: panel\.el, setDiceBottom: \(b\) => dice\.setBottom\(b\), setTalkRect: \(k\) => talk\.setRect\(k\) \},\s*\{ town: tl\.diceBottom, compact: tl\.diceBottomCompact \},\s*listWide \|\| mapOpen,\s*\);/,
     );
+    // M19（UI-24 / UI-13）: 地図が出ている間もパーティ欄を隠す（広い一覧と同じ引数。以前の期待値は listWide だけ）
+    expect(dungeon).toMatch(/showMap\(on: boolean\): void \{\s*map\.el\.style\.display = on \? "" : "none";[\s\S]*?mapOpen = on;\s*syncPanels\(\);\s*\}/);
+    // M19（UI-24）: 「凡例」は地図の部品の開閉だけ（app を通さない）
+    expect(dungeon).toMatch(/onMapLegend: \(\) => map\.toggleLegend\(\),/);
     // M16（UI-11 / UI-13）: 広い一覧が出ている間（controls の onWideChange）はパーティ欄を隠す（以前の期待値は listWide の引数なし）
     expect(dungeon).toMatch(/onWideChange: \(on\) => \{\s*listWide = on;\s*syncPanels\(\);\s*\}/);
     expect(dungeon).toMatch(/showWipe\(on: boolean\): void \{[\s\S]*?wipeOpen = on;\s*syncPanels\(\);\s*\}/);

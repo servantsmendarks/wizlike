@@ -105,8 +105,8 @@ const SCREENS: Record<string, Record<string, Rect>> = {
   listWideChoice: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.listWide.rows.map((r, i) => [`listWide[${i}]`, r])) },
   // 選択肢（階段の確認）は迷宮の上で十字ボタンの代わりに list を出す（M16 からは listWideChoice の位置）
   choice: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
-  // UI-25 地図: 閉じると移動
-  map: { mapClose: L.mapClose, mapGo: L.mapGo },
+  // UI-25 地図: 閉じると移動。UI-24（M19）: 閉じるの右隣に凡例
+  map: { mapClose: L.mapClose, mapGo: L.mapGo, mapLegend: L.mapLegend },
   // UI-54 戦闘: パーティの選択の 4 枠、メンバーの 5 枠（対象などの一覧は list と同じ）、オート中は「オート解除」だけ
   battleParty: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.battleParty.map((r, i) => [`battleParty[${i}]`, r])) },
   battleMember: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.battleMember.map((r, i) => [`battleMember[${i}]`, r])) },
@@ -345,6 +345,10 @@ describe("layout", () => {
     // UI-25 地図の「移動」は閉じるの真下で同じ幅（下端 397 は操作領域の内側）
     expect(L.mapGo).toEqual({ x: 60, y: 366, w: 120, h: 32 });
     expect(inside(L.mapGo, regions(data.config.ui.layout, W).controls)).toBe(true);
+    // UI-24（M19）: 地図の「凡例」は閉じるの右隣（x184..235・y334..365）。操作領域の内側で、閉じる・移動と重ならない
+    expect(L.mapLegend).toEqual({ x: 184, y: 334, w: 52, h: 32 });
+    expect(inside(L.mapLegend, regions(data.config.ui.layout, W).controls)).toBe(true);
+    expect(overlaps(L.mapLegend, L.mapClose) || overlaps(L.mapLegend, L.mapGo)).toBe(false);
     // UI-11 一覧の外の戻るは戦闘のメンバーの戻る（battleMember[4]）・キャンプの [7] と同じ 56×40（x178..233・y354..393）。
     // 行は list と同じ 3 行で幅 168（x8..175。戻るとの間 2）
     expect(L.listBack).toEqual({ x: 178, y: 354, w: 56, h: 40 });
@@ -362,16 +366,17 @@ describe("layout", () => {
     expect(L.message).toEqual({ text: { x: 4, y: 168, w: 232, h: 66 }, lines: 6, more: { x: 228, y: 226, w: 8, h: 8 } });
     // パーティ欄（y236..299）: 行 i は y238+10i
     expect(L.partyRows).toEqual([0, 1, 2, 3, 4, 5].map((i) => ({ x: 0, y: 238 + 10 * i, w: 240, h: 10 })));
-    // 地図: ビューとメッセージを合わせた 240×220。題 12、本体 240×208
+    // UI-24 / UI-13（M19）地図: ビュー・メッセージ・パーティ欄を合わせた 240×284（y16..299）。題 12、注記の行 10、本体 240×262
     expect(L.map).toEqual({
-      overlay: { x: 0, y: 16, w: 240, h: 220 },
+      overlay: { x: 0, y: 16, w: 240, h: 284 },
       title: { x: 0, y: 16, w: 240, h: 12 },
-      area: { x: 0, y: 28, w: 240, h: 208 },
+      note: { x: 0, y: 28, w: 240, h: 10 },
+      area: { x: 0, y: 38, w: 240, h: 262 },
     });
-    // UI-53 キャンプのパネル: ビュー領域（240×150）だけ。UI-56 全滅の内訳: 地図と同じ 240×220
+    // UI-53 キャンプのパネル: ビュー領域（240×150）だけ。UI-56 全滅の内訳: ビューとメッセージの 240×220（M18 までの地図と同じ）
     expect(L.camp).toEqual({ x: 0, y: 16, w: 240, h: 150 });
     expect(L.wipe).toEqual({ x: 0, y: 16, w: 240, h: 220 });
-    // UI-46 履歴の画面: 地図と同じ 240×220（y16..235）。題 12、一覧 240×208
+    // UI-46 履歴の画面: 全滅の内訳と同じ 240×220（y16..235）。題 12、一覧 240×208
     expect(L.history).toEqual({
       overlay: { x: 0, y: 16, w: 240, h: 220 },
       title: { x: 0, y: 16, w: 240, h: 12 },
@@ -406,11 +411,12 @@ describe("layout", () => {
       expect(rel(d.listBack, g.controls), tag).toEqual(rel(L.listBack, base.controls));
       expect(rel(d.mapClose, g.controls), tag).toEqual(rel(L.mapClose, base.controls));
       expect(rel(d.mapGo, g.controls), tag).toEqual(rel(L.mapGo, base.controls));
+      expect(rel(d.mapLegend, g.controls), tag).toEqual(rel(L.mapLegend, base.controls));
       d.battleParty.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.battleParty[i]!, base.controls)));
       d.battleMember.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.battleMember[i]!, base.controls)));
       expect(rel(d.autoStop, g.controls), tag).toEqual(rel(L.autoStop, base.controls));
       const fits = l.controls >= CONTROLS_MIN_HEIGHT;
-      for (const r of [...Object.values(d.dpad), ...d.menu, ...d.list, d.mapClose, d.mapGo, ...d.battleParty, ...d.battleMember, d.autoStop])
+      for (const r of [...Object.values(d.dpad), ...d.menu, ...d.list, d.mapClose, d.mapGo, d.mapLegend, ...d.battleParty, ...d.battleMember, d.autoStop])
         if (fits) expect(inside(r, g.controls), tag).toBe(true);
       // メッセージ: 文字領域と三角は窓の内側、行数は (高さ - 4) / 10 の切り捨て
       expect(inside(d.message.text, g.message), tag).toBe(true);
@@ -423,12 +429,13 @@ describe("layout", () => {
         expect(inside(r, g.party), tag).toBe(true);
         expect(r.y - d.partyRows[0]!.y, tag).toBe(10 * i);
       });
-      // 地図: ビューの上端からメッセージの下端まで
-      expect(d.map.overlay, tag).toEqual({ x: 0, y: g.view.y, w: W, h: l.view + l.message });
-      expect(d.map.area.y + d.map.area.h, tag).toBe(g.message.y + g.message.h);
-      expect(inside(d.map.area, d.map.overlay) && inside(d.map.title, d.map.overlay), tag).toBe(true);
-      // 全滅の内訳（UI-56）は地図の overlay と同じ範囲、キャンプ（UI-53）はビュー領域
-      expect(d.wipe, tag).toEqual(d.map.overlay);
+      // 地図（M19）: ビューの上端からパーティ欄の下端（操作領域の上端）まで。題・注記の行・本体の順に隙間なく並ぶ
+      expect(d.map.overlay, tag).toEqual({ x: 0, y: g.view.y, w: W, h: l.view + l.message + l.party });
+      expect(d.map.area.y + d.map.area.h, tag).toBe(g.controls.y);
+      expect(inside(d.map.area, d.map.overlay) && inside(d.map.title, d.map.overlay) && inside(d.map.note, d.map.overlay), tag).toBe(true);
+      expect([d.map.note.y, d.map.area.y], tag).toEqual([d.map.title.y + d.map.title.h, d.map.note.y + d.map.note.h]);
+      // 全滅の内訳（UI-56）はビューとメッセージを合わせた範囲、キャンプ（UI-53）はビュー領域
+      expect(d.wipe, tag).toEqual({ x: 0, y: g.view.y, w: W, h: l.view + l.message });
       expect(d.camp, tag).toEqual(g.view);
       d.campGrid.forEach((r, i) => expect(rel(r, g.controls), tag).toEqual(rel(L.campGrid[i]!, base.controls)));
       // 収まらないのは操作領域が下限より低いときだけで、その分だけ warn の文が出る
