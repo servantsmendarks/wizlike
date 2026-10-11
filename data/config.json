@@ -32,7 +32,7 @@
   },
   "san": {
     "max": 100,
-    "floorDescend": 5, "unidentifiedGroup": 2, "allyDeath": 10, "trap": 3,
+    "floorDescend": 5, "unidentifiedGroup": 2, "allyDeath": 10, "trap": 3, "search": 1,
     "uneasyRatio": 0.5, "confusedRatio": 0.25,
     "uneasyChance": 10, "confusedChance": 50, "randomDefendChance": 50,
     "restoreOnTown": true

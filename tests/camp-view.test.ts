@@ -77,11 +77,11 @@ const labels = (xs: readonly (CampEntry | null)[]) => xs.map((x) => (x === null 
 const character = (memberId: string): CampPage => ({ kind: "character", memberId });
 
 describe("UI-53 キャンプの top（M10）", () => {
-  test("UI-53 top は 8 枠: 状態・並び順 / 空き 5 つ・戻る（帰還の糸を使えなければ 3 つ目も空き）。見出しは camp.prompt.top。状態はメンバー一覧へ", () => {
+  test("UI-53 top は 8 枠: 状態・並び順・空き・辺りを探る / 空き 3 つ・戻る（帰還の糸を使えなければ 3 つ目は空き。M18 で 4 つ目に辺りを探る）。見出しは camp.prompt.top。状態はメンバー一覧へ", () => {
     const m = input(inDungeon({ c5: { classId: "bishop", inventory: [] } }));
     const e = grid(campEntries("camp", { kind: "top" }, m, S));
     expect(e).toHaveLength(CAMP_GRID_SLOTS);
-    expect(labels(e)).toEqual(["状態", "並び順", null, null, null, null, null, "戻る"]);
+    expect(labels(e)).toEqual(["状態", "並び順", null, "辺りを探る", null, null, null, "戻る"]);
     expect(e[7]!.choice).toEqual({ kind: "cancel" });
     expect(campHeader({ kind: "top" }, m, S)).toBe("キャンプ　どうする？");
     expect(campStep("camp", { kind: "top" }, m, { kind: "cancel" })).toEqual({ kind: "close" });
@@ -772,7 +772,7 @@ describe("DG-30/UI-53（M16）top の「糸で帰る」", () => {
     const s = inDungeon();
     const m = input(s);
     const e = grid(campEntries("camp", { kind: "top" }, m, S));
-    expect(labels(e)).toEqual(["状態", "並び順", "糸で帰る", null, null, null, null, "戻る"]);
+    expect(labels(e)).toEqual(["状態", "並び順", "糸で帰る", "辺りを探る", null, null, null, "戻る"]);
     const confirm: CampPage = { kind: "use", stage: "confirmReturn", memberId: "c5", instanceId: "i15", from: "top" };
     expect(e[2]).toEqual({ label: "糸で帰る", disabled: false, choice: { kind: "open", page: confirm } });
     expect(campStep("camp", { kind: "top" }, m, e[2]!.choice)).toEqual({ kind: "page", page: confirm });
@@ -806,6 +806,29 @@ describe("DG-30/UI-53（M16）top の「糸で帰る」", () => {
   });
 });
 
+describe("DG-45/UI-53（M18）top の「辺りを探る」", () => {
+  test("DG-45/UI-53 迷宮のキャンプの top の 4 つ目の枠は「辺りを探る」（糸の有無で位置は動かない）。押すとキャンプを閉じて dungeon.search を送り（確認なし）、core が受け付ける", () => {
+    for (const s of [inDungeon(), inDungeon({ c5: { inventory: [] } })]) {
+      const m = input(s);
+      const e = grid(campEntries("camp", { kind: "top" }, m, S));
+      expect(e[3]).toEqual({ label: "辺りを探る", disabled: false, choice: { kind: "search" } });
+      const r = campStep("camp", { kind: "top" }, m, e[3]!.choice);
+      expect(r).toEqual({ kind: "closeSend", command: { type: "dungeon.search" } });
+      if (r.kind !== "closeSend") throw new Error("not closeSend");
+      const after = accepted(s, r.command);
+      expect(after.adventureTurns).toBe(s.adventureTurns + 1);
+    }
+    // ラベルは 56×40 の枠に収まる（美咲の全角 8px × 5 字 = 40px）
+    expect([...S["camp.search"]!].length * 8).toBeLessThanOrEqual(56 - 4);
+  });
+
+  test("DG-45/UI-53 迷宮の外（campSummary が null）の top には出さない", () => {
+    const m = input(inTown());
+    expect(m.summary).toBeNull();
+    expect(grid(campEntries("camp", { kind: "top" }, m, S))[3]).toBeNull();
+  });
+});
+
 describe("UI-53 campRepair", () => {
   test("UI-53/UI-59 人がいなくなった段はキャンプならメンバー一覧、酒場なら先頭の者のキャラクター画面。行動できなくなっても装備の段はそのまま（U6）", () => {
     const m = input(inDungeon());
@@ -831,7 +854,8 @@ describe("UI-33 campKeyIndex", () => {
     const top = campEntries("camp", { kind: "top" }, m, S);
     expect(campKeyIndex({ menu: 0 }, top)).toBe(0);
     expect(campKeyIndex({ menu: 2 }, top)).toBe(2); // M16: 糸で帰る（c5 の帰還の糸）
-    expect(campKeyIndex({ menu: 3 }, top)).toBeNull();
+    expect(campKeyIndex({ menu: 3 }, top)).toBe(3); // M18: 辺りを探る（キー 4）
+    expect(campKeyIndex({ menu: 4 }, top)).toBeNull();
     expect(campKeyIndex({ menu: 7 }, top)).toBe(7);
     expect(campKeyIndex({ menu: 8 }, top)).toBeNull();
     expect(campKeyIndex("confirm", top)).toBe(0);
@@ -864,6 +888,7 @@ describe("UI-33 campKeyIndex", () => {
       "camp.returnConfirm.prompt",
       "camp.returnConfirm.yes",
       "camp.useReturn",
+      "camp.search",
       "camp.summary.return",
       "camp.summary.returnNoOwner",
       "character.prev",

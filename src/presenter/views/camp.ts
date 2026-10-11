@@ -2,8 +2,9 @@
 // ページ（CampPage）を段にした純粋な状態機械と、パネルの DOM。
 // - 候補・押せるか・対象の要否は core の campMenu と fieldItemMenu の値だけで決める（UI-35）。送る Command は
 //   dungeon.cast / dungeon.useItem / party.equip / party.unequip / party.give / party.drop / party.reorder / party.identify。
-// - 迷宮のキャンプの top は [状態][並び順][糸で帰る][空き] / [空き][空き][空き][戻る] の 4×2 の枠（layout.campGrid。M10 で 道具・装備・呪文・鑑定 を
-//   キャラクター画面へ移した。糸で帰るは M16 で、core の campSummary.returnItem があるときだけ。無ければ空き枠）。状態 → メンバー一覧（名前の 6 枠と [7] 戻る）→ 人 → キャラクター画面。
+// - 迷宮のキャンプの top は [状態][並び順][糸で帰る][辺りを探る] / [空き][空き][空き][戻る] の 4×2 の枠（layout.campGrid。M10 で 道具・装備・呪文・鑑定 を
+//   キャラクター画面へ移した。糸で帰るは M16 で、core の campSummary.returnItem があるときだけ。無ければ空き枠。辺りを探るは M18 で、
+//   押すとキャンプを閉じて dungeon.search を送る（CampStep の closeSend））。状態 → メンバー一覧（名前の 6 枠と [7] 戻る）→ 人 → キャラクター画面。
 // - キャラクター画面（UI-59。M10）は 1 人の全部（能力値・装備・所持品・習得呪文）を 1 画面に出し、操作は 4×2 の枠
 //   [装備][使う][渡す][捨てる] / [呪文][鑑定（鑑定できる職業の者だけ）][次の人][戻る]。その下の段（装備・使う・渡す・捨てる・呪文・鑑定）の
 //   やめるは同じ人のキャラクター画面へ。前後の人は ← → キー・左右スワイプ・ヘッダーの ◀ ▶ でも移る（M16。campCanCycle / campSwipeDir）。キャラクター画面の戻るは、キャンプはメンバー一覧、酒場は閉じる（酒場の一覧・帯を押した街のページへ）。
@@ -77,6 +78,8 @@ export type CampChoice =
   /** UI-59（M7）: 装備の段の品の行。押すと品の詳細の段へ */
   | { kind: "detail"; instanceId: string }
   | { kind: "identifyItem"; instanceId: string }
+  /** DG-45 / UI-53（M18）: top の「辺りを探る」（閉じて dungeon.search を送る。確認なし） */
+  | { kind: "search" }
   /** 確認の段の決定（帰還の糸の「戻る」・捨てるの「捨てる」・呪文の説明の段の「唱える」（UI-68）） */
   | { kind: "confirm" }
   /** 押しても何もしない行（「装備できる物がない」など） */
@@ -91,7 +94,12 @@ export type CampEntry = { label: string; disabled: boolean; choice: CampChoice; 
 /** grid は layout.campGrid の 8 枠（null は空き枠）、list は操作領域の一覧 */
 export type CampEntries = { layout: "grid"; slots: (CampEntry | null)[] } | { layout: "list"; rows: CampEntry[] };
 /** 段を移る・閉じる・送る（送った後は after の段へ） */
-export type CampStep = { kind: "page"; page: CampPage } | { kind: "close" } | { kind: "send"; command: Command; after: CampPage };
+export type CampStep =
+  | { kind: "page"; page: CampPage }
+  | { kind: "close" }
+  | { kind: "send"; command: Command; after: CampPage }
+  /** DG-45 / UI-53（M18）: キャンプを閉じてから送る（top の「辺りを探る」） */
+  | { kind: "closeSend"; command: Command };
 /**
  * ビューに出すもの。text は場所の見出し（キャンプ / 酒場。迷宮のキャンプの top だけ、見出しの下に campSummary の行を lines で出す）、
  * character は UI-59 のキャラクター画面（focusSlot はその枠を accent 色、spellPage / inventoryPage は頁の段の頁。省略は先頭から「ほか n」）、
@@ -266,9 +274,11 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
       const ret = m.summary?.returnItem ?? null;
       const useReturn =
         ret === null ? null : open("camp.useReturn", { kind: "use", stage: "confirmReturn", memberId: ret.memberId, instanceId: ret.instanceId, from: "top" });
+      // DG-45 / UI-53（M18。設計 1-3）: 迷宮のキャンプ（campSummary が非 null）では 4 つ目の枠に「辺りを探る」（糸の有無で位置は動かない）
+      const search: CampEntry | null = m.summary === null ? null : { label: s(strings, "camp.search"), disabled: false, choice: { kind: "search" } };
       return {
         layout: "grid",
-        slots: [open("camp.status", { kind: "members" }), open("camp.order", { kind: "order", picked: null }), useReturn, null, null, null, null, back],
+        slots: [open("camp.status", { kind: "members" }), open("camp.order", { kind: "order", picked: null }), useReturn, search, null, null, null, back],
       };
     }
     case "members":
@@ -453,6 +463,7 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
   const menu = m.menu;
   switch (page.kind) {
     case "top":
+      if (choice.kind === "search") return { kind: "closeSend", command: { type: "dungeon.search" } };
       return choice.kind === "open" ? go(choice.page) : stay;
     case "members":
       return choice.kind === "member" ? go({ kind: "character", memberId: choice.memberId }) : stay;

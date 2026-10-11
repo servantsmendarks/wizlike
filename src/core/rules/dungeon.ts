@@ -385,6 +385,35 @@ function lostExitsHint(ctx: RuleContext, dive: Dive, f: Floor): void {
 }
 
 /**
+ * DG-45（M18）: dungeon.search の受付の判定（engine が複製の前に呼ぶ。保留中・宝箱の門は engine の共通の門が先に見る）。
+ * 迷宮の外は not in dungeon、戦闘中・イベントなど screen が dungeon でなければ wrong screen、行動可能な者がいなければ no one can act
+ */
+export function checkSearch(state: GameState): string | null {
+  if (state.dive === null) return "not in dungeon";
+  if (state.screen !== "dungeon" || state.battle !== null) return "wrong screen";
+  return state.party.some(canAct) ? null : "no one can act";
+}
+
+/**
+ * DG-45 / CB-01b（M18）: 辺りを探る。位置・向き・視野・罠・階段は変えず、前進の 1 歩と同じ時間の経過（adventureTurns +1、毒の tick、walkRegen）
+ * → 生存者全員の SAN −config.san.search（タグなし。CH-51）→ 行動可能な者がいれば部屋の率で遭遇の d100（今のセルが通路でも部屋の率。
+ * 戦闘の origin の inRoom は今のセルのままなので、勝利後の宝箱の率 CB-52 は今のセルで決まる）。
+ * 遭遇しなければ dungeon.searched。floorSteps（DG-46）は増やさない。乱数は遭遇の d100（と遭遇したときの編成）だけ
+ */
+export function searchAround(ctx: RuleContext): void {
+  const { state, data } = ctx;
+  const dive = requireDive(state);
+  const here = cellAt(floorOf(dive, data), dive.pos.x, dive.pos.y);
+  state.adventureTurns += 1; // TW-12: 前進の 1 歩と同じく 1 進める
+  tickPoisonStep(ctx);
+  walkRegen(ctx);
+  for (const ch of aliveMembers(state)) loseSan(ctx, ch, data.config.san.search, []);
+  if (!state.party.some(canAct)) return; // CH-44: 全員が動けなくなれば遭遇しない（全滅処理は engine の後処理）
+  rollEncounter(ctx, here.roomId !== null, true); // 率は部屋、戦闘の origin の inRoom は今のセルのまま
+  if (state.battle === null) ctx.events.push({ kind: "message", key: "dungeon.searched" });
+}
+
+/**
  * IT-40 walkRegen: 前進が成立した歩（毒の後）で、life alive の者の装備中の walkRegen の品ごとに、adventureTurns が value の倍数なら
  * HP +1（実効の hpMax で止める）。増えたら hpChanged だけを出す（毒と同じく message なし）。乱数なし
  */
@@ -444,11 +473,14 @@ function continueStep(ctx: RuleContext, f: Floor, cell: Cell): void {
   rollEncounter(ctx, cell.roomId !== null);
 }
 
-/** CB-01。前進が成立した 1 歩につき d100 をちょうど 1 回消費し、当たれば CB-03 の編成で戦闘を始める */
-function rollEncounter(ctx: RuleContext, inRoom: boolean): void {
+/**
+ * CB-01。前進が成立した 1 歩につき d100 をちょうど 1 回消費し、当たれば CB-03 の編成で戦闘を始める。
+ * inRoom は今のセルが部屋か（戦闘の origin。勝利後の宝箱の率 CB-52 に効く）。roomRate を真にすると、通路でも部屋の遭遇率で振る（CB-01b。辺りを探る）
+ */
+function rollEncounter(ctx: RuleContext, inRoom: boolean, roomRate = inRoom): void {
   const dive = requireDive(ctx.state);
   const def = dungeonOf(ctx.data, dive.dungeonId);
-  const rate = inRoom ? def.encounterRate.room : def.encounterRate.corridor;
+  const rate = roomRate ? def.encounterRate.room : def.encounterRate.corridor;
   if (chance(ctx.state.rng, Math.round(rate * 100))) startRandomEncounter(ctx, inRoom);
 }
 

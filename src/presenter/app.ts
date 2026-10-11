@@ -1155,7 +1155,10 @@ export function createApp(o: {
     syncControls();
   };
 
-  /** UI-53: キャンプの段で 1 つ選ぶ。送るときは閉じずに after の段にしてから送る（使えるかは core が決める。UI-35） */
+  /**
+   * UI-53: キャンプの段で 1 つ選ぶ。送るときは閉じずに after の段にしてから送る（使えるかは core が決める。UI-35）。
+   * closeSend（M18 の辺りを探る）は閉じてから送る
+   */
   const chooseCamp = (choice: CampChoice): void => {
     if (overlay !== "camp") return;
     const m = campInput();
@@ -1171,6 +1174,14 @@ export function createApp(o: {
     }
     if (r.kind === "close") {
       closeCamp(true);
+      return;
+    }
+    if (r.kind === "closeSend") {
+      // DG-45（M18）: 辺りを探るは閉じてから送る（遭遇すれば通常の再生、rejected なら閉じた画面のまま描き直す）
+      closeCamp(true);
+      void run(r.command).then((res) => {
+        if (res !== null && res.rejected && !isBusy()) syncControls();
+      });
       return;
     }
     campPage = r.after;

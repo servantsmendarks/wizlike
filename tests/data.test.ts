@@ -451,6 +451,13 @@ describe("data: config.json", () => {
     expect(issuesOf((r) => delete (r.config.dungeon as Partial<typeof r.config.dungeon>).lostHintSteps).length).toBeGreaterThan(0);
     expect(issuesOf((r) => (r.config.dungeon.lostHintSteps = 1))).toEqual([]);
   });
+  test("data: DG-45 san.search は 0 以上の整数（M18。既定 1【仮】）", () => {
+    expect(config.san.search).toBe(1);
+    expect(issuesOf((r) => (r.config.san.search = -1)).length).toBeGreaterThan(0);
+    expect(issuesOf((r) => (r.config.san.search = 0.5)).length).toBeGreaterThan(0);
+    expect(issuesOf((r) => delete (r.config.san as Partial<typeof r.config.san>).search).length).toBeGreaterThan(0);
+    expect(issuesOf((r) => (r.config.san.search = 0))).toEqual([]);
+  });
   test("data: DG-20 dungeon.trap.pitDice はダイス記法（既定 1d4【仮】）。旧 pitDamage は未知のキー", () => {
     expect(config.dungeon.trap.pitDice).toBe("1d4");
     expectIssue((r) => (r.config.dungeon.trap.pitDice = "d6"), "config.json", 'dungeon.trap.pitDice: invalid dice expression "d6"');

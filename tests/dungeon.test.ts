@@ -2504,3 +2504,124 @@ describe("DG-46 100 歩の一言（dive.floorSteps と hint.lostExits。M18）",
     expect(ctx.state.dive!.floorSteps).toBe(0);
   });
 });
+
+describe("DG-45 / CB-01b 辺りを探る（dungeon.search。M18）", () => {
+  const SEARCH: Command = { type: "dungeon.search" };
+  /** floor 1 で roomId が null（通路）か非 null（部屋）の普通のセルに立たせた state */
+  function standOn(room: boolean, seed = 1): GameState {
+    const s0 = enterD01(seed);
+    const f = floorOf(s0.dive!, data);
+    for (let y = 0; y < f.height; y++) {
+      for (let x = 0; x < f.width; x++) {
+        const c = cellAt(f, x, y);
+        if ((c.kind === "corridor" || c.kind === "room") && (c.roomId !== null) === room) return placeAt(s0, { x, y }, "N");
+      }
+    }
+    throw new Error("standOn: not found");
+  }
+  const alive = (s: GameState) => s.party.filter((c) => c.life === "alive");
+
+  test("DG-45 config.san.search は 1【仮】。文言 camp.search「辺りを探る」と dungeon.searched がある", () => {
+    expect(data.config.san.search).toBe(1);
+    expect(data.strings["camp.search"]).toBe("辺りを探る");
+    expect(data.strings["dungeon.searched"]).toBe("辺りを探ったが、何も現れなかった。");
+    expect([...data.strings["dungeon.searched"]!].length).toBeLessThanOrEqual(28);
+  });
+
+  test("DG-45 遭遇しなければ [sanChanged ×生存者, message dungeon.searched]。adventureTurns +1、生存者の SAN −1、位置・向き・explored・floorSteps は変わらない。乱数は遭遇の d100 の 1 回だけ（鏡の rng）", () => {
+    for (const room of [false, true]) {
+      const s = standOn(room);
+      s.dive!.floorSteps = 12;
+      s.party[2]!.life = "dead";
+      const mirror = cloneRng(s.rng);
+      randInt(mirror, 1, 100);
+      const r = run(s, SEARCH, DATA0);
+      const ids = alive(s).map((c) => c.id);
+      expect(r.events).toEqual([
+        ...ids.map((id) => ({ kind: "sanChanged", id, delta: -1, san: s.party.find((c) => c.id === id)!.san - 1 })),
+        { kind: "message", key: "dungeon.searched" },
+      ]);
+      expect(r.state.rng).toEqual(mirror);
+      expect(r.state.adventureTurns).toBe(s.adventureTurns + 1);
+      expect(r.state.party[2]!.san).toBe(s.party[2]!.san); // 死者は減らない
+      expect(r.state.dive!.pos).toEqual(s.dive!.pos);
+      expect(r.state.dive!.facing).toBe(s.dive!.facing);
+      expect(r.state.dive!.explored).toEqual(s.dive!.explored);
+      expect(r.state.dive!.floorSteps).toBe(12); // DG-46 の歩数は増やさない
+      expect(r.state.screen).toBe("dungeon");
+      expectStateInvariants(r.state);
+    }
+  });
+
+  test("CB-01b 通路でも部屋の率で判定する（room 1・corridor 0 なら遭遇、room 0・corridor 1 なら遭遇しない）。遭遇したら [sanChanged…, screen battle, beat, encounter, …] で編成は鏡の rng どおり。origin の inRoom は今のセル", () => {
+    for (const room of [false, true]) {
+      const s = standOn(room);
+      const none = run(s, SEARCH, dataEnc(0, 1));
+      expect(none.state.battle).toBeNull();
+      expect(kinds(none.events)).not.toContain("encounter");
+      const d1 = dataEnc(1, 0);
+      const r = run(s, SEARCH, d1);
+      const n = alive(s).length;
+      expect(kinds(r.events).slice(0, n)).toEqual(Array.from({ length: n }, () => "sanChanged"));
+      expect(kinds(r.events).slice(n, n + 3)).toEqual(["screen", "beat", "encounter"]);
+      expect(kinds(r.events)).not.toContain("message:dungeon.searched");
+      expect(r.state.screen).toBe("battle");
+      expect(r.state.battle!.origin).toEqual({ kind: "random", inRoom: room });
+      const mirror = cloneRng(s.rng);
+      randInt(mirror, 1, 100);
+      mirrorRandomEncounter(mirror, d1, "d01", 1);
+      expect(r.state.rng).toEqual(mirror);
+      // 戦闘中は受け付けない
+      expectRejected(r.state, SEARCH, "wrong screen", d1);
+    }
+  });
+
+  test("DG-45 毒の 1 歩と同じ経過（hpChanged が SAN より前）。罠・階段のセルの上でも罠は発動せず確認も立たない", () => {
+    const s = standOn(false);
+    const p = s.party[1]!;
+    p.status = ["poison"];
+    p.hp = 10;
+    const r = run(s, SEARCH, DATA0);
+    expect(r.events[0]).toEqual({ kind: "hpChanged", id: p.id, delta: -data.config.combat.poisonDamagePerTick, hp: 10 - data.config.combat.poisonDamagePerTick });
+    expect(r.events[1]!.kind).toBe("sanChanged");
+    // 入場の直後は 1 階の上り階段の上（DG-14 の確認は出さない）
+    const up = enterD01(1);
+    const ru = run(up, SEARCH, DATA0);
+    expect(ru.state.pendingChoice).toBeNull();
+    expect(kinds(ru.events).at(-1)).toBe("message:dungeon.searched");
+    // 罠のセルの上
+    for (let seed = 1; seed <= 50; seed++) {
+      const s0 = enterD01(seed);
+      const f = floorOf(s0.dive!, data);
+      const t = f.cells.findIndex((c) => c.kind === "trap" && c.trapId !== null);
+      if (t < 0) continue;
+      const st = placeAt(s0, { x: t % f.width, y: Math.floor(t / f.width) }, "N");
+      const rt = run(st, SEARCH, DATA0);
+      expect(kinds(rt.events).some((k) => k.startsWith("message:dungeon.trap"))).toBe(false);
+      expect(rt.state.pendingChoice).toBeNull();
+      expect(rt.state.dive!.clearedCells).toEqual(st.dive!.clearedCells);
+      return;
+    }
+    throw new Error("no trap cell");
+  });
+
+  test("DG-45 受け付けない: 迷宮の外は not in dungeon、保留中は choice pending、行動可能な者がいなければ no one can act", () => {
+    expectRejected(newGame(1), SEARCH, "not in dungeon");
+    const s = standOn(false);
+    const ctx = makeContext(cloneState(s), data);
+    offerExit(ctx);
+    expectRejected(ctx.state, SEARCH, "choice pending");
+    const sleep = cloneState(s);
+    for (const c of sleep.party) c.status = ["sleep"];
+    expectRejected(sleep, SEARCH, "no one can act");
+  });
+
+  test("DG-45/CH-51 SAN の減少で全員が SAN 0 になれば遭遇の d100 は振らず、全滅処理へ（dungeon.searched も出さない）", () => {
+    const s = standOn(true);
+    for (const c of s.party) c.san = 1;
+    const r = run(s, SEARCH, dataEnc(1, 1));
+    expect(kinds(r.events)).not.toContain("encounter");
+    expect(kinds(r.events)).not.toContain("message:dungeon.searched");
+    expect(kinds(r.events)).toContain("wipe");
+  });
+});

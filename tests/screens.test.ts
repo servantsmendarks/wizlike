@@ -844,6 +844,16 @@ describe("入力と Command", () => {
     expect(sync.indexOf("const chest = chestView(state, data);")).toBeLessThan(sync.indexOf("stairsButtonKey("));
   });
 
+  test("DG-45 / UI-53（M18）キャンプの closeSend（辺りを探る）は閉じてから送る（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const choose = /const chooseCamp = \(choice: CampChoice\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    const i = choose.indexOf('if (r.kind === "closeSend") {');
+    expect(i).toBeGreaterThan(0);
+    const body = choose.slice(i);
+    expect(body.indexOf("closeCamp(true);")).toBeGreaterThan(0);
+    expect(body.indexOf("closeCamp(true);")).toBeLessThan(body.indexOf("void run(r.command)"));
+  });
+
   test("UI-66（2026-10-07）戻る・やめるは位置に関わらず cancel の配線: 戦闘・キャンプ・街の項目は種類から back の印を付ける（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const battle = /const syncBattleControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";

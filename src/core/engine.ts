@@ -35,7 +35,7 @@ import { checkBank, doBank } from "./rules/bank";
 import { startNewGame, validatePartySetup } from "./rules/creation";
 import { checkChest, disarmChest, inspectChest, leaveChest, openChest } from "./rules/chest";
 import { addTurns, DEBUG_LEVEL_MAX, debugChest, giveCursed, hpOne, sanDown, sanOver, setLevels, warp } from "./rules/debug";
-import { checkEnter, checkUseStairs, chooseOption, enterDungeon, moveForward, turn, useStairs } from "./rules/dungeon";
+import { checkEnter, checkSearch, checkUseStairs, chooseOption, enterDungeon, moveForward, searchAround, turn, useStairs } from "./rules/dungeon";
 import { checkUseItem, useItemInField } from "./rules/items";
 import { checkShop, doShop } from "./rules/shop";
 import { checkStorage, doDepositAll, doStorage } from "./rules/storage";
@@ -172,6 +172,14 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       if (r !== null) return reject(state, "dungeon.useStairs", r);
       const ctx = makeContext(cloneState(state), data);
       useStairs(ctx);
+      return finish(ctx);
+    }
+    case "dungeon.search": {
+      // DG-45（M18）: 辺りを探る（保留中・宝箱の間は上の共通の門で rejected）
+      const r = checkSearch(state);
+      if (r !== null) return reject(state, "dungeon.search", r);
+      const ctx = makeContext(cloneState(state), data);
+      searchAround(ctx);
       return finish(ctx);
     }
     case "dungeon.useItem": {

@@ -536,6 +536,11 @@ export type Command =
    */
   | { type: "dungeon.useStairs" }
   /**
+   * DG-45（M18）: 辺りを探る。その場で 1 歩ぶんの時間を進め（毒と walkRegen）、生存者の SAN を config.san.search 減らし、
+   * 部屋の遭遇率で遭遇を判定する（CB-01b）。迷宮の戦闘外・保留なし・宝箱なし・行動可能な者がいるときだけ。乱数は遭遇の d100 だけ
+   */
+  | { type: "dungeon.search" }
+  /**
    * itemId は §5 の名前のまま。中身は ItemInstance.id（使う本人の inventory のもの。items.json の id ではない）。
    * targetId は effect.target === "ally" のときだけ必須、他では無視（dungeon.cast と同じ形。types.ts を正とする）
    */

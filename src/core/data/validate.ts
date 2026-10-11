@@ -350,6 +350,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       unidentifiedGroup: I(NON_NEG),
       allyDeath: I(NON_NEG),
       trap: I(NON_NEG),
+      search: I(NON_NEG), // DG-45（M18）【仮】
       uneasyRatio: N(RATIO),
       confusedRatio: N(RATIO),
       uneasyChance: I(PERCENT),
