@@ -13,7 +13,6 @@ import {
   nextCursor,
   setFocus,
   spellNote,
-  groupNo,
   step,
   targetNumber,
   type Choice,
@@ -111,7 +110,6 @@ describe("UI-54 入力の段階", () => {
       ...["party", "member", "spell", "item", "enemy", "ally", "spellConfirm"].map((p) => `battle.prompt.${p}`),
       "spell.info.cast",
       "battle.targetGroup",
-      "battle.groupNo",
       "battle.targetAlly",
       "battle.spellRow",
       "battle.autoOn",
@@ -299,8 +297,8 @@ describe("UI-54 入力の段階", () => {
     expect(a).toEqual({ cursor: tgt("enemy", "c1", { kind: "attack" }), send: null });
     const rows = entries(m, a.cursor, S);
     expect(rows.map((e) => e.label)).toEqual([
-      t("battle.targetGroup", { no: "①", name: "コボルド", count: 3 }),
-      t("battle.targetGroup", { no: "②", name: "何かの獣", count: 1 }),
+      t("battle.targetGroup", { n: 1, name: "コボルド", count: 3 }),
+      t("battle.targetGroup", { n: 2, name: "何かの獣", count: 1 }),
       t("common.back"),
     ]);
     expect(rows.map((e) => e.choice)).toEqual([{ kind: "group", index: 1 }, { kind: "group", index: 2 }, { kind: "back" }]);
@@ -597,28 +595,19 @@ describe("UI-68 呪文の確認の段と説明（M10）", () => {
   });
 });
 
-describe("UI-54 グループの番号の字（M18。設計 2-5）", () => {
-  test("UI-54（M18）battle.groupNo は ①〜⑩ の 10 字。groupNo は n 番目の字（1 始まり）、範囲外・整数でない n は数字のまま", () => {
-    expect(S["battle.groupNo"]).toBe("①②③④⑤⑥⑦⑧⑨⑩");
-    expect([...S["battle.groupNo"]!].length).toBe(10);
-    expect([1, 2, 3, 4, 10].map((n) => groupNo(n, S))).toEqual(["①", "②", "③", "④", "⑩"]);
-    expect([11, 0, -1, 1.5].map((n) => groupNo(n, S))).toEqual(["11", "0", "-1", "1.5"]);
-    // strings に無ければ数字のまま
-    expect(groupNo(2, {})).toBe("2");
-    // 戦闘のグループの数の上限まで丸数字がある
-    expect(data.config.combat.maxEnemyGroups).toBeLessThanOrEqual(10);
-  });
-
-  test("UI-54（M18）対象の一覧の行は battle.targetGroup「{no} {name} {count}体」。番号は生存グループの順の丸数字で、21 字以内（名前が最長・体数が上限でも）", () => {
-    expect(S["battle.targetGroup"]).toBe("{no} {name} {count}体");
+describe("UI-54 対象の一覧の敵の行（M18。設計 5-12）", () => {
+  test("UI-54（M18）対象の一覧の行は battle.targetGroup「{n}. {name} {count}体」（2-5 の丸数字はやめた。battle.groupNo は無い）。番号は生存グループの順で、21 字以内（名前が最長・体数が上限・番号が上限でも）", () => {
+    expect(S["battle.targetGroup"]).toBe("{n}. {name} {count}体");
+    expect(Object.prototype.hasOwnProperty.call(S, "battle.groupNo")).toBe(false);
     const m = menu();
     const rows = entries(m, tgt("enemy", "c1", { kind: "attack" }), S);
-    expect(rows[0]!.label).toBe("① コボルド 3体");
-    expect(rows[1]!.label).toBe("② 何かの獣 1体");
+    expect(rows[0]!.label).toBe("1. コボルド 3体");
+    expect(rows[1]!.label).toBe("2. 何かの獣 1体");
     const names = data.monsters.flatMap((x) => [x.name, data.unknownKinds.find((k) => k.id === x.unknownKind)!.name]);
     for (const name of names) {
-      const line = formatMessage(S["battle.targetGroup"]!, { no: groupNo(data.config.combat.maxEnemyGroups, S), name, count: data.config.combat.maxPerGroup });
+      const line = formatMessage(S["battle.targetGroup"]!, { n: data.config.combat.maxEnemyGroups, name, count: data.config.combat.maxPerGroup });
       expect([...line].length, line).toBeLessThanOrEqual(21);
     }
   });
 });
+

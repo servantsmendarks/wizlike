@@ -81,18 +81,12 @@ export function targetNumber(groups: BattleMenu["groups"], index: number): numbe
 }
 
 /**
- * UI-54（M18。設計 2-5）: グループの番号の字。strings `battle.groupNo`（①〜⑩ を並べた文字列）の n 番目（1 始まり。コードポイント単位）。
- * 無ければ数字のまま（11 以上は起きないが、落とさない）。表示のための計算
+ * UI-54: 対象の一覧の敵の行（battle.targetGroup「{n}. {name} {count}体」。番号は targetNumber）。
+ * M18（設計 5-12）: 2-5 の丸数字（battle.groupNo）はやめて数字に戻した（絵の左上の番号の札と同じ数）
  */
-export function groupNo(n: number, strings: Strings): string {
-  const chars = [...(strings["battle.groupNo"] ?? "")];
-  return (Number.isInteger(n) && n >= 1 ? chars[n - 1] : undefined) ?? String(n);
-}
-
-/** UI-54: 対象の一覧の敵の行（battle.targetGroup「{no} {name} {count}体」。番号は targetNumber、字は groupNo） */
 function targetGroupLabel(menu: BattleMenu, g: BattleMenu["groups"][number], strings: Strings): string {
   const n = targetNumber(menu.groups, g.index) ?? g.index + 1;
-  return formatMessage(strings["battle.targetGroup"] ?? "battle.targetGroup", { n, no: groupNo(n, strings), name: g.name, count: g.count });
+  return formatMessage(strings["battle.targetGroup"] ?? "battle.targetGroup", { n, name: g.name, count: g.count });
 }
 
 function memberOf(menu: BattleMenu, id: string): BattleMenuMember | undefined {

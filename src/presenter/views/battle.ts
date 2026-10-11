@@ -1,9 +1,11 @@
 // UI-54 / UI-60: 戦闘のビューの層（敵グループの列）。ビュー（既定 240×150）の左上を原点にした論理 px で置く。
-// - 列は幅 56・間 4 で中央寄せ。絵の代わりの色付き矩形は 48×48（列内 x+4、y8..55）、1 グループだけなら 64×64（y2..65）。
+// - 列は幅 56 で中央寄せ。間は 3 グループまで 24、4 グループは 4（M18 設計 5-12。ラベルを 1 行にするため）。絵の代わりの色付き矩形は 48×48（列内 x+4、y8..55）、1 グループだけなら 64×64（y2..65）。
 // - 絵の下のラベルは注目の枠のすぐ下の 2 行（y58..77、1 グループなら y68..87。3 行目以降は line-clamp で「…」）。
-//   幅は 2 グループ以上なら注目の枠と同じ 52（隣と 8px 空ける）、1 グループなら列の箱の 56。
-//   戦闘で出る判定の箱（UI-40。上端 y88 以下にはならない）と重ならない位置（battle.groupLabel「{no}{name} ×{count}」。no は ①〜⑩（M18）。
-//   n は対象の一覧と同じ番号 = battle-input の targetNumber、name は core が選んだ表示名をそのまま）。列の区切り線や列の枠は描かない。
+//   幅は 3 グループまでは列の中央に 72（最長の名前 7 字 + 「 ×9」が 1 行。隣と 8px 空ける）、4 グループは注目の枠と同じ 52（2 行）。
+//   戦闘で出る判定の箱（UI-40。上端 y88 以下にはならない）と重ならない位置（battle.groupLabel「{name} ×{count}」。
+//   name は core が選んだ表示名をそのまま）。列の区切り線や列の枠は描かない。
+// - M18（設計 5-12）: 絵の左上の内側に番号の札（SVG。9×9 の黒地に 1px の枠と 3×5 の数字。groupBadge）。番号は対象の一覧と同じ
+//   battle-input の targetNumber。battle.groupLabel が {n} を含む（札をやめて文に番号を出す）ときは札を出さない（groupBadgeShown）。
 // - 体数 0 の列は詰めずに visibility hidden（グループの添字は戦闘中に詰めない。CB-42）。
 // - 対象の選択中は focus で、注目しているグループの絵の周り（focusFrame）に枠を出し、点滅させる（Element.animate の
 //   iterations: Infinity。常駐のループではなく、解除・切り替え・描き直しで cancel する）。演出スキップでは点滅せず枠だけ。
@@ -18,7 +20,7 @@
 import type { SpriteInfo } from "../../build/asset-types";
 import type { GameData, Strings } from "../../core/data/index";
 import type { EnemyGroupView } from "../../core/types";
-import { groupNo, targetNumber } from "../battle-input";
+import { targetNumber } from "../battle-input";
 import type { Rect } from "../layout";
 import { ENEMY_FILLS, PALETTE, type PaletteName } from "../palette";
 import { chooseSprite, isBossMonster } from "../sprites";
@@ -27,6 +29,12 @@ import { onTap } from "../input/tap";
 
 const COL_W = 56;
 const COL_GAP = 4;
+/** UI-54（M18 設計 5-12）: 3 グループまでの列の間（ラベル 72 を隣と 8px 空けて並べる: 56 + 24 = 72 + 8） */
+const COL_GAP_WIDE = 24;
+/** UI-54（M18）: 列の間を広げるグループの数の上限（4 グループは 240 に 72 × 4 が入らない） */
+const WIDE_MAX_GROUPS = 3;
+/** UI-54（M18）: 3 グループまでのラベルの幅（最長の名前 7 字 56 + 「 ×9」16 = 72。美咲: 半角 4px、他 8px） */
+const LABEL_W_WIDE = 72;
 const SPRITE = { x: 4, y: 8, size: 48 } as const;
 const SPRITE_SOLO = { y: 2, size: 64 } as const;
 /** UI-54 / UI-60（M8）: 1 グループのボスの絵の枠（96 の絵を縮小せずに描く） */
@@ -40,12 +48,13 @@ const FRAME_PAD = 2;
 /** 注目の枠の点滅の 1 周期（ms）。表示層のコード定数（GHOST_CLICK_MS と同じ扱い。config には置かない） */
 export const FOCUS_BLINK_MS = 400;
 
-/** 列 i の矩形（幅 56、高さはビュー全体）。中央寄せで、左右の余白の差は 1 以下 */
+/** 列 i の矩形（幅 56、高さはビュー全体）。中央寄せで、左右の余白の差は 1 以下。間は 3 グループまで 24、4 グループは 4（M18） */
 export function groupBoxes(n: number, viewW: number, viewH = 150): Rect[] {
   if (n <= 0) return [];
-  const total = n * COL_W + (n - 1) * COL_GAP;
+  const gap = n <= WIDE_MAX_GROUPS ? COL_GAP_WIDE : COL_GAP;
+  const total = n * COL_W + (n - 1) * gap;
   const left = Math.floor((viewW - total) / 2);
-  return Array.from({ length: n }, (_, i): Rect => ({ x: left + i * (COL_W + COL_GAP), y: 0, w: COL_W, h: viewH }));
+  return Array.from({ length: n }, (_, i): Rect => ({ x: left + i * (COL_W + gap), y: 0, w: COL_W, h: viewH }));
 }
 
 /** 列 i の絵の矩形。n=1 だけ 64×64（y2..65。bossSolo なら 96×96 の y2..97）、それ以外は 48×48（列内 x+4、y8..55） */
@@ -63,8 +72,8 @@ export function groupColumns(n: number, viewW: number, bossSolo = false): Rect[]
 
 /**
  * UI-54: 列 i のラベルの矩形（ビュー座標）。高さ 20（2 行）、y は注目の枠の下端（絵の下端 + FRAME_PAD）。
- * n=1 は列の箱の幅 56 で y68..87、それ以外は注目の枠と同じ x と幅 52 で y58..77（隣のラベルと 8px 空け、
- * 3〜4 グループで 1 行につながって見えないようにする）。戦闘で出る判定の箱（UI-40。rows 1〜2 で上端 y98 / y88）と重ならない。
+ * M18（設計 5-12）: 3 グループまでは列の中央に幅 72（n=1 は y68..87、2〜3 は y58..77。隣のラベルと 8px 空く）、
+ * 4 グループは注目の枠と同じ x と幅 52 で y58..77（隣のラベルと 8px 空け、1 行につながって見えないようにする）。戦闘で出る判定の箱（UI-40。rows 1〜2 で上端 y98 / y88）と重ならない。
  * n=1 の bossSolo（M8）は絵の右: x = 注目の枠の右 + 4（174）、y = 絵の上端（2）、幅はビューの右 4px まで（62）
  */
 export function groupLabelRects(n: number, viewW: number, bossSolo = false): Rect[] {
@@ -76,7 +85,7 @@ export function groupLabelRects(n: number, viewW: number, bossSolo = false): Rec
       return { x, y: sr.y, w: viewW - 4 - x, h: LABEL_H };
     }
     const y = sr.y + sr.h + FRAME_PAD;
-    if (n === 1) return { x: b.x, y, w: b.w, h: LABEL_H };
+    if (n <= WIDE_MAX_GROUPS) return { x: b.x + Math.floor((b.w - LABEL_W_WIDE) / 2), y, w: LABEL_W_WIDE, h: LABEL_H };
     const f = focusFrame(sr);
     return { x: f.x, y, w: f.w, h: LABEL_H };
   });
@@ -108,9 +117,51 @@ export function enemyGroupOfId(id: string): number | null {
   return m === null ? null : Number(m[1]);
 }
 
-/** UI-54: 絵の下のラベル（battle.groupLabel）。n は対象の一覧と同じ番号（targetNumber）。M18: 文には丸数字の no（groupNo）を出す */
+/**
+ * UI-54: 絵の下のラベル（battle.groupLabel「{name} ×{count}」）。n は対象の一覧と同じ番号（targetNumber）。
+ * M18（設計 5-12）: 番号は札（groupBadge）で出すので今の文には無いが、{n} は渡し続ける（札が読めなければ文を「{n}: {name} ×{count}」に変えるだけで済む）
+ */
 export function groupLabel(view: Pick<EnemyGroupView, "name" | "count">, n: number, strings: Strings): string {
-  return formatMessage(strings["battle.groupLabel"] ?? "battle.groupLabel", { n, no: groupNo(n, strings), name: view.name, count: view.count });
+  return formatMessage(strings["battle.groupLabel"] ?? "battle.groupLabel", { n, name: view.name, count: view.count });
+}
+
+/** UI-54（M18）: 札を出すか。battle.groupLabel が番号（{n}）を含むなら文に番号があるので札は出さない（表示のための判断） */
+export function groupBadgeShown(strings: Strings): boolean {
+  return !(strings["battle.groupLabel"] ?? "").includes("{n}");
+}
+
+/** UI-54（M18）: 札の数字の 3×5 の点（行ごとの 3 ビット。上の行から。左のビットが左の点） */
+const BADGE_DIGITS: Readonly<Record<string, readonly number[]>> = {
+  "0": [7, 5, 5, 5, 7],
+  "1": [2, 6, 2, 2, 7],
+  "2": [7, 1, 7, 4, 7],
+  "3": [7, 1, 7, 1, 7],
+  "4": [5, 5, 7, 1, 1],
+  "5": [7, 4, 7, 1, 7],
+  "6": [7, 4, 7, 5, 7],
+  "7": [7, 1, 1, 2, 2],
+  "8": [7, 5, 7, 5, 7],
+  "9": [7, 5, 7, 1, 7],
+};
+
+/**
+ * UI-54（M18。設計 5-12）: 番号の札の形（札の左上を原点にした論理 px）。外形は (4k+5)×9（k は桁の数。1 桁なら 9×9）で、
+ * frame は外周 1px の枠（fill-rule evenodd の 2 つの矩形）、digits は 3×5 の数字（字の間 1px）を枠の内側に上下 1px・左右 2px 空けて置く。
+ * 枠と数字が接しないよう、設計の「7×7 の枠」は枠の線の内側の大きさと読んだ（decisions）
+ */
+export function groupBadge(n: number): { w: number; h: number; frame: string; digits: string } {
+  const text = String(n);
+  const w = 4 * text.length + 5;
+  const h = 9;
+  const frame = `M0 0H${w}V${h}H0Z M1 1V${h - 1}H${w - 1}V1Z`;
+  const parts: string[] = [];
+  [...text].forEach((ch, k) => {
+    const rows = BADGE_DIGITS[ch] ?? [];
+    rows.forEach((bits, r) => {
+      for (let c = 0; c < 3; c++) if ((bits >> (2 - c)) & 1) parts.push(`M${3 + 4 * k + c} ${2 + r}h1v1h-1Z`);
+    });
+  });
+  return { w, h, frame, digits: parts.join(" ") };
 }
 
 /** UI-54: 注目の枠の矩形。絵の矩形を上下左右に FRAME_PAD ずつ広げる（48 → 52、64 → 68） */
@@ -133,7 +184,36 @@ export type BattleView = {
   clear(): void;
 };
 
-type Col = { box: HTMLElement; sprite: HTMLElement; frame: HTMLElement; label: HTMLElement; view: EnemyGroupView };
+type Col = { box: HTMLElement; sprite: HTMLElement; frame: HTMLElement; label: HTMLElement; badge: SVGSVGElement; view: EnemyGroupView };
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** UI-54（M18）: 番号の札を描き直す（番号が変われば形を変える。番号が無い・札を出さないときは隠す） */
+function paintBadge(svg: SVGSVGElement, n: number | null, shown: boolean): void {
+  if (n === null || !shown) {
+    svg.style.display = "none";
+    svg.replaceChildren();
+    return;
+  }
+  const b = groupBadge(n);
+  svg.style.display = "block";
+  svg.style.width = `${b.w}px`;
+  svg.style.height = `${b.h}px`;
+  svg.setAttribute("width", String(b.w));
+  svg.setAttribute("height", String(b.h));
+  svg.setAttribute("viewBox", `0 0 ${b.w} ${b.h}`);
+  const bg = document.createElementNS(SVG_NS, "path");
+  bg.setAttribute("d", `M0 0H${b.w}V${b.h}H0Z`);
+  bg.setAttribute("fill", PALETTE.black);
+  const frame = document.createElementNS(SVG_NS, "path");
+  frame.setAttribute("d", b.frame);
+  frame.setAttribute("fill", "currentColor");
+  frame.setAttribute("fill-rule", "evenodd");
+  const digits = document.createElementNS(SVG_NS, "path");
+  digits.setAttribute("d", b.digits);
+  digits.setAttribute("fill", "currentColor");
+  svg.replaceChildren(bg, frame, digits);
+}
 
 function place(el: HTMLElement, r: Rect): void {
   Object.assign(el.style, { position: "absolute", left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
@@ -178,10 +258,12 @@ export function createBattleView(
   };
 
   /** ラベルは番号が変わる（前のグループの全滅）ので全列を書き直す */
+  const badgeShown = groupBadgeShown(strings);
   const paintLabels = (): void => {
     for (const c of cols) {
       const n = targetNumber(groups, c.view.index);
       c.label.textContent = n === null ? "" : groupLabel(c.view, n, strings);
+      paintBadge(c.badge, n, badgeShown);
       c.box.style.visibility = c.view.count > 0 ? "visible" : "hidden";
     }
   };
@@ -277,9 +359,13 @@ export function createBattleView(
         webkitLineClamp: "2",
         webkitBoxOrient: "vertical",
       });
-      box.append(sprite, frame, label);
+      // UI-54（M18）: 番号の札は絵の左上の内側（絵の上に重ねる。押せない。注目の枠は絵の外なので重ならない）
+      const badge = document.createElementNS(SVG_NS, "svg");
+      badge.setAttribute("class", "battle-group-badge");
+      Object.assign(badge.style, { position: "absolute", left: `${sr.x - b.x}px`, top: `${sr.y}px`, pointerEvents: "none", shapeRendering: "crispEdges" });
+      box.append(sprite, badge, frame, label);
       el.appendChild(box);
-      return { box, sprite, frame, label, view: g };
+      return { box, sprite, frame, label, badge, view: g };
     });
     paintLabels();
     paintPickable();

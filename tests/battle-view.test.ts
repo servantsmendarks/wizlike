@@ -12,12 +12,13 @@ import {
   FOCUS_BLINK_MS,
   groupBoxes,
   groupColumns,
+  groupBadge,
+  groupBadgeShown,
   groupLabel,
   groupLabelRects,
   spriteUrl,
 } from "../src/presenter/views/battle";
 import { diceBox } from "../src/presenter/views/dice";
-import { formatMessage } from "../src/presenter/views/message";
 import type { Rect } from "../src/presenter/layout";
 import { data } from "./helpers/core";
 
@@ -43,13 +44,15 @@ describe("UI-54 敵グループの列", () => {
     expect(groupColumns(1, VIEW_W)).toEqual([{ x: 88, y: 2, w: 64, h: 64 }]);
   });
 
-  test("UI-54 列の箱は幅 56・間 4 で中央寄せ。絵は箱の x+4", () => {
+  // M18（設計 5-12）: 以前は全グループで間 4（2 グループは [62, 122]）
+  test("UI-54（M18）列の箱は幅 56 で中央寄せ。間は 3 グループまで 24、4 グループは 4。絵は箱の x+4", () => {
     expect(groupBoxes(4, VIEW_W).map((b) => b.x)).toEqual([2, 62, 122, 182]);
+    expect(groupBoxes(3, VIEW_W).map((b) => b.x)).toEqual([12, 92, 172]);
     expect(groupBoxes(2, VIEW_W).map((b) => [b.x, b.w])).toEqual([
-      [62, 56],
-      [122, 56],
+      [52, 56],
+      [132, 56],
     ]);
-    expect(groupColumns(2, VIEW_W).map((r) => r.x)).toEqual([66, 126]);
+    expect(groupColumns(2, VIEW_W).map((r) => r.x)).toEqual([56, 136]);
     expect(groupBoxes(0, VIEW_W)).toEqual([]);
   });
 
@@ -119,7 +122,7 @@ describe("UI-54 敵グループの列", () => {
       expect(groupLabelRects(n, VIEW_W, true), `${n}`).toEqual(groupLabelRects(n, VIEW_W));
     }
     expect(groupColumns(1, VIEW_W, false)).toEqual([{ x: 88, y: 2, w: 64, h: 64 }]);
-    expect(groupLabelRects(1, VIEW_W, false)).toEqual([{ x: 92, y: 68, w: 56, h: 20 }]);
+    expect(groupLabelRects(1, VIEW_W, false)).toEqual([{ x: 84, y: 68, w: 72, h: 20 }]);
   });
 
   test("UI-41 enemyGroupOfId は core の敵の id e{g}-{u} のグループ添字。味方の id などは null", () => {
@@ -129,66 +132,135 @@ describe("UI-54 敵グループの列", () => {
     for (const id of ["c1", "c6", "e", "e1", "e1-", "-1-2", "xe1-2", "e1-2x", ""]) expect(enemyGroupOfId(id), id).toBeNull();
   });
 
-  // M18（設計 2-5）: 以前の期待値は「{n} {name} ×{count}」（"1 人の形をした影 ×3"）
-  test("UI-54（M18）groupLabel は battle.groupLabel「{no}{name} ×{count}」。no は battle.groupNo の n 番目の丸数字。旧 battle.groupCount は無い", () => {
-    expect(data.strings["battle.groupLabel"]).toBe("{no}{name} ×{count}");
-    expect(groupLabel({ name: "人の形をした影", count: 3 }, 1, data.strings)).toBe("①人の形をした影 ×3");
-    expect(groupLabel({ name: "N", count: 2 }, 4, data.strings)).toBe(formatMessage(data.strings["battle.groupLabel"]!, { no: "④", name: "N", count: 2 }));
-    expect(groupLabel({ name: "N", count: 2 }, 10, data.strings)).toBe("⑩N ×2");
+  // M18（設計 5-12）: 2-5 の期待値は「{no}{name} ×{count}」（"①人の形をした影 ×3"）。番号は札（groupBadge）に移した
+  test("UI-54（M18）groupLabel は battle.groupLabel「{name} ×{count}」（番号は文に無い）。旧 battle.groupCount・battle.groupNo は無い。{n} を渡し続けるので、文を「{n}: {name} ×{count}」に変えるだけで番号が文に出て札は消える", () => {
+    expect(data.strings["battle.groupLabel"]).toBe("{name} ×{count}");
+    expect(groupLabel({ name: "人の形をした影", count: 3 }, 1, data.strings)).toBe("人の形をした影 ×3");
+    expect(groupLabel({ name: "N", count: 2 }, 4, data.strings)).toBe("N ×2");
     expect(Object.prototype.hasOwnProperty.call(data.strings, "battle.groupCount")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(data.strings, "battle.groupNo")).toBe(false);
+    expect(groupBadgeShown(data.strings)).toBe(true);
+    const alt = { ...data.strings, "battle.groupLabel": "{n}: {name} ×{count}" };
+    expect(groupLabel({ name: "大ネズミ", count: 3 }, 2, alt)).toBe("2: 大ネズミ ×3");
+    expect(groupBadgeShown(alt)).toBe(false);
+    expect(groupBadgeShown({})).toBe(true);
   });
 
-  test("UI-54 ラベルはラベルの幅（1 列 56、2 列以上 52）の 2 行に収まる: 全モンスターの名前・未鑑定名で、空白と仮名・漢字の間で折り返して 2 行以内（美咲: 半角 4px、他 8px）", () => {
-    const px = (s: string): number => [...s].reduce((a, c) => a + (c.charCodeAt(0) < 0x80 ? 4 : 8), 0);
-    // 折り返しの単位: 空白で区切った語。仮名・漢字を含む語は 1 字ずつ（その間で折り返せる）、それ以外（「×9」など）は語のまま
-    const units = (label: string): string[][] =>
-      label.split(" ").map((w) => (/[぀-ヿ一-鿿]/.test(w) ? [...w] : [w]));
-    const lines = (label: string, width: number): number => {
-      let n = 1;
-      let x = 0;
-      for (const word of units(label)) {
-        if (x > 0) x += px(" ");
-        for (const u of word) {
-          const w = px(u);
-          if (x > 0 && x + w > width) {
-            n++;
-            x = 0;
-          }
-          x += w;
+  // 美咲: 半角 4px、他 8px。折り返しの単位: 空白で区切った語。仮名・漢字を含む語は 1 字ずつ（その間で折り返せる）、それ以外（「×9」など）は語のまま
+  const px = (s: string): number => [...s].reduce((a, c) => a + (c.charCodeAt(0) < 0x80 ? 4 : 8), 0);
+  const lines = (label: string, width: number): number => {
+    let n = 1;
+    let x = 0;
+    for (const word of label.split(" ").map((w) => (/[぀-ヿ一-鿿]/.test(w) ? [...w] : [w]))) {
+      if (x > 0) x += px(" ");
+      for (const u of word) {
+        const w = px(u);
+        if (x > 0 && x + w > width) {
+          n++;
+          x = 0;
         }
+        x += w;
       }
-      return n;
-    };
-    expect(lines("①コボルド ×2", 56)).toBe(1);
-    expect(lines("①コボルド ×2", 52)).toBe(2);
+    }
+    return n;
+  };
+  const allNames = (): string[] => data.monsters.flatMap((m) => [m.name, data.unknownKinds.find((k) => k.id === m.unknownKind)!.name]);
+
+  test("UI-54（M18 設計 5-12）3 グループまでのラベル（幅 72）は、全モンスターの名前・未鑑定名と体数の上限で 1 行に収まる（最長は「人の形をした影 ×9」72px）。2 グループの「大ネズミ ×3」も 1 行", () => {
+    expect(lines("大ネズミ ×3", 52)).toBe(1);
+    expect(lines("①大ネズミ ×3", 52)).toBe(2); // 群 A の実機の気づき（2-5 の丸数字で折り返していた）
+    const longest = Math.max(...allNames().map((name) => px(groupLabel({ name, count: data.config.combat.maxPerGroup }, 1, data.strings))));
+    expect(longest).toBe(72);
+    for (let n = 1; n <= 3; n++) {
+      const rects = groupLabelRects(n, VIEW_W);
+      for (const r of rects) expect(r.w, `${n}`).toBe(72);
+      for (const name of allNames()) {
+        const label = groupLabel({ name, count: data.config.combat.maxPerGroup }, n, data.strings);
+        expect(px(label), `${n} ${label}`).toBeLessThanOrEqual(rects[0]!.w);
+        expect(lines(label, rects[0]!.w), `${n} ${label}`).toBe(1);
+      }
+    }
+  });
+
+  test("UI-54 ラベルはラベルの幅（3 グループまで 72、4 グループ 52）の 2 行に収まる: 全モンスターの名前・未鑑定名で（4 グループは 2 行に折り返すことがある）。札をやめた文「{n}: {name} ×{count}」でも 2 行以内", () => {
+    expect(lines("コボルド ×2", 52)).toBe(1);
+    expect(lines("人の形をした影 ×9", 52)).toBe(2);
+    const alt = { ...data.strings, "battle.groupLabel": "{n}: {name} ×{count}" };
     for (let n = 1; n <= data.config.combat.maxEnemyGroups; n++) {
       const width = groupLabelRects(n, VIEW_W)[0]!.w;
-      for (const m of data.monsters) {
-        for (const name of [m.name, data.unknownKinds.find((k) => k.id === m.unknownKind)!.name]) {
-          const label = groupLabel({ name, count: data.config.combat.maxPerGroup }, data.config.combat.maxEnemyGroups, data.strings);
+      for (const name of allNames()) {
+        for (const strings of [data.strings, alt]) {
+          const label = groupLabel({ name, count: data.config.combat.maxPerGroup }, data.config.combat.maxEnemyGroups, strings);
           expect(lines(label, width), `${n} ${label}`).toBeLessThanOrEqual(2);
         }
       }
     }
   });
 
-  test("UI-54 2 列以上のラベルは注目の枠と同じ x と幅（52）で、隣のラベルとは 8px 以上離れる（3・4 グループで 1 行につながって見えない）", () => {
-    for (let n = 2; n <= data.config.combat.maxEnemyGroups; n++) {
+  test("UI-54（M18）3 グループまでのラベルは列の中央に幅 72（列の箱から左右に 8 はみ出す）、4 グループは注目の枠と同じ x と幅 52。どちらも隣のラベルとは 8px 以上離れ、ビューの内側", () => {
+    for (let n = 1; n <= data.config.combat.maxEnemyGroups; n++) {
       const labels = groupLabelRects(n, VIEW_W);
       const frames = groupColumns(n, VIEW_W).map(focusFrame);
+      const boxes = groupBoxes(n, VIEW_W);
       labels.forEach((l, i) => {
-        expect([l.x, l.w], `${n} ${i}`).toEqual([frames[i]!.x, frames[i]!.w]);
+        if (n <= 3) expect([l.x, l.w], `${n} ${i}`).toEqual([boxes[i]!.x - 8, 72]);
+        else expect([l.x, l.w], `${n} ${i}`).toEqual([frames[i]!.x, frames[i]!.w]);
         expect(l.x >= 0 && l.x + l.w <= VIEW_W, `${n} ${i}`).toBe(true);
         const next = labels[i + 1];
         if (next !== undefined) expect(next.x - (l.x + l.w), `${n} ${i}`).toBeGreaterThanOrEqual(8);
       });
     }
     expect(groupLabelRects(3, VIEW_W).map((r) => [r.x, r.w])).toEqual([
-      [34, 52],
-      [94, 52],
-      [154, 52],
+      [4, 72],
+      [84, 72],
+      [164, 72],
+    ]);
+    expect(groupLabelRects(2, VIEW_W).map((r) => [r.x, r.w])).toEqual([
+      [44, 72],
+      [124, 72],
     ]);
   });
+
+  test("UI-54（M18 設計 5-12）groupBadge: 1 桁は 9×9（線 1px の枠の内側 7×7）で、3×5 の数字を枠の内側に上下 1px・左右 2px 空けて置く（枠と数字が接しない）。数字の点は 0〜9 の形", () => {
+    const pixels = (d: string): Set<string> => new Set([...d.matchAll(/M(\d+) (\d+)h1v1h-1Z/g)].map((m) => `${m[1]},${m[2]}`));
+    const b1 = groupBadge(1);
+    expect([b1.w, b1.h]).toEqual([9, 9]);
+    expect(b1.frame).toBe("M0 0H9V9H0Z M1 1V8H8V1Z");
+    // 「1」: .#. / ##. / .#. / .#. / ###
+    expect([...pixels(b1.digits)].sort()).toEqual(["3,3", "3,6", "4,2", "4,3", "4,4", "4,5", "4,6", "5,6"].sort());
+    for (let n = 0; n <= 9; n++) {
+      const b = groupBadge(n);
+      const ps = [...pixels(b.digits)].map((p) => p.split(",").map(Number) as [number, number]);
+      expect(ps.length, `${n}`).toBeGreaterThanOrEqual(7);
+      for (const [x, y] of ps) expect(x >= 3 && x <= 5 && y >= 2 && y <= 6, `${n} ${x},${y}`).toBe(true);
+    }
+    // 形が数字ごとに違う
+    expect(new Set(Array.from({ length: 10 }, (_, n) => groupBadge(n).digits)).size).toBe(10);
+    // 2 桁（起きないが落とさない）は幅 13、2 字目は 4 右
+    const b10 = groupBadge(10);
+    expect([b10.w, b10.h]).toEqual([13, 9]);
+    expect([...pixels(b10.digits)].some((p) => p.startsWith("7,"))).toBe(true);
+  });
+
+  test("UI-54（M18）札は絵の左上の内側（絵の矩形の中）に収まり、注目の枠・ラベル・隣の列と重ならない（n=1..4、ボスの 1 グループも）", () => {
+    for (const boss of [false, true]) {
+      for (let n = 1; n <= data.config.combat.maxEnemyGroups; n++) {
+        if (boss && n > 1) continue;
+        const sprites = groupColumns(n, VIEW_W, boss);
+        const labels = groupLabelRects(n, VIEW_W, boss);
+        sprites.forEach((sr, i) => {
+          const b = groupBadge(data.config.combat.maxEnemyGroups);
+          const r = { x: sr.x, y: sr.y, w: b.w, h: b.h };
+          expect(r.x + r.w <= sr.x + sr.w && r.y + r.h <= sr.y + sr.h, `${n} ${i}`).toBe(true);
+          for (const l of labels) expect(overlaps(r, l), `${n} ${i} label`).toBe(false);
+          sprites.forEach((o, j) => {
+            if (j !== i) expect(overlaps(r, focusFrame(o)), `${n} ${i}/${j}`).toBe(false);
+          });
+        });
+      }
+    }
+  });
+
 
   test("UI-54 focusFrame は絵を 2px ずつ広げ（48 → 52、64 → 68）、ビューの内側でラベルより上。2 列以上では列の箱の内側で互いに重ならない", () => {
     expect(focusFrame({ x: 66, y: 24, w: 48, h: 48 })).toEqual({ x: 64, y: 22, w: 52, h: 52 });
@@ -214,7 +286,7 @@ describe("UI-54 敵グループの列", () => {
       [98, 146],
     ]);
     // 期待値は 注目の枠の下端（絵の y + 大きさ + 2）からの 20px: 2 列以上は 8+48+2=58、1 列は 2+64+2=68
-    expect(groupLabelRects(1, VIEW_W)).toEqual([{ x: 92, y: 68, w: 56, h: 20 }]);
+    expect(groupLabelRects(1, VIEW_W)).toEqual([{ x: 84, y: 68, w: 72, h: 20 }]);
     expect(groupLabelRects(4, VIEW_W).map((r) => [r.x, r.y, r.w, r.h])).toEqual([
       [4, 58, 52, 20],
       [64, 58, 52, 20],
@@ -257,7 +329,11 @@ class FakeEl {
   addEventListener(type: string, f: (e: unknown) => void): void {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), f]);
   }
-  setAttribute(): void {}
+  attrs: Record<string, string> = {};
+  setAttribute(k: string, v: string): void {
+    this.attrs[k] = v;
+    if (k === "class") this.className = v;
+  }
   dispatch(type: string): void {
     for (const f of this.listeners.get(type) ?? []) f({ type });
   }
@@ -283,6 +359,11 @@ function fakeDocument(): FakeEl[] {
   const created: FakeEl[] = [];
   vi.stubGlobal("document", {
     createElement(): FakeEl {
+      const e = new FakeEl();
+      created.push(e);
+      return e;
+    },
+    createElementNS(): FakeEl {
       const e = new FakeEl();
       created.push(e);
       return e;
@@ -319,18 +400,20 @@ describe("UI-54 戦闘のビュー（DOM）", () => {
     expect(boxes).toHaveLength(3);
     for (const b of boxes) expect(b.style["outline"] ?? "").toBe("");
     expect(byClass("battle-group-number")).toEqual([]);
+    // M18（設計 5-12）: 番号は絵の左上の札（battle-group-badge）。体数 0 の列の札は隠す
+    expect(byClass("battle-group-badge").map((b) => b.style["display"])).toEqual(["block", "block", "none"]);
     expect(byClass("battle-group-label").map((l) => l.textContent)).toEqual([
       groupLabel(GROUPS[0]!, targetNumber(GROUPS, 0)!, data.strings),
       groupLabel(GROUPS[1]!, targetNumber(GROUPS, 1)!, data.strings),
       "",
     ]);
-    expect(byClass("battle-group-label")[1]!.textContent).toBe("②コボルド ×3");
+    expect(byClass("battle-group-label")[1]!.textContent).toBe("コボルド ×3");
     expect(boxes.map((b) => b.style["visibility"])).toEqual(["visible", "visible", "hidden"]);
     v.focus(1, true);
     for (const b of boxes) expect(b.style["outline"] ?? "").toBe("");
   });
 
-  test("UI-54/CB-05 同じ系統の別の種類が 2 グループいても、ラベルはグループの番号で区別できる（M18: 「①人の形をした影 ×2」「②人の形をした影 ×3」）", () => {
+  test("UI-54/CB-05（M18 設計 5-12）同じ系統の別の種類が 2 グループいても、絵の左上の札の番号（1・2）で区別できる（ラベルは「人の形をした影 ×2」「人の形をした影 ×3」）", () => {
     const gs: EnemyGroupView[] = [
       { index: 0, monsterId: "kobold", name: "人の形をした影", identified: false, count: 2 },
       { index: 1, monsterId: "rotting_corpse", name: "人の形をした影", identified: false, count: 3 },
@@ -338,10 +421,41 @@ describe("UI-54 戦闘のビュー（DOM）", () => {
     const created = fakeDocument();
     createBattleView(data, data.strings, VIEW_W, 150).setGroups(gs);
     expect(created.filter((e) => e.className === "battle-group-label").map((l) => l.textContent)).toEqual([
-      "①人の形をした影 ×2",
-      "②人の形をした影 ×3",
+      "人の形をした影 ×2",
+      "人の形をした影 ×3",
     ]);
+    const badges = created.filter((e) => e.className === "battle-group-badge");
+    expect(badges.map((b) => b.children[2]!.attrs["d"])).toEqual([groupBadge(1).digits, groupBadge(2).digits]);
   });
+
+  test("UI-54（M18 設計 5-12）札の SVG: 絵の左上（列の箱からの相対で絵の x、絵の y）に 9×9、黒地・枠（evenodd）・数字の 3 つの path で、枠と数字は currentColor。押せない", () => {
+    const { byClass } = setup();
+    const badges = byClass("battle-group-badge");
+    const sprites = groupColumns(GROUPS.length, VIEW_W);
+    const boxes = groupBoxes(GROUPS.length, VIEW_W);
+    expect(badges).toHaveLength(3);
+    badges.forEach((b, i) => {
+      expect(b.style["left"]).toBe(`${sprites[i]!.x - boxes[i]!.x}px`);
+      expect(b.style["top"]).toBe(`${sprites[i]!.y}px`);
+      expect(b.style["pointerEvents"]).toBe("none");
+    });
+    const b0 = badges[0]!;
+    expect([b0.style["width"], b0.style["height"], b0.attrs["viewBox"]]).toEqual(["9px", "9px", "0 0 9 9"]);
+    const [bg, frame, digits] = b0.children;
+    expect(bg!.attrs["fill"]).toBe(PALETTE.black);
+    expect([frame!.attrs["d"], frame!.attrs["fill"], frame!.attrs["fill-rule"]]).toEqual([groupBadge(1).frame, "currentColor", "evenodd"]);
+    expect([digits!.attrs["d"], digits!.attrs["fill"]]).toEqual([groupBadge(1).digits, "currentColor"]);
+    expect(badges[1]!.children[2]!.attrs["d"]).toBe(groupBadge(2).digits);
+  });
+
+  test("UI-54（M18）battle.groupLabel を「{n}: {name} ×{count}」に変えると、番号が文に出て札は出ない（strings の形だけで切り替わる）", () => {
+    const created = fakeDocument();
+    const alt = { ...data.strings, "battle.groupLabel": "{n}: {name} ×{count}" };
+    createBattleView(data, alt, VIEW_W, 150).setGroups(GROUPS);
+    expect(created.filter((e) => e.className === "battle-group-label").map((l) => l.textContent)).toEqual(["1: 何かの獣 ×1", "2: コボルド ×3", ""]);
+    expect(created.filter((e) => e.className === "battle-group-badge").map((b) => b.style["display"])).toEqual(["none", "none", "none"]);
+  });
+
 
   test("UI-60 一覧が空（素材が無い今）なら <img> を作らない（404 や SPA の HTML を取りに行かない）。矩形の塗りのまま", () => {
     const { byClass } = setup(undefined, {});
@@ -463,10 +577,13 @@ describe("UI-54 戦闘のビュー（DOM）", () => {
     const { v, byClass } = setup();
     await v.removeOne(0, 0);
     const labels = byClass("battle-group-label");
-    expect(labels[1]!.textContent).toBe("①コボルド ×3");
+    expect(labels[1]!.textContent).toBe("コボルド ×3");
+    // 番号の札が詰まる（2 → 1）
+    expect(byClass("battle-group-badge")[1]!.children[2]!.attrs["d"]).toBe(groupBadge(1).digits);
+    expect(byClass("battle-group-badge")[0]!.style["display"]).toBe("none");
     expect(byClass("battle-group")[0]!.style["visibility"]).toBe("hidden");
     await v.removeOne(1, 0);
-    expect(labels[1]!.textContent).toBe("①コボルド ×2");
+    expect(labels[1]!.textContent).toBe("コボルド ×2");
   });
 
   test("UI-54 focus(g, true) は g の絵の枠を出し、iterations: Infinity で点滅させる。切り替え・解除・setGroups・clear で前の点滅を cancel", () => {
