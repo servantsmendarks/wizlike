@@ -558,8 +558,8 @@ describe("layout", () => {
   });
 
   // M10.5: 会話の箱を施設メニューに被せるようにしたので、重ならない相手から会話の箱を外した（被さることは townLayout の試験で確かめる）
-  test("UI-13/UI-52（M10）townLayout の grid: 施設メニューの 48×48 を 3 列 × 2 段（x40/96/152・y190/246、間 8）でステージの中央寄せ。一覧の行の y 範囲（y190..387）に収まり、見出し・帯・絵と重ならない", () => {
-    expect(T.grid).toEqual([190, 246].flatMap((y) => [40, 96, 152].map((x) => ({ x, y, w: 48, h: 48 }))));
+  test("UI-13/UI-52（M10。M17）townLayout の grid: 施設メニューの 40×40 を 3 列 × 3 段（x54/100/146・y190/236/282、間 6）でステージの中央寄せ。一覧の行の y 範囲（y190..387）に収まり、見出し・帯・絵と重ならない", () => {
+    expect(T.grid).toEqual([190, 236, 282].flatMap((y) => [54, 100, 146].map((x) => ({ x, y, w: 40, h: 40 }))));
     const left = Math.min(...T.grid.map((r) => r.x));
     const right = Math.max(...T.grid.map((r) => r.x + r.w));
     expect(left).toBe(W - right);
@@ -571,10 +571,10 @@ describe("layout", () => {
     }
   });
 
-  test("UI-13/UI-52/UI-10（M16）townLayout の notes: 施設メニューの下の説明の 6 行を x8..231・y300..389（1 行 15）。グリッド・見出し・帯・絵と重ならず、ステージに収まる（押せない文字の行なので UI-10 の対象外）", () => {
-    expect(TOWN_NOTE_LINES).toBe(6);
-    expect(TOWN_NOTE_LINE_H).toBe(15);
-    expect(T.notes).toEqual(Array.from({ length: 6 }, (_, i) => ({ x: 8, y: 300 + 15 * i, w: 224, h: 15 })));
+  test("UI-13/UI-52/UI-10（M16。M17）townLayout の notes: 施設メニューの下の説明の 7 行を x8..231・y328..397（1 行 10）。グリッド・見出し・帯・絵と重ならず、ステージに収まる（押せない文字の行なので UI-10 の対象外）", () => {
+    expect(TOWN_NOTE_LINES).toBe(7);
+    expect(TOWN_NOTE_LINE_H).toBe(10);
+    expect(T.notes).toEqual(Array.from({ length: 7 }, (_, i) => ({ x: 8, y: 328 + 10 * i, w: 224, h: 10 })));
     for (const r of T.notes) {
       expect(inside(r, STAGE), JSON.stringify(r)).toBe(true);
       for (const o of [...T.grid, T.heading, T.band.row, ...T.band.hits, T.picture, T.header.text]) expect(overlaps(r, o), JSON.stringify([r, o])).toBe(false);

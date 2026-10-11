@@ -797,6 +797,13 @@ export function createApp(o: {
           case "withdraw":
             void run({ type: "town.storage", action: "withdraw", memberId: e.memberId, instanceId: e.instanceId });
             return;
+          // TW-10 / TW-16b（M17）: 金の預入・引出とすべて預けるの後も同じページにとどまる（額と dim は再生の最後の sync で townMenu を取り直す）
+          case "bank":
+            void run({ type: "town.bank", amount: e.amount });
+            return;
+          case "depositAll":
+            void run({ type: "town.storage", action: "depositAll", memberId: e.memberId });
+            return;
         }
       }),
   });
@@ -934,7 +941,7 @@ export function createApp(o: {
       // UI-63（2026-10-06）: 施設の曲（無い施設と施設メニューは街の曲）
       const song = townSong(townFacility(townPage), data);
       if (song !== undefined) setScene(song);
-      // UI-13 / UI-52（M10）: 施設メニューは見出しと 48×48 の 3 列 × 2 段（戻るは無い。数字キーは行の順）
+      // UI-13 / UI-52（M10。M17）: 施設メニューは見出しと 40×40 の 3 列 × 3 段（7 つ。戻るは無い。数字キーは行の順）
       if (townPage === "menu") {
         c.setBattleMenu(items, "town", { heading, notes: townMenuNotes(strings) });
         c.setMode("battle");

@@ -45,7 +45,7 @@ export type UiSound = keyof AudioData["ui"];
 export type BattleSlots = "party" | "member" | "camp" | "town";
 
 /**
- * UI-13（M8.5）: 街の一覧の見出し（1 行）と一覧（スクロールの欄と見える行）。grid は施設メニューの 6 枠（M10）、notes はその下の説明の行（M16。省略時は出さない）。
+ * UI-13（M8.5）: 街の一覧の見出し（1 行）と一覧（スクロールの欄と見える行）。grid は施設メニューの枠（M10 は 6 枠、M17 から 9 枠）、notes はその下の説明の行（M16。省略時は出さない）。
  * ステージ座標。layout の townLayout
  */
 export type TownListLayout = { heading: Rect; area: Rect; rows: Rect[]; grid: Rect[]; notes?: Rect[] };
@@ -70,7 +70,7 @@ export type Controls = {
    */
   setList(items: ControlItem[], opts?: { fixedLast?: boolean; fixedLastCancel?: boolean; town?: { heading: string }; wide?: boolean }): void;
   /**
-   * UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠 / campGrid の 8 枠 / townList.grid の 6 枠）に並べる。
+   * UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠 / campGrid の 8 枠 / townList.grid の 9 枠（M17。M10〜M16 は 6 枠））に並べる。
    * null は空き枠（何も置かない）。枠数を超える分は捨てる。
    * town（UI-13 / UI-52。M10）なら、setList の town と同じ見出し（opts.heading。accent 色の 1 行。押せない）も出す。
    * M16: town なら opts.notes を layout.townList.notes の行に 1 行ずつ出す（押せない文字の行。行数を超える分は捨てる）

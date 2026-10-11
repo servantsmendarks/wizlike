@@ -175,7 +175,7 @@ describe("controls", () => {
     expect(picked).toEqual([7, 0]);
   });
 
-  test("UI-13/UI-52（M10）街の施設メニュー（town の配置）: townList.grid の 48×48 の 6 枠（操作領域の原点 y300 からの相対で x40/96/152・top −110/−54）に置き、見出しも出す。数字キーは行の順。ほかの配置・一覧に移ると見出しを出し分ける", () => {
+  test("UI-13/UI-52（M10。M17）街の施設メニュー（town の配置）: townList.grid の 40×40 の 9 枠（操作領域の原点 y300 からの相対で x54/100/146・top −110/−64/−18）に置き、見出しも出す。数字キーは行の順。ほかの配置・一覧に移ると見出しを出し分ける", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);
     const L = dungeonLayout(g, data.config.party.size);
@@ -189,23 +189,18 @@ describe("controls", () => {
       onClose: () => {},
     });
     const picked: number[] = [];
-    const items = Array.from({ length: 7 }, (_, i) => ({ label: `f${i}`, onSelect: () => picked.push(i) }));
+    const items = Array.from({ length: 10 }, (_, i) => ({ label: `f${i}`, onSelect: () => picked.push(i) }));
     c.setBattleMenu(items, "town", { heading: "どこへ行く？" });
     c.setMode("battle");
     const buttons = created.filter((e) => e.className === "controls-battle-item");
-    expect(buttons.map((e) => [e["textContent"], e.style["left"], e.style["top"], e.style["width"], e.style["height"]])).toEqual([
-      ["f0", "40px", "-110px", "48px", "48px"],
-      ["f1", "96px", "-110px", "48px", "48px"],
-      ["f2", "152px", "-110px", "48px", "48px"],
-      ["f3", "40px", "-54px", "48px", "48px"],
-      ["f4", "96px", "-54px", "48px", "48px"],
-      ["f5", "152px", "-54px", "48px", "48px"],
-    ]);
+    expect(buttons.map((e) => [e["textContent"], e.style["left"], e.style["top"], e.style["width"], e.style["height"]])).toEqual(
+      [-110, -64, -18].flatMap((top, r) => [54, 100, 146].map((x, k) => [`f${3 * r + k}`, `${x}px`, `${top}px`, "40px", "40px"])),
+    );
     const heading = created.find((e) => e.className === "controls-list-heading")!;
     expect(heading["textContent"]).toBe("どこへ行く？");
     expect(heading.style["display"]).toBe("");
     c.select(4);
-    c.select(6); // 枠数を超える分は捨てた
+    c.select(9); // 枠数を超える分は捨てた
     buttons[0]!.tap();
     expect(picked).toEqual([4, 0]);
     // 施設のページ（一覧）へ移ると見出しは一覧の見出し、キャンプの枠では隠す
@@ -217,7 +212,7 @@ describe("controls", () => {
     expect(heading.style["display"]).toBe("none");
   });
 
-  test("UI-13/UI-52/UI-10（M16）街の施設メニューの下の説明: setBattleMenu(town) の notes を townList.notes の行（x8・y300 から 15 ごと、幅 224）に 1 行ずつ出す。押せない（pointer-events none）。一覧・ほかの配置では隠す", () => {
+  test("UI-13/UI-52/UI-10（M16。M17）街の施設メニューの下の説明: setBattleMenu(town) の notes を townList.notes の行（x8・y328 から 10 ごと、幅 224）に 1 行ずつ出す。押せない（pointer-events none）。一覧・ほかの配置では隠す", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);
     const L = dungeonLayout(g, data.config.party.size);
@@ -231,15 +226,15 @@ describe("controls", () => {
       onClose: () => {},
     });
     const items = Array.from({ length: 6 }, (_, i) => ({ label: `f${i}`, onSelect: () => {} }));
-    const lines = Array.from({ length: 7 }, (_, i) => `n${i}`);
+    const lines = Array.from({ length: 8 }, (_, i) => `n${i}`);
     c.setBattleMenu(items, "town", { heading: "どこへ行く？", notes: lines });
     c.setMode("battle");
     const box = created.find((e) => e.className === "controls-town-notes")!;
     expect(box.style["pointerEvents"]).toBe("none");
     expect(box.style["display"]).toBe("");
-    // 行数（6）を超える分は捨てる。位置は操作領域の原点（y300）からの相対
+    // 行数（7）を超える分は捨てる。位置は操作領域の原点（y300）からの相対
     expect(box.children.map((e) => [e["textContent"], e.style["left"], e.style["top"], e.style["width"], e.style["height"]])).toEqual(
-      Array.from({ length: 6 }, (_, i) => [`n${i}`, "8px", `${15 * i}px`, "224px", "15px"]),
+      Array.from({ length: 7 }, (_, i) => [`n${i}`, "8px", `${28 + 10 * i}px`, "224px", "10px"]),
     );
     expect(created.filter((e) => e.className === "controls-town-note").every((e) => tapSpecOf(e) === null)).toBe(true);
     c.setList([{ label: "a", onSelect: () => {} }], { town: { heading: "何をする？" } });

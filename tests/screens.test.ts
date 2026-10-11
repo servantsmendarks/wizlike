@@ -673,6 +673,9 @@ describe("入力と Command", () => {
         new RegExp(`case "${action}":\\s*void run\\(\\{ type: "town\\.storage", action: "${action}", memberId: e\\.memberId, instanceId: e\\.instanceId \\}\\);\\s*return;`),
       );
     }
+    // TW-10 / TW-16b（M17）: 銀行の金の額の行は town.bank、すべて預けるは town.storage の depositAll を送り、ページを変えない
+    expect(body).toMatch(/case "bank":\s*void run\(\{ type: "town\.bank", amount: e\.amount \}\);\s*return;/);
+    expect(body).toMatch(/case "depositAll":\s*void run\(\{ type: "town\.storage", action: "depositAll", memberId: e\.memberId \}\);\s*return;/);
     expect(app).toMatch(/townPage = townRepair\(townPage, menu\);\s*const ents = townEntries\(townPage, menu, strings, previewOf\(townPage\), classChangeOf\(townPage\)\);/);
   });
 
@@ -681,7 +684,7 @@ describe("入力と Command", () => {
   // メッセージ窓とパーティ欄の出し入れは applyPanels（街かキャラクター画面なら隠す）に移した
   // M10（UI-13 / UI-52。2026-10-07 U3）: 施設メニューは一覧ではなく 48×48 の 3 列 × 2 段（setBattleMenu の town）に改めたので、not.toContain を toContain に替えた
   // 2026-10-07（M10.5 追補・未定-22）: 見出しは townHeadingText（確認の段と救済の申し出は値の入った問い）で作るので、heading の期待を改めた
-  test("UI-13/UI-52/IT-66/UI-59（M8.5・M10）街の一覧は見出し（townHeadingText）付きの setList の town。施設メニューは見出しと説明の行（M16。townMenuNotes）付きの setBattleMenu の town（48×48 の 3 列 × 2 段）。ヘッダーは場所と所持金、ビューは施設の絵。図鑑とキャラクター画面のパネルは layout.character に広げる（ソースの検査）", () => {
+  test("UI-13/UI-52/IT-66/UI-59（M8.5・M10）街の一覧は見出し（townHeadingText）付きの setList の town。施設メニューは見出しと説明の行（M16。townMenuNotes）付きの setBattleMenu の town（M17 から 40×40 の 3 列 × 3 段）。ヘッダーは場所と所持金、ビューは施設の絵。図鑑とキャラクター画面のパネルは layout.character に広げる（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     expect(app).toContain("const heading = townHeadingText(townPage, menu, strings, previewOf(townPage), classChangeOf(townPage));");
     expect(app).toContain('c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading } });');

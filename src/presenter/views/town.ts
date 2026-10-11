@@ -1,10 +1,10 @@
-// UI-52 の街。施設メニューは 酒場・宿屋・寺院・闇魔術・迷宮へ・店 の 6 行の一覧（M8.5。UI-13 の街の一覧）。各施設もリスト選択。
+// UI-52 の街。施設メニューは 酒場・宿屋・寺院・闇魔術・迷宮へ・店・銀行 の 7 つ（M17 で銀行を足した。UI-13 の 3 列 × 3 段）。各施設はリスト選択。
 // 街の画面の配置は UI-13（layout の townLayout。views/dungeon.ts が組む）。ここはページの中身・見出し・施設を決める純粋な部分。
 // 料金・押せるか・候補（宿のランク、寺院・闇魔術の対象、救済の候補、店の売り物・売れる品・買い戻し・鑑定・持たせる者、倉庫、入れる迷宮）は
 // core の townMenu の値だけで決める（UI-35）。
-// 表示層は式を持たない。どの項目で何を送るか（town.inn / town.temple / town.dark / town.mercy / town.shop / town.storage / town.upgrade / dungeon.enter）は app が決める。
+// 表示層は式を持たない。どの項目で何を送るか（town.inn / town.temple / town.dark / town.mercy / town.shop / town.bank / town.storage / town.upgrade / dungeon.enter）は app が決める。
 // M7: 闇魔術は最初に 灰から戻す / 装備を鍛える / 戻る の一覧。強化（TW-17）の成功率・料金・可否は app が core の upgradePreview で取って渡す。
-// M7: 店は最初に 買う / 売る / 買い戻す / 鑑定 / 倉庫 / 戻る の一覧。倉庫（TW-16）の入口は店の一覧の中（items.md §11 の Q9 の既定。銀行を作る段で移す）。
+// M7: 店は最初に 買う / 売る / 買い戻す / 鑑定 / 倉庫 / 戻る の一覧。M17: 倉庫（TW-16）の入口を店から銀行（TW-10）へ移し、店は 買う / 売る / 買い戻す / 鑑定 / 戻る。
 import type { EquipSlot, Strings } from "../../core/data/index";
 import type { ClassChangeOption } from "../../core/rules/town";
 import type { TownMenu, TownMenuUpgradeCatalyst, UpgradeCatalystRef, UpgradePreview } from "../../core/types";
@@ -18,8 +18,9 @@ export type TempleService = "resurrect" | "cure" | "uncurse";
  * 街のページ。{ temple: s } は寺院のサービス s の対象の一覧。店（M7）:
  * shop は店の最初の一覧、shopBuy は売り物、{ shop: itemId } はその品を持たせる者、shopSell は売る者、{ sell: memberId } はその者の売れる品、
  * shopBuyback は買い戻しの品、{ buyback: instanceId } はその品を持たせる者、shopIdentify は鑑定する品。
- * 倉庫（TW-16）: storage は 預ける / 引き出す、storageDeposit は預ける者、{ deposit: memberId } はその者の品、
- * storageWithdraw は倉庫の品、{ withdraw: instanceId } はその品を受け取る者。
+ * 銀行（TW-10 / TW-16。M17）: bank は 金を預ける / 金を引き出す / 品を預ける / 品を引き出す / すべて預ける、bankDeposit・bankWithdraw は金の額の行、
+ * storageDeposit は品を預ける者、{ deposit: memberId } はその者の品、storageWithdraw は倉庫の品、{ withdraw: instanceId } はその品を受け取る者
+ * （M7〜M16 の倉庫の入口 storage（店の一覧の中）は M17 で bank に置き換えた）。
  * 闇魔術（M7）: dark は 灰から戻す / 装備を鍛える / 戻る、darkRevive は灰の者（TW-08）。強化（TW-17）: upgrade は者、{ upSlot: memberId } は部位、
  * { upCat } は触媒の選択（picked は選んだ順の実体 id）、{ upConfirm } は成功率と料金の確認
  */
@@ -37,7 +38,9 @@ export type TownPage =
   | "shopSell"
   | "shopBuyback"
   | "shopIdentify"
-  | "storage"
+  | "bank"
+  | "bankDeposit"
+  | "bankWithdraw"
   | "storageDeposit"
   | "storageWithdraw"
   | { temple: TempleService }
@@ -90,6 +93,10 @@ export type TownEntry =
   | { kind: "buyback"; memberId: string; instanceId: string; label: string; disabled: boolean }
   /** IT-65: 鑑定する品の行（持ち主・未鑑定の名前・料金。払えなければ disabled）。押すと town.shop の identify */
   | { kind: "identify"; memberId: string; instanceId: string; label: string; disabled: boolean }
+  /** TW-10（M17）: 金の額の行（core の townMenu.bank の行。ok でなければ disabled）。amount は town.bank に送る額（預入は正・引出は負）。押すと town.bank */
+  | { kind: "bank"; amount: number; label: string; disabled: boolean }
+  /** TW-16b（M17）: すべて預ける（memberId null は全員。core の depositAllOk でなければ disabled）。押すと town.storage の depositAll */
+  | { kind: "depositAll"; memberId: string | null; label: string; disabled: boolean }
   /** TW-16: 預ける品の行（倉庫が満杯なら disabled）。押すと town.storage の deposit */
   | { kind: "deposit"; memberId: string; instanceId: string; label: string; disabled: boolean }
   /** TW-16: 引き出した品を受け取る者の行（所持枠の空きが無ければ disabled）。押すと town.storage の withdraw */
@@ -116,6 +123,9 @@ export type TownEntry =
   | { kind: "back"; label: string };
 
 const TEMPLE_SERVICES: readonly TempleService[] = ["resurrect", "cure", "uncurse"];
+
+/** TW-10（M17）: 金の額の行の kind → ラベルの strings キー（{amount}） */
+const BANK_ROW_KEY: Readonly<Record<"all" | "half" | "fixed", string>> = { all: "town.bank.all", half: "town.bank.half", fixed: "town.bank.amountRow" };
 
 /** TW-09（M10）: core の checkClassChange の理由 → 語る文の strings キー（受け付けの段の理由は表に無いので語らない） */
 const CLASS_CHANGE_REASON: Readonly<Record<string, string>> = {
@@ -175,8 +185,8 @@ export function townParent(page: TownPage): TownPage | null {
   }
   if (page === "classChange") return "tavern";
   if (page === "darkRevive" || page === "upgrade") return "dark";
-  if (page === "shopBuy" || page === "shopSell" || page === "shopBuyback" || page === "shopIdentify" || page === "storage") return "shop";
-  if (page === "storageDeposit" || page === "storageWithdraw") return "storage";
+  if (page === "shopBuy" || page === "shopSell" || page === "shopBuyback" || page === "shopIdentify") return "shop";
+  if (page === "bankDeposit" || page === "bankWithdraw" || page === "storageDeposit" || page === "storageWithdraw") return "bank";
   return "menu";
 }
 
@@ -208,11 +218,11 @@ export function townRepair(page: TownPage, menu: TownMenu): TownPage {
   return page;
 }
 
-/** UI-13 / UI-52（M16）: 施設メニューの 6 枠の strings の id（town.menu.<id> がラベル、town.menu.note.<id> が説明。枠の順） */
-const TOWN_MENU_IDS = ["tavern", "inn", "temple", "dark", "dungeon", "shop"] as const;
+/** UI-13 / UI-52（M16。M17 で銀行）: 施設メニューの 7 枠の strings の id（town.menu.<id> がラベル、town.menu.note.<id> が説明。枠の順） */
+const TOWN_MENU_IDS = ["tavern", "inn", "temple", "dark", "dungeon", "shop", "bank"] as const;
 
 /**
- * UI-13 / UI-52（M16。設計 4-4）: 施設メニューの下の説明の 6 行（town.menu.noteRow「{label}: {note}」。枠の順）。
+ * UI-13 / UI-52（M16。設計 4-4。M17 で 7 行）: 施設メニューの下の説明の 7 行（town.menu.noteRow「{label}: {note}」。枠の順）。
  * 救済の申し出の間も同じ
  */
 export function townMenuNotes(strings: Strings): string[] {
@@ -220,7 +230,7 @@ export function townMenuNotes(strings: Strings): string[] {
 }
 
 /**
- * そのページのリストの項目（menu は 6 行で戻るは無い。それ以外は一覧で末尾が戻る）。
+ * そのページのリストの項目（menu は 7 つで戻るは無い。それ以外は一覧で末尾が戻る）。
  * preview は { upConfirm } のときに app が core の upgradePreview で取った値（それ以外のページでは使わない）
  */
 export function townEntries(
@@ -242,6 +252,7 @@ export function townEntries(
       { kind: "page", to: "dark", label: s(strings, "town.menu.dark") },
       { kind: "page", to: "gate", label: s(strings, "town.menu.dungeon") },
       { kind: "page", to: "shop", label: s(strings, "town.menu.shop") },
+      { kind: "page", to: "bank", label: s(strings, "town.menu.bank") },
     ];
   }
   if (page === "tavern") {
@@ -338,13 +349,12 @@ export function townEntries(
     return [...rows, back];
   }
   if (page === "shop") {
-    // M7 UI-52: 買う / 売る / 買い戻す / 鑑定 / 倉庫（TW-16。Q9 の既定）/ 戻る。どれも dim にしない（中が空なら空の行）
+    // M7 UI-52: 買う / 売る / 買い戻す / 鑑定 / 戻る。どれも dim にしない（中が空なら空の行）。M17: 倉庫は銀行へ移した
     return [
       { kind: "page", to: "shopBuy", label: s(strings, "town.shop.menu.buy") },
       { kind: "page", to: "shopSell", label: s(strings, "town.shop.menu.sell") },
       { kind: "page", to: "shopBuyback", label: s(strings, "town.shop.menu.buyback") },
       { kind: "page", to: "shopIdentify", label: s(strings, "town.shop.menu.identify") },
-      { kind: "page", to: "storage", label: s(strings, "town.shop.menu.storage") },
       back,
     ];
   }
@@ -382,14 +392,25 @@ export function townEntries(
     );
     return orEmpty(rows, "camp.identify.none");
   }
-  if (page === "storage") {
-    // TW-16: 預ける / 引き出す（倉庫の数と容量）/ 戻る
+  if (page === "bank") {
+    // TW-10 / TW-16 / TW-16b（M17）: 金を預ける / 金を引き出す / 品を預ける / 品を引き出す（倉庫の数と容量）/ すべて預ける（全員。core の depositAllOk）/ 戻る。
+    // 金と品の行は dim にしない（中の段の行で dim）
     const st = menu.storage;
     return [
+      { kind: "page", to: "bankDeposit", label: s(strings, "town.bank.menu.deposit") },
+      { kind: "page", to: "bankWithdraw", label: s(strings, "town.bank.menu.withdraw") },
       { kind: "page", to: "storageDeposit", label: s(strings, "town.storage.menu.deposit") },
       { kind: "page", to: "storageWithdraw", label: s(strings, "town.storage.menu.withdraw", { count: st.items.length, capacity: st.capacity }) },
+      { kind: "depositAll", memberId: null, label: s(strings, "town.storage.menu.depositAll"), disabled: !st.depositAllOk },
       back,
     ];
+  }
+  if (page === "bankDeposit" || page === "bankWithdraw") {
+    // TW-10（M17）: 額の行（core の townMenu.bank の順: 全額 → 半分 → config.bank.amounts）。ok でなければ dim。送った後もこのページにとどまる
+    const rows = (page === "bankDeposit" ? menu.bank.deposit : menu.bank.withdraw).map(
+      (r): TownEntry => ({ kind: "bank", amount: r.delta, label: s(strings, BANK_ROW_KEY[r.kind], { amount: r.amount }), disabled: !r.ok }),
+    );
+    return [...rows, back];
   }
   if (page === "storageDeposit") {
     // TW-16: 全員（並び順。life を問わない）。所持品の無い者は disabled
@@ -494,12 +515,19 @@ export function townEntries(
     return [...rows, back];
   }
   if ("deposit" in page) {
-    // TW-16: その者の所持品（未鑑定・呪われた品も可）。倉庫が満杯なら disabled
+    // TW-16: その者の所持品（未鑑定・呪われた品も可）。倉庫が満杯なら disabled。
+    // TW-16b（M17）: 先頭に「この者の物をすべて預ける（{count}品）」（core の members[].depositAllOk でなければ dim）
     const memberId = page.deposit;
     const m = menu.storage.members.find((x) => x.memberId === memberId);
     const full = menu.storage.slotsFree <= 0;
+    const all: TownEntry = {
+      kind: "depositAll",
+      memberId,
+      label: s(strings, "town.storage.depositAllOne", { count: m?.items.length ?? 0 }),
+      disabled: !(m?.depositAllOk ?? false),
+    };
     const rows = (m?.items ?? []).map((r): TownEntry => ({ kind: "deposit", memberId, instanceId: r.instanceId, label: r.name, disabled: full }));
-    return orEmpty(rows, "town.storage.none");
+    return [all, ...orEmpty(rows, "town.storage.none")];
   }
   if ("withdraw" in page) {
     // TW-16: 受け取る者（全員。life を問わない。所持枠の空きが無ければ disabled）
@@ -574,25 +602,25 @@ export function townPageIntro(page: TownPage, menu: TownMenu): string[] {
   if (page === "shopSell") return ["town.shop.sellIntro"];
   if (page === "shopBuyback") return ["town.shop.buybackIntro"];
   if (page === "shopIdentify") return ["town.shop.identifyIntro"];
-  if (page === "storage") return ["town.storage.intro"];
+  if (page === "bank") return ["town.bank.intro"]; // TW-10（M17）
   if (page === "classChange") return ["town.classChange.intro"]; // TW-09（M10）
   // M8.5: 問いだけの語り（買う・持たせる者・受け取る者・強化の部位と触媒）は一覧の見出し（townHeading）に移した
   return [];
 }
 
-/** UI-61 / UI-13（M8.5）: 施設の id（施設の絵 public/town/<id>.png・ヘッダーの場所 town.place.<id>） */
+/** UI-61 / UI-13（M8.5）: 施設の id（施設の絵 public/town/<id>.png・施設の曲）。ヘッダーの場所は townPlace（銀行（M17）だけ施設の id と違う） */
 export type TownFacility = "town" | "tavern" | "inn" | "temple" | "dark" | "gate" | "shop";
 
 /**
  * UI-61（M8.5）: ページの施設。menu は town、寺院のサービスの対象は temple、闇魔術（灰から戻す・強化の各段）は dark、
- * 店（売る・買う・買い戻す・鑑定・倉庫の各段）は shop
+ * 店（売る・買う・買い戻す・鑑定の各段）と銀行（M17。金・倉庫の各段。銀行の絵と曲は無いので店のものを使う）は shop
  */
 export function townFacility(page: TownPage): TownFacility {
   if (typeof page === "object") {
     if ("temple" in page) return "temple";
     if ("ccClass" in page || "ccConfirm" in page) return "tavern"; // TW-09（M10）
     if ("upSlot" in page || "upCat" in page || "upConfirm" in page) return "dark";
-    return "shop"; // shop / sell / buyback / deposit / withdraw
+    return "shop"; // shop / sell / buyback / deposit / withdraw（deposit / withdraw は銀行。M17）
   }
   switch (page) {
     case "menu":
@@ -610,13 +638,19 @@ export function townFacility(page: TownPage): TownFacility {
     case "upgrade":
       return "dark";
     default:
-      return "shop"; // shopBuy / shopSell / shopBuyback / shopIdentify / storage / storageDeposit / storageWithdraw
+      return "shop"; // shopBuy / shopSell / shopBuyback / shopIdentify、銀行（M17）の bank / bankDeposit / bankWithdraw / storageDeposit / storageWithdraw
   }
 }
 
-/** UI-52（M8.5）: ヘッダーの場所の strings キー（town.place.<施設>） */
+/** 銀行（TW-10 / TW-16。M17）のページか（ヘッダーの場所を town.place.bank にする） */
+function isBankPage(page: TownPage): boolean {
+  if (typeof page === "object") return "deposit" in page || "withdraw" in page;
+  return page === "bank" || page === "bankDeposit" || page === "bankWithdraw" || page === "storageDeposit" || page === "storageWithdraw";
+}
+
+/** UI-52（M8.5）: ヘッダーの場所の strings キー（town.place.<施設>。銀行のページは town.place.bank。M17） */
 export function townPlace(page: TownPage): string {
-  return `town.place.${townFacility(page)}`;
+  return isBankPage(page) ? "town.place.bank" : `town.place.${townFacility(page)}`;
 }
 
 /**
@@ -641,8 +675,13 @@ export function townHeading(page: TownPage): string {
       return "town.ask.menu";
     case "tavern":
     case "shop":
-    case "storage":
       return "town.ask.what";
+    case "bank":
+      return "town.bank.balance"; // TW-10（M17）。townHeadingText が預金と所持金を入れる
+    case "bankDeposit":
+      return "town.ask.bankDeposit";
+    case "bankWithdraw":
+      return "town.ask.bankWithdraw";
     case "inn":
       return "town.ask.inn";
     case "temple":
@@ -698,15 +737,17 @@ const LIST_ROW_UNITS = 39;
 
 /**
  * TW-17 / IT-70（M16 の G-2）: 触媒の行「●{item} +{level}　{owner}」（town.upgrade.catOn / catOff・catRow・itemLv）。
- * 行が一覧の行の文字の幅（39 単位 = 全角 19.5 字）を超えるときは、持ち主の名前を先頭 2 字 + item.owner.short（「{name}…」）に縮める（表示のための計算）
+ * 倉庫の品（M17。core の ownerId が null）の持ち主の欄は town.shop.menu.storage「倉庫」。
+ * 行が一覧の行の文字の幅（39 単位 = 全角 19.5 字）を超えるときは、持ち主の欄を先頭 2 字 + item.owner.short（「{name}…」）に縮める（表示のための計算）
  */
 export function upgradeCatalystLabel(c: TownMenuUpgradeCatalyst, on: boolean, strings: Strings): string {
   const key = on ? "town.upgrade.catOn" : "town.upgrade.catOff";
   const item = upgradeItemName(c.plainName, c.level, strings);
-  const row = (owner: string): string => s(strings, key, { name: s(strings, "town.upgrade.catRow", { item, owner }) });
-  const full = row(c.ownerName);
+  const owner = c.ownerId === null ? s(strings, "town.shop.menu.storage") : c.ownerName;
+  const row = (o: string): string => s(strings, key, { name: s(strings, "town.upgrade.catRow", { item, owner: o }) });
+  const full = row(owner);
   if (textUnits(full) <= LIST_ROW_UNITS) return full;
-  return row(s(strings, "item.owner.short", { name: Array.from(c.ownerName).slice(0, 2).join("") }));
+  return row(s(strings, "item.owner.short", { name: Array.from(owner).slice(0, 2).join("") }));
 }
 
 /**
@@ -717,6 +758,7 @@ export function upgradeCatalystLabel(c: TownMenuUpgradeCatalyst, on: boolean, st
  * - 転職の確認（{ ccConfirm }）: 「{name}を{cls}にする。レベルは 1 に戻る。よいか。」（town.classChange.confirm）。cc が null なら town.ask.classChangeConfirm
  * - 酒場で救済の申し出（TW-30。menu.mercy が null でない）の間: town.ask.mercy（答えは救済の行）
  * - 施設メニューで救済の申し出の間: town.ask.menuMercy（酒場へ行けば戻してもらえる、と施設の問い。街に入るときの語り town.mercy.offer は問いを含まない）
+ * - 銀行の一覧と金の額の段（M17）: townHeading のキーに預金 {bank} と所持金 {gold}（core の townMenu.bank）を入れた文
  * - ほかは townHeading のキーの文
  */
 export function townHeadingText(
@@ -737,6 +779,8 @@ export function townHeadingText(
   }
   if (page === "tavern" && menu.mercy !== null) return s(strings, "town.ask.mercy");
   if (page === "menu" && menu.mercy !== null) return s(strings, "town.ask.menuMercy");
+  // TW-10（M17）: 銀行の一覧と金の額の段の見出しは預金と所持金の値を入れる（core の townMenu.bank）
+  if (page === "bank" || page === "bankDeposit" || page === "bankWithdraw") return s(strings, townHeading(page), { bank: menu.bank.bank, gold: menu.bank.gold });
   return s(strings, townHeading(page));
 }
 

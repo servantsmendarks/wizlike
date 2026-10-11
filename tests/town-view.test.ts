@@ -81,7 +81,9 @@ const ALL_PAGES: readonly TownPage[] = [
   "shopSell",
   "shopBuyback",
   "shopIdentify",
-  "storage",
+  "bank",
+  "bankDeposit",
+  "bankWithdraw",
   "storageDeposit",
   "storageWithdraw",
   { shop: "herb" },
@@ -95,7 +97,7 @@ const ALL_PAGES: readonly TownPage[] = [
 ];
 
 describe("UI-52 街のページ", () => {
-  test("UI-52/TW-08/TW-05 施設メニューは 酒場・宿屋・寺院・闇魔術・迷宮へ・店 の 6 枠。ヘッダーは所持金", () => {
+  test("UI-52/TW-08/TW-05/TW-10 施設メニューは 酒場・宿屋・寺院・闇魔術・迷宮へ・店・銀行 の 7 枠（M17 で銀行。3 段目の左）。ヘッダーは所持金", () => {
     const m = menuOf(town());
     expect(townEntries("menu", m, S)).toEqual([
       { kind: "page", to: "tavern", label: "酒場" },
@@ -104,16 +106,18 @@ describe("UI-52 街のページ", () => {
       { kind: "page", to: "dark", label: "闇魔術" },
       { kind: "page", to: "gate", label: "迷宮へ" },
       { kind: "page", to: "shop", label: "店" },
+      { kind: "page", to: "bank", label: "銀行" },
     ]);
     expect(townHeader(m, S, "menu")).toBe("街　300G");
     expect(townHeader(menuOf(town({}, 0)), S, "menu")).toBe("街　0G");
   });
 
-  test("UI-13/UI-52（M10）施設メニューのラベルは 4 字（TOWN_GRID_LABEL_MAX）まで。8px の字で 48×48 の枠の内側に収まる（strings を差し替えて 5 字にしたら落ちる）", () => {
+  test("UI-13/UI-52（M10。M17）施設メニューのラベルは 4 字（TOWN_GRID_LABEL_MAX）まで。8px の字で 40×40 の枠の内側に収まる（strings を差し替えて 5 字にしたら落ちる）。7 つは 9 枠に収まる", () => {
     expect(TOWN_GRID_LABEL_MAX).toBe(4);
     const grid = townLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size).grid;
     const labels = townEntries("menu", menuOf(town()), S).map((e) => e.label);
-    expect(labels).toHaveLength(grid.length);
+    expect(grid).toHaveLength(9);
+    expect(labels).toHaveLength(7);
     for (const l of labels) expect([...l].length, l).toBeLessThanOrEqual(TOWN_GRID_LABEL_MAX);
     for (const r of grid) expect(8 * TOWN_GRID_LABEL_MAX).toBeLessThanOrEqual(r.w - 2);
     // 差し替えの検査が効くこと（5 字の施設名は上の検査で落ちる）
@@ -121,7 +125,7 @@ describe("UI-52 街のページ", () => {
     expect(long.some((l) => [...l].length > TOWN_GRID_LABEL_MAX)).toBe(true);
   });
 
-  test("UI-13/UI-52（M16）施設メニューの下の説明は枠の順に 6 行「{label}: {note}」。各行は全角 28 字以内で、行の数は townLayout の notes と同じ", () => {
+  test("UI-13/UI-52（M16。M17）施設メニューの下の説明は枠の順に 7 行「{label}: {note}」。各行は全角 28 字以内で、行の数は townLayout の notes と同じ", () => {
     const notes = townMenuNotes(S);
     expect(notes).toEqual([
       "酒場: 状態・転職・図鑑",
@@ -129,7 +133,8 @@ describe("UI-52 街のページ", () => {
       "寺院: 蘇生・治療",
       "闇魔術: 灰から戻す・装備を鍛える",
       "迷宮へ: 潜る",
-      "店: 売買・鑑定・倉庫",
+      "店: 売買・鑑定",
+      "銀行: 金と品を預ける",
     ]);
     // ラベルは施設メニューの枠と同じ文言（town.menu.<id>）
     expect(notes.map((l) => l.split(":")[0])).toEqual(townEntries("menu", menuOf(town()), S).map((e) => e.label));
@@ -341,6 +346,32 @@ describe("UI-52 街のページ", () => {
     expect(upgradeItemName("短剣", 0, S)).toBe("短剣 +0");
   });
 
+  test("UI-52/TW-17/IT-70（M17）倉庫の品の触媒の行は持ち主の欄が town.shop.menu.storage「倉庫」。メンバーの品の後に並び、選ぶと memberId null の組。townRepair は倉庫の品を選んだままにする", () => {
+    const s = town();
+    const mine = createItemInstance(s, { itemId: "dagger", level: 1, identified: true });
+    const stored = createItemInstance(s, { itemId: "dagger", level: 3, identified: true });
+    s.party[0]!.inventory.push(mine);
+    s.warehouse.push(stored);
+    const m = menuOf(s);
+    const sel = { memberId: "c1", slot: "weapon" as const, picked: [] as UpgradeCatalystRef[] };
+    const rows = townEntries({ upCat: sel }, m, S).filter((e) => e.kind === "upPick");
+    expect(rows).toEqual([
+      { kind: "upPick", to: { upCat: { ...sel, picked: [{ memberId: "c1", instanceId: mine }] } }, label: "○短剣 +1　アルド", disabled: false },
+      { kind: "upPick", to: { upCat: { ...sel, picked: [{ memberId: null, instanceId: stored }] } }, label: "○短剣 +3　倉庫", disabled: false },
+    ]);
+    const picked = { ...sel, picked: [{ memberId: null, instanceId: stored }] };
+    expect(townEntries({ upCat: picked }, m, S).find((e) => e.kind === "upPick" && e.label.includes("倉庫"))?.label).toBe("●短剣 +3　倉庫");
+    expect(townRepair({ upCat: picked }, m)).toEqual({ upCat: picked });
+    // 倉庫から消えたら選択から外す
+    const after = cloneState(s);
+    after.warehouse = [];
+    expect(townRepair({ upCat: picked }, menuOf(after))).toEqual({ upCat: sel });
+    // ownerName（倉庫は空文字）ではなく strings の「倉庫」を出す（差し替えに追従）
+    const row = { instanceId: "i1", name: "短剣 +3", plainName: "短剣", level: 3, ownerId: null, ownerName: "" };
+    expect(upgradeCatalystLabel(row, false, S)).toBe("○短剣 +3　倉庫");
+    expect(upgradeCatalystLabel(row, false, { ...S, "town.shop.menu.storage": "蔵" })).toBe("○短剣 +3　蔵");
+  });
+
   // 2026-10-07（M10.5 追補・未定-22）: 確認の段は会話の箱で語らず、問いを見出しに出し、対象と触媒の数を答えのボタンのラベルに出す。
   // 旧「対象・触媒の数」「成功率・料金」「所持金が足りない」の語り（upgradeConfirmLines）とラベル「鍛える」の期待を置き換えた
   test("UI-52/UI-47/TW-17 未定-22 確認の段: core の upgradePreview の値で見出しに「成功率（大成功）料金。鍛えるか？」（払えなければ「所持金が足りない。」）、ボタンに「{item}を鍛える（触媒 n）」。会話の箱では語らない。block が null のときだけ 鍛える を押せる", () => {
@@ -391,13 +422,27 @@ describe("UI-52 街のページ", () => {
     expect(TOWN_INTRO_DEDUP).toBe(2);
   });
 
-  test("UI-52（M8.5）townHeading: 全ページで strings にある params の無いキーで、1 行（見出しの幅 224 = 全角 28 字）に収まる", () => {
+  test("UI-52（M8.5）/TW-10（M17）townHeading: 全ページで strings にある params の無いキーで、1 行（見出しの幅 224 = 全角 28 字）に収まる。銀行の一覧と金の額の段だけは預金・所持金を入れた文（townHeadingText）", () => {
+    const bankPages: readonly TownPage[] = ["bank", "bankDeposit", "bankWithdraw"];
+    const rich = town({}, 9999999);
+    rich.bank = 9999999;
     for (const p of ALL_PAGES) {
       const k = townHeading(p);
       expect(S[k], JSON.stringify(p)).toBeDefined();
+      if (bankPages.includes(p)) {
+        // 7 桁の額でも 1 行に収まり、置き換え忘れの { が残らない
+        const text = townHeadingText(p, menuOf(rich), S);
+        expect(text, k).not.toContain("{");
+        expect(kinsokuLines(text, 28), text).toHaveLength(1);
+        continue;
+      }
       expect(S[k], k).not.toContain("{");
       expect(kinsokuLines(S[k]!, 28), k).toHaveLength(1);
     }
+    const m = menuOf(town({}, 300));
+    expect(townHeadingText("bank", m, S)).toBe("預金 0G　所持 300G");
+    expect(townHeadingText("bankDeposit", m, S)).toBe("いくら預ける？　所持 300G");
+    expect(townHeadingText("bankWithdraw", m, S)).toBe("いくら引き出す？　預金 0G");
     expect(townHeading("menu")).toBe("town.ask.menu");
     expect(townHeading("inn")).toBe("town.ask.inn");
     expect(townHeading("gate")).toBe("town.ask.gate");
@@ -426,7 +471,7 @@ describe("UI-52 街のページ", () => {
     expect(S["town.shop.sellIntro"]).toBe("鑑定していない品は、見た目どおりの値で引き取るそうだ。");
   });
 
-  test("UI-61（M8.5）townFacility: menu は town、寺院のサービスは temple、闇魔術の灰から戻す・強化の各段は dark、店と倉庫の各段は shop。townPlace は town.place.<施設>", () => {
+  test("UI-61（M8.5）townFacility: menu は town、寺院のサービスは temple、闇魔術の灰から戻す・強化の各段は dark、店と銀行（M17）の各段は shop。townPlace は town.place.<施設>（銀行の各段だけ town.place.bank）", () => {
     const sel = { memberId: "c1", slot: "weapon" as const, picked: [] };
     const want: [TownPage, string][] = [
       ["menu", "town"],
@@ -446,7 +491,9 @@ describe("UI-52 街のページ", () => {
       ["shopSell", "shop"],
       ["shopBuyback", "shop"],
       ["shopIdentify", "shop"],
-      ["storage", "shop"],
+      ["bank", "shop"],
+      ["bankDeposit", "shop"],
+      ["bankWithdraw", "shop"],
       ["storageDeposit", "shop"],
       ["storageWithdraw", "shop"],
       [{ shop: "herb" }, "shop"],
@@ -460,10 +507,14 @@ describe("UI-52 街のページ", () => {
     ];
     expect(want.map(([p]) => townFacility(p))).toEqual(want.map(([, f]) => f));
     expect(want.length).toBe(ALL_PAGES.length);
+    // TW-10 / TW-16（M17）: 銀行の各段（金の額・品を預ける者と品・引き出す品と受け取る者）は絵と曲は店のまま、場所は銀行
+    const bank = new Set(["bank", "bankDeposit", "bankWithdraw", "storageDeposit", "storageWithdraw", JSON.stringify({ deposit: "c1" }), JSON.stringify({ withdraw: "i1" })]);
     for (const [p, f] of want) {
-      expect(townPlace(p)).toBe(`town.place.${f}`);
+      const key = typeof p === "string" ? p : JSON.stringify(p);
+      expect(townPlace(p)).toBe(bank.has(key) ? "town.place.bank" : `town.place.${f}`);
       expect(S[townPlace(p)], f).toBeDefined();
     }
+    expect(S["town.place.bank"]).toBe("銀行");
   });
 
   test("UI-52（M8.5）townHeader は「{place}　{gold}G」（場所はページの施設）", () => {
@@ -472,7 +523,9 @@ describe("UI-52 街のページ", () => {
     expect(townHeader(m, S, "inn")).toBe("宿屋　300G");
     expect(townHeader(m, S, { upSlot: "c1" })).toBe("闇魔術　300G");
     expect(townHeader(m, S, "gate")).toBe("迷宮の入口　300G");
-    expect(townHeader(m, S, { withdraw: "i1" })).toBe("店　300G");
+    expect(townHeader(m, S, { withdraw: "i1" })).toBe("銀行　300G");
+    expect(townHeader(m, S, "bank")).toBe("銀行　300G");
+    expect(townHeader(m, S, "shopSell")).toBe("店　300G");
   });
 
   test("UI-47（M8.5）街で語る固定の文（ページの語り・救済の申し出・士気・街に入る・見回す・対象なし）は、会話の箱の 3 行（全角 28 字。禁則つき）に収まる", () => {
@@ -631,14 +684,14 @@ describe("UI-52 街のページ", () => {
     ]);
   });
 
-  // M7 で店の最初に 買う / 売る / 買い戻す / 鑑定 / 倉庫 の一覧を置いた（ui.md UI-52 の M7）。旧「店は売り物の行」は買うのページ（shopBuy）に移した
-  test("UI-52/TW-05/TW-16 店の最初の一覧は 買う・売る・買い戻す・鑑定・倉庫・戻る。どれも dim にしない", () => {
+  // M7 で店の最初に 買う / 売る / 買い戻す / 鑑定 / 倉庫 の一覧を置いた（ui.md UI-52 の M7）。旧「店は売り物の行」は買うのページ（shopBuy）に移した。
+  // M17 で倉庫を銀行へ移した
+  test("UI-52/TW-05/TW-16 店の最初の一覧は 買う・売る・買い戻す・鑑定・戻る（M17 で倉庫を銀行へ移した）。どれも dim にしない", () => {
     expect(townEntries("shop", menuOf(town({}, 0)), S)).toEqual([
       { kind: "page", to: "shopBuy", label: "買う" },
       { kind: "page", to: "shopSell", label: "売る" },
       { kind: "page", to: "shopBuyback", label: "買い戻す" },
       { kind: "page", to: "shopIdentify", label: "鑑定" },
-      { kind: "page", to: "storage", label: "倉庫" },
       back,
     ]);
     expect(townPageIntro("shop", menuOf(town()))).toEqual(["town.shop.intro"]);
@@ -716,7 +769,7 @@ describe("UI-52 街のページ", () => {
     expect(townEntries({ shop: "long_sword" }, m, S).filter((e) => e.kind === "buy").every((e) => e.kind === "buy" && e.disabled)).toBe(true);
     expect(townEntries({ shop: "staff" }, m, S).filter((e) => e.kind === "buy" && !e.disabled).length).toBe(4);
     expect(townPageIntro({ shop: "herb" }, m)).toEqual([]);
-    for (const k of ["town.shop.intro", "town.shop.whom", "town.shop.buyIntro", "town.shop.sellIntro", "town.shop.buybackIntro", "town.shop.identifyIntro", "town.storage.intro", "town.storage.whom"]) {
+    for (const k of ["town.shop.intro", "town.shop.whom", "town.shop.buyIntro", "town.shop.sellIntro", "town.shop.buybackIntro", "town.shop.identifyIntro", "town.bank.intro", "town.storage.whom"]) {
       expect(S[k], k).toBeDefined();
       expect(S[k], k).not.toContain("{");
     }
@@ -866,18 +919,78 @@ describe("UI-52 街のページ", () => {
     expect(townParent("shopIdentify")).toBe("shop");
   });
 
-  test("UI-52/TW-16 倉庫は 預ける・引き出す（数と容量）→ 預けるは者（品の無い者は disabled）→ 品。引き出すは品 → 受け取る者（空きが無ければ disabled）", () => {
+  test("UI-52/TW-10/TW-16/TW-16b（M17）銀行は 金を預ける・金を引き出す・品を預ける・品を引き出す（数と容量）・すべて預ける・戻る。語りは town.bank.intro、戻るは施設メニュー", () => {
+    const s = town({}, 300);
+    const kept = createItemInstance(s, { itemId: "long_sword", identified: false });
+    s.warehouse.push(kept);
+    const m = menuOf(s);
+    const cap = data.config.items.warehouseSlots;
+    expect(townEntries("bank", m, S)).toEqual([
+      { kind: "page", to: "bankDeposit", label: "金を預ける" },
+      { kind: "page", to: "bankWithdraw", label: "金を引き出す" },
+      { kind: "page", to: "storageDeposit", label: "品を預ける" },
+      { kind: "page", to: "storageWithdraw", label: `品を引き出す　1/${cap}` },
+      { kind: "depositAll", memberId: null, label: "すべて預ける", disabled: false },
+      back,
+    ]);
+    expect(townPageIntro("bank", m)).toEqual(["town.bank.intro"]);
+    expect(S["town.bank.intro"]).toBe("帳場の奥に金庫と倉庫。預けた物は一行が倒れても残る。");
+    expect(townParent("bank")).toBe("menu");
+    for (const p of ["bankDeposit", "bankWithdraw", "storageDeposit", "storageWithdraw"] as const) expect(townParent(p)).toBe("bank");
+    // すべて預ける（全員）の dim は core の depositAllOk: 誰も品を持たない・倉庫が満杯なら dim
+    const none = town();
+    for (const c of none.party) c.inventory = [];
+    expect(menuOf(none).storage.depositAllOk).toBe(false);
+    expect(townEntries("bank", menuOf(none), S).find((e) => e.kind === "depositAll")).toEqual({ kind: "depositAll", memberId: null, label: "すべて預ける", disabled: true });
+    const full = cloneState(s);
+    for (let i = full.warehouse.length; i < cap; i++) full.warehouse.push(createItemInstance(full, { itemId: "herb", identified: true }));
+    expect(townEntries("bank", menuOf(full), S).find((e) => e.kind === "depositAll")).toMatchObject({ disabled: true });
+  });
+
+  test("UI-52/TW-10（M17）金の額の段: core の townMenu.bank の行（全額 → 半分 → config.bank.amounts）。town.bank に送る額は預入が正・引出が負。ok でなければ dim", () => {
+    expect(data.config.bank.amounts).toEqual([100, 1000]);
+    const s = town({}, 301);
+    s.bank = 1500;
+    const m = menuOf(s);
+    expect(townEntries("bankDeposit", m, S)).toEqual([
+      { kind: "bank", amount: 301, label: "全額（301G）", disabled: false },
+      { kind: "bank", amount: 150, label: "半分（150G）", disabled: false },
+      { kind: "bank", amount: 100, label: "100G", disabled: false },
+      { kind: "bank", amount: 1000, label: "1000G", disabled: true },
+      back,
+    ]);
+    expect(townEntries("bankWithdraw", m, S)).toEqual([
+      { kind: "bank", amount: -1500, label: "全額（1500G）", disabled: false },
+      { kind: "bank", amount: -750, label: "半分（750G）", disabled: false },
+      { kind: "bank", amount: -100, label: "100G", disabled: false },
+      { kind: "bank", amount: -1000, label: "1000G", disabled: false },
+      back,
+    ]);
+    // 預金 0 なら引き出しの行は全部 dim（全額・半分は 0G）
+    const poor = menuOf(town({}, 0));
+    expect(townEntries("bankWithdraw", poor, S).map((e) => (e.kind === "bank" ? [e.label, e.disabled] : e.kind))).toEqual([
+      ["全額（0G）", true],
+      ["半分（0G）", true],
+      ["100G", true],
+      ["1000G", true],
+      "back",
+    ]);
+    expect(townEntries("bankDeposit", poor, S).every((e) => e.kind !== "bank" || e.disabled)).toBe(true);
+    // 送った額は core がそのまま受け付ける（dim でない行の amount は checkBank を通る）
+    for (const e of townEntries("bankDeposit", m, S)) if (e.kind === "bank" && !e.disabled) expect(execute(s, { type: "town.bank", amount: e.amount }, data).events[0]).toMatchObject({ key: "town.bank.deposited" });
+    for (const e of townEntries("bankWithdraw", m, S)) if (e.kind === "bank" && !e.disabled) expect(execute(s, { type: "town.bank", amount: e.amount }, data).events[0]).toMatchObject({ key: "town.bank.withdrawn" });
+    expect(townPageIntro("bankDeposit", m)).toEqual([]);
+    // 行は一覧の行の文字の幅（39 単位）に収まる（7 桁の額でも）
+    for (const k of ["town.bank.all", "town.bank.half", "town.bank.amountRow"]) expect(textUnits(formatMessage(S[k]!, { amount: 9999999 })), k).toBeLessThanOrEqual(39);
+  });
+
+  test("UI-52/TW-16/TW-16b 品を預けるは者（品の無い者は disabled）→ 品（先頭に「この者の物をすべて預ける」）。品を引き出すは品 → 受け取る者（空きが無ければ disabled）", () => {
     const s = town({ c3: { life: "dead", hp: 0 } });
     const kept = createItemInstance(s, { itemId: "long_sword", identified: false });
     s.warehouse.push(kept);
     for (let i = 0; i < 5; i++) s.party[5]!.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
     const m = menuOf(s);
     const cap = data.config.items.warehouseSlots;
-    expect(townEntries("storage", m, S)).toEqual([
-      { kind: "page", to: "storageDeposit", label: "預ける" },
-      { kind: "page", to: "storageWithdraw", label: `引き出す　1/${cap}` },
-      back,
-    ]);
     expect(townEntries("storageDeposit", m, S).map((e) => (e.kind === "pick" ? [e.label, e.disabled] : e.kind))).toEqual([
       ["アルド　1品", false],
       ["ベルク　0品", true],
@@ -888,8 +1001,17 @@ describe("UI-52 街のページ", () => {
       "back",
     ]);
     const herb = s.party[0]!.inventory[0]!;
-    expect(townEntries({ deposit: "c1" }, m, S)).toEqual([{ kind: "deposit", memberId: "c1", instanceId: herb, label: "薬草", disabled: false }, back]);
-    expect(townEntries({ deposit: "c2" }, m, S)).toEqual([{ kind: "empty", label: "預ける物がない", disabled: true }, back]);
+    expect(townEntries({ deposit: "c1" }, m, S)).toEqual([
+      { kind: "depositAll", memberId: "c1", label: "この者の物をすべて預ける（1品）", disabled: false },
+      { kind: "deposit", memberId: "c1", instanceId: herb, label: "薬草", disabled: false },
+      back,
+    ]);
+    expect(townEntries({ deposit: "c6" }, m, S)[0]).toEqual({ kind: "depositAll", memberId: "c6", label: "この者の物をすべて預ける（6品）", disabled: false });
+    expect(townEntries({ deposit: "c2" }, m, S)).toEqual([
+      { kind: "depositAll", memberId: "c2", label: "この者の物をすべて預ける（0品）", disabled: true },
+      { kind: "empty", label: "預ける物がない", disabled: true },
+      back,
+    ]);
     // 未鑑定の品は未鑑定の名前で出る
     expect(townEntries("storageWithdraw", m, S)).toEqual([{ kind: "pick", to: { withdraw: kept }, label: "剣？", disabled: false }, back]);
     // 受け取る者は全員（dead の c3 も）。c6 は空き 0
@@ -905,10 +1027,13 @@ describe("UI-52 街のページ", () => {
     // 倉庫が満杯なら預ける品は disabled
     const full = cloneState(s);
     for (let i = full.warehouse.length; i < cap; i++) full.warehouse.push(createItemInstance(full, { itemId: "herb", identified: true }));
-    expect(townEntries({ deposit: "c1" }, menuOf(full), S)).toEqual([{ kind: "deposit", memberId: "c1", instanceId: herb, label: "薬草", disabled: true }, back]);
+    expect(townEntries({ deposit: "c1" }, menuOf(full), S)).toEqual([
+      { kind: "depositAll", memberId: "c1", label: "この者の物をすべて預ける（1品）", disabled: true },
+      { kind: "deposit", memberId: "c1", instanceId: herb, label: "薬草", disabled: true },
+      back,
+    ]);
     expect(townEntries("storageWithdraw", menuOf(town()), S)).toEqual([{ kind: "empty", label: "倉庫は空だ", disabled: true }, back]);
-    expect(townParent("storage")).toBe("shop");
-    expect(townParent("storageDeposit")).toBe("storage");
+    expect(townParent("storageDeposit")).toBe("bank");
     expect(townParent({ deposit: "c1" })).toBe("storageDeposit");
     expect(townParent({ withdraw: kept })).toBe("storageWithdraw");
     expect(townPageIntro({ withdraw: kept }, m)).toEqual([]);
@@ -942,8 +1067,8 @@ describe("UI-52 街のページ", () => {
 
   test("UI-52/UI-33 戻る（Esc）は 1 つ上のページ。寺院のサービスは寺院へ、店の品は買うへ、店の各ページは店へ、他はメニューへ、メニューは null", () => {
     expect(townParent("menu")).toBeNull();
-    for (const p of ["tavern", "inn", "temple", "dark", "gate", "shop"] as const) expect(townParent(p)).toBe("menu");
-    for (const p of ["shopBuy", "shopSell", "shopBuyback", "shopIdentify", "storage"] as const) expect(townParent(p)).toBe("shop");
+    for (const p of ["tavern", "inn", "temple", "dark", "gate", "shop", "bank"] as const) expect(townParent(p)).toBe("menu");
+    for (const p of ["shopBuy", "shopSell", "shopBuyback", "shopIdentify"] as const) expect(townParent(p)).toBe("shop");
     expect(townParent({ temple: "cure" })).toBe("temple");
     expect(townParent({ shop: "herb" })).toBe("shopBuy");
     expect(samePage({ shop: "herb" }, { shop: "herb" })).toBe(true);
