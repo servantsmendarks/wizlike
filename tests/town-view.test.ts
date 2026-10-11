@@ -1,7 +1,7 @@
 // UI-52 街のページ（views/town.ts の純粋な部分）。値は core の townMenu だけから作る（UI-35）。
 // 既定のパーティ（newGame(1)）: c1 アルド（リーダー）、c2 ベルク、c3 キリ、c4 ドナ、c5 エル、c6 フィン。全員レベル 1。所持金 300。
 // 宿: 馬小屋 0G / 相部屋 20G / 個室 60G。寺院: 蘇生 level × 100、治療 毒 50 + 麻痺 150、解呪 200。闇魔術: level × darkCostPerLevel。
-// 店（TW-05）: 薬草 10G / 解毒草 15G / 帰還の糸 50G。初期の所持枠の空き（townMenu.shop.members）は c1 4 / c2 6 / c3 4 / c4 5 / c5 6 / c6 5。
+// 店（TW-05）: 薬草 10G / 解毒草 15G / 帰還の糸 50G。初期の所持枠の空き（townMenu.shop.members）は c1 5 / c2 7 / c3 4 / c4 5 / c5 6 / c6 5（M17 から c1・c2 は素の力 14・15 で上限 9）。
 import { describe, expect, test, vi } from "vitest";
 import { campMenu } from "../src/core/rules/camp";
 import { classChangeOptions, townMenu } from "../src/core/rules/town";
@@ -1037,6 +1037,40 @@ describe("UI-52 街のページ", () => {
     expect(townParent({ deposit: "c1" })).toBe("storageDeposit");
     expect(townParent({ withdraw: kept })).toBe("storageWithdraw");
     expect(townPageIntro({ withdraw: kept }, m)).toEqual([]);
+  });
+
+  test("UI-52/TW-05/TW-16/CH-71 店と倉庫の「空き n 枠」は slotsMaxOf に追従する（M17。力 11 → 8、12 → 9、16 → 10）", () => {
+    const bare = { weapon: null, armor: null, shield: null, helm: null, gauntlet: null, accessory: null };
+    const s = town({}, 300);
+    for (const [i, str] of [11, 12, 16, 16, 18, 3].entries()) {
+      const ch = s.party[i]!;
+      s.party[i] = { ...ch, stats: { ...ch.stats, str }, equipment: { ...bare }, inventory: [] };
+    }
+    // c4（力 16）に 10 品を持たせて満杯にする
+    for (let i = 0; i < 10; i++) s.party[3]!.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
+    const kept = createItemInstance(s, { itemId: "herb", identified: true });
+    s.warehouse.push(kept);
+    const m = menuOf(s);
+    const free = [
+      ["c1", "アルド　空き 8 枠", false],
+      ["c2", "ベルク　空き 9 枠", false],
+      ["c3", "キリ　空き 10 枠", false],
+      ["c4", "ドナ　空き 0 枠", true],
+      ["c5", "エル　空き 10 枠", false],
+      ["c6", "フィン　空き 8 枠", false],
+    ] as const;
+    expect(townEntries({ shop: "herb" }, m, S).flatMap((e) => (e.kind === "buy" ? [[e.memberId, e.label, e.disabled]] : []))).toEqual(free);
+    expect(townEntries({ withdraw: kept }, m, S).flatMap((e) => (e.kind === "withdraw" ? [[e.memberId, e.label, e.disabled]] : []))).toEqual(free);
+    // 空きの数のとおりに買える: c2（力 12）は 9 品目まで受け付け、10 品目は inventory full
+    let t = cloneState(s);
+    t.gold = 1000;
+    for (let i = 0; i < 9; i++) {
+      const r = execute(t, { type: "town.shop", action: { kind: "buy", itemId: "herb", memberId: "c2" } }, data);
+      expect(r.events.some((e) => e.kind === "rejected"), `buy ${i}`).toBe(false);
+      t = r.state;
+    }
+    expect(townEntries({ shop: "herb" }, menuOf(t), S).find((e) => e.kind === "buy" && e.memberId === "c2")).toMatchObject({ label: "ベルク　空き 0 枠", disabled: true });
+    expect(execute(t, { type: "town.shop", action: { kind: "buy", itemId: "herb", memberId: "c2" } }, data).events[0]).toMatchObject({ kind: "rejected" });
   });
 
   test("UI-52 townRepair: townMenu を取り直して品や者が消えたページは 1 つ上へ。成り立つページはそのまま", () => {

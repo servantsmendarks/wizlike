@@ -1,14 +1,14 @@
 // UI-53 / UI-59 / TW-03 キャンプ・キャラクター画面・酒場の段（views/camp.ts の純粋な状態機械。M4 の field-items.test を移した）。
 // 値は core の campMenu と fieldItemMenu だけ（UI-35）。送る Command は core が受け付けることも確かめる。
 // 既定のパーティ（dived(1)）: c1 アルド 戦士（inv i4 薬草）、c2 ベルク 戦士（inv なし）、c3 キリ 盗賊（inv i10 薬草）、c4 ドナ 僧侶（inv i13 解毒草、呪文 heal）、
-// c5 エル 魔術師（inv i15 帰還の糸、呪文 fire_arrow / sleep_mist は battle 専用）、c6 フィン 盗賊（inv i18 薬草）。使用枠の上限は 8。
+// c5 エル 魔術師（inv i15 帰還の糸、呪文 fire_arrow / sleep_mist は battle 専用）、c6 フィン 盗賊（inv i18 薬草）。使用枠の上限は c1・c2 が 9（M17。素の力 14・15）、ほかは 8。
 // M10（2026-10-07）: キャンプの top を 状態（メンバー一覧）・並び順・戻る に減らし、呪文・道具・装備・鑑定の段はキャラクター画面（UI-59）の下に移した。
 // 旧い段（唱える者・使う人・誰の装備・鑑定する者の名前の枠）のテストは消し、同じ中身をキャラクター画面の下の段で確かめる形に書き直した。
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { execute } from "../src/core/engine";
 import { campMenu, campSummary, identifyChance } from "../src/core/rules/camp";
 import { fieldItemMenu } from "../src/core/rules/items";
-import { cloneState, createItemInstance } from "../src/core/state";
+import { cloneState, createItemInstance, itemDisplayName } from "../src/core/state";
 import type { Character, Command, GameState } from "../src/core/types";
 import {
   CAMP_GRID_SLOTS,
@@ -30,6 +30,7 @@ import {
   type CampInput,
   type CampPage,
 } from "../src/presenter/views/camp";
+import { CHARACTER_INVENTORY_CELLS, formatCharacter } from "../src/presenter/views/detail";
 import { dived } from "./helpers/battle";
 import { data, expectKnownStringKeys, newGame } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
@@ -976,5 +977,67 @@ describe("CH-03/UI-53 並び順の表の列", () => {
     expect(el.style["height"]).toBe("150px");
     v.render({ kind: "lines", title: "杖", lines: [], tall: true });
     expect(el.style["height"]).toBe("284px");
+  });
+});
+
+describe("CH-71/UI-59 所持枠 9・10 枠のキャラクター画面（M17）", () => {
+  const bare = { weapon: null, armor: null, shield: null, helm: null, gauntlet: null, accessory: null };
+  /** c1 の素の力を str にし、装備を外して所持品を n 個の薬草にした迷宮の state */
+  function holding(str: number, n: number): GameState {
+    const s = inDungeon();
+    const c1 = s.party[0]!;
+    c1.stats = { ...c1.stats, str };
+    c1.equipment = { ...bare };
+    c1.inventory = Array.from({ length: n }, () => createItemInstance(s, { itemId: "herb", identified: true }));
+    return s;
+  }
+
+  test("CH-71/UI-59 見出しの上限は slotsMaxOf（力 11 → 8、12 → 9、16 → 10）", () => {
+    for (const [str, max] of [[11, 8], [12, 9], [15, 9], [16, 10], [18, 10]] as const) {
+      const s = holding(str, 0);
+      const c1 = input(s).menu.members[0]!;
+      expect(c1.slotsMax, `str ${str}`).toBe(max);
+      expect(formatCharacter(s.party[0]!, data, S, (iid) => itemDisplayName(s, data, iid), undefined, c1).inventoryHeading).toBe(`所持品 0/${max}（装備 0 を含む）`);
+    }
+  });
+
+  test("CH-71/UI-59 力 16 で 10 品: 頁の無い画面は 7 品と「ほか 3」、頁の段は 8 品と 2 品。11 品目は受け取れない", () => {
+    const s = holding(16, 10);
+    const m = input(s);
+    const c1 = m.menu.members[0]!;
+    expect([c1.slotsUsed, c1.slotsMax]).toEqual([10, 10]);
+    const name = (iid: string) => itemDisplayName(s, data, iid);
+    const d = formatCharacter(s.party[0]!, data, S, name, undefined, c1);
+    expect(d.inventoryHeading).toBe("所持品 10/10（装備 0 を含む）");
+    expect(d.inventory.map((x) => x.text)).toEqual([...Array.from({ length: 7 }, () => "薬草"), "ほか 3"]);
+    expect(formatCharacter(s.party[0]!, data, S, name, undefined, c1, { inventoryPage: 0 }).inventory).toHaveLength(CHARACTER_INVENTORY_CELLS);
+    expect(formatCharacter(s.party[0]!, data, S, name, undefined, c1, { inventoryPage: 1 }).inventory).toHaveLength(2);
+    // 捨てるの段: 1 頁目は 8 品 + [次の頁][前の頁]、2 頁目は 2 品。3 頁目へは進まない
+    const p0: CampPage = { kind: "drop", stage: "item", memberId: "c1", page: 0 };
+    const r0 = rows(campEntries("camp", p0, m, S));
+    expect(r0.slice(CHARACTER_INVENTORY_CELLS).map((x) => [x.label, x.disabled])).toEqual([
+      ["次の頁", false],
+      ["前の頁", true],
+      ["やめる", false],
+    ]);
+    const p1 = { ...p0, page: 1 };
+    expect(campStep("camp", p0, m, { kind: "pageTurn", delta: 1 })).toEqual({ kind: "page", page: p1 });
+    const r1 = rows(campEntries("camp", p1, m, S));
+    expect(r1.map((x) => x.label)).toEqual(["薬草", "薬草", "次の頁", "前の頁", "やめる"]);
+    expect(campStep("camp", p1, m, { kind: "pageTurn", delta: 1 })).toEqual({ kind: "page", page: p1 });
+    expect(campPanel(p1, m, S)).toEqual({ kind: "character", memberId: "c1", focusSlot: null, inventoryPage: 1 });
+    // 2 頁目の最後の品（10 品目）を捨てられる（core が受け付ける）
+    const last = r1[1]!.choice;
+    if (last.kind !== "item") throw new Error("not item");
+    expect(last.instanceId).toBe(s.party[0]!.inventory[9]);
+    const after = accepted(s, { type: "party.drop", memberId: "c1", instanceId: last.instanceId });
+    expect(after.party[0]!.inventory).toHaveLength(9);
+    // 9 品になれば頁の段は 8 品 + 1 品（2 頁目のまま）。頁が 1 つになれば campRepair で 1 頁目へ
+    expect(rows(campEntries("camp", p1, input(after), S)).map((x) => x.label)).toEqual(["薬草", "次の頁", "前の頁", "やめる"]);
+    expect(campRepair("camp", p1, input(holding(16, 8)))).toEqual(p0);
+    // 渡す: 満杯（10/10）の c1 は受け取れない。力 11 の者は 8 で満杯
+    expect(input(s).menu.members.find((x) => x.id === "c1")!.canReceive).toBe(false);
+    expect(input(holding(16, 9)).menu.members.find((x) => x.id === "c1")!.canReceive).toBe(true);
+    expect(input(holding(11, 8)).menu.members.find((x) => x.id === "c1")!.canReceive).toBe(false);
   });
 });
