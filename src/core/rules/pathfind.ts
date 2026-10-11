@@ -78,15 +78,16 @@ export function planRoute(state: GameState, data: GameData, target: Pos): RouteS
 /**
  * DG-15: 経路の 1 手を送った結果（events と、その後の state）で、自動歩行を続けてよいか。
  * 真になるのは次をすべて満たすときだけ:
- * - events から、move のときだけ先頭の message dungeon.door を 1 件除いた残りの [0] が、move なら moved、turn なら turned
+ * - events から一言（key が hint. で始まる message。UI-76。M19）をすべて除き、さらに move のときだけ先頭の message dungeon.door を 1 件除いた残りの [0] が、move なら moved、turn なら turned
  * - その後ろが hpChanged（毒の 1 歩）だけ
  * - after が迷宮（screen dungeon）で、戦闘なし・保留なし・dive あり・宝箱なし（M11）
  * - dive の pos と facing が step の予定値と一致する
- * 遭遇・罠の語り・スピナー（向きが違う）・階段などの確認（pendingChoice）・壁（blocked）・rejected では偽。扉では止まらない。
+ * 遭遇・罠の語り・スピナー（向きが違う）・階段などの確認（pendingChoice）・壁（blocked）・rejected では偽。扉と一言（DG-46 の hint.lostExits など）では止まらない。
  */
 export function routeStepOk(step: RouteStep, events: readonly GameEvent[], after: GameState): boolean {
   const isMove = step.command.type === "dungeon.move";
-  let rest = events;
+  // UI-76 / DG-46（M19）: 一言は自動歩行を止めない（窓に出るだけで、位置・状態は変えない）
+  let rest = events.filter((e) => !(e.kind === "message" && e.key.startsWith("hint.")));
   const first = rest[0];
   if (isMove && first !== undefined && first.kind === "message" && first.key === "dungeon.door") rest = rest.slice(1);
   const head = rest[0];

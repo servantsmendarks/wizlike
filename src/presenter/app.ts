@@ -26,7 +26,7 @@ import { mapView, stairsHere, visibleCells, visibleChests, visibleKnownTraps } f
 import { campMenu, campSummary } from "../core/rules/camp";
 import { DEBUG_LEVELS, SAN_OVER_DEBUG } from "../core/rules/debug";
 import { planRoute, routeStepOk } from "../core/rules/pathfind";
-import { STAY_CHOICE_ID } from "../core/rules/choices";
+import { PASS_CHOICE_ID, STAY_CHOICE_ID } from "../core/rules/choices";
 import { bestiaryView, equipPreview, itemDetail, memberSheet, spellInfo, uniqueBookView } from "../core/rules/item-view";
 import { sanStage } from "../core/rules/san";
 import { fieldItemMenu } from "../core/rules/items";
@@ -1058,12 +1058,14 @@ export function createApp(o: {
 
   /**
    * 迷宮の保留中の選択（階段・出口・テレポーター・罠・イベント）を送る。UI-11 / UI-13（M16）: 広い一覧はパーティ欄を隠すので、
-   * 送ったら再生の間は操作を下げてパーティ欄を戻す（宝箱の送信と同じ）。受け付けたら再生の最後の sync で、rejected なら下で出し直す
+   * 送ったら再生の間は操作を下げてパーティ欄を戻す（宝箱の送信と同じ）。受け付けたら再生の最後の sync で、rejected なら下で出し直す。
+   * UI-25 / DG-14（M19）: 階段・出口の「通り過ぎる」（PASS）を受け付けたら、「移動を続ける」と同じく歩き直す（目的地が無い・引けなければ何もしない）
    */
   const choosePending = (optionId: string): void => {
     play.controls.setMode("none");
     void run({ type: "event.choose", optionId }).then((r) => {
       if ((r === null || r.rejected) && !isBusy()) syncControls();
+      else if (optionId === PASS_CHOICE_ID) resumeWalk();
     });
   };
 

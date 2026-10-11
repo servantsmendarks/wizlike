@@ -922,4 +922,65 @@ describe("UI-25 移動を続ける（M18）", () => {
     expect(walkDestStale(dest, { dungeonId: "d1", floor: 2, pos: { x: 5, y: 6 } })).toBe(false);
     expect(walkDestStale(dest, { dungeonId: "d1", floor: 2, pos: { x: 4, y: 7 } })).toBe(false);
   });
+
+  test("UI-25/DG-14（M19）結合: 経路の途中の下り階段で確認が立って止まり、「通り過ぎる」（pass）の後は目的地が残り、経路を引き直して最後まで歩ける（遭遇率 0）", async () => {
+    const { walkDestStale } = await import("../src/presenter/input/swipe");
+    const d0 = structuredClone(data);
+    for (const def of d0.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    for (let seed = 1; seed <= 50; seed++) {
+      const s0 = cloneState(execute(newGame(seed), { type: "dungeon.enter", dungeonId: "d01" }, d0).state);
+      const f = floorOf(s0.dive!, d0);
+      s0.dive!.explored["1"] = f.cells.map((_, i) => i);
+      const down = f.stairsDown!;
+      const kindAt = (x: number, y: number): string => f.cells[y * f.width + x]!.kind;
+      // 途中で下り階段を 1 度だけ踏み、ほかの前進は通路か部屋だけを踏む経路を探す
+      let route: RouteStep[] | null = null;
+      let target: { x: number; y: number } | null = null;
+      for (let i = 0; i < f.cells.length && route === null; i++) {
+        const p = { x: i % f.width, y: Math.floor(i / f.width) };
+        const r = planRoute(s0, d0, p);
+        if (r === null || r.length < 2) continue;
+        const moves = r.filter((x) => x.command.type === "dungeon.move");
+        const onDown = moves.filter((x) => x.pos.x === down.x && x.pos.y === down.y).length;
+        const last = r[r.length - 1]!;
+        if (onDown !== 1 || (last.pos.x === down.x && last.pos.y === down.y)) continue;
+        if (!moves.every((x) => (x.pos.x === down.x && x.pos.y === down.y) || ["corridor", "room"].includes(kindAt(x.pos.x, x.pos.y)))) continue;
+        route = r;
+        target = p;
+      }
+      if (route === null || target === null) continue;
+      let state: GameState = s0;
+      const depsOf = (walk: RouteWalk) => ({
+        walk: () => walk,
+        ready: () => state.screen === "dungeon" && state.pendingChoice === null,
+        send: async (cmd: RouteCommand) => {
+          const r = execute(state, cmd as Command, d0);
+          state = r.state;
+          return { events: r.events, rejected: r.events[0]?.kind === "rejected" };
+        },
+        ok: (st: RouteStep, events: readonly GameEvent[]) => routeStepOk(st, events, state),
+        finish: () => {},
+      });
+      const dest = { dungeonId: s0.dive!.dungeonId, floor: 1, pos: { x: target.x, y: target.y } };
+      const walk1: RouteWalk = { steps: route, i: 0 };
+      while (await walkStep(depsOf(walk1)));
+      // 下り階段で止まり、確認に「通り過ぎる」がある
+      expect(state.dive!.pos).toEqual(down);
+      expect(state.pendingChoice!.options.map((o) => o.id)).toEqual(["descend", "pass", "stay"]);
+      state = execute(state, { type: "event.choose", optionId: "pass" }, d0).state;
+      expect(state.pendingChoice).toBeNull();
+      // 表示層は目的地を捨てず（walkDestStale が偽）、「移動を続ける」と同じく経路を引き直して歩く
+      expect(walkDestStale(dest, state.dive)).toBe(false);
+      const rest = planRoute(state, d0, dest.pos)!;
+      expect(rest.length).toBeGreaterThan(0);
+      const walk2: RouteWalk = { steps: rest, i: 0 };
+      while (await walkStep(depsOf(walk2)));
+      expect(walk2.i).toBe(rest.length);
+      expect(state.dive!.pos).toEqual(target);
+      expect(state.dive!.floor).toBe(1);
+      expect(walkDestStale(dest, state.dive)).toBe(true);
+      return;
+    }
+    throw new Error("no seed found");
+  });
 });

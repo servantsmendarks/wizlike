@@ -289,7 +289,7 @@ export type ChoiceOption = { id: string; labelKey: string };
  * 階段・出口・テレポーター・罠の察知（DG-21）・イベントの選択（EV-31）を kind で区別して同じ形で載せる。kind ごとに option id の意味が違う（id が重なってもよい）。
  * promptKey は確認文の strings キー（params なし。リロード復帰で表示層が出し直す）。
  * 不変条件: これを立てる execute は、同じ events の中に key === promptKey（params なし）の message を必ず出す。
- * option id: kind stairs は "descend" | "ascend" | "stay"（M2）と "exit"（DG-06 の 1 階の上り階段）、kind teleporter は "teleport" | "stay"（DG-32）、
+ * option id: kind stairs は "descend" | "ascend" | "stay"（M2）と "exit"（DG-06 の 1 階の上り階段）と "pass"（M19。stay と同じ効果。UI-25）、kind teleporter は "teleport" | "stay"（DG-32）、
  * kind trap は "retreat" | "proceed"（DG-21）、kind event は events[].choices[].id（EV-31）
  */
 export type PendingChoice =

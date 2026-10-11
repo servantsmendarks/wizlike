@@ -13,18 +13,25 @@ function offer(ctx: RuleContext, kind: "stairs" | "teleporter" | "trap", promptK
 export const STAY_CHOICE_ID = "stay";
 const STAY: ChoiceOption = { id: STAY_CHOICE_ID, labelKey: "dungeon.choice.stay" };
 
-/** DG-14: 下り階段（descend / stay）と、2 階以降の上り階段（ascend / stay）。問いの message は clearOn moved（UI-45。M18） */
+/**
+ * DG-14 / UI-25（M19）: 階段・出口の確認の「通り過ぎる」の id。core では STAY と同じ効果（何もしない）。
+ * 表示層はこれを受け付けたら、自動歩行の目的地が残っていれば「移動を続ける」と同じく歩き直す
+ */
+export const PASS_CHOICE_ID = "pass";
+const PASS: ChoiceOption = { id: PASS_CHOICE_ID, labelKey: "dungeon.choice.pass" };
+
+/** DG-14: 下り階段（descend / pass / stay）と、2 階以降の上り階段（ascend / pass / stay）。問いの message は clearOn moved（UI-45。M18）。pass は M19 */
 export function offerStairs(ctx: RuleContext, dir: "down" | "up"): void {
   if (dir === "down") {
-    offer(ctx, "stairs", "dungeon.stairsDown", [{ id: "descend", labelKey: "dungeon.choice.descend" }, { ...STAY }], true);
+    offer(ctx, "stairs", "dungeon.stairsDown", [{ id: "descend", labelKey: "dungeon.choice.descend" }, { ...PASS }, { ...STAY }], true);
   } else {
-    offer(ctx, "stairs", "dungeon.stairsUpFloor", [{ id: "ascend", labelKey: "dungeon.choice.ascend" }, { ...STAY }], true);
+    offer(ctx, "stairs", "dungeon.stairsUpFloor", [{ id: "ascend", labelKey: "dungeon.choice.ascend" }, { ...PASS }, { ...STAY }], true);
   }
 }
 
-/** DG-06: 1 階の上り階段は街への出口（徒歩帰還。exit / stay）。問いの message は clearOn moved（UI-45。M18） */
+/** DG-06: 1 階の上り階段は街への出口（徒歩帰還。exit / pass / stay）。問いの message は clearOn moved（UI-45。M18）。pass は M19 */
 export function offerExit(ctx: RuleContext): void {
-  offer(ctx, "stairs", "dungeon.stairsUp", [{ id: "exit", labelKey: "dungeon.choice.exit" }, { ...STAY }], true);
+  offer(ctx, "stairs", "dungeon.stairsUp", [{ id: "exit", labelKey: "dungeon.choice.exit" }, { ...PASS }, { ...STAY }], true);
 }
 
 /** DG-32: ボス撃破後のテレポーター（teleport / stay） */

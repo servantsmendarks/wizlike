@@ -567,7 +567,7 @@ function triggerTrap(ctx: RuleContext, f: Floor, p: Pos): void {
 /**
  * event.choose。optionId は pendingChoice.options にあることを呼び出し側で確かめ済み。
  * kind event は chooseEventOption（EV-31/33）、kind trap は chooseTrapOption（DG-21）。以下は階段・出口・テレポーター:
- * stay は何もしない。exit（DG-06 徒歩）と teleport（DG-32）は returnToTown で街へ（DG-43 で台帳を確定）。
+ * stay と pass（M19。表示層が歩き直す。UI-25）は何もしない。exit（DG-06 徒歩）と teleport（DG-32）は returnToTown で街へ（DG-43 で台帳を確定）。
  */
 export function chooseOption(ctx: RuleContext, optionId: string): void {
   const { state, data } = ctx;
@@ -582,7 +582,7 @@ export function chooseOption(ctx: RuleContext, optionId: string): void {
     chooseTrapOption(ctx, optionId);
     return;
   }
-  if (optionId === "stay") return;
+  if (optionId === "stay" || optionId === "pass") return;
   if (optionId === "exit") {
     returnToTown(ctx, "dungeon.exit");
     return;

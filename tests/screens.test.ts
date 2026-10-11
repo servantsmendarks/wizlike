@@ -324,7 +324,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   // M12 UI-57（U-6）: debug パネルの「Lv={n}」が巡回する目標の Lv の定数（値をラベルと送る引数に使うだけ。受け付けるかは core が決める）
   "rules/debug": ["SAN_OVER_DEBUG", "DEBUG_LEVELS"],
   // M9.5 UI-66（2026-10-07）: 迷宮の確認の取り消し（やめる）の id の定数。cancel の音の印を付けるのに使うだけ
-  "rules/choices": ["STAY_CHOICE_ID"],
+  // M19 UI-25: 階段・出口の確認の「通り過ぎる」の id の定数。受け付けたら歩き直す（「移動を続ける」と同じ）のに使うだけ
+  "rules/choices": ["PASS_CHOICE_ID", "STAY_CHOICE_ID"],
   // M7 TW-17: 強化の確認の段の成功率・大成功・料金・可否は core の upgradePreview の値を描く
   "rules/upgrade": ["upgradePreview"],
   // M11 UI-70 / SV-50: 宝箱の操作を出すか（と続きからの chest.prompt）は core の chestView の値（null でなければ箱が残っていて戦闘中・保留中でない）
@@ -706,6 +707,17 @@ describe("入力と Command", () => {
     expect(rw).toMatch(/if \(route !== "dungeon" \|\| overlay !== null \|\| walking !== null \|\| !fieldFree\(\)\) return;/);
     expect(rw).toMatch(/const steps = planRoute\(state, data, dest\);\s*if \(steps === null \|\| steps\.length === 0\) return;\s*startWalk\(steps, dest\);/);
     expect(data.strings["dungeon.walkResume"]).toBe("移動を続ける");
+  });
+
+  test("UI-25/DG-14（M19）階段・出口の確認の「通り過ぎる」（PASS_CHOICE_ID）を受け付けたら resumeWalk で歩き直す。rejected なら出し直すだけ（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const cp = /const choosePending = \(optionId: string\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(cp).toMatch(
+      /void run\(\{ type: "event\.choose", optionId \}\)\.then\(\(r\) => \{\s*if \(\(r === null \|\| r\.rejected\) && !isBusy\(\)\) syncControls\(\);\s*else if \(optionId === PASS_CHOICE_ID\) resumeWalk\(\);\s*\}\);/,
+    );
+    // 歩き直しは「移動を続ける」と同じ resumeWalk（目的地が無い・着いた・引けなければ何もしない）
+    expect(app).toMatch(/const walkResumeDest = \(\): Pos \| null => \{/);
+    expect(data.strings["dungeon.choice.pass"]).toBe("通り過ぎる");
   });
 
   test("UI-25（M16）選んでいないときの「移動」（dim のボタン・2 キー）は題の行を map.pickFirst に替えるだけ（歩き出さない）（ソースの検査）", () => {

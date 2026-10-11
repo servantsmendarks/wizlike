@@ -21,7 +21,7 @@ import { battleMenu } from "../src/core/rules/combat";
 import { returnToTown, townMenu } from "../src/core/rules/town";
 import { groupViews } from "../src/core/rules/combat-calc";
 import { expectRejected, withBattle } from "./helpers/battle";
-import { offerExit, offerStairs, offerTeleporter, offerTrap, STAY_CHOICE_ID } from "../src/core/rules/choices";
+import { offerExit, offerStairs, offerTeleporter, offerTrap, PASS_CHOICE_ID, STAY_CHOICE_ID } from "../src/core/rules/choices";
 import { cloneState, createItemInstance, dungeonOf, makeContext, monsterOf } from "../src/core/state";
 import type { Cell, Character, Command, Facing, Floor, GameEvent, GameState } from "../src/core/types";
 import {
@@ -995,7 +995,7 @@ describe("階段（DG-14, E3）", () => {
     return findSituation((c) => c.kind === "stairsDown");
   }
 
-  test("DG-14/E3 下り階段に入ると pendingChoice {kind:stairs, promptKey:dungeon.stairsDown, options:[descend, stay]} と message dungeon.stairsDown。遭遇判定はしない", () => {
+  test("DG-14/E3 下り階段に入ると pendingChoice {kind:stairs, promptKey:dungeon.stairsDown, options:[descend, pass, stay]}（pass は M19） と message dungeon.stairsDown。遭遇判定はしない", () => {
     const { state, a } = atStairsDown();
     const r = run(state, MOVE, dataWithRate(1, 1));
     expect(r.events).toEqual([
@@ -1007,6 +1007,7 @@ describe("階段（DG-14, E3）", () => {
       promptKey: "dungeon.stairsDown",
       options: [
         { id: "descend", labelKey: "dungeon.choice.descend" },
+        { id: "pass", labelKey: "dungeon.choice.pass" },
         { id: "stay", labelKey: "dungeon.choice.stay" },
       ],
     });
@@ -1124,6 +1125,7 @@ describe("階段（DG-14, E3）", () => {
       promptKey: "dungeon.stairsUpFloor",
       options: [
         { id: "ascend", labelKey: "dungeon.choice.ascend" },
+        { id: "pass", labelKey: "dungeon.choice.pass" },
         { id: "stay", labelKey: "dungeon.choice.stay" },
       ],
     });
@@ -1152,7 +1154,7 @@ describe("階段（DG-14, E3）", () => {
     expect(kinds(rt2.events)).toEqual(["turned"]);
   });
 
-  test("DG-06/E3 1 階の上り階段に入ると pendingChoice {kind stairs, promptKey dungeon.stairsUp, exit / stay} と同じ key の message。遭遇判定もしない", () => {
+  test("DG-06/E3 1 階の上り階段に入ると pendingChoice {kind stairs, promptKey dungeon.stairsUp, exit / pass / stay}（pass は M19） と同じ key の message。遭遇判定もしない", () => {
     const { state, a } = findSituation((c) => c.kind === "stairsUp");
     const r = run(state, MOVE, dataWithRate(1, 1));
     expect(r.events).toEqual([
@@ -1164,6 +1166,7 @@ describe("階段（DG-14, E3）", () => {
       promptKey: "dungeon.stairsUp",
       options: [
         { id: "exit", labelKey: "dungeon.choice.exit" },
+        { id: "pass", labelKey: "dungeon.choice.pass" },
         { id: "stay", labelKey: "dungeon.choice.stay" },
       ],
     });
@@ -2019,6 +2022,53 @@ describe("保留中の選択の不変条件（E3、SV-50）", () => {
     offerTrap(trap);
     expect(trap.state.pendingChoice!.options.map((o) => o.id)).not.toContain(STAY_CHOICE_ID);
   });
+
+  test("DG-14/DG-06/DG-44/UI-25（M19）階段・出口の確認は STAY の直前に「通り過ぎる」（id PASS_CHOICE_ID = pass、dungeon.choice.pass）を持つ。テレポーター・罠の確認は持たない", () => {
+    expect(PASS_CHOICE_ID).toBe("pass");
+    const cases: [string, (ctx: ReturnType<typeof ctxOf>) => void, boolean][] = [
+      ["down", (c) => offerStairs(c, "down"), true],
+      ["up", (c) => offerStairs(c, "up"), true],
+      ["exit", (c) => offerExit(c), true],
+      ["teleporter", (c) => offerTeleporter(c), false],
+      ["trap", (c) => offerTrap(c), false],
+    ];
+    for (const [name, f, want] of cases) {
+      const ctx = ctxOf(enterD01(1));
+      f(ctx);
+      const ops = ctx.state.pendingChoice!.options;
+      if (!want) {
+        expect(ops.map((o) => o.id), name).not.toContain(PASS_CHOICE_ID);
+        continue;
+      }
+      expect(ops.length, name).toBe(3);
+      expect(ops[1], name).toEqual({ id: PASS_CHOICE_ID, labelKey: "dungeon.choice.pass" });
+    }
+    expect(data.strings["dungeon.choice.pass"]).toBe("通り過ぎる");
+  });
+
+  test("DG-14/DG-06/UI-25（M19）pass は stay と同じ効果: 保留を外すだけで events []、位置・向き・階・乱数・SAN・画面は変わらず遭遇もしない（1 階の上りでも街へ出ない）", () => {
+    // 前進で下り階段に入った確認（遭遇率 1 の data でも遭遇しない）
+    const { state } = findSituation((c) => c.kind === "stairsDown");
+    const D1 = dataWithRate(1, 1);
+    const mv = run(state, MOVE, D1);
+    const viaPass = run(mv.state, { type: "event.choose", optionId: PASS_CHOICE_ID }, D1);
+    const viaStay = run(mv.state, { type: "event.choose", optionId: STAY_CHOICE_ID }, D1);
+    expect(viaPass.events).toEqual([]);
+    expect(viaPass.state).toEqual(viaStay.state);
+    expect(viaPass.state.pendingChoice).toBeNull();
+    expect(viaPass.state.dive!.floor).toBe(1);
+    expect(viaPass.state.dive!.pos).toEqual(mv.state.dive!.pos);
+    expect(viaPass.state.dive!.facing).toBe(mv.state.dive!.facing);
+    expect(viaPass.state.rng).toEqual(mv.state.rng);
+    expect(viaPass.state.party.map((c) => c.san)).toEqual(mv.state.party.map((c) => c.san));
+    // 1 階の上り階段（出口。DG-44 のボタンで出した確認）でも同じ
+    const atUp = run(enterD01(1), { type: "dungeon.useStairs" }, DATA0);
+    const upPass = run(atUp.state, { type: "event.choose", optionId: PASS_CHOICE_ID }, DATA0);
+    expect(upPass.events).toEqual([]);
+    expect(upPass.state.screen).toBe("dungeon");
+    expect(upPass.state.dive).not.toBeNull();
+    expect(upPass.state).toEqual(run(atUp.state, { type: "event.choose", optionId: STAY_CHOICE_ID }, DATA0).state);
+  });
 });
 
 function ctxOf(s: GameState) {
@@ -2344,11 +2394,12 @@ describe("DG-44 階段のボタン（dungeon.useStairs。M16）", () => {
     promptKey: "dungeon.stairsUp",
     options: [
       { id: "exit", labelKey: "dungeon.choice.exit" },
+      { id: "pass", labelKey: "dungeon.choice.pass" },
       { id: "stay", labelKey: "dungeon.choice.stay" },
     ],
   };
 
-  test("DG-44/DG-14 入場の直後（1 階の上り階段の上）に押すと、前進で入ったときと同じ確認（exit / stay）と同じ key の message。位置・向き・乱数は変わらない。「やめる」の後も押せて、exit で街へ", () => {
+  test("DG-44/DG-14 入場の直後（1 階の上り階段の上）に押すと、前進で入ったときと同じ確認（exit / pass / stay）と同じ key の message。位置・向き・乱数は変わらない。「やめる」の後も押せて、exit で街へ", () => {
     const s0 = enterD01(1);
     expect(stairsHere(s0, data)).toBe("exit");
     const r1 = run(s0, USE);
@@ -2373,7 +2424,7 @@ describe("DG-44 階段のボタン（dungeon.useStairs。M16）", () => {
     expect(rx.state.dive).toBeNull();
   });
 
-  test("DG-44/DG-14 下り階段の上では descend / stay、降りた先（2 階の上り階段）では ascend / stay を出す。乱数なし", () => {
+  test("DG-44/DG-14 下り階段の上では descend / pass / stay、降りた先（2 階の上り階段）では ascend / pass / stay を出す。乱数なし", () => {
     const { state } = findSituation((c) => c.kind === "stairsDown");
     const atDown = run(run(state, MOVE, DATA0).state, { type: "event.choose", optionId: "stay" }, DATA0).state;
     expect(stairsHere(atDown, DATA0)).toBe("down");
@@ -2384,6 +2435,7 @@ describe("DG-44 階段のボタン（dungeon.useStairs。M16）", () => {
       promptKey: "dungeon.stairsDown",
       options: [
         { id: "descend", labelKey: "dungeon.choice.descend" },
+        { id: "pass", labelKey: "dungeon.choice.pass" },
         { id: "stay", labelKey: "dungeon.choice.stay" },
       ],
     });
@@ -2398,6 +2450,7 @@ describe("DG-44 階段のボタン（dungeon.useStairs。M16）", () => {
       promptKey: "dungeon.stairsUpFloor",
       options: [
         { id: "ascend", labelKey: "dungeon.choice.ascend" },
+        { id: "pass", labelKey: "dungeon.choice.pass" },
         { id: "stay", labelKey: "dungeon.choice.stay" },
       ],
     });
