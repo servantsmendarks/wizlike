@@ -9,6 +9,8 @@
 //   creation.randomNote。最初は creation.hint）。エラー（creation.invalid）が出ている間はエラーを優先して説明を隠す。
 // - M16 追補 H-1: 行（性格のボタン・リーダーの札・名前の入力欄）に触れた時点でエラーは消え、説明に戻る（creationTouch）。
 //   「ランダム」は行ではないのでエラーを消さない。
+// - M18（設計 5-10）: 性格のボタンは 1 回目のタップで今の性格の説明を出すだけで、その行の説明が出ているとき（2 回目）に
+//   切り替える（creationPersonalityTap）。
 // 純粋な部分（性格の巡回、PartySetup の組み立て）を export する。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, PersonalityId, Strings } from "../../core/data/index";
 import type { QuickPartySetup } from "../../core/types";
@@ -72,6 +74,14 @@ export function creationInfoVisible(errorOn: boolean): { error: boolean; note: b
 /** UI-51（M16 追補 H-1）: 行 i に触れたときの説明の欄の状態。触れた行を覚え、エラーは消す（説明に戻す） */
 export function creationTouch(row: number): { touched: number; errorOn: boolean } {
   return { touched: row, errorOn: false };
+}
+
+/**
+ * UI-51（M18 設計 5-10）: 性格のボタン（行 i）を押したとき切り替えるか。説明が出ている行（touched === i）なら切り替え、
+ * そうでなければ切り替えずに今の性格の説明を出すだけ（どちらの場合も touch(i) は呼ぶ）
+ */
+export function creationPersonalityTap(touched: number | null, i: number): { switch: boolean } {
+  return { switch: touched === i };
 }
 
 /** game.new に渡す PartySetup。名前の検査は core が行うので、そのまま詰める */
@@ -179,8 +189,10 @@ export function createCreationScreen(o: {
       persButtons.push(null);
     } else {
       const b = button("", r.personality, () => {
-        choices[i] = nextPersonality(choices[i] ?? "random", ids);
-        renderChoices();
+        if (creationPersonalityTap(touched, i).switch) {
+          choices[i] = nextPersonality(choices[i] ?? "random", ids);
+          renderChoices();
+        }
         touch(i);
       });
       el.appendChild(b);

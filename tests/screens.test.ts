@@ -7,6 +7,7 @@ import {
   creationClassAbbr,
   creationInfoVisible,
   creationNote,
+  creationPersonalityTap,
   creationTouch,
   defaultPersonalities,
   nextPersonality,
@@ -71,7 +72,7 @@ describe("簡易作成", () => {
   test("UI-51 説明の欄（M16）: 最初は creation.hint、性格を押した行はその性格の shortDescription、おまかせは creation.randomNote、リーダーの行は creation.leaderNote。どれも 28 字 × 2 行以内", () => {
     const S = data.strings;
     const ch = defaultPersonalities(ids, 6);
-    expect(creationNote(null, ch, data, S)).toBe("性格をタップで切り替える。説明はここに出る");
+    expect(creationNote(null, ch, data, S)).toBe("性格をタップで説明、もう一度で切り替える");
     expect(creationNote(0, ch, data, S)).toBe("プレイヤーの分身。全滅しても必ず生き返る");
     expect(creationNote(1, ch, data, S)).toBe(data.personalities.find((p) => p.id === "cautious")!.shortDescription);
     // 押して切り替えた後の行の性格を引く（無鉄砲 → 強欲）
@@ -111,6 +112,60 @@ describe("簡易作成", () => {
     expect(randomBody).not.toBe("");
     expect(randomBody).not.toContain("touch(");
     expect(randomBody).not.toContain("errorOn");
+  });
+
+  test("UI-51 性格のボタン（M18 設計 5-10）: 1 回目のタップは切り替えずに今の性格の説明、その行の説明が出ている 2 回目で巡回、別の行を押すとまた 1 回目", () => {
+    // 押す操作を画面と同じ手順で再現する（creationPersonalityTap → 切り替え → touch）
+    let touched: number | null = null;
+    let choices = defaultPersonalities(ids, 6);
+    const press = (i: number): void => {
+      if (creationPersonalityTap(touched, i).switch) {
+        choices = choices.map((c, j) => (j === i ? nextPersonality(c ?? "random", ids) : c));
+      }
+      touched = creationTouch(i).touched;
+    };
+    const S = data.strings;
+    const desc = (id: string) => data.personalities.find((p) => p.id === id)!.shortDescription;
+    // 1 回目（まだ何も触っていない）: 行 1 は慎重のまま、慎重の説明
+    press(1);
+    expect(choices[1]).toBe("cautious");
+    expect(creationNote(touched, choices, data, S)).toBe(desc("cautious"));
+    // 2 回目: 無鉄砲へ切り替わり、無鉄砲の説明
+    press(1);
+    expect(choices[1]).toBe("reckless");
+    expect(creationNote(touched, choices, data, S)).toBe(desc("reckless"));
+    // 続けて押すと巡回する
+    press(1);
+    press(1);
+    press(1);
+    expect(choices[1]).toBe("random");
+    expect(creationNote(touched, choices, data, S)).toBe(S["creation.randomNote"]);
+    // 別の行（行 2 = 無鉄砲）を押すとまた 1 回目: 切り替えずに説明だけ
+    press(2);
+    expect(choices[2]).toBe("reckless");
+    expect(choices[1]).toBe("random");
+    expect(creationNote(touched, choices, data, S)).toBe(desc("reckless"));
+    // 行 1 に戻っても 1 回目
+    press(1);
+    expect(choices[1]).toBe("random");
+    // 名前の欄やリーダーの札で別の行に触れた後も 1 回目、同じ行の名前の欄に触れた後は 2 回目扱い
+    touched = creationTouch(0).touched;
+    press(3);
+    expect(choices[3]).toBe("greedy");
+    touched = creationTouch(4).touched;
+    press(4);
+    expect(choices[4]).toBe("random");
+    // 純粋な関数
+    expect(creationPersonalityTap(null, 1)).toEqual({ switch: false });
+    expect(creationPersonalityTap(2, 1)).toEqual({ switch: false });
+    expect(creationPersonalityTap(1, 1)).toEqual({ switch: true });
+    // 画面の配線（ソース）: 切り替えは creationPersonalityTap の真のときだけで、touch(i) はどちらでも呼ぶ
+    const src = creationSource.replace(/\r\n/g, "\n");
+    expect(src).toContain(`if (creationPersonalityTap(touched, i).switch) {
+          choices[i] = nextPersonality(choices[i] ?? "random", ids);
+          renderChoices();
+        }
+        touch(i);`);
   });
 
   test("UI-51/CH-05 既定名と既定の性格で作った PartySetup を core が受け付け、空の名前は rejected（表示層は検査しない）", () => {

@@ -32,7 +32,7 @@
   "creation.start": "始める",
   "creation.personality.random": "おまかせ",
   "creation.invalid": "名前は1〜{max}文字で決めてくれ。",
-  "creation.hint": "性格をタップで切り替える。説明はここに出る",
+  "creation.hint": "性格をタップで説明、もう一度で切り替える",
   "creation.leaderNote": "プレイヤーの分身。全滅しても必ず生き返る",
   "creation.randomNote": "おまかせ: 始めるときに性格が決まる。",
 
