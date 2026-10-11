@@ -52,6 +52,8 @@
 // - 区切り（M10.5 追補 2。UI-45 / UI-47）: section は、会話の箱に文が出ていれば（message.shown）タップを 1 回待ってから（演出スキップでも待つ）
 //   message.clearView で箱を空にする。迷宮・戦闘の窓は encounter・イベントから戻る以外の screen{dungeon}・floorChanged で clearView する（待たない）。
 //   空にするのは表示だけで、全文の履歴（UI-46）は残る。戦闘中の beat では空にしない。
+//   M18（UI-45）: message.clearOn が "moved"（階段・出口の問い）なら、その文を出した後の次の moved（位置が変わったもの）で clearView する。
+//   旋回では空にしない。印は再生をまたいで残し（問いと歩き去る手は別の再生）、ほかの契機で窓を空にしたら外す（clearOnMoved）。
 // 具体的な views は import しない（純粋な enemyGroupOfId / formatMessage / formatDiceSummary だけ）。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, StatusId, Strings } from "../core/data/index";
 import type { EndingRecord, EnemyGroupView, GameEvent, GameEventKind, GameState, Life, PenaltyResult, Screen, ViewPoint } from "../core/types";
@@ -334,6 +336,16 @@ export function createPlayer(deps: PlayerDeps): Player {
   let carry: string[] = [];
   /** UI-73（M12）: この再生で受けた ending の record（再生の終わりに ending.show へ渡す） */
   let endingRecord: EndingRecord | null = null;
+  /**
+   * UI-45（M18）: clearOn moved の文を出した後、まだ窓を空にしていない。次の moved（位置が変わったもの）で空にする。
+   * 再生をまたいで残す（問いの再生と、やめるの後に歩き去る再生は別）。ほかの契機で窓を空にしたら外す
+   */
+  let clearOnMoved = false;
+  /** UI-45 / UI-47: 今の表示先の文を空にする（clearOnMoved の印も外す） */
+  const clearWindow = (): void => {
+    clearOnMoved = false;
+    deps.message.clearView?.();
+  };
   /** UI-73（M12。未定-35）: この再生で wipe を受けたか（全滅の経路では結末の語りの後で待たない）。再生の開始で偽に戻す */
   let wipeSeen = false;
 
@@ -383,9 +395,13 @@ export function createPlayer(deps: PlayerDeps): Player {
       cx.skip = isSkip();
       const tpl = deps.strings[ev.key] ?? ev.key;
       await deps.message.say(formatMessage(tpl, ev.params), cx.skip);
+      if (ev.clearOn === "moved") clearOnMoved = true;
     },
     async moved(ev, cx, finalState) {
       cx.skip = isSkip();
+      // UI-45（M18）: 階段・出口の問い（clearOn moved）の後に歩き去ったら窓を空にする（位置の比較は表示のためだけ）
+      const prev = cx.cursor;
+      if (clearOnMoved && (prev === null || prev.pos.x !== ev.pos.x || prev.pos.y !== ev.pos.y)) clearWindow();
       const c = ensureCursor(cx, finalState);
       if (c === null) return;
       c.pos = { x: ev.pos.x, y: ev.pos.y };
@@ -402,7 +418,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     async floorChanged(ev, cx, finalState) {
       cx.skip = isSkip();
       // UI-45（M10.5 追補 2）: 階を移ったら窓は空から（前の階の行は履歴に残る）
-      deps.message.clearView?.();
+      clearWindow();
       cx.cursor = { floor: ev.floor, pos: { x: ev.pos.x, y: ev.pos.y }, facing: ev.facing };
       await redraw(cx, finalState);
     },
@@ -437,7 +453,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       if (ev.to === "dungeon") {
         // UI-45（M10.5 追補 2）: 迷宮に入る・戦闘を終えて探索に戻るときは窓を空から（戦闘の結果の文は leave の待ちで読ませた後。
         // 行は履歴に残る）。画面を切り替えた後に呼ぶ（表示先は迷宮の窓。イベントから戻るときは上の分岐で空にしない）
-        deps.message.clearView?.();
+        clearWindow();
         // UI-70（M11。A2）: 勝利・逃走の screen は at（戦った位置）を持つ。同じ再生の衝動の転移・警報の前に、まず戦った場所を描く
         const c = cursorOfScreen(ev, finalState);
         if (c === null) return;
@@ -484,7 +500,7 @@ export function createPlayer(deps: PlayerDeps): Player {
     async encounter(ev, cx) {
       cx.skip = isSkip();
       // UI-45（M10.5 追補 2）: 戦闘が始まったら探索中の行を空にする（履歴には残る）。戦闘中の拍では空にしない
-      deps.message.clearView?.();
+      clearWindow();
       deps.battle.setGroups(ev.groups);
     },
     async section(_ev, cx) {
@@ -493,7 +509,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       cx.skip = isSkip();
       if (deps.message.shown?.() !== true) return;
       await waitTap();
-      deps.message.clearView?.();
+      clearWindow();
       diceShown = false;
       wipeDiceShown = false;
     },

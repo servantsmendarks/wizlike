@@ -953,7 +953,7 @@ describe("階段（DG-14, E3）", () => {
     const r = run(state, MOVE, dataWithRate(1, 1));
     expect(r.events).toEqual([
       { kind: "moved", pos: a.target, facing: a.facing },
-      { kind: "message", key: "dungeon.stairsDown" },
+      { kind: "message", key: "dungeon.stairsDown", clearOn: "moved" },
     ]);
     expect(r.state.pendingChoice).toEqual({
       kind: "stairs",
@@ -1070,7 +1070,7 @@ describe("階段（DG-14, E3）", () => {
     const r1 = run(state, MOVE, dataWithRate(1, 1));
     expect(r1.events).toEqual([
       { kind: "moved", pos: a.target, facing: a.facing },
-      { kind: "message", key: "dungeon.stairsUpFloor" },
+      { kind: "message", key: "dungeon.stairsUpFloor", clearOn: "moved" },
     ]);
     expect(r1.state.pendingChoice).toEqual({
       kind: "stairs",
@@ -1110,7 +1110,7 @@ describe("階段（DG-14, E3）", () => {
     const r = run(state, MOVE, dataWithRate(1, 1));
     expect(r.events).toEqual([
       { kind: "moved", pos: a.target, facing: a.facing },
-      { kind: "message", key: "dungeon.stairsUp" },
+      { kind: "message", key: "dungeon.stairsUp", clearOn: "moved" },
     ]);
     expect(r.state.pendingChoice).toEqual({
       kind: "stairs",
@@ -1920,11 +1920,37 @@ describe("保留中の選択の不変条件（E3、SV-50）", () => {
       f(ctx);
       const pc = ctx.state.pendingChoice;
       expect(pc, name).not.toBeNull();
-      expect(ctx.events).toEqual([{ kind: "message", key: pc!.promptKey }]);
+      const stairs = name === "down" || name === "up" || name === "exit";
+      expect(ctx.events).toEqual([stairs ? { kind: "message", key: pc!.promptKey, clearOn: "moved" } : { kind: "message", key: pc!.promptKey }]);
       expectKnownStringKeys(ctx.events);
       expect(data.strings[pc!.promptKey], name).not.toContain("{");
       for (const o of pc!.options) expect(data.strings[o.labelKey], o.labelKey).not.toContain("{");
     }
+  });
+
+  test("UI-45（M18）階段・出口の問い（offerStairs / offerExit）の message だけが clearOn moved を持つ。テレポーター・罠の問いは持たない。前進で入ったときもボタン（useStairs）でも同じ", () => {
+    const cases: [string, (ctx: ReturnType<typeof ctxOf>) => void, "moved" | undefined][] = [
+      ["down", (c) => offerStairs(c, "down"), "moved"],
+      ["up", (c) => offerStairs(c, "up"), "moved"],
+      ["exit", (c) => offerExit(c), "moved"],
+      ["teleporter", (c) => offerTeleporter(c), undefined],
+      ["trap", (c) => offerTrap(c), undefined],
+    ];
+    for (const [name, f, want] of cases) {
+      const ctx = ctxOf(enterD01(1));
+      f(ctx);
+      const ev = ctx.events[0]!;
+      expect(ev.kind, name).toBe("message");
+      expect(ev.kind === "message" ? ev.clearOn : null, name).toBe(want);
+    }
+    // 入場の直後（1 階の上り階段の上）の useStairs と、前進で下り階段に入ったときの問い
+    const atUp = run(enterD01(1), { type: "dungeon.useStairs" }, DATA0);
+    expect(atUp.events).toEqual([{ kind: "message", key: "dungeon.stairsUp", clearOn: "moved" }]);
+    const { state } = findSituation((c) => c.kind === "stairsDown");
+    const mv = run(state, MOVE, DATA0);
+    expect(mv.events[mv.events.length - 1]).toEqual({ kind: "message", key: "dungeon.stairsDown", clearOn: "moved" });
+    // やめるは何も出さない（窓を空にするのは表示層の次の moved）
+    expect(run(mv.state, { type: "event.choose", optionId: "stay" }, DATA0).events).toEqual([]);
   });
 
   test("UI-66（2026-10-07）階段・出口・テレポーターの確認は最後に取り消しの STAY（id STAY_CHOICE_ID、dungeon.choice.stay）を持つ。罠の確認は持たない", () => {
@@ -2278,7 +2304,7 @@ describe("DG-44 階段のボタン（dungeon.useStairs。M16）", () => {
     const s0 = enterD01(1);
     expect(stairsHere(s0, data)).toBe("exit");
     const r1 = run(s0, USE);
-    expect(r1.events).toEqual([{ kind: "message", key: "dungeon.stairsUp" }]);
+    expect(r1.events).toEqual([{ kind: "message", key: "dungeon.stairsUp", clearOn: "moved" }]);
     expect(r1.state.pendingChoice).toEqual(EXIT_PROMPT);
     expect(r1.state.dive!.pos).toEqual(s0.dive!.pos);
     expect(r1.state.dive!.facing).toBe(s0.dive!.facing);
@@ -2292,7 +2318,7 @@ describe("DG-44 階段のボタン（dungeon.useStairs。M16）", () => {
     expect(rs.state.pendingChoice).toBeNull();
     expect(stairsHere(rs.state, data)).toBe("exit");
     const r2 = run(rs.state, USE);
-    expect(r2.events).toEqual([{ kind: "message", key: "dungeon.stairsUp" }]);
+    expect(r2.events).toEqual([{ kind: "message", key: "dungeon.stairsUp", clearOn: "moved" }]);
     expect(r2.state.pendingChoice).toEqual(EXIT_PROMPT);
     const rx = run(r2.state, { type: "event.choose", optionId: "exit" });
     expect(rx.state.screen).toBe("town");
@@ -2304,7 +2330,7 @@ describe("DG-44 階段のボタン（dungeon.useStairs。M16）", () => {
     const atDown = run(run(state, MOVE, DATA0).state, { type: "event.choose", optionId: "stay" }, DATA0).state;
     expect(stairsHere(atDown, DATA0)).toBe("down");
     const rd = run(atDown, USE, DATA0);
-    expect(rd.events).toEqual([{ kind: "message", key: "dungeon.stairsDown" }]);
+    expect(rd.events).toEqual([{ kind: "message", key: "dungeon.stairsDown", clearOn: "moved" }]);
     expect(rd.state.pendingChoice).toEqual({
       kind: "stairs",
       promptKey: "dungeon.stairsDown",
@@ -2318,7 +2344,7 @@ describe("DG-44 階段のボタン（dungeon.useStairs。M16）", () => {
     expect(f2.dive!.floor).toBe(2);
     expect(stairsHere(f2, DATA0)).toBe("up");
     const ru = run(f2, USE, DATA0);
-    expect(ru.events).toEqual([{ kind: "message", key: "dungeon.stairsUpFloor" }]);
+    expect(ru.events).toEqual([{ kind: "message", key: "dungeon.stairsUpFloor", clearOn: "moved" }]);
     expect(ru.state.pendingChoice).toEqual({
       kind: "stairs",
       promptKey: "dungeon.stairsUpFloor",
@@ -2370,7 +2396,7 @@ describe("DG-44 階段のボタン（dungeon.useStairs。M16）", () => {
     expect(kinds(rb.events)).toEqual(["moved", "message:dungeon.trap.retreat"]);
     expect(stairsHere(rb.state, DATA0)).toBe("exit");
     const r = run(rb.state, USE, DATA0);
-    expect(r.events).toEqual([{ kind: "message", key: "dungeon.stairsUp" }]);
+    expect(r.events).toEqual([{ kind: "message", key: "dungeon.stairsUp", clearOn: "moved" }]);
     expect(r.state.pendingChoice).toEqual(EXIT_PROMPT);
   });
 });

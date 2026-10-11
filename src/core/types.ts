@@ -1024,7 +1024,11 @@ export type DiceRow = { label: TextRef; base: number | null; dice: number[]; tot
 export type BeatPhase = "declare" | "result" | "aftermath" | "system";
 
 export type GameEvent =
-  | { kind: "message"; key: string; params?: Record<string, string | number> }
+  /**
+   * clearOn（UI-45。M18）: "moved" なら、表示層はこの文を出した後の次の moved（位置が変わったもの）でメッセージ窓を空にする
+   * （階段・出口の問い。やめるで答えて歩き去った後に問いが窓に残らないように）。旋回では空にしない。省略は従来どおり
+   */
+  | { kind: "message"; key: string; params?: Record<string, string | number>; clearOn?: "moved" }
   | { kind: "moved"; pos: Pos; facing: Facing }
   | { kind: "turned"; facing: Facing }
   | { kind: "blocked" }

@@ -4,27 +4,27 @@
 import type { EventDef } from "../data/index";
 import type { ChoiceOption, RuleContext } from "../types";
 
-function offer(ctx: RuleContext, kind: "stairs" | "teleporter" | "trap", promptKey: string, options: ChoiceOption[]): void {
+function offer(ctx: RuleContext, kind: "stairs" | "teleporter" | "trap", promptKey: string, options: ChoiceOption[], clearOnMoved = false): void {
   ctx.state.pendingChoice = { kind, promptKey, options };
-  ctx.events.push({ kind: "message", key: promptKey });
+  ctx.events.push(clearOnMoved ? { kind: "message", key: promptKey, clearOn: "moved" } : { kind: "message", key: promptKey });
 }
 
 /** UI-66: 確認の取り消し（やめる）の id。表示層は戻る・やめるの印（cancel の音）をこれで付ける */
 export const STAY_CHOICE_ID = "stay";
 const STAY: ChoiceOption = { id: STAY_CHOICE_ID, labelKey: "dungeon.choice.stay" };
 
-/** DG-14: 下り階段（descend / stay）と、2 階以降の上り階段（ascend / stay） */
+/** DG-14: 下り階段（descend / stay）と、2 階以降の上り階段（ascend / stay）。問いの message は clearOn moved（UI-45。M18） */
 export function offerStairs(ctx: RuleContext, dir: "down" | "up"): void {
   if (dir === "down") {
-    offer(ctx, "stairs", "dungeon.stairsDown", [{ id: "descend", labelKey: "dungeon.choice.descend" }, { ...STAY }]);
+    offer(ctx, "stairs", "dungeon.stairsDown", [{ id: "descend", labelKey: "dungeon.choice.descend" }, { ...STAY }], true);
   } else {
-    offer(ctx, "stairs", "dungeon.stairsUpFloor", [{ id: "ascend", labelKey: "dungeon.choice.ascend" }, { ...STAY }]);
+    offer(ctx, "stairs", "dungeon.stairsUpFloor", [{ id: "ascend", labelKey: "dungeon.choice.ascend" }, { ...STAY }], true);
   }
 }
 
-/** DG-06: 1 階の上り階段は街への出口（徒歩帰還。exit / stay） */
+/** DG-06: 1 階の上り階段は街への出口（徒歩帰還。exit / stay）。問いの message は clearOn moved（UI-45。M18） */
 export function offerExit(ctx: RuleContext): void {
-  offer(ctx, "stairs", "dungeon.stairsUp", [{ id: "exit", labelKey: "dungeon.choice.exit" }, { ...STAY }]);
+  offer(ctx, "stairs", "dungeon.stairsUp", [{ id: "exit", labelKey: "dungeon.choice.exit" }, { ...STAY }], true);
 }
 
 /** DG-32: ボス撃破後のテレポーター（teleport / stay） */
