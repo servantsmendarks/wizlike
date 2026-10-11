@@ -1,8 +1,8 @@
-// オート入力（性格傾向を含む）・行動計画への置き換え・対象の振り替え・行動順・オート解除（CB-11/13/15/40〜44）。
+// オート入力（性格傾向・既定の呪文を含む）・行動計画への置き換え・対象の振り替え・行動順・オート解除（CB-11/13/15/40〜46）。
 // すべて純粋関数。乱数は使わない。
-import type { GameData, StatusId } from "../data/index";
+import type { GameData, Spell, StatusId } from "../data/index";
 import { parseDice } from "../rng";
-import { findItem, monsterOf, personalityOf, spellOf } from "../state";
+import { classOf, findItem, monsterOf, personalityOf, spellOf } from "../state";
 import type { BattleAction, BattleState, BattleTarget, Character, GameState, Life } from "../types";
 import {
   battleItemUsable,
@@ -14,7 +14,7 @@ import {
   lowestHpRatioAlly,
   unitAlive,
 } from "./combat-calc";
-import { hpMaxOf, spellCost } from "./equip-stats";
+import { equipStats, hpMaxOf, spellCost } from "./equip-stats";
 import { sanCapOf, sanStage, stageRank } from "./san";
 
 /** CB-43 のオート解除の理由。strings: battle.autoReason.<r>。reinforce は M3 では発生源が無い */
@@ -33,12 +33,78 @@ export type TargetRef = { side: "enemy"; g: number; u: number } | { side: "ally"
 /** CB-43 用のラウンド開始時の写し */
 export type MemberSnap = { id: string; life: Life; hp: number; hpMax: number; status: StatusId[]; sanRank: number };
 
-/** CB-40 / CB-26: canStrike かつ生存グループがあれば、その最小への攻撃（飛行も対象。届かない相手は無い）。無ければ防御 */
+/**
+ * CB-40 / CB-46 / CB-26: lastBattleInput が無いときの既定。CB-46 の呪文（職業の系統で分ける。治癒 → 攻撃呪文の順）が
+ * 当てはまらなければ、canStrike かつ生存グループがあれば、その最小への攻撃（飛行も対象。届かない相手は無い）。無ければ防御
+ */
 function defaultAction(state: GameState, data: GameData, ch: Character): BattleAction {
   const b = state.battle;
+  const spell = autoSpellAction(state, data, ch);
+  if (spell !== null) return spell;
   const g = b === null ? null : lowestAliveGroup(b);
   if (g !== null && canStrike(state, data, ch)) return { type: "attack", group: g };
   return { type: "defend" };
+}
+
+/** CB-46: knownSpells のうち戦闘で使え（battleSpellUsable）、pick に合う呪文で spellCost が最小のもの（同値は knownSpells の順）と、その消費 */
+function cheapestSpell(state: GameState, data: GameData, ch: Character, pick: (sp: Spell) => boolean): { sp: Spell; cost: number } | null {
+  let best: { sp: Spell; cost: number } | null = null;
+  for (const id of ch.knownSpells) {
+    const sp = spellOf(data, id);
+    if (!battleSpellUsable(sp) || !pick(sp)) continue;
+    const cost = spellCost(state, data, ch, sp);
+    if (best === null || cost < best.cost) best = { sp, cost };
+  }
+  return best;
+}
+
+/**
+ * CB-46（M19）【仮】: オートの既定の呪文。乱数は使わない。
+ * 1. 治癒の系統（職業の spells に priest がある。僧侶・司教・君主）: life alive の味方に hp < hpMax × auto.healBelowRatio の者がいて、
+ *    最も安い治癒の呪文（effect heal・target ally）の MP（spellCost）があれば、HP の割合が最も低い者（同率は並び順）に唱える。
+ * 2. 攻撃の系統（職業の spells に mage がある。魔術師・司教・侍）: 生存の敵の個体の総数が auto.attackSpellMinEnemies 以上で、
+ *    mp >= mpMax（実効）× auto.attackSpellMpRatio なら、最も安い攻撃呪文（effect damage）を唱える（MP が足りるとき）。
+ *    対象は enemy・enemyGroup なら最小の生存グループ、allEnemies なら none。
+ * 司教は 1 → 2 の順。どちらも当てはまらなければ null
+ */
+function autoSpellAction(state: GameState, data: GameData, ch: Character): BattleAction | null {
+  const b = state.battle;
+  if (b === null) return null;
+  const cls = classOf(data, ch.classId);
+  const cfg = data.config.auto;
+  if (cls.spells.priest !== undefined) {
+    const heal = cheapestSpell(state, data, ch, (sp) => sp.effect.type === "heal" && sp.target === "ally");
+    if (heal !== null && ch.mp >= heal.cost) {
+      let target: Character | null = null;
+      let low = Infinity;
+      for (const c of state.party) {
+        if (c.life !== "alive") continue;
+        const max = hpMaxOf(state, data, c);
+        const r = max > 0 ? c.hp / max : 0;
+        if (c.hp < max * cfg.healBelowRatio && r < low) {
+          target = c;
+          low = r;
+        }
+      }
+      if (target !== null) return { type: "cast", spellId: heal.sp.id, target: { side: "ally", memberId: target.id } };
+    }
+  }
+  if (cls.spells.mage !== undefined) {
+    const enemies = b.groups.reduce((n, grp) => n + grp.units.filter(unitAlive).length, 0);
+    const atk = cheapestSpell(state, data, ch, (sp) => sp.effect.type === "damage");
+    const g = lowestAliveGroup(b);
+    if (
+      atk !== null &&
+      g !== null &&
+      enemies >= cfg.attackSpellMinEnemies &&
+      ch.mp >= equipStats(state, data, ch).mpMax * cfg.attackSpellMpRatio &&
+      ch.mp >= atk.cost
+    ) {
+      const target: BattleTarget = atk.sp.target === "allEnemies" ? { side: "none" } : { side: "enemy", group: g };
+      return { type: "cast", spellId: atk.sp.id, target };
+    }
+  }
+  return null;
 }
 
 /** CB-42: 対象の振り替え。振り替え先が無ければ null */
@@ -67,7 +133,7 @@ export function autoInput(state: GameState, data: GameData, ch: Character): Batt
 
 /**
  * CB-40/42: 基本のオート入力。lastBattleInput を繰り返し、無い・使えない呪文や道具なら既定
- * （canStrike なら最小の生存グループへの攻撃、でなければ防御）。対象は CB-42 で振り替える。
+ * （CB-46 の呪文、当てはまらなければ canStrike なら最小の生存グループへの攻撃、でなければ防御）。対象は CB-42 で振り替える。
  */
 function baseAutoInput(state: GameState, data: GameData, ch: Character): BattleAction {
   const a = ch.lastBattleInput;

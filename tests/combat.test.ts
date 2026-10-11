@@ -1295,7 +1295,7 @@ describe("オート（CB-40〜43、F2）", () => {
     setup(groups, { identified: groups.map((g) => g.monsterId), auto: true, inputs: {}, patches });
 
   test.each([
-    ["hp", "giant_rat", { c1: { hp: 30, hpMax: 100 }, c2: STONE, c3: STONE }],
+    ["hp", "giant_rat", { c1: { hp: 30, hpMax: 100 }, c2: STONE, c3: STONE, c4: { mp: 0 } }], // CB-46: ドナの治癒を出さない
     ["status", "giant_spider", { c1: { hp: 100, hpMax: 100 }, c2: STONE, c3: STONE }],
     ["dead", "giant_rat", { c1: { hp: 1 }, c2: STONE, c3: STONE }],
     ["san", "whispering_shadow", { c1: { hp: 100, hpMax: 100, san: 52 }, c2: STONE, c3: STONE }],
@@ -1310,6 +1310,22 @@ describe("オート（CB-40〜43、F2）", () => {
     expect(ks.slice(-2)).toEqual(["message:battle.autoOff", `message:battle.autoReason.${reason}`]);
     expect(r.state.battle!.inputs).toEqual({});
     expectRejected(r.state, RESOLVE, "inputs incomplete", d);
+  });
+
+  test("CB-46（M19）オートの既定: HP が 4 割未満の味方がいればドナが治癒を唱え、敵が 3 体以上ならエルが火矢を唱える（MP を払う）", () => {
+    const s = setup([{ monsterId: "giant_rat", hps: [200, 200, 200], status: [["paralysis"], ["paralysis"], ["paralysis"]] }], {
+      identified: ["giant_rat"],
+      auto: true,
+      inputs: {},
+      patches: { c1: { hp: 2, hpMax: 20 }, c4: { mp: 4, mpMax: 4 }, c5: { mp: 4, mpMax: 4 } },
+    });
+    const r = exec(s, RESOLVE);
+    const spells = eventsOf(r.events, "spell");
+    expect(spells.map((e) => [e.actorId, e.spellId])).toEqual(expect.arrayContaining([["c4", "heal"], ["c5", "fire_arrow"]]));
+    expect(spells.find((e) => e.actorId === "c4")!.targets).toEqual(["c1"]);
+    expect(member(r.state, "c4").mp).toBe(2);
+    expect(member(r.state, "c5").mp).toBe(2);
+    expect(member(r.state, "c1").hp).toBeGreaterThan(2);
   });
 
   test("CB-43 条件を満たさなければオートは続く", () => {
@@ -1371,7 +1387,7 @@ describe("オート（CB-40〜43、F2）", () => {
     const s = setup([{ monsterId: "giant_rat", hps: [200] }], {
       identified: ["giant_rat"],
       inputs: {},
-      patches: { c1: { hp: 30, hpMax: 100, lastBattleInput: atk(0) }, c2: STONE, c3: STONE }, // CB-12/40（M16）: 前回の手入力が要る
+      patches: { c1: { hp: 30, hpMax: 100, lastBattleInput: atk(0) }, c2: STONE, c3: STONE, c4: { mp: 0 } }, // CB-12/40（M16）: 前回の手入力が要る。CB-46: ドナの治癒を出さない
     });
     const r = exec(s, REPEAT, d);
     expect(member(r.state, "c1").hp).toBeLessThan(30); // CB-43 の hp 条件の遷移は起きている

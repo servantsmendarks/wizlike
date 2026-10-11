@@ -204,6 +204,11 @@ export type Config = {
     /** CB-57（M14）【仮】: 直接ドロップの金の種別の額（ダイス記法。敵の gold は使わない） */
     directDropGoldDice: string;
   };
+  /**
+   * CB-46（M19）【仮】: オートの既定（lastBattleInput が null のとき）の呪文。治癒は hp < hpMax × healBelowRatio の味方がいるとき、
+   * 攻撃呪文は生存の敵の総数が attackSpellMinEnemies 以上で mp >= mpMax × attackSpellMpRatio のとき
+   */
+  auto: { healBelowRatio: number; attackSpellMinEnemies: number; attackSpellMpRatio: number };
   san: {
     max: number;
     /** 減少量（正の数） */

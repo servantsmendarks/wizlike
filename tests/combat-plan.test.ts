@@ -23,16 +23,18 @@ function frontParalyzed(s: GameState): GameState {
 }
 
 describe("CB-40/42 autoInput", () => {
-  test("CB-40 lastBattleInput が null: 前衛とフィン（ranged）は最小の生存グループへ攻撃、ドナ・エルは防御", () => {
+  test("CB-40/CB-46 lastBattleInput が null: 前衛とフィン（ranged）は最小の生存グループへ攻撃、ドナ（全員 HP 満タン）は防御、エル（敵 3 体・MP 満タン）は火矢。エルの MP 0 なら防御", () => {
     const s = twoGroups();
     expect(s.party.map((c) => autoInput(s, data, c))).toEqual([
       { type: "attack", group: 1 },
       { type: "attack", group: 1 },
       { type: "attack", group: 1 },
       { type: "defend" },
-      { type: "defend" },
+      { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 1 } },
       { type: "attack", group: 1 },
     ]);
+    const noMp = withChar(s, 4, { mp: 0 });
+    expect(autoInput(noMp, data, ch(noMp, "c5"))).toEqual({ type: "defend" });
   });
 
   test("CB-40 前回の入力を繰り返す（攻撃・防御・呪文・道具）。無い（null）・使えないもの・手元に無い道具は既定に落とす", () => {
@@ -69,6 +71,99 @@ describe("CB-40/42 autoInput", () => {
     const tie = withChar(s, 2, { hp: 6 }); // 6/10 = 0.6、ベルクとドナ（6/12 は下で作る）
     const tie2 = withChar(tie, 3, { hp: 6 }); // ドナ 6/12 = 0.5 = ベルク 8/16
     expect(autoInput(tie2, data, ch(tie2, "c4"))).toEqual({ type: "cast", spellId: "heal", target: { side: "ally", memberId: "c2" } });
+  });
+});
+
+describe("CB-46 オートの既定の呪文（M19）", () => {
+  // 既定の一行: c4 ドナ（僧侶・heal）/ c5 エル（魔術師・fire_arrow・sleep_mist）。twoGroups の生存の敵は 3 体（グループ 1 に 2、2 に 1）
+  const full = (s: GameState): GameState => {
+    let x = s;
+    for (let i = 0; i < 6; i++) x = withChar(x, i, { hp: 20, hpMax: 20, mp: 10, mpMax: 10 });
+    return x;
+  };
+  const oneGroup = (n: number): GameState => full(withBattle(dived(1), [{ monsterId: "kobold", hps: Array<number>(n).fill(3) }]));
+
+  test("CB-46 config.auto の値【仮】", () => {
+    expect(data.config.auto).toEqual({ healBelowRatio: 0.4, attackSpellMinEnemies: 3, attackSpellMpRatio: 0.5 });
+  });
+
+  test("CB-46 治癒: hp < hpMax × 0.4 の味方がいて MP があれば、HP の割合が最も低い者に最も安い治癒。ちょうど 0.4 は治さない。MP 不足・死者だけなら既定", () => {
+    const s = full(twoGroups());
+    const heal = (id: string): BattleAction => ({ type: "cast", spellId: "heal", target: { side: "ally", memberId: id } });
+    // ちょうど 0.4（8/20）は対象外 → 既定（後衛の杖は防御）
+    const edge = withChar(s, 0, { hp: 8 });
+    expect(autoInput(edge, data, ch(edge, "c4"))).toEqual({ type: "defend" });
+    const one = withChar(s, 0, { hp: 7 });
+    expect(autoInput(one, data, ch(one, "c4"))).toEqual(heal("c1"));
+    // 複数なら割合の最も低い者（ドナ自身も候補）。同率は並び順
+    const two = withChar(withChar(one, 2, { hp: 3 }), 3, { hp: 5 });
+    expect(autoInput(two, data, ch(two, "c4"))).toEqual(heal("c3"));
+    const tie = withChar(withChar(one, 1, { hp: 7 }), 3, { hp: 7 });
+    expect(autoInput(tie, data, ch(tie, "c4"))).toEqual(heal("c1"));
+    // 死者は対象にしない
+    const dead = withChar(s, 1, { life: "dead", hp: 0 });
+    expect(autoInput(dead, data, ch(dead, "c4"))).toEqual({ type: "defend" });
+    // MP 不足（heal は 2）
+    const noMp = withChar(one, 3, { mp: 1 });
+    expect(autoInput(noMp, data, ch(noMp, "c4"))).toEqual({ type: "defend" });
+    // 治癒を知らなければ既定
+    const none = withChar(one, 3, { knownSpells: [] });
+    expect(autoInput(none, data, ch(none, "c4"))).toEqual({ type: "defend" });
+  });
+
+  test("CB-46 攻撃呪文: 生存の敵が 3 体以上で MP が最大の半分以上なら最も安い攻撃呪文（単体・グループは最小の生存グループ、全体は none）。2 体・半分未満・眠りの霧だけなら既定", () => {
+    const s = full(twoGroups());
+    const fire = { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 1 } };
+    expect(autoInput(s, data, ch(s, "c5"))).toEqual(fire);
+    const half = withChar(s, 4, { mp: 5 });
+    expect(autoInput(half, data, ch(half, "c5"))).toEqual(fire);
+    const below = withChar(s, 4, { mp: 4 });
+    expect(autoInput(below, data, ch(below, "c5"))).toEqual({ type: "defend" });
+    const two = oneGroup(2);
+    expect(autoInput(two, data, ch(two, "c5"))).toEqual({ type: "defend" });
+    const three = oneGroup(3);
+    expect(autoInput(three, data, ch(three, "c5"))).toEqual({ type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 0 } });
+    // 状態の呪文（眠りの霧）は攻撃呪文ではない
+    const mist = withChar(s, 4, { knownSpells: ["sleep_mist"] });
+    expect(autoInput(mist, data, ch(mist, "c5"))).toEqual({ type: "defend" });
+    // 最も安いもの（炎裂 5 より火矢 2）。炎裂だけならグループ 1、雷光だけなら none
+    const both = withChar(s, 4, { knownSpells: ["flame_burst", "fire_arrow"] });
+    expect(autoInput(both, data, ch(both, "c5"))).toEqual(fire);
+    const burst = withChar(s, 4, { knownSpells: ["flame_burst"] });
+    expect(autoInput(burst, data, ch(burst, "c5"))).toEqual({ type: "cast", spellId: "flame_burst", target: { side: "enemy", group: 1 } });
+    const bolt = withChar(s, 4, { knownSpells: ["lightning_tome"] });
+    expect(autoInput(bolt, data, ch(bolt, "c5"))).toEqual({ type: "cast", spellId: "lightning_tome", target: { side: "none" } });
+    // 半分以上でも唱える MP が無ければ既定（雷光 9 > MP 8）
+    const short = withChar(bolt, 4, { mp: 8, mpMax: 10 });
+    expect(autoInput(short, data, ch(short, "c5"))).toEqual({ type: "defend" });
+  });
+
+  test("CB-46 司教は治癒 → 攻撃呪文の順。職業に系統が無ければ（転職で呪文を覚えている戦士など）呪文を選ばない", () => {
+    const s = full(twoGroups());
+    const bishop = withChar(s, 3, { classId: "bishop", knownSpells: ["heal", "fire_arrow"] });
+    expect(autoInput(bishop, data, ch(bishop, "c4"))).toEqual({ type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 1 } });
+    const hurt = withChar(bishop, 0, { hp: 2 });
+    expect(autoInput(hurt, data, ch(hurt, "c4"))).toEqual({ type: "cast", spellId: "heal", target: { side: "ally", memberId: "c1" } });
+    // 治癒の系統だけ（僧侶）は火矢を知っていても唱えない。攻撃の系統だけ（魔術師）は治癒を知っていても唱えない
+    const priest = withChar(s, 3, { knownSpells: ["heal", "fire_arrow"] });
+    expect(autoInput(priest, data, ch(priest, "c4"))).toEqual({ type: "defend" });
+    const mage = withChar(withChar(s, 0, { hp: 2 }), 4, { knownSpells: ["heal"] });
+    expect(autoInput(mage, data, ch(mage, "c5"))).toEqual({ type: "defend" });
+    const fighter = withChar(withChar(s, 0, { hp: 2 }), 1, { knownSpells: ["heal", "fire_arrow"] });
+    expect(autoInput(fighter, data, ch(fighter, "c2"))).toEqual({ type: "attack", group: 1 });
+  });
+
+  test("CB-46 手入力の繰り返し（lastBattleInput）が優先。性格の傾向は後から掛かる（慎重で HP 半分未満なら治癒でなく防御、強欲は呪文を変えない）", () => {
+    const s = full(twoGroups());
+    const last = withLast(s, 4, { type: "attack", group: 2 });
+    expect(autoInput(last, data, ch(last, "c5"))).toEqual({ type: "attack", group: 2 });
+    const hurt = withChar(s, 0, { hp: 2 });
+    const lastDef = withLast(hurt, 3, { type: "defend" });
+    expect(autoInput(lastDef, data, ch(lastDef, "c4"))).toEqual({ type: "defend" });
+    const cautious = withChar(withChar(hurt, 3, { personality: "cautious" }), 3, { hp: 9 }); // ドナ 9/20 < 0.5、c1 2/20 が最低
+    expect(autoInput(cautious, data, ch(cautious, "c4"))).toEqual({ type: "defend" });
+    // ドナは強欲（既定）: 呪文は変えない
+    expect(autoInput(hurt, data, ch(hurt, "c4"))).toEqual({ type: "cast", spellId: "heal", target: { side: "ally", memberId: "c1" } });
   });
 });
 
@@ -180,8 +275,8 @@ describe("CB-44 オートの性格傾向", () => {
       target: { side: "enemy", group: 2 },
     });
     expect(autoInput(cast, data, ch(cast, "c3"))).toEqual({ type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 2 } });
-    // 後衛の無鉄砲（エルを無鉄砲に）: 既定の防御 → 攻撃。toPlan で後衛の防御（backRow。CB-13）
-    const back = withChar(s, 4, { personality: "reckless" });
+    // 後衛の無鉄砲（エルを無鉄砲に。MP 0 で CB-46 の呪文は無し）: 既定の防御 → 攻撃。toPlan で後衛の防御（backRow。CB-13）
+    const back = withChar(s, 4, { personality: "reckless", mp: 0 });
     const a = autoInput(back, data, ch(back, "c5"));
     expect(a).toEqual({ type: "attack", group: 1 });
     expect(toPlan(back, data, ch(back, "c5"), a)).toEqual({ kind: "defend", memberId: "c5", why: "backRow" });

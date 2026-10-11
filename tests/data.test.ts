@@ -207,6 +207,15 @@ describe("data: config.json", () => {
     expect(issuesOf((r) => (r.config.combat.sleepNaturalWake = 0))).toEqual([]);
     expect(issuesOf((r) => (r.config.combat.sleepNaturalWake = 100))).toEqual([]);
   });
+  test("data: CB-46（M19）auto の healBelowRatio・attackSpellMpRatio は 0..1 の数、attackSpellMinEnemies は 1 以上の整数【仮】", () => {
+    expect(config.auto).toEqual({ healBelowRatio: 0.4, attackSpellMinEnemies: 3, attackSpellMpRatio: 0.5 });
+    expectIssue((r) => (r.config.auto.healBelowRatio = 1.5), "config.json", "auto.healBelowRatio: expected number in 0..1, got 1.5");
+    expectIssue((r) => (r.config.auto.attackSpellMpRatio = -0.1), "config.json", "auto.attackSpellMpRatio: expected number in 0..1, got -0.1");
+    expectIssue((r) => (r.config.auto.attackSpellMinEnemies = 0), "config.json", "auto.attackSpellMinEnemies: expected integer >= 1, got 0");
+    expectIssue((r) => delete r.config.auto.healBelowRatio, "config.json", "auto.healBelowRatio: missing required field");
+    expect(issuesOf((r) => (r.config.auto.healBelowRatio = 0))).toEqual([]);
+    expect(issuesOf((r) => (r.config.auto.attackSpellMpRatio = 1))).toEqual([]);
+  });
   test("data: CB-44 combat.autoDefendHpRatio は 0..1 の数【仮】", () => {
     expect(config.combat.autoDefendHpRatio).toBe(0.5);
     expectIssue((r) => (r.config.combat.autoDefendHpRatio = 1.5), "config.json", "combat.autoDefendHpRatio: expected number in 0..1, got 1.5");

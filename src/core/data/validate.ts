@@ -344,6 +344,11 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       directDropChance: I(PERCENT), // CB-57（M14）【仮】
       directDropGoldDice: D, // CB-57（M14）【仮】
     }),
+    auto: F({
+      healBelowRatio: N(RATIO), // CB-46（M19）【仮】
+      attackSpellMinEnemies: I(POS_INT), // CB-46（M19）【仮】
+      attackSpellMpRatio: N(RATIO), // CB-46（M19）【仮】
+    }),
     san: F({
       max: I(POS_INT),
       floorDescend: I(NON_NEG),
