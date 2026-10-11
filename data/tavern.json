@@ -1,5 +1,6 @@
 {
   "lookTexts": ["town.look.crowd", "town.look.quiet", "town.look.gm", "town.look.board"],
+  "rumor": { "look": "town.look.board", "text": "town.look.rumor" },
   "events": [
     {
       "id": "dropped_coin",

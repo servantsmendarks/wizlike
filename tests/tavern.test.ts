@@ -7,6 +7,7 @@ import { tavernEventReady } from "../src/core/rules/tavern";
 import { cloneState } from "../src/core/state";
 import type { Command, GameEvent, GameState } from "../src/core/types";
 import { dived, withBattle } from "./helpers/battle";
+import { kinsokuLines } from "./helpers/wrap";
 import { data, deepFreeze, expectKnownStringKeys, loadFreshData, newGame } from "./helpers/core";
 
 const LOOK: Command = { type: "town.lookAround" };
@@ -37,6 +38,18 @@ function mirrorLook(m: RngState, d: GameData = data): string {
   return d.tavern.lookTexts[randInt(m, 0, d.tavern.lookTexts.length - 1)]!;
 }
 
+/** 鏡: 見回すの語り key の message と、それが掲示板（rumor.look）なら続く噂の message（M19 D-2。乱数は引かない） */
+function lookEvents(key: string, s: GameState, d: GameData = data): GameEvent[] {
+  const out: GameEvent[] = [{ kind: "message", key }];
+  if (key !== d.tavern.rumor.look) return out;
+  for (const id of s.progress.unlockedDungeons) {
+    const g = d.dungeons.find((x) => x.id === id)!;
+    if (g.placeholder === true) continue;
+    out.push({ kind: "message", key: d.tavern.rumor.text, params: { name: g.name, floors: g.floors, description: g.description } });
+  }
+  return out;
+}
+
 describe("酒場の見回す（TW-13）", () => {
   test("TW-13 town.lookAround は街でだけ受け付ける（迷宮・戦闘・title は rejected wrong screen。state は同じ参照で乱数も変えない）", () => {
     const cases: Array<[string, GameState]> = [
@@ -65,7 +78,7 @@ describe("酒場の見回す（TW-13）", () => {
       const key = mirrorLook(m);
       seen.add(key);
       const r = look(s, dataChance(100)); // 確率 100 でも条件外なら起きない
-      expect(r.events).toEqual([{ kind: "message", key }]);
+      expect(r.events).toEqual(lookEvents(key, s));
       expect(r.state.rng).toEqual(m);
       expect(r.state.tavernEventMark).toBe(0);
       expect(r.state.gold).toBe(s.gold);
@@ -97,7 +110,7 @@ describe("酒場の見回す（TW-13）", () => {
     const key = mirrorLook(m, d);
     chance(m, 0);
     const r = look(s, d);
-    expect(r.events).toEqual([{ kind: "message", key }]);
+    expect(r.events).toEqual(lookEvents(key, s, d));
     expect(r.state.rng).toEqual(m);
     expect(r.state.tavernEventMark).toBe(100);
     expect(r.state.adventureTurns).toBe(500);
@@ -121,7 +134,7 @@ describe("酒場の見回す（TW-13）", () => {
       const ev = d.tavern.events[weightedIndex(m, d.tavern.events.map((e) => e.weight))]!;
       seen.add(ev.id);
       const want: GameEvent[] = [
-        { kind: "message", key },
+        ...lookEvents(key, s, d), // M19 D-2: 掲示板なら噂がイベントの text より前
         { kind: "message", key: ev.text },
       ];
       let gold = s.gold;
@@ -143,7 +156,7 @@ describe("酒場の見回す（TW-13）", () => {
       const m2 = cloneRng(r.state.rng);
       const key2 = mirrorLook(m2, d);
       const r2 = look(r.state, d);
-      expect(r2.events).toEqual([{ kind: "message", key: key2 }]);
+      expect(r2.events).toEqual(lookEvents(key2, r.state, d));
       expect(r2.state.rng).toEqual(m2);
     }
     expect([...seen].sort()).toEqual(["dropped_coin", "drowned_bell_rumor", "old_rumor", "spilled_wager"]);
@@ -183,5 +196,90 @@ describe("酒場の見回すの §3-2", () => {
         expect(r1.state.tavernEventMark, `${name} seed ${seed}`).toBe(name.startsWith("当たり") ? 1000 : 0);
       }
     }
+  });
+});
+
+describe("掲示板の噂（TW-13。M19 D-2）", () => {
+  const fill = (t: string, p: Record<string, string | number>): string => t.replace(/\{(\w+)\}/g, (_, k: string) => String(p[k]));
+
+  /** 見回すの randInt が掲示板（rumor.look）を引く最初のシード */
+  function boardSeed(d: GameData = data): number {
+    for (let seed = 1; seed <= 200; seed++) if (mirrorLook(createRng(seed), d) === d.tavern.rumor.look) return seed;
+    throw new Error("no board seed");
+  }
+
+  test("TW-13（M19 D-2）データ: 噂は掲示板（town.look.board）の後に town.look.rumor「{name}（{floors}F）: {description}」。掲示板の文は依頼書を約束しない", () => {
+    expect(data.tavern.rumor).toEqual({ look: "town.look.board", text: "town.look.rumor" });
+    expect(data.tavern.lookTexts).toContain("town.look.board");
+    expect(data.strings["town.look.rumor"]).toBe("{name}（{floors}F）: {description}");
+    expect(data.strings["town.look.board"]).toBe("壁の掲示板には、迷宮の噂が書き付けてある。");
+  });
+
+  test("TW-13（M19 D-2）掲示板を引くと、開放済みの迷宮ごとに unlockedDungeons の順で噂を 1 文ずつ語る（params は name / floors / description）。乱数は randInt 1 回のまま", () => {
+    const seed = boardSeed();
+    // 開始時（d01 だけ）
+    const s1 = town(0, 0, seed);
+    expect(s1.progress.unlockedDungeons).toEqual(["d01"]);
+    const m1 = cloneRng(s1.rng);
+    expect(mirrorLook(m1)).toBe("town.look.board");
+    const r1 = look(s1);
+    expect(r1.events).toEqual([
+      { kind: "message", key: "town.look.board" },
+      { kind: "message", key: "town.look.rumor", params: { name: "試しの坑道", floors: 2, description: "冒険者の腕試しに使われる浅い坑道。最下層に門番がいる。" } },
+    ]);
+    expect(r1.state.rng).toEqual(m1);
+    // 3 つ開放（順は unlockedDungeons のまま）
+    const s3 = town(0, 0, seed);
+    s3.progress.unlockedDungeons = ["d01", "d03", "d02"];
+    const m3 = cloneRng(s3.rng);
+    mirrorLook(m3);
+    const r3 = look(s3);
+    expect(r3.events.map((e) => (e.kind === "message" ? [e.key, e.params?.name, e.params?.floors] : null))).toEqual([
+      ["town.look.board", undefined, undefined],
+      ["town.look.rumor", "試しの坑道", 2],
+      ["town.look.rumor", "灰の地下墓所", 4],
+      ["town.look.rumor", "沈んだ聖堂", 3],
+    ]);
+    expect(r3.state.rng).toEqual(m3);
+    expect(r3.state.progress).toEqual(s3.progress);
+  });
+
+  test("TW-13（M19 D-2）掲示板以外の語りには噂が付かない。準備中（DG-35）の迷宮の噂は語らない", () => {
+    for (let seed = 1; seed <= 40; seed++) {
+      const s = town(0, 0, seed);
+      s.progress.unlockedDungeons = ["d01", "d02"];
+      const key = mirrorLook(cloneRng(s.rng));
+      const r = look(s);
+      if (key !== "town.look.board") expect(r.events, `seed ${seed}`).toEqual([{ kind: "message", key }]);
+      else expect(r.events.length, `seed ${seed}`).toBe(3);
+    }
+    const d = loadFreshData();
+    d.dungeons.find((x) => x.id === "d02")!.placeholder = true;
+    const s = town(0, 0, boardSeed(d));
+    s.progress.unlockedDungeons = ["d01", "d02", "d03"];
+    const r = look(s, d);
+    expect(r.events.map((e) => (e.kind === "message" ? e.params?.name ?? e.key : null))).toEqual(["town.look.board", "試しの坑道", "灰の地下墓所"]);
+  });
+
+  test("TW-13/TW-14（M19 D-2）イベントが当たるときも乱数の順は randInt → chance → weightedIndex のまま、噂はイベントの text より前", () => {
+    const d = dataChance(100);
+    const s = town(300, 0, boardSeed(d));
+    s.progress.unlockedDungeons = ["d01", "d02"];
+    const m = cloneRng(s.rng);
+    expect(mirrorLook(m, d)).toBe("town.look.board");
+    chance(m, 100);
+    const ev = d.tavern.events[weightedIndex(m, d.tavern.events.map((e) => e.weight))]!;
+    const r = look(s, d);
+    expect(r.events.slice(0, 4).map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["town.look.board", "town.look.rumor", "town.look.rumor", ev.text]);
+    expect(r.state.tavernEventMark).toBe(300);
+  });
+
+  test("TW-13（M19 D-2）最悪の値: 全迷宮の噂の文と掲示板の文は会話の箱の 28 字 × 2 行（禁則つき）に収まる", () => {
+    const t = data.strings["town.look.rumor"]!;
+    for (const g of data.dungeons) {
+      const line = fill(t, { name: g.name, floors: g.floors, description: g.description });
+      expect(kinsokuLines(line, 28).length, `${g.id}: ${line}`).toBeLessThanOrEqual(2);
+    }
+    expect(kinsokuLines(data.strings["town.look.board"]!, 28).length).toBeLessThanOrEqual(2);
   });
 });

@@ -1596,12 +1596,24 @@ function validateTavern(ctx: Ctx, v: unknown, ix: Index): void {
     }
     return effectU(c, p, x);
   };
+  /** TW-13（M19 D-2）: 掲示板の噂の文。差し込みは {name} {floors} {description} だけ */
+  const rumorText: Field = (c, p, x) => {
+    const s = str(c, p, x);
+    strKey(c, p, s, ix);
+    onlyPlaceholders(c, p, s, ["{name}", "{floors}", "{description}"], "TW-13", ix);
+    return s;
+  };
   const t = fields(ctx, "", v, {
     lookTexts: L(strRef, 1),
+    rumor: F({ look: strRef, text: rumorText }),
     events: L(F({ id: S, name: S, weight: I(POS_INT), text: strRef, effects: L(effect) }), 1),
   });
   if (!t) return;
   if (Array.isArray(t.events)) uniqueIds(ctx, "events", t.events);
+  // TW-13（M19 D-2）: 噂を続ける語りは lookTexts のどれか
+  const rl = get(t.rumor, "look");
+  if (typeof rl === "string" && Array.isArray(t.lookTexts) && !t.lookTexts.includes(rl))
+    report(ctx, "rumor.look", `TW-13: ${JSON.stringify(rl)} is not in lookTexts`);
 }
 
 // ---- strings.json ----

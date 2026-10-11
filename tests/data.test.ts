@@ -1540,6 +1540,11 @@ describe("data: tavern.json（TW-13 / TW-14。M5.5）", () => {
     expectIssue((r) => (r.tavern.events[0].weight = 0), F, "events[0].weight: expected integer >= 1");
     expectIssue((r) => (r.tavern.events = []), F, "events");
     expectIssue((r) => (r.tavern.lookTexts = []), F, "lookTexts");
+    // TW-13（M19 D-2）: 掲示板の噂
+    expectIssue((r) => (r.tavern.rumor.look = "town.enter"), F, 'rumor.look: TW-13: "town.enter" is not in lookTexts');
+    expectIssue((r) => (r.tavern.rumor.text = "town.look.nope"), F, 'rumor.text: unknown strings.json key "town.look.nope"');
+    expectIssue((r) => (r.strings["town.look.rumor"] = "{name}{gold}"), F, "rumor.text: TW-13: strings");
+    expectIssue((r) => delete r.tavern.rumor, F, "rumor");
     expectIssue((r) => (r.tavern.events[1].id = "dropped_coin"), F, 'duplicate id "dropped_coin"');
     // 許される効果（gold / san party / message / nothing）だけなら通る
     expect(

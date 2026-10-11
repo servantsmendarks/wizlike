@@ -891,6 +891,11 @@ export type TavernEventDef = {
 export type TavernData = {
   /** TW-13: 見回すの語り（strings.json のキー。差し込みなし）。randInt で 1 つ */
   lookTexts: string[];
+  /**
+   * TW-13（M19 D-2）: 掲示板の噂。見回すが lookTexts の `look` を引いたとき、続けて開放済みの迷宮（準備中を除く）ごとに
+   * `text`（差し込みは {name} {floors} {description} だけ）を 1 文ずつ語る。乱数は引かない
+   */
+  rumor: { look: string; text: string };
   events: TavernEventDef[];
 };
 

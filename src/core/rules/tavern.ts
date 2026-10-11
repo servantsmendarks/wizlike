@@ -26,6 +26,8 @@ function leaderOf(state: GameState): Character {
 /**
  * TW-13 / TW-14: 見回す。
  * 1) randInt(0, lookTexts.length − 1) → message lookTexts[i]（params なし）
+ *    （M19 D-2）それが rumor.look（掲示板）なら、続けて progress.unlockedDungeons の順に準備中（DG-35）でない迷宮ごとに
+ *    message rumor.text { name, floors, description }（乱数は引かない）
  * 2) tavernEventReady なら chance(tavernEventChance) を 1 回。外れなら終わり（tavernEventMark は変えない）
  * 3) 当たれば weightedIndex(events の weight) で 1 つ → tavernEventMark = adventureTurns → message text → applyEffects(ctx, null, effects, リーダー)
  * screen・eventStarted は出さない（酒場の一覧のまま）
@@ -36,6 +38,13 @@ export function lookAround(ctx: RuleContext): void {
   const look = tv.lookTexts[randInt(state.rng, 0, tv.lookTexts.length - 1)];
   if (look === undefined) throw new Error("tavern: no lookTexts");
   ctx.events.push({ kind: "message", key: look });
+  if (look === tv.rumor.look) {
+    for (const id of state.progress.unlockedDungeons) {
+      const d = data.dungeons.find((x) => x.id === id);
+      if (d === undefined || d.placeholder === true) continue;
+      ctx.events.push({ kind: "message", key: tv.rumor.text, params: { name: d.name, floors: d.floors, description: d.description } });
+    }
+  }
   if (!tavernEventReady(state, data)) return;
   if (!chance(state.rng, data.config.town.tavernEventChance)) return;
   const ev = tv.events[weightedIndex(state.rng, tv.events.map((e) => e.weight))];
