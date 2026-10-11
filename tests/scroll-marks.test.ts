@@ -7,7 +7,8 @@ import { createControls } from "../src/presenter/views/controls";
 import { createHistoryView } from "../src/presenter/views/history";
 import { attachScrollMarks, marksAt, marksLeftOf, scrolledToEnd, scrollMarkState } from "../src/presenter/views/scroll-marks";
 import { createTitleScreen } from "../src/presenter/views/title";
-import { createWipeView } from "../src/presenter/views/wipe";
+import { tapSpecOf } from "../src/presenter/input/tap";
+import { createWipeView, WIPE_PAGE_BAND, wipePageLines, wipePageTap } from "../src/presenter/views/wipe";
 import { data } from "./helpers/core";
 
 class FakeEl {
@@ -265,6 +266,47 @@ describe("UI-11（M10.5 追補）各窓の続きの印", () => {
     view.style["display"] = "";
     w.refresh();
     expect(vis(up, down)).toEqual({ up: "hidden", down: "visible" });
+  });
+
+  test("UI-11/UI-77（M18）頁送りの帯（純粋）: 窓の内側の高さ 218 なら下端 12px（ly 206..217）が下へ、上端 12px（ly 0..11）が上へ、間と窓の外は何もしない。1 頁は見える 21 行 − 1 = 20 行", () => {
+    expect(WIPE_PAGE_BAND).toBe(12);
+    expect([wipePageTap(0, 218), wipePageTap(11, 218), wipePageTap(11.9, 218)]).toEqual([-1, -1, -1]);
+    expect([wipePageTap(12, 218), wipePageTap(109, 218), wipePageTap(205.9, 218)]).toEqual([0, 0, 0]);
+    expect([wipePageTap(206, 218), wipePageTap(217, 218)]).toEqual([1, 1]);
+    expect([wipePageTap(-1, 218), wipePageTap(218, 218), wipePageTap(Number.NaN, 218)]).toEqual([0, 0, 0]);
+    expect(wipePageLines(218)).toBe(20);
+    expect(wipePageLines(28)).toBe(1); // 2 行しか見えない窓でも 1 行は送る
+    expect(wipePageLines(10)).toBe(1);
+  });
+
+  test("UI-11/UI-77（M18）全滅の内訳・戦績・用語の窓（wipe-view）は押せる（onTap）: 下端の帯のタップで 20 行（200px）下へ、上端の帯で上へ、間のタップでは動かない。動かした後に印を出し直す。印そのものは押せないまま", () => {
+    const created = fakeDocument();
+    const w = createWipeView(L.wipe, data.strings);
+    const view = created.find((e) => e.className === "wipe-view")!;
+    const spec = tapSpecOf(view)!;
+    expect(spec).not.toBeNull();
+    expect(spec.whileBusy).toBeUndefined(); // 再生中・会話の箱の待ちは今どおりステージのタップに回る
+    const { ups, downs } = marksOf(created);
+    const up = ups[0]!;
+    const down = downs[0]!;
+    expect([up.style["pointerEvents"], down.style["pointerEvents"]]).toEqual(["none", "none"]);
+    expect(L.wipe.h - 2).toBe(218);
+    view.viewH = 218;
+    view.contentH = 36 * 10 + 8; // 用語の 36 行 + 上下の余白
+    w.render(["題", "行"]);
+    expect(vis(up, down)).toEqual({ up: "hidden", down: "visible" });
+    spec.onTap({ lx: 100, ly: 100 });
+    expect(view.scrollTop).toBe(0);
+    spec.onTap({ lx: 226, ly: 210 });
+    expect(view.scrollTop).toBe(200);
+    expect(vis(up, down)).toEqual({ up: "visible", down: "hidden" }); // 368 − 218 = 150 を越えた（ブラウザなら 150 で止まる）
+    spec.onTap({ lx: 226, ly: 4 });
+    expect(view.scrollTop).toBe(0);
+    expect(vis(up, down)).toEqual({ up: "hidden", down: "visible" });
+    // 描き直すと先頭に戻る（今どおり）
+    spec.onTap({ lx: 0, ly: 217 });
+    w.render(["題"]);
+    expect(view.scrollTop).toBe(0);
   });
 
   test("UI-50 タイトルの一覧: 一覧の左の 8px の列（x0・y52 と y212）に印。印は題字・一覧より後ろの子（一覧は 3 番目のまま）", () => {

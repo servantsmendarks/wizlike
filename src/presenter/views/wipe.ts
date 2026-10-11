@@ -3,10 +3,13 @@
 //   state は引かない（名前は PenaltyResult の中にある）。帯の名前だけ data.penaltyTable を表示のために引く。
 // - 閉じる（「街へ」・Enter / Esc / 1）は app が扱う。行が溢れたら縦スクロール。
 //   M10.5 追補（未定-24）: 枠（el）の中にスクロールする窓（wipe-view）を置き、右の 8px の列に続きの印（scroll-marks.ts）を出す。
+//   M18（UI-11 / UI-77。テストプレイ v2 の A-2 #4）: 窓の下端・上端の帯（余白 4 + 印 8 = 12px）のタップで 1 頁（見える行 − 1 行）送る・戻す
+//   （wipePageTap / wipePageLines は純粋。印そのものは押せないまま。窓の他の所のタップと指のスクロールは今どおり）。
 // モジュールのトップレベルでは DOM に触れない。
 import type { GameData, Strings } from "../../core/data/index";
 import type { PenaltyResult } from "../../core/types";
 import type { Action } from "../input/swipe";
+import { onTap } from "../input/tap";
 import type { Rect } from "../layout";
 import { formatMessage } from "./message";
 import { attachScrollMarks, marksAt, SCROLL_MARK_SIZE } from "./scroll-marks";
@@ -41,6 +44,22 @@ export function wipeKeyAction(a: Action, talkOpen: boolean): "toTown" | "scrollU
 
 const LINE_H = 10;
 const PAD = 4;
+/** UI-11 / UI-77（M18）: 頁送りの帯の高さ（窓の上端・下端から。余白 PAD + 続きの印 8 = 12px） */
+export const WIPE_PAGE_BAND = PAD + SCROLL_MARK_SIZE;
+
+/** UI-11 / UI-77（M18。純粋）: 窓の中の押した高さ ly（窓の上端から。論理 px）と窓の内側の高さ innerH から、1 = 下へ 1 頁、-1 = 上へ 1 頁、0 = 何もしない */
+export function wipePageTap(ly: number, innerH: number): -1 | 0 | 1 {
+  if (!Number.isFinite(ly) || ly < 0 || ly >= innerH) return 0;
+  if (ly >= innerH - WIPE_PAGE_BAND) return 1;
+  if (ly < WIPE_PAGE_BAND) return -1;
+  return 0;
+}
+
+/** UI-11 / UI-77（M18。純粋）: 1 頁で送る行数 = 見える行数 − 1（前の頁の最後の行を上端に残す）。既定の窓（内側 218）は 21 行が見えて 20 行 */
+export function wipePageLines(innerH: number): number {
+  return Math.max(1, Math.floor((innerH - 2 * PAD) / LINE_H) - 1);
+}
+
 /** UI-77（M16 追補 H-3）: 用語の列の幅（全角 4 字 = 32px。用語は 3 字まで + 区切り）。説明はこの x から始める */
 export const TERM_COL_W = 32;
 
@@ -94,6 +113,13 @@ export function createWipeView(rect: Rect, strings: Strings): WipeView {
     host: el,
     strings,
     pos: marksAt(innerW - PAD - SCROLL_MARK_SIZE, { y: PAD, h: innerH - 2 * PAD }),
+  });
+  // UI-11 / UI-77（M18）: 下端・上端の帯のタップで 1 頁。端を越える分はブラウザが止める（scrollTop は 0..scrollHeight − clientHeight）
+  onTap(view, (pt) => {
+    const dir = wipePageTap(pt.ly, innerH);
+    if (dir === 0) return;
+    view.scrollTop += dir * wipePageLines(innerH) * LINE_H;
+    marks.refresh();
   });
   return {
     el,

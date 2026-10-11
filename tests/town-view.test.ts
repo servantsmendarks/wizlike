@@ -1391,7 +1391,7 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     expect(splitRuleLine(`WAR 戦士${SP}THI 盗賊`)).toBe(`WAR 戦士${SP}THI 盗賊`); // 空白を含む = 一覧の行
     expect(splitRuleLine(`四文字語${SP}説明`)).toBe(`四文字語${SP}説明`); // 4 字は用語にしない
     expect(splitRuleLine("区切りなし")).toBe("区切りなし");
-    // 実データ: 職業の略称の一覧（1・2）は文字列、続きの行（6・20・21・23）は用語なし、ほかは用語あり
+    // 実データ: 職業の略称の一覧（1・2）は文字列、続きの行（6・28・29・33。M18 で用語を足して番号が動いた）は用語なし、ほかは用語あり
     expect(typeof body[0]).toBe("string");
     expect(typeof body[1]).toBe("string");
     for (const [i, l] of body.entries()) {
@@ -1400,7 +1400,7 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
       else if (raw.startsWith(SP)) expect(l.term, raw).toBe("");
       else expect(l.term.length, raw).toBeGreaterThan(0);
     }
-    expect(terms.filter((l) => l.term === "").map((l) => l.desc)).toEqual([6, 20, 21, 24].map((n) => S[`rules.line.${n}`]!.slice(1)));
+    expect(terms.filter((l) => l.term === "").map((l) => l.desc)).toEqual([6, 28, 29, 33].map((n) => S[`rules.line.${n}`]!.slice(1)));
   });
 
   test("UI-77（M16 追補 H-3）用語の列は 32px（全角 4 字。最長の用語 3 字 + 区切り）。説明はどの行も列の右の同じ x から（続きの行も字下げ）", () => {
@@ -1464,11 +1464,38 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     for (const term of ["灰", "士気", "未鑑定", "触媒"]) expect(head(term), term).toBeDefined();
   });
 
-  test("UI-77/UI-59（M18）+N の行: 用語「+N」は鍛えた段数（IT-11 の名前の「 +N」）で、武器は攻撃・防具は AC に効く。並びは未鑑定の後・触媒の前", () => {
+  test("UI-77/UI-59（M18）+N の行: 用語「+N」は鍛えた段数（IT-11 の名前の「 +N」）で、武器は攻撃・防具は AC に効く。並びは未鑑定・鑑定の後・触媒の前", () => {
     expect(head("+N")).toBe("鍛えた段数。武器は攻撃に、防具は AC に効く");
     const terms = body.flatMap((l) => (typeof l === "string" || l.term === "" ? [] : [l.term]));
-    expect(terms.indexOf("+N")).toBe(terms.indexOf("未鑑定") + 1);
+    expect(terms.indexOf("鑑定")).toBe(terms.indexOf("未鑑定") + 1);
+    expect(terms.indexOf("+N")).toBe(terms.indexOf("鑑定") + 1);
     expect(terms.indexOf("触媒")).toBe(terms.indexOf("+N") + 1);
+  });
+
+  test("UI-77（M18 設計 4-3）用語の追加: 前衛・後衛・判定・識別（戦闘）→ 蘇生・解呪・レベル・潜行（街）→ 鑑定（品）→ 呪文・加護（呪文）の 11 語が用語の行として立つ。並びは 職業 → 能力と状態（士気まで）→ 戦闘 → 街 → 品 → 呪文。行は見出しを入れて 36、どの用語も 3 字以内", () => {
+    const termsOf = body.flatMap((l) => (typeof l === "string" || l.term === "" ? [] : [l.term]));
+    const added = ["前衛", "後衛", "判定", "識別", "蘇生", "解呪", "レベル", "潜行", "鑑定", "呪文", "加護"];
+    for (const w of added) {
+      expect(head(w), w).toBeDefined();
+      expect([...w].length, w).toBeLessThanOrEqual(RULE_TERM_MAX);
+    }
+    // 並び（設計 4-3）
+    const order = ["士気", "前衛", "後衛", "判定", "識別", "蘇生", "解呪", "レベル", "潜行", "未鑑定", "鑑定", "+N", "触媒", "呪文", "加護"];
+    expect(order.map((w) => termsOf.indexOf(w))).toEqual(order.map((w) => termsOf.indexOf("士気") + order.indexOf(w)));
+    expect(termsOf.at(-1)).toBe("加護");
+    expect(lines).toHaveLength(36);
+    // 語は画面・データの名前と同じ（前衛・後衛は並び順の画面、解呪は寺院、識別・加護・蘇生は呪文の名前）
+    expect([S["camp.order.front"], S["camp.order.back"], S["town.temple.uncurse"]]).toEqual(["前衛", "後衛", "解呪"]);
+    const spell = (id: string): string | undefined => data.spells.find((x) => x.id === id)?.name;
+    expect([spell("identify"), spell("blessing"), spell("resurrect")]).toEqual(["識別", "加護", "蘇生"]);
+    // 中身の要点（説明は用語の中で閉じる: 説明に出る AC・SAN・MP・HP・灰・蘇生・呪文・レベル・判定・潜行・鑑定は用語にある）
+    expect(head("後衛")).toContain("弓・投擲・長柄");
+    expect(head("識別")).toContain("正体");
+    expect(head("識別")).not.toContain("鑑定");
+    expect(head("蘇生")).toContain("灰");
+    expect(head("解呪")).toContain("寺院");
+    expect(head("加護")).toContain("AC");
+    for (const w of ["AC", "SAN", "MP", "HP", "灰", "蘇生", "呪文", "レベル", "判定", "潜行", "鑑定"]) expect(head(w), w).toBeDefined();
   });
 
   test("UI-77/UI-52/TW-03 酒場の「用語」は戦績の有無によらず出る。転職（と戦績）の後・救済の行と戻るの前。閉じるのキーは戦績と同じ（endingKeyAction）", () => {
