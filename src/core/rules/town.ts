@@ -458,6 +458,8 @@ export function townMenu(state: GameState, data: GameData): TownMenu | null {
     dungeons: state.progress.unlockedDungeons.map((id) => ({
       id,
       name: dungeonOf(data, id).name,
+      floors: dungeonOf(data, id).floors, // TW-11 / UI-52（M19 D-1）: 入口の行「{name}（{floors}F）」
+      description: dungeonOf(data, id).description, // TW-11 / UI-52（M19 D-1）: 行を押したときに語る
       canEnter: enterBlockReason(state, id, data) === null,
       notReady: dungeonOf(data, id).placeholder === true, // DG-35
     })),

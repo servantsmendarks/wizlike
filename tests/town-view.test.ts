@@ -84,6 +84,7 @@ const ALL_PAGES: readonly TownPage[] = [
   { upCat: { memberId: "c1", slot: "weapon", picked: [] } },
   { upConfirm: { memberId: "c1", slot: "weapon", picked: [] } },
   "gate",
+  { gateAsk: "d01" },
   "shop",
   "shopBuy",
   "shopSell",
@@ -538,6 +539,7 @@ describe("UI-52 街のページ", () => {
       [{ upCat: sel }, "dark"],
       [{ upConfirm: sel }, "dark"],
       ["gate", "gate"],
+      [{ gateAsk: "d01" }, "gate"],
       ["shop", "shop"],
       ["shopBuy", "shop"],
       ["shopSell", "shop"],
@@ -716,11 +718,47 @@ describe("UI-52 街のページ", () => {
     for (const x of e) expect("disabled" in x, x.label).toBe(false);
   });
 
-  test("UI-52/TW-11 迷宮の入口は開放済みの迷宮の行。行動可能な者がいなければ disabled", () => {
-    const d01 = data.dungeons.find((d) => d.id === "d01")!.name;
-    expect(townEntries("gate", menuOf(town()), S)).toEqual([{ kind: "enter", dungeonId: "d01", label: d01, disabled: false, notReady: null }, back]);
+  test("UI-52/TW-11 迷宮の入口は開放済みの迷宮の行「{name}（{floors}F）」（M19 D-1）。行動可能な者がいなければ disabled", () => {
+    const d = data.dungeons.find((x) => x.id === "d01")!;
+    const row = { kind: "enter", dungeonId: "d01", label: "試しの坑道（2F）", notReady: null, description: d.description } as const;
+    expect(townEntries("gate", menuOf(town()), S)).toEqual([{ ...row, disabled: false }, back]);
     const allDead = town(Object.fromEntries(["c1", "c2", "c3", "c4", "c5", "c6"].map((id) => [id, { life: "dead" as const, hp: 0 }])));
-    expect(townEntries("gate", menuOf(allDead), S)).toEqual([{ kind: "enter", dungeonId: "d01", label: d01, disabled: true, notReady: null }, back]);
+    expect(townEntries("gate", menuOf(allDead), S)).toEqual([{ ...row, disabled: true }, back]);
+  });
+
+  test("TW-11/UI-52（M19 D-1）迷宮の入口の確認 { gateAsk }: 見出しは「{name}へ潜るか？」、答えは 潜る（入口の行と同じ canEnter で dim）/ やめる（迷宮の一覧へ）。語りは入口の行が持つ description", () => {
+    const cancel: TownEntry = { kind: "back", label: S["common.cancel"]! };
+    const m = menuOf(town());
+    const page: TownPage = { gateAsk: "d01" };
+    expect(townHeadingText(page, m, S)).toBe("試しの坑道へ潜るか？");
+    expect(townHeading(page)).toBe("town.ask.gateConfirm");
+    expect(townEntries(page, m, S)).toEqual([{ kind: "enterYes", dungeonId: "d01", label: "潜る", disabled: false }, cancel]);
+    expect(townParent(page)).toBe("gate");
+    expect(townPageIntro(page, m)).toEqual([]);
+    expect(townFacility(page)).toBe("gate");
+    expect(townPlace(page)).toBe("town.place.gate");
+    expect(townRepair(page, m)).toBe(page);
+    // 開いていない迷宮の確認の段は迷宮の一覧へ直し、見出しは名前の無い問い
+    expect(townRepair({ gateAsk: "d02" }, m)).toBe("gate");
+    expect(townHeadingText({ gateAsk: "d02" }, m, S)).toBe(S["town.ask.gateConfirm"]);
+    // 行動可能な者がいなければ「潜る」も dim
+    const allDead = town(Object.fromEntries(["c1", "c2", "c3", "c4", "c5", "c6"].map((id) => [id, { life: "dead" as const, hp: 0 }])));
+    expect(townEntries(page, menuOf(allDead), S)[0]).toMatchObject({ kind: "enterYes", disabled: true });
+    // 入口の行の description は dungeons.json の文
+    const e = townEntries("gate", m, S)[0]!;
+    expect(e.kind === "enter" ? e.description : null).toBe("冒険者の腕試しに使われる浅い坑道。最下層に門番がいる。");
+  });
+
+  test("TW-11/UI-52（M19 D-1）最悪の値: 全迷宮の入口の行は一覧の行の幅（39 単位）、確認の問いは見出しの 1 行（全角 28 字）、description は会話の箱の 28 字 × 2 行、潜るは全角 4 字", () => {
+    for (const d of data.dungeons) {
+      const row = formatMessage(S["town.gate.row"]!, { name: d.name, floors: 99 });
+      expect(row).not.toContain("{");
+      expect(textUnits(row), row).toBeLessThanOrEqual(39);
+      const ask = formatMessage(S["town.gate.ask"]!, { name: d.name });
+      expect(kinsokuLines(ask, 28), ask).toHaveLength(1);
+      expect(kinsokuLines(d.description, 28).length, d.id).toBeLessThanOrEqual(2);
+    }
+    expect(Array.from(S["town.gate.enterYes"]!).length).toBeLessThanOrEqual(4);
   });
 
   test("UI-52/DG-35/TW-11 迷宮の入口の準備中の行は town.gate.notReady のラベルで dim、押したときの理由の文 town.gate.notReadyReason を持つ（M9。M12 から合成データの d04）", () => {
@@ -729,13 +767,14 @@ describe("UI-52 街のページ", () => {
     const m = townMenu(s, loadDataWithPlaceholder());
     if (m === null) throw new Error("not in town");
     const P = PLACEHOLDER_DUNGEON_NAME;
+    const desc = (id: string): string => m.dungeons.find((x) => x.id === id)!.description;
     expect(townEntries("gate", m, S)).toEqual([
-      { kind: "enter", dungeonId: "d01", label: "試しの坑道", disabled: false, notReady: null },
-      { kind: "enter", dungeonId: "d02", label: "沈んだ聖堂", disabled: false, notReady: null },
+      { kind: "enter", dungeonId: "d01", label: "試しの坑道（2F）", disabled: false, notReady: null, description: desc("d01") },
+      { kind: "enter", dungeonId: "d02", label: "沈んだ聖堂（3F）", disabled: false, notReady: null, description: desc("d02") },
       // M12: 実データの d03 は本物になったので普通の行
-      { kind: "enter", dungeonId: "d03", label: "灰の地下墓所", disabled: false, notReady: null },
-      // UI-52 / TW-11（M9 実機 B2）: 押したときに会話の箱へ出す理由の 1 文（準備中かは core の notReady）
-      { kind: "enter", dungeonId: "d04", label: `${P}（準備中）`, disabled: true, notReady: `${P}はまだ道が開いていない。` },
+      { kind: "enter", dungeonId: "d03", label: "灰の地下墓所（4F）", disabled: false, notReady: null, description: desc("d03") },
+      // UI-52 / TW-11（M9 実機 B2）: 押したときに会話の箱へ出す理由の 1 文（準備中かは core の notReady）。準備中の行は階数を添えない（M19 D-1）
+      { kind: "enter", dungeonId: "d04", label: `${P}（準備中）`, disabled: true, notReady: `${P}はまだ道が開いていない。`, description: desc("d04") },
       back,
     ]);
   });

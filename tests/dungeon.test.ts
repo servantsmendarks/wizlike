@@ -2316,11 +2316,16 @@ describe("準備中のダンジョン（DG-35。M9。M12 から合成データ�
     expect(r.state).toBe(s);
     expect(r.events).toEqual([{ kind: "rejected", command: "dungeon.enter", reason: "not ready" }]);
     expect(s.rng).toEqual(rng);
+    // M19（D-1）: floors と description は dungeons.json の値
+    const extra = (id: string) => {
+      const d = pd.dungeons.find((x) => x.id === id)!;
+      return { floors: d.floors, description: d.description };
+    };
     expect(townMenu(s, pd)!.dungeons).toEqual([
-      { id: "d01", name: "試しの坑道", canEnter: true, notReady: false },
-      { id: "d02", name: "沈んだ聖堂", canEnter: true, notReady: false },
-      { id: "d03", name: "灰の地下墓所", canEnter: true, notReady: false },
-      { id: "d04", name: PLACEHOLDER_DUNGEON_NAME, canEnter: false, notReady: true },
+      { id: "d01", name: "試しの坑道", ...extra("d01"), canEnter: true, notReady: false },
+      { id: "d02", name: "沈んだ聖堂", ...extra("d02"), canEnter: true, notReady: false },
+      { id: "d03", name: "灰の地下墓所", ...extra("d03"), canEnter: true, notReady: false },
+      { id: "d04", name: PLACEHOLDER_DUNGEON_NAME, ...extra("d04"), canEnter: false, notReady: true },
     ]);
     // 未開放なら not unlocked が先
     const t = newGame(1);
@@ -2332,7 +2337,14 @@ describe("準備中のダンジョン（DG-35。M9。M12 から合成データ�
   test("DG-01/DG-35/TW-11 M12: 実データの d03 は準備中でない。開放済みなら入れて 1 階に立つ（townMenu の notReady は偽）", () => {
     const s = cloneState(newGame(1));
     s.progress.unlockedDungeons.push("d02", "d03");
-    expect(townMenu(s, data)!.dungeons.find((x) => x.id === "d03")).toEqual({ id: "d03", name: "灰の地下墓所", canEnter: true, notReady: false });
+    expect(townMenu(s, data)!.dungeons.find((x) => x.id === "d03")).toEqual({
+      id: "d03",
+      name: "灰の地下墓所",
+      floors: 4,
+      description: data.dungeons.find((x) => x.id === "d03")!.description,
+      canEnter: true,
+      notReady: false,
+    });
     const r = run(s, { type: "dungeon.enter", dungeonId: "d03" }, data);
     expect(r.state.dive!.dungeonId).toBe("d03");
     expect(r.state.dive!.floor).toBe(1);

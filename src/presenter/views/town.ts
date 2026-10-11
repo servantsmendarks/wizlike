@@ -23,6 +23,7 @@ export type TempleService = "resurrect" | "cure" | "uncurse";
  * 銀行（TW-10 / TW-16。M17）: bank は 金を預ける / 金を引き出す / 品を預ける / 品を引き出す / すべて預ける、bankDeposit・bankWithdraw は金の額の行、
  * storageDeposit は品を預ける者、{ deposit: memberId } はその者の品、storageWithdraw は倉庫の品、{ withdraw: instanceId } はその品を受け取る者
  * （M7〜M16 の倉庫の入口 storage（店の一覧の中）は M17 で bank に置き換えた）。
+ * 迷宮の入口（TW-11 / UI-52。M19 D-1）: gate は迷宮の一覧、{ gateAsk: dungeonId } は入る前の確認（答えは 潜る / やめる）。
  * 闇魔術（M7）: dark は 灰から戻す / 装備を鍛える / 戻る、darkRevive は灰の者（TW-08）。強化（TW-17）: upgrade は者、{ upSlot: memberId } は部位、
  * { upCat } は触媒の選択（picked は選んだ順の実体 id）、{ upConfirm } は成功率と料金の確認
  */
@@ -54,6 +55,8 @@ export type TownPage =
   /** TW-05 / UI-52（M18 5-2）: 買うの確認（持たせる者を押した後）と売るの確認（品を押した後） */
   | { buyAsk: BuyAskSel }
   | { sellAsk: SellAskSel }
+  /** TW-11 / UI-52（M19 D-1）: 迷宮の入口の確認（行を押した後）。値は迷宮の id */
+  | { gateAsk: string }
   | { upSlot: string }
   | { upCat: UpgradeSel }
   | { upConfirm: UpgradeSel }
@@ -86,8 +89,13 @@ export type TownEntry =
   /** M7: 一覧が空（「売れる物がない」など）。押しても何もしない */
   | { kind: "empty"; label: string; disabled: true }
   | { kind: "mercy"; memberId: string; label: string }
-  /** notReady: 準備中（DG-35。core の notReady）なら押したときに会話の箱へ出す理由の文、そうでなければ null（UI-52 / TW-11。M9） */
-  | { kind: "enter"; dungeonId: string; label: string; disabled: boolean; notReady: string | null }
+  /**
+   * notReady: 準備中（DG-35。core の notReady）なら押したときに会話の箱へ出す理由の文、そうでなければ null（UI-52 / TW-11。M9）。
+   * M19（D-1）: 行は town.gate.row「{name}（{floors}F）」。押すと入場せず確認の段 { gateAsk } へ移り、description（core の townMenu.dungeons の文）を会話の箱で語る
+   */
+  | { kind: "enter"; dungeonId: string; label: string; disabled: boolean; notReady: string | null; description: string }
+  /** TW-11（M19 D-1）: 迷宮の入口の確認の「潜る」。押すと dungeon.enter（入口の行と同じ条件で disabled） */
+  | { kind: "enterYes"; dungeonId: string; label: string; disabled: boolean }
   /** TW-05: 店の売り物の行（名前と価格。払えなければ disabled）。押すと { shop: itemId } のページへ */
   | { kind: "shopItem"; itemId: string; label: string; disabled: boolean }
   /**
@@ -215,6 +223,7 @@ export function townParent(page: TownPage): TownPage | null {
     if ("buyback" in page) return "shopBuyback";
     if ("buyAsk" in page) return { shop: page.buyAsk.itemId }; // M18（5-2）: やめるで持たせる者の段へ
     if ("sellAsk" in page) return { sell: page.sellAsk.memberId }; // M18（5-2）: やめるで品の段へ
+    if ("gateAsk" in page) return "gate"; // M19（D-1）: やめるで迷宮の一覧へ
     if ("deposit" in page) return "storageDeposit";
     if ("upSlot" in page) return "upgrade";
     if ("upCat" in page) return { upSlot: page.upCat.memberId };
@@ -255,6 +264,7 @@ export function townRepair(page: TownPage, menu: TownMenu): TownPage {
     if (m === undefined) return "shopSell";
     return m.items.some((r) => r.instanceId === sel.instanceId) ? page : { sell: sel.memberId };
   }
+  if ("gateAsk" in page) return menu.dungeons.some((d) => d.id === page.gateAsk) ? page : "gate"; // M19（D-1）
   if ("deposit" in page) return menu.storage.members.some((m) => m.memberId === page.deposit) ? page : "storageDeposit";
   if ("withdraw" in page) return menu.storage.items.some((r) => r.instanceId === page.withdraw) ? page : "storageWithdraw";
   if ("upSlot" in page) return menu.upgrade.members.some((m) => m.memberId === page.upSlot) ? page : "upgrade";
@@ -401,16 +411,26 @@ export function townEntries(
   }
   if (page === "gate") {
     // DG-35（M9）: 準備中の行は「名前（準備中）」。dim は canEnter だけで決まる（判定は core）
+    // M19（D-1）: 行は「{name}（{floors}F）」（town.gate.row）。押すと確認の段 { gateAsk } と description の語り
     const rows = menu.dungeons.map(
       (d): TownEntry => ({
         kind: "enter",
         dungeonId: d.id,
-        label: d.notReady ? s(strings, "town.gate.notReady", { name: d.name }) : d.name,
+        label: d.notReady ? s(strings, "town.gate.notReady", { name: d.name }) : s(strings, "town.gate.row", { name: d.name, floors: d.floors }),
         disabled: !d.canEnter,
         notReady: d.notReady ? s(strings, "town.gate.notReadyReason", { name: d.name }) : null,
+        description: d.description,
       }),
     );
     return [...rows, back];
+  }
+  if (typeof page === "object" && "gateAsk" in page) {
+    // TW-11（M19 D-1）: 潜る（入口の行と同じ canEnter で dim）→ やめる（迷宮の一覧へ）。問いは見出し（townHeadingText）
+    const d = menu.dungeons.find((x) => x.id === page.gateAsk);
+    return [
+      { kind: "enterYes", dungeonId: page.gateAsk, label: s(strings, "town.gate.enterYes"), disabled: d === undefined || !d.canEnter },
+      { kind: "back", label: s(strings, "common.cancel") },
+    ];
   }
   if (page === "shop") {
     // M7 UI-52: 買う / 売る / 買い戻す / 鑑定 / 戻る。どれも dim にしない（中が空なら空の行）。M17: 倉庫は銀行へ移した
@@ -757,6 +777,7 @@ export function townFacility(page: TownPage): TownFacility {
     if ("temple" in page) return "temple";
     if ("ccClass" in page || "ccConfirm" in page) return "tavern"; // TW-09（M10）
     if ("upSlot" in page || "upCat" in page || "upConfirm" in page) return "dark";
+    if ("gateAsk" in page) return "gate"; // M19（D-1）
     return "shop"; // shop / sell / buyback / buyAsk / sellAsk（M18）/ deposit / withdraw（deposit / withdraw は銀行。M17）
   }
   switch (page) {
@@ -806,6 +827,7 @@ export function townHeading(page: TownPage): string {
     if ("sell" in page) return "town.ask.sellItem";
     if ("buyAsk" in page) return "town.ask.buyConfirm"; // M18（5-2）。townHeadingText が品・者・料金を入れた問いにする
     if ("sellAsk" in page) return "town.ask.sellConfirm"; // M18（5-2）。townHeadingText が品と売値を入れた問いにする
+    if ("gateAsk" in page) return "town.ask.gateConfirm"; // M19（D-1）。townHeadingText が迷宮の名前を入れた問いにする
     if ("deposit" in page) return "town.ask.depositItem";
     return "town.storage.whom"; // withdraw
   }
@@ -918,6 +940,7 @@ export function upgradeCatalystLabel(c: TownMenuUpgradeCatalyst, on: boolean, st
  * - 転職の確認（{ ccConfirm }）: 「{name}を{cls}にする。レベルは 1 に戻る。よいか。」（town.classChange.confirm）。cc が null なら town.ask.classChangeConfirm
  * - 買うの確認（{ buyAsk }。M18 5-2）: town.shop.buyAsk{name, item, cost}（core の townMenu.shop の名前と価格）。品か者が見つからなければ town.ask.buyConfirm
  * - 売るの確認（{ sellAsk }。M18 5-2）: town.shop.sellAsk{item, gold}（core の sellable の名前と売値）。見つからなければ town.ask.sellConfirm
+ * - 迷宮の入口の確認（{ gateAsk }。M19 D-1）: town.gate.ask「{name}へ潜るか？」（core の townMenu.dungeons の名前）。見つからなければ town.ask.gateConfirm
  * - 酒場で救済の申し出（TW-30。menu.mercy が null でない）の間: town.ask.mercy（答えは救済の行）
  * - 施設メニューで救済の申し出の間: town.ask.menuMercy（酒場へ行けば戻してもらえる、と施設の問い。街に入るときの語り town.mercy.offer は問いを含まない）
  * - 銀行の一覧と金の額の段（M17）: townHeading のキーに預金 {bank} と所持金 {gold}（core の townMenu.bank）を入れた文
@@ -952,6 +975,10 @@ export function townHeadingText(
     const sel = page.sellAsk;
     const r = menu.shop.sellable.find((x) => x.memberId === sel.memberId)?.items.find((x) => x.instanceId === sel.instanceId);
     if (r !== undefined) return s(strings, "town.shop.sellAsk", { item: r.name, gold: r.price });
+  }
+  if (typeof page === "object" && "gateAsk" in page) {
+    const d = menu.dungeons.find((x) => x.id === page.gateAsk);
+    if (d !== undefined) return s(strings, "town.gate.ask", { name: d.name });
   }
   if (page === "tavern" && menu.mercy !== null) return s(strings, "town.ask.mercy");
   if (page === "menu" && menu.mercy !== null) return s(strings, "town.ask.menuMercy");

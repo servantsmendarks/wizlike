@@ -873,8 +873,11 @@ export type TownMenu = {
   };
   /** TW-31: townVisit.mercyOffered なら dead / ash の全員（並び順）。申し出が無ければ null */
   mercy: { memberId: string; name: string; life: "dead" | "ash" }[] | null;
-  /** TW-11: progress.unlockedDungeons の順。canEnter = checkEnter(state, id, data) === null */
-  dungeons: { id: string; name: string; canEnter: boolean; notReady: boolean }[];
+  /**
+   * TW-11: progress.unlockedDungeons の順。canEnter = checkEnter(state, id, data) === null。
+   * M19（D-1）: floors（階数）と description（入口の行を押したときに語る文）は dungeons.json の値
+   */
+  dungeons: { id: string; name: string; floors: number; description: string; canEnter: boolean; notReady: boolean }[];
   /** TW-03（M5.5）: 酒場の一覧に「鑑定」を出すか。abilities に identify を持ち canAct の者が 1 人以上（campMenu の identifiers.length > 0 と同値） */
   canIdentify: boolean;
   /** TW-35（M12。U-2）: 酒場の一覧に「戦績」を出すか。progress.conquered と同値 */

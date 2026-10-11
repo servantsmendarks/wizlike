@@ -783,7 +783,15 @@ export function createApp(o: {
             // TW-03: 酒場の状態（キャラクター画面）・並び順・図鑑はキャンプと同じ部品で開く（戻る・やめるで酒場の一覧へ戻る）
             openCamp("tavern", e.open);
             return;
-          case "enter":
+          case "enter": {
+            // TW-11 / UI-52（M19 D-1）: 押したらすぐ入らず確認の段（問いは見出し）へ移り、迷宮の description（core の townMenu.dungeons）を会話の箱で語る。
+            // 段を戻ってまた同じ迷宮を押したときは、入るときの語りと同じく履歴の末尾 2 件と同じ文を重ねない（townFreshIntro）
+            goTownPage({ gateAsk: e.dungeonId });
+            const skip = store.get().skipAnimations;
+            townFreshIntro([e.description], play.message.history().slice(-TOWN_INTRO_DEDUP)).forEach((x) => void narrator.say(x, skip));
+            return;
+          }
+          case "enterYes":
             void run({ type: "dungeon.enter", dungeonId: e.dungeonId });
             return;
           case "shopItem": {

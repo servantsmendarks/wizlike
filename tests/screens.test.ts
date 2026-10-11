@@ -809,6 +809,16 @@ describe("入力と Command", () => {
     expect(app.match(/kind: "sell", memberId/g)).toHaveLength(1);
   });
 
+  test("TW-11/UI-52（M19 D-1）迷宮の入口の行（enter）は入場せず確認の段 { gateAsk } へ移ってから description を会話の箱で語る（重ねない）。dungeon.enter を送るのは確認の「潜る」（enterYes）だけ（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const body = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(body).toMatch(
+      /case "enter": \{\s*goTownPage\(\{ gateAsk: e\.dungeonId \}\);\s*const skip = store\.get\(\)\.skipAnimations;\s*townFreshIntro\(\[e\.description\], play\.message\.history\(\)\.slice\(-TOWN_INTRO_DEDUP\)\)\.forEach\(\(x\) => void narrator\.say\(x, skip\)\);\s*return;\s*\}/,
+    );
+    expect(body).toMatch(/case "enterYes":\s*void run\(\{ type: "dungeon\.enter", dungeonId: e\.dungeonId \}\);\s*return;/);
+    expect(app.match(/type: "dungeon\.enter"/g)).toHaveLength(1);
+  });
+
   // M8.5: M7 の広げた一覧（townListTall・setList の tall・listTall.backdrop）は UI-13 の街の配置に置き換えた
   // M10（UI-59）: 図鑑とキャラクター画面のパネルは layout.character に広げる（townLayout の book は 2026-10-07 に消した）。判定の箱の層 diceLayer をキャンプと会話の箱の間に足した。
   // メッセージ窓とパーティ欄の出し入れは applyPanels（街かキャラクター画面なら隠す）に移した

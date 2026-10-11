@@ -834,7 +834,10 @@ describe("UI-52/TW-11 townMenu（表示層向けの問い合わせ）", () => {
     // TW-08: ash の c5 エル（L1）だけ。1 × 500 > 200（darkCostPerLevel 500【仮】。旧 1000）
     expect(m.dark).toEqual([{ memberId: "c5", name: "エル", cost: 500, affordable: false }]);
     expect(m.mercy).toBeNull();
-    expect(m.dungeons).toEqual([{ id: "d01", name: data.dungeons[0]!.name, canEnter: true, notReady: false }]);
+    // TW-11（M19 D-1）: floors と description は dungeons.json の値（d01 は 2 階）
+    expect(m.dungeons).toEqual([
+      { id: "d01", name: data.dungeons[0]!.name, floors: 2, description: data.dungeons[0]!.description, canEnter: true, notReady: false },
+    ]);
   });
 
   test("TW-08 dark は ash の者を並び順に、cost = level × 500（darkCostPerLevel 500【仮】）、affordable = 所持金 ≥ cost（dead は入らない）", () => {
