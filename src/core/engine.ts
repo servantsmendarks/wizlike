@@ -38,8 +38,7 @@ import { addTurns, DEBUG_LEVEL_MAX, debugChest, giveCursed, hpOne, sanDown, sanO
 import { checkEnter, checkUseStairs, chooseOption, enterDungeon, moveForward, turn, useStairs } from "./rules/dungeon";
 import { checkUseItem, useItemInField } from "./rules/items";
 import { checkShop, doShop } from "./rules/shop";
-import { checkStorage, doStorage } from "./rules/storage";
-import type { StorageAction } from "./rules/storage";
+import { checkStorage, doDepositAll, doStorage } from "./rules/storage";
 import { changeClass, checkClassChange, checkDark, checkInn, checkMercy, checkTemple, darkService, grantMercy, stayInn, templeService } from "./rules/town";
 import type { TempleService } from "./rules/town";
 import { checkLookAround, lookAround } from "./rules/tavern";
@@ -300,7 +299,8 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       const r = checkStorage(state, c.action, c.memberId, c.instanceId, data);
       if (r !== null) return reject(state, "town.storage", r);
       const ctx = makeContext(cloneState(state), data);
-      doStorage(ctx, c.action as StorageAction, c.memberId as string, c.instanceId as string);
+      if (c.action === "depositAll") doDepositAll(ctx, c.memberId as string | null);
+      else doStorage(ctx, c.action as "deposit" | "withdraw", c.memberId as string, c.instanceId as string);
       return finish(ctx);
     }
     case "town.upgrade": {

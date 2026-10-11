@@ -2,10 +2,10 @@
 // 実体は作らず消さない（id も中身もそのまま）。乱数は使わない。倉庫の品は全滅（TW-21 / TW-22）の対象外（wipe.ts は party の所持品だけを見る）。
 import type { GameData } from "../data/index";
 import { itemDisplayName, memberById, slotsMaxOf, slotsUsed } from "../state";
-import type { GameState, RuleContext, TownMenu } from "../types";
+import type { Character, GameState, RuleContext, TownMenu } from "../types";
 import { slotsFreeOf } from "./shop";
 
-export type StorageAction = "deposit" | "withdraw";
+export type StorageAction = "deposit" | "withdraw" | "depositAll";
 
 /**
  * town.storage を受け付けない理由。順: wrong screen → bad action（action が deposit / withdraw でない・memberId / instanceId が文字列でない）
@@ -14,6 +14,7 @@ export type StorageAction = "deposit" | "withdraw";
  */
 export function checkStorage(state: GameState, action: unknown, memberId: unknown, instanceId: unknown, data: GameData): string | null {
   if (state.screen !== "town" || state.dive !== null) return "wrong screen";
+  if (action === "depositAll") return checkDepositAll(state, memberId, data);
   if (action !== "deposit" && action !== "withdraw") return "bad action";
   if (typeof memberId !== "string" || typeof instanceId !== "string") return "bad action";
   const ch = memberById(state, memberId);
@@ -28,12 +29,55 @@ export function checkStorage(state: GameState, action: unknown, memberId: unknow
   return null;
 }
 
+/** TW-16b（M17）すべて預けるの対象の者（memberId が null なら全員を並び順に）。memberId が文字列でパーティに居なければ null */
+function depositAllTargets(state: GameState, memberId: string | null): Character[] | null {
+  if (memberId === null) return state.party;
+  const ch = memberById(state, memberId);
+  return ch === null ? null : [ch];
+}
+
+/**
+ * TW-16b（M17）depositAll を受け付けない理由（screen は checkStorage で見た後）。順: bad action（memberId が文字列でも null でもない）
+ * → no such member → nothing to deposit（対象の inventory が全部空）→ warehouse full（warehouse.length ≥ warehouseSlots）。life は問わない
+ */
+function checkDepositAll(state: GameState, memberId: unknown, data: GameData): string | null {
+  if (memberId !== null && typeof memberId !== "string") return "bad action";
+  const targets = depositAllTargets(state, memberId);
+  if (targets === null) return "no such member";
+  if (targets.every((ch) => ch.inventory.length === 0)) return "nothing to deposit";
+  if (state.warehouse.length >= data.config.items.warehouseSlots) return "warehouse full";
+  return null;
+}
+
+/**
+ * TW-16b（M17）すべて預ける。checkStorage が null を返した前提。対象の者（null = 全員を並び順に）の inventory の全部（装備していない物。
+ * 消耗品・未鑑定・呪われた品も含む）を、者の並び → inventory の順に warehouse の末尾へ移す。倉庫が満杯になったらそこで止め、残りは手元。
+ * 1 品でも預けた者ごとに message town.storage.depositedAll{name, count}。満杯で止まって対象の品が残れば最後に town.storage.fullStopped{left}。
+ * 実体は作らず消さない。乱数は使わない
+ */
+export function doDepositAll(ctx: RuleContext, memberId: string | null): void {
+  const { state, data } = ctx;
+  const targets = depositAllTargets(state, memberId);
+  if (targets === null) throw new Error(`doDepositAll: unknown member ${memberId}`);
+  const capacity = data.config.items.warehouseSlots;
+  for (const ch of targets) {
+    const room = Math.max(0, capacity - state.warehouse.length);
+    const moved = ch.inventory.slice(0, room);
+    if (moved.length === 0) continue;
+    ch.inventory = ch.inventory.slice(moved.length);
+    state.warehouse.push(...moved);
+    ctx.events.push({ kind: "message", key: "town.storage.depositedAll", params: { name: ch.name, count: moved.length } });
+  }
+  const left = targets.reduce((n, ch) => n + ch.inventory.length, 0);
+  if (left > 0) ctx.events.push({ kind: "message", key: "town.storage.fullStopped", params: { left } });
+}
+
 /**
  * TW-16。checkStorage が null を返した前提。
  * deposit: 本人の inventory から外して warehouse の末尾へ → message town.storage.deposited{name, item}
  * withdraw: warehouse から外して本人の inventory の末尾へ → message town.storage.withdrawn{name, item}
  */
-export function doStorage(ctx: RuleContext, action: StorageAction, memberId: string, instanceId: string): void {
+export function doStorage(ctx: RuleContext, action: "deposit" | "withdraw", memberId: string, instanceId: string): void {
   const { state, data } = ctx;
   const ch = memberById(state, memberId);
   if (ch === null || state.items[instanceId] === undefined) throw new Error(`doStorage: bad ${memberId} / ${instanceId}`);
@@ -77,11 +121,13 @@ export function storageMenu(state: GameState, data: GameData): TownMenu["storage
   return {
     capacity,
     slotsFree: Math.max(0, capacity - state.warehouse.length),
+    depositAllOk: checkDepositAll(state, null, data) === null,
     items: state.warehouse.map((id) => ({ instanceId: id, name: itemDisplayName(state, data, id) })),
     members: state.party.map((ch) => ({
       memberId: ch.id,
       name: ch.name,
       slotsFree: slotsFreeOf(ch, data),
+      depositAllOk: checkDepositAll(state, ch.id, data) === null,
       items: ch.inventory.map((id) => ({ instanceId: id, name: itemDisplayName(state, data, id) })),
     })),
   };

@@ -499,6 +499,7 @@ export type Command =
   | { type: "town.classChange"; memberId: string; classId: string }
   /** TW-16 / IT-64（M7）: 倉庫。deposit は本人の inventory の実体を warehouse へ、withdraw は warehouse の実体を本人の inventory へ。乱数は使わない */
   | { type: "town.storage"; action: "deposit" | "withdraw"; memberId: string; instanceId: string }
+  | { type: "town.storage"; action: "depositAll"; memberId: string | null } // TW-16b（M17）すべて預ける。null = 全員
   /**
    * TW-17（M7）: 闇魔術の強化。本人の equipment[slot] の汎用装備を、パーティの誰かの inventory の鑑定済みの汎用装備（catalysts。0〜upgradeMaxCatalysts 個、
    * 重複なし。成否に関わらず持ち主の inventory から消える。M16 で本人だけから全員に広げ、持ち主と実体の組にした）を触媒に d100 で鍛える。乱数は d100 の 1 回
@@ -796,10 +797,12 @@ export type TownMenu = {
     capacity: number;
     /** capacity − warehouse の数（0 なら warehouse full） */
     slotsFree: number;
+    /** TW-16b（M17）全員の「すべて預ける」（depositAll memberId null）を受け付けるか（checkStorage と同じ判定。品が無い・倉庫が満杯なら false） */
+    depositAllOk: boolean;
     /** warehouse の品（預けた順）。name は itemDisplayName（未鑑定なら未鑑定の名前） */
     items: TownMenuStorageRow[];
-    /** 全員（並び順。life を問わない）の inventory の品と、所持枠の空き（0 なら引き出しは inventory full） */
-    members: { memberId: string; name: string; slotsFree: number; items: TownMenuStorageRow[] }[];
+    /** 全員（並び順。life を問わない）の inventory の品と、所持枠の空き（0 なら引き出しは inventory full）。depositAllOk はその者の「すべて預ける」を受け付けるか */
+    members: { memberId: string; name: string; slotsFree: number; depositAllOk: boolean; items: TownMenuStorageRow[] }[];
   };
   /** TW-17（M7）闇魔術の強化（rules/upgrade.ts upgradeMenu） */
   upgrade: {
