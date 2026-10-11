@@ -930,11 +930,6 @@ export function upgradeItemName(plainName: string, level: number, strings: Strin
 const LIST_ROW_UNITS = 39;
 
 /**
- * TW-17 / IT-70（M16 の G-2）: 触媒の行「●{item} +{level}　{owner}」（town.upgrade.catOn / catOff・catRow・itemLv）。
- * 倉庫の品（M17。core の ownerId が null）の持ち主の欄は town.shop.menu.storage「倉庫」。
- * 行が一覧の行の文字の幅（39 単位 = 全角 19.5 字）を超えるときは、持ち主の欄を先頭 2 字 + item.owner.short（「{name}…」）に縮める（表示のための計算）
- */
-/**
  * TW-17（M20 B-2）: 触媒の付け外しのたびに会話の箱で語る性能の 1 文 town.upgrade.catInfo「{item}: 攻撃 {attack} / AC {ac} / 魔法攻撃力 {magic}」。
  * item は行と同じ「名前 +N」（upgradeItemName）、値は core の power（該当しない項目は town.shop.previewNone）。28 字 × 2 行に収める
  */
@@ -948,6 +943,11 @@ export function upgradeCatalystInfo(c: TownMenuUpgradeCatalyst, strings: Strings
   });
 }
 
+/**
+ * TW-17 / IT-70（M16 の G-2）: 触媒の行「●{item} +{level}　{owner}」（town.upgrade.catOn / catOff・catRow・itemLv）。
+ * 倉庫の品（M17。core の ownerId が null）の持ち主の欄は town.shop.menu.storage「倉庫」。
+ * 行が一覧の行の文字の幅（39 単位 = 全角 19.5 字）を超えるときは、持ち主の欄を先頭 2 字 + item.owner.short（「{name}…」）に縮める（表示のための計算）
+ */
 export function upgradeCatalystLabel(c: TownMenuUpgradeCatalyst, on: boolean, strings: Strings): string {
   const key = on ? "town.upgrade.catOn" : "town.upgrade.catOff";
   const item = upgradeItemName(c.plainName, c.level, strings);

@@ -980,7 +980,7 @@ describe("UI-33 campKeyIndex", () => {
       ...["top", "members", "spellWho", "status", "spellWhich", "spellTarget", "spellDead", "equipSlot", "equipItem", "order", "orderSecond", "identifyWhich", "giveWhich", "giveTo", "dropWhich"].map(
         (x) => `camp.prompt.${x}`,
       ),
-      ...["equip", "use", "give", "drop", "spell", "identify", "next", "pageNext", "pagePrev"].map((x) => `character.${x}`),
+      ...["use", "give", "drop", "spell", "next", "pageNext", "pagePrev"].map((x) => `character.${x}`),
       "camp.spellRow",
       "camp.equip.unequip",
       "camp.equip.none",
@@ -1008,8 +1008,8 @@ describe("UI-33 campKeyIndex", () => {
     ]) {
       expect(Object.prototype.hasOwnProperty.call(S, k), k).toBe(true);
     }
-    // M18（設計 5-1）: camp.spell と camp.prompt.spellWho は top の「呪文」で戻した
-    for (const k of ["camp.item", "camp.equip", "camp.identify", "camp.prompt.equipWho", "camp.prompt.identifyWho", "dungeon.items.who", "dungeon.menu.items"]) {
+    // M18（設計 5-1）: camp.spell と camp.prompt.spellWho は top の「呪文」で戻した。M20（UI-80）: キャラクター画面の枠の「装備」「鑑定」は品の段（camp.equip.do / camp.item.identify）に替えて消した
+    for (const k of ["camp.item", "camp.equip", "camp.identify", "character.equip", "character.identify", "camp.prompt.equipWho", "camp.prompt.identifyWho", "dungeon.items.who", "dungeon.menu.items"]) {
       expect(Object.prototype.hasOwnProperty.call(S, k), k).toBe(false);
     }
   });
