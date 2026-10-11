@@ -13,7 +13,7 @@ export const STATUS_IDS = ["poison", "paralysis", "sleep", "stone"] as const;
 export type StatusId = (typeof STATUS_IDS)[number];
 
 /** UI-76（M16）: 一度きりの GM の一言の id（strings の hint.<id>。読み込み時に必須キーとして検査する。rules/hints.ts tellHintOnce が出す） */
-export const HINT_IDS = ["dungeonFirst", "sanUnknown", "levelUpMark", "lostExits", "dungeonTerms"] as const;
+export const HINT_IDS = ["dungeonFirst", "sanUnknown", "levelUpMark", "lostExits", "dungeonTerms", "waitEnemy"] as const;
 export type HintId = (typeof HINT_IDS)[number];
 
 export const EQUIP_SLOTS = ["weapon", "armor", "shield", "helm", "gauntlet", "accessory"] as const;

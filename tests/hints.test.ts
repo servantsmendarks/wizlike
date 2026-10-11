@@ -19,8 +19,8 @@ const hintKeys = (events: readonly GameEvent[]): string[] =>
   events.flatMap((e) => (e.kind === "message" && e.key.startsWith("hint.") ? [e.key] : []));
 
 describe("UI-76 一度きりの GM の一言（M16）", () => {
-  test("UI-76/DG-46 HINT_IDS は dungeonFirst / sanUnknown / levelUpMark / lostExits / dungeonTerms（M18）。文は strings の hint.<id> にあり、会話の箱の 1 行 28 字で 2 行以内（禁則つき）、差し込みなし", () => {
-    expect([...HINT_IDS]).toEqual(["dungeonFirst", "sanUnknown", "levelUpMark", "lostExits", "dungeonTerms"]);
+  test("UI-76/DG-46/DG-45 HINT_IDS は dungeonFirst / sanUnknown / levelUpMark / lostExits / dungeonTerms（M18）/ waitEnemy（M19）。文は strings の hint.<id> にあり、会話の箱の 1 行 28 字で 2 行以内（禁則つき）、差し込みなし", () => {
+    expect([...HINT_IDS]).toEqual(["dungeonFirst", "sanUnknown", "levelUpMark", "lostExits", "dungeonTerms", "waitEnemy"]);
     for (const id of HINT_IDS) {
       const t = S[`hint.${id}`];
       expect(t, id).toBeDefined();
@@ -34,6 +34,8 @@ describe("UI-76 一度きりの GM の一言（M16）", () => {
     expect(S["hint.sanUnknown"]!).not.toContain("鑑定");
     expect(S["hint.levelUpMark"]).toBe("名前の横の↑は、宿で上がれる印だ。");
     expect(S["hint.lostExits"]).toBe("地図の端に、まだ歩いていない口がある。地図の「未踏の口」を探せ。");
+    // DG-45 / UI-53（M19）: 「敵を待つ」が何をする操作か（SAN が減ることも）を初回に語る
+    expect(S["hint.waitEnemy"]).toBe("その場で一巡り待ち、敵を呼び寄せる。正気が少し削れる。");
   });
 
   test("UI-76 tellHintOnce: hints に無ければ message hint.<id>（params なし）を出して積み真。2 回目は何も出さず偽。乱数は使わない", () => {

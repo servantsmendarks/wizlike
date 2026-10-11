@@ -1735,8 +1735,8 @@ describe("data: strings.json", () => {
       for (const n of [2, 3, 4, 5]) delete r.strings[`opening.speech.${n}`];
     })).toEqual([]);
   });
-  test("data: UI-76 一度きりの GM の一言 hint.dungeonFirst / hint.sanUnknown / hint.levelUpMark / hint.dungeonTerms（M18）は必須で、差し込みを持たない（M16）", () => {
-    for (const id of ["dungeonFirst", "sanUnknown", "levelUpMark", "dungeonTerms"]) {
+  test("data: UI-76 一度きりの GM の一言 hint.dungeonFirst / hint.sanUnknown / hint.levelUpMark / hint.dungeonTerms（M18）/ hint.waitEnemy（M19。DG-45）は必須で、差し込みを持たない（M16）", () => {
+    for (const id of ["dungeonFirst", "sanUnknown", "levelUpMark", "dungeonTerms", "waitEnemy"]) {
       expectIssue((r) => delete r.strings[`hint.${id}`], "strings.json", `hint.${id}`);
       expectIssue((r) => (r.strings[`hint.${id}`] = "{name}は覚えた。"), "strings.json", "UI-76");
     }

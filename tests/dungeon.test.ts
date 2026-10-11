@@ -2633,10 +2633,16 @@ describe("DG-46 100 歩の一言（dive.floorSteps と hint.lostExits。M18）",
   });
 });
 
-describe("DG-45 / CB-01b 辺りを探る（dungeon.search。M18）", () => {
+describe("DG-45 / CB-01b 敵を待つ（dungeon.search。M18。M19 で「辺りを探る」から改名）", () => {
   const SEARCH: Command = { type: "dungeon.search" };
-  /** floor 1 で roomId が null（通路）か非 null（部屋）の普通のセルに立たせた state */
+  /** floor 1 で roomId が null（通路）か非 null（部屋）の普通のセルに立たせた state（初回の一言 hint.waitEnemy は出し済みにする） */
   function standOn(room: boolean, seed = 1): GameState {
+    const s = standOnFresh(room, seed);
+    s.progress.hints.push("waitEnemy");
+    return s;
+  }
+  /** standOn と同じ位置で、hint.waitEnemy をまだ出していない state */
+  function standOnFresh(room: boolean, seed = 1): GameState {
     const s0 = enterD01(seed);
     const f = floorOf(s0.dive!, data);
     for (let y = 0; y < f.height; y++) {
@@ -2649,10 +2655,10 @@ describe("DG-45 / CB-01b 辺りを探る（dungeon.search。M18）", () => {
   }
   const alive = (s: GameState) => s.party.filter((c) => c.life === "alive");
 
-  test("DG-45 config.san.search は 1【仮】。文言 camp.search「辺りを探る」と dungeon.searched がある", () => {
+  test("DG-45 config.san.search は 1【仮】。文言 camp.search「敵を待つ」と dungeon.searched「待ったが、何も現れなかった。」（M19 で改名）がある", () => {
     expect(data.config.san.search).toBe(1);
-    expect(data.strings["camp.search"]).toBe("辺りを探る");
-    expect(data.strings["dungeon.searched"]).toBe("辺りを探ったが、何も現れなかった。");
+    expect(data.strings["camp.search"]).toBe("敵を待つ");
+    expect(data.strings["dungeon.searched"]).toBe("待ったが、何も現れなかった。");
     expect([...data.strings["dungeon.searched"]!].length).toBeLessThanOrEqual(28);
   });
 
@@ -2702,6 +2708,47 @@ describe("DG-45 / CB-01b 辺りを探る（dungeon.search。M18）", () => {
       // 戦闘中は受け付けない
       expectRejected(r.state, SEARCH, "wrong screen", d1);
     }
+  });
+
+  test("DG-45/UI-76（M19）ゲームで初めて受け付けた「敵を待つ」だけ、最初（毒・SAN・遭遇の d100 より前）に hint.waitEnemy を出して progress.hints に積む。2 回目は出さない。rejected では出さない。乱数は遭遇の d100 の 1 回のまま（鏡の rng）", () => {
+    for (const room of [false, true]) {
+      const s = standOnFresh(room);
+      expect(s.progress.hints).not.toContain("waitEnemy");
+      const p = s.party[1]!;
+      p.status = ["poison"];
+      p.hp = 10;
+      const mirror = cloneRng(s.rng);
+      randInt(mirror, 1, 100);
+      const r = run(s, SEARCH, DATA0);
+      expect(r.events[0]).toEqual({ kind: "message", key: "hint.waitEnemy" });
+      expect(r.events[1]!.kind).toBe("hpChanged");
+      expect(kinds(r.events).filter((k) => k === "message:hint.waitEnemy")).toHaveLength(1);
+      expect(kinds(r.events).at(-1)).toBe("message:dungeon.searched");
+      expect(r.state.rng).toEqual(mirror);
+      expect(r.state.progress.hints).toEqual([...s.progress.hints, "waitEnemy"]);
+      // 2 回目は一言なし（events は一言を除いた形のまま。乱数も d100 の 1 回）
+      const mirror2 = cloneRng(r.state.rng);
+      randInt(mirror2, 1, 100);
+      const r2 = run(r.state, SEARCH, DATA0);
+      expect(kinds(r2.events)).not.toContain("message:hint.waitEnemy");
+      expect(r2.state.rng).toEqual(mirror2);
+      // 一言の有無の他は、出し済みの state と同じ結果
+      const done = cloneState(s);
+      done.progress.hints.push("waitEnemy");
+      const rd = run(done, SEARCH, DATA0);
+      expect(r.events.slice(1)).toEqual(rd.events);
+      expect(r.state).toEqual(rd.state);
+    }
+    // 受け付けないとき（迷宮の外・保留中）は一言も積まない
+    const s = standOnFresh(false);
+    const ctx = makeContext(cloneState(s), data);
+    offerExit(ctx);
+    expectRejected(ctx.state, SEARCH, "choice pending");
+    expect(execute(ctx.state, SEARCH, data).state.progress.hints).not.toContain("waitEnemy");
+    // 遭遇したときも一言が先頭（その後は sanChanged…, screen battle）
+    const enc = run(standOnFresh(true), SEARCH, dataEnc(1, 0));
+    expect(kinds(enc.events)[0]).toBe("message:hint.waitEnemy");
+    expect(kinds(enc.events)).toContain("encounter");
   });
 
   test("DG-45 毒の 1 歩と同じ経過（hpChanged が SAN より前）。罠・階段のセルの上でも罠は発動せず確認も立たない", () => {

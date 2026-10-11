@@ -400,7 +400,7 @@ export function checkSearch(state: GameState): string | null {
 }
 
 /**
- * DG-45 / CB-01b（M18）: 辺りを探る。位置・向き・視野・罠・階段は変えず、前進の 1 歩と同じ時間の経過（adventureTurns +1、毒の tick、walkRegen）
+ * DG-45 / CB-01b（M18。M19 で「敵を待つ」に改名）: 敵を待つ。ゲームで初めて受け付けたときは最初に一言 hint.waitEnemy（UI-76。乱数の前）。位置・向き・視野・罠・階段は変えず、前進の 1 歩と同じ時間の経過（adventureTurns +1、毒の tick、walkRegen）
  * → 生存者全員の SAN −config.san.search（タグなし。CH-51）→ 行動可能な者がいれば部屋の率で遭遇の d100（今のセルが通路でも部屋の率。
  * 戦闘の origin の inRoom は今のセルのままなので、勝利後の宝箱の率 CB-52 は今のセルで決まる）。
  * 遭遇しなければ dungeon.searched。floorSteps（DG-46）は増やさない。乱数は遭遇の d100（と遭遇したときの編成）だけ
@@ -409,6 +409,7 @@ export function searchAround(ctx: RuleContext): void {
   const { state, data } = ctx;
   const dive = requireDive(state);
   const here = cellAt(floorOf(dive, data), dive.pos.x, dive.pos.y);
+  tellHintOnce(ctx, "waitEnemy"); // UI-76（M19）: 初めての「敵を待つ」で、何をする操作かの一言（経過・SAN・遭遇の前。乱数なし）
   state.adventureTurns += 1; // TW-12: 前進の 1 歩と同じく 1 進める
   tickPoisonStep(ctx);
   walkRegen(ctx);
