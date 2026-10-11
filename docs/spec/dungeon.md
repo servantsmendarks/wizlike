@@ -58,7 +58,7 @@
   "floors": 2, "width": 20, "height": 20, "rooms": [3, 6],  // rooms は任意。省略時は config.dungeon.defaultRooms（DG-05）
   "floorLevels": [1, 2],                // M14: 階の基準 Lv（長さ = floors。品の Lv の下限。DG-38 / IT-53）
   "unlock": null,                       // 開放条件になるダンジョン id。null なら最初から
-  "encounterRate": { "room": 0.12, "corridor": 0.05 },
+  "encounterRate": { "room": 0.12, "corridor": 0.07 },
   "encounterTable": { "1": [ { "monster": "giant_rat", "weight": 5 } ], "2": [ ... ] },  // 階ごとの出現表。出現する敵はこれだけで決まる（CB-03）
   "groupCountWeights": { "1": [80, 20, 0, 0], "2": [50, 35, 12, 3] },  // グループ数 1〜4 の重み【仮】
   "boss": { "monster": "gatekeeper_armor" },

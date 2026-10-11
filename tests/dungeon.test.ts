@@ -534,7 +534,8 @@ describe("遭遇（CB-01, DG-11）", () => {
     expect(r.events[0]?.kind).toBe("rejected");
   });
 
-  test("DG-11/CB-01 判定は d100 ≤ round(rate×100)（d01 corridor 0.05 → 5）。鏡の rng と一致する", () => {
+  test("DG-11/CB-01 判定は d100 ≤ round(rate×100)（d01 corridor 0.07 → 7。M19 で 0.05 から）。鏡の rng と一致する", () => {
+    expect(data.dungeons.find((d) => d.id === "d01")!.encounterRate).toEqual({ room: 0.12, corridor: 0.07 });
     let hits = 0;
     for (let seed = 1; seed <= 30; seed++) {
       const s0 = enterD01(seed);
@@ -544,7 +545,7 @@ describe("遭遇（CB-01, DG-11）", () => {
       const roll = randInt(cloneRng(s.rng), 1, 100);
       const r = run(s, MOVE);
       const enc = r.events.some((e) => e.kind === "message" && e.key === "battle.encounter");
-      expect(enc).toBe(roll <= 5);
+      expect(enc).toBe(roll <= 7);
       expect(r.state.battle !== null).toBe(enc);
       if (enc) hits += 1;
     }

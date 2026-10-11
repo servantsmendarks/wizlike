@@ -4,7 +4,7 @@
     "floors": 2, "width": 20, "height": 20, "rooms": [3, 6],
     "floorLevels": [1, 2],
     "unlock": null,
-    "encounterRate": { "room": 0.12, "corridor": 0.05 },
+    "encounterRate": { "room": 0.12, "corridor": 0.07 },
     "encounterTable": {
       "1": [
         { "monster": "giant_rat", "weight": 10 },
