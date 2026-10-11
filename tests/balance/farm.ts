@@ -6,7 +6,7 @@
 // 合否は不変条件だけで、数字は console.log に出す（farmReport。後で docs/balance.md に写す）。
 import { describe, expect, test } from "vitest";
 import { upgradeFee } from "../../src/core/rules/upgrade";
-import { slotsUsed } from "../../src/core/state";
+import { slotsMaxOf, slotsUsed } from "../../src/core/state";
 import { data } from "../helpers/core";
 import {
   CHEST_DANGERS,
@@ -45,15 +45,14 @@ export const FARM_PLACES = [
 
 /**
  * M13（設計書 §2-2）: 農夫ボットの帰る条件。この順に見て、理由を c.farmEnd に残す。
- * 1. full: 全員（生死を問わない。IT-54）の所持枠が満杯（slotsUsed ≥ config.inventory.slotsPerCharacter）
+ * 1. full: 全員（生死を問わない。IT-54）の所持枠が満杯（slotsUsed ≥ slotsMaxOf。M17 から素の力の補正を含む。CH-71）
  * 2. time: 推定の実時間（迷宮の分）≥ FARM_MINUTES 分
  * 3. death: 潜行の開始時に alive だった者が dead / ash（セオリーと同じ）
  * 4. hp: CB-14 の前衛の alive の者の HP の合計 × 2 < 最大 HP の合計（セオリーと同じ）
  * セオリーの 8 戦の上限は使わない
  */
 export function farmShouldReturn(c: Campaign): boolean {
-  const slots = data.config.inventory.slotsPerCharacter;
-  if (c.state.party.every((x) => slotsUsed(x) >= slots)) c.farmEnd = "full";
+  if (c.state.party.every((x) => slotsUsed(x) >= slotsMaxOf(x, data))) c.farmEnd = "full";
   else if (c.estDungeonMs() >= FARM_MINUTES * 60_000) c.farmEnd = "time";
   else if (returnOnDeath(c)) c.farmEnd = "death";
   else if (returnOnFrontHp(c)) c.farmEnd = "hp";

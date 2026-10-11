@@ -704,8 +704,8 @@ describe("UI-52 街のページ", () => {
     for (let i = 0; i < 5; i++) s.party[5]!.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
     const m = menuOf(s);
     expect(townEntries({ shop: "herb" }, m, S)).toEqual([
-      { kind: "buy", itemId: "herb", memberId: "c1", label: "アルド　空き 4 枠", disabled: false, reason: null },
-      { kind: "buy", itemId: "herb", memberId: "c2", label: "ベルク　空き 6 枠", disabled: false, reason: null },
+      { kind: "buy", itemId: "herb", memberId: "c1", label: "アルド　空き 5 枠", disabled: false, reason: null },
+      { kind: "buy", itemId: "herb", memberId: "c2", label: "ベルク　空き 7 枠", disabled: false, reason: null },
       { kind: "buy", itemId: "herb", memberId: "c4", label: "ドナ　空き 5 枠", disabled: false, reason: null },
       { kind: "buy", itemId: "herb", memberId: "c5", label: "エル　空き 6 枠", disabled: false, reason: null },
       { kind: "buy", itemId: "herb", memberId: "c6", label: "フィン　空き 0 枠", disabled: true, reason: null },
@@ -729,8 +729,8 @@ describe("UI-52 街のページ", () => {
     expect(NG).toBe("（装備不可）");
     const why = (name: string): string => `${name}は長剣を装備できない。WAR・SAM・LOR向けの品だ。`;
     expect(townEntries({ shop: "long_sword" }, m, S)).toEqual([
-      { kind: "buy", itemId: "long_sword", memberId: "c1", label: "アルド　空き 4 枠", disabled: false, reason: null },
-      { kind: "buy", itemId: "long_sword", memberId: "c2", label: "ベルク　空き 6 枠", disabled: false, reason: null },
+      { kind: "buy", itemId: "long_sword", memberId: "c1", label: "アルド　空き 5 枠", disabled: false, reason: null },
+      { kind: "buy", itemId: "long_sword", memberId: "c2", label: "ベルク　空き 7 枠", disabled: false, reason: null },
       { kind: "buy", itemId: "long_sword", memberId: "c3", label: `${m.shop.members[2]!.name}　空き ${m.shop.members[2]!.slotsFree} 枠${NG}`, disabled: true, reason: why(m.shop.members[2]!.name) },
       { kind: "buy", itemId: "long_sword", memberId: "c4", label: "ドナ　空き 5 枠（装備不可）", disabled: true, reason: why("ドナ") },
       { kind: "buy", itemId: "long_sword", memberId: "c5", label: "エル　空き 6 枠（装備不可）", disabled: true, reason: why("エル") },
@@ -835,8 +835,8 @@ describe("UI-52 街のページ", () => {
       back,
     ]);
     expect(townEntries({ buyback: twin }, m, S)).toEqual([
-      { kind: "buyback", memberId: "c1", instanceId: twin, label: "アルド　空き 4 枠", disabled: false },
-      { kind: "buyback", memberId: "c2", instanceId: twin, label: "ベルク　空き 6 枠", disabled: false },
+      { kind: "buyback", memberId: "c1", instanceId: twin, label: "アルド　空き 5 枠", disabled: false },
+      { kind: "buyback", memberId: "c2", instanceId: twin, label: "ベルク　空き 7 枠", disabled: false },
       { kind: "buyback", memberId: "c4", instanceId: twin, label: "ドナ　空き 5 枠", disabled: false },
       { kind: "buyback", memberId: "c5", instanceId: twin, label: "エル　空き 6 枠", disabled: false },
       { kind: "buyback", memberId: "c6", instanceId: twin, label: "フィン　空き 5 枠", disabled: false },

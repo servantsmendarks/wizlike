@@ -1,7 +1,7 @@
 // UI-57（開発用）: debug パネルのコマンド。全滅の流れ（M4 の実機の結果、ユーザー指示）と、
 // M5 の性格・イベント・SAN を実機で確かめるためのもの。乱数は使わない（例外は debug.chest{present: true}。衝動・制止・掛け合いが state.rng を使う。M12 の debug.levels も HP のダイスと習得判定に、M14 から能力値の成長 CH-61 にも state.rng を使う）。
 import { optionAppliesTo, optionKindOf, type StatKey } from "../data/index";
-import { classOf, createItemInstance, itemDisplayName, slotsUsed } from "../state";
+import { classOf, createItemInstance, itemDisplayName, slotsMaxOf, slotsUsed } from "../state";
 import type { RuleContext } from "../types";
 import { placeDebugChest, type StartAlarm } from "./chest";
 import { cellAt } from "./dungeon-gen";
@@ -113,7 +113,7 @@ export function giveCursed(ctx: RuleContext, wearable: boolean): void {
     ctx.events.push({ kind: "message", key: "debug.giveCursed.none" });
     return;
   }
-  const ch = state.party.find((c) => slotsUsed(c) < data.config.inventory.slotsPerCharacter);
+  const ch = state.party.find((c) => slotsUsed(c) < slotsMaxOf(c, data));
   if (ch === undefined) {
     ctx.events.push({ kind: "message", key: "debug.giveCursed.full" });
     return;

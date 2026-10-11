@@ -36,7 +36,7 @@ import { chestRate, chestView } from "../../src/core/rules/chest";
 import { equipStats, itemPower } from "../../src/core/rules/equip-stats";
 import { sellPrice } from "../../src/core/rules/shop";
 import { townMenu } from "../../src/core/rules/town";
-import { classOf, findBase, findItem, itemOf, monsterOf, slotsUsed } from "../../src/core/state";
+import { classOf, findBase, findItem, itemOf, monsterOf, slotsMaxOf, slotsUsed } from "../../src/core/state";
 import type { EquipSlot } from "../../src/core/data/index";
 import type { Command, Facing, Floor, GameEvent, GameState, ItemInstance, PartySetupMember, PenaltyResult, Pos, Rarity } from "../../src/core/types";
 import { data, expectKnownStringKeys, expectStateInvariants, expectTallyMatchesEvents, newGame } from "../helpers/core";
@@ -1587,7 +1587,6 @@ export class Campaign {
    * 装備させる。持ち主が違えば party.give（相手に空きが無ければその者を飛ばす）の後 party.equip。外した品は inventory に戻る（sellLoot が売る）
    */
   equipLoot(rec: DiveRecord): void {
-    const slots = data.config.inventory.slotsPerCharacter;
     const cands: { id: string; level: number }[] = [];
     for (const c of this.state.party)
       for (const id of c.inventory) {
@@ -1608,7 +1607,7 @@ export class Campaign {
         if (cur !== null && cur.cursed) continue;
         if (!this.stronger(inst, cur)) continue;
         if (ch.id !== owner.id) {
-          if (slotsUsed(ch) >= slots) continue;
+          if (slotsUsed(ch) >= slotsMaxOf(ch, data)) continue; // CH-71（M17。素の力の補正を含む）
           this.run({ type: "party.give", memberId: owner.id, instanceId: id, toId: ch.id });
         }
         this.run({ type: "party.equip", memberId: ch.id, instanceId: id });

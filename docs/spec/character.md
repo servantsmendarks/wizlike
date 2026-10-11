@@ -73,7 +73,7 @@
 M7 で、装備品の分類（汎用 / ユニーク）・実体の形・レベル・希少度・オプション・呪い・ドロップ・売買は `docs/spec/items.md`（IT）を正にする。この節の CH-72〜77 は、実体の欄（IT-10）と表示名（IT-11 / 12）を読み替えて今の手順のまま使う。
 
 - CH-70 装備スロットは 6: 武器 `weapon`、防具 `armor`、盾 `shield`、兜 `helm`、小手 `gauntlet`、装飾 `accessory`。
-- CH-71 所持枠は 8（装備中を含む）【仮】。`Character.inventory` は装備中の品を含まない。使用枠 = 装備数 + inventory の数。M16（2026-10-11 設計 4-7）: キャラクター画面の所持品の見出しは「所持品 {使用枠}/{上限}（装備 {装備数} を含む）」で、装備数は core の `campMenu.members[].equipped`（6 枠のうち空きでない枠の数）。
+- CH-71 所持枠（装備中を含む）の上限は `config.inventory.slotsPerCharacter`（8）【仮】に素の力の補正を足したもの（M17。core の `slotsMaxOf`）。補正は `config.inventory.strBonus` の閾値の表 `[{str: 12, slots: 1}, {str: 16, slots: 2}]`【仮】で、素の力（`stats.str`）が str 以上を満たした最後の段の slots（どの段も満たさなければ 0）。表は str の狭義の昇順、str・slots は正の整数（読み込み時に検証）。装備のオプション（IT-34。実効の能力値 CH-13）は含めない（枠が減る場面を作らない。素の能力値は減らない: CH-61 / CH-62 / TW-09）。力 11 以下 → 8、12〜15 → 9、16〜18 → 10。開始の編成の検査（CH-24 / prototypeParty）も同じ式。`Character.inventory` は装備中の品を含まない。使用枠 = 装備数 + inventory の数。M16（2026-10-11 設計 4-7）: キャラクター画面の所持品の見出しは「所持品 {使用枠}/{上限}（装備 {装備数} を含む）」で、装備数は core の `campMenu.members[].equipped`（6 枠のうち空きでない枠の数）。
 - CH-72 未鑑定アイテムは `unidentifiedName` で表示され、装備できない（CH-76。CH-77 の取り憑きは例外）。鑑定は司教（CH-77。MP を使い、確率で成功する。M10）か店（IT-65。料金を払い、必ず成功する）。M7: 表示は IT-12、店の鑑定は IT-65（鑑定料は見た目の品種の売値から決まる。2026-10-05）。未鑑定のままでも店で見た目の品種の売値で売れる（IT-61）。「装備できない」は items.md §11 の Q2【衝突】で代替案（未鑑定のまま装備できる）を諮っている。
   - M10（2026-10-07 ユーザー承認）: 司教の鑑定（CH-77）の失敗で呪われた品が取り憑けなかったときの SAN −10（`possessSan`）は街でも起き、次に街へ入るまで残る（街にいる間は回復しない。SAN の回復は街に入った時点だけ。TW-02）。これは意図した仕様。失敗の SAN −3（`failSanDungeon`）は今どおり迷宮内だけ。
 - CH-73 呪われたアイテムは装備すると外せない。寺院の解呪（TW-07）で外せる。呪いはアイテムの `cursed` で、未鑑定のうちは見えない（表示で呪いと示さないだけで、外せないことは鑑定と関係ない。CH-76）。M7: 呪いは実体の `cursed`（IT-10 / IT-32。ドロップの判定で付き、負のオプションを 1 つ持つ）で、`items[].cursed` は廃止する。
@@ -95,7 +95,7 @@ M7 で、装備品の分類（汎用 / ユニーク）・実体の形・レベ�
     - 装備できない品なら品は元の場所のまま `camp.possessedSan{name, item}` → 司教の SAN を `possessSan`（10【仮】）減らす（タグなし）。街でも減らし、次に街へ入るまで残る（CH-72 の M10 の注記）。
   - 乱数の順: d100 →（失敗かつ品が呪われているときだけ）chance。呪われていない品の失敗と成功では chance を引かない。
 - CH-78 渡す（M10。2026-10-07 ユーザー指示）: `party.give {memberId, instanceId, toId}`。memberId の inventory の品（装備中は対象外）を、パーティの他の者 toId に渡す。受け付けは街と、迷宮の戦闘外かつ保留なし（CH-76 と同じ）。
-  - 判定順: wrong screen → no such member → item not in inventory（本人の inventory に無い）→ no such target（自分・パーティ外）→ target full（受け取る側の使用枠（CH-71）が `config.inventory.slotsPerCharacter` 以上）。
+  - 判定順: wrong screen → no such member → item not in inventory（本人の inventory に無い）→ no such target（自分・パーティ外）→ target full（受け取る側の使用枠（CH-71）が上限（`slotsMaxOf`）以上）。
   - 渡す側・受け取る側とも life と行動の可否は問わない（操作するのはプレイヤー。死亡・灰の者の品も渡せ、死亡・灰の者にも渡せる。2026-10-07 ユーザー判断 U6）。呪われた品・未鑑定の品も渡せる。
   - 処理: 渡す側の inventory から外し、受け取る側の inventory の末尾に入れる → `camp.gave{name, item, to}`（item は IT-11 / IT-12 の表示名）。潜行台帳と品の実体は変わらない。乱数は使わない。
   - 表示層は相手の可否を `campMenu` の `members[].canReceive`（target full の逆。自分かどうかは見ない）で出す。

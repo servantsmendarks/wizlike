@@ -16,7 +16,7 @@ import type { DropCategory, DropEntry, GameData } from "../data/index";
 import { optionAppliesTo, optionKindOf } from "../data/index";
 import { chance, randInt, rollDice, weightedIndex } from "../rng";
 import type { ItemInstanceSpec } from "../state";
-import { baseOf, createItemInstance, dropTableOf, dungeonOf, findBase, itemDisplayName, itemOf, monsterOf, personalityOf, uniqueOf, slotsUsed } from "../state";
+import { baseOf, createItemInstance, dropTableOf, dungeonOf, findBase, itemDisplayName, itemOf, monsterOf, personalityOf, uniqueOf, slotsMaxOf, slotsUsed } from "../state";
 import type { GameState, ItemOptionRoll, RuleContext } from "../types";
 import { canAct, groupName } from "./combat-calc";
 import { gainGold } from "./field";
@@ -126,7 +126,7 @@ export function rollItemSpec(
  */
 export function placeFoundItem(ctx: RuleContext, spec: ItemInstanceSpec): boolean {
   const { state, data } = ctx;
-  const ch = state.party.find((c) => slotsUsed(c) < data.config.inventory.slotsPerCharacter) ?? null;
+  const ch = state.party.find((c) => slotsUsed(c) < slotsMaxOf(c, data)) ?? null;
   if (ch === null) {
     // 装備はベースの unidentifiedName、魔法書（IT-55。鑑定済みで生まれる）は items の name
     const base = findBase(data, spec.itemId);

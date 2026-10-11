@@ -14,6 +14,7 @@ import {
   memberById,
   monsterOf,
   optionOf,
+  slotsMaxOf,
   slotsUsed as slotsUsedOf,
   uniqueOf,
 } from "../src/core/state";
@@ -785,7 +786,7 @@ describe("UI-57 debug.giveCursed（開発用、M10）", () => {
   test("UI-57/CH-77 debug.giveCursed{wearable: true} は司教が装備できる最初のベース（dagger）の呪われた未鑑定品（Lv0・通常・負のオプション 1 つ）を、並び順で最初に使用枠の空いた者の末尾に入れる。街では台帳なし・foundIn null。message debug.giveCursed{name, item}。乱数は変えない", () => {
     const s = cloneState(newGame(1));
     s.party[0]!.inventory.push(...Array.from({ length: 8 }, () => createItemInstance(s, { itemId: "herb", identified: true })));
-    expect(slotsUsedOf(s.party[0]!)).toBeGreaterThanOrEqual(data.config.inventory.slotsPerCharacter);
+    expect(slotsUsedOf(s.party[0]!)).toBeGreaterThanOrEqual(slotsMaxOf(s.party[0]!, data));
     const before = JSON.stringify(s);
     const r = execute(s, WEAR, data);
     expect(JSON.stringify(s)).toBe(before);
@@ -822,7 +823,7 @@ describe("UI-57 debug.giveCursed（開発用、M10）", () => {
 
   test("UI-57 debug.giveCursed は誰の使用枠も空いていなければ実体を作らず message debug.giveCursed.full。保留中・戦闘中も受け付け、title は rejected no party", () => {
     const s = cloneState(newGame(1));
-    for (const ch of s.party) while (slotsUsedOf(ch) < data.config.inventory.slotsPerCharacter) ch.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
+    for (const ch of s.party) while (slotsUsedOf(ch) < slotsMaxOf(ch, data)) ch.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
     const full = execute(s, WEAR, data);
     expect(full.events).toEqual([{ kind: "message", key: "debug.giveCursed.full" }]);
     expectKnownStringKeys(full.events);

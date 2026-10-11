@@ -751,7 +751,7 @@ describe("UI-52/TW-11 townMenu（表示層向けの問い合わせ）", () => {
 // ---------------------------------------------------------------------------
 
 describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
-  // 既定のパーティの所持枠（CH-71、slotsPerCharacter 8）: c1 装備 3 + 薬草 1 = 4、c2 装備 2、c3 装備 3 + 薬草 1 = 4、
+  // 既定のパーティの所持枠（CH-71。slotsPerCharacter 8 + 素の力の補正（M17）で c1（力 14）・c2（力 15）は 9、ほかは 8）: c1 装備 3 + 薬草 1 = 4、c2 装備 2、c3 装備 3 + 薬草 1 = 4、
   // c4 装備 2 + 解毒草 1 = 3、c5 装備 1 + 帰還の糸 1 = 2、c6 装備 2 + 薬草 1 = 3。実体は i1..i18 で、次は i19。
   const buy = (memberId: unknown, itemId: unknown): Command =>
     ({ type: "town.shop", action: { kind: "buy", memberId, itemId } }) as unknown as Command;
@@ -795,12 +795,12 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
     expectRejected(town({}, 49), buy("c1", "return_thread"), "not enough gold");
   });
 
-  test("TW-05/CH-71 所持枠: 使用 7 なら買えて 8 になり、8 なら inventory full（所持金より先に判定）", () => {
+  test("TW-05/CH-71 所持枠: 素の力 15 の者（上限 9。M17）は使用 8 なら買えて 9 になり、9 なら inventory full（所持金より先に判定）", () => {
     const s = town();
     const c2 = member(s, "c2");
-    for (let i = 0; i < 5; i++) c2.inventory.push(createItemInstance(s, { itemId: "herb", identified: true })); // 装備 2 + 5 = 7
+    for (let i = 0; i < 6; i++) c2.inventory.push(createItemInstance(s, { itemId: "herb", identified: true })); // 装備 2 + 6 = 8
     const r = ok(s, buy("c2", "herb"));
-    expect(member(r.state, "c2").inventory).toHaveLength(6);
+    expect(member(r.state, "c2").inventory).toHaveLength(7);
     expectRejected(r.state, buy("c2", "herb"), "inventory full");
     const poor = cloneState(r.state);
     poor.gold = 0;
@@ -862,8 +862,8 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
         { itemId: "leather_gloves", name: "革小手", level: 0, price: 30, affordable: true, canEquip: ["c1", "c2", "c3", "c4", "c5", "c6"] },
       ].map((e) => ({ ...e, preview: shopItemPreview(data, e.itemId, 0)! })),
       members: [
-        { memberId: "c1", name: "アルド", slotsFree: 4 },
-        { memberId: "c2", name: "ベルク", slotsFree: 6 },
+        { memberId: "c1", name: "アルド", slotsFree: 5 }, // CH-71（M17）: 力 14 で上限 9
+        { memberId: "c2", name: "ベルク", slotsFree: 7 }, // 力 15 で上限 9
         { memberId: "c3", name: "キリ", slotsFree: 4 },
         { memberId: "c4", name: "ドナ", slotsFree: 5 },
         { memberId: "c5", name: "エル", slotsFree: 6 },
@@ -1133,7 +1133,7 @@ describe("IT-60〜63 店の装備の購入・売却・買い戻し（town.shop�
     expectRejected(s, buyback("c1", "i4"), "not in stock");
     expectRejected(s, buyback("c1", "i999"), "not in stock");
     const full = cloneState(s);
-    for (let i = 0; i < 3; i++) member(full, "c1").inventory.push(createItemInstance(full, { itemId: "herb", identified: true })); // 装備 3 + 5 = 8
+    for (let i = 0; i < 4; i++) member(full, "c1").inventory.push(createItemInstance(full, { itemId: "herb", identified: true })); // 装備 3 + 6 = 9（力 14 の上限。CH-71 M17）
     full.gold = 0;
     expectRejected(full, buyback("c1", u), "inventory full");
     expectRejected(s, buyback("c1", u), "not enough gold");
@@ -1337,9 +1337,9 @@ describe("TW-16/IT-64 倉庫（town.storage。M7）", () => {
     const fullW = ok(near, storage("deposit", "c3", "i10")).state;
     expect(fullW.warehouse).toHaveLength(40);
     expectRejected(fullW, storage("deposit", "c4", "i13"), "warehouse full");
-    // 所持枠: c1 は装備 3 + 5 = 8 で inventory full
+    // 所持枠: c1 は装備 3 + 6 = 9（力 14 の上限。CH-71 M17）で inventory full
     const fullI = cloneState(s);
-    for (let i = 0; i < 5; i++) member(fullI, "c1").inventory.push(createItemInstance(fullI, { itemId: "herb", identified: true }));
+    for (let i = 0; i < 6; i++) member(fullI, "c1").inventory.push(createItemInstance(fullI, { itemId: "herb", identified: true }));
     expectRejected(fullI, storage("withdraw", "c1", "i4"), "inventory full");
   });
 
@@ -1358,8 +1358,8 @@ describe("TW-16/IT-64 倉庫（town.storage。M7）", () => {
         { instanceId: "i4", name: "薬草" },
       ],
       members: [
-        { memberId: "c1", name: "アルド", slotsFree: 5, items: [] },
-        { memberId: "c2", name: "ベルク", slotsFree: 6, items: [] },
+        { memberId: "c1", name: "アルド", slotsFree: 6, items: [] }, // CH-71（M17）: 力 14 で上限 9
+        { memberId: "c2", name: "ベルク", slotsFree: 7, items: [] }, // 力 15 で上限 9
         { memberId: "c3", name: "キリ", slotsFree: 4, items: [{ instanceId: "i10", name: "薬草" }] },
         { memberId: "c4", name: "ドナ", slotsFree: 5, items: [{ instanceId: "i13", name: "解毒草" }] },
         { memberId: "c5", name: "エル", slotsFree: 6, items: [{ instanceId: "i15", name: "帰還の糸" }] },

@@ -251,7 +251,7 @@
   - 語り（M10）: キャラクター画面の間は、迷宮でも会話の箱（UI-47）に語る（▼ のタップ待ちと Enter / Space の箱送りも街と同じ。M10.5 から迷宮では 3 行の箱で、文を溜めて 3 行で埋まる。項目・数字キー・Esc は会話を打ち切ってから動くのも街と同じ。2026-10-07）。キャラクター画面を閉じるとき（メンバー一覧・top へ戻る・キャンプを閉じる）、街でなければ会話の箱を打ち切る（残りの文はログに入っている）。帰還の糸・帰還の呪文で街へ入って閉じるときは打ち切らず、街に入る語り（`townCarry`）も会話の箱に出し直さない（既に会話の箱で読んでいる。UI-47。2026-10-07）。
   - 行は 10px で y = 4 + 10i の 27 行（下端 274。`layout` の `CHARACTER_LINES`。`layout.character` の高さが 4 + 10 × 27 = 274 に満たない layout は起動を止めず console.warn で知らせる）:
     - 0 名前（accent）/ 1 種族・職業の正式名（`classes[].name`）/ 2 レベル（x4）・経験値（x56）・次のレベル（x120。UI-69）/ 3 HP・MP・SAN（現在/最大。x4 / x84 / x164）/ 4 状態 / 5〜6 能力値 3 列 × 2 行 / 7 攻撃・AC・魔法攻撃力 / 8〜13 装備 6 枠（枠名 x4、品名 x40。名前は鑑定を反映した表示名。空きは「なし」）
-    - 14 所持品の見出し `character.inventoryHeading`「所持品 {used}/{max}（装備 {equipped} を含む）」（used は CH-71 の使用枠 = 装備と所持品、max は `config.inventory.slotsPerCharacter`、equipped は装備中の数（M16）。core の `campMenu.members[].slotsUsed` / `slotsMax` / `equipped`）/ 15〜18 所持品 2 列 × 4 行（x4 / x122、各 114 幅。はみ出しは切る。名前は鑑定を反映した表示名）
+    - 14 所持品の見出し `character.inventoryHeading`「所持品 {used}/{max}（装備 {equipped} を含む）」（used は CH-71 の使用枠 = 装備と所持品、max は CH-71 の上限（`slotsMaxOf`。M17 から素の力の補正を含む）、equipped は装備中の数（M16）。core の `campMenu.members[].slotsUsed` / `slotsMax` / `equipped`）/ 15〜18 所持品 2 列 × 4 行（x4 / x122、各 114 幅。はみ出しは切る。名前は鑑定を反映した表示名）
     - 19 呪文の見出し `character.spellHeading` / 20〜26 習得呪文 2 列 × 7 行（`character.spellCell`「{name} MP{mp}」。戦闘外で唱えられない・MP の足りない呪文は dim）
     - 所持品が 9 件以上なら 8 番目の枠を、呪文が 15 件以上なら 14 番目の枠を `character.more`「ほか {n}」（n は出していない件数）にする（頁の段では頁の分をそのまま出す）。
   - M4.5〜M9 の「状態」（14 行・ビュー領域 240×150・名前の 6 枠で人を切り替える）は上のとおり改めた。旧い表示する項目（旧 UI-58 と同じ）: 名前、種族、職業の正式名、レベル、経験値、HP/MP/SAN（現在/最大）、状態、能力値 6 つ、装備 6 枠。

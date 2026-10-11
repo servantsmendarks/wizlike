@@ -246,6 +246,21 @@ export function identifyInstance(state: GameState, instanceId: string): void {
   }
 }
 
+/**
+ * CH-71（M17）: 素の力（ch.stats.str。装備のオプションは含めない）による所持枠の補正。
+ * config.inventory.strBonus（str の昇順の閾値の表）のうち、str 以上を満たした最後の段の slots。どの段も満たさなければ 0
+ */
+export function strBonusSlots(str: number, data: GameData): number {
+  let n = 0;
+  for (const row of data.config.inventory.strBonus) if (str >= row.str) n = row.slots;
+  return n;
+}
+
+/** CH-71（M17）: 所持枠の上限 = config.inventory.slotsPerCharacter + 素の力の補正（strBonusSlots） */
+export function slotsMaxOf(ch: Character, data: GameData): number {
+  return data.config.inventory.slotsPerCharacter + strBonusSlots(ch.stats.str, data);
+}
+
 /** CH-71 の使用枠 = equipment の非 null の数 + inventory.length */
 export function slotsUsed(ch: Character): number {
   let n = 0;

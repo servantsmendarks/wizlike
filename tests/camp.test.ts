@@ -9,7 +9,7 @@ import { chance, cloneRng, createRng, randInt, rollDice } from "../src/core/rng"
 import { campMenu, campSummary, checkCast, checkEquip, checkIdentify, checkUnequip, identifyChance } from "../src/core/rules/camp";
 import { frontLineIds } from "../src/core/rules/combat-calc";
 import { resurrectRate, townMenu } from "../src/core/rules/town";
-import { cloneState, createItemInstance, itemDisplayName } from "../src/core/state";
+import { cloneState, createItemInstance, itemDisplayName, slotsMaxOf } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState } from "../src/core/types";
 import { dived, withBattle } from "./helpers/battle";
 import { createInitialState } from "../src/core/engine";
@@ -733,7 +733,7 @@ describe("CH-77 party.identify", () => {
     c5.equipment.weapon = null;
     member(w, "c2").inventory.push("i14", ...c5.inventory); // 杖と帰還の糸は c2 へ（実体の参照を保つ）
     c5.inventory = [];
-    while (c5.inventory.length < data.config.inventory.slotsPerCharacter) c5.inventory.push(createItemInstance(w, { itemId: "herb", identified: true }));
+    while (c5.inventory.length < slotsMaxOf(c5, data)) c5.inventory.push(createItemInstance(w, { itemId: "herb", identified: true }));
     const third = cursedDagger(w, false);
     member(w, "c1").inventory.push(third);
     check(w, third, "短い刃？", 0);
@@ -769,13 +769,13 @@ describe("CH-77 party.identify", () => {
 
 // ---------------------------------------------------------------------------
 
-/** memberId の inventory を薬草で使用枠の上限（config.inventory.slotsPerCharacter）まで埋めた state */
+/** memberId の inventory を薬草で使用枠の上限（slotsMaxOf。CH-71 の素の力の補正を含む）まで埋めた state */
 function fillSlots(base: GameState, memberId: string): GameState {
   let s = base;
   while (true) {
     const ch = member(s, memberId);
     const used = Object.values(ch.equipment).filter((x) => x !== null).length + ch.inventory.length;
-    if (used >= data.config.inventory.slotsPerCharacter) return s;
+    if (used >= slotsMaxOf(ch, data)) return s;
     s = give(s, memberId, "herb").s;
   }
 }
@@ -1041,7 +1041,7 @@ describe("UI-59（M10）campMenu のキャラクター画面の欄（inventory�
       { instanceId: "i21", name: "雷光の魔法書", identified: true, kind: "book", cursed: false },
     ]);
     expect(c1.slotsUsed).toBe(3 + 4); // 長剣・革鎧・木の盾 + 所持品 4
-    expect(c1.slotsMax).toBe(data.config.inventory.slotsPerCharacter);
+    expect(c1.slotsMax).toBe(data.config.inventory.slotsPerCharacter + 1); // CH-71（M17）: アルドの素の力 14 は strBonus の 12 の段で +1
     expect(c1.equipped).toBe(3);
     expect(campMenu(s, data)!.members[1]!.inventory).toEqual([]); // ベルクは所持品なし
   });
@@ -1190,5 +1190,41 @@ describe("TW-03 townMenu.canIdentify（M5.5）", () => {
       expect(townMenu(s, data)!.canIdentify, name).toBe(want);
       expect(campMenu(s, data)!.identifiers.length > 0, name).toBe(want);
     }
+  });
+});
+
+describe("CH-71（M17）所持枠の素の力の補正（config.inventory.strBonus）", () => {
+  test("CH-71 slotsMaxOf = slotsPerCharacter 8 + 素の力の段（12 以上で +1、16 以上で +2【仮】）: 力 3・11 → 8、12・15 → 9、16・18 → 10", () => {
+    const s = inTown();
+    const ch = s.party[0]!;
+    for (const [str, want] of [[3, 8], [11, 8], [12, 9], [15, 9], [16, 10], [18, 10]] as const) {
+      ch.stats.str = str;
+      expect(slotsMaxOf(ch, data), `str ${str}`).toBe(want);
+    }
+  });
+
+  test("CH-71 装備の力のオプションは含めない（素の力 11 + 力 +3 の剣で実効 14 でも 8）。campMenu の slotsMax と townMenu の slotsFree が追従する", () => {
+    const s = inTown({ c1: { stats: { ...newGame(1).party[0]!.stats, str: 11 } } });
+    const c1 = member(s, "c1");
+    s.items[c1.equipment.weapon!]!.options = [{ optionId: "str", tier: 3, value: 3 }];
+    expect(slotsMaxOf(c1, data)).toBe(8);
+    expect(campMenu(s, data)!.members[0]!.slotsMax).toBe(8);
+    // c1 は装備 3 + 薬草 1 = 4 → 空き 4。c2（ベルク・力 15）は上限 9 で装備 2 → 空き 7
+    const shop = townMenu(s, data)!.shop;
+    expect(shop.members.find((m) => m.memberId === "c1")!.slotsFree).toBe(4);
+    expect(shop.members.find((m) => m.memberId === "c2")!.slotsFree).toBe(7);
+  });
+
+  test("CH-71/CH-78 力 16 の者は 10 品まで受け取れる（party.give の target full は 10 で）", () => {
+    const s = inDungeon({ c2: { stats: { ...dived(1).party[1]!.stats, str: 16 } } });
+    const c2 = member(s, "c2");
+    while (c2.inventory.length + 2 < 9) c2.inventory.push(createItemInstance(s, { itemId: "herb", identified: true })); // 装備 2 + 7 = 9
+    const r = execute(s, { type: "party.give", memberId: "c1", instanceId: "i4", toId: "c2" }, data);
+    expect(r.events.some((e) => e.kind === "rejected")).toBe(false);
+    expect(member(r.state, "c2").inventory).toHaveLength(8); // 10 枠が満杯
+    const c1 = member(r.state, "c1");
+    c1.inventory.push(createItemInstance(r.state, { itemId: "herb", identified: true }));
+    const again = execute(r.state, { type: "party.give", memberId: "c1", instanceId: c1.inventory.at(-1)!, toId: "c2" }, data);
+    expect(again.events).toEqual([{ kind: "rejected", command: "party.give", reason: "target full" }]);
   });
 });

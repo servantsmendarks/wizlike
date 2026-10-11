@@ -767,7 +767,7 @@ export type TownMenu = {
     items: TownMenuShopItem[];
     /** IT-62: 流通レベルの汎用装備（equipment-bases.json の順で shopMinLevel ≤ shopLevel のベース） */
     equipment: TownMenuShopEquipment[];
-    /** 持たせる候補（buy / buyback）= life alive の者（並び順）。slotsFree = slotsPerCharacter − 装備数 − inventory（CH-71。0 なら inventory full） */
+    /** 持たせる候補（buy / buyback）= life alive の者（並び順）。slotsFree = slotsMaxOf（CH-71。M17 から素の力の補正を含む）− 装備数 − inventory（CH-71。0 なら inventory full） */
     members: TownMenuShopMember[];
     /** IT-61: 全員（並び順。life を問わない）の、inventory の品（inventory の順。2026-10-05 から未鑑定も含む） */
     sellable: { memberId: string; name: string; items: TownMenuShopSellRow[] }[];
@@ -882,7 +882,7 @@ export type CampMember = {
   canReceive: boolean;
   /** UI-59（M10）: 本人の inventory の順の所持品（装備中は含めない。渡す・捨てるの候補） */
   inventory: CampInventoryItem[];
-  /** CH-71（M10）: 使用枠の数（装備 + 所持品。slotsUsed）と上限（config.inventory.slotsPerCharacter）。表示の数字だけ */
+  /** CH-71（M10）: 使用枠の数（装備 + 所持品。slotsUsed）と上限（slotsMaxOf = config.inventory.slotsPerCharacter + 素の力の補正。M17）。表示の数字だけ */
   slotsUsed: number;
   slotsMax: number;
   /** CH-71（M16。設計 4-7）: 装備中の品の数（6 枠のうち空きでない枠。slotsUsed に含まれる分）。所持品の見出しの「装備 n を含む」 */

@@ -6,7 +6,7 @@ import type { DropEntry, GameData, ItemOption, OptionKind } from "../src/core/da
 import { optionAppliesTo } from "../src/core/data";
 import { chance, cloneRng, weightedIndex } from "../src/core/rng";
 import { chestItemCount, dropLevelBase, genericOptionTier, partyChestQuality, placeFoundItem, rollBossTable, rollChestItems, rollItemSpec } from "../src/core/rules/loot";
-import { cloneState, createItemInstance, makeContext, memberById } from "../src/core/state";
+import { cloneState, createItemInstance, makeContext, memberById, slotsMaxOf } from "../src/core/state";
 import type { BattleAction, Character, Command, GameState } from "../src/core/types";
 import { ALWAYS_HIT, allInputs, dataWith, dived, exec, kindsOf, withBattle } from "./helpers/battle";
 import { data, expectKnownStringKeys, expectStateInvariants, loadFreshData } from "./helpers/core";
@@ -570,10 +570,10 @@ describe("IT-56 / IT-30 伝説の条件（M15）: 危険度 legendaryMinDanger �
 describe("IT-54 配る・置いていく", () => {
   test("IT-54 並び順に最初に所持枠が空いている者（life を問わない）の inventory の末尾と台帳に入れ、未鑑定の表示名で item.found", () => {
     const s = dived(1);
-    // c1 の所持枠を埋める（8 枠）。c2 は死亡していても受け取る
+    // c1 の所持枠を埋める（slotsMaxOf。素の力 14 で 9 枠）。c2 は死亡していても受け取る
     const c1 = member(s, "c1");
     const used = Object.values(c1.equipment).filter((x) => x !== null).length + c1.inventory.length;
-    for (let i = used; i < data.config.inventory.slotsPerCharacter; i++) c1.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
+    for (let i = used; i < slotsMaxOf(c1, data); i++) c1.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
     member(s, "c2").life = "dead";
     member(s, "c2").hp = 0;
     const ctx = makeContext(cloneState(s), data);
@@ -592,7 +592,7 @@ describe("IT-54 配る・置いていく", () => {
     const s = dived(1);
     for (const ch of s.party) {
       const used = Object.values(ch.equipment).filter((x) => x !== null).length + ch.inventory.length;
-      for (let i = used; i < data.config.inventory.slotsPerCharacter; i++) ch.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
+      for (let i = used; i < slotsMaxOf(ch, data); i++) ch.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
     }
     // ボスの表（itemChance 100 × rolls 1）で 1 品だけ引く。ボスの品は危険度 legendaryMinDanger 扱い（M15）なので上振れの chance を引く（0% にして外す）
     const d = lootData({
@@ -664,7 +664,7 @@ describe("IT-55 ドロップ表の魔法書の項目（M9）", () => {
     const s = dived(1);
     for (const ch of s.party) {
       const used = Object.values(ch.equipment).filter((x) => x !== null).length + ch.inventory.length;
-      for (let i = used; i < data.config.inventory.slotsPerCharacter; i++) ch.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
+      for (let i = used; i < slotsMaxOf(ch, data); i++) ch.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
     }
     const ctx = makeContext(cloneState(s), data);
     const seq = ctx.state.nextItemSeq;

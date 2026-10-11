@@ -543,7 +543,27 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.prototypeParty.members[0].stats.str = 10), "config.json", "CH-21");
   });
   test("data: CH-71 所持枠を超えない", () => {
-    expectIssue((r) => (r.config.prototypeParty.members[0].inventory = Array(6).fill("herb")), "config.json", "CH-71");
+    expectIssue((r) => (r.config.prototypeParty.members[0].inventory = Array(7).fill("herb")), "config.json", "CH-71");
+  });
+  test("data: CH-71（M17）開始の編成の所持枠は素の力の補正を含む（アルドの力 14 で 8 + 1 = 9。装備 3 + 6 は通り、7 は超える。力 11 なら 6 で超える）", () => {
+    expect(issuesOf((r) => (r.config.prototypeParty.members[0].inventory = Array(6).fill("herb")))).toEqual([]);
+    expectIssue((r) => (r.config.prototypeParty.members[0].inventory = Array(7).fill("herb")), "config.json", "CH-71: 10 items exceed inventory slots 9");
+    expectIssue(
+      (r) => {
+        r.config.prototypeParty.members[0].stats.str = 11;
+        r.config.prototypeParty.members[0].inventory = Array(6).fill("herb");
+      },
+      "config.json",
+      "CH-71: 9 items exceed inventory slots 8",
+    );
+  });
+  test("data: CH-71（M17）inventory.strBonus は { str, slots } の正の整数の配列で、str は狭義の昇順【仮】（既定 12→1・16→2）", () => {
+    expect(issuesOf((r) => (r.config.inventory.strBonus = []))).toEqual([]);
+    expectIssue((r) => delete r.config.inventory.strBonus, "config.json", "inventory.strBonus: missing required field");
+    expectIssue((r) => (r.config.inventory.strBonus = [{ str: 12, slots: 0 }]), "config.json", "inventory.strBonus[0].slots: expected integer >= 1");
+    expectIssue((r) => (r.config.inventory.strBonus = [{ str: 12.5, slots: 1 }]), "config.json", "inventory.strBonus[0].str: expected integer");
+    expectIssue((r) => (r.config.inventory.strBonus = [{ str: 16, slots: 2 }, { str: 12, slots: 1 }]), "config.json", "inventory.strBonus[1].str: CH-71: str 12 is not greater than 16");
+    expectIssue((r) => (r.config.inventory.strBonus = [{ str: 12, slots: 1 }, { str: 12, slots: 2 }]), "config.json", "CH-71: str 12 is not greater than 12");
   });
   test("data: MG-01 growth.mpStatPivot は整数、mpStatDivisor は 1 以上の整数", () => {
     expectIssue((r) => (r.config.growth.mpStatPivot = 10.5), "config.json", "growth.mpStatPivot: expected integer");

@@ -11,6 +11,7 @@ import {
   itemDisplayName,
   itemOf,
   memberById,
+  slotsMaxOf,
   slotsUsed,
   uniqueOf,
 } from "../state";
@@ -23,9 +24,9 @@ function inTown(state: GameState): boolean {
   return state.screen === "town" && state.dive === null;
 }
 
-/** CH-71: 空いている所持枠（slotsPerCharacter − 装備数 − inventory。負にはしない） */
+/** CH-71: 空いている所持枠（slotsMaxOf − 装備数 − inventory。負にはしない） */
 export function slotsFreeOf(ch: Character, data: GameData): number {
-  return Math.max(0, data.config.inventory.slotsPerCharacter - slotsUsed(ch));
+  return Math.max(0, slotsMaxOf(ch, data) - slotsUsed(ch));
 }
 
 // ---------------------------------------------------------------------------

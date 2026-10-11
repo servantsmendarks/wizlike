@@ -555,8 +555,8 @@ describe("CH-76/UI-59 装備（キャラクター画面の下）", () => {
 describe("CH-78/UI-59 渡す", () => {
   test("CH-78/UI-59 品（所持品の順）→ 相手（自分以外。使用枠が満杯の者は「（持てない）」で dim）→ party.give。送った後は同じ者の品の段", () => {
     const s = inDungeon();
-    // ベルクの使用枠を満杯にする（装備 2 + 所持品 6 = 8）
-    for (let i = 0; i < 6; i++) s.party[1]!.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
+    // ベルクの使用枠を満杯にする（装備 2 + 所持品 7 = 9。素の力 15 で上限 9: CH-71 M17）
+    for (let i = 0; i < 7; i++) s.party[1]!.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
     const m = input(s);
     const p: CampPage = { kind: "give", stage: "item", memberId: "c1", page: 0 };
     expect(rows(campEntries("camp", p, m, S))).toEqual([{ label: "薬草", disabled: false, choice: { kind: "item", instanceId: "i4" } }, cancel]);

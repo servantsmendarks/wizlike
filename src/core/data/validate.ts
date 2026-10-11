@@ -182,6 +182,8 @@ type Index = {
   stringText: Map<string, string>;
   partySize: number | undefined;
   slotsPerCharacter: number | undefined;
+  /** config.inventory.strBonus（CH-71。M17）。形が不正な段は除く */
+  strBonus: { str: number; slots: number }[];
   maxEnemyGroups: number | undefined;
   maxPerGroup: number | undefined;
   /** config.items.rarities[].options の最大（IT-30。オプション表の件数の検査に使う） */
@@ -225,6 +227,11 @@ function buildIndex(raw: RawGameData): Index {
     stringText,
     partySize: intOf(get(raw.config, "party", "size")),
     slotsPerCharacter: intOf(get(raw.config, "inventory", "slotsPerCharacter")),
+    strBonus: arrOf(get(raw.config, "inventory", "strBonus")).flatMap((r) => {
+      const s = isObj(r) ? intOf(r.str) : undefined;
+      const n = isObj(r) ? intOf(r.slots) : undefined;
+      return s === undefined || n === undefined ? [] : [{ str: s, slots: n }];
+    }),
     maxEnemyGroups: intOf(get(raw.config, "combat", "maxEnemyGroups")),
     maxPerGroup: intOf(get(raw.config, "combat", "maxPerGroup")),
     maxRarityOptions: (() => {
@@ -273,7 +280,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
   const c = fields(ctx, "", v, {
     stage: F({ width: I({ min: 240, max: 240 }), height: I({ min: 400, max: 400 }) }), // UI-01
     party: F({ size: I({ min: 6, max: 6 }), frontRow: I({ min: 3, max: 3 }) }), // CH-01
-    inventory: F({ slotsPerCharacter: I(POS_INT) }),
+    inventory: F({ slotsPerCharacter: I(POS_INT), strBonus: L(F({ str: I(POS_INT), slots: I(POS_INT) })) }), // CH-71（strBonus は M17）【仮】
     creation: F({
       bonusBase: I(),
       bonusDie: I(POS_INT),
@@ -521,6 +528,13 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
     if (typeof k === "string" && a.indexOf(k) < j) report(ctx, at("chest.impulse.impulseClasses", j), `EV-04: duplicate class ${JSON.stringify(k)}`);
   });
 
+  // CH-71（M17）: strBonus は str の狭義の昇順
+  arrOf(get(c, "inventory", "strBonus")).forEach((r, j, a) => {
+    const prev = j > 0 ? intOf(get(a[j - 1], "str")) : undefined;
+    const cur = intOf(get(r, "str"));
+    if (prev !== undefined && cur !== undefined && cur <= prev) report(ctx, at(at("inventory.strBonus", j), "str"), `CH-71: str ${cur} is not greater than ${prev}`);
+  });
+
   // IT-30: 希少度は normal / fine / rare / legendary の順で 4 件。重みの合計は正、個数は 0..3
   const rarities = arrOf(get(c, "items", "rarities"));
   if (rarities.length > 0) {
@@ -618,9 +632,15 @@ function validateKit(ctx: Ctx, p: string, m: Obj, classId: string | undefined, c
   }
   const inv = arrOf(m.inventory);
   inv.forEach((it, j) => ref(ctx, at(at(p, "inventory"), j), it, ix.items, "item"));
-  // CH-71 所持枠（装備中を含む）
-  if (ix.slotsPerCharacter !== undefined && equipped + inv.length > ix.slotsPerCharacter)
-    report(ctx, p, `CH-71: ${equipped + inv.length} items exceed inventory.slotsPerCharacter ${ix.slotsPerCharacter}`);
+  // CH-71 所持枠（装備中を含む。M17 から素の力の補正 strBonus を足す。state.ts の slotsMaxOf と同じ式）
+  if (ix.slotsPerCharacter !== undefined) {
+    const str = intOf(get(m, "stats", "str")) ?? 0;
+    let bonus = 0;
+    for (const row of ix.strBonus) if (str >= row.str) bonus = row.slots;
+    const max = ix.slotsPerCharacter + bonus;
+    if (equipped + inv.length > max)
+      report(ctx, p, `CH-71: ${equipped + inv.length} items exceed inventory slots ${max} (slotsPerCharacter ${ix.slotsPerCharacter} + strBonus ${bonus})`);
+  }
 
   // MG-11 初期呪文の系統
   arrOf(m.knownSpells).forEach((sp, j) => {

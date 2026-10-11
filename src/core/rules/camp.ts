@@ -6,7 +6,7 @@
 import type { EquipmentBase, EquipSlot, GameData, Spell } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
 import { chance, randInt } from "../rng";
-import { classOf, destroyItemInstance, dungeonOf, findBase, findItem, identifyInstance, itemDisplayName, memberById, moraleOf, slotsUsed, spellOf } from "../state";
+import { classOf, destroyItemInstance, dungeonOf, findBase, findItem, identifyInstance, itemDisplayName, memberById, moraleOf, slotsMaxOf, slotsUsed, spellOf } from "../state";
 import type {
   CampEquipCandidate,
   CampIdentifyItem,
@@ -285,7 +285,7 @@ export function unequipItem(ctx: RuleContext, memberId: string, slot: EquipSlot)
 
 /** 使用枠（CH-71）に空きがあるか（CH-78 の target full の逆。campMenu の canReceive） */
 function hasFreeSlot(data: GameData, ch: Character): boolean {
-  return slotsUsed(ch) < data.config.inventory.slotsPerCharacter;
+  return slotsUsed(ch) < slotsMaxOf(ch, data);
 }
 
 /** CH-78 / CH-79 共通の前半。順: wrong screen → no such member → item not in inventory（本人の inventory に無い。装備中は対象外） */
@@ -428,7 +428,7 @@ function canForceEquip(state: GameState, data: GameData, bishop: Character, owne
   if (base.classes.length > 0 && !base.classes.includes(bishop.classId)) return false;
   const old = bishop.equipment[base.slot];
   if (old !== null) return !isCursed(state, old);
-  return owner.id === bishop.id || slotsUsed(bishop) < data.config.inventory.slotsPerCharacter;
+  return owner.id === bishop.id || slotsUsed(bishop) < slotsMaxOf(bishop, data);
 }
 
 /**
@@ -581,7 +581,7 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
           return [{ instanceId: id, name: itemDisplayName(state, data, id), identified: inst.identified, kind, cursed: inst.identified && inst.cursed }];
         }),
         slotsUsed: slotsUsed(ch),
-        slotsMax: data.config.inventory.slotsPerCharacter,
+        slotsMax: slotsMaxOf(ch, data), // CH-71（M17。素の力の補正を含む）
         equipped: EQUIP_SLOTS.filter((slot) => ch.equipment[slot] !== null).length, // CH-71（M16）
         knownSpells: ch.knownSpells.flatMap((id) => {
           const sp = data.spells.find((s) => s.id === id);
