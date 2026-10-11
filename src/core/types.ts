@@ -327,10 +327,24 @@ export type VisibleCell = {
  * 察知していない罠・イベント・ボス・部屋・通路はすべて plain（地図で明かさない）
  */
 export type MapCellKind = "plain" | "stairsUp" | "stairsDown" | "trap" | "chest";
-/** 辺は絶対方位（扉は通り抜けた後も door。DG-10） */
-export type MapCell = { x: number; y: number; kind: MapCellKind; n: Edge; e: Edge; s: Edge; w: Edge };
-/** DG-13 / UI-24。cells は探索済みセルだけ（添字の昇順） */
-export type MapView = { dungeonId: string; floor: number; width: number; height: number; pos: Pos; facing: Facing; cells: MapCell[] };
+/** UI-78（M18）: 未踏の口の辺の向き（MapCell の辺の名前と同じ小文字の絶対方位） */
+export type MapEdgeDir = "n" | "e" | "s" | "w";
+/**
+ * 辺は絶対方位（扉は通り抜けた後も door。DG-10）。
+ * exits（UI-78。M18）: 辺が open か door で、その先のセルが盤の内側にあり探索済み（cells）でない辺。順は n, e, s, w
+ */
+export type MapCell = { x: number; y: number; kind: MapCellKind; n: Edge; e: Edge; s: Edge; w: Edge; exits: MapEdgeDir[] };
+/** DG-13 / UI-24。cells は探索済みセルだけ（添字の昇順）。unexploredExits は cells の exits の総数（UI-78。M18） */
+export type MapView = {
+  dungeonId: string;
+  floor: number;
+  width: number;
+  height: number;
+  pos: Pos;
+  facing: Facing;
+  cells: MapCell[];
+  unexploredExits: number;
+};
 
 /**
  * CB-60 / UI-70（M11）: 宝箱の操作の値。rules/chest.ts の chestView(state, data)。dive.chest が非 null で、battle も pendingChoice も null のときだけ非 null。

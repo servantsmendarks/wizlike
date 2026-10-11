@@ -6,6 +6,8 @@ import { cloneState } from "../src/core/state";
 import { tapSpecOf } from "../src/presenter/input/tap";
 import {
   createMapView,
+  exitD,
+  LEGEND_COL_W,
   MAP_LEGEND_KEYS,
   MAP_PICK_BLINK_MS,
   mapLayout,
@@ -25,11 +27,12 @@ import { data, newGame } from "./helpers/core";
 const MAP_AREA = dungeonLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size).map.area;
 
 function cellOf(x: number, y: number, p: Partial<MapCell> = {}): MapCell {
-  return { x, y, kind: "plain", n: "wall", e: "wall", s: "wall", w: "wall", ...p };
+  return { x, y, kind: "plain", n: "wall", e: "wall", s: "wall", w: "wall", exits: [], ...p };
 }
 
 function view(cells: MapCell[], o: Partial<MapView> = {}): MapView {
-  return { dungeonId: "d01", floor: 1, width: 20, height: 20, pos: { x: 0, y: 0 }, facing: "N", cells, ...o };
+  const unexploredExits = cells.reduce((a, c) => a + c.exits.length, 0);
+  return { dungeonId: "d01", floor: 1, width: 20, height: 20, pos: { x: 0, y: 0 }, facing: "N", cells, unexploredExits, ...o };
 }
 
 /** "M x y H x2" / "M x y V y2" の線分に分解する（mapPaths の walls の書式） */
@@ -77,25 +80,31 @@ describe("UI-24 地図", () => {
     }
   });
 
-  test("UI-24/UI-25/UI-72（M16）mapNotes: 20×20 は題の 2 行目が y0（盤 y23 の上）、凡例が盤の下端の線 183 の 2px 下から 2 行 × 3 列（x 12・84・156、y 186・196）。順は MAP_LEGEND_KEYS", () => {
-    expect(MAP_LEGEND_KEYS).toEqual(["self", "up", "down", "chest", "trap", "wall"]);
+  test("UI-24/UI-25/UI-72/UI-78（M16・M18）mapNotes: 20×20 は題の 2 行目が y0、3 行目（未踏の口）が y12..21（盤 y23 の上）、凡例が盤の下端の線 183 の 2px 下から 2 行 × 4 列（列幅 58。x 4・62・120・178、y 186・196）。順は MAP_LEGEND_KEYS", () => {
+    expect(MAP_LEGEND_KEYS).toEqual(["self", "up", "down", "chest", "trap", "wall", "exit"]);
+    expect(LEGEND_COL_W).toBe(58);
     const n = mapNotes(20, 20, MAP_AREA);
     expect(n.hintY).toBe(0);
+    expect(n.unexploredY).toBe(12);
     expect(n.legend).toEqual([
-      { key: "self", x: 12, y: 186 },
-      { key: "up", x: 84, y: 186 },
-      { key: "down", x: 156, y: 186 },
-      { key: "chest", x: 12, y: 196 },
-      { key: "trap", x: 84, y: 196 },
-      { key: "wall", x: 156, y: 196 },
+      { key: "self", x: 4, y: 186 },
+      { key: "up", x: 62, y: 186 },
+      { key: "down", x: 120, y: 186 },
+      { key: "chest", x: 178, y: 186 },
+      { key: "trap", x: 4, y: 196 },
+      { key: "wall", x: 62, y: 196 },
+      { key: "exit", x: 120, y: 196 },
     ]);
+    // 4 列 × 58 = 232 が 240 に収まる（左右 4px ずつ）
+    expect(178 + LEGEND_COL_W).toBeLessThanOrEqual(MAP_AREA.w - 4);
   });
 
   test("UI-24/UI-72（M16）mapNotes は盤の大きさから計算し、20×20 以外でも盤と重ならず領域からはみ出さない。余白に入らなければ出さない（30×30 は凡例なし、題の 2 行目はあり）", () => {
-    // 30×30: cell 6、盤 y13..194。凡例は 196 から 2 行で 216 > 208 なので出さない。2 行目は y0..9 で盤の上端 13 より 2 以上上
-    expect(mapNotes(30, 30, MAP_AREA)).toEqual({ hintY: 0, legend: null });
+    // 30×30: cell 6、盤 y13..194。凡例は 196 から 2 行で 216 > 208 なので出さない。2 行目は y0..9 で盤の上端 13 より 2 以上上。
+    // 3 行目（UI-78）は y12..21 が盤と重なるので出さない
+    expect(mapNotes(30, 30, MAP_AREA)).toEqual({ hintY: 0, unexploredY: null, legend: null });
     // 5×5: 盤 y83..123（下端の線 123）の 2px 下の 126 から
-    expect(mapNotes(5, 5, MAP_AREA).legend?.[0]).toEqual({ key: "self", x: 12, y: 126 });
+    expect(mapNotes(5, 5, MAP_AREA).legend?.[0]).toEqual({ key: "self", x: 4, y: 126 });
     for (let w = 1; w <= 60; w++) {
       for (const h of [1, 5, 10, 19, 20, 21, 22, 23, 24, 25, 26, 30, 40, 60]) {
         const l = mapLayout(w, h, MAP_AREA);
@@ -103,12 +112,16 @@ describe("UI-24 地図", () => {
         const boardTop = l.oy;
         const boardBottom = l.oy + h * l.cell; // 下端の線の画素番号
         if (n.hintY !== null) expect(n.hintY + 10).toBeLessThan(boardTop);
+        if (n.unexploredY !== null) {
+          expect(n.unexploredY + 10).toBeLessThan(boardTop);
+          expect(n.unexploredY).toBeGreaterThanOrEqual(12);
+        }
         if (n.legend !== null) {
           for (const it of n.legend) {
             expect(it.y).toBeGreaterThan(boardBottom);
             expect(it.y + 10).toBeLessThanOrEqual(MAP_AREA.h);
             expect(it.x).toBeGreaterThanOrEqual(0);
-            expect(it.x + 72).toBeLessThanOrEqual(MAP_AREA.w);
+            expect(it.x + LEGEND_COL_W).toBeLessThanOrEqual(MAP_AREA.w);
           }
         }
       }
@@ -139,6 +152,30 @@ describe("UI-24 地図", () => {
     expect(p.player).toBe(same(cellOf(0, 0), self.x, self.y + 1).player);
     const wall = at("wall");
     expect(p.walls).toBe(`M${wall.x} ${wall.y + 5}H${wall.x + 8}`);
+    // UI-78（M18）: 未踏は箱の下端を辺とみなした北向きの破線（箱 y+1..y+8 の中の y+2..y+8）
+    const exit = at("exit");
+    expect(p.exits).toBe(`M${exit.x + 4} ${exit.y + 8}V${exit.y + 6}M${exit.x + 4} ${exit.y + 4}V${exit.y + 2}`);
+  });
+
+  test("UI-78（M18）exits の辺の中央から外へ長さ 2 の破線 2 本（cell 8 で辺から 1〜3 と 5〜7）。4 方向、door も同じ、exits が空なら描かない。色は accent", () => {
+    const lay = mapLayout(20, 20, MAP_AREA);
+    const px = lay.ox + 5 * 8;
+    const py = lay.oy + 7 * 8;
+    const p = mapPaths(view([cellOf(5, 7, { n: "open", e: "door", s: "open", w: "open", exits: ["n", "e", "s", "w"] })]), lay);
+    expect(p.exits).toBe(
+      `M${px + 4} ${py - 1}V${py - 3}M${px + 4} ${py - 5}V${py - 7}` +
+        `M${px + 9} ${py + 4}H${px + 11}M${px + 13} ${py + 4}H${px + 15}` +
+        `M${px + 4} ${py + 9}V${py + 11}M${px + 4} ${py + 13}V${py + 15}` +
+        `M${px - 1} ${py + 4}H${px - 3}M${px - 5} ${py + 4}H${px - 7}`,
+    );
+    // 破線は隣のセル（未探索）の内側に収まり、自分のセルの内側（記号の場所）には入らない
+    for (const sg of segments(p.exits)) {
+      const inside = (x: number, y: number): boolean => x > px && x < px + 8 && y > py && y < py + 8;
+      expect(inside(sg.x1, sg.y1) || inside(sg.x2, sg.y2)).toBe(false);
+    }
+    expect(mapPaths(view([cellOf(5, 7, { n: "open" })]), lay).exits).toBe("");
+    // cell 6 では 8 基準を丸める（sc(1)=1・sc(3)=2・sc(5)=4・sc(7)=5、中央 sc(4)=3）
+    expect(exitD(0, 10, "n", 6)).toBe("M3 9V8M3 6V5");
   });
 
   test("UI-24 mapLayout は渡した領域の寸法に合わせる（ui §2 の区切りで地図本体の高さが変わる）", () => {
@@ -534,13 +571,15 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     ]);
   });
 
-  test("UI-24/UI-25/UI-72（M16）render は凡例の語（map.legend.*）を記号の右に、題の 2 行目（map.tapHint）を選んでいない間だけ出す。setPick で隠し、null で戻す。凡例が入らない盤では語も記号も出さない", () => {
+  test("UI-24/UI-25/UI-72/UI-78（M16・M18）render は凡例の語（map.legend.*）を記号の右に、題の 2 行目（map.tapHint）を選んでいない間だけ出す。setPick で隠し、null で戻す。凡例が入らない盤では語も記号も出さない", () => {
     const { divs, paths } = fakeDocument();
     const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, data.strings);
     const hint = divs.find((d) => d.className === "map-hint")!;
     const labels = divs.filter((d) => d.className === "map-legend-label");
     expect(hint.textContent).toBe(data.strings["map.tapHint"]);
     expect(labels.map((d) => d.textContent)).toEqual(MAP_LEGEND_KEYS.map((k) => data.strings[`map.legend.${k}`]));
+    const unexplored = divs.find((d) => d.className === "map-unexplored")!;
+    expect(unexplored.style["pointerEvents"]).toBe("none");
     // タップは地図本体に通す
     expect(hint.style["pointerEvents"]).toBe("none");
     expect(labels.every((d) => d.style["pointerEvents"] === "none")).toBe(true);
@@ -549,19 +588,32 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     const n = mapNotes(20, 20, L.map.area);
     expect(hint.style["display"]).toBe("");
     expect(hint.style["top"]).toBe(`${ay + n.hintY!}px`);
+    // UI-78（M18）: 3 行目「未踏の口 {n}」（n は MapView.unexploredExits。0 も数字のまま）
+    expect(unexplored.style["display"]).toBe("");
+    expect(unexplored.style["top"]).toBe(`${ay + 12}px`);
+    expect(unexplored.textContent).toBe("未踏の口 0");
     expect(labels.map((d) => [d.style["display"], d.style["left"], d.style["top"]])).toEqual(n.legend!.map((it) => ["", `${it.x + 10}px`, `${ay + it.y}px`]));
     const legendChest = paths.filter((p) => p.attrs["d"] === mapLegendPaths(n.legend!).chests);
     expect(legendChest).toHaveLength(1);
     expect(legendChest[0]!.attrs["stroke"]).toBe("var(--c-accent)");
     m.setPick({ x: 1, y: 0 }, false);
     expect(hint.style["display"]).toBe("none");
+    // 3 行目は選んでいる間も出す
+    expect(unexplored.style["display"]).toBe("");
     m.setPick(null, false);
     expect(hint.style["display"]).toBe("");
-    // 30×30: 凡例は出さない（記号の path も空）。2 行目は出る
+    // 破線（map-exits）と数
+    m.render(view([cellOf(0, 0, { e: "open", exits: [] }), cellOf(1, 0, { w: "open", s: "door", e: "open", exits: ["e", "s"] })]), "t");
+    expect(unexplored.textContent).toBe("未踏の口 2");
+    const exitsEl = paths.find((p) => p.attrs["class"] === "map-exits")!;
+    expect(exitsEl.attrs["stroke"]).toBe("var(--c-accent)");
+    expect(exitsEl.attrs["d"]).toBe(mapPaths(view([cellOf(1, 0, { exits: ["e", "s"] })]), mapLayout(20, 20, L.map.area)).exits);
+    // 30×30: 凡例は出さない（記号の path も空）。2 行目は出る。3 行目は盤と重なるので出さない
     m.render(view([cellOf(0, 0)], { width: 30, height: 30 }), "t");
     expect(labels.every((d) => d.style["display"] === "none")).toBe(true);
     expect(legendChest[0]!.attrs["d"]).toBe("");
     expect(hint.style["display"]).toBe("");
+    expect(unexplored.style["display"]).toBe("none");
   });
 
   test("UI-25 setPick: blink なら枠を点滅（iterations Infinity・周期 MAP_PICK_BLINK_MS）。切り替え・null・render で cancel。blink 偽では animate を呼ばず枠だけ", () => {

@@ -860,6 +860,85 @@ describe("オートマップ（DG-13）", () => {
     const edge = back === "N" ? here.n : back === "E" ? here.e : back === "S" ? here.s : here.w;
     expect(edge).toBe("door");
   });
+
+  // M18（UI-78）: 未踏の口。見えただけのセルも探索済み（DG-13）なので、その辺も数に入る
+  test("UI-78/DG-13 mapView の exits: 辺が open か door で、その先が盤の内側の未探索のセルのものだけ（n, e, s, w の順）。先が探索済み・wall・盤の外は入らない。unexploredExits は総数", () => {
+    const lower = { N: "n", E: "e", S: "s", W: "w" } as const;
+    const expectExits = (s: GameState): void => {
+      const f = floorOf(s.dive!, data);
+      const ex = s.dive!.explored[String(s.dive!.floor)] ?? [];
+      const mv = mapView(s, data)!;
+      let total = 0;
+      for (const c of mv.cells) {
+        const cell = cellAt(f, c.x, c.y);
+        const want = FACINGS.filter((d) => {
+          const e = edgeOf(cell, d);
+          const nb = step({ x: c.x, y: c.y }, d);
+          return (e === "open" || e === "door") && inBounds(f, nb.x, nb.y) && !ex.includes(idx(f, nb.x, nb.y));
+        }).map((d) => lower[d]);
+        expect(c.exits).toEqual(want);
+        total += want.length;
+      }
+      expect(mv.unexploredExits).toBe(total);
+    };
+    const withExplored = (s0: GameState, cells: number[]): GameState => {
+      const s = cloneState(s0);
+      s.dive!.explored[String(s.dive!.floor)] = [...cells].sort((a, b) => a - b);
+      return s;
+    };
+    for (const seed of [1, 2, 3]) {
+      const s0 = enterD01(seed);
+      expectExits(s0);
+      // 入場の直後でも未踏の口はある（階段の部屋から外へ）
+      expect(mapView(s0, data)!.unexploredExits).toBeGreaterThan(0);
+      const f = floorOf(s0.dive!, data);
+      // 全セルが探索済みなら 0
+      const all = withExplored(s0, Array.from({ length: f.width * f.height }, (_, i) => i));
+      expect(mapView(all, data)!.unexploredExits).toBe(0);
+      expect(mapView(all, data)!.cells.every((c) => c.exits.length === 0)).toBe(true);
+      // 盤の外周のセルだけを探索済みにしても、盤の外へ向く辺は入らない
+      const border = f.cells.map((_, i) => i).filter((i) => {
+        const x = i % f.width;
+        const y = (i - x) / f.width;
+        return x === 0 || y === 0 || x === f.width - 1 || y === f.height - 1;
+      });
+      const sb = withExplored(s0, border);
+      expectExits(sb);
+      for (const c of mapView(sb, data)!.cells) {
+        if (c.y === 0) expect(c.exits).not.toContain("n");
+        if (c.x === f.width - 1) expect(c.exits).not.toContain("e");
+        if (c.y === f.height - 1) expect(c.exits).not.toContain("s");
+        if (c.x === 0) expect(c.exits).not.toContain("w");
+      }
+    }
+    // 1 セルだけ探索済み: open の辺・door の辺は入り、wall の辺は入らない。先を探索済みにすると消える
+    const s0 = enterD01(1);
+    const f = floorOf(s0.dive!, data);
+    for (const kind of ["open", "door"] as const) {
+      const i = f.cells.findIndex((cell, k) => {
+        const x = k % f.width;
+        const y = (k - x) / f.width;
+        return FACINGS.some((d) => edgeOf(cell, d) === kind && inBounds(f, step({ x, y }, d).x, step({ x, y }, d).y)) && FACINGS.some((d) => edgeOf(cell, d) === "wall");
+      });
+      expect(i).toBeGreaterThanOrEqual(0);
+      const x = i % f.width;
+      const y = (i - x) / f.width;
+      const cell = f.cells[i]!;
+      const d = FACINGS.find((d) => edgeOf(cell, d) === kind && inBounds(f, step({ x, y }, d).x, step({ x, y }, d).y))!;
+      const one = mapView(withExplored(s0, [i]), data)!;
+      expect(one.cells).toHaveLength(1);
+      expect(one.cells[0]!.exits).toContain(lower[d]);
+      for (const w of FACINGS.filter((w) => edgeOf(cell, w) === "wall")) expect(one.cells[0]!.exits).not.toContain(lower[w]);
+      expect(one.unexploredExits).toBe(one.cells[0]!.exits.length);
+      const nb = step({ x, y }, d);
+      const two = mapView(withExplored(s0, [i, idx(f, nb.x, nb.y)]), data)!;
+      const here = two.cells.find((c) => c.x === x && c.y === y)!;
+      const there = two.cells.find((c) => c.x === nb.x && c.y === nb.y)!;
+      expect(here.exits).not.toContain(lower[d]);
+      expect(there.exits).not.toContain(lower[opposite(d)]);
+      expectExits(withExplored(s0, [i, idx(f, nb.x, nb.y)]));
+    }
+  });
 });
 
 describe("階段（DG-14, E3）", () => {

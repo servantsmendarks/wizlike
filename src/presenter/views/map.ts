@@ -12,9 +12,12 @@
 // 座標は画素番号。床の塗りは素の座標、線と記号と現在位置は translate(0.5 0.5) の中で描く（crispEdges）。
 // M16（UI-24 / UI-25）: 盤の上の余白に題の 2 行目（map.tapHint。選んでいない間だけ）、盤の下の余白に凡例（map.legend.*。
 // 記号は盤と同じ path を cell 8 で描く）。位置は盤の大きさから mapNotes で決め、余白に入らなければ出さない。
-import type { Facing, MapView, Pos } from "../../core/types";
+// M18（UI-78）: 未踏の口（core の MapCell.exits）の辺の中央から外へ短い破線（accent）、凡例に「未踏」（4 列 × 2 行）、
+// 題の下の 3 行目に「未踏の口 {n}」（n は core の MapView.unexploredExits。選んでいる間も出す）。
+import type { Facing, MapEdgeDir, MapView, Pos } from "../../core/types";
 import { onTap } from "../input/tap";
 import type { DungeonLayout } from "../layout";
+import { formatMessage } from "./message";
 
 const MAX_CELL = 8;
 
@@ -132,38 +135,55 @@ const chestD = (px: number, py: number, cell: number): string => {
   const b = sc(6, cell);
   return `M${px + a} ${py + a}H${px + b}V${py + b}H${px + a}Z`;
 };
+/**
+ * UI-78（M18）: 未踏の口の破線。セル原点 (px, py) の辺 dir の中央から、辺に直交して外（未探索のセル）へ向かう長さ 2 の線 2 本
+ * （cell 8 で辺から 1〜3 と 5〜7。8 基準の相対を丸める）。盤の外へ向く辺は core が exits に入れない
+ */
+export const exitD = (px: number, py: number, dir: MapEdgeDir, cell: number): string => {
+  const m = sc(4, cell);
+  const [a1, a2, b1, b2] = [sc(1, cell), sc(3, cell), sc(5, cell), sc(7, cell)];
+  if (dir === "n") return `M${px + m} ${py - a1}V${py - a2}M${px + m} ${py - b1}V${py - b2}`;
+  if (dir === "s") return `M${px + m} ${py + cell + a1}V${py + cell + a2}M${px + m} ${py + cell + b1}V${py + cell + b2}`;
+  if (dir === "w") return `M${px - a1} ${py + m}H${px - a2}M${px - b1} ${py + m}H${px - b2}`;
+  return `M${px + cell + a1} ${py + m}H${px + cell + a2}M${px + cell + b1} ${py + m}H${px + cell + b2}`;
+};
 const playerD = (px: number, py: number, facing: Facing, cell: number): string =>
   playerTriangle(facing, cell)
     .map(([x, y], i) => `${i === 0 ? "M" : "L"}${px + x} ${py + y}`)
     .join("") + "Z";
 
-/** UI-24（M16）: 凡例の項目（strings の map.legend.<key>）。2 行 × 3 列に、左上から行の順に並べる */
-export const MAP_LEGEND_KEYS = ["self", "up", "down", "chest", "trap", "wall"] as const;
+/** UI-24（M16）/ UI-78（M18）: 凡例の項目（strings の map.legend.<key>）。2 行 × 4 列に、左上から行の順に並べる */
+export const MAP_LEGEND_KEYS = ["self", "up", "down", "chest", "trap", "wall", "exit"] as const;
 export type MapLegendKey = (typeof MAP_LEGEND_KEYS)[number];
 
 /** 題の 2 行目と凡例の行の高さ（メッセージ窓の行と同じ 10。8px の字） */
 const NOTE_LINE_H = 10;
-/** 凡例の 1 列の幅（記号 8 + 間 2 + 語。語は全角 7 字まで） */
-const LEGEND_COL_W = 72;
-const LEGEND_COLS = 3;
+/** 凡例の 1 列の幅（記号 8 + 間 2 + 語。語は全角 6 字まで。M18 で 72 → 58 にして 4 列） */
+export const LEGEND_COL_W = 58;
+const LEGEND_COLS = 4;
 /** 盤の上端・下端と、題の 2 行目・凡例の間（論理 px） */
 const NOTE_GAP = 2;
+/** UI-78（M18）: 題の下の 3 行目（未踏の口の数）の上端。2 行目（y0..9）の下に NOTE_GAP を空ける */
+const UNEXPLORED_Y = NOTE_LINE_H + NOTE_GAP;
 
 export type MapNotes = {
   /** 題の 2 行目（map.tapHint）の上端（地図本体の SVG の座標）。盤の上の余白に入らなければ null */
   hintY: number | null;
+  /** UI-78（M18）: 題の下の 3 行目（map.unexplored）の上端。盤の上の余白に入らなければ null */
+  unexploredY: number | null;
   /** 凡例の各項目の左上（記号の 8×8 の箱は (x, y+1)、語は x+10 から。地図本体の SVG の座標）。盤の下の余白に入らなければ null */
   legend: Array<{ key: MapLegendKey; x: number; y: number }> | null;
 };
 
 /**
- * UI-24 / UI-25（M16）: 題の 2 行目と凡例の位置。盤（mapLayout）の上の余白の先頭に 2 行目、盤の下端 + NOTE_GAP から凡例の 2 行。
+ * UI-24 / UI-25（M16）: 題の 2 行目と凡例の位置。盤（mapLayout）の上の余白の先頭に 2 行目、その下に 3 行目（UI-78。M18）、盤の下端 + NOTE_GAP から凡例の 2 行。
  * 盤の大きさで余白が変わるので盤から計算し、余白に入らない（盤と重なる・領域からはみ出す）ものは出さない。
- * 例: 20×20 は盤 y23..183（area 240×208）で、2 行目 y0..9、凡例 y186..205
+ * 例: 20×20 は盤 y23..183（area 240×208）で、2 行目 y0..9、3 行目 y12..21、凡例 y186..205（4 列 × 58 = 232 を x4 から）
  */
 export function mapNotes(w: number, h: number, area: { w: number; h: number }): MapNotes {
   const lay = mapLayout(w, h, area);
   const hintY = lay.oy >= NOTE_LINE_H + NOTE_GAP ? 0 : null;
+  const unexploredY = UNEXPLORED_Y + NOTE_LINE_H < lay.oy ? UNEXPLORED_Y : null;
   const rows = Math.ceil(MAP_LEGEND_KEYS.length / LEGEND_COLS);
   const top = lay.oy + h * lay.cell + 1 + NOTE_GAP;
   const blockW = LEGEND_COL_W * LEGEND_COLS;
@@ -172,17 +192,18 @@ export function mapNotes(w: number, h: number, area: { w: number; h: number }): 
   const legend = fits
     ? MAP_LEGEND_KEYS.map((key, i) => ({ key, x: x0 + (i % LEGEND_COLS) * LEGEND_COL_W, y: top + Math.floor(i / LEGEND_COLS) * NOTE_LINE_H }))
     : null;
-  return { hintY, legend };
+  return { hintY, unexploredY, legend };
 }
 
-export type MapLegendPaths = { walls: string; stairs: string; traps: string; chests: string; player: string };
+export type MapLegendPaths = { walls: string; stairs: string; traps: string; chests: string; exits: string; player: string };
 
 /**
  * UI-24（M16）: 凡例の記号。盤と同じ path（cell 8）を各項目の記号の箱 (x, y+1) に描く。
- * self は北向きの現在位置、up / down は階段、chest は □、trap は ×、wall は箱の中ほどの横線 1 本（盤の壁の線と同じ色）
+ * self は北向きの現在位置、up / down は階段、chest は □、trap は ×、wall は箱の中ほどの横線 1 本（盤の壁の線と同じ色）、
+ * exit（UI-78。M18）は箱の下端を辺とみなした北向きの破線（盤の exitD と同じ。箱の y+1..y+7 に収まる）
  */
 export function mapLegendPaths(legend: NonNullable<MapNotes["legend"]>): MapLegendPaths {
-  const out: MapLegendPaths = { walls: "", stairs: "", traps: "", chests: "", player: "" };
+  const out: MapLegendPaths = { walls: "", stairs: "", traps: "", chests: "", exits: "", player: "" };
   for (const it of legend) {
     const px = it.x;
     const py = it.y + 1;
@@ -191,12 +212,13 @@ export function mapLegendPaths(legend: NonNullable<MapNotes["legend"]>): MapLege
     else if (it.key === "down") out.stairs += stairsDownD(px, py, MAX_CELL);
     else if (it.key === "chest") out.chests += chestD(px, py, MAX_CELL);
     else if (it.key === "trap") out.traps += trapD(px, py, MAX_CELL);
+    else if (it.key === "exit") out.exits += exitD(px, py + MAX_CELL, "n", MAX_CELL);
     else out.walls += `M${px} ${py + MAX_CELL / 2}H${px + MAX_CELL}`;
   }
   return out;
 }
 
-export type MapPaths = { floor: string; walls: string; stairs: string; traps: string; chests: string; player: string };
+export type MapPaths = { floor: string; walls: string; stairs: string; traps: string; chests: string; exits: string; player: string };
 
 /**
  * 地図の path。
@@ -205,6 +227,7 @@ export type MapPaths = { floor: string; walls: string; stairs: string; traps: st
  * - stairs: 下りは「V」、上りは「^」
  * - traps: 察知した罠（kind trap）は「×」（cell 8 で (2,2)-(6,6) と (6,2)-(2,6)。M5.5）。色は danger で、階段とは形も色も違う
  * - chests: 開ける前の宝箱（kind chest）は「□」（cell 8 で (2,2)-(6,6) の正方形の枠。M11。UI-72）。色は accent
+ * - exits: 未踏の口（MapCell.exits。UI-78。M18）の辺の中央から外への破線（exitD）。色は accent
  * - player: 現在位置の三角形（塗り）
  */
 export function mapPaths(v: MapView, lay: MapLayout): MapPaths {
@@ -214,6 +237,7 @@ export function mapPaths(v: MapView, lay: MapLayout): MapPaths {
   const stairs: string[] = [];
   const traps: string[] = [];
   const chests: string[] = [];
+  const exits: string[] = [];
   const seen = new Set<string>();
 
   const hLine = (px: number, py: number, door: boolean): string =>
@@ -244,11 +268,12 @@ export function mapPaths(v: MapView, lay: MapLayout): MapPaths {
     else if (c.kind === "stairsUp") stairs.push(stairsUpD(px, py, cell));
     else if (c.kind === "trap") traps.push(trapD(px, py, cell));
     else if (c.kind === "chest") chests.push(chestD(px, py, cell));
+    for (const d of c.exits) exits.push(exitD(px, py, d, cell));
   }
 
   const player = playerD(ox + v.pos.x * cell, oy + v.pos.y * cell, v.facing, cell);
 
-  return { floor: floor.join(""), walls: walls.join(""), stairs: stairs.join(""), traps: traps.join(""), chests: chests.join(""), player };
+  return { floor: floor.join(""), walls: walls.join(""), stairs: stairs.join(""), traps: traps.join(""), chests: chests.join(""), exits: exits.join(""), player };
 }
 
 export type MapViewEl = {
@@ -326,21 +351,24 @@ export function createMapView(
   const trapsPath = path({ fill: "none", stroke: "var(--c-danger)", "stroke-width": "1" });
   // 開ける前の宝箱の □（M11。UI-72）。罠の後、現在位置の前（宝箱のセルに立つと三角形が上に重なる）
   const chestsPath = path({ fill: "none", stroke: "var(--c-accent)", "stroke-width": "1" });
+  // 未踏の口の破線（UI-78。M18）。宝箱の後、現在位置の前
+  const exitsPath = path({ class: "map-exits", fill: "none", stroke: "var(--c-accent)", "stroke-width": "1" });
   // 現在位置は階段・罠より後に描く
   const playerPath = path({ fill: "var(--c-player)", stroke: "none" });
   // UI-25: 選んだセルの枠（壁と現在位置の上に描く）
   const pickPath = path({ class: "map-pick", fill: "none", stroke: "var(--c-accent)", "stroke-width": "1", d: "" });
-  g.append(wallPath, stairsPath, trapsPath, chestsPath, playerPath, pickPath);
+  g.append(wallPath, stairsPath, trapsPath, chestsPath, exitsPath, playerPath, pickPath);
 
   // UI-24（M16）: 凡例の記号（盤と同じ色と path。盤の下の余白）。語は el の上の div（タップは地図本体に通す）
   const legendWalls = path({ fill: "none", stroke: "var(--c-line)", "stroke-width": "1" });
   const legendStairs = path({ fill: "none", stroke: "var(--c-stairs)", "stroke-width": "1" });
   const legendTraps = path({ fill: "none", stroke: "var(--c-danger)", "stroke-width": "1" });
   const legendChests = path({ fill: "none", stroke: "var(--c-accent)", "stroke-width": "1" });
+  const legendExits = path({ fill: "none", stroke: "var(--c-accent)", "stroke-width": "1" });
   const legendPlayer = path({ fill: "var(--c-player)", stroke: "none" });
   const legendG = document.createElementNS(SVG_NS, "g");
   legendG.setAttribute("class", "map-legend");
-  legendG.append(legendWalls, legendStairs, legendTraps, legendChests, legendPlayer);
+  legendG.append(legendWalls, legendStairs, legendTraps, legendChests, legendExits, legendPlayer);
   g.appendChild(legendG);
   const ax = area.x - overlay.x;
   const ay = area.y - overlay.y;
@@ -364,6 +392,10 @@ export function createMapView(
     hint.style.top = `${ay + hintY}px`;
     hint.style.display = "";
   };
+  // UI-78（M18）: 題の下の 3 行目「未踏の口 {n}」（選んでいる間も出す。余白に入らない盤では出さない）
+  const unexplored = note("map-unexplored");
+  Object.assign(unexplored.style, { left: `${ax}px`, width: `${area.w}px`, textAlign: "center", display: "none" });
+  el.appendChild(unexplored);
   const legendLabels = MAP_LEGEND_KEYS.map((key) => {
     const d = note("map-legend-label");
     Object.assign(d.style, { width: `${LEGEND_COL_W - (MAX_CELL + 2)}px`, display: "none" });
@@ -372,11 +404,12 @@ export function createMapView(
     return d;
   });
   const paintLegend = (legend: MapNotes["legend"]): void => {
-    const p = legend === null ? { walls: "", stairs: "", traps: "", chests: "", player: "" } : mapLegendPaths(legend);
+    const p = legend === null ? { walls: "", stairs: "", traps: "", chests: "", exits: "", player: "" } : mapLegendPaths(legend);
     legendWalls.setAttribute("d", p.walls);
     legendStairs.setAttribute("d", p.stairs);
     legendTraps.setAttribute("d", p.traps);
     legendChests.setAttribute("d", p.chests);
+    legendExits.setAttribute("d", p.exits);
     legendPlayer.setAttribute("d", p.player);
     legendLabels.forEach((d, i) => {
       const it = legend?.[i];
@@ -440,12 +473,19 @@ export function createMapView(
       stairsPath.setAttribute("d", p.stairs);
       trapsPath.setAttribute("d", p.traps);
       chestsPath.setAttribute("d", p.chests);
+      exitsPath.setAttribute("d", p.exits);
       playerPath.setAttribute("d", p.player);
       // M16: 題の 2 行目と凡例（盤の大きさから。余白に入らなければ出さない）
       const notes = mapNotes(v.width, v.height, area);
       hintY = notes.hintY;
       paintHint(false);
       paintLegend(notes.legend);
+      if (notes.unexploredY === null) unexplored.style.display = "none";
+      else {
+        unexplored.textContent = formatMessage(strings["map.unexplored"] ?? "", { n: v.unexploredExits });
+        unexplored.style.top = `${ay + notes.unexploredY}px`;
+        unexplored.style.display = "";
+      }
     },
   };
 }

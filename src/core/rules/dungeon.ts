@@ -11,6 +11,7 @@ import type {
   GameState,
   MapCell,
   MapCellKind,
+  MapEdgeDir,
   MapView,
   Pos,
   RuleContext,
@@ -99,8 +100,11 @@ export function mapView(state: GameState, data: GameData): MapView | null {
   if (dive === null) return null;
   const f = floorOf(dive, data);
   const known = dive.knownTraps[String(dive.floor)] ?? [];
+  const explored = dive.explored[String(dive.floor)] ?? [];
+  const exploredSet = new Set(explored);
   const cells: MapCell[] = [];
-  for (const i of dive.explored[String(dive.floor)] ?? []) {
+  let unexploredExits = 0;
+  for (const i of explored) {
     const x = i % f.width;
     const y = (i - x) / f.width;
     const c = cellAt(f, x, y);
@@ -114,7 +118,17 @@ export function mapView(state: GameState, data: GameData): MapView | null {
             : c.kind === "chest"
               ? "chest"
               : "plain";
-    cells.push({ x, y, kind, n: c.n, e: c.e, s: c.s, w: c.w });
+    // UI-78（M18）: 未踏の口。辺が open か door で、その先が盤の内側の未探索のセル（見えただけのセルも探索済みに数える。DG-13）
+    const exits: MapEdgeDir[] = [];
+    for (const d of FACINGS) {
+      const e = edgeOf(c, d);
+      if (e !== "open" && e !== "door") continue;
+      const n = step({ x, y }, d);
+      if (!inBounds(f, n.x, n.y) || exploredSet.has(idx(f, n.x, n.y))) continue;
+      exits.push(EDGE_DIR[d]);
+    }
+    unexploredExits += exits.length;
+    cells.push({ x, y, kind, n: c.n, e: c.e, s: c.s, w: c.w, exits });
   }
   return {
     dungeonId: dive.dungeonId,
@@ -124,8 +138,12 @@ export function mapView(state: GameState, data: GameData): MapView | null {
     pos: { x: dive.pos.x, y: dive.pos.y },
     facing: dive.facing,
     cells,
+    unexploredExits,
   };
 }
+
+/** UI-78: 絶対方位 → MapCell の辺の名前 */
+const EDGE_DIR: Readonly<Record<Facing, MapEdgeDir>> = { N: "n", E: "e", S: "s", W: "w" };
 
 /**
  * UI-57（開発用、M5）: debug.warp の行き先。dive.floor の実効の構造（floorOf。処理済みのイベント・発動済みの罠は消えている）で、
