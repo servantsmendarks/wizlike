@@ -1,5 +1,6 @@
 // UI-59 キャラクター画面（M10。M4.5〜M9 のキャンプの「状態」を全画面にした）: キャンプと酒場のパネル（views/camp.ts。layout.character = 240×284）に出す 1 人分の表示。
-// 表示だけで、操作は無い（操作はキャンプの枠。app が扱う）。装備の段では、選んでいる枠の行を accent 色にする（focusSlot）。
+// 表示だけで、操作は無い（操作はキャンプの枠。app が扱う）。M20（UI-80）: 装備の行と所持品の枠の押せる矩形（characterHitRects。表示のための座標の計算）を
+// 返し、押した所の行き先は app がキャンプのパネルのタップで引く（DOM のリスナーはここに付けない）。装備の段では、選んでいる枠の行を accent 色にする（focusSlot）。
 // - formatCharacter は純粋: 名前、種族、職業の正式名（classes[].name。パーティの行の略称ではない）、レベル・経験値・次のレベル（UI-69）、
 //   HP / MP / SAN、状態、能力値 6 つ、攻撃・AC・魔法攻撃力、装備 6 枠（名前は呼び出し側が渡す itemName = 鑑定を反映した表示名。空きは detail.equipNone）、
 //   所持品（core の campMenu の members[].inventory）、習得呪文（members[].knownSpells。戦闘外で唱えられない呪文は dim）。
@@ -29,8 +30,13 @@ export const CHARACTER_SPELL_CELLS = 14;
 /** UI-68（M10）: 呪文の枠の行数（2 列 × 7 行の 7）。呪文の説明はこの行数まで */
 export const CHARACTER_SPELL_ROWS = CHARACTER_SPELL_CELLS / 2;
 
-/** 所持品・呪文の 1 枠。dim は dim 色（戦闘外で唱えられない呪文） */
-export type CharacterCell = { text: string; dim: boolean };
+/**
+ * 所持品・呪文の 1 枠。dim は dim 色（戦闘外で唱えられない呪文）。
+ * UI-80（M20）: instanceId は押すと品の詳細を開く所持品の枠、more は押すと畳んだ所持品の次の分を出す「ほか {n}」の枠
+ */
+export type CharacterCell = { text: string; dim: boolean; instanceId?: string; more?: true };
+/** UI-80（M20）: キャラクター画面のパネルを押したときの行き先（品の詳細・所持品の次の分） */
+export type CharacterTap = { kind: "item"; instanceId: string } | { kind: "more" };
 
 export type CharacterDetail = {
   name: string;
@@ -58,10 +64,12 @@ export type CharacterDetail = {
   ac: string;
   /** M7 / MG-33: 魔法攻撃力（detail.magicPower。core の memberSheet の magicPower）。sheet が無ければ空 */
   magicPower: string;
-  /** 装備 6 枠（SLOT_ORDER の順）。item は表示名、空きは detail.equipNone */
-  equipment: { slot: string; item: string }[];
+  /** 装備 6 枠（SLOT_ORDER の順）。item は表示名、空きは detail.equipNone。instanceId は装備中の品（UI-80。空きは null） */
+  equipment: { slot: string; item: string; instanceId: string | null }[];
   /** UI-59（M10）: 所持品の見出し（character.inventoryHeading{used, max, equipped}。equipped は M16 の CH-71。member が無ければ空） */
   inventoryHeading: string;
+  /** UI-80（M20）: 所持品の見出しの右の注記（character.tapHint「押すと詳細」。dim）。品を押せる画面（キャラクター画面そのもの）だけで、ほかは空 */
+  tapHint: string;
   /** UI-59（M10）: 所持品の枠（最大 CHARACTER_INVENTORY_CELLS） */
   inventory: CharacterCell[];
   /** UI-59（M10）: 呪文の見出し（character.spellHeading。member が無ければ空） */
@@ -86,11 +94,29 @@ export function characterCells<T>(items: readonly T[], cap: number, cell: (x: T)
 }
 
 /**
+ * UI-80（M20）: キャラクター画面そのもの（品を押せる画面）の所持品の畳み方の頁の数。CHARACTER_INVENTORY_CELLS 件以下なら 1 頁（全部を出す）、
+ * それを超えると 1 頁 CHARACTER_INVENTORY_CELLS − 1 件と「ほか {n}」の枠（n はその頁に出していない件数。押すと次の頁、最後の頁の次は最初）
+ */
+export function inventoryFoldCount(n: number): number {
+  return n <= CHARACTER_INVENTORY_CELLS ? 1 : Math.ceil(n / (CHARACTER_INVENTORY_CELLS - 1));
+}
+
+/** UI-80（M20）: 畳んだ所持品の fold 頁の枠（純粋。fold は 0 から inventoryFoldCount − 1 に収める） */
+export function foldedCells<T>(items: readonly T[], fold: number, cell: (x: T) => CharacterCell, more: (n: number) => string): CharacterCell[] {
+  if (items.length <= CHARACTER_INVENTORY_CELLS) return items.map(cell);
+  const per = CHARACTER_INVENTORY_CELLS - 1;
+  const f = Math.max(0, Math.min(fold, inventoryFoldCount(items.length) - 1));
+  const shown = items.slice(f * per, (f + 1) * per);
+  return [...shown.map(cell), { text: more(items.length - shown.length), dim: false, more: true }];
+}
+
+/**
  * UI-59 のキャラクター画面の文字列（純粋）。itemName は実体の id → 鑑定を反映した表示名。
  * sheet は core の memberSheet（M7。CH-13 / CH-14 / IT-35 の実効の能力値・最大値・AC・魔法攻撃力。M10 の CH-80 の levelUpView / expToNext）。
  * 能力値と HP / MP / SAN の最大はその値を出し、SAN が sheet.sanMax を超えていれば sanOver（TW-15）。省略すると素の値で、攻撃・AC・魔法攻撃力・次は空。
  * member は core の campMenu の members[] の 1 人（所持品・使用枠・習得呪文）。省略すると所持品と呪文の行は空。
- * view の inventoryPage / spellPage は頁の段（渡す・捨てる・呪文）の頁
+ * view の inventoryPage / spellPage は頁の段（渡す・捨てる・呪文）の頁。
+ * UI-80（M20）: view.tappable はキャラクター画面そのもの（品を押せる）で、所持品の見出しの右に注記を出し、所持品を inventoryFold の頁で畳む（foldedCells）
  */
 export function formatCharacter(
   ch: Character,
@@ -99,7 +125,7 @@ export function formatCharacter(
   itemName: (instanceId: string) => string,
   sheet?: MemberSheet,
   member?: Pick<CampMember, "inventory" | "slotsUsed" | "slotsMax" | "equipped" | "knownSpells">,
-  view: { inventoryPage?: number; spellPage?: number } = {},
+  view: { inventoryPage?: number; spellPage?: number; tappable?: boolean; inventoryFold?: number } = {},
 ): CharacterDetail {
   const s = (key: string, params?: Record<string, string | number>): string => formatMessage(strings[key] ?? key, params);
   const race = data.races.find((r) => r.id === ch.raceId)?.name ?? ch.raceId;
@@ -135,11 +161,16 @@ export function formatCharacter(
     magicPower: sheet === undefined ? "" : s("detail.magicPower", { value: sheet.magicPower }),
     equipment: SLOT_ORDER.map((slot) => {
       const id = ch.equipment[slot];
-      return { slot: s(`detail.slot.${slot}`), item: id === null ? s("detail.equipNone") : itemName(id) };
+      return { slot: s(`detail.slot.${slot}`), item: id === null ? s("detail.equipNone") : itemName(id), instanceId: id };
     }),
     inventoryHeading: member === undefined ? "" : s("character.inventoryHeading", { used: member.slotsUsed, max: member.slotsMax, equipped: member.equipped }),
+    tapHint: member !== undefined && view.tappable === true ? s("character.tapHint") : "",
     inventory:
-      member === undefined ? [] : characterCells(member.inventory, CHARACTER_INVENTORY_CELLS, (x) => ({ text: x.name, dim: false }), more, view.inventoryPage),
+      member === undefined
+        ? []
+        : view.tappable === true
+          ? foldedCells(member.inventory, view.inventoryFold ?? 0, (x) => ({ text: x.name, dim: false, instanceId: x.instanceId }), more)
+          : characterCells(member.inventory, CHARACTER_INVENTORY_CELLS, (x) => ({ text: x.name, dim: false, instanceId: x.instanceId }), more, view.inventoryPage),
     spellHeading: member === undefined ? "" : s("character.spellHeading"),
     spells:
       member === undefined
@@ -191,7 +222,42 @@ export const CELL_COLUMNS = [4, 122] as const;
 export const CELL_W = 114;
 /** UI-59（M10）: 行の位置（所持品の見出し 14・所持品 15〜18・呪文の見出し 19・呪文 20〜26） */
 const ROW_INVENTORY_HEAD = 14;
+/** UI-80（M20）: 装備の行の先頭（8〜13） */
+const ROW_EQUIP = 8;
 const ROW_SPELL_HEAD = 19;
+
+/** UI-80（M20）: 所持品の見出しの右の注記の幅（「押すと詳細」の全角 5 字 = 40 と余白）。見出しはその左までに切る */
+export const TAP_HINT_W = 48;
+/** UI-80 / UI-10（M20）: 品の当たり判定の高さ（行の 10px の上下に 1px ずつ広げる。隣の行と重なる所は中心の近い方） */
+export const CHARACTER_HIT_H = 12;
+export type CharacterHit = { x: number; y: number; w: number; h: number; tap: CharacterTap };
+
+/**
+ * UI-80 / UI-10（M20）: キャラクター画面の押せる矩形（パネルの外形の左上から。純粋）。装備の行（8〜13。品のある枠だけ。x4・幅 width − 8）と
+ * 所持品の枠（15〜18。x4 / x122、幅 114。instanceId か more のある枠だけ）。どれも行の上端 − 1 から高さ CHARACTER_HIT_H
+ */
+export function characterHitRects(d: CharacterDetail, width: number): CharacterHit[] {
+  const rowY = (row: number): number => TOP + LINE_H * row - 1;
+  const out: CharacterHit[] = [];
+  d.equipment.forEach((e, i) => {
+    if (e.instanceId !== null) out.push({ x: SLOT_X, y: rowY(ROW_EQUIP + i), w: width - 8, h: CHARACTER_HIT_H, tap: { kind: "item", instanceId: e.instanceId } });
+  });
+  d.inventory.forEach((c, i) => {
+    const tap: CharacterTap | null = c.instanceId !== undefined ? { kind: "item", instanceId: c.instanceId } : c.more === true ? { kind: "more" } : null;
+    if (tap !== null) out.push({ x: CELL_COLUMNS[i % 2]!, y: rowY(ROW_INVENTORY_HEAD + 1 + Math.floor(i / 2)), w: CELL_W, h: CHARACTER_HIT_H, tap });
+  });
+  return out;
+}
+
+/** UI-80（M20）: (lx, ly) を含む矩形の行き先。重なる所（隣の行との 2px）は中心の y が近い方。無ければ null */
+export function characterHitAt(rects: readonly CharacterHit[], lx: number, ly: number): CharacterTap | null {
+  let best: CharacterHit | null = null;
+  for (const r of rects) {
+    if (lx < r.x || lx >= r.x + r.w || ly < r.y || ly >= r.y + r.h) continue;
+    if (best === null || Math.abs(r.y + r.h / 2 - ly) < Math.abs(best.y + best.h / 2 - ly)) best = r;
+  }
+  return best === null ? null : best.tap;
+}
 
 export type DetailView = {
   el: HTMLElement;
@@ -239,6 +305,14 @@ export function createDetailView(rect: Rect): DetailView {
       return t;
     });
 
+  /** UI-80: 所持品の見出しの右の注記（dim・右寄せ） */
+  const tapHintNode = (hint: string): HTMLElement => {
+    const t = text(ROW_INVENTORY_HEAD, rect.w - 4 - TAP_HINT_W, TAP_HINT_W, hint, "detail-tap-hint");
+    t.style.color = "var(--c-dim)";
+    t.style.textAlign = "right";
+    return t;
+  };
+
   return {
     el,
     render(d: CharacterDetail, focusSlot: number | null = null): void {
@@ -270,7 +344,8 @@ export function createDetailView(rect: Rect): DetailView {
           if (i === focusSlot) for (const r of row) r.style.color = "var(--c-accent)";
           return row;
         }),
-        text(ROW_INVENTORY_HEAD, 4, full, d.inventoryHeading, "detail-inventory-head"),
+        text(ROW_INVENTORY_HEAD, 4, d.tapHint === "" ? full : full - TAP_HINT_W, d.inventoryHeading, "detail-inventory-head"),
+        ...(d.tapHint === "" ? [] : [tapHintNode(d.tapHint)]),
         ...cells(ROW_INVENTORY_HEAD + 1, d.inventory, "detail-inventory"),
         text(ROW_SPELL_HEAD, 4, full, d.spellHeading, "detail-spell-head"),
         ...(d.spellNote === undefined

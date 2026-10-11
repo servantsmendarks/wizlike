@@ -318,6 +318,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   // レベルアップ可は memberSheet の canLevelUp / levelUpView の値を描く
   // M19 TW-05 / UI-52（C-3）: 店の持たせる者の行の今の装備・印と比較の文は shopEquipCompare の値を描く
   "rules/item-view": ["itemDetail", "memberSheet", "uniqueBookView", "equipPreview", "spellInfo", "bestiaryView", "shopEquipCompare"], // bestiaryView は UI-79（M18）
+  // M20 UI-80: キャラクター画面の品の段の操作とできない理由は itemActions の値を描く
+  "rules/item-actions": ["itemActions"],
   // M5.5 UI-62 / CH-06: 自分で作るの配分の可否・残り・職業の条件・名前の長さは core の関数の値だけで決める。
   // 作成中はまだ GameState が無いので、ボーナスの振り（rollBonus）は表示層が持つ RngState（createRng。種は crypto）で引く（決定 5 の例外）
   // M10 UI-62 / CH-11: ボーナスの内訳（7+2、当たりは 7+2+10）と合計は core の rollBonusParts の値を描く
@@ -1041,6 +1043,20 @@ describe("入力と Command", () => {
     const redraw = body.indexOf("if (characterOpen && !campCharacterOpen(campPage)) syncControls();");
     expect(redraw).toBeGreaterThan(0);
     expect(redraw).toBeLessThan(body.indexOf("void run(r.command)"));
+  });
+
+  test("UI-80（M20）キャンプのパネルのタップ: onTap(play.camp.el) → tapCampPanel は guard の中で、キャンプの間だけ camp の characterTarget の行き先を、会話の箱を打ち切ってから openItem / pageTurn で選ぶ。campInput は campItemActions で core の itemActions を引く（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toContain("onTap(play.camp.el, (p) => tapCampPanel(p.lx, p.ly));");
+    const tap = /const tapCampPanel = \(lx: number, ly: number\): void =>([\s\S]*?)\n {4}\}\);/.exec(app)?.[1] ?? "";
+    expect(tap).toContain("guard(() => {");
+    expect(tap).toContain('if (overlay !== "camp") return;');
+    expect(tap).toContain("const hit = play.camp.characterTarget(lx, ly);");
+    const flush = tap.indexOf("play.talk.flush();");
+    expect(flush).toBeGreaterThan(0);
+    expect(flush).toBeLessThan(tap.indexOf("chooseCamp("));
+    expect(tap).toContain('chooseCamp(hit.kind === "item" ? { kind: "openItem", instanceId: hit.instanceId } : { kind: "pageTurn", delta: 1 });');
+    expect(app).toContain("itemActions: campItemActions(menu, (memberId, instanceId) => itemActions(state, data, memberId, instanceId)),");
   });
 
   test("UI-66（2026-10-07）戻る・やめるは位置に関わらず cancel の配線: 戦闘・キャンプ・街の項目は種類から back の印を付ける（ソースの検査）", () => {

@@ -9,12 +9,14 @@ import { execute } from "../src/core/engine";
 import { campMenu, campSummary, identifyChance } from "../src/core/rules/camp";
 import { bestiaryView } from "../src/core/rules/item-view";
 import { fieldItemMenu } from "../src/core/rules/items";
+import { itemActions } from "../src/core/rules/item-actions";
 import { cloneState, createItemInstance, itemDisplayName } from "../src/core/state";
 import type { Character, Command, GameState } from "../src/core/types";
 import {
   CAMP_GRID_SLOTS,
   campCanCycle,
   campCharacterOpen,
+  campItemActions,
   campCycle,
   campEntries,
   campFirstPage,
@@ -32,6 +34,8 @@ import {
   type CampPage,
 } from "../src/presenter/views/camp";
 import { CHARACTER_INVENTORY_CELLS, formatCharacter } from "../src/presenter/views/detail";
+import { formatMessage } from "../src/presenter/views/message";
+import { kinsokuLines } from "./helpers/wrap";
 import { dived } from "./helpers/battle";
 import { data, expectKnownStringKeys, newGame } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
@@ -52,7 +56,14 @@ const inTown = (patches: Record<string, Partial<Character>> = {}) => patched(new
 function input(s: GameState): CampInput {
   const menu = campMenu(s, data);
   if (menu === null) throw new Error("no camp menu");
-  return { menu, items: fieldItemMenu(s, data), summary: campSummary(s, data), identifyMpCost: data.config.identify.mpCost, bestiary: bestiaryView(s, data) };
+  return {
+    menu,
+    items: fieldItemMenu(s, data),
+    summary: campSummary(s, data),
+    identifyMpCost: data.config.identify.mpCost,
+    bestiary: bestiaryView(s, data),
+    itemActions: campItemActions(menu, (memberId, instanceId) => itemActions(s, data, memberId, instanceId)), // UI-80（M20）
+  };
 }
 
 /** 送った Command を core が受け付けること */
@@ -76,6 +87,8 @@ function rows(e: CampEntries): CampEntry[] {
 }
 const labels = (xs: readonly (CampEntry | null)[]) => xs.map((x) => (x === null ? null : x.label));
 const character = (memberId: string): CampPage => ({ kind: "character", memberId });
+/** UI-80（M20）: 品の段 */
+const itemPage = (memberId: string, instanceId: string): CampPage => ({ kind: "item", memberId, instanceId });
 
 describe("UI-53 キャンプの top（M10）", () => {
   test("UI-53 top は 8 枠: 状態・並び順・空き・敵を待つ / 呪文・空き 2 つ・戻る（帰還の糸を使えなければ 3 つ目は空き。M18 で 4 つ目に辺りを探る（M19 で「敵を待つ」に改名）、5 つ目に呪文）。見出しは camp.prompt.top。状態はメンバー一覧へ", () => {
@@ -144,50 +157,53 @@ describe("UI-53 キャンプの top（M10）", () => {
 });
 
 describe("UI-59 キャラクター画面（M10）", () => {
-  test("UI-59 操作の 4×2: 装備・使う・渡す・捨てる / 呪文・鑑定（鑑定できる職業の者だけ。ほかは空き枠）・次の人・戻る。見出しは {name}の状態", () => {
-    const m = input(inDungeon());
+  test("UI-59/UI-80（M20）操作の枠は [呪文][次の人] / [空き]…[戻る]（装備・使う・渡す・捨てる・鑑定はパネルの品を押して品の段から）。見出しは {name}の状態", () => {
+    const m = input(inDungeon({ c5: { classId: "bishop" } }));
     const e = grid(campEntries("camp", character("c1"), m, S));
-    expect(labels(e)).toEqual(["装備", "使う", "渡す", "捨てる", "呪文", null, "次の人", "戻る"]);
-    // アルド: 薬草を持つので使う・渡す・捨てるは押せる。呪文を知らないので呪文は dim
-    expect(e.map((x) => x?.disabled ?? null)).toEqual([false, false, false, false, true, null, false, false]);
+    expect(labels(e)).toEqual(["呪文", "次の人", null, null, null, null, null, "戻る"]);
+    // アルドは呪文を知らないので呪文は dim。司教でも鑑定の枠は出さない
+    expect(e.map((x) => x?.disabled ?? null)).toEqual([true, false, null, null, null, null, null, false]);
+    expect(labels(grid(campEntries("camp", character("c5"), m, S)))).toEqual(["呪文", "次の人", null, null, null, null, null, "戻る"]);
     expect(campHeader(character("c1"), m, S)).toBe("アルドの状態");
     // ドナ（治癒）は呪文が押せる。UI-68（M10）: エル（戦闘専用の呪文だけ）も、説明を見るために呪文が押せる（M10 の UI-59 では dim だった）
-    expect(grid(campEntries("camp", character("c4"), m, S))[4]!.disabled).toBe(false);
-    expect(grid(campEntries("camp", character("c5"), m, S))[4]!.disabled).toBe(false);
-    // ベルク: 所持品が無いので 使う・渡す・捨てる は dim
-    expect(grid(campEntries("camp", character("c2"), m, S)).slice(1, 4).map((x) => x!.disabled)).toEqual([true, true, true]);
-    // 各操作の行き先
+    expect(grid(campEntries("camp", character("c4"), m, S))[0]!.disabled).toBe(false);
+    expect(grid(campEntries("camp", character("c5"), m, S))[0]!.disabled).toBe(false);
+    // キーは 1・2・8
+    const ce = campEntries("camp", character("c1"), m, S);
+    expect([campKeyIndex({ menu: 0 }, ce), campKeyIndex({ menu: 1 }, ce), campKeyIndex({ menu: 2 }, ce), campKeyIndex("back", ce)]).toEqual([0, 1, null, 7]);
     const go = (i: number) => campStep("camp", character("c1"), m, e[i]!.choice);
-    expect(go(0)).toEqual({ kind: "page", page: { kind: "equip", stage: "slot", memberId: "c1" } });
-    expect(go(1)).toEqual({ kind: "page", page: { kind: "use", stage: "item", memberId: "c1" } });
-    expect(go(2)).toEqual({ kind: "page", page: { kind: "give", stage: "item", memberId: "c1", page: 0 } });
-    expect(go(3)).toEqual({ kind: "page", page: { kind: "drop", stage: "item", memberId: "c1", page: 0 } });
-    expect(go(4)).toEqual({ kind: "page", page: { kind: "spell", stage: "spell", memberId: "c1", page: 0 } });
-    expect(go(6)).toEqual({ kind: "page", page: character("c2") });
+    expect(go(0)).toEqual({ kind: "page", page: { kind: "spell", stage: "spell", memberId: "c1", page: 0 } });
+    expect(go(1)).toEqual({ kind: "page", page: character("c2") });
   });
 
-  test("UI-59 行動できない者は使うが dim（core の fieldItemMenu の canAct）。死亡の者でも装備・渡す・捨てるは押せる（U6）", () => {
+  test("UI-80/CH-44/U6（M20）品の段の使うは行動できない者で dim（core の itemActions の cannotAct。押すと理由）。死亡の者でも渡す・捨てるは押せる", () => {
     const m = input(inDungeon({ c1: { status: ["sleep"] }, c3: { life: "dead", hp: 0 } }));
-    const sleep = grid(campEntries("camp", character("c1"), m, S));
-    expect(sleep.slice(0, 4).map((x) => x!.disabled)).toEqual([false, true, false, false]);
-    const dead = grid(campEntries("camp", character("c3"), m, S));
-    expect(dead.slice(0, 4).map((x) => x!.disabled)).toEqual([false, true, false, false]);
+    const sleep = grid(campEntries("camp", itemPage("c1", "i4"), m, S));
+    expect(sleep.slice(1, 4).map((x) => x!.disabled)).toEqual([true, false, false]);
+    expect(sleep[1]!.reason).toBe("アルドは動けない。");
+    const dead = grid(campEntries("camp", itemPage("c3", "i10"), m, S));
+    expect(dead.slice(1, 4).map((x) => x!.disabled)).toEqual([true, false, false]);
   });
 
-  test("UI-59/CH-77 鑑定の枠は鑑定できる職業の者（identifyBlock が cannotIdentify でない）だけ。送れなければ dim で、押すと core の identifyBlock の理由を語る", () => {
+  test("UI-80/CH-77（M20）品の段の鑑定は未鑑定の品で、パーティに鑑定できる者がいるときだけ（core の itemActions）。「鑑定 {rate}%」で、送れなければ dim と理由", () => {
     const s = inDungeon({ c5: { classId: "bishop", mp: 5 } });
-    const none = grid(campEntries("camp", character("c5"), input(s), S))[5]!;
-    expect(none).toEqual({ label: "鑑定", disabled: true, choice: { kind: "action", action: "identify" }, reason: "鑑定する品が無い。" });
-    s.party[0]!.inventory.push(cursedDagger(s, false));
-    const ok = grid(campEntries("camp", character("c5"), input(s), S))[5]!;
-    expect(ok).toEqual({ label: "鑑定", disabled: false, choice: { kind: "action", action: "identify" } });
-    expect(campStep("camp", character("c5"), input(s), ok.choice)).toEqual({ kind: "page", page: { kind: "identify", memberId: "c5" } });
-    const noMp = grid(campEntries("camp", character("c5"), input(patched(s, { c5: { mp: 0 } })), S))[5]!;
+    const dag = cursedDagger(s, false);
+    s.party[0]!.inventory.push(dag);
+    const m = input(s);
+    const rate = identifyChance(s, data, "c5", dag)!.rate;
+    const ok = grid(campEntries("camp", itemPage("c1", dag), m, S))[4]!;
+    expect(ok).toEqual({ label: `鑑定 ${rate}%`, disabled: false, choice: { kind: "itemAction", action: "identify" } });
+    // 送るのは鑑定する者（司教 c5）の party.identify。送った後も同じ品の段
+    const r = campStep("camp", itemPage("c1", dag), m, ok.choice);
+    expect(r).toEqual({ kind: "send", command: { type: "party.identify", memberId: "c5", instanceId: dag }, after: itemPage("c1", dag) });
+    if (r.kind === "send") accepted(s, r.command);
+    const noMp = grid(campEntries("camp", itemPage("c1", dag), input(patched(s, { c5: { mp: 0 } })), S))[4]!;
     expect([noMp.disabled, noMp.reason]).toEqual([true, "エルは MP が足りない。"]);
-    const asleep = grid(campEntries("camp", character("c5"), input(patched(s, { c5: { status: ["sleep"] } })), S))[5]!;
+    const asleep = grid(campEntries("camp", itemPage("c1", dag), input(patched(s, { c5: { status: ["sleep"] } })), S))[4]!;
     expect([asleep.disabled, asleep.reason]).toEqual([true, "エルは動けない。"]);
-    // 鑑定できない職業の者は空き枠
-    expect(grid(campEntries("camp", character("c1"), input(s), S))[5]).toBeNull();
+    // 鑑定済みの品・鑑定できる者がいないときは空き枠
+    expect(grid(campEntries("camp", itemPage("c1", "i4"), m, S))[4]).toBeNull();
+    expect(grid(campEntries("camp", itemPage("c1", dag), input(patched(s, { c5: { classId: "mage" } })), S))[4]).toBeNull();
   });
 
   test("UI-59 次の人・← / → は並び順で巡回する（campCycle。キャラクター画面のときだけ）", () => {
@@ -209,7 +225,7 @@ describe("UI-59 キャラクター画面（M10）", () => {
     // 1 人だけなら出さない（「次の人」の枠の dim と同じ）
     const one: CampInput = { ...m, menu: { ...m.menu, members: m.menu.members.slice(0, 1) } };
     expect(campCanCycle(character("c1"), one)).toBe(false);
-    expect(grid(campEntries("camp", character("c1"), one, S))[6]!.disabled).toBe(true);
+    expect(grid(campEntries("camp", character("c1"), one, S))[1]!.disabled).toBe(true); // M20（UI-80）: 次の人は 2 つ目の枠
     expect([campSwipeDir("left"), campSwipeDir("right"), campSwipeDir("forward"), campSwipeDir("around"), campSwipeDir("confirm")]).toEqual([1, -1, null, null, null]);
     // スワイプの向きを campCycle に渡すと: c3 で指を左へ → c4、右へ → c2
     expect(campCycle(character("c3"), m, campSwipeDir("left")!)).toEqual(character("c4"));
@@ -218,7 +234,8 @@ describe("UI-59 キャラクター画面（M10）", () => {
 
   test("UI-59 パネルはキャラクター画面（装備の品の段だけ focusSlot、呪文・渡す・捨てるの品の段は頁）。キャラクター画面の間は campCharacterOpen が真", () => {
     const m = input(inDungeon());
-    expect(campPanel(character("c1"), m, S)).toEqual({ kind: "character", memberId: "c1", focusSlot: null });
+    // UI-80（M20）: キャラクター画面そのものは品を押せる（tappable と畳んだ所持品の頁）
+    expect(campPanel(character("c1"), m, S)).toEqual({ kind: "character", memberId: "c1", focusSlot: null, tappable: true, inventoryFold: 0 });
     expect(campPanel({ kind: "equip", stage: "slot", memberId: "c1" }, m, S)).toEqual({ kind: "character", memberId: "c1", focusSlot: null });
     expect(campPanel({ kind: "equip", stage: "item", memberId: "c1", slot: "helm" }, m, S)).toEqual({ kind: "character", memberId: "c1", focusSlot: "helm" });
     // UI-67（M10）: 品の詳細には装備の差分の引数（装備中の品は外すときの null）
@@ -589,7 +606,7 @@ describe("CH-78/UI-59 渡す", () => {
   test("CH-78/U6 死亡・灰の者の品も渡せる（core が受け付ける）", () => {
     const s = inDungeon({ c1: { life: "ash", hp: 0 } });
     const m = input(s);
-    expect(grid(campEntries("camp", character("c1"), m, S))[2]!.disabled).toBe(false);
+    expect(grid(campEntries("camp", itemPage("c1", "i4"), m, S))[2]!.disabled).toBe(false); // M20（UI-80）: 品の段の渡す
     const r = campStep("camp", { kind: "give", stage: "to", memberId: "c1", instanceId: "i4" }, m, { kind: "target", targetId: "c2" });
     if (r.kind !== "send") throw new Error("not send");
     expect(accepted(s, r.command).party[1]!.inventory).toEqual(["i4"]);
@@ -1076,6 +1093,7 @@ describe("CH-03/UI-53 並び順の表の列", () => {
       magicPower: "",
       equipment: [],
       inventoryHeading: "",
+      tapHint: "",
       inventory: [],
       spellHeading: "",
       spells: [],
@@ -1150,5 +1168,184 @@ describe("CH-71/UI-59 所持枠 9・10 枠のキャラクター画面（M17）",
     expect(input(s).menu.members.find((x) => x.id === "c1")!.canReceive).toBe(false);
     expect(input(holding(16, 9)).menu.members.find((x) => x.id === "c1")!.canReceive).toBe(true);
     expect(input(holding(11, 8)).menu.members.find((x) => x.id === "c1")!.canReceive).toBe(false);
+  });
+});
+
+describe("UI-80（M20）品を押して詳細と操作", () => {
+  test("UI-80 キャラクター画面でその人の品（装備・所持品）を押すと品の段。他人の品・無い品は同じ段のまま。品の段の戻るはキャラクター画面", () => {
+    const m = input(inDungeon());
+    expect(campStep("camp", character("c1"), m, { kind: "openItem", instanceId: "i1" })).toEqual({ kind: "page", page: itemPage("c1", "i1") });
+    expect(campStep("camp", character("c1"), m, { kind: "openItem", instanceId: "i4" })).toEqual({ kind: "page", page: itemPage("c1", "i4") });
+    expect(campStep("camp", character("c1"), m, { kind: "openItem", instanceId: "i10" })).toEqual({ kind: "page", page: character("c1") });
+    expect(campStep("camp", character("c1"), m, { kind: "openItem", instanceId: "zz" })).toEqual({ kind: "page", page: character("c1") });
+    // 品の段は下の段（パネルは広いまま）。前後の人へは移らない
+    expect(campCharacterOpen(itemPage("c1", "i1"))).toBe(true);
+    expect(campCanCycle(itemPage("c1", "i1"), m)).toBe(false);
+    for (const host of ["camp", "tavern"] as const) expect(campStep(host, itemPage("c1", "i1"), m, { kind: "cancel" })).toEqual({ kind: "page", page: character("c1") });
+    expect(campKeyIndex("back", campEntries("camp", itemPage("c1", "i1"), m, S))).toBe(7);
+    expect(campHeader(itemPage("c1", "i1"), m, S)).toBe("長剣をどうする？");
+  });
+
+  test("UI-80/UI-67 品の段のパネルは品の詳細（装備中は外すときの差分、所持品の装備品は装備するときの差分、消耗品は差分なし）", () => {
+    const s = inDungeon();
+    const id = createItemInstance(s, { itemId: "iron_shield", identified: true });
+    s.party[0]!.inventory.push(id);
+    const m = input(s);
+    expect(campPanel(itemPage("c1", "i1"), m, S)).toEqual({ kind: "item", instanceId: "i1", preview: { memberId: "c1", slot: "weapon", instanceId: null } });
+    expect(campPanel(itemPage("c1", id), m, S)).toEqual({ kind: "item", instanceId: id, preview: { memberId: "c1", slot: "shield", instanceId: id } });
+    expect(campPanel(itemPage("c1", "i4"), m, S)).toEqual({ kind: "item", instanceId: "i4" });
+  });
+
+  test("UI-80/CH-76 装備中の品は [外す] だけ（ほかは空き枠）。外すと party.unequip を送り、送った後も同じ品の段（品は所持品へ移り [装備する] になる）", () => {
+    const s = inDungeon();
+    const m = input(s);
+    const e = grid(campEntries("camp", itemPage("c1", "i1"), m, S));
+    expect(labels(e)).toEqual(["外す", null, null, null, null, null, null, "戻る"]);
+    const r = campStep("camp", itemPage("c1", "i1"), m, e[0]!.choice);
+    expect(r).toEqual({ kind: "send", command: { type: "party.unequip", memberId: "c1", slot: "weapon" }, after: itemPage("c1", "i1") });
+    if (r.kind !== "send") throw new Error("not send");
+    const t = accepted(s, r.command);
+    const m2 = input(t);
+    expect(campRepair("camp", itemPage("c1", "i1"), m2)).toEqual(itemPage("c1", "i1"));
+    const e2 = grid(campEntries("camp", itemPage("c1", "i1"), m2, S));
+    expect(labels(e2)).toEqual(["装備する", null, "渡す", "捨てる", null, null, null, "戻る"]);
+    const r2 = campStep("camp", itemPage("c1", "i1"), m2, e2[0]!.choice);
+    expect(r2).toEqual({ kind: "send", command: { type: "party.equip", memberId: "c1", instanceId: "i1" }, after: itemPage("c1", "i1") });
+    if (r2.kind === "send") accepted(t, r2.command);
+  });
+
+  test("UI-80 送れない操作は dim で、押すと理由（camp.itemReason.{block}）。呪われた装備は外せない・職業が装備できない", () => {
+    let s = inDungeon();
+    const g = cursedDagger(s, true);
+    s.party[2]!.inventory.push(g);
+    s = accepted(s, { type: "party.equip", memberId: "c3", instanceId: g });
+    const sword = createItemInstance(s, { itemId: "long_sword", identified: true });
+    s.party[4]!.inventory.push(sword);
+    const m = input(s);
+    const cursed = grid(campEntries("camp", itemPage("c3", g), m, S))[0]!;
+    expect(cursed).toEqual({ label: "外す", disabled: true, choice: { kind: "itemAction", action: "unequip" }, reason: "短剣は呪われていて、外せない。" });
+    expect(campStep("camp", itemPage("c3", g), m, cursed.choice)).toEqual({ kind: "page", page: itemPage("c3", g) });
+    const cls = grid(campEntries("camp", itemPage("c5", sword), m, S))[0]!;
+    expect([cls.label, cls.disabled, cls.reason]).toEqual(["装備する", true, "エルは長剣を装備できない。"]);
+  });
+
+  test("UI-80/MG-44 使う: 対象の要る品は対象の段（from item。やめるで品の段、送った後はキャラクター画面）。帰還の糸は確認の段", () => {
+    const s = inDungeon({ c2: { hp: 1 } });
+    const m = input(s);
+    const e = grid(campEntries("camp", itemPage("c1", "i4"), m, S));
+    expect(labels(e)).toEqual([null, "使う", "渡す", "捨てる", null, null, null, "戻る"]);
+    const target: CampPage = { kind: "use", stage: "target", memberId: "c1", instanceId: "i4", from: "item" };
+    expect(campStep("camp", itemPage("c1", "i4"), m, e[1]!.choice)).toEqual({ kind: "page", page: target });
+    expect(campStep("camp", target, m, { kind: "cancel" })).toEqual({ kind: "page", page: itemPage("c1", "i4") });
+    const r = campStep("camp", target, m, { kind: "target", targetId: "c2" });
+    expect(r).toEqual({ kind: "send", command: { type: "dungeon.useItem", memberId: "c1", itemId: "i4", targetId: "c2" }, after: character("c1") });
+    if (r.kind === "send") accepted(s, r.command);
+    // 帰還の糸
+    const ret = grid(campEntries("camp", itemPage("c5", "i15"), m, S))[1]!;
+    const confirm: CampPage = { kind: "use", stage: "confirmReturn", memberId: "c5", instanceId: "i15", from: "item" };
+    expect(campStep("camp", itemPage("c5", "i15"), m, ret.choice)).toEqual({ kind: "page", page: confirm });
+    expect(campStep("camp", confirm, m, { kind: "cancel" })).toEqual({ kind: "page", page: itemPage("c5", "i15") });
+    expect(campStep("camp", confirm, m, { kind: "confirm" })).toEqual({
+      kind: "send",
+      command: { type: "dungeon.useItem", memberId: "c5", itemId: "i15" },
+      after: character("c5"),
+    });
+    expect(campHeader(confirm, m, S)).not.toMatch(/[{}]/);
+    // 使えなくなったら（眠った）品の段へ、品が消えたらキャラクター画面へ
+    expect(campRepair("camp", target, input(patched(s, { c1: { status: ["sleep"] } })))).toEqual(itemPage("c1", "i4"));
+    expect(campRepair("camp", target, input(patched(s, { c1: { inventory: [] } })))).toEqual(character("c1"));
+  });
+
+  test("UI-80/CH-78/CH-79 渡す・捨てる: 相手の段・確認の段（from item。やめるで品の段）→ 送った後はキャラクター画面。品が消えた品の段はキャラクター画面へ直す", () => {
+    const s = inDungeon();
+    const m = input(s);
+    const e = grid(campEntries("camp", itemPage("c1", "i4"), m, S));
+    const to: CampPage = { kind: "give", stage: "to", memberId: "c1", instanceId: "i4", from: "item" };
+    expect(campStep("camp", itemPage("c1", "i4"), m, e[2]!.choice)).toEqual({ kind: "page", page: to });
+    expect(campStep("camp", to, m, { kind: "cancel" })).toEqual({ kind: "page", page: itemPage("c1", "i4") });
+    const r = campStep("camp", to, m, { kind: "target", targetId: "c2" });
+    expect(r).toEqual({ kind: "send", command: { type: "party.give", memberId: "c1", instanceId: "i4", toId: "c2" }, after: character("c1") });
+    if (r.kind !== "send") throw new Error("not send");
+    const t = accepted(s, r.command);
+    expect(campRepair("camp", itemPage("c1", "i4"), input(t))).toEqual(character("c1"));
+    expect(campRepair("camp", to, input(t))).toEqual(character("c1"));
+    const confirm: CampPage = { kind: "drop", stage: "confirm", memberId: "c1", instanceId: "i4", from: "item" };
+    expect(campStep("camp", itemPage("c1", "i4"), m, e[3]!.choice)).toEqual({ kind: "page", page: confirm });
+    expect(campStep("camp", confirm, m, { kind: "cancel" })).toEqual({ kind: "page", page: itemPage("c1", "i4") });
+    const d = campStep("camp", confirm, m, { kind: "confirm" });
+    expect(d).toEqual({ kind: "send", command: { type: "party.drop", memberId: "c1", instanceId: "i4" }, after: character("c1") });
+    if (d.kind === "send") accepted(s, d.command);
+    expect(campHeader(confirm, m, S)).toBe("薬草を捨てる。よいか。");
+  });
+
+  test("UI-80 所持品が 9 件以上なら、キャラクター画面は 7 件と「ほか {n}」で畳み、押す（pageTurn）と次の分（最後の次は最初）。頁が減れば campRepair で最初へ", () => {
+    const m = input(inDungeon());
+    const many = structuredClone(m);
+    const c1 = many.menu.members.find((x) => x.id === "c1")!;
+    c1.inventory = Array.from({ length: 10 }, (_, i) => ({ instanceId: `x${i}`, name: `品${i}`, identified: true, kind: "consumable" as const, cursed: false }));
+    const p1 = campStep("camp", character("c1"), many, { kind: "pageTurn", delta: 1 });
+    expect(p1).toEqual({ kind: "page", page: { kind: "character", memberId: "c1", fold: 1 } });
+    expect(campPanel({ kind: "character", memberId: "c1", fold: 1 }, many, S)).toMatchObject({ tappable: true, inventoryFold: 1 });
+    expect(campStep("camp", { kind: "character", memberId: "c1", fold: 1 }, many, { kind: "pageTurn", delta: 1 })).toEqual({ kind: "page", page: character("c1") });
+    // 8 件以下は畳まないので同じ段のまま
+    expect(campStep("camp", character("c1"), m, { kind: "pageTurn", delta: 1 })).toEqual({ kind: "page", page: character("c1") });
+    expect(campRepair("camp", { kind: "character", memberId: "c1", fold: 1 }, m)).toEqual(character("c1"));
+    expect(campRepair("camp", { kind: "character", memberId: "c1", fold: 1 }, many)).toEqual({ kind: "character", memberId: "c1", fold: 1 });
+  });
+
+  test("UI-80 新しい文は最悪の値でも収まる: 理由は会話の箱の 28 字 × 2 行（6 字の名前・最も長い品名）、品の段の問いは見出しの 28 字、鑑定の枠のラベルは枠の幅", () => {
+    const units = (x: string): number => Array.from(x).reduce((n, c) => n + ((c.codePointAt(0) ?? 0) < 0x80 ? 0.5 : 1), 0);
+    const longest = (xs: string[]): string => [...xs].sort((a, b) => units(b) - units(a))[0]!;
+    const prefix = longest(["fine", "rare", "legendary"].map((r) => S[`item.rarity.${r}`]!));
+    const item = longest([
+      ...data.items.flatMap((it) => [it.name, it.unidentifiedName ?? it.name]),
+      ...data.equipmentBases.flatMap((b) => [b.unidentifiedName, `${prefix}${b.name}${formatMessage(S["item.plus"]!, { n: 12 })}`]),
+      ...data.uniques.map((u) => `${prefix}${u.name}`),
+    ]);
+    const name = "あ".repeat(data.config.creation.nameMaxLength);
+    const blocks = ["cannotAct", "unidentified", "class", "cursedSlot", "cursed", "notHere", "cannotLearn", "known", "noTarget", "noReceiver", "noMp"];
+    for (const b of blocks) {
+      const text = formatMessage(S[`camp.itemReason.${b}`]!, { name, item });
+      expect(text, b).not.toContain("{");
+      expect(kinsokuLines(text, 28).length, `${b}: ${text}`).toBeLessThanOrEqual(2);
+    }
+    expect(units(formatMessage(S["camp.prompt.item"]!, { item }))).toBeLessThanOrEqual(28);
+    // 鑑定の枠のラベル（成功率は 3 桁まで）は枠の幅 56 から左右の余白を除いた 48px に収まる（全角 8px・半角 4px）
+    expect(units(formatMessage(S["camp.item.identify"]!, { rate: 100 })) * 8).toBeLessThanOrEqual(48);
+  });
+
+  test("UI-80 campItemActions はパーティ全員の装備と所持品の instanceId ごとの core の itemActions。持ち主の違う段では使わない", () => {
+    const s = inDungeon();
+    const m = input(s);
+    expect(Object.keys(m.itemActions!).sort()).toEqual(
+      s.party.flatMap((c) => [...Object.values(c.equipment).filter((x): x is string => x !== null), ...c.inventory]).sort(),
+    );
+    for (const [id, a] of Object.entries(m.itemActions!)) expect(a).toEqual(itemActions(s, data, a.memberId, id));
+    // c2 の段で c1 の品を指しても操作は出ない（戻るだけ）
+    expect(labels(grid(campEntries("camp", itemPage("c2", "i4"), m, S)))).toEqual([null, null, null, null, null, null, null, "戻る"]);
+  });
+});
+
+describe("UI-80（M20）キャンプのパネルの characterTarget", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("UI-80 最後に描いたのが品を押せるキャラクター画面（tappable）のときだけ、押した所の行き先を返す（矩形は detail の characterHitRects）。ほかの画面では null", () => {
+    vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
+    const v = createCampView({ x: 0, y: 16, w: 240, h: 150 }, { x: 0, y: 16, w: 240, h: 284 });
+    const s = inDungeon();
+    const m = input(s);
+    const ch = s.party[0]!;
+    const detail = formatCharacter(ch, data, S, (iid) => itemDisplayName(s, data, iid), undefined, m.menu.members[0]!, { tappable: true, inventoryFold: 0 });
+    v.render({ kind: "character", detail, focusSlot: null, tappable: true });
+    expect(v.characterTarget(10, 88)).toEqual({ kind: "item", instanceId: "i1" });
+    expect(v.characterTarget(10, 158)).toEqual({ kind: "item", instanceId: "i4" });
+    expect(v.characterTarget(10, 40)).toBeNull();
+    v.render({ kind: "character", detail, focusSlot: null });
+    expect(v.characterTarget(10, 88)).toBeNull();
+    v.render({ kind: "character", detail, focusSlot: null, tappable: true });
+    v.render({ kind: "lines", title: "長剣", lines: [], tall: true });
+    expect(v.characterTarget(10, 88)).toBeNull();
   });
 });

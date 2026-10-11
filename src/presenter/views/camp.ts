@@ -8,7 +8,9 @@
 // - M18（設計 5-1）: top の 5 つ目の「呪文」は 術者（spellWho。唱えられる呪文の無い者は dim）→ 呪文の段（from "top"。キャラクター画面の呪文の段と同じ）
 //   → 説明 → 対象 → dungeon.cast → top。from "top" の呪文の一覧のやめるは術者の段へ（説明・対象のやめるは今どおり 1 つ上の段）。
 // - キャラクター画面（UI-59。M10）は 1 人の全部（能力値・装備・所持品・習得呪文）を 1 画面に出し、操作は 4×2 の枠
-//   [装備][使う][渡す][捨てる] / [呪文][鑑定（鑑定できる職業の者だけ）][次の人][戻る]。その下の段（装備・使う・渡す・捨てる・呪文・鑑定）の
+//   [装備][使う][渡す][捨てる] / [呪文][鑑定（鑑定できる職業の者だけ）][次の人][戻る]（M20 の UI-80 から [呪文][次の人] / …[戻る] だけで、
+//   装備・使う・渡す・捨てる・鑑定はパネルの品（装備の行・所持品の枠）を押した品の段（kind "item"。core の itemActions）から。
+//   品の段から入った使う・渡す・捨てるの段は from "item"（やめるで品の段、送った後はキャラクター画面）。旧い枠からの段は残してある）。その下の段（装備・使う・渡す・捨てる・呪文・鑑定）の
 //   やめるは同じ人のキャラクター画面へ。前後の人は ← → キー・左右スワイプ・ヘッダーの ◀ ▶ でも移る（M16。campCanCycle / campSwipeDir）。キャラクター画面の戻るは、キャンプはメンバー一覧、酒場は閉じる（酒場の一覧・帯を押した街のページへ）。
 // - 送った後も閉じずに、同じ者の段へ戻る（CampStep の after）。sync で campMenu を取り直し、campRepair で成り立たない段を直す。
 // - 帰還の糸（FieldItemView.isReturn）は送る前に確認の段（confirmReturn。戻る / やめる）を挟む。捨てるも確認の段（drop の confirm）を挟む。
@@ -22,10 +24,20 @@
 import type { SpriteInfo } from "../../build/asset-types";
 import type { EquipSlot, GameData, Strings } from "../../core/data/index";
 import type { BestiaryView } from "../../core/rules/item-view";
-import type { CampMember, CampMenu, CampSummary, CampTargetBlock, Command, FieldItemMenu } from "../../core/types";
+import type { CampMember, CampMenu, CampSummary, CampTargetBlock, Command, FieldItemMenu, ItemActionKind, ItemActions } from "../../core/types";
 import type { Action } from "../input/swipe";
 import type { Rect } from "../layout";
-import { CHARACTER_INVENTORY_CELLS, CHARACTER_SPELL_CELLS, createDetailView, SLOT_ORDER, type CharacterDetail } from "./detail";
+import {
+  CHARACTER_INVENTORY_CELLS,
+  CHARACTER_SPELL_CELLS,
+  characterHitAt,
+  characterHitRects,
+  createDetailView,
+  inventoryFoldCount,
+  SLOT_ORDER,
+  type CharacterDetail,
+  type CharacterTap,
+} from "./detail";
 import type { PanelLine } from "./item-detail";
 import { formatMessage } from "./message";
 import { PALETTE } from "../palette";
@@ -41,25 +53,28 @@ export type CampPage =
   | { kind: "members" }
   /** UI-53 / MG-44（M18。設計 5-1）: top の「呪文」の術者（名前の 6 枠と [7] やめる。唱えられる呪文の無い者は dim） */
   | { kind: "spellWho" }
-  /** UI-59（M10）: キャラクター画面 */
-  | { kind: "character"; memberId: string }
+  /** UI-59（M10）: キャラクター画面。fold は UI-80（M20）の畳んだ所持品の頁（省略は 0。「ほか {n}」を押すと次） */
+  | { kind: "character"; memberId: string; fold?: number }
+  /** UI-80（M20）: キャラクター画面で押した品の詳細と、その品の操作（core の itemActions） */
+  | { kind: "item"; memberId: string; instanceId: string }
   | { kind: "equip"; stage: "slot"; memberId: string }
   | { kind: "equip"; stage: "item"; memberId: string; slot: EquipSlot }
   /** UI-59（M7）: 品の詳細（装備中の品なら 外す、候補なら 装備する / やめる） */
   | { kind: "equip"; stage: "detail"; memberId: string; slot: EquipSlot; instanceId: string }
   | { kind: "use"; stage: "item"; memberId: string }
-  | { kind: "use"; stage: "target"; memberId: string; instanceId: string }
+  /** from "item" は UI-80（M20）の品の操作から来たとき（やめるで品の段へ、送った後はキャラクター画面へ） */
+  | { kind: "use"; stage: "target"; memberId: string; instanceId: string; from?: "item" }
   /**
    * DG-30 / UI-53（M5.5）: 帰還の糸を使う前の確認。from "top" は迷宮のキャンプの top の「糸で帰る」（M16。campSummary.returnItem）から
-   * 来たとき（キャラクター画面を開かず、やめるで top へ戻る）
+   * 来たとき（キャラクター画面を開かず、やめるで top へ戻る）。from "item" は UI-80（M20）の品の操作から
    */
-  | { kind: "use"; stage: "confirmReturn"; memberId: string; instanceId: string; from?: "top" }
-  /** CH-78（M10）: 渡す品（page は所持品の頁） → 相手 */
+  | { kind: "use"; stage: "confirmReturn"; memberId: string; instanceId: string; from?: "top" | "item" }
+  /** CH-78（M10）: 渡す品（page は所持品の頁） → 相手。from "item" は UI-80（M20）の品の操作から */
   | { kind: "give"; stage: "item"; memberId: string; page: number }
-  | { kind: "give"; stage: "to"; memberId: string; instanceId: string }
-  /** CH-79（M10）: 捨てる品（page は所持品の頁） → 確認 */
+  | { kind: "give"; stage: "to"; memberId: string; instanceId: string; from?: "item" }
+  /** CH-79（M10）: 捨てる品（page は所持品の頁） → 確認。from "item" は UI-80（M20）の品の操作から */
   | { kind: "drop"; stage: "item"; memberId: string; page: number }
-  | { kind: "drop"; stage: "confirm"; memberId: string; instanceId: string }
+  | { kind: "drop"; stage: "confirm"; memberId: string; instanceId: string; from?: "item" }
   /**
    * MG-44（M10 で キャラクター画面の下へ）: 習得呪文の一覧（page は呪文の頁）→ 説明（UI-68。[唱える][やめる]）→ 対象。
    * from "top" は top の「呪文」の術者の段から来たとき（M18。設計 5-1。一覧のやめるで術者の段へ、送った後は top へ）
@@ -79,7 +94,7 @@ export type CharacterAction = "equip" | "use" | "give" | "drop" | "spell" | "ide
 export type CampChoice =
   | { kind: "open"; page: CampPage }
   | { kind: "member"; memberId: string }
-  /** UI-59（M10）: キャラクター画面の操作の枠 */
+  /** UI-59（M10）: キャラクター画面の操作の枠（M20 の UI-80 からキャラクター画面の枠は 呪文 だけ。ほかは品の段から） */
   | { kind: "action"; action: CharacterAction }
   /** UI-59（M10）: 次の人（並び順で巡回） */
   | { kind: "nextMember" }
@@ -94,6 +109,10 @@ export type CampChoice =
   /** UI-59（M7）: 装備の段の品の行。押すと品の詳細の段へ */
   | { kind: "detail"; instanceId: string }
   | { kind: "identifyItem"; instanceId: string }
+  /** UI-80（M20）: キャラクター画面のパネルで品を押した（品の段へ） */
+  | { kind: "openItem"; instanceId: string }
+  /** UI-80（M20）: 品の段の操作の枠 */
+  | { kind: "itemAction"; action: ItemActionKind }
   /** DG-45 / UI-53（M18）: top の「敵を待つ」（旧 辺りを探る。閉じて dungeon.search を送る。確認なし） */
   | { kind: "search" }
   /** 確認の段の決定（帰還の糸の「戻る」・捨てるの「捨てる」・呪文の説明の段の「唱える」（UI-68）） */
@@ -123,8 +142,20 @@ export type CampStep =
  */
 export type CampPanel =
   | { kind: "text"; title: string; lines?: string[] }
-  /** spellInfo は UI-68（M10）の呪文の説明の段・対象の段の呪文（呪文の枠を説明に置き換える。app が core の spellInfo から作る） */
-  | { kind: "character"; memberId: string; focusSlot: EquipSlot | null; spellPage?: number; inventoryPage?: number; spellInfo?: string }
+  /**
+   * spellInfo は UI-68（M10）の呪文の説明の段・対象の段の呪文（呪文の枠を説明に置き換える。app が core の spellInfo から作る）。
+   * tappable は UI-80（M20）のキャラクター画面そのもの（品を押せる。注記を出し、所持品は inventoryFold の頁で畳む）
+   */
+  | {
+      kind: "character";
+      memberId: string;
+      focusSlot: EquipSlot | null;
+      spellPage?: number;
+      inventoryPage?: number;
+      spellInfo?: string;
+      tappable?: true;
+      inventoryFold?: number;
+    }
   | { kind: "order"; rows: { n: number; name: string; row: string; picked: boolean }[] }
   /**
    * UI-59（M7）: 品の詳細（app が core の itemDetail から formatItemDetail で行を作る）。
@@ -146,10 +177,33 @@ export type CampInput = {
   identifyMpCost: number;
   /** UI-79（M18）: core の bestiaryView（敵の図鑑の段の行と頁送りの範囲） */
   bestiary: BestiaryView;
+  /**
+   * UI-80（M20）: core の itemActions（品の段の操作と理由）を、パーティ全員の装備と所持品の instanceId ごとに引いた値（campItemActions で作る。
+   * 品は 1 人だけが持つので instanceId で引ける）。省略すると品の段は戻るだけ
+   */
+  itemActions?: Readonly<Record<string, ItemActions>>;
 };
+
+/**
+ * UI-80（M20）: CampInput.itemActions を作る（純粋。menu の各人の装備（slots）と所持品（inventory）の instanceId ごとに of を呼ぶ。null は入れない）。
+ * of は app が core の itemActions を渡す
+ */
+export function campItemActions(menu: CampMenu, of: (memberId: string, instanceId: string) => ItemActions | null): Record<string, ItemActions> {
+  const out: Record<string, ItemActions> = {};
+  for (const x of menu.members) {
+    const ids = [...x.slots.flatMap((sl) => (sl.instanceId === null ? [] : [sl.instanceId])), ...x.inventory.map((y) => y.instanceId)];
+    for (const id of ids) {
+      const a = of(x.id, id);
+      if (a !== null) out[id] = a;
+    }
+  }
+  return out;
+}
 
 /** campGrid の枠の数（4 列 × 2 段）。[7] がやめる / 戻る */
 export const CAMP_GRID_SLOTS = 8;
+/** UI-80（M20）: 品の段の操作の枠の位置（装備する と 外す は同じ枠。当てはまらない操作の枠は空き） */
+export const ITEM_ACTION_SLOT: Record<ItemActionKind, number> = { equip: 0, unequip: 0, use: 1, give: 2, drop: 3, identify: 4 };
 
 function s(strings: Strings, key: string, params?: Record<string, string | number>): string {
   return formatMessage(strings[key] ?? key, params);
@@ -215,6 +269,8 @@ function cancelStep(host: CampHost, page: CampPage, m: CampInput): CampStep {
       return host === "camp" ? go({ kind: "top" }) : { kind: "close" };
     case "character":
       return host === "camp" ? go({ kind: "members" }) : { kind: "close" };
+    case "item":
+      return go({ kind: "character", memberId: page.memberId });
     case "order":
     case "book":
     case "bestiary":
@@ -226,12 +282,15 @@ function cancelStep(host: CampHost, page: CampPage, m: CampInput): CampStep {
     case "use":
       if (page.stage === "item") return go({ kind: "character", memberId: page.memberId });
       if (page.stage === "confirmReturn" && page.from === "top") return go({ kind: "top" });
+      if (page.from === "item") return go({ kind: "item", memberId: page.memberId, instanceId: page.instanceId }); // UI-80（M20）
       return go({ kind: "use", stage: "item", memberId: page.memberId });
     case "give":
       if (page.stage === "item") return go({ kind: "character", memberId: page.memberId });
+      if (page.from === "item") return go({ kind: "item", memberId: page.memberId, instanceId: page.instanceId }); // UI-80（M20）
       return go({ kind: "give", stage: "item", memberId: page.memberId, page: inventoryPageOf(m, page.memberId, page.instanceId) });
     case "drop":
       if (page.stage === "item") return go({ kind: "character", memberId: page.memberId });
+      if (page.from === "item") return go({ kind: "item", memberId: page.memberId, instanceId: page.instanceId }); // UI-80（M20）
       return go({ kind: "drop", stage: "item", memberId: page.memberId, page: inventoryPageOf(m, page.memberId, page.instanceId) });
     case "spell":
       // M18（設計 5-1）: top の「呪文」から来た一覧のやめるは術者の段へ
@@ -245,6 +304,22 @@ function cancelStep(host: CampHost, page: CampPage, m: CampInput): CampStep {
 
 const memberOf = (m: CampInput, id: string): CampMember | undefined => m.menu.members.find((x) => x.id === id);
 const nameOf = (m: CampInput, id: string): string => memberOf(m, id)?.name ?? "";
+
+/** UI-80（M20）: その人の品の操作（CampInput.itemActions。持ち主が違えば null） */
+function actionsOf(m: CampInput, memberId: string, instanceId: string): ItemActions | null {
+  const a = m.itemActions?.[instanceId];
+  return a !== undefined && a.memberId === memberId ? a : null;
+}
+/** UI-80（M20）: その人の装備か所持品にある品か */
+function ownsItem(m: CampInput, memberId: string, instanceId: string): boolean {
+  const x = memberOf(m, memberId);
+  return x !== undefined && (x.inventory.some((y) => y.instanceId === instanceId) || x.slots.some((y) => y.instanceId === instanceId));
+}
+/** UI-80（M20）: その人の装備か所持品の品の表示名（無ければ空） */
+function ownItemName(m: CampInput, memberId: string, instanceId: string): string {
+  const x = memberOf(m, memberId);
+  return x?.inventory.find((y) => y.instanceId === instanceId)?.name ?? x?.slots.find((y) => y.instanceId === instanceId)?.name ?? "";
+}
 
 /** 頁の数（0 件でも 1） */
 function pageCount(n: number, per: number): number {
@@ -329,31 +404,48 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
       return memberGrid(m, (id) => !hasCastable(m, id), cancel);
     case "character": {
       const x = memberOf(m, page.memberId);
-      const it = m.items?.members.find((y) => y.id === page.memberId);
-      const act = (action: CharacterAction, disabled: boolean, reason?: string): CampEntry => ({
-        label: s(strings, `character.${action}`),
-        disabled,
-        choice: { kind: "action", action },
-        ...(reason !== undefined ? { reason } : {}),
-      });
-      const empty = (x?.inventory.length ?? 0) === 0;
-      // 鑑定: 鑑定できる職業の者だけ枠を出す。送れない理由（行動不能・MP・品が無い）は core の identifyBlock
-      const block = x === undefined ? "cannotIdentify" : x.identifyBlock;
-      const identify = block === "cannotIdentify" ? null : act("identify", block !== null, block === null ? undefined : s(strings, `camp.identifyBlock.${block}`, { name: x?.name ?? "" }));
+      // UI-80（M20）: 装備・使う・渡す・捨てる・鑑定はパネルの品を押して品の段から。枠は [呪文][次の人] / [空き]…[戻る]（キー 1・2・8）
       return {
         layout: "grid",
         slots: [
-          act("equip", false),
-          act("use", it === undefined || !it.canAct || !it.items.some((y) => y.usable)),
-          act("give", empty),
-          act("drop", empty),
           // UI-68（M10）: 習得呪文があれば押せる（唱えられない呪文も一覧から説明を見られる。唱えられるかは説明の段の「唱える」）
-          act("spell", (x?.knownSpells.length ?? 0) === 0),
-          identify,
+          { label: s(strings, "character.spell"), disabled: (x?.knownSpells.length ?? 0) === 0, choice: { kind: "action", action: "spell" } },
           { label: s(strings, "character.next"), disabled: menu.members.length <= 1, choice: { kind: "nextMember" } },
+          null,
+          null,
+          null,
+          null,
+          null,
           back,
         ],
       };
+    }
+    case "item": {
+      // UI-80（M20）: core の itemActions の操作を決まった枠に置く（装備する／外す 1・使う 2・渡す 3・捨てる 4・鑑定 5・戻る 8）。
+      // 当てはまらない操作は空き枠、送れない操作は dim で、押すと理由（camp.itemReason.{block}）を語る
+      const a = actionsOf(m, page.memberId, page.instanceId);
+      const slots: (CampEntry | null)[] = Array.from({ length: CAMP_GRID_SLOTS }, () => null);
+      slots[CAMP_GRID_SLOTS - 1] = back;
+      if (a === null) return { layout: "grid", slots };
+      const owner = nameOf(m, page.memberId);
+      for (const v of a.actions) {
+        const label =
+          v.action === "equip"
+            ? s(strings, "camp.equip.do")
+            : v.action === "unequip"
+              ? s(strings, "camp.equip.unequip")
+              : v.action === "identify"
+                ? s(strings, "camp.item.identify", { rate: a.identifier?.rate ?? "?" })
+                : s(strings, `character.${v.action}`);
+        const who = v.action === "identify" ? (a.identifier?.name ?? owner) : owner;
+        slots[ITEM_ACTION_SLOT[v.action]] = {
+          label,
+          disabled: v.block !== null,
+          choice: { kind: "itemAction", action: v.action },
+          ...(v.block === null ? {} : { reason: s(strings, `camp.itemReason.${v.block}`, { name: who, item: a.name }) }),
+        };
+      }
+      return { layout: "grid", slots };
     }
     case "equip": {
       const x = memberOf(m, page.memberId);
@@ -526,6 +618,16 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
       return go({ kind: "spell", stage: "spell", memberId: choice.memberId, page: 0, from: "top" });
     case "character": {
       if (choice.kind === "nextMember") return go(campCycle(page, m, 1) ?? page);
+      // UI-80（M20）: パネルの品（その人の装備か所持品）を押すと品の段、「ほか {n}」を押すと畳んだ所持品の次の頁（最後の次は最初）
+      if (choice.kind === "openItem") {
+        return ownsItem(m, page.memberId, choice.instanceId) ? go({ kind: "item", memberId: page.memberId, instanceId: choice.instanceId }) : stay;
+      }
+      if (choice.kind === "pageTurn") {
+        const n = inventoryFoldCount(memberOf(m, page.memberId)?.inventory.length ?? 0);
+        if (n <= 1) return stay;
+        const f = ((((page.fold ?? 0) + choice.delta) % n) + n) % n;
+        return go({ kind: "character", memberId: page.memberId, ...(f === 0 ? {} : { fold: f }) });
+      }
       if (choice.kind !== "action") return stay;
       const id = page.memberId;
       switch (choice.action) {
@@ -544,6 +646,36 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
       }
       return stay;
     }
+    case "item": {
+      // UI-80（M20）: 品の操作。送れない操作（core の block）と当てはまらない操作は同じ段のまま
+      if (choice.kind !== "itemAction") return stay;
+      const a = actionsOf(m, page.memberId, page.instanceId);
+      const v = a?.actions.find((y) => y.action === choice.action);
+      if (a === null || v === undefined || v.block !== null) return stay;
+      const id = page.instanceId;
+      const character: CampPage = { kind: "character", memberId: page.memberId };
+      switch (v.action) {
+        case "equip":
+          return { kind: "send", command: { type: "party.equip", memberId: page.memberId, instanceId: id }, after: page };
+        case "unequip":
+          return a.equippedSlot === null ? stay : { kind: "send", command: { type: "party.unequip", memberId: page.memberId, slot: a.equippedSlot }, after: page };
+        case "use": {
+          // 既存の使うの段へ（対象の要る品は対象の段、帰還の糸は確認の段。どちらも from "item"）。それ以外は送ってキャラクター画面へ（品は消える）
+          const it = m.items?.members.find((x) => x.id === page.memberId)?.items.find((x) => x.instanceId === id);
+          if (it === undefined || !it.usable) return stay;
+          if (it.target === "ally") return go({ kind: "use", stage: "target", memberId: page.memberId, instanceId: id, from: "item" });
+          if (it.isReturn) return go({ kind: "use", stage: "confirmReturn", memberId: page.memberId, instanceId: id, from: "item" });
+          return { kind: "send", command: { type: "dungeon.useItem", memberId: page.memberId, itemId: id }, after: character };
+        }
+        case "give":
+          return go({ kind: "give", stage: "to", memberId: page.memberId, instanceId: id, from: "item" });
+        case "drop":
+          return go({ kind: "drop", stage: "confirm", memberId: page.memberId, instanceId: id, from: "item" });
+        case "identify":
+          return a.identifier === null ? stay : { kind: "send", command: { type: "party.identify", memberId: a.identifier.id, instanceId: id }, after: page };
+      }
+      return stay;
+    }
     case "equip": {
       if (page.stage === "slot") {
         return choice.kind === "slot" ? go({ kind: "equip", stage: "item", memberId: page.memberId, slot: choice.slot }) : stay;
@@ -557,7 +689,9 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
       return stay;
     }
     case "use": {
-      const back: CampPage = { kind: "use", stage: "item", memberId: page.memberId };
+      // UI-80（M20）: 品の段から来た段は、送った後はキャラクター画面（使った品は消える）
+      const back: CampPage =
+        page.stage !== "item" && page.from === "item" ? { kind: "character", memberId: page.memberId } : { kind: "use", stage: "item", memberId: page.memberId };
       if (page.stage === "confirmReturn") {
         if (choice.kind !== "confirm") return stay;
         return { kind: "send", command: { type: "dungeon.useItem", memberId: page.memberId, itemId: page.instanceId }, after: page.from === "top" ? { kind: "top" } : back };
@@ -587,7 +721,11 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
           ? go({ kind: "give", stage: "to", memberId: page.memberId, instanceId: choice.instanceId })
           : go({ kind: "drop", stage: "confirm", memberId: page.memberId, instanceId: choice.instanceId });
       }
-      const after: CampPage = { kind: page.kind, stage: "item", memberId: page.memberId, page: inventoryPageOf(m, page.memberId, page.instanceId) };
+      // UI-80（M20）: 品の段から来た段は、送った後はキャラクター画面（品は手元から消える）
+      const after: CampPage =
+        page.from === "item"
+          ? { kind: "character", memberId: page.memberId }
+          : { kind: page.kind, stage: "item", memberId: page.memberId, page: inventoryPageOf(m, page.memberId, page.instanceId) };
       if (page.kind === "give" && page.stage === "to") {
         if (choice.kind !== "target" || choice.targetId === page.memberId) return stay;
         return { kind: "send", command: { type: "party.give", memberId: page.memberId, instanceId: page.instanceId, toId: choice.targetId }, after };
@@ -663,6 +801,8 @@ export function campHeader(page: CampPage, m: CampInput, strings: Strings): stri
       return s(strings, "camp.prompt.spellWho");
     case "character":
       return s(strings, "camp.prompt.status", { name: nameOf(m, page.memberId) });
+    case "item":
+      return s(strings, "camp.prompt.item", { item: ownItemName(m, page.memberId, page.instanceId) });
     case "equip":
       if (page.stage === "slot") return s(strings, "camp.prompt.equipSlot", { name: nameOf(m, page.memberId) });
       return s(strings, "camp.prompt.equipItem", { name: nameOf(m, page.memberId), slot: s(strings, `detail.slot.${page.slot}`) });
@@ -704,12 +844,23 @@ export function campPanel(page: CampPage, m: CampInput, strings: Strings): CampP
     const equipped = cur !== undefined && cur.instanceId === page.instanceId;
     return { kind: "item", instanceId: page.instanceId, preview: { memberId: page.memberId, slot: page.slot, instanceId: equipped ? null : page.instanceId } };
   }
+  if (page.kind === "item") {
+    // UI-80（M20）/ UI-67: 品の詳細。装備中の品なら外すときの差分、所持品の装備品なら装備するときの差分（core の equipPreview が拒めば出ない）
+    const x = memberOf(m, page.memberId);
+    const cur = x?.slots.find((sl) => sl.instanceId === page.instanceId);
+    if (cur !== undefined) return { kind: "item", instanceId: page.instanceId, preview: { memberId: page.memberId, slot: cur.slot, instanceId: null } };
+    const cand = x?.equipCandidates.find((c) => c.instanceId === page.instanceId);
+    if (cand !== undefined) return { kind: "item", instanceId: page.instanceId, preview: { memberId: page.memberId, slot: cand.slot, instanceId: page.instanceId } };
+    return { kind: "item", instanceId: page.instanceId };
+  }
   if (page.kind === "book") return { kind: "book" };
   if (page.kind === "bestiary") return { kind: "bestiary", focus: page.focus };
   const who = pageMember(page);
   if (who !== null) {
     const focusSlot = page.kind === "equip" && page.stage === "item" ? page.slot : null;
     const base = { kind: "character" as const, memberId: who, focusSlot };
+    // UI-80（M20）: キャラクター画面そのものだけ品を押せる（注記と畳んだ所持品）
+    if (page.kind === "character") return { ...base, tappable: true as const, inventoryFold: page.fold ?? 0 };
     if (page.kind === "spell") {
       if (page.stage === "spell") return { ...base, spellPage: page.page };
       // UI-68（M10）: 説明の段と対象の段は、呪文の枠をその呪文の説明に置き換える
@@ -785,8 +936,14 @@ export function campRepair(host: CampHost, page: CampPage, m: CampInput): CampPa
   if (x === undefined) return page.kind === "spell" && page.from === "top" && host === "camp" ? { kind: "spellWho" } : lost();
   const character: CampPage = { kind: "character", memberId: page.memberId };
   switch (page.kind) {
-    case "character":
-      return page;
+    case "character": {
+      // UI-80（M20）: 畳んだ所持品の頁が減ったら（渡した・捨てた後）最初の頁へ
+      const f = page.fold ?? 0;
+      return f === 0 || f < inventoryFoldCount(x.inventory.length) ? page : character;
+    }
+    case "item":
+      // UI-80（M20）: 品がその人の装備にも所持品にも無くなったら（消えた・渡した）キャラクター画面へ
+      return ownsItem(m, page.memberId, page.instanceId) ? page : character;
     case "equip": {
       // U6（M10）: 行動できない者・死亡・灰の者の段も成り立つ（外すは core の canUnequip、装備するは core の block で dim）
       if (page.stage !== "detail") return page;
@@ -797,6 +954,12 @@ export function campRepair(host: CampHost, page: CampPage, m: CampInput): CampPa
     }
     case "use": {
       const it = m.items?.members.find((y) => y.id === page.memberId);
+      if (page.stage !== "item" && page.from === "item") {
+        // UI-80（M20）: 品の段から来た段は、品が使えなくなったら品の段へ（品が消えていれば品の段の直しでキャラクター画面へ）
+        const ok = it !== undefined && it.canAct && it.items.some((y) => y.instanceId === page.instanceId && y.usable);
+        if (ok) return page;
+        return ownsItem(m, page.memberId, page.instanceId) ? { kind: "item", memberId: page.memberId, instanceId: page.instanceId } : character;
+      }
       if (it === undefined || !it.canAct) return character;
       if (page.stage === "item") return page;
       // 対象の段・確認の段: 品が消えた・使えなくなったら同じ者の道具の段へ
@@ -808,8 +971,9 @@ export function campRepair(host: CampHost, page: CampPage, m: CampInput): CampPa
         const last = pageCount(x.inventory.length, CHARACTER_INVENTORY_CELLS) - 1;
         return page.page > last ? { ...page, page: last } : page;
       }
-      // 相手・確認の段: 品が手元から消えたら同じ者の品の段へ
-      return x.inventory.some((y) => y.instanceId === page.instanceId) ? page : { kind: page.kind, stage: "item", memberId: page.memberId, page: 0 };
+      // 相手・確認の段: 品が手元から消えたら同じ者の品の段へ（UI-80（M20）: 品の段から来た段はキャラクター画面へ）
+      if (x.inventory.some((y) => y.instanceId === page.instanceId)) return page;
+      return page.from === "item" ? character : { kind: page.kind, stage: "item", memberId: page.memberId, page: 0 };
     }
     case "spell": {
       if (page.stage === "spell") {
@@ -869,8 +1033,8 @@ export const ORDER_COLUMNS = {
 /** 描くもの。character は app が formatCharacter で作った文字列。order の label は番号と名前、row は前衛 / 後衛 */
 export type CampPanelView =
   | { kind: "text"; title: string; lines?: string[] }
-  /** UI-59（M10）: キャラクター画面（tallRect に広げる） */
-  | { kind: "character"; detail: CharacterDetail; focusSlot: number | null }
+  /** UI-59（M10）: キャラクター画面（tallRect に広げる）。tappable は UI-80（M20）の品を押せる画面（characterTarget が行き先を返す） */
+  | { kind: "character"; detail: CharacterDetail; focusSlot: number | null; tappable?: boolean }
   | { kind: "order"; lines: { label: string; row: string; picked: boolean }[] }
   /** UI-59 の品の詳細・IT-66 の図鑑（M7）。見出しは accent、行は tone の色（danger / dim）。tall ならパネルを tallRect に広げる（図鑑・キャラクター画面の下の品の詳細。UI-11） */
   | { kind: "lines"; title: string; lines: PanelLine[]; tall?: boolean }
@@ -924,6 +1088,11 @@ export function bestiaryWindowStart(count: number, focus: number, visible: numbe
 export type CampView = {
   el: HTMLElement;
   render(p: CampPanelView): void;
+  /**
+   * UI-80（M20）: パネルの左上からの論理 px (lx, ly) を押したときの行き先（最後に描いたのが品を押せるキャラクター画面のときだけ。
+   * 矩形は detail の characterHitRects）。それ以外は null
+   */
+  characterTarget(lx: number, ly: number): CharacterTap | null;
 };
 
 /**
@@ -1023,10 +1192,17 @@ export function createCampView(rect: Rect, tallRect: Rect = rect, art?: CampArt)
     return nodes;
   };
 
+  /** UI-80: 最後に描いた品を押せるキャラクター画面（それ以外を描いたら null） */
+  let tappable: CharacterDetail | null = null;
+
   return {
     el,
+    characterTarget(lx: number, ly: number): CharacterTap | null {
+      return tappable === null ? null : characterHitAt(characterHitRects(tappable, tallRect.w), lx, ly);
+    },
     render(p: CampPanelView): void {
       place(p.kind === "character" || p.kind === "bestiary" || (p.kind === "lines" && p.tall === true) ? tallRect : rect);
+      tappable = p.kind === "character" && p.tappable === true ? p.detail : null;
       if (p.kind === "character") {
         detail.render(p.detail, p.focusSlot);
         el.replaceChildren(detail.el);

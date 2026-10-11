@@ -5,7 +5,20 @@ import { createItemInstance, itemDisplayName } from "../src/core/state";
 import type { GameState } from "../src/core/types";
 import { campMenu } from "../src/core/rules/camp";
 import { CHARACTER_LINES, CHARACTER_MIN_HEIGHT, dungeonLayout, layoutWarnings, regions } from "../src/presenter/layout";
-import { characterCells, createDetailView, formatCharacter, LEVEL_COLUMNS, SLOT_ORDER, STAT_ORDER } from "../src/presenter/views/detail";
+import {
+  CHARACTER_HIT_H,
+  characterCells,
+  characterHitAt,
+  characterHitRects,
+  createDetailView,
+  foldedCells,
+  formatCharacter,
+  inventoryFoldCount,
+  LEVEL_COLUMNS,
+  SLOT_ORDER,
+  STAT_ORDER,
+  TAP_HINT_W,
+} from "../src/presenter/views/detail";
 import { textUnits } from "../src/presenter/views/party-band";
 import { formatMessage } from "../src/presenter/views/message";
 import { createPartyPanel } from "../src/presenter/views/party";
@@ -84,12 +97,13 @@ describe("UI-59 詳細", () => {
     // M7: 7 行目の「装備」の見出しは攻撃の行に譲った（2026-10-05）。sheet が無ければ攻撃は空
     expect(d.attack).toBe("");
     expect(d.equipment).toEqual([
-      { slot: "武器", item: "長剣" },
-      { slot: "防具", item: "革鎧" },
-      { slot: "盾", item: "木の盾" },
-      { slot: "兜", item: t("detail.equipNone") },
-      { slot: "小手", item: t("detail.equipNone") },
-      { slot: "装飾", item: t("detail.equipNone") },
+      // M20（UI-80）: 装備中の品の instanceId（押すと品の段）。空きは null
+      { slot: "武器", item: "長剣", instanceId: "i1" },
+      { slot: "防具", item: "革鎧", instanceId: "i2" },
+      { slot: "盾", item: "木の盾", instanceId: "i3" },
+      { slot: "兜", item: t("detail.equipNone"), instanceId: null },
+      { slot: "小手", item: t("detail.equipNone"), instanceId: null },
+      { slot: "装飾", item: t("detail.equipNone"), instanceId: null },
     ]);
   });
 
@@ -98,7 +112,7 @@ describe("UI-59 詳細", () => {
     const iid = cursedDagger(s, false);
     s.party[0]!.equipment.weapon = iid;
     const d = formatCharacter(s.party[0]!, data, S, nameOf(s));
-    expect(d.equipment[0]).toEqual({ slot: "武器", item: "短い刃？" });
+    expect(d.equipment[0]).toEqual({ slot: "武器", item: "短い刃？", instanceId: iid });
     s.items[iid]!.identified = true;
     expect(formatCharacter(s.party[0]!, data, S, nameOf(s)).equipment[0]!.item).toBe("短剣");
     const dead = formatCharacter({ ...s.party[0]!, life: "dead", hp: 0, status: ["poison"] }, data, S, nameOf(s));
@@ -553,5 +567,81 @@ describe("UI-68 キャラクター画面の呪文の説明（M10）", () => {
     v.render(d);
     expect(el.children.filter((c) => c.className === "detail-spell-note")).toEqual([]);
     expect(el.children.filter((c) => c.className === "detail-spell").length).toBe(member.knownSpells.length);
+  });
+});
+
+describe("UI-80（M20）キャラクター画面の品の当たり判定と注記", () => {
+  const sheetOf = (s: GameState) => {
+    const ch = s.party[0]!;
+    return formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch), campMenu(s, data)!.members[0]!, { tappable: true, inventoryFold: 0 });
+  };
+
+  test("UI-80/UI-10 押せる矩形: 装備の行（品のある枠だけ。x4・幅 232）と所持品の枠（x4 / x122・幅 114）。高さ 12 で行の上端 − 1 から（上下に 1px ずつ重なる）", () => {
+    const s = newGame(1); // アルド: 長剣 i1・革鎧 i2・木の盾 i3、所持品 薬草 i4
+    const d = sheetOf(s);
+    expect(characterHitRects(d, 240)).toEqual([
+      { x: 4, y: 83, w: 232, h: 12, tap: { kind: "item", instanceId: "i1" } },
+      { x: 4, y: 93, w: 232, h: 12, tap: { kind: "item", instanceId: "i2" } },
+      { x: 4, y: 103, w: 232, h: 12, tap: { kind: "item", instanceId: "i3" } },
+      { x: 4, y: 153, w: 114, h: 12, tap: { kind: "item", instanceId: "i4" } },
+    ]);
+    for (const r of characterHitRects(d, 240)) expect(r.h).toBe(CHARACTER_HIT_H);
+    const rects = characterHitRects(d, 240);
+    // 行の中・上下の 1px（重なる所は中心の近い方）
+    expect(characterHitAt(rects, 10, 88)).toEqual({ kind: "item", instanceId: "i1" });
+    expect(characterHitAt(rects, 10, 83)).toEqual({ kind: "item", instanceId: "i1" });
+    expect(characterHitAt(rects, 10, 93)).toEqual({ kind: "item", instanceId: "i1" }); // 重なり（i1 の中心 89 が近い）
+    expect(characterHitAt(rects, 10, 95)).toEqual({ kind: "item", instanceId: "i2" });
+    expect(characterHitAt(rects, 235, 100)).toEqual({ kind: "item", instanceId: "i2" });
+    // 空きの枠（兜）・右の列の空き・行の外は null
+    expect(characterHitAt(rects, 10, 118)).toBeNull();
+    expect(characterHitAt(rects, 130, 158)).toBeNull();
+    expect(characterHitAt(rects, 2, 88)).toBeNull();
+    expect(characterHitAt(rects, 10, 40)).toBeNull();
+  });
+
+  test("UI-80 所持品が 9 件以上なら tappable の画面は 7 件と「ほか {n}」（more。押すと次の分）。最後の分の「ほか」は最初の分の件数", () => {
+    const s = structuredClone(newGame(1));
+    const c1 = s.party[0]!;
+    c1.equipment = { weapon: null, armor: null, shield: null, helm: null, gauntlet: null, accessory: null };
+    for (let i = 0; i < 9; i++) c1.inventory.push(createItemInstance(s, { itemId: "herb", identified: true })); // 計 10 件
+    const member = campMenu(s, data)!.members[0]!;
+    expect(inventoryFoldCount(10)).toBe(2);
+    expect(inventoryFoldCount(8)).toBe(1);
+    const f0 = formatCharacter(c1, data, S, nameOf(s), undefined, member, { tappable: true, inventoryFold: 0 }).inventory;
+    expect(f0.map((x) => x.text)).toEqual([...Array(7).fill("薬草"), t("character.more", { n: 3 })]);
+    expect(f0.slice(0, 7).map((x) => x.instanceId)).toEqual(c1.inventory.slice(0, 7));
+    expect(f0[7]).toEqual({ text: "ほか 3", dim: false, more: true });
+    const f1 = formatCharacter(c1, data, S, nameOf(s), undefined, member, { tappable: true, inventoryFold: 1 }).inventory;
+    expect(f1.map((x) => x.instanceId ?? x.text)).toEqual([...c1.inventory.slice(7), "ほか 7"]);
+    expect(characterHitAt(characterHitRects({ ...formatCharacter(c1, data, S, nameOf(s), undefined, member, { tappable: true }) }, 240), 130, 188)).toEqual({ kind: "more" });
+    // tappable でなければ今どおり（8 件目を「ほか {n}」。押せない）
+    const plain = formatCharacter(c1, data, S, nameOf(s), undefined, member).inventory;
+    expect(plain[7]).toEqual({ text: "ほか 3", dim: false });
+    expect(foldedCells([1, 2], 5, (x) => ({ text: `${x}`, dim: false }), (n) => `+${n}`)).toEqual([
+      { text: "1", dim: false },
+      { text: "2", dim: false },
+    ]);
+  });
+
+  test("UI-80 所持品の見出しの右に character.tapHint「押すと詳細」（dim・右寄せ・幅 48）。見出しはその左までに切る。tappable でなければ出さない", () => {
+    vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
+    expect(t("character.tapHint")).toBe("押すと詳細");
+    expect(textUnits(t("character.tapHint")) * 4).toBeLessThanOrEqual(TAP_HINT_W);
+    // 最悪の見出し（上限 10・装備 6）は見出しの幅（232 − 48）に収まる
+    expect(textUnits(t("character.inventoryHeading", { used: 10, max: 10, equipped: 6 })) * 4).toBeLessThanOrEqual(232 - TAP_HINT_W);
+    const v = createDetailView({ x: 0, y: 16, w: 240, h: 284 });
+    const s = newGame(1);
+    const el = v.el as unknown as FakeEl;
+    const px = (x: string | undefined): number => Number((x ?? "").replace("px", ""));
+    v.render(sheetOf(s));
+    const hint = el.children.find((c) => c.className === "detail-tap-hint")!;
+    expect([px(hint.style["left"]) + 1, px(hint.style["top"]) + 1, px(hint.style["width"])]).toEqual([188, 144, 48]);
+    expect([hint.textContent, hint.style["color"], hint.style["textAlign"]]).toEqual(["押すと詳細", "var(--c-dim)", "right"]);
+    expect(px(el.children.find((c) => c.className === "detail-inventory-head")!.style["width"])).toBe(232 - 48);
+    const ch = s.party[0]!;
+    v.render(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch), campMenu(s, data)!.members[0]!));
+    expect(el.children.some((c) => c.className === "detail-tap-hint")).toBe(false);
+    expect(px(el.children.find((c) => c.className === "detail-inventory-head")!.style["width"])).toBe(232);
   });
 });

@@ -33,6 +33,7 @@ import {
   UPDATE_NOTICE,
   type Rect,
 } from "../src/presenter/layout";
+import { characterHitRects, type CharacterDetail } from "../src/presenter/views/detail";
 import { data } from "./helpers/core";
 
 const W = data.config.stage.width;
@@ -180,7 +181,8 @@ describe("layout", () => {
     // 例外はヘッダーの設定ボタン、M8.5 の街のログ・帯・一覧の行、M16 の迷宮・戦闘の広い一覧の行だけで、ヘッダーの 2 つはヘッダーの中に収まる
     // M16（UI-59）: キャラクター画面のヘッダーの ◀ ▶（header.prev / header.next）を足した。追補 H-2 から押せる矩形は 24×32（幅 24 < 30 なので例外のまま）で、
     // 見た目の枠（prevMark / nextMark）がヘッダーの中に収まる
-    expect(TOUCH_EXCEPTIONS).toEqual(["header.settings", "header.log", "header.prev", "header.next", "town.band", "town.list", "listWide"]);
+    // M20（UI-80）: キャラクター画面の品の行 character.item（高さ 12。SCREENS には入れず、下の UI-80 のテストで確かめる）
+    expect(TOUCH_EXCEPTIONS).toEqual(["header.settings", "header.log", "header.prev", "header.next", "town.band", "town.list", "listWide", "character.item"]);
     for (const k of ["prevMark", "nextMark"] as const) expect(inside(L.header[k], regions(data.config.ui.layout, W).header), k).toBe(true);
     expect(inside(T.header.log, regions(data.config.ui.layout, W).header)).toBe(true);
     expect(inside(HEADER_SETTINGS, regions(data.config.ui.layout, W).header)).toBe(true);
@@ -597,6 +599,23 @@ describe("layout", () => {
       "ui.layout: character panel (height 227) is lower than 274",
       "ui.layout: message region (height 13) has no text line",
     ]);
+  });
+
+  test("UI-80 / UI-10（M20）キャラクター画面の品の行（character.item）は UI-10 の例外で高さ 12（12 論理 px 以上）。装備 6 行と所持品 8 枠を埋めても layout.character の内側で、◀ ▶・操作の枠に重ならない", () => {
+    expect(isTouchException("character.item")).toBe(true);
+    expect(isTouchException("character.item[13]")).toBe(true);
+    const full = {
+      equipment: Array.from({ length: 6 }, (_, i) => ({ slot: "", item: "", instanceId: `e${i}` })),
+      inventory: Array.from({ length: 8 }, (_, i) => ({ text: "", dim: false, instanceId: `i${i}` })),
+    } as unknown as CharacterDetail;
+    const rects = characterHitRects(full, L.character.w);
+    expect(rects).toHaveLength(14);
+    for (const r of rects) {
+      const st: Rect = { x: L.character.x + r.x, y: L.character.y + r.y, w: r.w, h: r.h };
+      expect(Math.min(st.w, st.h)).toBeGreaterThanOrEqual(12);
+      expect(inside(st, L.character), JSON.stringify(st)).toBe(true);
+      for (const o of [L.header.prev, L.header.next, ...L.campGrid]) expect(overlaps(st, o), `${JSON.stringify(st)} ${JSON.stringify(o)}`).toBe(false);
+    }
   });
 
   test("UI-59 / UI-10（M16 追補 H-2）キャラクター画面の ◀ ▶ の押せる矩形は 24×32（y0..31）で、見た目の枠はヘッダーの帯の 24×16。y16..31 は押せない名前の行だけ", () => {

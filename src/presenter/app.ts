@@ -31,6 +31,7 @@ import { bestiaryView, equipPreview, itemDetail, memberSheet, shopEquipCompare, 
 import type { ShopEquipCompare } from "../core/rules/item-view";
 import { sanStage } from "../core/rules/san";
 import { fieldItemMenu } from "../core/rules/items";
+import { itemActions } from "../core/rules/item-actions";
 import { endingRecordView } from "../core/rules/progress";
 import { classChangeOptions, townMenu } from "../core/rules/town";
 import { upgradePreview } from "../core/rules/upgrade";
@@ -109,6 +110,7 @@ import { createSettingsScreen, settingsItems, settingsKeyIndex, type SettingsCon
 import { isStandalone, type StandaloneEnv } from "./pwa-env";
 import {
   campCanCycle,
+  campItemActions,
   campCharacterOpen,
   campCycle,
   campEntries,
@@ -1118,6 +1120,7 @@ export function createApp(o: {
       summary: campSummary(state, data),
       identifyMpCost: data.config.identify.mpCost,
       bestiary: bestiaryView(state, data), // UI-79（M18）
+      itemActions: campItemActions(menu, (memberId, instanceId) => itemActions(state, data, memberId, instanceId)), // UI-80（M20）
     };
   };
 
@@ -1225,7 +1228,12 @@ export function createApp(o: {
     const ch = state.party.find((x) => x.id === p.memberId);
     const member = m.menu.members.find((x) => x.id === p.memberId);
     if (ch === undefined || member === undefined) return { kind: "text", title: "" };
-    const view = { ...(p.inventoryPage !== undefined ? { inventoryPage: p.inventoryPage } : {}), ...(p.spellPage !== undefined ? { spellPage: p.spellPage } : {}) };
+    const view = {
+      ...(p.inventoryPage !== undefined ? { inventoryPage: p.inventoryPage } : {}),
+      ...(p.spellPage !== undefined ? { spellPage: p.spellPage } : {}),
+      // UI-80（M20）: キャラクター画面そのものは品を押せる（注記と畳んだ所持品）
+      ...(p.tappable === true ? { tappable: true, inventoryFold: p.inventoryFold ?? 0 } : {}),
+    };
     const detail = formatCharacter(ch, data, strings, (iid) => itemDisplayName(state, data, iid), memberSheet(state, data, ch), member, view);
     // UI-68（M10）: 呪文の説明の段と対象の段は、呪文の枠（行 20〜26）を core の spellInfo の説明に置き換える
     const info = p.spellInfo === undefined ? null : spellInfo(state, data, p.memberId, p.spellInfo);
@@ -1237,8 +1245,22 @@ export function createApp(o: {
       kind: "character",
       detail,
       focusSlot: p.focusSlot === null ? null : SLOT_ORDER.indexOf(p.focusSlot),
+      tappable: p.tappable === true,
     };
   };
+
+  /**
+   * UI-80（M20）: キャンプのパネルのタップ。品を押せるキャラクター画面（camp の characterTarget）のときだけ、項目と同じく
+   * 会話の箱を打ち切ってから品の段（openItem）か所持品の次の分（pageTurn）を選ぶ
+   */
+  const tapCampPanel = (lx: number, ly: number): void =>
+    guard(() => {
+      if (overlay !== "camp") return;
+      const hit = play.camp.characterTarget(lx, ly);
+      if (hit === null) return;
+      play.talk.flush();
+      chooseCamp(hit.kind === "item" ? { kind: "openItem", instanceId: hit.instanceId } : { kind: "pageTurn", delta: 1 });
+    });
 
   /**
    * UI-59 / UI-33 / UI-30（M16）: キャラクター画面で前後の人へ（← → キー・左右スワイプ・ヘッダーの ◀ ▶）。キャラクター画面でなければ何もしない。
@@ -2562,6 +2584,8 @@ export function createApp(o: {
       // UI-47: 街の会話の箱と施設の絵のタップで会話を進める
       onTap(play.talk.el, () => tapTalk());
       onTap(play.picture, () => tapTalk());
+      // UI-80（M20）: キャラクター画面の品（装備の行・所持品の枠）を押すと品の段へ、「ほか {n}」は所持品の次の分
+      onTap(play.camp.el, (p) => tapCampPanel(p.lx, p.ly));
       // UI-57: ポインタの記録（capture なので attachStageInput の処理より先に走る）。debug パネルを開いている間は記録しない
       attachPointerLog(stage, { log: pointerLog, scale, now: () => performance.now(), enabled: () => overlay !== "debug" });
       const stageInput = attachStageInput(stage, {

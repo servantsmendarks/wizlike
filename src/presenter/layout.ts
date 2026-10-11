@@ -27,9 +27,11 @@ export const TOUCH_MIN_LOGICAL = 30;
 
 /**
  * UI-10 の最小寸法を満たさなくてよい矩形の名前（dungeonLayout の header.settings、header.log（M8.5 の townLayout。M16 から dungeonLayout にも）・
- * キャラクター画面のヘッダーの ◀ ▶ header.prev / header.next（M16。当たり判定 24×32。追補 H-2）・パーティの帯 town.band（40×22）・一覧の行 town.list（高さ 22）・迷宮と戦闘の広い一覧の行 listWide（高さ 22。M16）。添字付きの名前 "town.band[0]" なども含む）
+ * キャラクター画面のヘッダーの ◀ ▶ header.prev / header.next（M16。当たり判定 24×32。追補 H-2）・パーティの帯 town.band（40×22）・一覧の行 town.list（高さ 22）・迷宮と戦闘の広い一覧の行 listWide（高さ 22。M16）・
+ * キャラクター画面の品の行 character.item（M20。UI-80。装備の行と所持品の枠の当たり判定は高さ 12（行の 10px の上下に 1px）。views/detail の characterHitRects）。
+ * 添字付きの名前 "town.band[0]" なども含む）
  */
-export const TOUCH_EXCEPTIONS: readonly string[] = ["header.settings", "header.log", "header.prev", "header.next", "town.band", "town.list", "listWide"];
+export const TOUCH_EXCEPTIONS: readonly string[] = ["header.settings", "header.log", "header.prev", "header.next", "town.band", "town.list", "listWide", "character.item"];
 
 /** UI-10: name が TOUCH_EXCEPTIONS の名前そのものか、その添字付き（"town.band[2]"） */
 export function isTouchException(name: string): boolean {
