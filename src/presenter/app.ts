@@ -774,8 +774,16 @@ export function createApp(o: {
             return;
           }
           case "buy":
-            // TW-05: 買った後も持たせる者の一覧にとどまる（再生の最後の sync で townMenu を取り直す）
-            void run({ type: "town.shop", action: { kind: "buy", memberId: e.memberId, itemId: e.itemId } });
+            // TW-05（M18 5-2）: 持たせる者を押したら確認の段（問いは見出し。送るのは「買う」の buyYes）
+            goTownPage({ buyAsk: { itemId: e.itemId, memberId: e.memberId } });
+            return;
+          case "buyYes":
+            // TW-05: 買った後は持たせる者の一覧に戻ってとどまる（続けて買える。再生の最後の sync で townMenu を取り直す）
+            townPage = { shop: e.itemId };
+            // rejected（と再生中で捨てられた）なら再生の最後の sync が無いので、戻した段をここで描き直す
+            void run({ type: "town.shop", action: { kind: "buy", memberId: e.memberId, itemId: e.itemId } }).then((r) => {
+              if ((r === null || r.rejected) && !isBusy()) syncControls();
+            });
             return;
           case "pick":
           case "ccClass":
@@ -804,7 +812,16 @@ export function createApp(o: {
             return;
           // M7: 売る・買い戻す・鑑定・預ける・引き出すの後も同じページにとどまる（品が消えたページは sync の townRepair で 1 つ上へ）
           case "sell":
-            void run({ type: "town.shop", action: { kind: "sell", memberId: e.memberId, instanceId: e.instanceId } });
+            // IT-61（M18 5-2）: 品を押したら確認の段（問いは見出し。送るのは「売る」の sellYes）
+            goTownPage({ sellAsk: { memberId: e.memberId, instanceId: e.instanceId } });
+            return;
+          case "sellYes":
+            // IT-61: 売った後はその者の品の一覧に戻ってとどまる（品が無くなれば sync の townRepair で売る者の段へ）
+            townPage = { sell: e.memberId };
+            // rejected（と再生中で捨てられた）なら再生の最後の sync が無いので、戻した段をここで描き直す
+            void run({ type: "town.shop", action: { kind: "sell", memberId: e.memberId, instanceId: e.instanceId } }).then((r) => {
+              if ((r === null || r.rejected) && !isBusy()) syncControls();
+            });
             return;
           case "buyback":
             void run({ type: "town.shop", action: { kind: "buyback", memberId: e.memberId, instanceId: e.instanceId } });

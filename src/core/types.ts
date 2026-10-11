@@ -817,8 +817,11 @@ export type TownMenu = {
     equipment: TownMenuShopEquipment[];
     /** 持たせる候補（buy / buyback）= life alive の者（並び順）。slotsFree = slotsMaxOf（CH-71。M17 から素の力の補正を含む）− 装備数 − inventory（CH-71。0 なら inventory full） */
     members: TownMenuShopMember[];
-    /** IT-61: 全員（並び順。life を問わない）の、inventory の品（inventory の順。2026-10-05 から未鑑定も含む） */
-    sellable: { memberId: string; name: string; items: TownMenuShopSellRow[] }[];
+    /**
+     * IT-61: 全員（並び順。life を問わない）の、inventory の品（inventory の順。2026-10-05 から未鑑定も含む）。
+     * total は items の price の合計（TW-05 / UI-52。M18 5-2。「誰の品を売る」の行の計）
+     */
+    sellable: { memberId: string; name: string; items: TownMenuShopSellRow[]; total: number }[];
     /** IT-63: 買い戻しのストック（売った順） */
     buyback: TownMenuShopBuybackRow[];
     /** IT-65: 全員（並び順。life を問わない）の inventory の未鑑定の品（鑑定料は品ごと） */

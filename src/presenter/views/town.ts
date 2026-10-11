@@ -18,6 +18,7 @@ export type TempleService = "resurrect" | "cure" | "uncurse";
  * 街のページ。{ temple: s } は寺院のサービス s の対象の一覧。店（M7）:
  * shop は店の最初の一覧、shopBuy は売り物、{ shop: itemId } はその品を持たせる者、shopSell は売る者、{ sell: memberId } はその者の売れる品、
  * shopBuyback は買い戻しの品、{ buyback: instanceId } はその品を持たせる者、shopIdentify は鑑定する品。
+ * M18（5-2）: { buyAsk } は買うの確認（品と持たせる者）、{ sellAsk } は売るの確認（持ち主と品）。答えは 買う・売る / やめる。
  * 銀行（TW-10 / TW-16。M17）: bank は 金を預ける / 金を引き出す / 品を預ける / 品を引き出す / すべて預ける、bankDeposit・bankWithdraw は金の額の行、
  * storageDeposit は品を預ける者、{ deposit: memberId } はその者の品、storageWithdraw は倉庫の品、{ withdraw: instanceId } はその品を受け取る者
  * （M7〜M16 の倉庫の入口 storage（店の一覧の中）は M17 で bank に置き換えた）。
@@ -49,6 +50,9 @@ export type TownPage =
   | { buyback: string }
   | { deposit: string }
   | { withdraw: string }
+  /** TW-05 / UI-52（M18 5-2）: 買うの確認（持たせる者を押した後）と売るの確認（品を押した後） */
+  | { buyAsk: BuyAskSel }
+  | { sellAsk: SellAskSel }
   | { upSlot: string }
   | { upCat: UpgradeSel }
   | { upConfirm: UpgradeSel }
@@ -56,6 +60,10 @@ export type TownPage =
   | "classChange"
   | { ccClass: string }
   | { ccConfirm: ClassChangeSel };
+/** TW-05（M18 5-2）: 買うの確認の対象（品と持たせる者） */
+export type BuyAskSel = { itemId: string; memberId: string };
+/** IT-61（M18 5-2）: 売るの確認の対象（持ち主と品） */
+export type SellAskSel = { memberId: string; instanceId: string };
 /** TW-17: 強化の選択中の対象（本人・部位）と触媒 */
 export type UpgradeSel = { memberId: string; slot: EquipSlot; picked: UpgradeCatalystRef[] };
 /** TW-09（M10）: 転職の確認の対象（者と転職先） */
@@ -82,13 +90,17 @@ export type TownEntry =
   /** TW-05: 店の売り物の行（名前と価格。払えなければ disabled）。押すと { shop: itemId } のページへ */
   | { kind: "shopItem"; itemId: string; label: string; disabled: boolean }
   /**
-   * TW-05: 持たせるメンバーの行（名前と所持枠の空き。空きが無いか払えなければ disabled）。押すと town.shop の buy。
+   * TW-05: 持たせるメンバーの行（名前と所持枠の空き。空きが無いか払えなければ disabled）。押すと確認の段 { buyAsk }（M18 5-2。M17 までは town.shop の buy）。
    * M16 追補 H-4: 職業で装備できない者（core の canEquip に無い者）は disabled で、reason（理由の文。shopCannotEquipText）を持つ。
    * 押すと command を送らず reason を語って品の一覧（shopBuy）へ戻る。装備できる者・消耗品の行は null
    */
   | { kind: "buy"; itemId: string; memberId: string; label: string; disabled: boolean; reason: string | null }
-  /** IT-61: 売る品の行（名前と売値）。押すと town.shop の sell */
+  /** IT-61: 売る品の行（名前と売値）。押すと確認の段 { sellAsk }（M18 5-2。M17 までは town.shop の sell） */
   | { kind: "sell"; memberId: string; instanceId: string; label: string; disabled: boolean }
+  /** TW-05（M18 5-2）: 買うの確認の「買う」。押すと town.shop の buy（持たせる者の段の行と同じ条件で disabled） */
+  | { kind: "buyYes"; itemId: string; memberId: string; label: string; disabled: boolean }
+  /** IT-61（M18 5-2）: 売るの確認の「売る」。押すと town.shop の sell */
+  | { kind: "sellYes"; memberId: string; instanceId: string; label: string; disabled: boolean }
   /** IT-63: 買い戻した品を持たせる者の行。押すと town.shop の buyback */
   | { kind: "buyback"; memberId: string; instanceId: string; label: string; disabled: boolean }
   /** IT-65: 鑑定する品の行（持ち主・未鑑定の名前・料金。払えなければ disabled）。押すと town.shop の identify */
@@ -175,6 +187,8 @@ export function townParent(page: TownPage): TownPage | null {
     if ("shop" in page) return "shopBuy";
     if ("sell" in page) return "shopSell";
     if ("buyback" in page) return "shopBuyback";
+    if ("buyAsk" in page) return { shop: page.buyAsk.itemId }; // M18（5-2）: やめるで持たせる者の段へ
+    if ("sellAsk" in page) return { sell: page.sellAsk.memberId }; // M18（5-2）: やめるで品の段へ
     if ("deposit" in page) return "storageDeposit";
     if ("upSlot" in page) return "upgrade";
     if ("upCat" in page) return { upSlot: page.upCat.memberId };
@@ -202,6 +216,19 @@ export function townRepair(page: TownPage, menu: TownMenu): TownPage {
   }
   if ("sell" in page) return menu.shop.sellable.some((m) => m.memberId === page.sell) ? page : "shopSell";
   if ("buyback" in page) return menu.shop.buyback.some((r) => r.instanceId === page.buyback) ? page : "shopBuyback";
+  if ("buyAsk" in page) {
+    // M18（5-2）: 品が売り物から消えた → 売り物の一覧、持たせる者がいない → 持たせる者の段
+    const sel = page.buyAsk;
+    if (!menu.shop.items.some((r) => r.itemId === sel.itemId) && !menu.shop.equipment.some((r) => r.itemId === sel.itemId)) return "shopBuy";
+    return menu.shop.members.some((m) => m.memberId === sel.memberId) ? page : { shop: sel.itemId };
+  }
+  if ("sellAsk" in page) {
+    // M18（5-2）: 品が手元から消えた → その者の品の段（その者もいなければ売る者の段）
+    const sel = page.sellAsk;
+    const m = menu.shop.sellable.find((x) => x.memberId === sel.memberId);
+    if (m === undefined) return "shopSell";
+    return m.items.some((r) => r.instanceId === sel.instanceId) ? page : { sell: sel.memberId };
+  }
   if ("deposit" in page) return menu.storage.members.some((m) => m.memberId === page.deposit) ? page : "storageDeposit";
   if ("withdraw" in page) return menu.storage.items.some((r) => r.instanceId === page.withdraw) ? page : "storageWithdraw";
   if ("upSlot" in page) return menu.upgrade.members.some((m) => m.memberId === page.upSlot) ? page : "upgrade";
@@ -368,7 +395,13 @@ export function townEntries(
   if (page === "shopSell") {
     // IT-61: 全員（並び順。life を問わない）。売れる品（所持品。未鑑定も売れる）が無い者は disabled
     const rows = menu.shop.sellable.map(
-      (m): TownEntry => ({ kind: "pick", to: { sell: m.memberId }, label: s(strings, "town.shop.sellWho", { name: m.name, count: m.items.length }), disabled: m.items.length === 0 }),
+      // M18（5-2）: 行に売値の計（core の sellable[].total）
+      (m): TownEntry => ({
+        kind: "pick",
+        to: { sell: m.memberId },
+        label: s(strings, "town.shop.sellWho", { name: m.name, count: m.items.length, gold: m.total }),
+        disabled: m.items.length === 0,
+      }),
     );
     return [...rows, back];
   }
@@ -415,7 +448,8 @@ export function townEntries(
   if (page === "storageDeposit") {
     // TW-16: 全員（並び順。life を問わない）。所持品の無い者は disabled
     const rows = menu.storage.members.map(
-      (m): TownEntry => ({ kind: "pick", to: { deposit: m.memberId }, label: s(strings, "town.shop.sellWho", { name: m.name, count: m.items.length }), disabled: m.items.length === 0 }),
+      // M18（5-2）: 売るの行（town.shop.sellWho）に計が付いたので、預けるの行は計の無い town.storage.depositWho（M17 までの sellWho と同じ文）
+      (m): TownEntry => ({ kind: "pick", to: { deposit: m.memberId }, label: s(strings, "town.storage.depositWho", { name: m.name, count: m.items.length }), disabled: m.items.length === 0 }),
     );
     return [...rows, back];
   }
@@ -498,6 +532,24 @@ export function townEntries(
       (r): TownEntry => ({ kind: "sell", memberId, instanceId: r.instanceId, label: s(strings, "town.shop.sellRow", { name: r.name, gold: r.price }), disabled: false }),
     );
     return orEmpty(rows, "town.shop.sell.none");
+  }
+  if ("buyAsk" in page) {
+    // TW-05（M18 5-2）: 買う（持たせる者の段のその者の行と同じ条件で dim）→ やめる（持たせる者の段へ）。問いは見出し（townHeadingText）
+    const sel = page.buyAsk;
+    const row = townEntries({ shop: sel.itemId }, menu, strings).find((e) => e.kind === "buy" && e.memberId === sel.memberId);
+    const ok = row !== undefined && row.kind === "buy" && !row.disabled;
+    return [
+      { kind: "buyYes", itemId: sel.itemId, memberId: sel.memberId, label: s(strings, "town.shop.buyYes"), disabled: !ok },
+      { kind: "back", label: s(strings, "common.cancel") },
+    ];
+  }
+  if ("sellAsk" in page) {
+    // IT-61（M18 5-2）: 売る → やめる（品の段へ）。問いは見出し（townHeadingText）
+    const sel = page.sellAsk;
+    return [
+      { kind: "sellYes", memberId: sel.memberId, instanceId: sel.instanceId, label: s(strings, "town.shop.sellYes"), disabled: false },
+      { kind: "back", label: s(strings, "common.cancel") },
+    ];
   }
   if ("buyback" in page) {
     // IT-63: 持たせる者（生きている者。所持枠の空きが無い者・払えないときは disabled）
@@ -620,7 +672,7 @@ export function townFacility(page: TownPage): TownFacility {
     if ("temple" in page) return "temple";
     if ("ccClass" in page || "ccConfirm" in page) return "tavern"; // TW-09（M10）
     if ("upSlot" in page || "upCat" in page || "upConfirm" in page) return "dark";
-    return "shop"; // shop / sell / buyback / deposit / withdraw（deposit / withdraw は銀行。M17）
+    return "shop"; // shop / sell / buyback / buyAsk / sellAsk（M18）/ deposit / withdraw（deposit / withdraw は銀行。M17）
   }
   switch (page) {
     case "menu":
@@ -667,6 +719,8 @@ export function townHeading(page: TownPage): string {
     if ("ccConfirm" in page) return "town.ask.classChangeConfirm";
     if ("shop" in page || "buyback" in page) return "town.shop.whom";
     if ("sell" in page) return "town.ask.sellItem";
+    if ("buyAsk" in page) return "town.ask.buyConfirm"; // M18（5-2）。townHeadingText が品・者・料金を入れた問いにする
+    if ("sellAsk" in page) return "town.ask.sellConfirm"; // M18（5-2）。townHeadingText が品と売値を入れた問いにする
     if ("deposit" in page) return "town.ask.depositItem";
     return "town.storage.whom"; // withdraw
   }
@@ -770,6 +824,8 @@ export function upgradeCatalystLabel(c: TownMenuUpgradeCatalyst, on: boolean, st
  * - 強化の確認（{ upConfirm }）: core の upgradePreview の値で「成功率 {rate}（大成功 {great}）料金 {fee}G。鍛えるか？」、払えなければ問いの代わりに
  *   「…。所持金が足りない。」（town.upgrade.ask / askNoGold）。対象と触媒の数は答えのボタンのラベル（town.upgrade.do）。preview が null なら town.ask.upConfirm
  * - 転職の確認（{ ccConfirm }）: 「{name}を{cls}にする。レベルは 1 に戻る。よいか。」（town.classChange.confirm）。cc が null なら town.ask.classChangeConfirm
+ * - 買うの確認（{ buyAsk }。M18 5-2）: town.shop.buyAsk{name, item, cost}（core の townMenu.shop の名前と価格）。品か者が見つからなければ town.ask.buyConfirm
+ * - 売るの確認（{ sellAsk }。M18 5-2）: town.shop.sellAsk{item, gold}（core の sellable の名前と売値）。見つからなければ town.ask.sellConfirm
  * - 酒場で救済の申し出（TW-30。menu.mercy が null でない）の間: town.ask.mercy（答えは救済の行）
  * - 施設メニューで救済の申し出の間: town.ask.menuMercy（酒場へ行けば戻してもらえる、と施設の問い。街に入るときの語り town.mercy.offer は問いを含まない）
  * - 銀行の一覧と金の額の段（M17）: townHeading のキーに預金 {bank} と所持金 {gold}（core の townMenu.bank）を入れた文
@@ -790,6 +846,17 @@ export function townHeadingText(
     const name = cc.members.find((x) => x.memberId === sel.memberId)?.name ?? "";
     const cls = cc.options.find((o) => o.classId === sel.classId)?.name ?? "";
     return s(strings, "town.classChange.confirm", { name, cls });
+  }
+  if (typeof page === "object" && "buyAsk" in page) {
+    const sel = page.buyAsk;
+    const item = [...menu.shop.items, ...menu.shop.equipment].find((r) => r.itemId === sel.itemId);
+    const m = menu.shop.members.find((x) => x.memberId === sel.memberId);
+    if (item !== undefined && m !== undefined) return s(strings, "town.shop.buyAsk", { name: m.name, item: item.name, cost: item.price });
+  }
+  if (typeof page === "object" && "sellAsk" in page) {
+    const sel = page.sellAsk;
+    const r = menu.shop.sellable.find((x) => x.memberId === sel.memberId)?.items.find((x) => x.instanceId === sel.instanceId);
+    if (r !== undefined) return s(strings, "town.shop.sellAsk", { item: r.name, gold: r.price });
   }
   if (page === "tavern" && menu.mercy !== null) return s(strings, "town.ask.mercy");
   if (page === "menu" && menu.mercy !== null) return s(strings, "town.ask.menuMercy");

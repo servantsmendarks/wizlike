@@ -872,12 +872,12 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
       ],
       // IT-61: 消耗品は floor(price × 0.5)（薬草 5・解毒草 7・帰還の糸 25）。装備中の品は inventory に無いので出ない
       sellable: [
-        { memberId: "c1", name: "アルド", items: [{ instanceId: "i4", name: "薬草", price: 5 }] },
-        { memberId: "c2", name: "ベルク", items: [] },
-        { memberId: "c3", name: "キリ", items: [{ instanceId: "i10", name: "薬草", price: 5 }] },
-        { memberId: "c4", name: "ドナ", items: [{ instanceId: "i13", name: "解毒草", price: 7 }] },
-        { memberId: "c5", name: "エル", items: [{ instanceId: "i15", name: "帰還の糸", price: 25 }] },
-        { memberId: "c6", name: "フィン", items: [{ instanceId: "i18", name: "薬草", price: 5 }] },
+        { memberId: "c1", name: "アルド", items: [{ instanceId: "i4", name: "薬草", price: 5 }], total: 5 },
+        { memberId: "c2", name: "ベルク", items: [], total: 0 },
+        { memberId: "c3", name: "キリ", items: [{ instanceId: "i10", name: "薬草", price: 5 }], total: 5 },
+        { memberId: "c4", name: "ドナ", items: [{ instanceId: "i13", name: "解毒草", price: 7 }], total: 7 },
+        { memberId: "c5", name: "エル", items: [{ instanceId: "i15", name: "帰還の糸", price: 25 }], total: 25 },
+        { memberId: "c6", name: "フィン", items: [{ instanceId: "i18", name: "薬草", price: 5 }], total: 5 },
       ],
       buyback: [],
       identify: { items: [] }, // 2026-10-05: 鑑定料は品ごと（IT-65）になり、全体の fee / affordable を外した
@@ -923,6 +923,29 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
     expect(m.sellable.find((x) => x.memberId === "c2")!.items).toEqual([{ instanceId: unid, name: "剣？", price: 50 }]);
     expect(m.identify).toEqual({ items: [{ memberId: "c2", memberName: "ベルク", instanceId: unid, name: "剣？", fee: 25, affordable: true }] });
     expect(m.buyback).toEqual([{ instanceId: u, name: "上質な影法師の剣", price: 1200, affordable: false }]);
+  });
+
+  test("TW-05/UI-52（M18 5-2）townMenu.shop.sellable[].total は売れる品の売値の合計（品が無ければ 0。未鑑定は見た目の売値で数える）。乱数を使わず state を変えない", () => {
+    const s = town({}, 150);
+    // 上質な長剣 +2（力 +1 の段階 1）: floor(100 × 0.5 × (1 + 0.5 × 2)) + 20 = 120。未鑑定の長剣は floor(100 × 0.5) = 50
+    const fine = createItemInstance(s, { itemId: "long_sword", level: 2, rarity: "fine", options: [{ optionId: "str", tier: 1, value: 1 }], identified: true });
+    const unk = createItemInstance(s, { itemId: "long_sword", identified: false });
+    member(s, "c2").inventory.push(fine, unk);
+    const before = structuredClone(s);
+    const m = townMenu(s, data)!.shop;
+    expect(m.sellable.map((x) => [x.memberId, x.total])).toEqual([
+      ["c1", 5],
+      ["c2", 170],
+      ["c3", 5],
+      ["c4", 7],
+      ["c5", 25],
+      ["c6", 5],
+    ]);
+    for (const x of m.sellable) expect(x.total).toBe(x.items.reduce((n, r) => n + r.price, 0));
+    member(s, "c1").inventory = [];
+    expect(townMenu(s, data)!.shop.sellable[0]).toEqual({ memberId: "c1", name: "アルド", items: [], total: 0 });
+    member(s, "c1").inventory = before.party[0]!.inventory;
+    expect(s).toEqual(before);
   });
 });
 

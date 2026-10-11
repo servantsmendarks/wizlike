@@ -5,6 +5,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { campMenu } from "../src/core/rules/camp";
 import { classChangeOptions, townMenu } from "../src/core/rules/town";
+import { shopPrice } from "../src/core/rules/shop";
 import { execute } from "../src/core/engine";
 import { upgradePreview } from "../src/core/rules/upgrade";
 import { cloneState, createItemInstance, itemDisplayName } from "../src/core/state";
@@ -93,6 +94,8 @@ const ALL_PAGES: readonly TownPage[] = [
   { buyback: "i1" },
   { deposit: "c1" },
   { withdraw: "i1" },
+  { buyAsk: { itemId: "herb", memberId: "c1" } },
+  { sellAsk: { memberId: "c1", instanceId: "i1" } },
   "classChange",
   { ccClass: "c1" },
   { ccConfirm: { memberId: "c1", classId: "mage" } },
@@ -503,6 +506,8 @@ describe("UI-52 街のページ", () => {
       [{ buyback: "i1" }, "shop"],
       [{ deposit: "c1" }, "shop"],
       [{ withdraw: "i1" }, "shop"],
+      [{ buyAsk: { itemId: "herb", memberId: "c1" } }, "shop"],
+      [{ sellAsk: { memberId: "c1", instanceId: "i1" } }, "shop"],
       ["classChange", "tavern"],
       [{ ccClass: "c1" }, "tavern"],
       [{ ccConfirm: { memberId: "c1", classId: "mage" } }, "tavern"],
@@ -898,7 +903,8 @@ describe("UI-52 街のページ", () => {
     }
   });
 
-  test("UI-52/IT-61 売るは全員（life を問わない）の行（名前と売れる品の数。無ければ disabled）→ その者の売れる品（名前と売値）。押すと sell", () => {
+  // M18（5-2）: 売る者の行に売値の計（「計 {gold}G」）を足した。品の行を押すと確認の段（{ sellAsk }）へ（下の M18 の describe）
+  test("UI-52/IT-61 売るは全員（life を問わない）の行（名前と売れる品の数と売値の計。無ければ disabled）→ その者の売れる品（名前と売値）", () => {
     // 初期の所持品: c1 薬草・c2 なし・c3 薬草・c4 解毒草・c5 帰還の糸・c6 薬草（どれも鑑定済み）。c3 を dead にしても行は出る
     const s = town({ c3: { life: "dead", hp: 0 } });
     // c2 に 上質な長剣 +2（力 +1 の段階 1）と未鑑定の長剣（2026-10-05 から見た目の売値で売れるので数える）を持たせる
@@ -907,12 +913,12 @@ describe("UI-52 街のページ", () => {
     s.party[1]!.inventory.push(fine, unk);
     const m = menuOf(s);
     expect(townEntries("shopSell", m, S)).toEqual([
-      { kind: "pick", to: { sell: "c1" }, label: "アルド　1品", disabled: false },
-      { kind: "pick", to: { sell: "c2" }, label: "ベルク　2品", disabled: false },
-      { kind: "pick", to: { sell: "c3" }, label: "キリ　1品", disabled: false },
-      { kind: "pick", to: { sell: "c4" }, label: "ドナ　1品", disabled: false },
-      { kind: "pick", to: { sell: "c5" }, label: "エル　1品", disabled: false },
-      { kind: "pick", to: { sell: "c6" }, label: "フィン　1品", disabled: false },
+      { kind: "pick", to: { sell: "c1" }, label: "アルド　1品　計 5G", disabled: false },
+      { kind: "pick", to: { sell: "c2" }, label: "ベルク　2品　計 170G", disabled: false },
+      { kind: "pick", to: { sell: "c3" }, label: "キリ　1品　計 5G", disabled: false },
+      { kind: "pick", to: { sell: "c4" }, label: "ドナ　1品　計 7G", disabled: false },
+      { kind: "pick", to: { sell: "c5" }, label: "エル　1品　計 25G", disabled: false },
+      { kind: "pick", to: { sell: "c6" }, label: "フィン　1品　計 5G", disabled: false },
       back,
     ]);
     // IT-61: floor(100 × 0.5 × (1 + 0.5 × 2)) = 100 + 正のオプション 段階 1 の 20 = 120。未鑑定の長剣は見た目の品種の floor(100 × 0.5) = 50
@@ -925,7 +931,7 @@ describe("UI-52 街のページ", () => {
     expect(townEntries({ sell: "c1" }, m, S)).toEqual([{ kind: "sell", memberId: "c1", instanceId: s.party[0]!.inventory[0]!, label: "薬草　5G", disabled: false }, back]);
     // 売れる品が無い者は disabled、そのページは「売れる物がない」
     const bare = town();
-    expect(townEntries("shopSell", menuOf(bare), S)[1]).toEqual({ kind: "pick", to: { sell: "c2" }, label: "ベルク　0品", disabled: true });
+    expect(townEntries("shopSell", menuOf(bare), S)[1]).toEqual({ kind: "pick", to: { sell: "c2" }, label: "ベルク　0品　計 0G", disabled: true });
     expect(townEntries({ sell: "c2" }, menuOf(bare), S)).toEqual([{ kind: "empty", label: "売れる物がない", disabled: true }, back]);
     expect(townParent({ sell: "c2" })).toBe("shopSell");
     expect(townPageIntro("shopSell", m)).toEqual(["town.shop.sellIntro"]);
@@ -1519,5 +1525,101 @@ describe("TW-36 開始の語り（M12.5）の文の長さ", () => {
       const t = S[`opening.speech.${n}`]!;
       expect(kinsokuLines(t, 28).length, `${n}: ${t}`).toBeLessThanOrEqual(2);
     }
+  });
+});
+
+describe("TW-05/UI-52/IT-61（M18 5-2）店の確認と売値", () => {
+  const cancel: TownEntry = { kind: "back", label: S["common.cancel"]! };
+
+  test("TW-05/UI-52（M18 5-2）買うの確認 { buyAsk }: 見出しは「{name}に{item}を持たせる。{cost}G で買うか？」、答えは 買う（持たせる者の段のその者の行と同じ条件で dim）/ やめる（持たせる者の段へ）", () => {
+    const m = menuOf(town());
+    const herb: TownPage = { buyAsk: { itemId: "herb", memberId: "c1" } };
+    expect(townHeadingText(herb, m, S)).toBe("アルドに薬草を持たせる。10G で買うか？");
+    expect(townEntries(herb, m, S)).toEqual([{ kind: "buyYes", itemId: "herb", memberId: "c1", label: "買う", disabled: false }, cancel]);
+    expect(S["common.cancel"]).toBe("やめる");
+    expect(townParent(herb)).toEqual({ shop: "herb" });
+    expect(townHeading(herb)).toBe("town.ask.buyConfirm");
+    expect(townPageIntro(herb, m)).toEqual([]);
+    // 装備の品は core の表示名と買値（流通レベル 0 の長剣 100G）
+    const sword: TownPage = { buyAsk: { itemId: "long_sword", memberId: "c2" } };
+    expect(townHeadingText(sword, m, S)).toBe("ベルクに長剣を持たせる。100G で買うか？");
+    expect(townEntries(sword, m, S)[0]).toEqual({ kind: "buyYes", itemId: "long_sword", memberId: "c2", label: "買う", disabled: false });
+    // 装備できない者（ドナ）・所持枠の空きが無い者・払えないときの「買う」は dim（持たせる者の段の行と同じ）
+    expect(townEntries({ buyAsk: { itemId: "long_sword", memberId: "c4" } }, m, S)[0]).toMatchObject({ kind: "buyYes", disabled: true });
+    const full = town();
+    for (let i = 0; i < 5; i++) full.party[5]!.inventory.push(createItemInstance(full, { itemId: "herb", identified: true }));
+    expect(menuOf(full).shop.members.find((x) => x.memberId === "c6")!.slotsFree).toBe(0);
+    expect(townEntries({ buyAsk: { itemId: "herb", memberId: "c6" } }, menuOf(full), S)[0]).toMatchObject({ kind: "buyYes", disabled: true });
+    expect(townEntries({ buyAsk: { itemId: "herb", memberId: "c1" } }, menuOf(town({}, 5)), S)[0]).toMatchObject({ kind: "buyYes", disabled: true });
+  });
+
+  test("IT-61/UI-52（M18 5-2）売るの確認 { sellAsk }: 見出しは「{item}を {gold}G で売る。売るか？」（core の売値）、答えは 売る / やめる（その者の品の段へ）", () => {
+    const s = town();
+    const fine = createItemInstance(s, { itemId: "long_sword", level: 2, rarity: "fine", options: [{ optionId: "str", tier: 1, value: 1 }], identified: true });
+    s.party[1]!.inventory.push(fine);
+    const m = menuOf(s);
+    const page: TownPage = { sellAsk: { memberId: "c2", instanceId: fine } };
+    expect(townHeadingText(page, m, S)).toBe("上質な長剣 +2を 120G で売る。売るか？");
+    expect(townEntries(page, m, S)).toEqual([{ kind: "sellYes", memberId: "c2", instanceId: fine, label: "売る", disabled: false }, cancel]);
+    expect(townParent(page)).toEqual({ sell: "c2" });
+    expect(townHeading(page)).toBe("town.ask.sellConfirm");
+    expect(townPageIntro(page, m)).toEqual([]);
+    expect(townFacility(page)).toBe("shop");
+    expect(townPlace(page)).toBe("town.place.shop");
+  });
+
+  test("TW-05/IT-61/UI-52（M18 5-2）確認の段の直し（townRepair）と、品や者が見つからないときの見出し（town.ask.buyConfirm / sellConfirm）", () => {
+    const s = town({ c3: { life: "dead", hp: 0 } });
+    const m = menuOf(s);
+    const ok: TownPage = { buyAsk: { itemId: "herb", memberId: "c1" } };
+    expect(townRepair(ok, m)).toBe(ok);
+    // 売り物に無い品 → 売り物の一覧、持たせる者にいない（死んだ）者 → 持たせる者の段
+    expect(townRepair({ buyAsk: { itemId: "no_such", memberId: "c1" } }, m)).toBe("shopBuy");
+    expect(townRepair({ buyAsk: { itemId: "herb", memberId: "c3" } }, m)).toEqual({ shop: "herb" });
+    expect(townHeadingText({ buyAsk: { itemId: "herb", memberId: "c3" } }, m, S)).toBe(S["town.ask.buyConfirm"]);
+    const herbOf1 = s.party[0]!.inventory[0]!;
+    const sell: TownPage = { sellAsk: { memberId: "c1", instanceId: herbOf1 } };
+    expect(townRepair(sell, m)).toBe(sell);
+    // 売った品が手元から消えた → その者の品の段、者がいない → 売る者の段
+    expect(townRepair({ sellAsk: { memberId: "c1", instanceId: "i999" } }, m)).toEqual({ sell: "c1" });
+    expect(townRepair({ sellAsk: { memberId: "zz", instanceId: herbOf1 } }, m)).toBe("shopSell");
+    expect(townHeadingText({ sellAsk: { memberId: "c1", instanceId: "i999" } }, m, S)).toBe(S["town.ask.sellConfirm"]);
+    expect(samePage(ok, { buyAsk: { itemId: "herb", memberId: "c1" } })).toBe(true);
+    expect(samePage(ok, { buyAsk: { itemId: "herb", memberId: "c2" } })).toBe(false);
+  });
+
+  test("TW-05/IT-61/UI-52（M18 5-2）最悪の値（6 字の名前・最も長い品名・5 桁の額・2 桁の数）でも、確認の問いは見出しの 1 行（全角 28 字）、売る者の行は一覧の行の幅（39 単位）、答えのラベルは全角 4 字に収まる", () => {
+    const name = "ろくもじのな";
+    const longest = (xs: string[]): string => [...xs].sort((a, b) => textUnits(b) - textUnits(a))[0]!;
+    // 買う: 店の売り物は消耗品と、流通レベル（最大は dungeons の onClear.shopLevel の最大）の汎用装備（通常・Lv 付きの表示名）
+    const maxLevel = Math.max(...data.dungeons.map((d) => d.onClear.shopLevel));
+    const plus = formatMessage(S["item.plus"]!, { n: maxLevel });
+    const shopName = longest([...data.items.map((it) => it.name), ...data.equipmentBases.map((b) => `${b.name}${plus}`)]);
+    const maxCost = Math.max(
+      ...data.items.map((it) => it.price ?? 0),
+      ...data.equipmentBases.map((b) => shopPrice(b, maxLevel, data)),
+    );
+    expect(String(maxCost).length).toBeLessThanOrEqual(5);
+    const buy = formatMessage(S["town.shop.buyAsk"]!, { name, item: shopName, cost: 99999 });
+    expect(buy).not.toContain("{");
+    expect(kinsokuLines(buy, 28), buy).toHaveLength(1);
+    // 売る: 手元の品は未鑑定の名前、希少度の接頭辞 + ベース + 2 桁の Lv、希少度の接頭辞 + ユニークの名前
+    const prefix = longest(["fine", "rare", "legendary"].map((r) => S[`item.rarity.${r}`]!));
+    const item = longest([
+      ...data.items.flatMap((it) => [it.name, it.unidentifiedName ?? it.name]),
+      ...data.equipmentBases.flatMap((b) => [b.unidentifiedName, `${prefix}${b.name}${formatMessage(S["item.plus"]!, { n: 12 })}`]),
+      ...data.uniques.map((u) => `${prefix}${u.name}`),
+    ]);
+    const sell = formatMessage(S["town.shop.sellAsk"]!, { item, gold: 99999 });
+    expect(sell).not.toContain("{");
+    expect(kinsokuLines(sell, 28), sell).toHaveLength(1);
+    const row = formatMessage(S["town.shop.sellWho"]!, { name, count: 99, gold: 99999 });
+    expect(row).not.toContain("{");
+    expect(textUnits(row), row).toBeLessThanOrEqual(39);
+    for (const k of ["town.shop.buyYes", "town.shop.sellYes", "common.cancel", "town.ask.buyConfirm", "town.ask.sellConfirm"]) {
+      expect(Array.from(S[k]!).length, k).toBeLessThanOrEqual(k.startsWith("town.ask") ? 28 : 4);
+    }
+    // 預けるの行（銀行。M17）は計の無い文のまま
+    expect(formatMessage(S["town.storage.depositWho"]!, { name: "アルド", count: 1 })).toBe("アルド　1品");
   });
 });

@@ -314,14 +314,14 @@ export function shopMenu(state: GameState, data: GameData): TownMenu["shop"] {
       };
     }),
     members: alive.map((ch) => ({ memberId: ch.id, name: ch.name, slotsFree: slotsFreeOf(ch, data) })),
-    sellable: state.party.map((ch) => ({
-      memberId: ch.id,
-      name: ch.name,
-      items: ch.inventory.flatMap((id) => {
+    sellable: state.party.map((ch) => {
+      const items = ch.inventory.flatMap((id) => {
         const inst = state.items[id];
         return inst !== undefined ? [{ instanceId: id, name: itemDisplayName(state, data, id), price: shopSellPrice(inst, data) }] : [];
-      }),
-    })),
+      });
+      // TW-05 / UI-52（M18 5-2）: 「誰の品を売る」の行の計（売れる品の売値の合計）
+      return { memberId: ch.id, name: ch.name, items, total: items.reduce((n, r) => n + r.price, 0) };
+    }),
     buyback: state.buyback.map((id) => {
       const inst = state.items[id];
       if (inst === undefined) throw new Error(`shopMenu: unknown buyback item ${id}`);

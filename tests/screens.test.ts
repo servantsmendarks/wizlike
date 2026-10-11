@@ -701,7 +701,8 @@ describe("入力と Command", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
     expect(body).toMatch(/case "pick":\s*case "ccClass":\s*goTownPage\(e\.to\);\s*return;/);
-    for (const kind of ["sell", "buyback", "identify"]) {
+    // M18（5-2）: sell は確認の段（{ sellAsk }）を経る（下の M18 のテスト）。以前は sell もここで送っていた
+    for (const kind of ["buyback", "identify"]) {
       expect(body).toMatch(
         new RegExp(`case "${kind}":\\s*void run\\(\\{ type: "town\\.shop", action: \\{ kind: "${kind}", memberId: e\\.memberId, instanceId: e\\.instanceId \\} \\}\\);\\s*return;`),
       );
@@ -715,6 +716,22 @@ describe("入力と Command", () => {
     expect(body).toMatch(/case "bank":\s*void run\(\{ type: "town\.bank", amount: e\.amount \}\);\s*return;/);
     expect(body).toMatch(/case "depositAll":\s*void run\(\{ type: "town\.storage", action: "depositAll", memberId: e\.memberId \}\);\s*return;/);
     expect(app).toMatch(/townPage = townRepair\(townPage, menu\);\s*const ents = townEntries\(townPage, menu, strings, previewOf\(townPage\), classChangeOf\(townPage\)\);/);
+  });
+
+  test("TW-05/UI-52/IT-61（M18 5-2）店の買う・売るは確認の段を経ないと town.shop を送らない。持たせる者の行（buy）は { buyAsk }、品の行（sell）は { sellAsk } へ移るだけで、送るのは確認の「買う」（buyYes）・「売る」（sellYes）。送った後は元の段（持たせる者・その者の品）に戻ってとどまる（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const body = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(body).toMatch(/case "buy":\s*goTownPage\(\{ buyAsk: \{ itemId: e\.itemId, memberId: e\.memberId \} \}\);\s*return;/);
+    expect(body).toMatch(/case "sell":\s*goTownPage\(\{ sellAsk: \{ memberId: e\.memberId, instanceId: e\.instanceId \} \}\);\s*return;/);
+    expect(body).toMatch(
+      /case "buyYes":\s*townPage = \{ shop: e\.itemId \};\s*void run\(\{ type: "town\.shop", action: \{ kind: "buy", memberId: e\.memberId, itemId: e\.itemId \} \}\)\.then\(\(r\) => \{\s*if \(\(r === null \|\| r\.rejected\) && !isBusy\(\)\) syncControls\(\);\s*\}\);\s*return;/,
+    );
+    expect(body).toMatch(
+      /case "sellYes":\s*townPage = \{ sell: e\.memberId \};\s*void run\(\{ type: "town\.shop", action: \{ kind: "sell", memberId: e\.memberId, instanceId: e\.instanceId \} \}\)\.then\(\(r\) => \{\s*if \(\(r === null \|\| r\.rejected\) && !isBusy\(\)\) syncControls\(\);\s*\}\);\s*return;/,
+    );
+    // buy / sell の command を送るのはそれぞれ 1 か所だけ（確認の答えの case）
+    expect(app.match(/kind: "buy", memberId/g)).toHaveLength(1);
+    expect(app.match(/kind: "sell", memberId/g)).toHaveLength(1);
   });
 
   // M8.5: M7 の広げた一覧（townListTall・setList の tall・listTall.backdrop）は UI-13 の街の配置に置き換えた
