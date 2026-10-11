@@ -1,7 +1,8 @@
 // rules/combat-plan.ts（オート入力・行動計画・行動順・敵の対象・オート解除）のテスト。純粋。
 import { describe, expect, test } from "vitest";
 import { autoInput, autoInterruptReason, enemyTargetIds, orderActors, richestGroup, snapMembers, toPlan } from "../src/core/rules/combat-plan";
-import { memberById } from "../src/core/state";
+import { equipStats } from "../src/core/rules/equip-stats";
+import { createItemInstance, memberById } from "../src/core/state";
 import type { BattleAction, Character, GameState } from "../src/core/types";
 import { dataWith, dived, withBattle } from "./helpers/battle";
 import { data, withChar } from "./helpers/core";
@@ -136,6 +137,17 @@ describe("CB-46 オートの既定の呪文（M19）", () => {
     // 半分以上でも唱える MP が無ければ既定（雷光 9 > MP 8）
     const short = withChar(bolt, 4, { mp: 8, mpMax: 10 });
     expect(autoInput(short, data, ch(short, "c5"))).toEqual({ type: "defend" });
+  });
+
+  test("CB-46 MP の半分は実効の mpMax（装備の mp_max +6 で 10 → 16。MP 7 は半分未満で既定、8 で火矢）", () => {
+    const s = structuredClone(full(twoGroups()));
+    const id = createItemInstance(s, { itemId: "charm", identified: true, options: [{ optionId: "mp_max", tier: 3, value: 6 }] });
+    ch(s, "c5").equipment.accessory = id;
+    expect(equipStats(s, data, ch(s, "c5")).mpMax).toBe(16);
+    const seven = withChar(s, 4, { mp: 7 });
+    expect(autoInput(seven, data, ch(seven, "c5"))).toEqual({ type: "defend" });
+    const eight = withChar(s, 4, { mp: 8 });
+    expect(autoInput(eight, data, ch(eight, "c5"))).toEqual({ type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 1 } });
   });
 
   test("CB-46 司教は治癒 → 攻撃呪文の順。職業に系統が無ければ（転職で呪文を覚えている戦士など）呪文を選ばない", () => {

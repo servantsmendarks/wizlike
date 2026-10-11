@@ -207,7 +207,7 @@ export type Config = {
     directDropGoldDice: string;
   };
   /**
-   * CB-46（M19）【仮】: オートの既定（lastBattleInput が null のとき）の呪文。治癒は hp < hpMax × healBelowRatio の味方がいるとき、
+   * CB-46（M19）【仮】: オートの既定（lastBattleInput が null のとき、または前回の入力が使えず既定に落ちるとき）の呪文。治癒は hp < hpMax × healBelowRatio の味方がいるとき、
    * 攻撃呪文は生存の敵の総数が attackSpellMinEnemies 以上で mp >= mpMax × attackSpellMpRatio のとき
    */
   auto: { healBelowRatio: number; attackSpellMinEnemies: number; attackSpellMpRatio: number };
