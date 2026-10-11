@@ -1713,8 +1713,8 @@ describe("TW-04/UI-52（M18 5-3）宿屋の見出しの 2 行目と泊まった�
   });
 
   test("TW-04 泊まった後の一言 town.inn.restored / restoredMp は会話の箱の 1 行（28 字）に収まる", () => {
-    expect(S["town.inn.restored"]).toBe("全員の HP と MP が戻った。");
-    expect(S["town.inn.restoredMp"]).toBe("全員の MP が戻った。");
+    expect(S["town.inn.restored"]).toBe("生きている者の HP と MP が戻った。");
+    expect(S["town.inn.restoredMp"]).toBe("生きている者の MP が戻った。");
     for (const k of ["town.inn.restored", "town.inn.restoredMp"]) expect(kinsokuLines(S[k]!, 28), k).toHaveLength(1);
   });
 });

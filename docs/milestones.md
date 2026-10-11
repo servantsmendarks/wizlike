@@ -791,7 +791,7 @@ M2〜M5 の実機確認の結果（`docs/decisions.md` の 2026-10-04 の行）�
     - 5-9 性格の恩恵・耐性が効いた瞬間の一言（新 ID EV-44。追補）: 強欲の金・強欲の良い宝・無鉄砲の恐怖の半減・慎重の罠と仲間の負傷の半減で core が message。乱数は引かない。
     - 5-10 簡易作成の性格ボタン（UI-51。追補）: 1 回目のタップで今の性格の説明、2 回目で切り替え。
     - 5-11 設定にビルドの短いハッシュ（UI-57 / SV-40。追補）: vite の define `__WIZLIKE_BUILD__`（GITHUB_SHA の 7 字 → git rev-parse --short HEAD → "dev"）。設定の見出しの右端に「版 {hash}」を薄い色で（ユーザーの「末尾」から位置を変えたことは承認済み）。
-    - 5-12 敵グループの番号の札（UI-54。設計書 §12。2-5 の丸数字をやめる）: 戦闘の絵の左上に SVG の小さな札（7×7 の枠に数字）。battle.groupLabel は「{name} ×{count}」、battle.targetGroup は「{n}. {name} {count}体」に戻し、battle.groupNo と groupNo は消す。2 グループ時のラベルの折り返しも確かめ、規則を UI-54 に（札が実機で読めなければ「{n}: {name} ×{count}」に切り替え、実機の担当が decisions に書く）。
+    - 5-12 敵グループの番号の札（UI-54。設計書 §12。2-5 の丸数字をやめる）: 戦闘の絵の左上に SVG の小さな札（7×7 の枠に数字。実装は 9×9（線の内側 7×7）。decisions 2026-10-11）。battle.groupLabel は「{name} ×{count}」、battle.targetGroup は「{n}. {name} {count}体」に戻し、battle.groupNo と groupNo は消す。2 グループ時のラベルの折り返しも確かめ、規則を UI-54 に（札が実機で読めなければ「{n}: {name} ×{count}」に切り替え、実機の担当が decisions に書く）。
     - 5-13 鍛えるの前後が同じ値のときの文（TW-17。設計書 §13）: before と after が同じなら town.upgrade.previewSame「成功で {kind} は変わらない（+{n} で {next}）」。core の upgradePreview に nextChangeAt（{ levels; value } | null）を足す。乱数なし。
   - 対象外（設計書 §6。D5 で v3 へ）: 束に無い第 2 回の観察。一覧は checklist §17 の「束に無い（v3 へ）」の行。
 - 群と作業の順（設計書 §8 と §10 の追記。各群は別の workflow。各コミット単体で typecheck と test が通る。仕様の文・strings / config・テストは同じコミット）:

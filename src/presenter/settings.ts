@@ -65,6 +65,17 @@ export function snapAutoBeat(ms: number): number {
 /** UI-57: 設定画面の文字速度の選択肢（ms/字。0 = 即時。入力欄の選択肢なのでコードの定数。debug パネルの -/+ は SETTING_RANGES のまま） */
 export const TEXT_SPEED_CHOICES = [0, 15, 30, 60] as const;
 
+/**
+ * UI-57（M18。設計 5-7）: 文字速度の選択肢の名前（strings の鍵）。選択肢と同じ所に置き、型で全選択肢の鍵を必須にする
+ * （選択肢を変えて鍵を足し忘れると typecheck が落ちる。レビューの指摘で views/settings.ts から移した）
+ */
+export const TEXT_SPEED_LABEL: Readonly<Record<(typeof TEXT_SPEED_CHOICES)[number], string>> = {
+  0: "settings.textSpeed.instant",
+  15: "settings.textSpeed.fast",
+  30: "settings.textSpeed.normal",
+  60: "settings.textSpeed.slow",
+};
+
 /** UI-57: ms より大きい最小の選択肢、無ければ先頭（0）。0 → 15 → 30 → 60 → 0 */
 export function nextTextSpeed(ms: number): number {
   for (const c of TEXT_SPEED_CHOICES) if (c > ms) return c;

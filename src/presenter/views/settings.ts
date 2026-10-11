@@ -12,7 +12,7 @@ import type { Action } from "../input/swipe";
 import { onTap } from "../input/tap";
 import { createFileButton } from "../file-io";
 import type { Rect, SettingsLayout } from "../layout";
-import { nextAutoBeat, nextBeatAdvance, nextInputMode, nextTextSpeed, nextVolume, type Settings, type SettingsStore } from "../settings";
+import { TEXT_SPEED_LABEL, nextAutoBeat, nextBeatAdvance, nextInputMode, nextTextSpeed, nextVolume, type Settings, type SettingsStore } from "../settings";
 import { formatMessage } from "./message";
 
 export type SettingsKey = "skipAnimations" | "textSpeed" | "autoBeatMs" | "inputMode" | "beatAdvance";
@@ -26,18 +26,11 @@ export const VOLUME_KEYS: readonly VolumeKey[] = ["musicVolume", "sfxVolume"];
 const tr = (strings: Strings, k: string): string => strings[k] ?? k;
 
 /**
- * UI-57（M18。設計 5-7）: 文字速度の選択肢（TEXT_SPEED_CHOICES）の名前。値（保存の形）は ms のまま、表示だけを言葉にする。
+ * UI-57（M18。設計 5-7）: 文字速度の選択肢（TEXT_SPEED_CHOICES）の名前（TEXT_SPEED_LABEL。../settings）。値（保存の形）は ms のまま、表示だけを言葉にする。
  * 選択肢に無い値（debug パネルの -/+ で入れた値）は「{ms}ms」
  */
-const TEXT_SPEED_LABEL: Readonly<Record<number, string>> = {
-  0: "settings.textSpeed.instant",
-  15: "settings.textSpeed.fast",
-  30: "settings.textSpeed.normal",
-  60: "settings.textSpeed.slow",
-};
-
 function textSpeedText(n: number, strings: Strings, ms: (n: number) => string): string {
-  const key = TEXT_SPEED_LABEL[n];
+  const key = (TEXT_SPEED_LABEL as Readonly<Record<number, string | undefined>>)[n];
   return key === undefined ? ms(n) : tr(strings, key);
 }
 

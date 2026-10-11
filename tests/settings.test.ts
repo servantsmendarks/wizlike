@@ -16,6 +16,7 @@ import {
   snapAutoBeat,
   stepSetting,
   TEXT_SPEED_CHOICES,
+  TEXT_SPEED_LABEL,
   nextTextSpeed,
   nextVolume,
   VOLUME_CHOICES,
@@ -262,6 +263,11 @@ describe("UI-57 設定画面の文字速度の選択肢", () => {
     const st = createSettingsStore({ ...D, textSpeed: 30 }, () => {});
     st.set({ textSpeed: nextTextSpeed(st.get().textSpeed) });
     expect(st.get().textSpeed).toBe(60);
+  });
+
+  test("UI-57 TEXT_SPEED_LABEL は TEXT_SPEED_CHOICES と同じ値をちょうど持ち、どの鍵も strings にある", () => {
+    expect(Object.keys(TEXT_SPEED_LABEL).map(Number).sort((a, b) => a - b)).toEqual([...TEXT_SPEED_CHOICES]);
+    for (const c of TEXT_SPEED_CHOICES) expect(data.strings[TEXT_SPEED_LABEL[c]], String(c)).toBeTruthy();
   });
 
   test("SV-24 musicVolume・sfxVolume: 既定は config.ui.musicVolume / sfxVolume。範囲外・非整数・型違いは既定（store の set では今の値のまま）。serialize の末尾。欄の無い古い保存は既定", () => {
