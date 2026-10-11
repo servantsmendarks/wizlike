@@ -82,8 +82,8 @@ export function createRulesOverlay(o: { rect: Rect; close: Rect; strings: String
       backdrop.style.display = onTitle ? "" : "none";
       close.style.display = onTitle ? "" : "none";
       el.style.display = "";
-      // UI-11: 見えてから続きの印を出し直す（隠れている間は寸法が 0）
-      frame.refresh();
+      // UI-11 / UI-77: 見えてから先頭へ戻し、続きの印を出し直す（隠れている間は scrollTop も寸法も効かない。開くたびに先頭から）
+      frame.reveal();
     },
     hide() {
       el.style.display = "none";

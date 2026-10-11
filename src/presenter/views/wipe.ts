@@ -71,8 +71,12 @@ export type WipeLine = string | WipeTermLine;
 export type WipeView = {
   el: HTMLElement;
   render(lines: readonly WipeLine[]): void;
-  /** UI-11（M10.5 追補）: 続きの印を出し直す（el を表示した後） */
-  refresh(): void;
+  /**
+   * UI-11 / UI-77（M19 実機の気づき (a)）: el を表示した後に呼ぶ。窓を先頭へ戻し、続きの印を出し直す。
+   * 隠れている（祖先が display:none）間は scrollTop の設定も寸法も効かないので、render の中の先頭へ戻すだけでは
+   * 前に開いたときの位置で開いてしまう。開くたびに先頭から
+   */
+  reveal(): void;
 };
 
 /** rect はステージ座標の overlay の範囲（layout の wipe）。strings は続きの印の字（scroll.up / scroll.down） */
@@ -149,6 +153,9 @@ export function createWipeView(rect: Rect, strings: Strings): WipeView {
       );
       marks.refresh();
     },
-    refresh: () => marks.refresh(),
+    reveal(): void {
+      view.scrollTop = 0;
+      marks.refresh();
+    },
   };
 }

@@ -1755,6 +1755,53 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     }
   });
 
+  test("UI-77/UI-11（M19 実機の気づき (a)）用語の窓は開くたびに先頭から: 3 頁目まで送って閉じ、もう一度 show しても scrollTop は 0（隠れている間の scrollTop の設定は捨てる偽の DOM で、窓を出してから先頭へ戻すことを見る）", () => {
+    const made: Array<Record<string, unknown>> = [];
+    const hidden = (e: Record<string, unknown> | undefined): boolean => {
+      for (let p = e; p; p = p["parent"] as Record<string, unknown> | undefined) if ((p["style"] as Record<string, string>)["display"] === "none") return true;
+      return false;
+    };
+    const el = (tag: string): Record<string, unknown> => {
+      let top = 0;
+      const e: Record<string, unknown> = { tagName: tag.toUpperCase(), style: {}, className: "", textContent: "", children: [] as unknown[], scrollHeight: 0, clientHeight: 0 };
+      // 実機と同じく、祖先が display:none の間は scrollTop の設定が効かない
+      Object.defineProperty(e, "scrollTop", {
+        get: () => top,
+        set: (v: number) => {
+          if (!hidden(e)) top = v;
+        },
+      });
+      const adopt = (c: unknown): void => void ((c as Record<string, unknown>)["parent"] = e);
+      e["appendChild"] = (c: unknown) => (adopt(c), (e["children"] as unknown[]).push(c), c);
+      e["append"] = (...c: unknown[]) => (c.forEach(adopt), (e["children"] as unknown[]).push(...c));
+      e["replaceChildren"] = (...c: unknown[]) => (c.forEach(adopt), (e["children"] = c));
+      e["addEventListener"] = () => {};
+      e["setAttribute"] = () => {};
+      e["removeAttribute"] = () => {};
+      made.push(e);
+      return e;
+    };
+    vi.stubGlobal("document", { createElement: el, createElementNS: (_ns: string, tag: string) => el(tag) });
+    try {
+      const L = dungeonLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size);
+      const o = createRulesOverlay({ rect: L.wipe, close: L.mapClose, strings: S, onClose: () => {} });
+      const view = made.find((e) => e["className"] === "wipe-view")!;
+      o.show(formatRules(S), true);
+      expect(view["scrollTop"]).toBe(0);
+      view["scrollTop"] = 370; // 3 頁目まで送った
+      expect(view["scrollTop"]).toBe(370);
+      o.hide();
+      o.show(formatRules(S), false);
+      expect(view["scrollTop"]).toBe(0);
+      view["scrollTop"] = 370;
+      o.hide();
+      o.show(formatRules(S), true);
+      expect(view["scrollTop"]).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   test("UI-77 中身: 職業の略称と名前（classes.json と同じ）、HP / MP / SAN（party.*）、SAN の段と状態の略称（party.san.* / party.status.*）、↑（town.band.mark.levelUp）、G、AC、灰、士気、未鑑定、触媒", () => {
     for (const c of data.classes) expect(body.some((l) => typeof l === "string" && l.includes(`${c.abbr} ${c.name}`)), c.id).toBe(true);
     for (const k of ["party.hp", "party.mp", "party.san"]) expect(head(S[k]!), k).toBeDefined();

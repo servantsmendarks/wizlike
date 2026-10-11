@@ -261,10 +261,10 @@ describe("UI-11（M10.5 追補）各窓の続きの印", () => {
     // 表示した後の出し直し（隠れている間は寸法が 0）
     frame.style["display"] = "none";
     view.style["display"] = "none";
-    w.refresh();
+    w.reveal();
     expect(vis(up, down)).toEqual({ up: "hidden", down: "hidden" });
     view.style["display"] = "";
-    w.refresh();
+    w.reveal();
     expect(vis(up, down)).toEqual({ up: "hidden", down: "visible" });
   });
 

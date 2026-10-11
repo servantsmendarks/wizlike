@@ -428,15 +428,15 @@ export function createDungeonScreen(o: {
     },
     showWipe(on: boolean): void {
       wipe.el.style.display = on ? "" : "none";
-      // UI-11（M10.5 追補）: 見えてから続きの印を出し直す（隠れている間は寸法が 0）
-      if (on) wipe.refresh();
+      // UI-11（M10.5 追補）: 見えてから先頭へ戻し、続きの印を出し直す（隠れている間は scrollTop も寸法も効かない）
+      if (on) wipe.reveal();
       // UI-47 / UI-56（M10.5 追補 2・未定-25）: 内訳の間の会話の箱は内訳の下・「街へ」の上。閉じたら（「街へ」・再開）街の広い箱に戻す
       wipeOpen = on;
       syncPanels();
     },
     showEnding(on: boolean): void {
       ending.el.style.display = on ? "" : "none";
-      if (on) ending.refresh();
+      if (on) ending.reveal();
       endingOpen = on;
       syncPanels();
     },
