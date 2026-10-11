@@ -929,21 +929,46 @@ describe("入力と Command", () => {
     expect(tap).toContain("if (play.message.typing()) play.message.rush();");
     expect(tap).not.toContain("openHistory");
     expect(app).toContain("onTap(play.message.el, () => tapMessage());");
-    // 履歴を開く経路はヘッダーのログ（onLog）とキー l の 2 つだけ
-    expect(app.match(/guard\(\(\) => openHistory\(\)\)/g)).toHaveLength(2);
+    // 履歴を開く経路はヘッダーのログ（onLog）とキー l の 2 つだけ。M20（UI-46 / UI-44）: どちらも pressLog を通す
+    // （再生の外は guard、leave の待ちの間だけ guard の例外。以前の期待値は guard(() => openHistory()) が 2 か所）
+    expect(app.match(/guard\(\(\) => openHistory\(\)\)/g)).toHaveLength(1);
+    expect(app.match(/openHistory\(\);/g)).toHaveLength(1);
+    expect(app.match(/pressLog\(\)/g)).toHaveLength(2);
     const core = /const handleActionCore = \(a: Action\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     // 自動歩行を止める処理の後・オートの戦闘の分岐の前（キーは guard が捨てる）
     const stop = core.indexOf("if (stopWalk()) return;");
-    const log = core.indexOf('if (a === "log") {\n      guard(() => openHistory());\n      return;\n    }');
+    const log = core.indexOf('if (a === "log") {\n      pressLog();\n      return;\n    }');
     expect(stop).toBeGreaterThanOrEqual(0);
     expect(log).toBeGreaterThan(stop);
     expect(core.indexOf('route === "battle" && overlay === null')).toBeGreaterThan(log);
   });
 
+  test("UI-46/UI-44（M20）戦闘の外へ出る前の待ち（leave のタップ待ち）の間だけ、ヘッダーのログとキー l で履歴を開ける（guard の例外）。それ以外の再生中は拍のタップ。履歴の間はタップを拍のタップにせず「閉じる」と履歴のキーだけが効き、閉じても待ちは続く（操作領域は下げたまま。ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const press = /const pressLog = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    // leave の待ち（自動歩行の外）なら開く。それ以外の再生中・連鎖の途中は拍のタップ（履歴の間は何もしない）。再生の外は guard
+    expect(press).toMatch(/if \(walking === null && player\.waitingLeave\(\)\) \{\s*openHistory\(\);\s*return;\s*\}/);
+    expect(press).toMatch(/if \(isBusy\(\) \|\| chaining\) \{\s*if \(overlay !== "history"\) player\.tap\(\);\s*return;\s*\}\s*guard\(\(\) => openHistory\(\)\);/);
+    expect(app).toContain('const historyInPlay = (): boolean => overlay === "history" && (isBusy() || chaining);');
+    // 履歴の間はステージのタップを拍のタップにしない（busy を偽にして、押した要素の onTap に回す）
+    expect(app).toContain('busy: () => (isBusy() || chaining) && overlay !== "history",');
+    // 「閉じる」は再生中でも履歴を閉じる
+    expect(app).toContain("onClose: () => (historyInPlay() ? closeHistory() : guard(() => closeOverlay())),");
+    // キー: l の後・再生中の Enter（拍のタップ）より前に、履歴のキーだけを受ける
+    const core = /const handleActionCore = \(a: Action\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    const hk = core.indexOf("if (historyInPlay()) {\n      historyKey(a);\n      return;\n    }");
+    expect(hk).toBeGreaterThan(core.indexOf("pressLog();"));
+    expect(hk).toBeLessThan(core.indexOf('if (isBusy() && a === "confirm") {'));
+    // 閉じたら、再生中は操作領域を下げたまま（syncControls を呼ばない。再生の最後の sync で出し直す）
+    const close = /const closeHistory = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(close).toMatch(/if \(isBusy\(\) \|\| chaining\) \{\s*play\.controls\.setMode\("none"\);\s*return;\s*\}\s*syncControls\(\);/);
+  });
+
   // M10: 帯のタップで開く人は campFirstPage の memberId で渡す（キャラクター画面 UI-59）
   test("UI-13/UI-46/UI-59（M8.5・M10）ヘッダーのログは履歴の画面（openHistory）を開き、帯のタップはその人のキャラクター画面（酒場の状態と同じ部品）を開く。どちらも guard を通す（再生中・自動歩行中は捨てる。ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
-    expect(app).toContain("onLog: () => guard(() => openHistory()),");
+    // M20（UI-46 / UI-44）: pressLog（再生の外は guard を通す。leave の待ちの間だけ例外。以前の期待値は guard(() => openHistory())）
+    expect(app).toContain("onLog: () => pressLog(),");
     // UI-47: 開く前に会話の箱を打ち切る（overlay があれば開かないので打ち切らない）
     expect(app).toMatch(/onBand: \(id\) =>\s*guard\(\(\) => \{\s*if \(overlay !== null\) return;\s*play\.talk\.flush\(\);\s*openCamp\("tavern", "status", id\);\s*\}\),/);
     const open = /const openCamp = \(host: CampHost, open\?: CampOpen, memberId\?: string\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";

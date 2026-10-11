@@ -390,8 +390,9 @@ export function createApp(o: {
     stageOf: (san, sanMax) => sanStage(san, sanMax, data.config),
     maxOf: (ch) => memberSheet(state, data, ch), // CH-14 / UI-12（M7）: 実効の hpMax / mpMax / sanMax（core の memberSheet）
     onSettings: () => guard(() => openSettings()),
-    // UI-46 / UI-13（M8.5。M16 から迷宮・戦闘でも）: ヘッダーのログ（他の overlay があるとき・再生中は捨てる）
-    onLog: () => guard(() => openHistory()),
+    // UI-46 / UI-13（M8.5。M16 から迷宮・戦闘でも）: ヘッダーのログ（他の overlay があるときは捨てる）。
+    // M20（UI-44 の例外）: 再生中も受け（whileBusy）、leave の待ちの間は履歴を開き、それ以外の再生中は拍のタップ
+    onLog: () => pressLog(),
     // UI-59 / UI-33（M16）: キャラクター画面のヘッダーの ◀ ▶ で前後の人
     onCycle: (dir) => guard(() => cycleCamp(dir)),
     // UI-13 / UI-59（M8.5）: 街の帯のタップでその人の状態
@@ -409,7 +410,8 @@ export function createApp(o: {
       onHoldStart: () => handleAction("forward"),
       onHoldEnd: () => repeater.release(),
     },
-    onClose: () => guard(() => closeOverlay()),
+    // UI-46（M20）: leave の待ちの間に開いた履歴は、再生中でも閉じる（閉じても待ちは続く）
+    onClose: () => (historyInPlay() ? closeHistory() : guard(() => closeOverlay())),
     onPick: (g) => guard(() => chooseBattle({ kind: "group", index: g })),
     onMapCell: (p) => guard(() => tapMapCell(p)),
     onMapGo: () => guard(() => goMapPick()),
@@ -1721,6 +1723,25 @@ export function createApp(o: {
     fn();
   };
 
+  /** UI-46 / UI-44（M20）: 再生の途中（leave の待ち）に開いた履歴の画面が出ている */
+  const historyInPlay = (): boolean => overlay === "history" && (isBusy() || chaining);
+
+  /**
+   * UI-46 / UI-44（M20）: ヘッダーのログとキー l。戦闘の外へ出る前の待ち（leave のタップ待ち）の間だけ、再生中でも履歴を開く（guard の例外）。
+   * それ以外の再生中・連鎖の途中は、ほかの所のタップと同じ拍のタップ。再生の外は guard を通す
+   */
+  const pressLog = (): void => {
+    if (walking === null && player.waitingLeave()) {
+      openHistory();
+      return;
+    }
+    if (isBusy() || chaining) {
+      if (overlay !== "history") player.tap();
+      return;
+    }
+    guard(() => openHistory());
+  };
+
   // ---------------------------------------------------------------- タイトル（UI-50）と続きから（SV-50）
   const renderTitle = (): void => {
     const size = data.config.party.size;
@@ -2343,6 +2364,11 @@ export function createApp(o: {
     if (overlay !== "history") return;
     overlay = null;
     play.showHistory(false);
+    // UI-46 / UI-44（M20）: leave の待ちの間に開いた履歴を閉じたら、操作領域は下げたまま（battleEnd の後と同じ。待ちは続き、再生の最後の sync で出し直す）
+    if (isBusy() || chaining) {
+      play.controls.setMode("none");
+      return;
+    }
     syncControls();
   };
 
@@ -2369,12 +2395,24 @@ export function createApp(o: {
     if (watch && uiSounds === n && sig() !== before) playUi("cancel");
   };
 
+  /** UI-33 / UI-46: 履歴の画面のキー。Esc / Enter / 1 で閉じる。↑↓ で 3 行ずつ */
+  const historyKey = (a: Action): void => {
+    if (a === "back" || a === "confirm" || (typeof a === "object" && a.menu === 0)) closeHistory();
+    else if (a === "forward") play.history.scrollBy(-HISTORY_KEY_LINES);
+    else if (a === "around") play.history.scrollBy(HISTORY_KEY_LINES);
+  };
+
   const handleActionCore = (a: Action): void => {
     // UI-25: 自動歩行中のキーは歩行を止めるだけ（その入力は捨てる）
     if (stopWalk()) return;
     // UI-33 / UI-46（M16）: l はヘッダーの「ログ」と同じ（guard を通し、overlay が無いときだけ履歴を開く）
     if (a === "log") {
-      guard(() => openHistory());
+      pressLog();
+      return;
+    }
+    // UI-46（M20）: leave の待ちの間に開いた履歴は、再生中でも履歴のキー（Esc / Enter / 1 で閉じる、↑↓）だけを受ける（拍のタップにしない）
+    if (historyInPlay()) {
+      historyKey(a);
       return;
     }
     // UI-44 の例外: オート中の「オート解除」（Esc / Enter / 1）は再生中も予約として受ける
@@ -2435,10 +2473,7 @@ export function createApp(o: {
       return;
     }
     if (overlay === "history") {
-      // UI-33: Esc / Enter / 1 で閉じる。↑↓ で 3 行ずつ
-      if (a === "back" || a === "confirm" || (typeof a === "object" && a.menu === 0)) closeHistory();
-      else if (a === "forward") play.history.scrollBy(-HISTORY_KEY_LINES);
-      else if (a === "around") play.history.scrollBy(HISTORY_KEY_LINES);
+      historyKey(a);
       return;
     }
     if (overlay === "camp") {
@@ -2600,7 +2635,8 @@ export function createApp(o: {
         deadZone: data.config.input.edgeDeadZonePx,
         width: data.config.stage.width,
         swipeEnabled,
-        busy: () => isBusy() || chaining,
+        // UI-46（M20）: leave の待ちの間に開いた履歴の間は、タップを拍のタップにしない（「閉じる」だけが効き、待ちは続く）
+        busy: () => (isBusy() || chaining) && overlay !== "history",
         onBusyTap: () => player.tap(),
         // 未定-19: 会話の箱が文送りを待つ間は、どこのタップも文送り
         talkWaits: () => talkWaits(),

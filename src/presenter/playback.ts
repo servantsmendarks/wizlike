@@ -230,6 +230,11 @@ export type Player = {
   play(events: readonly GameEvent[], before: GameState, finalState: GameState): Promise<void>;
   /** タップ待ちなら解く。timed の待ち（leave 以外）なら残りを飛ばす（M18）。拍の中なら今の拍の残りを即時にする。拍の外なら UI-43（1 回目で今の文、2 回目で残りすべて） */
   tap(): void;
+  /**
+   * UI-46 / UI-44（M20）: 戦闘の外へ出る前の待ち（leave）のタップ待ちの最中か。この間だけ表示層は履歴の画面を開ける
+   * （閉じても待ちは続く。待ちを解くのは tap()）
+   */
+  waitingLeave(): boolean;
 };
 
 /** UI-45: 拍の待ち方。tap = 手動（タップ待ち）、timed = オート（autoBeatMs） */
@@ -326,6 +331,8 @@ export function createPlayer(deps: PlayerDeps): Player {
   let beatRush = false;
   /** タップ待ちの最中か */
   let waitingTap = false;
+  /** UI-46（M20）: leave のタップ待ちの最中か（waitingLeave） */
+  let leaveTap = false;
   /** UI-45（M18）: 飛ばせる timed の待ちの最中なら、その待ちを打ち切る関数（待っていなければ null） */
   let cutTimed: (() => void) | null = null;
   /**
@@ -647,7 +654,12 @@ export function createPlayer(deps: PlayerDeps): Player {
     if (w === "tap") {
       // leave（戦闘の外への screen の前）は先取りのタップを使わない（連打で結果を素通りしない）
       if (ahead && at !== "leave") return;
-      await waitTap();
+      leaveTap = at === "leave";
+      try {
+        await waitTap();
+      } finally {
+        leaveTap = false;
+      }
     } else if (w === "timed") {
       // M18: 次の拍の前と再生の終わりの待ちは、待ちの間のタップで打ち切る（leave は打ち切らない）
       await waitTimed(deps.settings().autoBeatMs, at !== "leave");
@@ -836,6 +848,9 @@ export function createPlayer(deps: PlayerDeps): Player {
       taps++;
       if (taps >= 2) rushed = true;
       deps.message.rush();
+    },
+    waitingLeave(): boolean {
+      return leaveTap && waitingTap;
     },
   };
 }

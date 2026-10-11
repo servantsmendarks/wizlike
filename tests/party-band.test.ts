@@ -286,6 +286,8 @@ describe("UI-13 帯の DOM・UI-61 施設の絵・ヘッダーのログ", () => 
     expect(L.header.text).toEqual(T.header.text);
     tapSpecOf(log!)!.onTap({ lx: 0, ly: 0 });
     expect(logs).toBe(1);
+    // UI-46 / UI-44（M20）: 再生中も onLog に届く（whileBusy。leave の待ちの間に履歴を開くため。拍のタップに回すかは app が決める）
+    expect(tapSpecOf(log!)!.whileBusy).toBe(true);
   });
 
   test("UI-46 / UI-54（M16）createHeader: 戦闘のターン表示はログの左（x108..155 の 48px）で、その間の問いは 100px。ログは隠れない", () => {

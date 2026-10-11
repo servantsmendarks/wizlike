@@ -986,6 +986,54 @@ describe("UI-45 拍の再生", () => {
     await b.p;
   });
 
+  test("UI-46/UI-44（M20）waitingLeave は戦闘の外へ出る前（leave）のタップ待ちの間だけ真（次の拍の前の待ち・再生の外・オートの timed の leave は偽）。tap() で待ちが解けると偽に戻る", async () => {
+    const flush = async (): Promise<void> => {
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+    };
+    const { deps, log } = fakeDeps();
+    delete deps.beat; // 既定の掛け金（Player.tap() が解く）
+    const player = createPlayer(deps);
+    expect(player.waitingLeave()).toBe(false);
+    const events: GameEvent[] = [
+      beat("system", false),
+      msg("battle.win"),
+      beat("system", false),
+      { kind: "battleEnd", result: "win" },
+      msg("battle.chestLeft"),
+      { kind: "screen", to: "dungeon" },
+    ];
+    expectKnownStringKeys(events);
+    let done = false;
+    const p = player.play(events, battleState(), stateWith(diveAt(1, 1, "N"))).then(() => {
+      done = true;
+    });
+    await flush();
+    // 次の拍の前のタップ待ち: leave ではない
+    expect(names(log)).not.toContain("screens.show");
+    expect(player.waitingLeave()).toBe(false);
+    player.tap();
+    await flush();
+    // 戦闘の外への screen の前のタップ待ち: leave
+    expect(done).toBe(false);
+    expect(player.waitingLeave()).toBe(true);
+    player.tap();
+    await p;
+    expect(names(log)).toContain("screens.show");
+    expect(player.waitingLeave()).toBe(false);
+    // オート（timed）の leave の待ちはタップ待ちではないので偽
+    const f2 = fakeDeps();
+    const p2 = createPlayer(f2.deps);
+    let seen = false;
+    const waitMs = f2.deps.message.waitMs;
+    f2.deps.message.waitMs = async (ms) => {
+      seen = seen || p2.waitingLeave();
+      await waitMs(ms);
+    };
+    await p2.play([beat("system", true), msg("battle.win"), { kind: "screen", to: "dungeon" }], battleState(), stateWith(diveAt(1, 1, "N")));
+    expect(waits(f2.log)).toContain("waitMs 400");
+    expect(seen).toBe(false);
+  });
+
   test("UI-45/UI-57（M16）beatAdvanceWait: 再生の進め方が timed なら手動の待ち（tap）を timed に。leave（戦闘の外への screen と wipe の前）はタップのまま。tap の設定・待たない・オートの待ちは変えない", () => {
     for (const at of ["beat", "end"] as const) {
       expect(beatAdvanceWait("tap", at, "timed")).toBe("timed");

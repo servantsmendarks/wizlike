@@ -148,7 +148,8 @@ export function createHeader(o: {
     font: "inherit",
     lineHeight: `${lg.h - 2}px`,
   });
-  onTap(logBtn, () => o.onLog?.());
+  // UI-46 / UI-44（M20）: 再生中も onLog を呼ぶ（whileBusy）。leave の待ちの間は履歴を開き、それ以外の再生中は拍のタップに回すのは app
+  onTap(logBtn, { onTap: () => o.onLog?.(), whileBusy: true });
   el.appendChild(logBtn);
   // UI-59（M16）: ◀ ▶（既定は隠す。setNav）。ボタンは押せる矩形（透明）、その中に見た目の枠（mark）と三角
   const navButton = (rect: Rect, mark: Rect, dir: 1 | -1): HTMLButtonElement => {

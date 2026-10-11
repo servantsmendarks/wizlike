@@ -5,7 +5,7 @@
 // - 迷宮でスワイプを受ける間（swipeEnabled）は、ボタンの上で始まっても閾値を越えた瞬間に 1 回だけスワイプにする（UI-30）。
 //   左右の非反応帯（UI-34。ステージの左右の全高）で始まった押下はスワイプにしないが、タップは通す。
 // - 前進ボタン（spec.hold）は、動かずに hold.ms() 押し続けたら onHoldStart、離したら onHoldEnd（onTap は呼ばない。UI-31）。
-// - 再生中（busy）のタップは、whileBusy の要素（オート解除）以外はすべて onBusyTap（player.tap()）に回す（UI-44 / UI-45）。
+// - 再生中（busy）のタップは、whileBusy の要素（オート解除・更新の案内・M20 からヘッダーのログ）以外はすべて onBusyTap（player.tap()）に回す（UI-44 / UI-45）。
 // - 再生の外で会話の箱が文送りを待つ間（talkWaits。未定-19）は、押した要素によらずタップを onTalkTap（箱のタップ）に回す。
 // - ステージの外の余白（拡大の余り。outside に document を渡したときだけ）のタップは、ステージの押せない所のタップと同じに扱う
 //   （M16。テストプレイ 2026-10-09 C-1 #2: 会話の箱の下の余白を押しても進まなかった）。箱のタップ・再生中のタップにだけなる。
@@ -22,7 +22,7 @@ export type TapPoint = { lx: number; ly: number };
 
 export type TapSpec = {
   onTap(p: TapPoint): void;
-  /** 再生中でも onTap を呼ぶ（オート解除の枠だけ） */
+  /** 再生中でも onTap を呼ぶ（オート解除の枠・更新の案内・ヘッダーのログ（M20。UI-46）） */
   whileBusy?: boolean;
   /** 前進ボタンだけ: 動かずに ms() 押し続けたら onHoldStart、離したら onHoldEnd（onTap は呼ばない） */
   hold?: { ms(): number; onHoldStart(): void; onHoldEnd(): void };
