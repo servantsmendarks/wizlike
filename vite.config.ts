@@ -2,6 +2,7 @@ import { defineConfig } from "vitest/config";
 import type { Plugin } from "vite";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { execSync } from "node:child_process";
 import { dirname, join, resolve, sep } from "node:path";
 import { precacheUrls, renderServiceWorker } from "./src/pwa/sw-template.ts";
 import { ASSET_DIRS, collectAssets, formatIssue, type AssetFiles } from "./src/build/assets.ts";
@@ -151,11 +152,37 @@ export function gameAssets(o: { scanInVitest?: boolean } = {}): Plugin {
  */
 export const PAGES_BASE = "/wizlike/";
 
+const HEX7 = /^[0-9a-f]{7,}$/;
+
+/**
+ * UI-57 / SV-40（M18。設計 5-11）: 設定の見出しの右端に出すビルドの版（__WIZLIKE_BUILD__）。英小文字の 16 進 7 字か "dev"。
+ * 本番ビルド（command "build"）だけ GITHUB_SHA（Actions）の先頭 7 字 → 無ければ git（`git rev-parse --short HEAD`）の先頭 7 字 → どちらも 16 進でなければ "dev"。
+ * 開発サーバー・preview・vitest では "dev"（git を呼ばない）。git は引数で差し替えてテストする。ビルド時にだけ読む値で、実行時に外へ出ない
+ */
+export function buildId(command: "build" | "serve", env: Record<string, string | undefined>, git: () => string = gitShortHead): string {
+  if (command !== "build") return "dev";
+  const sha = (env.GITHUB_SHA ?? "").trim().toLowerCase();
+  if (HEX7.test(sha)) return sha.slice(0, 7);
+  let head = "";
+  try {
+    head = git().trim().toLowerCase();
+  } catch {
+    return "dev";
+  }
+  return HEX7.test(head) ? head.slice(0, 7) : "dev";
+}
+
+function gitShortHead(): string {
+  return execSync("git rev-parse --short HEAD", { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+}
+
 // 本番ビルド（vite build）とビルド結果の確認（vite preview。command は "serve" で isPreview が真）では PAGES_BASE、
 // 開発サーバー（と vitest）では "/"
 export default defineConfig(({ command, isPreview }) => ({
   base: command === "build" || isPreview === true ? PAGES_BASE : "/",
   plugins: [gameAssets(), serviceWorker()],
+  // UI-57 / SV-40（M18）: ビルドの版。表示層の settings.ts だけが読む（core には渡さない）
+  define: { __WIZLIKE_BUILD__: JSON.stringify(buildId(command, process.env)) },
   test: {
     include: ["tests/**/*.test.ts"],
     environment: "node",

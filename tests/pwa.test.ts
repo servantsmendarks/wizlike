@@ -521,8 +521,51 @@ type ViteConfig = { base?: string; plugins: SwPlugin[] };
 const viteModule = (await import(/* @vite-ignore */ new URL("../vite.config.ts", import.meta.url).href)) as {
   default: (env: { command: "build" | "serve"; mode: string; isPreview?: boolean }) => ViteConfig;
   PAGES_BASE: string;
+  buildId(command: "build" | "serve", env: Record<string, string | undefined>, git?: () => string): string;
 };
 const viteConfig = viteModule.default({ command: "build", mode: "production" });
+
+describe("SV-40 / UI-57 ビルドの版 __WIZLIKE_BUILD__（M18。設計 5-11）", () => {
+  const { buildId } = viteModule;
+  const noGit = (): string => {
+    throw new Error("git must not be called");
+  };
+
+  test("SV-40 本番ビルドは GITHUB_SHA の先頭 7 字（git は呼ばない）", () => {
+    expect(buildId("build", { GITHUB_SHA: "0123456789abcdef0123456789abcdef01234567" }, noGit)).toBe("0123456");
+    expect(buildId("build", { GITHUB_SHA: "ABCDEF0123456789" }, noGit)).toBe("abcdef0");
+  });
+
+  test("SV-40 GITHUB_SHA が無い・16 進でなければ git rev-parse --short HEAD の先頭 7 字、git が失敗・16 進でなければ \"dev\"", () => {
+    expect(buildId("build", {}, () => "8ca9dbd\n")).toBe("8ca9dbd");
+    expect(buildId("build", { GITHUB_SHA: "" }, () => "8ca9dbd12\n")).toBe("8ca9dbd");
+    expect(buildId("build", { GITHUB_SHA: "not-a-sha" }, () => "8ca9dbd")).toBe("8ca9dbd");
+    expect(
+      buildId("build", {}, () => {
+        throw new Error("not a git repository");
+      }),
+    ).toBe("dev");
+    expect(buildId("build", {}, () => "fatal: x")).toBe("dev");
+    expect(buildId("build", {}, () => "abc")).toBe("dev");
+  });
+
+  test("SV-40 開発サーバー・preview・vitest（serve）は \"dev\"（GITHUB_SHA があっても、git は呼ばない）", () => {
+    expect(buildId("serve", { GITHUB_SHA: "0123456789abcdef" }, noGit)).toBe("dev");
+  });
+
+  test("SV-40 vite.config.ts の define に __WIZLIKE_BUILD__（JSON の文字列。7 字の hex か dev）。build と serve の両方", () => {
+    const def = (c: { define?: Record<string, string> }): string => JSON.parse(c.define?.["__WIZLIKE_BUILD__"] ?? "null") as string;
+    expect(def(viteModule.default({ command: "serve", mode: "development" }) as { define?: Record<string, string> })).toBe("dev");
+    expect(def(viteConfig as { define?: Record<string, string> })).toMatch(/^(?:[0-9a-f]{7}|dev)$/);
+  });
+
+  test("SV-40 版を読むのは表示層の設定画面だけ（core は使わない）。宣言は src/vite-env.d.ts", () => {
+    const decl = (nfs.readFileSync as unknown as (p: URL, e: "utf8") => string)(new URL("../src/vite-env.d.ts", import.meta.url), "utf8");
+    expect(decl).toContain("declare const __WIZLIKE_BUILD__: string;");
+    const core = import.meta.glob("../src/core/**/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+    for (const [f, src] of Object.entries(core)) expect(src.includes("__WIZLIKE_BUILD__"), f).toBe(false);
+  });
+});
 
 describe("SV-42 ビルドの sw.js", () => {
   /** 一時の root に dist を作り、プラグインの closeBundle で sw.js を書いて、VERSION と URLS を読む */

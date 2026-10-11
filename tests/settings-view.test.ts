@@ -13,6 +13,8 @@ import {
   settingsRows,
   settingsToggle,
   settingsVolumeText,
+  BUILD_ID,
+  settingsBuildText,
   VOLUME_KEYS,
   type SettingsContext,
 } from "../src/presenter/views/settings";
@@ -421,6 +423,65 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
     view.select(8); // 読み込み（play では dim）
     expect(calls).toEqual(["debug", "close", "export"]);
     expect(input.clicks).toBe(1);
+  });
+});
+
+describe("UI-57 / SV-40 設定の見出しの右端のビルドの版（M18。設計 5-11）", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("UI-57 settingsBuildText は settings.build「版 {hash}」。vitest（serve）では define の値が \"dev\"", () => {
+    expect(S["settings.build"]).toBe("版 {hash}");
+    expect(settingsBuildText("abcdef0", S)).toBe("版 abcdef0");
+    expect(BUILD_ID).toBe("dev");
+    expect(settingsBuildText(BUILD_ID, S)).toBe("版 dev");
+  });
+
+  test("UI-57 見出しと版が見出しの行（x4 y4 232×12）の 1 行に重ならずに収まる（7 字の hex。1 単位 4px）", () => {
+    const L = settingsLayout(regions(data.config.ui.layout, W));
+    const title = textUnits(S["settings.title"]!) * 4;
+    for (const b of ["0123456789abcdef".slice(0, 7), "fffffff", "dev"]) {
+      const w = textUnits(settingsBuildText(b, S)) * 4;
+      expect(title + 8 + w, b).toBeLessThanOrEqual(L.heading.w);
+    }
+  });
+
+  test("UI-57 createSettingsScreen: 見出しと同じ矩形に settings-build の要素を置き、文は「版 {hash}」（タイトルから開いても遊んでいる途中でも同じ）。省けば BUILD_ID", () => {
+    vi.stubGlobal("document", { createElement: (tag: string) => new FakeEl(tag.toUpperCase()) });
+    const L = settingsLayout(regions(data.config.ui.layout, W));
+    const make = (build?: string) =>
+      createSettingsScreen({
+        strings: S,
+        store: createSettingsStore(D, () => {}),
+        layout: L,
+        onExport: () => {},
+        onImportFile: () => {},
+        onDebug: () => {},
+        onRules: () => {},
+        onClose: () => {},
+        ...(build === undefined ? {} : { build }),
+      });
+    for (const ctx of [TITLE, PLAY]) {
+      const view = make("1a2b3c4");
+      view.render(ctx, null);
+      const el = (view.el as unknown as FakeEl).children.find((c) => c.className === "settings-build")!;
+      expect(el.textContent).toBe("版 1a2b3c4");
+      expect([el.style["left"], el.style["top"], el.style["width"], el.style["height"]]).toEqual([`${L.heading.x}px`, `${L.heading.y}px`, `${L.heading.w}px`, `${L.heading.h}px`]);
+    }
+    expect((make().el as unknown as FakeEl).children.find((c) => c.className === "settings-build")!.textContent).toBe("版 dev");
+  });
+
+  test("UI-57 style.css の .settings-build は右寄せ・dim・押せない", async () => {
+    // vitest は CSS の import を空にするので node の fs で読む（@types/node は入れていないので型は手で書く。message.test.ts と同じ）
+    const FS_MODULE = "node:fs";
+    const fs = (await import(/* @vite-ignore */ FS_MODULE)) as { readFileSync(p: URL, enc: "utf8"): string };
+    const styleCss = fs.readFileSync(new URL("../src/presenter/style.css", import.meta.url), "utf8");
+    const css = styleCss.slice(styleCss.indexOf(".settings-build {"));
+    const block = css.slice(0, css.indexOf("}"));
+    expect(block).toContain("text-align: right;");
+    expect(block).toContain("color: var(--c-dim);");
+    expect(block).toContain("pointer-events: none;");
   });
 });
 

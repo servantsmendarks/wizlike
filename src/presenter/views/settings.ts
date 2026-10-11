@@ -2,6 +2,7 @@
 // 上から 見出し → 5 行（演出スキップ・文字速度・オートの速さ・入力・再生の進め方（M16）。押すたびに巡回し、その場で store.set）→ 音量の 1 行（M8。
 // 曲・効果音の 2 つのトグル。0〜10 を巡回）→ 書き出し・読み込み
 // （SV-30〜33。遊んでいる途中は書き出しだけ、タイトルでは読み込みだけ）→ 案内の欄（2 行）→ ホーム画面への追加の案内（SV-40）→
+// 見出しの行の右端にビルドの版（M18。設計 5-11。settings.build「版 {hash}」を dim で右寄せ。値は vite.config.ts の define __WIZLIKE_BUILD__）。
 // 下の段に「開発用」（debug パネルを開く）・「用語」（M18。遊んでいる途中だけ。設定を閉じて用語の一覧を開く）・「閉じる」（UI-11 の固定の位置）。
 // 純粋な部分（settingsRows / settingsToggle / settingsItems / settingsKeyIndex / settingsFileHint）は DOM に触れないので node でテストできる。
 // 書き出し・読み込み・debug パネル・閉じるの中身は app が行う（ここは描いて押されたことを知らせるだけ）。
@@ -158,6 +159,14 @@ export type SettingsScreen = {
   select(i: number): void;
 };
 
+/** UI-57 / SV-40（M18）: ビルドの版（vite.config.ts の define。英小文字の 16 進 7 字か "dev"）。define が無い環境では "dev" */
+export const BUILD_ID: string = typeof __WIZLIKE_BUILD__ === "string" ? __WIZLIKE_BUILD__ : "dev";
+
+/** UI-57 / SV-40（M18）: 見出しの行の右端の文（settings.build「版 {hash}」） */
+export function settingsBuildText(build: string, strings: Strings): string {
+  return formatMessage(tr(strings, "settings.build"), { hash: build });
+}
+
 function place(el: HTMLElement, r: Rect): void {
   Object.assign(el.style, { position: "absolute", left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
 }
@@ -179,6 +188,8 @@ export function createSettingsScreen(o: {
   /** UI-57 / UI-77（M18）: 「用語」が押された（canRules のときだけ呼ぶ） */
   onRules(): void;
   onClose(): void;
+  /** UI-57（M18）: 見出しの右端に出す版。省けば BUILD_ID（テストで差し替える） */
+  build?: string;
 }): SettingsScreen {
   const t = (k: string): string => tr(o.strings, k);
   const L = o.layout;
@@ -204,6 +215,12 @@ export function createSettingsScreen(o: {
   place(heading, L.heading);
   heading.textContent = t("settings.title");
   el.appendChild(heading);
+  // UI-57 / SV-40（M18）: 見出しの行の右端にビルドの版を dim で（表示だけ。押せない）
+  const build = document.createElement("div");
+  build.className = "settings-build";
+  place(build, L.heading);
+  build.textContent = settingsBuildText(o.build ?? BUILD_ID, o.strings);
+  el.appendChild(build);
 
   // 5 行（ラベルは押せない、値の toggle は押せる）
   const rowEls = SETTINGS_ROW_KEYS.map((key, i) => {

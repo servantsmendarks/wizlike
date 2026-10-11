@@ -443,6 +443,15 @@ body {
   color: var(--c-accent);
 }
 
+/* UI-57（M18）: 見出しの行の右端のビルドの版。見出しと同じ矩形に右寄せで重ねる */
+.settings-build {
+  white-space: nowrap;
+  overflow: hidden;
+  text-align: right;
+  color: var(--c-dim);
+  pointer-events: none;
+}
+
 .settings-label {
   line-height: 32px;
   white-space: nowrap;

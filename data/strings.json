@@ -611,6 +611,7 @@
   "settings.off": "切",
   "settings.reset": "既定に戻す",
   "settings.title": "設定",
+  "settings.build": "版 {hash}",
   "settings.textSpeed.instant": "即時",
   "settings.textSpeed.fast": "速い",
   "settings.textSpeed.normal": "普通",
