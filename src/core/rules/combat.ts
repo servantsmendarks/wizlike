@@ -1179,9 +1179,9 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
       // CB-51 / CB-60: 宝箱の判定と罠の抽選は chest.ts（ボス戦では判定しない）。箱を置くだけで、語りは screen{dungeon} の後（presentChest）。
       // IT-53: Lv はこの戦闘で倒した種類の level の最大
       // CB-60（M16）: 箱を置いたら、迷宮に戻る前に戦闘の結果として予告する（battle.chestLeft。乱数なし）
-      if (rollDropChest(ctx, b.origin.inRoom, Math.max(...b.groups.map((g) => monsterOf(data, g.monsterId).level)))) {
-        ctx.events.push({ kind: "message", key: "battle.chestLeft" });
-      }
+      // CB-51（M19 A-5）: 箱が出なかったときも同じ位置に battle.noChest（乱数なし。判定は rollDropChest の 1 回のまま）
+      const left = rollDropChest(ctx, b.origin.inRoom, Math.max(...b.groups.map((g) => monsterOf(data, g.monsterId).level)));
+      ctx.events.push({ kind: "message", key: left ? "battle.chestLeft" : "battle.noChest" });
     }
     if (b.origin.kind === "boss") {
       const dive = requireDive(state);

@@ -1624,6 +1624,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(ks.slice(iScreen + 1)).toEqual(["chestFound", "message:chest.found.drop", "message:chest.prompt"]);
     // CB-60（M16）: 箱を置いたら戦闘の結果の最後（screen dungeon の前）に予告の一文。乱数の順は上の鏡のまま（rollDropChest の位置は同じ）
     expect(ks.slice(ks.indexOf("battleEnd"), iScreen + 1)).toEqual(["battleEnd", "message:battle.win", "message:battle.exp", "message:battle.chestLeft", "screen"]);
+    expect(ks).not.toContain("message:battle.noChest"); // CB-51（M19 A-5）: 箱を置いたら「無かった」は出さない
     expect(r.events).toContainEqual({ kind: "chestFound", source: "drop", danger: 0 });
     // chest.open（罠なし）: 金 chestGoldDice → 2 個目の chance(0) → 1 品目（魔法書。weightedIndex(entries) だけ）→ chestEnd opened
     const cg = rollDice(m, "2d10").total;
@@ -1650,6 +1651,10 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(rc.state.dive!.chest).toBeNull();
     expect(kindsOf(rc.events)).not.toContain("chestFound");
     expect(kindsOf(rc.events)).not.toContain("message:battle.chestLeft");
+    // CB-51（M19 A-5）: 箱が出なかったら、箱を置いたときと同じ位置（金・直接ドロップの後、screen dungeon の前）に battle.noChest。乱数は上の鏡のまま
+    const kc = kindsOf(rc.events);
+    expect(kc.slice(kc.indexOf("battleEnd"), kc.indexOf("screen") + 1)).toEqual(["battleEnd", "message:battle.win", "message:battle.exp", "message:battle.noChest", "screen"]);
+    expect(rc.events).toContainEqual({ kind: "message", key: "battle.noChest" });
     // 通路: chestChanceCorridor 100 なら部屋と同じ手順（部屋の chestChance 0 は効かない）。inRoom は偽
     const corr2 = mk({ kind: "random", inRoom: false });
     const m3 = cloneRng(corr2.rng);
@@ -1692,12 +1697,43 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
         const ks = kindsOf(r.events);
         expect(ks.includes("message:battle.chestLeft"), `seed ${seed} inRoom ${String(inRoom)}`).toBe(want);
         if (want) expect(ks.indexOf("message:battle.chestLeft")).toBeLessThan(ks.indexOf("screen"));
+        // CB-51（M19 A-5）: 出なかったときは同じ位置に battle.noChest（どちらか一方だけ。乱数は上の鏡のまま）
+        expect(ks.includes("message:battle.noChest"), `seed ${seed} inRoom ${String(inRoom)}`).toBe(!want);
+        if (!want) expect(ks.indexOf("message:battle.noChest")).toBeLessThan(ks.indexOf("screen"));
+        if (!want) expect(r.state.rng, `seed ${seed} inRoom ${String(inRoom)}`).toEqual(m); // 箱が出なければ chance の 1 回で終わる
         seen[inRoom ? "room" : "corridor"][want ? 1 : 0]! += 1;
       }
     }
     // 60 シードで部屋・通路とも、出る場合と出ない場合の両方を通る（M14: 直接ドロップの chance で出目がずれ、20 では通路が出なくなった。M15: 通路 10% では 50 まで通路が出なかったので 60 にした）
     expect(seen.room.every((n) => n > 0)).toBe(true);
     expect(seen.corridor.every((n) => n > 0)).toBe(true);
+  });
+
+  test("CB-51/CB-55（M19 A-5）battle.noChest は origin random だけ: 警報（alarm）とボス（boss）の勝利では箱を判定しないので出さない（乱数も引かない。警報は鏡の rng）", () => {
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 0, chestChanceCorridor: 0 } }, noChestImpulse);
+    const alarm = setup([{ monsterId: "rotting_corpse", hps: [1], status: [["paralysis"]] }], {
+      identified: ["rotting_corpse"],
+      origin: { kind: "alarm", inRoom: true },
+    });
+    alarm.battle!.inputs["c1"] = atk(0);
+    const m = cloneRng(alarm.rng);
+    rolls(m, 6);
+    chance(m, 100);
+    rollDice(m, "1d8");
+    chance(m, 0); // CB-57（M14）: 直接ドロップの判定（dataWith の既定 0 で外れ）。宝箱の chance は引かない
+    const ra = exec(alarm, RESOLVE, d);
+    expect(ra.state.rng).toEqual(m);
+    const ka = kindsOf(ra.events);
+    expect(ka).toContain("message:battle.win");
+    expect(ka).not.toContain("message:battle.noChest");
+    expect(ka).not.toContain("message:battle.chestLeft");
+    const boss = setup([{ monsterId: "gatekeeper_armor", hps: [1], status: [["paralysis"]] }], { origin: { kind: "boss" } });
+    boss.battle!.inputs["c1"] = atk(0);
+    const rb = exec(boss, RESOLVE, d);
+    const kb = kindsOf(rb.events);
+    expect(kb).toContain("message:battle.bossDefeated");
+    expect(kb).not.toContain("message:battle.noChest");
+    expect(kb).not.toContain("message:battle.chestLeft");
   });
 
   // ---- CB-57 / IT-57（M14）: 敵の種類ごとの直接ドロップ ----
@@ -2317,7 +2353,8 @@ describe("拍（CB-55）", () => {
       ["declare", ["message:battle.attackDeclare"]],
       ["result", ["hpChanged", "attack", "message:battle.hit"]],
       ["aftermath", ["lifeChanged", "message:battle.dead"]],
-      ["system", ["battleEnd", "message:battle.win", "message:battle.exp", "message:battle.gold", "screen"]],
+      // CB-51（M19 A-5）: ランダム遭遇で箱が出なかった（dataWith の既定 chestChance 0）ので、金の後に battle.noChest
+      ["system", ["battleEnd", "message:battle.win", "message:battle.exp", "message:battle.gold", "message:battle.noChest", "screen"]],
     ]);
     expect(segs.every((x) => x.beat.auto === false)).toBe(true);
     const dmg = eventsOf(r.events, "attack")[0]!.damage;

@@ -946,7 +946,7 @@ describe("UI-45 拍の再生", () => {
     expect(waits(f2.log)).toEqual([say("battle.win"), "waitMs 400", "screens.show", "screens.sync"]);
   });
 
-  test("UI-45（M16）leave の待ち（戦闘の外への screen の前）は先取りのタップを使わない: 文を出し終えた後のタップがあっても新しいタップまで止まる。次の拍の前の待ちは今までどおり先取りで抜ける", async () => {
+  test("UI-45（M16）/CB-51（M19）leave の待ち（戦闘の外への screen の前。箱の battle.chestLeft・battle.noChest の後も）は先取りのタップを使わない: 文を出し終えた後のタップがあっても新しいタップまで止まる。次の拍の前の待ちは今までどおり先取りで抜ける", async () => {
     /** 文を出すたびに、文字送りの外（typing 偽・ダイスなし）で 1 回タップする（連打） */
     const run = (events: GameEvent[], after: GameState) => {
       const { deps, log } = fakeDeps();
@@ -966,15 +966,18 @@ describe("UI-45 拍の再生", () => {
       };
       return { log, player, p, flush, isDone: () => done };
     };
-    const leave: GameEvent[] = [beat("system", false), { kind: "battleEnd", result: "win" }, msg("battle.win"), msg("battle.chestLeft"), { kind: "screen", to: "dungeon" }];
-    expectKnownStringKeys(leave);
-    const a = run(leave, stateWith(diveAt(1, 1, "N")));
-    await a.flush();
-    expect(a.isDone()).toBe(false);
-    expect(names(a.log)).not.toContain("screens.show");
-    a.player.tap();
-    await a.p;
-    expect(names(a.log)).toContain("screens.show");
+    // CB-51（M19 A-5）: 箱が出なかったときの battle.noChest でも、leave の待ちは同じ（文が 1 つ変わるだけ）
+    for (const last of ["battle.chestLeft", "battle.noChest"]) {
+      const leave: GameEvent[] = [beat("system", false), { kind: "battleEnd", result: "win" }, msg("battle.win"), msg(last), { kind: "screen", to: "dungeon" }];
+      expectKnownStringKeys(leave);
+      const a = run(leave, stateWith(diveAt(1, 1, "N")));
+      await a.flush();
+      expect(a.isDone(), last).toBe(false);
+      expect(names(a.log), last).not.toContain("screens.show");
+      a.player.tap();
+      await a.p;
+      expect(names(a.log), last).toContain("screens.show");
+    }
     // 比べる: 次の拍の前の待ちは、文の後のタップを持ち越して止まらない（手動の再生の終わりはダイスが無ければ待たない）
     const next: GameEvent[] = [beat("system", false), msg("battle.win"), beat("system", false), msg("battle.exp", { exp: 3 })];
     const b = run(next, battleState());

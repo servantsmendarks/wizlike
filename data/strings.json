@@ -673,6 +673,7 @@
   "battle.exp": "{exp}の経験を得た。",
   "battle.gold": "{gold}の金を拾った。",
   "battle.chestLeft": "敵は宝箱を残していった。",
+  "battle.noChest": "宝箱は無かった。",
   "battle.drop": "{name}は何かを落としていった。",
   "battle.dropGold": "{name}の懐から{gold}の金がこぼれ落ちた。",
   "battle.autoOff": "オートを解いた。",
