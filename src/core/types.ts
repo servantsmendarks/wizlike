@@ -813,6 +813,11 @@ export type TownMenu = {
     cure: TownMenuTempleRow[];
     /** 呪われた品を装備している者（life を問わない）。cost = uncurseCost */
     uncurse: TownMenuTempleRow[];
+    /**
+     * TW-07（M18 5-4）: 最初の段（蘇生・治療・解呪）の料金の目安。perLevel = templeCostPerLevel、
+     * cureFrom = cureCost の最小値（治療 1 つ分）、uncurse = uncurseCost。対象の有無に関わらず config の値
+     */
+    pricing: { perLevel: number; cureFrom: number; uncurse: number };
   };
   /** TW-08 闇魔術: life ash の者（並び順）。cost = level × darkCostPerLevel、affordable = gold >= cost */
   dark: TownMenuTempleRow[];

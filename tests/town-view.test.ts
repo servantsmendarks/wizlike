@@ -136,7 +136,7 @@ describe("UI-52 街のページ", () => {
     expect(notes).toEqual([
       "酒場: 状態・転職・図鑑",
       "宿屋: 休む・レベルアップ",
-      "寺院: 蘇生・治療",
+      "寺院: 蘇生・治療・解呪",
       "闇魔術: 灰から戻す・装備を鍛える",
       "迷宮へ: 潜る",
       "店: 売買・鑑定",
@@ -179,13 +179,13 @@ describe("UI-52 街のページ", () => {
     expect(kinsokuLines(S["town.inn.intro"]!, 28).length).toBeLessThanOrEqual(2);
   });
 
-  test("UI-52/TW-07 寺院はサービスの 3 項目と戻る。サービスの対象は行（名前と料金、払えなければ disabled）", () => {
+  test("UI-52/TW-07 寺院はサービスの 3 項目と戻る（M18 5-4 から料金の目安つき）。サービスの対象は行（名前と料金、払えなければ disabled）", () => {
     const s = town({ c3: { life: "dead", hp: 0 }, c2: { status: ["poison", "paralysis"] } }, 200);
     const m = menuOf(s);
     expect(townEntries("temple", m, S)).toEqual([
-      { kind: "page", to: { temple: "resurrect" }, label: "蘇生" },
-      { kind: "page", to: { temple: "cure" }, label: "治療" },
-      { kind: "page", to: { temple: "uncurse" }, label: "解呪" },
+      { kind: "page", to: { temple: "resurrect" }, label: "蘇生　Lv×100G" },
+      { kind: "page", to: { temple: "cure" }, label: "治療　50G〜" },
+      { kind: "page", to: { temple: "uncurse" }, label: "解呪　200G" },
       back,
     ]);
     // 蘇生 1 × 100 = 100 ≤ 200 → 押せる
@@ -1652,5 +1652,27 @@ describe("TW-04/UI-52（M18 5-3）宿屋の見出しの 2 行目と泊まった�
     expect(S["town.inn.restored"]).toBe("全員の HP と MP が戻った。");
     expect(S["town.inn.restoredMp"]).toBe("全員の MP が戻った。");
     for (const k of ["town.inn.restored", "town.inn.restoredMp"]) expect(kinsokuLines(S[k]!, 28), k).toHaveLength(1);
+  });
+});
+
+describe("TW-07/UI-52（M18 5-4）寺院の最初の段の料金の目安", () => {
+  test("TW-07 townMenu.temple.pricing は config の templeCostPerLevel・cureCost の最小値・uncurseCost（対象がいなくても出る）。行は town.temple.<sv>Row に値を入れるだけ", () => {
+    const m = menuOf(town());
+    const e = data.config.economy;
+    expect(m.temple.pricing).toEqual({ perLevel: e.templeCostPerLevel, cureFrom: Math.min(...Object.values(e.cureCost)), uncurse: e.uncurseCost });
+    expect(m.temple.pricing).toEqual({ perLevel: 100, cureFrom: 50, uncurse: 200 });
+    expect(m.temple.resurrect).toEqual([]);
+    // 表示層は config を読まず menu の値を入れる（menu を差し替えれば行も変わる）
+    const m2: TownMenu = { ...m, temple: { ...m.temple, pricing: { perLevel: 7, cureFrom: 8, uncurse: 9 } } };
+    expect(townEntries("temple", m2, S).map((x) => x.label)).toEqual(["蘇生　Lv×7G", "治療　8G〜", "解呪　9G", S["common.back"]]);
+  });
+
+  test("TW-07 料金の目安の行は最悪の値（6 桁）でも一覧の 21 字（39 単位）に収まる。説明 town.menu.note.temple は「蘇生・治療・解呪」", () => {
+    for (const k of ["town.temple.resurrectRow", "town.temple.cureRow", "town.temple.uncurseRow"]) {
+      const label = formatMessage(S[k]!, { perLevel: 999999, cost: 999999 });
+      expect(label, k).not.toContain("{");
+      expect(textUnits(label), label).toBeLessThanOrEqual(39);
+    }
+    expect(S["town.menu.note.temple"]).toBe("蘇生・治療・解呪");
   });
 });

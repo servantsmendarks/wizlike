@@ -300,7 +300,7 @@
   "town.menu.noteRow": "{label}: {note}",
   "town.menu.note.tavern": "状態・転職・図鑑",
   "town.menu.note.inn": "休む・レベルアップ",
-  "town.menu.note.temple": "蘇生・治療",
+  "town.menu.note.temple": "蘇生・治療・解呪",
   "town.menu.note.dark": "灰から戻す・装備を鍛える",
   "town.menu.note.dungeon": "潜る",
   "town.menu.note.shop": "売買・鑑定",
@@ -345,6 +345,9 @@
   "town.temple.cure": "治療",
   "town.temple.uncurse": "解呪",
   "town.temple.row": "{name}　{cost}G",
+  "town.temple.resurrectRow": "蘇生　Lv×{perLevel}G",
+  "town.temple.cureRow": "治療　{cost}G〜",
+  "town.temple.uncurseRow": "解呪　{cost}G",
   "town.temple.none": "その必要がある者はいない。",
 
   "dungeon.enter": "{dungeon}へ潜る。迷宮は潜るたびに形を変える。地図は毎回白紙だ。",

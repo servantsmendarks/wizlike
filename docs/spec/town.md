@@ -21,6 +21,7 @@
   - 蘇生の対象は `dead` だけ（`ash` は闇魔術）。判定は d100 ≤ 成功率で、ダイスは表示しない（UI-40 の一覧に寺院は無い）。蘇生しても MP・SAN はそのまま。状態異常は常に無しで戻る（CH-45。死亡の時点で外れている。失敗して灰になっても状態異常は持たない）。M7 の途中までは「状態異常もそのまま」だった（2026-10-05 のユーザー決定で改めた）。
   - 治療は対象の毒・麻痺・石化をすべて治し、`cureCost` の合計を払う。対象は `alive` の者だけ。
   - 解呪は対象が装備している呪われた品をすべて失い、費用は 1 回分。対象の life は問わない。
+  - M18（2026-10-11 設計 5-4。テストプレイ v2）: 最初の段（蘇生・治療・解呪）の行に料金の目安を出す（UI-52）。core の `townMenu.temple.pricing` に `{ perLevel: templeCostPerLevel, cureFrom: cureCost の最小値, uncurse: uncurseCost }` を足す（対象の有無に関わらず config の値。乱数なし）。表示層は config を読まず、この値を `town.temple.resurrectRow`「蘇生　Lv×{perLevel}G」・`cureRow`「治療　{cost}G〜」・`uncurseRow`「解呪　{cost}G」に入れるだけ。`town.temple` のコマンドと料金の式は変えない。
 - TW-08 闇魔術（`town.dark`）: `ash` → `alive`（HP 1）。確定（乱数を使わない）。費用 = `level × config.economy.darkCostPerLevel`（500）【仮】を所持金から払う（M7。2026-10-05 ユーザー指示「灰の経済」で 1000 から 500 にした）（銀行の残高は使わない）。対象は `ash` の者だけ（`alive` / `dead` は rejected `not ash`）、所持金が足りなければ rejected `not enough gold`。戻しても MP・SAN はそのまま、状態異常は常に無し（寺院の蘇生と同じ。CH-45）。M7 で同じ施設に汎用装備の強化（TW-17）を足す。
 - TW-09 訓練所: ゲーム開始時のキャラクター作成。以降はステータス閲覧のみ。（M10）転職（CH-22）は訓練所を作らず、酒場で GM に申し出る `town.classChange { memberId, classId }` にする（TW-01 の「訓練所は実装しない」はそのまま）。
   - 受け付け: 街（screen town・dive null）だけ。理由の順: `wrong screen` → `no such member` → `not alive`（死亡・灰は不可）→ `no such class` → `same class` → `requirements not met`（素の能力値。CH-21）→ `not enough gold`（料金 `config.classChange.fee`（0）【仮】が所持金を超えるとき。銀行の残高は使わない）。乱数は使わない。

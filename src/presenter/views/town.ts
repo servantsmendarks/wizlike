@@ -339,7 +339,17 @@ export function townEntries(
     return [...rows, back];
   }
   if (page === "temple") {
-    return [...TEMPLE_SERVICES.map((sv): TownEntry => ({ kind: "page", to: { temple: sv }, label: s(strings, `town.temple.${sv}`) })), back];
+    // TW-07（M18 5-4）: 行に料金の目安（town.temple.<sv>Row。値は core の townMenu.temple.pricing。表示層は config を読まない）
+    const p = menu.temple.pricing;
+    const params: Record<TempleService, Record<string, number>> = {
+      resurrect: { perLevel: p.perLevel },
+      cure: { cost: p.cureFrom },
+      uncurse: { cost: p.uncurse },
+    };
+    return [
+      ...TEMPLE_SERVICES.map((sv): TownEntry => ({ kind: "page", to: { temple: sv }, label: s(strings, `town.temple.${sv}Row`, params[sv]) })),
+      back,
+    ];
   }
   if (page === "dark") {
     // M7 UI-52: 灰から戻す / 装備を鍛える（TW-17）/ 戻る。どちらも dim にしない（中が空なら空の行）

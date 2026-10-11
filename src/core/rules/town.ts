@@ -420,7 +420,17 @@ export function townMenu(state: GameState, data: GameData): TownMenu | null {
       const m = moraleOf(state, data);
       return m === null ? null : { rankId: m.id, name: m.name };
     })(),
-    temple: { resurrect: rows("resurrect"), cure: rows("cure"), uncurse: rows("uncurse") },
+    temple: {
+      resurrect: rows("resurrect"),
+      cure: rows("cure"),
+      uncurse: rows("uncurse"),
+      // TW-07（M18 5-4）: 最初の段の料金の目安
+      pricing: {
+        perLevel: data.config.economy.templeCostPerLevel,
+        cureFrom: Math.min(...Object.values(data.config.economy.cureCost)),
+        uncurse: data.config.economy.uncurseCost,
+      },
+    },
     dark: state.party.flatMap((ch) => {
       if (ch.life !== "ash") return [];
       const cost = resurrectCostOf(ch, data);
