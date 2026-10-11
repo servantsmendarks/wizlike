@@ -16,6 +16,7 @@ import { ceilRatio } from "./ratio";
 import { clearAllStatus } from "./field";
 import { capSan, overSan, restoreSan } from "./san";
 import { shopMenu } from "./shop";
+import { bankMenu } from "./bank";
 import { settleOverflow, storageMenu } from "./storage";
 import { upgradeMenu } from "./upgrade";
 import { bumpTally, endingRecordView } from "./progress";
@@ -404,6 +405,7 @@ export function townMenu(state: GameState, data: GameData): TownMenu | null {
       return [{ memberId: ch.id, name: ch.name, cost, affordable: gold >= cost }];
     }),
     shop: shopMenu(state, data), // TW-05 / IT-60〜65（rules/shop.ts）
+    bank: bankMenu(state, data), // TW-10（M17。rules/bank.ts）
     storage: storageMenu(state, data), // TW-16 / IT-64（rules/storage.ts）
     upgrade: upgradeMenu(state, data), // TW-17（rules/upgrade.ts）
     mercy: offered

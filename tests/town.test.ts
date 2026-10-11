@@ -1370,6 +1370,85 @@ describe("TW-16/IT-64 倉庫（town.storage。M7）", () => {
   });
 });
 
+describe("TW-10（M17）銀行の金（town.bank）", () => {
+  const bank = (amount: unknown): Command => ({ type: "town.bank", amount }) as unknown as Command;
+
+  test("TW-10 正で預入: 所持金から預金へ移し town.bank.deposited{amount, bank}。負で引出: 預金から所持金へ town.bank.withdrawn{amount（正の額）, gold}。合計は保たれ、乱数・品は変わらない", () => {
+    const s = town({}, 300);
+    const r1 = ok(s, bank(100));
+    expect(r1.events).toEqual([{ kind: "message", key: "town.bank.deposited", params: { amount: 100, bank: 100 } }]);
+    expect([r1.state.gold, r1.state.bank]).toEqual([200, 100]);
+    expect(s.gold).toBe(300); // 引数の state は書き換えない
+    const r2 = ok(r1.state, bank(-30));
+    expect(r2.events).toEqual([{ kind: "message", key: "town.bank.withdrawn", params: { amount: 30, gold: 230 } }]);
+    expect([r2.state.gold, r2.state.bank]).toEqual([230, 70]);
+    // 全額の預入と全額の引出（境界）
+    const r3 = ok(r2.state, bank(230));
+    expect([r3.state.gold, r3.state.bank]).toEqual([0, 300]);
+    const r4 = ok(r3.state, bank(-300));
+    expect([r4.state.gold, r4.state.bank]).toEqual([300, 0]);
+    for (const r of [r1, r2, r3, r4]) {
+      expect(r.state.gold + r.state.bank).toBe(300);
+      expect(r.state.rng).toEqual(s.rng);
+      expect(r.state.items).toEqual(s.items);
+      expect(r.state.party).toEqual(s.party);
+      expectStateInvariants(r.state);
+    }
+  });
+
+  test("TW-10 受け付けない理由の順: wrong screen（迷宮の中。額が不正でも先）→ bad amount（0・整数でない・数でない・所持金を超える預入・預金を超える引出）", () => {
+    const d = diving({}, 300);
+    expectRejected(d, bank(100), "wrong screen");
+    expectRejected(d, bank(0), "wrong screen");
+    const s = town({}, 300);
+    s.bank = 50;
+    for (const a of [0, 1.5, -0.5, Number.NaN, Number.POSITIVE_INFINITY, "10", null, undefined, 301, -51]) expectRejected(s, bank(a), "bad amount");
+    ok(s, bank(300));
+    ok(s, bank(-50));
+  });
+
+  test("TW-10 townMenu.bank: 預金・所持金と、預入・引出の額の行（全額 → 半分（floor）→ config.bank.amounts [100, 1000]）。delta は送る額（引出は負）、ok は town.bank が受け付けるか（額 0・元より多い額は false）", () => {
+    expect(data.config.bank.amounts).toEqual([100, 1000]);
+    const s = town({}, 301);
+    s.bank = 1;
+    const m = townMenu(s, data)!.bank;
+    expect(m.bank).toBe(1);
+    expect(m.gold).toBe(301);
+    expect(m.deposit).toEqual([
+      { kind: "all", amount: 301, delta: 301, ok: true },
+      { kind: "half", amount: 150, delta: 150, ok: true },
+      { kind: "fixed", amount: 100, delta: 100, ok: true },
+      { kind: "fixed", amount: 1000, delta: 1000, ok: false },
+    ]);
+    expect(m.withdraw).toEqual([
+      { kind: "all", amount: 1, delta: -1, ok: true },
+      { kind: "half", amount: 0, delta: -0, ok: false },
+      { kind: "fixed", amount: 100, delta: -100, ok: false },
+      { kind: "fixed", amount: 1000, delta: -1000, ok: false },
+    ]);
+    // ok は execute の受け付けと一致する
+    for (const row of [...m.deposit, ...m.withdraw]) {
+      const r = execute(s, bank(row.delta), data);
+      expect(r.events.some((e) => e.kind === "rejected")).toBe(!row.ok);
+    }
+    // 所持金 0・預金 0 なら全部 false
+    const z = town({}, 0);
+    const mz = townMenu(z, data)!.bank;
+    expect([...mz.deposit, ...mz.withdraw].every((r) => !r.ok)).toBe(true);
+  });
+
+  test("TW-10/TW-30 預け入れは救済の判定を変えない（所持金 + 預金で数える）", () => {
+    const allDead = { c2: DEAD, c3: DEAD, c4: DEAD, c5: DEAD, c6: DEAD };
+    for (const g of [99, 100]) {
+      const s = town(allDead, g);
+      const before = mercyEligible(s, data);
+      const r = ok(s, bank(g));
+      expect(r.state.gold).toBe(0);
+      expect(mercyEligible(r.state, data)).toBe(before);
+    }
+  });
+});
+
 describe("CH-71b（M17）溢れの保険（settleOverflow）", () => {
   const coreSources = import.meta.glob("../src/core/**/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
   /** アルド（装備 3・所持 [i4]）の素の力を 3（上限 8）にし、薬草を n 個足したもの。使用枠 = 4 + n */

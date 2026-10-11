@@ -31,6 +31,7 @@ import {
   reorderParty,
   unequipItem,
 } from "./rules/camp";
+import { checkBank, doBank } from "./rules/bank";
 import { startNewGame, validatePartySetup } from "./rules/creation";
 import { checkChest, disarmChest, inspectChest, leaveChest, openChest } from "./rules/chest";
 import { addTurns, DEBUG_LEVEL_MAX, debugChest, giveCursed, hpOne, sanDown, sanOver, setLevels, warp } from "./rules/debug";
@@ -421,8 +422,15 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       else leaveChest(ctx);
       return finish(ctx);
     }
-    case "town.bank":
-      return reject(state, command.type, "not implemented");
+    case "town.bank": {
+      // TW-10（M17）
+      const amount = (command as { amount?: unknown }).amount;
+      const r = checkBank(state, amount);
+      if (r !== null) return reject(state, "town.bank", r);
+      const ctx = makeContext(cloneState(state), data);
+      doBank(ctx, amount as number);
+      return finish(ctx);
+    }
     default:
       return reject(state, String((command as unknown as { type?: unknown }).type), "unknown command");
   }

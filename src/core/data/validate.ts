@@ -420,6 +420,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       },
       warehouseSlots: I(POS_INT), // IT-64
     }),
+    bank: F({ amounts: L(I(POS_INT)) }), // TW-10（M17）【仮】
     town: F({
       innRanks: L(
         F({

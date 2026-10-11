@@ -745,6 +745,11 @@ export type TownMenuUpgradeMember = {
  * affordable = gold >= fee、block は checkUpgrade の理由（受け付けるなら null）
  */
 export type UpgradePreview = { rate: number; great: number; fee: number; affordable: boolean; block: string | null };
+/**
+ * TW-10（M17）: 銀行の額の行。kind は all（全額）/ half（半分。floor）/ fixed（config.bank.amounts の額）、amount は表示の額（正）、
+ * delta は town.bank に送る額（預入は +amount、引出は −amount）、ok = checkBank(state, delta) === null（額 0・元より多い額は false）
+ */
+export type TownMenuBankRow = { kind: "all" | "half" | "fixed"; amount: number; delta: number; ok: boolean };
 /** rules/town.ts townMenu。screen === "town" のときだけ非 null */
 export type TownMenu = {
   gold: number;
@@ -775,6 +780,15 @@ export type TownMenu = {
     buyback: TownMenuShopBuybackRow[];
     /** IT-65: 全員（並び順。life を問わない）の inventory の未鑑定の品（鑑定料は品ごと） */
     identify: { items: TownMenuShopIdentifyRow[] };
+  };
+  /** TW-10（M17）銀行の金（rules/bank.ts bankMenu）。bank は預金、gold は所持金 */
+  bank: {
+    bank: number;
+    gold: number;
+    /** 預け入れの額の行（全額 → 半分 → config.bank.amounts の順）。元は所持金 */
+    deposit: TownMenuBankRow[];
+    /** 引き出しの額の行（同じ順）。元は預金 */
+    withdraw: TownMenuBankRow[];
   };
   /** TW-16 / IT-64 倉庫（rules/storage.ts storageMenu） */
   storage: {

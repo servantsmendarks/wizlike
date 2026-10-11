@@ -268,6 +268,8 @@ export type Config = {
   };
   /** items.md §10（M7）の数値【仮】 */
   items: ItemsConfig;
+  /** TW-10（M17）【仮】: 銀行の金の額の行（全額・半分の後に並べる固定の額。正の整数） */
+  bank: { amounts: number[] };
   /** TW-04 / TW-14（M5.5）: tavernEventTurns は酒場のイベントが起きうるまでの冒険のターン数【仮】、tavernEventChance は見回すごとの確率%【仮】 */
   town: { innRanks: InnRank[]; tavernEventTurns: number; tavernEventChance: number };
   /** EV-11 / EV-14（M11）: 衝動確率の誘いの倍率 lureMul（%）、上限 cap・下限 floor（%）【仮】。stopSanGain は EV-22、confusedLureWeight は EV-14【仮】 */

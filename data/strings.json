@@ -155,6 +155,8 @@
   "town.shop.boughtBack": "{name}は{item}を買い戻した。（{cost}G）",
   "town.storage.deposited": "{name}は{item}を倉庫に預けた。",
   "town.storage.withdrawn": "{name}は{item}を倉庫から出した。",
+  "town.bank.deposited": "{amount}G を預けた。預金 {bank}G。",
+  "town.bank.withdrawn": "{amount}G を引き出した。所持 {gold}G。",
   "town.storage.autoDeposited": "{name}の{item}は枠に収まらず、銀行の倉庫に預けた。",
   "inventory.overflow": "{name}は枠を {over} 品ぶん持ちきれていない。倉庫に空きができたら預ける。",
   "town.upgrade.great": "{name}の{item}が大きく鍛えられた。",

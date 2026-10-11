@@ -62,6 +62,7 @@
     "weaponLvPerDamage": 2, "armorLvPerAc": 3, "casterLvPerPower": 2,
     "levelPriceRatio": 0.5, "optionSellValue": [20, 40, 80], "warehouseSlots": 40
   },
+  "bank": { "amounts": [100, 1000] },
   "town": {
     "innRanks": [
       { "id": "stable", "name": "馬小屋", "cost": 0, "hpRatio": 0, "sanOver": 0, "goodWeight": 0, "judgeBonus": 0, "gossip": false },

@@ -347,14 +347,7 @@ describe("engine: execute", () => {
     }
   });
 
-  test.each<Command>([
-    { type: "town.bank", amount: 10 },
-  ])("D2 未実装のコマンドは not implemented: $type（dungeon.cast と party.reorder は M4.5、town.shop の sell は M7 の B7 で実装した）", (cmd) => {
-    const s = newGame(1);
-    const r = execute(s, cmd, data);
-    expect(r.state).toBe(s);
-    expect(r.events).toEqual([{ kind: "rejected", command: cmd.type, reason: "not implemented" }]);
-  });
+  // D2 未実装のコマンドは not implemented: 最後の town.bank を M17 で実装した（TW-10 のテストは town.test.ts）。未実装のコマンドは無い
 
   test.each<Command>([
     { type: "battle.input", memberId: "c1", action: { type: "defend" } },

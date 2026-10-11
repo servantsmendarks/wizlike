@@ -621,6 +621,21 @@ describe("TW-27 全滅の方が得にならない", () => {
     }
   });
 
+  test("TW-10/TW-22/TW-27（M17）預金は全滅の金の損失の対象外: 預金があっても所持金の損失は預金なしと同じ額で、預金はそのまま。総資産（gold + bank）は 2d10 の合計 2〜20 のどれでも徒歩で帰還した後を上回らない", () => {
+    const s0 = withLedger(base());
+    const banked = cloneState(s0);
+    banked.bank = 500;
+    for (let t = 2; t <= 20; t++) {
+      const plain = wipeOf(withTotal(s0, t)).state;
+      const w = wipeOf(withTotal(banked, t)).state;
+      expect(w.bank).toBe(500);
+      expect(w.gold).toBe(plain.gold);
+      expect(assetValue(w, data)).toBe(assetValue(plain, data) + 500);
+      const { r } = expectWipeNotBetter(withTotal(banked, t));
+      expect(r.bank).toBe(500);
+    }
+  });
+
   test("TW-27 比較の基準が徒歩の帰還である理由: 糸で帰った場合と比べると、台帳が空で奇跡（損失 0）の全滅は糸の売値 25 だけ上回る", () => {
     const s = withTotal(base(), 20);
     const thread = s.party[4]!.inventory[0]!;
