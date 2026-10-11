@@ -220,13 +220,17 @@ export function customStep(d: CustomDraft, c: CustomChoice, data: GameData, rng:
  * - 決めてある段は保つ: 種族・能力値（配分し終えていれば）・職業（その能力値で条件を満たすなら）、後ろの人も同じ。
  * - 職業はおすすめの一行の型（config.prototypeParty.members[i].classId）。届かなければ classes の順で最初に届く職業。
  * - 種族は pickAutoRace（その職業の条件を満たせる種族から作成中の乱数で）、ボーナスを振って、配分は autoAllocate。
- * - 性格（リーダー以外）: 今の人は名前の段まで来ていれば保ち、後ろの人は 6 段とも決めてあれば保つ。ほかは pickPersonality。
+ * - 性格（リーダー以外）: 今の人は名前の段まで来ていれば保ち、後ろの人は種族・配分し終えた能力値・職業が決まっていれば保つ
+ *   （性格の段を通ったかは見ない。通っていなければ下書きの既定の性格が残る）。ほかは pickPersonality。
  *   保った「おまかせ」も pickPersonality で具体的に（CH-30）。
- * - 名前: 今の人が名前の段なら name（入力欄の値。正しくなければ invalidName）、ほかは下書きの名前（正しくなければ既定の名前）。
+ * - 名前: 今の人が名前の段なら name（入力欄の値。正しくなければ乱数を引く前に invalidName）、ほかは下書きの名前（正しくなければ既定の名前）。
  * 乱数は人の順に 種族 → ボーナス → 性格 の順で、要るものだけ引く。職業がどれも届かない人がいれば、その人の職業の段で止める
  * （custom.noClass が出る）
  */
 function autoRest(d: CustomDraft, name: string | undefined, data: GameData, rng: RngState): CustomResult {
+  // 名前の段の入力欄は乱数を引く前に検査する（不正なら作成中の乱数を進めない。次へと同じ）
+  const atName = d.step === "name" && name !== undefined;
+  if (atName && !validCreationName(name, data)) return { kind: "invalidName", draft: withMember(d, { name }, "name") };
   const members = [...d.members];
   for (let i = d.index; i < members.length; i++) {
     const m = members[i];
@@ -259,10 +263,7 @@ function autoRest(d: CustomDraft, name: string | undefined, data: GameData, rng:
     const keepPersonality = cur ? d.step === "name" : done;
     const personality = i === 0 ? null : keepPersonality ? resolveDraftPersonality(m.personality, data, rng) : pickPersonality(rng, data);
     let nm = m.name;
-    if (cur && d.step === "name" && name !== undefined) {
-      if (!validCreationName(name, data)) return { kind: "invalidName", draft: withMember(d, { name }, "name") };
-      nm = name;
-    } else if (!validCreationName(nm, data)) nm = data.config.prototypeParty.members[i]?.defaultName ?? nm;
+    if (cur && atName) nm = name; else if (!validCreationName(nm, data)) nm = data.config.prototypeParty.members[i]?.defaultName ?? nm;
     members[i] = { ...m, raceId: r, stats: finalStats, bonus, bonusParts, classId, personality, name: nm };
   }
   return { kind: "draft", draft: { ...d, members, index: members.length - 1, step: "confirm" } };

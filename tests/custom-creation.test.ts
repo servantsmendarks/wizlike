@@ -796,6 +796,23 @@ describe("残りはおまかせ（UI-62 / CH-06。M20）", () => {
     expect(r.members[1]!.classId).toBe("thief");
   });
 
+  test("UI-62/CH-30 名前の段で名前が正しくないとき、残りはおまかせは乱数を引かずに invalidName（おまかせの性格も決めない）", () => {
+    const rng = createRng(5);
+    let d = makeOne(initialDraft(data), rng, "アキ");
+    d = step(d, { kind: "race", raceId: "human" }, rng);
+    d = spendAll(d, rng, ["str"]);
+    d = step(d, { kind: "next" }, rng);
+    d = step(d, { kind: "class", classId: "fighter" }, rng);
+    d = step(d, { kind: "personality", value: "random" }, rng);
+    expect(d.step).toBe("name");
+    const mirror = cloneRng(rng);
+    const bad = customStep(d, { kind: "autoRest", name: "" }, data, rng);
+    expect(bad.kind).toBe("invalidName");
+    if (bad.kind !== "invalidName") return;
+    expect(bad.draft.members[1]!.personality).toBe("random");
+    expect(rng).toEqual(mirror);
+  });
+
   test("UI-62 職業がどれも届かない人がいれば、その人の職業の段で止める（custom.noClass が出る）。確認の段では何もしない", () => {
     const rng = createRng(2);
     let d = step(initialDraft(data), { kind: "race", raceId: "human" }, rng);
