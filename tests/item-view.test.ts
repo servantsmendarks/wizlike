@@ -280,8 +280,8 @@ describe("UI-79 bestiaryView（敵の図鑑。M18）", () => {
       known: 2,
       total: data.monsters.length,
       rows: [
-        { monsterId: "giant_rat", name: name("giant_rat"), kills: 0 },
-        { monsterId: "kobold", name: name("kobold"), kills: 7 },
+        { monsterId: "giant_rat", name: name("giant_rat"), unknownName: "何かの獣", kills: 0 },
+        { monsterId: "kobold", name: name("kobold"), unknownName: "人の形をした影", kills: 7 },
       ],
     });
     expect(data.monsters.findIndex((m) => m.id === "giant_rat")).toBeLessThan(data.monsters.findIndex((m) => m.id === "kobold"));
@@ -302,6 +302,19 @@ describe("UI-79 bestiaryView（敵の図鑑。M18）", () => {
     const w = bestiaryView(some, data);
     expect({ known: w.known, total: w.total }).toEqual(endingRecordView(some, data).bestiary);
     expect(v.rows.map((r) => r.monsterId)).toEqual(data.monsters.map((m) => m.id));
+  });
+
+  test("UI-79/CB-05 unknownName（M19。D-7）は正体の分からないときの呼び名（unknownKind の系統の name）。全種類で系統の name と一致し、同じ系統の敵は同じ呼び名", () => {
+    const s = town();
+    for (const m of data.monsters) s.bestiary[m.id] = { kills: 1, identified: true };
+    const v = bestiaryView(s, data);
+    for (const r of v.rows) {
+      const m = data.monsters.find((x) => x.id === r.monsterId)!;
+      expect(r.unknownName, r.monsterId).toBe(data.unknownKinds.find((k) => k.id === m.unknownKind)!.name);
+    }
+    expect(v.rows.find((r) => r.monsterId === "kobold")!.unknownName).toBe("人の形をした影");
+    expect(v.rows.find((r) => r.monsterId === "rotting_corpse")!.unknownName).toBe("人の形をした影");
+    expect(v.rows.find((r) => r.monsterId === "giant_rat")!.unknownName).toBe("何かの獣");
   });
 });
 

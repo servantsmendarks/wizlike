@@ -899,7 +899,7 @@ export const BESTIARY_LAYOUT = {
   caption: { left: 136, width: 100, row: 11 },
 } as const;
 
-/** UI-79（M18）: core の bestiaryView から敵の図鑑のパネルを組む（文字列を組むだけ） */
+/** UI-79（M18）: core の bestiaryView から敵の図鑑のパネルを組む（文字列を組むだけ）。M19（D-7）: 一覧の行は「{name}（{unknown}）」（bestiary.row）。絵の下の名前は name だけ */
 export function formatBestiary(v: BestiaryView, focus: number, strings: Strings): BestiaryPanel {
   const title = s(strings, "bestiary.title", { known: v.known, total: v.total });
   const f = Math.max(0, Math.min(focus, v.rows.length - 1));
@@ -907,7 +907,7 @@ export function formatBestiary(v: BestiaryView, focus: number, strings: Strings)
   return {
     kind: "bestiary",
     title,
-    rows: v.rows.map((x, i) => ({ text: x.name, focused: i === f })),
+    rows: v.rows.map((x, i) => ({ text: s(strings, "bestiary.row", { name: x.name, unknown: x.unknownName }), focused: i === f })),
     empty: v.rows.length === 0 ? s(strings, "bestiary.none") : null,
     pick: r === undefined ? null : { monsterId: r.monsterId, name: r.name, kills: s(strings, "bestiary.kills", { kills: r.kills }) },
   };

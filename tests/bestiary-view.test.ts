@@ -89,20 +89,22 @@ describe("UI-79 酒場の敵の図鑑の段（純粋な状態機械）", () => {
 });
 
 describe("UI-79 formatBestiary", () => {
-  test("UI-79 見出しは「敵の図鑑　{known}/{total}」（分母は正体の分からない敵を含む全種類）。行は名前だけで focus の行に印、絵の下は名前と倒した数", () => {
+  test("UI-79 見出しは「敵の図鑑　{known}/{total}」（分母は正体の分からない敵を含む全種類）。行は名前と正体の分からないときの呼び名（M19。D-7）で focus の行に印、絵の下は名前と倒した数", () => {
     const p = formatBestiary(bestiaryView(known(), data), 1, S);
     expect(p).toEqual({
       kind: "bestiary",
       title: `敵の図鑑　2/${data.monsters.length}`,
       rows: [
-        { text: nameOf("giant_rat"), focused: false },
-        { text: nameOf("kobold"), focused: true },
+        { text: `${nameOf("giant_rat")}（何かの獣）`, focused: false },
+        { text: "コボルド（人の形をした影）", focused: true },
       ],
       empty: null,
       pick: { monsterId: "kobold", name: nameOf("kobold"), kills: "倒した数 7" },
     });
     // 正体の分からない敵（giant_spider）の名前は出ない
     expect(JSON.stringify(p)).not.toContain(nameOf("giant_spider"));
+    // 絵の下の名前は本名だけ（呼び名は一覧の行だけ）
+    expect(p.pick!.name).toBe("コボルド");
   });
 
   test("UI-79 1 体もいなければ bestiary.none の 1 行（dim で描く）と見出しだけ。絵は無い", () => {
@@ -119,6 +121,13 @@ describe("UI-79 formatBestiary", () => {
     const longest = Math.max(...data.monsters.map((m) => Array.from(m.name).length));
     expect(longest * 8).toBeLessThanOrEqual(BESTIARY_LAYOUT.list.width);
     expect(longest * 8).toBeLessThanOrEqual(BESTIARY_LAYOUT.caption.width);
+    // M19（D-7）: 一覧の行「{name}（{unknown}）」は、全種類の実際の組で名前の列（128px = 全角 16 字）に収まり、
+    // 最悪の値（最長の名前 + 系統の name の上限 8 字。CB-05 の検証）でも収まる
+    const all = town();
+    for (const m of data.monsters) all.bestiary[m.id] = { kills: 1, identified: true };
+    for (const r of formatBestiary(bestiaryView(all, data), 0, S).rows) expect(Array.from(r.text).length * 8, r.text).toBeLessThanOrEqual(BESTIARY_LAYOUT.list.width);
+    const worst = formatMessage(S["bestiary.row"]!, { name: "あ".repeat(longest), unknown: "い".repeat(8) });
+    expect(Array.from(worst).length * 8).toBeLessThanOrEqual(BESTIARY_LAYOUT.list.width);
     // 倒した数: 全角 4 字 + 半角（空白 1 + 数字 5）= 8×4 + 4×6 = 56px
     const kills = formatMessage(S["bestiary.kills"]!, { kills: 99999 });
     const px = Array.from(kills).reduce((n, c) => n + (c.charCodeAt(0) < 0x80 ? 4 : 8), 0);
@@ -179,8 +188,8 @@ describe("UI-79 敵の図鑑のパネルの DOM", () => {
     const texts = el.children.filter((c) => c.className !== "camp-bestiary-picture").map((c) => [c.className, c.textContent, c.style["top"], c.style["left"], c.style["color"]]);
     expect(texts).toEqual([
       ["camp-title", `敵の図鑑　2/${data.monsters.length}`, "4px", "4px", "var(--c-accent)"],
-      ["camp-bestiary-row", nameOf("giant_rat"), "14px", "4px", undefined],
-      ["camp-bestiary-row", nameOf("kobold"), "24px", "4px", "var(--c-accent)"],
+      ["camp-bestiary-row", `${nameOf("giant_rat")}（何かの獣）`, "14px", "4px", undefined],
+      ["camp-bestiary-row", "コボルド（人の形をした影）", "24px", "4px", "var(--c-accent)"],
       ["camp-bestiary-name", nameOf("kobold"), "114px", "136px", "var(--c-accent)"],
       ["camp-bestiary-kills", "倒した数 7", "124px", "136px", undefined],
     ]);
