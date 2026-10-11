@@ -889,6 +889,8 @@ describe("入力と Command", () => {
     expect(dungeon).toMatch(/showMap\(on: boolean\): void \{\s*map\.el\.style\.display = on \? "" : "none";[\s\S]*?mapOpen = on;\s*syncPanels\(\);\s*\}/);
     // M19（UI-24）: 「凡例」は地図の部品の開閉だけ（app を通さない）
     expect(dungeon).toMatch(/onMapLegend: \(\) => map\.toggleLegend\(\),/);
+    // M20（UI-24）: 地図を開くたびに凡例を開いた状態に戻す（地図の部品と「凡例」の見た目の両方。app を通さない）
+    expect(dungeon).toMatch(/showMap\(on: boolean\): void \{[^}]*?if \(on\) \{\s*map\.setLegend\(true\);\s*controls\.setMapLegend\(true\);\s*\}/);
     // M16（UI-11 / UI-13）: 広い一覧が出ている間（controls の onWideChange）はパーティ欄を隠す（以前の期待値は listWide の引数なし）
     expect(dungeon).toMatch(/onWideChange: \(on\) => \{\s*listWide = on;\s*syncPanels\(\);\s*\}/);
     expect(dungeon).toMatch(/showWipe\(on: boolean\): void \{[\s\S]*?wipeOpen = on;\s*syncPanels\(\);\s*\}/);

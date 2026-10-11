@@ -245,8 +245,8 @@ const playerD = (px: number, py: number, facing: Facing, cell: number): string =
     .map(([x, y], i) => `${i === 0 ? "M" : "L"}${px + x} ${py + y}`)
     .join("") + "Z";
 
-/** UI-24（M16）/ UI-78（M18）: 凡例の項目（strings の map.legend.<key>）。2 行 × 4 列に、左上から行の順に並べる */
-export const MAP_LEGEND_KEYS = ["self", "up", "down", "chest", "trap", "wall", "exit"] as const;
+/** UI-24（M16）/ UI-78（M18）: 凡例の項目（strings の map.legend.<key>）。2 行 × 4 列に、左上から行の順に並べる（M20 で 8 枠目に扉） */
+export const MAP_LEGEND_KEYS = ["self", "up", "down", "chest", "trap", "wall", "exit", "door"] as const;
 export type MapLegendKey = (typeof MAP_LEGEND_KEYS)[number];
 
 /** 凡例の行の高さ（メッセージ窓の行と同じ 10。8px の字） */
@@ -307,7 +307,9 @@ export type MapLegendPaths = { walls: string; stairs: string; traps: string; che
 /**
  * UI-24（M16）: 凡例の記号。盤と同じ path（cell 8。M19 で盤は 11 になったが凡例は 8 のまま）を各項目の記号の箱 (x, y+1) に描く。
  * self は北向きの現在位置、up / down は階段、chest は □、trap は ×、wall は箱の中ほどの横線 1 本（盤の壁の線と同じ色）、
- * exit（UI-78。M18。M19 で点線に）は wall と同じ箱の中ほどの横の辺に沿った点線（盤の open の辺の exitD と同じ。箱の y+5 の x+1..x+7）
+ * exit（UI-78。M18。M19 で点線に）は wall と同じ箱の中ほどの横の辺に沿った点線（盤の open の辺の exitD と同じ。箱の y+5 の x+1..x+7）、
+ * door（M20）は同じ高さの横の辺を盤の未踏の扉の口と同じに描く（両端 2px の線の色の線（盤の door の辺の hLine と同じ。x..x+2・x+6..x+8）を walls に、
+ * 中央の accent の線（exitD の door。x+2..x+6）を exits に）
  */
 export function mapLegendPaths(legend: NonNullable<MapNotes["legend"]>): MapLegendPaths {
   const out: MapLegendPaths = { walls: "", stairs: "", traps: "", chests: "", exits: "", player: "" };
@@ -320,7 +322,11 @@ export function mapLegendPaths(legend: NonNullable<MapNotes["legend"]>): MapLege
     else if (it.key === "chest") out.chests += chestD(px, py, BASE_CELL);
     else if (it.key === "trap") out.traps += trapD(px, py, BASE_CELL);
     else if (it.key === "exit") out.exits += exitD(px, py + BASE_CELL / 2, "n", BASE_CELL);
-    else out.walls += `M${px} ${py + BASE_CELL / 2}H${px + BASE_CELL}`;
+    else if (it.key === "door") {
+      const y = py + BASE_CELL / 2;
+      out.walls += `M${px} ${y}H${px + DOOR_END}M${px + BASE_CELL - DOOR_END} ${y}H${px + BASE_CELL}`;
+      out.exits += exitD(px, y, "n", BASE_CELL, true);
+    } else out.walls += `M${px} ${py + BASE_CELL / 2}H${px + BASE_CELL}`;
   }
   return out;
 }
@@ -393,8 +399,10 @@ export type MapViewEl = {
    * 注記の行の tapHint（map.tapHint。M16。M19 から左寄せ）は選んでいない間だけ出す
    */
   setPick(p: MapPick | null, blink: boolean): void;
-  /** UI-24（M19）: 凡例を開閉する（表示だけの値。保存しない。地図を閉じても、ページを読み直すまで保つ）。開いたら真を返す */
+  /** UI-24（M19）: 凡例を開閉する（表示だけの値。保存しない。M20 から地図を開くたびに setLegend(true) で開いた状態に戻す）。開いたら真を返す */
   toggleLegend(): boolean;
+  /** UI-24（M20）: 凡例の開閉を決める（地図を開くたびに true。作った直後も開いている） */
+  setLegend(on: boolean): void;
   /** UI-24（M19）: 凡例が開いているか */
   legendOpen(): boolean;
 };
@@ -522,7 +530,8 @@ export function createMapView(
     el.appendChild(d);
     return d;
   });
-  let legendOn = false;
+  // UI-24（M20）: 凡例は開いた状態で始まる（地図を開くたびに setLegend(true) で戻す）
+  let legendOn = true;
   let notes: MapNotes = { legend: null, legendBox: null };
   const paintLegend = (): void => {
     const legend = legendOn ? notes.legend : null;
@@ -596,6 +605,10 @@ export function createMapView(
       legendOn = !legendOn;
       paintLegend();
       return legendOn;
+    },
+    setLegend(on: boolean): void {
+      legendOn = on;
+      paintLegend();
     },
     legendOpen(): boolean {
       return legendOn;

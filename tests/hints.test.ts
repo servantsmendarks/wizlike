@@ -19,7 +19,7 @@ const hintKeys = (events: readonly GameEvent[]): string[] =>
   events.flatMap((e) => (e.kind === "message" && e.key.startsWith("hint.") ? [e.key] : []));
 
 describe("UI-76 一度きりの GM の一言（M16）", () => {
-  test("UI-76/DG-46/DG-45/CB-06 HINT_IDS は dungeonFirst / sanUnknown / levelUpMark / lostExits / dungeonTerms（M18）/ waitEnemy（M19）。文は strings の hint.<id> にあり、会話の箱の 1 行 28 字で 2 行以内（禁則つき）、差し込みなし", () => {
+  test("UI-76/UI-20/UI-78/DG-46/DG-45/CB-06 HINT_IDS は dungeonFirst / sanUnknown / levelUpMark / lostExits / dungeonTerms（M18）/ waitEnemy（M19）。文は strings の hint.<id> にあり、会話の箱の 1 行 28 字で 2 行以内（禁則つき）、差し込みなし", () => {
     expect([...HINT_IDS]).toEqual(["dungeonFirst", "sanUnknown", "levelUpMark", "lostExits", "dungeonTerms", "waitEnemy"]);
     for (const id of HINT_IDS) {
       const t = S[`hint.${id}`];
@@ -27,7 +27,9 @@ describe("UI-76 一度きりの GM の一言（M16）", () => {
       expect(kinsokuLines(t!, 28).length, `${id}: ${t}`).toBeLessThanOrEqual(2);
       expect(t!).not.toMatch(/\{\w+\}/);
     }
-    expect(S["hint.dungeonFirst"]).toBe("奥へ伸びる線が道、正面の四角は壁。下の△▷は、その向きに口がある印。");
+    // M20（UI-20 / UI-76。テストプレイ v4 の C-4 #5）: 線画の下の印の □（扉）も説明する。会話の箱の 2 行
+    expect(S["hint.dungeonFirst"]).toBe("奥へ伸びる線が道、正面の四角は壁。下の△▷は口、□は扉の印。");
+    expect(kinsokuLines(S["hint.dungeonFirst"]!, 28)).toEqual(["奥へ伸びる線が道、正面の四角は壁。下の△▷は口、□は扉の", "印。"]);
     expect(S["hint.dungeonTerms"]).toBe("分からない言葉は、設定の「用語」で引ける。");
     expect(S["hint.sanUnknown"]).toBe("正体の分からない敵に会うと正気が削れる。何度か戦ううちに正体が分かる。");
     // M19（D-7。CB-06）: 1 回の戦闘ではなく何度か戦ううちに分かること（識別は毎ラウンドの判定と通算の撃破数）。会話の箱の 2 行
@@ -35,7 +37,9 @@ describe("UI-76 一度きりの GM の一言（M16）", () => {
     // M18（CB-05 / CB-06）: 敵に「鑑定」の語を使わない（品の鑑定と分ける）
     expect(S["hint.sanUnknown"]!).not.toContain("鑑定");
     expect(S["hint.levelUpMark"]).toBe("名前の横の↑は、宿で上がれる印だ。");
-    expect(S["hint.lostExits"]).toBe("地図の端に、まだ歩いていない口がある。地図の「未踏の口」を探せ。");
+    // M20（UI-78 / UI-25 / DG-46。テストプレイ v4 の B-4 #11）: 未踏の口の印を押せば歩けることを語る。1 行に収まる
+    expect(S["hint.lostExits"]).toBe("地図の未踏の口を押せば、そこまで歩く。");
+    expect(kinsokuLines(S["hint.lostExits"]!, 28)).toHaveLength(1);
     // DG-45 / UI-53（M19）: 「敵を待つ」が何をする操作か（SAN が減ることも）を初回に語る
     expect(S["hint.waitEnemy"]).toBe("その場で一巡り待ち、敵を呼び寄せる。正気が少し削れる。");
   });

@@ -103,7 +103,8 @@ describe("UI-24 地図", () => {
   });
 
   test("UI-24（M19・C-5）mapNotes: 凡例は盤の外周の枠線の下。20×20 は枠線の下端の線 240 の 1 つ下から地 x2..237・y241..261（地図本体の下端 262 まで。下の余白を詰めて h 21）、2 行 × 4 列（列幅 58。x 4・62・120・178、y 242・252）。順は MAP_LEGEND_KEYS", () => {
-    expect(MAP_LEGEND_KEYS).toEqual(["self", "up", "down", "chest", "trap", "wall", "exit"]);
+    // M20: 8 枠目に扉（2 行 × 4 列のまま）
+    expect(MAP_LEGEND_KEYS).toEqual(["self", "up", "down", "chest", "trap", "wall", "exit", "door"]);
     expect(LEGEND_COL_W).toBe(58);
     const n = mapNotes(20, 20, MAP_AREA);
     expect(n.legend).toEqual([
@@ -114,6 +115,7 @@ describe("UI-24 地図", () => {
       { key: "trap", x: 4, y: 252 },
       { key: "wall", x: 62, y: 252 },
       { key: "exit", x: 120, y: 252 },
+      { key: "door", x: 178, y: 252 },
     ]);
     expect(n.legendBox).toEqual({ x: 2, y: 241, w: 236, h: 21 });
     // 盤の外周の枠線（下端の線は画素 240）を覆わない
@@ -163,7 +165,7 @@ describe("UI-24 地図", () => {
     expect(mapNoteBothFit("あ".repeat(20), "1".repeat(17), 240)).toBe(false);
   });
 
-  test("UI-24（M16）凡例の記号は盤と同じ path（cell 8）を記号の箱 (x, y+1) に描く。wall は箱の中ほどの横線", () => {
+  test("UI-24（M16・M20）凡例の記号は盤と同じ path（cell 8）を記号の箱 (x, y+1) に描く。wall は箱の中ほどの横線、door（M20）は同じ高さの未踏の扉の口", () => {
     const n = mapNotes(20, 20, MAP_AREA);
     const p = mapLegendPaths(n.legend!);
     // 盤の (px, py) = (x, y+1) に置いた各記号と同じ
@@ -180,11 +182,18 @@ describe("UI-24 地図", () => {
     const self = at("self");
     expect(p.player).toBe(same(cellOf(0, 0), self.x, self.y + 1).player);
     const wall = at("wall");
-    expect(p.walls).toBe(`M${wall.x} ${wall.y + 5}H${wall.x + 8}`);
+    const door = at("door");
+    // M20: door の両端 2px は wall と同じ walls（線の色）に、wall の後に続く
+    expect(p.walls).toBe(`M${wall.x} ${wall.y + 5}H${wall.x + 8}` + `M${door.x} ${door.y + 5}H${door.x + 2}M${door.x + 6} ${door.y + 5}H${door.x + 8}`);
     // UI-78（M18。M19 で点線に）: 未踏は wall と同じ高さ（y+5）の横の辺に沿った点線（盤の open の辺と同じ 1〜2・3.5〜4.5・6〜7）
     const exit = at("exit");
-    expect(p.exits).toBe(`M${exit.x + 1} ${exit.y + 5}H${exit.x + 2}M${exit.x + 3.5} ${exit.y + 5}H${exit.x + 4.5}M${exit.x + 6} ${exit.y + 5}H${exit.x + 7}`);
-    expect(p.exits).toBe(exitD(exit.x, exit.y + 5, "n", 8));
+    const exitOnly = `M${exit.x + 1} ${exit.y + 5}H${exit.x + 2}M${exit.x + 3.5} ${exit.y + 5}H${exit.x + 4.5}M${exit.x + 6} ${exit.y + 5}H${exit.x + 7}`;
+    expect(exitOnly).toBe(exitD(exit.x, exit.y + 5, "n", 8));
+    // UI-24 / UI-78（M20）: 扉は盤の未踏の扉の口と同じ（両端 2px の線の色 + 中央 2..6 の accent の線。テストプレイ v4 の C-4 #6）
+    expect(p.exits).toBe(exitOnly + `M${door.x + 2} ${door.y + 5}H${door.x + 6}`);
+    const doorCell = same(cellOf(0, 0, { n: "door", e: "open", s: "open", w: "open", exits: ["n"] }), door.x, door.y + 5);
+    expect(`M${wall.x} ${wall.y + 5}H${wall.x + 8}` + doorCell.walls).toBe(p.walls);
+    expect(exitOnly + doorCell.exits).toBe(p.exits);
   });
 
   test("UI-78（M18・M19）exits は口の辺の上に辺に沿った長さ 1 の点線 3 本（cell 8 で 1〜2・3.5〜4.5・6〜7）。door の辺は中央に辺の半分の長さの 1 本（C-5。cell 8 で 2〜6）。4 方向、exits が空なら描かない。色は accent", () => {
@@ -710,7 +719,7 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     expect(got).toEqual([{ pos: { x: 1, y: 0 }, dir: "e" }, { pos: { x: 0, y: 0 } }, { pos: { x: 1, y: 0 } }]);
   });
 
-  test("UI-24/UI-25/UI-78（M19）render は注記の行（題の下 y12..21）に tapHint を左寄せ（選んでいない間だけ）・「未踏の口 {n}」を右寄せ（選んでいる間も）で出し、盤の外周に dim の枠線を描く。凡例は閉じて始まり、toggleLegend で盤の外周の枠線の下（C-5。M19 の群 A では盤の下端に重ねた）に開閉する", () => {
+  test("UI-24/UI-25/UI-78（M19）render は注記の行（題の下 y12..21）に tapHint を左寄せ（選んでいない間だけ）・「未踏の口 {n}」を右寄せ（選んでいる間も）で出し、盤の外周に dim の枠線を描く。凡例は開いて始まり（M20。M19 は閉じて始まった）、toggleLegend で盤の外周の枠線の下（C-5。M19 の群 A では盤の下端に重ねた）に開閉する。setLegend(true) で開いた状態に戻す", () => {
     const { divs, paths } = fakeDocument();
     const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, data.strings, data.config.ui.mapExitHitPx);
     const hint = divs.find((d) => d.className === "map-hint")!;
@@ -737,39 +746,49 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     expect(frame.attrs["d"]).toBe(mapFramePath(20, 20, mapLayout(20, 20, L.map.area)));
     expect(frame.attrs["stroke"]).toBe("var(--c-dim)");
     expect(frame.attrs["fill"]).toBe("none");
-    // 凡例は閉じて始まる（語も記号も地も出さない）
+    // M20: 凡例は開いて始まる（盤の外周の枠線の下に 2 行と半透明の地。8 項目）
     const ay = L.map.area.y - L.map.overlay.y;
     const n = mapNotes(20, 20, L.map.area);
     const box = paths.find((p) => p.attrs["class"] === "map-legend-box")!;
     const legendChest = paths.filter((p) => p.attrs["stroke"] === "var(--c-accent)" && p.attrs["class"] === undefined);
-    expect(m.legendOpen()).toBe(false);
-    expect(labels.every((d) => d.style["display"] === "none")).toBe(true);
-    expect(box.attrs["d"]).toBe("");
-    // 開く: 盤の下端に重ねた 2 行と半透明の地
-    expect(m.toggleLegend()).toBe(true);
     expect(m.legendOpen()).toBe(true);
+    expect(labels).toHaveLength(8);
     expect(labels.map((d) => [d.style["display"], d.style["left"], d.style["top"]])).toEqual(n.legend!.map((it) => ["", `${it.x + 10}px`, `${ay + it.y}px`]));
+    expect(labels[7]!.textContent).toBe("扉");
     expect(box.attrs["d"]).toBe("M2 241h236v21h-236Z");
     expect(box.attrs["fill"]).toBe("var(--c-bg)");
     expect(Number(box.attrs["fill-opacity"])).toBeLessThan(1);
     expect(paths.filter((p) => p.attrs["d"] === mapLegendPaths(n.legend!).chests)).toHaveLength(1);
+    // 閉じる: 語・記号・地を消す
+    expect(m.toggleLegend()).toBe(false);
+    expect(m.legendOpen()).toBe(false);
+    expect(labels.every((d) => d.style["display"] === "none")).toBe(true);
+    expect(box.attrs["d"]).toBe("");
+    // 開く
+    expect(m.toggleLegend()).toBe(true);
+    expect(labels.filter((d) => d.style["display"] === "")).toHaveLength(MAP_LEGEND_KEYS.length);
+    expect(box.attrs["d"]).toBe("M2 241h236v21h-236Z");
     // 選ぶと tapHint は隠れ、未踏の口は出たまま。解くと戻る
     m.setPick({ pos: { x: 1, y: 0 } }, false);
     expect(hint.style["display"]).toBe("none");
     expect(unexplored.style["display"]).toBe("");
     m.setPick(null, false);
     expect(hint.style["display"]).toBe("");
-    // 点線（map-exits）と数。描き直しても凡例は開いたまま（表示だけの値）
+    // 点線（map-exits）と数。描き直しても凡例の開閉はそのまま（表示だけの値。閉じたまま描き直しても閉じたまま）
+    expect(m.toggleLegend()).toBe(false);
     m.render(view([cellOf(0, 0, { e: "open", exits: [] }), cellOf(1, 0, { w: "open", s: "door", e: "open", exits: ["e", "s"] })]), "t");
     expect(unexplored.textContent).toBe("未踏の口 2");
     const exitsEl = paths.find((p) => p.attrs["class"] === "map-exits")!;
     expect(exitsEl.attrs["stroke"]).toBe("var(--c-accent)");
     expect(exitsEl.attrs["d"]).toBe(mapPaths(view([cellOf(1, 0, { w: "open", s: "door", e: "open", exits: ["e", "s"] })]), mapLayout(20, 20, L.map.area)).exits);
+    expect(m.legendOpen()).toBe(false);
+    expect(labels.every((d) => d.style["display"] === "none")).toBe(true);
+    // M20: 地図を開くたび（dungeon.ts の showMap(true)）に setLegend(true) で開いた状態に戻す
+    m.setLegend(true);
     expect(m.legendOpen()).toBe(true);
     expect(labels.filter((d) => d.style["display"] === "")).toHaveLength(MAP_LEGEND_KEYS.length);
-    // 閉じる: 語・記号・地を消す
-    expect(m.toggleLegend()).toBe(false);
-    expect(labels.every((d) => d.style["display"] === "none")).toBe(true);
+    expect(box.attrs["d"]).toBe("M2 241h236v21h-236Z");
+    m.setLegend(false);
     expect(box.attrs["d"]).toBe("");
     expect(legendChest.length).toBeGreaterThan(0);
   });

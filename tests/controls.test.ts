@@ -654,11 +654,11 @@ describe("controls", () => {
     expect(went).toBe(2);
   });
 
-  test("UI-24（M19）map モードは閉じるの右隣に「凡例」（mapLegend）。タップと select(2) で onMapLegend を呼び、開いている間は文字と枠を accent。音は鳴らさない。map 以外のモードでは出さない", () => {
+  test("UI-24（M19）map モードは閉じるの右隣に「凡例」（mapLegend）。タップと select(2) で onMapLegend を呼び、開いている間は文字と枠を accent（M20: 開いた状態で始まり、setMapLegend で見た目だけ合わせる）。音は鳴らさない。map 以外のモードでは出さない", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);
     const L = dungeonLayout(g, data.config.party.size);
-    let open = false;
+    let open = true;
     let calls = 0;
     const sounds: string[] = [];
     const c = createControls({
@@ -681,12 +681,25 @@ describe("controls", () => {
     expect(legend.style).toMatchObject({ left: `${L.mapLegend.x - g.controls.x}px`, top: `${L.mapLegend.y - g.controls.y}px`, width: "52px", height: "32px" });
     c.setMode("map");
     expect(legend.style["display"]).toBe("");
-    legend.tap();
-    expect(calls).toBe(1);
+    // M20: 凡例は開いた状態で始まる（地図の部品の初期値と同じ）
     expect(legend.style["color"]).toBe("var(--c-accent)");
     expect(legend.style["borderColor"]).toBe("var(--c-accent)");
+    legend.tap();
+    expect(calls).toBe(1);
+    expect(legend.style["color"]).toBe("var(--c-text)");
+    expect(legend.style["borderColor"]).toBe("var(--c-frame)");
     c.select(2);
     expect(calls).toBe(2);
+    expect(legend.style["color"]).toBe("var(--c-accent)");
+    expect(legend.style["borderColor"]).toBe("var(--c-accent)");
+    legend.tap();
+    expect(legend.style["color"]).toBe("var(--c-text)");
+    // M20: setMapLegend は見た目だけ（onMapLegend を呼ばない。地図を開くたびに true）
+    c.setMapLegend(true);
+    expect(calls).toBe(3);
+    expect(legend.style["color"]).toBe("var(--c-accent)");
+    expect(legend.style["borderColor"]).toBe("var(--c-accent)");
+    c.setMapLegend(false);
     expect(legend.style["color"]).toBe("var(--c-text)");
     expect(legend.style["borderColor"]).toBe("var(--c-frame)");
     expect(sounds).toEqual([]);
@@ -697,7 +710,7 @@ describe("controls", () => {
     // close モードの select(2) は何もしない
     c.setMode("close");
     c.select(2);
-    expect(calls).toBe(2);
+    expect(calls).toBe(3);
   });
 
   test("UI-25（M16）dim の「移動」を押す（タップ・select(1)）と onMapGoDim を呼ぶ（onMapGo は呼ばない）。押せる間は onMapGoDim を呼ばない", () => {

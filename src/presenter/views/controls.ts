@@ -56,6 +56,8 @@ export type Controls = {
   setMode(m: ControlsMode): void;
   /** inputMode が swipe なら十字ボタンを隠す（メニューは残す） */
   setDpadVisible(on: boolean): void;
+  /** UI-24（M20）: 「凡例」の見た目を開閉に合わせる（地図を開くたびに凡例を開いた状態に戻すとき。onMapLegend は呼ばない） */
+  setMapLegend(on: boolean): void;
   /** layout.menu に並べる（5 件目以降は捨てる） */
   setMenu(items: ControlItem[]): void;
   /**
@@ -367,13 +369,14 @@ export function createControls(o: {
   mapLegend.className = "controls-map-legend";
   mapLegend.textContent = s("map.legend");
   buttonStyle(mapLegend, o.layout.mapLegend, origin);
-  const pressMapLegend = (): void => {
-    const on = o.onMapLegend?.() === true;
+  const paintMapLegend = (on: boolean): void => {
     mapLegend.style.color = on ? "var(--c-accent)" : "var(--c-text)";
     mapLegend.style.borderColor = on ? "var(--c-accent)" : "var(--c-frame)";
     mapLegend.setAttribute("aria-pressed", on ? "true" : "false");
   };
-  mapLegend.setAttribute("aria-pressed", "false");
+  const pressMapLegend = (): void => paintMapLegend(o.onMapLegend?.() === true);
+  // UI-24（M20）: 凡例は開いた状態で始まる（地図の部品の初期値と同じ）
+  paintMapLegend(true);
   onTap(mapLegend, () => pressMapLegend());
   el.appendChild(mapLegend);
 
@@ -455,6 +458,9 @@ export function createControls(o: {
     setDpadVisible(on: boolean): void {
       dpadVisible = on;
       apply();
+    },
+    setMapLegend(on: boolean): void {
+      paintMapLegend(on);
     },
     setMenu(items: ControlItem[]): void {
       menuItems = items.slice(0, MENU_SLOTS.length);

@@ -413,6 +413,11 @@ export function createDungeonScreen(o: {
     },
     showMap(on: boolean): void {
       map.el.style.display = on ? "" : "none";
+      // UI-24（M20）: 地図を開くたびに凡例を開いた状態に戻す（閉じるのはその地図を開いている間だけ）
+      if (on) {
+        map.setLegend(true);
+        controls.setMapLegend(true);
+      }
       // UI-24 / UI-13（M19）: 地図の間はパーティ欄を隠す
       mapOpen = on;
       syncPanels();
