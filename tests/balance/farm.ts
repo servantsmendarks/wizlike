@@ -190,6 +190,13 @@ export function farmReport(results: CampaignResult[], kind: BotKind): string {
   const el = mean(fin(kl.map((d) => d.enemyLvMean)));
   row(`装備の追従（潜行 1 / 潜行 ${FARM_DIVES} の開始時の装備の平均 Lv。ユニークを除く。潜行 1 は初期装備の Lv0 なのでいつも 0）`, `${fmt(g1)} / ${fmt(gl)}（装備中のユニーク 潜行 ${FARM_DIVES} の開始時 計 ${sum(kl.map((d) => d.gearUniques))}）`);
   row(`敵の Lv（体数で重み付けした平均。潜行 1 / 潜行 ${FARM_DIVES}）・差（装備 − 敵。潜行 1 / 潜行 ${FARM_DIVES}）`, `${fmt(e1)} / ${fmt(el)}・${fmt(g1 - e1)} / ${fmt(gl - el)}`);
+  // M18（設計 3-1）: 装備の補正の数字（itemPower。IT-20 / IT-21 / IT-23）
+  const b1 = mean(fin(k1.map((d) => d.gearDamageBonusStart)));
+  const bl = mean(fin(kl.map((d) => d.gearDamageBonusStart)));
+  const a1 = mean(fin(k1.map((d) => d.gearAcStart)));
+  const al = mean(fin(kl.map((d) => d.gearAcStart)));
+  row(`装備のダメージ補正の平均（装備中の武器の damageBonus。潜行 1 / 潜行 ${FARM_DIVES} の開始時）`, `${fmt(b1)} / ${fmt(bl)}`);
+  row(`装備の AC の平均（1 人あたりの武器以外の装備の ac の合計。潜行 1 / 潜行 ${FARM_DIVES} の開始時）`, `${fmt(a1)} / ${fmt(al)}`);
   row("拾った品を装備した数（全潜行）", String(sum(all.map((d) => d.lootEquipped))));
   // 9. ボスのユニーク（表の値。d01 1F Lv3 のレポートだけ）
   if (f.level === 3 && f.dungeonId === "d01" && f.floor === 1) {

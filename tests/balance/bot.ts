@@ -358,6 +358,8 @@ export type DiveRecord = {
   soldUniqueGold: number; // その売却収入
   gearLvStart: number; // 潜行の開始時（入場の前）に全員が装備中の汎用装備の Lv の平均（ユニークを除く。無ければ NaN）
   gearUniques: number; // 潜行の開始時に装備中のユニークの数
+  gearDamageBonusStart: number; // M18: 潜行の開始時に全員が装備中の武器の damageBonus（itemPower。IT-20）の平均（武器が無ければ NaN）
+  gearAcStart: number; // M18: 潜行の開始時の 1 人あたりの武器以外の装備の ac（itemPower。IT-21 / IT-23）の合計の平均（全員）
   enemyLvMean: number; // この潜行の遭遇の敵の level の体数で重み付けした平均（遭遇が無ければ NaN）
   lootEquipped: number; // 街で拾った品を装備した数（農夫の equipLoot）
   netProfit: number; // 純益 = 売却の直後の所持金 − 潜行の前の所持金（農夫だけ。ほかは 0）
@@ -524,6 +526,8 @@ export class Campaign {
   enemyUnits = 0; // 遭遇の敵の体数の合計
   gearLvStart = NaN;
   gearUniques = 0;
+  gearDamageBonusStart = NaN; // M18
+  gearAcStart = NaN; // M18
   /**
    * M7-宝箱「蘇生を払えずに潜った」の定義: 直前の街の手順（revive）で、dead の者の寺院の蘇生、または ash の者（蘇生に失敗して灰になった者を含む）の
    * 闇魔術の費用が、その時点の所持金で払えずに（townMenu の affordable が偽で）蘇生しなかった者の id。次の潜行の開始時に、そのうちまだ dead / ash の者が
@@ -1245,15 +1249,25 @@ export class Campaign {
     this.enemyLvSum = 0;
     this.enemyUnits = 0;
     const gearLv: number[] = [];
+    const dmgBonus: number[] = []; // M18: 装備中の武器の damageBonus
+    const acSum: number[] = []; // M18: 1 人あたりの武器以外の装備の ac の合計
     this.gearUniques = 0;
-    for (const c of this.state.party)
+    for (const c of this.state.party) {
+      let ac = 0;
       for (const id of Object.values(c.equipment)) {
         if (id === null) continue;
         const inst = this.state.items[id]!;
         if (inst.uniqueId !== null) this.gearUniques += 1;
         else gearLv.push(inst.level);
+        const p = itemPower(data, inst, findBase(data, inst.itemId)!);
+        if (p.kind === "weapon") dmgBonus.push(p.damageBonus);
+        else ac += p.ac;
       }
+      acSum.push(ac);
+    }
     this.gearLvStart = mean(gearLv);
+    this.gearDamageBonusStart = mean(dmgBonus);
+    this.gearAcStart = mean(acSum);
     const down = this.state.party.filter((c) => c.life !== "alive").map((c) => c.id);
     expect(down.filter((id) => !this.unpaidLeft.includes(id))).toEqual([]); // 定義（unpaidLeft）のとおり、残った理由は所持金不足だけ
     this.unpaidAtStart = down.length;
@@ -1833,6 +1847,8 @@ export class Campaign {
         soldUniqueGold: 0,
         gearLvStart: this.gearLvStart,
         gearUniques: this.gearUniques,
+        gearDamageBonusStart: this.gearDamageBonusStart,
+        gearAcStart: this.gearAcStart,
         enemyLvMean: this.enemyUnits === 0 ? NaN : this.enemyLvSum / this.enemyUnits,
         lootEquipped: 0,
         netProfit: 0,
