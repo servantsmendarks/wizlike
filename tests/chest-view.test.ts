@@ -5,12 +5,14 @@ import { describe, expect, test } from "vitest";
 import { execute } from "../src/core/engine";
 import { chestView } from "../src/core/rules/chest";
 import type { ChestView, Command, GameState } from "../src/core/types";
-import { CHEST_MENU, chestEntries, chestHeading, chestParent, chestRepair, type ChestChoice, type ChestEntry, type ChestPage } from "../src/presenter/views/chest";
+import { CHEST_MENU, chestEntries, chestHeading, chestListWide, chestParent, chestRepair, type ChestChoice, type ChestEntry, type ChestPage } from "../src/presenter/views/chest";
 import { dived, exec } from "./helpers/battle";
 import { data, loadFreshData, withChar } from "./helpers/core";
 import { kinsokuLines } from "./helpers/wrap";
+import { formatMessage } from "../src/presenter/views/message";
 
 const S = data.strings;
+const t = (k: string, name: string): string => formatMessage(S[k]!, { name });
 
 function withChest(trapId: string | null): GameState {
   return exec(dived(1), { type: "debug.chest", trapId }).state;
@@ -49,7 +51,8 @@ describe("UI-70 宝箱の段（views/chest）", () => {
     const v = viewOf(s);
     const page: ChestPage = { kind: "inspect" };
     const es = chestEntries(page, v, S);
-    expect(labels(es)).toEqual(["アルド", "ベルク", "キリ", "ドナ", "エル", "フィン", "戻る"]);
+    // M19 D-5: 盗賊（キリ・フィン）は「（得意）」
+    expect(labels(es)).toEqual(["アルド", "ベルク", "キリ（得意）", "ドナ", "エル", "フィン（得意）", "戻る"]);
     expect(es.map((e) => e.disabled)).toEqual([false, false, false, false, true, false, false]);
     expect(es[4]!.reason).toBe("エルは動けない。");
     expect(es.filter((e) => e.reason !== undefined)).toHaveLength(1);
@@ -69,8 +72,42 @@ describe("UI-70 宝箱の段（views/chest）", () => {
     s.dive!.chest!.rivalry = { id: "thief_chest", ownerId: "c3" };
     const v = viewOf(s);
     for (const kind of ["inspect", "disarmWho"] as const) {
-      expect(labels(chestEntries({ kind }, v, S)).slice(0, 6)).toEqual(["アルド", "ベルク", "キリ（担当）", "ドナ", "エル", "フィン"]);
+      // M19 D-5: 担当の盗賊は「（得意・担当）」
+      expect(labels(chestEntries({ kind }, v, S)).slice(0, 6)).toEqual(["アルド", "ベルク", "キリ（得意・担当）", "ドナ", "エル", "フィン（得意）"]);
     }
+  });
+
+  test("UI-70/CB-63（M19 D-5）盗賊の補正が効く者（chestView.thief = 職業の abilities に disarm）は人の段で「{name}（得意）」。担当が盗賊でなければ「（担当）」だけ。最悪の名前（nameMaxLength 字の全角）でも一覧の行 21 字に収まる", () => {
+    const s = withChest("bomb");
+    const v = viewOf(s);
+    expect(v.members.map((m) => [m.name, m.thief])).toEqual([
+      ["アルド", false],
+      ["ベルク", false],
+      ["キリ", true],
+      ["ドナ", false],
+      ["エル", false],
+      ["フィン", true],
+    ]);
+    expect(v.members.filter((m) => m.thief).map((m) => s.party.find((c) => c.id === m.id)!.classId)).toEqual(["thief", "thief"]);
+    for (const kind of ["inspect", "disarmWho"] as const) {
+      expect(labels(chestEntries({ kind }, v, S)).slice(0, 6)).toEqual(["アルド", "ベルク", "キリ（得意）", "ドナ", "エル", "フィン（得意）"]);
+    }
+    // 盗賊でない担当（今のデータには無いが、印の組み合わせとして）
+    const owned: ChestView = { ...v, ownerId: "c1" };
+    expect(chestEntries({ kind: "inspect" }, owned, S)[0]!.label).toBe("アルド（担当）");
+    // 罠の段の見出しには印を付けない
+    expect(chestHeading({ kind: "disarmTrap", memberId: "c3" }, v, S)).toBe("キリが外す罠は？");
+    const worst = "あ".repeat(data.config.creation.nameMaxLength);
+    for (const k of ["chest.menu.thief", "chest.menu.thiefOwner", "chest.menu.owner"]) {
+      expect([...t(k, worst)].length, k).toBeLessThanOrEqual(21);
+    }
+  });
+
+  test("UI-70/UI-13（M19 D-5）最初の段（4 択）は通常の一覧（パーティ欄を見せる）、人の段と罠の名前の段は広い一覧", () => {
+    expect(chestListWide(CHEST_MENU)).toBe(false);
+    expect(chestListWide({ kind: "inspect" })).toBe(true);
+    expect(chestListWide({ kind: "disarmWho" })).toBe(true);
+    expect(chestListWide({ kind: "disarmTrap", memberId: "c3" })).toBe(true);
   });
 
   test("UI-70/CB-64 解除の段: 人を選ぶと罠の名前の段（chest-traps の全 8 種、データの順と [戻る]）。ヘッダーは「{name}が外す罠は？」。選ぶと chest.disarm{memberId, trapId}（core が受け付ける）", () => {
@@ -125,7 +162,7 @@ describe("UI-70 宝箱の段（views/chest）", () => {
   });
 
   test("UI-70 段の文言の鍵は strings.json にある", () => {
-    for (const k of ["chest.menu.inspect", "chest.menu.disarm", "chest.menu.open", "chest.menu.leave", "chest.menu.whoInspect", "chest.menu.whoDisarm", "chest.menu.which", "chest.menu.owner", "chest.menu.found", "chest.menu.cannotAct", "common.back"]) {
+    for (const k of ["chest.menu.inspect", "chest.menu.disarm", "chest.menu.open", "chest.menu.leave", "chest.menu.whoInspect", "chest.menu.whoDisarm", "chest.menu.which", "chest.menu.owner", "chest.menu.thief", "chest.menu.thiefOwner", "chest.menu.found", "chest.menu.cannotAct", "common.back"]) {
       expect(S[k], k).toBeTypeOf("string");
     }
   });

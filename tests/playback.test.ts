@@ -2960,6 +2960,25 @@ describe("UI-70/UI-71 宝箱の判定の箱と衝動の流れの再生（M11 作
     expect(boxes).toEqual([{ label: "dice.chestDisarm", rows: ev.rows.length, hidden: false }]);
   });
 
+  test("UI-71/CB-63（M19 D-5）伏せた箱の結果の行は「→ 出目は伏せられた（成功率だけが分かる）」（箱の幅 224 = 28 字に収まる）", () => {
+    const d = loadFreshData();
+    expect(d.strings["dice.chestInspect.hidden"]).toBe("出目は伏せられた（成功率だけが分かる）");
+    expect([...(d.strings["dice.arrow"]! + d.strings["dice.chestInspect.hidden"]!)].length).toBeLessThanOrEqual(28);
+  });
+
+  test("CB-62/UI-70（M19 D-5）解除の名前違いで作動: 作動の文 → 効果 → chest.trap.gone → chest.prompt を順に語る（判定の箱は無い）", async () => {
+    const d = loadFreshData();
+    const s0 = execute(dived(1), { type: "debug.chest", trapId: "curse" }, d).state;
+    const r = execute(s0, { type: "chest.disarm", memberId: "c6", trapId: "bomb" }, d);
+    expectKnownStringKeys(r.events, d);
+    const { log, boxes } = await play(r.events, s0, r.state, d);
+    const says = flow(log).filter((x) => x.startsWith("say:"));
+    expect(says[0]).toBe(sayOf(d, "chest.disarm.wrong"));
+    expect(says[1]).toBe(sayOf(d, "chest.trap.curse"));
+    expect(says.slice(-2)).toEqual([sayOf(d, "chest.trap.gone"), sayOf(d, "chest.prompt")]);
+    expect(boxes).toEqual([]);
+  });
+
   test("UI-71/EV-73 職業の掛け合い（勝利の後の箱）: start → 両者の行の箱（キリ・フィン）→ win を語ってタップ → 消す → chest.prompt。履歴の要約にも両者の内訳", async () => {
     const d = loadFreshData();
     d.config.combat.hitMin = d.config.combat.hitMax = 100;

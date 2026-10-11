@@ -21,10 +21,19 @@ function t(strings: Strings, key: string, params?: Record<string, string | numbe
   return formatMessage(strings[key] ?? key, params);
 }
 
-/** 人の段の行（canAct でない者は dim で、理由は chest.menu.cannotAct。掛け合いの担当は chest.menu.owner の印） */
+/**
+ * 人の段の行の名前。掛け合いの担当は chest.menu.owner、盗賊の補正が効く者（chestView の thief。M19 D-5）は chest.menu.thief「（得意）」、
+ * 両方なら chest.menu.thiefOwner
+ */
+function memberLabel(m: ChestView["members"][number], owner: boolean, strings: Strings): string {
+  const key = owner ? (m.thief ? "chest.menu.thiefOwner" : "chest.menu.owner") : m.thief ? "chest.menu.thief" : null;
+  return key === null ? m.name : t(strings, key, { name: m.name });
+}
+
+/** 人の段の行（canAct でない者は dim で、理由は chest.menu.cannotAct。掛け合いの担当と盗賊は memberLabel の印） */
 function memberEntries(v: ChestView, strings: Strings, choose: (memberId: string) => ChestChoice): ChestEntry[] {
   return v.members.map((m) => ({
-    label: m.id === v.ownerId ? t(strings, "chest.menu.owner", { name: m.name }) : m.name,
+    label: memberLabel(m, m.id === v.ownerId, strings),
     disabled: !m.canAct,
     choice: choose(m.id),
     ...(m.canAct ? {} : { reason: t(strings, "chest.menu.cannotAct", { name: m.name }) }),
@@ -76,6 +85,14 @@ export function chestHeading(page: ChestPage, v: ChestView, strings: Strings): s
       return t(strings, "chest.menu.which", { name });
     }
   }
+}
+
+/**
+ * UI-70 / UI-13（M19 D-5）: 段の一覧を広い一覧（パーティ欄を隠す）にするか。最初の段（4 択）は通常の一覧でパーティ欄の HP を見せ、
+ * 人の段と罠の名前の段は広い一覧
+ */
+export function chestListWide(page: ChestPage): boolean {
+  return page.kind !== "menu";
 }
 
 /** 1 つ上の段（menu では null） */

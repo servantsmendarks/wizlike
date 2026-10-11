@@ -1620,3 +1620,89 @@ describe("DG-24 宝箱のセルに乗る（M11 の作業 7）", () => {
     expect(kindsOf(exec(dived(1), { type: "debug.warp", to: "chest" }, none).events)).toEqual(["message:debug.warp.none"]);
   });
 });
+
+describe("CB-62（M19 D-5）作動の後の文", () => {
+  test("CB-62/CB-63/CB-64（M19 D-5）調べる・解除で作動して箱が残れば、効果の文の後・chest.prompt の前に chest.trap.gone（乱数は変えない。鏡の rng）", () => {
+    // 調べるの失敗の作動（石弓。調べた人キリに 2d4）
+    const dT = chestData((x) => {
+      x.config.chest.inspect.min = x.config.chest.inspect.max = 0;
+      x.config.chest.triggerChance = 100;
+    });
+    const s = withChest("crossbow", 4);
+    const m = cloneRng(s.rng);
+    randInt(m, 1, 100);
+    randInt(m, 1, 100);
+    const dmg = rollDice(m, "2d4").total;
+    const t = exec(s, inspect("c3"), dT);
+    expect(t.state.rng).toEqual(m);
+    expect(kindsOf(t.events)).toEqual(["dice", "chestTrap", "message:chest.trap.crossbow", "hpChanged", "message:chest.trap.gone", "message:chest.prompt"]);
+    expect(eventsOf(t.events, "hpChanged")[0]).toMatchObject({ id: "c3", delta: -Math.min(dmg, member(s, "c3").hp) });
+    expect(chestOf(t.state)).toMatchObject({ trapId: null });
+    // 解除の名前違い（爆弾 → 全員 1d6。乱数は効果だけ）
+    const s2 = withChest("bomb", 6);
+    const m2 = cloneRng(s2.rng);
+    for (const c of s2.party) if (c.life === "alive") rollDice(m2, "1d6");
+    const w = exec(s2, disarm("c6", "crossbow"));
+    expect(w.state.rng).toEqual(m2);
+    const kw = kindsOf(w.events);
+    expect(kw.slice(0, 3)).toEqual(["message:chest.disarm.wrong", "chestTrap", "message:chest.trap.bomb"]);
+    expect(kw.slice(-2)).toEqual(["message:chest.trap.gone", "message:chest.prompt"]);
+    expect(kw.filter((k) => k === "message:chest.trap.gone")).toHaveLength(1);
+    // 解除の失敗の作動（呪詛。SAN の後）
+    const dF = chestData((x) => {
+      x.config.chest.disarm.min = x.config.chest.disarm.max = 0;
+      x.config.chest.disarmFailTrigger = 100;
+    });
+    const f = exec(withChest("curse", 2), disarm("c3", "curse"), dF);
+    const kf = kindsOf(f.events);
+    expect(kf[0]).toBe("dice");
+    expect(kf.indexOf("message:chest.trap.gone")).toBeGreaterThan(kf.lastIndexOf("sanChanged"));
+    expect(kf.slice(-2)).toEqual(["message:chest.trap.gone", "message:chest.prompt"]);
+    // 文は窓の 28 字 × 2 行に収まる
+    expect(data.strings["chest.trap.gone"]).toBe("罠は作動して消えた。箱は開けられる。");
+    expect([...data.strings["chest.trap.gone"]!].length).toBeLessThanOrEqual(28);
+  });
+
+  test("CB-62（M19 D-5）chest.trap.gone を出さない: 開ける（中身を得る）・警報（戦闘）・転移（箱を失う）・全滅処理の前・罠を外した・作動しなかった", () => {
+    const has = (es: GameEvent[]): boolean => kindsOf(es).includes("message:chest.trap.gone");
+    // 開けるで作動
+    expect(has(exec(withChest("bomb", 3), OPEN, chestData()).events)).toBe(false);
+    // 解除の名前違いで警報 → 戦闘
+    const a = exec(withChest("alarm", 1), disarm("c3", "bomb"));
+    expect(a.state.battle).not.toBeNull();
+    expect(has(a.events)).toBe(false);
+    // 調べるの失敗で転移 → 箱を失う
+    const dT = chestData((x) => {
+      x.config.chest.inspect.min = x.config.chest.inspect.max = 0;
+      x.config.chest.triggerChance = 100;
+    });
+    expect(has(exec(withChest("teleport", 4, 1, dT), inspect("c3"), dT).events)).toBe(false);
+    // 作動で全員が行動不能 → 全滅処理
+    const allPara = chestData((x) => {
+      x.config.chest.inspect.min = x.config.chest.inspect.max = 0;
+      x.config.chest.triggerChance = 100;
+      x.chestTraps.find((t) => t.id === "paralysis_gas")!.effect = { kind: "status", target: "all", status: "paralysis", chance: 1000 };
+    });
+    const wp = exec(withChest("paralysis_gas", 1, 1, allPara), inspect("c3"), allPara);
+    expect(kindsOf(wp.events)).toContain("wipe");
+    expect(has(wp.events)).toBe(false);
+    // 解除の成功・作動しない失敗
+    const ok = chestData((x) => (x.config.chest.disarm.min = x.config.chest.disarm.max = 100));
+    expect(has(exec(withChest("bomb", 2), disarm("c3", "bomb"), ok).events)).toBe(false);
+    const ng = chestData((x) => {
+      x.config.chest.disarm.min = x.config.chest.disarm.max = 0;
+      x.config.chest.disarmFailTrigger = 0;
+    });
+    expect(has(exec(withChest("bomb", 2), disarm("c3", "bomb"), ng).events)).toBe(false);
+  });
+
+  test("CB-63/UI-70（M19 D-5）chestView の members の thief は盗賊の補正（chestRate の chest.row.thief）が効く者と一致する", () => {
+    const s = withChest("bomb");
+    const v = chestView(s, data)!;
+    for (const m of v.members) {
+      const r = chestRate(s, data, "inspect", member(s, m.id), 0);
+      expect(r.powerRows.some((x) => x.label.key === "chest.row.thief"), m.id).toBe(m.thief);
+    }
+    expect(v.members.filter((m) => m.thief).map((m) => m.id)).toEqual(["c3", "c6"]);
+  });
+});

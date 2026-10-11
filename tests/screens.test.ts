@@ -517,8 +517,9 @@ describe("入力と Command", () => {
     expect(branch).toMatch(/if \(heading !== null\) play\.header\.setText\(heading\);/);
     // レビュー A-A-2（2026-10-08）: 最初の段の 4 件目 [放っておく] も一覧の外に固定する（音は取り消しにしない）ようにしたので期待を書き直した
     expect(branch).toMatch(/const lastBack = ents\[ents\.length - 1\]\?\.choice\.kind === "back";/);
-    // M16（UI-11 / UI-13）: 宝箱の段は広い一覧（wide。パーティ欄を隠す）。以前の期待値は wide なし
-    expect(branch).toMatch(/c\.setList\(ents\.map\(chestItem\), \{ fixedLast: lastBack \|\| chestPage\.kind === "menu", fixedLastCancel: lastBack, wide: true \}\);/);
+    // M16（UI-11 / UI-13）: 宝箱の段は広い一覧（wide。パーティ欄を隠す）。以前の期待値は wide なし。
+    // M19 D-5: wide は chestListWide（最初の段の 4 択は通常の一覧。中身は tests/chest-view.test.ts）。以前の期待値は wide: true
+    expect(branch).toMatch(/c\.setList\(ents\.map\(chestItem\), \{ fixedLast: lastBack \|\| chestPage\.kind === "menu", fixedLastCancel: lastBack, wide: chestListWide\(chestPage\) \}\);/);
     expect(branch).toMatch(/c\.setMode\("list"\);\s*return;/);
     // 4b の直書きは残っていない
     expect(branch).not.toMatch(/chest\.menu\.open/);

@@ -84,6 +84,11 @@ function row(key: string, value: number, v: string = signed(value)): DiceRow {
   return { label: { key, params: { v } }, base: value, dice: [], total: value };
 }
 
+/** CB-63 / CB-64: 盗賊の補正（thiefBonus）が効く者 = 職業の abilities に disarm がある（chestRate と chestView の印で共有） */
+function isChestThief(data: GameData, ch: Character): boolean {
+  return classOf(data, ch.classId).abilities.includes("disarm");
+}
+
 /**
  * CB-63 / CB-64: 調べる・解除の成功率と判定の箱の行（純粋）。
  * rate = clamp(min, max, base + (盗賊なら thiefBonus) + (実効の agi − statPivot) × agiMul + (実効の luk − statPivot) × lukMul + trapDetect − danger × dangerMul)。
@@ -102,7 +107,7 @@ export function chestRate(
 ): { rate: number; power: number; powerRows: DiceRow[]; riskRows: DiceRow[] } {
   const c = data.config.chest[kind];
   const es = equipStats(state, data, ch);
-  const thief = classOf(data, ch.classId).abilities.includes("disarm") ? c.thiefBonus : 0;
+  const thief = isChestThief(data, ch) ? c.thiefBonus : 0;
   const agi = (es.stats.agi - c.statPivot) * c.agiMul;
   const luk = (es.stats.luk - c.statPivot) * c.lukMul;
   const detect = (personalityOf(data, ch.personality)?.benefits.trapDetect ?? 0) + es.trapDetect;
@@ -131,6 +136,17 @@ function promptIfPending(ctx: RuleContext): void {
   if (state.dive?.chest == null || state.battle !== null) return;
   if (!state.party.some(canAct)) return;
   ctx.events.push({ kind: "message", key: "chest.prompt" });
+}
+
+/**
+ * CB-62（M19 D-5）: 調べる・解除で罠が作動した後、箱が残っていて戦闘中でなく、行動可能な者がいれば（promptIfPending と同じ条件）
+ * message chest.trap.gone（効果の文の後、chest.prompt の前）。警報（戦闘中）・転移（箱を失う）・全滅処理の前は出さない。開けるの作動は中身を得るので出さない。乱数なし
+ */
+function tellTrapGone(ctx: RuleContext): void {
+  const { state } = ctx;
+  if (state.dive?.chest == null || state.battle !== null) return;
+  if (!state.party.some(canAct)) return;
+  ctx.events.push({ kind: "message", key: "chest.trap.gone" });
 }
 
 /**
@@ -476,6 +492,7 @@ export function inspectChest(ctx: RuleContext, memberId: string, startAlarm: Sta
       else {
         chest.finding = null;
         triggerTrap(ctx, ch, startAlarm);
+        tellTrapGone(ctx);
       }
     } else if (r2 <= cfg.triggerChance + cfg.wrongNameChance) {
       const others = data.chestTraps.filter((t) => t.id !== chest.trapId);
@@ -521,6 +538,7 @@ export function disarmChest(ctx: RuleContext, memberId: string, trapId: string, 
   } else if (chest.trapId !== trapId) {
     ctx.events.push({ kind: "message", key: "chest.disarm.wrong" });
     triggerTrap(ctx, ch, startAlarm);
+    tellTrapGone(ctx);
   } else {
     const r = chestRate(state, data, "disarm", ch, chestTrapOf(data, chest.trapId).danger);
     const roll = randInt(state.rng, 1, 100);
@@ -538,6 +556,7 @@ export function disarmChest(ctx: RuleContext, memberId: string, trapId: string, 
       ctx.events.push({ kind: "message", key: "chest.disarm.ok" });
     } else if (chance(state.rng, data.config.chest.disarmFailTrigger)) {
       triggerTrap(ctx, ch, startAlarm);
+      tellTrapGone(ctx);
     } else {
       ctx.events.push({ kind: "message", key: "chest.disarm.fail" });
     }
@@ -592,7 +611,7 @@ export function chestView(state: GameState, data: GameData): ChestView | null {
   const f = chest.finding;
   return {
     source: chest.source,
-    members: state.party.map((c) => ({ id: c.id, name: c.name, canAct: canAct(c) })),
+    members: state.party.map((c) => ({ id: c.id, name: c.name, canAct: canAct(c), thief: isChestThief(data, c) })),
     trapNames: data.chestTraps.map((t) => ({ id: t.id, name: data.strings[t.name] ?? t.name })),
     finding: f === null ? null : { trapId: f.trapId, name: f.trapId === null ? null : trapName(data, f.trapId) },
     ownerId: chest.rivalry?.ownerId ?? null,

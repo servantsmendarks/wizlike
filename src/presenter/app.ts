@@ -91,7 +91,7 @@ import { paintsTownStill, resumePlan, routeOfScreen } from "./resume";
 import { createRunGate } from "./run-gate";
 import { defaultSettings, type SettingsStore } from "./settings";
 import type { StageLayout, StageLayoutInput } from "./stage";
-import { CHEST_MENU, chestEntries, chestHeading, chestParent, chestRepair, type ChestChoice, type ChestEntry, type ChestPage } from "./views/chest";
+import { CHEST_MENU, chestEntries, chestHeading, chestListWide, chestParent, chestRepair, type ChestChoice, type ChestEntry, type ChestPage } from "./views/chest";
 import type { ControlItem, DpadAction, UiSound } from "./views/controls";
 import { createCreationScreen } from "./views/creation";
 import {
@@ -1067,8 +1067,8 @@ export function createApp(o: {
       // UI-11: 人と罠の段の末尾の戻るは一覧の外に固定する。
       // UI-70: 最初の段の 4 件目 [放っておく] も同じ位置に固定し、3 行の一覧からはみ出さないようにする（戻るではないので音は取り消しにしない）
       const lastBack = ents[ents.length - 1]?.choice.kind === "back";
-      // UI-11 / UI-13（M16）: 広い一覧（パーティ欄を隠す。送る前に chooseChest が下げる）
-      c.setList(ents.map(chestItem), { fixedLast: lastBack || chestPage.kind === "menu", fixedLastCancel: lastBack, wide: true });
+      // UI-11 / UI-13（M16）: 広い一覧（パーティ欄を隠す。送る前に chooseChest が下げる）。M19 D-5: 最初の段は通常の一覧（chestListWide）
+      c.setList(ents.map(chestItem), { fixedLast: lastBack || chestPage.kind === "menu", fixedLastCancel: lastBack, wide: chestListWide(chestPage) });
       c.setMode("list");
       return;
     }

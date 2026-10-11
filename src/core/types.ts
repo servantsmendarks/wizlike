@@ -361,7 +361,8 @@ export type MapView = {
  */
 export type ChestView = {
   source: "drop" | "cell";
-  members: { id: string; name: string; canAct: boolean }[];
+  /** thief: 盗賊の補正（config.chest の thiefBonus。職業の abilities に disarm）が効く者（M19 D-5。人の段の「（得意）」の印） */
+  members: { id: string; name: string; canAct: boolean; thief: boolean }[];
   trapNames: { id: string; name: string }[];
   finding: { trapId: string | null; name: string | null } | null;
   ownerId: string | null;
