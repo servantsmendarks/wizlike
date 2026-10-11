@@ -7,6 +7,8 @@
 // - M16: 名前の右に職業の略称（classes.json の abbr。config.prototypeParty.members[i].classId から）。y240 の説明の欄に、最後に
 //   触った行（性格のボタン・リーダーの札・名前の入力欄）の性格の shortDescription（リーダーは creation.leaderNote、おまかせは
 //   creation.randomNote。最初は creation.hint）。エラー（creation.invalid）が出ている間はエラーを優先して説明を隠す。
+// - M16 追補 H-1: 行（性格のボタン・リーダーの札・名前の入力欄）に触れた時点でエラーは消え、説明に戻る（creationTouch）。
+//   「ランダム」は行ではないのでエラーを消さない。
 // 純粋な部分（性格の巡回、PartySetup の組み立て）を export する。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, PersonalityId, Strings } from "../../core/data/index";
 import type { QuickPartySetup } from "../../core/types";
@@ -65,6 +67,11 @@ export function creationNote(row: number | null, choices: readonly PersonalityCh
 /** UI-51（M16）: エラーと説明のどちらを見せるか。エラーが出ている間はエラーを優先する */
 export function creationInfoVisible(errorOn: boolean): { error: boolean; note: boolean } {
   return { error: errorOn, note: !errorOn };
+}
+
+/** UI-51（M16 追補 H-1）: 行 i に触れたときの説明の欄の状態。触れた行を覚え、エラーは消す（説明に戻す） */
+export function creationTouch(row: number): { touched: number; errorOn: boolean } {
+  return { touched: row, errorOn: false };
 }
 
 /** game.new に渡す PartySetup。名前の検査は core が行うので、そのまま詰める */
@@ -200,7 +207,7 @@ export function createCreationScreen(o: {
     note.textContent = creationNote(touched, choices, o.data, o.strings);
   };
   function touch(i: number): void {
-    touched = i;
+    ({ touched, errorOn } = creationTouch(i));
     renderInfo();
   }
 

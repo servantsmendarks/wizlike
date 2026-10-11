@@ -7,6 +7,7 @@ import {
   creationClassAbbr,
   creationInfoVisible,
   creationNote,
+  creationTouch,
   defaultPersonalities,
   nextPersonality,
   personalityLabel,
@@ -21,6 +22,7 @@ import type { Command, GameEvent } from "../src/core/types";
 import { data, newGame } from "./helpers/core";
 import { kinsokuLines } from "./helpers/wrap";
 import { CREATION_ERROR, CREATION_NOTE, creationRow } from "../src/presenter/layout";
+import creationSource from "../src/presenter/views/creation.ts?raw";
 
 const ids = data.personalities.map((p) => p.id);
 /** UI-12: app と同じく core の sanStage で段を決める */
@@ -90,6 +92,25 @@ describe("簡易作成", () => {
     expect(CREATION_NOTE.y).toBe(240);
     expect(creationInfoVisible(true)).toEqual({ error: true, note: false });
     expect(creationInfoVisible(false)).toEqual({ error: false, note: true });
+  });
+
+  test("UI-51 行に触れるとエラーは消え、説明に戻る（M16 追補 H-1）。touch は性格のボタン・リーダーの札・名前の入力欄から呼ばれ、「ランダム」は呼ばない", () => {
+    // showError(true) の後に行 2 に触れた: error は hidden、note は visible で、行 2 の説明
+    const after = creationTouch(2);
+    expect(after).toEqual({ touched: 2, errorOn: false });
+    expect(creationInfoVisible(after.errorOn)).toEqual({ error: false, note: true });
+    expect(creationTouch(0)).toEqual({ touched: 0, errorOn: false });
+    // 画面の配線（DOM を立てないので、ソースで確かめる）
+    const src = creationSource.replace(/\r\n/g, "\n");
+    const touchBody = /function touch\(i: number\): void \{\n([\s\S]*?)\n  \}/.exec(src)?.[1] ?? "";
+    expect(touchBody).toContain("({ touched, errorOn } = creationTouch(i));");
+    expect(touchBody).toContain("renderInfo();");
+    expect(src).toContain('input.addEventListener("focus", () => touch(i));');
+    expect(src).toContain("onTap(lab, () => touch(0));");
+    const randomBody = /button\(t\("creation\.random"\)[\s\S]*?\}\),/.exec(src)?.[0] ?? "";
+    expect(randomBody).not.toBe("");
+    expect(randomBody).not.toContain("touch(");
+    expect(randomBody).not.toContain("errorOn");
   });
 
   test("UI-51/CH-05 既定名と既定の性格で作った PartySetup を core が受け付け、空の名前は rejected（表示層は検査しない）", () => {
