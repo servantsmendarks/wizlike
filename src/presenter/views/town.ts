@@ -326,7 +326,7 @@ export function townEntries(
     return [{ kind: "classChange", memberId: sel.memberId, classId: sel.classId, label: s(strings, "town.classChange.yes"), disabled: !ok }, back];
   }
   if (page === "inn") {
-    // TW-04 / TW-15（M16）: 行は名前・料金・効果（town.inn.effect.<ランクの id>。士気の立つランクは効果の文に「＋士気」を含む）。
+    // TW-04 / TW-15（M16）: 行は名前・料金・効果（town.inn.effect.<ランクの id>。士気の立つランクは効果の文に「＋士気」を含む）。M18（5-3）: 料金は「{cost}G（一行）」
     // 表示層はランクで分岐せず、core の townMenu の id からキーを組み立てるだけ
     const rows = menu.inn.map(
       (r): TownEntry => ({
@@ -863,6 +863,16 @@ export function townHeadingText(
   // TW-10（M17）: 銀行の一覧と金の額の段の見出しは預金と所持金の値を入れる（core の townMenu.bank）
   if (page === "bank" || page === "bankDeposit" || page === "bankWithdraw") return s(strings, townHeading(page), { bank: menu.bank.bank, gold: menu.bank.gold });
   return s(strings, townHeading(page));
+}
+
+/**
+ * TW-04 / UI-52（M18 5-3）: 見出しの 2 行目（無ければ null）。宿屋の一覧だけ、一行の HP / MP の合計と宿で上がる人数
+ * （core の townMenu.innParty の値を入れるだけ）
+ */
+export function townHeadingSub(page: TownPage, menu: TownMenu, strings: Strings): string | null {
+  if (page !== "inn") return null;
+  const p = menu.innParty;
+  return s(strings, "town.inn.partyHp", { hp: p.hp, hpMax: p.hpMax, mp: p.mp, mpMax: p.mpMax, n: p.levelUpReady });
 }
 
 /**

@@ -147,6 +147,7 @@ import {
   townFreshIntro,
   townHeader,
   townHeadingText,
+  townHeadingSub,
   townLowersInput,
   townMenuNotes,
   townPageIntro,
@@ -985,8 +986,10 @@ export function createApp(o: {
         c.setMode("battle");
         return;
       }
-      // UI-13: 見出し（段の問い。ログに残さない）と一覧。UI-11: 末尾の戻るは一覧の外に固定する
-      c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading } });
+      // UI-13: 見出し（段の問い。ログに残さない）と一覧。UI-11: 末尾の戻るは一覧の外に固定する。
+      // TW-04（M18 5-3）: 宿屋は見出しの 2 行目に一行の HP / MP の合計と宿で上がる人数（townHeadingSub）
+      const sub = townHeadingSub(townPage, menu, strings);
+      c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading, sub } });
       c.setMode("list");
       return;
     }

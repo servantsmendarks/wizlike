@@ -739,10 +739,12 @@ describe("入力と Command", () => {
   // メッセージ窓とパーティ欄の出し入れは applyPanels（街かキャラクター画面なら隠す）に移した
   // M10（UI-13 / UI-52。2026-10-07 U3）: 施設メニューは一覧ではなく 48×48 の 3 列 × 2 段（setBattleMenu の town）に改めたので、not.toContain を toContain に替えた
   // 2026-10-07（M10.5 追補・未定-22）: 見出しは townHeadingText（確認の段と救済の申し出は値の入った問い）で作るので、heading の期待を改めた
-  test("UI-13/UI-52/IT-66/UI-59（M8.5・M10）街の一覧は見出し（townHeadingText）付きの setList の town。施設メニューは見出しと説明の行（M16。townMenuNotes）付きの setBattleMenu の town（M17 から 40×40 の 3 列 × 3 段）。ヘッダーは場所と所持金、ビューは施設の絵。図鑑とキャラクター画面のパネルは layout.character に広げる（ソースの検査）", () => {
+  test("UI-13/UI-52/IT-66/UI-59/TW-04（M8.5・M10。M18 5-3）街の一覧は見出し（townHeadingText）と 2 行目（townHeadingSub）付きの setList の town。施設メニューは見出しと説明の行（M16。townMenuNotes）付きの setBattleMenu の town（M17 から 40×40 の 3 列 × 3 段）。ヘッダーは場所と所持金、ビューは施設の絵。図鑑とキャラクター画面のパネルは layout.character に広げる（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     expect(app).toContain("const heading = townHeadingText(townPage, menu, strings, previewOf(townPage), classChangeOf(townPage));");
-    expect(app).toContain('c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading } });');
+    // TW-04（M18 5-3）: 見出しの 2 行目（宿屋の一行の合計。townHeadingSub。宿屋以外は null）も渡す
+    expect(app).toContain("const sub = townHeadingSub(townPage, menu, strings);");
+    expect(app).toContain('c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading, sub } });');
     expect(app).toMatch(
       /if \(townPage === "menu"\) \{\s*c\.setBattleMenu\(items, "town", \{ heading, notes: townMenuNotes\(strings\) \}\);\s*c\.setMode\("battle"\);\s*return;\s*\}/,
     );

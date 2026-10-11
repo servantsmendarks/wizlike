@@ -64,11 +64,12 @@ export type Controls = {
    * 添字（select・setListFocus・数字キー）は fixedLast によらず items の順（末尾が戻る / やめる）。
    * fixedLastCancel が false なら、固定した末尾は戻る / やめるではない項目として扱い、取り消しの音にしない（UI-70 の宝箱の最初の段の [放っておく]。既定は true）。
    * town（M8.5。UI-13 の街の一覧）なら、見出し（town.heading。accent 色の 1 行。押せない）と一覧を layout.townList の位置に置く
-   * （行の高さは townList の行、幅は 168。固定の戻るは listBack のまま）。
+   * （行の高さは townList の行、幅は 168。固定の戻るは listBack のまま）。town.sub（M18 5-3。宿屋の一行の合計）があれば見出しの下に
+   * 2 行目（同じ色・同じ幅の 1 行）を出し、一覧を 1 行（見出しの高さ）下げて、高さを townList の 1 行ぶん減らす。
    * wide（M16。UI-11 / UI-13 の迷宮・戦闘の広い一覧）なら、一覧を layout.listWide の位置に置く（行の高さ 22、幅は fixedLast なら 168・無ければ 224。
    * 固定の戻るは listBack のまま）。list モードで出ている間は onWideChange(true)
    */
-  setList(items: ControlItem[], opts?: { fixedLast?: boolean; fixedLastCancel?: boolean; town?: { heading: string }; wide?: boolean }): void;
+  setList(items: ControlItem[], opts?: { fixedLast?: boolean; fixedLastCancel?: boolean; town?: { heading: string; sub?: string | null }; wide?: boolean }): void;
   /**
    * UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠 / campGrid の 8 枠 / townList.grid の 9 枠（M17。M10〜M16 は 6 枠））に並べる。
    * null は空き枠（何も置かない）。枠数を超える分は捨てる。
@@ -244,7 +245,7 @@ export function createControls(o: {
   /** UI-13（M8.5）: 街の一覧の見出し（押せない 1 行。accent 色） */
   const heading = document.createElement("div");
   heading.className = "controls-list-heading";
-  Object.assign(heading.style, {
+  const headingStyle = {
     position: "absolute",
     left: `${town.heading.x - origin.x}px`,
     top: `${town.heading.y - origin.y}px`,
@@ -256,8 +257,16 @@ export function createControls(o: {
     overflow: "hidden",
     // 帯の押せる範囲（y166..187）の上に重なるので、押下を下の帯のセルへ通す（UI-13・UI-10 の例外 town.band 40×22）
     pointerEvents: "none",
-  });
+  };
+  Object.assign(heading.style, headingStyle);
   el.appendChild(heading);
+  /** TW-04 / UI-13（M18 5-3）: 街の一覧の見出しの 2 行目（setList の town.sub。押せない 1 行。見出しのすぐ下） */
+  const headingSub = document.createElement("div");
+  headingSub.className = "controls-list-heading-sub";
+  Object.assign(headingSub.style, { ...headingStyle, top: `${town.heading.y + town.heading.h - origin.y}px` });
+  el.appendChild(headingSub);
+  /** 今の街の一覧に見出しの 2 行目を出しているか（一覧を 1 行下げる） */
+  let listTownSub = false;
   /** UI-13 / UI-52（M16）: 施設メニューの下の説明の行（押せない。UI-10 の最小サイズの対象外） */
   const notes = document.createElement("div");
   notes.className = "controls-town-notes";
@@ -281,7 +290,13 @@ export function createControls(o: {
   type ListPlace = "normal" | "town" | "wide";
   /** 一覧の容器の矩形（ステージ座標） */
   const listRect = (at: ListPlace): Rect =>
-    at === "town" ? town.area : at === "wide" ? wide.area : { x: first.x, y: first.y, w: first.w, h: last.y + last.h - first.y };
+    at === "town"
+      ? listTownSub
+        ? { ...town.area, y: town.area.y + town.heading.h, h: town.area.h - townRow.h }
+        : town.area
+      : at === "wide"
+        ? wide.area
+        : { x: first.x, y: first.y, w: first.w, h: last.y + last.h - first.y };
   /** 一覧の続きの印の位置（操作領域の原点からの座標） */
   const listMarkPos = (at: ListPlace) => {
     const r = listRect(at);
@@ -370,6 +385,7 @@ export function createControls(o: {
     setShown(list, mode === "list");
     setShown(listBack, mode === "list" && listBackOn);
     setShown(heading, (mode === "list" && listTownOn) || (mode === "battle" && battleTownOn));
+    setShown(headingSub, mode === "list" && listTownOn && listTownSub);
     setShown(notes, mode === "battle" && battleTownOn);
     setShown(close, mode === "close" || mode === "map");
     setShown(mapGo, mode === "map");
@@ -437,7 +453,7 @@ export function createControls(o: {
         menu.appendChild(b);
       });
     },
-    setList(items: ControlItem[], opts?: { fixedLast?: boolean; fixedLastCancel?: boolean; town?: { heading: string }; wide?: boolean }): void {
+    setList(items: ControlItem[], opts?: { fixedLast?: boolean; fixedLastCancel?: boolean; town?: { heading: string; sub?: string | null }; wide?: boolean }): void {
       const fixed = opts?.fixedLast === true && items.length > 0;
       listBackCancel = opts?.fixedLastCancel !== false;
       const townOn = opts?.town !== undefined;
@@ -447,6 +463,9 @@ export function createControls(o: {
       const rowW = townOn ? town.area.w : fixed ? narrow.w : wideOn ? wide.area.w : first.w;
       const rowH = townOn ? townRow.h : wideOn ? wideRow.h : first.h;
       if (opts?.town !== undefined && heading.textContent !== opts.town.heading) heading.textContent = opts.town.heading;
+      const sub = opts?.town?.sub ?? null;
+      listTownSub = sub !== null;
+      if (sub !== null && headingSub.textContent !== sub) headingSub.textContent = sub;
       const sigs = items.map((it, k) => listRowSig(it, fixed && k === items.length - 1, rowW, rowH, townOn, wideOn));
       listItems = items.slice();
       list.scrollTop = 0;

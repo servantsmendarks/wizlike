@@ -22,6 +22,7 @@ import {
   townFreshIntro,
   townHeader,
   townHeading,
+  townHeadingSub,
   townHeadingText,
   townLowersInput,
   townMenuNotes,
@@ -147,11 +148,11 @@ describe("UI-52 街のページ", () => {
     expect(notes).toHaveLength(townLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size).notes.length);
   });
 
-  test("UI-52/TW-04/TW-15（M16）宿屋はランクの行（名前・料金・効果。士気の立つ個室は効果に「＋士気」）。払えないランクは disabled。末尾が戻る", () => {
+  test("UI-52/TW-04/TW-15（M16。M18 5-3）宿屋はランクの行（名前・料金「{cost}G（一行）」・効果。士気の立つ個室は効果に「＋士気」）。払えないランクは disabled。末尾が戻る", () => {
     expect(townEntries("inn", menuOf(town({}, 50)), S)).toEqual([
-      { kind: "inn", rank: 0, label: "馬小屋　0G　MPのみ", disabled: false },
-      { kind: "inn", rank: 1, label: "相部屋　20G　HP・MP全回復", disabled: false },
-      { kind: "inn", rank: 2, label: "個室　60G　全回復＋士気", disabled: true },
+      { kind: "inn", rank: 0, label: "馬小屋　0G（一行）　MPのみ", disabled: false },
+      { kind: "inn", rank: 1, label: "相部屋　20G（一行）　HP・MP全回復", disabled: false },
+      { kind: "inn", rank: 2, label: "個室　60G（一行）　全回復＋士気", disabled: true },
       back,
     ]);
     // ちょうど払える額なら押せる
@@ -163,7 +164,7 @@ describe("UI-52 街のページ", () => {
     for (const e of townEntries("inn", menuOf(town()), S)) expect(kinsokuLines(e.label, 21), e.label).toHaveLength(1);
     // 効果の文はランクの id で引く（strings を差し替えれば行も変わる。表示層はランクを見て分岐しない）
     const swapped = townEntries("inn", menuOf(town()), { ...S, "town.inn.effect.cheap": "効果X" });
-    expect(swapped[1]?.label).toBe("相部屋　20G　効果X");
+    expect(swapped[1]?.label).toBe("相部屋　20G（一行）　効果X");
     expect(S["town.inn.moraleMark"]).toBeUndefined();
   });
 
@@ -1621,5 +1622,35 @@ describe("TW-05/UI-52/IT-61（M18 5-2）店の確認と売値", () => {
     }
     // 預けるの行（銀行。M17）は計の無い文のまま
     expect(formatMessage(S["town.storage.depositWho"]!, { name: "アルド", count: 1 })).toBe("アルド　1品");
+  });
+});
+
+describe("TW-04/UI-52（M18 5-3）宿屋の見出しの 2 行目と泊まった後の一言", () => {
+  test("TW-04/UI-52 宿屋の段だけ見出しの 2 行目 town.inn.partyHp「HP {hp}/{hpMax}　MP {mp}/{mpMax}　↑ {n}人」（値は core の townMenu.innParty）。ほかの段は null", () => {
+    const s = town({ c1: { hp: 1 }, c2: { exp: 100000 }, c4: { mp: 0 } });
+    const m = menuOf(s);
+    const p = m.innParty;
+    expect(townHeadingSub("inn", m, S)).toBe(`HP ${p.hp}/${p.hpMax}　MP ${p.mp}/${p.mpMax}　↑ ${p.levelUpReady}人`);
+    expect(p.levelUpReady).toBe(1);
+    // 見出しの 1 行目は今までどおりの問い
+    expect(townHeadingText("inn", m, S)).toBe(S["town.ask.inn"]);
+    for (const page of ALL_PAGES.filter((x) => x !== "inn")) expect(townHeadingSub(page, m, S), JSON.stringify(page)).toBeNull();
+    // strings を差し替えれば文も変わる（表示層は値を入れるだけ）
+    expect(townHeadingSub("inn", m, { ...S, "town.inn.partyHp": "{hp}-{hpMax}-{mp}-{mpMax}-{n}" })).toBe(`${p.hp}-${p.hpMax}-${p.mp}-${p.mpMax}-${p.levelUpReady}`);
+  });
+
+  test("TW-04/UI-52 見出しの 2 行目は最悪の値（HP・MP とも 9999/9999、6人）でも見出しの 1 行（全角 28 字 = 56 単位）に収まる。宿の行は最悪の料金（6 桁）でも一覧の 21 字（39 単位）に収まる", () => {
+    const worst = formatMessage(S["town.inn.partyHp"]!, { hp: 9999, hpMax: 9999, mp: 9999, mpMax: 9999, n: 6 });
+    expect(textUnits(worst), worst).toBeLessThanOrEqual(56);
+    for (const r of data.config.town.innRanks) {
+      const label = formatMessage(S["town.inn.rank"]!, { name: r.name, cost: 999999, effect: S[`town.inn.effect.${r.id}`]! });
+      expect(textUnits(label), label).toBeLessThanOrEqual(39);
+    }
+  });
+
+  test("TW-04 泊まった後の一言 town.inn.restored / restoredMp は会話の箱の 1 行（28 字）に収まる", () => {
+    expect(S["town.inn.restored"]).toBe("全員の HP と MP が戻った。");
+    expect(S["town.inn.restoredMp"]).toBe("全員の MP が戻った。");
+    for (const k of ["town.inn.restored", "town.inn.restoredMp"]) expect(kinsokuLines(S[k]!, 28), k).toHaveLength(1);
   });
 });

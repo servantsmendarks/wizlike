@@ -168,7 +168,8 @@ export function checkInn(state: GameState, rank: unknown, data: GameData): strin
 
 /**
  * TW-04 / MG-02: 料金を 1 回払う → message town.inn.stay → alive の者を並び順に、HP に ceil(hpMax × hpRatio) を足して hpMax で止め
- * （hpRatio 0 なら増えない）、MP は全ランクで mpMax に戻す →（TW-15。士気の立つランクなら）morale = { rankId } →
+ * （hpRatio 0 なら増えない）、MP は全ランクで mpMax に戻す →（M18 5-3。alive の者がいれば）message town.inn.restored（hpRatio > 0）/
+ * town.inn.restoredMp（hpRatio 0）→（TW-15。士気の立つランクなら）morale = { rankId } →
  * sanOver > 0 なら alive の者を並び順に overSan → message town.inn.morale → alive の者を並び順に levelUpWhilePossible（どのランクでも）。
  * 上がる者（canLevelUp）の処理の前には section を 1 回出す（UI-47 の区切り。M10.5 追補 2。上がらない者には出さない）。
  * 士気の立たないランクでは morale を変えない（消さない）。状態異常は治さない。満タンでも泊まれる。
@@ -188,6 +189,11 @@ export function stayInn(ctx: RuleContext, rank: number): void {
     const mp = es.mpMax;
     if (mp > ch.mp) ctx.events.push({ kind: "mpChanged", id: ch.id, delta: mp - ch.mp, mp });
     ch.mp = mp;
+  }
+  // M18（5-3）: 回復の後・士気の前に、何が戻ったかを 1 文（HP の増えるランクは HP と MP、増えないランクは MP だけ）。
+  // 生きている者がいなければ出さない。満タンでも出す（泊まれば戻った状態になる）
+  if (state.party.some((ch) => ch.life === "alive")) {
+    ctx.events.push({ kind: "message", key: r.hpRatio > 0 ? "town.inn.restored" : "town.inn.restoredMp" });
   }
   if (raisesMorale(r)) {
     state.morale = { rankId: r.id };
@@ -374,6 +380,21 @@ export function grantMercy(ctx: RuleContext, memberId: string): void {
 // ---------------------------------------------------------------------------
 // 表示層向けの問い合わせ（純粋。state を変えない）
 
+/** TW-04（M18 5-3）: 宿屋の見出しの 2 行目の値。life alive の者の HP / MP と実効の最大値（CH-14）の合計、canLevelUp の人数 */
+function innPartyOf(state: GameState, data: GameData): TownMenu["innParty"] {
+  const out = { hp: 0, hpMax: 0, mp: 0, mpMax: 0, levelUpReady: 0 };
+  for (const ch of state.party) {
+    if (ch.life !== "alive") continue;
+    const es = equipStats(state, data, ch);
+    out.hp += ch.hp;
+    out.hpMax += es.hpMax;
+    out.mp += ch.mp;
+    out.mpMax += es.mpMax;
+    if (canLevelUp(ch, data)) out.levelUpReady += 1;
+  }
+  return out;
+}
+
 /** UI-52 の街のメニューの値。screen が town でなければ null */
 export function townMenu(state: GameState, data: GameData): TownMenu | null {
   if (state.screen !== "town") return null;
@@ -394,6 +415,7 @@ export function townMenu(state: GameState, data: GameData): TownMenu | null {
       affordable: gold >= r.cost,
       morale: raisesMorale(r),
     })),
+    innParty: innPartyOf(state, data), // TW-04（M18 5-3）
     morale: (() => {
       const m = moraleOf(state, data);
       return m === null ? null : { rankId: m.id, name: m.name };

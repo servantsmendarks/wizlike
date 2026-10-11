@@ -497,6 +497,49 @@ describe("controls", () => {
     expect(heading.style["display"]).toBe("none");
   });
 
+  test("TW-04/UI-13（M18 5-3）setList(town) の sub は見出しの 2 行目（x8・y188・224×10、同じ色・押せない）。出ている間は一覧を 1 行下げ（y200）、高さを 1 行ぶん減らす（176）。sub なし・null で元の位置に戻し 2 行目を隠す", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const T = townLayout(g, data.config.party.size);
+    const c = createControls({
+      region: g.controls,
+      layout: { ...L, townList: { heading: T.heading, area: T.list.area, rows: T.list.rows, grid: T.grid } },
+      strings: data.strings,
+      onAction: () => {},
+      hold: HOLD,
+      onClose: () => {},
+    });
+    const rows = [{ label: "r0", onSelect: () => {} }, { label: "back", onSelect: () => {} }];
+    c.setList(rows, { fixedLast: true, town: { heading: "どの部屋にする？", sub: "HP 9/10　MP 3/4　↑ 1人" } });
+    c.setMode("list");
+    const list = created.find((e) => e.className === "controls-list")!;
+    const heading = created.find((e) => e.className === "controls-list-heading")!;
+    const sub = created.find((e) => e.className === "controls-list-heading-sub")!;
+    // 操作領域の原点は y300。見出しは y178（−122）、2 行目は y188（−112）、一覧は y200（−100）
+    expect([sub.style["left"], sub.style["top"], sub.style["width"], sub.style["height"], sub.style["display"]]).toEqual(["8px", "-112px", "224px", "10px", ""]);
+    expect([sub["textContent"], sub.style["color"], sub.style["pointerEvents"], sub.style["whiteSpace"]]).toEqual([
+      "HP 9/10　MP 3/4　↑ 1人",
+      "var(--c-accent)",
+      "none",
+      "nowrap",
+    ]);
+    expect(tapSpecOf(sub)).toBeNull();
+    expect(heading["textContent"]).toBe("どの部屋にする？");
+    expect([list.style["top"], list.style["height"]]).toEqual(["-100px", "176px"]);
+    // 2 行目の無い段（null）では元の位置（y190・198）に戻し、2 行目を隠す
+    c.setList(rows, { fixedLast: true, town: { heading: "何をする？", sub: null } });
+    expect([list.style["top"], list.style["height"], sub.style["display"]]).toEqual(["-110px", "198px", "none"]);
+    c.setList(rows, { fixedLast: true, town: { heading: "h", sub: "s" } });
+    expect(sub.style["display"]).toBe("");
+    c.setList(rows, { fixedLast: true, town: { heading: "h" } });
+    expect([list.style["top"], sub.style["display"]]).toEqual(["-110px", "none"]);
+    // 一覧以外のモードでは隠す
+    c.setList(rows, { fixedLast: true, town: { heading: "h", sub: "s" } });
+    c.setMode("none");
+    expect(sub.style["display"]).toBe("none");
+  });
+
   test("UI-11/UI-13/UI-10（M16）setList(wide) は一覧を listWide の位置（x8・y238。操作領域の原点 y300 から −62）の高さ 154（22 × 7 行）に置く。7 件までは欄に収まり、8 件目からは縦スクロール。行は onTap で押せる（tapSpecOf）。固定の戻るは listBack のまま、固定しない一覧は幅 224。wide なしで元の位置に戻す", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);

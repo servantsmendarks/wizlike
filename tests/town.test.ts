@@ -139,13 +139,14 @@ describe("TW-02/TW-26 街に入る処理（arriveTown / returnToTown）", () => 
 // ---------------------------------------------------------------------------
 
 describe("TW-15 士気（宿の個室。M7）", () => {
-  test("TW-15/TW-04 個室: 払う → stay → HP・MP → alive の者を並び順に SAN を sanMax + 10 = 110 へ（dead は変えない）→ town.inn.morale。morale = { rankId: good }、乱数なし", () => {
+  test("TW-15/TW-04 個室: 払う → stay → HP・MP → town.inn.restored（M18 5-3）→ alive の者を並び順に SAN を sanMax + 10 = 110 へ（dead は変えない）→ town.inn.morale。morale = { rankId: good }、乱数なし", () => {
     // c1 HP 1/15 → 15（+14）、c2 dead（SAN 100 のまま）、c3 SAN 40 → 110（+70）、ほかは 100 → 110（+10）
     const s = town({ c1: { hp: 1 }, c2: { ...DEAD }, c3: { san: 40 } });
     const r = ok(s, { type: "town.inn", rank: 2 });
     expect(r.events).toEqual([
       { kind: "message", key: "town.inn.stay", params: { room: "個室", cost: 60 } },
       { kind: "hpChanged", id: "c1", delta: 14, hp: 15 },
+      { kind: "message", key: "town.inn.restored" },
       { kind: "sanChanged", id: "c1", delta: 10, san: 110 },
       { kind: "sanChanged", id: "c3", delta: 70, san: 110 },
       { kind: "sanChanged", id: "c4", delta: 10, san: 110 },
@@ -164,13 +165,17 @@ describe("TW-15 士気（宿の個室。M7）", () => {
     const a = ok(town(), { type: "town.inn", rank: 2 }).state;
     const b = ok(a, { type: "town.inn", rank: 0 });
     expect(b.state.morale).toEqual({ rankId: "good" });
-    expect(b.events).toEqual([{ kind: "message", key: "town.inn.stay", params: { room: "馬小屋", cost: 0 } }]);
+    expect(b.events).toEqual([
+      { kind: "message", key: "town.inn.stay", params: { room: "馬小屋", cost: 0 } },
+      { kind: "message", key: "town.inn.restoredMp" },
+    ]);
     const c = ok(b.state, { type: "town.inn", rank: 1 });
     expect(c.state.morale).toEqual({ rankId: "good" });
     expect(c.state.party.map((x) => x.san)).toEqual([110, 110, 110, 110, 110, 110]);
     const d = ok(c.state, { type: "town.inn", rank: 2 });
     expect(d.events).toEqual([
       { kind: "message", key: "town.inn.stay", params: { room: "個室", cost: 60 } },
+      { kind: "message", key: "town.inn.restored" },
       { kind: "message", key: "town.inn.morale" },
     ]);
     expect(d.state.morale).toEqual({ rankId: "good" });
@@ -220,7 +225,7 @@ describe("TW-15 士気（宿の個室。M7）", () => {
 });
 
 describe("TW-04 宿屋（town.inn）", () => {
-  test("TW-04/MG-02 馬小屋（0G、HP ×0）: HP は増えず、alive の MP は mpMax に戻る（1 人ずつ HP → MP）。dead は不変、状態異常は残る", () => {
+  test("TW-04/MG-02 馬小屋（0G、HP ×0）: HP は増えず、alive の MP は mpMax に戻る（1 人ずつ HP → MP）→ town.inn.restoredMp（M18 5-3）。dead は不変、状態異常は残る", () => {
     // c1 HP 1/15 → +ceil(15 × 0)=0 で 1 のまま、c4 MP 0/5 → 5、c5 HP 5/8 は 5 のまま・MP 3/7 → 7、c2 dead は MP 0 のまま
     const s = town({ c1: { hp: 1, status: ["poison"] }, c2: { ...DEAD, mp: 0 }, c4: { mp: 0 }, c5: { hp: 5, mp: 3 } });
     const r = ok(s, { type: "town.inn", rank: 0 });
@@ -228,6 +233,7 @@ describe("TW-04 宿屋（town.inn）", () => {
       { kind: "message", key: "town.inn.stay", params: { room: "馬小屋", cost: 0 } },
       { kind: "mpChanged", id: "c4", delta: 5, mp: 5 },
       { kind: "mpChanged", id: "c5", delta: 4, mp: 7 },
+      { kind: "message", key: "town.inn.restoredMp" },
     ]);
     expect(member(r.state, "c1").hp).toBe(1);
     expect(member(r.state, "c5").hp).toBe(5);
@@ -250,10 +256,13 @@ describe("TW-04 宿屋（town.inn）", () => {
     expect(member(b.state, "c4").mp).toBe(5);
   });
 
-  test("TW-04 満タンでも泊まれる（料金を払い、回復のイベントは出ない。相部屋は士気が立たない）", () => {
+  test("TW-04 満タンでも泊まれる（料金を払い、回復のイベントは出ない。語りは stay と town.inn.restored（M18 5-3。満タンでも出す）。相部屋は士気が立たない）", () => {
     const s = town();
     const r = ok(s, { type: "town.inn", rank: 1 });
-    expect(r.events).toEqual([{ kind: "message", key: "town.inn.stay", params: { room: "相部屋", cost: 20 } }]);
+    expect(r.events).toEqual([
+      { kind: "message", key: "town.inn.stay", params: { room: "相部屋", cost: 20 } },
+      { kind: "message", key: "town.inn.restored" },
+    ]);
     expect(r.state.gold).toBe(280);
     expect(r.state.morale).toBeNull();
   });
@@ -349,6 +358,56 @@ describe("TW-04 宿屋（town.inn）", () => {
     expect(ks.slice(at[0]! + 1, at[1]).filter((k) => k === "levelUp:c2")).toHaveLength(2);
     // 上がる者がいなければ出さない
     expect(ok(town(), { type: "town.inn", rank: 0 }).events.some((e) => e.kind === "section")).toBe(false);
+  });
+
+  test("TW-04（M18 5-3）泊まった後の一言 town.inn.restored / restoredMp は HP・MP の回復（hpChanged / mpChanged）の後、士気・section・レベルアップの前。乱数の消費は変えない（鏡の rng は上の CH-61 のテスト）", () => {
+    const d = loadRuleData();
+    const s = town({ c1: { hp: 1 }, c2: { exp: 1500 }, c4: { mp: 0 } });
+    for (const [rank, key] of [
+      [0, "town.inn.restoredMp"],
+      [1, "town.inn.restored"],
+      [2, "town.inn.restored"],
+    ] as const) {
+      const r = execute(s, { type: "town.inn", rank }, d);
+      expectKnownStringKeys(r.events);
+      const ks = r.events.map((e) => (e.kind === "message" ? e.key : e.kind));
+      const at = ks.indexOf(key);
+      expect(ks.filter((k) => k === "town.inn.restored" || k === "town.inn.restoredMp")).toEqual([key]);
+      expect(at).toBeGreaterThan(Math.max(ks.lastIndexOf("hpChanged"), ks.lastIndexOf("mpChanged")));
+      expect(at).toBeLessThan(ks.indexOf("section"));
+      if (rank === 2) expect(at).toBeLessThan(ks.indexOf("sanChanged"));
+      // 一言を除けば M17 までの順と同じ（stay の次に回復、回復の後に士気・レベルアップ）
+      expect(ks[0]).toBe("town.inn.stay");
+    }
+    // 生きている者がいなければ一言を出さない（語りは stay だけ）
+    const allDead = town({ c1: DEAD, c2: DEAD, c3: DEAD, c4: DEAD, c5: ASH, c6: DEAD });
+    expect(ok(allDead, { type: "town.inn", rank: 1 }).events).toEqual([
+      { kind: "message", key: "town.inn.stay", params: { room: "相部屋", cost: 20 } },
+    ]);
+  });
+
+  test("TW-04（M18 5-3）townMenu.innParty は life alive の者の HP / MP と実効の最大値の合計、canLevelUp の人数（dead・ash は数えない）。乱数を引かず state を変えない", () => {
+    const s = town({ c1: { hp: 1 }, c2: { exp: 1500 }, c3: { ...DEAD, exp: 5000 }, c4: { mp: 0 }, c6: ASH });
+    const before = structuredClone(s);
+    const p = townMenu(s, data)!.innParty;
+    const alive = s.party.filter((c) => c.life === "alive");
+    const sheet = alive.map((c) => memberSheet(s, data, c));
+    expect(p).toEqual({
+      hp: alive.reduce((a, c) => a + c.hp, 0),
+      hpMax: sheet.reduce((a, x) => a + x.hpMax, 0),
+      mp: alive.reduce((a, c) => a + c.mp, 0),
+      mpMax: sheet.reduce((a, x) => a + x.mpMax, 0),
+      levelUpReady: sheet.filter((x) => x.canLevelUp).length,
+    });
+    expect(p.levelUpReady).toBe(1); // ベルク（c2）だけ。dead のキリ（c3）は数えない
+    expect(p.hp).toBeLessThan(p.hpMax);
+    expect(s).toEqual(before);
+    // 泊まった後（相部屋）は HP・MP が最大値と同じ
+    const after = townMenu(ok(town({ c1: { hp: 1 }, c4: { mp: 0 } }), { type: "town.inn", rank: 1 }).state, data)!.innParty;
+    expect([after.hp, after.mp]).toEqual([after.hpMax, after.mpMax]);
+    // 生きている者がいなければ全部 0
+    const none = town({ c1: DEAD, c2: DEAD, c3: DEAD, c4: DEAD, c5: ASH, c6: DEAD });
+    expect(townMenu(none, data)!.innParty).toEqual({ hp: 0, hpMax: 0, mp: 0, mpMax: 0, levelUpReady: 0 });
   });
 });
 

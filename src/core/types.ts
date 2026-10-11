@@ -709,6 +709,11 @@ export type PenaltyResult = {
 
 /** morale はそのランクに泊まると士気が立つか（TW-15。宿の一覧の印） */
 export type TownMenuInnRank = { rank: number; id: string; name: string; cost: number; affordable: boolean; morale: boolean };
+/**
+ * TW-04（M18 5-3）: 宿屋の見出しの 2 行目の一行の合計。life alive の者（宿で回復・レベルアップする者）の HP / MP の今の値と
+ * 実効の最大値（CH-14 の equipStats）の合計と、そのうち canLevelUp（CH-61。宿で上がる）の人数。生きている者がいなければ全部 0
+ */
+export type TownMenuInnParty = { hp: number; hpMax: number; mp: number; mpMax: number; levelUpReady: number };
 export type TownMenuTempleRow = { memberId: string; name: string; cost: number; affordable: boolean };
 export type TownMenuShopItem = { itemId: string; name: string; price: number; affordable: boolean };
 /**
@@ -797,6 +802,8 @@ export type TownMenuBankRow = { kind: "all" | "half" | "fixed"; amount: number; 
 export type TownMenu = {
   gold: number;
   inn: TownMenuInnRank[];
+  /** TW-04（M18 5-3）: 宿屋の見出しの 2 行目の値（一行の HP / MP の合計と、宿で上がる人数） */
+  innParty: TownMenuInnParty;
   /** TW-15（M7）: 今の士気（立てたランクの id と名前）。無ければ null。rankId がデータに無ければ null */
   morale: { rankId: string; name: string } | null;
   temple: {
