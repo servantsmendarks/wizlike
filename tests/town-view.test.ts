@@ -2,7 +2,7 @@
 // 既定のパーティ（newGame(1)）: c1 アルド（リーダー）、c2 ベルク、c3 キリ、c4 ドナ、c5 エル、c6 フィン。全員レベル 1。所持金 300。
 // 宿: 馬小屋 0G / 相部屋 20G / 個室 60G。寺院: 蘇生 level × 100、治療 毒 50 + 麻痺 150、解呪 200。闇魔術: level × darkCostPerLevel。
 // 店（TW-05）: 薬草 10G / 解毒草 15G / 帰還の糸 50G。初期の所持枠の空き（townMenu.shop.members）は c1 4 / c2 6 / c3 4 / c4 5 / c5 6 / c6 5。
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { campMenu } from "../src/core/rules/camp";
 import { classChangeOptions, townMenu } from "../src/core/rules/town";
 import { execute } from "../src/core/engine";
@@ -10,7 +10,8 @@ import { upgradePreview } from "../src/core/rules/upgrade";
 import { cloneState, createItemInstance } from "../src/core/state";
 import type { Character, EndingRecord, GameState, TownMenu, UpgradeCatalystRef } from "../src/core/types";
 import { endingKeyAction, formatEndingRecord } from "../src/presenter/views/ending";
-import { formatRules } from "../src/presenter/views/rules";
+import { formatRules, RULE_TERM_MAX, splitRuleLine } from "../src/presenter/views/rules";
+import { createWipeView, TERM_COL_W, type WipeTermLine } from "../src/presenter/views/wipe";
 import {
   samePage,
   TOWN_INTRO_DEDUP,
@@ -1087,30 +1088,92 @@ describe("UI-73 戦績の画面（M12。views/ending.ts の純粋な部分）", 
 describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」）", () => {
   const lines = formatRules(S);
   const body = lines.slice(1);
-  const head = (term: string): string | undefined => body.find((l) => l.startsWith(`${term}　`));
+  const terms = body.filter((l): l is WipeTermLine => typeof l !== "string");
+  const head = (term: string): string | undefined => terms.find((l) => l.term === term)?.desc;
+  const SP = String.fromCharCode(0x3000);
 
   test("UI-77 formatRules: 見出し rules.title → rules.line.1..N（続き番号のある限り。途切れた先は使わない）。値は strings だけ", () => {
     expect(lines[0]).toBe("用語");
     expect(S["rules.line.1"]).toBeDefined();
     const n = body.length;
     expect(n).toBeGreaterThanOrEqual(10);
-    for (let i = 1; i <= n; i++) expect(body[i - 1]).toBe(S[`rules.line.${i}`]);
+    for (let i = 1; i <= n; i++) expect(body[i - 1]).toEqual(splitRuleLine(S[`rules.line.${i}`]!));
     expect(S[`rules.line.${n + 1}`]).toBeUndefined();
     // 続き番号が途切れた先のキーは使わない
     expect(formatRules({ "rules.title": "t", "rules.line.1": "a", "rules.line.3": "c" })).toEqual(["t", "a"]);
   });
 
-  test("UI-77 どの行も 1 行に収まる: 会話の箱の 1 行（全角 28 字）と、戦績と同じ部品の窓の幅（枠 1×2・左の余白 4・右の余白 4 と続きの印 8 を除く。折り返さず切れる）", () => {
+  test("UI-77（M16 追補 H-3）行の切り分け: 最初の全角空白の前が 3 字以内で空白なしなら用語、全角空白で始まる行は用語なしの続きの行、ほかは文字列のまま", () => {
+    expect(RULE_TERM_MAX).toBe(3);
+    expect(splitRuleLine(`HP${SP}体力`)).toEqual({ term: "HP", desc: "体力" });
+    expect(splitRuleLine(`未鑑定${SP}拾った品`)).toEqual({ term: "未鑑定", desc: "拾った品" });
+    expect(splitRuleLine(`${SP}続き`)).toEqual({ term: "", desc: "続き" });
+    expect(splitRuleLine(`WAR 戦士${SP}THI 盗賊`)).toBe(`WAR 戦士${SP}THI 盗賊`); // 空白を含む = 一覧の行
+    expect(splitRuleLine(`四文字語${SP}説明`)).toBe(`四文字語${SP}説明`); // 4 字は用語にしない
+    expect(splitRuleLine("区切りなし")).toBe("区切りなし");
+    // 実データ: 職業の略称の一覧（1・2）は文字列、続きの行（6・20・21・23）は用語なし、ほかは用語あり
+    expect(typeof body[0]).toBe("string");
+    expect(typeof body[1]).toBe("string");
+    for (const [i, l] of body.entries()) {
+      const raw = S[`rules.line.${i + 1}`]!;
+      if (typeof l === "string") expect(i, raw).toBeLessThan(2);
+      else if (raw.startsWith(SP)) expect(l.term, raw).toBe("");
+      else expect(l.term.length, raw).toBeGreaterThan(0);
+    }
+    expect(terms.filter((l) => l.term === "").map((l) => l.desc)).toEqual([6, 20, 21, 23].map((n) => S[`rules.line.${n}`]!.slice(1)));
+  });
+
+  test("UI-77（M16 追補 H-3）用語の列は 32px（全角 4 字。最長の用語 3 字 + 区切り）。説明はどの行も列の右の同じ x から（続きの行も字下げ）", () => {
+    expect(TERM_COL_W).toBe(32);
+    for (const l of terms) expect(textUnits(l.term) * 4, l.term).toBeLessThan(TERM_COL_W);
+  });
+
+  test("UI-77 どの行も 1 行に収まる: 会話の箱の 1 行（全角 28 字）と、戦績と同じ部品の窓の幅（枠 1×2・左の余白 4・右の余白 4 と続きの印 8 を除く 222px。用語の行は列 32px + 説明。折り返さず切れる）", () => {
     const w = dungeonLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size).wipe;
     const inner = w.w - 2 - 4 - 4 - 8;
+    expect(inner).toBe(222);
+    for (let n = 1; S[`rules.line.${n}`] !== undefined; n++) expect(kinsokuLines(S[`rules.line.${n}`]!, 28), `${n}`).toHaveLength(1);
     for (const l of lines) {
-      expect(kinsokuLines(l, 28), l).toHaveLength(1);
-      expect(textUnits(l) * 4, l).toBeLessThanOrEqual(inner);
+      const px = typeof l === "string" ? textUnits(l) * 4 : TERM_COL_W + textUnits(l.desc) * 4;
+      expect(px, JSON.stringify(l)).toBeLessThanOrEqual(inner);
+    }
+  });
+
+  test("UI-77（M16 追補 H-3）窓の部品: 用語の行は用語の span（幅 32px の inline-block）と説明の span の 2 つ。文字列の行は今までどおり textContent", () => {
+    const made: Array<Record<string, unknown>> = [];
+    const el = (): Record<string, unknown> => {
+      const e: Record<string, unknown> = { style: {}, className: "", textContent: "", children: [] as unknown[], scrollTop: 0, scrollHeight: 0, clientHeight: 0 };
+      e["appendChild"] = (c: unknown) => ((e["children"] as unknown[]).push(c), c);
+      e["append"] = (...c: unknown[]) => (e["children"] as unknown[]).push(...c);
+      e["replaceChildren"] = (...c: unknown[]) => (e["children"] = c);
+      e["addEventListener"] = () => {};
+      e["setAttribute"] = () => {};
+      e["removeAttribute"] = () => {};
+      made.push(e);
+      return e;
+    };
+    vi.stubGlobal("document", { createElement: el, createElementNS: el });
+    try {
+      const L = dungeonLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size);
+      const v = createWipeView(L.wipe, S);
+      v.render(["用語", "WAR 戦士", { term: "HP", desc: "体力" }, { term: "", desc: "続き" }]);
+      const view = made.find((e) => e["className"] === "wipe-view")!;
+      const rows = view["children"] as Array<Record<string, unknown>>;
+      expect(rows.map((r) => r["className"])).toEqual(["wipe-title", "wipe-line", "wipe-line", "wipe-line"]);
+      expect(rows[1]!["textContent"]).toBe("WAR 戦士");
+      for (const [i, r] of [rows[2]!, rows[3]!].entries()) {
+        const [t, d] = r["children"] as Array<Record<string, unknown>>;
+        expect([t!["className"], d!["className"]]).toEqual(["wipe-term", "wipe-desc"]);
+        expect(t!["style"]).toMatchObject({ display: "inline-block", width: "32px", overflow: "hidden" });
+        expect([t!["textContent"], d!["textContent"]]).toEqual(i === 0 ? ["HP", "体力"] : ["", "続き"]);
+      }
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 
   test("UI-77 中身: 職業の略称と名前（classes.json と同じ）、HP / MP / SAN（party.*）、SAN の段と状態の略称（party.san.* / party.status.*）、↑（town.band.mark.levelUp）、G、AC、灰、士気、未鑑定、触媒", () => {
-    for (const c of data.classes) expect(body.some((l) => l.includes(`${c.abbr} ${c.name}`)), c.id).toBe(true);
+    for (const c of data.classes) expect(body.some((l) => typeof l === "string" && l.includes(`${c.abbr} ${c.name}`)), c.id).toBe(true);
     for (const k of ["party.hp", "party.mp", "party.san"]) expect(head(S[k]!), k).toBeDefined();
     for (const st of ["uneasy", "confused", "broken"]) expect(head(S[`party.san.${st}`]!), st).toBeDefined();
     for (const st of ["poison", "paralysis", "sleep", "stone"]) expect(head(S[`party.status.${st}`]!), st).toBeDefined();

@@ -41,10 +41,17 @@ export function wipeKeyAction(a: Action, talkOpen: boolean): "toTown" | "scrollU
 
 const LINE_H = 10;
 const PAD = 4;
+/** UI-77（M16 追補 H-3）: 用語の列の幅（全角 4 字 = 32px。用語は 3 字まで + 区切り）。説明はこの x から始める */
+export const TERM_COL_W = 32;
+
+/** UI-77（M16 追補 H-3）: 用語の列の行。term は幅 TERM_COL_W の列（空なら字下げだけ。続きの行）、desc は列の右から */
+export type WipeTermLine = { term: string; desc: string };
+/** 窓の 1 行。文字列はそのまま 1 行（全滅の内訳・戦績・用語の一覧の見出しと一覧の行） */
+export type WipeLine = string | WipeTermLine;
 
 export type WipeView = {
   el: HTMLElement;
-  render(lines: readonly string[]): void;
+  render(lines: readonly WipeLine[]): void;
   /** UI-11（M10.5 追補）: 続きの印を出し直す（el を表示した後） */
   refresh(): void;
 };
@@ -90,15 +97,27 @@ export function createWipeView(rect: Rect, strings: Strings): WipeView {
   });
   return {
     el,
-    render(lines: readonly string[]): void {
+    render(lines: readonly WipeLine[]): void {
       view.scrollTop = 0;
       view.replaceChildren(
-        ...lines.map((text, i) => {
+        ...lines.map((line, i) => {
           const t = document.createElement("div");
           t.className = i === 0 ? "wipe-title" : "wipe-line";
           Object.assign(t.style, { height: `${LINE_H}px`, lineHeight: `${LINE_H}px`, whiteSpace: "nowrap", overflow: "hidden" });
           if (i === 0) t.style.color = "var(--c-accent)";
-          t.textContent = text;
+          if (typeof line === "string") {
+            t.textContent = line;
+            return t;
+          }
+          // UI-77（M16 追補 H-3）: 用語は幅 TERM_COL_W の列に置き、説明はどの行も同じ x から（字の幅によらず揃う）
+          const term = document.createElement("span");
+          term.className = "wipe-term";
+          Object.assign(term.style, { display: "inline-block", width: `${TERM_COL_W}px`, overflow: "hidden", verticalAlign: "top" });
+          term.textContent = line.term;
+          const desc = document.createElement("span");
+          desc.className = "wipe-desc";
+          desc.textContent = line.desc;
+          t.append(term, desc);
           return t;
         }),
       );
