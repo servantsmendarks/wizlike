@@ -55,7 +55,9 @@
 //   message.clearView で箱を空にする。迷宮・戦闘の窓は encounter・イベントから戻る以外の screen{dungeon}・floorChanged で clearView する（待たない）。
 //   空にするのは表示だけで、全文の履歴（UI-46）は残る。戦闘中の beat では空にしない。
 //   M18（UI-45）: message.clearOn が "moved"（階段・出口の問い）なら、その文を出した後の次の moved（位置が変わったもの）で clearView する。
-//   旋回では空にしない。印は再生をまたいで残し（問いと歩き去る手は別の再生）、ほかの契機で窓を空にしたら外す（clearOnMoved）。
+//   旋回では空にしない。印は再生をまたいで残し（問いと歩き去る手は別の再生）、ほかの契機で窓を空にしたら外す（clearMark）。
+//   M19（UI-45）: clearOn "step"（壁 dungeon.blocked・扉 dungeon.door）は、その文を出した再生より後の再生の、次の moved（位置が変わったもの）か
+//   turned で clearView する（扉の文は同じ再生の moved より前に出るので、同じ再生の moved では消さない）。印は後に出た文の値で上書きする。
 // 具体的な views は import しない（純粋な enemyGroupOfId / formatMessage / formatDiceSummary だけ）。モジュールのトップレベルでは DOM に触れない。
 import type { GameData, StatusId, Strings } from "../core/data/index";
 import type { EndingRecord, EnemyGroupView, GameEvent, GameEventKind, GameState, Life, PenaltyResult, Screen, ViewPoint } from "../core/types";
@@ -343,13 +345,24 @@ export function createPlayer(deps: PlayerDeps): Player {
   /** UI-73（M12）: この再生で受けた ending の record（再生の終わりに ending.show へ渡す） */
   let endingRecord: EndingRecord | null = null;
   /**
-   * UI-45（M18）: clearOn moved の文を出した後、まだ窓を空にしていない。次の moved（位置が変わったもの）で空にする。
+   * UI-45（M18）: clearOn の文を出した後、まだ窓を空にしていない。on "moved" は次の moved（位置が変わったもの）で、
+   * on "step"（M19）は play の番号 gen より後の再生の次の moved（位置が変わったもの）か turned で空にする。
    * 再生をまたいで残す（問いの再生と、やめるの後に歩き去る再生は別）。ほかの契機で窓を空にしたら外す
    */
-  let clearOnMoved = false;
-  /** UI-45 / UI-47: 今の表示先の文を空にする（clearOnMoved の印も外す） */
+  let clearMark: { on: "moved" | "step"; gen: number } | null = null;
+  /** UI-45（M19）: play の通し番号（clearOn step の文と同じ再生の moved では消さないため） */
+  let playGen = 0;
+  /** UI-45: 今の印で、この出来事（moved は位置が変わったときだけ）の前に窓を空にするか（表示のためだけの比較） */
+  const clearsOn = (ev: GameEvent, cursor: ViewPoint | null): boolean => {
+    const m = clearMark;
+    if (m === null) return false;
+    if (m.on === "step" && m.gen >= playGen) return false;
+    if (ev.kind === "moved") return cursor === null || cursor.pos.x !== ev.pos.x || cursor.pos.y !== ev.pos.y;
+    return ev.kind === "turned" && m.on === "step";
+  };
+  /** UI-45 / UI-47: 今の表示先の文を空にする（clearMark の印も外す） */
   const clearWindow = (): void => {
-    clearOnMoved = false;
+    clearMark = null;
     deps.message.clearView?.();
   };
   /** UI-73（M12。未定-35）: この再生で wipe を受けたか（全滅の経路では結末の語りの後で待たない）。再生の開始で偽に戻す */
@@ -401,13 +414,13 @@ export function createPlayer(deps: PlayerDeps): Player {
       cx.skip = isSkip();
       const tpl = deps.strings[ev.key] ?? ev.key;
       await deps.message.say(formatMessage(tpl, ev.params), cx.skip);
-      if (ev.clearOn === "moved") clearOnMoved = true;
+      if (ev.clearOn !== undefined) clearMark = { on: ev.clearOn, gen: playGen };
     },
     async moved(ev, cx, finalState) {
       cx.skip = isSkip();
-      // UI-45（M18）: 階段・出口の問い（clearOn moved）の後に歩き去ったら窓を空にする（位置の比較は表示のためだけ）
-      const prev = cx.cursor;
-      if (clearOnMoved && (prev === null || prev.pos.x !== ev.pos.x || prev.pos.y !== ev.pos.y)) clearWindow();
+      // UI-45（M18）: 階段・出口の問い（clearOn moved）の後に歩き去ったら窓を空にする（位置の比較は表示のためだけ）。
+      // M19: 壁・扉の文（clearOn step）の後の再生の前進でも空にする
+      if (clearsOn(ev, cx.cursor)) clearWindow();
       const c = ensureCursor(cx, finalState);
       if (c === null) return;
       c.pos = { x: ev.pos.x, y: ev.pos.y };
@@ -416,6 +429,8 @@ export function createPlayer(deps: PlayerDeps): Player {
     },
     async turned(ev, cx, finalState) {
       cx.skip = isSkip();
+      // UI-45（M19）: 壁・扉の文（clearOn step）の後の再生の旋回で窓を空にする（階段の問いの clearOn moved では空にしない）
+      if (clearsOn(ev, cx.cursor)) clearWindow();
       const c = ensureCursor(cx, finalState);
       if (c === null) return;
       c.facing = ev.facing;
@@ -691,13 +706,13 @@ export function createPlayer(deps: PlayerDeps): Player {
       wipeSeen = false;
       leaveBeats();
       soundStart("playback");
+      playGen += 1;
       const cx: PlayCx = { cursor: cursorOfDive(before), skip: isSkip(), screen: before.screen };
       // UI-45（M18。レビューの指摘）: 問いの後に歩き去る再生では、core が moved より先に出す文（扉など）を消さないよう、
-      // 最初の出来事の前に窓を空にする（位置の比較は表示のためだけ）
-      if (clearOnMoved) {
-        const c0 = cx.cursor;
-        const mv = events.find((e) => e.kind === "moved");
-        if (mv !== undefined && mv.kind === "moved" && (c0 === null || c0.pos.x !== mv.pos.x || c0.pos.y !== mv.pos.y)) clearWindow();
+      // 最初の出来事の前に窓を空にする（位置の比較は表示のためだけ）。M19: clearOn step の印では、最初の moved か turned で決める
+      if (clearMark !== null) {
+        const first = events.find((e) => e.kind === "moved" || (clearMark?.on === "step" && e.kind === "turned"));
+        if (first !== undefined && clearsOn(first, cx.cursor)) clearWindow();
       }
       // 後ろに message が残っているか（続きの三角。拍の外はタップを待たずに先へ進む）
       let messagesLeft = events.filter((e) => e.kind === "message").length;

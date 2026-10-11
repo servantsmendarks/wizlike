@@ -347,11 +347,12 @@ export function moveForward(ctx: RuleContext): void {
   const e = edgeOf(here, dive.facing);
   if (e === "wall") {
     ctx.events.push({ kind: "blocked" });
-    ctx.events.push({ kind: "message", key: "dungeon.blocked" });
+    // UI-45（M19）: 壁の文は次の前進・旋回で窓から消す（clearOn step）
+    ctx.events.push({ kind: "message", key: "dungeon.blocked", clearOn: "step" });
     return;
   }
-  // DG-10: 扉は通り抜けるたびに語る。辺は door のまま（開けた記録を持たない。ユーザー決定）
-  if (e === "door") ctx.events.push({ kind: "message", key: "dungeon.door" });
+  // DG-10: 扉は通り抜けるたびに語る。辺は door のまま（開けた記録を持たない。ユーザー決定）。UI-45（M19）: 次の前進・旋回で窓から消す
+  if (e === "door") ctx.events.push({ kind: "message", key: "dungeon.door", clearOn: "step" });
   dive.pos = step(dive.pos, dive.facing);
   ctx.events.push({ kind: "moved", pos: { x: dive.pos.x, y: dive.pos.y }, facing: dive.facing });
   state.adventureTurns += 1; // TW-12: 前進が成立した 1 歩（壁の blocked では来ない）

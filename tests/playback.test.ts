@@ -9,7 +9,9 @@ import { textUnits } from "../src/presenter/views/party-band";
 import { STAT_KEYS } from "../src/core/data/index";
 import type { PenaltyTableText } from "../src/presenter/views/penalty-table";
 import type { Settings } from "../src/presenter/settings";
-import type { Dive, EndingRecord, EnemyGroupView, GameEvent, GameState, PenaltyResult, ViewPoint } from "../src/core/types";
+import type { Dive, EndingRecord, EnemyGroupView, Facing, GameEvent, GameState, PenaltyResult, ViewPoint } from "../src/core/types";
+import { floorOf } from "../src/core/rules/dungeon";
+import { cellAt, edgeOf } from "../src/core/rules/dungeon-gen";
 import { data, defaultMembers, expectKnownStringKeys, loadFreshData, newGame, withChar } from "./helpers/core";
 import { cloneState, createItemInstance, makeContext } from "../src/core/state";
 import { startBattle } from "../src/core/rules/combat";
@@ -2527,6 +2529,90 @@ describe("UI-45/UI-47（M10.5 追補 2）区切りで窓を空にする", () => 
     log.length = 0;
     await player.play([{ kind: "moved", pos: { x: 1, y: 2 }, facing: "N" }], stateWith(diveAt(1, 1, "N", 2)), stateWith(diveAt(1, 2, "N", 2)));
     expect(names(log)).not.toContain("message.clearView");
+  });
+
+  test("UI-45（M19）壁の文（clearOn step）の後、次の再生の turned で窓を空にしてから続ける。同じ再生の中では空にしない。空にしたら印は外れる", async () => {
+    const { deps, log } = windowDeps();
+    const s = stateWith(diveAt(3, 3, "N"));
+    const player = createPlayer(deps);
+    const wall: GameEvent = { kind: "message", key: "dungeon.blocked", clearOn: "step" };
+    await player.play([{ kind: "blocked" }, wall], s, s);
+    expect(names(log).filter((m) => m === "message.clearView" || m === "message.say")).toEqual(["message.say"]);
+    log.length = 0;
+    // 旋回: 最初の出来事の前に空にする
+    await player.play([{ kind: "turned", facing: "E" }], s, stateWith(diveAt(3, 3, "E")));
+    expect(names(log).filter((m) => m === "message.clearView" || m === "message.say" || m === "view.fade")).toEqual(["message.clearView", "view.fade"]);
+    log.length = 0;
+    // 印は外れている（次の旋回では空にしない）
+    await player.play([{ kind: "turned", facing: "S" }], stateWith(diveAt(3, 3, "E")), stateWith(diveAt(3, 3, "S")));
+    expect(names(log)).not.toContain("message.clearView");
+  });
+
+  test("UI-45（M19）壁の文（clearOn step）の後、次の再生の moved（位置が変わったもの）で空にする。扉越し（dungeon.door → moved）でも扉の文は窓に残し、その扉の文も次の旋回で空にする", async () => {
+    const { deps, log } = windowDeps();
+    const s = stateWith(diveAt(3, 3, "E"));
+    const player = createPlayer(deps);
+    await player.play([{ kind: "blocked" }, { kind: "message", key: "dungeon.blocked", clearOn: "step" }], s, s);
+    log.length = 0;
+    // 位置の変わらない moved では空にしない
+    await player.play([{ kind: "moved", pos: { x: 3, y: 3 }, facing: "E" }], s, s);
+    expect(names(log)).not.toContain("message.clearView");
+    // 扉越しに進む: 最初の出来事の前に空にし、扉の文（clearOn step）は同じ再生の moved では消さない
+    const door: GameEvent = { kind: "message", key: "dungeon.door", clearOn: "step" };
+    await player.play([door, { kind: "moved", pos: { x: 4, y: 3 }, facing: "E" }], s, stateWith(diveAt(4, 3, "E")));
+    expect(names(log).filter((m) => m === "message.clearView" || m === "message.say")).toEqual(["message.clearView", "message.say"]);
+    log.length = 0;
+    // 扉の文も、次の再生の旋回で空にする
+    await player.play([{ kind: "turned", facing: "S" }], stateWith(diveAt(4, 3, "E")), stateWith(diveAt(4, 3, "S")));
+    expect(names(log).filter((m) => m === "message.clearView" || m === "message.say")).toEqual(["message.clearView"]);
+    log.length = 0;
+    // 扉の文の次の前進（扉なし）でも空にする
+    await player.play([door, { kind: "moved", pos: { x: 4, y: 4 }, facing: "S" }], stateWith(diveAt(4, 3, "S")), stateWith(diveAt(4, 4, "S")));
+    log.length = 0;
+    await player.play([{ kind: "moved", pos: { x: 4, y: 5 }, facing: "S" }], stateWith(diveAt(4, 4, "S")), stateWith(diveAt(4, 5, "S")));
+    expect(names(log).filter((m) => m === "message.clearView" || m === "message.say")).toEqual(["message.clearView"]);
+  });
+
+  test("UI-45（M19）階段の問い（clearOn moved）は旋回で残す（壁・扉の clearOn step だけが旋回で空にする）。後に出た文の印で上書きする", async () => {
+    const { deps, log } = windowDeps();
+    const s = stateWith(diveAt(3, 3, "N"));
+    const player = createPlayer(deps);
+    // 扉越しに階段に入る: 扉（step）→ moved → 問い（moved）。印は問いの moved になる
+    await player.play(
+      [{ kind: "message", key: "dungeon.door", clearOn: "step" }, { kind: "moved", pos: { x: 3, y: 3 }, facing: "N" }, { kind: "message", key: "dungeon.stairsDown", clearOn: "moved" }],
+      stateWith(diveAt(3, 4, "N")),
+      s,
+    );
+    log.length = 0;
+    await player.play([{ kind: "turned", facing: "E" }], s, stateWith(diveAt(3, 3, "E")));
+    expect(names(log)).not.toContain("message.clearView");
+    // 問いの後に壁に当たる: 印は壁の step に変わり、次の旋回で空にする
+    await player.play([{ kind: "blocked" }, { kind: "message", key: "dungeon.blocked", clearOn: "step" }], stateWith(diveAt(3, 3, "E")), stateWith(diveAt(3, 3, "E")));
+    log.length = 0;
+    await player.play([{ kind: "turned", facing: "S" }], stateWith(diveAt(3, 3, "E")), stateWith(diveAt(3, 3, "S")));
+    expect(names(log)).toContain("message.clearView");
+  });
+
+  test("UI-45（M19）実際の execute: 壁に当たった後の旋回の再生で窓を空にする", async () => {
+    const d = data;
+    const base = cloneState(dived(1));
+    const f = floorOf(base.dive!, d);
+    let at: { x: number; y: number; facing: Facing } | null = null;
+    for (let y = 0; y < f.height && at === null; y++)
+      for (let x = 0; x < f.width && at === null; x++)
+        for (const fc of ["N", "E", "S", "W"] as const) if (edgeOf(cellAt(f, x, y), fc) === "wall") { at = { x, y, facing: fc }; break; }
+    const s0 = cloneState(base);
+    s0.dive!.pos = { x: at!.x, y: at!.y };
+    s0.dive!.facing = at!.facing;
+    const { deps, log } = windowDeps();
+    const player = createPlayer(deps);
+    const r1 = execute(s0, { type: "dungeon.move" }, d);
+    expect(r1.events.some((e) => e.kind === "message" && e.key === "dungeon.blocked" && e.clearOn === "step")).toBe(true);
+    await player.play(r1.events, s0, r1.state);
+    log.length = 0;
+    const r2 = execute(r1.state, { type: "dungeon.turn", dir: "left" }, d);
+    await player.play(r2.events, r1.state, r2.state);
+    expect(names(log)).toContain("message.clearView");
   });
 
   test("UI-45/UI-47 実際の execute: 遭遇の列（startBattle）は encounter で 1 回だけ空にし、宿のレベルアップ（2 人）は section が 2 回", () => {

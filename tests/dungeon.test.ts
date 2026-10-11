@@ -383,7 +383,7 @@ describe("TW-15 宿の主人の噂話（M7）", () => {
 });
 
 describe("移動と旋回", () => {
-  test("DG-10 前進: 前が open なら moved{pos,facing}。wall なら [blocked, message dungeon.blocked] で、pos・rng・explored は変わらない", () => {
+  test("DG-10/UI-45 前進: 前が open なら moved{pos,facing}。wall なら [blocked, message dungeon.blocked（clearOn step。M19）] で、pos・rng・explored は変わらない", () => {
     const { state, a } = findSituation((c) => c.kind === "corridor" && c.roomId === null);
     const r = run(state, MOVE, DATA0);
     expect(r.events[0]).toEqual({ kind: "moved", pos: a.target, facing: a.facing });
@@ -407,13 +407,13 @@ describe("移動と旋回", () => {
     }
     const w = wallState!;
     const rw = run(w, MOVE);
-    expect(rw.events).toEqual([{ kind: "blocked" }, { kind: "message", key: "dungeon.blocked" }]);
+    expect(rw.events).toEqual([{ kind: "blocked" }, { kind: "message", key: "dungeon.blocked", clearOn: "step" }]);
     expect(rw.state.dive!.pos).toEqual(w.dive!.pos);
     expect(rw.state.rng).toEqual(w.rng);
     expect(rw.state.dive!.explored).toEqual(w.dive!.explored);
   });
 
-  test("DG-10 扉: [message dungeon.door, moved, …] の順。扉は通り抜けても door のまま（両側から）で、戻って通っても同じ向きで通っても毎回 message dungeon.door。dive に扉の記録は無い", () => {
+  test("DG-10/UI-45 扉: [message dungeon.door（clearOn step。M19）, moved, …] の順。扉は通り抜けても door のまま（両側から）で、戻って通っても同じ向きで通っても毎回 message dungeon.door。dive に扉の記録は無い", () => {
     const seen = new Set<Facing>();
     for (let seed = 1; seed <= 40 && seen.size < 4; seed++) {
       const s0 = enterD01(seed);
@@ -424,6 +424,8 @@ describe("移動と旋回", () => {
         const s = placeAt(s0, a.pos, a.facing);
         const r = run(s, MOVE, DATA0);
         expect(kinds(r.events).slice(0, 2)).toEqual(["message:dungeon.door", "moved"]);
+        // UI-45（M19）: 扉の文は次の前進・旋回で窓から消す（clearOn step）
+        expect(r.events[0]).toEqual({ kind: "message", key: "dungeon.door", clearOn: "step" });
         expect(r.state.dive!.pos).toEqual(a.target);
         expect(Object.keys(r.state.dive!).sort()).toEqual(Object.keys(s.dive!).sort());
         expect("openedDoors" in r.state.dive!).toBe(false);
