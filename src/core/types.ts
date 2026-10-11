@@ -727,12 +727,13 @@ export type TownMenuUpgradeSlot = {
   block: string | null;
 };
 /**
- * TW-17: 触媒の候補 1 個（パーティ全員の inventory の鑑定済みの汎用装備。メンバーの並び順 → inventory の順。M16 で本人だけから全員に広げた）。
- * name は表示名、plainName は Lv を除いた名前（equipmentPlainName）、ownerId / ownerName は持ち主
+ * TW-17: 触媒の候補 1 個（パーティ全員の inventory の鑑定済みの汎用装備。メンバーの並び順 → inventory の順。M16 で本人だけから全員に広げた。
+ * M17 でその後ろに倉庫の品を倉庫の順で足した）。name は表示名、plainName は Lv を除いた名前（equipmentPlainName）、ownerId / ownerName は持ち主。
+ * 倉庫の品は ownerId null・ownerName 空文字（表示層が strings の town.shop.menu.storage を引く。core に日本語を持たない）
  */
-export type TownMenuUpgradeCatalyst = { instanceId: string; name: string; plainName: string; level: number; ownerId: string; ownerName: string };
-/** TW-17（M16）: town.upgrade の触媒 1 個の指定（持ち主と実体）。消費は持ち主の inventory から */
-export type UpgradeCatalystRef = { memberId: string; instanceId: string };
+export type TownMenuUpgradeCatalyst = { instanceId: string; name: string; plainName: string; level: number; ownerId: string | null; ownerName: string };
+/** TW-17（M16）: town.upgrade の触媒 1 個の指定（持ち主と実体）。消費は持ち主の inventory から。M17: memberId null は倉庫の品（消費は warehouse から） */
+export type UpgradeCatalystRef = { memberId: string | null; instanceId: string };
 /** TW-17: 1 人分。canUpgrade は block が null の部位が 1 つ以上あるか */
 export type TownMenuUpgradeMember = {
   memberId: string;

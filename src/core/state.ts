@@ -172,17 +172,21 @@ export function createItemInstance(state: GameState, spec: ItemInstanceSpec): st
 }
 
 /**
- * 持ち主の equipment（該当スロットを null に）と inventory から外し、state.items から消す。
+ * 持ち主の equipment（該当スロットを null に）と inventory から外し、state.items から消す。持ち主 null は倉庫の品（M17。TW-17 の倉庫の触媒）。
+ * 倉庫（warehouse）からはいつも外す（実体は 1 か所にしか無いので、持ち主の品なら何も変わらない）。
  * 潜行中なら潜行台帳（dive.ledger.items）からも外す（DG-41: 迷宮で使った・壊れた取得物は台帳から消える）。
  */
-export function destroyItemInstance(state: GameState, ch: Character, instanceId: string): void {
+export function destroyItemInstance(state: GameState, ch: Character | null, instanceId: string): void {
   if (!Object.prototype.hasOwnProperty.call(state.items, instanceId)) {
     throw new Error(`unknown item instance: ${instanceId}`);
   }
-  for (const slot of EQUIP_SLOTS) {
-    if (ch.equipment[slot] === instanceId) ch.equipment[slot] = null;
+  if (ch !== null) {
+    for (const slot of EQUIP_SLOTS) {
+      if (ch.equipment[slot] === instanceId) ch.equipment[slot] = null;
+    }
+    ch.inventory = ch.inventory.filter((x) => x !== instanceId);
   }
-  ch.inventory = ch.inventory.filter((x) => x !== instanceId);
+  if (state.warehouse.includes(instanceId)) state.warehouse = state.warehouse.filter((x) => x !== instanceId);
   if (state.dive !== null) state.dive.ledger.items = state.dive.ledger.items.filter((x) => x !== instanceId);
   delete state.items[instanceId];
 }

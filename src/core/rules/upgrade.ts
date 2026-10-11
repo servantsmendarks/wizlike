@@ -1,5 +1,5 @@
 // 闇魔術の強化（TW-17 / IT-70。M7 の C）。街（screen town・dive null）でだけ、本人の装備中の汎用装備 1 つを、パーティの誰かの inventory の
-// 鑑定済みの汎用装備（触媒。0〜upgradeMaxCatalysts 個。M16 で本人だけから全員に広げた）を食わせて d100 で鍛える。触媒は成否に関わらず持ち主から消え、
+// 鑑定済みの汎用装備（触媒。0〜upgradeMaxCatalysts 個。M16 で本人だけから全員に広げ、M17 で倉庫の品も足した）を食わせて d100 で鍛える。触媒は成否に関わらず持ち主（倉庫）から消え、
 // オプション・希少度は引き継がない。
 // 成功率 p・大成功の率 q・料金の式は core のここだけに置く（表示層は upgradePreview / townMenu.upgrade の値を描く。UI-35）。
 // 乱数は d100（randInt(1, 100)）の 1 回だけ。拒否では引かない。
@@ -8,7 +8,7 @@ import type { Config, EquipSlot, GameData } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
 import { randInt } from "../rng";
 import { destroyItemInstance, equipmentPlainName, findBase, itemDisplayName, memberById } from "../state";
-import type { Character, GameState, ItemInstance, RuleContext, TownMenu, UpgradeCatalystRef, UpgradePreview } from "../types";
+import type { Character, GameState, ItemInstance, RuleContext, TownMenu, TownMenuUpgradeCatalyst, UpgradeCatalystRef, UpgradePreview } from "../types";
 
 type EconomyConfig = Config["economy"];
 
@@ -48,13 +48,18 @@ function targetBlock(state: GameState, ch: Character, slot: EquipSlot): string |
 
 /**
  * TW-17 / Q13: 触媒にできる実体（持ち主 ref.memberId がパーティにいて、その inventory にあり、装備品のベースで、ユニークでなく、鑑定済み）。
+ * M17: ref.memberId が null なら倉庫（state.warehouse）にある品（owner は null）。
  * できなければ null。inventory は装備中の品を含まないので、鍛える対象そのものは触媒にならない
  */
-function catalystOf(state: GameState, data: GameData, ref: UpgradeCatalystRef): { owner: Character; inst: ItemInstance } | null {
-  const owner = memberById(state, ref.memberId);
-  if (owner === null) return null;
+function catalystOf(state: GameState, data: GameData, ref: UpgradeCatalystRef): { owner: Character | null; inst: ItemInstance } | null {
   const id = ref.instanceId;
-  if (!owner.inventory.includes(id)) return null;
+  let owner: Character | null = null;
+  if (ref.memberId === null) {
+    if (!state.warehouse.includes(id)) return null;
+  } else {
+    owner = memberById(state, ref.memberId);
+    if (owner === null || !owner.inventory.includes(id)) return null;
+  }
   const inst = state.items[id];
   if (inst === undefined || findBase(data, inst.itemId) === null) return null;
   if (inst.uniqueId !== null || !inst.identified) return null;
@@ -64,13 +69,13 @@ function catalystOf(state: GameState, data: GameData, ref: UpgradeCatalystRef): 
 function isRef(x: unknown): x is UpgradeCatalystRef {
   if (typeof x !== "object" || x === null) return false;
   const r = x as { memberId?: unknown; instanceId?: unknown };
-  return typeof r.memberId === "string" && typeof r.instanceId === "string";
+  return (typeof r.memberId === "string" || r.memberId === null) && typeof r.instanceId === "string";
 }
 
 /**
- * town.upgrade を受け付けない理由。順: wrong screen → bad action（catalysts が {memberId, instanceId} の配列でない・upgradeMaxCatalysts より多い・
- * instanceId の重複）→ no such member → bad slot → slot empty → unique → bad catalyst（持ち主がいない・持ち主の inventory に無い・装備品でない・
- * ユニーク・未鑑定）→ not enough gold。本人・持ち主の life は問わない。呪われた対象・触媒も可
+ * town.upgrade を受け付けない理由。順: wrong screen → bad action（catalysts が {memberId（文字列か null）, instanceId} の配列でない・upgradeMaxCatalysts より多い・
+ * instanceId の重複）→ no such member → bad slot → slot empty → unique → bad catalyst（持ち主がいない・持ち主の inventory に無い・memberId null で倉庫に無い・
+ * 装備品でない・ユニーク・未鑑定）→ not enough gold。本人・持ち主の life は問わない。呪われた対象・触媒も可
  */
 export function checkUpgrade(state: GameState, memberId: unknown, slot: unknown, catalysts: unknown, data: GameData): string | null {
   if (state.screen !== "town" || state.dive !== null) return "wrong screen";
@@ -90,7 +95,7 @@ export function checkUpgrade(state: GameState, memberId: unknown, slot: unknown,
 
 /**
  * TW-17。checkUpgrade が null を返した前提。
- * 料金を払う → 触媒を catalysts の順に持ち主から destroyItemInstance → randInt(1, 100) を 1 回 → dice（label dice.upgrade{item: 強化前の表示名}、
+ * 料金を払う → 触媒を catalysts の順に持ち主（null なら倉庫）から destroyItemInstance → randInt(1, 100) を 1 回 → dice（label dice.upgrade{item: 強化前の表示名}、
  * 行 dice.row.roll（base null）、基準 dice.upgrade.rule{rate, great}、結果 dice.upgrade.great / ok / ng）→ level を +2 / +1 / −1（0 で止まる）
  * → message town.upgrade.great / ok / ng{name, item: 強化後の表示名}。M16（4-5）: 強化前が Lv0 の失敗は ng の代わりに ngFloor（同じ params）。
  * オプション・希少度・呪い・鑑定はそのまま
@@ -169,11 +174,12 @@ function plainNameOf(state: GameState, data: GameData, id: string): string {
 
 /**
  * UI-52 / TW-17: 闇魔術の強化のページの値（townMenu.upgrade。純粋）。全員（並び順。life を問わない）。
- * 触媒の候補は全員で同じ（パーティ全員の inventory。メンバーの並び順 → inventory の順。M16 の G-2）。
+ * 触媒の候補は全員で同じ（パーティ全員の inventory。メンバーの並び順 → inventory の順。M16 の G-2）。その後ろに倉庫の品を倉庫の順で
+ * （M17。ownerId null・ownerName 空文字）。
  * 対象は装備中の品で inventory に無いので、候補に出ない
  */
 export function upgradeMenu(state: GameState, data: GameData): TownMenu["upgrade"] {
-  const catalysts = state.party.flatMap((owner) =>
+  const catalysts: TownMenuUpgradeCatalyst[] = state.party.flatMap((owner) =>
     owner.inventory.flatMap((id) => {
       const c = catalystOf(state, data, { memberId: owner.id, instanceId: id });
       if (c === null) return [];
@@ -181,6 +187,11 @@ export function upgradeMenu(state: GameState, data: GameData): TownMenu["upgrade
       return [{ instanceId: id, name, plainName: plainNameOf(state, data, id), level: c.inst.level, ownerId: owner.id, ownerName: owner.name }];
     }),
   );
+  for (const id of state.warehouse) {
+    const c = catalystOf(state, data, { memberId: null, instanceId: id });
+    if (c === null) continue;
+    catalysts.push({ instanceId: id, name: itemDisplayName(state, data, id), plainName: plainNameOf(state, data, id), level: c.inst.level, ownerId: null, ownerName: "" });
+  }
   return {
     maxCatalysts: data.config.economy.upgradeMaxCatalysts,
     members: state.party.map((ch) => {

@@ -8,7 +8,7 @@ import { execute } from "../src/core/engine";
 import { createRng, randInt } from "../src/core/rng";
 import { townMenu } from "../src/core/rules/town";
 import { checkUpgrade, upgradeFee, upgradeGreat, upgradePreview, upgradeRate } from "../src/core/rules/upgrade";
-import { cloneState, createItemInstance } from "../src/core/state";
+import { cloneState, createItemInstance, destroyItemInstance } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState, ItemInstance, UpgradeCatalystRef } from "../src/core/types";
 import { data, expectKnownStringKeys, expectStateInvariants, loadFreshData, newGame, seedWithFirstD100 } from "./helpers/core";
 
@@ -398,5 +398,87 @@ describe("TW-17 / IT-70 M16（G-2）触媒はパーティ全員の所持品か�
     for (const id of [a, b, c]) expect(r.state.items[id]).toBeUndefined();
     expect(member(r.state, "c4").inventory).not.toContain(b);
     expect(member(r.state, "c5").inventory).not.toContain(c);
+  });
+});
+
+describe("TW-17 / IT-70 M17 倉庫の品を触媒に", () => {
+  /** 倉庫の末尾に実体を足して id を返す（既定は鑑定済みの汎用装備） */
+  function store(s: GameState, spec: Partial<ItemInstance> & { itemId: string }): string {
+    const iid = createItemInstance(s, { identified: true, ...spec });
+    s.warehouse.push(iid);
+    return iid;
+  }
+  const wh = (instanceId: string): UpgradeCatalystRef => ({ memberId: null, instanceId });
+
+  test("TW-17/IT-70 M17 候補はメンバーの品の後に倉庫の品（倉庫の順）。倉庫の品は ownerId null・ownerName 空文字。未鑑定・ユニーク・消耗品は出ない。どの者の段でも同じ", () => {
+    const s = town(1000, 0);
+    const herb = member(s, "c1").inventory.shift()!; // 薬草（消耗品）を倉庫へ
+    s.warehouse.push(herb);
+    const p = store(s, { itemId: "dagger", level: 3 });
+    store(s, { itemId: "dagger", identified: false });
+    store(s, { itemId: "dagger", uniqueId: "twin_tongue_dagger" });
+    const q = store(s, { itemId: "long_sword", level: 0 });
+    const x = give(s, "c2", { itemId: "dagger", level: 1 });
+    const m = townMenu(s, data)!.upgrade;
+    const expected = [
+      { instanceId: x, name: "短剣 +1", plainName: "短剣", level: 1, ownerId: "c2", ownerName: "ベルク" },
+      { instanceId: p, name: "短剣 +3", plainName: "短剣", level: 3, ownerId: null, ownerName: "" },
+      { instanceId: q, name: "長剣", plainName: "長剣", level: 0, ownerId: null, ownerName: "" },
+    ];
+    for (const mm of m.members) expect(mm.catalysts, mm.memberId).toEqual(expected);
+    // 表示層が持ち主の欄に引く文言（core は日本語を持たない）
+    expect(data.strings["town.shop.menu.storage"]).toBe("倉庫");
+  });
+
+  test("TW-17/IT-70 M17 倉庫の品を触媒にすると倉庫から消える（ほかの倉庫の品と並びは残る）。メンバーの品と混ぜられ、成功率は同じ式。品は触媒の分だけ減る", () => {
+    const s = town(1000, 2);
+    const keep1 = store(s, { itemId: "dagger", level: 0 });
+    const cat = store(s, { itemId: "long_sword", level: 2 });
+    const keep2 = store(s, { itemId: "dagger", identified: false });
+    const mine = give(s, "c3", { itemId: "long_sword", level: 2 });
+    const inv = s.party.map((c) => [...c.inventory]);
+    const nItems = Object.keys(s.items).length;
+    expect(upgradePreview(s, data, "c1", "weapon", [wh(cat)])).toEqual({ rate: 40, great: 4, fee: 150, affordable: true, block: null });
+    expect(upgradePreview(s, data, "c1", "weapon", [wh(cat), ref(mine, "c3")])).toEqual({ rate: 70, great: 7, fee: 150, affordable: true, block: null });
+    withFirstRoll(s, 50); // q 7 < 50 ≤ p 70 で成功（Lv +1）
+    const r = ok(s, up([wh(cat), ref(mine, "c3")]));
+    const d = r.events[0];
+    expect(d?.kind === "dice" && d.rule.params).toEqual({ rate: 70, great: 7 });
+    expect(r.state.items[cat]).toBeUndefined();
+    expect(r.state.items[mine]).toBeUndefined();
+    expect(r.state.warehouse).toEqual([keep1, keep2]);
+    expect(member(r.state, "c3").inventory).toEqual(inv[2]!.filter((id) => id !== mine));
+    for (const [i, c] of r.state.party.entries()) if (c.id !== "c3") expect(c.inventory, c.id).toEqual(inv[i]);
+    expect(Object.keys(r.state.items).length).toBe(nItems - 2); // 消えたのは触媒の 2 個だけ
+    expect(weaponOf(r.state, "c1").level).toBe(3);
+    expect(s.warehouse).toEqual([keep1, cat, keep2]); // 引数の state は変わらない
+  });
+
+  test("TW-17/IT-70 M17 拒否: memberId null で倉庫に無い・倉庫の品を者の品として・倉庫の未鑑定は bad catalyst。memberId が文字列でも null でもなければ bad action。倉庫と者で同じ実体の重複も bad action", () => {
+    const s = town(1000, 0);
+    const w = store(s, { itemId: "dagger" });
+    const wUnid = store(s, { itemId: "dagger", identified: false });
+    const mine = give(s, "c1", { itemId: "dagger" });
+    expectRejected(s, up([wh(mine)]), "bad catalyst"); // 者の品を倉庫の品として
+    expectRejected(s, up([ref(w)]), "bad catalyst"); // 倉庫の品を c1 の品として
+    expectRejected(s, up([wh(wUnid)]), "bad catalyst");
+    expectRejected(s, up([wh("i999")]), "bad catalyst");
+    expectRejected(s, up([{ instanceId: w }]), "bad action"); // memberId の欠け（undefined）
+    expectRejected(s, up([{ memberId: 0, instanceId: w }]), "bad action");
+    expectRejected(s, up([wh(w), ref(w)]), "bad action");
+    expect(checkUpgrade(s, "c1", "weapon", [wh(w), ref(mine)], data)).toBeNull();
+    // 迷宮の中では wrong screen（倉庫は街だけ）
+    const diving = cloneState(execute(newGame(1), { type: "dungeon.enter", dungeonId: "d01" }, data).state);
+    expectRejected(diving, up([wh(w)]), "wrong screen");
+  });
+
+  test("TW-17 M17 destroyItemInstance は持ち主 null で倉庫から外す（持ち主ありでも倉庫に残った参照は外す）", () => {
+    const s = town(1000, 0);
+    const a = store(s, { itemId: "dagger" });
+    const b = store(s, { itemId: "dagger" });
+    destroyItemInstance(s, null, a);
+    expect(s.warehouse).toEqual([b]);
+    expect(s.items[a]).toBeUndefined();
+    expectStateInvariants(s);
   });
 });
