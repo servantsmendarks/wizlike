@@ -222,6 +222,11 @@ export type Dive = {
   floor: number;
   /** DG-14 / CH-51: この潜行で到達した最深の階（入場時 1。常に floor 以上）。これより深い階に降りたときだけ SAN が減る */
   deepestFloor: number;
+  /**
+   * DG-46（M18。schemaVersion 9）: 今の階で前進が成立した歩数。入場・階の移動（昇降）・転移（DG-25）で 0、前進の 1 歩で +1。
+   * 旋回・罠の察知の引き返す・debug.warp では変えない。config.dungeon.lostHintSteps に届いて下り階段が未探索なら hint.lostExits（UI-76）
+   */
+  floorSteps: number;
   pos: Pos;
   facing: Facing;
   /** DG-13: キーは階番号の文字列 "1".."floors"。値はセル添字（y*width+x）の昇順・重複なしの配列（Set は使わない。§3-11） */
@@ -425,6 +430,7 @@ export type Morale = { rankId: string };
 // M7 の B で ItemInstance の欄・warehouse・buyback・uniqueBook・progress.shopLevel を足して schemaVersion 4 にした（migrateV3toV4）。
 // M10 で maxLevelReached を職業ごとにして 5（migrateV4toV5）、M11 で dive.chest・disarmedChests を足して 6（migrateV5toV6）にした。
 // M12 で tally・progress.enteredDungeons / conquered / endingPending を足して schemaVersion 7 にした（migrateV6toV7）。
+// M16 で progress.hints を足して 8（migrateV7toV8）、M18 で dive.floorSteps を足して 9（migrateV8toV9）にした。
 // schemaVersion、turn、updatedAt、gameId は保存レコード側の欄（SV-21）で、ここには入れない。
 
 export type GameState = {

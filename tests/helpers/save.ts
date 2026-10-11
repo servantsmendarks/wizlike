@@ -56,20 +56,40 @@ export function createMemoryBackend(opts: { fail?: FailSpec } = {}): MemoryBacke
 }
 
 /**
- * 今の state（schemaVersion 8）から M16 の欄（UI-76 の progress.hints）を消した v7 の形（JSON の複製。引数は書き換えない）
+ * 今の state（schemaVersion 9）から M18 の欄（DG-46 の dive.floorSteps）を消した v8 の形（JSON の複製。引数は書き換えない）
+ */
+export function toV8(s: GameState): Record<string, unknown> {
+  const v8 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+  const dive = v8["dive"] as Record<string, unknown> | null;
+  if (dive !== null) delete dive["floorSteps"];
+  return v8;
+}
+
+/**
+ * SV-04 v8 → v9（M18。DG-46）の移行で s から作った v8 以前の保存が行き着く state（JSON の複製）: dive があれば floorSteps は 0（歩数は復元しない）。
+ * ほかの欄は s のまま
+ */
+export function asMigratedToV9(s: GameState): GameState {
+  const m = JSON.parse(JSON.stringify(s)) as GameState;
+  if (m.dive !== null) m.dive.floorSteps = 0;
+  return m;
+}
+
+/**
+ * 今の state から M18 の欄と M16 の欄（UI-76 の progress.hints）を消した v7 の形（toV8 を通した JSON の複製。引数は書き換えない）
  */
 export function toV7(s: GameState): Record<string, unknown> {
-  const v7 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+  const v7 = toV8(s);
   delete (v7["progress"] as Record<string, unknown>)["hints"];
   return v7;
 }
 
 /**
  * SV-04 v7 → v8（M16。UI-76）の移行で s から作った v7 以前の保存が行き着く state（JSON の複製）: progress.hints は []（出した一言は復元しない）。
- * ほかの欄は s のまま
+ * その後の v8 → v9（M18）も通るので dive.floorSteps は 0（asMigratedToV9）。ほかの欄は s のまま
  */
 export function asMigratedToV8(s: GameState): GameState {
-  const m = JSON.parse(JSON.stringify(s)) as GameState;
+  const m = asMigratedToV9(s);
   m.progress = { ...m.progress, hints: [] };
   return m;
 }

@@ -27,6 +27,7 @@ function diveAt(x: number, y: number, facing: Dive["facing"], floor = 1): Dive {
     diveSeed: 1,
     floor,
     deepestFloor: floor,
+    floorSteps: 0,
     pos: { x, y },
     facing,
     explored: {},

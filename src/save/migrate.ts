@@ -131,12 +131,24 @@ export function migrateV7toV8(x: unknown): unknown {
 }
 
 /**
+ * SV-04 v8 → v9（M18。DG-46）: dive がオブジェクトなら floorSteps 0 を足す（今の階の歩数は保存に残っていないので 0 から数え直す）。
+ * 引数は書き換えない（浅い複製。dive も複製する）。オブジェクトでなければそのまま返す（形の検査で broken）。dive がオブジェクトでなければ dive は変えない
+ */
+export function migrateV8toV9(x: unknown): unknown {
+  if (!isPlainObject(x)) return x;
+  const out: Record<string, unknown> = { ...x };
+  const dive = x["dive"];
+  if (isPlainObject(dive)) out["dive"] = { ...dive, floorSteps: 0 };
+  return out;
+}
+
+/**
  * 移行関数の列（MIGRATIONS[i] は版 i+1 → i+2）。v3 → v4 の流通レベルは dungeons の onClear.shopLevel から計算する（IT-80）。
  * アプリ（main.ts）は検証済みの data.dungeons を渡して SaveDeps.migrations にする
  */
 export function createMigrations(dungeons: readonly Pick<DungeonDef, "id" | "onClear">[]): readonly Migration[] {
   const table: ShopLevelTable = Object.fromEntries(dungeons.map((d) => [d.id, d.onClear.shopLevel]));
-  return [migrateV1toV2, migrateV2toV3, (x) => migrateV3toV4(x, table), migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8];
+  return [migrateV1toV2, migrateV2toV3, (x) => migrateV3toV4(x, table), migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9];
 }
 
 /** 既定の移行関数の列（流通レベルの表が空なので v3 → v4 の shopLevel は 0）。アプリは createMigrations(data.dungeons) を使う */
@@ -258,6 +270,7 @@ function isChestShape(x: unknown): boolean {
  * schemaVersion 7（M12。TW-35 / DG-36 / TW-34 / DG-37）: tally が isTallyShape、progress.conquered / endingPending が真偽値、
  * progress.enteredDungeons が文字列の配列。
  * schemaVersion 8（M16。UI-76）: progress.hints が文字列の配列。
+ * schemaVersion 9（M18。DG-46）: dive がオブジェクトなら floorSteps が 0 以上の安全な整数。
  */
 export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(x)) return false;
@@ -280,6 +293,7 @@ export function isGameStateShape(x: unknown): x is GameState {
     const jc = dive["judgedChests"];
     if (jc !== undefined && !(Array.isArray(jc) && jc.every(isCellRefShape))) return false;
     if (dive["chest"] !== null && x["pendingChoice"] !== null) return false;
+    if (!isTurnCount(dive["floorSteps"])) return false;
   }
   if (!isMoraleShape(x["morale"])) return false;
   if (!Object.values(x["items"] as Record<string, unknown>).every(isItemInstanceShape)) return false;

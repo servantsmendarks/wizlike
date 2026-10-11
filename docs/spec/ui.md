@@ -160,7 +160,7 @@
   - `innMs`（616【仮】）: 宿泊 1 回（相部屋。レベルアップなし）。ランクのタップ → 箱を閉じるまで。
   - 条件: 演出スキップ OFF、文字送り 30ms/字（UI-43）、オートの拍 400ms（UI-45 の既定）、Pixel 3a・Chrome。人の反応時間は含まない（台本の ▼ は即時に押す）。
   - 含めないもの（推定の実時間にも入れない）: 人の反応時間、店・宿のページに入る前置きの語りとページの移動（設定・施設のボタンの移動）、店の補充の購入、寺院、徒歩の帰りの階段の選択、逃走、罠の作動の演出、衝動イベントの語り、レベルアップの語り。
-- UI-76 一度きりの GM の一言（hints。M16。2026-10-11）: 遊び方の要点を、その場面に初めて出会ったときに GM が一度だけ語る。記録は `GameState.progress.hints`（出した一言の id の配列。順不同・重複なし。game.new で []。SV-04 v8）。core の `tellHintOnce`（`rules/hints.ts`）が、id が hints に無ければ message `hint.<id>`（params なし）を出して id を積み、あれば何もしない。id の一覧は core の `HINT_IDS` で、strings の `hint.<id>` は読み込み時に必須（無い・差し込みを持つなら起動を止める）。文は迷宮・戦闘のメッセージ窓（1 行 28 字）で 2 行以内（禁則つき。テストで見る）。乱数は使わない。表示層は何もしない（ふつうの message として窓に出す）。契機（v1）: `hint.dungeonFirst` ゲームで最初の入場（DG-37）、`hint.sanUnknown` 初めて未鑑定の敵と会い SAN が減るとき（CB-06）、`hint.levelUpMark` 初めて↑（レベルアップ可）が付いたとき（CH-80）。出来事の順は各規則に書く。v7 から移行した記録は hints が空なので、契機を満たせば一言がもう一度出る（DG-37 は `enteredDungeons` が空でなければ出ない）。
+- UI-76 一度きりの GM の一言（hints。M16。2026-10-11）: 遊び方の要点を、その場面に初めて出会ったときに GM が一度だけ語る。記録は `GameState.progress.hints`（出した一言の id の配列。順不同・重複なし。game.new で []。SV-04 v8）。core の `tellHintOnce`（`rules/hints.ts`）が、id が hints に無ければ message `hint.<id>`（params なし）を出して id を積み、あれば何もしない。id の一覧は core の `HINT_IDS` で、strings の `hint.<id>` は読み込み時に必須（無い・差し込みを持つなら起動を止める）。文は迷宮・戦闘のメッセージ窓（1 行 28 字）で 2 行以内（禁則つき。テストで見る）。乱数は使わない。表示層は何もしない（ふつうの message として窓に出す）。契機（v1）: `hint.dungeonFirst` ゲームで最初の入場（DG-37）、`hint.sanUnknown` 初めて未鑑定の敵と会い SAN が減るとき（CB-06）、`hint.levelUpMark` 初めて↑（レベルアップ可）が付いたとき（CH-80）。M18 で `hint.lostExits` 同じ階を `config.dungeon.lostHintSteps`（100）歩以上歩いても下り階段を見つけていないとき（DG-46。地図の「未踏の口」（UI-78）へ導く）を足した。出来事の順は各規則に書く。v7 から移行した記録は hints が空なので、契機を満たせば一言がもう一度出る（DG-37 は `enteredDungeons` が空でなければ出ない）。
 
 ## 6. 画面
 

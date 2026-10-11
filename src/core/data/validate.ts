@@ -310,6 +310,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       straightBias: N(RATIO), // DG-05【仮】
       viewDepth: I({ min: 1, max: 3 }), // DG-12【仮】（UI-20 の座標表が奥行き 0..3）
       trap: F({ pitDice: D }), // DG-20【仮】
+      lostHintSteps: I(POS_INT), // DG-46【仮】
     }),
     combat: F({
       hitBase: I(),

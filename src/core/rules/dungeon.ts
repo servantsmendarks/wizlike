@@ -245,6 +245,7 @@ export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
     diveSeed,
     floor: 1,
     deepestFloor: 1,
+    floorSteps: 0, // DG-46（M18）
     pos: { x: f.stairsUp.x, y: f.stairsUp.y },
     facing,
     explored: {},
@@ -350,7 +351,9 @@ export function moveForward(ctx: RuleContext): void {
   dive.pos = step(dive.pos, dive.facing);
   ctx.events.push({ kind: "moved", pos: { x: dive.pos.x, y: dive.pos.y }, facing: dive.facing });
   state.adventureTurns += 1; // TW-12: 前進が成立した 1 歩（壁の blocked では来ない）
+  dive.floorSteps += 1; // DG-46（M18）: 今の階の歩数
   explore(ctx, dive, f);
+  lostExitsHint(ctx, dive, f); // DG-46: 毒・罠・階段・遭遇より前（乱数は引かない）
   const cell = cellAt(f, dive.pos.x, dive.pos.y);
   // CH-43: 毒の 1 歩ごとのダメージ（HP 1 で止まるので、これで死ぬことはない）
   tickPoisonStep(ctx);
@@ -365,6 +368,20 @@ export function moveForward(ctx: RuleContext): void {
     triggerTrap(ctx, f, dive.pos);
   }
   continueStep(ctx, f, cell);
+}
+
+/**
+ * DG-46（M18）: 前進の 1 歩の後（explore の後）、今の階の歩数 floorSteps が config.dungeon.lostHintSteps 以上で、
+ * 実効の構造の下り階段（最下層で null なら出さない）のセルの添字がその階の explored に無ければ、UI-76 の一言 hint.lostExits（ゲームで一度だけ）。
+ * 乱数は使わない
+ */
+function lostExitsHint(ctx: RuleContext, dive: Dive, f: Floor): void {
+  if (dive.floorSteps < ctx.data.config.dungeon.lostHintSteps) return;
+  if (ctx.state.progress.hints.includes("lostExits")) return;
+  const down = f.stairsDown;
+  if (down === null) return;
+  if ((dive.explored[String(dive.floor)] ?? []).includes(idx(f, down.x, down.y))) return;
+  tellHintOnce(ctx, "lostExits");
 }
 
 /**
@@ -540,6 +557,7 @@ export function chooseOption(ctx: RuleContext, optionId: string): void {
   const dive = requireDive(state);
   if (optionId === "descend") {
     dive.floor += 1;
+    dive.floorSteps = 0; // DG-46（M18）
     explore(ctx, dive, floorOf(dive, data));
     ctx.events.push({ kind: "floorChanged", floor: dive.floor, pos: { x: dive.pos.x, y: dive.pos.y }, facing: dive.facing });
     ctx.events.push({ kind: "message", key: "dungeon.descend" });
@@ -552,6 +570,7 @@ export function chooseOption(ctx: RuleContext, optionId: string): void {
   }
   if (optionId === "ascend") {
     dive.floor -= 1;
+    dive.floorSteps = 0; // DG-46（M18）
     explore(ctx, dive, floorOf(dive, data));
     ctx.events.push({ kind: "floorChanged", floor: dive.floor, pos: { x: dive.pos.x, y: dive.pos.y }, facing: dive.facing });
     ctx.events.push({ kind: "message", key: "dungeon.ascend" });

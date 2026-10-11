@@ -16,6 +16,7 @@ import {
 import { chestGenOf, floorOf, gossipCandidates, mapView, stairsHere, visibleCells, visibleCellsOf, visibleKnownTraps } from "../src/core/rules/dungeon";
 import { isConquered } from "../src/core/rules/progress";
 import { addIndex, removeIndex } from "../src/core/rules/field";
+import { teleportParty } from "../src/core/rules/floor";
 import { battleMenu } from "../src/core/rules/combat";
 import { returnToTown, townMenu } from "../src/core/rules/town";
 import { groupViews } from "../src/core/rules/combat-calc";
@@ -141,6 +142,7 @@ describe("dungeon.enter", () => {
       diveSeed: dive.diveSeed,
       floor: 1,
       deepestFloor: 1,
+      floorSteps: 0, // DG-46（M18）
       pos: f1.stairsUp,
       facing,
       explored: dive.explored,
@@ -2370,5 +2372,135 @@ describe("DG-44 階段のボタン（dungeon.useStairs。M16）", () => {
     const r = run(rb.state, USE, DATA0);
     expect(r.events).toEqual([{ kind: "message", key: "dungeon.stairsUp" }]);
     expect(r.state.pendingChoice).toEqual(EXIT_PROMPT);
+  });
+});
+
+describe("DG-46 100 歩の一言（dive.floorSteps と hint.lostExits。M18）", () => {
+  const LOST = "hint.lostExits";
+  const STEPS = data.config.dungeon.lostHintSteps;
+  const plain = (c: Cell): boolean => c.kind === "corridor" || c.kind === "room";
+
+  /** floorNo 階で、普通のセル（通路・部屋）へ open の辺を 1 歩で入れて、着いた先の視野に下り階段が入らない立ち位置。explored はその階だけ空にする */
+  function plainStep(floorNo: number): { state: GameState; f: Floor; target: { x: number; y: number } } {
+    for (let seed = 1; seed <= 300; seed++) {
+      const s0 = enterD01(seed);
+      const f = floorOf(s0.dive!, data, floorNo);
+      const down = f.stairsDown;
+      for (const a of approaches(f, plain)) {
+        if (!plain(cellAt(f, a.pos.x, a.pos.y))) continue;
+        const seen = visibleCellsOf(f, a.target, a.facing, data.config.dungeon.viewDepth).map((v) => idx(f, v.x, v.y));
+        if (down !== null && seen.includes(idx(f, down.x, down.y))) continue;
+        const s = placeAt(s0, a.pos, a.facing, floorNo);
+        s.dive!.explored = {};
+        return { state: s, f, target: a.target };
+      }
+    }
+    throw new Error("plainStep: not found");
+  }
+
+  const withSteps = (s: GameState, n: number): GameState => {
+    const x = cloneState(s);
+    x.dive!.floorSteps = n;
+    return x;
+  };
+  const lostCount = (events: readonly GameEvent[]): number => events.filter((e) => e.kind === "message" && e.key === LOST).length;
+
+  test("DG-46 config.dungeon.lostHintSteps は 100【仮】。入場の直後の floorSteps は 0", () => {
+    expect(STEPS).toBe(100);
+    expect(enterD01(1).dive!.floorSteps).toBe(0);
+  });
+
+  test("DG-46 前進が成立した 1 歩で floorSteps +1。旋回・壁の blocked では変わらない", () => {
+    const { state } = plainStep(1);
+    const s = withSteps(state, 7);
+    expect(run(s, MOVE, DATA0).state.dive!.floorSteps).toBe(8);
+    expect(run(s, { type: "dungeon.turn", dir: "left" }, DATA0).state.dive!.floorSteps).toBe(7);
+    const f = floorOf(s.dive!, data);
+    const wall = approaches(f, () => true, () => true)
+      .map((a) => a.pos)
+      .flatMap((p) => FACINGS.filter((d) => edgeOf(cellAt(f, p.x, p.y), d) === "wall").map((d) => ({ p, d })))[0]!;
+    const r = run(placeAt(s, wall.p, wall.d), MOVE, DATA0);
+    expect(r.events.map((e) => e.kind)).toContain("blocked");
+    expect(r.state.dive!.floorSteps).toBe(7);
+  });
+
+  test("DG-46 99 歩目では出ず、100 歩目（floorSteps が lostHintSteps に届いた歩）で moved の直後に hint.lostExits を一度だけ出して progress.hints に積む", () => {
+    const { state } = plainStep(1);
+    const r99 = run(withSteps(state, STEPS - 2), MOVE, DATA0);
+    expect(r99.state.dive!.floorSteps).toBe(STEPS - 1);
+    expect(lostCount(r99.events)).toBe(0);
+    const r100 = run(withSteps(state, STEPS - 1), MOVE, DATA0);
+    expect(r100.state.dive!.floorSteps).toBe(STEPS);
+    expect(lostCount(r100.events)).toBe(1);
+    const i = r100.events.findIndex((e) => e.kind === "moved");
+    expect(r100.events[i + 1]).toEqual({ kind: "message", key: LOST });
+    expect(r100.state.progress.hints).toEqual(["dungeonFirst", "lostExits"]);
+    // 2 回目（もう積んである）は 150 歩でも出さない
+    const again = withSteps(r100.state, 149);
+    again.dive!.pos = { ...state.dive!.pos };
+    again.dive!.facing = state.dive!.facing;
+    again.dive!.explored = {};
+    expect(lostCount(run(again, MOVE, DATA0).events)).toBe(0);
+  });
+
+  test("DG-46 下り階段のセルがその階の explored にあれば（階段を見つけていれば）出さない", () => {
+    const { state, f } = plainStep(1);
+    const s = withSteps(state, STEPS - 1);
+    s.dive!.explored = { "1": [idx(f, f.stairsDown!.x, f.stairsDown!.y)] };
+    const r = run(s, MOVE, DATA0);
+    expect(r.state.dive!.floorSteps).toBe(STEPS);
+    expect(lostCount(r.events)).toBe(0);
+    expect(r.state.progress.hints).not.toContain("lostExits");
+    // 別の階で見つけた添字は数えない（階ごと）
+    const s2 = withSteps(state, STEPS - 1);
+    s2.dive!.explored = { "2": [idx(f, f.stairsDown!.x, f.stairsDown!.y)] };
+    expect(lostCount(run(s2, MOVE, DATA0).events)).toBe(1);
+  });
+
+  test("DG-46 最下層（stairsDown が null）では出さない", () => {
+    const last = dungeonOf(data, "d01").floors;
+    const { state, f } = plainStep(last);
+    expect(f.stairsDown).toBeNull();
+    const r = run(withSteps(state, STEPS + 50), MOVE, DATA0);
+    expect(lostCount(r.events)).toBe(0);
+  });
+
+  test("DG-46 乱数は引かず、既存の出来事の順も変えない（遭遇率 100% で、一言の有無の他は events と rng が同じ。一言は遭遇より前）", () => {
+    const { state } = plainStep(1);
+    const d1 = dataWithRate(1, 1);
+    noTrapDetect(d1);
+    const base = run(withSteps(state, 0), MOVE, d1);
+    const hit = run(withSteps(state, STEPS - 1), MOVE, d1);
+    expect(lostCount(base.events)).toBe(0);
+    expect(lostCount(hit.events)).toBe(1);
+    expect(hit.state.rng).toEqual(base.state.rng);
+    expect(hit.events.filter((e) => !(e.kind === "message" && e.key === LOST))).toEqual(base.events);
+    const kinds = hit.events.map((e) => (e.kind === "message" ? e.key : e.kind));
+    expect(kinds.indexOf(LOST)).toBeLessThan(kinds.indexOf("encounter"));
+    expect(kinds).toContain("encounter");
+  });
+
+  test("DG-46 階の移動（降りる・上る）と転移（DG-25）で floorSteps は 0。やめる（stay）では変わらない", () => {
+    // 降りる
+    const down = findSituation((c) => c.kind === "stairsDown");
+    const atDown = run(withSteps(down.state, 40), MOVE, DATA0);
+    expect(atDown.state.pendingChoice?.promptKey).toBe("dungeon.stairsDown");
+    expect(atDown.state.dive!.floorSteps).toBe(41);
+    expect(run(atDown.state, { type: "event.choose", optionId: "stay" }, DATA0).state.dive!.floorSteps).toBe(41);
+    const descended = run(atDown.state, { type: "event.choose", optionId: "descend" }, DATA0).state;
+    expect(descended.dive!.floor).toBe(2);
+    expect(descended.dive!.floorSteps).toBe(0);
+    // 上る（2 階の上り階段）
+    const up = findSituation((c) => c.kind === "stairsUp", { floor: 2 });
+    const atUp = run(withSteps(up.state, 30), MOVE, DATA0);
+    expect(atUp.state.pendingChoice?.promptKey).toBe("dungeon.stairsUpFloor");
+    const ascended = run(atUp.state, { type: "event.choose", optionId: "ascend" }, DATA0).state;
+    expect(ascended.dive!.floor).toBe(1);
+    expect(ascended.dive!.floorSteps).toBe(0);
+    // 転移
+    const ctx = makeContext(withSteps(enterD01(1), 60), data);
+    teleportParty(ctx);
+    expect(ctx.events.map((e) => e.kind)).toEqual(["moved"]);
+    expect(ctx.state.dive!.floorSteps).toBe(0);
   });
 });

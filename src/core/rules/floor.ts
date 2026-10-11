@@ -100,7 +100,7 @@ export function markExplored(dive: Dive, f: Floor, depth: number): void {
 
 /**
  * DG-25（M11）: 転移。今の階の実効の構造（floorOf）で、kind が corridor かつ roomId が null の、今の位置ではないセルを添字の昇順に並べ、
- * randInt(0, n − 1)（state.rng）で 1 つ選んで pos を書き換える（向きはそのまま）→ 視野を explored に足す（markExplored）→ moved{pos, facing}。
+ * randInt(0, n − 1)（state.rng）で 1 つ選んで pos を書き換える（向きはそのまま。DG-46 の floorSteps は 0）→ 視野を explored に足す（markExplored）→ moved{pos, facing}。
  * 着地したセルでは歩の続き（遭遇・罠・イベント・階段）を起こさない。explored は階ごとに保つので、地図は転移の前後で続く（DG-13）。
  * 候補が無ければ何もしない（乱数も引かない）
  */
@@ -117,6 +117,7 @@ export function teleportParty(ctx: RuleContext): void {
   if (cands.length === 0) return;
   const to = cands[randInt(state.rng, 0, cands.length - 1)]!;
   dive.pos = { x: to.x, y: to.y };
+  dive.floorSteps = 0; // DG-46（M18）: 転移で今の階の歩数を数え直す
   markExplored(dive, f, data.config.dungeon.viewDepth);
   ctx.events.push({ kind: "moved", pos: { x: to.x, y: to.y }, facing: dive.facing });
 }
