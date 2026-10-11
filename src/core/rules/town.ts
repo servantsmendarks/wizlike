@@ -11,7 +11,8 @@ import { classOf, destroyItemInstance, dungeonOf, findBase, itemDisplayName, mem
 import type { Character, GameState, RuleContext, TownMenu } from "../types";
 import { canAct } from "./combat-calc";
 import { clampToMax, effectiveStats, equipStats } from "./equip-stats";
-import { canLevelUp, levelUpWhilePossible, mpGainFor } from "./growth";
+import { canLevelUp, expFor, levelUpWhilePossible, mpGainFor } from "./growth";
+import { hasGossip } from "./gossip";
 import { ceilRatio } from "./ratio";
 import { clearAllStatus } from "./field";
 import { capSan, overSan, restoreSan } from "./san";
@@ -171,7 +172,7 @@ export function checkInn(state: GameState, rank: unknown, data: GameData): strin
  * （hpRatio 0 なら増えない）、MP は全ランクで mpMax に戻す →（M18 5-3。alive の者がいれば）message town.inn.restored（hpRatio > 0）/
  * town.inn.restoredMp（hpRatio 0）→（M19。curePoison のランクなら）alive の者を並び順に毒を外し（statusChanged off）、
  * 1 人でも外れたら message town.inn.curedPoison →（TW-15。士気の立つランクなら）morale = { rankId } →
- * sanOver > 0 なら alive の者を並び順に overSan → message town.inn.morale → alive の者を並び順に levelUpWhilePossible（どのランクでも）。
+ * sanOver > 0 なら alive の者を並び順に overSan → message town.inn.morale →（M20 D-5。gossip のランクで hasGossip が真なら）message town.inn.gossipHeard → alive の者を並び順に levelUpWhilePossible（どのランクでも）。
  * 上がる者（canLevelUp）の処理の前には section を 1 回出す（UI-47 の区切り。M10.5 追補 2。上がらない者には出さない）。
  * 士気の立たないランクでは morale を変えない（消さない）。毒のほかの状態異常（麻痺・石化）は治さない。満タンでも泊まれる。乱数は引かない（レベルアップを除く）。
  */
@@ -215,6 +216,8 @@ export function stayInn(ctx: RuleContext, rank: number): void {
       }
     }
     ctx.events.push({ kind: "message", key: "town.inn.morale" });
+    // TW-15（M20 D-5）: 噂話の立つランクなら、入場で思い出す噂の予告。候補（解放済みのダンジョンの未鑑定の敵）があるときだけ。乱数は引かない
+    if (r.gossip && hasGossip(state, data)) ctx.events.push({ kind: "message", key: "town.inn.gossipHeard" });
   }
   for (const ch of state.party) {
     if (ch.life !== "alive" || !canLevelUp(ch, data)) continue;
@@ -392,9 +395,12 @@ export function grantMercy(ctx: RuleContext, memberId: string): void {
 // ---------------------------------------------------------------------------
 // 表示層向けの問い合わせ（純粋。state を変えない）
 
-/** TW-04（M18 5-3）: 宿屋の見出しの 2 行目の値。life alive の者の HP / MP と実効の最大値（CH-14）の合計、canLevelUp の人数 */
+/**
+ * TW-04（M18 5-3）: 宿屋の見出しの 2 行目の値。life alive の者の HP / MP と実効の最大値（CH-14）の合計、canLevelUp の人数。
+ * M20 D-6: nearest は alive で canLevelUp が偽の者のうち残り exp の最も少ない者（同じなら並び順で先。いなければ null）
+ */
 function innPartyOf(state: GameState, data: GameData): TownMenu["innParty"] {
-  const out = { hp: 0, hpMax: 0, mp: 0, mpMax: 0, levelUpReady: 0 };
+  const out: TownMenu["innParty"] = { hp: 0, hpMax: 0, mp: 0, mpMax: 0, levelUpReady: 0, nearest: null };
   for (const ch of state.party) {
     if (ch.life !== "alive") continue;
     const es = equipStats(state, data, ch);
@@ -402,7 +408,12 @@ function innPartyOf(state: GameState, data: GameData): TownMenu["innParty"] {
     out.hpMax += es.hpMax;
     out.mp += ch.mp;
     out.mpMax += es.mpMax;
-    if (canLevelUp(ch, data)) out.levelUpReady += 1;
+    if (canLevelUp(ch, data)) {
+      out.levelUpReady += 1;
+      continue;
+    }
+    const expToNext = expFor(ch.level + 1, classOf(data, ch.classId), data.config) - ch.exp;
+    if (out.nearest === null || expToNext < out.nearest.expToNext) out.nearest = { name: ch.name, expToNext };
   }
   return out;
 }

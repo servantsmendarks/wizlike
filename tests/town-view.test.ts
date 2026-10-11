@@ -2092,22 +2092,43 @@ describe("TW-05/UI-52/IT-61（M18 5-2）店の確認と売値", () => {
 });
 
 describe("TW-04/UI-52（M18 5-3）宿屋の見出しの 2 行目と泊まった後の一言", () => {
-  test("TW-04/UI-52 宿屋の段だけ見出しの 2 行目 town.inn.partyHp「HP {hp}/{hpMax}　MP {mp}/{mpMax}　↑ {n}人」（値は core の townMenu.innParty）。ほかの段は null", () => {
+  test("TW-04/UI-52 宿屋の段だけ見出しの 2 行目 town.inn.partyHp「HP {hp}/{hpMax} MP {mp}/{mpMax} ↑{n}人（{name}あと{exp}）」（値は core の townMenu.innParty。M20 D-6 で最短の者）。ほかの段は null", () => {
     const s = town({ c1: { hp: 1 }, c2: { exp: 100000 }, c4: { mp: 0 } });
     const m = menuOf(s);
     const p = m.innParty;
-    expect(townHeadingSub("inn", m, S)).toBe(`HP ${p.hp}/${p.hpMax}　MP ${p.mp}/${p.mpMax}　↑ ${p.levelUpReady}人`);
+    expect(p.nearest).not.toBeNull();
+    expect(townHeadingSub("inn", m, S)).toBe(`HP ${p.hp}/${p.hpMax} MP ${p.mp}/${p.mpMax} ↑${p.levelUpReady}人（${p.nearest!.name}あと${p.nearest!.expToNext}）`);
     expect(p.levelUpReady).toBe(1);
     // 見出しの 1 行目は今までどおりの問い
     expect(townHeadingText("inn", m, S)).toBe(S["town.ask.inn"]);
     for (const page of ALL_PAGES.filter((x) => x !== "inn")) expect(townHeadingSub(page, m, S), JSON.stringify(page)).toBeNull();
     // strings を差し替えれば文も変わる（表示層は値を入れるだけ）
-    expect(townHeadingSub("inn", m, { ...S, "town.inn.partyHp": "{hp}-{hpMax}-{mp}-{mpMax}-{n}" })).toBe(`${p.hp}-${p.hpMax}-${p.mp}-${p.mpMax}-${p.levelUpReady}`);
+    expect(townHeadingSub("inn", m, { ...S, "town.inn.partyHp": "{hp}-{hpMax}-{mp}-{mpMax}-{n}-{name}-{exp}" })).toBe(
+      `${p.hp}-${p.hpMax}-${p.mp}-${p.mpMax}-${p.levelUpReady}-${p.nearest!.name}-${p.nearest!.expToNext}`,
+    );
   });
 
-  test("TW-04/UI-52 見出しの 2 行目は最悪の値（HP・MP とも 9999/9999、6人）でも見出しの 1 行（全角 28 字 = 56 単位）に収まる。宿の行は最悪の料金（6 桁）でも一覧の 21 字（39 単位）に収まる", () => {
-    const worst = formatMessage(S["town.inn.partyHp"]!, { hp: 9999, hpMax: 9999, mp: 9999, mpMax: 9999, n: 6 });
+  test("TW-04/UI-52（M20 D-6）全員が宿で上がるなら town.inn.partyHpAll「…↑{n}人（全員）」、生きている者がいなければ town.inn.partyHpNone（人数だけ）", () => {
+    const m = menuOf(town());
+    const all = { ...m, innParty: { hp: 60, hpMax: 60, mp: 10, mpMax: 10, levelUpReady: 6, nearest: null } };
+    expect(townHeadingSub("inn", all, S)).toBe("HP 60/60 MP 10/10 ↑6人（全員）");
+    const none = { ...m, innParty: { hp: 0, hpMax: 0, mp: 0, mpMax: 0, levelUpReady: 0, nearest: null } };
+    expect(townHeadingSub("inn", none, S)).toBe("HP 0/0 MP 0/0 ↑0人");
+  });
+
+  test("TW-15（M20 D-5）town.inn.gossipHeard は会話の箱の 1 行（28 字）に収まる", () => {
+    expect(S["town.inn.gossipHeard"]).toBe("主人から迷宮の噂を聞いた。");
+    expect(kinsokuLines(S["town.inn.gossipHeard"]!, 28)).toHaveLength(1);
+  });
+
+  test("TW-04/UI-52 見出しの 2 行目は最悪の値（HP・MP とも 9999/9999、6人。M20 D-6: 名前 6 字・残り 5 桁）でも見出しの 1 行（全角 28 字 = 56 単位）に収まる。宿の行は最悪の料金（6 桁）でも一覧の 21 字（39 単位）に収まる", () => {
+    const hm = { hp: 9999, hpMax: 9999, mp: 9999, mpMax: 9999 };
+    const worst = formatMessage(S["town.inn.partyHp"]!, { ...hm, n: 5, name: "アアアアアア", exp: 99999 });
     expect(textUnits(worst), worst).toBeLessThanOrEqual(56);
+    for (const k of ["town.inn.partyHpAll", "town.inn.partyHpNone"]) {
+      const w = formatMessage(S[k]!, { ...hm, n: 6 });
+      expect(textUnits(w), w).toBeLessThanOrEqual(56);
+    }
     for (const r of data.config.town.innRanks) {
       const label = formatMessage(S["town.inn.rank"]!, { name: r.name, cost: 999999, effect: S[`town.inn.effect.${r.id}`]! });
       expect(textUnits(label), label).toBeLessThanOrEqual(39);

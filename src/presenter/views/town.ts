@@ -1017,12 +1017,15 @@ export function townHeadingText(
 
 /**
  * TW-04 / UI-52（M18 5-3）: 見出しの 2 行目（無ければ null）。宿屋の一覧だけ、一行の HP / MP の合計と宿で上がる人数
- * （core の townMenu.innParty の値を入れるだけ）
+ * （core の townMenu.innParty の値を入れるだけ）。M20 D-6: 括弧に最短の者の名前と残り exp（全員上がるなら「全員」）
  */
 export function townHeadingSub(page: TownPage, menu: TownMenu, strings: Strings): string | null {
   if (page !== "inn") return null;
   const p = menu.innParty;
-  return s(strings, "town.inn.partyHp", { hp: p.hp, hpMax: p.hpMax, mp: p.mp, mpMax: p.mpMax, n: p.levelUpReady });
+  const base = { hp: p.hp, hpMax: p.hpMax, mp: p.mp, mpMax: p.mpMax, n: p.levelUpReady };
+  // M20 D-6: 最短の者（core の nearest）があればその名前と残り、いなくて上がる者がいれば「全員」、生きている者がいなければ人数だけ
+  if (p.nearest !== null) return s(strings, "town.inn.partyHp", { ...base, name: p.nearest.name, exp: p.nearest.expToNext });
+  return s(strings, p.levelUpReady > 0 ? "town.inn.partyHpAll" : "town.inn.partyHpNone", base);
 }
 
 /**

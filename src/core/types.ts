@@ -727,9 +727,18 @@ export type PenaltyResult = {
 export type TownMenuInnRank = { rank: number; id: string; name: string; cost: number; affordable: boolean; morale: boolean };
 /**
  * TW-04（M18 5-3）: 宿屋の見出しの 2 行目の一行の合計。life alive の者（宿で回復・レベルアップする者）の HP / MP の今の値と
- * 実効の最大値（CH-14 の equipStats）の合計と、そのうち canLevelUp（CH-61。宿で上がる）の人数。生きている者がいなければ全部 0
+ * 実効の最大値（CH-14 の equipStats）の合計と、そのうち canLevelUp（CH-61。宿で上がる）の人数。生きている者がいなければ全部 0。
+ * M20 D-6: nearest は life alive で宿で上がらない者（canLevelUp が偽）のうち
+ * 次のレベルまでの残り exp（expFor(level + 1) − exp）が最も少ない者（同じなら並び順で先）。そういう者がいなければ null
  */
-export type TownMenuInnParty = { hp: number; hpMax: number; mp: number; mpMax: number; levelUpReady: number };
+export type TownMenuInnParty = {
+  hp: number;
+  hpMax: number;
+  mp: number;
+  mpMax: number;
+  levelUpReady: number;
+  nearest: { name: string; expToNext: number } | null;
+};
 export type TownMenuTempleRow = { memberId: string; name: string; cost: number; affordable: boolean };
 export type TownMenuShopItem = { itemId: string; name: string; price: number; affordable: boolean };
 /**

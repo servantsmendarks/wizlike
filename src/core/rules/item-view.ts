@@ -2,7 +2,7 @@
 // 呪文の説明（UI-68）・レベルアップ可（CH-80）・敵の図鑑（UI-79。M18）。純粋。state を変えない。乱数を使わない。
 // 値の式は equip-stats.ts（実効の値・品 1 つの性能）と shop.ts（売値）のものをそのまま使う（表示層は計算しない。UI-35）。
 import type { EquipSlot, GameData, SkillType, StatBlock } from "../data/index";
-import { classOf, cloneState, equipmentPlainName, findBase, itemDisplayName, itemOf, memberById, optionOf, uniqueOf, unknownKindOf } from "../state";
+import { classOf, cloneState, equipmentPlainName, findBase, itemDisplayName, itemOf, memberById, moraleOf, optionOf, uniqueOf, unknownKindOf } from "../state";
 import { formatDice, parseDice } from "../rng";
 import type { Character, GameState, ItemInstance, Rarity, RuleContext, SpellInfo } from "../types";
 import { checkEquip, checkUnequip, equipItem, unequipItem } from "./camp";
@@ -132,6 +132,8 @@ export type MemberSheet = {
    * blocked = 残りが 0 だが alive でない（死亡・灰。U9。蘇生すれば ready）
    */
   levelUpView: LevelUpView;
+  /** TW-15 / UI-59（M20 D-6）: 宿の士気がある（moraleOf が null でない）。一行の値なので life を問わない */
+  morale: boolean;
 };
 export type LevelUpView = "ready" | "next" | "blocked";
 export type AttackParts = { weaponDice: string; weaponBonus: number; strBonus: number; traitBonus: number; optionBonus: number };
@@ -147,6 +149,7 @@ export function memberSheet(state: GameState, data: GameData, ch: Character): Me
     expToNext,
     canLevelUp,
     levelUpView: canLevelUp ? "ready" : expToNext > 0 ? "next" : "blocked",
+    morale: moraleOf(state, data) !== null,
     stats: es.stats,
     hpMax: es.hpMax,
     mpMax: es.mpMax,

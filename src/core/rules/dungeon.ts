@@ -39,6 +39,7 @@ import { offerExit, offerStairs, offerTeleporter, offerTrap } from "./choices";
 import { equipStats } from "./equip-stats";
 import { chooseEventOption, startEvent } from "./events";
 import { addIndex, aliveMembers, damageMembers, removeIndex } from "./field";
+import { gossipCandidates } from "./gossip";
 import { tellHintOnce } from "./hints";
 import { bumpTally } from "./progress";
 import { loseSan } from "./san";
@@ -200,17 +201,7 @@ export function checkEnter(state: GameState, dungeonId: unknown, data: GameData)
   return enterBlockReason(state, dungeonId, data);
 }
 
-/**
- * TW-15: 宿の主人の噂話の候補。dungeonId の encounterTable の全階に出る敵（ボス boss.monster は表にあっても除く）から、
- * 図鑑で鑑定済みの種類を除き、重複なく monsters.json の順に並べた monsterId の列
- */
-export function gossipCandidates(state: GameState, data: GameData, dungeonId: string): string[] {
-  const def = dungeonOf(data, dungeonId);
-  const inTable = new Set<string>();
-  for (const entries of Object.values(def.encounterTable)) for (const e of entries) inTable.add(e.monster);
-  inTable.delete(def.boss.monster);
-  return data.monsters.filter((m) => inTable.has(m.id) && state.bestiary[m.id]?.identified !== true).map((m) => m.id);
-}
+export { gossipCandidates }; // TW-15: 本体は gossip.ts（M20 D-5 で town.ts からも使うため切り出した）
 
 /**
  * TW-15: 士気の gossip が真なら、gossipCandidates から randInt(0, n − 1) で 1 種を選んで図鑑で鑑定済みにし

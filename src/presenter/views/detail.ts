@@ -150,7 +150,10 @@ export function formatCharacter(
     mp: s("detail.mp", { mp: ch.mp, mpMax: sheet?.mpMax ?? ch.mpMax }),
     san: s("detail.san", { san: ch.san, sanMax: sanCap }),
     sanOver: ch.san > sanCap,
-    status: s("detail.status", { status: cond === "" ? s("detail.statusOk") : cond }),
+    // M20 D-6（UI-59 / TW-15）: 宿の士気がある間は生きている者の状態の行の末尾に「士気」（sheet の morale。life alive だけ）
+    status: s("detail.status", {
+      status: [cond === "" ? s("detail.statusOk") : cond, ...(sheet?.morale === true && ch.life === "alive" ? [s("detail.statusMorale")] : [])].join(" "),
+    }),
     stats: STAT_ORDER.map((k) => {
       const label = s(`stat.${k}`);
       const value = stats[k];

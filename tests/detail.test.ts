@@ -146,6 +146,26 @@ afterEach(() => {
 });
 
 describe("UI-59/UI-12 士気の SAN の超過（TW-15。M7）", () => {
+  test("UI-59/TW-15（M20 D-6）状態の行: 宿の士気がある間（core の memberSheet の morale）は生きている者の末尾に「士気」。dead・灰と士気なし・sheet なしは付けない。最悪でも 1 行（56 単位）", () => {
+    const s = structuredClone(newGame(1));
+    expect(memberSheet(s, data, s.party[0]!).morale).toBe(false);
+    expect(formatCharacter(s.party[0]!, data, S, nameOf(s), memberSheet(s, data, s.party[0]!)).status).toBe(t("detail.status", { status: "正常" }));
+    s.morale = { rankId: "good" };
+    const sheet = memberSheet(s, data, s.party[0]!);
+    expect(sheet.morale).toBe(true);
+    expect(formatCharacter(s.party[0]!, data, S, nameOf(s), sheet).status).toBe(t("detail.status", { status: "正常 士気" }));
+    const poisoned = { ...s.party[0]!, status: ["poison", "sleep"] as GameState["party"][number]["status"] };
+    expect(formatCharacter(poisoned, data, S, nameOf(s), memberSheet(s, data, poisoned)).status).toBe(t("detail.status", { status: "毒 眠 士気" }));
+    const dead = { ...s.party[0]!, life: "dead" as const, hp: 0 };
+    expect(formatCharacter(dead, data, S, nameOf(s), memberSheet(s, data, dead)).status).toBe(t("detail.status", { status: t("party.life.dead") }));
+    expect(formatCharacter(s.party[0]!, data, S, nameOf(s)).status).toBe(t("detail.status", { status: "正常" }));
+    // 最悪: 状態異常 4 つ（石化・麻痺・眠り・毒）と SAN の段と士気
+    const worst = { ...s.party[0]!, status: ["stone", "paralysis", "sleep", "poison"] as GameState["party"][number]["status"], san: 0 };
+    const w = formatCharacter(worst, data, S, nameOf(s), memberSheet(s, data, worst)).status;
+    expect(w.endsWith("士気")).toBe(true);
+    expect(textUnits(w), w).toBeLessThanOrEqual(56);
+  });
+
   // M7 の B10 で 5 番目の引数を sanCap（core の sanCapOf）から sheet（core の memberSheet。sanMax は sanCapOf と同じ値）に替えた
   test("UI-59/TW-15 formatCharacter: SAN は「SAN 110/100」（最大は core の memberSheet の sanMax）で sanOver が真。100/100 は偽。sheet の省略は sanMax", () => {
     const s = newGame(1);

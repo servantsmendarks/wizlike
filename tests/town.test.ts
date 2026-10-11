@@ -7,7 +7,7 @@ import { describe, expect, test } from "vitest";
 import { STAT_KEYS, type StatKey } from "../src/core/data";
 import { createInitialState, execute } from "../src/core/engine";
 import { createRng, randInt, type RngState } from "../src/core/rng";
-import { checkEnter } from "../src/core/rules/dungeon";
+import { checkEnter, gossipCandidates } from "../src/core/rules/dungeon";
 import { startAlarmEncounter, startBossEncounter, startRandomEncounter } from "../src/core/rules/combat";
 import { damageMembers } from "../src/core/rules/field";
 import { endingRecordView } from "../src/core/rules/progress";
@@ -153,6 +153,7 @@ describe("TW-15 士気（宿の個室。M7）", () => {
       { kind: "sanChanged", id: "c5", delta: 10, san: 110 },
       { kind: "sanChanged", id: "c6", delta: 10, san: 110 },
       { kind: "message", key: "town.inn.morale" },
+      { kind: "message", key: "town.inn.gossipHeard" }, // M20 D-5: d01 に未鑑定の敵がいる
     ]);
     expect(r.state.morale).toEqual({ rankId: "good" });
     expect(r.state.gold).toBe(240);
@@ -177,8 +178,36 @@ describe("TW-15 士気（宿の個室。M7）", () => {
       { kind: "message", key: "town.inn.stay", params: { room: "個室", cost: 60 } },
       { kind: "message", key: "town.inn.restored" },
       { kind: "message", key: "town.inn.morale" },
+      { kind: "message", key: "town.inn.gossipHeard" },
     ]);
     expect(d.state.morale).toEqual({ rankId: "good" });
+  });
+
+  test("TW-15（M20 D-5）噂の予告: 噂話の立つランク（個室）で、解放済みのダンジョンに未鑑定の候補があれば town.inn.morale の直後に town.inn.gossipHeard。乱数を引かない", () => {
+    const s = town({ c2: { exp: 100000 } });
+    const r = ok(s, { type: "town.inn", rank: 2 });
+    const keys = r.events.map((e) => (e.kind === "message" ? e.key : e.kind));
+    expect(keys.indexOf("town.inn.gossipHeard")).toBe(keys.indexOf("town.inn.morale") + 1);
+    expect(keys.indexOf("levelUp")).toBeGreaterThan(keys.indexOf("town.inn.gossipHeard")); // レベルアップの前
+    expect(r.state.rng).toEqual(ok(s, { type: "town.inn", rank: 2 }).state.rng);
+    // 噂話の無いランク（馬小屋・相部屋）では出さない
+    for (const rank of [0, 1]) expect(ok(town(), { type: "town.inn", rank }).events.some((e) => e.kind === "message" && e.key === "town.inn.gossipHeard")).toBe(false);
+  });
+
+  test("TW-15（M20 D-5）噂の予告は候補が無ければ出さない（解放済みのダンジョンの敵を図鑑で全部鑑定済み）。乱数は泊まる前後で同じ", () => {
+    const s = town();
+    for (const id of s.progress.unlockedDungeons) for (const m of gossipCandidates(s, data, id)) s.bestiary[m] = { kills: 0, identified: true };
+    const r = ok(s, { type: "town.inn", rank: 2 });
+    const keys = r.events.map((e) => (e.kind === "message" ? e.key : e.kind));
+    expect(keys).toContain("town.inn.morale");
+    expect(keys).not.toContain("town.inn.gossipHeard");
+    expect(r.state.rng).toEqual(s.rng);
+    // 候補が 1 つでも残っていれば出す
+    const one = cloneState(s);
+    const first = data.dungeons.find((d) => d.id === s.progress.unlockedDungeons[0])!;
+    const left = Object.values(first.encounterTable).flat().map((e) => e.monster).find((m) => m !== first.boss.monster)!;
+    one.bestiary[left] = { kills: 3, identified: false };
+    expect(ok(one, { type: "town.inn", rank: 2 }).events).toContainEqual({ kind: "message", key: "town.inn.gossipHeard" });
   });
 
   test("TW-15 士気の後にレベルアップ（stay → SAN → town.inn.morale → levelUp の順）", () => {
@@ -453,6 +482,7 @@ describe("TW-04 宿屋（town.inn）", () => {
       mp: alive.reduce((a, c) => a + c.mp, 0),
       mpMax: sheet.reduce((a, x) => a + x.mpMax, 0),
       levelUpReady: sheet.filter((x) => x.canLevelUp).length,
+      nearest: p.nearest,
     });
     expect(p.levelUpReady).toBe(1); // ベルク（c2）だけ。dead のキリ（c3）は数えない
     expect(p.hp).toBeLessThan(p.hpMax);
@@ -462,7 +492,35 @@ describe("TW-04 宿屋（town.inn）", () => {
     expect([after.hp, after.mp]).toEqual([after.hpMax, after.mpMax]);
     // 生きている者がいなければ全部 0
     const none = town({ c1: DEAD, c2: DEAD, c3: DEAD, c4: DEAD, c5: ASH, c6: DEAD });
-    expect(townMenu(none, data)!.innParty).toEqual({ hp: 0, hpMax: 0, mp: 0, mpMax: 0, levelUpReady: 0 });
+    expect(townMenu(none, data)!.innParty).toEqual({ hp: 0, hpMax: 0, mp: 0, mpMax: 0, levelUpReady: 0, nearest: null });
+  });
+
+  test("TW-04（M20 D-6）innParty.nearest は alive で宿で上がらない者のうち残り exp の最も少ない者（同じなら並び順で先）。上がる者・dead・ash は外す。全員上がるか生きている者がいなければ null。乱数を引かない", () => {
+    const need = (c: string, s: ReturnType<typeof town>) => {
+      const ch = s.party.find((x) => x.id === c)!;
+      return memberSheet(s, data, ch).expNext;
+    };
+    const base = town();
+    // c4 は残り 23、c5 も残り 23（並び順で c4 が先）、c3 は dead で残り 1、c2 は上がる
+    const s = town({
+      c2: { exp: 100000 },
+      c3: { ...DEAD, exp: need("c3", base) - 1 },
+      c4: { exp: need("c4", base) - 23 },
+      c5: { exp: need("c5", base) - 23 },
+    });
+    const p = townMenu(s, data)!.innParty;
+    expect(p.levelUpReady).toBe(1);
+    expect(p.nearest).toEqual({ name: s.party[3]!.name, expToNext: 23 });
+    expect(p.nearest!.expToNext).toBe(memberSheet(s, data, s.party[3]!).expToNext);
+    // 全員上がるなら null
+    const all = town({ c1: { exp: 100000 }, c2: { exp: 100000 }, c3: { exp: 100000 }, c4: { exp: 100000 }, c5: { exp: 100000 }, c6: { exp: 100000 } });
+    expect(townMenu(all, data)!.innParty).toMatchObject({ levelUpReady: 6, nearest: null });
+    // 上がる者と灰の者のほかは 1 人だけ
+    const one = town({ c1: { exp: 100000 }, c2: { exp: 100000 }, c3: ASH, c4: DEAD, c5: { exp: 100000 }, c6: { exp: 7 } });
+    expect(townMenu(one, data)!.innParty.nearest).toEqual({ name: one.party[5]!.name, expToNext: memberSheet(one, data, one.party[5]!).expToNext });
+    const before = structuredClone(one);
+    townMenu(one, data);
+    expect(one).toEqual(before);
   });
 });
 
