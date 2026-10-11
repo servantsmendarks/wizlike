@@ -531,16 +531,16 @@ describe("CH-77 party.identify", () => {
       },
       { kind: "message", key: "camp.identified", params: { name: "エル", old: "短い刃？", item: "短剣", rarity: "normal" } },
       // UI-59 / CH-77（M18）: 装備なら品そのものの数値の 1 文（短剣 1d4。該当しない項目は「—」）
-      { kind: "message", key: "camp.identifiedPower", params: { item: "短剣", attack: "1d4", ac: "—", magic: "—" } },
+      { kind: "message", key: "camp.identifiedPower", params: { item: "短剣", attack: "1d4", ac: "—", magic: "—" }, instant: true },
       // IT-61 / CH-77（M19）: 希少度と売値の 1 文（短剣 floor(15 × 0.5) = 7G）
-      { kind: "message", key: "camp.identifiedValue", params: { rarity: "通常", gold: 7 } },
+      { kind: "message", key: "camp.identifiedValue", params: { rarity: "通常", gold: 7 }, instant: true },
     ]);
     expect(r.state.items[g.id]!.identified).toBe(true);
     expect(member(r.state, "c5").mp).toBe(4);
     expect(r.state.rng).toEqual(m);
   });
 
-  test("IT-61/CH-77（M19）司教の鑑定の成功の後に camp.identifiedValue{rarity, gold}（希少度の語と鑑定後の売値）。消耗品でも出す（性能の文は出さない）。乱数は d100 の 1 回のまま", () => {
+  test("IT-61/CH-77/UI-43（M19・M20 D-3）司教の鑑定の成功の後に camp.identifiedValue{rarity, gold}（希少度の語と鑑定後の売値。数値の行なので instant）。消耗品でも出す（性能の文は出さない）。乱数は d100 の 1 回のまま", () => {
     const sure = sureData();
     const g = give(bishopAt(inTown()), "c1", "herb", false);
     const m = cloneRng(g.s.rng);
@@ -548,7 +548,7 @@ describe("CH-77 party.identify", () => {
     const r = ok(g.s, identify("c5", g.id), sure);
     // 薬草 floor(10 × 0.5) = 5G。消耗品の実体の希少度は normal
     expect(messagesOf(r.events).map((e) => (e.kind === "message" ? e.key : ""))).toEqual(["camp.identified", "camp.identifiedValue"]);
-    expect(messagesOf(r.events)[1]).toEqual({ kind: "message", key: "camp.identifiedValue", params: { rarity: "通常", gold: 5 } });
+    expect(messagesOf(r.events)[1]).toEqual({ kind: "message", key: "camp.identifiedValue", params: { rarity: "通常", gold: 5 }, instant: true });
     expect(r.state.rng).toEqual(m);
   });
 
@@ -560,8 +560,8 @@ describe("CH-77 party.identify", () => {
     const r = ok(s, identify("c5", g.id));
     expect(messagesOf(r.events)).toEqual([
       { kind: "message", key: "camp.identified", params: { name: "エル", old: "短い刃？", item: "短剣", rarity: "normal" } },
-      { kind: "message", key: "camp.identifiedPower", params: { item: "短剣", attack: "1d4", ac: "—", magic: "—" } },
-      { kind: "message", key: "camp.identifiedValue", params: { rarity: "通常", gold: 7 } },
+      { kind: "message", key: "camp.identifiedPower", params: { item: "短剣", attack: "1d4", ac: "—", magic: "—" }, instant: true },
+      { kind: "message", key: "camp.identifiedValue", params: { rarity: "通常", gold: 7 }, instant: true },
       { kind: "message", key: "camp.identifiedCursed", params: { item: "短剣" } },
     ]);
     expect(r.state.rng).toEqual(m);
@@ -777,8 +777,8 @@ describe("CH-77 party.identify", () => {
     // IT-11 / IT-12: 鑑定前は「剣？」、鑑定後は「上質な影法師の剣」（ユニークは Lv を出さない）
     expect(messagesOf(r1.events)).toEqual([
       { kind: "message", key: "camp.identified", params: { name: "エル", old: "剣？", item: "上質な影法師の剣", rarity: "fine" } },
-      { kind: "message", key: "camp.identifiedPower", params: { item: "上質な影法師の剣", attack: "1d8", ac: "—", magic: "—" } }, // ユニークは Lv の効果なし（IT-03）
-      { kind: "message", key: "camp.identifiedValue", params: { rarity: "上質", gold: 600 } }, // IT-61: ユニークは floor(1200 × 0.5)（希少度に関わらず固定）
+      { kind: "message", key: "camp.identifiedPower", params: { item: "上質な影法師の剣", attack: "1d8", ac: "—", magic: "—" }, instant: true }, // ユニークは Lv の効果なし（IT-03）
+      { kind: "message", key: "camp.identifiedValue", params: { rarity: "上質", gold: 600 }, instant: true }, // IT-61: ユニークは floor(1200 × 0.5)（希少度に関わらず固定）
     ]);
     expect(r1.state.uniqueBook).toEqual({ shadowfolk_sword: { foundIn: "d01", bestRarity: "fine" } });
     const r2 = ok(r1.state, identify("c5", b), sure);
@@ -788,9 +788,9 @@ describe("CH-77 party.identify", () => {
     const r4 = ok(r3.state, identify("c5", g), sure);
     expect(r4.state.uniqueBook).toEqual(r3.state.uniqueBook);
     expect(messagesOf(r4.events)[0]).toEqual({ kind: "message", key: "camp.identified", params: { name: "エル", old: "剣？", item: "伝説の長剣 +2", rarity: "legendary" } });
-    expect(messagesOf(r4.events)[1]).toEqual({ kind: "message", key: "camp.identifiedPower", params: { item: "伝説の長剣 +2", attack: "1d8+2", ac: "—", magic: "—" } }); // IT-20: Lv2 → +2
+    expect(messagesOf(r4.events)[1]).toEqual({ kind: "message", key: "camp.identifiedPower", params: { item: "伝説の長剣 +2", attack: "1d8+2", ac: "—", magic: "—" }, instant: true }); // IT-20: Lv2 → +2
     // IT-61（M19）: 汎用は floor(100 × 0.5 × (1 + 0.5 × 2)) = 100G
-    expect(messagesOf(r4.events)[2]).toEqual({ kind: "message", key: "camp.identifiedValue", params: { rarity: "伝説", gold: 100 } });
+    expect(messagesOf(r4.events)[2]).toEqual({ kind: "message", key: "camp.identifiedValue", params: { rarity: "伝説", gold: 100 }, instant: true });
   });
 });
 

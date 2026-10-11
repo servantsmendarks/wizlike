@@ -713,7 +713,8 @@ export function createApp(o: {
     const intro = [...townPageIntro(page, menu).map(t), ...(upText === null ? [] : [upText])];
     const texts = townFreshIntro(intro, play.message.history().slice(-TOWN_INTRO_DEDUP));
     const skip = store.get().skipAnimations;
-    texts.forEach((x) => void narrator.say(x, skip));
+    // UI-43（M20 D-3）: 強化の前後の 1 文は数値の行なので即時（入るときの語りは今のまま文字送り）
+    texts.forEach((x) => void narrator.say(x, skip || x === upText));
   };
 
   /** Esc・戻る: 1 つ上のページへ（menu では何もしない） */
@@ -810,7 +811,8 @@ export function createApp(o: {
             goTownPage({ shop: e.itemId });
             const m = townMenu(state, data);
             const text = m === null ? null : shopPreviewText(e.itemId, m, strings);
-            if (text !== null) void narrator.say(text, store.get().skipAnimations);
+            // UI-43（M20 D-3）: 性能の 1 文は数値の行なので文字送りの速さによらず即時
+            if (text !== null) void narrator.say(text, true);
             return;
           }
           case "buy":
@@ -819,10 +821,10 @@ export function createApp(o: {
             // 段を戻ってまた同じ者を押したときは、入るときの語りと同じく履歴の末尾 2 件と同じ文を重ねない（townFreshIntro）
             goTownPage({ buyAsk: { itemId: e.itemId, memberId: e.memberId } });
             // M20 B-2: 比較の文とオプションの行はひと続きで出す（先頭の文が履歴の末尾にあれば全部省く。townFreshBlock）
+            // UI-43（M20 D-3）: 比較の文とオプションの行は数値の行なので即時
             if (e.compare !== null) {
-              const skip = store.get().skipAnimations;
               const recent = play.message.history().slice(-Math.max(TOWN_INTRO_DEDUP, e.compare.length));
-              townFreshBlock(e.compare, recent).forEach((x) => void narrator.say(x, skip));
+              townFreshBlock(e.compare, recent).forEach((x) => void narrator.say(x, true));
             }
             return;
           case "buyYes":
@@ -848,8 +850,8 @@ export function createApp(o: {
             // TW-17: 触媒の印の付け外し。M20 B-2: 付け外しのたびにその品の性能の 1 文（views/town の info）を語る（履歴の末尾 2 件と同じ文は重ねない）
             townPage = e.to;
             syncControls();
-            const skip = store.get().skipAnimations;
-            townFreshIntro([e.info], play.message.history().slice(-TOWN_INTRO_DEDUP)).forEach((x) => void narrator.say(x, skip));
+            // UI-43（M20 D-3）: 触媒の性能の 1 文は数値の行なので即時
+            townFreshIntro([e.info], play.message.history().slice(-TOWN_INTRO_DEDUP)).forEach((x) => void narrator.say(x, true));
             return;
           }
           case "upgrade":

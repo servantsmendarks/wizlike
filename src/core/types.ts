@@ -1118,8 +1118,10 @@ export type GameEvent =
    * （階段・出口の問い。やめるで答えて歩き去った後に問いが窓に残らないように）。旋回では空にしない。
    * M19: "step" なら、この文を出した再生より後の再生の、次の moved（位置が変わったもの）か turned のどちらでも窓を空にする
    * （壁 dungeon.blocked と扉 dungeon.door。古い「壁だ。」が向き直った後に残らないように）。省略は従来どおり
+   * instant（UI-43。M20 D-3）: 真なら表示層は文字送りの速さによらずこの文を即時に出す（数値の行。鑑定の結果の性能・希少度と売値）。
+   * 省略は従来どおり（演出スキップのときだけ即時）。タップ待ちは変えない
    */
-  | { kind: "message"; key: string; params?: Record<string, string | number>; clearOn?: "moved" | "step" }
+  | { kind: "message"; key: string; params?: Record<string, string | number>; clearOn?: "moved" | "step"; instant?: true }
   | { kind: "moved"; pos: Pos; facing: Facing }
   | { kind: "turned"; facing: Facing }
   | { kind: "blocked" }

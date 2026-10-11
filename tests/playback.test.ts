@@ -210,6 +210,25 @@ describe("UI-41 playback", () => {
     expect(log.filter((e) => e.m === "message.say").map((e) => e.a[1])).toEqual([false]);
   });
 
+  test("UI-43（M20 D-3）instant の message（数値の行）は演出ありでも say(text, true)。印の無い文は今のまま false で、後の出来事のフェードも変えない", async () => {
+    const { deps, log } = fakeDeps({ skipAnimations: false, textSpeed: 30 });
+    const before = stateWith(diveAt(3, 3, "N"));
+    await createPlayer(deps).play(
+      [
+        { kind: "message", key: "town.shop.identifiedValue", params: { rarity: "希少", gold: 125 }, instant: true },
+        { kind: "moved", pos: { x: 3, y: 2 }, facing: "N" },
+        { kind: "message", key: "dungeon.blocked" },
+      ],
+      before,
+      before,
+    );
+    expect(log.filter((e) => e.m === "message.say").map((e) => e.a)).toEqual([
+      ["希少度 希少　売値 125G", true],
+      [data.strings["dungeon.blocked"], false],
+    ]);
+    expect(log.filter((e) => e.m === "view.fade").map((e) => e.a[0])).toEqual([data.config.ui.viewFadeMs]);
+  });
+
   test("UI-23/UI-25/UI-31（M16）view.quickStep が真の間は moved / turned の描き直しを 0ms にする（戦闘への切り替えのフェードは viewFadeMs のまま）。省略・偽なら viewFadeMs", async () => {
     let quick = true;
     const { deps, log } = fakeDeps({ skipAnimations: false });

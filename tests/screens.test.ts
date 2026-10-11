@@ -834,7 +834,7 @@ describe("入力と Command", () => {
     // 群 C のレビュー: 段を戻って同じ者をまた押したときは履歴の末尾 2 件と同じ文を重ねない（townFreshIntro）
     // M20 B-2: 比較の文とオプションの行はひと続き（townFreshBlock。履歴の末尾 max(2, 文の数) 件に先頭の文があれば全部省く）
     expect(body).toMatch(
-      /case "buy":\s*goTownPage\(\{ buyAsk: \{ itemId: e\.itemId, memberId: e\.memberId \} \}\);\s*if \(e\.compare !== null\) \{\s*const skip = store\.get\(\)\.skipAnimations;\s*const recent = play\.message\.history\(\)\.slice\(-Math\.max\(TOWN_INTRO_DEDUP, e\.compare\.length\)\);\s*townFreshBlock\(e\.compare, recent\)\.forEach\(\(x\) => void narrator\.say\(x, skip\)\);\s*\}\s*return;/,
+      /case "buy":\s*goTownPage\(\{ buyAsk: \{ itemId: e\.itemId, memberId: e\.memberId \} \}\);\s*if \(e\.compare !== null\) \{\s*const recent = play\.message\.history\(\)\.slice\(-Math\.max\(TOWN_INTRO_DEDUP, e\.compare\.length\)\);\s*townFreshBlock\(e\.compare, recent\)\.forEach\(\(x\) => void narrator\.say\(x, true\)\);\s*\}\s*return;/,
     );
     expect(body).toMatch(/case "sell":\s*goTownPage\(\{ sellAsk: \{ memberId: e\.memberId, instanceId: e\.instanceId \} \}\);\s*return;/);
     expect(body).toMatch(
@@ -986,7 +986,7 @@ describe("入力と Command", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
     expect(body).toMatch(
-      /case "upPick": \{\s*townPage = e\.to;\s*syncControls\(\);\s*const skip = store\.get\(\)\.skipAnimations;\s*townFreshIntro\(\[e\.info\], play\.message\.history\(\)\.slice\(-TOWN_INTRO_DEDUP\)\)\.forEach\(\(x\) => void narrator\.say\(x, skip\)\);\s*return;\s*\}/,
+      /case "upPick": \{\s*townPage = e\.to;\s*syncControls\(\);\s*townFreshIntro\(\[e\.info\], play\.message\.history\(\)\.slice\(-TOWN_INTRO_DEDUP\)\)\.forEach\(\(x\) => void narrator\.say\(x, true\)\);\s*return;\s*\}/,
     );
     expect(body).toMatch(
       /case "upgrade":\s*townPage = \{ upSlot: e\.memberId \};\s*if \(townLowersInput\(e\)\) lowerInput\(\);\s*void run\(\{ type: "town\.upgrade", memberId: e\.memberId, slot: e\.slot, catalysts: e\.catalysts \}\)\.then\(\(r\) => \{\s*if \(r === null \|\| r\.rejected\) sync\(state\);\s*\}\);\s*return;/,
@@ -1032,9 +1032,24 @@ describe("入力と Command", () => {
     expect(app).toContain('if (r.announce) void narrator.say(t("save.failed"), true);');
     expect(app).toContain("for (const k of plan.prompts) void narrator.say(t(k), instant);");
     const body = /const goTownPage = \(page: TownPage\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
-    expect(body).toContain("texts.forEach((x) => void narrator.say(x, skip));");
+    // UI-43（M20 D-3）: 強化の確認の段の前後の 1 文（upText）だけ即時。ほかの入るときの語りは skip のまま
+    expect(body).toContain("texts.forEach((x) => void narrator.say(x, skip || x === upText));");
     // 箱の ▼ は演出スキップでは点滅しない
     expect(app).toContain("talkBlink: () => !store.get().skipAnimations,");
+  });
+
+  test("UI-43（M20 D-3）表示層が語る数値の行（店の下見・比較の文とオプションの行・触媒の 1 文・強化の前後の 1 文）は say(x, true)。再生は message の instant で即時（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const shopItem = /case "shopItem": \{([\s\S]*?)\n {10}\}/.exec(app)?.[1] ?? "";
+    expect(shopItem).toContain("const text = m === null ? null : shopPreviewText(e.itemId, m, strings);");
+    expect(shopItem).toContain("if (text !== null) void narrator.say(text, true);");
+    expect(app).toContain("townFreshBlock(e.compare, recent).forEach((x) => void narrator.say(x, true));");
+    expect(app).toContain("townFreshIntro([e.info], play.message.history().slice(-TOWN_INTRO_DEDUP)).forEach((x) => void narrator.say(x, true));");
+    const body = /const goTownPage = \(page: TownPage\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(body).toContain("const upText = ");
+    expect(body).toContain("texts.forEach((x) => void narrator.say(x, skip || x === upText));");
+    const pb = stripComments(presenterRaw["../src/presenter/playback.ts"]!);
+    expect(pb).toContain("await deps.message.say(formatMessage(tpl, ev.params), cx.skip || ev.instant === true);");
   });
 
   test("UI-63/UI-66（2026-10-06）音の拡充の配線: 出来事の音は表示層だけの SoundContext を通す、街は施設の曲、迷宮のキャンプの間はキャンプの曲で閉じたら場面の曲、続きからは潜っているダンジョンの曲、施設に入る・キャンプを開く・会話の送りの音（ソースの検査）", () => {

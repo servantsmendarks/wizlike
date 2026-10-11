@@ -420,7 +420,8 @@ export function createPlayer(deps: PlayerDeps): Player {
     async message(ev, cx) {
       cx.skip = isSkip();
       const tpl = deps.strings[ev.key] ?? ev.key;
-      await deps.message.say(formatMessage(tpl, ev.params), cx.skip);
+      // UI-43（M20 D-3）: instant の文（数値の行）は文字送りの速さによらず即時。cx.skip（後の待ち・フェード）は変えない
+      await deps.message.say(formatMessage(tpl, ev.params), cx.skip || ev.instant === true);
       if (ev.clearOn !== undefined) clearMark = { on: ev.clearOn, gen: playGen };
     },
     async moved(ev, cx, finalState) {
