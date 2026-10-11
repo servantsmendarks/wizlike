@@ -610,9 +610,47 @@ describe("入力と Command", () => {
     // 途中の手の語りで下がったら出し直す
     expect(walker).toMatch(/if \(go && walking === w && !play\.message\.noting\(\)\) showWalkingNote\(\);/);
     const goPick = /const goMapPick = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
-    expect(goPick).toMatch(/walking = \{ steps, i: 0 \};\s*showWalkingNote\(\);\s*syncControls\(\);\s*walker\.press\(\);/);
+    expect(goPick).toMatch(/closeMap\(\);\s*startWalk\(steps, dest\);/);
+    const start = /const startWalk = \(steps: readonly RouteStep\[\], dest: Pos\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(start).toMatch(/walking = \{ steps, i: 0 \};\s*showWalkingNote\(\);\s*syncControls\(\);\s*walker\.press\(\);/);
     const end = /const endWalk = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(end).toMatch(/walking = null;\s*play\.message\.hideNote\(\);/);
+  });
+
+  test("UI-25（M18）移動を続ける: 自動歩行を始めたときに目的地（walkDest）を覚え、止まっても（endWalk）残す。着いた・階の移動・手動の前進と旋回・地図で別のマス・街とタイトル・続きからで捨てる。ボタンは目的地があり planRoute が引けるときだけ（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    // 始めたときに覚える（ダンジョン・階・セル）
+    const start = /const startWalk = \(steps: readonly RouteStep\[\], dest: Pos\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(start).toMatch(/walkDest = d === null \? null : \{ dungeonId: d\.dungeonId, floor: d\.floor, pos: \{ x: dest\.x, y: dest\.y \} \};/);
+    // 止まっても残す（endWalk・stopWalk は walkDest に触れない）
+    const end = /const endWalk = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(end).not.toContain("walkDest");
+    const stop = /const stopWalk = \(\): boolean => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(stop).not.toContain("walkDest");
+    // 着いた・階の移動は walkDestStale、経路が引けなければ出さない
+    const dest = /const walkResumeDest = \(\): Pos \| null => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(dest).toMatch(/if \(walkDest !== null && walkDestStale\(walkDest, state\.dive\)\) walkDest = null;/);
+    expect(dest).toMatch(/const steps = planRoute\(state, data, walkDest\.pos\);\s*return steps === null \|\| steps\.length === 0 \? null : walkDest\.pos;/);
+    // 手動の前進・旋回（自動歩行の手でないもの）で捨てる
+    const run = /const run = \(cmd: Command, opt\?: CommandExecOptions\): Promise<DispatchResult \| null> => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(run).toMatch(/if \(walking === null && \(cmd\.type === "dungeon\.move" \|\| cmd\.type === "dungeon\.turn"\)\) walkDest = null;\s*return gate\.run\(cmd, opt\);/);
+    // 地図で別のマスを選んだら捨てる
+    const tap = /const tapMapCell = \(p: Pos\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(tap).toMatch(/if \(walkDest !== null && \(walkDest\.pos\.x !== p\.x \|\| walkDest\.pos\.y !== p\.y\)\) walkDest = null;/);
+    // 街・タイトルへ、続きから
+    const scr = /const onScreen = \(to: Screen, carry: readonly string\[\] = \[\]\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(scr).toMatch(/if \(r === "town" \|\| r === "title"\) walkDest = null;/);
+    const resume = /const resume = \(st: GameState\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(resume).toMatch(/walking = null;\s*walkDest = null;/);
+    // 迷宮の操作の一覧: 階段のボタンの後に、出せるときだけ [移動を続ける]。押すと経路を引き直して歩き出す
+    expect(app).toMatch(/const resumeOn = walking === null && walkResumeDest\(\) !== null;/);
+    expect(app).toMatch(
+      /\.\.\.\(stairsKey === null \? \[\] : \[listItem\(t\(stairsKey\), \(\) => void run\(\{ type: "dungeon\.useStairs" \}\)\)\]\),\s*\.\.\.\(resumeOn \? \[listItem\(t\("dungeon\.walkResume"\), \(\) => resumeWalk\(\)\)\] : \[\]\),/,
+    );
+    const rw = /const resumeWalk = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(rw).toMatch(/if \(route !== "dungeon" \|\| overlay !== null \|\| walking !== null \|\| !fieldFree\(\)\) return;/);
+    expect(rw).toMatch(/const steps = planRoute\(state, data, dest\);\s*if \(steps === null \|\| steps\.length === 0\) return;\s*startWalk\(steps, dest\);/);
+    expect(data.strings["dungeon.walkResume"]).toBe("移動を続ける");
   });
 
   test("UI-25（M16）選んでいないときの「移動」（dim のボタン・2 キー）は題の行を map.pickFirst に替えるだけ（歩き出さない）（ソースの検査）", () => {

@@ -34,7 +34,7 @@ import { endingRecordView } from "../core/rules/progress";
 import { classChangeOptions, townMenu } from "../core/rules/town";
 import { upgradePreview } from "../core/rules/upgrade";
 import { dungeonOf, itemDisplayName } from "../core/state";
-import type { BattleMenu, Command, EndingRecord, GameState, PenaltyResult, Pos, Screen, UpgradePreview, ViewPoint } from "../core/types";
+import type { BattleMenu, Command, EndingRecord, GameState, PenaltyResult, Pos, RouteStep, Screen, UpgradePreview, ViewPoint } from "../core/types";
 import type { GameListEntry, ImportPlan, SaveService } from "../save/types";
 import { downloadText, exportFileName } from "./file-io";
 import { closesInput, runChain, type ChainDeps } from "./auto-chain";
@@ -59,8 +59,10 @@ import {
   battleKeyChoice,
   createHoldRepeater,
   forwardStep,
+  walkDestStale,
   walkStep,
   type RouteWalk,
+  type WalkDest,
   type Action,
 } from "./input/swipe";
 import { attachPointerLog, createPointerLog } from "./input/pointer-log";
@@ -269,6 +271,11 @@ export function createApp(o: {
   let characterOpen = false;
   /** UI-25: 地図のタップ移動の自動歩行（歩いている間だけ非 null。SV-50 の再開では戻さない） */
   let walking: RouteWalk | null = null;
+  /**
+   * UI-25（M18）: 「移動を続ける」の目的地（自動歩行を始めたときに入れ、戦闘・罠などで止まっても残す。表示層だけの値で保存しない）。
+   * 着いた・階の移動（walkDestStale）、手動の前進・旋回（run）、地図で別のマスを選んだ（tapMapCell）、街・タイトルへ（onScreen）、続きから（resume）で null
+   */
+  let walkDest: WalkDest | null = null;
   /** UI-25: 地図で選んだセル（地図を開いている間だけ。表示層だけの値で保存しない） */
   let mapPick: Pos | null = null;
   /** UI-25: 地図の題（経路が無いときの「道が分からない。」から戻すため） */
@@ -554,6 +561,8 @@ export function createApp(o: {
     // UI-47 / UI-59（M10）: キャラクター画面の間の語りは既に会話の箱に出ているので、街に入っても carry を出し直さず、最後の文を箱に残す
     const talked = characterOpen;
     if (r === "town") townPage = "menu";
+    // UI-25（M18）: 街・タイトルへ出たら「移動を続ける」の目的地を捨てる
+    if (r === "town" || r === "title") walkDest = null;
     if (from === "town" && r !== "town") {
       play.talk.flush();
       // 前に街へ入ったときに窓で語った文（帰還・救済の申し出など）を迷宮の窓に残さない（ログには入っている）
@@ -1002,10 +1011,13 @@ export function createApp(o: {
     // UI-53: [キャンプ][地図]（M16 の DG-44: 階段の上にいる間は 3 つ目に [地上へ戻る / 階段を上る / 階段を降りる]。出すかは core の stairsHere）
     // UI-66（2026-10-06）: キャンプを開く項目は ok の代わりにキャンプの音
     const stairsKey = stairsButtonKey(stairsHere(state, data));
+    // UI-25（M18）: 自動歩行の外で、戦闘・罠などで止まった目的地が残り経路が引ければ、階段のボタンの後に [移動を続ける]
+    const resumeOn = walking === null && walkResumeDest() !== null;
     c.setMenu([
       { ...listItem(t("dungeon.menu.camp"), () => openCamp("camp")), sound: "camp" },
       listItem(t("dungeon.menu.map"), () => openMap()),
       ...(stairsKey === null ? [] : [listItem(t(stairsKey), () => void run({ type: "dungeon.useStairs" }))]),
+      ...(resumeOn ? [listItem(t("dungeon.walkResume"), () => resumeWalk())] : []),
     ]);
     c.setDpadVisible(s.inputMode !== "swipe");
     c.setMode("dpad");
@@ -1324,7 +1336,11 @@ export function createApp(o: {
       onRejected: (ev) => console.debug("rejected", ev.command, ev.reason),
     }),
   });
-  const run = (cmd: Command, opt?: CommandExecOptions): Promise<DispatchResult | null> => gate.run(cmd, opt);
+  const run = (cmd: Command, opt?: CommandExecOptions): Promise<DispatchResult | null> => {
+    // UI-25（M18）: 手動の前進・旋回（自動歩行の手でないもの）を送ったら「移動を続ける」の目的地を捨てる
+    if (walking === null && (cmd.type === "dungeon.move" || cmd.type === "dungeon.turn")) walkDest = null;
+    return gate.run(cmd, opt);
+  };
 
   // ---------------------------------------------------------------- 戦闘
   /** 段の間で 1 フレーム譲る（1 回だけの requestAnimationFrame。常駐のループではない） */
@@ -1520,6 +1536,8 @@ export function createApp(o: {
       play.map.setTitle(t("map.noRoute"));
       setMapPick(null);
     } else if (act === "pick") {
+      // UI-25（M18）: 「移動を続ける」の目的地と別のマスを選んだら目的地を捨てる
+      if (walkDest !== null && (walkDest.pos.x !== p.x || walkDest.pos.y !== p.y)) walkDest = null;
       play.map.setTitle(mapTitle);
       setMapPick({ x: p.x, y: p.y });
     }
@@ -1528,9 +1546,38 @@ export function createApp(o: {
   /** UI-25: 選んだセルへ歩き出す（地図の「移動」・同じセルの再タップ・キー）。経路は引き直す。選んでいなければ何もしない */
   const goMapPick = (): void => {
     if (overlay !== "map" || walking !== null || mapPick === null) return;
-    const steps = planRoute(state, data, mapPick);
+    const dest = mapPick;
+    const steps = planRoute(state, data, dest);
     if (steps === null || steps.length === 0) return;
     closeMap();
+    startWalk(steps, dest);
+  };
+
+  /**
+   * UI-25（M18）: 「移動を続ける」の目的地。捨ててよい（着いた・階が違う。walkDestStale）なら捨てる。
+   * 残っていても core の planRoute が null か []（戦闘中・保留中・届かない）なら null（ボタンを出さない）
+   */
+  const walkResumeDest = (): Pos | null => {
+    if (walkDest !== null && walkDestStale(walkDest, state.dive)) walkDest = null;
+    if (walkDest === null) return null;
+    const steps = planRoute(state, data, walkDest.pos);
+    return steps === null || steps.length === 0 ? null : walkDest.pos;
+  };
+
+  /** UI-25（M18）: 迷宮の操作の一覧の [移動を続ける]。経路を引き直して歩き出す（地図の「移動」と同じ） */
+  const resumeWalk = (): void => {
+    if (route !== "dungeon" || overlay !== null || walking !== null || !fieldFree()) return;
+    const dest = walkResumeDest();
+    if (dest === null) return;
+    const steps = planRoute(state, data, dest);
+    if (steps === null || steps.length === 0) return;
+    startWalk(steps, dest);
+  };
+
+  /** UI-25: 自動歩行を始める（目的地を覚え、「移動中」を出して 1 手目をすぐに送る） */
+  const startWalk = (steps: readonly RouteStep[], dest: Pos): void => {
+    const d = state.dive;
+    walkDest = d === null ? null : { dungeonId: d.dungeonId, floor: d.floor, pos: { x: dest.x, y: dest.y } };
     walking = { steps, i: 0 };
     showWalkingNote();
     syncControls();
@@ -1774,6 +1821,7 @@ export function createApp(o: {
     play.setCharacterOpen(false);
     play.header.setNav(false);
     walking = null;
+    walkDest = null;
     walker.release();
     mapPick = null;
     play.map.setPick(null, false);

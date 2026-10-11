@@ -2,7 +2,7 @@
 // ポインタの押下・スワイプ・タップはステージ 1 か所で受ける（input/tap.ts の attachStageInput。UI-36）。
 // 純粋な部分（分類・キー表・canRepeat・walkStep）を export して node 環境で試す。DOM に触れるのは attach* と createHoldRepeater の中だけ。
 // setTimeout を使うのは長押しの連打（createHoldRepeater）だけ。
-import type { GameEvent, PendingChoice, RouteCommand, RouteStep } from "../../core/types";
+import type { GameEvent, PendingChoice, Pos, RouteCommand, RouteStep } from "../../core/types";
 
 export type Dir = "up" | "down" | "left" | "right";
 export type Action = "forward" | "left" | "right" | "around" | "map" | "log" | "back" | "confirm" | "debug" | { menu: number };
@@ -144,6 +144,22 @@ export async function forwardStep(o: {
 
 /** UI-25: 地図のタップ移動の自動歩行。steps は core の planRoute の結果、i は次に送る手の添字 */
 export type RouteWalk = { steps: readonly RouteStep[]; i: number };
+
+/**
+ * UI-25（M18）: 「移動を続ける」の目的地。自動歩行を始めたときのダンジョン・階・セル（表示層だけの値で保存しない）。
+ * 戦闘・罠などで止まっても残し、同じ階のまま目的地に着いていなければ、迷宮の操作の一覧に `dungeon.walkResume` を出す
+ */
+export type WalkDest = { dungeonId: string; floor: number; pos: Pos };
+
+/**
+ * UI-25（M18）: 目的地をもう捨ててよいか（表示のためだけの比較）。潜っていない・ダンジョンか階が違う（階の移動・帰還）・
+ * 今のセルが目的地（着いた）なら true。経路が引けるかは別に core の planRoute で確かめる
+ */
+export function walkDestStale(dest: WalkDest, dive: { dungeonId: string; floor: number; pos: Pos } | null): boolean {
+  if (dive === null) return true;
+  if (dive.dungeonId !== dest.dungeonId || dive.floor !== dest.floor) return true;
+  return dive.pos.x === dest.pos.x && dive.pos.y === dest.pos.y;
+}
 
 /**
  * UI-25: 自動歩行の 1 手（createHoldRepeater の fire）。次も続けるなら true。

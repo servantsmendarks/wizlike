@@ -492,3 +492,17 @@ describe("DG-44 / UI-53 階段のボタンの文言（M16）", () => {
     for (const k of ["exit", "up", "down"] as const) expect(data.strings[stairsButtonKey(k)!]).toBeTypeOf("string");
   });
 });
+
+describe("UI-25 / UI-53 移動を続けるのボタン（M18）", () => {
+  test("UI-25 dungeon.walkResume「移動を続ける」は迷宮のメニューのどの枠（56×32、枠線 1px）にも 1 行で収まる（全角 8px）", async () => {
+    const { data } = await import("./helpers/core");
+    const { dungeonLayout, regions } = await import("../src/presenter/layout");
+    const { textUnits } = await import("../src/presenter/views/party-band");
+    const label = data.strings["dungeon.walkResume"]!;
+    expect(label).toBe("移動を続ける");
+    const L = dungeonLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size);
+    // キャンプ・地図・階段・移動を続ける の 4 つが同時に出ても枠が足りる
+    expect(L.menu.length).toBeGreaterThanOrEqual(4);
+    for (const r of L.menu) expect(textUnits(label) * 4).toBeLessThanOrEqual(r.w - 2);
+  });
+});

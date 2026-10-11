@@ -910,3 +910,16 @@ describe("自動歩行（walkStep）", () => {
     expect(state.dive!.pos).toEqual(target);
   });
 });
+
+describe("UI-25 移動を続ける（M18）", () => {
+  test("UI-25 walkDestStale: 潜っていない・ダンジョンか階が違う・目的地に着いたら捨てる。同じ階の別のセルなら残す（戦闘・罠で止まった後）", async () => {
+    const { walkDestStale } = await import("../src/presenter/input/swipe");
+    const dest = { dungeonId: "d1", floor: 2, pos: { x: 5, y: 7 } };
+    expect(walkDestStale(dest, null)).toBe(true);
+    expect(walkDestStale(dest, { dungeonId: "d2", floor: 2, pos: { x: 1, y: 1 } })).toBe(true);
+    expect(walkDestStale(dest, { dungeonId: "d1", floor: 3, pos: { x: 1, y: 1 } })).toBe(true);
+    expect(walkDestStale(dest, { dungeonId: "d1", floor: 2, pos: { x: 5, y: 7 } })).toBe(true);
+    expect(walkDestStale(dest, { dungeonId: "d1", floor: 2, pos: { x: 5, y: 6 } })).toBe(false);
+    expect(walkDestStale(dest, { dungeonId: "d1", floor: 2, pos: { x: 4, y: 7 } })).toBe(false);
+  });
+});
