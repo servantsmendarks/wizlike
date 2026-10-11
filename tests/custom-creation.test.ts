@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { STAT_KEYS, type StatKey } from "../src/core/data";
 import { execute, createInitialState } from "../src/core/engine";
-import { cloneRng, createRng, type RngState } from "../src/core/rng";
+import { cloneRng, createRng, randInt, type RngState } from "../src/core/rng";
 import { rollBonus, rollBonusParts, statAllocation } from "../src/core/rules/creation";
 import {
   CUSTOM_BUTTONS,
@@ -22,6 +22,7 @@ import {
   customStep,
   customView,
   initialDraft,
+  resolveDraftPersonality,
   sameChildren,
   statHoldSpec,
   type CustomChoice,
@@ -421,6 +422,42 @@ describe("自分で作る（UI-62 / CH-06）", () => {
     expect(ov(n.b, n.c)).toBe(false);
     expect(ov(n.b, n.error) || ov(n.c, n.error)).toBe(false);
     expect(customButtonRects(false)).toEqual({ a: CUSTOM_BUTTONS.a, b: CUSTOM_BUTTONS.b, c: CUSTOM_BUTTONS.c, error: CUSTOM_ERROR });
+  });
+
+  test("CH-30（M20）おまかせの性格は名前の段を終えるときに作成中の乱数で具体的に決まる（鏡の rng の randInt(0,3) の配列順）。確認の行に出て、game.new は state.rng を引かない", () => {
+    const rng = createRng(11);
+    let d = makeOne(initialDraft(data), rng, "アキ");
+    let e = step(d, { kind: "race", raceId: "human" }, rng);
+    e = spendAll(e, rng);
+    e = step(e, { kind: "next" }, rng);
+    e = step(e, { kind: "class", classId: "fighter" }, rng);
+    e = step(e, { kind: "personality", value: "random" }, rng);
+    // 名前の段ではまだおまかせ（要約の行もおまかせ）
+    expect(e.members[1]!.personality).toBe("random");
+    expect(customView(e, data, S).summary).toContain(S["creation.personality.random"]);
+    // 不正な名前では決めない（乱数も引かない）
+    const before = cloneRng(rng);
+    expect(customStep(e, { kind: "name", name: "" }, data, rng).kind).toBe("invalidName");
+    expect(rng).toEqual(before);
+    const mirror = cloneRng(rng);
+    const want = data.personalities[randInt(mirror, 0, data.personalities.length - 1)]!.id;
+    d = step(e, { kind: "name", name: "イサ" }, rng);
+    expect(d.members[1]!.personality).toBe(want);
+    expect(rng).toEqual(mirror);
+    // 具体的な性格・リーダーは引かない
+    const r2 = createRng(4);
+    expect(resolveDraftPersonality("normal", data, r2)).toBe("normal");
+    expect(resolveDraftPersonality(null, data, r2)).toBeNull();
+    expect(r2).toEqual(createRng(4));
+    // 残りを作って確認へ: 2 人目の行は具体的な性格。setup に random は無く、game.new は state.rng を引かない
+    for (let i = 2; i < 6; i++) d = makeOne(d, rng, `ウ${i}`);
+    expect(d.step).toBe("confirm");
+    const name = data.personalities.find((p) => p.id === want)!.name;
+    expect(customView(d, data, S).confirm[1]).toContain(name);
+    const setup = buildCustomSetup(d)!;
+    expect(setup.members.some((m) => m.personality === "random")).toBe(false);
+    const r = execute(createInitialState(1, data), { type: "game.new", party: setup }, data);
+    expect(r.state.rng).toEqual(createRng(1));
   });
 
   test("UI-62 buildCustomSetup は決まっていない人がいれば null", () => {

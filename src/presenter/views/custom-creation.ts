@@ -9,7 +9,7 @@
 import type { GameData, StatBlock, StatKey, Strings } from "../../core/data/index";
 import { STAT_KEYS } from "../../core/data/index";
 import type { RngState } from "../../core/rng";
-import { adjustStat, classOptions, rollBonusParts, statAllocation, validCreationName, type BonusParts } from "../../core/rules/creation";
+import { adjustStat, classOptions, pickPersonality, rollBonusParts, statAllocation, validCreationName, type BonusParts } from "../../core/rules/creation";
 import type { CustomPartySetup } from "../../core/types";
 import { createHoldRepeater, type Action } from "../input/swipe";
 import { onTap, type TapSpec } from "../input/tap";
@@ -101,11 +101,19 @@ function withMember(d: CustomDraft, patch: Partial<CustomMemberDraft>, step: Cus
 
 const same = (d: CustomDraft): CustomResult => ({ kind: "draft", draft: d });
 
+/**
+ * CH-30（M20）: 自分で作るの「おまかせ」の性格を、作成中の乱数で core の pickPersonality（簡易作成と同じ選び方）で決める。
+ * 引くのは random のときだけ。それ以外（具体的な性格・リーダーの null）はそのまま
+ */
+export function resolveDraftPersonality(p: PersonalityChoice, data: GameData, rng: RngState): PersonalityChoice {
+  return p === "random" ? pickPersonality(rng, data) : p;
+}
+
 /** CH-11 / UI-62: 振ったボーナスを下書きの欄に。bonus は配分（core の statAllocation / adjustStat）に渡す合計、bonusParts は内訳の表示用 */
 const bonusOf = (p: BonusParts): Pick<CustomMemberDraft, "bonus" | "bonusParts"> => ({ bonus: p.total, bonusParts: p });
 
 /**
- * UI-62 / CH-06: 1 つ選んだ結果（純粋。rng だけは rollBonusParts で進む）。今の段に合わない選択・選べない選択は同じ下書きのまま。
+ * UI-62 / CH-06: 1 つ選んだ結果（純粋。rng だけは rollBonusParts と、名前の段を終えるときのおまかせの性格（CH-30。M20）で進む）。今の段に合わない選択・選べない選択は同じ下書きのまま。
  * 戻る: 0 人目の種族 → exit、k 人目の種族 → k−1 人目の名前、能力値 → 種族、職業 → 能力値（配分は残す）、
  * 性格 → 職業、名前 → 性格（リーダーは職業）、確認 → 6 人目の名前
  */
@@ -178,8 +186,9 @@ export function customStep(d: CustomDraft, c: CustomChoice, data: GameData, rng:
     }
     case "name": {
       if (c.kind !== "name") return same(d);
-      const named = withMember(d, { name: c.name }, "name");
-      if (!validCreationName(c.name, data)) return { kind: "invalidName", draft: named };
+      if (!validCreationName(c.name, data)) return { kind: "invalidName", draft: withMember(d, { name: c.name }, "name") };
+      // CH-30（M20）: おまかせの性格は名前の段を終えるときに具体的に決める（確認の行に出す。core には id を送る）
+      const named = withMember(d, { name: c.name, personality: resolveDraftPersonality(m.personality, data, rng) }, "name");
       if (d.index < last) return { kind: "draft", draft: { ...named, index: d.index + 1, step: "race" } };
       return { kind: "draft", draft: { ...named, step: "confirm" } };
     }

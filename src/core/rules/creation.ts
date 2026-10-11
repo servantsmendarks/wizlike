@@ -183,16 +183,24 @@ function validateCustomMember(m: Record<string, unknown>, i: number, data: GameD
   return null;
 }
 
-/** CH-30: "random" は data.personalities の配列順から randInt で選ぶ。null → null。それ以外はそのまま。 */
+/**
+ * CH-30: おまかせの性格を 1 つ選ぶ（data.personalities の配列順から randInt(0, 数 − 1)。乱数は 1 回）。
+ * 簡易作成は core の resolvePersonality（state.rng）、自分で作る（M20）は表示層が作成中の乱数で呼ぶ
+ */
+export function pickPersonality(rng: RngState, data: GameData): PersonalityId {
+  const list = data.personalities;
+  const picked = list[randInt(rng, 0, list.length - 1)];
+  if (picked === undefined) throw new Error("pickPersonality: no personalities");
+  return picked.id;
+}
+
+/** CH-30: "random" は pickPersonality（state.rng）。null → null。それ以外はそのまま。 */
 export function resolvePersonality(
   ctx: RuleContext,
   choice: PersonalityId | "random" | null,
 ): PersonalityId | null {
   if (choice !== "random") return choice;
-  const list = ctx.data.personalities;
-  const picked = list[randInt(ctx.state.rng, 0, list.length - 1)];
-  if (picked === undefined) throw new Error("resolvePersonality: no personalities");
-  return picked.id;
+  return pickPersonality(ctx.state.rng, ctx.data);
 }
 
 type Kit = { equipment: Partial<Record<EquipSlot, string>>; inventory: readonly string[]; knownSpells: readonly string[] };
