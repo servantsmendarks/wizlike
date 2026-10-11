@@ -793,8 +793,9 @@ describe("入力と Command", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
     // M19（C-3）: 装備の品なら確認の段に移ってから比較の文（views/town の行の compare）を会話の箱で語る
+    // 群 C のレビュー: 段を戻って同じ者をまた押したときは履歴の末尾 2 件と同じ文を重ねない（townFreshIntro）
     expect(body).toMatch(
-      /case "buy":\s*goTownPage\(\{ buyAsk: \{ itemId: e\.itemId, memberId: e\.memberId \} \}\);\s*if \(e\.compare !== null\) void narrator\.say\(e\.compare, store\.get\(\)\.skipAnimations\);\s*return;/,
+      /case "buy":\s*goTownPage\(\{ buyAsk: \{ itemId: e\.itemId, memberId: e\.memberId \} \}\);\s*if \(e\.compare !== null\) \{\s*const skip = store\.get\(\)\.skipAnimations;\s*townFreshIntro\(\[e\.compare\], play\.message\.history\(\)\.slice\(-TOWN_INTRO_DEDUP\)\)\.forEach\(\(x\) => void narrator\.say\(x, skip\)\);\s*\}\s*return;/,
     );
     expect(body).toMatch(/case "sell":\s*goTownPage\(\{ sellAsk: \{ memberId: e\.memberId, instanceId: e\.instanceId \} \}\);\s*return;/);
     expect(body).toMatch(

@@ -797,8 +797,12 @@ export function createApp(o: {
           case "buy":
             // TW-05（M18 5-2）: 持たせる者を押したら確認の段（問いは見出し。送るのは「買う」の buyYes）
             // M19（C-3）: 装備の品なら、確認の段に移ってから今の装備との比較の文（core の shopEquipCompare）を会話の箱で語る
+            // 段を戻ってまた同じ者を押したときは、入るときの語りと同じく履歴の末尾 2 件と同じ文を重ねない（townFreshIntro）
             goTownPage({ buyAsk: { itemId: e.itemId, memberId: e.memberId } });
-            if (e.compare !== null) void narrator.say(e.compare, store.get().skipAnimations);
+            if (e.compare !== null) {
+              const skip = store.get().skipAnimations;
+              townFreshIntro([e.compare], play.message.history().slice(-TOWN_INTRO_DEDUP)).forEach((x) => void narrator.say(x, skip));
+            }
             return;
           case "buyYes":
             // TW-05: 買った後は持たせる者の一覧に戻ってとどまる（続けて買える。再生の最後の sync で townMenu を取り直す）
