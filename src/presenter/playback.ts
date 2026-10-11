@@ -692,6 +692,13 @@ export function createPlayer(deps: PlayerDeps): Player {
       leaveBeats();
       soundStart("playback");
       const cx: PlayCx = { cursor: cursorOfDive(before), skip: isSkip(), screen: before.screen };
+      // UI-45（M18。レビューの指摘）: 問いの後に歩き去る再生では、core が moved より先に出す文（扉など）を消さないよう、
+      // 最初の出来事の前に窓を空にする（位置の比較は表示のためだけ）
+      if (clearOnMoved) {
+        const c0 = cx.cursor;
+        const mv = events.find((e) => e.kind === "moved");
+        if (mv !== undefined && mv.kind === "moved" && (c0 === null || c0.pos.x !== mv.pos.x || c0.pos.y !== mv.pos.y)) clearWindow();
+      }
       // 後ろに message が残っているか（続きの三角。拍の外はタップを待たずに先へ進む）
       let messagesLeft = events.filter((e) => e.kind === "message").length;
       /**

@@ -2483,8 +2483,8 @@ describe("UI-45/UI-47（M10.5 追補 2）区切りで窓を空にする", () => 
     await player.play([{ kind: "turned", facing: "E" }], s, stateWith(diveAt(3, 3, "E")));
     await player.play([{ kind: "moved", pos: { x: 3, y: 3 }, facing: "E" }], stateWith(diveAt(3, 3, "E")), stateWith(diveAt(3, 3, "E")));
     expect(names(log)).not.toContain("message.clearView");
-    // 歩き去る: moved で空にしてから、その手の文を出す
-    await player.play([{ kind: "moved", pos: { x: 4, y: 3 }, facing: "E" }, msg("dungeon.door")], stateWith(diveAt(3, 3, "E")), stateWith(diveAt(4, 3, "E")));
+    // 歩き去る（扉越し。core の順は dungeon.door → moved）: 最初の出来事の前に空にし、扉の文は窓に残す
+    await player.play([msg("dungeon.door"), { kind: "moved", pos: { x: 4, y: 3 }, facing: "E" }], stateWith(diveAt(3, 3, "E")), stateWith(diveAt(4, 3, "E")));
     expect(names(log).filter((m) => m === "message.clearView" || m === "message.say")).toEqual(["message.clearView", "message.say"]);
     log.length = 0;
     // 空にしたら印は外れる（次の moved では空にしない）

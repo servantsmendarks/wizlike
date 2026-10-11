@@ -1192,7 +1192,8 @@ export function createApp(o: {
       // DG-45（M18）: 辺りを探るは閉じてから送る（遭遇すれば通常の再生、rejected なら閉じた画面のまま描き直す）
       closeCamp(true);
       void run(r.command).then((res) => {
-        if (res !== null && res.rejected && !isBusy()) syncControls();
+        // 再生中で送れなかった（run が null）ときも、閉じた画面の操作を描き直す
+        if ((res === null || res.rejected) && !isBusy()) syncControls();
       });
       return;
     }
