@@ -434,7 +434,7 @@ export function checkChest(state: GameState, data: GameData, cmd: { type: string
  * 失敗なら 2 回目の d100: 1〜triggerChance は作動（作動させた人は調べた人。罠なしの箱なら何も起きず「分からない」）、
  * 続く wrongNameChance の幅は本当の罠以外（罠なしなら全種）から randInt で別の名前を告げる（成功と同じ文）、残りは chest.inspect.unknown。
  * 判定の箱は U-2 (1): 調べる人の力の内訳と危険度を引く前の値だけを出し、危険度・出目・結果は伏せる（hidden）。結果の文は箱の後の語り。
- * 告げた結果は chest.finding（不明・作動は null）。
+ * 告げた結果は chest.finding（作動は null。不明は前の見立てを残す。M18）。
  * 掛け合いの担当（EV-75）が失敗したら chest.rivalryFails を 1 増やす（語りと SAN は箱が片付いた時点。EV-76 / U-7 (b)）
  */
 export function inspectChest(ctx: RuleContext, memberId: string, startAlarm: StartAlarm): void {
@@ -460,8 +460,8 @@ export function inspectChest(ctx: RuleContext, memberId: string, startAlarm: Sta
     if (trapId === null) ctx.events.push({ kind: "message", key: "chest.inspect.none" });
     else ctx.events.push({ kind: "message", key: "chest.inspect.found", params: { trap: trapName(data, trapId) } });
   };
+  // M18（設計 5-8）: 不明に終わっても前の見立て（finding）は残す（作動は箱の罠が変わるので null に戻す）
   const unknown = (): void => {
-    chest.finding = null;
     ctx.events.push({ kind: "message", key: "chest.inspect.unknown" });
   };
   if (roll <= r.rate) {

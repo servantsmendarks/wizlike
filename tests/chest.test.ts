@@ -564,7 +564,7 @@ describe("CB-63 調べる", () => {
     expect(chestOf(n.state)!.finding).toEqual({ trapId: null });
   });
 
-  test("CB-63 失敗の 2 回目の d100: 1〜triggerChance は作動（作動させた人は調べた人）、続く wrongNameChance の幅は別の名前（本当の罠以外から randInt）、残りは不明", () => {
+  test("CB-63 失敗の 2 回目の d100: 1〜triggerChance は作動（作動させた人は調べた人。finding は null）、続く wrongNameChance の幅は別の名前（本当の罠以外から randInt）、残りは不明（M18: 前の見立て finding は残す）", () => {
     const fail = (mut: (x: GameData) => void) =>
       chestData((x) => {
         x.config.chest.inspect.min = x.config.chest.inspect.max = 0;
@@ -586,9 +586,16 @@ describe("CB-63 調べる", () => {
     expect(eventsOf(t.events, "hpChanged")[0]).toMatchObject({ id: "c3", delta: -Math.min(dmg, member(s, "c3").hp) });
     expect(chestOf(t.state)).toMatchObject({ trapId: null, danger: 1, finding: null }); // 作動した罠は消える。箱は残る
     expect(kindsOf(t.events).at(-1)).toBe("message:chest.prompt");
-    // 罠なしの箱で作動の段なら何も起きず「分からない」
-    const n = exec(withChest(null, 4), inspect("c3"), dT);
+    // 作動したときは前の見立ても消える（罠が変わる）
+    const sT = withChest("crossbow", 4);
+    sT.dive!.chest!.finding = { trapId: "bomb" };
+    expect(chestOf(exec(sT, inspect("c3"), dT).state)!.finding).toBeNull();
+    // 罠なしの箱で作動の段なら何も起きず「分からない」（M18: 前の見立ては残す）
+    const sN = withChest(null, 4);
+    sN.dive!.chest!.finding = { trapId: "poison_needle" };
+    const n = exec(sN, inspect("c3"), dT);
     expect(kindsOf(n.events)).toEqual(["dice", "message:chest.inspect.unknown", "message:chest.prompt"]);
+    expect(chestOf(n.state)!.finding).toEqual({ trapId: "poison_needle" });
     // 別の名前（成功と同じ文）。本当の名前とは違う（シード 1〜30 で毎回）
     const dW = fail((x) => {
       x.config.chest.triggerChance = 0;
@@ -620,10 +627,19 @@ describe("CB-63 調べる", () => {
       x.config.chest.wrongNameChance = 0;
     });
     const told0 = withChest("crossbow", 4);
-    told0.dive!.chest!.finding = { trapId: "bomb" }; // 前に告げられた名前は不明で消える
+    told0.dive!.chest!.finding = { trapId: "bomb" }; // M18: 前に告げられた名前は不明でも残る
+    const mu = cloneRng(told0.rng);
+    randInt(mu, 1, 100);
+    randInt(mu, 1, 100);
     const u = exec(told0, inspect("c3"), dU);
+    expect(u.state.rng).toEqual(mu);
     expect(kindsOf(u.events)).toEqual(["dice", "message:chest.inspect.unknown", "message:chest.prompt"]);
-    expect(chestOf(u.state)!.finding).toBeNull();
+    expect(chestOf(u.state)!.finding).toEqual({ trapId: "bomb" });
+    // 「罠は無さそう」の見立ても残る。未調査（null）は null のまま
+    const none0 = withChest("crossbow", 4);
+    none0.dive!.chest!.finding = { trapId: null };
+    expect(chestOf(exec(none0, inspect("c3"), dU).state)!.finding).toEqual({ trapId: null });
+    expect(chestOf(exec(withChest("crossbow", 4), inspect("c3"), dU).state)!.finding).toBeNull();
   });
 
   test("CB-63 既定の 2 回目の d100 の幅は 1〜10 作動・11〜60 別の名前・61〜100 不明（鏡の rng。シード 1〜200 で 3 つとも通る）", () => {

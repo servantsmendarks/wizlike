@@ -703,7 +703,7 @@
   "chest.trap.curse": "箱の底から、誰かの呪いの声が這い上がってきた。",
   "chest.inspect.found": "罠は{trap}のようだ。",
   "chest.inspect.none": "罠は無さそうだ。",
-  "chest.inspect.unknown": "罠があるのか、よく分からない。",
+  "chest.inspect.unknown": "罠があるかどうかは分からなかった。もう一度調べるか、賭けて開けるか。",
   "chest.disarm.ok": "罠を外した。",
   "chest.disarm.nothing": "罠は見つからなかった。",
   "chest.disarm.wrong": "思っていた仕掛けと違う！",

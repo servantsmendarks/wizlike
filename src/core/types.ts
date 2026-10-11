@@ -260,7 +260,7 @@ export type Dive = {
  * - trapId: 今かかっている罠（chest-traps.json の id。解除・作動で null）
  * - danger: 見つけた時点の危険度（罠なし 0）。解除・作動しても残す。使うのは中身の上振れ（IT-56）だけ（調べる・解除の式は trapId から引く）
  * - level: 中身の Lv（IT-53）
- * - finding: 最後の「調べる」で GM が告げた名前（偽りもありうる）。{ trapId: null } は「罠は無さそう」、null は未調査か不明。解除に成功したら { trapId: null }
+ * - finding: 最後の「調べる」で GM が告げた名前（偽りもありうる）。{ trapId: null } は「罠は無さそう」、null は未調査か作動の後（不明に終わった調べ直しは前の値を残す。M18）。解除に成功したら { trapId: null }
  * - rivalry: 職業の掛け合い（EV-70〜76）の担当。発生していなければ null
  * - rivalryFails: 担当の調べるの失敗の数（EV-76。片付いた時点で清算する）
  */

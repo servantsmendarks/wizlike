@@ -7,7 +7,8 @@ import { chestView } from "../src/core/rules/chest";
 import type { ChestView, Command, GameState } from "../src/core/types";
 import { CHEST_MENU, chestEntries, chestHeading, chestParent, chestRepair, type ChestChoice, type ChestEntry, type ChestPage } from "../src/presenter/views/chest";
 import { dived, exec } from "./helpers/battle";
-import { data, withChar } from "./helpers/core";
+import { data, loadFreshData, withChar } from "./helpers/core";
+import { kinsokuLines } from "./helpers/wrap";
 
 const S = data.strings;
 
@@ -97,6 +98,21 @@ describe("UI-70 宝箱の段（views/chest）", () => {
     expect(labels(es).slice(0, 3)).toEqual(["毒針", "石弓（見立て）", "爆弾"]);
     s.dive!.chest!.finding = { trapId: null };
     expect(labels(chestEntries({ kind: "disarmTrap", memberId: "c3" }, viewOf(s), S)).slice(0, 8)).toEqual(["毒針", "石弓", "爆弾", "毒ガス", "麻痺ガス", "警報", "転移", "呪詛"]);
+  });
+
+  test("UI-70/CB-63（M18 設計 5-8）調べ直しが不明に終わっても見立ての印は残る。不明の文 chest.inspect.unknown は窓の 28 字 × 2 行に収まる", () => {
+    const d = loadFreshData();
+    d.config.chest.inspect.min = d.config.chest.inspect.max = 0;
+    d.config.chest.triggerChance = 0;
+    d.config.chest.wrongNameChance = 0;
+    const s = withChest("bomb");
+    s.dive!.chest!.finding = { trapId: "crossbow" };
+    const r = exec(s, { type: "chest.inspect", memberId: "c3" }, d);
+    expect(r.events.some((e) => e.kind === "message" && e.key === "chest.inspect.unknown")).toBe(true);
+    expect(labels(chestEntries({ kind: "disarmTrap", memberId: "c3" }, viewOf(r.state), S)).slice(0, 3)).toEqual(["毒針", "石弓（見立て）", "爆弾"]);
+    const text = S["chest.inspect.unknown"]!;
+    expect(text).toBe("罠があるかどうかは分からなかった。もう一度調べるか、賭けて開けるか。");
+    expect(kinsokuLines(text, 28).length).toBeLessThanOrEqual(2);
   });
 
   test("UI-70 chestRepair: 罠の段の人が動けなくなった・いなければ人の段へ。ほかの段はそのまま", () => {
