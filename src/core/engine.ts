@@ -175,7 +175,7 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       return finish(ctx);
     }
     case "dungeon.search": {
-      // DG-45（M18）: 辺りを探る（保留中・宝箱の間は上の共通の門で rejected）
+      // DG-45（M18）: 敵を待つ（旧 辺りを探る。保留中・宝箱の間は上の共通の門で rejected）
       const r = checkSearch(state);
       if (r !== null) return reject(state, "dungeon.search", r);
       const ctx = makeContext(cloneState(state), data);

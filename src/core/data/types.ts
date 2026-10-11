@@ -214,7 +214,7 @@ export type Config = {
     allyDeath: number;
     /** 減少量（正の数）。罠の発動時、生存メンバー全員（CH-51） */
     trap: number;
-    /** DG-45（M18）【仮】: 減少量（正の数）。辺りを探る 1 回ごと、生存メンバー全員（CH-51） */
+    /** DG-45（M18）【仮】: 減少量（正の数）。敵を待つ（旧 辺りを探る）1 回ごと、生存メンバー全員（CH-51） */
     search: number;
     uneasyRatio: number;
     confusedRatio: number;

@@ -1065,7 +1065,7 @@ export function createApp(o: {
     play.controls.setMode("none");
     void run({ type: "event.choose", optionId }).then((r) => {
       if ((r === null || r.rejected) && !isBusy()) syncControls();
-      else if (optionId === PASS_CHOICE_ID) resumeWalk();
+      else if (r !== null && !r.rejected && optionId === PASS_CHOICE_ID) resumeWalk();
     });
   };
 
@@ -1218,7 +1218,7 @@ export function createApp(o: {
 
   /**
    * UI-53: キャンプの段で 1 つ選ぶ。送るときは閉じずに after の段にしてから送る（使えるかは core が決める。UI-35）。
-   * closeSend（M18 の辺りを探る）は閉じてから送る
+   * closeSend（M18 の敵を待つ。旧 辺りを探る）は閉じてから送る
    */
   const chooseCamp = (choice: CampChoice): void => {
     if (overlay !== "camp") return;
@@ -1238,7 +1238,7 @@ export function createApp(o: {
       return;
     }
     if (r.kind === "closeSend") {
-      // DG-45（M18）: 辺りを探るは閉じてから送る（遭遇すれば通常の再生、rejected なら閉じた画面のまま描き直す）
+      // DG-45（M18）: 敵を待つ（旧 辺りを探る）は閉じてから送る（遭遇すれば通常の再生、rejected なら閉じた画面のまま描き直す）
       closeCamp(true);
       void run(r.command).then((res) => {
         // 再生中で送れなかった（run が null）ときも、閉じた画面の操作を描き直す

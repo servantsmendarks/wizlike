@@ -2,8 +2,8 @@
 // ページ（CampPage）を段にした純粋な状態機械と、パネルの DOM。
 // - 候補・押せるか・対象の要否は core の campMenu と fieldItemMenu の値だけで決める（UI-35）。送る Command は
 //   dungeon.cast / dungeon.useItem / party.equip / party.unequip / party.give / party.drop / party.reorder / party.identify。
-// - 迷宮のキャンプの top は [状態][並び順][糸で帰る][辺りを探る] / [呪文][空き][空き][戻る] の 4×2 の枠（layout.campGrid。M10 で 道具・装備・呪文・鑑定 を
-//   キャラクター画面へ移した。糸で帰るは M16 で、core の campSummary.returnItem があるときだけ。無ければ空き枠。辺りを探るは M18 で、
+// - 迷宮のキャンプの top は [状態][並び順][糸で帰る][敵を待つ] / [呪文][空き][空き][戻る] の 4×2 の枠（layout.campGrid。M10 で 道具・装備・呪文・鑑定 を
+//   キャラクター画面へ移した。糸で帰るは M16 で、core の campSummary.returnItem があるときだけ。無ければ空き枠。敵を待つ（旧 辺りを探る）は M18 で、
 //   押すとキャンプを閉じて dungeon.search を送る（CampStep の closeSend））。状態 → メンバー一覧（名前の 6 枠と [7] 戻る）→ 人 → キャラクター画面。
 // - M18（設計 5-1）: top の 5 つ目の「呪文」は 術者（spellWho。唱えられる呪文の無い者は dim）→ 呪文の段（from "top"。キャラクター画面の呪文の段と同じ）
 //   → 説明 → 対象 → dungeon.cast → top。from "top" の呪文の一覧のやめるは術者の段へ（説明・対象のやめるは今どおり 1 つ上の段）。
@@ -94,7 +94,7 @@ export type CampChoice =
   /** UI-59（M7）: 装備の段の品の行。押すと品の詳細の段へ */
   | { kind: "detail"; instanceId: string }
   | { kind: "identifyItem"; instanceId: string }
-  /** DG-45 / UI-53（M18）: top の「辺りを探る」（閉じて dungeon.search を送る。確認なし） */
+  /** DG-45 / UI-53（M18）: top の「敵を待つ」（旧 辺りを探る。閉じて dungeon.search を送る。確認なし） */
   | { kind: "search" }
   /** 確認の段の決定（帰還の糸の「戻る」・捨てるの「捨てる」・呪文の説明の段の「唱える」（UI-68）） */
   | { kind: "confirm" }
@@ -114,7 +114,7 @@ export type CampStep =
   | { kind: "page"; page: CampPage }
   | { kind: "close" }
   | { kind: "send"; command: Command; after: CampPage }
-  /** DG-45 / UI-53（M18）: キャンプを閉じてから送る（top の「辺りを探る」） */
+  /** DG-45 / UI-53（M18）: キャンプを閉じてから送る（top の「敵を待つ」） */
   | { kind: "closeSend"; command: Command };
 /**
  * ビューに出すもの。text は場所の見出し（キャンプ / 酒場。迷宮のキャンプの top だけ、見出しの下に campSummary の行を lines で出す）、
@@ -314,7 +314,7 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
       const ret = m.summary?.returnItem ?? null;
       const useReturn =
         ret === null ? null : open("camp.useReturn", { kind: "use", stage: "confirmReturn", memberId: ret.memberId, instanceId: ret.instanceId, from: "top" });
-      // DG-45 / UI-53（M18。設計 1-3）: 迷宮のキャンプ（campSummary が非 null）では 4 つ目の枠に「辺りを探る」（糸の有無で位置は動かない）
+      // DG-45 / UI-53（M18。設計 1-3）: 迷宮のキャンプ（campSummary が非 null）では 4 つ目の枠に「敵を待つ」（糸の有無で位置は動かない）
       const search: CampEntry | null = m.summary === null ? null : { label: s(strings, "camp.search"), disabled: false, choice: { kind: "search" } };
       return {
         layout: "grid",

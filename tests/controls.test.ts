@@ -7,6 +7,7 @@ import { shouldReleaseHold, talkBlocksStage, talkTakesTap, type Overlay, type Ro
 import { tapSpecOf } from "../src/presenter/input/tap";
 import { dungeonLayout, regions, townLayout } from "../src/presenter/layout";
 import { createControls } from "../src/presenter/views/controls";
+import { textUnits } from "../src/presenter/views/party-band";
 import { data } from "./helpers/core";
 
 class FakeEl {
@@ -676,6 +677,7 @@ describe("controls", () => {
     });
     const legend = created.find((e) => e.className === "controls-map-legend")!;
     expect(legend["textContent"]).toBe(data.strings["map.legend"]);
+    expect(textUnits(data.strings["map.legend"]!) * 4).toBeLessThanOrEqual(52 - 2); // ラベルはボタンの枠に収まる
     expect(legend.style).toMatchObject({ left: `${L.mapLegend.x - g.controls.x}px`, top: `${L.mapLegend.y - g.controls.y}px`, width: "52px", height: "32px" });
     c.setMode("map");
     expect(legend.style["display"]).toBe("");

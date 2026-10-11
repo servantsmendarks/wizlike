@@ -1655,6 +1655,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     const kc = kindsOf(rc.events);
     expect(kc.slice(kc.indexOf("battleEnd"), kc.indexOf("screen") + 1)).toEqual(["battleEnd", "message:battle.win", "message:battle.exp", "message:battle.noChest", "screen"]);
     expect(rc.events).toContainEqual({ kind: "message", key: "battle.noChest" });
+    expect([...data.strings["battle.noChest"]!].length).toBeLessThanOrEqual(28); // メッセージ窓の一言は 28 字
     // 通路: chestChanceCorridor 100 なら部屋と同じ手順（部屋の chestChance 0 は効かない）。inRoom は偽
     const corr2 = mk({ kind: "random", inRoom: false });
     const m3 = cloneRng(corr2.rng);

@@ -481,7 +481,7 @@ function continueStep(ctx: RuleContext, f: Floor, cell: Cell): void {
 
 /**
  * CB-01。前進が成立した 1 歩につき d100 をちょうど 1 回消費し、当たれば CB-03 の編成で戦闘を始める。
- * inRoom は今のセルが部屋か（戦闘の origin。勝利後の宝箱の率 CB-52 に効く）。roomRate を真にすると、通路でも部屋の遭遇率で振る（CB-01b。辺りを探る）
+ * inRoom は今のセルが部屋か（戦闘の origin。勝利後の宝箱の率 CB-52 に効く）。roomRate を真にすると、通路でも部屋の遭遇率で振る（CB-01b。敵を待つ（旧 辺りを探る））
  */
 function rollEncounter(ctx: RuleContext, inRoom: boolean, roomRate = inRoom): void {
   const dive = requireDive(ctx.state);

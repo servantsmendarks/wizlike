@@ -713,11 +713,12 @@ describe("入力と Command", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const cp = /const choosePending = \(optionId: string\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(cp).toMatch(
-      /void run\(\{ type: "event\.choose", optionId \}\)\.then\(\(r\) => \{\s*if \(\(r === null \|\| r\.rejected\) && !isBusy\(\)\) syncControls\(\);\s*else if \(optionId === PASS_CHOICE_ID\) resumeWalk\(\);\s*\}\);/,
+      /void run\(\{ type: "event\.choose", optionId \}\)\.then\(\(r\) => \{\s*if \(\(r === null \|\| r\.rejected\) && !isBusy\(\)\) syncControls\(\);\s*else if \(r !== null && !r\.rejected && optionId === PASS_CHOICE_ID\) resumeWalk\(\);\s*\}\);/,
     );
     // 歩き直しは「移動を続ける」と同じ resumeWalk（目的地が無い・着いた・引けなければ何もしない）
     expect(app).toMatch(/const walkResumeDest = \(\): Pos \| null => \{/);
     expect(data.strings["dungeon.choice.pass"]).toBe("通り過ぎる");
+    expect([...data.strings["dungeon.choice.pass"]!].length).toBeLessThanOrEqual(21); // 一覧の行は 21 字
   });
 
   test("UI-25（M16）選んでいないときの「移動」（dim のボタン・2 キー）は題の行を map.pickFirst に替えるだけ（歩き出さない）（ソースの検査）", () => {
