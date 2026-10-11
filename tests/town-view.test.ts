@@ -4,7 +4,7 @@
 // 店（TW-05）: 薬草 10G / 解毒草 15G / 帰還の糸 50G。初期の所持枠の空き（townMenu.shop.members）は c1 5 / c2 7 / c3 4 / c4 5 / c5 6 / c6 5（M17 から c1・c2 は素の力 14・15 で上限 9）。
 import { describe, expect, test, vi } from "vitest";
 import { campMenu } from "../src/core/rules/camp";
-import { classChangeOptions, townMenu } from "../src/core/rules/town";
+import { classChangeOptions, townMenu, type ClassChangeOption } from "../src/core/rules/town";
 import { shopPrice } from "../src/core/rules/shop";
 import { execute } from "../src/core/engine";
 import { upgradePreview } from "../src/core/rules/upgrade";
@@ -15,6 +15,7 @@ import { endingKeyAction, formatEndingRecord } from "../src/presenter/views/endi
 import { formatRules, RULE_TERM_MAX, splitRuleLine } from "../src/presenter/views/rules";
 import { createWipeView, TERM_COL_W, type WipeTermLine } from "../src/presenter/views/wipe";
 import {
+  classChangeRowLabel,
   samePage,
   TOWN_INTRO_DEDUP,
   townEntries,
@@ -1256,25 +1257,26 @@ describe("TW-09/CH-22 転職（酒場の「GMに申し出る」。M10）", () =>
     expect(townParent({ ccConfirm: { memberId: "c5", classId: "thief" } })).toEqual({ ccClass: "c5" });
   });
 
-  test("TW-09/CH-22 職業の段: classes.json の順。core の ok が偽なら dim で、押したときの理由（要る能力値は requirements をそのまま並べる）。今の職業は「（今）」", () => {
+  test("TW-09/CH-22 職業の段: classes.json の順。core の ok が偽なら dim で、押したときの理由（要る能力値は requirements をそのまま並べる）。今の職業は「（今）」。M18: 条件の足りない行は条件を添える", () => {
     // エル（魔術師。力 7・知恵 16・信仰心 10・素早さ 11）: 盗賊（素早さ 11）だけ条件を満たす
     const s = town();
     const e = townEntries({ ccClass: "c5" }, menuOf(s), S, null, ccOf(s, "c5"));
     const to = (classId: string): TownPage => ({ ccConfirm: { memberId: "c5", classId } });
     expect(e).toEqual([
-      { kind: "ccClass", to: to("fighter"), label: "戦士", disabled: true, reason: "戦士には 力 11 が要る。" },
+      { kind: "ccClass", to: to("fighter"), label: "戦士　力 11", disabled: true, reason: "戦士には 力 11 が要る。" },
       { kind: "ccClass", to: to("thief"), label: "盗賊", disabled: false, reason: null },
-      { kind: "ccClass", to: to("priest"), label: "僧侶", disabled: true, reason: "僧侶には 信仰心 11 が要る。" },
+      { kind: "ccClass", to: to("priest"), label: "僧侶　信仰心 11", disabled: true, reason: "僧侶には 信仰心 11 が要る。" },
       { kind: "ccClass", to: to("mage"), label: "魔術師（今）", disabled: true, reason: "エルはすでに魔術師だ。" },
-      { kind: "ccClass", to: to("samurai"), label: "侍", disabled: true, reason: "侍には 力 15・知恵 11・信仰心 10・生命力 14・素早さ 10 が要る。" },
-      { kind: "ccClass", to: to("lord"), label: "君主", disabled: true, reason: "君主には 力 15・知恵 12・信仰心 12・生命力 15・素早さ 14・運 15 が要る。" },
-      { kind: "ccClass", to: to("bishop"), label: "司教", disabled: true, reason: "司教には 知恵 12・信仰心 12 が要る。" },
+      { kind: "ccClass", to: to("samurai"), label: "侍　力15 知11 信10 生14 速10", disabled: true, reason: "侍には 力 15・知恵 11・信仰心 10・生命力 14・素早さ 10 が要る。" },
+      { kind: "ccClass", to: to("lord"), label: "君主　力15 知12 信12 生15 速14 運15", disabled: true, reason: "君主には 力 15・知恵 12・信仰心 12・生命力 15・素早さ 14・運 15 が要る。" },
+      { kind: "ccClass", to: to("bishop"), label: "司教　知恵 12・信仰心 12", disabled: true, reason: "司教には 知恵 12・信仰心 12 が要る。" },
       back,
     ]);
-    // 死亡の者はどの職業も dim（core の not alive）
+    // 死亡の者はどの職業も dim（core の not alive）。行は職業名だけ（条件は添えない）
     const d = town({ c5: { life: "dead", hp: 0 } });
     const de = townEntries({ ccClass: "c5" }, menuOf(d), S, null, ccOf(d, "c5"));
     for (const x of de.slice(0, -1)) expect(x).toMatchObject({ kind: "ccClass", disabled: true, reason: "エルは今、転職を申し出られない。" });
+    expect(de.slice(0, -1).map((x) => x.label)).toEqual(["戦士", "盗賊", "僧侶", "魔術師（今）", "侍", "君主", "司教"]);
     // dim かどうかは core の ok と一致する（表示層は比べない）
     const opts = classChangeOptions(s, data, "c5");
     expect(e.slice(0, -1).map((x) => ("disabled" in x ? !x.disabled : null))).toEqual(opts.map((o) => o.ok));
@@ -1302,6 +1304,30 @@ describe("TW-09/CH-22 転職（酒場の「GMに申し出る」。M10）", () =>
     // 転職の後は今の職業の印が盗賊に移る
     const after = townEntries({ ccClass: "c5" }, menuOf(r.state), S, null, ccOf(r.state, "c5"));
     expect(after.find((y) => y.label === "盗賊（今）")).toMatchObject({ disabled: true });
+  });
+
+  test("TW-09/CH-22（M18 設計 5-6）classChangeRowLabel: rowNeed「{cls}　{stats}」は requirements not met の行だけ。どの職業の条件でも一覧の行（39 単位）に収まり、収まらない行は能力値を 1 字の略にする", () => {
+    expect(S["town.classChange.rowNeed"]).toBe("{cls}　{stats}");
+    const opt = (classId: string, reason: string | null, current = false): ClassChangeOption => {
+      const c = data.classes.find((x) => x.id === classId)!;
+      return { classId, name: c.name, ok: reason === null, reason, requirements: { ...c.requirements }, current };
+    };
+    expect(classChangeRowLabel(opt("thief", "requirements not met"), S)).toBe("盗賊　素早さ 11");
+    expect(classChangeRowLabel(opt("thief", null), S)).toBe("盗賊");
+    expect(classChangeRowLabel(opt("thief", "not alive"), S)).toBe("盗賊");
+    expect(classChangeRowLabel(opt("thief", "not enough gold"), S)).toBe("盗賊");
+    expect(classChangeRowLabel(opt("thief", "same class", true), S)).toBe("盗賊（今）");
+    // 全職業・全能力値が 2 桁の最悪の値（requirements を 18 に差し替え）でも収まる
+    for (const c of data.classes) {
+      const worst: ClassChangeOption = { ...opt(c.id, "requirements not met"), requirements: { str: 18, iq: 18, pie: 18, vit: 18, agi: 18, luk: 18 } };
+      for (const o of [opt(c.id, "requirements not met"), worst]) {
+        const label = classChangeRowLabel(o, S);
+        expect(label.startsWith(`${c.name}　`), label).toBe(true);
+        expect(textUnits(label), label).toBeLessThanOrEqual(39);
+      }
+    }
+    // 収まる行は略さない（全部の能力値の名前が出る）
+    expect(classChangeRowLabel(opt("bishop", "requirements not met"), S)).toBe("司教　知恵 12・信仰心 12");
   });
 
   test("TW-09/UI-47 転職の文（理由・語り）は会話の箱の 3 行（全角 28 字）に収まる。未定-22: 確認の見出しは全角 6 字の名前と最も長い職業名でも 1 行", () => {

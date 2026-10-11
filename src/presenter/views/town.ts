@@ -154,11 +154,34 @@ const CLASS_CHANGE_REASON: Readonly<Record<string, string>> = {
 function classChangeReason(o: ClassChangeOption, name: string, strings: Strings): string | null {
   const key = o.reason === null ? undefined : CLASS_CHANGE_REASON[o.reason];
   if (key === undefined) return null;
-  const stats = STAT_ORDER.flatMap((k) => {
+  return s(strings, key, { name, cls: o.name, stats: classChangeStats(o, strings, false) });
+}
+
+/**
+ * TW-09 / CH-22: 要る能力値を能力値の順に並べた文字列。short が偽なら「力 15・知恵 11」（town.classChange.stat / statSep）、
+ * 真なら「力15 知11」（town.classChange.statShort / statSepShort と stat.abbr.<k>）
+ */
+function classChangeStats(o: ClassChangeOption, strings: Strings, short: boolean): string {
+  return STAT_ORDER.flatMap((k) => {
     const n = o.requirements[k];
-    return n === undefined ? [] : [s(strings, "town.classChange.stat", { stat: s(strings, `stat.${k}`), n })];
-  }).join(s(strings, "town.classChange.statSep"));
-  return s(strings, key, { name, cls: o.name, stats });
+    if (n === undefined) return [];
+    return short
+      ? [s(strings, "town.classChange.statShort", { stat: s(strings, `stat.abbr.${k}`), n })]
+      : [s(strings, "town.classChange.stat", { stat: s(strings, `stat.${k}`), n })];
+  }).join(s(strings, short ? "town.classChange.statSepShort" : "town.classChange.statSep"));
+}
+
+/**
+ * TW-09 / CH-22（M18。設計 5-6）: 転職先の行のラベル。今の職業は「{cls}（今）」。core の reason が requirements not met の行だけ
+ * town.classChange.rowNeed「{cls}　{stats}」（例「盗賊　素早さ 11」）。一覧の行の文字の幅（39 単位）を超えるときは能力値を 1 字の略
+ * （「君主　力15 知12 …」）にする（表示のための計算。満たしているかは比べない）。それ以外（ok・死亡・所持金）は職業名だけ
+ */
+export function classChangeRowLabel(o: ClassChangeOption, strings: Strings): string {
+  if (o.current) return s(strings, "town.classChange.current", { cls: o.name });
+  if (o.reason !== "requirements not met") return o.name;
+  const full = s(strings, "town.classChange.rowNeed", { cls: o.name, stats: classChangeStats(o, strings, false) });
+  if (textUnits(full) <= LIST_ROW_UNITS) return full;
+  return s(strings, "town.classChange.rowNeed", { cls: o.name, stats: classChangeStats(o, strings, true) });
 }
 
 function s(strings: Strings, key: string, params?: Record<string, string | number>): string {
@@ -305,14 +328,14 @@ export function townEntries(
     return [...rows, back];
   }
   if (typeof page === "object" && "ccClass" in page) {
-    // TW-09 / CH-22（M10）: 転職先（classes.json の順。今の職業は印）。可否と理由は core の classChangeOptions だけで決める
+    // TW-09 / CH-22（M10）: 転職先（classes.json の順。今の職業は印）。可否と理由は core の classChangeOptions だけで決める。M18: 条件の足りない行は条件を添える
     const memberId = page.ccClass;
     const name = cc?.members.find((x) => x.memberId === memberId)?.name ?? "";
     const rows = (cc?.options ?? []).map(
       (o): TownEntry => ({
         kind: "ccClass",
         to: { ccConfirm: { memberId, classId: o.classId } },
-        label: o.current ? s(strings, "town.classChange.current", { cls: o.name }) : o.name,
+        label: classChangeRowLabel(o, strings),
         disabled: !o.ok,
         reason: classChangeReason(o, name, strings),
       }),

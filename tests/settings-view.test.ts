@@ -18,6 +18,7 @@ import {
 } from "../src/presenter/views/settings";
 import { data } from "./helpers/core";
 import { kinsokuLines } from "./helpers/wrap";
+import { textUnits } from "../src/presenter/views/party-band";
 
 const S = data.strings;
 const D: Settings = defaultSettings(data.config);
@@ -35,7 +36,7 @@ describe("設定画面の純粋な部分（UI-57）", () => {
     expect([...SETTINGS_ROW_KEYS]).toEqual(["skipAnimations", "textSpeed", "autoBeatMs", "inputMode", "beatAdvance"]);
     expect(rows).toEqual([
       { key: "skipAnimations", label: S["settings.skipAnimations"], value: S["settings.off"] },
-      { key: "textSpeed", label: S["settings.textSpeed"], value: "30ms" },
+      { key: "textSpeed", label: S["settings.textSpeed"], value: S["settings.textSpeed.normal"] },
       { key: "autoBeatMs", label: S["settings.autoBeatMs"], value: "400ms" },
       { key: "inputMode", label: S["settings.inputMode"], value: S["settings.inputMode.both"] },
       { key: "beatAdvance", label: S["settings.beatAdvance"], value: S["settings.beatAdvance.tap"] },
@@ -45,6 +46,20 @@ describe("設定画面の純粋な部分（UI-57）", () => {
     expect(on.map((r) => r.value)).toEqual([S["settings.on"], S["settings.textSpeed.instant"], "200ms", S["settings.inputMode.swipe"], S["settings.beatAdvance.timed"]]);
     // debug パネルの -/+ で入れた選択肢に無い値（50）もそのまま出す
     expect(settingsRows({ ...D, textSpeed: 50 }, S)[1]?.value).toBe("50ms");
+  });
+
+  test("UI-57（M18 設計 5-7）文字速度は 即時 0 / 速い 15 / 普通 30 / 遅い 60 の言葉で出し（値は ms のまま。選択肢に無い値は {ms}ms）、入力の both は「スワイプとボタン」。値はトグルの枠（100px = 余白込みで全角 11 字 = 22 単位）に収まる", () => {
+    const speed = (n: number): string | undefined => settingsRows({ ...D, textSpeed: n }, S)[1]?.value;
+    expect([0, 15, 30, 60].map(speed)).toEqual(["即時", "速い", "普通", "遅い"]);
+    expect([S["settings.textSpeed.instant"], S["settings.textSpeed.fast"], S["settings.textSpeed.normal"], S["settings.textSpeed.slow"]]).toEqual(["即時", "速い", "普通", "遅い"]);
+    expect([10, 50, 100].map(speed)).toEqual(["10ms", "50ms", "100ms"]);
+    // 巡回の順と保存の値は変えない（0 → 15 → 30 → 60 → 0）
+    expect([0, 15, 30, 60].map((v) => settingsToggle({ ...D, textSpeed: v }, "textSpeed"))).toEqual([{ textSpeed: 15 }, { textSpeed: 30 }, { textSpeed: 60 }, { textSpeed: 0 }]);
+    expect(S["settings.inputMode.both"]).toBe("スワイプとボタン");
+    expect(settingsRows({ ...D, inputMode: "both" }, S)[3]?.value).toBe("スワイプとボタン");
+    for (const m of ["swipe", "buttons", "both"] as const) for (const n of [0, 15, 30, 60, 100]) {
+      for (const r of settingsRows({ ...D, inputMode: m, textSpeed: n }, S)) expect(textUnits(r.value), r.value).toBeLessThanOrEqual(22);
+    }
   });
 
   test("UI-57 settingsToggle: skip は反転、textSpeed は nextTextSpeed、autoBeatMs は 200 → 400 → 600 → 200、inputMode は swipe → buttons → both", () => {
@@ -265,14 +280,14 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
     expect(root.children.some((c) => c.textContent === S["settings.title"])).toBe(true);
     // 5 行の値
     const toggles = L.rows.map((r) => buttonAt(r.toggle));
-    expect(toggles.map((b) => b.textContent)).toEqual([S["settings.off"], "30ms", "400ms", S["settings.inputMode.both"], S["settings.beatAdvance.timed"]]);
+    expect(toggles.map((b) => b.textContent)).toEqual([S["settings.off"], S["settings.textSpeed.normal"], "400ms", S["settings.inputMode.both"], S["settings.beatAdvance.timed"]]);
     for (const b of toggles) expect(tapSpecOf(b)).not.toBeNull();
     // 文字速度 30 → 60（store.set → persist。値の描き直しは app の store 購読者が refresh を呼ぶ）
     tap(toggles[1]!);
     expect(store.get().textSpeed).toBe(60);
     expect(persisted.at(-1)?.textSpeed).toBe(60);
     view.refresh();
-    expect(toggles[1]!.textContent).toBe("60ms");
+    expect(toggles[1]!.textContent).toBe(S["settings.textSpeed.slow"]);
     tap(toggles[1]!);
     view.refresh();
     expect(toggles[1]!.textContent).toBe(S["settings.textSpeed.instant"]);

@@ -24,7 +24,23 @@ export const VOLUME_KEYS: readonly VolumeKey[] = ["musicVolume", "sfxVolume"];
 
 const tr = (strings: Strings, k: string): string => strings[k] ?? k;
 
-/** UI-57: 5 行のラベルと値（演出スキップ 入/切、文字速度 即時/{ms}ms、オートの速さ {ms}ms、入力 スワイプ/ボタン/両方、再生の進め方 タップで送る/自動で流す） */
+/**
+ * UI-57（M18。設計 5-7）: 文字速度の選択肢（TEXT_SPEED_CHOICES）の名前。値（保存の形）は ms のまま、表示だけを言葉にする。
+ * 選択肢に無い値（debug パネルの -/+ で入れた値）は「{ms}ms」
+ */
+const TEXT_SPEED_LABEL: Readonly<Record<number, string>> = {
+  0: "settings.textSpeed.instant",
+  15: "settings.textSpeed.fast",
+  30: "settings.textSpeed.normal",
+  60: "settings.textSpeed.slow",
+};
+
+function textSpeedText(n: number, strings: Strings, ms: (n: number) => string): string {
+  const key = TEXT_SPEED_LABEL[n];
+  return key === undefined ? ms(n) : tr(strings, key);
+}
+
+/** UI-57: 5 行のラベルと値（演出スキップ 入/切、文字速度 即時/速い/普通/遅い（M18。選択肢に無い値は {ms}ms）、オートの速さ {ms}ms、入力 スワイプ/ボタン/スワイプとボタン、再生の進め方 タップで送る/自動で流す） */
 export function settingsRows(s: Settings, strings: Strings): SettingsRowView[] {
   const ms = (n: number): string => formatMessage(tr(strings, "settings.ms"), { ms: n });
   return SETTINGS_ROW_KEYS.map((key): SettingsRowView => {
@@ -32,7 +48,7 @@ export function settingsRows(s: Settings, strings: Strings): SettingsRowView[] {
       case "skipAnimations":
         return { key, label: tr(strings, "settings.skipAnimations"), value: tr(strings, s.skipAnimations ? "settings.on" : "settings.off") };
       case "textSpeed":
-        return { key, label: tr(strings, "settings.textSpeed"), value: s.textSpeed === 0 ? tr(strings, "settings.textSpeed.instant") : ms(s.textSpeed) };
+        return { key, label: tr(strings, "settings.textSpeed"), value: textSpeedText(s.textSpeed, strings, ms) };
       case "autoBeatMs":
         return { key, label: tr(strings, "settings.autoBeatMs"), value: ms(s.autoBeatMs) };
       case "inputMode":
