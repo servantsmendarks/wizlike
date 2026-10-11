@@ -1643,16 +1643,16 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     expect(splitRuleLine(`WAR 戦士${SP}THI 盗賊`)).toBe(`WAR 戦士${SP}THI 盗賊`); // 空白を含む = 一覧の行
     expect(splitRuleLine(`四文字語${SP}説明`)).toBe(`四文字語${SP}説明`); // 4 字は用語にしない
     expect(splitRuleLine("区切りなし")).toBe("区切りなし");
-    // 実データ: 職業の略称の一覧（1・2）は文字列、続きの行（6・11・29・30・34。M18 で用語を足して番号が動き、M19 で毒の治し方の 11 を足した）は用語なし、ほかは用語あり
-    expect(typeof body[0]).toBe("string");
-    expect(typeof body[1]).toBe("string");
+    // 実データ: 分類の見出し（「■ 」で始まる。M19 D-4）と職業の略称の一覧（2・3）は文字列、続きの行（8・13・45・46・50・54。M18 で用語を足して番号が動き、
+    // M19 で毒の治し方の 13、D-4 で見出しと名品の続きの 54 を足した）は用語なし、ほかは用語あり
+    expect([body[1], body[2]].map((l) => typeof l)).toEqual(["string", "string"]);
     for (const [i, l] of body.entries()) {
       const raw = S[`rules.line.${i + 1}`]!;
-      if (typeof l === "string") expect(i, raw).toBeLessThan(2);
+      if (typeof l === "string") expect(raw.startsWith("■ ") || i === 1 || i === 2, raw).toBe(true);
       else if (raw.startsWith(SP)) expect(l.term, raw).toBe("");
       else expect(l.term.length, raw).toBeGreaterThan(0);
     }
-    expect(terms.filter((l) => l.term === "").map((l) => l.desc)).toEqual([6, 11, 29, 30, 34].map((n) => S[`rules.line.${n}`]!.slice(1)));
+    expect(terms.filter((l) => l.term === "").map((l) => l.desc)).toEqual([8, 13, 45, 46, 50, 54].map((n) => S[`rules.line.${n}`]!.slice(1)));
   });
 
   test("UI-77（M16 追補 H-3）用語の列は 32px（全角 4 字。最長の用語 3 字 + 区切り）。説明はどの行も列の右の同じ x から（続きの行も字下げ）", () => {
@@ -1775,18 +1775,17 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     expect(terms.indexOf("触媒")).toBe(terms.indexOf("+N") + 1);
   });
 
-  test("UI-77（M18 設計 4-3）用語の追加: 前衛・後衛・判定・識別（戦闘）→ 蘇生・解呪・レベル・潜行（街）→ 鑑定（品）→ 呪文・加護（呪文）の 11 語が用語の行として立つ。並びは 職業 → 能力と状態（士気まで）→ 戦闘 → 街 → 品 → 呪文。行は見出しを入れて 37（M19 で毒の続きの行を足した）、どの用語も 3 字以内", () => {
+  test("UI-77（M18 設計 4-3）用語の追加: 前衛・後衛・判定・識別・蘇生・解呪・レベル・潜行・鑑定・呪文・加護の 11 語が用語の行として立つ。並びは M19 D-4 の分類のとおり（職業 → 能力と状態（士気まで）→ 卓と判定 → 戦闘 → 迷宮 → 街 → 品 → 呪文）。どの用語も 3 字以内", () => {
     const termsOf = body.flatMap((l) => (typeof l === "string" || l.term === "" ? [] : [l.term]));
     const added = ["前衛", "後衛", "判定", "識別", "蘇生", "解呪", "レベル", "潜行", "鑑定", "呪文", "加護"];
     for (const w of added) {
       expect(head(w), w).toBeDefined();
       expect([...w].length, w).toBeLessThanOrEqual(RULE_TERM_MAX);
     }
-    // 並び（設計 4-3）
-    const order = ["士気", "前衛", "後衛", "判定", "識別", "蘇生", "解呪", "レベル", "潜行", "未鑑定", "鑑定", "+N", "触媒", "呪文", "加護"];
+    // 並び（設計 4-3 を M19 D-4 で分類した後）
+    const order = ["士気", "GM", "d", "判定", "大当り", "ターン", "先手", "前衛", "後衛", "識別", "潜行", "主", "糸", "見立て", "蘇生", "解呪", "経験", "レベル", "未鑑定", "鑑定", "+N", "触媒", "大成功", "希少度", "名品", "呪文", "加護"];
     expect(order.map((w) => termsOf.indexOf(w))).toEqual(order.map((w) => termsOf.indexOf("士気") + order.indexOf(w)));
     expect(termsOf.at(-1)).toBe("加護");
-    expect(lines).toHaveLength(37);
     // 語は画面・データの名前と同じ（前衛・後衛は並び順の画面、解呪は寺院、識別・加護・蘇生は呪文の名前）
     expect([S["camp.order.front"], S["camp.order.back"], S["town.temple.uncurse"]]).toEqual(["前衛", "後衛", "解呪"]);
     const spell = (id: string): string | undefined => data.spells.find((x) => x.id === id)?.name;
@@ -1799,6 +1798,61 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     expect(head("解呪")).toContain("寺院");
     expect(head("加護")).toContain("AC");
     for (const w of ["AC", "SAN", "MP", "HP", "灰", "蘇生", "呪文", "レベル", "判定", "潜行", "鑑定"]) expect(head(w), w).toBeDefined();
+  });
+
+  test("UI-77（M19 D-4）用語の追加と分類: 12 語（GM・経験・d・大成功・見立て・帰還の糸（用語は「糸」）・希少度・主・ターン・先手・大当り・名品）が用語の行として立つ。分類の見出しは「■ 」で始まる文字列の行（用語の列は無い）で、直後は用語の行。行は見出しを入れて 58（1 頁 21 行の 3 頁）", () => {
+    const termsOf = body.flatMap((l) => (typeof l === "string" || l.term === "" ? [] : [l.term]));
+    const added = ["GM", "経験", "d", "大成功", "見立て", "糸", "希少度", "主", "ターン", "先手", "大当り", "名品"];
+    for (const w of added) {
+      expect(head(w), w).toBeDefined();
+      expect([...w].length, w).toBeLessThanOrEqual(RULE_TERM_MAX);
+    }
+    expect(new Set(termsOf).size).toBe(termsOf.length); // 用語は重ならない
+    // 分類の見出し: 「■ 」+ 分類名の文字列の行（全角空白を含まず、splitRuleLine で用語にならない）。直後の行は用語の行か職業の略称の一覧
+    const heads = body.flatMap((l, i) => (typeof l === "string" && l.startsWith("■ ") ? [i] : []));
+    expect(heads.map((i) => body[i])).toEqual(["■ 職業", "■ 能力と状態", "■ 卓と判定", "■ 戦闘", "■ 迷宮", "■ 街", "■ 品", "■ 呪文"]);
+    expect(heads[0]).toBe(0);
+    for (const i of heads) {
+      expect((body[i] as string).includes(SP), String(i)).toBe(false);
+      const next = body[i + 1]!;
+      if (i === 0) expect(typeof next).toBe("string");
+      else expect(typeof next !== "string" && next.term !== "", JSON.stringify(next)).toBe(true);
+    }
+    // 分類ごとの用語（見出しから次の見出しまで）
+    const section = (h: string): string[] => {
+      const a = body.indexOf(h);
+      const b = heads.find((i) => i > a) ?? body.length;
+      return body.slice(a + 1, b).flatMap((l) => (typeof l === "string" || l.term === "" ? [] : [l.term]));
+    };
+    expect(section("■ 卓と判定")).toEqual(["GM", "d", "判定", "大当り"]);
+    expect(section("■ 戦闘")).toEqual(["ターン", "先手", "前衛", "後衛", "識別"]);
+    expect(section("■ 迷宮")).toEqual(["潜行", "主", "糸", "見立て"]);
+    expect(section("■ 街")).toEqual(["蘇生", "解呪", "経験", "レベル"]);
+    expect(section("■ 品")).toEqual(["未鑑定", "鑑定", "+N", "触媒", "大成功", "希少度", "名品"]);
+    expect(lines).toHaveLength(58);
+    expect(Math.ceil(lines.length / 21)).toBe(3);
+    // 語は画面・データの名前と同じ
+    expect(S["gm.name"]).toBe("GM");
+    expect(S["battle.exp"]).toContain("経験");
+    expect(S["custom.bonusDetailBig"]).toContain("大当り");
+    expect(S["dice.upgrade.great"]).toBe("大成功");
+    expect(S["chest.menu.found"]).toBe("{name}（見立て）");
+    expect(S["camp.book"]).toBe("名品の図鑑");
+    expect(S["battle.turn"]).toBe("第{n}ターン");
+    expect(S["dice.initiative.party"]).toBe("先手");
+    expect(S["item.detail.rarity"]).toBe("希少度 {rarity}");
+    const thread = data.items.find((x) => x.id === "return_thread")!;
+    expect(head("糸")!.startsWith(`${thread.name}。`)).toBe(true);
+    // 中身の要点（数値の設定を書かない言い方。説明は用語の中で閉じる）
+    expect(head("d")).toContain("2d10");
+    expect(head("先手")).toContain(S["dice.initiative.enemy"]!);
+    expect(head("希少度")).toContain(["normal", "fine", "rare", "legendary"].map((r) => S[`book.rarity.${r}`]!).join("・"));
+    expect(head("大成功")).toContain("+N");
+    expect(head("名品")).toContain("図鑑");
+    const meihin = body.indexOf(body.find((l) => typeof l !== "string" && l.term === "名品")!);
+    expect(body[meihin + 1]).toEqual({ term: "", desc: "名品は鍛えられず、触媒にもできない" });
+    expect(head("経験")).toContain("レベル");
+    expect(head("主")).toContain("最下層");
   });
 
   test("UI-77/UI-52/TW-03 酒場の「用語」は戦績の有無によらず出る。転職（と戦績）の後・救済の行と戻るの前。閉じるのキーは戦績と同じ（endingKeyAction）", () => {
