@@ -63,7 +63,7 @@ function cheapestSpell(state: GameState, data: GameData, ch: Character, pick: (s
  * 1. 治癒の系統（職業の spells に priest がある。僧侶・司教・君主）: life alive の味方に hp < hpMax × auto.healBelowRatio の者がいて、
  *    最も安い治癒の呪文（effect heal・target ally）の MP（spellCost）があれば、HP の割合が最も低い者（同率は並び順）に唱える。
  * 2. 攻撃の系統（職業の spells に mage がある。魔術師・司教・侍）: 生存の敵の個体の総数が auto.attackSpellMinEnemies 以上で、
- *    mp >= mpMax（実効）× auto.attackSpellMpRatio なら、最も安い攻撃呪文（effect damage）を唱える（MP が足りるとき）。
+ *    最も安い攻撃呪文（effect damage）を唱えた後の MP が mpMax（実効）× auto.attackSpellMpRatio 以上（mp − cost >= mpMax × ratio。M20）なら唱える。
  *    対象は enemy・enemyGroup なら最小の生存グループ、allEnemies なら none。
  * 司教は 1 → 2 の順。どちらも当てはまらなければ null
  */
@@ -97,8 +97,7 @@ function autoSpellAction(state: GameState, data: GameData, ch: Character): Battl
       atk !== null &&
       g !== null &&
       enemies >= cfg.attackSpellMinEnemies &&
-      ch.mp >= equipStats(state, data, ch).mpMax * cfg.attackSpellMpRatio &&
-      ch.mp >= atk.cost
+      ch.mp - atk.cost >= equipStats(state, data, ch).mpMax * cfg.attackSpellMpRatio
     ) {
       const target: BattleTarget = atk.sp.target === "allEnemies" ? { side: "none" } : { side: "enemy", group: g };
       return { type: "cast", spellId: atk.sp.id, target };

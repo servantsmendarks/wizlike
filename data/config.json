@@ -30,7 +30,7 @@
     "rangedHitAgiMul": 2, "rangedHitLukPivot": 10,
     "directDropChance": 3, "directDropGoldDice": "2d10"
   },
-  "auto": { "healBelowRatio": 0.4, "attackSpellMinEnemies": 3, "attackSpellMpRatio": 0.5 },
+  "auto": { "healBelowRatio": 0.5, "attackSpellMinEnemies": 3, "attackSpellMpRatio": 0.5 },
   "san": {
     "max": 100,
     "floorDescend": 5, "unidentifiedGroup": 2, "allyDeath": 10, "trap": 3, "search": 1,

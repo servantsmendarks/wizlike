@@ -208,7 +208,7 @@ describe("data: config.json", () => {
     expect(issuesOf((r) => (r.config.combat.sleepNaturalWake = 100))).toEqual([]);
   });
   test("data: CB-46（M19）auto の healBelowRatio・attackSpellMpRatio は 0..1 の数、attackSpellMinEnemies は 1 以上の整数【仮】", () => {
-    expect(config.auto).toEqual({ healBelowRatio: 0.4, attackSpellMinEnemies: 3, attackSpellMpRatio: 0.5 });
+    expect(config.auto).toEqual({ healBelowRatio: 0.5, attackSpellMinEnemies: 3, attackSpellMpRatio: 0.5 });
     expectIssue((r) => (r.config.auto.healBelowRatio = 1.5), "config.json", "auto.healBelowRatio: expected number in 0..1, got 1.5");
     expectIssue((r) => (r.config.auto.attackSpellMpRatio = -0.1), "config.json", "auto.attackSpellMpRatio: expected number in 0..1, got -0.1");
     expectIssue((r) => (r.config.auto.attackSpellMinEnemies = 0), "config.json", "auto.attackSpellMinEnemies: expected integer >= 1, got 0");

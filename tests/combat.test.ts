@@ -1312,7 +1312,7 @@ describe("オート（CB-40〜43、F2）", () => {
     expectRejected(r.state, RESOLVE, "inputs incomplete", d);
   });
 
-  test("CB-46（M19）オートの既定: HP が 4 割未満の味方がいればドナが治癒を唱え、敵が 3 体以上ならエルが火矢を唱える（MP を払う）", () => {
+  test("CB-46（M19・M20）オートの既定: HP が 5 割未満の味方がいればドナが治癒を唱え、敵が 3 体以上ならエルが火矢を唱える（MP を払う）", () => {
     const s = setup([{ monsterId: "giant_rat", hps: [200, 200, 200], status: [["paralysis"], ["paralysis"], ["paralysis"]] }], {
       identified: ["giant_rat"],
       auto: true,
