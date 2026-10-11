@@ -916,11 +916,66 @@ describe("UI-25 移動を続ける（M18）", () => {
     const { walkDestStale } = await import("../src/presenter/input/swipe");
     const dest = { dungeonId: "d1", floor: 2, pos: { x: 5, y: 7 } };
     expect(walkDestStale(dest, null)).toBe(true);
-    expect(walkDestStale(dest, { dungeonId: "d2", floor: 2, pos: { x: 1, y: 1 } })).toBe(true);
-    expect(walkDestStale(dest, { dungeonId: "d1", floor: 3, pos: { x: 1, y: 1 } })).toBe(true);
-    expect(walkDestStale(dest, { dungeonId: "d1", floor: 2, pos: { x: 5, y: 7 } })).toBe(true);
-    expect(walkDestStale(dest, { dungeonId: "d1", floor: 2, pos: { x: 5, y: 6 } })).toBe(false);
-    expect(walkDestStale(dest, { dungeonId: "d1", floor: 2, pos: { x: 4, y: 7 } })).toBe(false);
+    expect(walkDestStale(dest, { dungeonId: "d2", floor: 2, pos: { x: 1, y: 1 }, facing: "N" })).toBe(true);
+    expect(walkDestStale(dest, { dungeonId: "d1", floor: 3, pos: { x: 1, y: 1 }, facing: "N" })).toBe(true);
+    expect(walkDestStale(dest, { dungeonId: "d1", floor: 2, pos: { x: 5, y: 7 }, facing: "N" })).toBe(true);
+    expect(walkDestStale(dest, { dungeonId: "d1", floor: 2, pos: { x: 5, y: 7 }, facing: "W" })).toBe(true); // 向きは問わない
+    expect(walkDestStale(dest, { dungeonId: "d1", floor: 2, pos: { x: 5, y: 6 }, facing: "N" })).toBe(false);
+    expect(walkDestStale(dest, { dungeonId: "d1", floor: 2, pos: { x: 4, y: 7 }, facing: "N" })).toBe(false);
+  });
+
+  test("UI-25/UI-78（M20）walkDestStale: 口の印を選んだ目的地（facing あり）は、そのセルでその向きになったときだけ着いた。セルが同じでも向きが違えば残す", async () => {
+    const { walkDestStale } = await import("../src/presenter/input/swipe");
+    const dest = { dungeonId: "d1", floor: 2, pos: { x: 5, y: 7 }, facing: "E" as const };
+    expect(walkDestStale(dest, { dungeonId: "d1", floor: 2, pos: { x: 5, y: 7 }, facing: "E" })).toBe(true);
+    expect(walkDestStale(dest, { dungeonId: "d1", floor: 2, pos: { x: 5, y: 7 }, facing: "N" })).toBe(false);
+    expect(walkDestStale(dest, { dungeonId: "d1", floor: 2, pos: { x: 5, y: 6 }, facing: "E" })).toBe(false);
+    expect(walkDestStale(dest, { dungeonId: "d1", floor: 3, pos: { x: 5, y: 7 }, facing: "N" })).toBe(true);
+    expect(walkDestStale(dest, null)).toBe(true);
+  });
+
+  test("UI-25/UI-78/DG-15（M20）結合: 地図の未踏の口（mapView の exits）を行き先にした経路を walkStep で歩くと、口のセルで口の向きになって止まり、目的地は着いた扱い（遭遇率 0）", async () => {
+    const { walkDestStale } = await import("../src/presenter/input/swipe");
+    const { mapView } = await import("../src/core/rules/dungeon");
+    const { EXIT_FACING } = await import("../src/core/rules/pathfind");
+    const d0 = structuredClone(data);
+    for (const def of d0.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    let checked = 0;
+    for (let seed = 1; seed <= 30 && checked < 5; seed++) {
+      const s0 = cloneState(execute(newGame(seed), { type: "dungeon.enter", dungeonId: "d01" }, d0).state);
+      const v = mapView(s0, d0)!;
+      for (const c of v.cells) {
+        for (const dir of c.exits) {
+          const facing = EXIT_FACING[dir];
+          const route = planRoute(s0, d0, { x: c.x, y: c.y }, facing);
+          if (route === null || route.length === 0) continue;
+          let state: GameState = s0;
+          const walk: RouteWalk = { steps: route, i: 0 };
+          while (
+            await walkStep({
+              walk: () => walk,
+              ready: () => state.screen === "dungeon" && state.pendingChoice === null,
+              send: async (cmd: RouteCommand) => {
+                const r = execute(state, cmd as Command, d0);
+                state = r.state;
+                return { events: r.events, rejected: r.events[0]?.kind === "rejected" };
+              },
+              ok: (st: RouteStep, events: readonly GameEvent[]) => routeStepOk(st, events, state),
+              finish: () => {},
+            })
+          );
+          // 罠・階段・イベントで止まった経路は数えない（踏めば core のイベントで止まるのは DG-15 のとおり）
+          if (walk.i !== route.length) continue;
+          expect(state.dive!.pos).toEqual({ x: c.x, y: c.y });
+          expect(state.dive!.facing).toBe(facing);
+          const dest = { dungeonId: s0.dive!.dungeonId, floor: s0.dive!.floor, pos: { x: c.x, y: c.y }, facing };
+          expect(walkDestStale(dest, state.dive)).toBe(true);
+          expect(walkDestStale(dest, s0.dive)).toBe(false);
+          checked++;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
   });
 
   test("UI-25/DG-14（M19）結合: 経路の途中の下り階段で確認が立って止まり、「通り過ぎる」（pass）の後は目的地が残り、経路を引き直して最後まで歩ける（遭遇率 0）", async () => {

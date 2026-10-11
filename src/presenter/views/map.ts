@@ -17,6 +17,8 @@
 // M19（UI-24 / UI-72）: マスを 11px に（20×20 の盤は 221×221）、盤の外周に dim の枠線、題の 2 行目と 3 行目は 1 行（注記の行）にまとめ、
 // tapHint は左寄せ・未踏の口は右寄せ（両方が入らなければ tapHint だけ）。凡例は操作領域の「凡例」で開閉し、開いている間は盤の外周の枠線の下（C-5 から。それまでは盤の下端に重ねた）に
 // 半透明の地の上に 2 行で出す。選んだセルの枠は 2px の text 色（宝箱の □ と見分ける）。
+// M20（UI-25 / UI-78）: 未踏の口の印にも当たり判定（辺の中央から辺に直交して ±mapExitHitPx・辺に沿って ±mapExitHitPx。mapHitExit）を持たせ、
+// 当たれば口のセルとその向き（MapPick の dir）を選ぶ。当たらなければ今どおりセルに吸着する。口を選んだら枠に加えて、その辺の外側を 2px 太らせる。
 import type { Facing, MapEdgeDir, MapView, Pos } from "../../core/types";
 import { onTap } from "../input/tap";
 import type { DungeonLayout } from "../layout";
@@ -56,6 +58,55 @@ export function mapLayout(w: number, h: number, area: { w: number; h: number }):
  */
 export const SNAP_TIE_EPS = 1e-6;
 
+/** UI-25 / UI-78（M20）: 地図で選んだもの。dir は未踏の口の印を押したときのその辺（無ければセルだけ） */
+export type MapPick = { pos: Pos; dir?: MapEdgeDir };
+
+/** UI-25（M20）: 2 つの選択が同じか（セルと、口の辺の有無・向き） */
+export function samePick(a: MapPick | null, b: MapPick): boolean {
+  return a !== null && a.pos.x === b.pos.x && a.pos.y === b.pos.y && a.dir === b.dir;
+}
+
+/** 口の辺の中央（地図本体の座標。mapSnapCell のセルの中心と同じく translate(0.5 0.5) を足さない） */
+function exitMid(lay: MapLayout, p: Pos, dir: MapEdgeDir): { x: number; y: number } {
+  const px = lay.ox + p.x * lay.cell;
+  const py = lay.oy + p.y * lay.cell;
+  const h = lay.cell / 2;
+  if (dir === "n") return { x: px + h, y: py };
+  if (dir === "s") return { x: px + h, y: py + lay.cell };
+  if (dir === "w") return { x: px, y: py + h };
+  return { x: px + lay.cell, y: py + h };
+}
+
+const EXIT_DIR_NO: Readonly<Record<MapEdgeDir, number>> = { n: 0, e: 1, s: 2, w: 3 };
+
+/**
+ * UI-25 / UI-78（M20）: 未踏の口の印の当たり判定。各セルの exits（core の mapView）の辺の中央から、辺に直交する向きと辺に沿う向きの
+ * どちらも hitPx 以内（境界ちょうどは含む）の印のうち、辺の中央までの距離が一番近いもの。同じ距離（二乗距離の差が SNAP_TIE_EPS 以下）なら
+ * y、次に x の小さい方、次に n・e・s・w の順。無ければ null（地図のビューは mapSnapCell の吸着に回す）
+ */
+export function mapHitExit(v: Pick<MapView, "cells">, lay: MapLayout, lx: number, ly: number, hitPx: number): MapPick | null {
+  if (!Number.isFinite(lx) || !Number.isFinite(ly)) return null;
+  let best: { x: number; y: number; dir: MapEdgeDir } | null = null;
+  let bestD = Infinity;
+  for (const c of v.cells) {
+    for (const dir of c.exits) {
+      const m = exitMid(lay, c, dir);
+      const dx = lx - m.x;
+      const dy = ly - m.y;
+      if (Math.abs(dx) > hitPx || Math.abs(dy) > hitPx) continue;
+      const d = dx * dx + dy * dy;
+      const tie = Math.abs(d - bestD) <= SNAP_TIE_EPS;
+      const before =
+        best !== null && (c.y < best.y || (c.y === best.y && (c.x < best.x || (c.x === best.x && EXIT_DIR_NO[dir] < EXIT_DIR_NO[best.dir]))));
+      if (best === null || (!tie && d < bestD) || (tie && before)) {
+        best = { x: c.x, y: c.y, dir };
+        bestD = d;
+      }
+    }
+  }
+  return best === null ? null : { pos: { x: best.x, y: best.y }, dir: best.dir };
+}
+
 export function mapSnapCell(v: Pick<MapView, "cells">, lay: MapLayout, lx: number, ly: number, maxPx: number): Pos | null {
   if (!Number.isFinite(lx) || !Number.isFinite(ly)) return null;
   const lim = maxPx * maxPx;
@@ -77,14 +128,24 @@ export function mapSnapCell(v: Pick<MapView, "cells">, lay: MapLayout, lx: numbe
 
 /**
  * UI-25 / UI-72（M19）: 選んだセルの枠（translate(0.5 0.5) の中で描く 1px の線を 2 重にした太さ 2px の枠）。外側は壁の線と同じ位置、
- * 内側はその 1px 内側。宝箱の □（1px・accent・セルの内側の小さな四角）と太さ・大きさ・色（text）で見分ける
+ * 内側はその 1px 内側。宝箱の □（1px・accent・セルの内側の小さな四角）と太さ・大きさ・色（text）で見分ける。
+ * M20（UI-78）: dir（未踏の口の印を選んだとき）があれば、その辺の外側（未探索のセルの側）に辺と同じ長さの 1px の線を 2 本足し、
+ * 辺だけを太さ 4px にする（同じ path なので枠と一緒に点滅する）。口の先は盤の内側なので盤の外には出ない
  */
-export function mapPickPath(p: Pos, lay: MapLayout): string {
+export function mapPickPath(p: Pos, lay: MapLayout, dir?: MapEdgeDir): string {
   const px = lay.ox + p.x * lay.cell;
   const py = lay.oy + p.y * lay.cell;
   const c = lay.cell;
   const i = c - 2;
-  return `M${px} ${py}h${c}v${c}h${-c}ZM${px + 1} ${py + 1}h${i}v${i}h${-i}Z`;
+  const frame = `M${px} ${py}h${c}v${c}h${-c}ZM${px + 1} ${py + 1}h${i}v${i}h${-i}Z`;
+  if (dir === undefined) return frame;
+  const edge = (k: number): string => {
+    if (dir === "n") return `M${px} ${py - k}h${c}`;
+    if (dir === "s") return `M${px} ${py + c + k}h${c}`;
+    if (dir === "w") return `M${px - k} ${py}v${c}`;
+    return `M${px + c + k} ${py}v${c}`;
+  };
+  return frame + edge(1) + edge(2);
 }
 
 /** UI-24（M19）: 盤の外周の枠線（translate(0.5 0.5) の中で描く 1px。外周の壁の線と同じ位置。dim 色で壁の線の下に描く） */
@@ -93,14 +154,14 @@ export function mapFramePath(w: number, h: number, lay: MapLayout): string {
 }
 
 /**
- * UI-25: 吸着したセル p のタップをどう扱うか（app の分岐。経路の有無は core の planRoute の結果 route をそのまま渡す）。
- * - go: 選んでいるセル（pick）と同じ → 歩き出す（route は見ない。歩き出すときに引き直す）
+ * UI-25: 吸着したセル（M20 から口の印も）p のタップをどう扱うか（app の分岐。経路の有無は core の planRoute の結果 route をそのまま渡す）。
+ * - go: 選んでいるもの（pick。セルと口の辺）と同じ → 歩き出す（route は見ない。歩き出すときに引き直す）
  * - noRoute: 経路が無い → 題を「道が分からない。」にして選択を解く
- * - none: 現在位置（route が []）→ 何もしない（選択も変えない）
- * - pick: それ以外 → そのセルを選ぶ
+ * - none: 現在位置（route が []。口なら向きも同じ）→ 何もしない（選択も変えない）
+ * - pick: それ以外 → それを選ぶ
  */
-export function mapTapAction(pick: Pos | null, p: Pos, route: readonly unknown[] | null): "go" | "noRoute" | "none" | "pick" {
-  if (pick !== null && pick.x === p.x && pick.y === p.y) return "go";
+export function mapTapAction(pick: MapPick | null, p: MapPick, route: readonly unknown[] | null): "go" | "noRoute" | "none" | "pick" {
+  if (samePick(pick, p)) return "go";
   if (route === null) return "noRoute";
   if (route.length === 0) return "none";
   return "pick";
@@ -328,10 +389,10 @@ export type MapViewEl = {
   /** UI-25: 題の行だけを差し替える（経路が無いときの「道が分からない。」。次の render で戻る） */
   setTitle(title: string): void;
   /**
-   * UI-25: 選んだセルの枠（null で消す）。blink なら点滅、偽なら静的な枠だけ（演出スキップ）。
+   * UI-25: 選んだセルの枠（null で消す。M20: 口を選んだらその辺も太らせる）。blink なら点滅、偽なら静的な枠だけ（演出スキップ）。
    * 注記の行の tapHint（map.tapHint。M16。M19 から左寄せ）は選んでいない間だけ出す
    */
-  setPick(p: Pos | null, blink: boolean): void;
+  setPick(p: MapPick | null, blink: boolean): void;
   /** UI-24（M19）: 凡例を開閉する（表示だけの値。保存しない。地図を閉じても、ページを読み直すまで保つ）。開いたら真を返す */
   toggleLegend(): boolean;
   /** UI-24（M19）: 凡例が開いているか */
@@ -339,14 +400,16 @@ export type MapViewEl = {
 };
 
 /**
- * onCell は地図本体のタップ（UI-25）。探索済みのセルの中心から snapPx 以内のタップだけを、一番近いセルに吸着させて呼ぶ
- * （範囲外のタップでは呼ばない）。strings は注記の行（map.tapHint・map.unexplored）と凡例の語（map.legend.*）を引く（M16）
+ * onPick は地図本体のタップ（UI-25）。M20: 未踏の口の印から exitHitPx 以内（mapHitExit）なら口のセルと辺を、
+ * そうでなければ探索済みのセルの中心から snapPx 以内のタップを一番近いセルに吸着させて（mapSnapCell）呼ぶ
+ * （どちらにも当たらないタップでは呼ばない）。strings は注記の行（map.tapHint・map.unexplored）と凡例の語（map.legend.*）を引く（M16）
  */
 export function createMapView(
   lay: DungeonLayout["map"],
-  onCell: ((p: Pos) => void) | undefined,
+  onPick: ((p: MapPick) => void) | undefined,
   snapPx: number,
   strings: Readonly<Record<string, string>>,
+  exitHitPx: number,
 ): MapViewEl {
   const SVG_NS = "http://www.w3.org/2000/svg";
   const { overlay, title: tr, note: nr, area } = lay;
@@ -491,9 +554,15 @@ export function createMapView(
 
   // UI-25: 地図本体のタップ。座標は SVG の左上からの論理 px（viewBox は area と同じ寸法）
   onTap(svg, (pt) => {
-    if (shown === null || onCell === undefined) return;
-    const c = mapSnapCell(shown, mapLayout(shown.width, shown.height, area), pt.lx, pt.ly, snapPx);
-    if (c !== null) onCell(c);
+    if (shown === null || onPick === undefined) return;
+    const ml = mapLayout(shown.width, shown.height, area);
+    const e = mapHitExit(shown, ml, pt.lx, pt.ly, exitHitPx);
+    if (e !== null) {
+      onPick(e);
+      return;
+    }
+    const c = mapSnapCell(shown, ml, pt.lx, pt.ly, snapPx);
+    if (c !== null) onPick({ pos: c });
   });
 
   return {
@@ -501,7 +570,7 @@ export function createMapView(
     setTitle(t: string): void {
       title.textContent = t;
     },
-    setPick(p: Pos | null, blink: boolean): void {
+    setPick(p: MapPick | null, blink: boolean): void {
       stopBlink();
       if (p === null || shown === null) {
         pickPath.setAttribute("d", "");
@@ -511,7 +580,7 @@ export function createMapView(
       }
       picked = true;
       paintNote();
-      pickPath.setAttribute("d", mapPickPath(p, mapLayout(shown.width, shown.height, area)));
+      pickPath.setAttribute("d", mapPickPath(p.pos, mapLayout(shown.width, shown.height, area), p.dir));
       if (!blink) return;
       blinking = pickPath.animate(
         [

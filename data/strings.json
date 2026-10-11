@@ -559,7 +559,7 @@
   "map.noRoute": "道が分からない。",
   "map.go": "移動",
   "map.legend": "凡例",
-  "map.tapHint": "探索済みのマスをタップすると、そこまで歩く",
+  "map.tapHint": "口の印か探索済みのマスを押すと、そこまで歩く",
   "map.unexplored": "未踏の口 {n}",
   "map.pickFirst": "行き先のマスをタップ",
   "map.legend.self": "自分",

@@ -13,6 +13,7 @@ import {
   mapLayout,
   mapLegendPaths,
   mapFramePath,
+  mapHitExit,
   mapNoteBothFit,
   mapNotes,
   mapPaths,
@@ -20,6 +21,7 @@ import {
   mapSnapCell,
   mapTapAction,
   playerTriangle,
+  samePick,
 } from "../src/presenter/views/map";
 import type { Edge, Facing, MapCell, MapView } from "../src/core/types";
 import { dungeonLayout, regions } from "../src/presenter/layout";
@@ -511,18 +513,67 @@ describe("UI-25 地図のタップ（吸着）", () => {
   });
 
   test("UI-25 mapTapAction: 選んでいるセルの再タップは go、経路 null は noRoute、[]（現在位置）は none、それ以外は pick", () => {
-    const a = { x: 3, y: 4 };
-    const b = { x: 5, y: 4 };
+    const a = { pos: { x: 3, y: 4 } };
+    const b = { pos: { x: 5, y: 4 } };
     const route = [{ type: "dungeon.move" }];
     expect(mapTapAction(null, a, route)).toBe("pick");
-    expect(mapTapAction(a, { x: 3, y: 4 }, route)).toBe("go");
+    expect(mapTapAction(a, { pos: { x: 3, y: 4 } }, route)).toBe("go");
     // 同じセルなら経路を見ない（歩き出すときに引き直す）
-    expect(mapTapAction(a, { x: 3, y: 4 }, null)).toBe("go");
+    expect(mapTapAction(a, { pos: { x: 3, y: 4 } }, null)).toBe("go");
     expect(mapTapAction(a, b, route)).toBe("pick");
     expect(mapTapAction(a, b, null)).toBe("noRoute");
     expect(mapTapAction(null, b, null)).toBe("noRoute");
     expect(mapTapAction(a, b, [])).toBe("none");
     expect(mapTapAction(null, b, [])).toBe("none");
+  });
+
+  test("UI-25/UI-78（M20）mapTapAction / samePick: 口の印の選択は、セルと辺の両方が同じときだけ同じ（go）。同じセルのセルだけの選択・別の辺は pick。旋回だけの経路（1 手）も pick", () => {
+    const cell = { pos: { x: 3, y: 4 } };
+    const north = { pos: { x: 3, y: 4 }, dir: "n" as const };
+    const east = { pos: { x: 3, y: 4 }, dir: "e" as const };
+    const turn = [{ type: "dungeon.turn" }];
+    expect(samePick(north, { pos: { x: 3, y: 4 }, dir: "n" })).toBe(true);
+    expect(samePick(north, cell)).toBe(false);
+    expect(samePick(cell, north)).toBe(false);
+    expect(samePick(north, east)).toBe(false);
+    expect(samePick(null, north)).toBe(false);
+    expect(mapTapAction(north, { pos: { x: 3, y: 4 }, dir: "n" }, null)).toBe("go");
+    expect(mapTapAction(cell, north, turn)).toBe("pick");
+    expect(mapTapAction(north, east, turn)).toBe("pick");
+    expect(mapTapAction(north, cell, turn)).toBe("pick");
+    expect(mapTapAction(null, north, turn)).toBe("pick");
+    expect(mapTapAction(null, north, [])).toBe("none");
+    expect(mapTapAction(cell, east, null)).toBe("noRoute");
+  });
+
+  test("UI-25/UI-78（M20）mapHitExit: 未踏の口の辺の中央から、辺に直交・辺に沿ってどちらも hitPx（config.ui.mapExitHitPx 6）以内（境界を含む）の印。一番近いもの、同じ距離なら y・x・n e s w の順。口の無いセルや範囲外は null", () => {
+    expect(data.config.ui.mapExitHitPx).toBe(6);
+    const lay = mapLayout(20, 20, MAP_AREA); // cell 11・ox 9・oy 20
+    // (2,3) の n の辺の中央は (9+22+5.5, 20+33) = (36.5, 53)、e の辺の中央は (42, 58.5)
+    const v = view([cellOf(2, 3, { n: "open", e: "door", exits: ["n", "e"] }), cellOf(3, 3)]);
+    expect(mapHitExit(v, lay, 36.5, 53, 6)).toEqual({ pos: { x: 2, y: 3 }, dir: "n" });
+    // 辺に直交して外へ 6 ちょうど・内へ 6 ちょうどは当たる。6.01 は外れ
+    expect(mapHitExit(v, lay, 36.5, 47, 6)).toEqual({ pos: { x: 2, y: 3 }, dir: "n" });
+    expect(mapHitExit(v, lay, 36.5, 46.99, 6)).toBeNull();
+    // 辺に沿って 6 ちょうどは当たる（30.5）。6.01 は外れ（30.49。セルの西の辺は口でない）
+    expect(mapHitExit(v, lay, 30.5, 50, 6)).toEqual({ pos: { x: 2, y: 3 }, dir: "n" });
+    expect(mapHitExit(v, lay, 30.49, 50, 6)).toBeNull();
+    // 扉の口（e）も同じ。辺の外側（未探索のセル (3,3) の側。ここでは (3,3) を探索済みにしているが、印の当たり判定はセルを見ない）
+    expect(mapHitExit(v, lay, 45, 58.5, 6)).toEqual({ pos: { x: 2, y: 3 }, dir: "e" });
+    // セルの中心 (36.5, 58.5) は n の辺の中央から 5.5・e の辺の中央から 5.5（どちらも ±6 の内）で同じ距離 → n（n e s w の順）
+    expect(mapHitExit(v, lay, 36.5, 58.5, 6)).toEqual({ pos: { x: 2, y: 3 }, dir: "n" });
+    // 北東の角寄りは近い方
+    expect(mapHitExit(v, lay, 41.5, 54, 6)).toEqual({ pos: { x: 2, y: 3 }, dir: "e" });
+    expect(mapHitExit(v, lay, 40, 53.5, 6)).toEqual({ pos: { x: 2, y: 3 }, dir: "n" });
+    // 隣り合う 2 つのセルの同じ向きの口は、境目の両側でそれぞれのセル。同じ距離なら x の小さい方
+    const row = view([cellOf(4, 5, { exits: ["s"] }), cellOf(5, 5, { exits: ["s"] })]);
+    // (4,5) の s の辺の中央は (9+44+5.5, 20+66) = (58.5, 86)、(5,5) は (69.5, 86)。境目は x 64
+    expect(mapHitExit(row, lay, 63, 86, 6)).toEqual({ pos: { x: 4, y: 5 }, dir: "s" });
+    expect(mapHitExit(row, lay, 65, 86, 6)).toEqual({ pos: { x: 5, y: 5 }, dir: "s" });
+    expect(mapHitExit(row, lay, 64, 86, 6)).toEqual({ pos: { x: 4, y: 5 }, dir: "s" });
+    // 口の無い盤・NaN
+    expect(mapHitExit(view([cellOf(2, 3)]), lay, 36.5, 53, 6)).toBeNull();
+    expect(mapHitExit(v, lay, Number.NaN, 53, 6)).toBeNull();
   });
 
   test("UI-25/UI-72（M19）mapPickPath は選んだセルの太さ 2px の枠（外側は壁の線と同じ位置の cell 角、内側はその 1px 内側）。宝箱の □（セルの内側の小さな 1px の四角）と形が違う", () => {
@@ -533,6 +584,16 @@ describe("UI-25 地図のタップ（吸着）", () => {
     expect(mapPickPath({ x: 5, y: 12 }, lay)).toBe("M64 152h11v11h-11ZM65 153h9v9h-9Z");
     // 宝箱の □ は (2,2)-(8,8)（cell 11 で sc(2)=3・sc(6)=8。3..8）で、選んだ枠（0..11 と 1..10）とは重ならない
     expect(mapPaths(view([cellOf(5, 12, { kind: "chest" })]), lay).chests).toBe("M67 155H72V160H67Z");
+  });
+
+  test("UI-25/UI-78（M20）mapPickPath に口の辺 dir を渡すと、枠に加えてその辺の外側（未探索のセルの側）に辺と同じ長さの 1px の線を 2 本足す（辺だけ太さ 4px）", () => {
+    const lay = mapLayout(20, 20, MAP_AREA);
+    const frame = "M64 152h11v11h-11ZM65 153h9v9h-9Z";
+    expect(mapPickPath({ x: 5, y: 12 }, lay, "n")).toBe(frame + "M64 151h11M64 150h11");
+    expect(mapPickPath({ x: 5, y: 12 }, lay, "s")).toBe(frame + "M64 164h11M64 165h11");
+    expect(mapPickPath({ x: 5, y: 12 }, lay, "w")).toBe(frame + "M63 152v11M62 152v11");
+    expect(mapPickPath({ x: 5, y: 12 }, lay, "e")).toBe(frame + "M76 152v11M77 152v11");
+    expect(mapPickPath({ x: 5, y: 12 }, lay)).toBe(frame);
   });
 });
 
@@ -601,7 +662,7 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
 
   test("UI-72 render は宝箱の □（mapPaths の chests）を accent の線の path に入れる。重ね順は罠の × の後・現在位置の前", () => {
     const { svgs, paths } = fakeDocument();
-    const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, data.strings);
+    const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, data.strings, data.config.ui.mapExitHitPx);
     const v = view([cellOf(0, 0, { kind: "chest" }), cellOf(1, 0, { kind: "trap" }), cellOf(2, 0)], { pos: { x: 2, y: 0 } });
     m.render(v, "t");
     const p = mapPaths(v, mapLayout(v.width, v.height, L.map.area));
@@ -625,7 +686,7 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
   test("UI-25 地図本体のタップは config.ui.mapSnapPx 以内の探索済みのセルに吸着したときだけ onCell を呼ぶ（範囲外は呼ばない）", () => {
     const { svgs } = fakeDocument();
     const got: unknown[] = [];
-    const m = createMapView(L.map, (p) => got.push(p), data.config.ui.mapSnapPx, data.strings);
+    const m = createMapView(L.map, (p) => got.push(p), data.config.ui.mapSnapPx, data.strings, data.config.ui.mapExitHitPx);
     m.render(view([cellOf(0, 0), cellOf(1, 0)]), "t");
     const tap = tapSpecOf(svgs[0]!)!;
     // M19: 20×20 は cell 11・ox 9・oy 20。(0,0) の中心 (14.5,25.5)、(1,0) の中心 (25.5,25.5)
@@ -633,15 +694,25 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     tap.onTap({ lx: 20, ly: 36.5 }); // どちらの中心からも sqrt(5.5² + 11²) ≈ 12.3 → 範囲外
     tap.onTap({ lx: 37.5, ly: 25.5 }); // (1,0) の中心から 12 ちょうど
     tap.onTap({ lx: 38.5, ly: 25.5 }); // 13 → 範囲外
-    expect(got).toEqual([
-      { x: 1, y: 0 },
-      { x: 1, y: 0 },
-    ]);
+    expect(got).toEqual([{ pos: { x: 1, y: 0 } }, { pos: { x: 1, y: 0 } }]);
+  });
+
+  test("UI-25/UI-78（M20）地図本体のタップは、未踏の口の印（mapHitExit。mapExitHitPx 以内）に当たれば口のセルと辺を、当たらなければ今どおりセルの吸着を onPick に渡す", () => {
+    const { svgs } = fakeDocument();
+    const got: unknown[] = [];
+    const m = createMapView(L.map, (p) => got.push(p), data.config.ui.mapSnapPx, data.strings, data.config.ui.mapExitHitPx);
+    // (1,0) に東の口。(1,0) の e の辺の中央は (9+22, 20+5.5) = (31, 25.5)
+    m.render(view([cellOf(0, 0, { e: "open" }), cellOf(1, 0, { w: "open", e: "open", exits: ["e"] })]), "t");
+    const tap = tapSpecOf(svgs[0]!)!;
+    tap.onTap({ lx: 33, ly: 25.5 }); // 口の印から 2 → 口
+    tap.onTap({ lx: 14.5, ly: 25.5 }); // (0,0) の中心。口からは遠い → セル
+    tap.onTap({ lx: 37.5, ly: 25.5 }); // 口の印から 6.5 → 外れ、(1,0) の中心から 12 → セル
+    expect(got).toEqual([{ pos: { x: 1, y: 0 }, dir: "e" }, { pos: { x: 0, y: 0 } }, { pos: { x: 1, y: 0 } }]);
   });
 
   test("UI-24/UI-25/UI-78（M19）render は注記の行（題の下 y12..21）に tapHint を左寄せ（選んでいない間だけ）・「未踏の口 {n}」を右寄せ（選んでいる間も）で出し、盤の外周に dim の枠線を描く。凡例は閉じて始まり、toggleLegend で盤の外周の枠線の下（C-5。M19 の群 A では盤の下端に重ねた）に開閉する", () => {
     const { divs, paths } = fakeDocument();
-    const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, data.strings);
+    const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, data.strings, data.config.ui.mapExitHitPx);
     const hint = divs.find((d) => d.className === "map-hint")!;
     const labels = divs.filter((d) => d.className === "map-legend-label");
     expect(hint.textContent).toBe(data.strings["map.tapHint"]);
@@ -683,7 +754,7 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     expect(Number(box.attrs["fill-opacity"])).toBeLessThan(1);
     expect(paths.filter((p) => p.attrs["d"] === mapLegendPaths(n.legend!).chests)).toHaveLength(1);
     // 選ぶと tapHint は隠れ、未踏の口は出たまま。解くと戻る
-    m.setPick({ x: 1, y: 0 }, false);
+    m.setPick({ pos: { x: 1, y: 0 } }, false);
     expect(hint.style["display"]).toBe("none");
     expect(unexplored.style["display"]).toBe("");
     m.setPick(null, false);
@@ -706,20 +777,20 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
   test("UI-25（M19）注記の行に tapHint と未踏の口の数が入らないときは、選んでいない間は tapHint だけ（未踏の口を隠す）。選んでいる間は未踏の口を出す", () => {
     const { divs } = fakeDocument();
     const long = { ...data.strings, "map.tapHint": "あ".repeat(28) };
-    const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, long);
+    const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, long, data.config.ui.mapExitHitPx);
     const hint = divs.find((d) => d.className === "map-hint")!;
     const unexplored = divs.find((d) => d.className === "map-unexplored")!;
     m.render(view([cellOf(0, 0), cellOf(1, 0)]), "t");
     expect(hint.style["display"]).toBe("");
     expect(unexplored.style["display"]).toBe("none");
-    m.setPick({ x: 1, y: 0 }, false);
+    m.setPick({ pos: { x: 1, y: 0 } }, false);
     expect(hint.style["display"]).toBe("none");
     expect(unexplored.style["display"]).toBe("");
   });
 
   test("UI-25/UI-72（M19）選んだセルの枠は text 色の 2px（mapPickPath の 2 重の線）で、宝箱の □（accent）と色も形も違う。凡例の地と記号は選んだ枠より上の層", () => {
     const { svgs, paths } = fakeDocument();
-    createMapView(L.map, () => {}, data.config.ui.mapSnapPx, data.strings);
+    createMapView(L.map, () => {}, data.config.ui.mapSnapPx, data.strings, data.config.ui.mapExitHitPx);
     const pick = pickOf(paths);
     expect(pick.attrs["stroke"]).toBe("var(--c-text)");
     expect(pick.attrs["fill"]).toBe("none");
@@ -733,16 +804,16 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
 
   test("UI-25 setPick: blink なら枠を点滅（iterations Infinity・周期 MAP_PICK_BLINK_MS）。切り替え・null・render で cancel。blink 偽では animate を呼ばず枠だけ", () => {
     const { paths } = fakeDocument();
-    const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, data.strings);
+    const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, data.strings, data.config.ui.mapExitHitPx);
     m.render(view([cellOf(0, 0), cellOf(5, 12)]), "t");
     const pick = pickOf(paths);
     expect(pick.attrs["d"]).toBe("");
-    m.setPick({ x: 5, y: 12 }, true);
+    m.setPick({ pos: { x: 5, y: 12 } }, true);
     expect(pick.attrs["d"]).toBe("M64 152h11v11h-11ZM65 153h9v9h-9Z");
     expect(pick.anims).toHaveLength(1);
     expect(pick.anims[0]!.options).toEqual({ duration: MAP_PICK_BLINK_MS, iterations: Infinity });
     // 切り替え: 前の点滅を止めて新しい点滅
-    m.setPick({ x: 0, y: 0 }, true);
+    m.setPick({ pos: { x: 0, y: 0 } }, true);
     expect(pick.anims[0]!.cancelled).toBe(true);
     expect(pick.anims).toHaveLength(2);
     expect(pick.attrs["d"]).toBe("M9 20h11v11h-11ZM10 21h9v9h-9Z");
@@ -751,14 +822,18 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     expect(pick.anims[1]!.cancelled).toBe(true);
     expect(pick.attrs["d"]).toBe("");
     // render: 止めて消す
-    m.setPick({ x: 0, y: 0 }, true);
+    m.setPick({ pos: { x: 0, y: 0 } }, true);
     m.render(view([cellOf(0, 0)]), "t");
     expect(pick.anims[2]!.cancelled).toBe(true);
     expect(pick.attrs["d"]).toBe("");
     // 演出スキップ（blink 偽）: 枠だけで animate を呼ばない
-    m.setPick({ x: 0, y: 0 }, false);
+    m.setPick({ pos: { x: 0, y: 0 } }, false);
     expect(pick.attrs["d"]).toBe("M9 20h11v11h-11ZM10 21h9v9h-9Z");
     expect(pick.anims).toHaveLength(3);
+    // M20（UI-78）: 口を選ぶと、枠と辺の強調が同じ path（一緒に点滅する）
+    m.setPick({ pos: { x: 0, y: 0 }, dir: "s" }, true);
+    expect(pick.attrs["d"]).toBe("M9 20h11v11h-11ZM10 21h9v9h-9ZM9 32h11M9 33h11");
+    expect(pick.anims).toHaveLength(4);
   });
 });
 

@@ -326,6 +326,8 @@ export type Config = {
     saveBannerHeight: number;
     /** UI-25: 地図のタップを探索済みのセルの中心に吸着させる距離（論理 px）。ユーザーが決めた値（【仮】ではない） */
     mapSnapPx: number;
+    /** UI-25 / UI-78（M20）: 地図の未踏の口の印の当たり判定（辺の中央から辺に直交・辺に沿ってそれぞれ ± この値。論理 px）【仮】 */
+    mapExitHitPx: number;
     /** UI-57 / SV-24（M8）: 設定の曲の音量の既定値（0〜10 の段）【仮】 */
     musicVolume: number;
     /** UI-57 / SV-24（M8）: 設定の効果音の音量の既定値（0〜10 の段）【仮】 */

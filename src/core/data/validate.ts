@@ -479,6 +479,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       autoBeatMs: I(POS_INT), // UI-45【仮】
       saveBannerHeight: I(POS_INT), // SV-23【仮】
       mapSnapPx: I(POS_INT), // UI-25（ユーザーが決めた値。【仮】ではない）
+      mapExitHitPx: I(POS_INT), // UI-25 / UI-78（M20）【仮】
       musicVolume: I(VOLUME_STEPS), // UI-57 / SV-24（M8）【仮】
       sfxVolume: I(VOLUME_STEPS), // UI-57 / SV-24（M8）【仮】
     }),

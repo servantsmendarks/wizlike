@@ -523,6 +523,12 @@ describe("data: config.json", () => {
     expectIssue((r) => delete r.config.ui.mapSnapPx, "config.json", "ui.mapSnapPx: missing required field");
   });
 
+  test("data: UI-25/UI-78（M20）ui.mapExitHitPx は 1 以上の整数（必須。既定 6【仮】）", () => {
+    expect(config.ui.mapExitHitPx).toBe(6);
+    expectIssue((r) => (r.config.ui.mapExitHitPx = 0), "config.json", "ui.mapExitHitPx: expected integer >= 1, got 0");
+    expectIssue((r) => delete r.config.ui.mapExitHitPx, "config.json", "ui.mapExitHitPx: missing required field");
+  });
+
   test("data: UI-43 ui.messageHistory は 1 以上の整数", () => {
     expectIssue((r) => (r.config.ui.messageHistory = 0), "config.json", "ui.messageHistory: expected integer >= 1, got 0");
     expectIssue((r) => delete r.config.ui.messageHistory, "config.json", "ui.messageHistory: missing required field");

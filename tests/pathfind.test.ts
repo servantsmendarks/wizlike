@@ -5,7 +5,8 @@ import type { GameData } from "../src/core/data/index";
 import { execute } from "../src/core/engine";
 import { cellAt, edgeOf, idx, setEdge } from "../src/core/rules/dungeon-gen";
 import { floorOf } from "../src/core/rules/dungeon";
-import { planRoute, routeOnFloor, routeStepOk } from "../src/core/rules/pathfind";
+import { EXIT_FACING, planRoute, routeOnFloor, routeStepOk } from "../src/core/rules/pathfind";
+import { mapView } from "../src/core/rules/dungeon";
 import { cloneState } from "../src/core/state";
 import type { Cell, Command, Facing, Floor, GameEvent, GameState, Pos, RouteStep } from "../src/core/types";
 import { dived, withBattle } from "./helpers/battle";
@@ -79,6 +80,33 @@ describe("DG-15 routeOnFloor（手組みの Floor）", () => {
     expect(routeOnFloor(f, all(f), { x: 0, y: 0 }, "N", { x: 0, y: 2 })).toEqual([st(AROUND, 0, 0, "S"), st(MOVE, 0, 1, "S"), st(MOVE, 0, 2, "S")]);
   });
 
+  test("DG-15/UI-78（M20）targetFacing を渡すと、目標のセルでその向きになって止まる（着いた後の旋回も手に入る。最短の手数・同じ手数なら move → left → right → around の順は同じ）", () => {
+    const f = makeFloor(1, 3);
+    setEdge(f, 0, 0, "S", "open");
+    setEdge(f, 0, 1, "S", "open");
+    // 南向きで (0,2) に着いてから左（S → E）
+    expect(routeOnFloor(f, all(f), { x: 0, y: 0 }, "S", { x: 0, y: 2 }, "E")).toEqual([st(MOVE, 0, 1, "S"), st(MOVE, 0, 2, "S"), st(LEFT, 0, 2, "E")]);
+    // 着いたときの向きがそのまま合えば旋回は足さない
+    expect(routeOnFloor(f, all(f), { x: 0, y: 0 }, "S", { x: 0, y: 2 }, "S")).toEqual([st(MOVE, 0, 1, "S"), st(MOVE, 0, 2, "S")]);
+    // 真後ろは around
+    expect(routeOnFloor(f, all(f), { x: 0, y: 0 }, "S", { x: 0, y: 2 }, "N")).toEqual([st(MOVE, 0, 1, "S"), st(MOVE, 0, 2, "S"), st(AROUND, 0, 2, "N")]);
+    // 途中で目標のセルを別の向きで通っても止めない（輪の (1,0) を東向きで通り過ぎず、着いてから反転する 2 手）
+    const r = ring();
+    expect(routeOnFloor(r, all(r), { x: 0, y: 0 }, "E", { x: 1, y: 0 }, "W")).toEqual([st(MOVE, 1, 0, "E"), st(AROUND, 1, 0, "W")]);
+    // 届かない・未探索なら向きがあっても null
+    expect(routeOnFloor(r, all(r), { x: 0, y: 0 }, "E", { x: 1, y: 1 }, "N")).toBeNull();
+    expect(routeOnFloor(r, [0], { x: 0, y: 0 }, "E", { x: 1, y: 0 }, "W")).toBeNull();
+  });
+
+  test("DG-15/UI-78（M20）旋回だけの経路: 目標が現在位置で向きだけ違えば 1 手（左・右・反転）、向きも同じなら []。向きを渡さなければ今どおり []", () => {
+    const f = makeFloor(1, 1);
+    expect(routeOnFloor(f, all(f), { x: 0, y: 0 }, "N", { x: 0, y: 0 }, "W")).toEqual([st(LEFT, 0, 0, "W")]);
+    expect(routeOnFloor(f, all(f), { x: 0, y: 0 }, "N", { x: 0, y: 0 }, "E")).toEqual([st(RIGHT, 0, 0, "E")]);
+    expect(routeOnFloor(f, all(f), { x: 0, y: 0 }, "N", { x: 0, y: 0 }, "S")).toEqual([st(AROUND, 0, 0, "S")]);
+    expect(routeOnFloor(f, all(f), { x: 0, y: 0 }, "N", { x: 0, y: 0 }, "N")).toEqual([]);
+    expect(routeOnFloor(f, all(f), { x: 0, y: 0 }, "N", { x: 0, y: 0 })).toEqual([]);
+  });
+
   test("DG-15 扉は通れる（door の辺も前進の候補）", () => {
     const f = makeFloor(3, 1);
     setEdge(f, 0, 0, "E", "door");
@@ -146,6 +174,50 @@ describe("DG-15 planRoute（state）", () => {
     const town = cloneState(s);
     town.screen = "town";
     expect(planRoute(town, data, here)).toBeNull();
+  });
+
+  test("DG-15/UI-78（M20）planRoute(state, data, target, facing): 未踏の口（mapView の exits）のセルと EXIT_FACING の向きへの経路を順に execute すると、どの手も routeStepOk が真で、口の向きを向いて止まる。旋回だけの経路も同じ。state は書き換えない", () => {
+    expect(EXIT_FACING).toEqual({ n: "N", e: "E", s: "S", w: "W" });
+    let walked = 0;
+    let turnOnly = 0;
+    for (let seed = 1; seed <= 20; seed++) {
+      const s0 = dived(seed);
+      const snapshot = structuredClone(s0);
+      const v = mapView(s0, DATA0)!;
+      for (const c of v.cells) {
+        for (const dir of c.exits) {
+          const facing = EXIT_FACING[dir];
+          const steps = planRoute(s0, DATA0, { x: c.x, y: c.y }, facing);
+          if (steps === null) continue;
+          if (steps.length === 0) {
+            expect(s0.dive!.pos).toEqual({ x: c.x, y: c.y });
+            expect(s0.dive!.facing).toBe(facing);
+            continue;
+          }
+          const last = steps[steps.length - 1]!;
+          expect(last.pos).toEqual({ x: c.x, y: c.y });
+          expect(last.facing).toBe(facing);
+          let s = s0;
+          let ok = true;
+          for (const step of steps) {
+            const r = execute(s, step.command, DATA0);
+            s = r.state;
+            if (!routeStepOk(step, r.events, s)) {
+              ok = false;
+              break;
+            }
+          }
+          if (!ok) continue; // 罠・階段などを踏んだ経路（DG-15 のとおり止まる）は数えない
+          expect(s.dive!.pos).toEqual({ x: c.x, y: c.y });
+          expect(s.dive!.facing).toBe(facing);
+          walked++;
+          if (steps.every((x) => x.command.type === "dungeon.turn")) turnOnly++;
+        }
+      }
+      expect(s0).toEqual(snapshot);
+    }
+    expect(walked).toBeGreaterThan(0);
+    expect(turnOnly).toBeGreaterThan(0);
   });
 
   test("DG-15 planRoute は state を書き換えず、乱数も進めない。探索済みの範囲だけ（入場直後の explored の外は null）", () => {
@@ -236,6 +308,15 @@ describe("DG-15 routeStepOk", () => {
     expect(routeStepOk(step, [door, moved], after)).toBe(true);
     expect(routeStepOk(step, [door, moved, poison, { ...poison, id: "c2" }], after)).toBe(true);
     expect(routeStepOk(turnStep, [{ kind: "turned", facing: "W" }], at({ x: 3, y: 4 }, "W"))).toBe(true);
+  });
+
+  test("DG-15/UI-78（M20）routeStepOk: 旋回だけの経路（口の向きを向く）の手も、実際の execute の turned で真。向きが予定と違えば偽", () => {
+    const s0 = at(base.dive!.pos, "N");
+    const steps = planRoute(s0, DATA0, base.dive!.pos, "E")!;
+    expect(steps).toEqual([st(RIGHT, base.dive!.pos.x, base.dive!.pos.y, "E")]);
+    const r = execute(s0, steps[0]!.command, DATA0);
+    expect(routeStepOk(steps[0]!, r.events, r.state)).toBe(true);
+    expect(routeStepOk({ ...steps[0]!, facing: "W" }, r.events, r.state)).toBe(false);
   });
 
   test("DG-15 routeStepOk 偽: 扉の message は move のときだけ・先頭の 1 件だけ許す。turn に moved、move に turned、空の events", () => {

@@ -25,7 +25,7 @@ import { battleMenu } from "../core/rules/combat";
 import { mapView, stairsHere, visibleCells, visibleChests, visibleKnownTraps } from "../core/rules/dungeon";
 import { campMenu, campSummary } from "../core/rules/camp";
 import { DEBUG_LEVELS, SAN_OVER_DEBUG } from "../core/rules/debug";
-import { planRoute, routeStepOk } from "../core/rules/pathfind";
+import { EXIT_FACING, planRoute, routeStepOk } from "../core/rules/pathfind";
 import { PASS_CHOICE_ID, STAY_CHOICE_ID } from "../core/rules/choices";
 import { bestiaryView, equipPreview, itemDetail, memberSheet, shopEquipCompare, spellInfo, uniqueBookView } from "../core/rules/item-view";
 import type { ShopEquipCompare } from "../core/rules/item-view";
@@ -35,7 +35,7 @@ import { endingRecordView } from "../core/rules/progress";
 import { classChangeOptions, townMenu } from "../core/rules/town";
 import { upgradePreview } from "../core/rules/upgrade";
 import { dungeonOf, itemDisplayName } from "../core/state";
-import type { BattleMenu, Command, EndingRecord, GameState, PenaltyResult, Pos, RouteStep, Screen, TownMenu, UpgradePreview, ViewPoint } from "../core/types";
+import type { BattleMenu, Command, EndingRecord, GameState, PenaltyResult, RouteStep, Screen, TownMenu, UpgradePreview, ViewPoint } from "../core/types";
 import type { GameListEntry, ImportPlan, SaveService } from "../save/types";
 import { downloadText, exportFileName } from "./file-io";
 import { closesInput, runChain, type ChainDeps } from "./auto-chain";
@@ -66,6 +66,7 @@ import {
   walkStep,
   type RouteWalk,
   type WalkDest,
+  type WalkTarget,
   type Action,
 } from "./input/swipe";
 import { attachPointerLog, createPointerLog } from "./input/pointer-log";
@@ -131,7 +132,7 @@ import { formatCharacter, SLOT_ORDER } from "./views/detail";
 import { chunkDescription, formatBook, formatEquipPreview, formatItemDetail } from "./views/item-detail";
 import { formatSpellInfo } from "./views/spell-info";
 import { createDungeonScreen, stairsButtonKey } from "./views/dungeon";
-import { mapTapAction } from "./views/map";
+import { mapTapAction, samePick, type MapPick } from "./views/map";
 import { exitMarksFor, slotsFor } from "./views/dungeon-geometry";
 import { battleTurnText, headerText } from "./views/header";
 import { formatMessage } from "./views/message";
@@ -282,8 +283,8 @@ export function createApp(o: {
    * 着いた・階の移動（walkDestStale）、手動の前進・旋回（run）、地図で別のマスを選んだ（tapMapCell）、街・タイトルへ（onScreen）、続きから（resume）で null
    */
   let walkDest: WalkDest | null = null;
-  /** UI-25: 地図で選んだセル（地図を開いている間だけ。表示層だけの値で保存しない） */
-  let mapPick: Pos | null = null;
+  /** UI-25: 地図で選んだセル（M20: 未踏の口の印なら、その辺も。地図を開いている間だけ。表示層だけの値で保存しない） */
+  let mapPick: MapPick | null = null;
   /** UI-25: 地図の題（経路が無いときの「道が分からない。」から戻すため） */
   let mapTitle = "";
   /** UI-23（M16）: 自動歩行の 1 手を送って再生している間（線画をフェードしない） */
@@ -1038,8 +1039,8 @@ export function createApp(o: {
     }
     if (route !== "dungeon") return;
     if (overlay === "map") {
-      // UI-25: 閉じると移動（選んでいないときの移動は dim）
-      c.setMapGo(mapPick !== null);
+      // UI-25: 閉じると移動（M20: 選んでいて、core の planRoute の経路が [] でも null でもないときだけ押せる。それ以外は dim）
+      c.setMapGo(mapPick !== null && (routeTo(pickTarget(mapPick))?.length ?? 0) > 0);
       c.setMode("map");
       return;
     }
@@ -1603,41 +1604,46 @@ export function createApp(o: {
     return true;
   };
 
+  /** UI-25 / UI-78（M20）: 地図の選択を歩行の行き先にする（口の印なら、その口の向き。core の EXIT_FACING） */
+  const pickTarget = (p: MapPick): WalkTarget => (p.dir === undefined ? { pos: p.pos } : { pos: p.pos, facing: EXIT_FACING[p.dir] });
+  /** UI-25（M20）: 行き先までの経路（core の planRoute。facing があれば、着いたときにその向き） */
+  const routeTo = (w: WalkTarget): RouteStep[] | null => planRoute(state, data, w.pos, w.facing);
+
   /** UI-25: 地図の選択を変え、枠（演出スキップでは点滅しない）と「移動」の押せる・押せないを合わせる */
-  const setMapPick = (p: Pos | null): void => {
+  const setMapPick = (p: MapPick | null): void => {
     mapPick = p;
     play.map.setPick(p, !store.get().skipAnimations);
     if (overlay === "map") syncControls();
   };
 
   /**
-   * UI-25: 地図のタップ（探索済みのセルに吸着済み。範囲外のタップでは呼ばれない）。
-   * - 選んでいるセルと同じなら歩き出す（goMapPick）。
+   * UI-25: 地図のタップ（未踏の口の印に当たったか、探索済みのセルに吸着済み。どちらでもないタップでは呼ばれない）。
+   * - 選んでいるもの（セルと口の辺。M20）と同じなら歩き出す（goMapPick）。
    * - 経路（core の planRoute）が null なら題の行を「道が分からない。」にして選択を解く（地図は開いたまま）。
    * - [] （現在位置）なら何もしない（選択も変えない）。
    * - それ以外はそのセルを選んで点滅させ、題を元に戻す。
    */
-  const tapMapCell = (p: Pos): void => {
+  const tapMapCell = (p: MapPick): void => {
     if (overlay !== "map" || walking !== null) return;
-    const same = mapPick !== null && mapPick.x === p.x && mapPick.y === p.y;
-    const act = mapTapAction(mapPick, p, same ? [] : planRoute(state, data, p));
+    const dest = pickTarget(p);
+    const act = mapTapAction(mapPick, p, samePick(mapPick, p) ? [] : routeTo(dest));
     if (act === "go") goMapPick();
     else if (act === "noRoute") {
       play.map.setTitle(t("map.noRoute"));
       setMapPick(null);
     } else if (act === "pick") {
-      // UI-25（M18）: 「移動を続ける」の目的地と別のマスを選んだら目的地を捨てる
-      if (walkDest !== null && (walkDest.pos.x !== p.x || walkDest.pos.y !== p.y)) walkDest = null;
+      // UI-25（M18）: 「移動を続ける」の目的地と別のマス（M20: 同じマスでも口の向きが違えば別）を選んだら目的地を捨てる
+      if (walkDest !== null && (walkDest.pos.x !== p.pos.x || walkDest.pos.y !== p.pos.y || walkDest.facing !== dest.facing)) walkDest = null;
       play.map.setTitle(mapTitle);
-      setMapPick({ x: p.x, y: p.y });
+      setMapPick(p.dir === undefined ? { pos: { x: p.pos.x, y: p.pos.y } } : { pos: { x: p.pos.x, y: p.pos.y }, dir: p.dir });
     }
   };
 
   /** UI-25: 選んだセルへ歩き出す（地図の「移動」・同じセルの再タップ・キー）。経路は引き直す。選んでいなければ何もしない */
   const goMapPick = (): void => {
     if (overlay !== "map" || walking !== null || mapPick === null) return;
-    const dest = mapPick;
-    const steps = planRoute(state, data, dest);
+    const dest = pickTarget(mapPick);
+    const steps = routeTo(dest);
     if (steps === null || steps.length === 0) return;
     closeMap();
     startWalk(steps, dest);
@@ -1647,11 +1653,11 @@ export function createApp(o: {
    * UI-25（M18）: 「移動を続ける」の目的地。捨ててよい（着いた・階が違う。walkDestStale）なら捨てる。
    * 残っていても core の planRoute が null か []（戦闘中・保留中・届かない）なら null（ボタンを出さない）
    */
-  const walkResumeDest = (): Pos | null => {
+  const walkResumeDest = (): WalkTarget | null => {
     if (walkDest !== null && walkDestStale(walkDest, state.dive)) walkDest = null;
     if (walkDest === null) return null;
-    const steps = planRoute(state, data, walkDest.pos);
-    return steps === null || steps.length === 0 ? null : walkDest.pos;
+    const steps = routeTo(walkDest);
+    return steps === null || steps.length === 0 ? null : walkDest;
   };
 
   /** UI-25（M18）: 迷宮の操作の一覧の [移動を続ける]。経路を引き直して歩き出す（地図の「移動」と同じ） */
@@ -1659,15 +1665,16 @@ export function createApp(o: {
     if (route !== "dungeon" || overlay !== null || walking !== null || !fieldFree()) return;
     const dest = walkResumeDest();
     if (dest === null) return;
-    const steps = planRoute(state, data, dest);
+    const steps = routeTo(dest);
     if (steps === null || steps.length === 0) return;
     startWalk(steps, dest);
   };
 
-  /** UI-25: 自動歩行を始める（目的地を覚え、「移動中」を出して 1 手目をすぐに送る） */
-  const startWalk = (steps: readonly RouteStep[], dest: Pos): void => {
+  /** UI-25: 自動歩行を始める（目的地を覚え（M20: 口の向きも）、「移動中」を出して 1 手目をすぐに送る） */
+  const startWalk = (steps: readonly RouteStep[], dest: WalkTarget): void => {
     const d = state.dive;
-    walkDest = d === null ? null : { dungeonId: d.dungeonId, floor: d.floor, pos: { x: dest.x, y: dest.y } };
+    const pos = { x: dest.pos.x, y: dest.pos.y };
+    walkDest = d === null ? null : dest.facing === undefined ? { dungeonId: d.dungeonId, floor: d.floor, pos } : { dungeonId: d.dungeonId, floor: d.floor, pos, facing: dest.facing };
     walking = { steps, i: 0 };
     showWalkingNote();
     syncControls();

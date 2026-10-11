@@ -18,7 +18,7 @@
 // 部品の結線（何を描くか、Action を何にするか）は app が行う。モジュールのトップレベルでは DOM に触れない。
 import type { SpriteInfo } from "../../build/asset-types";
 import type { GameData, Strings } from "../../core/data/index";
-import type { Character, Pos } from "../../core/types";
+import type { Character } from "../../core/types";
 import type { StairsUse } from "../../core/rules/dungeon";
 import type { DungeonLayout, Regions, TownLayout } from "../layout";
 import { createBattleView, type BattleView } from "./battle";
@@ -29,7 +29,7 @@ import { createPenaltyTableView, type PenaltyTableView } from "./penalty-table";
 import { createDungeonSvg, type DungeonSvg } from "./dungeon-svg";
 import { createHeader, type Header } from "./header";
 import { createHistoryView, type HistoryView } from "./history";
-import { createMapView, type MapViewEl } from "./map";
+import { createMapView, type MapPick, type MapViewEl } from "./map";
 import { createMessageWindow, type MessageWindow } from "./message";
 import { createPartyPanel, type MaxOf, type PartyPanel, type StageOf } from "./party";
 import { createPartyBand, type PartyBand } from "./party-band";
@@ -186,8 +186,8 @@ export function createDungeonScreen(o: {
   onClose(): void;
   /** UI-54: 対象の選択中に敵の絵をタップした（グループの添字） */
   onPick?(g: number): void;
-  /** UI-25: 地図本体のタップを探索済みのセルに吸着させた（config.ui.mapSnapPx 以内。範囲外のタップでは呼ばない） */
-  onMapCell?(p: Pos): void;
+  /** UI-25: 地図本体のタップを未踏の口の印（M20。config.ui.mapExitHitPx 以内）か探索済みのセル（config.ui.mapSnapPx 以内）に当てた（どちらでもなければ呼ばない） */
+  onMapCell?(p: MapPick): void;
   /** UI-25: 操作領域の地図の「移動」（選んでいるときだけ呼ぶ） */
   onMapGo?(): void;
   /** UI-25（M16）: dim の「移動」を押した（選んでいないとき） */
@@ -297,7 +297,7 @@ export function createDungeonScreen(o: {
   });
 
   // 地図はビューの上端から、パーティ欄の下端まで（M19 から。既定 240×284）
-  const map = createMapView(lay.map, (p) => o.onMapCell?.(p), o.data.config.ui.mapSnapPx, o.strings);
+  const map = createMapView(lay.map, (p) => o.onMapCell?.(p), o.data.config.ui.mapSnapPx, o.strings, o.data.config.ui.mapExitHitPx);
   map.el.style.display = "none";
 
   // キャンプと酒場のパネル（UI-53）はビュー領域だけ（キャラクター画面と酒場の図鑑は layout.character に広げる。M8.5 / M10）

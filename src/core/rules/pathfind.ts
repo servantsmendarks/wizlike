@@ -2,7 +2,7 @@
 // 経路は探索済みのセル（dive.explored）と、その実効の辺（floorOf）だけで探す。扉は通れる。
 // 階段・罠・ボス・イベントのセルは特別扱いしない（踏めば core のイベントで止まる。routeStepOk が偽になる）。
 import type { GameData } from "../data/index";
-import type { Facing, Floor, GameEvent, GameState, Pos, RouteCommand, RouteStep } from "../types";
+import type { Facing, Floor, GameEvent, GameState, MapEdgeDir, Pos, RouteCommand, RouteStep } from "../types";
 import { floorOf } from "./dungeon";
 import { cellAt, edgeOf, idx, inBounds, isPassable, opposite, step, turnLeft, turnRight } from "./dungeon-gen";
 
@@ -15,17 +15,23 @@ const MOVES: readonly { command: RouteCommand; next(p: Pos, d: Facing): { pos: P
 ];
 const FACING_NO: Readonly<Record<Facing, number>> = { N: 0, E: 1, S: 2, W: 3 };
 
+/** UI-78 / DG-15（M20）: 未踏の口の辺（MapCell.exits の n / e / s / w）を向く向き。地図で口の印を選んだときの終点の向き */
+export const EXIT_FACING: Readonly<Record<MapEdgeDir, Facing>> = { n: "N", e: "E", s: "S", w: "W" };
+
 /**
  * DG-15 の本体（手組みの Floor でも確かめられるように Floor を直接取る）。
  * explored は探索済みのセルの添字。(x, y, 向き) を状態にした幅優先探索で、前進と旋回の手数の合計を最短にする。
  * target が現在位置なら []。target が盤の外・未探索、または探索済みのセルと辺だけでは届かなければ null。
+ * M20: targetFacing を渡したら、target のセルでその向きになった状態を終点にする（途中で target のセルを別の向きで通っても止めない）。
+ * 現在位置で向きも同じなら []、現在位置で向きだけ違えば旋回だけの経路（1 手）。
  */
-export function routeOnFloor(f: Floor, explored: readonly number[], pos: Pos, facing: Facing, target: Pos): RouteStep[] | null {
+export function routeOnFloor(f: Floor, explored: readonly number[], pos: Pos, facing: Facing, target: Pos, targetFacing?: Facing): RouteStep[] | null {
   if (!Number.isInteger(target.x) || !Number.isInteger(target.y) || !inBounds(f, target.x, target.y)) return null;
   const known: boolean[] = new Array<boolean>(f.width * f.height).fill(false);
   for (const i of explored) known[i] = true;
   if (!known[idx(f, target.x, target.y)]) return null;
-  if (pos.x === target.x && pos.y === target.y) return [];
+  const atTarget = (p: Pos, d: Facing): boolean => p.x === target.x && p.y === target.y && (targetFacing === undefined || d === targetFacing);
+  if (atTarget(pos, facing)) return [];
   const key = (p: Pos, d: Facing) => idx(f, p.x, p.y) * 4 + FACING_NO[d];
   // 状態ごとに、来た状態のキーと手（復元用）
   const from: (null | { prev: number; step: RouteStep })[] = new Array(f.width * f.height * 4).fill(null);
@@ -45,8 +51,8 @@ export function routeOnFloor(f: Floor, explored: readonly number[], pos: Pos, fa
       if (seen[k]) continue;
       seen[k] = true;
       from[k] = { prev: curKey, step: { command: m.command, pos: { x: n.pos.x, y: n.pos.y }, facing: n.facing } };
-      if (n.pos.x === target.x && n.pos.y === target.y) {
-        // 目標のセルに最初に着いた状態（向きは問わない）から手を復元する
+      if (atTarget(n.pos, n.facing)) {
+        // 目標のセルに最初に着いた状態（targetFacing が無ければ向きは問わない）から手を復元する
         const out: RouteStep[] = [];
         let at = k;
         const startKey = key(pos, facing);
@@ -65,14 +71,15 @@ export function routeOnFloor(f: Floor, explored: readonly number[], pos: Pos, fa
 
 /**
  * DG-15 / UI-25。迷宮の戦闘外・保留なしのときだけ探す（それ以外は null）。
- * []   = target が現在位置
+ * []   = target が現在位置（facing を渡したときは向きも同じ）
  * null = 上のとき以外に、盤の外 / target が未探索 / 探索済みのセルと辺だけでは届かない
+ * M20（UI-78）: facing を渡すと、target でその向きになって止まる経路（地図の未踏の口の印を選んだとき。現在位置なら旋回だけ）
  */
-export function planRoute(state: GameState, data: GameData, target: Pos): RouteStep[] | null {
+export function planRoute(state: GameState, data: GameData, target: Pos, facing?: Facing): RouteStep[] | null {
   const dive = state.dive;
   if (dive === null || state.battle !== null || state.pendingChoice !== null || state.screen !== "dungeon") return null;
   const f = floorOf(dive, data);
-  return routeOnFloor(f, dive.explored[String(dive.floor)] ?? [], dive.pos, dive.facing, target);
+  return routeOnFloor(f, dive.explored[String(dive.floor)] ?? [], dive.pos, dive.facing, target, facing);
 }
 
 /**

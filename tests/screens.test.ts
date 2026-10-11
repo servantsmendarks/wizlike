@@ -308,7 +308,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   // M10 CH-77: 司教の鑑定の成功率は campMenu.members[].identifyRates、内訳は core の dice（dice.identify）を描く
   "rules/camp": ["campMenu", "campSummary"],
   // M4.5 UI-25 / DG-15: 地図のタップ移動の経路と、自動歩行を続けてよいかは core が決める
-  "rules/pathfind": ["planRoute", "routeStepOk"],
+  // M20 UI-78: 口の印の向き（MapEdgeDir → Facing）は core の EXIT_FACING の値
+  "rules/pathfind": ["planRoute", "routeStepOk", "EXIT_FACING"],
   // M5 UI-12: パーティ欄の SAN の段は core の sanStage で決める（境の比率を表示層で持たない）
   // M7 UI-12 / UI-59 / TW-15: SAN の最大として描く値と、士気の超過の色の基準は core の sanCapOf（B で実効の sanMax になる）
   "rules/san": ["sanStage", "sanCapOf"],
@@ -670,7 +671,7 @@ describe("入力と Command", () => {
     expect(walker).toMatch(/if \(go && walking === w && !play\.message\.noting\(\)\) showWalkingNote\(\);/);
     const goPick = /const goMapPick = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(goPick).toMatch(/closeMap\(\);\s*startWalk\(steps, dest\);/);
-    const start = /const startWalk = \(steps: readonly RouteStep\[\], dest: Pos\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    const start = /const startWalk = \(steps: readonly RouteStep\[\], dest: WalkTarget\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(start).toMatch(/walking = \{ steps, i: 0 \};\s*showWalkingNote\(\);\s*syncControls\(\);\s*walker\.press\(\);/);
     const end = /const endWalk = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(end).toMatch(/walking = null;\s*play\.message\.hideNote\(\);/);
@@ -679,23 +680,29 @@ describe("入力と Command", () => {
   test("UI-25（M18）移動を続ける: 自動歩行を始めたときに目的地（walkDest）を覚え、止まっても（endWalk）残す。着いた・階の移動・手動の前進と旋回・地図で別のマス・街とタイトル・続きからで捨てる。ボタンは目的地があり planRoute が引けるときだけ（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     // 始めたときに覚える（ダンジョン・階・セル）
-    const start = /const startWalk = \(steps: readonly RouteStep\[\], dest: Pos\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
-    expect(start).toMatch(/walkDest = d === null \? null : \{ dungeonId: d\.dungeonId, floor: d\.floor, pos: \{ x: dest\.x, y: dest\.y \} \};/);
+    const start = /const startWalk = \(steps: readonly RouteStep\[\], dest: WalkTarget\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    // M20（UI-78）: 口の印を選んだときは口の向き（facing）も覚える
+    expect(start).toMatch(/const pos = \{ x: dest\.pos\.x, y: dest\.pos\.y \};/);
+    expect(start).toMatch(
+      /walkDest = d === null \? null : dest\.facing === undefined \? \{ dungeonId: d\.dungeonId, floor: d\.floor, pos \} : \{ dungeonId: d\.dungeonId, floor: d\.floor, pos, facing: dest\.facing \};/,
+    );
     // 止まっても残す（endWalk・stopWalk は walkDest に触れない）
     const end = /const endWalk = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(end).not.toContain("walkDest");
     const stop = /const stopWalk = \(\): boolean => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(stop).not.toContain("walkDest");
     // 着いた・階の移動は walkDestStale、経路が引けなければ出さない
-    const dest = /const walkResumeDest = \(\): Pos \| null => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    const dest = /const walkResumeDest = \(\): WalkTarget \| null => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(dest).toMatch(/if \(walkDest !== null && walkDestStale\(walkDest, state\.dive\)\) walkDest = null;/);
-    expect(dest).toMatch(/const steps = planRoute\(state, data, walkDest\.pos\);\s*return steps === null \|\| steps\.length === 0 \? null : walkDest\.pos;/);
+    expect(dest).toMatch(/const steps = routeTo\(walkDest\);\s*return steps === null \|\| steps\.length === 0 \? null : walkDest;/);
+    // M20: 経路は向き（facing）ごと core の planRoute に渡す
+    expect(app).toMatch(/const routeTo = \(w: WalkTarget\): RouteStep\[\] \| null => planRoute\(state, data, w\.pos, w\.facing\);/);
     // 手動の前進・旋回（自動歩行の手でないもの）で捨てる
     const run = /const run = \(cmd: Command, opt\?: CommandExecOptions\): Promise<DispatchResult \| null> => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(run).toMatch(/if \(walking === null && \(cmd\.type === "dungeon\.move" \|\| cmd\.type === "dungeon\.turn"\)\) walkDest = null;\s*return gate\.run\(cmd, opt\);/);
     // 地図で別のマスを選んだら捨てる
-    const tap = /const tapMapCell = \(p: Pos\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
-    expect(tap).toMatch(/if \(walkDest !== null && \(walkDest\.pos\.x !== p\.x \|\| walkDest\.pos\.y !== p\.y\)\) walkDest = null;/);
+    const tap = /const tapMapCell = \(p: MapPick\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(tap).toMatch(/if \(walkDest !== null && \(walkDest\.pos\.x !== p\.pos\.x \|\| walkDest\.pos\.y !== p\.pos\.y \|\| walkDest\.facing !== dest\.facing\)\) walkDest = null;/);
     // 街・タイトルへ、続きから
     const scr = /const onScreen = \(to: Screen, carry: readonly string\[\] = \[\]\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(scr).toMatch(/if \(r === "town" \|\| r === "title"\) walkDest = null;/);
@@ -708,7 +715,7 @@ describe("入力と Command", () => {
     );
     const rw = /const resumeWalk = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(rw).toMatch(/if \(route !== "dungeon" \|\| overlay !== null \|\| walking !== null \|\| !fieldFree\(\)\) return;/);
-    expect(rw).toMatch(/const steps = planRoute\(state, data, dest\);\s*if \(steps === null \|\| steps\.length === 0\) return;\s*startWalk\(steps, dest\);/);
+    expect(rw).toMatch(/const steps = routeTo\(dest\);\s*if \(steps === null \|\| steps\.length === 0\) return;\s*startWalk\(steps, dest\);/);
     expect(data.strings["dungeon.walkResume"]).toBe("移動を続ける");
   });
 
@@ -719,9 +726,23 @@ describe("入力と Command", () => {
       /void run\(\{ type: "event\.choose", optionId \}\)\.then\(\(r\) => \{\s*if \(\(r === null \|\| r\.rejected\) && !isBusy\(\)\) syncControls\(\);\s*else if \(r !== null && !r\.rejected && optionId === PASS_CHOICE_ID\) resumeWalk\(\);\s*\}\);/,
     );
     // 歩き直しは「移動を続ける」と同じ resumeWalk（目的地が無い・着いた・引けなければ何もしない）
-    expect(app).toMatch(/const walkResumeDest = \(\): Pos \| null => \{/);
+    expect(app).toMatch(/const walkResumeDest = \(\): WalkTarget \| null => \{/);
     expect(data.strings["dungeon.choice.pass"]).toBe("通り過ぎる");
     expect([...data.strings["dungeon.choice.pass"]!].length).toBeLessThanOrEqual(21); // 一覧の行は 21 字
+  });
+
+  test("UI-25/UI-78（M20）地図の未踏の口の印を選ぶと、口の向き（core の EXIT_FACING）を行き先にして planRoute を引き、「移動」は選んでいて経路が [] でも null でもないときだけ押せる。歩き出し（goMapPick）は向きごと startWalk に渡す（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toMatch(/const pickTarget = \(p: MapPick\): WalkTarget => \(p\.dir === undefined \? \{ pos: p\.pos \} : \{ pos: p\.pos, facing: EXIT_FACING\[p\.dir\] \}\);/);
+    expect(app).toMatch(/c\.setMapGo\(mapPick !== null && \(routeTo\(pickTarget\(mapPick\)\)\?\.length \?\? 0\) > 0\);/);
+    const tap = /const tapMapCell = \(p: MapPick\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(tap).toMatch(/const dest = pickTarget\(p\);\s*const act = mapTapAction\(mapPick, p, samePick\(mapPick, p\) \? \[\] : routeTo\(dest\)\);/);
+    const goPick = /const goMapPick = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(goPick).toMatch(/const dest = pickTarget\(mapPick\);\s*const steps = routeTo\(dest\);\s*if \(steps === null \|\| steps\.length === 0\) return;\s*closeMap\(\);\s*startWalk\(steps, dest\);/);
+    // 地図のビューには mapExitHitPx を渡す
+    const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
+    expect(dungeon).toMatch(/createMapView\(lay\.map, \(p\) => o\.onMapCell\?\.\(p\), o\.data\.config\.ui\.mapSnapPx, o\.strings, o\.data\.config\.ui\.mapExitHitPx\)/);
+    expect([...data.strings["map.tapHint"]!].length).toBeLessThanOrEqual(28);
   });
 
   test("UI-25（M16）選んでいないときの「移動」（dim のボタン・2 キー）は題の行を map.pickFirst に替えるだけ（歩き出さない）（ソースの検査）", () => {
@@ -733,7 +754,7 @@ describe("入力と Command", () => {
     // M19（UI-24 / UI-33）: 地図の間の 3 は「凡例」（controls の select(2)）
     expect(app).toMatch(/\} else if \(typeof a === "object" && a\.menu === 2\) play\.controls\.select\(2\);/);
     expect(data.strings["map.pickFirst"]).toBe("行き先のマスをタップ");
-    expect(data.strings["map.tapHint"]).toBe("探索済みのマスをタップすると、そこまで歩く");
+    expect(data.strings["map.tapHint"]).toBe("口の印か探索済みのマスを押すと、そこまで歩く");
     expect(data.strings["dungeon.walking"]).toBe("移動中…（触れると止まる）");
   });
 
