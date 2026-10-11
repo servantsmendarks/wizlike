@@ -72,7 +72,7 @@ describe("簡易作成", () => {
     const S = data.strings;
     const ch = defaultPersonalities(ids, 6);
     expect(creationNote(null, ch, data, S)).toBe("性格をタップで切り替える。説明はここに出る");
-    expect(creationNote(0, ch, data, S)).toBe("全滅しても必ず戻る、GM の相手役");
+    expect(creationNote(0, ch, data, S)).toBe("プレイヤーの分身。全滅しても必ず生き返る");
     expect(creationNote(1, ch, data, S)).toBe(data.personalities.find((p) => p.id === "cautious")!.shortDescription);
     // 押して切り替えた後の行の性格を引く（無鉄砲 → 強欲）
     const ch2 = [...ch];

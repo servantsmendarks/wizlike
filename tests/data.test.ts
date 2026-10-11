@@ -908,6 +908,14 @@ describe("data: spells.json", () => {
     expectIssue((r) => (r.spells[0].description = ""), "spells.json", "[0].description: expected non-empty string");
     expectIssue((r) => delete r.spells[0].description, "spells.json", "[0].description: missing required field");
   });
+  test("data: MG-41/CB-05/IT-34（M18）敵には「識別」: 識別の呪文の説明とオプション identify_rate の名前に「鑑定」の語を使わない（品の鑑定と分ける）", () => {
+    const d = loadGameData(rawData());
+    const identify = d.spells.find((sp) => sp.id === "identify")!;
+    expect(identify.name).toBe("識別");
+    expect(identify.description).toBe("敵の正体を暴く。正体の分からない敵による SAN の減少を止める。");
+    expect(d.itemOptions.options.find((o) => o.id === "identify_rate")!.name).toBe("識別率");
+    expect(d.strings["hint.sanUnknown"]).not.toContain("鑑定");
+  });
 });
 
 describe("data: monsters.json", () => {

@@ -256,7 +256,7 @@ function statRequirement(k: StatKey, data: GameData, strings: Strings): string {
   return list.length === 0 ? tr(strings, "custom.statReqNone") : formatMessage(tr(strings, "custom.statReq"), { list: list.join(" ") });
 }
 
-/** CH-11 / UI-62: ボーナスの内訳の文（7+2、当たりは 7+2+10）。値は core の rollBonusParts のまま並べる（big は外れなら 0 で、0 の項は書かない） */
+/** CH-11 / UI-62: ボーナスの内訳の文（基本7+ダイス2、当たりは 基本7+ダイス2+大当り10。項の名前は strings）。値は core の rollBonusParts のまま並べる（big は外れなら 0 で、0 の項は書かない） */
 function bonusDetail(p: BonusParts | null, strings: Strings): string {
   if (p === null) return "";
   return formatMessage(tr(strings, p.big > 0 ? "custom.bonusDetailBig" : "custom.bonusDetail"), { base: p.base, die: p.die, big: p.big });

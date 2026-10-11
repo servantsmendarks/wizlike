@@ -53,7 +53,7 @@
     "mp": 4, "target": "allEnemies", "usableIn": "battle",
     "effect": { "type": "identify" },
     "bookOnly": false, "tags": [],
-    "description": "敵の正体を暴く。未鑑定の敵によるSAN減少を止める。"
+    "description": "敵の正体を暴く。正体の分からない敵による SAN の減少を止める。"
   },
   {
     "id": "return", "name": "帰還", "school": "priest", "level": 3, "learnLevel": 5,

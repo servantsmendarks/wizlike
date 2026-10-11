@@ -28,6 +28,7 @@ import {
 } from "../src/presenter/views/custom-creation";
 import { data, gameNewEvents } from "./helpers/core";
 import { kinsokuLines } from "./helpers/wrap";
+import { textUnits } from "../src/presenter/views/party-band";
 
 const S = data.strings;
 
@@ -112,7 +113,7 @@ describe("自分で作る（UI-62 / CH-06）", () => {
     const rng = createRng(5);
     const d0 = initialDraft(data);
     const v0 = customView(d0, data, S);
-    expect(S["creation.leaderNote"]).toBe("全滅しても必ず戻る、GM の相手役");
+    expect(S["creation.leaderNote"]).toBe("プレイヤーの分身。全滅しても必ず生き返る");
     expect(v0.summary).toBe(S["creation.leaderNote"]);
     // 要約の行は 1 行（幅 232 = 全角 29 字）
     expect(kinsokuLines(v0.summary, 29)).toHaveLength(1);
@@ -271,7 +272,7 @@ describe("自分で作る（UI-62 / CH-06）", () => {
     expect(vs.summary).toBe("人間");
     expect(vs.stats!.rows.map((r) => r.label)).toEqual(["力", "知恵", "信仰心", "生命力", "素早さ", "運"]);
     const bp = st.members[0]!.bonusParts!;
-    expect(vs.stats!.remaining).toBe(`残り ${bp.total}　ボーナス ${bp.total}（${bp.base}+${bp.die}${bp.big > 0 ? `+${bp.big}` : ""}）`);
+    expect(vs.stats!.remaining).toBe(`残り ${bp.total}　ボーナス ${bp.total}（基本${bp.base}+ダイス${bp.die}${bp.big > 0 ? `+大当り${bp.big}` : ""}）`);
     expect(vs.buttons.a).toMatchObject({ label: "振り直す", choice: { kind: "reroll" } });
     expect(vs.buttons.b).toMatchObject({ label: "次へ", dim: true });
     const second = makeOne(d0, rng, "アキ");
@@ -294,7 +295,7 @@ describe("自分で作る（UI-62 / CH-06）", () => {
     expect(vc.buttons.b).toMatchObject({ label: "始める", choice: { kind: "start" } });
   });
 
-  test("UI-62/CH-11 能力値の段の残りの行にボーナスの内訳を出す: 外れは「ボーナス 9（7+2）」、当たりは「ボーナス 19（7+2+10）」。値は core の rollBonusParts（鏡の rng）", () => {
+  test("UI-62/CH-11 能力値の段の残りの行にボーナスの内訳を出す: 外れは「ボーナス 9（基本7+ダイス2）」、当たりは「ボーナス 19（基本7+ダイス2+大当り10）」（M18 で項の名前）。値は core の rollBonusParts（鏡の rng）", () => {
     const rng = createRng(4);
     const mirror = cloneRng(rng);
     const st = step(initialDraft(data), { kind: "race", raceId: "human" }, rng);
@@ -303,7 +304,7 @@ describe("自分で作る（UI-62 / CH-06）", () => {
     expect(st.members[0]!.bonusParts).toEqual(p);
     expect(st.members[0]!.bonus).toBe(p.total);
     expect(p.big).toBe(0);
-    expect(customView(st, data, S).stats!.remaining).toBe(`残り ${p.total}　ボーナス ${p.total}（${p.base}+${p.die}）`);
+    expect(customView(st, data, S).stats!.remaining).toBe(`残り ${p.total}　ボーナス ${p.total}（基本${p.base}+ダイス${p.die}）`);
     // 振り直しも内訳を引き直す（rollBonus と同じ順）
     const re = step(st, { kind: "reroll" }, rng);
     const q = rollBonusParts(mirror, data.config.creation);
@@ -312,22 +313,29 @@ describe("自分で作る（UI-62 / CH-06）", () => {
     // 当たり（big > 0）は 3 つ目の項を足す。配分した分だけ残りが減る
     const big = { base: 7, die: 2, big: 10, total: 19 };
     const hit: CustomDraft = { ...st, members: st.members.map((m, i) => (i === 0 ? { ...m, bonus: 19, bonusParts: big } : m)) };
-    expect(customView(hit, data, S).stats!.remaining).toBe("残り 19　ボーナス 19（7+2+10）");
+    expect(customView(hit, data, S).stats!.remaining).toBe("残り 19　ボーナス 19（基本7+ダイス2+大当り10）");
     const spent = step(hit, { kind: "inc", key: "str" }, rng);
-    expect(customView(spent, data, S).stats!.remaining).toBe("残り 18　ボーナス 19（7+2+10）");
+    expect(customView(spent, data, S).stats!.remaining).toBe("残り 18　ボーナス 19（基本7+ダイス2+大当り10）");
     expect(customView({ ...st, members: st.members.map((m, i) => (i === 0 ? { ...m, bonus: 9, bonusParts: { base: 7, die: 2, big: 0, total: 9 } } : m)) }, data, S).stats!.remaining).toBe(
-      "残り 9　ボーナス 9（7+2）",
+      "残り 9　ボーナス 9（基本7+ダイス2）",
     );
   });
 
-  test("UI-62 残りの行は最大の値（残り 21・7+4+10）でも行の幅 224px（全角 8px で 28 字）に収まる", () => {
+  test("UI-62/CH-11 残りの行は最大の値（残り 21・基本7+ダイス4+大当り10）でも行の幅 224px（全角 28 字。半角 4px・全角 8px で数える）に収まる（M18 で項の名前を足した）", () => {
     const rng = createRng(4);
     const st = step(initialDraft(data), { kind: "race", raceId: "human" }, rng);
     const c = data.config.creation;
     const max = c.bonusBase + c.bonusDie + c.bonusBig;
     const parts = { base: c.bonusBase, die: c.bonusDie, big: c.bonusBig, total: max };
     const v = customView({ ...st, members: st.members.map((m, i) => (i === 0 ? { ...m, bonus: max, bonusParts: parts } : m)) }, data, S);
-    expect(v.stats!.remaining.length).toBeLessThanOrEqual(28);
+    expect(v.stats!.remaining).toBe("残り 21　ボーナス 21（基本7+ダイス4+大当り10）");
+    // 字の数は 29 だが半角が 12 あり、幅は全角 8px × 17 + 半角 4px × 12 = 184px
+    expect(textUnits(v.stats!.remaining) * 4).toBeLessThanOrEqual(CUSTOM_REMAINING.w);
+    expect(CUSTOM_REMAINING.w).toBe(224);
+    // 外れの最大（残り 11・基本7+ダイス4）も同じ
+    const small = { base: c.bonusBase, die: c.bonusDie, big: 0, total: c.bonusBase + c.bonusDie };
+    const vs = customView({ ...st, members: st.members.map((m, i) => (i === 0 ? { ...m, bonus: small.total, bonusParts: small } : m)) }, data, S);
+    expect(textUnits(vs.stats!.remaining) * 4).toBeLessThanOrEqual(CUSTOM_REMAINING.w);
   });
 
   test("UI-33/UI-62 キー: Esc は戻る、数字 n は n 番目の行（dim は null）、Enter は先頭の選べる行・能力値は次へ・名前は入力で次へ・確認は始める", () => {

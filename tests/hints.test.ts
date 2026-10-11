@@ -29,7 +29,9 @@ describe("UI-76 一度きりの GM の一言（M16）", () => {
     }
     expect(S["hint.dungeonFirst"]).toBe("奥へ伸びる線が道、正面の四角は壁。下の△▷は、その向きに口がある印。");
     expect(S["hint.dungeonTerms"]).toBe("分からない言葉は、設定の「用語」で引ける。");
-    expect(S["hint.sanUnknown"]).toBe("正体の分からない敵に会うと正気が削れる。鑑定すれば減らない。");
+    expect(S["hint.sanUnknown"]).toBe("正体の分からない敵に会うと正気が削れる。戦ううちに正体が分かる。");
+    // M18（CB-05 / CB-06）: 敵に「鑑定」の語を使わない（品の鑑定と分ける）
+    expect(S["hint.sanUnknown"]!).not.toContain("鑑定");
     expect(S["hint.levelUpMark"]).toBe("名前の横の↑は、宿で上がれる印だ。");
     expect(S["hint.lostExits"]).toBe("地図の端に、まだ歩いていない口がある。地図の「未踏の口」を探せ。");
   });
