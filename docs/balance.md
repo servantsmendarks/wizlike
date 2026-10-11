@@ -1333,6 +1333,7 @@ drops.json の表から出した期待値で、計測ではない（農夫ボッ
 | 2026-10-11 | 箱の出る率（config.combat.chestChance / chestChanceCorridor。CB-51 / IT-50）と d01 の通路の遭遇率（dungeons.json d01 encounterRate.corridor。CB-01。部屋 0.12・d02 / d03 は据え置き）。M19 の A-3。ユーザーの承認（束 v3 の返答の変更 1 点） | 部屋 45 → 35、通路 10 → 20（%）。d01 通路 0.05 → 0.07 | 計測(M18)（2e13412） | 計測(M19)（群 B の最後。§3 のオートの既定と同時） | 計測(M19)（dbbebf8）: d01 1 階の 15 分の品 15.9 / 16.6 / 16.9（目安 8〜10 を上に外れた）、満杯で帰る潜行 17.8 / 20.6 / 24.4%、希少/時 8.1〜8.7。設計 §1 の戻し（部屋の率を 35 → 40 → 45 と上げる）は品を増やす向きなので行わず、率はユーザーの決定待ち（計測(M19) の「目安との比較と判定」。参考の取り直しで通路 10 なら 10.2〜10.8）。煙テストの進行ボットはシード 1 が d02 を踏破しなくなり、シード 2 に替えた |
 | 2026-10-11 | オートの既定（CB-40 / CB-46。config.auto 新設。M19 の B-1。規則の変更で、数値は新設の【仮】） | 既定は「打てれば攻撃、でなければ防御」→ 治癒の系統は HP 40% 未満の味方に最も安い治癒、攻撃の系統は敵 3 体以上かつ MP 半分以上で最も安い攻撃呪文、司教は治癒 → 攻撃、当てはまらなければ今の既定（healBelowRatio 0.4・attackSpellMinEnemies 3・attackSpellMpRatio 0.5） | 計測(M18)（2e13412） | 計測(M19)（群 B の最後。箱の率・d01 の通路の遭遇率と同時） | 計測(M19)（dbbebf8）: 全滅率は農夫の d01 2 階・d02 1 階の 6 通りで下がり（d02 1 階 19.1 / 12.2 / 8.6% → 13.1 / 3.5 / 4.0%）、4 戦固定 2.9 → 0.4%・セオリー 0.5 → 0.2%。1 戦闘あたりの declare は 9 通りとも減った。箱の率・遭遇率・宿の毒と同時なので効きは分けられない。計測の前の記録: ボットの戦闘はほぼすべて `battle.auto` なので全ボットの戦闘の入力が変わり、M18 の基準値とは比べられない。BALANCE_SEEDS=3 BALANCE_BOTS=f1 は完走（4 戦固定 全滅 0/15） |
 | 2026-10-12 | 部屋の箱の出る率（config.combat.chestChance。CB-51 / IT-50）。ユーザーの決定（設計 §9）: 通路 20 と d01 通路の遭遇率 0.07 は据え置き、目安 1（d01 1 階の 15 分の品）を 8〜10 → 8〜11 に広げた | 35 → 25（%） | 計測(M19)（dbbebf8） | 計測(M19-部屋25)（直後の取り直し） | 計測の前の見込み（計測の担当の推測）: 部屋の勝利は 9.4% なので 15 分の品は 15 前後に留まり 8〜11 に入らない可能性が高い。入らなければ通路 20 → 15 に戻して取り直す（設計 §9）。煙テストの進行ボットはシード 2 が d02 を踏破しなくなり、シード 3 に替えた。BALANCE_SEEDS=3 BALANCE_BOTS=farm は完走 |
+| 2026-10-12 | 宝箱の 2 個目の確率（config.chest.secondItemChance。CB-65 / IT-51）と直接ドロップの確率（config.combat.directDropChance。CB-57 / IT-57）。ユーザーの決定（2026-10-12。計測(M19-部屋25) で 8〜11 に届かなかったときの手順を「通路 20 → 15」から変更）: 箱の出る率（部屋 25・通路 20）と d01 通路の遭遇率 0.07 は据え置き、目安 1（d01 1 階の 15 分の品）を 8〜11 → 8〜12 に広げた。それでも外れたら数字を報告して止まる | 2 個目 25 → 10（+15%/危険度は維持）、直接ドロップ 5 → 3（%） | 計測(M19-部屋25)（bae0f1e。d01 1 階の 15 分の品 15.3 / 16.1 / 16.2） | 計測(M19-量)（直後の取り直し） | 計測の前の記録: BALANCE_SEEDS=3 BALANCE_BOTS=farm は完走。npm test の進行ボットの煙テスト（シード 3）は通ったまま |
 
 ## 目安と調整の順（M12）
 
@@ -1523,7 +1524,7 @@ tests/balance/farm.ts と tests/balance/bot.ts（route "farm"）。設計は scr
 | d02 の floorLevels | [3, 4, 5] |
 | d03 の floorLevels | [5, 6, 6, 7] |
 | 宝箱の表（drops.json の d01_f1・d01_f2・d02_f1〜f3・d03_f1〜f4。IT-51） | itemChance / rolls を廃止（M13 までは 40〜70 × 1。個数は config.chest.secondItemChance・secondItemPerDanger。値と【仮】は CB-65）。ボスの表は 100 × 1〜2 のまま（d01_boss 100 × 1、d02_boss・d03_boss 100 × 2） |
-| config.combat.directDropChance・directDropGoldDice | config の値（参照のみ。値と【仮】は CB-57） |
+| config.combat.directDropChance・directDropGoldDice | config の値（参照のみ。値と【仮】は CB-57。2026-10-12 M19 で directDropChance 3） |
 | drops.json の direct.kinds（IT-57） | humanoid 武器・防具 / undead 装飾・魔法書 / beast 消耗品・金 / construct 防具 / spirit 魔法書・装飾（防具は部位 armor・shield・helm・gauntlet。装備と魔法書の母集団はその階の宝箱の表を種別で絞ったもの） |
 | drops.json の direct.consumables（IT-57） | 薬草 herb 3・解毒草 antidote_herb 2・帰還の糸 return_thread 1（重み） |
 
