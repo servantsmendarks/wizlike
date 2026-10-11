@@ -3,7 +3,8 @@
 // - party はラウンドの始めのパーティの選択（2 列 × 2 段: 戦う・前回と同じ / 逃げる・オート）。前回と同じは battle.repeat、
 //   逃げるは battle.flee、オートは battle.auto on を送る。戦うで先頭の行動可能なメンバーの member へ。
 // - member は 5 枠（上段 攻撃・呪文・防御・道具、下段の右端 戻る）。戻るは並び順で前の行動可能なメンバー、先頭なら party。
-//   攻撃は canStrike が偽なら dim で「攻撃(届かず)」（M16。CB-13）。
+//   攻撃は canStrike が偽なら dim で「攻撃(届かず)」（M16。CB-13）。押すと理由（reason: battle.reason.noReach）を窓に出す（M18。設計 4-6）。
+// - 入力の問い（ヘッダー）は battlePrompt。member の段は core の row で「{name}（前衛 / 後衛）は？」（M18。設計 4-6 / D1）。
 // - spell / item / enemy / ally は一覧で、末尾が「戻る」（親の段へ）。enemy / ally は注目（focus。一覧の添字）を持つ。
 // - UI-68（M10）/ U4: 呪文を選ぶと、対象を選ぶ呪文（enemy / enemyGroup / ally）は対象の段へ、対象を選ばない呪文（allEnemies / party / self / none）と、
 //   体数 1 以上の敵グループが 1 つだけのときの敵の呪文は確認の段 spellConfirm（[唱える][戻る]）へ進む（説明を読む 1 タップ。対象の有無で手数を揃える）。
@@ -39,8 +40,11 @@ export type Choice =
   /** UI-68（M10）: 確認の段の「唱える」 */
   | { kind: "castConfirm" }
   | { kind: "back" };
-/** peek: dim でも押せば選ぶ行（UI-68。唱えられない呪文の説明を見る。キャンプの CampEntry の peek と同じ） */
-export type MenuEntry = { label: string; disabled: boolean; choice: Choice; peek?: boolean };
+/**
+ * peek: dim でも押せば選ぶ行（UI-68。唱えられない呪文の説明を見る。キャンプの CampEntry の peek と同じ）。
+ * reason: dim の行を押したときに窓に出す理由の文（UI-54。M18 設計 4-6。届かない攻撃）。peek とは併せない
+ */
+export type MenuEntry = { label: string; disabled: boolean; choice: Choice; peek?: boolean; reason?: string };
 
 /** UI-66（2026-10-07）: 戻るの意味の選択肢か（メンバーの枠の「戻る」と、一覧の末尾の戻る。取り消しの音を鳴らす項目） */
 export function isBackChoice(c: Choice): boolean {
@@ -171,12 +175,17 @@ export function entries(menu: BattleMenu, cursor: InputCursor, strings: Strings)
   const back: MenuEntry = { label: s("common.back"), disabled: false, choice: { kind: "back" } };
   switch (cursor.stage) {
     case "member":
-      return MEMBER_CMDS.map((cmd) => ({
-        // UI-54 / CB-13: 届かない者の攻撃は「攻撃(届かず)」（battle.cmd.attackNoReach。56px の枠に収まる 48px）
-        label: s(cmd === "back" ? "common.back" : cmd === "attack" && !m.canStrike ? "battle.cmd.attackNoReach" : `battle.cmd.${cmd}`),
-        disabled: memberDisabled(m, cmd),
-        choice: { kind: "member", cmd },
-      }));
+      return MEMBER_CMDS.map((cmd): MenuEntry => {
+        const noReach = cmd === "attack" && !m.canStrike;
+        return {
+          // UI-54 / CB-13: 届かない者の攻撃は「攻撃(届かず)」（battle.cmd.attackNoReach。56px の枠に収まる 48px）
+          label: s(cmd === "back" ? "common.back" : noReach ? "battle.cmd.attackNoReach" : `battle.cmd.${cmd}`),
+          disabled: memberDisabled(m, cmd),
+          choice: { kind: "member", cmd },
+          // UI-54（M18。設計 4-6）: 押すと理由を窓に出す（段は変えない。送らない）
+          ...(noReach ? { reason: s("battle.reason.noReach") } : {}),
+        };
+      });
     case "spell":
       return [
         ...m.spells.map(
@@ -222,6 +231,16 @@ export function entries(menu: BattleMenu, cursor: InputCursor, strings: Strings)
         back,
       ];
   }
+}
+
+/**
+ * UI-54: 入力の問い（ヘッダーの文）。strings `battle.prompt.<stage>` に名前を差し込む。
+ * member の段は core の BattleMenuMember.row の表記（battle.row.front / back）も差し込む（M18。設計 4-6 / D1）。判定はしない
+ */
+export function battlePrompt(menu: BattleMenu, cursor: InputCursor, strings: Strings): string {
+  const m = cursor.stage === "party" ? undefined : memberOf(menu, cursor.memberId);
+  const row = m === undefined ? "" : (strings[`battle.row.${m.row}`] ?? `battle.row.${m.row}`);
+  return formatMessage(strings[`battle.prompt.${cursor.stage}`] ?? `battle.prompt.${cursor.stage}`, { name: m?.name ?? "", row });
 }
 
 /** 対象の種類 → 次の段階（enemy / ally）。対象を選ばない種類は null */

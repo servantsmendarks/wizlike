@@ -1254,7 +1254,8 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
 export function battleMenu(state: GameState, data: GameData): BattleMenu | null {
   const b = state.battle;
   if (b === null) return null;
-  const members = state.party.map((ch) => {
+  const frontRow = data.config.party.frontRow;
+  const members = state.party.map((ch, i) => {
     const spells = ch.knownSpells
       .map((id) => data.spells.find((s) => s.id === id))
       .filter((s): s is Spell => s !== undefined && battleSpellUsable(s))
@@ -1277,6 +1278,7 @@ export function battleMenu(state: GameState, data: GameData): BattleMenu | null 
       canAct: canAct(ch),
       input: input === undefined ? null : cleanAction(input),
       canStrike: canStrike(state, data, ch),
+      row: i < frontRow ? ("front" as const) : ("back" as const),
       spells,
       items,
     };

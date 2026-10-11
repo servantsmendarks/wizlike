@@ -2065,6 +2065,24 @@ describe("網羅（完了条件「6 種と戦える」、敵の id、battleMenu�
     expect(battleMenu(dived(1), data)).toBeNull();
   });
 
+  test("UI-54（M18。設計 4-6）battleMenu の row: 並び順の添字が config.party.frontRow 未満なら front、ほかは back（行動不能・死亡でも並び順のまま。CB-14 の繰り上げは反映しない）。乱数を引かない", () => {
+    const s = setup([{ monsterId: "giant_rat", hps: [5] }], { inputs: {}, patches: { c1: PARA, c2: PARA, c3: DEAD } });
+    const before = JSON.stringify(s);
+    expect(data.config.party.frontRow).toBe(3);
+    const menu = battleMenu(s, data)!;
+    expect(menu.members.map((x) => [x.id, x.row])).toEqual([
+      ["c1", "front"],
+      ["c2", "front"],
+      ["c3", "front"],
+      ["c4", "back"],
+      ["c5", "back"],
+      ["c6", "back"],
+    ]);
+    expect(battleMenu(s, data)!.members.map((x) => x.row)).toEqual(menu.members.map((x) => x.row));
+    // state（rng を含む）を書き換えない
+    expect(JSON.stringify(s)).toBe(before);
+  });
+
   test.each([
     ["battle.resolve（オート）", RESOLVE, true],
     ["battle.repeat", REPEAT, false],

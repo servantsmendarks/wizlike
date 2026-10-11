@@ -642,6 +642,8 @@ export type BattleMenuMember = {
   input: BattleAction | null;
   /** CB-13/14 の今の判定。偽なら「攻撃」は防御として解決される（入力は受け付ける。表示の注記用） */
   canStrike: boolean;
+  /** UI-54（M18。設計 4-6）: 並び順の添字が config.party.frontRow 未満なら front（入力の問いの表記だけに使う。CB-14 の繰り上げは反映しない） */
+  row: "front" | "back";
   spells: BattleMenuSpell[];
   items: BattleMenuItem[];
 };

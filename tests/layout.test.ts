@@ -301,7 +301,7 @@ describe("layout", () => {
       expect(overlaps(shrunk, tu)).toBe(false);
       expect(tu.x - (shrunk.x + shrunk.w)).toBe(HEADER_TURN_GAP);
     }
-    // 既定の問いの最長（「{name}はどうする？」の 6 文字の名前で 12 字 = 96px）は縮めた 100px に収まる（M16 でログと並べた。以前は 132px）
+    // 既定の問いの最長（M18: 「{name}（後衛）は？」の 6 文字の名前で 12 字 = 96px。M17 までは「{name}はどうする？」で同じ 96px）は縮めた 100px に収まる（M16 でログと並べた。以前は 132px）
     expect(HEADER_TURN_W).toBe(48);
     expect(L.header.text.w - HEADER_TURN_W - HEADER_TURN_GAP).toBe(100);
     expect(L.header.text.w - HEADER_TURN_W - HEADER_TURN_GAP).toBeGreaterThanOrEqual(96);

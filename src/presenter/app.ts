@@ -40,6 +40,7 @@ import { downloadText, exportFileName } from "./file-io";
 import { closesInput, runChain, type ChainDeps } from "./auto-chain";
 import { createAutosaver, createCommandExec, createSaveBannerState, type CommandExecOptions, type CommandResult, type SaveStatus } from "./autosave";
 import {
+  battlePrompt,
   entries,
   firstCursor,
   focusedChoice,
@@ -52,6 +53,7 @@ import {
   step,
   type Choice,
   type InputCursor,
+  type MenuEntry,
 } from "./battle-input";
 import {
   attachKeyboard,
@@ -1098,6 +1100,13 @@ export function createApp(o: {
     }
   };
 
+  /** UI-54（M18。設計 4-6）: 戦闘の押せない項目（届かない攻撃）の理由をメッセージ窓に語る（理由が無ければ何もしない） */
+  const battleReason = (e: MenuEntry): Pick<ControlItem, "onDisabled"> => {
+    const reason = e.reason;
+    if (reason === undefined) return {};
+    return { onDisabled: () => guard(() => void narrator.say(reason, store.get().skipAnimations)) };
+  };
+
   /** UI-59（M10）: 押せない項目の理由を語る（理由が無ければ何もしない） */
   const campReason = (x: CampEntry): Pick<ControlItem, "onDisabled"> => {
     const reason = x.reason;
@@ -1248,8 +1257,7 @@ export function createApp(o: {
       return;
     }
     const memberId = cur.stage === "party" ? null : cur.memberId;
-    const member = memberId === null ? undefined : menu.members.find((m) => m.id === memberId);
-    play.header.setText(formatMessage(t(`battle.prompt.${cur.stage}`), { name: member?.name ?? "" }));
+    play.header.setText(battlePrompt(menu, cur, strings));
     play.party.setActive(memberId);
     const targeting = cur.stage === "enemy" || cur.stage === "ally";
     const ents = entries(menu, cur, strings);
@@ -1261,7 +1269,7 @@ export function createApp(o: {
         back: isBackChoice(e.choice),
         onSelect: () => guard(() => chooseBattle(e.choice)),
         // UI-68（2026-10-07）: peek の行（唱えられない呪文）は dim でも選べる（確認の段で説明を見る）
-        ...(e.peek === true ? { onDisabled: () => guard(() => chooseBattle(e.choice)) } : {}),
+        ...(e.peek === true ? { onDisabled: () => guard(() => chooseBattle(e.choice)) } : battleReason(e)),
         ...(targeting ? { onFocus: () => guard(() => focusTo(i, false)) } : {}),
       }),
     );

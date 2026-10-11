@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import type { BattleAction, BattleMenu, BattleMenuMember } from "../src/core/types";
 import {
   back,
+  battlePrompt,
   entries,
   firstCursor,
   focusedChoice,
@@ -22,6 +23,7 @@ import {
   type Pick,
 } from "../src/presenter/battle-input";
 import { formatMessage } from "../src/presenter/views/message";
+import { kinsokuLines } from "./helpers/wrap";
 import { data } from "./helpers/core";
 
 const S = data.strings;
@@ -33,7 +35,7 @@ const t = (k: string, p?: Record<string, string | number>): string => {
 };
 
 function member(id: string, o: Partial<BattleMenuMember> = {}): BattleMenuMember {
-  return { id, name: `N${id}`, canAct: true, input: null, canStrike: true, spells: [], items: [], ...o };
+  return { id, name: `N${id}`, canAct: true, input: null, canStrike: true, row: "front", spells: [], items: [], ...o };
 }
 
 /** 6 人。c3 は麻痺（canAct 偽）、c5 は呪文、c6 は道具を持つ。グループ 0 は全滅、1 と 2 が生存 */
@@ -42,9 +44,10 @@ function menu(o: Partial<BattleMenu> = {}): BattleMenu {
     member("c1"),
     member("c2"),
     member("c3", { canAct: false }),
-    member("c4", { canStrike: false }),
+    member("c4", { canStrike: false, row: "back" }),
     member("c5", {
       canStrike: false,
+      row: "back",
       spells: [
         { spellId: "fire_arrow", name: "火矢", mp: 2, target: "enemy", usable: true },
         { spellId: "flame_burst", name: "炎", mp: 5, target: "enemyGroup", usable: false },
@@ -55,6 +58,7 @@ function menu(o: Partial<BattleMenu> = {}): BattleMenu {
     }),
     member("c6", {
       canStrike: false,
+      row: "back",
       items: [
         { instanceId: "i1", itemId: "herb", name: "薬草", target: "ally" },
         { instanceId: "i2", itemId: "x", name: "煙玉", target: "none" },
@@ -227,7 +231,12 @@ describe("UI-54 入力の段階", () => {
     const m = menu();
     const e4 = entries(m, mem("c4"), S);
     expect(t("battle.cmd.attackNoReach")).toBe("攻撃(届かず)");
-    expect(e4[0]).toEqual({ label: t("battle.cmd.attackNoReach"), disabled: true, choice: { kind: "member", cmd: "attack" } });
+    expect(e4[0]).toEqual({
+      label: t("battle.cmd.attackNoReach"),
+      disabled: true,
+      choice: { kind: "member", cmd: "attack" },
+      reason: t("battle.reason.noReach"),
+    });
     // 他の枠は今までどおり（c4 は呪文・道具なしで dim、防御・戻るは押せる）
     expect(e4.slice(1).map((e) => [e.label, e.disabled])).toEqual([
       [t("battle.cmd.spell"), true],
@@ -244,6 +253,44 @@ describe("UI-54 入力の段階", () => {
     const reach = { ...m, members: m.members.map((x) => (x.id === "c4" ? { ...x, canStrike: true } : x)) };
     expect(entries(reach, mem("c4"), S)[0]).toEqual({ label: t("battle.cmd.attack"), disabled: false, choice: { kind: "member", cmd: "attack" } });
     expect(step(reach, mem("c4"), mc("attack")).cursor).toEqual(tgt("enemy", "c4", { kind: "attack" }));
+  });
+
+  test("UI-54（M18。設計 4-6）届かない攻撃の行だけ reason に battle.reason.noReach（理由の文。peek ではない）。他の枠・届く者・他の段には reason が無い。文は窓の 28 字 × 2 行に収まる（禁則つき）", () => {
+    const m = menu();
+    expect(t("battle.reason.noReach")).toBe("後衛からは届かない。弓・投擲・長柄の武器なら後衛からでも攻撃できる。");
+    expect(kinsokuLines(t("battle.reason.noReach"), 28).length).toBeLessThanOrEqual(2);
+    for (const id of ["c4", "c5", "c6"]) {
+      const es = entries(m, mem(id), S);
+      expect(es[0]!.reason, id).toBe(t("battle.reason.noReach"));
+      expect(es[0]!.peek, id).toBeUndefined();
+      expect(es.slice(1).every((e) => e.reason === undefined), id).toBe(true);
+    }
+    expect(entries(m, mem("c1"), S).every((e) => e.reason === undefined)).toBe(true);
+    for (const cur of [PARTY, list("spell", "c5"), list("item", "c6"), tgt("enemy", "c1", { kind: "attack" }), tgt("ally", "c5", { kind: "cast", spellId: "heal" })]) {
+      expect(entries(m, cur, S).every((e) => e.reason === undefined)).toBe(true);
+    }
+    // 押しても段は変わらず送らない（reason は表示層が窓に出すだけ）
+    expect(step(m, mem("c4"), mc("attack"))).toEqual({ cursor: mem("c4"), send: null });
+  });
+
+  test("UI-54（M18。設計 4-6 / D1）入力の問い battlePrompt: member の段は「{name}（前衛 / 後衛）は？」（core の row）。他の段は今の問いに名前だけ。6 字の名前でもターン表示の間の 100px に収まる", () => {
+    const m = menu();
+    expect(t("battle.row.front")).toBe("前衛");
+    expect(t("battle.row.back")).toBe("後衛");
+    expect(battlePrompt(m, mem("c1"), S)).toBe("Nc1（前衛）は？");
+    expect(battlePrompt(m, mem("c4"), S)).toBe("Nc4（後衛）は？");
+    expect(battlePrompt(m, PARTY, S)).toBe(t("battle.prompt.party"));
+    expect(battlePrompt(m, list("spell", "c5"), S)).toBe(t("battle.prompt.spell", { name: "Nc5" }));
+    expect(battlePrompt(m, list("item", "c6"), S)).toBe(t("battle.prompt.item", { name: "Nc6" }));
+    expect(battlePrompt(m, tgt("enemy", "c1", { kind: "attack" }), S)).toBe(t("battle.prompt.enemy"));
+    // 最悪: 全角 6 字の名前の後衛。全角 8px・半角 4px で数える
+    const long = { ...m, members: m.members.map((x) => ({ ...x, name: "アアアアアア" })) };
+    const w = (x: string): number => [...x].reduce((a, ch) => a + (ch.charCodeAt(0) < 0x80 ? 4 : 8), 0);
+    for (const id of ["c1", "c4"]) {
+      const p = battlePrompt(long, mem(id), S);
+      expect(w(p), p).toBeLessThanOrEqual(100);
+    }
+    expect(w(battlePrompt(long, mem("c4"), S))).toBe(96);
   });
 
   test("UI-54/CB-12 攻撃 → 敵の一覧（体数 0 は出さない、番号は生存グループの順）→ battle.input attack", () => {

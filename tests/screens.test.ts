@@ -1019,7 +1019,18 @@ describe("入力と Command", () => {
     expect(app.match(/showNote\(/g)?.length).toBe(2);
     expect(app).toContain('const showWalkingNote = (): void => play.message.showNote([t("dungeon.walking")]);');
     // 2026-10-07（A-A3）: peek の行（MP 不足の呪文）は dim でも選べて、確認の段で説明を見る（キャンプと同じ）
-    expect(sync).toContain("...(e.peek === true ? { onDisabled: () => guard(() => chooseBattle(e.choice)) } : {}),");
+    expect(sync).toContain("...(e.peek === true ? { onDisabled: () => guard(() => chooseBattle(e.choice)) } : battleReason(e)),");
+  });
+
+  test("UI-54（M18。設計 4-6）戦闘の届かない攻撃: reason のある dim の行は onDisabled で narrator に理由を語る（route battle ではメッセージ窓）。入力の問いは battlePrompt（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const fn = /const battleReason = \(e: MenuEntry\): Pick<ControlItem, "onDisabled"> => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(fn).toContain("const reason = e.reason;");
+    expect(fn).toContain("if (reason === undefined) return {};");
+    expect(fn).toContain("return { onDisabled: () => guard(() => void narrator.say(reason, store.get().skipAnimations)) };");
+    const sync = /const syncBattleControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(sync).toContain("play.header.setText(battlePrompt(menu, cur, strings));");
+    expect(sync).not.toContain("battle.prompt.");
   });
 
   test("UI-59（M10）キャラクター画面の開閉は setCharacter を通す: campCharacterOpen の段で開き、閉じる・再開で閉じる。閉じるとき街でなければ会話の箱を打ち切る。押せない項目の理由は会話の箱に語る（ソースの検査）", () => {
