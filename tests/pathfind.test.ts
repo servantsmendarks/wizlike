@@ -176,7 +176,7 @@ describe("DG-15 planRoute（state）", () => {
     expect(planRoute(town, data, here)).toBeNull();
   });
 
-  test("DG-15/UI-78（M20）planRoute(state, data, target, facing): 未踏の口（mapView の exits）のセルと EXIT_FACING の向きへの経路を順に execute すると、どの手も routeStepOk が真で、口の向きを向いて止まる。旋回だけの経路も同じ。state は書き換えない", () => {
+  test("DG-15/UI-78（M20）planRoute(state, data, target, facing): 未踏の口（mapView の exits）のセルと EXIT_FACING の向きへの経路を順に execute すると、どの手も routeStepOk が真で、口の向きを向いて止まる。旋回だけの経路も同じ。state は書き換えず、乱数も進めない", () => {
     expect(EXIT_FACING).toEqual({ n: "N", e: "E", s: "S", w: "W" });
     let walked = 0;
     let turnOnly = 0;
@@ -215,6 +215,7 @@ describe("DG-15 planRoute（state）", () => {
         }
       }
       expect(s0).toEqual(snapshot);
+      expect(s0.rng).toEqual(snapshot.rng); // M20 レビュー: 向き付きの planRoute も乱数を引かない
     }
     expect(walked).toBeGreaterThan(0);
     expect(turnOnly).toBeGreaterThan(0);

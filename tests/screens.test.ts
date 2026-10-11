@@ -753,7 +753,7 @@ describe("入力と Command", () => {
     expect(app).toMatch(/a\.menu === 1\) \{\s*if \(mapPick !== null\) goMapPick\(\);\s*else mapPickFirst\(\);\s*\}/);
     // M19（UI-24 / UI-33）: 地図の間の 3 は「凡例」（controls の select(2)）
     expect(app).toMatch(/\} else if \(typeof a === "object" && a\.menu === 2\) play\.controls\.select\(2\);/);
-    expect(data.strings["map.pickFirst"]).toBe("行き先のマスをタップ");
+    expect(data.strings["map.pickFirst"]).toBe("行き先のマスか口の印を押す");
     expect(data.strings["map.tapHint"]).toBe("口の印か探索済みのマスを押すと、そこまで歩く");
     expect(data.strings["dungeon.walking"]).toBe("移動中…（触れると止まる）");
   });

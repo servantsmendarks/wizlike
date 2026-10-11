@@ -1681,7 +1681,7 @@ export function createApp(o: {
     walker.press();
   };
 
-  /** UI-25（M16）: 選んでいないときの「移動」（dim のボタン・2 キー）。題の行を「行き先のマスをタップ」に替える（次の選択・render で戻る） */
+  /** UI-25（M16）: 選んでいないときの「移動」（dim のボタン・2 キー）。題の行を `map.pickFirst` に替える（次の選択・render で戻る） */
   const mapPickFirst = (): void => {
     if (overlay !== "map" || walking !== null || mapPick !== null) return;
     play.map.setTitle(t("map.pickFirst"));
