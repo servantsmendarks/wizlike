@@ -565,6 +565,13 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.inventory.strBonus = [{ str: 16, slots: 2 }, { str: 12, slots: 1 }]), "config.json", "inventory.strBonus[1].str: CH-71: str 12 is not greater than 16");
     expectIssue((r) => (r.config.inventory.strBonus = [{ str: 12, slots: 1 }, { str: 12, slots: 2 }]), "config.json", "CH-71: str 12 is not greater than 12");
   });
+  test("data: TW-10（M17）bank.amounts は正の整数の配列【仮】（既定 [100, 1000]）", () => {
+    expect(issuesOf((r) => (r.config.bank.amounts = []))).toEqual([]);
+    expectIssue((r) => delete r.config.bank, "config.json", "bank: missing required field");
+    expectIssue((r) => delete r.config.bank.amounts, "config.json", "bank.amounts: missing required field");
+    expectIssue((r) => (r.config.bank.amounts = [0]), "config.json", "bank.amounts[0]: expected integer >= 1");
+    expectIssue((r) => (r.config.bank.amounts = [100, 2.5]), "config.json", "bank.amounts[1]: expected integer");
+  });
   test("data: MG-01 growth.mpStatPivot は整数、mpStatDivisor は 1 以上の整数", () => {
     expectIssue((r) => (r.config.growth.mpStatPivot = 10.5), "config.json", "growth.mpStatPivot: expected integer");
     expectIssue((r) => (r.config.growth.mpStatPivot = "10"), "config.json", "growth.mpStatPivot: expected integer");

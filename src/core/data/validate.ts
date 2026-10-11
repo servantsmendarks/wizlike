@@ -633,7 +633,8 @@ function validateKit(ctx: Ctx, p: string, m: Obj, classId: string | undefined, c
   }
   const inv = arrOf(m.inventory);
   inv.forEach((it, j) => ref(ctx, at(at(p, "inventory"), j), it, ix.items, "item"));
-  // CH-71 所持枠（装備中を含む。M17 から素の力の補正 strBonus を足す。state.ts の slotsMaxOf と同じ式）
+  // CH-71 所持枠（装備中を含む。M17 から素の力の補正 strBonus を足す。state.ts の slotsMaxOf と同じ式）。
+  // stats を持たない kit（職業の開始の持ち物 classes[].start）は力 0 として補正 0 で見る（最も厳しい側。力 3 の新しいキャラでも収まる）
   if (ix.slotsPerCharacter !== undefined) {
     const str = intOf(get(m, "stats", "str")) ?? 0;
     let bonus = 0;

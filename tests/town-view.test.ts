@@ -984,6 +984,43 @@ describe("UI-52 街のページ", () => {
     for (const k of ["town.bank.all", "town.bank.half", "town.bank.amountRow"]) expect(textUnits(formatMessage(S[k]!, { amount: 9999999 })), k).toBeLessThanOrEqual(39);
   });
 
+  test("CH-71b/TW-10/TW-16b（M17 レビュー）新しい語りは最悪の値（6 字の名前・最も長い品名・7 桁の額・3 桁の数）でも会話の箱の 2 行（全角 28 字）に収まり、銀行の一覧の行は行の幅（39 単位）に収まる", () => {
+    const longest = (xs: string[]): string => [...xs].sort((a, b) => textUnits(b) - textUnits(a))[0]!;
+    const rarities = ["fine", "rare", "legendary"].map((r) => S[`item.rarity.${r}`]!);
+    const prefix = longest(rarities);
+    const item = longest([
+      ...data.items.flatMap((it) => [it.name, it.unidentifiedName ?? it.name]),
+      ...data.equipmentBases.flatMap((b) => [b.unidentifiedName, `${prefix}${b.name}${formatMessage(S["item.plus"]!, { n: 12 })}`]),
+      ...data.uniques.map((u) => `${prefix}${u.name}`),
+    ]);
+    const name = "ろくもじのな";
+    const said: [string, Record<string, string | number>][] = [
+      ["town.storage.autoDeposited", { name, item }],
+      ["inventory.overflow", { name, over: 999 }],
+      ["town.storage.depositedAll", { name, count: 999 }],
+      ["town.storage.fullStopped", { left: 999 }],
+      ["town.bank.deposited", { amount: 9999999, bank: 9999999 }],
+      ["town.bank.withdrawn", { amount: 9999999, gold: 9999999 }],
+    ];
+    for (const [k, p] of said) {
+      const text = formatMessage(S[k]!, p);
+      expect(text, k).not.toContain("{");
+      expect(kinsokuLines(text, 28).length, `${k}: ${text}`).toBeLessThanOrEqual(2);
+    }
+    expect(kinsokuLines(S["town.bank.intro"]!, 28).length).toBeLessThanOrEqual(2);
+    const rows = [
+      formatMessage(S["town.storage.depositAllOne"]!, { count: 999 }),
+      formatMessage(S["town.storage.menu.withdraw"]!, { count: 999, capacity: 999 }),
+      S["town.bank.menu.deposit"]!,
+      S["town.bank.menu.withdraw"]!,
+      S["town.storage.menu.depositAll"]!,
+    ];
+    for (const r of rows) {
+      expect(r).not.toContain("{");
+      expect(textUnits(r), r).toBeLessThanOrEqual(39);
+    }
+  });
+
   test("UI-52/TW-16/TW-16b 品を預けるは者（品の無い者は disabled）→ 品（先頭に「この者の物をすべて預ける」）。品を引き出すは品 → 受け取る者（空きが無ければ disabled）", () => {
     const s = town({ c3: { life: "dead", hp: 0 } });
     const kept = createItemInstance(s, { itemId: "long_sword", identified: false });
