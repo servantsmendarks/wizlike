@@ -315,7 +315,8 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   // M7 UI-59 / UI-12 / IT-66: 品の詳細・状態とパーティ欄の実効の値（能力値・最大値・AC・魔法攻撃力）・図鑑は core の問い合わせの値を描く（IT-35）
   // M10 UI-67 / UI-68 / CH-80: 装備の差分（変わったか・呪いの警告を含む）は equipPreview、呪文の説明は spellInfo、
   // レベルアップ可は memberSheet の canLevelUp / levelUpView の値を描く
-  "rules/item-view": ["itemDetail", "memberSheet", "uniqueBookView", "equipPreview", "spellInfo", "bestiaryView"], // bestiaryView は UI-79（M18）
+  // M19 TW-05 / UI-52（C-3）: 店の持たせる者の行の今の装備・印と比較の文は shopEquipCompare の値を描く
+  "rules/item-view": ["itemDetail", "memberSheet", "uniqueBookView", "equipPreview", "spellInfo", "bestiaryView", "shopEquipCompare"], // bestiaryView は UI-79（M18）
   // M5.5 UI-62 / CH-06: 自分で作るの配分の可否・残り・職業の条件・名前の長さは core の関数の値だけで決める。
   // 作成中はまだ GameState が無いので、ボーナスの振り（rollBonus）は表示層が持つ RngState（createRng。種は crypto）で引く（決定 5 の例外）
   // M10 UI-62 / CH-11: ボーナスの内訳（7+2、当たりは 7+2+10）と合計は core の rollBonusParts の値を描く
@@ -785,13 +786,16 @@ describe("入力と Command", () => {
     // TW-10 / TW-16b（M17）: 銀行の金の額の行は town.bank、すべて預けるは town.storage の depositAll を送り、ページを変えない
     expect(body).toMatch(/case "bank":\s*void run\(\{ type: "town\.bank", amount: e\.amount \}\);\s*return;/);
     expect(body).toMatch(/case "depositAll":\s*void run\(\{ type: "town\.storage", action: "depositAll", memberId: e\.memberId \}\);\s*return;/);
-    expect(app).toMatch(/townPage = townRepair\(townPage, menu\);\s*const ents = townEntries\(townPage, menu, strings, previewOf\(townPage\), classChangeOf\(townPage\)\);/);
+    expect(app).toMatch(/townPage = townRepair\(townPage, menu\);\s*const ents = townEntries\(townPage, menu, strings, previewOf\(townPage\), classChangeOf\(townPage\), shopCompareOf\(townPage, menu\)\);/);
   });
 
   test("TW-05/UI-52/IT-61（M18 5-2）店の買う・売るは確認の段を経ないと town.shop を送らない。持たせる者の行（buy）は { buyAsk }、品の行（sell）は { sellAsk } へ移るだけで、送るのは確認の「買う」（buyYes）・「売る」（sellYes）。送った後は元の段（持たせる者・その者の品）に戻ってとどまる（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
-    expect(body).toMatch(/case "buy":\s*goTownPage\(\{ buyAsk: \{ itemId: e\.itemId, memberId: e\.memberId \} \}\);\s*return;/);
+    // M19（C-3）: 装備の品なら確認の段に移ってから比較の文（views/town の行の compare）を会話の箱で語る
+    expect(body).toMatch(
+      /case "buy":\s*goTownPage\(\{ buyAsk: \{ itemId: e\.itemId, memberId: e\.memberId \} \}\);\s*if \(e\.compare !== null\) void narrator\.say\(e\.compare, store\.get\(\)\.skipAnimations\);\s*return;/,
+    );
     expect(body).toMatch(/case "sell":\s*goTownPage\(\{ sellAsk: \{ memberId: e\.memberId, instanceId: e\.instanceId \} \}\);\s*return;/);
     expect(body).toMatch(
       /case "buyYes":\s*townPage = \{ shop: e\.itemId \};\s*void run\(\{ type: "town\.shop", action: \{ kind: "buy", memberId: e\.memberId, itemId: e\.itemId \} \}\)\.then\(\(r\) => \{\s*if \(\(r === null \|\| r\.rejected\) && !isBusy\(\)\) syncControls\(\);\s*\}\);\s*return;/,
@@ -921,7 +925,7 @@ describe("入力と Command", () => {
     const fn = /const classChangeOf = \(page: TownPage\): ClassChangeView \| null => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(fn).toContain("campMenu(state, data)?.members ?? []");
     expect(fn).toContain("classChangeOptions(state, data, who)");
-    expect(app).toContain("townEntries(townPage, menu, strings, previewOf(townPage), classChangeOf(townPage))");
+    expect(app).toContain("townEntries(townPage, menu, strings, previewOf(townPage), classChangeOf(townPage), shopCompareOf(townPage, menu))");
   });
 
   // 2026-10-07（M10.5 追補・未定-22）: 語りは townPageIntro だけ（強化・転職の確認の文は見出しに移した）に改めた

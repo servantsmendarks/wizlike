@@ -8,6 +8,7 @@ import { classChangeOptions, townMenu, type ClassChangeOption } from "../src/cor
 import { shopPrice } from "../src/core/rules/shop";
 import { execute } from "../src/core/engine";
 import { upgradePreview } from "../src/core/rules/upgrade";
+import { shopEquipCompare, type EquipVerdict, type ShopEquipCompare } from "../src/core/rules/item-view";
 import { cloneState, createItemInstance, itemDisplayName } from "../src/core/state";
 import { identifiedPowerParams, POWER_NONE } from "../src/core/rules/equip-stats";
 import type { Character, EndingRecord, GameState, TownMenu, UpgradeCatalystRef } from "../src/core/types";
@@ -32,6 +33,8 @@ import {
   townPlace,
   townRepair,
   shopCannotEquipText,
+  shopCompareText,
+  shopMemberCompareLabel,
   shopPreviewText,
   upgradeCatalystLabel,
   upgradeItemName,
@@ -810,11 +813,11 @@ describe("UI-52 街のページ", () => {
     for (let i = 0; i < 5; i++) s.party[5]!.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
     const m = menuOf(s);
     expect(townEntries({ shop: "herb" }, m, S)).toEqual([
-      { kind: "buy", itemId: "herb", memberId: "c1", label: "アルド　空き 5 枠", disabled: false, reason: null },
-      { kind: "buy", itemId: "herb", memberId: "c2", label: "ベルク　空き 7 枠", disabled: false, reason: null },
-      { kind: "buy", itemId: "herb", memberId: "c4", label: "ドナ　空き 5 枠", disabled: false, reason: null },
-      { kind: "buy", itemId: "herb", memberId: "c5", label: "エル　空き 6 枠", disabled: false, reason: null },
-      { kind: "buy", itemId: "herb", memberId: "c6", label: "フィン　空き 0 枠", disabled: true, reason: null },
+      { kind: "buy", itemId: "herb", memberId: "c1", label: "アルド　空き 5 枠", disabled: false, reason: null, compare: null },
+      { kind: "buy", itemId: "herb", memberId: "c2", label: "ベルク　空き 7 枠", disabled: false, reason: null, compare: null },
+      { kind: "buy", itemId: "herb", memberId: "c4", label: "ドナ　空き 5 枠", disabled: false, reason: null, compare: null },
+      { kind: "buy", itemId: "herb", memberId: "c5", label: "エル　空き 6 枠", disabled: false, reason: null, compare: null },
+      { kind: "buy", itemId: "herb", memberId: "c6", label: "フィン　空き 0 枠", disabled: true, reason: null, compare: null },
       back,
     ]);
     // 払えない品（10G で帰還の糸 50G・長剣 100G）は全員 disabled。杖（10G）は空きのある 4 人が押せる
@@ -835,12 +838,12 @@ describe("UI-52 街のページ", () => {
     expect(NG).toBe("（装備不可）");
     const why = (name: string): string => `${name}は長剣を装備できない。WAR・SAM・LOR向けの品だ。`;
     expect(townEntries({ shop: "long_sword" }, m, S)).toEqual([
-      { kind: "buy", itemId: "long_sword", memberId: "c1", label: "アルド　空き 5 枠", disabled: false, reason: null },
-      { kind: "buy", itemId: "long_sword", memberId: "c2", label: "ベルク　空き 7 枠", disabled: false, reason: null },
-      { kind: "buy", itemId: "long_sword", memberId: "c3", label: `${m.shop.members[2]!.name}　空き ${m.shop.members[2]!.slotsFree} 枠${NG}`, disabled: true, reason: why(m.shop.members[2]!.name) },
-      { kind: "buy", itemId: "long_sword", memberId: "c4", label: "ドナ　空き 5 枠（装備不可）", disabled: true, reason: why("ドナ") },
-      { kind: "buy", itemId: "long_sword", memberId: "c5", label: "エル　空き 6 枠（装備不可）", disabled: true, reason: why("エル") },
-      { kind: "buy", itemId: "long_sword", memberId: "c6", label: `${m.shop.members[5]!.name}　空き ${m.shop.members[5]!.slotsFree} 枠${NG}`, disabled: true, reason: why(m.shop.members[5]!.name) },
+      { kind: "buy", itemId: "long_sword", memberId: "c1", label: "アルド　空き 5 枠", disabled: false, reason: null, compare: null },
+      { kind: "buy", itemId: "long_sword", memberId: "c2", label: "ベルク　空き 7 枠", disabled: false, reason: null, compare: null },
+      { kind: "buy", itemId: "long_sword", memberId: "c3", label: `${m.shop.members[2]!.name}　空き ${m.shop.members[2]!.slotsFree} 枠${NG}`, disabled: true, reason: why(m.shop.members[2]!.name), compare: null },
+      { kind: "buy", itemId: "long_sword", memberId: "c4", label: "ドナ　空き 5 枠（装備不可）", disabled: true, reason: why("ドナ"), compare: null },
+      { kind: "buy", itemId: "long_sword", memberId: "c5", label: "エル　空き 6 枠（装備不可）", disabled: true, reason: why("エル"), compare: null },
+      { kind: "buy", itemId: "long_sword", memberId: "c6", label: `${m.shop.members[5]!.name}　空き ${m.shop.members[5]!.slotsFree} 枠${NG}`, disabled: true, reason: why(m.shop.members[5]!.name), compare: null },
       back,
     ]);
     // 誰でも装備できる杖・消耗品は添えない（reason も null）
@@ -852,6 +855,77 @@ describe("UI-52 街のページ", () => {
     expect(poor.map((e) => e.kind === "buy" && e.reason !== null)).toEqual([false, false, true, true, true, true]);
     // 行は一覧の幅（全角 21 字）に収まる（名前 6 字・空き 2 桁でも）
     expect(kinsokuLines(`ああああああ${formatMessage(S["town.shop.member"]!, { name: "", slots: 10 })}${NG}`, 21)).toHaveLength(1);
+  });
+
+  // M19（C-3）: 持たせる者の行の今の装備と印（app が core の shopEquipCompare を渡す）と、押したときの比較の文
+  const comparesOf = (s: GameState, m: TownMenu, itemId: string): ShopEquipCompare[] => {
+    const row = m.shop.equipment.find((r) => r.itemId === itemId)!;
+    return m.shop.members.flatMap((x) => {
+      const c = shopEquipCompare(s, data, x.memberId, itemId, row.level);
+      return c === null ? [] : [c];
+    });
+  };
+
+  test("TW-05/UI-52/UI-67 M19 C-3 装備の品の持たせる者の行は town.shop.memberCompare「{name}　{current}　{mark}」（今の装備の plainName か「なし」と core の verdict の印）。押すと語る比較の文は compare に持つ。装備できない者・空きの無い者・消耗品は今の行のまま", () => {
+    const s = town({}, 1000);
+    s.progress.shopLevel = 2;
+    for (let i = 0; i < 5; i++) s.party[5]!.inventory.push(createItemInstance(s, { itemId: "herb", identified: true })); // c6 の空きを 0 に
+    const m = menuOf(s);
+    expect(S["equip.mark.better"]).toBe("▲");
+    expect(S["equip.mark.worse"]).toBe("▼");
+    expect(S["equip.mark.same"]).toBe("－");
+    expect(S["equip.mark.mixed"]).toBe("±");
+    const sword = townEntries({ shop: "long_sword" }, m, S, null, null, comparesOf(s, m, "long_sword"));
+    expect(sword[0]).toEqual({ kind: "buy", itemId: "long_sword", memberId: "c1", label: "アルド　長剣　▲", disabled: false, reason: null, compare: "長剣 1d8+2 → 長剣 +2 1d8+4" });
+    expect(sword[1]).toMatchObject({ memberId: "c2", label: "ベルク　長剣　▲", disabled: false });
+    expect(sword[3]).toMatchObject({ memberId: "c4", label: "ドナ　空き 5 枠（装備不可）", disabled: true, compare: null });
+    // 誰でも装備できる革兜: 兜の無い者は「なし」。空きの無い c6 は空きの行（dim の理由が見える）
+    const cap = townEntries({ shop: "leather_cap" }, m, S, null, null, comparesOf(s, m, "leather_cap"));
+    expect(cap[0]).toMatchObject({ memberId: "c1", label: "アルド　なし　▲", compare: "なし AC 7 → 革兜 +2 AC 5" });
+    expect(cap[2]).toMatchObject({ memberId: "c3", label: `${m.shop.members[2]!.name}　革兜　▲` });
+    expect(cap[5]).toMatchObject({ memberId: "c6", label: `${m.shop.members[5]!.name}　空き 0 枠`, disabled: true });
+    // 良くなる行と悪くなる行がある（樫の杖を戦士に）は ±。主の行（武器は攻撃）の後に、ほかの変わる行を印つきで続ける
+    const oak = townEntries({ shop: "oak_staff" }, m, S, null, null, comparesOf(s, m, "oak_staff"));
+    expect(oak[0]).toMatchObject({ label: "アルド　長剣　±", compare: "長剣 1d8+2 → 樫の杖 +2 1d6+2　魔法攻撃力 0 → 3 ▲" });
+    // 比較を渡さなければ（消耗品・他のページ）今の行のまま
+    expect(townEntries({ shop: "herb" }, m, S, null, null, comparesOf(s, m, "long_sword"))[0]).toMatchObject({ label: "アルド　空き 5 枠", compare: null });
+    expect(townEntries({ shop: "long_sword" }, m, S)[0]).toMatchObject({ label: "アルド　空き 5 枠", compare: null });
+    // 文言はデータで差し替えられる
+    const S2 = { ...S, "town.shop.memberCompare": "{mark}{name}/{current}", "town.shop.currentNone": "素手", "equip.mark.better": "上" };
+    expect(townEntries({ shop: "leather_cap" }, m, S2, null, null, comparesOf(s, m, "leather_cap"))[0]).toMatchObject({ label: "上アルド/素手" });
+  });
+
+  test("TW-05/UI-52 M19 C-3 最悪の値（6 字の名前・最も長い今の装備の名前・大きい数）でも、持たせる者の行は一覧の行の幅（39 単位）に収まり（収まらなければ今の装備の名前を「…」で切る）、比較の文は会話の箱の 28 字 × 2 行に収まる", () => {
+    const longest = (xs: string[]): string => xs.reduce((a, b) => (textUnits(b) > textUnits(a) ? b : a));
+    const prefixes = ["fine", "rare", "legendary"].map((r) => S[`item.rarity.${r}`]!);
+    const plain = longest([...data.uniques.map((u) => u.name), ...data.equipmentBases.map((b) => b.name)].flatMap((n) => prefixes.map((p) => p + n)));
+    const shopName = longest(data.equipmentBases.map((b) => b.name + formatMessage(S["item.plus"]!, { n: 6 })));
+    const line = <T,>(from: T, to: T, verdict: EquipVerdict) => ({ from, to, changed: true, verdict });
+    const base: ShopEquipCompare = {
+      memberId: "c1",
+      slot: "armor",
+      current: { plainName: plain, name: plain + formatMessage(S["item.plus"]!, { n: 10 }) },
+      ac: line(-20, -20, "better"),
+      attack: line("2d10+20", "2d10+20", "worse"),
+      magicPower: line(12, 12, "better"),
+      verdict: "mixed",
+    };
+    for (const verdict of ["better", "worse", "same", "mixed"] as const) {
+      const label = shopMemberCompareLabel("ああああああ", { ...base, verdict }, S);
+      expect(textUnits(label), label).toBeLessThanOrEqual(39);
+      expect(label.endsWith(S[`equip.mark.${verdict}`]!), label).toBe(true);
+    }
+    expect(shopMemberCompareLabel("ああああああ", base, S)).toContain(S["town.band.ellipsis"]!);
+    // 短い名前は切らない
+    expect(shopMemberCompareLabel("アルド", { ...base, current: { plainName: "長剣", name: "長剣" } }, S)).toBe("アルド　長剣　±");
+    const menu = { shop: { equipment: [{ itemId: "x", name: shopName }] } } as unknown as TownMenu;
+    for (const slot of ["armor", "weapon"] as const) {
+      const text = shopCompareText("x", { ...base, slot }, menu, S);
+      expect(kinsokuLines(text, 28).length, text).toBeLessThanOrEqual(2);
+    }
+    expect(shopCompareText("x", { ...base, slot: "weapon" }, menu, S)).toBe(
+      `${base.current!.name} 2d10+20 → ${shopName} 2d10+20　AC -20 → -20 ▲　魔法攻撃力 12 → 12 ▲`,
+    );
   });
 
   test("TW-05 品の性能の 1 文 shopPreviewText は core の preview を並べるだけ（該当しない項目は —、誰でもは「誰でも」）。どの流通レベルのどの品も 28 字 × 2 行以内（M16）", () => {

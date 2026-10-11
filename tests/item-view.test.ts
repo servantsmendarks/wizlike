@@ -6,7 +6,7 @@ import { createInitialState, execute } from "../src/core/engine";
 import { spellCost } from "../src/core/rules/equip-stats";
 import { canLevelUp, expFor, levelUpReady } from "../src/core/rules/growth";
 import { endingRecordView } from "../src/core/rules/progress";
-import { bestiaryView, equipPreview, itemDetail, memberSheet, spellInfo, uniqueBookView, weaponDamageDice } from "../src/core/rules/item-view";
+import { bestiaryView, equipPreview, itemDetail, memberSheet, shopEquipCompare, spellInfo, uniqueBookView, weaponDamageDice } from "../src/core/rules/item-view";
 import { cloneState, createItemInstance, memberById } from "../src/core/state";
 import type { Character, Command, GameState } from "../src/core/types";
 import { data, newGame } from "./helpers/core";
@@ -323,11 +323,11 @@ describe("UI-67 equipPreview（装備の差分）", () => {
     const before = memberSheet(s, data, member(s, "c1"));
     const p = equipPreview(s, data, "c1", "weapon", dagger)!;
     const after = sheetAfter(s, { type: "party.equip", memberId: "c1", instanceId: dagger }, "c1");
-    expect(p.attack).toEqual({ from: before.attackDamageDice, to: after.attackDamageDice, changed: true });
+    expect(p.attack).toEqual({ from: before.attackDamageDice, to: after.attackDamageDice, changed: true, verdict: "worse" });
     expect(p.attack.from.startsWith("1d8")).toBe(true);
     expect(p.attack.to.startsWith("1d4")).toBe(true);
-    expect(p.ac).toEqual({ from: before.ac, to: before.ac, changed: false });
-    expect(p.magicPower).toEqual({ from: 0, to: 0, changed: false });
+    expect(p.ac).toEqual({ from: before.ac, to: before.ac, changed: false, verdict: "same" });
+    expect(p.magicPower).toEqual({ from: 0, to: 0, changed: false, verdict: "same" });
     expect(p.cursedWarning).toBe(false);
   });
 
@@ -348,12 +348,12 @@ describe("UI-67 equipPreview（装備の差分）", () => {
     const staff = createItemInstance(s, { itemId: "staff", level: 4, identified: true });
     c5.equipment.weapon = staff;
     const off = equipPreview(s, data, "c5", "weapon", null)!;
-    expect(off.magicPower).toEqual({ from: 4, to: 0, changed: true });
+    expect(off.magicPower).toEqual({ from: 4, to: 0, changed: true, verdict: "worse" });
     expect(off.magicPower.to).toBe(sheetAfter(s, { type: "party.unequip", memberId: "c5", slot: "weapon" }, "c5").magicPower);
     expect(off.cursedWarning).toBe(false);
     const charm = createItemInstance(s, { itemId: "charm", options: [{ optionId: "magic_power", tier: 2, value: 2 }], identified: true });
     member(s, "c1").inventory.push(charm);
-    expect(equipPreview(s, data, "c1", "accessory", charm)!.magicPower).toEqual({ from: 0, to: 2, changed: true });
+    expect(equipPreview(s, data, "c1", "accessory", charm)!.magicPower).toEqual({ from: 0, to: 2, changed: true, verdict: "better" });
   });
 
   test("UI-67 呪いの警告は鑑定済みの呪われた品だけ（cursedWarning）。未鑑定の品は CH-76 で装備できないので null", () => {
@@ -388,6 +388,71 @@ describe("UI-67 equipPreview（装備の差分）", () => {
     const before = JSON.stringify(s);
     equipPreview(s, data, "c1", "armor", mail);
     equipPreview(s, data, "c1", "shield", null);
+    expect(JSON.stringify(s)).toBe(before);
+  });
+});
+
+// M19（C-3）: TW-05 / UI-52 / UI-67 店の比較（shopEquipCompare）と差分の良し悪し（verdict）
+describe("TW-05/UI-67 shopEquipCompare（店の品と今の装備の比較。M19 C-3）", () => {
+  test("TW-05/UI-67 M19 C-3 長剣 Lv2 を戦士 c1（長剣 Lv0）に: 攻撃 1d8+2 → 1d8+4 で better。値は実際に買って装備したときの equipPreview と一致し、current は今の装備の名前", () => {
+    const s = town();
+    s.gold = 100000;
+    s.progress.shopLevel = 2;
+    const c = shopEquipCompare(s, data, "c1", "long_sword", 2)!;
+    expect(c).toEqual({
+      memberId: "c1",
+      slot: "weapon",
+      current: { plainName: "長剣", name: "長剣" },
+      ac: { from: 7, to: 7, changed: false, verdict: "same" },
+      attack: { from: "1d8+2", to: "1d8+4", changed: true, verdict: "better" },
+      magicPower: { from: 0, to: 0, changed: false, verdict: "same" },
+      verdict: "better",
+    });
+    // 鏡: 店で買った実体を装備したときの差分（UI-67 の equipPreview。party.equip の処理を当てた値）と同じ
+    const r = execute(s, { type: "town.shop", action: { kind: "buy", memberId: "c1", itemId: "long_sword" } }, data);
+    expect(r.events.find((e) => e.kind === "rejected")).toBeUndefined();
+    const bought = member(r.state, "c1").inventory.at(-1)!;
+    const p = equipPreview(r.state, data, "c1", "weapon", bought)!;
+    expect({ ac: c.ac, attack: c.attack, magicPower: c.magicPower }).toEqual({ ac: p.ac, attack: p.attack, magicPower: p.magicPower });
+  });
+
+  test("TW-05/UI-67 M19 C-3 verdict: 攻撃は期待値（1d4+4 と 1d8+2 はどちらも 6.5 で same）、AC は小さいほど良い、魔法攻撃力は大きいほど良い。良くなる行と悪くなる行が両方あれば mixed", () => {
+    const s = town();
+    // 短剣 Lv2: 1d4+4（平均 6.5）と長剣の 1d8+2（平均 6.5）。文字列は違う（changed）が良し悪しは same
+    const dagger = shopEquipCompare(s, data, "c1", "dagger", 2)!;
+    expect(dagger.attack).toEqual({ from: "1d8+2", to: "1d4+4", changed: true, verdict: "same" });
+    expect(dagger.verdict).toBe("same");
+    // 短剣 Lv0: 1d4+2（平均 4.5）は悪くなる
+    expect(shopEquipCompare(s, data, "c1", "dagger", 0)!.verdict).toBe("worse");
+    // 鎖帷子（−4）は革鎧（−2）より AC が 2 下がる（7 → 5。木の盾はそのまま）→ better
+    const mail = shopEquipCompare(s, data, "c1", "chain_mail", 0)!;
+    expect(mail.ac).toEqual({ from: 7, to: 5, changed: true, verdict: "better" });
+    expect(mail.current).toEqual({ plainName: "革鎧", name: "革鎧" });
+    // 樫の杖 Lv2 を戦士に: 攻撃 1d8+2 → 1d6+2（術者用は Lv の分なし）で悪く、魔法攻撃力 0 → 3 で良い → mixed
+    const oak = shopEquipCompare(s, data, "c1", "oak_staff", 2)!;
+    expect([oak.attack.verdict, oak.magicPower.verdict, oak.verdict]).toEqual(["worse", "better", "mixed"]);
+    // 魔術師 c5（杖 Lv0）には樫の杖 Lv2 は攻撃も魔法攻撃力も良くなる → better
+    expect(shopEquipCompare(s, data, "c5", "oak_staff", 2)!.verdict).toBe("better");
+  });
+
+  test("TW-05 M19 C-3 枠が空なら current は null（革兜を兜の無い c1 に: AC 7 → 6 で better）。希少度の付いた今の装備は plainName が接頭辞 + 名前（Lv なし）、name が表示名", () => {
+    const s = town();
+    const cap = shopEquipCompare(s, data, "c1", "leather_cap", 0)!;
+    expect(cap.current).toBeNull();
+    expect(cap.slot).toBe("helm");
+    expect(cap.ac).toEqual({ from: 7, to: 6, changed: true, verdict: "better" });
+    member(s, "c1").equipment.weapon = createItemInstance(s, { itemId: "long_sword", level: 3, rarity: "rare", identified: true });
+    expect(shopEquipCompare(s, data, "c1", "long_sword", 0)!.current).toEqual({ plainName: "希少な長剣", name: "希少な長剣 +3" });
+  });
+
+  test("TW-05 M19 C-3 職業で装備できない品・消耗品・知らない者は null。元の state と乱数は変えない", () => {
+    const s = town();
+    const before = JSON.stringify(s);
+    expect(shopEquipCompare(s, data, "c5", "long_sword", 0)).toBeNull(); // 魔術師は長剣を装備できない
+    expect(shopEquipCompare(s, data, "c1", "herb", 0)).toBeNull();
+    expect(shopEquipCompare(s, data, "c9", "dagger", 0)).toBeNull();
+    shopEquipCompare(s, data, "c1", "long_sword", 2);
+    shopEquipCompare(s, data, "c1", "leather_cap", 0);
     expect(JSON.stringify(s)).toBe(before);
   });
 });

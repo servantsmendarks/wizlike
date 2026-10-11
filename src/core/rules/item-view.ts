@@ -2,9 +2,9 @@
 // 呪文の説明（UI-68）・レベルアップ可（CH-80）・敵の図鑑（UI-79。M18）。純粋。state を変えない。乱数を使わない。
 // 値の式は equip-stats.ts（実効の値・品 1 つの性能）と shop.ts（売値）のものをそのまま使う（表示層は計算しない。UI-35）。
 import type { EquipSlot, GameData, SkillType, StatBlock } from "../data/index";
-import { classOf, cloneState, findBase, itemDisplayName, itemOf, memberById, optionOf, uniqueOf } from "../state";
+import { classOf, cloneState, equipmentPlainName, findBase, itemDisplayName, itemOf, memberById, optionOf, uniqueOf } from "../state";
 import { formatDice, parseDice } from "../rng";
-import type { Character, GameState, Rarity, RuleContext, SpellInfo } from "../types";
+import type { Character, GameState, ItemInstance, Rarity, RuleContext, SpellInfo } from "../types";
 import { checkEquip, checkUnequip, equipItem, unequipItem } from "./camp";
 import { allyAc, allyAttackBonus, benefitOf, strBonus } from "./combat-calc";
 import { equipStats, itemPower, spellCost, type ItemPower } from "./equip-stats";
@@ -161,8 +161,14 @@ export function memberSheet(state: GameState, data: GameData, ch: Character): Me
   };
 }
 
-/** UI-67（M10）: 差分の 1 行。changed は from と to が違うか（表示層は比べない） */
-export type EquipPreviewLine<T> = { from: T; to: T; changed: boolean };
+/**
+ * UI-67（M10）: 差分の 1 行。changed は from と to が違うか（表示層は比べない）。
+ * verdict（M19 C-3。UI-67 / TW-05）は良し悪し: better / worse / same。攻撃はダイスの期待値（平均 + 定数）、AC は小さいほど良い、魔法攻撃力は大きいほど良い
+ * （攻撃の文字列が違っても期待値が同じなら same。例 1d4+1 と 1d6）
+ */
+export type EquipPreviewLine<T> = { from: T; to: T; changed: boolean; verdict: EquipVerdict };
+/** UI-67 / TW-05（M19 C-3）: 1 行の良し悪し */
+export type EquipVerdict = "better" | "worse" | "same";
 /**
  * UI-67（M10）: 装備の差分。ac / magicPower は memberSheet の ac / magicPower、attack は memberSheet の attackDamageDice。
  * cursedWarning は装備しようとする品が鑑定済みかつ呪われているとき真（呪いの警告。未鑑定は CH-76 で装備できないので出ない。外すときは偽）
@@ -174,8 +180,25 @@ export type EquipPreview = {
   cursedWarning: boolean;
 };
 
-function line<T>(from: T, to: T): EquipPreviewLine<T> {
-  return { from, to, changed: from !== to };
+/** ダイスの期待値の 2 倍（整数で比べるため）: count × (sides + 1) + 2 × modifier */
+function diceMean2(dice: string): number {
+  const d = parseDice(dice);
+  return d.count * (d.sides + 1) + 2 * d.modifier;
+}
+
+/** 大きいほど良い値 a → b の良し悪し */
+function verdictOf(a: number, b: number): EquipVerdict {
+  return b > a ? "better" : b < a ? "worse" : "same";
+}
+
+function acLine(from: number, to: number): EquipPreviewLine<number> {
+  return { from, to, changed: from !== to, verdict: verdictOf(-from, -to) };
+}
+function attackLine(from: string, to: string): EquipPreviewLine<string> {
+  return { from, to, changed: from !== to, verdict: verdictOf(diceMean2(from), diceMean2(to)) };
+}
+function magicLine(from: number, to: number): EquipPreviewLine<number> {
+  return { from, to, changed: from !== to, verdict: verdictOf(from, to) };
 }
 
 /**
@@ -202,11 +225,64 @@ export function equipPreview(state: GameState, data: GameData, memberId: string,
   const after = memberSheet(copy, data, memberById(copy, memberId)!);
   const inst = instanceId === null ? undefined : state.items[instanceId];
   return {
-    ac: line(before.ac, after.ac),
-    attack: line(before.attackDamageDice, after.attackDamageDice),
-    magicPower: line(before.magicPower, after.magicPower),
+    ac: acLine(before.ac, after.ac),
+    attack: attackLine(before.attackDamageDice, after.attackDamageDice),
+    magicPower: magicLine(before.magicPower, after.magicPower),
     cursedWarning: inst !== undefined && inst.identified && inst.cursed,
   };
+}
+
+/**
+ * TW-05 / UI-52（M19 C-3）: 店の汎用装備を持たせる者の今の装備との比較。
+ * - slot: 品の部位。current: その枠の今の装備（無ければ null）。plainName は希少度の接頭辞 + 名前（Lv なし。行に出す）、name は表示名（Lv 込み。箱に出す）
+ * - ac / attack / magicPower: memberSheet の ac / attackDamageDice / magicPower の、今のままと店の品に替えたときの前後（verdict は EquipPreviewLine と同じ）
+ * - verdict: 3 行の良し悪しをまとめたもの。良くなる行があり悪くなる行が無ければ better、逆なら worse、どちらも無ければ same、両方あれば mixed
+ */
+export type ShopEquipVerdict = EquipVerdict | "mixed";
+export type ShopEquipCompare = {
+  memberId: string;
+  slot: EquipSlot;
+  current: { plainName: string; name: string } | null;
+  ac: EquipPreviewLine<number>;
+  attack: EquipPreviewLine<string>;
+  magicPower: EquipPreviewLine<number>;
+  verdict: ShopEquipVerdict;
+};
+
+/**
+ * TW-05 / UI-52（M19 C-3）: 店の汎用装備 itemId（Lv level）を memberId の者が装備したときの差分。
+ * 店の品は shopItemPreview と同じ実体（鑑定済み・通常・オプションなし・呪いなし）を合成し、state の浅い複製の items に置いて
+ * その者の枠 slot を差し替えた memberSheet と、今の memberSheet を比べる（装備の差し替えは能力値の計算では party.equip と同じ。元の state は変えない。乱数なし）。
+ * 知らない者・ベースでない品・職業で装備できない品（CH-76 の class cannot equip と同じ条件）は null。今の装備が呪われていても比べる（買うことはできる）
+ */
+export function shopEquipCompare(state: GameState, data: GameData, memberId: string, itemId: string, level: number): ShopEquipCompare | null {
+  const ch = memberById(state, memberId);
+  const base = findBase(data, itemId);
+  if (ch === null || base === null) return null;
+  if (base.classes.length > 0 && !base.classes.includes(ch.classId)) return null;
+  const slot = base.slot;
+  const tmpId = "@shopCompare";
+  const inst: ItemInstance = { id: tmpId, itemId, level, rarity: "normal", options: [], uniqueId: null, identified: true, cursed: false, foundIn: null };
+  const after: GameState = { ...state, items: { ...state.items, [tmpId]: inst } };
+  const chAfter: Character = { ...ch, equipment: { ...ch.equipment, [slot]: tmpId } };
+  const b = memberSheet(state, data, ch);
+  const a = memberSheet(after, data, chAfter);
+  const curId = ch.equipment[slot];
+  const cur = curId === null ? undefined : state.items[curId];
+  const curBase = cur === undefined ? null : findBase(data, cur.itemId);
+  const current =
+    curId === null || cur === undefined
+      ? null
+      : {
+          plainName: cur.identified && curBase !== null ? equipmentPlainName(data, curBase, cur.rarity, cur.uniqueId) : itemDisplayName(state, data, curId),
+          name: itemDisplayName(state, data, curId),
+        };
+  const lines = { ac: acLine(b.ac, a.ac), attack: attackLine(b.attackDamageDice, a.attackDamageDice), magicPower: magicLine(b.magicPower, a.magicPower) };
+  const vs = [lines.ac.verdict, lines.attack.verdict, lines.magicPower.verdict];
+  const up = vs.includes("better");
+  const down = vs.includes("worse");
+  const verdict: ShopEquipVerdict = up && down ? "mixed" : up ? "better" : down ? "worse" : "same";
+  return { memberId, slot, current, ...lines, verdict };
 }
 
 /**

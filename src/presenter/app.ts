@@ -27,14 +27,15 @@ import { campMenu, campSummary } from "../core/rules/camp";
 import { DEBUG_LEVELS, SAN_OVER_DEBUG } from "../core/rules/debug";
 import { planRoute, routeStepOk } from "../core/rules/pathfind";
 import { PASS_CHOICE_ID, STAY_CHOICE_ID } from "../core/rules/choices";
-import { bestiaryView, equipPreview, itemDetail, memberSheet, spellInfo, uniqueBookView } from "../core/rules/item-view";
+import { bestiaryView, equipPreview, itemDetail, memberSheet, shopEquipCompare, spellInfo, uniqueBookView } from "../core/rules/item-view";
+import type { ShopEquipCompare } from "../core/rules/item-view";
 import { sanStage } from "../core/rules/san";
 import { fieldItemMenu } from "../core/rules/items";
 import { endingRecordView } from "../core/rules/progress";
 import { classChangeOptions, townMenu } from "../core/rules/town";
 import { upgradePreview } from "../core/rules/upgrade";
 import { dungeonOf, itemDisplayName } from "../core/state";
-import type { BattleMenu, Command, EndingRecord, GameState, PenaltyResult, Pos, RouteStep, Screen, UpgradePreview, ViewPoint } from "../core/types";
+import type { BattleMenu, Command, EndingRecord, GameState, PenaltyResult, Pos, RouteStep, Screen, TownMenu, UpgradePreview, ViewPoint } from "../core/types";
 import type { GameListEntry, ImportPlan, SaveService } from "../save/types";
 import { downloadText, exportFileName } from "./file-io";
 import { closesInput, runChain, type ChainDeps } from "./auto-chain";
@@ -662,6 +663,20 @@ export function createApp(o: {
   };
 
   /**
+   * TW-05 / UI-52（M19 C-3）: 持たせる者の段（{ shop }）で品が汎用装備なら、持たせる候補ごとの core の shopEquipCompare（null の者は除く）。
+   * 他のページ・消耗品は null
+   */
+  const shopCompareOf = (page: TownPage, menu: TownMenu): ShopEquipCompare[] | null => {
+    if (typeof page !== "object" || !("shop" in page)) return null;
+    const row = menu.shop.equipment.find((r) => r.itemId === page.shop);
+    if (row === undefined) return null;
+    return menu.shop.members.flatMap((m) => {
+      const c = shopEquipCompare(state, data, m.memberId, row.itemId, row.level);
+      return c === null ? [] : [c];
+    });
+  };
+
+  /**
    * TW-09（M10）: 転職の段（classChange / { ccClass } / { ccConfirm }）なら、パーティの名前（campMenu）とその段の者の
    * core の classChangeOptions（申し出る者の段では []）。他のページは null
    */
@@ -781,7 +796,9 @@ export function createApp(o: {
           }
           case "buy":
             // TW-05（M18 5-2）: 持たせる者を押したら確認の段（問いは見出し。送るのは「買う」の buyYes）
+            // M19（C-3）: 装備の品なら、確認の段に移ってから今の装備との比較の文（core の shopEquipCompare）を会話の箱で語る
             goTownPage({ buyAsk: { itemId: e.itemId, memberId: e.memberId } });
+            if (e.compare !== null) void narrator.say(e.compare, store.get().skipAnimations);
             return;
           case "buyYes":
             // TW-05: 買った後は持たせる者の一覧に戻ってとどまる（続けて買える。再生の最後の sync で townMenu を取り直す）
@@ -975,7 +992,7 @@ export function createApp(o: {
         return;
       }
       townPage = townRepair(townPage, menu);
-      const ents = townEntries(townPage, menu, strings, previewOf(townPage), classChangeOf(townPage));
+      const ents = townEntries(townPage, menu, strings, previewOf(townPage), classChangeOf(townPage), shopCompareOf(townPage, menu));
       const items = ents.map(townItem);
       // UI-52 / UI-47（M10.5 追補。未定-22）: 見出しは段の問い。確認の段と救済の申し出は core の値を入れた問い（答えのボタンと同時に見える）
       const heading = townHeadingText(townPage, menu, strings, previewOf(townPage), classChangeOf(townPage));

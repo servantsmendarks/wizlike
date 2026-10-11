@@ -6,12 +6,13 @@
 // M7: 闇魔術は最初に 灰から戻す / 装備を鍛える / 戻る の一覧。強化（TW-17）の成功率・料金・可否は app が core の upgradePreview で取って渡す。
 // M7: 店は最初に 買う / 売る / 買い戻す / 鑑定 / 倉庫 / 戻る の一覧。M17: 倉庫（TW-16）の入口を店から銀行（TW-10）へ移し、店は 買う / 売る / 買い戻す / 鑑定 / 戻る。
 import type { EquipSlot, Strings } from "../../core/data/index";
+import type { ShopEquipCompare } from "../../core/rules/item-view";
 import type { ClassChangeOption } from "../../core/rules/town";
 import type { TownMenu, TownMenuUpgradeCatalyst, UpgradeCatalystRef, UpgradePreview } from "../../core/types";
 import type { CampOpen } from "./camp";
 import { STAT_ORDER } from "./detail";
 import { formatMessage } from "./message";
-import { textUnits } from "./party-band";
+import { BAND_ELLIPSIS_KEY, fitName, textUnits } from "./party-band";
 
 export type TempleService = "resurrect" | "cure" | "uncurse";
 /**
@@ -93,8 +94,10 @@ export type TownEntry =
    * TW-05: 持たせるメンバーの行（名前と所持枠の空き。空きが無いか払えなければ disabled）。押すと確認の段 { buyAsk }（M18 5-2。M17 までは town.shop の buy）。
    * M16 追補 H-4: 職業で装備できない者（core の canEquip に無い者）は disabled で、reason（理由の文。shopCannotEquipText）を持つ。
    * 押すと command を送らず reason を語って品の一覧（shopBuy）へ戻る。装備できる者・消耗品の行は null
+   * M19（C-3）: 装備の品で core の shopEquipCompare がある者の行は town.shop.memberCompare（今の装備と印）。compare は押したとき（確認の段に移ってから）に
+   * 会話の箱で語る比較の文（shopCompareText）。消耗品・比較の無い者は null
    */
-  | { kind: "buy"; itemId: string; memberId: string; label: string; disabled: boolean; reason: string | null }
+  | { kind: "buy"; itemId: string; memberId: string; label: string; disabled: boolean; reason: string | null; compare: string | null }
   /** IT-61: 売る品の行（名前と売値）。押すと確認の段 { sellAsk }（M18 5-2。M17 までは town.shop の sell） */
   | { kind: "sell"; memberId: string; instanceId: string; label: string; disabled: boolean }
   /** TW-05（M18 5-2）: 買うの確認の「買う」。押すと town.shop の buy（持たせる者の段の行と同じ条件で disabled） */
@@ -289,6 +292,7 @@ export function townEntries(
   strings: Strings,
   preview: UpgradePreview | null = null,
   cc: ClassChangeView | null = null,
+  compare: readonly ShopEquipCompare[] | null = null,
 ): TownEntry[] {
   const back: TownEntry = { kind: "back", label: s(strings, "common.back") };
   const empty = (key: string): TownEntry => ({ kind: "empty", label: s(strings, key), disabled: true });
@@ -543,9 +547,13 @@ export function townEntries(
     const itemId = page.shop;
     const affordable = [...menu.shop.items, ...menu.shop.equipment].find((r) => r.itemId === itemId)?.affordable ?? false;
     const canEquip = menu.shop.equipment.find((r) => r.itemId === itemId)?.canEquip ?? null;
+    // M19（C-3）: 装備の品で比較（app が core の shopEquipCompare で渡す）がある者は、今の装備と印の行（shopMemberCompareLabel）。
+    // 空きが無い者は今どおり空きの行（dim の理由が見えるように）
     const rows = menu.shop.members.map((m): TownEntry => {
       const cannot = canEquip !== null && !canEquip.includes(m.memberId);
-      const label = s(strings, "town.shop.member", { name: m.name, slots: m.slotsFree });
+      const cmp = canEquip === null || cannot ? undefined : compare?.find((c) => c.memberId === m.memberId);
+      const plain = s(strings, "town.shop.member", { name: m.name, slots: m.slotsFree });
+      const label = cmp !== undefined && m.slotsFree > 0 ? shopMemberCompareLabel(m.name, cmp, strings) : plain;
       return {
         kind: "buy",
         itemId,
@@ -553,6 +561,7 @@ export function townEntries(
         label: cannot ? label + s(strings, "town.shop.cannotEquip") : label,
         disabled: !affordable || m.slotsFree <= 0 || cannot,
         reason: cannot ? shopCannotEquipText(itemId, m.name, menu, strings) : null,
+        compare: cmp === undefined ? null : shopCompareText(itemId, cmp, menu, strings),
       };
     });
     return [...rows, back];
@@ -660,6 +669,44 @@ export function shopPreviewText(itemId: string, menu: TownMenu, strings: Strings
     magic: p.magicPower ?? none,
     classes: p.anyone ? s(strings, "town.shop.previewAnyone") : p.classes.join(s(strings, "town.shop.classSep")),
   });
+}
+
+/**
+ * TW-05 / UI-52（M19 C-3）: 持たせる者の行 town.shop.memberCompare「{name}　{current}　{mark}」。current は今の装備の plainName（無ければ town.shop.currentNone）、
+ * mark は core の verdict の印 equip.mark.<verdict>。行の幅（39 単位）を超えるときは current の末尾を「…」（town.band.ellipsis）で切る
+ */
+export function shopMemberCompareLabel(name: string, c: ShopEquipCompare, strings: Strings): string {
+  const mark = s(strings, `equip.mark.${c.verdict}`);
+  const current = c.current === null ? s(strings, "town.shop.currentNone") : c.current.plainName;
+  const room = LIST_ROW_UNITS - textUnits(s(strings, "town.shop.memberCompare", { name, current: "", mark }));
+  return s(strings, "town.shop.memberCompare", { name, current: fitName(current, Math.max(0, room), s(strings, BAND_ELLIPSIS_KEY)), mark });
+}
+
+/**
+ * TW-05 / UI-52（M19 C-3）: 持たせる者の行を押したときに会話の箱へ語る比較の文。
+ * town.shop.compare「{current} {from} → {item} {to}」（current は今の装備の表示名か town.shop.currentNone、item は売り物の行の名前）。
+ * from / to は武器なら攻撃（core の attack）、それ以外は town.shop.compareAc「AC {ac}」。続けて、ほかの変わる行（core の changed）を
+ * equip.diffAc / diffAttack / diffMagic（印つき）で town.shop.compareSep でつなぐ。28 字 × 2 行に収める
+ */
+export function shopCompareText(itemId: string, c: ShopEquipCompare, menu: TownMenu, strings: Strings): string {
+  const item = menu.shop.equipment.find((x) => x.itemId === itemId)?.name ?? "";
+  const current = c.current === null ? s(strings, "town.shop.currentNone") : c.current.name;
+  const weapon = c.slot === "weapon";
+  const ac = (v: number): string => s(strings, "town.shop.compareAc", { ac: v });
+  const head = s(strings, "town.shop.compare", {
+    current,
+    from: weapon ? c.attack.from : ac(c.ac.from),
+    item,
+    to: weapon ? c.attack.to : ac(c.ac.to),
+  });
+  const rest: string[] = [];
+  const add = <T extends string | number>(key: string, l: { from: T; to: T; changed: boolean; verdict: string }): void => {
+    if (l.changed) rest.push(s(strings, key, { from: l.from, to: l.to, mark: s(strings, `equip.mark.${l.verdict}`) }));
+  };
+  if (weapon) add("equip.diffAc", c.ac);
+  else add("equip.diffAttack", c.attack);
+  add("equip.diffMagic", c.magicPower);
+  return [head, ...rest].join(s(strings, "town.shop.compareSep"));
 }
 
 /**

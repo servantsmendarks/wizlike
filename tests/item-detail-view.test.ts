@@ -288,9 +288,9 @@ describe("UI-67 formatEquipPreview（装備の差分）", () => {
     const p = equipPreview(s, data, "c1", "armor", mail)!;
     expect(p.ac.changed).toBe(true);
     expect(formatEquipPreview(p, S)).toEqual([
-      { text: `AC ${p.ac.from} → ${p.ac.to}`, tone: "accent" },
-      { text: `攻撃 ${p.attack.from} → ${p.attack.from}`, tone: "normal" },
-      { text: "魔法攻撃力 0 → 0", tone: "normal" },
+      { text: `AC ${p.ac.from} → ${p.ac.to} ▲`, tone: "accent" },
+      { text: `攻撃 ${p.attack.from} → ${p.attack.from} －`, tone: "normal" },
+      { text: "魔法攻撃力 0 → 0 －", tone: "normal" },
     ]);
   });
 
@@ -302,11 +302,21 @@ describe("UI-67 formatEquipPreview（装備の差分）", () => {
     const lines = formatEquipPreview(p, S);
     expect(lines[0]).toEqual({ text: "呪われている。装備すると外せない。", tone: "danger" });
     expect(lines.slice(1).map((x) => x.text)).toEqual([
-      `AC ${p.ac.from} → ${p.ac.to}`,
-      `攻撃 ${p.attack.from} → ${p.attack.to}`,
-      `魔法攻撃力 ${p.magicPower.from} → ${p.magicPower.to}`,
+      `AC ${p.ac.from} → ${p.ac.to} ${S[`equip.mark.${p.ac.verdict}`]!}`,
+      `攻撃 ${p.attack.from} → ${p.attack.to} ${S[`equip.mark.${p.attack.verdict}`]!}`,
+      `魔法攻撃力 ${p.magicPower.from} → ${p.magicPower.to} ${S[`equip.mark.${p.magicPower.verdict}`]!}`,
     ]);
     expect(formatEquipPreview({ ...p, cursedWarning: false }, S)).toHaveLength(3);
+  });
+
+  test("UI-67 M19 C-3 各行の末尾に core の verdict の印（▲ 良くなる / ▼ 悪くなる / － 同じ）。短剣に替えると攻撃 ▼、印の字は strings で差し替えられる", () => {
+    const s = town();
+    const dagger = createItemInstance(s, { itemId: "dagger", identified: true });
+    s.party[0]!.inventory.push(dagger);
+    const p = equipPreview(s, data, "c1", "weapon", dagger)!;
+    expect(p.attack.verdict).toBe("worse");
+    expect(formatEquipPreview(p, S).map((x) => x.text)).toEqual([`AC ${p.ac.from} → ${p.ac.to} －`, `攻撃 ${p.attack.from} → ${p.attack.to} ▼`, "魔法攻撃力 0 → 0 －"]);
+    expect(formatEquipPreview(p, { ...S, "equip.mark.worse": "下" })[1]!.text).toBe(`攻撃 ${p.attack.from} → ${p.attack.to} 下`);
   });
 
   test("UI-67 品の詳細の段のパネルは差分の引数を持つ（候補は装備するとき、装備中の品は外すとき null）", () => {

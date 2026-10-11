@@ -64,11 +64,12 @@ export function formatItemDetail(d: ItemDetail, strings: Strings): PanelLines {
 /**
  * UI-67（M10）: 装備の差分の行（品の詳細の下に足す）。値は core の equipPreview だけ（UI-35）。
  * 呪いの警告（cursedWarning。鑑定済みの呪われた品）があれば先頭に camp.equipCursedWarn（danger）、続けて
- * equip.diffAc / equip.diffAttack / equip.diffMagic の 3 行（変わらない行も出す。core の changed が真の行は accent。良し悪しの色分けはしない）
+ * equip.diffAc / equip.diffAttack / equip.diffMagic の 3 行（変わらない行も出す。core の changed が真の行は accent。良し悪しの色分けはしない）。
+ * M19（C-3）: 各行の末尾に core の verdict の印（equip.mark.better「▲」/ worse「▼」/ same「－」）を添える
  */
 export function formatEquipPreview(p: EquipPreview, strings: Strings): PanelLine[] {
   const row = <T extends string | number>(key: string, l: EquipPreviewLine<T>): PanelLine => ({
-    text: s(strings, key, { from: l.from, to: l.to }),
+    text: s(strings, key, { from: l.from, to: l.to, mark: s(strings, `equip.mark.${l.verdict}`) }),
     tone: l.changed ? "accent" : "normal",
   });
   return [
