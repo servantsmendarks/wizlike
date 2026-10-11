@@ -4,12 +4,13 @@
 
 ## 1. パーティ
 
-- CH-01 パーティは 6 人固定。並び順 1〜3 が前衛、4〜6 が後衛。
+- CH-01 パーティは 6 人固定。並び順 1〜3 が前衛、4〜6 が後衛。作った直後の並びは CH-07（M20）。
 - CH-02 キャラクター作成はゲーム開始時のみ。1 人目に作ったキャラクターがリーダー（主人公）。
-- CH-03 リーダーは変更も除外もできない。並び順の変更は街と迷宮内（非戦闘時）で可能。コマンドは `party.reorder {order}`（全員の id の並べ替え。リーダーの位置も自由）。受け付けは街と、迷宮の戦闘外かつ保留なし（それ以外は rejected `wrong screen`。保留中は choice pending）。配列でない・長さが違う・文字列でない・重複・未知の id は `bad order`、今と同じ並びは `no change`。受け付けたら並べ替えて `camp.reordered`。乱数は使わない（M4.5）。
+- CH-03 リーダーは変更も除外もできない。並び順の変更は街と迷宮内（非戦闘時）で可能。コマンドは `party.reorder {order}`（全員の id の並べ替え。リーダーの位置も自由）。受け付けは街と、迷宮の戦闘外かつ保留なし（それ以外は rejected `wrong screen`。保留中は choice pending）。配列でない・長さが違う・文字列でない・重複・未知の id は `bad order`、今と同じ並びは `no change`。受け付けたら並べ替えて `camp.reordered`。乱数は使わない（M4.5）。作った直後の並び（CH-07。M20）で、リーダーが先頭でなくなることがある。
 - CH-04 メンバーの追加・除外は、将来の客将（EV-60、【未定】）を除いて発生しない。
 - CH-05 タイトルの「新しく始める」で、おすすめ（簡易作成）か自分で作る（CH-06）を選ぶ（M5.5）。プロトタイプの簡易作成では、6 人の名前と性格（リーダー以外）だけを選ぶ。種族・職業・能力値は `data/config.json` の `prototypeParty` で固定。名前は前後の空白を除いて 1〜`config.creation.nameMaxLength`（6）【仮】文字（コードポイント数）。重複は可。性格の「ランダム」は core が乱数で決める。開始の語りは TW-36。
 - CH-06 自分で作る（M5.5）: 6 人（1 人目がリーダー）を 1 人ずつ、種族 → 能力値（CH-11）→ 職業（CH-21）→ 性格（CH-30。リーダーは無し）→ 名前（CH-05 と同じ長さ）の順に決める。各段で 1 つ前へ戻れる。6 人そろったら確認して `game.new {party: {kind: "custom", members}}`（members の各人は `name` / `personality` / `raceId` / `classId` / `stats`）。core は 6 人であること、名前・性格（CH-05 / CH-30 / CH-31 と同じ）、各人の種族・職業の実在（`unknown race at i` / `unknown class at i`）、能力値が 6 つとも種族の基礎値以上 18 以下の整数（`bad stats at i`）、配分の合計（能力値 − 基礎値の和）≤ `bonusBase + bonusDie + bonusBig`（`too many bonus points at i`）、職業の条件（`class requirements not met at i`）をこの順に検証する。`kind` が無い setup は今どおりおすすめ、`custom` 以外の `kind` は `invalid party setup`。開始の装備・所持品・呪文・所持金は CH-24。性格の「ランダム」はおすすめと同じく添字の順に core が乱数で決める。作成中の乱数（CH-11 のボーナス）は表示層が持ち（GameState がまだ無いため。種は `crypto.getRandomValues`）、作成中の下書きは保存しない（SV-50）。開始の語りは TW-36。
+- CH-07 作った後の並び（M20。2026-10-12。テストプレイ v4 の B-4 #5）: `game.new`（おすすめ・自分で作るの両方）は 6 人を作った後に職業で並べ替える。`config.creation.frontClasses`（戦士・侍・君主）【仮】の職業の者を作った順に前へ出す。その人数が前衛（`party.frontRow`）に満たなければ、`config.creation.frontFill`（盗賊 → 僧侶）【仮】の職業の順に、各職業の中は作った順に、前衛が埋まるまで前へ足す。残りは作った順に後ろへ。id（`c{n}`）と `isLeader` は作った順のまま変えず、リーダーの位置は問わない（CH-03）。乱数は使わない。おすすめの一行（`prototypeParty`。戦士・戦士・盗賊 | 僧侶・魔術師・盗賊）は並びが変わらない。開始の語り（TW-36）の後に message `camp.orderNote`（「並び順はキャンプの「並び順」で変えられる。」。語はキャンプのボタン `camp.order` と揃える）を 1 文出す。
 
 ## 2. 能力値
 

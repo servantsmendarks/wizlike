@@ -1792,7 +1792,7 @@ describe("UI-47 街の会話の箱と再生", () => {
     expect(shown2).toEqual([{ to: "dungeon", n: 0 }]);
   });
 
-  test("TW-36 game.new の再生（core の実際の列）: screens.show(town) の後に opening.speech.1..N を message.say で順に語る。carry は空（skip の真偽の両方）", async () => {
+  test("TW-36 game.new の再生（core の実際の列）: screens.show(town) の後に opening.speech.1..N と camp.orderNote（CH-07。M20）を message.say で順に語る。carry は空（skip の真偽の両方）", async () => {
     const before = createInitialState(1, data);
     const r = execute(before, { type: "game.new", party: { members: defaultMembers() } }, data);
     const n = r.events.filter((e) => e.kind === "message").length;
@@ -1808,9 +1808,11 @@ describe("UI-47 街の会話の箱と再生", () => {
       await createPlayer(deps).play(r.events, before, r.state);
       const seq = log.filter((e) => e.m === "screens.show" || e.m === "message.say");
       expect(seq.map((e) => e.m)).toEqual(["screens.show", ...Array<string>(n).fill("message.say")]);
-      expect(seq.slice(1).map((e) => e.a)).toEqual(
-        Array.from({ length: n }, (_, i) => [data.strings[`opening.speech.${i + 1}`], skipAnimations]),
-      );
+      // CH-07（M20）: 開始の語りの後に camp.orderNote
+      expect(seq.slice(1).map((e) => e.a)).toEqual([
+        ...Array.from({ length: n - 1 }, (_, i) => [data.strings[`opening.speech.${i + 1}`], skipAnimations]),
+        [data.strings["camp.orderNote"], skipAnimations],
+      ]);
       expect(carries).toEqual([[]]);
     }
   });

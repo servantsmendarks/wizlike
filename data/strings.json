@@ -422,6 +422,7 @@
   "dungeon.cast.resurrectOk": "{name}は息を吹き返した。",
   "dungeon.cast.resurrectFail": "呼びかけは届かなかった。{name}は灰になった。",
   "camp.reordered": "並び順を変えた。",
+  "camp.orderNote": "並び順はキャンプの「並び順」で変えられる。",
   "camp.equipped": "{name}は{item}を装備した。",
   "camp.unequipped": "{name}は{item}を外した。",
   "camp.cursed": "{item}が手に吸い付いた。外せない！",

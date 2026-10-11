@@ -627,6 +627,12 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.growth.statCap = 0), "config.json", "growth.statCap: expected integer >= 1, got 0");
     expectIssue((r) => delete r.config.growth.statCap, "config.json", "growth.statCap: missing required field");
   });
+  test("data: CH-07（M20）creation.frontClasses / frontFill は classes の id の配列", () => {
+    expectIssue((r) => (r.config.creation.frontClasses = ["ninja"]), "config.json", 'creation.frontClasses[0]: unknown class id "ninja"');
+    expectIssue((r) => (r.config.creation.frontFill = ["thief", "ninja"]), "config.json", 'creation.frontFill[1]: unknown class id "ninja"');
+    expectIssue((r) => delete r.config.creation.frontFill, "config.json", "creation.frontFill: missing required field");
+  });
+
   test("data: CH-05 creation.nameMaxLength は 1 以上の整数", () => {
     expectIssue((r) => (r.config.creation.nameMaxLength = 0), "config.json", "creation.nameMaxLength: expected integer >= 1, got 0");
     expectIssue((r) => (r.config.creation.nameMaxLength = "6"), "config.json", "creation.nameMaxLength: expected integer >= 1, got string");

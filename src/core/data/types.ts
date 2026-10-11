@@ -124,7 +124,17 @@ export type Config = {
   /** CH-71: slotsPerCharacter は基本の所持枠。strBonus は素の力の閾値の表（str の昇順。str 以上なら slots を足す。最後に満たした段。M17）【仮】 */
   inventory: { slotsPerCharacter: number; strBonus: { str: number; slots: number }[] };
   /** nameMaxLength: CH-05 名前の上限（trim 後のコードポイント数）【仮】 */
-  creation: { bonusBase: number; bonusDie: number; bonusBigChance: number; bonusBig: number; nameMaxLength: number };
+  creation: {
+    bonusBase: number;
+    bonusDie: number;
+    bonusBigChance: number;
+    bonusBig: number;
+    nameMaxLength: number;
+    /** CH-07（M20）: game.new の並べ替えで前へ出す職業（classes の id。作った順を保つ） */
+    frontClasses: string[];
+    /** CH-07（M20）: frontClasses の者が前衛の人数（party.frontRow）に満たないとき、この順に職業ごとに前へ足す（作った順を保ち、前衛が埋まるまで） */
+    frontFill: string[];
+  };
   /** mpStatPivot / mpStatDivisor: MG-01 の MP 補正【仮】 */
   growth: {
     expBase: number;

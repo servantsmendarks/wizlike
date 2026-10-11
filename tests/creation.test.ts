@@ -5,6 +5,7 @@ import type { StatBlock } from "../src/core/data";
 import { chance, cloneRng, createRng, randInt, rollDie } from "../src/core/rng";
 import {
   adjustStat,
+  autoOrder,
   classOptions,
   nameLength,
   normalizeName,
@@ -412,15 +413,18 @@ describe("creation: 自分で作る（CH-06 / CH-11 / CH-21 / CH-24）", () => {
     const s0 = createInitialState(1, data);
     const r = execute(s0, { type: "game.new", party: { kind: "custom", members: ms } }, data);
     const s = r.state;
+    // CH-07（M20）: 並びは職業で変わる（下の確かめは作った順 = id の順で見る）
+    const made = [...s.party].sort((a, b) => a.id.localeCompare(b.id));
+    expect(s.party.map((c) => c.id)).toEqual(["c1", "c6", "c3", "c2", "c4", "c5"]);
     expect(r.events).toEqual(gameNewEvents()); // TW-36（M12.5）: screen{town} の後に開始の語り
     expect(s.screen).toBe("town");
     expect(s.gold).toBe(300);
     expect(s.rng).toEqual(createRng(1)); // random が無ければ乱数を使わない
-    expect(s.party.map((c) => c.id)).toEqual(["c1", "c2", "c3", "c4", "c5", "c6"]);
-    expect(s.party.map((c) => c.name)).toEqual(["アキ", "イサ", "ウル", "エマ", "オト", "カイ"]);
-    expect(s.party.map((c) => c.isLeader)).toEqual([true, false, false, false, false, false]);
-    expect(s.party.map((c) => c.personality)).toEqual([null, "cautious", "reckless", "greedy", "normal", "cautious"]);
-    expect(s.party.map((c) => [c.raceId, c.classId])).toEqual([
+    expect(made.map((c) => c.id)).toEqual(["c1", "c2", "c3", "c4", "c5", "c6"]);
+    expect(made.map((c) => c.name)).toEqual(["アキ", "イサ", "ウル", "エマ", "オト", "カイ"]);
+    expect(made.map((c) => c.isLeader)).toEqual([true, false, false, false, false, false]);
+    expect(made.map((c) => c.personality)).toEqual([null, "cautious", "reckless", "greedy", "normal", "cautious"]);
+    expect(made.map((c) => [c.raceId, c.classId])).toEqual([
       ["human", "fighter"],
       ["dwarf", "priest"],
       ["hobbit", "thief"],
@@ -428,7 +432,7 @@ describe("creation: 自分で作る（CH-06 / CH-11 / CH-21 / CH-24）", () => {
       ["gnome", "bishop"],
       ["dwarf", "samurai"],
     ]);
-    s.party.forEach((c, i) => {
+    made.forEach((c, i) => {
       const m = customMembers()[i]!;
       const cls = data.classes.find((x) => x.id === m.classId)!;
       expect(c.stats).toEqual(m.stats);
@@ -444,10 +448,10 @@ describe("creation: 自分で作る（CH-06 / CH-11 / CH-21 / CH-24）", () => {
       expect(c.inventory.map((id) => s.items[id]!.itemId)).toEqual(cls.start.inventory);
     });
     // 手で数えた値: 戦士 アキは long_sword・leather_armor・wooden_shield と herb（i1..i4）
-    expect(s.party[0]!.equipment).toEqual({ weapon: "i1", armor: "i2", shield: "i3", helm: null, gauntlet: null, accessory: null });
-    expect(s.party[0]!.inventory).toEqual(["i4"]);
-    expect(s.party[3]!.knownSpells).toEqual(["fire_arrow", "sleep_mist"]);
-    expect(s.party[4]!.knownSpells).toEqual(["heal", "fire_arrow"]);
+    expect(made[0]!.equipment).toEqual({ weapon: "i1", armor: "i2", shield: "i3", helm: null, gauntlet: null, accessory: null });
+    expect(made[0]!.inventory).toEqual(["i4"]);
+    expect(made[3]!.knownSpells).toEqual(["fire_arrow", "sleep_mist"]);
+    expect(made[4]!.knownSpells).toEqual(["heal", "fire_arrow"]);
     expect(Object.values(s.items).every((it) => it.identified)).toBe(true);
     // 余分なキーは写さない（GameState は JSON 安全なプレーンなオブジェクト）
     const extra = customMembers();
@@ -462,7 +466,8 @@ describe("creation: 自分で作る（CH-06 / CH-11 / CH-21 / CH-24）", () => {
     const s = execute(createInitialState(1, data), { type: "game.new", party: { kind: "custom", members: ms } }, data).state;
     const rng = createRng(1);
     expect([0, 1, 2, 3, 4].map(() => randInt(rng, 0, 3))).toEqual([0, 1, 3, 2, 2]);
-    expect(s.party.map((c) => c.personality)).toEqual([null, "cautious", "reckless", "normal", "greedy", "greedy"]);
+    // CH-07（M20）: 作った順（id の順）で見る
+    expect([...s.party].sort((a, b) => a.id.localeCompare(b.id)).map((c) => c.personality)).toEqual([null, "cautious", "reckless", "normal", "greedy", "greedy"]);
     expect(s.rng).toEqual(rng);
   });
 
@@ -506,9 +511,9 @@ describe("creation: TW-36 開始の語り", () => {
   const quick = (d = data) => execute(createInitialState(1, d), { type: "game.new", party: { members: defaultMembers() } }, d);
   const custom = (d = data) => execute(createInitialState(1, d), { type: "game.new", party: { kind: "custom", members: customMembers() } }, d);
 
-  test("TW-36 game.new（おすすめ・自分で作るの両方）は screen{town} の後に opening.speech.1..6 を順に（M16 で 5 → 6 文） message で出す（差し込みなし。キーは strings に実在）", () => {
+  test("TW-36 game.new（おすすめ・自分で作るの両方）は screen{town} の後に opening.speech.1..6 を順に（M16 で 5 → 6 文） message で出す（差し込みなし。キーは strings に実在。CH-07（M20）: 最後に camp.orderNote）", () => {
     for (const r of [quick(), custom()]) {
-      expect(r.events).toEqual([{ kind: "screen", to: "town" }, ...OPENING.map((key) => ({ kind: "message", key }))]);
+      expect(r.events).toEqual([{ kind: "screen", to: "town" }, ...[...OPENING, "camp.orderNote"].map((key) => ({ kind: "message", key }))]);
       expectKnownStringKeys(r.events);
     }
   });
@@ -527,16 +532,62 @@ describe("creation: TW-36 開始の語り", () => {
     for (const [drop, want] of cases) {
       const d = loadFreshData();
       for (const k of drop) delete (d.strings as Record<string, string>)[k];
-      expect(quick(d).events.map(keyOf), drop.join(",")).toEqual(["screen", ...want]);
+      expect(quick(d).events.map(keyOf), drop.join(",")).toEqual(["screen", ...want, "camp.orderNote"]);
     }
     const eight = loadFreshData();
     (eight.strings as Record<string, string>)["opening.speech.7"] = "七";
     (eight.strings as Record<string, string>)["opening.speech.8"] = "八";
-    expect(custom(eight).events.map(keyOf)).toEqual(["screen", ...OPENING, "opening.speech.7", "opening.speech.8"]);
+    expect(custom(eight).events.map(keyOf)).toEqual(["screen", ...OPENING, "opening.speech.7", "opening.speech.8", "camp.orderNote"]);
   });
 
   test("TW-36（M20 A-4）5 文目は敵が落とす品にも触れる。開始の語りはどの文も会話の箱の 28 字 × 2 行（禁則つき）に収まる（差し込みの無い文なので文そのものが最悪の値）", () => {
     expect(data.strings["opening.speech.5"]).toBe("「拾い物は、倒した敵が残す宝箱から出る。敵が落としていくこともある。罠に気をつけろ。」");
     for (const k of OPENING) expect(kinsokuLines(data.strings[k]!, 28).length, k).toBeLessThanOrEqual(2);
+  });
+});
+
+// ---------------------------------------------------------------- CH-07 作った後の並び（M20）
+
+describe("creation: CH-07 職業で並べ替える（M20）", () => {
+  const cls = (ids: string[]) => ids.map((classId, i) => ({ id: `c${i + 1}`, classId }));
+  const order = (ids: string[]) => autoOrder(cls(ids), data).map((c) => c.id);
+
+  test("CH-07 config: frontClasses は戦士・侍・君主、frontFill は盗賊 → 僧侶", () => {
+    expect(data.config.creation.frontClasses).toEqual(["fighter", "samurai", "lord"]);
+    expect(data.config.creation.frontFill).toEqual(["thief", "priest"]);
+  });
+
+  test("CH-07 autoOrder: 戦士・侍・君主を作った順に前へ。前衛 3 人に満たなければ盗賊、次に僧侶を作った順に足し、残りは作った順", () => {
+    // 魔 戦 僧 盗 侍 魔 → 戦 侍 盗 | 魔 僧 魔（リーダー c1 の魔術師は後ろへ。CH-03 で位置は自由）
+    expect(order(["mage", "fighter", "priest", "thief", "samurai", "mage"])).toEqual(["c2", "c5", "c4", "c1", "c3", "c6"]);
+    // 前へ出す職業が 4 人なら 4 人とも前から（4 人目は後衛の先頭）
+    expect(order(["mage", "lord", "fighter", "samurai", "fighter", "priest"])).toEqual(["c2", "c3", "c4", "c5", "c1", "c6"]);
+    // 前へ出す職業が無い: 盗賊 2 人 → 僧侶 1 人で埋め、2 人目の僧侶は後ろ
+    expect(order(["priest", "mage", "thief", "priest", "bishop", "thief"])).toEqual(["c3", "c6", "c1", "c2", "c4", "c5"]);
+    // 盗賊も僧侶もいない: 戦士 1 人だけ前で、残りは作った順
+    expect(order(["mage", "bishop", "fighter", "mage", "bishop", "mage"])).toEqual(["c3", "c1", "c2", "c4", "c5", "c6"]);
+    // 6 人とも戦士ならそのまま
+    expect(order(Array<string>(6).fill("fighter"))).toEqual(["c1", "c2", "c3", "c4", "c5", "c6"]);
+  });
+
+  test("CH-07 おすすめの一行（prototypeParty）は今の並びのまま。乱数を使わない（random の性格が無ければ state.rng は createRng(seed) のまま）", () => {
+    const r = execute(createInitialState(1, data), { type: "game.new", party: { members: defaultMembers() } }, data);
+    expect(r.state.party.map((c) => c.id)).toEqual(["c1", "c2", "c3", "c4", "c5", "c6"]);
+    expect(r.state.party.map((c) => c.classId)).toEqual(data.config.prototypeParty.members.map((m) => m.classId));
+    expect(r.state.rng).toEqual(createRng(1));
+  });
+
+  test("CH-07 自分で作る: 並べ替えた後もリーダーは c1（isLeader）のまま。開始の語りの後に camp.orderNote（キャンプのボタン名と同じ語。28 字の 1 行）", () => {
+    // リーダーを魔術師にして先頭から外す
+    const ms = customMembers();
+    ms[0] = { ...ms[3]!, personality: null, name: "アキ" };
+    const r = execute(createInitialState(1, data), { type: "game.new", party: { kind: "custom", members: ms } }, data);
+    expect(r.state.party.map((c) => c.classId)).toEqual(["samurai", "thief", "priest", "mage", "mage", "bishop"]);
+    const leader = r.state.party.find((c) => c.isLeader)!;
+    expect(leader.id).toBe("c1");
+    expect(r.state.party.indexOf(leader)).toBe(3);
+    expect(r.events.at(-1)).toEqual({ kind: "message", key: "camp.orderNote" });
+    expect(data.strings["camp.orderNote"]).toContain(`「${data.strings["camp.order"]}」`);
+    expect(kinsokuLines(data.strings["camp.orderNote"]!, 28).length).toBe(1);
   });
 });

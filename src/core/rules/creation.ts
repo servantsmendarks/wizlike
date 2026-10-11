@@ -1,4 +1,4 @@
-// キャラクター作成（CH-01〜06、CH-11、CH-21、CH-24、CH-30、CH-31）。game.new の本体。
+// キャラクター作成（CH-01〜07、CH-11、CH-21、CH-24、CH-30、CH-31）。game.new の本体。
 // 自分で作る（CH-06）の作成中の問い合わせ（ボーナスの振り・配分・職業の可否・名前）もここに置く。どれも純粋で、
 // 作成中の乱数（CH-11 のボーナス）は呼び出し側（表示層）が持つ RngState を受ける（作成中はまだ GameState が無いため）。
 import type { Config, EquipSlot, GameData, PersonalityId, StatBlock, StatKey } from "../data/index";
@@ -305,6 +305,24 @@ export function createCustomCharacter(
   });
 }
 
+/**
+ * CH-07（M20）: 作った後の並び。config.creation.frontClasses の職業の者を前へ（作った順のまま）。それが前衛の人数
+ * （party.frontRow）に満たなければ、frontFill の職業ごとに（その順で、各職業の中は作った順に）前衛が埋まるまで前へ足す。
+ * 残りは作った順に後ろへ。リーダーの位置は問わない（CH-03）。乱数は使わない。新しい配列を返す（要素は同じ参照）
+ */
+export function autoOrder<T extends { classId: string }>(party: readonly T[], data: GameData): T[] {
+  const { frontClasses, frontFill } = data.config.creation;
+  const frontRow = data.config.party.frontRow;
+  const front = party.filter((c) => frontClasses.includes(c.classId));
+  for (const cls of frontFill) {
+    for (const c of party) {
+      if (front.length >= frontRow) break;
+      if (c.classId === cls && !front.includes(c)) front.push(c);
+    }
+  }
+  return [...front, ...party.filter((c) => !front.includes(c))];
+}
+
 /** game.new の本体（validatePartySetup が null を返した前提）。 */
 export function startNewGame(ctx: RuleContext, setup: PartySetup): void {
   const { state, data } = ctx;
@@ -329,6 +347,8 @@ export function startNewGame(ctx: RuleContext, setup: PartySetup): void {
     }
     state.gold = data.config.prototypeParty.startingGold;
   }
+  // CH-07（M20）: 職業で並べ替える（id・isLeader は作った順のまま）
+  state.party = autoOrder(state.party, data);
   const first = data.dungeons[0];
   if (first === undefined) throw new Error("startNewGame: no dungeons");
   state.progress.unlockedDungeons = [first.id]; // DG-01
@@ -340,4 +360,6 @@ export function startNewGame(ctx: RuleContext, setup: PartySetup): void {
   for (let n = 1; data.strings[`opening.speech.${n}`] !== undefined; n++) {
     ctx.events.push({ kind: "message", key: `opening.speech.${n}` });
   }
+  // CH-07（M20）: 開始の語りの後に、並び順はキャンプで変えられることを 1 文
+  ctx.events.push({ kind: "message", key: "camp.orderNote" });
 }

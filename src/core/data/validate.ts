@@ -287,6 +287,8 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       bonusBigChance: I(PERCENT),
       bonusBig: I(),
       nameMaxLength: I(POS_INT), // CH-05
+      frontClasses: L(S), // CH-07（M20）
+      frontFill: L(S), // CH-07（M20）
     }),
     growth: F({
       expBase: I({ positive: true }),
@@ -584,6 +586,12 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
   }
 
   uniqueIds(ctx, "town.innRanks", arrOf(get(c, "town", "innRanks")));
+
+  // CH-07（M20）: 並べ替えの職業は classes の id
+  for (const k of ["frontClasses", "frontFill"] as const) {
+    const list = get(c, "creation", k);
+    if (Array.isArray(list)) list.forEach((id, i) => ref(ctx, at(`creation.${k}`, i), id, ix.classes, "class"));
+  }
 
   // prototypeParty（CH-01, CH-02, CH-05, CH-21, CH-71, CH-75, MG-11）
   const members = get(c, "prototypeParty", "members");
