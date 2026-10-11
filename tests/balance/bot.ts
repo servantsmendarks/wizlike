@@ -301,6 +301,12 @@ export type DiveRecord = {
   randomWinsCorridor: number;
   dropChestsRoom: number;
   dropChestsCorridor: number;
+  // M19（設計 §8）: 戦闘の終了時（battleEnd{win / flee}。全滅は除く）の術者の MP。術者 = その execute の後の state で knownSpells を 1 つ以上持つ alive の者。
+  // casterEnds は術者 × 戦闘の延べ数、casterMp0 はそのうち mp === 0 の数、endsWithCaster は術者が 1 人以上いた戦闘の数、endsAnyMp0 はそのうち誰かが 0 だった戦闘の数
+  casterEnds: number;
+  casterMp0: number;
+  endsWithCaster: number;
+  endsAnyMp0: number;
   chestGold: number; // M7-宝箱: 宝箱の金の合計（chest.open.gold の gold。金運込み）
   chestItems: number; // M7-宝箱: 宝箱の品のうち所持枠に入った数（chest.open.gold の後の item.found）
   chestLeft: number; // M7-宝箱: 宝箱の品のうち所持枠が無くて置いていった数（chest.open.gold の後の item.leftBehind）
@@ -480,6 +486,10 @@ export class Campaign {
   randomWinsCorridor = 0;
   dropChestsRoom = 0;
   dropChestsCorridor = 0;
+  casterEnds = 0; // M19（設計 §8）
+  casterMp0 = 0;
+  endsWithCaster = 0;
+  endsAnyMp0 = 0;
   chestGold = 0;
   chestItems = 0;
   chestLeft = 0;
@@ -551,6 +561,7 @@ export class Campaign {
     this.countChest(from, r.events);
     this.countDrops(r.events); // M14（CB-57）
     this.countBattlePlace(from, r.events); // 確認(M15)
+    this.countCasterMp(r.state, r.events); // M19（設計 §8）
     this.countDeaths(from, r.events);
     this.countImpulses(from, r.events);
     this.countChestFlow(cmd, from, r.state, r.events);
@@ -612,6 +623,21 @@ export class Campaign {
       this.randomWinsCorridor += 1;
       if (dropped) this.dropChestsCorridor += 1;
     }
+  }
+
+  /**
+   * M19（設計 §8）: 戦闘の終了時（battleEnd{win / flee}。全滅は除く）の術者の MP 0 を数える。state は battleEnd を出した execute の後の state
+   * （endBattleBody は MP を変えない）。術者は knownSpells を 1 つ以上持つ alive の者。数えるだけで、ボットの判断・乱数・コマンド列には触れない
+   */
+  countCasterMp(after: GameState, events: GameEvent[]): void {
+    if (!events.some((e) => e.kind === "battleEnd" && (e.result === "win" || e.result === "flee"))) return;
+    const casters = after.party.filter((c) => c.life === "alive" && c.knownSpells.length > 0);
+    if (casters.length === 0) return;
+    const zero = casters.filter((c) => c.mp === 0).length;
+    this.casterEnds += casters.length;
+    this.casterMp0 += zero;
+    this.endsWithCaster += 1;
+    if (zero > 0) this.endsAnyMp0 += 1;
   }
 
   /**
@@ -1220,6 +1246,10 @@ export class Campaign {
     this.randomWinsCorridor = 0;
     this.dropChestsRoom = 0;
     this.dropChestsCorridor = 0;
+    this.casterEnds = 0;
+    this.casterMp0 = 0;
+    this.endsWithCaster = 0;
+    this.endsAnyMp0 = 0;
     this.chestGold = 0;
     this.chestItems = 0;
     this.chestLeft = 0;
@@ -1773,6 +1803,10 @@ export class Campaign {
         randomWinsCorridor: this.randomWinsCorridor,
         dropChestsRoom: this.dropChestsRoom,
         dropChestsCorridor: this.dropChestsCorridor,
+        casterEnds: this.casterEnds,
+        casterMp0: this.casterMp0,
+        endsWithCaster: this.endsWithCaster,
+        endsAnyMp0: this.endsAnyMp0,
         chestGold: this.chestGold,
         chestItems: this.chestItems,
         chestLeft: this.chestLeft,

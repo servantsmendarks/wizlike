@@ -118,6 +118,13 @@ export function farmReport(results: CampaignResult[], kind: BotKind): string {
   row("推定の実時間 街（分）", dist(all.map((d) => d.estTownMs / MIN)));
   row("推定の実時間 計（分）", dist(all.map((d) => totalMs(d) / MIN)));
   row("戦闘数・歩数・declare の数（平均）", `${per(all.map((d) => d.battles))}・${per(all.map((d) => d.beats.steps))}・${per(all.map((d) => d.beats.declares))}`);
+  // M19（設計 §8）: 戦闘の終了時（勝ち・逃げ）の術者（knownSpells を持つ alive の者）の MP 0
+  const ce = sum(all.map((d) => d.casterEnds));
+  const cz = sum(all.map((d) => d.casterMp0));
+  const ew = sum(all.map((d) => d.endsWithCaster));
+  const ez = sum(all.map((d) => d.endsAnyMp0));
+  row("術者の MP 0（延べ。戦闘の終了時（勝ち・逃げ）の術者 × 戦闘のうち MP 0）", pct(cz, ce));
+  row("術者の MP 0（戦闘。術者のいた勝ち・逃げの戦闘のうち誰かが MP 0）", pct(ez, ew));
   // 3. 拾った品
   const found = (k: keyof DiveRecord["found"]) => all.map((d) => d.found[k]);
   row("拾った品 1 潜行あたり（汎用 / ユニーク / 消耗品 / 魔法書）", `${per(found("generic"))} / ${per(found("unique"))} / ${per(found("consumable"))} / ${per(found("book"))}`);
