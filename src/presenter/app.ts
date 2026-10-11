@@ -461,6 +461,12 @@ export function createApp(o: {
       importFromFile(f);
     },
     onDebug: () => guard(() => openDebug()),
+    // UI-57 / UI-77（M18）: 設定を閉じてから用語を開く（openRules は overlay が無いときだけ開く）
+    onRules: () =>
+      guard(() => {
+        closeSettings();
+        openRules();
+      }),
     onClose: () => guard(() => closeSettings()),
   });
 
@@ -1926,6 +1932,8 @@ export function createApp(o: {
       canImport: where === "title",
       where,
       standalone: isStandalone(globalThis as StandaloneEnv),
+      // UI-57 / UI-77（M18）: 遊んでいる途中で、設定の下に何も預けていないとき（閉じた後に openRules が開ける）
+      canRules: (route === "town" || route === "dungeon" || route === "battle") && underSettings === null,
     };
   };
 

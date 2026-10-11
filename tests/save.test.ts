@@ -1591,7 +1591,7 @@ describe("SV-04 v7 → v8 の移行（M16。UI-76）", () => {
       ["event", eventState()],
       ["chest", exec(dived(1), { type: "debug.chest", trapId: "bomb" }).state],
     ];
-    expect(dived(1).progress.hints).toEqual(["dungeonFirst"]); // 迷宮の state は一言を出した後（移行では復元しない）
+    expect(dived(1).progress.hints).toEqual(["dungeonFirst", "dungeonTerms"]); // 迷宮の state は一言を出した後（移行では復元しない）
     for (const [name, s] of cases) {
       const v7 = toV7(s);
       const before = json(v7);

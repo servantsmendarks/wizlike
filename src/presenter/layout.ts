@@ -714,12 +714,14 @@ export type SettingsLayout = {
   install: Rect;
   /** 開発用（debug パネルを開く） */
   debug: Rect;
+  /** UI-57 / UI-77（M18）: 「用語」（設定を閉じて用語の一覧を開く）。開発用と閉じるの間（x88..174）の中央の 56×40 */
+  rules: Rect;
   /** UI-11 の固定の閉じる */
   close: Rect;
 };
 
 /**
- * UI-57: 設定画面の配置。既定の regions では 閉じる 178,354（56×40）、開発用 4,354（80×40）。
+ * UI-57: 設定画面の配置。既定の regions では 閉じる 178,354（56×40）、開発用 4,354（80×40）、用語 103,354（56×40。M18）。
  * M16 で 5 行目（再生の進め方）を足し、音量の行 y190、書き出し・読み込み y224、案内 y258（1 行）、ホーム画面の案内 y270..349（8 行）。
  * 行・音量・書き出しの間は 2px（M8 までは音量の後と書き出しの後が 4px、案内は 2 行）
  */
@@ -735,6 +737,7 @@ export function settingsLayout(g: Regions): SettingsLayout {
     notice: { x: 4, y: 258, w: 232, h: 10 },
     install: { x: 4, y: installY, w: 232, h: close.y - 4 - installY },
     debug: { x: 4, y: close.y, w: 80, h: close.h },
+    rules: { x: 103, y: close.y, w: 56, h: close.h },
     close,
   };
 }

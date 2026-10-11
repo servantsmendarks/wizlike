@@ -2,7 +2,7 @@
 // 上から 見出し → 5 行（演出スキップ・文字速度・オートの速さ・入力・再生の進め方（M16）。押すたびに巡回し、その場で store.set）→ 音量の 1 行（M8。
 // 曲・効果音の 2 つのトグル。0〜10 を巡回）→ 書き出し・読み込み
 // （SV-30〜33。遊んでいる途中は書き出しだけ、タイトルでは読み込みだけ）→ 案内の欄（2 行）→ ホーム画面への追加の案内（SV-40）→
-// 下の段に「開発用」（debug パネルを開く）と「閉じる」（UI-11 の固定の位置）。
+// 下の段に「開発用」（debug パネルを開く）・「用語」（M18。遊んでいる途中だけ。設定を閉じて用語の一覧を開く）・「閉じる」（UI-11 の固定の位置）。
 // 純粋な部分（settingsRows / settingsToggle / settingsItems / settingsKeyIndex / settingsFileHint）は DOM に触れないので node でテストできる。
 // 書き出し・読み込み・debug パネル・閉じるの中身は app が行う（ここは描いて押されたことを知らせるだけ）。
 // モジュールのトップレベルでは DOM に触れない。
@@ -76,6 +76,8 @@ export type SettingsContext = {
   where: "title" | "play" | "none";
   /** SV-40: ホーム画面から起動している */
   standalone: boolean;
+  /** UI-57 / UI-77（M18）: 「用語」を出す（街・迷宮・戦闘から開き、下に全滅の内訳・戦績・用語が無いとき。タイトルでは出さない。数字キーは無い） */
+  canRules: boolean;
 };
 
 export type SettingsItem =
@@ -158,6 +160,8 @@ export function createSettingsScreen(o: {
   onExport(): void;
   onImportFile(f: File): void;
   onDebug(): void;
+  /** UI-57 / UI-77（M18）: 「用語」が押された（canRules のときだけ呼ぶ） */
+  onRules(): void;
   onClose(): void;
 }): SettingsScreen {
   const t = (k: string): string => tr(o.strings, k);
@@ -207,7 +211,7 @@ export function createSettingsScreen(o: {
     sfxVolume: button("", L.volume.sfx, () => stepVolume("sfxVolume")),
   };
 
-  let ctx: SettingsContext = { canExport: false, canImport: false, where: "none", standalone: false };
+  let ctx: SettingsContext = { canExport: false, canImport: false, where: "none", standalone: false, canRules: false };
 
   const exportButton = button(t("title.export"), L.exportButton, () => {
     if (ctx.canExport) o.onExport();
@@ -228,6 +232,10 @@ export function createSettingsScreen(o: {
   el.appendChild(install);
 
   button(t("settings.debug"), L.debug, () => o.onDebug());
+  const rulesButton = button(t("settings.rules"), L.rules, () => {
+    if (ctx.canRules) o.onRules();
+  });
+  rulesButton.style.display = "none";
   button(t("common.close"), L.close, () => o.onClose());
 
   const toggleRow = (key: SettingsKey): void => {
@@ -257,6 +265,7 @@ export function createSettingsScreen(o: {
       ctx = c;
       setDim(exportButton, !c.canExport);
       fileButton.setDisabled(!c.canImport);
+      rulesButton.style.display = c.canRules ? "" : "none";
       notice.textContent = text ?? settingsFileHint(c, o.strings);
       // SV-40: 項目ごとに 1 つの塊（折り返しは欄の幅で）。standalone でないときの先頭（見出し）は accent
       install.replaceChildren(

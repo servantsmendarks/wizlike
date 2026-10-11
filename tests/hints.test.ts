@@ -19,15 +19,16 @@ const hintKeys = (events: readonly GameEvent[]): string[] =>
   events.flatMap((e) => (e.kind === "message" && e.key.startsWith("hint.") ? [e.key] : []));
 
 describe("UI-76 一度きりの GM の一言（M16）", () => {
-  test("UI-76/DG-46 HINT_IDS は dungeonFirst / sanUnknown / levelUpMark / lostExits（M18）。文は strings の hint.<id> にあり、会話の箱の 1 行 28 字で 2 行以内（禁則つき）、差し込みなし", () => {
-    expect([...HINT_IDS]).toEqual(["dungeonFirst", "sanUnknown", "levelUpMark", "lostExits"]);
+  test("UI-76/DG-46 HINT_IDS は dungeonFirst / sanUnknown / levelUpMark / lostExits / dungeonTerms（M18）。文は strings の hint.<id> にあり、会話の箱の 1 行 28 字で 2 行以内（禁則つき）、差し込みなし", () => {
+    expect([...HINT_IDS]).toEqual(["dungeonFirst", "sanUnknown", "levelUpMark", "lostExits", "dungeonTerms"]);
     for (const id of HINT_IDS) {
       const t = S[`hint.${id}`];
       expect(t, id).toBeDefined();
       expect(kinsokuLines(t!, 28).length, `${id}: ${t}`).toBeLessThanOrEqual(2);
       expect(t!).not.toMatch(/\{\w+\}/);
     }
-    expect(S["hint.dungeonFirst"]).toBe("奥へ伸びる線が道、正面の四角は壁。床の線が横へ伸びる側に口がある。");
+    expect(S["hint.dungeonFirst"]).toBe("奥へ伸びる線が道、正面の四角は壁。下の△▷は、その向きに口がある印。");
+    expect(S["hint.dungeonTerms"]).toBe("分からない言葉は、設定の「用語」で引ける。");
     expect(S["hint.sanUnknown"]).toBe("正体の分からない敵に会うと正気が削れる。鑑定すれば減らない。");
     expect(S["hint.levelUpMark"]).toBe("名前の横の↑は、宿で上がれる印だ。");
     expect(S["hint.lostExits"]).toBe("地図の端に、まだ歩いていない口がある。地図の「未踏の口」を探せ。");
@@ -50,14 +51,14 @@ describe("UI-76 一度きりの GM の一言（M16）", () => {
 });
 
 describe("DG-37/UI-76 ゲームで最初の入場の一言（M16）", () => {
-  test("DG-37/UI-76 ゲームで最初の入場（enteredDungeons が空）だけ dungeon.enter の直後に hint.dungeonFirst。2 回目の入場・別のダンジョンへの初回入場では出さない。乱数は増やさない", () => {
+  test("DG-37/UI-76 ゲームで最初の入場（enteredDungeons が空）だけ dungeon.enter の直後に hint.dungeonFirst、続けて hint.dungeonTerms（M18）。2 回目の入場・別のダンジョンへの初回入場では出さない。乱数は増やさない", () => {
     const s0 = cloneState(newGame(1));
     s0.progress.unlockedDungeons = ["d01", "d02"];
     const m = cloneRng(s0.rng);
     nextUint32(m);
     const r = exec(s0, ENTER_D01);
-    expect(keysOf(r.events)).toEqual(["screen", "message:dungeon.enter", "message:hint.dungeonFirst"]);
-    expect(r.state.progress.hints).toEqual(["dungeonFirst"]);
+    expect(keysOf(r.events)).toEqual(["screen", "message:dungeon.enter", "message:hint.dungeonFirst", "message:hint.dungeonTerms"]);
+    expect(r.state.progress.hints).toEqual(["dungeonFirst", "dungeonTerms"]);
     expect(r.state.rng).toEqual(m);
     // 街へ戻って d01 にもう一度、d02 に初めて: どちらも出さない
     const back = makeContext(cloneState(r.state), data);
@@ -66,10 +67,14 @@ describe("DG-37/UI-76 ゲームで最初の入場の一言（M16）", () => {
     expect(hintKeys(exec(back.state, { type: "dungeon.enter", dungeonId: "d02" }).events)).toEqual([]);
   });
 
-  test("DG-37/UI-76 enteredDungeons が空でも hints に dungeonFirst があれば出さない。hints が空でも enteredDungeons があれば（v7 からの移行など）出さない", () => {
+  test("DG-37/UI-76 enteredDungeons が空でも hints に dungeonFirst・dungeonTerms があれば出さない（dungeonFirst だけなら dungeonTerms だけ。M18）。hints が空でも enteredDungeons があれば（v7 からの移行など）出さない", () => {
     const s = cloneState(newGame(1));
-    s.progress.hints = ["dungeonFirst"];
+    s.progress.hints = ["dungeonFirst", "dungeonTerms"];
     expect(hintKeys(exec(s, ENTER_D01).events)).toEqual([]);
+    // M18 より前の保存（dungeonFirst だけ積んである）で最初の入場をまだしていなければ、dungeonTerms だけ出る
+    const old = cloneState(newGame(1));
+    old.progress.hints = ["dungeonFirst"];
+    expect(hintKeys(exec(old, ENTER_D01).events)).toEqual(["hint.dungeonTerms"]);
     const migrated = cloneState(newGame(1));
     migrated.progress.enteredDungeons = ["d01"];
     const r = exec(migrated, ENTER_D01);
@@ -92,7 +97,7 @@ describe("CB-06/UI-76 正体不明の敵の SAN の一言（M16）", () => {
     const ks = keysOf(first.events);
     const i = ks.indexOf("message:battle.unidentified");
     expect(ks.slice(i, i + 3)).toEqual(["message:battle.unidentified", "message:hint.sanUnknown", "sanChanged"]);
-    expect(first.state.progress.hints).toEqual(["dungeonFirst", "sanUnknown"]);
+    expect(first.state.progress.hints).toEqual(["dungeonFirst", "dungeonTerms", "sanUnknown"]);
     // 2 回目（同じ hints を持つ state）では battle.unidentified と SAN は出るが、一言は出ない
     const again = cloneState(dived(1));
     again.progress.hints = [...first.state.progress.hints];
@@ -106,7 +111,7 @@ describe("CB-06/UI-76 正体不明の敵の SAN の一言（M16）", () => {
     const ctx = start(dived(1), true);
     expect(keysOf(ctx.events)).not.toContain("message:battle.unidentified");
     expect(hintKeys(ctx.events)).toEqual([]);
-    expect(ctx.state.progress.hints).toEqual(["dungeonFirst"]);
+    expect(ctx.state.progress.hints).toEqual(["dungeonFirst", "dungeonTerms"]);
   });
 });
 

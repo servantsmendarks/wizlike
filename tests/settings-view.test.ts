@@ -24,9 +24,9 @@ const D: Settings = defaultSettings(data.config);
 const W = data.config.stage.width;
 const H = data.config.stage.height;
 
-const TITLE: SettingsContext = { canExport: false, canImport: true, where: "title", standalone: false };
-const PLAY: SettingsContext = { canExport: true, canImport: false, where: "play", standalone: false };
-const NONE: SettingsContext = { canExport: false, canImport: false, where: "none", standalone: false };
+const TITLE: SettingsContext = { canExport: false, canImport: true, where: "title", standalone: false, canRules: false };
+const PLAY: SettingsContext = { canExport: true, canImport: false, where: "play", standalone: false, canRules: true };
+const NONE: SettingsContext = { canExport: false, canImport: false, where: "none", standalone: false, canRules: false };
 
 describe("設定画面の純粋な部分（UI-57）", () => {
   test("UI-57 settingsRows: 5 行（演出スキップ 入/切、文字速度 即時 / {ms}ms、オートの速さ {ms}ms、入力 両方など、再生の進め方 タップで送る / 自動で流す（M16））", () => {
@@ -115,6 +115,10 @@ describe("設定画面の純粋な部分（UI-57）", () => {
     expect(L.close).toEqual({ x: g.controls.x + 178, y: g.controls.y + 54, w: 56, h: 40 });
     expect(L.close).toEqual({ x: 178, y: 354, w: 56, h: 40 });
     expect(L.debug).toEqual({ x: 4, y: 354, w: 80, h: 40 });
+    // M18: 用語は開発用と閉じるの間（x88..174）の中央の 56×40
+    expect(L.rules).toEqual({ x: 103, y: 354, w: 56, h: 40 });
+    expect(L.rules.x).toBeGreaterThanOrEqual(L.debug.x + L.debug.w + 4);
+    expect(L.rules.x + L.rules.w).toBeLessThanOrEqual(L.close.x - 4);
     expect(L.heading).toEqual({ x: 4, y: 4, w: 232, h: 12 });
     // M16: 5 行（y20+34i、i=0..4）。音量 y190、書き出し・読み込み y224、案内 y258（1 行）、ホーム画面の案内 y270..349（8 行）
     expect(L.rows).toEqual([0, 1, 2, 3, 4].map((i) => ({ label: { x: 4, y: 20 + 34 * i, w: 128, h: 32 }, toggle: { x: 136, y: 20 + 34 * i, w: 100, h: 32 } })));
@@ -132,6 +136,7 @@ describe("設定画面の純粋な部分（UI-57）", () => {
       ["export", L.exportButton],
       ["import", L.importButton],
       ["debug", L.debug],
+      ["rules", L.rules],
       ["close", L.close],
     ];
     for (const [name, r] of pressable) expect(Math.min(r.w, r.h), name).toBeGreaterThanOrEqual(TOUCH_MIN_LOGICAL);
@@ -242,6 +247,7 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
       onExport: () => calls.push("export"),
       onImportFile: (f) => files.push(f),
       onDebug: () => calls.push("debug"),
+      onRules: () => calls.push("rules"),
       onClose: () => calls.push("close"),
     });
     const root = view.el as unknown as FakeEl;
@@ -320,6 +326,31 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
     input.emit("change");
     expect(files).toEqual([file]);
     expect(root.children.some((c) => c.textContent === S["settings.fileHintTitle"])).toBe(true);
+  });
+
+  test("UI-57/UI-77（M18）「用語」のボタン: settings.rules「用語」が L.rules に（onTap。高さ 40 の行の高さ 38px）。canRules なら見えて押すと onRules、タイトル（canRules 偽）では隠れて押しても呼ばない。数字キーの並び（settingsItems）は変わらない", () => {
+    const { calls, L, view, buttonAt, tap } = setup();
+    expect(S["settings.rules"]).toBe("用語");
+    const b = buttonAt(L.rules);
+    expect(b.textContent).toBe(S["settings.rules"]);
+    expect(tapSpecOf(b)).not.toBeNull();
+    expect(b.style["lineHeight"]).toBe("38px");
+    // 枠（56 − 枠と余白 8）に 8px の字で収まる
+    expect([...S["settings.rules"]!].length * 8).toBeLessThanOrEqual(L.rules.w - 8);
+    expect(b.style["display"]).toBe("none"); // 描く前は出さない
+    view.render(PLAY, null);
+    expect(b.style["display"]).toBe("");
+    tap(b);
+    expect(calls).toEqual(["rules"]);
+    view.render(TITLE, null);
+    expect(b.style["display"]).toBe("none");
+    tap(b);
+    view.render({ ...PLAY, canRules: false }, null);
+    expect(b.style["display"]).toBe("none");
+    tap(b);
+    expect(calls).toEqual(["rules"]);
+    expect(settingsItems(PLAY).some((it) => (it.kind as string) === "rules")).toBe(false);
+    expect(settingsItems(PLAY)).toEqual(settingsItems({ ...PLAY, canRules: false }));
   });
 
   test("UI-57 音量の行: ラベル「音量」、トグル「曲 3」「効果音 2」（既定。onTap）。押すと 1 上がり、10 の次は 0（0 のときも数字のまま）", () => {
@@ -417,6 +448,7 @@ describe("ホーム画面への追加の案内（SV-40）", () => {
       onExport: () => {},
       onImportFile: () => {},
       onDebug: () => {},
+      onRules: () => {},
       onClose: () => {},
     });
     const root = view.el as unknown as FakeEl;

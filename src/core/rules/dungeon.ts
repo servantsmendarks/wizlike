@@ -229,7 +229,7 @@ function gossip(ctx: RuleContext, dungeonId: string): void {
 
 /**
  * DG-03: 入場。乱数は diveSeed の nextUint32 → （TW-15 の噂話。士気の gossip が真で候補があるときだけ）randInt の順。
- * イベントは screen{dungeon} → dungeon.enter →（DG-37 / UI-76。ゲームで最初の入場のときだけ）hint.dungeonFirst
+ * イベントは screen{dungeon} → dungeon.enter →（DG-37 / UI-76。ゲームで最初の入場のときだけ）hint.dungeonFirst → hint.dungeonTerms（M18）
  * →（DG-37。初回入場で enterSpeech を持つときだけ）その語り →（噂話）dungeon.gossip
  */
 export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
@@ -268,7 +268,11 @@ export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
   ctx.events.push({ kind: "screen", to: "dungeon", dungeonId: dive.dungeonId });
   ctx.events.push({ kind: "message", key: "dungeon.enter", params: { dungeon: def.name } });
   // DG-37 / UI-76（M16）: ゲームで最初の入場なら、線画の読み方の一言（一度きり。enterSpeech の前）
-  if (firstEver) tellHintOnce(ctx, "dungeonFirst");
+  // UI-76（M18）: 続けて「用語」への案内（設定の「用語」。同じく一度きり）
+  if (firstEver) {
+    tellHintOnce(ctx, "dungeonFirst");
+    tellHintOnce(ctx, "dungeonTerms");
+  }
   // DG-37（M12。U-5）: そのダンジョンに初めて入るときだけ、enterSpeech の GM の一行（入場の語りの後、噂話の前）
   if (first && def.enterSpeech !== undefined) ctx.events.push({ kind: "message", key: def.enterSpeech });
   gossip(ctx, dungeonId);

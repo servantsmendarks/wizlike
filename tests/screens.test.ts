@@ -1125,6 +1125,17 @@ describe("入力と Command", () => {
     expect(open).not.toContain("run(");
   });
 
+  test("UI-57/UI-77（M18）設定の「用語」: onRules は guard の中で closeSettings → openRules の順。canRules は route が街・迷宮・戦闘で、設定の下に何も預けていない（underSettings が null）ときだけ真（タイトルでは出さない。ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toMatch(/onRules: \(\) =>\s*guard\(\(\) => \{\s*closeSettings\(\);\s*openRules\(\);\s*\}\),/);
+    const ctx = /const settingsCtx = \(\): SettingsContext => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(ctx).toContain('canRules: (route === "town" || route === "dungeon" || route === "battle") && underSettings === null,');
+    // openSettings は underSettings を決めてから描く（canRules が今の下敷きを見る）
+    const openS = /const openSettings = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(openS.indexOf("underSettings = ")).toBeGreaterThanOrEqual(0);
+    expect(openS.indexOf("underSettings = ")).toBeLessThan(openS.indexOf("renderSettings()"));
+  });
+
   test("UI-47/UI-59（M10。2026-10-07 A-A2）キャンプの項目（と peek の dim の行）は、街かキャラクター画面なら会話の箱を打ち切ってから動く。Esc も campKeyIndex → select でこの onSelect を通る（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const sync = /const syncCampControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
