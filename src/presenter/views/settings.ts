@@ -1,5 +1,5 @@
 // UI-57 の設定画面（M6）とホーム画面への追加の案内（SV-40）。タイトルの「設定」とヘッダーの設定ボタンから開くステージ全面の overlay（app の overlay "settings"）。
-// 上から 見出し → 5 行（演出スキップ・文字速度・オートの速さ・入力・再生の進め方（M16）。押すたびに巡回し、その場で store.set）→ 音量の 1 行（M8。
+// 上から 見出し → 6 行（演出スキップ・文字速度・オートの速さ・入力・再生の進め方（M16）・GM の助言（M20）。押すたびに巡回し、その場で store.set）→ 音量の 1 行（M8。
 // 曲・効果音の 2 つのトグル。0〜10 を巡回）→ 書き出し・読み込み
 // （SV-30〜33。遊んでいる途中は書き出しだけ、タイトルでは読み込みだけ）→ 案内の欄（2 行）→ ホーム画面への追加の案内（SV-40）→
 // 見出しの行の右端にビルドの版（M18。設計 5-11。settings.build「版 {hash}」を dim で右寄せ。値は vite.config.ts の define __WIZLIKE_BUILD__）。
@@ -12,12 +12,12 @@ import type { Action } from "../input/swipe";
 import { onTap } from "../input/tap";
 import { createFileButton } from "../file-io";
 import type { Rect, SettingsLayout } from "../layout";
-import { TEXT_SPEED_LABEL, nextAutoBeat, nextBeatAdvance, nextInputMode, nextTextSpeed, nextVolume, type Settings, type SettingsStore } from "../settings";
+import { TEXT_SPEED_LABEL, nextAutoBeat, nextBeatAdvance, nextHintLevel, nextInputMode, nextTextSpeed, nextVolume, type Settings, type SettingsStore } from "../settings";
 import { formatMessage } from "./message";
 
-export type SettingsKey = "skipAnimations" | "textSpeed" | "autoBeatMs" | "inputMode" | "beatAdvance";
-/** UI-57: 5 行の並び（固定。M16 で 5 行目に再生の進め方） */
-export const SETTINGS_ROW_KEYS: readonly SettingsKey[] = ["skipAnimations", "textSpeed", "autoBeatMs", "inputMode", "beatAdvance"];
+export type SettingsKey = "skipAnimations" | "textSpeed" | "autoBeatMs" | "inputMode" | "beatAdvance" | "hints";
+/** UI-57: 6 行の並び（固定。M16 で 5 行目に再生の進め方、M20 D-7 で 6 行目に GM の助言） */
+export const SETTINGS_ROW_KEYS: readonly SettingsKey[] = ["skipAnimations", "textSpeed", "autoBeatMs", "inputMode", "beatAdvance", "hints"];
 export type SettingsRowView = { key: SettingsKey; label: string; value: string };
 /** UI-57（M8）: 音量の 1 行に並べる 2 つ（曲・効果音） */
 export type VolumeKey = "musicVolume" | "sfxVolume";
@@ -34,7 +34,7 @@ function textSpeedText(n: number, strings: Strings, ms: (n: number) => string): 
   return key === undefined ? ms(n) : tr(strings, key);
 }
 
-/** UI-57: 5 行のラベルと値（演出スキップ 入/切、文字速度 即時/速い/普通/遅い（M18。選択肢に無い値は {ms}ms）、オートの速さ {ms}ms、入力 スワイプ/ボタン/スワイプとボタン、再生の進め方 タップで送る/自動で流す） */
+/** UI-57: 6 行のラベルと値（演出スキップ 入/切、文字速度 即時/速い/普通/遅い（M18。選択肢に無い値は {ms}ms）、オートの速さ {ms}ms、入力 スワイプ/ボタン/スワイプとボタン、再生の進め方 タップで送る/自動で流す、GM の助言 多め/少なめ/なし（M20）） */
 export function settingsRows(s: Settings, strings: Strings): SettingsRowView[] {
   const ms = (n: number): string => formatMessage(tr(strings, "settings.ms"), { ms: n });
   return SETTINGS_ROW_KEYS.map((key): SettingsRowView => {
@@ -49,11 +49,13 @@ export function settingsRows(s: Settings, strings: Strings): SettingsRowView[] {
         return { key, label: tr(strings, "settings.inputMode"), value: tr(strings, `settings.inputMode.${s.inputMode}`) };
       case "beatAdvance":
         return { key, label: tr(strings, "settings.beatAdvance"), value: tr(strings, `settings.beatAdvance.${s.beatAdvance}`) };
+      case "hints":
+        return { key, label: tr(strings, "settings.hints"), value: tr(strings, `settings.hints.${s.hints}`) };
     }
   });
 }
 
-/** UI-57: 押したときの次の値（skip は反転、textSpeed は nextTextSpeed、autoBeatMs は nextAutoBeat、inputMode は nextInputMode、beatAdvance は nextBeatAdvance） */
+/** UI-57: 押したときの次の値（skip は反転、textSpeed は nextTextSpeed、autoBeatMs は nextAutoBeat、inputMode は nextInputMode、beatAdvance は nextBeatAdvance、hints は nextHintLevel） */
 export function settingsToggle(s: Settings, key: SettingsKey): Partial<Settings> {
   switch (key) {
     case "skipAnimations":
@@ -66,6 +68,8 @@ export function settingsToggle(s: Settings, key: SettingsKey): Partial<Settings>
       return { inputMode: nextInputMode(s.inputMode) };
     case "beatAdvance":
       return { beatAdvance: nextBeatAdvance(s.beatAdvance) };
+    case "hints":
+      return { hints: nextHintLevel(s.hints) };
   }
 }
 
@@ -98,7 +102,7 @@ export type SettingsItem =
   | { kind: "debug" }
   | { kind: "close" };
 
-/** UI-33: 項目の並び（数字キーの番号）。5 行 → 曲 → 効果音 → 書き出し → 読み込み → 開発用 → 閉じる（開発用は 10 番目・閉じるは 11 番目。数字キーは 1〜9 なので開発用は F2、閉じるは Esc / Enter） */
+/** UI-33: 項目の並び（数字キーの番号）。6 行 → 曲 → 効果音 → 書き出し → 読み込み → 開発用 → 閉じる（M20 から読み込みは 10 番目・開発用は 11 番目・閉じるは 12 番目。数字キーは 1〜9 なので読み込みは押すだけ、開発用は F2、閉じるは Esc / Enter） */
 export function settingsItems(ctx: SettingsContext): SettingsItem[] {
   return [
     ...SETTINGS_ROW_KEYS.map((key): SettingsItem => ({ kind: "row", key })),
@@ -215,7 +219,7 @@ export function createSettingsScreen(o: {
   build.textContent = settingsBuildText(o.build ?? BUILD_ID, o.strings);
   el.appendChild(build);
 
-  // 5 行（ラベルは押せない、値の toggle は押せる）
+  // 6 行（M20。ラベルは押せない、値の toggle は押せる）
   const rowEls = SETTINGS_ROW_KEYS.map((key, i) => {
     const r = L.rows[i] ?? { label: { x: 0, y: 0, w: 0, h: 0 }, toggle: { x: 0, y: 0, w: 0, h: 0 } };
     const label = document.createElement("div");

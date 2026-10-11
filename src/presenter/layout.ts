@@ -720,7 +720,7 @@ export const DEBUG_POINTER = { x: 4, w: 232, titleY: 4, rowY: 16, rowH: 10 } as 
 export type SettingsLayout = {
   /** 見出し（押せない） */
   heading: Rect;
-  /** i=0..4（演出スキップ・文字速度・オートの速さ・入力・再生の進め方（M16））。label は押せない、toggle は押せる */
+  /** i=0..5（演出スキップ・文字速度・オートの速さ・入力・再生の進め方（M16）・GM の助言（M20））。label は押せない、toggle は押せる */
   rows: readonly { label: Rect; toggle: Rect }[];
   /** UI-57（M8）: 音量の 1 行。label は押せない、music・sfx は押せる（0〜10 を巡回） */
   volume: { label: Rect; music: Rect; sfx: Rect };
@@ -741,18 +741,20 @@ export type SettingsLayout = {
 /**
  * UI-57: 設定画面の配置。既定の regions では 閉じる 178,354（56×40）、開発用 4,354（80×40）、用語 103,354（56×40。M18）。
  * M16 で 5 行目（再生の進め方）を足し、音量の行 y190、書き出し・読み込み y224、案内 y258（1 行）、ホーム画面の案内 y270..349（8 行）。
- * 行・音量・書き出しの間は 2px（M8 までは音量の後と書き出しの後が 4px、案内は 2 行）
+ * 行・音量・書き出しの間は 2px（M8 までは音量の後と書き出しの後が 4px、案内は 2 行）。
+ * M20（D-7）で 6 行目（GM の助言）を足し、行は高さ 30（TOUCH_MIN_LOGICAL）で y16+30i（i=0..5。間を空けない）、音量の行 y197、書き出し・読み込み y228
+ * （どちらも高さ 30。前の段との間は 1px）、案内 y259。ホーム画面の案内は y270..349（8 行）のまま【仮】
  */
 export function settingsLayout(g: Regions): SettingsLayout {
   const close: Rect = { x: g.controls.x + LIST_BACK_REL.x, y: g.controls.y + LIST_BACK_REL.y, w: LIST_BACK_REL.w, h: LIST_BACK_REL.h };
   const installY = 270;
   return {
     heading: { x: 4, y: 4, w: 232, h: 12 },
-    rows: [0, 1, 2, 3, 4].map((i) => ({ label: { x: 4, y: 20 + 34 * i, w: 128, h: 32 }, toggle: { x: 136, y: 20 + 34 * i, w: 100, h: 32 } })),
-    volume: { label: { x: 4, y: 190, w: 64, h: 32 }, music: { x: 72, y: 190, w: 80, h: 32 }, sfx: { x: 156, y: 190, w: 80, h: 32 } },
-    exportButton: { x: 8, y: 224, w: 108, h: 32 },
-    importButton: { x: 124, y: 224, w: 108, h: 32 },
-    notice: { x: 4, y: 258, w: 232, h: 10 },
+    rows: [0, 1, 2, 3, 4, 5].map((i) => ({ label: { x: 4, y: 16 + 30 * i, w: 128, h: 30 }, toggle: { x: 136, y: 16 + 30 * i, w: 100, h: 30 } })),
+    volume: { label: { x: 4, y: 197, w: 64, h: 30 }, music: { x: 72, y: 197, w: 80, h: 30 }, sfx: { x: 156, y: 197, w: 80, h: 30 } },
+    exportButton: { x: 8, y: 228, w: 108, h: 30 },
+    importButton: { x: 124, y: 228, w: 108, h: 30 },
+    notice: { x: 4, y: 259, w: 232, h: 10 },
     install: { x: 4, y: installY, w: 232, h: close.y - 4 - installY },
     debug: { x: 4, y: close.y, w: 80, h: close.h },
     rules: { x: 103, y: close.y, w: 56, h: close.h },

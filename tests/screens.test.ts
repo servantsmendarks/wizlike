@@ -221,6 +221,12 @@ describe("パーティ欄", () => {
     expect(party).toMatch(/setSan\(id: string, san: number\): void \{[\s\S]*?showCondition\(row\);[\s\S]*?\},/);
   });
 
+  test("UI-76/UI-57 M20（D-7）コマンドの出来事は設定「GM の助言」で一言を除いてから再生する（filterHints。core の state と記録は変えない。ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toContain("play: (events, before, after) => player.play(filterHints(events, store.get().hints), before, after),");
+    expect(app.match(/player\.play\(/g)).toHaveLength(1);
+  });
+
   test("ui §2 X1/X2 formatPartyRow の略称は classes[].abbr（fighter → WAR …）。知らない職業は空", () => {
     const party = newGame(1).party;
     expect(party.map((ch) => formatPartyRow(ch, data.strings, data.classes, stageOf).abbr)).toEqual(["WAR", "WAR", "THI", "PRI", "MAG", "THI"]);

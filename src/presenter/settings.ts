@@ -2,6 +2,7 @@
 // 既定値は config から取り、壊れた欄だけ既定値に戻す。範囲外は丸める。未知のキーは捨てる。
 // モジュールのトップレベルでは DOM / Web API に触れない（node 環境のテストから import するため）。
 import type { Config } from "../core/data/index";
+import type { GameEvent } from "../core/types";
 
 export type InputMode = "swipe" | "buttons" | "both";
 export const INPUT_MODES: readonly InputMode[] = ["swipe", "buttons", "both"];
@@ -9,6 +10,32 @@ export const INPUT_MODES: readonly InputMode[] = ["swipe", "buttons", "both"];
 /** UI-57 / UI-45（M16）: 再生の進め方。tap = 拍の手動の待ちはタップで送る、timed = 拍の手動の待ちも autoBeatMs で自動に流す */
 export type BeatAdvance = "tap" | "timed";
 export const BEAT_ADVANCES: readonly BeatAdvance[] = ["tap", "timed"];
+
+/**
+ * UI-57 / UI-76（M20 D-7）: 設定「GM の助言」。一度きりの一言（core の message hint.<id>）のうち表示層が出すもの。
+ * more = すべて、less = HINTS_LESS だけ、none = 出さない（core は今までどおり progress.hints に記録する）
+ */
+export type HintLevel = "more" | "less" | "none";
+export const HINT_LEVELS: readonly HintLevel[] = ["more", "less", "none"];
+/** UI-76（M20 D-7）: 「少なめ」でも出す一言（最初の入場の線画の読み方と、正体の分からない敵で正気が削れる理由） */
+export const HINTS_LESS: readonly string[] = ["hint.dungeonFirst", "hint.sanUnknown"];
+
+/** UI-57（M20 D-7）: more → less → none → more */
+export function nextHintLevel(h: HintLevel): HintLevel {
+  const i = HINT_LEVELS.indexOf(h);
+  return HINT_LEVELS[(i + 1) % HINT_LEVELS.length] ?? "more";
+}
+
+/** UI-76（M20 D-7、純粋）: 一度きりの一言（key が hint. で始まる message）を設定で出すか。ほかの出来事は常に真 */
+export function hintShown(e: GameEvent, level: HintLevel): boolean {
+  if (e.kind !== "message" || !e.key.startsWith("hint.")) return true;
+  return level === "more" || (level === "less" && HINTS_LESS.includes(e.key));
+}
+
+/** UI-76（M20 D-7、純粋）: 再生に渡す前に、設定で出さない一言を除く（順は保つ。more ならそのまま） */
+export function filterHints(events: readonly GameEvent[], level: HintLevel): readonly GameEvent[] {
+  return level === "more" ? events : events.filter((e) => hintShown(e, level));
+}
 
 export type Settings = {
   /**
@@ -32,6 +59,8 @@ export type Settings = {
   musicVolume: number;
   /** UI-57 / UI-65（M8）: 効果音の音量の段（VOLUME_CHOICES。0 なら鳴らさない） */
   sfxVolume: number;
+  /** UI-57 / UI-76（M20 D-7）: GM の助言（一度きりの一言の出し分け。既定 more） */
+  hints: HintLevel;
 };
 
 export const SETTINGS_KEY = "wizlike.settings";
@@ -131,10 +160,11 @@ function normalize(src: Record<string, unknown>, fallback: Settings): Settings {
     beatAdvance: typeof src.beatAdvance === "string" && (BEAT_ADVANCES as readonly string[]).includes(src.beatAdvance) ? (src.beatAdvance as BeatAdvance) : fallback.beatAdvance,
     musicVolume: isVolume(src.musicVolume) ? src.musicVolume : fallback.musicVolume,
     sfxVolume: isVolume(src.sfxVolume) ? src.sfxVolume : fallback.sfxVolume,
+    hints: typeof src.hints === "string" && (HINT_LEVELS as readonly string[]).includes(src.hints) ? (src.hints as HintLevel) : fallback.hints,
   };
 }
 
-/** config の値を範囲に丸めたもの。inputMode は both、skipAnimations は false、beatAdvance は timed（M18。保存の無い人にだけ効く。保存の値は書き換えない）、autoBeatMs は config.ui.autoBeatMs を選択肢に寄せたもの */
+/** config の値を範囲に丸めたもの。hints は more（M20）、inputMode は both、skipAnimations は false、beatAdvance は timed（M18。保存の無い人にだけ効く。保存の値は書き換えない）、autoBeatMs は config.ui.autoBeatMs を選択肢に寄せたもの */
 export function defaultSettings(config: Config): Settings {
   return {
     skipAnimations: false,
@@ -146,6 +176,7 @@ export function defaultSettings(config: Config): Settings {
     beatAdvance: "timed",
     musicVolume: clampVolume(config.ui.musicVolume),
     sfxVolume: clampVolume(config.ui.sfxVolume),
+    hints: "more",
   };
 }
 
@@ -174,6 +205,7 @@ export function serializeSettings(s: Settings): string {
     holdRepeatMs: s.holdRepeatMs,
     musicVolume: s.musicVolume,
     sfxVolume: s.sfxVolume,
+    hints: s.hints,
   });
 }
 

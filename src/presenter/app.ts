@@ -91,7 +91,7 @@ import {
 } from "./sound-cues";
 import { paintsTownStill, resumePlan, routeOfScreen } from "./resume";
 import { createRunGate } from "./run-gate";
-import { defaultSettings, type SettingsStore } from "./settings";
+import { defaultSettings, filterHints, type SettingsStore } from "./settings";
 import type { StageLayout, StageLayoutInput } from "./stage";
 import { CHEST_MENU, chestEntries, chestHeading, chestListWide, chestParent, chestRepair, type ChestChoice, type ChestEntry, type ChestPage } from "./views/chest";
 import type { ControlItem, DpadAction, UiSound } from "./views/controls";
@@ -1455,7 +1455,8 @@ export function createApp(o: {
         state = st;
       },
       autosaver,
-      play: (events, before, after) => player.play(events, before, after),
+      // UI-76 / UI-57（M20 D-7）: 設定「GM の助言」で出さない一度きりの一言を除いてから再生する（core は記録を続ける）
+      play: (events, before, after) => player.play(filterHints(events, store.get().hints), before, after),
       onRejected: (ev) => console.debug("rejected", ev.command, ev.reason),
     }),
   });

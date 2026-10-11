@@ -7,7 +7,12 @@ import {
   loadSettings,
   nextAutoBeat,
   nextBeatAdvance,
+  nextHintLevel,
   nextInputMode,
+  filterHints,
+  hintShown,
+  HINT_LEVELS,
+  HINTS_LESS,
   parseSettings,
   saveSettings,
   serializeSettings,
@@ -23,6 +28,8 @@ import {
   type Settings,
 } from "../src/presenter/settings";
 import { data } from "./helpers/core";
+import type { GameEvent } from "../src/core/types";
+import { HINT_IDS } from "../src/core/data/types";
 
 const D: Settings = defaultSettings(data.config);
 
@@ -33,7 +40,7 @@ afterEach(() => {
 
 describe("settings", () => {
   test("SV-24 defaultSettings は config から取る（28/250/30/both/false/400）", () => {
-    expect(D).toEqual({ skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400, beatAdvance: "timed", musicVolume: 3, sfxVolume: 2 });
+    expect(D).toEqual({ skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400, beatAdvance: "timed", musicVolume: 3, sfxVolume: 2, hints: "more" });
     expect(D.swipeThreshold).toBe(data.config.input.swipeThresholdPx);
     expect(D.holdRepeatMs).toBe(data.config.input.holdRepeatMs);
     expect(D.textSpeed).toBe(data.config.ui.textSpeedMs);
@@ -66,12 +73,56 @@ describe("settings", () => {
     });
     // 未知のキーは捨てる
     const p = parseSettings(JSON.stringify({ ...D, volume: 3, extra: true }), D);
-    expect(Object.keys(p).sort()).toEqual(["autoBeatMs", "beatAdvance", "holdRepeatMs", "inputMode", "musicVolume", "sfxVolume", "skipAnimations", "swipeThreshold", "textSpeed"]);
+    expect(Object.keys(p).sort()).toEqual(["autoBeatMs", "beatAdvance", "hints", "holdRepeatMs", "inputMode", "musicVolume", "sfxVolume", "skipAnimations", "swipeThreshold", "textSpeed"]);
     // 往復
-    const s: Settings = { skipAnimations: true, textSpeed: 0, inputMode: "swipe", swipeThreshold: 40, holdRepeatMs: 500, autoBeatMs: 600, beatAdvance: "timed", musicVolume: 0, sfxVolume: 10 };
+    const s: Settings = { skipAnimations: true, textSpeed: 0, inputMode: "swipe", swipeThreshold: 40, holdRepeatMs: 500, autoBeatMs: 600, beatAdvance: "timed", musicVolume: 0, sfxVolume: 10, hints: "less" };
     expect(parseSettings(serializeSettings(s), D)).toEqual(s);
     // 返り値は defaults と別のオブジェクト
     expect(parseSettings(null, D)).not.toBe(D);
+  });
+
+  test("SV-24/UI-57 M20（D-7）hints（GM の助言）は more / less / none。既定 more、保存の対象で、欄が無い（M19 までの保存）・選択肢に無い値は既定値。nextHintLevel は more → less → none → more", () => {
+    expect([...HINT_LEVELS]).toEqual(["more", "less", "none"]);
+    expect(D.hints).toBe("more");
+    for (const h of HINT_LEVELS) {
+      const json = serializeSettings({ ...D, hints: h });
+      expect(JSON.parse(json).hints).toBe(h);
+      expect(parseSettings(json, D).hints).toBe(h);
+    }
+    // M19 までの保存（hints の欄が無い）は既定値。壊れた値も既定値で、ほかの欄は残る
+    const { hints: _drop, ...old } = { ...D, textSpeed: 60 };
+    expect(parseSettings(JSON.stringify(old), D)).toEqual({ ...D, textSpeed: 60 });
+    for (const bad of ["many", 1, null, true]) expect(parseSettings(JSON.stringify({ ...D, hints: bad }), { ...D, hints: "none" }).hints).toBe("none");
+    expect(nextHintLevel("more")).toBe("less");
+    expect(nextHintLevel("less")).toBe("none");
+    expect(nextHintLevel("none")).toBe("more");
+  });
+
+  test("UI-76/UI-57 M20（D-7）filterHints: more は出来事をそのまま、less は hint.dungeonFirst と hint.sanUnknown だけ残し、none は hint.* の message をすべて除く。hint. で始まらない message とほかの出来事は残し、順を保つ", () => {
+    expect([...HINTS_LESS]).toEqual(["hint.dungeonFirst", "hint.sanUnknown"]);
+    // HINTS_LESS は core の一言の id から作られる鍵だけ
+    for (const k of HINTS_LESS) expect((HINT_IDS as readonly string[]).map((id) => `hint.${id}`)).toContain(k);
+    const hints: GameEvent[] = HINT_IDS.map((id) => ({ kind: "message", key: `hint.${id}` }));
+    const others: GameEvent[] = [
+      { kind: "message", key: "dungeon.enter", params: { name: "x" } },
+      { kind: "screen", to: "dungeon" },
+      { kind: "message", key: "hintless" },
+    ];
+    const ev: GameEvent[] = [others[0]!, ...hints.slice(0, 3), others[1]!, ...hints.slice(3), others[2]!];
+    expect(filterHints(ev, "more")).toBe(ev);
+    expect(filterHints(ev, "less")).toEqual([
+      others[0],
+      ...ev.filter((e) => e.kind === "message" && HINTS_LESS.includes(e.key)),
+      others[1],
+      others[2],
+    ].sort((a, b) => ev.indexOf(a!) - ev.indexOf(b!)));
+    expect(filterHints(ev, "less").filter((e) => e.kind === "message" && e.key.startsWith("hint.")).map((e) => (e as { key: string }).key).sort()).toEqual(["hint.dungeonFirst", "hint.sanUnknown"]);
+    expect(filterHints(ev, "none")).toEqual(others);
+    expect(hintShown({ kind: "message", key: "hint.waitEnemy" }, "less")).toBe(false);
+    expect(hintShown({ kind: "message", key: "hint.sanUnknown" }, "none")).toBe(false);
+    expect(hintShown({ kind: "screen", to: "town" }, "none")).toBe(true);
+    // 元の配列を書き換えない
+    expect(ev).toHaveLength(others.length + hints.length);
   });
 
   test("UI-31/SV-24 holdRepeatMs が保存の対象に入る", () => {
@@ -199,6 +250,7 @@ describe("UI-45 オートの拍の速さ", () => {
       "holdRepeatMs",
       "musicVolume",
       "sfxVolume",
+      "hints",
     ]);
     // store の set でも選択肢に無い値は今の値のまま
     const st = createSettingsStore(D, () => {});
@@ -285,7 +337,8 @@ describe("UI-57 設定画面の文字速度の選択肢", () => {
     const { musicVolume: _m, sfxVolume: _s, ...old } = { ...D, holdRepeatMs: 300 };
     expect(parseSettings(JSON.stringify(old), D)).toEqual({ ...D, holdRepeatMs: 300 });
     const keys = Object.keys(JSON.parse(serializeSettings(D)) as object);
-    expect(keys.slice(-2)).toEqual(["musicVolume", "sfxVolume"]);
+    // M20（D-7）: 末尾に hints を足した（音量はその前）
+    expect(keys.slice(-3)).toEqual(["musicVolume", "sfxVolume", "hints"]);
     const st = createSettingsStore({ ...D, musicVolume: 4 }, () => {});
     st.set({ musicVolume: 12 });
     expect(st.get().musicVolume).toBe(4);

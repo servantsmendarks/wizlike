@@ -33,20 +33,29 @@ const PLAY: SettingsContext = { canExport: true, canImport: false, where: "play"
 const NONE: SettingsContext = { canExport: false, canImport: false, where: "none", standalone: false, canRules: false };
 
 describe("設定画面の純粋な部分（UI-57）", () => {
-  test("UI-57 settingsRows: 5 行（演出スキップ 入/切、文字速度 即時 / {ms}ms、オートの速さ {ms}ms、入力 両方など、再生の進め方 タップで送る / 自動で流す（M16））", () => {
-    const rows = settingsRows({ ...D, skipAnimations: false, textSpeed: 30, autoBeatMs: 400, inputMode: "both", beatAdvance: "tap" }, S);
-    expect(rows.map((r) => r.key)).toEqual(["skipAnimations", "textSpeed", "autoBeatMs", "inputMode", "beatAdvance"]);
-    expect([...SETTINGS_ROW_KEYS]).toEqual(["skipAnimations", "textSpeed", "autoBeatMs", "inputMode", "beatAdvance"]);
+  test("UI-57 settingsRows: 6 行（演出スキップ 入/切、文字速度 即時 / {ms}ms、オートの速さ {ms}ms、入力 両方など、再生の進め方 タップで送る / 自動で流す（M16）、GM の助言 多め / 少なめ / なし（M20 D-7））", () => {
+    const rows = settingsRows({ ...D, skipAnimations: false, textSpeed: 30, autoBeatMs: 400, inputMode: "both", beatAdvance: "tap", hints: "more" }, S);
+    expect(rows.map((r) => r.key)).toEqual(["skipAnimations", "textSpeed", "autoBeatMs", "inputMode", "beatAdvance", "hints"]);
+    expect([...SETTINGS_ROW_KEYS]).toEqual(["skipAnimations", "textSpeed", "autoBeatMs", "inputMode", "beatAdvance", "hints"]);
     expect(rows).toEqual([
       { key: "skipAnimations", label: S["settings.skipAnimations"], value: S["settings.off"] },
       { key: "textSpeed", label: S["settings.textSpeed"], value: S["settings.textSpeed.normal"] },
       { key: "autoBeatMs", label: S["settings.autoBeatMs"], value: "400ms" },
       { key: "inputMode", label: S["settings.inputMode"], value: S["settings.inputMode.both"] },
       { key: "beatAdvance", label: S["settings.beatAdvance"], value: S["settings.beatAdvance.tap"] },
+      { key: "hints", label: S["settings.hints"], value: S["settings.hints.more"] },
     ]);
+    expect([S["settings.hints"], S["settings.hints.more"], S["settings.hints.less"], S["settings.hints.none"]]).toEqual(["GM の助言", "多め", "少なめ", "なし"]);
     expect([S["settings.beatAdvance"], S["settings.beatAdvance.tap"], S["settings.beatAdvance.timed"]]).toEqual(["再生の進め方", "タップで送る", "自動で流す"]);
-    const on = settingsRows({ ...D, skipAnimations: true, textSpeed: 0, autoBeatMs: 200, inputMode: "swipe", beatAdvance: "timed" }, S);
-    expect(on.map((r) => r.value)).toEqual([S["settings.on"], S["settings.textSpeed.instant"], "200ms", S["settings.inputMode.swipe"], S["settings.beatAdvance.timed"]]);
+    const on = settingsRows({ ...D, skipAnimations: true, textSpeed: 0, autoBeatMs: 200, inputMode: "swipe", beatAdvance: "timed", hints: "none" }, S);
+    expect(on.map((r) => r.value)).toEqual([S["settings.on"], S["settings.textSpeed.instant"], "200ms", S["settings.inputMode.swipe"], S["settings.beatAdvance.timed"], S["settings.hints.none"]]);
+    expect(settingsRows({ ...D, hints: "less" }, S)[5]?.value).toBe(S["settings.hints.less"]);
+    // ラベルの枠（128px = 全角 16 字 = 32 単位）と値の枠（22 単位）に収まる
+    for (const h of ["more", "less", "none"] as const) {
+      const row = settingsRows({ ...D, hints: h }, S)[5]!;
+      expect(textUnits(row.label)).toBeLessThanOrEqual(32);
+      expect(textUnits(row.value)).toBeLessThanOrEqual(22);
+    }
     // debug パネルの -/+ で入れた選択肢に無い値（50）もそのまま出す
     expect(settingsRows({ ...D, textSpeed: 50 }, S)[1]?.value).toBe("50ms");
   });
@@ -83,9 +92,11 @@ describe("設定画面の純粋な部分（UI-57）", () => {
     ]);
     expect(settingsToggle({ ...D, beatAdvance: "tap" }, "beatAdvance")).toEqual({ beatAdvance: "timed" });
     expect(settingsToggle({ ...D, beatAdvance: "timed" }, "beatAdvance")).toEqual({ beatAdvance: "tap" });
+    // M20（D-7）: GM の助言は more → less → none → more
+    expect((["more", "less", "none"] as const).map((h) => settingsToggle({ ...D, hints: h }, "hints"))).toEqual([{ hints: "less" }, { hints: "none" }, { hints: "more" }]);
   });
 
-  test("UI-57/SV-31 settingsItems: title は 書き出し dim・読み込み 可、play は 書き出し 可・読み込み dim、none は両方 dim。並びは 5 行 → 曲 → 効果音 → 書き出し → 読み込み → 開発用 → 閉じる", () => {
+  test("UI-57/SV-31 settingsItems: title は 書き出し dim・読み込み 可、play は 書き出し 可・読み込み dim、none は両方 dim。並びは 6 行（M20）→ 曲 → 効果音 → 書き出し → 読み込み → 開発用 → 閉じる", () => {
     const rows = [
       ...SETTINGS_ROW_KEYS.map((key) => ({ kind: "row", key })),
       { kind: "volume", key: "musicVolume" },
@@ -96,34 +107,36 @@ describe("設定画面の純粋な部分（UI-57）", () => {
     expect(settingsItems(PLAY)).toEqual([...rows, { kind: "export", disabled: false }, { kind: "import", disabled: true }, { kind: "debug" }, { kind: "close" }]);
     expect(settingsItems(NONE)).toEqual([...rows, { kind: "export", disabled: true }, { kind: "import", disabled: true }, { kind: "debug" }, { kind: "close" }]);
     // 遊んでいる途中でも current が無ければ（canExport 偽）書き出しは dim
-    expect(settingsItems({ ...PLAY, canExport: false })[7]).toEqual({ kind: "export", disabled: true });
+    expect(settingsItems({ ...PLAY, canExport: false })[8]).toEqual({ kind: "export", disabled: true });
     // 案内の欄の既定の文
     expect(settingsFileHint(TITLE, S)).toBe(S["settings.fileHintTitle"]);
     expect(settingsFileHint(PLAY, S)).toBe(S["settings.fileHintPlay"]);
     expect(settingsFileHint(NONE, S)).toBe(S["settings.fileHintNone"]);
   });
 
-  test("UI-33 settingsKeyIndex: 数字 n → n 番目（5 が再生の進め方、6・7 が曲・効果音、8 が書き出し、9 が読み込み）、dim は null、Esc / Enter → 閉じる（11 番目。開発用は 10 番目で数字では届かない）、範囲外は null", () => {
+  test("UI-33 settingsKeyIndex: 数字 n → n 番目（5 が再生の進め方、6 が GM の助言（M20）、7・8 が曲・効果音、9 が書き出し）、dim は null、Esc / Enter → 閉じる（12 番目。読み込みは 10 番目・開発用は 11 番目で数字では届かない）、範囲外は null", () => {
     const play = settingsItems(PLAY);
-    expect(play).toHaveLength(11);
+    expect(play).toHaveLength(12);
     expect(settingsKeyIndex({ menu: 0 }, play)).toBe(0);
     expect(settingsKeyIndex({ menu: 3 }, play)).toBe(3);
     expect(settingsKeyIndex({ menu: 4 }, play)).toBe(4); // 再生の進め方（数字キー 5）
     expect(play[4]).toEqual({ kind: "row", key: "beatAdvance" });
-    expect(settingsKeyIndex({ menu: 5 }, play)).toBe(5); // 曲
-    expect(play[5]).toEqual({ kind: "volume", key: "musicVolume" });
-    expect(settingsKeyIndex({ menu: 6 }, play)).toBe(6); // 効果音
-    expect(play[6]).toEqual({ kind: "volume", key: "sfxVolume" });
-    expect(settingsKeyIndex({ menu: 7 }, play)).toBe(7); // 書き出し（可）
-    expect(settingsKeyIndex({ menu: 8 }, play)).toBeNull(); // 読み込み（dim。数字キー 9）
-    expect(play[9]).toEqual({ kind: "debug" }); // 開発用（10 番目。F2 で開く）
-    expect(settingsKeyIndex({ menu: 10 }, play)).toBe(10); // 閉じる
-    expect(settingsKeyIndex({ menu: 11 }, play)).toBeNull();
-    expect(settingsKeyIndex("back", play)).toBe(10);
-    expect(settingsKeyIndex("confirm", play)).toBe(10);
+    expect(settingsKeyIndex({ menu: 5 }, play)).toBe(5); // GM の助言（数字キー 6）
+    expect(play[5]).toEqual({ kind: "row", key: "hints" });
+    expect(settingsKeyIndex({ menu: 6 }, play)).toBe(6); // 曲
+    expect(play[6]).toEqual({ kind: "volume", key: "musicVolume" });
+    expect(settingsKeyIndex({ menu: 7 }, play)).toBe(7); // 効果音
+    expect(play[7]).toEqual({ kind: "volume", key: "sfxVolume" });
+    expect(settingsKeyIndex({ menu: 8 }, play)).toBe(8); // 書き出し（可。数字キー 9）
+    expect(settingsKeyIndex({ menu: 9 }, play)).toBeNull(); // 読み込み（dim）
+    expect(play[10]).toEqual({ kind: "debug" }); // 開発用（11 番目。F2 で開く）
+    expect(settingsKeyIndex({ menu: 11 }, play)).toBe(11); // 閉じる
+    expect(settingsKeyIndex({ menu: 12 }, play)).toBeNull();
+    expect(settingsKeyIndex("back", play)).toBe(11);
+    expect(settingsKeyIndex("confirm", play)).toBe(11);
     const title = settingsItems(TITLE);
-    expect(settingsKeyIndex({ menu: 7 }, title)).toBeNull();
-    expect(settingsKeyIndex({ menu: 8 }, title)).toBe(8);
+    expect(settingsKeyIndex({ menu: 8 }, title)).toBeNull();
+    expect(settingsKeyIndex({ menu: 9 }, title)).toBe(9); // 読み込み（10 番目。数字キーでは届かず、押すだけ）
     for (const a of ["forward", "left", "right", "around", "map", "debug"] as const) expect(settingsKeyIndex(a, play), a).toBeNull();
   });
 
@@ -138,12 +151,13 @@ describe("設定画面の純粋な部分（UI-57）", () => {
     expect(L.rules.x).toBeGreaterThanOrEqual(L.debug.x + L.debug.w + 4);
     expect(L.rules.x + L.rules.w).toBeLessThanOrEqual(L.close.x - 4);
     expect(L.heading).toEqual({ x: 4, y: 4, w: 232, h: 12 });
-    // M16: 5 行（y20+34i、i=0..4）。音量 y190、書き出し・読み込み y224、案内 y258（1 行）、ホーム画面の案内 y270..349（8 行）
-    expect(L.rows).toEqual([0, 1, 2, 3, 4].map((i) => ({ label: { x: 4, y: 20 + 34 * i, w: 128, h: 32 }, toggle: { x: 136, y: 20 + 34 * i, w: 100, h: 32 } })));
-    expect(L.volume).toEqual({ label: { x: 4, y: 190, w: 64, h: 32 }, music: { x: 72, y: 190, w: 80, h: 32 }, sfx: { x: 156, y: 190, w: 80, h: 32 } });
-    expect(L.exportButton).toEqual({ x: 8, y: 224, w: 108, h: 32 });
-    expect(L.importButton).toEqual({ x: 124, y: 224, w: 108, h: 32 });
-    expect(L.notice).toEqual({ x: 4, y: 258, w: 232, h: 10 });
+    // M20（D-7）: 6 行（高さ 30 で y16+30i、i=0..5）。音量 y197、書き出し・読み込み y228（高さ 30）、案内 y259（1 行）、ホーム画面の案内 y270..349（8 行）のまま
+    expect(L.rows).toEqual([0, 1, 2, 3, 4, 5].map((i) => ({ label: { x: 4, y: 16 + 30 * i, w: 128, h: 30 }, toggle: { x: 136, y: 16 + 30 * i, w: 100, h: 30 } })));
+    expect(L.volume).toEqual({ label: { x: 4, y: 197, w: 64, h: 30 }, music: { x: 72, y: 197, w: 80, h: 30 }, sfx: { x: 156, y: 197, w: 80, h: 30 } });
+    expect(L.exportButton).toEqual({ x: 8, y: 228, w: 108, h: 30 });
+    expect(L.importButton).toEqual({ x: 124, y: 228, w: 108, h: 30 });
+    expect(L.notice).toEqual({ x: 4, y: 259, w: 232, h: 10 });
+    expect(L.rows).toHaveLength(SETTINGS_ROW_KEYS.length);
     expect(L.install).toEqual({ x: 4, y: 270, w: 232, h: 80 });
     const inside = (r: Rect): boolean => r.x >= 0 && r.y >= 0 && r.x + r.w <= W && r.y + r.h <= H;
     const overlaps = (a: Rect, b: Rect): boolean => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
@@ -281,9 +295,11 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
     view.render(PLAY, null);
     // 見出し
     expect(root.children.some((c) => c.textContent === S["settings.title"])).toBe(true);
-    // 5 行の値
+    // 6 行の値（M20: 6 行目は GM の助言。既定 more）
     const toggles = L.rows.map((r) => buttonAt(r.toggle));
-    expect(toggles.map((b) => b.textContent)).toEqual([S["settings.off"], S["settings.textSpeed.normal"], "400ms", S["settings.inputMode.both"], S["settings.beatAdvance.timed"]]);
+    expect(toggles.map((b) => b.textContent)).toEqual([S["settings.off"], S["settings.textSpeed.normal"], "400ms", S["settings.inputMode.both"], S["settings.beatAdvance.timed"], S["settings.hints.more"]]);
+    // M20: 高さ 30 の行の toggle は内側の高さ（h − 2）で縦の中央
+    expect(toggles[0]!.style["lineHeight"]).toBe("28px");
     for (const b of toggles) expect(tapSpecOf(b)).not.toBeNull();
     // 文字速度 30 → 60（store.set → persist。値の描き直しは app の store 購読者が refresh を呼ぶ）
     tap(toggles[1]!);
@@ -305,6 +321,11 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
     expect(persisted.at(-1)?.beatAdvance).toBe("tap");
     view.refresh();
     expect(toggles[4]!.textContent).toBe(S["settings.beatAdvance.tap"]);
+    tap(toggles[5]!); // M20（D-7）: GM の助言 more → less
+    expect(store.get().hints).toBe("less");
+    expect(persisted.at(-1)?.hints).toBe("less");
+    view.refresh();
+    expect(toggles[5]!.textContent).toBe(S["settings.hints.less"]);
     // 書き出し（play では押せる）・開発用・閉じる
     const exp = buttonAt(L.exportButton);
     expect(exp.textContent).toBe(S["title.export"]);
@@ -412,21 +433,23 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
     expect(store.get().textSpeed).toBe(60);
     view.select(4); // 再生の進め方（M18: 既定 timed → tap）
     expect(store.get().beatAdvance).toBe("tap");
-    view.select(5); // 曲
+    view.select(5); // GM の助言（M20: 既定 more → less）
+    expect(store.get().hints).toBe("less");
+    view.select(6); // 曲
     expect(store.get().musicVolume).toBe(D.musicVolume + 1);
-    view.select(6); // 効果音
+    view.select(7); // 効果音
     expect(store.get().sfxVolume).toBe(D.sfxVolume + 1);
-    view.select(7); // 書き出し（title では dim）
+    view.select(8); // 書き出し（title では dim）
     expect(calls).toEqual([]);
-    view.select(8); // 読み込み
+    view.select(9); // 読み込み
     expect(input.clicks).toBe(1);
-    view.select(9);
     view.select(10);
+    view.select(11);
     view.select(99);
     expect(calls).toEqual(["debug", "close"]);
     view.render(PLAY, null);
-    view.select(7);
-    view.select(8); // 読み込み（play では dim）
+    view.select(8);
+    view.select(9); // 読み込み（play では dim）
     expect(calls).toEqual(["debug", "close", "export"]);
     expect(input.clicks).toBe(1);
   });
