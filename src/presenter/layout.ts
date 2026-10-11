@@ -613,11 +613,12 @@ export const CUSTOM_STAT_DESC: Rect = { x: 4, y: 254, w: 232, h: 42 };
 export const CUSTOM_NAME: Rect = { x: 8, y: 34, w: 224, h: 32 };
 /** 誤りの欄（押せない） */
 export const CUSTOM_ERROR: Rect = { x: 4, y: 276, w: 232, h: 20 };
-/** 下のボタン a（左上）・b（右上）・c（左下 = 戻る） */
+/** 下のボタン a（左上）・b（右上）・c（左下 = 戻る）・d（右下 = 残りはおまかせ。M20） */
 export const CUSTOM_BUTTONS = {
   a: { x: 8, y: 300, w: 108, h: 32 },
   b: { x: 124, y: 300, w: 108, h: 32 },
   c: { x: 8, y: 340, w: 108, h: 32 },
+  d: { x: 124, y: 340, w: 108, h: 32 },
 } as const satisfies Record<string, Rect>;
 /**
  * 名前の段のボタン b（次へ）・c（戻る）と誤りの欄。ソフトキーボードが出ても隠れないように、入力欄（y34..66）のすぐ下に置く

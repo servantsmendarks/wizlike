@@ -117,6 +117,62 @@ export function classOptions(
   }));
 }
 
+/**
+ * CH-06 / UI-62（M20）: 「残りはおまかせ」の配分。stats に残りのボーナスを足す: まず classId の条件（requirements）の不足分を
+ * STAT_KEYS の順に埋め、残りは STAT_KEYS の順に 1 点ずつ巡回して均等に（STAT_MAX の能力値は飛ばす）。残りが 0 か、全部が
+ * STAT_MAX になったら止まる。classId が null なら条件は見ない。乱数は使わない。新しい StatBlock を返す
+ */
+export function autoAllocate(raceId: string, stats: StatBlock, bonus: number, classId: string | null, data: GameData): StatBlock {
+  const out = { ...stats };
+  let remaining = statAllocation(raceId, stats, bonus, data).remaining;
+  const req = classId === null ? {} : (data.classes.find((c) => c.id === classId)?.requirements ?? {});
+  for (const k of STAT_KEYS) {
+    const need = Math.min(req[k] ?? 0, STAT_MAX);
+    const add = Math.min(Math.max(0, need - out[k]), remaining);
+    out[k] += add;
+    remaining -= add;
+  }
+  while (remaining > 0 && STAT_KEYS.some((k) => out[k] < STAT_MAX)) {
+    for (const k of STAT_KEYS) {
+      if (remaining === 0) break;
+      if (out[k] >= STAT_MAX) continue;
+      out[k] += 1;
+      remaining -= 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * CH-06 / UI-62（M20）: 今の能力値と残りのボーナスで classId の条件を満たせるか（不足分の和 ≤ 残り、条件はどれも STAT_MAX 以下）。
+ * 配分し終えていれば classOptions の ok と同じ
+ */
+export function classReachable(raceId: string, stats: StatBlock, bonus: number, classId: string, data: GameData): boolean {
+  const cls = data.classes.find((c) => c.id === classId);
+  if (cls === undefined) return false;
+  let deficit = 0;
+  for (const k of STAT_KEYS) {
+    const need = cls.requirements[k];
+    if (need === undefined) continue;
+    if (need > STAT_MAX) return false;
+    deficit += Math.max(0, need - stats[k]);
+  }
+  return deficit <= statAllocation(raceId, stats, bonus, data).remaining;
+}
+
+/**
+ * CH-06 / UI-62（M20）: 「残りはおまかせ」の種族。classId の条件を、種族の基礎値と最も少ないボーナス（bonusBase + 1）で満たせる種族
+ * （races.json の順）から randInt で 1 つ（乱数は 1 回）。満たせる種族が無ければ全種族から
+ */
+export function pickAutoRace(rng: RngState, classId: string, data: GameData): string {
+  const least = data.config.creation.bonusBase + 1;
+  const ok = data.races.filter((r) => classReachable(r.id, r.baseStats, least, classId, data));
+  const list = ok.length > 0 ? ok : data.races;
+  const picked = list[randInt(rng, 0, list.length - 1)];
+  if (picked === undefined) throw new Error("pickAutoRace: no races");
+  return picked.id;
+}
+
 /** CH-06: 配分できるボーナスの最大（作成中の出目は表示層が持つので、core は取りうる最大で守る） */
 function maxBonus(data: GameData): number {
   const c = data.config.creation;

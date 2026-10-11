@@ -9,7 +9,18 @@
 import type { GameData, StatBlock, StatKey, Strings } from "../../core/data/index";
 import { STAT_KEYS } from "../../core/data/index";
 import type { RngState } from "../../core/rng";
-import { adjustStat, classOptions, pickPersonality, rollBonusParts, statAllocation, validCreationName, type BonusParts } from "../../core/rules/creation";
+import {
+  adjustStat,
+  autoAllocate,
+  classOptions,
+  classReachable,
+  pickAutoRace,
+  pickPersonality,
+  rollBonusParts,
+  statAllocation,
+  validCreationName,
+  type BonusParts,
+} from "../../core/rules/creation";
 import type { CustomPartySetup } from "../../core/types";
 import { createHoldRepeater, type Action } from "../input/swipe";
 import { onTap, type TapSpec } from "../input/tap";
@@ -61,7 +72,9 @@ export type CustomChoice =
   | { kind: "name"; name: string }
   | { kind: "next" }
   | { kind: "start" }
-  | { kind: "back" };
+  | { kind: "back" }
+  /** UI-62（M20）: 残りはおまかせ。name は名前の段で入力欄の値（その段では次へと同じく名前を検査する） */
+  | { kind: "autoRest"; name?: string };
 
 /** draft: 次の下書き。exit: タイトルの作り方の選択へ戻る。invalidName: 名前が長さの条件を満たさない。start: game.new を送る */
 export type CustomResult =
@@ -122,6 +135,8 @@ export function customStep(d: CustomDraft, c: CustomChoice, data: GameData, rng:
   if (m === undefined) return same(d);
   const last = d.members.length - 1;
   const isLeader = d.index === 0;
+
+  if (c.kind === "autoRest") return d.step === "confirm" ? same(d) : autoRest(d, c.name, data, rng);
 
   if (c.kind === "back") {
     switch (d.step) {
@@ -200,6 +215,59 @@ export function customStep(d: CustomDraft, c: CustomChoice, data: GameData, rng:
   }
 }
 
+/**
+ * UI-62 / CH-06（M20）: 残りはおまかせ。今の人の残りの段と、後ろの人を埋めて確認の段へ。前の人は変えない。
+ * - 決めてある段は保つ: 種族・能力値（配分し終えていれば）・職業（その能力値で条件を満たすなら）、後ろの人も同じ。
+ * - 職業はおすすめの一行の型（config.prototypeParty.members[i].classId）。届かなければ classes の順で最初に届く職業。
+ * - 種族は pickAutoRace（その職業の条件を満たせる種族から作成中の乱数で）、ボーナスを振って、配分は autoAllocate。
+ * - 性格（リーダー以外）: 今の人は名前の段まで来ていれば保ち、後ろの人は 6 段とも決めてあれば保つ。ほかは pickPersonality。
+ *   保った「おまかせ」も pickPersonality で具体的に（CH-30）。
+ * - 名前: 今の人が名前の段なら name（入力欄の値。正しくなければ invalidName）、ほかは下書きの名前（正しくなければ既定の名前）。
+ * 乱数は人の順に 種族 → ボーナス → 性格 の順で、要るものだけ引く。職業がどれも届かない人がいれば、その人の職業の段で止める
+ * （custom.noClass が出る）
+ */
+function autoRest(d: CustomDraft, name: string | undefined, data: GameData, rng: RngState): CustomResult {
+  const members = [...d.members];
+  for (let i = d.index; i < members.length; i++) {
+    const m = members[i];
+    if (m === undefined) continue;
+    const cur = i === d.index;
+    const template = data.config.prototypeParty.members[i]?.classId ?? null;
+    const done = m.raceId !== null && m.stats !== null && m.classId !== null && statAllocation(m.raceId, m.stats, m.bonus, data).complete;
+    let { raceId, stats, bonus, bonusParts, classId } = m;
+    if (raceId === null || stats === null) {
+      raceId = pickAutoRace(rng, classId ?? template ?? data.classes[0]?.id ?? "", data);
+      const base = raceBase(data, raceId);
+      if (base === null) return same(d);
+      const parts = rollBonusParts(rng, data.config.creation);
+      stats = { ...base };
+      bonus = parts.total;
+      bonusParts = parts;
+    }
+    const r = raceId;
+    const st = stats;
+    const reach = (id: string | null): id is string => id !== null && classReachable(r, st, bonus, id, data);
+    const target = [classId, template, ...data.classes.map((c) => c.id)].find(reach) ?? null;
+    if (!statAllocation(r, st, bonus, data).complete) stats = autoAllocate(r, st, bonus, target, data);
+    const finalStats = stats;
+    const ok = (id: string | null): boolean => id !== null && classOptions(finalStats, data).some((o) => o.classId === id && o.ok);
+    classId = [classId, target, template].find(ok) ?? classOptions(finalStats, data).find((o) => o.ok)?.classId ?? null;
+    if (classId === null) {
+      members[i] = { ...m, raceId: r, stats: finalStats, bonus, bonusParts, classId: null };
+      return { kind: "draft", draft: { ...d, members, index: i, step: "class" } };
+    }
+    const keepPersonality = cur ? d.step === "name" : done;
+    const personality = i === 0 ? null : keepPersonality ? resolveDraftPersonality(m.personality, data, rng) : pickPersonality(rng, data);
+    let nm = m.name;
+    if (cur && d.step === "name" && name !== undefined) {
+      if (!validCreationName(name, data)) return { kind: "invalidName", draft: withMember(d, { name }, "name") };
+      nm = name;
+    } else if (!validCreationName(nm, data)) nm = data.config.prototypeParty.members[i]?.defaultName ?? nm;
+    members[i] = { ...m, raceId: r, stats: finalStats, bonus, bonusParts, classId, personality, name: nm };
+  }
+  return { kind: "draft", draft: { ...d, members, index: members.length - 1, step: "confirm" } };
+}
+
 /** 6 人とも種族・能力値・職業が決まっていれば CustomPartySetup。名前・配分などの検査は core（game.new）が行う */
 export function buildCustomSetup(d: CustomDraft): CustomPartySetup | null {
   const members: CustomPartySetup["members"] = [];
@@ -240,8 +308,8 @@ export type CustomView = {
   confirm: string[];
   /** 案内の 1 行（職業の段で選べる職業が 1 つも無いとき custom.noClass。それ以外は null。誤りの欄に出す） */
   notice: string | null;
-  /** 下のボタン a（左上）・b（右上）・c（左下 = 戻る）。無い枠は null */
-  buttons: { a: CustomButton | null; b: CustomButton | null; c: CustomButton };
+  /** 下のボタン a（左上）・b（右上）・c（左下 = 戻る）・d（右下 = 残りはおまかせ。M20。確認の段は null）。無い枠は null */
+  buttons: { a: CustomButton | null; b: CustomButton | null; c: CustomButton; d: CustomButton | null };
 };
 
 const tr = (strings: Strings, k: string): string => strings[k] ?? k;
@@ -291,7 +359,12 @@ export function customView(d: CustomDraft, data: GameData, strings: Strings): Cu
     name: null,
     confirm: [],
     notice: null,
-    buttons: { a: null, b: null, c: back },
+    buttons: {
+      a: null,
+      b: null,
+      c: back,
+      d: d.step === "confirm" ? null : { label: tr(strings, "custom.autoRest"), choice: { kind: "autoRest" }, dim: false },
+    },
   };
   if (m === undefined) return view;
   if (d.step !== "confirm") {
@@ -407,10 +480,13 @@ export function customKeyChoice(a: Action, view: CustomView, step: CustomStepId,
   return null;
 }
 
-/** 下のボタン a・b・c と誤りの欄の矩形。名前の段（nameStep）は b・c と誤りの欄を入力欄のすぐ下に置く（a は使わない） */
-export function customButtonRects(nameStep: boolean): { a: Rect; b: Rect; c: Rect; error: Rect } {
-  if (nameStep) return { a: CUSTOM_BUTTONS.a, b: CUSTOM_NAME_BUTTONS.b, c: CUSTOM_NAME_BUTTONS.c, error: CUSTOM_NAME_ERROR };
-  return { a: CUSTOM_BUTTONS.a, b: CUSTOM_BUTTONS.b, c: CUSTOM_BUTTONS.c, error: CUSTOM_ERROR };
+/**
+ * 下のボタン a・b・c・d と誤りの欄の矩形。名前の段（nameStep）は b・c と誤りの欄を入力欄のすぐ下に置く（a は使わない）。
+ * d（残りはおまかせ。M20）はどの段も右下
+ */
+export function customButtonRects(nameStep: boolean): { a: Rect; b: Rect; c: Rect; d: Rect; error: Rect } {
+  if (nameStep) return { a: CUSTOM_BUTTONS.a, b: CUSTOM_NAME_BUTTONS.b, c: CUSTOM_NAME_BUTTONS.c, d: CUSTOM_BUTTONS.d, error: CUSTOM_NAME_ERROR };
+  return { a: CUSTOM_BUTTONS.a, b: CUSTOM_BUTTONS.b, c: CUSTOM_BUTTONS.c, d: CUSTOM_BUTTONS.d, error: CUSTOM_ERROR };
 }
 
 // ---------------------------------------------------------------- DOM
@@ -644,7 +720,7 @@ export function createCustomCreationScreen(o: { onChoice(c: CustomChoice): void;
       // 名前の段は 次へ・戻る と誤りの欄を入力欄のすぐ下に置く（ソフトキーボードで隠れないように。M6）
       const rects = customButtonRects(view.name !== null);
       const bs: HTMLElement[] = [];
-      const { a, b, c } = view.buttons;
+      const { a, b, c, d } = view.buttons;
       if (a !== null) bs.push(button(a.label, rects.a, a.dim, () => o.onChoice(a.choice)));
       if (b !== null)
         bs.push(
@@ -654,6 +730,8 @@ export function createCustomCreationScreen(o: { onChoice(c: CustomChoice): void;
           ),
         );
       bs.push(button(c.label, rects.c, c.dim, () => o.onChoice(c.choice)));
+      // UI-62（M20）: 残りはおまかせ。名前の段では入力欄の値を添える（次へと同じく名前を検査する）
+      if (d !== null) bs.push(button(d.label, rects.d, d.dim, () => o.onChoice(view.name !== null ? { kind: "autoRest", name: input.value } : d.choice)));
       buttons.replaceChildren(...bs);
 
       place(error, rects.error);

@@ -68,6 +68,7 @@
   "custom.bonusDetailBig": "基本{base}+ダイス{die}+大当り{big}",
   "custom.reroll": "振り直す",
   "custom.next": "次へ",
+  "custom.autoRest": "残りはおまかせ",
   "custom.start": "始める",
   "custom.reqNone": "条件なし",
   "custom.noClass": "能力値が足りず、選べる職業が無い。戻って配分し直そう。",

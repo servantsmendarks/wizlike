@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { STAT_KEYS, type StatKey } from "../src/core/data";
 import { execute, createInitialState } from "../src/core/engine";
 import { cloneRng, createRng, randInt, type RngState } from "../src/core/rng";
-import { rollBonus, rollBonusParts, statAllocation } from "../src/core/rules/creation";
+import { classOptions, pickAutoRace, pickPersonality, rollBonus, rollBonusParts, statAllocation } from "../src/core/rules/creation";
 import {
   CUSTOM_BUTTONS,
   CUSTOM_ERROR,
@@ -421,7 +421,12 @@ describe("自分で作る（UI-62 / CH-06）", () => {
     for (const r of [n.b, n.c]) expect(Math.min(r.w, r.h)).toBeGreaterThanOrEqual(TOUCH_MIN_LOGICAL);
     expect(ov(n.b, n.c)).toBe(false);
     expect(ov(n.b, n.error) || ov(n.c, n.error)).toBe(false);
-    expect(customButtonRects(false)).toEqual({ a: CUSTOM_BUTTONS.a, b: CUSTOM_BUTTONS.b, c: CUSTOM_BUTTONS.c, error: CUSTOM_ERROR });
+    expect(customButtonRects(false)).toEqual({ a: CUSTOM_BUTTONS.a, b: CUSTOM_BUTTONS.b, c: CUSTOM_BUTTONS.c, d: CUSTOM_BUTTONS.d, error: CUSTOM_ERROR });
+    // UI-62（M20）: 残りはおまかせ（d）はどの段も右下の空き枠（名前の段もキーボードの下の同じ枠）
+    expect(n.d).toEqual(CUSTOM_BUTTONS.d);
+    expect(CUSTOM_BUTTONS.d).toEqual({ x: 124, y: 340, w: 108, h: 32 });
+    for (const r of [CUSTOM_BUTTONS.a, CUSTOM_BUTTONS.b, CUSTOM_BUTTONS.c, n.b, n.c, n.error, CUSTOM_ERROR, CUSTOM_STAT_DESC, CUSTOM_REMAINING]) expect(ov(CUSTOM_BUTTONS.d, r)).toBe(false);
+    expect(CUSTOM_BUTTONS.d.y + CUSTOM_BUTTONS.d.h).toBeLessThanOrEqual(data.config.stage.height);
   });
 
   test("CH-30（M20）おまかせの性格は名前の段を終えるときに作成中の乱数で具体的に決まる（鏡の rng の randInt(0,3) の配列順）。確認の行に出て、game.new は state.rng を引かない", () => {
@@ -480,6 +485,7 @@ describe("自分で作る（UI-62 / CH-06）", () => {
       "custom.bonusDetailBig",
       "custom.reroll",
       "custom.next",
+      "custom.autoRest",
       "custom.start",
       "custom.reqNone",
       "custom.noClass",
@@ -698,5 +704,135 @@ describe("能力値の「+」「−」の長押し（UI-62。M19 D-6）", () => 
     expect(src).toMatch(/if \(!sameChildren\(body\.children, kids\)\) body\.replaceChildren\(\.\.\.kids\);/);
     const app = fs.readFileSync(new URL("../src/presenter/app.ts", import.meta.url), "utf8");
     expect(app).toMatch(/createCustomCreationScreen\(\{[^\n]*holdMs: \(\) => store\.get\(\)\.holdRepeatMs/);
+  });
+});
+
+describe("残りはおまかせ（UI-62 / CH-06。M20）", () => {
+  const proto = data.config.prototypeParty.members;
+  /** 人 i を鏡の rng で埋めたときの期待値（種族 → ボーナス → 性格の順に引く） */
+  const mirrorFill = (mirror: RngState, i: number, withRace: boolean, withPersonality: boolean) => {
+    const cls = proto[i]!.classId;
+    const raceId = withRace ? pickAutoRace(mirror, cls, data) : null;
+    const bonus = withRace ? rollBonusParts(mirror, data.config.creation).total : null;
+    const personality = i === 0 ? null : withPersonality ? pickPersonality(mirror, data) : null;
+    return { raceId, bonus, personality };
+  };
+  const expectComplete = (d: CustomDraft) => {
+    for (const m of d.members) {
+      expect(statAllocation(m.raceId!, m.stats!, m.bonus, data).complete).toBe(true);
+      expect(classOptions(m.stats!, data).find((o) => o.classId === m.classId)?.ok).toBe(true);
+    }
+  };
+
+  test("UI-62 1 人目の種族の段で押すと 6 人を埋めて確認へ: 職業はおすすめの一行の型、種族は pickAutoRace、配分し終え、性格は具体的（鏡の rng）、名前は既定。game.new が受け付け、並びはおすすめと同じ（CH-07）", () => {
+    const rng = createRng(21);
+    const mirror = cloneRng(rng);
+    const d = step(initialDraft(data), { kind: "autoRest" }, rng);
+    expect(d.step).toBe("confirm");
+    expect(d.index).toBe(5);
+    d.members.forEach((m, i) => {
+      const want = mirrorFill(mirror, i, true, true);
+      expect(m.classId, `${i}`).toBe(proto[i]!.classId);
+      expect(m.raceId, `${i}`).toBe(want.raceId);
+      expect(m.bonus, `${i}`).toBe(want.bonus);
+      expect(m.personality, `${i}`).toBe(want.personality);
+      expect(m.name).toBe(proto[i]!.defaultName);
+    });
+    expect(rng).toEqual(mirror);
+    expectComplete(d);
+    const setup = buildCustomSetup(d)!;
+    const r = execute(createInitialState(1, data), { type: "game.new", party: setup }, data);
+    expect(r.events[0]).toEqual({ kind: "screen", to: "town" });
+    expect(r.state.party.map((c) => c.classId)).toEqual(proto.map((m) => m.classId));
+    // 確認の行は具体的な性格（おまかせは出ない）
+    for (const line of customView(d, data, S).confirm.slice(1)) expect(line).not.toContain(S["creation.personality.random"]);
+  });
+
+  test("UI-62 決めた段は保つ: 前の人は変えない。今の人の種族・振ったボーナス・配った分は残し、残りを職業の型の不足分から配る。性格の段より前なら性格は引き直す", () => {
+    const rng = createRng(8);
+    const leader = makeOne(initialDraft(data), rng, "アキ");
+    let d = step(leader, { kind: "race", raceId: "dwarf" }, rng);
+    d = step(d, { kind: "inc", key: "luk" }, rng);
+    const m1 = d.members[1]!;
+    const mirror = cloneRng(rng);
+    const r = step(d, { kind: "autoRest" }, rng);
+    expect(r.step).toBe("confirm");
+    expect(r.members[0]).toEqual(leader.members[0]);
+    const a = r.members[1]!;
+    expect(a.raceId).toBe("dwarf");
+    expect(a.bonus).toBe(m1.bonus);
+    expect(a.bonusParts).toEqual(m1.bonusParts);
+    expect(a.stats!.luk).toBeGreaterThanOrEqual(m1.stats!.luk);
+    expect(a.classId).toBe(proto[1]!.classId);
+    expect(a.personality).toBe(mirrorFill(mirror, 1, false, true).personality);
+    for (let i = 2; i < 6; i++) mirrorFill(mirror, i, true, true);
+    expect(rng).toEqual(mirror);
+    expectComplete(r);
+  });
+
+  test("UI-62 職業の段で押すと、決めた職業（型と違っても）を保つ。名前の段で押すと入力の名前で（正しくなければ invalidName）、選んだ性格を保つ", () => {
+    const rng = createRng(5);
+    let d = makeOne(initialDraft(data), rng, "アキ");
+    d = step(d, { kind: "race", raceId: "human" }, rng);
+    // 素早さ 11（盗賊）にしてから残りを力へ（戦士も選べる）
+    for (let k = 0; k < 3; k++) d = step(d, { kind: "inc", key: "agi" }, rng);
+    d = spendAll(d, rng, ["str"]);
+    d = step(d, { kind: "next" }, rng);
+    expect(d.step).toBe("class");
+    expect(classOptions(d.members[1]!.stats!, data).filter((o) => o.ok).map((o) => o.classId)).toEqual(expect.arrayContaining(["fighter", "thief"]));
+    const atClass = draftOf(customStep(d, { kind: "autoRest" }, data, cloneRng(rng)));
+    expect(atClass.members[1]!.classId).toBe(proto[1]!.classId);
+    d = step(d, { kind: "class", classId: "thief" }, rng);
+    const kept = draftOf(customStep(d, { kind: "autoRest" }, data, cloneRng(rng)));
+    expect(kept.members[1]!.classId).toBe("thief");
+    d = step(d, { kind: "personality", value: "greedy" }, rng);
+    expect(d.step).toBe("name");
+    const bad = customStep(d, { kind: "autoRest", name: "" }, data, rng);
+    expect(bad.kind).toBe("invalidName");
+    const r = step(d, { kind: "autoRest", name: "イサ" }, rng);
+    expect(r.step).toBe("confirm");
+    expect(r.members[1]!.name).toBe("イサ");
+    expect(r.members[1]!.personality).toBe("greedy");
+    expect(r.members[1]!.classId).toBe("thief");
+  });
+
+  test("UI-62 職業がどれも届かない人がいれば、その人の職業の段で止める（custom.noClass が出る）。確認の段では何もしない", () => {
+    const rng = createRng(2);
+    let d = step(initialDraft(data), { kind: "race", raceId: "human" }, rng);
+    d = spendAll(d, rng, ["luk", "vit"]);
+    const r = step(d, { kind: "autoRest" }, rng);
+    expect(r.index).toBe(0);
+    expect(r.step).toBe("class");
+    expect(customView(r, data, S).notice).toBe(S["custom.noClass"]);
+    const full = step(initialDraft(data), { kind: "autoRest" }, createRng(3));
+    expect(customStep(full, { kind: "autoRest" }, data, createRng(3))).toEqual({ kind: "draft", draft: full });
+  });
+
+  test("UI-62 ボタン d（残りはおまかせ）は種族・能力値・職業・性格・名前の段にあり、確認の段には無い。ラベルは枠（108px）に収まる", () => {
+    const rng = createRng(4);
+    let d = makeOne(initialDraft(data), rng, "アキ");
+    const steps: CustomDraft[] = [d];
+    d = step(d, { kind: "race", raceId: "human" }, rng);
+    steps.push(d);
+    d = spendAll(d, rng);
+    d = step(d, { kind: "next" }, rng);
+    steps.push(d);
+    d = step(d, { kind: "class", classId: "fighter" }, rng);
+    steps.push(d);
+    d = step(d, { kind: "personality", value: "normal" }, rng);
+    steps.push(d);
+    expect(steps.map((x) => x.step)).toEqual(["race", "stats", "class", "personality", "name"]);
+    for (const x of steps) {
+      const b = customView(x, data, S).buttons.d;
+      expect(b, x.step).toEqual({ label: S["custom.autoRest"], choice: { kind: "autoRest" }, dim: false });
+    }
+    const conf = step(d, { kind: "autoRest", name: "イサ" }, rng);
+    expect(customView(conf, data, S).buttons.d).toBeNull();
+    expect(textUnits(S["custom.autoRest"]!) * 4 + 8).toBeLessThanOrEqual(CUSTOM_BUTTONS.d.w);
+  });
+
+  test("UI-62 名前の段の d は入力欄の値を添えて送る（ソースの検査）", () => {
+    const src = fs.readFileSync(new URL("../src/presenter/views/custom-creation.ts", import.meta.url), "utf8");
+    expect(src).toContain('{ kind: "autoRest", name: input.value }');
   });
 });

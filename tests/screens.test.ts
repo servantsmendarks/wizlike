@@ -324,7 +324,19 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   // 作成中はまだ GameState が無いので、ボーナスの振り（rollBonus）は表示層が持つ RngState（createRng。種は crypto）で引く（決定 5 の例外）
   // M10 UI-62 / CH-11: ボーナスの内訳（7+2、当たりは 7+2+10）と合計は core の rollBonusParts の値を描く
   // M20 CH-30: 自分で作るのおまかせの性格は作成中の乱数（customRng。GameState の rng ではない）で core の pickPersonality を呼んで決める
-  "rules/creation": ["rollBonus", "rollBonusParts", "statAllocation", "adjustStat", "classOptions", "validCreationName", "pickPersonality"],
+  // M20 UI-62: 残りはおまかせの種族・配分・職業の届くかは core の pickAutoRace（作成中の乱数）・autoAllocate・classReachable の値
+  "rules/creation": [
+    "rollBonus",
+    "rollBonusParts",
+    "statAllocation",
+    "adjustStat",
+    "classOptions",
+    "validCreationName",
+    "pickPersonality",
+    "pickAutoRace",
+    "autoAllocate",
+    "classReachable",
+  ],
   // M7 UI-57: debug パネルの「SAN+{n}」のラベルの n（core が足す量の定数。値を表示に使うだけ）
   // M12 UI-57（U-6）: debug パネルの「Lv={n}」が巡回する目標の Lv の定数（値をラベルと送る引数に使うだけ。受け付けるかは core が決める）
   "rules/debug": ["SAN_OVER_DEBUG", "DEBUG_LEVELS"],

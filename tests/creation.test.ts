@@ -5,8 +5,12 @@ import type { StatBlock } from "../src/core/data";
 import { chance, cloneRng, createRng, randInt, rollDie } from "../src/core/rng";
 import {
   adjustStat,
+  autoAllocate,
   autoOrder,
   classOptions,
+  classReachable,
+  pickAutoRace,
+  pickPersonality,
   nameLength,
   normalizeName,
   rollBonus,
@@ -589,5 +593,53 @@ describe("creation: CH-07 職業で並べ替える（M20）", () => {
     expect(r.events.at(-1)).toEqual({ kind: "message", key: "camp.orderNote" });
     expect(data.strings["camp.orderNote"]).toContain(`「${data.strings["camp.order"]}」`);
     expect(kinsokuLines(data.strings["camp.orderNote"]!, 28).length).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------- UI-62 残りはおまかせの core の問い合わせ（M20）
+
+describe("creation: UI-62 / CH-06 残りはおまかせ（M20）", () => {
+  const human = data.races.find((r) => r.id === "human")!.baseStats; // {8,8,5,8,8,9}
+
+  test("UI-62 autoAllocate: 職業の条件の不足分を先に（STAT_KEYS の順）、残りは STAT_KEYS の順に 1 点ずつ巡回（人間・ボーナス 10・戦士 → 力 +3 の後に 7 点）", () => {
+    expect(autoAllocate("human", human, 10, "fighter", data)).toEqual({ str: 13, iq: 9, pie: 6, vit: 9, agi: 9, luk: 10 });
+    // 職業なしは巡回だけ
+    expect(autoAllocate("human", human, 8, null, data)).toEqual({ str: 10, iq: 10, pie: 6, vit: 9, agi: 9, luk: 10 });
+    // 途中まで配った分は残し、残り（10 − 2 = 8）だけ配る
+    const part = { ...human, luk: 11 };
+    const r = autoAllocate("human", part, 10, "mage", data);
+    expect(r).toEqual({ str: 9, iq: 12, pie: 6, vit: 9, agi: 9, luk: 11 });
+    expect(statAllocation("human", r, 10, data).complete).toBe(true);
+    // 18 で止める: 運が 18 の人間に多いボーナスを配っても 18 を超えない（運は飛ばす）
+    const big = autoAllocate("human", { ...human, luk: 18 }, 30, null, data);
+    for (const k of ["str", "iq", "pie", "vit", "agi", "luk"] as const) expect(big[k]).toBeLessThanOrEqual(STAT_MAX);
+  });
+
+  test("UI-62 classReachable: 不足分の和 ≤ 残り。配分し終えていれば classOptions の ok と同じ", () => {
+    expect(classReachable("human", human, 3, "fighter", data)).toBe(true);
+    expect(classReachable("human", human, 2, "fighter", data)).toBe(false);
+    expect(classReachable("human", human, 8, "samurai", data)).toBe(false);
+    expect(classReachable("human", human, 8, "ninja", data)).toBe(false);
+    const done = { ...human, str: 11, luk: 14 };
+    for (const o of classOptions(done, data)) expect(classReachable("human", done, 8, o.classId, data), o.classId).toBe(o.ok);
+  });
+
+  test("UI-62 pickAutoRace: 最も少ないボーナス（bonusBase + 1）で条件を満たせる種族から randInt で 1 回。無ければ全種族から", () => {
+    const least = data.config.creation.bonusBase + 1;
+    for (const cls of ["fighter", "mage", "priest", "thief", "ninja"]) {
+      const ok = data.races.filter((r) => classReachable(r.id, r.baseStats, least, cls, data));
+      const list = ok.length > 0 ? ok : data.races;
+      for (let seed = 1; seed <= 5; seed++) {
+        const rng = createRng(seed);
+        const mirror = createRng(seed);
+        expect(pickAutoRace(rng, cls, data)).toBe(list[randInt(mirror, 0, list.length - 1)]!.id);
+        expect(rng).toEqual(mirror);
+      }
+    }
+  });
+
+  test("CH-30 pickPersonality は personalities の配列順から randInt(0, 数 − 1) を 1 回（resolvePersonality と同じ選び方）", () => {
+    const rng = createRng(1);
+    expect([0, 1, 2, 3, 4].map(() => pickPersonality(rng, data))).toEqual(["cautious", "reckless", "normal", "greedy", "greedy"]);
   });
 });
