@@ -100,23 +100,26 @@ describe("UI-24 地図", () => {
     expect(segs).toContainEqual({ x1: 229, y1: 229, x2: 229, y2: 240 });
   });
 
-  test("UI-24（M19）mapNotes: 凡例は盤の下端に重ねる。20×20 は盤の下端の線 240 の 2px 上を下端に 2 行 × 4 列（列幅 58。x 4・62・120・178、y 218・228）、地は x2..237・y216..239。順は MAP_LEGEND_KEYS", () => {
+  test("UI-24（M19・C-5）mapNotes: 凡例は盤の外周の枠線の下。20×20 は枠線の下端の線 240 の 1 つ下から地 x2..237・y241..261（地図本体の下端 262 まで。下の余白を詰めて h 21）、2 行 × 4 列（列幅 58。x 4・62・120・178、y 242・252）。順は MAP_LEGEND_KEYS", () => {
     expect(MAP_LEGEND_KEYS).toEqual(["self", "up", "down", "chest", "trap", "wall", "exit"]);
     expect(LEGEND_COL_W).toBe(58);
     const n = mapNotes(20, 20, MAP_AREA);
     expect(n.legend).toEqual([
-      { key: "self", x: 4, y: 218 },
-      { key: "up", x: 62, y: 218 },
-      { key: "down", x: 120, y: 218 },
-      { key: "chest", x: 178, y: 218 },
-      { key: "trap", x: 4, y: 228 },
-      { key: "wall", x: 62, y: 228 },
-      { key: "exit", x: 120, y: 228 },
+      { key: "self", x: 4, y: 242 },
+      { key: "up", x: 62, y: 242 },
+      { key: "down", x: 120, y: 242 },
+      { key: "chest", x: 178, y: 242 },
+      { key: "trap", x: 4, y: 252 },
+      { key: "wall", x: 62, y: 252 },
+      { key: "exit", x: 120, y: 252 },
     ]);
-    expect(n.legendBox).toEqual({ x: 2, y: 216, w: 236, h: 24 });
+    expect(n.legendBox).toEqual({ x: 2, y: 241, w: 236, h: 21 });
+    // 盤の外周の枠線（下端の線は画素 240）を覆わない
+    const l = mapLayout(20, 20, MAP_AREA);
+    expect(n.legendBox!.y).toBe(l.oy + 20 * l.cell + 1);
   });
 
-  test("UI-24（M19）mapNotes は盤の大きさから計算し、どの寸法でも凡例と地は地図本体の内側で、盤の下端の線より上。入らなければ（盤が低すぎる）出さない", () => {
+  test("UI-24（M19・C-5）mapNotes は盤の大きさから計算し、どの寸法でも地は盤の外周の枠線の下端の線より下から始まって枠線を覆わず、凡例と地は地図本体の内側。字の行（10）は地の中。入らなければ（盤の下の余白が足りない）出さない", () => {
     for (let w = 1; w <= 60; w++) {
       for (const h of [1, 2, 3, 5, 10, 19, 20, 21, 22, 23, 24, 25, 26, 30, 40, 60]) {
         const l = mapLayout(w, h, MAP_AREA);
@@ -128,7 +131,8 @@ describe("UI-24 地図", () => {
         expect(b.x).toBeGreaterThanOrEqual(0);
         expect(b.y).toBeGreaterThanOrEqual(0);
         expect(b.x + b.w).toBeLessThanOrEqual(MAP_AREA.w);
-        expect(b.y + b.h).toBeLessThanOrEqual(boardBottom);
+        expect(b.y).toBeGreaterThan(boardBottom);
+        expect(b.y + b.h).toBeLessThanOrEqual(MAP_AREA.h);
         for (const it of n.legend) {
           expect(it.y).toBeGreaterThanOrEqual(b.y);
           expect(it.y + 10).toBeLessThanOrEqual(b.y + b.h);
@@ -137,8 +141,9 @@ describe("UI-24 地図", () => {
         }
       }
     }
-    // 地（24px）が地図本体に入らない（盤の下端の線が y22 未満）なら出さない
+    // 盤の下の余白（枠線の下）が字の 2 行 + 1 に満たないなら出さない
     expect(mapNotes(1, 1, { w: 240, h: 20 })).toEqual({ legend: null, legendBox: null });
+    expect(mapNotes(20, 23, MAP_AREA)).toEqual({ legend: null, legendBox: null });
     expect(mapNotes(4, 2, { w: 232, h: 262 })).toEqual({ legend: null, legendBox: null });
     expect(mapNotes(20, 20, MAP_AREA).legend).not.toBeNull();
   });
@@ -180,26 +185,29 @@ describe("UI-24 地図", () => {
     expect(p.exits).toBe(exitD(exit.x, exit.y + 5, "n", 8));
   });
 
-  test("UI-78（M18・M19）exits は口の辺の上に辺に沿った長さ 1 の点線 3 本（cell 8 で 1〜2・3.5〜4.5・6〜7）。door の辺は中央の 1 本だけ。4 方向、exits が空なら描かない。色は accent", () => {
+  test("UI-78（M18・M19）exits は口の辺の上に辺に沿った長さ 1 の点線 3 本（cell 8 で 1〜2・3.5〜4.5・6〜7）。door の辺は中央に辺の半分の長さの 1 本（C-5。cell 8 で 2〜6）。4 方向、exits が空なら描かない。色は accent", () => {
     const lay = LAY8;
     const px = lay.ox + 5 * 8;
     const py = lay.oy + 7 * 8;
     const p = mapPaths(view([cellOf(5, 7, { n: "open", e: "door", s: "open", w: "open", exits: ["n", "e", "s", "w"] })]), lay);
     expect(p.exits).toBe(
       `M${px + 1} ${py}H${px + 2}M${px + 3.5} ${py}H${px + 4.5}M${px + 6} ${py}H${px + 7}` +
-        `M${px + 8} ${py + 3.5}V${py + 4.5}` +
+        `M${px + 8} ${py + 2}V${py + 6}` +
         `M${px + 1} ${py + 8}H${px + 2}M${px + 3.5} ${py + 8}H${px + 4.5}M${px + 6} ${py + 8}H${px + 7}` +
         `M${px} ${py + 1}V${py + 2}M${px} ${py + 3.5}V${py + 4.5}M${px} ${py + 6}V${py + 7}`,
     );
     expect(mapPaths(view([cellOf(5, 7, { n: "open" })]), lay).exits).toBe("");
     // cell 6 では端の 2 本を sc(1)=1 から（1〜2・4〜5）、中央は 2.5〜3.5
     expect(exitD(0, 10, "n", 6)).toBe("M1 10H2M2.5 10H3.5M4 10H5");
-    expect(exitD(0, 10, "w", 6, true)).toBe("M0 12.5V13.5");
+    // door は max(2, cell/4)〜cell−それ。cell 6 は 2〜4、cell 11 は 2.75〜8.25。扉の隙間が 1 未満の cell 4 は中央の長さ 1
+    expect(exitD(0, 10, "w", 6, true)).toBe("M0 12V14");
+    expect(exitD(0, 10, "n", 11, true)).toBe("M2.75 10H8.25");
+    expect(exitD(0, 10, "n", 4, true)).toBe("M1.5 10H2.5");
     // cell 11（M19 の 20×20）では sc(1)=1 から（1〜2・9〜10）、中央は 5〜6
     expect(exitD(0, 10, "n", 11)).toBe("M1 10H2M5 10H6M9 10H10");
   });
 
-  test("UI-78（M19）点線の線分はすべて口のあるセルの矩形（辺を含む）の中にあり、ほかのセルの内側に入らない。辺の上に乗り、辺の両端（角）には届かない。door の 1 本は扉の線（両端 2px）と重ならない", () => {
+  test("UI-78（M19）点線の線分はすべて口のあるセルの矩形（辺を含む）の中にあり、ほかのセルの内側に入らない。辺の上に乗り、辺の両端（角）には届かない。door の 1 本は辺の中央に辺の半分の長さ（扉の線が両端 2px を取るので max(2, cell/4) から）で、扉の線（両端 2px）と重ならない", () => {
     const lay = mapLayout(20, 20, MAP_AREA);
     const edges: Edge[] = ["open", "door"];
     for (const cell of [11, 10, 8, 7, 6]) {
@@ -219,9 +227,12 @@ describe("UI-24 地図", () => {
             // 辺の上（n は y = py、s は y = py+cell、w は x = px、e は x = px+cell）で、辺に沿う
             const on = d === "n" ? sg.y1 === py && sg.y2 === py : d === "s" ? sg.y1 === py + cell && sg.y2 === py + cell : d === "w" ? sg.x1 === px && sg.x2 === px : sg.x1 === px + cell && sg.x2 === px + cell;
             expect(on).toBe(true);
-            // 長さ 1、角（辺の両端）に届かない
+            // open は長さ 1、door は辺の中央に辺の半分（max(2, cell/4)〜cell−それ）。角（辺の両端）に届かない
             const [lo, hi] = d === "n" || d === "s" ? [Math.min(sg.x1, sg.x2) - px, Math.max(sg.x1, sg.x2) - px] : [Math.min(sg.y1, sg.y2) - py, Math.max(sg.y1, sg.y2) - py];
-            expect(hi - lo).toBe(1);
+            if (e === "door") {
+              expect(lo).toBe(Math.max(2, cell / 4));
+              expect(lo + hi).toBe(cell);
+            } else expect(hi - lo).toBe(1);
             expect(lo > 0 && hi < cell).toBe(true);
             // door の扉の線（0〜2 と cell-2〜cell）と重ならない
             if (e === "door") expect(lo >= 2 && hi <= cell - 2).toBe(true);
@@ -628,7 +639,7 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     ]);
   });
 
-  test("UI-24/UI-25/UI-78（M19）render は注記の行（題の下 y12..21）に tapHint を左寄せ（選んでいない間だけ）・「未踏の口 {n}」を右寄せ（選んでいる間も）で出し、盤の外周に dim の枠線を描く。凡例は閉じて始まり、toggleLegend で盤の下端に重ねて開閉する", () => {
+  test("UI-24/UI-25/UI-78（M19）render は注記の行（題の下 y12..21）に tapHint を左寄せ（選んでいない間だけ）・「未踏の口 {n}」を右寄せ（選んでいる間も）で出し、盤の外周に dim の枠線を描く。凡例は閉じて始まり、toggleLegend で盤の外周の枠線の下（C-5。M19 の群 A では盤の下端に重ねた）に開閉する", () => {
     const { divs, paths } = fakeDocument();
     const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, data.strings);
     const hint = divs.find((d) => d.className === "map-hint")!;
@@ -667,7 +678,7 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     expect(m.toggleLegend()).toBe(true);
     expect(m.legendOpen()).toBe(true);
     expect(labels.map((d) => [d.style["display"], d.style["left"], d.style["top"]])).toEqual(n.legend!.map((it) => ["", `${it.x + 10}px`, `${ay + it.y}px`]));
-    expect(box.attrs["d"]).toBe("M2 216h236v24h-236Z");
+    expect(box.attrs["d"]).toBe("M2 241h236v21h-236Z");
     expect(box.attrs["fill"]).toBe("var(--c-bg)");
     expect(Number(box.attrs["fill-opacity"])).toBeLessThan(1);
     expect(paths.filter((p) => p.attrs["d"] === mapLegendPaths(n.legend!).chests)).toHaveLength(1);

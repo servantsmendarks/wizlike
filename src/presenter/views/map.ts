@@ -15,7 +15,7 @@
 // M18（UI-78）: 未踏の口（core の MapCell.exits）の辺の上に点線（accent。M19 で辺の外へ伸ばす破線から改めた）、凡例に「未踏」（4 列 × 2 行）、
 // 題の下の 3 行目に「未踏の口 {n}」（n は core の MapView.unexploredExits。選んでいる間も出す）。
 // M19（UI-24 / UI-72）: マスを 11px に（20×20 の盤は 221×221）、盤の外周に dim の枠線、題の 2 行目と 3 行目は 1 行（注記の行）にまとめ、
-// tapHint は左寄せ・未踏の口は右寄せ（両方が入らなければ tapHint だけ）。凡例は操作領域の「凡例」で開閉し、開いている間は盤の下端に重ねて
+// tapHint は左寄せ・未踏の口は右寄せ（両方が入らなければ tapHint だけ）。凡例は操作領域の「凡例」で開閉し、開いている間は盤の外周の枠線の下（C-5 から。それまでは盤の下端に重ねた）に
 // 半透明の地の上に 2 行で出す。選んだセルの枠は 2px の text 色（宝箱の □ と見分ける）。
 import type { Facing, MapEdgeDir, MapView, Pos } from "../../core/types";
 import { onTap } from "../input/tap";
@@ -152,17 +152,21 @@ const chestD = (px: number, py: number, cell: number): string => {
   const b = sc(6, cell);
   return `M${px + a} ${py + a}H${px + b}V${py + b}H${px + a}Z`;
 };
+/** 扉の辺の両端の線の長さ（mapPaths の hLine / vLine の 2px） */
+const DOOR_END = 2;
 /**
  * UI-78（M18。M19 で形を変えた）: 未踏の口の点線。セル原点 (px, py) の辺 dir の上（open の辺には線が無いので辺の位置そのもの）に、
  * 辺に沿った長さ 1 の線を 3 本（cell 8 で辺の 1〜2・3.5〜4.5・6〜7。端の 2 本は a = sc(1) から a〜a+1 と cell-a-1〜cell-a、中央は cell/2±0.5）。
- * door の辺は両端の 2px に扉の線があるので、中央の 1 本だけ（扉の隙間の中）。線は口のあるセルの辺の上に収まり、隣のセルの内側には入らない。
- * 盤の外へ向く辺は core が exits に入れない
+ * door の辺は両端の 2px に扉の線があるので、辺の中央に辺の半分の長さの線を 1 本（M19 の C-5 から。cell 8 で 2〜6 で、扉の線 0〜2・6〜8 に接して重ならない。
+ * 始まりは max(2, cell/4)、終わりは cell − 始まり。cell 11 は 2.75〜8.25。扉の隙間が 1 未満（cell 4 以下）のときは M19 の C-5 までの中央の長さ 1 の 1 本）。
+ * 線は口のあるセルの辺の上に収まり、隣のセルの内側には入らない。盤の外へ向く辺は core が exits に入れない
  */
 export const exitD = (px: number, py: number, dir: MapEdgeDir, cell: number, door = false): string => {
   const a = sc(1, cell);
   const m = cell / 2;
+  const ds = Math.max(DOOR_END, cell / 4);
   const spans: Array<[number, number]> = door
-    ? [[m - 0.5, m + 0.5]]
+    ? [cell - 2 * ds >= 1 ? [ds, cell - ds] : [m - 0.5, m + 0.5]]
     : [
         [a, a + 1],
         [m - 0.5, m + 0.5],
@@ -189,7 +193,7 @@ const NOTE_LINE_H = 10;
 /** 凡例の 1 列の幅（記号 8 + 間 2 + 語。語は全角 6 字まで。M18 で 72 → 58 にして 4 列） */
 export const LEGEND_COL_W = 58;
 const LEGEND_COLS = 4;
-/** 盤の下端の線と凡例の間、凡例と地の縁の間（論理 px） */
+/** 凡例と地の縁の間（論理 px。地図本体の下端を越えるときは詰める） */
 const NOTE_GAP = 2;
 /** UI-24 / UI-78（M19）: 注記の行の左右の余白と、tapHint と未踏の口の数の間の最小の空き（論理 px） */
 const NOTE_PAD_X = 4;
@@ -205,18 +209,24 @@ export type MapNotes = {
 };
 
 /**
- * UI-24（M19）: 凡例の位置。盤（mapLayout）の下端の線から NOTE_GAP 上を下端にして 2 行 × 4 列（列幅 58。中央寄せ）を盤に重ね、
- * その外側 NOTE_GAP を半透明の地にする。地が地図本体からはみ出すなら出さない。
- * 例: 20×20 は盤 y20..240（area 240×262）で、凡例 y218・228 の 2 行（x 4・62・120・178）、地 x2..237・y216..239
+ * UI-24（M19。C-5 で盤の下へ）: 凡例の位置。半透明の地は盤（mapLayout）の外周の枠線の下端の線（画素 oy + h*cell）の 1 つ下の画素から始め、
+ * 枠線を覆わない。その中に 2 行 × 4 列（行の高さ 10、列幅 58。中央寄せ）を、地の上端から NOTE_GAP 下に置く。
+ * 地は上下左右 NOTE_GAP の余白を取るが、地図本体の下端を越えるなら字の行の高さを保ったまま地の余白だけを詰める（上の余白も 1 まで詰める）。
+ * それでも 2 行が地図本体に入らない（盤の下の余白が字の行の高さ + 1 未満）か、地が左右にはみ出すなら出さない。
+ * 例: 20×20 は盤 y20..240（area 240×262）で、地 x2..237・y241..261（h 21）、凡例 y242・252 の 2 行（x 4・62・120・178）
  */
 export function mapNotes(w: number, h: number, area: { w: number; h: number }): MapNotes {
   const lay = mapLayout(w, h, area);
   const rows = Math.ceil(MAP_LEGEND_KEYS.length / LEGEND_COLS);
-  const top = lay.oy + h * lay.cell - NOTE_GAP - rows * NOTE_LINE_H;
+  const textH = rows * NOTE_LINE_H;
+  const boxY = lay.oy + h * lay.cell + 1;
+  const room = area.h - boxY;
+  const padTop = Math.min(NOTE_GAP, room - textH);
   const blockW = LEGEND_COL_W * LEGEND_COLS;
   const x0 = Math.floor((area.w - blockW) / 2);
-  const box = { x: x0 - NOTE_GAP, y: top - NOTE_GAP, w: blockW + 2 * NOTE_GAP, h: rows * NOTE_LINE_H + 2 * NOTE_GAP };
-  if (box.x < 0 || box.y < 0 || box.x + box.w > area.w || box.y + box.h > area.h) return { legend: null, legendBox: null };
+  const box = { x: x0 - NOTE_GAP, y: boxY, w: blockW + 2 * NOTE_GAP, h: Math.min(textH + 2 * NOTE_GAP, room) };
+  if (padTop < 1 || box.x < 0 || box.x + box.w > area.w) return { legend: null, legendBox: null };
+  const top = boxY + padTop;
   return {
     legend: MAP_LEGEND_KEYS.map((key, i) => ({ key, x: x0 + (i % LEGEND_COLS) * LEGEND_COL_W, y: top + Math.floor(i / LEGEND_COLS) * NOTE_LINE_H })),
     legendBox: box,
@@ -263,7 +273,7 @@ export type MapPaths = { floor: string; walls: string; stairs: string; traps: st
  * - stairs: 下りは「V」、上りは「^」
  * - traps: 察知した罠（kind trap）は「×」（cell 8 で (2,2)-(6,6) と (6,2)-(2,6)。M5.5）。色は danger で、階段とは形も色も違う
  * - chests: 開ける前の宝箱（kind chest）は「□」（cell 8 で (2,2)-(6,6) の正方形の枠。M11。UI-72）。色は accent
- * - exits: 未踏の口（MapCell.exits。UI-78。M18）の辺の上の点線（exitD。M19 から。door の辺は中央の 1 本だけ）。色は accent
+ * - exits: 未踏の口（MapCell.exits。UI-78。M18）の辺の上の点線（exitD。M19 から。door の辺は中央に辺の半分の長さの 1 本）。色は accent
  * - player: 現在位置の三角形（塗り）
  */
 export function mapPaths(v: MapView, lay: MapLayout): MapPaths {
@@ -401,7 +411,7 @@ export function createMapView(
   const pickPath = path({ class: "map-pick", fill: "none", stroke: "var(--c-text)", "stroke-width": "1", d: "" });
   g.append(framePath, wallPath, stairsPath, trapsPath, chestsPath, exitsPath, playerPath, pickPath);
 
-  // UI-24（M16。M19 から開閉）: 凡例の地（半透明）と記号（盤と同じ色と path）。盤の下端に重ねるので選択の枠より上に描く。
+  // UI-24（M16。M19 から開閉）: 凡例の地（半透明）と記号（盤と同じ色と path）。選択の枠より上の層に描く（C-5 から盤の下に出すので重ならないが、層の順は保つ）。
   // 語は el の上の div（タップは地図本体に通す）
   const legendBox = path({ class: "map-legend-box", fill: "var(--c-bg)", "fill-opacity": "0.85", stroke: "none" });
   svg.appendChild(legendBox);
