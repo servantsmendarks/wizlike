@@ -39,7 +39,7 @@ function view(cells: MapCell[], o: Partial<MapView> = {}): MapView {
 type Seg = { x1: number; y1: number; x2: number; y2: number };
 function segments(d: string): Seg[] {
   const out: Seg[] = [];
-  const re = /M(-?\d+) (-?\d+)([HV])(-?\d+)/g;
+  const re = /M(-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?)([HV])(-?\d+(?:\.\d+)?)/g;
   for (const m of d.matchAll(re)) {
     const x = Number(m[1]);
     const y = Number(m[2]);
@@ -152,30 +152,59 @@ describe("UI-24 地図", () => {
     expect(p.player).toBe(same(cellOf(0, 0), self.x, self.y + 1).player);
     const wall = at("wall");
     expect(p.walls).toBe(`M${wall.x} ${wall.y + 5}H${wall.x + 8}`);
-    // UI-78（M18）: 未踏は箱の下端を辺とみなした北向きの破線（箱 y+1..y+8 の中の y+2..y+8）
+    // UI-78（M18。M19 で点線に）: 未踏は wall と同じ高さ（y+5）の横の辺に沿った点線（盤の open の辺と同じ 1〜2・3.5〜4.5・6〜7）
     const exit = at("exit");
-    expect(p.exits).toBe(`M${exit.x + 4} ${exit.y + 8}V${exit.y + 6}M${exit.x + 4} ${exit.y + 4}V${exit.y + 2}`);
+    expect(p.exits).toBe(`M${exit.x + 1} ${exit.y + 5}H${exit.x + 2}M${exit.x + 3.5} ${exit.y + 5}H${exit.x + 4.5}M${exit.x + 6} ${exit.y + 5}H${exit.x + 7}`);
+    expect(p.exits).toBe(exitD(exit.x, exit.y + 5, "n", 8));
   });
 
-  test("UI-78（M18）exits の辺の中央から外へ長さ 2 の破線 2 本（cell 8 で辺から 1〜3 と 5〜7）。4 方向、door も同じ、exits が空なら描かない。色は accent", () => {
+  test("UI-78（M18・M19）exits は口の辺の上に辺に沿った長さ 1 の点線 3 本（cell 8 で 1〜2・3.5〜4.5・6〜7）。door の辺は中央の 1 本だけ。4 方向、exits が空なら描かない。色は accent", () => {
     const lay = mapLayout(20, 20, MAP_AREA);
     const px = lay.ox + 5 * 8;
     const py = lay.oy + 7 * 8;
     const p = mapPaths(view([cellOf(5, 7, { n: "open", e: "door", s: "open", w: "open", exits: ["n", "e", "s", "w"] })]), lay);
     expect(p.exits).toBe(
-      `M${px + 4} ${py - 1}V${py - 3}M${px + 4} ${py - 5}V${py - 7}` +
-        `M${px + 9} ${py + 4}H${px + 11}M${px + 13} ${py + 4}H${px + 15}` +
-        `M${px + 4} ${py + 9}V${py + 11}M${px + 4} ${py + 13}V${py + 15}` +
-        `M${px - 1} ${py + 4}H${px - 3}M${px - 5} ${py + 4}H${px - 7}`,
+      `M${px + 1} ${py}H${px + 2}M${px + 3.5} ${py}H${px + 4.5}M${px + 6} ${py}H${px + 7}` +
+        `M${px + 8} ${py + 3.5}V${py + 4.5}` +
+        `M${px + 1} ${py + 8}H${px + 2}M${px + 3.5} ${py + 8}H${px + 4.5}M${px + 6} ${py + 8}H${px + 7}` +
+        `M${px} ${py + 1}V${py + 2}M${px} ${py + 3.5}V${py + 4.5}M${px} ${py + 6}V${py + 7}`,
     );
-    // 破線は隣のセル（未探索）の内側に収まり、自分のセルの内側（記号の場所）には入らない
-    for (const sg of segments(p.exits)) {
-      const inside = (x: number, y: number): boolean => x > px && x < px + 8 && y > py && y < py + 8;
-      expect(inside(sg.x1, sg.y1) || inside(sg.x2, sg.y2)).toBe(false);
-    }
     expect(mapPaths(view([cellOf(5, 7, { n: "open" })]), lay).exits).toBe("");
-    // cell 6 では 8 基準を丸める（sc(1)=1・sc(3)=2・sc(5)=4・sc(7)=5、中央 sc(4)=3）
-    expect(exitD(0, 10, "n", 6)).toBe("M3 9V8M3 6V5");
+    // cell 6 では端の 2 本を sc(1)=1 から（1〜2・4〜5）、中央は 2.5〜3.5
+    expect(exitD(0, 10, "n", 6)).toBe("M1 10H2M2.5 10H3.5M4 10H5");
+    expect(exitD(0, 10, "w", 6, true)).toBe("M0 12.5V13.5");
+  });
+
+  test("UI-78（M19）点線の線分はすべて口のあるセルの矩形（辺を含む）の中にあり、ほかのセルの内側に入らない。辺の上に乗り、辺の両端（角）には届かない。door の 1 本は扉の線（両端 2px）と重ならない", () => {
+    const lay = mapLayout(20, 20, MAP_AREA);
+    const edges: Edge[] = ["open", "door"];
+    for (const cell of [8, 7, 6]) {
+      const l = { ...lay, cell };
+      for (const e of edges) {
+        for (const d of ["n", "e", "s", "w"] as const) {
+          const c = cellOf(5, 7, { [d]: e, exits: [d] });
+          const px = l.ox + 5 * cell;
+          const py = l.oy + 7 * cell;
+          const segs = segments(mapPaths(view([c]), l).exits);
+          expect(segs.length).toBe(e === "door" ? 1 : 3);
+          for (const sg of segs) {
+            // 口のあるセルの矩形（辺を含む）の中
+            for (const [x, y] of [[sg.x1, sg.y1], [sg.x2, sg.y2]] as const) {
+              expect(x >= px && x <= px + cell && y >= py && y <= py + cell).toBe(true);
+            }
+            // 辺の上（n は y = py、s は y = py+cell、w は x = px、e は x = px+cell）で、辺に沿う
+            const on = d === "n" ? sg.y1 === py && sg.y2 === py : d === "s" ? sg.y1 === py + cell && sg.y2 === py + cell : d === "w" ? sg.x1 === px && sg.x2 === px : sg.x1 === px + cell && sg.x2 === px + cell;
+            expect(on).toBe(true);
+            // 長さ 1、角（辺の両端）に届かない
+            const [lo, hi] = d === "n" || d === "s" ? [Math.min(sg.x1, sg.x2) - px, Math.max(sg.x1, sg.x2) - px] : [Math.min(sg.y1, sg.y2) - py, Math.max(sg.y1, sg.y2) - py];
+            expect(hi - lo).toBe(1);
+            expect(lo > 0 && hi < cell).toBe(true);
+            // door の扉の線（0〜2 と cell-2〜cell）と重ならない
+            if (e === "door") expect(lo >= 2 && hi <= cell - 2).toBe(true);
+          }
+        }
+      }
+    }
   });
 
   test("UI-24 mapLayout は渡した領域の寸法に合わせる（ui §2 の区切りで地図本体の高さが変わる）", () => {
@@ -602,12 +631,12 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     expect(unexplored.style["display"]).toBe("");
     m.setPick(null, false);
     expect(hint.style["display"]).toBe("");
-    // 破線（map-exits）と数
+    // 点線（map-exits）と数
     m.render(view([cellOf(0, 0, { e: "open", exits: [] }), cellOf(1, 0, { w: "open", s: "door", e: "open", exits: ["e", "s"] })]), "t");
     expect(unexplored.textContent).toBe("未踏の口 2");
     const exitsEl = paths.find((p) => p.attrs["class"] === "map-exits")!;
     expect(exitsEl.attrs["stroke"]).toBe("var(--c-accent)");
-    expect(exitsEl.attrs["d"]).toBe(mapPaths(view([cellOf(1, 0, { exits: ["e", "s"] })]), mapLayout(20, 20, L.map.area)).exits);
+    expect(exitsEl.attrs["d"]).toBe(mapPaths(view([cellOf(1, 0, { w: "open", s: "door", e: "open", exits: ["e", "s"] })]), mapLayout(20, 20, L.map.area)).exits);
     // 30×30: 凡例は出さない（記号の path も空）。2 行目は出る。3 行目は盤と重なるので出さない
     m.render(view([cellOf(0, 0)], { width: 30, height: 30 }), "t");
     expect(labels.every((d) => d.style["display"] === "none")).toBe(true);

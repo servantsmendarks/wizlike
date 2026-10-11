@@ -12,7 +12,7 @@
 // 座標は画素番号。床の塗りは素の座標、線と記号と現在位置は translate(0.5 0.5) の中で描く（crispEdges）。
 // M16（UI-24 / UI-25）: 盤の上の余白に題の 2 行目（map.tapHint。選んでいない間だけ）、盤の下の余白に凡例（map.legend.*。
 // 記号は盤と同じ path を cell 8 で描く）。位置は盤の大きさから mapNotes で決め、余白に入らなければ出さない。
-// M18（UI-78）: 未踏の口（core の MapCell.exits）の辺の中央から外へ短い破線（accent）、凡例に「未踏」（4 列 × 2 行）、
+// M18（UI-78）: 未踏の口（core の MapCell.exits）の辺の上に点線（accent。M19 で辺の外へ伸ばす破線から改めた）、凡例に「未踏」（4 列 × 2 行）、
 // 題の下の 3 行目に「未踏の口 {n}」（n は core の MapView.unexploredExits。選んでいる間も出す）。
 import type { Facing, MapEdgeDir, MapView, Pos } from "../../core/types";
 import { onTap } from "../input/tap";
@@ -136,16 +136,27 @@ const chestD = (px: number, py: number, cell: number): string => {
   return `M${px + a} ${py + a}H${px + b}V${py + b}H${px + a}Z`;
 };
 /**
- * UI-78（M18）: 未踏の口の破線。セル原点 (px, py) の辺 dir の中央から、辺に直交して外（未探索のセル）へ向かう長さ 2 の線 2 本
- * （cell 8 で辺から 1〜3 と 5〜7。8 基準の相対を丸める）。盤の外へ向く辺は core が exits に入れない
+ * UI-78（M18。M19 で形を変えた）: 未踏の口の点線。セル原点 (px, py) の辺 dir の上（open の辺には線が無いので辺の位置そのもの）に、
+ * 辺に沿った長さ 1 の線を 3 本（cell 8 で辺の 1〜2・3.5〜4.5・6〜7。端の 2 本は a = sc(1) から a〜a+1 と cell-a-1〜cell-a、中央は cell/2±0.5）。
+ * door の辺は両端の 2px に扉の線があるので、中央の 1 本だけ（扉の隙間の中）。線は口のあるセルの辺の上に収まり、隣のセルの内側には入らない。
+ * 盤の外へ向く辺は core が exits に入れない
  */
-export const exitD = (px: number, py: number, dir: MapEdgeDir, cell: number): string => {
-  const m = sc(4, cell);
-  const [a1, a2, b1, b2] = [sc(1, cell), sc(3, cell), sc(5, cell), sc(7, cell)];
-  if (dir === "n") return `M${px + m} ${py - a1}V${py - a2}M${px + m} ${py - b1}V${py - b2}`;
-  if (dir === "s") return `M${px + m} ${py + cell + a1}V${py + cell + a2}M${px + m} ${py + cell + b1}V${py + cell + b2}`;
-  if (dir === "w") return `M${px - a1} ${py + m}H${px - a2}M${px - b1} ${py + m}H${px - b2}`;
-  return `M${px + cell + a1} ${py + m}H${px + cell + a2}M${px + cell + b1} ${py + m}H${px + cell + b2}`;
+export const exitD = (px: number, py: number, dir: MapEdgeDir, cell: number, door = false): string => {
+  const a = sc(1, cell);
+  const m = cell / 2;
+  const spans: Array<[number, number]> = door
+    ? [[m - 0.5, m + 0.5]]
+    : [
+        [a, a + 1],
+        [m - 0.5, m + 0.5],
+        [cell - a - 1, cell - a],
+      ];
+  if (dir === "n" || dir === "s") {
+    const y = dir === "n" ? py : py + cell;
+    return spans.map(([s, e]) => `M${px + s} ${y}H${px + e}`).join("");
+  }
+  const x = dir === "w" ? px : px + cell;
+  return spans.map(([s, e]) => `M${x} ${py + s}V${py + e}`).join("");
 };
 const playerD = (px: number, py: number, facing: Facing, cell: number): string =>
   playerTriangle(facing, cell)
@@ -200,7 +211,7 @@ export type MapLegendPaths = { walls: string; stairs: string; traps: string; che
 /**
  * UI-24（M16）: 凡例の記号。盤と同じ path（cell 8）を各項目の記号の箱 (x, y+1) に描く。
  * self は北向きの現在位置、up / down は階段、chest は □、trap は ×、wall は箱の中ほどの横線 1 本（盤の壁の線と同じ色）、
- * exit（UI-78。M18）は箱の下端を辺とみなした北向きの破線（盤の exitD と同じ。箱の y+1..y+7 に収まる）
+ * exit（UI-78。M18。M19 で点線に）は wall と同じ箱の中ほどの横の辺に沿った点線（盤の open の辺の exitD と同じ。箱の y+5 の x+1..x+7）
  */
 export function mapLegendPaths(legend: NonNullable<MapNotes["legend"]>): MapLegendPaths {
   const out: MapLegendPaths = { walls: "", stairs: "", traps: "", chests: "", exits: "", player: "" };
@@ -212,7 +223,7 @@ export function mapLegendPaths(legend: NonNullable<MapNotes["legend"]>): MapLege
     else if (it.key === "down") out.stairs += stairsDownD(px, py, MAX_CELL);
     else if (it.key === "chest") out.chests += chestD(px, py, MAX_CELL);
     else if (it.key === "trap") out.traps += trapD(px, py, MAX_CELL);
-    else if (it.key === "exit") out.exits += exitD(px, py + MAX_CELL, "n", MAX_CELL);
+    else if (it.key === "exit") out.exits += exitD(px, py + MAX_CELL / 2, "n", MAX_CELL);
     else out.walls += `M${px} ${py + MAX_CELL / 2}H${px + MAX_CELL}`;
   }
   return out;
@@ -227,7 +238,7 @@ export type MapPaths = { floor: string; walls: string; stairs: string; traps: st
  * - stairs: 下りは「V」、上りは「^」
  * - traps: 察知した罠（kind trap）は「×」（cell 8 で (2,2)-(6,6) と (6,2)-(2,6)。M5.5）。色は danger で、階段とは形も色も違う
  * - chests: 開ける前の宝箱（kind chest）は「□」（cell 8 で (2,2)-(6,6) の正方形の枠。M11。UI-72）。色は accent
- * - exits: 未踏の口（MapCell.exits。UI-78。M18）の辺の中央から外への破線（exitD）。色は accent
+ * - exits: 未踏の口（MapCell.exits。UI-78。M18）の辺の上の点線（exitD。M19 から。door の辺は中央の 1 本だけ）。色は accent
  * - player: 現在位置の三角形（塗り）
  */
 export function mapPaths(v: MapView, lay: MapLayout): MapPaths {
@@ -268,7 +279,7 @@ export function mapPaths(v: MapView, lay: MapLayout): MapPaths {
     else if (c.kind === "stairsUp") stairs.push(stairsUpD(px, py, cell));
     else if (c.kind === "trap") traps.push(trapD(px, py, cell));
     else if (c.kind === "chest") chests.push(chestD(px, py, cell));
-    for (const d of c.exits) exits.push(exitD(px, py, d, cell));
+    for (const d of c.exits) exits.push(exitD(px, py, d, cell, c[d] === "door"));
   }
 
   const player = playerD(ox + v.pos.x * cell, oy + v.pos.y * cell, v.facing, cell);

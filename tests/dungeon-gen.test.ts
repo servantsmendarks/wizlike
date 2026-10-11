@@ -140,6 +140,26 @@ describe("dungeon-gen: d01/d02 × 200 シード × 全階", () => {
     }
   });
 
+  // M19（UI-78 の点線の調査）: 上の d01/d02 に加えて、data.dungeons のすべて（d03 以降も）× 200 シード × 全階で辺の対称性を見る
+  test("DG-04/UI-78 辺の整合性（全ダンジョン）: data.dungeons のすべて × 200 シード × 全階で checkEdges が空", () => {
+    expect(data.dungeons.length).toBeGreaterThanOrEqual(3);
+    const bad: string[] = [];
+    let floors = 0;
+    for (const def of data.dungeons) {
+      const pre = ALL.filter((a) => a.def.id === def.id);
+      for (const seed of SEEDS) {
+        const dive = pre.find((a) => a.seed === seed)?.floors ?? generateDive(def, CFG, seed, GEN(def));
+        expect(dive.length).toBe(def.floors);
+        for (const f of dive) {
+          floors++;
+          for (const e of checkEdges(f)) bad.push(`${def.id} seed ${seed} floor ${f.floor}: ${e}`);
+        }
+      }
+    }
+    expect(floors).toBe(data.dungeons.reduce((a, d) => a + d.floors, 0) * SEEDS.length);
+    expect(bad).toEqual([]);
+  });
+
   // M11（DG-04 改）: kind に chest を足して 9 種（旧 8 種）。chestTrapId は kind=chest のときだけ非 null になりうる（罠なしの箱は null）
   test("DG-04 kind は 9 種のどれか。eventId は kind=event のときだけ、trapId は kind=trap のときだけ非 null、chestTrapId は kind=chest 以外では null", () => {
     const bad: string[] = [];

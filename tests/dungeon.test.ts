@@ -950,6 +950,42 @@ describe("オートマップ（DG-13）", () => {
       expectExits(withExplored(s0, [i, idx(f, nb.x, nb.y)]));
     }
   });
+
+  // M19（UI-78 の点線の調査）: 地図の未踏の口は、その辺へ向いて前進すれば必ず通れる（壁と言われない）。退行を防ぐ網
+  test("UI-78/DG-13 200 シード: mapView の exits の辺は dungeon.move で blocked にならない", () => {
+    const d = dataWithRate(0, 0);
+    const toFacing = { n: "N", e: "E", s: "S", w: "W" } as const;
+    let steps = 0;
+    let checked = 0;
+    const blocked: string[] = [];
+    for (let seed = 1; seed <= 200; seed++) {
+      let s = enterD01(seed);
+      const walk = createRng(seed);
+      for (let k = 0; k < 120; k++) {
+        if (s.screen !== "dungeon" || s.dive === null || s.pendingChoice !== null || s.battle !== null || s.dive.chest !== null) break;
+        const roll = randInt(walk, 0, 3);
+        const cmd: Command = roll === 0 ? { type: "dungeon.turn", dir: "left" } : roll === 1 ? { type: "dungeon.turn", dir: "right" } : MOVE;
+        const r = execute(s, cmd, d);
+        if (r.events[0]?.kind === "rejected") break;
+        s = r.state;
+        steps++;
+        if (s.screen !== "dungeon" || s.dive === null || s.pendingChoice !== null || s.battle !== null || s.dive.chest !== null) break;
+        const mv = mapView(s, d)!;
+        for (const c of mv.cells) {
+          for (const e of c.exits) {
+            const t = execute(placeAt(s, { x: c.x, y: c.y }, toFacing[e]), MOVE, d);
+            checked++;
+            expect(t.events[0]?.kind).not.toBe("rejected");
+            if (t.events.some((ev) => ev.kind === "blocked")) blocked.push(`seed ${seed} floor ${s.dive.floor} (${c.x},${c.y}) ${e}`);
+          }
+        }
+      }
+    }
+    // 歩きが十分に長く、口を十分に試したこと（調査の時点で約 12,000 手・44,000 件）
+    expect(steps).toBeGreaterThan(5000);
+    expect(checked).toBeGreaterThan(20000);
+    expect(blocked).toEqual([]);
+  }, 120000);
 });
 
 describe("階段（DG-14, E3）", () => {
