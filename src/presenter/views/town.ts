@@ -682,6 +682,11 @@ export function townPageIntro(page: TownPage, menu: TownMenu): string[] {
   if (page === "temple") return ["town.temple.intro"];
   if (page === "dark") return ["town.dark.intro"];
   if (page === "upgrade") return ["town.upgrade.intro"]; // TW-17
+  // TW-17（M19 C-1）: 触媒の段に入ったとき、候補が無ければ候補に出ない理由を語る（候補はどの者の段でも同じ。townMenu.upgrade）
+  if (typeof page === "object" && "upCat" in page) {
+    const m = menu.upgrade.members.find((x) => x.memberId === page.upCat.memberId);
+    return m !== undefined && m.catalysts.length === 0 ? ["town.upgrade.catNoneWhy"] : [];
+  }
   if (page === "gate") return ["town.dungeonGate.intro"];
   if (page === "shop") return ["town.shop.intro"];
   if (page === "shopSell") return ["town.shop.sellIntro"];
@@ -859,6 +864,8 @@ export function upgradeCatalystLabel(c: TownMenuUpgradeCatalyst, on: boolean, st
 /**
  * UI-52 / UI-47（M10.5 追補。2026-10-07 ユーザーの指示「ボタンが隠れてはまずいので問いがある場合はその出し方に。全体表示はボタンがない場合」。未定-22）:
  * 一覧の見出し（1 行・全角 28 字）に出す文（整形済み）。答えのボタンが続く問いは会話の箱（広い箱は答えのボタンを覆う）で語らず、ここに値を入れて出す。
+ * - 強化の触媒の段（{ upCat }。M19 C-1）: core の upgradePreview(picked) の値で「触媒 {n} → 成功率 {rate}%（大成功 {great}%）」（town.upgrade.catalystRate）。
+ *   選ぶたびに app が描き直すので値も組み直る。preview が null なら town.upgrade.catalyst
  * - 強化の確認（{ upConfirm }）: core の upgradePreview の値で「成功率 {rate}（大成功 {great}）料金 {fee}G。鍛えるか？」、払えなければ問いの代わりに
  *   「…。所持金が足りない。」（town.upgrade.ask / askNoGold）。対象と触媒の数は答えのボタンのラベル（town.upgrade.do）。preview が null なら town.ask.upConfirm
  * - 転職の確認（{ ccConfirm }）: 「{name}を{cls}にする。レベルは 1 に戻る。よいか。」（town.classChange.confirm）。cc が null なら town.ask.classChangeConfirm
@@ -876,6 +883,9 @@ export function townHeadingText(
   preview: UpgradePreview | null = null,
   cc: ClassChangeView | null = null,
 ): string {
+  if (typeof page === "object" && "upCat" in page && preview !== null) {
+    return s(strings, "town.upgrade.catalystRate", { n: page.upCat.picked.length, rate: preview.rate, great: preview.great });
+  }
   if (typeof page === "object" && "upConfirm" in page && preview !== null) {
     return s(strings, preview.affordable ? "town.upgrade.ask" : "town.upgrade.askNoGold", { rate: preview.rate, great: preview.great, fee: preview.fee });
   }

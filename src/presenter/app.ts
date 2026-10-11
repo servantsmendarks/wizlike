@@ -652,11 +652,14 @@ export function createApp(o: {
 
   const listItem = (label: string, onSelect: () => void): ControlItem => ({ label, onSelect: () => guard(onSelect) });
 
-  /** TW-17: 確認の段（{ upConfirm }）なら core の upgradePreview の値（成功率・大成功・料金・可否）。他のページは null */
-  const previewOf = (page: TownPage): UpgradePreview | null =>
-    typeof page === "object" && "upConfirm" in page
-      ? upgradePreview(state, data, page.upConfirm.memberId, page.upConfirm.slot, page.upConfirm.picked)
-      : null;
+  /**
+   * TW-17: 確認の段（{ upConfirm }）と触媒の段（{ upCat }。M19 C-1 の見出しの成功率）なら、選んだ触媒での core の upgradePreview の値
+   * （成功率・大成功・料金・可否）。他のページは null
+   */
+  const previewOf = (page: TownPage): UpgradePreview | null => {
+    const sel = typeof page === "object" ? ("upConfirm" in page ? page.upConfirm : "upCat" in page ? page.upCat : null) : null;
+    return sel === null ? null : upgradePreview(state, data, sel.memberId, sel.slot, sel.picked);
+  };
 
   /**
    * TW-09（M10）: 転職の段（classChange / { ccClass } / { ccConfirm }）なら、パーティの名前（campMenu）とその段の者の
@@ -679,7 +682,8 @@ export function createApp(o: {
     // 履歴の末尾 2 件と同じ語りは重ねて出さない（段を戻ってまた進んだとき。UI-52 / TW-17）
     // M10.5 追補（未定-22）: 答えのボタンが続く問い（強化・転職の確認、救済の申し出）は箱で語らず、見出し（townHeadingText）に出す
     // TW-17（M18 3-3）: 強化の確認の段は、入るときに前後の 1 文（core の upgradePreview の値。見出しの問いは今のまま townHeadingText）
-    const upText = upgradePreviewText(previewOf(page), strings);
+    // M19（C-1）: 触媒の段も previewOf が値を返す（見出しの成功率）が、前後の 1 文は確認の段だけで語る
+    const upText = typeof page === "object" && "upConfirm" in page ? upgradePreviewText(previewOf(page), strings) : null;
     const intro = [...townPageIntro(page, menu).map(t), ...(upText === null ? [] : [upText])];
     const texts = townFreshIntro(intro, play.message.history().slice(-TOWN_INTRO_DEDUP));
     const skip = store.get().skipAnimations;

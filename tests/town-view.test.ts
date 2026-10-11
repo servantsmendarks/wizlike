@@ -410,6 +410,48 @@ describe("UI-52 街のページ", () => {
     expect(townHeadingText("dark", m, S, p)).toBe(S["town.ask.service"]);
   });
 
+  test("UI-52/TW-17 M19（C-1）触媒の段の見出しは core の upgradePreview(picked) の値で「触媒 {n} → 成功率 {rate}%（大成功 {great}%）」（town.upgrade.catalystRate）。選ぶたびに組み直り、最悪の値でも 1 行（28 字）。preview が無ければ town.upgrade.catalyst", () => {
+    const s = town({}, 300);
+    s.items[s.party[0]!.equipment.weapon!]!.level = 1;
+    const [a, b] = [0, 0].map((lv) => {
+      const id = createItemInstance(s, { itemId: "dagger", level: lv, identified: true });
+      s.party[0]!.inventory.push(id);
+      return { memberId: "c1", instanceId: id } as UpgradeCatalystRef;
+    });
+    const m = menuOf(s);
+    const sel = { memberId: "c1", slot: "weapon" as const, picked: [] as UpgradeCatalystRef[] };
+    const head = (picked: UpgradeCatalystRef[]): string =>
+      townHeadingText({ upCat: { ...sel, picked } }, m, S, upgradePreview(s, data, "c1", "weapon", picked));
+    // 触媒なし 10%（大成功 1%）→ Lv0 を 1 個 29%（10 + 30 × 0.66 = 29.8）→ 2 個 49%（49.6）
+    expect(head([])).toBe("触媒 0 → 成功率 10%（大成功 1%）");
+    expect(head([a!])).toBe("触媒 1 → 成功率 29%（大成功 2%）");
+    expect(head([a!, b!])).toBe("触媒 2 → 成功率 49%（大成功 4%）");
+    // 確認の段の見出し（town.upgrade.ask）と同じ値
+    expect(townHeadingText({ upConfirm: { ...sel, picked: [a!] } }, m, S, upgradePreview(s, data, "c1", "weapon", [a!]))).toContain("成功率 29%（大成功 2%）");
+    // 値が無ければ固定の問い（townHeading のキー）
+    expect(townHeadingText({ upCat: sel }, m, S, null)).toBe(S["town.upgrade.catalyst"]);
+    expect(townHeading({ upCat: sel })).toBe("town.upgrade.catalyst");
+    // 最悪の値（触媒 3・成功率 100・大成功 10）でも見出しの 1 行
+    expect(kinsokuLines(formatMessage(S["town.upgrade.catalystRate"]!, { n: 3, rate: 100, great: 10 }), 28)).toHaveLength(1);
+    // 文言は strings から
+    const S2 = { ...S, "town.upgrade.catalystRate": "{n}:{rate}/{great}" };
+    expect(townHeadingText({ upCat: { ...sel, picked: [a!] } }, m, S2, upgradePreview(s, data, "c1", "weapon", [a!]))).toBe("1:29/2");
+  });
+
+  test("TW-17/UI-52 M19（C-1）候補が無い触媒の段に入るときは、候補に出ない理由（town.upgrade.catNoneWhy）を語る（候補があれば語らない）。語り town.upgrade.intro は触媒が成否によらず消えると言う。どちらも会話の箱の 2 行（28 字 × 2）", () => {
+    const sel = { memberId: "c1", slot: "weapon" as const, picked: [] as UpgradeCatalystRef[] };
+    expect(townPageIntro({ upCat: sel }, menuOf(town()))).toEqual(["town.upgrade.catNoneWhy"]);
+    const s = town();
+    s.party[1]!.inventory.push(createItemInstance(s, { itemId: "dagger", level: 0, identified: true }));
+    expect(townPageIntro({ upCat: sel }, menuOf(s))).toEqual([]);
+    // 一覧の空の行は短いまま（行の幅 21 字）
+    expect(townEntries({ upCat: sel }, menuOf(town()), S)[0]).toEqual({ kind: "empty", label: S["town.upgrade.catNone"], disabled: true });
+    expect(kinsokuLines(S["town.upgrade.catNone"]!, 21)).toHaveLength(1);
+    for (const k of ["town.upgrade.catNoneWhy", "town.upgrade.intro"]) expect(kinsokuLines(S[k]!, 28).length, k).toBeLessThanOrEqual(2);
+    expect(S["town.upgrade.intro"]).toContain("成否によらず消える");
+    for (const w of ["装備中", "消耗品", "未鑑定", "倉庫"]) expect(S["town.upgrade.catNoneWhy"]).toContain(w);
+  });
+
   // M8.5: townListTall（M7 の広げた一覧のページ）は UI-13 の街の配置に置き換えて削除した（どのページも同じ一覧の位置）
   test("UI-52/TW-17（M7）townFreshIntro: 窓の下に見えている直近の文（recent）と同じ語りは重ねて出さない。強化の段を戻ってまた進んでも「どれを鍛える？ / 触媒を選べ。」が重ならない", () => {
     const slot = S["town.upgrade.slot"]!;

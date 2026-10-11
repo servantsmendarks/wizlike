@@ -906,7 +906,9 @@ describe("入力と Command", () => {
     expect(body).toMatch(
       /case "upgrade":\s*townPage = \{ upSlot: e\.memberId \};\s*if \(townLowersInput\(e\)\) lowerInput\(\);\s*void run\(\{ type: "town\.upgrade", memberId: e\.memberId, slot: e\.slot, catalysts: e\.catalysts \}\)\.then\(\(r\) => \{\s*if \(r === null \|\| r\.rejected\) sync\(state\);\s*\}\);\s*return;/,
     );
-    expect(app).toMatch(/upgradePreview\(state, data, page\.upConfirm\.memberId, page\.upConfirm\.slot, page\.upConfirm\.picked\)/);
+    // M19（C-1）: 触媒の段（{ upCat }）でも選んだ触媒で upgradePreview を呼び、見出しの成功率に使う
+    expect(app).toContain('const sel = typeof page === "object" ? ("upConfirm" in page ? page.upConfirm : "upCat" in page ? page.upCat : null) : null;');
+    expect(app).toContain("upgradePreview(state, data, sel.memberId, sel.slot, sel.picked)");
     expect(app).not.toContain("upgradeConfirmLines");
   });
 
@@ -927,7 +929,8 @@ describe("入力と Command", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const goTownPage = \(page: TownPage\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     // M18（3-3）: 強化の確認の段は、入るときに前後の 1 文（upgradePreviewText。core の upgradePreview の値）を語りの後ろに足す
-    expect(body).toContain("const upText = upgradePreviewText(previewOf(page), strings);");
+    // M19（C-1）: 触媒の段も previewOf が値を返すが、前後の 1 文は確認の段だけ
+    expect(body).toContain('const upText = typeof page === "object" && "upConfirm" in page ? upgradePreviewText(previewOf(page), strings) : null;');
     expect(body).toContain("const intro = [...townPageIntro(page, menu).map(t), ...(upText === null ? [] : [upText])];");
     expect(body).toMatch(/const texts = townFreshIntro\(intro, play\.message\.history\(\)\.slice\(-TOWN_INTRO_DEDUP\)\);/);
   });
