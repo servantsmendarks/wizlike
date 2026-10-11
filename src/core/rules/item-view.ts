@@ -6,7 +6,7 @@ import { classOf, cloneState, findBase, itemDisplayName, itemOf, memberById, opt
 import { formatDice, parseDice } from "../rng";
 import type { Character, GameState, Rarity, RuleContext, SpellInfo } from "../types";
 import { checkEquip, checkUnequip, equipItem, unequipItem } from "./camp";
-import { allyAc, allyAttackBonus } from "./combat-calc";
+import { allyAc, allyAttackBonus, benefitOf, strBonus } from "./combat-calc";
 import { equipStats, itemPower, spellCost, type ItemPower } from "./equip-stats";
 import { expFor, levelUpReady } from "./growth";
 import { appearanceSellPrice, sellPrice } from "./shop";
@@ -110,6 +110,12 @@ export type MemberSheet = {
   attackDice: string;
   attackBonus: number;
   attackDamageDice: string;
+  /**
+   * UI-59 / CB-22（M19 C-2）: 攻撃の内訳。weaponDice は attackDice と同じ。weaponBonus は汎用の武器の Lv の分（floor(Lv ÷ weaponLvPerDamage)）、
+   * strBonus は力の補正（実効の力）、traitBonus は性格の恩恵 damage、optionBonus は全部位のオプション damage の合計。
+   * weaponBonus + strBonus + traitBonus + optionBonus = attackBonus（武器のダイスの記法の定数は weaponDice の側）
+   */
+  attackParts: AttackParts;
   /** CH-80（M10）: 次のレベルに要る累計 EXP（expFor(level + 1)。CH-64） */
   expNext: number;
   /** CH-80（M10）: 次のレベルまでの残り max(0, expNext − exp)。life を問わない */
@@ -123,6 +129,7 @@ export type MemberSheet = {
   levelUpView: LevelUpView;
 };
 export type LevelUpView = "ready" | "next" | "blocked";
+export type AttackParts = { weaponDice: string; weaponBonus: number; strBonus: number; traitBonus: number; optionBonus: number };
 
 export function memberSheet(state: GameState, data: GameData, ch: Character): MemberSheet {
   const es = equipStats(state, data, ch);
@@ -144,6 +151,13 @@ export function memberSheet(state: GameState, data: GameData, ch: Character): Me
     attackDice: es.weaponDice,
     attackBonus,
     attackDamageDice: weaponDamageDice(es.weaponDice, attackBonus),
+    attackParts: {
+      weaponDice: es.weaponDice,
+      weaponBonus: es.weaponLvDamage,
+      strBonus: strBonus(es.stats.str),
+      traitBonus: benefitOf(data, ch, "damage"),
+      optionBonus: es.damageBonus - es.weaponLvDamage,
+    },
   };
 }
 

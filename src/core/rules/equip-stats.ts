@@ -25,6 +25,8 @@ export type EquipStats = {
   weaponDice: string;
   /** CB-22 / IT-20: 汎用の武器（術者用でない）の floor(Lv ÷ weaponLvPerDamage) + オプション damage */
   damageBonus: number;
+  /** UI-59 / CB-22（M19 C-2）: damageBonus のうち汎用の武器（術者用でない）の floor(Lv ÷ weaponLvPerDamage) の分（残りはオプション damage） */
+  weaponLvDamage: number;
   /** MG-33 / IT-22: 汎用の術者用武器のベースの magicPower + floor(Lv ÷ casterLvPerPower)、ユニークはユニークの magicPower、+ オプション magicPower の合計（IT-34。M10）。下限 0 */
   magicPower: number;
   /** CB-21: オプション hit の合計（%） */
@@ -124,6 +126,7 @@ export function equipStats(state: GameState, data: GameData, ch: Character): Equ
   let acEquip = 0;
   let weaponDice = data.config.combat.unarmedDice;
   let damageBonus = 0;
+  let weaponLvDamage = 0;
   let magicPower = 0;
   let hit = 0;
   let initiative = 0;
@@ -146,6 +149,7 @@ export function equipStats(state: GameState, data: GameData, ch: Character): Equ
       reach = perf.reach;
       magicPower += perf.magicPower;
       damageBonus += perf.damageBonus;
+      weaponLvDamage += perf.damageBonus;
     } else {
       acEquip += perf.ac;
     }
@@ -215,6 +219,7 @@ export function equipStats(state: GameState, data: GameData, ch: Character): Equ
     acEquip,
     weaponDice,
     damageBonus,
+    weaponLvDamage,
     magicPower: Math.max(0, magicPower), // IT-34 / MG-33: 負のオプションでも合計は 0 未満にしない
     hit,
     initiative,

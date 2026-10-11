@@ -195,6 +195,38 @@ describe("UI-59/CH-13/CH-14/MG-33 memberSheet（状態の実効の値）", () =>
     expect(memberSheet(s, data, c1)).toMatchObject({ attackDice: "1d2", attackBonus: -1 });
   });
 
+  test("CB-22/UI-59 C-2 memberSheet の attackParts: 武器ダイス・武器 Lv の分・力補正・性格恩恵・オプション damage。内訳の合計 = attackBonus", () => {
+    const s = cloneState(newGame(1));
+    const c1 = s.party[0]!;
+    const sumOf = (p: ReturnType<typeof memberSheet>["attackParts"]): number => p.weaponBonus + p.strBonus + p.traitBonus + p.optionBonus;
+    c1.stats.str = 14; // 力補正 2
+    c1.personality = "reckless"; // 恩恵 damage 1
+    c1.equipment.weapon = createItemInstance(s, { itemId: "long_sword", level: 4, options: [{ optionId: "damage", tier: 1, value: 1 }], identified: true });
+    // 兜にもオプション damage 2（オプションは全部位の合計）
+    c1.equipment.helm = createItemInstance(s, { itemId: "leather_cap", options: [{ optionId: "damage", tier: 2, value: 2 }], identified: true });
+    let sheet = memberSheet(s, data, c1);
+    expect(sheet.attackParts).toEqual({ weaponDice: "1d8", weaponBonus: 4, strBonus: 2, traitBonus: 1, optionBonus: 3 });
+    expect(sumOf(sheet.attackParts)).toBe(sheet.attackBonus);
+    expect(sheet.attackBonus).toBe(10);
+    // 投げナイフ 1d4+1 Lv2: ダイスの定数 1 は weaponDice の側（内訳の合計には入らない）
+    c1.equipment.helm = null;
+    c1.equipment.weapon = createItemInstance(s, { itemId: "throwing_knives", level: 2, identified: true });
+    sheet = memberSheet(s, data, c1);
+    expect(sheet.attackParts).toEqual({ weaponDice: "1d4+1", weaponBonus: 2, strBonus: 2, traitBonus: 1, optionBonus: 0 });
+    expect(sumOf(sheet.attackParts)).toBe(sheet.attackBonus);
+    // 杖（術者用）は Lv の分が 0、素手・力 9・性格なしは力 −1 だけ
+    c1.equipment.weapon = createItemInstance(s, { itemId: "staff", level: 5, identified: true });
+    sheet = memberSheet(s, data, c1);
+    expect(sheet.attackParts.weaponBonus).toBe(0);
+    expect(sumOf(sheet.attackParts)).toBe(sheet.attackBonus);
+    c1.equipment.weapon = null;
+    c1.stats.str = 9;
+    c1.personality = null;
+    sheet = memberSheet(s, data, c1);
+    expect(sheet.attackParts).toEqual({ weaponDice: data.config.combat.unarmedDice, weaponBonus: 0, strBonus: -1, traitBonus: 0, optionBonus: 0 });
+    expect(sumOf(sheet.attackParts)).toBe(sheet.attackBonus);
+  });
+
   // 2026-10-06（ユーザーの指示）: キャンプの状態画面の攻撃の行に出す実効値（オプションまで合算）
   test("CB-22/UI-59 memberSheet の attackDamageDice: 武器ダイスの定数と足し分（力補正 + 性格恩恵 + Lv の効果 + オプション damage）を 1 つの定数に合算", () => {
     const s = cloneState(newGame(1));

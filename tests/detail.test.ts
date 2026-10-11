@@ -9,7 +9,7 @@ import { characterCells, createDetailView, formatCharacter, LEVEL_COLUMNS, SLOT_
 import { textUnits } from "../src/presenter/views/party-band";
 import { formatMessage } from "../src/presenter/views/message";
 import { createPartyPanel } from "../src/presenter/views/party";
-import { memberSheet } from "../src/core/rules/item-view";
+import { memberSheet, type MemberSheet } from "../src/core/rules/item-view";
 import { sanStage } from "../src/core/rules/san";
 import { data, newGame } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
@@ -35,6 +35,12 @@ describe("UI-59 詳細", () => {
       "detail.statusOk",
       "detail.stat",
       "detail.attack",
+      "detail.attackParts",
+      "detail.attackSep",
+      "detail.attackPart.str",
+      "detail.attackPart.weapon",
+      "detail.attackPart.option",
+      "detail.attackPart.trait",
       "detail.equipNone",
       "detail.ac",
       "detail.magicPower",
@@ -258,7 +264,7 @@ describe("UI-59/CH-13/CH-14/CB-20/MG-33 状態の実効の値（M7）", () => {
     expect(d.ac).toBe("AC 4");
     expect(d.magicPower).toBe("魔法攻撃力 5");
     // CB-22: 杖 1d4（術者用なので Lv の効果は足さない）+ 力 16 の補正 3 + リーダーの性格恩恵 0 → 攻撃 1d4+3
-    expect(d.attack).toBe("攻撃 1d4+3");
+    expect(d.attack).toBe("攻撃 1d4+3（力+3）"); // M19 C-2: 0 でない内訳を添える
     const raw = formatCharacter(ch, data, S, nameOf(s));
     expect([raw.stats[0]!.value, raw.hp, raw.ac, raw.magicPower, raw.attack]).toEqual([14, `HP ${ch.hp}/15`, "", "", ""]);
     // 装備名は IT-11 の表示名（ユニークはユニークの名前、汎用は +Lv）
@@ -272,7 +278,7 @@ describe("UI-59/CH-13/CH-14/CB-20/MG-33 状態の実効の値（M7）", () => {
     expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d8");
     ch.equipment.weapon = null;
     ch.stats.str = 9; // 素手 1d2・力 9 の補正 −1
-    expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d2-1");
+    expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d2-1（力-1）"); // M19 C-2: 内訳
   });
 
   // 2026-10-06（ユーザーの指示）: 攻撃の行はオプションまで合算した実効値。ダイスの記法の定数と足し分を 1 つの定数にする（品の詳細とは役割が違う）
@@ -282,18 +288,57 @@ describe("UI-59/CH-13/CH-14/CB-20/MG-33 状態の実効の値（M7）", () => {
     ch.stats.str = 14; // 力補正 2、リーダー（恩恵 0）
     ch.equipment.weapon = createItemInstance(s, { itemId: "throwing_knives", level: 2, options: [{ optionId: "damage", tier: 1, value: 1 }], identified: true });
     // 投げナイフ 1d4+1 + 力 2 + Lv2 の 2 + オプション 1 → 1d4+6（M18 で Lv の分が 1 → 2）
-    expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d4+6");
+    expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d4+6（力+2 武器Lv+2 ダメージ+1）"); // M19 C-2: 内訳（性格 0 は省く。ダイスの定数 1 は内訳に出さない）
     ch.stats.str = 6; // 力補正 −2 → 1d4+1 − 2 + 2 + 1 = 1d4+2
-    expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d4+2");
+    expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d4+2（力-2 武器Lv+2 ダメージ+1）");
     ch.stats.str = 2; // 力補正 −4 → 合計 0 は定数を省く
-    expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d4");
+    expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d4（力-4 武器Lv+2 ダメージ+1）");
     ch.stats.str = 0; // 力補正 −5 → 合計 −1
-    expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d4-1");
+    expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe("攻撃 1d4-1（力-5 武器Lv+2 ダメージ+1）");
   });
 
   // M7（2026-10-05）: 7 行目の「装備」の見出しを攻撃の行（x4）に替えた。
   // M10（2026-10-07）: キャラクター画面を 27 行（240×284）にしたので「14 行のまま」の検査は外した（行の数は「UI-59 キャラクター画面の配置」で確かめる）
-  test("UI-59 render: 7 行目は 攻撃（x4）・AC（x84）・魔法攻撃力（x164）", () => {
+  test("UI-59/CB-22 C-2 攻撃の内訳: 0 でない項を 力・武器Lv・ダメージ・性格 の順に括弧で添える。どれも 0 なら括弧なし。最悪の値でも 28 字・全幅に収まる。文言は差し替えられる", () => {
+    const s = structuredClone(newGame(1));
+    const ch = s.party[0]!;
+    ch.stats.str = 14; // 力補正 2
+    ch.personality = "reckless"; // 恩恵 damage 1
+    ch.equipment.weapon = createItemInstance(s, { itemId: "long_sword", level: 4, options: [{ optionId: "damage", tier: 1, value: 1 }], identified: true });
+    const sheet = memberSheet(s, data, ch);
+    expect(formatCharacter(ch, data, S, nameOf(s), sheet).attack).toBe("攻撃 1d8+8（力+2 武器Lv+4 ダメージ+1 性格+1）");
+    expect(formatCharacter(ch, data, S, nameOf(s), sheet).attack).toBe(
+      t("detail.attackParts", {
+        dice: "1d8+8",
+        parts: [t("detail.attackPart.str", { n: "+2" }), t("detail.attackPart.weapon", { n: "+4" }), t("detail.attackPart.option", { n: "+1" }), t("detail.attackPart.trait", { n: "+1" })].join(t("detail.attackSep")),
+      }),
+    );
+    // 内訳がどれも 0（長剣 Lv0・力 10・リーダー）なら detail.attack のまま
+    ch.stats.str = 10;
+    ch.personality = null;
+    ch.equipment.weapon = createItemInstance(s, { itemId: "long_sword", level: 0, identified: true });
+    expect(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch)).attack).toBe(t("detail.attack", { dice: "1d8" }));
+    // 最悪の値（大きいダイスと 2 桁の内訳 4 つ）: 28 字（56 単位）以内で、7 行目の幅 232 に収まる
+    const worst: MemberSheet = {
+      ...sheet,
+      attackDamageDice: "10d10+99",
+      attackParts: { weaponDice: "10d10", weaponBonus: 99, strBonus: -10, traitBonus: 10, optionBonus: 99 },
+    };
+    const text = formatCharacter(ch, data, S, nameOf(s), worst).attack;
+    expect(text).toBe("攻撃 10d10+99（力-10 武器Lv+99 ダメージ+99 性格+10）");
+    expect(textUnits(text)).toBeLessThanOrEqual(56);
+    expect(textUnits(text) * 4).toBeLessThanOrEqual(232);
+    // 1 行目に寄せた列: 種族・職業はどの組でも幅 76、AC と魔法攻撃力は大きい値でも各列に収まる
+    for (const r of data.races) for (const c of data.classes) expect(textUnits(t("detail.raceClass", { race: r.name, class: c.name })) * 4, `${r.name} ${c.name}`).toBeLessThanOrEqual(76);
+    expect(textUnits(t("detail.ac", { ac: -99 })) * 4).toBeLessThanOrEqual(76);
+    expect(textUnits(t("detail.magicPower", { value: 999 })) * 4).toBeLessThanOrEqual(68);
+    // 文言はデータで差し替えられる
+    const S2 = { ...S, "detail.attackParts": "ATK {dice} [{parts}]", "detail.attackSep": "/", "detail.attackPart.str": "S{n}", "detail.attackPart.weapon": "W{n}", "detail.attackPart.option": "O{n}", "detail.attackPart.trait": "T{n}" };
+    expect(formatCharacter(ch, data, S2, nameOf(s), worst).attack).toBe("ATK 10d10+99 [S-10/W+99/O+99/T+10]");
+  });
+
+  // M19 C-2: 7 行目は攻撃の内訳で全幅（x4・幅 232）。AC と魔法攻撃力は 1 行目の 2・3 列（種族・職業は 1 列目の幅 76）
+  test("UI-59 render: 7 行目は 攻撃（x4・全幅）、1 行目に AC（x84）・魔法攻撃力（x164）", () => {
     vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
     const v = createDetailView({ x: 0, y: 16, w: 240, h: 284 });
     const s = equippedAld();
@@ -304,9 +349,12 @@ describe("UI-59/CH-13/CH-14/CB-20/MG-33 状態の実効の値（M7）", () => {
       const c = el.children.find((x) => x.className === cls)!;
       return [px(c.style["left"]) + 1, px(c.style["top"]) + 1, c.textContent];
     };
-    expect(at("detail-attack")).toEqual([4, 74, "攻撃 1d4+3"]);
-    expect(at("detail-ac")).toEqual([84, 74, "AC 4"]);
-    expect(at("detail-magic-power")).toEqual([164, 74, "魔法攻撃力 5"]);
+    expect(at("detail-attack")).toEqual([4, 74, "攻撃 1d4+3（力+3）"]);
+    expect(at("detail-race-class")).toEqual([4, 14, "人間 戦士"]);
+    expect(at("detail-ac")).toEqual([84, 14, "AC 4"]);
+    expect(at("detail-magic-power")).toEqual([164, 14, "魔法攻撃力 5"]);
+    const w = (cls: string): number => px(el.children.find((x) => x.className === cls)!.style["width"]);
+    expect([w("detail-attack"), w("detail-race-class"), w("detail-ac"), w("detail-magic-power")]).toEqual([232, 76, 76, 68]);
   });
 
   test("UI-12/CH-14/CH-53 パーティ欄: HP / MP / SAN の最大と SAN の段は maxOf（core の memberSheet）の値。最大SAN +10 で SAN 54 は 110 の半分未満なので不安", () => {

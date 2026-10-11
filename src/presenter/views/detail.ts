@@ -50,7 +50,7 @@ export type CharacterDetail = {
   stats: { label: string; value: number; text: string }[];
   /**
    * M7 / CB-22: 攻撃（detail.attack「攻撃 1d8+3」。core の memberSheet の attackDamageDice（武器ダイスの定数と足し分を 1 つの定数に合算した実効値。2026-10-06）。
-   * 合計 0 なら「攻撃 1d8」、負なら「攻撃 1d8-1」）。
+   * 合計 0 なら「攻撃 1d8」、負なら「攻撃 1d8-1」）。M19 C-2: 0 でない内訳（memberSheet の attackParts）があれば detail.attackParts「攻撃 1d8+3（力+2 武器Lv+1）」。
    * sheet が無ければ空
    */
   attack: string;
@@ -130,7 +130,7 @@ export function formatCharacter(
       const value = stats[k];
       return { label, value, text: s("detail.stat", { label, value }) };
     }),
-    attack: sheet === undefined ? "" : s("detail.attack", { dice: sheet.attackDamageDice }),
+    attack: sheet === undefined ? "" : attackText(sheet, s),
     ac: sheet === undefined ? "" : s("detail.ac", { ac: sheet.ac }),
     magicPower: sheet === undefined ? "" : s("detail.magicPower", { value: sheet.magicPower }),
     equipment: SLOT_ORDER.map((slot) => {
@@ -146,6 +146,29 @@ export function formatCharacter(
         ? []
         : characterCells(member.knownSpells, CHARACTER_SPELL_CELLS, (x) => ({ text: s("character.spellCell", { name: x.name, mp: x.mp }), dim: !x.castable }), more, view.spellPage),
   };
+}
+
+/** 符号付きの数（表示のためだけ。+2 / -1） */
+function signed(v: number): string {
+  return v > 0 ? `+${v}` : String(v);
+}
+
+/** UI-59 / CB-22（M19 C-2）: 攻撃の内訳の順（力・武器 Lv・オプション damage・性格）。キーは detail.attackPart.<key> */
+const ATTACK_PART_ORDER = [
+  ["str", "strBonus"],
+  ["weapon", "weaponBonus"],
+  ["option", "optionBonus"],
+  ["trait", "traitBonus"],
+] as const;
+
+/**
+ * UI-59 / CB-22（M19 C-2）: 攻撃の行。合算の値（attackDamageDice）に、0 でない内訳を括弧で添える（detail.attackParts「攻撃 {dice}（{parts}）」）。
+ * 内訳がどれも 0 なら detail.attack「攻撃 {dice}」。値は core の memberSheet の attackParts をそのまま出す（表示層は足さない）
+ */
+function attackText(sheet: MemberSheet, s: (key: string, params?: Record<string, string | number>) => string): string {
+  const parts = ATTACK_PART_ORDER.filter(([, f]) => sheet.attackParts[f] !== 0).map(([k, f]) => s(`detail.attackPart.${k}`, { n: signed(sheet.attackParts[f]) }));
+  if (parts.length === 0) return s("detail.attack", { dice: sheet.attackDamageDice });
+  return s("detail.attackParts", { dice: sheet.attackDamageDice, parts: parts.join(s("detail.attackSep")) });
 }
 
 const LINE_H = 10;
@@ -228,7 +251,10 @@ export function createDetailView(rect: Rect): DetailView {
       if (d.next.ready) next.style.color = "var(--c-accent)"; // UI-69: Lv UP 可
       const parts: HTMLElement[] = [
         name,
-        text(1, 4, full, d.raceClass, "detail-race-class"),
+        // M19 C-2: AC と魔法攻撃力は 1 行目の 2・3 列（7 行目は攻撃の内訳で全幅）
+        text(1, 4, COL3_W, d.raceClass, "detail-race-class"),
+        text(1, COL3[1], COL3_W, d.ac, "detail-ac"),
+        text(1, COL3[2], COL3_W - 8, d.magicPower, "detail-magic-power"),
         text(2, LEVEL_COLUMNS.level.x, LEVEL_COLUMNS.level.w, d.level, "detail-level"),
         text(2, LEVEL_COLUMNS.exp.x, LEVEL_COLUMNS.exp.w, d.exp, "detail-exp"),
         next,
@@ -237,10 +263,8 @@ export function createDetailView(rect: Rect): DetailView {
         san,
         text(4, 4, full, d.status, "detail-status"),
         ...d.stats.map((st, i) => text(5 + Math.floor(i / 3), COL3[i % 3]!, COL3_W - (i % 3 === 2 ? 8 : 0), st.text, "detail-stat")),
-        // 7 行目: M7 の攻撃・AC・魔法攻撃力（能力値の 3 列にそろえる）
-        text(7, COL3[0], COL3_W, d.attack, "detail-attack"),
-        text(7, COL3[1], COL3_W, d.ac, "detail-ac"),
-        text(7, COL3[2], COL3_W - 8, d.magicPower, "detail-magic-power"),
+        // 7 行目: 攻撃（M19 C-2 から内訳を添えて全幅。28 字）
+        text(7, 4, full, d.attack, "detail-attack"),
         ...d.equipment.flatMap((e, i) => {
           const row = [text(8 + i, SLOT_X, SLOT_W, e.slot, "detail-slot"), text(8 + i, ITEM_X, rect.w - ITEM_X - 4, e.item, "detail-item")];
           if (i === focusSlot) for (const r of row) r.style.color = "var(--c-accent)";
