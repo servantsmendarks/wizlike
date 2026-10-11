@@ -830,6 +830,7 @@
   "item.plus": " +{n}",
   "item.owner.short": "{name}…",
   "item.found": "{name}は{item}を拾った。",
+  "item.foundN": "{name}は{item}を {n} つ拾った。",
   "item.leftBehind": "持ちきれず、{item}を置いていった。",
   "item.detail.slot": "{slot}",
   "item.detail.slotLv": "{slot}　Lv{level}",

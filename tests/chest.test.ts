@@ -797,6 +797,26 @@ describe("CB-65 / CB-66 開ける・放っておく", () => {
     expect(exec(r.state, { type: "dungeon.turn", dir: "left" }).events[0]!.kind).toBe("turned");
   });
 
+  test("CB-65/IT-54（M20 D-4）箱の 2 品が同じ人・同じ表示名なら item.foundN{n: 2} の 1 文にまとまる。乱数は今までどおり（金 → 2 個目の chance → 品ごとの weightedIndex）", () => {
+    const D = chestData((d) => (d.config.chest.secondItemChance = 100));
+    const s = withChest(null, 4, 1, D);
+    const m = cloneRng(s.rng);
+    const gold = Math.max(0, rollDice(m, D.config.combat.chestGoldDice).total);
+    chance(m, 100);
+    weightedIndex(m, [1]);
+    weightedIndex(m, [1]);
+    const r = exec(s, OPEN, D);
+    expect(r.state.rng).toEqual(m);
+    expect(r.events).toEqual([
+      { kind: "message", key: "chest.open.gold", params: { gold } },
+      { kind: "message", key: "item.foundN", params: { name: member(s, "c1").name, item: data.items.find((i) => i.id === CHEST_BOOK)!.name, n: 2 } },
+      { kind: "chestEnd", result: "opened" },
+    ]);
+    expect(r.state.dive!.ledger.items).toHaveLength(s.dive!.ledger.items.length + 2);
+    expectKnownStringKeys(r.events, D);
+    expectStateInvariants(r.state);
+  });
+
   test("CB-66 放っておく: chest.left → chestEnd left。ドロップの箱は失う（乱数なし）", () => {
     const s = withChest("bomb", 4);
     const r = exec(s, LEAVE);

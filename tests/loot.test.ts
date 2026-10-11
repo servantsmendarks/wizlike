@@ -185,7 +185,8 @@ describe("IT-52 1 品の生成と乱数の順", () => {
       rollChestItems(ctx, "d01", 1, 1, 2);
       expect(ctx.state.rng).toEqual(m);
       expect(ctx.state.dive!.ledger.items).toHaveLength(2);
-      expect(ctx.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["item.found", "item.found"]);
+      // IT-54（M20 D-4）: 同じ人・同じ表示名（剣？）の 2 品は item.foundN{n: 2} の 1 文にまとまる
+      expect(ctx.events).toEqual([{ kind: "message", key: "item.foundN", params: { name: ctx.state.party[0]!.name, item: "剣？", n: 2 } }]);
       for (const id of ctx.state.dive!.ledger.items) expect(ctx.state.items[id]).toMatchObject({ itemId: "long_sword", level: 1, rarity: "normal", foundIn: "d01" });
       return;
     }
@@ -619,6 +620,68 @@ describe("IT-54 配る・置いていく", () => {
     expect(Object.keys(ctx.state.items)).toEqual(Object.keys(s.items));
     expect(ctx.state.dive!.ledger.items).toEqual([]);
     expectStateInvariants(ctx.state);
+  });
+});
+
+describe("IT-54 拾った品のまとめ（M20 D-4）", () => {
+  const fill = (s: GameState, id: string): void => {
+    const c = member(s, id);
+    const used = Object.values(c.equipment).filter((x) => x !== null).length + c.inventory.length;
+    for (let i = used; i < slotsMaxOf(c, data); i++) c.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
+  };
+  const SPEC = { itemId: "long_sword", identified: false, level: 1, rarity: "normal", foundIn: "d01" } as const;
+
+  test("IT-54 直前の出来事が同じ人・同じ表示名の item.found / item.foundN なら item.foundN{name, item, n} に置き換える（3 品で n 3）。品・台帳は 1 品ずつ。乱数は引かない", () => {
+    const ctx = makeContext(cloneState(dived(1)), data);
+    const rng = cloneRng(ctx.state.rng);
+    for (let i = 0; i < 3; i++) expect(placeFoundItem(ctx, SPEC)).toBe(true);
+    expect(ctx.state.rng).toEqual(rng);
+    const name = ctx.state.party[0]!.name;
+    expect(ctx.events).toEqual([{ kind: "message", key: "item.foundN", params: { name, item: "剣？", n: 3 } }]);
+    expect(ctx.state.dive!.ledger.items).toHaveLength(3);
+    expect(member(ctx.state, "c1").inventory.slice(-3)).toEqual(ctx.state.dive!.ledger.items);
+    expectKnownStringKeys(ctx.events, data);
+    expectStateInvariants(ctx.state);
+  });
+
+  test("IT-54 まとめない: 表示名が違う・間に別の出来事が挟まる・受け取る人が違う。最初の item.found は書き換えない", () => {
+    const name1 = (s: GameState): string => member(s, "c1").name;
+    // 表示名が違う（剣？ と 短剣の未鑑定名）
+    const a = makeContext(cloneState(dived(1)), data);
+    placeFoundItem(a, SPEC);
+    placeFoundItem(a, { ...SPEC, itemId: "dagger" });
+    expect(a.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["item.found", "item.found"]);
+    expect(a.events[0]).toEqual({ kind: "message", key: "item.found", params: { name: name1(a.state), item: "剣？" } });
+    // 間に別の message（強欲の一言など）が挟まる
+    const b = makeContext(cloneState(dived(1)), data);
+    placeFoundItem(b, SPEC);
+    b.events.push({ kind: "message", key: "battle.drop", params: { name: "x" } });
+    placeFoundItem(b, SPEC);
+    expect(b.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["item.found", "battle.drop", "item.found"]);
+    // 受け取る人が違う（c1 の最後の 1 枠が埋まると次は c2）
+    const s = dived(1);
+    fill(s, "c1");
+    const c1 = member(s, "c1");
+    c1.inventory.pop();
+    const c = makeContext(cloneState(s), data);
+    placeFoundItem(c, SPEC);
+    placeFoundItem(c, SPEC);
+    expect(c.events).toEqual([
+      { kind: "message", key: "item.found", params: { name: member(s, "c1").name, item: "剣？" } },
+      { kind: "message", key: "item.found", params: { name: member(s, "c2").name, item: "剣？" } },
+    ]);
+  });
+
+  test("IT-54 item.foundN の文は最悪の名前（nameMaxLength 字の全角）・最長の品名（未鑑定名・品の名前）・n 2 桁でも 28 字 × 2 行に収まる", () => {
+    const longest = Math.max(
+      ...data.equipmentBases.map((b) => b.unidentifiedName.length),
+      ...data.items.map((i) => Math.max(i.name.length, (i.unidentifiedName ?? "").length)),
+    );
+    const line = data.strings["item.foundN"]!
+      .replace("{name}", "あ".repeat(data.config.creation.nameMaxLength))
+      .replace("{item}", "い".repeat(longest))
+      .replace("{n}", "99");
+    expect(line.length).toBeLessThanOrEqual(56);
   });
 });
 

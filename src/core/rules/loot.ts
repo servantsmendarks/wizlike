@@ -146,7 +146,8 @@ function rollItemSpecDetail(
 
 /**
  * IT-54: 並び順に最初に所持枠（CH-71）が空いている者（life を問わない）の inventory の末尾に実体を作って入れ、潜行台帳（DG-40）に入れる。
- * message item.found{name, item}（item は未鑑定の表示名）。誰も空いていなければ実体を作らず（nextItemSeq も進めない）
+ * message item.found{name, item}（item は未鑑定の表示名）。直前の出来事が同じ人・同じ表示名の item.found / item.foundN なら
+ * item.foundN{name, item, n} に置き換えてまとめる（M20 D-4。間に別の出来事が挟まれば別の文）。誰も空いていなければ実体を作らず（nextItemSeq も進めない）
  * message item.leftBehind{item}（item はベースの unidentifiedName）。置けたら true
  */
 export function placeFoundItem(ctx: RuleContext, spec: ItemInstanceSpec): boolean {
@@ -162,7 +163,15 @@ export function placeFoundItem(ctx: RuleContext, spec: ItemInstanceSpec): boolea
   const id = createItemInstance(state, spec);
   ch.inventory.push(id);
   if (state.dive !== null) state.dive.ledger.items.push(id);
-  ctx.events.push({ kind: "message", key: "item.found", params: { name: ch.name, item: itemDisplayName(state, data, id) } });
+  const item = itemDisplayName(state, data, id);
+  // IT-54（M20 D-4）: 直前の出来事が同じ人・同じ表示名の item.found / item.foundN なら item.foundN{name, item, n} にまとめる（乱数なし）
+  const last = ctx.events.at(-1);
+  if (last?.kind === "message" && (last.key === "item.found" || last.key === "item.foundN") && last.params?.["name"] === ch.name && last.params["item"] === item) {
+    const n = last.key === "item.foundN" ? Number(last.params["n"]) + 1 : 2;
+    ctx.events[ctx.events.length - 1] = { kind: "message", key: "item.foundN", params: { name: ch.name, item, n } };
+    return true;
+  }
+  ctx.events.push({ kind: "message", key: "item.found", params: { name: ch.name, item } });
   return true;
 }
 

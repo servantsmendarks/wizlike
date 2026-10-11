@@ -80,6 +80,8 @@ const monsterMark = (id: string) => (M12_MONSTERS.includes(id) ? "**" : M9_MONST
 export const RANGED_BUY = ["throwing_knives", "short_bow"] as const;
 /** 前衛の防具の更新で替える部位（防具・盾・兜・小手。この順に見る） */
 const ARMOR_SLOTS: readonly EquipSlot[] = ["armor", "shield", "helm", "gauntlet"];
+/** M20 D-4（IT-54）: 品の語り 1 文の品の数（item.foundN は n、item.found は 1） */
+const foundCount = (e: Extract<GameEvent, { kind: "message" }>): number => (e.key === "item.foundN" ? Number(e.params!["n"]) : 1);
 /** M11: 同じ箱で解除を試す回数の上限（U-4 の「作動しなければ再挑戦」。超えたら開ける。テストの定数で、ゲームの調整値ではない） */
 export const DISARM_TRIES = 5;
 
@@ -606,7 +608,7 @@ export class Campaign {
     this.chestGold += Number(e.params!["gold"]);
     for (const x of events.slice(i + 1)) {
       if (x.kind !== "message") continue;
-      if (x.key === "item.found") this.chestItems += 1;
+      if (x.key === "item.found" || x.key === "item.foundN") this.chestItems += foundCount(x); // M20 D-4（IT-54）: まとめた文は n 品
       else if (x.key === "item.leftBehind") this.chestLeft += 1;
     }
   }
@@ -657,8 +659,8 @@ export class Campaign {
       if (e.kind !== "message") continue;
       if (e.key === "battle.drop") pending = true;
       else if (e.key === "battle.dropGold") this.dropGold += Number(e.params!["gold"]);
-      else if (pending && e.key === "item.found") {
-        this.dropItems += 1;
+      else if (pending && (e.key === "item.found" || e.key === "item.foundN")) {
+        this.dropItems += foundCount(e);
         pending = false;
       } else if (pending && e.key === "item.leftBehind") {
         this.dropLeft += 1;
@@ -704,7 +706,8 @@ export class Campaign {
    * 見つけた箱（chest.found.<source> の直前の chestFound）の数も危険度ごとに数える
    */
   countFound(from: GameState, to: GameState, events: GameEvent[]): void {
-    const n = events.filter((e) => e.kind === "message" && e.key === "item.found").length;
+    // M20 D-4（IT-54）: 同じ人・同じ表示名の連続は item.foundN{n} の 1 文（n 品）
+    const n = events.reduce((a, e) => a + (e.kind === "message" && (e.key === "item.found" || e.key === "item.foundN") ? foundCount(e) : 0), 0);
     let ids: string[] = [];
     if (n > 0) {
       if (to.dive !== null) {
@@ -743,29 +746,33 @@ export class Campaign {
         if (this.chestDanger === null) throw new Error(`seed ${this.seed}: chest.open.gold without chestFound`);
         if (held !== undefined && held !== this.chestDanger) throw new Error(`seed ${this.seed}: chestFound danger ${this.chestDanger} but dive.chest.danger ${held}`);
       }
-      if (e.key !== "item.found") continue;
-      const id = ids[k++]!;
+      if (e.key !== "item.found" && e.key !== "item.foundN") continue;
       if (source === null) throw new Error(`seed ${this.seed}: item.found without source (battle.drop / chest.open.gold / battle.bossDefeated)`);
-      const inst = to.items[id]!;
-      if (inst.cursed) this.foundCursed += 1;
-      if (inst.uniqueId !== null) this.found.unique += 1;
-      else if (findBase(data, inst.itemId) !== null) {
-        this.found.generic += 1;
-        this.foundGenericByLevel[inst.level] = (this.foundGenericByLevel[inst.level] ?? 0) + 1;
-      } else {
-        const t = itemOf(data, inst.itemId).type;
-        if (t === "book") this.found.book += 1;
-        else this.found.consumable += 1;
-        continue;
-      }
-      const danger = this.chestDanger;
-      // M15 不変条件（IT-56 / IT-57）: 伝説は危険度 legendaryMinDanger 以上の宝箱かボスの戦利品からだけ（数える前に見る）
-      const allowed = source === "boss" || (source === "chest" && danger !== null && danger >= data.config.items.legendaryMinDanger);
-      if (inst.rarity === "legendary" && !allowed) throw new Error(`seed ${this.seed}: legendary ${inst.itemId} from ${source}${source === "chest" ? ` danger ${String(danger)}` : ""}`);
-      this.foundRarity[inst.rarity] = (this.foundRarity[inst.rarity] ?? 0) + 1;
-      this.foundRarityBySource[source][inst.rarity] += 1;
-      if (source === "chest" && danger !== null) (this.chestRarityByDanger[danger] ??= emptyRarityTally())[inst.rarity] += 1;
+      for (let j = foundCount(e); j > 0; j--) this.countFoundItem(to, ids[k++]!, source);
     }
+  }
+
+  /** M13 / M15: 拾った 1 品（id）を数える（countFound の本体。M20 D-4 で item.foundN の n 品を回すために切り出した） */
+  private countFoundItem(to: GameState, id: string, source: FoundSource): void {
+    const inst = to.items[id]!;
+    if (inst.cursed) this.foundCursed += 1;
+    if (inst.uniqueId !== null) this.found.unique += 1;
+    else if (findBase(data, inst.itemId) !== null) {
+      this.found.generic += 1;
+      this.foundGenericByLevel[inst.level] = (this.foundGenericByLevel[inst.level] ?? 0) + 1;
+    } else {
+      const t = itemOf(data, inst.itemId).type;
+      if (t === "book") this.found.book += 1;
+      else this.found.consumable += 1;
+      return;
+    }
+    const danger = this.chestDanger;
+    // M15 不変条件（IT-56 / IT-57）: 伝説は危険度 legendaryMinDanger 以上の宝箱かボスの戦利品からだけ（数える前に見る）
+    const allowed = source === "boss" || (source === "chest" && danger !== null && danger >= data.config.items.legendaryMinDanger);
+    if (inst.rarity === "legendary" && !allowed) throw new Error(`seed ${this.seed}: legendary ${inst.itemId} from ${source}${source === "chest" ? ` danger ${String(danger)}` : ""}`);
+    this.foundRarity[inst.rarity] = (this.foundRarity[inst.rarity] ?? 0) + 1;
+    this.foundRarityBySource[source][inst.rarity] += 1;
+    if (source === "chest" && danger !== null) (this.chestRarityByDanger[danger] ??= emptyRarityTally())[inst.rarity] += 1;
   }
 
   /** M13: この潜行の迷宮の分の推定の実時間（ms。農夫の帰る判定に使う） */

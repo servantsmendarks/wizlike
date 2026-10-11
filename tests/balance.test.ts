@@ -416,4 +416,23 @@ describe("バランス（H9 煙テスト）", () => {
     expect(c.chestsByDanger[min]).toBe(1);
     expect(c.chestsByDanger[min - 1]).toBe(1); // 例外で止まった回も、見つけた箱は品より前に数えている
   });
+
+  test("M20 IT-54（D-4）集計: まとめた item.foundN{n} は n 品として数える（増えた実体の数と合わなければ例外）", () => {
+    const c = new Campaign(1, PROGRESS_BOT);
+    const from = execute(c.state, { type: "dungeon.enter", dungeonId: "d01" }, data).state;
+    const to = structuredClone(from);
+    const src = Object.values(to.items).find((x) => x.uniqueId === null && findBase(data, x.itemId) !== null)!;
+    for (const id of ["m20a", "m20b"]) {
+      to.items[id] = { ...structuredClone(src), id, rarity: "rare" };
+      to.dive!.ledger.items.push(id);
+    }
+    const foundN = (n: number) => ({ kind: "message", key: "item.foundN", params: { name: "x", item: "x", n } }) as const;
+    const drop = { kind: "message", key: "battle.drop" } as const;
+    expect(() => c.countFound(from, to, [drop, foundN(3)])).toThrow(/item.found 3 but 2/);
+    c.countFound(from, to, [drop, foundN(2)]);
+    expect(c.foundRarityBySource.drop.rare).toBe(2);
+    expect(c.found.generic).toBe(2);
+    c.countDrops([drop, foundN(2)]);
+    expect(c.dropItems).toBe(2);
+  });
 });
