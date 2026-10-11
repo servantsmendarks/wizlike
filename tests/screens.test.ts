@@ -260,7 +260,7 @@ const ALLOWED_CORE_VALUES: Record<string, readonly string[]> = {
   // M7 UI-59 / UI-12 / IT-66: 品の詳細・状態とパーティ欄の実効の値（能力値・最大値・AC・魔法攻撃力）・図鑑は core の問い合わせの値を描く（IT-35）
   // M10 UI-67 / UI-68 / CH-80: 装備の差分（変わったか・呪いの警告を含む）は equipPreview、呪文の説明は spellInfo、
   // レベルアップ可は memberSheet の canLevelUp / levelUpView の値を描く
-  "rules/item-view": ["itemDetail", "memberSheet", "uniqueBookView", "equipPreview", "spellInfo"],
+  "rules/item-view": ["itemDetail", "memberSheet", "uniqueBookView", "equipPreview", "spellInfo", "bestiaryView"], // bestiaryView は UI-79（M18）
   // M5.5 UI-62 / CH-06: 自分で作るの配分の可否・残り・職業の条件・名前の長さは core の関数の値だけで決める。
   // 作成中はまだ GameState が無いので、ボーナスの振り（rollBonus）は表示層が持つ RngState（createRng。種は crypto）で引く（決定 5 の例外）
   // M10 UI-62 / CH-11: ボーナスの内訳（7+2、当たりは 7+2+10）と合計は core の rollBonusParts の値を描く
@@ -756,7 +756,9 @@ describe("入力と Command", () => {
     // UI-50（2026-10-06 ユーザー決定）: タイトルの絵も同じ一覧（GameAssets.town）の title を読む
     expect(app).toMatch(/createTitleScreen\(\{[\s\S]*?pictures: o\.assets\?\.town \?\? \{\},\s*base: import\.meta\.env\.BASE_URL,/);
     const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
-    expect(dungeon).toContain("const camp = createCampView(lay.camp, lay.character);");
+    // UI-79（M18）: 敵の図鑑の絵のために data と絵の一覧を渡す（以前の期待値は第 3 引数なし）
+    expect(dungeon).toContain("const camp = createCampView(lay.camp, lay.character, { data: o.data, sprites: o.sprites ?? {} });");
+    expect(app).toMatch(/if \(p\.kind === "bestiary"\) return formatBestiary\(m\.bestiary, p\.focus, strings\);/);
     expect(dungeon).toContain("townList: { heading: tl.heading, area: tl.list.area, rows: tl.list.rows, grid: tl.grid, notes: tl.notes } }");
     // 帯は窓の後・キャンプのパネルの前（図鑑・キャラクター画面のパネルが帯を覆う）、判定の箱の層（UI-59）はキャンプの後、
     // パーティ欄はその後（キャラクター画面の間は隠す）、操作はその後。会話の箱（UI-47）は M10.5 で操作の後に移した（操作の欄に被せる。

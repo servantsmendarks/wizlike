@@ -16,18 +16,25 @@
 // - 所持品は 8 件、呪文は 14 件ずつの頁（渡す・捨てる・呪文の段の一覧の [次の頁][前の頁]。パネルも同じ頁を出す）。
 // - UI-68（M10）: 呪文は 一覧 → 説明（[唱える][やめる]。パネルの呪文の枠を説明に置き換える）→ 対象。一覧の dim の呪文も説明を見られる（peek）。
 // - UI-67（M10）: 装備の品の詳細の段のパネルには差分の引数（preview）を付け、app が core の equipPreview の差分を詳細の下に出す。
+// - UI-79（M18。設計 5-5）: 酒場の「敵の図鑑」（bestiary）。パネルに正体の分かった敵の名前の一覧と、選んでいる 1 体の絵（戦闘と同じ chooseSprite）・
+//   名前・倒した数。操作は [次の敵][前の敵]（2 体以上のとき）とやめる。値は core の bestiaryView（CampInput.bestiary）だけ。
 // DOM はパネル（createCampView）だけで、モジュールのトップレベルでは DOM に触れない。結線は app が行う。
-import type { EquipSlot, Strings } from "../../core/data/index";
+import type { SpriteInfo } from "../../build/asset-types";
+import type { EquipSlot, GameData, Strings } from "../../core/data/index";
+import type { BestiaryView } from "../../core/rules/item-view";
 import type { CampMember, CampMenu, CampSummary, CampTargetBlock, Command, FieldItemMenu } from "../../core/types";
 import type { Action } from "../input/swipe";
 import type { Rect } from "../layout";
 import { CHARACTER_INVENTORY_CELLS, CHARACTER_SPELL_CELLS, createDetailView, SLOT_ORDER, type CharacterDetail } from "./detail";
 import type { PanelLine } from "./item-detail";
 import { formatMessage } from "./message";
+import { PALETTE } from "../palette";
+import { chooseSprite } from "../sprites";
+import { enemyFill, spriteUrl } from "./battle";
 
 export type CampHost = "camp" | "tavern";
 /** TW-03（M10）: 酒場の一覧から開く項目（状態は先頭の者のキャラクター画面） */
-export type CampOpen = "status" | "order" | "book";
+export type CampOpen = "status" | "order" | "book" | "bestiary";
 export type CampPage =
   | { kind: "top" }
   /** UI-53（M10）: キャンプの「状態」のメンバー一覧（名前の 6 枠と [7] 戻る） */
@@ -64,7 +71,9 @@ export type CampPage =
   | { kind: "identify"; memberId: string }
   | { kind: "order"; picked: string | null }
   /** IT-66（M7）: 図鑑（酒場の一覧から開く。操作はやめるだけ） */
-  | { kind: "book" };
+  | { kind: "book" }
+  /** UI-79（M18。設計 5-5）: 敵の図鑑（酒場の一覧から開く）。focus は絵を出す敵の bestiary.rows の添字（[次の敵][前の敵] で動かす） */
+  | { kind: "bestiary"; focus: number };
 /** キャラクター画面の操作（UI-59。M10） */
 export type CharacterAction = "equip" | "use" | "give" | "drop" | "spell" | "identify";
 export type CampChoice =
@@ -123,12 +132,21 @@ export type CampPanel =
    */
   | { kind: "item"; instanceId: string; preview?: { memberId: string; slot: EquipSlot; instanceId: string | null } }
   /** IT-66（M7）: 図鑑（app が core の uniqueBookView から formatBook で行を作る） */
-  | { kind: "book" };
+  | { kind: "book" }
+  /** UI-79（M18）: 敵の図鑑（app が CampInput.bestiary から formatBestiary で作る） */
+  | { kind: "bestiary"; focus: number };
 /**
  * summary は core の campSummary（迷宮のキャンプだけ非 null。UI-53）。
  * identifyMpCost は CH-77（M10）の鑑定 1 回の MP（config.identify.mpCost。鑑定の段の見出しに出すだけ）
  */
-export type CampInput = { menu: CampMenu; items: FieldItemMenu | null; summary: CampSummary | null; identifyMpCost: number };
+export type CampInput = {
+  menu: CampMenu;
+  items: FieldItemMenu | null;
+  summary: CampSummary | null;
+  identifyMpCost: number;
+  /** UI-79（M18）: core の bestiaryView（敵の図鑑の段の行と頁送りの範囲） */
+  bestiary: BestiaryView;
+};
 
 /** campGrid の枠の数（4 列 × 2 段）。[7] がやめる / 戻る */
 export const CAMP_GRID_SLOTS = 8;
@@ -143,7 +161,9 @@ function s(strings: Strings, key: string, params?: Record<string, string | numbe
  */
 export function campCharacterOpen(page: CampPage): boolean {
   if (page.kind === "use" && page.stage === "confirmReturn" && page.from === "top") return false; // M16: top の「糸で帰る」の確認
-  return page.kind !== "top" && page.kind !== "members" && page.kind !== "spellWho" && page.kind !== "order" && page.kind !== "book";
+  return (
+    page.kind !== "top" && page.kind !== "members" && page.kind !== "spellWho" && page.kind !== "order" && page.kind !== "book" && page.kind !== "bestiary"
+  );
 }
 
 /**
@@ -179,6 +199,8 @@ export function campFirstPage(host: CampHost, open?: CampOpen, menu?: CampMenu, 
       return { kind: "order", picked: null };
     case "book":
       return { kind: "book" };
+    case "bestiary":
+      return { kind: "bestiary", focus: 0 };
   }
 }
 
@@ -195,6 +217,7 @@ function cancelStep(host: CampHost, page: CampPage, m: CampInput): CampStep {
       return host === "camp" ? go({ kind: "members" }) : { kind: "close" };
     case "order":
     case "book":
+    case "bestiary":
       return host === "camp" ? go({ kind: "top" }) : { kind: "close" };
     case "equip":
       if (page.stage === "slot") return go({ kind: "character", memberId: page.memberId });
@@ -461,6 +484,15 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
     case "book":
       // IT-66: 図鑑はパネルに出すだけで、操作はやめるだけ
       return list([]);
+    case "bestiary": {
+      // UI-79（M18）: 2 体以上なら [次の敵][前の敵]（最後・最初の敵で dim）とやめる。1 体以下はやめるだけ
+      const n = m.bestiary.rows.length;
+      if (n <= 1) return list([]);
+      return list([
+        { label: s(strings, "bestiary.next"), disabled: page.focus >= n - 1, choice: { kind: "pageTurn", delta: 1 } },
+        { label: s(strings, "bestiary.prev"), disabled: page.focus <= 0, choice: { kind: "pageTurn", delta: -1 } },
+      ]);
+    }
   }
 }
 
@@ -612,6 +644,11 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
     }
     case "book":
       return stay;
+    case "bestiary": {
+      if (choice.kind !== "pageTurn") return stay;
+      const f = page.focus + choice.delta;
+      return f < 0 || f >= m.bestiary.rows.length ? stay : go({ kind: "bestiary", focus: f });
+    }
   }
 }
 
@@ -654,6 +691,8 @@ export function campHeader(page: CampPage, m: CampInput, strings: Strings): stri
       return page.picked === null ? s(strings, "camp.prompt.order") : s(strings, "camp.prompt.orderSecond", { name: nameOf(m, page.picked) });
     case "book":
       return s(strings, "camp.prompt.book");
+    case "bestiary":
+      return s(strings, "camp.prompt.bestiary");
   }
 }
 
@@ -666,6 +705,7 @@ export function campPanel(page: CampPage, m: CampInput, strings: Strings): CampP
     return { kind: "item", instanceId: page.instanceId, preview: { memberId: page.memberId, slot: page.slot, instanceId: equipped ? null : page.instanceId } };
   }
   if (page.kind === "book") return { kind: "book" };
+  if (page.kind === "bestiary") return { kind: "bestiary", focus: page.focus };
   const who = pageMember(page);
   if (who !== null) {
     const focusSlot = page.kind === "equip" && page.stage === "item" ? page.slot : null;
@@ -727,6 +767,11 @@ export function campRepair(host: CampHost, page: CampPage, m: CampInput): CampPa
       return page.picked === null || member(page.picked) !== undefined ? page : { kind: "order", picked: null };
     case "book":
       return page;
+    case "bestiary": {
+      // UI-79: 行が減ることは無いが、範囲の外の focus は端へ寄せる
+      const f = Math.max(0, Math.min(page.focus, m.bestiary.rows.length - 1));
+      return f === page.focus ? page : { kind: "bestiary", focus: f };
+    }
     default:
       break;
   }
@@ -828,7 +873,53 @@ export type CampPanelView =
   | { kind: "character"; detail: CharacterDetail; focusSlot: number | null }
   | { kind: "order"; lines: { label: string; row: string; picked: boolean }[] }
   /** UI-59 の品の詳細・IT-66 の図鑑（M7）。見出しは accent、行は tone の色（danger / dim）。tall ならパネルを tallRect に広げる（図鑑・キャラクター画面の下の品の詳細。UI-11） */
-  | { kind: "lines"; title: string; lines: PanelLine[]; tall?: boolean };
+  | { kind: "lines"; title: string; lines: PanelLine[]; tall?: boolean }
+  /** UI-79（M18）: 敵の図鑑（formatBestiary。tallRect に広げる） */
+  | BestiaryPanel;
+
+/**
+ * UI-79（M18。設計 5-5）: 敵の図鑑のパネル。title は見出し（accent）、rows は名前の一覧（focused は accent）、empty は 1 体もいないときの dim の 1 行、
+ * pick は絵を出す敵（monsterId は chooseSprite に渡す。name と kills は絵の下の 2 行）
+ */
+export type BestiaryPanel = {
+  kind: "bestiary";
+  title: string;
+  rows: { text: string; focused: boolean }[];
+  empty: string | null;
+  pick: { monsterId: string; name: string; kills: string } | null;
+};
+
+/**
+ * UI-79（M18）: 敵の図鑑の配置（パネル内の座標）。左に名前の一覧の列（見出しの下から 10px の行）、右に絵の枠（96 角。48 の絵は 2 倍、96 の絵は等倍。
+ * 戦闘と同じ chooseSprite で整数倍だけ。縮小しない）と、その下に名前と倒した数の 2 行
+ */
+export const BESTIARY_LAYOUT = {
+  list: { left: 4, width: 128 },
+  picture: { x: 136, y: 14, size: 96 },
+  caption: { left: 136, width: 100, row: 11 },
+} as const;
+
+/** UI-79（M18）: core の bestiaryView から敵の図鑑のパネルを組む（文字列を組むだけ） */
+export function formatBestiary(v: BestiaryView, focus: number, strings: Strings): BestiaryPanel {
+  const title = s(strings, "bestiary.title", { known: v.known, total: v.total });
+  const f = Math.max(0, Math.min(focus, v.rows.length - 1));
+  const r = v.rows[f];
+  return {
+    kind: "bestiary",
+    title,
+    rows: v.rows.map((x, i) => ({ text: x.name, focused: i === f })),
+    empty: v.rows.length === 0 ? s(strings, "bestiary.none") : null,
+    pick: r === undefined ? null : { monsterId: r.monsterId, name: r.name, kills: s(strings, "bestiary.kills", { kills: r.kills }) },
+  };
+}
+
+/**
+ * UI-79（M18）: 名前の一覧の見える範囲の先頭（表示のためだけの計算）。見える行数 visible に focus が入るように先頭をずらす
+ */
+export function bestiaryWindowStart(count: number, focus: number, visible: number): number {
+  if (visible <= 0 || count <= visible) return 0;
+  return Math.max(0, Math.min(focus - visible + 1, count - visible));
+}
 
 export type CampView = {
   el: HTMLElement;
@@ -840,7 +931,10 @@ export type CampView = {
  * tallRect は広げたパネル（キャラクター画面（UI-59。M10）・その下の品の詳細と、IT-66 の図鑑）の範囲（layout.character = ビューの上端から操作領域の上端まで）。
  * 幅は rect と同じ前提（行の幅は rect.w で決める）
  */
-export function createCampView(rect: Rect, tallRect: Rect = rect): CampView {
+/** UI-79（M18）: 敵の図鑑の絵に使うもの（data は chooseSprite と塗りの色、sprites は GameAssets.sprites。無ければ絵を読まず塗るだけ） */
+export type CampArt = { data: Pick<GameData, "monsters" | "unknownKinds">; sprites: Readonly<Record<string, SpriteInfo>> };
+
+export function createCampView(rect: Rect, tallRect: Rect = rect, art?: CampArt): CampView {
   const el = document.createElement("div");
   el.className = "camp-view";
   Object.assign(el.style, {
@@ -873,10 +967,66 @@ export function createCampView(rect: Rect, tallRect: Rect = rect): CampView {
     return t;
   };
 
+  /** UI-79: 敵の図鑑の絵の枠（絵が無い・読めないときは戦闘と同じ塗りの矩形） */
+  const pictureNode = (monsterId: string): HTMLElement => {
+    const L = BESTIARY_LAYOUT.picture;
+    const box = document.createElement("div");
+    box.className = "camp-bestiary-picture";
+    Object.assign(box.style, { position: "absolute", left: `${L.x}px`, top: `${L.y}px`, width: `${L.size}px`, height: `${L.size}px` });
+    if (art === undefined) return box;
+    const fill = PALETTE[enemyFill(art.data as GameData, monsterId, true)];
+    const pick = chooseSprite(art.data, monsterId, true, art.sprites, L.size);
+    if (pick === null) {
+      box.style.background = fill;
+      return box;
+    }
+    const img = document.createElement("img");
+    img.className = "camp-bestiary-img";
+    img.alt = "";
+    img.draggable = false;
+    const dw = pick.w * pick.scale;
+    const dh = pick.h * pick.scale;
+    Object.assign(img.style, {
+      position: "absolute",
+      left: `${Math.floor((L.size - dw) / 2)}px`,
+      top: `${Math.floor((L.size - dh) / 2)}px`,
+      width: `${dw}px`,
+      height: `${dh}px`,
+      imageRendering: "pixelated",
+      pointerEvents: "none",
+    });
+    img.addEventListener("error", () => {
+      img.style.display = "none";
+      box.style.background = fill;
+    });
+    img.src = spriteUrl(pick.name, import.meta.env.BASE_URL);
+    box.appendChild(img);
+    return box;
+  };
+
+  /** UI-79: 見出し・名前の一覧（focus が見える範囲）・絵・絵の下の 2 行 */
+  const bestiaryNodes = (p: BestiaryPanel): HTMLElement[] => {
+    const L = BESTIARY_LAYOUT;
+    const nodes = [line(0, p.title, "camp-title", "var(--c-accent)")];
+    if (p.empty !== null) return [...nodes, line(1, p.empty, "camp-line", "var(--c-dim)")];
+    const visible = Math.floor((tallRect.h - PAD) / LINE_H) - 1;
+    const focus = Math.max(0, p.rows.findIndex((r) => r.focused));
+    const start = bestiaryWindowStart(p.rows.length, focus, visible);
+    p.rows.slice(start, start + Math.max(0, visible)).forEach((r, i) => {
+      nodes.push(line(i + 1, r.text, "camp-bestiary-row", r.focused ? "var(--c-accent)" : undefined, L.list));
+    });
+    if (p.pick !== null) {
+      nodes.push(pictureNode(p.pick.monsterId));
+      nodes.push(line(L.caption.row, p.pick.name, "camp-bestiary-name", "var(--c-accent)", L.caption));
+      nodes.push(line(L.caption.row + 1, p.pick.kills, "camp-bestiary-kills", undefined, L.caption));
+    }
+    return nodes;
+  };
+
   return {
     el,
     render(p: CampPanelView): void {
-      place(p.kind === "character" || (p.kind === "lines" && p.tall === true) ? tallRect : rect);
+      place(p.kind === "character" || p.kind === "bestiary" || (p.kind === "lines" && p.tall === true) ? tallRect : rect);
       if (p.kind === "character") {
         detail.render(p.detail, p.focusSlot);
         el.replaceChildren(detail.el);
@@ -889,6 +1039,10 @@ export function createCampView(rect: Rect, tallRect: Rect = rect): CampView {
             return [line(i, l.label, "camp-order-name", color, ORDER_COLUMNS.name), line(i, l.row, "camp-order-col", color, ORDER_COLUMNS.row)];
           }),
         );
+        return;
+      }
+      if (p.kind === "bestiary") {
+        el.replaceChildren(...bestiaryNodes(p));
         return;
       }
       if (p.kind === "lines") {

@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { campMenu } from "../src/core/rules/camp";
 import { fieldItemMenu } from "../src/core/rules/items";
-import { equipPreview, itemDetail, spellInfo, uniqueBookView } from "../src/core/rules/item-view";
+import { bestiaryView, equipPreview, itemDetail, spellInfo, uniqueBookView } from "../src/core/rules/item-view";
 import { cloneState, createItemInstance } from "../src/core/state";
 import type { GameState } from "../src/core/types";
 import { campEntries, campFirstPage, campHeader, campPanel, campRepair, campStep, createCampView, type CampInput } from "../src/presenter/views/camp";
@@ -18,7 +18,7 @@ const inDungeonState = (): GameState => cloneState(dived(1));
 function campInput(s: GameState): CampInput {
   const menu = campMenu(s, data);
   if (menu === null) throw new Error("no camp menu");
-  return { menu, items: fieldItemMenu(s, data), summary: null, identifyMpCost: data.config.identify.mpCost };
+  return { menu, items: fieldItemMenu(s, data), summary: null, identifyMpCost: data.config.identify.mpCost, bestiary: bestiaryView(s, data) };
 }
 
 const S = data.strings;
@@ -193,7 +193,7 @@ describe("IT-66 formatBook（図鑑）", () => {
 function input(s: GameState): CampInput {
   const menu = campMenu(s, data);
   if (menu === null) throw new Error("camp closed");
-  return { menu, items: fieldItemMenu(s, data), summary: null, identifyMpCost: data.config.identify.mpCost };
+  return { menu, items: fieldItemMenu(s, data), summary: null, identifyMpCost: data.config.identify.mpCost, bestiary: bestiaryView(s, data) };
 }
 
 describe("IT-66/TW-03 酒場の図鑑の段", () => {

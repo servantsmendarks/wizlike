@@ -5,7 +5,8 @@ import { equipStats } from "../src/core/rules/equip-stats";
 import { createInitialState, execute } from "../src/core/engine";
 import { spellCost } from "../src/core/rules/equip-stats";
 import { canLevelUp, expFor, levelUpReady } from "../src/core/rules/growth";
-import { equipPreview, itemDetail, memberSheet, spellInfo, uniqueBookView, weaponDamageDice } from "../src/core/rules/item-view";
+import { endingRecordView } from "../src/core/rules/progress";
+import { bestiaryView, equipPreview, itemDetail, memberSheet, spellInfo, uniqueBookView, weaponDamageDice } from "../src/core/rules/item-view";
 import { cloneState, createItemInstance, memberById } from "../src/core/state";
 import type { Character, Command, GameState } from "../src/core/types";
 import { data, newGame } from "./helpers/core";
@@ -230,6 +231,45 @@ describe("IT-66 uniqueBookView（図鑑）", () => {
     expect(rows.find((r) => r.uniqueId === "alarm_bell_helm")).toEqual({ uniqueId: "alarm_bell_helm", known: true, name: "早鐘の兜", foundIn: null, bestRarity: "normal" });
     expect(rows.find((r) => r.uniqueId === "twin_tongue_dagger")).toEqual({ uniqueId: "twin_tongue_dagger", known: false, name: null, foundIn: null, bestRarity: null });
     expect(rows.filter((r) => r.known)).toHaveLength(2);
+  });
+});
+
+describe("UI-79 bestiaryView（敵の図鑑。M18）", () => {
+  test("UI-79/CB-06 識別済みの敵だけを monsters.json の順で（id・名前・倒した数）。遭遇しただけ（identified 偽）・記録の無い敵は載せず、total は全種類の数", () => {
+    const s = town();
+    // 記録の順を monsters.json と逆にしても monsters.json の順で出る
+    s.bestiary["kobold"] = { kills: 7, identified: true };
+    s.bestiary["giant_spider"] = { kills: 3, identified: false }; // 遭遇しただけ
+    s.bestiary["giant_rat"] = { kills: 0, identified: true }; // 噂話（TW-15）で識別しただけ（倒していない）
+    const before = JSON.stringify(s);
+    const v = bestiaryView(s, data);
+    const name = (id: string) => data.monsters.find((m) => m.id === id)!.name;
+    expect(v).toEqual({
+      known: 2,
+      total: data.monsters.length,
+      rows: [
+        { monsterId: "giant_rat", name: name("giant_rat"), kills: 0 },
+        { monsterId: "kobold", name: name("kobold"), kills: 7 },
+      ],
+    });
+    expect(data.monsters.findIndex((m) => m.id === "giant_rat")).toBeLessThan(data.monsters.findIndex((m) => m.id === "kobold"));
+    expect(JSON.stringify(s)).toBe(before); // state を変えない
+    // 何も識別していなければ空（分母はそのまま）
+    expect(bestiaryView(town(), data)).toEqual({ known: 0, total: data.monsters.length, rows: [] });
+  });
+
+  test("UI-79/UI-73 known は戦績の敵の図鑑（endingRecordView の bestiary）と同じ数え方: 全種類を識別すれば known = total", () => {
+    const s = town();
+    for (const m of data.monsters) s.bestiary[m.id] = { kills: 1, identified: true };
+    const v = bestiaryView(s, data);
+    expect(v.known).toBe(data.monsters.length);
+    expect({ known: v.known, total: v.total }).toEqual(endingRecordView(s, data).bestiary);
+    const some = town();
+    some.bestiary["kobold"] = { kills: 2, identified: true };
+    some.bestiary["giant_rat"] = { kills: 1, identified: false };
+    const w = bestiaryView(some, data);
+    expect({ known: w.known, total: w.total }).toEqual(endingRecordView(some, data).bestiary);
+    expect(v.rows.map((r) => r.monsterId)).toEqual(data.monsters.map((m) => m.id));
   });
 });
 

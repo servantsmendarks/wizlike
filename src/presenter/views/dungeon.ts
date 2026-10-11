@@ -291,7 +291,8 @@ export function createDungeonScreen(o: {
   map.el.style.display = "none";
 
   // キャンプと酒場のパネル（UI-53）はビュー領域だけ（キャラクター画面と酒場の図鑑は layout.character に広げる。M8.5 / M10）
-  const camp = createCampView(lay.camp, lay.character);
+  // UI-79（M18）: 酒場の敵の図鑑の絵は戦闘と同じ一覧（GameAssets.sprites）から読む
+  const camp = createCampView(lay.camp, lay.character, { data: o.data, sprites: o.sprites ?? {} });
   camp.el.style.display = "none";
 
   // UI-59 / UI-40（M10）: キャラクター画面の間の判定の箱の層（キャンプのパネルより上、会話の箱より下。押せない）

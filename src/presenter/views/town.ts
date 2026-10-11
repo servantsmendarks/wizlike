@@ -284,8 +284,8 @@ export function townEntries(
   }
   if (page === "tavern") {
     // TW-13: 見回す → TW-03: 状態（M10: キャラクター画面 UI-59。呪文・道具・装備・鑑定はその画面の操作に移した）・並び順
-    // → IT-66（M7）: 図鑑 → TW-31: 救済の申し出の間だけ、dead / ash の者の行（押すと town.mercy）→ 戻る（UI-11 の固定の位置）
-    const opens: readonly CampOpen[] = ["status", "order", "book"];
+    // → IT-66（M7）: 図鑑（M18 から「名品の図鑑」）→ UI-79（M18）: 敵の図鑑 → TW-31: 救済の申し出の間だけ、dead / ash の者の行（押すと town.mercy）→ 戻る（UI-11 の固定の位置）
+    const opens: readonly CampOpen[] = ["status", "order", "book", "bestiary"];
     const camp: TownEntry[] = [
       { kind: "look", label: s(strings, "town.tavern.look") },
       ...opens.map((open): TownEntry => ({ kind: "camp", open, label: s(strings, `camp.${open}`) })),

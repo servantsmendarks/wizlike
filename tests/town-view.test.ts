@@ -601,12 +601,14 @@ describe("UI-52 街のページ", () => {
   // M10（2026-10-07）: 呪文・道具・装備・鑑定はキャラクター画面（UI-59。状態から開く）の操作に移したので、酒場の一覧から外した
   // M10 TW-09: 図鑑の後に「GMに申し出る」（転職）を足した
   // M16 UI-77: 転職の後に「用語」を足した（以前の期待値は用語なし）
-  test("TW-01/TW-03/TW-13/UI-52/TW-31/IT-66/TW-09 酒場: 見回す → 状態・並び順 → 図鑑 → GMに申し出る → 救済の行（申し出の間だけ。dead / ash の者、リーダーも）→ 戻る", () => {
+  // M18 UI-79（設計 5-5）: 図鑑を「名品の図鑑」（ラベルを「図鑑」から改めた）と「敵の図鑑」の 2 項目にした
+  test("TW-01/TW-03/TW-13/UI-52/TW-31/IT-66/UI-79/TW-09 酒場: 見回す → 状態・並び順 → 名品の図鑑・敵の図鑑 → GMに申し出る → 救済の行（申し出の間だけ。dead / ash の者、リーダーも）→ 戻る", () => {
     const camp: TownEntry[] = [
       { kind: "look", label: "見回す" },
       { kind: "camp", open: "status", label: "状態" },
       { kind: "camp", open: "order", label: "並び順" },
-      { kind: "camp", open: "book", label: "図鑑" }, // IT-66（M7）: 図鑑は酒場の一覧（並び順の後）
+      { kind: "camp", open: "book", label: "名品の図鑑" }, // IT-66（M7）: 図鑑は酒場の一覧（並び順の後）
+      { kind: "camp", open: "bestiary", label: "敵の図鑑" }, // UI-79（M18）: 敵の図鑑は名品の図鑑の後
       { kind: "page", to: "classChange", label: "転職（GMに申し出る）" }, // TW-09（M10）: 転職は図鑑の後
       { kind: "rules", label: "用語" }, // UI-77（M16）: 用語は転職（と戦績）の後・救済の行の前
     ];
@@ -664,7 +666,7 @@ describe("UI-52 街のページ", () => {
     const m = menuOf(s);
     expect(m.canIdentify).toBe(true);
     const e = townEntries("tavern", m, S);
-    expect(e.map((x) => x.kind)).toEqual(["look", "camp", "camp", "camp", "page", "rules", "mercy", "back"]); // UI-77（M16）で rules を足した
+    expect(e.map((x) => x.kind)).toEqual(["look", "camp", "camp", "camp", "camp", "page", "rules", "mercy", "back"]); // UI-77（M16）で rules、UI-79（M18）で 4 つ目の camp（敵の図鑑）を足した
     for (const x of e) expect("disabled" in x, x.label).toBe(false);
   });
 

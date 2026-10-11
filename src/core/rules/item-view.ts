@@ -1,5 +1,5 @@
 // 表示層向けの装備の問い合わせ（IT-11 / IT-12 / IT-35 / IT-66、UI-59 の状態と品の詳細、図鑑）と、M10 の装備の差分（UI-67）・
-// 呪文の説明（UI-68）・レベルアップ可（CH-80）。純粋。state を変えない。乱数を使わない。
+// 呪文の説明（UI-68）・レベルアップ可（CH-80）・敵の図鑑（UI-79。M18）。純粋。state を変えない。乱数を使わない。
 // 値の式は equip-stats.ts（実効の値・品 1 つの性能）と shop.ts（売値）のものをそのまま使う（表示層は計算しない。UI-35）。
 import type { EquipSlot, GameData, SkillType, StatBlock } from "../data/index";
 import { classOf, cloneState, findBase, itemDisplayName, itemOf, memberById, optionOf, uniqueOf } from "../state";
@@ -226,4 +226,19 @@ export function uniqueBookView(state: GameState, data: GameData): UniqueBookRow[
     const dungeon = e.foundIn === null ? undefined : data.dungeons.find((d) => d.id === e.foundIn);
     return { uniqueId: u.id, known: true, name: u.name, foundIn: dungeon?.name ?? null, bestRarity: e.bestRarity };
   });
+}
+
+/** UI-79（M18。設計 5-5）: 敵の図鑑の 1 行（正体の分かった敵だけ）。name は monsters[].name（識別済みの名前）、kills は通算の撃破数（CB-06 の図鑑） */
+export type BestiaryRow = { monsterId: string; name: string; kills: number };
+/**
+ * UI-79: 敵の図鑑。rows は bestiary の identified が真の敵だけを monsters.json の順で（正体の分からない敵・遭遇していない敵は載せない）。
+ * total は data.monsters の数（分母には正体の分からない敵も入る。戦績 UI-73 の敵の図鑑と同じ分母）。known は rows の数
+ */
+export type BestiaryView = { known: number; total: number; rows: BestiaryRow[] };
+
+export function bestiaryView(state: GameState, data: GameData): BestiaryView {
+  const rows = data.monsters
+    .filter((m) => state.bestiary[m.id]?.identified === true)
+    .map((m): BestiaryRow => ({ monsterId: m.id, name: m.name, kills: state.bestiary[m.id]?.kills ?? 0 }));
+  return { known: rows.length, total: data.monsters.length, rows };
 }

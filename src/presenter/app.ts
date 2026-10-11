@@ -27,7 +27,7 @@ import { campMenu, campSummary } from "../core/rules/camp";
 import { DEBUG_LEVELS, SAN_OVER_DEBUG } from "../core/rules/debug";
 import { planRoute, routeStepOk } from "../core/rules/pathfind";
 import { STAY_CHOICE_ID } from "../core/rules/choices";
-import { equipPreview, itemDetail, memberSheet, spellInfo, uniqueBookView } from "../core/rules/item-view";
+import { bestiaryView, equipPreview, itemDetail, memberSheet, spellInfo, uniqueBookView } from "../core/rules/item-view";
 import { sanStage } from "../core/rules/san";
 import { fieldItemMenu } from "../core/rules/items";
 import { endingRecordView } from "../core/rules/progress";
@@ -117,6 +117,7 @@ import {
   campRepair,
   campStep,
   campSwipeDir,
+  formatBestiary,
   type CampChoice,
   type CampOpen,
   type CampEntry,
@@ -1070,7 +1071,13 @@ export function createApp(o: {
   const campInput = (): CampInput | null => {
     const menu = campMenu(state, data);
     if (menu === null) return null;
-    return { menu, items: fieldItemMenu(state, data), summary: campSummary(state, data), identifyMpCost: data.config.identify.mpCost };
+    return {
+      menu,
+      items: fieldItemMenu(state, data),
+      summary: campSummary(state, data),
+      identifyMpCost: data.config.identify.mpCost,
+      bestiary: bestiaryView(state, data), // UI-79（M18）
+    };
   };
 
   /**
@@ -1173,6 +1180,7 @@ export function createApp(o: {
       return { kind: "lines", title: panel.title, lines, tall: true };
     }
     if (p.kind === "book") return { kind: "lines", ...formatBook(uniqueBookView(state, data), strings), tall: true }; // IT-66 / UI-11（M7）: 図鑑はビューとメッセージの領域に広げる
+    if (p.kind === "bestiary") return formatBestiary(m.bestiary, p.focus, strings); // UI-79（M18）: 敵の図鑑（tallRect に広げる）
     const ch = state.party.find((x) => x.id === p.memberId);
     const member = m.menu.members.find((x) => x.id === p.memberId);
     if (ch === undefined || member === undefined) return { kind: "text", title: "" };

@@ -100,7 +100,7 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 - IT-64 倉庫（TW-16）: 銀行に併設。品の実体の id の配列 `warehouse`。容量は `config.items.warehouseSlots`（40）【仮】。全滅（TW-21 / 22）の対象外。
 - IT-65 店の鑑定: `town.shop {kind: "identify"}` で鑑定料（品ごと。下の注記。M7-B までは一律の `config.economy.identifyFee`（100））を払い、本人の inventory の未鑑定の品を鑑定する（結果は CH-77 と同じ。乱数なし）。本人の life は問わない（TW-05 の M7 の順）。語りは `town.shop.identified`{name, old, item, cost, rarity}（rarity は CH-77 と同じく音の契機。UI-66。料金を見せるため CH-77 の `camp.identified` とは別のキー）、M18 から装備なら続けて品そのものの数値の `town.shop.identifiedPower`{item, attack, ac, magic}（UI-59 の「鑑定の結果の数値」）、呪われていれば続けて `camp.identifiedCursed`{item}。
   - 2026-10-05 ユーザー指示（経済【仮】）: 鑑定料 = max(`config.economy.identifyFeeMin`（10）, floor(見た目の品種の売値（IT-61）× `config.economy.identifyFeeRatio`（0.5）))【仮】。品の本当の Lv・希少度・オプション・ユニークは料金に反映しない（鑑定料から中身を推測できないようにする）。例: 長剣 50 → 25G、護符 100 → 50G、短剣 7 → 3 → 10G。司教の鑑定（CH-77）は無料のまま（M10 で MP 1・確率に改めた。店の鑑定は 100% のまま、料金も今のまま）。`townMenu.shop.identify` は品ごとの `fee` と `affordable`（gold ≥ fee）を持つ（全体の fee / affordable は外した）。
-- IT-66 図鑑（ユニーク）`uniqueBook`: uniqueId → `{ foundIn, bestRarity }`。ユニークを鑑定した時点（司教・店）で記録し（指示は「入手は図鑑に記録」。§11 の Q12 で【仮】）、既にあれば bestRarity だけを良い方に更新する（foundIn は最初の記録のまま。foundIn が null の実体なら null）。ゲーム単位で永続（全滅・売却でも消えない）。名前は uniques.json から出す。
+- IT-66 図鑑（ユニーク）`uniqueBook`: uniqueId → `{ foundIn, bestRarity }`。ユニークを鑑定した時点（司教・店）で記録し（指示は「入手は図鑑に記録」。§11 の Q12 で【仮】）、既にあれば bestRarity だけを良い方に更新する（foundIn は最初の記録のまま。foundIn が null の実体なら null）。ゲーム単位で永続（全滅・売却でも消えない）。名前は uniques.json から出す。M18（2026-10-11）: 酒場の項目のラベルを「名品の図鑑」（`camp.book`）に改め、その後に敵の図鑑（UI-79）を置いた。
 
 ## 8. 強化
 

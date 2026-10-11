@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { execute } from "../src/core/engine";
 import { campMenu, campSummary, identifyChance } from "../src/core/rules/camp";
+import { bestiaryView } from "../src/core/rules/item-view";
 import { fieldItemMenu } from "../src/core/rules/items";
 import { cloneState, createItemInstance, itemDisplayName } from "../src/core/state";
 import type { Character, Command, GameState } from "../src/core/types";
@@ -51,7 +52,7 @@ const inTown = (patches: Record<string, Partial<Character>> = {}) => patched(new
 function input(s: GameState): CampInput {
   const menu = campMenu(s, data);
   if (menu === null) throw new Error("no camp menu");
-  return { menu, items: fieldItemMenu(s, data), summary: campSummary(s, data), identifyMpCost: data.config.identify.mpCost };
+  return { menu, items: fieldItemMenu(s, data), summary: campSummary(s, data), identifyMpCost: data.config.identify.mpCost, bestiary: bestiaryView(s, data) };
 }
 
 /** 送った Command を core が受け付けること */
