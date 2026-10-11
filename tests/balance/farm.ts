@@ -169,6 +169,10 @@ export function farmReport(results: CampaignResult[], kind: BotKind): string {
     const i = line.indexOf(": ");
     row(line.slice(0, i), line.slice(i + 2));
   }
+  // M20（設計 A-3）: ドロップの箱が出なかった連続（ランダム遭遇の勝利。CB-51b）。5 連続で外れた割合 = 最長が 5 以上だった潜行の割合
+  const longest = all.map((d) => d.noChestLongest);
+  row("5 連続で外れた割合（ランダム遭遇の勝利でドロップの箱が 5 回以上続けて出なかったことが 1 度でもあった潜行）", pct(longest.filter((x) => x >= 5).length, n));
+  row("最長の連続（潜行ごとの箱が出なかった連続の最長。平均 / 中央値 / p90 / 最大）", `${fmt(mean(longest))} / ${fmt(median(longest))} / ${fmt(percentile(longest, 90))} / ${Math.max(0, ...longest)}`);
   row("置いていった品（満杯）", `計 ${sum(left)}・1 潜行あたり ${per(left)}（宝箱 ${sum(all.map((d) => d.chestLeft))}・直接ドロップ ${sum(all.map((d) => d.dropLeft))}）`);
   // 6. 1 時間あたり
   const hours = sum(all.map(totalMs)) / 3_600_000;
