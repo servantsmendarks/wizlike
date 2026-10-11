@@ -528,6 +528,8 @@ describe("CH-77 party.identify", () => {
         result: { key: "dice.identify.ok" },
       },
       { kind: "message", key: "camp.identified", params: { name: "エル", old: "短い刃？", item: "短剣", rarity: "normal" } },
+      // UI-59 / CH-77（M18）: 装備なら品そのものの数値の 1 文（短剣 1d4。該当しない項目は「—」）
+      { kind: "message", key: "camp.identifiedPower", params: { item: "短剣", attack: "1d4", ac: "—", magic: "—" } },
     ]);
     expect(r.state.items[g.id]!.identified).toBe(true);
     expect(member(r.state, "c5").mp).toBe(4);
@@ -542,6 +544,7 @@ describe("CH-77 party.identify", () => {
     const r = ok(s, identify("c5", g.id));
     expect(messagesOf(r.events)).toEqual([
       { kind: "message", key: "camp.identified", params: { name: "エル", old: "短い刃？", item: "短剣", rarity: "normal" } },
+      { kind: "message", key: "camp.identifiedPower", params: { item: "短剣", attack: "1d4", ac: "—", magic: "—" } },
       { kind: "message", key: "camp.identifiedCursed", params: { item: "短剣" } },
     ]);
     expect(r.state.rng).toEqual(m);
@@ -755,7 +758,10 @@ describe("CH-77 party.identify", () => {
     expect(s.uniqueBook).toEqual({});
     const r1 = ok(s, identify("c5", a), sure);
     // IT-11 / IT-12: 鑑定前は「剣？」、鑑定後は「上質な影法師の剣」（ユニークは Lv を出さない）
-    expect(messagesOf(r1.events)).toEqual([{ kind: "message", key: "camp.identified", params: { name: "エル", old: "剣？", item: "上質な影法師の剣", rarity: "fine" } }]);
+    expect(messagesOf(r1.events)).toEqual([
+      { kind: "message", key: "camp.identified", params: { name: "エル", old: "剣？", item: "上質な影法師の剣", rarity: "fine" } },
+      { kind: "message", key: "camp.identifiedPower", params: { item: "上質な影法師の剣", attack: "1d8", ac: "—", magic: "—" } }, // ユニークは Lv の効果なし（IT-03）
+    ]);
     expect(r1.state.uniqueBook).toEqual({ shadowfolk_sword: { foundIn: "d01", bestRarity: "fine" } });
     const r2 = ok(r1.state, identify("c5", b), sure);
     expect(r2.state.uniqueBook).toEqual({ shadowfolk_sword: { foundIn: "d01", bestRarity: "rare" } });
@@ -764,6 +770,7 @@ describe("CH-77 party.identify", () => {
     const r4 = ok(r3.state, identify("c5", g), sure);
     expect(r4.state.uniqueBook).toEqual(r3.state.uniqueBook);
     expect(messagesOf(r4.events)[0]).toEqual({ kind: "message", key: "camp.identified", params: { name: "エル", old: "剣？", item: "伝説の長剣 +2", rarity: "legendary" } });
+    expect(messagesOf(r4.events)[1]).toEqual({ kind: "message", key: "camp.identifiedPower", params: { item: "伝説の長剣 +2", attack: "1d8+2", ac: "—", magic: "—" } }); // IT-20: Lv2 → +2
   });
 });
 

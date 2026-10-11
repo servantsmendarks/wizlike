@@ -1606,13 +1606,17 @@ describe("UI-55/UI-40 制止の箱のタップ待ち（M5）", () => {
     const id = createItemInstance(st, { itemId: "dagger", identified: false });
     st.party.find((c) => c.id === "c1")!.inventory.push(id);
     const r = execute(st, { type: "party.identify", memberId: "c5", instanceId: id }, data);
-    expect(r.events.map((e) => e.kind)).toEqual(["mpChanged", "dice", "message"]);
+    // UI-59 / CH-77（M18）: 装備なら結果の語りの後に品そのものの数値の 1 文（camp.identifiedPower）が続く
+    expect(r.events.map((e) => e.kind)).toEqual(["mpChanged", "dice", "message", "message"]);
     const m = r.events[2]!;
-    if (m.kind !== "message") throw new Error("message expected");
+    const p = r.events[3]!;
+    if (m.kind !== "message" || p.kind !== "message") throw new Error("message expected");
+    expect(p.key).toBe("camp.identifiedPower");
     for (const skipAnimations of [false, true]) {
       const { deps, log } = fakeDeps({ skipAnimations });
       await createPlayer(deps).play(r.events, st, r.state);
-      expect(span(log), String(skipAnimations)).toEqual(["dice.show", say(m.key, m.params), "beat.waitTap", "dice.hide"]);
+      // 箱は結果の語り 1 件の後のタップで消え（呪いの camp.identifiedCursed が続くときと同じ）、性能の文はその後に出る
+      expect(span(log), String(skipAnimations)).toEqual(["dice.show", say(m.key, m.params), "beat.waitTap", "dice.hide", say(p.key, p.params)]);
     }
   });
 
@@ -1884,6 +1888,26 @@ describe("UI-47 街の会話の箱と再生", () => {
           done = true;
         });
         await new Promise<void>((res) => setTimeout(res, 0));
+        if (i === 1) {
+          // UI-59 / CH-77（M18）: 鑑定は結果の語りの後に性能の文が続くので、結果の語りの後で 1 回タップを待ち（呪いの文が続くときと同じ）、判定の箱を消してから性能の文
+          const first = r.events.find((e) => e.kind === "message")!;
+          if (first.kind !== "message") throw new Error("message expected");
+          expect(done, tag).toBe(false);
+          expect(sink.text, tag).toBe(formatMessage(data.strings[first.key]!, first.params));
+          expect(sink.more.on, tag).toBe(true);
+          latch.release();
+          await new Promise<void>((res) => setTimeout(res, 0));
+          // 判定の箱はこのタップで消え、会話の箱には 2 文が溜まる。最後の ▼ のタップで会話の箱を閉じる
+          expect(done, tag).toBe(true);
+          const texts = [first, m].map((e) => (e.kind === "message" ? formatMessage(data.strings[e.key]!, e.params) : ""));
+          expect(sink.text, tag).toBe(texts.join("\n"));
+          expect({ open: sink.open, more: sink.more }, tag).toEqual({ open: true, more: { on: true, blink: !skipAnimations } });
+          expect(names(log).filter((x) => x === "dice.hide"), tag).toHaveLength(1);
+          expect(logs, tag).toEqual(texts);
+          talk.tap();
+          expect(sink.open, tag).toBe(false);
+          continue;
+        }
         // 再生はタップを待たずに終わる
         expect(done, tag).toBe(true);
         // 結果の文と最後の ▼。判定の箱は残っている

@@ -27,7 +27,7 @@ import type {
 } from "../types";
 import { canAct } from "./combat-calc";
 import { applyAllyEffect } from "./effects";
-import { clampToMax, equipStats, hpMaxOf, spellCost } from "./equip-stats";
+import { clampToMax, equipStats, hpMaxOf, identifiedPowerParams, spellCost } from "./equip-stats";
 import { loseSan } from "./san";
 import { returnToTown, rollResurrect } from "./town";
 
@@ -456,7 +456,7 @@ function forceEquip(ctx: RuleContext, bishop: Character, owner: Character, insta
  * CH-77（M10）。checkIdentify が null を返した前提。
  * MP を mpCost 引く（mpChanged）→ randInt(1, 100) を 1 回 → dice（label dice.identify{item: 鑑定前の表示名}、内訳の行（identifyChance）
  * と最後に出目の行 identify.row.roll（base null）、基準 identify.rule{rate}、結果 dice.identify.ok / ng）。出目 ≤ rate で成功。
- * 成功: identified = true（ユニークなら図鑑。IT-66）→ message camp.identified{name, old, item, rarity} → 呪われていれば camp.identifiedCursed{item}。
+ * 成功: identified = true（ユニークなら図鑑。IT-66）→ message camp.identified{name, old, item, rarity} →（M18。装備なら）camp.identifiedPower{item, attack, ac, magic} → 呪われていれば camp.identifiedCursed{item}。
  * 失敗: message camp.identifyFailed{name, item} → 迷宮内（dive が null でない）なら司教の SAN −failSanDungeon（tags 空）→
  * 品が呪われていれば chance(possessChance) を 1 回。当たれば canForceEquip なら forceEquip、そうでなければ
  * message camp.possessedSan{name, item} → 司教の SAN −possessSan（tags 空）。
@@ -489,6 +489,9 @@ export function identifyItem(ctx: RuleContext, memberId: string, instanceId: str
     const item = itemDisplayName(state, data, instanceId);
     // UI-66（M8）: rarity は文には出さない（音の契機。伝説の品の鑑定で rare）
     ctx.events.push({ kind: "message", key: "camp.identified", params: { name: ch.name, old, item, rarity: inst.rarity } });
+    // UI-59 / CH-77（M18）: 装備なら品そのものの数値の 1 文（消耗品・魔法書では出さない。乱数を引かない）
+    const power = identifiedPowerParams(state, data, instanceId, item);
+    if (power !== null) ctx.events.push({ kind: "message", key: "camp.identifiedPower", params: power });
     if (inst.cursed) ctx.events.push({ kind: "message", key: "camp.identifiedCursed", params: { item } });
     return;
   }

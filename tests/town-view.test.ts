@@ -7,7 +7,8 @@ import { campMenu } from "../src/core/rules/camp";
 import { classChangeOptions, townMenu } from "../src/core/rules/town";
 import { execute } from "../src/core/engine";
 import { upgradePreview } from "../src/core/rules/upgrade";
-import { cloneState, createItemInstance } from "../src/core/state";
+import { cloneState, createItemInstance, itemDisplayName } from "../src/core/state";
+import { identifiedPowerParams, POWER_NONE } from "../src/core/rules/equip-stats";
 import type { Character, EndingRecord, GameState, TownMenu, UpgradeCatalystRef } from "../src/core/types";
 import { endingKeyAction, formatEndingRecord } from "../src/presenter/views/ending";
 import { formatRules, RULE_TERM_MAX, splitRuleLine } from "../src/presenter/views/rules";
@@ -820,6 +821,26 @@ describe("UI-52 街のページ", () => {
     }
   });
 
+  test("UI-59/IT-65/CH-77（M18）鑑定の結果の性能の 1 文 town.shop.identifiedPower / camp.identifiedPower: core の params を埋めるだけ。どのベース・ユニークの伝説・Lv20 でも 28 字 × 2 行以内", () => {
+    expect(S["town.shop.identifiedPower"]).toBe("{item}: 攻撃 {attack} / AC {ac} / 魔法攻撃力 {magic}");
+    expect(S["camp.identifiedPower"]).toBe(S["town.shop.identifiedPower"]);
+    // core が該当しない項目に入れる記号は店の下見の「—」と同じ
+    expect(POWER_NONE).toBe(S["town.shop.previewNone"]);
+    const s = town({}, 0);
+    const ids = [
+      ...data.equipmentBases.map((b) => createItemInstance(s, { itemId: b.id, level: 20, rarity: "legendary", identified: true })),
+      ...data.uniques.map((u) => createItemInstance(s, { itemId: u.base, uniqueId: u.id, rarity: "legendary", identified: true })),
+    ];
+    for (const id of ids) {
+      const params = identifiedPowerParams(s, data, id, itemDisplayName(s, data, id))!;
+      for (const key of ["town.shop.identifiedPower", "camp.identifiedPower"]) {
+        const text = formatMessage(S[key]!, params);
+        expect(text, text).not.toMatch(/\{/);
+        expect(kinsokuLines(text, 28).length, text).toBeLessThanOrEqual(2);
+      }
+    }
+  });
+
   test("TW-05/UI-52 装備できない理由の 1 文 shopCannotEquipText は core の preview.classes をつなぐだけ（誰でも・消耗品は null）。名前 6 字・どの品・職業 6 つでも 28 字 × 2 行以内（M16 追補 H-4）", () => {
     const s = town({}, 0);
     expect(S["town.shop.cannotEquipWhy"]).toBe("{name}は{item}を装備できない。{classes}向けの品だ。");
@@ -1344,7 +1365,7 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
       else if (raw.startsWith(SP)) expect(l.term, raw).toBe("");
       else expect(l.term.length, raw).toBeGreaterThan(0);
     }
-    expect(terms.filter((l) => l.term === "").map((l) => l.desc)).toEqual([6, 20, 21, 23].map((n) => S[`rules.line.${n}`]!.slice(1)));
+    expect(terms.filter((l) => l.term === "").map((l) => l.desc)).toEqual([6, 20, 21, 24].map((n) => S[`rules.line.${n}`]!.slice(1)));
   });
 
   test("UI-77（M16 追補 H-3）用語の列は 32px（全角 4 字。最長の用語 3 字 + 区切り）。説明はどの行も列の右の同じ x から（続きの行も字下げ）", () => {
@@ -1406,6 +1427,13 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     expect(head("G")).toContain("所持金");
     expect(head("AC")).toContain("小さいほど");
     for (const term of ["灰", "士気", "未鑑定", "触媒"]) expect(head(term), term).toBeDefined();
+  });
+
+  test("UI-77/UI-59（M18）+N の行: 用語「+N」は鍛えた段数（IT-11 の名前の「 +N」）で、武器は攻撃・防具は AC に効く。並びは未鑑定の後・触媒の前", () => {
+    expect(head("+N")).toBe("鍛えた段数。武器は攻撃に、防具は AC に効く");
+    const terms = body.flatMap((l) => (typeof l === "string" || l.term === "" ? [] : [l.term]));
+    expect(terms.indexOf("+N")).toBe(terms.indexOf("未鑑定") + 1);
+    expect(terms.indexOf("触媒")).toBe(terms.indexOf("+N") + 1);
   });
 
   test("UI-77/UI-52/TW-03 酒場の「用語」は戦績の有無によらず出る。転職（と戦績）の後・救済の行と戻るの前。閉じるのキーは戦績と同じ（endingKeyAction）", () => {

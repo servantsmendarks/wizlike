@@ -3,8 +3,9 @@
 // 装備中の品は、鑑定の有無に関係なく効く（IT-34）。state.items に無い id（表示層が古い写しの Character を渡した場合など）は飛ばす。
 import type { EquipmentBase, GameData, SkillType, Spell, StatBlock, StatusId, WeaponBase, WeaponReach } from "../data/index";
 import { EQUIP_SLOTS, STAT_KEYS, STATUS_IDS } from "../data/index";
+import { formatDice, parseDice } from "../rng";
 import { findBase, moraleOf, optionOf, uniqueOf } from "../state";
-import type { Character, GameState, ItemInstance, RuleContext } from "../types";
+import type { Character, GameState, ItemInstance, RuleContext, ShopItemPreview } from "../types";
 
 /** IT-40: 装備中のユニークの固有スキル 1 つ */
 export type EquipSkill = { type: SkillType; value: number; instanceId: string };
@@ -82,6 +83,36 @@ export function itemPower(data: GameData, inst: ItemInstance, base: EquipmentBas
   const lv = uniq === null && base.slot !== "accessory" ? Math.floor(inst.level / ic.armorLvPerAc) : 0;
   return { kind: "armor", ac: (uniq?.ac ?? base.ac) - lv };
 }
+
+/**
+ * TW-05 / UI-59 / IT-65: 品 1 つの性能の下見の値（itemPower。オプションを除く）。attack は武器のダメージのダイス（Lv の分を定数に合算した正規形）で
+ * 武器でなければ null、ac は武器以外の AC で武器なら null、magicPower は術者用の武器の魔法攻撃力でそれ以外は null。
+ * 店の下見（shop.ts shopItemPreview）と鑑定の結果の 1 文（identifiedPowerParams）が同じ値を使う
+ */
+export function itemPowerPreview(data: GameData, inst: ItemInstance, base: EquipmentBase): Pick<ShopItemPreview, "attack" | "ac" | "magicPower"> {
+  const p = itemPower(data, inst, base);
+  if (p.kind === "weapon") {
+    const spec = parseDice(p.dice);
+    return { attack: formatDice({ ...spec, modifier: spec.modifier + p.damageBonus }), ac: null, magicPower: p.caster ? p.magicPower : null };
+  }
+  return { attack: null, ac: p.ac, magicPower: null };
+}
+
+/**
+ * UI-59 / IT-65 / CH-77（M18）: 鑑定の結果の直後の性能の 1 文（town.shop.identifiedPower / camp.identifiedPower）の params。
+ * 鑑定済みの装備の実体なら { item, attack, ac, magic }（itemPowerPreview の値。該当しない項目は POWER_NONE）、消耗品・魔法書・実体が無ければ null。乱数を引かない
+ */
+export function identifiedPowerParams(state: GameState, data: GameData, instanceId: string, item: string): Record<string, string | number> | null {
+  const inst = state.items[instanceId];
+  if (inst === undefined) return null;
+  const base = findBase(data, inst.itemId);
+  if (base === null) return null;
+  const p = itemPowerPreview(data, inst, base);
+  return { item, attack: p.attack ?? POWER_NONE, ac: p.ac ?? POWER_NONE, magic: p.magicPower ?? POWER_NONE };
+}
+
+/** 鑑定の結果の性能の 1 文で、該当しない項目に入れる記号（strings の town.shop.previewNone と同じ「—」。日本語ではない記号なので core に置く。テストで一致を検査） */
+export const POWER_NONE = "—";
 
 /** IT-35: ch の実効の値。装備は EQUIP_SLOTS の順に見る（武器は weapon の枠だけ） */
 export function equipStats(state: GameState, data: GameData, ch: Character): EquipStats {

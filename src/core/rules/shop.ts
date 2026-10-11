@@ -15,9 +15,8 @@ import {
   slotsUsed,
   uniqueOf,
 } from "../state";
-import { formatDice, parseDice } from "../rng";
 import type { Character, GameState, ItemInstance, RuleContext, ShopAction, ShopItemPreview, TownMenu } from "../types";
-import { itemPower } from "./equip-stats";
+import { identifiedPowerParams, itemPowerPreview } from "./equip-stats";
 import { floorRatio } from "./ratio";
 
 function inTown(state: GameState): boolean {
@@ -241,7 +240,7 @@ export function buyBack(ctx: RuleContext, memberId: string, instanceId: string):
 /**
  * IT-65 店の鑑定。乱数は使わない（結果は CH-77 と同じ）。
  * 品ごとの鑑定料 identifyFeeOf を払う → 鑑定済みにし、ユニークなら図鑑に記録（IT-66）→ message town.shop.identified{name, old, item, cost, rarity}
- * → 呪われていれば message camp.identifiedCursed{item}
+ * →（M18。装備なら）message town.shop.identifiedPower{item, attack, ac, magic}（identifiedPowerParams）→ 呪われていれば message camp.identifiedCursed{item}
  */
 export function identifyAtShop(ctx: RuleContext, memberId: string, instanceId: string): void {
   const { state, data } = ctx;
@@ -255,6 +254,9 @@ export function identifyAtShop(ctx: RuleContext, memberId: string, instanceId: s
   const item = itemDisplayName(state, data, instanceId);
   // UI-66（M8）: rarity は文には出さない（音の契機。伝説の品の鑑定で rare）
   ctx.events.push({ kind: "message", key: "town.shop.identified", params: { name: ch.name, old, item, cost, rarity: inst.rarity } });
+  // UI-59 / IT-65（M18）: 装備なら品そのものの数値の 1 文（消耗品・魔法書では出さない）
+  const power = identifiedPowerParams(state, data, instanceId, item);
+  if (power !== null) ctx.events.push({ kind: "message", key: "town.shop.identifiedPower", params: power });
   if (state.items[instanceId]!.cursed) ctx.events.push({ kind: "message", key: "camp.identifiedCursed", params: { item } });
 }
 
@@ -285,15 +287,9 @@ export function shopItemPreview(data: GameData, itemId: string, level: number): 
   const base = findBase(data, itemId);
   if (base === null) return null;
   const inst: ItemInstance = { id: "", itemId, level, rarity: "normal", options: [], uniqueId: null, identified: true, cursed: false, foundIn: null };
-  const p = itemPower(data, inst, base);
   const anyone = base.classes.length === 0;
   const classes = data.classes.filter((c) => classCanEquip(base, c.id)).map((c) => c.abbr);
-  if (p.kind === "weapon") {
-    const spec = parseDice(p.dice);
-    const attack = formatDice({ ...spec, modifier: spec.modifier + p.damageBonus });
-    return { attack, ac: null, magicPower: p.caster ? p.magicPower : null, anyone, classes };
-  }
-  return { attack: null, ac: p.ac, magicPower: null, anyone, classes };
+  return { ...itemPowerPreview(data, inst, base), anyone, classes };
 }
 
 /** UI-52 の店のページの値（townMenu.shop） */

@@ -1159,6 +1159,8 @@ describe("IT-65/IT-66 店の鑑定（town.shop identify。M7）", () => {
     expect(r.state.items[id]!.identified).toBe(true);
     expect(r.events).toEqual([
       { kind: "message", key: "town.shop.identified", params: { name: "ベルク", old: "剣？", item: "希少な長剣 +3", cost: 25, rarity: "rare" } },
+      // UI-59 / IT-65（M18）: 装備なら品そのものの数値の 1 文（長剣 1d8、Lv3 → +3。該当しない項目は「—」）
+      { kind: "message", key: "town.shop.identifiedPower", params: { item: "希少な長剣 +3", attack: "1d8+3", ac: "—", magic: "—" } },
     ]);
     expect(r.state.rng).toEqual(s.rng);
     expect(r.state.uniqueBook).toEqual({});
@@ -1166,8 +1168,24 @@ describe("IT-65/IT-66 店の鑑定（town.shop identify。M7）", () => {
     const rc = ok(c.s, identify("c2", c.id));
     expect(rc.events).toEqual([
       { kind: "message", key: "town.shop.identified", params: { name: "ベルク", old: "剣？", item: "長剣", cost: 25, rarity: "normal" } },
+      { kind: "message", key: "town.shop.identifiedPower", params: { item: "長剣", attack: "1d8", ac: "—", magic: "—" } }, // 品そのものの数値はオプションを含まない
       { kind: "message", key: "camp.identifiedCursed", params: { item: "長剣" } },
     ]);
+  });
+
+  test("UI-59/IT-65（M18）鑑定の結果の性能の 1 文 town.shop.identifiedPower: 防具は AC（IT-21）、術者用の武器は攻撃と魔法攻撃力（IT-22）、ユニークは Lv の効果なし（IT-03）。魔法書（装備でない品）では出さない。乱数なし", () => {
+    const power = (r: { events: GameEvent[] }) => r.events.filter((e) => e.kind === "message" && e.key === "town.shop.identifiedPower");
+    const armor = withUnidentified(town({}, 300), "c2", { itemId: "chain_mail", level: 3, rarity: "normal" });
+    const ra = ok(armor.s, identify("c2", armor.id));
+    expect(power(ra)).toEqual([{ kind: "message", key: "town.shop.identifiedPower", params: { item: "鎖帷子 +3", attack: "—", ac: -5, magic: "—" } }]); // 鎖帷子 −4 − floor(3/2)
+    expect(ra.state.rng).toEqual(armor.s.rng);
+    const staff = withUnidentified(town({}, 300), "c2", { itemId: "staff", level: 2, rarity: "normal" });
+    expect(power(ok(staff.s, identify("c2", staff.id)))[0]).toMatchObject({ params: { attack: "1d4", ac: "—", magic: 2 } }); // 杖 0 + floor(2/1)
+    const helm = withUnidentified(town({}, 300), "c2", { itemId: "leather_cap", uniqueId: "alarm_bell_helm", level: 0, rarity: "legendary" });
+    expect(power(ok(helm.s, identify("c2", helm.id)))[0]).toMatchObject({ params: { item: "伝説の早鐘の兜", attack: "—", ac: -2, magic: "—" } });
+    const book = withUnidentified(town({}, 1000), "c2", { itemId: "tome_lightning", level: 0, rarity: "normal" });
+    const rb = ok(book.s, identify("c2", book.id));
+    expect(rb.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["town.shop.identified"]);
   });
 
   test("IT-65/IT-66 ユニークを店で鑑定しても図鑑に記録する。死亡している者の品も鑑定できる（life を問わない）", () => {
