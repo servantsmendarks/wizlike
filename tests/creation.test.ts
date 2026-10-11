@@ -19,6 +19,7 @@ import { initialHpMax, mpGainFor } from "../src/core/rules/growth";
 import { slotsUsed } from "../src/core/state";
 import type { Command, CustomMember, PartySetupMember } from "../src/core/types";
 import { data, defaultMembers, expectKnownStringKeys, gameNewEvents, loadFreshData, newGame } from "./helpers/core";
+import { kinsokuLines } from "./helpers/wrap";
 
 const protos = data.config.prototypeParty.members;
 
@@ -532,5 +533,10 @@ describe("creation: TW-36 開始の語り", () => {
     (eight.strings as Record<string, string>)["opening.speech.7"] = "七";
     (eight.strings as Record<string, string>)["opening.speech.8"] = "八";
     expect(custom(eight).events.map(keyOf)).toEqual(["screen", ...OPENING, "opening.speech.7", "opening.speech.8"]);
+  });
+
+  test("TW-36（M20 A-4）5 文目は敵が落とす品にも触れる。開始の語りはどの文も会話の箱の 28 字 × 2 行（禁則つき）に収まる（差し込みの無い文なので文そのものが最悪の値）", () => {
+    expect(data.strings["opening.speech.5"]).toBe("「拾い物は、倒した敵が残す宝箱から出る。敵が落としていくこともある。罠に気をつけろ。」");
+    for (const k of OPENING) expect(kinsokuLines(data.strings[k]!, 28).length, k).toBeLessThanOrEqual(2);
   });
 });
