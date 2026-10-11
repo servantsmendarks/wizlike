@@ -11,6 +11,7 @@ import type { ClassChangeOption } from "../../core/rules/town";
 import type { TownMenu, TownMenuUpgradeCatalyst, UpgradeCatalystRef, UpgradePreview } from "../../core/types";
 import type { CampOpen } from "./camp";
 import { STAT_ORDER } from "./detail";
+import { optionRowText } from "./item-detail";
 import { formatMessage } from "./message";
 import { BAND_ELLIPSIS_KEY, fitName, textUnits } from "./party-band";
 
@@ -103,9 +104,9 @@ export type TownEntry =
    * M16 追補 H-4: 職業で装備できない者（core の canEquip に無い者）は disabled で、reason（理由の文。shopCannotEquipText）を持つ。
    * 押すと command を送らず reason を語って品の一覧（shopBuy）へ戻る。装備できる者・消耗品の行は null
    * M19（C-3）: 装備の品で core の shopEquipCompare がある者の行は town.shop.memberCompare（今の装備と印）。compare は押したとき（確認の段に移ってから）に
-   * 会話の箱で語る比較の文（shopCompareText）。消耗品・比較の無い者は null
+   * 会話の箱で語る比較の文（shopCompareText。M20 B-2 で比較の文とオプションの行の 1 文ずつの配列）。消耗品・比較の無い者は null
    */
-  | { kind: "buy"; itemId: string; memberId: string; label: string; disabled: boolean; reason: string | null; compare: string | null }
+  | { kind: "buy"; itemId: string; memberId: string; label: string; disabled: boolean; reason: string | null; compare: string[] | null }
   /** IT-61: 売る品の行（名前と売値）。押すと確認の段 { sellAsk }（M18 5-2。M17 までは town.shop の sell） */
   | { kind: "sell"; memberId: string; instanceId: string; label: string; disabled: boolean }
   /** TW-05（M18 5-2）: 買うの確認の「買う」。押すと town.shop の buy（持たせる者の段の行と同じ条件で disabled） */
@@ -131,7 +132,8 @@ export type TownEntry =
   /** UI-77（M16）: 酒場の「用語」。押すと用語の一覧（UI-73 と同じ部品。コマンドは送らない。state を使わないので core の menu に項目を持たない） */
   | { kind: "rules"; label: string }
   /** TW-17: 触媒の行。押すと選択の印を付け外しした { upCat } へ（語りは出さない）。3 個選んだ後の未選択の行は disabled */
-  | { kind: "upPick"; to: TownPage; label: string; disabled: boolean }
+  /** TW-17: 触媒の印の付け外し。info（M20 B-2）は押したときに会話の箱で語る性能の 1 文（upgradeCatalystInfo） */
+  | { kind: "upPick"; to: TownPage; label: string; disabled: boolean; info: string }
   /** TW-17: 確認の「鍛える」。押すと town.upgrade（upgradePreview の block が null でなければ disabled） */
   | { kind: "upgrade"; memberId: string; slot: EquipSlot; catalysts: UpgradeCatalystRef[]; label: string; disabled: boolean }
   /** TW-03 / UI-52: 酒場の状態（キャラクター画面 UI-59）・並び順・図鑑。押すとキャンプと同じ部品（views/camp.ts）をその段で開く */
@@ -540,6 +542,7 @@ export function townEntries(
         to: { upCat: { ...sel, picked } },
         label: upgradeCatalystLabel(c, on, strings),
         disabled: !on && full,
+        info: upgradeCatalystInfo(c, strings),
       };
     });
     const decide: TownEntry = { kind: "page", to: { upConfirm: sel }, label: s(strings, "town.upgrade.decide") };
@@ -706,9 +709,11 @@ export function shopMemberCompareLabel(name: string, c: ShopEquipCompare, string
  * TW-05 / UI-52（M19 C-3）: 持たせる者の行を押したときに会話の箱へ語る比較の文。
  * town.shop.compare「{current} {from} → {item} {to}」（current は今の装備の表示名か town.shop.currentNone、item は売り物の行の名前）。
  * from / to は武器なら攻撃（core の attack）、それ以外は town.shop.compareAc「AC {ac}」。続けて、ほかの変わる行（core の changed）を
- * equip.diffAc / diffAttack / diffMagic（印つき）で town.shop.compareSep でつなぐ。28 字 × 2 行に収める
+ * equip.diffAc / diffAttack / diffMagic（印つき）で town.shop.compareSep でつなぐ。28 字 × 2 行に収める。
+ * M20 B-2: 値は core の品の値どうし（行の印と同じ基準）。今の装備にオプションがあれば、続けて town.shop.compareOpt
+ * 「{current}のオプション（{item}はなし）」と、オプションを 1 文に 1 行ずつ（item.option.row）。返すのは語る順の文の配列
  */
-export function shopCompareText(itemId: string, c: ShopEquipCompare, menu: TownMenu, strings: Strings): string {
+export function shopCompareText(itemId: string, c: ShopEquipCompare, menu: TownMenu, strings: Strings): string[] {
   const item = menu.shop.equipment.find((x) => x.itemId === itemId)?.name ?? "";
   const current = c.current === null ? s(strings, "town.shop.currentNone") : c.current.name;
   const weapon = c.slot === "weapon";
@@ -726,7 +731,8 @@ export function shopCompareText(itemId: string, c: ShopEquipCompare, menu: TownM
   if (weapon) add("equip.diffAc", c.ac);
   else add("equip.diffAttack", c.attack);
   add("equip.diffMagic", c.magicPower);
-  return [head, ...rest].join(s(strings, "town.shop.compareSep"));
+  const opts = c.currentOptions.length === 0 ? [] : [s(strings, "town.shop.compareOpt", { current, item }), ...c.currentOptions.map((o) => optionRowText(o, strings))];
+  return [[head, ...rest].join(s(strings, "town.shop.compareSep")), ...opts];
 }
 
 /**
@@ -882,6 +888,14 @@ export function townFreshIntro(texts: readonly string[], recent: readonly string
   return texts.filter((x) => !recent.includes(x));
 }
 
+/**
+ * TW-05（M20 B-2）: ひと続きの語り（店の比較の文とオプションの行）を、まとめて重ねずに出す。先頭の文が recent（app は全文の履歴の末尾
+ * max(TOWN_INTRO_DEDUP, texts の数) 件を渡す）にあれば []、無ければ texts の写し（オプションの行だけが他の者の行と同じでも省かない）
+ */
+export function townFreshBlock(texts: readonly string[], recent: readonly string[]): string[] {
+  return texts.length > 0 && recent.includes(texts[0]!) ? [] : [...texts];
+}
+
 /** TW-17: 確認の段の対象の品名（townMenu.upgrade の部位の name。見つからなければ空） */
 function upgradeTarget(menu: TownMenu, sel: UpgradeSel, strings: Strings): string {
   const x = menu.upgrade.members.find((m) => m.memberId === sel.memberId)?.slots.find((y) => y.slot === sel.slot);
@@ -920,6 +934,20 @@ const LIST_ROW_UNITS = 39;
  * 倉庫の品（M17。core の ownerId が null）の持ち主の欄は town.shop.menu.storage「倉庫」。
  * 行が一覧の行の文字の幅（39 単位 = 全角 19.5 字）を超えるときは、持ち主の欄を先頭 2 字 + item.owner.short（「{name}…」）に縮める（表示のための計算）
  */
+/**
+ * TW-17（M20 B-2）: 触媒の付け外しのたびに会話の箱で語る性能の 1 文 town.upgrade.catInfo「{item}: 攻撃 {attack} / AC {ac} / 魔法攻撃力 {magic}」。
+ * item は行と同じ「名前 +N」（upgradeItemName）、値は core の power（該当しない項目は town.shop.previewNone）。28 字 × 2 行に収める
+ */
+export function upgradeCatalystInfo(c: TownMenuUpgradeCatalyst, strings: Strings): string {
+  const none = s(strings, "town.shop.previewNone");
+  return s(strings, "town.upgrade.catInfo", {
+    item: upgradeItemName(c.plainName, c.level, strings),
+    attack: c.power.attack ?? none,
+    ac: c.power.ac ?? none,
+    magic: c.power.magicPower ?? none,
+  });
+}
+
 export function upgradeCatalystLabel(c: TownMenuUpgradeCatalyst, on: boolean, strings: Strings): string {
   const key = on ? "town.upgrade.catOn" : "town.upgrade.catOff";
   const item = upgradeItemName(c.plainName, c.level, strings);

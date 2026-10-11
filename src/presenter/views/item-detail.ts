@@ -2,7 +2,7 @@
 // 値は core の itemDetail / uniqueBookView の値だけで決める（UI-35。式・判定を持たない）。ここは文字列を組むだけの純粋な部分で、
 // 描くのはキャンプのパネル（views/camp.ts の lines）。行は 10px で、パネル（ビュー領域 150px）に見出し + 13 行まで。
 import type { Strings } from "../../core/data/index";
-import type { EquipPreview, EquipPreviewLine, ItemDetail, UniqueBookRow } from "../../core/rules/item-view";
+import type { EquipPreview, EquipPreviewLine, ItemDetail, ItemDetailOption, UniqueBookRow } from "../../core/rules/item-view";
 import { formatMessage } from "./message";
 
 /** パネルの 1 行。tone は色（danger は負のオプションと呪い、dim は説明、accent は装備の差分の変わった行（UI-67）） */
@@ -19,6 +19,11 @@ function s(strings: Strings, key: string, params?: Record<string, string | numbe
 /** 符号付きの値（正は +、0 と負はそのまま） */
 function signed(v: number): string {
   return v > 0 ? `+${v}` : String(v);
+}
+
+/** IT-65 / TW-05（M20 B-2）: オプション 1 行の文 item.option.row「{name} {value}{unit}」（値は符号付き）。品の詳細と店の比較の文で共通 */
+export function optionRowText(o: ItemDetailOption, strings: Strings): string {
+  return s(strings, "item.option.row", { name: o.name, value: signed(o.value), unit: o.unit });
 }
 
 /** 説明を DESCRIPTION_CHARS 字ずつに切る（表示のためだけの計算。UI-68 の呪文の説明もこれで切る） */
@@ -53,7 +58,7 @@ export function formatItemDetail(d: ItemDetail, strings: Strings): PanelLines {
   } else if (p !== null) {
     lines.push(line(s(strings, "item.detail.ac", { ac: p.ac })));
   }
-  for (const o of d.options) lines.push(line(s(strings, "item.option.row", { name: o.name, value: signed(o.value), unit: o.unit }), o.bad ? "danger" : "normal"));
+  for (const o of d.options) lines.push(line(optionRowText(o, strings), o.bad ? "danger" : "normal"));
   if (d.skill !== null) lines.push(line(s(strings, `item.skill.${d.skill.type}`, { value: d.skill.value })));
   if (d.cursed) lines.push(line(s(strings, "item.cursed"), "danger"));
   if (d.sellPrice !== null) lines.push(line(s(strings, "item.detail.sell", { gold: d.sellPrice })));

@@ -7,7 +7,7 @@ import { formatDice, parseDice } from "../rng";
 import type { Character, GameState, ItemInstance, Rarity, RuleContext, SpellInfo } from "../types";
 import { checkEquip, checkUnequip, equipItem, unequipItem } from "./camp";
 import { allyAc, allyAttackBonus, benefitOf, strBonus } from "./combat-calc";
-import { equipStats, itemPower, spellCost, type ItemPower } from "./equip-stats";
+import { equipStats, itemPower, POWER_NONE, spellCost, type ItemPower } from "./equip-stats";
 import { expFor, levelUpReady } from "./growth";
 import { appearanceSellPrice, sellPrice } from "./shop";
 
@@ -47,6 +47,14 @@ export function weaponDamageDice(dice: string, damageBonus: number): string {
   return formatDice({ ...spec, modifier: spec.modifier + damageBonus });
 }
 
+/** UI-59 / IT-65: 実体のオプションの行（実体の順。ac は AC の増減として −値）。鑑定の有無は見ない（呼ぶ側が鑑定済みに限る） */
+function detailOptions(data: GameData, inst: ItemInstance): ItemDetailOption[] {
+  return inst.options.map((o) => {
+    const def = optionOf(data, o.optionId);
+    return { name: def.name, value: def.effect.type === "ac" ? -o.value : o.value, unit: def.unit, bad: o.value < 0 };
+  });
+}
+
 /** UI-59 / IT-11 / IT-12: 品の詳細。実体が無ければ null */
 export function itemDetail(state: GameState, data: GameData, instanceId: string): ItemDetail | null {
   const inst = state.items[instanceId];
@@ -83,10 +91,7 @@ export function itemDetail(state: GameState, data: GameData, instanceId: string)
     unique: uniq !== null,
     power,
     damageDice: power.kind === "weapon" ? weaponDamageDice(power.dice, power.damageBonus) : null,
-    options: inst.options.map((o) => {
-      const def = optionOf(data, o.optionId);
-      return { name: def.name, value: def.effect.type === "ac" ? -o.value : o.value, unit: def.unit, bad: o.value < 0 };
-    }),
+    options: detailOptions(data, inst),
     skill: uniq === null ? null : { type: uniq.skill.type, value: uniq.skill.value },
     cursed: inst.cursed,
     sellPrice: sellPrice(inst, data),
@@ -235,8 +240,12 @@ export function equipPreview(state: GameState, data: GameData, memberId: string,
 /**
  * TW-05 / UI-52（M19 C-3）: 店の汎用装備を持たせる者の今の装備との比較。
  * - slot: 品の部位。current: その枠の今の装備（無ければ null）。plainName は希少度の接頭辞 + 名前（Lv なし。行に出す）、name は表示名（Lv 込み。箱に出す）
- * - ac / attack / magicPower: memberSheet の ac / attackDamageDice / magicPower の、今のままと店の品に替えたときの前後（verdict は EquipPreviewLine と同じ）
+ * - ac / attack / magicPower: 品の値どうし（M20 B-2。itemPower。力・性格・オプションを含めない）の今の装備 → 店の品（verdict は EquipPreviewLine と同じ）。
+ *   武器の枠は attack（ダイスに Lv の分を合算した正規形。枠が空なら combat.unarmedDice）と magicPower（術者用でなければ 0）、ac は 0 → 0。
+ *   武器以外の枠は ac（枠が空なら 0）、attack は POWER_NONE → POWER_NONE、magicPower は 0 → 0（変わらない行）
+ * - currentOptions: 今の装備が鑑定済みならそのオプション（itemDetail の options と同じ形。未鑑定・枠が空なら []）。店の品はオプションを持たない
  * - verdict: 3 行の良し悪しをまとめたもの。良くなる行があり悪くなる行が無ければ better、逆なら worse、どちらも無ければ same、両方あれば mixed
+ *   （M19 C-3 は memberSheet の前後で比べていた。M20 B-2 で行の印と比較の文を同じ品の値に揃えた）
  */
 export type ShopEquipVerdict = EquipVerdict | "mixed";
 export type ShopEquipCompare = {
@@ -246,13 +255,14 @@ export type ShopEquipCompare = {
   ac: EquipPreviewLine<number>;
   attack: EquipPreviewLine<string>;
   magicPower: EquipPreviewLine<number>;
+  currentOptions: ItemDetailOption[];
   verdict: ShopEquipVerdict;
 };
 
 /**
  * TW-05 / UI-52（M19 C-3）: 店の汎用装備 itemId（Lv level）を memberId の者が装備したときの差分。
- * 店の品は shopItemPreview と同じ実体（鑑定済み・通常・オプションなし・呪いなし）を合成し、state の浅い複製の items に置いて
- * その者の枠 slot を差し替えた memberSheet と、今の memberSheet を比べる（装備の差し替えは能力値の計算では party.equip と同じ。元の state は変えない。乱数なし）。
+ * 店の品は shopItemPreview と同じ実体（鑑定済み・通常・オプションなし・呪いなし）を合成し、今の装備の実体と itemPower（品の値。M20 B-2）で比べる
+ * （元の state は変えない。乱数なし）。
  * 知らない者・ベースでない品・職業で装備できない品（CH-76 の class cannot equip と同じ条件）は null。今の装備が呪われていても比べる（買うことはできる）
  */
 export function shopEquipCompare(state: GameState, data: GameData, memberId: string, itemId: string, level: number): ShopEquipCompare | null {
@@ -261,15 +271,12 @@ export function shopEquipCompare(state: GameState, data: GameData, memberId: str
   if (ch === null || base === null) return null;
   if (base.classes.length > 0 && !base.classes.includes(ch.classId)) return null;
   const slot = base.slot;
-  const tmpId = "@shopCompare";
-  const inst: ItemInstance = { id: tmpId, itemId, level, rarity: "normal", options: [], uniqueId: null, identified: true, cursed: false, foundIn: null };
-  const after: GameState = { ...state, items: { ...state.items, [tmpId]: inst } };
-  const chAfter: Character = { ...ch, equipment: { ...ch.equipment, [slot]: tmpId } };
-  const b = memberSheet(state, data, ch);
-  const a = memberSheet(after, data, chAfter);
+  const inst: ItemInstance = { id: "@shopCompare", itemId, level, rarity: "normal", options: [], uniqueId: null, identified: true, cursed: false, foundIn: null };
   const curId = ch.equipment[slot];
   const cur = curId === null ? undefined : state.items[curId];
   const curBase = cur === undefined ? null : findBase(data, cur.itemId);
+  const to = comparePower(data, itemPower(data, inst, base));
+  const from = cur === undefined || curBase === null ? comparePower(data, null, slot) : comparePower(data, itemPower(data, cur, curBase));
   const current =
     curId === null || cur === undefined
       ? null
@@ -277,12 +284,25 @@ export function shopEquipCompare(state: GameState, data: GameData, memberId: str
           plainName: cur.identified && curBase !== null ? equipmentPlainName(data, curBase, cur.rarity, cur.uniqueId) : itemDisplayName(state, data, curId),
           name: itemDisplayName(state, data, curId),
         };
-  const lines = { ac: acLine(b.ac, a.ac), attack: attackLine(b.attackDamageDice, a.attackDamageDice), magicPower: magicLine(b.magicPower, a.magicPower) };
+  const attack: EquipPreviewLine<string> =
+    from.attack === null || to.attack === null ? { from: POWER_NONE, to: POWER_NONE, changed: false, verdict: "same" } : attackLine(from.attack, to.attack);
+  const lines = { ac: acLine(from.ac, to.ac), attack, magicPower: magicLine(from.magicPower, to.magicPower) };
   const vs = [lines.ac.verdict, lines.attack.verdict, lines.magicPower.verdict];
   const up = vs.includes("better");
   const down = vs.includes("worse");
   const verdict: ShopEquipVerdict = up && down ? "mixed" : up ? "better" : down ? "worse" : "same";
-  return { memberId, slot, current, ...lines, verdict };
+  const currentOptions = cur !== undefined && cur.identified ? detailOptions(data, cur) : [];
+  return { memberId, slot, current, ...lines, currentOptions, verdict };
+}
+
+/**
+ * TW-05（M20 B-2）: 店の比較の品の値。武器は攻撃（ダイスに Lv の分を合算した正規形）と魔法攻撃力、ac は 0。それ以外は ac、攻撃は null、魔法攻撃力は 0。
+ * power が null（枠が空）なら、武器の枠（slot "weapon"）は素手（combat.unarmedDice）、それ以外は ac 0
+ */
+function comparePower(data: GameData, power: ItemPower | null, slot?: EquipSlot): { attack: string | null; ac: number; magicPower: number } {
+  if (power === null) return slot === "weapon" ? { attack: data.config.combat.unarmedDice, ac: 0, magicPower: 0 } : { attack: null, ac: 0, magicPower: 0 };
+  if (power.kind === "weapon") return { attack: weaponDamageDice(power.dice, power.damageBonus), ac: 0, magicPower: power.magicPower };
+  return { attack: null, ac: power.ac, magicPower: 0 };
 }
 
 /**

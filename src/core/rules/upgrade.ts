@@ -9,6 +9,7 @@ import { EQUIP_SLOTS } from "../data/index";
 import { randInt } from "../rng";
 import { destroyItemInstance, equipmentPlainName, findBase, itemDisplayName, memberById } from "../state";
 import type { Character, GameState, ItemInstance, ItemPreview, RuleContext, TownMenu, TownMenuUpgradeCatalyst, UpgradeCatalystRef, UpgradePreview, UpgradePreviewKind } from "../types";
+import { itemPowerPreview } from "./equip-stats";
 import { shopItemPreview } from "./shop";
 
 type EconomyConfig = Config["economy"];
@@ -215,6 +216,11 @@ function plainNameOf(state: GameState, data: GameData, id: string): string {
   return equipmentPlainName(data, base, inst.rarity, inst.uniqueId);
 }
 
+/** TW-17（M20 B-2）: 触媒の候補の性能の下見（itemPowerPreview。候補は catalystOf が通した汎用装備なのでベースがある） */
+function catalystPower(data: GameData, inst: ItemInstance): TownMenuUpgradeCatalyst["power"] {
+  return itemPowerPreview(data, inst, findBase(data, inst.itemId)!);
+}
+
 /**
  * UI-52 / TW-17: 闇魔術の強化のページの値（townMenu.upgrade。純粋）。全員（並び順。life を問わない）。
  * 触媒の候補は全員で同じ（パーティ全員の inventory。メンバーの並び順 → inventory の順。M16 の G-2）。その後ろに倉庫の品を倉庫の順で
@@ -227,13 +233,21 @@ export function upgradeMenu(state: GameState, data: GameData): TownMenu["upgrade
       const c = catalystOf(state, data, { memberId: owner.id, instanceId: id });
       if (c === null) return [];
       const name = itemDisplayName(state, data, id);
-      return [{ instanceId: id, name, plainName: plainNameOf(state, data, id), level: c.inst.level, ownerId: owner.id, ownerName: owner.name }];
+      return [{ instanceId: id, name, plainName: plainNameOf(state, data, id), level: c.inst.level, ownerId: owner.id, ownerName: owner.name, power: catalystPower(data, c.inst) }];
     }),
   );
   for (const id of state.warehouse) {
     const c = catalystOf(state, data, { memberId: null, instanceId: id });
     if (c === null) continue;
-    catalysts.push({ instanceId: id, name: itemDisplayName(state, data, id), plainName: plainNameOf(state, data, id), level: c.inst.level, ownerId: null, ownerName: "" });
+    catalysts.push({
+      instanceId: id,
+      name: itemDisplayName(state, data, id),
+      plainName: plainNameOf(state, data, id),
+      level: c.inst.level,
+      ownerId: null,
+      ownerName: "",
+      power: catalystPower(data, c.inst),
+    });
   }
   return {
     maxCatalysts: data.config.economy.upgradeMaxCatalysts,

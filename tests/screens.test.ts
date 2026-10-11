@@ -819,8 +819,9 @@ describe("入力と Command", () => {
     const body = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
     // M19（C-3）: 装備の品なら確認の段に移ってから比較の文（views/town の行の compare）を会話の箱で語る
     // 群 C のレビュー: 段を戻って同じ者をまた押したときは履歴の末尾 2 件と同じ文を重ねない（townFreshIntro）
+    // M20 B-2: 比較の文とオプションの行はひと続き（townFreshBlock。履歴の末尾 max(2, 文の数) 件に先頭の文があれば全部省く）
     expect(body).toMatch(
-      /case "buy":\s*goTownPage\(\{ buyAsk: \{ itemId: e\.itemId, memberId: e\.memberId \} \}\);\s*if \(e\.compare !== null\) \{\s*const skip = store\.get\(\)\.skipAnimations;\s*townFreshIntro\(\[e\.compare\], play\.message\.history\(\)\.slice\(-TOWN_INTRO_DEDUP\)\)\.forEach\(\(x\) => void narrator\.say\(x, skip\)\);\s*\}\s*return;/,
+      /case "buy":\s*goTownPage\(\{ buyAsk: \{ itemId: e\.itemId, memberId: e\.memberId \} \}\);\s*if \(e\.compare !== null\) \{\s*const skip = store\.get\(\)\.skipAnimations;\s*const recent = play\.message\.history\(\)\.slice\(-Math\.max\(TOWN_INTRO_DEDUP, e\.compare\.length\)\);\s*townFreshBlock\(e\.compare, recent\)\.forEach\(\(x\) => void narrator\.say\(x, skip\)\);\s*\}\s*return;/,
     );
     expect(body).toMatch(/case "sell":\s*goTownPage\(\{ sellAsk: \{ memberId: e\.memberId, instanceId: e\.instanceId \} \}\);\s*return;/);
     expect(body).toMatch(
@@ -942,10 +943,13 @@ describe("入力と Command", () => {
 
   // M7（2026-10-05）: 鍛えるは送る前に lowerInput（UI-44）し、rejected なら sync で戻すようにしたので、upgrade の分岐の期待を改めた
   // 2026-10-07（M10.5 追補・未定-22）: 確認の段は会話の箱で語らず見出し（townHeadingText）に出すので、upgradeConfirmLines の期待を「使わない」に替えた
-  test("UI-52/TW-17/UI-44（M7）強化: 触媒の行は語りなしで段を替え、鍛えるは部位の段に戻して入力の UI を下げてから town.upgrade を送り、rejected なら sync で戻す。確認の段は upgradePreview の値を見出しに出す（ソースの検査）", () => {
+  // M20 B-2: 触媒の行は段を替えた後に性能の 1 文（views/town の info）を語る（townFreshIntro で重ねない）。「語りなし」の期待を置き換えた
+  test("UI-52/TW-17/UI-44（M7・M20 B-2）強化: 触媒の行は段を替えてから性能の 1 文 info を語り（履歴の末尾 2 件と同じなら重ねない）、鍛えるは部位の段に戻して入力の UI を下げてから town.upgrade を送り、rejected なら sync で戻す。確認の段は upgradePreview の値を見出しに出す（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
-    expect(body).toMatch(/case "upPick":\s*townPage = e\.to;\s*syncControls\(\);\s*return;/);
+    expect(body).toMatch(
+      /case "upPick": \{\s*townPage = e\.to;\s*syncControls\(\);\s*const skip = store\.get\(\)\.skipAnimations;\s*townFreshIntro\(\[e\.info\], play\.message\.history\(\)\.slice\(-TOWN_INTRO_DEDUP\)\)\.forEach\(\(x\) => void narrator\.say\(x, skip\)\);\s*return;\s*\}/,
+    );
     expect(body).toMatch(
       /case "upgrade":\s*townPage = \{ upSlot: e\.memberId \};\s*if \(townLowersInput\(e\)\) lowerInput\(\);\s*void run\(\{ type: "town\.upgrade", memberId: e\.memberId, slot: e\.slot, catalysts: e\.catalysts \}\)\.then\(\(r\) => \{\s*if \(r === null \|\| r\.rejected\) sync\(state\);\s*\}\);\s*return;/,
     );

@@ -22,6 +22,7 @@ import {
   TOWN_INTRO_DEDUP,
   townEntries,
   townFacility,
+  townFreshBlock,
   townFreshIntro,
   townHeader,
   townHeading,
@@ -37,6 +38,7 @@ import {
   shopCompareText,
   shopMemberCompareLabel,
   shopPreviewText,
+  upgradeCatalystInfo,
   upgradeCatalystLabel,
   upgradeItemName,
   upgradePreviewText,
@@ -299,18 +301,18 @@ describe("UI-52 街のページ", () => {
     const [ra, rb, rc, rd] = [r1(a), r1(b), r1(c), r1(d)];
     const e0 = townEntries({ upCat: sel }, m, S);
     expect(e0).toEqual([
-      { kind: "upPick", to: { upCat: { ...sel, picked: [ra] } }, label: "○短剣 +1　アルド", disabled: false },
-      { kind: "upPick", to: { upCat: { ...sel, picked: [rb] } }, label: "○短剣 +0　アルド", disabled: false },
-      { kind: "upPick", to: { upCat: { ...sel, picked: [rc] } }, label: "○短剣 +2　アルド", disabled: false },
-      { kind: "upPick", to: { upCat: { ...sel, picked: [rd] } }, label: "○短剣 +0　アルド", disabled: false },
+      { kind: "upPick", to: { upCat: { ...sel, picked: [ra] } }, label: "○短剣 +1　アルド", disabled: false, info: "短剣 +1: 攻撃 1d4+1 / AC — / 魔法攻撃力 —" },
+      { kind: "upPick", to: { upCat: { ...sel, picked: [rb] } }, label: "○短剣 +0　アルド", disabled: false, info: "短剣 +0: 攻撃 1d4 / AC — / 魔法攻撃力 —" },
+      { kind: "upPick", to: { upCat: { ...sel, picked: [rc] } }, label: "○短剣 +2　アルド", disabled: false, info: "短剣 +2: 攻撃 1d4+2 / AC — / 魔法攻撃力 —" },
+      { kind: "upPick", to: { upCat: { ...sel, picked: [rd] } }, label: "○短剣 +0　アルド", disabled: false, info: "短剣 +0: 攻撃 1d4 / AC — / 魔法攻撃力 —" },
       { kind: "page", to: { upConfirm: sel }, label: "決める" },
       back,
     ]);
     // c → a → b の順に 3 個選んだ: 印が付き、外すと選んだ順のまま 1 個抜ける。未選択の d は disabled
     const full = { ...sel, picked: [rc, ra, rb] };
     const e3 = townEntries({ upCat: full }, m, S);
-    expect(e3[0]).toEqual({ kind: "upPick", to: { upCat: { ...sel, picked: [rc, rb] } }, label: "●短剣 +1　アルド", disabled: false });
-    expect(e3[3]).toEqual({ kind: "upPick", to: { upCat: { ...sel, picked: [rc, ra, rb, rd] } }, label: "○短剣 +0　アルド", disabled: true });
+    expect(e3[0]).toEqual({ kind: "upPick", to: { upCat: { ...sel, picked: [rc, rb] } }, label: "●短剣 +1　アルド", disabled: false, info: "短剣 +1: 攻撃 1d4+1 / AC — / 魔法攻撃力 —" });
+    expect(e3[3]).toEqual({ kind: "upPick", to: { upCat: { ...sel, picked: [rc, ra, rb, rd] } }, label: "○短剣 +0　アルド", disabled: true, info: "短剣 +0: 攻撃 1d4 / AC — / 魔法攻撃力 —" });
     expect(e3[4]).toEqual({ kind: "page", to: { upConfirm: full }, label: "決める" });
     expect(townParent({ upCat: full })).toEqual({ upSlot: "c1" });
     expect(townPageIntro({ upCat: full }, m)).toEqual([]);
@@ -320,6 +322,7 @@ describe("UI-52 街のページ", () => {
       to: { upCat: { ...sel, memberId: "c2", picked: [ra] } },
       label: "○短剣 +1　アルド",
       disabled: false,
+      info: "短剣 +1: 攻撃 1d4+1 / AC — / 魔法攻撃力 —",
     });
     // 候補が無ければ空の行 → 決める → 戻る（触媒なしでも鍛えられる）
     const none = menuOf(town());
@@ -345,7 +348,7 @@ describe("UI-52 街のページ", () => {
     expect(rows.map((e) => e.label)).toEqual([`○${item}　ろくもじのな`, "○短剣 +0　ろくもじのな"]);
     for (const e of rows) expect(textUnits(e.label), e.label).toBeLessThanOrEqual(39);
     // 39 単位を超える行（名前の長いベースを足したデータを想定した値）は、持ち主の名前を先頭 2 字 +「…」に縮める
-    const long = { instanceId: "i1", name: "とてもながいなまえのけん +12", plainName: "とてもながいなまえのけん", level: 12, ownerId: "c3", ownerName: "ろくもじのな" };
+    const long = { instanceId: "i1", name: "とてもながいなまえのけん +12", plainName: "とてもながいなまえのけん", level: 12, ownerId: "c3", ownerName: "ろくもじのな", power: { attack: "1d6+12", ac: null, magicPower: null } };
     expect(textUnits(`○とてもながいなまえのけん +12　ろくもじのな`)).toBeGreaterThan(39);
     expect(upgradeCatalystLabel(long, false, S)).toBe("○とてもながいなまえのけん +12　ろく…");
     expect(upgradeCatalystLabel(long, true, S)).toBe("●とてもながいなまえのけん +12　ろく…");
@@ -368,8 +371,8 @@ describe("UI-52 街のページ", () => {
     const sel = { memberId: "c1", slot: "weapon" as const, picked: [] as UpgradeCatalystRef[] };
     const rows = townEntries({ upCat: sel }, m, S).filter((e) => e.kind === "upPick");
     expect(rows).toEqual([
-      { kind: "upPick", to: { upCat: { ...sel, picked: [{ memberId: "c1", instanceId: mine }] } }, label: "○短剣 +1　アルド", disabled: false },
-      { kind: "upPick", to: { upCat: { ...sel, picked: [{ memberId: null, instanceId: stored }] } }, label: "○短剣 +3　倉庫", disabled: false },
+      { kind: "upPick", to: { upCat: { ...sel, picked: [{ memberId: "c1", instanceId: mine }] } }, label: "○短剣 +1　アルド", disabled: false, info: "短剣 +1: 攻撃 1d4+1 / AC — / 魔法攻撃力 —" },
+      { kind: "upPick", to: { upCat: { ...sel, picked: [{ memberId: null, instanceId: stored }] } }, label: "○短剣 +3　倉庫", disabled: false, info: "短剣 +3: 攻撃 1d4+3 / AC — / 魔法攻撃力 —" },
     ]);
     const picked = { ...sel, picked: [{ memberId: null, instanceId: stored }] };
     expect(townEntries({ upCat: picked }, m, S).find((e) => e.kind === "upPick" && e.label.includes("倉庫"))?.label).toBe("●短剣 +3　倉庫");
@@ -379,7 +382,7 @@ describe("UI-52 街のページ", () => {
     after.warehouse = [];
     expect(townRepair({ upCat: picked }, menuOf(after))).toEqual({ upCat: sel });
     // ownerName（倉庫は空文字）ではなく strings の「倉庫」を出す（差し替えに追従）
-    const row = { instanceId: "i1", name: "短剣 +3", plainName: "短剣", level: 3, ownerId: null, ownerName: "" };
+    const row = { instanceId: "i1", name: "短剣 +3", plainName: "短剣", level: 3, ownerId: null, ownerName: "", power: { attack: "1d4+3", ac: null, magicPower: null } };
     expect(upgradeCatalystLabel(row, false, S)).toBe("○短剣 +3　倉庫");
     expect(upgradeCatalystLabel(row, false, { ...S, "town.shop.menu.storage": "蔵" })).toBe("○短剣 +3　蔵");
   });
@@ -916,17 +919,17 @@ describe("UI-52 街のページ", () => {
     expect(S["equip.mark.same"]).toBe("－");
     expect(S["equip.mark.mixed"]).toBe("±");
     const sword = townEntries({ shop: "long_sword" }, m, S, null, null, comparesOf(s, m, "long_sword"));
-    expect(sword[0]).toEqual({ kind: "buy", itemId: "long_sword", memberId: "c1", label: "アルド　長剣　▲", disabled: false, reason: null, compare: "長剣 1d8+2 → 長剣 +2 1d8+4" });
+    expect(sword[0]).toEqual({ kind: "buy", itemId: "long_sword", memberId: "c1", label: "アルド　長剣　▲", disabled: false, reason: null, compare: ["長剣 1d8 → 長剣 +2 1d8+2"] });
     expect(sword[1]).toMatchObject({ memberId: "c2", label: "ベルク　長剣　▲", disabled: false });
     expect(sword[3]).toMatchObject({ memberId: "c4", label: "ドナ　空き 5 枠（装備不可）", disabled: true, compare: null });
     // 誰でも装備できる革兜: 兜の無い者は「なし」。空きの無い c6 は空きの行（dim の理由が見える）
     const cap = townEntries({ shop: "leather_cap" }, m, S, null, null, comparesOf(s, m, "leather_cap"));
-    expect(cap[0]).toMatchObject({ memberId: "c1", label: "アルド　なし　▲", compare: "なし AC 7 → 革兜 +2 AC 5" });
+    expect(cap[0]).toMatchObject({ memberId: "c1", label: "アルド　なし　▲", compare: ["なし AC 0 → 革兜 +2 AC -2"] });
     expect(cap[2]).toMatchObject({ memberId: "c3", label: `${m.shop.members[2]!.name}　革兜　▲` });
     expect(cap[5]).toMatchObject({ memberId: "c6", label: `${m.shop.members[5]!.name}　空き 0 枠`, disabled: true });
     // 良くなる行と悪くなる行がある（樫の杖を戦士に）は ±。主の行（武器は攻撃）の後に、ほかの変わる行を印つきで続ける
     const oak = townEntries({ shop: "oak_staff" }, m, S, null, null, comparesOf(s, m, "oak_staff"));
-    expect(oak[0]).toMatchObject({ label: "アルド　長剣　±", compare: "長剣 1d8+2 → 樫の杖 +2 1d6+2　魔法攻撃力 0 → 3 ▲" });
+    expect(oak[0]).toMatchObject({ label: "アルド　長剣　±", compare: ["長剣 1d8 → 樫の杖 +2 1d6　魔法攻撃力 0 → 3 ▲"] });
     // 比較を渡さなければ（消耗品・他のページ）今の行のまま
     expect(townEntries({ shop: "herb" }, m, S, null, null, comparesOf(s, m, "long_sword"))[0]).toMatchObject({ label: "アルド　空き 5 枠", compare: null });
     expect(townEntries({ shop: "long_sword" }, m, S)[0]).toMatchObject({ label: "アルド　空き 5 枠", compare: null });
@@ -948,6 +951,7 @@ describe("UI-52 街のページ", () => {
       ac: line(-20, -20, "better"),
       attack: line("2d10+20", "2d10+20", "worse"),
       magicPower: line(12, 12, "better"),
+      currentOptions: [],
       verdict: "mixed",
     };
     for (const verdict of ["better", "worse", "same", "mixed"] as const) {
@@ -960,12 +964,75 @@ describe("UI-52 街のページ", () => {
     expect(shopMemberCompareLabel("アルド", { ...base, current: { plainName: "長剣", name: "長剣" } }, S)).toBe("アルド　長剣　±");
     const menu = { shop: { equipment: [{ itemId: "x", name: shopName }] } } as unknown as TownMenu;
     for (const slot of ["armor", "weapon"] as const) {
-      const text = shopCompareText("x", { ...base, slot }, menu, S);
-      expect(kinsokuLines(text, 28).length, text).toBeLessThanOrEqual(2);
+      const texts = shopCompareText("x", { ...base, slot }, menu, S);
+      expect(texts).toHaveLength(1);
+      expect(kinsokuLines(texts[0]!, 28).length, texts[0]).toBeLessThanOrEqual(2);
     }
-    expect(shopCompareText("x", { ...base, slot: "weapon" }, menu, S)).toBe(
+    expect(shopCompareText("x", { ...base, slot: "weapon" }, menu, S)).toEqual([
       `${base.current!.name} 2d10+20 → ${shopName} 2d10+20　AC -20 → -20 ▲　魔法攻撃力 12 → 12 ▲`,
-    );
+    ]);
+    // M20 B-2: 今の装備のオプション（伝説の 3 個。最も長い名前・最も大きい値）は、見出しの 1 文と 1 文に 1 行ずつ。どれも 28 字 × 2 行に収まる
+    const opt = data.itemOptions.options.reduce((a, b) => (textUnits(b.name + b.unit) > textUnits(a.name + a.unit) ? b : a));
+    const big = Math.max(...data.itemOptions.options.flatMap((o) => o.values));
+    const options = [1, 2, 3].map(() => ({ name: opt.name, value: -big, unit: opt.unit, bad: true }));
+    const withOpts = shopCompareText("x", { ...base, slot: "weapon", currentOptions: options }, menu, S);
+    expect(withOpts).toHaveLength(5);
+    expect(withOpts[1]).toBe(`${base.current!.name}のオプション（${shopName}はなし）`);
+    for (const text of withOpts) expect(kinsokuLines(text, 28).length, text).toBeLessThanOrEqual(2);
+  });
+
+  test("TW-05/UI-52 M20 B-2 今の装備にオプションがあれば、比較の文の後に town.shop.compareOpt「{current}のオプション（{item}はなし）」とオプションを 1 文に 1 行ずつ（item.option.row。品の詳細と同じ文）。未鑑定の今の装備は出さない", () => {
+    const s = town({}, 1000);
+    s.progress.shopLevel = 2;
+    const opts = [
+      { optionId: "mp_max", tier: 2 as const, value: 4 },
+      { optionId: "str", tier: 1 as const, value: -1 },
+    ];
+    s.party[0]!.equipment.weapon = createItemInstance(s, { itemId: "long_sword", level: 1, rarity: "rare", options: opts, identified: true });
+    const m = menuOf(s);
+    const row = townEntries({ shop: "long_sword" }, m, S, null, null, comparesOf(s, m, "long_sword"))[0]!;
+    expect(row).toMatchObject({ label: "アルド　希少な長剣　▲", compare: ["希少な長剣 +1 1d8+1 → 長剣 +2 1d8+2", "希少な長剣 +1のオプション（長剣 +2はなし）", "最大MP +4", "力 -1"] });
+    // 文言はデータで差し替えられる
+    const S2 = { ...S, "town.shop.compareOpt": "{current}/{item}", "item.option.row": "{name}={value}" };
+    expect(townEntries({ shop: "long_sword" }, m, S2, null, null, comparesOf(s, m, "long_sword"))[0]).toMatchObject({
+      compare: ["希少な長剣 +1 1d8+1 → 長剣 +2 1d8+2", "希少な長剣 +1/長剣 +2", "最大MP=+4", "力=-1"],
+    });
+    // 未鑑定の今の装備はオプションを見せない（比較の文だけ）
+    s.items[s.party[0]!.equipment.weapon!]!.identified = false;
+    const hidden = townEntries({ shop: "long_sword" }, menuOf(s), S, null, null, comparesOf(s, menuOf(s), "long_sword"))[0]!;
+    expect(hidden.kind === "buy" ? hidden.compare : null).toHaveLength(1);
+  });
+
+  test("TW-05 M20 B-2 townFreshBlock: ひと続きの語りは、先頭の文が直近（recent）にあればまとめて省き、無ければ全部出す（オプションの行だけが他の者と同じでも省かない）", () => {
+    const block = ["比較", "見出し", "命中 +2"];
+    expect(townFreshBlock(block, [])).toEqual(block);
+    expect(townFreshBlock(block, block)).toEqual([]);
+    expect(townFreshBlock(block, ["別の者の比較", "見出し", "命中 +2"])).toEqual(block);
+    expect(townFreshBlock([], ["x"])).toEqual([]);
+    expect(townFreshBlock(block, [])).not.toBe(block);
+  });
+
+  test("TW-17/UI-52 M20 B-2 触媒の行は押したときに語る性能の 1 文 town.upgrade.catInfo「{item}: 攻撃 … / AC … / 魔法攻撃力 …」を info に持つ（core の power。該当しない項目は —）。最悪の値（最も長い接頭辞 + 名前・Lv20）でも 28 字 × 2 行", () => {
+    const s = town();
+    const mail = createItemInstance(s, { itemId: "chain_mail", level: 4, identified: true });
+    const oak = createItemInstance(s, { itemId: "oak_staff", level: 2, rarity: "fine", identified: true });
+    s.party[0]!.inventory.push(mail, oak);
+    const m = menuOf(s);
+    const sel = { memberId: "c1", slot: "weapon" as const, picked: [] as UpgradeCatalystRef[] };
+    const rows = townEntries({ upCat: sel }, m, S).filter((e) => e.kind === "upPick");
+    expect(rows.map((e) => (e.kind === "upPick" ? e.info : ""))).toEqual(["鎖帷子 +4: 攻撃 — / AC -6 / 魔法攻撃力 —", "上質な樫の杖 +2: 攻撃 1d6 / AC — / 魔法攻撃力 3"]);
+    // 選んだ後の行（●）も同じ文
+    const on = townEntries({ upCat: { ...sel, picked: [{ memberId: "c1", instanceId: mail }] } }, m, S).find((e) => e.kind === "upPick")!;
+    expect(on.kind === "upPick" ? on.info : "").toBe("鎖帷子 +4: 攻撃 — / AC -6 / 魔法攻撃力 —");
+    // 文言はデータで差し替えられる
+    const c = m.upgrade.members[0]!.catalysts[0]!;
+    expect(upgradeCatalystInfo(c, { ...S, "town.upgrade.catInfo": "{item}|{attack}|{ac}|{magic}", "town.shop.previewNone": "x" })).toBe("鎖帷子 +4|x|-6|x");
+    // 最悪の値
+    const prefixes = ["fine", "rare", "legendary"].map((r) => S[`item.rarity.${r}`]!);
+    const longest = (xs: string[]): string => xs.reduce((a, b) => (textUnits(b) > textUnits(a) ? b : a));
+    const plain = longest(data.equipmentBases.flatMap((b) => prefixes.map((p) => p + b.name)));
+    const worst = upgradeCatalystInfo({ ...c, plainName: plain, level: 20, power: { attack: "10d10+20", ac: -20, magicPower: 20 } }, S);
+    expect(kinsokuLines(worst, 28).length, worst).toBeLessThanOrEqual(2);
   });
 
   test("TW-05 品の性能の 1 文 shopPreviewText は core の preview を並べるだけ（該当しない項目は —、誰でもは「誰でも」）。どの流通レベルのどの品も 28 字 × 2 行以内（M16）", () => {

@@ -149,6 +149,7 @@ import {
   TOWN_INTRO_DEDUP,
   townEntries,
   townFacility,
+  townFreshBlock,
   townFreshIntro,
   townHeader,
   townHeadingText,
@@ -815,9 +816,11 @@ export function createApp(o: {
             // M19（C-3）: 装備の品なら、確認の段に移ってから今の装備との比較の文（core の shopEquipCompare）を会話の箱で語る
             // 段を戻ってまた同じ者を押したときは、入るときの語りと同じく履歴の末尾 2 件と同じ文を重ねない（townFreshIntro）
             goTownPage({ buyAsk: { itemId: e.itemId, memberId: e.memberId } });
+            // M20 B-2: 比較の文とオプションの行はひと続きで出す（先頭の文が履歴の末尾にあれば全部省く。townFreshBlock）
             if (e.compare !== null) {
               const skip = store.get().skipAnimations;
-              townFreshIntro([e.compare], play.message.history().slice(-TOWN_INTRO_DEDUP)).forEach((x) => void narrator.say(x, skip));
+              const recent = play.message.history().slice(-Math.max(TOWN_INTRO_DEDUP, e.compare.length));
+              townFreshBlock(e.compare, recent).forEach((x) => void narrator.say(x, skip));
             }
             return;
           case "buyYes":
@@ -839,11 +842,14 @@ export function createApp(o: {
             return;
           case "empty":
             return;
-          case "upPick":
-            // TW-17: 触媒の印の付け外し。同じ段なので語りは出さない
+          case "upPick": {
+            // TW-17: 触媒の印の付け外し。M20 B-2: 付け外しのたびにその品の性能の 1 文（views/town の info）を語る（履歴の末尾 2 件と同じ文は重ねない）
             townPage = e.to;
             syncControls();
+            const skip = store.get().skipAnimations;
+            townFreshIntro([e.info], play.message.history().slice(-TOWN_INTRO_DEDUP)).forEach((x) => void narrator.say(x, skip));
             return;
+          }
           case "upgrade":
             // TW-17: 送った後は部位の段に戻る（判定の箱は playback が続く語りの後でタップを 1 回待つ）。
             // UI-44（M7）: 待ちの間は所持金・一覧・戻るを出さない（再生の最後の sync で出し直す。rejected なら再生が無いのでここで描き直す）
