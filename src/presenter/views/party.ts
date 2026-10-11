@@ -8,6 +8,7 @@
 // 戦闘の再生用に setMp / setMax（レベルの変化）/ setStatus / flash（UI-42 の被弾。opacity 2 往復）/ setActive（入力中の名前を accent 色）を持つ。
 // UI-55: markActor（衝動の行動者の名前を accent 色、行を点滅。render で消える）。
 // UI-69（M10）: Lv UP 可（maxOf の canLevelUp = core の memberSheet。CH-80）の者は名前を 12 − 2 単位に切って↑を付ける。再生中の setter は触れず、sync の render で直る。
+//   M20（D-8）: 例外として setLevelUp（出来事 levelUpReady）は再生中にその人の名前に↑を付ける（一言 hint.levelUpMark より前に↑を見せる）。
 // UI-12（M7）: HP / MP / SAN の最大は maxOf（app が core の memberSheet の実効の値を渡す。CH-14）。SAN が最大を超えている間（士気の超過。TW-15）は SAN の値を accent 色。
 // UI-54 / CB-14（M16。2026-10-11 の設計 2-5）: 行 frontRow（config.party.frontRow）の上に 1px の区切り線（dim 色。前衛と後衛の境）。
 //   線は並び順で固定で、CB-14 の繰り上げ（前衛が全員行動不能のとき後衛を前衛として扱う）は反映しない。行の後ろに足すので children[i] は行 i のまま。
@@ -118,6 +119,8 @@ const COLS: Readonly<Record<ColKey, PartyColumn>> = PARTY_COLUMNS;
 
 type Row = {
   line: HTMLElement;
+  /** M20（D-8）: 名前（setLevelUp で↑を付け直すため。render の時点の ch.name） */
+  name: string;
   cells: Record<ColKey, HTMLElement>;
   hp: number;
   hpMax: number;
@@ -139,6 +142,8 @@ export type PartyPanel = {
   setMp(id: string, mp: number): void;
   /** levelUp / levelDown（CH-61 / CH-62）: 最大値を変えて HP / MP の列を描き直す（MP のラベルも mpMax に合わせる） */
   setMax(id: string, hpMax: number, mpMax: number): void;
+  /** UI-69 / CH-80（M20。D-8）: 出来事 levelUpReady。その人の名前の列を↑付き（on 偽なら↑なし）に描き直す。次の render で maxOf の値に戻る */
+  setLevelUp(id: string, on: boolean): void;
   /** 状態異常を 1 つ付ける（on）か外す。life が alive でない間は列に死亡・灰を出したまま */
   setStatus(id: string, status: StatusId, on: boolean): void;
   /** UI-42 の被弾: その行の opacity を 2 往復（ms が 0 以下なら何もせずに解決） */
@@ -221,7 +226,7 @@ export function createPartyPanel(o: {
     cells.sanLabel.textContent = strings["party.san"] ?? "party.san";
     cells.status.style.color = "var(--c-danger)";
     el.appendChild(line);
-    return { line, cells, hp: 0, hpMax: 0, mp: 0, mpMax: 0, life: "alive", status: [], san: 0, sanMax: 0 };
+    return { line, cells, name: "", hp: 0, hpMax: 0, mp: 0, mpMax: 0, life: "alive", status: [], san: 0, sanMax: 0 };
   };
 
   /** UI-12 / TW-15: SAN の値を描き、上限を超えていれば accent 色 */
@@ -259,6 +264,7 @@ export function createPartyPanel(o: {
         const max = maxOf(ch);
         const t = formatPartyRow(ch, strings, classes, stageOf, max);
         row.cells.name.textContent = t.name;
+        row.name = ch.name;
         row.cells.abbr.textContent = t.abbr;
         row.cells.hp.textContent = t.hp;
         row.cells.mpLabel.textContent = t.mpLabel;
@@ -325,6 +331,11 @@ export function createPartyPanel(o: {
       row.cells.hp.textContent = hpText(row.hp, hpMax);
       row.cells.mp.textContent = mpText(row.mp, mpMax);
       row.cells.mpLabel.textContent = mpMax > 0 ? (strings["party.mp"] ?? "party.mp") : "";
+    },
+    setLevelUp(id: string, on: boolean): void {
+      const row = byId.get(id);
+      if (row === undefined) return;
+      row.cells.name.textContent = nameText(row.name, on, strings);
     },
     setStatus(id: string, status: StatusId, on: boolean): void {
       const row = byId.get(id);

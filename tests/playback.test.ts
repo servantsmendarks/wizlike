@@ -96,6 +96,7 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
       setLife: rec("party.setLife"),
       setMp: rec("party.setMp"),
       setMax: rec("party.setMax"),
+      setLevelUp: rec("party.setLevelUp"),
       setStatus: rec("party.setStatus"),
       flash(id, ms) {
         log.push({ m: "party.flash", a: [id, ms] });
@@ -339,6 +340,26 @@ describe("UI-41 playback", () => {
         { m: "party.setMp", a: ["c1", 0] },
       ]);
       expect(names(log).filter((m) => !m.startsWith("party."))).toEqual(["message.setMore", "screens.sync"]);
+    }
+  });
+
+  test("UI-69/CH-80/UI-76 levelUpReady（M20 D-8）は party.setLevelUp(id, true) をその場で呼び（待たない）、続く hint.levelUpMark の文はその後に出る（skip の真偽とも）", async () => {
+    for (const skipAnimations of [false, true]) {
+      const { deps, log } = fakeDeps({ skipAnimations });
+      const s = stateWith(null);
+      const events: GameEvent[] = [
+        { kind: "levelUpReady", id: "c1" },
+        { kind: "levelUpReady", id: "c3" },
+        { kind: "message", key: "hint.levelUpMark" },
+      ];
+      await createPlayer(deps).play(events, s, s);
+      const ms = names(log);
+      expect(log.filter((e) => e.m === "party.setLevelUp")).toEqual([
+        { m: "party.setLevelUp", a: ["c1", true] },
+        { m: "party.setLevelUp", a: ["c3", true] },
+      ]);
+      expect(ms.lastIndexOf("party.setLevelUp")).toBeLessThan(ms.indexOf("message.say"));
+      expect(log.find((e) => e.m === "message.say")!.a[0]).toBe(data.strings["hint.levelUpMark"]);
     }
   });
 

@@ -1162,8 +1162,11 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
     const readyBefore = alive.map((ch) => levelUpReady(ch, data));
     for (const ch of alive) ch.exp += share;
     ctx.events.push({ kind: "message", key: "battle.exp", params: { exp: share } });
-    // CH-80 / UI-76（M16）: この経験値で↑（レベルアップ可）が偽 → 真になった者が 1 人でもいれば、印の一言（一度きり。battle.exp の直後）
-    if (alive.some((ch, i) => !readyBefore[i] && levelUpReady(ch, data))) tellHintOnce(ctx, "levelUpMark");
+    // CH-80 / UI-69（M20。D-8）: この経験値で↑（レベルアップ可）が偽 → 真になった者ごとに levelUpReady（並び順。表示層はその場で↑を付ける）
+    const nowReady = alive.filter((ch, i) => !readyBefore[i] && levelUpReady(ch, data));
+    for (const ch of nowReady) ctx.events.push({ kind: "levelUpReady", id: ch.id });
+    // CH-80 / UI-76（M16）: そういう者が 1 人でもいれば、印の一言（一度きり）。M20（D-8）から battle.exp と levelUpReady の後（↑が付いてから語る）
+    if (nowReady.length > 0) tellHintOnce(ctx, "levelUpMark");
     let rolled = 0;
     for (const grp of b.groups) {
       const m = monsterOf(data, grp.monsterId);

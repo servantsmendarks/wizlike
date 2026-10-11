@@ -146,13 +146,14 @@ describe("CH-80/UI-76 ↑（レベルアップ可）の一言（M16）", () => {
   }
   const need = (s: GameState, i: number): number => expFor(2, classOf(data, s.party[i]!.classId), data.config);
 
-  test("CH-80/UI-76 勝利の経験値で↑が偽 → 真になった者がいれば、battle.exp の直後に hint.levelUpMark（一度だけ）", () => {
+  test("CH-80/UI-76 勝利の経験値で↑が偽 → 真になった者がいれば、battle.exp と levelUpReady（M20 D-8。UI-69）の後に hint.levelUpMark（一度だけ）", () => {
     const s0 = dived(1);
     const { state, events } = win(s0, [need(s0, 0) - 1]);
     expect(state.party[0]!.exp).toBeGreaterThanOrEqual(need(s0, 0));
     const ks = keysOf(events);
     const i = ks.indexOf("message:battle.exp");
-    expect(ks[i + 1]).toBe("message:hint.levelUpMark");
+    expect(ks[i + 1]).toBe("levelUpReady");
+    expect(ks[i + 2]).toBe("message:hint.levelUpMark");
     expect(state.progress.hints).toContain("levelUpMark");
     expectKnownStringKeys(events);
     // 2 回目: 別の者が↑になっても出さない

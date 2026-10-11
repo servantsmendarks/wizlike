@@ -11,7 +11,8 @@ import { allyAc, canAct, hitPercent, reachHitBonus, statusPercent } from "../src
 import { autoInput } from "../src/core/rules/combat-plan";
 import { battleMenu, beatSwitchForTests, startBattle, startRandomEncounter } from "../src/core/rules/combat";
 import { rollDirectDrops } from "../src/core/rules/loot";
-import { cloneState, createItemInstance, makeContext, memberById, monsterOf } from "../src/core/state";
+import { expFor } from "../src/core/rules/growth";
+import { classOf, cloneState, createItemInstance, makeContext, memberById, monsterOf } from "../src/core/state";
 import type { BattleAction, Character, Command, GameEvent, GameState, ItemOptionRoll } from "../src/core/types";
 import {
   allInputs,
@@ -3422,5 +3423,59 @@ describe("勝利の打ち切りと要約の回数（CB-51 / CB-55 / CB-24。M18�
       expect(list).toContain("回で");
     }
     expect(found).toBeGreaterThan(0);
+  });
+});
+
+describe("↑ の出来事と一言の順（CH-80 / UI-69 / UI-76。M20 D-8）", () => {
+  const AUTO_ON: Command = { type: "battle.auto", on: true };
+  const RESOLVE: Command = { type: "battle.resolve" };
+  /** 麻痺した大ネズミ 1 体（HP 1）にオートで勝つまで回す。exps は c1.. の exp（無い者は 0）。hints は progress.hints の初期値 */
+  function win(exps: number[], hints: string[] = []): { state: GameState; events: GameEvent[] } {
+    const d = dataWith({ combat: { hitMin: 100, hitMax: 100 } });
+    const s1 = withBattle(dived(1), [{ monsterId: "giant_rat", hps: [1], status: [["paralysis"]] }], { identified: ["giant_rat"] });
+    s1.party.forEach((c, i) => (c.exp = exps[i] ?? 0));
+    s1.progress.hints = hints as GameState["progress"]["hints"];
+    let s = exec(s1, AUTO_ON, d).state;
+    const events: GameEvent[] = [];
+    for (let n = 0; s.battle !== null && n < 20; n++) {
+      if (!s.battle.auto) s = exec(s, AUTO_ON, d).state;
+      const r = exec(s, RESOLVE, d);
+      events.push(...r.events);
+      s = r.state;
+    }
+    expect(s.battle).toBeNull();
+    return { state: s, events };
+  }
+  const s0 = dived(1);
+  const need = (i: number): number => expFor(2, classOf(data, s0.party[i]!.classId), data.config);
+  const keys = (events: readonly GameEvent[]): string[] =>
+    events.map((e) => (e.kind === "message" ? `message:${e.key}` : e.kind === "levelUpReady" ? `levelUpReady:${e.id}` : e.kind));
+
+  test("CH-80/UI-69/UI-76 経験値で↑が偽 → 真になった者ごとに battle.exp の直後に levelUpReady{id}（並び順）、その後に hint.levelUpMark。乱数の消費は↑の有無で変わらない（rng が同じ）", () => {
+    const ids = s0.party.map((c) => c.id);
+    const ready = win([need(0) - 1, 0, need(2) - 1]);
+    const ks = keys(ready.events);
+    const i = ks.indexOf("message:battle.exp");
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(ks.slice(i, i + 4)).toEqual(["message:battle.exp", `levelUpReady:${ids[0]}`, `levelUpReady:${ids[2]}`, "message:hint.levelUpMark"]);
+    expect(ks.filter((k) => k.startsWith("levelUpReady:"))).toHaveLength(2);
+    expect(ready.state.progress.hints).toContain("levelUpMark");
+    expectKnownStringKeys(ready.events);
+    // 鏡: もともと↑の者だけ（偽 → 真が無い）の勝利と、乱数の状態も levelUpReady と一言を除いた出来事も同じ
+    const already = win([need(0) + 10, 0, need(2) + 10]);
+    expect(keys(already.events).some((k) => k.startsWith("levelUpReady:"))).toBe(false);
+    expect(ready.state.rng).toEqual(already.state.rng);
+    const strip = (evs: readonly GameEvent[]) =>
+      evs.filter((e) => e.kind !== "levelUpReady" && !(e.kind === "message" && e.key === "hint.levelUpMark"));
+    expect(strip(ready.events)).toEqual(strip(already.events));
+  });
+
+  test("CH-80/UI-69 一言を既に出した後も、↑が付いた者の levelUpReady は毎回出す（一言だけ出さない）", () => {
+    const ids = s0.party.map((c) => c.id);
+    const r = win([0, need(1) - 1], ["levelUpMark"]);
+    const ks = keys(r.events);
+    const i = ks.indexOf("message:battle.exp");
+    expect(ks[i + 1]).toBe(`levelUpReady:${ids[1]}`);
+    expect(ks).not.toContain("message:hint.levelUpMark");
   });
 });

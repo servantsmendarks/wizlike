@@ -1193,6 +1193,11 @@ export type GameEvent =
       /** CH-61（M10）: この段で +1 された能力値（STAT_KEYS の順）。判定しなかった段・上がらなかった段は空。state には残さない */
       statGains: StatKey[];
     }
+  /**
+   * CH-80 / UI-69（M20。D-8）: 戦闘の勝利の経験値（CB-50）でレベルアップ可（↑）が偽 → 真になった者 1 人につき 1 件（battle.exp の直後、並び順）。
+   * 表示層はパーティ欄のその人の名前に↑をその場で付ける（今までは再生の最後の sync まで付かず、一言 hint.levelUpMark が先に出た）
+   */
+  | { kind: "levelUpReady"; id: string }
   /** §5 に追加（CH-62）。1 段下がるごとに 1 件。hp / mp は変化後の現在値 */
   | { kind: "levelDown"; id: string; level: number; hpMax: number; mpMax: number; hp: number; mp: number }
   /** via は §5 に追加（MG-21 の判定 / MG-23 の保証 / MG-25 の魔法書 / TW-09 の転職で初めての職業の start.knownSpells。M10） */

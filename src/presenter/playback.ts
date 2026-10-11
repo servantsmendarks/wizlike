@@ -27,6 +27,7 @@
 // - battleEnd を受けたら deps.battleEnded() で戦闘の入力の UI（ヘッダーの問い・オート解除・パーティの選択）を下げる。
 //   全滅の 2d10 を受けたら deps.inputClosed() で入力の UI（迷宮のヘッダー・十字ボタンなども）を下げる。
 // - レベルの変化（levelUp / levelDown）はパーティ欄の最大値と現在値を描き直す。spellLearned は何もしない（message が語る）。
+//   levelUpReady（M20。D-8）はパーティ欄のその人の名前に↑を付ける（party.setLevelUp。待たない）。
 // - 戦闘（UI-41 / UI-42 / UI-40）: 被弾のフラッシュは hpChanged（delta < 0）に一本化する（味方はパーティ行、敵はグループの絵）。
 //   敵の id は "e{g}-{u}"（enemyGroupOfId）。敵の HP・状態は見せない（状態は core の message で伝わる）。
 //   全体攻撃の揺れは、spell の呪文が target enemyGroup / allEnemies かつ effect damage のとき（data.spells を表示のためだけに引く）。
@@ -132,6 +133,8 @@ export type PlayerDeps = {
     setMp(id: string, mp: number): void;
     /** levelUp / levelDown の最大値（続けて setHp / setMp で現在値） */
     setMax(id: string, hpMax: number, mpMax: number): void;
+    /** UI-69 / CH-80（M20。D-8）: levelUpReady でその人の名前に↑を付ける。省略すると何もしない（再生の最後の sync で付く） */
+    setLevelUp?(id: string, on: boolean): void;
     setStatus(id: string, status: StatusId, on: boolean): void;
     /** UI-42 の被弾 */
     flash(id: string, ms: number): Promise<void>;
@@ -584,6 +587,11 @@ export function createPlayer(deps: PlayerDeps): Player {
       deps.party.setMax(ev.id, ev.hpMax, ev.mpMax);
       deps.party.setHp(ev.id, ev.hp);
       deps.party.setMp(ev.id, ev.mp);
+    },
+    async levelUpReady(ev, cx) {
+      // UI-69 / CH-80（M20。D-8）: ↑をその場で付ける（続く一言 hint.levelUpMark の前に。待たない）
+      cx.skip = isSkip();
+      deps.party.setLevelUp?.(ev.id, true);
     },
     async levelDown(ev, cx) {
       cx.skip = isSkip();
