@@ -1853,6 +1853,8 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     expect(body[meihin + 1]).toEqual({ term: "", desc: "名品は鍛えられず、触媒にもできない" });
     expect(head("経験")).toContain("レベル");
     expect(head("主")).toContain("最下層");
+    expect(head("主")).toContain("門番"); // 画面の呼び名（d01 の description の「門番」）から引ける
+    expect(data.dungeons.find((x) => x.id === "d01")!.description).toContain("門番");
   });
 
   test("UI-77/UI-52/TW-03 酒場の「用語」は戦績の有無によらず出る。転職（と戦績）の後・救済の行と戻るの前。閉じるのキーは戦績と同じ（endingKeyAction）", () => {

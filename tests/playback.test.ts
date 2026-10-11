@@ -2960,9 +2960,9 @@ describe("UI-70/UI-71 宝箱の判定の箱と衝動の流れの再生（M11 作
     expect(boxes).toEqual([{ label: "dice.chestDisarm", rows: ev.rows.length, hidden: false }]);
   });
 
-  test("UI-71/CB-63（M19 D-5）伏せた箱の結果の行は「→ 出目は伏せられた（成功率だけが分かる）」（箱の幅 224 = 28 字に収まる）", () => {
+  test("UI-71/CB-63（M19 D-5）伏せた箱の結果の行は「→ 出目と危険度は伏せられた」（成功率は箱に出ないので言わない。箱の幅 224 = 28 字に収まる）", () => {
     const d = loadFreshData();
-    expect(d.strings["dice.chestInspect.hidden"]).toBe("出目は伏せられた（成功率だけが分かる）");
+    expect(d.strings["dice.chestInspect.hidden"]).toBe("出目と危険度は伏せられた");
     expect([...(d.strings["dice.arrow"]! + d.strings["dice.chestInspect.hidden"]!)].length).toBeLessThanOrEqual(28);
   });
 
