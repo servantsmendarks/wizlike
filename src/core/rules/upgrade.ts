@@ -169,8 +169,9 @@ export function upgradePreview(
   return { rate, great: upgradeGreat(rate), fee, affordable: state.gold >= fee, block, kind: upgradePreviewKind(data, target), before, after };
 }
 
-/** M18（3-3）: 確認の段で語る前後の項目。術者用武器は magic（IT-22）、ほかの武器は attack（IT-20）、装飾は Lv で数値が変わらないので null（IT-23）、ほかは ac（IT-21） */
+/** M18（3-3）: 確認の段で語る前後の項目。術者用武器は magic（IT-22）、ほかの武器は attack（IT-20）、装飾は Lv で数値が変わらないので null（IT-23）、ほかは ac（IT-21）。未鑑定の対象（取り憑かれて着けている品）は中身を見せない（IT-12）ので null */
 function upgradePreviewKind(data: GameData, target: ItemInstance): UpgradePreviewKind | null {
+  if (!target.identified) return null;
   const base = findBase(data, target.itemId)!;
   if (base.slot === "weapon") return base.caster ? "magic" : "attack";
   return base.slot === "accessory" ? null : "ac";

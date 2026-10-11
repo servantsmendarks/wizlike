@@ -352,6 +352,15 @@ describe("TW-17 upgradePreview と townMenu.upgrade（表示層向けの問い�
     expect(JSON.stringify(s.rng)).toBe(rng);
   });
 
+  test("TW-17 IT-12 M18 upgradePreview: 未鑑定の対象（呪いで外せずに着けている品）は kind を null にして前後を語らない（品の中身を見せない）", () => {
+    const s = town(1000, 3);
+    s.items[member(s, "c1").equipment.weapon!]!.identified = false;
+    const p = upgradePreview(s, data, "c1", "weapon", [])!;
+    expect(p).toMatchObject({ block: null, kind: null });
+    s.items[member(s, "c1").equipment.weapon!]!.identified = true;
+    expect(upgradePreview(s, data, "c1", "weapon", [])!.kind).toBe("attack");
+  });
+
   test("TW-17 townMenu.upgrade: 全員の部位（EQUIP_SLOTS の順。空き・ユニークは block）と触媒の候補（鑑定済みの汎用装備だけ、inventory の順）", () => {
     const s = town(1000, 3);
     const a = give(s, "c1", { itemId: "dagger", level: 1 });

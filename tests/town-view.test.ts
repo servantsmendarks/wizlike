@@ -1465,7 +1465,7 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
   });
 
   test("UI-77/UI-59（M18）+N の行: 用語「+N」は鍛えた段数（IT-11 の名前の「 +N」）で、武器は攻撃・防具は AC に効く。並びは未鑑定・鑑定の後・触媒の前", () => {
-    expect(head("+N")).toBe("鍛えた段数。武器は攻撃に、防具は AC に効く");
+    expect(head("+N")).toBe("鍛えた段数。武器は攻撃・魔法、防具は AC に効く");
     const terms = body.flatMap((l) => (typeof l === "string" || l.term === "" ? [] : [l.term]));
     expect(terms.indexOf("鑑定")).toBe(terms.indexOf("未鑑定") + 1);
     expect(terms.indexOf("+N")).toBe(terms.indexOf("鑑定") + 1);
