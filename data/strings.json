@@ -853,6 +853,8 @@
   "item.detail.ac": "AC {ac}",
   "item.detail.sell": "売値 {gold}G",
   "item.option.row": "{name} {value}{unit}",
+  "item.option.found": "オプション: {name} {value}{unit}",
+  "item.option.foundBad": "オプション: {name} {value}{unit}（呪い）",
   "item.cursed": "呪われている",
   "item.skill.mpCostDown": "呪文の消費 -{value}",
   "item.skill.extraAttack": "攻撃回数 +{value}",

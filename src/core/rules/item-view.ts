@@ -2,17 +2,16 @@
 // 呪文の説明（UI-68）・レベルアップ可（CH-80）・敵の図鑑（UI-79。M18）。純粋。state を変えない。乱数を使わない。
 // 値の式は equip-stats.ts（実効の値・品 1 つの性能）と shop.ts（売値）のものをそのまま使う（表示層は計算しない。UI-35）。
 import type { EquipSlot, GameData, SkillType, StatBlock } from "../data/index";
-import { classOf, cloneState, equipmentPlainName, findBase, itemDisplayName, itemOf, memberById, moraleOf, optionOf, uniqueOf, unknownKindOf } from "../state";
+import { classOf, cloneState, equipmentPlainName, findBase, itemDisplayName, itemOf, memberById, moraleOf, uniqueOf, unknownKindOf } from "../state";
 import { formatDice, parseDice } from "../rng";
 import type { Character, GameState, ItemInstance, Rarity, RuleContext, SpellInfo } from "../types";
 import { checkEquip, checkUnequip, equipItem, unequipItem } from "./camp";
 import { allyAc, allyAttackBonus, benefitOf, strBonus } from "./combat-calc";
-import { equipStats, itemPower, POWER_NONE, spellCost, type ItemPower } from "./equip-stats";
+import { detailOptions, equipStats, itemPower, POWER_NONE, spellCost, type ItemDetailOption, type ItemPower } from "./equip-stats";
 import { expFor, levelUpReady } from "./growth";
 import { appearanceSellPrice, sellPrice } from "./shop";
 
-/** 品の詳細のオプション 1 行。value は表示する符号付きの値（ac は AC の増減として −値。IT-34）、bad は負のオプション（呪い。IT-32） */
-export type ItemDetailOption = { name: string; value: number; unit: string; bad: boolean };
+export type { ItemDetailOption } from "./equip-stats";
 
 /**
  * UI-59（M7）: 品の詳細。未鑑定（IT-12）は name（未鑑定の名前）・slot・identified・sellPrice（見た目の品種の売値）だけで、ほかは null / [] / false（呪いも見せない。CH-73）。
@@ -45,14 +44,6 @@ export type ItemDetail = {
 export function weaponDamageDice(dice: string, damageBonus: number): string {
   const spec = parseDice(dice);
   return formatDice({ ...spec, modifier: spec.modifier + damageBonus });
-}
-
-/** UI-59 / IT-65: 実体のオプションの行（実体の順。ac は AC の増減として −値）。鑑定の有無は見ない（呼ぶ側が鑑定済みに限る） */
-function detailOptions(data: GameData, inst: ItemInstance): ItemDetailOption[] {
-  return inst.options.map((o) => {
-    const def = optionOf(data, o.optionId);
-    return { name: def.name, value: def.effect.type === "ac" ? -o.value : o.value, unit: def.unit, bad: o.value < 0 };
-  });
 }
 
 /** UI-59 / IT-11 / IT-12: 品の詳細。実体が無ければ null */

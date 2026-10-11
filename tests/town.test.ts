@@ -17,7 +17,7 @@ import { expFor } from "../src/core/rules/growth";
 import { settleOverflow } from "../src/core/rules/storage";
 import { arriveTown, classChangeOptions, mercyEligible, resurrectCostOf, returnToTown, townMenu } from "../src/core/rules/town";
 import { cloneState, createItemInstance, makeContext } from "../src/core/state";
-import type { Character, Command, GameEvent, GameState } from "../src/core/types";
+import type { Character, Command, GameEvent, GameState, ItemOptionRoll } from "../src/core/types";
 import { ctxFor, data, expectKnownStringKeys, expectStateInvariants, loadFreshData, loadRuleData, newGame, seedWithFirstD100 } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
 
@@ -1370,11 +1370,12 @@ describe("IT-65/IT-66 店の鑑定（town.shop identify。M7）", () => {
       { kind: "message", key: "town.shop.identified", params: { name: "ベルク", old: "剣？", item: "長剣", cost: 25, rarity: "normal" } },
       { kind: "message", key: "town.shop.identifiedPower", params: { item: "長剣", attack: "1d8", ac: "—", magic: "—" }, instant: true }, // 品そのものの数値はオプションを含まない
       { kind: "message", key: "town.shop.identifiedValue", params: { rarity: "通常", gold: 50 }, instant: true }, // 負のオプションは売値に 0（IT-61）
+      { kind: "message", key: "item.option.foundBad", params: { name: "力", value: "-1", unit: "" }, instant: true }, // M20 D-7: オプションの行
       { kind: "message", key: "camp.identifiedCursed", params: { item: "長剣" } },
     ]);
   });
 
-  test("UI-43（M20 D-3）店の鑑定の結果のうち数値の行（identifiedPower / identifiedValue）だけに instant。鑑定の文と呪いの文には付けない", () => {
+  test("UI-43（M20 D-3・D-7）店の鑑定の結果のうち数値の行（identifiedPower / identifiedValue / オプションの行）だけに instant。鑑定の文と呪いの文には付けない", () => {
     const c = withUnidentified(town({}, 300), "c2", { cursed: true, options: [{ optionId: "str", tier: 1, value: -1 }], rarity: "normal", level: 0 });
     const r = ok(c.s, identify("c2", c.id));
     const marks = r.events.map((e) => (e.kind === "message" ? [e.key, e.instant === true] : [e.kind, false]));
@@ -1382,9 +1383,40 @@ describe("IT-65/IT-66 店の鑑定（town.shop identify。M7）", () => {
       ["town.shop.identified", false],
       ["town.shop.identifiedPower", true],
       ["town.shop.identifiedValue", true],
+      ["item.option.foundBad", true],
       ["camp.identifiedCursed", false],
     ]);
     expect(r.state.rng).toEqual(c.s.rng);
+  });
+
+  test("IT-65/UI-43 M20（D-7）店の鑑定の結果の後にオプションを 1 行ずつ item.option.found / foundBad{name, value（符号付き）, unit}（実体の順。instant。ac は AC の増減として −値。負は foundBad）。オプションが無ければ出さない。乱数なし", () => {
+    const opts: ItemOptionRoll[] = [
+      { optionId: "hit", tier: 3, value: 15 },
+      { optionId: "ac", tier: 1, value: 1 },
+      { optionId: "str", tier: 1, value: -2 },
+    ];
+    const c = withUnidentified(town({}, 300), "c2", { cursed: true, options: opts, rarity: "legendary", level: 0 });
+    const r = ok(c.s, identify("c2", c.id));
+    const keys = r.events.map((e) => (e.kind === "message" ? e.key : e.kind));
+    expect(keys).toEqual([
+      "town.shop.identified",
+      "town.shop.identifiedPower",
+      "town.shop.identifiedValue",
+      "item.option.found",
+      "item.option.found",
+      "item.option.foundBad",
+      "camp.identifiedCursed",
+    ]);
+    expect(r.events.slice(3, 6)).toEqual([
+      { kind: "message", key: "item.option.found", params: { name: "命中", value: "+15", unit: "%" }, instant: true },
+      { kind: "message", key: "item.option.found", params: { name: "AC", value: "-1", unit: "" }, instant: true }, // AC の増減（良い向き）
+      { kind: "message", key: "item.option.foundBad", params: { name: "力", value: "-2", unit: "" }, instant: true },
+    ]);
+    expect(r.state.rng).toEqual(c.s.rng);
+    // オプションの無い品（通常）では出さない
+    const plain = withUnidentified(town({}, 300), "c2", { rarity: "normal", options: [] });
+    const rp = ok(plain.s, identify("c2", plain.id));
+    expect(rp.events.some((e) => e.kind === "message" && e.key.startsWith("item.option."))).toBe(false);
   });
 
   test("UI-59/IT-65（M18）鑑定の結果の性能の 1 文 town.shop.identifiedPower: 防具は AC（IT-21）、術者用の武器は攻撃と魔法攻撃力（IT-22）、ユニークは Lv の効果なし（IT-03）。魔法書（装備でない品）では出さない。乱数なし", () => {

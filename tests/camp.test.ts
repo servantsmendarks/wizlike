@@ -562,9 +562,37 @@ describe("CH-77 party.identify", () => {
       { kind: "message", key: "camp.identified", params: { name: "エル", old: "短い刃？", item: "短剣", rarity: "normal" } },
       { kind: "message", key: "camp.identifiedPower", params: { item: "短剣", attack: "1d4", ac: "—", magic: "—" }, instant: true },
       { kind: "message", key: "camp.identifiedValue", params: { rarity: "通常", gold: 7 }, instant: true },
+      // IT-65 / CH-77（M20 D-7）: オプションの行（負は foundBad。instant）
+      { kind: "message", key: "item.option.foundBad", params: { name: "力", value: "-1", unit: "" }, instant: true },
       { kind: "message", key: "camp.identifiedCursed", params: { item: "短剣" } },
     ]);
     expect(r.state.rng).toEqual(m);
+  });
+
+  test("CH-77/IT-65/UI-43 M20（D-7）司教の鑑定の成功の後にオプションを 1 行ずつ item.option.found{name, value（符号付き）, unit}（identifiedValue の後。instant）。失敗では出さない。乱数は d100 の 1 回のまま", () => {
+    const base = bishopAt(inTown());
+    const s0 = cloneState(base);
+    const id = createItemInstance(s0, { itemId: "dagger", identified: false, rarity: "rare", options: [{ optionId: "agi", tier: 2, value: 2 }, { optionId: "fear_loss", tier: 1, value: 10 }] });
+    member(s0, "c3").inventory.push(id);
+    const s = withSeed(s0, seedFor((x) => x <= 5)); // 成功率は 5 以上なので必ず成功
+    const m = cloneRng(s.rng);
+    randInt(m, 1, 100);
+    const r = ok(s, identify("c5", id));
+    expect(messagesOf(r.events).map((e) => (e.kind === "message" ? e.key : ""))).toEqual([
+      "camp.identified",
+      "camp.identifiedPower",
+      "camp.identifiedValue",
+      "item.option.found",
+      "item.option.found",
+    ]);
+    expect(messagesOf(r.events).slice(3)).toEqual([
+      { kind: "message", key: "item.option.found", params: { name: "素早さ", value: "+2", unit: "" }, instant: true },
+      { kind: "message", key: "item.option.found", params: { name: "恐怖への耐性", value: "+10", unit: "%" }, instant: true },
+    ]);
+    expect(r.state.rng).toEqual(m);
+    // 失敗（出目 > 95）ではオプションを明かさない
+    const f = ok(withSeed(s0, seedFor((x) => x > 95)), identify("c5", id));
+    expect(f.events.some((e) => e.kind === "message" && e.key.startsWith("item.option."))).toBe(false);
   });
 
   test("CH-77 失敗（迷宮）: dice.identify.ng → camp.identifyFailed → 司教の SAN −3。品は未鑑定のまま。呪われていない品では chance を引かない", () => {

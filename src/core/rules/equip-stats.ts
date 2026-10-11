@@ -5,7 +5,7 @@ import type { EquipmentBase, GameData, SkillType, Spell, StatBlock, StatusId, We
 import { EQUIP_SLOTS, STAT_KEYS, STATUS_IDS } from "../data/index";
 import { formatDice, parseDice } from "../rng";
 import { findBase, moraleOf, optionOf, uniqueOf } from "../state";
-import type { Character, GameState, ItemInstance, ItemPreview, RuleContext } from "../types";
+import type { Character, GameEvent, GameState, ItemInstance, ItemPreview, RuleContext } from "../types";
 
 /** IT-40: 装備中のユニークの固有スキル 1 つ */
 export type EquipSkill = { type: SkillType; value: number; instanceId: string };
@@ -98,6 +98,35 @@ export function itemPowerPreview(data: GameData, inst: ItemInstance, base: Equip
     return { attack: formatDice({ ...spec, modifier: spec.modifier + p.damageBonus }), ac: null, magicPower: p.caster ? p.magicPower : null };
   }
   return { attack: null, ac: p.ac, magicPower: null };
+}
+
+/** 品の詳細のオプション 1 行。value は表示する符号付きの値（ac は AC の増減として −値。IT-34）、bad は負のオプション（呪い。IT-32） */
+export type ItemDetailOption = { name: string; value: number; unit: string; bad: boolean };
+
+/** UI-59 / IT-65 / TW-05: 実体のオプションの行（実体の順。ac は AC の増減として −値）。鑑定の有無は見ない（呼ぶ側が鑑定済みに限る）。M20 D-7 で item-view.ts から移した（鑑定の結果の行と共用） */
+export function detailOptions(data: GameData, inst: ItemInstance): ItemDetailOption[] {
+  return inst.options.map((o) => {
+    const def = optionOf(data, o.optionId);
+    return { name: def.name, value: def.effect.type === "ac" ? -o.value : o.value, unit: def.unit, bad: o.value < 0 };
+  });
+}
+
+/**
+ * IT-65 / CH-77 / UI-43（M20 D-7）: 鑑定の結果のオプションの行。オプション 1 つに 1 件の message（実体の順。数値の行なので instant）。
+ * 負のオプション（bad。呪い）は item.option.foundBad、それ以外は item.option.found。params は {name, value（符号付きの文字列。正は +）, unit}。
+ * オプションが無ければ []。乱数は使わない
+ */
+export function identifiedOptionEvents(state: GameState, data: GameData, instanceId: string): GameEvent[] {
+  const inst = state.items[instanceId];
+  if (inst === undefined) return [];
+  return detailOptions(data, inst).map(
+    (o): GameEvent => ({
+      kind: "message",
+      key: o.bad ? "item.option.foundBad" : "item.option.found",
+      params: { name: o.name, value: o.value > 0 ? `+${o.value}` : String(o.value), unit: o.unit },
+      instant: true,
+    }),
+  );
 }
 
 /**

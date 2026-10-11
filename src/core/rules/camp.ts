@@ -27,7 +27,7 @@ import type {
 } from "../types";
 import { canAct } from "./combat-calc";
 import { applyAllyEffect } from "./effects";
-import { clampToMax, equipStats, hpMaxOf, identifiedPowerParams, spellCost } from "./equip-stats";
+import { clampToMax, equipStats, hpMaxOf, identifiedOptionEvents, identifiedPowerParams, spellCost } from "./equip-stats";
 import { loseSan } from "./san";
 import { identifiedValueParams } from "./shop";
 import { returnToTown, rollResurrect } from "./town";
@@ -459,6 +459,7 @@ function forceEquip(ctx: RuleContext, bishop: Character, owner: Character, insta
  * と最後に出目の行 identify.row.roll（base null）、基準 identify.rule{rate}、結果 dice.identify.ok / ng）。出目 ≤ rate で成功。
  * 成功: identified = true（ユニークなら図鑑。IT-66）→ message camp.identified{name, old, item, rarity} →（M18。装備なら）camp.identifiedPower{item, attack, ac, magic} →（M19）camp.identifiedValue{rarity, gold} → 呪われていれば camp.identifiedCursed{item}。
  * UI-43（M20 D-3）: identifiedPower と identifiedValue は数値の行なので instant を付ける（文字送りしない）。
+ * M20（D-7）: identifiedValue の後（呪いの文の前）に、オプションを 1 つ 1 件 item.option.found / foundBad{name, value, unit}（identifiedOptionEvents。instant）。
  * 失敗: message camp.identifyFailed{name, item} → 迷宮内（dive が null でない）なら司教の SAN −failSanDungeon（tags 空）→
  * 品が呪われていれば chance(possessChance) を 1 回。当たれば canForceEquip なら forceEquip、そうでなければ
  * message camp.possessedSan{name, item} → 司教の SAN −possessSan（tags 空）。
@@ -496,6 +497,8 @@ export function identifyItem(ctx: RuleContext, memberId: string, instanceId: str
     if (power !== null) ctx.events.push({ kind: "message", key: "camp.identifiedPower", params: power, instant: true });
     // IT-61 / CH-77（M19）: 希少度と売値の 1 文（消耗品・魔法書でも出す）
     ctx.events.push({ kind: "message", key: "camp.identifiedValue", params: identifiedValueParams(state, data, instanceId), instant: true });
+    // IT-65 / CH-77（M20 D-7）: オプションを 1 行ずつ（負は「（呪い）」の文）
+    ctx.events.push(...identifiedOptionEvents(state, data, instanceId));
     if (inst.cursed) ctx.events.push({ kind: "message", key: "camp.identifiedCursed", params: { item } });
     return;
   }

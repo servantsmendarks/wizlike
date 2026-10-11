@@ -1109,6 +1109,19 @@ describe("UI-52 街のページ", () => {
     }
   });
 
+  test("IT-65/CH-77 M20（D-7）鑑定の結果のオプションの行 item.option.found「オプション: {name} {value}{unit}」/ foundBad（末尾に「（呪い）」）は、どのオプションの最大の値（正負）でも会話の箱の 1 行（28 字）に収まる", () => {
+    expect(S["item.option.found"]).toBe("オプション: {name} {value}{unit}");
+    expect(S["item.option.foundBad"]).toBe("オプション: {name} {value}{unit}（呪い）");
+    expect(formatMessage(S["item.option.foundBad"]!, { name: "力", value: "-2", unit: "" })).toBe("オプション: 力 -2（呪い）");
+    for (const o of data.itemOptions.options) {
+      const top = Math.max(...o.values);
+      for (const [key, value] of [["item.option.found", `+${top}`], ["item.option.foundBad", `-${top}`]] as const) {
+        const text = formatMessage(S[key]!, { name: o.name, value, unit: o.unit });
+        expect(kinsokuLines(text, 28), text).toHaveLength(1);
+      }
+    }
+  });
+
   test("IT-65/IT-61/CH-77（M19）鑑定の結果の 2 文目 town.shop.identifiedValue / camp.identifiedValue「希少度 {rarity}　売値 {gold}G」: core の params を埋めるだけ。どのベースの伝説・Lv20・tier 3 のオプション 3 つ、どのユニーク、どの消耗品・魔法書でも 28 字 × 2 行以内", () => {
     expect(S["town.shop.identifiedValue"]).toBe("希少度 {rarity}　売値 {gold}G");
     expect(S["camp.identifiedValue"]).toBe(S["town.shop.identifiedValue"]);

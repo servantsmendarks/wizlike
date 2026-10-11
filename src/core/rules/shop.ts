@@ -16,7 +16,7 @@ import {
   uniqueOf,
 } from "../state";
 import type { Character, GameState, ItemInstance, ItemPreview, RuleContext, ShopAction, TownMenu } from "../types";
-import { identifiedPowerParams, itemPowerPreview } from "./equip-stats";
+import { identifiedOptionEvents, identifiedPowerParams, itemPowerPreview } from "./equip-stats";
 import { floorRatio } from "./ratio";
 
 function inTown(state: GameState): boolean {
@@ -254,7 +254,8 @@ export function buyBack(ctx: RuleContext, memberId: string, instanceId: string):
  * 品ごとの鑑定料 identifyFeeOf を払う → 鑑定済みにし、ユニークなら図鑑に記録（IT-66）→ message town.shop.identified{name, old, item, cost, rarity}
  * →（M18。装備なら）message town.shop.identifiedPower{item, attack, ac, magic}（identifiedPowerParams）
  * →（M19）message town.shop.identifiedValue{rarity, gold}（identifiedValueParams。消耗品でも）→ 呪われていれば message camp.identifiedCursed{item}
- * UI-43（M20 D-3）: 性能と希少度・売値の 2 文は数値の行なので instant を付ける（文字送りしない）
+ * UI-43（M20 D-3）: 性能と希少度・売値の 2 文は数値の行なので instant を付ける（文字送りしない）。
+ * M20（D-7）: identifiedValue の後（呪いの文の前）に、オプションを 1 つ 1 件 item.option.found / foundBad{name, value, unit}（identifiedOptionEvents。instant）
  */
 export function identifyAtShop(ctx: RuleContext, memberId: string, instanceId: string): void {
   const { state, data } = ctx;
@@ -273,6 +274,8 @@ export function identifyAtShop(ctx: RuleContext, memberId: string, instanceId: s
   if (power !== null) ctx.events.push({ kind: "message", key: "town.shop.identifiedPower", params: power, instant: true });
   // IT-65 / IT-61（M19）: 希少度と売値の 1 文（消耗品・魔法書でも出す）
   ctx.events.push({ kind: "message", key: "town.shop.identifiedValue", params: identifiedValueParams(state, data, instanceId), instant: true });
+  // IT-65（M20 D-7）: オプションを 1 行ずつ（負は「（呪い）」の文）
+  ctx.events.push(...identifiedOptionEvents(state, data, instanceId));
   if (state.items[instanceId]!.cursed) ctx.events.push({ kind: "message", key: "camp.identifiedCursed", params: { item } });
 }
 
