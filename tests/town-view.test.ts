@@ -13,7 +13,8 @@ import { cloneState, createItemInstance, itemDisplayName } from "../src/core/sta
 import { identifiedPowerParams, POWER_NONE } from "../src/core/rules/equip-stats";
 import type { Character, EndingRecord, GameState, TownMenu, UpgradeCatalystRef } from "../src/core/types";
 import { endingKeyAction, formatEndingRecord } from "../src/presenter/views/ending";
-import { formatRules, RULE_TERM_MAX, splitRuleLine } from "../src/presenter/views/rules";
+import { createRulesOverlay, formatRules, RULE_TERM_MAX, splitRuleLine } from "../src/presenter/views/rules";
+import { tapSpecOf } from "../src/presenter/input/tap";
 import { createWipeView, TERM_COL_W, type WipeTermLine } from "../src/presenter/views/wipe";
 import {
   classChangeRowLabel,
@@ -1698,6 +1699,57 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
         expect(t!["style"]).toMatchObject({ display: "inline-block", width: "32px", overflow: "hidden" });
         expect([t!["textContent"], d!["textContent"]]).toEqual(i === 0 ? ["HP", "体力"] : ["", "続き"]);
       }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("UI-77/UI-57（M19 D-3）用語の窓の層: ステージ全面の層（自身は押せない）に、窓（rules-frame。layout の wipe の矩形）・幕・「閉じる」（ending.dismiss。layout の mapClose = 操作領域の close モードの位置）。タイトルでは幕と「閉じる」も出し、遊んでいる途中は窓だけ。「閉じる」で onClose、hide で層ごと隠す", () => {
+    const made: Array<Record<string, unknown>> = [];
+    const el = (tag: string): Record<string, unknown> => {
+      const e: Record<string, unknown> = { tagName: tag.toUpperCase(), style: {}, className: "", textContent: "", children: [] as unknown[], scrollTop: 0, scrollHeight: 0, clientHeight: 0 };
+      e["appendChild"] = (c: unknown) => ((e["children"] as unknown[]).push(c), c);
+      e["append"] = (...c: unknown[]) => (e["children"] as unknown[]).push(...c);
+      e["replaceChildren"] = (...c: unknown[]) => (e["children"] = c);
+      e["addEventListener"] = () => {};
+      e["setAttribute"] = () => {};
+      e["removeAttribute"] = () => {};
+      made.push(e);
+      return e;
+    };
+    vi.stubGlobal("document", { createElement: el, createElementNS: (_ns: string, tag: string) => el(tag) });
+    try {
+      const L = dungeonLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size);
+      let closed = 0;
+      const o = createRulesOverlay({ rect: L.wipe, close: L.mapClose, strings: S, onClose: () => closed++ });
+      const root = o.el as unknown as Record<string, unknown>;
+      const style = (e: Record<string, unknown>): Record<string, string> => e["style"] as Record<string, string>;
+      expect(root["className"]).toBe("rules-layer");
+      expect(style(root)).toMatchObject({ position: "absolute", left: "0px", top: "0px", width: "100%", height: "100%", pointerEvents: "none", display: "none" });
+      const [backdrop, frame, close] = root["children"] as Array<Record<string, unknown>>;
+      expect([backdrop!["className"], frame!["className"], close!["className"]]).toEqual(["rules-backdrop", "rules-frame", "ui-button"]);
+      expect(style(backdrop!)).toMatchObject({ width: "100%", height: "100%", background: "var(--c-bg)", pointerEvents: "auto" });
+      // 窓は戦績・全滅の内訳と同じ矩形
+      expect(style(frame!)).toMatchObject({ left: `${L.wipe.x}px`, top: `${L.wipe.y}px`, width: `${L.wipe.w}px`, height: `${L.wipe.h}px`, pointerEvents: "auto" });
+      // 「閉じる」は操作領域の close モードの「閉じる」と同じ位置・同じ字
+      expect(close!["textContent"]).toBe(S["ending.dismiss"]);
+      expect(style(close!)).toMatchObject({ left: `${L.mapClose.x}px`, top: `${L.mapClose.y}px`, width: `${L.mapClose.w}px`, height: `${L.mapClose.h}px`, pointerEvents: "auto" });
+      // タイトル: 幕と「閉じる」も出す。行は formatRules のまま
+      o.show(formatRules(S), true);
+      expect([style(root)["display"], style(backdrop!)["display"], style(close!)["display"]]).toEqual(["", "", ""]);
+      const view = made.find((e) => e["className"] === "wipe-view")!;
+      const rows = view["children"] as Array<Record<string, unknown>>;
+      expect(rows).toHaveLength(formatRules(S).length);
+      expect(rows[0]!["textContent"]).toBe(S["rules.title"]);
+      tapSpecOf(close as unknown as Element)!.onTap({ lx: 0, ly: 0 });
+      expect(closed).toBe(1);
+      o.hide();
+      expect(style(root)["display"]).toBe("none");
+      // 遊んでいる途中: 窓だけ（幕と「閉じる」は隠す。操作領域の「閉じる」を使う）
+      o.show(formatRules(S), false);
+      expect([style(root)["display"], style(backdrop!)["display"], style(close!)["display"]]).toEqual(["", "none", "none"]);
+      // 「閉じる」の字はボタンの幅に収まる（8px の字、枠 2）
+      expect([...S["ending.dismiss"]!].length * 8).toBeLessThanOrEqual(L.mapClose.w - 2);
     } finally {
       vi.unstubAllGlobals();
     }

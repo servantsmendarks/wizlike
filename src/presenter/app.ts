@@ -139,7 +139,7 @@ import { createSaveBanner } from "./views/save-banner";
 import { createUpdateNotice } from "./views/update-notice";
 import { createTitleScreen, titleEntries, titleHint, titleItems, titleKeyIndex, titleNotice, titleStep, type TitlePage } from "./views/title";
 import { endingKeyAction, formatEndingRecord } from "./views/ending";
-import { formatRules } from "./views/rules";
+import { createRulesOverlay, formatRules } from "./views/rules";
 import { formatWipeSummary, wipeKeyAction } from "./views/wipe";
 import { createNarrator, TALK_KEY_LINES } from "./views/talk";
 import {
@@ -478,7 +478,11 @@ export function createApp(o: {
   // SV-42: 新しい版の案内（最前面。閉じても遊べる）
   const updateNotice = createUpdateNotice({ strings });
 
-  stage.replaceChildren(title.el, creation.el, custom.el, play.el, settingsView.el, debug.el, banner.el, updateNotice.el);
+  // UI-77 / UI-57（M19 D-3）: 用語の窓はステージ直下の層（タイトルとプレイ画面の上、設定画面と debug パネルの下）。
+  // タイトルでは幕と「閉じる」も出す（プレイ画面の操作領域が無いため）。遊んでいる途中は操作領域の「閉じる」を使う
+  const rulesLayer = createRulesOverlay({ rect: playLayout.wipe, close: playLayout.mapClose, strings, onClose: () => guard(() => closeEnding()) });
+
+  stage.replaceChildren(title.el, creation.el, custom.el, play.el, rulesLayer.el, settingsView.el, debug.el, banner.el, updateNotice.el);
 
   // ---------------------------------------------------------------- 再生
   const dungeonName = (st: GameState): string => (st.dive === null ? "" : dungeonOf(data, st.dive.dungeonId).name);
@@ -1891,6 +1895,9 @@ export function createApp(o: {
     // UI-73（M12）: 戦績の画面も再開では出さない（endingPending は語った後に落として保存済み。酒場の「戦績」で見直せる）
     play.showEnding(false);
     endingQueued = null;
+    // UI-77（M19 D-3）: 用語の窓も閉じる（タイトルから開いたまま続きからに進んだときなど）
+    rulesLayer.hide();
+    play.setRulesOpen(false);
     play.showHistory(false);
     // 読み込みを待つ間に F2 で開いた debug パネルも閉じる（overlay を null にするので、残すと閉じられなくなる）
     debug.el.style.display = "none";
@@ -2006,8 +2013,8 @@ export function createApp(o: {
       canImport: where === "title",
       where,
       standalone: isStandalone(globalThis as StandaloneEnv),
-      // UI-57 / UI-77（M18）: 遊んでいる途中で、設定の下に何も預けていないとき（閉じた後に openRules が開ける）
-      canRules: (route === "town" || route === "dungeon" || route === "battle") && underSettings === null,
+      // UI-57 / UI-77（M18。M19 D-3 でタイトルも）: タイトルか遊んでいる途中で、設定の下に何も預けていないとき（閉じた後に openRules が開ける）
+      canRules: (route === "title" || route === "town" || route === "dungeon" || route === "battle") && underSettings === null,
     };
   };
 
@@ -2257,15 +2264,17 @@ export function createApp(o: {
   };
 
   /**
-   * UI-77（M16）: 用語の一覧を開く（酒場の「用語」）。戦績の画面と同じ overlay ending・同じ部品に strings の行（formatRules）を描く。
+   * UI-77（M16）: 用語の一覧を開く（酒場の「用語」と設定の「用語」）。戦績の画面と同じ overlay ending で、strings の行（formatRules）を描く。
+   * M19（D-3）: 窓はプレイ画面の ending ではなくステージ直下の層（rulesLayer）。タイトルの設定からも開ける。
    * 閉じる（「閉じる」・Enter / Esc / 1）、debug パネルと設定画面の下に残すこと、再開で閉じることは戦績と同じ経路。会話の箱に触れない
    */
   const openRules = (): void => {
     if (overlay !== null) return;
     repeater.release();
     overlay = "ending";
-    play.ending.render(formatRules(strings));
-    play.showEnding(true);
+    // M19 D-3: 窓はステージ直下の層（タイトルでは幕と「閉じる」も）。プレイ画面には会話の箱の位置だけを伝える
+    rulesLayer.show(formatRules(strings), route === "title");
+    play.setRulesOpen(true);
     syncControls();
   };
 
@@ -2274,6 +2283,8 @@ export function createApp(o: {
     if (overlay !== "ending") return;
     overlay = null;
     play.showEnding(false);
+    rulesLayer.hide();
+    play.setRulesOpen(false);
     syncControls();
   };
 

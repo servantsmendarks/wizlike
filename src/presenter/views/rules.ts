@@ -4,9 +4,13 @@
 //   行の数はコードに持たない。opening.speech.N と同じ形）。値は strings だけ（state を引かない）。
 // - M16 追補 H-3（2026-10-11 ユーザーの判断「等幅で揃えられるなら直す」）: 用語の行は用語の列（幅 32px）と説明に分け、
 //   説明の書き出しを揃える（splitRuleLine。表示のための字の切り分けだけ）。
+// - M19（D-3）: 窓はプレイ画面の部品ではなく、ステージ直下の層（createRulesOverlay）に置く。タイトルの設定からも開けるように
+//   （プレイ画面はタイトルで隠れている）。タイトルでは下を覆う幕と、操作領域の「閉じる」と同じ位置の「閉じる」も出す。
 // モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
-import type { WipeLine } from "./wipe";
+import { onTap } from "../input/tap";
+import type { Rect } from "../layout";
+import { createWipeView, type WipeLine } from "./wipe";
 
 /** UI-77 の用語と説明の区切り（全角空白） */
 const SEP = String.fromCharCode(0x3000);
@@ -30,4 +34,59 @@ export function formatRules(strings: Strings): WipeLine[] {
   const out: WipeLine[] = [strings["rules.title"] ?? "rules.title"];
   for (let n = 1; strings[`rules.line.${n}`] !== undefined; n++) out.push(splitRuleLine(strings[`rules.line.${n}`]!));
   return out;
+}
+
+export type RulesOverlay = {
+  /** ステージ直下の層（ステージ全面。自身は押せず、窓・幕・「閉じる」だけが押せる） */
+  el: HTMLElement;
+  /** 行を描いて出す。onTitle なら下（タイトル）を覆う幕と「閉じる」も出す（遊んでいる途中は操作領域の「閉じる」を使う） */
+  show(lines: readonly WipeLine[], onTitle: boolean): void;
+  hide(): void;
+};
+
+/**
+ * UI-77 / UI-57（M19 D-3）: 用語の窓の層。rect は窓（layout の wipe。戦績・全滅の内訳と同じ範囲）、close は「閉じる」
+ * （layout の mapClose。操作領域の close モードの「閉じる」と同じ位置）。onClose は「閉じる」を押したとき（タイトルだけ出す）
+ */
+export function createRulesOverlay(o: { rect: Rect; close: Rect; strings: Strings; onClose(): void }): RulesOverlay {
+  const el = document.createElement("div");
+  el.className = "rules-layer";
+  Object.assign(el.style, { position: "absolute", left: "0px", top: "0px", width: "100%", height: "100%", pointerEvents: "none", display: "none" });
+  // タイトルの間だけ下を覆う幕（タイトルの項目を押させない）
+  const backdrop = document.createElement("div");
+  backdrop.className = "rules-backdrop";
+  Object.assign(backdrop.style, { position: "absolute", left: "0px", top: "0px", width: "100%", height: "100%", background: "var(--c-bg)", pointerEvents: "auto" });
+  const frame = createWipeView(o.rect, o.strings);
+  frame.el.className = "rules-frame";
+  frame.el.style.pointerEvents = "auto";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "ui-button";
+  close.textContent = o.strings["ending.dismiss"] ?? "ending.dismiss";
+  Object.assign(close.style, {
+    left: `${o.close.x}px`,
+    top: `${o.close.y}px`,
+    width: `${o.close.w}px`,
+    height: `${o.close.h}px`,
+    lineHeight: `${o.close.h - 2}px`,
+    pointerEvents: "auto",
+  });
+  onTap(close, () => o.onClose());
+  el.appendChild(backdrop);
+  el.appendChild(frame.el);
+  el.appendChild(close);
+  return {
+    el,
+    show(lines, onTitle) {
+      frame.render(lines);
+      backdrop.style.display = onTitle ? "" : "none";
+      close.style.display = onTitle ? "" : "none";
+      el.style.display = "";
+      // UI-11: 見えてから続きの印を出し直す（隠れている間は寸法が 0）
+      frame.refresh();
+    },
+    hide() {
+      el.style.display = "none";
+    },
+  };
 }

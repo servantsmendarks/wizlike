@@ -93,6 +93,11 @@ export type DungeonScreen = {
   showWipe(on: boolean): void;
   /** UI-73（M12）の戦績の画面の表示（会話の箱は全滅の内訳と同じく下の 3 行の箱） */
   showEnding(on: boolean): void;
+  /**
+   * UI-77（M19 D-3）: 用語の窓（ステージ直下の層。views/rules.ts）が出ているか。窓はこの画面の部品ではないが、
+   * 会話の箱は戦績と同じく窓の下の 3 行の箱にする
+   */
+  setRulesOpen(on: boolean): void;
   /** UI-46 の履歴の画面の表示 */
   showHistory(on: boolean): void;
   /** UI-37: スワイプを受ける間は画面に class swipe-on を付ける（touch-action: none） */
@@ -342,6 +347,8 @@ export function createDungeonScreen(o: {
   let wipeOpen = false;
   /** UI-73（M12）: 戦績の画面が出ているか（会話の箱は全滅の内訳と同じ下の 3 行の箱） */
   let endingOpen = false;
+  /** UI-77（M19 D-3）: 用語の窓が出ているか（会話の箱は戦績と同じ下の 3 行の箱） */
+  let rulesOpen = false;
   /**
    * メッセージ窓・パーティ欄・判定の箱の下端（街かキャラクター画面なら窓と欄を隠し、箱は会話の箱の上）。
    * UI-13: 街はメッセージ窓とパーティ欄を置かず、帯とヘッダーのログを出す。UI-59（M10）: キャラクター画面の間も隠す
@@ -350,7 +357,7 @@ export function createDungeonScreen(o: {
     applyPanels(
       mode,
       characterOpen,
-      wipeOpen || endingOpen,
+      wipeOpen || endingOpen || rulesOpen,
       { message: message.el, panel: panel.el, setDiceBottom: (b) => dice.setBottom(b), setTalkRect: (k) => talk.setRect(k) },
       { town: tl.diceBottom, compact: tl.diceBottomCompact },
       listWide || mapOpen,
@@ -431,6 +438,10 @@ export function createDungeonScreen(o: {
       ending.el.style.display = on ? "" : "none";
       if (on) ending.refresh();
       endingOpen = on;
+      syncPanels();
+    },
+    setRulesOpen(on: boolean): void {
+      rulesOpen = on;
       syncPanels();
     },
     showHistory(on: boolean): void {

@@ -27,7 +27,8 @@ const D: Settings = defaultSettings(data.config);
 const W = data.config.stage.width;
 const H = data.config.stage.height;
 
-const TITLE: SettingsContext = { canExport: false, canImport: true, where: "title", standalone: false, canRules: false };
+// M19 D-3: タイトルからも用語を開ける（以前は canRules 偽）
+const TITLE: SettingsContext = { canExport: false, canImport: true, where: "title", standalone: false, canRules: true };
 const PLAY: SettingsContext = { canExport: true, canImport: false, where: "play", standalone: false, canRules: true };
 const NONE: SettingsContext = { canExport: false, canImport: false, where: "none", standalone: false, canRules: false };
 
@@ -345,7 +346,7 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
     expect(root.children.some((c) => c.textContent === S["settings.fileHintTitle"])).toBe(true);
   });
 
-  test("UI-57/UI-77（M18）「用語」のボタン: settings.rules「用語」が L.rules に（onTap。高さ 40 の行の高さ 38px）。canRules なら見えて押すと onRules、タイトル（canRules 偽）では隠れて押しても呼ばない。数字キーの並び（settingsItems）は変わらない", () => {
+  test("UI-57/UI-77（M18。M19 D-3）「用語」のボタン: settings.rules「用語」が L.rules に（onTap。高さ 40 の行の高さ 38px）。canRules なら見えて押すと onRules（M19 からタイトルでも）、canRules 偽（設定の下に預けているとき）は隠れて押しても呼ばない。数字キーの並び（settingsItems）は変わらない", () => {
     const { calls, L, view, buttonAt, tap } = setup();
     expect(S["settings.rules"]).toBe("用語");
     const b = buttonAt(L.rules);
@@ -360,12 +361,17 @@ describe("createSettingsScreen（UI-57 / UI-36）", () => {
     tap(b);
     expect(calls).toEqual(["rules"]);
     view.render(TITLE, null);
+    expect(b.style["display"]).toBe("");
+    tap(b);
+    expect(calls).toEqual(["rules", "rules"]);
+    view.render({ ...TITLE, canRules: false }, null);
     expect(b.style["display"]).toBe("none");
     tap(b);
     view.render({ ...PLAY, canRules: false }, null);
     expect(b.style["display"]).toBe("none");
     tap(b);
-    expect(calls).toEqual(["rules"]);
+    expect(calls).toEqual(["rules", "rules"]);
+    expect(settingsItems(TITLE)).toEqual(settingsItems({ ...TITLE, canRules: false }));
     expect(settingsItems(PLAY).some((it) => (it.kind as string) === "rules")).toBe(false);
     expect(settingsItems(PLAY)).toEqual(settingsItems({ ...PLAY, canRules: false }));
   });

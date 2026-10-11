@@ -639,7 +639,8 @@ describe("入力と Command", () => {
     // 設定画面のキー（UI-33）は debug の判定の後
     expect(app).toMatch(/if \(overlay === "settings"\) \{\s*const k = settingsKeyIndex\(a, settingsItems\(settingsCtx\(\)\)\);\s*if \(k !== null\) settingsView\.select\(k\);\s*return;/);
     // 設定画面は debug パネルの下、帯はその上、最前面は SV-42 の更新の案内
-    expect(app).toMatch(/stage\.replaceChildren\(title\.el, creation\.el, custom\.el, play\.el, settingsView\.el, debug\.el, banner\.el, updateNotice\.el\)/);
+    // M19 D-3: 用語の窓の層（rulesLayer.el）はプレイ画面と設定画面の間（以前の期待値は rulesLayer.el なし）
+    expect(app).toMatch(/stage\.replaceChildren\(title\.el, creation\.el, custom\.el, play\.el, rulesLayer\.el, settingsView\.el, debug\.el, banner\.el, updateNotice\.el\)/);
     // 遊んでいる途中の書き出しは flush を待ってから
     const exp = /const exportFromSettings = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(exp).toMatch(/await autosaver\.flush\(state\);\s*ok = await exportGameFile\(cur\.gameId\);/);
@@ -859,7 +860,8 @@ describe("入力と Command", () => {
     //（以前の期待値は wipeOpen なし・setTalkCompact: (on) => talk.setCompact(on)）。内訳の出し入れ（showWipe）で出し直す
     expect(dungeon).toMatch(
       // M12（UI-73）: 戦績の画面の間（endingOpen）も内訳の下の 3 行の箱（以前の期待値は wipeOpen だけ）
-      /const syncPanels = \(\): void =>\s*applyPanels\(\s*mode,\s*characterOpen,\s*wipeOpen \|\| endingOpen,\s*\{ message: message\.el, panel: panel\.el, setDiceBottom: \(b\) => dice\.setBottom\(b\), setTalkRect: \(k\) => talk\.setRect\(k\) \},\s*\{ town: tl\.diceBottom, compact: tl\.diceBottomCompact \},\s*listWide \|\| mapOpen,\s*\);/,
+      // M19 D-3: 用語の窓の間（rulesOpen）も同じ（以前の期待値は wipeOpen || endingOpen）
+      /const syncPanels = \(\): void =>\s*applyPanels\(\s*mode,\s*characterOpen,\s*wipeOpen \|\| endingOpen \|\| rulesOpen,\s*\{ message: message\.el, panel: panel\.el, setDiceBottom: \(b\) => dice\.setBottom\(b\), setTalkRect: \(k\) => talk\.setRect\(k\) \},\s*\{ town: tl\.diceBottom, compact: tl\.diceBottomCompact \},\s*listWide \|\| mapOpen,\s*\);/,
     );
     // M19（UI-24 / UI-13）: 地図が出ている間もパーティ欄を隠す（広い一覧と同じ引数。以前の期待値は listWide だけ）
     expect(dungeon).toMatch(/showMap\(on: boolean\): void \{\s*map\.el\.style\.display = on \? "" : "none";[\s\S]*?mapOpen = on;\s*syncPanels\(\);\s*\}/);
@@ -1237,7 +1239,7 @@ describe("入力と Command", () => {
     const closeW = /const closeWipe = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(closeW).toMatch(/syncControls\(\);\s*if \(endingQueued !== null\) \{\s*const r = endingQueued;\s*endingQueued = null;\s*openEnding\(r, true\);\s*\}/);
     const closeE = /const closeEnding = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
-    expect(closeE).toMatch(/overlay = null;\s*play\.showEnding\(false\);\s*syncControls\(\);/);
+    expect(closeE).toMatch(/overlay = null;\s*play\.showEnding\(false\);\s*rulesLayer\.hide\(\);\s*play\.setRulesOpen\(false\);\s*syncControls\(\);/);
     expect(closeE).not.toContain("play.talk.");
     const sync = /const syncControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(sync).toMatch(/if \(overlay === "ending"\) \{\s*clearFocus\(\);\s*c\.setCloseLabel\(t\("ending\.dismiss"\)\);\s*c\.setMode\("close"\);\s*return;\s*\}/);
@@ -1250,21 +1252,38 @@ describe("入力と Command", () => {
     expect(dungeon).toMatch(/showEnding\(on: boolean\): void \{[\s\S]*?endingOpen = on;\s*syncPanels\(\);\s*\}/);
   });
 
-  test("UI-77（M16）用語の一覧: 酒場の「用語」で openRules。戦績と同じ overlay ending・同じ部品（play.ending）に formatRules(strings) を描き、閉じる・キー・再開は戦績の経路のまま。コマンドは送らず会話の箱に触れない（ソースの検査）", () => {
+  test("UI-77（M16。M19 D-3）用語の一覧: 酒場の「用語」で openRules。戦績と同じ overlay ending で、M19 からはステージ直下の層（rulesLayer）に formatRules(strings) を描き、閉じる・キー・再開は戦績の経路のまま。コマンドは送らず会話の箱に触れない（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     expect(app).toMatch(/case "rules":\s*openRules\(\);\s*return;/);
     const open = /const openRules = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(open).not.toBe("");
-    expect(open).toMatch(/if \(overlay !== null\) return;\s*repeater\.release\(\);\s*overlay = "ending";\s*play\.ending\.render\(formatRules\(strings\)\);\s*play\.showEnding\(true\);\s*syncControls\(\);/);
+    // M19 D-3: 窓はステージ直下の層（rulesLayer）。タイトルなら幕と「閉じる」も出す。プレイ画面には会話の箱の位置（setRulesOpen）だけ
+    expect(open).toMatch(/if \(overlay !== null\) return;\s*repeater\.release\(\);\s*overlay = "ending";\s*rulesLayer\.show\(formatRules\(strings\), route === "title"\);\s*play\.setRulesOpen\(true\);\s*syncControls\(\);/);
+    expect(open).not.toContain("play.ending");
     expect(open).not.toContain("play.talk.");
     expect(open).not.toContain("run(");
   });
 
-  test("UI-57/UI-77（M18）設定の「用語」: onRules は guard の中で closeSettings → openRules の順。canRules は route が街・迷宮・戦闘で、設定の下に何も預けていない（underSettings が null）ときだけ真（タイトルでは出さない。ソースの検査）", () => {
+  test("UI-77/UI-57（M19 D-3）用語の窓の層: ステージ直下（プレイ画面の上・設定画面と debug パネルの下）に置き、窓は戦績と同じ layout の wipe、「閉じる」は操作領域の close モードと同じ mapClose で、押すと guard の中で closeEnding。再開（SV-50）では層を隠す。プレイ画面は setRulesOpen で会話の箱を窓の下の 3 行の箱にする（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toContain("const rulesLayer = createRulesOverlay({ rect: playLayout.wipe, close: playLayout.mapClose, strings, onClose: () => guard(() => closeEnding()) });");
+    expect(app).toContain("stage.replaceChildren(title.el, creation.el, custom.el, play.el, rulesLayer.el, settingsView.el, debug.el, banner.el, updateNotice.el);");
+    const resume = /const resume = \(st: GameState\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(resume).toMatch(/endingQueued = null;\s*rulesLayer\.hide\(\);\s*play\.setRulesOpen\(false\);/);
+    // 戦績は今のままプレイ画面の ending
+    const openE = /const openEnding = \(r: EndingRecord, read = false\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(openE).toContain("play.ending.render(formatEndingRecord(r, strings));");
+    expect(openE).not.toContain("rulesLayer");
+    const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
+    expect(dungeon).toContain("wipeOpen || endingOpen || rulesOpen,");
+    expect(dungeon).toMatch(/setRulesOpen\(on: boolean\): void \{\s*rulesOpen = on;\s*syncPanels\(\);\s*\}/);
+  });
+
+  test("UI-57/UI-77（M18。M19 D-3）設定の「用語」: onRules は guard の中で closeSettings → openRules の順。canRules は route がタイトル・街・迷宮・戦闘で、設定の下に何も預けていない（underSettings が null）ときだけ真（M19 からタイトルでも出す。作成の画面では出さない。ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     expect(app).toMatch(/onRules: \(\) =>\s*guard\(\(\) => \{\s*closeSettings\(\);\s*openRules\(\);\s*\}\),/);
     const ctx = /const settingsCtx = \(\): SettingsContext => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
-    expect(ctx).toContain('canRules: (route === "town" || route === "dungeon" || route === "battle") && underSettings === null,');
+    expect(ctx).toContain('canRules: (route === "title" || route === "town" || route === "dungeon" || route === "battle") && underSettings === null,');
     // openSettings は underSettings を決めてから描く（canRules が今の下敷きを見る）
     const openS = /const openSettings = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(openS.indexOf("underSettings = ")).toBeGreaterThanOrEqual(0);
