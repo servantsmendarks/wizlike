@@ -5,7 +5,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { campMenu } from "../src/core/rules/camp";
 import { classChangeOptions, townMenu, type ClassChangeOption } from "../src/core/rules/town";
-import { shopPrice } from "../src/core/rules/shop";
+import { identifiedValueParams, shopPrice } from "../src/core/rules/shop";
 import { execute } from "../src/core/engine";
 import { upgradePreview } from "../src/core/rules/upgrade";
 import { shopEquipCompare, type EquipVerdict, type ShopEquipCompare } from "../src/core/rules/item-view";
@@ -965,6 +965,31 @@ describe("UI-52 街のページ", () => {
         expect(kinsokuLines(text, 28).length, text).toBeLessThanOrEqual(2);
       }
     }
+  });
+
+  test("IT-65/IT-61/CH-77（M19）鑑定の結果の 2 文目 town.shop.identifiedValue / camp.identifiedValue「希少度 {rarity}　売値 {gold}G」: core の params を埋めるだけ。どのベースの伝説・Lv20・tier 3 のオプション 3 つ、どのユニーク、どの消耗品・魔法書でも 28 字 × 2 行以内", () => {
+    expect(S["town.shop.identifiedValue"]).toBe("希少度 {rarity}　売値 {gold}G");
+    expect(S["camp.identifiedValue"]).toBe(S["town.shop.identifiedValue"]);
+    const s = town({}, 0);
+    const opts = [1, 2, 3].map(() => ({ optionId: "str", tier: 3 as const, value: 3 }));
+    const ids = [
+      ...data.equipmentBases.map((b) => createItemInstance(s, { itemId: b.id, level: 20, rarity: "legendary", options: opts, identified: true })),
+      ...data.uniques.map((u) => createItemInstance(s, { itemId: u.base, uniqueId: u.id, rarity: "legendary", identified: true })),
+      ...data.items.map((it) => createItemInstance(s, { itemId: it.id, identified: true })),
+    ];
+    // 例: 伝説の長剣 +3（floor(100 × 0.5 × 2.5) = 125G）
+    const sword = createItemInstance(s, { itemId: "long_sword", level: 3, rarity: "legendary", identified: true });
+    expect(formatMessage(S["town.shop.identifiedValue"]!, identifiedValueParams(s, data, sword))).toBe("希少度 伝説　売値 125G");
+    for (const id of ids) {
+      const params = identifiedValueParams(s, data, id);
+      for (const key of ["town.shop.identifiedValue", "camp.identifiedValue"]) {
+        const text = formatMessage(S[key]!, params);
+        expect(text, text).not.toMatch(/\{/);
+        expect(kinsokuLines(text, 28).length, text).toBeLessThanOrEqual(2);
+      }
+    }
+    // 文言はデータで差し替えられる（表示層は params を埋めるだけ）
+    expect(formatMessage("{rarity}/{gold}", identifiedValueParams(s, data, sword))).toBe("伝説/125");
   });
 
   test("TW-17 M18（3-3）確認の段の前後の 1 文 upgradePreviewText「成功で {kind} {before} → {after}」は core の upgradePreview の kind と before / after を埋めるだけ（装飾・preview なしは null）。どのベースの Lv20 でも 28 字 × 2 行以内", () => {

@@ -1611,17 +1611,20 @@ describe("UI-55/UI-40 制止の箱のタップ待ち（M5）", () => {
     const id = createItemInstance(st, { itemId: "dagger", identified: false });
     st.party.find((c) => c.id === "c1")!.inventory.push(id);
     const r = execute(st, { type: "party.identify", memberId: "c5", instanceId: id }, data);
-    // UI-59 / CH-77（M18）: 装備なら結果の語りの後に品そのものの数値の 1 文（camp.identifiedPower）が続く
-    expect(r.events.map((e) => e.kind)).toEqual(["mpChanged", "dice", "message", "message"]);
+    // UI-59 / CH-77（M18）: 装備なら結果の語りの後に品そのものの数値の 1 文（camp.identifiedPower）が続く。
+    // IT-61 / CH-77（M19）: さらに希少度と売値の 1 文（camp.identifiedValue）
+    expect(r.events.map((e) => e.kind)).toEqual(["mpChanged", "dice", "message", "message", "message"]);
     const m = r.events[2]!;
     const p = r.events[3]!;
-    if (m.kind !== "message" || p.kind !== "message") throw new Error("message expected");
+    const v = r.events[4]!;
+    if (m.kind !== "message" || p.kind !== "message" || v.kind !== "message") throw new Error("message expected");
     expect(p.key).toBe("camp.identifiedPower");
+    expect(v.key).toBe("camp.identifiedValue");
     for (const skipAnimations of [false, true]) {
       const { deps, log } = fakeDeps({ skipAnimations });
       await createPlayer(deps).play(r.events, st, r.state);
-      // 箱は結果の語り 1 件の後のタップで消え（呪いの camp.identifiedCursed が続くときと同じ）、性能の文はその後に出る
-      expect(span(log), String(skipAnimations)).toEqual(["dice.show", say(m.key, m.params), "beat.waitTap", "dice.hide", say(p.key, p.params)]);
+      // 箱は結果の語り 1 件の後のタップで消え（呪いの camp.identifiedCursed が続くときと同じ）、性能の文と希少度・売値の文はその後に出る
+      expect(span(log), String(skipAnimations)).toEqual(["dice.show", say(m.key, m.params), "beat.waitTap", "dice.hide", say(p.key, p.params), say(v.key, v.params)]);
     }
   });
 
@@ -1902,9 +1905,11 @@ describe("UI-47 街の会話の箱と再生", () => {
           expect(sink.more.on, tag).toBe(true);
           latch.release();
           await new Promise<void>((res) => setTimeout(res, 0));
-          // 判定の箱はこのタップで消え、会話の箱には 2 文が溜まる。最後の ▼ のタップで会話の箱を閉じる
+          // 判定の箱はこのタップで消え、会話の箱には結果・性能・希少度と売値（M19）の 3 文が溜まる。最後の ▼ のタップで会話の箱を閉じる
           expect(done, tag).toBe(true);
-          const texts = [first, m].map((e) => (e.kind === "message" ? formatMessage(data.strings[e.key]!, e.params) : ""));
+          const said = r.events.filter((e) => e.kind === "message");
+          expect(said.map((e) => (e.kind === "message" ? e.key : "")), tag).toEqual(["camp.identified", "camp.identifiedPower", "camp.identifiedValue"]);
+          const texts = said.map((e) => (e.kind === "message" ? formatMessage(data.strings[e.key]!, e.params) : ""));
           expect(sink.text, tag).toBe(texts.join("\n"));
           expect({ open: sink.open, more: sink.more }, tag).toEqual({ open: true, more: { on: true, blink: !skipAnimations } });
           expect(names(log).filter((x) => x === "dice.hide"), tag).toHaveLength(1);

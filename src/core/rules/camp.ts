@@ -29,6 +29,7 @@ import { canAct } from "./combat-calc";
 import { applyAllyEffect } from "./effects";
 import { clampToMax, equipStats, hpMaxOf, identifiedPowerParams, spellCost } from "./equip-stats";
 import { loseSan } from "./san";
+import { identifiedValueParams } from "./shop";
 import { returnToTown, rollResurrect } from "./town";
 
 /** キャンプのコマンドを受け付ける場所。街（dive null）か迷宮の戦闘外。どちらも保留なしのときだけ。それ以外は null */
@@ -456,7 +457,7 @@ function forceEquip(ctx: RuleContext, bishop: Character, owner: Character, insta
  * CH-77（M10）。checkIdentify が null を返した前提。
  * MP を mpCost 引く（mpChanged）→ randInt(1, 100) を 1 回 → dice（label dice.identify{item: 鑑定前の表示名}、内訳の行（identifyChance）
  * と最後に出目の行 identify.row.roll（base null）、基準 identify.rule{rate}、結果 dice.identify.ok / ng）。出目 ≤ rate で成功。
- * 成功: identified = true（ユニークなら図鑑。IT-66）→ message camp.identified{name, old, item, rarity} →（M18。装備なら）camp.identifiedPower{item, attack, ac, magic} → 呪われていれば camp.identifiedCursed{item}。
+ * 成功: identified = true（ユニークなら図鑑。IT-66）→ message camp.identified{name, old, item, rarity} →（M18。装備なら）camp.identifiedPower{item, attack, ac, magic} →（M19）camp.identifiedValue{rarity, gold} → 呪われていれば camp.identifiedCursed{item}。
  * 失敗: message camp.identifyFailed{name, item} → 迷宮内（dive が null でない）なら司教の SAN −failSanDungeon（tags 空）→
  * 品が呪われていれば chance(possessChance) を 1 回。当たれば canForceEquip なら forceEquip、そうでなければ
  * message camp.possessedSan{name, item} → 司教の SAN −possessSan（tags 空）。
@@ -492,6 +493,8 @@ export function identifyItem(ctx: RuleContext, memberId: string, instanceId: str
     // UI-59 / CH-77（M18）: 装備なら品そのものの数値の 1 文（消耗品・魔法書では出さない。乱数を引かない）
     const power = identifiedPowerParams(state, data, instanceId, item);
     if (power !== null) ctx.events.push({ kind: "message", key: "camp.identifiedPower", params: power });
+    // IT-61 / CH-77（M19）: 希少度と売値の 1 文（消耗品・魔法書でも出す）
+    ctx.events.push({ kind: "message", key: "camp.identifiedValue", params: identifiedValueParams(state, data, instanceId) });
     if (inst.cursed) ctx.events.push({ kind: "message", key: "camp.identifiedCursed", params: { item } });
     return;
   }

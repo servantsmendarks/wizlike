@@ -1298,6 +1298,8 @@ describe("IT-65/IT-66 店の鑑定（town.shop identify。M7）", () => {
       { kind: "message", key: "town.shop.identified", params: { name: "ベルク", old: "剣？", item: "希少な長剣 +3", cost: 25, rarity: "rare" } },
       // UI-59 / IT-65（M18）: 装備なら品そのものの数値の 1 文（長剣 1d8、Lv3 → +3。該当しない項目は「—」）
       { kind: "message", key: "town.shop.identifiedPower", params: { item: "希少な長剣 +3", attack: "1d8+3", ac: "—", magic: "—" } },
+      // IT-65 / IT-61（M19）: 希少度と売値の 1 文（floor(100 × 0.5 × (1 + 0.5 × 3)) = 125G）
+      { kind: "message", key: "town.shop.identifiedValue", params: { rarity: "希少", gold: 125 } },
     ]);
     expect(r.state.rng).toEqual(s.rng);
     expect(r.state.uniqueBook).toEqual({});
@@ -1306,6 +1308,7 @@ describe("IT-65/IT-66 店の鑑定（town.shop identify。M7）", () => {
     expect(rc.events).toEqual([
       { kind: "message", key: "town.shop.identified", params: { name: "ベルク", old: "剣？", item: "長剣", cost: 25, rarity: "normal" } },
       { kind: "message", key: "town.shop.identifiedPower", params: { item: "長剣", attack: "1d8", ac: "—", magic: "—" } }, // 品そのものの数値はオプションを含まない
+      { kind: "message", key: "town.shop.identifiedValue", params: { rarity: "通常", gold: 50 } }, // 負のオプションは売値に 0（IT-61）
       { kind: "message", key: "camp.identifiedCursed", params: { item: "長剣" } },
     ]);
   });
@@ -1322,7 +1325,27 @@ describe("IT-65/IT-66 店の鑑定（town.shop identify。M7）", () => {
     expect(power(ok(helm.s, identify("c2", helm.id)))[0]).toMatchObject({ params: { item: "伝説の早鐘の兜", attack: "—", ac: -2, magic: "—" } });
     const book = withUnidentified(town({}, 1000), "c2", { itemId: "tome_lightning", level: 0, rarity: "normal" });
     const rb = ok(book.s, identify("c2", book.id));
-    expect(rb.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["town.shop.identified"]);
+    expect(rb.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["town.shop.identified", "town.shop.identifiedValue"]);
+  });
+
+  test("IT-65/IT-61（M19）鑑定の結果の 2 文目 town.shop.identifiedValue{rarity, gold}: 希少度の語は book.rarity.*、売値は鑑定後の本当の売値（sellPrice。正のオプション込み）。消耗品・魔法書でも出す。乱数なし", () => {
+    const value = (r: { events: GameEvent[] }) => r.events.filter((e) => e.kind === "message" && e.key === "town.shop.identifiedValue");
+    // 正のオプション（tier 2 → +40G）: floor(100 × 0.5 × (1 + 0.5 × 1)) + 40 = 115G。見た目の売値（50G）ではない
+    const opt = withUnidentified(town({}, 300), "c2", { level: 1, rarity: "fine", options: [{ optionId: "str", tier: 2, value: 2 }] });
+    const ro = ok(opt.s, identify("c2", opt.id));
+    expect(value(ro)).toEqual([{ kind: "message", key: "town.shop.identifiedValue", params: { rarity: "上質", gold: 115 } }]);
+    expect(ro.state.rng).toEqual(opt.s.rng);
+    // 消耗品（薬草 floor(10 × 0.5) = 5G）と魔法書（雷光の魔法書 floor(1500 × 0.5) = 750G）は実体の希少度 normal の語
+    const herb = withUnidentified(town({}, 300), "c2", { itemId: "herb", level: 0, rarity: "normal" });
+    const rh = ok(herb.s, identify("c2", herb.id));
+    expect(rh.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["town.shop.identified", "town.shop.identifiedValue"]);
+    expect(value(rh)[0]).toEqual({ kind: "message", key: "town.shop.identifiedValue", params: { rarity: "通常", gold: 5 } });
+    const book = withUnidentified(town({}, 1000), "c2", { itemId: "tome_lightning", level: 0, rarity: "normal" });
+    expect(value(ok(book.s, identify("c2", book.id)))[0]).toMatchObject({ params: { rarity: "通常", gold: 750 } });
+    // ユニークは floor(uniques[].price × 0.5)（早鐘の兜）
+    const helm = withUnidentified(town({}, 300), "c2", { itemId: "leather_cap", uniqueId: "alarm_bell_helm", level: 0, rarity: "legendary" });
+    const helmPrice = data.uniques.find((u) => u.id === "alarm_bell_helm")!.price;
+    expect(value(ok(helm.s, identify("c2", helm.id)))[0]).toMatchObject({ params: { rarity: "伝説", gold: Math.floor(helmPrice * 0.5) } });
   });
 
   test("IT-65/IT-66 ユニークを店で鑑定しても図鑑に記録する。死亡している者の品も鑑定できる（life を問わない）", () => {

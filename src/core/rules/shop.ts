@@ -76,6 +76,18 @@ export function shopSellPrice(inst: ItemInstance, data: GameData): number {
   return inst.identified ? sellPrice(inst, data) : appearanceSellPrice(inst, data);
 }
 
+/**
+ * IT-65 / IT-61 / CH-77（M19）: 鑑定の結果の 2 文目（town.shop.identifiedValue / camp.identifiedValue「希少度 {rarity}　売値 {gold}G」）の params。
+ * rarity は希少度の語（strings の book.rarity.*。図鑑・品の詳細と同じ語。消耗品・魔法書は実体の希少度 normal の語）、gold は鑑定済みの売値（sellPrice）。
+ * 消耗品・魔法書でも返す。乱数を引かない。実体が無ければ Error
+ */
+export function identifiedValueParams(state: GameState, data: GameData, instanceId: string): { rarity: string; gold: number } {
+  const inst = state.items[instanceId];
+  if (inst === undefined) throw new Error(`identifiedValueParams: unknown ${instanceId}`);
+  const key = `book.rarity.${inst.rarity}`;
+  return { rarity: data.strings[key] ?? key, gold: sellPrice(inst, data) };
+}
+
 /** IT-65（2026-10-05 ユーザー指示）: 店の鑑定料 = max(identifyFeeMin, floor(見た目の品種の売値 × identifyFeeRatio))。中身は料金に出ない */
 export function identifyFeeOf(inst: ItemInstance, data: GameData): number {
   const e = data.config.economy;
@@ -240,7 +252,8 @@ export function buyBack(ctx: RuleContext, memberId: string, instanceId: string):
 /**
  * IT-65 店の鑑定。乱数は使わない（結果は CH-77 と同じ）。
  * 品ごとの鑑定料 identifyFeeOf を払う → 鑑定済みにし、ユニークなら図鑑に記録（IT-66）→ message town.shop.identified{name, old, item, cost, rarity}
- * →（M18。装備なら）message town.shop.identifiedPower{item, attack, ac, magic}（identifiedPowerParams）→ 呪われていれば message camp.identifiedCursed{item}
+ * →（M18。装備なら）message town.shop.identifiedPower{item, attack, ac, magic}（identifiedPowerParams）
+ * →（M19）message town.shop.identifiedValue{rarity, gold}（identifiedValueParams。消耗品でも）→ 呪われていれば message camp.identifiedCursed{item}
  */
 export function identifyAtShop(ctx: RuleContext, memberId: string, instanceId: string): void {
   const { state, data } = ctx;
@@ -257,6 +270,8 @@ export function identifyAtShop(ctx: RuleContext, memberId: string, instanceId: s
   // UI-59 / IT-65（M18）: 装備なら品そのものの数値の 1 文（消耗品・魔法書では出さない）
   const power = identifiedPowerParams(state, data, instanceId, item);
   if (power !== null) ctx.events.push({ kind: "message", key: "town.shop.identifiedPower", params: power });
+  // IT-65 / IT-61（M19）: 希少度と売値の 1 文（消耗品・魔法書でも出す）
+  ctx.events.push({ kind: "message", key: "town.shop.identifiedValue", params: identifiedValueParams(state, data, instanceId) });
   if (state.items[instanceId]!.cursed) ctx.events.push({ kind: "message", key: "camp.identifiedCursed", params: { item } });
 }
 
