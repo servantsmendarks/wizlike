@@ -152,8 +152,8 @@ describe("UI-52 街のページ", () => {
   test("UI-52/TW-04/TW-15（M16。M18 5-3）宿屋はランクの行（名前・料金「{cost}G（一行）」・効果。士気の立つ個室は効果に「＋士気」）。払えないランクは disabled。末尾が戻る", () => {
     expect(townEntries("inn", menuOf(town({}, 50)), S)).toEqual([
       { kind: "inn", rank: 0, label: "馬小屋　0G（一行）　MPのみ", disabled: false },
-      { kind: "inn", rank: 1, label: "相部屋　20G（一行）　HP・MP全回復", disabled: false },
-      { kind: "inn", rank: 2, label: "個室　60G（一行）　全回復＋士気", disabled: true },
+      { kind: "inn", rank: 1, label: "相部屋　20G（一行）　全回復・毒", disabled: false },
+      { kind: "inn", rank: 2, label: "個室　60G（一行）　全回復＋士気・毒", disabled: true },
       back,
     ]);
     // ちょうど払える額なら押せる
@@ -185,7 +185,7 @@ describe("UI-52 街のページ", () => {
     const m = menuOf(s);
     expect(townEntries("temple", m, S)).toEqual([
       { kind: "page", to: { temple: "resurrect" }, label: "蘇生　Lv×100G" },
-      { kind: "page", to: { temple: "cure" }, label: "治療　50G〜" },
+      { kind: "page", to: { temple: "cure" }, label: "治療（麻痺・石化・毒）　50G〜" },
       { kind: "page", to: { temple: "uncurse" }, label: "解呪　200G" },
       back,
     ]);
@@ -1462,7 +1462,7 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     expect(splitRuleLine(`WAR 戦士${SP}THI 盗賊`)).toBe(`WAR 戦士${SP}THI 盗賊`); // 空白を含む = 一覧の行
     expect(splitRuleLine(`四文字語${SP}説明`)).toBe(`四文字語${SP}説明`); // 4 字は用語にしない
     expect(splitRuleLine("区切りなし")).toBe("区切りなし");
-    // 実データ: 職業の略称の一覧（1・2）は文字列、続きの行（6・28・29・33。M18 で用語を足して番号が動いた）は用語なし、ほかは用語あり
+    // 実データ: 職業の略称の一覧（1・2）は文字列、続きの行（6・11・29・30・34。M18 で用語を足して番号が動き、M19 で毒の治し方の 11 を足した）は用語なし、ほかは用語あり
     expect(typeof body[0]).toBe("string");
     expect(typeof body[1]).toBe("string");
     for (const [i, l] of body.entries()) {
@@ -1471,7 +1471,7 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
       else if (raw.startsWith(SP)) expect(l.term, raw).toBe("");
       else expect(l.term.length, raw).toBeGreaterThan(0);
     }
-    expect(terms.filter((l) => l.term === "").map((l) => l.desc)).toEqual([6, 28, 29, 33].map((n) => S[`rules.line.${n}`]!.slice(1)));
+    expect(terms.filter((l) => l.term === "").map((l) => l.desc)).toEqual([6, 11, 29, 30, 34].map((n) => S[`rules.line.${n}`]!.slice(1)));
   });
 
   test("UI-77（M16 追補 H-3）用語の列は 32px（全角 4 字。最長の用語 3 字 + 区切り）。説明はどの行も列の右の同じ x から（続きの行も字下げ）", () => {
@@ -1543,7 +1543,7 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     expect(terms.indexOf("触媒")).toBe(terms.indexOf("+N") + 1);
   });
 
-  test("UI-77（M18 設計 4-3）用語の追加: 前衛・後衛・判定・識別（戦闘）→ 蘇生・解呪・レベル・潜行（街）→ 鑑定（品）→ 呪文・加護（呪文）の 11 語が用語の行として立つ。並びは 職業 → 能力と状態（士気まで）→ 戦闘 → 街 → 品 → 呪文。行は見出しを入れて 36、どの用語も 3 字以内", () => {
+  test("UI-77（M18 設計 4-3）用語の追加: 前衛・後衛・判定・識別（戦闘）→ 蘇生・解呪・レベル・潜行（街）→ 鑑定（品）→ 呪文・加護（呪文）の 11 語が用語の行として立つ。並びは 職業 → 能力と状態（士気まで）→ 戦闘 → 街 → 品 → 呪文。行は見出しを入れて 37（M19 で毒の続きの行を足した）、どの用語も 3 字以内", () => {
     const termsOf = body.flatMap((l) => (typeof l === "string" || l.term === "" ? [] : [l.term]));
     const added = ["前衛", "後衛", "判定", "識別", "蘇生", "解呪", "レベル", "潜行", "鑑定", "呪文", "加護"];
     for (const w of added) {
@@ -1554,7 +1554,7 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     const order = ["士気", "前衛", "後衛", "判定", "識別", "蘇生", "解呪", "レベル", "潜行", "未鑑定", "鑑定", "+N", "触媒", "呪文", "加護"];
     expect(order.map((w) => termsOf.indexOf(w))).toEqual(order.map((w) => termsOf.indexOf("士気") + order.indexOf(w)));
     expect(termsOf.at(-1)).toBe("加護");
-    expect(lines).toHaveLength(36);
+    expect(lines).toHaveLength(37);
     // 語は画面・データの名前と同じ（前衛・後衛は並び順の画面、解呪は寺院、識別・加護・蘇生は呪文の名前）
     expect([S["camp.order.front"], S["camp.order.back"], S["town.temple.uncurse"]]).toEqual(["前衛", "後衛", "解呪"]);
     const spell = (id: string): string | undefined => data.spells.find((x) => x.id === id)?.name;
@@ -1717,6 +1717,19 @@ describe("TW-04/UI-52（M18 5-3）宿屋の見出しの 2 行目と泊まった�
     expect(S["town.inn.restoredMp"]).toBe("生きている者の MP が戻った。");
     for (const k of ["town.inn.restored", "town.inn.restoredMp"]) expect(kinsokuLines(S[k]!, 28), k).toHaveLength(1);
   });
+
+  test("TW-04/CH-43/UI-52/UI-77（M19）毒と宿の文: town.inn.curedPoison は会話の箱の 1 行。毒を治すランク（curePoison）の効果の文だけに「毒」。用語の毒の続きの行に宿・寺院・解毒。寺院の治療の行は治す状態を並べる", () => {
+    expect(S["town.inn.curedPoison"]).toBe("毒も抜けた。");
+    expect(kinsokuLines(S["town.inn.curedPoison"]!, 28)).toHaveLength(1);
+    for (const r of data.config.town.innRanks) expect(S[`town.inn.effect.${r.id}`]!.includes("毒"), r.id).toBe(r.curePoison);
+    expect([S["town.inn.effect.cheap"], S["town.inn.effect.good"]]).toEqual(["全回復・毒", "全回復＋士気・毒"]);
+    // 用語: 毒の行の直後が用語なしの続きの行で、治し方を書く（宿は相部屋以上）
+    const body = formatRules(S).slice(1);
+    const at = body.findIndex((l) => typeof l !== "string" && l.term === S["party.status.poison"]);
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(body[at + 1]).toEqual({ term: "", desc: "宿（相部屋以上）・寺院・解毒で治る" });
+    expect(S["town.temple.cureRow"]).toBe("治療（麻痺・石化・毒）　{cost}G〜");
+  });
 });
 
 describe("TW-07/UI-52（M18 5-4）寺院の最初の段の料金の目安", () => {
@@ -1728,7 +1741,7 @@ describe("TW-07/UI-52（M18 5-4）寺院の最初の段の料金の目安", () =
     expect(m.temple.resurrect).toEqual([]);
     // 表示層は config を読まず menu の値を入れる（menu を差し替えれば行も変わる）
     const m2: TownMenu = { ...m, temple: { ...m.temple, pricing: { perLevel: 7, cureFrom: 8, uncurse: 9 } } };
-    expect(townEntries("temple", m2, S).map((x) => x.label)).toEqual(["蘇生　Lv×7G", "治療　8G〜", "解呪　9G", S["common.back"]]);
+    expect(townEntries("temple", m2, S).map((x) => x.label)).toEqual(["蘇生　Lv×7G", "治療（麻痺・石化・毒）　8G〜", "解呪　9G", S["common.back"]]);
   });
 
   test("TW-07 料金の目安の行は最悪の値（6 桁）でも一覧の 21 字（39 単位）に収まる。説明 town.menu.note.temple は「蘇生・治療・解呪」", () => {

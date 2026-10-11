@@ -169,10 +169,11 @@ export function checkInn(state: GameState, rank: unknown, data: GameData): strin
 /**
  * TW-04 / MG-02: 料金を 1 回払う → message town.inn.stay → alive の者を並び順に、HP に ceil(hpMax × hpRatio) を足して hpMax で止め
  * （hpRatio 0 なら増えない）、MP は全ランクで mpMax に戻す →（M18 5-3。alive の者がいれば）message town.inn.restored（hpRatio > 0）/
- * town.inn.restoredMp（hpRatio 0）→（TW-15。士気の立つランクなら）morale = { rankId } →
+ * town.inn.restoredMp（hpRatio 0）→（M19。curePoison のランクなら）alive の者を並び順に毒を外し（statusChanged off）、
+ * 1 人でも外れたら message town.inn.curedPoison →（TW-15。士気の立つランクなら）morale = { rankId } →
  * sanOver > 0 なら alive の者を並び順に overSan → message town.inn.morale → alive の者を並び順に levelUpWhilePossible（どのランクでも）。
  * 上がる者（canLevelUp）の処理の前には section を 1 回出す（UI-47 の区切り。M10.5 追補 2。上がらない者には出さない）。
- * 士気の立たないランクでは morale を変えない（消さない）。状態異常は治さない。満タンでも泊まれる。
+ * 士気の立たないランクでは morale を変えない（消さない）。毒のほかの状態異常（麻痺・石化）は治さない。満タンでも泊まれる。乱数は引かない（レベルアップを除く）。
  */
 export function stayInn(ctx: RuleContext, rank: number): void {
   const { state, data } = ctx;
@@ -194,6 +195,17 @@ export function stayInn(ctx: RuleContext, rank: number): void {
   // 生きている者がいなければ出さない。満タンでも出す（泊まれば戻った状態になる）
   if (state.party.some((ch) => ch.life === "alive")) {
     ctx.events.push({ kind: "message", key: r.hpRatio > 0 ? "town.inn.restored" : "town.inn.restoredMp" });
+  }
+  // TW-04（M19）: 一晩休めば毒は抜ける（相部屋以上）。麻痺・石化は寺院のまま。乱数は引かない
+  if (r.curePoison) {
+    let cured = false;
+    for (const ch of state.party) {
+      if (ch.life !== "alive" || !ch.status.includes("poison")) continue;
+      ch.status = ch.status.filter((s) => s !== "poison");
+      ctx.events.push({ kind: "statusChanged", id: ch.id, status: "poison", on: false });
+      cured = true;
+    }
+    if (cured) ctx.events.push({ kind: "message", key: "town.inn.curedPoison" });
   }
   if (raisesMorale(r)) {
     state.morale = { rankId: r.id };

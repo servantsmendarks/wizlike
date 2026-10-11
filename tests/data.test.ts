@@ -443,6 +443,15 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.town.innRanks[2].morale = true), "config.json", `${p}.morale: unknown field`);
     expect(issuesOf((r) => (r.config.town.innRanks[0].judgeBonus = 3))).toEqual([]);
   });
+  test("data: TW-04（M19）town.innRanks の curePoison は真偽値（馬小屋 false / 相部屋・個室 true【仮】）。必須", () => {
+    expect(config.town.innRanks.map((r) => [r.id, r.curePoison])).toEqual([
+      ["stable", false],
+      ["cheap", true],
+      ["good", true],
+    ]);
+    expectIssue((r) => (r.config.town.innRanks[1].curePoison = 1), "config.json", "town.innRanks[1].curePoison: expected boolean, got integer");
+    expectIssue((r) => delete r.config.town.innRanks[1].curePoison, "config.json", "town.innRanks[1].curePoison: missing required field");
+  });
   test("data: DG-05 dungeon.roomAttempts は 1 以上の整数", () => {
     expectIssue((r) => (r.config.dungeon.roomAttempts = 0), "config.json", "dungeon.roomAttempts: expected integer >= 1, got 0");
     expectIssue((r) => delete r.config.dungeon.roomAttempts, "config.json", "dungeon.roomAttempts: missing required field");

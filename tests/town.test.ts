@@ -267,6 +267,61 @@ describe("TW-04 宿屋（town.inn）", () => {
     expect(r.state.morale).toBeNull();
   });
 
+  test("TW-04/CH-43（M19）相部屋: 回復と town.inn.restored の後に alive の者を並び順に毒を外し（statusChanged off）→ town.inn.curedPoison。麻痺・石化は残る。乱数を引かない", () => {
+    // c1 毒 HP 1、c2 麻痺 + 毒、c3 麻痺だけ、c5 石化 + 毒、c6 dead
+    const s = town({ c1: { hp: 1, status: ["poison"] }, c2: { status: ["paralysis", "poison"] }, c3: { status: ["paralysis"] }, c5: { status: ["stone", "poison"] }, c6: DEAD });
+    const r = ok(s, { type: "town.inn", rank: 1 });
+    expect(r.events).toEqual([
+      { kind: "message", key: "town.inn.stay", params: { room: "相部屋", cost: 20 } },
+      { kind: "hpChanged", id: "c1", delta: 14, hp: 15 },
+      { kind: "message", key: "town.inn.restored" },
+      { kind: "statusChanged", id: "c1", status: "poison", on: false },
+      { kind: "statusChanged", id: "c2", status: "poison", on: false },
+      { kind: "statusChanged", id: "c5", status: "poison", on: false },
+      { kind: "message", key: "town.inn.curedPoison" },
+    ]);
+    expect(["c1", "c2", "c3", "c5"].map((id) => member(r.state, id).status)).toEqual([[], ["paralysis"], ["paralysis"], ["stone"]]);
+    expect(member(r.state, "c6")).toEqual(member(s, "c6"));
+    expect(r.state.rng).toEqual(s.rng);
+    expectStateInvariants(r.state);
+  });
+
+  test("TW-04/CH-43（M19）毒を治すのは curePoison のランク（相部屋・個室）だけ。馬小屋は毒が残り curedPoison も出ない。毒の者がいなければ curedPoison は出ない。個室では毒の解除が士気の前", () => {
+    expect(data.config.town.innRanks.map((r) => [r.id, r.curePoison])).toEqual([
+      ["stable", false],
+      ["cheap", true],
+      ["good", true],
+    ]);
+    const s = town({ c1: { status: ["poison"] } });
+    const a = ok(s, { type: "town.inn", rank: 0 });
+    expect(member(a.state, "c1").status).toEqual(["poison"]);
+    expect(a.events.some((e) => e.kind === "statusChanged" || (e.kind === "message" && e.key === "town.inn.curedPoison"))).toBe(false);
+    const b = ok(s, { type: "town.inn", rank: 2 });
+    const ks = b.events.map((e) => (e.kind === "message" ? e.key : e.kind));
+    expect(member(b.state, "c1").status).toEqual([]);
+    expect(ks.indexOf("town.inn.restored")).toBeLessThan(ks.indexOf("statusChanged"));
+    expect(ks.indexOf("statusChanged")).toBeLessThan(ks.indexOf("town.inn.curedPoison"));
+    expect(ks.indexOf("town.inn.curedPoison")).toBeLessThan(ks.indexOf("sanChanged"));
+    expect(ks.indexOf("town.inn.curedPoison")).toBeLessThan(ks.indexOf("town.inn.morale"));
+    // 毒の者がいない（麻痺だけ）なら外す出来事も一言も無い
+    const c = ok(town({ c3: { status: ["paralysis"] } }), { type: "town.inn", rank: 1 });
+    expect(c.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["town.inn.stay", "town.inn.restored"]);
+  });
+
+  test("TW-04（M19）毒の解除は乱数を引かない: レベルアップのある宿でも、毒の有無で乱数の消費と levelUp 以降の出来事は同じ", () => {
+    const d = loadRuleData();
+    const plain = town({ c2: { exp: 1500 } });
+    const poisoned = town({ c2: { exp: 1500 }, c1: { status: ["poison"] }, c4: { status: ["poison"] } });
+    for (const rank of [0, 1, 2]) {
+      const a = execute(plain, { type: "town.inn", rank }, d);
+      const b = execute(poisoned, { type: "town.inn", rank }, d);
+      expect(b.state.rng, `${rank}`).toEqual(a.state.rng);
+      const strip = (es: GameEvent[]): GameEvent[] => es.filter((e) => e.kind !== "statusChanged" && !(e.kind === "message" && e.key === "town.inn.curedPoison"));
+      expect(strip(b.events), `${rank}`).toEqual(a.events);
+      expect(b.events.filter((e) => e.kind === "statusChanged").length, `${rank}`).toBe(rank === 0 ? 0 : 2);
+    }
+  });
+
   test("TW-04 rank が範囲外・整数でない・数でない、所持金不足、街の外は rejected（同じ参照・乱数不変）", () => {
     const s = town({}, 59);
     expectRejected(s, { type: "town.inn", rank: -1 }, "bad rank");

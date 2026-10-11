@@ -439,6 +439,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
           goodWeight: I(NON_NEG),
           judgeBonus: I(NON_NEG),
           gossip: B,
+          curePoison: B, // TW-04（M19）【仮】
         }),
         1,
       ), // TW-04 / TW-15【仮】。MP は全ランクで全回復（MG-02）

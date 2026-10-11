@@ -59,6 +59,8 @@ export type InnRank = {
   goodWeight: number;
   judgeBonus: number;
   gossip: boolean;
+  /** TW-04（M19）: 泊まると生存者の毒を外す（馬小屋 false / 相部屋・個室 true【仮】） */
+  curePoison: boolean;
 };
 
 /** IT-30: 希少度の行。id は normal / fine / rare / legendary の順で 4 件（検証する） */

@@ -67,9 +67,9 @@
   "bank": { "amounts": [100, 1000] },
   "town": {
     "innRanks": [
-      { "id": "stable", "name": "馬小屋", "cost": 0, "hpRatio": 0, "sanOver": 0, "goodWeight": 0, "judgeBonus": 0, "gossip": false },
-      { "id": "cheap", "name": "相部屋", "cost": 20, "hpRatio": 1.0, "sanOver": 0, "goodWeight": 0, "judgeBonus": 0, "gossip": false },
-      { "id": "good", "name": "個室", "cost": 60, "hpRatio": 1.0, "sanOver": 10, "goodWeight": 1, "judgeBonus": 1, "gossip": true }
+      { "id": "stable", "name": "馬小屋", "cost": 0, "hpRatio": 0, "sanOver": 0, "goodWeight": 0, "judgeBonus": 0, "gossip": false, "curePoison": false },
+      { "id": "cheap", "name": "相部屋", "cost": 20, "hpRatio": 1.0, "sanOver": 0, "goodWeight": 0, "judgeBonus": 0, "gossip": false, "curePoison": true },
+      { "id": "good", "name": "個室", "cost": 60, "hpRatio": 1.0, "sanOver": 10, "goodWeight": 1, "judgeBonus": 1, "gossip": true, "curePoison": true }
     ],
     "tavernEventTurns": 200,
     "tavernEventChance": 30
