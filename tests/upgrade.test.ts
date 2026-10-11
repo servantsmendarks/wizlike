@@ -7,6 +7,7 @@ import { describe, expect, test } from "vitest";
 import { execute } from "../src/core/engine";
 import { createRng, randInt } from "../src/core/rng";
 import { townMenu } from "../src/core/rules/town";
+import { shopItemPreview } from "../src/core/rules/shop";
 import { checkUpgrade, upgradeFee, upgradeGreat, upgradePreview, upgradeRate } from "../src/core/rules/upgrade";
 import { cloneState, createItemInstance, destroyItemInstance } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState, ItemInstance, UpgradeCatalystRef } from "../src/core/types";
@@ -300,7 +301,7 @@ describe("TW-17 upgradePreview と townMenu.upgrade（表示層向けの問い�
     const s = town(1000, 4);
     const cats = [give(s, "c1", { itemId: "long_sword", level: 4 }), give(s, "c1", { itemId: "dagger", level: 3 }), give(s, "c1", { itemId: "dagger", level: 0 })];
     const p = upgradePreview(s, data, "c1", "weapon", refs(cats));
-    expect(p).toEqual({ rate: 65, great: 6, fee: 250, affordable: true, block: null });
+    expect(p).toMatchObject({ rate: 65, great: 6, fee: 250, affordable: true, block: null });
     withFirstRoll(s, 50);
     const r = ok(s, up(cats));
     const d = r.events[0];
@@ -311,10 +312,44 @@ describe("TW-17 upgradePreview と townMenu.upgrade（表示層向けの問い�
   test("TW-17 upgradePreview: 払えなければ affordable 偽・block not enough gold、触媒が不正なら block bad catalyst、対象が決まらなければ null", () => {
     const s = town(100, 2);
     const unid = give(s, "c1", { itemId: "dagger", identified: false });
-    expect(upgradePreview(s, data, "c1", "weapon", [])).toEqual({ rate: 10, great: 1, fee: 150, affordable: false, block: "not enough gold" });
-    expect(upgradePreview(s, data, "c1", "weapon", [ref(unid)])).toEqual({ rate: 10, great: 1, fee: 150, affordable: false, block: "bad catalyst" });
+    expect(upgradePreview(s, data, "c1", "weapon", [])).toMatchObject({ rate: 10, great: 1, fee: 150, affordable: false, block: "not enough gold" });
+    expect(upgradePreview(s, data, "c1", "weapon", [ref(unid)])).toMatchObject({ rate: 10, great: 1, fee: 150, affordable: false, block: "bad catalyst" });
     expect(upgradePreview(s, data, "c1", "helm", [])).toBeNull();
     expect(upgradePreview(s, data, "c9", "weapon", [])).toBeNull();
+  });
+
+  test("TW-17 M18（3-3）upgradePreview の before / after は対象の Lv と Lv+1 の性能の下見（shopItemPreview と同じ値。大成功の +2 は出さない）、kind は武器 attack・防具 ac・術者用武器 magic・装飾 null。触媒・所持金によらず、乱数を引かない", () => {
+    const s = town(0, 3);
+    const rng = JSON.stringify(s.rng);
+    // 武器（長剣 1d8。weaponLvPerDamage 1）: Lv3 → Lv4 で 1d8+3 → 1d8+4
+    const w = upgradePreview(s, data, "c1", "weapon", [])!;
+    expect(w.kind).toBe("attack");
+    expect(w.before).toEqual(shopItemPreview(data, "long_sword", 3));
+    expect(w.after).toEqual(shopItemPreview(data, "long_sword", 4));
+    expect([w.before.attack, w.after.attack, w.before.ac, w.before.magicPower]).toEqual(["1d8+3", "1d8+4", null, null]);
+    // 触媒と所持金は前後に効かない（block が bad catalyst でも値は出す）
+    const cat = give(s, "c1", { itemId: "dagger", identified: false });
+    expect(upgradePreview(s, data, "c1", "weapon", [ref(cat)])).toMatchObject({ block: "bad catalyst", kind: "attack", before: w.before, after: w.after });
+    // 防具（革鎧 AC -2。armorLvPerAc 2）: Lv0 → 1 は -2 → -2、Lv1 → 2 は -2 → -3
+    const armor = s.items[member(s, "c1").equipment.armor!]!;
+    expect(armor.itemId).toBe("leather_armor");
+    const a0 = upgradePreview(s, data, "c1", "armor", [])!;
+    expect([a0.kind, a0.before.ac, a0.after.ac, a0.before.attack]).toEqual(["ac", -2, -2, null]);
+    armor.level = 1;
+    const a1 = upgradePreview(s, data, "c1", "armor", [])!;
+    expect([a1.before.ac, a1.after.ac]).toEqual([-2, -3]);
+    // 術者用武器（樫の杖 magicPower 1。casterLvPerPower 1）: Lv2 → 3 で 3 → 4。攻撃は Lv で増えない
+    const staff = createItemInstance(s, { itemId: "oak_staff", level: 2, identified: true });
+    member(s, "c2").equipment.weapon = staff;
+    const m = upgradePreview(s, data, "c2", "weapon", [])!;
+    expect([m.kind, m.before.magicPower, m.after.magicPower, m.before.attack, m.after.attack]).toEqual(["magic", 3, 4, "1d6", "1d6"]);
+    // 装飾（IT-23。Lv は AC に効かない）は語る項目が無い
+    const charm = createItemInstance(s, { itemId: "charm", level: 1, identified: true });
+    member(s, "c1").equipment.accessory = charm;
+    const c = upgradePreview(s, data, "c1", "accessory", [])!;
+    expect(c.kind).toBeNull();
+    expect([c.before.ac, c.after.ac]).toEqual([0, 0]);
+    expect(JSON.stringify(s.rng)).toBe(rng);
   });
 
   test("TW-17 townMenu.upgrade: 全員の部位（EQUIP_SLOTS の順。空き・ユニークは block）と触媒の候補（鑑定済みの汎用装備だけ、inventory の順）", () => {
@@ -374,7 +409,7 @@ describe("TW-17 / IT-70 M16（G-2）触媒はパーティ全員の所持品か�
     const cat = give(s, "c2", { itemId: "long_sword", level: 2 });
     const before1 = [...member(s, "c1").inventory];
     const before2 = member(s, "c2").inventory.filter((id) => id !== cat);
-    expect(upgradePreview(s, data, "c1", "weapon", [ref(cat, "c2")])).toEqual({ rate: 40, great: 4, fee: 150, affordable: true, block: null });
+    expect(upgradePreview(s, data, "c1", "weapon", [ref(cat, "c2")])).toMatchObject({ rate: 40, great: 4, fee: 150, affordable: true, block: null });
     withFirstRoll(s, 5);
     const r = ok(s, up([ref(cat, "c2")]));
     expect(r.events[1]).toEqual({ kind: "message", key: "town.upgrade.ok", params: { name: "アルド", item: "長剣 +3" } });
@@ -438,8 +473,8 @@ describe("TW-17 / IT-70 M17 倉庫の品を触媒に", () => {
     const mine = give(s, "c3", { itemId: "long_sword", level: 2 });
     const inv = s.party.map((c) => [...c.inventory]);
     const nItems = Object.keys(s.items).length;
-    expect(upgradePreview(s, data, "c1", "weapon", [wh(cat)])).toEqual({ rate: 40, great: 4, fee: 150, affordable: true, block: null });
-    expect(upgradePreview(s, data, "c1", "weapon", [wh(cat), ref(mine, "c3")])).toEqual({ rate: 70, great: 7, fee: 150, affordable: true, block: null });
+    expect(upgradePreview(s, data, "c1", "weapon", [wh(cat)])).toMatchObject({ rate: 40, great: 4, fee: 150, affordable: true, block: null });
+    expect(upgradePreview(s, data, "c1", "weapon", [wh(cat), ref(mine, "c3")])).toMatchObject({ rate: 70, great: 7, fee: 150, affordable: true, block: null });
     withFirstRoll(s, 50); // q 7 < 50 ≤ p 70 で成功（Lv +1）
     const r = ok(s, up([wh(cat), ref(mine, "c3")]));
     const d = r.events[0];

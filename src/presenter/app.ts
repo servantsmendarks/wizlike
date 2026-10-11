@@ -148,6 +148,7 @@ import {
   townLowersInput,
   townMenuNotes,
   townPageIntro,
+  upgradePreviewText,
   shopPreviewText,
   townParent,
   townRepair,
@@ -667,7 +668,10 @@ export function createApp(o: {
     // UI-47: 会話の箱に 1 文ずつ語る（どの文も文字送り。M10.5: 箱に溜め、埋まったときだけタップで次のページ。演出スキップは文字送りだけ省く）
     // 履歴の末尾 2 件と同じ語りは重ねて出さない（段を戻ってまた進んだとき。UI-52 / TW-17）
     // M10.5 追補（未定-22）: 答えのボタンが続く問い（強化・転職の確認、救済の申し出）は箱で語らず、見出し（townHeadingText）に出す
-    const texts = townFreshIntro(townPageIntro(page, menu).map(t), play.message.history().slice(-TOWN_INTRO_DEDUP));
+    // TW-17（M18 3-3）: 強化の確認の段は、入るときに前後の 1 文（core の upgradePreview の値。見出しの問いは今のまま townHeadingText）
+    const upText = upgradePreviewText(previewOf(page), strings);
+    const intro = [...townPageIntro(page, menu).map(t), ...(upText === null ? [] : [upText])];
+    const texts = townFreshIntro(intro, play.message.history().slice(-TOWN_INTRO_DEDUP));
     const skip = store.get().skipAnimations;
     texts.forEach((x) => void narrator.say(x, skip));
   };

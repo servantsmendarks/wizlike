@@ -15,7 +15,7 @@ import {
   slotsUsed,
   uniqueOf,
 } from "../state";
-import type { Character, GameState, ItemInstance, RuleContext, ShopAction, ShopItemPreview, TownMenu } from "../types";
+import type { Character, GameState, ItemInstance, ItemPreview, RuleContext, ShopAction, TownMenu } from "../types";
 import { identifiedPowerParams, itemPowerPreview } from "./equip-stats";
 import { floorRatio } from "./ratio";
 
@@ -283,7 +283,7 @@ function classCanEquip(base: EquipmentBase, classId: string): boolean {
  * TW-05（M16）: 店の汎用装備の性能の下見。鑑定済み・通常・オプションなし・呪いなしの Lv level の実体を合成して itemPower（IT-20〜23）を呼ぶ。
  * 武器の attack は Lv の分（damageBonus）をダイスの定数に合算した正規形（品の詳細の damageDice と同じ）。純粋。ベースでなければ null
  */
-export function shopItemPreview(data: GameData, itemId: string, level: number): ShopItemPreview | null {
+export function shopItemPreview(data: GameData, itemId: string, level: number): ItemPreview | null {
   const base = findBase(data, itemId);
   if (base === null) return null;
   const inst: ItemInstance = { id: "", itemId, level, rarity: "normal", options: [], uniqueId: null, identified: true, cursed: false, foundIn: null };

@@ -828,12 +828,13 @@ describe("入力と Command", () => {
   });
 
   // 2026-10-07（M10.5 追補・未定-22）: 語りは townPageIntro だけ（強化・転職の確認の文は見出しに移した）に改めた
-  test("UI-52/TW-17（M7・M8.5）ページに入ったときの語りは、全文の履歴の末尾 TOWN_INTRO_DEDUP 件に同じ文があれば重ねて出さない（townFreshIntro。ソースの検査）", () => {
+  test("UI-52/TW-17（M7・M8.5・M18）ページに入ったときの語り（強化の確認の段は前後の 1 文も）は、全文の履歴の末尾 TOWN_INTRO_DEDUP 件に同じ文があれば重ねて出さない（townFreshIntro。ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const goTownPage = \(page: TownPage\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
-    expect(body).toMatch(
-      /const texts = townFreshIntro\(townPageIntro\(page, menu\)\.map\(t\), play\.message\.history\(\)\.slice\(-TOWN_INTRO_DEDUP\)\);/,
-    );
+    // M18（3-3）: 強化の確認の段は、入るときに前後の 1 文（upgradePreviewText。core の upgradePreview の値）を語りの後ろに足す
+    expect(body).toContain("const upText = upgradePreviewText(previewOf(page), strings);");
+    expect(body).toContain("const intro = [...townPageIntro(page, menu).map(t), ...(upText === null ? [] : [upText])];");
+    expect(body).toMatch(/const texts = townFreshIntro\(intro, play\.message\.history\(\)\.slice\(-TOWN_INTRO_DEDUP\)\);/);
   });
 
   // M10（UI-59）: キャラクター画面の間は迷宮でも会話の箱（characterOpen）

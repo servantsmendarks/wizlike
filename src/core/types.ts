@@ -710,12 +710,13 @@ export type TownMenuInnRank = { rank: number; id: string; name: string; cost: nu
 export type TownMenuTempleRow = { memberId: string; name: string; cost: number; affordable: boolean };
 export type TownMenuShopItem = { itemId: string; name: string; price: number; affordable: boolean };
 /**
- * TW-05（M16）: 店の汎用装備の性能の下見（rules/shop.ts shopItemPreview。鑑定済み・通常・オプションなしの Lv の実体を合成して itemPower を呼んだ値）。
+ * TW-05（M16）: 汎用装備の性能の下見（rules/shop.ts shopItemPreview。鑑定済み・通常・オプションなしの Lv の実体を合成して itemPower を呼んだ値）。
+ * M18（3-3）: 店の下見と強化の確認の前後（UpgradePreview の before / after）が共用する（ShopItemPreview から改名）。
  * attack は武器のダメージのダイス（Lv の分を定数に合算した正規形。品の詳細の damageDice と同じ）で武器でなければ null、
  * ac は防具類（盾・兜・小手・装飾を含む）の AC で武器なら null、magicPower は術者用の武器の魔法攻撃力でそれ以外は null。
  * anyone はベースの classes が空（誰でも装備できる）、classes は装備できる職業の abbr（classes.json の順。anyone なら全職業）
  */
-export type ShopItemPreview = { attack: string | null; ac: number | null; magicPower: number | null; anyone: boolean; classes: string[] };
+export type ItemPreview = { attack: string | null; ac: number | null; magicPower: number | null; anyone: boolean; classes: string[] };
 /**
  * IT-62: 流通レベルの汎用装備の売り物。name は表示名（「長剣 +2」）、level は progress.shopLevel、price は IT-60 の買値。
  * TW-05（M16）: preview は性能の下見、canEquip は持たせる候補（shop.members）のうち職業でこの品を装備できる者の id（並び順）
@@ -726,7 +727,7 @@ export type TownMenuShopEquipment = {
   level: number;
   price: number;
   affordable: boolean;
-  preview: ShopItemPreview;
+  preview: ItemPreview;
   canEquip: string[];
 };
 export type TownMenuShopMember = { memberId: string; name: string; slotsFree: number };
@@ -769,9 +770,22 @@ export type TownMenuUpgradeMember = {
 };
 /**
  * TW-17: rules/upgrade.ts upgradePreview の値。rate は成功率 p（整数。判定はこの値と出目を比べる）、great は大成功の率 q、fee は料金、
- * affordable = gold >= fee、block は checkUpgrade の理由（受け付けるなら null）
+ * affordable = gold >= fee、block は checkUpgrade の理由（受け付けるなら null）。
+ * M18（3-3）: before / after は対象の今の Lv と Lv+1（成功のとき。大成功の +2 は出さない）の性能の下見（shopItemPreview と同じ値）。
+ * kind は確認の段で語る前後の項目（UpgradePreviewKind）。Lv で数値が変わらない装飾（IT-23）は null（語らない）
  */
-export type UpgradePreview = { rate: number; great: number; fee: number; affordable: boolean; block: string | null };
+export type UpgradePreview = {
+  rate: number;
+  great: number;
+  fee: number;
+  affordable: boolean;
+  block: string | null;
+  kind: UpgradePreviewKind | null;
+  before: ItemPreview;
+  after: ItemPreview;
+};
+/** M18（3-3）: 強化の前後で比べる項目。attack は武器（術者用でない）の攻撃、ac は防具・盾・兜・小手の AC、magic は術者用武器の魔法攻撃力 */
+export type UpgradePreviewKind = "attack" | "ac" | "magic";
 /**
  * TW-10（M17）: 銀行の額の行。kind は all（全額）/ half（半分。floor）/ fixed（config.bank.amounts の額）、amount は表示の額（正）、
  * delta は town.bank に送る額（預入は +amount、引出は −amount）、ok = checkBank(state, delta) === null（額 0・元より多い額は false）

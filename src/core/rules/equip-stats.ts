@@ -5,7 +5,7 @@ import type { EquipmentBase, GameData, SkillType, Spell, StatBlock, StatusId, We
 import { EQUIP_SLOTS, STAT_KEYS, STATUS_IDS } from "../data/index";
 import { formatDice, parseDice } from "../rng";
 import { findBase, moraleOf, optionOf, uniqueOf } from "../state";
-import type { Character, GameState, ItemInstance, RuleContext, ShopItemPreview } from "../types";
+import type { Character, GameState, ItemInstance, ItemPreview, RuleContext } from "../types";
 
 /** IT-40: 装備中のユニークの固有スキル 1 つ */
 export type EquipSkill = { type: SkillType; value: number; instanceId: string };
@@ -89,7 +89,7 @@ export function itemPower(data: GameData, inst: ItemInstance, base: EquipmentBas
  * 武器でなければ null、ac は武器以外の AC で武器なら null、magicPower は術者用の武器の魔法攻撃力でそれ以外は null。
  * 店の下見（shop.ts shopItemPreview）と鑑定の結果の 1 文（identifiedPowerParams）が同じ値を使う
  */
-export function itemPowerPreview(data: GameData, inst: ItemInstance, base: EquipmentBase): Pick<ShopItemPreview, "attack" | "ac" | "magicPower"> {
+export function itemPowerPreview(data: GameData, inst: ItemInstance, base: EquipmentBase): Pick<ItemPreview, "attack" | "ac" | "magicPower"> {
   const p = itemPower(data, inst, base);
   if (p.kind === "weapon") {
     const spec = parseDice(p.dice);

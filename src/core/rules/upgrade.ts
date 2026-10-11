@@ -8,7 +8,8 @@ import type { Config, EquipSlot, GameData } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
 import { randInt } from "../rng";
 import { destroyItemInstance, equipmentPlainName, findBase, itemDisplayName, memberById } from "../state";
-import type { Character, GameState, ItemInstance, RuleContext, TownMenu, TownMenuUpgradeCatalyst, UpgradeCatalystRef, UpgradePreview } from "../types";
+import type { Character, GameState, ItemInstance, RuleContext, TownMenu, TownMenuUpgradeCatalyst, UpgradeCatalystRef, UpgradePreview, UpgradePreviewKind } from "../types";
+import { shopItemPreview } from "./shop";
 
 type EconomyConfig = Config["economy"];
 
@@ -141,7 +142,8 @@ export function doUpgrade(ctx: RuleContext, memberId: string, slot: EquipSlot, c
 /**
  * TW-17 / UI-35: 表示層向けの問い合わせ（純粋）。対象（本人・部位・その実体）が決まらない（checkUpgrade が wrong screen / bad action /
  * no such member / bad slot / slot empty / unique のどれか）なら null。それ以外は、触媒のうち触媒にできる実体の Lv で成功率を出し、
- * block に checkUpgrade の理由（bad catalyst / not enough gold / null）を入れる。block が null のときだけ town.upgrade が受け付けられる
+ * block に checkUpgrade の理由（bad catalyst / not enough gold / null）を入れる。block が null のときだけ town.upgrade が受け付けられる。
+ * M18（3-3）: before / after（Lv と Lv+1 の ItemPreview）と kind（語る項目）を添える。乱数を引かない
  */
 export function upgradePreview(
   state: GameState,
@@ -161,7 +163,17 @@ export function upgradePreview(
   });
   const rate = upgradeRate(target.level, lvs, e);
   const fee = upgradeFee(target.level, e);
-  return { rate, great: upgradeGreat(rate), fee, affordable: state.gold >= fee, block };
+  // M18（3-3）: 前後の性能の下見。対象は汎用装備（ユニークは上で null）なので、同じベース・同じ Lv の合成の実体と itemPower が同じ（希少度・オプション・呪いは itemPower に効かない）
+  const before = shopItemPreview(data, target.itemId, target.level)!;
+  const after = shopItemPreview(data, target.itemId, target.level + 1)!;
+  return { rate, great: upgradeGreat(rate), fee, affordable: state.gold >= fee, block, kind: upgradePreviewKind(data, target), before, after };
+}
+
+/** M18（3-3）: 確認の段で語る前後の項目。術者用武器は magic（IT-22）、ほかの武器は attack（IT-20）、装飾は Lv で数値が変わらないので null（IT-23）、ほかは ac（IT-21） */
+function upgradePreviewKind(data: GameData, target: ItemInstance): UpgradePreviewKind | null {
+  const base = findBase(data, target.itemId)!;
+  if (base.slot === "weapon") return base.caster ? "magic" : "attack";
+  return base.slot === "accessory" ? null : "ac";
 }
 
 /** M16（4-5）: 鑑定済みの装備の実体の、Lv を除いた名前（equipmentPlainName）。装備品のベースでないか未鑑定なら表示名 */

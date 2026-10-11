@@ -32,6 +32,7 @@ import {
   shopPreviewText,
   upgradeCatalystLabel,
   upgradeItemName,
+  upgradePreviewText,
   type ClassChangeView,
   type TownEntry,
   type TownPage,
@@ -383,13 +384,13 @@ describe("UI-52 街のページ", () => {
     const m = menuOf(s);
     const sel = { memberId: "c1", slot: "weapon" as const, picked: [{ memberId: "c1", instanceId: cat }] };
     const p = upgradePreview(s, data, "c1", "weapon", sel.picked);
-    expect(p).toEqual({ rate: 29, great: 2, fee: 100, affordable: true, block: null });
+    expect(p).toMatchObject({ rate: 29, great: 2, fee: 100, affordable: true, block: null });
     expect(townEntries({ upConfirm: sel }, m, S, p)).toEqual([
       { kind: "upgrade", memberId: "c1", slot: "weapon", catalysts: [{ memberId: "c1", instanceId: cat }], label: "長剣 +1を鍛える（触媒 1）", disabled: false },
       back,
     ]);
     expect(townHeadingText({ upConfirm: sel }, m, S, p)).toBe("成功率 29%（大成功 2%）料金 100G。鍛えるか？");
-    // 問いは見出しに出すので、会話の箱（広い箱は答えのボタンを覆う）で語らない
+    // 問いは見出しに出すので、会話の箱（広い箱は答えのボタンを覆う）で語らない（M18 3-3 の前後の 1 文は問いではない語り。upgradePreviewText）
     expect(townPageIntro({ upConfirm: sel }, m)).toEqual([]);
     expect(townParent({ upConfirm: sel })).toEqual({ upCat: sel });
     // 払えない: 鍛えるは disabled、見出しの問いを「所持金が足りない。」に替える
@@ -839,6 +840,40 @@ describe("UI-52 街のページ", () => {
         expect(kinsokuLines(text, 28).length, text).toBeLessThanOrEqual(2);
       }
     }
+  });
+
+  test("TW-17 M18（3-3）確認の段の前後の 1 文 upgradePreviewText「成功で {kind} {before} → {after}」は core の upgradePreview の kind と before / after を埋めるだけ（装飾・preview なしは null）。どのベースの Lv20 でも 28 字 × 2 行以内", () => {
+    expect(S["town.upgrade.preview"]).toBe("成功で {kind} {before} → {after}");
+    expect([S["town.upgrade.kind.attack"], S["town.upgrade.kind.ac"], S["town.upgrade.kind.magic"]]).toEqual(["攻撃", "AC", "魔法攻撃力"]);
+    const s = town({}, 0);
+    const c1 = s.party[0]!;
+    s.items[c1.equipment.weapon!]!.level = 1;
+    expect(upgradePreviewText(upgradePreview(s, data, "c1", "weapon", []), S)).toBe("成功で 攻撃 1d8+1 → 1d8+2");
+    s.items[c1.equipment.armor!]!.level = 1;
+    expect(upgradePreviewText(upgradePreview(s, data, "c1", "armor", []), S)).toBe("成功で AC -2 → -3");
+    const staff = createItemInstance(s, { itemId: "oak_staff", level: 2, identified: true });
+    c1.equipment.weapon = staff;
+    expect(upgradePreviewText(upgradePreview(s, data, "c1", "weapon", []), S)).toBe("成功で 魔法攻撃力 3 → 4");
+    const charm = createItemInstance(s, { itemId: "charm", level: 0, identified: true });
+    c1.equipment.accessory = charm;
+    expect(upgradePreviewText(upgradePreview(s, data, "c1", "accessory", []), S)).toBeNull();
+    expect(upgradePreviewText(null, S)).toBeNull();
+    // 最悪の値: どのベースも Lv20（装飾は語らない）
+    let n = 0;
+    for (const b of data.equipmentBases) {
+      const id = createItemInstance(s, { itemId: b.id, level: 20, rarity: "legendary", identified: true });
+      c1.equipment[b.slot] = id;
+      const text = upgradePreviewText(upgradePreview(s, data, "c1", b.slot, []), S);
+      if (b.slot === "accessory") {
+        expect(text, b.id).toBeNull();
+        continue;
+      }
+      n++;
+      expect(text, b.id).not.toBeNull();
+      expect(text!, text!).not.toMatch(/\{/);
+      expect(kinsokuLines(text!, 28).length, text!).toBeLessThanOrEqual(2);
+    }
+    expect(n).toBeGreaterThan(0);
   });
 
   test("TW-05/UI-52 装備できない理由の 1 文 shopCannotEquipText は core の preview.classes をつなぐだけ（誰でも・消耗品は null）。名前 6 字・どの品・職業 6 つでも 28 字 × 2 行以内（M16 追補 H-4）", () => {
