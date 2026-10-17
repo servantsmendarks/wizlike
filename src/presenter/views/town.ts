@@ -92,7 +92,8 @@ export type TownEntry =
   | { kind: "mercy"; memberId: string; label: string }
   /**
    * notReady: 準備中（DG-35。core の notReady）なら押したときに会話の箱へ出す理由の文、そうでなければ null（UI-52 / TW-11。M9）。
-   * M19（D-1）: 行は town.gate.row「{name}（{floors}F）」。押すと入場せず確認の段 { gateAsk } へ移り、description（core の townMenu.dungeons の文）を会話の箱で語る
+   * M19（D-1）: 行は town.gate.row。押すと入場せず確認の段 { gateAsk } へ移り、description（core の townMenu.dungeons の文）を会話の箱で語る。
+   * M21（DG-47）: 行は「{name}（全 {floors} 階）」で、core の reached があれば town.gate.reached「　到達 {n}F」を添える
    */
   | { kind: "enter"; dungeonId: string; label: string; disabled: boolean; notReady: string | null; description: string }
   /** TW-11（M19 D-1）: 迷宮の入口の確認の「潜る」。押すと dungeon.enter（入口の行と同じ条件で disabled） */
@@ -416,12 +417,15 @@ export function townEntries(
   }
   if (page === "gate") {
     // DG-35（M9）: 準備中の行は「名前（準備中）」。dim は canEnter だけで決まる（判定は core）
-    // M19（D-1）: 行は「{name}（{floors}F）」（town.gate.row）。押すと確認の段 { gateAsk } と description の語り
+    // M19（D-1）: 行は town.gate.row。押すと確認の段 { gateAsk } と description の語り
+    // M21（DG-47）: 「{name}（全 {floors} 階）」に、到達の記録（core の reached）があれば「　到達 {n}F」を添える
     const rows = menu.dungeons.map(
       (d): TownEntry => ({
         kind: "enter",
         dungeonId: d.id,
-        label: d.notReady ? s(strings, "town.gate.notReady", { name: d.name }) : s(strings, "town.gate.row", { name: d.name, floors: d.floors }),
+        label: d.notReady
+          ? s(strings, "town.gate.notReady", { name: d.name })
+          : s(strings, "town.gate.row", { name: d.name, floors: d.floors }) + (d.reached === null ? "" : s(strings, "town.gate.reached", { n: d.reached })),
         disabled: !d.canEnter,
         notReady: d.notReady ? s(strings, "town.gate.notReadyReason", { name: d.name }) : null,
         description: d.description,

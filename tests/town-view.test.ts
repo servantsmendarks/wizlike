@@ -757,12 +757,28 @@ describe("UI-52 街のページ", () => {
     for (const x of e) expect("disabled" in x, x.label).toBe(false);
   });
 
-  test("UI-52/TW-11 迷宮の入口は開放済みの迷宮の行「{name}（{floors}F）」（M19 D-1）。行動可能な者がいなければ disabled", () => {
+  test("UI-52/TW-11/DG-47 迷宮の入口は開放済みの迷宮の行「{name}（全 {floors} 階）」（M19 D-1。M21 で表記を変えた）。行動可能な者がいなければ disabled", () => {
     const d = data.dungeons.find((x) => x.id === "d01")!;
-    const row = { kind: "enter", dungeonId: "d01", label: "試しの坑道（2F）", notReady: null, description: d.description } as const;
+    const row = { kind: "enter", dungeonId: "d01", label: "試しの坑道（全 2 階）", notReady: null, description: d.description } as const;
     expect(townEntries("gate", menuOf(town()), S)).toEqual([{ ...row, disabled: false }, back]);
     const allDead = town(Object.fromEntries(["c1", "c2", "c3", "c4", "c5", "c6"].map((id) => [id, { life: "dead" as const, hp: 0 }])));
     expect(townEntries("gate", menuOf(allDead), S)).toEqual([{ ...row, disabled: true }, back]);
+  });
+
+  test("UI-52/DG-47（M21）到達の記録（core の reached）があれば入口の行に「　到達 {n}F」を添える。記録の無い迷宮には添えない。最悪の値（全迷宮・99 階・到達 99F）でも一覧の行（39 単位・21 字）に収まる", () => {
+    const s = town();
+    s.progress.unlockedDungeons.push("d02");
+    s.progress.deepestFloors = { d01: 2 };
+    const labels = townEntries("gate", menuOf(s), S).map((e) => e.label);
+    expect(labels.slice(0, 2)).toEqual(["試しの坑道（全 2 階）　到達 2F", "沈んだ聖堂（全 3 階）"]);
+    expect(Array.from(labels[0]!).length).toBeLessThanOrEqual(21);
+    for (const d of data.dungeons) {
+      const row = formatMessage(S["town.gate.row"]!, { name: d.name, floors: 99 }) + formatMessage(S["town.gate.reached"]!, { n: 99 });
+      expect(row).not.toContain("{");
+      expect(textUnits(row), row).toBeLessThanOrEqual(39);
+      expect(Array.from(row).length, row).toBeLessThanOrEqual(21);
+      expect(kinsokuLines(row, 21), row).toHaveLength(1);
+    }
   });
 
   test("TW-11/UI-52（M19 D-1）迷宮の入口の確認 { gateAsk }: 見出しは「{name}へ潜るか？」、答えは 潜る（入口の行と同じ canEnter で dim）/ やめる（迷宮の一覧へ）。語りは入口の行が持つ description", () => {
@@ -808,10 +824,10 @@ describe("UI-52 街のページ", () => {
     const P = PLACEHOLDER_DUNGEON_NAME;
     const desc = (id: string): string => m.dungeons.find((x) => x.id === id)!.description;
     expect(townEntries("gate", m, S)).toEqual([
-      { kind: "enter", dungeonId: "d01", label: "試しの坑道（2F）", disabled: false, notReady: null, description: desc("d01") },
-      { kind: "enter", dungeonId: "d02", label: "沈んだ聖堂（3F）", disabled: false, notReady: null, description: desc("d02") },
+      { kind: "enter", dungeonId: "d01", label: "試しの坑道（全 2 階）", disabled: false, notReady: null, description: desc("d01") },
+      { kind: "enter", dungeonId: "d02", label: "沈んだ聖堂（全 3 階）", disabled: false, notReady: null, description: desc("d02") },
       // M12: 実データの d03 は本物になったので普通の行
-      { kind: "enter", dungeonId: "d03", label: "灰の地下墓所（4F）", disabled: false, notReady: null, description: desc("d03") },
+      { kind: "enter", dungeonId: "d03", label: "灰の地下墓所（全 4 階）", disabled: false, notReady: null, description: desc("d03") },
       // UI-52 / TW-11（M9 実機 B2）: 押したときに会話の箱へ出す理由の 1 文（準備中かは core の notReady）。準備中の行は階数を添えない（M19 D-1）
       { kind: "enter", dungeonId: "d04", label: `${P}（準備中）`, disabled: true, notReady: `${P}はまだ道が開いていない。`, description: desc("d04") },
       back,
