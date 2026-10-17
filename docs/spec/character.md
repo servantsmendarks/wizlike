@@ -86,6 +86,7 @@ M7 で、装備品の分類（汎用 / ユニーク）・実体の形・レベ�
   - `party.unequip` の判定順: wrong screen → no such member → cannot act → bad slot → slot empty → cursed（`items[].cursed` の品は鑑定と関係なく外せない）。受け付けたら枠を空にして inventory の末尾に入れる → `camp.unequipped{name, item}`。
     - M10（2026-10-07 ユーザー判断 U6）: `party.unequip` は本人の life と行動の可否を問わない（cannot act を外した。判定順は wrong screen → no such member → bad slot → slot empty → cursed）。死亡・灰の者の装備も、呪われていなければ外して回収できる（外した品は本人の inventory に入るので、CH-78 で他の者に渡す）。`party.equip` は今どおり本人が行動可能であること。
   - どちらも乱数は使わない。
+  - M21: 街では倉庫の品を装備する `from: "warehouse"` と、旧品・外した品を倉庫へ入れる `to: "warehouse"` を受け付ける（TW-16c）。
 - CH-77 鑑定（M4.5。M10 で MP・確率・取り憑きに書き換え。2026-10-07 ユーザー指示）: `party.identify {memberId, instanceId}`。鑑定する者は `classes[].abilities` に `identify` を持つ職業（司教）。対象はパーティの誰かの inventory にある未鑑定品（装備中は対象外）。受け付けは街と、迷宮の戦闘外かつ保留なし。判定順: wrong screen → no such member → cannot identify → cannot act → no mp（MP が `config.identify.mpCost` 未満）→ no such item → already identified。回数の制限は MP だけ（同じ品を何度でも試せる）。
   - 処理: MP を `mpCost`（1【仮】）減らす（`mpChanged`）→ d100（`randInt(1, 100)`）を 1 回 → 判定の箱（UI-40）に `dice` を出す → 出目 ≤ 成功率なら成功。
   - 成功率（`identifyChance`。UI-35 の問い合わせ）= `base`（60【仮】）+ (知恵 − `iqPivot`（10【仮】）) × `iqPerPoint`（3【仮】）+ `perLevelStep`（10【仮】）× floor(レベル / `levelStep`（10【仮】）) − `rarityPenalty`[希少度]（通常 0 / 上質 10 / 希少 20 / 伝説 30【仮】）−（ユニークなら `uniquePenalty`（15【仮】））を `min`（5【仮】）〜`max`（95【仮】）に収めた値。知恵は実効の値（CH-13）。鍵はすべて `config.identify`。

@@ -207,22 +207,31 @@ function magicLine(from: number, to: number): EquipPreviewLine<number> {
  * UI-67（M10）/ UI-35: 枠 slot に instanceId を装備したとき（null なら枠の品を外したとき）の memberSheet の前後。
  * 求め方は、state の複製（cloneState）に party.equip / party.unequip の処理（equipItem / unequipItem）をそのまま当てて前後の memberSheet を比べる
  * （upgradePreview と同じく、表示の値と処理の結果がずれない）。元の state と乱数は変えない（どちらの処理も乱数を使わない）。
- * checkEquip / checkUnequip が拒む（装備できない・外せない・キャンプの外）か、品の部位が slot でなければ null
+ * checkEquip / checkUnequip が拒む（装備できない・外せない・キャンプの外）か、品の部位が slot でなければ null。
+ * TW-16c（M21）: from "warehouse" は倉庫の品を装備するとき（party.equip の from / to "warehouse" と同じ処理を当てる。外すときは見ない）
  */
-export function equipPreview(state: GameState, data: GameData, memberId: string, slot: EquipSlot, instanceId: string | null): EquipPreview | null {
+export function equipPreview(
+  state: GameState,
+  data: GameData,
+  memberId: string,
+  slot: EquipSlot,
+  instanceId: string | null,
+  from?: "warehouse",
+): EquipPreview | null {
   const ch = memberById(state, memberId);
   if (ch === null) return null;
+  const wh = instanceId === null ? undefined : from;
   if (instanceId === null) {
     if (checkUnequip(state, data, memberId, slot) !== null) return null;
   } else {
-    if (checkEquip(state, data, memberId, instanceId) !== null) return null;
+    if (checkEquip(state, data, memberId, instanceId, wh, wh) !== null) return null;
     const inst = state.items[instanceId]!;
     if (findBase(data, inst.itemId)?.slot !== slot) return null;
   }
   const copy = cloneState(state);
   const ctx: RuleContext = { state: copy, data, events: [] };
   if (instanceId === null) unequipItem(ctx, memberId, slot);
-  else equipItem(ctx, memberId, instanceId);
+  else equipItem(ctx, memberId, instanceId, wh, wh);
   const before = memberSheet(state, data, ch);
   const after = memberSheet(copy, data, memberById(copy, memberId)!);
   const inst = instanceId === null ? undefined : state.items[instanceId];

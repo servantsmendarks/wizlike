@@ -14,6 +14,7 @@ const EQUIP_BLOCK: Record<string, EquipBlock> = {
   "not identified": "unidentified",
   "class cannot equip": "class",
   "slot cursed": "cursedSlot",
+  "inventory full": "full", // TW-16c（M21）: 倉庫の品で旧品が無く、使用枠に空きが無い
 };
 
 /** checkUseItem の理由 → ItemActionBlock。full hp は対象の段の理由なので null（品の行では見ない。fieldItemMenu と同じ） */
@@ -41,6 +42,8 @@ function mapped(r: string | null, table: Record<string, ItemActionBlock>, what: 
  * - 渡す: 自分以外に checkGive が通る者がいなければ noReceiver。捨てる: 常に送れる（checkDrop は持ち主の所持品なら通る）。
  * - 鑑定: 品が未鑑定で、パーティに鑑定できる職業の者がいるときだけ。鑑定する者は 持ち主 → 並び順 の順で、checkIdentify が通る最初の者
  *   （誰も通らなければ同じ順の最初の者で、理由は cannotAct / noMp）。identifier にその者と identifyChance の rate
+ * - TW-16c（M21）: 街（campPlace town）で、品が倉庫（GameState.warehouse）にある装備品なら、装備する だけ（checkEquip の from / to "warehouse" の理由）で
+ *   from "warehouse"。倉庫の消耗品・魔法書は null（倉庫からは使えない）
  */
 export function itemActions(state: GameState, data: GameData, memberId: string, instanceId: string): ItemActions | null {
   if (campPlace(state) === null) return null;
@@ -48,8 +51,22 @@ export function itemActions(state: GameState, data: GameData, memberId: string, 
   const inst = state.items[instanceId];
   if (ch === null || inst === undefined) return null;
   const equippedSlot = EQUIP_SLOTS.find((k) => ch.equipment[k] === instanceId) ?? null;
-  if (equippedSlot === null && !ch.inventory.includes(instanceId)) return null;
   const base = findBase(data, inst.itemId);
+  if (equippedSlot === null && !ch.inventory.includes(instanceId)) {
+    // TW-16c（M21）: 倉庫の装備品
+    if (campPlace(state) !== "town" || base === null || !state.warehouse.includes(instanceId)) return null;
+    const r = checkEquip(state, data, memberId, instanceId, "warehouse", "warehouse");
+    return {
+      memberId,
+      instanceId,
+      name: itemDisplayName(state, data, instanceId),
+      equippedSlot: null,
+      slot: base.slot,
+      actions: [{ action: "equip", block: mapped(r, EQUIP_BLOCK, "equip") }],
+      identifier: null,
+      from: "warehouse",
+    };
+  }
   const out: ItemActions = {
     memberId,
     instanceId,

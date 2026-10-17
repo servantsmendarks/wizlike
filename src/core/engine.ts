@@ -30,6 +30,7 @@ import {
   identifyItem,
   reorderParty,
   unequipItem,
+  type WarehouseRef,
 } from "./rules/camp";
 import { checkBank, doBank } from "./rules/bank";
 import { startNewGame, validatePartySetup } from "./rules/creation";
@@ -336,19 +337,19 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       return finish(ctx);
     }
     case "party.equip": {
-      const c = command as { memberId?: unknown; instanceId?: unknown };
-      const r = checkEquip(state, data, c.memberId, c.instanceId);
+      const c = command as { memberId?: unknown; instanceId?: unknown; from?: unknown; to?: unknown };
+      const r = checkEquip(state, data, c.memberId, c.instanceId, c.from, c.to); // TW-16c（M21）: from / to "warehouse"
       if (r !== null) return reject(state, "party.equip", r);
       const ctx = makeContext(cloneState(state), data);
-      equipItem(ctx, c.memberId as string, c.instanceId as string);
+      equipItem(ctx, c.memberId as string, c.instanceId as string, c.from as WarehouseRef, c.to as WarehouseRef);
       return finish(ctx);
     }
     case "party.unequip": {
-      const c = command as { memberId?: unknown; slot?: unknown };
-      const r = checkUnequip(state, data, c.memberId, c.slot);
+      const c = command as { memberId?: unknown; slot?: unknown; to?: unknown };
+      const r = checkUnequip(state, data, c.memberId, c.slot, c.to); // TW-16c（M21）: to "warehouse"
       if (r !== null) return reject(state, "party.unequip", r);
       const ctx = makeContext(cloneState(state), data);
-      unequipItem(ctx, c.memberId as string, c.slot as EquipSlot);
+      unequipItem(ctx, c.memberId as string, c.slot as EquipSlot, c.to as WarehouseRef);
       return finish(ctx);
     }
     case "party.identify": {

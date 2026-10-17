@@ -205,18 +205,45 @@ function isCursed(state: GameState, instanceId: string): boolean {
   return inst.cursed;
 }
 
+/** TW-16c（M21）: party.equip の from / party.equip・party.unequip の to（省略は undefined） */
+export type WarehouseRef = "warehouse" | undefined;
+
+/** TW-16c（M21）: from / to の値の検査。省略か "warehouse" なら null、それ以外は "bad place"、warehouse なのに街（dive null）でなければ "not in town" */
+function checkWarehouseRef(state: GameState, ...refs: unknown[]): string | null {
+  for (const r of refs) if (r !== undefined && r !== "warehouse") return "bad place";
+  if (refs.some((r) => r === "warehouse") && campPlace(state) !== "town") return "not in town";
+  return null;
+}
+
+/** TW-16c（M21）: 倉庫に空きがあるか（config.items.warehouseSlots） */
+function warehouseHasRoom(state: GameState, data: GameData): boolean {
+  return state.warehouse.length < data.config.items.warehouseSlots;
+}
+
 /**
- * party.equip を受け付けない理由。順: wrong screen → no such member → cannot act → item not in inventory → not equipment →
- * not identified → class cannot equip → slot cursed
+ * party.equip を受け付けない理由。順: wrong screen → bad place / not in town（TW-16c。from / to）→ no such member → cannot act →
+ * item not in inventory（from "warehouse" なら item not in warehouse）→ not equipment → not identified → class cannot equip → slot cursed →
+ * （TW-16c）inventory full（from "warehouse" で旧品が無く、使用枠 CH-71 に空きが無い）/ warehouse full（手元の品で to "warehouse"、旧品があり倉庫が満杯）
  */
-export function checkEquip(state: GameState, data: GameData, memberId: unknown, instanceId: unknown): string | null {
+export function checkEquip(
+  state: GameState,
+  data: GameData,
+  memberId: unknown,
+  instanceId: unknown,
+  from?: unknown,
+  to?: unknown,
+): string | null {
   if (campPlace(state) === null) return "wrong screen";
+  const where = checkWarehouseRef(state, from, to);
+  if (where !== null) return where;
   const ch = typeof memberId === "string" ? memberById(state, memberId) : null;
   if (ch === null) return "no such member";
   if (!canAct(ch)) return "cannot act";
-  if (typeof instanceId !== "string" || !ch.inventory.includes(instanceId)) return "item not in inventory";
+  const fromWarehouse = from === "warehouse";
+  const missing = fromWarehouse ? "item not in warehouse" : "item not in inventory";
+  if (typeof instanceId !== "string" || !(fromWarehouse ? state.warehouse : ch.inventory).includes(instanceId)) return missing;
   const inst = state.items[instanceId];
-  if (inst === undefined) return "item not in inventory";
+  if (inst === undefined) return missing;
   const item = asEquip(data, inst.itemId);
   if (item === null) return "not equipment";
   const slot = item.slot;
@@ -224,15 +251,20 @@ export function checkEquip(state: GameState, data: GameData, memberId: unknown, 
   if (item.classes.length > 0 && !item.classes.includes(ch.classId)) return "class cannot equip";
   const old = ch.equipment[slot];
   if (old !== null && isCursed(state, old)) return "slot cursed";
+  if (fromWarehouse && old === null && !hasFreeSlot(data, ch)) return "inventory full";
+  if (!fromWarehouse && to === "warehouse" && old !== null && !warehouseHasRoom(state, data)) return "warehouse full";
   return null;
 }
 
 /**
- * CH-76。checkEquip が null を返した前提。乱数なし。所持枠と台帳は変わらない。
+ * CH-76。checkEquip が null を返した前提。乱数なし。手元の品で to が無ければ所持枠と台帳は変わらない。
  * inventory の新しい品の位置に旧品を入れる（旧品が無ければ取り除く）→ equipment[slot] = 新しい品 → message camp.equipped{name, item}
  * → 新しい品が呪われていれば message camp.cursed{item}
+ * TW-16c（M21。街だけ）: from "warehouse" なら新しい品は倉庫から取る。旧品の行き先は、to "warehouse" なら倉庫（倉庫の品なら新しい品のいた位置、
+ * 手元の品なら倉庫の末尾）、to が無ければ 手元の品は今どおり inventory の同じ位置・倉庫の品は inventory の末尾（使用枠に空きが無ければ倉庫の新しい品のいた位置）。
+ * 旧品が倉庫へ入ったら camp.equipped の後に message camp.toWarehouse{item}
  */
-export function equipItem(ctx: RuleContext, memberId: string, instanceId: string): void {
+export function equipItem(ctx: RuleContext, memberId: string, instanceId: string, from?: WarehouseRef, to?: WarehouseRef): void {
   const { state, data } = ctx;
   const ch = memberById(state, memberId);
   if (ch === null) throw new Error(`equipItem: unknown member ${memberId}`);
@@ -240,14 +272,30 @@ export function equipItem(ctx: RuleContext, memberId: string, instanceId: string
   if (inst === undefined) throw new Error(`equipItem: unknown item instance ${instanceId}`);
   const slot = equipSlotOf(data, inst.itemId);
   if (slot === null) throw new Error(`equipItem: not equipment ${inst.itemId}`);
-  const i = ch.inventory.indexOf(instanceId);
-  if (i < 0) throw new Error(`equipItem: ${instanceId} not in inventory`);
+  const source = from === "warehouse" ? state.warehouse : ch.inventory;
+  const i = source.indexOf(instanceId);
+  if (i < 0) throw new Error(`equipItem: ${instanceId} not in ${from === "warehouse" ? "warehouse" : "inventory"}`);
   const old = ch.equipment[slot];
-  if (old === null) ch.inventory.splice(i, 1);
+  let stored: string | null = null;
+  if (from === "warehouse") {
+    // 旧品が倉庫へ戻るのは to "warehouse" か、手元に空きが無いとき
+    if (old !== null && (to === "warehouse" || !hasFreeSlot(data, ch))) {
+      state.warehouse[i] = old;
+      stored = old;
+    } else {
+      state.warehouse.splice(i, 1);
+      if (old !== null) ch.inventory.push(old);
+    }
+  } else if (old !== null && to === "warehouse") {
+    ch.inventory.splice(i, 1);
+    state.warehouse.push(old);
+    stored = old;
+  } else if (old === null) ch.inventory.splice(i, 1);
   else ch.inventory[i] = old;
   ch.equipment[slot] = instanceId;
   const item = itemDisplayName(state, data, instanceId);
   ctx.events.push({ kind: "message", key: "camp.equipped", params: { name: ch.name, item } });
+  if (stored !== null) ctx.events.push({ kind: "message", key: "camp.toWarehouse", params: { item: itemDisplayName(state, data, stored) } });
   if (isCursed(state, instanceId)) ctx.events.push({ kind: "message", key: "camp.cursed", params: { item } });
   clampToMax(ctx, ch); // CH-14: 実効の最大値が下がったら現在値を止める
 }
@@ -257,27 +305,36 @@ export function equipItem(ctx: RuleContext, memberId: string, instanceId: string
  * M10（U6）: 本人の life と行動の可否は問わない（死亡・灰の者の装備も、呪われていなければ外して回収できる。操作するのはプレイヤー）。
  * 呪いは実体の cursed（M7）で見るので data は読まない（引数は呼び出し側との形を保つために残す）
  */
-export function checkUnequip(state: GameState, _data: GameData, memberId: unknown, slot: unknown): string | null {
+export function checkUnequip(state: GameState, data: GameData, memberId: unknown, slot: unknown, to?: unknown): string | null {
   if (campPlace(state) === null) return "wrong screen";
+  const where = checkWarehouseRef(state, to); // TW-16c（M21）
+  if (where !== null) return where;
   const ch = typeof memberId === "string" ? memberById(state, memberId) : null;
   if (ch === null) return "no such member";
   if (!isEquipSlot(slot)) return "bad slot";
   const id = ch.equipment[slot];
   if (id === null) return "slot empty";
   if (isCursed(state, id)) return "cursed";
+  if (to === "warehouse" && !warehouseHasRoom(state, data)) return "warehouse full"; // TW-16c（M21）
   return null;
 }
 
-/** CH-76。checkUnequip が null を返した前提。equipment[slot] = null → inventory の末尾 → message camp.unequipped{name, item}。乱数なし */
-export function unequipItem(ctx: RuleContext, memberId: string, slot: EquipSlot): void {
+/**
+ * CH-76。checkUnequip が null を返した前提。equipment[slot] = null → inventory の末尾 → message camp.unequipped{name, item}。乱数なし。
+ * TW-16c（M21）: to "warehouse" なら inventory ではなく倉庫の末尾へ入れ、camp.unequipped の後に message camp.toWarehouse{item}
+ */
+export function unequipItem(ctx: RuleContext, memberId: string, slot: EquipSlot, to?: WarehouseRef): void {
   const { state, data } = ctx;
   const ch = memberById(state, memberId);
   if (ch === null) throw new Error(`unequipItem: unknown member ${memberId}`);
   const id = ch.equipment[slot];
   if (id === null) throw new Error(`unequipItem: ${slot} is empty`);
   ch.equipment[slot] = null;
-  ch.inventory.push(id);
-  ctx.events.push({ kind: "message", key: "camp.unequipped", params: { name: ch.name, item: itemDisplayName(state, data, id) } });
+  if (to === "warehouse") state.warehouse.push(id);
+  else ch.inventory.push(id);
+  const item = itemDisplayName(state, data, id);
+  ctx.events.push({ kind: "message", key: "camp.unequipped", params: { name: ch.name, item } });
+  if (to === "warehouse") ctx.events.push({ kind: "message", key: "camp.toWarehouse", params: { item } });
   clampToMax(ctx, ch); // CH-14
 }
 
@@ -521,6 +578,7 @@ const BLOCK_OF: Record<string, EquipBlock> = {
   "not identified": "unidentified",
   "class cannot equip": "class",
   "slot cursed": "cursedSlot",
+  "inventory full": "full", // TW-16c（M21）: 倉庫の品で旧品が無く、使用枠に空きが無い
 };
 
 /**
@@ -568,6 +626,20 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
         if (r !== null && block === null) throw new Error(`campMenu: unexpected equip reason ${r}`);
         equipCandidates.push({ instanceId: id, name: itemDisplayName(state, data, id), slot, block });
       }
+      // TW-16c（M21）: 街だけ、倉庫の鑑定済みで職業が装備できる品（理由は from / to "warehouse" の checkEquip）
+      const warehouseCandidates: CampEquipCandidate[] | null = place !== "town" ? null : [];
+      if (warehouseCandidates !== null) {
+        for (const id of state.warehouse) {
+          const inst = state.items[id];
+          const base = inst === undefined ? null : asEquip(data, inst.itemId);
+          if (inst === undefined || base === null || !inst.identified) continue;
+          if (base.classes.length > 0 && !base.classes.includes(ch.classId)) continue;
+          const r = checkEquip(state, data, ch.id, id, "warehouse", "warehouse");
+          const block = r === null ? null : (BLOCK_OF[r] ?? null);
+          if (r !== null && block === null) throw new Error(`campMenu: unexpected warehouse equip reason ${r}`);
+          warehouseCandidates.push({ instanceId: id, name: itemDisplayName(state, data, id), slot: base.slot, block });
+        }
+      }
       return {
         id: ch.id,
         name: ch.name,
@@ -577,12 +649,20 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
         spells,
         slots: EQUIP_SLOTS.map((slot) => {
           const id = ch.equipment[slot];
-          if (id === null) return { slot, instanceId: null, name: null, cursed: false, canUnequip: false };
+          if (id === null) return { slot, instanceId: null, name: null, cursed: false, canUnequip: false, canUnequipToWarehouse: false };
           const inst = state.items[id];
           const cursed = inst !== undefined && inst.identified && isCursed(state, id);
-          return { slot, instanceId: id, name: itemDisplayName(state, data, id), cursed, canUnequip: checkUnequip(state, data, ch.id, slot) === null };
+          return {
+            slot,
+            instanceId: id,
+            name: itemDisplayName(state, data, id),
+            cursed,
+            canUnequip: checkUnequip(state, data, ch.id, slot) === null,
+            canUnequipToWarehouse: checkUnequip(state, data, ch.id, slot, "warehouse") === null, // TW-16c（M21）
+          };
         }),
         equipCandidates,
+        warehouseCandidates,
         canReceive: hasFreeSlot(data, ch),
         inventory: ch.inventory.flatMap((id) => {
           const inst = state.items[id];

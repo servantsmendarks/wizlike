@@ -8,6 +8,9 @@ import { execute } from "../src/core/engine";
 import { chance, cloneRng, createRng, randInt, rollDice } from "../src/core/rng";
 import { campMenu, campSummary, checkCast, checkEquip, checkIdentify, checkUnequip, identifyChance } from "../src/core/rules/camp";
 import { itemActions } from "../src/core/rules/item-actions";
+import { equipPreview } from "../src/core/rules/item-view";
+import { formatMessage } from "../src/presenter/views/message";
+import { kinsokuLines } from "./helpers/wrap";
 import { fieldItemMenu } from "../src/core/rules/items";
 import { frontLineIds } from "../src/core/rules/combat-calc";
 import { resurrectRate, townMenu } from "../src/core/rules/town";
@@ -1048,8 +1051,8 @@ describe("UI-53/TW-03 campMenu", () => {
     ]);
     const c3 = m.members.find((x) => x.id === "c3")!;
     expect(c3.slots.map((x) => x.slot)).toEqual(["weapon", "armor", "shield", "helm", "gauntlet", "accessory"]);
-    expect(c3.slots[0]).toEqual({ slot: "weapon", instanceId: "i22", name: "短剣", cursed: true, canUnequip: false });
-    expect(c3.slots[2]).toEqual({ slot: "shield", instanceId: null, name: null, cursed: false, canUnequip: false });
+    expect(c3.slots[0]).toEqual({ slot: "weapon", instanceId: "i22", name: "短剣", cursed: true, canUnequip: false, canUnequipToWarehouse: false }); // TW-16c: 迷宮は false
+    expect(c3.slots[2]).toEqual({ slot: "shield", instanceId: null, name: null, cursed: false, canUnequip: false, canUnequipToWarehouse: false }); // TW-16c: 迷宮は false
     for (const mem of m.members) {
       for (const sl of mem.slots) {
         if (sl.instanceId !== null) expect(sl.canUnequip).toBe(checkUnequip(s, data, mem.id, sl.slot) === null);
@@ -1064,7 +1067,7 @@ describe("UI-53/TW-03 campMenu", () => {
     const u = cloneState(s);
     u.items[g.id]!.identified = false;
     const w = campMenu(u, data)!.members.find((x) => x.id === "c3")!.slots[0]!;
-    expect(w).toEqual({ slot: "weapon", instanceId: g.id, name: "短い刃？", cursed: false, canUnequip: false });
+    expect(w).toEqual({ slot: "weapon", instanceId: g.id, name: "短い刃？", cursed: false, canUnequip: false, canUnequipToWarehouse: false }); // TW-16c: 迷宮は false
   });
 
   test("UI-53/CH-77 identifiers は司教が alive・canAct のときだけ。unidentified は並び順 × inventory の順", () => {
@@ -1409,5 +1412,218 @@ describe("UI-80（M20）itemActions 品に当てはまる操作とできない�
     const before = JSON.stringify(s);
     for (const m of s.party) for (const id of [...m.inventory, ...Object.values(m.equipment)]) if (id !== null) itemActions(s, data, m.id, id);
     expect(JSON.stringify(s)).toBe(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/** base の複製の倉庫の末尾に itemId の実体を足した state と、その実体 id（TW-16c） */
+function stash(base: GameState, itemId: string, identified = true): { s: GameState; id: string } {
+  const s = cloneState(base);
+  const id = createItemInstance(s, { itemId, identified });
+  s.warehouse.push(id);
+  return { s, id };
+}
+const nameOfItem = (s: GameState, id: string): string => itemDisplayName(s, data, id);
+
+describe("TW-16c（M21）倉庫から装備する・倉庫へ外す（party.equip の from / to、party.unequip の to）", () => {
+  test("TW-16c/CH-76 空きの枠に倉庫の品を装備: 倉庫から消え、inventory は変わらない。message camp.equipped だけ。乱数なし", () => {
+    const pre = stash(inTown(), "dagger").s;
+    const { s, id } = stash(pre, "leather_cap");
+    const other = s.warehouse[0]!;
+    const r = ok(s, { type: "party.equip", memberId: "c5", instanceId: id, from: "warehouse" });
+    expect(r.events).toEqual([{ kind: "message", key: "camp.equipped", params: { name: "エル", item: nameOfItem(s, id) } }]);
+    expect(member(r.state, "c5").equipment.helm).toBe(id);
+    expect(member(r.state, "c5").inventory).toEqual(["i15"]);
+    expect(r.state.warehouse).toEqual([other]);
+    expect(r.state.rng).toEqual(s.rng);
+  });
+
+  test("TW-16c 入れ替え（to warehouse）: 旧品は倉庫の新しい品のいた位置に入り、camp.equipped → camp.toWarehouse。手元と使用枠は変わらない", () => {
+    const pre = stash(inTown(), "leather_cap").s;
+    const { s, id } = stash(pre, "short_bow");
+    const r = ok(s, { type: "party.equip", memberId: "c3", instanceId: id, from: "warehouse", to: "warehouse" });
+    expect(r.events).toEqual([
+      { kind: "message", key: "camp.equipped", params: { name: "キリ", item: nameOfItem(s, id) } },
+      { kind: "message", key: "camp.toWarehouse", params: { item: nameOfItem(s, "i7") } },
+    ]);
+    expect(member(r.state, "c3").equipment.weapon).toBe(id);
+    expect(member(r.state, "c3").inventory).toEqual(member(s, "c3").inventory);
+    expect(r.state.warehouse).toEqual([s.warehouse[0], "i7"]);
+    expect(r.state.rng).toEqual(s.rng);
+  });
+
+  test("TW-16c 入れ替え（to なし）: 旧品は inventory の末尾。使用枠に空きが無ければ倉庫の新しい品のいた位置（camp.toWarehouse）", () => {
+    const { s, id } = stash(inTown(), "short_bow");
+    const r = ok(s, { type: "party.equip", memberId: "c3", instanceId: id, from: "warehouse" });
+    expect(r.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["camp.equipped"]);
+    expect(member(r.state, "c3").inventory).toEqual([...member(s, "c3").inventory, "i7"]);
+    expect(r.state.warehouse).toEqual([]);
+    const full = fillSlots(s, "c3");
+    const r2 = ok(full, { type: "party.equip", memberId: "c3", instanceId: id, from: "warehouse" });
+    expect(r2.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["camp.equipped", "camp.toWarehouse"]);
+    expect(member(r2.state, "c3").inventory).toEqual(member(full, "c3").inventory);
+    expect(r2.state.warehouse).toEqual(["i7"]);
+  });
+
+  test("TW-16c 手元の品を to warehouse で装備: 旧品は倉庫の末尾（camp.toWarehouse）。旧品が無ければ倉庫は変わらない", () => {
+    const { s, id } = give(inTown(), "c3", "short_bow");
+    const r = ok(s, { type: "party.equip", memberId: "c3", instanceId: id, to: "warehouse" });
+    expect(r.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["camp.equipped", "camp.toWarehouse"]);
+    expect(member(r.state, "c3").inventory).toEqual(["i10"]);
+    expect(r.state.warehouse).toEqual(["i7"]);
+    const cap = give(inTown(), "c5", "leather_cap");
+    const r2 = ok(cap.s, { type: "party.equip", memberId: "c5", instanceId: cap.id, to: "warehouse" });
+    expect(r2.state.warehouse).toEqual([]);
+    expect(member(r2.state, "c5").inventory).toEqual(["i15"]);
+  });
+
+  test("TW-16c party.unequip の to warehouse: 倉庫の末尾へ入り、camp.unequipped → camp.toWarehouse。満杯なら warehouse full", () => {
+    const s = inTown();
+    const r = ok(s, { type: "party.unequip", memberId: "c1", slot: "shield", to: "warehouse" });
+    expect(r.events).toEqual([
+      { kind: "message", key: "camp.unequipped", params: { name: "アルド", item: "木の盾" } },
+      { kind: "message", key: "camp.toWarehouse", params: { item: "木の盾" } },
+    ]);
+    expect(member(r.state, "c1").equipment.shield).toBeNull();
+    expect(member(r.state, "c1").inventory).toEqual(["i4"]);
+    expect(r.state.warehouse).toEqual(["i3"]);
+    expect(r.state.rng).toEqual(s.rng);
+    const full = cloneState(s);
+    for (let i = 0; i < data.config.items.warehouseSlots; i++) full.warehouse.push(createItemInstance(full, { itemId: "herb", identified: true }));
+    expectRejected(full, { type: "party.unequip", memberId: "c1", slot: "shield", to: "warehouse" }, "warehouse full");
+    // to なしは今どおり（倉庫が満杯でも inventory へ）
+    ok(full, { type: "party.unequip", memberId: "c1", slot: "shield" });
+  });
+
+  test("TW-16c 理由: 街だけ（迷宮は not in town）、bad place、item not in warehouse、inventory full、warehouse full、ほかは CH-76 の順", () => {
+    const { s, id } = stash(inTown(), "leather_cap");
+    // 迷宮（dive 非 null）では from / to を受け付けない。to なしの付け外しは今どおり
+    const d = cloneState(dived(1));
+    d.warehouse.push(createItemInstance(d, { itemId: "leather_cap", identified: true }));
+    expectRejected(d, { type: "party.equip", memberId: "c5", instanceId: d.warehouse[0]!, from: "warehouse" }, "not in town");
+    expectRejected(d, { type: "party.unequip", memberId: "c1", slot: "shield", to: "warehouse" }, "not in town");
+    expectRejected(battleOf(dived(1)), { type: "party.unequip", memberId: "c1", slot: "shield", to: "warehouse" }, "wrong screen");
+    expectRejected(s, { type: "party.equip", memberId: "c5", instanceId: id, from: "bag" as "warehouse" }, "bad place");
+    expectRejected(s, { type: "party.unequip", memberId: "c1", slot: "shield", to: "bag" as "warehouse" }, "bad place");
+    expectRejected(s, { type: "party.equip", memberId: "c9", instanceId: id, from: "warehouse" }, "no such member");
+    expectRejected(patched(s, { c5: { status: ["sleep"] } }), { type: "party.equip", memberId: "c5", instanceId: id, from: "warehouse" }, "cannot act");
+    expectRejected(s, { type: "party.equip", memberId: "c5", instanceId: "i15", from: "warehouse" }, "item not in warehouse"); // 手元の品
+    expectRejected(s, { type: "party.equip", memberId: "c5", instanceId: id }, "item not in inventory"); // from なしで倉庫の品
+    const herb = stash(s, "herb");
+    expectRejected(herb.s, { type: "party.equip", memberId: "c5", instanceId: herb.id, from: "warehouse" }, "not equipment");
+    const un = stash(s, "dagger", false);
+    expectRejected(un.s, { type: "party.equip", memberId: "c3", instanceId: un.id, from: "warehouse" }, "not identified");
+    const sw = stash(s, "long_sword");
+    expectRejected(sw.s, { type: "party.equip", memberId: "c5", instanceId: sw.id, from: "warehouse" }, "class cannot equip");
+    const cur = giveCursed(s, "c3");
+    const cursed = stash(ok(cur.s, { type: "party.equip", memberId: "c3", instanceId: cur.id }).state, "dagger");
+    expectRejected(cursed.s, { type: "party.equip", memberId: "c3", instanceId: cursed.id, from: "warehouse" }, "slot cursed");
+    // 旧品が無く使用枠に空きが無い → inventory full（旧品があれば入れ替えなので通る）
+    const full = fillSlots(s, "c5");
+    expectRejected(full, { type: "party.equip", memberId: "c5", instanceId: id, from: "warehouse" }, "inventory full");
+    expectRejected(full, { type: "party.equip", memberId: "c5", instanceId: id, from: "warehouse", to: "warehouse" }, "inventory full");
+    const bow = stash(fillSlots(s, "c3"), "short_bow");
+    ok(bow.s, { type: "party.equip", memberId: "c3", instanceId: bow.id, from: "warehouse", to: "warehouse" });
+    // 手元の品を to warehouse で入れ替えるとき、倉庫が満杯なら warehouse full
+    const own = give(s, "c3", "short_bow");
+    const wf = cloneState(own.s);
+    for (let i = wf.warehouse.length; i < data.config.items.warehouseSlots; i++) wf.warehouse.push(createItemInstance(wf, { itemId: "herb", identified: true }));
+    expectRejected(wf, { type: "party.equip", memberId: "c3", instanceId: own.id, to: "warehouse" }, "warehouse full");
+    expect(checkEquip(wf, data, "c3", own.id)).toBeNull(); // to なしは通る
+  });
+
+  test("TW-16c campMenu: 街だけ warehouseCandidates（倉庫の順。鑑定済みで職業が装備できる装備品。block は checkEquip）と slots の canUnequipToWarehouse。迷宮は null / false", () => {
+    let s = inTown();
+    const cap = stash(s, "leather_cap");
+    s = cap.s;
+    const sw = stash(s, "long_sword");
+    s = sw.s;
+    const un = stash(s, "dagger", false);
+    s = un.s;
+    const herb = stash(s, "herb");
+    s = herb.s;
+    const c5 = campMenu(s, data)!.members.find((m) => m.id === "c5")!;
+    expect(c5.warehouseCandidates).toEqual([{ instanceId: cap.id, name: nameOfItem(s, cap.id), slot: "helm", block: null }]);
+    const c1 = campMenu(s, data)!.members.find((m) => m.id === "c1")!;
+    expect(c1.warehouseCandidates!.map((c) => c.instanceId)).toEqual([cap.id, sw.id]);
+    expect(c1.slots.find((x) => x.slot === "shield")!.canUnequipToWarehouse).toBe(true);
+    expect(c1.slots.find((x) => x.slot === "helm")!.canUnequipToWarehouse).toBe(false); // 空き枠
+    // block は from / to warehouse の checkEquip の写し（full / cannotAct）
+    const full = fillSlots(s, "c5");
+    expect(campMenu(full, data)!.members.find((m) => m.id === "c5")!.warehouseCandidates![0]!.block).toBe("full");
+    expect(campMenu(patched(s, { c1: { status: ["sleep"] } }), data)!.members.find((m) => m.id === "c1")!.warehouseCandidates!.map((c) => c.block)).toEqual([
+      "cannotAct",
+      "cannotAct",
+    ]);
+    // 倉庫が満杯なら外して倉庫へ入れられない
+    const wf = cloneState(s);
+    for (let i = wf.warehouse.length; i < data.config.items.warehouseSlots; i++) wf.warehouse.push(createItemInstance(wf, { itemId: "herb", identified: true }));
+    expect(campMenu(wf, data)!.members.find((m) => m.id === "c1")!.slots.every((x) => !x.canUnequipToWarehouse)).toBe(true);
+    // 迷宮
+    const d = campMenu(dived(1), data)!;
+    expect(d.members.every((m) => m.warehouseCandidates === null && m.slots.every((x) => !x.canUnequipToWarehouse))).toBe(true);
+  });
+
+  test("TW-16c/UI-80 itemActions: 街の倉庫の装備品は 装備する だけ（from warehouse。理由は campMenu の warehouseCandidates と同じ）。倉庫の消耗品・迷宮は null", () => {
+    const { s, id } = stash(inTown(), "leather_cap");
+    expect(itemActions(s, data, "c5", id)).toEqual({
+      memberId: "c5",
+      instanceId: id,
+      name: nameOfItem(s, id),
+      equippedSlot: null,
+      slot: "helm",
+      actions: [{ action: "equip", block: null }],
+      identifier: null,
+      from: "warehouse",
+    });
+    expect(itemActions(fillSlots(s, "c5"), data, "c5", id)!.actions).toEqual([{ action: "equip", block: "full" }]);
+    const sw = stash(s, "long_sword");
+    expect(itemActions(sw.s, data, "c5", sw.id)!.actions).toEqual([{ action: "equip", block: "class" }]);
+    const herb = stash(s, "herb");
+    expect(itemActions(herb.s, data, "c5", herb.id)).toBeNull();
+    const d = cloneState(dived(1));
+    d.warehouse.push(createItemInstance(d, { itemId: "leather_cap", identified: true }));
+    expect(itemActions(d, data, "c5", d.warehouse[0]!)).toBeNull();
+    // 手元の品の itemActions は from を持たない
+    expect(itemActions(s, data, "c1", "i1")).not.toHaveProperty("from");
+  });
+
+  test("TW-16c/UI-67 equipPreview の from warehouse: 倉庫の品を装備したときの差分（元の state と乱数は変えない）。from なしでは倉庫の品は null", () => {
+    const { s, id } = stash(inTown(), "short_bow");
+    const before = JSON.stringify(s);
+    expect(equipPreview(s, data, "c3", "weapon", id)).toBeNull();
+    const pv = equipPreview(s, data, "c3", "weapon", id, "warehouse");
+    expect(pv).not.toBeNull();
+    expect(pv!.attack.changed).toBe(true);
+    expect(JSON.stringify(s)).toBe(before);
+  });
+
+  test("TW-16c 乱数: from / to を付けた付け外しは乱数を引かない（rng は送る前と同じ。鏡の rng と並べても同じ）", () => {
+    const { s, id } = stash(inTown(), "short_bow");
+    const mirror = cloneRng(s.rng);
+    const r1 = ok(s, { type: "party.equip", memberId: "c3", instanceId: id, from: "warehouse", to: "warehouse" });
+    const r2 = ok(r1.state, { type: "party.unequip", memberId: "c3", slot: "weapon", to: "warehouse" });
+    const r3 = ok(r2.state, { type: "party.equip", memberId: "c3", instanceId: "i7", from: "warehouse" });
+    expect(r3.state.rng).toEqual(mirror);
+    expect(randInt(cloneRng(r3.state.rng), 1, 100)).toBe(randInt(cloneRng(mirror), 1, 100));
+  });
+
+  test("TW-16c 新しい文は最悪の値でも会話の箱の 28 字 × 2 行に収まる（6 字の名前・最も長い品名）", () => {
+    const units = (x: string): number => Array.from(x).reduce((n, c) => n + ((c.codePointAt(0) ?? 0) < 0x80 ? 0.5 : 1), 0);
+    const longest = (xs: string[]): string => [...xs].sort((a, b) => units(b) - units(a))[0]!;
+    const S = data.strings;
+    const prefix = longest(["fine", "rare", "legendary"].map((r) => S[`item.rarity.${r}`]!));
+    const item = longest([
+      ...data.equipmentBases.flatMap((b) => [b.unidentifiedName, `${prefix}${b.name}${formatMessage(S["item.plus"]!, { n: 12 })}`]),
+      ...data.uniques.map((u) => `${prefix}${u.name}`),
+    ]);
+    const name = "あ".repeat(data.config.creation.nameMaxLength);
+    for (const k of ["camp.toWarehouse", "camp.equipReason.full", "camp.itemReason.full"]) {
+      const text = formatMessage(S[k]!, { name, item });
+      expect(text, k).not.toContain("{");
+      expect(kinsokuLines(text, 28).length, `${k}: ${text}`).toBeLessThanOrEqual(2);
+    }
+    expect(units(S["camp.equipBlock.full"]!)).toBeLessThanOrEqual(units(S["camp.equipBlock.cursedSlot"]!));
   });
 });

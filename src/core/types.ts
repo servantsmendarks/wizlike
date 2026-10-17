@@ -563,10 +563,14 @@ export type Command =
   | { type: "event.choose"; optionId: string }
   /** CH-03: パーティ全員の id を並べ替えたもの（同じ集合で重複なし）。街と、迷宮の戦闘外かつ保留なしのとき */
   | { type: "party.reorder"; order: string[] }
-  /** CH-76: 本人の inventory にある品を装備する。同じスロットの旧品は inventory の同じ位置に入る */
-  | { type: "party.equip"; memberId: string; instanceId: string }
-  /** CH-76: 装備を外して inventory の末尾に入れる */
-  | { type: "party.unequip"; memberId: string; slot: EquipSlot }
+  /**
+   * CH-76: 本人の inventory にある品を装備する。同じスロットの旧品は inventory の同じ位置に入る。
+   * TW-16c（M21）: from "warehouse" は倉庫（GameState.warehouse）の品を装備する（旧品は to が無ければ inventory の末尾（使用枠に空きが無ければ倉庫）、
+   * to "warehouse" なら倉庫へ）。from / to のどちらかがあれば街（dive null）だけ
+   */
+  | { type: "party.equip"; memberId: string; instanceId: string; from?: "warehouse"; to?: "warehouse" }
+  /** CH-76: 装備を外して inventory の末尾に入れる。TW-16c（M21）: to "warehouse" なら倉庫の末尾へ（街だけ） */
+  | { type: "party.unequip"; memberId: string; slot: EquipSlot; to?: "warehouse" }
   /** CH-77: memberId は鑑定する者（abilities に identify を持つ職業）。instanceId はパーティの誰かの inventory にある未鑑定品 */
   | { type: "party.identify"; memberId: string; instanceId: string }
   /** CH-78（M10）: memberId の inventory の品を toId（自分以外のパーティの者）の inventory の末尾へ渡す。両者の life と行動の可否は問わない */
@@ -960,8 +964,8 @@ export type CampSpellView = {
 /** MG-44 / UI-53（2026-10-05）: 戦闘外の回復の対象を選べない理由。表示層は strings の camp.targetBlock.{block} で出す */
 export type CampTargetBlock = "fullHp";
 export type CampTargetView = { id: string; block: CampTargetBlock | null };
-/** 装備できない理由。表示層は strings の camp.equipBlock.{block} で出す */
-export type EquipBlock = "cannotAct" | "unidentified" | "class" | "cursedSlot";
+/** 装備できない理由。表示層は strings の camp.equipBlock.{block} で出す。full は TW-16c（M21）の倉庫の品で、旧品が無く使用枠（CH-71）に空きが無いとき */
+export type EquipBlock = "cannotAct" | "unidentified" | "class" | "cursedSlot" | "full";
 export type CampEquipCandidate = {
   instanceId: string;
   /** itemDisplayName。未鑑定なら unidentifiedName（CH-72） */
@@ -978,6 +982,8 @@ export type CampSlotView = {
   cursed: boolean;
   /** checkUnequip === null と同じ。呪われているかは鑑定と関係なく実体の cursed で決める */
   canUnequip: boolean;
+  /** TW-16c（M21）: 外して倉庫へ入れられるか（checkUnequip の to "warehouse" === null。街でなければ・倉庫が満杯なら false） */
+  canUnequipToWarehouse: boolean;
 };
 export type CampMember = {
   id: string;
@@ -992,6 +998,11 @@ export type CampMember = {
   slots: CampSlotView[];
   /** 本人の inventory の順で、type が EQUIP_SLOTS のどれかに当たる品 */
   equipCandidates: CampEquipCandidate[];
+  /**
+   * TW-16c（M21）: 倉庫（GameState.warehouse の順）の品のうち、鑑定済みでこの者の職業が装備できる装備品（party.equip の from "warehouse" の候補）。
+   * block は checkEquip（from "warehouse"、to "warehouse"）の理由の写し（cannotAct / cursedSlot / full）。街（place town）でなければ null
+   */
+  warehouseCandidates: CampEquipCandidate[] | null;
   /** CH-78（M10）: 使用枠（CH-71）に空きがあり、party.give の受け取る側になれる（target full の逆）。life は問わない。自分かどうかは見ない */
   canReceive: boolean;
   /** UI-59（M10）: 本人の inventory の順の所持品（装備中は含めない。渡す・捨てるの候補） */
@@ -1079,6 +1090,8 @@ export type ItemActions = {
   actions: ItemActionView[];
   /** identify があるとき、鑑定する者と成功率（identifyChance の rate）。無ければ null */
   identifier: { id: string; name: string; rate: number } | null;
+  /** TW-16c（M21）: 倉庫の品（街だけ。操作は装備するだけで、送るのは party.equip の from "warehouse"）のとき "warehouse"。手元の品は省略 */
+  from?: "warehouse";
 };
 
 /**
