@@ -276,8 +276,8 @@ export type Config = {
     darkCostPerLevel: number;
     cureCost: Record<CurableStatusId, number>;
     uncurseCost: number;
-    /** TW-17（M7）【仮】: 強化の料金 = upgradeBase × (対象Lv + 1) */
-    upgradeBase: number;
+    /** TW-17（M21 B-1）【仮】: 強化の料金 = 結果の Lv（成功のとき。大成功の +1 は含めない）× upgradeFeePerLevel。M7〜M20 の upgradeBase × (対象Lv + 1) を置き換えた */
+    upgradeFeePerLevel: number;
     /** TW-17【仮】: 成功率の基礎（%） */
     upgradeRateBase: number;
     /** TW-17【仮】: 触媒 1 個あたりの成功率（%）。対象より Lv が低い触媒は upgradeDecay^(Lv 差) を掛ける */

@@ -29,9 +29,17 @@ export function upgradeGreat(rate: number): number {
   return Math.max(1, Math.floor(rate / 10));
 }
 
-/** TW-17: 料金 = upgradeBase × (対象Lv + 1)。触媒の数に関わらない */
-export function upgradeFee(targetLv: number, e: EconomyConfig): number {
-  return e.upgradeBase * (targetLv + 1);
+/**
+ * TW-17（M21 B-1）: 成功のときの結果の Lv = max(対象Lv + 1, 触媒の Lv の最小値)。触媒が無ければ対象Lv + 1。
+ * 大成功はこれに +1、失敗は対象Lv − 1（0 で止まる）
+ */
+export function upgradeResultLevel(targetLv: number, catalystLvs: readonly number[]): number {
+  return catalystLvs.length === 0 ? targetLv + 1 : Math.max(targetLv + 1, Math.min(...catalystLvs));
+}
+
+/** TW-17（M21 B-1）: 料金 = 結果の Lv（upgradeResultLevel。大成功の +1 は含めない）× upgradeFeePerLevel */
+export function upgradeFee(resultLv: number, e: EconomyConfig): number {
+  return e.upgradeFeePerLevel * resultLv;
 }
 
 function isSlot(x: unknown): x is EquipSlot {
@@ -91,14 +99,16 @@ export function checkUpgrade(state: GameState, memberId: unknown, slot: unknown,
   if (tb !== null) return tb;
   if (catalysts.some((r) => catalystOf(state, data, r) === null)) return "bad catalyst";
   const target = state.items[ch.equipment[slot]!]!;
-  if (state.gold < upgradeFee(target.level, data.config.economy)) return "not enough gold";
+  const lvs = catalysts.map((r) => catalystOf(state, data, r)!.inst.level);
+  if (state.gold < upgradeFee(upgradeResultLevel(target.level, lvs), data.config.economy)) return "not enough gold";
   return null;
 }
 
 /**
  * TW-17。checkUpgrade が null を返した前提。
  * 料金を払う → 触媒を catalysts の順に持ち主（null なら倉庫）から destroyItemInstance → randInt(1, 100) を 1 回 → dice（label dice.upgrade{item: 強化前の表示名}、
- * 行 dice.row.roll（base null）、基準 dice.upgrade.rule{rate, great}、結果 dice.upgrade.great / ok / ng）→ level を +2 / +1 / −1（0 で止まる）
+ * 行 dice.row.roll（base null）、基準 dice.upgrade.rule{rate, great}、結果 dice.upgrade.great / ok / ng）→ level を 結果の Lv + 1 / 結果の Lv / −1（0 で止まる）
+ * （M21 B-1: 結果の Lv は upgradeResultLevel。料金も結果の Lv から。M7〜M20 は +2 / +1 / −1 と 50 × (対象Lv + 1)）
  * → message town.upgrade.great / ok / ng{name, item: 強化後の表示名}。M16（4-5）: 強化前が Lv0 の失敗は ng の代わりに ngFloor（同じ params）。
  * オプション・希少度・呪い・鑑定はそのまま
  */
@@ -119,8 +129,9 @@ export function doUpgrade(ctx: RuleContext, memberId: string, slot: EquipSlot, c
   const lvs = cats.map((c) => c.inst.level);
   const rate = upgradeRate(target.level, lvs, e);
   const great = upgradeGreat(rate);
+  const result = upgradeResultLevel(target.level, lvs);
   const before = itemDisplayName(state, data, targetId);
-  state.gold -= upgradeFee(target.level, e);
+  state.gold -= upgradeFee(result, e);
   for (const c of cats) destroyItemInstance(state, c.owner, c.inst.id);
   const roll = randInt(state.rng, 1, 100);
   const outcome = roll <= great ? "great" : roll <= rate ? "ok" : "ng";
@@ -132,7 +143,7 @@ export function doUpgrade(ctx: RuleContext, memberId: string, slot: EquipSlot, c
     result: { key: `dice.upgrade.${outcome}` },
   });
   const floor = outcome === "ng" && target.level === 0;
-  target.level = Math.max(0, target.level + (outcome === "great" ? 2 : outcome === "ok" ? 1 : -1));
+  target.level = outcome === "great" ? result + 1 : outcome === "ok" ? result : Math.max(0, target.level - 1);
   ctx.events.push({
     kind: "message",
     key: floor ? "town.upgrade.ngFloor" : `town.upgrade.${outcome}`,
@@ -144,7 +155,8 @@ export function doUpgrade(ctx: RuleContext, memberId: string, slot: EquipSlot, c
  * TW-17 / UI-35: 表示層向けの問い合わせ（純粋）。対象（本人・部位・その実体）が決まらない（checkUpgrade が wrong screen / bad action /
  * no such member / bad slot / slot empty / unique のどれか）なら null。それ以外は、触媒のうち触媒にできる実体の Lv で成功率を出し、
  * block に checkUpgrade の理由（bad catalyst / not enough gold / null）を入れる。block が null のときだけ town.upgrade が受け付けられる。
- * M18（3-3）: before / after（Lv と Lv+1 の ItemPreview）と kind（語る項目）を添える。乱数を引かない
+ * M18（3-3）: before / after（Lv と Lv+1 の ItemPreview）と kind（語る項目）を添える。乱数を引かない。
+ * M21（B-1）: after は結果の Lv（upgradeResultLevel。触媒にできる実体の Lv から）の下見。level / resultLevel に前後の Lv、料金も結果の Lv から
  */
 export function upgradePreview(
   state: GameState,
@@ -163,13 +175,14 @@ export function upgradePreview(
     return c === null ? [] : [c.inst.level];
   });
   const rate = upgradeRate(target.level, lvs, e);
-  const fee = upgradeFee(target.level, e);
+  const resultLevel = upgradeResultLevel(target.level, lvs);
+  const fee = upgradeFee(resultLevel, e);
   // M18（3-3）: 前後の性能の下見。対象は汎用装備（ユニークは上で null）なので、同じベース・同じ Lv の合成の実体と itemPower が同じ（希少度・オプション・呪いは itemPower に効かない）
   const before = shopItemPreview(data, target.itemId, target.level)!;
-  const after = shopItemPreview(data, target.itemId, target.level + 1)!;
+  const after = shopItemPreview(data, target.itemId, resultLevel)!;
   const kind = upgradePreviewKind(data, target);
-  const nextChangeAt = kind === null ? null : upgradeNextChange(data, target, kind, before, after);
-  return { rate, great: upgradeGreat(rate), fee, affordable: state.gold >= fee, block, kind, before, after, nextChangeAt };
+  const nextChangeAt = kind === null ? null : upgradeNextChange(data, target, kind, before, after, resultLevel);
+  return { rate, great: upgradeGreat(rate), fee, affordable: state.gold >= fee, block, kind, level: target.level, resultLevel, before, after, nextChangeAt };
 }
 
 /** M18（5-13）: ItemPreview の kind の項目の値（文字列。AC・魔法攻撃力は数を文字列に）。該当しなければ null */
@@ -179,8 +192,9 @@ function previewValue(p: ItemPreview, kind: UpgradePreviewKind): string | null {
 }
 
 /**
- * M18（5-13）: before と after の kind の値が同じとき、次に値が変わる Lv までの段数（今の Lv からの差）とそのときの値。違えば null。
- * 値は floor(Lv ÷ 除数) で変わる（IT-20〜22）ので、今の Lv から除数の段までに必ず変わる。そこまでに変わらなければ null
+ * M18（5-13）: before と after の kind の値が同じとき、次に値が変わる Lv までの段数（今の Lv からの差）・その Lv・そのときの値。違えば null。
+ * 値は floor(Lv ÷ 除数) で変わる（IT-20〜22）ので、今の Lv から除数の段までに必ず変わる。そこまでに変わらなければ null。
+ * M21（B-1）: after は結果の Lv の下見なので、結果の Lv の次から探す
  */
 function upgradeNextChange(
   data: GameData,
@@ -188,14 +202,15 @@ function upgradeNextChange(
   kind: UpgradePreviewKind,
   before: ItemPreview,
   after: ItemPreview,
+  resultLevel: number,
 ): UpgradePreview["nextChangeAt"] {
   const now = previewValue(before, kind);
   if (now === null || previewValue(after, kind) !== now) return null;
   const it = data.config.items;
   const span = kind === "attack" ? it.weaponLvPerDamage : kind === "ac" ? it.armorLvPerAc : it.casterLvPerPower;
-  for (let levels = 2; levels <= span; levels++) {
+  for (let levels = resultLevel - target.level + 1; levels <= span; levels++) {
     const value = previewValue(shopItemPreview(data, target.itemId, target.level + levels)!, kind);
-    if (value !== null && value !== now) return { levels, value };
+    if (value !== null && value !== now) return { levels, level: target.level + levels, value };
   }
   return null;
 }

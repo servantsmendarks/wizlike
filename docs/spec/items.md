@@ -106,7 +106,7 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 
 ## 8. 強化
 
-- IT-70 汎用装備の強化は闇魔術の施設のサービス（TW-17）。ユニークは強化できない。触媒はパーティ全員の所持品（inventory）の鑑定済みの汎用装備から選び、持ち主から消える（M16 の G-2。それまでは本人の所持品だけ）。M17 から倉庫（IT-64）の鑑定済みの汎用装備も選べ、倉庫から消える。強化の画面では品の Lv を常に「+N」で出す（Lv0 も「+0」。M16 の 4-5。IT-11 の表示名は変えない）。
+- IT-70 汎用装備の強化は闇魔術の施設のサービス（TW-17）。ユニークは強化できない。触媒はパーティ全員の所持品（inventory）の鑑定済みの汎用装備から選び、持ち主から消える（M16 の G-2。それまでは本人の所持品だけ）。M17 から倉庫（IT-64）の鑑定済みの汎用装備も選べ、倉庫から消える。強化の画面では品の Lv を常に「+N」で出す（Lv0 も「+0」。M16 の 4-5。IT-11 の表示名は変えない）。M21（B-1）から触媒の Lv が結果に移る: 成功の Lv = max(対象の Lv + 1, 触媒の Lv の最小値)、大成功はさらに +1、失敗は −1。料金は結果の Lv × `config.economy.upgradeFeePerLevel`（50）【仮】（式は TW-17）。
 
 ## 9. 保存
 
@@ -152,7 +152,7 @@ M7 の A（宿の士気）と B（装備・ドロップ・希少度・オプシ�
 `data/monsters.json` の各敵に `"dropKind": "beast"`（必須。DROP_KINDS のどれか。IT-57。M14）。
 
 `config.items`（M7 の B3 で config.json に入れた。検証は rarities の順と件数・重みの合計 > 0・個数 0〜3、optionSellValue 3 件、*LvPer* と optionTierStep は正の整数、legendaryMinDanger は整数 1〜4）【仮】:
-`rarities`（`[{ id, weight, options }]` 通常 73/0・上質 22/1・希少 5/2・伝説 0/3。M14 で重みを 75/18/6/1 から、M15 で 72/20/7/1 から変えた）、`legendaryMinDanger` 3（IT-56。伝説に上がれる箱の危険度の下限。ボスの戦利品はこの危険度で振る。M15）、`curseChance` 8、`optionTierStep` 4、`dropLevelUpWeights` [60, 30, 10]（IT-53。M14 で `dropLevelSpread` 1 を置き換えた）、`weaponLvPerDamage` 1、`armorLvPerAc` 2、`casterLvPerPower` 1（M18 で 2・3・2 から）、`levelPriceRatio` 0.5、`optionSellValue` [20, 40, 80]、`warehouseSlots` 40。`config.economy` に `upgradeBase` 50・`upgradeRateBase` 10・`upgradeRatePerCatalyst` 30・`upgradeDecay` 0.66・`upgradeMaxCatalysts` 3（TW-17）。`config.chest` に `secondItemChance` 10・`secondItemPerDanger` 15（IT-51 / CB-65。宝箱の 2 個目の確率。M14。M19 で secondItemChance を 25 から）、`rarityUpPerDanger` 10（IT-56。M15 で 15 から）。`config.combat` に `directDropChance` 3（%。0〜100。M19 で 5 から）・`directDropGoldDice` "2d10"（ダイス記法）（CB-57 / IT-57。直接ドロップ。M14）。`config.combat.acMin` は削除（IT-24）。`dungeons[].onClear` は `shopStock` を `shopLevel` に置き換える。
+`rarities`（`[{ id, weight, options }]` 通常 73/0・上質 22/1・希少 5/2・伝説 0/3。M14 で重みを 75/18/6/1 から、M15 で 72/20/7/1 から変えた）、`legendaryMinDanger` 3（IT-56。伝説に上がれる箱の危険度の下限。ボスの戦利品はこの危険度で振る。M15）、`curseChance` 8、`optionTierStep` 4、`dropLevelUpWeights` [60, 30, 10]（IT-53。M14 で `dropLevelSpread` 1 を置き換えた）、`weaponLvPerDamage` 1、`armorLvPerAc` 2、`casterLvPerPower` 1（M18 で 2・3・2 から）、`levelPriceRatio` 0.5、`optionSellValue` [20, 40, 80]、`warehouseSlots` 40。`config.economy` に `upgradeBase` 50（M21 で `upgradeFeePerLevel` 50 に置き換えた。TW-17）・`upgradeRateBase` 10・`upgradeRatePerCatalyst` 30・`upgradeDecay` 0.66・`upgradeMaxCatalysts` 3（TW-17）。`config.chest` に `secondItemChance` 10・`secondItemPerDanger` 15（IT-51 / CB-65。宝箱の 2 個目の確率。M14。M19 で secondItemChance を 25 から）、`rarityUpPerDanger` 10（IT-56。M15 で 15 から）。`config.combat` に `directDropChance` 3（%。0〜100。M19 で 5 から）・`directDropGoldDice` "2d10"（ダイス記法）（CB-57 / IT-57。直接ドロップ。M14）。`config.combat.acMin` は削除（IT-24）。`dungeons[].onClear` は `shopStock` を `shopLevel` に置き換える。
 
 ## 11. 未決（ユーザーに確認すること。2026-10-05）
 

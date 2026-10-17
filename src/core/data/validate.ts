@@ -395,7 +395,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       cureCost: F(Object.fromEntries(CURABLE_STATUS_IDS.map((k) => [k, I(NON_NEG)]))),
       uncurseCost: I(NON_NEG),
       // TW-17（M7）【仮】
-      upgradeBase: I(NON_NEG),
+      upgradeFeePerLevel: I(NON_NEG),
       upgradeRateBase: I(PERCENT),
       upgradeRatePerCatalyst: I(PERCENT),
       upgradeDecay: N(RATIO),

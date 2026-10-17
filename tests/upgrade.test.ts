@@ -1,14 +1,14 @@
 // 闇魔術の強化（TW-17 / IT-70。M7 の C）。rules/upgrade.ts と engine の town.upgrade の配線、townMenu.upgrade。
 // M16（G-2）: 触媒は {memberId, instanceId} の組でパーティ全員の inventory から。up() は文字列を c1 の品の組に読み替える。
 // 既定のパーティ（newGame）: c1 アルド（武器 長剣・防具 革鎧・盾 木の盾、所持品 薬草）、c2 ベルク（長剣・鎖帷子）。所持金は town() で決める。
-// config.economy: upgradeBase 50・upgradeRateBase 10・upgradeRatePerCatalyst 30・upgradeDecay 0.66・upgradeMaxCatalysts 3【仮】。
+// config.economy: upgradeFeePerLevel 50（M21 B-1。それまでは upgradeBase 50）・upgradeRateBase 10・upgradeRatePerCatalyst 30・upgradeDecay 0.66・upgradeMaxCatalysts 3【仮】。
 // 出目は seedWithFirstD100 で「最初の randInt(1, 100) がその値になる種」を探して state.rng に入れる（鏡の rng で同じ 1 回を引いて比べる）。
 import { describe, expect, test } from "vitest";
 import { execute } from "../src/core/engine";
 import { createRng, randInt } from "../src/core/rng";
 import { townMenu } from "../src/core/rules/town";
 import { shopItemPreview } from "../src/core/rules/shop";
-import { checkUpgrade, upgradeFee, upgradeGreat, upgradePreview, upgradeRate } from "../src/core/rules/upgrade";
+import { checkUpgrade, upgradeFee, upgradeGreat, upgradePreview, upgradeRate, upgradeResultLevel } from "../src/core/rules/upgrade";
 import { cloneState, createItemInstance, destroyItemInstance } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState, ItemInstance, UpgradeCatalystRef } from "../src/core/types";
 import { data, expectKnownStringKeys, expectStateInvariants, loadFreshData, newGame, seedWithFirstD100 } from "./helpers/core";
@@ -109,10 +109,22 @@ describe("TW-17 成功率・大成功・料金の式", () => {
     expect(upgradeGreat(100)).toBe(10);
   });
 
-  test("TW-17 料金 = 50 × (対象Lv + 1)", () => {
-    expect(upgradeFee(0, E)).toBe(50);
-    expect(upgradeFee(2, E)).toBe(150);
-    expect(upgradeFee(9, E)).toBe(500);
+  test("TW-17 M21（B-1）料金 = 50 × 結果の Lv（触媒が無ければ対象Lv + 1 なので M20 までの 50 × (対象Lv + 1) と同じ額）", () => {
+    expect(upgradeFee(1, E)).toBe(50);
+    expect(upgradeFee(3, E)).toBe(150);
+    expect(upgradeFee(10, E)).toBe(500);
+    expect(upgradeFee(upgradeResultLevel(0, []), E)).toBe(50);
+    expect(upgradeFee(upgradeResultLevel(0, [5]), E)).toBe(250);
+  });
+
+  test("TW-17 M21（B-1）結果の Lv = max(対象Lv + 1, 触媒の Lv の最小値)。触媒が無ければ対象Lv + 1", () => {
+    expect(upgradeResultLevel(0, [])).toBe(1);
+    expect(upgradeResultLevel(4, [])).toBe(5);
+    expect(upgradeResultLevel(0, [5])).toBe(5);
+    expect(upgradeResultLevel(0, [5, 3, 7])).toBe(3); // 最小値
+    expect(upgradeResultLevel(2, [5, 3])).toBe(3); // = 対象 + 1
+    expect(upgradeResultLevel(2, [5, 0])).toBe(3); // 最小値が対象以下なら対象 + 1
+    expect(upgradeResultLevel(6, [2, 2, 2])).toBe(7);
   });
 });
 
@@ -362,15 +374,15 @@ describe("TW-17 upgradePreview と townMenu.upgrade（表示層向けの問い�
     armor.level = 0;
     const a0 = upgradePreview(s, data, "c1", "armor", [])!;
     expect([a0.before.ac, a0.after.ac]).toEqual([-2, -2]);
-    expect(a0.nextChangeAt).toEqual({ levels: 2, value: "-3" });
+    expect(a0.nextChangeAt).toEqual({ levels: 2, level: 2, value: "-3" });
     armor.level = 1;
     expect(upgradePreview(s, data, "c1", "armor", [])!.nextChangeAt).toBeNull();
     armor.level = 2;
-    expect(upgradePreview(s, data, "c1", "armor", [])!.nextChangeAt).toEqual({ levels: 2, value: "-4" });
+    expect(upgradePreview(s, data, "c1", "armor", [])!.nextChangeAt).toEqual({ levels: 2, level: 4, value: "-4" });
     // 除数を 3 にすると Lv0 は +3 で変わる（config の値を読む）
     const d3 = { ...data, config: { ...data.config, items: { ...data.config.items, armorLvPerAc: 3 } } };
     armor.level = 0;
-    expect(upgradePreview(s, d3, "c1", "armor", [])!.nextChangeAt).toEqual({ levels: 3, value: "-3" });
+    expect(upgradePreview(s, d3, "c1", "armor", [])!.nextChangeAt).toEqual({ levels: 3, level: 3, value: "-3" });
     armor.level = 2;
     expect(upgradePreview(s, d3, "c1", "armor", [])!.nextChangeAt).toBeNull();
     // 装飾（kind null）は前後が同じでも null
@@ -569,5 +581,92 @@ describe("TW-17 / IT-70 M17 倉庫の品を触媒に", () => {
     expect(s.warehouse).toEqual([b]);
     expect(s.items[a]).toBeUndefined();
     expectStateInvariants(s);
+  });
+});
+
+describe("TW-17 M21（B-1）鍛えるの Lv 移植と料金", () => {
+  /** c1 の長剣 Lv targetLv、触媒（c1 の inventory の長剣）を lvs の Lv で足し、最初の d100 を roll に */
+  function setup(targetLv: number, lvs: number[], roll: number, gold = 1000): { s: GameState; cats: string[] } {
+    const s = town(gold, targetLv);
+    const cats = lvs.map((lv) => give(s, "c1", { itemId: "long_sword", level: lv }));
+    withFirstRoll(s, roll);
+    return { s, cats };
+  }
+
+  test("TW-17 M21 成功: Lv0 の長剣に Lv5 の触媒 1 個（p 40・q 4）、出目 5 → Lv5、料金 50 × 5 = 250。乱数は d100 の 1 回（鏡の rng）", () => {
+    const { s, cats } = setup(0, [5], 5);
+    const mirror = structuredClone(s.rng);
+    expect(randInt(mirror, 1, 100)).toBe(5);
+    const r = ok(s, up(cats));
+    expect(r.events[0]).toMatchObject({ kind: "dice", rule: { params: { rate: 40, great: 4 } }, result: { key: "dice.upgrade.ok" } });
+    expect(r.events[1]).toEqual({ kind: "message", key: "town.upgrade.ok", params: { name: "アルド", item: "長剣 +5" } });
+    expect(weaponOf(r.state, "c1").level).toBe(5);
+    expect(r.state.gold).toBe(1000 - 250);
+    expect(r.state.rng).toEqual(mirror);
+  });
+
+  test("TW-17 M21 大成功は結果の Lv に +1（Lv0 + 触媒 Lv5 → Lv6）。料金は大成功を含めない 250", () => {
+    const { s, cats } = setup(0, [5], 4);
+    const r = ok(s, up(cats));
+    expect(r.events[0]).toMatchObject({ kind: "dice", result: { key: "dice.upgrade.great" } });
+    expect(weaponOf(r.state, "c1").level).toBe(6);
+    expect(r.state.gold).toBe(1000 - 250);
+  });
+
+  test("TW-17 M21 失敗は対象の Lv − 1（触媒の Lv によらない）。Lv0 は 0 のまま ngFloor。料金は結果の Lv で取る", () => {
+    const a = setup(3, [8, 6], 100);
+    const ra = ok(a.s, up(a.cats));
+    expect(ra.events[0]).toMatchObject({ kind: "dice", result: { key: "dice.upgrade.ng" } });
+    expect(weaponOf(ra.state, "c1").level).toBe(2);
+    expect(ra.state.gold).toBe(1000 - 50 * 6); // 結果の Lv = max(4, 6) = 6
+    const b = setup(0, [5], 100);
+    const rb = ok(b.s, up(b.cats));
+    expect(weaponOf(rb.state, "c1").level).toBe(0);
+    expect(rb.events[1]).toMatchObject({ key: "town.upgrade.ngFloor" });
+    expect(rb.state.gold).toBe(1000 - 250);
+  });
+
+  test("TW-17 M21 触媒の最小値が対象以下なら対象 + 1（Lv2 + 触媒 Lv5・Lv0 → 成功で Lv3、料金 150）", () => {
+    const { s, cats } = setup(2, [5, 0], 10);
+    const r = ok(s, up(cats));
+    expect(r.events[0]).toMatchObject({ kind: "dice", result: { key: "dice.upgrade.ok" } });
+    expect(weaponOf(r.state, "c1").level).toBe(3);
+    expect(r.state.gold).toBe(1000 - 150);
+  });
+
+  test("TW-17 M21 checkUpgrade の所持金の検査は結果の Lv の料金（Lv0 + 触媒 Lv5 は 250G。249G は not enough gold、乱数を引かない）", () => {
+    const poor = setup(0, [5], 5, 249);
+    expectRejected(poor.s, up(poor.cats), "not enough gold");
+    expect(checkUpgrade(poor.s, "c1", "weapon", refs(poor.cats), data)).toBe("not enough gold");
+    expect(checkUpgrade(poor.s, "c1", "weapon", [], data)).toBeNull(); // 触媒なしなら 50G
+    const rich = setup(0, [5], 5, 250);
+    expect(checkUpgrade(rich.s, "c1", "weapon", refs(rich.cats), data)).toBeNull();
+    expect(ok(rich.s, up(rich.cats)).state.gold).toBe(0);
+  });
+
+  test("TW-17 M21 upgradePreview: level / resultLevel、after は結果の Lv の下見、fee は結果の Lv × 50、affordable も同じ額。触媒にできない品は数えない", () => {
+    const s = town(240, 0);
+    const c5 = give(s, "c1", { itemId: "long_sword", level: 5 });
+    const p = upgradePreview(s, data, "c1", "weapon", [ref(c5)])!;
+    expect(p).toMatchObject({ level: 0, resultLevel: 5, fee: 250, affordable: false, block: "not enough gold" });
+    expect(p.before).toEqual(shopItemPreview(data, "long_sword", 0));
+    expect(p.after).toEqual(shopItemPreview(data, "long_sword", 5));
+    const unid = give(s, "c1", { itemId: "long_sword", level: 9, identified: false });
+    expect(upgradePreview(s, data, "c1", "weapon", [ref(c5), ref(unid)])).toMatchObject({ resultLevel: 5, block: "bad catalyst" });
+    expect(upgradePreview(s, data, "c1", "weapon", [])).toMatchObject({ level: 0, resultLevel: 1, fee: 50, affordable: true, block: null });
+  });
+
+  test("TW-17 M21 upgradePreview の nextChangeAt は結果の Lv で判定（革鎧 Lv0 + 触媒 Lv1 は同じ値で +2 で -3、触媒 Lv3 は値が変わるので null。除数 3 で触媒 Lv2 は +3 で -3）", () => {
+    const s = town(1000, 0);
+    const armor = s.items[member(s, "c1").equipment.armor!]!;
+    armor.level = 0;
+    const c1 = give(s, "c1", { itemId: "leather_armor", level: 1 });
+    const c2 = give(s, "c1", { itemId: "leather_armor", level: 2 });
+    const c3 = give(s, "c1", { itemId: "leather_armor", level: 3 });
+    expect(upgradePreview(s, data, "c1", "armor", [ref(c1)])!.nextChangeAt).toEqual({ levels: 2, level: 2, value: "-3" });
+    const p3 = upgradePreview(s, data, "c1", "armor", [ref(c3)])!;
+    expect([p3.resultLevel, p3.before.ac, p3.after.ac, p3.nextChangeAt]).toEqual([3, -2, -3, null]);
+    const d3 = { ...data, config: { ...data.config, items: { ...data.config.items, armorLvPerAc: 3 } } };
+    expect(upgradePreview(s, d3, "c1", "armor", [ref(c2)])!.nextChangeAt).toEqual({ levels: 3, level: 3, value: "-3" });
   });
 });

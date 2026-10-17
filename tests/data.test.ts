@@ -224,10 +224,11 @@ describe("data: config.json", () => {
     expect(issuesOf((r) => (r.config.combat.autoDefendHpRatio = 0))).toEqual([]);
     expect(issuesOf((r) => (r.config.combat.autoDefendHpRatio = 1))).toEqual([]);
   });
-  test("data: TW-17 economy.upgrade*（料金 50・基礎 10・触媒 30・減衰 0.66・最大 3）【仮】の検証", () => {
+  test("data: TW-17 economy.upgrade*（料金 結果の Lv あたり 50・基礎 10・触媒 30・減衰 0.66・最大 3）【仮】の検証。M21 B-1: upgradeBase は upgradeFeePerLevel に置き換えた", () => {
     const e = config.economy;
-    expect([e.upgradeBase, e.upgradeRateBase, e.upgradeRatePerCatalyst, e.upgradeDecay, e.upgradeMaxCatalysts]).toEqual([50, 10, 30, 0.66, 3]);
-    expectIssue((r) => (r.config.economy.upgradeBase = -1), "config.json", "economy.upgradeBase: expected integer >= 0, got -1");
+    expect([e.upgradeFeePerLevel, e.upgradeRateBase, e.upgradeRatePerCatalyst, e.upgradeDecay, e.upgradeMaxCatalysts]).toEqual([50, 10, 30, 0.66, 3]);
+    expect("upgradeBase" in e).toBe(false);
+    expectIssue((r) => (r.config.economy.upgradeFeePerLevel = -1), "config.json", "economy.upgradeFeePerLevel: expected integer >= 0, got -1");
     expectIssue((r) => (r.config.economy.upgradeRateBase = 101), "config.json", "economy.upgradeRateBase: expected integer in 0..100, got 101");
     expectIssue((r) => (r.config.economy.upgradeRatePerCatalyst = 2.5), "config.json", "economy.upgradeRatePerCatalyst: expected integer");
     expectIssue((r) => (r.config.economy.upgradeDecay = 1.5), "config.json", "economy.upgradeDecay: expected number in 0..1, got 1.5");

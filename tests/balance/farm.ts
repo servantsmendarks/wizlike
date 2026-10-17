@@ -177,9 +177,9 @@ export function farmReport(results: CampaignResult[], kind: BotKind): string {
   // 6. 1 時間あたり
   const hours = sum(all.map(totalMs)) / 3_600_000;
   row("1 時間あたり（推定の計の時間で割る）上質 / 希少 / 伝説", ["fine", "rare", "legendary"].map((r) => fmt(rar(r) / hours)).join(" / ") + `（計 ${fmt(hours)} 時間）`);
-  // 7. 逆算（Lv3 → Lv5。触媒 Lv3 以上 3 個 + Lv4 以上 3 個で成功 100%、料金 upgradeFee(3) + upgradeFee(4)）。
+  // 7. 逆算（Lv3 → Lv5。触媒 Lv3 以上 3 個 + Lv4 以上 3 個で成功 100%、料金 upgradeFee(4) + upgradeFee(5)（M21 B-1 から料金は結果の Lv × 50。額は M20 までと同じ 450G））。
   // 1 段目と 2 段目の触媒は別々の 6 個で、Lv3 以上の数には Lv4 以上も入るので、1 項目は Lv3 以上 6 個（レビューの指摘 L-1）
-  const fee = upgradeFee(3, data.config.economy) + upgradeFee(4, data.config.economy);
+  const fee = upgradeFee(4, data.config.economy) + upgradeFee(5, data.config.economy);
   const a3 = mean(lv3);
   const a4 = mean(lv4);
   const ag = mean(found("generic"));

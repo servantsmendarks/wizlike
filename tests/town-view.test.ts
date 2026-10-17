@@ -454,7 +454,7 @@ describe("UI-52 街のページ", () => {
     const ref = { memberId: "c1", instanceId: id } as UpgradeCatalystRef;
     const m = menuOf(s);
     const sel = { memberId: "c1", slot: "weapon" as const, picked: [] as UpgradeCatalystRef[] };
-    const fee = data.config.economy.upgradeBase * 2; // 対象の Lv1 → upgradeBase × (1 + 1)
+    const fee = data.config.economy.upgradeFeePerLevel * 2; // 対象の Lv1・触媒 Lv0 → 結果の Lv2 × upgradeFeePerLevel（M21 B-1）
     for (const picked of [[], [ref]]) {
       const pv = upgradePreview(s, data, "c1", "weapon", picked)!;
       expect(pv.fee).toBe(fee);
@@ -1163,28 +1163,34 @@ describe("UI-52 街のページ", () => {
     expect(formatMessage("{rarity}/{gold}", identifiedValueParams(s, data, sword))).toBe("伝説/125");
   });
 
-  test("TW-17 M18（3-3）確認の段の前後の 1 文 upgradePreviewText「成功で {kind} {before} → {after}」は core の upgradePreview の kind と before / after を埋めるだけ（装飾・preview なしは null）。どのベースの Lv20 でも 28 字 × 2 行以内", () => {
-    expect(S["town.upgrade.preview"]).toBe("成功で {kind} {before} → {after}");
+  test("TW-17 M18（3-3）/ M21（B-1）確認の段の前後の 1 文 upgradePreviewText「成功で +{before} → +{after}（{kind} {b} → {a}）」は core の upgradePreview の level / resultLevel・kind・before / after を埋めるだけ（装飾・preview なしは null）。どのベースの Lv20 → Lv99 でも 28 字 × 2 行以内", () => {
+    expect(S["town.upgrade.preview"]).toBe("成功で +{before} → +{after}（{kind} {b} → {a}）");
     expect([S["town.upgrade.kind.attack"], S["town.upgrade.kind.ac"], S["town.upgrade.kind.magic"]]).toEqual(["攻撃", "AC", "魔法攻撃力"]);
     const s = town({}, 0);
     const c1 = s.party[0]!;
     s.items[c1.equipment.weapon!]!.level = 1;
-    expect(upgradePreviewText(upgradePreview(s, data, "c1", "weapon", []), S)).toBe("成功で 攻撃 1d8+1 → 1d8+2");
+    expect(upgradePreviewText(upgradePreview(s, data, "c1", "weapon", []), S)).toBe("成功で +1 → +2（攻撃 1d8+1 → 1d8+2）");
+    // M21（B-1）: 触媒の Lv の最小値が上なら結果の Lv はそこまで（Lv1 + 触媒 Lv5 → +5）
+    const cat5 = createItemInstance(s, { itemId: "long_sword", level: 5, identified: true });
+    c1.inventory.push(cat5);
+    expect(upgradePreviewText(upgradePreview(s, data, "c1", "weapon", [{ memberId: "c1", instanceId: cat5 }]), S)).toBe("成功で +1 → +5（攻撃 1d8+1 → 1d8+5）");
     s.items[c1.equipment.armor!]!.level = 1;
-    expect(upgradePreviewText(upgradePreview(s, data, "c1", "armor", []), S)).toBe("成功で AC -2 → -3");
+    expect(upgradePreviewText(upgradePreview(s, data, "c1", "armor", []), S)).toBe("成功で +1 → +2（AC -2 → -3）");
     const staff = createItemInstance(s, { itemId: "oak_staff", level: 2, identified: true });
     c1.equipment.weapon = staff;
-    expect(upgradePreviewText(upgradePreview(s, data, "c1", "weapon", []), S)).toBe("成功で 魔法攻撃力 3 → 4");
+    expect(upgradePreviewText(upgradePreview(s, data, "c1", "weapon", []), S)).toBe("成功で +2 → +3（魔法攻撃力 3 → 4）");
     const charm = createItemInstance(s, { itemId: "charm", level: 0, identified: true });
     c1.equipment.accessory = charm;
     expect(upgradePreviewText(upgradePreview(s, data, "c1", "accessory", []), S)).toBeNull();
     expect(upgradePreviewText(null, S)).toBeNull();
-    // 最悪の値: どのベースも Lv20（装飾は語らない）
+    // 最悪の値: どのベースも Lv20 に触媒 Lv99 で +20 → +99（装飾は語らない）
     let n = 0;
+    const cat99 = createItemInstance(s, { itemId: "long_sword", level: 99, identified: true });
+    c1.inventory.push(cat99);
     for (const b of data.equipmentBases) {
       const id = createItemInstance(s, { itemId: b.id, level: 20, rarity: "legendary", identified: true });
       c1.equipment[b.slot] = id;
-      const text = upgradePreviewText(upgradePreview(s, data, "c1", b.slot, []), S);
+      const text = upgradePreviewText(upgradePreview(s, data, "c1", b.slot, [{ memberId: "c1", instanceId: cat99 }]), S);
       if (b.slot === "accessory") {
         expect(text, b.id).toBeNull();
         continue;
@@ -1197,18 +1203,21 @@ describe("UI-52 街のページ", () => {
     expect(n).toBeGreaterThan(0);
   });
 
-  test("TW-17 M18（5-13）前後が同じ値のときは upgradePreviewText が town.upgrade.previewSame「成功で {kind} は変わらない（+{n} で {next}）」（core の nextChangeAt を埋めるだけ）。どのベースの Lv0〜20 でも 28 字 × 2 行以内", () => {
-    expect(S["town.upgrade.previewSame"]).toBe("成功で {kind} は変わらない（+{n} で {next}）");
+  test("TW-17 M18（5-13）/ M21（B-1）前後が同じ値のときは upgradePreviewText が town.upgrade.previewSame「成功で +{before} → +{after}（{kind} は変わらない。+{n} で {next}）」（core の level / resultLevel と nextChangeAt の level・value を埋めるだけ）。どのベースの Lv0〜20 でも 28 字 × 2 行以内", () => {
+    expect(S["town.upgrade.previewSame"]).toBe("成功で +{before} → +{after}（{kind} は変わらない。+{n} で {next}）");
     const s = town({}, 0);
     const c1 = s.party[0]!;
     s.items[c1.equipment.armor!]!.level = 0;
-    expect(upgradePreviewText(upgradePreview(s, data, "c1", "armor", []), S)).toBe("成功で AC は変わらない（+2 で -3）");
+    expect(upgradePreviewText(upgradePreview(s, data, "c1", "armor", []), S)).toBe("成功で +0 → +1（AC は変わらない。+2 で -3）");
     s.items[c1.equipment.armor!]!.level = 1;
-    expect(upgradePreviewText(upgradePreview(s, data, "c1", "armor", []), S)).toBe("成功で AC -2 → -3");
+    expect(upgradePreviewText(upgradePreview(s, data, "c1", "armor", []), S)).toBe("成功で +1 → +2（AC -2 → -3）");
     // 表示層は値を比べない: nextChangeAt があればその値で語る（除数 3 の Lv0 → +3）
     const d3 = { ...data, config: { ...data.config, items: { ...data.config.items, armorLvPerAc: 3 } } };
     s.items[c1.equipment.armor!]!.level = 0;
-    expect(upgradePreviewText(upgradePreview(s, d3, "c1", "armor", []), S)).toBe("成功で AC は変わらない（+3 で -3）");
+    expect(upgradePreviewText(upgradePreview(s, d3, "c1", "armor", []), S)).toBe("成功で +0 → +1（AC は変わらない。+3 で -3）");
+    // n は次に値が変わる Lv（nextChangeAt.level）。Lv1 の革鎧（除数 3）も +3 で -3
+    s.items[c1.equipment.armor!]!.level = 1;
+    expect(upgradePreviewText(upgradePreview(s, d3, "c1", "armor", []), S)).toBe("成功で +1 → +2（AC は変わらない。+3 で -3）");
     // 最悪の値: どのベースの Lv0〜20 でも、同じ値のときは previewSame、28 字 × 2 行以内（大きい除数 9 も見る）
     const d9 = { ...data, config: { ...data.config, items: { ...data.config.items, weaponLvPerDamage: 9, armorLvPerAc: 9, casterLvPerPower: 9 } } };
     let same = 0;
@@ -1224,7 +1233,7 @@ describe("UI-52 街のページ", () => {
           expect(text, text).not.toMatch(/\{/);
           if (p.nextChangeAt !== null) {
             same++;
-            expect(text).toMatch(/は変わらない（\+\d+ で /);
+            expect(text).toMatch(/は変わらない。\+\d+ で /);
           }
           expect(kinsokuLines(text, 28).length, text).toBeLessThanOrEqual(2);
         }

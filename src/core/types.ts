@@ -824,7 +824,9 @@ export type TownMenuUpgradeMember = {
  * M18（3-3）: before / after は対象の今の Lv と Lv+1（成功のとき。大成功の +2 は出さない）の性能の下見（shopItemPreview と同じ値）。
  * kind は確認の段で語る前後の項目（UpgradePreviewKind）。Lv で数値が変わらない装飾（IT-23）は null（語らない）。
  * M18（5-13）: nextChangeAt は kind の値が before と after で同じとき（防具の Lv0 → 1 の AC など）、次に値が変わる Lv までの段数 levels
- * （今の Lv からの差。2 以上）とそのときの値 value（文字列）。値が変わるとき・kind が null のときは null
+ * （今の Lv からの差。2 以上）とそのときの値 value（文字列）。値が変わるとき・kind が null のときは null。
+ * M21（B-1）: level / resultLevel は対象の今の Lv と成功のときの結果の Lv（max(Lv + 1, 触媒の Lv の最小値)。大成功の +1 は含めない）。
+ * after は resultLevel の下見、fee は resultLevel × upgradeFeePerLevel。nextChangeAt.level はその Lv（level + levels）
  */
 export type UpgradePreview = {
   rate: number;
@@ -833,9 +835,11 @@ export type UpgradePreview = {
   affordable: boolean;
   block: string | null;
   kind: UpgradePreviewKind | null;
+  level: number;
+  resultLevel: number;
   before: ItemPreview;
   after: ItemPreview;
-  nextChangeAt: { levels: number; value: string } | null;
+  nextChangeAt: { levels: number; level: number; value: string } | null;
 };
 /** M18（3-3）: 強化の前後で比べる項目。attack は武器（術者用でない）の攻撃、ac は防具・盾・兜・小手の AC、magic は術者用武器の魔法攻撃力 */
 export type UpgradePreviewKind = "attack" | "ac" | "magic";
