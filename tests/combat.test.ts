@@ -1688,11 +1688,11 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     // ボス戦では判定しない（乱数も使わない）は tests/dungeon.test.ts の DG-31
   });
 
-  test("CB-51/CB-60【仮】宝箱の既定の率（M21）: 段の表 chestTable [0,5,15,40,80,100]・部屋の上乗せ chestRoomBonus 10。連続 0 の段では部屋 10%・通路 0%（通路も chance は 1 回引く）。勝利の金と直接ドロップ（CB-57）の後の chance 1 回の出目で決まる（鏡の rng、シード 1〜60）", () => {
-    expect(data.config.combat.chestTable).toEqual([0, 5, 15, 40, 80, 100]);
+  test("CB-51/CB-60【仮】宝箱の既定の率（M21）: 段の表 chestTable [0,5,5,15,100]（計測(M21-群B) の後の調整。初めは [0,5,15,40,80,100]）・部屋の上乗せ chestRoomBonus 10。連続 0 の段では部屋 10%・通路 0%（通路も chance は 1 回引く）。勝利の金と直接ドロップ（CB-57）の後の chance 1 回の出目で決まる（鏡の rng、シード 1〜60）", () => {
+    expect(data.config.combat.chestTable).toEqual([0, 5, 5, 15, 100]);
     expect(data.config.combat.chestRoomBonus).toBe(10);
     // M11（B8）: dataWith は既定で宝箱の判定を 0 にするので、実データの値を戻す
-    const d = dataWith({ combat: { ...ALWAYS_HIT, chestTable: [0, 5, 15, 40, 80, 100], chestRoomBonus: 10 } }, noChestImpulse);
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestTable: [0, 5, 5, 15, 100], chestRoomBonus: 10 } }, noChestImpulse);
     const seen = { room: [0, 0], corridor: [0, 0] };
     for (let seed = 1; seed <= 60; seed++) {
       for (const inRoom of [true, false]) {

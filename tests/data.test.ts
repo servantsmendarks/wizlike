@@ -1382,9 +1382,9 @@ describe("data: drops.json（IT-50〜53。M7）", () => {
     expectIssue((r) => (r.config.combat.directDropGoldDice = "2d"), "config.json", 'combat.directDropGoldDice: invalid dice expression "2d"');
     expectIssue((r) => delete r.config.combat.directDropGoldDice, "config.json", "combat.directDropGoldDice: missing required field");
   });
-  test("data: CB-51/CB-51b（M21）combat.chestTable は 0..100 の整数の 1 つ以上の列、chestRoomBonus は 0..100【仮】（[0,5,15,40,80,100]・10。M20 の chestChance・chestChanceCorridor・chestPity は消した）", () => {
+  test("data: CB-51/CB-51b（M21）combat.chestTable は 0..100 の整数の 1 つ以上の列、chestRoomBonus は 0..100【仮】（[0,5,5,15,100]・10。計測(M21-群B) の後の調整。初めは [0,5,15,40,80,100]。M20 の chestChance・chestChanceCorridor・chestPity は消した）", () => {
     const d = loadGameData(rawData());
-    expect(d.config.combat.chestTable).toEqual([0, 5, 15, 40, 80, 100]);
+    expect(d.config.combat.chestTable).toEqual([0, 5, 5, 15, 100]);
     expect(d.config.combat.chestRoomBonus).toBe(10);
     expect(d.config.combat).not.toHaveProperty("chestChance");
     expect(d.config.combat).not.toHaveProperty("chestChanceCorridor");
