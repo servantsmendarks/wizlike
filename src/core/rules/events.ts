@@ -175,7 +175,9 @@ export function applyEffects(ctx: RuleContext, f: Floor | null, effects: readonl
       case "revealFloor": {
         if (f === null) throw new Error("EV-32: no floor");
         const dive = requireDiveOf(state);
-        addExplored(dive, dive.floor, Array.from({ length: f.width * f.height }, (_, i) => i)); // 語りは結果の text
+        // DG-48: 岩は explored にも地図にも入れない（床のセルだけ）
+        const floorCells = f.cells.flatMap((c, i) => (c.kind === "rock" ? [] : [i]));
+        addExplored(dive, dive.floor, floorCells); // 語りは結果の text
         break;
       }
       case "revealStairs": {

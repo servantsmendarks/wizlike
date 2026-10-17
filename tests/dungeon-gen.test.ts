@@ -640,7 +640,7 @@ describe("dungeon-gen: 階の充填率（DG-48。M21）", () => {
     return out;
   };
 
-  test("DG-48 data: fillRatio は各ダンジョンにある（d01 0.45 / d02 0.6 / d03 0.75【仮】）", () => {
+  test("DG-48 data: fillRatio は各ダンジョンにある（d01 0.45 / d02 0.6 / d03 0.75）", () => {
     expect(Object.fromEntries(ALL_DEFS.map((d) => [d.id, d.fillRatio]))).toEqual({ d01: 0.45, d02: 0.6, d03: 0.75 });
   });
 

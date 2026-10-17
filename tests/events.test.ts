@@ -7,7 +7,7 @@ import { describe, expect, test } from "vitest";
 import type { GameData } from "../src/core/data/index";
 import { LURE_TAGS } from "../src/core/data/index";
 import { cloneRng, randInt, rollDice, rollDie, weightedIndex, type RngState } from "../src/core/rng";
-import { floorOf } from "../src/core/rules/dungeon";
+import { floorOf, mapView } from "../src/core/rules/dungeon";
 import { cellAt, idx } from "../src/core/rules/dungeon-gen";
 import { effectiveStats } from "../src/core/rules/equip-stats";
 import { applyEffects, decideImpulse, impulseChance, lureProduct, pickStopper, startEvent } from "../src/core/rules/events";
@@ -541,7 +541,7 @@ describe("衝動の実行（EV-23, EV-24, EV-30）", () => {
   /** stop.fail より後のイベント */
   const afterFail = (ctx: RuleContext) => ctx.events.slice(kinds(ctx.events).indexOf("message:event.stop.fail") + 1);
 
-  test("EV-23 失敗 good: impulseBonus（石板 SAN +4 / 宝袋 2d10 金）。revealFloor は全セル", () => {
+  test("EV-23 失敗 good: impulseBonus（石板 SAN +4 / 宝袋 2d10 金）。revealFloor は床の全セル（岩を除く。DG-48）", () => {
     const { state } = tablet();
     const s = failing(state);
     const m = mirrorToFail(s);
@@ -555,7 +555,7 @@ describe("衝動の実行（EV-23, EV-24, EV-30）", () => {
     ]);
     expect(ctx.state.rng).toEqual(m);
     const f = floorOf(ctx.state.dive!, data);
-    expect(ctx.state.dive!.explored["1"]).toEqual(Array.from({ length: f.width * f.height }, (_, i) => i));
+    expect(ctx.state.dive!.explored["1"]).toEqual(f.cells.flatMap((c, i) => (c.kind === "rock" ? [] : [i]))); // DG-48: 岩を除く
     expect(ctx.state.dive!.clearedCells).toEqual([{ floor: 1, ...ctx.state.dive!.pos }]);
     expect(ctx.state.screen).toBe("dungeon");
     // 宝袋: 5d10 と bonus の 2d10 で event.gold が 2 回、強欲のドナ +2 が 2 回（CH-52）。所持金と台帳に足す
@@ -763,13 +763,13 @@ describe("効果（EV-32）", () => {
     expect(ctx.events).toEqual([]);
   });
 
-  test("EV-32 revealFloor は全セルを explored に、revealStairs は下り階段、最下層ではボスのセル（B9）", () => {
+  test("EV-32 revealFloor は床の全セル（岩を除く）を explored に、revealStairs は下り階段、最下層ではボスのセル（B9）", () => {
     const { ctx, f, actor } = fx();
     const before = [...(ctx.state.dive!.explored["1"] ?? [])];
     applyEffects(ctx, f, [{ type: "revealStairs" }], actor(0));
     expect(ctx.state.dive!.explored["1"]).toEqual([...new Set([...before, idx(f, f.stairsDown!.x, f.stairsDown!.y)])].sort((a, b) => a - b));
     applyEffects(ctx, f, [{ type: "revealFloor" }], actor(0));
-    expect(ctx.state.dive!.explored["1"]).toEqual(Array.from({ length: f.width * f.height }, (_, i) => i));
+    expect(ctx.state.dive!.explored["1"]).toEqual(f.cells.flatMap((c, i) => (c.kind === "rock" ? [] : [i]))); // DG-48: 岩を除く
     expect(ctx.events).toEqual([]); // GameEvent は出さない（語りは結果の text）
     // d02 の 3 階（最下層。下り階段が無い）ではボスのセル
     const s0 = cloneState(newGame(3));
@@ -781,6 +781,19 @@ describe("効果（EV-32）", () => {
     expect(f3.stairsDown).toBeNull();
     applyEffects(c3, f3, [{ type: "revealStairs" }], c3.state.party[0]!);
     expect(c3.state.dive!.explored["3"]).toEqual([idx(f3, f3.boss!.x, f3.boss!.y)]);
+  });
+
+  test("EV-32/DG-48 revealFloor は岩を探索済みに入れない（mapView に岩が無い）", () => {
+    const { ctx, f, actor } = fx();
+    const rocks = f.cells.flatMap((c, i) => (c.kind === "rock" ? [i] : []));
+    expect(rocks.length).toBeGreaterThan(0); // d01 は fillRatio 0.45 なので岩がある
+    applyEffects(ctx, f, [{ type: "revealFloor" }], actor(0));
+    const explored = ctx.state.dive!.explored["1"]!;
+    expect(explored.filter((i) => rocks.includes(i))).toEqual([]);
+    expect(explored.length).toBe(f.width * f.height - rocks.length);
+    const view = mapView(ctx.state, data)!;
+    expect(view.cells.filter((c) => f.cells[idx(f, c.x, c.y)]!.kind === "rock")).toEqual([]);
+    expect(view.cells.length).toBe(f.width * f.height - rocks.length);
   });
 
   test("EV-32/TW-14 applyEffects は f が null（酒場）のとき revealFloor / revealStairs で Error。gold / san / message / nothing は f が null でも使え、dive が無ければ台帳には入れない", () => {
