@@ -136,8 +136,11 @@ export type TownEntry =
   | { kind: "upPick"; to: TownPage; label: string; disabled: boolean; info: string }
   /** TW-17: 確認の「鍛える」。押すと town.upgrade（upgradePreview の block が null でなければ disabled） */
   | { kind: "upgrade"; memberId: string; slot: EquipSlot; catalysts: UpgradeCatalystRef[]; label: string; disabled: boolean }
-  /** TW-03 / UI-52: 酒場の状態（キャラクター画面 UI-59）・並び順・図鑑。押すとキャンプと同じ部品（views/camp.ts）をその段で開く */
-  | { kind: "camp"; open: CampOpen; label: string }
+  /**
+   * TW-03 / UI-52: 酒場の状態（キャラクター画面 UI-59）・並び順・図鑑。押すとキャンプと同じ部品（views/camp.ts）をその段で開く。
+   * host "bank" は TW-16c（M21 A-2）の銀行の「状態」（倉庫から装備できるキャラクター画面。省略は酒場）
+   */
+  | { kind: "camp"; open: CampOpen; label: string; host?: "bank" }
   /**
    * TW-09 / CH-22（M10）: 転職先の行。押すと確認の段（{ ccConfirm }）へ。core の classChangeOptions の ok が偽なら dim で、
    * 押すと会話の箱に reason（core の理由から作った文。無ければ null）を語る
@@ -486,7 +489,7 @@ export function townEntries(
   }
   if (page === "bank") {
     // TW-10 / TW-16 / TW-16b（M17）: 金を預ける / 金を引き出す / 品を預ける / 品を引き出す（倉庫の数と容量）/ すべて預ける（全員。core の depositAllOk）/ 戻る。
-    // 金と品の行は dim にしない（中の段の行で dim）
+    // 金と品の行は dim にしない（中の段の行で dim）。TW-16c（M21 A-2）: すべて預けるの後に「状態（倉庫から装備）」（キャラクター画面を host bank で開く）
     const st = menu.storage;
     return [
       { kind: "page", to: "bankDeposit", label: s(strings, "town.bank.menu.deposit") },
@@ -494,6 +497,7 @@ export function townEntries(
       { kind: "page", to: "storageDeposit", label: s(strings, "town.storage.menu.deposit") },
       { kind: "page", to: "storageWithdraw", label: s(strings, "town.storage.menu.withdraw", { count: st.items.length, capacity: st.capacity }) },
       { kind: "depositAll", memberId: null, label: s(strings, "town.storage.menu.depositAll"), disabled: !st.depositAllOk },
+      { kind: "camp", open: "status", host: "bank", label: s(strings, "town.bank.menu.status") },
       back,
     ];
   }
@@ -928,8 +932,8 @@ export function upgradeItemName(plainName: string, level: number, strings: Strin
   return s(strings, "town.upgrade.itemLv", { name: plainName, level });
 }
 
-/** 一覧の行の文字の幅（158 = 168 − 余白 4×2 − 枠 1×2。全角 19.5 字 = 39 単位。party-band の textUnits の単位。UI-47） */
-const LIST_ROW_UNITS = 39;
+/** 一覧の行の文字の幅（158 = 168 − 余白 4×2 − 枠 1×2。全角 19.5 字 = 39 単位。party-band の textUnits の単位。UI-47）。M21: 銀行の状態の倉庫の候補の行（views/camp.ts）も使う */
+export const LIST_ROW_UNITS = 39;
 
 /**
  * TW-17（M20 B-2）: 触媒の付け外しのたびに会話の箱で語る性能の 1 文 town.upgrade.catInfo「{item}: 攻撃 {attack} / AC {ac} / 魔法攻撃力 {magic}」。

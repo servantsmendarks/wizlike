@@ -32,6 +32,7 @@ import {
   type CampEntry,
   type CampInput,
   type CampPage,
+  warehouseRowLabel,
 } from "../src/presenter/views/camp";
 import { CHARACTER_INVENTORY_CELLS, formatCharacter } from "../src/presenter/views/detail";
 import { formatMessage } from "../src/presenter/views/message";
@@ -1437,5 +1438,149 @@ describe("UI-80（M20）キャンプのパネルの characterTarget", () => {
     v.render({ kind: "character", detail, focusSlot: null, tappable: true });
     v.render({ kind: "lines", title: "長剣", lines: [], tall: true });
     expect(v.characterTarget(10, 88)).toBeNull();
+  });
+});
+
+describe("TW-16c/UI-59 銀行の状態で倉庫から装備（M21 A-2。host bank）", () => {
+  const units = (x: string): number => Array.from(x).reduce((n, c) => n + ((c.codePointAt(0) ?? 0) < 0x80 ? 0.5 : 1), 0);
+  /** 倉庫の末尾に itemId の実体を足した state と、その実体 id */
+  function stash(base: GameState, itemId: string, identified = true): { s: GameState; id: string } {
+    const s = cloneState(base);
+    const id = createItemInstance(s, { itemId, identified });
+    s.warehouse.push(id);
+    return { s, id };
+  }
+  const equipItemPage = (memberId: string, slot: "weapon" | "helm" | "shield"): CampPage => ({ kind: "equip", stage: "item", memberId, slot });
+  const who = (s: GameState, id: string): Character => s.party.find((c) => c.id === id)!;
+  const fillWarehouse = (base: GameState): GameState => {
+    const s = cloneState(base);
+    while (s.warehouse.length < data.config.items.warehouseSlots) s.warehouse.push(createItemInstance(s, { itemId: "herb", identified: true }));
+    return s;
+  };
+
+  test("TW-16c/UI-59 host bank のキャラクター画面だけ 4 つ目の枠（キー 4）に「倉庫から」（装備の段へ）。酒場・キャンプでは空き枠。最初の頁と戻るは酒場と同じ", () => {
+    const m = input(inTown());
+    const e = campEntries("bank", character("c1"), m, S);
+    expect(grid(e)[3]).toEqual({ label: "倉庫から", disabled: false, choice: { kind: "action", action: "equip" } });
+    expect(campKeyIndex({ menu: 3 }, e)).toBe(3);
+    expect(labels(grid(e))).toEqual(["呪文", "次の人", null, "倉庫から", null, null, null, "戻る"]);
+    for (const host of ["tavern", "camp"] as const) expect(grid(campEntries(host, character("c1"), m, S))[3], host).toBeNull();
+    expect(campStep("bank", character("c1"), m, { kind: "action", action: "equip" })).toEqual({ kind: "page", page: { kind: "equip", stage: "slot", memberId: "c1" } });
+    expect(campFirstPage("bank", "status", m.menu)).toEqual(character("c1"));
+    expect(campStep("bank", character("c1"), m, { kind: "cancel" })).toEqual({ kind: "close" });
+    expect(campStep("bank", { kind: "equip", stage: "slot", memberId: "c1" }, m, { kind: "cancel" })).toEqual({ kind: "page", page: character("c1") });
+  });
+
+  test("TW-16c 品の一覧: 外して倉庫へ → 装備中 → 手元の候補 → 倉庫の候補「{name}（倉庫）」。倉庫の候補を選ぶと from warehouse の詳細 → 装備する → party.equip の from / to warehouse（core が受け付け、旧品は倉庫へ）", () => {
+    let s = inTown();
+    const own = createItemInstance(s, { itemId: "dagger", identified: true });
+    who(s, "c3").inventory.push(own); // c3 の手元の短剣
+    const bow = stash(s, "short_bow");
+    s = bow.s;
+    const m = input(s);
+    const list = rows(campEntries("bank", equipItemPage("c3", "weapon"), m, S));
+    expect(labels(list)).toEqual(["外して倉庫へ", "短剣（装備中）", "短剣", "短弓（倉庫）", "やめる"]);
+    expect(list[3]!.choice).toEqual({ kind: "detail", instanceId: bow.id, from: "warehouse" });
+    const step = campStep("bank", equipItemPage("c3", "weapon"), m, list[3]!.choice);
+    const detail: CampPage = { kind: "equip", stage: "detail", memberId: "c3", slot: "weapon", instanceId: bow.id, from: "warehouse" };
+    expect(step).toEqual({ kind: "page", page: detail });
+    expect(campPanel(detail, m, S)).toEqual({ kind: "item", instanceId: bow.id, preview: { memberId: "c3", slot: "weapon", instanceId: bow.id, from: "warehouse" } });
+    const de = rows(campEntries("bank", detail, m, S));
+    expect(de[0]).toEqual({ label: "装備する", disabled: false, choice: { kind: "equip", instanceId: bow.id } });
+    const sent = campStep("bank", detail, m, de[0]!.choice);
+    expect(sent).toEqual({
+      kind: "send",
+      command: { type: "party.equip", memberId: "c3", instanceId: bow.id, from: "warehouse", to: "warehouse" },
+      after: { kind: "equip", stage: "slot", memberId: "c3" },
+    });
+    const t = accepted(s, (sent as { command: Command }).command);
+    expect(who(t, "c3").equipment.weapon).toBe(bow.id);
+    expect(t.warehouse).toEqual(["i7"]);
+    // 送った後の段で、倉庫に戻った旧品（短剣）が倉庫の候補に出る。詳細の段の品は装備中になったので段はそのまま（外して倉庫へ）
+    const m2 = input(t);
+    expect(labels(rows(campEntries("bank", equipItemPage("c3", "weapon"), m2, S)))).toEqual(["外して倉庫へ", "短弓（装備中）", "短剣", "短剣（倉庫）", "やめる"]);
+    expect(campRepair("bank", detail, m2)).toEqual(detail);
+    expect(labels(rows(campEntries("bank", detail, m2, S)))).toEqual(["外して倉庫へ", "やめる"]);
+    // 倉庫の候補でも装備中でもなくなった品の詳細（ほかの者が引き出した等）は品の一覧へ
+    const gone = cloneState(s);
+    gone.warehouse = [];
+    expect(campRepair("bank", detail, input(gone))).toEqual(equipItemPage("c3", "weapon"));
+    // 手元の候補は今どおり（from / to なし。旧品は手元へ）
+    const ownStep = campStep("bank", { kind: "equip", stage: "detail", memberId: "c3", slot: "weapon", instanceId: own }, m, { kind: "equip", instanceId: own });
+    expect(ownStep).toMatchObject({ kind: "send", command: { type: "party.equip", memberId: "c3", instanceId: own } });
+    expect((ownStep as { command: Command }).command).not.toHaveProperty("from");
+    expect((ownStep as { command: Command }).command).not.toHaveProperty("to");
+  });
+
+  test("TW-16c 外して倉庫へ: party.unequip の to warehouse（core が受け付ける）。倉庫が満杯なら dim（core の canUnequipToWarehouse）。詳細の段の外すも同じ", () => {
+    const s = inTown();
+    const m = input(s);
+    const list = rows(campEntries("bank", equipItemPage("c1", "shield"), m, S));
+    expect(list[0]).toEqual({ label: "外して倉庫へ", disabled: false, choice: { kind: "unequip" } });
+    const sent = campStep("bank", equipItemPage("c1", "shield"), m, { kind: "unequip" });
+    expect(sent).toEqual({
+      kind: "send",
+      command: { type: "party.unequip", memberId: "c1", slot: "shield", to: "warehouse" },
+      after: { kind: "equip", stage: "slot", memberId: "c1" },
+    });
+    const t = accepted(s, (sent as { command: Command }).command);
+    expect(t.warehouse).toEqual(["i3"]);
+    expect(who(t, "c1").inventory).toEqual(["i4"]);
+    const full = input(fillWarehouse(s));
+    expect(rows(campEntries("bank", equipItemPage("c1", "shield"), full, S))[0]).toMatchObject({ label: "外して倉庫へ", disabled: true });
+    const cur: CampPage = { kind: "equip", stage: "detail", memberId: "c1", slot: "shield", instanceId: "i3" };
+    expect(rows(campEntries("bank", cur, m, S))[0]).toEqual({ label: "外して倉庫へ", disabled: false, choice: { kind: "unequip" } });
+    expect(rows(campEntries("bank", cur, full, S))[0]!.disabled).toBe(true);
+  });
+
+  test("TW-16c 酒場の状態（host tavern）は今どおり: 倉庫の候補を出さず、外すは手元へ（to なし）。倉庫の品だけなら「装備できる物がない」は bank で出ない", () => {
+    const { s, id } = stash(inTown(), "leather_cap");
+    const m = input(s);
+    expect(labels(rows(campEntries("tavern", equipItemPage("c5", "helm"), m, S)))).toEqual(["装備できる物がない", "やめる"]);
+    expect(labels(rows(campEntries("bank", equipItemPage("c5", "helm"), m, S)))).toEqual([`${itemDisplayName(s, data, id)}（倉庫）`, "やめる"]);
+    expect(campStep("tavern", equipItemPage("c1", "shield"), m, { kind: "unequip" })).toMatchObject({ command: { type: "party.unequip", memberId: "c1", slot: "shield" } });
+    expect((campStep("tavern", equipItemPage("c1", "shield"), m, { kind: "unequip" }) as { command: Command }).command).not.toHaveProperty("to");
+    // tavern では倉庫の候補の行（from warehouse）を選んでも from は付かない（詳細は手元の候補を探すので出ない）
+    expect(campStep("tavern", equipItemPage("c5", "helm"), m, { kind: "detail", instanceId: id, from: "warehouse" })).toEqual({
+      kind: "page",
+      page: { kind: "equip", stage: "detail", memberId: "c5", slot: "helm", instanceId: id },
+    });
+  });
+
+  test("TW-16c 送れない倉庫の候補: 行は「{name}（倉庫）（{why}）」、詳細の装備するは dim で押すと理由（使用枠が一杯 = full・動けない）", () => {
+    const s = inTown();
+    while (who(s, "c5").inventory.length + 1 < 8) who(s, "c5").inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
+    const cap = stash(s, "leather_cap");
+    const m = input(cap.s);
+    expect(m.menu.members.find((x) => x.id === "c5")!.warehouseCandidates![0]!.block).toBe("full");
+    const name = itemDisplayName(cap.s, data, cap.id);
+    expect(labels(rows(campEntries("bank", equipItemPage("c5", "helm"), m, S)))).toEqual([`${name}（倉庫）（持てない）`, "やめる"]);
+    const detail: CampPage = { kind: "equip", stage: "detail", memberId: "c5", slot: "helm", instanceId: cap.id, from: "warehouse" };
+    expect(rows(campEntries("bank", detail, m, S))[0]).toEqual({
+      label: "装備する（持てない）",
+      disabled: true,
+      choice: { kind: "equip", instanceId: cap.id },
+      reason: `エルは持ち物が一杯で、${name}を持てない。`,
+    });
+    const sleep = stash(patched(inTown(), { c5: { status: ["sleep"] } }), "leather_cap");
+    const ds: CampPage = { ...detail, instanceId: sleep.id };
+    expect(rows(campEntries("bank", ds, input(sleep.s), S))[0]).toMatchObject({ disabled: true, reason: "エルは動けない。" });
+  });
+
+  test("TW-16c 新しい文は最悪の値でも収まる: 倉庫の候補の行は一覧の行の幅（39 単位。長ければ名前の末尾を「…」）、銀行の行・外して倉庫へも一覧の行、倉庫からの枠は 48px", () => {
+    const prefix = [...["fine", "rare", "legendary"].map((r) => S[`item.rarity.${r}`]!)].sort((a, b) => units(b) - units(a))[0]!;
+    const names = [
+      ...data.equipmentBases.map((b) => `${prefix}${b.name}${formatMessage(S["item.plus"]!, { n: 12 })}`),
+      ...data.uniques.map((u) => `${prefix}${u.name}${formatMessage(S["item.plus"]!, { n: 12 })}`),
+    ];
+    const whys = [null, ...["cannotAct", "cursedSlot", "full"].map((b) => S[`camp.equipBlock.${b}`]!)];
+    for (const n of names) for (const w of whys) expect(units(warehouseRowLabel(n, w, S)) * 2, `${n} ${w}`).toBeLessThanOrEqual(39);
+    // 収まる名前はそのまま、収まらない名前は「…」で切って（倉庫）を残す
+    expect(warehouseRowLabel("短弓", null, S)).toBe("短弓（倉庫）");
+    const cut = warehouseRowLabel("あ".repeat(30), "持てない", S);
+    expect(cut.endsWith("…（倉庫）（持てない）")).toBe(true);
+    expect(units(cut) * 2).toBeLessThanOrEqual(39);
+    for (const k of ["town.bank.menu.status", "camp.equip.unequipToWarehouse"]) expect(units(S[k]!) * 2, k).toBeLessThanOrEqual(39);
+    expect(units(S["character.fromWarehouse"]!) * 8).toBeLessThanOrEqual(48);
   });
 });

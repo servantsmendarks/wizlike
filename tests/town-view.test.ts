@@ -1329,6 +1329,7 @@ describe("UI-52 街のページ", () => {
       { kind: "page", to: "storageDeposit", label: "品を預ける" },
       { kind: "page", to: "storageWithdraw", label: `品を引き出す　1/${cap}` },
       { kind: "depositAll", memberId: null, label: "すべて預ける", disabled: false },
+      { kind: "camp", open: "status", host: "bank", label: "状態（倉庫から装備）" }, // TW-16c（M21 A-2）
       back,
     ]);
     expect(townPageIntro("bank", m)).toEqual(["town.bank.intro"]);

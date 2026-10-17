@@ -792,8 +792,9 @@ export function createApp(o: {
             openRules();
             return;
           case "camp":
-            // TW-03: 酒場の状態（キャラクター画面）・並び順・図鑑はキャンプと同じ部品で開く（戻る・やめるで酒場の一覧へ戻る）
-            openCamp("tavern", e.open);
+            // TW-03: 酒場の状態（キャラクター画面）・並び順・図鑑はキャンプと同じ部品で開く（戻る・やめるで酒場の一覧へ戻る）。
+            // TW-16c（M21 A-2）: 銀行の「状態」は host bank（倉庫から装備できる。戻る・やめるで銀行の一覧へ戻る）
+            openCamp(e.host ?? "tavern", e.open);
             return;
           case "enter": {
             // TW-11 / UI-52（M19 D-1）: 押したらすぐ入らず確認の段（問いは見出し）へ移り、迷宮の description（core の townMenu.dungeons）を会話の箱で語る。
@@ -1229,7 +1230,7 @@ export function createApp(o: {
       if (d === null) return { kind: "text", title: "" };
       const panel = formatItemDetail(d, strings);
       // UI-67（M10）: 装備の段の品の詳細の下に、core の equipPreview の差分（装備できない・外せないなら null で出さない）
-      const pv = p.preview === undefined ? null : equipPreview(state, data, p.preview.memberId, p.preview.slot, p.preview.instanceId);
+      const pv = p.preview === undefined ? null : equipPreview(state, data, p.preview.memberId, p.preview.slot, p.preview.instanceId, p.preview.from); // TW-16c（M21）: 倉庫の候補は from
       const lines = pv === null ? panel.lines : [...panel.lines, ...formatEquipPreview(pv, strings)];
       return { kind: "lines", title: panel.title, lines, tall: true };
     }

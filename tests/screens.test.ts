@@ -834,8 +834,8 @@ describe("入力と Command", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
     expect(body).toMatch(/case "look":\s*void run\(\{ type: "town\.lookAround" \}\);\s*return;/);
-    // 酒場の項目はキャンプと同じ部品をその段で開く
-    expect(body).toMatch(/case "camp":\s*openCamp\("tavern", e\.open\);/);
+    // 酒場の項目はキャンプと同じ部品をその段で開く（TW-16c（M21 A-2）: 銀行の「状態」は host bank）
+    expect(body).toMatch(/case "camp":\s*openCamp\(e\.host \?\? "tavern", e\.open\);/);
     expect(app).toMatch(/const openCamp = \(host: CampHost, open\?: CampOpen, memberId\?: string\): void =>/);
   });
 
