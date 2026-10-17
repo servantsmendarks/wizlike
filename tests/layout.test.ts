@@ -184,7 +184,8 @@ describe("layout", () => {
     // M16（UI-59）: キャラクター画面のヘッダーの ◀ ▶（header.prev / header.next）を足した。追補 H-2 から押せる矩形は 24×32（幅 24 < 30 なので例外のまま）で、
     // 見た目の枠（prevMark / nextMark）がヘッダーの中に収まる
     // M20（UI-80）: キャラクター画面の品の行 character.item（高さ 12。SCREENS には入れず、下の UI-80 のテストで確かめる）
-    expect(TOUCH_EXCEPTIONS).toEqual(["header.settings", "header.log", "header.prev", "header.next", "town.band", "town.list", "listWide", "character.item"]);
+    // M21（B-3）: 設定画面の 7 行の値のトグル settings.row（高さ 26。SCREENS には入れず、settings-view.test の settingsLayout のテストで確かめる）
+    expect(TOUCH_EXCEPTIONS).toEqual(["header.settings", "header.log", "header.prev", "header.next", "town.band", "town.list", "listWide", "character.item", "settings.row"]);
     for (const k of ["prevMark", "nextMark"] as const) expect(inside(L.header[k], regions(data.config.ui.layout, W).header), k).toBe(true);
     expect(inside(T.header.log, regions(data.config.ui.layout, W).header)).toBe(true);
     expect(inside(HEADER_SETTINGS, regions(data.config.ui.layout, W).header)).toBe(true);

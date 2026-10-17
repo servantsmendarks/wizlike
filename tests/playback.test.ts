@@ -58,7 +58,7 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
     (...a: unknown[]): void => {
       log.push({ m, a: JSON.parse(JSON.stringify(a)) as unknown[] });
     };
-  const s: Settings = { skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400, beatAdvance: "tap", musicVolume: 7, sfxVolume: 7, hints: "more", ...settings };
+  const s: Settings = { skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400, beatAdvance: "tap", musicVolume: 7, sfxVolume: 7, hints: "more", autoSpells: true, ...settings };
   const deps: PlayerDeps = {
     data,
     strings: data.strings,

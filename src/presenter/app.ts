@@ -53,6 +53,7 @@ import {
   setFocus,
   spellNote,
   step,
+  withAutoSpells,
   type Choice,
   type InputCursor,
   type MenuEntry,
@@ -1529,7 +1530,7 @@ export function createApp(o: {
     // 再生の間は注目の枠の点滅と絵のタップを止める（rejected なら runBattle の後の描き直しで戻る）
     clearFocus();
     play.message.hideNote(); // UI-68: 入力を確定したら呪文の説明を下げる（rejected なら描き直しで出し直す）
-    void runBattle(r.send);
+    void runBattle(withAutoSpells(r.send, store.get().autoSpells)); // CB-47: 設定「オートの呪文」を battle.auto on / battle.repeat に乗せる
   };
 
   /**

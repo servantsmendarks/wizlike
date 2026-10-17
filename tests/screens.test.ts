@@ -21,6 +21,7 @@ import { sanStage } from "../src/core/rules/san";
 import { createRunGate } from "../src/presenter/run-gate";
 import { paintsTownStill } from "../src/presenter/resume";
 import type { Command, GameEvent } from "../src/core/types";
+import { withAutoSpells } from "../src/presenter/battle-input";
 import { data, newGame } from "./helpers/core";
 import { kinsokuLines } from "./helpers/wrap";
 import { CREATION_ERROR, CREATION_NOTE, creationRow } from "../src/presenter/layout";
@@ -1264,6 +1265,20 @@ describe("入力と Command", () => {
     expect(close).toContain("play.header.setNav(false);");
   });
 
+  test("CB-47/UI-57（M21）設定「オートの呪文」は withAutoSpells で battle.auto on と battle.repeat にだけ spells として乗る（off・ほかはそのまま）。app は入力の段の送信で store の値を乗せ、ほかの所で battle.auto on・battle.repeat を作らない（ソースの検査）", () => {
+    for (const v of [true, false]) {
+      expect(withAutoSpells({ type: "battle.auto", on: true }, v)).toEqual({ type: "battle.auto", on: true, spells: v });
+      expect(withAutoSpells({ type: "battle.repeat" }, v)).toEqual({ type: "battle.repeat", spells: v });
+      expect(withAutoSpells({ type: "battle.auto", on: false }, v)).toEqual({ type: "battle.auto", on: false });
+      expect(withAutoSpells({ type: "battle.resolve" }, v)).toEqual({ type: "battle.resolve" });
+      expect(withAutoSpells({ type: "battle.flee" }, v)).toEqual({ type: "battle.flee" });
+    }
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app.match(/withAutoSpells\(/g)?.length).toBe(1);
+    expect(app).not.toMatch(/type: "battle\.repeat"/);
+    expect(app).not.toMatch(/type: "battle\.auto", on: true/);
+  });
+
   test("UI-68（M10）戦闘の呪文の説明は窓の showNote（履歴に残さない）: syncBattleControls が spellNote の段だけ core の spellInfo を出し、それ以外とオートでは hideNote。確定（送る）と入力の UI を下げるときも hideNote（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const sync = /const syncBattleControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
@@ -1271,7 +1286,7 @@ describe("入力と Command", () => {
       /const note = menu === null \|\| menu\.auto \|\| cursor === null \? null : spellNote\(cursor\);\s*const info = note === null \? null : spellInfo\(state, data, note\.memberId, note\.spellId\);\s*if \(info === null\) play\.message\.hideNote\(\);\s*else play\.message\.showNote\(formatSpellInfo\(info, strings\)\);\s*if \(menu === null\)/,
     );
     const choose = /const chooseBattle = \(choice: Choice\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
-    expect(choose).toMatch(/clearFocus\(\);\s*play\.message\.hideNote\(\);\s*void runBattle\(r\.send\);/);
+    expect(choose).toMatch(/clearFocus\(\);\s*play\.message\.hideNote\(\);\s*void runBattle\(withAutoSpells\(r\.send, store\.get\(\)\.autoSpells\)\);/); // M21: CB-47 の設定を乗せる
     const lower = /const lowerInput = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(lower).toContain("play.message.hideNote();");
     // 窓の説明を出すのは app の戦闘の 1 か所だけ（キャンプの説明はキャラクター画面の呪文の枠に出す）

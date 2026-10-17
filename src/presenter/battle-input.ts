@@ -449,3 +449,13 @@ export function focusedGroup(menu: BattleMenu, cursor: InputCursor): number | nu
   const c = focusedChoice(menu, cursor);
   return c !== null && c.kind === "group" ? c.index : null;
 }
+
+/**
+ * CB-47 / UI-57（M21）: 設定「オートの呪文」を core の command に乗せる。battle.auto の ON と battle.repeat にだけ spells を足す
+ * （battle.auto off・ほかの command はそのまま）。判定は core（表示層は値を運ぶだけ）
+ */
+export function withAutoSpells(cmd: Command, spells: boolean): Command {
+  if (cmd.type === "battle.auto" && cmd.on) return { ...cmd, spells };
+  if (cmd.type === "battle.repeat") return { ...cmd, spells };
+  return cmd;
+}

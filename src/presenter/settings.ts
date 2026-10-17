@@ -61,6 +61,8 @@ export type Settings = {
   sfxVolume: number;
   /** UI-57 / UI-76（M20 D-7）: GM の助言（一度きりの一言の出し分け。既定 more） */
   hints: HintLevel;
+  /** UI-57 / CB-47（M21）: オートの呪文（使う = true。既定 true）。core には battle.auto / battle.repeat の spells で渡す（withAutoSpells） */
+  autoSpells: boolean;
 };
 
 export const SETTINGS_KEY = "wizlike.settings";
@@ -161,10 +163,11 @@ function normalize(src: Record<string, unknown>, fallback: Settings): Settings {
     musicVolume: isVolume(src.musicVolume) ? src.musicVolume : fallback.musicVolume,
     sfxVolume: isVolume(src.sfxVolume) ? src.sfxVolume : fallback.sfxVolume,
     hints: typeof src.hints === "string" && (HINT_LEVELS as readonly string[]).includes(src.hints) ? (src.hints as HintLevel) : fallback.hints,
+    autoSpells: typeof src.autoSpells === "boolean" ? src.autoSpells : fallback.autoSpells,
   };
 }
 
-/** config の値を範囲に丸めたもの。hints は more（M20）、inputMode は both、skipAnimations は false、beatAdvance は timed（M18。保存の無い人にだけ効く。保存の値は書き換えない）、autoBeatMs は config.ui.autoBeatMs を選択肢に寄せたもの */
+/** config の値を範囲に丸めたもの。autoSpells は true（M21）、hints は more（M20）、inputMode は both、skipAnimations は false、beatAdvance は timed（M18。保存の無い人にだけ効く。保存の値は書き換えない）、autoBeatMs は config.ui.autoBeatMs を選択肢に寄せたもの */
 export function defaultSettings(config: Config): Settings {
   return {
     skipAnimations: false,
@@ -177,6 +180,7 @@ export function defaultSettings(config: Config): Settings {
     musicVolume: clampVolume(config.ui.musicVolume),
     sfxVolume: clampVolume(config.ui.sfxVolume),
     hints: "more",
+    autoSpells: true,
   };
 }
 
@@ -206,6 +210,7 @@ export function serializeSettings(s: Settings): string {
     musicVolume: s.musicVolume,
     sfxVolume: s.sfxVolume,
     hints: s.hints,
+    autoSpells: s.autoSpells,
   });
 }
 

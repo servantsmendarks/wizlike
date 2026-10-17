@@ -40,7 +40,7 @@ afterEach(() => {
 
 describe("settings", () => {
   test("SV-24 defaultSettings は config から取る（28/250/30/both/false/400）", () => {
-    expect(D).toEqual({ skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400, beatAdvance: "timed", musicVolume: 3, sfxVolume: 2, hints: "more" });
+    expect(D).toEqual({ skipAnimations: false, textSpeed: 30, inputMode: "both", swipeThreshold: 28, holdRepeatMs: 250, autoBeatMs: 400, beatAdvance: "timed", musicVolume: 3, sfxVolume: 2, hints: "more", autoSpells: true });
     expect(D.swipeThreshold).toBe(data.config.input.swipeThresholdPx);
     expect(D.holdRepeatMs).toBe(data.config.input.holdRepeatMs);
     expect(D.textSpeed).toBe(data.config.ui.textSpeedMs);
@@ -73,9 +73,9 @@ describe("settings", () => {
     });
     // 未知のキーは捨てる
     const p = parseSettings(JSON.stringify({ ...D, volume: 3, extra: true }), D);
-    expect(Object.keys(p).sort()).toEqual(["autoBeatMs", "beatAdvance", "hints", "holdRepeatMs", "inputMode", "musicVolume", "sfxVolume", "skipAnimations", "swipeThreshold", "textSpeed"]);
+    expect(Object.keys(p).sort()).toEqual(["autoBeatMs", "autoSpells", "beatAdvance", "hints", "holdRepeatMs", "inputMode", "musicVolume", "sfxVolume", "skipAnimations", "swipeThreshold", "textSpeed"]);
     // 往復
-    const s: Settings = { skipAnimations: true, textSpeed: 0, inputMode: "swipe", swipeThreshold: 40, holdRepeatMs: 500, autoBeatMs: 600, beatAdvance: "timed", musicVolume: 0, sfxVolume: 10, hints: "less" };
+    const s: Settings = { skipAnimations: true, textSpeed: 0, inputMode: "swipe", swipeThreshold: 40, holdRepeatMs: 500, autoBeatMs: 600, beatAdvance: "timed", musicVolume: 0, sfxVolume: 10, hints: "less", autoSpells: false };
     expect(parseSettings(serializeSettings(s), D)).toEqual(s);
     // 返り値は defaults と別のオブジェクト
     expect(parseSettings(null, D)).not.toBe(D);
@@ -96,6 +96,25 @@ describe("settings", () => {
     expect(nextHintLevel("more")).toBe("less");
     expect(nextHintLevel("less")).toBe("none");
     expect(nextHintLevel("none")).toBe("more");
+  });
+
+  test("SV-24/UI-57/CB-47 M21（B-3）autoSpells（オートの呪文）は真偽値。既定は true（使う）、保存の対象で serialize の末尾。欄が無い（M20 までの保存）・真偽値でない値は既定値（store の set では今の値のまま）", () => {
+    expect(D.autoSpells).toBe(true);
+    for (const v of [true, false]) {
+      const json = serializeSettings({ ...D, autoSpells: v });
+      expect(JSON.parse(json).autoSpells).toBe(v);
+      expect(parseSettings(json, D).autoSpells).toBe(v);
+    }
+    // M20 までの保存（autoSpells の欄が無い）は既定値で、ほかの欄は残る
+    const { autoSpells: _drop, ...old } = { ...D, hints: "none" as const };
+    expect(Object.keys(old)).not.toContain("autoSpells");
+    expect(parseSettings(JSON.stringify(old), D)).toEqual({ ...D, hints: "none" });
+    for (const bad of ["false", 0, null, 1]) expect(parseSettings(JSON.stringify({ ...D, autoSpells: bad }), { ...D, autoSpells: false }).autoSpells).toBe(false);
+    const st = createSettingsStore(D, () => {});
+    st.set({ autoSpells: "no" as unknown as boolean });
+    expect(st.get().autoSpells).toBe(true);
+    st.set({ autoSpells: false });
+    expect(st.get().autoSpells).toBe(false);
   });
 
   test("UI-76/UI-57 M20（D-7）filterHints: more は出来事をそのまま、less は hint.dungeonFirst と hint.sanUnknown だけ残し、none は hint.* の message をすべて除く。hint. で始まらない message とほかの出来事は残し、順を保つ", () => {
@@ -251,6 +270,7 @@ describe("UI-45 オートの拍の速さ", () => {
       "musicVolume",
       "sfxVolume",
       "hints",
+      "autoSpells",
     ]);
     // store の set でも選択肢に無い値は今の値のまま
     const st = createSettingsStore(D, () => {});
@@ -337,8 +357,8 @@ describe("UI-57 設定画面の文字速度の選択肢", () => {
     const { musicVolume: _m, sfxVolume: _s, ...old } = { ...D, holdRepeatMs: 300 };
     expect(parseSettings(JSON.stringify(old), D)).toEqual({ ...D, holdRepeatMs: 300 });
     const keys = Object.keys(JSON.parse(serializeSettings(D)) as object);
-    // M20（D-7）: 末尾に hints を足した（音量はその前）
-    expect(keys.slice(-3)).toEqual(["musicVolume", "sfxVolume", "hints"]);
+    // M20（D-7）: 末尾に hints を足した（音量はその前）。M21（B-3）: その後に autoSpells
+    expect(keys.slice(-4)).toEqual(["musicVolume", "sfxVolume", "hints", "autoSpells"]);
     const st = createSettingsStore({ ...D, musicVolume: 4 }, () => {});
     st.set({ musicVolume: 12 });
     expect(st.get().musicVolume).toBe(4);

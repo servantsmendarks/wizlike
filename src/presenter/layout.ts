@@ -28,10 +28,11 @@ export const TOUCH_MIN_LOGICAL = 30;
 /**
  * UI-10 の最小寸法を満たさなくてよい矩形の名前（dungeonLayout の header.settings、header.log（M8.5 の townLayout。M16 から dungeonLayout にも）・
  * キャラクター画面のヘッダーの ◀ ▶ header.prev / header.next（M16。当たり判定 24×32。追補 H-2）・パーティの帯 town.band（40×22）・一覧の行 town.list（高さ 22）・迷宮と戦闘の広い一覧の行 listWide（高さ 22。M16）・
- * キャラクター画面の品の行 character.item（M20。UI-80。装備の行と所持品の枠の当たり判定は高さ 12（行の 10px の上下に 1px）。views/detail の characterHitRects）。
+ * キャラクター画面の品の行 character.item（M20。UI-80。装備の行と所持品の枠の当たり判定は高さ 12（行の 10px の上下に 1px）。views/detail の characterHitRects）・
+ * 設定画面の 7 行の値のトグル settings.row（M21 B-3。高さ 26。7 行目を足すためにホーム画面の案内の 8 行を残して詰めた）。
  * 添字付きの名前 "town.band[0]" なども含む）
  */
-export const TOUCH_EXCEPTIONS: readonly string[] = ["header.settings", "header.log", "header.prev", "header.next", "town.band", "town.list", "listWide", "character.item"];
+export const TOUCH_EXCEPTIONS: readonly string[] = ["header.settings", "header.log", "header.prev", "header.next", "town.band", "town.list", "listWide", "character.item", "settings.row"];
 
 /** UI-10: name が TOUCH_EXCEPTIONS の名前そのものか、その添字付き（"town.band[2]"） */
 export function isTouchException(name: string): boolean {
@@ -721,7 +722,7 @@ export const DEBUG_POINTER = { x: 4, w: 232, titleY: 4, rowY: 16, rowH: 10 } as 
 export type SettingsLayout = {
   /** 見出し（押せない） */
   heading: Rect;
-  /** i=0..5（演出スキップ・文字速度・オートの速さ・入力・再生の進め方（M16）・GM の助言（M20））。label は押せない、toggle は押せる */
+  /** i=0..6（演出スキップ・文字速度・オートの速さ・入力・再生の進め方（M16）・GM の助言（M20）・オートの呪文（M21））。label は押せない、toggle は押せる（高さ 26。UI-10 の例外 settings.row） */
   rows: readonly { label: Rect; toggle: Rect }[];
   /** UI-57（M8）: 音量の 1 行。label は押せない、music・sfx は押せる（0〜10 を巡回） */
   volume: { label: Rect; music: Rect; sfx: Rect };
@@ -744,15 +745,17 @@ export type SettingsLayout = {
  * M16 で 5 行目（再生の進め方）を足し、音量の行 y190、書き出し・読み込み y224、案内 y258（1 行）、ホーム画面の案内 y270..349（8 行）。
  * 行・音量・書き出しの間は 2px（M8 までは音量の後と書き出しの後が 4px、案内は 2 行）。
  * M20（D-7）で 6 行目（GM の助言）を足し、行は高さ 30（TOUCH_MIN_LOGICAL）で y16+30i（i=0..5。間を空けない）、音量の行 y197、書き出し・読み込み y228
- * （どちらも高さ 30。前の段との間は 1px）、案内 y259。ホーム画面の案内は y270..349（8 行）のまま【仮】
+ * （どちらも高さ 30。前の段との間は 1px）、案内 y259。ホーム画面の案内は y270..349（8 行）のまま【仮】。
+ * M21（B-3）で 7 行目（オートの呪文。CB-47）を足し、行は高さ 26 で y16+26i（i=0..6。UI-10 の例外 settings.row）、音量の行 y198（高さ 30。行のすぐ下）。
+ * 書き出し・読み込み y228（音量との間は空かなくなった）・案内・ホーム画面の案内は変えない【仮】
  */
 export function settingsLayout(g: Regions): SettingsLayout {
   const close: Rect = { x: g.controls.x + LIST_BACK_REL.x, y: g.controls.y + LIST_BACK_REL.y, w: LIST_BACK_REL.w, h: LIST_BACK_REL.h };
   const installY = 270;
   return {
     heading: { x: 4, y: 4, w: 232, h: 12 },
-    rows: [0, 1, 2, 3, 4, 5].map((i) => ({ label: { x: 4, y: 16 + 30 * i, w: 128, h: 30 }, toggle: { x: 136, y: 16 + 30 * i, w: 100, h: 30 } })),
-    volume: { label: { x: 4, y: 197, w: 64, h: 30 }, music: { x: 72, y: 197, w: 80, h: 30 }, sfx: { x: 156, y: 197, w: 80, h: 30 } },
+    rows: [0, 1, 2, 3, 4, 5, 6].map((i) => ({ label: { x: 4, y: 16 + 26 * i, w: 128, h: 26 }, toggle: { x: 136, y: 16 + 26 * i, w: 100, h: 26 } })),
+    volume: { label: { x: 4, y: 198, w: 64, h: 30 }, music: { x: 72, y: 198, w: 80, h: 30 }, sfx: { x: 156, y: 198, w: 80, h: 30 } },
     exportButton: { x: 8, y: 228, w: 108, h: 30 },
     importButton: { x: 124, y: 228, w: 108, h: 30 },
     notice: { x: 4, y: 259, w: 232, h: 10 },
