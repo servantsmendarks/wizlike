@@ -349,7 +349,8 @@ describe("CB-67 警報の戦闘", () => {
   test("CB-67/CB-51/A2 警報の戦闘に勝つと新しい宝箱を判定せず（chance を振らない）、screen{dungeon, at} → chestFound → chest.afterAlarm → chest.prompt で同じ箱に戻る。その後は開けて中身を得る", () => {
     const d = chestData((x) => {
       x.config.combat.hitMin = x.config.combat.hitMax = 100;
-      x.config.combat.chestChance = x.config.combat.chestChanceCorridor = 0;
+      x.config.combat.chestTable = [0];
+      x.config.combat.chestRoomBonus = 0;
     });
     const s0 = exec(withChest("alarm", 5, 1, d), OPEN, d).state;
     const s = withBattle(s0, [{ monsterId: "giant_rat", hps: [1], status: [["paralysis"]] }], {
@@ -1034,7 +1035,8 @@ describe("EV-16 / EV-25 宝箱の衝動と制止", () => {
   const forced = (trapId: string) =>
     chestData((x) => {
       x.config.combat.hitMin = x.config.combat.hitMax = 100;
-      x.config.combat.chestChance = 100;
+      x.config.combat.chestTable = [0];
+      x.config.combat.chestRoomBonus = 100;
       x.config.chest.noTrapChance = 0;
       x.config.events.floor = x.config.events.cap = 100;
       x.chestTraps = x.chestTraps.filter((t) => t.danger !== 1 && t.id !== trapId).concat(x.chestTraps.filter((t) => t.id === trapId).map((t) => ({ ...t, danger: 1 })));
@@ -1324,7 +1326,8 @@ describe("EV-70〜76 職業の掛け合い", () => {
       x.config.chest.triggerChance = 0;
       x.config.chest.wrongNameChance = 0;
       x.config.combat.hitMin = x.config.combat.hitMax = 100;
-      x.config.combat.chestChance = x.config.combat.chestChanceCorridor = 0;
+      x.config.combat.chestTable = [0];
+      x.config.combat.chestRoomBonus = 0;
     });
     const s1 = exec(owned("alarm", dW), inspect("c3"), dW).state;
     expect(chestOf(s1)!.rivalryFails).toBe(1);

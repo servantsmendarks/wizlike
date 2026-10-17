@@ -334,9 +334,8 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       poisonDamagePerTick: I(POS_INT),
       fleeBase: I(),
       fleeAgiMul: I(),
-      chestChance: I(PERCENT), // CB-51 / CB-52【仮】部屋
-      chestChanceCorridor: I(PERCENT), // CB-51 / CB-52【仮】通路
-      chestPity: I(PERCENT), // CB-51b（M20）【仮】救済
+      chestTable: L(I(PERCENT), 1), // CB-51 / CB-51b（M21）【仮】段の表（通路）
+      chestRoomBonus: I(PERCENT), // CB-51 / CB-51b（M21）【仮】部屋の上乗せ
       chestGoldDice: D, // CB-52【仮】（M3 の仮実装）
       unarmedDice: D,
       autoInterrupt: F({ hpRatio: N(RATIO) }),

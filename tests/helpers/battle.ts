@@ -51,7 +51,7 @@ export function withBattle(state: GameState, groups: GroupSpec[], opts: BattleOp
 
 /**
  * loadFreshData の複製に config.combat / config.san / config.events の上書きを当て、mut でさらに書き換えたもの。
- * M11（B8）: 既定で宝箱の判定（combat.chestChance / chestChanceCorridor）を 0 にする（勝利の後に箱が残ると次のコマンドが "chest pending" で断られるため）。
+ * M11（B8）: 既定で宝箱の判定（M21 から combat.chestTable を [0]・chestRoomBonus を 0）を 0 にする（勝利の後に箱が残ると次のコマンドが "chest pending" で断られるため）。
  * 宝箱を出すテストは patch.combat で値を戻す。
  * M14（CB-57）: 直接ドロップ（combat.directDropChance）も既定で 0 にする（勝利でグループごとに chance を 1 回引く。外れで固定）。出すテストは patch.combat で戻す
  */
@@ -60,9 +60,8 @@ export function dataWith(
   mut?: (d: GameData) => void,
 ): GameData {
   const d = loadFreshData();
-  d.config.combat.chestChance = 0;
-  d.config.combat.chestChanceCorridor = 0;
-  d.config.combat.chestPity = 0; // CB-51b（M20）: 救済も 0（chestChance 0 なら箱は出ない、のまま）
+  d.config.combat.chestTable = [0]; // CB-51 / CB-51b（M21）: 段はすべて 0（連続の外れが伸びても箱は出ない）
+  d.config.combat.chestRoomBonus = 0;
   d.config.combat.directDropChance = 0;
   Object.assign(d.config.combat, patch.combat ?? {});
   Object.assign(d.config.san, patch.san ?? {});

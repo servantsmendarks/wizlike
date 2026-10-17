@@ -1077,7 +1077,7 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
     rollDice(m, "1d4");
     chance(m, 0); // CB-57（M14）: 直接ドロップの判定（dataWith の既定 0 で外れ）
     chance(m, 0); // CB-51: 通路の遭遇の宝箱の判定（chestChanceCorridor 0 で外れ）
-    const k = exec(kill, RESOLVE, dataWith({ combat: { ...base, sleepWakeChance: 100, chestChanceCorridor: 0 } }));
+    const k = exec(kill, RESOLVE, dataWith({ combat: { ...base, sleepWakeChance: 100, chestTable: [0] } }));
     expect(k.state.rng).toEqual(m);
   });
 
@@ -1171,7 +1171,7 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
       patches: { c2: { status: ["sleep"] } },
       inputs: { c1: atk(0), c3: DEF, c4: DEF, c5: DEF, c6: DEF },
     });
-    const dw = dataWith({ combat: { ...ALWAYS_HIT, sleepNaturalWake: 100, chestChanceCorridor: 0 } });
+    const dw = dataWith({ combat: { ...ALWAYS_HIT, sleepNaturalWake: 100, chestTable: [0] } });
     const m = cloneRng(win.rng);
     rolls(m, 5);
     chance(m, 100);
@@ -1574,7 +1574,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
   });
 
   test("CB-51/DG-40/CH-60 勝利: EXP は生存者で等分（死者は受け取らない、端数切り捨て）、金は個体ごとに振って state.gold と ledger.gold の両方へ（鏡の rng）", () => {
-    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChanceCorridor: 0 } });
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestTable: [0] } });
     const s = setup([{ monsterId: "giant_rat", hps: [1, 1], status: [["paralysis"], ["paralysis"]] }], {
       identified: ["giant_rat"],
       patches: { c1: { level: 5 }, c6: DEAD },
@@ -1607,7 +1607,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(rc.state.gold).toBe(c.gold);
   });
 
-  test("CB-51/CB-60 宝箱: 部屋の遭遇で chestChance 100 なら勝利の金の後に箱を置き（罠の抽選 CB-61。中身はまだ配らない）、screen dungeon の後に chestFound → chest.found.drop → chest.prompt。chest.open で chestGoldDice の金。通路は chestChanceCorridor で同じ手順（0 なら chance を 1 回振って出ない）", () => {
+  test("CB-51/CB-60 宝箱: 部屋の遭遇で率 100（M21: 段の表 [0] + 部屋の上乗せ 100）なら勝利の金の後に箱を置き（罠の抽選 CB-61。中身はまだ配らない）、screen dungeon の後に chestFound → chest.found.drop → chest.prompt。chest.open で chestGoldDice の金。通路は段の表のまま（上乗せなし）で同じ手順（0 なら chance を 1 回振って出ない）", () => {
     const mk = (origin: BattleOpts["origin"], monsterId = "rotting_corpse") => {
       const s = setup([{ monsterId, hps: [1], status: [["paralysis"]] }], { identified: [monsterId], origin });
       s.battle!.inputs["c1"] = atk(0);
@@ -1623,7 +1623,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
       x.config.chest.noTrapChance = 100;
       noChestImpulse(x);
     };
-    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100 } }, noItems);
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestTable: [0], chestRoomBonus: 100 } }, noItems);
     const room = mk({ kind: "random", inRoom: true });
     const m = cloneRng(room.rng);
     rolls(m, 6);
@@ -1655,7 +1655,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(o.state.gold).toBe(room.gold + cg);
     expect(o.state.dive!.ledger.gold).toBe(cg);
     expect(o.state.dive!.chest).toBeNull();
-    // 通路: chestChanceCorridor 0 なら chance を 1 回振って出ない（部屋の chestChance 100 は効かない）
+    // 通路: 段の表 0 なら chance を 1 回振って出ない（部屋の上乗せ chestRoomBonus 100 は効かない）
     const corr = mk({ kind: "random", inRoom: false });
     const m2 = cloneRng(corr.rng);
     rolls(m2, 6);
@@ -1663,7 +1663,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     rollDice(m2, "1d8");
     chance(m2, 0); // CB-57（M14）: 直接ドロップの判定（dataWith の既定 0 で外れ）
     chance(m2, 0);
-    const rc = exec(corr, RESOLVE, dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100, chestChanceCorridor: 0 } }, noItems));
+    const rc = exec(corr, RESOLVE, dataWith({ combat: { ...ALWAYS_HIT, chestTable: [0], chestRoomBonus: 100 } }, noItems));
     expect(rc.state.rng).toEqual(m2);
     expect(rc.state.dive!.chest).toBeNull();
     expect(kindsOf(rc.events)).not.toContain("chestFound");
@@ -1673,7 +1673,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(kc.slice(kc.indexOf("battleEnd"), kc.indexOf("screen") + 1)).toEqual(["battleEnd", "message:battle.win", "message:battle.exp", "message:battle.noChest", "screen"]);
     expect(rc.events).toContainEqual({ kind: "message", key: "battle.noChest" });
     expect([...data.strings["battle.noChest"]!].length).toBeLessThanOrEqual(28); // メッセージ窓の一言は 28 字
-    // 通路: chestChanceCorridor 100 なら部屋と同じ手順（部屋の chestChance 0 は効かない）。inRoom は偽
+    // 通路: 段の表 100 なら部屋と同じ手順（上乗せ 0）。inRoom は偽
     const corr2 = mk({ kind: "random", inRoom: false });
     const m3 = cloneRng(corr2.rng);
     rolls(m3, 6);
@@ -1682,17 +1682,17 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     chance(m3, 0); // CB-57（M14）: 直接ドロップの判定（dataWith の既定 0 で外れ）
     chance(m3, 100);
     chance(m3, 100);
-    const r3 = exec(corr2, RESOLVE, dataWith({ combat: { ...ALWAYS_HIT, chestChance: 0, chestChanceCorridor: 100 } }, noItems));
+    const r3 = exec(corr2, RESOLVE, dataWith({ combat: { ...ALWAYS_HIT, chestTable: [100], chestRoomBonus: 0 } }, noItems));
     expect(r3.state.rng).toEqual(m3);
     expect(r3.state.dive!.chest).toMatchObject({ source: "drop", inRoom: false, trapId: null });
     // ボス戦では判定しない（乱数も使わない）は tests/dungeon.test.ts の DG-31
   });
 
-  test("CB-51/CB-60【仮】宝箱の既定の確率: 部屋 chestChance 10・通路 chestChanceCorridor 8（M15 で 60・15 から 45・10、M19 で 35・20、さらに部屋 25、M20 で 20・15、M20 の終わりに 10・8）。勝利の金と直接ドロップ（CB-57）の後の chance 1 回の出目で決まる（鏡の rng、シード 1〜60。連続 0 なので救済 CB-51b は足されない）", () => {
-    expect(data.config.combat.chestChance).toBe(10);
-    expect(data.config.combat.chestChanceCorridor).toBe(8);
+  test("CB-51/CB-60【仮】宝箱の既定の率（M21）: 段の表 chestTable [0,5,15,40,80,100]・部屋の上乗せ chestRoomBonus 10。連続 0 の段では部屋 10%・通路 0%（通路も chance は 1 回引く）。勝利の金と直接ドロップ（CB-57）の後の chance 1 回の出目で決まる（鏡の rng、シード 1〜60）", () => {
+    expect(data.config.combat.chestTable).toEqual([0, 5, 15, 40, 80, 100]);
+    expect(data.config.combat.chestRoomBonus).toBe(10);
     // M11（B8）: dataWith は既定で宝箱の判定を 0 にするので、実データの値を戻す
-    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 10, chestChanceCorridor: 8, chestPity: 15 } }, noChestImpulse);
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestTable: [0, 5, 15, 40, 80, 100], chestRoomBonus: 10 } }, noChestImpulse);
     const seen = { room: [0, 0], corridor: [0, 0] };
     for (let seed = 1; seed <= 60; seed++) {
       for (const inRoom of [true, false]) {
@@ -1707,7 +1707,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
         chance(m, 100);
         rollDice(m, "1d8");
         chance(m, 0); // CB-57（M14）: 直接ドロップの判定（dataWith の既定 0 で外れ）
-        const want = randInt(m, 1, 100) <= (inRoom ? 10 : 8);
+        const want = randInt(m, 1, 100) <= (inRoom ? 10 : 0);
         const r = exec(s, RESOLVE, d);
         expect(kindsOf(r.events).includes("chestFound"), `seed ${seed} inRoom ${String(inRoom)}`).toBe(want);
         expect(r.state.dive!.chest !== null, `seed ${seed} inRoom ${String(inRoom)}`).toBe(want);
@@ -1723,22 +1723,23 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
         seen[inRoom ? "room" : "corridor"][want ? 1 : 0]! += 1;
       }
     }
-    // 60 シードで部屋・通路とも、出る場合と出ない場合の両方を通る（M14: 直接ドロップの chance で出目がずれ、20 では通路が出なくなった。M15: 通路 10% では 50 まで通路が出なかったので 60 にした）
+    // 60 シードで部屋は出る場合と出ない場合の両方を通る（M14: 直接ドロップの chance で出目がずれ、20 では通路が出なくなった。M15: 通路 10% では 50 まで通路が出なかったので 60 にした）。
+    // M21: 通路の 0 段目は 0% なので出ない（連続の段で出るのは次の CB-51b のテスト）
     expect(seen.room.every((n) => n > 0)).toBe(true);
-    expect(seen.corridor.every((n) => n > 0)).toBe(true);
+    expect(seen.corridor).toEqual([60, 0]);
   });
 
-  test("CB-51b（M20）【仮】宝箱の救済: 率 = 基本 + chestPity（15）× dive.noChestStreak（上限 100。chance は 1 回のまま）。出たら 0、出なければ +1。省略は 0 として読む（鏡の rng、シード 1〜60）", () => {
-    expect(data.config.combat.chestPity).toBe(15);
+  test("CB-51b（M21）【仮】宝箱の段の表: 率 = chestTable[min(dive.noChestStreak, 表の長さ − 1)] + 部屋なら chestRoomBonus（上限 100。chance は 1 回のまま）。出たら 0、出なければ +1。省略は 0 として読む（鏡の rng、シード 1〜60）", () => {
+    const table = [0, 5, 15, 40, 80, 100];
     // 罠の抽選は noTrapChance 100 で chance 1 回（罠なし）に固定し、当たったときも鏡で最後まで追う
-    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 10, chestChanceCorridor: 8, chestPity: 15 } }, (x) => {
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestTable: table, chestRoomBonus: 10 } }, (x) => {
       noChestImpulse(x);
       x.config.chest.noTrapChance = 100;
     });
     let pityHits = 0;
     for (let seed = 1; seed <= 60; seed++) {
       for (const inRoom of [true, false]) {
-        for (const streak of [undefined, 0, 3, 7] as const) {
+        for (const streak of [undefined, 0, 1, 2, 3, 4, 5, 9] as const) {
           const s = setup([{ monsterId: "rotting_corpse", hps: [1], status: [["paralysis"]] }], {
             seed,
             identified: ["rotting_corpse"],
@@ -1748,8 +1749,8 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
           if (streak === undefined) delete s.dive!.noChestStreak;
           else s.dive!.noChestStreak = streak;
           const label = `seed ${seed} inRoom ${String(inRoom)} streak ${String(streak)}`;
-          const base = inRoom ? 10 : 8;
-          const pct = Math.min(100, base + 15 * (streak ?? 0));
+          const base = inRoom ? 10 : 0; // 0 段目の率
+          const pct = Math.min(100, table[Math.min(streak ?? 0, table.length - 1)]! + (inRoom ? 10 : 0));
           const m = cloneRng(s.rng);
           rolls(m, 6);
           chance(m, 100);
@@ -1764,16 +1765,18 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
           expect(kindsOf(r.events).includes("message:battle.chestLeft"), label).toBe(want);
           expect(kindsOf(r.events).includes("message:battle.noChest"), label).toBe(!want);
           expect(r.state.dive!.noChestStreak, label).toBe(want ? 0 : (streak ?? 0) + 1);
-          if (streak === 7) expect(want, label).toBe(true); // 10 / 8 + 105 ≥ 100 は必ず当たる（それでも chance は 1 回引く。M20 の終わりに 20 / 15 + 90 の連続 6 から 7 に）
+          if (streak === 5 || streak === 9) expect(want, label).toBe(true); // 5 段目（表の最後）100 と、表の長さを超えた 9 は最後の値で必ず当たる（それでも chance は 1 回引く）
+          if (streak === 4 && inRoom) expect(pct, label).toBe(90); // 部屋は各段 +10（4 段目 80 → 90）
+          if (streak === 5 && inRoom) expect(pct, label).toBe(100); // 上限 100（100 + 10 → 100）
           if (want && roll > base) pityHits += 1;
         }
       }
     }
-    expect(pityHits).toBeGreaterThan(0); // 救済の分で当たった場合を通る
+    expect(pityHits).toBeGreaterThan(0); // 連続の段（1 段目以降）の分で当たった場合を通る
   });
 
   test("CB-51b（M20）警報（alarm）とボス（boss）の勝利では dive.noChestStreak を数えも戻しもしない（箱を判定しないので乱数も引かない）", () => {
-    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 0, chestChanceCorridor: 0, chestPity: 15 } }, noChestImpulse);
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestTable: [0], chestRoomBonus: 0 } }, noChestImpulse);
     const alarm = setup([{ monsterId: "rotting_corpse", hps: [1], status: [["paralysis"]] }], {
       identified: ["rotting_corpse"],
       origin: { kind: "alarm", inRoom: true },
@@ -1797,7 +1800,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
   });
 
   test("CB-51/CB-55（M19 A-5）battle.noChest は origin random だけ: 警報（alarm）とボス（boss）の勝利では箱を判定しないので出さない（乱数も引かない。警報は鏡の rng）", () => {
-    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 0, chestChanceCorridor: 0 } }, noChestImpulse);
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestTable: [0], chestRoomBonus: 0 } }, noChestImpulse);
     const alarm = setup([{ monsterId: "rotting_corpse", hps: [1], status: [["paralysis"]] }], {
       identified: ["rotting_corpse"],
       origin: { kind: "alarm", inRoom: true },
@@ -1995,7 +1998,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
       x.config.chest.noTrapChance = 100;
       noChestImpulse(x);
     };
-    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100 } }, noTrap);
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestTable: [0], chestRoomBonus: 100 } }, noTrap);
     const mk = (patches: Record<string, Partial<Character>>, monsterId = "giant_rat") => {
       const s = setup([{ monsterId, hps: [1], status: [["paralysis"]] }], {
         identified: [monsterId],
@@ -2032,7 +2035,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(member(winAndOpen(mk({ c4: { ...DEAD, san: 50 } }), d).state, "c4").san).toBe(50);
     expect(member(winAndOpen(mk({ c4: { san: 0 } }), d).state, "c4").san).toBe(0);
     // gold "0" の敵（battle.gold なし）で宝箱の金が 0 なら 1 回も増えない（宝箱の message は出る）
-    const d0 = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100, chestGoldDice: "0" } }, noTrap);
+    const d0 = dataWith({ combat: { ...ALWAYS_HIT, chestTable: [0], chestRoomBonus: 100, chestGoldDice: "0" } }, noTrap);
     const r0 = winAndOpen(mk({ c4: { san: 50 } }, "rotting_corpse"), d0);
     expect(r0.events).toContainEqual({ kind: "message", key: "chest.open.gold", params: { gold: 0 } });
     expect(eventsOf(r0.events, "sanChanged")).toEqual([]);

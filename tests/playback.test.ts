@@ -2861,7 +2861,8 @@ describe("UI-70 宝箱の再生（M11 作業 4b）", () => {
   test("UI-70/A2/EV-16/DG-25 core の実際の列（勝利 → 衝動 → 転移）: 再生はまず戦った位置を描き、moved で転移先へ移る", async () => {
     const d = loadFreshData();
     d.config.combat.hitMin = d.config.combat.hitMax = 100;
-    d.config.combat.chestChance = 100;
+    d.config.combat.chestTable = [0];
+    d.config.combat.chestRoomBonus = 100;
     d.config.chest.noTrapChance = 0;
     d.config.events.floor = d.config.events.cap = 100;
     d.chestTraps = d.chestTraps.filter((t) => t.danger !== 1 && t.id !== "teleport").concat(d.chestTraps.filter((t) => t.id === "teleport").map((t) => ({ ...t, danger: 1 })));
@@ -3071,7 +3072,8 @@ describe("UI-70/UI-71 宝箱の判定の箱と衝動の流れの再生（M11 作
   test("UI-71/EV-73 職業の掛け合い（勝利の後の箱）: start → 両者の行の箱（キリ・フィン）→ win を語ってタップ → 消す → chest.prompt。履歴の要約にも両者の内訳", async () => {
     const d = loadFreshData();
     d.config.combat.hitMin = d.config.combat.hitMax = 100;
-    d.config.combat.chestChance = 100;
+    d.config.combat.chestTable = [0];
+    d.config.combat.chestRoomBonus = 100;
     d.config.events.cap = 0;
     d.rivalries[0]!.chance = 100;
     const s0 = winning(dived(1));
@@ -3094,7 +3096,8 @@ describe("UI-70/UI-71 宝箱の判定の箱と衝動の流れの再生（M11 作
   test("UI-70/A2/EV-16/EV-25/CB-67 勝利 → 衝動 → 制止の箱（失敗）→ 開けて警報 → 同じ再生で 2 回目の戦闘: 戦った位置を描き、制止の箱は語りの後でタップを待ち、screen{battle} の後に警報の敵の群れ（encounter の値）を描く", async () => {
     const d = loadFreshData();
     d.config.combat.hitMin = d.config.combat.hitMax = 100;
-    d.config.combat.chestChance = 100;
+    d.config.combat.chestTable = [0];
+    d.config.combat.chestRoomBonus = 100;
     d.config.chest.noTrapChance = 0;
     d.config.events.floor = d.config.events.cap = 100;
     d.rivalries[0]!.chance = 0;

@@ -1996,7 +1996,7 @@ export function report(kind: BotKind, results: CampaignResult[], seeds: number, 
 }
 
 /**
- * 確認(M15): ランダム遭遇の勝利の場所（部屋 / 通路）と、ドロップの箱の率（置かれた箱 / 勝利。CB-51 の chestChance / chestChanceCorridor の実測）。
+ * 確認(M15): ランダム遭遇の勝利の場所（部屋 / 通路）と、ドロップの箱の率（置かれた箱 / 勝利。CB-51 / CB-51b の chestTable / chestRoomBonus の実測。M21 から段の表）。
  * 箱は置かれた数（開けたかは問わない）。宝箱の「うち通路」は中身を得た数なので、通路の箱はそれ以上になる
  */
 export function placeLines(label: string, ds: readonly DiveRecord[]): string[] {
@@ -2006,7 +2006,7 @@ export function placeLines(label: string, ds: readonly DiveRecord[]): string[] {
   const cc = sum(ds.map((d) => d.dropChestsCorridor));
   return [
     `戦闘の場所（ランダム遭遇の勝利。${label}）: 部屋 ${wr} / 通路 ${wc}`,
-    `ドロップの箱の率（${label}）: 部屋 ${pct(cr, wr)}（箱/戦闘） / 通路 ${pct(cc, wc)}（箱/戦闘） / 設定 部屋 ${data.config.combat.chestChance}%・通路 ${data.config.combat.chestChanceCorridor}%`,
+    `ドロップの箱の率（${label}）: 部屋 ${pct(cr, wr)}（箱/戦闘） / 通路 ${pct(cc, wc)}（箱/戦闘） / 設定 通路 [${data.config.combat.chestTable.join(",")}]・部屋 +${data.config.combat.chestRoomBonus}`,
   ];
 }
 

@@ -22,7 +22,7 @@
     "statusLukPerPoint": 2, "sleepWakeChance": 50, "sleepHitBonus": 30, "sleepNaturalWake": 20,
     "poisonDamagePerTick": 1,
     "fleeBase": 50, "fleeAgiMul": 3,
-    "chestChance": 10, "chestChanceCorridor": 8, "chestPity": 15, "chestGoldDice": "2d10",
+    "chestTable": [0, 5, 15, 40, 80, 100], "chestRoomBonus": 10, "chestGoldDice": "2d10",
     "unarmedDice": "1d2",
     "autoInterrupt": { "hpRatio": 0.3 },
     "autoDefendHpRatio": 0.5,

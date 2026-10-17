@@ -195,12 +195,10 @@ export type Config = {
     poisonDamagePerTick: number;
     fleeBase: number;
     fleeAgiMul: number;
-    /** CB-51 / CB-52【仮】: 部屋のセル（roomId が非 null）のランダム遭遇に勝ったときの宝箱の確率（%） */
-    chestChance: number;
-    /** CB-51 / CB-52【仮】: 通路のセル（部屋でないセル）のランダム遭遇に勝ったときの宝箱の確率（%） */
-    chestChanceCorridor: number;
-    /** CB-51b（M20）【仮】: ドロップの箱が出なかったランダム遭遇の勝利が続いた回数（dive.noChestStreak）1 回ごとに、次の判定の率に足す %（上限は 100） */
-    chestPity: number;
+    /** CB-51 / CB-51b（M21）【仮】: ランダム遭遇の勝利の宝箱の率（%）の段の表。添字は dive.noChestStreak（表の長さを超えたら最後の値）。通路はこのまま */
+    chestTable: number[];
+    /** CB-51 / CB-51b（M21）【仮】: 部屋のセル（roomId が非 null）の遭遇は各段にこの % を足す（上限 100） */
+    chestRoomBonus: number;
     /** CB-52【仮】: M3 の仮実装の宝箱の金のダイス */
     chestGoldDice: string;
     unarmedDice: string;

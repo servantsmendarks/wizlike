@@ -752,7 +752,7 @@ describe("CB-52 宝箱の品（IT-50 / IT-31 / IT-53）", () => {
     );
   }
   const chestData = (rarity: keyof typeof ONLY) =>
-    dataWith({ combat: { ...ALWAYS_HIT, chestChance: 100 } }, (d) => {
+    dataWith({ combat: { ...ALWAYS_HIT, chestTable: [0], chestRoomBonus: 100 } }, (d) => {
       d.config.items.rarities.forEach((r, i) => (r.weight = ONLY[rarity][i]!));
       d.config.items.curseChance = 0;
       d.config.items.dropLevelUpWeights = [1]; // IT-53（M14）: 上乗せ 0 に固定
@@ -792,7 +792,7 @@ describe("CB-52 宝箱の品（IT-50 / IT-31 / IT-53）", () => {
     expect(p.state.items[pid]).toMatchObject({ level: 2, rarity: "normal", options: [] });
   });
 
-  test("CB-51/CB-65 通路の遭遇の宝箱は chestChanceCorridor で判定し、出れば部屋と同じく開けると金の後に品。0 なら宝箱も品も出ない", () => {
+  test("CB-51/CB-65 通路の遭遇の宝箱は段の表 chestTable で判定し（部屋の上乗せ chestRoomBonus は足さない。M21）、出れば部屋と同じく開けると金の後に品。0 なら宝箱も品も出ない", () => {
     const base = dived(1);
     const inputs = allInputs(base, DEF);
     inputs["c1"] = { type: "attack", group: 0 };
@@ -803,7 +803,7 @@ describe("CB-52 宝箱の品（IT-50 / IT-31 / IT-53）", () => {
     });
     const corridor = (pct: number) => {
       const d = chestData("normal");
-      d.config.combat.chestChanceCorridor = pct;
+      d.config.combat.chestTable = [pct]; // 部屋の上乗せ 100 は通路には効かない
       return d;
     };
     const r0 = winOpen(s, corridor(0));
