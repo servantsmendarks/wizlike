@@ -1115,6 +1115,42 @@ describe("階段（DG-14, E3）", () => {
     expect(d2.state.dive!.deepestFloor).toBe(2);
   });
 
+  test("DG-47（M21）progress.deepestFloors: game.new では無く、入場で {d01: 1}、降りると 2。上っても・再入場しても下げず、ほかのダンジョンは別に持つ。townMenu の reached はその値。乱数と出来事は欄の有無で変わらない", () => {
+    expect(newGame(1).progress.deepestFloors).toBeUndefined();
+    expect(townMenu(newGame(1), data)!.dungeons[0]!.reached).toBeNull();
+    const entered = run(newGame(1), ENTER_D01, DATA0).state;
+    expect(entered.progress.deepestFloors).toEqual({ d01: 1 });
+    const { state } = atStairsDown();
+    const atDown = run(state, MOVE, DATA0).state;
+    const d1 = run(atDown, { type: "event.choose", optionId: "descend" }, DATA0);
+    expect(d1.state.progress.deepestFloors).toEqual({ d01: 2 });
+    // 鏡: 欄が無い state から同じ降りるを打っても、出来事と乱数は同じ（欄だけが {d01: 2} で作られる）
+    const bare = cloneState(atDown);
+    delete bare.progress.deepestFloors;
+    const d1b = run(bare, { type: "event.choose", optionId: "descend" }, DATA0);
+    expect(d1b.events).toEqual(d1.events);
+    expect(d1b.state.rng).toEqual(d1.state.rng);
+    expect(d1b.state.progress.deepestFloors).toEqual({ d01: 2 });
+    // 潜行を終えて街から再入場しても 2 のまま（dive.deepestFloor は 1 に戻る）。d02 は別に 1
+    const town = cloneState(d1.state);
+    town.dive = null;
+    town.screen = "town";
+    town.progress.unlockedDungeons.push("d02");
+    expect(townMenu(town, data)!.dungeons.map((d) => d.reached)).toEqual([2, null]);
+    const again = run(town, ENTER_D01, DATA0);
+    expect(again.state.dive!.deepestFloor).toBe(1);
+    expect(again.state.progress.deepestFloors).toEqual({ d01: 2 });
+    const bareTown = cloneState(town);
+    delete bareTown.progress.deepestFloors;
+    const againBare = run(bareTown, ENTER_D01, DATA0);
+    expect(againBare.events).toEqual(again.events);
+    expect(againBare.state.rng).toEqual(again.state.rng);
+    const town2 = cloneState(again.state);
+    town2.dive = null;
+    town2.screen = "town";
+    expect(run(town2, { type: "dungeon.enter", dungeonId: "d02" }, DATA0).state.progress.deepestFloors).toEqual({ d01: 2, d02: 1 });
+  });
+
   test("DG-14 ascend（2 階の上り階段）: floor 1、pos は 1 階の stairsDown、SAN は変わらない。stay: pendingChoice null、events []。昇降の直後・stay の直後に、同じセルで確認は出ない", () => {
     const { state, a } = findSituation((c) => c.kind === "stairsUp", { floor: 2 });
     const r1 = run(state, MOVE, dataWithRate(1, 1));
@@ -2323,10 +2359,10 @@ describe("準備中のダンジョン（DG-35。M9。M12 から合成データ�
       return { floors: d.floors, description: d.description };
     };
     expect(townMenu(s, pd)!.dungeons).toEqual([
-      { id: "d01", name: "試しの坑道", ...extra("d01"), canEnter: true, notReady: false },
-      { id: "d02", name: "沈んだ聖堂", ...extra("d02"), canEnter: true, notReady: false },
-      { id: "d03", name: "灰の地下墓所", ...extra("d03"), canEnter: true, notReady: false },
-      { id: "d04", name: PLACEHOLDER_DUNGEON_NAME, ...extra("d04"), canEnter: false, notReady: true },
+      { id: "d01", name: "試しの坑道", ...extra("d01"), canEnter: true, notReady: false, reached: null },
+      { id: "d02", name: "沈んだ聖堂", ...extra("d02"), canEnter: true, notReady: false, reached: null },
+      { id: "d03", name: "灰の地下墓所", ...extra("d03"), canEnter: true, notReady: false, reached: null },
+      { id: "d04", name: PLACEHOLDER_DUNGEON_NAME, ...extra("d04"), canEnter: false, notReady: true, reached: null },
     ]);
     // 未開放なら not unlocked が先
     const t = newGame(1);
@@ -2345,6 +2381,7 @@ describe("準備中のダンジョン（DG-35。M9。M12 から合成データ�
       description: data.dungeons.find((x) => x.id === "d03")!.description,
       canEnter: true,
       notReady: false,
+      reached: null,
     });
     const r = run(s, { type: "dungeon.enter", dungeonId: "d03" }, data);
     expect(r.state.dive!.dungeonId).toBe("d03");

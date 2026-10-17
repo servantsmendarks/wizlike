@@ -473,6 +473,7 @@ export function townMenu(state: GameState, data: GameData): TownMenu | null {
       description: dungeonOf(data, id).description, // TW-11 / UI-52（M19 D-1）: 行を押したときに語る
       canEnter: enterBlockReason(state, id, data) === null,
       notReady: dungeonOf(data, id).placeholder === true, // DG-35
+      reached: state.progress.deepestFloors?.[id] ?? null, // DG-47（M21）: 入口の行に添える到達階
     })),
     // TW-03（M5.5）: camp.ts を import しない（循環を作らない）ので、campMenu の identifiers と同じ条件をここで数える
     canIdentify: state.party.some((c) => canAct(c) && classOf(data, c.classId).abilities.includes("identify")),

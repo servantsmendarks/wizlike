@@ -272,6 +272,7 @@ function isChestShape(x: unknown): boolean {
  * schemaVersion 8（M16。UI-76）: progress.hints が文字列の配列。
  * schemaVersion 9（M18。DG-46）: dive がオブジェクトなら floorSteps が 0 以上の安全な整数。
  * 同じ版に後から足した省略可能な欄（M20。CB-51b）: dive.noChestStreak は無いか 0 以上の安全な整数。
+ * 同じ版に後から足した省略可能な欄（M21。DG-47）: progress.deepestFloors は無いか、各値が 1 以上の安全な整数のプレーンなオブジェクト。
  */
 export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(x)) return false;
@@ -308,6 +309,8 @@ export function isGameStateShape(x: unknown): x is GameState {
   if (typeof progress["conquered"] !== "boolean" || typeof progress["endingPending"] !== "boolean") return false;
   if (!isStringArray(progress["enteredDungeons"])) return false;
   if (!isStringArray(progress["hints"])) return false;
+  const df = progress["deepestFloors"]; // DG-47（M21）: 省略可能
+  if (df !== undefined && !(isPlainObject(df) && Object.values(df).every((v) => isTurnCount(v) && (v as number) >= 1))) return false;
   if (!isTallyShape(x["tally"])) return false;
   if ((x["screen"] === "battle") !== (x["battle"] !== null)) return false;
   if ((x["screen"] === "town") !== (x["townVisit"] !== null)) return false;

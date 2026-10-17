@@ -130,6 +130,11 @@ export type Progress = {
    * 初回入場の語り（enterSpeech）の判定に使う。v6 からの移行では clearedDungeons と潜行中の dive.dungeonId から復元する
    */
   enteredDungeons: string[];
+  /**
+   * DG-47（M21）: ダンジョンごとに到達した最深の階（キーはダンジョンの id、値は 1 以上）。入場（DG-03）で 1、降りる（DG-14）で dive.floor との大きい方にする。
+   * 潜行・全滅をまたいで残し、下げない。省略可能（schemaVersion 9 のまま足した欄。無ければ記録なしとして読む。移行は無い。SV-04）。game.new では作らない
+   */
+  deepestFloors?: Record<string, number>;
   /** DG-36（M12。schemaVersion 7）: 全ダンジョン制覇。一度立てたら落とさない。game.new で false */
   conquered: boolean;
   /** TW-34（M12。schemaVersion 7）: 結末を街で語る予定。語ったら false。game.new で false */
@@ -913,9 +918,10 @@ export type TownMenu = {
   mercy: { memberId: string; name: string; life: "dead" | "ash" }[] | null;
   /**
    * TW-11: progress.unlockedDungeons の順。canEnter = checkEnter(state, id, data) === null。
-   * M19（D-1）: floors（階数）と description（入口の行を押したときに語る文）は dungeons.json の値
+   * M19（D-1）: floors（階数）と description（入口の行を押したときに語る文）は dungeons.json の値。
+   * M21（DG-47）: reached は progress.deepestFloors のその id の値（記録が無ければ null）
    */
-  dungeons: { id: string; name: string; floors: number; description: string; canEnter: boolean; notReady: boolean }[];
+  dungeons: { id: string; name: string; floors: number; description: string; canEnter: boolean; notReady: boolean; reached: number | null }[];
   /** TW-03（M5.5）: 酒場の一覧に「鑑定」を出すか。abilities に identify を持ち canAct の者が 1 人以上（campMenu の identifiers.length > 0 と同値） */
   canIdentify: boolean;
   /** TW-35（M12。U-2）: 酒場の一覧に「戦績」を出すか。progress.conquered と同値 */

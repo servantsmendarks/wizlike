@@ -254,6 +254,7 @@ export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
   const first = !state.progress.enteredDungeons.includes(dungeonId);
   const firstEver = state.progress.enteredDungeons.length === 0; // DG-37 / UI-76（M16）: ゲームで最初の入場
   if (first) state.progress.enteredDungeons.push(dungeonId);
+  recordDeepest(state, dungeonId, 1); // DG-47（M21）
   state.townVisit = null; // TW-32: 来訪の終わり（救済の申し出も下ろす）
   state.screen = "dungeon";
   explore(ctx, dive, f);
@@ -554,6 +555,12 @@ function triggerTrap(ctx: RuleContext, f: Floor, p: Pos): void {
   for (const ch of aliveMembers(state)) loseSan(ctx, ch, cfg.san.trap, ["trap"]);
 }
 
+/** DG-47（M21）: progress.deepestFloors[dungeonId] を floor との大きい方にする（欄が無ければ作る。下げない。乱数・出来事なし） */
+function recordDeepest(state: GameState, dungeonId: string, floor: number): void {
+  const rec = (state.progress.deepestFloors ??= {});
+  rec[dungeonId] = Math.max(rec[dungeonId] ?? 0, floor);
+}
+
 // ---------------------------------------------------------------------------
 // 階段・出口・テレポーター（DG-06, DG-14, DG-32, E3）。確認を立てるのは choices.ts
 
@@ -591,6 +598,7 @@ export function chooseOption(ctx: RuleContext, optionId: string): void {
     explore(ctx, dive, floorOf(dive, data));
     ctx.events.push({ kind: "floorChanged", floor: dive.floor, pos: { x: dive.pos.x, y: dive.pos.y }, facing: dive.facing });
     ctx.events.push({ kind: "message", key: "dungeon.descend" });
+    recordDeepest(state, dive.dungeonId, dive.floor); // DG-47（M21）: SAN の判定（この潜行の deepestFloor）とは別の、潜行をまたぐ記録
     // DG-14 / CH-51: この潜行で初めて到達した階に降りたときだけ減る（上って降り直しても減らない。ユーザー決定）
     if (dive.floor > dive.deepestFloor) {
       dive.deepestFloor = dive.floor;

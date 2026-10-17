@@ -1448,6 +1448,30 @@ describe("SV-04 v5 → v6 の移行（M11。CB-60）", () => {
     expect(ok("3")).toBe(false);
   });
 
+  test("SV-04/DG-47（M21）: progress.deepestFloors は省略可能（schemaVersion 9 のまま足した欄。移行なし）。欄の無い古い保存はそのまま読めて townMenu の reached は null。あれば各値が 1 以上の安全な整数のオブジェクトでなければ broken", async () => {
+    const { townMenu } = await import("../src/core/rules/town");
+    const old = json(newGame(1)) as unknown as Record<string, unknown>;
+    delete (old["progress"] as Record<string, unknown>)["deepestFloors"];
+    const r = migrateState(old, SCHEMA, SCHEMA);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.state.progress.deepestFloors).toBeUndefined();
+      expect(townMenu(r.state, data)!.dungeons.map((d) => d.reached)).toEqual([null]);
+    }
+    const ok = (v: unknown): boolean => {
+      const x = json(newGame(1)) as unknown as Record<string, unknown>;
+      (x["progress"] as Record<string, unknown>)["deepestFloors"] = v;
+      return isGameStateShape(x);
+    };
+    expect(ok({})).toBe(true);
+    expect(ok({ d01: 2, d03: 4 })).toBe(true);
+    expect(ok({ d01: 0 })).toBe(false);
+    expect(ok({ d01: 1.5 })).toBe(false);
+    expect(ok({ d01: "2" })).toBe(false);
+    expect(ok(null)).toBe(false);
+    expect(ok([2])).toBe(false);
+  });
+
   test("SV-04/EV-76 U-7: dive.chest.rivalryFails は省略可能（schemaVersion 6 のまま足した欄）。無い・0 以上の整数なら通り、型が違えば broken", () => {
     const s = chestState();
     const bad = (v: unknown): boolean => {

@@ -894,7 +894,7 @@ describe("UI-52/TW-11 townMenu（表示層向けの問い合わせ）", () => {
     expect(m.mercy).toBeNull();
     // TW-11（M19 D-1）: floors と description は dungeons.json の値（d01 は 2 階）
     expect(m.dungeons).toEqual([
-      { id: "d01", name: data.dungeons[0]!.name, floors: 2, description: data.dungeons[0]!.description, canEnter: true, notReady: false },
+      { id: "d01", name: data.dungeons[0]!.name, floors: 2, description: data.dungeons[0]!.description, canEnter: true, notReady: false, reached: null },
     ]);
   });
 
