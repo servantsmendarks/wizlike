@@ -22,7 +22,7 @@
     "statusLukPerPoint": 2, "sleepWakeChance": 50, "sleepHitBonus": 30, "sleepNaturalWake": 20,
     "poisonDamagePerTick": 1,
     "fleeBase": 50, "fleeAgiMul": 3,
-    "chestChance": 20, "chestChanceCorridor": 15, "chestPity": 15, "chestGoldDice": "2d10",
+    "chestChance": 10, "chestChanceCorridor": 8, "chestPity": 15, "chestGoldDice": "2d10",
     "unarmedDice": "1d2",
     "autoInterrupt": { "hpRatio": 0.3 },
     "autoDefendHpRatio": 0.5,
@@ -30,7 +30,7 @@
     "rangedHitAgiMul": 2, "rangedHitLukPivot": 10,
     "directDropChance": 3, "directDropGoldDice": "2d10"
   },
-  "auto": { "healBelowRatio": 0.5, "attackSpellMinEnemies": 3, "attackSpellMpRatio": 0.5 },
+  "auto": { "healBelowRatio": 0.5, "attackSpellMinEnemies": 3, "attackSpellMpRatio": 0.33 },
   "san": {
     "max": 100,
     "floorDescend": 5, "unidentifiedGroup": 2, "allyDeath": 10, "trap": 3, "search": 1,

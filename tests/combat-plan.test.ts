@@ -85,7 +85,7 @@ describe("CB-46 オートの既定の呪文（M19）", () => {
   const oneGroup = (n: number): GameState => full(withBattle(dived(1), [{ monsterId: "kobold", hps: Array<number>(n).fill(3) }]));
 
   test("CB-46 config.auto の値【仮】", () => {
-    expect(data.config.auto).toEqual({ healBelowRatio: 0.5, attackSpellMinEnemies: 3, attackSpellMpRatio: 0.5 });
+    expect(data.config.auto).toEqual({ healBelowRatio: 0.5, attackSpellMinEnemies: 3, attackSpellMpRatio: 0.33 }); // M20 の終わりに 0.5 → 0.33（3 分の 1）
   });
 
   test("CB-46 治癒: hp < hpMax × 0.5（M20）の味方がいて MP があれば、HP の割合が最も低い者に最も安い治癒。ちょうど 0.5 は治さない。MP 不足・死者だけなら既定", () => {
@@ -116,17 +116,15 @@ describe("CB-46 オートの既定の呪文（M19）", () => {
     expect(autoInput(none, data, ch(none, "c4"))).toEqual({ type: "defend" });
   });
 
-  test("CB-46 攻撃呪文: 生存の敵が 3 体以上で、唱えた後も MP が最大の半分以上残る（mp − cost ≥ mpMax × 0.5。M20）なら最も安い攻撃呪文（単体・グループは最小の生存グループ、全体は none）。2 体・残りが半分未満・眠りの霧だけなら既定", () => {
+  test("CB-46 攻撃呪文: 生存の敵が 3 体以上で、唱えた後も MP が最大の 3 分の 1 以上残る（mp − cost ≥ mpMax × 0.33。M20 の終わりに 0.5 から）なら最も安い攻撃呪文（単体・グループは最小の生存グループ、全体は none）。2 体・残りが 3 分の 1 未満・眠りの霧だけなら既定", () => {
     const s = full(twoGroups());
     const fire = { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 1 } };
     expect(autoInput(s, data, ch(s, "c5"))).toEqual(fire);
-    // 火矢 2: MP 7 → 残り 5 = 10 × 0.5 で唱える。MP 6 → 残り 4 で既定。旧い式で唱えていた MP 5（半分ちょうど）も既定
-    const half = withChar(s, 4, { mp: 7 });
-    expect(autoInput(half, data, ch(half, "c5"))).toEqual(fire);
-    const below = withChar(s, 4, { mp: 6 });
+    // 火矢 2: MP 6 → 残り 4 ≥ 10 × 0.33 で唱える（0.5 の頃は既定）。MP 5 → 残り 3 < 3.3 で既定
+    const third = withChar(s, 4, { mp: 6 });
+    expect(autoInput(third, data, ch(third, "c5"))).toEqual(fire);
+    const below = withChar(s, 4, { mp: 5 });
     expect(autoInput(below, data, ch(below, "c5"))).toEqual({ type: "defend" });
-    const oldHalf = withChar(s, 4, { mp: 5 });
-    expect(autoInput(oldHalf, data, ch(oldHalf, "c5"))).toEqual({ type: "defend" });
     const two = oneGroup(2);
     expect(autoInput(two, data, ch(two, "c5"))).toEqual({ type: "defend" });
     const three = oneGroup(3);
@@ -139,11 +137,13 @@ describe("CB-46 オートの既定の呪文（M19）", () => {
     expect(autoInput(both, data, ch(both, "c5"))).toEqual(fire);
     const burst = withChar(s, 4, { knownSpells: ["flame_burst"] });
     expect(autoInput(burst, data, ch(burst, "c5"))).toEqual({ type: "cast", spellId: "flame_burst", target: { side: "enemy", group: 1 } });
-    // 炎裂 5: MP 10 → 残り 5 で唱える。雷光 9: MP 18/18 → 残り 9 で唱える、MP 17 → 残り 8 で既定、MP 10/10 → 残り 1 で既定
+    // 炎裂 5: MP 10 → 残り 5 で唱える。雷光 9: MP 18/18 → 残り 9 で唱える、MP 15 → 残り 6 ≥ 5.94 で唱える、MP 14 → 残り 5 で既定、MP 10/10 → 残り 1 で既定
     const bolt = withChar(s, 4, { knownSpells: ["lightning_tome"], mp: 18, mpMax: 18 });
     expect(autoInput(bolt, data, ch(bolt, "c5"))).toEqual({ type: "cast", spellId: "lightning_tome", target: { side: "none" } });
-    const bolt17 = withChar(bolt, 4, { mp: 17 });
-    expect(autoInput(bolt17, data, ch(bolt17, "c5"))).toEqual({ type: "defend" });
+    const bolt15 = withChar(bolt, 4, { mp: 15 });
+    expect(autoInput(bolt15, data, ch(bolt15, "c5"))).toEqual({ type: "cast", spellId: "lightning_tome", target: { side: "none" } });
+    const bolt14 = withChar(bolt, 4, { mp: 14 });
+    expect(autoInput(bolt14, data, ch(bolt14, "c5"))).toEqual({ type: "defend" });
     const bolt10 = withChar(bolt, 4, { mp: 10, mpMax: 10 });
     expect(autoInput(bolt10, data, ch(bolt10, "c5"))).toEqual({ type: "defend" });
     // 唱える MP が無ければ既定（雷光 9 > MP 8）
@@ -151,15 +151,15 @@ describe("CB-46 オートの既定の呪文（M19）", () => {
     expect(autoInput(short, data, ch(short, "c5"))).toEqual({ type: "defend" });
   });
 
-  test("CB-46 MP の半分は実効の mpMax（装備の mp_max +6 で 10 → 16。火矢 2 の後の残りで比べ、MP 9 は残り 7 で既定、10 は残り 8 で火矢）", () => {
+  test("CB-46 MP の 3 分の 1 は実効の mpMax（装備の mp_max +6 で 10 → 16、16 × 0.33 = 5.28。火矢 2 の後の残りで比べ、MP 7 は残り 5 で既定（素の 10 なら唱える）、8 は残り 6 で火矢）", () => {
     const s = structuredClone(full(twoGroups()));
     const id = createItemInstance(s, { itemId: "charm", identified: true, options: [{ optionId: "mp_max", tier: 3, value: 6 }] });
     ch(s, "c5").equipment.accessory = id;
     expect(equipStats(s, data, ch(s, "c5")).mpMax).toBe(16);
-    const nine = withChar(s, 4, { mp: 9 });
-    expect(autoInput(nine, data, ch(nine, "c5"))).toEqual({ type: "defend" });
-    const ten = withChar(s, 4, { mp: 10 });
-    expect(autoInput(ten, data, ch(ten, "c5"))).toEqual({ type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 1 } });
+    const seven = withChar(s, 4, { mp: 7 });
+    expect(autoInput(seven, data, ch(seven, "c5"))).toEqual({ type: "defend" });
+    const eight = withChar(s, 4, { mp: 8 });
+    expect(autoInput(eight, data, ch(eight, "c5"))).toEqual({ type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 1 } });
   });
 
   test("CB-46 司教は治癒 → 攻撃呪文の順。職業に系統が無ければ（転職で呪文を覚えている戦士など）呪文を選ばない", () => {

@@ -1688,11 +1688,11 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     // ボス戦では判定しない（乱数も使わない）は tests/dungeon.test.ts の DG-31
   });
 
-  test("CB-51/CB-60【仮】宝箱の既定の確率: 部屋 chestChance 20・通路 chestChanceCorridor 15（M15 で 60・15 から 45・10、M19 で 35・20、さらに部屋 25、M20 で 20・15）。勝利の金と直接ドロップ（CB-57）の後の chance 1 回の出目で決まる（鏡の rng、シード 1〜60。連続 0 なので救済 CB-51b は足されない）", () => {
-    expect(data.config.combat.chestChance).toBe(20);
-    expect(data.config.combat.chestChanceCorridor).toBe(15);
+  test("CB-51/CB-60【仮】宝箱の既定の確率: 部屋 chestChance 10・通路 chestChanceCorridor 8（M15 で 60・15 から 45・10、M19 で 35・20、さらに部屋 25、M20 で 20・15、M20 の終わりに 10・8）。勝利の金と直接ドロップ（CB-57）の後の chance 1 回の出目で決まる（鏡の rng、シード 1〜60。連続 0 なので救済 CB-51b は足されない）", () => {
+    expect(data.config.combat.chestChance).toBe(10);
+    expect(data.config.combat.chestChanceCorridor).toBe(8);
     // M11（B8）: dataWith は既定で宝箱の判定を 0 にするので、実データの値を戻す
-    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 20, chestChanceCorridor: 15, chestPity: 15 } }, noChestImpulse);
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 10, chestChanceCorridor: 8, chestPity: 15 } }, noChestImpulse);
     const seen = { room: [0, 0], corridor: [0, 0] };
     for (let seed = 1; seed <= 60; seed++) {
       for (const inRoom of [true, false]) {
@@ -1707,7 +1707,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
         chance(m, 100);
         rollDice(m, "1d8");
         chance(m, 0); // CB-57（M14）: 直接ドロップの判定（dataWith の既定 0 で外れ）
-        const want = randInt(m, 1, 100) <= (inRoom ? 20 : 15);
+        const want = randInt(m, 1, 100) <= (inRoom ? 10 : 8);
         const r = exec(s, RESOLVE, d);
         expect(kindsOf(r.events).includes("chestFound"), `seed ${seed} inRoom ${String(inRoom)}`).toBe(want);
         expect(r.state.dive!.chest !== null, `seed ${seed} inRoom ${String(inRoom)}`).toBe(want);
@@ -1731,14 +1731,14 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
   test("CB-51b（M20）【仮】宝箱の救済: 率 = 基本 + chestPity（15）× dive.noChestStreak（上限 100。chance は 1 回のまま）。出たら 0、出なければ +1。省略は 0 として読む（鏡の rng、シード 1〜60）", () => {
     expect(data.config.combat.chestPity).toBe(15);
     // 罠の抽選は noTrapChance 100 で chance 1 回（罠なし）に固定し、当たったときも鏡で最後まで追う
-    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 20, chestChanceCorridor: 15, chestPity: 15 } }, (x) => {
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestChance: 10, chestChanceCorridor: 8, chestPity: 15 } }, (x) => {
       noChestImpulse(x);
       x.config.chest.noTrapChance = 100;
     });
     let pityHits = 0;
     for (let seed = 1; seed <= 60; seed++) {
       for (const inRoom of [true, false]) {
-        for (const streak of [undefined, 0, 3, 6] as const) {
+        for (const streak of [undefined, 0, 3, 7] as const) {
           const s = setup([{ monsterId: "rotting_corpse", hps: [1], status: [["paralysis"]] }], {
             seed,
             identified: ["rotting_corpse"],
@@ -1748,7 +1748,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
           if (streak === undefined) delete s.dive!.noChestStreak;
           else s.dive!.noChestStreak = streak;
           const label = `seed ${seed} inRoom ${String(inRoom)} streak ${String(streak)}`;
-          const base = inRoom ? 20 : 15;
+          const base = inRoom ? 10 : 8;
           const pct = Math.min(100, base + 15 * (streak ?? 0));
           const m = cloneRng(s.rng);
           rolls(m, 6);
@@ -1764,7 +1764,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
           expect(kindsOf(r.events).includes("message:battle.chestLeft"), label).toBe(want);
           expect(kindsOf(r.events).includes("message:battle.noChest"), label).toBe(!want);
           expect(r.state.dive!.noChestStreak, label).toBe(want ? 0 : (streak ?? 0) + 1);
-          if (streak === 6) expect(want, label).toBe(true); // 20 / 15 + 90 ≥ 100 は必ず当たる（それでも chance は 1 回引く）
+          if (streak === 7) expect(want, label).toBe(true); // 10 / 8 + 105 ≥ 100 は必ず当たる（それでも chance は 1 回引く。M20 の終わりに 20 / 15 + 90 の連続 6 から 7 に）
           if (want && roll > base) pityHits += 1;
         }
       }

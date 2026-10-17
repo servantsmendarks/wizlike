@@ -220,7 +220,7 @@ export type Config = {
   };
   /**
    * CB-46（M19）【仮】: オートの既定（lastBattleInput が null のとき、または前回の入力が使えず既定に落ちるとき）の呪文。治癒は hp < hpMax × healBelowRatio の味方がいるとき、
-   * 攻撃呪文は生存の敵の総数が attackSpellMinEnemies 以上で mp − cost >= mpMax × attackSpellMpRatio（唱えた後も残る。M20）のとき
+   * 攻撃呪文は生存の敵の総数が attackSpellMinEnemies 以上で mp − cost >= mpMax × attackSpellMpRatio（唱えた後も MP が最大の 3 分の 1（0.33）以上残る。M20。式は M20 の C-1、値は M20 の終わりに 0.5 → 0.33）のとき
    */
   auto: { healBelowRatio: number; attackSpellMinEnemies: number; attackSpellMpRatio: number };
   san: {

@@ -208,7 +208,7 @@ describe("data: config.json", () => {
     expect(issuesOf((r) => (r.config.combat.sleepNaturalWake = 100))).toEqual([]);
   });
   test("data: CB-46（M19）auto の healBelowRatio・attackSpellMpRatio は 0..1 の数、attackSpellMinEnemies は 1 以上の整数【仮】", () => {
-    expect(config.auto).toEqual({ healBelowRatio: 0.5, attackSpellMinEnemies: 3, attackSpellMpRatio: 0.5 });
+    expect(config.auto).toEqual({ healBelowRatio: 0.5, attackSpellMinEnemies: 3, attackSpellMpRatio: 0.33 }); // M20 の終わりに 0.5 → 0.33（3 分の 1）
     expectIssue((r) => (r.config.auto.healBelowRatio = 1.5), "config.json", "auto.healBelowRatio: expected number in 0..1, got 1.5");
     expectIssue((r) => (r.config.auto.attackSpellMpRatio = -0.1), "config.json", "auto.attackSpellMpRatio: expected number in 0..1, got -0.1");
     expectIssue((r) => (r.config.auto.attackSpellMinEnemies = 0), "config.json", "auto.attackSpellMinEnemies: expected integer >= 1, got 0");
@@ -1376,9 +1376,9 @@ describe("data: drops.json（IT-50〜53。M7）", () => {
     expectIssue((r) => (r.config.combat.directDropGoldDice = "2d"), "config.json", 'combat.directDropGoldDice: invalid dice expression "2d"');
     expectIssue((r) => delete r.config.combat.directDropGoldDice, "config.json", "combat.directDropGoldDice: missing required field");
   });
-  test("data: CB-51/CB-51b combat.chestChance・chestChanceCorridor・chestPity は 0..100【仮】（M20 で 20・15・15）", () => {
+  test("data: CB-51/CB-51b combat.chestChance・chestChanceCorridor・chestPity は 0..100【仮】（M20 で 20・15・15、M20 の終わりに 10・8・15）", () => {
     const d = loadGameData(rawData());
-    expect([d.config.combat.chestChance, d.config.combat.chestChanceCorridor, d.config.combat.chestPity]).toEqual([20, 15, 15]);
+    expect([d.config.combat.chestChance, d.config.combat.chestChanceCorridor, d.config.combat.chestPity]).toEqual([10, 8, 15]);
     expectIssue((r) => delete r.config.combat.chestPity, "config.json", "combat.chestPity: missing required field");
     expectIssue((r) => (r.config.combat.chestPity = 101), "config.json", "combat.chestPity: expected integer in 0..100, got 101");
     expectIssue((r) => (r.config.combat.chestPity = 1.5), "config.json", "combat.chestPity: expected integer in 0..100, got number");
