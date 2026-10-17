@@ -1132,7 +1132,8 @@ export function createApp(o: {
       summary: campSummary(state, data),
       identifyMpCost: data.config.identify.mpCost,
       bestiary: bestiaryView(state, data), // UI-79（M18）
-      itemActions: campItemActions(menu, (memberId, instanceId) => itemActions(state, data, memberId, instanceId)), // UI-80（M20）
+      // UI-80（M20）。TW-16c（M21）: 銀行の状態は外す・入れ替えで外れる品を倉庫へ（to "warehouse"）
+      itemActions: campItemActions(menu, (memberId, instanceId) => itemActions(state, data, memberId, instanceId, campHost === "bank" ? "warehouse" : undefined)),
     };
   };
 

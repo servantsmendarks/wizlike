@@ -970,8 +970,11 @@ export type CampSpellView = {
 /** MG-44 / UI-53（2026-10-05）: 戦闘外の回復の対象を選べない理由。表示層は strings の camp.targetBlock.{block} で出す */
 export type CampTargetBlock = "fullHp";
 export type CampTargetView = { id: string; block: CampTargetBlock | null };
-/** 装備できない理由。表示層は strings の camp.equipBlock.{block} で出す。full は TW-16c（M21）の倉庫の品で、旧品が無く使用枠（CH-71）に空きが無いとき */
-export type EquipBlock = "cannotAct" | "unidentified" | "class" | "cursedSlot" | "full";
+/**
+ * 装備できない理由。表示層は strings の camp.equipBlock.{block} で出す。full は TW-16c（M21）の倉庫の品で、旧品が無く使用枠（CH-71）に空きが無いとき。
+ * warehouseFull は TW-16c（M21）の to "warehouse"（銀行の状態）で、外す品・入れ替えで外れる品があり倉庫が満杯のとき
+ */
+export type EquipBlock = "cannotAct" | "unidentified" | "class" | "cursedSlot" | "full" | "warehouseFull";
 export type CampEquipCandidate = {
   instanceId: string;
   /** itemDisplayName。未鑑定なら unidentifiedName（CH-72） */
@@ -979,6 +982,11 @@ export type CampEquipCandidate = {
   slot: EquipSlot;
   /** null なら party.equip を受け付ける（checkEquip === null と同じ） */
   block: EquipBlock | null;
+  /**
+   * TW-16c（M21）: 街（place town）だけ。旧品を倉庫へ入れる装備（party.equip の to "warehouse"。倉庫の品は from も "warehouse"）の理由の写し。
+   * 銀行の状態の表示層はこちらを使う。街でなければ省略
+   */
+  toWarehouseBlock?: EquipBlock | null;
 };
 export type CampSlotView = {
   slot: EquipSlot;
@@ -1098,6 +1106,11 @@ export type ItemActions = {
   identifier: { id: string; name: string; rate: number } | null;
   /** TW-16c（M21）: 倉庫の品（街だけ。操作は装備するだけで、送るのは party.equip の from "warehouse"）のとき "warehouse"。手元の品は省略 */
   from?: "warehouse";
+  /**
+   * TW-16c（M21）: itemActions に to "warehouse" を渡し、街（campPlace town）だったとき "warehouse"。手元の品の 装備する・外す の理由は
+   * to "warehouse" の checkEquip / checkUnequip（倉庫が満杯なら warehouseFull）で、送るのも to "warehouse"。それ以外は省略
+   */
+  to?: "warehouse";
 };
 
 /**

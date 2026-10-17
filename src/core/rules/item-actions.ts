@@ -15,6 +15,7 @@ const EQUIP_BLOCK: Record<string, EquipBlock> = {
   "class cannot equip": "class",
   "slot cursed": "cursedSlot",
   "inventory full": "full", // TW-16c（M21）: 倉庫の品で旧品が無く、使用枠に空きが無い
+  "warehouse full": "warehouseFull", // TW-16c（M21）: to "warehouse" で旧品があり、倉庫が満杯
 };
 
 /** checkUseItem の理由 → ItemActionBlock。full hp は対象の段の理由なので null（品の行では見ない。fieldItemMenu と同じ） */
@@ -44,8 +45,10 @@ function mapped(r: string | null, table: Record<string, ItemActionBlock>, what: 
  *   （誰も通らなければ同じ順の最初の者で、理由は cannotAct / noMp）。identifier にその者と identifyChance の rate
  * - TW-16c（M21）: 街（campPlace town）で、品が倉庫（GameState.warehouse）にある装備品なら、装備する だけ（checkEquip の from / to "warehouse" の理由）で
  *   from "warehouse"。倉庫の消耗品・魔法書は null（倉庫からは使えない）
+ * - TW-16c（M21）: to "warehouse"（銀行の状態）を渡し、街なら、手元の品の 外す・装備する の理由は to "warehouse" の checkUnequip / checkEquip
+ *   （外す品・入れ替えで外れる品の行き先は倉庫。満杯なら warehouseFull）で、結果に to: "warehouse"。街でなければ to は無視する
  */
-export function itemActions(state: GameState, data: GameData, memberId: string, instanceId: string): ItemActions | null {
+export function itemActions(state: GameState, data: GameData, memberId: string, instanceId: string, to?: "warehouse"): ItemActions | null {
   if (campPlace(state) === null) return null;
   const ch = memberById(state, memberId);
   const inst = state.items[instanceId];
@@ -67,6 +70,7 @@ export function itemActions(state: GameState, data: GameData, memberId: string, 
       from: "warehouse",
     };
   }
+  const toWh = to === "warehouse" && campPlace(state) === "town" ? ("warehouse" as const) : undefined;
   const out: ItemActions = {
     memberId,
     instanceId,
@@ -75,18 +79,19 @@ export function itemActions(state: GameState, data: GameData, memberId: string, 
     slot: base?.slot ?? null,
     actions: [],
     identifier: null,
+    ...(toWh === undefined ? {} : { to: toWh }),
   };
   const push = (action: ItemActionView["action"], block: ItemActionBlock | null): void => {
     out.actions.push({ action, block });
   };
   if (equippedSlot !== null) {
-    const r = checkUnequip(state, data, memberId, equippedSlot);
-    if (r !== null && r !== "cursed") throw new Error(`itemActions: unexpected unequip reason ${r}`);
-    push("unequip", r === null ? null : "cursed");
+    const r = checkUnequip(state, data, memberId, equippedSlot, toWh);
+    if (r !== null && r !== "cursed" && r !== "warehouse full") throw new Error(`itemActions: unexpected unequip reason ${r}`);
+    push("unequip", r === null ? null : r === "cursed" ? "cursed" : "warehouseFull");
     return out;
   }
   if (base !== null) {
-    push("equip", mapped(checkEquip(state, data, memberId, instanceId), EQUIP_BLOCK, "equip"));
+    push("equip", mapped(checkEquip(state, data, memberId, instanceId, undefined, toWh), EQUIP_BLOCK, "equip"));
   } else if (findItem(data, inst.itemId) !== null) {
     const item = findItem(data, inst.itemId)!;
     const ally = item.type === "consumable" && item.effect.type !== "return" && item.effect.target === "ally";

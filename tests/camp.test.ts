@@ -1544,7 +1544,7 @@ describe("TW-16c（M21）倉庫から装備する・倉庫へ外す（party.equi
     const herb = stash(s, "herb");
     s = herb.s;
     const c5 = campMenu(s, data)!.members.find((m) => m.id === "c5")!;
-    expect(c5.warehouseCandidates).toEqual([{ instanceId: cap.id, name: nameOfItem(s, cap.id), slot: "helm", block: null }]);
+    expect(c5.warehouseCandidates).toEqual([{ instanceId: cap.id, name: nameOfItem(s, cap.id), slot: "helm", block: null, toWarehouseBlock: null }]);
     const c1 = campMenu(s, data)!.members.find((m) => m.id === "c1")!;
     expect(c1.warehouseCandidates!.map((c) => c.instanceId)).toEqual([cap.id, sw.id]);
     expect(c1.slots.find((x) => x.slot === "shield")!.canUnequipToWarehouse).toBe(true);
@@ -1589,6 +1589,37 @@ describe("TW-16c（M21）倉庫から装備する・倉庫へ外す（party.equi
     expect(itemActions(s, data, "c1", "i1")).not.toHaveProperty("from");
   });
 
+  const who = (st: GameState, id: string): Character => st.party.find((c) => c.id === id)!;
+  test("TW-16c campMenu の toWarehouseBlock と itemActions の to warehouse: 旧品・外す品を倉庫へ入れる理由（倉庫が満杯で旧品があれば warehouseFull）。迷宮は省略・to は無視。乱数と state は変えない", () => {
+    const own = give(inTown(), "c3", "short_bow");
+    const s = own.s;
+    const cand = (st: GameState) => campMenu(st, data)!.members.find((m) => m.id === "c3")!.equipCandidates.find((c) => c.instanceId === own.id)!;
+    expect(cand(s)).toMatchObject({ block: null, toWarehouseBlock: null });
+    const wf = cloneState(s);
+    for (let i = wf.warehouse.length; i < data.config.items.warehouseSlots; i++) wf.warehouse.push(createItemInstance(wf, { itemId: "herb", identified: true }));
+    expect(cand(wf)).toMatchObject({ block: null, toWarehouseBlock: "warehouseFull" });
+    // 旧品の無い枠への装備は倉庫を使わないので満杯でも null
+    const helm = give(wf, "c1", "leather_cap"); // c1 の兜の枠は空き
+    expect(campMenu(helm.s, data)!.members.find((m) => m.id === "c1")!.equipCandidates.find((c) => c.instanceId === helm.id)!.toWarehouseBlock).toBeNull();
+    // 迷宮は省略
+    const d = campMenu(dived(1), data)!;
+    expect(d.members.every((m) => m.equipCandidates.every((c) => !("toWarehouseBlock" in c)))).toBe(true);
+    // itemActions の to warehouse
+    const before = JSON.stringify(wf);
+    const weapon = who(wf, "c3").equipment.weapon!;
+    expect(itemActions(wf, data, "c3", weapon, "warehouse")).toMatchObject({ to: "warehouse", actions: [{ action: "unequip", block: "warehouseFull" }] });
+    expect(itemActions(wf, data, "c3", own.id, "warehouse")!.actions[0]).toEqual({ action: "equip", block: "warehouseFull" });
+    expect(itemActions(s, data, "c3", weapon, "warehouse")!.actions).toEqual([{ action: "unequip", block: null }]);
+    expect(itemActions(wf, data, "c3", weapon)).not.toHaveProperty("to"); // to なしは今どおり
+    expect(itemActions(wf, data, "c3", weapon)!.actions).toEqual([{ action: "unequip", block: null }]);
+    expect(JSON.stringify(wf)).toBe(before);
+    // 迷宮では to を無視する（結果に to が無く、理由は手元のまま）
+    const dv = dived(1);
+    const dw = who(dv, "c1").equipment.weapon!;
+    expect(itemActions(dv, data, "c1", dw, "warehouse")).not.toHaveProperty("to");
+    expect(itemActions(dv, data, "c1", dw, "warehouse")!.actions).toEqual([{ action: "unequip", block: null }]);
+  });
+
   test("TW-16c/UI-67 equipPreview の from warehouse: 倉庫の品を装備したときの差分（元の state と乱数は変えない）。from なしでは倉庫の品は null", () => {
     const { s, id } = stash(inTown(), "short_bow");
     const before = JSON.stringify(s);
@@ -1619,11 +1650,12 @@ describe("TW-16c（M21）倉庫から装備する・倉庫へ外す（party.equi
       ...data.uniques.map((u) => `${prefix}${u.name}`),
     ]);
     const name = "あ".repeat(data.config.creation.nameMaxLength);
-    for (const k of ["camp.toWarehouse", "camp.equipReason.full", "camp.itemReason.full"]) {
+    for (const k of ["camp.toWarehouse", "camp.equipReason.full", "camp.itemReason.full", "camp.equipReason.warehouseFull", "camp.itemReason.warehouseFull"]) {
       const text = formatMessage(S[k]!, { name, item });
       expect(text, k).not.toContain("{");
       expect(kinsokuLines(text, 28).length, `${k}: ${text}`).toBeLessThanOrEqual(2);
     }
     expect(units(S["camp.equipBlock.full"]!)).toBeLessThanOrEqual(units(S["camp.equipBlock.cursedSlot"]!));
+    expect(units(S["camp.equipBlock.warehouseFull"]!)).toBeLessThanOrEqual(units(S["camp.equipBlock.cursedSlot"]!));
   });
 });

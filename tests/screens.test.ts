@@ -1147,7 +1147,10 @@ describe("入力と Command", () => {
     expect(flush).toBeGreaterThan(0);
     expect(flush).toBeLessThan(tap.indexOf("chooseCamp("));
     expect(tap).toContain('chooseCamp(hit.kind === "item" ? { kind: "openItem", instanceId: hit.instanceId } : { kind: "pageTurn", delta: 1 });');
-    expect(app).toContain("itemActions: campItemActions(menu, (memberId, instanceId) => itemActions(state, data, memberId, instanceId)),");
+    // TW-16c（M21）: 銀行の状態だけ to "warehouse"
+    expect(app).toContain(
+      'itemActions: campItemActions(menu, (memberId, instanceId) => itemActions(state, data, memberId, instanceId, campHost === "bank" ? "warehouse" : undefined)),',
+    );
   });
 
   test("UI-66（2026-10-07）戻る・やめるは位置に関わらず cancel の配線: 戦闘・キャンプ・街の項目は種類から back の印を付ける（ソースの検査）", () => {

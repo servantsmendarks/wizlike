@@ -23,12 +23,13 @@
 // - TW-16c / UI-52 / UI-59（M21 A-2）: 銀行の一覧の「状態」から host "bank" で開く（酒場の状態と同じキャラクター画面。閉じると銀行の一覧へ）。
 //   host "bank" のキャラクター画面だけ 4 つ目の枠に「倉庫から」（キー 4）を置き、残置の装備の段（部位 → 品の一覧 → 品の詳細）を開く。品の一覧は
 //   「外して倉庫へ」（core の canUnequipToWarehouse）→ 装備中 → 手元の候補 → 倉庫の候補「{name}（倉庫）」（core の warehouseCandidates）。
-//   倉庫の品の装備は party.equip の from / to "warehouse"（旧品は倉庫へ）、外すは party.unequip の to "warehouse"。手元の候補は今どおり（旧品は手元へ）。
+//   倉庫の品の装備は party.equip の from / to "warehouse"（旧品は倉庫へ）、外すは party.unequip の to "warehouse"。手元の候補の装備も to "warehouse"
+//   （旧品は倉庫へ。可否は core の toWarehouseBlock）。品の段（UI-80）も銀行では core の itemActions の to "warehouse" の結果で、外す・装備するは倉庫へ。
 // DOM はパネル（createCampView）だけで、モジュールのトップレベルでは DOM に触れない。結線は app が行う。
 import type { SpriteInfo } from "../../build/asset-types";
 import type { EquipSlot, GameData, Strings } from "../../core/data/index";
 import type { BestiaryView } from "../../core/rules/item-view";
-import type { CampMember, CampMenu, CampSummary, CampTargetBlock, Command, FieldItemMenu, ItemActionKind, ItemActions } from "../../core/types";
+import type { CampMember, CampMenu, CampSummary, CampTargetBlock, Command, EquipBlock, FieldItemMenu, ItemActionKind, ItemActions } from "../../core/types";
 import type { Action } from "../input/swipe";
 import type { Rect } from "../layout";
 import {
@@ -470,7 +471,7 @@ export function campEntries(host: CampHost, page: CampPage, m: CampInput, string
           v.action === "equip"
             ? s(strings, "camp.equip.do")
             : v.action === "unequip"
-              ? s(strings, "camp.equip.unequip")
+              ? s(strings, a.to === "warehouse" ? "camp.equip.unequipToWarehouse" : "camp.equip.unequip") // TW-16c（M21）: 銀行の状態
               : v.action === "identify"
                 ? s(strings, "camp.item.identify", { rate: a.identifier?.rate ?? "?" })
                 : s(strings, `character.${v.action}`);
@@ -499,6 +500,8 @@ export function campEntries(host: CampHost, page: CampPage, m: CampInput, string
       // TW-16c（M21）: 銀行の状態では倉庫の候補を足し、外すは倉庫へ（可否は core の canUnequipToWarehouse）
       const bank = host === "bank";
       const stored = bank ? (x?.warehouseCandidates ?? []).filter((c) => c.slot === page.slot) : [];
+      // TW-16c（M21）: 銀行の状態の装備は旧品を倉庫へ入れるので、理由は core の toWarehouseBlock（倉庫の候補は block と同じ）
+      const blockOf = (c: (typeof cands)[number]): EquipBlock | null => (bank ? (c.toWarehouseBlock ?? c.block) : c.block);
       const unequipRow = (c: NonNullable<typeof cur>): CampEntry =>
         bank
           ? { label: s(strings, "camp.equip.unequipToWarehouse"), disabled: !c.canUnequipToWarehouse, choice: { kind: "unequip" } }
@@ -511,13 +514,14 @@ export function campEntries(host: CampHost, page: CampPage, m: CampInput, string
         const c = (page.from === "warehouse" ? stored : cands).find((y) => y.instanceId === page.instanceId);
         if (c === undefined) return list([]);
         const label = s(strings, "camp.equip.do");
+        const b = blockOf(c);
         // UI-59（M10）: dim の「装備する（{why}）」は押すと理由を語る（core の block ごとの文。転職の dim の行と同じ作法）
         return list([
           {
-            label: c.block === null ? label : s(strings, "camp.equip.blocked", { name: label, why: s(strings, `camp.equipBlock.${c.block}`) }),
-            disabled: c.block !== null,
+            label: b === null ? label : s(strings, "camp.equip.blocked", { name: label, why: s(strings, `camp.equipBlock.${b}`) }),
+            disabled: b !== null,
             choice: { kind: "equip", instanceId: c.instanceId },
-            ...(c.block === null ? {} : { reason: s(strings, `camp.equipReason.${c.block}`, { name: x?.name ?? "", item: c.name }) }),
+            ...(b === null ? {} : { reason: s(strings, `camp.equipReason.${b}`, { name: x?.name ?? "", item: c.name }) }),
           },
         ]);
       }
@@ -528,8 +532,9 @@ export function campEntries(host: CampHost, page: CampPage, m: CampInput, string
         rows.push({ label: s(strings, "camp.equip.current", { name: cur.name ?? "" }), disabled: false, choice: { kind: "detail", instanceId: cur.instanceId } });
       }
       for (const c of cands) {
+        const b = blockOf(c);
         rows.push({
-          label: c.block === null ? c.name : s(strings, "camp.equip.blocked", { name: c.name, why: s(strings, `camp.equipBlock.${c.block}`) }),
+          label: b === null ? c.name : s(strings, "camp.equip.blocked", { name: c.name, why: s(strings, `camp.equipBlock.${b}`) }),
           disabled: false,
           choice: { kind: "detail", instanceId: c.instanceId },
         });
@@ -706,11 +711,15 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
       if (a === null || v === undefined || v.block !== null) return stay;
       const id = page.instanceId;
       const character: CampPage = { kind: "character", memberId: page.memberId };
+      // TW-16c（M21）: 銀行の状態（core が to "warehouse" で判定した結果）は、外す品・入れ替えで外れる品を倉庫へ
+      const to = a.to === "warehouse" ? { to: "warehouse" as const } : {};
       switch (v.action) {
         case "equip":
-          return { kind: "send", command: { type: "party.equip", memberId: page.memberId, instanceId: id }, after: page };
+          return { kind: "send", command: { type: "party.equip", memberId: page.memberId, instanceId: id, ...to }, after: page };
         case "unequip":
-          return a.equippedSlot === null ? stay : { kind: "send", command: { type: "party.unequip", memberId: page.memberId, slot: a.equippedSlot }, after: page };
+          return a.equippedSlot === null
+            ? stay
+            : { kind: "send", command: { type: "party.unequip", memberId: page.memberId, slot: a.equippedSlot, ...to }, after: page };
         case "use": {
           // 既存の使うの段へ（対象の要る品は対象の段、帰還の糸は確認の段。どちらも from "item"）。それ以外は送ってキャラクター画面へ（品は消える）
           const it = m.items?.members.find((x) => x.id === page.memberId)?.items.find((x) => x.instanceId === id);
@@ -733,14 +742,14 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
         return choice.kind === "slot" ? go({ kind: "equip", stage: "item", memberId: page.memberId, slot: choice.slot }) : stay;
       }
       const slotStage: CampPage = { kind: "equip", stage: "slot", memberId: page.memberId };
-      // TW-16c（M21）: 銀行の状態の外すは倉庫へ、倉庫の候補の装備は倉庫から（旧品は倉庫へ）
+      // TW-16c（M21）: 銀行の状態の外す・入れ替えで外れた品は倉庫へ、倉庫の候補の装備は倉庫から
       const toWarehouse = host === "bank" ? { to: "warehouse" as const } : {};
       if (choice.kind === "unequip") {
         return { kind: "send", command: { type: "party.unequip", memberId: page.memberId, slot: page.slot, ...toWarehouse }, after: slotStage };
       }
       if (choice.kind === "equip") {
-        const wh = host === "bank" && page.stage === "detail" && page.from === "warehouse" ? { from: "warehouse" as const, to: "warehouse" as const } : {};
-        return { kind: "send", command: { type: "party.equip", memberId: page.memberId, instanceId: choice.instanceId, ...wh }, after: slotStage };
+        const from = host === "bank" && page.stage === "detail" && page.from === "warehouse" ? { from: "warehouse" as const } : {};
+        return { kind: "send", command: { type: "party.equip", memberId: page.memberId, instanceId: choice.instanceId, ...from, ...toWarehouse }, after: slotStage };
       }
       if (choice.kind === "detail" && page.stage === "item") {
         const from = host === "bank" && choice.from === "warehouse" ? { from: "warehouse" as const } : {};

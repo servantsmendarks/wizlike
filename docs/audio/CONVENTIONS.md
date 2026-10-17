@@ -78,7 +78,6 @@
 - 長さ: 全トラックの終端（End of Track）を曲末（bars × 1 小節の長さ）に置く。MIDI の長さ = 小節数。曲末を越える音は置かない。
 - 1 ファイル 1 曲。ファイル名は場面名（`project.json` の `music.songs` と `music.jingles`）。
   - 曲（12）: `title.mid`、`town.mid`、`dungeon1.mid`、`dungeon2.mid`、`dungeon3.mid`、`camp.mid`、`battle1.mid`、`battle2.mid`（ボス）、`tavern.mid`、`shop.mid`、`temple.mid`、`dark.mid`。tavern・shop・temple・dark は town の編曲違い（town の動機を使う。`music.arrangements`）。ダンジョンの曲は `dungeon1`、`dungeon2`、… と番号で増やす。
-  - 【ゲーム側から工房への提案（M21、2026-10-18。工房の版に入るまでは提案）】曲 `bank.mid`（銀行。town の編曲違い）を足して 13 曲にする。ゲームの data/audio.json の `music.songs` には先に足した（ファイルが届くまで無音）。`facilitySongs.bank` は曲が届くまで "shop"（店の曲）の暫定で、届いたら "bank" に替える。
   - ジングル（7）: `encounter.mid`、`victory.mid`、`wipe.mid`、`levelup.mid`、`inn.mid`、`clear.mid`（ダンジョン制覇）、`rare.mid`（伝説品の入手）。
 
 ## 3. 音符リストのテキスト形式（LLM が書く形）

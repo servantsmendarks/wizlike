@@ -579,6 +579,7 @@ const BLOCK_OF: Record<string, EquipBlock> = {
   "class cannot equip": "class",
   "slot cursed": "cursedSlot",
   "inventory full": "full", // TW-16c（M21）: 倉庫の品で旧品が無く、使用枠に空きが無い
+  "warehouse full": "warehouseFull", // TW-16c（M21）: to "warehouse" で旧品があり、倉庫が満杯
 };
 
 /**
@@ -624,7 +625,15 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
         const r = checkEquip(state, data, ch.id, id);
         const block = r === null ? null : (BLOCK_OF[r] ?? null);
         if (r !== null && block === null) throw new Error(`campMenu: unexpected equip reason ${r}`);
-        equipCandidates.push({ instanceId: id, name: itemDisplayName(state, data, id), slot, block });
+        const cand: CampEquipCandidate = { instanceId: id, name: itemDisplayName(state, data, id), slot, block };
+        if (place === "town") {
+          // TW-16c（M21）: 銀行の状態の入れ替え（旧品は倉庫へ）の理由
+          const w = checkEquip(state, data, ch.id, id, undefined, "warehouse");
+          const wb = w === null ? null : (BLOCK_OF[w] ?? null);
+          if (w !== null && wb === null) throw new Error(`campMenu: unexpected equip reason ${w}`);
+          cand.toWarehouseBlock = wb;
+        }
+        equipCandidates.push(cand);
       }
       // TW-16c（M21）: 街だけ、倉庫の鑑定済みで職業が装備できる品（理由は from / to "warehouse" の checkEquip）
       const warehouseCandidates: CampEquipCandidate[] | null = place !== "town" ? null : [];
@@ -637,7 +646,7 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
           const r = checkEquip(state, data, ch.id, id, "warehouse", "warehouse");
           const block = r === null ? null : (BLOCK_OF[r] ?? null);
           if (r !== null && block === null) throw new Error(`campMenu: unexpected warehouse equip reason ${r}`);
-          warehouseCandidates.push({ instanceId: id, name: itemDisplayName(state, data, id), slot: base.slot, block });
+          warehouseCandidates.push({ instanceId: id, name: itemDisplayName(state, data, id), slot: base.slot, block, toWarehouseBlock: block });
         }
       }
       return {

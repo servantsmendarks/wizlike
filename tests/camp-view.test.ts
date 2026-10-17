@@ -1506,11 +1506,14 @@ describe("TW-16c/UI-59 銀行の状態で倉庫から装備（M21 A-2。host ban
     const gone = cloneState(s);
     gone.warehouse = [];
     expect(campRepair("bank", detail, input(gone))).toEqual(equipItemPage("c3", "weapon"));
-    // 手元の候補は今どおり（from / to なし。旧品は手元へ）
-    const ownStep = campStep("bank", { kind: "equip", stage: "detail", memberId: "c3", slot: "weapon", instanceId: own }, m, { kind: "equip", instanceId: own });
-    expect(ownStep).toMatchObject({ kind: "send", command: { type: "party.equip", memberId: "c3", instanceId: own } });
+    // 手元の候補は to warehouse（旧品は倉庫へ。from なし）。酒場の状態では from / to なし
+    const ownDetail: CampPage = { kind: "equip", stage: "detail", memberId: "c3", slot: "weapon", instanceId: own };
+    const ownStep = campStep("bank", ownDetail, m, { kind: "equip", instanceId: own });
+    expect(ownStep).toMatchObject({ kind: "send", command: { type: "party.equip", memberId: "c3", instanceId: own, to: "warehouse" } });
     expect((ownStep as { command: Command }).command).not.toHaveProperty("from");
-    expect((ownStep as { command: Command }).command).not.toHaveProperty("to");
+    const tavernStep = campStep("tavern", ownDetail, m, { kind: "equip", instanceId: own });
+    expect((tavernStep as { command: Command }).command).not.toHaveProperty("from");
+    expect((tavernStep as { command: Command }).command).not.toHaveProperty("to");
   });
 
   test("TW-16c 外して倉庫へ: party.unequip の to warehouse（core が受け付ける）。倉庫が満杯なら dim（core の canUnequipToWarehouse）。詳細の段の外すも同じ", () => {
@@ -1532,6 +1535,53 @@ describe("TW-16c/UI-59 銀行の状態で倉庫から装備（M21 A-2。host ban
     const cur: CampPage = { kind: "equip", stage: "detail", memberId: "c1", slot: "shield", instanceId: "i3" };
     expect(rows(campEntries("bank", cur, m, S))[0]).toEqual({ label: "外して倉庫へ", disabled: false, choice: { kind: "unequip" } });
     expect(rows(campEntries("bank", cur, full, S))[0]!.disabled).toBe(true);
+  });
+
+  test("TW-16c/UI-80 銀行の状態の手元の候補の入れ替えと品の段: 旧品・外した品は倉庫へ（to warehouse。core が受け付ける）。倉庫が満杯なら dim で、押すと理由（warehouseFull）", () => {
+    // app の campInput と同じ（銀行の状態は itemActions に to "warehouse"）
+    const bankInput = (s: GameState): CampInput => ({
+      ...input(s),
+      itemActions: campItemActions(campMenu(s, data)!, (memberId, instanceId) => itemActions(s, data, memberId, instanceId, "warehouse")),
+    });
+    const s = inTown();
+    const own = createItemInstance(s, { itemId: "dagger", identified: true });
+    who(s, "c3").inventory.push(own);
+    const old = who(s, "c3").equipment.weapon!;
+    // 装備の段の手元の候補: 詳細の装備する → to warehouse → 旧品（短剣）は倉庫へ
+    const ownDetail: CampPage = { kind: "equip", stage: "detail", memberId: "c3", slot: "weapon", instanceId: own };
+    const sent = campStep("bank", ownDetail, bankInput(s), rows(campEntries("bank", ownDetail, bankInput(s), S))[0]!.choice);
+    expect((sent as { command: Command }).command).toEqual({ type: "party.equip", memberId: "c3", instanceId: own, to: "warehouse" });
+    const t = accepted(s, (sent as { command: Command }).command);
+    expect(t.warehouse).toEqual([old]);
+    expect(who(t, "c3").inventory).not.toContain(old);
+    // 倉庫が満杯なら手元の候補は「{name}（倉庫が一杯）」で、詳細の装備するは dim・理由
+    const full = fillWarehouse(s);
+    const fm = bankInput(full);
+    expect(fm.menu.members.find((x) => x.id === "c3")!.equipCandidates.find((c) => c.instanceId === own)).toMatchObject({ block: null, toWarehouseBlock: "warehouseFull" });
+    expect(labels(rows(campEntries("bank", equipItemPage("c3", "weapon"), fm, S)))).toContain("短剣（倉庫が一杯）");
+    expect(labels(rows(campEntries("tavern", equipItemPage("c3", "weapon"), fm, S)))).toContain("短剣"); // 酒場は今どおり
+    expect(rows(campEntries("bank", ownDetail, fm, S))[0]).toMatchObject({
+      label: "装備する（倉庫が一杯）",
+      disabled: true,
+      reason: S["camp.equipReason.warehouseFull"],
+    });
+    // 品の段（UI-80）: 装備中の品は「外して倉庫へ」→ party.unequip の to warehouse。所持品の装備は to warehouse
+    const eq = itemPage("c3", old);
+    const g = grid(campEntries("bank", eq, bankInput(s), S));
+    expect(g[0]).toEqual({ label: "外して倉庫へ", disabled: false, choice: { kind: "itemAction", action: "unequip" } });
+    const un = campStep("bank", eq, bankInput(s), g[0]!.choice);
+    expect((un as { command: Command }).command).toEqual({ type: "party.unequip", memberId: "c3", slot: "weapon", to: "warehouse" });
+    expect(accepted(s, (un as { command: Command }).command).warehouse).toEqual([old]);
+    const eqOwn = campStep("bank", itemPage("c3", own), bankInput(s), { kind: "itemAction", action: "equip" });
+    expect((eqOwn as { command: Command }).command).toEqual({ type: "party.equip", memberId: "c3", instanceId: own, to: "warehouse" });
+    // 満杯なら品の段の外す・装備するは dim で、押すと理由
+    expect(grid(campEntries("bank", eq, fm, S))[0]).toMatchObject({ label: "外して倉庫へ", disabled: true, reason: S["camp.itemReason.warehouseFull"] });
+    expect(grid(campEntries("bank", itemPage("c3", own), fm, S))[0]).toMatchObject({ disabled: true, reason: S["camp.itemReason.warehouseFull"] });
+    expect(campStep("bank", eq, fm, { kind: "itemAction", action: "unequip" })).toEqual({ kind: "page", page: eq });
+    // 酒場の状態の品の段は今どおり（外す・to なし）
+    const tg = grid(campEntries("tavern", eq, input(s), S));
+    expect(tg[0]!.label).toBe("外す");
+    expect((campStep("tavern", eq, input(s), tg[0]!.choice) as { command: Command }).command).not.toHaveProperty("to");
   });
 
   test("TW-16c 酒場の状態（host tavern）は今どおり: 倉庫の候補を出さず、外すは手元へ（to なし）。倉庫の品だけなら「装備できる物がない」は bank で出ない", () => {
