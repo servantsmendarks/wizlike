@@ -1,6 +1,6 @@
 // M13 ハクスラの計測（2026-10-09 ユーザー指示。設計書 §2）: 農夫ボット（tests/balance/bot.ts の route "farm"）。
 // debug.levels で Lv3・5・8 にした既定の編成で、d01 の 1 階・2 階、d02 の 1 階（d02 は d01 を踏破済みの state にする）を
-// 「所持枠が埋まるか推定 20 分」まで稼いで糸で帰り、街で鑑定・装備の更新・売却・寺院・宿・補充、を FARM_DIVES 回繰り返す。
+// 「所持枠が埋まるか推定 20 分」まで稼いで糸で帰り、街で鑑定・装備の更新・鍛える（M21）・売却・寺院・宿・補充、を FARM_DIVES 回繰り返す。
 // 9 通りは tests/balance/farm-{d01f1,d01f2,d02f1}-lv{3,5,8}.sim.ts（1 ファイル 1 通り。npm run balance で並列に回る）。
 // ボットの値（FARM_MINUTES・FARM_DIVES・NEAR）はテストの定数で、ゲームの調整値ではない（docs/balance.md のコンテンツの数値）。
 // 合否は不変条件だけで、数字は console.log に出す（farmReport。後で docs/balance.md に写す）。
@@ -209,6 +209,12 @@ export function farmReport(results: CampaignResult[], kind: BotKind): string {
   row(`装備のダメージ補正の平均（装備中の武器の damageBonus。潜行 1 / 潜行 ${FARM_DIVES} の開始時）`, `${fmt(b1)} / ${fmt(bl)}`);
   row(`装備の AC の平均（1 人あたりの武器以外の装備の ac の合計。潜行 1 / 潜行 ${FARM_DIVES} の開始時）`, `${fmt(a1)} / ${fmt(al)}`);
   row("拾った品を装備した数（全潜行）", String(sum(all.map((d) => d.lootEquipped))));
+  // M21（B-1。判断 D1）: 農夫の鍛える（装備の更新の後・売却の前。1 潜行 1 回まで）
+  const ups = sum(all.map((d) => d.upgrades));
+  row(
+    "鍛えた回数（全潜行。成功 / 大成功 / 失敗）・料金の計",
+    `${ups}（鍛えた潜行 ${pct(ups, n)}）・${sum(all.map((d) => d.upgradeOk))} / ${sum(all.map((d) => d.upgradeGreat))} / ${sum(all.map((d) => d.upgradeNg))}・${sum(all.map((d) => d.upgradeCost))}G`,
+  );
   // 9. ボスのユニーク（表の値。d01 1F Lv3 のレポートだけ）
   if (f.level === 3 && f.dungeonId === "d01" && f.floor === 1) {
     row("ボス撃破あたりのユニーク（drops.json の表の期待値。計測ではない）", Object.keys(data.drops.boss).map((id) => `${id} ${bossUniqueExpectation(id).toFixed(2)}`).join("・"));
@@ -216,7 +222,7 @@ export function farmReport(results: CampaignResult[], kind: BotKind): string {
   return [
     `## 農夫 Lv${f.level} ${f.dungeonId} ${f.floor}F（${seeds} シード × ${dives} 潜行）`,
     "",
-    `帰る条件: 所持枠が満杯（full）・推定 ${FARM_MINUTES} 分（time）・開始時に alive の者の死亡（death）・前衛の HP 半分（hp）。目標の階は上り階段から BFS ${NEAR} 以内。街: 救済 → 鑑定（見た目の売値の高い順に払える限り）→ 装備の更新 → 売却（鑑定しない）→ 寺院 → 相部屋 → 補充。`,
+    `帰る条件: 所持枠が満杯（full）・推定 ${FARM_MINUTES} 分（time）・開始時に alive の者の死亡（death）・前衛の HP 半分（hp）。目標の階は上り階段から BFS ${NEAR} 以内。街: 救済 → 鑑定（見た目の売値の高い順に払える限り）→ 装備の更新 → 鍛える（M21。最も Lv の低い武器を、触媒の候補の先頭から最大 3 個で、触媒が 1 つ以上あり払えるとき 1 回）→ 売却（鑑定しない）→ 寺院 → 相部屋 → 補充。純益は鍛えるの料金を除く。`,
     "",
     "| 項目 | 値 |",
     "|---|---|",

@@ -358,7 +358,11 @@ describe("バランス（H9 煙テスト）", () => {
       expect(d.estTownMs).toBeGreaterThan(0); // 少なくとも宿
       expect(d.beats.steps).toBe(d.steps);
       expect(sum(Object.values(d.found))).toBe(d.chestItems + d.dropItems); // 農夫はボスと戦わないので、拾った品は宝箱の品と直接ドロップ（M14。CB-57）の品
-      expect(d.netProfit).toBe(d.goldAfterSell - d.goldBefore);
+      expect(d.netProfit).toBe(d.goldAfterSell - d.goldBefore + d.upgradeCost); // M21（B-1）: 鍛えるの料金は足し戻す
+      // M21（B-1。判断 D1）: 鍛えるは 1 潜行 1 回まで、結果の内訳の合計 = 回数、料金は鍛えたときだけ
+      expect(d.upgrades).toBeLessThanOrEqual(1);
+      expect(d.upgradeOk + d.upgradeGreat + d.upgradeNg).toBe(d.upgrades);
+      expect(d.upgradeCost > 0).toBe(d.upgrades > 0);
       // M15: 出どころ別の合計 = found（汎用 + ユニーク）の合計。農夫はボスと戦わない。d01 は危険度 3 以上の箱が出ないので伝説 0（IT-56）
       expect(sum(FOUND_SOURCES.map((x) => rarityTotal(d.foundRarityBySource[x])))).toBe(d.found.generic + d.found.unique);
       expect(rarityTotal(d.foundRarityBySource.boss)).toBe(0);

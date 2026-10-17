@@ -36,6 +36,7 @@ import { chestRate, chestView } from "../../src/core/rules/chest";
 import { equipStats, itemPower } from "../../src/core/rules/equip-stats";
 import { sellPrice } from "../../src/core/rules/shop";
 import { townMenu } from "../../src/core/rules/town";
+import { upgradePreview } from "../../src/core/rules/upgrade";
 import { classOf, findBase, findItem, itemOf, monsterOf, slotsMaxOf, slotsUsed } from "../../src/core/state";
 import type { EquipSlot } from "../../src/core/data/index";
 import type { Command, Facing, Floor, GameEvent, GameState, ItemInstance, PartySetupMember, PenaltyResult, Pos, Rarity } from "../../src/core/types";
@@ -372,7 +373,13 @@ export type DiveRecord = {
   gearAcStart: number; // M18: 潜行の開始時の 1 人あたりの武器以外の装備の ac（itemPower。IT-21 / IT-23）の合計の平均（全員）
   enemyLvMean: number; // この潜行の遭遇の敵の level の体数で重み付けした平均（遭遇が無ければ NaN）
   lootEquipped: number; // 街で拾った品を装備した数（農夫の equipLoot）
-  netProfit: number; // 純益 = 売却の直後の所持金 − 潜行の前の所持金（農夫だけ。ほかは 0）
+  // M21（B-1。判断 D1）: 農夫の鍛える（upgradeLoot。1 潜行 1 回まで。農夫以外は 0）
+  upgrades: number; // 鍛えた回数（0 か 1）
+  upgradeGreat: number; // そのうち大成功
+  upgradeOk: number; // そのうち成功
+  upgradeNg: number; // そのうち失敗
+  upgradeCost: number; // 鍛えるに払った料金
+  netProfit: number; // 純益 = 売却の直後の所持金 − 潜行の前の所持金（農夫だけ。ほかは 0）。M21: 鍛えるの料金（upgradeCost）は足し戻す
   goldAfterSell: number; // 売却の直後の所持金（農夫だけ。ほかは 0）
 };
 
@@ -1678,6 +1685,42 @@ export class Campaign {
     }
   }
 
+  /**
+   * M21（B-1。判断 D1。ボットの方針で、ゲームの規則ではない）: 農夫の鍛える（1 潜行 1 回まで）。対象は townMenu.upgrade の部位の行で鍛えられる（block null）
+   * 武器のうち Lv が最も低いもの（同じなら並び順。life は問わない）。触媒は core の候補（townMenu.upgrade の catalysts。並び順 × inventory → 倉庫の順）の
+   * 先頭から upgradeMaxCatalysts 個。触媒が 1 つ以上あり、upgradePreview の block が null（所持金 ≥ 料金）のときだけ town.upgrade を送る。
+   * 結果は Lv の前後で数える（resultLevel + 1 は大成功、resultLevel は成功、それ以外は失敗）
+   */
+  upgradeLoot(rec: DiveRecord): void {
+    const m = townMenu(this.state, data)!.upgrade;
+    let target: { memberId: string; level: number } | null = null;
+    for (const mm of m.members) {
+      const w = mm.slots.find((x) => x.slot === "weapon")!;
+      if (w.block !== null) continue;
+      if (target === null || w.level < target.level) target = { memberId: mm.memberId, level: w.level };
+    }
+    if (target === null) return;
+    const cats = m.members.find((x) => x.memberId === target.memberId)!.catalysts.slice(0, m.maxCatalysts);
+    if (cats.length === 0) return;
+    const refs = cats.map((c) => ({ memberId: c.ownerId, instanceId: c.instanceId }));
+    const p = upgradePreview(this.state, data, target.memberId, "weapon", refs);
+    if (p === null || p.block !== null) return;
+    const ch = this.state.party.find((x) => x.id === target.memberId)!;
+    const wid = ch.equipment.weapon!;
+    const g = this.state.gold;
+    this.run({ type: "town.upgrade", memberId: target.memberId, slot: "weapon", catalysts: refs });
+    expect(g - this.state.gold).toBe(p.fee);
+    const lv = this.state.items[wid]!.level;
+    rec.upgrades += 1;
+    rec.upgradeCost += p.fee;
+    if (lv === p.resultLevel + 1) rec.upgradeGreat += 1;
+    else if (lv === p.resultLevel) rec.upgradeOk += 1;
+    else {
+      expect(lv).toBe(Math.max(0, target.level - 1));
+      rec.upgradeNg += 1;
+    }
+  }
+
   /** パーティ全体（死者・灰を含む）の手持ちの装備品の数 */
   equipmentInHand(): number {
     return sum(this.state.party.map((c) => c.inventory.filter((id) => this.isEquipment(id)).length));
@@ -1902,6 +1945,11 @@ export class Campaign {
         gearAcStart: this.gearAcStart,
         enemyLvMean: this.enemyUnits === 0 ? NaN : this.enemyLvSum / this.enemyUnits,
         lootEquipped: 0,
+        upgrades: 0,
+        upgradeGreat: 0,
+        upgradeOk: 0,
+        upgradeNg: 0,
+        upgradeCost: 0,
         netProfit: 0,
         goldAfterSell: 0,
       };
@@ -1917,11 +1965,13 @@ export class Campaign {
       this.mercy(rec);
       if (farm !== null) {
         // M13（設計書 §2-3）: 農夫の街の手順。救済 → 鑑定 → 装備の更新 → 売却（鑑定しない）→ 寺院 → 宿 → 店の補充（outfit はしない）
+        // M21（B-1。判断 D1）: 装備の更新の後・売却の前に 1 回だけ鍛える（売却の後では触媒が残らないため）。純益は鍛えるの料金を除いて数える
         this.identifyLoot(rec);
         this.equipLoot(rec);
+        this.upgradeLoot(rec);
         this.sellLoot(rec, { identify: false });
         rec.goldAfterSell = this.state.gold;
-        rec.netProfit = this.state.gold - goldBefore;
+        rec.netProfit = this.state.gold - goldBefore + rec.upgradeCost;
       } else this.sellLoot(rec);
       this.revive(rec);
       this.inn(rec);
