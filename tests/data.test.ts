@@ -748,8 +748,8 @@ describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
   const F = "audio.json";
   test("data: UI-63 / UI-65 / UI-66 実データが通る（工房の project.json の名前の写しと、ゲーム側が足した名前）", () => {
     const d = loadGameData(rawData());
-    // 工房の project.json（2026-10-08、dungeon3 を追加）の 12 曲と同じ（ボスの曲 boss の提案はユーザーの判断 4（2026-10-06）で取り下げ。ボスは battle2）
-    expect(d.audio.music.songs).toEqual(["title", "town", "dungeon1", "dungeon2", "dungeon3", "camp", "battle1", "battle2", "tavern", "shop", "temple", "dark"]);
+    // 工房の project.json（2026-10-08、dungeon3 を追加）の 12 曲 + bank（M21。工房への提案。ファイルが届くまで無音）（ボスの曲 boss の提案はユーザーの判断 4（2026-10-06）で取り下げ。ボスは battle2）
+    expect(d.audio.music.songs).toEqual(["title", "town", "dungeon1", "dungeon2", "dungeon3", "camp", "battle1", "battle2", "tavern", "shop", "temple", "dark", "bank"]);
     expect(d.audio.music.jingles).toEqual(["encounter", "victory", "wipe", "levelup", "inn", "clear", "rare"]);
     expect(d.audio.music.noteRange).toEqual([36, 96]);
     // 工房の 22 + learn・ailment・tent・page（工房への提案）
@@ -762,7 +762,8 @@ describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
     // ユーザーの判断 4（2026-10-06）: 通常の戦闘は battle1 だけ、ボス戦は battle2（工房の確定版の意味どおり）
     expect(d.audio.battleSongs).toEqual(["battle1"]);
     expect(d.audio.bossSong).toBe("battle2");
-    expect(d.audio.facilitySongs).toEqual({ tavern: "tavern", shop: "shop", temple: "temple", dark: "dark" });
+    // UI-63（M21）: 銀行は曲が工房から届くまで店の曲 shop（暫定。届いたら "bank"）
+    expect(d.audio.facilitySongs).toEqual({ tavern: "tavern", shop: "shop", temple: "temple", dark: "dark", bank: "shop" });
     expect(d.audio.campSong).toBe("camp");
     expect(d.audio.ui).toEqual({ ok: "ok", cancel: "cancel", facility: "door", camp: "tent", talk: "page" });
     expect(d.dungeons.map((x) => [x.id, x.song])).toEqual([
@@ -778,9 +779,9 @@ describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
   });
   test("data: UI-63 songs と jingles は名前の配列で全体で重複しない", () => {
     expectIssue((r) => r.audio.music.jingles.push("town"), F, 'music.jingles[7]: UI-63: duplicate name "town"');
-    // 添字は実データの songs が 12 曲（判断 4 で boss を消して 11 曲、2026-10-08 に dungeon3 を足して 12 曲）なので [12]
-    expectIssue((r) => r.audio.music.songs.push("title"), F, 'music.songs[12]: UI-63: duplicate name "title"');
-    expectIssue((r) => r.audio.music.songs.push("Boss 2"), F, "music.songs[12]: UI-63: name must match");
+    // 添字は実データの songs が 13 曲（判断 4 で boss を消して 11 曲、2026-10-08 に dungeon3 を足して 12 曲、M21 に bank を足して 13 曲）なので [13]
+    expectIssue((r) => r.audio.music.songs.push("title"), F, 'music.songs[13]: UI-63: duplicate name "title"');
+    expectIssue((r) => r.audio.music.songs.push("Boss 2"), F, "music.songs[13]: UI-63: name must match");
     expectIssue((r) => r.audio.sfx.names.push("ok"), F, 'sfx.names[26]: UI-65: duplicate name "ok"');
   });
   test("data: UI-63 noteRange は 0 <= lo <= hi <= 127 の整数", () => {

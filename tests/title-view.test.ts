@@ -508,7 +508,7 @@ describe("UI-50 タイトルの絵（DOM。2026-10-06 ユーザー決定）", ()
   });
 
   test("UI-50/UI-61 タイトルの絵: 一覧（GameAssets.town）に title があれば最下層に base/town/title.png を 240×150・y0 で出し（押せない）、無ければ何も足さない", () => {
-    expect(TOWN_PICTURE_IDS).toEqual(["town", "tavern", "inn", "temple", "dark", "gate", "shop", "title"]);
+    expect(TOWN_PICTURE_IDS).toEqual(["town", "tavern", "inn", "temple", "dark", "gate", "shop", "bank", "title"]); // bank は M21
     expect(TITLE_PICTURE).toEqual({ x: 0, y: 0, w: 240, h: 150 });
     stubDocument();
     const none = createTitleScreen({ strings: S, onSelect: () => {}, onFile: () => {}, pictures: { inn: { w: 240, h: 150 } }, base: "/wizlike/" });

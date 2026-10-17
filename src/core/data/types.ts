@@ -940,7 +940,7 @@ export type AudioScreen = (typeof AUDIO_SCREENS)[number];
  * UI-63（2026-10-06）: 施設ごとの曲を持てる街の施設（表示層の townFacility の id から town を除いたもの。
  * data に施設の一覧が無いので、ここに写す。表示層の値と同じことをテストで確かめる）
  */
-export const AUDIO_FACILITIES = ["tavern", "inn", "temple", "dark", "gate", "shop"] as const;
+export const AUDIO_FACILITIES = ["tavern", "inn", "temple", "dark", "gate", "shop", "bank"] as const;
 export type AudioFacility = (typeof AUDIO_FACILITIES)[number];
 
 /** 音の契機にできる GameEvent の kind（UI-66。encounter 以降は 2026-10-06、chestFound は 2026-10-08（M11）に足した） */

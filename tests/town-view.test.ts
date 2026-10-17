@@ -563,7 +563,7 @@ describe("UI-52 街のページ", () => {
     expect(S["town.shop.sellIntro"]).toBe("鑑定していない品は、見た目どおりの値で引き取るそうだ。");
   });
 
-  test("UI-61（M8.5）townFacility: menu は town、寺院のサービスは temple、闇魔術の灰から戻す・強化の各段は dark、店と銀行（M17）の各段は shop。townPlace は town.place.<施設>（銀行の各段だけ town.place.bank）", () => {
+  test("UI-61（M8.5）townFacility: menu は town、寺院のサービスは temple、闇魔術の灰から戻す・強化の各段は dark、店の各段は shop、銀行（M17）の各段は bank（M21。M20 までは shop）。townPlace は town.place.<施設>（銀行の各段は town.place.bank）", () => {
     const sel = { memberId: "c1", slot: "weapon" as const, picked: [] };
     const want: [TownPage, string][] = [
       ["menu", "town"],
@@ -584,16 +584,16 @@ describe("UI-52 街のページ", () => {
       ["shopSell", "shop"],
       ["shopBuyback", "shop"],
       ["shopIdentify", "shop"],
-      ["bank", "shop"],
-      ["bankDeposit", "shop"],
-      ["bankWithdraw", "shop"],
-      ["storageDeposit", "shop"],
-      ["storageWithdraw", "shop"],
+      ["bank", "bank"],
+      ["bankDeposit", "bank"],
+      ["bankWithdraw", "bank"],
+      ["storageDeposit", "bank"],
+      ["storageWithdraw", "bank"],
       [{ shop: "herb" }, "shop"],
       [{ sell: "c1" }, "shop"],
       [{ buyback: "i1" }, "shop"],
-      [{ deposit: "c1" }, "shop"],
-      [{ withdraw: "i1" }, "shop"],
+      [{ deposit: "c1" }, "bank"],
+      [{ withdraw: "i1" }, "bank"],
       [{ buyAsk: { itemId: "herb", memberId: "c1" } }, "shop"],
       [{ sellAsk: { memberId: "c1", instanceId: "i1" } }, "shop"],
       ["classChange", "tavern"],
@@ -602,7 +602,7 @@ describe("UI-52 街のページ", () => {
     ];
     expect(want.map(([p]) => townFacility(p))).toEqual(want.map(([, f]) => f));
     expect(want.length).toBe(ALL_PAGES.length);
-    // TW-10 / TW-16（M17）: 銀行の各段（金の額・品を預ける者と品・引き出す品と受け取る者）は絵と曲は店のまま、場所は銀行
+    // TW-10 / TW-16（M17）: 銀行の各段（金の額・品を預ける者と品・引き出す品と受け取る者）は施設の id が bank（M21。絵と曲は届くまで店に落とす）、場所は銀行
     const bank = new Set(["bank", "bankDeposit", "bankWithdraw", "storageDeposit", "storageWithdraw", JSON.stringify({ deposit: "c1" }), JSON.stringify({ withdraw: "i1" })]);
     for (const [p, f] of want) {
       const key = typeof p === "string" ? p : JSON.stringify(p);

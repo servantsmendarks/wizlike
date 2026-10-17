@@ -7,7 +7,7 @@ import { dungeonLayout, regions, townLayout } from "../src/presenter/layout";
 import { createHeader, navTrianglePath } from "../src/presenter/views/header";
 import { createPartyPanel } from "../src/presenter/views/party";
 import { bandCell, BAND_CELL_UNITS, createPartyBand, fitName, textUnits } from "../src/presenter/views/party-band";
-import { createTownPicture, townPictureUrl } from "../src/presenter/views/town-picture";
+import { createTownPicture, TOWN_PICTURE_FALLBACK, townPictureName, townPictureUrl } from "../src/presenter/views/town-picture";
 import { data, newGame } from "./helpers/core";
 
 const S = data.strings;
@@ -286,6 +286,19 @@ describe("UI-13 帯の DOM・UI-61 施設の絵・ヘッダーのログ", () => 
     pic.show("town");
     pic.show("inn");
     expect(fake(pic.el).children).toEqual([]);
+  });
+
+  test("UI-61（M21）施設の絵の落とし先: 銀行 bank の絵が一覧に無ければ店 shop の絵（暫定。TOWN_PICTURE_FALLBACK）、bank があれば bank、shop も無ければ黒", () => {
+    expect(TOWN_PICTURE_FALLBACK).toEqual({ bank: "shop" });
+    const shopOnly = { shop: { w: 240, h: 150 } };
+    expect(townPictureName("bank", shopOnly)).toBe("shop");
+    expect(townPictureName("bank", { ...shopOnly, bank: { w: 240, h: 150 } })).toBe("bank");
+    expect(townPictureName("bank", {})).toBeNull();
+    expect(townPictureName("inn", shopOnly)).toBeNull();
+    fakeDocument();
+    const pic = createTownPicture({ w: 240, h: 150, available: shopOnly, base: "/wizlike/" });
+    pic.show("bank");
+    expect(fake(pic.el).children[0]!["src"]).toBe("/wizlike/town/shop.png");
   });
 
   // M16（UI-46）: 以前は「街ではログのボタンを出し文字領域を 152 に縮め、隠すと 192 に戻す」（setLogVisible）。ログは街・迷宮・戦闘で常に出す

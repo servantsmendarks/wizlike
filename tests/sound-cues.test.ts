@@ -255,6 +255,12 @@ describe("UI-63 sceneSong ほか", () => {
     expect(data.audio.music.songs).not.toContain("boss");
   });
 
+  it("UI-63（M21）銀行の施設 bank: 曲が工房から届くまでは facilitySongs.bank = shop で店の曲。facilitySongs に bank が無ければ街の曲", () => {
+    expect(townSong("bank", data)).toBe("shop");
+    const without: typeof data = { ...data, audio: { ...data.audio, facilitySongs: { ...data.audio.facilitySongs, bank: undefined } } };
+    expect(townSong("bank", without)).toBe("town");
+  });
+
   it("UI-63 AUDIO_FACILITIES は表示層の施設の id（townFacility。施設の絵の名前から town と title を除いたもの）と同じ", () => {
     expect([...AUDIO_FACILITIES].sort()).toEqual(TOWN_PICTURE_IDS.filter((x) => x !== "town" && x !== "title").sort());
   });

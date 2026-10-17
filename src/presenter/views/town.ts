@@ -771,20 +771,22 @@ export function townPageIntro(page: TownPage, menu: TownMenu): string[] {
   return [];
 }
 
-/** UI-61 / UI-13（M8.5）: 施設の id（施設の絵 public/town/<id>.png・施設の曲）。ヘッダーの場所は townPlace（銀行（M17）だけ施設の id と違う） */
-export type TownFacility = "town" | "tavern" | "inn" | "temple" | "dark" | "gate" | "shop";
+/** UI-61 / UI-13（M8.5）: 施設の id（施設の絵 public/town/<id>.png・施設の曲）。ヘッダーの場所は townPlace。bank は M21 */
+export type TownFacility = "town" | "tavern" | "inn" | "temple" | "dark" | "gate" | "shop" | "bank";
 
 /**
  * UI-61（M8.5）: ページの施設。menu は town、寺院のサービスの対象は temple、闇魔術（灰から戻す・強化の各段）は dark、
- * 店（売る・買う・買い戻す・鑑定の各段）と銀行（M17。金・倉庫の各段。銀行の絵と曲は無いので店のものを使う）は shop
+ * 店（売る・買う・買い戻す・鑑定の各段）は shop、銀行（M17。金・倉庫の各段）は bank（M21。M20 までは shop。
+ * 絵と曲が工房から届くまでは TOWN_PICTURE_FALLBACK と facilitySongs.bank で店のものに落とす）
  */
 export function townFacility(page: TownPage): TownFacility {
+  if (isBankPage(page)) return "bank";
   if (typeof page === "object") {
     if ("temple" in page) return "temple";
     if ("ccClass" in page || "ccConfirm" in page) return "tavern"; // TW-09（M10）
     if ("upSlot" in page || "upCat" in page || "upConfirm" in page) return "dark";
     if ("gateAsk" in page) return "gate"; // M19（D-1）
-    return "shop"; // shop / sell / buyback / buyAsk / sellAsk（M18）/ deposit / withdraw（deposit / withdraw は銀行。M17）
+    return "shop"; // shop / sell / buyback / buyAsk / sellAsk（M18）
   }
   switch (page) {
     case "menu":
@@ -802,7 +804,7 @@ export function townFacility(page: TownPage): TownFacility {
     case "upgrade":
       return "dark";
     default:
-      return "shop"; // shopBuy / shopSell / shopBuyback / shopIdentify、銀行（M17）の bank / bankDeposit / bankWithdraw / storageDeposit / storageWithdraw
+      return "shop"; // shopBuy / shopSell / shopBuyback / shopIdentify
   }
 }
 
@@ -814,7 +816,7 @@ function isBankPage(page: TownPage): boolean {
 
 /** UI-52（M8.5）: ヘッダーの場所の strings キー（town.place.<施設>。銀行のページは town.place.bank。M17） */
 export function townPlace(page: TownPage): string {
-  return isBankPage(page) ? "town.place.bank" : `town.place.${townFacility(page)}`;
+  return `town.place.${townFacility(page)}`;
 }
 
 /**

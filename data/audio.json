@@ -1,6 +1,6 @@
 {
   "music": {
-    "songs": ["title", "town", "dungeon1", "dungeon2", "dungeon3", "camp", "battle1", "battle2", "tavern", "shop", "temple", "dark"],
+    "songs": ["title", "town", "dungeon1", "dungeon2", "dungeon3", "camp", "battle1", "battle2", "tavern", "shop", "temple", "dark", "bank"],
     "jingles": ["encounter", "victory", "wipe", "levelup", "inn", "clear", "rare"],
     "noteRange": [36, 96]
   },
@@ -14,7 +14,7 @@
   "screenSongs": { "title": "title", "town": "town", "dungeon": "dungeon1" },
   "battleSongs": ["battle1"],
   "bossSong": "battle2",
-  "facilitySongs": { "tavern": "tavern", "shop": "shop", "temple": "temple", "dark": "dark" },
+  "facilitySongs": { "tavern": "tavern", "shop": "shop", "temple": "temple", "dark": "dark", "bank": "shop" },
   "campSong": "camp",
   "cues": [
     { "event": "battleEnd", "result": "win", "boss": false, "jingle": "victory" },

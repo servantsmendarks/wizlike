@@ -5,10 +5,24 @@ import type { SpriteInfo } from "../../build/asset-types";
 import { townPicture } from "../sprites";
 
 /**
- * UI-61 / UI-50: public/town の絵の名前の一覧（施設は townFacility の 7 つ。title はタイトル画面の絵。2026-10-06 ユーザー決定）。
- * ビルドの一覧（GameAssets.town）は名前で選ばないので、この一覧は表示層が読みに行く名前の正
+ * UI-61 / UI-50: public/town の絵の名前の一覧（施設は townFacility の 8 つ。title はタイトル画面の絵。2026-10-06 ユーザー決定。
+ * bank は M21（工房の銀行の絵の準備）で足した）。ビルドの一覧（GameAssets.town）は名前で選ばないので、この一覧は表示層が読みに行く名前の正
  */
-export const TOWN_PICTURE_IDS = ["town", "tavern", "inn", "temple", "dark", "gate", "shop", "title"] as const;
+export const TOWN_PICTURE_IDS = ["town", "tavern", "inn", "temple", "dark", "gate", "shop", "bank", "title"] as const;
+
+/**
+ * UI-61（M21）: 絵が一覧（GameAssets.town）に無い施設の落とし先（暫定）。銀行の絵（public/town/bank.png）は工房から届くまで店の絵。
+ * 工房の bank.png が届いたら bank の行を外す
+ */
+export const TOWN_PICTURE_FALLBACK: Readonly<Record<string, string>> = { bank: "shop" };
+
+/** UI-61: 施設の絵の名前。一覧に無ければ落とし先（TOWN_PICTURE_FALLBACK）の絵、それも無ければ null（黒） */
+export function townPictureName(facility: string, available: Readonly<Record<string, SpriteInfo>>): string | null {
+  const own = townPicture(facility, available);
+  if (own !== null) return own;
+  const fb = Object.prototype.hasOwnProperty.call(TOWN_PICTURE_FALLBACK, facility) ? TOWN_PICTURE_FALLBACK[facility] : undefined;
+  return fb === undefined ? null : townPicture(fb, available);
+}
 
 /** UI-50: タイトル画面の絵の名前（public/town/title.png） */
 export const TITLE_PICTURE_ID = "title";
@@ -20,7 +34,7 @@ export function townPictureUrl(id: string, base: string): string {
 
 export type TownPictureView = {
   el: HTMLElement;
-  /** 施設の絵を出す（一覧に無ければ黒）。同じ施設なら何もしない */
+  /** 施設の絵を出す（一覧に無ければ落とし先の絵、それも無ければ黒）。同じ施設なら何もしない */
   show(facility: string): void;
 };
 
@@ -37,7 +51,7 @@ export function createTownPicture(o: { w: number; h: number; available: Readonly
       if (current === facility) return;
       current = facility;
       el.replaceChildren();
-      const name = townPicture(facility, o.available);
+      const name = townPictureName(facility, o.available);
       if (name === null) return;
       const url = townPictureUrl(name, o.base);
       if (missing.has(url)) return;
