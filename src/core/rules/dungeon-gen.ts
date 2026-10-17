@@ -12,13 +12,15 @@
 //   (4) ループ化: 割合 randInt(round(braidRatio[0]*100), round(braidRatio[1]*100)) を 1 回（整数パーセント）。
 //       行き止まり（扉の後の時点。添字の昇順）の shuffleInPlace、続いて先頭から、まだ行き止まりのものごとに
 //       抜く壁 randInt(0, cand-1) を 1 回（cand は隣が盤内の非部屋セルの wall の辺。N→E→S→W の順）。round(行き止まり数 × 割合 / 100) 本抜いたら止める。
-//   (5) 上り階段: 1 階だけ randInt(0, nonRoom-1) を 1 回（2 階以降は前の階の stairsDown の座標で、乱数を使わない）。
+//   (5) 上り階段: 1 階だけ randInt(0, n-1) を 1 回（n は部屋の外の床のセル数。M21 から岩を除く。2 階以降は前の階の stairsDown の座標で、乱数を使わない）。
 //   (6) 下り階段 / ボス: BFS 距離が最大のセルから randInt(0, far-1) を 1 回。
 //   (7) イベントと罠: 候補の shuffleInPlace（i = len-1..1 で randInt(0, i)）、罠の個数 randInt(trapsPerFloor) を 1 回、
 //       罠ごとに種類 randInt(0, traps-1)（traps が空なら引かない）。
 //   (8) 宝箱のセル（DG-23。M11）: 個数 randInt(chestsPerFloor) を 1 回（[0,0] でも引く）、(7) の残りの候補の先頭から置く箱ごとに
 //       drawChestTrap（chance(noTrapChance) →（罠ありなら）weightedIndex(危険度の重み) → randInt(その危険度の罠)。CB-61 と同じ順）。
 //       候補が尽きたら、その分は置かず罠も引かない。(7) までの消費は変えない（既存の回帰値はそのまま）。
+// (4) と (5) の間に DG-48（M21）の充填率の間引き（cullToFill）を挟む。乱数は引かない（(1)〜(4) の消費は fillRatio によらず同じ）。
+//   (5) の 1 階の上り階段は、間引いた後の部屋の外の床から選ぶ（fillRatio 1 なら間引かないので M20 までと同じ盤）。
 import type { Config, DungeonDef } from "../data/index";
 import { chance, createRng, nextFloat, randInt, weightedIndex, type RngState } from "../rng";
 import type { Cell, Edge, Facing, Floor, Pos, Room } from "../types";
@@ -353,6 +355,128 @@ function braid(f: Floor, rng: RngState, cfg: Config["dungeon"]): number {
   return done;
 }
 
+/**
+ * DG-48（M21）: 充填率の間引き。乱数を引かない決まった手順で床（岩でないセル）を減らし、floor(fillRatio × 盤のセル数) 以下になったら止める。
+ * (a) 行き止まりの通路のセル（部屋の外で通れる辺が 1 本、どの辺も door でない。keep の座標は除く）を、1 回ごとに添字の昇順（行優先）に集め、
+ *     先頭から 1 つずつ（まだ行き止まりなら）岩（kind rock、4 辺 wall）にする。新しくできた行き止まりは次の回で拾う。
+ * (b) 行き止まりが尽きても届かなければ、ループを 1 本閉じる: 通路のセルどうしの open の辺（橋でない = 閉じても連結が保たれる）を、
+ *     セルの添字の昇順・E→S の順に見て、閉じると端のどちらかが (a) で間引けるようになる最初の辺を wall にする（無ければ最初の橋でない辺）。
+ *     閉じたら (a) に戻る。閉じられる辺も尽きたら届かなくても止める（Error にしない）。
+ * 行き止まりを除いても橋でない辺を閉じても、残りの床の連結は保たれる。岩にした数を返す
+ */
+export function cullToFill(f: Floor, fillRatio: number, keep: Pos | null): number {
+  const target = Math.floor(fillRatio * f.width * f.height);
+  let floorCount = f.cells.filter((c) => c.kind !== "rock").length;
+  const keepIdx = keep === null ? -1 : idx(f, keep.x, keep.y);
+  const noDoor = (c: Cell): boolean => FACINGS.every((d) => edgeOf(c, d) !== "door");
+  const cullable = (i: number): boolean => {
+    if (i === keepIdx) return false;
+    const p = posOf(f, i);
+    const c = cellAt(f, p.x, p.y);
+    if (c.kind === "rock" || !isDeadEnd(f, p.x, p.y)) return false;
+    return noDoor(c);
+  };
+  let culled = 0;
+  while (floorCount > target) {
+    const list: number[] = [];
+    for (let i = 0; i < f.cells.length; i++) if (cullable(i)) list.push(i);
+    if (list.length > 0) {
+      for (const i of list) {
+        if (floorCount <= target) break;
+        if (!cullable(i)) continue;
+        const p = posOf(f, i);
+        const c = cellAt(f, p.x, p.y);
+        for (const d of FACINGS) if (edgeOf(c, d) !== "wall") setEdge(f, p.x, p.y, d, "wall");
+        c.kind = "rock";
+        floorCount -= 1;
+        culled += 1;
+      }
+      continue;
+    }
+    // (b) ループを 1 本閉じる
+    const bridges = bridgesOf(f);
+    /** 閉じたあと (a) で間引けるようになる端か（通れる辺がちょうど 2 本で、door が無く、keep でない通路のセル） */
+    const opens = (i: number): boolean => {
+      if (i === keepIdx) return false;
+      const c = f.cells[i]!;
+      return c.roomId === null && noDoor(c) && FACINGS.filter((d) => isPassable(edgeOf(c, d))).length === 2;
+    };
+    let pick: EdgeRef | null = null;
+    let fallback: EdgeRef | null = null;
+    for (let i = 0; i < f.cells.length && pick === null; i++) {
+      const p = posOf(f, i);
+      const c = f.cells[i]!;
+      if (c.roomId !== null || c.kind === "rock") continue;
+      for (const d of ["E", "S"] as const) {
+        if (edgeOf(c, d) !== "open") continue;
+        const nx = p.x + DX[d];
+        const ny = p.y + DY[d];
+        if (!inBounds(f, nx, ny)) continue;
+        const ni = idx(f, nx, ny);
+        if (f.cells[ni]!.roomId !== null || bridges.has(i * 4 + FACINGS.indexOf(d))) continue;
+        fallback ??= { x: p.x, y: p.y, d };
+        if (opens(i) || opens(ni)) {
+          pick = { x: p.x, y: p.y, d };
+          break;
+        }
+      }
+    }
+    const e = pick ?? fallback;
+    if (e === null) break;
+    setEdge(f, e.x, e.y, e.d, "wall");
+  }
+  return culled;
+}
+
+/**
+ * DG-48: 通れる辺（open / door）の橋（閉じると床が 2 つに分かれる辺）。キーは「セルの添字 × 4 + FACINGS の添字」で、両側の向きを入れる。
+ * 岩のセルは辺がすべて wall なので自然に外れる。再帰を使わない Tarjan の lowlink
+ */
+function bridgesOf(f: Floor): Set<number> {
+  const n = f.cells.length;
+  const order: number[] = new Array<number>(n).fill(-1);
+  const low: number[] = new Array<number>(n).fill(0);
+  const out = new Set<number>();
+  let t = 0;
+  for (let s = 0; s < n; s++) {
+    if (order[s] !== -1 || f.cells[s]!.kind === "rock") continue;
+    // スタックの要素: [セル, 来た辺の向きの添字（根は -1）, 次に見る向きの添字]
+    const stack: [number, number, number][] = [[s, -1, 0]];
+    order[s] = low[s] = t++;
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1]!;
+      const [v, fromDir] = top;
+      if (top[2] < 4) {
+        const di = top[2]++;
+        const d = FACINGS[di]!;
+        const p = posOf(f, v);
+        if (!isPassable(edgeOf(f.cells[v]!, d))) continue;
+        const nx = p.x + DX[d];
+        const ny = p.y + DY[d];
+        if (!inBounds(f, nx, ny)) continue;
+        if (fromDir !== -1 && di === (fromDir + 2) % 4) continue; // 来た辺は戻らない（2 セルの間の辺は 1 本だけ）
+        const w = idx(f, nx, ny);
+        if (order[w] === -1) {
+          order[w] = low[w] = t++;
+          stack.push([w, di, 0]);
+        } else {
+          low[v] = Math.min(low[v]!, order[w]!);
+        }
+        continue;
+      }
+      stack.pop();
+      if (fromDir === -1) continue;
+      const parent = idx(f, posOf(f, v).x - DX[FACINGS[fromDir]!], posOf(f, v).y - DY[FACINGS[fromDir]!]);
+      low[parent] = Math.min(low[parent]!, low[v]!);
+      if (low[v]! > order[parent]!) {
+        out.add(parent * 4 + fromDir);
+        out.add(v * 4 + ((fromDir + 2) % 4));
+      }
+    }
+  }
+  return out;
+}
+
 function posOf(f: Floor, i: number): Pos {
   const x = i % f.width;
   return { x, y: (i - x) / f.width };
@@ -418,14 +542,19 @@ export function generateFloor(
   // (4) ループ化
   braid(f, rng, cfg);
 
-  // (5) 上り階段（DG-05, DG-06）
-  const up: Pos = upPos === null ? posOf(f, nonRoom[randInt(rng, 0, nonRoom.length - 1)]!) : { x: upPos.x, y: upPos.y };
+  // (4b) 充填率（DG-48。M21）。乱数を引かない。2 階以降の上り階段の座標（前の階の下り階段）は岩にしない
+  cullToFill(f, def.fillRatio, upPos);
+
+  // (5) 上り階段（DG-05, DG-06）。1 階は部屋の外の床（岩でない）から
+  const openNonRoom = nonRoom.filter((i) => cells[i]!.kind !== "rock");
+  const up: Pos = upPos === null ? posOf(f, openNonRoom[randInt(rng, 0, openNonRoom.length - 1)]!) : { x: upPos.x, y: upPos.y };
   cellAt(f, up.x, up.y).kind = "stairsUp";
   f.stairsUp = up;
 
   // (6) 下り階段 / ボス
   const dist = distancesFrom(f, up);
-  if (dist.includes(-1)) throw new Error("generateFloor: unreachable cell");
+  // DG-05 / DG-48: 床（岩でない）のセルはすべて上り階段から届く
+  if (dist.some((d, i) => d < 0 && cells[i]!.kind !== "rock")) throw new Error("generateFloor: unreachable cell");
   let maxD = 0;
   for (const d of dist) if (d > maxD) maxD = d;
   const far: number[] = [];

@@ -27,11 +27,14 @@ export function chestGenOf(data: GameData, dungeonId: string): ChestGen {
  * clearedCells（kind を roomId !== null ? "room" : "corridor" に、eventId・trapId・chestTrapId を null に）を重ねる。
  * 宝箱のセル（DG-23）は、開けた・転移で失ったものが clearedCells に入って消える。罠が無くなった箱（disarmedChests）は重ねない
  * （chestTrapId は生成のまま。箱を置くとき DG-24 が disarmedChests を見て罠なしにし、危険度は生成の罠の値を残す）。
+ * DG-48（M21）: dive.culled が true のときだけ dungeons[].fillRatio で間引く（無ければ fillRatio 1）。
  * 最下層でボスを倒していれば（dive.bossDefeated）、ボスのセルを teleporter に重ねる（DG-32。前進で入ると街へ戻るかを尋ねる）。
  * 辺は生成のまま（扉は通り抜けても door。DG-10）。
  */
 export function floorOf(dive: Dive, data: GameData, floorNo: number = dive.floor): Floor {
-  const def = dungeonOf(data, dive.dungeonId);
+  // DG-48（M21）: culled の無い潜行（M20 までのセーブの途中の潜行）は間引かない（fillRatio 1）
+  const def0 = dungeonOf(data, dive.dungeonId);
+  const def = dive.culled === true ? def0 : { ...def0, fillRatio: 1 };
   if (!Number.isInteger(floorNo) || floorNo < 1 || floorNo > def.floors) throw new Error(`floorOf: bad floor ${floorNo}`);
   const gen = chestGenOf(data, dive.dungeonId);
   // generateDive(...)[floorNo-1] と同じ。下の階は上の階に依存しない（DG-06 は上の階の stairsDown だけ）ので、floorNo までで止める

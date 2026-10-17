@@ -758,6 +758,8 @@ export type DungeonDef = {
   height: number;
   /** DG-05: 部屋数 [min, max]。省略時は config.dungeon.defaultRooms */
   rooms?: [number, number];
+  /** DG-48（M21）: 階の充填率（0 より大きく 1 以下。省略不可）。床（岩でないセル）を floor(fillRatio × 盤のセル数) まで行き止まりから間引く。1 なら間引かない。値は docs/balance.md のコンテンツの数値 */
+  fillRatio: number;
   unlock: string | null;
   encounterRate: { room: number; corridor: number };
   /** キーは階番号の文字列 "1".."floors" */

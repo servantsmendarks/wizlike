@@ -4,6 +4,7 @@ import { createRng, randInt } from "../src/core/rng";
 import {
   cellAt,
   checkEdges,
+  cullToFill,
   DX,
   DY,
   distancesFrom,
@@ -29,7 +30,7 @@ import { data } from "./helpers/core";
 const SEEDS = Array.from({ length: 200 }, (_, i) => i + 1);
 const CFG: Config["dungeon"] = data.config.dungeon;
 const DEFS: DungeonDef[] = ["d01", "d02"].map((id) => data.dungeons.find((d) => d.id === id)!);
-const KINDS: readonly CellKind[] = ["corridor", "room", "stairsUp", "stairsDown", "boss", "teleporter", "event", "trap", "chest"];
+const KINDS: readonly CellKind[] = ["corridor", "room", "stairsUp", "stairsDown", "boss", "teleporter", "event", "trap", "chest", "rock"];
 /** DG-23（M11）: 宝箱の罠の抽選の材料（id から実データで組む。盤の寸法を変えた def も id は d01 / d02 のまま） */
 const GEN = (def: DungeonDef) => chestGenOf(data, def.id);
 
@@ -40,6 +41,9 @@ for (const def of DEFS) for (const seed of SEEDS) ALL.push({ def, seed, floors: 
 function* eachFloor(): Generator<{ def: DungeonDef; seed: number; f: Floor; floors: Floor[] }> {
   for (const { def, seed, floors } of ALL) for (const f of floors) yield { def, seed, f, floors };
 }
+
+/** DG-48（M21）: 間引かない（fillRatio 1）def。M20 までの生成と同じ盤 */
+const FULL = (def: DungeonDef): DungeonDef => ({ ...def, fillRatio: 1 });
 
 /** ループ化しない設定（ループ化の前の迷路を見るため） */
 const NO_BRAID: Config["dungeon"] = { ...CFG, braidRatio: [0, 0] };
@@ -161,7 +165,8 @@ describe("dungeon-gen: d01/d02 × 200 シード × 全階", () => {
   });
 
   // M11（DG-04 改）: kind に chest を足して 9 種（旧 8 種）。chestTrapId は kind=chest のときだけ非 null になりうる（罠なしの箱は null）
-  test("DG-04 kind は 9 種のどれか。eventId は kind=event のときだけ、trapId は kind=trap のときだけ非 null、chestTrapId は kind=chest 以外では null", () => {
+  // M21（DG-48）: kind に rock（岩）を足して 10 種
+  test("DG-04/DG-48 kind は 10 種のどれか。eventId は kind=event のときだけ、trapId は kind=trap のときだけ非 null、chestTrapId は kind=chest 以外では null", () => {
     const bad: string[] = [];
     for (const { def, seed, f } of eachFloor()) {
       f.cells.forEach((c, i) => {
@@ -176,10 +181,11 @@ describe("dungeon-gen: d01/d02 × 200 シード × 全階", () => {
     expect(bad).toEqual([]);
   });
 
-  test("DG-05 到達性: stairsUp からの BFS（open/door）が全セルに届く。stairsDown（最下層は boss）にも届く", () => {
+  // M21（DG-48）: 到達性は床（岩でないセル）のすべて。岩は到達の対象外（4 辺 wall なので届かない）
+  test("DG-05/DG-48 到達性: stairsUp からの BFS（open/door）が床（岩でない）の全セルに届き、岩には届かない。stairsDown（最下層は boss）にも届く", () => {
     for (const { def, seed, f } of eachFloor()) {
       const dist = distancesFrom(f, f.stairsUp);
-      expect(dist.filter((d) => d < 0).length, `${def.id} seed ${seed} floor ${f.floor}`).toBe(0);
+      expect(dist.filter((d, i) => (d < 0) !== (f.cells[i]!.kind === "rock")).length, `${def.id} seed ${seed} floor ${f.floor}`).toBe(0);
       const goal = f.floor === def.floors ? f.boss : f.stairsDown;
       expect(goal).not.toBeNull();
       expect(dist[idx(f, goal!.x, goal!.y)]).toBeGreaterThan(0);
@@ -264,8 +270,10 @@ describe("dungeon-gen: d01/d02 × 200 シード × 全階", () => {
     for (const { def, seed, f } of eachFloor()) {
       const where = `${def.id} seed ${seed} floor ${f.floor}`;
       // ループ化の前（部屋・迷路・扉）までは乱数の消費が同じなので、[0,0] で作った階の行き止まりがループ化の直前の行き止まり
-      const f0 = generateFloor(def, NO_BRAID, seed, f.floor, f.floor === 1 ? null : f.stairsUp, GEN(def));
-      const t = treeCounts(f);
+      // M21（DG-48）: 間引くと行き止まりとループの数が変わるので、間引かない盤（fillRatio 1）どうしで比べる
+      const full = generateFloor(FULL(def), CFG, seed, f.floor, f.floor === 1 ? null : f.stairsUp, GEN(def));
+      const f0 = generateFloor(FULL(def), NO_BRAID, seed, f.floor, f.floor === 1 ? null : f.stairsUp, GEN(def));
+      const t = treeCounts(full);
       const t0 = treeCounts(f0);
       if (t.doors !== 0 || t0.doors !== 0) bad.push(`${where}: door between corridors`);
       if (t0.edges !== t0.nonRoom - 1) bad.push(`${where}: not a spanning tree without braid (${t0.edges} / ${t0.nonRoom})`);
@@ -424,20 +432,24 @@ describe("dungeon-gen: 決定性と境界", () => {
     }
   });
 
-  test("DG-03 回帰: d01・diveSeed 12345 の 1 階の stairsUp・stairsDown・rooms.length と 2 階の boss", () => {
-    const fs = generateDive(DEFS[0]!, CFG, 12345, GEN(DEFS[0]!));
-    expect({
+  // M21（DG-48）: fillRatio 1（間引かない）では M20 までの値のまま（生成が同じであることの回帰）。d01 の既定（0.45）の値は取り直した
+  test("DG-03/DG-48 回帰: d01・diveSeed 12345 の 1 階の stairsUp・stairsDown・rooms.length と 2 階の boss（fillRatio 1 は M20 までの値、既定 0.45 は取り直した値と床の数）", () => {
+    const pick = (fs: Floor[]) => ({
       up: fs[0]!.stairsUp,
       down: fs[0]!.stairsDown,
       rooms: fs[0]!.rooms.length,
       boss: fs[1]!.boss,
-    }).toEqual({ up: { x: 8, y: 14 }, down: { x: 17, y: 7 }, rooms: 3, boss: { x: 3, y: 14 } });
+      floors: fs.map((f) => f.cells.filter((c) => c.kind !== "rock").length),
+    });
+    expect(DEFS[0]!.fillRatio).toBe(0.45);
+    expect(pick(generateDive(FULL(DEFS[0]!), CFG, 12345, GEN(DEFS[0]!)))).toEqual({ up: { x: 8, y: 14 }, down: { x: 17, y: 7 }, rooms: 3, boss: { x: 3, y: 14 }, floors: [400, 400] });
+    expect(pick(generateDive(DEFS[0]!, CFG, 12345, GEN(DEFS[0]!)))).toEqual({ up: { x: 1, y: 9 }, down: { x: 11, y: 9 }, rooms: 3, boss: { x: 1, y: 4 }, floors: [180, 225] });
   });
 
-  test("DG-02 width 5・height 5・rooms [0,0] の def でも生成でき、全セルに到達できる。roomSize が盤より大きくても Error にならない", () => {
+  test("DG-02 width 5・height 5・rooms [0,0] の def でも生成でき、全セルに到達できる。roomSize が盤より大きくても Error にならない（fillRatio 1。M21）", () => {
     // イベントは置かない（5×5 ではループ化で行き止まりが無くなり、DG-22 の Error になる盤がある。DG-05）
-    const tiny: DungeonDef = { ...DEFS[0]!, width: 5, height: 5, rooms: [0, 0], events: [] };
-    const big: DungeonDef = { ...DEFS[0]!, width: 5, height: 5, rooms: [1, 2], events: [] };
+    const tiny: DungeonDef = { ...DEFS[0]!, width: 5, height: 5, rooms: [0, 0], events: [], fillRatio: 1 };
+    const big: DungeonDef = { ...DEFS[0]!, width: 5, height: 5, rooms: [1, 2], events: [], fillRatio: 1 };
     const hugeRooms: Config["dungeon"] = { ...CFG, roomSize: [6, 9] };
     for (const seed of SEEDS) {
       for (const [def, cfg] of [
@@ -594,5 +606,152 @@ describe("dungeon-gen: 宝箱のセル（DG-23。M11）", () => {
       for (const f of generateDive(DEFS[0]!, CFG, seed, onlyTwo)) for (const c of chestsOf(f)) got.add(c.trap);
     }
     expect([...got].sort()).toEqual([...d2].sort());
+  });
+});
+
+describe("dungeon-gen: 階の充填率（DG-48。M21）", () => {
+  const ALL_DEFS: DungeonDef[] = data.dungeons;
+  /** 全ダンジョン × 200 シードの生成結果（d01 / d02 は上の ALL を使う） */
+  const EVERY: { def: DungeonDef; seed: number; floors: Floor[] }[] = [];
+  for (const def of ALL_DEFS) {
+    for (const seed of SEEDS) EVERY.push(ALL.find((a) => a.def.id === def.id && a.seed === seed) ?? { def, seed, floors: generateDive(def, CFG, seed, GEN(def)) });
+  }
+  const floorCount = (f: Floor): number => f.cells.filter((c) => c.kind !== "rock").length;
+  const hasDoor = (f: Floor, i: number): boolean => FACINGS.some((d) => edgeOf(f.cells[i]!, d) === "door");
+  /** cullToFill がまだ間引ける行き止まり（部屋の外・通れる辺 1 本・door なし・keep でない） */
+  const cullableDeadEnds = (f: Floor, keep: number): number[] =>
+    f.cells.flatMap((c, i) => (c.kind !== "rock" && i !== keep && isDeadEnd(f, i % f.width, Math.floor(i / f.width)) && !hasDoor(f, i) ? [i] : []));
+  /** 通路のセルどうしの open の辺で、閉じても床の連結が保たれるもの（総当たり。f は一時的に書き換えて戻す） */
+  const closableLoopEdges = (f: Floor): string[] => {
+    const out: string[] = [];
+    const total = floorCount(f);
+    for (let i = 0; i < f.cells.length; i++) {
+      const c = f.cells[i]!;
+      if (c.roomId !== null || c.kind === "rock") continue;
+      const x = i % f.width;
+      const y = Math.floor(i / f.width);
+      for (const d of ["E", "S"] as const) {
+        if (edgeOf(c, d) !== "open" || !inBounds(f, x + DX[d], y + DY[d]) || cellAt(f, x + DX[d], y + DY[d]).roomId !== null) continue;
+        setEdge(f, x, y, d, "wall"); // 一時的に閉じて数え、open に戻す
+        if (distancesFrom(f, { x, y }).filter((v) => v >= 0).length === total) out.push(`${x},${y} ${d}`);
+        setEdge(f, x, y, d, "open");
+      }
+    }
+    return out;
+  };
+
+  test("DG-48 data: fillRatio は各ダンジョンにある（d01 0.45 / d02 0.6 / d03 0.75【仮】）", () => {
+    expect(Object.fromEntries(ALL_DEFS.map((d) => [d.id, d.fillRatio]))).toEqual({ d01: 0.45, d02: 0.6, d03: 0.75 });
+  });
+
+  test("DG-48 岩: 辺はすべて wall、部屋の外（roomId null）、eventId・trapId・chestTrapId は null。部屋のセルは岩にならず、door の辺は残る。階段・ボスは岩に置かれない（全ダンジョン × 200 シード × 全階）", () => {
+    const [dmin] = CFG.doorsPerRoom;
+    const bad: string[] = [];
+    let rocks = 0;
+    for (const { def, seed, floors } of EVERY) {
+      for (const f of floors) {
+        const where = `${def.id} seed ${seed} floor ${f.floor}`;
+        f.cells.forEach((c, i) => {
+          if (c.kind !== "rock") return;
+          rocks += 1;
+          if (FACINGS.some((d) => edgeOf(c, d) !== "wall")) bad.push(`${where} cell ${i}: edge not wall`);
+          if (c.roomId !== null || c.eventId !== null || c.trapId !== null || c.chestTrapId !== null) bad.push(`${where} cell ${i}: room or content`);
+        });
+        f.rooms.forEach((R, id) => {
+          let doors = 0;
+          for (let y = R.y; y < R.y + R.h; y++) {
+            for (let x = R.x; x < R.x + R.w; x++) {
+              const c = cellAt(f, x, y);
+              if (c.kind === "rock") bad.push(`${where}: room cell ${x},${y} is rock`);
+              doors += FACINGS.filter((d) => edgeOf(c, d) === "door").length;
+            }
+          }
+          if (doors < dmin) bad.push(`${where}: room ${id} has ${doors} doors`);
+        });
+        for (const p of [f.stairsUp, f.stairsDown, f.boss]) if (p !== null && cellAt(f, p.x, p.y).kind === "rock") bad.push(`${where}: stairs on rock`);
+      }
+    }
+    expect(bad).toEqual([]);
+    expect(rocks).toBeGreaterThan(0);
+  });
+
+  test("DG-48 床の数: floor(fillRatio × 盤のセル数) 以下か、間引ける行き止まりも閉じられるループの辺も尽きている（d01・d02 × 200 シード × 全階）。fillRatio 1 なら岩は 0", () => {
+    const bad: string[] = [];
+    for (const { def, seed, floors } of ALL) {
+      for (const f of floors) {
+        const target = Math.floor(def.fillRatio * f.width * f.height);
+        if (floorCount(f) <= target) continue;
+        const keep = f.floor === 1 ? -1 : idx(f, f.stairsUp.x, f.stairsUp.y);
+        const where = `${def.id} seed ${seed} floor ${f.floor}`;
+        if (cullableDeadEnds(f, keep).length > 0) bad.push(`${where}: dead end left`);
+        if (closableLoopEdges(f).length > 0) bad.push(`${where}: loop left`);
+      }
+    }
+    expect(bad).toEqual([]);
+    for (const def of DEFS) for (const seed of SEEDS.slice(0, 50)) for (const f of generateDive(FULL(def), CFG, seed, GEN(def))) expect(floorCount(f)).toBe(400);
+  });
+
+  test("DG-48 決定性: 同じ diveSeed で generateDive は deep-equal（全ダンジョン）。間引きは乱数を引かない: 生成した階は「fillRatio 1 の同じ階を部屋・通路に戻して cullToFill(fillRatio, 2 階以降は上り階段)」と同じ辺と岩（(1)〜(4) の乱数の消費が fillRatio によらず同じ）", () => {
+    for (const def of ALL_DEFS) {
+      for (const seed of SEEDS.slice(0, 40)) {
+        const a = generateDive(def, CFG, seed, GEN(def));
+        expect(generateDive(def, CFG, seed, GEN(def))).toEqual(a);
+        a.forEach((f) => {
+          const upPos = f.floor === 1 ? null : f.stairsUp;
+          const full = generateFloor(FULL(def), CFG, seed, f.floor, upPos, GEN(def));
+          expect(full.rooms).toEqual(f.rooms);
+          const g = structuredClone(full);
+          for (const c of g.cells) c.kind = c.roomId !== null ? "room" : "corridor";
+          cullToFill(g, def.fillRatio, upPos);
+          const shape = (h: Floor) => h.cells.map((c) => [c.n, c.e, c.s, c.w, c.kind === "rock"].join(","));
+          expect(shape(g), `${def.id} seed ${seed} floor ${f.floor}`).toEqual(shape(f));
+        });
+      }
+    }
+  });
+
+  test("DG-48 cullToFill: 行き止まりから添字の昇順に岩にする。行き止まりが尽きたら橋でないループの辺を閉じて続ける。keep は岩にしない。届かなければ止まる（Error にしない）。fillRatio 1 なら何もしない", () => {
+    // 7×3 の盤。床は 1 行目の 0-1-2-3-4 の通路と、2 行目の 7・8（0-1-8-7 で輪）。ほかのセルは先に岩にしておく
+    const used = (i: number): boolean => i < 5 || i === 7 || i === 8;
+    const make = (): Floor => {
+      const cells: Floor["cells"] = [];
+      for (let i = 0; i < 21; i++) cells.push({ kind: used(i) ? "corridor" : "rock", n: "wall", e: "wall", s: "wall", w: "wall", roomId: null, eventId: null, trapId: null, chestTrapId: null });
+      const f: Floor = { floor: 1, width: 7, height: 3, cells, rooms: [], stairsUp: { x: 0, y: 0 }, stairsDown: null, boss: null };
+      for (let x = 0; x < 4; x++) setEdge(f, x, 0, "E", "open");
+      setEdge(f, 0, 0, "S", "open");
+      setEdge(f, 1, 0, "S", "open");
+      setEdge(f, 0, 1, "E", "open");
+      return f;
+    };
+    const rocksOf = (f: Floor) => f.cells.flatMap((c, i) => (c.kind === "rock" && used(i) ? [i] : []));
+    // 床 7、目標 floor(0.2 × 21) = 4。行き止まりは 4 だけ → 次の回で 3 → 2 で床 4 になって止まる
+    const f = make();
+    expect(cullToFill(f, 0.2, null)).toBe(3);
+    expect(rocksOf(f)).toEqual([2, 3, 4]);
+    expect(checkEdges(f)).toEqual([]);
+    // 目標 1: 行き止まりが尽きたら輪の辺（0 の E。閉じると 0 が間引ける）を閉じて続け、床 1 で止まる
+    const g = make();
+    cullToFill(g, 1 / 21, null);
+    expect(g.cells.filter((c) => c.kind !== "rock").length).toBe(1);
+    expect(g.cells[8]!.kind).toBe("corridor");
+    expect(checkEdges(g)).toEqual([]);
+    // keep（4,0）は岩にしない。輪を閉じて反対側から間引き、keep だけが残る
+    const h = make();
+    cullToFill(h, 1 / 21, { x: 4, y: 0 });
+    expect(rocksOf(h)).toEqual([0, 1, 2, 3, 7, 8]);
+    // 目標 0 でも、床が 1 セルになれば行き止まりも閉じる辺も無いので止まる
+    const z = make();
+    cullToFill(z, 0.0001, null);
+    expect(z.cells.filter((c) => c.kind !== "rock").length).toBe(1);
+    // fillRatio 1 は何もしない
+    const k = make();
+    expect(cullToFill(k, 1, null)).toBe(0);
+    expect(k).toEqual(make());
+  });
+
+  test("DG-05/DG-48 統計: d01 の 1 階の床の数（200 シード）の最小・中央値・最大（docs/balance.md に記録した値）", () => {
+    const d01 = ALL.filter((a) => a.def.id === "d01").map((a) => floorCount(a.floors[0]!));
+    expect(d01).toHaveLength(200);
+    expect([Math.min(...d01), median(d01), Math.max(...d01)]).toEqual([180, 203, 288]);
   });
 });

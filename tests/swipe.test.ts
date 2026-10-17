@@ -981,7 +981,11 @@ describe("UI-25 移動を続ける（M18）", () => {
   test("UI-25/DG-14（M19）結合: 経路の途中の下り階段で確認が立って止まり、「通り過ぎる」（pass）の後は目的地が残り、経路を引き直して最後まで歩ける（遭遇率 0）", async () => {
     const { walkDestStale } = await import("../src/presenter/input/swipe");
     const d0 = structuredClone(data);
-    for (const def of d0.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    // DG-48（M21）: 間引いた盤では下り階段（距離が最大のセル）がほぼ行き止まりになり、途中で踏む経路が無いので、間引かない盤（fillRatio 1）で確かめる
+    for (const def of d0.dungeons) {
+      def.encounterRate = { room: 0, corridor: 0 };
+      def.fillRatio = 1;
+    }
     for (let seed = 1; seed <= 50; seed++) {
       const s0 = cloneState(execute(newGame(seed), { type: "dungeon.enter", dungeonId: "d01" }, d0).state);
       const f = floorOf(s0.dive!, d0);

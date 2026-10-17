@@ -158,6 +158,7 @@ describe("dungeon.enter", () => {
       chest: null, // CB-60（M11）
       disarmedChests: [],
       noChestStreak: 0, // CB-51b（M20）
+      culled: true, // DG-48（M21）: この潜行の階は fillRatio で間引く
     });
     expect(Object.keys(dive.explored)).toEqual(["1"]);
     expectExploredCovers(r.state);
@@ -1978,6 +1979,7 @@ describe("決定性と網羅", () => {
     // 戦闘で受けた毒（出目しだい。M14 で勝利の直接ドロップの chance が入り出目がずれた）は外して歩く（歩くたびの hpChanged を出さない）
     const cured = cloneState(won);
     for (const c of cured.party) c.status = c.status.filter((x) => x !== "poison");
+    cured.dive!.chest = null; // DG-48（M21）で盤が変わり、勝利のドロップの箱（CB-51。出目しだい）が出るシードになった。箱はこのテストの対象でないので外す
     const r1 = run(cured, MOVE, DATA0);
     expect(kinds(r1.events)).toEqual(["moved", "message:dungeon.stairsDown"]);
     const r2 = run(r1.state, { type: "event.choose", optionId: "descend" }, DATA0);
@@ -2848,5 +2850,124 @@ describe("DG-45 / CB-01b 敵を待つ（dungeon.search。M18。M19 で「辺り�
     expect(kinds(r.events)).not.toContain("encounter");
     expect(kinds(r.events)).not.toContain("message:dungeon.searched");
     expect(kinds(r.events)).toContain("wipe");
+  });
+});
+
+
+describe("DG-48 岩の扱い（視野・地図・転移・経路・移動。M21）", () => {
+  /** d01 の 1 階で岩のある潜行（シード 1〜） */
+  const culledDives = (n: number): GameState[] => {
+    const out: GameState[] = [];
+    for (let seed = 1; out.length < n && seed <= 50; seed++) {
+      const s = enterD01(seed);
+      if (floorOf(s.dive!, data).cells.some((c) => c.kind === "rock")) out.push(s);
+    }
+    return out;
+  };
+  const isRock = (f: Floor, x: number, y: number): boolean => cellAt(f, x, y).kind === "rock";
+
+  test("DG-48 入場した潜行は culled: true で、floorOf の盤に岩がある（d01 の fillRatio 0.45）", () => {
+    const s = enterD01(1);
+    expect(s.dive!.culled).toBe(true);
+    expect(culledDives(5)).toHaveLength(5);
+  });
+
+  test("DG-13/DG-48 視野: 床のどのセル・どの向きからも visibleCellsOf に岩は入らない（岩は 4 辺 wall なので壁として見える）。入場の explored にも岩は無い", () => {
+    let views = 0;
+    for (const s of culledDives(5)) {
+      const f = floorOf(s.dive!, data);
+      const rock = new Set(f.cells.flatMap((c, i) => (c.kind === "rock" ? [i] : [])));
+      for (const i of s.dive!.explored["1"]!) expect(rock.has(i)).toBe(false);
+      for (let i = 0; i < f.cells.length; i++) {
+        if (rock.has(i)) continue;
+        for (const d of FACINGS) {
+          for (const v of visibleCellsOf(f, { x: i % f.width, y: Math.floor(i / f.width) }, d, data.config.dungeon.viewDepth)) {
+            views += 1;
+            expect(isRock(f, v.x, v.y)).toBe(false);
+          }
+        }
+      }
+    }
+    expect(views).toBeGreaterThan(0);
+  });
+
+  test("DG-14/DG-13/DG-48 地図: 床から見えるセルをすべて探索済みにしても、mapView の cells に岩は無い。岩に面した床の辺は wall で描く", () => {
+    for (const s0 of culledDives(3)) {
+      const s = cloneState(s0);
+      const f = floorOf(s.dive!, data);
+      const seen = new Set<number>();
+      for (let i = 0; i < f.cells.length; i++) {
+        if (f.cells[i]!.kind === "rock") continue;
+        for (const d of FACINGS) for (const v of visibleCellsOf(f, { x: i % f.width, y: Math.floor(i / f.width) }, d, data.config.dungeon.viewDepth)) seen.add(idx(f, v.x, v.y));
+      }
+      s.dive!.explored["1"] = [...seen].sort((a, b) => a - b);
+      const view = mapView(s, data)!;
+      expect(view.cells).toHaveLength(seen.size);
+      for (const c of view.cells) {
+        expect(isRock(f, c.x, c.y)).toBe(false);
+        for (const d of FACINGS) {
+          const n = step({ x: c.x, y: c.y }, d);
+          if (inBounds(f, n.x, n.y) && isRock(f, n.x, n.y)) expect(c[d.toLowerCase() as "n" | "e" | "s" | "w"]).toBe("wall");
+        }
+      }
+    }
+  });
+
+  test("DG-25/DG-48 転移: 候補は corridor・roomId null のセルで、岩は入らない。state.rng を変えて 30 回転移しても岩には着かない", () => {
+    for (const s0 of culledDives(3)) {
+      const f = floorOf(s0.dive!, data);
+      for (let k = 1; k <= 30; k++) {
+        const ctx = makeContext(withRng(s0, k), data);
+        teleportParty(ctx);
+        const to = ctx.state.dive!.pos;
+        expect(isRock(f, to.x, to.y)).toBe(false);
+        expect(cellAt(f, to.x, to.y)).toMatchObject({ kind: "corridor", roomId: null });
+      }
+    }
+  });
+
+  test("DG-15/DG-48 経路: 探索済みに岩を混ぜても、経路は岩を通らず、岩を目標にすると null", async () => {
+    const { routeOnFloor } = await import("../src/core/rules/pathfind");
+    let routes = 0;
+    for (const s of culledDives(3)) {
+      const f = floorOf(s.dive!, data);
+      const all = f.cells.map((_, i) => i);
+      for (let i = 0; i < f.cells.length; i += 7) {
+        const t = { x: i % f.width, y: Math.floor(i / f.width) };
+        const r = routeOnFloor(f, all, s.dive!.pos, s.dive!.facing, t);
+        if (isRock(f, t.x, t.y)) {
+          expect(r).toBeNull();
+          continue;
+        }
+        expect(r).not.toBeNull();
+        routes += 1;
+        for (const st of r!) expect(isRock(f, st.pos.x, st.pos.y)).toBe(false);
+      }
+    }
+    expect(routes).toBeGreaterThan(0);
+  });
+
+  test("DG-10/DG-48 移動: 岩に向かって前進すると blocked（位置は変わらない）", () => {
+    let checked = 0;
+    for (const s0 of culledDives(3)) {
+      const f = floorOf(s0.dive!, data);
+      for (let i = 0; i < f.cells.length && checked < 6; i++) {
+        const c = f.cells[i]!;
+        if (c.kind !== "corridor" && c.kind !== "room") continue;
+        const p = { x: i % f.width, y: Math.floor(i / f.width) };
+        const d = FACINGS.find((dd) => {
+          const n = step(p, dd);
+          return inBounds(f, n.x, n.y) && isRock(f, n.x, n.y);
+        });
+        if (d === undefined) continue;
+        expect(edgeOf(c, d)).toBe("wall");
+        const r = run(placeAt(s0, p, d), MOVE, DATA0);
+        expect(r.events[0]?.kind).toBe("blocked");
+        expect(r.events.map((e) => e.kind)).not.toContain("moved");
+        expect(r.state.dive!.pos).toEqual(p);
+        checked += 1;
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
   });
 });

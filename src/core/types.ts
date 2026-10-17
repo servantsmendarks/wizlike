@@ -173,8 +173,8 @@ export type EndingRecord = {
 
 /** DG-04: 辺の種別 */
 export type Edge = "wall" | "door" | "open";
-/** DG-04: セル種別 */
-export type CellKind = "corridor" | "room" | "stairsUp" | "stairsDown" | "boss" | "teleporter" | "event" | "trap" | "chest";
+/** DG-04: セル種別。rock は DG-48（M21）の岩（充填率で間引いた通路。4 辺 wall で、床に数えない） */
+export type CellKind = "corridor" | "room" | "stairsUp" | "stairsDown" | "boss" | "teleporter" | "event" | "trap" | "chest" | "rock";
 /**
  * 生成結果のセル 1 つ。4 辺は各セルが持ち、隣のセルと同じ値を二重に持つ（DG-04 の文面どおり）。
  * 辺の書き込みは必ず dungeon-gen.ts の setEdge（両側を同時に書く）を通す。
@@ -261,6 +261,11 @@ export type Dive = {
    * 省略可能（schemaVersion 9 のまま足した欄。無ければ 0 として扱う）
    */
   noChestStreak?: number;
+  /**
+   * DG-48（M21）: この潜行の階は dungeons[].fillRatio で間引く（入場で true）。
+   * 省略可能（schemaVersion 9 のまま足した欄。無ければ M20 までの潜行として間引かない = fillRatio 1 で生成。途中の潜行の盤を変えないため）
+   */
+  culled?: boolean;
 };
 
 /**

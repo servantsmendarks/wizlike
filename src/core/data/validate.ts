@@ -1239,6 +1239,7 @@ function validateDungeons(ctx: Ctx, v: unknown, ix: Index): void {
       width: I({ min: 5 }), // DG-02: 生成の前提（部屋が置ける寸法）
       height: I({ min: 5 }), // DG-02
       rooms: opt(pair(NON_NEG)), // DG-05: 省略時は config.dungeon.defaultRooms
+      fillRatio: N({ positive: true, max: 1 }), // DG-48（M21）: 0 < fillRatio ≤ 1。省略不可
       unlock: nullable(refField(ix.dungeons, "dungeon")),
       encounterRate: F({ room: N(RATIO), corridor: N(RATIO) }), // CB-01
       encounterTable: (c, p, x) => obj(c, p, x, null),

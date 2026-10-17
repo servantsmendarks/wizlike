@@ -277,6 +277,7 @@ function isChestShape(x: unknown): boolean {
  * 同じ版に後から足した省略可能な欄（M21。DG-47）: progress.deepestFloors は無いか、各値が 1 以上の安全な整数のプレーンなオブジェクト。
  * 同じ版に後から足した省略可能な欄（M21。CB-68 (a)）: dive.chest.contentsDestroyed は無いか真偽値。
  * 同じ版に後から足した省略可能な欄（M21。CB-47）: battle がオブジェクトなら battle.autoSpells は無いか真偽値。
+ * 同じ版に後から足した省略可能な欄（M21。DG-48）: dive.culled は無いか真偽値（無い潜行は間引かない盤のまま続く）。
  */
 export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(x)) return false;
@@ -300,6 +301,8 @@ export function isGameStateShape(x: unknown): x is GameState {
     if (jc !== undefined && !(Array.isArray(jc) && jc.every(isCellRefShape))) return false;
     const ns = dive["noChestStreak"]; // CB-51b（M20）: 省略可能
     if (ns !== undefined && !isTurnCount(ns)) return false;
+    const cu = dive["culled"]; // DG-48（M21）: 省略可能
+    if (cu !== undefined && typeof cu !== "boolean") return false;
     if (dive["chest"] !== null && x["pendingChoice"] !== null) return false;
     if (!isTurnCount(dive["floorSteps"])) return false;
   }

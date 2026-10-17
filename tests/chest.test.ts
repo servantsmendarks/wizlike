@@ -1560,7 +1560,7 @@ describe("DG-24 宝箱のセルに乗る（M11 の作業 7）", () => {
       for (const def of x.dungeons) def.encounterRate = { room: 0, corridor: 0 };
     });
     const k = findK((m) => randInt(m, 1, 100) <= P_KIRI);
-    const { state } = atChest();
+    const { state } = atChest((t) => t === null); // 罠なしの箱（danger 0）。DG-48（M21）で盤が変わったので明示する
     const r = exec(withRng(state, k), MOVE, Di);
     expect(r.events.slice(1, 4)).toEqual([
       { kind: "chestFound", source: "cell", danger: 0 },
@@ -1575,7 +1575,7 @@ describe("DG-24 宝箱のセルに乗る（M11 の作業 7）", () => {
     });
     // キリの衝動 → フィンの制止が成功（SAN +）→ 掛け合いが発生する出目
     const k = findK((m) => rollDie(m, 100) <= P_KIRI && 9 + rollDie(m, 10) >= 15 + rollDie(m, 10) && chance(m, 50));
-    const { state, a } = atChest();
+    const { state, a } = atChest((t) => t === null); // 罠なしの箱（danger 0）。DG-48（M21）で盤が変わったので明示する
     const ref = { floor: 1, x: a.target.x, y: a.target.y };
     const s = withRng(state, k);
     expect(s.dive!.judgedChests ?? []).toEqual([]);

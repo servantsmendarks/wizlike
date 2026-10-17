@@ -1519,6 +1519,13 @@ describe("data: dungeons.json", () => {
     expectIssue((r) => (r.dungeons[1].height = 1), "dungeons.json", "[1].height: expected integer >= 5, got 1");
     expect(issuesOf((r) => ((r.dungeons[0].width = 5), (r.dungeons[0].height = 5)))).toEqual([]);
   });
+  test("data: DG-48 fillRatio は省略不可で、0 より大きく 1 以下（M21）", () => {
+    expectIssue((r) => delete r.dungeons[0].fillRatio, "dungeons.json", "[0].fillRatio: missing required field");
+    expectIssue((r) => (r.dungeons[0].fillRatio = 0), "dungeons.json", "[0].fillRatio: expected number");
+    expectIssue((r) => (r.dungeons[1].fillRatio = 1.01), "dungeons.json", "[1].fillRatio: expected number");
+    expectIssue((r) => (r.dungeons[0].fillRatio = "0.5"), "dungeons.json", "[0].fillRatio: expected number");
+    expect(issuesOf((r) => ((r.dungeons[0].fillRatio = 1), (r.dungeons[1].fillRatio = 0.01)))).toEqual([]);
+  });
   test("data: DG-05 rooms は [min, max]", () => {
     expectIssue((r) => (r.dungeons[0].rooms = [6, 3]), "dungeons.json", "[0].rooms: min 6 > max 3");
   });

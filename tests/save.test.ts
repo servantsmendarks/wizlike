@@ -1471,6 +1471,37 @@ describe("SV-04 v5 → v6 の移行（M11。CB-60）", () => {
     expect(ok(null)).toBe(false);
     expect(ok([2])).toBe(false);
   });
+  test("SV-04/DG-48（M21）: dive.culled は省略可能（schemaVersion 9 のまま足した欄。移行なし）。欄の無い古い潜行（岩の無い階）はそのまま読めて、floorOf は間引かない盤（fillRatio 1。岩なし）のまま続く。あれば真偽値でなければ broken", async () => {
+    const { chestGenOf, floorOf } = await import("../src/core/rules/floor");
+    const { generateFloor } = await import("../src/core/rules/dungeon-gen");
+    const s = dived(1);
+    expect(s.dive!.culled).toBe(true);
+    expect(floorOf(s.dive!, data).cells.some((c) => c.kind === "rock")).toBe(true); // 新しい潜行は間引く（d01 は 0.45）
+    const old = json(s) as unknown as Record<string, unknown>;
+    delete (old["dive"] as Record<string, unknown>)["culled"];
+    const r = migrateState(old, SCHEMA, SCHEMA);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.state.dive!.culled).toBeUndefined();
+      const f = floorOf(r.state.dive!, data);
+      expect(f.cells.some((c) => c.kind === "rock")).toBe(false);
+      const def = { ...data.dungeons.find((d) => d.id === "d01")!, fillRatio: 1 };
+      expect(f).toEqual(generateFloor(def, data.config.dungeon, s.dive!.diveSeed, 1, null, chestGenOf(data, "d01")));
+      // 古い潜行のまま前進・旋回できる（rejected にならない）
+      const t = execute(r.state, { type: "dungeon.turn", dir: "left" }, data);
+      expect(t.events[0]?.kind).not.toBe("rejected");
+    }
+    const ok = (v: unknown): boolean => {
+      const x = json(s) as unknown as Record<string, unknown>;
+      (x["dive"] as Record<string, unknown>)["culled"] = v;
+      return isGameStateShape(x);
+    };
+    expect(ok(true)).toBe(true);
+    expect(ok(false)).toBe(true);
+    expect(ok(null)).toBe(false);
+    expect(ok(1)).toBe(false);
+    expect(ok("true")).toBe(false);
+  });
 
   test("SV-04/EV-76 U-7: dive.chest.rivalryFails は省略可能（schemaVersion 6 のまま足した欄）。無い・0 以上の整数なら通り、型が違えば broken", () => {
     const s = chestState();
