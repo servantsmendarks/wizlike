@@ -404,14 +404,26 @@ export function campEntries(_host: CampHost, page: CampPage, m: CampInput, strin
       return memberGrid(m, (id) => !hasCastable(m, id), cancel);
     case "character": {
       const x = memberOf(m, page.memberId);
-      // UI-80（M20）: 装備・使う・渡す・捨てる・鑑定はパネルの品を押して品の段から。枠は [呪文][次の人] / [空き]…[戻る]（キー 1・2・8）
+      // UI-80（M20）: 装備・使う・渡す・捨てる・鑑定はパネルの品を押して品の段から。枠は [呪文][次の人][鑑定] / [空き]…[戻る]（キー 1・2・3・8）
+      // UI-59 / UI-80（M21 A-1）: 鑑定できる職業の者（core の identifyBlock が cannotIdentify でない）だけ 3 つ目の枠に「鑑定」（鑑定の一覧の段へ。キー 3）。
+      // 送れない間（cannotAct / noMp / noUnidentified）は dim で、押すと core の identifyBlock の理由を語る
+      const block = x?.identifyBlock ?? null;
+      const identify: CampEntry | null =
+        x === undefined || block === "cannotIdentify"
+          ? null
+          : {
+              label: s(strings, "character.identify"),
+              disabled: !x.canIdentifyNow,
+              choice: { kind: "action", action: "identify" },
+              ...(block === null || x.canIdentifyNow ? {} : { reason: s(strings, `camp.identifyBlock.${block}`, { name: x.name }) }),
+            };
       return {
         layout: "grid",
         slots: [
           // UI-68（M10）: 習得呪文があれば押せる（唱えられない呪文も一覧から説明を見られる。唱えられるかは説明の段の「唱える」）
           { label: s(strings, "character.spell"), disabled: (x?.knownSpells.length ?? 0) === 0, choice: { kind: "action", action: "spell" } },
           { label: s(strings, "character.next"), disabled: menu.members.length <= 1, choice: { kind: "nextMember" } },
-          null,
+          identify,
           null,
           null,
           null,

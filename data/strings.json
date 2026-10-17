@@ -486,6 +486,7 @@
   "character.give": "渡す",
   "character.drop": "捨てる",
   "character.spell": "呪文",
+  "character.identify": "鑑定",
   "character.next": "次の人",
   "character.prev": "前の人",
   "character.inventoryHeading": "所持品 {used}/{max}（装備 {equipped} を含む）",
