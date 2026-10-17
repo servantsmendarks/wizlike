@@ -1249,7 +1249,7 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
   if (result === "win" && b.origin.kind === "boss") offerTeleporter(ctx);
   if (dive.chest !== null) {
     if (b.origin.kind === "alarm") {
-      // CB-67: 警報の戦闘に勝てば同じ箱（作動した罠は消えている）の選択に戻る。逃げたら箱を失う（宝箱のセルは罠なしで残る）
+      // CB-67 / CB-68 (b)（M21）: 警報の戦闘に勝てば同じ箱（作動した罠は消えている）の開けるの続きを行う。逃げたら箱を失う（宝箱のセルは罠なしで残る）
       if (result === "win") returnToChest(ctx);
       else abandonChest(ctx);
     } else if (result === "win") {

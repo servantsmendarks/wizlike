@@ -120,7 +120,7 @@ M11 で CB-52 の仮実装を置き換える。今はデータと検証（罠の
 - CB-62 罠の表 `data/chest-traps.json`: `{ id, name（罠の名前の strings キー）, danger（1〜4）, effect }`。床の罠（DG-20 の `TRAP_IDS`）とは別の id 空間。作動の語りは strings の `chest.trap.<id>`（差し込みは `{actor}` だけ）。効果 `effect.kind`:
   - `damage`: `target` が `one` なら作動させた人 1 人、`all` なら生存者全員に、それぞれ `dice` のダメージ。`status` があれば（`one` のとき）判定なしで付ける。`destroyContents`（省略可能な真偽値。M21）が true なら、ダメージの後に中身の消失を判定する（CB-68 (a)。今は爆弾だけ）。
   - `status`: `target` は `all`。生存者それぞれに CB-30 と同じ式（`chance` と運・`statusResist`）で `status` を付ける。
-  - `alarm`: 罠を消し、箱を残したまま即座に遭遇する（CB-67）。中身は得ない。
+  - `alarm`: 罠を消し、箱を残したまま即座に遭遇する（CB-67）。作動した時点では中身は得ない（勝って戻れば開けるの続きで得る。CB-68 (b)）。
   - `teleport`: 箱を失い、同じ階の通路のランダムな位置へ移る（DG-25）。中身は得ない。
   - `san`: `target` は `all`。生存者全員の SAN を `amount` 減らす（"trap" の耐性が効く）。
 
@@ -131,7 +131,7 @@ M11 で CB-52 の仮実装を置き換える。今はデータと検証（罠の
   | bomb | 爆弾 | 2 | 全員に 1d6。`bombDestroy` % で中身の品が吹き飛ぶ（CB-68。金は残る） |
   | poison_gas | 毒ガス | 2 | 全員に毒の判定（60） |
   | paralysis_gas | 麻痺ガス | 3 | 全員に麻痺の判定（35） |
-  | alarm | 警報 | 3 | 即遭遇。箱は残る |
+  | alarm | 警報 | 3 | 即遭遇。箱は残る（勝てば開ける。CB-68 (b)） |
   | teleport | 転移 | 4 | 同じ階の通路へ。箱は失う |
   | curse | 呪詛 | 4 | 全員 SAN −8 |
 

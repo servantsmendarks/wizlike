@@ -1076,7 +1076,7 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
     rollDice(m, "1d8");
     rollDice(m, "1d4");
     chance(m, 0); // CB-57（M14）: 直接ドロップの判定（dataWith の既定 0 で外れ）
-    chance(m, 0); // CB-51: 通路の遭遇の宝箱の判定（chestChanceCorridor 0 で外れ）
+    chance(m, 0); // CB-51: 通路の遭遇の宝箱の判定（dataWith の既定 chestTable [0]・chestRoomBonus 0 で外れ）
     const k = exec(kill, RESOLVE, dataWith({ combat: { ...base, sleepWakeChance: 100, chestTable: [0] } }));
     expect(k.state.rng).toEqual(m);
   });
@@ -2504,7 +2504,7 @@ describe("拍（CB-55）", () => {
       ["declare", ["message:battle.attackDeclare"]],
       ["result", ["hpChanged", "attack", "message:battle.hit"]],
       ["aftermath", ["lifeChanged", "message:battle.dead"]],
-      // CB-51（M19 A-5）: ランダム遭遇で箱が出なかった（dataWith の既定 chestChance 0）ので、金の後に battle.noChest
+      // CB-51（M19 A-5）: ランダム遭遇で箱が出なかった（dataWith の既定 chestTable [0]・chestRoomBonus 0）ので、金の後に battle.noChest
       ["system", ["battleEnd", "message:battle.win", "message:battle.exp", "message:battle.gold", "message:battle.noChest", "screen"]],
     ]);
     expect(segs.every((x) => x.beat.auto === false)).toBe(true);
