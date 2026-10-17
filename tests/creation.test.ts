@@ -420,7 +420,7 @@ describe("creation: 自分で作る（CH-06 / CH-11 / CH-21 / CH-24）", () => {
     // CH-07（M20）: 並びは職業で変わる（下の確かめは作った順 = id の順で見る）
     const made = [...s.party].sort((a, b) => a.id.localeCompare(b.id));
     expect(s.party.map((c) => c.id)).toEqual(["c1", "c6", "c3", "c2", "c4", "c5"]);
-    expect(r.events).toEqual(gameNewEvents()); // TW-36（M12.5）: screen{town} の後に開始の語り
+    expect(r.events).toEqual(gameNewEvents(data, true)); // TW-36（M12.5）: screen{town} の後に開始の語り。CH-07: 並びが変わったので camp.orderNote
     expect(s.screen).toBe("town");
     expect(s.gold).toBe(300);
     expect(s.rng).toEqual(createRng(1)); // random が無ければ乱数を使わない
@@ -515,11 +515,11 @@ describe("creation: TW-36 開始の語り", () => {
   const quick = (d = data) => execute(createInitialState(1, d), { type: "game.new", party: { members: defaultMembers() } }, d);
   const custom = (d = data) => execute(createInitialState(1, d), { type: "game.new", party: { kind: "custom", members: customMembers() } }, d);
 
-  test("TW-36 game.new（おすすめ・自分で作るの両方）は screen{town} の後に opening.speech.1..6 を順に（M16 で 5 → 6 文） message で出す（差し込みなし。キーは strings に実在。CH-07（M20）: 最後に camp.orderNote）", () => {
-    for (const r of [quick(), custom()]) {
-      expect(r.events).toEqual([{ kind: "screen", to: "town" }, ...[...OPENING, "camp.orderNote"].map((key) => ({ kind: "message", key }))]);
-      expectKnownStringKeys(r.events);
-    }
+  test("TW-36 game.new（おすすめ・自分で作るの両方）は screen{town} の後に opening.speech.1..6 を順に（M16 で 5 → 6 文） message で出す（差し込みなし。キーは strings に実在。CH-07（M20 / M21）: 並びが変わった自分で作るだけ最後に camp.orderNote）", () => {
+    const msgs = (keys: string[]) => [{ kind: "screen", to: "town" }, ...keys.map((key) => ({ kind: "message", key }))];
+    expect(quick().events).toEqual(msgs(OPENING));
+    expect(custom().events).toEqual(msgs([...OPENING, "camp.orderNote"]));
+    for (const r of [quick(), custom()]) expectKnownStringKeys(r.events);
   });
 
   test("TW-36 開始の語りは乱数を使わない（random の性格が無ければ state.rng は createRng(seed) のまま）", () => {
@@ -536,7 +536,7 @@ describe("creation: TW-36 開始の語り", () => {
     for (const [drop, want] of cases) {
       const d = loadFreshData();
       for (const k of drop) delete (d.strings as Record<string, string>)[k];
-      expect(quick(d).events.map(keyOf), drop.join(",")).toEqual(["screen", ...want, "camp.orderNote"]);
+      expect(quick(d).events.map(keyOf), drop.join(",")).toEqual(["screen", ...want]);
     }
     const eight = loadFreshData();
     (eight.strings as Record<string, string>)["opening.speech.7"] = "七";
@@ -593,6 +593,22 @@ describe("creation: CH-07 職業で並べ替える（M20）", () => {
     expect(r.events.at(-1)).toEqual({ kind: "message", key: "camp.orderNote" });
     expect(data.strings["camp.orderNote"]).toContain(`「${data.strings["camp.order"]}」`);
     expect(kinsokuLines(data.strings["camp.orderNote"]!, 28).length).toBe(1);
+  });
+
+  test("CH-07（M21 A-5）並びが変わらなければ camp.orderNote を出さない: おすすめの一行・作った順がそのまま前後に分かれる自分で作るの両方。乱数の消費は並びの有無で変わらない", () => {
+    const quick = execute(createInitialState(1, data), { type: "game.new", party: { members: defaultMembers() } }, data);
+    expect(quick.events.some((e) => e.kind === "message" && e.key === "camp.orderNote")).toBe(false);
+    expect(quick.events).toEqual(gameNewEvents());
+    // 戦 侍 盗 | 僧 魔 司 の順に作れば autoOrder の前後で id 列が同じ
+    const base = customMembers();
+    const same = [base[0]!, base[5]!, base[2]!, base[1]!, base[3]!, base[4]!];
+    const r = execute(createInitialState(1, data), { type: "game.new", party: { kind: "custom", members: same } }, data);
+    expect(r.state.party.map((c) => c.id)).toEqual(["c1", "c2", "c3", "c4", "c5", "c6"]);
+    expect(r.events).toEqual(gameNewEvents());
+    // 並びが変わる自分で作る（customMembers のまま）は最後に 1 文。rng は並びの有無で同じ（並べ替えは乱数を引かない）
+    const moved = execute(createInitialState(1, data), { type: "game.new", party: { kind: "custom", members: base } }, data);
+    expect(moved.events).toEqual(gameNewEvents(data, true));
+    expect(moved.state.rng).toEqual(r.state.rng);
   });
 });
 

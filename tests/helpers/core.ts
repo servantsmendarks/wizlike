@@ -167,12 +167,12 @@ export function withChar(state: GameState, idx: number, patch: Partial<Character
 
 /**
  * TW-36（M12.5）: game.new の events（screen{town} の後に、d.strings の opening.speech.1.. を続き番号のある限り message で）。
- * CH-07（M20）: その後に camp.orderNote
+ * CH-07（M20）: その後に camp.orderNote。M21（A-5）: 並びが変わったとき（reordered）だけ
  */
-export function gameNewEvents(d: GameData = data): GameEvent[] {
+export function gameNewEvents(d: GameData = data, reordered = false): GameEvent[] {
   const out: GameEvent[] = [{ kind: "screen", to: "town" }];
   for (let n = 1; d.strings[`opening.speech.${n}`] !== undefined; n++) out.push({ kind: "message", key: `opening.speech.${n}` });
-  out.push({ kind: "message", key: "camp.orderNote" });
+  if (reordered) out.push({ kind: "message", key: "camp.orderNote" });
   return out;
 }
 

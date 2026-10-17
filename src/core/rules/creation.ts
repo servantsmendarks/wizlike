@@ -412,7 +412,9 @@ export function startNewGame(ctx: RuleContext, setup: PartySetup): void {
     state.gold = data.config.prototypeParty.startingGold;
   }
   // CH-07（M20）: 職業で並べ替える（id・isLeader は作った順のまま）
+  const createdIds = state.party.map((c) => c.id).join(",");
   state.party = autoOrder(state.party, data);
+  const reordered = state.party.map((c) => c.id).join(",") !== createdIds;
   const first = data.dungeons[0];
   if (first === undefined) throw new Error("startNewGame: no dungeons");
   state.progress.unlockedDungeons = [first.id]; // DG-01
@@ -424,6 +426,6 @@ export function startNewGame(ctx: RuleContext, setup: PartySetup): void {
   for (let n = 1; data.strings[`opening.speech.${n}`] !== undefined; n++) {
     ctx.events.push({ kind: "message", key: `opening.speech.${n}` });
   }
-  // CH-07（M20）: 開始の語りの後に、並び順はキャンプで変えられることを 1 文
-  ctx.events.push({ kind: "message", key: "camp.orderNote" });
+  // CH-07（M20）: 開始の語りの後に、並び順はキャンプで変えられることを 1 文。M21（A-5）: 並びが変わったときだけ
+  if (reordered) ctx.events.push({ kind: "message", key: "camp.orderNote" });
 }
