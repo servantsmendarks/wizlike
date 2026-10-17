@@ -262,10 +262,32 @@ export function characterHitAt(rects: readonly CharacterHit[], lx: number, ly: n
   return best === null ? null : best.tap;
 }
 
+/**
+ * UI-33 / UI-80（M21）: キーの注目（characterHitRects の順の添字）が指す所。装備の行（品のある枠）→ 所持品の枠（品か「ほか」）の順に数え、
+ * 装備の行なら equipment の添字、所持品なら inventory の添字を返す（範囲の外・null は null）。純粋
+ */
+export function characterFocusAt(d: CharacterDetail, focus: number | null): { equip: number } | { cell: number } | null {
+  if (focus === null || focus < 0) return null;
+  let k = 0;
+  for (let i = 0; i < d.equipment.length; i++) {
+    if (d.equipment[i]!.instanceId === null) continue;
+    if (k++ === focus) return { equip: i };
+  }
+  for (let i = 0; i < d.inventory.length; i++) {
+    const c = d.inventory[i]!;
+    if (c.instanceId === undefined && c.more !== true) continue;
+    if (k++ === focus) return { cell: i };
+  }
+  return null;
+}
+
 export type DetailView = {
   el: HTMLElement;
-  /** focusSlot は SLOT_ORDER の添字（その枠の行を accent 色）。null なら無し */
-  render(d: CharacterDetail, focusSlot?: number | null): void;
+  /**
+   * focusSlot は SLOT_ORDER の添字（その枠の行を accent 色）。null なら無し。
+   * itemFocus は UI-33 / UI-80（M21）のキーの注目（characterHitRects の順の添字。characterFocusAt）で、その装備の行・所持品の枠を accent 色
+   */
+  render(d: CharacterDetail, focusSlot?: number | null, itemFocus?: number | null): void;
 };
 
 /** rect は置き場所の範囲（親の要素からの座標）。27 行（layout の CHARACTER_LINES。CHARACTER_MIN_HEIGHT）が入る高さを前提にする */
@@ -300,11 +322,12 @@ export function createDetailView(rect: Rect): DetailView {
     t.textContent = value;
     return t;
   };
-  /** 2 列の枠（所持品・呪文）。first は最初の行 */
-  const cells = (first: number, xs: readonly CharacterCell[], cls: string): HTMLElement[] =>
+  /** 2 列の枠（所持品・呪文）。first は最初の行。focus はその添字の枠を accent 色（UI-33 / UI-80 のキーの注目。dim より優先） */
+  const cells = (first: number, xs: readonly CharacterCell[], cls: string, focus: number | null = null): HTMLElement[] =>
     xs.map((c, i) => {
       const t = text(first + Math.floor(i / 2), CELL_COLUMNS[i % 2]!, CELL_W, c.text, cls);
       if (c.dim) t.style.color = "var(--c-dim)";
+      if (i === focus) t.style.color = "var(--c-accent)";
       return t;
     });
 
@@ -318,8 +341,11 @@ export function createDetailView(rect: Rect): DetailView {
 
   return {
     el,
-    render(d: CharacterDetail, focusSlot: number | null = null): void {
+    render(d: CharacterDetail, focusSlot: number | null = null, itemFocus: number | null = null): void {
       const full = rect.w - 8;
+      const at = characterFocusAt(d, itemFocus);
+      const focusEquip = at !== null && "equip" in at ? at.equip : null;
+      const focusCell = at !== null && "cell" in at ? at.cell : null;
       const name = text(0, 4, full, d.name, "detail-name");
       name.style.color = "var(--c-accent)";
       const san = text(3, COL3[2], COL3_W - 8, d.san, "detail-san");
@@ -344,12 +370,12 @@ export function createDetailView(rect: Rect): DetailView {
         text(7, 4, full, d.attack, "detail-attack"),
         ...d.equipment.flatMap((e, i) => {
           const row = [text(8 + i, SLOT_X, SLOT_W, e.slot, "detail-slot"), text(8 + i, ITEM_X, rect.w - ITEM_X - 4, e.item, "detail-item")];
-          if (i === focusSlot) for (const r of row) r.style.color = "var(--c-accent)";
+          if (i === focusSlot || i === focusEquip) for (const r of row) r.style.color = "var(--c-accent)";
           return row;
         }),
         text(ROW_INVENTORY_HEAD, 4, d.tapHint === "" ? full : full - TAP_HINT_W, d.inventoryHeading, "detail-inventory-head"),
         ...(d.tapHint === "" ? [] : [tapHintNode(d.tapHint)]),
-        ...cells(ROW_INVENTORY_HEAD + 1, d.inventory, "detail-inventory"),
+        ...cells(ROW_INVENTORY_HEAD + 1, d.inventory, "detail-inventory", focusCell),
         text(ROW_SPELL_HEAD, 4, full, d.spellHeading, "detail-spell-head"),
         ...(d.spellNote === undefined
           ? cells(ROW_SPELL_HEAD + 1, d.spells, "detail-spell")

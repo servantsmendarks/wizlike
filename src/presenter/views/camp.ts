@@ -60,8 +60,11 @@ export type CampPage =
   | { kind: "members" }
   /** UI-53 / MG-44（M18。設計 5-1）: top の「呪文」の術者（名前の 6 枠と [7] やめる。唱えられる呪文の無い者は dim） */
   | { kind: "spellWho" }
-  /** UI-59（M10）: キャラクター画面。fold は UI-80（M20）の畳んだ所持品の頁（省略は 0。「ほか {n}」を押すと次） */
-  | { kind: "character"; memberId: string; fold?: number }
+  /**
+   * UI-59（M10）: キャラクター画面。fold は UI-80（M20）の畳んだ所持品の頁（省略は 0。「ほか {n}」を押すと次）。
+   * focus は UI-33 / UI-80（M21）のキーの注目（characterHitRects の順の添字。省略は注目なし。表示だけの値）
+   */
+  | { kind: "character"; memberId: string; fold?: number; focus?: number }
   /** UI-80（M20）: キャラクター画面で押した品の詳細と、その品の操作（core の itemActions） */
   | { kind: "item"; memberId: string; instanceId: string }
   | { kind: "equip"; stage: "slot"; memberId: string }
@@ -162,6 +165,8 @@ export type CampPanel =
       spellInfo?: string;
       tappable?: true;
       inventoryFold?: number;
+      /** UI-33 / UI-80（M21）: キーの注目（tappable のときだけ。characterHitRects の順の添字） */
+      itemFocus?: number;
     }
   | { kind: "order"; rows: { n: number; name: string; row: string; picked: boolean }[] }
   /**
@@ -672,7 +677,8 @@ export function campStep(host: CampHost, page: CampPage, m: CampInput, choice: C
         const n = inventoryFoldCount(memberOf(m, page.memberId)?.inventory.length ?? 0);
         if (n <= 1) return stay;
         const f = ((((page.fold ?? 0) + choice.delta) % n) + n) % n;
-        return go({ kind: "character", memberId: page.memberId, ...(f === 0 ? {} : { fold: f }) });
+        // UI-33（M21）: キーの注目は頁をめくっても同じ添字のまま（数が減れば次のキーで詰める）
+        return go({ kind: "character", memberId: page.memberId, ...(f === 0 ? {} : { fold: f }), ...(page.focus === undefined ? {} : { focus: page.focus }) });
       }
       if (choice.kind !== "action") return stay;
       const id = page.memberId;
@@ -916,7 +922,9 @@ export function campPanel(page: CampPage, m: CampInput, strings: Strings): CampP
     const focusSlot = page.kind === "equip" && page.stage === "item" ? page.slot : null;
     const base = { kind: "character" as const, memberId: who, focusSlot };
     // UI-80（M20）: キャラクター画面そのものだけ品を押せる（注記と畳んだ所持品）
-    if (page.kind === "character") return { ...base, tappable: true as const, inventoryFold: page.fold ?? 0 };
+    if (page.kind === "character") {
+      return { ...base, tappable: true as const, inventoryFold: page.fold ?? 0, ...(page.focus === undefined ? {} : { itemFocus: page.focus }) };
+    }
     if (page.kind === "spell") {
       if (page.stage === "spell") return { ...base, spellPage: page.page };
       // UI-68（M10）: 説明の段と対象の段は、呪文の枠をその呪文の説明に置き換える
@@ -1074,6 +1082,29 @@ export function campKeyIndex(a: Action, e: CampEntries): number | null {
   return null;
 }
 
+/**
+ * UI-33 / UI-80（M21）: キャラクター画面そのものの品のキー。taps は描いた画面の押せる所（characterHitRects の順。ビューの characterTaps）。
+ * ↑（forward）↓（around）は注目を 1 つ動かし（注目なしからはどちらも先頭。端で止まる）、Enter（confirm）は注目している所を押したのと同じ
+ * （品は openItem、「ほか」は pageTurn）。注目なしの Enter・押せる所が無い・キャラクター画面でないなどは null（campKeyIndex のまま）。純粋
+ */
+export function characterItemKey(
+  a: Action,
+  page: CampPage,
+  taps: readonly CharacterTap[],
+): { kind: "focus"; page: CampPage } | { kind: "choose"; choice: CampChoice } | null {
+  if (page.kind !== "character" || taps.length === 0) return null;
+  if (a === "forward" || a === "around") {
+    const next = page.focus === undefined ? 0 : Math.max(0, Math.min(taps.length - 1, page.focus + (a === "forward" ? -1 : 1)));
+    return { kind: "focus", page: { ...page, focus: next } };
+  }
+  if (a === "confirm" && page.focus !== undefined) {
+    const t = taps[page.focus];
+    if (t === undefined) return null;
+    return { kind: "choose", choice: t.kind === "item" ? { kind: "openItem", instanceId: t.instanceId } : { kind: "pageTurn", delta: 1 } };
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------- パネルの DOM
 
 const LINE_H = 10;
@@ -1092,7 +1123,7 @@ export const ORDER_COLUMNS = {
 export type CampPanelView =
   | { kind: "text"; title: string; lines?: string[] }
   /** UI-59（M10）: キャラクター画面（tallRect に広げる）。tappable は UI-80（M20）の品を押せる画面（characterTarget が行き先を返す） */
-  | { kind: "character"; detail: CharacterDetail; focusSlot: number | null; tappable?: boolean }
+  | { kind: "character"; detail: CharacterDetail; focusSlot: number | null; tappable?: boolean; itemFocus?: number | null }
   | { kind: "order"; lines: { label: string; row: string; picked: boolean }[] }
   /** UI-59 の品の詳細・IT-66 の図鑑（M7）。見出しは accent、行は tone の色（danger / dim）。tall ならパネルを tallRect に広げる（図鑑・キャラクター画面の下の品の詳細。UI-11） */
   | { kind: "lines"; title: string; lines: PanelLine[]; tall?: boolean }
@@ -1151,6 +1182,8 @@ export type CampView = {
    * 矩形は detail の characterHitRects）。それ以外は null
    */
   characterTarget(lx: number, ly: number): CharacterTap | null;
+  /** UI-33 / UI-80（M21）: 最後に描いた品を押せるキャラクター画面の押せる所（characterHitRects の順）。それ以外は空 */
+  characterTaps(): CharacterTap[];
 };
 
 /**
@@ -1258,11 +1291,14 @@ export function createCampView(rect: Rect, tallRect: Rect = rect, art?: CampArt)
     characterTarget(lx: number, ly: number): CharacterTap | null {
       return tappable === null ? null : characterHitAt(characterHitRects(tappable, tallRect.w), lx, ly);
     },
+    characterTaps(): CharacterTap[] {
+      return tappable === null ? [] : characterHitRects(tappable, tallRect.w).map((r) => r.tap);
+    },
     render(p: CampPanelView): void {
       place(p.kind === "character" || p.kind === "bestiary" || (p.kind === "lines" && p.tall === true) ? tallRect : rect);
       tappable = p.kind === "character" && p.tappable === true ? p.detail : null;
       if (p.kind === "character") {
-        detail.render(p.detail, p.focusSlot);
+        detail.render(p.detail, p.focusSlot, p.itemFocus ?? null);
         el.replaceChildren(detail.el);
         return;
       }

@@ -22,6 +22,7 @@ import {
   campFirstPage,
   campHeader,
   campKeyIndex,
+  characterItemKey,
   campPanel,
   campRepair,
   campRows,
@@ -1582,5 +1583,80 @@ describe("TW-16c/UI-59 銀行の状態で倉庫から装備（M21 A-2。host ban
     expect(units(cut) * 2).toBeLessThanOrEqual(39);
     for (const k of ["town.bank.menu.status", "camp.equip.unequipToWarehouse"]) expect(units(S[k]!) * 2, k).toBeLessThanOrEqual(39);
     expect(units(S["character.fromWarehouse"]!) * 8).toBeLessThanOrEqual(48);
+  });
+});
+
+describe("UI-33/UI-80（M21 A-4）キャラクター画面の品のキー操作", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+  const item = (instanceId: string) => ({ kind: "item" as const, instanceId });
+  // アルド（c1）: 装備 長剣 i1・革鎧 i2・木の盾 i3、所持品 薬草 i4 → characterHitRects の順は i1, i2, i3, i4
+  const taps = [item("i1"), item("i2"), item("i3"), item("i4")];
+
+  test("UI-33/UI-80 ↑↓（forward / around）は注目を 1 つ動かす。注目なしからはどちらも先頭、端で止まる。注目はキャラクター画面の段の focus", () => {
+    const c1: Extract<CampPage, { kind: "character" }> = { kind: "character", memberId: "c1" };
+    expect(characterItemKey("around", c1, taps)).toEqual({ kind: "focus", page: { ...c1, focus: 0 } });
+    expect(characterItemKey("forward", c1, taps)).toEqual({ kind: "focus", page: { ...c1, focus: 0 } });
+    expect(characterItemKey("around", { ...c1, focus: 0 }, taps)).toEqual({ kind: "focus", page: { ...c1, focus: 1 } });
+    expect(characterItemKey("around", { ...c1, focus: 3 }, taps)).toEqual({ kind: "focus", page: { ...c1, focus: 3 } });
+    expect(characterItemKey("forward", { ...c1, focus: 2 }, taps)).toEqual({ kind: "focus", page: { ...c1, focus: 1 } });
+    expect(characterItemKey("forward", { ...c1, focus: 0 }, taps)).toEqual({ kind: "focus", page: { ...c1, focus: 0 } });
+    // 品が減って注目が範囲の外なら、次のキーで末尾に詰める
+    expect(characterItemKey("around", { ...c1, focus: 7 }, taps)).toEqual({ kind: "focus", page: { ...c1, focus: 3 } });
+    // fold は保つ
+    expect(characterItemKey("around", { ...c1, fold: 1 }, taps)).toEqual({ kind: "focus", page: { ...c1, fold: 1, focus: 0 } });
+  });
+
+  test("UI-33/UI-80 Enter は注目している所を押したのと同じ（品は openItem、「ほか」は pageTurn）。注目なし・範囲の外の Enter と、数字・Esc・←→ は null（campKeyIndex のまま）", () => {
+    const c1: Extract<CampPage, { kind: "character" }> = { kind: "character", memberId: "c1" };
+    expect(characterItemKey("confirm", { ...c1, focus: 1 }, taps)).toEqual({ kind: "choose", choice: { kind: "openItem", instanceId: "i2" } });
+    expect(characterItemKey("confirm", { ...c1, focus: 0 }, [{ kind: "more" }])).toEqual({ kind: "choose", choice: { kind: "pageTurn", delta: 1 } });
+    expect(characterItemKey("confirm", c1, taps)).toBeNull();
+    expect(characterItemKey("confirm", { ...c1, focus: 4 }, taps)).toBeNull();
+    for (const a of [{ menu: 0 }, { menu: 2 }, "back", "left", "right"] as const) expect(characterItemKey(a, { ...c1, focus: 1 }, taps)).toBeNull();
+    // 押せる所が無い・キャラクター画面そのものでない段（品の段・装備の段）は何もしない
+    expect(characterItemKey("around", c1, [])).toBeNull();
+    expect(characterItemKey("around", itemPage("c1", "i1"), taps)).toBeNull();
+    expect(characterItemKey("around", { kind: "equip", stage: "item", memberId: "c1", slot: "weapon" }, taps)).toBeNull();
+    // 注目なしの Enter は今どおり先頭の押せる項目（戦士のアルドは呪文が dim なので 2 つ目の次の人）
+    const m = input(inDungeon());
+    expect(campKeyIndex("confirm", campEntries("camp", c1, m, S))).toBe(1);
+    // 選んだ品の段は campStep で開く（タップと同じ）
+    const r = characterItemKey("confirm", { ...c1, focus: 3 }, taps);
+    if (r === null || r.kind !== "choose") throw new Error("not choose");
+    expect(campStep("camp", { ...c1, focus: 3 }, m, r.choice)).toEqual({ kind: "page", page: itemPage("c1", "i4") });
+  });
+
+  test("UI-33/UI-80 campPanel は注目を itemFocus で渡す（注目なしは欄なし）。「ほか」で頁をめくっても注目は同じ添字のまま。品の段の戻る・次の人では注目なし", () => {
+    const s = inDungeon();
+    for (let i = 0; i < 9; i++) s.party[0]!.inventory.push(createItemInstance(s, { itemId: "herb", identified: true })); // 計 10 件で畳む
+    const m = input(s);
+    const c1: Extract<CampPage, { kind: "character" }> = { kind: "character", memberId: "c1" };
+    expect(campPanel({ ...c1, focus: 2 }, m, S)).toEqual({ kind: "character", memberId: "c1", focusSlot: null, tappable: true, inventoryFold: 0, itemFocus: 2 });
+    expect(campPanel(c1, m, S)).toEqual({ kind: "character", memberId: "c1", focusSlot: null, tappable: true, inventoryFold: 0 });
+    expect(campStep("camp", { ...c1, focus: 10 }, m, { kind: "pageTurn", delta: 1 })).toEqual({ kind: "page", page: { ...c1, fold: 1, focus: 10 } });
+    expect(campStep("camp", { ...c1, focus: 10, fold: 1 }, m, { kind: "pageTurn", delta: 1 })).toEqual({ kind: "page", page: { ...c1, focus: 10 } });
+    expect(campStep("camp", itemPage("c1", "i1"), m, { kind: "cancel" })).toEqual({ kind: "page", page: c1 });
+    expect(campStep("camp", { ...c1, focus: 1 }, m, { kind: "nextMember" })).toEqual({ kind: "page", page: character("c2") });
+  });
+
+  test("UI-33/UI-80 ビューの characterTaps は最後に描いた品を押せるキャラクター画面の押せる所（characterHitRects の順）。itemFocus の所を accent で描く。ほかの画面では空", () => {
+    vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
+    const v = createCampView({ x: 0, y: 16, w: 240, h: 150 }, { x: 0, y: 16, w: 240, h: 284 });
+    const s = inDungeon();
+    const ch = s.party[0]!;
+    const member = campMenu(s, data)!.members[0]!;
+    const detail = formatCharacter(ch, data, S, (iid) => itemDisplayName(s, data, iid), undefined, member, { tappable: true, inventoryFold: 0 });
+    v.render({ kind: "character", detail, focusSlot: null, tappable: true, itemFocus: 3 });
+    expect(v.characterTaps()).toEqual(taps);
+    const el = v.el as unknown as FakeEl;
+    const all = el.children.flatMap((c) => [c, ...c.children]);
+    const herb = all.find((c) => c.className === "detail-inventory" && c.textContent === "薬草")!;
+    expect(herb.style["color"]).toBe("var(--c-accent)");
+    v.render({ kind: "character", detail, focusSlot: null, tappable: false });
+    expect(v.characterTaps()).toEqual([]);
+    v.render({ kind: "text", title: "キャンプ" });
+    expect(v.characterTaps()).toEqual([]);
   });
 });

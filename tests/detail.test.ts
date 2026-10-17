@@ -8,6 +8,7 @@ import { CHARACTER_LINES, CHARACTER_MIN_HEIGHT, dungeonLayout, layoutWarnings, r
 import {
   CHARACTER_HIT_H,
   characterCells,
+  characterFocusAt,
   characterHitAt,
   characterHitRects,
   createDetailView,
@@ -664,5 +665,50 @@ describe("UI-80（M20）キャラクター画面の品の当たり判定と注�
     v.render(formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch), campMenu(s, data)!.members[0]!));
     expect(el.children.some((c) => c.className === "detail-tap-hint")).toBe(false);
     expect(px(el.children.find((c) => c.className === "detail-inventory-head")!.style["width"])).toBe(232);
+  });
+});
+
+describe("UI-33/UI-80（M21 A-4）キャラクター画面のキーの注目", () => {
+  const sheetOf = (s: GameState) => {
+    const ch = s.party[0]!;
+    return formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch), campMenu(s, data)!.members[0]!, { tappable: true, inventoryFold: 0 });
+  };
+
+  test("UI-33/UI-80 characterFocusAt は characterHitRects と同じ順（装備の行の品のある枠 → 所持品の枠の品と「ほか」）で数える。範囲の外・null は null", () => {
+    const s = newGame(1); // アルド: 長剣（武器 0）・革鎧（鎧 1）・木の盾（盾 2）、所持品 薬草
+    const d = sheetOf(s);
+    expect(characterHitRects(d, 240)).toHaveLength(4);
+    expect([0, 1, 2, 3].map((i) => characterFocusAt(d, i))).toEqual([{ equip: 0 }, { equip: 1 }, { equip: 2 }, { cell: 0 }]);
+    expect(characterFocusAt(d, 4)).toBeNull();
+    expect(characterFocusAt(d, -1)).toBeNull();
+    expect(characterFocusAt(d, null)).toBeNull();
+    // 空きの枠を飛ばし、「ほか」も数える
+    const t2 = structuredClone(newGame(1));
+    const c1 = t2.party[0]!;
+    c1.equipment = { weapon: null, armor: null, shield: null, helm: c1.equipment.weapon, gauntlet: null, accessory: null };
+    for (let i = 0; i < 9; i++) c1.inventory.push(createItemInstance(t2, { itemId: "herb", identified: true })); // 計 10 件で 7 件と「ほか」
+    const d2 = sheetOf(t2);
+    expect(characterHitRects(d2, 240).map((r) => r.tap.kind)).toEqual(["item", ...Array(7).fill("item"), "more"]);
+    expect(characterFocusAt(d2, 0)).toEqual({ equip: SLOT_ORDER.indexOf("helm") });
+    expect(characterFocusAt(d2, 8)).toEqual({ cell: 7 });
+  });
+
+  test("UI-33/UI-80 render の itemFocus: 装備の行（部位と品の名）か所持品の枠を accent で描く。ほかの行は今の色のまま", () => {
+    vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
+    const v = createDetailView({ x: 0, y: 16, w: 240, h: 284 });
+    const s = newGame(1);
+    const d = sheetOf(s);
+    const el = v.el as unknown as FakeEl;
+    const colors = (cls: string) => el.children.filter((c) => c.className === cls).map((c) => c.style["color"]);
+    const A = "var(--c-accent)";
+    v.render(d, null, 1);
+    expect(colors("detail-item")).toEqual([undefined, A, undefined, undefined, undefined, undefined]);
+    expect(colors("detail-slot")).toEqual([undefined, A, undefined, undefined, undefined, undefined]);
+    expect(colors("detail-inventory")).toEqual([undefined]);
+    v.render(d, null, 3);
+    expect(colors("detail-item")).toEqual(Array(6).fill(undefined));
+    expect(colors("detail-inventory")).toEqual([A]);
+    v.render(d);
+    expect([...colors("detail-item"), ...colors("detail-inventory")]).toEqual(Array(7).fill(undefined));
   });
 });

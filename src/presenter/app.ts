@@ -117,6 +117,7 @@ import {
   campFirstPage,
   campHeader,
   campKeyIndex,
+  characterItemKey,
   campPanel,
   campRepair,
   campStep,
@@ -1257,6 +1258,7 @@ export function createApp(o: {
       detail,
       focusSlot: p.focusSlot === null ? null : SLOT_ORDER.indexOf(p.focusSlot),
       tappable: p.tappable === true,
+      itemFocus: p.itemFocus ?? null, // UI-33 / UI-80（M21）: キーの注目
     };
   };
 
@@ -2499,6 +2501,18 @@ export function createApp(o: {
       // UI-59（M10）: キャラクター画面の ← / → は前後の人（M16 から ◀ ▶・スワイプと同じ cycleCamp）
       if (a === "left" || a === "right") {
         cycleCamp(a === "right" ? 1 : -1);
+        return;
+      }
+      // UI-33 / UI-80（M21）: キャラクター画面そのものでは ↑↓ で品の注目を動かし、Enter で注目している品を押したのと同じ（注目なしの Enter は下の先頭の項目）
+      const ik = characterItemKey(a, campPage, play.camp.characterTaps());
+      if (ik !== null) {
+        if (ik.kind === "focus") {
+          campPage = ik.page;
+          syncControls();
+        } else {
+          play.talk.flush();
+          chooseCamp(ik.choice);
+        }
         return;
       }
       const k = campKeyIndex(a, campEntries(campHost, campPage, m, strings));
