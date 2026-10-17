@@ -35,11 +35,11 @@ export type MemberSnap = { id: string; life: Life; hp: number; hpMax: number; st
 
 /**
  * CB-40 / CB-46 / CB-26: lastBattleInput が無いときの既定。CB-46 の呪文（職業の系統で分ける。治癒 → 攻撃呪文の順）が
- * 当てはまらなければ、canStrike かつ生存グループがあれば、その最小への攻撃（飛行も対象。届かない相手は無い）。無ければ防御
+ * 当てはまらなければ（CB-47: spells が偽なら CB-46 を見ない）、canStrike かつ生存グループがあれば、その最小への攻撃（飛行も対象。届かない相手は無い）。無ければ防御
  */
-function defaultAction(state: GameState, data: GameData, ch: Character): BattleAction {
+function defaultAction(state: GameState, data: GameData, ch: Character, spells: boolean): BattleAction {
   const b = state.battle;
-  const spell = autoSpellAction(state, data, ch);
+  const spell = spells ? autoSpellAction(state, data, ch) : null; // CB-47: 設定「オートの呪文: 使わない」なら CB-46 を見ない
   if (spell !== null) return spell;
   const g = b === null ? null : lowestAliveGroup(b);
   if (g !== null && canStrike(state, data, ch)) return { type: "attack", group: g };
@@ -125,18 +125,20 @@ function retarget(state: GameState, data: GameData, t: BattleTarget): BattleTarg
 /**
  * CB-40/42/44: オートの入力（battle.repeat も使う）。基本の入力（baseAutoInput）に性格傾向（CB-44）を掛ける。
  * MP 不足はここでは見ない（toPlan の CB-41）。
+ * CB-47（M21）: spells は設定「オートの呪文」（BattleState.autoSpells / battle.repeat の spells。省略は真）。偽なら既定に落ちたときに
+ * CB-46 の呪文を選ばない。手入力の呪文の繰り返し（lastBattleInput）は設定の対象外で、偽でも繰り返す
  */
-export function autoInput(state: GameState, data: GameData, ch: Character): BattleAction {
-  return applyAutoTendency(state, data, ch, baseAutoInput(state, data, ch));
+export function autoInput(state: GameState, data: GameData, ch: Character, spells = true): BattleAction {
+  return applyAutoTendency(state, data, ch, baseAutoInput(state, data, ch, spells));
 }
 
 /**
  * CB-40/42: 基本のオート入力。lastBattleInput を繰り返し、無い・使えない呪文や道具なら既定
  * （CB-46 の呪文、当てはまらなければ canStrike なら最小の生存グループへの攻撃、でなければ防御）。対象は CB-42 で振り替える。
  */
-function baseAutoInput(state: GameState, data: GameData, ch: Character): BattleAction {
+function baseAutoInput(state: GameState, data: GameData, ch: Character, spells: boolean): BattleAction {
   const a = ch.lastBattleInput;
-  if (a === null) return defaultAction(state, data, ch);
+  if (a === null) return defaultAction(state, data, ch, spells);
   switch (a.type) {
     case "defend":
       return { type: "defend" };
@@ -145,22 +147,22 @@ function baseAutoInput(state: GameState, data: GameData, ch: Character): BattleA
       const b = state.battle;
       if (b !== null && groupAlive(b, a.group)) return { type: "attack", group: a.group };
       const g = b === null ? null : lowestAliveGroup(b);
-      return g === null ? defaultAction(state, data, ch) : { type: "attack", group: g };
+      return g === null ? defaultAction(state, data, ch, spells) : { type: "attack", group: g };
     }
     case "cast": {
       if (!ch.knownSpells.includes(a.spellId) || !battleSpellUsable(spellOf(data, a.spellId))) {
-        return defaultAction(state, data, ch);
+        return defaultAction(state, data, ch, spells);
       }
       const t = retarget(state, data, a.target);
-      return t === null ? defaultAction(state, data, ch) : { type: "cast", spellId: a.spellId, target: t };
+      return t === null ? defaultAction(state, data, ch, spells) : { type: "cast", spellId: a.spellId, target: t };
     }
     case "item": {
       const inst = state.items[a.instanceId];
       if (!ch.inventory.includes(a.instanceId) || inst === undefined || !battleItemUsable(findItem(data, inst.itemId))) {
-        return defaultAction(state, data, ch);
+        return defaultAction(state, data, ch, spells);
       }
       const t = retarget(state, data, a.target);
-      return t === null ? defaultAction(state, data, ch) : { type: "item", instanceId: a.instanceId, target: t };
+      return t === null ? defaultAction(state, data, ch, spells) : { type: "item", instanceId: a.instanceId, target: t };
     }
   }
 }

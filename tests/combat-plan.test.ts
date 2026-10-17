@@ -189,6 +189,27 @@ describe("CB-46 オートの既定の呪文（M19）", () => {
     // ドナは強欲（既定）: 呪文は変えない
     expect(autoInput(hurt, data, ch(hurt, "c4"))).toEqual({ type: "cast", spellId: "heal", target: { side: "ally", memberId: "c1" } });
   });
+
+  test("CB-47（M21）spells 偽（設定「オートの呪文: 使わない」）なら CB-46 を見ず既定の攻撃・防御。手入力の呪文の繰り返しは対象外で繰り返す。省略は真", () => {
+    const s = full(twoGroups());
+    const hurt = withChar(s, 0, { hp: 2 });
+    // 真・省略なら治癒と火矢、偽なら後衛の杖は防御
+    expect(autoInput(hurt, data, ch(hurt, "c4"), true)).toEqual({ type: "cast", spellId: "heal", target: { side: "ally", memberId: "c1" } });
+    expect(autoInput(hurt, data, ch(hurt, "c4"), false)).toEqual({ type: "defend" });
+    expect(autoInput(s, data, ch(s, "c5"))).toEqual({ type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 1 } });
+    expect(autoInput(s, data, ch(s, "c5"), false)).toEqual({ type: "defend" });
+    // 前衛の司教（武器で攻撃できる）は真なら治癒、偽なら最小の生存グループへの攻撃
+    const bishop = withChar(hurt, 1, { classId: "bishop", knownSpells: ["heal", "fire_arrow"] });
+    expect(autoInput(bishop, data, ch(bishop, "c2"), true)).toEqual({ type: "cast", spellId: "heal", target: { side: "ally", memberId: "c1" } });
+    expect(autoInput(bishop, data, ch(bishop, "c2"), false)).toEqual({ type: "attack", group: 1 });
+    // 前回の入力が使えず既定に落ちるときも偽なら呪文を選ばない（全滅したグループへの攻撃は振り替え、知らない呪文は既定）
+    const unknown = withLast(s, 4, { type: "cast", spellId: "heal", target: { side: "ally", memberId: "c1" } });
+    expect(autoInput(unknown, data, ch(unknown, "c5"), false)).toEqual({ type: "defend" });
+    expect(autoInput(unknown, data, ch(unknown, "c5"), true)).toEqual({ type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 1 } });
+    // 手入力の呪文の繰り返しは偽でもそのまま
+    const manual = withLast(s, 4, { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 2 } });
+    expect(autoInput(manual, data, ch(manual, "c5"), false)).toEqual({ type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 2 } });
+  });
 });
 
 describe("CB-13/41 toPlan", () => {

@@ -24,7 +24,7 @@
     - 防御 `defend`（そのラウンドは被ダメージ半減）
     - 道具 `item`
     - M20（設計 D-2）: core の `battleMenu` は、呪文・道具の一覧が空の理由を `spellBlock`（`knownSpells` が空なら `none`、戦闘で使える呪文が無ければ `unusable`）と `itemBlock`（`inventory` に装備でない品が無ければ `none`、あっても戦闘で使えるものが無ければ `fieldOnly`）で返す。一覧が空でなければ `null`。乱数を引かない（表示は UI-54）。
-  - 「前回と同じ」は `battle.repeat`。行動可能な全員の入力を CB-40〜42・CB-46 のオート入力の規則で作り、そのラウンドを 1 回だけ解決する。オートは ON にしないので CB-43 は効かない。`lastBattleInput` は変えない。
+  - 「前回と同じ」は `battle.repeat`。行動可能な全員の入力を CB-40〜42・CB-46 のオート入力の規則（M21 から CB-47 の設定「オートの呪文」も効く）で作り、そのラウンドを 1 回だけ解決する。オートは ON にしないので CB-43 は効かない。`lastBattleInput` は変えない。
     - M16（2026-10-11）: 行動可能な者に `lastBattleInput` が 1 人でもあるときだけ使える（core の `BattleMenu.canRepeat`）。無ければ `battle.repeat` は rejected（`no last input`。オート中は `auto on` が先）。CB-40 で戦闘の開始に消えるので、「この戦闘で手入力したラウンドがあるまで使えない」になる。行動可能な味方が 0 人のときも使えない（`battle.resolve` は受け付ける）。
   - 「逃げる」は `battle.flee`。パーティの行動として、入力済みの行動を捨て、すぐに CB-50 の逃走判定をする。
   - オートの ON/OFF は `battle.auto` で入力フェーズ中に切り替える。
@@ -73,6 +73,11 @@
   2. 攻撃の系統（`spells` に `mage` がある職業。魔術師・司教・侍）: 生存の敵の個体の総数が `config.auto.attackSpellMinEnemies`（3【仮】）以上で、最も安い攻撃呪文（効果 damage。状態の呪文は含まない）を唱えた後も MP が残る（mp − その MP ≥ mpMax（実効）× `config.auto.attackSpellMpRatio`（3 分の 1（0.33）【仮】。唱えた後も MP が最大の 3 分の 1 以上残る）。M20 で「mp ≥ mpMax × 割合 かつ その MP が足りる」から。2026-10-18 M20 の終わりにユーザーの判断で 0.5 → 0.33）なら、それを唱える。対象は単体・グループなら最小の生存グループ、全体なら無し。
   3. 両方の系統を持つ職業（司教）は 1 → 2 の順。どちらも当てはまらなければ CB-40 の既定（攻撃、打てなければ防御）。系統の無い職業は、転職で呪文を覚えていても呪文を選ばない。
   4. 手入力の繰り返し（`lastBattleInput`）が優先し、CB-46 は既定のときだけ。CB-44 の性格の傾向はこの後に掛かる（慎重で HP が半分未満なら治癒でなく防御。強欲は呪文を変えない）。`battle.repeat` も同じ規則。
+- CB-47（M21）設定「オートの呪文」（UI-57 / SV-24 の `autoSpells`。使う / 使わない。既定は使う）。設定は表示層に置き、core は command で受け取る: `battle.auto` の `spells`（省略可能な真偽値。省略は true）と `battle.repeat` の `spells`（同じ）。真偽値でなければ rejected（`bad spells`。`battle.auto` は `bad on` の後・`no change` の前、`battle.repeat` は `auto on` の前）。
+  1. `battle.auto` を ON にするとき `spells` が false なら `BattleState.autoSpells = false`（省略可能な欄。SV-04）を置き、それ以外（省略・true）は欄を置かない（無い = 使う）。OFF にするとき（`battle.auto` off と CB-43 の解除）は欄を消す。ON のままの切り替えは `no change` で受け付けないので、オート中に設定を変えたら次に ON にしたときから効く。
+  2. `autoSpells` が false のオートのラウンドと、`spells` が false の `battle.repeat` のラウンドでは、CB-40 の既定に落ちたとき CB-46 の呪文を選ばず、攻撃（打てなければ防御）にする。`battle.repeat` の `spells` は state に残さない（そのラウンドだけ）。
+  3. 手入力の呪文の繰り返し（`lastBattleInput` が呪文）は設定の対象外で、使わないでも今どおり繰り返す（CB-41 の MP 不足の置き換えも今どおり）。
+  4. 乱数: 入力の作り方を変えるだけで、引く乱数の種類と順は同じ入力を手で入れたラウンドと同じ（CB-46 も乱数を使わない）。
 
 ## 6. 逃走・勝利・全滅
 

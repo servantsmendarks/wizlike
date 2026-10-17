@@ -426,6 +426,8 @@ export type BattleState = {
   inputs: Record<string, BattleAction>;
   /** F2: パーティ単位のオート。開始時 false */
   auto: boolean;
+  /** CB-47（M21。省略可能）: battle.auto on の spells が false のときだけ false。無ければ真（オートで CB-46 の呪文を選ぶ）。OFF にすると消す */
+  autoSpells?: boolean;
   /** CB-20: 戦闘中だけの AC 補正（blessing の −2 を加算で重ねる）。memberId → 合計。無いキーは 0 */
   acBonus: Record<string, number>;
 };
@@ -566,11 +568,12 @@ export type Command =
   | { type: "dungeon.cast"; memberId: string; spellId: string; targetId?: string }
   | { type: "battle.input"; memberId: string; action: BattleAction }
   | { type: "battle.resolve" }
-  | { type: "battle.auto"; on: boolean }
+  /** F2。CB-47（M21）: spells は設定「オートの呪文」（省略は true。false なら CB-46 の呪文を選ばない）。ON にするときだけ効く */
+  | { type: "battle.auto"; on: boolean; spells?: boolean }
   /** CB-12/50: パーティの「逃げる」。入力済みの行動を捨てて、すぐに逃走判定をする */
   | { type: "battle.flee" }
   /** CB-12/40: パーティの「前回と同じ」。行動可能な全員の入力をオート入力の規則で作り、1 ラウンドだけ解決する */
-  | { type: "battle.repeat" }
+  | { type: "battle.repeat"; spells?: boolean }
   | { type: "event.choose"; optionId: string }
   /** CH-03: パーティ全員の id を並べ替えたもの（同じ集合で重複なし）。街と、迷宮の戦闘外かつ保留なしのとき */
   | { type: "party.reorder"; order: string[] }

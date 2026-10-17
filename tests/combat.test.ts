@@ -3511,3 +3511,98 @@ describe("↑ の出来事と一言の順（CH-80 / UI-69 / UI-76。M20 D-8）",
     expect(ks).not.toContain("message:hint.levelUpMark");
   });
 });
+
+describe("CB-47 設定「オートの呪文」（M21）", () => {
+  // 生存の敵 3 体（グループ 0 に 2、1 に 1）。全員 HP・MP 満タンで、エル（c5 魔術師）は既定で火矢、ドナ（c4 僧侶）は防御。
+  // 当たらない（NEVER_HIT）ので CB-43 のオート解除は起きない
+  const d = dataWith({ combat: NEVER_HIT });
+  const base3 = (): GameState => {
+    const s = setup(
+      [
+        { monsterId: "kobold", hps: [60, 60] },
+        { monsterId: "kobold", hps: [60] },
+      ],
+      { identified: ["kobold"], inputs: {} },
+    );
+    for (const c of s.party) Object.assign(c, { hp: 20, hpMax: 20, mp: 10, mpMax: 10 });
+    return s;
+  };
+  const castsOf = (events: readonly GameEvent[]): string[] => eventsOf(events, "spell").map((e) => e.actorId);
+  /** 行動可能な全員に autoInput(spells) を入れて battle.resolve した結果（手入力のラウンドとして） */
+  const manualRound = (s: GameState, spells: boolean) => {
+    const m = cloneState(s);
+    for (const c of m.party) if (canAct(c)) m.battle!.inputs[c.id] = autoInput(m, d, c, spells);
+    return exec(m, RESOLVE, d);
+  };
+
+  test("CB-47 battle.auto の spells: false なら autoSpells = false を置き、オートのラウンドで CB-46 の呪文を選ばない（エルは防御。MP は減らない）。省略・true は欄を置かず火矢", () => {
+    const s = base3();
+    const off = exec(s, { type: "battle.auto", on: true, spells: false }, d);
+    expect(off.events).toEqual([]);
+    expect(off.state.battle!.autoSpells).toBe(false);
+    const r = exec(off.state, RESOLVE, d);
+    expect(castsOf(r.events)).toEqual([]);
+    expect(member(r.state, "c5").mp).toBe(10);
+    expect(r.state.battle!.auto).toBe(true);
+    expect(r.state.battle!.autoSpells).toBe(false); // ラウンドをまたいで残る
+    // 引く乱数と出来事は、同じ入力（autoInput の spells 偽）を手で入れたラウンドと同じ（拍の auto の印だけ違う）
+    const want = manualRound(s, false);
+    expect(r.state.rng).toEqual(want.state.rng);
+    expect(withoutBeats(r.events)).toEqual(withoutBeats(want.events));
+    for (const cmd of [AUTO_ON, { type: "battle.auto", on: true, spells: true }] as Command[]) {
+      const on = exec(s, cmd, d);
+      expect("autoSpells" in on.state.battle!).toBe(false);
+      const r2 = exec(on.state, RESOLVE, d);
+      expect(castsOf(r2.events)).toEqual(["c5"]);
+      const want2 = manualRound(s, true);
+      expect(r2.state.rng).toEqual(want2.state.rng);
+      expect(withoutBeats(r2.events)).toEqual(withoutBeats(want2.events));
+    }
+  });
+
+  test("CB-47 手入力の呪文の繰り返し（lastBattleInput）は設定の対象外: spells: false でもオートで火矢を繰り返す", () => {
+    const s = base3();
+    s.party[4]!.lastBattleInput = { type: "cast", spellId: "fire_arrow", target: { side: "enemy", group: 1 } };
+    const on = exec(s, { type: "battle.auto", on: true, spells: false }, d).state;
+    expect(castsOf(exec(on, RESOLVE, d).events)).toEqual(["c5"]);
+  });
+
+  test("CB-47 battle.repeat の spells: false はそのラウンドだけ呪文を選ばない（state に残さない）。省略・true は今どおり。結果は手で入れたラウンドと同じ", () => {
+    const s = base3();
+    s.party[0]!.lastBattleInput = { type: "defend" }; // CB-12/40: 前回の手入力が要る
+    const off = exec(s, { type: "battle.repeat", spells: false }, d);
+    expect(castsOf(off.events)).toEqual([]);
+    expect("autoSpells" in off.state.battle!).toBe(false);
+    const want = manualRound(s, false);
+    expect(off.events).toEqual(want.events);
+    expect(off.state.rng).toEqual(want.state.rng);
+    expect(off.state.party).toEqual(want.state.party);
+    for (const cmd of [REPEAT, { type: "battle.repeat", spells: true }] as Command[]) {
+      const r = exec(s, cmd, d);
+      expect(castsOf(r.events)).toEqual(["c5"]);
+      expect(r.events).toEqual(manualRound(s, true).events);
+    }
+  });
+
+  test("CB-47 spells が真偽値でなければ rejected bad spells（battle.auto は bad on の後、no change の前。battle.repeat は auto on の前）。OFF にすると・CB-43 で解けると autoSpells を消す", () => {
+    const s = base3();
+    expectRejected(s, { type: "battle.auto", on: true, spells: "no" } as unknown as Command, "bad spells", d);
+    expectRejected(s, { type: "battle.auto", on: "x", spells: "no" } as unknown as Command, "bad on", d);
+    expectRejected(s, { type: "battle.auto", on: false, spells: 0 } as unknown as Command, "bad spells", d);
+    s.party[0]!.lastBattleInput = { type: "defend" };
+    expectRejected(s, { type: "battle.repeat", spells: null } as unknown as Command, "bad spells", d);
+    const on = exec(s, { type: "battle.auto", on: true, spells: false }, d).state;
+    expectRejected(on, { type: "battle.auto", on: true, spells: true }, "no change", d); // ON のままの切り替えは受け付けない（次の ON で効く）
+    const offed = exec(on, { type: "battle.auto", on: false }, d).state;
+    expect("autoSpells" in offed.battle!).toBe(false);
+    // CB-43: 当たる data で HP の条件の遷移を起こすと auto と一緒に消える
+    const hit = dataWith({ combat: ALWAYS_HIT });
+    const weak = cloneState(on);
+    for (const c of weak.party) Object.assign(c, { hp: 7, hpMax: 20 });
+    const cut = exec(weak, RESOLVE, hit);
+    expect(kindsOf(cut.events)).toContain("message:battle.autoOff");
+    expect(cut.state.battle!.auto).toBe(false);
+    expect("autoSpells" in cut.state.battle!).toBe(false);
+    expect(JSON.parse(JSON.stringify(on))).toStrictEqual(on);
+  });
+});

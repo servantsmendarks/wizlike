@@ -391,17 +391,24 @@ export function checkResolve(state: GameState, _data: GameData): string | null {
   return "inputs incomplete";
 }
 
-/** battle.auto を受け付けない理由（state.battle が非 null の前提） */
-export function checkBattleAuto(state: GameState, on: unknown): string | null {
+/** battle.auto を受け付けない理由（state.battle が非 null の前提）。CB-47: spells は無いか真偽値 */
+export function checkBattleAuto(state: GameState, on: unknown, spells?: unknown): string | null {
   const b = requireBattle(state);
   if (typeof on !== "boolean") return "bad on";
+  if (spells !== undefined && typeof spells !== "boolean") return "bad spells";
   if (on === b.auto) return "no change";
   return null;
 }
 
-/** F2: オートの切り替え。イベントは出さず、inputs も触らない */
-export function setAuto(ctx: RuleContext, on: boolean): void {
-  requireBattle(ctx.state).auto = on;
+/**
+ * F2: オートの切り替え。イベントは出さず、inputs も触らない。
+ * CB-47（M21）: ON にするとき spells が false なら autoSpells = false を置き、それ以外（省略・true・OFF にするとき）は欄を消す（無い = 使う）
+ */
+export function setAuto(ctx: RuleContext, on: boolean, spells?: boolean): void {
+  const b = requireBattle(ctx.state);
+  b.auto = on;
+  if (on && spells === false) b.autoSpells = false;
+  else delete b.autoSpells;
 }
 
 /** battle.flee を受け付けない理由（CB-12/50。state.battle が非 null の前提） */
@@ -418,9 +425,10 @@ function canRepeatOf(state: GameState): boolean {
   return state.party.some((c) => canAct(c) && c.lastBattleInput !== null);
 }
 
-/** battle.repeat を受け付けない理由（CB-12/40。state.battle が非 null の前提） */
-export function checkRepeat(state: GameState): string | null {
+/** battle.repeat を受け付けない理由（CB-12/40。state.battle が非 null の前提）。CB-47: spells は無いか真偽値 */
+export function checkRepeat(state: GameState, spells?: unknown): string | null {
   const b = requireBattle(state);
+  if (spells !== undefined && typeof spells !== "boolean") return "bad spells";
   if (b.auto) return "auto on";
   if (!canRepeatOf(state)) return "no last input";
   return null;
@@ -436,25 +444,26 @@ export function resolveRound(ctx: RuleContext): void {
   const before = snapMembers(state, data);
   const surprised = b.partySurprise;
   b.partySurprise = false; // どの経路でも消費する
-  if (b.auto) fillAutoInputs(state, data, b);
+  if (b.auto) fillAutoInputs(state, data, b, b.autoSpells !== false); // CB-47: 欄が無ければ呪文を使う
   const ended = runRound(ctx, { allies: true, enemies: !surprised });
   if (!ended) roundEnd(ctx, before);
 }
 
-/** CB-40〜42: 行動可能な全員の入力をオート入力で上書きする（lastBattleInput は変えない） */
-function fillAutoInputs(state: GameState, data: GameData, b: BattleState): void {
+/** CB-40〜42: 行動可能な全員の入力をオート入力で上書きする（lastBattleInput は変えない）。spells は CB-47 の設定 */
+function fillAutoInputs(state: GameState, data: GameData, b: BattleState, spells: boolean): void {
   for (const ch of state.party) {
-    if (canAct(ch)) b.inputs[ch.id] = autoInput(state, data, ch);
+    if (canAct(ch)) b.inputs[ch.id] = autoInput(state, data, ch, spells);
   }
 }
 
 /**
  * battle.repeat の本体（CB-12/40。checkRepeat が null を返した前提）。
- * オートの規則で入力を作って battle.resolve と同じ手順で 1 ラウンドを解決する。auto は OFF のままなので CB-43 は効かない
+ * オートの規則で入力を作って battle.resolve と同じ手順で 1 ラウンドを解決する。auto は OFF のままなので CB-43 は効かない。
+ * CB-47（M21）: spells（省略は真）が偽なら CB-46 の呪文を選ばない。state には残さない（そのラウンドだけ）
  */
-export function repeatRound(ctx: RuleContext): void {
+export function repeatRound(ctx: RuleContext, spells = true): void {
   const { state, data } = ctx;
-  fillAutoInputs(state, data, requireBattle(state));
+  fillAutoInputs(state, data, requireBattle(state), spells);
   resolveRound(ctx);
 }
 
@@ -1094,6 +1103,7 @@ function roundEndBody(ctx: RuleContext, before: MemberSnap[]): void {
     const r = autoInterruptReason(before, state, data);
     if (r !== null) {
       b.auto = false;
+      delete b.autoSpells; // CB-47: OFF にすると消す（次の battle.auto on で置き直す）
       ctx.events.push({ kind: "message", key: "battle.autoOff" });
       ctx.events.push({ kind: "message", key: `battle.autoReason.${r}` });
     }

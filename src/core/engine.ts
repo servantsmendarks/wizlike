@@ -221,11 +221,11 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
     }
     case "battle.auto": {
       if (state.screen !== "battle" || state.battle === null) return reject(state, "battle.auto", "not in battle");
-      const on = (command as { on?: unknown }).on;
-      const r = checkBattleAuto(state, on);
+      const { on, spells } = command as { on?: unknown; spells?: unknown };
+      const r = checkBattleAuto(state, on, spells);
       if (r !== null) return reject(state, "battle.auto", r);
       const ctx = makeContext(cloneState(state), data);
-      setAuto(ctx, on as boolean);
+      setAuto(ctx, on as boolean, spells as boolean | undefined);
       return finish(ctx);
     }
     case "battle.flee": {
@@ -238,10 +238,11 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
     }
     case "battle.repeat": {
       if (state.screen !== "battle" || state.battle === null) return reject(state, "battle.repeat", "not in battle");
-      const r = checkRepeat(state);
+      const spells = (command as { spells?: unknown }).spells;
+      const r = checkRepeat(state, spells);
       if (r !== null) return reject(state, "battle.repeat", r);
       const ctx = makeContext(cloneState(state), data);
-      repeatRound(ctx);
+      repeatRound(ctx, spells !== false);
       return finish(ctx);
     }
     case "town.enter":

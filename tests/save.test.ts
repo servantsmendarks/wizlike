@@ -1520,6 +1520,38 @@ describe("SV-04 v5 → v6 の移行（M11。CB-60）", () => {
     }
   });
 
+  test("SV-04/CB-47 battle.autoSpells は省略可能（schemaVersion 9 のまま足した欄。M21）。無い（古いセーブ）・真偽値なら通り、型が違えば broken。読み直しても同じ戦闘で、オートを続けられる", async () => {
+    const s = exec(withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }]), { type: "battle.auto", on: true, spells: false }).state;
+    expect(s.battle!.autoSpells).toBe(false);
+    const ok = (v: unknown): boolean => {
+      const x = json(s) as unknown as Record<string, unknown>;
+      const b = x["battle"] as Record<string, unknown>;
+      if (v === undefined) delete b["autoSpells"];
+      else b["autoSpells"] = v;
+      return isGameStateShape(x);
+    };
+    expect(ok(undefined)).toBe(true);
+    expect(ok(false)).toBe(true);
+    expect(ok(true)).toBe(true);
+    expect(ok(0)).toBe(false);
+    expect(ok("false")).toBe(false);
+    expect(ok(null)).toBe(false);
+    for (const mark of [undefined, false] as const) {
+      const mem = createMemoryBackend();
+      const svc = service(mem);
+      const st = cloneState(s);
+      if (mark === undefined) delete st.battle!.autoSpells;
+      expect(SCHEMA).toBe(9);
+      mem.raw("g1", buildRecord("g1", 1, 999, SCHEMA, st));
+      const r = await svc.load("g1");
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.state.battle).toEqual(st.battle);
+      expect("autoSpells" in r.state.battle!).toBe(mark !== undefined);
+      expect(exec(r.state, { type: "battle.resolve" }).events[0]?.kind).not.toBe("rejected");
+    }
+  });
+
   test("SV-04/SV-50 箱の選択中に保存したレコードは、続きからで同じ箱の操作に戻る（chest.open を受け付ける）", async () => {
     const mem = createMemoryBackend();
     const svc = service(mem);
