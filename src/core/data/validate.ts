@@ -466,6 +466,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       triggerChance: I(PERCENT), // CB-63
       wrongNameChance: I(PERCENT), // CB-63
       disarmFailTrigger: I(PERCENT), // CB-64（U-4）
+      bombDestroy: I(PERCENT), // CB-68 (a)（M21）
       impulse: F({ lure, stat: E(STAT_KEYS), impulseClasses: opt(L(classRef, 1)) }), // EV-16 / EV-04
     }),
     save: F({ maxGames: I(POS_INT), schemaVersion: I(POS_INT) }),
@@ -1497,7 +1498,7 @@ function onlyPlaceholders(ctx: Ctx, p: string, key: unknown, allowed: readonly s
 
 /** CB-62: 効果の kind ごとの欄（kind 以外） */
 const CHEST_EFFECT_FIELDS: Record<(typeof CHEST_TRAP_KINDS)[number], Record<string, Field>> = {
-  damage: { target: E(["one", "all"]), dice: D, status: opt(E(STATUS_IDS)) },
+  damage: { target: E(["one", "all"]), dice: D, status: opt(E(STATUS_IDS)), destroyContents: opt(B) }, // destroyContents: CB-68 (a)（M21）
   status: { target: E(["all"]), status: E(STATUS_IDS), chance: I(PERCENT) },
   alarm: {},
   teleport: {},

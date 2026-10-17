@@ -204,19 +204,26 @@ describe("バランス（H9 煙テスト）", () => {
     c.dungeonId = "d01";
     expect(c.bossReady()).toBe(true); // d01 のボスは L4（HP は満タン）
   });
-  test("H9/M11 CB-67 ボットは警報の箱を開けると警報の戦闘を戦い、勝って同じ箱に戻ったらもう一度開けて中身を得る（resolveChest → fight → resolveChest のループ）", () => {
+  test("H9/M11 CB-67/CB-68 ボットは警報の箱を開けると警報の戦闘を戦い、勝って同じ箱に戻ると開けるの続きで中身を得る（M21。resolveChest → fight。もう一度は開けない）", () => {
     const c = new Campaign(6, PROGRESS_BOT);
     c.state = execute(c.state, { type: "dungeon.enter", dungeonId: "d01" }, data).state;
     c.state = execute(c.state, { type: "debug.chest", trapId: "alarm" }, data).state;
     expect(c.state.dive!.chest).not.toBeNull();
     // M11 作業 9: ボットは盗賊がいれば先に調べ・解除するので、盗賊を麻痺させて「開ける」だけの経路にする（作業 5 の最小版のボットは常に開けていた）
     for (const ch of c.state.party) if (ch.classId === "thief") ch.status.push("paralysis");
+    const sent: string[] = [];
+    const run = c.run.bind(c);
+    c.run = (cmd) => {
+      if (cmd.type.startsWith("chest.")) sent.push(cmd.type);
+      return run(cmd);
+    };
     c.resolveChest();
     expect(c.battles).toBe(1);
     expect(c.state.battle).toBeNull();
     expect(c.state.screen).toBe("dungeon");
     expect(c.state.dive!.chest).toBeNull();
-    expect(c.chests).toBe(1); // 2 回目の開けるで中身（chest.open.gold）を得た
+    expect(c.chests).toBe(1); // 勝った battle.resolve の中で開けるの続き（chest.open.gold）を得た
+    expect(sent).toEqual(["chest.open"]); // 開けるは警報を作動させた 1 回だけ
     expectStateInvariants(c.state);
   }, 60_000);
 

@@ -79,7 +79,7 @@
     "noTrapChance": 30, "rarityUpPerDanger": 10, "secondItemChance": 10, "secondItemPerDanger": 15,
     "inspect": { "base": 40, "statPivot": 10, "thiefBonus": 30, "agiMul": 2, "lukMul": 2, "dangerMul": 10, "min": 5, "max": 95 },
     "disarm": { "base": 50, "statPivot": 10, "thiefBonus": 30, "agiMul": 2, "lukMul": 2, "dangerMul": 10, "min": 5, "max": 95 },
-    "triggerChance": 10, "wrongNameChance": 50, "disarmFailTrigger": 50,
+    "triggerChance": 10, "wrongNameChance": 50, "disarmFailTrigger": 50, "bombDestroy": 50,
     "impulse": { "lure": { "treasure": 2, "unknown": 0, "danger": 1, "weak": 0 }, "stat": "agi", "impulseClasses": ["thief"] }
   },
   "save": { "maxGames": 5, "schemaVersion": 9 },

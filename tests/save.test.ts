@@ -1489,6 +1489,37 @@ describe("SV-04 v5 → v6 の移行（M11。CB-60）", () => {
     expect(bad(null)).toBe(false);
   });
 
+  test("SV-04/CB-68 dive.chest.contentsDestroyed は省略可能（schemaVersion 9 のまま足した欄。M21）。無い（古いセーブ）・真偽値なら通り、型が違えば broken。印のある箱も読み直して同じ", async () => {
+    const s = chestState();
+    const bad = (v: unknown): boolean => {
+      const x = json(s) as unknown as Record<string, unknown>;
+      const chest = (x["dive"] as Record<string, unknown>)["chest"] as Record<string, unknown>;
+      if (v === undefined) delete chest["contentsDestroyed"];
+      else chest["contentsDestroyed"] = v;
+      return isGameStateShape(x);
+    };
+    expect(bad(undefined)).toBe(true);
+    expect(bad(true)).toBe(true);
+    expect(bad(false)).toBe(true);
+    expect(bad(1)).toBe(false);
+    expect(bad("true")).toBe(false);
+    expect(bad(null)).toBe(false);
+    // 古いセーブ（欄なし）も印のある箱も、続きからで同じ箱に戻る
+    for (const mark of [undefined, true] as const) {
+      const mem = createMemoryBackend();
+      const svc = service(mem);
+      const st = chestState();
+      if (mark !== undefined) st.dive!.chest!.contentsDestroyed = mark;
+      expect(SCHEMA).toBe(9);
+      mem.raw("g1", buildRecord("g1", 1, 999, SCHEMA, st));
+      const r = await svc.load("g1");
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.state.dive!.chest).toEqual(st.dive!.chest);
+      expect("contentsDestroyed" in r.state.dive!.chest!).toBe(mark !== undefined);
+    }
+  });
+
   test("SV-04/SV-50 箱の選択中に保存したレコードは、続きからで同じ箱の操作に戻る（chest.open を受け付ける）", async () => {
     const mem = createMemoryBackend();
     const svc = service(mem);

@@ -3,7 +3,7 @@
 import { describe, expect, test } from "vitest";
 import type { GameData } from "../src/core/data";
 import { chance, cloneRng, createRng, randInt, rollDice, rollDie, weightedIndex, type RngState } from "../src/core/rng";
-import { statusPercent } from "../src/core/rules/combat-calc";
+import { canAct, statusPercent } from "../src/core/rules/combat-calc";
 import { chestRate, chestView, presentChest, rollChestTrap } from "../src/core/rules/chest";
 import { battleMenu, startAlarmEncounter } from "../src/core/rules/combat";
 import { floorOf, mapView, visibleCellsOf, visibleChests } from "../src/core/rules/dungeon";
@@ -229,12 +229,13 @@ describe("CB-62 罠の効果（開けて作動させる）", () => {
     }
   });
 
-  test("CB-62 爆弾: 生存者全員に 1d6（並び順に 1 人 1 回。死者は振らない）。actorId は null（開けるで target one でない罠）", () => {
+  test("CB-62/CB-68 爆弾: 生存者全員に 1d6（並び順に 1 人 1 回。死者は振らない）→ 中身の消失の chance(bombDestroy) 1 回。actorId は null（開けるで target one でない罠）", () => {
     const s = withChar(withChest("bomb", 3, 1, D), 1, { life: "dead", hp: 0 });
     const m = cloneRng(s.rng);
     const alive = s.party.filter((c) => c.life === "alive");
     const dmg = alive.map(() => rollDice(m, "1d6").total);
-    mirrorContents(m, D);
+    if (chance(m, D.config.chest.bombDestroy)) rollDice(m, D.config.combat.chestGoldDice);
+    else mirrorContents(m, D);
     const r = exec(s, OPEN, D);
     expect(r.state.rng).toEqual(m);
     expect(r.events.slice(0, 2)).toEqual([
@@ -346,7 +347,7 @@ describe("CB-67 警報の戦闘", () => {
     expect(kindsOf(r.events)).not.toContain("message:chest.prompt");
   });
 
-  test("CB-67/CB-51/A2 警報の戦闘に勝つと新しい宝箱を判定せず（chance を振らない）、screen{dungeon, at} → chestFound → chest.afterAlarm → chest.prompt で同じ箱に戻る。その後は開けて中身を得る", () => {
+  test("CB-67/CB-68/CB-51/A2 警報の戦闘に勝つと新しい宝箱を判定せず（chance を振らない）、screen{dungeon, at} → chestFound → chest.afterAlarm → 開けるの続き（中身 → chestEnd opened）。chest.prompt は無い", () => {
     const d = chestData((x) => {
       x.config.combat.hitMin = x.config.combat.hitMax = 100;
       x.config.combat.chestTable = [0];
@@ -360,31 +361,39 @@ describe("CB-67 警報の戦闘", () => {
     });
     const r = exec(s, { type: "battle.resolve" }, d);
     expect(eventsOf(r.events, "battleEnd")).toEqual([{ kind: "battleEnd", result: "win" }]);
-    // 同じ戦闘を origin random（箱なし）で解くと、宝箱の chance の 1 回だけ多く引く
+    // 戦闘の終わりまでの乱数（P）は、同じ戦闘を箱なしで解いた値（箱が無ければ endBattle は箱に触れない）
+    const sp = cloneState(s);
+    sp.dive!.chest = null;
+    const p = exec(sp, { type: "battle.resolve" }, d).state.rng;
+    // 警報: P → 中身（金 → 2 個目の chance → 品）。M20 までの「戻る → chest.open」と同じ乱数の順で、新しい宝箱の chance は振らない
+    const m = cloneRng(p);
+    const gold = mirrorContents(m, d);
+    expect(r.state.rng).toEqual(m);
+    // 同じ戦闘を origin random（箱なし）で解くと、P の後に宝箱の chance を 1 回だけ引く
     // （CB-57（M14）の直接ドロップの chance はどちらも金の後にグループ数（ここでは 1）だけ引くので差に出ない）
     const sr = cloneState(s);
     sr.battle!.origin = { kind: "random", inRoom: true };
     sr.dive!.chest = null;
     const rr = exec(sr, { type: "battle.resolve" }, d);
-    const m = cloneRng(r.state.rng);
-    chance(m, 0);
-    expect(rr.state.rng).toEqual(m);
-    // 再生の並び: 戦闘の終わりの screen{dungeon}（戦った位置）の後に同じ箱へ戻る
+    const mr = cloneRng(p);
+    chance(mr, 0);
+    expect(rr.state.rng).toEqual(mr);
+    // 再生の並び: 戦闘の終わりの screen{dungeon}（戦った位置）の後に同じ箱へ戻り、そのまま開ける（罠は作動して消えている）
     const iScreen = r.events.findIndex((e) => e.kind === "screen");
-    expect(r.events.slice(iScreen)).toEqual([
+    expect(r.events.slice(iScreen, iScreen + 4)).toEqual([
       { kind: "screen", to: "dungeon", dungeonId: "d01", at: { pos: s.dive!.pos, facing: s.dive!.facing } },
       { kind: "chestFound", source: "drop", danger: 3 },
       { kind: "message", key: "chest.afterAlarm" },
-      { kind: "message", key: "chest.prompt" },
+      { kind: "message", key: "chest.open.gold", params: { gold } },
     ]);
+    expect(r.events.at(-1)).toEqual({ kind: "chestEnd", result: "opened" });
+    const ks = kindsOf(r.events.slice(iScreen));
+    expect(ks).toContain("message:item.found");
+    for (const k of ["chestTrap", "message:chest.prompt", "message:chest.open.destroyed"]) expect(ks).not.toContain(k);
     expect(r.state.battle).toBeNull();
-    expect(chestOf(r.state)).toEqual({ ...chestOf(s0)!, trapId: null });
-    expect(chestView(r.state, d)).not.toBeNull();
+    expect(chestOf(r.state)).toBeNull();
+    expect(chestView(r.state, d)).toBeNull();
     expectStateInvariants(r.state);
-    // 罠は作動して消えているので、開ければ中身だけ
-    const o = exec(r.state, OPEN, d);
-    expect(kindsOf(o.events)[0]).toBe("message:chest.open.gold");
-    expect(o.events.at(-1)).toEqual({ kind: "chestEnd", result: "opened" });
   });
 
   test("CB-67/CB-04 警報の戦闘は入力が要らない状態（battleMenu の ready が真・pending が空）で始まりうる: 全員が眠っていると isWipe は偽で、行動できる者が 0 人なので揃っている（UI-70 の表示層はここで kickBattle する）", () => {
@@ -669,7 +678,7 @@ describe("CB-63 調べる", () => {
     expect(seen.size).toBe(3);
   });
 
-  test("CB-63（B1）危険度は今の trapId から引く: 解除した後は 0 として判定する", () => {
+  test("CB-63（B1）危険度は今の trapId から引く: 罠が作動して消えた後は 0 として判定する", () => {
     // ベルク（c2）の調べるの危険度を引く前の値は 40 − 16 + 30 = 54。base をずらして、最初の d100 の出目 = 危険度 0 の成功率にする
     const k = 3;
     const roll = randInt(createRng(k), 1, 100);
@@ -681,9 +690,10 @@ describe("CB-63 調べる", () => {
     });
     const armed = withChest("crossbow", k);
     expect(kindsOf(exec(armed, inspect("c2"), d).events)[1]).not.toBe("message:chest.inspect.none"); // 危険度 1 で 1 足りず失敗
-    const disarmed = withRng(exec(armed, disarm("c2", "crossbow"), d).state, k);
-    expect(chestOf(disarmed)).toMatchObject({ trapId: null, danger: 1 });
-    expect(kindsOf(exec(disarmed, inspect("c2"), d).events)[1]).toBe("message:chest.inspect.none");
+    // CB-68 (c)（M21）: 解除に成功すると開けてしまうので、名前違いで作動させて箱を残す（石弓は c2 に 2d4）
+    const gone = withRng(exec(armed, disarm("c2", "bomb"), d).state, k);
+    expect(chestOf(gone)).toMatchObject({ trapId: null, danger: 1 });
+    expect(kindsOf(exec(gone, inspect("c2"), d).events)[1]).toBe("message:chest.inspect.none");
   });
 });
 
@@ -700,7 +710,7 @@ describe("CB-64 解除", () => {
     expect(chestOf(r.state)!.trapId).toBeNull();
   });
 
-  test("CB-64/UI-71 名前が合えば d100（判定の箱は全行: 内訳・危険度・上下限・出目、基準 chest.rule{rate}）。成功で罠なし（finding は罠なし）→ chest.disarm.ok", () => {
+  test("CB-64/CB-68/UI-71 名前が合えば d100（判定の箱は全行: 内訳・危険度・上下限・出目、基準 chest.rule{rate}）。成功で罠なし → chest.disarm.ok → そのまま開ける（中身。乱数は d100 → 中身の順）", () => {
     // 最初の d100 が 20〜90 のシードを選び、キリ（盗賊 +30・agi +10・luk +10）の爆弾（危険度 2: −20）の成功率がちょうど出目になる base にする
     let k = 1;
     while (((x) => x < 20 || x > 90)(randInt(createRng(k), 1, 100))) k++;
@@ -710,6 +720,7 @@ describe("CB-64 解除", () => {
     const s = withChest("bomb", k);
     const m = cloneRng(s.rng);
     randInt(m, 1, 100);
+    const gold = mirrorContents(m, d);
     const r = exec(s, disarm("c3", "bomb"), d);
     expect(r.state.rng).toEqual(m);
     expect(r.events[0]).toEqual({
@@ -726,11 +737,15 @@ describe("CB-64 解除", () => {
       rule: { key: "chest.rule", params: { rate: roll } },
       result: { key: "dice.chestDisarm.ok" },
     });
-    expect(r.events.slice(1)).toEqual([
-      { kind: "message", key: "chest.disarm.ok" },
-      { kind: "message", key: "chest.prompt" },
-    ]);
-    expect(chestOf(r.state)).toMatchObject({ trapId: null, danger: 2, finding: { trapId: null } });
+    // CB-68 (c)（M21）: 成功の文の後に開けるの続き（罠は無いので作動しない。金 → 品 → chestEnd opened）。chest.prompt は無い
+    expect(r.events[1]).toEqual({ kind: "message", key: "chest.disarm.ok" });
+    expect(r.events[2]).toEqual({ kind: "message", key: "chest.open.gold", params: { gold } });
+    expect(r.events.at(-1)).toEqual({ kind: "chestEnd", result: "opened" });
+    const ks = kindsOf(r.events);
+    expect(ks).toContain("message:item.found");
+    for (const k2 of ["chestTrap", "message:chest.prompt", "message:chest.open.destroyed"]) expect(ks).not.toContain(k2);
+    expect(chestOf(r.state)).toBeNull();
+    expectStateInvariants(r.state);
     // 上下限の行: 成功率が上限 95 を超えると、その差を出す
     const hi = exec(s, disarm("c3", "bomb"), chestData((x) => (x.config.chest.disarm.base = 200)));
     const rows = (hi.events[0] as Extract<GameEvent, { kind: "dice" }>).rows.map((x) => [x.label.key, x.total]);
@@ -738,8 +753,6 @@ describe("CB-64 解除", () => {
       ["chest.row.danger", -20],
       ["chest.row.clamp", 95 - 230],
     ]);
-    // 罠を外した箱を開けると作動せずに中身（危険度は IT-56 の上振れに残る）
-    expect(kindsOf(exec(r.state, OPEN, d).events)).not.toContain("chestTrap");
   });
 
   test("CB-64（U-4）名前が合って失敗: chance(disarmFailTrigger) が当たれば作動、外れれば chest.disarm.fail で箱も罠も残り、再挑戦できる", () => {
@@ -763,6 +776,7 @@ describe("CB-64 解除", () => {
     randInt(m, 1, 100);
     chance(m, 100);
     for (const c of s.party) if (c.life === "alive") rollDice(m, "1d6");
+    chance(m, data.config.chest.bombDestroy); // CB-68 (a)（M21）
     const t = exec(s, disarm("c3", "bomb"), never(100));
     expect(t.state.rng).toEqual(m);
     expect(kindsOf(t.events).slice(0, 3)).toEqual(["dice", "chestTrap", "message:chest.trap.bomb"]);
@@ -1319,7 +1333,7 @@ describe("EV-70〜76 職業の掛け合い", () => {
     ]);
   });
 
-  test("EV-76/U-7 警報に勝って同じ箱に戻れば続けて数える（戻った時点では出さず、もう一度失敗して開けると text.fail 1 回と SAN −3×2）", () => {
+  test("EV-76/U-7/CB-68 警報の戦闘の間は持ち越し、勝って同じ箱に戻ると開けるの続きで片付くので、chestEnd opened の後に text.fail 1 回と SAN −3", () => {
     const dW = chestData((x) => {
       x.config.events.cap = 0;
       x.config.chest.inspect.min = x.config.chest.inspect.max = 0;
@@ -1341,21 +1355,15 @@ describe("EV-70〜76 職業の掛け合い", () => {
     const won = exec(s, { type: "battle.resolve" }, dW);
     expect(eventsOf(won.events, "battleEnd")).toEqual([{ kind: "battleEnd", result: "win" }]);
     expect(won.state.battle).toBeNull();
-    expect(kindsOf(won.events)).not.toContain("message:rivalry.thief_chest.fail");
-    expect(won.events.at(-1)).toEqual({ kind: "message", key: "chest.prompt" });
-    expect(chestOf(won.state)!.rivalryFails).toBe(1);
-    expectStateInvariants(won.state);
-    const s2 = exec(won.state, inspect("c3"), dW).state;
-    expect(chestOf(s2)!.rivalryFails).toBe(2);
-    const san = member(s2, "c3").san;
-    const r = exec(s2, OPEN, dW);
-    expect(eventsOf(r.events, "message").filter((e) => e.key === "rivalry.thief_chest.fail")).toHaveLength(1);
-    expect(r.events.slice(-3)).toEqual([
+    const san = member(s, "c3").san;
+    expect(eventsOf(won.events, "message").filter((e) => e.key === "rivalry.thief_chest.fail")).toHaveLength(1);
+    expect(won.events.slice(-3)).toEqual([
       { kind: "chestEnd", result: "opened" },
       { kind: "message", key: "rivalry.thief_chest.fail", params: { name: "キリ" } },
-      { kind: "sanChanged", id: "c3", delta: -6, san: san - 6 },
+      { kind: "sanChanged", id: "c3", delta: -3, san: san - 3 },
     ]);
-    expect(chestOf(r.state)).toBeNull();
+    expect(chestOf(won.state)).toBeNull();
+    expectStateInvariants(won.state);
   });
 
   test("EV-76/U-7 転移で箱を失ったときは chestEnd lost の直後（moved の前）にまとめて出す", () => {
@@ -1665,6 +1673,7 @@ describe("CB-62（M19 D-5）作動の後の文", () => {
     const s2 = withChest("bomb", 6);
     const m2 = cloneRng(s2.rng);
     for (const c of s2.party) if (c.life === "alive") rollDice(m2, "1d6");
+    chance(m2, data.config.chest.bombDestroy); // CB-68 (a)（M21）
     const w = exec(s2, disarm("c6", "crossbow"));
     expect(w.state.rng).toEqual(m2);
     const kw = kindsOf(w.events);
@@ -1727,5 +1736,154 @@ describe("CB-62（M19 D-5）作動の後の文", () => {
       expect(r.powerRows.some((x) => x.label.key === "chest.row.thief"), m.id).toBe(m.thief);
     }
     expect(v.members.filter((m) => m.thief).map((m) => m.id)).toEqual(["c3", "c6"]);
+  });
+});
+
+describe("CB-68 宝箱の罠の続き（M21）", () => {
+  /** 爆弾の消失の確率を p にした chestData */
+  const bombData = (p: number, mut?: (d: GameData) => void): GameData =>
+    chestData((x) => {
+      x.config.chest.bombDestroy = p;
+      mut?.(x);
+    });
+
+  test("CB-68 (a) 開けて爆弾: ダメージの後に chance(bombDestroy) を 1 回。当たれば金の後に chest.open.destroyed で品は引かない（乱数も引かない）。外れれば今どおり", () => {
+    expect(data.config.chest.bombDestroy).toBe(50);
+    for (const p of [100, 0]) {
+      const d = bombData(p);
+      const s = withChest("bomb", 3, 1, d);
+      const m = cloneRng(s.rng);
+      for (const c of s.party) if (c.life === "alive") rollDice(m, "1d6");
+      expect(chance(m, p)).toBe(p === 100);
+      const gold = p === 100 ? Math.max(0, rollDice(m, d.config.combat.chestGoldDice).total) : mirrorContents(m, d);
+      const r = exec(s, OPEN, d);
+      expect(r.state.rng, `p ${p}`).toEqual(m);
+      const ks = kindsOf(r.events);
+      const iGold = ks.indexOf("message:chest.open.gold");
+      expect(r.events[iGold]).toEqual({ kind: "message", key: "chest.open.gold", params: { gold } });
+      if (p === 100) {
+        expect(ks.slice(iGold + 1).filter((k) => k.startsWith("message:"))).toEqual(["message:chest.open.destroyed"]);
+        expect(ks).not.toContain("message:item.found");
+      } else {
+        expect(ks).not.toContain("message:chest.open.destroyed");
+        expect(ks).toContain("message:item.found");
+      }
+      expect(r.events.at(-1)).toEqual({ kind: "chestEnd", result: "opened" });
+      expect(chestOf(r.state)).toBeNull();
+      expectStateInvariants(r.state);
+    }
+    // 文は窓の 28 字 × 2 行に収まる
+    expect(data.strings["chest.open.destroyed"]).toBe("中身は吹き飛んだ。");
+    expect([...data.strings["chest.open.destroyed"]!].length).toBeLessThanOrEqual(28);
+  });
+
+  test("CB-68 (a) 調べる・解除の途中の爆弾も同じ印（contentsDestroyed）。箱は残り、後で開けると金と chest.open.destroyed だけ。外れれば印は無い", () => {
+    const viaInspect = (p: number): GameState => {
+      const d = bombData(p, (x) => {
+        x.config.chest.inspect.min = x.config.chest.inspect.max = 0;
+        x.config.chest.triggerChance = 100;
+      });
+      const s = withChest("bomb", 4, 1, d);
+      const m = cloneRng(s.rng);
+      randInt(m, 1, 100);
+      randInt(m, 1, 100);
+      for (const c of s.party) if (c.life === "alive") rollDice(m, "1d6");
+      chance(m, p);
+      const r = exec(s, inspect("c3"), d);
+      expect(r.state.rng).toEqual(m);
+      expect(kindsOf(r.events).slice(-2)).toEqual(["message:chest.trap.gone", "message:chest.prompt"]);
+      expect(kindsOf(r.events)).not.toContain("message:chest.open.destroyed"); // 語るのは開けたとき
+      return r.state;
+    };
+    const hit = viaInspect(100);
+    expect(chestOf(hit)).toMatchObject({ trapId: null, contentsDestroyed: true });
+    expectStateInvariants(hit);
+    const d = chestData();
+    const m = cloneRng(hit.rng);
+    const gold = Math.max(0, rollDice(m, d.config.combat.chestGoldDice).total);
+    const o = exec(hit, OPEN, d);
+    expect(o.state.rng).toEqual(m);
+    expect(kindsOf(o.events).filter((k) => k.startsWith("message:chest.") || k === "chestTrap")).toEqual(["message:chest.open.gold", "message:chest.open.destroyed"]);
+    expect(o.events[0]).toEqual({ kind: "message", key: "chest.open.gold", params: { gold } });
+    expect(kindsOf(o.events)).not.toContain("message:item.found");
+    expect(o.events.at(-1)).toEqual({ kind: "chestEnd", result: "opened" });
+    const miss = viaInspect(0);
+    expect(chestOf(miss)!.contentsDestroyed).toBeUndefined();
+    // 解除の失敗の作動でも印が立つ（乱数: d100 → chance(disarmFailTrigger) → 1d6 × 生存者 → chance(bombDestroy)）
+    const dF = bombData(100, (x) => {
+      x.config.chest.disarm.min = x.config.chest.disarm.max = 0;
+      x.config.chest.disarmFailTrigger = 100;
+    });
+    const s = withChest("bomb", 2, 1, dF);
+    const mf = cloneRng(s.rng);
+    randInt(mf, 1, 100);
+    chance(mf, 100);
+    for (const c of s.party) if (c.life === "alive") rollDice(mf, "1d6");
+    chance(mf, 100);
+    const f = exec(s, disarm("c3", "bomb"), dF);
+    expect(f.state.rng).toEqual(mf);
+    expect(chestOf(f.state)).toMatchObject({ trapId: null, contentsDestroyed: true });
+    // 名前違いの作動でも同じ
+    expect(chestOf(exec(withChest("bomb", 6, 1, dF), disarm("c6", "crossbow"), dF).state)).toMatchObject({ contentsDestroyed: true });
+  });
+
+  test("CB-68 (a) 爆弾でない罠は消失の chance を引かない（石弓・呪詛。鏡の rng は M20 と同じ）", () => {
+    const d = bombData(100);
+    for (const [trapId, effect] of [["crossbow", (m: RngState) => rollDice(m, "2d4")], ["curse", () => undefined]] as const) {
+      const s = withChest(trapId, 5, 1, d);
+      const m = cloneRng(s.rng);
+      if (trapId === "crossbow") randInt(m, 0, s.party.filter(canAct).length - 1);
+      effect(m);
+      mirrorContents(m, d);
+      const r = exec(s, OPEN, d);
+      expect(r.state.rng, trapId).toEqual(m);
+      expect(kindsOf(r.events), trapId).not.toContain("message:chest.open.destroyed");
+    }
+  });
+
+  test("CB-68 (b) 警報の戦闘に勝って戻ると、箱の印（contentsDestroyed）を保ったまま開けるの続き: 金 → chest.open.destroyed → chestEnd opened", () => {
+    const d = chestData((x) => {
+      x.config.combat.hitMin = x.config.combat.hitMax = 100;
+      x.config.combat.chestTable = [0];
+      x.config.combat.chestRoomBonus = 0;
+    });
+    const s0 = exec(withChest("alarm", 5, 1, d), OPEN, d).state;
+    s0.dive!.chest!.contentsDestroyed = true;
+    const s = withBattle(s0, [{ monsterId: "giant_rat", hps: [1], status: [["paralysis"]] }], {
+      origin: { kind: "alarm", inRoom: false },
+      identified: ["giant_rat"],
+      inputs: allInputs(s0, { type: "defend" }, { c1: { type: "attack", group: 0 } }),
+    });
+    const r = exec(s, { type: "battle.resolve" }, d);
+    const ks = kindsOf(r.events);
+    const i = ks.indexOf("message:chest.afterAlarm");
+    expect(i).toBeGreaterThan(0);
+    expect(ks.slice(i + 1).filter((k) => k.startsWith("message:chest.") || k === "chestEnd")).toEqual([
+      "message:chest.open.gold",
+      "message:chest.open.destroyed",
+      "chestEnd",
+    ]);
+    expect(ks.slice(i)).not.toContain("message:item.found");
+    expect(chestOf(r.state)).toBeNull();
+    expect(data.strings["chest.afterAlarm"]).toBe("騒ぎは静まった。改めて宝箱を開ける。");
+    expect([...data.strings["chest.afterAlarm"]!].length).toBeLessThanOrEqual(28);
+  });
+
+  test("CB-68 (c) 解除の成功はそのまま開ける（宝箱のセルは clearedCells に入り、罠の印 disarmedChests にも入る）。罠なしの箱の「開ける」は今どおり手動", () => {
+    const d = chestData((x) => (x.config.chest.disarm.min = x.config.chest.disarm.max = 100));
+    const s = withChest("crossbow", 2, 1, d);
+    const pos = { ...s.dive!.pos };
+    s.dive!.chest = { ...s.dive!.chest!, source: "cell", cell: { floor: 1, x: pos.x, y: pos.y } };
+    const r = exec(s, disarm("c3", "crossbow"), d);
+    const ks = kindsOf(r.events);
+    expect(ks.slice(1, 3)).toEqual(["message:chest.disarm.ok", "message:chest.open.gold"]);
+    expect(r.events.at(-1)).toEqual({ kind: "chestEnd", result: "opened" });
+    expect(ks).not.toContain("message:chest.prompt");
+    expect(r.state.dive!.clearedCells).toContainEqual({ floor: 1, x: pos.x, y: pos.y });
+    expect(r.state.dive!.disarmedChests).toContainEqual({ floor: 1, x: pos.x, y: pos.y });
+    // 罠なしの箱は解除しても判定せず（chest.disarm.nothing）、開けない
+    const n = exec(withChest(null, 2, 1, d), disarm("c3", "bomb"), d);
+    expect(kindsOf(n.events)).toEqual(["message:chest.disarm.nothing", "message:chest.prompt"]);
+    expect(chestOf(n.state)).not.toBeNull();
   });
 });

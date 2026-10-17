@@ -281,6 +281,7 @@ describe("data: config.json", () => {
       triggerChance: 10,
       wrongNameChance: 50,
       disarmFailTrigger: 50,
+      bombDestroy: 50, // CB-68 (a)（M21）【仮】
       impulse: { lure: { treasure: 2, unknown: 0, danger: 1, weak: 0 }, stat: "agi", impulseClasses: ["thief"] },
     });
     expect("chestTrapChance" in config.combat).toBe(false);
@@ -299,6 +300,9 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.chest.disarm.max = 101), "config.json", "chest.disarm.max: expected integer in 0..100, got 101");
     expectIssue((r) => (r.config.chest.triggerChance = 51), "config.json", "chest.wrongNameChance: CB-63: triggerChance 51 + wrongNameChance 50 > 100");
     expectIssue((r) => (r.config.chest.disarmFailTrigger = 101), "config.json", "chest.disarmFailTrigger: expected integer in 0..100, got 101");
+    // CB-68 (a)（M21）: 爆弾で中身が吹き飛ぶ確率
+    expectIssue((r) => delete r.config.chest.bombDestroy, "config.json", "chest.bombDestroy: missing required field");
+    expectIssue((r) => (r.config.chest.bombDestroy = 101), "config.json", "chest.bombDestroy: expected integer in 0..100, got 101");
     expectIssue((r) => (r.config.chest.impulse.lure.treasure = 4), "config.json", "chest.impulse.lure.treasure: expected integer in 0..3, got 4");
     expectIssue((r) => (r.config.chest.impulse.stat = "spd"), "config.json", "chest.impulse.stat: expected one of");
     expectIssue((r) => (r.config.chest.impulse.impulseClasses = ["ninja"]), "config.json", 'chest.impulse.impulseClasses[0]: unknown class id "ninja"');
@@ -1692,6 +1696,9 @@ describe("data: chest-traps.json（CB-62。M11）", () => {
     expect(ts[0]!.effect).toEqual({ kind: "damage", target: "one", dice: "1d4", status: "poison" });
     expect(ts[3]!.effect).toEqual({ kind: "status", target: "all", status: "poison", chance: 60 });
     expect(ts[7]!.effect).toEqual({ kind: "san", target: "all", amount: 8 });
+    // CB-68 (a)（M21）: 中身を吹き飛ばすのは爆弾だけ
+    expect(ts[2]!.effect).toEqual({ kind: "damage", target: "all", dice: "1d6", destroyContents: true });
+    expect(ts.filter((t) => t.effect.kind === "damage" && t.effect.destroyContents === true).map((t) => t.id)).toEqual(["bomb"]);
   });
   test("data: CB-62 検証: id の重複、danger 1..4、効果の kind と欄、ダイス、状態、確率、文言の鍵", () => {
     expectIssue((r) => (r.chestTraps[1].id = "poison_needle"), F, '[1].id: duplicate id "poison_needle"');
@@ -1708,6 +1715,10 @@ describe("data: chest-traps.json（CB-62。M11）", () => {
     expectIssue((r) => (r.chestTraps[0].name = "chest.trapName.nope"), F, '[0].name: unknown strings.json key "chest.trapName.nope"');
     expectIssue((r) => delete r.strings["chest.trap.bomb"], F, '[2]: unknown strings.json key "chest.trap.bomb"');
     expect(issuesOf((r) => delete r.chestTraps[1].effect.status)).toEqual([]);
+    // CB-68 (a)（M21）: destroyContents は damage の省略可能な真偽値
+    expectIssue((r) => (r.chestTraps[2].effect.destroyContents = 1), F, "[2].effect.destroyContents: expected boolean, got integer");
+    expectIssue((r) => (r.chestTraps[3].effect.destroyContents = true), F, "[3].effect.destroyContents: unknown field");
+    expect(issuesOf((r) => delete r.chestTraps[2].effect.destroyContents)).toEqual([]);
   });
   test("data: CB-61 危険度 1〜4 のそれぞれに 1 件以上ある", () => {
     expectIssue((r) => (r.chestTraps = r.chestTraps.filter((t: any) => t.danger !== 3)), F, "(root): CB-61: no trap with danger 3");

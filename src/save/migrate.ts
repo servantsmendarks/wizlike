@@ -249,6 +249,8 @@ function isChestShape(x: unknown): boolean {
   if (r !== null && !(isPlainObject(r) && typeof r["id"] === "string" && typeof r["ownerId"] === "string")) return false;
   // 同じ版に後から足した省略可能な欄（U-7 (b)）: rivalryFails は無いか 0 以上の整数
   if (x["rivalryFails"] !== undefined && !isTurnCount(x["rivalryFails"])) return false;
+  // 同じ版に後から足した省略可能な欄（M21。CB-68 (a)）: contentsDestroyed は無いか真偽値
+  if (x["contentsDestroyed"] !== undefined && typeof x["contentsDestroyed"] !== "boolean") return false;
   return true;
 }
 
@@ -273,6 +275,7 @@ function isChestShape(x: unknown): boolean {
  * schemaVersion 9（M18。DG-46）: dive がオブジェクトなら floorSteps が 0 以上の安全な整数。
  * 同じ版に後から足した省略可能な欄（M20。CB-51b）: dive.noChestStreak は無いか 0 以上の安全な整数。
  * 同じ版に後から足した省略可能な欄（M21。DG-47）: progress.deepestFloors は無いか、各値が 1 以上の安全な整数のプレーンなオブジェクト。
+ * 同じ版に後から足した省略可能な欄（M21。CB-68 (a)）: dive.chest.contentsDestroyed は無いか真偽値。
  */
 export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(x)) return false;

@@ -963,7 +963,8 @@ export class Campaign {
 
   /**
    * M11（設計書 §8。A3）: 宝箱が残っていて戦闘中でも保留中でもなければ、chestCommand の方針で 1 手ずつ送る。警報で戦闘になれば戦う
-   * （fight の中でまた呼ぶ。勝って同じ箱に戻れば、その中で方針を続ける）。箱が無くなったら覚え（chestMemo）を消す。
+   * （fight の中でまた呼ぶ。M21（CB-68 (b) / (c)）から、勝って戻ると core が開けるの続きをするので箱は片付いていて、解除の成功もそのまま開く）。
+   * 箱が無くなったら覚え（chestMemo）を消す。
    * 呼ぶのは fight の後・dungeon.move の後・resolvePending の後の 3 か所と、fight からの再帰
    */
   resolveChest(): void {

@@ -273,6 +273,7 @@ export type Dive = {
  * - finding: 最後の「調べる」で GM が告げた名前（偽りもありうる）。{ trapId: null } は「罠は無さそう」、null は未調査か作動の後（不明に終わった調べ直しは前の値を残す。M18）。解除に成功したら { trapId: null }
  * - rivalry: 職業の掛け合い（EV-70〜76）の担当。発生していなければ null
  * - rivalryFails: 担当の調べるの失敗の数（EV-76。片付いた時点で清算する）
+ * - contentsDestroyed: 爆弾で中身（品）が吹き飛んだ印（CB-68 (a)。M21）
  */
 export type ChestState = {
   source: "drop" | "cell";
@@ -288,6 +289,11 @@ export type ChestState = {
    * 省略可能（schemaVersion 6 のまま足した欄）。無ければ 0。あれば 1 以上で、rivalry は非 null
    */
   rivalryFails?: number;
+  /**
+   * CB-68 (a)（M21）: 爆弾（効果に destroyContents がある罠）の作動で中身が吹き飛んだ。開けるとき金だけ配り、品は引かない。
+   * 省略可能（schemaVersion 9 のまま足した欄）。無ければ偽。立てるときは true だけ
+   */
+  contentsDestroyed?: boolean;
 };
 
 // ===================== 保留中の選択（E3） =====================

@@ -1826,6 +1826,35 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(kb).not.toContain("message:battle.chestLeft");
   });
 
+  test("CB-67/CB-68 (b)（M21）警報の戦闘に勝って箱に戻ると、M20 までの「戻る → chest.open」と同じ乱数・同じ中身で開けるの続きをする（新しい箱の chance は引かない）", () => {
+    const d = dataWith({ combat: { ...ALWAYS_HIT, chestTable: [100], chestRoomBonus: 0 } }, noChestImpulse);
+    const alarm = setup([{ monsterId: "rotting_corpse", hps: [1], status: [["paralysis"]] }], {
+      identified: ["rotting_corpse"],
+      origin: { kind: "alarm", inRoom: true },
+    });
+    alarm.battle!.inputs["c1"] = atk(0);
+    const chest = { source: "drop" as const, cell: null, inRoom: true, trapId: null, danger: 3, level: 2, finding: null, rivalry: null };
+    alarm.dive!.chest = { ...chest };
+    const ra = exec(alarm, RESOLVE, d);
+    // 比べる側: 箱なしで勝ち（戦闘の終わりまでの乱数）、迷宮に戻ってから同じ箱を置いて chest.open
+    const bare = cloneState(alarm);
+    bare.dive!.chest = null;
+    const won = exec(bare, RESOLVE, d).state;
+    won.dive!.chest = { ...chest };
+    const opened = exec(won, { type: "chest.open" }, d);
+    expect(ra.state.rng).toEqual(opened.state.rng);
+    const ka = kindsOf(ra.events);
+    const i = ka.indexOf("message:chest.afterAlarm");
+    expect(ka[i - 1]).toBe("chestFound");
+    expect(ra.events.slice(i + 1)).toEqual(opened.events);
+    expect(opened.events.at(-1)).toEqual({ kind: "chestEnd", result: "opened" });
+    expect(ka).not.toContain("message:chest.prompt");
+    expect(ka).not.toContain("message:battle.chestLeft");
+    expect(ra.state.dive!.chest).toBeNull();
+    expect(ra.state.dive!.ledger).toEqual(opened.state.dive!.ledger);
+    expectStateInvariants(ra.state);
+  });
+
   // ---- CB-57 / IT-57（M14）: 敵の種類ごとの直接ドロップ ----
 
   /** 直接ドロップを必ず起こし（directDropChance 100）、d01 1 階の宝箱の表を entries に、品の希少度・呪い・Lv の上乗せを固定したデータ */

@@ -3036,7 +3036,7 @@ describe("UI-70/UI-71 宝箱の判定の箱と衝動の流れの再生（M11 作
     }
   });
 
-  test("UI-71/CB-64 解除: 全行の箱（内訳・危険度・上下限・出目）→ 結果の文 chest.disarm.ok → タップ → 消す → chest.prompt", async () => {
+  test("UI-71/CB-64/CB-68 解除: 全行の箱（内訳・危険度・上下限・出目）→ 結果の文 chest.disarm.ok → タップ → 消す → そのまま開けた中身の文（chest.prompt は無い。M21）", async () => {
     const d = loadFreshData();
     d.config.chest.disarm.min = d.config.chest.disarm.max = 100;
     const s0 = execute(dived(1), { type: "debug.chest", trapId: "bomb" }, d).state;
@@ -3046,8 +3046,25 @@ describe("UI-70/UI-71 宝箱の判定の箱と衝動の流れの再生（M11 作
     expect(ev.hidden).toBeUndefined();
     expect(ev.rows.at(-1)!.dice).toHaveLength(1);
     const { log, boxes } = await play(r.events, s0, r.state, d);
-    expect(flow(log)).toEqual(["dice.show:dice.chestDisarm", sayOf(d, "chest.disarm.ok"), "beat.waitTap", "dice.hide", sayOf(d, "chest.prompt")]);
+    const gold = r.events.find((e) => e.kind === "message" && e.key === "chest.open.gold") as Extract<GameEvent, { kind: "message" }>;
+    const f = flow(log);
+    expect(f.slice(0, 5)).toEqual(["dice.show:dice.chestDisarm", sayOf(d, "chest.disarm.ok"), "beat.waitTap", "dice.hide", sayOf(d, "chest.open.gold", gold.params)]);
+    expect(f).not.toContain(sayOf(d, "chest.prompt"));
     expect(boxes).toEqual([{ label: "dice.chestDisarm", rows: ev.rows.length, hidden: false }]);
+    expect(r.state.dive!.chest).toBeNull();
+  });
+
+  test("CB-68/UI-70（M21）爆弾で中身が吹き飛んだ箱を開ける: 作動の文 → 金の文 → chest.open.destroyed を順に語る", async () => {
+    const d = loadFreshData();
+    d.config.chest.bombDestroy = 100;
+    const s0 = execute(dived(1), { type: "debug.chest", trapId: "bomb" }, d).state;
+    const r = execute(s0, { type: "chest.open" }, d);
+    expectKnownStringKeys(r.events, d);
+    const { log } = await play(r.events, s0, r.state, d);
+    const says = flow(log).filter((x) => x.startsWith("say:"));
+    const gold = r.events.find((e) => e.kind === "message" && e.key === "chest.open.gold") as Extract<GameEvent, { kind: "message" }>;
+    expect(says[0]).toBe(sayOf(d, "chest.trap.bomb"));
+    expect(says.slice(-2)).toEqual([sayOf(d, "chest.open.gold", gold.params), sayOf(d, "chest.open.destroyed")]);
   });
 
   test("UI-71/CB-63（M19 D-5）伏せた箱の結果の行は「→ 出目と危険度は伏せられた」（成功率は箱に出ないので言わない。箱の幅 224 = 28 字に収まる）", () => {

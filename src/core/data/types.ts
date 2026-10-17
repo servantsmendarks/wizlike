@@ -315,6 +315,8 @@ export type Config = {
     wrongNameChance: number;
     /** CB-64（U-4）: 名前が合って解除の判定に失敗したときに作動する確率（%）。作動しなければ再挑戦できる */
     disarmFailTrigger: number;
+    /** CB-68 (a)（M21）: 効果に destroyContents がある罠（爆弾）が作動したとき、中身（品）が吹き飛ぶ確率（%） */
+    bombDestroy: number;
     /** EV-16: 宝箱の衝動判定の spec（decideImpulse に渡す） */
     impulse: { lure: LureWeights; stat: StatKey; impulseClasses?: string[] };
   };
@@ -849,7 +851,7 @@ export const CHEST_TRAP_MAX_DANGER = 4;
 
 /** CB-62: 宝箱の罠の効果。target one は作動させた人 1 人、all は生存者全員 */
 export type ChestTrapEffect =
-  | { kind: "damage"; target: "one" | "all"; dice: string; status?: StatusId }
+  | { kind: "damage"; target: "one" | "all"; dice: string; status?: StatusId; destroyContents?: boolean }
   | { kind: "status"; target: "all"; status: StatusId; chance: number }
   | { kind: "alarm" }
   | { kind: "teleport" }
