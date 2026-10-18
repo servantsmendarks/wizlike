@@ -369,7 +369,7 @@ export function townEntries(
     return [{ kind: "classChange", memberId: sel.memberId, classId: sel.classId, label: s(strings, "town.classChange.yes"), disabled: !ok }, back];
   }
   if (page === "inn") {
-    // TW-04 / TW-15（M16）: 行は名前・料金・効果（town.inn.effect.<ランクの id>。士気の立つランクは効果の文に「＋士気」を含む）。M18（5-3）: 料金は「{cost}G（一行）」
+    // TW-04 / TW-15（M16）: 行は名前・料金・効果（town.inn.effect.<ランクの id>。士気の立つランクは効果の文に「＋士気」を含む）。M18（5-3）: 料金は「{cost} G（一行）」
     // 表示層はランクで分岐せず、core の townMenu の id からキーを組み立てるだけ
     const rows = menu.inn.map(
       (r): TownEntry => ({
@@ -986,7 +986,7 @@ export function upgradeCatalystLabel(c: TownMenuUpgradeCatalyst, on: boolean, st
  * 一覧の見出し（1 行・全角 28 字）に出す文（整形済み）。答えのボタンが続く問いは会話の箱（広い箱は答えのボタンを覆う）で語らず、ここに値を入れて出す。
  * - 強化の触媒の段（{ upCat }。M19 C-1）: core の upgradePreview(picked) の値で「触媒 {n} → 成功率 {rate}%（大成功 {great}%）」（town.upgrade.catalystRate）。
  *   選ぶたびに app が描き直すので値も組み直る。preview が null なら town.upgrade.catalyst
- * - 強化の確認（{ upConfirm }）: core の upgradePreview の値で「成功率 {rate}（大成功 {great}）料金 {fee}G。鍛えるか？」、払えなければ問いの代わりに
+ * - 強化の確認（{ upConfirm }）: core の upgradePreview の値で「成功率 {rate}（大成功 {great}）料金 {fee} G。鍛えるか？」、払えなければ問いの代わりに
  *   「…。所持金が足りない。」（town.upgrade.ask / askNoGold）。対象と触媒の数は答えのボタンのラベル（town.upgrade.do）。preview が null なら town.ask.upConfirm
  * - 転職の確認（{ ccConfirm }）: 「{name}を{cls}にする。レベルは 1 に戻る。よいか。」（town.classChange.confirm）。cc が null なら town.ask.classChangeConfirm
  * - 買うの確認（{ buyAsk }。M18 5-2）: town.shop.buyAsk{name, item, cost}（core の townMenu.shop の名前と価格）。品か者が見つからなければ town.ask.buyConfirm
@@ -1041,7 +1041,7 @@ export function townHeadingText(
 /**
  * TW-04 / UI-52（M18 5-3）: 見出しの 2 行目（無ければ null）。宿屋の一覧だけ、一行の HP / MP の合計と宿で上がる人数
  * （core の townMenu.innParty の値を入れるだけ）。M20 D-6: 括弧に最短の者の名前と残り exp（全員上がるなら「全員」）。
- * TW-17（M20 D-7）: 強化の触媒の段（{ upCat }）は core の upgradePreview の料金で「料金 {fee}G」（town.upgrade.feeSub。preview が null なら null）
+ * TW-17（M20 D-7）: 強化の触媒の段（{ upCat }）は core の upgradePreview の料金で「料金 {fee} G」（town.upgrade.feeSub。preview が null なら null）
  */
 export function townHeadingSub(page: TownPage, menu: TownMenu, strings: Strings, preview: UpgradePreview | null = null): string | null {
   if (typeof page === "object" && "upCat" in page) return preview === null ? null : s(strings, "town.upgrade.feeSub", { fee: preview.fee });
@@ -1062,7 +1062,7 @@ export function townLowersInput(e: TownEntry): boolean {
   return e.kind === "upgrade";
 }
 
-/** UI-52（M8.5）: 街のヘッダー（場所と所持金。「{place}　{gold}G」） */
+/** UI-52（M8.5）: 街のヘッダー（場所と所持金。「{place}　{gold} G」） */
 export function townHeader(menu: TownMenu, strings: Strings, page: TownPage): string {
   return s(strings, "town.header", { place: s(strings, townPlace(page)), gold: menu.gold });
 }

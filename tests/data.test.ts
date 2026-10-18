@@ -2171,21 +2171,46 @@ describe("data: d03 灰の地下墓所（M12）", () => {
 });
 
 describe("UI-81 金額の表記（M22 追補。2026-10-18）", () => {
+  const NB = " ";
   test("UI-81 strings.json の値で、数字・} の直後に G が続くものが無い（金額は「400 G」。用語の行 rules.line.* は G が行頭）", () => {
     const bad = Object.entries(strings as Record<string, string>).filter(([, v]) => /[0-9}]G/.test(v));
     expect(bad).toEqual([]);
   });
 
-  test("UI-81 折り返し: 「400 G」の G を行頭にしない（空白の前の数字の頭で切って、数字ごと次の行へ送る）", () => {
-    // 先頭 25 字 + 「400 G」: 400 は 26.5 単位までに収まり、空白の次の G が 28 単位目の外に出る形
-    const text = `${"あ".repeat(26)}400 G`;
+  test("UI-81 数字・} と G の間は NBSP（U+00A0）。普通の空白だと折り返しで G が行頭に来る（headless Chrome で確認）", () => {
+    const bad = Object.entries(strings as Record<string, string>).filter(([, v]) => /[0-9}] G/.test(v));
+    expect(bad).toEqual([]);
+    expect((strings as Record<string, string>)["town.header"]).toContain(`}${NB}G`);
+  });
+
+  test("UI-81 折り返し: 「400 G」の G を行頭にしない（NBSP でつないだ 1 語を数字ごと次の行へ送る）", () => {
+    const text = `${"あ".repeat(26)}400${NB}G`;
     const lines = kinsokuLines(text, 28);
     expect(lines.length).toBe(2);
-    expect(lines[1]).toBe("400 G");
-    for (const l of lines) expect(l.startsWith("G"), l).toBe(false);
-    // 先頭から「400」がちょうど行末に収まる形
+    expect(lines[1]).toBe(`400${NB}G`);
     for (let n = 20; n <= 27; n++) {
-      for (const l of kinsokuLines(`${"あ".repeat(n)}400 G。`, 28)) expect(l.startsWith("G"), `${n}: ${l}`).toBe(false);
+      for (const l of kinsokuLines(`${"あ".repeat(n)}400${NB}G。`, 28)) expect(l, `${n}: ${l}`).not.toMatch(/^\s*G/);
+    }
+  });
+
+  test("UI-81 最悪の値の総当たり: 金額の文の各行の頭が G（前に空白があっても）にならない", () => {
+    const S = strings as Record<string, string>;
+    const keys = ["town.inn.stay", "town.shop.bought", "town.shop.identified", "town.shop.sold", "town.shop.boughtBack"];
+    for (const key of keys) {
+      for (let nameLen = 1; nameLen <= 6; nameLen++) {
+        for (const item of ["剣", "群れ鴎の投げナイフ+20", "人の形をした影"]) {
+          for (let digits = 1; digits <= 7; digits++) {
+            const v = "9".repeat(digits);
+            const text = S[key]!
+              .replace("{name}", "ア".repeat(nameLen))
+              .replace("{item}", item)
+              .replace("{old}", item)
+              .replace("{room}", "個室")
+              .replace(/\{(cost|gold)\}/, v);
+            for (const l of kinsokuLines(text, 28)) expect(l, `${key} ${text}`).not.toMatch(/^\s*G/);
+          }
+        }
+      }
     }
   });
 });

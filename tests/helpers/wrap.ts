@@ -7,8 +7,8 @@ export const NOT_AT_LINE_START = new Set(
 );
 export const NOT_AT_LINE_END = new Set(Array.from("「『（【〔〈《｛［([{"));
 
-const unit = (c: string): number => ((c.codePointAt(0) ?? 0) < 0x80 ? 0.5 : 1);
-const isWordChar = (c: string | undefined): boolean => c !== undefined && /^[A-Za-z0-9_]$/.test(c);
+const unit = (c: string): number => ((c.codePointAt(0) ?? 0) < 0x80 || c === "\u00a0" ? 0.5 : 1);
+const isWordChar = (c: string | undefined): boolean => c !== undefined && /^[A-Za-z0-9_ ]$/.test(c);
 
 /** text（\n で段落を分ける）を幅 cols 単位で折り返した行 */
 export function kinsokuLines(text: string, cols: number): string[] {
@@ -35,11 +35,12 @@ export function kinsokuLines(text: string, cols: number): string[] {
         while (k > start && isWordChar(cs[k - 1])) k--;
         if (k > start) b = k;
       }
-      // 金額（「400 G」）の G を行頭にしない（M22 追補。空白の前の数字の頭へ戻して、数字ごと次の行へ送る）。禁則の追い出しの後にも見直す
+      // 金額（「400 G」）は NBSP でつながった 1 語（isWordChar）なので、G だけが行頭に来ない。禁則の追い出しは語の頭より前で行う
       for (;;) {
         while (b > start + 1 && (NOT_AT_LINE_START.has(cs[b]!) || NOT_AT_LINE_END.has(cs[b - 1]!))) b--;
-        if (cs[b] === "G" && cs[b - 1] === " " && /^[0-9]$/.test(cs[b - 2] ?? "")) {
-          let k = b - 1;
+        // 追い出しで語の途中に来たら、語の頭へ戻す（「400 G。」の「。」を追い出すと G で切れるので、400 ごと送る）
+        if (isWordChar(cs[b]) && isWordChar(cs[b - 1])) {
+          let k = b;
           while (k > start && isWordChar(cs[k - 1])) k--;
           if (k > start) {
             b = k;

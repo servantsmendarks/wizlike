@@ -32,8 +32,8 @@ describe("UI-56 全滅の内訳", () => {
     expect(formatWipeSummary(p, data, S)).toEqual([
       "全滅の代償　災難",
       "出目 2+3 ＝ 5",
-      "持ち帰れなかった　40 G・2品",
-      "所持金　−78 G",
+      "持ち帰れなかった　40 G・2品",
+      "所持金　−78 G",
       "失った品　薬草",
       "失った品　長剣",
       "アルド　−180EXP　Lv4→3",
@@ -41,7 +41,7 @@ describe("UI-56 全滅の内訳", () => {
     ]);
   });
 
-  test("UI-56 奇跡（損失 0）・台帳が空: ledgerNone と itemsNone を出し、所持金は −0 G", () => {
+  test("UI-56 奇跡（損失 0）・台帳が空: ledgerNone と itemsNone を出し、所持金は −0 G", () => {
     const last = data.penaltyTable.bands.length - 1;
     const p: PenaltyResult = {
       dice: [10, 10],
@@ -59,13 +59,13 @@ describe("UI-56 全滅の内訳", () => {
       `全滅の代償　${data.penaltyTable.bands[last]!.name}`,
       "出目 10+10 ＝ 20",
       "持ち帰るはずのものは無かった",
-      "所持金　−0 G",
+      "所持金　−0 G",
       "失った品　なし",
       "アルド　−0EXP",
     ]);
   });
 
-  test("UI-56 台帳の金が 0 でも品があれば ledger の行（0 G・n品）", () => {
+  test("UI-56 台帳の金が 0 でも品があれば ledger の行（0 G・n品）", () => {
     const p: PenaltyResult = {
       dice: [5, 6],
       total: 11,
@@ -78,7 +78,7 @@ describe("UI-56 全滅の内訳", () => {
       revived: [],
       leaderRule: false,
     };
-    expect(formatWipeSummary(p, data, S)[2]).toBe("持ち帰れなかった　0 G・1品");
+    expect(formatWipeSummary(p, data, S)[2]).toBe("持ち帰れなかった　0 G・1品");
   });
 
   test("UI-56 core の全滅（迷宮で行動可能な者がいない一行のコマンド。TW-20）の wipe イベントをそのまま描ける。内訳の行に未置換の {…} が残らない", () => {

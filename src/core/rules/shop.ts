@@ -77,7 +77,7 @@ export function shopSellPrice(inst: ItemInstance, data: GameData): number {
 }
 
 /**
- * IT-65 / IT-61 / CH-77（M19）: 鑑定の結果の 2 文目（town.shop.identifiedValue / camp.identifiedValue「希少度 {rarity}　売値 {gold}G」）の params。
+ * IT-65 / IT-61 / CH-77（M19）: 鑑定の結果の 2 文目（town.shop.identifiedValue / camp.identifiedValue「希少度 {rarity}　売値 {gold} G」）の params。
  * rarity は希少度の語（strings の book.rarity.*。図鑑・品の詳細と同じ語。消耗品・魔法書は実体の希少度 normal の語）、gold は鑑定済みの売値（sellPrice）。
  * 消耗品・魔法書でも返す。乱数を引かない。実体が無ければ Error
  */

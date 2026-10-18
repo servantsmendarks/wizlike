@@ -32,7 +32,7 @@ export type BandCell = { label: string; mark: string; levelMark: string; role: B
 /** 文字の幅（単位）。ASCII と半角カナは 1、それ以外は 2 */
 export function charUnits(ch: string): number {
   const c = ch.codePointAt(0) ?? 0;
-  return c <= 0x7e || (c >= 0xff61 && c <= 0xff9f) ? 1 : 2;
+  return c <= 0x7e || c === 0xa0 || (c >= 0xff61 && c <= 0xff9f) ? 1 : 2;
 }
 
 /** 文字列の幅（単位） */
