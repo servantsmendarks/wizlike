@@ -692,6 +692,8 @@ export type BattleMenu = {
   auto: boolean;
   /** CB-02: origin が random か alarm のときだけ真 */
   canFlee: boolean;
+  /** CB-50b（M22）: 逃走の成功率（%。0〜100。canFlee が偽でも値は入る）。battle.flee の dice の rate と同じ値 */
+  fleePercent: number;
   /** CB-12/40（M16）: 行動可能な者に lastBattleInput が 1 人でもあれば真。偽なら battle.repeat は rejected（no last input） */
   canRepeat: boolean;
   /** battle.resolve を受け付けるか（checkResolve(state, data) === null と同値） */

@@ -7,7 +7,7 @@ import type { GameData } from "../src/core/data";
 import { optionAppliesTo } from "../src/core/data";
 import { execute } from "../src/core/engine";
 import { chance, cloneRng, randInt, rollDice, rollDie, weightedIndex, type RngState } from "../src/core/rng";
-import { allyAc, canAct, hitPercent, reachHitBonus, statusPercent } from "../src/core/rules/combat-calc";
+import { allyAc, canAct, fleePercent, hitPercent, reachHitBonus, statusPercent } from "../src/core/rules/combat-calc";
 import { autoInput } from "../src/core/rules/combat-plan";
 import { battleMenu, beatSwitchForTests, startBattle, startRandomEncounter } from "../src/core/rules/combat";
 import { rollDirectDrops } from "../src/core/rules/loot";
@@ -2288,6 +2288,7 @@ describe("網羅（完了条件「6 種と戦える」、敵の id、battleMenu�
     expect(menu.round).toBe(0);
     expect(menu.auto).toBe(false);
     expect(menu.canFlee).toBe(true);
+    expect(menu.fleePercent).toBe(fleePercent(s, data)); // CB-50b: battle.flee の dice の rate と同じ関数
     expect(menu.ready).toBe(false);
     expect(menu.pending).toEqual(["c1", "c2", "c4", "c5"]);
     expect(menu.groups.map((g) => g.count)).toEqual([1, 0]);

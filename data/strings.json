@@ -912,6 +912,7 @@
   "battle.cmd.defend": "防御",
   "battle.cmd.item": "道具",
   "battle.cmd.flee": "逃げる",
+  "battle.cmd.fleeRate": "逃げる {rate}%",
   "battle.cmd.auto": "オート",
   "battle.cmd.autoStop": "オート解除",
   "battle.autoStopping": "解除する……",

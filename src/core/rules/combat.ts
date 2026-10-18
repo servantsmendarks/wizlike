@@ -1314,6 +1314,7 @@ export function battleMenu(state: GameState, data: GameData): BattleMenu | null 
     round: b.round,
     auto: b.auto,
     canFlee: canFleeOf(b),
+    fleePercent: fleePercent(state, data),
     canRepeat: canRepeatOf(state),
     ready: checkResolve(state, data) === null,
     pending: b.auto ? [] : members.filter((m) => m.canAct && m.input === null).map((m) => m.id),

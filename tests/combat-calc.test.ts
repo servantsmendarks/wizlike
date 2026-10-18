@@ -122,6 +122,16 @@ describe("逃走・鑑定・EXP", () => {
     expect(fleePercent(s3, data)).toBe(55);
   });
 
+  test("CB-50b fleePercent は 0〜100 に丸める（味方が圧倒的に速ければ 100、遅ければ 0）", () => {
+    const s = base();
+    const fast = { ...s, party: s.party.map((c) => ({ ...c, stats: { ...c.stats, agi: 99 } })) };
+    expect(fleePercent(fast, data)).toBe(100);
+    const slow = { ...s, party: s.party.map((c) => ({ ...c, stats: { ...c.stats, agi: 1 } })) };
+    expect(fleePercent(slow, data)).toBeGreaterThanOrEqual(0);
+    const d2 = { ...data, config: { ...data.config, combat: { ...data.config.combat, fleeBase: -500 } } };
+    expect(fleePercent(s, d2)).toBe(0);
+  });
+
   test("CB-05 identifyPercent: エル iq16 → 15 + 6 = 21。行動可能な味方の iq 最大が 10 以下なら 15", () => {
     const s = base();
     expect(identifyPercent(s, data)).toBe(21);

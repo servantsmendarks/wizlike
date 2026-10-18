@@ -169,7 +169,8 @@ export function entries(menu: BattleMenu, cursor: InputCursor, strings: Strings)
   if (cursor.stage === "party") {
     // UI-54 / CB-12（M18。設計 2-6）: core の canRepeat が偽なら「前回と同じ」は出さない（dim にせず一覧から外し、後ろを詰める）
     return PARTY_CMDS.filter((cmd) => cmd !== "repeat" || menu.canRepeat).map((cmd) => ({
-      label: s(`battle.cmd.${cmd}`),
+      // CB-50b: 逃げるは core の fleePercent を添える（dim のときも出す）
+      label: cmd === "flee" ? s("battle.cmd.fleeRate", { rate: menu.fleePercent }) : s(`battle.cmd.${cmd}`),
       disabled: partyDisabled(menu, cmd),
       choice: { kind: "party", cmd },
     }));

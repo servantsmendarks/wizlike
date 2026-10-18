@@ -160,10 +160,11 @@ export function enemyAgiAvg(state: GameState, data: GameData): number {
   return n === 0 ? 0 : sum / n;
 }
 
-/** CB-50: floor(fleeBase + (味方平均 − 敵平均) × fleeAgiMul)。クランプしない */
+/** CB-50 / CB-50b: floor(fleeBase + (味方平均 − 敵平均) × fleeAgiMul) を 0〜100 に丸める（d100 ≤ 率の結果は丸めても変わらない） */
 export function fleePercent(state: GameState, data: GameData): number {
   const c = data.config.combat;
-  return Math.floor(c.fleeBase + (partyAgiAvg(state, data) - enemyAgiAvg(state, data)) * c.fleeAgiMul);
+  const raw = Math.floor(c.fleeBase + (partyAgiAvg(state, data) - enemyAgiAvg(state, data)) * c.fleeAgiMul);
+  return Math.max(0, Math.min(100, raw));
 }
 
 /**
