@@ -1663,3 +1663,4 @@
 - 2026-10-18 M22 D-3 CB-60/UI-70: 宝箱の問いの直前に message chest.promptHelp（3 操作の違い 1 行）を毎回出す。core（promptIfPending）と resume の再掲の両方。表示は message をそのまま語る既存の流れで、1 件ずつタップを待つ。
 - 2026-10-18 M22 D-7 TW-04/UI-52: 宿屋の行から「（一行）」を外し、見出し town.ask.inn に「（料金は一行分）」を移した（town.md で「一行」はパーティ全員の意味と確認。行の上限 39 単位のため）。効果は「全回復・毒も治る」「全回復＋士気・毒も治る」。最悪値の料金は実際の最大 60G に対し 9999 とした（999999 は非現実）。
 - 2026-10-18 M22 D-4 TW-17/UI-52: 鍛えるの確認の段の箱に、予告（town.upgrade.preview「成功すれば +a → +b になる。」、previewSame も同じ調子）と見出しの問い（town.upgrade.ask）を 1 回の narrator.say で続けて出す（upgradeConfirmSay）。未定-22「答えのボタンが続く問いは箱で語らない」の例外（箱が見出しを覆い、閉じるまで問いが見えなかった。C-5 #8）。見出しの問いは残す。town.dark.intro の末尾に「店で買った安い装備も触媒になる。」。town.upgrade.intro は 3 行になるので触らない。
+- 2026-10-18 M22 D-5 UI-55: 衝動の行動者の行の点滅を opacity 1/1/0/0 から 1/1/0.35/0.35 にした（ACTOR_BLINK_MIN_OPACITY 0.35【仮】。▼ の MORE_BLINK_MIN_OPACITY と同じ値）。戦闘の対象の枠と地図の枠は触らない。keyframes は ACTOR_BLINK_KEYFRAMES に出してテスト（party のビューは DOM のテストが無いため）。

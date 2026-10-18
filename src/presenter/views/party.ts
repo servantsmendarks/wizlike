@@ -160,6 +160,17 @@ export type PartyPanel = {
 /** UI-55: 衝動の行動者の行の点滅の周期（ms） */
 export const ACTOR_BLINK_MS = 400;
 
+/** UI-55（M22 D-5）: 衝動の行動者の行の点滅の最小の不透明度（0 まで消すと名前が読めない。▼ の MORE_BLINK_MIN_OPACITY と同じ） */
+export const ACTOR_BLINK_MIN_OPACITY = 0.35;
+
+/** UI-55: 点滅の keyframes（半周期ずつ 1 → ACTOR_BLINK_MIN_OPACITY の矩形波） */
+export const ACTOR_BLINK_KEYFRAMES: readonly Keyframe[] = [
+  { opacity: 1, offset: 0 },
+  { opacity: 1, offset: 0.5 },
+  { opacity: ACTOR_BLINK_MIN_OPACITY, offset: 0.5 },
+  { opacity: ACTOR_BLINK_MIN_OPACITY, offset: 1 },
+];
+
 /** region は ui §2 の party 領域、rows は行 0..party.size-1 の矩形（どちらもステージ座標）。classes は略称（abbr）の参照 */
 export function createPartyPanel(o: {
   strings: Strings;
@@ -369,12 +380,7 @@ export function createPartyPanel(o: {
       const row = id === null ? undefined : byId.get(id);
       if (row === undefined || !blink) return;
       blinkAnim = row.line.animate(
-        [
-          { opacity: 1, offset: 0 },
-          { opacity: 1, offset: 0.5 },
-          { opacity: 0, offset: 0.5 },
-          { opacity: 0, offset: 1 },
-        ],
+        [...ACTOR_BLINK_KEYFRAMES],
         { duration: ACTOR_BLINK_MS, iterations: Infinity },
       );
     },

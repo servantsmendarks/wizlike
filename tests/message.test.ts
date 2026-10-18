@@ -3,7 +3,7 @@ import { dungeonLayout, MESSAGE_LINE_H, regions } from "../src/presenter/layout"
 import { createMessageWindow, formatMessage, MORE_BLINK_KEYFRAMES, MORE_BLINK_MIN_OPACITY, MORE_BLINK_MS, trimHistory, typewriterSteps } from "../src/presenter/views/message";
 import { createHistoryView, HISTORY_LINE_H } from "../src/presenter/views/history";
 import { battleTurnText, headerText } from "../src/presenter/views/header";
-import { formatPartyRow } from "../src/presenter/views/party";
+import { ACTOR_BLINK_KEYFRAMES, ACTOR_BLINK_MIN_OPACITY, ACTOR_BLINK_MS, formatPartyRow } from "../src/presenter/views/party";
 import { sanStage } from "../src/core/rules/san";
 import { WRAP_STYLE } from "../src/presenter/views/wrap";
 import { data, newGame } from "./helpers/core";
@@ -463,6 +463,17 @@ describe("UI-68 MessageWindow の説明（showNote / hideNote。M10）", () => {
 describe("UI-43 ▼ の点滅（M18。設計 2-4）", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  test("UI-55（M22 D-5）衝動の行動者の行の点滅の暗い側は不透明度 0.35（0 にしない）。keyframes は 1（前半）→ 0.35（後半）、周期 400ms", () => {
+    expect(ACTOR_BLINK_MIN_OPACITY).toBe(0.35);
+    expect(ACTOR_BLINK_MS).toBe(400);
+    expect(ACTOR_BLINK_KEYFRAMES).toEqual([
+      { opacity: 1, offset: 0 },
+      { opacity: 1, offset: 0.5 },
+      { opacity: 0.35, offset: 0.5 },
+      { opacity: 0.35, offset: 1 },
+    ]);
   });
 
   test("UI-43（M18）▼ の点滅の暗い側は不透明度 0.35（0 にしない。いつ撮っても ▼ が見える）。keyframes は 1（前半）→ 0.35（後半）、周期 600ms の繰り返し", () => {
