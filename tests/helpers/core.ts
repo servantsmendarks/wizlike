@@ -285,7 +285,7 @@ export function expectTallyMatchesEvents(from: GameState, to: GameState, events:
   const ids = new Set(from.party.map((c) => c.id));
   const count = (pred: (e: GameEvent) => boolean) => events.filter(pred).length;
   const want = {
-    dives: from.tally.dives + count((e) => e.kind === "message" && e.key === "dungeon.enter"),
+    dives: from.tally.dives + count((e) => e.kind === "message" && (e.key === "dungeon.enter" || e.key === "dungeon.enterAgain")),
     battles: from.tally.battles + count((e) => e.kind === "screen" && e.to === "battle"),
     deaths: from.tally.deaths + count((e) => e.kind === "lifeChanged" && e.life === "dead" && ids.has(e.id)),
     ashes: from.tally.ashes + count((e) => e.kind === "lifeChanged" && e.life === "ash"),

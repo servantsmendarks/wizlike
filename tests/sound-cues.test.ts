@@ -53,6 +53,7 @@ describe("UI-66 soundsFor", () => {
     ],
     // 2026-10-09 工房の提案: 門から入る語りと 1F の上り階段から徒歩で出る語りで stairs。糸・呪文では鳴らさない（テレポーターは下の行の teleport だけ）
     ["門から迷宮に入る語り dungeon.enter で stairs", { kind: "message", key: "dungeon.enter", params: { dungeon: "x" } }, [{ type: "sfx", name: "stairs" }]],
+    ["2 回目以降の入場の語り dungeon.enterAgain も stairs（M22）", { kind: "message", key: "dungeon.enterAgain", params: { dungeon: "x" } }, [{ type: "sfx", name: "stairs" }]],
     ["徒歩で地上へ出る語り dungeon.exit で stairs", { kind: "message", key: "dungeon.exit" }, [{ type: "sfx", name: "stairs" }]],
     ["帰還の糸の語り dungeon.return は無し", { kind: "message", key: "dungeon.return" }, []],
     ["帰還の呪文の語り dungeon.returnSpell は無し", { kind: "message", key: "dungeon.returnSpell" }, []],

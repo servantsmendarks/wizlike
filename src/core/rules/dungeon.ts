@@ -259,7 +259,8 @@ export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
   state.screen = "dungeon";
   explore(ctx, dive, f);
   ctx.events.push({ kind: "screen", to: "dungeon", dungeonId: dive.dungeonId });
-  ctx.events.push({ kind: "message", key: "dungeon.enter", params: { dungeon: def.name } });
+  // DG-03（M22）: その迷宮に初めて入るときは dungeon.enter、2 回目以降は dungeon.enterAgain（前回の地図は役に立たないと告げる）
+  ctx.events.push({ kind: "message", key: first ? "dungeon.enter" : "dungeon.enterAgain", params: { dungeon: def.name } });
   // DG-37 / UI-76（M16）: ゲームで最初の入場なら、線画の読み方の一言（一度きり。enterSpeech の前）
   // UI-76（M18）: 続けて「用語」への案内（設定の「用語」。同じく一度きり）
   if (firstEver) {

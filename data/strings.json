@@ -399,6 +399,7 @@
   "town.temple.uncurseRow": "解呪　{cost}G",
   "town.temple.none": "その必要がある者はいない。",
 
+  "dungeon.enterAgain": "{dungeon}へ潜る。迷宮は潜るたびに形を変える。前回の地図は役に立たない。",
   "dungeon.enter": "{dungeon}へ潜る。迷宮は潜るたびに形を変える。地図は毎回白紙だ。",
   "dungeon.walking": "移動中…（触れると止まる）",
   "dungeon.walkResume": "移動を続ける",

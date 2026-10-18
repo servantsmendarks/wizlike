@@ -129,8 +129,24 @@ function makeFloor(w: number, h: number): Floor {
 // ---------------------------------------------------------------------------
 
 describe("dungeon.enter", () => {
-  test("DG-03（M16）入場の語り dungeon.enter は毎回同じ文で、{dungeon} を持ち、潜るたびに形が変わること・地図が毎回白紙であることを語る", () => {
+  test("DG-03（M22）入場の語りは、その迷宮に初めて入るときは dungeon.enter、2 回目以降は dungeon.enterAgain（前回の地図は役に立たない）。どちらも {dungeon} を持ち、最悪値の迷宮名（6 字）でも 2 行以内", () => {
     expect(data.strings["dungeon.enter"]).toBe("{dungeon}へ潜る。迷宮は潜るたびに形を変える。地図は毎回白紙だ。");
+    expect(data.strings["dungeon.enterAgain"]).toBe("{dungeon}へ潜る。迷宮は潜るたびに形を変える。前回の地図は役に立たない。");
+    for (const k of ["dungeon.enter", "dungeon.enterAgain"]) {
+      expect(kinsokuLines(data.strings[k]!.replace("{dungeon}", "アアアアアア"), 28).length).toBeLessThanOrEqual(2);
+    }
+  });
+
+  test("DG-03（M22）同じ迷宮への 2 回目の入場は dungeon.enterAgain（params は同じ）。別の迷宮の初回は dungeon.enter。乱数は初回と同じだけ（nextUint32 の 1 回）", () => {
+    const first = run(newGame(1), ENTER_D01);
+    expect(first.events[1]).toEqual({ kind: "message", key: "dungeon.enter", params: { dungeon: "試しの坑道" } });
+    const ctx = makeContext(cloneState(first.state), data);
+    returnToTown(ctx, "dungeon.return");
+    const again = run(ctx.state, ENTER_D01);
+    expect(again.events[1]).toEqual({ kind: "message", key: "dungeon.enterAgain", params: { dungeon: "試しの坑道" } });
+    const mirror = cloneRng(ctx.state.rng);
+    nextUint32(mirror);
+    expect(again.state.rng).toEqual(mirror);
   });
 
   test("DG-03/DG-40/TW-11/CB-51b dungeon.enter: screen dungeon、dive の全欄（CB-51b（M21 D-1）noChestStreak は dive に無く、progress.noChestStreak は入場で変えない = 持ち越す）、events は [screen dungeon, message dungeon.enter {dungeon:'試しの坑道'}, （DG-37/UI-76 ゲームで最初の入場）message hint.dungeonFirst, （UI-76 M18）message hint.dungeonTerms]", () => {
@@ -239,7 +255,7 @@ describe("dungeon.enter", () => {
     const ctx = makeContext(cloneState(r.state), data);
     returnToTown(ctx, "dungeon.return");
     const again = run(ctx.state, { type: "dungeon.enter", dungeonId: "d03" });
-    expect(again.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["screen", "dungeon.enter"]);
+    expect(again.events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["screen", "dungeon.enterAgain"]);
     // 欄の無い d01 は初回でも語らない（ゲームで最初の入場なので UI-76 の一言だけ出る）
     expect(run(s, ENTER_D01).events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual(["screen", "dungeon.enter", "hint.dungeonFirst", "hint.dungeonTerms"]);
     // v6 からの移行などで enteredDungeons に既にあれば初回ではない
@@ -247,7 +263,7 @@ describe("dungeon.enter", () => {
     known.progress.enteredDungeons = ["d03"];
     expect(run(known, { type: "dungeon.enter", dungeonId: "d03" }).events.map((e) => (e.kind === "message" ? e.key : e.kind))).toEqual([
       "screen",
-      "dungeon.enter",
+      "dungeon.enterAgain",
     ]);
   });
 
