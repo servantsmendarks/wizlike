@@ -171,6 +171,15 @@ export const ACTOR_BLINK_KEYFRAMES: readonly Keyframe[] = [
   { opacity: ACTOR_BLINK_MIN_OPACITY, offset: 1 },
 ];
 
+/** UI-41（M23 A-2）: 被弾のフラッシュの keyframes（1 → ACTOR_BLINK_MIN_OPACITY を 2 往復。0 まで消すと一覧の行が空白に見える） */
+export const FLASH_KEYFRAMES: readonly Keyframe[] = [
+  { opacity: 1 },
+  { opacity: ACTOR_BLINK_MIN_OPACITY },
+  { opacity: 1 },
+  { opacity: ACTOR_BLINK_MIN_OPACITY },
+  { opacity: 1 },
+];
+
 /** region は ui §2 の party 領域、rows は行 0..party.size-1 の矩形（どちらもステージ座標）。classes は略称（abbr）の参照 */
 export function createPartyPanel(o: {
   strings: Strings;
@@ -359,7 +368,7 @@ export function createPartyPanel(o: {
     async flash(id: string, ms: number): Promise<void> {
       const row = byId.get(id);
       if (row === undefined || !(ms > 0)) return;
-      const a = row.line.animate([{ opacity: 1 }, { opacity: 0 }, { opacity: 1 }, { opacity: 0 }, { opacity: 1 }], {
+      const a = row.line.animate([...FLASH_KEYFRAMES], {
         duration: ms,
         easing: "steps(4, end)",
       });

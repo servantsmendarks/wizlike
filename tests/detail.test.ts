@@ -712,3 +712,32 @@ describe("UI-33/UI-80（M21 A-4）キャラクター画面のキーの注目", (
     expect([...colors("detail-item"), ...colors("detail-inventory")]).toEqual(Array(7).fill(undefined));
   });
 });
+
+describe("UI-41 被弾のフラッシュ（M23 A-2）", () => {
+  test("UI-41 party.flash の keyframes の不透明度は最小 0.35（0 まで消えない）。1 → 最小 → 1 を 2 往復、duration と steps は変えない", async () => {
+    const calls: { kf: readonly Keyframe[]; opt: { duration: number; easing: string } }[] = [];
+    class AnimEl extends FakeEl {
+      animate(kf: readonly Keyframe[], opt: { duration: number; easing: string }): { finished: Promise<void> } {
+        calls.push({ kf, opt });
+        return { finished: Promise.resolve() };
+      }
+    }
+    vi.stubGlobal("document", { createElement: (): AnimEl => new AnimEl() });
+    const s = newGame(1);
+    const panel = createPartyPanel({
+      strings: S,
+      classes: data.classes,
+      region: { x: 0, y: 0, w: 240, h: 64 },
+      rows: [],
+      frontRow: data.config.party.frontRow,
+      stageOf: (san, sanMax) => sanStage(san, sanMax, data.config),
+    });
+    panel.render(s.party);
+    await panel.flash(s.party[0]!.id, 120);
+    expect(calls.length).toBe(1);
+    const ops = calls[0]!.kf.map((k) => Number(k["opacity"]));
+    expect(ops).toEqual([1, 0.35, 1, 0.35, 1]);
+    expect(Math.min(...ops)).toBe(0.35);
+    expect(calls[0]!.opt).toEqual({ duration: 120, easing: "steps(4, end)" });
+  });
+});
