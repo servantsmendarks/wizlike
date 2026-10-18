@@ -1653,3 +1653,5 @@
 - 2026-10-18 M22 A-1 CB-14 の確認: 前衛 3 人が dead のとき、手動の attack・オート（autoInput）・battle.repeat・敵の対象（CB-15）・menu の canStrike はすべて frontLineIds / canStrike を通り、後衛が攻撃できる。抜けは無く、コードは変えていない（tests/combat.test.ts に CB-14 の 4 本を足して固定）。B-5 #10 の「届かず」は前衛が残っていたターンの表示（canStrike 偽）と推測する。
 - 2026-10-18 M22 A-2 CB-43b: autoInterruptReason の戻りを {reason, id?} にし、解除の文に誰か（dead: name、hp: name・hp・hpMax）を出す。複数なら dead は並び順の先頭、hp は割合が最低の者（同率は並び順）。status / san / reinforce は params なし。乱数は使わない。
 - 2026-10-18 M22 A-3 CB-50b: fleePercent を 0〜100 に丸め（判定の結果は同じ）、BattleMenu.fleePercent を足し、逃げるの行を「逃げる {率}%」（dim でも率）にした。乱数は使わない。「逃げる 100%」は 114px の枠に収まる（見積もりで確認。実機では未確認）。
+- 2026-10-18 M22 A-4 CH-43b: 歩行中の毒の警告 poisonWarn{id,hp,hpMax}。しきい値は config.combat.poisonWarnRatio 0.25【仮】（hpMax × 割合を下回る）。dive.poisonWarned? で「治るまで一度」（治る・割合以上に戻ると外す）。HP 1 で止まっている毒の者も、最初の歩で下回っていれば一度出る（最も単純な解釈）。乱数は使わない。表示層は文と markActor(id, !skip)。
+- 2026-10-18 M22 A-5 UI-76: HINT_IDS に firstDeath。allyDies と damageMembers の死の message の直後（SAN の前）に一度だけ。HINTS_LESS には入れない（少なめは知っている人向け。多めだけで出る）。

@@ -1048,6 +1048,7 @@ function allyDies(ctx: RuleContext, ch: Character): void {
   ctx.events.push({ kind: "lifeChanged", id: ch.id, life: "dead" });
   clearAllStatus(ctx, ch);
   ctx.events.push({ kind: "message", key: "battle.dead", params: { target: ch.name } });
+  tellHintOnce(ctx, "firstDeath"); // UI-76（M22）
   for (const o of ctx.state.party) {
     if (o.life === "alive") loseSan(ctx, o, ctx.data.config.san.allyDeath, ["allyInjury"]);
   }
@@ -1157,6 +1158,31 @@ function tickPoison(ctx: RuleContext): void {
 /** CH-43 / F8: 迷宮の 1 歩ごとの毒 */
 export function tickPoisonStep(ctx: RuleContext): void {
   tickPoison(ctx);
+  warnPoison(ctx);
+}
+
+/**
+ * CH-43b（M22）: 歩行中の毒の警告。毒の者の hp が hpMax × poisonWarnRatio を下回り、dive.poisonWarned に id が無ければ
+ * poisonWarn を出して id を足す。毒でない・割合以上なら id を外す（治って再び下がればまた出る）。街（dive なし）では何もしない。乱数なし
+ */
+function warnPoison(ctx: RuleContext): void {
+  const { state, data } = ctx;
+  const dive = state.dive;
+  if (dive === null) return;
+  const ratio = data.config.combat.poisonWarnRatio;
+  let warned = dive.poisonWarned ?? [];
+  for (const ch of state.party) {
+    const hpMax = hpMaxOf(state, data, ch);
+    const weak = ch.life === "alive" && ch.status.includes("poison") && ch.hp < hpMax * ratio;
+    const has = warned.includes(ch.id);
+    if (weak && !has) {
+      ctx.events.push({ kind: "poisonWarn", id: ch.id, hp: ch.hp, hpMax });
+      warned = [...warned, ch.id];
+    } else if (!weak && has) {
+      warned = warned.filter((x) => x !== ch.id);
+    }
+  }
+  if (warned.length > 0 || dive.poisonWarned !== undefined) dive.poisonWarned = warned;
 }
 
 /** 戦闘の終わり（CB-50/51/53、DG-31〜33） */

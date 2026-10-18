@@ -37,6 +37,7 @@ import {
   noTrapDetect,
   PLACEHOLDER_DUNGEON_NAME,
 } from "./helpers/core";
+import { kinsokuLines } from "./helpers/wrap";
 import { approaches, dataWithRate, ENTER_D01, enterD01, findSituation, MOVE, placeAt, run, withRng } from "./helpers/dungeon";
 
 // ---------------------------------------------------------------------------
@@ -631,7 +632,9 @@ describe("毒の 1 歩（CH-43）", () => {
     s.party[2]!.life = "dead";
     s.party[2]!.hp = 0;
     const r = run(s, MOVE, DATA0);
-    expect(r.events.slice(0, 3)).toEqual([
+    // CH-43b: 毒で弱った者の poisonWarn は hpChanged の後ろに入る（ここでは見ない）
+    const ev3 = r.events.filter((e) => e.kind !== "poisonWarn");
+    expect(ev3.slice(0, 3)).toEqual([
       { kind: "moved", pos: sit.a.target, facing: sit.a.facing },
       { kind: "hpChanged", id: "c1", delta: -1, hp: 4 },
       { kind: "message", key: "dungeon.trap.pit" },
@@ -650,7 +653,69 @@ describe("毒の 1 歩（CH-43）", () => {
     expect(run(p, MOVE, DATA0).events).toEqual([
       { kind: "moved", pos: a.target, facing: a.facing },
       { kind: "hpChanged", id: "c4", delta: -1, hp: 11 }, // ドナ hpMax 12（CH-65）− 1
+      { kind: "poisonWarn", id: "c2", hp: 1, hpMax: p.party[1]!.hpMax }, // CH-43b: HP 1 の毒の者は最初の歩で警告（HP は減らない）
     ]);
+  });
+});
+
+describe("歩行中の毒の警告（CH-43b。M22 A-4）", () => {
+  const setup = (hp: number, status: ("poison")[] = ["poison"]) => {
+    const s2 = enterD01(1);
+    const f = floorOf(s2.dive!, data);
+    const a = approaches(f, (c) => c.kind === "corridor")[0]!;
+    const p = placeAt(s2, a.pos, a.facing);
+    p.party[3]!.status = status;
+    p.party[3]!.hp = hp;
+    return { p, a };
+  };
+  const warns = (events: readonly { kind: string }[]) => events.filter((e) => e.kind === "poisonWarn");
+
+  test("CH-43b しきい値（hpMax 12 × 0.25 = 3）をまたぐ歩で hpChanged の直後に 1 回だけ。次の歩では出ない。乱数は変わらない", () => {
+    expect(data.config.combat.poisonWarnRatio).toBe(0.25);
+    const { p, a } = setup(3);
+    const r = run(p, MOVE, DATA0);
+    expect(r.events).toEqual([
+      { kind: "moved", pos: a.target, facing: a.facing },
+      { kind: "hpChanged", id: "c4", delta: -1, hp: 2 },
+      { kind: "poisonWarn", id: "c4", hp: 2, hpMax: 12 },
+    ]);
+    expect(r.state.dive!.poisonWarned).toEqual(["c4"]);
+    // 乱数の消費は毒の警告の有無で変わらない（毒なしで同じ歩をしたときと同じ rng）
+    const clean = structuredClone(p);
+    clean.party[3]!.status = [];
+    expect(r.state.rng).toEqual(run(clean, MOVE, DATA0).state.rng);
+    // 同じ潜行の次の歩（hp 2 → 1）では出ない
+    const again = run(placeAt(r.state, a.pos, a.facing), MOVE, DATA0);
+    expect(warns(again.events)).toEqual([]);
+    expect(again.state.dive!.poisonWarned).toEqual(["c4"]);
+  });
+
+  test("CH-43b しきい値以上（hp 4 → 3）では出ない。HP 1 で止まった者は一度出た後は出ない", () => {
+    const { p } = setup(4);
+    const r = run(p, MOVE, DATA0);
+    expect(warns(r.events)).toEqual([]);
+    expect(r.state.dive!.poisonWarned).toBeUndefined();
+  });
+
+  test("CH-43b 治る（毒でなくなる）と id を外し、再び毒で下がればまた出る", () => {
+    const { p, a } = setup(3);
+    const r1 = run(p, MOVE, DATA0);
+    const healed = placeAt(r1.state, a.pos, a.facing);
+    healed.party[3]!.status = [];
+    const r2 = run(healed, MOVE, DATA0);
+    expect(r2.state.dive!.poisonWarned).toEqual([]);
+    const again = placeAt(r2.state, a.pos, a.facing);
+    again.party[3]!.status = ["poison"];
+    again.party[3]!.hp = 3;
+    const r3 = run(again, MOVE, DATA0);
+    expect(warns(r3.events)).toHaveLength(1);
+  });
+
+  test("CH-43b 文は strings の dungeon.poisonWeak。名前 6 字・HP 3 桁でも 28 字 2 行以内", () => {
+    const t = data.strings["dungeon.poisonWeak"]!;
+    expect(t).toBe("{name}は毒で弱っている（HP {hp}/{hpMax}）。");
+    const filled = t.replace("{name}", "アアアアアア").replace("{hp}", "249").replace("{hpMax}", "999");
+    expect(kinsokuLines(filled, 28).length).toBeLessThanOrEqual(2);
   });
 });
 
@@ -1303,6 +1368,7 @@ describe("罠（DG-20, DG-21, E4）", () => {
       ...state.party.map((c, i) => ({ kind: "hpChanged", id: c.id, delta: -(c.hp - Math.max(0, c.hp - rolls[i]!)), hp: Math.max(0, c.hp - rolls[i]!) })),
       { kind: "lifeChanged", id: victim.id, life: "dead" },
       { kind: "message", key: "dungeon.dead", params: { name: victim.name } },
+      { kind: "message", key: "hint.firstDeath" }, // UI-76（M22）
       ...others.flatMap((c) => [...calm(c), { kind: "sanChanged", id: c.id, delta: -ally(c.id), san: c.san - ally(c.id) }]),
       ...others.flatMap((c) => [...calm(c), { kind: "sanChanged", id: c.id, delta: -trapLoss(state, c.id), san: c.san - ally(c.id) - trapLoss(state, c.id) }]),
     ]);

@@ -20,7 +20,7 @@ const hintKeys = (events: readonly GameEvent[]): string[] =>
 
 describe("UI-76 一度きりの GM の一言（M16）", () => {
   test("UI-76/UI-20/UI-78/DG-46/DG-45/CB-06 HINT_IDS は dungeonFirst / sanUnknown / levelUpMark / lostExits / dungeonTerms（M18）/ waitEnemy（M19）。文は strings の hint.<id> にあり、会話の箱の 1 行 28 字で 2 行以内（禁則つき）、差し込みなし", () => {
-    expect([...HINT_IDS]).toEqual(["dungeonFirst", "sanUnknown", "levelUpMark", "lostExits", "dungeonTerms", "waitEnemy"]);
+    expect([...HINT_IDS]).toEqual(["dungeonFirst", "sanUnknown", "levelUpMark", "lostExits", "dungeonTerms", "waitEnemy", "firstDeath"]);
     for (const id of HINT_IDS) {
       const t = S[`hint.${id}`];
       expect(t, id).toBeDefined();
@@ -30,6 +30,8 @@ describe("UI-76 一度きりの GM の一言（M16）", () => {
     // M20（UI-20 / UI-76。テストプレイ v4 の C-4 #5）: 線画の下の印の □（扉）も説明する。会話の箱の 2 行
     expect(S["hint.dungeonFirst"]).toBe("奥へ伸びる線が道、正面の四角は壁。下の三角は口、□は扉。");
     expect(kinsokuLines(S["hint.dungeonFirst"]!, 28)).toEqual(["奥へ伸びる線が道、正面の四角は壁。下の三角は口、□は扉。"]); // M20 レビュー: ▷ は同梱フォント（美咲ゴシック第2）に無いので「三角」と書く
+    // M22（UI-76 A-5）: 初めての死者の一言（22 字、1 行）
+    expect(S["hint.firstDeath"]).toBe("死んだ者は寺院で生き返る。灰になる前に街へ戻れ。");
     expect(S["hint.dungeonTerms"]).toBe("分からない言葉は、設定の「用語」で引ける。");
     expect(S["hint.sanUnknown"]).toBe("正体の分からない敵に会うと正気が削れる。何度か戦ううちに正体が分かる。");
     // M19（D-7。CB-06）: 1 回の戦闘ではなく何度か戦ううちに分かること（識別は毎ラウンドの判定と通算の撃破数）。会話の箱の 2 行

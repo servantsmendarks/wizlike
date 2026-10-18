@@ -82,6 +82,7 @@
 `dungeonId, diveSeed, floor, deepestFloor, pos {x,y}, facing ("N"|"E"|"S"|"W"), explored { [floor]: Set 相当の配列 }, clearedCells [], knownTraps { [floor]: 配列 }, bossDefeated, ledger`
 
 - `deepestFloor`: この潜行で到達した最深の階（入場時 1、常に `floor` 以上。DG-14）。
+- `poisonWarned`: 毒の警告（CH-43b の poisonWarn）を出して、まだ毒で弱ったままの者の id（M22。省略可能で、無ければ空）。
 - `culled`: この潜行の階を `fillRatio` で間引くか（M21。DG-48。入場で true。省略可能で、無い潜行は fillRatio 1 として間引かない）。
 - `explored`: 階番号の文字列 → その階の探索済みセルの添字（`y*width+x`）の昇順・重複なしの配列。
 - `clearedCells`: `{floor, x, y}` の配列（発動済みの罠など。通常のセルとして扱う）。

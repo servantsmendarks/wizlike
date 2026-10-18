@@ -645,6 +645,15 @@ export function createPlayer(deps: PlayerDeps): Player {
       deps.party.markActor(ev.actorId, !cx.skip);
       marked = true;
     },
+    async poisonWarn(ev, cx, finalState) {
+      // CH-43b（M22）: 歩行中の毒の警告。その者の帯に印を付け（演出スキップでは点滅せず色だけ。印は再生の終わりで外す）、文を出す
+      cx.skip = isSkip();
+      const who = finalState.party.find((c) => c.id === ev.id);
+      const tpl = deps.strings["dungeon.poisonWeak"] ?? "dungeon.poisonWeak";
+      deps.party.markActor(ev.id, !cx.skip);
+      marked = true;
+      await deps.message.say(formatMessage(tpl, { name: who?.name ?? ev.id, hp: ev.hp, hpMax: ev.hpMax }), cx.skip);
+    },
     async chestTrap(_ev, cx) {
       // 何もしない（作動の語りは message、効果は hpChanged / statusChanged / sanChanged / moved / screen が来る）
       cx.skip = isSkip();

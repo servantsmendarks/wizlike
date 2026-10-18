@@ -2179,6 +2179,11 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     const r = exec(s, RESOLVE, d);
     expect(r.events).toContainEqual({ kind: "lifeChanged", id: "c1", life: "dead" });
     expect(r.events).toContainEqual({ kind: "message", key: "battle.dead", params: { target: "アルド" } });
+    // UI-76（M22 A-5）: 初めての死者の一言（battle.dead の直後、SAN の前。一度きり）
+    const keysOf = r.events.map((e) => (e.kind === "message" ? e.key : e.kind));
+    expect(keysOf.indexOf("hint.firstDeath")).toBe(keysOf.indexOf("battle.dead") + 1);
+    expect(keysOf.indexOf("hint.firstDeath")).toBeLessThan(keysOf.indexOf("sanChanged"));
+    expect(r.state.progress.hints).toContain("firstDeath");
     expect(eventsOf(r.events, "sanChanged")).toEqual([
       { kind: "sanChanged", id: "c2", delta: -5, san: 95 },
       { kind: "sanChanged", id: "c3", delta: -10, san: 90 },

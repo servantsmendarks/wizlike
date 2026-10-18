@@ -407,6 +407,8 @@
   "hint.sanUnknown": "正体の分からない敵に会うと正気が削れる。何度か戦ううちに正体が分かる。",
   "hint.levelUpMark": "名前の横の↑は、宿で上がれる印だ。",
   "hint.lostExits": "地図の未踏の口を押せば、そこまで歩く。",
+  "hint.firstDeath": "死んだ者は寺院で生き返る。灰になる前に街へ戻れ。",
+  "dungeon.poisonWeak": "{name}は毒で弱っている（HP {hp}/{hpMax}）。",
   "hint.waitEnemy": "その場で一巡り待ち、敵を呼び寄せる。正気が少し削れる。",
   "dungeon.enterSpeech.d03": "GM が声を落とした。「ここが最後の迷宮だ。灰の匂いがするだろう？」",
   "dungeon.gossip": "宿で聞いた噂を思い出す。{monster}が出るらしい。",

@@ -725,6 +725,7 @@ describe("効果（EV-32）", () => {
       { kind: "hpChanged", id: "c3", delta: -1, hp: 0 },
       { kind: "lifeChanged", id: "c3", life: "dead" },
       { kind: "message", key: "dungeon.dead", params: { name: "キリ" } },
+      { kind: "message", key: "hint.firstDeath" }, // UI-76（M22）
       // EV-44（M18）: 慎重の allyInjury の半減が効いた者は sanChanged の直前に trait.cautiousCalm
       ...others.flatMap((c) => [
         ...(c.personality === "cautious" ? [{ kind: "message", key: "trait.cautiousCalm", params: { name: c.name } }] : []),

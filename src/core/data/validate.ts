@@ -332,6 +332,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       sleepHitBonus: I(),
       sleepNaturalWake: I(PERCENT), // CB-32【仮】
       poisonDamagePerTick: I(POS_INT),
+      poisonWarnRatio: N(RATIO), // CH-43b【仮】
       fleeBase: I(),
       fleeAgiMul: I(),
       chestTable: L(I(PERCENT), 1), // CB-51 / CB-51b（M21）【仮】段の表（通路）

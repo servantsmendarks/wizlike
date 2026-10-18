@@ -2,6 +2,7 @@
 // dungeon.ts・combat.ts・（M5 の）events.ts から使う。import は san.ts と型・dungeon-gen だけ（循環を作らない）。
 import { rollDice } from "../rng";
 import type { Character, Dive, GameState, RuleContext, TextRef } from "../types";
+import { tellHintOnce } from "./hints";
 import { bumpTally } from "./progress";
 import { gainTreasureSan, loseSan } from "./san";
 
@@ -43,6 +44,7 @@ export function damageMembers(ctx: RuleContext, targets: readonly Character[], d
     ctx.events.push({ kind: "lifeChanged", id: ch.id, life: "dead" });
     clearAllStatus(ctx, ch); // CH-45
     ctx.events.push({ kind: "message", key: "dungeon.dead", params: { name: ch.name } });
+    tellHintOnce(ctx, "firstDeath"); // UI-76（M22）
   }
   for (let k = 0; k < died.length; k++) {
     for (const o of aliveMembers(state)) loseSan(ctx, o, data.config.san.allyDeath, ["allyInjury"]);

@@ -266,6 +266,10 @@ export type Dive = {
    * 省略可能（schemaVersion 9 のまま足した欄。無ければ M20 までの潜行として間引かない = fillRatio 1 で生成。途中の潜行の盤を変えないため）
    */
   culled?: boolean;
+  /**
+   * CH-43b（M22）: 毒の警告（poisonWarn）を出して、まだ毒で弱ったままの者の id。省略可能（schemaVersion 10 のまま足した欄。無ければ空）
+   */
+  poisonWarned?: string[];
 };
 
 /**
@@ -1281,6 +1285,8 @@ export type GameEvent =
    * 「調べずに開ける」（CB-65。作動させた人は行動者）。表示層の印は eventStarted の actorId と同じ扱い
    */
   | { kind: "chestImpulse"; actorId: string }
+  /** CH-43b（M22）: 歩行中の毒で hp が hpMax × poisonWarnRatio を下回った（潜行ごとに、治るまで一度） */
+  | { kind: "poisonWarn"; id: string; hp: number; hpMax: number }
   /** D2: 受け付けなかったコマンド。command は受け取った type（形が壊れていれば "unknown"）、reason は英語の短い理由 */
   | { kind: "rejected"; command: string; reason: string }
   /** M3 追加: 鑑定（CB-05 / MG-41）で表示名が変わったときに全グループを出し直す */

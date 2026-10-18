@@ -13,7 +13,7 @@ export const STATUS_IDS = ["poison", "paralysis", "sleep", "stone"] as const;
 export type StatusId = (typeof STATUS_IDS)[number];
 
 /** UI-76（M16）: 一度きりの GM の一言の id（strings の hint.<id>。読み込み時に必須キーとして検査する。rules/hints.ts tellHintOnce が出す） */
-export const HINT_IDS = ["dungeonFirst", "sanUnknown", "levelUpMark", "lostExits", "dungeonTerms", "waitEnemy"] as const;
+export const HINT_IDS = ["dungeonFirst", "sanUnknown", "levelUpMark", "lostExits", "dungeonTerms", "waitEnemy", "firstDeath"] as const;
 export type HintId = (typeof HINT_IDS)[number];
 
 export const EQUIP_SLOTS = ["weapon", "armor", "shield", "helm", "gauntlet", "accessory"] as const;
@@ -193,6 +193,8 @@ export type Config = {
     /** CB-32【仮】: ラウンド終了時に眠っている者が自然に覚める確率（%） */
     sleepNaturalWake: number;
     poisonDamagePerTick: number;
+    /** CH-43b【仮】: 毒で HP が hpMax × この割合を下回った歩で一度だけ警告 */
+    poisonWarnRatio: number;
     fleeBase: number;
     fleeAgiMul: number;
     /** CB-51 / CB-51b（M21）【仮】: ランダム遭遇の勝利の宝箱の率（%）の段の表。添字は progress.noChestStreak（表の長さを超えたら最後の値）。通路はこのまま */
