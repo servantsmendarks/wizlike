@@ -2,7 +2,7 @@
 // M11 の作業 5 で floorOf・visibleCellsOf・markExplored を dungeon.ts から移した（挙動は不変）。宝箱の転移の罠（chest.ts）がこれらを使うが、
 // chest.ts は combat.ts から import され、dungeon.ts は combat.ts を import するので、chest.ts → dungeon.ts は循環になるため。
 // import は dungeon-gen・field・rng・state と型だけ（循環を作らない）。dungeon.ts は同じ名前で再び export する。
-import type { GameData } from "../data/index";
+import type { DungeonDef, GameData } from "../data/index";
 import { randInt } from "../rng";
 import { dungeonOf } from "../state";
 import type { Dive, Edge, Facing, Floor, Pos, RuleContext, VisibleCell } from "../types";
@@ -36,10 +36,7 @@ export function floorOf(dive: Dive, data: GameData, floorNo: number = dive.floor
   const def0 = dungeonOf(data, dive.dungeonId);
   const def = dive.culled === true ? def0 : { ...def0, fillRatio: 1 };
   if (!Number.isInteger(floorNo) || floorNo < 1 || floorNo > def.floors) throw new Error(`floorOf: bad floor ${floorNo}`);
-  const gen = chestGenOf(data, dive.dungeonId);
-  // generateDive(...)[floorNo-1] と同じ。下の階は上の階に依存しない（DG-06 は上の階の stairsDown だけ）ので、floorNo までで止める
-  let f = generateFloor(def, data.config.dungeon, dive.diveSeed, 1, null, gen);
-  for (let n = 2; n <= floorNo; n++) f = generateFloor(def, data.config.dungeon, dive.diveSeed, n, f.stairsDown, gen);
+  const f = copyFloor(generatedFloor(def, data.config.dungeon, dive.diveSeed, floorNo, chestGenOf(data, dive.dungeonId)));
   for (const c of dive.clearedCells) {
     if (c.floor !== floorNo) continue;
     const cell = cellAt(f, c.x, c.y);
@@ -50,6 +47,40 @@ export function floorOf(dive: Dive, data: GameData, floorNo: number = dive.floor
   }
   if (floorNo === def.floors && dive.bossDefeated && f.boss !== null) cellAt(f, f.boss.x, f.boss.y).kind = "teleporter";
   return f;
+}
+
+/**
+ * D-1b（M21）: 生成した盤（clearedCells などを重ねる前）のモジュール内のメモ。DG-48 の間引きで生成が重くなり（PC で 1 階あたり約 1ms）、
+ * floorOf はコマンドのたびに呼ばれるため。鍵は生成の入力のすべて（実効の def・config.dungeon・chestGen・diveSeed）を JSON にした文字列なので、
+ * 同じ鍵からは必ず同じ盤になる（generateFloor は純粋）。GameState には入れない。値は外へ渡さず、floorOf は copyFloor の写しを返す
+ * （呼び出し側が盤を書き換えてもメモは変わらない）。直近 GEN_CACHE_MAX 個の潜行だけを持つ
+ */
+const GEN_CACHE_MAX = 8;
+const genCache = new Map<string, Floor[]>();
+
+/** generateDive(...)[floorNo-1] と同じ盤（メモ）。下の階は上の階に依存しない（DG-06 は上の階の stairsDown だけ）ので、floorNo までだけ作る */
+function generatedFloor(def: DungeonDef, cfg: GameData["config"]["dungeon"], diveSeed: number, floorNo: number, gen: ChestGen): Floor {
+  const key = JSON.stringify([def, cfg, gen, diveSeed]);
+  let chain = genCache.get(key);
+  if (chain === undefined) {
+    chain = [];
+    if (genCache.size >= GEN_CACHE_MAX) genCache.delete(genCache.keys().next().value!);
+  } else genCache.delete(key); // 使った鍵を末尾へ（古いものから捨てる）
+  genCache.set(key, chain);
+  for (let n = chain.length + 1; n <= floorNo; n++) chain.push(generateFloor(def, cfg, diveSeed, n, n === 1 ? null : chain[n - 2]!.stairsDown, gen));
+  return chain[floorNo - 1]!;
+}
+
+/** 盤の深い写し（Floor は平たいオブジェクトの入れ子だけ） */
+function copyFloor(f: Floor): Floor {
+  return {
+    ...f,
+    cells: f.cells.map((c) => ({ ...c })),
+    rooms: f.rooms.map((r) => ({ ...r })),
+    stairsUp: { ...f.stairsUp },
+    stairsDown: f.stairsDown === null ? null : { ...f.stairsDown },
+    boss: f.boss === null ? null : { ...f.boss },
+  };
 }
 
 /** 向きに対する前・左・右の辺と、階段の記号（DG-12。罠・イベント・ボスは返さない） */

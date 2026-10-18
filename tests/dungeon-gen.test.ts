@@ -23,8 +23,8 @@ import {
   turnLeft,
   turnRight,
 } from "../src/core/rules/dungeon-gen";
-import type { CellKind, Floor } from "../src/core/types";
-import { chestGenOf } from "../src/core/rules/floor";
+import type { CellKind, Dive, Floor } from "../src/core/types";
+import { chestGenOf, floorOf } from "../src/core/rules/floor";
 import { data } from "./helpers/core";
 
 const SEEDS = Array.from({ length: 200 }, (_, i) => i + 1);
@@ -753,5 +753,68 @@ describe("dungeon-gen: 階の充填率（DG-48。M21）", () => {
     const d01 = ALL.filter((a) => a.def.id === "d01").map((a) => floorCount(a.floors[0]!));
     expect(d01).toHaveLength(200);
     expect([Math.min(...d01), median(d01), Math.max(...d01)]).toEqual([180, 203, 288]);
+  });
+});
+
+// M21 D-1b: floorOf の生成のメモ（src/core/rules/floor.ts の genCache）。盤は変えない
+describe("dungeon-gen: 生成の盤の固定と floorOf のメモ（DG-03 / DG-48。M21 D-1b）", () => {
+  /**
+   * 3 ダンジョン × diveSeed 1〜200 の generateDive の JSON（シードの順に連結）の sha256。
+   * 出どころ: D-1b の変更の前の HEAD 71c6b60（と 49229d2。同じ値）で、scratchpad の m21d-perf/perf.mts（HASH=1）が出した値。
+   * 生成の手順（DG-03 の乱数の消費・DG-48 の間引き）を速くしても、この値が変わったら盤が変わっている
+   */
+  const DIVE_HASH: Record<string, string> = {
+    d01: "cc0d27caee86fe0b176dad727bdf2d1232c2481134077557fd0dce9073f5df49",
+    d02: "1fab810c7eddf501182ce26ac104207820ab4db11e99d4cbf0678ac0362d566f",
+    d03: "f88d3a9de563408ce4c0b6d9294becd885ff004f4bd6f35cbe7131cd89d159c3",
+  };
+  const sha256 = async (s: string): Promise<string> =>
+    [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const diveOf = (dungeonId: string, diveSeed: number, extra: Partial<Dive> = {}): Dive =>
+    ({ dungeonId, diveSeed, floor: 1, culled: true, clearedCells: [], bossDefeated: false, ...extra }) as unknown as Dive;
+  const defOf = (id: string): DungeonDef => data.dungeons.find((d) => d.id === id)!;
+
+  test("DG-03/DG-48 盤の固定: 3 ダンジョン × 200 シードの generateDive の JSON の sha256 が変更の前の値と同じ。floorOf（culled、処理済みなし）の全階を並べた JSON も同じ値", async () => {
+    for (const id of ["d01", "d02", "d03"]) {
+      const def = defOf(id);
+      let viaGen = "";
+      let viaFloorOf = "";
+      for (const seed of SEEDS) {
+        viaGen += JSON.stringify(generateDive(def, CFG, seed, GEN(def)));
+        const dive = diveOf(id, seed);
+        const last = floorOf(dive, data, def.floors); // 下の階から呼んで、上の階はメモから出す
+        const fs = Array.from({ length: def.floors - 1 }, (_, i) => floorOf(dive, data, i + 1));
+        viaFloorOf += JSON.stringify([...fs, last]);
+      }
+      expect(await sha256(viaGen), id).toBe(DIVE_HASH[id]);
+      expect(await sha256(viaFloorOf), id).toBe(DIVE_HASH[id]);
+    }
+  });
+
+  test("DG-03/DG-48 floorOf のメモ: 返した盤を書き換えても次の floorOf は生成のまま。処理済みのセル・ボスの撃破は呼ぶたびに重ねる。def の値（fillRatio）や culled が違えば別の盤。9 潜行以上を巡っても generateDive と同じ", () => {
+    const def = defOf("d01");
+    const gen = generateDive(def, CFG, 777, GEN(def));
+    const dive = diveOf("d01", 777);
+    const a = floorOf(dive, data, 1);
+    expect(a).toEqual(gen[0]);
+    a.cells[0]!.kind = "trap";
+    a.cells[0]!.n = "open";
+    a.rooms.length = 0;
+    a.stairsUp.x = 99;
+    expect(floorOf(dive, data, 1)).toEqual(gen[0]);
+    // 処理済みのセルとボスの撃破は dive から重ねる（メモの盤は変えない）
+    const boss = gen[1]!.boss!;
+    const done = diveOf("d01", 777, { bossDefeated: true, clearedCells: [{ floor: 1, x: gen[0]!.stairsUp.x, y: gen[0]!.stairsUp.y }] });
+    expect(cellAt(floorOf(done, data, 1), gen[0]!.stairsUp.x, gen[0]!.stairsUp.y).kind).not.toBe("stairsUp");
+    expect(cellAt(floorOf(done, data, 2), boss.x, boss.y).kind).toBe("teleporter");
+    expect(floorOf(dive, data, 2)).toEqual(gen[1]);
+    // culled の無い潜行は fillRatio 1。data の fillRatio を変えた写しでは、その値の盤
+    expect(floorOf(diveOf("d01", 777, { culled: undefined }), data, 1)).toEqual(generateDive(FULL(def), CFG, 777, GEN(def))[0]);
+    const other = { ...data, dungeons: data.dungeons.map((d) => (d.id === "d01" ? { ...d, fillRatio: 0.6 } : d)) };
+    expect(floorOf(dive, other, 1)).toEqual(generateDive({ ...def, fillRatio: 0.6 }, CFG, 777, GEN(def))[0]);
+    // メモの数（8）より多い潜行を 2 巡しても同じ
+    for (let round = 0; round < 2; round++) {
+      for (let seed = 1000; seed < 1012; seed++) expect(floorOf(diveOf("d01", seed), data, 2)).toEqual(generateDive(def, CFG, seed, GEN(def))[1]);
+    }
   });
 });
