@@ -156,11 +156,11 @@ describe("UI-52 街のページ", () => {
     expect(notes).toHaveLength(townLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size).notes.length);
   });
 
-  test("UI-52/TW-04/TW-15（M16。M18 5-3）宿屋はランクの行（名前・料金「{cost}G（一行）」・効果。士気の立つ個室は効果に「＋士気」）。払えないランクは disabled。末尾が戻る", () => {
+  test("UI-52/TW-04/TW-15（M16。M18 5-3）宿屋はランクの行（名前・料金「{cost}G」・効果。M22 D-7 で「（一行）」は見出しへ。士気の立つ個室は効果に「＋士気」）。払えないランクは disabled。末尾が戻る", () => {
     expect(townEntries("inn", menuOf(town({}, 50)), S)).toEqual([
-      { kind: "inn", rank: 0, label: "馬小屋　0G（一行）　MPのみ", disabled: false },
-      { kind: "inn", rank: 1, label: "相部屋　20G（一行）　全回復・毒", disabled: false },
-      { kind: "inn", rank: 2, label: "個室　60G（一行）　全回復＋士気・毒", disabled: true },
+      { kind: "inn", rank: 0, label: "馬小屋　0G　MPのみ", disabled: false },
+      { kind: "inn", rank: 1, label: "相部屋　20G　全回復・毒も治る", disabled: false },
+      { kind: "inn", rank: 2, label: "個室　60G　全回復＋士気・毒も治る", disabled: true },
       back,
     ]);
     // ちょうど払える額なら押せる
@@ -172,7 +172,7 @@ describe("UI-52 街のページ", () => {
     for (const e of townEntries("inn", menuOf(town()), S)) expect(kinsokuLines(e.label, 21), e.label).toHaveLength(1);
     // 効果の文はランクの id で引く（strings を差し替えれば行も変わる。表示層はランクを見て分岐しない）
     const swapped = townEntries("inn", menuOf(town()), { ...S, "town.inn.effect.cheap": "効果X" });
-    expect(swapped[1]?.label).toBe("相部屋　20G（一行）　効果X");
+    expect(swapped[1]?.label).toBe("相部屋　20G　効果X");
     expect(S["town.inn.moraleMark"]).toBeUndefined();
   });
 
@@ -543,7 +543,7 @@ describe("UI-52 街のページ", () => {
     expect(townHeading("shopBuy")).toBe("town.shop.buyIntro");
     expect(townHeading({ shop: "herb" })).toBe("town.shop.whom");
     expect(townHeading({ withdraw: "i1" })).toBe("town.storage.whom");
-    expect(S["town.ask.inn"]).toBe("どの部屋にする？");
+    expect(S["town.ask.inn"]).toBe("どの部屋にする？（料金は一行分）");
   });
 
   test("UI-52（M8.5）townPageIntro は問いを含まない（見出し townHeading のキーと重ならず、語りの文に「？」が無い）", () => {
@@ -2198,7 +2198,7 @@ describe("TW-04/UI-52（M18 5-3）宿屋の見出しの 2 行目と泊まった�
     expect(kinsokuLines(S["town.inn.gossipHeard"]!, 28)).toHaveLength(1);
   });
 
-  test("TW-04/UI-52 見出しの 2 行目は最悪の値（HP・MP とも 9999/9999、6人。M20 D-6: 名前 6 字・残り 5 桁）でも見出しの 1 行（全角 28 字 = 56 単位）に収まる。宿の行は最悪の料金（6 桁）でも一覧の 21 字（39 単位）に収まる", () => {
+  test("TW-04/UI-52 見出しの 2 行目は最悪の値（HP・MP とも 9999/9999、6人。M20 D-6: 名前 6 字・残り 5 桁）でも見出しの 1 行（全角 28 字 = 56 単位）に収まる。宿の行は最悪の料金（M22 D-7: 実際の料金は 0 / 20 / 60 なので 4 桁 9999）でも一覧の 21 字（39 単位）に収まる", () => {
     const hm = { hp: 9999, hpMax: 9999, mp: 9999, mpMax: 9999 };
     const worst = formatMessage(S["town.inn.partyHp"]!, { ...hm, n: 5, name: "アアアアアア", exp: 99999 });
     expect(textUnits(worst), worst).toBeLessThanOrEqual(56);
@@ -2207,7 +2207,7 @@ describe("TW-04/UI-52（M18 5-3）宿屋の見出しの 2 行目と泊まった�
       expect(textUnits(w), w).toBeLessThanOrEqual(56);
     }
     for (const r of data.config.town.innRanks) {
-      const label = formatMessage(S["town.inn.rank"]!, { name: r.name, cost: 999999, effect: S[`town.inn.effect.${r.id}`]! });
+      const label = formatMessage(S["town.inn.rank"]!, { name: r.name, cost: 9999, effect: S[`town.inn.effect.${r.id}`]! });
       expect(textUnits(label), label).toBeLessThanOrEqual(39);
     }
   });
@@ -2222,7 +2222,7 @@ describe("TW-04/UI-52（M18 5-3）宿屋の見出しの 2 行目と泊まった�
     expect(S["town.inn.curedPoison"]).toBe("毒も抜けた。");
     expect(kinsokuLines(S["town.inn.curedPoison"]!, 28)).toHaveLength(1);
     for (const r of data.config.town.innRanks) expect(S[`town.inn.effect.${r.id}`]!.includes("毒"), r.id).toBe(r.curePoison);
-    expect([S["town.inn.effect.cheap"], S["town.inn.effect.good"]]).toEqual(["全回復・毒", "全回復＋士気・毒"]);
+    expect([S["town.inn.effect.cheap"], S["town.inn.effect.good"]]).toEqual(["全回復・毒も治る", "全回復＋士気・毒も治る"]);
     // 用語: 毒の行の直後が用語なしの続きの行で、治し方を書く（宿は相部屋以上）
     const body = formatRules(S).slice(1);
     const at = body.findIndex((l) => typeof l !== "string" && l.term === S["party.status.poison"]);
