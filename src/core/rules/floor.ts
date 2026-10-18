@@ -58,7 +58,7 @@ export function floorOf(dive: Dive, data: GameData, floorNo: number = dive.floor
 const GEN_CACHE_MAX = 8;
 const genCache = new Map<string, Floor[]>();
 
-/** generateDive(...)[floorNo-1] と同じ盤（メモ）。下の階は上の階に依存しない（DG-06 は上の階の stairsDown だけ）ので、floorNo までだけ作る */
+/** generateDive(...)[floorNo-1] と同じ盤（メモ）。上の階は下の階に依存しない（下の階は上の階の stairsDown だけを使う。DG-06）ので、floorNo までだけ作る */
 function generatedFloor(def: DungeonDef, cfg: GameData["config"]["dungeon"], diveSeed: number, floorNo: number, gen: ChestGen): Floor {
   const key = JSON.stringify([def, cfg, gen, diveSeed]);
   let chain = genCache.get(key);

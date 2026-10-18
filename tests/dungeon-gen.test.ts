@@ -760,7 +760,7 @@ describe("dungeon-gen: 階の充填率（DG-48。M21）", () => {
 describe("dungeon-gen: 生成の盤の固定と floorOf のメモ（DG-03 / DG-48。M21 D-1b）", () => {
   /**
    * 3 ダンジョン × diveSeed 1〜200 の generateDive の JSON（シードの順に連結）の sha256。
-   * 出どころ: D-1b の変更の前の HEAD 71c6b60（と 49229d2。同じ値）で、scratchpad の m21d-perf/perf.mts（HASH=1）が出した値。
+   * 出どころ: このテストの viaGen の連結（generateDive の JSON をシードの順に連結）を sha256 したもの。D-1b の変更の前の HEAD 71c6b60（と 49229d2）で同じ手順で出した値。
    * 生成の手順（DG-03 の乱数の消費・DG-48 の間引き）を速くしても、この値が変わったら盤が変わっている
    */
   const DIVE_HASH: Record<string, string> = {

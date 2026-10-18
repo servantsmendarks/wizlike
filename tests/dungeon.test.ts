@@ -1225,10 +1225,11 @@ describe("階段（DG-14, E3）", () => {
     expect(st.state.pendingChoice).toBeNull();
   });
 
-  test("DG-06/DG-43 exit で徒歩帰還: dungeon.exit → town.enter → screen town。dive は消え、台帳の品と金は所持に残る。乱数なし", () => {
+  test("DG-06/DG-43/CB-51b exit で徒歩帰還: dungeon.exit → town.enter → screen town。dive は消え、台帳の品と金は所持に残る。乱数なし。progress.noChestStreak は戻さない（M21）", () => {
     const { state } = findSituation((c) => c.kind === "stairsUp");
     const s = cloneState(state);
     s.gold = 380;
+    s.progress.noChestStreak = 3;
     s.dive!.ledger = { items: ["i4"], gold: 80 };
     const at = run(s, MOVE, dataWithRate(1, 1)).state;
     const r = run(at, { type: "event.choose", optionId: "exit" });
@@ -1245,6 +1246,7 @@ describe("階段（DG-14, E3）", () => {
     expect(r.state.items["i4"]).toEqual(s.items["i4"]);
     expect(r.state.party[0]!.inventory).toEqual(["i4"]);
     expect(r.state.rng).toEqual(at.rng);
+    expect(r.state.progress.noChestStreak).toBe(3); // CB-51b（M21）: 帰還で戻さない
   });
 });
 

@@ -432,6 +432,20 @@ describe("全滅処理（TW-20〜26）", () => {
     expect(r.events.at(-1)).toEqual({ kind: "screen", to: "town" });
     expect(r.state.townVisit).toEqual({ mercyOffered: false });
   });
+
+  test("CB-51b（M21）箱の段の連続 progress.noChestStreak は全滅でも帰還（糸・徒歩・テレポーター・帰還の呪文）でも戻さない（3 のまま街へ）", () => {
+    const s0 = cloneState(base());
+    s0.progress.noChestStreak = 3;
+    const w = wipeOf(withTotal(patch(s0, { c1: DEAD, c2: DEAD, c3: DEAD, c4: DEAD, c5: DEAD, c6: DEAD }), 11));
+    expect(w.state.dive).toBeNull();
+    expect(w.state.progress.noChestStreak).toBe(3);
+    for (const key of ["dungeon.return", "dungeon.exit", "dungeon.teleport", "dungeon.returnSpell"] as const) {
+      const ctx = makeContext(cloneState(s0), data);
+      returnToTown(ctx, key);
+      expect(ctx.state.dive, key).toBeNull();
+      expect(ctx.state.progress.noChestStreak, key).toBe(3);
+    }
+  });
 });
 
 describe("全滅の出目の表（TW-22 / UI-56。M5.5）", () => {
