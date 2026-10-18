@@ -13,7 +13,7 @@ import { cloneState, createItemInstance, itemDisplayName } from "../src/core/sta
 import { identifiedPowerParams, POWER_NONE } from "../src/core/rules/equip-stats";
 import type { Character, EndingRecord, GameState, TownMenu, UpgradeCatalystRef } from "../src/core/types";
 import { endingKeyAction, formatEndingRecord } from "../src/presenter/views/ending";
-import { createRulesOverlay, formatRules, RULE_TERM_MAX, splitRuleLine } from "../src/presenter/views/rules";
+import { createRulesOverlay, formatRules, RULE_TERM_MAX, splitRuleEntry, splitRuleLine } from "../src/presenter/views/rules";
 import { tapSpecOf } from "../src/presenter/input/tap";
 import { createWipeView, TERM_COL_W, type WipeTermLine } from "../src/presenter/views/wipe";
 import {
@@ -482,7 +482,7 @@ describe("UI-52 街のページ", () => {
   });
 
   test("UI-77/IT-30 M20（D-7）用語の希少度の行はオプションの個数（config.items.rarities の options。上質 1・希少 2・伝説 3）を言う", () => {
-    const l = splitRuleLine(S["rules.line.52"]!);
+    const l = splitRuleLine(Object.entries(S).find(([k, v]) => k.startsWith("rules.line.") && v.startsWith("希少度"))![1]);
     expect(l).toEqual({ term: "希少度", desc: "品の格。上質 1・希少 2・伝説 3 のオプション" });
     const n = Object.fromEntries(data.config.items.rarities.map((r) => [r.id, r.options]));
     expect([n["fine"], n["rare"], n["legendary"]]).toEqual([1, 2, 3]);
@@ -1797,10 +1797,10 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
   test("UI-77 formatRules: 見出し rules.title → rules.line.1..N（続き番号のある限り。途切れた先は使わない）。値は strings だけ", () => {
     expect(lines[0]).toBe("用語");
     expect(S["rules.line.1"]).toBeDefined();
-    const n = body.length;
+    let n = 0;
+    while (S[`rules.line.${n + 1}`] !== undefined) n++;
     expect(n).toBeGreaterThanOrEqual(10);
-    for (let i = 1; i <= n; i++) expect(body[i - 1]).toEqual(splitRuleLine(S[`rules.line.${i}`]!));
-    expect(S[`rules.line.${n + 1}`]).toBeUndefined();
+    expect(body).toEqual(Array.from({ length: n }, (_, i) => splitRuleEntry(S[`rules.line.${i + 1}`]!)).flat());
     // 続き番号が途切れた先のキーは使わない
     expect(formatRules({ "rules.title": "t", "rules.line.1": "a", "rules.line.3": "c" })).toEqual(["t", "a"]);
   });
@@ -1816,13 +1816,52 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     // 実データ: 分類の見出し（「■ 」で始まる。M19 D-4）と職業の略称の一覧（2・3）は文字列、続きの行（8・13・45・46・50・54。M18 で用語を足して番号が動き、
     // M19 で毒の治し方の 13、D-4 で見出しと名品の続きの 54 を足した）は用語なし、ほかは用語あり
     expect([body[1], body[2]].map((l) => typeof l)).toEqual(["string", "string"]);
-    for (const [i, l] of body.entries()) {
-      const raw = S[`rules.line.${i + 1}`]!;
-      if (typeof l === "string") expect(raw.startsWith("■ ") || i === 1 || i === 2, raw).toBe(true);
+    const raws = Array.from({ length: body.length }, (_, i) => S[`rules.line.${i + 1}`]).filter((x): x is string => x !== undefined);
+    for (const raw of raws) {
+      const got = splitRuleEntry(raw);
+      const l = got[0]!;
+      if (got.length === 2) continue; // 長い用語（M22 D-6。下のテスト）
+      if (typeof l === "string") expect(raw.startsWith("■ ") || raws.indexOf(raw) === 1 || raws.indexOf(raw) === 2, raw).toBe(true);
       else if (raw.startsWith(SP)) expect(l.term, raw).toBe("");
       else expect(l.term.length, raw).toBeGreaterThan(0);
     }
-    expect(terms.filter((l) => l.term === "").map((l) => l.desc)).toEqual([8, 13, 45, 46, 50, 54].map((n) => S[`rules.line.${n}`]!.slice(1)));
+    const contNums = raws.flatMap((r, i) => (r.startsWith(SP) ? [i + 1] : []));
+    expect(contNums).toHaveLength(13);
+    // 用語なしの行 = 続きの行 13 + 長い用語の説明 6（M22 D-6）
+    expect(terms.filter((l) => l.term === "")).toHaveLength(contNums.length + 6);
+    for (const n of contNums) expect(terms.some((l) => l.term === "" && l.desc === S[`rules.line.${n}`]!.slice(1)), String(n)).toBe(true);
+  });
+
+  test("UI-77（M22 D-6）長い用語（RULE_TERM_MAX 字を超える）は用語を 1 行に置き、説明を次の行から続きの行（用語なし）で出す。6 語の説明は 1 本 27 字以内・説明の列に収まる", () => {
+    expect(splitRuleEntry(`取り乱さなかった${SP}説明`)).toEqual(["取り乱さなかった", { term: "", desc: "説明" }]);
+    expect(splitRuleEntry(`HP${SP}体力`)).toEqual([{ term: "HP", desc: "体力" }]);
+    expect(splitRuleEntry(`${SP}続き`)).toEqual([{ term: "", desc: "続き" }]);
+    expect(splitRuleEntry(`WAR 戦士${SP}THI 盗賊`)).toEqual([`WAR 戦士${SP}THI 盗賊`]);
+    expect(splitRuleEntry("■ 職業")).toEqual(["■ 職業"]);
+    const long = ["取り乱さなかった", "恐怖に動じない", "不意を突かれた", "回り込まれた", "張り合い", "制止判定"];
+    for (const w of long) {
+      const i = body.indexOf(w);
+      expect(i, w).toBeGreaterThan(0);
+      const next = body[i + 1] as WipeTermLine;
+      expect(next.term, w).toBe("");
+      expect(next.desc.length, w).toBeGreaterThan(0);
+      expect([...w].length, w).toBeGreaterThan(RULE_TERM_MAX);
+    }
+    // 説明の要点（仕様: EV-44 / CB-04 / CB-50 / EV-75 / EV-21）
+    const desc = (w: string): string => {
+      let i = body.indexOf(w) + 1;
+      let s = "";
+      while (i < body.length && typeof body[i] !== "string" && (body[i] as WipeTermLine).term === "") s += (body[i++] as WipeTermLine).desc;
+      return s;
+    };
+    expect(desc("取り乱さなかった")).toContain("慎重");
+    expect(desc("恐怖に動じない")).toContain("無鉄砲");
+    expect(desc("不意を突かれた")).toContain("敵だけが動く");
+    expect(desc("回り込まれた")).toContain("逃走に失敗");
+    expect(desc("張り合い")).toContain("+10");
+    expect(desc("制止判定")).toContain("知恵");
+    // 並び: 能力と状態の末尾・戦闘の先手の後・迷宮の見立ての後。名品・加護は足していない（既にある）
+    expect(body.filter((l) => l === "名品" || l === "加護")).toHaveLength(0);
   });
 
   test("UI-77（M16 追補 H-3）用語の列は 32px（全角 4 字。最長の用語 3 字 + 区切り）。説明はどの行も列の右の同じ x から（続きの行も字下げ）", () => {
@@ -2042,12 +2081,12 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
       return body.slice(a + 1, b).flatMap((l) => (typeof l === "string" || l.term === "" ? [] : [l.term]));
     };
     expect(section("■ 卓と判定")).toEqual(["GM", "d", "判定", "大当り"]);
-    expect(section("■ 戦闘")).toEqual(["ターン", "先手", "前衛", "後衛", "識別"]);
+    expect(section("■ 戦闘")).toEqual(["ターン", "先手", "前衛", "後衛", "識別"]); // 長い用語は用語の行が文字列なので数えない
     expect(section("■ 迷宮")).toEqual(["潜行", "主", "糸", "見立て"]);
     expect(section("■ 街")).toEqual(["蘇生", "解呪", "経験", "レベル"]);
     expect(section("■ 品")).toEqual(["未鑑定", "鑑定", "+N", "触媒", "大成功", "希少度", "名品"]);
-    expect(lines).toHaveLength(58);
-    expect(Math.ceil(lines.length / 21)).toBe(3);
+    expect(lines).toHaveLength(77); // 見出し 1 + strings 70 + 長い用語 6 語の説明（M22 D-6）
+    expect(Math.ceil(lines.length / 21)).toBe(4);
     // 語は画面・データの名前と同じ
     expect(S["gm.name"]).toBe("GM");
     expect(S["battle.exp"]).toContain("経験");

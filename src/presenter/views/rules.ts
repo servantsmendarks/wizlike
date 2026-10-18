@@ -29,10 +29,23 @@ export function splitRuleLine(text: string): WipeLine {
   return { term, desc: text.slice(i + SEP.length) };
 }
 
-/** UI-77 の行（純粋）。1 行目は見出し（文字列）。2 行目からは splitRuleLine の結果 */
+/**
+ * UI-77（M22 D-6）: 1 本の strings の行を表示の行に切り分ける（純粋）。用語が RULE_TERM_MAX 字を超える行（空白を含まない）は、
+ * 用語の列（32px）に入らないので、用語だけを 1 行（文字列）に置き、説明を次の行（用語なしの続きの行。説明の列に字下げ）にする。
+ * ほかは splitRuleLine の 1 行。strings の書き方は「用語　説明」のまま（長い説明は全角空白で始まる次のキーに続ける）
+ */
+export function splitRuleEntry(text: string): WipeLine[] {
+  const i = text.indexOf(SEP);
+  if (i < 0) return [text];
+  const term = text.slice(0, i);
+  if ([...term].length > RULE_TERM_MAX && !/\s/.test(term) && !term.startsWith("■")) return [term, { term: "", desc: text.slice(i + SEP.length) }];
+  return [splitRuleLine(text)];
+}
+
+/** UI-77 の行（純粋）。1 行目は見出し（文字列）。2 行目からは splitRuleEntry の結果 */
 export function formatRules(strings: Strings): WipeLine[] {
   const out: WipeLine[] = [strings["rules.title"] ?? "rules.title"];
-  for (let n = 1; strings[`rules.line.${n}`] !== undefined; n++) out.push(splitRuleLine(strings[`rules.line.${n}`]!));
+  for (let n = 1; strings[`rules.line.${n}`] !== undefined; n++) out.push(...splitRuleEntry(strings[`rules.line.${n}`]!));
   return out;
 }
 
