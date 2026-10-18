@@ -13,6 +13,9 @@
 //   フォーカスを外す（touchend の preventDefault で合成のフォーカス移動が起きないため）。
 // - touchend は passive:false で受けて preventDefault する（UI-37: ダブルタップの拡大と、合成の click を止める）。
 //   cancelable が偽の touchend（スクロール中）は止められないので呼ばない（未定-32。呼ぶと Chrome が intervention の警告を出す）。
+// - UI-83（M23）: 画面の切り替え（markScreenShown。app が screen の出来事を受けた再生の後の sync で呼ぶ）より前に押し始めたタップと、
+//   切り替えから screenGuardMs 未満に押し始めたタップは、要素のタップとして捨てる（遭遇の直後の「前進のつもり」が「戦う」に当たる）。
+//   再生中のタップ（拍）・会話の箱のタップ・キーは対象外。長押しを発火した押下の pointerup はタップにならない（pressUp の held）。
 // 純粋な部分（pressDown / pressMove / pressUp）を export して node 環境で試す。setTimeout は長押しの判定にだけ使う。
 // モジュールのトップレベルでは DOM に触れない。
 import { classifySwipe, inDeadZone, swipeAction, thresholdCss, type Action, type Dir } from "./swipe";
@@ -168,6 +171,10 @@ export type StageInputOptions = {
   onSwipeRelease(): void;
   /** debug パネル用。確定したときの CSS px の移動量と方向 */
   onDebugSwipe?(dx: number, dy: number, d: Dir): void;
+  /** UI-83: 画面が出てから要素のタップを捨てる時間（ms。config.input.screenGuardMs）。省略すると捨てない */
+  screenGuardMs?: number;
+  /** UI-83: 現在時刻（ms）。省略すると performance.now() */
+  now?(): number;
 };
 
 type Ev = {
@@ -181,7 +188,11 @@ type Ev = {
 };
 
 /** attachStageInput の戻り値。呼ぶと外す。reset は追っている押下を「離した」として片付ける（タップにはしない） */
-export type StageInput = (() => void) & { reset(): void };
+export type StageInput = (() => void) & {
+  reset(): void;
+  /** UI-83: 画面が切り替わって操作が出た。これより前に押し始めたタップと、screenGuardMs 未満に押し始めたタップを捨てる */
+  markScreenShown(): void;
+};
 
 /**
  * UI-36: stage で Pointer Events・click（キーボード由来だけ）・touchend を受ける。戻り値で外す。
@@ -191,6 +202,12 @@ export function attachStageInput(stage: HTMLElement, o: StageInputOptions): Stag
   let p: PressState = null;
   let spec: TapSpec | null = null;
   let holdTimer: ReturnType<typeof setTimeout> | null = null;
+  // UI-83: 画面の世代と、その画面が出た時刻。押下は始まった時点の世代と時刻を控える
+  let gen = 0;
+  let shownAt = Number.NEGATIVE_INFINITY;
+  let pressGen = 0;
+  let pressAt = 0;
+  const nowMs = (): number => o.now?.() ?? (typeof performance !== "undefined" ? performance.now() : Date.now());
 
   const clearHold = (): void => {
     if (holdTimer !== null) clearTimeout(holdTimer);
@@ -228,6 +245,9 @@ export function attachStageInput(stage: HTMLElement, o: StageInputOptions): Stag
     if (s === null || el === null) return;
     // 押している間に描き直されて外れた要素は押さない
     if ((el as { isConnected?: boolean }).isConnected === false) return;
+    // UI-83: 画面の切り替えの前に押し始めた・切り替えの直後に押し始めたタップは捨てる
+    if (pressGen < gen) return;
+    if (o.screenGuardMs !== undefined && pressAt - shownAt < o.screenGuardMs) return;
     const r = el.getBoundingClientRect();
     const sc = o.scale();
     s.onTap({ lx: (pressed.sx - r.left) / sc, ly: (pressed.sy - r.top) / sc });
@@ -266,6 +286,8 @@ export function attachStageInput(stage: HTMLElement, o: StageInputOptions): Stag
     const target = closestTap(e.target);
     const lx = (e.clientX - stage.getBoundingClientRect().left) / o.scale();
     p = pressDown(e.pointerId, e.clientX, e.clientY, target, lx, o.width, o.deadZone);
+    pressGen = gen;
+    pressAt = nowMs();
     spec = tapSpecOf(target);
     setPressed(target, true);
     if (e.pointerType === "mouse") {
@@ -403,5 +425,9 @@ export function attachStageInput(stage: HTMLElement, o: StageInputOptions): Stag
     o.outside?.removeEventListener("pointercancel", on(outCancel));
     out = null;
   };
-  return Object.assign(detach, { reset });
+  const markScreenShown = (): void => {
+    gen++;
+    shownAt = nowMs();
+  };
+  return Object.assign(detach, { reset, markScreenShown });
 }

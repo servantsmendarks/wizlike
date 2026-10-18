@@ -327,7 +327,7 @@ export type Config = {
     impulse: { lure: LureWeights; stat: StatKey; impulseClasses?: string[] };
   };
   save: { maxGames: number; schemaVersion: number };
-  input: { swipeThresholdPx: number; holdRepeatMs: number; edgeDeadZonePx: number };
+  input: { swipeThresholdPx: number; holdRepeatMs: number; edgeDeadZonePx: number; screenGuardMs: number };
   ui: {
     textSpeedMs: number;
     diceStepMs: number;

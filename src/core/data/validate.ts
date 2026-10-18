@@ -472,7 +472,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       impulse: F({ lure, stat: E(STAT_KEYS), impulseClasses: opt(L(classRef, 1)) }), // EV-16 / EV-04
     }),
     save: F({ maxGames: I(POS_INT), schemaVersion: I(POS_INT) }),
-    input: F({ swipeThresholdPx: I(POS_INT), holdRepeatMs: I(POS_INT), edgeDeadZonePx: I(NON_NEG) }),
+    input: F({ swipeThresholdPx: I(POS_INT), holdRepeatMs: I(POS_INT), edgeDeadZonePx: I(NON_NEG), screenGuardMs: I(NON_NEG) }),
     ui: F({
       textSpeedMs: I(NON_NEG),
       diceStepMs: I(NON_NEG),

@@ -14,6 +14,7 @@ import {
   type StageInputOptions,
   type TapPoint,
 } from "../src/presenter/input/tap";
+import appSource from "../src/presenter/app.ts?raw";
 import { statHoldSpec } from "../src/presenter/views/custom-creation";
 import { data } from "./helpers/core";
 import { FakeNode, FakeStage } from "./helpers/dom";
@@ -730,5 +731,110 @@ describe("UI-62（M19 D-6）能力値の「+」の長押し", () => {
     expect(vi.getTimerCount()).toBe(0);
     t.up(3, 40, 620);
     expect(t.out).toEqual(["press", "inc 1", "inc 0"]);
+  });
+});
+
+describe("UI-83（M23）画面の切り替えの間のタップ", () => {
+  const GUARD = data.config.input.screenGuardMs;
+  function guarded() {
+    let now = 1000;
+    const t = setup({ screenGuardMs: GUARD, now: () => now });
+    const a = t.button("a");
+    const tapAt = (id: number, downAt: number, upAt: number): void => {
+      now = downAt;
+      t.down(id, 40, 620, a.btn);
+      now = upAt;
+      t.up(id, 40, 620);
+    };
+    return { t, a, tapAt, setNow: (n: number) => (now = n) };
+  }
+  const taps = (t: { out: string[] }): string[] => t.out.filter((x) => x.startsWith("tap"));
+
+  test("UI-83 screenGuardMs は config にあり 500【仮】", () => {
+    expect(GUARD).toBe(500);
+  });
+
+  test("UI-83 画面が出てから screenGuardMs 未満に押し始めたタップは捨てる。過ぎれば効く（ちょうどは効く）", () => {
+    const g = guarded();
+    g.setNow(2000);
+    g.t.detach.markScreenShown();
+    g.tapAt(1, 2000 + GUARD - 1, 2000 + GUARD + 50);
+    expect(taps(g.t)).toEqual([]);
+    g.tapAt(2, 2000 + GUARD, 2000 + GUARD + 50);
+    expect(taps(g.t)).toEqual(["tap a 10,10"]);
+  });
+
+  test("UI-83 画面が切り替わる前に押し始めたタップは、離したのが guard の後でも捨てる", () => {
+    const g = guarded();
+    g.setNow(2000);
+    g.t.down(1, 40, 620, g.a.btn);
+    g.setNow(2100);
+    g.t.detach.markScreenShown();
+    g.setNow(5000);
+    g.t.up(1, 40, 620);
+    expect(taps(g.t)).toEqual([]);
+    // 次の押下は効く
+    g.tapAt(2, 5100, 5150);
+    expect(taps(g.t)).toEqual(["tap a 10,10"]);
+  });
+
+  test("UI-83 再生中に押し始め、戦闘の操作が出た後に離したタップは「戦う」に落ちない（遭遇の再生の後）", () => {
+    const g = guarded();
+    g.setNow(1000);
+    g.t.down(1, 40, 620, g.a.btn); // 前進のつもりで押し始める
+    g.setNow(3500);
+    g.t.detach.markScreenShown(); // 遭遇の再生が終わり戦闘のメニューが出た
+    g.setNow(3600);
+    g.t.up(1, 40, 620);
+    expect(taps(g.t)).toEqual([]);
+    // guard の間に押して離したタップも捨てる
+    g.tapAt(2, 3700, 3750);
+    expect(taps(g.t)).toEqual([]);
+    // guard の後は選べる
+    g.tapAt(3, 4100, 4150);
+    expect(taps(g.t)).toEqual(["tap a 10,10"]);
+  });
+
+  test("UI-83 markScreenShown を呼ばない移動（街の施設の段・戦闘の段・overlay の開閉）では guard は掛からない", () => {
+    const g = guarded();
+    g.setNow(2000);
+    g.t.detach.markScreenShown();
+    g.tapAt(1, 3000, 3010);
+    g.tapAt(2, 3020, 3030); // 直後の次の段のタップも効く
+    expect(taps(g.t)).toEqual(["tap a 10,10", "tap a 10,10"]);
+  });
+
+  test("UI-83 キー（Enter の click）は対象外。guard の間でも効く", () => {
+    const g = guarded();
+    g.setNow(2000);
+    g.t.detach.markScreenShown();
+    g.t.stage.emit("click", { detail: 0, target: g.a.btn, preventDefault() {} });
+    expect(taps(g.t)).toEqual(["tap a 0,0"]);
+  });
+
+  test("UI-83 長押しの連打を発火した押下の pointerup はタップにならない（遭遇で戦闘の操作が出た後に指を離しても「戦う」に落ちない）", async () => {
+    vi.useFakeTimers();
+    const g = guarded();
+    let holds = 0;
+    const fwd = g.t.button("fwd", {
+      onTap: () => g.t.out.push("tap fwd"),
+      hold: { ms: () => 250, onHoldStart: () => holds++, onHoldEnd: () => g.t.out.push("holdEnd") },
+    });
+    g.t.down(1, 40, 620, fwd.btn);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(holds).toBe(1);
+    g.t.detach.markScreenShown();
+    await vi.advanceTimersByTimeAsync(1000);
+    g.t.up(1, 40, 620);
+    expect(taps(g.t)).toEqual([]);
+    expect(g.t.out).toContain("holdEnd");
+  });
+
+  test("UI-83 app は screen の出来事を受けた再生の後の sync で markScreenShown を呼び、config の screenGuardMs を渡す", () => {
+    const app = appSource;
+    expect(app).toContain("screenGuardMs: data.config.input.screenGuardMs,");
+    expect(app).toMatch(/if \(r !== "title"\) screenPending = true;/);
+    expect(/const sync = \(st: GameState\): void => \{\s*if \(screenPending\) \{\s*screenPending = false;\s*markScreenShown\(\);/.test(app)).toBe(true);
+    expect(app).toContain("markScreenShown = () => stageInput.markScreenShown();");
   });
 });

@@ -251,6 +251,9 @@ export function createApp(o: {
   const seed = o.seed ?? crypto.getRandomValues(new Uint32Array(1))[0] ?? 1;
   let state: GameState = createInitialState(seed, data);
   let route: Route = "title";
+  // UI-83（M23）: core の screen の出来事を受けた再生の後の sync で、入力の層に「画面が出た」を知らせる
+  let screenPending = false;
+  let markScreenShown: () => void = () => {};
   let overlay: Overlay = null;
   let layout: StageLayout | null = null;
   let townPage: TownPage = "menu";
@@ -582,6 +585,7 @@ export function createApp(o: {
   const onScreen = (to: Screen, carry: readonly string[] = []): void => {
     const r = to === "title" ? "title" : routeOfScreen(to);
     if (r === null) return;
+    if (r !== "title") screenPending = true;
     const from = route;
     // UI-47 / UI-59（M10）: キャラクター画面の間の語りは既に会話の箱に出ているので、街に入っても carry を出し直さず、最後の文を箱に残す
     const talked = characterOpen;
@@ -626,6 +630,10 @@ export function createApp(o: {
 
   /** state を描く（再生の最後に 1 回） */
   const sync = (st: GameState): void => {
+    if (screenPending) {
+      screenPending = false;
+      markScreenShown();
+    }
     if (route !== "town" && route !== "dungeon" && route !== "battle") return;
     play.party.render(st.party);
     if (route === "battle") {
@@ -2657,6 +2665,8 @@ export function createApp(o: {
         threshold: () => store.get().swipeThreshold,
         deadZone: data.config.input.edgeDeadZonePx,
         width: data.config.stage.width,
+        // UI-83（M23）: 画面が切り替わって操作が出た直後（screenGuardMs）と、その前に押し始めたタップは捨てる
+        screenGuardMs: data.config.input.screenGuardMs,
         swipeEnabled,
         // UI-46（M20）: leave の待ちの間に開いた履歴の間は、タップを拍のタップにしない（「閉じる」だけが効き、待ちは続く）
         busy: () => (isBusy() || chaining) && overlay !== "history",
@@ -2672,6 +2682,7 @@ export function createApp(o: {
         onSwipeRelease: () => repeater.release(),
         onDebugSwipe: (dx, dy, d) => debug.setSwipe(dx, dy, d),
       });
+      markScreenShown = () => stageInput.markScreenShown();
       attachKeyboard({
         onAction: (a) => handleAction(a),
         onRelease: (a) => {
