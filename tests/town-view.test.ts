@@ -2037,7 +2037,7 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     expect(head("補正")).toContain("士気");
     expect(head("×4")).toContain("4 体");
     expect(head("得意")).toContain("盗賊");
-    expect(head("担当")).toContain("+10");
+    expect(head("担当")).toContain("調べ役");
     const i = body.findIndex((l) => typeof l !== "string" && l.term === "後衛");
     const cont = body[i + 1] as WipeTermLine;
     expect(cont.term).toBe("");
