@@ -2197,6 +2197,27 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(member(out.state, "c1").life).toBe("dead");
   });
 
+  test("UI-76 firstDeath: 初めての死者の一言は一度きり。2 人目（記録済み）では出ず、全滅の死でも出る", () => {
+    const d = dataWith({ combat: ALWAYS_HIT });
+    const mk = () => {
+      const s = setup([{ monsterId: "kobold", hps: [50] }], {
+        identified: ["kobold"],
+        patches: { c1: { hp: 1 }, c2: STONE, c3: STONE, c4: PARA, c5: PARA, c6: PARA },
+        inputs: { c1: DEF },
+      });
+      return s;
+    };
+    const count = (evs: readonly { kind: string; key?: string }[]) => evs.filter((e) => e.kind === "message" && e.key === "hint.firstDeath").length;
+    // 全滅になる死でも出る（一度だけ）
+    const w = exec(mk(), RESOLVE, d);
+    expect(count(w.events)).toBe(1);
+    expect(w.state.progress.hints).toContain("firstDeath");
+    // 記録済みなら出ない
+    const s2 = mk();
+    s2.progress.hints = [...(s2.progress.hints ?? []), "firstDeath"];
+    expect(count(exec(s2, RESOLVE, d).events)).toBe(0);
+  });
+
   test("TW-35 戦闘中の死亡（allyDies）で tally.deaths が死者 1 人につき 1 増える。戦闘の開始は battles に数え済みで、ラウンドでは増えない", () => {
     const d = dataWith({ combat: ALWAYS_HIT });
     const s = setup([{ monsterId: "kobold", hps: [80] }], {

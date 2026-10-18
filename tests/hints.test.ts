@@ -19,7 +19,7 @@ const hintKeys = (events: readonly GameEvent[]): string[] =>
   events.flatMap((e) => (e.kind === "message" && e.key.startsWith("hint.") ? [e.key] : []));
 
 describe("UI-76 一度きりの GM の一言（M16）", () => {
-  test("UI-76/UI-20/UI-78/DG-46/DG-45/CB-06 HINT_IDS は dungeonFirst / sanUnknown / levelUpMark / lostExits / dungeonTerms（M18）/ waitEnemy（M19）。文は strings の hint.<id> にあり、会話の箱の 1 行 28 字で 2 行以内（禁則つき）、差し込みなし", () => {
+  test("UI-76/UI-20/UI-78/DG-46/DG-45/CB-06 HINT_IDS は dungeonFirst / sanUnknown / levelUpMark / lostExits / dungeonTerms（M18）/ waitEnemy（M19）/ firstDeath（M22）。文は strings の hint.<id> にあり、会話の箱の 1 行 28 字で 2 行以内（禁則つき）、差し込みなし", () => {
     expect([...HINT_IDS]).toEqual(["dungeonFirst", "sanUnknown", "levelUpMark", "lostExits", "dungeonTerms", "waitEnemy", "firstDeath"]);
     for (const id of HINT_IDS) {
       const t = S[`hint.${id}`];

@@ -4,7 +4,7 @@
 // - 「ランダム」はリーダー以外の性格を "random" にする（名前は変えない。乱数は core が引く。CH-30）。
 // - 名前の検査は core（validatePartySetup）が行う。表示層は rejected を受けて creation.invalid を出すだけ。
 // - 入力欄は iOS の自動ズームを避けるため、font-size 16px の 2 倍の大きさで作り、scale(0.5) で 80×32 に見せる。
-// - M16: 名前の右に職業の略称（classes.json の abbr。config.prototypeParty.members[i].classId から）。y240 の説明の欄に、最後に
+// - M16: 名前の右に職業の略称（M22 D-1 から classes.json の name。config.prototypeParty.members[i].classId から）。y240 の説明の欄に、最後に
 //   触った行（性格のボタン・リーダーの札・名前の入力欄）の性格の shortDescription（リーダーは creation.leaderNote、おまかせは
 //   creation.randomNote。最初は creation.hint）。エラー（creation.invalid）が出ている間はエラーを優先して説明を隠す。
 // - M16 追補 H-1: 行（性格のボタン・リーダーの札・名前の入力欄）に触れた時点でエラーは消え、説明に戻る（creationTouch）。
