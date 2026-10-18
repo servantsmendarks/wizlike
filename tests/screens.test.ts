@@ -55,19 +55,19 @@ describe("簡易作成", () => {
     expect(personalityLabel(null, data, data.strings)).toBe(data.strings["creation.leader"]);
   });
 
-  test("UI-51 職業の略称（M16）: 行 i は config.prototypeParty.members[i].classId の classes[].abbr。名前の欄（幅 80）の右・性格のボタンの左に収まる", () => {
+  test("UI-51 職業の名前（M16。M22 D-1 から日本語）: 行 i は config.prototypeParty.members[i].classId の classes[].name。名前の欄（幅 80）の右・性格のボタンの左に収まる", () => {
     const members = data.config.prototypeParty.members;
     const abbrs = members.map((_m, i) => creationClassAbbr(i, data));
-    expect(abbrs).toEqual(members.map((m) => data.classes.find((c) => c.id === m.classId)!.abbr));
-    expect(abbrs).toEqual(["WAR", "WAR", "THI", "PRI", "MAG", "THI"]);
+    expect(abbrs).toEqual(members.map((m) => data.classes.find((c) => c.id === m.classId)!.name));
+    expect(abbrs).toEqual(["戦士", "戦士", "盗賊", "僧侶", "魔術師", "盗賊"]);
     expect(creationClassAbbr(99, data)).toBe("");
     for (let i = 0; i < members.length; i++) {
       const r = creationRow(i);
       expect(r.name.w).toBe(80);
       expect(r.abbr.x).toBeGreaterThanOrEqual(r.name.x + r.name.w);
       expect(r.abbr.x + r.abbr.w).toBeLessThanOrEqual(r.personality.x);
-      // 美咲の半角 4px で略称が入る
-      expect(abbrs[i]!.length * 4).toBeLessThanOrEqual(r.abbr.w);
+      // 美咲の全角 8px で職業名が入る
+      expect(abbrs[i]!.length * 8).toBeLessThanOrEqual(r.abbr.w);
     }
   });
 

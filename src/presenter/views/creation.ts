@@ -50,10 +50,10 @@ export function personalityLabel(choice: PersonalityChoice, data: GameData, stri
   return data.personalities.find((p) => p.id === choice)?.name ?? choice;
 }
 
-/** UI-51（M16）: 行 i の職業の略称（config.prototypeParty.members[i].classId の classes[].abbr。無ければ空） */
+/** UI-51（M16。M22 D-1 から日本語）: 行 i の職業の名前（config.prototypeParty.members[i].classId の classes[].name。無ければ空） */
 export function creationClassAbbr(i: number, data: GameData): string {
   const classId = data.config.prototypeParty.members[i]?.classId;
-  return data.classes.find((c) => c.id === classId)?.abbr ?? "";
+  return data.classes.find((c) => c.id === classId)?.name ?? "";
 }
 
 /**
