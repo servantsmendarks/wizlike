@@ -159,7 +159,7 @@ import {
   townLowersInput,
   townMenuNotes,
   townPageIntro,
-  upgradePreviewText,
+  upgradeConfirmSay,
   shopPreviewText,
   townParent,
   townRepair,
@@ -711,7 +711,8 @@ export function createApp(o: {
     // M10.5 追補（未定-22）: 答えのボタンが続く問い（強化・転職の確認、救済の申し出）は箱で語らず、見出し（townHeadingText）に出す
     // TW-17（M18 3-3）: 強化の確認の段は、入るときに前後の 1 文（core の upgradePreview の値。見出しの問いは今のまま townHeadingText）
     // M19（C-1）: 触媒の段も previewOf が値を返す（見出しの成功率）が、前後の 1 文は確認の段だけで語る
-    const upText = typeof page === "object" && "upConfirm" in page ? upgradePreviewText(previewOf(page), strings) : null;
+    // M22（D-4）: 箱には予告と問い（見出しと同じ townHeadingText）を 1 回の語りで続けて出す（箱が見出しを覆うため。未定-22 の例外）
+    const upText = typeof page === "object" && "upConfirm" in page ? upgradeConfirmSay(page, previewOf(page), menu, strings) : null;
     const intro = [...townPageIntro(page, menu).map(t), ...(upText === null ? [] : [upText])];
     const texts = townFreshIntro(intro, play.message.history().slice(-TOWN_INTRO_DEDUP));
     const skip = store.get().skipAnimations;

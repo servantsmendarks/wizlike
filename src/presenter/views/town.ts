@@ -934,6 +934,16 @@ export function upgradePreviewText(preview: UpgradePreview | null, strings: Stri
   return s(strings, "town.upgrade.preview", { ...lv, kind, b: before, a: after });
 }
 
+/**
+ * M22（D-4）: 確認の段に入るときに会話の箱で語る 1 回分。予告（upgradePreviewText）に問い（townHeadingText の town.upgrade.ask / askNoGold）を続ける。
+ * 予告が null（装飾など）なら null（語らない。見出しだけ）
+ */
+export function upgradeConfirmSay(page: TownPage, preview: UpgradePreview | null, menu: TownMenu, strings: Strings): string | null {
+  const head = upgradePreviewText(preview, strings);
+  if (head === null || preview === null) return null;
+  return head + townHeadingText(page, menu, strings, preview);
+}
+
 /** M16（4-5）: 強化の画面の品の名前。Lv を常に出す「{name} +{level}」（town.upgrade.itemLv。Lv0 でも「長剣 +0」） */
 export function upgradeItemName(plainName: string, level: number, strings: Strings): string {
   return s(strings, "town.upgrade.itemLv", { name: plainName, level });

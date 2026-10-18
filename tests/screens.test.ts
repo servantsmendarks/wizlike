@@ -1050,7 +1050,7 @@ describe("入力と Command", () => {
     const body = /const goTownPage = \(page: TownPage\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     // M18（3-3）: 強化の確認の段は、入るときに前後の 1 文（upgradePreviewText。core の upgradePreview の値）を語りの後ろに足す
     // M19（C-1）: 触媒の段も previewOf が値を返すが、前後の 1 文は確認の段だけ
-    expect(body).toContain('const upText = typeof page === "object" && "upConfirm" in page ? upgradePreviewText(previewOf(page), strings) : null;');
+    expect(body).toContain('const upText = typeof page === "object" && "upConfirm" in page ? upgradeConfirmSay(page, previewOf(page), menu, strings) : null;');
     expect(body).toContain("const intro = [...townPageIntro(page, menu).map(t), ...(upText === null ? [] : [upText])];");
     expect(body).toMatch(/const texts = townFreshIntro\(intro, play\.message\.history\(\)\.slice\(-TOWN_INTRO_DEDUP\)\);/);
   });
