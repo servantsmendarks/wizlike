@@ -1105,7 +1105,15 @@ function roundEndBody(ctx: RuleContext, before: MemberSnap[]): void {
       b.auto = false;
       delete b.autoSpells; // CB-47: OFF にすると消す（次の battle.auto on で置き直す）
       ctx.events.push({ kind: "message", key: "battle.autoOff" });
-      ctx.events.push({ kind: "message", key: `battle.autoReason.${r}` });
+      const who = r.id === undefined ? undefined : state.party.find((x) => x.id === r.id);
+      if (who === undefined) ctx.events.push({ kind: "message", key: `battle.autoReason.${r.reason}` });
+      else if (r.reason === "hp") {
+        ctx.events.push({
+          kind: "message",
+          key: "battle.autoReason.hp",
+          params: { name: who.name, hp: who.hp, hpMax: hpMaxOf(state, data, who) },
+        });
+      } else ctx.events.push({ kind: "message", key: `battle.autoReason.${r.reason}`, params: { name: who.name } });
     }
   }
 }

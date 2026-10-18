@@ -376,8 +376,9 @@ describe("CB-43 autoInterruptReason", () => {
   };
 
   test("CB-43 HP 割合が 0.3 を下回った遷移で hp。0.31→0.29 は hp、0.30→0.29 も hp、0.25→0.2 は null（遷移でない）、0.31→0.30 は null", () => {
-    expect(ratioCase(31, 29)).toBe("hp");
-    expect(ratioCase(30, 29)).toBe("hp");
+    expect(ratioCase(31, 29)).toMatchObject({ reason: "hp" });
+    expect(ratioCase(30, 29)).toMatchObject({ reason: "hp" });
+    expect(ratioCase(31, 29)).toEqual({ reason: "hp", id: "c1" }); // CB-43b
     expect(ratioCase(25, 20)).toBeNull();
     expect(ratioCase(31, 30)).toBeNull();
   });
@@ -386,12 +387,12 @@ describe("CB-43 autoInterruptReason", () => {
     const s0 = twoGroups();
     const before = snapMembers(s0, data);
     expect(autoInterruptReason(before, s0, data)).toBeNull();
-    expect(autoInterruptReason(before, withChar(s0, 2, { status: ["poison"] }), data)).toBe("status");
-    expect(autoInterruptReason(before, withChar(s0, 2, { hp: 0, life: "dead" }), data)).toBe("dead");
-    expect(autoInterruptReason(before, withChar(s0, 2, { san: 49 }), data)).toBe("san"); // 50% 未満で uneasy
+    expect(autoInterruptReason(before, withChar(s0, 2, { status: ["poison"] }), data)).toMatchObject({ reason: "status" });
+    expect(autoInterruptReason(before, withChar(s0, 2, { hp: 0, life: "dead" }), data)).toMatchObject({ reason: "dead" });
+    expect(autoInterruptReason(before, withChar(s0, 2, { san: 49 }), data)).toMatchObject({ reason: "san" }); // 50% 未満で uneasy
     expect(autoInterruptReason(before, withChar(s0, 2, { san: 50 }), data)).toBeNull();
     const both = withChar(withChar(s0, 0, { hp: 1 }), 1, { status: ["paralysis"] });
-    expect(autoInterruptReason(before, both, data)).toBe("hp");
+    expect(autoInterruptReason(before, both, data)).toMatchObject({ reason: "hp" });
     // 前から持っていた状態は数えない。死者の状態も数えない
     const poisoned = withChar(s0, 2, { status: ["poison"] });
     expect(autoInterruptReason(snapMembers(poisoned, data), poisoned, data)).toBeNull();
@@ -404,13 +405,13 @@ describe("CB-43 autoInterruptReason", () => {
     const before = snapMembers(s0, data);
     const c3dead = (s: GameState) => withChar(s, 2, { hp: 0, life: "dead" });
     // 死亡だけ: hp は前後とも alive のときだけなので立たない
-    expect(autoInterruptReason(before, c3dead(s0), data)).toBe("dead");
+    expect(autoInterruptReason(before, c3dead(s0), data)).toMatchObject({ reason: "dead" });
     // c1 の HP 0.31→0.29 と c3 の死亡が同時 → dead（hp より優先）
-    expect(autoInterruptReason(before, withChar(c3dead(s0), 0, { hp: 29 }), data)).toBe("dead");
+    expect(autoInterruptReason(before, withChar(c3dead(s0), 0, { hp: 29 }), data)).toMatchObject({ reason: "dead" });
     // c3 の死亡と c2 の毒が同時 → dead（status より優先）
-    expect(autoInterruptReason(before, withChar(c3dead(s0), 1, { status: ["poison"] }), data)).toBe("dead");
+    expect(autoInterruptReason(before, withChar(c3dead(s0), 1, { status: ["poison"] }), data)).toMatchObject({ reason: "dead" });
     // c1 の毒と c3 の SAN の段階の悪化（49 で uneasy）が同時 → status（san より優先）
-    expect(autoInterruptReason(before, withChar(withChar(s0, 0, { status: ["poison"] }), 2, { san: 49 }), data)).toBe("status");
+    expect(autoInterruptReason(before, withChar(withChar(s0, 0, { status: ["poison"] }), 2, { san: 49 }), data)).toMatchObject({ reason: "status" });
   });
 });
 
@@ -455,5 +456,18 @@ describe("CB-26 飛行とオートの対象", () => {
     expect(autoInput(r, dKR, ch(r, "c3"))).toEqual({ type: "attack", group: 1 });
     const g = withChar(twoGroups(), 0, { personality: "greedy" });
     expect(autoInput(g, dK, ch(g, "c1"))).toEqual({ type: "attack", group: 1 });
+  });
+
+  test("CB-43b 対象の id: dead は今回死んだ者の並び順の先頭、hp は割合が最も低い者（同じなら並び順）。status と san は id なし", () => {
+    const s0 = twoGroups();
+    const before = snapMembers(s0, data);
+    const dead2 = withChar(withChar(s0, 4, { hp: 0, life: "dead" }), 1, { hp: 0, life: "dead" });
+    expect(autoInterruptReason(before, dead2, data)).toEqual({ reason: "dead", id: "c2" });
+    const hpA = withChar(withChar(withChar(s0, 0, { hp: 1, hpMax: 100 }), 1, { hp: 1, hpMax: 100 }), 2, { hp: 1, hpMax: 100 });
+    const b2 = snapMembers(withChar(withChar(withChar(s0, 0, { hp: 50, hpMax: 100 }), 1, { hp: 50, hpMax: 100 }), 2, { hp: 50, hpMax: 100 }), data);
+    expect(autoInterruptReason(b2, withChar(hpA, 2, { hp: 0 }), data)).toEqual({ reason: "hp", id: "c3" });
+    expect(autoInterruptReason(b2, hpA, data)?.id).toBe("c1");
+    expect(autoInterruptReason(before, withChar(s0, 2, { status: ["poison"] }), data)).toEqual({ reason: "status" });
+    expect(autoInterruptReason(before, withChar(s0, 2, { san: 49 }), data)).toEqual({ reason: "san" });
   });
 });

@@ -29,6 +29,8 @@ import {
   type BattleOpts,
   type GroupSpec,
 } from "./helpers/battle";
+import { kinsokuLines } from "./helpers/wrap";
+import { formatMessage } from "../src/presenter/views/message";
 import { data, expectKnownStringKeys, expectStateInvariants, noAmbushAvoid, noBenefits, noSanOverride } from "./helpers/core";
 
 const RESOLVE: Command = { type: "battle.resolve" };
@@ -1364,6 +1366,20 @@ describe("オート（CB-40〜43、F2）", () => {
     expect(ks.slice(-2)).toEqual(["message:battle.autoOff", `message:battle.autoReason.${reason}`]);
     expect(r.state.battle!.inputs).toEqual({});
     expectRejected(r.state, RESOLVE, "inputs incomplete", d);
+    // CB-43b: dead / hp は誰かが params に入る。長さは 28 字 × 2 行以内（名前 6 字・HP 3 桁）
+    const why = r.events.filter((e) => e.kind === "message" && e.key === `battle.autoReason.${reason}`)[0] as { params?: Record<string, string | number> };
+    if (reason === "dead") expect(why.params).toEqual({ name: expect.any(String) });
+    else if (reason === "hp") expect(why.params).toEqual({ name: expect.any(String), hp: expect.any(Number), hpMax: expect.any(Number) });
+    else expect(why.params).toBeUndefined();
+  });
+
+  test("CB-43b 解除の文は最悪の値（名前 6 字・HP 3 桁）でも 28 字 × 2 行以内", () => {
+    const strings = data.strings as Record<string, string>;
+    const hp = formatMessage(strings["battle.autoReason.hp"]!, { name: "アアアアアア", hp: 100, hpMax: 999 });
+    const dead = formatMessage(strings["battle.autoReason.dead"]!, { name: "アアアアアア" });
+    expect(kinsokuLines(hp, 28).length).toBeLessThanOrEqual(2);
+    expect(kinsokuLines(dead, 28).length).toBeLessThanOrEqual(2);
+    expect(hp).toBe("アアアアアアが危ない（HP 100/999）。逃げるか回復を。");
   });
 
   test("CB-46（M19・M20）オートの既定: HP が 5 割未満の味方がいればドナが治癒を唱え、敵が 3 体以上ならエルが火矢を唱える（MP を払う）", () => {

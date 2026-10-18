@@ -278,28 +278,39 @@ export function snapMembers(state: GameState, data: GameData): MemberSnap[] {
   }));
 }
 
+/** CB-43b: 解除の理由と、その対象（dead / hp のときだけ id） */
+export type AutoInterrupt = { reason: AutoOffReason; id?: string };
+
 /**
  * CB-43: ラウンド開始時の写しとの遷移で判定する。優先 dead > hp > status > san。
  * dead: 前 alive → 後 dead/ash。hp: 前 alive で割合 ≥ hpRatio → 後 alive で < hpRatio。
  * status: 後 alive で、前に無かった状態がある。san: 段階が悪化した。
+ * CB-43b: dead は今回 dead になった者の先頭、hp は今回下回った者のうち割合が最も低い者（同じなら並び順）を id で返す。
  */
-export function autoInterruptReason(before: MemberSnap[], state: GameState, data: GameData): AutoOffReason | null {
+export function autoInterruptReason(before: MemberSnap[], state: GameState, data: GameData): AutoInterrupt | null {
   const ratio = data.config.combat.autoInterrupt.hpRatio;
-  let dead = false;
-  let hp = false;
+  let deadId: string | undefined;
+  let hpId: string | undefined;
+  let hpLowest = Infinity;
   let status = false;
   let san = false;
   for (const prev of before) {
     const c = state.party.find((x) => x.id === prev.id);
     if (c === undefined) continue;
-    if (prev.life === "alive" && c.life !== "alive") dead = true;
-    if (prev.life === "alive" && c.life === "alive" && prev.hp / prev.hpMax >= ratio && c.hp / hpMaxOf(state, data, c) < ratio) hp = true;
+    if (prev.life === "alive" && c.life !== "alive" && deadId === undefined) deadId = c.id;
+    if (prev.life === "alive" && c.life === "alive" && prev.hp / prev.hpMax >= ratio) {
+      const now = c.hp / hpMaxOf(state, data, c);
+      if (now < ratio && now < hpLowest) {
+        hpLowest = now;
+        hpId = c.id;
+      }
+    }
     if (c.life === "alive" && c.status.some((s) => !prev.status.includes(s))) status = true;
     if (stageRank(sanStage(c.san, sanCapOf(state, data, c), data.config)) > prev.sanRank) san = true;
   }
-  if (dead) return "dead";
-  if (hp) return "hp";
-  if (status) return "status";
-  if (san) return "san";
+  if (deadId !== undefined) return { reason: "dead", id: deadId };
+  if (hpId !== undefined) return { reason: "hp", id: hpId };
+  if (status) return { reason: "status" };
+  if (san) return { reason: "san" };
   return null;
 }
