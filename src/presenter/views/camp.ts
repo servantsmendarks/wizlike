@@ -410,8 +410,18 @@ export function campEntries(host: CampHost, page: CampPage, m: CampInput, string
       const open = (key: string, p: CampPage): CampEntry => ({ label: s(strings, key), disabled: false, choice: { kind: "open", page: p } });
       // DG-30 / UI-53（M16。設計 4-8）: いま使える帰還の品があれば 3 つ目の枠に「糸で帰る」（どれを使うかは core の campSummary.returnItem）
       const ret = m.summary?.returnItem ?? null;
-      const useReturn =
-        ret === null ? null : open("camp.useReturn", { kind: "use", stage: "confirmReturn", memberId: ret.memberId, instanceId: ret.instanceId, from: "top" });
+      // M22 D-2: 使える品が無くても迷宮のキャンプなら枠に dim で置き、押すと理由を語る（本数が 0 なら none、あるのに使える者がいないなら holder）
+      const useReturn: CampEntry | null =
+        ret !== null
+          ? open("camp.useReturn", { kind: "use", stage: "confirmReturn", memberId: ret.memberId, instanceId: ret.instanceId, from: "top" })
+          : m.summary === null
+            ? null
+            : {
+                label: s(strings, "camp.useReturn"),
+                disabled: true,
+                choice: { kind: "open", page: { kind: "top" } },
+                reason: s(strings, m.summary.returnItems === 0 ? "camp.returnBlock.none" : "camp.returnBlock.holder"),
+              };
       // DG-45 / UI-53（M18。設計 1-3）: 迷宮のキャンプ（campSummary が非 null）では 4 つ目の枠に「敵を待つ」（糸の有無で位置は動かない）
       const search: CampEntry | null = m.summary === null ? null : { label: s(strings, "camp.search"), disabled: false, choice: { kind: "search" } };
       return {

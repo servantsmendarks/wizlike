@@ -97,7 +97,7 @@ describe("UI-53 キャンプの top（M10）", () => {
     const m = input(inDungeon({ c5: { classId: "bishop", inventory: [] } }));
     const e = grid(campEntries("camp", { kind: "top" }, m, S));
     expect(e).toHaveLength(CAMP_GRID_SLOTS);
-    expect(labels(e)).toEqual(["状態", "並び順", null, "敵を待つ", "呪文", null, null, "戻る"]);
+    expect(labels(e)).toEqual(["状態", "並び順", "糸で帰る", "敵を待つ", "呪文", null, null, "戻る"]); // M22 D-2: 使えなくても dim で置く
     expect(e[7]!.choice).toEqual({ kind: "cancel" });
     expect(campHeader({ kind: "top" }, m, S)).toBe("キャンプ　どうする？");
     expect(campStep("camp", { kind: "top" }, m, { kind: "cancel" })).toEqual({ kind: "close" });
@@ -900,14 +900,21 @@ describe("DG-30/UI-53（M16）top の「糸で帰る」", () => {
     expect(campRepair("camp", confirm, input(inDungeon({ c5: { inventory: [] } })))).toEqual({ kind: "top" });
   });
 
-  test("DG-30/UI-53 使える帰還の品が無ければ 3 つ目は空き枠で、要約の行は持ち主なしの「帰還の糸　n本」（持ち主が動けない 1 本も数える）", () => {
+  test("DG-30/UI-53 使える帰還の品が無ければ 3 つ目は dim の「糸で帰る」で（M22 D-2）、要約の行は持ち主なしの「帰還の糸　n本」（持ち主が動けない 1 本も数える）", () => {
     const s = inDungeon({ c5: { status: ["sleep"] } });
     const m = input(s);
     expect(m.summary!.returnItem).toBeNull();
-    expect(grid(campEntries("camp", { kind: "top" }, m, S))[2]).toBeNull();
+    const dim = grid(campEntries("camp", { kind: "top" }, m, S))[2]!;
+    expect(dim.label).toBe("糸で帰る");
+    expect(dim.disabled).toBe(true);
+    expect(dim.reason).toBe("糸を持つ者が動けない。"); // 本数はあるが使える者がいない
     const p = campPanel({ kind: "top" }, m, S);
     expect(p.kind === "text" && p.lines?.[3]).toBe("帰還の糸　1本");
     const none = input(inDungeon({ c5: { inventory: [] } }));
+    const noneDim = grid(campEntries("camp", { kind: "top" }, none, S))[2]!;
+    expect(noneDim.disabled).toBe(true);
+    expect(noneDim.reason).toBe("糸が無い。上り階段から帰れる。"); // 本数 0
+    for (const r of [dim.reason!, noneDim.reason!]) expect(kinsokuLines(r, 28).length).toBeLessThanOrEqual(2);
     const q = campPanel({ kind: "top" }, none, S);
     expect(q.kind === "text" && q.lines?.[3]).toBe("帰還の糸　0本");
     // 要約の行は名前 6 字でも 29 字以内（パネルの幅 232 = 全角 29 字）

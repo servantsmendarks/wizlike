@@ -1659,3 +1659,4 @@
 - 2026-10-18 M22 C-1 DG-46b: 100 歩の一言に降り階段の方角。dungeons[].lostHintDirection（d01 だけ true）が真なら hint.lostExitsDir.<八方位> を出す（記録の id は lostExits のまま。tellHintOnce に省略可能な key）。印の無い d02 以降は今の hint.lostExits。八方位は octant(純粋関数。ちょうど 2 倍は斜め)。階段のセルが今の位置と同じ場合は起きない（探索済みなので出さない）。
 - 2026-10-18 M22 C-2 DG-03: 入場の語りを、その迷宮に 2 回目以降（progress.enteredDungeons にある）なら dungeon.enterAgain「…前回の地図は役に立たない。」に分けた。audio.json に同じ stairs の対応を 1 行足した（dungeon.enter と同じ音。工房の複製の audio.json への局所の追記）。tally.dives を数えるテストの補助は両方のキーを数える。
 - 2026-10-18 M22 D-1 UI-51: 簡易作成の職業の列を略称（abbr）から classes[].name（日本語）に。幅 32 に「魔術師」（24px）まで入るので矩形は変えない。帯と自分で作るの一覧は今のまま。
+- 2026-10-18 M22 D-2 DG-30/UI-53: 糸で帰るは使える品が無くても迷宮のキャンプなら dim で置く（CampEntry.reason の前例）。理由は returnItems が 0 なら camp.returnBlock.none、あれば holder。街（summary が null）には置かない。

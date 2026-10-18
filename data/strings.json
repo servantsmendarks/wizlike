@@ -477,6 +477,8 @@
   "camp.summary.return": "帰還の糸　{count}本（{owner}）",
   "camp.summary.returnNoOwner": "帰還の糸　{count}本",
   "camp.useReturn": "糸で帰る",
+  "camp.returnBlock.none": "糸が無い。上り階段から帰れる。",
+  "camp.returnBlock.holder": "糸を持つ者が動けない。",
   "camp.search": "敵を待つ",
   "camp.spell": "呪文",
   "camp.summary.morale": "宿の士気　あり",
