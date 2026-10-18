@@ -58,7 +58,13 @@ export type CustomMemberDraft = {
 };
 
 /** statKey: UI-74 の能力値の段で選択中の能力値（説明の欄に出す。表示だけの値） */
-export type CustomDraft = { index: number; step: CustomStepId; members: CustomMemberDraft[]; statKey: StatKey };
+/**
+ * UI-62（M23 D-1）: 残りはおまかせの結果の 1 行の材料（確認の段の notice に出す。表示のためだけの欄で、core には送らない）。
+ * points: 押した人の残りの点 n と配った内訳（STAT_KEYS の順。0 は除く）。rest: 残りの点が 0 だったとき、おまかせで決めた最初の人の番号（k 人目。1 始まり）
+ */
+export type AutoRestNote = { points: number; deltas: { key: StatKey; delta: number }[] } | { rest: number };
+
+export type CustomDraft = { index: number; step: CustomStepId; members: CustomMemberDraft[]; statKey: StatKey; autoRestNote?: AutoRestNote };
 
 export type CustomChoice =
   | { kind: "race"; raceId: string }
@@ -150,8 +156,10 @@ export function customStep(d: CustomDraft, c: CustomChoice, data: GameData, rng:
         return { kind: "draft", draft: { ...d, step: "class" } };
       case "name":
         return { kind: "draft", draft: { ...d, step: isLeader ? "class" : "personality" } };
-      case "confirm":
-        return { kind: "draft", draft: { ...d, index: last, step: "name" } };
+      case "confirm": {
+        const { autoRestNote: _gone, ...rest } = d; // M23 D-1: 確認の段の 1 行は戻ったら消す
+        return { kind: "draft", draft: { ...rest, index: last, step: "name" } };
+      }
     }
   }
 
@@ -232,6 +240,7 @@ function autoRest(d: CustomDraft, name: string | undefined, data: GameData, rng:
   const atName = d.step === "name" && name !== undefined;
   if (atName && !validCreationName(name, data)) return { kind: "invalidName", draft: withMember(d, { name }, "name") };
   const members = [...d.members];
+  let note: AutoRestNote | null = null;
   for (let i = d.index; i < members.length; i++) {
     const m = members[i];
     if (m === undefined) continue;
@@ -252,7 +261,14 @@ function autoRest(d: CustomDraft, name: string | undefined, data: GameData, rng:
     const st = stats;
     const reach = (id: string | null): id is string => id !== null && classReachable(r, st, bonus, id, data);
     const target = [classId, template, ...data.classes.map((c) => c.id)].find(reach) ?? null;
-    if (!statAllocation(r, st, bonus, data).complete) stats = autoAllocate(r, st, bonus, target, data);
+    const before = statAllocation(r, st, bonus, data);
+    if (!before.complete) stats = autoAllocate(r, st, bonus, target, data);
+    if (cur) {
+      // M23 D-1: 押した人の残りの点と配った内訳。残りが 0 なら、次の人（k = 番号 + 2）からおまかせで決めた。6 人目で押したなら無し
+      const after = stats;
+      const deltas = STAT_KEYS.flatMap((key) => (after[key] - st[key] > 0 ? [{ key, delta: after[key] - st[key] }] : []));
+      note = before.remaining > 0 ? { points: before.remaining, deltas } : i + 1 < members.length ? { rest: i + 2 } : null;
+    }
     const finalStats = stats;
     const ok = (id: string | null): boolean => id !== null && classOptions(finalStats, data).some((o) => o.classId === id && o.ok);
     classId = [classId, target, template].find(ok) ?? classOptions(finalStats, data).find((o) => o.ok)?.classId ?? null;
@@ -266,7 +282,10 @@ function autoRest(d: CustomDraft, name: string | undefined, data: GameData, rng:
     if (cur && atName) nm = name; else if (!validCreationName(nm, data)) nm = data.config.prototypeParty.members[i]?.defaultName ?? nm;
     members[i] = { ...m, raceId: r, stats: finalStats, bonus, bonusParts, classId, personality, name: nm };
   }
-  return { kind: "draft", draft: { ...d, members, index: members.length - 1, step: "confirm" } };
+  const next: CustomDraft = { ...d, members, index: members.length - 1, step: "confirm" };
+  if (note !== null) next.autoRestNote = note;
+  else delete next.autoRestNote;
+  return { kind: "draft", draft: next };
 }
 
 /** 6 人とも種族・能力値・職業が決まっていれば CustomPartySetup。名前・配分などの検査は core（game.new）が行う */
@@ -342,6 +361,16 @@ function bonusDetail(p: BonusParts | null, strings: Strings): string {
 
 const raceName = (data: GameData, id: string | null): string => (id === null ? "" : (data.races.find((r) => r.id === id)?.name ?? id));
 const className = (data: GameData, id: string | null): string => (id === null ? "" : (data.classes.find((c) => c.id === id)?.name ?? id));
+
+/** UI-62（M23 D-1）: 残りはおまかせの結果の 1 行（確認の段の notice）。無ければ null */
+function autoRestNoteText(note: AutoRestNote | undefined, strings: Strings): string | null {
+  if (note === undefined) return null;
+  if ("rest" in note) return formatMessage(tr(strings, "custom.autoRestRest"), { k: note.rest });
+  const detail = note.deltas
+    .map((x) => formatMessage(tr(strings, "custom.statDelta"), { label: tr(strings, `stat.${x.key}`), delta: x.delta }))
+    .join(tr(strings, "custom.autoRestSep"));
+  return formatMessage(tr(strings, "custom.autoRestNote"), { n: note.points, detail });
+}
 
 /** UI-62: 今の段の描く内容。可否は core の関数の値をそのまま写す */
 export function customView(d: CustomDraft, data: GameData, strings: Strings): CustomView {
@@ -453,6 +482,7 @@ export function customView(d: CustomDraft, data: GameData, strings: Strings): Cu
           personality: i === 0 ? tr(strings, "custom.leader") : personalityLabel(x.personality, data, strings),
         }),
       );
+      view.notice = autoRestNoteText(d.autoRestNote, strings);
       view.buttons.b = { label: tr(strings, "custom.start"), choice: { kind: "start" }, dim: false };
       break;
   }

@@ -848,6 +848,78 @@ describe("残りはおまかせ（UI-62 / CH-06。M20）", () => {
     expect(textUnits(S["custom.autoRest"]!) * 4 + 8).toBeLessThanOrEqual(CUSTOM_BUTTONS.d.w);
   });
 
+  describe("結果の 1 行（M23 D-1）", () => {
+    const dwarf = data.races.find((r) => r.id === "dwarf")!;
+    /** M22 B-1 の例: ドワーフ 2 人目、bonus 10 のうち 4 点（力 +1・生命力 +2・素早さ +1）を配った能力値の段 */
+    const atStats = (): CustomDraft => {
+      const leader = makeOne(initialDraft(data), createRng(8), "アキ");
+      const base = dwarf.baseStats;
+      const stats = { ...base, str: base.str + 1, vit: base.vit + 2, agi: base.agi + 1 };
+      const members = leader.members.map((m, i) => (i === 1 ? { ...m, raceId: "dwarf", stats, bonus: 10 } : m));
+      return { ...leader, members, step: "stats" as const };
+    };
+    const note = (d: CustomDraft): string | null => customView(d, data, S).notice;
+
+    test("UI-62 能力の段で押すと、押した人の残りの点 n と配った内訳（STAT_KEYS の順・0 は除く）が確認の段の notice に出る", () => {
+      const d0 = atStats();
+      const before = statAllocation("dwarf", d0.members[1]!.stats!, 10, data);
+      expect(before.remaining).toBe(6);
+      const r = step(d0, { kind: "autoRest" }, createRng(3));
+      expect(r.step).toBe("confirm");
+      const n = r.autoRestNote!;
+      expect("points" in n && n.points).toBe(6);
+      if (!("points" in n)) throw new Error("points");
+      const after = r.members[1]!.stats!;
+      expect(n.deltas).toEqual(STAT_KEYS.flatMap((key) => (after[key] - d0.members[1]!.stats![key] > 0 ? [{ key, delta: after[key] - d0.members[1]!.stats![key] }] : [])));
+      expect(n.deltas.reduce((a, x) => a + x.delta, 0)).toBe(6);
+      // 文: 残りの 6 点を配った（力 +1、…）。順は STAT_KEYS
+      const text = note(r)!;
+      expect(text.startsWith("残りの 6 点を配った（")).toBe(true);
+      expect(text).toBe("残りの 6 点を配った（力 +1、知恵 +1、信仰心 +1、生命力 +1、素早さ +1、運 +1）"); // M22 B-1 の例
+      expect(text).toBe(`残りの 6 点を配った（${n.deltas.map((x) => `${S[`stat.${x.key}`]} +${x.delta}`).join("、")}）`);
+      const idx = n.deltas.map((x) => STAT_KEYS.indexOf(x.key));
+      expect(idx).toEqual([...idx].sort((a, b) => a - b));
+    });
+
+    test("UI-62 名前の段で押した（残りの点が 0）ときは「{k} 人目からはおまかせで決めた。」。6 人目で押したなら無し", () => {
+      const rng = createRng(5);
+      let d = makeOne(initialDraft(data), rng, "アキ");
+      d = step(d, { kind: "race", raceId: "human" }, rng);
+      d = spendAll(d, rng);
+      d = step(d, { kind: "next" }, rng);
+      d = step(d, { kind: "class", classId: proto[1]!.classId }, rng);
+      d = step(d, { kind: "personality", value: "greedy" }, rng);
+      expect(d.step).toBe("name");
+      const r = step(d, { kind: "autoRest", name: "イサ" }, rng);
+      expect(r.autoRestNote).toEqual({ rest: 3 });
+      expect(note(r)).toBe("3 人目からはおまかせで決めた。");
+      // 6 人目の名前の段で押す
+      const r2 = step({ ...d, index: 5, step: "name" as const, members: d.members.map((m, i) => (i === 5 ? { ...d.members[1]!, name: "ウタ" } : m)) }, { kind: "autoRest", name: "ウタ" }, rng);
+      expect(r2.step).toBe("confirm");
+      expect(r2.autoRestNote).toBeUndefined();
+      expect(note(r2)).toBeNull();
+    });
+
+    test("UI-62 確認の段から戻ると 1 行の材料は外れる。普通に進んだ確認の段には無い", () => {
+      const r = step(atStats(), { kind: "autoRest" }, createRng(3));
+      expect(r.autoRestNote).toBeDefined();
+      const back = step(r, { kind: "back" }, createRng(3));
+      expect(back.step).toBe("name");
+      expect(back.autoRestNote).toBeUndefined();
+      expect("autoRestNote" in back).toBe(false);
+    });
+
+    test("UI-62 最悪値（6 能力が 2 桁ずつ）でも 28 字 × 2 行以内。古い下書き（欄なし）は notice が null", () => {
+      const worst: CustomDraft = { ...atStats(), step: "confirm", autoRestNote: { points: 60, deltas: STAT_KEYS.map((key) => ({ key, delta: 10 })) } };
+      const text = note(worst)!;
+      expect(kinsokuLines(text, 28).length).toBeLessThanOrEqual(2);
+      expect([...text].length).toBeLessThanOrEqual(56);
+      const old: CustomDraft = { ...atStats(), step: "confirm" };
+      expect(note(old)).toBeNull();
+      expect(kinsokuLines(note({ ...old, autoRestNote: { rest: 6 } })!, 28)).toHaveLength(1);
+    });
+  });
+
   test("UI-62 名前の段の d は入力欄の値を添えて送る（ソースの検査）", () => {
     const src = fs.readFileSync(new URL("../src/presenter/views/custom-creation.ts", import.meta.url), "utf8");
     expect(src).toContain('{ kind: "autoRest", name: input.value }');
