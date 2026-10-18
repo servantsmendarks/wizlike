@@ -20,7 +20,8 @@ import { teleportParty } from "../src/core/rules/floor";
 import { battleMenu } from "../src/core/rules/combat";
 import { returnToTown, townMenu } from "../src/core/rules/town";
 import { groupViews } from "../src/core/rules/combat-calc";
-import { expectRejected, withBattle } from "./helpers/battle";
+import { dataWith, dived, exec, expectRejected, withBattle } from "./helpers/battle";
+import { atEvent, dataEvents } from "./helpers/events";
 import { offerExit, offerStairs, offerTeleporter, offerTrap, PASS_CHOICE_ID, STAY_CHOICE_ID } from "../src/core/rules/choices";
 import { cloneState, createItemInstance, dungeonOf, makeContext, monsterOf } from "../src/core/state";
 import type { Cell, Character, Command, Facing, Floor, GameEvent, GameState } from "../src/core/types";
@@ -648,8 +649,8 @@ describe("毒の 1 歩（CH-43）", () => {
     s.party[2]!.life = "dead";
     s.party[2]!.hp = 0;
     const r = run(s, MOVE, DATA0);
-    // CH-43b: 毒で弱った者の poisonWarn は hpChanged の後ろに入る（ここでは見ない）
-    const ev3 = r.events.filter((e) => e.kind !== "poisonWarn");
+    // CH-43b: 弱った者の hpWarn は手の終わりに入る（ここでは見ない）
+    const ev3 = r.events.filter((e) => e.kind !== "hpWarn");
     expect(ev3.slice(0, 3)).toEqual([
       { kind: "moved", pos: sit.a.target, facing: sit.a.facing },
       { kind: "hpChanged", id: "c1", delta: -1, hp: 4 },
@@ -669,13 +670,13 @@ describe("毒の 1 歩（CH-43）", () => {
     expect(run(p, MOVE, DATA0).events).toEqual([
       { kind: "moved", pos: a.target, facing: a.facing },
       { kind: "hpChanged", id: "c4", delta: -1, hp: 11 }, // ドナ hpMax 12（CH-65）− 1
-      { kind: "poisonWarn", id: "c2", hp: 1, hpMax: p.party[1]!.hpMax }, // CH-43b: HP 1 の毒の者は最初の歩で警告（HP は減らない）
+      { kind: "hpWarn", id: "c2", hp: 1, hpMax: p.party[1]!.hpMax, poison: true }, // CH-43b: HP 1 の毒の者は最初の歩で警告（HP は減らない）
     ]);
   });
 });
 
-describe("歩行中の毒の警告（CH-43b。M22 A-4）", () => {
-  const setup = (hp: number, status: ("poison")[] = ["poison"]) => {
+describe("歩行の HP の警告（CH-43b。M23 B-2）", () => {
+  const setup = (hp: number, status: "poison"[] = ["poison"]) => {
     const s2 = enterD01(1);
     const f = floorOf(s2.dive!, data);
     const a = approaches(f, (c) => c.kind === "corridor")[0]!;
@@ -684,45 +685,114 @@ describe("歩行中の毒の警告（CH-43b。M22 A-4）", () => {
     p.party[3]!.hp = hp;
     return { p, a };
   };
-  const warns = (events: readonly { kind: string }[]) => events.filter((e) => e.kind === "poisonWarn");
+  const warns = (events: readonly GameEvent[]) => events.filter((e) => e.kind === "hpWarn");
+  const RATE1 = noTrap(dataWithRate(1, 1));
 
-  test("CH-43b しきい値（hpMax 12 × 0.25 = 3）をまたぐ歩で hpChanged の直後に 1 回だけ。次の歩では出ない。乱数は変わらない", () => {
-    expect(data.config.combat.poisonWarnRatio).toBe(0.25);
+  test("CH-43b 毒の者: しきい値（hpMax 12 × 0.25 = 3）をまたぐ歩の終わりに 1 回だけ（poison 真）。次の歩では出ない。乱数は変わらない", () => {
+    expect(data.config.combat.hpWarnRatio).toBe(0.25);
     const { p, a } = setup(3);
     const r = run(p, MOVE, DATA0);
     expect(r.events).toEqual([
       { kind: "moved", pos: a.target, facing: a.facing },
       { kind: "hpChanged", id: "c4", delta: -1, hp: 2 },
-      { kind: "poisonWarn", id: "c4", hp: 2, hpMax: 12 },
+      { kind: "hpWarn", id: "c4", hp: 2, hpMax: 12, poison: true },
     ]);
-    expect(r.state.dive!.poisonWarned).toEqual(["c4"]);
-    // 乱数の消費は毒の警告の有無で変わらない（毒なしで同じ歩をしたときと同じ rng）
-    const clean = structuredClone(p);
-    clean.party[3]!.status = [];
-    expect(r.state.rng).toEqual(run(clean, MOVE, DATA0).state.rng);
-    // 同じ潜行の次の歩（hp 2 → 1）では出ない
+    expect(r.state.dive!.hpWarned).toEqual(["c4"]);
+    // 乱数の消費は警告の有無で変わらない（HP が満ちた一行で同じ歩をしたときと同じ rng）
+    const full = structuredClone(p);
+    full.party[3]!.status = [];
+    full.party[3]!.hp = 12;
+    expect(r.state.rng).toEqual(run(full, MOVE, DATA0).state.rng);
     const again = run(placeAt(r.state, a.pos, a.facing), MOVE, DATA0);
     expect(warns(again.events)).toEqual([]);
-    expect(again.state.dive!.poisonWarned).toEqual(["c4"]);
+    expect(again.state.dive!.hpWarned).toEqual(["c4"]);
   });
 
-  test("CH-43b しきい値以上（hp 4 → 3）では出ない。HP 1 で止まった者は一度出た後は出ない", () => {
-    const { p } = setup(4);
+  test("CH-43b 毒でない者も対象（poison 偽）。しきい値以上（hp 3 / 12）では出ず、hpWarned は作らない", () => {
+    const { p } = setup(2, []);
     const r = run(p, MOVE, DATA0);
-    expect(warns(r.events)).toEqual([]);
-    expect(r.state.dive!.poisonWarned).toBeUndefined();
+    expect(warns(r.events)).toEqual([{ kind: "hpWarn", id: "c4", hp: 2, hpMax: 12, poison: false }]);
+    expect(r.events[r.events.length - 1]!.kind).toBe("hpWarn");
+    const ok = run(setup(3, []).p, MOVE, DATA0);
+    expect(warns(ok.events)).toEqual([]);
+    expect(ok.state.dive!.hpWarned).toBeUndefined();
+    // 敵を待つ（DG-45）の終わりでも出る
+    const w = run(p, { type: "dungeon.search" }, DATA0);
+    expect(w.events[w.events.length - 1]).toEqual({ kind: "hpWarn", id: "c4", hp: 2, hpMax: 12, poison: false });
   });
 
-  test("CH-43b 治る（毒でなくなる）と id を外し、再び毒で下がればまた出る", () => {
+  test("CH-43b 落とし穴で下回った手で、罠の文の後に出る", () => {
+    const sit = findSituation((c) => c.kind === "trap" && c.trapId === "pit");
+    const s = cloneState(sit.state);
+    s.party.forEach((c) => (c.status = []));
+    s.party[0]!.hpMax = 100; // pitDice 1d4: 25 → 21..24（< 25）
+    s.party[0]!.hp = 25;
+    const r = run(s, MOVE, DATA0);
+    const ks = kinds(r.events);
+    expect(ks).toContain("message:dungeon.trap.pit");
+    const w = warns(r.events);
+    expect(w.map((e) => (e as { id: string }).id)).toContain("c1");
+    expect(r.events.indexOf(w[0]!)).toBeGreaterThan(ks.indexOf("message:dungeon.trap.pit"));
+  });
+
+  test("CH-43b 戦闘が始まった手では出さず、戦闘の開始で hpWarned を空にする。戦闘の終わり（勝利）の screen{dungeon} の直後にもう一度出る", () => {
+    const { p } = setup(2, []);
+    p.dive!.hpWarned = ["c4"];
+    const r = run(p, MOVE, RATE1);
+    expect(r.state.battle).not.toBeNull();
+    expect(warns(r.events)).toEqual([]);
+    expect(r.state.dive!.hpWarned).toEqual([]);
+    // 勝つ（敵 1 体 HP 1、必ず当たる。宝箱なし）
+    const d = dataWith({ combat: { hitMin: 100, hitMax: 100 } });
+    let s = withBattle(r.state, [{ monsterId: "giant_rat", hps: [1] }], { identified: ["giant_rat"] });
+    s = exec(s, { type: "battle.auto", on: true }, d).state;
+    const end = exec(s, { type: "battle.resolve" }, d);
+    expect(end.state.battle).toBeNull();
+    const at = end.events.findIndex((e) => e.kind === "screen" && e.to === "dungeon");
+    expect(end.events[at + 1]).toEqual({ kind: "hpWarn", id: "c4", hp: 2, hpMax: 12, poison: false });
+    expect(end.state.dive!.hpWarned).toEqual(["c4"]);
+  });
+
+  test("CH-43b 入場の最後（噂話の後）に出る。乱数は変わらない", () => {
+    const town = cloneState(newGame(1));
+    town.party[3]!.hp = 2;
+    const r = run(town, ENTER_D01);
+    expect(r.events[r.events.length - 1]).toEqual({ kind: "hpWarn", id: "c4", hp: 2, hpMax: 12, poison: false });
+    expect(r.state.dive!.hpWarned).toEqual(["c4"]);
+    expect(r.state.rng).toEqual(run(newGame(1), ENTER_D01).state.rng); // 鏡: 警告の有無で乱数の消費は変わらない
+  });
+
+  test("CH-43b 宝箱の終わり（chestEnd の後）とイベントの終わり（効果の後）に出る", () => {
+    const c = exec(dived(1), { type: "debug.chest", trapId: null }).state;
+    c.party[3]!.hp = 2;
+    const left = exec(c, { type: "chest.leave" });
+    const ce = left.events.findIndex((e) => e.kind === "chestEnd");
+    expect(ce).toBeGreaterThan(-1);
+    expect(warns(left.events.slice(ce))).toEqual([{ kind: "hpWarn", id: "c4", hp: 2, hpMax: 12, poison: false }]);
+    const { state } = atEvent("glowing_tablet");
+    const calm = dataEvents((x) => {
+      x.config.events.cap = 0;
+      for (const def of x.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    });
+    const r1 = run(state, MOVE, calm);
+    expect(r1.state.pendingChoice).not.toBeNull();
+    const lowered = cloneState(r1.state);
+    lowered.party[3]!.hp = 2;
+    expect(warns(r1.events)).toEqual([]); // 保留の問いが立った手では出さない
+    const r2 = run(lowered, { type: "event.choose", optionId: "examine" }, calm);
+    expect(r2.events[r2.events.length - 1]).toEqual({ kind: "hpWarn", id: "c4", hp: 2, hpMax: 12, poison: false });
+  });
+
+  test("CH-43b 割合以上に戻ると id を外し、再び下がればまた出る", () => {
     const { p, a } = setup(3);
     const r1 = run(p, MOVE, DATA0);
     const healed = placeAt(r1.state, a.pos, a.facing);
     healed.party[3]!.status = [];
+    healed.party[3]!.hp = 12;
     const r2 = run(healed, MOVE, DATA0);
-    expect(r2.state.dive!.poisonWarned).toEqual([]);
+    expect(r2.state.dive!.hpWarned).toEqual([]);
     const again = placeAt(r2.state, a.pos, a.facing);
-    again.party[3]!.status = ["poison"];
-    again.party[3]!.hp = 3;
+    again.party[3]!.hp = 2;
     const r3 = run(again, MOVE, DATA0);
     expect(warns(r3.events)).toHaveLength(1);
   });

@@ -1515,12 +1515,12 @@ describe("UI-55 イベントの再生（M5）", () => {
     expect(names(log)).not.toContain("party.markActor");
   });
 
-  test("CH-43b poisonWarn は文（名前は state から）を出し、markActor(id, !skip)。再生の終わりで外す", async () => {
+  test("CH-43b hpWarn は文（名前は state から）を出し、markActor(id, !skip)。再生の終わりで外す", async () => {
     for (const skipAnimations of [false, true]) {
       const { deps, log } = fakeDeps({ skipAnimations });
       const s = dungeonState();
       const name = s.party.find((c) => c.id === "c3")!.name;
-      await createPlayer(deps).play([{ kind: "poisonWarn", id: "c3", hp: 2, hpMax: 12 }], s, s);
+      await createPlayer(deps).play([{ kind: "hpWarn", id: "c3", hp: 2, hpMax: 12, poison: true }], s, s);
       expect(log.filter((e) => e.m === "message.say").map((e) => e.a[0])).toEqual([`${name}は毒で弱っている（HP 2/12）。`]);
       expect(log.filter((e) => e.m === "party.markActor").map((e) => e.a)).toEqual([["c3", !skipAnimations], [null, false]]);
     }

@@ -26,6 +26,7 @@ import { classOf, dungeonOf, memberById, personalityOf } from "../state";
 import type { Cell, Character, ChestState, ChestView, DiceRow, Dive, GameState, Pos, RuleContext } from "../types";
 import { canAct, partyGoldLuck, withGoldLuck } from "./combat-calc";
 import { drawChestTrap } from "./dungeon-gen";
+import { warnHp } from "./hp-warn";
 import { effectiveStats, equipStats } from "./equip-stats";
 import { decideImpulse, pickStopper, rollRestrain } from "./events";
 import { aliveMembers, damageMembers, gainGold } from "./field";
@@ -349,6 +350,7 @@ function endChest(ctx: RuleContext, result: "opened" | "left" | "lost"): void {
   if (chest.cell !== null && result !== "left") dive.clearedCells.push({ ...chest.cell });
   ctx.events.push({ kind: "chestEnd", result });
   settleRivalryFails(ctx, chest);
+  warnHp(ctx); // CH-43b（M23）: 宝箱の終わりの歩き始め（担当の失敗の清算の後）
 }
 
 /** 罠が無くなった（解除・作動）。trapId = null、セルの箱なら disarmedChests に入れる（重複なし） */

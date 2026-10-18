@@ -330,6 +330,13 @@ describe("DG-15 routeStepOk", () => {
     expect(routeStepOk(step, [], after)).toBe(false);
   });
 
+  test("UI-25/CH-43b（M23）routeStepOk 偽: hpWarn が混ざる手で止まる（警告を見せる）", () => {
+    const after = at({ x: 3, y: 4 }, "N");
+    const warn: GameEvent = { kind: "hpWarn", id: "c1", hp: 2, hpMax: 12, poison: false };
+    expect(routeStepOk(step, [moved, warn], after)).toBe(false);
+    expect(routeStepOk(step, [door, moved, poison, { ...warn, poison: true }], after)).toBe(false);
+  });
+
   test("DG-15 routeStepOk 偽: 罠の message、スピナー（turned が続き向きが違う）、pos が違う、向きが違う", () => {
     expect(routeStepOk(step, [moved, { kind: "message", key: "dungeon.trap.pit" }, poison], at({ x: 3, y: 4 }, "N"))).toBe(false);
     expect(routeStepOk(step, [moved, { kind: "message", key: "dungeon.trap.spinner" }, { kind: "turned", facing: "E" }], at({ x: 3, y: 4 }, "E"))).toBe(false);

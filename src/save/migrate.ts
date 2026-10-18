@@ -323,7 +323,7 @@ export function isGameStateShape(x: unknown): x is GameState {
     if (jc !== undefined && !(Array.isArray(jc) && jc.every(isCellRefShape))) return false;
     const cu = dive["culled"]; // DG-48（M21）: 省略可能
     if (cu !== undefined && typeof cu !== "boolean") return false;
-    const pw = dive["poisonWarned"]; // CH-43b（M22）: 省略可能
+    const pw = dive["hpWarned"]; // CH-43b（M23）: 省略可能（古い poisonWarned は読まない）
     if (pw !== undefined && !isStringArray(pw)) return false;
     if (dive["chest"] !== null && x["pendingChoice"] !== null) return false;
     if (!isTurnCount(dive["floorSteps"])) return false;

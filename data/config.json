@@ -21,7 +21,7 @@
     "identifyChancePerRound": 15, "identifyKills": 5, "identifyIqPerPoint": 1,
     "statusLukPerPoint": 2, "sleepWakeChance": 50, "sleepHitBonus": 30, "sleepNaturalWake": 20,
     "poisonDamagePerTick": 1,
-    "poisonWarnRatio": 0.25,
+    "hpWarnRatio": 0.25,
     "fleeBase": 50, "fleeAgiMul": 3,
     "chestTable": [0, 5, 5, 15, 100], "chestRoomBonus": 10, "chestGoldDice": "2d10",
     "unarmedDice": "1d2",

@@ -33,6 +33,7 @@ import {
 } from "./dungeon-gen";
 import { chestGenOf, floorOf, markExplored, visibleCellsOf } from "./floor";
 import { startAlarmEncounter, startBossEncounter, startRandomEncounter, tickPoisonStep } from "./combat";
+import { warnHp } from "./hp-warn";
 import { findCellChest } from "./chest";
 import { canAct } from "./combat-calc";
 import { offerExit, offerStairs, offerTeleporter, offerTrap } from "./choices";
@@ -270,6 +271,7 @@ export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
   // DG-37（M12。U-5）: そのダンジョンに初めて入るときだけ、enterSpeech の GM の一行（入場の語りの後、噂話の前）
   if (first && def.enterSpeech !== undefined) ctx.events.push({ kind: "message", key: def.enterSpeech });
   gossip(ctx, dungeonId);
+  warnHp(ctx); // CH-43b（M23）: 入場の歩き始め（噂話の後）
 }
 
 function requireDive(state: GameState): Dive {
@@ -334,6 +336,11 @@ export function useStairs(ctx: RuleContext): void {
 // 前進（DG-10, DG-11, DG-13, DG-14, DG-20, DG-31, CB-01, CH-43）
 
 export function moveForward(ctx: RuleContext): void {
+  moveForwardBody(ctx);
+  warnHp(ctx); // CH-43b（M23）: 毒・罠・遭遇判定の後。戦闘が始まった手・保留の問いが立った手では warnHp が出さない
+}
+
+function moveForwardBody(ctx: RuleContext): void {
   const { state, data } = ctx;
   const dive = requireDive(state);
   const f = floorOf(dive, data);
@@ -428,6 +435,7 @@ export function searchAround(ctx: RuleContext): void {
   if (!state.party.some(canAct)) return; // CH-44: 全員が動けなくなれば遭遇しない（全滅処理は engine の後処理）
   rollEncounter(ctx, here.roomId !== null, true); // 率は部屋、戦闘の origin の inRoom は今のセルのまま
   if (state.battle === null) ctx.events.push({ kind: "message", key: "dungeon.searched" });
+  warnHp(ctx); // CH-43b（M23）: 手の終わり（戦闘が始まれば出さない）
 }
 
 /**

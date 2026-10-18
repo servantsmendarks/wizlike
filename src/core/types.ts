@@ -267,9 +267,10 @@ export type Dive = {
    */
   culled?: boolean;
   /**
-   * CH-43b（M22）: 毒の警告（poisonWarn）を出して、まだ毒で弱ったままの者の id。省略可能（schemaVersion 10 のまま足した欄。無ければ空）
+   * CH-43b（M23。M22 の poisonWarned を改名）: HP の警告（hpWarn）を出して、まだ弱ったままの者の id。戦闘の開始で空になる。
+   * 省略可能（schemaVersion 10 のまま足した欄。無ければ空。古いセーブの poisonWarned は読まない）
    */
-  poisonWarned?: string[];
+  hpWarned?: string[];
 };
 
 /**
@@ -1285,8 +1286,8 @@ export type GameEvent =
    * 「調べずに開ける」（CB-65。作動させた人は行動者）。表示層の印は eventStarted の actorId と同じ扱い
    */
   | { kind: "chestImpulse"; actorId: string }
-  /** CH-43b（M22）: 歩行中の毒で hp が hpMax × poisonWarnRatio を下回った（潜行ごとに、治るまで一度） */
-  | { kind: "poisonWarn"; id: string; hp: number; hpMax: number }
+  /** CH-43b（M23）: 歩ける場面で hp が hpMax × hpWarnRatio を下回った（割合以上に戻るか戦闘が始まるまで一度）。poison はその者が毒か（文を選ぶ） */
+  | { kind: "hpWarn"; id: string; hp: number; hpMax: number; poison: boolean }
   /** D2: 受け付けなかったコマンド。command は受け取った type（形が壊れていれば "unknown"）、reason は英語の短い理由 */
   | { kind: "rejected"; command: string; reason: string }
   /** M3 追加: 鑑定（CB-05 / MG-41）で表示名が変わったときに全グループを出し直す */

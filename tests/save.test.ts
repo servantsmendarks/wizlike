@@ -1415,18 +1415,21 @@ describe("SV-04 v5 → v6 の移行（M11。CB-60）", () => {
     expect(bad((_d, x) => (x["pendingChoice"] = { kind: "stairs", promptKey: "k", options: [] }))).toBe(false); // B4
   });
 
-  test("SV-04/CH-43b M22: dive.poisonWarned は省略可能（schemaVersion 10 のまま足した欄）。無い・文字列の配列なら通り、型が違えば broken", () => {
+  test("SV-04/CH-43b M23: dive.hpWarned は省略可能（schemaVersion 10 のまま足した欄）。無い・文字列の配列なら通り、型が違えば broken。古い poisonWarned は読まない（型が違っても通る）", () => {
     const s = chestState();
     const bad = (f: (dive: Record<string, unknown>) => void): boolean => {
       const x = json(s) as unknown as Record<string, unknown>;
       f(x["dive"] as Record<string, unknown>);
       return isGameStateShape(x);
     };
-    expect(bad((d) => delete d["poisonWarned"])).toBe(true);
-    expect(bad((d) => (d["poisonWarned"] = []))).toBe(true);
+    expect(bad((d) => delete d["hpWarned"])).toBe(true);
+    expect(bad((d) => (d["hpWarned"] = []))).toBe(true);
+    expect(bad((d) => (d["hpWarned"] = ["c1"]))).toBe(true);
+    expect(bad((d) => (d["hpWarned"] = [1]))).toBe(false);
+    expect(bad((d) => (d["hpWarned"] = "c1"))).toBe(false);
+    // M22 のセーブの poisonWarned は無視する（残っていても読める）
     expect(bad((d) => (d["poisonWarned"] = ["c1"]))).toBe(true);
-    expect(bad((d) => (d["poisonWarned"] = [1]))).toBe(false);
-    expect(bad((d) => (d["poisonWarned"] = "c1"))).toBe(false);
+    expect(bad((d) => (d["poisonWarned"] = 1))).toBe(true);
   });
 
   test("SV-04/DG-24 D-2: dive.judgedChests は省略可能（schemaVersion 6 のまま足した欄）。無い・CellRef の配列なら通り、型が違えば broken", () => {

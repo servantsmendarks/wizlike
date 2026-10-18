@@ -197,8 +197,8 @@ export type Config = {
     /** CB-32【仮】: ラウンド終了時に眠っている者が自然に覚める確率（%） */
     sleepNaturalWake: number;
     poisonDamagePerTick: number;
-    /** CH-43b【仮】: 毒で HP が hpMax × この割合を下回った歩で一度だけ警告 */
-    poisonWarnRatio: number;
+    /** CH-43b（M23）【仮】: 歩ける場面で HP が hpMax × この割合を下回ったら一度だけ警告（毒でなくてもよい） */
+    hpWarnRatio: number;
     fleeBase: number;
     fleeAgiMul: number;
     /** CB-51 / CB-51b（M21）【仮】: ランダム遭遇の勝利の宝箱の率（%）の段の表。添字は progress.noChestStreak（表の長さを超えたら最後の値）。通路はこのまま */

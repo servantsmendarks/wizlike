@@ -645,7 +645,7 @@ export function createPlayer(deps: PlayerDeps): Player {
       deps.party.markActor(ev.actorId, !cx.skip);
       marked = true;
     },
-    async poisonWarn(ev, cx, finalState) {
+    async hpWarn(ev, cx, finalState) {
       // CH-43b（M22）: 歩行中の毒の警告。その者の帯に印を付け（演出スキップでは点滅せず色だけ。印は再生の終わりで外す）、文を出す
       cx.skip = isSkip();
       const who = finalState.party.find((c) => c.id === ev.id);

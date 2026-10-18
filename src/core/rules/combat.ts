@@ -86,6 +86,7 @@ import { performWipe } from "./wipe";
 import { levelUpReady } from "./growth";
 import { tellHintOnce } from "./hints";
 import { bumpTally, isConquered } from "./progress";
+import { warnHp } from "./hp-warn";
 
 /**
  * CB-55 の拍を出すかどうか。テストで「拍を入れない場合」と比べる（不変条件 (c)）ためだけのスイッチで、
@@ -207,6 +208,8 @@ export function startBattle(ctx: RuleContext, origin: BattleOrigin, specs: { mon
     if (state.bestiary[g.monsterId] === undefined) state.bestiary[g.monsterId] = { kills: 0, identified: false };
   }
   state.battle = { origin, round: 0, partySurprise: false, groups, inputs: {}, auto: false, acBonus: {} };
+  // CH-43b（M23）: 戦闘の開始で HP の警告の記録を空にする（戦闘の終わりの歩き始めにもう一度出す）
+  if (state.dive !== null && state.dive.hpWarned !== undefined) state.dive.hpWarned = [];
   bumpTally(state, "battles"); // TW-35（M12）: 戦闘の開始（random・boss・alarm のすべてがここを通る）
   state.screen = "battle";
   ctx.events.push({ kind: "screen", to: "battle" });
@@ -1155,34 +1158,9 @@ function tickPoison(ctx: RuleContext): void {
   }
 }
 
-/** CH-43 / F8: 迷宮の 1 歩ごとの毒 */
+/** CH-43 / F8: 迷宮の 1 歩ごとの毒（警告は手の終わりの warnHp。CH-43b） */
 export function tickPoisonStep(ctx: RuleContext): void {
   tickPoison(ctx);
-  warnPoison(ctx);
-}
-
-/**
- * CH-43b（M22）: 歩行中の毒の警告。毒の者の hp が hpMax × poisonWarnRatio を下回り、dive.poisonWarned に id が無ければ
- * poisonWarn を出して id を足す。毒でない・割合以上なら id を外す（治って再び下がればまた出る）。街（dive なし）では何もしない。乱数なし
- */
-function warnPoison(ctx: RuleContext): void {
-  const { state, data } = ctx;
-  const dive = state.dive;
-  if (dive === null) return;
-  const ratio = data.config.combat.poisonWarnRatio;
-  let warned = dive.poisonWarned ?? [];
-  for (const ch of state.party) {
-    const hpMax = hpMaxOf(state, data, ch);
-    const weak = ch.life === "alive" && ch.status.includes("poison") && ch.hp < hpMax * ratio;
-    const has = warned.includes(ch.id);
-    if (weak && !has) {
-      ctx.events.push({ kind: "poisonWarn", id: ch.id, hp: ch.hp, hpMax });
-      warned = [...warned, ch.id];
-    } else if (!weak && has) {
-      warned = warned.filter((x) => x !== ch.id);
-    }
-  }
-  if (warned.length > 0 || dive.poisonWarned !== undefined) dive.poisonWarned = warned;
 }
 
 /** 戦闘の終わり（CB-50/51/53、DG-31〜33） */
@@ -1279,6 +1257,7 @@ function endBattleBody(ctx: RuleContext, result: "win" | "flee" | "wipe"): void 
     dungeonId: dive.dungeonId,
     at: { pos: { x: dive.pos.x, y: dive.pos.y }, facing: dive.facing },
   });
+  warnHp(ctx); // CH-43b（M23）: 歩き始めの HP の警告（テレポーター・宝箱の前）
   // DG-32: ボスを倒すとその場にテレポーターが出て、一行はその上に立っているので、すぐに街へ戻るかを尋ねる
   if (result === "win" && b.origin.kind === "boss") offerTeleporter(ctx);
   if (dive.chest !== null) {

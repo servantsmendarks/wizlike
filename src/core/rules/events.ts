@@ -10,6 +10,7 @@ import { canAct } from "./combat-calc";
 import { offerEventChoice } from "./choices";
 import { idx } from "./dungeon-gen";
 import { addExplored, aliveMembers, damageMembers, gainGold } from "./field";
+import { warnHp } from "./hp-warn";
 import { effectiveStats, equipStats } from "./equip-stats";
 import { applySanValue, gainSan, sanCapOf, sanStage } from "./san";
 
@@ -308,4 +309,5 @@ export function chooseEventOption(
   ctx.events.push({ kind: "message", key: choice.text });
   applyEffects(ctx, f, choice.effects, leaderOf(state));
   clearHere(ctx);
+  warnHp(ctx); // CH-43b（M23）: イベントの終わりの歩き始め（効果の後）
 }
