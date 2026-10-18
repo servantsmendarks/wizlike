@@ -34,6 +34,8 @@ import {
   type Rect,
 } from "../src/presenter/layout";
 import { characterHitRects, type CharacterDetail } from "../src/presenter/views/detail";
+import { headerText } from "../src/presenter/views/header";
+import { formatMessage } from "../src/presenter/views/message";
 import { data } from "./helpers/core";
 
 const W = data.config.stage.width;
@@ -44,6 +46,8 @@ const L = dungeonLayout(regions(data.config.ui.layout, W), N);
 const HEADER_SETTINGS = L.header.settings;
 /** UI-46（M16）: 迷宮・戦闘のヘッダーのログ（街と同じ位置） */
 const HEADER_LOG = L.header.log;
+/** UI-82（M23）: ヘッダーの「？」（ログの左。街・迷宮・戦闘で同じ位置） */
+const HEADER_HELP = L.header.help;
 /** UI-13（M8.5）: 既定の config での街の画面の矩形 */
 const T = townLayout(regions(data.config.ui.layout, W), N);
 /** 既定の config での SV-23 の帯 */
@@ -71,6 +75,7 @@ const SCREENS: Record<string, Record<string, Rect>> = {
   },
   // UI-13（M8.5）新しい街の画面: ヘッダーのログと設定、帯の 6 セル（押せる範囲 40×22）、一覧の 9 行、固定の戻る
   townScreen: {
+    "header.help": T.header.help,
     "header.log": T.header.log,
     "header.settings": T.header.settings,
     ...Object.fromEntries(T.band.hits.map((r, i) => [`town.band[${i}]`, r])),
@@ -79,6 +84,7 @@ const SCREENS: Record<string, Record<string, Rect>> = {
   },
   // UI-13 / UI-52（M10）街の施設メニュー: ヘッダーのログと設定、帯の 6 セル、48×48 の 6 枠（一覧の行と戻るは出さない）
   townMenu: {
+    "header.help": T.header.help,
     "header.log": T.header.log,
     "header.settings": T.header.settings,
     ...Object.fromEntries(T.band.hits.map((r, i) => [`town.band[${i}]`, r])),
@@ -86,13 +92,13 @@ const SCREENS: Record<string, Record<string, Rect>> = {
   },
   // UI-11 末尾が戻る / やめるの一覧（街の各施設・キャンプと酒場の一覧の段・戦闘の呪文・道具・対象）: 幅 168 の行と、一覧の外の戻る
   listFixed: {
-    "header.log": HEADER_LOG,
+    "header.help": HEADER_HELP, "header.log": HEADER_LOG,
     "header.settings": HEADER_SETTINGS,
     ...Object.fromEntries(L.listNarrow.map((r, i) => [`listNarrow[${i}]`, r])),
     listBack: L.listBack,
   },
   dungeon: {
-    "header.log": HEADER_LOG,
+    "header.help": HEADER_HELP, "header.log": HEADER_LOG,
     "header.settings": HEADER_SETTINGS,
     ...Object.fromEntries(Object.entries(L.dpad).map(([k, r]) => [`dpad.${k}`, r])),
     ...Object.fromEntries(L.menu.map((r, i) => [`menu[${i}]`, r])),
@@ -100,23 +106,24 @@ const SCREENS: Record<string, Record<string, Rect>> = {
   // UI-11 / UI-13（M16）迷宮・戦闘の広い一覧: 末尾を固定する一覧（戦闘の呪文・道具・確認・対象、宝箱の段）は幅 168 の 22px の行と固定の戻る、
   // 固定しない一覧（保留中の選択）は幅 224 の行。行は UI-10 の例外 listWide
   listWideFixed: {
-    "header.log": HEADER_LOG,
+    "header.help": HEADER_HELP, "header.log": HEADER_LOG,
     "header.settings": HEADER_SETTINGS,
     ...Object.fromEntries(L.listWide.rows.map((r, i) => [`listWide[${i}]`, { ...r, w: L.listNarrow[0]!.w }])),
     listBack: L.listBack,
   },
-  listWideChoice: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.listWide.rows.map((r, i) => [`listWide[${i}]`, r])) },
+  listWideChoice: { "header.help": HEADER_HELP, "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.listWide.rows.map((r, i) => [`listWide[${i}]`, r])) },
   // 選択肢（階段の確認）は迷宮の上で十字ボタンの代わりに list を出す（M16 からは listWideChoice の位置）
-  choice: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
+  choice: { "header.help": HEADER_HELP, "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
   // UI-25 地図: 閉じると移動。UI-24（M19）: 閉じるの右隣に凡例
   map: { mapClose: L.mapClose, mapGo: L.mapGo, mapLegend: L.mapLegend },
   // UI-54 戦闘: パーティの選択の 4 枠、メンバーの 5 枠（対象などの一覧は list と同じ）、オート中は「オート解除」だけ
-  battleParty: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.battleParty.map((r, i) => [`battleParty[${i}]`, r])) },
-  battleMember: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.battleMember.map((r, i) => [`battleMember[${i}]`, r])) },
-  battleList: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
-  autoStop: { "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, autoStop: L.autoStop },
+  battleParty: { "header.help": HEADER_HELP, "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.battleParty.map((r, i) => [`battleParty[${i}]`, r])) },
+  battleMember: { "header.help": HEADER_HELP, "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.battleMember.map((r, i) => [`battleMember[${i}]`, r])) },
+  battleList: { "header.help": HEADER_HELP, "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, ...Object.fromEntries(L.list.map((r, i) => [`list[${i}]`, r])) },
+  autoStop: { "header.help": HEADER_HELP, "header.log": HEADER_LOG, "header.settings": HEADER_SETTINGS, autoStop: L.autoStop },
   // UI-59（M16）キャラクター画面: ヘッダーの ◀ ▶・ログ・設定と、操作の 4×2 の枠
   character: {
+    // UI-82（M23）: キャラクター画面（overlay camp）の間は「？」を隠すので入れない
     "header.prev": L.header.prev,
     "header.next": L.header.next,
     "header.log": HEADER_LOG,
@@ -185,9 +192,12 @@ describe("layout", () => {
     // 見た目の枠（prevMark / nextMark）がヘッダーの中に収まる
     // M20（UI-80）: キャラクター画面の品の行 character.item（高さ 12。SCREENS には入れず、下の UI-80 のテストで確かめる）
     // M21（B-3）: 設定画面の 7 行の値のトグル settings.row（高さ 26。SCREENS には入れず、settings-view.test の settingsLayout のテストで確かめる）
-    expect(TOUCH_EXCEPTIONS).toEqual(["header.settings", "header.log", "header.prev", "header.next", "town.band", "town.list", "listWide", "character.item", "settings.row"]);
+    expect(TOUCH_EXCEPTIONS).toEqual(["header.settings", "header.log", "header.help", "header.prev", "header.next", "town.band", "town.list", "listWide", "character.item", "settings.row"]);
     for (const k of ["prevMark", "nextMark"] as const) expect(inside(L.header[k], regions(data.config.ui.layout, W).header), k).toBe(true);
     expect(inside(T.header.log, regions(data.config.ui.layout, W).header)).toBe(true);
+    // M23（UI-82）: ヘッダーの「？」header.help（28×16）を足した。ヘッダーの中に収まる
+    expect(inside(HEADER_HELP, regions(data.config.ui.layout, W).header)).toBe(true);
+    expect(inside(T.header.help, regions(data.config.ui.layout, W).header)).toBe(true);
     expect(inside(HEADER_SETTINGS, regions(data.config.ui.layout, W).header)).toBe(true);
     // 押せない欄も画面の内側
     expect(inside(CREATION_ERROR, STAGE)).toBe(true);
@@ -299,14 +309,17 @@ describe("layout", () => {
       expect(overlaps(tu, d.header.settings)).toBe(false);
       // UI-46（M16）: ログのボタンとも重ならない
       expect(overlaps(tu, d.header.log)).toBe(false);
+      // UI-82（M23）: 「？」とも重ならない
+      expect(overlaps(tu, d.header.help)).toBe(false);
       // ターン表示の間の問いの領域（text.w − HEADER_TURN_W − HEADER_TURN_GAP）は turn の左に HEADER_TURN_GAP 空く
       const shrunk = { ...d.header.text, w: d.header.text.w - HEADER_TURN_W - HEADER_TURN_GAP };
       expect(overlaps(shrunk, tu)).toBe(false);
       expect(tu.x - (shrunk.x + shrunk.w)).toBe(HEADER_TURN_GAP);
     }
-    // 既定の問いの最長（M18: 「{name}（後衛）は？」の 6 文字の名前で 12 字 = 96px。M17 までは「{name}はどうする？」で同じ 96px）は縮めた 100px に収まる（M16 でログと並べた。以前は 132px）
+    // 既定の問いの最長（M18: 「{name}（後衛）は？」の 6 文字の名前で 12 字 = 96px。M17 までは「{name}はどうする？」で同じ 96px）は縮めた 96px にちょうど収まる
+    //（M16 でログと並べて 100px。以前は 132px。M23（UI-82）で「？」を足して 96px）
     expect(HEADER_TURN_W).toBe(48);
-    expect(L.header.text.w - HEADER_TURN_W - HEADER_TURN_GAP).toBe(100);
+    expect(L.header.text.w - HEADER_TURN_W - HEADER_TURN_GAP).toBe(96);
     expect(L.header.text.w - HEADER_TURN_W - HEADER_TURN_GAP).toBeGreaterThanOrEqual(96);
     // 「第12ターン」（全角 5 字 = 40px）はターン表示に収まる
     expect(HEADER_TURN_W).toBeGreaterThanOrEqual(40);
@@ -314,18 +327,19 @@ describe("layout", () => {
 
   test("ui §2 既定の layout（16/150/70/64/100）での迷宮の画面の座標は M2 の定数と同じ", () => {
     // turn は M5.5（UI-54）で足した。M16（UI-46）でログ x160..199 を足し、text は x4..155（152）、turn は 56 → 48 で x108..155
-    //（以前は text w192・turn x140 w56、log なし）
+    //（以前は text w192・turn x140 w56、log なし）。M23（UI-82）: 「？」x156..183・ログ x184..211・設定 x212..239（各 28）、text x4..151（148）、turn x104..151
     expect(L.header).toEqual({
-      text: { x: 4, y: 0, w: 152, h: 16 },
-      log: { x: 160, y: 0, w: 40, h: 16 },
-      settings: { x: 200, y: 0, w: 40, h: 16 },
-      turn: { x: 108, y: 0, w: 48, h: 16 },
-      // UI-59（M16）: キャラクター画面の ◀ ▶ と、その間の問い。追補 H-2 から押せる矩形は 24×32、見た目の枠は 24×16
+      text: { x: 4, y: 0, w: 148, h: 16 },
+      help: { x: 156, y: 0, w: 28, h: 16 },
+      log: { x: 184, y: 0, w: 28, h: 16 },
+      settings: { x: 212, y: 0, w: 28, h: 16 },
+      turn: { x: 104, y: 0, w: 48, h: 16 },
+      // UI-59（M16）: キャラクター画面の ◀ ▶ と、その間の問い。追補 H-2 から押せる矩形は 24×32、見た目の枠は 24×16。M23: ▶ は「？」の左（x132..155）
       prev: { x: 0, y: 0, w: 24, h: 32 },
-      next: { x: 136, y: 0, w: 24, h: 32 },
+      next: { x: 132, y: 0, w: 24, h: 32 },
       prevMark: { x: 0, y: 0, w: 24, h: 16 },
-      nextMark: { x: 136, y: 0, w: 24, h: 16 },
-      navText: { x: 28, y: 0, w: 104, h: 16 },
+      nextMark: { x: 132, y: 0, w: 24, h: 16 },
+      navText: { x: 28, y: 0, w: 100, h: 16 },
     });
     expect(L.dpad).toEqual({
       forward: { x: 40, y: 300, w: 32, h: 32 },
@@ -462,11 +476,12 @@ describe("layout", () => {
   });
 
   // M8.5: M7 の広げた一覧（listTall）は UI-13 の街の配置（townLayout）に置き換えた
-  test("UI-13（M8.5）townLayout: ヘッダー（文字 x4..155・ログ x160..199・設定 x200..239）、絵 240×150、会話の箱、帯 6 セル、見出し、一覧 9 行×22・幅 168、戻る x178 y354。重ならずステージに収まる", () => {
+  test("UI-13（M8.5）/ UI-82（M23）townLayout: ヘッダー（文字 x4..151・「？」x156..183・ログ x184..211・設定 x212..239）、絵 240×150、会話の箱、帯 6 セル、見出し、一覧 9 行×22・幅 168、戻る x178 y354。重ならずステージに収まる", () => {
     expect(T.header).toEqual({
-      text: { x: 4, y: 0, w: 152, h: 16 },
-      log: { x: 160, y: 0, w: 40, h: 16 },
-      settings: { x: 200, y: 0, w: 40, h: 16 },
+      text: { x: 4, y: 0, w: 148, h: 16 },
+      help: { x: 156, y: 0, w: 28, h: 16 },
+      log: { x: 184, y: 0, w: 28, h: 16 },
+      settings: { x: 212, y: 0, w: 28, h: 16 },
     });
     expect(T.picture).toEqual({ x: 0, y: 16, w: 240, h: 150 });
     // UI-47（M10.5）会話の箱: 絵の下端からステージの下端まで（枠 x0..239・y166..399、文字 x5..228・y169..388 の 22 行 × 56 単位、▼ x221..228・y381..388）。
@@ -643,6 +658,64 @@ describe("layout", () => {
     expect(layoutWarnings(g, { ...L, header: { ...L.header, next: { ...L.header.next, y: 280 } } })).toEqual([
       "ui.layout: header.next does not fit in the header and character regions",
     ]);
+  });
+
+  test("UI-82（M23）ヘッダーの「？」header.help: ログの左の 28×16（x156..183）。ログ・設定も 28 に詰め、文字・ターン表示・◀ ▶ と重ならない。UI-10 の例外で、はみ出せば layoutWarnings", () => {
+    for (const lay of [data.config.ui.layout, { header: 20, view: 150, message: 66, party: 64, controls: 100 }]) {
+      const g = regions(lay, W);
+      for (const hd of [dungeonLayout(g, N).header, townLayout(g, N).header]) {
+        expect([hd.help.w, hd.log.w, hd.settings.w]).toEqual([28, 28, 28]);
+        expect(hd.help.h).toBe(g.header.h);
+        // 右から 設定・ログ・「？」が隙間なく並び、文字領域は「？」の左（余白 4）まで
+        expect(hd.settings.x + hd.settings.w).toBe(g.header.x + g.header.w);
+        expect(hd.log.x + hd.log.w).toBe(hd.settings.x);
+        expect(hd.help.x + hd.help.w).toBe(hd.log.x);
+        expect(hd.text.x + hd.text.w + 4).toBe(hd.help.x);
+        expect(overlaps(hd.help, hd.text)).toBe(false);
+        expect(inside(hd.help, g.header)).toBe(true);
+      }
+      const d = dungeonLayout(g, N);
+      expect(overlaps(d.header.help, d.header.turn)).toBe(false);
+      expect(d.header.turn.x + d.header.turn.w).toBe(d.header.text.x + d.header.text.w);
+      // ◀ ▶ の見た目と押せる矩形も「？」に重ならない（キャラクター画面の間は「？」を隠すが、位置でも分けておく）
+      for (const r of [d.header.prev, d.header.next, d.header.prevMark, d.header.nextMark, d.header.navText]) expect(overlaps(r, d.header.help)).toBe(false);
+      expect(d.header.nextMark.x + d.header.nextMark.w).toBe(d.header.help.x);
+    }
+    expect(L.header.help).toEqual({ x: 156, y: 0, w: 28, h: 16 });
+    expect(isTouchException("header.help")).toBe(true);
+    const g = regions(data.config.ui.layout, W);
+    expect(layoutWarnings(g, { ...L, header: { ...L.header, help: { ...L.header.help, y: 4 } } })).toEqual([
+      "ui.layout: header.help does not fit in the header region (height 16)",
+    ]);
+  });
+
+  test("UI-82 / UI-54 / UI-13（M23）ヘッダーの文字の長さ: ターンの間の問いの最悪値（12 字）は 96px、街の見出し「闇魔術　999999 G」と迷宮の見出し（最長の名前 10F）は 148px に収まる", () => {
+    // 美咲フォント: 全角 8px・半角 4px（金額の NBSP も半角）
+    const px = (t: string): number => Array.from(t).reduce((a, c) => a + ((c.codePointAt(0) ?? 0) < 0x80 || c === " " ? 4 : 8), 0);
+    const st = data.strings;
+    const turnTextW = L.header.text.w - HEADER_TURN_W - HEADER_TURN_GAP;
+    expect(turnTextW).toBe(96);
+    for (const row of ["battle.row.front", "battle.row.back"]) {
+      const q = formatMessage(st["battle.prompt.member"]!, { name: "アアアアアア", row: st[row]! });
+      expect(q).toBe(`アアアアアア（${st[row]}）は？`);
+      expect(px(q), q).toBeLessThanOrEqual(turnTextW);
+    }
+    expect(px(formatMessage(st["battle.prompt.member"]!, { name: "アアアアアア", row: st["battle.row.front"]! }))).toBe(96);
+    expect(px(formatMessage(st["battle.prompt.party"]!, {}))).toBeLessThanOrEqual(turnTextW);
+    // 街: 施設の名前の最長（迷宮の入口・闇魔術ほか）と 6 桁の所持金
+    for (const k of Object.keys(st).filter((k) => k.startsWith("town.place."))) {
+      const h = formatMessage(st["town.header"]!, { place: st[k]!, gold: 999999 });
+      expect(px(h), h).toBeLessThanOrEqual(T.header.text.w);
+    }
+    expect(formatMessage(st["town.header"]!, { place: st["town.place.dark"]!, gold: 999999 }).replace(/ /g, " ")).toBe("闇魔術　999999 G");
+    expect(T.header.text.w).toBe(148);
+    // 迷宮: どの迷宮の名前でも 10F・どの向きでも
+    for (const dg of data.dungeons)
+      for (const f of ["N", "E", "S", "W"] as const) {
+        const h = headerText(st, dg.name, 10, f);
+        expect(px(h), h).toBeLessThanOrEqual(L.header.text.w);
+      }
+    expect(headerText(st, "灰の地下墓所", 10, "N")).toBe("灰の地下墓所 10F 北");
   });
 
   test("UI-50 タイトル: 題字 y32、行 i は y52+34i の 224×32、行の欄は 5 行ちょうど、案内の欄・ボタン 4 枠は行と重ならない", () => {

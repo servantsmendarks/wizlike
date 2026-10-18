@@ -952,7 +952,8 @@ describe("入力と Command", () => {
   test("UI-13/UI-46（M16）迷宮・戦闘のヘッダーにもログ: createHeader は dungeonLayout の header（log を含む）だけを受け、街の矩形（town）は渡さない（ソースの検査）", () => {
     const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
     // M16（UI-59）: ◀ ▶ の onCycle を足した
-    expect(dungeon).toContain("createHeader({ strings: o.strings, region: r.header, layout: lay.header, onSettings: o.onSettings, onLog: o.onLog, onCycle: (d) => o.onCycle?.(d) });");
+    // M23（UI-82）: 「？」の onHelp を足した
+    expect(dungeon).toContain("createHeader({ strings: o.strings, region: r.header, layout: lay.header, onSettings: o.onSettings, onLog: o.onLog, onHelp: () => o.onHelp?.(), onCycle: (d) => o.onCycle?.(d) });");
     const header = stripComments(presenterRaw["../src/presenter/views/header.ts"]!);
     expect(header).toContain("const lg = o.layout.log;");
   });
@@ -1411,6 +1412,49 @@ describe("入力と Command", () => {
     expect(open).not.toContain("play.ending");
     expect(open).not.toContain("play.talk.");
     expect(open).not.toContain("run(");
+  });
+
+  test("UI-82（M23）ヘッダーの「？」とキー ?: どちらも pressHelp（「？」は guard の中、キーは再生中・連鎖中の return の後）。開くのは街・迷宮・戦闘で overlay が無いときだけ openRules。「？」は overlay の間は隠す（syncControls の先頭・設定・debug・全滅の内訳を開いたとき）。開閉は戦闘の入力の段（cursor）に触れず、閉じると syncControls が段を描き直す（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    expect(app).toContain("onHelp: () => guard(() => pressHelp()),");
+    expect(app).toContain('const helpOn = (): boolean => overlay === null && (route === "town" || route === "dungeon" || route === "battle");');
+    expect(app).toMatch(/const syncHelp = \(\): void => \{\s*play\.header\.setHelpVisible\(helpOn\(\)\);\s*\};/);
+    expect(app).toMatch(/const pressHelp = \(\): void => \{\s*if \(helpOn\(\)\) openRules\(\);\s*\};/);
+    // 「？」を隠す: syncControls の先頭（overlay の開閉はここを通る）と、syncControls を呼ばずに overlay を立てる 3 か所
+    /** 「const name = (…): void => {」から、字下げ 2 の「};」までの本体 */
+    const bodyOf = (head: string): string => {
+      const i = app.indexOf(head);
+      if (i < 0) return "";
+      const j = app.indexOf("\n  };", i);
+      return app.slice(i + head.length, j);
+    };
+    const sync = bodyOf("const syncControls = (): void => {");
+    expect(sync.trimStart().startsWith("syncHelp();")).toBe(true);
+    for (const [name, ov] of [["openSettings", "settings"], ["openDebug", "debug"], ["openWipe", "wipe"]] as const) {
+      const body = bodyOf(`const ${name} = (`);
+      expect(body, name).toContain(`overlay = "${ov}";\n    syncHelp();`);
+    }
+    // キー ?: 自動歩行を止めた後・再生中（isBusy）と連鎖中の return の後に置く（再生中は効かない）
+    const core = bodyOf("const handleActionCore = (a: Action): void => {");
+    const at = core.indexOf('if (a === "help") {');
+    expect(at).toBeGreaterThan(core.indexOf("if (isBusy() || chaining) return;"));
+    expect(at).toBeGreaterThan(core.indexOf("if (stopWalk()) return;"));
+    expect(core.slice(at)).toMatch(/^if \(a === "help"\) \{\s*pressHelp\(\);\s*return;\s*\}/);
+    // 戦闘の入力の段（member / target の cursor）は用語の開閉で変えない。閉じた後の syncControls → syncBattleControls が cursor の段を描き直す
+    for (const name of ["openRules", "closeEnding", "pressHelp", "syncHelp"]) {
+      const body = bodyOf(`const ${name} = (): void => {`);
+      expect(body, name).not.toBe("");
+      expect(body, name).not.toMatch(/cursor\s*=|advanceFrom|send\(|run\(/);
+    }
+    const close = bodyOf("const closeEnding = (): void => {");
+    expect(close.trimEnd().endsWith("syncControls();")).toBe(true);
+    const sb = bodyOf("const syncBattleControls = (): void => {");
+    expect(sb).toContain("const cur = cursor;");
+    expect(sb).not.toMatch(/cursor\s*=[^=]/);
+    expect(sb).toContain("play.header.setText(battlePrompt(menu, cur, strings));");
+    // 迷宮の画面の「？」はヘッダーへ渡すだけ
+    const dungeon = stripComments(presenterRaw["../src/presenter/views/dungeon.ts"]!);
+    expect(dungeon).toContain("onHelp: () => o.onHelp?.(),");
   });
 
   test("UI-77/UI-57（M19 D-3）用語の窓の層: ステージ直下（プレイ画面の上・設定画面と debug パネルの下）に置き、窓は戦績と同じ layout の wipe、「閉じる」は操作領域の close モードと同じ mapClose で、押すと guard の中で closeEnding。再開（SV-50）では層を隠す。プレイ画面は setRulesOpen で会話の箱を窓の下の 3 行の箱にする（ソースの検査）", () => {

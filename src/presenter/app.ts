@@ -398,6 +398,8 @@ export function createApp(o: {
     // UI-46 / UI-13（M8.5。M16 から迷宮・戦闘でも）: ヘッダーのログ（他の overlay があるときは捨てる）。
     // M20（UI-44 の例外）: 再生中も受け（whileBusy）、leave の待ちの間は履歴を開き、それ以外の再生中は拍のタップ
     onLog: () => pressLog(),
+    // UI-82（M23）: ヘッダーの「？」で用語の一覧（guard の中。再生中・連鎖中・自動歩行中は効かない）
+    onHelp: () => guard(() => pressHelp()),
     // UI-59 / UI-33（M16）: キャラクター画面のヘッダーの ◀ ▶ で前後の人
     onCycle: (dir) => guard(() => cycleCamp(dir)),
     // UI-13 / UI-59（M8.5）: 街の帯のタップでその人の状態
@@ -996,6 +998,7 @@ export function createApp(o: {
 
   /** 操作領域とスワイプの可否を、route / overlay / pendingChoice / inputMode から決める */
   const syncControls = (): void => {
+    syncHelp();
     const s = store.get();
     play.setSwipeOn(swipeEnabled());
     const c = play.controls;
@@ -1740,6 +1743,16 @@ export function createApp(o: {
     fn();
   };
 
+  /** UI-82（M23）: ヘッダーの「？」を出すのは街・迷宮・戦闘で overlay が無いときだけ */
+  const helpOn = (): boolean => overlay === null && (route === "town" || route === "dungeon" || route === "battle");
+  const syncHelp = (): void => {
+    play.header.setHelpVisible(helpOn());
+  };
+  /** UI-82（M23）: ヘッダーの「？」とキー ?。出している間だけ用語の一覧を開く（閉じた後は syncControls が元の操作を出し直す） */
+  const pressHelp = (): void => {
+    if (helpOn()) openRules();
+  };
+
   /** UI-46 / UI-44（M20）: 再生の途中（leave の待ち）に開いた履歴の画面が出ている */
   const historyInPlay = (): boolean => overlay === "history" && (isBusy() || chaining);
 
@@ -2076,6 +2089,7 @@ export function createApp(o: {
     underDebug = overlay === "wipe" || overlay === "ending" || overlay === "settings" ? overlay : null;
     repeater.release();
     overlay = "debug";
+    syncHelp();
     debug.showSettings();
     debug.refresh();
     debug.el.style.display = "";
@@ -2109,6 +2123,7 @@ export function createApp(o: {
     underSettings = overlay === "wipe" || overlay === "ending" ? overlay : null;
     repeater.release();
     overlay = "settings";
+    syncHelp();
     settingsNotice = null;
     renderSettings();
     settingsView.el.style.display = "";
@@ -2299,6 +2314,7 @@ export function createApp(o: {
     if (overlay === "history") closeHistory();
     repeater.release();
     overlay = "wipe";
+    syncHelp();
     play.wipe.render(formatWipeSummary(p, data, strings));
     play.showWipe(true);
   };
@@ -2448,6 +2464,11 @@ export function createApp(o: {
     // 未定-19（UI-47 / UI-66）: 会話の箱が文送りを待つ間は、数字と Enter / Space も箱のタップ（一覧は選ばない。Esc は会話を打ち切って戻る）
     if (talkWaits() && (a === "confirm" || typeof a === "object")) {
       play.talk.tap();
+      return;
+    }
+    // UI-33 / UI-82（M23）: ? はヘッダーの「？」と同じ（overlay の間・街・迷宮・戦闘の外では何もしない）
+    if (a === "help") {
+      pressHelp();
       return;
     }
     if (a === "debug") {

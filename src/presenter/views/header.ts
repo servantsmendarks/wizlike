@@ -2,12 +2,14 @@
 // UI-54（M5.5）: 戦闘中は文字領域の右端（設定ボタンの左）に「第{n}ターン」を右寄せで出す（setTurn。問いを消しても残す）。
 // 矩形は layout.ts の dungeonLayout（header.text / header.settings。設定ボタンは UI-10 の例外。F2 でも開ける）。
 // UI-13 / UI-46（M16）: 設定の左に「ログ」（header.log。UI-46 の履歴を開く。UI-10 の例外）を街・迷宮・戦闘で常に出す。文字領域はその左まで
-// （M8.5〜M15 は街だけで、setLogVisible で出し入れしていた）。戦闘のターン表示はログの左に置き、その間の問いは 100px（既定）。
+// （M8.5〜M15 は街だけで、setLogVisible で出し入れしていた）。戦闘のターン表示は文字領域の右端に置く（M23 から「？」の左）。
 // UI-59 / UI-33（M16。設計 4-9）: キャラクター画面の間は、ヘッダーの左端に ◀（前の人）、ログの左に ▶（次の人）を出し（setNav）、
 // 問いはその間に中央寄せ。三角は美咲フォントに無いのでインライン SVG の path で描く。
 // M16 追補 H-2（2026-10-11 ユーザーの判断）: ◀ ▶ の見た目（枠と三角。layout の prevMark / nextMark = ヘッダーの帯の 24×16）はそのままで、
 // 押せるボタン（prev / next）は透明の 24×32 にしてヘッダーの下へはみ出させる。DOM で後に置くキャンプのパネルに覆われないよう z-index 1
 // （出すのはキャラクター画面の間だけで、その間に上の層に来る overlay は無い。設定はキャンプを閉じてから開く）。
+// UI-82（M23）: ログの左に「？」（header.help。用語の一覧を開く。UI-10 の例外）。overlay が開いている間は隠す（setHelpVisible）。
+// 文字領域は「？」の左まで（既定 x4..151 の 148）。ターン表示の間の問いは 96px（既定）。
 // el は region の位置と大きさに自分で置く。モジュールのトップレベルでは DOM に触れない。
 import type { Strings } from "../../core/data/index";
 import type { Facing } from "../../core/types";
@@ -37,6 +39,8 @@ export type Header = {
   setTurn(s: string | null): void;
   /** UI-59（M16）: キャラクター画面の ◀ ▶ を出すか（出す間は問いを両者の間に中央寄せ） */
   setNav(on: boolean): void;
+  /** UI-82（M23）: ヘッダーの「？」を出すか（overlay の間は隠す） */
+  setHelpVisible(on: boolean): void;
 };
 
 /** UI-59（M16）: ◀ ▶ の三角の path（ボタンの中央に置く 8×8。dir -1 が左向き） */
@@ -54,6 +58,8 @@ export function createHeader(o: {
   onSettings(): void;
   /** UI-46 / UI-13（M8.5）: ログのボタン */
   onLog?(): void;
+  /** UI-82（M23）: 「？」のボタン（用語の一覧） */
+  onHelp?(): void;
   /** UI-59（M16）: キャラクター画面の ◀（−1）/ ▶（+1） */
   onCycle?(dir: 1 | -1): void;
 }): Header {
@@ -77,7 +83,7 @@ export function createHeader(o: {
     position: "absolute",
     left: `${t.x - r.x}px`,
     top: `${t.y - r.y}px`,
-    width: `${t.w}px`, // 既定 x4..155（ログの左まで）
+    width: `${t.w}px`, // 既定 x4..151（「？」の左まで。M23）
     height: `${t.h}px`,
     lineHeight: `${t.h}px`,
     whiteSpace: "nowrap",
@@ -151,6 +157,30 @@ export function createHeader(o: {
   // UI-46 / UI-44（M20）: 再生中も onLog を呼ぶ（whileBusy）。leave の待ちの間は履歴を開き、それ以外の再生中は拍のタップに回すのは app
   onTap(logBtn, { onTap: () => o.onLog?.(), whileBusy: true });
   el.appendChild(logBtn);
+  // UI-82（M23）: 「？」のボタン（ログの左。設定・ログと同じ見た目）。再生中の扱いは既定（拍のタップ）。開けるかは app の guard
+  const hp = o.layout.help;
+  const helpLabel = o.strings["header.help"] ?? "header.help";
+  const helpBtn = document.createElement("button");
+  helpBtn.type = "button";
+  helpBtn.className = "header-help";
+  helpBtn.textContent = helpLabel;
+  helpBtn.setAttribute("aria-label", o.strings["rules.title"] ?? helpLabel);
+  Object.assign(helpBtn.style, {
+    position: "absolute",
+    left: `${hp.x - r.x}px`,
+    top: `${hp.y - r.y}px`,
+    width: `${hp.w}px`,
+    height: `${hp.h}px`,
+    margin: "0",
+    padding: "0",
+    border: "1px solid var(--c-frame)",
+    background: "var(--c-bg)",
+    color: "var(--c-text)",
+    font: "inherit",
+    lineHeight: `${hp.h - 2}px`,
+  });
+  onTap(helpBtn, () => o.onHelp?.());
+  el.appendChild(helpBtn);
   // UI-59（M16）: ◀ ▶（既定は隠す。setNav）。ボタンは押せる矩形（透明）、その中に見た目の枠（mark）と三角
   const navButton = (rect: Rect, mark: Rect, dir: 1 | -1): HTMLButtonElement => {
     const key = dir < 0 ? "character.prev" : "character.next";
@@ -209,7 +239,7 @@ export function createHeader(o: {
   const nt = o.layout.navText;
 
   let turnOn = false;
-  /** 文字領域の幅（ログの左まで。戦闘のターン表示の間はさらにその左まで） */
+  /** 文字領域の幅（「？」の左まで。戦闘のターン表示の間はさらにその左まで） */
   const textW = (): number => (turnOn ? t.w - tu.w - HEADER_TURN_GAP : t.w);
 
   return {
@@ -229,6 +259,9 @@ export function createHeader(o: {
       text.style.left = `${(on ? nt.x : t.x) - r.x}px`;
       text.style.width = `${on ? nt.w : textW()}px`;
       text.style.textAlign = on ? "center" : "";
+    },
+    setHelpVisible(on: boolean): void {
+      helpBtn.style.display = on ? "" : "none";
     },
   };
 }

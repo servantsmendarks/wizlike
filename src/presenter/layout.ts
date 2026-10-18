@@ -29,10 +29,11 @@ export const TOUCH_MIN_LOGICAL = 30;
  * UI-10 の最小寸法を満たさなくてよい矩形の名前（dungeonLayout の header.settings、header.log（M8.5 の townLayout。M16 から dungeonLayout にも）・
  * キャラクター画面のヘッダーの ◀ ▶ header.prev / header.next（M16。当たり判定 24×32。追補 H-2）・パーティの帯 town.band（40×22）・一覧の行 town.list（高さ 22）・迷宮と戦闘の広い一覧の行 listWide（高さ 22。M16）・
  * キャラクター画面の品の行 character.item（M20。UI-80。装備の行と所持品の枠の当たり判定は高さ 12（行の 10px の上下に 1px）。views/detail の characterHitRects）・
- * 設定画面の 7 行の値のトグル settings.row（M21 B-3。高さ 26。7 行目を足すためにホーム画面の案内の 8 行を残して詰めた）。
+ * 設定画面の 7 行の値のトグル settings.row（M21 B-3。高さ 26。7 行目を足すためにホーム画面の案内の 8 行を残して詰めた）・
+ * ヘッダーの「？」header.help（M23 UI-82。28×16。ログの左）。
  * 添字付きの名前 "town.band[0]" なども含む）
  */
-export const TOUCH_EXCEPTIONS: readonly string[] = ["header.settings", "header.log", "header.prev", "header.next", "town.band", "town.list", "listWide", "character.item", "settings.row"];
+export const TOUCH_EXCEPTIONS: readonly string[] = ["header.settings", "header.log", "header.help", "header.prev", "header.next", "town.band", "town.list", "listWide", "character.item", "settings.row"];
 
 /** UI-10: name が TOUCH_EXCEPTIONS の名前そのものか、その添字付き（"town.band[2]"） */
 export function isTouchException(name: string): boolean {
@@ -41,10 +42,12 @@ export function isTouchException(name: string): boolean {
 
 // ---- 迷宮の画面（各領域の左上からの相対座標）
 
-/** ヘッダーの設定ボタンの幅。右端に置き、高さはヘッダーの高さ（16 が上限なので UI-10 の例外。F2 でも開ける） */
-const HEADER_SETTINGS_W = 40;
-/** UI-13 / UI-46: ヘッダーのログのボタンの幅（設定の左に並べる。高さはヘッダー。UI-10 の例外 header.log。M16 から迷宮・戦闘でも） */
-const HEADER_LOG_W = 40;
+/** ヘッダーの設定ボタンの幅。右端に置き、高さはヘッダーの高さ（16 が上限なので UI-10 の例外。F2 でも開ける）。M23（UI-82）で「？」を足すため 40 → 28 */
+const HEADER_SETTINGS_W = 28;
+/** UI-13 / UI-46: ヘッダーのログのボタンの幅（設定の左に並べる。高さはヘッダー。UI-10 の例外 header.log。M16 から迷宮・戦闘でも）。M23（UI-82）で 40 → 28 */
+const HEADER_LOG_W = 28;
+/** UI-82（M23）: ヘッダーの「？」（用語）のボタンの幅（ログの左に並べる。高さはヘッダー。UI-10 の例外 header.help） */
+const HEADER_HELP_W = 28;
 /**
  * UI-59 / UI-33（M16。設計 4-9）: キャラクター画面のヘッダーの ◀ ▶ の幅。◀ はヘッダーの左端、▶ はログの左に置き、高さはヘッダー
  * （UI-10 の例外 header.prev / header.next。12 論理 px 以上）。出している間、名前の問いはその間に中央寄せ
@@ -181,7 +184,7 @@ export type DungeonLayout = {
    * prev / next は UI-59 のキャラクター画面の ◀ ▶ の押せる矩形（M16。追補 H-2 から 24×32 でヘッダーの下へはみ出す）。
    * prevMark / nextMark はその見た目の枠（ヘッダーの帯の中の 24×16）。出している間の問いは navText（その間）
    */
-  header: { text: Rect; log: Rect; settings: Rect; turn: Rect; prev: Rect; next: Rect; prevMark: Rect; nextMark: Rect; navText: Rect };
+  header: { text: Rect; help: Rect; log: Rect; settings: Rect; turn: Rect; prev: Rect; next: Rect; prevMark: Rect; nextMark: Rect; navText: Rect };
   dpad: Record<DpadKey, Rect>;
   menu: Rect[];
   list: Rect[];
@@ -235,13 +238,14 @@ export type DungeonLayout = {
 export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
   const h = g.header;
   const settings: Rect = { x: h.x + h.w - HEADER_SETTINGS_W, y: h.y, w: HEADER_SETTINGS_W, h: h.h };
-  // UI-46（M16）: ログのボタンは設定の左（townLayout と同じ）。文字領域はその左まで（既定 x4..155 の 152）
+  // UI-46（M16）: ログのボタンは設定の左（townLayout と同じ）。UI-82（M23）: 「？」はログの左。文字領域はその左まで（既定 x4..151 の 148）
   const log: Rect = { x: settings.x - HEADER_LOG_W, y: h.y, w: HEADER_LOG_W, h: h.h };
-  const text: Rect = { x: h.x + HEADER_TEXT_PAD, y: h.y, w: log.x - h.x - 2 * HEADER_TEXT_PAD, h: h.h };
+  const help: Rect = { x: log.x - HEADER_HELP_W, y: h.y, w: HEADER_HELP_W, h: h.h };
+  const text: Rect = { x: h.x + HEADER_TEXT_PAD, y: h.y, w: help.x - h.x - 2 * HEADER_TEXT_PAD, h: h.h };
   const turn: Rect = { x: text.x + text.w - HEADER_TURN_W, y: text.y, w: HEADER_TURN_W, h: text.h };
-  // UI-59（M16）: ◀ は左端、▶ はログの左。問いはその間（両側に余白）。見た目の枠はヘッダーの帯、押せる矩形は下へ 32（追補 H-2）
+  // UI-59（M16）: ◀ は左端、▶ は「？」の左（M23。キャラクター画面の間は「？」を隠す）。問いはその間（両側に余白）。見た目の枠はヘッダーの帯、押せる矩形は下へ 32（追補 H-2）
   const prevMark: Rect = { x: h.x, y: h.y, w: HEADER_NAV_W, h: h.h };
-  const nextMark: Rect = { x: log.x - HEADER_NAV_W, y: h.y, w: HEADER_NAV_W, h: h.h };
+  const nextMark: Rect = { x: help.x - HEADER_NAV_W, y: h.y, w: HEADER_NAV_W, h: h.h };
   const navHitH = Math.max(h.h, HEADER_NAV_HIT_H);
   const prev: Rect = { ...prevMark, h: navHitH };
   const next: Rect = { ...nextMark, h: navHitH };
@@ -273,7 +277,7 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
   const list0 = shift(LIST_ROWS_REL[0]!, c);
   const wideArea: Rect = { x: list0.x, y: wideTop, w: list0.w, h: wideCount * LIST_WIDE_ROW_H };
   return {
-    header: { text, log, settings, turn, prev, next, prevMark, nextMark, navText },
+    header: { text, help, log, settings, turn, prev, next, prevMark, nextMark, navText },
     dpad,
     menu: MENU_SLOTS_REL.map((r) => shift(r, c)),
     list: LIST_ROWS_REL.map((r) => shift(r, c)),
@@ -382,7 +386,7 @@ function talkRect(box: Rect): TalkRect {
 
 export type TownLayout = {
   /** text は場所と所持金、log はログのボタン（UI-46 の履歴を開く）、settings は設定のボタン */
-  header: { text: Rect; log: Rect; settings: Rect };
+  header: { text: Rect; help: Rect; log: Rect; settings: Rect };
   /** UI-61 施設の絵（= ビュー領域。240×150） */
   picture: Rect;
   /** UI-47 会話の箱（M10.5。絵の下端からステージの下端まで） */
@@ -415,7 +419,8 @@ export function townLayout(g: Regions, partySize: number): TownLayout {
   const h = g.header;
   const settings: Rect = { x: h.x + h.w - HEADER_SETTINGS_W, y: h.y, w: HEADER_SETTINGS_W, h: h.h };
   const log: Rect = { x: settings.x - HEADER_LOG_W, y: h.y, w: HEADER_LOG_W, h: h.h };
-  const text: Rect = { x: h.x + HEADER_TEXT_PAD, y: h.y, w: log.x - h.x - 2 * HEADER_TEXT_PAD, h: h.h };
+  const help: Rect = { x: log.x - HEADER_HELP_W, y: h.y, w: HEADER_HELP_W, h: h.h };
+  const text: Rect = { x: h.x + HEADER_TEXT_PAD, y: h.y, w: help.x - h.x - 2 * HEADER_TEXT_PAD, h: h.h };
 
   const v = g.view;
   const bandY = v.y + v.h;
@@ -452,7 +457,7 @@ export function townLayout(g: Regions, partySize: number): TownLayout {
     h: TOWN_NOTE_LINE_H,
   }));
   return {
-    header: { text, log, settings },
+    header: { text, help, log, settings },
     picture: { ...v },
     talk,
     talkCompact,
@@ -484,6 +489,7 @@ export function layoutWarnings(g: Regions, l: DungeonLayout): string[] {
   };
   check("header.settings", l.header.settings, "header");
   check("header.log", l.header.log, "header");
+  check("header.help", l.header.help, "header");
   check("header.prevMark", l.header.prevMark, "header");
   check("header.nextMark", l.header.nextMark, "header");
   // UI-59（M16 追補 H-2）: ◀ ▶ の押せる矩形はヘッダーの下へはみ出すので、ヘッダーとキャラクター画面（操作領域の上端まで）に収まるかを見る

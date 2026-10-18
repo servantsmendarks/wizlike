@@ -302,7 +302,7 @@ describe("UI-13 帯の DOM・UI-61 施設の絵・ヘッダーのログ", () => 
   });
 
   // M16（UI-46）: 以前は「街ではログのボタンを出し文字領域を 152 に縮め、隠すと 192 に戻す」（setLogVisible）。ログは街・迷宮・戦闘で常に出す
-  test("UI-13 / UI-46（M16）createHeader: ログのボタン（header.log の位置）を常に出し、文字領域はその左までの 152。ログのタップは onLog", () => {
+  test("UI-13 / UI-46（M16）/ UI-82（M23）createHeader: ログのボタン（header.log の位置）を常に出し、文字領域は「？」の左までの 148。ログのタップは onLog", () => {
     fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);
     const L = dungeonLayout(g, data.config.party.size);
@@ -312,8 +312,9 @@ describe("UI-13 帯の DOM・UI-61 施設の絵・ヘッダーのログ", () => 
     expect(settings!.className).toBe("header-settings");
     expect(log!.className).toBe("header-log");
     expect(log!.textContent).toBe("ログ");
-    expect([log!.style["left"], log!.style["width"], log!.style["height"], log!.style["display"]]).toEqual(["160px", "40px", "16px", undefined]);
-    expect(text!.style["width"]).toBe("152px");
+    expect([log!.style["left"], log!.style["width"], log!.style["height"], log!.style["display"]]).toEqual(["184px", "28px", "16px", undefined]);
+    expect([settings!.style["left"], settings!.style["width"]]).toEqual(["212px", "28px"]);
+    expect(text!.style["width"]).toBe("148px");
     // 街のヘッダーと同じ位置（迷宮・戦闘・街で同じボタン）
     expect(L.header.log).toEqual(T.header.log);
     expect(L.header.text).toEqual(T.header.text);
@@ -323,24 +324,24 @@ describe("UI-13 帯の DOM・UI-61 施設の絵・ヘッダーのログ", () => 
     expect(tapSpecOf(log!)!.whileBusy).toBe(true);
   });
 
-  test("UI-46 / UI-54（M16）createHeader: 戦闘のターン表示はログの左（x108..155 の 48px）で、その間の問いは 100px。ログは隠れない", () => {
+  test("UI-46 / UI-54（M16）/ UI-82（M23）createHeader: 戦闘のターン表示は「？」の左（x104..151 の 48px）で、その間の問いは 96px。ログは隠れない", () => {
     fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);
     const L = dungeonLayout(g, data.config.party.size);
     const h = createHeader({ strings: S, region: g.header, layout: L.header, onSettings: () => {} });
     const [text, turn, , log] = fake(h.el).children;
     expect(turn!.className).toBe("header-turn");
-    expect([turn!.style["left"], turn!.style["width"]]).toEqual(["108px", "48px"]);
+    expect([turn!.style["left"], turn!.style["width"]]).toEqual(["104px", "48px"]);
     h.setTurn("第12ターン");
     expect(turn!.style["display"]).toBe("");
-    expect(text!.style["width"]).toBe("100px");
+    expect(text!.style["width"]).toBe("96px");
     expect(log!.style["display"]).toBe(undefined);
     h.setTurn(null);
     expect(turn!.style["display"]).toBe("none");
-    expect(text!.style["width"]).toBe("152px");
+    expect(text!.style["width"]).toBe("148px");
   });
 
-  test("UI-59/UI-33（M16）createHeader: キャラクター画面の ◀（x0..23）▶（x136..159。ログの左）は setNav の間だけ出し、問いはその間（x28..131 の 104px）に中央寄せ。タップは onCycle(−1 / +1)", () => {
+  test("UI-59/UI-33（M16）/ UI-82（M23）createHeader: キャラクター画面の ◀（x0..23）▶（x132..155。「？」の左）は setNav の間だけ出し、問いはその間（x28..127 の 100px）に中央寄せ。タップは onCycle(−1 / +1)", () => {
     fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);
     const L = dungeonLayout(g, data.config.party.size);
@@ -352,25 +353,50 @@ describe("UI-13 帯の DOM・UI-61 施設の絵・ヘッダーのログ", () => 
     const next = kids.find((c) => c.className === "header-next")!;
     // 追補 H-2: 押せる矩形は 24×32、見た目の枠は 24×16
     expect(L.header.prev).toEqual({ x: 0, y: 0, w: 24, h: 32 });
-    expect(L.header.next).toEqual({ x: 136, y: 0, w: 24, h: 32 });
-    expect(L.header.navText).toEqual({ x: 28, y: 0, w: 104, h: 16 });
+    expect(L.header.next).toEqual({ x: 132, y: 0, w: 24, h: 32 });
+    expect(L.header.navText).toEqual({ x: 28, y: 0, w: 100, h: 16 });
     expect([prev.style["left"], prev.style["width"], prev.style["display"]]).toEqual(["0px", "24px", "none"]);
-    expect([next.style["left"], next.style["width"], next.style["display"]]).toEqual(["136px", "24px", "none"]);
+    expect([next.style["left"], next.style["width"], next.style["display"]]).toEqual(["132px", "24px", "none"]);
     // 三角は SVG の path（美咲フォントに ◀ ▶ が無い）。ボタンの中の見た目の枠の中に置く
     expect(prev.children[0]!.children[0]!["tagName"]).toBe("svg");
     expect(prev.children[0]!.children[0]!.children[0]!["tagName"]).toBe("path");
     h.setNav(true);
     expect([prev.style["display"], next.style["display"]]).toEqual(["", ""]);
-    expect([text.style["left"], text.style["width"], text.style["textAlign"]]).toEqual(["28px", "104px", "center"]);
+    expect([text.style["left"], text.style["width"], text.style["textAlign"]]).toEqual(["28px", "100px", "center"]);
     tapSpecOf(prev)!.onTap({ lx: 0, ly: 0 });
     tapSpecOf(next)!.onTap({ lx: 0, ly: 0 });
     expect(dirs).toEqual([-1, 1]);
     h.setNav(false);
     expect([prev.style["display"], next.style["display"]]).toEqual(["none", "none"]);
-    expect([text.style["left"], text.style["width"], text.style["textAlign"]]).toEqual(["4px", "152px", ""]);
+    expect([text.style["left"], text.style["width"], text.style["textAlign"]]).toEqual(["4px", "148px", ""]);
     // 「{name}の状態」は名前 6 字でも問いの幅に入る（全角 9 字 = 72px）
     expect(textUnits(S["camp.prompt.status"]!.replace("{name}", "アルドリンド")) * 4).toBeLessThanOrEqual(L.header.navText.w);
     expect(S["character.prev"]).toBe("前の人");
+  });
+
+  test("UI-82（M23）createHeader: 「？」のボタン（header.help の位置 x156 の 28×16、文字 header.help「？」）。タップは onHelp（再生中は拍のタップ＝whileBusy でない）。setHelpVisible で出し入れ", () => {
+    fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    let helps = 0;
+    const h = createHeader({ strings: S, region: g.header, layout: L.header, onSettings: () => {}, onHelp: () => helps++ });
+    const help = fake(h.el).children.find((c) => c.className === "header-help")!;
+    expect(S["header.help"]).toBe("？");
+    expect(help.textContent).toBe("？");
+    expect(help.attrs["aria-label"]).toBe(S["rules.title"]);
+    expect([help.style["left"], help.style["top"], help.style["width"], help.style["height"], help.style["display"]]).toEqual(["156px", "0px", "28px", "16px", undefined]);
+    // 街のヘッダーと同じ位置
+    expect(L.header.help).toEqual(T.header.help);
+    tapSpecOf(help)!.onTap({ lx: 0, ly: 0 });
+    expect(helps).toBe(1);
+    expect(tapSpecOf(help)!.whileBusy).not.toBe(true);
+    h.setHelpVisible(false);
+    expect(help.style["display"]).toBe("none");
+    h.setHelpVisible(true);
+    expect(help.style["display"]).toBe("");
+    // onHelp を渡さなくても押せる（何もしない）
+    const h2 = createHeader({ strings: S, region: g.header, layout: L.header, onSettings: () => {} });
+    expect(() => tapSpecOf(fake(h2.el).children.find((c) => c.className === "header-help")!)!.onTap({ lx: 0, ly: 0 })).not.toThrow();
   });
 
   test("UI-59 / UI-10（M16 追補 H-2）createHeader: ◀ ▶ のボタン（押せる矩形）は透明の 24×32 で z-index 1、見た目の枠は上 16（枠線と地の色）で、三角の path はその中", () => {

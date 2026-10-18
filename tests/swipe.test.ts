@@ -163,7 +163,7 @@ describe("連打の可否とキーボード", () => {
     }
   });
 
-  test("UI-33/UI-46 keyToAction の表どおり（Space は confirm、l / L は log）。repeat と input 上は null", () => {
+  test("UI-33/UI-46/UI-82 keyToAction の表どおり（Space は confirm、l / L は log、M23 から ? は help）。repeat と input 上は null", () => {
     const table: [string, Action][] = [
       ["ArrowUp", "forward"],
       ["ArrowLeft", "left"],
@@ -177,6 +177,8 @@ describe("連打の可否とキーボード", () => {
       // UI-33 / UI-46（M16）: l は履歴（ヘッダーのログ）
       ["l", "log"],
       ["L", "log"],
+      // UI-33 / UI-82（M23）: ? は用語の一覧（ヘッダーの「？」）。/ や全角の ？ は割り当てない
+      ["?", "help"],
       ["F2", "debug"],
       ["1", { menu: 0 }],
       ["5", { menu: 4 }],
@@ -187,7 +189,7 @@ describe("連打の可否とキーボード", () => {
       expect(keyToAction(k, true, false), `${k} repeat`).toBeNull();
       expect(keyToAction(k, false, true), `${k} on input`).toBeNull();
     }
-    for (const k of ["0", "q", "x", "Spacebar", "Tab", "F1", "10", "toString", "constructor", ""]) {
+    for (const k of ["0", "q", "x", "/", "Spacebar", "Tab", "F1", "10", "toString", "constructor", ""]) {
       expect(keyToAction(k, false, false), k).toBeNull();
     }
   });

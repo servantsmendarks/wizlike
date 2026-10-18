@@ -708,6 +708,7 @@
   "controls.around": "振り返る",
   "controls.settings": "設定",
   "controls.log": "ログ",
+  "header.help": "？",
 
   "settings.swipeThreshold": "スワイプ閾値",
   "settings.holdRepeatMs": "長押し間隔",
