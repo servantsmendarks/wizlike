@@ -766,7 +766,7 @@ export function townPageIntro(page: TownPage, menu: TownMenu): string[] {
   // TW-17（M19 C-1）: 触媒の段に入ったとき、候補が無ければ候補に出ない理由を語る（候補はどの者の段でも同じ。townMenu.upgrade）
   if (typeof page === "object" && "upCat" in page) {
     const m = menu.upgrade.members.find((x) => x.memberId === page.upCat.memberId);
-    return m !== undefined && m.catalysts.length === 0 ? ["town.upgrade.catNoneWhy"] : [];
+    return m !== undefined && m.catalysts.length === 0 ? ["town.upgrade.catNoneWhy", "town.upgrade.catNoneShop"] : []; // M22 追補: 2 文目で店の安い装備も触媒になると添える
   }
   if (page === "gate") return ["town.dungeonGate.intro"];
   if (page === "shop") return ["town.shop.intro"];

@@ -288,6 +288,7 @@
   "town.upgrade.catRow": "{item}　{owner}",
   "town.upgrade.catInfo": "{item}: 攻撃 {attack} / AC {ac} / 魔法攻撃力 {magic}",
   "town.upgrade.catNone": "触媒にできる物がない",
+  "town.upgrade.catNoneShop": "店の安い装備も触媒になる。",
   "town.upgrade.catNoneWhy": "触媒は持ち物と倉庫の鑑定済みの装備だけ。装備中の品・名品・消耗品・未鑑定の品は使えない。",
   "town.upgrade.decide": "決める",
   "town.upgrade.ask": "成功率 {rate}%（大成功 {great}%）料金 {fee} G。鍛えるか？",

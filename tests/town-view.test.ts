@@ -490,16 +490,20 @@ describe("UI-52 街のページ", () => {
 
   test("TW-17/UI-52 M19（C-1）候補が無い触媒の段に入るときは、候補に出ない理由（town.upgrade.catNoneWhy）を語る（候補があれば語らない）。語り town.upgrade.intro は触媒が成否によらず消えると言う。どちらも会話の箱の 2 行（28 字 × 2）", () => {
     const sel = { memberId: "c1", slot: "weapon" as const, picked: [] as UpgradeCatalystRef[] };
-    expect(townPageIntro({ upCat: sel }, menuOf(town()))).toEqual(["town.upgrade.catNoneWhy"]);
+    expect(townPageIntro({ upCat: sel }, menuOf(town()))).toEqual(["town.upgrade.catNoneWhy", "town.upgrade.catNoneShop"]);
     const s = town();
     s.party[1]!.inventory.push(createItemInstance(s, { itemId: "dagger", level: 0, identified: true }));
     expect(townPageIntro({ upCat: sel }, menuOf(s))).toEqual([]);
     // 一覧の空の行は短いまま（行の幅 21 字）
     expect(townEntries({ upCat: sel }, menuOf(town()), S)[0]).toEqual({ kind: "empty", label: S["town.upgrade.catNone"], disabled: true });
     expect(kinsokuLines(S["town.upgrade.catNone"]!, 21)).toHaveLength(1);
-    for (const k of ["town.upgrade.catNoneWhy", "town.upgrade.intro"]) expect(kinsokuLines(S[k]!, 28).length, k).toBeLessThanOrEqual(2);
+    for (const k of ["town.upgrade.catNoneWhy", "town.upgrade.catNoneShop", "town.upgrade.intro"]) expect(kinsokuLines(S[k]!, 28).length, k).toBeLessThanOrEqual(2);
     expect(S["town.upgrade.intro"]).toContain("成否によらず消える");
     for (const w of ["装備中", "消耗品", "未鑑定", "倉庫"]) expect(S["town.upgrade.catNoneWhy"]).toContain(w);
+    // M22 追補（TW-17）: 店の安い装備も触媒になる、の 1 文は候補が無いときの 2 文目だけ（town.dark.intro の 1 文はそのまま。town.upgrade.intro には足さない）
+    expect(S["town.upgrade.catNoneShop"]).toBe("店の安い装備も触媒になる。");
+    expect(kinsokuLines(S["town.upgrade.catNoneShop"]!, 28)).toHaveLength(1);
+    expect(S["town.upgrade.intro"]).not.toContain("店の");
   });
 
   // M8.5: townListTall（M7 の広げた一覧のページ）は UI-13 の街の配置に置き換えて削除した（どのページも同じ一覧の位置）
