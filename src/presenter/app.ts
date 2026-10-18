@@ -633,7 +633,7 @@ export function createApp(o: {
 
   /** state を描く（再生の最後に 1 回） */
   const sync = (st: GameState): void => {
-    // UI-83（M23 追補）: 迷宮で問い（罠・階段・出口・宝箱）が立った sync も画面の切り替えとして guard を掛ける
+    // UI-83（M23 追補）: 迷宮で問い（罠・階段・出口・テレポーター・宝箱）が立った sync も画面の切り替えとして guard を掛ける
     const promptUp = promptAppeared(lastSynced, st);
     lastSynced = st;
     if (screenPending || promptUp) {

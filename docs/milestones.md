@@ -1346,7 +1346,7 @@ M22 で見送った小さな件: camp の holder の理由を core の CampSumma
 - 範囲（対応）:
   - 重なり = 配置は変えず記録のみ（guard の後の同じ座標は意図した操作）。
   - guard = 500ms のまま（遅れて感じたら 300ms に落とす。config.input.screenGuardMs）。
-  - 問いの遷移の guard = 764223c（UI-83。迷宮で問い（罠・階段・出口。ユーザーの文に無い宝箱も同じ形なので含めた）が立った sync でも `markScreenShown`。`input/tap.ts` の `promptAppeared`）。
+  - 問いの遷移の guard = 764223c（UI-83。迷宮で問い（罠・階段・出口・テレポーター。ユーザーの文に無い宝箱も同じ形なので含めた）が立った sync でも `markScreenShown`。`input/tap.ts` の `promptAppeared`）。
   - 用語の残り = v8 へ。
 - 完了条件:
   1. 問いが立った sync の後 500ms のタップが捨てられることがテストで固定されている。済（根拠: 764223c。tests/tap.test.ts の UI-83）。
