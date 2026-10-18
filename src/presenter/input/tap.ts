@@ -50,6 +50,21 @@ export type PressState = {
 export type PressResult = { kind: "none" } | { kind: "swipe"; dir: Dir } | { kind: "cancel" };
 
 /** 押下を始める。lx はステージの左端からの論理 px（非反応帯の判定だけに使う） */
+/**
+ * UI-83（M23 追補）: 迷宮の歩行の操作に対して、問い（罠の確認・階段・出口・宝箱）が立っているか。
+ * 十字ボタンが選択肢の一覧に替わる状態。screen が dungeon のときだけ見る（event は screen の出来事の guard が受け持つ）
+ */
+export type PromptView = { screen: string; pendingChoice: { kind: string } | null; dive: { chest: unknown } | null };
+export function dungeonPromptUp(st: PromptView): boolean {
+  if (st.screen !== "dungeon") return false;
+  return (st.pendingChoice !== null && st.pendingChoice.kind !== "event") || (st.dive !== null && st.dive.chest !== null);
+}
+
+/** UI-83（M23 追補）: 問いが立った sync（偽 → 真）だけ真。閉じる・問いの中の段の移動・街・戦闘は偽 */
+export function promptAppeared(prev: PromptView | null, next: PromptView): boolean {
+  return (prev === null || !dungeonPromptUp(prev)) && dungeonPromptUp(next);
+}
+
 export function pressDown(id: number, x: number, y: number, target: Element | null, lx: number, width: number, deadZone: number): PressState {
   return { id, sx: x, sy: y, target, moved: false, swiped: null, inDeadZone: inDeadZone(lx, width, deadZone), held: false };
 }

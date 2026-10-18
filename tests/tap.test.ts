@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { thresholdCss } from "../src/presenter/input/swipe";
 import {
+  promptAppeared,
   attachStageInput,
   isTextInput,
   onTap,
@@ -834,7 +835,44 @@ describe("UI-83（M23）画面の切り替えの間のタップ", () => {
     const app = appSource;
     expect(app).toContain("screenGuardMs: data.config.input.screenGuardMs,");
     expect(app).toMatch(/if \(r !== "title"\) screenPending = true;/);
-    expect(/const sync = \(st: GameState\): void => \{\s*if \(screenPending\) \{\s*screenPending = false;\s*markScreenShown\(\);/.test(app)).toBe(true);
+    expect(/const sync = \(st: GameState\): void => \{[^]*?if \(screenPending \|\| promptUp\) \{\s*screenPending = false;\s*markScreenShown\(\);/.test(app)).toBe(true);
     expect(app).toContain("markScreenShown = () => stageInput.markScreenShown();");
+  });
+
+  const view = (screen: string, pc: string | null, chest: boolean) => ({
+    screen,
+    pendingChoice: pc === null ? null : { kind: pc },
+    dive: screen === "town" ? null : { chest: chest ? {} : null },
+  });
+
+  test("UI-83 問いが立った sync（偽 → 真）だけ真。閉じる・問いの中・偽 → 偽・街・戦闘・event は偽", () => {
+    const walk = view("dungeon", null, false);
+    expect(promptAppeared(walk, view("dungeon", "trap", false))).toBe(true);
+    expect(promptAppeared(walk, view("dungeon", "stairs", false))).toBe(true);
+    expect(promptAppeared(walk, view("dungeon", "teleporter", false))).toBe(true);
+    expect(promptAppeared(walk, view("dungeon", null, true))).toBe(true);
+    expect(promptAppeared(null, view("dungeon", "trap", false))).toBe(true);
+    expect(promptAppeared(view("dungeon", "trap", false), walk)).toBe(false);
+    expect(promptAppeared(view("dungeon", "trap", false), view("dungeon", "trap", false))).toBe(false);
+    expect(promptAppeared(view("dungeon", null, true), view("dungeon", null, true))).toBe(false);
+    expect(promptAppeared(walk, walk)).toBe(false);
+    expect(promptAppeared(walk, view("town", null, false))).toBe(false);
+    expect(promptAppeared(walk, view("battle", null, false))).toBe(false);
+    expect(promptAppeared(walk, view("event", "event", false))).toBe(false);
+  });
+
+  test("UI-83 問いが立った sync（markScreenShown）の後 500ms 未満のタップは捨て、過ぎれば効く", () => {
+    const g = guarded();
+    g.setNow(2000);
+    g.t.detach.markScreenShown();
+    g.tapAt(1, 2000 + GUARD - 1, 2000 + GUARD + 10);
+    expect(taps(g.t)).toEqual([]);
+    g.tapAt(2, 2000 + GUARD, 2000 + GUARD + 20);
+    expect(taps(g.t).length).toBe(1);
+  });
+
+  test("UI-83 app は sync で直前の state と比べ、問いが立ったときも markScreenShown を呼ぶ", () => {
+    expect(appSource).toContain("const promptUp = promptAppeared(lastSynced, st);");
+    expect(appSource).toContain("if (screenPending || promptUp) {");
   });
 });

@@ -73,7 +73,7 @@ import {
 } from "./input/swipe";
 import { attachPointerLog, createPointerLog } from "./input/pointer-log";
 import { attachSaveOnHide } from "./lifecycle";
-import { attachStageInput, onTap } from "./input/tap";
+import { attachStageInput, onTap, promptAppeared } from "./input/tap";
 import { dungeonLayout, layoutWarnings, regions, saveBannerRect, settingsLayout, townLayout } from "./layout";
 import { createPlayer } from "./playback";
 import type { AudioPlayer } from "./audio";
@@ -253,6 +253,7 @@ export function createApp(o: {
   let route: Route = "title";
   // UI-83（M23）: core の screen の出来事を受けた再生の後の sync で、入力の層に「画面が出た」を知らせる
   let screenPending = false;
+  let lastSynced: GameState | null = null;
   let markScreenShown: () => void = () => {};
   let overlay: Overlay = null;
   let layout: StageLayout | null = null;
@@ -632,7 +633,10 @@ export function createApp(o: {
 
   /** state を描く（再生の最後に 1 回） */
   const sync = (st: GameState): void => {
-    if (screenPending) {
+    // UI-83（M23 追補）: 迷宮で問い（罠・階段・出口・宝箱）が立った sync も画面の切り替えとして guard を掛ける
+    const promptUp = promptAppeared(lastSynced, st);
+    lastSynced = st;
+    if (screenPending || promptUp) {
       screenPending = false;
       markScreenShown();
     }
