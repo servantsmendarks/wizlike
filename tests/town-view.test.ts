@@ -1830,9 +1830,9 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
       else expect(l.term.length, raw).toBeGreaterThan(0);
     }
     const contNums = raws.flatMap((r, i) => (r.startsWith(SP) ? [i + 1] : []));
-    expect(contNums).toHaveLength(13);
-    // 用語なしの行 = 続きの行 13 + 長い用語の説明 6（M22 D-6）
-    expect(terms.filter((l) => l.term === "")).toHaveLength(contNums.length + 6);
+    expect(contNums).toHaveLength(14);
+    // 用語なしの行 = 続きの行 14（M23 で後衛の続きを足した）+ 長い用語の説明 7（M22 D-6 の 6 + M23 の「取り乱す」）
+    expect(terms.filter((l) => l.term === "")).toHaveLength(contNums.length + 7);
     for (const n of contNums) expect(terms.some((l) => l.term === "" && l.desc === S[`rules.line.${n}`]!.slice(1)), String(n)).toBe(true);
   });
 
@@ -1842,7 +1842,7 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     expect(splitRuleEntry(`${SP}続き`)).toEqual([{ term: "", desc: "続き" }]);
     expect(splitRuleEntry(`WAR 戦士${SP}THI 盗賊`)).toEqual([`WAR 戦士${SP}THI 盗賊`]);
     expect(splitRuleEntry("■ 職業")).toEqual(["■ 職業"]);
-    const long = ["取り乱さなかった", "恐怖に動じない", "不意を突かれた", "回り込まれた", "張り合い", "制止判定"];
+    const long = ["取り乱す", "取り乱さなかった", "恐怖に動じない", "不意を突かれた", "回り込まれた", "張り合い", "制止判定"];
     for (const w of long) {
       const i = body.indexOf(w);
       expect(i, w).toBeGreaterThan(0);
@@ -2027,6 +2027,23 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     for (const term of ["灰", "士気", "未鑑定", "触媒"]) expect(head(term), term).toBeDefined();
   });
 
+  test("UI-77（M23 C-2）用語の追加: 取り乱す・補正・×4・得意・担当と、後衛の続きの行（CB-14）。説明は仕様のとおり", () => {
+    const termsOf = body.flatMap((l) => (typeof l === "string" ? [l] : l.term === "" ? [] : [l.term]));
+    expect(termsOf.indexOf("取り乱す")).toBe(termsOf.indexOf("取り乱さなかった") - 1);
+    expect(termsOf.indexOf("補正")).toBe(termsOf.indexOf("判定") + 1);
+    expect(termsOf.indexOf("×4")).toBe(termsOf.indexOf("識別") + 1);
+    expect(termsOf.indexOf("得意")).toBe(termsOf.indexOf("見立て") + 1);
+    expect(termsOf.indexOf("担当")).toBe(termsOf.indexOf("得意") + 1);
+    expect(head("補正")).toContain("士気");
+    expect(head("×4")).toContain("4 体");
+    expect(head("得意")).toContain("盗賊");
+    expect(head("担当")).toContain("+10");
+    const i = body.findIndex((l) => typeof l !== "string" && l.term === "後衛");
+    const cont = body[i + 1] as WipeTermLine;
+    expect(cont.term).toBe("");
+    expect(cont.desc).toContain("前衛扱い");
+    expect(S["battle.groupLabel"]).toContain("×");
+  });
   test("UI-77/UI-59（M18）+N の行: 用語「+N」は鍛えた段数（IT-11 の名前の「 +N」）で、武器は攻撃・防具は AC に効く。並びは未鑑定・鑑定の後・触媒の前", () => {
     expect(head("+N")).toBe("鍛えた段数。武器は攻撃・魔法、防具は AC に効く");
     const terms = body.flatMap((l) => (typeof l === "string" || l.term === "" ? [] : [l.term]));
@@ -2043,7 +2060,7 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
       expect([...w].length, w).toBeLessThanOrEqual(RULE_TERM_MAX);
     }
     // 並び（設計 4-3 を M19 D-4 で分類した後）
-    const order = ["士気", "GM", "d", "判定", "大当り", "ターン", "先手", "前衛", "後衛", "識別", "潜行", "主", "糸", "見立て", "蘇生", "解呪", "経験", "レベル", "未鑑定", "鑑定", "+N", "触媒", "大成功", "希少度", "名品", "呪文", "加護"];
+    const order = ["士気", "GM", "d", "判定", "補正", "大当り", "ターン", "先手", "前衛", "後衛", "識別", "×4", "潜行", "主", "糸", "見立て", "得意", "担当", "蘇生", "解呪", "経験", "レベル", "未鑑定", "鑑定", "+N", "触媒", "大成功", "希少度", "名品", "呪文", "加護"];
     expect(order.map((w) => termsOf.indexOf(w))).toEqual(order.map((w) => termsOf.indexOf("士気") + order.indexOf(w)));
     expect(termsOf.at(-1)).toBe("加護");
     // 語は画面・データの名前と同じ（前衛・後衛は並び順の画面、解呪は寺院、識別・加護・蘇生は呪文の名前）
@@ -2084,12 +2101,12 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
       const b = heads.find((i) => i > a) ?? body.length;
       return body.slice(a + 1, b).flatMap((l) => (typeof l === "string" || l.term === "" ? [] : [l.term]));
     };
-    expect(section("■ 卓と判定")).toEqual(["GM", "d", "判定", "大当り"]);
-    expect(section("■ 戦闘")).toEqual(["ターン", "先手", "前衛", "後衛", "識別"]); // 長い用語は用語の行が文字列なので数えない
-    expect(section("■ 迷宮")).toEqual(["潜行", "主", "糸", "見立て"]);
+    expect(section("■ 卓と判定")).toEqual(["GM", "d", "判定", "補正", "大当り"]);
+    expect(section("■ 戦闘")).toEqual(["ターン", "先手", "前衛", "後衛", "識別", "×4"]); // 長い用語は用語の行が文字列なので数えない
+    expect(section("■ 迷宮")).toEqual(["潜行", "主", "糸", "見立て", "得意", "担当"]);
     expect(section("■ 街")).toEqual(["蘇生", "解呪", "経験", "レベル"]);
     expect(section("■ 品")).toEqual(["未鑑定", "鑑定", "+N", "触媒", "大成功", "希少度", "名品"]);
-    expect(lines).toHaveLength(77); // 見出し 1 + strings 70 + 長い用語 6 語の説明（M22 D-6）
+    expect(lines).toHaveLength(84); // 見出し 1 + strings 76 + 長い用語 7 語の説明（M22 D-6 の 6 + M23 C-2 の取り乱す）
     expect(Math.ceil(lines.length / 21)).toBe(4);
     // 語は画面・データの名前と同じ
     expect(S["gm.name"]).toBe("GM");
