@@ -2,6 +2,7 @@
   {
     "id": "d01", "name": "試しの坑道",
     "floors": 2, "width": 20, "height": 20, "rooms": [3, 6], "fillRatio": 0.45,
+    "lostHintDirection": true,
     "floorLevels": [1, 2],
     "unlock": null,
     "encounterRate": { "room": 0.12, "corridor": 0.07 },

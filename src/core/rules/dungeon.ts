@@ -1,6 +1,6 @@
 // 潜行中のルール（DG-03, DG-10〜14, DG-20〜22, DG-31〜33, DG-40, CB-01, CH-43/45/51/54）と、表示層向けの問い合わせ（visibleCells, mapView）。
 // 迷宮の構造は state に入れず、dive.diveSeed から毎回作り直す（DG-03）。発動済みの罠は dive の記録を重ねる。扉は通り抜けても扉のまま（DG-10）。
-import type { GameData } from "../data/index";
+import type { GameData, Octant } from "../data/index";
 import { chance, nextUint32, randInt } from "../rng";
 import { dungeonOf, moraleOf, personalityOf } from "../state";
 import type {
@@ -379,7 +379,24 @@ function lostExitsHint(ctx: RuleContext, dive: Dive, f: Floor): void {
   const down = f.stairsDown;
   if (down === null) return;
   if ((dive.explored[String(dive.floor)] ?? []).includes(idx(f, down.x, down.y))) return;
-  tellHintOnce(ctx, "lostExits");
+  // DG-46b（M22）: 印のあるダンジョン（d01）だけ、下り階段の方角を添える
+  const withDir = dungeonOf(ctx.data, dive.dungeonId).lostHintDirection === true;
+  tellHintOnce(ctx, "lostExits", withDir ? `hint.lostExitsDir.${octant(dive.pos, down)}` : undefined);
+}
+
+/**
+ * DG-46b（M22）: from から to への八方位（N は y−1、E は x+1）。|dx| > 2|dy| なら E/W、|dy| > 2|dx| なら N/S、それ以外は斜め。
+ * 同じセル（dx = dy = 0）は起きない前提だが、来たら N を返す。純粋関数
+ */
+export function octant(from: Pos, to: Pos): Octant {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
+  if (ax > 2 * ay) return dx > 0 ? "E" : "W";
+  if (ay > 2 * ax) return dy > 0 ? "S" : "N";
+  if (dx > 0) return dy > 0 ? "SE" : "NE";
+  return dy > 0 ? "SW" : "NW";
 }
 
 /**

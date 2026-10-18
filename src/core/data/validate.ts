@@ -56,6 +56,7 @@ import {
   STAT_KEYS,
   STATUS_IDS,
   HINT_IDS,
+  OCTANTS,
   TRAP_IDS,
   USABLE_IN,
   VALUELESS_SKILL_TYPES,
@@ -1261,6 +1262,7 @@ function validateDungeons(ctx: Ctx, v: unknown, ix: Index): void {
         if (ph.length > 0) report(c, p, `DG-37: strings ${JSON.stringify(s)} must not have placeholders (found ${ph.join(" ")})`);
         return s;
       }),
+      lostHintDirection: opt(B), // DG-46b（M22）
       events: L(refField(ix.events, "event")),
       traps: L((c, p, x) => {
         const t = oneOf(c, p, x, TRAP_IDS);
@@ -1667,6 +1669,11 @@ function validateStrings(ctx: Ctx, v: unknown, ix: Index): void {
   for (const id of HINT_IDS) {
     strKey(ctx, "", `hint.${id}`, ix);
     onlyPlaceholders(ctx, `hint.${id}`, `hint.${id}`, [], "UI-76", ix);
+  }
+  // DG-46b（M22）: 100 歩の一言の方角つき（八方位。差し込みなし）
+  for (const d of OCTANTS) {
+    strKey(ctx, "", `hint.lostExitsDir.${d}`, ix);
+    onlyPlaceholders(ctx, `hint.lostExitsDir.${d}`, `hint.lostExitsDir.${d}`, [], "DG-46b", ix);
   }
   const plus = ix.stringText.get("item.plus");
   if (plus !== undefined) {

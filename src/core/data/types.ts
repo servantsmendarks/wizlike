@@ -10,6 +10,10 @@ export const SCHOOLS = ["mage", "priest"] as const;
 export type School = (typeof SCHOOLS)[number];
 
 export const STATUS_IDS = ["poison", "paralysis", "sleep", "stone"] as const;
+/** DG-46b（M22）: 八方位（strings の hint.lostExitsDir.<id>。rules/dungeon.ts octant が返す） */
+export const OCTANTS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"] as const;
+export type Octant = (typeof OCTANTS)[number];
+
 export type StatusId = (typeof STATUS_IDS)[number];
 
 /** UI-76（M16）: 一度きりの GM の一言の id（strings の hint.<id>。読み込み時に必須キーとして検査する。rules/hints.ts tellHintOnce が出す） */
@@ -773,6 +777,8 @@ export type DungeonDef = {
   song?: string;
   /** DG-37（M12。U-5）: 初回入場の GM の一行（strings のキー。プレースホルダーなし）。省略は語らない。初回入場で dungeon.enter の直後に語る（rules/dungeon.ts enterDungeon） */
   enterSpeech?: string;
+  /** DG-46b（M22）: 真なら 100 歩の一言（hint.lostExits）が下り階段の方角（hint.lostExitsDir.<N..NW>）を添える。省略は方角なし */
+  lostHintDirection?: boolean;
   events: string[];
   traps: TrapId[];
   trapsPerFloor: [number, number];

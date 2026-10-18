@@ -2161,4 +2161,10 @@ describe("data: d03 灰の地下墓所（M12）", () => {
     expectIssue((r) => (r.dungeons[0].enterSpeech = "dungeon.enter"), "dungeons.json", '[0].enterSpeech: DG-37: strings "dungeon.enter" must not have placeholders (found {dungeon})');
     expect(issuesOf((r) => (r.dungeons[0].enterSpeech = "dungeon.enterSpeech.d03"))).toEqual([]);
   });
+  test("data: DG-46b lostHintDirection は任意の真偽値で d01 だけ true。真偽値でなければ、八方位の文が欠ければ起動を止める", () => {
+    const g = loadGameData(rawData());
+    expect(g.dungeons.map((x) => [x.id, x.lostHintDirection])).toEqual([["d01", true], ["d02", undefined], ["d03", undefined]]);
+    expectIssue((r) => (r.dungeons[1].lostHintDirection = "yes"), "dungeons.json", "[1].lostHintDirection: expected");
+    expectIssue((r) => delete r.strings["hint.lostExitsDir.NW"], "strings.json", "hint.lostExitsDir.NW");
+  });
 });

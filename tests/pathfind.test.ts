@@ -474,7 +474,7 @@ describe("DG-15 routeStepOk", () => {
       let hints = 0;
       for (const x of route) {
         const r = execute(s, x.command as Command, DATA0);
-        hints += r.events.filter((e) => e.kind === "message" && e.key === "hint.lostExits").length;
+        hints += r.events.filter((e) => e.kind === "message" && (e.key === "hint.lostExits" || e.key.startsWith("hint.lostExitsDir."))).length;
         expect(routeStepOk(x, r.events, r.state)).toBe(true);
         s = r.state;
       }
