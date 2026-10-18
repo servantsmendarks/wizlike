@@ -1707,7 +1707,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(r.state.gold).toBe(room.gold); // 腐った死体の金は "0"、宝箱の金はまだ
     const ks = kindsOf(r.events);
     const iScreen = ks.indexOf("screen");
-    expect(ks.slice(iScreen + 1)).toEqual(["chestFound", "message:chest.found.drop", "message:chest.prompt"]);
+    expect(ks.slice(iScreen + 1)).toEqual(["chestFound", "message:chest.found.drop", "message:chest.promptHelp", "message:chest.prompt"]);
     // CB-60（M16）: 箱を置いたら戦闘の結果の最後（screen dungeon の前）に予告の一文。乱数の順は上の鏡のまま（rollDropChest の位置は同じ）
     expect(ks.slice(ks.indexOf("battleEnd"), iScreen + 1)).toEqual(["battleEnd", "message:battle.win", "message:battle.exp", "message:battle.chestLeft", "screen"]);
     expect(ks).not.toContain("message:battle.noChest"); // CB-51（M19 A-5）: 箱を置いたら「無かった」は出さない

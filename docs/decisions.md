@@ -1660,3 +1660,4 @@
 - 2026-10-18 M22 C-2 DG-03: 入場の語りを、その迷宮に 2 回目以降（progress.enteredDungeons にある）なら dungeon.enterAgain「…前回の地図は役に立たない。」に分けた。audio.json に同じ stairs の対応を 1 行足した（dungeon.enter と同じ音。工房の複製の audio.json への局所の追記）。tally.dives を数えるテストの補助は両方のキーを数える。
 - 2026-10-18 M22 D-1 UI-51: 簡易作成の職業の列を略称（abbr）から classes[].name（日本語）に。幅 32 に「魔術師」（24px）まで入るので矩形は変えない。帯と自分で作るの一覧は今のまま。
 - 2026-10-18 M22 D-2 DG-30/UI-53: 糸で帰るは使える品が無くても迷宮のキャンプなら dim で置く（CampEntry.reason の前例）。理由は returnItems が 0 なら camp.returnBlock.none、あれば holder。街（summary が null）には置かない。
+- 2026-10-18 M22 D-3 CB-60/UI-70: 宝箱の問いの直前に message chest.promptHelp（3 操作の違い 1 行）を毎回出す。core（promptIfPending）と resume の再掲の両方。表示は message をそのまま語る既存の流れで、1 件ずつタップを待つ。

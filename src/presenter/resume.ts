@@ -50,7 +50,7 @@ export function resumePlan(st: GameState, data: GameData): ResumePlan {
   if (route === null) throw new Error(`resumePlan: unexpected screen ${st.screen}`);
   const prompts: string[] = [];
   if (st.pendingChoice !== null) prompts.push(st.pendingChoice.promptKey);
-  if (chestView(st, data) !== null) prompts.push("chest.prompt");
+  if (chestView(st, data) !== null) prompts.push("chest.promptHelp", "chest.prompt"); // M22 D-3
   const menu = townMenu(st, data);
   if (menu !== null && menu.mercy !== null) prompts.push("town.mercy.offer");
   return { route, prompts };

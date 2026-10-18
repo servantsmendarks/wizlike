@@ -16,6 +16,7 @@ import type { Character, ChestState, Command, GameEvent, GameState } from "../sr
 import { allInputs, dataWith, dived, eventsOf, exec, expectRejected, kindsOf, withBattle } from "./helpers/battle";
 import { data, expectKnownStringKeys, expectStateInvariants, loadFreshData, newGame, withChar } from "./helpers/core";
 import { findSituation, withRng } from "./helpers/dungeon";
+import { kinsokuLines } from "./helpers/wrap";
 
 const OPEN: Command = { type: "chest.open" };
 const LEAVE: Command = { type: "chest.leave" };
@@ -57,6 +58,17 @@ function mirrorContents(m: ReturnType<typeof createRng>, d: GameData): number {
 }
 
 describe("CB-60 箱の状態と受け付け", () => {
+  test("CB-60/UI-70 chest.promptHelp（M22 D-3）: 問いの直前に毎回 1 行（調べる・解除・開ける の違い）。1 行 28 字以内、乱数は変えない", () => {
+    const s0 = dived(1);
+    const r = exec(s0, { type: "debug.chest", trapId: "bomb" });
+    const keys = r.events.filter((e) => e.kind === "message").map((e) => (e as { key: string }).key);
+    expect(keys.slice(-2)).toEqual(["chest.promptHelp", "chest.prompt"]);
+    expect(r.state.rng).toEqual(s0.rng);
+    const t = data.strings["chest.promptHelp"]!;
+    expect(t).toBe("調べる: 罠を見立てる／解除: 罠を外す／開ける: そのまま");
+    expect(kinsokuLines(t, 28).length).toBe(1);
+  });
+
   test("CB-60/UI-57 debug.chest: 今の位置にドロップの箱（危険度は罠の値、Lv はその階の遭遇表の最大、inRoom は今のセル）。chestFound → chest.found.drop → chest.prompt。乱数は使わない", () => {
     const s0 = dived(1);
     const r = exec(s0, { type: "debug.chest", trapId: "bomb" });
@@ -66,6 +78,7 @@ describe("CB-60 箱の状態と受け付け", () => {
     expect(r.events).toEqual([
       { kind: "chestFound", source: "drop", danger: 2 },
       { kind: "message", key: "chest.found.drop" },
+      { kind: "message", key: "chest.promptHelp" },
       { kind: "message", key: "chest.prompt" },
     ]);
     expect(chestOf(exec(s0, { type: "debug.chest", trapId: null }).state)).toMatchObject({ trapId: null, danger: 0 });
@@ -573,12 +586,13 @@ describe("CB-63 調べる", () => {
     });
     expect(r.events.slice(1)).toEqual([
       { kind: "message", key: "chest.inspect.found", params: { trap: "爆弾" } },
+      { kind: "message", key: "chest.promptHelp" },
       { kind: "message", key: "chest.prompt" },
     ]);
     expect(chestOf(r.state)!.finding).toEqual({ trapId: "bomb" });
     expect(chestOf(r.state)!.trapId).toBe("bomb"); // 調べても罠は変わらない
     const n = exec(withChest(null), inspect("c6"), d);
-    expect(kindsOf(n.events)).toEqual(["dice", "message:chest.inspect.none", "message:chest.prompt"]);
+    expect(kindsOf(n.events)).toEqual(["dice", "message:chest.inspect.none", "message:chest.promptHelp", "message:chest.prompt"]);
     expect(chestOf(n.state)!.finding).toEqual({ trapId: null });
   });
 
@@ -612,7 +626,7 @@ describe("CB-63 調べる", () => {
     const sN = withChest(null, 4);
     sN.dive!.chest!.finding = { trapId: "poison_needle" };
     const n = exec(sN, inspect("c3"), dT);
-    expect(kindsOf(n.events)).toEqual(["dice", "message:chest.inspect.unknown", "message:chest.prompt"]);
+    expect(kindsOf(n.events)).toEqual(["dice", "message:chest.inspect.unknown", "message:chest.promptHelp", "message:chest.prompt"]);
     expect(chestOf(n.state)!.finding).toEqual({ trapId: "poison_needle" });
     // 別の名前（成功と同じ文）。本当の名前とは違う（シード 1〜30 で毎回）
     const dW = fail((x) => {
@@ -651,7 +665,7 @@ describe("CB-63 調べる", () => {
     randInt(mu, 1, 100);
     const u = exec(told0, inspect("c3"), dU);
     expect(u.state.rng).toEqual(mu);
-    expect(kindsOf(u.events)).toEqual(["dice", "message:chest.inspect.unknown", "message:chest.prompt"]);
+    expect(kindsOf(u.events)).toEqual(["dice", "message:chest.inspect.unknown", "message:chest.promptHelp", "message:chest.prompt"]);
     expect(chestOf(u.state)!.finding).toEqual({ trapId: "bomb" });
     // 「罠は無さそう」の見立ても残る。未調査（null）は null のまま
     const none0 = withChest("crossbow", 4);
@@ -768,7 +782,7 @@ describe("CB-64 解除", () => {
     chance(m, 0);
     const f = exec(s, disarm("c3", "bomb"), never(0));
     expect(f.state.rng).toEqual(m);
-    expect(kindsOf(f.events)).toEqual(["dice", "message:chest.disarm.fail", "message:chest.prompt"]);
+    expect(kindsOf(f.events)).toEqual(["dice", "message:chest.disarm.fail", "message:chest.promptHelp", "message:chest.prompt"]);
     expect((f.events[0] as Extract<GameEvent, { kind: "dice" }>).result.key).toBe("dice.chestDisarm.ng");
     expect(chestOf(f.state)!.trapId).toBe("bomb");
     expect(exec(f.state, disarm("c3", "bomb"), never(0)).events[0]!.kind).toBe("dice"); // 再挑戦できる
@@ -788,7 +802,7 @@ describe("CB-64 解除", () => {
     const s = withChest(null, 2);
     const r = exec(s, disarm("c3", "bomb"));
     expect(r.state.rng).toEqual(s.rng);
-    expect(kindsOf(r.events)).toEqual(["message:chest.disarm.nothing", "message:chest.prompt"]);
+    expect(kindsOf(r.events)).toEqual(["message:chest.disarm.nothing", "message:chest.promptHelp", "message:chest.prompt"]);
     expect(chestOf(r.state)).toEqual(chestOf(s));
   });
 });
@@ -895,6 +909,7 @@ describe("EV-16 / EV-25 宝箱の衝動と制止", () => {
     expect(r.events).toEqual([
       { kind: "chestFound", source: "drop", danger: 1 },
       { kind: "message", key: "chest.found.drop" },
+      { kind: "message", key: "chest.promptHelp" },
       { kind: "message", key: "chest.prompt" },
     ]);
     expect(chestOf(r.state)).toEqual(chestOf(s));
@@ -911,7 +926,7 @@ describe("EV-16 / EV-25 宝箱の衝動と制止", () => {
     rollDie(m2, 100);
     const r2 = present(s2, dAll);
     expect(r2.state.rng).toEqual(m2);
-    expect(kindsOf(r2.events)).toEqual(["chestFound", "message:chest.found.drop", "message:chest.prompt"]);
+    expect(kindsOf(r2.events)).toEqual(["chestFound", "message:chest.found.drop", "message:chest.promptHelp", "message:chest.prompt"]);
   });
 
   test("EV-16/EV-25/EV-23 衝動で調べずに開ける（制止の失敗）: chestImpulse → chest.impulse.actor → 制止（フィン iq 9 + 1d10 ≥ キリ agi 15 + 1d10 に失敗）→ chest.impulse.open → 罠は行動者に作動 → 中身 → chestEnd opened → told（制止者 SAN +3）。chest.prompt は無い", () => {
@@ -984,7 +999,7 @@ describe("EV-16 / EV-25 宝箱の衝動と制止", () => {
       "message:event.stop.success",
       "sanChanged",
       "sanChanged",
-      "message:chest.prompt",
+      "message:chest.promptHelp", "message:chest.prompt",
     ]);
     expect(eventsOf(r.events, "sanChanged")).toEqual([
       { kind: "sanChanged", id: "c6", delta: 3, san: 53 },
@@ -1162,6 +1177,7 @@ describe("EV-70〜76 職業の掛け合い", () => {
       },
       { kind: "message", key: "rivalry.thief_chest.win", params: { winner: "キリ", loser: "フィン" } },
       { kind: "sanChanged", id: "c6", delta: -1, san: 99 },
+      { kind: "message", key: "chest.promptHelp" },
       { kind: "message", key: "chest.prompt" },
     ]);
     expect(chestOf(r.state)!.rivalry).toEqual({ id: "thief_chest", ownerId: "c3" });
@@ -1173,7 +1189,7 @@ describe("EV-70〜76 職業の掛け合い", () => {
     chance(m2, 50);
     const r2 = present(s2, D);
     expect(r2.state.rng).toEqual(m2);
-    expect(kindsOf(r2.events)).toEqual(["chestFound", "message:chest.found.drop", "message:chest.prompt"]);
+    expect(kindsOf(r2.events)).toEqual(["chestFound", "message:chest.found.drop", "message:chest.promptHelp", "message:chest.prompt"]);
     expect(chestOf(r2.state)!.rivalry).toBeNull();
   });
 
@@ -1206,7 +1222,7 @@ describe("EV-70〜76 職業の掛け合い", () => {
     const s = withChar(withChest("crossbow", 3, 1, D), 5, { status: ["paralysis"] });
     const r = present(s, D);
     expect(r.state.rng).toEqual(s.rng);
-    expect(kindsOf(r.events)).toEqual(["chestFound", "message:chest.found.drop", "message:chest.prompt"]);
+    expect(kindsOf(r.events)).toEqual(["chestFound", "message:chest.found.drop", "message:chest.promptHelp", "message:chest.prompt"]);
     // リーダーを盗賊にすると、アルドとキリの 2 人で判定する
     const k = findK((m) => chance(m, 50));
     const s2 = withChar(withChar(withChest("crossbow", k, 1, D), 5, { status: ["paralysis"] }), 0, { classId: "thief" });
@@ -1268,6 +1284,7 @@ describe("EV-70〜76 職業の掛け合い", () => {
     expect(r.state.rng).toEqual(m);
     expect(r.events.slice(1)).toEqual([
       { kind: "message", key: "chest.inspect.unknown" },
+      { kind: "message", key: "chest.promptHelp" },
       { kind: "message", key: "chest.prompt" },
     ]);
     expect(chestOf(r.state)!.rivalryFails).toBe(1);
@@ -1463,6 +1480,7 @@ describe("DG-24 宝箱のセルに乗る（M11 の作業 7）", () => {
       { kind: "moved", pos: a.target, facing: a.facing },
       { kind: "chestFound", source: "cell", danger: 1 },
       { kind: "message", key: "chest.found.cell" },
+      { kind: "message", key: "chest.promptHelp" },
       { kind: "message", key: "chest.prompt" },
     ]);
     expect(chestOf(r.state)).toEqual({
@@ -1596,6 +1614,7 @@ describe("DG-24 宝箱のセルに乗る（M11 の作業 7）", () => {
       { kind: "moved", pos: a.target, facing: a.facing },
       { kind: "chestFound", source: "cell", danger: 0 },
       { kind: "message", key: "chest.found.cell" },
+      { kind: "message", key: "chest.promptHelp" },
       { kind: "message", key: "chest.prompt" },
     ]);
     expect(eventsOf(back.events, "sanChanged")).toEqual([]);
@@ -1666,7 +1685,7 @@ describe("CB-62（M19 D-5）作動の後の文", () => {
     const dmg = rollDice(m, "2d4").total;
     const t = exec(s, inspect("c3"), dT);
     expect(t.state.rng).toEqual(m);
-    expect(kindsOf(t.events)).toEqual(["dice", "chestTrap", "message:chest.trap.crossbow", "hpChanged", "message:chest.trap.gone", "message:chest.prompt"]);
+    expect(kindsOf(t.events)).toEqual(["dice", "chestTrap", "message:chest.trap.crossbow", "hpChanged", "message:chest.trap.gone", "message:chest.promptHelp", "message:chest.prompt"]);
     expect(eventsOf(t.events, "hpChanged")[0]).toMatchObject({ id: "c3", delta: -Math.min(dmg, member(s, "c3").hp) });
     expect(chestOf(t.state)).toMatchObject({ trapId: null });
     // 解除の名前違い（爆弾 → 全員 1d6。乱数は効果だけ）
@@ -1678,7 +1697,7 @@ describe("CB-62（M19 D-5）作動の後の文", () => {
     expect(w.state.rng).toEqual(m2);
     const kw = kindsOf(w.events);
     expect(kw.slice(0, 3)).toEqual(["message:chest.disarm.wrong", "chestTrap", "message:chest.trap.bomb"]);
-    expect(kw.slice(-2)).toEqual(["message:chest.trap.gone", "message:chest.prompt"]);
+    expect(kw.slice(-3)).toEqual(["message:chest.trap.gone", "message:chest.promptHelp", "message:chest.prompt"]);
     expect(kw.filter((k) => k === "message:chest.trap.gone")).toHaveLength(1);
     // 解除の失敗の作動（呪詛。SAN の後）
     const dF = chestData((x) => {
@@ -1689,7 +1708,7 @@ describe("CB-62（M19 D-5）作動の後の文", () => {
     const kf = kindsOf(f.events);
     expect(kf[0]).toBe("dice");
     expect(kf.indexOf("message:chest.trap.gone")).toBeGreaterThan(kf.lastIndexOf("sanChanged"));
-    expect(kf.slice(-2)).toEqual(["message:chest.trap.gone", "message:chest.prompt"]);
+    expect(kf.slice(-3)).toEqual(["message:chest.trap.gone", "message:chest.promptHelp", "message:chest.prompt"]);
     // 文は窓の 28 字 × 2 行に収まる
     expect(data.strings["chest.trap.gone"]).toBe("罠は作動して消えた。箱は開けられる。");
     expect([...data.strings["chest.trap.gone"]!].length).toBeLessThanOrEqual(28);
@@ -1791,7 +1810,7 @@ describe("CB-68 宝箱の罠の続き（M21）", () => {
       chance(m, p);
       const r = exec(s, inspect("c3"), d);
       expect(r.state.rng).toEqual(m);
-      expect(kindsOf(r.events).slice(-2)).toEqual(["message:chest.trap.gone", "message:chest.prompt"]);
+      expect(kindsOf(r.events).slice(-3)).toEqual(["message:chest.trap.gone", "message:chest.promptHelp", "message:chest.prompt"]);
       expect(kindsOf(r.events)).not.toContain("message:chest.open.destroyed"); // 語るのは開けたとき
       return r.state;
     };
@@ -1883,7 +1902,7 @@ describe("CB-68 宝箱の罠の続き（M21）", () => {
     expect(r.state.dive!.disarmedChests).toContainEqual({ floor: 1, x: pos.x, y: pos.y });
     // 罠なしの箱は解除しても判定せず（chest.disarm.nothing）、開けない
     const n = exec(withChest(null, 2, 1, d), disarm("c3", "bomb"), d);
-    expect(kindsOf(n.events)).toEqual(["message:chest.disarm.nothing", "message:chest.prompt"]);
+    expect(kindsOf(n.events)).toEqual(["message:chest.disarm.nothing", "message:chest.promptHelp", "message:chest.prompt"]);
     expect(chestOf(n.state)).not.toBeNull();
   });
 });

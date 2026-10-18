@@ -3041,7 +3041,7 @@ describe("UI-70/UI-71 宝箱の判定の箱と衝動の流れの再生（M11 作
     expect(ev.rows.every((x) => x.dice.length === 0)).toBe(true);
     for (const skipAnimations of [true, false]) {
       const { log, boxes } = await play(r.events, s0, r.state, d, skipAnimations);
-      expect(flow(log)).toEqual([...holdSpan(d, r.events, "dice.chestInspect"), sayOf(d, "chest.prompt")]);
+      expect(flow(log)).toEqual([...holdSpan(d, r.events, "dice.chestInspect"), sayOf(d, "chest.promptHelp"), sayOf(d, "chest.prompt")]);
       expect(flow(log)[1]).toBe(sayOf(d, "chest.inspect.found", { trap: "爆弾" }));
       expect(boxes).toEqual([{ label: "dice.chestInspect", rows: ev.rows.length, hidden: true }]);
     }
@@ -3093,7 +3093,7 @@ describe("UI-70/UI-71 宝箱の判定の箱と衝動の流れの再生（M11 作
     const says = flow(log).filter((x) => x.startsWith("say:"));
     expect(says[0]).toBe(sayOf(d, "chest.disarm.wrong"));
     expect(says[1]).toBe(sayOf(d, "chest.trap.curse"));
-    expect(says.slice(-2)).toEqual([sayOf(d, "chest.trap.gone"), sayOf(d, "chest.prompt")]);
+    expect(says.slice(-3)).toEqual([sayOf(d, "chest.trap.gone"), sayOf(d, "chest.promptHelp"), sayOf(d, "chest.prompt")]);
     expect(boxes).toEqual([]);
   });
 
@@ -3113,7 +3113,7 @@ describe("UI-70/UI-71 宝箱の判定の箱と衝動の流れの再生（M11 作
     const f = flow(log);
     const i = f.indexOf("dice.show:dice.rivalry");
     expect(f[i - 1]).toBe(sayOf(d, "rivalry.thief_chest.start", { a: "キリ", b: "フィン" }));
-    expect(f.slice(i)).toEqual([...holdSpan(d, r.events, "dice.rivalry"), sayOf(d, "chest.prompt")]);
+    expect(f.slice(i)).toEqual([...holdSpan(d, r.events, "dice.rivalry"), sayOf(d, "chest.promptHelp"), sayOf(d, "chest.prompt")]);
     expect(f[i + 1]).toBe(sayOf(d, "rivalry.thief_chest.win", { winner: "キリ", loser: "フィン" }));
     expect(boxes.find((b) => b.label === "dice.rivalry")).toEqual({ label: "dice.rivalry", rows: 2, hidden: false });
     const sum = formatDiceSummary(ev, d.strings);

@@ -138,6 +138,8 @@ function promptIfPending(ctx: RuleContext): void {
   const { state } = ctx;
   if (state.dive?.chest == null || state.battle !== null) return;
   if (!state.party.some(canAct)) return;
+  // M22 D-3: 3 つの操作の違いの 1 行を問いの直前に毎回添える
+  ctx.events.push({ kind: "message", key: "chest.promptHelp" });
   ctx.events.push({ kind: "message", key: "chest.prompt" });
 }
 

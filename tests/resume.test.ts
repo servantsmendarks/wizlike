@@ -99,12 +99,12 @@ describe("続きから（SV-50）", () => {
     expect(resumePlan(await roundTrip(s), data)).toEqual({ route: "dungeon", prompts: ["dungeon.trap.prompt"] });
   });
 
-  test("SV-50/UI-70/CB-60 宝箱が残っていて戦闘中でなければ route dungeon、prompts は [chest.prompt]（往復でも）。警報の戦闘中（battle 非 null）は出さない", async () => {
+  test("SV-50/UI-70/CB-60 宝箱が残っていて戦闘中でなければ route dungeon、prompts は [chest.promptHelp, chest.prompt]（M22 D-3）（往復でも）。警報の戦闘中（battle 非 null）は出さない", async () => {
     const r = execute(dived(1), { type: "debug.chest", trapId: "bomb" }, data);
     const s = r.state;
     expect(s.dive!.chest).not.toBeNull();
-    expect(resumePlan(s, data)).toEqual({ route: "dungeon", prompts: ["chest.prompt"] });
-    expect(resumePlan(await roundTrip(s), data)).toEqual({ route: "dungeon", prompts: ["chest.prompt"] });
+    expect(resumePlan(s, data)).toEqual({ route: "dungeon", prompts: ["chest.promptHelp", "chest.prompt"] });
+    expect(resumePlan(await roundTrip(s), data)).toEqual({ route: "dungeon", prompts: ["chest.promptHelp", "chest.prompt"] });
     expect(data.strings["chest.prompt"]).toBeTypeOf("string");
     const alarm = withBattle(s, [{ monsterId: data.monsters[0]!.id, hps: [3] }], { origin: { kind: "alarm", inRoom: false } });
     expect(alarm.dive!.chest).not.toBeNull();
