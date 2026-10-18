@@ -1719,7 +1719,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
         expect(ks.includes("message:battle.noChest"), `seed ${seed} inRoom ${String(inRoom)}`).toBe(!want);
         if (!want) expect(ks.indexOf("message:battle.noChest")).toBeLessThan(ks.indexOf("screen"));
         if (!want) expect(r.state.rng, `seed ${seed} inRoom ${String(inRoom)}`).toEqual(m); // 箱が出なければ chance の 1 回で終わる
-        expect(r.state.dive!.noChestStreak, `seed ${seed} inRoom ${String(inRoom)}`).toBe(want ? 0 : 1); // CB-51b（M20）
+        expect(r.state.progress.noChestStreak, `seed ${seed} inRoom ${String(inRoom)}`).toBe(want ? 0 : 1); // CB-51b（M21。progress に持つ）
         seen[inRoom ? "room" : "corridor"][want ? 1 : 0]! += 1;
       }
     }
@@ -1729,7 +1729,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(seen.corridor).toEqual([60, 0]);
   });
 
-  test("CB-51b（M21）【仮】宝箱の段の表: 率 = chestTable[min(dive.noChestStreak, 表の長さ − 1)] + 部屋なら chestRoomBonus（上限 100。chance は 1 回のまま）。出たら 0、出なければ +1。省略は 0 として読む（鏡の rng、シード 1〜60）", () => {
+  test("CB-51b（M21）【仮】宝箱の段の表: 率 = chestTable[min(progress.noChestStreak, 表の長さ − 1)] + 部屋なら chestRoomBonus（上限 100。chance は 1 回のまま）。出たら 0、出なければ +1（M21 D-1: 段は progress に持ち、潜行をまたいで持ち越す。dive に欄は無い）（鏡の rng、シード 1〜60）", () => {
     const table = [0, 5, 15, 40, 80, 100];
     // 罠の抽選は noTrapChance 100 で chance 1 回（罠なし）に固定し、当たったときも鏡で最後まで追う
     const d = dataWith({ combat: { ...ALWAYS_HIT, chestTable: table, chestRoomBonus: 10 } }, (x) => {
@@ -1739,18 +1739,17 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     let pityHits = 0;
     for (let seed = 1; seed <= 60; seed++) {
       for (const inRoom of [true, false]) {
-        for (const streak of [undefined, 0, 1, 2, 3, 4, 5, 9] as const) {
+        for (const streak of [0, 1, 2, 3, 4, 5, 9] as const) {
           const s = setup([{ monsterId: "rotting_corpse", hps: [1], status: [["paralysis"]] }], {
             seed,
             identified: ["rotting_corpse"],
             origin: { kind: "random", inRoom },
           });
           s.battle!.inputs["c1"] = atk(0);
-          if (streak === undefined) delete s.dive!.noChestStreak;
-          else s.dive!.noChestStreak = streak;
-          const label = `seed ${seed} inRoom ${String(inRoom)} streak ${String(streak)}`;
+          s.progress.noChestStreak = streak;
+          const label = `seed ${seed} inRoom ${String(inRoom)} streak ${streak}`;
           const base = inRoom ? 10 : 0; // 0 段目の率
-          const pct = Math.min(100, table[Math.min(streak ?? 0, table.length - 1)]! + (inRoom ? 10 : 0));
+          const pct = Math.min(100, table[Math.min(streak, table.length - 1)]! + (inRoom ? 10 : 0));
           const m = cloneRng(s.rng);
           rolls(m, 6);
           chance(m, 100);
@@ -1764,7 +1763,8 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
           expect(r.state.dive!.chest !== null, label).toBe(want);
           expect(kindsOf(r.events).includes("message:battle.chestLeft"), label).toBe(want);
           expect(kindsOf(r.events).includes("message:battle.noChest"), label).toBe(!want);
-          expect(r.state.dive!.noChestStreak, label).toBe(want ? 0 : (streak ?? 0) + 1);
+          expect(r.state.progress.noChestStreak, label).toBe(want ? 0 : streak + 1);
+          expect(r.state.dive, label).not.toHaveProperty("noChestStreak"); // M21 D-1: dive には持たない
           if (streak === 5 || streak === 9) expect(want, label).toBe(true); // 5 段目（表の最後）100 と、表の長さを超えた 9 は最後の値で必ず当たる（それでも chance は 1 回引く）
           if (streak === 4 && inRoom) expect(pct, label).toBe(90); // 部屋は各段 +10（4 段目 80 → 90）
           if (streak === 5 && inRoom) expect(pct, label).toBe(100); // 上限 100（100 + 10 → 100）
@@ -1775,28 +1775,23 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(pityHits).toBeGreaterThan(0); // 連続の段（1 段目以降）の分で当たった場合を通る
   });
 
-  test("CB-51b（M20）警報（alarm）とボス（boss）の勝利では dive.noChestStreak を数えも戻しもしない（箱を判定しないので乱数も引かない）", () => {
+  test("CB-51b（M20 / M21）警報（alarm）とボス（boss）の勝利では progress.noChestStreak を数えも戻しもしない（箱を判定しないので乱数も引かない）", () => {
     const d = dataWith({ combat: { ...ALWAYS_HIT, chestTable: [0], chestRoomBonus: 0 } }, noChestImpulse);
     const alarm = setup([{ monsterId: "rotting_corpse", hps: [1], status: [["paralysis"]] }], {
       identified: ["rotting_corpse"],
       origin: { kind: "alarm", inRoom: true },
     });
     alarm.battle!.inputs["c1"] = atk(0);
-    alarm.dive!.noChestStreak = 4;
+    alarm.progress.noChestStreak = 4;
     const ra = exec(alarm, RESOLVE, d);
     expect(kindsOf(ra.events)).toContain("message:battle.win");
-    expect(ra.state.dive!.noChestStreak).toBe(4);
+    expect(ra.state.progress.noChestStreak).toBe(4);
     const boss = setup([{ monsterId: "gatekeeper_armor", hps: [1], status: [["paralysis"]] }], { origin: { kind: "boss" } });
     boss.battle!.inputs["c1"] = atk(0);
-    boss.dive!.noChestStreak = 4;
+    boss.progress.noChestStreak = 4;
     const rb = exec(boss, RESOLVE, d);
     expect(kindsOf(rb.events)).toContain("message:battle.bossDefeated");
-    expect(rb.state.dive!.noChestStreak).toBe(4);
-    // 省略（M20 の前の保存）なら省略のまま
-    const boss2 = setup([{ monsterId: "gatekeeper_armor", hps: [1], status: [["paralysis"]] }], { origin: { kind: "boss" } });
-    boss2.battle!.inputs["c1"] = atk(0);
-    delete boss2.dive!.noChestStreak;
-    expect(exec(boss2, RESOLVE, d).state.dive!.noChestStreak).toBeUndefined();
+    expect(rb.state.progress.noChestStreak).toBe(4);
   });
 
   test("CB-51/CB-55（M19 A-5）battle.noChest は origin random だけ: 警報（alarm）とボス（boss）の勝利では箱を判定しないので出さない（乱数も引かない。警報は鏡の rng）", () => {

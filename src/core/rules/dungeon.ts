@@ -246,7 +246,6 @@ export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
     ledger: { items: [], gold: 0 },
     chest: null,
     disarmedChests: [],
-    noChestStreak: 0, // CB-51b（M20）
     culled: true, // DG-48（M21）: この潜行の階は fillRatio で間引く（floorOf も同じ盤を作る）
   };
   state.dive = dive;

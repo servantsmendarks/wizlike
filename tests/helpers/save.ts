@@ -56,10 +56,34 @@ export function createMemoryBackend(opts: { fail?: FailSpec } = {}): MemoryBacke
 }
 
 /**
- * 今の state（schemaVersion 9）から M18 の欄（DG-46 の dive.floorSteps）を消した v8 の形（JSON の複製。引数は書き換えない）
+ * 今の state（schemaVersion 10）を v9 の形にした複製（JSON の複製。引数は書き換えない）: progress.noChestStreak を消し、
+ * dive があればその値を dive.noChestStreak に置く（v9 では潜行の欄。CB-51b の M20〜M21 群 C）。dive が null なら連続はどこにも残らない
+ */
+export function toV9(s: GameState): Record<string, unknown> {
+  const v9 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+  const progress = v9["progress"] as Record<string, unknown>;
+  const streak = progress["noChestStreak"];
+  delete progress["noChestStreak"];
+  const dive = v9["dive"] as Record<string, unknown> | null;
+  if (dive !== null) dive["noChestStreak"] = streak;
+  return v9;
+}
+
+/**
+ * SV-04 v9 → v10（M21。CB-51b）の移行で s から作った v9 以前の保存（toV9 以前）が行き着く state（JSON の複製）:
+ * dive があれば progress.noChestStreak は s のまま（dive.noChestStreak から移る）、dive が null なら 0。ほかの欄は s のまま
+ */
+export function asMigratedToV10(s: GameState): GameState {
+  const m = JSON.parse(JSON.stringify(s)) as GameState;
+  if (m.dive === null) m.progress.noChestStreak = 0;
+  return m;
+}
+
+/**
+ * 今の state から M21 の移行（toV9）と M18 の欄（DG-46 の dive.floorSteps）を消した v8 の形（toV9 を通した JSON の複製。引数は書き換えない）
  */
 export function toV8(s: GameState): Record<string, unknown> {
-  const v8 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+  const v8 = toV9(s);
   const dive = v8["dive"] as Record<string, unknown> | null;
   if (dive !== null) delete dive["floorSteps"];
   return v8;
@@ -67,10 +91,10 @@ export function toV8(s: GameState): Record<string, unknown> {
 
 /**
  * SV-04 v8 → v9（M18。DG-46）の移行で s から作った v8 以前の保存が行き着く state（JSON の複製）: dive があれば floorSteps は 0（歩数は復元しない）。
- * ほかの欄は s のまま
+ * その後の v9 → v10（M21）も通るので progress.noChestStreak は asMigratedToV10 のとおり。ほかの欄は s のまま
  */
 export function asMigratedToV9(s: GameState): GameState {
-  const m = JSON.parse(JSON.stringify(s)) as GameState;
+  const m = asMigratedToV10(s);
   if (m.dive !== null) m.dive.floorSteps = 0;
   return m;
 }

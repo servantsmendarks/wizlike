@@ -85,7 +85,8 @@ describe("creation: game.new", () => {
     expect(s.bank).toBe(0);
     // M12: progress に enteredDungeons / conquered / endingPending を足した（SV-04 v7）
     // M16: progress に hints を足した（UI-76。SV-04 v8）
-    expect(s.progress).toEqual({ unlockedDungeons: ["d01"], clearedDungeons: [], shopLevel: 0, enteredDungeons: [], conquered: false, endingPending: false, hints: [] });
+    // M21: progress に noChestStreak を足した（CB-51b。SV-04 v10。game.new で 0）
+    expect(s.progress).toEqual({ unlockedDungeons: ["d01"], clearedDungeons: [], shopLevel: 0, enteredDungeons: [], conquered: false, endingPending: false, hints: [], noChestStreak: 0 });
     expect([s.warehouse, s.buyback, s.uniqueBook]).toEqual([[], [], {}]);
   });
 

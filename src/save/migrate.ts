@@ -143,12 +143,34 @@ export function migrateV8toV9(x: unknown): unknown {
 }
 
 /**
+ * SV-04 v9 → v10（M21。CB-51b）: 箱の段の連続の外れを dive から progress に移す（潜行をまたいで持ち越すため）。
+ * progress.noChestStreak は dive.noChestStreak が 0 以上の安全な整数ならその値、そうでなければ（dive が null・欄が無い・型が違う）0。dive.noChestStreak は消す。
+ * 引数は書き換えない（浅い複製。progress と dive も複製する）。オブジェクトでなければそのまま返す（形の検査で broken）。
+ * progress がオブジェクトでなければ progress は変えない（形の検査で broken）
+ */
+export function migrateV9toV10(x: unknown): unknown {
+  if (!isPlainObject(x)) return x;
+  const out: Record<string, unknown> = { ...x };
+  const dive = x["dive"];
+  let streak = 0;
+  if (isPlainObject(dive)) {
+    const ns = dive["noChestStreak"];
+    if (typeof ns === "number" && isTurnCount(ns)) streak = ns;
+    const { noChestStreak: _drop, ...rest } = dive;
+    out["dive"] = rest;
+  }
+  const progress = x["progress"];
+  if (isPlainObject(progress)) out["progress"] = { ...progress, noChestStreak: streak };
+  return out;
+}
+
+/**
  * 移行関数の列（MIGRATIONS[i] は版 i+1 → i+2）。v3 → v4 の流通レベルは dungeons の onClear.shopLevel から計算する（IT-80）。
  * アプリ（main.ts）は検証済みの data.dungeons を渡して SaveDeps.migrations にする
  */
 export function createMigrations(dungeons: readonly Pick<DungeonDef, "id" | "onClear">[]): readonly Migration[] {
   const table: ShopLevelTable = Object.fromEntries(dungeons.map((d) => [d.id, d.onClear.shopLevel]));
-  return [migrateV1toV2, migrateV2toV3, (x) => migrateV3toV4(x, table), migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9];
+  return [migrateV1toV2, migrateV2toV3, (x) => migrateV3toV4(x, table), migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10];
 }
 
 /** 既定の移行関数の列（流通レベルの表が空なので v3 → v4 の shopLevel は 0）。アプリは createMigrations(data.dungeons) を使う */
@@ -273,11 +295,11 @@ function isChestShape(x: unknown): boolean {
  * progress.enteredDungeons が文字列の配列。
  * schemaVersion 8（M16。UI-76）: progress.hints が文字列の配列。
  * schemaVersion 9（M18。DG-46）: dive がオブジェクトなら floorSteps が 0 以上の安全な整数。
- * 同じ版に後から足した省略可能な欄（M20。CB-51b）: dive.noChestStreak は無いか 0 以上の安全な整数。
  * 同じ版に後から足した省略可能な欄（M21。DG-47）: progress.deepestFloors は無いか、各値が 1 以上の安全な整数のプレーンなオブジェクト。
  * 同じ版に後から足した省略可能な欄（M21。CB-68 (a)）: dive.chest.contentsDestroyed は無いか真偽値。
  * 同じ版に後から足した省略可能な欄（M21。CB-47）: battle がオブジェクトなら battle.autoSpells は無いか真偽値。
  * 同じ版に後から足した省略可能な欄（M21。DG-48）: dive.culled は無いか真偽値（無い潜行は間引かない盤のまま続く）。
+ * schemaVersion 10（M21。CB-51b）: progress.noChestStreak が 0 以上の安全な整数（dive.noChestStreak は v9 の欄で、v10 では見ない）。
  */
 export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(x)) return false;
@@ -299,8 +321,6 @@ export function isGameStateShape(x: unknown): x is GameState {
     if (!Array.isArray(dc) || !dc.every(isCellRefShape)) return false;
     const jc = dive["judgedChests"];
     if (jc !== undefined && !(Array.isArray(jc) && jc.every(isCellRefShape))) return false;
-    const ns = dive["noChestStreak"]; // CB-51b（M20）: 省略可能
-    if (ns !== undefined && !isTurnCount(ns)) return false;
     const cu = dive["culled"]; // DG-48（M21）: 省略可能
     if (cu !== undefined && typeof cu !== "boolean") return false;
     if (dive["chest"] !== null && x["pendingChoice"] !== null) return false;
@@ -316,6 +336,7 @@ export function isGameStateShape(x: unknown): x is GameState {
   if (typeof progress["conquered"] !== "boolean" || typeof progress["endingPending"] !== "boolean") return false;
   if (!isStringArray(progress["enteredDungeons"])) return false;
   if (!isStringArray(progress["hints"])) return false;
+  if (!isTurnCount(progress["noChestStreak"])) return false; // CB-51b（M21。schemaVersion 10）
   const df = progress["deepestFloors"]; // DG-47（M21）: 省略可能
   if (df !== undefined && !(isPlainObject(df) && Object.values(df).every((v) => isTurnCount(v) && (v as number) >= 1))) return false;
   if (!isTallyShape(x["tally"])) return false;

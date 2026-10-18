@@ -58,7 +58,7 @@ export function createInitialState(seed: number, _data: GameData): GameState {
     nextItemSeq: 1,
     gold: 0,
     bank: 0,
-    progress: { unlockedDungeons: [], clearedDungeons: [], shopLevel: 0, enteredDungeons: [], conquered: false, endingPending: false, hints: [] },
+    progress: { unlockedDungeons: [], clearedDungeons: [], shopLevel: 0, enteredDungeons: [], conquered: false, endingPending: false, hints: [], noChestStreak: 0 },
     dive: null,
     pendingChoice: null,
     battle: null,

@@ -304,7 +304,8 @@ export type DiveRecord = {
   randomWinsCorridor: number;
   dropChestsRoom: number;
   dropChestsCorridor: number;
-  // M20（設計 A-3）: ランダム遭遇の勝利でドロップの箱が出なかった連続の、この潜行での最長（場所を問わない。箱が出たら 0 に戻す。CB-51b の noChestStreak と同じ数え方）
+  // M20（設計 A-3）: ランダム遭遇の勝利でドロップの箱が出なかった連続の、この潜行での最長（場所を問わない。箱が出たら 0 に戻す）。
+  // M21 D-1（CB-51b の持ち越し）: この潜行のランダム遭遇の勝利の直後の progress.noChestStreak の最大（前の潜行から持ち越した分を含む。勝利が無ければ 0）
   noChestLongest: number;
   // M19（設計 §8）: 戦闘の終了時（battleEnd{win / flee}。全滅は除く）の術者の MP。術者 = その execute の後の state で knownSpells を 1 つ以上持つ alive の者。
   // casterEnds は術者 × 戦闘の延べ数、casterMp0 はそのうち mp === 0 の数、endsWithCaster は術者が 1 人以上いた戦闘の数、endsAnyMp0 はそのうち誰かが 0 だった戦闘の数
@@ -497,7 +498,6 @@ export class Campaign {
   randomWinsCorridor = 0;
   dropChestsRoom = 0;
   dropChestsCorridor = 0;
-  noChestRun = 0; // M20（設計 A-3）: 今の連続
   noChestLongest = 0;
   casterEnds = 0; // M19（設計 §8）
   casterMp0 = 0;
@@ -573,7 +573,7 @@ export class Campaign {
     if (r.events[0]?.kind === "rejected") throw new Error(`seed ${this.seed}: ${JSON.stringify(cmd)} rejected: ${JSON.stringify(r.events[0])}`);
     this.countChest(from, r.events);
     this.countDrops(r.events); // M14（CB-57）
-    this.countBattlePlace(from, r.events); // 確認(M15)
+    this.countBattlePlace(from, r.state, r.events); // 確認(M15)
     this.countCasterMp(r.state, r.events); // M19（設計 §8）
     this.countDeaths(from, r.events);
     this.countImpulses(from, r.events);
@@ -624,7 +624,7 @@ export class Campaign {
    * 確認(M15): ランダム遭遇の勝利を場所別（origin.inRoom）に数え、その勝利で置かれたドロップの箱（chest.found.drop）も場所別に数える。
    * 勝利の見方は countBeats と同じ（battleEnd{win}）。数えるだけで、ボットの判断・乱数・コマンド列には触れない
    */
-  countBattlePlace(from: GameState, events: GameEvent[]): void {
+  countBattlePlace(from: GameState, after: GameState, events: GameEvent[]): void {
     const origin = from.battle?.origin;
     if (origin?.kind !== "random") return;
     if (!events.some((e) => e.kind === "battleEnd" && e.result === "win")) return;
@@ -636,9 +636,9 @@ export class Campaign {
       this.randomWinsCorridor += 1;
       if (dropped) this.dropChestsCorridor += 1;
     }
-    // M20（設計 A-3）: 箱が出なかった連続（出たら 0 に戻す）と、この潜行での最長
-    this.noChestRun = dropped ? 0 : this.noChestRun + 1;
-    this.noChestLongest = Math.max(this.noChestLongest, this.noChestRun);
+    // M20（設計 A-3）: 箱が出なかった連続（出たら 0 に戻す）の、この潜行での最長。
+    // M21 D-1: 連続は core の progress.noChestStreak（潜行をまたいで持ち越す）をそのまま読む。農夫の潜行の最初の段は前の潜行の続き
+    this.noChestLongest = Math.max(this.noChestLongest, after.progress.noChestStreak);
   }
 
   /**
@@ -1268,7 +1268,6 @@ export class Campaign {
     this.randomWinsCorridor = 0;
     this.dropChestsRoom = 0;
     this.dropChestsCorridor = 0;
-    this.noChestRun = 0;
     this.noChestLongest = 0;
     this.casterEnds = 0;
     this.casterMp0 = 0;

@@ -132,7 +132,7 @@ describe("dungeon.enter", () => {
     expect(data.strings["dungeon.enter"]).toBe("{dungeon}へ潜る。迷宮は潜るたびに形を変える。地図は毎回白紙だ。");
   });
 
-  test("DG-03/DG-40/TW-11/CB-51b dungeon.enter: screen dungeon、dive の全欄（CB-51b（M20）noChestStreak は入場で 0）、events は [screen dungeon, message dungeon.enter {dungeon:'試しの坑道'}, （DG-37/UI-76 ゲームで最初の入場）message hint.dungeonFirst, （UI-76 M18）message hint.dungeonTerms]", () => {
+  test("DG-03/DG-40/TW-11/CB-51b dungeon.enter: screen dungeon、dive の全欄（CB-51b（M21 D-1）noChestStreak は dive に無く、progress.noChestStreak は入場で変えない = 持ち越す）、events は [screen dungeon, message dungeon.enter {dungeon:'試しの坑道'}, （DG-37/UI-76 ゲームで最初の入場）message hint.dungeonFirst, （UI-76 M18）message hint.dungeonTerms]", () => {
     const s0 = newGame(1);
     const r = run(s0, ENTER_D01);
     const dive = r.state.dive!;
@@ -157,7 +157,6 @@ describe("dungeon.enter", () => {
       ledger: { items: [], gold: 0 },
       chest: null, // CB-60（M11）
       disarmedChests: [],
-      noChestStreak: 0, // CB-51b（M20）
       culled: true, // DG-48（M21）: この潜行の階は fillRatio で間引く
     });
     expect(Object.keys(dive.explored)).toEqual(["1"]);
@@ -169,6 +168,15 @@ describe("dungeon.enter", () => {
       { kind: "message", key: "hint.dungeonTerms" }, // UI-76（M18）: 用語への案内は dungeonFirst の直後
     ]);
     expect(r.state.progress.hints).toEqual(["dungeonFirst", "dungeonTerms"]);
+    // CB-51b（M21 D-1）: 段の連続は入場で戻さない（game.new の 0 のまま。3 から入れば 3）。ほかの結果（rng・dive・events）は同じ
+    expect(r.state.progress.noChestStreak).toBe(0);
+    const s3 = structuredClone(s0);
+    s3.progress.noChestStreak = 3;
+    const r3 = run(s3, ENTER_D01);
+    expect(r3.state.progress.noChestStreak).toBe(3);
+    expect(r3.state.rng).toEqual(r.state.rng);
+    expect(r3.state.dive).toEqual(r.state.dive);
+    expect(r3.events).toEqual(r.events);
   });
 
   test("DG-03 dungeon.enter は state.rng を nextUint32 ちょうど 1 回だけ進め、diveSeed はその値", () => {

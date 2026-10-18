@@ -135,6 +135,11 @@ export type Progress = {
    * 潜行・全滅をまたいで残し、下げない。省略可能（schemaVersion 9 のまま足した欄。無ければ記録なしとして読む。移行は無い。SV-04）。game.new では作らない
    */
   deepestFloors?: Record<string, number>;
+  /**
+   * CB-51b（M21。schemaVersion 10）: ランダム遭遇の勝利でドロップの箱が出なかった連続の回数（0 以上の整数。出たら 0）。game.new で 0。
+   * 潜行をまたいで持ち越す（入場・帰還・全滅では戻さない）。v9 からの移行では dive.noChestStreak（無ければ 0）
+   */
+  noChestStreak: number;
   /** DG-36（M12。schemaVersion 7）: 全ダンジョン制覇。一度立てたら落とさない。game.new で false */
   conquered: boolean;
   /** TW-34（M12。schemaVersion 7）: 結末を街で語る予定。語ったら false。game.new で false */
@@ -256,11 +261,6 @@ export type Dive = {
    * 重複なし。省略可能（schemaVersion 6 のまま足した欄。無ければ空として扱い、最初に判定したときに作る）
    */
   judgedChests?: CellRef[];
-  /**
-   * CB-51b（M20）: ランダム遭遇の勝利でドロップの箱が出なかった連続の回数（出たら 0）。入場時 0。
-   * 省略可能（schemaVersion 9 のまま足した欄。無ければ 0 として扱う）
-   */
-  noChestStreak?: number;
   /**
    * DG-48（M21）: この潜行の階は dungeons[].fillRatio で間引く（入場で true）。
    * 省略可能（schemaVersion 9 のまま足した欄。無ければ M20 までの潜行として間引かない = fillRatio 1 で生成。途中の潜行の盤を変えないため）
@@ -455,6 +455,7 @@ export type Morale = { rankId: string };
 // M10 で maxLevelReached を職業ごとにして 5（migrateV4toV5）、M11 で dive.chest・disarmedChests を足して 6（migrateV5toV6）にした。
 // M12 で tally・progress.enteredDungeons / conquered / endingPending を足して schemaVersion 7 にした（migrateV6toV7）。
 // M16 で progress.hints を足して 8（migrateV7toV8）、M18 で dive.floorSteps を足して 9（migrateV8toV9）にした。
+// M21 で dive.noChestStreak を progress.noChestStreak に移して 10（migrateV9toV10。CB-51b）にした。
 // schemaVersion、turn、updatedAt、gameId は保存レコード側の欄（SV-21）で、ここには入れない。
 
 export type GameState = {

@@ -153,8 +153,8 @@ function tellTrapGone(ctx: RuleContext): void {
 }
 
 /**
- * CB-51 / CB-60: ランダム遭遇の勝利の宝箱。率は段の表 chestTable[min(dive.noChestStreak（省略は 0）, 表の長さ − 1)]、部屋のセルなら
- * chestRoomBonus を足す（上限 100）。CB-51b（M21）: chance は 1 回のまま。当たれば noChestStreak を 0、外れたら +1。
+ * CB-51 / CB-60: ランダム遭遇の勝利の宝箱。率は段の表 chestTable[min(progress.noChestStreak, 表の長さ − 1)]、部屋のセルなら
+ * chestRoomBonus を足す（上限 100）。CB-51b（M21）: chance は 1 回のまま。当たれば noChestStreak を 0、外れたら +1（M21 D-1: 潜行をまたいで持ち越す。入場では戻さない）。
  * 当たれば CB-61 で罠を引き、dive.chest にドロップの箱を置く（中身はまだ配らない。開けたとき CB-65）。level はこの戦闘で倒した種類の level の最大（IT-53）。
  * 呼び出し側は origin.kind === "random" のときだけ呼び、screen{dungeon} の後に presentChest を呼ぶ。当たったら true
  */
@@ -162,13 +162,13 @@ export function rollDropChest(ctx: RuleContext, inRoom: boolean, level: number):
   const { state, data } = ctx;
   const dive = requireDive(state);
   const { chestTable, chestRoomBonus } = data.config.combat;
-  const streak = dive.noChestStreak ?? 0;
+  const streak = state.progress.noChestStreak;
   const pct = Math.min(100, (chestTable[Math.min(streak, chestTable.length - 1)] ?? 0) + (inRoom ? chestRoomBonus : 0));
   if (!chance(state.rng, pct)) {
-    dive.noChestStreak = streak + 1;
+    state.progress.noChestStreak = streak + 1;
     return false;
   }
-  dive.noChestStreak = 0;
+  state.progress.noChestStreak = 0;
   const t = rollChestTrap(state.rng, data, dive.dungeonId);
   dive.chest = { source: "drop", cell: null, inRoom, trapId: t.trapId, danger: t.danger, level, finding: null, rivalry: null };
   return true;

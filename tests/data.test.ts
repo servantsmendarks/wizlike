@@ -157,6 +157,9 @@ describe("data: config.json", () => {
   test("data: 型違い", () => {
     expectIssue((r) => (r.config.save.maxGames = "5"), "config.json", "save.maxGames: expected integer >= 1, got string");
   });
+  test("data: SV-04/CB-51b（M21）save.schemaVersion は 10（v9 → v10 で箱の段の連続を dive から progress に移した）", () => {
+    expect(config.save.schemaVersion).toBe(10);
+  });
   test("data: CB-21 hitMin <= hitMax、百分率の範囲", () => {
     expectIssue((r) => (r.config.combat.hitMin = 96), "config.json", "CB-21");
     expectIssue((r) => (r.config.combat.hitMax = 101), "config.json", "combat.hitMax: expected integer in 0..100, got 101");

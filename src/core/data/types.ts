@@ -195,7 +195,7 @@ export type Config = {
     poisonDamagePerTick: number;
     fleeBase: number;
     fleeAgiMul: number;
-    /** CB-51 / CB-51b（M21）【仮】: ランダム遭遇の勝利の宝箱の率（%）の段の表。添字は dive.noChestStreak（表の長さを超えたら最後の値）。通路はこのまま */
+    /** CB-51 / CB-51b（M21）【仮】: ランダム遭遇の勝利の宝箱の率（%）の段の表。添字は progress.noChestStreak（表の長さを超えたら最後の値）。通路はこのまま */
     chestTable: number[];
     /** CB-51 / CB-51b（M21）【仮】: 部屋のセル（roomId が非 null）の遭遇は各段にこの % を足す（上限 100） */
     chestRoomBonus: number;
