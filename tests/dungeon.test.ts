@@ -797,11 +797,13 @@ describe("歩行の HP の警告（CH-43b。M23 B-2）", () => {
     expect(warns(r3.events)).toHaveLength(1);
   });
 
-  test("CH-43b 文は strings の dungeon.poisonWeak。名前 6 字・HP 3 桁でも 28 字 2 行以内", () => {
-    const t = data.strings["dungeon.poisonWeak"]!;
-    expect(t).toBe("{name}は毒で弱っている（HP {hp}/{hpMax}）。");
-    const filled = t.replace("{name}", "アアアアアア").replace("{hp}", "249").replace("{hpMax}", "999");
-    expect(kinsokuLines(filled, 28).length).toBeLessThanOrEqual(2);
+  test("CH-43b 文は strings の dungeon.poisonWeak / dungeon.hpLow。名前 6 字・HP 3 桁でも 28 字 2 行以内", () => {
+    expect(data.strings["dungeon.poisonWeak"]).toBe("{name}は毒で弱っている（HP {hp}/{hpMax}）。");
+    expect(data.strings["dungeon.hpLow"]).toBe("{name}は弱っている（HP {hp}/{hpMax}）。街へ戻るか回復を。");
+    for (const key of ["dungeon.poisonWeak", "dungeon.hpLow"]) {
+      const filled = data.strings[key]!.replace("{name}", "アアアアアア").replace("{hp}", "249").replace("{hpMax}", "999");
+      expect(kinsokuLines(filled, 28).length).toBeLessThanOrEqual(2);
+    }
   });
 });
 

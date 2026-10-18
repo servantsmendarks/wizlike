@@ -646,10 +646,12 @@ export function createPlayer(deps: PlayerDeps): Player {
       marked = true;
     },
     async hpWarn(ev, cx, finalState) {
-      // CH-43b（M22）: 歩行中の毒の警告。その者の帯に印を付け（演出スキップでは点滅せず色だけ。印は再生の終わりで外す）、文を出す
+      // CH-43b（M23）: 歩行の HP の警告。その者の帯に印を付け（演出スキップでは点滅せず色だけ。印は再生の終わりで外す）、文を出す。
+      // 文は core の poison で選ぶ（毒なら dungeon.poisonWeak、でなければ dungeon.hpLow）
       cx.skip = isSkip();
       const who = finalState.party.find((c) => c.id === ev.id);
-      const tpl = deps.strings["dungeon.poisonWeak"] ?? "dungeon.poisonWeak";
+      const key = ev.poison ? "dungeon.poisonWeak" : "dungeon.hpLow";
+      const tpl = deps.strings[key] ?? key;
       deps.party.markActor(ev.id, !cx.skip);
       marked = true;
       await deps.message.say(formatMessage(tpl, { name: who?.name ?? ev.id, hp: ev.hp, hpMax: ev.hpMax }), cx.skip);

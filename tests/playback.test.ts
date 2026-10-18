@@ -1515,7 +1515,7 @@ describe("UI-55 イベントの再生（M5）", () => {
     expect(names(log)).not.toContain("party.markActor");
   });
 
-  test("CH-43b hpWarn は文（名前は state から）を出し、markActor(id, !skip)。再生の終わりで外す", async () => {
+  test("CH-43b hpWarn は文（poison で dungeon.poisonWeak / dungeon.hpLow。名前は state から）を出し、markActor(id, !skip)。再生の終わりで外す", async () => {
     for (const skipAnimations of [false, true]) {
       const { deps, log } = fakeDeps({ skipAnimations });
       const s = dungeonState();
@@ -1523,6 +1523,11 @@ describe("UI-55 イベントの再生（M5）", () => {
       await createPlayer(deps).play([{ kind: "hpWarn", id: "c3", hp: 2, hpMax: 12, poison: true }], s, s);
       expect(log.filter((e) => e.m === "message.say").map((e) => e.a[0])).toEqual([`${name}は毒で弱っている（HP 2/12）。`]);
       expect(log.filter((e) => e.m === "party.markActor").map((e) => e.a)).toEqual([["c3", !skipAnimations], [null, false]]);
+      // M23: 毒でなければ dungeon.hpLow（印は同じ）
+      const f2 = fakeDeps({ skipAnimations });
+      await createPlayer(f2.deps).play([{ kind: "hpWarn", id: "c3", hp: 2, hpMax: 12, poison: false }], s, s);
+      expect(f2.log.filter((e) => e.m === "message.say").map((e) => e.a[0])).toEqual([`${name}は弱っている（HP 2/12）。街へ戻るか回復を。`]);
+      expect(f2.log.filter((e) => e.m === "party.markActor").map((e) => e.a)).toEqual([["c3", !skipAnimations], [null, false]]);
     }
   });
 
