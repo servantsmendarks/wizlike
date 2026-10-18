@@ -691,6 +691,59 @@ describe("前衛と後衛・敵の対象（CB-13/14/15/16）", () => {
     const r2 = exec(s2, RESOLVE, slow);
     expect(eventsOf(r2.events, "attack").map((e) => e.actorId)).toEqual(["c1", "e1-0"]);
   });
+
+  // M22 A-1: 前衛 3 人が dead のとき、後衛（ドナ・エル・フィン）が前衛扱いで届く。手動・オート・前回と同じ・敵の対象・menu で同じ結論
+  describe("CB-14 前衛 3 人が死亡（M22 A-1）", () => {
+    const mk = (extra: Record<string, Partial<Character>> = {}, inputs: Record<string, BattleAction> = {}): GameState =>
+      setup([{ monsterId: "kobold", hps: [80] }], {
+        identified: ["kobold"],
+        patches: { c1: DEAD, c2: DEAD, c3: DEAD, c4: { hp: 50, hpMax: 50 }, c5: { hp: 50, hpMax: 50 }, c6: { hp: 50, hpMax: 50 }, ...extra },
+        inputs,
+      });
+
+    test("CB-14 手動の attack: 後衛のドナは攻撃として解決し、backRowCannotAttack は出ない", () => {
+      const s = mk({}, { c4: atk(0), c5: DEF, c6: DEF });
+      const r = exec(s, RESOLVE, dataWith({ combat: ALWAYS_HIT }));
+      expect(eventsOf(r.events, "attack").filter((a) => a.actorId === "c4")).toHaveLength(1);
+      expect(kindsOf(r.events)).not.toContain("message:battle.backRowCannotAttack");
+    });
+
+    test("CB-14 オート: autoInput は後衛のドナ・エルを防御にしない（既定・MP 0・前回の攻撃）", () => {
+      const s = mk({ c5: { mp: 0 } });
+      expect(autoInput(s, data, member(s, "c4"))).toEqual({ type: "attack", group: 0 });
+      expect(autoInput(s, data, member(s, "c5"))).toEqual({ type: "attack", group: 0 });
+      const last = patchParty(s, { c4: { lastBattleInput: atk(0) } });
+      expect(autoInput(last, data, member(last, "c4"))).toEqual({ type: "attack", group: 0 });
+    });
+
+    test("CB-14 battle.repeat: 前回が攻撃の後衛は攻撃のまま解決し、防御に落とさない。lastBattleInput は変えない", () => {
+      const s = mk({ c4: { lastBattleInput: atk(0) }, c6: { lastBattleInput: atk(0) } });
+      const r = exec(s, REPEAT, dataWith({ combat: ALWAYS_HIT }));
+      const who = eventsOf(r.events, "attack").map((a) => a.actorId);
+      expect(who).toContain("c4");
+      expect(who).toContain("c6");
+      expect(kindsOf(r.events)).not.toContain("message:battle.backRowCannotAttack");
+      expect(member(r.state, "c4").lastBattleInput).toEqual(atk(0));
+    });
+
+    test("CB-14/CB-15 menu の canStrike は後衛 3 人とも真（row は並び順のまま）。敵の対象は後衛の生存者だけ", () => {
+      const menu = battleMenu(mk(), data)!;
+      expect(menu.members.filter((m) => m.canStrike).map((m) => m.id)).toEqual(["c4", "c5", "c6"]);
+      expect(menu.members.map((m) => m.row)).toEqual(["front", "front", "front", "back", "back", "back"]);
+      const d = dataWith({ combat: ALWAYS_HIT });
+      const hit = new Set<string>();
+      for (let seed = 1; seed <= 12; seed++) {
+        const t = setup([{ monsterId: "kobold", hps: [80] }], {
+          seed,
+          identified: ["kobold"],
+          patches: { c1: DEAD, c2: DEAD, c3: DEAD, c4: { hp: 50, hpMax: 50 }, c5: { hp: 50, hpMax: 50 }, c6: { hp: 50, hpMax: 50 } },
+          inputs: { c4: DEF, c5: DEF, c6: DEF },
+        });
+        for (const a of eventsOf(exec(t, RESOLVE, d).events, "attack")) if (a.actorId === "e0-0") hit.add(a.targetId);
+      }
+      expect([...hit].sort()).toEqual(["c4", "c5", "c6"]);
+    });
+  });
 });
 
 describe("行動順（CB-11）", () => {
