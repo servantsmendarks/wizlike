@@ -859,7 +859,7 @@ describe("TW-03/UI-52 酒場とキャンプの共有（M10）", () => {
     expect(campPanel({ kind: "top" }, input(s), S)).toEqual({
       kind: "text",
       title: "キャンプ",
-      lines: ["試しの坑道　2F", "所持金　230G", "今回の収穫　30G・1品", "帰還の糸　1本（エル）"],
+      lines: ["試しの坑道　2F", "所持金　230 G", "今回の収穫　30 G・1品", "帰還の糸　1本（エル）"],
     });
     expect(campPanel({ kind: "members" }, input(s), S)).toEqual({ kind: "text", title: "キャンプ" });
     const town = input(inTown());

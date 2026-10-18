@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { kinsokuLines } from "./helpers/wrap";
 import config from "../data/config.json";
 import races from "../data/races.json";
 import classes from "../data/classes.json";
@@ -2166,5 +2167,25 @@ describe("data: d03 灰の地下墓所（M12）", () => {
     expect(g.dungeons.map((x) => [x.id, x.lostHintDirection])).toEqual([["d01", true], ["d02", undefined], ["d03", undefined]]);
     expectIssue((r) => (r.dungeons[1].lostHintDirection = "yes"), "dungeons.json", "[1].lostHintDirection: expected");
     expectIssue((r) => delete r.strings["hint.lostExitsDir.NW"], "strings.json", "hint.lostExitsDir.NW");
+  });
+});
+
+describe("UI-81 金額の表記（M22 追補。2026-10-18）", () => {
+  test("UI-81 strings.json の値で、数字・} の直後に G が続くものが無い（金額は「400 G」。用語の行 rules.line.* は G が行頭）", () => {
+    const bad = Object.entries(strings as Record<string, string>).filter(([, v]) => /[0-9}]G/.test(v));
+    expect(bad).toEqual([]);
+  });
+
+  test("UI-81 折り返し: 「400 G」の G を行頭にしない（空白の前の数字の頭で切って、数字ごと次の行へ送る）", () => {
+    // 先頭 25 字 + 「400 G」: 400 は 26.5 単位までに収まり、空白の次の G が 28 単位目の外に出る形
+    const text = `${"あ".repeat(26)}400 G`;
+    const lines = kinsokuLines(text, 28);
+    expect(lines.length).toBe(2);
+    expect(lines[1]).toBe("400 G");
+    for (const l of lines) expect(l.startsWith("G"), l).toBe(false);
+    // 先頭から「400」がちょうど行末に収まる形
+    for (let n = 20; n <= 27; n++) {
+      for (const l of kinsokuLines(`${"あ".repeat(n)}400 G。`, 28)) expect(l.startsWith("G"), `${n}: ${l}`).toBe(false);
+    }
   });
 });

@@ -35,7 +35,19 @@ export function kinsokuLines(text: string, cols: number): string[] {
         while (k > start && isWordChar(cs[k - 1])) k--;
         if (k > start) b = k;
       }
-      while (b > start + 1 && (NOT_AT_LINE_START.has(cs[b]!) || NOT_AT_LINE_END.has(cs[b - 1]!))) b--;
+      // 金額（「400 G」）の G を行頭にしない（M22 追補。空白の前の数字の頭へ戻して、数字ごと次の行へ送る）。禁則の追い出しの後にも見直す
+      for (;;) {
+        while (b > start + 1 && (NOT_AT_LINE_START.has(cs[b]!) || NOT_AT_LINE_END.has(cs[b - 1]!))) b--;
+        if (cs[b] === "G" && cs[b - 1] === " " && /^[0-9]$/.test(cs[b - 2] ?? "")) {
+          let k = b - 1;
+          while (k > start && isWordChar(cs[k - 1])) k--;
+          if (k > start) {
+            b = k;
+            continue;
+          }
+        }
+        break;
+      }
       out.push(cs.slice(start, b).join(""));
       start = b;
     }

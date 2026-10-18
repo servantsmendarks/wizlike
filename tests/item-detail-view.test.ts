@@ -51,7 +51,7 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
         { text: "攻撃 1d8+5", tone: "normal" },
         { text: "命中 +10%", tone: "normal" },
         { text: "AC -1", tone: "normal" },
-        { text: "売値 255G", tone: "normal" }, // floor(100 × 0.5 × 3.5) = 175 + 40 × 2
+        { text: "売値 255 G", tone: "normal" }, // floor(100 × 0.5 × 3.5) = 175 + 40 × 2
       ],
     });
   });
@@ -62,11 +62,11 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
     const staff = createItemInstance(s, { itemId: "staff", identified: true });
     const bow = createItemInstance(s, { itemId: "short_bow", level: 2, identified: true });
     const spear = createItemInstance(s, { itemId: "spear", identified: true });
-    expect(formatItemDetail(detailOf(s, armor), S).lines.map((l) => l.text)).toEqual(["防具　Lv6", "希少度 通常", "AC -5", "売値 100G"]); // floor(50 × 0.5 × 4) = 100
-    expect(formatItemDetail(detailOf(s, staff), S).lines.map((l) => l.text)).toEqual(["武器　Lv0", "希少度 通常", "攻撃 1d4", "魔法攻撃力 0", "売値 5G"]);
-    expect(formatItemDetail(detailOf(s, bow), S).lines.map((l) => l.text)).toEqual(["武器　Lv2", "希少度 通常", "攻撃 1d6+2", "飛び道具。後列から届く", "売値 80G"]); // floor(80 × 0.5 × 2) = 80
+    expect(formatItemDetail(detailOf(s, armor), S).lines.map((l) => l.text)).toEqual(["防具　Lv6", "希少度 通常", "AC -5", "売値 100 G"]); // floor(50 × 0.5 × 4) = 100
+    expect(formatItemDetail(detailOf(s, staff), S).lines.map((l) => l.text)).toEqual(["武器　Lv0", "希少度 通常", "攻撃 1d4", "魔法攻撃力 0", "売値 5 G"]);
+    expect(formatItemDetail(detailOf(s, bow), S).lines.map((l) => l.text)).toEqual(["武器　Lv2", "希少度 通常", "攻撃 1d6+2", "飛び道具。後列から届く", "売値 80 G"]); // floor(80 × 0.5 × 2) = 80
     // IT-25: 長柄（reach long）
-    expect(formatItemDetail(detailOf(s, spear), S).lines.map((l) => l.text)).toEqual(["武器　Lv0", "希少度 通常", "攻撃 1d6", "長柄。後列から届く", "売値 75G"]);
+    expect(formatItemDetail(detailOf(s, spear), S).lines.map((l) => l.text)).toEqual(["武器　Lv0", "希少度 通常", "攻撃 1d6", "長柄。後列から届く", "売値 75 G"]);
     // 上質・伝説の語（book.rarity.fine / legendary）
     const fine = createItemInstance(s, { itemId: "leather_armor", rarity: "fine", options: [{ optionId: "hit", tier: 1, value: 5 }], identified: true });
     const legend = createItemInstance(s, { itemId: "leather_armor", rarity: "legendary", identified: true });
@@ -100,7 +100,7 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
       { text: "攻撃 1d6", tone: "normal" },
       { text: "魔法攻撃力 2", tone: "normal" },
       { text: "呪文の消費 -1", tone: "normal" },
-      { text: "売値 450G", tone: "normal" },
+      { text: "売値 450 G", tone: "normal" },
       ...descLines,
     ]);
     // 見出し + 13 行に収まる（ビュー領域 150px）
@@ -131,7 +131,7 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
         { text: "攻撃 1d4", tone: "normal" },
         { text: "力 -1", tone: "danger" },
         { text: "呪われている", tone: "danger" },
-        { text: "売値 7G", tone: "normal" },
+        { text: "売値 7 G", tone: "normal" },
       ],
     });
     const hidden = cursedDagger(s, false);
@@ -140,11 +140,11 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
       lines: [
         { text: "武器", tone: "normal" },
         { text: "鑑定するまで正体は分からない。", tone: "normal" },
-        { text: "売値 7G", tone: "normal" }, // 2026-10-05 から未鑑定も見た目の品種（短剣 Lv0）の floor(15 × 0.5) = 7 で売れる
+        { text: "売値 7 G", tone: "normal" }, // 2026-10-05 から未鑑定も見た目の品種（短剣 Lv0）の floor(15 × 0.5) = 7 で売れる
       ],
     });
     const herb = createItemInstance(s, { itemId: "herb", identified: true });
-    expect(formatItemDetail(detailOf(s, herb), S).lines.map((l) => l.text)).toEqual(["道具", "売値 5G"]);
+    expect(formatItemDetail(detailOf(s, herb), S).lines.map((l) => l.text)).toEqual(["道具", "売値 5 G"]);
   });
 
   // 2026-10-06: 実機(M9-飛行) の B3。ダイスの記法の定数と Lv の分（ItemPower.damageBonus）を 1 つの定数に合算して出す（「1d4+1+1」→「1d4+2」）

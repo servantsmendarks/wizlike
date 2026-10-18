@@ -224,7 +224,7 @@ describe("UI-41 playback", () => {
       before,
     );
     expect(log.filter((e) => e.m === "message.say").map((e) => e.a)).toEqual([
-      ["希少度 希少　売値 125G", true],
+      ["希少度 希少　売値 125 G", true],
       [data.strings["dungeon.blocked"], false],
     ]);
     expect(log.filter((e) => e.m === "view.fade").map((e) => e.a[0])).toEqual([data.config.ui.viewFadeMs]);
