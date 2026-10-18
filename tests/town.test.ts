@@ -613,6 +613,18 @@ describe("TW-07 寺院（town.temple）", () => {
     expect(r.state.rng).toEqual(s.rng);
   });
 
+  test("TW-07（M22 B-2）寺院の一覧の料金（townMenu）と払う額は同じ templeQuote で、蘇生 Lv1 は 100G。開始の所持金は 300G で、減額は一覧の額だけ（400G を 4000G と読み違えた報告の固定）", () => {
+    const s = town({ c2: { ...DEAD } }, 300);
+    const row = townMenu(s, data)!.temple.resurrect.find((x) => x.memberId === "c2")!;
+    expect(row.cost).toBe(100);
+    const r = ok(s, { type: "town.temple", memberId: "c2", service: "resurrect" });
+    expect(s.gold - r.state.gold).toBe(row.cost);
+    const cs = town({ c3: { status: ["paralysis", "poison"] } }, 500);
+    const crow = townMenu(cs, data)!.temple.cure.find((x) => x.memberId === "c3")!;
+    const cr = ok(cs, { type: "town.temple", memberId: "c3", service: "cure" });
+    expect(cs.gold - cr.state.gold).toBe(crow.cost);
+  });
+
   test("TW-07 治療の rejected: 治すものが無い、dead、所持金不足", () => {
     expectRejected(town({ c3: { status: ["sleep"] } }), { type: "town.temple", memberId: "c3", service: "cure" }, "nothing to cure");
     expectRejected(town({ c3: { ...DEAD, status: ["poison"] } }), { type: "town.temple", memberId: "c3", service: "cure" }, "not alive");

@@ -632,6 +632,16 @@ describe("creation: UI-62 / CH-06 残りはおまかせ（M20）", () => {
     for (const k of ["str", "iq", "pie", "vit", "agi", "luk"] as const) expect(big[k]).toBeLessThanOrEqual(STAT_MAX);
   });
 
+  test("CH-11 autoAllocate は振った値を保ち、残りだけを足す（B-5 #1 の再現: ドワーフ 10/7/10/10/5/6 に +1/0/0/+2/+1/0、bonus 10 → 12/8/11/13/7/7）", () => {
+    const dwarf = data.races.find((r) => r.id === "dwarf")!.baseStats;
+    const part = { str: dwarf.str + 1, iq: dwarf.iq, pie: dwarf.pie, vit: dwarf.vit + 2, agi: dwarf.agi + 1, luk: dwarf.luk };
+    const r = autoAllocate("dwarf", part, 10, null, data);
+    expect(r).toEqual({ str: 12, iq: 8, pie: 11, vit: 13, agi: 7, luk: 7 });
+    expect(statAllocation("dwarf", r, 10, data).complete).toBe(true);
+    // 乱数なし: もう一度呼んでも同じ
+    expect(autoAllocate("dwarf", part, 10, null, data)).toEqual(r);
+  });
+
   test("UI-62 classReachable: 不足分の和 ≤ 残り。配分し終えていれば classOptions の ok と同じ", () => {
     expect(classReachable("human", human, 3, "fighter", data)).toBe(true);
     expect(classReachable("human", human, 2, "fighter", data)).toBe(false);
