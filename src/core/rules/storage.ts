@@ -115,6 +115,12 @@ export function settleOverflow(ctx: RuleContext, memberId: string): void {
   if (over > 0) ctx.events.push({ kind: "message", key: "inventory.overflow", params: { name: ch.name, over } });
 }
 
+/** TW-16 の行 1 個（M24 B-1: cursed は鑑定済みかつ実体の cursed） */
+function storageRow(state: GameState, data: GameData, id: string): TownMenu["storage"]["items"][number] {
+  const inst = state.items[id];
+  return { instanceId: id, name: itemDisplayName(state, data, id), cursed: inst !== undefined && inst.identified && inst.cursed };
+}
+
 /** UI-52 の倉庫のページの値（townMenu.storage。純粋） */
 export function storageMenu(state: GameState, data: GameData): TownMenu["storage"] {
   const capacity = data.config.items.warehouseSlots;
@@ -122,13 +128,13 @@ export function storageMenu(state: GameState, data: GameData): TownMenu["storage
     capacity,
     slotsFree: Math.max(0, capacity - state.warehouse.length),
     depositAllOk: checkDepositAll(state, null, data) === null,
-    items: state.warehouse.map((id) => ({ instanceId: id, name: itemDisplayName(state, data, id) })),
+    items: state.warehouse.map((id) => storageRow(state, data, id)),
     members: state.party.map((ch) => ({
       memberId: ch.id,
       name: ch.name,
       slotsFree: slotsFreeOf(ch, data),
       depositAllOk: checkDepositAll(state, ch.id, data) === null,
-      items: ch.inventory.map((id) => ({ instanceId: id, name: itemDisplayName(state, data, id) })),
+      items: ch.inventory.map((id) => storageRow(state, data, id)),
     })),
   };
 }

@@ -808,13 +808,14 @@ export type TownMenuShopEquipment = {
 };
 export type TownMenuShopMember = { memberId: string; name: string; slotsFree: number };
 /** IT-61: 売れる品 1 個（本人の inventory の品。未鑑定も売れる）。price は店での売値 shopSellPrice（未鑑定は見た目の品種の売値、name は未鑑定の名前） */
-export type TownMenuShopSellRow = { instanceId: string; name: string; price: number };
+/** cursed（M24 B-1）: 鑑定済みかつ実体の cursed（campMenu の inventory[].cursed と同じ基準。表示層が名前を danger で描く） */
+export type TownMenuShopSellRow = { instanceId: string; name: string; price: number; cursed: boolean };
 /** IT-63: 買い戻しのストックの品 1 個。price は uniques[].price、affordable = gold >= price */
-export type TownMenuShopBuybackRow = { instanceId: string; name: string; price: number; affordable: boolean };
+export type TownMenuShopBuybackRow = { instanceId: string; name: string; price: number; affordable: boolean; cursed: boolean };
 /** IT-65: 店で鑑定できる品 1 個（本人の inventory の未鑑定の品）。name は未鑑定の表示名、fee は品ごとの鑑定料 identifyFeeOf、affordable = gold >= fee */
 export type TownMenuShopIdentifyRow = { memberId: string; memberName: string; instanceId: string; name: string; fee: number; affordable: boolean };
-/** TW-16: 倉庫・所持品の 1 個 */
-export type TownMenuStorageRow = { instanceId: string; name: string };
+/** TW-16: 倉庫・所持品の 1 個。cursed（M24 B-1）は鑑定済みかつ実体の cursed */
+export type TownMenuStorageRow = { instanceId: string; name: string; cursed: boolean };
 /**
  * TW-17: 強化の部位 1 つ（EQUIP_SLOTS の順）。block は null なら対象にできる、"slot empty"（空き）/ "unique"（ユニーク）。
  * name は表示名（空きなら null）、level は実体の level（空きなら 0）
@@ -827,6 +828,8 @@ export type TownMenuUpgradeSlot = {
   plainName: string | null;
   level: number;
   block: string | null;
+  /** M24 B-1: 鑑定済みかつ実体の cursed（空きなら false） */
+  cursed: boolean;
 };
 /**
  * TW-17: 触媒の候補 1 個（パーティ全員の inventory の鑑定済みの汎用装備。メンバーの並び順 → inventory の順。M16 で本人だけから全員に広げた。
@@ -842,6 +845,8 @@ export type TownMenuUpgradeCatalyst = {
   ownerId: string | null;
   ownerName: string;
   power: Pick<ItemPreview, "attack" | "ac" | "magicPower">;
+  /** M24 B-1: 鑑定済みかつ実体の cursed */
+  cursed: boolean;
 };
 /** TW-17（M16）: town.upgrade の触媒 1 個の指定（持ち主と実体）。消費は持ち主の inventory から。M17: memberId null は倉庫の品（消費は warehouse から） */
 export type UpgradeCatalystRef = { memberId: string | null; instanceId: string };

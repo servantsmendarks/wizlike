@@ -425,7 +425,7 @@ describe("TW-17 upgradePreview と townMenu.upgrade（表示層向けの問い�
       ["gauntlet", null, null, 0, "slot empty"],
       ["accessory", null, null, 0, "slot empty"],
     ]);
-    expect(c1.catalysts).toEqual([{ instanceId: a, name: "短剣 +1", plainName: "短剣", level: 1, ownerId: "c1", ownerName: "アルド", power: { attack: "1d4+1", ac: null, magicPower: null } }]);
+    expect(c1.catalysts).toEqual([{ instanceId: a, name: "短剣 +1", plainName: "短剣", level: 1, ownerId: "c1", ownerName: "アルド", power: { attack: "1d4+1", ac: null, magicPower: null }, cursed: false }]);
     // ユニークだけを装備した者は canUpgrade 偽
     const s2 = cloneState(s);
     const c5 = member(s2, "c5"); // 魔術師（杖だけ）
@@ -445,10 +445,10 @@ describe("TW-17 / IT-70 M16（G-2）触媒はパーティ全員の所持品か�
     const w = give(s, "c6", { itemId: "dagger", level: 1 });
     const m = townMenu(s, data)!.upgrade;
     const expected = [
-      { instanceId: y, name: "上質な長剣", plainName: "上質な長剣", level: 0, ownerId: "c1", ownerName: "アルド", power: { attack: "1d8", ac: null, magicPower: null } },
-      { instanceId: x, name: "短剣 +2", plainName: "短剣", level: 2, ownerId: "c3", ownerName: "キリ", power: { attack: "1d4+2", ac: null, magicPower: null } },
-      { instanceId: z, name: "短剣", plainName: "短剣", level: 0, ownerId: "c3", ownerName: "キリ", power: { attack: "1d4", ac: null, magicPower: null } },
-      { instanceId: w, name: "短剣 +1", plainName: "短剣", level: 1, ownerId: "c6", ownerName: "フィン", power: { attack: "1d4+1", ac: null, magicPower: null } },
+      { instanceId: y, name: "上質な長剣", plainName: "上質な長剣", level: 0, ownerId: "c1", ownerName: "アルド", power: { attack: "1d8", ac: null, magicPower: null }, cursed: false },
+      { instanceId: x, name: "短剣 +2", plainName: "短剣", level: 2, ownerId: "c3", ownerName: "キリ", power: { attack: "1d4+2", ac: null, magicPower: null }, cursed: false },
+      { instanceId: z, name: "短剣", plainName: "短剣", level: 0, ownerId: "c3", ownerName: "キリ", power: { attack: "1d4", ac: null, magicPower: null }, cursed: false },
+      { instanceId: w, name: "短剣 +1", plainName: "短剣", level: 1, ownerId: "c6", ownerName: "フィン", power: { attack: "1d4+1", ac: null, magicPower: null }, cursed: false },
     ];
     for (const mm of m.members) expect(mm.catalysts, mm.memberId).toEqual(expected);
     // 装備中の品（全員の equipment）は候補に出ない
@@ -522,9 +522,9 @@ describe("TW-17 / IT-70 M17 倉庫の品を触媒に", () => {
     const x = give(s, "c2", { itemId: "dagger", level: 1 });
     const m = townMenu(s, data)!.upgrade;
     const expected = [
-      { instanceId: x, name: "短剣 +1", plainName: "短剣", level: 1, ownerId: "c2", ownerName: "ベルク", power: { attack: "1d4+1", ac: null, magicPower: null } },
-      { instanceId: p, name: "短剣 +3", plainName: "短剣", level: 3, ownerId: null, ownerName: "", power: { attack: "1d4+3", ac: null, magicPower: null } },
-      { instanceId: q, name: "長剣", plainName: "長剣", level: 0, ownerId: null, ownerName: "", power: { attack: "1d8", ac: null, magicPower: null } },
+      { instanceId: x, name: "短剣 +1", plainName: "短剣", level: 1, ownerId: "c2", ownerName: "ベルク", power: { attack: "1d4+1", ac: null, magicPower: null }, cursed: false },
+      { instanceId: p, name: "短剣 +3", plainName: "短剣", level: 3, ownerId: null, ownerName: "", power: { attack: "1d4+3", ac: null, magicPower: null }, cursed: false },
+      { instanceId: q, name: "長剣", plainName: "長剣", level: 0, ownerId: null, ownerName: "", power: { attack: "1d8", ac: null, magicPower: null }, cursed: false },
     ];
     for (const mm of m.members) expect(mm.catalysts, mm.memberId).toEqual(expected);
     // 表示層が持ち主の欄に引く文言（core は日本語を持たない）

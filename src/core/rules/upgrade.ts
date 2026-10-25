@@ -248,7 +248,7 @@ export function upgradeMenu(state: GameState, data: GameData): TownMenu["upgrade
       const c = catalystOf(state, data, { memberId: owner.id, instanceId: id });
       if (c === null) return [];
       const name = itemDisplayName(state, data, id);
-      return [{ instanceId: id, name, plainName: plainNameOf(state, data, id), level: c.inst.level, ownerId: owner.id, ownerName: owner.name, power: catalystPower(data, c.inst) }];
+      return [{ instanceId: id, name, plainName: plainNameOf(state, data, id), level: c.inst.level, ownerId: owner.id, ownerName: owner.name, power: catalystPower(data, c.inst), cursed: c.inst.identified && c.inst.cursed }];
     }),
   );
   for (const id of state.warehouse) {
@@ -262,6 +262,7 @@ export function upgradeMenu(state: GameState, data: GameData): TownMenu["upgrade
       ownerId: null,
       ownerName: "",
       power: catalystPower(data, c.inst),
+      cursed: c.inst.identified && c.inst.cursed,
     });
   }
   return {
@@ -277,6 +278,7 @@ export function upgradeMenu(state: GameState, data: GameData): TownMenu["upgrade
           plainName: id === null ? null : plainNameOf(state, data, id),
           level: id === null ? 0 : (state.items[id]?.level ?? 0),
           block,
+          cursed: id !== null && state.items[id]?.identified === true && state.items[id]?.cursed === true,
         };
       });
       return { memberId: ch.id, name: ch.name, canUpgrade: slots.some((s) => s.block === null), slots, catalysts: catalysts.map((c) => ({ ...c })) };

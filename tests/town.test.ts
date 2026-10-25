@@ -1151,12 +1151,12 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
       ],
       // IT-61: 消耗品は floor(price × 0.5)（薬草 5・解毒草 7・帰還の糸 25）。装備中の品は inventory に無いので出ない
       sellable: [
-        { memberId: "c1", name: "アルド", items: [{ instanceId: "i4", name: "薬草", price: 5 }], total: 5 },
+        { memberId: "c1", name: "アルド", items: [{ instanceId: "i4", name: "薬草", price: 5, cursed: false }], total: 5 },
         { memberId: "c2", name: "ベルク", items: [], total: 0 },
-        { memberId: "c3", name: "キリ", items: [{ instanceId: "i10", name: "薬草", price: 5 }], total: 5 },
-        { memberId: "c4", name: "ドナ", items: [{ instanceId: "i13", name: "解毒草", price: 7 }], total: 7 },
-        { memberId: "c5", name: "エル", items: [{ instanceId: "i15", name: "帰還の糸", price: 25 }], total: 25 },
-        { memberId: "c6", name: "フィン", items: [{ instanceId: "i18", name: "薬草", price: 5 }], total: 5 },
+        { memberId: "c3", name: "キリ", items: [{ instanceId: "i10", name: "薬草", price: 5, cursed: false }], total: 5 },
+        { memberId: "c4", name: "ドナ", items: [{ instanceId: "i13", name: "解毒草", price: 7, cursed: false }], total: 7 },
+        { memberId: "c5", name: "エル", items: [{ instanceId: "i15", name: "帰還の糸", price: 25, cursed: false }], total: 25 },
+        { memberId: "c6", name: "フィン", items: [{ instanceId: "i18", name: "薬草", price: 5, cursed: false }], total: 5 },
       ],
       buyback: [],
       identify: { items: [] }, // 2026-10-05: 鑑定料は品ごと（IT-65）になり、全体の fee / affordable を外した
@@ -1199,9 +1199,9 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
       ["charm", "護符 +2", 2, 400, false],
     ]);
     // 2026-10-05: 未鑑定も見た目の品種（長剣 Lv0）の売値 floor(100 × 0.5) = 50 で売れる。鑑定料は max(10, floor(50 × 0.5)) = 25（所持金 150 で払える）
-    expect(m.sellable.find((x) => x.memberId === "c2")!.items).toEqual([{ instanceId: unid, name: "剣？", price: 50 }]);
+    expect(m.sellable.find((x) => x.memberId === "c2")!.items).toEqual([{ instanceId: unid, name: "剣？", price: 50, cursed: false }]);
     expect(m.identify).toEqual({ items: [{ memberId: "c2", memberName: "ベルク", instanceId: unid, name: "剣？", fee: 25, affordable: true }] });
-    expect(m.buyback).toEqual([{ instanceId: u, name: "上質な影法師の剣", price: 1200, affordable: false }]);
+    expect(m.buyback).toEqual([{ instanceId: u, name: "上質な影法師の剣", price: 1200, affordable: false, cursed: false }]);
   });
 
   test("TW-05/UI-52（M18 5-2）townMenu.shop.sellable[].total は売れる品の売値の合計（品が無ければ 0。未鑑定は見た目の売値で数える）。乱数を使わず state を変えない", () => {
@@ -1656,8 +1656,8 @@ describe("IT-61/IT-65 鑑定料と未鑑定の売値（2026-10-05 ユーザー�
     member(s, "c2").inventory.push(sword, dagger);
     const m = townMenu(s, data)!.shop;
     expect(m.sellable.find((x) => x.memberId === "c2")!.items).toEqual([
-      { instanceId: sword, name: "剣？", price: 50 },
-      { instanceId: dagger, name: "短い刃？", price: 7 },
+      { instanceId: sword, name: "剣？", price: 50, cursed: false },
+      { instanceId: dagger, name: "短い刃？", price: 7, cursed: false },
     ]);
     // 所持金 24: 長剣の 25 は払えず、短剣の 10 は払える
     expect(m.identify).toEqual({
@@ -1747,16 +1747,16 @@ describe("TW-16/IT-64 倉庫（town.storage。M7）", () => {
       slotsFree: 38,
       depositAllOk: true,
       items: [
-        { instanceId: "i19", name: "剣？" },
-        { instanceId: "i4", name: "薬草" },
+        { instanceId: "i19", name: "剣？", cursed: false },
+        { instanceId: "i4", name: "薬草", cursed: false },
       ],
       members: [
         { memberId: "c1", name: "アルド", slotsFree: 6, depositAllOk: false, items: [] }, // CH-71（M17）: 力 14 で上限 9。TW-16b: 品が無いので false
         { memberId: "c2", name: "ベルク", slotsFree: 7, depositAllOk: false, items: [] }, // 力 15 で上限 9
-        { memberId: "c3", name: "キリ", slotsFree: 4, depositAllOk: true, items: [{ instanceId: "i10", name: "薬草" }] },
-        { memberId: "c4", name: "ドナ", slotsFree: 5, depositAllOk: true, items: [{ instanceId: "i13", name: "解毒草" }] },
-        { memberId: "c5", name: "エル", slotsFree: 6, depositAllOk: true, items: [{ instanceId: "i15", name: "帰還の糸" }] },
-        { memberId: "c6", name: "フィン", slotsFree: 5, depositAllOk: true, items: [{ instanceId: "i18", name: "薬草" }] },
+        { memberId: "c3", name: "キリ", slotsFree: 4, depositAllOk: true, items: [{ instanceId: "i10", name: "薬草", cursed: false }] },
+        { memberId: "c4", name: "ドナ", slotsFree: 5, depositAllOk: true, items: [{ instanceId: "i13", name: "解毒草", cursed: false }] },
+        { memberId: "c5", name: "エル", slotsFree: 6, depositAllOk: true, items: [{ instanceId: "i15", name: "帰還の糸", cursed: false }] },
+        { memberId: "c6", name: "フィン", slotsFree: 5, depositAllOk: true, items: [{ instanceId: "i18", name: "薬草", cursed: false }] },
       ],
     });
   });
@@ -2486,5 +2486,36 @@ describe("TW-34 結末の語り（M12）", () => {
     const ctx = ctxFor(s);
     returnToTown(ctx, "dungeon.return");
     expect(ctx.events.map(keyOf)).toEqual(["dungeon.return", "town.enter", "sanChanged", "town.mercy.offer", "screen"]);
+  });
+});
+
+describe("UI-52/IT-32（M24 B-1）townMenu の品の行の cursed（鑑定済みかつ実体の cursed。表示層が名前を danger で描く）", () => {
+  test("UI-52/IT-32 売る・買い戻し・倉庫・強化の部位・触媒の行の cursed は鑑定済みの呪われた品だけ真（未鑑定の呪われた品と普通の品は偽）。乱数を使わない", () => {
+    const s = town();
+    const known = cursedDagger(s, true);
+    const hidden = cursedDagger(s, false);
+    const plain = createItemInstance(s, { itemId: "dagger", identified: true });
+    member(s, "c1").inventory = [known, hidden, plain];
+    const stored = cursedDagger(s, true);
+    s.warehouse.push(stored);
+    const u = createItemInstance(s, { itemId: "long_sword", uniqueId: "shadowfolk_sword", rarity: "fine", identified: true, cursed: true });
+    s.buyback.push(u);
+    const worn = cursedDagger(s, true);
+    member(s, "c2").equipment.weapon = worn;
+    const rng = { ...s.rng };
+    const m = townMenu(s, data)!;
+    expect(m.shop.sellable[0]!.items.map((r) => [r.instanceId, r.cursed])).toEqual([[known, true], [hidden, false], [plain, false]]);
+    expect(m.shop.buyback.map((r) => r.cursed)).toEqual([true]);
+    expect(m.storage.items.map((r) => [r.instanceId, r.cursed])).toEqual([[stored, true]]);
+    expect(m.storage.members[0]!.items.map((r) => r.cursed)).toEqual([true, false, false]);
+    expect(m.upgrade.members[1]!.slots.find((x) => x.slot === "weapon")!.cursed).toBe(true);
+    expect(m.upgrade.members[1]!.slots.filter((x) => x.instanceId === null).every((x) => !x.cursed)).toBe(true);
+    // 触媒は鑑定済みの汎用装備だけ（未鑑定は出ない）
+    expect(m.upgrade.members[0]!.catalysts.filter((c) => [known, plain, stored].includes(c.instanceId)).map((c) => [c.instanceId, c.cursed])).toEqual([
+      [known, true],
+      [plain, false],
+      [stored, true],
+    ]);
+    expect(s.rng).toEqual(rng);
   });
 });
