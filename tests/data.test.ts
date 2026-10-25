@@ -239,6 +239,13 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.economy.upgradeMaxCatalysts = 0), "config.json", "economy.upgradeMaxCatalysts: expected integer >= 1, got 0");
     expectIssue((r) => delete r.config.economy.upgradeDecay, "config.json", "economy.upgradeDecay: missing required field");
   });
+  test("data: TW-17 M25 B-1 economy.upgradeCatalystWarnFrom（rare）【仮】は上質・希少・伝説の id（normal は一言の {rarity} の文が無いので不可）", () => {
+    expect(config.economy.upgradeCatalystWarnFrom).toBe("rare");
+    expectIssue((r) => (r.config.economy.upgradeCatalystWarnFrom = "normal"), "config.json", "economy.upgradeCatalystWarnFrom: expected one of fine|rare|legendary");
+    expectIssue((r) => (r.config.economy.upgradeCatalystWarnFrom = "mythic"), "config.json", "economy.upgradeCatalystWarnFrom: expected one of fine|rare|legendary");
+    expectIssue((r) => delete r.config.economy.upgradeCatalystWarnFrom, "config.json", "economy.upgradeCatalystWarnFrom: missing required field");
+    for (const ok of ["fine", "rare", "legendary"]) expect(issuesOf((r) => (r.config.economy.upgradeCatalystWarnFrom = ok))).toEqual([]);
+  });
   test("data: TW-07 economy.uncurseFeeRatio（2）・uncurseFeeMin（50）【仮】の検証。M24: uncurseCost は廃止", () => {
     const e = config.economy;
     expect([e.uncurseFeeRatio, e.uncurseFeeMin]).toEqual([2, 50]);

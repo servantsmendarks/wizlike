@@ -363,7 +363,7 @@ describe("UI-52 街のページ", () => {
     expect(rows.map((e) => e.label)).toEqual([`○${item}　ろくもじのな`, "○短剣 +0　ろくもじのな"]);
     for (const e of rows) expect(textUnits(e.label), e.label).toBeLessThanOrEqual(39);
     // 39 単位を超える行（名前の長いベースを足したデータを想定した値）は、持ち主の名前を先頭 2 字 +「…」に縮める
-    const long = { instanceId: "i1", name: "とてもながいなまえのけん +12", plainName: "とてもながいなまえのけん", level: 12, ownerId: "c3", ownerName: "ろくもじのな", power: { attack: "1d6+12", ac: null, magicPower: null }, cursed: false };
+    const long = { instanceId: "i1", name: "とてもながいなまえのけん +12", plainName: "とてもながいなまえのけん", level: 12, ownerId: "c3", ownerName: "ろくもじのな", power: { attack: "1d6+12", ac: null, magicPower: null }, cursed: false, rarity: "normal" as const, warn: false };
     expect(textUnits(`○とてもながいなまえのけん +12　ろくもじのな`)).toBeGreaterThan(39);
     expect(upgradeCatalystLabel(long, false, S)).toBe("○とてもながいなまえのけん +12　ろく…");
     expect(upgradeCatalystLabel(long, true, S)).toBe("●とてもながいなまえのけん +12　ろく…");
@@ -397,7 +397,7 @@ describe("UI-52 街のページ", () => {
     after.warehouse = [];
     expect(townRepair({ upCat: picked }, menuOf(after))).toEqual({ upCat: sel });
     // ownerName（倉庫は空文字）ではなく strings の「倉庫」を出す（差し替えに追従）
-    const row = { instanceId: "i1", name: "短剣 +3", plainName: "短剣", level: 3, ownerId: null, ownerName: "", power: { attack: "1d4+3", ac: null, magicPower: null }, cursed: false };
+    const row = { instanceId: "i1", name: "短剣 +3", plainName: "短剣", level: 3, ownerId: null, ownerName: "", power: { attack: "1d4+3", ac: null, magicPower: null }, cursed: false, rarity: "normal" as const, warn: false };
     expect(upgradeCatalystLabel(row, false, S)).toBe("○短剣 +3　倉庫");
     expect(upgradeCatalystLabel(row, false, { ...S, "town.shop.menu.storage": "蔵" })).toBe("○短剣 +3　蔵");
   });

@@ -295,6 +295,11 @@ export type Config = {
     upgradeDecay: number;
     /** TW-17【仮】: 触媒の最大個数 */
     upgradeMaxCatalysts: number;
+    /**
+     * TW-17（M25 B-1）【仮】: 触媒の候補の warn（表示層が行に ★ を付け、付けたときに赤の一言を語る）の線引き。品の希少度が
+     * この id 以上（RARITY_ORDER の順）なら真。上質・希少・伝説のどれか（normal は一言の {rarity} の文が無いので受け付けない）
+     */
+    upgradeCatalystWarnFrom: Exclude<RarityDef["id"], "normal">;
   };
   /** items.md §10（M7）の数値【仮】 */
   items: ItemsConfig;

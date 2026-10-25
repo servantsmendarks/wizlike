@@ -431,7 +431,7 @@ describe("TW-17 upgradePreview と townMenu.upgrade（表示層向けの問い�
       ["gauntlet", null, null, 0, "slot empty"],
       ["accessory", null, null, 0, "slot empty"],
     ]);
-    expect(c1.catalysts).toEqual([{ instanceId: a, name: "短剣 +1", plainName: "短剣", level: 1, ownerId: "c1", ownerName: "アルド", power: { attack: "1d4+1", ac: null, magicPower: null }, cursed: false }]);
+    expect(c1.catalysts).toEqual([{ instanceId: a, name: "短剣 +1", plainName: "短剣", level: 1, ownerId: "c1", ownerName: "アルド", power: { attack: "1d4+1", ac: null, magicPower: null }, cursed: false, rarity: "normal", warn: false }]);
     // ユニークだけを装備した者は canUpgrade 偽
     const s2 = cloneState(s);
     const c5 = member(s2, "c5"); // 魔術師（杖だけ）
@@ -451,10 +451,10 @@ describe("TW-17 / IT-70 M16（G-2）触媒はパーティ全員の所持品か�
     const w = give(s, "c6", { itemId: "dagger", level: 1 });
     const m = townMenu(s, data)!.upgrade;
     const expected = [
-      { instanceId: y, name: "上質な長剣", plainName: "上質な長剣", level: 0, ownerId: "c1", ownerName: "アルド", power: { attack: "1d8", ac: null, magicPower: null }, cursed: false },
-      { instanceId: x, name: "短剣 +2", plainName: "短剣", level: 2, ownerId: "c3", ownerName: "キリ", power: { attack: "1d4+2", ac: null, magicPower: null }, cursed: false },
-      { instanceId: z, name: "短剣", plainName: "短剣", level: 0, ownerId: "c3", ownerName: "キリ", power: { attack: "1d4", ac: null, magicPower: null }, cursed: false },
-      { instanceId: w, name: "短剣 +1", plainName: "短剣", level: 1, ownerId: "c6", ownerName: "フィン", power: { attack: "1d4+1", ac: null, magicPower: null }, cursed: false },
+      { instanceId: y, name: "上質な長剣", plainName: "上質な長剣", level: 0, ownerId: "c1", ownerName: "アルド", power: { attack: "1d8", ac: null, magicPower: null }, cursed: false, rarity: "fine", warn: false },
+      { instanceId: x, name: "短剣 +2", plainName: "短剣", level: 2, ownerId: "c3", ownerName: "キリ", power: { attack: "1d4+2", ac: null, magicPower: null }, cursed: false, rarity: "normal", warn: false },
+      { instanceId: z, name: "短剣", plainName: "短剣", level: 0, ownerId: "c3", ownerName: "キリ", power: { attack: "1d4", ac: null, magicPower: null }, cursed: false, rarity: "normal", warn: false },
+      { instanceId: w, name: "短剣 +1", plainName: "短剣", level: 1, ownerId: "c6", ownerName: "フィン", power: { attack: "1d4+1", ac: null, magicPower: null }, cursed: false, rarity: "normal", warn: false },
     ];
     for (const mm of m.members) expect(mm.catalysts, mm.memberId).toEqual(expected);
     // 装備中の品（全員の equipment）は候補に出ない
@@ -528,13 +528,39 @@ describe("TW-17 / IT-70 M17 倉庫の品を触媒に", () => {
     const x = give(s, "c2", { itemId: "dagger", level: 1 });
     const m = townMenu(s, data)!.upgrade;
     const expected = [
-      { instanceId: x, name: "短剣 +1", plainName: "短剣", level: 1, ownerId: "c2", ownerName: "ベルク", power: { attack: "1d4+1", ac: null, magicPower: null }, cursed: false },
-      { instanceId: p, name: "短剣 +3", plainName: "短剣", level: 3, ownerId: null, ownerName: "", power: { attack: "1d4+3", ac: null, magicPower: null }, cursed: false },
-      { instanceId: q, name: "長剣", plainName: "長剣", level: 0, ownerId: null, ownerName: "", power: { attack: "1d8", ac: null, magicPower: null }, cursed: false },
+      { instanceId: x, name: "短剣 +1", plainName: "短剣", level: 1, ownerId: "c2", ownerName: "ベルク", power: { attack: "1d4+1", ac: null, magicPower: null }, cursed: false, rarity: "normal", warn: false },
+      { instanceId: p, name: "短剣 +3", plainName: "短剣", level: 3, ownerId: null, ownerName: "", power: { attack: "1d4+3", ac: null, magicPower: null }, cursed: false, rarity: "normal", warn: false },
+      { instanceId: q, name: "長剣", plainName: "長剣", level: 0, ownerId: null, ownerName: "", power: { attack: "1d8", ac: null, magicPower: null }, cursed: false, rarity: "normal", warn: false },
     ];
     for (const mm of m.members) expect(mm.catalysts, mm.memberId).toEqual(expected);
     // 表示層が持ち主の欄に引く文言（core は日本語を持たない）
     expect(data.strings["town.shop.menu.storage"]).toBe("倉庫");
+  });
+
+  test("TW-17 M25 B-1 触媒の候補の rarity と warn（rare 以上で真。config を fine にすると上質でも真）。メンバーの品も倉庫の品も、呪いとは別に決まる。乱数と状態は変えない", () => {
+    expect(E.upgradeCatalystWarnFrom).toBe("rare");
+    const s = town(1000, 0);
+    const n = give(s, "c1", { itemId: "dagger", rarity: "normal" });
+    const f = give(s, "c2", { itemId: "dagger", rarity: "fine" });
+    const r = give(s, "c3", { itemId: "dagger", rarity: "rare", cursed: true });
+    const l = store(s, { itemId: "dagger", rarity: "legendary" });
+    const before = cloneState(s);
+    const pick = (d: typeof data) => townMenu(s, d)!.upgrade.members[0]!.catalysts.map((c) => [c.instanceId, c.rarity, c.warn, c.cursed]);
+    expect(pick(data)).toEqual([
+      [n, "normal", false, false],
+      [f, "fine", false, false],
+      [r, "rare", true, true],
+      [l, "legendary", true, false],
+    ]);
+    // 線引きは config だけで動く（core の RARITY_ORDER の順で「以上」）
+    const fine = { ...data, config: { ...data.config, economy: { ...E, upgradeCatalystWarnFrom: "fine" as const } } };
+    expect(pick(fine).map((x) => x[2])).toEqual([false, true, true, true]);
+    const legendary = { ...data, config: { ...data.config, economy: { ...E, upgradeCatalystWarnFrom: "legendary" as const } } };
+    expect(pick(legendary).map((x) => x[2])).toEqual([false, false, false, true]);
+    // どの者の段でも同じ値
+    const m = townMenu(s, data)!.upgrade;
+    for (const mm of m.members) expect(mm.catalysts.map((c) => c.warn), mm.memberId).toEqual([false, false, true, true]);
+    expect(s).toEqual(before);
   });
 
   test("TW-17/IT-70 M17 倉庫の品を触媒にすると倉庫から消える（ほかの倉庫の品と並びは残る）。メンバーの品と混ぜられ、成功率は同じ式。品は触媒の分だけ減る", () => {

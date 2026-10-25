@@ -7,7 +7,7 @@
 import type { Config, EquipSlot, GameData } from "../data/index";
 import { EQUIP_SLOTS } from "../data/index";
 import { randInt } from "../rng";
-import { destroyItemInstance, equipmentPlainName, findBase, itemDisplayName, memberById } from "../state";
+import { destroyItemInstance, equipmentPlainName, findBase, itemDisplayName, memberById, RARITY_ORDER } from "../state";
 import type { Character, GameState, ItemInstance, ItemPreview, RuleContext, TownMenu, TownMenuUpgradeCatalyst, UpgradeCatalystRef, UpgradePreview, UpgradePreviewKind } from "../types";
 import { itemPowerPreview } from "./equip-stats";
 import { shopItemPreview } from "./shop";
@@ -237,6 +237,11 @@ function catalystPower(data: GameData, inst: ItemInstance): TownMenuUpgradeCatal
   return itemPowerPreview(data, inst, findBase(data, inst.itemId)!);
 }
 
+/** TW-17（M25 B-1）: 触媒の候補の希少度と warn（希少度が config.economy.upgradeCatalystWarnFrom 以上。RARITY_ORDER の順） */
+function catalystRarity(data: GameData, inst: ItemInstance): Pick<TownMenuUpgradeCatalyst, "rarity" | "warn"> {
+  return { rarity: inst.rarity, warn: RARITY_ORDER.indexOf(inst.rarity) >= RARITY_ORDER.indexOf(data.config.economy.upgradeCatalystWarnFrom) };
+}
+
 /**
  * UI-52 / TW-17: 闇魔術の強化のページの値（townMenu.upgrade。純粋）。全員（並び順。life を問わない）。
  * 触媒の候補は全員で同じ（パーティ全員の inventory。メンバーの並び順 → inventory の順。M16 の G-2）。その後ろに倉庫の品を倉庫の順で
@@ -249,7 +254,7 @@ export function upgradeMenu(state: GameState, data: GameData): TownMenu["upgrade
       const c = catalystOf(state, data, { memberId: owner.id, instanceId: id });
       if (c === null) return [];
       const name = itemDisplayName(state, data, id);
-      return [{ instanceId: id, name, plainName: plainNameOf(state, data, id), level: c.inst.level, ownerId: owner.id, ownerName: owner.name, power: catalystPower(data, c.inst), cursed: c.inst.identified && c.inst.cursed }];
+      return [{ instanceId: id, name, plainName: plainNameOf(state, data, id), level: c.inst.level, ownerId: owner.id, ownerName: owner.name, power: catalystPower(data, c.inst), cursed: c.inst.identified && c.inst.cursed, ...catalystRarity(data, c.inst) }];
     }),
   );
   for (const id of state.warehouse) {
@@ -264,6 +269,7 @@ export function upgradeMenu(state: GameState, data: GameData): TownMenu["upgrade
       ownerName: "",
       power: catalystPower(data, c.inst),
       cursed: c.inst.identified && c.inst.cursed,
+      ...catalystRarity(data, c.inst),
     });
   }
   return {

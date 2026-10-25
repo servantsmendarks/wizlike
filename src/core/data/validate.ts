@@ -402,6 +402,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       upgradeRatePerCatalyst: I(PERCENT),
       upgradeDecay: N(RATIO),
       upgradeMaxCatalysts: I(POS_INT),
+      upgradeCatalystWarnFrom: E(RARITY_IDS.filter((r) => r !== "normal")), // TW-17（M25 B-1）【仮】
     }),
     // items.md §10（M7）【仮】
     items: F({

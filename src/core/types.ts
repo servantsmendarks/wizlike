@@ -864,6 +864,10 @@ export type TownMenuUpgradeCatalyst = {
   power: Pick<ItemPreview, "attack" | "ac" | "magicPower">;
   /** M24 B-1: 鑑定済みかつ実体の cursed */
   cursed: boolean;
+  /** M25 B-1: 実体の希少度（候補は鑑定済みだけなので実体の値） */
+  rarity: Rarity;
+  /** M25 B-1: rarity が config.economy.upgradeCatalystWarnFrom 以上（RARITY_ORDER の順）。表示層は行に ★ を付け、付けたときに赤の一言を語る（線引きは core と config だけ） */
+  warn: boolean;
 };
 /** TW-17（M16）: town.upgrade の触媒 1 個の指定（持ち主と実体）。消費は持ち主の inventory から。M17: memberId null は倉庫の品（消費は warehouse から） */
 export type UpgradeCatalystRef = { memberId: string | null; instanceId: string };
