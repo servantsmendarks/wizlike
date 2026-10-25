@@ -626,7 +626,7 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
         const r = checkEquip(state, data, ch.id, id);
         const block = r === null ? null : (BLOCK_OF[r] ?? null);
         if (r !== null && block === null) throw new Error(`campMenu: unexpected equip reason ${r}`);
-        const cand: CampEquipCandidate = { instanceId: id, name: itemDisplayName(state, data, id), slot, block };
+        const cand: CampEquipCandidate = { instanceId: id, name: itemDisplayName(state, data, id), slot, block, cursed: inst.identified && inst.cursed };
         if (place === "town") {
           // TW-16c（M21）: 銀行の状態の入れ替え（旧品は倉庫へ）の理由
           const w = checkEquip(state, data, ch.id, id, undefined, "warehouse");
@@ -647,7 +647,7 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
           const r = checkEquip(state, data, ch.id, id, "warehouse", "warehouse");
           const block = r === null ? null : (BLOCK_OF[r] ?? null);
           if (r !== null && block === null) throw new Error(`campMenu: unexpected warehouse equip reason ${r}`);
-          warehouseCandidates.push({ instanceId: id, name: itemDisplayName(state, data, id), slot: base.slot, block, toWarehouseBlock: block });
+          warehouseCandidates.push({ instanceId: id, name: itemDisplayName(state, data, id), slot: base.slot, block, cursed: inst.cursed, toWarehouseBlock: block });
         }
       }
       return {

@@ -1037,16 +1037,16 @@ describe("UI-53/TW-03 campMenu", () => {
     const m = campMenu(s, data)!;
     expect(m.members.map((x) => x.row)).toEqual(["front", "front", "front", "back", "back", "back"]);
     expect(m.members.find((x) => x.id === "c5")!.equipCandidates).toEqual([
-      { instanceId: "i19", name: "長剣", slot: "weapon", block: "class" },
-      { instanceId: "i20", name: "短い刃？", slot: "weapon", block: "unidentified" },
-      { instanceId: "i21", name: "革兜", slot: "helm", block: null },
+      { instanceId: "i19", name: "長剣", slot: "weapon", block: "class", cursed: false },
+      { instanceId: "i20", name: "短い刃？", slot: "weapon", block: "unidentified", cursed: false },
+      { instanceId: "i21", name: "革兜", slot: "helm", block: null, cursed: false },
     ]);
     // 呪いの短剣を装備した c3 の inventory は [i10 薬草, i7 短剣（入れ替えた旧品）]
     expect(m.members.find((x) => x.id === "c3")!.equipCandidates).toEqual([
-      { instanceId: "i7", name: "短剣", slot: "weapon", block: "cursedSlot" },
+      { instanceId: "i7", name: "短剣", slot: "weapon", block: "cursedSlot", cursed: false },
     ]);
     expect(m.members.find((x) => x.id === "c2")!.equipCandidates).toEqual([
-      { instanceId: "i23", name: "革兜", slot: "helm", block: "cannotAct" },
+      { instanceId: "i23", name: "革兜", slot: "helm", block: "cannotAct", cursed: false },
     ]);
     const c3 = m.members.find((x) => x.id === "c3")!;
     expect(c3.slots.map((x) => x.slot)).toEqual(["weapon", "armor", "shield", "helm", "gauntlet", "accessory"]);
@@ -1543,7 +1543,7 @@ describe("TW-16c（M21）倉庫から装備する・倉庫へ外す（party.equi
     const herb = stash(s, "herb");
     s = herb.s;
     const c5 = campMenu(s, data)!.members.find((m) => m.id === "c5")!;
-    expect(c5.warehouseCandidates).toEqual([{ instanceId: cap.id, name: nameOfItem(s, cap.id), slot: "helm", block: null, toWarehouseBlock: null }]);
+    expect(c5.warehouseCandidates).toEqual([{ instanceId: cap.id, name: nameOfItem(s, cap.id), slot: "helm", block: null, cursed: false, toWarehouseBlock: null }]);
     const c1 = campMenu(s, data)!.members.find((m) => m.id === "c1")!;
     expect(c1.warehouseCandidates!.map((c) => c.instanceId)).toEqual([cap.id, sw.id]);
     expect(c1.slots.find((x) => x.slot === "shield")!.canUnequipToWarehouse).toBe(true);
@@ -1656,5 +1656,21 @@ describe("TW-16c（M21）倉庫から装備する・倉庫へ外す（party.equi
     }
     expect(units(S["camp.equipBlock.full"]!)).toBeLessThanOrEqual(units(S["camp.equipBlock.cursedSlot"]!));
     expect(units(S["camp.equipBlock.warehouseFull"]!)).toBeLessThanOrEqual(units(S["camp.equipBlock.cursedSlot"]!));
+  });
+});
+
+describe("UI-59/IT-32（M24 B-1）campMenu の装備の候補の cursed", () => {
+  test("UI-59/IT-32 equipCandidates と warehouseCandidates の cursed は鑑定済みの呪われた品だけ真（未鑑定の呪われた品は偽。中身を漏らさない）", () => {
+    const known = giveCursed(inTown(), "c1", true);
+    const hidden = giveCursed(known.s, "c1", false);
+    const s = hidden.s;
+    const stored = cursedDagger(s, true);
+    s.warehouse.push(stored);
+    const c1 = campMenu(s, data)!.members.find((m) => m.id === "c1")!;
+    expect(c1.equipCandidates.filter((c) => [known.id, hidden.id].includes(c.instanceId)).map((c) => [c.instanceId, c.cursed])).toEqual([
+      [known.id, true],
+      [hidden.id, false],
+    ]);
+    expect(c1.warehouseCandidates!.find((c) => c.instanceId === stored)!.cursed).toBe(true);
   });
 });

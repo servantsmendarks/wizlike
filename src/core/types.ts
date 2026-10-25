@@ -1030,6 +1030,8 @@ export type CampEquipCandidate = {
   slot: EquipSlot;
   /** null なら party.equip を受け付ける（checkEquip === null と同じ） */
   block: EquipBlock | null;
+  /** M24 B-1: 鑑定済みかつ実体の cursed（CampSlotView.cursed と同じ基準。表示層が名前を danger で描く） */
+  cursed: boolean;
   /**
    * TW-16c（M21）: 街（place town）だけ。旧品を倉庫へ入れる装備（party.equip の to "warehouse"。倉庫の品は from も "warehouse"）の理由の写し。
    * 銀行の状態の表示層はこちらを使う。街でなければ省略
