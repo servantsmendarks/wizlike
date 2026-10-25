@@ -432,7 +432,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       },
       warehouseSlots: I(POS_INT), // IT-64
     }),
-    bank: F({ amounts: L(I(POS_INT)) }), // TW-10（M17）【仮】
+    bank: F({ amounts: L(I(POS_INT)), expandCost: I(POS_INT), expandSlots: I(POS_INT), maxSlots: I(POS_INT) }), // TW-10（M17。M24 D-1 で拡張の 3 欄）【仮】
     town: F({
       innRanks: L(
         F({
@@ -524,6 +524,10 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
   const idMin = numOf(get(c, "identify", "min"));
   const idMax = numOf(get(c, "identify", "max"));
   if (idMin !== undefined && idMax !== undefined && idMin > idMax) report(ctx, "identify.min", `CH-77: min ${idMin} > max ${idMax}`);
+  // TW-10 / IT-64（M24 D-1）: 倉庫の初期の枠数 ≤ 上限
+  const whInit = intOf(get(c, "items", "warehouseSlots"));
+  const whMax = intOf(get(c, "bank", "maxSlots"));
+  if (whInit !== undefined && whMax !== undefined && whInit > whMax) report(ctx, "bank.maxSlots", `TW-10: maxSlots ${whMax} < items.warehouseSlots ${whInit}`);
   // EV-11（M11）
   const evFloor = intOf(get(c, "events", "floor"));
   const evCap = intOf(get(c, "events", "cap"));

@@ -5,15 +5,16 @@ import { itemDisplayName, memberById, slotsMaxOf, slotsUsed } from "../state";
 import type { Character, GameState, RuleContext, TownMenu } from "../types";
 import { slotsFreeOf } from "./shop";
 
-export type StorageAction = "deposit" | "withdraw" | "depositAll";
+export type StorageAction = "deposit" | "withdraw" | "depositAll" | "expand";
 
 /**
  * town.storage を受け付けない理由。順: wrong screen → bad action（action が deposit / withdraw でない・memberId / instanceId が文字列でない）
  * → no such member → item not in inventory（deposit。装備中の品は inventory に無い）/ not in warehouse（withdraw）
- * → warehouse full（deposit。warehouse.length ≥ warehouseSlots）/ inventory full（withdraw。CH-71）。本人の life は問わない
+ * → （expand は storage max → not enough gold。TW-10 M24）→ warehouse full（deposit。warehouse.length ≥ progress.warehouseSlots）/ inventory full（withdraw。CH-71）。本人の life は問わない
  */
 export function checkStorage(state: GameState, action: unknown, memberId: unknown, instanceId: unknown, data: GameData): string | null {
   if (state.screen !== "town" || state.dive !== null) return "wrong screen";
+  if (action === "expand") return checkExpand(state, data);
   if (action === "depositAll") return checkDepositAll(state, memberId, data);
   if (action !== "deposit" && action !== "withdraw") return "bad action";
   if (typeof memberId !== "string" || typeof instanceId !== "string") return "bad action";
@@ -21,12 +22,29 @@ export function checkStorage(state: GameState, action: unknown, memberId: unknow
   if (ch === null) return "no such member";
   if (action === "deposit") {
     if (!ch.inventory.includes(instanceId) || state.items[instanceId] === undefined) return "item not in inventory";
-    if (state.warehouse.length >= data.config.items.warehouseSlots) return "warehouse full";
+    if (state.warehouse.length >= state.progress.warehouseSlots) return "warehouse full";
     return null;
   }
   if (!state.warehouse.includes(instanceId) || state.items[instanceId] === undefined) return "not in warehouse";
   if (slotsFreeOf(ch, data) === 0) return "inventory full";
   return null;
+}
+
+/** TW-10（M24 D-1）倉庫を広げる（screen は checkStorage で見た後）。順: storage max（枠数 ≥ config.bank.maxSlots）→ not enough gold（gold < expandCost） */
+function checkExpand(state: GameState, data: GameData): string | null {
+  const b = data.config.bank;
+  if (state.progress.warehouseSlots >= b.maxSlots) return "storage max";
+  if (state.gold < b.expandCost) return "not enough gold";
+  return null;
+}
+
+/** TW-10（M24 D-1）倉庫を広げる。checkStorage が null を返した前提。gold −= expandCost、枠数 = min(maxSlots, 枠数 + expandSlots)。message town.storage.expanded{capacity}。乱数は使わない */
+export function doExpand(ctx: RuleContext): void {
+  const { state, data } = ctx;
+  const b = data.config.bank;
+  state.gold -= b.expandCost;
+  state.progress.warehouseSlots = Math.min(b.maxSlots, state.progress.warehouseSlots + b.expandSlots);
+  ctx.events.push({ kind: "message", key: "town.storage.expanded", params: { capacity: state.progress.warehouseSlots } });
 }
 
 /** TW-16b（M17）すべて預けるの対象の者（memberId が null なら全員を並び順に）。memberId が文字列でパーティに居なければ null */
@@ -38,14 +56,14 @@ function depositAllTargets(state: GameState, memberId: string | null): Character
 
 /**
  * TW-16b（M17）depositAll を受け付けない理由（screen は checkStorage で見た後）。順: bad action（memberId が文字列でも null でもない）
- * → no such member → nothing to deposit（対象の inventory が全部空）→ warehouse full（warehouse.length ≥ warehouseSlots）。life は問わない
+ * → no such member → nothing to deposit（対象の inventory が全部空）→ warehouse full（warehouse.length ≥ progress.warehouseSlots）。life は問わない
  */
-function checkDepositAll(state: GameState, memberId: unknown, data: GameData): string | null {
+function checkDepositAll(state: GameState, memberId: unknown, _data: GameData): string | null {
   if (memberId !== null && typeof memberId !== "string") return "bad action";
   const targets = depositAllTargets(state, memberId);
   if (targets === null) return "no such member";
   if (targets.every((ch) => ch.inventory.length === 0)) return "nothing to deposit";
-  if (state.warehouse.length >= data.config.items.warehouseSlots) return "warehouse full";
+  if (state.warehouse.length >= state.progress.warehouseSlots) return "warehouse full";
   return null;
 }
 
@@ -56,10 +74,10 @@ function checkDepositAll(state: GameState, memberId: unknown, data: GameData): s
  * 実体は作らず消さない。乱数は使わない
  */
 export function doDepositAll(ctx: RuleContext, memberId: string | null): void {
-  const { state, data } = ctx;
+  const { state } = ctx;
   const targets = depositAllTargets(state, memberId);
   if (targets === null) throw new Error(`doDepositAll: unknown member ${memberId}`);
-  const capacity = data.config.items.warehouseSlots;
+  const capacity = state.progress.warehouseSlots;
   for (const ch of targets) {
     const room = Math.max(0, capacity - state.warehouse.length);
     const moved = ch.inventory.slice(0, room);
@@ -104,7 +122,7 @@ export function settleOverflow(ctx: RuleContext, memberId: string): void {
   if (state.screen !== "town" || state.dive !== null) return;
   const ch = memberById(state, memberId);
   if (ch === null) throw new Error(`settleOverflow: unknown member ${memberId}`);
-  const capacity = data.config.items.warehouseSlots;
+  const capacity = state.progress.warehouseSlots;
   while (slotsUsed(ch) > slotsMaxOf(ch, data) && ch.inventory.length > 0 && state.warehouse.length < capacity) {
     const id = ch.inventory[ch.inventory.length - 1] as string;
     ch.inventory = ch.inventory.slice(0, -1);
@@ -123,9 +141,15 @@ function storageRow(state: GameState, data: GameData, id: string): TownMenu["sto
 
 /** UI-52 の倉庫のページの値（townMenu.storage。純粋） */
 export function storageMenu(state: GameState, data: GameData): TownMenu["storage"] {
-  const capacity = data.config.items.warehouseSlots;
+  const capacity = state.progress.warehouseSlots;
+  const b = data.config.bank;
+  const expandReason = checkExpand(state, data);
   return {
     capacity,
+    expand:
+      capacity >= b.maxSlots
+        ? null
+        : { cost: b.expandCost, slots: b.expandSlots, next: Math.min(b.maxSlots, capacity + b.expandSlots), ok: expandReason === null, reason: expandReason },
     slotsFree: Math.max(0, capacity - state.warehouse.length),
     depositAllOk: checkDepositAll(state, null, data) === null,
     items: state.warehouse.map((id) => storageRow(state, data, id)),

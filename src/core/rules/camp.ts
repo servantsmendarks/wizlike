@@ -215,9 +215,9 @@ function checkWarehouseRef(state: GameState, ...refs: unknown[]): string | null 
   return null;
 }
 
-/** TW-16c（M21）: 倉庫に空きがあるか（config.items.warehouseSlots） */
-function warehouseHasRoom(state: GameState, data: GameData): boolean {
-  return state.warehouse.length < data.config.items.warehouseSlots;
+/** TW-16c（M21）: 倉庫に空きがあるか（progress.warehouseSlots） */
+function warehouseHasRoom(state: GameState, _data: GameData): boolean {
+  return state.warehouse.length < state.progress.warehouseSlots;
 }
 
 /**

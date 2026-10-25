@@ -104,7 +104,7 @@ describe("engine: execute", () => {
       nextItemSeq: 1,
       gold: 0,
       bank: 0,
-      progress: { unlockedDungeons: [], clearedDungeons: [], shopLevel: 0, enteredDungeons: [], conquered: false, endingPending: false, hints: [], noChestStreak: 0 }, // IT-62（M7）、DG-37 / DG-36 / TW-34（M12）、UI-76（M16）、CB-51b（M21）
+      progress: { unlockedDungeons: [], clearedDungeons: [], shopLevel: 0, enteredDungeons: [], conquered: false, endingPending: false, hints: [], noChestStreak: 0, warehouseSlots: 40 }, // IT-62（M7）、DG-37 / DG-36 / TW-34（M12）、UI-76（M16）、CB-51b（M21）
       dive: null,
       pendingChoice: null,
       battle: null,

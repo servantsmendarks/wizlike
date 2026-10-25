@@ -39,7 +39,7 @@ import { addTurns, DEBUG_LEVEL_MAX, debugChest, giveCursed, hpOne, sanDown, sanO
 import { checkEnter, checkSearch, checkUseStairs, chooseOption, enterDungeon, moveForward, searchAround, turn, useStairs } from "./rules/dungeon";
 import { checkUseItem, useItemInField } from "./rules/items";
 import { checkShop, doShop } from "./rules/shop";
-import { checkStorage, doDepositAll, doStorage } from "./rules/storage";
+import { checkStorage, doDepositAll, doExpand, doStorage } from "./rules/storage";
 import { changeClass, checkClassChange, checkDark, checkInn, checkMercy, checkTemple, darkService, grantMercy, stayInn, templeService } from "./rules/town";
 import type { TempleService } from "./rules/town";
 import { checkLookAround, lookAround } from "./rules/tavern";
@@ -49,7 +49,7 @@ import { cloneState, makeContext } from "./state";
 import type { BattleAction, Command, ExecuteResult, GameState, RuleContext, ShopAction, UpgradeCatalystRef } from "./types";
 
 /** ゲーム開始前の状態（D3）。整数でない seed は createRng の RangeError をそのまま投げる。 */
-export function createInitialState(seed: number, _data: GameData): GameState {
+export function createInitialState(seed: number, data: GameData): GameState {
   return {
     screen: "title",
     rng: createRng(seed),
@@ -58,7 +58,7 @@ export function createInitialState(seed: number, _data: GameData): GameState {
     nextItemSeq: 1,
     gold: 0,
     bank: 0,
-    progress: { unlockedDungeons: [], clearedDungeons: [], shopLevel: 0, enteredDungeons: [], conquered: false, endingPending: false, hints: [], noChestStreak: 0 },
+    progress: { unlockedDungeons: [], clearedDungeons: [], shopLevel: 0, enteredDungeons: [], conquered: false, endingPending: false, hints: [], noChestStreak: 0, warehouseSlots: data.config.items.warehouseSlots },
     dive: null,
     pendingChoice: null,
     battle: null,
@@ -309,7 +309,8 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       const r = checkStorage(state, c.action, c.memberId, c.instanceId, data);
       if (r !== null) return reject(state, "town.storage", r);
       const ctx = makeContext(cloneState(state), data);
-      if (c.action === "depositAll") doDepositAll(ctx, c.memberId as string | null);
+      if (c.action === "expand") doExpand(ctx);
+      else if (c.action === "depositAll") doDepositAll(ctx, c.memberId as string | null);
       else doStorage(ctx, c.action as "deposit" | "withdraw", c.memberId as string, c.instanceId as string);
       return finish(ctx);
     }

@@ -628,6 +628,15 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.bank.amounts = [0]), "config.json", "bank.amounts[0]: expected integer >= 1");
     expectIssue((r) => (r.config.bank.amounts = [100, 2.5]), "config.json", "bank.amounts[1]: expected integer");
   });
+  test("data: TW-10（M24 D-1）bank.expandCost / expandSlots / maxSlots は正の整数【仮】（既定 1000 / 10 / 100）で、maxSlots は items.warehouseSlots 以上", () => {
+    expect(config.bank).toEqual({ amounts: [100, 1000], expandCost: 1000, expandSlots: 10, maxSlots: 100 });
+    for (const k of ["expandCost", "expandSlots", "maxSlots"] as const) {
+      expectIssue((r) => delete (r.config.bank as Record<string, unknown>)[k], "config.json", `bank.${k}: missing required field`);
+      expectIssue((r) => ((r.config.bank as Record<string, unknown>)[k] = 0), "config.json", `bank.${k}: expected integer >= 1`);
+    }
+    expect(issuesOf((r) => (r.config.bank.maxSlots = r.config.items.warehouseSlots))).toEqual([]);
+    expectIssue((r) => (r.config.bank.maxSlots = 39), "config.json", "TW-10: maxSlots 39 < items.warehouseSlots 40");
+  });
   test("data: MG-01 growth.mpStatPivot は整数、mpStatDivisor は 1 以上の整数", () => {
     expectIssue((r) => (r.config.growth.mpStatPivot = 10.5), "config.json", "growth.mpStatPivot: expected integer");
     expectIssue((r) => (r.config.growth.mpStatPivot = "10"), "config.json", "growth.mpStatPivot: expected integer");

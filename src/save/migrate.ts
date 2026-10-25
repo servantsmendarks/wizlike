@@ -178,9 +178,13 @@ function migrateItemV10toV11(inst: unknown): unknown {
   return { ...inst, options: options.filter((o) => !isNeg(o)), curseEffect: { ...moved } };
 }
 
+/** v10 時点の config.items.warehouseSlots（IT-64。倉庫の枠数。D-1 の移行の初期値） */
+const V10_WAREHOUSE_SLOTS = 40;
+
 /**
  * SV-04 v10 → v11（M24。IT-32 / TW-10）: 各アイテム実体に curseEffect を足す。呪われていて値が負のオプションがあれば、その最後の 1 つを
  * options から外して curseEffect に移す（それ以外の負のオプションは捨てる）。呪われていない・負のオプションの無い実体は null（呪われていれば cursed のまま）。
+ * あわせて progress.warehouseSlots を 40 にする（D-1。progress がオブジェクトのときだけ）。
  * 引数は書き換えない（浅い複製。items と各実体も複製する）。オブジェクトでなければそのまま返す（形の検査で broken）
  */
 export function migrateV10toV11(x: unknown): unknown {
@@ -188,6 +192,10 @@ export function migrateV10toV11(x: unknown): unknown {
   const out: Record<string, unknown> = { ...x };
   const items = x["items"];
   if (isPlainObject(items)) out["items"] = Object.fromEntries(Object.entries(items).map(([k, inst]) => [k, migrateItemV10toV11(inst)]));
+  // IT-64 / TW-10（M24 D-1）: progress.warehouseSlots。v10 までの倉庫の枠数は config.items.warehouseSlots の 40 固定だった
+  // （移行は純粋で config を読まないので、v10 時点の値を定数で持つ。config を変えても既存の記録の枠数は動かさない）
+  const progress = x["progress"];
+  if (isPlainObject(progress)) out["progress"] = { ...progress, warehouseSlots: V10_WAREHOUSE_SLOTS };
   return out;
 }
 
@@ -327,6 +335,7 @@ function isChestShape(x: unknown): boolean {
  * 同じ版に後から足した省略可能な欄（M21。CB-68 (a)）: dive.chest.contentsDestroyed は無いか真偽値。
  * 同じ版に後から足した省略可能な欄（M21。CB-47）: battle がオブジェクトなら battle.autoSpells は無いか真偽値。
  * 同じ版に後から足した省略可能な欄（M21。DG-48）: dive.culled は無いか真偽値（無い潜行は間引かない盤のまま続く）。
+ * schemaVersion 11（M24。IT-32 / IT-64）: items の各実体の curseEffect（isItemInstanceShape）、progress.warehouseSlots が 1 以上の安全な整数。
  * schemaVersion 10（M21。CB-51b）: progress.noChestStreak が 0 以上の安全な整数（dive.noChestStreak は v9 の欄で、v10 では見ない）。
  */
 export function isGameStateShape(x: unknown): x is GameState {
@@ -367,6 +376,7 @@ export function isGameStateShape(x: unknown): x is GameState {
   if (!isStringArray(progress["enteredDungeons"])) return false;
   if (!isStringArray(progress["hints"])) return false;
   if (!isTurnCount(progress["noChestStreak"])) return false; // CB-51b（M21。schemaVersion 10）
+  if (!isTurnCount(progress["warehouseSlots"]) || (progress["warehouseSlots"] as number) < 1) return false; // IT-64（M24 D-1。schemaVersion 11）
   const df = progress["deepestFloors"]; // DG-47（M21）: 省略可能
   if (df !== undefined && !(isPlainObject(df) && Object.values(df).every((v) => isTurnCount(v) && (v as number) >= 1))) return false;
   if (!isTallyShape(x["tally"])) return false;

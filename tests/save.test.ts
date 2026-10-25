@@ -2005,6 +2005,7 @@ describe("SV-04 v10 → v11 の移行（M24。IT-32 / TW-10）", () => {
     expect(MIGRATIONS[9]!("x")).toBe("x");
     expect(MIGRATIONS[9]!(null)).toBe(null);
     const arg = {
+      progress: { shopLevel: 1 },
       items: {
         i1: { id: "i1", cursed: true, options: [pos, neg] },
         i2: { id: "i2", cursed: false, options: [pos] },
@@ -2015,6 +2016,7 @@ describe("SV-04 v10 → v11 の移行（M24。IT-32 / TW-10）", () => {
     };
     const before = json(arg);
     expect(migrateV10toV11(arg)).toEqual({
+      progress: { shopLevel: 1, warehouseSlots: 40 }, // IT-64（M24 D-1）: v10 までの倉庫の枠数 40
       items: {
         i1: { id: "i1", cursed: true, options: [pos], curseEffect: neg },
         i2: { id: "i2", cursed: false, options: [pos], curseEffect: null },
@@ -2054,6 +2056,21 @@ describe("SV-04 v10 → v11 の移行（M24。IT-32 / TW-10）", () => {
     expect(inst.options).toEqual([town.items[id]!.curseEffect]);
     const r = migrateState(v10, 10, SCHEMA);
     expect(r.ok && r.state.items[id]).toEqual({ ...town.items[id]!, options: [] });
+  });
+
+  test("SV-04/IT-64 progress.warehouseSlots は 1 以上の安全な整数（無い・0・小数・文字列は形の検査で broken）。v10 の移行で 40", () => {
+    const s = newGame(1);
+    expect(s.progress.warehouseSlots).toBe(40);
+    expect(isGameStateShape(JSON.parse(JSON.stringify(s)))).toBe(true);
+    for (const bad of [undefined, 0, -1, 2.5, "40"]) {
+      const j = JSON.parse(JSON.stringify(s)) as GameState;
+      (j.progress as unknown as Record<string, unknown>)["warehouseSlots"] = bad;
+      expect(isGameStateShape(j), String(bad)).toBe(false);
+    }
+    const v10 = toV10(s);
+    expect((v10["progress"] as Record<string, unknown>)["warehouseSlots"]).toBeUndefined();
+    const r = migrateState(v10, 10, SCHEMA);
+    expect(r.ok && r.state.progress.warehouseSlots).toBe(40);
   });
 
   test("SV-04/IT-32 古い版（v9）の保存も v9 → v10 → v11 の順に移行して読める。保存先（メモリ）に置いた v10 のレコードも一覧で ok、続きからで読めて呪いは curseEffect にある", async () => {

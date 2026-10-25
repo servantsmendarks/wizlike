@@ -1722,7 +1722,7 @@ describe("TW-16/IT-64 倉庫（town.storage。M7）", () => {
     expectRejected(s, storage("withdraw", "c3", "i10"), "not in warehouse"); // 所持品
     expectRejected(s, storage("withdraw", "c3", "i999"), "not in warehouse");
     // 容量 40: 39 個なら預けられて 40 個になり、40 個なら warehouse full
-    expect(data.config.items.warehouseSlots).toBe(40);
+    expect(s.progress.warehouseSlots).toBe(40);
     const near = cloneState(s);
     for (let i = 0; i < 38; i++) near.warehouse.push(createItemInstance(near, { itemId: "herb", identified: true }));
     expect(near.warehouse).toHaveLength(39);
@@ -1744,6 +1744,7 @@ describe("TW-16/IT-64 倉庫（town.storage。M7）", () => {
     expect(unid).toBe("i19");
     expect(townMenu(s, data)!.storage).toEqual({
       capacity: 40,
+      expand: { cost: 1000, slots: 10, next: 50, ok: false, reason: "not enough gold" }, // TW-10（M24 D-1）所持金 300
       slotsFree: 38,
       depositAllOk: true,
       items: [
@@ -1813,7 +1814,7 @@ describe("TW-16b（M17）すべて預ける（town.storage の depositAll）", (
   });
 
   test("TW-16b 倉庫が満杯になったらそこで止め、残りは手元（者の途中でも止まる）。語りは預けた者ごと → 最後に town.storage.fullStopped{left}（対象の者の残り）。品の総数は保たれる", () => {
-    expect(data.config.items.warehouseSlots).toBe(40);
+    expect(town().progress.warehouseSlots).toBe(40);
     // 全員: 空き 2 → アルドの i4・キリの i10 で満杯、ドナ・エル・フィンの 3 品が残る
     const s = town();
     fillWarehouse(s, 38);
@@ -2517,5 +2518,59 @@ describe("UI-52/IT-32（M24 B-1）townMenu の品の行の cursed（鑑定済み
       [stored, true],
     ]);
     expect(s.rng).toEqual(rng);
+  });
+});
+
+describe("TW-10（M24 D-1）倉庫を広げる（town.storage expand）", () => {
+  const expand = (): Command => ({ type: "town.storage", action: "expand" }) as unknown as Command;
+  const b = data.config.bank;
+
+  test("TW-10 倉庫を広げる: 1000 G で +10。語りは town.storage.expanded{capacity}。乱数・品は変わらず、引数の state は書き換えない。townMenu.storage.expand は next と ok", () => {
+    expect([b.expandCost, b.expandSlots, b.maxSlots]).toEqual([1000, 10, 100]);
+    const s = town({}, 1500);
+    const m0 = townMenu(s, data)!.storage;
+    expect([m0.capacity, m0.expand]).toEqual([40, { cost: 1000, slots: 10, next: 50, ok: true, reason: null }]);
+    const r = ok(s, expand());
+    expect(r.events).toEqual([{ kind: "message", key: "town.storage.expanded", params: { capacity: 50 } }]);
+    expect([r.state.gold, r.state.progress.warehouseSlots]).toEqual([500, 50]);
+    expect(s.progress.warehouseSlots).toBe(40);
+    expect(r.state.rng).toEqual(s.rng);
+    expect(r.state.items).toEqual(s.items);
+    expect(townMenu(r.state, data)!.storage.capacity).toBe(50);
+    expectStateInvariants(r.state);
+  });
+
+  test("TW-10 判定順: wrong screen → storage max（上限 100）→ not enough gold。金が足りなければ not enough gold。上限の townMenu.storage.expand は null", () => {
+    const poor = town({}, 999);
+    expectRejected(poor, expand(), "not enough gold");
+    expect(townMenu(poor, data)!.storage.expand).toEqual({ cost: 1000, slots: 10, next: 50, ok: false, reason: "not enough gold" });
+    const exact = town({}, 1000);
+    expect(ok(exact, expand()).state.gold).toBe(0);
+    // 6 回で上限（40 → 100）。上限では金が足りていなくても storage max が先
+    let s = town({}, 6000);
+    for (let i = 0; i < 6; i++) s = ok(s, expand()).state;
+    expect([s.progress.warehouseSlots, s.gold]).toEqual([100, 0]);
+    expect(townMenu(s, data)!.storage.expand).toBeNull();
+    expectRejected(s, expand(), "storage max");
+    const richMax = town({}, 5000);
+    richMax.progress.warehouseSlots = 100;
+    expectRejected(richMax, expand(), "storage max");
+    // 迷宮の中は wrong screen（金が足りなくても先）
+    const dived = cloneState(poor);
+    dived.screen = "dungeon";
+    expectRejected(dived, expand(), "wrong screen");
+  });
+
+  test("TW-10/TW-16 容量は progress.warehouseSlots を使う: 広げた分だけ預けられ、満杯の境界も progress の値。上限が割り切れない端数は maxSlots で止まる", () => {
+    const s = town({}, 1000);
+    s.progress.warehouseSlots = 41;
+    for (let i = 0; i < 41; i++) s.warehouse.push(createItemInstance(s, { itemId: "herb", identified: true }));
+    expectRejected(s, { type: "town.storage", action: "deposit", memberId: "c3", instanceId: "i10" } as unknown as Command, "warehouse full");
+    const r = ok(s, expand());
+    expect(r.state.progress.warehouseSlots).toBe(51);
+    expect(ok(r.state, { type: "town.storage", action: "deposit", memberId: "c3", instanceId: "i10" } as unknown as Command).state.warehouse).toHaveLength(42);
+    const near = town({}, 1000);
+    near.progress.warehouseSlots = 95;
+    expect(ok(near, expand()).state.progress.warehouseSlots).toBe(100);
   });
 });

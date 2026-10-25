@@ -66,15 +66,18 @@ export function toV10(s: GameState): Record<string, unknown> {
     if (c !== null && c !== undefined) (inst["options"] as unknown[]).push(c);
     delete inst["curseEffect"];
   }
+  delete (v10["progress"] as Record<string, unknown>)["warehouseSlots"]; // IT-64（M24 D-1）
   return v10;
 }
 
 /**
  * SV-04 v10 → v11（M24。IT-32）の移行で s から作った v10 以前の保存（toV10 以前）が行き着く state（JSON の複製）:
- * 呪いの効果は options の末尾から curseEffect に戻るので s のまま
+ * 呪いの効果は options の末尾から curseEffect に戻るので s のまま。progress.warehouseSlots（IT-64。D-1）は 40 に戻る（v10 までの固定の枠数）
  */
 export function asMigratedToV11(s: GameState): GameState {
-  return JSON.parse(JSON.stringify(s)) as GameState;
+  const m = JSON.parse(JSON.stringify(s)) as GameState;
+  m.progress.warehouseSlots = 40;
+  return m;
 }
 
 /**

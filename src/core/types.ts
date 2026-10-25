@@ -145,6 +145,11 @@ export type Progress = {
    * 潜行をまたいで持ち越す（入場・帰還・全滅では戻さない）。v9 からの移行では dive.noChestStreak（無ければ 0）
    */
   noChestStreak: number;
+  /**
+   * IT-64 / TW-10（M24 D-1。schemaVersion 11）: 倉庫の枠数。game.new で config.items.warehouseSlots（40）、town.storage の expand で
+   * config.bank.expandSlots ずつ増え config.bank.maxSlots で止まる。v10 からの移行では 40
+   */
+  warehouseSlots: number;
   /** DG-36（M12。schemaVersion 7）: 全ダンジョン制覇。一度立てたら落とさない。game.new で false */
   conquered: boolean;
   /** TW-34（M12。schemaVersion 7）: 結末を街で語る予定。語ったら false。game.new で false */
@@ -555,6 +560,7 @@ export type Command =
   | { type: "town.classChange"; memberId: string; classId: string }
   /** TW-16 / IT-64（M7）: 倉庫。deposit は本人の inventory の実体を warehouse へ、withdraw は warehouse の実体を本人の inventory へ。乱数は使わない */
   | { type: "town.storage"; action: "deposit" | "withdraw"; memberId: string; instanceId: string }
+  | { type: "town.storage"; action: "expand" } // TW-10（M24 D-1）倉庫を広げる
   | { type: "town.storage"; action: "depositAll"; memberId: string | null } // TW-16b（M17）すべて預ける。null = 全員
   /**
    * TW-17（M7）: 闇魔術の強化。本人の equipment[slot] の汎用装備を、パーティの誰かの inventory の鑑定済みの汎用装備（catalysts。0〜upgradeMaxCatalysts 個、
@@ -944,8 +950,10 @@ export type TownMenu = {
   };
   /** TW-16 / IT-64 倉庫（rules/storage.ts storageMenu） */
   storage: {
-    /** config.items.warehouseSlots */
+    /** progress.warehouseSlots（初期は config.items.warehouseSlots。拡張は TW-10） */
     capacity: number;
+    /** TW-10（M24 D-1）倉庫を広げる。上限（capacity ≥ config.bank.maxSlots）なら null。next = 広げた後の枠数、ok = 受け付けるか、reason = ok でない理由（checkStorage の文） */
+    expand: { cost: number; slots: number; next: number; ok: boolean; reason: string | null } | null;
     /** capacity − warehouse の数（0 なら warehouse full） */
     slotsFree: number;
     /** TW-16b（M17）全員の「すべて預ける」（depositAll memberId null）を受け付けるか（checkStorage と同じ判定。品が無い・倉庫が満杯なら false） */
