@@ -874,5 +874,8 @@ describe("UI-83（M23）画面の切り替えの間のタップ", () => {
   test("UI-83 app は sync で直前の state と比べ、問いが立ったときも markScreenShown を呼ぶ", () => {
     expect(appSource).toContain("const promptUp = promptAppeared(lastSynced, st);");
     expect(appSource).toContain("if (screenPending || promptUp) {");
+    // UI-83（M24 E-2）: タイトルへ戻る onScreen と続きからの resume で lastSynced を null にする
+    expect(appSource).toContain('if (r === "title") lastSynced = null;');
+    expect(appSource).toContain("lastSynced = null; // UI-83（M24）");
   });
 });

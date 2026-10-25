@@ -596,6 +596,8 @@ export function createApp(o: {
     if (r === "town") townPage = "menu";
     // UI-25（M18）: 街・タイトルへ出たら「移動を続ける」の目的地を捨てる
     if (r === "town" || r === "title") walkDest = null;
+    // UI-83（M24）: タイトルへ戻るとき、直前の sync の記録を捨てる（続きからの最初の sync で問いが立って見えるように）
+    if (r === "title") lastSynced = null;
     if (from === "town" && r !== "town") {
       play.talk.flush();
       // 前に街へ入ったときに窓で語った文（帰還・救済の申し出など）を迷宮の窓に残さない（ログには入っている）
@@ -2025,6 +2027,7 @@ export function createApp(o: {
   const resume = (st: GameState): void => {
     const plan = resumePlan(st, data);
     state = st;
+    lastSynced = null; // UI-83（M24）: 続きからの最初の sync は偽 → 真として見る
     // SV-41: 読み込んだ state は保存済み（続きからの直後にページが隠れても書かない）
     autosaver.markSaved(st);
     overlay = null;
