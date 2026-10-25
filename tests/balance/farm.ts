@@ -241,13 +241,13 @@ function seedsFromEnv(): number {
 }
 
 /**
- * 1 通り分の計測（farm-*.sim.ts から呼ぶ）。BALANCE_BOTS が f1 / progress なら skip。FARM_DIVES 回 × BALANCE_SEEDS シードで runCampaigns
+ * 1 通り分の計測（farm-*.sim.ts から呼ぶ）。BALANCE_BOTS が f1 / progress / explore なら skip。FARM_DIVES 回 × BALANCE_SEEDS シードで runCampaigns
  * （不変条件はその中）→ キーの検査 → farmReport を console.log に出す
  */
 export function runFarm(level: number, dungeonId: string, floor: number): void {
   const bots: unknown = import.meta.env["BALANCE_BOTS"];
-  if (bots !== undefined && bots !== "" && bots !== "f1" && bots !== "progress" && bots !== "farm") throw new Error(`BALANCE_BOTS: unknown value ${String(bots)}（f1 / progress / farm）`);
-  const skip = bots === "f1" || bots === "progress";
+  if (bots !== undefined && bots !== "" && bots !== "f1" && bots !== "progress" && bots !== "farm" && bots !== "explore") throw new Error(`BALANCE_BOTS: unknown value ${String(bots)}（f1 / progress / farm / explore）`);
+  const skip = bots === "f1" || bots === "progress" || bots === "explore"; // M25: explore は探索ボット（explore.sim.ts）だけ
   const seeds = seedsFromEnv();
   const kind = farmBot(level, dungeonId, floor);
   describe("バランス（M13 農夫）", () => {
