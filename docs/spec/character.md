@@ -30,7 +30,7 @@
 
 ## 4. 性格
 
-- CH-30 作成時に性格を選ぶ: 慎重 `cautious`、無鉄砲 `reckless`、強欲 `greedy`、普通 `normal`。選択肢に「ランダム」があり、4 つから等確率で決まる。決めるのは、簡易作成（CH-05）では core（`game.new` の中で添字の順に state.rng の randInt で personalities の配列順から）、自分で作る（CH-06）では表示層（名前の段を終えるときに作成中の乱数の randInt で同じ配列順から。確認の行に具体的な性格を出し、core には id を送る。M20 で改めた。core は `"random"` も今どおり受け付ける）。この改めで、自分で作るの `game.new` は性格のために state.rng を引かなくなった（開始の後の乱数の並びが変わる。規則の変更）。
+- CH-30 作成時に性格を選ぶ: 慎重 `cautious`、無鉄砲 `reckless`、強欲 `greedy`、普通 `normal`。選択肢に「ランダム」があり、4 つから等確率で決まる。決めるのは、簡易作成（CH-05）では core（`game.new` の中で添字の順に state.rng の randInt で personalities の配列順から）、自分で作る（CH-06）では表示層（名前の段を終えるときに作成中の乱数の randInt で同じ配列順から。確認の行に具体的な性格を出し、core には id を送る。M20 で改めた。core は `"random"` も今どおり受け付ける）。この改めで、自分で作るの `game.new` は性格のために state.rng を引かなくなった（開始の後の乱数の並びが変わる。規則の変更）。 M24（F-2）: キャラクター画面（UI-59）の状態の行の右に性格の名前を出し、押すと `personalities[].shortDescription`（リーダーは `creation.leaderNote`）を語る。表示のための参照で、判定には使わない。
 - CH-31 リーダーは性格を持たない（プレイヤー自身が判断するため）。データ上は `personality: null`。
 - CH-32 性格の効果（衝動、制止、恩恵、SAN 耐性、オート戦闘の傾向）は `data/personalities.json` を正とする。判定の手順は `events.md` と `combat.md`。
 - CH-33 性格は変更できない。

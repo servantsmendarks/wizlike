@@ -37,12 +37,17 @@ export const CHARACTER_SPELL_ROWS = CHARACTER_SPELL_CELLS / 2;
 /** danger（M24 B-1）: 鑑定済みの呪われた品（core の campMenu の inventory[].cursed）。文字を danger で描く（dim・注目の accent が優先）。偽なら欄を持たない */
 export type CharacterCell = { text: string; dim: boolean; instanceId?: string; more?: true; danger?: true };
 /** UI-80（M20）: キャラクター画面のパネルを押したときの行き先（品の詳細・所持品の次の分） */
-export type CharacterTap = { kind: "item"; instanceId: string } | { kind: "more" };
+/** M24 F-2: personality は状態の行の右の性格の語（押すと性格の説明を語る） */
+export type CharacterTap = { kind: "item"; instanceId: string } | { kind: "more" } | { kind: "personality" };
 
 export type CharacterDetail = {
   name: string;
   /** detail.raceClass（種族の名前と職業の正式名） */
   raceClass: string;
+  /** M24 F-2（UI-59 / CH-30）: 状態の行の右の「性格 {name}」（リーダーは detail.personalityNone）。押すと personalityNote を語る */
+  personality: string;
+  /** M24 F-2: 性格の説明（personalities[].shortDescription。リーダーは creation.leaderNote）。表示のための参照 */
+  personalityNote: string;
   level: string;
   exp: string;
   /** UI-69（M10）: 次のレベルの列（ready は「Lv UP 可（宿で処理）」で accent、next は「次の Lv まで あと n」、blocked と sheet なしは空） */
@@ -124,7 +129,7 @@ export function foldedCells<T>(items: readonly T[], fold: number, cell: (x: T) =
  */
 export function formatCharacter(
   ch: Character,
-  data: Pick<GameData, "races" | "classes">,
+  data: Pick<GameData, "races" | "classes" | "personalities">,
   strings: Strings,
   itemName: (instanceId: string) => string,
   sheet?: MemberSheet,
@@ -134,6 +139,7 @@ export function formatCharacter(
   const s = (key: string, params?: Record<string, string | number>): string => formatMessage(strings[key] ?? key, params);
   const race = data.races.find((r) => r.id === ch.raceId)?.name ?? ch.raceId;
   const cls = data.classes.find((c) => c.id === ch.classId)?.name ?? ch.classId;
+  const pers = ch.personality === null ? undefined : data.personalities.find((x) => x.id === ch.personality);
   const cond = conditionText(ch.life, ch.status, strings);
   const stats = sheet?.stats ?? ch.stats;
   const sanCap = sheet?.sanMax ?? ch.sanMax;
@@ -149,6 +155,8 @@ export function formatCharacter(
   return {
     name: ch.name,
     raceClass: s("detail.raceClass", { race, class: cls }),
+    personality: s("detail.personality", { name: ch.personality === null ? s("detail.personalityNone") : (pers?.name ?? ch.personality) }),
+    personalityNote: ch.personality === null ? s("creation.leaderNote") : (pers?.shortDescription ?? ""),
     level: s("detail.level", { level: ch.level }),
     exp: s("detail.exp", { exp: ch.exp }),
     next,
@@ -236,6 +244,10 @@ const ROW_INVENTORY_HEAD = 14;
 /** UI-80（M20）: 装備の行の先頭（8〜13） */
 const ROW_EQUIP = 8;
 const ROW_SPELL_HEAD = 19;
+/** M24 F-2（UI-80）: 性格の語は状態の行（4）の右。x152 から 236（幅 84 = 「性格 なし（リーダー）」の 20 + 64）。状態の語はその左（x4 から 148）に収める */
+const ROW_STATUS = 4;
+export const PERSONALITY_X = 152;
+export const PERSONALITY_W = 84;
 
 /** UI-80（M20）: 所持品の見出しの右の注記の幅（「押すと詳細」の全角 5 字 = 40 と余白）。見出しはその左までに切る */
 export const TAP_HINT_W = 48;
@@ -245,7 +257,7 @@ export type CharacterHit = { x: number; y: number; w: number; h: number; tap: Ch
 
 /**
  * UI-80 / UI-10（M20）: キャラクター画面の押せる矩形（パネルの外形の左上から。純粋）。装備の行（8〜13。品のある枠だけ。x4・幅 width − 8）と
- * 所持品の枠（15〜18。x4 / x122、幅 114。instanceId か more のある枠だけ）。どれも行の上端 − 1 から高さ CHARACTER_HIT_H
+ * 所持品の枠（15〜18。x4 / x122、幅 114。instanceId か more のある枠だけ）、最後に性格の語（M24 F-2。行 4 の x152・幅 84）。どれも行の上端 − 1 から高さ CHARACTER_HIT_H
  */
 export function characterHitRects(d: CharacterDetail, width: number): CharacterHit[] {
   const rowY = (row: number): number => TOP + LINE_H * row - 1;
@@ -257,6 +269,8 @@ export function characterHitRects(d: CharacterDetail, width: number): CharacterH
     const tap: CharacterTap | null = c.instanceId !== undefined ? { kind: "item", instanceId: c.instanceId } : c.more === true ? { kind: "more" } : null;
     if (tap !== null) out.push({ x: CELL_COLUMNS[i % 2]!, y: rowY(ROW_INVENTORY_HEAD + 1 + Math.floor(i / 2)), w: CELL_W, h: CHARACTER_HIT_H, tap });
   });
+  // M24 F-2: 性格の語は最後（キーの注目の添字を既存の順から動かさない）
+  out.push({ x: PERSONALITY_X, y: rowY(ROW_STATUS), w: PERSONALITY_W, h: CHARACTER_HIT_H, tap: { kind: "personality" } });
   return out;
 }
 
@@ -274,7 +288,7 @@ export function characterHitAt(rects: readonly CharacterHit[], lx: number, ly: n
  * UI-33 / UI-80（M21）: キーの注目（characterHitRects の順の添字）が指す所。装備の行（品のある枠）→ 所持品の枠（品か「ほか」）の順に数え、
  * 装備の行なら equipment の添字、所持品なら inventory の添字を返す（範囲の外・null は null）。純粋
  */
-export function characterFocusAt(d: CharacterDetail, focus: number | null): { equip: number } | { cell: number } | null {
+export function characterFocusAt(d: CharacterDetail, focus: number | null): { equip: number } | { cell: number } | { personality: true } | null {
   if (focus === null || focus < 0) return null;
   let k = 0;
   for (let i = 0; i < d.equipment.length; i++) {
@@ -286,6 +300,7 @@ export function characterFocusAt(d: CharacterDetail, focus: number | null): { eq
     if (c.instanceId === undefined && c.more !== true) continue;
     if (k++ === focus) return { cell: i };
   }
+  if (k === focus) return { personality: true }; // M24 F-2: 最後
   return null;
 }
 
@@ -357,6 +372,9 @@ export function createDetailView(rect: Rect): DetailView {
       const focusCell = at !== null && "cell" in at ? at.cell : null;
       const name = text(0, 4, full, d.name, "detail-name");
       name.style.color = "var(--c-accent)";
+      const status = text(ROW_STATUS, 4, PERSONALITY_X - 4, d.status, "detail-status");
+      const personality = text(ROW_STATUS, PERSONALITY_X, PERSONALITY_W, d.personality, "detail-personality");
+      if (at !== null && "personality" in at) personality.style.color = "var(--c-accent)"; // UI-33: キーの注目
       const san = text(3, COL3[2], COL3_W - 8, d.san, "detail-san");
       if (d.sanOver) san.style.color = "var(--c-accent)"; // TW-15: 士気の超過中（UI-12 と同じ色）
       const next = text(2, LEVEL_COLUMNS.next.x, LEVEL_COLUMNS.next.w, d.next.text, "detail-next");
@@ -373,7 +391,8 @@ export function createDetailView(rect: Rect): DetailView {
         text(3, COL3[0], COL3_W, d.hp, "detail-hp"),
         text(3, COL3[1], COL3_W, d.mp, "detail-mp"),
         san,
-        text(4, 4, full, d.status, "detail-status"),
+        status,
+        personality,
         ...d.stats.map((st, i) => text(5 + Math.floor(i / 3), COL3[i % 3]!, COL3_W - (i % 3 === 2 ? 8 : 0), st.text, "detail-stat")),
         // 7 行目: 攻撃（M19 C-2 から内訳を添えて全幅。28 字）
         text(7, 4, full, d.attack, "detail-attack"),

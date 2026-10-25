@@ -606,6 +606,8 @@ describe("UI-80（M20）キャラクター画面の品の当たり判定と注�
       { x: 4, y: 93, w: 232, h: 12, tap: { kind: "item", instanceId: "i2" } },
       { x: 4, y: 103, w: 232, h: 12, tap: { kind: "item", instanceId: "i3" } },
       { x: 4, y: 153, w: 114, h: 12, tap: { kind: "item", instanceId: "i4" } },
+      // M24 F-2: 性格の語（行 4 の右。x152..236）は最後
+      { x: 152, y: 43, w: 84, h: 12, tap: { kind: "personality" } },
     ]);
     for (const r of characterHitRects(d, 240)) expect(r.h).toBe(CHARACTER_HIT_H);
     const rects = characterHitRects(d, 240);
@@ -668,6 +670,47 @@ describe("UI-80（M20）キャラクター画面の品の当たり判定と注�
   });
 });
 
+describe("UI-59/UI-80（M24 F-2）キャラクター画面の性格の語", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+  test("UI-59/CH-30 リーダーは「性格 なし（リーダー）」と leaderNote、ほかは性格の名前と shortDescription。行の幅（x152..236 の 84）に収まる", () => {
+    const s = newGame(1);
+    const leader = formatCharacter(s.party[0]!, data, S, nameOf(s), memberSheet(s, data, s.party[0]!));
+    expect(s.party[0]!.personality).toBeNull();
+    expect(leader.personality).toBe("性格 なし（リーダー）");
+    expect(leader.personalityNote).toBe(t("creation.leaderNote"));
+    for (const p of data.personalities) {
+      const ch = { ...s.party[1]!, personality: p.id };
+      const d = formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch));
+      expect(d.personality).toBe(`性格 ${p.name}`);
+      expect(d.personalityNote).toBe(p.shortDescription);
+    }
+    // 美咲: 半角 4px・全角 8px。「性格 なし（リーダー）」は 20 + 64 = 84
+    const width = (x: string): number => [...x].reduce((n, c) => n + (c.charCodeAt(0) < 0x100 ? 4 : 8), 0);
+    expect(width(leader.personality)).toBeLessThanOrEqual(84);
+  });
+
+  test("UI-59 render は状態の行（行 4）の左に状態（x4・幅 148）、右 x152 に性格（幅 84）を置く。注目が性格のとき accent", () => {
+    vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
+    const v = createDetailView({ x: 0, y: 16, w: 240, h: 284 });
+    const s = newGame(1);
+    const ch = s.party[0]!;
+    const d = formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch), campMenu(s, data)!.members[0]!, { tappable: true, inventoryFold: 0 });
+    const el = v.el as unknown as FakeEl;
+    const px = (x: string | undefined): number => Number((x ?? "").replace("px", ""));
+    v.render(d);
+    const box = (cls: string) => {
+      const c = el.children.find((x) => x.className === cls)!;
+      return [px(c.style["left"]) + 1, px(c.style["top"]) + 1, px(c.style["width"]), c.textContent, c.style["color"]];
+    };
+    expect(box("detail-status")).toEqual([4, 44, 148, d.status, undefined]);
+    expect(box("detail-personality")).toEqual([152, 44, 84, "性格 なし（リーダー）", undefined]);
+    v.render(d, null, characterHitRects(d, 240).length - 1);
+    expect(box("detail-personality")[4]).toBe("var(--c-accent)");
+  });
+});
+
 describe("UI-33/UI-80（M21 A-4）キャラクター画面のキーの注目", () => {
   const sheetOf = (s: GameState) => {
     const ch = s.party[0]!;
@@ -677,9 +720,9 @@ describe("UI-33/UI-80（M21 A-4）キャラクター画面のキーの注目", (
   test("UI-33/UI-80 characterFocusAt は characterHitRects と同じ順（装備の行の品のある枠 → 所持品の枠の品と「ほか」）で数える。範囲の外・null は null", () => {
     const s = newGame(1); // アルド: 長剣（武器 0）・革鎧（鎧 1）・木の盾（盾 2）、所持品 薬草
     const d = sheetOf(s);
-    expect(characterHitRects(d, 240)).toHaveLength(4);
-    expect([0, 1, 2, 3].map((i) => characterFocusAt(d, i))).toEqual([{ equip: 0 }, { equip: 1 }, { equip: 2 }, { cell: 0 }]);
-    expect(characterFocusAt(d, 4)).toBeNull();
+    expect(characterHitRects(d, 240)).toHaveLength(5);
+    expect([0, 1, 2, 3, 4].map((i) => characterFocusAt(d, i))).toEqual([{ equip: 0 }, { equip: 1 }, { equip: 2 }, { cell: 0 }, { personality: true }]);
+    expect(characterFocusAt(d, 5)).toBeNull();
     expect(characterFocusAt(d, -1)).toBeNull();
     expect(characterFocusAt(d, null)).toBeNull();
     // 空きの枠を飛ばし、「ほか」も数える
@@ -688,9 +731,10 @@ describe("UI-33/UI-80（M21 A-4）キャラクター画面のキーの注目", (
     c1.equipment = { weapon: null, armor: null, shield: null, helm: c1.equipment.weapon, gauntlet: null, accessory: null };
     for (let i = 0; i < 9; i++) c1.inventory.push(createItemInstance(t2, { itemId: "herb", identified: true })); // 計 10 件で 7 件と「ほか」
     const d2 = sheetOf(t2);
-    expect(characterHitRects(d2, 240).map((r) => r.tap.kind)).toEqual(["item", ...Array(7).fill("item"), "more"]);
+    expect(characterHitRects(d2, 240).map((r) => r.tap.kind)).toEqual(["item", ...Array(7).fill("item"), "more", "personality"]);
     expect(characterFocusAt(d2, 0)).toEqual({ equip: SLOT_ORDER.indexOf("helm") });
     expect(characterFocusAt(d2, 8)).toEqual({ cell: 7 });
+    expect(characterFocusAt(d2, 9)).toEqual({ personality: true });
   });
 
   test("UI-33/UI-80 render の itemFocus: 装備の行（部位と品の名）か所持品の枠を accent で描く。ほかの行は今の色のまま", () => {

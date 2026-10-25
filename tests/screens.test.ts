@@ -1151,6 +1151,14 @@ describe("入力と Command", () => {
     expect(flush).toBeGreaterThan(0);
     expect(flush).toBeLessThan(tap.indexOf("chooseCamp("));
     expect(tap).toContain('chooseCamp(hit.kind === "item" ? { kind: "openItem", instanceId: hit.instanceId } : { kind: "pageTurn", delta: 1 });');
+    // M24 F-2: 性格の語は説明を語るだけ（コマンドを送らず、頁も変えない）。キーの Enter も同じ
+    const say = /const sayPersonality = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(say).toContain("formatCharacter(ch, data, strings, () => \"\").personalityNote");
+    expect(say).toContain("void narrator.say(note, store.get().skipAnimations);");
+    expect(say).not.toContain("run(");
+    expect(say).not.toContain("campPage =");
+    expect(tap).toContain('if (hit.kind === "personality") {');
+    expect(app).toContain('} else if (ik.kind === "personality") {');
     // TW-16c（M21）: 銀行の状態だけ to "warehouse"
     expect(app).toContain(
       'itemActions: campItemActions(menu, (memberId, instanceId) => itemActions(state, data, memberId, instanceId, campHost === "bank" ? "warehouse" : undefined)),',

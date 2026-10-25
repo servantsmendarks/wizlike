@@ -673,6 +673,8 @@
   "party.san.broken": "虚脱",
 
   "detail.raceClass": "{race} {class}",
+  "detail.personality": "性格 {name}",
+  "detail.personalityNone": "なし（リーダー）",
   "detail.level": "レベル {level}",
   "detail.exp": "経験値 {exp}",
   "detail.hp": "HP {hp}/{hpMax}",

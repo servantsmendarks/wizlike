@@ -635,7 +635,7 @@ describe("layout", () => {
       inventory: Array.from({ length: 8 }, (_, i) => ({ text: "", dim: false, instanceId: `i${i}` })),
     } as unknown as CharacterDetail;
     const rects = characterHitRects(full, L.character.w);
-    expect(rects).toHaveLength(14);
+    expect(rects).toHaveLength(15); // 装備 6 + 所持品 8 + 性格の語（M24 F-2）
     for (const r of rects) {
       const st: Rect = { x: L.character.x + r.x, y: L.character.y + r.y, w: r.w, h: r.h };
       expect(Math.min(st.w, st.h)).toBeGreaterThanOrEqual(12);

@@ -1178,6 +1178,8 @@ describe("CH-03/UI-53 並び順の表の列", () => {
     const detail = {
       name: "a",
       raceClass: "",
+      personality: "",
+      personalityNote: "",
       level: "",
       exp: "",
       next: { text: "", ready: false },
@@ -1665,6 +1667,13 @@ describe("UI-33/UI-80（M21 A-4）キャラクター画面の品のキー操作"
     expect(characterItemKey("around", { ...c1, fold: 1 }, taps)).toEqual({ kind: "focus", page: { ...c1, fold: 1, focus: 0 } });
   });
 
+  test("UI-59/UI-80（M24 F-2）性格の語の矩形が注目の最後のとき、Enter は性格の説明を語る印 { kind: \"personality\" }（コマンドも頁の変更も無い）", () => {
+    const c1: Extract<CampPage, { kind: "character" }> = { kind: "character", memberId: "c1" };
+    const withP = [...taps, { kind: "personality" as const }];
+    expect(characterItemKey("around", { ...c1, focus: 3 }, withP)).toEqual({ kind: "focus", page: { ...c1, focus: 4 } });
+    expect(characterItemKey("confirm", { ...c1, focus: 4 }, withP)).toEqual({ kind: "personality" });
+  });
+
   test("UI-33/UI-80 Enter は注目している所を押したのと同じ（品は openItem、「ほか」は pageTurn）。注目なし・範囲の外の Enter と、数字・Esc・←→ は null（campKeyIndex のまま）", () => {
     const c1: Extract<CampPage, { kind: "character" }> = { kind: "character", memberId: "c1" };
     expect(characterItemKey("confirm", { ...c1, focus: 1 }, taps)).toEqual({ kind: "choose", choice: { kind: "openItem", instanceId: "i2" } });
@@ -1706,7 +1715,7 @@ describe("UI-33/UI-80（M21 A-4）キャラクター画面の品のキー操作"
     const member = campMenu(s, data)!.members[0]!;
     const detail = formatCharacter(ch, data, S, (iid) => itemDisplayName(s, data, iid), undefined, member, { tappable: true, inventoryFold: 0 });
     v.render({ kind: "character", detail, focusSlot: null, tappable: true, itemFocus: 3 });
-    expect(v.characterTaps()).toEqual(taps);
+    expect(v.characterTaps()).toEqual([...taps, { kind: "personality" }]); // M24 F-2: 性格の語は最後
     const el = v.el as unknown as FakeEl;
     const all = el.children.flatMap((c) => [c, ...c.children]);
     const herb = all.find((c) => c.className === "detail-inventory" && c.textContent === "薬草")!;

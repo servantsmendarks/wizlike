@@ -1310,6 +1310,19 @@ export function createApp(o: {
   };
 
   /**
+   * UI-59 / UI-80（M24 F-2）: キャラクター画面の性格の語を押した。その人の性格の説明（shortDescription。リーダーは creation.leaderNote）を語る。
+   * campReason と同じ作法で、コマンドは送らず頁も変えない。再生中は押せない（tapCampPanel の guard）
+   */
+  const sayPersonality = (): void => {
+    if (campPage.kind !== "character") return;
+    const memberId = campPage.memberId;
+    const ch = state.party.find((x) => x.id === memberId);
+    if (ch === undefined) return;
+    const note = formatCharacter(ch, data, strings, () => "").personalityNote;
+    if (note !== "") void narrator.say(note, store.get().skipAnimations);
+  };
+
+  /**
    * UI-80（M20）: キャンプのパネルのタップ。品を押せるキャラクター画面（camp の characterTarget）のときだけ、項目と同じく
    * 会話の箱を打ち切ってから品の段（openItem）か所持品の次の分（pageTurn）を選ぶ
    */
@@ -1319,6 +1332,10 @@ export function createApp(o: {
       const hit = play.camp.characterTarget(lx, ly);
       if (hit === null) return;
       play.talk.flush();
+      if (hit.kind === "personality") {
+        sayPersonality();
+        return;
+      }
       chooseCamp(hit.kind === "item" ? { kind: "openItem", instanceId: hit.instanceId } : { kind: "pageTurn", delta: 1 });
     });
 
@@ -2574,6 +2591,9 @@ export function createApp(o: {
         if (ik.kind === "focus") {
           campPage = ik.page;
           syncControls();
+        } else if (ik.kind === "personality") {
+          play.talk.flush();
+          sayPersonality();
         } else {
           play.talk.flush();
           chooseCamp(ik.choice);

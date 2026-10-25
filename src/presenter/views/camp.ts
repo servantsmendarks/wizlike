@@ -1113,7 +1113,7 @@ export function characterItemKey(
   a: Action,
   page: CampPage,
   taps: readonly CharacterTap[],
-): { kind: "focus"; page: CampPage } | { kind: "choose"; choice: CampChoice } | null {
+): { kind: "focus"; page: CampPage } | { kind: "choose"; choice: CampChoice } | { kind: "personality" } | null {
   if (page.kind !== "character" || taps.length === 0) return null;
   if (a === "forward" || a === "around") {
     const next = page.focus === undefined ? 0 : Math.max(0, Math.min(taps.length - 1, page.focus + (a === "forward" ? -1 : 1)));
@@ -1122,6 +1122,7 @@ export function characterItemKey(
   if (a === "confirm" && page.focus !== undefined) {
     const t = taps[page.focus];
     if (t === undefined) return null;
+    if (t.kind === "personality") return { kind: "personality" }; // M24 F-2: 性格の語は説明を語るだけ（頁は変えない）
     return { kind: "choose", choice: t.kind === "item" ? { kind: "openItem", instanceId: t.instanceId } : { kind: "pageTurn", delta: 1 } };
   }
   return null;
