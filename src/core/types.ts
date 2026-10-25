@@ -641,6 +641,7 @@ export type Command =
    * rejected no party。保留中・戦闘中・街も受け付ける。乱数は使わない
    */
   | { type: "debug.giveCursed"; wearable: boolean }
+  | { type: "debug.giveRare"; rarity: "rare" | "legendary" }
   /**
    * UI-57（開発用、M11）: 今の位置にドロップの宝箱を出す（罠を指定する。null は罠なし。U-1 の確認用）。迷宮の戦闘外・保留なし・箱なしのときだけ。
    * 危険度は罠の値、中身の Lv はその階の遭遇表の敵の level の最大。present が偽・省略なら乱数は使わない（衝動判定もしない）。

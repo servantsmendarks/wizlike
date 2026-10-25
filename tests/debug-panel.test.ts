@@ -1,7 +1,7 @@
 // debug パネル（M0 の確認画面と設定の仮 UI、UI-57 のポインタの記録）。純粋な部分と、偽の document の DOM の部分。
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { tapSpecOf } from "../src/presenter/input/tap";
-import { DEBUG_BUTTONS, DEBUG_BUTTONS_M10, DEBUG_BUTTONS_M11, DEBUG_BUTTONS_M12, DEBUG_BUTTONS_M5, DEBUG_BUTTONS_M7, DEBUG_POINTER, debugRow } from "../src/presenter/layout";
+import { DEBUG_BUTTONS, DEBUG_BUTTONS_M10, DEBUG_BUTTONS_M11, DEBUG_BUTTONS_M12, DEBUG_BUTTONS_M25, DEBUG_BUTTONS_M5, DEBUG_BUTTONS_M7, DEBUG_POINTER, debugRow } from "../src/presenter/layout";
 import { createSettingsStore, defaultSettings } from "../src/presenter/settings";
 import type { StageLayout } from "../src/presenter/stage";
 import { createDebugPanel, DEBUG_ROW_KEYS, debugRows, formatStageInfo, formatSwipeDebug, pointerRowsText, type StageInfoInput } from "../src/presenter/views/debug-panel";
@@ -119,6 +119,7 @@ describe("createDebugPanel", () => {
       onSanOver: () => calls.push("sanOver"),
       sanOver: 10,
       onGiveCursed: (wearable) => calls.push(`giveCursed:${wearable}`),
+      onGiveRare: (rarity) => calls.push(`giveRare:${rarity}`),
       onChest: (trapId) => calls.push(`chest:${trapId}`),
       chestTraps: data.chestTraps,
       onLevels: () => {},
@@ -154,6 +155,7 @@ describe("createDebugPanel", () => {
       onSanOver: () => calls.push("sanOver"),
       sanOver: 10,
       onGiveCursed: (wearable) => calls.push(`giveCursed:${wearable}`),
+      onGiveRare: (rarity) => calls.push(`giveRare:${rarity}`),
       onChest: (trapId) => calls.push(`chest:${trapId}`),
       chestTraps: data.chestTraps,
       onLevels: () => {},
@@ -201,6 +203,7 @@ describe("createDebugPanel", () => {
       onSanOver: () => calls.push("sanOver"),
       sanOver: 10,
       onGiveCursed: (wearable) => calls.push(`giveCursed:${wearable}`),
+      onGiveRare: (rarity) => calls.push(`giveRare:${rarity}`),
       onChest: (trapId) => calls.push(`chest:${trapId}`),
       chestTraps: data.chestTraps,
       onLevels: () => {},
@@ -270,6 +273,7 @@ describe("createDebugPanel", () => {
       onSanOver: () => calls.push("sanOver"),
       sanOver: 10,
       onGiveCursed: (wearable) => calls.push(`giveCursed:${wearable}`),
+      onGiveRare: (rarity) => calls.push(`giveRare:${rarity}`),
       onChest: (trapId) => calls.push(`chest:${trapId}`),
       chestTraps: data.chestTraps,
       onLevels: (level) => calls.push(`levels:${level}`),
@@ -300,6 +304,52 @@ describe("createDebugPanel", () => {
     expect(r.h).toBeGreaterThanOrEqual(30);
   });
 
+  test("UI-57（M25）2 ページ目のポインタの記録の下に「希少の品」「伝説の品」（DEBUG_BUTTONS_M25）。押すと onGiveRare(rare / legendary)。2 ページ目の子で、ポインタの記録の最終行より下・1 ページ目の段より上・ステージの内側で互いに重ならない", () => {
+    vi.stubGlobal("document", { createElement: () => new FakeEl(), createElementNS: () => new FakeEl() });
+    const store = createSettingsStore(defaultSettings(data.config), () => {});
+    const calls: string[] = [];
+    const panel = createDebugPanel({
+      strings: data.strings,
+      store,
+      defaults: defaultSettings(data.config),
+      onClose: () => {},
+      onHpOne: () => {},
+      onSanDown: () => {},
+      onWarp: () => {},
+      onAddTurns: () => {},
+      addTurns: 200,
+      onSanOver: () => {},
+      sanOver: 10,
+      onGiveCursed: () => {},
+      onGiveRare: (rarity) => calls.push(`giveRare:${rarity}`),
+      onChest: () => {},
+      chestTraps: data.chestTraps,
+      onLevels: () => {},
+      levels: [5, 8, 11],
+      pointers: () => [],
+    });
+    const root = panel.el as unknown as FakeEl;
+    const [page1, page2] = root.children.filter((c) => c.className === "debug-page") as [FakeEl, FakeEl];
+    for (const [key, r, call] of [
+      ["debug.giveRareButton", DEBUG_BUTTONS_M25.giveRare, "giveRare:rare"],
+      ["debug.giveLegendaryButton", DEBUG_BUTTONS_M25.giveLegendary, "giveRare:legendary"],
+    ] as const) {
+      const b = page2.children.find((c) => c.className === "ui-button" && c.textContent === data.strings[key]);
+      expect(b, key).toBeDefined();
+      expect(page1.children.includes(b!), key).toBe(false);
+      expect([b!.style["left"], b!.style["top"], b!.style["width"], b!.style["height"], b!.style["lineHeight"]]).toEqual([`${r.x}px`, `${r.y}px`, `${r.w}px`, `${r.h}px`, `${r.h - 2}px`]);
+      calls.length = 0;
+      tapSpecOf(b!)!.onTap({ lx: 0, ly: 0 });
+      expect(calls, key).toEqual([call]);
+      expect(r.y).toBeGreaterThanOrEqual(DEBUG_POINTER.rowY + DEBUG_POINTER.rowH * 20);
+      expect(r.y + r.h).toBeLessThanOrEqual(DEBUG_BUTTONS.hpOne.y);
+      expect(r.x).toBeGreaterThanOrEqual(4);
+      expect(r.x + r.w).toBeLessThanOrEqual(236);
+      expect(Math.min(r.w, r.h)).toBeGreaterThanOrEqual(30);
+    }
+    expect(DEBUG_BUTTONS_M25.giveRare.x + DEBUG_BUTTONS_M25.giveRare.w).toBeLessThanOrEqual(DEBUG_BUTTONS_M25.giveLegendary.x);
+  });
+
   test("UI-57/EV-16/EV-71（M11。2026-10-08）呪いのボタンの下に「箱!:{罠}」と「次」（DEBUG_BUTTONS_M11.chestPresent / chestPresentNext）。箱! は罠を進めずに onChest(罠, true)、次 は箱! の罠だけを巡回し（なし → 8 種 → なし）送らない。箱のボタンの巡回とは別。計測値・呪い・設定の行と重ならない", () => {
     vi.stubGlobal("document", { createElement: () => new FakeEl(), createElementNS: () => new FakeEl() });
     const store = createSettingsStore(defaultSettings(data.config), () => {});
@@ -317,6 +367,7 @@ describe("createDebugPanel", () => {
       onSanOver: () => calls.push("sanOver"),
       sanOver: 10,
       onGiveCursed: (wearable) => calls.push(`giveCursed:${wearable}`),
+      onGiveRare: (rarity) => calls.push(`giveRare:${rarity}`),
       onChest: (trapId, present) => calls.push(`chest:${trapId}:${present}`),
       chestTraps: data.chestTraps,
       onLevels: () => {},
@@ -415,6 +466,7 @@ describe("createDebugPanel", () => {
       onSanOver: () => calls.push("sanOver"),
       sanOver: 10,
       onGiveCursed: (wearable) => calls.push(`giveCursed:${wearable}`),
+      onGiveRare: (rarity) => calls.push(`giveRare:${rarity}`),
       onChest: (trapId) => calls.push(`chest:${trapId}`),
       chestTraps: data.chestTraps,
       onLevels: () => {},
@@ -464,7 +516,7 @@ describe("createDebugPanel", () => {
     const store = createSettingsStore(defaultSettings(data.config), (s) => persisted.push(s.autoBeatMs));
     let hpOne = 0;
     let closed = 0;
-    createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => closed++, onHpOne: () => hpOne++, onSanDown: () => {}, onWarp: () => {}, onAddTurns: () => {}, addTurns: 200, onSanOver: () => {}, sanOver: 10, onGiveCursed: () => {}, onChest: () => {}, chestTraps: data.chestTraps, onLevels: () => {}, levels: [5, 8, 11], pointers: () => [] });
+    createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => closed++, onHpOne: () => hpOne++, onSanDown: () => {}, onWarp: () => {}, onAddTurns: () => {}, addTurns: 200, onSanOver: () => {}, sanOver: 10, onGiveCursed: () => {}, onGiveRare: () => {}, onChest: () => {}, chestTraps: data.chestTraps, onLevels: () => {}, levels: [5, 8, 11], pointers: () => [] });
     const buttons = created.filter((e) => e.className === "ui-button");
     const byText = (t: string): FakeEl => buttons.find((b) => b.textContent === t)!;
     const tap = (b: FakeEl): void => tapSpecOf(b)!.onTap({ lx: 0, ly: 0 });
@@ -510,7 +562,7 @@ describe("createDebugPanel", () => {
     });
     const store = createSettingsStore(defaultSettings(data.config), () => {});
     let entries: PointerEntry[] = [];
-    const panel = createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => {}, onHpOne: () => {}, onSanDown: () => {}, onWarp: () => {}, onAddTurns: () => {}, addTurns: 200, onSanOver: () => {}, sanOver: 10, onGiveCursed: () => {}, onChest: () => {}, chestTraps: data.chestTraps, onLevels: () => {}, levels: [5, 8, 11], pointers: () => entries });
+    const panel = createDebugPanel({ strings: data.strings, store, defaults: defaultSettings(data.config), onClose: () => {}, onHpOne: () => {}, onSanDown: () => {}, onWarp: () => {}, onAddTurns: () => {}, addTurns: 200, onSanOver: () => {}, sanOver: 10, onGiveCursed: () => {}, onGiveRare: () => {}, onChest: () => {}, chestTraps: data.chestTraps, onLevels: () => {}, levels: [5, 8, 11], pointers: () => entries });
     const root = panel.el as unknown as FakeEl;
     const pages = root.children.filter((c) => c.className === "debug-page");
     expect(pages).toHaveLength(2);

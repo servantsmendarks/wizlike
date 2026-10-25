@@ -11,6 +11,7 @@
 // - DEBUG_BUTTONS_M11（SAN+10 の左。1 ページ目だけ）: 宝箱前・箱:{罠}（M11。debug.warp{chest} / debug.chest{trapId} を送るのは app。
 //   箱のボタンは押すたびにラベルの罠で送ってから次の罠へ巡回する）。呪いのボタンの下に 箱!:{罠}・次（debug.chest{trapId, present: true}。
 //   箱! は罠を進めずに送り（衝動が起きるまで同じ罠で試せる）、次 は箱! の罠だけを進める）
+// - DEBUG_BUTTONS_M25（2 ページ目のポインタの記録の下）: 希少の品・伝説の品（M25。debug.giveRare{rarity} を送るのは app）
 // - DEBUG_BUTTONS_M12（1px の模様の右。1 ページ目だけ）: Lv={n}（M12。U-6。押すたびにラベルの Lv で debug.levels を送るのは app、
 //   ラベルは受け取った levels（core の DEBUG_LEVELS）を巡回する）
 // - 「ポインタ」で 2 ページ目（UI-57。直近 20 件のポインタイベント。input/pointer-log の記録を DEBUG_POINTER の 20 行に古い順）。
@@ -20,7 +21,7 @@
 import type { Strings } from "../../core/data/index";
 import { thresholdCss } from "../input/swipe";
 import { formatPointerRow, POINTER_LOG_MAX, type PointerEntry } from "../input/pointer-log";
-import { DEBUG_BUTTONS, DEBUG_BUTTONS_M10, DEBUG_BUTTONS_M11, DEBUG_BUTTONS_M12, DEBUG_BUTTONS_M5, DEBUG_BUTTONS_M7, DEBUG_POINTER, DEBUG_SWIPE_Y, debugRow, type Rect } from "../layout";
+import { DEBUG_BUTTONS, DEBUG_BUTTONS_M10, DEBUG_BUTTONS_M11, DEBUG_BUTTONS_M12, DEBUG_BUTTONS_M25, DEBUG_BUTTONS_M5, DEBUG_BUTTONS_M7, DEBUG_POINTER, DEBUG_SWIPE_Y, debugRow, type Rect } from "../layout";
 import type { Insets, StageLayout, StageLayoutInput } from "../stage";
 import { nextAutoBeat, nextInputMode, stepSetting, type NumericSettingKey, type Settings, type SettingsStore } from "../settings";
 import { formatMessage } from "./message";
@@ -174,6 +175,8 @@ export function createDebugPanel(o: {
   sanOver: number;
   /** UI-57（M10）: 「呪い:司可」（true）「呪い:司否」（false）（debug.giveCursed。送れるかは app が決める） */
   onGiveCursed(wearable: boolean): void;
+  /** UI-57（M25）: 2 ページ目の「希少の品」「伝説の品」（debug.giveRare。触媒の ★ の確認用。送れるかは app が決める） */
+  onGiveRare(rarity: "rare" | "legendary"): void;
   /**
    * UI-57（M11）: 「箱:{罠}」（present 偽。debug.chest{trapId}）と「箱!:{罠}」（present 真。debug.chest{trapId, present: true}。
    * 衝動・制止・掛け合いを起こす）。null は罠なし。送れるかは app が決める
@@ -324,6 +327,10 @@ export function createDebugPanel(o: {
     page2.appendChild(r);
     return r;
   });
+
+  // M25: 2 ページ目のポインタの記録の下（DEBUG_BUTTONS_M25）。2 ページ目の子なので 1 ページ目では見えない
+  page2.appendChild(shortButton(t("debug.giveRareButton"), DEBUG_BUTTONS_M25.giveRare, () => o.onGiveRare("rare")));
+  page2.appendChild(shortButton(t("debug.giveLegendaryButton"), DEBUG_BUTTONS_M25.giveLegendary, () => o.onGiveRare("legendary")));
 
   let page: 1 | 2 = 1;
   const showPage = (p: 1 | 2): void => {

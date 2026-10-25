@@ -733,6 +733,15 @@ export const DEBUG_BUTTONS_M12 = {
   levels: { x: 172, y: 4, w: 60, h: 30 },
 } as const satisfies Record<string, Rect>;
 
+/**
+ * debug パネルの 2 ページ目の「希少の品」「伝説の品」（M25。開発用、UI-57。debug.giveRare{rarity}）: 1 ページ目に空きが無いため、
+ * ポインタの記録（行 19 の下端 y215）の下の y224 の 112×30 を x4 / x124 に 2 つ（右端 236。下端 254 は 1 ページ目の段のボタン y342 より上）
+ */
+export const DEBUG_BUTTONS_M25 = {
+  giveRare: { x: 4, y: 224, w: 112, h: 30 },
+  giveLegendary: { x: 124, y: 224, w: 112, h: 30 },
+} as const satisfies Record<string, Rect>;
+
 /** debug パネルの 2 ページ目（UI-57 のポインタの記録）: 題 y4、行 i は y16+10i（i=0..19、最後の行は y206..215）、x4・幅 232 */
 export const DEBUG_POINTER = { x: 4, w: 232, titleY: 4, rowY: 16, rowH: 10 } as const;
 

@@ -135,6 +135,42 @@ export function giveCursed(ctx: RuleContext, wearable: boolean): void {
 }
 
 /**
+ * debug.giveRare（M25）: 鑑定済み・呪いなし・Lv0・ユニークでない装備品の実体を 1 つ作り、並び順で最初に使用枠（CH-71）の空いた者
+ * （life を問わない。giveCursed と同じ）の inventory の末尾に入れる。品は equipment-bases.json の並びで最初のベース（装備品のベースはどれも
+ * 触媒になれる。upgrade の catalystOf）。希少度は rarity、オプションは config.items.rarities のその希少度の個数（IT-30）だけ、その品種に付けられる
+ * オプションを data の並びで先頭から（重複なし）段階 1 の値で付ける。迷宮内なら潜行台帳（DG-40）に入れ、foundIn は giveCursed と同じ。
+ * message debug.giveRare{name, item}。誰も空いていなければ実体を作らず message debug.giveRare.full。
+ * 実機で触媒の ★ と赤の一言（TW-17。M25）を確かめるため。乱数は使わない
+ */
+export function giveRare(ctx: RuleContext, rarity: "rare" | "legendary"): void {
+  const { state, data } = ctx;
+  const base = data.equipmentBases[0];
+  const def = data.config.items.rarities.find((r) => r.id === rarity);
+  const ch = state.party.find((c) => slotsUsed(c) < slotsMaxOf(c, data));
+  if (base === undefined || def === undefined || ch === undefined) {
+    ctx.events.push({ kind: "message", key: "debug.giveRare.full" });
+    return;
+  }
+  const kind = optionKindOf(base);
+  const options = data.itemOptions.options
+    .filter((o) => optionAppliesTo(o, kind))
+    .slice(0, def.options)
+    .map((o) => ({ optionId: o.id, tier: 1 as const, value: o.values[0]! }));
+  const id = createItemInstance(state, {
+    itemId: base.id,
+    identified: true,
+    rarity,
+    options,
+    cursed: false,
+    curseEffect: null,
+    foundIn: state.dive === null ? null : state.dive.dungeonId,
+  });
+  ch.inventory.push(id);
+  if (state.dive !== null) state.dive.ledger.items.push(id);
+  ctx.events.push({ kind: "message", key: "debug.giveRare", params: { name: ch.name, item: itemDisplayName(state, data, id) } });
+}
+
+/**
  * debug.levels のボタンが巡回する目標の Lv（M12。U-6）。d01 のボス（Lv4）・d02 のボス（Lv5）・d03（Lv5〜7）を数分で通すための開発用の値で、
  * ゲームの調整値ではないので config に置かない（SAN_OVER_DEBUG と同じ）。core はこの並びを使わず、表示層のラベルと巡回だけが使う
  */

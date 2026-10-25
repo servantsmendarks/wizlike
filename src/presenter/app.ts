@@ -457,6 +457,7 @@ export function createApp(o: {
     onSanOver: () => guard(() => sanOverFromDebug()),
     sanOver: SAN_OVER_DEBUG,
     onGiveCursed: (wearable) => guard(() => giveCursedFromDebug(wearable)),
+    onGiveRare: (rarity) => guard(() => giveRareFromDebug(rarity)),
     // M11 UI-57: 「箱:{罠}」。迷宮のときだけパネルを閉じてから debug.chest を送る（受け付けるかは core が決める。箱がある間は rejected）
     onChest: (trapId, present) => guard(() => debugCommand(present ? { type: "debug.chest", trapId, present: true } : { type: "debug.chest", trapId })),
     chestTraps: data.chestTraps,
@@ -2263,6 +2264,16 @@ export function createApp(o: {
     if (route !== "town" && route !== "dungeon" && route !== "battle") return;
     closeDebugForCommand();
     void run({ type: "debug.giveCursed", wearable });
+  };
+
+  /**
+   * UI-57（開発用、M25）: 2 ページ目の「希少の品」「伝説の品」。街・迷宮・戦闘のときだけ、パネルを閉じてから debug.giveRare を送る。
+   * 触媒の ★ と赤の一言（TW-17）を実機で確かめるためのもの
+   */
+  const giveRareFromDebug = (rarity: "rare" | "legendary"): void => {
+    if (route !== "town" && route !== "dungeon" && route !== "battle") return;
+    closeDebugForCommand();
+    void run({ type: "debug.giveRare", rarity });
   };
 
   /**

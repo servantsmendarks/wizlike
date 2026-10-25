@@ -35,7 +35,7 @@ import {
 import { checkBank, doBank } from "./rules/bank";
 import { startNewGame, validatePartySetup } from "./rules/creation";
 import { checkChest, disarmChest, inspectChest, leaveChest, openChest } from "./rules/chest";
-import { addTurns, DEBUG_LEVEL_MAX, debugChest, giveCursed, hpOne, sanDown, sanOver, setLevels, warp } from "./rules/debug";
+import { addTurns, DEBUG_LEVEL_MAX, debugChest, giveCursed, giveRare, hpOne, sanDown, sanOver, setLevels, warp } from "./rules/debug";
 import { checkEnter, checkSearch, checkUseStairs, chooseOption, enterDungeon, moveForward, searchAround, turn, useStairs } from "./rules/dungeon";
 import { checkUseItem, useItemInField } from "./rules/items";
 import { checkShop, doShop } from "./rules/shop";
@@ -118,6 +118,13 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
     if (state.party.length === 0) return reject(state, "debug.giveCursed", "no party");
     const ctx = makeContext(cloneState(state), data);
     giveCursed(ctx, command.wearable === true);
+    return finish(ctx);
+  }
+  // UI-57（開発用、M25）: 鑑定済みの希少／伝説の装備品を 1 つ持たせる（触媒の ★ の確認用）。giveCursed と同じ受け付け方
+  if (command.type === "debug.giveRare") {
+    if (state.party.length === 0) return reject(state, "debug.giveRare", "no party");
+    const ctx = makeContext(cloneState(state), data);
+    giveRare(ctx, command.rarity === "legendary" ? "legendary" : "rare");
     return finish(ctx);
   }
   // UI-57（開発用、M5）: リーダー以外の SAN を 1 段下げる。迷宮の戦闘外なら保留中（screen event を含む）も受け付ける

@@ -19,6 +19,7 @@ import {
   uniqueOf,
 } from "../src/core/state";
 import { floorOf, visibleCellsOf, warpTarget } from "../src/core/rules/dungeon";
+import { townMenu } from "../src/core/rules/town";
 import { cellAt, idx, isPassable, step } from "../src/core/rules/dungeon-gen";
 import { gainSan, loseSan, sanJustBelow, sanStage } from "../src/core/rules/san";
 import type { Cell, Character, Command, Floor, GameEvent, GameState } from "../src/core/types";
@@ -990,5 +991,64 @@ describe("UI-57 debug.addTurns（開発用、M5.5）", () => {
     const d = loadFreshData();
     d.config.town.tavernEventTurns = 7;
     expect(execute(town, ADD, d).state.adventureTurns).toBe(22);
+  });
+});
+
+describe("UI-57 debug.giveRare（開発用、M25）", () => {
+  const RARE: Command = { type: "debug.giveRare", rarity: "rare" };
+  const LEGEND: Command = { type: "debug.giveRare", rarity: "legendary" };
+
+  test("UI-57/TW-17/IT-30 debug.giveRare は鑑定済み・呪いなし・Lv0・ユニークでない最初のベースの品を、希少度に応じた個数のオプション（段階 1）で並び順で最初に使用枠の空いた者の末尾に入れる。乱数は変えない", () => {
+    for (const [cmd, rarity] of [[RARE, "rare"], [LEGEND, "legendary"]] as const) {
+      const s = cloneState(newGame(1));
+      s.party[0]!.inventory.push(...Array.from({ length: 8 }, () => createItemInstance(s, { itemId: "herb", identified: true })));
+      const before = JSON.stringify(s);
+      const r = execute(s, cmd, data);
+      expect(JSON.stringify(s)).toBe(before);
+      const id = `i${s.nextItemSeq}`;
+      const c2 = r.state.party[1]!;
+      expect(c2.inventory.at(-1)).toBe(id);
+      const inst = r.state.items[id]!;
+      const base = data.equipmentBases[0]!;
+      const n = data.config.items.rarities.find((x) => x.id === rarity)!.options;
+      expect(n).toBeGreaterThan(0);
+      expect([inst.itemId, inst.identified, inst.cursed, inst.curseEffect, inst.level, inst.uniqueId, inst.rarity, inst.options.length, inst.foundIn]).toEqual([base.id, true, false, null, 0, null, rarity, n, null]);
+      expect(new Set(inst.options.map((o) => o.optionId)).size).toBe(n);
+      expect(inst.options.every((o) => o.tier === 1)).toBe(true);
+      expect(r.events).toEqual([{ kind: "message", key: "debug.giveRare", params: { name: c2.name, item: itemDisplayName(r.state, data, id) } }]);
+      expectKnownStringKeys(r.events);
+      expect(r.state.rng).toEqual(s.rng);
+    }
+  });
+
+  test("UI-57/TW-17 debug.giveRare の品は触媒の候補（townMenu.upgrade の catalysts）に warn 真で出る。迷宮では台帳に入り foundIn はそのダンジョン", () => {
+    for (const cmd of [RARE, LEGEND]) {
+      const r = execute(cloneState(newGame(1)), cmd, data);
+      const id = Object.keys(r.state.items).find((k) => r.state.items[k]!.rarity !== "normal")!;
+      const rows = townMenu(r.state, data)!.upgrade.members.flatMap((m) => m.catalysts).filter((c) => c.instanceId === id);
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.every((c) => c.warn && c.rarity === r.state.items[id]!.rarity)).toBe(true);
+    }
+    const s = dived(1);
+    const r = execute(s, RARE, data);
+    const id = `i${s.nextItemSeq}`;
+    expect(r.state.items[id]!.foundIn).toBe(s.dive!.dungeonId);
+    expect(r.state.dive!.ledger.items).toEqual([...s.dive!.ledger.items, id]);
+  });
+
+  test("UI-57 debug.giveRare は誰の使用枠も空いていなければ実体を作らず message debug.giveRare.full。title は rejected no party。ボット（tests/balance）は使わない", () => {
+    const s = cloneState(newGame(1));
+    for (const ch of s.party) while (slotsUsedOf(ch) < slotsMaxOf(ch, data)) ch.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
+    const full = execute(s, RARE, data);
+    expect(full.events).toEqual([{ kind: "message", key: "debug.giveRare.full" }]);
+    expectKnownStringKeys(full.events);
+    expect(full.state).toEqual(s);
+    const t = createInitialState(1, data);
+    const r = execute(t, RARE, data);
+    expect(r.state).toBe(t);
+    expect(r.events).toEqual([{ kind: "rejected", command: "debug.giveRare", reason: "no party" }]);
+    const balanceSources = import.meta.glob("./balance/**/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+    expect(Object.keys(balanceSources).length).toBeGreaterThan(0);
+    for (const [file, src] of Object.entries(balanceSources)) expect(src, file).not.toContain("debug.giveRare");
   });
 });
