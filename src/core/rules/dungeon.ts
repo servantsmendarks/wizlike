@@ -434,7 +434,7 @@ export function searchAround(ctx: RuleContext): void {
   for (const ch of aliveMembers(state)) loseSan(ctx, ch, data.config.san.search, []);
   if (!state.party.some(canAct)) return; // CH-44: 全員が動けなくなれば遭遇しない（全滅処理は engine の後処理）
   rollEncounter(ctx, here.roomId !== null, true); // 率は部屋、戦闘の origin の inRoom は今のセルのまま
-  if (state.battle === null) ctx.events.push({ kind: "message", key: "dungeon.searched" });
+  if (state.battle === null) ctx.events.push({ kind: "message", key: "dungeon.searched", params: { n: data.config.san.search } }); // CH-51（M24）: 減った基本の量
   warnHp(ctx); // CH-43b（M23）: 手の終わり（戦闘が始まれば出さない）
 }
 
@@ -569,8 +569,9 @@ function triggerTrap(ctx: RuleContext, f: Floor, p: Pos): void {
   if (trapId === null || trapId === "teleport") return; // teleport は M2 では何もしない（clearedCells にも入れない）
   dive.clearedCells.push({ floor: dive.floor, x: p.x, y: p.y });
   removeIndex(dive.knownTraps, dive.floor, idx(f, p.x, p.y)); // DG-21（M5.5）: 発動したら察知の印を外す
-  ctx.events.push({ kind: "message", key: `dungeon.trap.${trapId}` });
   const cfg = data.config;
+  // DG-20 / CH-51（M24）: 文に SAN の基本の量（慎重の者の半分は直後の trait.cautiousCalm が示す）
+  ctx.events.push({ kind: "message", key: `dungeon.trap.${trapId}`, params: { n: cfg.san.trap } });
   if (trapId === "pit") {
     damageMembers(ctx, aliveMembers(state), cfg.dungeon.trap.pitDice);
   } else if (trapId === "spinner") {
@@ -623,12 +624,15 @@ export function chooseOption(ctx: RuleContext, optionId: string): void {
     dive.floorSteps = 0; // DG-46（M18）
     explore(ctx, dive, floorOf(dive, data));
     ctx.events.push({ kind: "floorChanged", floor: dive.floor, pos: { x: dive.pos.x, y: dive.pos.y }, facing: dive.facing });
-    ctx.events.push({ kind: "message", key: "dungeon.descend" });
     recordDeepest(state, dive.dungeonId, dive.floor); // DG-47（M21）: SAN の判定（この潜行の deepestFloor）とは別の、潜行をまたぐ記録
     // DG-14 / CH-51: この潜行で初めて到達した階に降りたときだけ減る（上って降り直しても減らない。ユーザー決定）
+    // CH-51 / DG-14（M24）: 減るときは dungeon.descend{n}、減らないときは dungeon.descendAgain
     if (dive.floor > dive.deepestFloor) {
       dive.deepestFloor = dive.floor;
+      ctx.events.push({ kind: "message", key: "dungeon.descend", params: { n: data.config.san.floorDescend } });
       for (const ch of aliveMembers(state)) loseSan(ctx, ch, data.config.san.floorDescend, []);
+    } else {
+      ctx.events.push({ kind: "message", key: "dungeon.descendAgain" });
     }
     return;
   }

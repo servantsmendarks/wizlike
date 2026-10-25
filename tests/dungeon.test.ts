@@ -39,6 +39,7 @@ import {
   PLACEHOLDER_DUNGEON_NAME,
 } from "./helpers/core";
 import { kinsokuLines } from "./helpers/wrap";
+import { formatMessage } from "../src/presenter/views/message";
 import { approaches, dataWithRate, ENTER_D01, enterD01, findSituation, MOVE, placeAt, run, withRng } from "./helpers/dungeon";
 
 // ---------------------------------------------------------------------------
@@ -654,7 +655,7 @@ describe("毒の 1 歩（CH-43）", () => {
     expect(ev3.slice(0, 3)).toEqual([
       { kind: "moved", pos: sit.a.target, facing: sit.a.facing },
       { kind: "hpChanged", id: "c1", delta: -1, hp: 4 },
-      { kind: "message", key: "dungeon.trap.pit" },
+      { kind: "message", key: "dungeon.trap.pit", params: { n: 3 } },
     ]);
     expect(r.events.slice(0, 3).filter((e) => e.kind === "hpChanged" && e.id === "c2")).toEqual([]);
     const t = run(s, { type: "dungeon.turn", dir: "left" }, DATA0);
@@ -1196,7 +1197,7 @@ describe("階段（DG-14, E3）", () => {
     expect(r2.events).toEqual([{ kind: "rejected", command: "event.choose", reason: "no pending choice" }]);
   });
 
-  test("DG-14/CH-51/CH-54 descend: floor 2、pos・facing は変わらず、pos は 2 階の stairsUp と一致。events は [floorChanged, message dungeon.descend, sanChanged×生存者]。慎重も −5（耐性なし）、dead のメンバーは減らない", () => {
+  test("DG-14/CH-51/CH-54 descend: floor 2、pos・facing は変わらず、pos は 2 階の stairsUp と一致。events は [floorChanged, message dungeon.descend{n: 5}, sanChanged×生存者]（M24: 文に量）。慎重も −5（耐性なし）、dead のメンバーは減らない", () => {
     const { state } = atStairsDown();
     const s1 = cloneState(run(state, MOVE).state);
     s1.party[2]!.life = "dead";
@@ -1213,7 +1214,7 @@ describe("階段（DG-14, E3）", () => {
     const n = data.config.san.floorDescend;
     expect(r.events).toEqual([
       { kind: "floorChanged", floor: 2, pos: dive.pos, facing: dive.facing },
-      { kind: "message", key: "dungeon.descend" },
+      { kind: "message", key: "dungeon.descend", params: { n } },
       ...s1.party.filter((c) => c.life === "alive").map((c) => ({ kind: "sanChanged", id: c.id, delta: -n, san: c.san - n })),
     ]);
     expect(r.state.party[2]!.san).toBe(s1.party[2]!.san);
@@ -1222,7 +1223,7 @@ describe("階段（DG-14, E3）", () => {
     expectExploredCovers(r.state);
   });
 
-  test("DG-14/CH-51 その潜行で初めて到達した階に降りたときだけ SAN が減る。2 階へ降り→上る→また降りると、2 回目は [floorChanged, message dungeon.descend] だけで SAN は変わらない", () => {
+  test("DG-14/CH-51 その潜行で初めて到達した階に降りたときだけ SAN が減る。2 階へ降り→上る→また降りると、2 回目は [floorChanged, message dungeon.descendAgain]（M24。「階を降りた。」だけ）で SAN は変わらない", () => {
     const { state } = atStairsDown();
     expect(state.dive!.deepestFloor).toBe(1);
     const d1 = run(run(state, MOVE, DATA0).state, { type: "event.choose", optionId: "descend" }, DATA0);
@@ -1249,11 +1250,40 @@ describe("階段（DG-14, E3）", () => {
     const d2 = run(atDown.state, { type: "event.choose", optionId: "descend" }, DATA0);
     expect(d2.events).toEqual([
       { kind: "floorChanged", floor: 2, pos: d2.state.dive!.pos, facing: d2.state.dive!.facing },
-      { kind: "message", key: "dungeon.descend" },
+      { kind: "message", key: "dungeon.descendAgain" },
     ]);
     expect(d2.state.party.map((c) => c.san)).toEqual(atDown.state.party.map((c) => c.san));
     expect(d2.state.dive!.deepestFloor).toBe(2);
     expect(d2.state.rng).toEqual(atDown.state.rng);
+  });
+
+  test("CH-51/DG-14/DG-20/DG-45/CB-06/CB-31/CB-62/CH-77（M24）SAN の減る文は「（正気 −{n}）」で量を添え、最悪の値（n 2 桁・名前 6 字・品名 24 単位）でも 28 字 × 2 行。回転床は 1 行。descendAgain は量なし", () => {
+    const S = data.strings;
+    const NAME = "アアアアアア";
+    const ITEM = "アアアアアアアアアアアア";
+    const cases: [string, Record<string, string | number>][] = [
+      ["dungeon.descend", { n: 99 }],
+      ["dungeon.trap.pit", { n: 99 }],
+      ["dungeon.trap.spinner", { n: 99 }],
+      ["dungeon.searched", { n: 99 }],
+      ["battle.unidentified", { n: 99 }],
+      ["battle.sanDrain", { target: NAME, n: 99 }],
+      ["chest.trap.curse", { actor: NAME, n: 99 }],
+      ["camp.identifyFailedSan", { name: NAME, item: ITEM, n: 99 }],
+      ["camp.possessedSan", { name: NAME, item: ITEM, n: 99 }],
+    ];
+    for (const [k, params] of cases) {
+      expect(S[k], k).toContain("−{n}）");
+      const text = formatMessage(S[k]!, params);
+      expect(text, k).not.toContain("{");
+      expect(kinsokuLines(text, 28).length, k).toBeLessThanOrEqual(2);
+    }
+    expect(S["dungeon.descend"]).toBe("階を降りた。空気が重くなる（正気\u00a0−{n}）。");
+    expect(S["dungeon.trap.spinner"]).toBe("床が回った（正気\u00a0−{n}）。どちらを向いている？");
+    expect(kinsokuLines(formatMessage(S["dungeon.trap.spinner"]!, { n: 99 }), 28)).toHaveLength(1);
+    expect(S["dungeon.descendAgain"]).toBe("階を降りた。");
+    // 街の鑑定の失敗は SAN が減らないので量の無い文のまま
+    expect(S["camp.identifyFailed"]).not.toContain("{n}");
   });
 
   test("DG-14/CH-51 再入場では deepestFloor が 1 に戻り、2 階へ降りるとまた SAN が減る", () => {
@@ -1416,7 +1446,7 @@ describe("罠（DG-20, DG-21, E4）", () => {
     return { ...sit, state: s };
   }
 
-  test("DG-20/CH-51/CH-54 pit: message dungeon.trap.pit。生存者に並び順で config.dungeon.trap.pitDice（1d4。鏡の rng と一致）、hpChanged の delta と hp。dead のメンバーには振らない。罠の SAN はリーダー・普通 −3、慎重 −1（tags trap）", () => {
+  test("DG-20/CH-51/CH-54 pit: message dungeon.trap.pit。生存者に並び順で config.dungeon.trap.pitDice（1d4。鏡の rng と一致）、hpChanged の delta と hp。dead のメンバーには振らない。罠の SAN はリーダー・普通 −3、慎重 −1（tags trap）。M24: 文の n は慎重の者がいても基本の量 3", () => {
     const { state, a } = atPit((s) => {
       s.party[5]!.life = "dead";
       s.party[5]!.hp = 0;
@@ -1428,7 +1458,7 @@ describe("罠（DG-20, DG-21, E4）", () => {
     const r = run(state, MOVE, DATA0);
     expect(r.events).toEqual([
       { kind: "moved", pos: a.target, facing: a.facing },
-      { kind: "message", key: "dungeon.trap.pit" },
+      { kind: "message", key: "dungeon.trap.pit", params: { n: 3 } },
       ...alive.map((c, i) => ({ kind: "hpChanged", id: c.id, delta: -rolls[i]!, hp: 30 - rolls[i]! })),
       ...alive.flatMap((c) => [...calm(c), { kind: "sanChanged", id: c.id, delta: -trapLoss(state, c.id), san: c.san - trapLoss(state, c.id) }]),
     ]);
@@ -1452,7 +1482,7 @@ describe("罠（DG-20, DG-21, E4）", () => {
     const ally = (id: string) => (state.party.find((c) => c.id === id)!.personality === "cautious" ? 5 : 10);
     expect(r.events).toEqual([
       { kind: "moved", pos: a.target, facing: a.facing },
-      { kind: "message", key: "dungeon.trap.pit" },
+      { kind: "message", key: "dungeon.trap.pit", params: { n: 3 } },
       ...state.party.map((c, i) => ({ kind: "hpChanged", id: c.id, delta: -(c.hp - Math.max(0, c.hp - rolls[i]!)), hp: Math.max(0, c.hp - rolls[i]!) })),
       { kind: "lifeChanged", id: victim.id, life: "dead" },
       { kind: "message", key: "dungeon.dead", params: { name: victim.name } },
@@ -1575,7 +1605,7 @@ describe("罠（DG-20, DG-21, E4）", () => {
     }
   });
 
-  test("DG-20 spinner: 向きは FACINGS[randInt(0,3)]（鏡の rng と一致）、turned を出し、罠の SAN、explored の更新", () => {
+  test("DG-20 spinner: message dungeon.trap.spinner{n: 3}（M24）。向きは FACINGS[randInt(0,3)]（鏡の rng と一致）、turned を出し、罠の SAN、explored の更新", () => {
     const seen = new Set<Facing>();
     for (let seed = 1; seed <= 60; seed++) {
       const s0 = enterD01(seed);
@@ -1590,7 +1620,7 @@ describe("罠（DG-20, DG-21, E4）", () => {
       const r = run(state, MOVE, DATA0);
       expect(r.events).toEqual([
         { kind: "moved", pos: a.target, facing: a.facing },
-        { kind: "message", key: "dungeon.trap.spinner" },
+        { kind: "message", key: "dungeon.trap.spinner", params: { n: 3 } },
         { kind: "turned", facing },
         ...state.party.flatMap((c) => [...calm(c), { kind: "sanChanged", id: c.id, delta: -trapLoss(state, c.id), san: c.san - trapLoss(state, c.id) }]),
       ]);
@@ -1653,7 +1683,7 @@ describe("罠（DG-20, DG-21, E4）", () => {
     const r = run(state, MOVE, detectData());
     expect(r.events.slice(0, 2)).toEqual([
       { kind: "moved", pos: a.target, facing: a.facing },
-      { kind: "message", key: "dungeon.trap.pit" },
+      { kind: "message", key: "dungeon.trap.pit", params: { n: 3 } },
     ]);
     expect(eventsOfKind(r.events, "hpChanged").map((e) => -e.delta)).toEqual(rolls);
     expect(kinds(r.events)).not.toContain("message:dungeon.trap.detected");
@@ -1698,7 +1728,7 @@ describe("罠（DG-20, DG-21, E4）", () => {
     randInt(mirror, 1, 100); // その後の遭遇判定
     const r2 = run(r1.state, { type: "event.choose", optionId: "proceed" }, detectData());
     expect(r2.events).toEqual([
-      { kind: "message", key: "dungeon.trap.pit" },
+      { kind: "message", key: "dungeon.trap.pit", params: { n: 3 } },
       ...state.party.map((c, i) => ({ kind: "hpChanged", id: c.id, delta: -rolls[i]!, hp: 30 - rolls[i]! })),
       ...state.party.flatMap((c) => [...calm(c), { kind: "sanChanged", id: c.id, delta: -trapLoss(state, c.id), san: c.san - trapLoss(state, c.id) }]),
     ]);
@@ -2906,11 +2936,11 @@ describe("DG-45 / CB-01b 敵を待つ（dungeon.search。M18。M19 で「辺り�
   }
   const alive = (s: GameState) => s.party.filter((c) => c.life === "alive");
 
-  test("DG-45 config.san.search は 1【仮】。文言 camp.search「敵を待つ」と dungeon.searched「待ったが、何も現れなかった。」（M19 で改名）がある", () => {
+  test("DG-45 config.san.search は 1【仮】。文言 camp.search「敵を待つ」と dungeon.searched「待ったが、何も現れなかった（正気 −{n}）。」（M19 で改名。M24 で量）がある", () => {
     expect(data.config.san.search).toBe(1);
     expect(data.strings["camp.search"]).toBe("敵を待つ");
-    expect(data.strings["dungeon.searched"]).toBe("待ったが、何も現れなかった。");
-    expect([...data.strings["dungeon.searched"]!].length).toBeLessThanOrEqual(28);
+    expect(data.strings["dungeon.searched"]).toBe("待ったが、何も現れなかった（正気 −{n}）。");
+    expect([...formatMessage(data.strings["dungeon.searched"]!, { n: 99 })].length).toBeLessThanOrEqual(28);
   });
 
   test("DG-45 遭遇しなければ [sanChanged ×生存者, message dungeon.searched]。adventureTurns +1、生存者の SAN −1、位置・向き・explored・floorSteps は変わらない。乱数は遭遇の d100 の 1 回だけ（鏡の rng）", () => {
@@ -2924,7 +2954,7 @@ describe("DG-45 / CB-01b 敵を待つ（dungeon.search。M18。M19 で「辺り�
       const ids = alive(s).map((c) => c.id);
       expect(r.events).toEqual([
         ...ids.map((id) => ({ kind: "sanChanged", id, delta: -1, san: s.party.find((c) => c.id === id)!.san - 1 })),
-        { kind: "message", key: "dungeon.searched" },
+        { kind: "message", key: "dungeon.searched", params: { n: 1 } },
       ]);
       expect(r.state.rng).toEqual(mirror);
       expect(r.state.adventureTurns).toBe(s.adventureTurns + 1);

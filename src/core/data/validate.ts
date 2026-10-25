@@ -1534,10 +1534,11 @@ function validateChestTraps(ctx: Ctx, v: unknown, ix: Index): void {
   a.forEach((t, i) => {
     const id = strOf(get(t, "id"));
     if (id === undefined) return;
-    // CB-62: 作動の語りは chest.trap.<id>。作動させた人 {actor} だけを差し込む
+    // CB-62: 作動の語りは chest.trap.<id>。作動させた人 {actor} だけを差し込む（M24。CH-51: SAN の効果なら量 {n} も）
     const key = `chest.trap.${id}`;
     strKey(ctx, at("", i), key, ix);
-    onlyPlaceholders(ctx, at("", i), key, ["{actor}"], "CB-62", ix);
+    const isSan = get(get(t, "effect"), "kind") === "san";
+    onlyPlaceholders(ctx, at("", i), key, isSan ? ["{actor}", "{n}"] : ["{actor}"], "CB-62", ix);
   });
   // CB-61: 危険度 1..4 のそれぞれに 1 件以上（抽選で空の段を作らない）
   for (let dg = 1; dg <= CHEST_TRAP_MAX_DANGER; dg++)

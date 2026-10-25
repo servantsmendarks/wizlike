@@ -231,7 +231,7 @@ export function startBattle(ctx: RuleContext, origin: BattleOrigin, specs: { mon
     // CB-06: 未鑑定のグループの数 × unidentifiedGroup（耐性なし）
     const k = groups.filter((g) => !isIdentified(state, g.monsterId)).length;
     if (k > 0) {
-      ctx.events.push({ kind: "message", key: "battle.unidentified" });
+      ctx.events.push({ kind: "message", key: "battle.unidentified", params: { n: k * cfg.san.unidentifiedGroup } }); // CH-51（M24）: 1 人あたりの量
       tellHintOnce(ctx, "sanUnknown"); // CB-06 / UI-76（M16）: 初めてのときだけ、SAN が減る理由の一言（sanChanged の前）
       for (const ch of state.party) {
         if (ch.life === "alive") loseSan(ctx, ch, k * cfg.san.unidentifiedGroup, []);
@@ -984,7 +984,7 @@ function actEnemyGroup(ctx: RuleContext, g: number, us: readonly number[], defen
         }
         if (atk.sanDrain !== undefined) {
           const c = loseSan(lctx, tt, atk.sanDrain, atk.tags ?? []); // CB-31: fear 耐性は san.ts が効かせる
-          if (c.delta !== 0) later.push({ kind: "message", key: "battle.sanDrain", params: { target: tt.name } });
+          if (c.delta !== 0) later.push({ kind: "message", key: "battle.sanDrain", params: { target: tt.name, n: -c.delta } }); // CB-31（M24）: 実際の減り
         }
       }
       if (isWipe(state)) break;

@@ -936,7 +936,7 @@ describe("IT-40 固有スキル", () => {
     const para = cloneState(s0);
     member(para, "c2").status = ["paralysis"];
     const p = run1(para);
-    expect(p.events).toContainEqual({ kind: "message", key: "battle.unidentified" });
+    expect(p.events).toContainEqual({ kind: "message", key: "battle.unidentified", params: { n: 4 } });
     expect(p.state.bestiary["giant_rat"]!.identified).toBe(false);
   });
 

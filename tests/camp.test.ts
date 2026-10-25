@@ -597,7 +597,7 @@ describe("CH-77 party.identify", () => {
     expect(f.events.some((e) => e.kind === "message" && e.key.startsWith("item.option."))).toBe(false);
   });
 
-  test("CH-77 失敗（迷宮）: dice.identify.ng → camp.identifyFailed → 司教の SAN −3。品は未鑑定のまま。呪われていない品では chance を引かない", () => {
+  test("CH-77 失敗（迷宮）: dice.identify.ng → camp.identifyFailedSan{n: 3}（M24。CH-51）→ 司教の SAN −3。品は未鑑定のまま。呪われていない品では chance を引かない", () => {
     const g = give(bishopAt(inDungeon()), "c1", "dagger", false);
     const s = withSeed(g.s, seedFor((x) => x > 60));
     const m = cloneRng(s.rng);
@@ -616,7 +616,7 @@ describe("CH-77 party.identify", () => {
         rule: { key: "identify.rule", params: { rate: 60 } },
         result: { key: "dice.identify.ng" },
       },
-      { kind: "message", key: "camp.identifyFailed", params: { name: "エル", item: "短い刃？" } },
+      { kind: "message", key: "camp.identifyFailedSan", params: { name: "エル", item: "短い刃？", n: 3 } },
       { kind: "sanChanged", id: "c5", delta: -3, san: san - 3 },
     ]);
     expect(r.state.items[g.id]!.identified).toBe(false);
@@ -702,7 +702,7 @@ describe("CH-77 party.identify", () => {
     const san = member(s, "c5").san;
     const r = ok(s, identify("c5", g.id));
     expect(r.events.slice(2)).toEqual([
-      { kind: "message", key: "camp.identifyFailed", params: { name: "エル", item: "短い刃？" } },
+      { kind: "message", key: "camp.identifyFailedSan", params: { name: "エル", item: "短い刃？", n: 3 } },
       { kind: "sanChanged", id: "c5", delta: -3, san: san - 3 },
       { kind: "message", key: "camp.possessed", params: { name: "エル", item: "短い刃？" } },
       { kind: "message", key: "camp.cursed", params: { item: "短い刃？" } },
@@ -744,7 +744,7 @@ describe("CH-77 party.identify", () => {
     const g = giveCursed(bishopAt(inDungeon()), "c1", false);
     const s = withSeed(g.s, seedFor((x) => x > 60, false));
     const r = ok(s, identify("c5", g.id));
-    expect(messagesOf(r.events)).toEqual([{ kind: "message", key: "camp.identifyFailed", params: { name: "エル", item: "短い刃？" } }]);
+    expect(messagesOf(r.events)).toEqual([{ kind: "message", key: "camp.identifyFailedSan", params: { name: "エル", item: "短い刃？", n: 3 } }]);
     expect(member(r.state, "c1").inventory).toContain(g.id);
     expect(member(r.state, "c5").equipment.weapon).toBe("i14");
   });
@@ -758,7 +758,7 @@ describe("CH-77 party.identify", () => {
       const inv = [...member(s, "c1").inventory];
       const r = ok(s, identify("c5", id));
       expect(r.events.slice(-2)).toEqual([
-        { kind: "message", key: "camp.possessedSan", params: { name: "エル", item: name } },
+        { kind: "message", key: "camp.possessedSan", params: { name: "エル", item: name, n: 10 } },
         { kind: "sanChanged", id: "c5", delta: -10, san: san - failSan - 10 },
       ]);
       expect(member(r.state, "c5").san).toBe(san - failSan - 10);

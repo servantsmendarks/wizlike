@@ -281,7 +281,7 @@ describe("CB-62 罠の効果（開けて作動させる）", () => {
     }
   });
 
-  test("CB-62/EV-44 呪詛: 生存者全員の SAN −8（trap の耐性: 慎重は −4。その直前に trait.cautiousCalm）。乱数なし", () => {
+  test("CB-62/EV-44 呪詛: chest.trap.curse{n: 8}（M24）→ 生存者全員の SAN −8（trap の耐性: 慎重は −4。その直前に trait.cautiousCalm）。乱数なし", () => {
     const s = withChest("curse", 5, 1, D);
     const m = cloneRng(s.rng);
     mirrorContents(m, D);
@@ -296,6 +296,9 @@ describe("CB-62 罠の効果（開けて作動させる）", () => {
       ["c5", -8],
       ["c6", -4],
     ]);
+    // CH-51（M24）: 作動の文は基本の量 n 8（慎重の半分は直後の trait.cautiousCalm が示す）
+    const said = r.events.find((e) => e.kind === "message" && e.key === "chest.trap.curse");
+    expect(said && said.kind === "message" ? said.params?.n : undefined).toBe(8);
     // EV-44（M18）: 慎重（c2 ベルク・c6 フィン）の半減が効いた sanChanged の直前に trait.cautiousCalm
     const pre = r.events.slice(0, iGold);
     for (const [id, name] of [["c2", "ベルク"], ["c6", "フィン"]] as const) {

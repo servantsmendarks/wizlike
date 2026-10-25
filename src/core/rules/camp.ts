@@ -517,9 +517,10 @@ function forceEquip(ctx: RuleContext, bishop: Character, owner: Character, insta
  * 成功: identified = true（ユニークなら図鑑。IT-66）→ message camp.identified{name, old, item, rarity} →（M18。装備なら）camp.identifiedPower{item, attack, ac, magic} →（M19）camp.identifiedValue{rarity, gold} → 呪われていれば item.curse.found / foundNone（M24。IT-32。identifiedCurseEvents）。
  * UI-43（M20 D-3）: identifiedPower と identifiedValue は数値の行なので instant を付ける（文字送りしない）。
  * M20（D-7）: identifiedValue の後（呪いの文の前）に、オプションを 1 つ 1 件 item.option.found{name, value, unit}（identifiedOptionEvents。instant）。
- * 失敗: message camp.identifyFailed{name, item} → 迷宮内（dive が null でない）なら司教の SAN −failSanDungeon（tags 空）→
+ * 失敗: 迷宮内（dive が null でない）なら message camp.identifyFailedSan{name, item, n} → 司教の SAN −failSanDungeon（tags 空）、
+ * 街なら message camp.identifyFailed{name, item}（M24。CH-51）→
  * 品が呪われていれば chance(possessChance) を 1 回。当たれば canForceEquip なら forceEquip、そうでなければ
- * message camp.possessedSan{name, item} → 司教の SAN −possessSan（tags 空）。
+ * message camp.possessedSan{name, item, n} → 司教の SAN −possessSan（tags 空）。
  * 乱数の順: d100 →（失敗かつ呪いのときだけ）chance
  */
 export function identifyItem(ctx: RuleContext, memberId: string, instanceId: string): void {
@@ -560,14 +561,19 @@ export function identifyItem(ctx: RuleContext, memberId: string, instanceId: str
     ctx.events.push(...identifiedCurseEvents(state, data, instanceId, item));
     return;
   }
-  ctx.events.push({ kind: "message", key: "camp.identifyFailed", params: { name: ch.name, item: old } });
-  if (state.dive !== null) loseSan(ctx, ch, c.failSanDungeon);
+  // CH-77 / CH-51（M24）: 迷宮では SAN が減るので量の付いた camp.identifyFailedSan{n}、街では今の文
+  if (state.dive !== null) {
+    ctx.events.push({ kind: "message", key: "camp.identifyFailedSan", params: { name: ch.name, item: old, n: c.failSanDungeon } });
+    loseSan(ctx, ch, c.failSanDungeon);
+  } else {
+    ctx.events.push({ kind: "message", key: "camp.identifyFailed", params: { name: ch.name, item: old } });
+  }
   if (!inst.cursed || !chance(state.rng, c.possessChance)) return;
   if (canForceEquip(state, data, ch, owner, instanceId)) {
     forceEquip(ctx, ch, owner, instanceId);
     return;
   }
-  ctx.events.push({ kind: "message", key: "camp.possessedSan", params: { name: ch.name, item: old } });
+  ctx.events.push({ kind: "message", key: "camp.possessedSan", params: { name: ch.name, item: old, n: c.possessSan } }); // CH-51（M24）: 量
   loseSan(ctx, ch, c.possessSan);
 }
 

@@ -357,7 +357,7 @@ describe("遭遇（CB-03/04/05/06）", () => {
     }
   });
 
-  test("CB-05/CB-06 未鑑定 2 グループで生存者全員の SAN −4（無鉄砲・慎重でも −4、死者は減らない）。encounter の name は系統（unknown-kinds.json）の name", () => {
+  test("CB-05/CB-06 未鑑定 2 グループで生存者全員の SAN −4（battle.unidentified{n: 4}。M24）（無鉄砲・慎重でも −4、死者は減らない）。encounter の name は系統（unknown-kinds.json）の name", () => {
     const d = dataWith({ combat: { surpriseDiff: 1000 } });
     const s0 = patchParty(dived(1), { c6: DEAD });
     const ctx = runCtx(s0, d, (c) =>
@@ -371,6 +371,7 @@ describe("遭遇（CB-03/04/05/06）", () => {
       { index: 1, monsterId: "kobold", name: "人の形をした影", identified: false, count: 1 },
     ]);
     expect(kindsOf(ctx.events)).toContain("message:battle.unidentified");
+    expect(ctx.events).toContainEqual({ kind: "message", key: "battle.unidentified", params: { n: 4 } }); // CH-51（M24）: 文の n は 1 人あたりの量（2 × 群の数）
     expect(eventsOf(ctx.events, "sanChanged")).toEqual(
       ["c1", "c2", "c3", "c4", "c5"].map((id) => ({ kind: "sanChanged", id, delta: -4, san: 96 })),
     );
@@ -385,6 +386,7 @@ describe("遭遇（CB-03/04/05/06）", () => {
       ]),
     );
     expect(eventsOf(c1.events, "sanChanged").map((e) => e.delta)).toEqual([-2, -2, -2, -2, -2]);
+    expect(c1.events).toContainEqual({ kind: "message", key: "battle.unidentified", params: { n: 2 } });
     expect(eventsOf(c1.events, "encounter")[0]!.groups[0]!.name).toBe("大ネズミ");
     const c2 = runCtx(s1, d, (c) => startBattle(c, { kind: "random", inRoom: false }, [{ monsterId: "giant_rat", count: 3 }]));
     expect(eventsOf(c2.events, "sanChanged")).toEqual([]);
@@ -1073,16 +1075,18 @@ describe("状態異常と SAN 攻撃（CB-30〜33）", () => {
     expect(rb.state.rng).toEqual(m);
   });
 
-  test("CB-31 囁く影の sanDrain 4（battle.sanDrain）、無鉄砲は fear 耐性で 2。SAN 0 で行動不能", () => {
+  test("CB-31 囁く影の sanDrain 4（battle.sanDrain{target, n}。M24: n は実際の減り）、無鉄砲は fear 耐性で 2。SAN 0 で行動不能", () => {
     // noSanOverride: SAN 2（錯乱）のキリの防御が CB-45 で置き換わらないようにする（耐性の量だけを見る）
     const d = dataWith({ combat: ALWAYS_HIT }, noSanOverride);
     const shadow = (patches: Record<string, Partial<Character>>, inputs: Record<string, BattleAction>) =>
       setup([{ monsterId: "whispering_shadow", hps: [50] }], { identified: ["whispering_shadow"], patches, inputs });
     const lead = exec(shadow({ c2: STONE, c3: STONE }, { c1: DEF, c4: DEF, c5: DEF, c6: DEF }), RESOLVE, d);
     expect(eventsOf(lead.events, "sanChanged")).toEqual([{ kind: "sanChanged", id: "c1", delta: -4, san: 96 }]);
-    expect(lead.events).toContainEqual({ kind: "message", key: "battle.sanDrain", params: { target: "アルド" } });
+    expect(lead.events).toContainEqual({ kind: "message", key: "battle.sanDrain", params: { target: "アルド", n: 4 } });
     const reck = exec(shadow({ c1: STONE, c2: STONE, c3: { san: 2 } }, { c3: DEF, c4: DEF, c5: DEF, c6: DEF }), RESOLVE, d);
     expect(eventsOf(reck.events, "sanChanged")[0]).toEqual({ kind: "sanChanged", id: "c3", delta: -2, san: 0 });
+    // CB-31（M24）: 文の n はその対象の実際の減り（無鉄砲は fear 耐性で 2）
+    expect(reck.events).toContainEqual({ kind: "message", key: "battle.sanDrain", params: { target: member(reck.state, "c3").name, n: 2 } });
     expect(canAct(member(reck.state, "c3"))).toBe(false);
     expect(battleMenu(reck.state, d)!.members[2]!.canAct).toBe(false);
   });

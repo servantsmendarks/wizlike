@@ -385,7 +385,9 @@ function triggerTrap(ctx: RuleContext, actor: Character | null, startAlarm: Star
   }
   removeTrap(dive, chest);
   ctx.events.push({ kind: "chestTrap", trapId: trap.id, actorId: who === null ? null : who.id });
-  ctx.events.push({ kind: "message", key: `chest.trap.${trap.id}`, ...(who === null ? {} : { params: { actor: who.name } }) });
+  // CB-62 / CH-51（M24）: SAN の効果なら文に基本の量 n（慎重の者の半分は直後の trait.cautiousCalm が示す）
+  const params = { ...(who === null ? {} : { actor: who.name }), ...(eff.kind === "san" ? { n: eff.amount } : {}) };
+  ctx.events.push({ kind: "message", key: `chest.trap.${trap.id}`, ...(Object.keys(params).length === 0 ? {} : { params }) });
   switch (eff.kind) {
     case "damage": {
       if (eff.target === "one") {

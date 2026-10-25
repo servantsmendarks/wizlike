@@ -3126,7 +3126,7 @@ describe("UI-70/UI-71 宝箱の判定の箱と衝動の流れの再生（M11 作
     const { log, boxes } = await play(r.events, s0, r.state, d);
     const says = flow(log).filter((x) => x.startsWith("say:"));
     expect(says[0]).toBe(sayOf(d, "chest.disarm.wrong"));
-    expect(says[1]).toBe(sayOf(d, "chest.trap.curse"));
+    expect(says[1]).toBe(sayOf(d, "chest.trap.curse", { n: 8 }));
     expect(says.slice(-3)).toEqual([sayOf(d, "chest.trap.gone"), sayOf(d, "chest.promptHelp"), sayOf(d, "chest.prompt")]);
     expect(boxes).toEqual([]);
   });
