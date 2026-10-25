@@ -229,7 +229,7 @@ export type FloorWalk = {
   exitsAtFound: number | null;
   /** 見つけた時点の explored のマス数 */
   exploredAtFound: number | null;
-  /** DG-46: 前進の後に歩数 ≥ hintSteps かつ降り口が見えていない、が一度でも起きたか（最下層は null） */
+  /** DG-46: 前進の後に歩数 ≥ hintSteps かつ降り口が見えていない、が一度でも起きたか（最下層は hintOnBossFloor が偽のときだけ null） */
   hintFired: boolean | null;
   /**
    * 方角の一言（hint 方針だけ。階ごとに 1 回。最下層は hintOnBossFloor が偽でなければ）: 語られた方角と、そのときの歩数・位置。出なければ null

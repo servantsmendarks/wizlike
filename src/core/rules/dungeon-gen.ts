@@ -583,7 +583,7 @@ export function generateFloor(
   const myEvents = def.events.filter((_, i) => (i % def.floors) + 1 === floor);
   for (const ev of myEvents) {
     const c = cand.shift();
-    // DG-22 は各イベント 1 回を定めるので、置けなければ Error（実データの 20×20 では起きない）
+    // DG-22 は各イベント 1 回を定めるので、置けなければ Error（実データの盤〔d01 16×16・d02 / d03 20×20〕では起きない。DG-05）
     if (c === undefined) throw new Error(`generateFloor: no cell for event ${ev} on floor ${floor}`);
     c.kind = "event";
     c.eventId = ev;
