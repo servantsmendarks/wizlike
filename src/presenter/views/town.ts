@@ -94,7 +94,8 @@ export function cursedTone(cursed: boolean): { tone?: "danger" } {
 
 export type TownEntry =
   /** M24 C-2: disabled は触媒の段の「決める」（触媒を 1 つも選んでいない間は dim）だけが持つ */
-  | { kind: "page"; to: TownPage; label: string; disabled?: boolean }
+  /** reason（M24 C-2。レビュー A-3）: dim の行を押したときの理由の 1 文（触媒の段の「決める」だけが持つ。expand と同じ作法） */
+  | { kind: "page"; to: TownPage; label: string; disabled?: boolean; reason?: string | null }
   /** M7: 次のページへ移る行で、押せないことがあるもの（売れる品の無い者・払えない買い戻しの品など）。disabled なら dim */
   | { kind: "pick"; to: TownPage; label: string; disabled: boolean; tone?: "danger" }
   | { kind: "inn"; rank: number; label: string; disabled: boolean }
@@ -601,7 +602,7 @@ export function townEntries(
       };
     });
     // M24 C-2（TW-17）: 触媒 0 個の鍛えは廃止。決めるは末尾から 2 つ目（app が固定の枠 listDecide に置く）で、触媒を選ぶまで dim
-    const decide: TownEntry = { kind: "page", to: { upConfirm: sel }, label: s(strings, "town.upgrade.decide"), disabled: sel.picked.length === 0 };
+    const decide: TownEntry = { kind: "page", to: { upConfirm: sel }, label: s(strings, "town.upgrade.decide"), disabled: sel.picked.length === 0, reason: sel.picked.length === 0 ? s(strings, "town.upgrade.needCatalyst") : null };
     return [...(rows.length === 0 ? [empty("town.upgrade.catNone")] : rows), decide, back];
   }
   if ("upConfirm" in page) {

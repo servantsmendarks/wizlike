@@ -1489,7 +1489,7 @@ describe("TW-16c（M21）倉庫から装備する・倉庫へ外す（party.equi
     expect(r.state.warehouse).toEqual(["i3"]);
     expect(r.state.rng).toEqual(s.rng);
     const full = cloneState(s);
-    for (let i = 0; i < data.config.items.warehouseSlots; i++) full.warehouse.push(createItemInstance(full, { itemId: "herb", identified: true }));
+    for (let i = 0; i < full.progress.warehouseSlots; i++) full.warehouse.push(createItemInstance(full, { itemId: "herb", identified: true }));
     expectRejected(full, { type: "party.unequip", memberId: "c1", slot: "shield", to: "warehouse" }, "warehouse full");
     // to なしは今どおり（倉庫が満杯でも inventory へ）
     ok(full, { type: "party.unequip", memberId: "c1", slot: "shield" });
@@ -1527,7 +1527,7 @@ describe("TW-16c（M21）倉庫から装備する・倉庫へ外す（party.equi
     // 手元の品を to warehouse で入れ替えるとき、倉庫が満杯なら warehouse full
     const own = give(s, "c3", "short_bow");
     const wf = cloneState(own.s);
-    for (let i = wf.warehouse.length; i < data.config.items.warehouseSlots; i++) wf.warehouse.push(createItemInstance(wf, { itemId: "herb", identified: true }));
+    for (let i = wf.warehouse.length; i < wf.progress.warehouseSlots; i++) wf.warehouse.push(createItemInstance(wf, { itemId: "herb", identified: true }));
     expectRejected(wf, { type: "party.equip", memberId: "c3", instanceId: own.id, to: "warehouse" }, "warehouse full");
     expect(checkEquip(wf, data, "c3", own.id)).toBeNull(); // to なしは通る
   });
@@ -1557,7 +1557,7 @@ describe("TW-16c（M21）倉庫から装備する・倉庫へ外す（party.equi
     ]);
     // 倉庫が満杯なら外して倉庫へ入れられない
     const wf = cloneState(s);
-    for (let i = wf.warehouse.length; i < data.config.items.warehouseSlots; i++) wf.warehouse.push(createItemInstance(wf, { itemId: "herb", identified: true }));
+    for (let i = wf.warehouse.length; i < wf.progress.warehouseSlots; i++) wf.warehouse.push(createItemInstance(wf, { itemId: "herb", identified: true }));
     expect(campMenu(wf, data)!.members.find((m) => m.id === "c1")!.slots.every((x) => !x.canUnequipToWarehouse)).toBe(true);
     // 迷宮
     const d = campMenu(dived(1), data)!;
@@ -1595,7 +1595,7 @@ describe("TW-16c（M21）倉庫から装備する・倉庫へ外す（party.equi
     const cand = (st: GameState) => campMenu(st, data)!.members.find((m) => m.id === "c3")!.equipCandidates.find((c) => c.instanceId === own.id)!;
     expect(cand(s)).toMatchObject({ block: null, toWarehouseBlock: null });
     const wf = cloneState(s);
-    for (let i = wf.warehouse.length; i < data.config.items.warehouseSlots; i++) wf.warehouse.push(createItemInstance(wf, { itemId: "herb", identified: true }));
+    for (let i = wf.warehouse.length; i < wf.progress.warehouseSlots; i++) wf.warehouse.push(createItemInstance(wf, { itemId: "herb", identified: true }));
     expect(cand(wf)).toMatchObject({ block: null, toWarehouseBlock: "warehouseFull" });
     // 旧品の無い枠への装備は倉庫を使わないので満杯でも null
     const helm = give(wf, "c1", "leather_cap"); // c1 の兜の枠は空き

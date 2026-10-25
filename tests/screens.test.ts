@@ -1191,8 +1191,9 @@ describe("入力と Command", () => {
     // TW-09（M10）: 転職先の dim の行（ccClass の reason）も同じ経路で語る。TW-05（M16 追補 H-4）: 店の装備できない者の行（buy の reason）も
     expect(fn).toContain('e.kind === "enter"');
     expect(fn).toContain('e.kind === "ccClass" || e.kind === "buy"');
-    expect(fn).toContain('e.kind === "page" && e.disabled === true'); // TW-17（M24 C-2）: 触媒を選ぶ前の決める
-    expect(fn).toContain('t("town.upgrade.needCatalyst")');
+    expect(fn).toContain('e.kind === "page"'); // TW-17（M24 C-2）: 触媒を選ぶ前の決める（理由は page の行の reason。レビュー A-3）
+    expect(fn).toContain("e.reason ?? null");
+    expect(fn).not.toContain("needCatalyst"); // 理由の文は views/town が行に持たせる（page の disabled から一律に決めない）
     expect(fn).toMatch(
       /onDisabled: \(\) =>\s*guard\(\(\) => \{\s*play\.talk\.flush\(\);\s*void narrator\.say\(reason, store\.get\(\)\.skipAnimations\);\s*if \(e\.kind === "buy"\) goTownPage\("shopBuy"\);\s*\}\),/,
     );

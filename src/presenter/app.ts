@@ -752,14 +752,14 @@ export function createApp(o: {
   const notReadyReason = (e: TownEntry): Pick<ControlItem, "onDisabled"> => {
     // TW-09（M10）: 転職先の dim の行も同じく理由の 1 文（理由は core の classChangeOptions から views/town が作る）
     // TW-05（M16 追補 H-4）: 装備できない者の行も理由の 1 文（command は送らない）。語ってから「誰に持たせる？」に戻らず品の一覧（shopBuy）へ
-    // TW-17（M24 C-2）: 触媒を選ぶ前の dim の「決める」も理由の 1 文（town.upgrade.needCatalyst）
+    // TW-17（M24 C-2）: 触媒を選ぶ前の dim の「決める」も理由の 1 文（views/town が page の行の reason に town.upgrade.needCatalyst を入れる）
     const reason =
       e.kind === "enter"
         ? e.notReady
         : e.kind === "ccClass" || e.kind === "buy" || e.kind === "expand"
           ? e.reason
-          : e.kind === "page" && e.disabled === true
-            ? t("town.upgrade.needCatalyst")
+          : e.kind === "page"
+            ? (e.reason ?? null)
             : null;
     if (reason === null) return {};
     return {

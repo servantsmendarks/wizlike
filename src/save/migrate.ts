@@ -266,7 +266,7 @@ function isItemInstanceShape(x: unknown): boolean {
     isStringOrNull(x["uniqueId"]) &&
     typeof x["identified"] === "boolean" &&
     typeof x["cursed"] === "boolean" &&
-    (x["curseEffect"] === null || isOptionRollShape(x["curseEffect"])) &&
+    (x["curseEffect"] === null || (x["cursed"] === true && isOptionRollShape(x["curseEffect"]))) && // IT-32: curseEffect があれば cursed
     isStringOrNull(x["foundIn"])
   );
 }

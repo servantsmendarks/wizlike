@@ -320,7 +320,7 @@ describe("UI-52 街のページ", () => {
       { kind: "upPick", to: { upCat: { ...sel, picked: [rb] } }, label: "○短剣 +0　アルド", disabled: false, info: "短剣 +0: 攻撃 1d4 / AC — / 魔法攻撃力 —" },
       { kind: "upPick", to: { upCat: { ...sel, picked: [rc] } }, label: "○短剣 +2　アルド", disabled: false, info: "短剣 +2: 攻撃 1d4+2 / AC — / 魔法攻撃力 —" },
       { kind: "upPick", to: { upCat: { ...sel, picked: [rd] } }, label: "○短剣 +0　アルド", disabled: false, info: "短剣 +0: 攻撃 1d4 / AC — / 魔法攻撃力 —" },
-      { kind: "page", to: { upConfirm: sel }, label: "決める", disabled: true }, // M24 C-2: 触媒を 1 つも選んでいない間は dim
+      { kind: "page", to: { upConfirm: sel }, label: "決める", disabled: true, reason: S["town.upgrade.needCatalyst"] }, // M24 C-2: 触媒を 1 つも選んでいない間は dim。押すと理由（レビュー A-3）
       back,
     ]);
     // c → a → b の順に 3 個選んだ: 印が付き、外すと選んだ順のまま 1 個抜ける。未選択の d は disabled
@@ -328,7 +328,7 @@ describe("UI-52 街のページ", () => {
     const e3 = townEntries({ upCat: full }, m, S);
     expect(e3[0]).toEqual({ kind: "upPick", to: { upCat: { ...sel, picked: [rc, rb] } }, label: "●短剣 +1　アルド", disabled: false, info: "短剣 +1: 攻撃 1d4+1 / AC — / 魔法攻撃力 —" });
     expect(e3[3]).toEqual({ kind: "upPick", to: { upCat: { ...sel, picked: [rc, ra, rb, rd] } }, label: "○短剣 +0　アルド", disabled: true, info: "短剣 +0: 攻撃 1d4 / AC — / 魔法攻撃力 —" });
-    expect(e3[4]).toEqual({ kind: "page", to: { upConfirm: full }, label: "決める", disabled: false });
+    expect(e3[4]).toEqual({ kind: "page", to: { upConfirm: full }, label: "決める", disabled: false, reason: null });
     expect(townParent({ upCat: full })).toEqual({ upSlot: "c1" });
     expect(townPageIntro({ upCat: full }, m)).toEqual([]);
     // M16（G-2）: 他の者の段でも同じ候補（c1 の品）が出る
@@ -343,7 +343,7 @@ describe("UI-52 街のページ", () => {
     const none = menuOf(town());
     expect(townEntries({ upCat: { ...sel, memberId: "c2" } }, none, S)).toEqual([
       { kind: "empty", label: "触媒にできる物がない", disabled: true },
-      { kind: "page", to: { upConfirm: { ...sel, memberId: "c2" } }, label: "決める", disabled: true },
+      { kind: "page", to: { upConfirm: { ...sel, memberId: "c2" } }, label: "決める", disabled: true, reason: S["town.upgrade.needCatalyst"] },
       back,
     ]);
   });
@@ -1402,7 +1402,7 @@ describe("UI-52 街のページ", () => {
     const kept = createItemInstance(s, { itemId: "long_sword", identified: false });
     s.warehouse.push(kept);
     const m = menuOf(s);
-    const cap = data.config.items.warehouseSlots;
+    const cap = s.progress.warehouseSlots;
     expect(townEntries("bank", m, S)).toEqual([
       { kind: "page", to: "bankDeposit", label: "金を預ける" },
       { kind: "page", to: "bankWithdraw", label: "金を引き出す" },
@@ -1523,7 +1523,7 @@ describe("UI-52 街のページ", () => {
     s.warehouse.push(kept);
     for (let i = 0; i < 5; i++) s.party[5]!.inventory.push(createItemInstance(s, { itemId: "herb", identified: true }));
     const m = menuOf(s);
-    const cap = data.config.items.warehouseSlots;
+    const cap = s.progress.warehouseSlots;
     expect(townEntries("storageDeposit", m, S).map((e) => (e.kind === "pick" ? [e.label, e.disabled] : e.kind))).toEqual([
       ["アルド　1品", false],
       ["ベルク　0品", true],
@@ -1869,7 +1869,7 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
       else expect(l.term.length, raw).toBeGreaterThan(0);
     }
     const contNums = raws.flatMap((r, i) => (r.startsWith(SP) ? [i + 1] : []));
-    expect(contNums).toHaveLength(15); // M24: SAN の契機の続きの行（F-3）を足した
+    expect(contNums).toHaveLength(16); // M24: SAN の契機の続きの行（F-3）を足した。レビューで敵を待つ・鑑定の失敗・取り憑きの続きの行を足した
     // 用語なしの行 = 続きの行 14（M23 で後衛の続きを足した）+ 長い用語の説明 7（M22 D-6 の 6 + M23 の「取り乱す」）
     expect(terms.filter((l) => l.term === "")).toHaveLength(contNums.length + 10); // M24 E-1: 長い用語に ドワーフ・ホビット・敵を待つ を足した
     for (const n of contNums) expect(terms.some((l) => l.term === "" && l.desc === S[`rules.line.${n}`]!.slice(1)), String(n)).toBe(true);
@@ -2125,6 +2125,9 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     const cursed = (chestTraps.find((t) => t.id === "curse")!.effect as { amount: number }).amount;
     const sanLine = body.find((l) => typeof l !== "string" && l.term === "" && l.desc.includes("仲間の死"))! as WipeTermLine;
     expect(sanLine.desc).toBe(`階${san.floorDescend}・罠${san.trap}・未知の敵${san.unidentifiedGroup}/群・仲間の死${san.allyDeath}・呪詛${cursed}`);
+    // M24 レビュー B-L5: SAN の減る契機の残り（敵を待つ・迷宮の鑑定の失敗・取り憑き）は続きの行
+    const idf = data.config.identify;
+    expect(body[body.indexOf(sanLine) + 1]).toEqual({ term: "", desc: `敵を待つ${san.search}・迷宮の鑑定の失敗${idf.failSanDungeon}・取り憑き${idf.possessSan}` });
     expect(head("並び順")).toContain("前");
     expect(head("上下限")).toContain("5〜95%");
     expect(head("痺")).toContain("寺院");
@@ -2164,7 +2167,7 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     expect(section("■ 種族")).toEqual(["人間", "エルフ", "ノーム"]); // ドワーフ・ホビットは 4 字で用語の行が文字列
     expect(section("■ 性格")).toEqual(["性格", "慎重", "無鉄砲", "強欲", "普通"]);
     expect(section("■ 能力と状態").slice(0, 6)).toEqual(["力", "知恵", "信仰心", "生命力", "素早さ", "運"]);
-    expect(lines).toHaveLength(110); // 見出し 1 + strings 99 + 長い用語 10 語の説明（M22 D-6 の 6 + M23 C-2 の取り乱す + M24 E-1 のドワーフ・ホビット・敵を待つ）
+    expect(lines).toHaveLength(111); // 見出し 1 + strings 100 + 長い用語 10 語の説明（M22 D-6 の 6 + M23 C-2 の取り乱す + M24 E-1 のドワーフ・ホビット・敵を待つ）
     expect(Math.ceil(lines.length / 21)).toBe(6);
     // 語は画面・データの名前と同じ
     expect(S["gm.name"]).toBe("GM");

@@ -2058,6 +2058,17 @@ describe("SV-04 v10 → v11 の移行（M24。IT-32 / TW-10）", () => {
     expect(r.ok && r.state.items[id]).toEqual({ ...town.items[id]!, options: [] });
   });
 
+  test("SV-04/IT-32 形の検査: curseEffect が null でない実体は cursed（呪いの解けた品に効果だけが残った保存は broken）", () => {
+    const town = exec(newGame(1), { type: "debug.giveCursed", wearable: true }).state;
+    const id = town.party[0]!.inventory.at(-1)!;
+    expect(isGameStateShape(JSON.parse(JSON.stringify(town)))).toBe(true);
+    const j = JSON.parse(JSON.stringify(town)) as GameState;
+    j.items[id]!.cursed = false;
+    expect(isGameStateShape(j)).toBe(false);
+    j.items[id]!.curseEffect = null;
+    expect(isGameStateShape(j)).toBe(true);
+  });
+
   test("SV-04/IT-64 progress.warehouseSlots は 1 以上の安全な整数（無い・0・小数・文字列は形の検査で broken）。v10 の移行で 40", () => {
     const s = newGame(1);
     expect(s.progress.warehouseSlots).toBe(40);

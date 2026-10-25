@@ -1464,7 +1464,7 @@ describe("TW-16c/UI-59 銀行の状態で倉庫から装備（M21 A-2。host ban
   const who = (s: GameState, id: string): Character => s.party.find((c) => c.id === id)!;
   const fillWarehouse = (base: GameState): GameState => {
     const s = cloneState(base);
-    while (s.warehouse.length < data.config.items.warehouseSlots) s.warehouse.push(createItemInstance(s, { itemId: "herb", identified: true }));
+    while (s.warehouse.length < s.progress.warehouseSlots) s.warehouse.push(createItemInstance(s, { itemId: "herb", identified: true }));
     return s;
   };
 

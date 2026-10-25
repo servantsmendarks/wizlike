@@ -48,7 +48,7 @@ export function shopPrice(base: EquipmentBase, level: number, data: GameData): n
 
 /**
  * IT-61: 実体の売値（鑑定の有無・装備中かどうかは見ない。売れるかは checkShop が見る）。
- * - 汎用装備: floor(price × sellRatio × (1 + levelPriceRatio × Lv)) + 正のオプションごとに optionSellValue[tier − 1]（負は 0）
+ * - 汎用装備: floor(price × sellRatio × (1 + levelPriceRatio × Lv)) + 正のオプションごとに optionSellValue[tier − 1]（呪いの効果 curseEffect は数えない）
  * - ユニーク: floor(uniques[].price × sellRatio)（希少度・オプションに関わらず固定）
  * - 消耗品・魔法書: floor(price × sellRatio)
  */
