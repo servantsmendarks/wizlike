@@ -919,3 +919,14 @@ describe("UI-47/UI-59（M24 B-1）語りの行ごとの色（tone）", () => {
     ]);
   });
 });
+
+describe("CH-61/UI-47（M24 F-1）宿のレベルアップの文", () => {
+  test("CH-61 town.inn.hpUp の文は「HP」を含み「MP」を含まない。town.inn.mpUp は逆（「MP の増加が最大 HP と出る」の観察は再現せず。美咲フォントの H と M の読み違い。文で固定する）", () => {
+    const hp = formatMessage(data.strings["town.inn.hpUp"]!, { gain: 11, max: 27 });
+    const mp = formatMessage(data.strings["town.inn.mpUp"]!, { gain: 3, max: 9 });
+    expect(hp).toBe("最大 HP が 11 増えた（27）。");
+    expect(mp).toBe("最大 MP が 3 増えた（9）。");
+    expect(hp.includes("HP") && !hp.includes("MP")).toBe(true);
+    expect(mp.includes("MP") && !mp.includes("HP")).toBe(true);
+  });
+});

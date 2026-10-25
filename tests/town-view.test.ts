@@ -163,8 +163,8 @@ describe("UI-52 街のページ", () => {
   test("UI-52/TW-04/TW-15（M16。M18 5-3）宿屋はランクの行（名前・料金「{cost} G」・効果。M22 D-7 で「（一行）」は見出しへ。士気の立つ個室は効果に「＋士気」）。払えないランクは disabled。末尾が戻る", () => {
     expect(townEntries("inn", menuOf(town({}, 50)), S)).toEqual([
       { kind: "inn", rank: 0, label: "馬小屋　0 G　MPのみ", disabled: false },
-      { kind: "inn", rank: 1, label: "相部屋　20 G　全回復・毒も治る", disabled: false },
-      { kind: "inn", rank: 2, label: "個室　60 G　全回復＋士気・毒も治る", disabled: true },
+      { kind: "inn", rank: 1, label: "相部屋　20 G　HP・MP 全回復・解毒", disabled: false },
+      { kind: "inn", rank: 2, label: "個室　60 G　HP・MP 全回復＋士気・解毒", disabled: true },
       back,
     ]);
     // ちょうど払える額なら押せる
@@ -2349,7 +2349,7 @@ describe("TW-04/UI-52（M18 5-3）宿屋の見出しの 2 行目と泊まった�
     expect(S["town.inn.curedPoison"]).toBe("毒も抜けた。");
     expect(kinsokuLines(S["town.inn.curedPoison"]!, 28)).toHaveLength(1);
     for (const r of data.config.town.innRanks) expect(S[`town.inn.effect.${r.id}`]!.includes("毒"), r.id).toBe(r.curePoison);
-    expect([S["town.inn.effect.cheap"], S["town.inn.effect.good"]]).toEqual(["全回復・毒も治る", "全回復＋士気・毒も治る"]);
+    expect([S["town.inn.effect.cheap"], S["town.inn.effect.good"]]).toEqual(["HP・MP 全回復・解毒", "HP・MP 全回復＋士気・解毒"]);
     // 用語: 毒の行の直後が用語なしの続きの行で、治し方を書く（宿は相部屋以上）
     const body = formatRules(S).slice(1);
     const at = body.findIndex((l) => typeof l !== "string" && l.term === S["party.status.poison"]);
