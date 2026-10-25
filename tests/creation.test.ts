@@ -210,10 +210,11 @@ describe("creation: game.new", () => {
       uniqueId: null,
       identified: true,
       cursed: false,
+      curseEffect: null,
       foundIn: null,
     });
     for (const inst of Object.values(s.items)) {
-      expect([inst.level, inst.rarity, inst.options, inst.uniqueId, inst.cursed, inst.foundIn], inst.id).toEqual([0, "normal", [], null, false, null]);
+      expect([inst.level, inst.rarity, inst.options, inst.uniqueId, inst.cursed, inst.curseEffect, inst.foundIn], inst.id).toEqual([0, "normal", [], null, false, null, null]);
     }
     expect(s.items["i2"]!.itemId).toBe("leather_armor");
     expect(s.items["i3"]!.itemId).toBe("wooden_shield");

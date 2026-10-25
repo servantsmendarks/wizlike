@@ -197,7 +197,7 @@ describe("engine: execute", () => {
     expect(s.dive!.ledger.items).toEqual([gotB]);
   });
 
-  test("IT-10 createItemInstance(state, spec): 既定は Lv0・通常・オプションなし・ユニークでない・呪いなし・foundIn null。指定した欄はそのまま入り、options は複製する（M7）", () => {
+  test("IT-10/IT-32 createItemInstance(state, spec): 既定は Lv0・通常・オプションなし・ユニークでない・呪いなし（curseEffect null。M24）・foundIn null。指定した欄はそのまま入り、options と curseEffect は複製する（M7）", () => {
     const s = cloneState(execute(createInitialState(1, data), gameNew(), data).state);
     const seq = s.nextItemSeq;
     const a = createItemInstance(s, { itemId: "herb", identified: false });
@@ -211,9 +211,11 @@ describe("engine: execute", () => {
       uniqueId: null,
       identified: false,
       cursed: false,
+      curseEffect: null,
       foundIn: null,
     });
     const options = [{ optionId: "hit", tier: 2 as const, value: 10 }];
+    const curseEffect = { optionId: "str", tier: 2 as const, value: -2 };
     const b = createItemInstance(s, {
       itemId: "dagger",
       identified: true,
@@ -222,6 +224,7 @@ describe("engine: execute", () => {
       options,
       uniqueId: "twin_tongue_dagger",
       cursed: true,
+      curseEffect,
       foundIn: "d01",
     });
     expect(b).toBe(`i${seq + 1}`);
@@ -235,8 +238,10 @@ describe("engine: execute", () => {
       uniqueId: "twin_tongue_dagger",
       identified: true,
       cursed: true,
+      curseEffect: { optionId: "str", tier: 2, value: -2 },
       foundIn: "d01",
     });
+    expect(s.items[b]!.curseEffect).not.toBe(curseEffect); // 複製して持つ
     expect(s.items[b]!.options).not.toBe(options);
     expect(s.items[b]!.options[0]).not.toBe(options[0]);
     expect(JSON.parse(JSON.stringify(s))).toStrictEqual(s); // §3-11
@@ -776,7 +781,7 @@ describe("UI-57 debug.giveCursed（開発用、M10）", () => {
   const WEAR: Command = { type: "debug.giveCursed", wearable: true };
   const OTHER: Command = { type: "debug.giveCursed", wearable: false };
 
-  test("UI-57/CH-77 debug.giveCursed{wearable: true} は司教が装備できる最初のベース（dagger）の呪われた未鑑定品（Lv0・通常・負のオプション 1 つ）を、並び順で最初に使用枠の空いた者の末尾に入れる。街では台帳なし・foundIn null。message debug.giveCursed{name, item}。乱数は変えない", () => {
+  test("UI-57/CH-77 debug.giveCursed{wearable: true} は司教が装備できる最初のベース（dagger）の呪われた未鑑定品（Lv0・通常・オプションなし・curseEffect に負の効果 1 つ。M24）を、並び順で最初に使用枠の空いた者の末尾に入れる。街では台帳なし・foundIn null。message debug.giveCursed{name, item}。乱数は変えない", () => {
     const s = cloneState(newGame(1));
     s.party[0]!.inventory.push(...Array.from({ length: 8 }, () => createItemInstance(s, { itemId: "herb", identified: true })));
     expect(slotsUsedOf(s.party[0]!)).toBeGreaterThanOrEqual(slotsMaxOf(s.party[0]!, data));
@@ -786,7 +791,7 @@ describe("UI-57 debug.giveCursed（開発用、M10）", () => {
     const id = `i${s.nextItemSeq}`;
     const c2 = r.state.party[1]!;
     expect(c2.inventory.at(-1)).toBe(id);
-    expect(r.state.items[id]).toEqual({ id, itemId: "dagger", level: 0, rarity: "normal", options: [{ optionId: "str", tier: 1, value: -1 }], uniqueId: null, identified: false, cursed: true, foundIn: null });
+    expect(r.state.items[id]).toEqual({ id, itemId: "dagger", level: 0, rarity: "normal", options: [], uniqueId: null, identified: false, cursed: true, curseEffect: { optionId: "str", tier: 1, value: -1 }, foundIn: null });
     expect(r.state.nextItemSeq).toBe(s.nextItemSeq + 1);
     expect(r.events).toEqual([{ kind: "message", key: "debug.giveCursed", params: { name: c2.name, item: "短い刃？" } }]);
     expectKnownStringKeys(r.events);
@@ -806,8 +811,8 @@ describe("UI-57 debug.giveCursed（開発用、M10）", () => {
     expect(inst.itemId).toBe("long_sword");
     expect(baseOf(data, "long_sword").classes.includes("bishop")).toBe(false);
     expect([inst.cursed, inst.identified, inst.level, inst.rarity, inst.foundIn]).toEqual([true, false, 0, "normal", s.dive!.dungeonId]);
-    expect(inst.options).toHaveLength(1);
-    expect(inst.options[0]!.value).toBeLessThan(0);
+    expect(inst.options).toEqual([]);
+    expect(inst.curseEffect!.value).toBeLessThan(0);
     expect(r.state.dive!.ledger.items).toEqual([...s.dive!.ledger.items, id]);
     expect(r.state.party[0]!.inventory.at(-1)).toBe(id);
     expect(r.events).toEqual([{ kind: "message", key: "debug.giveCursed", params: { name: r.state.party[0]!.name, item: itemDisplayName(r.state, data, id) } }]);

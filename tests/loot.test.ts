@@ -69,7 +69,9 @@ describe("IT-52 1 品の生成と乱数の順", () => {
         const o = pool.splice(k, 1)[0]!;
         want.push({ optionId: o.id, tier, value: o.values[tier - 1]! });
       }
-      if (cursed) want[want.length - 1]!.value *= -1;
+      // IT-32（M24）: 呪いの分（最後に引いた 1 つ）は値を負にして curseEffect に置く（options に入れない）
+      const last = cursed ? want.pop()! : null;
+      const curseEffect = last === null ? null : { ...last, value: -last.value };
       const spec = rollItemSpec(s, data, entries, 5, 0, "d01");
       expect(s.rng).toEqual(m);
       expect(spec).toEqual({
@@ -80,6 +82,7 @@ describe("IT-52 1 品の生成と乱数の順", () => {
         options: want,
         uniqueId: null,
         cursed,
+        curseEffect,
         foundIn: "d01",
       });
       return;
@@ -107,6 +110,7 @@ describe("IT-52 1 品の生成と乱数の順", () => {
       options: [{ optionId: o.id, tier: 1, value: o.values[0] }],
       uniqueId: "twin_tongue_dagger",
       cursed: false,
+      curseEffect: null,
       foundIn: "d01",
     });
     // 影法師の剣は optionTier 2（ドロップの Lv に関係なく固定）
@@ -379,19 +383,58 @@ describe("IT-30〜33 希少度・chestQuality・呪い・オプション", () =>
     expect(partyChestQuality(two, data)).toBe(25);
   });
 
-  test("IT-32 呪われた品は個数 +1 で、最後に引いた 1 つだけ値が負。通常なら負のオプション 1 つだけ", () => {
+  test("IT-32 呪われた品は options が希少度どおり（全部正）で、curseEffect に同じ母集団の残りから引いた負の効果 1 つ（M24）。通常なら options は空で curseEffect だけ", () => {
     const n = rollItemSpec(dived(7), lootData({ rarity: "normal", curse: 100 }), SWORD, 3, 0, "d01");
     expect(n.cursed).toBe(true);
-    expect(n.options).toHaveLength(1);
-    expect(n.options![0]!.value).toBeLessThan(0);
+    expect(n.options).toEqual([]);
+    expect(n.curseEffect!.value).toBeLessThan(0);
     const r = rollItemSpec(dived(7), lootData({ rarity: "legendary", curse: 100, mut: noUp }), SWORD, 3, 0, "d01", LEGEND_DANGER);
-    expect(r.options).toHaveLength(4);
-    expect(r.options!.map((o) => Math.sign(o.value))).toEqual([1, 1, 1, -1]);
-    expect(new Set(r.options!.map((o) => o.optionId)).size).toBe(4);
-    // 呪い 0% では負にならない
+    expect(r.options).toHaveLength(3);
+    expect(r.options!.every((o) => o.value > 0)).toBe(true);
+    expect(r.curseEffect!.value).toBeLessThan(0);
+    expect(new Set([...r.options!, r.curseEffect!].map((o) => o.optionId)).size).toBe(4);
+    // 呪い 0% では curseEffect は null
     const c = rollItemSpec(dived(7), lootData({ rarity: "legendary", curse: 0, mut: noUp }), SWORD, 3, 0, "d01", LEGEND_DANGER);
     expect(c.cursed).toBe(false);
+    expect(c.curseEffect).toBeNull();
     expect(c.options!.every((o) => o.value > 0)).toBe(true);
+  });
+
+  test("IT-32/IT-52 M24 の別枠化で乱数の消費と生成される品は M23 と同じ: M23 の手順（個数 = 希少度の個数 + 呪い 1、最後の 1 つの値を負に）の鏡と、options + curseEffect（値の絶対値）が一致し rng も一致する（実データ・呪い 8% / 100%・200 シード）", () => {
+    const m23 = (m: ReturnType<typeof cloneRng>, d: GameData) => {
+      weightedIndex(m, [1]);
+      const up = weightedIndex(m, d.config.items.dropLevelUpWeights);
+      const ri = weightedIndex(
+        m,
+        d.config.items.rarities.map((r) => r.weight),
+      );
+      const rarity = d.config.items.rarities[Math.min(ri, d.config.items.rarities.length - 2)]!; // 危険度 0 は希少で止める（IT-56）
+      const cursed = chance(m, d.config.items.curseChance);
+      const tier = genericOptionTier(3 + up, d);
+      const pool = poolOf("weapon");
+      const out: { optionId: string; tier: number; value: number }[] = [];
+      for (let i = 0; i < rarity.options + (cursed ? 1 : 0) && pool.length > 0; i++) {
+        const o = pool.splice(weightedIndex(m, pool.map((x) => x.weight)), 1)[0]!;
+        out.push({ optionId: o.id, tier, value: o.values[tier - 1]! });
+      }
+      if (cursed && out.length > 0) out[out.length - 1]!.value *= -1;
+      return { cursed, rarity: rarity.id, out };
+    };
+    let cursedSeen = 0;
+    for (const d of [data, lootData({ curse: 100, mut: (x) => x.config.items.rarities.forEach((r, i) => (r.weight = [1, 1, 1, 0][i]!)) })]) {
+      for (let seed = 1; seed <= 200; seed++) {
+        const s = dived(seed);
+        const m = cloneRng(s.rng);
+        const want = m23(m, d);
+        const spec = rollItemSpec(s, d, SWORD, 3, 0, "d01");
+        expect(s.rng, `seed ${seed}`).toEqual(m);
+        expect([spec.rarity, spec.cursed]).toEqual([want.rarity, want.cursed]);
+        expect([...spec.options!, ...(spec.curseEffect ? [spec.curseEffect] : [])], `seed ${seed}`).toEqual(want.out);
+        expect(spec.options!.every((o) => o.value > 0)).toBe(true);
+        if (spec.cursed) cursedSeen += 1;
+      }
+    }
+    expect(cursedSeen).toBeGreaterThan(200);
   });
 
   test("IT-33 汎用の段階 = min(3, 1 + floor(Lv ÷ 4))（Lv0〜3 は 1、4〜7 は 2、8 以上は 3）。値は values[段階 − 1]", () => {
@@ -407,8 +450,9 @@ describe("IT-30〜33 希少度・chestQuality・呪い・オプション", () =>
     for (const base of ["long_sword", "short_bow", "leather_armor", "wooden_shield", "leather_cap", "leather_gloves"]) {
       for (let seed = 1; seed <= 60; seed++) {
         const spec = rollItemSpec(dived(seed), d, [{ base, weight: 1 }], 3, 0, "d01", LEGEND_DANGER);
-        expect(spec.options).toHaveLength(4);
-        expect(spec.options!.map((o) => o.optionId)).not.toContain("magic_power");
+        expect(spec.options).toHaveLength(3);
+        expect(spec.curseEffect).not.toBeNull(); // IT-32（M24）: 呪いの分は curseEffect
+        expect([...spec.options!, spec.curseEffect!].map((o) => o.optionId)).not.toContain("magic_power");
       }
     }
   });
@@ -712,6 +756,7 @@ describe("IT-55 ドロップ表の魔法書の項目（M9）", () => {
         uniqueId: null,
         identified: true,
         cursed: false,
+        curseEffect: null,
         foundIn: "d01",
       });
       expect(ctx.state.dive!.ledger.items).toEqual([id]);

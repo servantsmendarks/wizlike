@@ -6,7 +6,8 @@
 //   ボスの表は rolls 回 × chance(itemChance)（外れならその回は品なし）。
 // 乱数の消費順（1 品。IT-52）: weightedIndex(entries) →（汎用なら）weightedIndex(dropLevelUpWeights)（IT-53。M14）
 //   → weightedIndex(rarities) →（宝箱の危険度が正なら）chance(危険度 × rarityUpPerDanger)（IT-56。M11）
-//   →（宝箱の chestQuality が正なら）chance(chestQuality)（IT-31。M14）→ 上限で止める（乱数なし）→ chance(curseChance) → オプションの個数だけ weightedIndex(残りのオプションの weight)。
+//   →（宝箱の chestQuality が正なら）chance(chestQuality)（IT-31。M14）→ 上限で止める（乱数なし）→ chance(curseChance) → オプションの個数だけ weightedIndex(残りのオプションの weight)
+//   →（呪いなら）もう 1 回 weightedIndex(残りの weight) で curseEffect（IT-32。M24。M23 までの「個数 +1」と同じ消費）。
 //   上限（IT-56。M15）: 危険度が items.legendaryMinDanger 以上なら伝説、それ未満（直接ドロップは危険度 0）なら希少。
 //   ボスの戦利品は危険度 legendaryMinDanger の箱として振る（M15。M14 までは危険度 0 で上振れの chance を引かなかった）。
 //   オプションの母集団はその品の品種に付けられるもの（IT-36）で、引く回数は品種に依存しない。
@@ -62,7 +63,7 @@ export function chestQualitySource(state: GameState, data: GameData): Character 
  * 魔法書（IT-55）は weightedIndex(entries) の後に乱数を引かず、鑑定済みの Lv0・通常で返す。
  * 希少度は重みで引いた直後に、danger > 0 なら chance(danger × chest.rarityUpPerDanger) で 1 段上げ（IT-56。M11。danger 0 では振らない）、
  * さらに quality > 0 なら chance(quality) を 1 回振って当たれば 1 段上げ（IT-31。M14。quality 0 では振らない）、
- * danger >= items.legendaryMinDanger なら伝説で、それ未満なら希少で止める（IT-56。M15）。呪われたら個数 +1 で、最後の 1 つの値を負にする。
+ * danger >= items.legendaryMinDanger なら伝説で、それ未満なら希少で止める（IT-56。M15）。呪われたら同じ母集団の残りからもう 1 つ引き、値を負にして curseEffect に置く（IT-32。M24）。
  */
 export function rollItemSpec(
   state: GameState,
@@ -92,7 +93,7 @@ function rollItemSpecDetail(
   const entry = entries[weightedIndex(state.rng, entries.map((e) => e.weight))]!;
   // IT-55（M9）: 魔法書の項目は Lv0・通常・オプションなし・呪いなし・鑑定済みで、以降の乱数を引かない
   if ("item" in entry)
-    return { spec: { itemId: entry.item, identified: true, level: 0, rarity: "normal", options: [], uniqueId: null, cursed: false, foundIn }, greedRaised: false };
+    return { spec: { itemId: entry.item, identified: true, level: 0, rarity: "normal", options: [], uniqueId: null, cursed: false, curseEffect: null, foundIn }, greedRaised: false };
   let itemId: string;
   let uniqueId: string | null = null;
   let level = 0;
@@ -124,24 +125,28 @@ function rollItemSpecDetail(
   const greedRaised = greed > 0 && rIdx > Math.min(maxIdx, drawn + up);
   const rarity = cfg.rarities[rIdx]!;
   const cursed = chance(state.rng, cfg.curseChance);
-  const count = rarity.options + (cursed ? 1 : 0);
   // IT-33 / IT-36（M10）: 母集団はその品の品種（ユニークはベースの品種。itemId はベース）に付けられるオプションだけ
   const kind = optionKindOf(baseOf(data, itemId));
   const pool = data.itemOptions.options.filter((o) => optionAppliesTo(o, kind));
-  const options: ItemOptionRoll[] = [];
-  for (let i = 0; i < count && pool.length > 0; i++) {
+  const draw = (): ItemOptionRoll | null => {
+    if (pool.length === 0) return null;
     const k = weightedIndex(
       state.rng,
       pool.map((o) => o.weight),
     );
     const o = pool.splice(k, 1)[0]!;
-    options.push({ optionId: o.id, tier, value: o.values[tier - 1]! });
+    return { optionId: o.id, tier, value: o.values[tier - 1]! };
+  };
+  const options: ItemOptionRoll[] = [];
+  for (let i = 0; i < rarity.options; i++) {
+    const o = draw();
+    if (o) options.push(o);
   }
-  if (cursed && options.length > 0) {
-    const last = options[options.length - 1]!;
-    last.value = -last.value;
-  }
-  return { spec: { itemId, identified: false, level, rarity: rarity.id, options, uniqueId, cursed, foundIn }, greedRaised };
+  // IT-32（M24）: 呪いなら同じ母集団の残りからもう 1 つ引き、値を負にして curseEffect に置く（options の枠を使わない）。
+  // 乱数の消費は M23 までの「個数 +1 で引き、最後の 1 つを負にする」と同じ
+  const drawnCurse = cursed ? draw() : null;
+  const curseEffect = drawnCurse ? { ...drawnCurse, value: -drawnCurse.value } : null;
+  return { spec: { itemId, identified: false, level, rarity: rarity.id, options, uniqueId, cursed, curseEffect, foundIn }, greedRaised };
 }
 
 /**
@@ -278,7 +283,7 @@ export function rollDirectDrops(ctx: RuleContext): void {
     if (cat === "consumable") {
       const list = data.drops.direct.consumables;
       const itemId = list[weightedIndex(state.rng, list.map((e) => e.weight))]!.item;
-      spec = { itemId, identified: true, level: 0, rarity: "normal", options: [], uniqueId: null, cursed: false, foundIn: dive.dungeonId };
+      spec = { itemId, identified: true, level: 0, rarity: "normal", options: [], uniqueId: null, cursed: false, curseEffect: null, foundIn: dive.dungeonId };
     } else {
       const pool = directDropPool(data, dive.dungeonId, dive.floor, cat);
       if (pool.length === 0) continue;

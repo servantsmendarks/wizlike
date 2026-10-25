@@ -5,7 +5,7 @@ import { cloneState } from "../src/core/state";
 import type { BattleAction, Command, GameState } from "../src/core/types";
 import { DB_NAME, DB_VERSION, openIdbBackend, STORE_GAMES, STORE_SETTINGS } from "../src/save/db";
 import { newGameId } from "../src/save/id";
-import { createMigrations, isGameStateShape, migrateState, migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10, MIGRATIONS } from "../src/save/migrate";
+import { createMigrations, isGameStateShape, migrateState, migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10, migrateV10toV11, MIGRATIONS } from "../src/save/migrate";
 import { buildRecord, checkStoredRecord, summarize } from "../src/save/record";
 import { createSaveService } from "../src/save/saves";
 import { buildExportFile, parseExportFile, serializeExportFile } from "../src/save/transfer";
@@ -13,7 +13,7 @@ import type { GameRecord, GameStoreBackend, ImportPlan, Migration, SaveDeps } fr
 import { dived, exec, withBattle } from "./helpers/battle";
 import { data, expectKnownStringKeys, loadFreshData, newGame, withChar } from "./helpers/core";
 import { atEvent } from "./helpers/events";
-import { asMigratedToV10, asMigratedToV7, asMigratedToV8, asMigratedToV9, createMemoryBackend, toV3, toV4, toV5, toV6, toV7, toV8, toV9 } from "./helpers/save";
+import { asMigratedToV10, asMigratedToV11, asMigratedToV7, asMigratedToV8, asMigratedToV9, createMemoryBackend, toV10, toV3, toV4, toV5, toV6, toV7, toV8, toV9 } from "./helpers/save";
 import mainSrc from "../src/main.ts?raw";
 
 const SCHEMA = data.config.save.schemaVersion;
@@ -233,7 +233,7 @@ describe("SV-04 v1 → v2 の移行（M5.5）", () => {
   }
 
   test("SV-04 v1 の保存（adventureTurns・tavernEventMark・knownTraps が無い）は v2 へ移行して 0 / 0 / {} が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(10); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10
+    expect(SCHEMA).toBe(11); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -319,7 +319,7 @@ describe("SV-04 v2 → v3 の移行（M7 の A）", () => {
   }
 
   test("SV-04/TW-15 v2 の保存（morale が無い）は v3 へ移行して morale null が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(10); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10
+    expect(SCHEMA).toBe(11); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -396,8 +396,8 @@ describe("SV-04 v3 → v4 の移行（M7 の B。IT-80）", () => {
   const MIG = createMigrations(data.dungeons);
 
   test("SV-04/IT-80 v3 の保存は v4 へ移行し、各実体に Lv0・通常・オプションなし・ユニークでない・呪いなし・foundIn null、warehouse []・buyback []・uniqueBook {} が入る。街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(10); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10
-    expect(MIGRATIONS).toHaveLength(9); // M10（CH-63）で v4 → v5、M11（CB-60）で v5 → v6、M12（TW-35）で v6 → v7、M16（UI-76）で v7 → v8、M18（DG-46）で v8 → v9、M21（CB-51b）で v9 → v10 を足した
+    expect(SCHEMA).toBe(11); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11
+    expect(MIGRATIONS).toHaveLength(10); // M10（CH-63）で v4 → v5、M11（CB-60）で v5 → v6、M12（TW-35）で v6 → v7、M16（UI-76）で v7 → v8、M18（DG-46）で v8 → v9、M21（CB-51b）で v9 → v10、M24（IT-32）で v10 → v11 を足した
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -429,6 +429,7 @@ describe("SV-04 v3 → v4 の移行（M7 の B。IT-80）", () => {
       uniqueId: null,
       identified: false,
       cursed: false,
+      curseEffect: null, // M24: v10 → v11 で足す
       foundIn: null,
     });
     // MIGRATIONS[2] 単体: オブジェクトでなければそのまま
@@ -533,8 +534,8 @@ describe("SV-04 v4 → v5 の移行（M10。CH-63）", () => {
     return execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state;
   }
   test("SV-04/CH-63 v4 の保存（maxLevelReached が数）は v5 へ移行して今の職業の記録 { [classId]: n } になり、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(10); // M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10
-    expect(MIGRATIONS).toHaveLength(9);
+    expect(SCHEMA).toBe(11); // M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11
+    expect(MIGRATIONS).toHaveLength(10);
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -1362,8 +1363,8 @@ describe("SV-04 v5 → v6 の移行（M11。CB-60）", () => {
   }
 
   test("SV-04/CB-60 v5 の保存（dive に chest・disarmedChests が無い）は v6 へ移行して chest null・disarmedChests [] が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(10); // M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10
-    expect(MIGRATIONS).toHaveLength(9);
+    expect(SCHEMA).toBe(11); // M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11
+    expect(MIGRATIONS).toHaveLength(10);
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -1560,7 +1561,7 @@ describe("SV-04 v5 → v6 の移行（M11。CB-60）", () => {
       const svc = service(mem);
       const st = chestState();
       if (mark !== undefined) st.dive!.chest!.contentsDestroyed = mark;
-      expect(SCHEMA).toBe(10);
+      expect(SCHEMA).toBe(11);
       mem.raw("g1", buildRecord("g1", 1, 999, SCHEMA, st));
       const r = await svc.load("g1");
       expect(r.ok).toBe(true);
@@ -1591,7 +1592,7 @@ describe("SV-04 v5 → v6 の移行（M11。CB-60）", () => {
       const svc = service(mem);
       const st = cloneState(s);
       if (mark === undefined) delete st.battle!.autoSpells;
-      expect(SCHEMA).toBe(10);
+      expect(SCHEMA).toBe(11);
       mem.raw("g1", buildRecord("g1", 1, 999, SCHEMA, st));
       const r = await svc.load("g1");
       expect(r.ok).toBe(true);
@@ -1624,8 +1625,8 @@ describe("SV-04 v6 → v7 の移行（M12。TW-35 / DG-36 / TW-34 / DG-37）", (
   }
 
   test("SV-04/TW-35 v6 の保存（tally・progress の 3 欄が無い）は v7 へ移行して tally 0・conquered false・endingPending false・enteredDungeons（clearedDungeons と潜行中の dungeonId）が入り、街・迷宮・戦闘・イベント待ち・箱のどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(10); // M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10
-    expect(MIGRATIONS).toHaveLength(9);
+    expect(SCHEMA).toBe(11); // M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11
+    expect(MIGRATIONS).toHaveLength(10);
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -1737,8 +1738,8 @@ describe("SV-04 v7 → v8 の移行（M16。UI-76）", () => {
   }
 
   test("SV-04/UI-76 v7 の保存（progress.hints が無い）は v8 へ移行して hints [] が入り、街・迷宮・戦闘・イベント待ち・箱のどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(10);
-    expect(MIGRATIONS).toHaveLength(9);
+    expect(SCHEMA).toBe(11);
+    expect(MIGRATIONS).toHaveLength(10);
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -1817,8 +1818,8 @@ describe("SV-04 v7 → v8 の移行（M16。UI-76）", () => {
 
 describe("SV-04 v8 → v9 の移行（M18。DG-46）", () => {
   test("SV-04/DG-46 v8 の保存（dive.floorSteps が無い）は v9 へ移行して floorSteps 0 が入り、街・迷宮・戦闘・箱のどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(10);
-    expect(MIGRATIONS).toHaveLength(9);
+    expect(SCHEMA).toBe(11);
+    expect(MIGRATIONS).toHaveLength(10);
     const walked = cloneState(dived(1));
     walked.dive!.floorSteps = 37;
     const cases: Array<[string, GameState]> = [
@@ -1902,8 +1903,8 @@ describe("SV-04 v8 → v9 の移行（M18。DG-46）", () => {
 
 describe("SV-04 v9 → v10 の移行（M21。CB-51b）", () => {
   test("SV-04/CB-51b v9 の保存は v10 へ移行して progress.noChestStreak = dive.noChestStreak（3 → 3）。dive の欄が無い・dive が null なら 0。dive.noChestStreak は消える。街・迷宮・戦闘・箱のどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(10);
-    expect(MIGRATIONS).toHaveLength(9);
+    expect(SCHEMA).toBe(11);
+    expect(MIGRATIONS).toHaveLength(10);
     const streak3 = cloneState(dived(1));
     streak3.progress.noChestStreak = 3;
     const townStreak = cloneState(newGame(1));
@@ -1994,5 +1995,82 @@ describe("SV-04 v9 → v10 の移行（M21。CB-51b）", () => {
     if (!r.ok) return;
     expect(r.state.progress.noChestStreak).toBe(3);
     expect(r.state.dive).not.toHaveProperty("noChestStreak");
+  });
+});
+
+describe("SV-04 v10 → v11 の移行（M24。IT-32 / TW-10）", () => {
+  const neg = { optionId: "str", tier: 1 as const, value: -1 };
+  const pos = { optionId: "hit", tier: 2 as const, value: 10 };
+  test("SV-04/IT-32 migrateV10toV11 の単体: 呪われた実体の負のオプションは options から外れて curseEffect へ。呪われていない実体は null。呪われていて負のオプションが無い実体は null のまま cursed。負が 2 つ以上なら最後の 1 つだけ移し残りは捨てる。オブジェクトでなければそのまま。引数は書き換えない", () => {
+    expect(MIGRATIONS[9]!("x")).toBe("x");
+    expect(MIGRATIONS[9]!(null)).toBe(null);
+    const arg = {
+      items: {
+        i1: { id: "i1", cursed: true, options: [pos, neg] },
+        i2: { id: "i2", cursed: false, options: [pos] },
+        i3: { id: "i3", cursed: true, options: [pos] },
+        i4: { id: "i4", cursed: true, options: [{ ...neg, optionId: "iq" }, pos, neg] },
+        i5: "broken",
+      },
+    };
+    const before = json(arg);
+    expect(migrateV10toV11(arg)).toEqual({
+      items: {
+        i1: { id: "i1", cursed: true, options: [pos], curseEffect: neg },
+        i2: { id: "i2", cursed: false, options: [pos], curseEffect: null },
+        i3: { id: "i3", cursed: true, options: [pos], curseEffect: null },
+        i4: { id: "i4", cursed: true, options: [pos], curseEffect: neg },
+        i5: "broken",
+      },
+    });
+    expect(arg).toEqual(before);
+  });
+
+  test("SV-04/IT-32 v10 の保存は v11 へ移行し、呪われた品の負のオプション（M23 までの生成・debug.giveCursed の形）が curseEffect に移る。v10 のままでは形の検査を通らない。街・迷宮・戦闘のどれでも通る。引数は書き換えない", () => {
+    expect(SCHEMA).toBe(11);
+    expect(MIGRATIONS).toHaveLength(10);
+    const town = exec(newGame(1), { type: "debug.giveCursed", wearable: true }).state;
+    const id = town.party[0]!.inventory.at(-1)!;
+    expect(town.items[id]!.curseEffect).not.toBeNull();
+    const cases: Array<[string, GameState]> = [
+      ["town", town],
+      ["dungeon", dived(1)],
+      ["battle", withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }])],
+    ];
+    for (const [name, s] of cases) {
+      const v10 = toV10(s);
+      const before = json(v10);
+      expect(isGameStateShape(v10), name).toBe(false); // curseEffect が無い
+      const r = migrateState(v10, 10, SCHEMA);
+      expect(r.ok, name).toBe(true);
+      if (!r.ok) continue;
+      expect(r.fromVersion).toBe(10);
+      expect(r.state, name).toEqual(asMigratedToV11(s));
+      expect(v10, name).toEqual(before);
+    }
+    // v10 では呪いは options の末尾の負の値だった
+    const v10 = toV10(town);
+    const inst = (v10["items"] as Record<string, { options: unknown[] }>)[id]!;
+    expect(inst.options).toEqual([town.items[id]!.curseEffect]);
+    const r = migrateState(v10, 10, SCHEMA);
+    expect(r.ok && r.state.items[id]).toEqual({ ...town.items[id]!, options: [] });
+  });
+
+  test("SV-04/IT-32 古い版（v9）の保存も v9 → v10 → v11 の順に移行して読める。保存先（メモリ）に置いた v10 のレコードも一覧で ok、続きからで読めて呪いは curseEffect にある", async () => {
+    const s = exec(newGame(1), { type: "debug.giveCursed", wearable: true }).state;
+    const r9 = migrateState(toV9(s), 9, SCHEMA);
+    expect(r9.ok && r9.state).toEqual(asMigratedToV10(s));
+    const mem = createMemoryBackend();
+    const svc = service(mem);
+    mem.raw("g1", { ...buildRecord("g1", 4, 999, 10, s), state: toV10(s) });
+    const l = await svc.list();
+    expect(l.ok && l.entries.map((e) => [e.gameId, e.status])).toEqual([["g1", "ok"]]);
+    const r = await svc.load("g1");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const id = s.party[0]!.inventory.at(-1)!;
+    expect(r.state.items[id]!.options).toEqual([]);
+    expect(r.state.items[id]!.curseEffect!.value).toBeLessThan(0);
+    expect(r.state.items[id]!.cursed).toBe(true);
   });
 });

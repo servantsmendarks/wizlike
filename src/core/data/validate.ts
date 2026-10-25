@@ -950,7 +950,7 @@ function validateItemOptions(ctx: Ctx, v: unknown, ix: Index): void {
   });
   if (t !== undefined && Array.isArray(t.options)) {
     uniqueIds(ctx, "options", t.options);
-    // IT-30 / IT-32: 同じ実体の中で重複なしに引くので、希少度の個数の最大 + 呪いの余分 1 個ぶんの件数が要る
+    // IT-30 / IT-32: 同じ実体の中で重複なしに引くので、希少度の個数の最大 + 呪いの効果 1 個ぶんの件数が要る（M24 から呪いの効果は curseEffect の別枠だが、同じ表の残りから引く）
     const need = ix.maxRarityOptions === undefined ? undefined : ix.maxRarityOptions + 1;
     if (need !== undefined && t.options.length < need)
       report(ctx, "options", `IT-30/IT-32: expected at least ${need} options (max rarities[].options + 1 for a curse), got ${t.options.length}`);

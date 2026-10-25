@@ -136,7 +136,7 @@ export function memberById(state: GameState, id: string): Character | null {
   return state.party.find((c) => c.id === id) ?? null;
 }
 
-/** createItemInstance の指定。省略した欄の既定は Lv0・normal・オプションなし・ユニークでない・呪いなし・foundIn null（IT-10） */
+/** createItemInstance の指定。省略した欄の既定は Lv0・normal・オプションなし・ユニークでない・呪いなし（curseEffect null）・foundIn null（IT-10） */
 export type ItemInstanceSpec = {
   itemId: string;
   identified: boolean;
@@ -145,13 +145,15 @@ export type ItemInstanceSpec = {
   options?: ItemOptionRoll[];
   uniqueId?: string | null;
   cursed?: boolean;
+  /** IT-32（M24）: 呪いの負の効果。既定 null */
+  curseEffect?: ItemOptionRoll | null;
   foundIn?: string | null;
 };
 
 /**
  * 実体を作って state.items に登録し、id を返す。id は "i" + nextItemSeq で、作った後に nextItemSeq += 1。
  * 持ち主への登録は呼び出し側が行う。itemId は equipment-bases.json か items.json の id（data での存在確認は呼び出し側）。
- * options は複製して持つ（呼び出し側の配列を共有しない）。
+ * options と curseEffect は複製して持つ（呼び出し側の値を共有しない）。
  */
 export function createItemInstance(state: GameState, spec: ItemInstanceSpec): string {
   const id = `i${state.nextItemSeq}`;
@@ -165,6 +167,7 @@ export function createItemInstance(state: GameState, spec: ItemInstanceSpec): st
     uniqueId: spec.uniqueId ?? null,
     identified: spec.identified,
     cursed: spec.cursed ?? false,
+    curseEffect: spec.curseEffect ? { ...spec.curseEffect } : null,
     foundIn: spec.foundIn ?? null,
   };
   state.nextItemSeq += 1;

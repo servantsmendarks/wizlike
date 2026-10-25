@@ -97,8 +97,8 @@ export function addTurns(ctx: RuleContext): void {
 /**
  * debug.giveCursed（M10）: 呪われた未鑑定の装備品の実体を 1 つ作り、並び順で最初に使用枠（CH-71）の空いた者（life を問わない。IT-54 と同じ）の
  * inventory の末尾に入れる。品は equipment-bases.json の並びで最初の、鑑定できる職業（abilities に identify）のすべてが装備できる（wearable 真）／
- * どれも装備できない（偽）ベース。Lv0・通常・ユニークでない。オプションはその品種に付けられる最初の 1 つ（段階 1）の値を負にしたもの
- * （IT-32 の「呪いの余分の 1 個の符号を反転」と同じ形）。迷宮内なら潜行台帳（DG-40）に入れ、foundIn はそのダンジョン（街では null）。
+ * どれも装備できない（偽）ベース。Lv0・通常・ユニークでない。オプションは無く、curseEffect はその品種に付けられる最初の 1 つ（段階 1）の値を負にしたもの
+ * （IT-32 の「同じ表から引いた 1 つの符号を反転」と同じ形。M24）。迷宮内なら潜行台帳（DG-40）に入れ、foundIn はそのダンジョン（街では null）。
  * message debug.giveCursed{name, item}（item は未鑑定の表示名）。誰も空いていない・該当するベースが無ければ実体を作らず message debug.giveCursed.full /
  * debug.giveCursed.none。取り憑き（CH-77）・街での鑑定の失敗・呪いの警告を実機で確かめるため。乱数は使わない
  */
@@ -120,12 +120,13 @@ export function giveCursed(ctx: RuleContext, wearable: boolean): void {
   }
   const kind = optionKindOf(base);
   const option = data.itemOptions.options.find((o) => optionAppliesTo(o, kind));
-  const options = option === undefined ? [] : [{ optionId: option.id, tier: 1 as const, value: -option.values[0]! }];
+  // IT-32（M24）: 負の効果は curseEffect に 1 つ（options は空）
+  const curseEffect = option === undefined ? null : { optionId: option.id, tier: 1 as const, value: -option.values[0]! };
   const id = createItemInstance(state, {
     itemId: base.id,
     identified: false,
     cursed: true,
-    options,
+    curseEffect,
     foundIn: state.dive === null ? null : state.dive.dungeonId,
   });
   ch.inventory.push(id);

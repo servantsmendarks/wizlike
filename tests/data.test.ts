@@ -158,8 +158,8 @@ describe("data: config.json", () => {
   test("data: 型違い", () => {
     expectIssue((r) => (r.config.save.maxGames = "5"), "config.json", "save.maxGames: expected integer >= 1, got string");
   });
-  test("data: SV-04/CB-51b（M21）save.schemaVersion は 10（v9 → v10 で箱の段の連続を dive から progress に移した）", () => {
-    expect(config.save.schemaVersion).toBe(10);
+  test("data: SV-04/IT-32（M24）save.schemaVersion は 11（v9 → v10（M21）で箱の段の連続を dive から progress に、v10 → v11 で呪いの効果を curseEffect に移した）", () => {
+    expect(config.save.schemaVersion).toBe(11);
   });
   test("data: CB-21 hitMin <= hitMax、百分率の範囲", () => {
     expectIssue((r) => (r.config.combat.hitMin = 96), "config.json", "CB-21");

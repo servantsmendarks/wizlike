@@ -105,14 +105,15 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
     ]);
     // 見出し + 13 行に収まる（ビュー領域 150px）
     expect(p.lines.length).toBeLessThanOrEqual(13);
-    // 希少度の行を足しても、今のデータの最も長い形（どのユニークも伝説・呪いでオプション 3 + 1 = 4 個）で 13 行以内
+    // 希少度の行を足しても、今のデータの最も長い形（どのユニークも伝説・呪いでオプション 3 個 + 呪いの効果の行。M24）で 13 行以内
     for (const u of data.uniques) {
       const w = createItemInstance(s, {
         itemId: u.base,
         uniqueId: u.id,
         rarity: "legendary",
         cursed: true,
-        options: [0, 1, 2, 3].map((k) => ({ optionId: "hit", tier: 1, value: k === 3 ? -5 : 5 })),
+        options: [0, 1, 2].map(() => ({ optionId: "hit", tier: 1, value: 5 })),
+        curseEffect: { optionId: "hit", tier: 1, value: -5 },
         identified: true,
       });
       expect(formatItemDetail(detailOf(s, w), S).lines.length, u.id).toBeLessThanOrEqual(13);
@@ -120,7 +121,7 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
     for (const u of data.uniques) expect(S[`item.skill.${u.skill.type}`], u.skill.type).toBeDefined();
   });
 
-  test("UI-59/IT-32/IT-12 呪いは負のオプション（danger）と「呪われている」（danger）。未鑑定は名前・部位・「鑑定するまで分からない」・見た目の品種の売値だけ", () => {
+  test("UI-59/IT-32/IT-12 呪いは item.curse.row「呪い: 外せない／{name} {value}{unit}」（danger。M24。効果が無ければ item.curse.rowNone「呪い: 外せない」）を「呪われている」の位置に。オプションの行は normal。未鑑定は名前・部位・「鑑定するまで分からない」・見た目の品種の売値だけ", () => {
     const s = town();
     const known = cursedDagger(s, true);
     expect(formatItemDetail(detailOf(s, known), S)).toEqual({
@@ -129,11 +130,22 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
         { text: "武器　Lv0", tone: "normal" },
         { text: "希少度 通常", tone: "normal" },
         { text: "攻撃 1d4", tone: "normal" },
-        { text: "力 -1", tone: "danger" },
-        { text: "呪われている", tone: "danger" },
+        { text: "呪い: 外せない／力 -1", tone: "danger" },
         { text: "売値 7 G", tone: "normal" },
       ],
     });
+    const none = createItemInstance(s, { itemId: "dagger", identified: true, cursed: true, rarity: "fine", options: [{ optionId: "str", tier: 1, value: 1 }] });
+    expect(formatItemDetail(detailOf(s, none), S).lines.slice(3, 5)).toEqual([
+      { text: "力 +1", tone: "normal" },
+      { text: "呪い: 外せない", tone: "danger" },
+    ]);
+    // 最悪の値（どのオプションも最大の段の負の値）でも 1 行（28 字）に収まる
+    for (const o of data.itemOptions.options) {
+      const v = Math.max(...o.values);
+      const w = createItemInstance(s, { itemId: "charm", identified: true, cursed: true, curseEffect: { optionId: o.id, tier: 3, value: -v } });
+      const row = formatItemDetail(detailOf(s, w), S).lines.find((l) => l.tone === "danger")!.text;
+      expect(Array.from(row).length, row).toBeLessThanOrEqual(DESCRIPTION_CHARS);
+    }
     const hidden = cursedDagger(s, false);
     expect(formatItemDetail(detailOf(s, hidden), S)).toEqual({
       title: "短い刃？",
@@ -343,17 +355,17 @@ describe("UI-67 装備の差分の外れるオプション（core の lostOption
   test("UI-67 M20 装備するときは枠から外れる今の装備（鑑定済み）のオプションを 1 つ 1 行「外れる {name} {value}{unit}」（danger）で差分の下に。外すとき・未鑑定は出さない", () => {
     const s = town();
     const armor = s.party[0]!.equipment.armor!;
-    s.items[armor] = { ...s.items[armor]!, identified: true, options: [{ optionId: "hit", tier: 1, value: 5 }, { optionId: "fear_loss", tier: 1, value: -30 }] };
+    s.items[armor] = { ...s.items[armor]!, identified: true, options: [{ optionId: "hit", tier: 1, value: 5 }, { optionId: "fear_loss", tier: 3, value: 30 }] };
     const mail = createItemInstance(s, { itemId: "chain_mail", identified: true });
     s.party[0]!.inventory.push(mail);
     const p = equipPreview(s, data, "c1", "armor", mail)!;
     expect(p.lostOptions).toEqual([
-      { name: "命中", value: 5, unit: "%", bad: false },
-      { name: "恐怖への耐性", value: -30, unit: "%", bad: true },
+      { name: "命中", value: 5, unit: "%" },
+      { name: "恐怖への耐性", value: 30, unit: "%" },
     ]);
     expect(formatEquipPreview(p, S).slice(3)).toEqual([
       { text: "外れる 命中 +5%", tone: "danger" },
-      { text: "外れる 恐怖への耐性 -30%", tone: "danger" },
+      { text: "外れる 恐怖への耐性 +30%", tone: "danger" },
     ]);
     // 外すときは品の詳細にその品のオプションが出ているので重ねない
     expect(equipPreview(s, data, "c1", "armor", null)!.lostOptions).toEqual([]);
@@ -366,7 +378,7 @@ describe("UI-67 装備の差分の外れるオプション（core の lostOption
     for (const o of data.itemOptions.options) {
       const v = -Math.max(...o.values.map(Math.abs));
       const text = formatEquipPreview(
-        { ac: { from: 0, to: 0, changed: false, verdict: "same" }, attack: { from: "1d2", to: "1d2", changed: false, verdict: "same" }, magicPower: { from: 0, to: 0, changed: false, verdict: "same" }, cursedWarning: false, lostOptions: [{ name: o.name, value: v, unit: o.unit, bad: true }] },
+        { ac: { from: 0, to: 0, changed: false, verdict: "same" }, attack: { from: "1d2", to: "1d2", changed: false, verdict: "same" }, magicPower: { from: 0, to: 0, changed: false, verdict: "same" }, cursedWarning: false, lostOptions: [{ name: o.name, value: v, unit: o.unit }] },
         S,
       )[3]!.text;
       expect(Array.from(text).length, text).toBeLessThanOrEqual(DESCRIPTION_CHARS);

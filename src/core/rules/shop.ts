@@ -16,7 +16,7 @@ import {
   uniqueOf,
 } from "../state";
 import type { Character, GameState, ItemInstance, ItemPreview, RuleContext, ShopAction, TownMenu } from "../types";
-import { identifiedOptionEvents, identifiedPowerParams, itemPowerPreview } from "./equip-stats";
+import { identifiedCurseEvents, identifiedOptionEvents, identifiedPowerParams, itemPowerPreview } from "./equip-stats";
 import { floorRatio } from "./ratio";
 
 function inTown(state: GameState): boolean {
@@ -253,9 +253,9 @@ export function buyBack(ctx: RuleContext, memberId: string, instanceId: string):
  * IT-65 店の鑑定。乱数は使わない（結果は CH-77 と同じ）。
  * 品ごとの鑑定料 identifyFeeOf を払う → 鑑定済みにし、ユニークなら図鑑に記録（IT-66）→ message town.shop.identified{name, old, item, cost, rarity}
  * →（M18。装備なら）message town.shop.identifiedPower{item, attack, ac, magic}（identifiedPowerParams）
- * →（M19）message town.shop.identifiedValue{rarity, gold}（identifiedValueParams。消耗品でも）→ 呪われていれば message camp.identifiedCursed{item}
+ * →（M19）message town.shop.identifiedValue{rarity, gold}（identifiedValueParams。消耗品でも）→ 呪われていれば message item.curse.found / foundNone（M24。IT-32）
  * UI-43（M20 D-3）: 性能と希少度・売値の 2 文は数値の行なので instant を付ける（文字送りしない）。
- * M20（D-7）: identifiedValue の後（呪いの文の前）に、オプションを 1 つ 1 件 item.option.found / foundBad{name, value, unit}（identifiedOptionEvents。instant）
+ * M20（D-7）: identifiedValue の後（呪いの文の前）に、オプションを 1 つ 1 件 item.option.found{name, value, unit}（identifiedOptionEvents。instant）
  */
 export function identifyAtShop(ctx: RuleContext, memberId: string, instanceId: string): void {
   const { state, data } = ctx;
@@ -274,9 +274,10 @@ export function identifyAtShop(ctx: RuleContext, memberId: string, instanceId: s
   if (power !== null) ctx.events.push({ kind: "message", key: "town.shop.identifiedPower", params: power, instant: true });
   // IT-65 / IT-61（M19）: 希少度と売値の 1 文（消耗品・魔法書でも出す）
   ctx.events.push({ kind: "message", key: "town.shop.identifiedValue", params: identifiedValueParams(state, data, instanceId), instant: true });
-  // IT-65（M20 D-7）: オプションを 1 行ずつ（負は「（呪い）」の文）
+  // IT-65（M20 D-7）: オプションを 1 行ずつ
   ctx.events.push(...identifiedOptionEvents(state, data, instanceId));
-  if (state.items[instanceId]!.cursed) ctx.events.push({ kind: "message", key: "camp.identifiedCursed", params: { item } });
+  // IT-32（M24）: 呪われていれば最後に呪いの 1 文（item.curse.found / foundNone）
+  ctx.events.push(...identifiedCurseEvents(state, data, instanceId, item));
 }
 
 /**
@@ -305,7 +306,7 @@ function classCanEquip(base: EquipmentBase, classId: string): boolean {
 export function shopItemPreview(data: GameData, itemId: string, level: number): ItemPreview | null {
   const base = findBase(data, itemId);
   if (base === null) return null;
-  const inst: ItemInstance = { id: "", itemId, level, rarity: "normal", options: [], uniqueId: null, identified: true, cursed: false, foundIn: null };
+  const inst: ItemInstance = { id: "", itemId, level, rarity: "normal", options: [], uniqueId: null, identified: true, cursed: false, curseEffect: null, foundIn: null };
   const anyone = base.classes.length === 0;
   const classes = data.classes.filter((c) => classCanEquip(base, c.id)).map((c) => c.abbr);
   return { ...itemPowerPreview(data, inst, base), anyone, classes };

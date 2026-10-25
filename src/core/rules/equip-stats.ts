@@ -5,7 +5,7 @@ import type { EquipmentBase, GameData, SkillType, Spell, StatBlock, StatusId, We
 import { EQUIP_SLOTS, STAT_KEYS, STATUS_IDS } from "../data/index";
 import { formatDice, parseDice } from "../rng";
 import { findBase, moraleOf, optionOf, uniqueOf } from "../state";
-import type { Character, GameEvent, GameState, ItemInstance, ItemPreview, RuleContext } from "../types";
+import type { Character, GameEvent, GameState, ItemInstance, ItemOptionRoll, ItemPreview, RuleContext } from "../types";
 
 /** IT-40: 装備中のユニークの固有スキル 1 つ */
 export type EquipSkill = { type: SkillType; value: number; instanceId: string };
@@ -100,21 +100,32 @@ export function itemPowerPreview(data: GameData, inst: ItemInstance, base: Equip
   return { attack: null, ac: p.ac, magicPower: null };
 }
 
-/** 品の詳細のオプション 1 行。value は表示する符号付きの値（ac は AC の増減として −値。IT-34）、bad は負のオプション（呪い。IT-32） */
-export type ItemDetailOption = { name: string; value: number; unit: string; bad: boolean };
+/** 品の詳細のオプション 1 行。value は表示する符号付きの値（ac は AC の増減として −値。IT-34）。呪いの効果（IT-32）の行も同じ形 */
+export type ItemDetailOption = { name: string; value: number; unit: string };
+
+function detailRoll(data: GameData, o: ItemOptionRoll): ItemDetailOption {
+  const def = optionOf(data, o.optionId);
+  return { name: def.name, value: def.effect.type === "ac" ? -o.value : o.value, unit: def.unit };
+}
 
 /** UI-59 / IT-65 / TW-05: 実体のオプションの行（実体の順。ac は AC の増減として −値）。鑑定の有無は見ない（呼ぶ側が鑑定済みに限る）。M20 D-7 で item-view.ts から移した（鑑定の結果の行と共用） */
 export function detailOptions(data: GameData, inst: ItemInstance): ItemDetailOption[] {
-  return inst.options.map((o) => {
-    const def = optionOf(data, o.optionId);
-    return { name: def.name, value: def.effect.type === "ac" ? -o.value : o.value, unit: def.unit, bad: o.value < 0 };
-  });
+  return inst.options.map((o) => detailRoll(data, o));
+}
+
+/** IT-32 / UI-59（M24）: 呪いの効果の行（curseEffect。無ければ null）。鑑定の有無は見ない（呼ぶ側が鑑定済みに限る） */
+export function detailCurse(data: GameData, inst: ItemInstance): ItemDetailOption | null {
+  return inst.curseEffect === null ? null : detailRoll(data, inst.curseEffect);
+}
+
+/** 符号付きの値の文字列（正は +） */
+function signed(v: number): string {
+  return v > 0 ? `+${v}` : String(v);
 }
 
 /**
- * IT-65 / CH-77 / UI-43（M20 D-7）: 鑑定の結果のオプションの行。オプション 1 つに 1 件の message（実体の順。数値の行なので instant）。
- * 負のオプション（bad。呪い）は item.option.foundBad、それ以外は item.option.found。params は {name, value（符号付きの文字列。正は +）, unit}。
- * オプションが無ければ []。乱数は使わない
+ * IT-65 / CH-77 / UI-43（M20 D-7）: 鑑定の結果のオプションの行。オプション 1 つに 1 件の message item.option.found（実体の順。数値の行なので instant）。
+ * params は {name, value（符号付きの文字列。正は +）, unit}。呪い（IT-32。M24）はここに含めず identifiedCurseEvents。オプションが無ければ []。乱数は使わない
  */
 export function identifiedOptionEvents(state: GameState, data: GameData, instanceId: string): GameEvent[] {
   const inst = state.items[instanceId];
@@ -122,11 +133,23 @@ export function identifiedOptionEvents(state: GameState, data: GameData, instanc
   return detailOptions(data, inst).map(
     (o): GameEvent => ({
       kind: "message",
-      key: o.bad ? "item.option.foundBad" : "item.option.found",
-      params: { name: o.name, value: o.value > 0 ? `+${o.value}` : String(o.value), unit: o.unit },
+      key: "item.option.found",
+      params: { name: o.name, value: signed(o.value), unit: o.unit },
       instant: true,
     }),
   );
+}
+
+/**
+ * IT-32 / IT-65 / CH-77（M24）: 鑑定の結果の呪いの 1 文。呪われていれば、効果があれば item.curse.found{item, name, value, unit}、
+ * 無ければ item.curse.foundNone{item}。呪いの文なので instant は付けない（UI-43。M23 までの camp.identifiedCursed と同じ）。呪われていない・実体が無ければ []。鑑定の文の最後に置く。乱数は使わない
+ */
+export function identifiedCurseEvents(state: GameState, data: GameData, instanceId: string, item: string): GameEvent[] {
+  const inst = state.items[instanceId];
+  if (inst === undefined || !inst.cursed) return [];
+  const c = detailCurse(data, inst);
+  if (c === null) return [{ kind: "message", key: "item.curse.foundNone", params: { item } }];
+  return [{ kind: "message", key: "item.curse.found", params: { item, name: c.name, value: signed(c.value), unit: c.unit } }];
 }
 
 /**
@@ -186,7 +209,8 @@ export function equipStats(state: GameState, data: GameData, ch: Character): Equ
       const uniq = uniqueOf(data, inst.uniqueId);
       skills.push({ type: uniq.skill.type, value: uniq.skill.value, instanceId: id }); // IT-40
     }
-    for (const roll of inst.options) {
+    // IT-32 / IT-34（M24）: 呪いの効果（curseEffect）も options と同じ経路で足す（下限も同じ）
+    for (const roll of inst.curseEffect === null ? inst.options : [...inst.options, inst.curseEffect]) {
       const e = optionOf(data, roll.optionId).effect;
       const v = roll.value;
       switch (e.type) {

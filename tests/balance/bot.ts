@@ -1818,7 +1818,7 @@ export class Campaign {
         for (const row of townMenu(this.state, data)!.shop.equipment) {
           const base = findBase(data, row.itemId)!;
           if (base.slot !== slot || (base.classes.length > 0 && !base.classes.includes(ch.classId))) continue;
-          const ac = armorAc({ id: "-", itemId: row.itemId, level: row.level, rarity: "normal", options: [], uniqueId: null, identified: true, cursed: false, foundIn: null });
+          const ac = armorAc({ id: "-", itemId: row.itemId, level: row.level, rarity: "normal", options: [], uniqueId: null, identified: true, cursed: false, curseEffect: null, foundIn: null });
           if (best === null || ac < best.ac || (ac === best.ac && row.price < best.price)) best = { itemId: row.itemId, ac, price: row.price };
         }
         if (best === null || best.ac >= curAc) continue;

@@ -56,11 +56,33 @@ export function createMemoryBackend(opts: { fail?: FailSpec } = {}): MemoryBacke
 }
 
 /**
- * 今の state（schemaVersion 10）を v9 の形にした複製（JSON の複製。引数は書き換えない）: progress.noChestStreak を消し、
+ * 今の state（schemaVersion 11）を v10 の形にした複製（JSON の複製。引数は書き換えない）: 各実体の curseEffect を消し、
+ * null でなければ options の末尾に戻す（M23 までの呪いは「最後のオプションが負」。IT-32）
+ */
+export function toV10(s: GameState): Record<string, unknown> {
+  const v10 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+  for (const inst of Object.values(v10["items"] as Record<string, Record<string, unknown>>)) {
+    const c = inst["curseEffect"];
+    if (c !== null && c !== undefined) (inst["options"] as unknown[]).push(c);
+    delete inst["curseEffect"];
+  }
+  return v10;
+}
+
+/**
+ * SV-04 v10 → v11（M24。IT-32）の移行で s から作った v10 以前の保存（toV10 以前）が行き着く state（JSON の複製）:
+ * 呪いの効果は options の末尾から curseEffect に戻るので s のまま
+ */
+export function asMigratedToV11(s: GameState): GameState {
+  return JSON.parse(JSON.stringify(s)) as GameState;
+}
+
+/**
+ * 今の state（schemaVersion 11）を v9 の形にした複製（toV10 を通した JSON の複製。引数は書き換えない）: progress.noChestStreak を消し、
  * dive があればその値を dive.noChestStreak に置く（v9 では潜行の欄。CB-51b の M20〜M21 群 C）。dive が null なら連続はどこにも残らない
  */
 export function toV9(s: GameState): Record<string, unknown> {
-  const v9 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+  const v9 = toV10(s);
   const progress = v9["progress"] as Record<string, unknown>;
   const streak = progress["noChestStreak"];
   delete progress["noChestStreak"];
@@ -74,7 +96,7 @@ export function toV9(s: GameState): Record<string, unknown> {
  * dive があれば progress.noChestStreak は s のまま（dive.noChestStreak から移る）、dive が null なら 0。ほかの欄は s のまま
  */
 export function asMigratedToV10(s: GameState): GameState {
-  const m = JSON.parse(JSON.stringify(s)) as GameState;
+  const m = asMigratedToV11(s);
   if (m.dive === null) m.progress.noChestStreak = 0;
   return m;
 }
@@ -181,7 +203,7 @@ export function toV3(s: GameState): Record<string, unknown> {
   delete v3["uniqueBook"];
   delete (v3["progress"] as Record<string, unknown>)["shopLevel"];
   for (const inst of Object.values(v3["items"] as Record<string, Record<string, unknown>>)) {
-    for (const k of ["level", "rarity", "options", "uniqueId", "cursed", "foundIn"]) delete inst[k];
+    for (const k of ["level", "rarity", "options", "uniqueId", "cursed", "foundIn"]) delete inst[k]; // curseEffect は toV10 で消してある
   }
   return v3;
 }

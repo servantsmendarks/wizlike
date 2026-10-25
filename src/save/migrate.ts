@@ -164,13 +164,40 @@ export function migrateV9toV10(x: unknown): unknown {
   return out;
 }
 
+/** v10 → v11 の 1 実体: curseEffect を足し、呪われていれば値が負の最後のオプションを options から外して curseEffect に移す（IT-32。M24） */
+function migrateItemV10toV11(inst: unknown): unknown {
+  if (!isPlainObject(inst)) return inst;
+  const options = inst["options"];
+  if (inst["cursed"] !== true || !Array.isArray(options)) return { ...inst, curseEffect: null };
+  const isNeg = (o: unknown): boolean => isPlainObject(o) && typeof o["value"] === "number" && o["value"] < 0;
+  let last = -1;
+  for (let i = 0; i < options.length; i++) if (isNeg(options[i])) last = i;
+  if (last < 0) return { ...inst, curseEffect: null };
+  // 負のオプションは M23 までの生成（IT-32）と debug.giveCursed では 1 品に 1 つ。2 つ以上あれば最後の 1 つだけ移し、残りの負は捨てる
+  const moved = options[last] as Record<string, unknown>;
+  return { ...inst, options: options.filter((o) => !isNeg(o)), curseEffect: { ...moved } };
+}
+
+/**
+ * SV-04 v10 → v11（M24。IT-32 / TW-10）: 各アイテム実体に curseEffect を足す。呪われていて値が負のオプションがあれば、その最後の 1 つを
+ * options から外して curseEffect に移す（それ以外の負のオプションは捨てる）。呪われていない・負のオプションの無い実体は null（呪われていれば cursed のまま）。
+ * 引数は書き換えない（浅い複製。items と各実体も複製する）。オブジェクトでなければそのまま返す（形の検査で broken）
+ */
+export function migrateV10toV11(x: unknown): unknown {
+  if (!isPlainObject(x)) return x;
+  const out: Record<string, unknown> = { ...x };
+  const items = x["items"];
+  if (isPlainObject(items)) out["items"] = Object.fromEntries(Object.entries(items).map(([k, inst]) => [k, migrateItemV10toV11(inst)]));
+  return out;
+}
+
 /**
  * 移行関数の列（MIGRATIONS[i] は版 i+1 → i+2）。v3 → v4 の流通レベルは dungeons の onClear.shopLevel から計算する（IT-80）。
  * アプリ（main.ts）は検証済みの data.dungeons を渡して SaveDeps.migrations にする
  */
 export function createMigrations(dungeons: readonly Pick<DungeonDef, "id" | "onClear">[]): readonly Migration[] {
   const table: ShopLevelTable = Object.fromEntries(dungeons.map((d) => [d.id, d.onClear.shopLevel]));
-  return [migrateV1toV2, migrateV2toV3, (x) => migrateV3toV4(x, table), migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10];
+  return [migrateV1toV2, migrateV2toV3, (x) => migrateV3toV4(x, table), migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10, migrateV10toV11];
 }
 
 /** 既定の移行関数の列（流通レベルの表が空なので v3 → v4 の shopLevel は 0）。アプリは createMigrations(data.dungeons) を使う */
@@ -218,7 +245,7 @@ function isOptionRollShape(x: unknown): boolean {
   );
 }
 
-/** IT-10（schemaVersion 4）: アイテム実体の欄の型 */
+/** IT-10（schemaVersion 4。curseEffect は 11。IT-32）: アイテム実体の欄の型 */
 function isItemInstanceShape(x: unknown): boolean {
   return (
     isPlainObject(x) &&
@@ -231,6 +258,7 @@ function isItemInstanceShape(x: unknown): boolean {
     isStringOrNull(x["uniqueId"]) &&
     typeof x["identified"] === "boolean" &&
     typeof x["cursed"] === "boolean" &&
+    (x["curseEffect"] === null || isOptionRollShape(x["curseEffect"])) &&
     isStringOrNull(x["foundIn"])
   );
 }

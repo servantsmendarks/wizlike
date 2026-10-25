@@ -7,7 +7,7 @@ import { formatDice, parseDice } from "../rng";
 import type { Character, GameState, ItemInstance, Rarity, RuleContext, SpellInfo } from "../types";
 import { checkEquip, checkUnequip, equipItem, unequipItem } from "./camp";
 import { allyAc, allyAttackBonus, benefitOf, strBonus } from "./combat-calc";
-import { detailOptions, equipStats, itemPower, POWER_NONE, spellCost, type ItemDetailOption, type ItemPower } from "./equip-stats";
+import { detailCurse, detailOptions, equipStats, itemPower, POWER_NONE, spellCost, type ItemDetailOption, type ItemPower } from "./equip-stats";
 import { expFor, levelUpReady } from "./growth";
 import { appearanceSellPrice, sellPrice } from "./shop";
 
@@ -19,7 +19,7 @@ export type { ItemDetailOption } from "./equip-stats";
  * - rarity / power: 鑑定済みの装備だけ（power はオプションを除く性能。IT-20〜23）
  * - damageDice: 鑑定済みの武器のダメージの表示用のダイス。power.dice の定数と power.damageBonus（Lv の分）を 1 つの定数に合算した正規形（「1d4+1」の Lv2 は「1d4+2」、合計 0 は「1d4」、負は「1d4-1」）。武器でなければ null
  * - options: 鑑定済みの装備のオプション（実体の順）。skill: 鑑定済みのユニークの固有スキル（IT-40）
- * - cursed: 鑑定済みかつ呪われている。sellPrice: 店での売値（IT-61。鑑定済みは本当の売値、未鑑定は見た目の品種の売値。2026-10-05 から未鑑定も売れる）
+ * - cursed: 鑑定済みかつ呪われている。curse: 鑑定済みの呪いの効果の行（IT-32。M24。curseEffect が無ければ null）。sellPrice: 店での売値（IT-61。鑑定済みは本当の売値、未鑑定は見た目の品種の売値。2026-10-05 から未鑑定も売れる）
  * - description: 鑑定済みのユニークの説明（uniques[].description）
  */
 export type ItemDetail = {
@@ -36,6 +36,7 @@ export type ItemDetail = {
   options: ItemDetailOption[];
   skill: { type: SkillType; value: number } | null;
   cursed: boolean;
+  curse: ItemDetailOption | null;
   sellPrice: number | null;
   description: string | null;
 };
@@ -65,6 +66,7 @@ export function itemDetail(state: GameState, data: GameData, instanceId: string)
     options: [],
     skill: null,
     cursed: false,
+    curse: null,
     sellPrice: null,
     description: null,
   };
@@ -85,6 +87,7 @@ export function itemDetail(state: GameState, data: GameData, instanceId: string)
     options: detailOptions(data, inst),
     skill: uniq === null ? null : { type: uniq.skill.type, value: uniq.skill.value },
     cursed: inst.cursed,
+    curse: detailCurse(data, inst),
     sellPrice: sellPrice(inst, data),
     description: uniq?.description ?? null,
   };
@@ -280,7 +283,7 @@ export function shopEquipCompare(state: GameState, data: GameData, memberId: str
   if (ch === null || base === null) return null;
   if (base.classes.length > 0 && !base.classes.includes(ch.classId)) return null;
   const slot = base.slot;
-  const inst: ItemInstance = { id: "@shopCompare", itemId, level, rarity: "normal", options: [], uniqueId: null, identified: true, cursed: false, foundIn: null };
+  const inst: ItemInstance = { id: "@shopCompare", itemId, level, rarity: "normal", options: [], uniqueId: null, identified: true, cursed: false, curseEffect: null, foundIn: null };
   const curId = ch.equipment[slot];
   const cur = curId === null ? undefined : state.items[curId];
   const curBase = cur === undefined ? null : findBase(data, cur.itemId);

@@ -1727,7 +1727,7 @@ describe("UI-55/UI-40 制止の箱のタップ待ち（M5）", () => {
     for (const skipAnimations of [false, true]) {
       const { deps, log } = fakeDeps({ skipAnimations });
       await createPlayer(deps).play(r.events, st, r.state);
-      // 箱は結果の語り 1 件の後のタップで消え（呪いの camp.identifiedCursed が続くときと同じ）、性能の文と希少度・売値の文はその後に出る
+      // 箱は結果の語り 1 件の後のタップで消え（呪いの item.curse.found が続くときと同じ）、性能の文と希少度・売値の文はその後に出る
       expect(span(log), String(skipAnimations)).toEqual(["dice.show", say(m.key, m.params), "beat.waitTap", "dice.hide", say(p.key, p.params), say(v.key, v.params)]);
     }
   });

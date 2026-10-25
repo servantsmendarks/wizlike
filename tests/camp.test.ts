@@ -555,7 +555,7 @@ describe("CH-77 party.identify", () => {
     expect(r.state.rng).toEqual(m);
   });
 
-  test("CH-73/77 呪われた品の鑑定に成功すると camp.identifiedCursed が続く（街でも受け付ける。取り憑きの chance は引かない）", () => {
+  test("CH-73/77/IT-32 呪われた品の鑑定に成功すると最後に item.curse.found{item, name, value, unit}（M24。camp.identifiedCursed と foundBad を統合。instant なし）が続く（街でも受け付ける。取り憑きの chance は引かない）", () => {
     const g = giveCursed(bishopAt(inTown()), "c3", false);
     const s = withSeed(g.s, seedFor((x) => x <= 60));
     const m = cloneRng(s.rng);
@@ -565,9 +565,8 @@ describe("CH-77 party.identify", () => {
       { kind: "message", key: "camp.identified", params: { name: "エル", old: "短い刃？", item: "短剣", rarity: "normal" } },
       { kind: "message", key: "camp.identifiedPower", params: { item: "短剣", attack: "1d4", ac: "—", magic: "—" }, instant: true },
       { kind: "message", key: "camp.identifiedValue", params: { rarity: "通常", gold: 7 }, instant: true },
-      // IT-65 / CH-77（M20 D-7）: オプションの行（負は foundBad。instant）
-      { kind: "message", key: "item.option.foundBad", params: { name: "力", value: "-1", unit: "" }, instant: true },
-      { kind: "message", key: "camp.identifiedCursed", params: { item: "短剣" } },
+      // IT-32（M24）: 呪いの効果はオプションの行に出さず、最後の呪いの 1 文に出す
+      { kind: "message", key: "item.curse.found", params: { item: "短剣", name: "力", value: "-1", unit: "" } },
     ]);
     expect(r.state.rng).toEqual(m);
   });

@@ -961,6 +961,7 @@ describe("TW-05 店（town.shop。消耗品の購入だけ）", () => {
       uniqueId: null,
       identified: true,
       cursed: false,
+      curseEffect: null,
       foundIn: null,
     });
     expect(r.state.nextItemSeq).toBe(20);
@@ -1252,6 +1253,7 @@ describe("IT-60〜63 店の装備の購入・売却・買い戻し（town.shop�
       uniqueId: null,
       identified: true,
       cursed: false,
+      curseEffect: null,
       foundIn: null,
     });
     expect(r.state.rng).toEqual(s.rng);
@@ -1362,7 +1364,7 @@ describe("IT-65/IT-66 店の鑑定（town.shop identify。M7）", () => {
     return { s, id };
   }
 
-  test("IT-65 鑑定料（長剣は max(10, floor(50 × 0.5)) = 25G。2026-10-05 に一律 100G から変えた）を払って本人の未鑑定の品を鑑定: town.shop.identified{name, old, item, cost, rarity}。乱数なし。呪われていれば camp.identifiedCursed が続く", () => {
+  test("IT-65 鑑定料（長剣は max(10, floor(50 × 0.5)) = 25G。2026-10-05 に一律 100G から変えた）を払って本人の未鑑定の品を鑑定: town.shop.identified{name, old, item, cost, rarity}。乱数なし。呪われていれば最後に item.curse.found が続く（M24。IT-32）", () => {
     const { s, id } = withUnidentified(town({}, 300), "c2");
     const r = ok(s, identify("c2", id));
     expect(r.state.gold).toBe(275);
@@ -1376,38 +1378,36 @@ describe("IT-65/IT-66 店の鑑定（town.shop identify。M7）", () => {
     ]);
     expect(r.state.rng).toEqual(s.rng);
     expect(r.state.uniqueBook).toEqual({});
-    const c = withUnidentified(town({}, 300), "c2", { cursed: true, options: [{ optionId: "str", tier: 1, value: -1 }], rarity: "normal", level: 0 });
+    const c = withUnidentified(town({}, 300), "c2", { cursed: true, options: [], curseEffect: { optionId: "str", tier: 1, value: -1 }, rarity: "normal", level: 0 });
     const rc = ok(c.s, identify("c2", c.id));
     expect(rc.events).toEqual([
       { kind: "message", key: "town.shop.identified", params: { name: "ベルク", old: "剣？", item: "長剣", cost: 25, rarity: "normal" } },
       { kind: "message", key: "town.shop.identifiedPower", params: { item: "長剣", attack: "1d8", ac: "—", magic: "—" }, instant: true }, // 品そのものの数値はオプションを含まない
-      { kind: "message", key: "town.shop.identifiedValue", params: { rarity: "通常", gold: 50 }, instant: true }, // 負のオプションは売値に 0（IT-61）
-      { kind: "message", key: "item.option.foundBad", params: { name: "力", value: "-1", unit: "" }, instant: true }, // M20 D-7: オプションの行
-      { kind: "message", key: "camp.identifiedCursed", params: { item: "長剣" } },
+      { kind: "message", key: "town.shop.identifiedValue", params: { rarity: "通常", gold: 50 }, instant: true }, // 呪いの効果は売値に数えない（IT-61）
+      { kind: "message", key: "item.curse.found", params: { item: "長剣", name: "力", value: "-1", unit: "" } }, // M24: 呪いの 1 文（オプションの行に出さない）
     ]);
   });
 
   test("UI-43（M20 D-3・D-7）店の鑑定の結果のうち数値の行（identifiedPower / identifiedValue / オプションの行）だけに instant。鑑定の文と呪いの文には付けない", () => {
-    const c = withUnidentified(town({}, 300), "c2", { cursed: true, options: [{ optionId: "str", tier: 1, value: -1 }], rarity: "normal", level: 0 });
+    const c = withUnidentified(town({}, 300), "c2", { cursed: true, options: [], curseEffect: { optionId: "str", tier: 1, value: -1 }, rarity: "normal", level: 0 });
     const r = ok(c.s, identify("c2", c.id));
     const marks = r.events.map((e) => (e.kind === "message" ? [e.key, e.instant === true] : [e.kind, false]));
     expect(marks).toEqual([
       ["town.shop.identified", false],
       ["town.shop.identifiedPower", true],
       ["town.shop.identifiedValue", true],
-      ["item.option.foundBad", true],
-      ["camp.identifiedCursed", false],
+      ["item.curse.found", false],
     ]);
     expect(r.state.rng).toEqual(c.s.rng);
   });
 
-  test("IT-65/UI-43 M20（D-7）店の鑑定の結果の後にオプションを 1 行ずつ item.option.found / foundBad{name, value（符号付き）, unit}（実体の順。instant。ac は AC の増減として −値。負は foundBad）。オプションが無ければ出さない。乱数なし", () => {
+  test("IT-65/UI-43 M20（D-7）店の鑑定の結果の後にオプションを 1 行ずつ item.option.found{name, value（符号付き）, unit}（実体の順。instant。ac は AC の増減として −値）。呪いの効果（M24）は最後の item.curse.found に。オプションが無ければ出さない。乱数なし", () => {
     const opts: ItemOptionRoll[] = [
       { optionId: "hit", tier: 3, value: 15 },
       { optionId: "ac", tier: 1, value: 1 },
-      { optionId: "str", tier: 1, value: -2 },
+      { optionId: "agi", tier: 1, value: 1 },
     ];
-    const c = withUnidentified(town({}, 300), "c2", { cursed: true, options: opts, rarity: "legendary", level: 0 });
+    const c = withUnidentified(town({}, 300), "c2", { cursed: true, options: opts, curseEffect: { optionId: "str", tier: 1, value: -2 }, rarity: "legendary", level: 0 });
     const r = ok(c.s, identify("c2", c.id));
     const keys = r.events.map((e) => (e.kind === "message" ? e.key : e.kind));
     expect(keys).toEqual([
@@ -1416,14 +1416,18 @@ describe("IT-65/IT-66 店の鑑定（town.shop identify。M7）", () => {
       "town.shop.identifiedValue",
       "item.option.found",
       "item.option.found",
-      "item.option.foundBad",
-      "camp.identifiedCursed",
+      "item.option.found",
+      "item.curse.found",
     ]);
-    expect(r.events.slice(3, 6)).toEqual([
+    expect(r.events.slice(3, 7)).toEqual([
       { kind: "message", key: "item.option.found", params: { name: "命中", value: "+15", unit: "%" }, instant: true },
       { kind: "message", key: "item.option.found", params: { name: "AC", value: "-1", unit: "" }, instant: true }, // AC の増減（良い向き）
-      { kind: "message", key: "item.option.foundBad", params: { name: "力", value: "-2", unit: "" }, instant: true },
+      { kind: "message", key: "item.option.found", params: { name: "素早さ", value: "+1", unit: "" }, instant: true },
+      { kind: "message", key: "item.curse.found", params: { item: "伝説の長剣", name: "力", value: "-2", unit: "" } },
     ]);
+    // 効果の無い呪い（cursed で curseEffect null）は item.curse.foundNone{item}
+    const none = withUnidentified(town({}, 300), "c2", { cursed: true, options: [], rarity: "normal", level: 0 });
+    expect(ok(none.s, identify("c2", none.id)).events.at(-1)).toEqual({ kind: "message", key: "item.curse.foundNone", params: { item: "長剣" } });
     expect(r.state.rng).toEqual(c.s.rng);
     // オプションの無い品（通常）では出さない
     const plain = withUnidentified(town({}, 300), "c2", { rarity: "normal", options: [] });

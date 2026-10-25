@@ -58,9 +58,16 @@ export function formatItemDetail(d: ItemDetail, strings: Strings): PanelLines {
   } else if (p !== null) {
     lines.push(line(s(strings, "item.detail.ac", { ac: p.ac })));
   }
-  for (const o of d.options) lines.push(line(optionRowText(o, strings), o.bad ? "danger" : "normal"));
+  for (const o of d.options) lines.push(line(optionRowText(o, strings)));
   if (d.skill !== null) lines.push(line(s(strings, `item.skill.${d.skill.type}`, { value: d.skill.value })));
-  if (d.cursed) lines.push(line(s(strings, "item.cursed"), "danger"));
+  // IT-32（M24）: 呪いの行（効果があれば item.curse.row、無ければ item.curse.rowNone）
+  if (d.cursed)
+    lines.push(
+      line(
+        d.curse === null ? s(strings, "item.curse.rowNone") : s(strings, "item.curse.row", { name: d.curse.name, value: signed(d.curse.value), unit: d.curse.unit }),
+        "danger",
+      ),
+    );
   if (d.sellPrice !== null) lines.push(line(s(strings, "item.detail.sell", { gold: d.sellPrice })));
   if (d.description !== null) lines.push(...chunkDescription(d.description).map((t) => line(t, "dim")));
   return { title: d.name, lines };

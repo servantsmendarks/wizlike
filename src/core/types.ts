@@ -45,7 +45,7 @@ export type BattleAction =
 /** IT-30: 希少度（オプションの個数 通常 0 / 上質 1 / 希少 2 / 伝説 3）。消耗品・魔法書は normal */
 export type Rarity = "normal" | "fine" | "rare" | "legendary";
 
-/** IT-33: 実体が持つオプション 1 つ。value は符号付き（呪いの負のオプションは負。IT-32）で、生成時に決めた値のまま */
+/** IT-33: 実体が持つオプション 1 つ。生成時に決めた値のまま。options の値は正、curseEffect（IT-32。M24）の値は負 */
 export type ItemOptionRoll = { optionId: string; tier: 1 | 2 | 3; value: number };
 
 /**
@@ -67,6 +67,11 @@ export type ItemInstance = {
   identified: boolean;
   /** IT-32 / CH-73: 呪われているか（鑑定と関係なく効く） */
   cursed: boolean;
+  /**
+   * IT-32（M24）: 呪いの負の効果（options の枠を使わない。値は負）。呪われていなければ null。
+   * 不変条件: curseEffect !== null ⇒ cursed（母集団が尽きて効果の無い呪いはあり得る: cursed で null）
+   */
+  curseEffect: ItemOptionRoll | null;
   /** IT-66: ドロップしたダンジョンの id。店で買った品・初期装備は null */
   foundIn: string | null;
 };

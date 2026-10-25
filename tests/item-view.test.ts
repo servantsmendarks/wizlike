@@ -40,11 +40,12 @@ describe("UI-59/IT-11/IT-12 itemDetail（品の詳細）", () => {
       power: { kind: "weapon", dice: "1d8", damageBonus: 5, magicPower: 0, reach: "melee", caster: false },
       damageDice: "1d8+5", // 2026-10-06（実機(M9-飛行) B3）: 表示用のダイス（定数と Lv の分を合算）の項目を足した
       options: [
-        { name: "力", value: 2, unit: "", bad: false },
-        { name: "AC", value: -1, unit: "", bad: false },
+        { name: "力", value: 2, unit: "" },
+        { name: "AC", value: -1, unit: "" },
       ],
       skill: null,
       cursed: false,
+      curse: null,
       // IT-61: floor(100 × 0.5 × (1 + 0.5 × 5)) = floor(175) = 175 + 段階 2 の 40 × 2 = 255
       sellPrice: 255,
       description: null,
@@ -82,7 +83,7 @@ describe("UI-59/IT-11/IT-12 itemDetail（品の詳細）", () => {
       rarity: "fine",
       unique: true,
       power: { kind: "weapon", dice: "1d6", damageBonus: 0, magicPower: 2, reach: "melee", caster: true },
-      options: [{ name: "最大MP", value: 4, unit: "", bad: false }],
+      options: [{ name: "最大MP", value: 4, unit: "" }],
       skill: { type: "mpCostDown", value: 1 },
       cursed: false,
       sellPrice: 450, // floor(900 × 0.5)
@@ -92,15 +93,21 @@ describe("UI-59/IT-11/IT-12 itemDetail（品の詳細）", () => {
     expect(itemDetail(s, data, helm)!.power).toEqual({ kind: "armor", ac: -2 });
   });
 
-  test("IT-32/CH-73 呪いは鑑定済みなら cursed と負のオプション（bad）。未鑑定（IT-12）は名前と部位と見た目の品種の売値だけで、呪いは見せない", () => {
+  test("IT-32/CH-73 呪いは鑑定済みなら cursed と curse（呪いの効果の行。M24。options には入らない）。効果の無い呪いは curse null。未鑑定（IT-12）は名前と部位と見た目の品種の売値だけで、呪いは見せない", () => {
     const s = town();
     const known = cursedDagger(s, true);
     expect(itemDetail(s, data, known)).toMatchObject({
       name: "短剣",
       cursed: true,
-      options: [{ name: "力", value: -1, unit: "", bad: true }],
-      sellPrice: 7, // floor(15 × 0.5)。負のオプションは 0
+      options: [],
+      curse: { name: "力", value: -1, unit: "" },
+      sellPrice: 7, // floor(15 × 0.5)。呪いの効果は数えない（IT-61）
     });
+    // AC の呪いは AC の増減として −値の反対（AC が上がる = +）
+    const acCurse = createItemInstance(s, { itemId: "leather_armor", identified: true, cursed: true, curseEffect: { optionId: "ac", tier: 1, value: -1 } });
+    expect(itemDetail(s, data, acCurse)!.curse).toEqual({ name: "AC", value: 1, unit: "" });
+    const none = createItemInstance(s, { itemId: "dagger", identified: true, cursed: true });
+    expect(itemDetail(s, data, none)).toMatchObject({ cursed: true, curse: null });
     const hidden = cursedDagger(s, false);
     expect(itemDetail(s, data, hidden)).toEqual({
       instanceId: hidden,
@@ -115,6 +122,7 @@ describe("UI-59/IT-11/IT-12 itemDetail（品の詳細）", () => {
       options: [],
       skill: null,
       cursed: false,
+      curse: null,
       sellPrice: 7, // 2026-10-05 から未鑑定も見た目の品種（短剣 Lv0）の売値 floor(15 × 0.5) = 7 で売れる（以前は売れないので null）
       description: null,
     });
@@ -477,17 +485,18 @@ describe("TW-05/UI-67 shopEquipCompare（店の品と今の装備の比較。M19
     expect(shopEquipCompare(s, data, "c1", "long_sword", 0)!.current).toEqual({ plainName: "希少な長剣", name: "希少な長剣 +3" });
   });
 
-  test("TW-05 M20 B-2 currentOptions: 今の装備が鑑定済みならそのオプション（itemDetail の options と同じ形・実体の順。負は bad）。オプションは比較の値に入らない。未鑑定の今の装備は []", () => {
+  test("TW-05 M20 B-2 currentOptions: 今の装備が鑑定済みならそのオプション（itemDetail の options と同じ形・実体の順。呪いの効果（curseEffect。M24）は入らない）。オプションは比較の値に入らない。未鑑定の今の装備は []", () => {
     const s = town();
     const opts = [
       { optionId: "mp_max", tier: 2 as const, value: 4 },
-      { optionId: "str", tier: 1 as const, value: -1 },
+      { optionId: "str", tier: 1 as const, value: 1 },
     ];
-    member(s, "c1").equipment.weapon = createItemInstance(s, { itemId: "long_sword", level: 0, rarity: "rare", options: opts, identified: true });
+    const curseEffect = { optionId: "agi", tier: 1 as const, value: -1 };
+    member(s, "c1").equipment.weapon = createItemInstance(s, { itemId: "long_sword", level: 0, rarity: "rare", options: opts, cursed: true, curseEffect, identified: true });
     const c = shopEquipCompare(s, data, "c1", "long_sword", 0)!;
     expect(c.currentOptions).toEqual([
-      { name: "最大MP", value: 4, unit: "", bad: false },
-      { name: "力", value: -1, unit: "", bad: true },
+      { name: "最大MP", value: 4, unit: "" },
+      { name: "力", value: 1, unit: "" },
     ]);
     expect(c.currentOptions).toEqual(itemDetail(s, data, member(s, "c1").equipment.weapon!)!.options);
     expect(c.attack).toEqual({ from: "1d8", to: "1d8", changed: false, verdict: "same" });

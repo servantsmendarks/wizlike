@@ -1136,16 +1136,25 @@ describe("UI-52 街のページ", () => {
     }
   });
 
-  test("IT-65/CH-77 M20（D-7）鑑定の結果のオプションの行 item.option.found「オプション: {name} {value}{unit}」/ foundBad（末尾に「（呪い）」）は、どのオプションの最大の値（正負）でも会話の箱の 1 行（28 字）に収まる", () => {
+  test("IT-65/CH-77 M20（D-7）鑑定の結果のオプションの行 item.option.found「オプション: {name} {value}{unit}」は、どのオプションの最大の値でも会話の箱の 1 行（28 字）に収まる", () => {
     expect(S["item.option.found"]).toBe("オプション: {name} {value}{unit}");
-    expect(S["item.option.foundBad"]).toBe("オプション: {name} {value}{unit}（呪い）");
-    expect(formatMessage(S["item.option.foundBad"]!, { name: "力", value: "-2", unit: "" })).toBe("オプション: 力 -2（呪い）");
     for (const o of data.itemOptions.options) {
-      const top = Math.max(...o.values);
-      for (const [key, value] of [["item.option.found", `+${top}`], ["item.option.foundBad", `-${top}`]] as const) {
-        const text = formatMessage(S[key]!, { name: o.name, value, unit: o.unit });
-        expect(kinsokuLines(text, 28), text).toHaveLength(1);
-      }
+      const text = formatMessage(S["item.option.found"]!, { name: o.name, value: `+${Math.max(...o.values)}`, unit: o.unit });
+      expect(kinsokuLines(text, 28), text).toHaveLength(1);
+    }
+  });
+
+  test("IT-32/CH-77 M24 鑑定の結果の呪いの 1 文 item.curse.found「{item}の呪い: 外せない／{name} {value}{unit}」/ foundNone「{item}の呪い: 外せない」は、品名 24 単位とどのオプションの最大の負の値でも会話の箱の 2 行（28 字 × 2）に収まる。item.option.foundBad・camp.identifiedCursed・item.cursed は無い", () => {
+    expect(S["item.curse.found"]).toBe("{item}の呪い: 外せない／{name} {value}{unit}");
+    expect(S["item.curse.foundNone"]).toBe("{item}の呪い: 外せない");
+    expect(S["item.curse.row"]).toBe("呪い: 外せない／{name} {value}{unit}");
+    expect(S["item.curse.rowNone"]).toBe("呪い: 外せない");
+    for (const k of ["item.option.foundBad", "camp.identifiedCursed", "item.cursed"]) expect(S[k], k).toBeUndefined();
+    const item = "アアアアアアアアアアアア"; // 24 単位
+    expect(kinsokuLines(formatMessage(S["item.curse.foundNone"]!, { item }), 28)).toHaveLength(1);
+    for (const o of data.itemOptions.options) {
+      const text = formatMessage(S["item.curse.found"]!, { item, name: o.name, value: `-${Math.max(...o.values)}`, unit: o.unit });
+      expect(kinsokuLines(text, 28).length, text).toBeLessThanOrEqual(2);
     }
   });
 

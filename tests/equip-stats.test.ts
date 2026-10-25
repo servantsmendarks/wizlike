@@ -208,6 +208,29 @@ describe("IT-34 オプションと CH-13 / CH-14 の実効の値", () => {
     expect(equipStats(s, data, member(s, "c5")).mpMax).toBe(1);
   });
 
+  test("IT-34/IT-32 curseEffect（M24）は装備中だけ効き options と同じ経路・同じ下限（M23 までの「options の末尾の負の値」と同じ実効の値）。所持品にあるだけなら効かない", () => {
+    const s = newGame(1);
+    const pos = [opt("hit", 10, 2), opt("ac", 1)];
+    // 新しい形（curseEffect）と M23 までの形（options の末尾が負）を、同じ人の同じ部位に装備させて比べる（戦士 c1 と魔術師 c5）
+    for (const id of ["c1", "c5"]) {
+      for (const curse of [opt("str", -30), opt("hp_max", -100), opt("ac", -1), opt("san_max", -200), opt("gold_luck", -6), opt("mp_max", -100), opt("magic_power", -3)]) {
+        const t = cloneState(s);
+        const o = cloneState(s);
+        equipNew(t, id, "accessory", { itemId: "charm", identified: true, rarity: "rare", options: pos, cursed: true, curseEffect: curse });
+        equipNew(o, id, "accessory", { itemId: "charm", identified: true, rarity: "rare", options: [...pos, curse], cursed: true });
+        expect(equipStats(t, data, member(t, id)), `${id} ${curse.optionId}`).toEqual(equipStats(o, data, member(o, id)));
+      }
+    }
+    const t = cloneState(s);
+    equipNew(t, "c1", "accessory", { itemId: "charm", identified: true, cursed: true, curseEffect: opt("str", -30) });
+    expect(equipStats(t, data, member(t, "c1")).stats.str).toBe(1); // 1 未満にしない
+    // 所持品にあるだけなら効かない
+    const u = cloneState(s);
+    const before = equipStats(u, data, member(u, "c1"));
+    member(u, "c1").inventory.push(createItemInstance(u, { itemId: "charm", identified: true, cursed: true, curseEffect: opt("str", -3) }));
+    expect(equipStats(u, data, member(u, "c1"))).toEqual(before);
+  });
+
   test("CH-14 素の mpMax が 0（戦士 c1）なら、mp_max の正のオプション（+6）でも実効の mpMax は 0。素が 1 以上（魔術師 c5）なら +6 が足される", () => {
     const s = newGame(1);
     equipNew(s, "c1", "accessory", { itemId: "charm", identified: true, options: [opt("mp_max", 6, 3)] });
