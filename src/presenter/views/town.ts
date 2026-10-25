@@ -139,6 +139,8 @@ export type TownEntry =
   | { kind: "bank"; amount: number; label: string; disabled: boolean }
   /** TW-16b（M17）: すべて預ける（memberId null は全員。core の depositAllOk でなければ disabled）。押すと town.storage の depositAll */
   | { kind: "depositAll"; memberId: string | null; label: string; disabled: boolean }
+  /** TW-10（M24 D-1）: 倉庫を広げる（core の townMenu.storage.expand.ok でなければ disabled。reason は dim の行を押したときの理由の 1 文）。押すと town.storage の expand */
+  | { kind: "expand"; label: string; disabled: boolean; reason: string | null }
   /** TW-16: 預ける品の行（倉庫が満杯なら disabled）。押すと town.storage の deposit */
   | { kind: "deposit"; memberId: string; instanceId: string; label: string; disabled: boolean; tone?: "danger" }
   /** TW-16: 引き出した品を受け取る者の行（所持枠の空きが無ければ disabled）。押すと town.storage の withdraw */
@@ -532,12 +534,19 @@ export function townEntries(
     // TW-10 / TW-16 / TW-16b（M17）: 金を預ける / 金を引き出す / 品を預ける / 品を引き出す（倉庫の数と容量）/ すべて預ける（全員。core の depositAllOk）/ 戻る。
     // 金と品の行は dim にしない（中の段の行で dim）。TW-16c（M21 A-2）: すべて預けるの後に「状態（倉庫から装備）」（キャラクター画面を host bank で開く）
     const st = menu.storage;
+    // TW-10（M24 D-1）: すべて預けるの後に倉庫を広げる（上限なら dim の「倉庫は最大」）
+    const ex = st.expand;
+    const expandRow: TownEntry =
+      ex === null
+        ? { kind: "empty", label: s(strings, "town.storage.menu.expandMax", { capacity: st.capacity }), disabled: true }
+        : { kind: "expand", label: s(strings, "town.storage.menu.expand", { cost: ex.cost, slots: ex.slots }), disabled: !ex.ok, reason: ex.ok ? null : s(strings, "town.storage.expandNoGold") };
     return [
       { kind: "page", to: "bankDeposit", label: s(strings, "town.bank.menu.deposit") },
       { kind: "page", to: "bankWithdraw", label: s(strings, "town.bank.menu.withdraw") },
       { kind: "page", to: "storageDeposit", label: s(strings, "town.storage.menu.deposit") },
       { kind: "page", to: "storageWithdraw", label: s(strings, "town.storage.menu.withdraw", { count: st.items.length, capacity: st.capacity }) },
       { kind: "depositAll", memberId: null, label: s(strings, "town.storage.menu.depositAll"), disabled: !st.depositAllOk },
+      expandRow,
       { kind: "camp", open: "status", host: "bank", label: s(strings, "town.bank.menu.status") },
       back,
     ];

@@ -1408,6 +1408,7 @@ describe("UI-52 街のページ", () => {
       { kind: "page", to: "storageDeposit", label: "品を預ける" },
       { kind: "page", to: "storageWithdraw", label: `品を引き出す　1/${cap}` },
       { kind: "depositAll", memberId: null, label: "すべて預ける", disabled: false },
+      { kind: "expand", label: "倉庫を広げる　1000 G（+10）", disabled: true, reason: "金が足りない。" }, // TW-10（M24 D-1）所持金 300 では dim
       { kind: "camp", open: "status", host: "bank", label: "状態（倉庫から装備）" }, // TW-16c（M21 A-2）
       back,
     ]);
@@ -1423,6 +1424,22 @@ describe("UI-52 街のページ", () => {
     const full = cloneState(s);
     for (let i = full.warehouse.length; i < cap; i++) full.warehouse.push(createItemInstance(full, { itemId: "herb", identified: true }));
     expect(townEntries("bank", menuOf(full), S).find((e) => e.kind === "depositAll")).toMatchObject({ disabled: true });
+  });
+
+  test("UI-52/TW-10（M24 D-1）倉庫を広げる: すべて預けるの後。1000 G あれば有効（reason なし）。上限（100）では dim の「倉庫は最大（100）」。どちらも一覧の行の幅（39 単位）に収まる", () => {
+    const rich = town({}, 1000);
+    const row = townEntries("bank", menuOf(rich), S).find((e) => e.kind === "expand");
+    expect(row).toEqual({ kind: "expand", label: "倉庫を広げる　" + "1000 G（+10）", disabled: false, reason: null });
+    const names = townEntries("bank", menuOf(rich), S).map((e) => e.kind);
+    expect(names.indexOf("expand")).toBe(names.indexOf("depositAll") + 1);
+    const max = town({}, 9999);
+    max.progress.warehouseSlots = 100;
+    const maxRow = townEntries("bank", menuOf(max), S).find((e) => e.label.startsWith("倉庫は最大"));
+    expect(maxRow).toEqual({ kind: "empty", label: "倉庫は最大（100）", disabled: true });
+    expect(townEntries("bank", menuOf(max), S).some((e) => e.kind === "expand")).toBe(false);
+    // 最悪: 料金 5 桁・枠 3 桁
+    const worst = townEntries("bank", menuOf(rich), { ...S }).find((e) => e.kind === "expand")!;
+    for (const label of [worst.label, S["town.storage.menu.expand"]!.replace("{cost}", "99999").replace("{slots}", "100"), maxRow!.label]) expect(textUnits(label), label).toBeLessThanOrEqual(39);
   });
 
   test("UI-52/TW-10（M17）金の額の段: core の townMenu.bank の行（全額 → 半分 → config.bank.amounts）。town.bank に送る額は預入が正・引出が負。ok でなければ dim", () => {

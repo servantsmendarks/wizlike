@@ -754,7 +754,7 @@ export function createApp(o: {
     const reason =
       e.kind === "enter"
         ? e.notReady
-        : e.kind === "ccClass" || e.kind === "buy"
+        : e.kind === "ccClass" || e.kind === "buy" || e.kind === "expand"
           ? e.reason
           : e.kind === "page" && e.disabled === true
             ? t("town.upgrade.needCatalyst")
@@ -933,6 +933,10 @@ export function createApp(o: {
             return;
           case "depositAll":
             void run({ type: "town.storage", action: "depositAll", memberId: e.memberId });
+            return;
+          // TW-10（M24 D-1）: 倉庫を広げる（同じページにとどまる。dim の行は notReadyReason が理由を語る）
+          case "expand":
+            void run({ type: "town.storage", action: "expand" });
             return;
         }
       }),
