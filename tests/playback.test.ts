@@ -173,6 +173,13 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+/** TW-17（M24 C-2）: 触媒 0 個は拒まれるので、c1 の持ち物に鑑定済みの短剣を足して触媒に指定する */
+function oneCatalyst(st: GameState): { memberId: string; instanceId: string } {
+  const instanceId = createItemInstance(st, { itemId: "dagger", identified: true });
+  st.party.find((c) => c.id === "c1")!.inventory.push(instanceId);
+  return { memberId: "c1", instanceId };
+}
+
 describe("UI-41 playback", () => {
   test("UI-41 skipAnimations が真なら、[message, moved, turned, floorChanged, hpChanged] を fade(0) と say(instant) だけで解決する", async () => {
     vi.useFakeTimers();
@@ -1718,7 +1725,7 @@ describe("UI-55/UI-40 制止の箱のタップ待ち（M5）", () => {
   test("UI-40/TW-17 強化の箱（core の実際の town.upgrade の列）も制止の箱と同じく、成否の語りを出した後でタップを 1 回待ってから消す（演出スキップの真偽とも）", async () => {
     const st = cloneState(newGame(1));
     st.gold = 1000;
-    const r = execute(st, { type: "town.upgrade", memberId: "c1", slot: "weapon", catalysts: [] }, data);
+    const r = execute(st, { type: "town.upgrade", memberId: "c1", slot: "weapon", catalysts: [oneCatalyst(st)] }, data);
     expect(r.events.map((e) => e.kind)).toEqual(["dice", "message"]);
     const m = r.events[1]!;
     if (m.kind !== "message") throw new Error("message expected");
@@ -1989,7 +1996,7 @@ describe("UI-47 街の会話の箱と再生", () => {
     const id = createItemInstance(st, { itemId: "dagger", identified: false });
     st.party.find((c) => c.id === "c1")!.inventory.push(id);
     const cases = [
-      execute(st, { type: "town.upgrade", memberId: "c1", slot: "weapon", catalysts: [] }, data),
+      execute(st, { type: "town.upgrade", memberId: "c1", slot: "weapon", catalysts: [oneCatalyst(st)] }, data),
       execute(st, { type: "party.identify", memberId: "c5", instanceId: id }, data),
     ];
     for (const [i, r] of cases.entries()) {
@@ -2285,7 +2292,7 @@ describe("UI-47 街の会話の箱と再生", () => {
   test("UI-66/UI-40/TW-17（2026-10-07 未定-17。M10.5）闇魔術の強化（実際の execute の出来事を Player で再生）: 再生はタップなしで終わり、結果の文を閉じる 1 回のタップで page が 1 回鳴って判定の箱も消える", async () => {
     const st = cloneState(newGame(1));
     st.gold = 1000;
-    const r = execute(st, { type: "town.upgrade", memberId: "c1", slot: "weapon", catalysts: [] }, data);
+    const r = execute(st, { type: "town.upgrade", memberId: "c1", slot: "weapon", catalysts: [oneCatalyst(st)] }, data);
     expect(r.events.map((e) => e.kind).slice(0, 2)).toEqual(["dice", "message"]);
     const { deps, log, sink, talk, pages } = pagedTalk();
     await createPlayer(deps).play(r.events, st, r.state);

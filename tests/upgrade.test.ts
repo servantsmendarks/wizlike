@@ -177,12 +177,13 @@ describe("TW-17 town.upgrade の判定と処理", () => {
     }
   });
 
-  test("TW-17 強化の Lv に上限はない（Lv20 が触媒なし・p 10・q 1・出目 1 で大成功 → Lv22、料金 50 × 21 = 1050）", () => {
+  test("TW-17 強化の Lv に上限はない（Lv20 に Lv0 の触媒 1 個・p 10・q 1・出目 1 で大成功 → Lv22、料金 50 × 21 = 1050）", () => {
     const s = town(2000, 20);
+    const cat = give(s, "c1", { itemId: "dagger", level: 0 });
     withFirstRoll(s, 1);
     const mirror = structuredClone(s.rng);
     expect(randInt(mirror, 1, 100)).toBe(1);
-    const r = ok(s, up([]));
+    const r = ok(s, up([cat]));
     const d = r.events[0];
     expect(d?.kind === "dice" && d.rule.params).toEqual({ rate: 10, great: 1 });
     expect(d?.kind === "dice" && d.result.key).toBe("dice.upgrade.great");
@@ -192,18 +193,19 @@ describe("TW-17 town.upgrade の判定と処理", () => {
   });
 
   // M16（4-5）: Lv0 の失敗の語りは ng ではなく ngFloor「鍛えそこねた。+0 なのでこれ以上は鈍らない。」（判定の箱の結果は ng のまま）
-  test("TW-17 Lv0 で失敗しても 0 のまま、語りは town.upgrade.ngFloor。触媒なしでも料金（50）は取る（p 10・q 1、出目 11）", () => {
+  test("TW-17 Lv0 で失敗しても 0 のまま、語りは town.upgrade.ngFloor。失敗でも料金（50）は取る（Lv0 の触媒 1 個で p 40・q 4、出目 41）", () => {
     const s = town(1000, 0);
-    withFirstRoll(s, 11);
-    const r = ok(s, up([]));
+    const cat = give(s, "c1", { itemId: "dagger", level: 0 });
+    withFirstRoll(s, 41);
+    const r = ok(s, up([cat]));
     expect(weaponOf(r.state, "c1").level).toBe(0);
     expect(r.state.gold).toBe(950);
     expect(r.events).toEqual([
       {
         kind: "dice",
         label: { key: "dice.upgrade", params: { item: "長剣" } },
-        rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [11], total: 11 }],
-        rule: { key: "dice.upgrade.rule", params: { rate: 10, great: 1 } },
+        rows: [{ label: { key: "dice.row.roll" }, base: null, dice: [41], total: 41 }],
+        rule: { key: "dice.upgrade.rule", params: { rate: 40, great: 4 } },
         result: { key: "dice.upgrade.ng" },
       },
       { kind: "message", key: "town.upgrade.ngFloor", params: { name: "アルド", item: "長剣" } },
@@ -213,11 +215,12 @@ describe("TW-17 town.upgrade の判定と処理", () => {
   test("TW-17 M16 ngFloor は強化前が Lv0 の失敗だけ（Lv1 の失敗で Lv0 になるときは今の ng。Lv0 の成功は ok）", () => {
     const msg = (lv: number, roll: number): GameEvent | undefined => {
       const s = town(1000, lv);
+      const cat = give(s, "c1", { itemId: "dagger", level: 0 });
       withFirstRoll(s, roll);
-      return ok(s, up([])).events[1];
+      return ok(s, up([cat])).events[1];
     };
-    expect(msg(1, 11)).toEqual({ kind: "message", key: "town.upgrade.ng", params: { name: "アルド", item: "長剣" } });
-    expect(msg(0, 2)).toEqual({ kind: "message", key: "town.upgrade.ok", params: { name: "アルド", item: "長剣 +1" } });
+    expect(msg(1, 100)).toEqual({ kind: "message", key: "town.upgrade.ng", params: { name: "アルド", item: "長剣" } });
+    expect(msg(0, 5)).toEqual({ kind: "message", key: "town.upgrade.ok", params: { name: "アルド", item: "長剣 +1" } });
     expect(msg(0, 100)).toMatchObject({ key: "town.upgrade.ngFloor" });
     expect(data.strings["town.upgrade.ngFloor"]).toBe("鍛えそこねた。+0 なのでこれ以上は鈍らない。");
   });
@@ -259,12 +262,13 @@ describe("TW-17 town.upgrade の判定と処理", () => {
     const c2 = member(s, "c2");
     c2.life = "ash";
     c2.hp = 0;
+    const cat = give(s, "c2", { itemId: "dagger", level: 0 });
     withFirstRoll(s, 1);
-    const r = ok(s, up([], "c2"));
+    const r = ok(s, up([ref(cat, "c2")], "c2"));
     expect(weaponOf(r.state, "c2").level).toBe(2);
   });
 
-  test("TW-17 拒否の理由と判定順（wrong screen → bad action → no such member → bad slot → slot empty → unique → bad catalyst → not enough gold）。拒否では乱数を引かない", () => {
+  test("TW-17 拒否の理由と判定順（wrong screen → bad action → no such member → bad slot → slot empty → unique → no catalyst → bad catalyst → not enough gold）。拒否では乱数を引かない", () => {
     const s = town(149, 2); // Lv2 の料金 150 に 1 足りない
     const good = give(s, "c1", { itemId: "long_sword", level: 0 });
     const unid = give(s, "c1", { itemId: "dagger", identified: false });
@@ -294,6 +298,8 @@ describe("TW-17 town.upgrade の判定と処理", () => {
     const su = cloneState(s);
     su.items[target]!.uniqueId = "shadowfolk_sword";
     expectRejected(su, up([]), "unique");
+    // M24 C-2: no catalyst（触媒 0 個）。unique の後・bad catalyst の前（0 個では bad catalyst に届かない。払えない s でも not enough gold ではなく no catalyst）
+    expectRejected(s, up([]), "no catalyst");
     // bad catalyst: 未鑑定・ユニーク・持ち主の違う指定（c2 の品を c1 の品として）・消耗品・装備中の品（対象そのもの）・存在しない id。not enough gold より先
     for (const id of [unid, uniq, others, herb, target, "i999"]) expectRejected(s, up([id]), "bad catalyst");
     // M16（G-2）: 持ち主の inventory に無い（c1 の品を c2 の品として）・持ち主がいない
@@ -324,7 +330,7 @@ describe("TW-17 upgradePreview と townMenu.upgrade（表示層向けの問い�
   test("TW-17 upgradePreview: 払えなければ affordable 偽・block not enough gold、触媒が不正なら block bad catalyst、対象が決まらなければ null", () => {
     const s = town(100, 2);
     const unid = give(s, "c1", { itemId: "dagger", identified: false });
-    expect(upgradePreview(s, data, "c1", "weapon", [])).toMatchObject({ rate: 10, great: 1, fee: 150, affordable: false, block: "not enough gold" });
+    expect(upgradePreview(s, data, "c1", "weapon", [])).toMatchObject({ rate: 10, great: 1, fee: 150, affordable: false, block: "no catalyst" });
     expect(upgradePreview(s, data, "c1", "weapon", [ref(unid)])).toMatchObject({ rate: 10, great: 1, fee: 150, affordable: false, block: "bad catalyst" });
     expect(upgradePreview(s, data, "c1", "helm", [])).toBeNull();
     expect(upgradePreview(s, data, "c9", "weapon", [])).toBeNull();
@@ -401,7 +407,7 @@ describe("TW-17 upgradePreview と townMenu.upgrade（表示層向けの問い�
     const s = town(1000, 3);
     s.items[member(s, "c1").equipment.weapon!]!.identified = false;
     const p = upgradePreview(s, data, "c1", "weapon", [])!;
-    expect(p).toMatchObject({ block: null, kind: null });
+    expect(p).toMatchObject({ block: "no catalyst", kind: null });
     s.items[member(s, "c1").equipment.weapon!]!.identified = true;
     expect(upgradePreview(s, data, "c1", "weapon", [])!.kind).toBe("attack");
   });
@@ -638,7 +644,7 @@ describe("TW-17 M21（B-1）鍛えるの Lv 移植と料金", () => {
     const poor = setup(0, [5], 5, 249);
     expectRejected(poor.s, up(poor.cats), "not enough gold");
     expect(checkUpgrade(poor.s, "c1", "weapon", refs(poor.cats), data)).toBe("not enough gold");
-    expect(checkUpgrade(poor.s, "c1", "weapon", [], data)).toBeNull(); // 触媒なしなら 50G
+    expect(checkUpgrade(poor.s, "c1", "weapon", [], data)).toBe("no catalyst"); // M24: 触媒なしは廃止（金の検査に届かない）
     const rich = setup(0, [5], 5, 250);
     expect(checkUpgrade(rich.s, "c1", "weapon", refs(rich.cats), data)).toBeNull();
     expect(ok(rich.s, up(rich.cats)).state.gold).toBe(0);
@@ -653,7 +659,7 @@ describe("TW-17 M21（B-1）鍛えるの Lv 移植と料金", () => {
     expect(p.after).toEqual(shopItemPreview(data, "long_sword", 5));
     const unid = give(s, "c1", { itemId: "long_sword", level: 9, identified: false });
     expect(upgradePreview(s, data, "c1", "weapon", [ref(c5), ref(unid)])).toMatchObject({ resultLevel: 5, block: "bad catalyst" });
-    expect(upgradePreview(s, data, "c1", "weapon", [])).toMatchObject({ level: 0, resultLevel: 1, fee: 50, affordable: true, block: null });
+    expect(upgradePreview(s, data, "c1", "weapon", [])).toMatchObject({ level: 0, resultLevel: 1, fee: 50, affordable: true, block: "no catalyst" }); // M24 C-2: 値は出すが block
   });
 
   test("TW-17 M21 upgradePreview の nextChangeAt は結果の Lv で判定（革鎧 Lv0 + 触媒 Lv1 は同じ値で +2 で -3、触媒 Lv3 は値が変わるので null。除数 3 で触媒 Lv2 は +3 で -3）", () => {

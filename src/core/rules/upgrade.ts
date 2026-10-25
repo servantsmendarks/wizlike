@@ -84,7 +84,7 @@ function isRef(x: unknown): x is UpgradeCatalystRef {
 
 /**
  * town.upgrade を受け付けない理由。順: wrong screen → bad action（catalysts が {memberId（文字列か null）, instanceId} の配列でない・upgradeMaxCatalysts より多い・
- * instanceId の重複）→ no such member → bad slot → slot empty → unique → bad catalyst（持ち主がいない・持ち主の inventory に無い・memberId null で倉庫に無い・
+ * instanceId の重複）→ no such member → bad slot → slot empty → unique → no catalyst（M24。触媒 0 個）→ bad catalyst（持ち主がいない・持ち主の inventory に無い・memberId null で倉庫に無い・
  * 装備品でない・ユニーク・未鑑定）→ not enough gold。本人・持ち主の life は問わない。呪われた対象・触媒も可
  */
 export function checkUpgrade(state: GameState, memberId: unknown, slot: unknown, catalysts: unknown, data: GameData): string | null {
@@ -97,6 +97,7 @@ export function checkUpgrade(state: GameState, memberId: unknown, slot: unknown,
   if (!isSlot(slot)) return "bad slot";
   const tb = targetBlock(state, ch, slot);
   if (tb !== null) return tb;
+  if (catalysts.length === 0) return "no catalyst"; // TW-17（M24 C-2）: 触媒なしの鍛えは廃止
   if (catalysts.some((r) => catalystOf(state, data, r) === null)) return "bad catalyst";
   const target = state.items[ch.equipment[slot]!]!;
   const lvs = catalysts.map((r) => catalystOf(state, data, r)!.inst.level);
@@ -154,7 +155,7 @@ export function doUpgrade(ctx: RuleContext, memberId: string, slot: EquipSlot, c
 /**
  * TW-17 / UI-35: 表示層向けの問い合わせ（純粋）。対象（本人・部位・その実体）が決まらない（checkUpgrade が wrong screen / bad action /
  * no such member / bad slot / slot empty / unique のどれか）なら null。それ以外は、触媒のうち触媒にできる実体の Lv で成功率を出し、
- * block に checkUpgrade の理由（bad catalyst / not enough gold / null）を入れる。block が null のときだけ town.upgrade が受け付けられる。
+ * block に checkUpgrade の理由（no catalyst / bad catalyst / not enough gold / null）を入れる。block が null のときだけ town.upgrade が受け付けられる。
  * M18（3-3）: before / after（Lv と Lv+1 の ItemPreview）と kind（語る項目）を添える。乱数を引かない。
  * M21（B-1）: after は結果の Lv（upgradeResultLevel。触媒にできる実体の Lv から）の下見。level / resultLevel に前後の Lv、料金も結果の Lv から
  */
@@ -166,7 +167,7 @@ export function upgradePreview(
   catalysts: readonly UpgradeCatalystRef[],
 ): UpgradePreview | null {
   const block = checkUpgrade(state, memberId, slot, [...catalysts], data);
-  if (block !== null && block !== "bad catalyst" && block !== "not enough gold") return null;
+  if (block !== null && block !== "no catalyst" && block !== "bad catalyst" && block !== "not enough gold") return null;
   const ch = memberById(state, memberId)!;
   const target = state.items[ch.equipment[slot]!]!;
   const e = data.config.economy;
