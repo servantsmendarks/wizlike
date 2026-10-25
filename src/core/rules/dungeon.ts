@@ -249,6 +249,7 @@ export function enterDungeon(ctx: RuleContext, dungeonId: string): void {
     disarmedChests: [],
     culled: true, // DG-48（M21）: この潜行の階は fillRatio で間引く（floorOf も同じ盤を作る）
     board: { width: def.width, height: def.height }, // DG-03（M25）: 潜った時の盤の寸法（floorOf はこれで盤を作る）
+    lostHintFloors: [], // DG-46（M25）: 方角の一言を出した階
   };
   state.dive = dive;
   bumpTally(state, "dives"); // TW-35（M12）: 潜行の開始
@@ -378,19 +379,22 @@ function moveForwardBody(ctx: RuleContext): void {
 }
 
 /**
- * DG-46（M18）: 前進の 1 歩の後（explore の後）、今の階の歩数 floorSteps が config.dungeon.lostHintSteps 以上で、
- * 実効の構造の下り階段（最下層で null なら出さない）のセルの添字がその階の explored に無ければ、UI-76 の一言 hint.lostExits（ゲームで一度だけ）。
- * 乱数は使わない
+ * DG-46 / DG-46b（M18。M25 で各潜行・各階で 1 回に）: 前進の 1 歩の後（explore の後）、今の階の歩数 floorSteps がそのダンジョンの
+ * lostHintSteps 以上で、今の階が dive.lostHintFloors に無く、目標のセルの添字がその階の explored に無ければ、方角の一言を 1 つ出して
+ * 今の階を lostHintFloors に積む（昇順を保つ）。目標は実効の構造の下り階段で、最下層（stairsDown が null）は倒す前のボスのセル
+ * （dive.bossDefeated なら目標なし = 出さない）。キーは降り口が hint.lostExitsDir.<八方位>、ボスが hint.lostBossDir.<八方位>
+ * （octant(今の位置, 目標)）。一度きりの一言（tellHintOnce / progress.hints）は使わない。乱数は使わない
  */
 function lostExitsHint(ctx: RuleContext, dive: Dive, f: Floor): void {
-  if (dive.floorSteps < ctx.data.config.dungeon.lostHintSteps) return;
-  if (ctx.state.progress.hints.includes("lostExits")) return;
+  if (dive.floorSteps < dungeonOf(ctx.data, dive.dungeonId).lostHintSteps) return;
+  if (dive.lostHintFloors.includes(dive.floor)) return;
   const down = f.stairsDown;
-  if (down === null) return;
-  if ((dive.explored[String(dive.floor)] ?? []).includes(idx(f, down.x, down.y))) return;
-  // DG-46b（M22）: 印のあるダンジョン（d01）だけ、下り階段の方角を添える
-  const withDir = dungeonOf(ctx.data, dive.dungeonId).lostHintDirection === true;
-  tellHintOnce(ctx, "lostExits", withDir ? `hint.lostExitsDir.${octant(dive.pos, down)}` : undefined);
+  const target = down ?? (dive.bossDefeated ? null : f.boss);
+  if (target === null) return;
+  if ((dive.explored[String(dive.floor)] ?? []).includes(idx(f, target.x, target.y))) return;
+  const key = down !== null ? "hint.lostExitsDir" : "hint.lostBossDir";
+  ctx.events.push({ kind: "message", key: `${key}.${octant(dive.pos, target)}` });
+  dive.lostHintFloors = [...dive.lostHintFloors, dive.floor].sort((a, b) => a - b);
 }
 
 /**

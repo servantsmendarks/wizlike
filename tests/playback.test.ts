@@ -41,6 +41,7 @@ function diveAt(x: number, y: number, facing: Dive["facing"], floor = 1): Dive {
     chest: null,
     disarmedChests: [],
     board: { width: data.dungeons[0]!.width, height: data.dungeons[0]!.height }, // DG-03（M25）
+    lostHintFloors: [], // DG-46（M25）
   };
 }
 

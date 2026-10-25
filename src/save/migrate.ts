@@ -203,7 +203,9 @@ export function migrateV10toV11(x: unknown): unknown {
 const V11_BOARD = { width: 20, height: 20 } as const;
 
 /**
- * SV-04 v11 → v12（M25。DG-03 / DG-46）: dive がオブジェクトなら dive.board { width: 20, height: 20 } を足す（盤の寸法を潜行に記録する。DG-03）。
+ * SV-04 v11 → v12（M25。DG-03 / DG-46）: dive がオブジェクトなら dive.board { width: 20, height: 20 }（盤の寸法を潜行に記録する。DG-03）と
+ * dive.lostHintFloors []（方角の一言を出した階。DG-46。v11 の潜行ではまだどの階でも各階の一言を出していない扱い）を足す。
+ * progress.hints に残る "lostExits"（M24 までの一度きりの一言の記録）は消さない（M25 から読まない。形の検査は文字列の配列かだけを見る）。
  * v11 までのダンジョンの盤はすべて 20×20 だったので定数でよい（移行は純粋で data を読まない。M25 で d01 のデータを 16×16 にしても、
  * 潜行の途中の記録は潜った時の 20×20 の盤のまま続く。M24 の warehouseSlots 40 と同じ考え方）。dive が null なら版だけが変わる。
  * 引数は書き換えない（浅い複製。dive も複製する）。オブジェクトでなければそのまま返す（形の検査で broken）
@@ -212,7 +214,7 @@ export function migrateV11toV12(x: unknown): unknown {
   if (!isPlainObject(x)) return x;
   const out: Record<string, unknown> = { ...x };
   const dive = x["dive"];
-  if (isPlainObject(dive)) out["dive"] = { ...dive, board: { ...V11_BOARD } };
+  if (isPlainObject(dive)) out["dive"] = { ...dive, board: { ...V11_BOARD }, lostHintFloors: [] };
   return out;
 }
 
@@ -302,6 +304,11 @@ function isCharacterShape(x: unknown): boolean {
   return Object.prototype.hasOwnProperty.call(m, x["classId"]);
 }
 
+/** DG-46（schemaVersion 12）: dive.lostHintFloors は 1 以上の安全な整数の狭義の昇順の配列（昇順・重複なし） */
+function isFloorListShape(x: unknown): boolean {
+  return Array.isArray(x) && x.every((v, i) => isTurnCount(v) && (v as number) >= 1 && (i === 0 || (v as number) > (x[i - 1] as number)));
+}
+
 /** DG-03（schemaVersion 12）: dive.board は width・height とも 5 以上の安全な整数（DG-02 の盤の下限）のプレーンなオブジェクト */
 function isBoardShape(x: unknown): boolean {
   return isPlainObject(x) && [x["width"], x["height"]].every((v) => isTurnCount(v) && (v as number) >= 5);
@@ -359,7 +366,8 @@ function isChestShape(x: unknown): boolean {
  * 同じ版に後から足した省略可能な欄（M21。DG-48）: dive.culled は無いか真偽値（無い潜行は間引かない盤のまま続く）。
  * schemaVersion 11（M24。IT-32 / IT-64）: items の各実体の curseEffect（isItemInstanceShape）、progress.warehouseSlots が 1 以上の安全な整数。
  * schemaVersion 10（M21。CB-51b）: progress.noChestStreak が 0 以上の安全な整数（dive.noChestStreak は v9 の欄で、v10 では見ない）。
- * schemaVersion 12（M25。DG-03）: dive がオブジェクトなら dive.board が width・height とも 5 以上の安全な整数のプレーンなオブジェクト（isBoardShape）。
+ * schemaVersion 12（M25。DG-03 / DG-46）: dive がオブジェクトなら dive.board が width・height とも 5 以上の安全な整数のプレーンなオブジェクト（isBoardShape）、
+ * dive.lostHintFloors が 1 以上の安全な整数の昇順・重複なしの配列（isFloorListShape）。
  */
 export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(x)) return false;
@@ -388,6 +396,7 @@ export function isGameStateShape(x: unknown): x is GameState {
     if (dive["chest"] !== null && x["pendingChoice"] !== null) return false;
     if (!isTurnCount(dive["floorSteps"])) return false;
     if (!isBoardShape(dive["board"])) return false; // DG-03（M25。schemaVersion 12）
+    if (!isFloorListShape(dive["lostHintFloors"])) return false; // DG-46（M25。schemaVersion 12）
   }
   if (!isMoraleShape(x["morale"])) return false;
   if (!Object.values(x["items"] as Record<string, unknown>).every(isItemInstanceShape)) return false;

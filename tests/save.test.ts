@@ -2132,13 +2132,13 @@ describe("SV-04 v11 → v12 の移行（M25。DG-03 / DG-46）", () => {
     return s;
   }
 
-  test("SV-04/DG-03 migrateV11toV12 の単体: dive がオブジェクトなら board { width: 20, height: 20 } を足す。dive が null なら版だけ。オブジェクトでなければそのまま。引数は書き換えない", () => {
+  test("SV-04/DG-03/DG-46 migrateV11toV12 の単体: dive がオブジェクトなら board { width: 20, height: 20 } と lostHintFloors [] を足す。dive が null なら版だけ。オブジェクトでなければそのまま。引数は書き換えない", () => {
     expect(MIGRATIONS[10]).toBe(migrateV11toV12);
     expect(migrateV11toV12("x")).toBe("x");
     expect(migrateV11toV12(null)).toBe(null);
     const arg = { gold: 3, dive: { floor: 2 } };
     const before = json(arg);
-    expect(migrateV11toV12(arg)).toEqual({ gold: 3, dive: { floor: 2, board: { width: 20, height: 20 } } });
+    expect(migrateV11toV12(arg)).toEqual({ gold: 3, dive: { floor: 2, board: { width: 20, height: 20 }, lostHintFloors: [] } });
     expect(arg).toEqual(before);
     expect(migrateV11toV12({ gold: 3, dive: null })).toEqual({ gold: 3, dive: null });
   });
@@ -2151,10 +2151,11 @@ describe("SV-04 v11 → v12 の移行（M25。DG-03 / DG-46）", () => {
     const dive20 = s20.dive!;
     expect(dive20.board).toEqual({ width: 20, height: 20 });
     expect(dive20.floorSteps).toBeGreaterThanOrEqual(5); // 数歩は歩いている
-    // v11 の記録: board が無い。v12 の形の検査は通らない
+    // v11 の記録: board と lostHintFloors が無い。v12 の形の検査は通らない
     const v11 = toV11(s20);
     const before = json(v11);
     expect((v11["dive"] as Record<string, unknown>)["board"]).toBeUndefined();
+    expect((v11["dive"] as Record<string, unknown>)["lostHintFloors"]).toBeUndefined();
     expect(isGameStateShape(v11)).toBe(false);
     const r = migrateState(v11, 11, SCHEMA);
     expect(r.ok).toBe(true);
@@ -2223,6 +2224,32 @@ describe("SV-04 v11 → v12 の移行（M25。DG-03 / DG-46）", () => {
     for (const bad of [undefined, null, [], { width: 16 }, { width: 4, height: 16 }, { width: 16, height: 2.5 }, { width: "16", height: 16 }]) {
       const j = json(s1) as unknown as Record<string, Record<string, unknown>>;
       j["dive"]!["board"] = bad;
+      expect(isGameStateShape(j), JSON.stringify(bad)).toBe(false);
+    }
+  });
+
+  test("SV-04/DG-46 v11 で方角の一言を出した記録（progress.hints に lostExits、潜行中）は v12 で lostHintFloors []、hints の lostExits は消さず残る（害はない）。形の検査は lostHintFloors が 1 以上の整数の昇順・重複なしの配列", () => {
+    const d20 = data20();
+    const s20 = walk(execute(newGame(1), { type: "dungeon.enter", dungeonId: "d01" }, d20).state, d20, 10);
+    const v11 = toV11(s20);
+    (v11["progress"] as Record<string, unknown>)["hints"] = ["dungeonFirst", "dungeonTerms", "lostExits"];
+    const r = migrateState(v11, 11, SCHEMA);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.state.dive!.lostHintFloors).toEqual([]);
+    expect(r.state.progress.hints).toEqual(["dungeonFirst", "dungeonTerms", "lostExits"]);
+    expect(isGameStateShape(json(r.state))).toBe(true);
+    // 新しい入場は [] で、形の検査
+    const s1 = execute(newGame(1), { type: "dungeon.enter", dungeonId: "d01" }, data).state;
+    expect(s1.dive!.lostHintFloors).toEqual([]);
+    for (const ok of [[], [1], [1, 2], [2, 4]]) {
+      const j = json(s1) as unknown as Record<string, Record<string, unknown>>;
+      j["dive"]!["lostHintFloors"] = ok;
+      expect(isGameStateShape(j), JSON.stringify(ok)).toBe(true);
+    }
+    for (const bad of [undefined, null, {}, [0], [1.5], ["1"], [2, 1], [1, 1], [-1]]) {
+      const j = json(s1) as unknown as Record<string, Record<string, unknown>>;
+      j["dive"]!["lostHintFloors"] = bad;
       expect(isGameStateShape(j), JSON.stringify(bad)).toBe(false);
     }
   });

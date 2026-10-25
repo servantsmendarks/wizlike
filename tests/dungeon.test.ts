@@ -40,6 +40,7 @@ import {
 } from "./helpers/core";
 import { kinsokuLines } from "./helpers/wrap";
 import { formatMessage } from "../src/presenter/views/message";
+import { filterHints } from "../src/presenter/settings";
 import { approaches, dataWithRate, ENTER_D01, enterD01, findSituation, MOVE, placeAt, run, withRng } from "./helpers/dungeon";
 
 // ---------------------------------------------------------------------------
@@ -178,6 +179,7 @@ describe("dungeon.enter", () => {
       disarmedChests: [],
       culled: true, // DG-48（M21）: この潜行の階は fillRatio で間引く
       board: { width: 16, height: 16 }, // DG-03（M25）: 潜った時の盤の寸法（d01 は 16×16）
+      lostHintFloors: [], // DG-46（M25）: 方角の一言を出した階
     });
     expect(Object.keys(dive.explored)).toEqual(["1"]);
     expectExploredCovers(r.state);
@@ -2752,25 +2754,44 @@ describe("DG-44 階段のボタン（dungeon.useStairs。M16）", () => {
   });
 });
 
-describe("DG-46 100 歩の一言（dive.floorSteps と hint.lostExits。M18）", () => {
-  const LOST = "hint.lostExits";
-  const STEPS = data.config.dungeon.lostHintSteps;
+describe("DG-46 / DG-46b 方角の一言（dive.floorSteps・dungeons[].lostHintSteps・dive.lostHintFloors。M18。M25 で各潜行・各階で 1 回）", () => {
+  const DOWN_DIR = "hint.lostExitsDir.";
+  const BOSS_DIR = "hint.lostBossDir.";
   const plain = (c: Cell): boolean => c.kind === "corridor" || c.kind === "room";
+  const stepsOf = (id: string): number => dungeonOf(data, id).lostHintSteps;
 
-  /** floorNo 階で、普通のセル（通路・部屋）へ open の辺を 1 歩で入れて、着いた先の視野に下り階段が入らない立ち位置。explored はその階だけ空にする */
-  function plainStep(floorNo: number): { state: GameState; f: Floor; target: { x: number; y: number } } {
+  /** newGame(seed) で dungeonId に入った state（d01 以外は開放してから入る） */
+  function enterIn(dungeonId: string, seed: number): GameState {
+    const s = cloneState(newGame(seed));
+    if (!s.progress.unlockedDungeons.includes(dungeonId)) s.progress.unlockedDungeons.push(dungeonId);
+    const r = execute(s, { type: "dungeon.enter", dungeonId }, data);
+    if (r.events[0]?.kind === "rejected") throw new Error(JSON.stringify(r.events));
+    return r.state;
+  }
+  /** その階の一言の目標（下り階段。最下層はボス） */
+  const goalOf = (f: Floor): { x: number; y: number } => f.stairsDown ?? f.boss!;
+
+  /**
+   * s0 の潜行の floorNo 階で、普通のセル（通路・部屋）へ open の辺を 1 歩で入れて、着いた先の視野に目標（下り階段。最下層はボス）が
+   * 入らない立ち位置に置いた state（explored はその階だけ空にする）。無ければ null
+   */
+  function plainStepIn(s0: GameState, floorNo: number): { state: GameState; f: Floor; target: { x: number; y: number } } | null {
+    const f = floorOf(s0.dive!, data, floorNo);
+    const goal = goalOf(f);
+    for (const a of approaches(f, plain)) {
+      if (!plain(cellAt(f, a.pos.x, a.pos.y))) continue;
+      const seen = visibleCellsOf(f, a.target, a.facing, data.config.dungeon.viewDepth).map((v) => idx(f, v.x, v.y));
+      if (seen.includes(idx(f, goal.x, goal.y))) continue;
+      const s = placeAt(s0, a.pos, a.facing, floorNo);
+      delete s.dive!.explored[String(floorNo)];
+      return { state: s, f, target: a.target };
+    }
+    return null;
+  }
+  function plainStep(floorNo: number, dungeonId = "d01"): { state: GameState; f: Floor; target: { x: number; y: number } } {
     for (let seed = 1; seed <= 300; seed++) {
-      const s0 = enterD01(seed);
-      const f = floorOf(s0.dive!, data, floorNo);
-      const down = f.stairsDown;
-      for (const a of approaches(f, plain)) {
-        if (!plain(cellAt(f, a.pos.x, a.pos.y))) continue;
-        const seen = visibleCellsOf(f, a.target, a.facing, data.config.dungeon.viewDepth).map((v) => idx(f, v.x, v.y));
-        if (down !== null && seen.includes(idx(f, down.x, down.y))) continue;
-        const s = placeAt(s0, a.pos, a.facing, floorNo);
-        s.dive!.explored = {};
-        return { state: s, f, target: a.target };
-      }
+      const p = plainStepIn(enterIn(dungeonId, seed), floorNo);
+      if (p !== null) return p;
     }
     throw new Error("plainStep: not found");
   }
@@ -2780,13 +2801,15 @@ describe("DG-46 100 歩の一言（dive.floorSteps と hint.lostExits。M18）",
     x.dive!.floorSteps = n;
     return x;
   };
-  const LOST_DIR = "hint.lostExitsDir.";
-  const isLost = (e: GameEvent): boolean => e.kind === "message" && (e.key === LOST || e.key.startsWith(LOST_DIR));
-  const lostCount = (events: readonly GameEvent[]): number => events.filter(isLost).length;
+  const isLost = (e: GameEvent): boolean => e.kind === "message" && (e.key.startsWith(DOWN_DIR) || e.key.startsWith(BOSS_DIR));
+  const lostKeys = (events: readonly GameEvent[]): string[] => events.flatMap((e) => (isLost(e) && e.kind === "message" ? [e.key] : []));
+  /** 閾値の 1 歩前に置いて前進した結果（ちょうど閾値に届く歩） */
+  const stepAtThreshold = (s: GameState, d: GameData = DATA0) => run(withSteps(s, stepsOf(s.dive!.dungeonId) - 1), MOVE, d);
 
-  test("DG-46 config.dungeon.lostHintSteps は 100【仮】。入場の直後の floorSteps は 0", () => {
-    expect(STEPS).toBe(100);
+  test("DG-46 閾値は dungeons[].lostHintSteps（d01 50・d02 100・d03 100【仮】は balance.md）。入場の直後の floorSteps は 0・lostHintFloors は []", () => {
+    expect(data.dungeons.map((d) => [d.id, d.lostHintSteps])).toEqual([["d01", 50], ["d02", 100], ["d03", 100]]);
     expect(enterD01(1).dive!.floorSteps).toBe(0);
+    expect(enterD01(1).dive!.lostHintFloors).toEqual([]);
   });
 
   test("DG-46 前進が成立した 1 歩で floorSteps +1。旋回・壁の blocked では変わらない", () => {
@@ -2803,40 +2826,147 @@ describe("DG-46 100 歩の一言（dive.floorSteps と hint.lostExits。M18）",
     expect(r.state.dive!.floorSteps).toBe(7);
   });
 
-  test("DG-46 99 歩目では出ず、100 歩目（floorSteps が lostHintSteps に届いた歩）で moved の直後に hint.lostExits を一度だけ出して progress.hints に積む", () => {
+  test("DG-46/DG-46b d01: 49 歩目では出ず、50 歩目で moved の直後に hint.lostExitsDir.<下り階段への octant> を 1 つ出して lostHintFloors に 1 階を積む。progress.hints は変わらない", () => {
     const { state } = plainStep(1);
-    const r99 = run(withSteps(state, STEPS - 2), MOVE, DATA0);
-    expect(r99.state.dive!.floorSteps).toBe(STEPS - 1);
-    expect(lostCount(r99.events)).toBe(0);
-    const r100 = run(withSteps(state, STEPS - 1), MOVE, DATA0);
-    expect(r100.state.dive!.floorSteps).toBe(STEPS);
-    expect(lostCount(r100.events)).toBe(1);
-    const i = r100.events.findIndex((e) => e.kind === "moved");
-    // DG-46b: d01 は方角つき（下り階段のセルへの octant）
-    const f1 = floorOf(r100.state.dive!, data, 1);
-    expect(r100.events[i + 1]).toEqual({ kind: "message", key: `${LOST_DIR}${octant(r100.state.dive!.pos, f1.stairsDown!)}` });
-    expect(r100.state.progress.hints).toEqual(["dungeonFirst", "dungeonTerms", "lostExits"]);
-    // 2 回目（もう積んである）は 150 歩でも出さない
-    const again = withSteps(r100.state, 149);
-    again.dive!.pos = { ...state.dive!.pos };
-    again.dive!.facing = state.dive!.facing;
-    again.dive!.explored = {};
-    expect(lostCount(run(again, MOVE, DATA0).events)).toBe(0);
+    expect(stepsOf("d01")).toBe(50);
+    const r49 = run(withSteps(state, 48), MOVE, DATA0);
+    expect(r49.state.dive!.floorSteps).toBe(49);
+    expect(lostKeys(r49.events)).toEqual([]);
+    expect(r49.state.dive!.lostHintFloors).toEqual([]);
+    const r50 = run(withSteps(state, 49), MOVE, DATA0);
+    expect(r50.state.dive!.floorSteps).toBe(50);
+    const i = r50.events.findIndex((e) => e.kind === "moved");
+    const f1 = floorOf(r50.state.dive!, data, 1);
+    expect(r50.events[i + 1]).toEqual({ kind: "message", key: `${DOWN_DIR}${octant(r50.state.dive!.pos, f1.stairsDown!)}` });
+    expect(lostKeys(r50.events)).toHaveLength(1);
+    expect(r50.state.dive!.lostHintFloors).toEqual([1]);
+    expect(r50.state.progress.hints).toEqual(state.progress.hints);
+    expect(r50.state.progress.hints).not.toContain("lostExits");
+    // 閾値を超えた歩（同じ階で一度も出ていなければ、届いた後の歩でも出る。>= の判定）
+    expect(lostKeys(run(withSteps(state, 80), MOVE, DATA0).events)).toHaveLength(1);
   });
 
-  test("DG-46b 方角の印（dungeons[].lostHintDirection）が無いダンジョンは今の hint.lostExits（キーに方角なし）。印のある d01 は hint.lostExitsDir.*。どちらも progress.hints には lostExits", () => {
+  test("DG-46/DG-46b d02: 1 階は 99 歩目で出ず 100 歩目で出る。2 階（最下層でない）でも 100 歩目で、その階の下り階段の方角", () => {
+    expect(stepsOf("d02")).toBe(100);
+    for (const floorNo of [1, 2]) {
+      const { state } = plainStep(floorNo, "d02");
+      expect(lostKeys(run(withSteps(state, 98), MOVE, DATA0).events), `${floorNo}F`).toEqual([]);
+      const r = run(withSteps(state, 99), MOVE, DATA0);
+      const f = floorOf(r.state.dive!, data, floorNo);
+      expect(f.stairsDown).not.toBeNull();
+      const i = r.events.findIndex((e) => e.kind === "moved");
+      expect(r.events[i + 1]).toEqual({ kind: "message", key: `${DOWN_DIR}${octant(r.state.dive!.pos, f.stairsDown!)}` });
+      expect(r.state.dive!.lostHintFloors).toEqual([floorNo]);
+    }
+  });
+
+  test("DG-46 同じ潜行の同じ階では 2 度目は出ない（閾値を超えて歩き続けても、転移で floorSteps が 0 に戻った後も）。lostHintFloors は昇順に積む", () => {
     const { state } = plainStep(1);
-    expect(dungeonOf(data, "d01").lostHintDirection).toBe(true);
-    expect(dungeonOf(data, "d02").lostHintDirection).toBeUndefined();
-    const noMark = structuredClone(data);
-    delete noMark.dungeons.find((d) => d.id === "d01")!.lostHintDirection;
-    const r = run(withSteps(state, STEPS - 1), MOVE, noMark);
+    const r50 = stepAtThreshold(state);
+    expect(lostKeys(r50.events)).toHaveLength(1);
+    // 同じ位置から歩数を足し直しても（2 度目の閾値）出ない
+    const again = withSteps(r50.state, 149);
+    again.dive!.pos = { ...state.dive!.pos };
+    again.dive!.facing = state.dive!.facing;
+    delete again.dive!.explored["1"];
+    expect(lostKeys(run(again, MOVE, DATA0).events)).toEqual([]);
+    // 転移（DG-25）で floorSteps 0 → 閾値まで歩き直しても出ない
+    const ctx = makeContext(cloneState(r50.state), data);
+    teleportParty(ctx);
+    expect(ctx.state.dive!.floorSteps).toBe(0);
+    expect(ctx.state.dive!.lostHintFloors).toEqual([1]);
+    const back = placeAt(ctx.state, state.dive!.pos, state.dive!.facing);
+    delete back.dive!.explored["1"];
+    expect(lostKeys(stepAtThreshold(back).events)).toEqual([]);
+    // 先に 2 階で出していても 1 階では出て、[1, 2] の昇順
+    const s2 = withSteps(state, 49);
+    s2.dive!.lostHintFloors = [2];
+    const r = run(s2, MOVE, DATA0);
+    expect(lostKeys(r.events)).toHaveLength(1);
+    expect(r.state.dive!.lostHintFloors).toEqual([1, 2]);
+  });
+
+  test("DG-46 階を出て戻っても（1 階で出した後に降りて上る。floorSteps は 0 に戻る）同じ潜行の 1 階では出ない。2 階では出る", () => {
+    const base = plainStep(1);
+    const r50 = stepAtThreshold(base.state);
+    expect(r50.state.dive!.lostHintFloors).toEqual([1]);
+    // 下り階段へ入れる位置に置いて降りる
+    const f1 = base.f;
+    const toDown = approaches(f1, (c) => c.kind === "stairsDown", (e) => e !== "wall")[0]!;
+    const atDown = run(placeAt(r50.state, toDown.pos, toDown.facing), MOVE, DATA0);
+    expect(atDown.state.pendingChoice?.promptKey).toBe("dungeon.stairsDown");
+    const f2State = run(atDown.state, { type: "event.choose", optionId: "descend" }, DATA0).state;
+    expect([f2State.dive!.floor, f2State.dive!.floorSteps, f2State.dive!.lostHintFloors]).toEqual([2, 0, [1]]);
+    // 2 階の上り階段から上る
+    const f2 = floorOf(f2State.dive!, data, 2);
+    const toUp = approaches(f2, (c) => c.kind === "stairsUp", (e) => e !== "wall")[0]!;
+    const atUp = run(placeAt(f2State, toUp.pos, toUp.facing, 2), MOVE, DATA0);
+    expect(atUp.state.pendingChoice?.promptKey).toBe("dungeon.stairsUpFloor");
+    const f1State = run(atUp.state, { type: "event.choose", optionId: "ascend" }, DATA0).state;
+    expect([f1State.dive!.floor, f1State.dive!.floorSteps, f1State.dive!.lostHintFloors]).toEqual([1, 0, [1]]);
+    const back = placeAt(f1State, base.state.dive!.pos, base.state.dive!.facing);
+    delete back.dive!.explored["1"];
+    expect(lostKeys(stepAtThreshold(back).events)).toEqual([]);
+    // 2 階（最下層）はまだ出していないので、ボスの方角が出る
+    const p2 = plainStepIn(f2State, 2);
+    expect(p2).not.toBeNull();
+    const r2 = stepAtThreshold(p2!.state);
+    expect(lostKeys(r2.events)).toEqual([`${BOSS_DIR}${octant(r2.state.dive!.pos, f2.boss!)}`]);
+    expect(r2.state.dive!.lostHintFloors).toEqual([1, 2]);
+  });
+
+  test("DG-46 次の潜行ではまた出る（街へ戻って入り直すと lostHintFloors は []）", () => {
+    const { state } = plainStep(1);
+    const r50 = stepAtThreshold(state);
+    expect(r50.state.dive!.lostHintFloors).toEqual([1]);
+    const ctx = makeContext(cloneState(r50.state), data);
+    returnToTown(ctx, "dungeon.return");
+    const again = run(ctx.state, ENTER_D01, DATA0).state;
+    expect(again.dive!.lostHintFloors).toEqual([]);
+    const p = plainStepIn(again, 1);
+    expect(p).not.toBeNull();
+    const r = stepAtThreshold(p!.state);
+    const f = floorOf(r.state.dive!, data, 1);
+    expect(lostKeys(r.events)).toEqual([`${DOWN_DIR}${octant(r.state.dive!.pos, f.stairsDown!)}`]);
+    expect(r.state.dive!.lostHintFloors).toEqual([1]);
+  });
+
+  test("DG-46b 最下層（stairsDown が null）は倒す前のボスのセルへの octant で hint.lostBossDir.<八方位>。倒した後（dive.bossDefeated）は出さない", () => {
+    const last = dungeonOf(data, "d01").floors;
+    const { state, f } = plainStep(last);
+    expect(f.stairsDown).toBeNull();
+    expect(f.boss).not.toBeNull();
+    const r49 = run(withSteps(state, 48), MOVE, DATA0);
+    expect(lostKeys(r49.events)).toEqual([]);
+    const r = stepAtThreshold(state);
     const i = r.events.findIndex((e) => e.kind === "moved");
-    expect(r.events[i + 1]).toEqual({ kind: "message", key: LOST });
-    expect(r.state.progress.hints).toContain("lostExits");
-    const withMark = run(withSteps(state, STEPS - 1), MOVE, DATA0);
-    expect(withMark.state.progress.hints).toContain("lostExits");
-    expect(withMark.state.rng).toEqual(r.state.rng);
+    expect(r.events[i + 1]).toEqual({ kind: "message", key: `${BOSS_DIR}${octant(r.state.dive!.pos, f.boss!)}` });
+    expect(r.state.dive!.lostHintFloors).toEqual([last]);
+    expect(r.state.progress.hints).toEqual(state.progress.hints);
+    const beaten = cloneState(state);
+    beaten.dive!.bossDefeated = true;
+    const rb = stepAtThreshold(beaten);
+    expect(lostKeys(rb.events)).toEqual([]);
+    expect(rb.state.dive!.lostHintFloors).toEqual([]);
+  });
+
+  test("DG-46 目標のセルがその階の explored にあれば（下り階段・ボスを見つけていれば）出さない。別の階の添字は数えない", () => {
+    const { state, f } = plainStep(1);
+    const down = idx(f, f.stairsDown!.x, f.stairsDown!.y);
+    const s = withSteps(state, 49);
+    s.dive!.explored = { "1": [down] };
+    const r = run(s, MOVE, DATA0);
+    expect(r.state.dive!.floorSteps).toBe(50);
+    expect(lostKeys(r.events)).toEqual([]);
+    expect(r.state.dive!.lostHintFloors).toEqual([]);
+    const s2 = withSteps(state, 49);
+    s2.dive!.explored = { "2": [down] };
+    expect(lostKeys(run(s2, MOVE, DATA0).events)).toHaveLength(1);
+    // 最下層のボスのセル
+    const last = plainStep(2);
+    const sb = withSteps(last.state, 49);
+    sb.dive!.explored = { ...sb.dive!.explored, "2": [idx(last.f, last.f.boss!.x, last.f.boss!.y)] };
+    expect(lostKeys(run(sb, MOVE, DATA0).events)).toEqual([]);
   });
 
   test("DG-46b octant: 八方位（N は y−1、E は x+1）。|dx| > 2|dy| なら E/W、|dy| > 2|dx| なら N/S、ちょうど 2 倍は斜め", () => {
@@ -2846,50 +2976,34 @@ describe("DG-46 100 歩の一言（dive.floorSteps と hint.lostExits。M18）",
     expect([o(5, -1), o(-5, 1), o(1, 5), o(-1, -5)]).toEqual(["E", "W", "S", "N"]);
   });
 
-  test("DG-46b 方角の文 hint.lostExitsDir.<八方位> は全部あり、最悪値でも 28 字 2 行以内（方角の語は 北・北東・東・南東・南・南西・西・北西）", () => {
+  test("DG-46b 方角の文 hint.lostExitsDir / hint.lostBossDir の八方位は全部あり、28 字 2 行以内（方角の語は 北・北東・東・南東・南・南西・西・北西。差し込みなし）", () => {
     const words = ["北", "北東", "東", "南東", "南", "南西", "西", "北西"];
     OCTANTS.forEach((d, i) => {
       const t = data.strings[`hint.lostExitsDir.${d}`]!;
       expect(t).toBe(`降り口は${words[i]}の方だ。地図の未踏の口を押せばそこまで歩く。`);
       expect(kinsokuLines(t, 28).length).toBeLessThanOrEqual(2);
+      const b = data.strings[`hint.lostBossDir.${d}`]!;
+      expect(b).toBe(`階の主の気配は${words[i]}の方だ。地図の未踏の口を押せばそこまで歩く。`);
+      expect(kinsokuLines(b, 28).length).toBeLessThanOrEqual(2);
     });
+    expect(kinsokuLines(data.strings["hint.lostBossDir.NE"]!, 28)).toEqual(["階の主の気配は北東の方だ。地図の未踏の口を押せばそこまで", "歩く。"]);
   });
 
-  test("DG-46 下り階段のセルがその階の explored にあれば（階段を見つけていれば）出さない", () => {
-    const { state, f } = plainStep(1);
-    const s = withSteps(state, STEPS - 1);
-    s.dive!.explored = { "1": [idx(f, f.stairsDown!.x, f.stairsDown!.y)] };
-    const r = run(s, MOVE, DATA0);
-    expect(r.state.dive!.floorSteps).toBe(STEPS);
-    expect(lostCount(r.events)).toBe(0);
-    expect(r.state.progress.hints).not.toContain("lostExits");
-    // 別の階で見つけた添字は数えない（階ごと）
-    const s2 = withSteps(state, STEPS - 1);
-    s2.dive!.explored = { "2": [idx(f, f.stairsDown!.x, f.stairsDown!.y)] };
-    expect(lostCount(run(s2, MOVE, DATA0).events)).toBe(1);
-  });
-
-  test("DG-46 最下層（stairsDown が null）では出さない", () => {
-    const last = dungeonOf(data, "d01").floors;
-    const { state, f } = plainStep(last);
-    expect(f.stairsDown).toBeNull();
-    const r = run(withSteps(state, STEPS + 50), MOVE, DATA0);
-    expect(lostCount(r.events)).toBe(0);
-  });
-
-  test("DG-46 乱数は引かず、既存の出来事の順も変えない（遭遇率 100% で、一言の有無の他は events と rng が同じ。一言は遭遇より前）", () => {
-    const { state } = plainStep(1);
-    const d1 = dataWithRate(1, 1);
-    noTrapDetect(d1);
-    const base = run(withSteps(state, 0), MOVE, d1);
-    const hit = run(withSteps(state, STEPS - 1), MOVE, d1);
-    expect(lostCount(base.events)).toBe(0);
-    expect(lostCount(hit.events)).toBe(1);
-    expect(hit.state.rng).toEqual(base.state.rng);
-    expect(hit.events.filter((e) => !isLost(e))).toEqual(base.events);
-    const kinds = hit.events.map((e) => (e.kind === "message" && !isLost(e) ? e.key : isLost(e) ? LOST : e.kind));
-    expect(kinds.indexOf(LOST)).toBeLessThan(kinds.indexOf("encounter"));
-    expect(kinds).toContain("encounter");
+  test("DG-46 乱数は引かず、既存の出来事の順も変えない（遭遇率 100% で、一言の有無の他は events と rng が同じ。一言は遭遇より前）。最下層のボスの一言も同じ", () => {
+    for (const floorNo of [1, 2]) {
+      const { state } = plainStep(floorNo);
+      const d1 = dataWithRate(1, 1);
+      noTrapDetect(d1);
+      const base = run(withSteps(state, 0), MOVE, d1);
+      const hit = run(withSteps(state, 49), MOVE, d1);
+      expect(lostKeys(base.events)).toEqual([]);
+      expect(lostKeys(hit.events)).toHaveLength(1);
+      expect(hit.state.rng).toEqual(base.state.rng);
+      expect(hit.events.filter((e) => !isLost(e))).toEqual(base.events);
+      const kinds = hit.events.map((e) => (isLost(e) ? "LOST" : e.kind));
+      expect(kinds).toContain("encounter");
+      expect(kinds.indexOf("LOST")).toBeLessThan(kinds.indexOf("encounter"));
+    }
   });
 
   test("DG-46 階の移動（降りる・上る）と転移（DG-25）で floorSteps は 0。やめる（stay）では変わらない", () => {
@@ -2914,6 +3028,22 @@ describe("DG-46 100 歩の一言（dive.floorSteps と hint.lostExits。M18）",
     teleportParty(ctx);
     expect(ctx.events.map((e) => e.kind)).toEqual(["moved"]);
     expect(ctx.state.dive!.floorSteps).toBe(0);
+  });
+
+  test("DG-46/UI-76/UI-57 方角の一言のキーは hint. で始まるので、GM の助言の設定（filterHints）の「少なめ」「なし」で除かれ、「多め」では残る（降り口もボスも）", () => {
+    const moved: GameEvent = { kind: "moved", pos: { x: 1, y: 1 }, facing: "N" };
+    for (const key of [`${DOWN_DIR}NE`, `${BOSS_DIR}SW`]) {
+      const events: GameEvent[] = [moved, { kind: "message", key }];
+      expect(filterHints(events, "more")).toEqual(events);
+      expect(filterHints(events, "less")).toEqual([moved]);
+      expect(filterHints(events, "none")).toEqual([moved]);
+    }
+    // 実際の execute の出来事（最下層のボスの一言）でも同じ
+    const { state } = plainStep(2);
+    const r = stepAtThreshold(state);
+    expect(lostKeys(r.events)).toHaveLength(1);
+    expect(lostKeys([...filterHints(r.events, "less")])).toEqual([]);
+    expect(lostKeys([...filterHints(r.events, "none")])).toEqual([]);
   });
 });
 

@@ -313,7 +313,6 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       straightBias: N(RATIO), // DG-05【仮】
       viewDepth: I({ min: 1, max: 3 }), // DG-12【仮】（UI-20 の座標表が奥行き 0..3）
       trap: F({ pitDice: D }), // DG-20【仮】
-      lostHintSteps: I(POS_INT), // DG-46【仮】
     }),
     combat: F({
       hitBase: I(),
@@ -1267,7 +1266,7 @@ function validateDungeons(ctx: Ctx, v: unknown, ix: Index): void {
         if (ph.length > 0) report(c, p, `DG-37: strings ${JSON.stringify(s)} must not have placeholders (found ${ph.join(" ")})`);
         return s;
       }),
-      lostHintDirection: opt(B), // DG-46b（M22）
+      lostHintSteps: I(POS_INT), // DG-46（M25。方角の一言の閾値）
       events: L(refField(ix.events, "event")),
       traps: L((c, p, x) => {
         const t = oneOf(c, p, x, TRAP_IDS);
@@ -1676,10 +1675,12 @@ function validateStrings(ctx: Ctx, v: unknown, ix: Index): void {
     strKey(ctx, "", `hint.${id}`, ix);
     onlyPlaceholders(ctx, `hint.${id}`, `hint.${id}`, [], "UI-76", ix);
   }
-  // DG-46b（M22）: 100 歩の一言の方角つき（八方位。差し込みなし）
+  // DG-46b（M22）: 方角の一言（八方位。差し込みなし）。降り口の hint.lostExitsDir と、M25 から最下層のボスの hint.lostBossDir
   for (const d of OCTANTS) {
-    strKey(ctx, "", `hint.lostExitsDir.${d}`, ix);
-    onlyPlaceholders(ctx, `hint.lostExitsDir.${d}`, `hint.lostExitsDir.${d}`, [], "DG-46b", ix);
+    for (const k of [`hint.lostExitsDir.${d}`, `hint.lostBossDir.${d}`]) {
+      strKey(ctx, "", k, ix);
+      onlyPlaceholders(ctx, k, k, [], "DG-46b", ix);
+    }
   }
   const plus = ix.stringText.get("item.plus");
   if (plus !== undefined) {

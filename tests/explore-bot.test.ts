@@ -20,6 +20,7 @@ import {
   measureExplore,
   POLICIES,
   type Policy,
+  type FloorWalk,
   type WalkMove,
   type WalkObservation,
   type WalkOptions,
@@ -37,7 +38,7 @@ const optsFor = (f: Floor, policy: Policy, seed: number, extra: Partial<WalkOpti
   goal: f.floor === D01.floors ? "boss" : "stairsDown",
   policy,
   depth: CFG.viewDepth,
-  hintSteps: CFG.lostHintSteps,
+  hintSteps: D01.lostHintSteps,
   rng: policy === "random" || policy === "random-hint" ? createRng(walkSeed("test", "d01", seed, f.floor)) : undefined,
   ...extra,
 });
@@ -152,7 +153,7 @@ describe("計測の道具（M25）探索ボット", () => {
         goal: "stairsDown",
         policy: "nearest",
         depth: d0.config.dungeon.viewDepth,
-        hintSteps: d0.config.dungeon.lostHintSteps,
+        hintSteps: d0.dungeons.find((d) => d.id === "d01")!.lostHintSteps,
         trace,
         observe: (o) => obs.push({ pos: o.pos, facing: o.facing, explored: [...o.explored].sort((a, b) => a - b), exits: o.exits }),
       });
@@ -179,7 +180,7 @@ describe("計測の道具（M25）探索ボット", () => {
     expect(compared).toBeGreaterThan(200);
   });
 
-  test("計測の道具（M25）DG-46: 罠・宝箱・イベントを片付けた d01 の 1 階を 100 歩を超えて歩かせると、道具の hintFired とゲームの hint.lostExits の有無が一致する（40 シード）", () => {
+  test("計測の道具（M25）DG-46: 罠・宝箱・イベントを片付けた d01 の 1 階を lostHintSteps（50）歩を超えて歩かせると、道具の hintFired とゲームの方角の一言（hint.lostExitsDir）の有無が一致する（40 シード）", () => {
     const d0 = dataWithRate(0, 0);
     let fired = 0;
     for (let seed = 1; seed <= 40; seed++) {
@@ -196,14 +197,14 @@ describe("計測の道具（M25）探索ボット", () => {
         goal: "stairsDown",
         policy: "nearest",
         depth: d0.config.dungeon.viewDepth,
-        hintSteps: d0.config.dungeon.lostHintSteps,
+        hintSteps: d0.dungeons.find((d) => d.id === "d01")!.lostHintSteps,
         trace,
       });
       let hintGame = false;
       for (const m of trace) {
         const r = run(state, m.command === "move" ? { type: "dungeon.move" } : { type: "dungeon.turn", dir: m.command }, d0);
         state = r.state;
-        if (r.events.some((e) => e.kind === "message" && e.key.startsWith("hint.lostExits"))) hintGame = true;
+        if (r.events.some((e) => e.kind === "message" && e.key.startsWith("hint.lostExitsDir."))) hintGame = true;
         // 上り階段の上を通るときの尋ねは「そのまま」で閉じる（降り口の尋ねで終わる）
         if (state.pendingChoice?.promptKey === "dungeon.stairsUp") state = run(state, { type: "event.choose", optionId: "stay" }, d0).state;
         if (state.pendingChoice !== null || state.battle !== null || state.dive!.chest !== null) break;
@@ -230,7 +231,7 @@ describe("計測の道具（M25）探索ボット", () => {
     expect(differs).toBe(true);
   });
 
-  test("計測の道具（M25）DG-05 / DG-46: d01 の数シードで、両方針とも失敗せずに各階の降り口（最下層はボス）に着く。見つけた ≤ 着いた、一言は降り口の階だけ", () => {
+  test("計測の道具（M25）DG-05 / DG-46: d01 の数シードで、両方針とも失敗せずに各階の降り口（最下層はボス）に着く。見つけた ≤ 着いた、一言の判定は全階（最下層はボス。hintOnBossFloor の既定は真）", () => {
     const r = measureExplore(data, { label: "d01", dungeonIds: ["d01"], seeds: 10 });
     const d = r.dungeons[0]!;
     expect(d.genErrors).toBe(0);
@@ -243,18 +244,18 @@ describe("計測の道具（M25）探索ボット", () => {
           expect(w.found).not.toBeNull();
           expect(w.reached).not.toBeNull();
           expect(w.found!).toBeLessThanOrEqual(w.reached!);
-          expect(w.hintFired === null).toBe(fr.goal === "boss");
+          expect(w.hintFired).not.toBeNull();
           expect(w.exitsMean).toBeGreaterThanOrEqual(0);
         }
       }
     }
   });
 
-  test("計測の道具（M25）DG-46 / DG-46b: 一言を聞く前の手は、同じシードの nearest / random と完全に同じ（聞かなかった階は歩き全体が同じ）。d01 の 30 シード・全階", () => {
+  test("計測の道具（M25）DG-46 / DG-46b: 一言を聞く前の手は、同じシードの nearest / random と完全に同じ（聞かなかった階は歩き全体が同じ）。d01 の 60 シード・全階（M25 で閾値が 50 歩になり聞かない階が減ったので 30 → 60）", () => {
     let withHint = 0;
     let without = 0;
     let changedAfter = 0;
-    for (let seed = 1; seed <= 30; seed++) {
+    for (let seed = 1; seed <= 60; seed++) {
       for (const f of diveOf(seed)) {
         for (const [base, hp] of [
           ["nearest", "nearest-hint"],
@@ -290,33 +291,40 @@ describe("計測の道具（M25）探索ボット", () => {
     expect(changedAfter).toBeGreaterThan(5);
   });
 
-  test("計測の道具（M25）DG-05 / DG-46b: hint 方針も決定的（同じ入力から同じ結果）で、d01 の 40 シードで失敗せず、一言が出るのは降り口の階だけ（hintOnBossFloor 既定 false）", () => {
+  test("計測の道具（M25）DG-05 / DG-46b: hint 方針も決定的（同じ入力から同じ結果）で、d01 の 40 シードで失敗せず、一言は降り口の階にも最下層（ボス）にも lostHintSteps 以上の歩で出る（hintOnBossFloor の既定は真。ゲームと同じ）", () => {
     const v = { label: "hint", dungeonIds: ["d01"], seeds: 40, policies: HINT_POLICIES };
     const a = measureExplore(data, v);
     expect(measureExplore(data, v).dungeons).toEqual(a.dungeons);
     expect(failuresOf(a)).toBe(0);
     let told = 0;
+    let toldBoss = 0;
+    expect(a.hintOnBossFloor).toBe(true);
+    expect(a.dungeons[0]!.hintSteps).toBe(D01.lostHintSteps);
     for (const fr of a.dungeons[0]!.floorRecords) {
       for (const { list } of fr.walks) {
         for (const w of list) {
           expect(w.found).not.toBeNull();
           expect(w.found!).toBeLessThanOrEqual(w.reached!);
-          if (fr.goal === "boss") expect([w.hintFired, w.hintOctant, w.hintStep]).toEqual([null, null, null]);
-          else if (w.hintOctant !== null) {
-            told += 1;
+          if (w.hintOctant !== null) {
+            if (fr.goal === "boss") toldBoss += 1;
+            else told += 1;
             expect(w.hintFired).toBe(true);
-            expect(w.hintStep!).toBeGreaterThanOrEqual(CFG.lostHintSteps);
+            expect(w.hintStep!).toBeGreaterThanOrEqual(D01.lostHintSteps);
           } else expect(w.hintFired).toBe(false);
         }
       }
     }
     expect(told).toBeGreaterThan(5);
+    expect(toldBoss).toBeGreaterThan(5);
   });
 
-  test("計測の道具（M25）DG-46b: hintOnBossFloor が真なら最下層でもボスのマスを目標に一言が出る（偽なら出ない）", () => {
+  test("計測の道具（M25）DG-46b: 既定（hintOnBossFloor 真）では最下層でもボスのマスを目標に一言が出る（偽なら出ない）。閾値は defOverride の lostHintSteps で替えられる", () => {
     const base = { label: "boss", dungeonIds: ["d01"], seeds: 30, policies: HINT_POLICIES };
-    const off = measureExplore(data, base);
-    const on = measureExplore(data, { ...base, hintOnBossFloor: true });
+    const off = measureExplore(data, { ...base, hintOnBossFloor: false });
+    const on = measureExplore(data, base);
+    const late = measureExplore(data, { ...base, defOverride: { d01: { lostHintSteps: 100 } } });
+    expect(late.dungeons[0]!.hintSteps).toBe(100);
+    for (const fr of late.dungeons[0]!.floorRecords) for (const { list } of fr.walks) for (const w of list) if (w.hintStep !== null) expect(w.hintStep).toBeGreaterThanOrEqual(100);
     const last = (r: typeof on) => r.dungeons[0]!.floorRecords.at(-1)!;
     expect(last(off).walks.every(({ list }) => list.every((w) => w.hintOctant === null && w.hintFired === null))).toBe(true);
     expect(last(on).walks.every(({ list }) => list.every((w) => w.hintFired !== null))).toBe(true);
@@ -324,49 +332,68 @@ describe("計測の道具（M25）探索ボット", () => {
     expect(failuresOf(on)).toBe(0);
   });
 
-  test("計測の道具（M25）DG-46b: 道具の語った方角は、ゲームの方角の一言のキー hint.lostExitsDir.<方角>（d01 は lostHintDirection）と一致する（罠などを片付けた 1 階・40 シード・両 hint 方針。一言が出たシードが 1 つ以上）", () => {
+  test("計測の道具（M25）DG-46b: 道具の語った方角は、ゲームの方角の一言のキーと一致する（1 階は hint.lostExitsDir.<方角>、execute で降りた最下層の 2 階は hint.lostBossDir.<方角>。罠などを片付けた d01・40 シード・両 hint 方針。一言が出たシードが各階 5 つより多い）", () => {
     const d0 = dataWithRate(0, 0);
-    let told = 0;
+    const told = { 1: 0, 2: 0 };
+    const KEY = { 1: "hint.lostExitsDir.", 2: "hint.lostBossDir." } as const;
+    /** 道具の手順を execute で再生する。方角の一言の最初のキーとその歩数、止まった歩数を返す（保留・戦闘・宝箱で止まる。上り階段の尋ねは「そのまま」） */
+    const replay = (s0: GameState, trace: readonly WalkMove[]) => {
+      let state = s0;
+      let key: string | null = null;
+      let gameSteps: number | null = null;
+      for (const m of trace) {
+        const r = run(state, m.command === "move" ? { type: "dungeon.move" } : { type: "dungeon.turn", dir: m.command }, d0);
+        state = r.state;
+        const e = r.events.find((x) => x.kind === "message" && (x.key.startsWith("hint.lostExitsDir.") || x.key.startsWith("hint.lostBossDir.")));
+        if (e !== undefined && e.kind === "message" && key === null) {
+          key = e.key;
+          gameSteps = state.dive!.floorSteps;
+        }
+        if (state.pendingChoice?.promptKey === "dungeon.stairsUp") state = run(state, { type: "event.choose", optionId: "stay" }, d0).state;
+        if (state.pendingChoice !== null || state.battle !== null || state.dive!.chest !== null) break;
+      }
+      return { state, key, gameSteps, stoppedAt: state.dive!.floorSteps };
+    };
+    const check = (w: FloorWalk, got: { key: string | null; gameSteps: number | null; stoppedAt: number }, floorNo: 1 | 2, label: string): void => {
+      if (w.hintOctant === null) expect(got.key, label).toBeNull();
+      else if (got.key === null) {
+        // 一言の前に再生が止まった（保留・戦闘・宝箱）ときだけ許す: 止まった歩数は一言の歩数より前
+        expect(got.stoppedAt, `${label} stopped`).toBeLessThan(w.hintStep!);
+      } else {
+        expect(got.key, label).toBe(`${KEY[floorNo]}${w.hintOctant}`);
+        expect(got.gameSteps, label).toBe(w.hintStep);
+        told[floorNo] += 1;
+      }
+    };
     for (const policy of HINT_POLICIES) {
       for (let seed = 1; seed <= 40; seed++) {
         let state: GameState = run(newGame(seed), ENTER_D01, d0).state;
-        const base = floorOf(state.dive!, d0);
-        const cleared = base.cells
-          .map((c, i) => ({ c, i }))
-          .filter(({ c }) => c.kind === "trap" || c.kind === "chest" || c.kind === "event" || c.kind === "teleporter")
-          .map(({ i }) => ({ floor: 1, x: i % base.width, y: Math.floor(i / base.width) }));
+        const cleared = [1, 2].flatMap((floorNo) => {
+          const base = floorOf(state.dive!, d0, floorNo);
+          return base.cells
+            .map((c, i) => ({ c, i }))
+            .filter(({ c }) => c.kind === "trap" || c.kind === "chest" || c.kind === "event" || c.kind === "teleporter")
+            .map(({ i }) => ({ floor: floorNo, x: i % base.width, y: Math.floor(i / base.width) }));
+        });
         state = { ...state, dive: { ...state.dive!, clearedCells: [...state.dive!.clearedCells, ...cleared] } };
-        const f = floorOf(state.dive!, d0);
-        const trace: WalkMove[] = [];
-        const w = exploreFloorWalk(f, state.dive!.pos, state.dive!.facing, { ...optsFor(f, policy, seed, { trace }), depth: d0.config.dungeon.viewDepth });
-        let key: string | null = null;
-        let gameSteps: number | null = null;
-        let stoppedAt = 0;
-        for (const m of trace) {
-          const r = run(state, m.command === "move" ? { type: "dungeon.move" } : { type: "dungeon.turn", dir: m.command }, d0);
-          state = r.state;
-          stoppedAt = state.dive!.floorSteps;
-          const e = r.events.find((x) => x.kind === "message" && x.key.startsWith("hint.lostExits"));
-          if (e !== undefined && e.kind === "message") {
-            key = e.key;
-            gameSteps = state.dive!.floorSteps;
-            break;
-          }
-          if (state.pendingChoice?.promptKey === "dungeon.stairsUp") state = run(state, { type: "event.choose", optionId: "stay" }, d0).state;
-          if (state.pendingChoice !== null || state.battle !== null || state.dive!.chest !== null) break;
-        }
-        if (w.hintOctant === null) expect(key, `seed ${seed} ${policy}`).toBeNull();
-        else if (key === null) {
-          // 一言の前に再生が止まった（保留・戦闘・宝箱）ときだけ許す: 止まった歩数は一言の歩数より前
-          expect(stoppedAt, `seed ${seed} ${policy} stopped`).toBeLessThan(w.hintStep!);
-        } else {
-          expect(key, `seed ${seed} ${policy}`).toBe(`hint.lostExitsDir.${w.hintOctant}`);
-          expect(gameSteps).toBe(w.hintStep);
-          told += 1;
-        }
+        const f1 = floorOf(state.dive!, d0, 1);
+        const trace1: WalkMove[] = [];
+        const w1 = exploreFloorWalk(f1, state.dive!.pos, state.dive!.facing, { ...optsFor(f1, policy, seed, { trace: trace1 }), depth: d0.config.dungeon.viewDepth });
+        const g1 = replay(state, trace1);
+        check(w1, g1, 1, `seed ${seed} ${policy} 1F`);
+        // 降り口の尋ねで止まっていれば、ゲームで降りて 2 階（最下層。ボス）も比べる
+        if (g1.state.pendingChoice?.promptKey !== "dungeon.stairsDown") continue;
+        const s2 = run(g1.state, { type: "event.choose", optionId: "descend" }, d0).state;
+        expect([s2.dive!.floor, s2.dive!.floorSteps, s2.dive!.lostHintFloors.includes(2)]).toEqual([2, 0, false]);
+        const f2 = floorOf(s2.dive!, d0, 2);
+        expect(f2.stairsDown).toBeNull();
+        const trace2: WalkMove[] = [];
+        const w2 = exploreFloorWalk(f2, s2.dive!.pos, s2.dive!.facing, { ...optsFor(f2, policy, seed, { trace: trace2 }), depth: d0.config.dungeon.viewDepth });
+        check(w2, replay(s2, trace2), 2, `seed ${seed} ${policy} 2F`);
       }
     }
-    expect(told).toBeGreaterThan(5);
+    expect(told[1]).toBeGreaterThan(5);
+    expect(told[2]).toBeGreaterThan(5);
   });
 
   test("計測の道具（M25）DG-46b: 一言の後に目標の座標を使っていない。語られた方角が変わらない別の座標に目標を替え、歩いたことのないマスの中身を替えても、歩きは同じ（d01 の 30 シード・両 hint 方針）。口の候補の規則 hintCandidate は Known・hintPos・方角だけを受け取る", () => {

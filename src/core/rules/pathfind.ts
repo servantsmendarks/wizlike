@@ -89,7 +89,7 @@ export function planRoute(state: GameState, data: GameData, target: Pos, facing?
  * - その後ろが hpChanged（毒の 1 歩）だけ
  * - after が迷宮（screen dungeon）で、戦闘なし・保留なし・dive あり・宝箱なし（M11）
  * - dive の pos と facing が step の予定値と一致する
- * 遭遇・罠の語り・スピナー（向きが違う）・階段などの確認（pendingChoice）・壁（blocked）・rejected では偽。扉と一言（DG-46 の hint.lostExits など）では止まらない。
+ * 遭遇・罠の語り・スピナー（向きが違う）・階段などの確認（pendingChoice）・壁（blocked）・rejected では偽。扉と一言（DG-46 の hint.lostExitsDir / hint.lostBossDir など）では止まらない。
  */
 export function routeStepOk(step: RouteStep, events: readonly GameEvent[], after: GameState): boolean {
   const isMove = step.command.type === "dungeon.move";

@@ -56,22 +56,29 @@ export function createMemoryBackend(opts: { fail?: FailSpec } = {}): MemoryBacke
 }
 
 /**
- * 今の state（schemaVersion 12）を v11 の形にした複製（JSON の複製。引数は書き換えない）: dive があれば dive.board を消す（DG-03。M25）
+ * 今の state（schemaVersion 12）を v11 の形にした複製（JSON の複製。引数は書き換えない）: dive があれば dive.board（DG-03）と
+ * dive.lostHintFloors（DG-46）を消す（M25）
  */
 export function toV11(s: GameState): Record<string, unknown> {
   const v11 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
   const dive = v11["dive"] as Record<string, unknown> | null;
-  if (dive !== null) delete dive["board"];
+  if (dive !== null) {
+    delete dive["board"];
+    delete dive["lostHintFloors"];
+  }
   return v11;
 }
 
 /**
- * SV-04 v11 → v12（M25。DG-03）の移行で s から作った v11 以前の保存（toV11 以前）が行き着く state（JSON の複製）:
- * dive があれば dive.board は 20×20（v11 までの盤の寸法。移行は定数）。ほかの欄は s のまま
+ * SV-04 v11 → v12（M25。DG-03 / DG-46）の移行で s から作った v11 以前の保存（toV11 以前）が行き着く state（JSON の複製）:
+ * dive があれば dive.board は 20×20（v11 までの盤の寸法。移行は定数）、dive.lostHintFloors は []。ほかの欄は s のまま
  */
 export function asMigratedToV12(s: GameState): GameState {
   const m = JSON.parse(JSON.stringify(s)) as GameState;
-  if (m.dive !== null) m.dive.board = { width: 20, height: 20 };
+  if (m.dive !== null) {
+    m.dive.board = { width: 20, height: 20 };
+    m.dive.lostHintFloors = [];
+  }
   return m;
 }
 

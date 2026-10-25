@@ -10,8 +10,7 @@
     "roomSize": [4, 8], "roomAttempts": 50, "doorsPerRoom": [1, 2],
     "braidRatio": [0.3, 0.5], "straightBias": 0.3,
     "viewDepth": 3,
-    "trap": { "pitDice": "1d4" },
-    "lostHintSteps": 100
+    "trap": { "pitDice": "1d4" }
   },
   "combat": {
     "hitBase": 20, "hitPerLevel": 5, "hitPerAC": 4, "hitMin": 5, "hitMax": 95,

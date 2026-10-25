@@ -244,7 +244,7 @@ export type Dive = {
   deepestFloor: number;
   /**
    * DG-46（M18。schemaVersion 9）: 今の階で前進が成立した歩数。入場・階の移動（昇降）・転移（DG-25）で 0、前進の 1 歩で +1。
-   * 旋回・罠の察知の引き返す・debug.warp では変えない。config.dungeon.lostHintSteps に届いて下り階段が未探索なら hint.lostExits（UI-76）
+   * 旋回・罠の察知の引き返す・debug.warp では変えない。dungeons[].lostHintSteps に届いて降り口（最下層は倒す前のボス）が未探索なら方角の一言（DG-46。lostHintFloors）
    */
   floorSteps: number;
   pos: Pos;
@@ -287,6 +287,11 @@ export type Dive = {
    * explored の添字・pos が別の盤を指さないように。DG-48 の culled と同じ考え方）。移行 v11 → v12 で潜行中の記録は 20×20
    */
   board: { width: number; height: number };
+  /**
+   * DG-46（M25。schemaVersion 12）: この潜行で方角の一言（hint.lostExitsDir / hint.lostBossDir）を出した階の番号。昇順・重複なし。入場で []。
+   * 階の出入りと転移（DG-25）で floorSteps が 0 に戻っても、同じ潜行の同じ階では二度と出さないため。移行 v11 → v12 で潜行中の記録は []
+   */
+  lostHintFloors: number[];
 };
 
 /**

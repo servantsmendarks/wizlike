@@ -203,9 +203,9 @@ export type WalkOptions = {
   policy: Policy;
   /** config.dungeon.viewDepth */
   depth: number;
-  /** config.dungeon.lostHintSteps（DG-46） */
+  /** そのダンジョンの dungeons[].lostHintSteps（DG-46。M25 から。M24 までは config.dungeon.lostHintSteps） */
   hintSteps: number;
-  /** 真なら最下層でもボスのマスを目標に一言を出す（既定 false。今のゲームは最下層では出さない） */
+  /** 偽なら最下層では一言を出さない（既定は真。M25 からゲームも最下層で倒す前のボスの方角を語る。偽は M24 までのゲームの比較用） */
   hintOnBossFloor?: boolean;
   /** random / random-hint の方針の乱数（ゲームの乱数とは無関係） */
   rng?: RngState;
@@ -232,7 +232,7 @@ export type FloorWalk = {
   /** DG-46: 前進の後に歩数 ≥ hintSteps かつ降り口が見えていない、が一度でも起きたか（最下層は null） */
   hintFired: boolean | null;
   /**
-   * 方角の一言（hint 方針だけ。階ごとに 1 回。最下層は hintOnBossFloor のときだけ）: 語られた方角と、そのときの歩数・位置。出なければ null
+   * 方角の一言（hint 方針だけ。階ごとに 1 回。最下層は hintOnBossFloor が偽でなければ）: 語られた方角と、そのときの歩数・位置。出なければ null
    */
   hintOctant: Octant | null;
   hintStep: number | null;
@@ -265,7 +265,7 @@ export function exploreFloorWalk(f: Floor, start: Pos, facing: Facing, opt: Walk
   let hintOctant: Octant | null = null;
   let hintStep: number | null = null;
   let hintPos: Pos | null = null;
-  const hintApplies = opt.goal === "stairsDown" || opt.hintOnBossFloor === true;
+  const hintApplies = opt.goal === "stairsDown" || opt.hintOnBossFloor !== false;
   const samples: number[] = [];
 
   const look = (): void => {
@@ -502,9 +502,9 @@ export type ExploreVariant = {
   policies?: readonly Policy[];
   /** def の上書き（width / height / rooms / fillRatio など。data のファイルは書き換えない） */
   defOverride?: Readonly<Record<string, Partial<DungeonDef>>>;
-  /** config.dungeon の上書き（doorsPerRoom / braidRatio / straightBias / roomSize など） */
+  /** config.dungeon の上書き（doorsPerRoom / braidRatio / straightBias / roomSize など）。一言の閾値は defOverride の lostHintSteps（M25） */
   cfgOverride?: Partial<Config["dungeon"]>;
-  /** 真なら最下層でもボスのマスを目標に方角の一言を出す（既定 false） */
+  /** 偽なら最下層では方角の一言を出さない（既定は真。ゲームと同じ） */
   hintOnBossFloor?: boolean;
 };
 
@@ -521,6 +521,8 @@ export type DungeonRecord = {
   width: number;
   height: number;
   floors: number;
+  /** 方角の一言の閾値（def の lostHintSteps） */
+  hintSteps: number;
   /** 生成できた潜行の数 */
   dives: number;
   genErrors: number;
@@ -558,7 +560,7 @@ export function measureExplore(data: GameData, v: ExploreVariant): ExploreResult
     if (base === undefined) throw new Error(`measureExplore: unknown dungeon ${id}`);
     const def: DungeonDef = { ...base, ...v.defOverride?.[id] };
     const chestGen = chestGenOf(data, id);
-    const rec: DungeonRecord = { id, width: def.width, height: def.height, floors: def.floors, dives: 0, genErrors: 0, genErrorSamples: [], floorRecords: [] };
+    const rec: DungeonRecord = { id, width: def.width, height: def.height, floors: def.floors, hintSteps: def.lostHintSteps, dives: 0, genErrors: 0, genErrorSamples: [], floorRecords: [] };
     for (let n = 1; n <= def.floors; n++) {
       rec.floorRecords.push({ floor: n, goal: n === def.floors ? "boss" : "stairsDown", boards: [], walks: policies.map((policy) => ({ policy, list: [] })) });
     }
@@ -587,8 +589,8 @@ export function measureExplore(data: GameData, v: ExploreVariant): ExploreResult
             goal: fr.goal,
             policy,
             depth: cfg.viewDepth,
-            hintSteps: cfg.lostHintSteps,
-            hintOnBossFloor: v.hintOnBossFloor === true,
+            hintSteps: def.lostHintSteps,
+            hintOnBossFloor: v.hintOnBossFloor !== false,
             // 方針ごとに別のシード（random-hint は random とは別の列）
             rng: usesRng(policy) ? createRng(walkSeed(policy === "random" ? v.label : `${v.label}|${policy}`, id, seed, f.floor)) : undefined,
           });
@@ -600,7 +602,7 @@ export function measureExplore(data: GameData, v: ExploreVariant): ExploreResult
     }
     dungeons.push(rec);
   }
-  return { label: v.label, seeds: v.seeds, policies, dungeons, ms: { gen: genMs, walk: walkMs }, hintOnBossFloor: v.hintOnBossFloor === true };
+  return { label: v.label, seeds: v.seeds, policies, dungeons, ms: { gen: genMs, walk: walkMs }, hintOnBossFloor: v.hintOnBossFloor !== false };
 }
 
 // ===================== 表 =====================
@@ -647,10 +649,10 @@ export function failuresOf(r: ExploreResult): number {
 export function formatExploreReport(r: ExploreResult, title: string): string {
   const lines: string[] = [];
   lines.push(`### ${title}`, "");
-  const gens = r.dungeons.map((d) => `${d.id} ${d.width}×${d.height} 生成 ${d.dives}/${r.seeds}（Error ${d.genErrors}${d.genErrorSamples.length > 0 ? `: ${d.genErrorSamples.join(" / ")}` : ""}）`);
+  const gens = r.dungeons.map((d) => `${d.id} ${d.width}×${d.height} 一言 ${d.hintSteps} 歩 生成 ${d.dives}/${r.seeds}（Error ${d.genErrors}${d.genErrorSamples.length > 0 ? `: ${d.genErrorSamples.join(" / ")}` : ""}）`);
   lines.push(
     `条件: diveSeed 1..${r.seeds}。${gens.join("、")}。方針 ${r.policies.join(" / ")}。所要 生成 ${(r.ms.gen / 1000).toFixed(2)} 秒・歩き ${(r.ms.walk / 1000).toFixed(2)} 秒。ボットの失敗 ${failuresOf(r)}。`,
-    `歩数は前進の回数（floorSteps と同じ）。「見つける」は explored に降り口（最下層はボス）のマスが入った時点。罠・遭遇・宝箱・イベント（revealFloor / revealStairs）・転移は扱わない。方角の一言は nearest / random では「出たか」の割合だけ（ゲームの「ゲームで 1 回」は無視して毎階出ると仮定。最下層は ${r.hintOnBossFloor ? "ボスのマスを目標に出す" : "—"}）、*-hint では聞いた後に語られた方角（と両隣）の口を選ぶ（毎階・全ダンジョンで方角付きの一言が出ると仮定する。今のゲームは d01 だけ・ゲームで 1 回）。未踏の口は前進のたびに数えた値の見つけるまでの平均（の平均）・1 回の歩きの最大（の中央値）・見つけた時点（の中央値）。`,
+    `歩数は前進の回数（floorSteps と同じ）。「見つける」は explored に降り口（最下層はボス）のマスが入った時点。罠・遭遇・宝箱・イベント（revealFloor / revealStairs）・転移は扱わない。方角の一言は各潜行・各階で 1 回（M25 のゲームと同じ。最下層は ${r.hintOnBossFloor ? "倒す前のボスのマスを目標に出す" : "出さない"}）。nearest / random では「出たか」の割合だけ、*-hint では聞いた後に語られた方角（と両隣）の口を選ぶ。未踏の口は前進のたびに数えた値の見つけるまでの平均（の平均）・1 回の歩きの最大（の中央値）・見つけた時点（の中央値）。`,
     "",
     "| ダンジョン | 階 | 方針 | 見つけるまで 最小 / 中央値 / 平均 / p90 / 最大 | 着くまで 中央値 | 見つけた時の探索率 | 一言の割合 | 未踏の口 平均 / 最大の中央値 / 見つけた時 | 失敗 |",
     "|---|---|---|---|---|---|---|---|---|",

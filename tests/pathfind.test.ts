@@ -7,7 +7,7 @@ import { cellAt, edgeOf, idx, setEdge } from "../src/core/rules/dungeon-gen";
 import { floorOf } from "../src/core/rules/dungeon";
 import { EXIT_FACING, planRoute, routeOnFloor, routeStepOk } from "../src/core/rules/pathfind";
 import { mapView } from "../src/core/rules/dungeon";
-import { cloneState } from "../src/core/state";
+import { cloneState, dungeonOf } from "../src/core/state";
 import type { Cell, Command, Facing, Floor, GameEvent, GameState, Pos, RouteStep } from "../src/core/types";
 import { dived, withBattle } from "./helpers/battle";
 import { data, expectKnownStringKeys, loadFreshData, newGame } from "./helpers/core";
@@ -449,10 +449,11 @@ describe("DG-15 routeStepOk", () => {
 
   test("DG-15/DG-46/UI-76（M19）routeStepOk 真: 一言（key が hint. で始まる message）は読み飛ばす（moved の後ろ・扉と毒と並んでも）。一言以外の message は今どおり偽", () => {
     const after = at({ x: 3, y: 4 }, "N");
-    const hint: GameEvent = { kind: "message", key: "hint.lostExits" };
+    const hint: GameEvent = { kind: "message", key: "hint.lostExitsDir.NE" };
     expect(routeStepOk(step, [moved, hint], after)).toBe(true);
     expect(routeStepOk(step, [door, moved, hint, poison], after)).toBe(true);
     expect(routeStepOk(turnStep, [{ kind: "turned", facing: "W" }, hint], at({ x: 3, y: 4 }, "W"))).toBe(true);
+    expect(routeStepOk(step, [moved, { kind: "message", key: "hint.lostBossDir.SW" }], after)).toBe(true); // M25: ボスの方角の一言も同じ
     // 一言だけ（moved が無い）・一言以外の message・「hint」で始まらない key は偽
     expect(routeStepOk(step, [hint], after)).toBe(false);
     expect(routeStepOk(step, [moved, hint, { kind: "message", key: "dungeon.trap.pit" }], after)).toBe(false);
@@ -461,14 +462,14 @@ describe("DG-15 routeStepOk", () => {
     expect(routeStepOk(step, [moved, hint], at({ x: 3, y: 4 }, "N", (x) => (x.pendingChoice = { kind: "stairs", promptKey: "dungeon.stairsDown", options: [] })))).toBe(false);
   });
 
-  test("DG-46/DG-15（M19）実際の execute: 今の階の歩数が lostHintSteps に届いた手で hint.lostExits が出ても、自動歩行は止まらず目標に着く", () => {
+  test("DG-46/DG-15（M19）実際の execute: 今の階の歩数が lostHintSteps に届いた手で方角の一言（hint.lostExitsDir）が出ても、自動歩行は止まらず目標に着く", () => {
     for (let seed = 1; seed <= 50; seed++) {
       const s0 = fullyExplored(seed);
       const f = floorOf(s0.dive!, DATA0);
       const down = f.stairsDown!;
       // 下り階段のセルだけ未探索にし、次の 1 歩で一言の歩数に届くようにする
       s0.dive!.explored["1"] = all(f).filter((i) => i !== idx(f, down.x, down.y));
-      s0.dive!.floorSteps = DATA0.config.dungeon.lostHintSteps - 1;
+      s0.dive!.floorSteps = dungeonOf(DATA0, s0.dive!.dungeonId).lostHintSteps - 1;
       let route: RouteStep[] | null = null;
       for (let i = 0; i < f.cells.length && route === null; i++) {
         const p = { x: i % f.width, y: Math.floor(i / f.width) };
@@ -481,7 +482,7 @@ describe("DG-15 routeStepOk", () => {
       let hints = 0;
       for (const x of route) {
         const r = execute(s, x.command as Command, DATA0);
-        hints += r.events.filter((e) => e.kind === "message" && (e.key === "hint.lostExits" || e.key.startsWith("hint.lostExitsDir."))).length;
+        hints += r.events.filter((e) => e.kind === "message" && e.key.startsWith("hint.lostExitsDir.")).length;
         expect(routeStepOk(x, r.events, r.state)).toBe(true);
         s = r.state;
       }

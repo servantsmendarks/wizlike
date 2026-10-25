@@ -481,11 +481,9 @@ describe("data: config.json", () => {
     expect(issuesOf((r) => (r.config.dungeon.viewDepth = 3))).toEqual([]);
   });
 
-  test("data: DG-46 dungeon.lostHintSteps は 1 以上の整数（M18）", () => {
-    expect(issuesOf((r) => (r.config.dungeon.lostHintSteps = 0)).length).toBeGreaterThan(0);
-    expect(issuesOf((r) => (r.config.dungeon.lostHintSteps = 1.5)).length).toBeGreaterThan(0);
-    expect(issuesOf((r) => delete (r.config.dungeon as Partial<typeof r.config.dungeon>).lostHintSteps).length).toBeGreaterThan(0);
-    expect(issuesOf((r) => (r.config.dungeon.lostHintSteps = 1))).toEqual([]);
+  test("data: DG-46（M25）config.dungeon.lostHintSteps は廃止（閾値は dungeons[].lostHintSteps）。残っていれば起動を止める", () => {
+    expect(Object.keys(config.dungeon)).not.toContain("lostHintSteps");
+    expect(issuesOf((r) => ((r.config.dungeon as Record<string, unknown>)["lostHintSteps"] = 100)).length).toBeGreaterThan(0);
   });
   test("data: DG-45 san.search は 0 以上の整数（M18。既定 1【仮】）", () => {
     expect(config.san.search).toBe(1);
@@ -2192,11 +2190,22 @@ describe("data: d03 灰の地下墓所（M12）", () => {
     expectIssue((r) => (r.dungeons[0].enterSpeech = "dungeon.enter"), "dungeons.json", '[0].enterSpeech: DG-37: strings "dungeon.enter" must not have placeholders (found {dungeon})');
     expect(issuesOf((r) => (r.dungeons[0].enterSpeech = "dungeon.enterSpeech.d03"))).toEqual([]);
   });
-  test("data: DG-46b lostHintDirection は任意の真偽値で d01 だけ true。真偽値でなければ、八方位の文が欠ければ起動を止める", () => {
+  test("data: DG-46（M25）dungeons[].lostHintSteps は必須の正の整数で d01 50・d02 100・d03 100（ユーザーの決定 2026-10-25。【仮】は balance.md）", () => {
     const g = loadGameData(rawData());
-    expect(g.dungeons.map((x) => [x.id, x.lostHintDirection])).toEqual([["d01", true], ["d02", undefined], ["d03", undefined]]);
-    expectIssue((r) => (r.dungeons[1].lostHintDirection = "yes"), "dungeons.json", "[1].lostHintDirection: expected");
+    expect(g.dungeons.map((x) => [x.id, x.lostHintSteps])).toEqual([["d01", 50], ["d02", 100], ["d03", 100]]);
+    expectIssue((r) => delete r.dungeons[0].lostHintSteps, "dungeons.json", "[0].lostHintSteps: missing required field");
+    expectIssue((r) => (r.dungeons[1].lostHintSteps = 0), "dungeons.json", "[1].lostHintSteps: expected integer");
+    expectIssue((r) => (r.dungeons[2].lostHintSteps = 1.5), "dungeons.json", "[2].lostHintSteps: expected integer");
+    expect(issuesOf((r) => (r.dungeons[0].lostHintSteps = 1))).toEqual([]);
+  });
+  test("data: DG-46b（M25）lostHintDirection は廃止（方角は全ダンジョン）。残っていれば、降り口・ボスの八方位の文が欠けるか差し込みを持てば起動を止める", () => {
+    const g = loadGameData(rawData());
+    expect(g.dungeons.every((x) => !Object.keys(x).includes("lostHintDirection"))).toBe(true);
+    expect(issuesOf((r) => (r.dungeons[0].lostHintDirection = true)).length).toBeGreaterThan(0);
     expectIssue((r) => delete r.strings["hint.lostExitsDir.NW"], "strings.json", "hint.lostExitsDir.NW");
+    expectIssue((r) => delete r.strings["hint.lostBossDir.SE"], "strings.json", "hint.lostBossDir.SE");
+    expectIssue((r) => (r.strings["hint.lostBossDir.N"] = "階の主は{name}の方だ。"), "strings.json", "hint.lostBossDir.N");
+    expect(g.strings["hint.lostExits"]).toBeUndefined();
   });
 });
 

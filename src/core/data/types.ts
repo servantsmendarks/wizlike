@@ -10,14 +10,17 @@ export const SCHOOLS = ["mage", "priest"] as const;
 export type School = (typeof SCHOOLS)[number];
 
 export const STATUS_IDS = ["poison", "paralysis", "sleep", "stone"] as const;
-/** DG-46b（M22）: 八方位（strings の hint.lostExitsDir.<id>。rules/dungeon.ts octant が返す） */
+/** DG-46b（M22。M25 でボスの hint.lostBossDir.<id> も）: 八方位（strings の hint.lostExitsDir.<id>。rules/dungeon.ts octant が返す） */
 export const OCTANTS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"] as const;
 export type Octant = (typeof OCTANTS)[number];
 
 export type StatusId = (typeof STATUS_IDS)[number];
 
-/** UI-76（M16）: 一度きりの GM の一言の id（strings の hint.<id>。読み込み時に必須キーとして検査する。rules/hints.ts tellHintOnce が出す） */
-export const HINT_IDS = ["dungeonFirst", "sanUnknown", "levelUpMark", "lostExits", "dungeonTerms", "waitEnemy", "firstDeath"] as const;
+/**
+ * UI-76（M16）: 一度きりの GM の一言の id（strings の hint.<id>。読み込み時に必須キーとして検査する。rules/hints.ts tellHintOnce が出す）。
+ * M25 で lostExits を外した（方角の一言 DG-46 は各潜行・各階で 1 回になり、一度きりの一言の外。古い記録の progress.hints に残っても読まない）
+ */
+export const HINT_IDS = ["dungeonFirst", "sanUnknown", "levelUpMark", "dungeonTerms", "waitEnemy", "firstDeath"] as const;
 export type HintId = (typeof HINT_IDS)[number];
 
 export const EQUIP_SLOTS = ["weapon", "armor", "shield", "helm", "gauntlet", "accessory"] as const;
@@ -173,8 +176,6 @@ export type Config = {
     viewDepth: number;
     /** DG-20: 罠の数値。pitDice は落とし穴のダメージ（ダイス記法）【仮】 */
     trap: { pitDice: string };
-    /** DG-46（M18）: 同じ階で前進がこの歩数に届き、下り階段がまだ未探索なら hint.lostExits（UI-76）【仮】 */
-    lostHintSteps: number;
   };
   combat: {
     hitBase: number;
@@ -779,8 +780,11 @@ export type DungeonDef = {
   song?: string;
   /** DG-37（M12。U-5）: 初回入場の GM の一行（strings のキー。プレースホルダーなし）。省略は語らない。初回入場で dungeon.enter の直後に語る（rules/dungeon.ts enterDungeon） */
   enterSpeech?: string;
-  /** DG-46b（M22）: 真なら 100 歩の一言（hint.lostExits）が下り階段の方角（hint.lostExitsDir.<N..NW>）を添える。省略は方角なし */
-  lostHintDirection?: boolean;
+  /**
+   * DG-46（M25。M18〜M24 は config.dungeon.lostHintSteps）: 方角の一言の閾値（正の整数）。今の階の歩数 dive.floorSteps がこれ以上で、
+   * 降り口（最下層は倒す前のボス）がまだ未探索なら、各潜行・各階で 1 回 hint.lostExitsDir / hint.lostBossDir。値は docs/balance.md のコンテンツの数値
+   */
+  lostHintSteps: number;
   events: string[];
   traps: TrapId[];
   trapsPerFloor: [number, number];
