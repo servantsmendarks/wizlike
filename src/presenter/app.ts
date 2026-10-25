@@ -163,6 +163,7 @@ import {
   shopPreviewText,
   townParent,
   townRepair,
+  uncurseReturnPage,
   type ClassChangeView,
   type TownEntry,
   type TownPage,
@@ -894,6 +895,16 @@ export function createApp(o: {
               if ((r === null || r.rejected) && !isBusy()) syncControls();
             });
             return;
+          case "uncurseYes": {
+            // TW-07（M24）: 解呪した後は人の段へ戻る（押した品が最後の対象なら寺院の最初の段。uncurseReturnPage）
+            const m = townMenu(state, data);
+            townPage = m === null ? { temple: "uncurse" } : uncurseReturnPage(m);
+            // rejected（と再生中で捨てられた）なら再生の最後の sync が無いので、戻した段をここで描き直す
+            void run({ type: "town.temple", memberId: e.memberId, service: "uncurse", instanceId: e.instanceId }).then((r) => {
+              if ((r === null || r.rejected) && !isBusy()) syncControls();
+            });
+            return;
+          }
           case "buyback":
             void run({ type: "town.shop", action: { kind: "buyback", memberId: e.memberId, instanceId: e.instanceId } });
             return;

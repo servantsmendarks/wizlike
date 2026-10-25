@@ -421,6 +421,12 @@
   "town.temple.resurrectRow": "蘇生　Lv×{perLevel} G",
   "town.temple.cureRow": "治療（麻痺・石化・毒）　{cost} G〜",
   "town.temple.uncurseRow": "解呪　売値×{ratio}（最低 {min} G）",
+  "town.temple.uncurseWho": "誰の呪いを払う？",
+  "town.temple.uncurseWhich": "どれの呪いを払う？",
+  "town.temple.uncurseMember": "{name}　{count} 品",
+  "town.temple.uncurseItem": "{item}　{fee} G",
+  "town.temple.uncurseAsk": "{item}を {fee} G で解呪するか？",
+  "town.temple.uncurseYes": "解呪する",
   "town.temple.none": "その必要がある者はいない。",
 
   "dungeon.enterAgain": "{dungeon}へ潜る。迷宮は潜るたびに形を変える。前回の地図は役に立たない。",

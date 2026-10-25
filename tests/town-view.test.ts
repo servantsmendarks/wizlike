@@ -34,6 +34,7 @@ import {
   townParent,
   townPlace,
   townRepair,
+  uncurseReturnPage,
   shopCannotEquipText,
   shopCompareText,
   shopMemberCompareLabel,
@@ -106,6 +107,8 @@ const ALL_PAGES: readonly TownPage[] = [
   { withdraw: "i1" },
   { buyAsk: { itemId: "herb", memberId: "c1" } },
   { sellAsk: { memberId: "c1", instanceId: "i1" } },
+  { uncurseItems: "c1" },
+  { uncurseAsk: { memberId: "c1", instanceId: "i1" } },
   "classChange",
   { ccClass: "c1" },
   { ccConfirm: { memberId: "c1", classId: "mage" } },
@@ -211,13 +214,17 @@ describe("UI-52 街のページ", () => {
     expect(townEntries({ temple: "uncurse" }, m, S)).toEqual([{ kind: "templeNone", label: S["town.temple.none"] }, back]);
   });
 
-  test("UI-52/TW-07 解呪の行は呪われた品を装備している者（料金 200）", () => {
+  test("UI-52/TW-07（M24）解呪の人の段は誰かに対象があれば全員「{name}　{count} 品」（対象の無い者は dim）。押すと品の段", () => {
     const s = town();
     s.party[0]!.equipment.weapon = cursedDagger(s, true);
     expect(townEntries({ temple: "uncurse" }, menuOf(s), S)).toEqual([
-      { kind: "temple", service: "uncurse", memberId: "c1", label: "アルド", disabled: false },
+      { kind: "pick", to: { uncurseItems: "c1" }, label: "アルド　1 品", disabled: false },
+      ...s.party.slice(1).map((c): TownEntry => ({ kind: "pick", to: { uncurseItems: c.id }, label: `${c.name}　0 品`, disabled: true })),
       back,
     ]);
+    expect(townHeading({ temple: "uncurse" })).toBe("town.temple.uncurseWho");
+    expect(S["town.temple.uncurseWho"]).toBe("誰の呪いを払う？");
+    expect(townHeading({ temple: "cure" })).toBe("town.ask.templeWho");
   });
 
   // M7（TW-17）で闇魔術の最初を「灰から戻す / 装備を鍛える / 戻る」にし、灰の者の一覧は darkRevive のページに移した（期待のページ名だけを変えた）
@@ -607,6 +614,8 @@ describe("UI-52 街のページ", () => {
       [{ withdraw: "i1" }, "bank"],
       [{ buyAsk: { itemId: "herb", memberId: "c1" } }, "shop"],
       [{ sellAsk: { memberId: "c1", instanceId: "i1" } }, "shop"],
+      [{ uncurseItems: "c1" }, "temple"],
+      [{ uncurseAsk: { memberId: "c1", instanceId: "i1" } }, "temple"],
       ["classChange", "tavern"],
       [{ ccClass: "c1" }, "tavern"],
       [{ ccConfirm: { memberId: "c1", classId: "mage" } }, "tavern"],
@@ -2327,6 +2336,104 @@ describe("TW-04/UI-52（M18 5-3）宿屋の見出しの 2 行目と泊まった�
     expect(at).toBeGreaterThanOrEqual(0);
     expect(body[at + 1]).toEqual({ term: "", desc: "宿（相部屋以上）・寺院・解毒で治る" });
     expect(S["town.temple.cureRow"]).toBe("治療（麻痺・石化・毒）　{cost} G〜");
+  });
+});
+
+describe("TW-07/UI-52（M24）解呪の品の段と確認の段", () => {
+  const cancel: TownEntry = { kind: "back", label: S["common.cancel"]! };
+  /** c2 に呪われた短剣を装備させ、所持品に鑑定済みの呪われた長剣 +5（料金 > 50）を足す */
+  function cursedTown(gold: number): { s: GameState; dagger: string; sword: string } {
+    const s = town({}, gold);
+    const c2 = s.party[1]!;
+    const dagger = cursedDagger(s, false);
+    c2.inventory.push(c2.equipment.weapon!);
+    c2.equipment.weapon = dagger;
+    const sword = createItemInstance(s, { itemId: "long_sword", level: 5, identified: true, cursed: true, curseEffect: { optionId: "str", tier: 1, value: -1 } });
+    c2.inventory.push(sword);
+    return { s, dagger, sword };
+  }
+
+  test("TW-07 品の段は「{item}　{fee} G」（core の uncurseTargets の順と uncurseFee）。払えない行は dim。押すと確認の段", () => {
+    const { s, dagger, sword } = cursedTown(100);
+    const m = menuOf(s);
+    const fee = m.temple.uncurse[1]!.items[1]!.fee;
+    expect(fee).toBeGreaterThan(100);
+    const swordName = itemDisplayName(s, data, sword);
+    expect(townEntries({ uncurseItems: "c2" }, m, S)).toEqual([
+      { kind: "pick", to: { uncurseAsk: { memberId: "c2", instanceId: dagger } }, label: "短い刃？　50 G", disabled: false },
+      { kind: "pick", to: { uncurseAsk: { memberId: "c2", instanceId: sword } }, label: `${swordName}　${fee} G`, disabled: true },
+      back,
+    ]);
+    expect(townHeading({ uncurseItems: "c2" })).toBe("town.temple.uncurseWhich");
+    expect(townHeadingText({ uncurseItems: "c2" }, m, S)).toBe("どれの呪いを払う？");
+    expect(townParent({ uncurseItems: "c2" })).toEqual({ temple: "uncurse" });
+    expect(townFacility({ uncurseItems: "c2" })).toBe("temple");
+    expect(townPlace({ uncurseItems: "c2" })).toBe("town.place.temple");
+    expect(townPageIntro({ uncurseItems: "c2" }, m)).toEqual([]);
+  });
+
+  test("TW-07 確認の段 { uncurseAsk }: 見出しは「{item}を {fee} G で解呪するか？」、答えは 解呪する（払えなければ dim）/ やめる（品の段へ）", () => {
+    const { s, dagger, sword } = cursedTown(100);
+    const m = menuOf(s);
+    const page: TownPage = { uncurseAsk: { memberId: "c2", instanceId: dagger } };
+    expect(townHeadingText(page, m, S)).toBe("短い刃？を 50 G で解呪するか？");
+    expect(townEntries(page, m, S)).toEqual([{ kind: "uncurseYes", memberId: "c2", instanceId: dagger, label: "解呪する", disabled: false }, cancel]);
+    expect(townParent(page)).toEqual({ uncurseItems: "c2" });
+    expect(townFacility(page)).toBe("temple");
+    expect(townPageIntro(page, m)).toEqual([]);
+    const poor: TownPage = { uncurseAsk: { memberId: "c2", instanceId: sword } };
+    expect(townEntries(poor, m, S)[0]).toMatchObject({ kind: "uncurseYes", disabled: true });
+    // 見つからない品は見出しを品の段の問いにし、解呪するは dim
+    const gone: TownPage = { uncurseAsk: { memberId: "c2", instanceId: "i999" } };
+    expect(townHeadingText(gone, m, S)).toBe(S["town.temple.uncurseWhich"]);
+    expect(townEntries(gone, m, S)[0]).toMatchObject({ kind: "uncurseYes", disabled: true });
+    expect(samePage(page, { uncurseAsk: { memberId: "c2", instanceId: dagger } })).toBe(true);
+    expect(samePage(page, poor)).toBe(false);
+  });
+
+  test("TW-07 頁の修復（townRepair）と解呪した後に戻る段（uncurseReturnPage）", () => {
+    const { s, dagger, sword } = cursedTown(1000);
+    const m = menuOf(s);
+    const ask: TownPage = { uncurseAsk: { memberId: "c2", instanceId: dagger } };
+    expect(townRepair(ask, m)).toBe(ask);
+    expect(townRepair({ uncurseItems: "c2" }, m)).toEqual({ uncurseItems: "c2" });
+    // 品が対象から消えた → 品の段、その者の対象が無い（count 0）・者がいない → 人の段
+    expect(townRepair({ uncurseAsk: { memberId: "c2", instanceId: "i999" } }, m)).toEqual({ uncurseItems: "c2" });
+    expect(townRepair({ uncurseItems: "c1" }, m)).toEqual({ temple: "uncurse" });
+    expect(townRepair({ uncurseAsk: { memberId: "zz", instanceId: dagger } }, m)).toEqual({ temple: "uncurse" });
+    // 対象が 2 つ → 解呪の後は人の段。1 つ解いた後（残り 1 つ）→ 次は寺院の最初の段
+    expect(uncurseReturnPage(m)).toEqual({ temple: "uncurse" });
+    const r = execute(s, { type: "town.temple", memberId: "c2", service: "uncurse", instanceId: sword }, data);
+    const m2 = menuOf(r.state);
+    expect(m2.temple.uncurse[1]!.count).toBe(1);
+    expect(townRepair({ uncurseAsk: { memberId: "c2", instanceId: sword } }, m2)).toEqual({ uncurseItems: "c2" });
+    expect(uncurseReturnPage(m2)).toBe("temple");
+    const r2 = execute(r.state, { type: "town.temple", memberId: "c2", service: "uncurse", instanceId: dagger }, data);
+    const m3 = menuOf(r2.state);
+    expect(m3.temple.uncurse).toEqual([]);
+    expect(townRepair({ uncurseItems: "c2" }, m3)).toEqual({ temple: "uncurse" });
+    expect(townEntries({ temple: "uncurse" }, m3, S)).toEqual([{ kind: "templeNone", label: S["town.temple.none"] }, back]);
+    expect(r2.events).toContainEqual({ kind: "message", key: "town.temple.uncursed", params: { name: s.party[1]!.name, item: "短い刃？" } });
+    expect(formatMessage(S["town.temple.uncursed"]!, { name: "ベルク", item: "短剣" })).toBe("ベルクの短剣から呪いが抜けた。");
+  });
+
+  test("TW-07 最悪の値（6 字の名前・品名 24 単位・5 桁の料金・2 桁の数）でも、人と品の行は 39 単位、確認の問いは 28 字 × 2 行、見出しと答えは 1 行", () => {
+    const name = "アアアアアア";
+    const item = "アアアアアアアアアアアア"; // 24 単位
+    expect(textUnits(item)).toBe(24);
+    const member = formatMessage(S["town.temple.uncurseMember"]!, { name, count: 99 });
+    const row = formatMessage(S["town.temple.uncurseItem"]!, { item, fee: 99999 });
+    for (const x of [member, row]) {
+      expect(x).not.toContain("{");
+      expect(textUnits(x), x).toBeLessThanOrEqual(39);
+    }
+    const ask = formatMessage(S["town.temple.uncurseAsk"]!, { item, fee: 99999 });
+    expect(ask).not.toContain("{");
+    expect(kinsokuLines(ask, 28).length, ask).toBeLessThanOrEqual(2);
+    expect(S["town.temple.uncurseAsk"]).toContain("{fee} G");
+    expect(S["town.temple.uncurseItem"]).toContain("{fee} G");
+    for (const k of ["town.temple.uncurseWho", "town.temple.uncurseWhich"]) expect(kinsokuLines(S[k]!, 28), k).toHaveLength(1);
+    expect(Array.from(S["town.temple.uncurseYes"]!).length).toBeLessThanOrEqual(4);
   });
 });
 

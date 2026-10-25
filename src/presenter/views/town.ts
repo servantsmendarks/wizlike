@@ -26,7 +26,8 @@ export type TempleService = "resurrect" | "cure" | "uncurse";
  * （M7〜M16 の倉庫の入口 storage（店の一覧の中）は M17 で bank に置き換えた）。
  * 迷宮の入口（TW-11 / UI-52。M19 D-1）: gate は迷宮の一覧、{ gateAsk: dungeonId } は入る前の確認（答えは 潜る / やめる）。
  * 闇魔術（M7）: dark は 灰から戻す / 装備を鍛える / 戻る、darkRevive は灰の者（TW-08）。強化（TW-17）: upgrade は者、{ upSlot: memberId } は部位、
- * { upCat } は触媒の選択（picked は選んだ順の実体 id）、{ upConfirm } は成功率と料金の確認
+ * { upCat } は触媒の選択（picked は選んだ順の実体 id）、{ upConfirm } は成功率と料金の確認。
+ * 寺院の解呪（TW-07。M24）: { temple: "uncurse" } は人の段、{ uncurseItems: memberId } はその者の品、{ uncurseAsk } は解呪の確認（答えは 解呪する / やめる）
  */
 export type TownPage =
   | "menu"
@@ -58,6 +59,9 @@ export type TownPage =
   | { sellAsk: SellAskSel }
   /** TW-11 / UI-52（M19 D-1）: 迷宮の入口の確認（行を押した後）。値は迷宮の id */
   | { gateAsk: string }
+  /** TW-07（M24）: 解呪の品の段（値は者の id）と確認の段（者と品） */
+  | { uncurseItems: string }
+  | { uncurseAsk: UncurseAskSel }
   | { upSlot: string }
   | { upCat: UpgradeSel }
   | { upConfirm: UpgradeSel }
@@ -69,6 +73,8 @@ export type TownPage =
 export type BuyAskSel = { itemId: string; memberId: string };
 /** IT-61（M18 5-2）: 売るの確認の対象（持ち主と品） */
 export type SellAskSel = { memberId: string; instanceId: string };
+/** TW-07（M24）: 解呪の確認の対象（者と品） */
+export type UncurseAskSel = { memberId: string; instanceId: string };
 /** TW-17: 強化の選択中の対象（本人・部位）と触媒 */
 export type UpgradeSel = { memberId: string; slot: EquipSlot; picked: UpgradeCatalystRef[] };
 /** TW-09（M10）: 転職の確認の対象（者と転職先） */
@@ -114,6 +120,8 @@ export type TownEntry =
   | { kind: "buyYes"; itemId: string; memberId: string; label: string; disabled: boolean }
   /** IT-61（M18 5-2）: 売るの確認の「売る」。押すと town.shop の sell */
   | { kind: "sellYes"; memberId: string; instanceId: string; label: string; disabled: boolean }
+  /** TW-07（M24）: 解呪の確認の「解呪する」。押すと town.temple の uncurse（品の段のその品の行と同じ条件で disabled） */
+  | { kind: "uncurseYes"; memberId: string; instanceId: string; label: string; disabled: boolean }
   /** IT-63: 買い戻した品を持たせる者の行。押すと town.shop の buyback */
   | { kind: "buyback"; memberId: string; instanceId: string; label: string; disabled: boolean }
   /** IT-65: 鑑定する品の行（持ち主・未鑑定の名前・料金。払えなければ disabled）。押すと town.shop の identify */
@@ -230,6 +238,8 @@ export function townParent(page: TownPage): TownPage | null {
     if ("buyAsk" in page) return { shop: page.buyAsk.itemId }; // M18（5-2）: やめるで持たせる者の段へ
     if ("sellAsk" in page) return { sell: page.sellAsk.memberId }; // M18（5-2）: やめるで品の段へ
     if ("gateAsk" in page) return "gate"; // M19（D-1）: やめるで迷宮の一覧へ
+    if ("uncurseItems" in page) return { temple: "uncurse" }; // TW-07（M24）: 品の段 → 人の段
+    if ("uncurseAsk" in page) return { uncurseItems: page.uncurseAsk.memberId }; // TW-07（M24）: やめるで品の段へ
     if ("deposit" in page) return "storageDeposit";
     if ("upSlot" in page) return "upgrade";
     if ("upCat" in page) return { upSlot: page.upCat.memberId };
@@ -271,6 +281,15 @@ export function townRepair(page: TownPage, menu: TownMenu): TownPage {
     return m.items.some((r) => r.instanceId === sel.instanceId) ? page : { sell: sel.memberId };
   }
   if ("gateAsk" in page) return menu.dungeons.some((d) => d.id === page.gateAsk) ? page : "gate"; // M19（D-1）
+  if ("uncurseItems" in page || "uncurseAsk" in page) {
+    // TW-07（M24）: その者の対象が無くなった → 人の段（誰にも無ければ人の段は「その必要がある者はいない」）、品が対象から消えた → 品の段
+    const memberId = "uncurseItems" in page ? page.uncurseItems : page.uncurseAsk.memberId;
+    const m = menu.temple.uncurse.find((x) => x.memberId === memberId);
+    if (m === undefined || m.count === 0) return { temple: "uncurse" };
+    if ("uncurseItems" in page) return page;
+    const id = page.uncurseAsk.instanceId;
+    return m.items.some((r) => r.instanceId === id) ? page : { uncurseItems: memberId };
+  }
   if ("deposit" in page) return menu.storage.members.some((m) => m.memberId === page.deposit) ? page : "storageDeposit";
   if ("withdraw" in page) return menu.storage.items.some((r) => r.instanceId === page.withdraw) ? page : "storageWithdraw";
   if ("upSlot" in page) return menu.upgrade.members.some((m) => m.memberId === page.upSlot) ? page : "upgrade";
@@ -285,6 +304,15 @@ export function townRepair(page: TownPage, menu: TownMenu): TownPage {
     return "upCat" in page ? { upCat: { ...sel, picked } } : { upConfirm: { ...sel, picked } };
   }
   return page;
+}
+
+/**
+ * TW-07（M24）: 解呪の「解呪する」を押した後に戻る段。core の townMenu の対象の数（count）の合計が 1 以下（押した品が最後の対象）なら
+ * 寺院の最初の段、それ以外は人の段。送る前の menu で決める（rejected なら人の段のまま描き直す。表示のための段の選び方で、判定は core）
+ */
+export function uncurseReturnPage(menu: TownMenu): TownPage {
+  const left = menu.temple.uncurse.reduce((n, r) => n + r.count, 0);
+  return left <= 1 ? "temple" : { temple: "uncurse" };
 }
 
 /** UI-13 / UI-52（M16。M17 で銀行）: 施設メニューの 7 枠の strings の id（town.menu.<id> がラベル、town.menu.note.<id> が説明。枠の順） */
@@ -668,11 +696,40 @@ export function townEntries(
     );
     return [...rows, back];
   }
+  if ("uncurseItems" in page) {
+    // TW-07（M24）: その者の対象の品（core の uncurseTargets の順）「{item}　{fee} G」。払えなければ dim。押すと確認の段 { uncurseAsk }
+    const memberId = page.uncurseItems;
+    const m = menu.temple.uncurse.find((x) => x.memberId === memberId);
+    const rows = (m?.items ?? []).map(
+      (r): TownEntry => ({
+        kind: "pick",
+        to: { uncurseAsk: { memberId, instanceId: r.instanceId } },
+        label: s(strings, "town.temple.uncurseItem", { item: r.name, fee: r.fee }),
+        disabled: !r.affordable,
+      }),
+    );
+    return orEmpty(rows, "town.temple.none");
+  }
+  if ("uncurseAsk" in page) {
+    // TW-07（M24。ユーザーの返事 4）: 解呪する（品の段のその品の行と同じ条件で dim）→ やめる（品の段へ）。問いは見出し（townHeadingText）
+    const sel = page.uncurseAsk;
+    const r = menu.temple.uncurse.find((x) => x.memberId === sel.memberId)?.items.find((x) => x.instanceId === sel.instanceId);
+    return [
+      { kind: "uncurseYes", memberId: sel.memberId, instanceId: sel.instanceId, label: s(strings, "town.temple.uncurseYes"), disabled: r === undefined || !r.affordable },
+      { kind: "back", label: s(strings, "common.cancel") },
+    ];
+  }
   const sv = page.temple;
   if (sv === "uncurse") {
-    const rows = menu.temple.uncurse
-      .filter((r) => r.count > 0)
-      .map((r): TownEntry => ({ kind: "temple", service: sv, memberId: r.memberId, label: r.name, disabled: false }));
+    // TW-07（M24）: 人の段「{name}　{count} 品」（誰かに対象があれば全員。対象の無い者は dim）。押すと品の段 { uncurseItems }
+    const rows = menu.temple.uncurse.map(
+      (r): TownEntry => ({
+        kind: "pick",
+        to: { uncurseItems: r.memberId },
+        label: s(strings, "town.temple.uncurseMember", { name: r.name, count: r.count }),
+        disabled: r.count === 0,
+      }),
+    );
     return rows.length === 0 ? [{ kind: "templeNone", label: s(strings, "town.temple.none") }, back] : [...rows, back];
   }
   const rows = menu.temple[sv].map(
@@ -796,7 +853,7 @@ export type TownFacility = "town" | "tavern" | "inn" | "temple" | "dark" | "gate
 export function townFacility(page: TownPage): TownFacility {
   if (isBankPage(page)) return "bank";
   if (typeof page === "object") {
-    if ("temple" in page) return "temple";
+    if ("temple" in page || "uncurseItems" in page || "uncurseAsk" in page) return "temple"; // TW-07（M24）: 解呪の品・確認の段も寺院
     if ("ccClass" in page || "ccConfirm" in page) return "tavern"; // TW-09（M10）
     if ("upSlot" in page || "upCat" in page || "upConfirm" in page) return "dark";
     if ("gateAsk" in page) return "gate"; // M19（D-1）
@@ -839,7 +896,9 @@ export function townPlace(page: TownPage): string {
  */
 export function townHeading(page: TownPage): string {
   if (typeof page === "object") {
-    if ("temple" in page) return "town.ask.templeWho";
+    if ("temple" in page) return page.temple === "uncurse" ? "town.temple.uncurseWho" : "town.ask.templeWho"; // TW-07（M24）: 解呪は「誰の呪いを払う？」
+    if ("uncurseItems" in page) return "town.temple.uncurseWhich"; // TW-07（M24）
+    if ("uncurseAsk" in page) return "town.temple.uncurseWhich"; // TW-07（M24）。townHeadingText が品と料金を入れた問いにする
     if ("upSlot" in page) return "town.upgrade.slot";
     if ("upCat" in page) return "town.upgrade.catalyst";
     if ("upConfirm" in page) return "town.ask.upConfirm";
@@ -998,6 +1057,8 @@ export function upgradeCatalystLabel(c: TownMenuUpgradeCatalyst, on: boolean, st
  * - 買うの確認（{ buyAsk }。M18 5-2）: town.shop.buyAsk{name, item, cost}（core の townMenu.shop の名前と価格）。品か者が見つからなければ town.ask.buyConfirm
  * - 売るの確認（{ sellAsk }。M18 5-2）: town.shop.sellAsk{item, gold}（core の sellable の名前と売値）。見つからなければ town.ask.sellConfirm
  * - 迷宮の入口の確認（{ gateAsk }。M19 D-1）: town.gate.ask「{name}へ潜るか？」（core の townMenu.dungeons の名前）。見つからなければ town.ask.gateConfirm
+ * - 解呪の確認（{ uncurseAsk }。TW-07 M24）: town.temple.uncurseAsk「{item}を {fee} G で解呪するか？」（core の townMenu.temple.uncurse の名前と料金）。
+ *   見つからなければ town.temple.uncurseWhich
  * - 酒場で救済の申し出（TW-30。menu.mercy が null でない）の間: town.ask.mercy（答えは救済の行）
  * - 施設メニューで救済の申し出の間: town.ask.menuMercy（酒場へ行けば戻してもらえる、と施設の問い。街に入るときの語り town.mercy.offer は問いを含まない）
  * - 銀行の一覧と金の額の段（M17）: townHeading のキーに預金 {bank} と所持金 {gold}（core の townMenu.bank）を入れた文
@@ -1032,6 +1093,11 @@ export function townHeadingText(
     const sel = page.sellAsk;
     const r = menu.shop.sellable.find((x) => x.memberId === sel.memberId)?.items.find((x) => x.instanceId === sel.instanceId);
     if (r !== undefined) return s(strings, "town.shop.sellAsk", { item: r.name, gold: r.price });
+  }
+  if (typeof page === "object" && "uncurseAsk" in page) {
+    const sel = page.uncurseAsk;
+    const r = menu.temple.uncurse.find((x) => x.memberId === sel.memberId)?.items.find((x) => x.instanceId === sel.instanceId);
+    if (r !== undefined) return s(strings, "town.temple.uncurseAsk", { item: r.name, fee: r.fee });
   }
   if (typeof page === "object" && "gateAsk" in page) {
     const d = menu.dungeons.find((x) => x.id === page.gateAsk);
