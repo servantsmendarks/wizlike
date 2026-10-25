@@ -74,13 +74,22 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
     expect(formatItemDetail(detailOf(s, legend), S).lines[1]).toEqual({ text: "希少度 伝説", tone: "normal" });
   });
 
+  test("UI-59/IT-23 装飾は AC の行の代わりに基礎の効果の無い旨の 1 行（28 字以内。M24 C-1）", () => {
+    const s = town();
+    const charm = createItemInstance(s, { itemId: "charm", identified: true });
+    const lines = formatItemDetail(detailOf(s, charm), S).lines.map((l) => l.text);
+    expect(lines).toContain("基礎の効果はない。オプションで決まる");
+    expect(lines.some((l) => l.startsWith("AC"))).toBe(false);
+    expect([...(S["item.detail.accessory"] ?? "")].length).toBeLessThanOrEqual(28);
+  });
+
   test("UI-59/IT-34/IT-36 杖のオプション魔法攻撃力（M10。U10）: 性能の行（ベース + Lv。オプションを含まない）とオプションの行の両方を出す。護符はオプションの行だけ", () => {
     const s = town();
     const staff = createItemInstance(s, { itemId: "oak_staff", level: 2, rarity: "fine", options: [{ optionId: "magic_power", tier: 1, value: 2 }], identified: true });
     const charm = createItemInstance(s, { itemId: "charm", rarity: "fine", options: [{ optionId: "magic_power", tier: 1, value: 1 }], identified: true });
     const staffLines = formatItemDetail(detailOf(s, staff), S).lines.map((l) => l.text);
     expect(staffLines.slice(0, 5)).toEqual(["武器　Lv2", "希少度 上質", "攻撃 1d6", "魔法攻撃力 3", "魔法攻撃力 +2"]); // 樫の杖 1 + floor(2/1)
-    expect(formatItemDetail(detailOf(s, charm), S).lines.map((l) => l.text).slice(0, 4)).toEqual(["装飾　Lv0", "希少度 上質", "AC 0", "魔法攻撃力 +1"]);
+    expect(formatItemDetail(detailOf(s, charm), S).lines.map((l) => l.text).slice(0, 4)).toEqual(["装飾　Lv0", "希少度 上質", "基礎の効果はない。オプションで決まる", "魔法攻撃力 +1"]);
   });
 
   test("UI-59/IT-03/IT-40 ユニーク: Lv なし、性能、固有スキル、売値、説明（28 字ずつ。dim）", () => {

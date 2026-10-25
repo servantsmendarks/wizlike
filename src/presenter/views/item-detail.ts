@@ -60,6 +60,9 @@ export function formatItemDetail(d: ItemDetail, strings: Strings): PanelLines {
     lines.push(line(s(strings, "item.detail.damage", { dice: d.damageDice ?? p.dice })));
     if (p.caster || p.magicPower > 0) lines.push(line(s(strings, "item.detail.magicPower", { value: p.magicPower })));
     if (p.reach !== "melee") lines.push(line(s(strings, `item.detail.reach.${p.reach}`))); // IT-25: 長柄・飛び道具は後列から届く
+  } else if (d.slot === "accessory") {
+    // UI-59（M24 C-1）: 装飾品に基礎の効果は無い（効くのはオプションと固有スキルだけ）。「AC 0」の代わりに 1 行で言う
+    lines.push(line(s(strings, "item.detail.accessory")));
   } else if (p !== null) {
     lines.push(line(s(strings, "item.detail.ac", { ac: p.ac })));
   }

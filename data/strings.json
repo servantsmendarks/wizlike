@@ -914,6 +914,7 @@
   "item.detail.reach.long": "長柄。後列から届く",
   "item.detail.reach.ranged": "飛び道具。後列から届く",
   "item.detail.ac": "AC {ac}",
+  "item.detail.accessory": "基礎の効果はない。オプションで決まる",
   "item.detail.sell": "売値 {gold} G",
   "item.option.row": "{name} {value}{unit}",
   "item.option.found": "オプション: {name} {value}{unit}",
