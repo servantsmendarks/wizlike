@@ -5,11 +5,17 @@ import { generateDive, idx } from "../src/core/rules/dungeon-gen";
 import { mapView, octant } from "../src/core/rules/dungeon";
 import { chestGenOf, floorOf } from "../src/core/rules/floor";
 import { createRng } from "../src/core/rng";
-import type { Command, Floor, GameState } from "../src/core/types";
+import type { Octant } from "../src/core/data/index";
+import type { Cell, Command, Floor, GameState } from "../src/core/types";
 import {
   enterFacing,
+  exitsOf,
   exploreFloorWalk,
   failuresOf,
+  hintCandidate,
+  type Known,
+  nearestHintExit,
+  randomHintExit,
   isHintPolicy,
   measureExplore,
   POLICIES,
@@ -244,6 +250,7 @@ describe("計測の道具（M25）探索ボット", () => {
   test("計測の道具（M25）DG-46 / DG-46b: 一言を聞く前の手は、同じシードの nearest / random と完全に同じ（聞かなかった階は歩き全体が同じ）。d01 の 30 シード・全階", () => {
     let withHint = 0;
     let without = 0;
+    let changedAfter = 0;
     for (let seed = 1; seed <= 30; seed++) {
       for (const f of diveOf(seed)) {
         for (const [base, hp] of [
@@ -269,12 +276,15 @@ describe("計測の道具（M25）探索ボット", () => {
             let cut = 0;
             while (moves < b.w.hintStep) if (b.trace[cut++]!.command === "move") moves += 1;
             expect(b.trace.slice(0, cut)).toEqual(a.trace.slice(0, cut));
+            if (JSON.stringify(b.trace.slice(cut)) !== JSON.stringify(a.trace.slice(cut))) changedAfter += 1;
           }
         }
       }
     }
     expect(withHint).toBeGreaterThan(5);
     expect(without).toBeGreaterThan(5);
+    // 一言の後は方針が効いて手が変わる（hintCandidate が常に真なら 0 になる）
+    expect(changedAfter).toBeGreaterThan(5);
   });
 
   test("計測の道具（M25）DG-05 / DG-46b: hint 方針も決定的（同じ入力から同じ結果）で、d01 の 40 シードで失敗せず、一言が出るのは降り口の階だけ（hintOnBossFloor 既定 false）", () => {
@@ -328,9 +338,11 @@ describe("計測の道具（M25）探索ボット", () => {
         const w = exploreFloorWalk(f, state.dive!.pos, state.dive!.facing, { ...optsFor(f, policy, seed, { trace }), depth: d0.config.dungeon.viewDepth });
         let key: string | null = null;
         let gameSteps: number | null = null;
+        let stoppedAt = 0;
         for (const m of trace) {
           const r = run(state, m.command === "move" ? { type: "dungeon.move" } : { type: "dungeon.turn", dir: m.command }, d0);
           state = r.state;
+          stoppedAt = state.dive!.floorSteps;
           const e = r.events.find((x) => x.kind === "message" && x.key.startsWith("hint.lostExits"));
           if (e !== undefined && e.kind === "message") {
             key = e.key;
@@ -341,7 +353,10 @@ describe("計測の道具（M25）探索ボット", () => {
           if (state.pendingChoice !== null || state.battle !== null || state.dive!.chest !== null) break;
         }
         if (w.hintOctant === null) expect(key, `seed ${seed} ${policy}`).toBeNull();
-        else if (key !== null) {
+        else if (key === null) {
+          // 一言の前に再生が止まった（保留・戦闘・宝箱）ときだけ許す: 止まった歩数は一言の歩数より前
+          expect(stoppedAt, `seed ${seed} ${policy} stopped`).toBeLessThan(w.hintStep!);
+        } else {
           expect(key, `seed ${seed} ${policy}`).toBe(`hint.lostExitsDir.${w.hintOctant}`);
           expect(gameSteps).toBe(w.hintStep);
           told += 1;
@@ -391,5 +406,50 @@ describe("計測の道具（M25）探索ボット", () => {
       }
     }
     expect(swapped).toBeGreaterThan(5);
+  });
+
+  test("計測の道具（M25）DG-46b: 口の候補の規則 hintCandidate は、語られた方角と両隣の口だけを通し、2 つ以上離れた口は通さず、候補が 0 なら全部の口を通す", () => {
+    const at = { x: 4, y: 4 };
+    const known = (cell: Partial<Cell>): Known => {
+      const cells: Cell[] = [];
+      for (let i = 0; i < 81; i++) cells.push({ kind: "rock", n: "wall", e: "wall", s: "wall", w: "wall", roomId: null, eventId: null, trapId: null, chestTrapId: null });
+      cells[4 * 9 + 4] = { ...cells[0]!, kind: "corridor", ...cell };
+      const fog: Floor = { floor: 0, width: 9, height: 9, cells, rooms: [], stairsUp: at, stairsDown: null, boss: null };
+      return { fog, explored: new Set([40]), list: [40], goalKind: "stairsDown", exits: 0, goal: null };
+    };
+    const ok = (k: Known, told: Octant): string =>
+      exitsOf(k).filter((e) => hintCandidate(k, at, told)(e)).map((e) => e.d).join("").toLowerCase();
+    const four = known({ n: "open", e: "open", s: "open", w: "open" });
+    expect(ok(four, "N")).toBe("n");
+    expect(ok(four, "NE")).toBe("ne");
+    expect(ok(four, "SE")).toBe("es");
+    expect(ok(four, "SW")).toBe("sw");
+    expect(ok(four, "W")).toBe("w");
+    // 南北だけに口がある盤で E が語られると、候補は 0 なので全部の口を通す
+    const ns = known({ n: "open", s: "open" });
+    expect(ok(ns, "E")).toBe("ns");
+    expect(ok(ns, "N")).toBe("n");
+  });
+
+  test("計測の道具（M25）DG-46b: nearestHintExit は候補のうち BFS で最初の口を返し、randomHintExit は候補だけから選ぶ（東西に口がある 3 マスの廊下）", () => {
+    const corridor: Cell = { kind: "corridor", n: "wall", e: "open", s: "wall", w: "open", roomId: null, eventId: null, trapId: null, chestTrapId: null };
+    const cells: Cell[] = [];
+    for (let i = 0; i < 81; i++) cells.push({ ...corridor, kind: "rock", e: "wall", w: "wall" });
+    for (const x of [3, 4, 5]) cells[4 * 9 + x] = { ...corridor };
+    const fog: Floor = { floor: 0, width: 9, height: 9, cells, rooms: [], stairsUp: { x: 4, y: 4 }, stairsDown: null, boss: null };
+    const k: Known = { fog, explored: new Set([39, 40, 41]), list: [39, 40, 41], goalKind: "stairsDown", exits: 2, goal: null };
+    const at = { x: 4, y: 4 };
+    expect(nearestHintExit(k, at, at, "E")).toEqual({ pos: { x: 5, y: 4 }, d: "E" });
+    expect(nearestHintExit(k, at, at, "W")).toEqual({ pos: { x: 3, y: 4 }, d: "W" });
+    const rng = createRng(7);
+    for (let i = 0; i < 20; i++) {
+      expect(randomHintExit(k, rng, at, "E")).toEqual({ pos: { x: 5, y: 4 }, d: "E" });
+      expect(randomHintExit(k, rng, at, "W")).toEqual({ pos: { x: 3, y: 4 }, d: "W" });
+    }
+    // 南が語られると候補は 0（東西の口は 2 つ以上離れている）なので全部の口から選ぶ
+    const seenDirs = new Set<string>();
+    for (let i = 0; i < 40; i++) seenDirs.add(randomHintExit(k, rng, at, "S")!.d);
+    expect([...seenDirs].sort()).toEqual(["E", "W"]);
+    expect(nearestHintExit(k, at, at, "S")).not.toBeNull();
   });
 });

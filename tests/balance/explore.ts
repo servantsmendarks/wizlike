@@ -5,12 +5,12 @@
 //
 // 知識の決まり（M25 計画 §4。いちばん大事）:
 // - 判断に使ってよいのは、自分の位置と向き、explored（見たマスの集合）、explored のマスの中身（kind・辺）だけ。
-// - 盤の全体（Floor）を読むのは sight() だけ。visibleCellsOf（DG-12）で見えたマスを explored に足し（core の markExplored と同じ規則。DG-13）、
+// - 盤の全体（Floor）を読むのは sight() だけ（例外: hint 方針は一言の時点で 1 回だけ forward() が f.stairsDown ?? f.boss を読み、octant(今の位置, 目標) を計算する。以後は hintPos と方角だけを使う）。visibleCellsOf（DG-12）で見えたマスを explored に足し（core の markExplored と同じ規則。DG-13）、
 //   そのマスの中身を Known.fog に写す。判断の関数（goal の判定・未踏の口・nearest / random の選択・経路）は Known しか受け取らない。
 //   Known.fog は未探索のマスを FOG（岩・4 辺 wall）にした盤で、未探索のマスの中身は入っていない。
 // - 「見つけた」は explored のマスの kind で決める（座標の比較で近道しない。DG-46 / UI-78 の「見えただけで見つけた」）。
 // - 盤の形の統計（boardStats）と探索率の分母は全知だが、集計だけに使い、歩きの判断には渡さない。
-// 扱わないもの: 罠・遭遇・宝箱・イベント（revealFloor / revealStairs）・転移・方角の一言（盤を歩くだけ）。
+// 扱わないもの: 罠・遭遇・宝箱・イベント（revealFloor / revealStairs）・転移（盤を歩くだけ）。
 import { type Config, type DungeonDef, type GameData, type Octant, OCTANTS } from "../../src/core/data/index";
 import { octant } from "../../src/core/rules/dungeon";
 import { cellAt, distancesFrom, edgeOf, FACINGS, generateDive, idx, inBounds, isDeadEnd, isPassable, opposite, step, turnLeft, turnRight } from "../../src/core/rules/dungeon-gen";
@@ -650,7 +650,7 @@ export function formatExploreReport(r: ExploreResult, title: string): string {
   const gens = r.dungeons.map((d) => `${d.id} ${d.width}×${d.height} 生成 ${d.dives}/${r.seeds}（Error ${d.genErrors}${d.genErrorSamples.length > 0 ? `: ${d.genErrorSamples.join(" / ")}` : ""}）`);
   lines.push(
     `条件: diveSeed 1..${r.seeds}。${gens.join("、")}。方針 ${r.policies.join(" / ")}。所要 生成 ${(r.ms.gen / 1000).toFixed(2)} 秒・歩き ${(r.ms.walk / 1000).toFixed(2)} 秒。ボットの失敗 ${failuresOf(r)}。`,
-    `歩数は前進の回数（floorSteps と同じ）。「見つける」は explored に降り口（最下層はボス）のマスが入った時点。罠・遭遇・宝箱・イベント（revealFloor / revealStairs）・転移は扱わない。方角の一言は nearest / random では「出たか」の割合だけ（ゲームの「ゲームで 1 回」は無視して毎階出ると仮定。最下層は ${r.hintOnBossFloor ? "ボスのマスを目標に出す" : "—"}）、*-hint では聞いた後に語られた方角（と両隣）の口を選ぶ。未踏の口は前進のたびに数えた値の見つけるまでの平均（の平均）・1 回の歩きの最大（の中央値）・見つけた時点（の中央値）。`,
+    `歩数は前進の回数（floorSteps と同じ）。「見つける」は explored に降り口（最下層はボス）のマスが入った時点。罠・遭遇・宝箱・イベント（revealFloor / revealStairs）・転移は扱わない。方角の一言は nearest / random では「出たか」の割合だけ（ゲームの「ゲームで 1 回」は無視して毎階出ると仮定。最下層は ${r.hintOnBossFloor ? "ボスのマスを目標に出す" : "—"}）、*-hint では聞いた後に語られた方角（と両隣）の口を選ぶ（毎階・全ダンジョンで方角付きの一言が出ると仮定する。今のゲームは d01 だけ・ゲームで 1 回）。未踏の口は前進のたびに数えた値の見つけるまでの平均（の平均）・1 回の歩きの最大（の中央値）・見つけた時点（の中央値）。`,
     "",
     "| ダンジョン | 階 | 方針 | 見つけるまで 最小 / 中央値 / 平均 / p90 / 最大 | 着くまで 中央値 | 見つけた時の探索率 | 一言の割合 | 未踏の口 平均 / 最大の中央値 / 見つけた時 | 失敗 |",
     "|---|---|---|---|---|---|---|---|---|",
