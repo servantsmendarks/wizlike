@@ -45,6 +45,7 @@ describe("計測の道具（M25）探索ボット", () => {
           for (const m of trace.filter((x) => x.command === "move")) {
             if (m.phase === "enter") {
               enters += 1;
+              // 口の定義の確認（口は隣が未探索のものだけ）。意味のある検査は下の targetKnownBefore の方
               expect(m.targetKnownAtChoice).toBe(false);
             } else {
               others += 1;
@@ -128,7 +129,7 @@ describe("計測の道具（M25）探索ボット", () => {
     }
   });
 
-  test("計測の道具（M25）UI-78 / DG-13: 実際の state で、道具の explored と未踏の口の数が dive.explored と mapView の unexploredExits に一致する（d01 の 1 階をゲームの execute で同じ手順に歩かせ、保留・戦闘・ずれが起きるまで比べる）", () => {
+  test("計測の道具（M25）UI-78 / DG-13: 実際の state で、道具の explored と未踏の口の数が dive.explored と mapView の unexploredExits に一致する（d01 の 1 階をゲームの execute で同じ手順に歩かせ、保留・宝箱・戦闘が起きるまで比べ、位置・向きのずれは失敗にする）", () => {
     const d0 = dataWithRate(0, 0);
     let compared = 0;
     for (let seed = 1; seed <= 12; seed++) {
@@ -145,24 +146,59 @@ describe("計測の道具（M25）探索ボット", () => {
         trace,
         observe: (o) => obs.push({ pos: o.pos, facing: o.facing, explored: [...o.explored].sort((a, b) => a - b), exits: o.exits }),
       });
-      const check = (s: GameState, o: (typeof obs)[number]): boolean => {
+      const check = (s: GameState, o: (typeof obs)[number]): void => {
         const dv = s.dive!;
-        if (dv.floor !== 1 || dv.pos.x !== o.pos.x || dv.pos.y !== o.pos.y || dv.facing !== o.facing) return false;
+        expect({ floor: dv.floor, pos: dv.pos, facing: dv.facing }, `seed ${seed}`).toEqual({ floor: 1, pos: o.pos, facing: o.facing });
         expect(dv.explored["1"]).toEqual(o.explored);
         expect(mapView(s, d0)!.unexploredExits).toBe(o.exits);
         compared += 1;
-        return true;
       };
-      expect(check(state, obs[0]!)).toBe(true);
+      check(state, obs[0]!);
       for (let i = 0; i < trace.length; i++) {
         const m = trace[i]!;
         const cmd: Command = m.command === "move" ? { type: "dungeon.move" } : { type: "dungeon.turn", dir: m.command };
         state = run(state, cmd, d0).state;
-        if (state.pendingChoice !== null || state.battle !== null || state.screen !== "dungeon") break;
-        if (!check(state, obs[i + 1]!)) break;
+        // 保留（階段・罠・宝箱）と戦闘は道具が扱わない盤の外の出来事なので、そこで止める。それ以外のずれは落とす
+        if (state.pendingChoice !== null || state.battle !== null || state.screen !== "dungeon" || state.dive!.chest !== null) break;
+        check(state, obs[i + 1]!);
       }
     }
     expect(compared).toBeGreaterThan(200);
+  });
+
+  test("計測の道具（M25）DG-46: 罠・宝箱・イベントを片付けた d01 の 1 階を 100 歩を超えて歩かせると、道具の hintFired とゲームの hint.lostExits の有無が一致する（40 シード）", () => {
+    const d0 = dataWithRate(0, 0);
+    let fired = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      let state: GameState = run(newGame(seed), ENTER_D01, d0).state;
+      const base = floorOf(state.dive!, d0);
+      const cleared = base.cells
+        .map((c, i) => ({ c, i }))
+        .filter(({ c }) => c.kind === "trap" || c.kind === "chest" || c.kind === "event" || c.kind === "teleporter")
+        .map(({ i }) => ({ floor: 1, x: i % base.width, y: Math.floor(i / base.width) }));
+      state = { ...state, dive: { ...state.dive!, clearedCells: [...state.dive!.clearedCells, ...cleared] } };
+      const f = floorOf(state.dive!, d0);
+      const trace: WalkMove[] = [];
+      const w = exploreFloorWalk(f, state.dive!.pos, state.dive!.facing, {
+        goal: "stairsDown",
+        policy: "nearest",
+        depth: d0.config.dungeon.viewDepth,
+        hintSteps: d0.config.dungeon.lostHintSteps,
+        trace,
+      });
+      let hintGame = false;
+      for (const m of trace) {
+        const r = run(state, m.command === "move" ? { type: "dungeon.move" } : { type: "dungeon.turn", dir: m.command }, d0);
+        state = r.state;
+        if (r.events.some((e) => e.kind === "message" && e.key.startsWith("hint.lostExits"))) hintGame = true;
+        // 上り階段の上を通るときの尋ねは「そのまま」で閉じる（降り口の尋ねで終わる）
+        if (state.pendingChoice?.promptKey === "dungeon.stairsUp") state = run(state, { type: "event.choose", optionId: "stay" }, d0).state;
+        if (state.pendingChoice !== null || state.battle !== null || state.dive!.chest !== null) break;
+      }
+      expect(hintGame, `seed ${seed}`).toBe(w.hintFired);
+      if (w.hintFired) fired += 1;
+    }
+    expect(fired).toBeGreaterThan(0);
   });
 
   test("計測の道具（M25）DG-05 / DG-46: 同じ入力から同じ結果（決定的）。random の方針も同じシードなら同じで、シードが違えば歩きが変わる", () => {
