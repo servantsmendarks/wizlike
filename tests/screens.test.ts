@@ -1018,11 +1018,12 @@ describe("入力と Command", () => {
   // M7（2026-10-05）: 鍛えるは送る前に lowerInput（UI-44）し、rejected なら sync で戻すようにしたので、upgrade の分岐の期待を改めた
   // 2026-10-07（M10.5 追補・未定-22）: 確認の段は会話の箱で語らず見出し（townHeadingText）に出すので、upgradeConfirmLines の期待を「使わない」に替えた
   // M20 B-2: 触媒の行は段を替えた後に性能の 1 文（views/town の info）を語る（townFreshIntro で重ねない）。「語りなし」の期待を置き換えた
-  test("UI-52/TW-17/UI-44（M7・M20 B-2）強化: 触媒の行は段を替えてから性能の 1 文 info を語り（履歴の末尾 2 件と同じなら重ねない）、鍛えるは部位の段に戻して入力の UI を下げてから town.upgrade を送り、rejected なら sync で戻す。確認の段は upgradePreview の値を見出しに出す（ソースの検査）", () => {
+  // M25 B-1: 語る文は views/town の upgradePickLines（info と、warn の品に印を付けるときの一言を danger で。townFreshBlock で重ねない）に替えた
+  test("UI-52/TW-17/UI-44（M7・M20 B-2・M25 B-1）強化: 触媒の行は段を替えてから性能の 1 文 info（warn の品に印を付けるときは一言を danger で続けて）を語り（履歴の末尾 2 件と同じなら重ねない）、鍛えるは部位の段に戻して入力の UI を下げてから town.upgrade を送り、rejected なら sync で戻す。確認の段は upgradePreview の値を見出しに出す（ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     const body = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
     expect(body).toMatch(
-      /case "upPick": \{\s*townPage = e\.to;\s*syncControls\(\);\s*townFreshIntro\(\[e\.info\], play\.message\.history\(\)\.slice\(-TOWN_INTRO_DEDUP\)\)\.forEach\(\(x\) => void narrator\.say\(x, true\)\);\s*return;\s*\}/,
+      /case "upPick": \{\s*townPage = e\.to;\s*syncControls\(\);\s*upgradePickLines\(e, play\.message\.history\(\)\.slice\(-TOWN_INTRO_DEDUP\)\)\.forEach\(\(x\) => void \(x\.tone === undefined \? narrator\.say\(x\.text, true\) : narrator\.say\(x\.text, true, x\.tone\)\)\);\s*return;\s*\}/,
     );
     expect(body).toMatch(
       /case "upgrade":\s*townPage = \{ upSlot: e\.memberId \};\s*if \(townLowersInput\(e\)\) lowerInput\(\);\s*void run\(\{ type: "town\.upgrade", memberId: e\.memberId, slot: e\.slot, catalysts: e\.catalysts \}\)\.then\(\(r\) => \{\s*if \(r === null \|\| r\.rejected\) sync\(state\);\s*\}\);\s*return;/,
@@ -1080,7 +1081,10 @@ describe("入力と Command", () => {
     expect(shopItem).toContain("const text = m === null ? null : shopPreviewText(e.itemId, m, strings);");
     expect(shopItem).toContain("if (text !== null) void narrator.say(text, true);");
     expect(app).toContain("townFreshBlock(e.compare, recent).forEach((x) => void narrator.say(x, true));");
-    expect(app).toContain("townFreshIntro([e.info], play.message.history().slice(-TOWN_INTRO_DEDUP)).forEach((x) => void narrator.say(x, true));");
+    // M25 B-1: 触媒の 1 文と一言（upgradePickLines）はどちらも即時（一言は danger）
+    expect(app).toContain(
+      "upgradePickLines(e, play.message.history().slice(-TOWN_INTRO_DEDUP)).forEach((x) => void (x.tone === undefined ? narrator.say(x.text, true) : narrator.say(x.text, true, x.tone)));",
+    );
     const body = /const goTownPage = \(page: TownPage\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     expect(body).toContain("const upText = ");
     expect(body).toContain("texts.forEach((x) => void narrator.say(x, skip || x === upText));");

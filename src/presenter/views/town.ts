@@ -153,8 +153,11 @@ export type TownEntry =
   /** UI-77（M16）: 酒場の「用語」。押すと用語の一覧（UI-73 と同じ部品。コマンドは送らない。state を使わないので core の menu に項目を持たない） */
   | { kind: "rules"; label: string }
   /** TW-17: 触媒の行。押すと選択の印を付け外しした { upCat } へ（語りは出さない）。3 個選んだ後の未選択の行は disabled */
-  /** TW-17: 触媒の印の付け外し。info（M20 B-2）は押したときに会話の箱で語る性能の 1 文（upgradeCatalystInfo） */
-  | { kind: "upPick"; to: TownPage; label: string; disabled: boolean; info: string; tone?: "danger" }
+  /**
+   * TW-17: 触媒の印の付け外し。info（M20 B-2）は押したときに会話の箱で語る性能の 1 文（upgradeCatalystInfo）。
+   * warn（M25 B-1）は core の warn の品に印を付ける行（○ の行）だけが持つ一言 town.upgrade.catWarn（upgradeCatalystWarn。info の後に danger で語る）
+   */
+  | { kind: "upPick"; to: TownPage; label: string; disabled: boolean; info: string; warn?: string; tone?: "danger" }
   /** TW-17: 確認の「鍛える」。押すと town.upgrade（upgradePreview の block が null でなければ disabled） */
   | { kind: "upgrade"; memberId: string; slot: EquipSlot; catalysts: UpgradeCatalystRef[]; label: string; disabled: boolean }
   /**
@@ -598,6 +601,8 @@ export function townEntries(
         label: upgradeCatalystLabel(c, on, strings),
         disabled: !on && full,
         info: upgradeCatalystInfo(c, strings),
+        // M25 B-1（TW-17）: core の warn の品に印を付けるときだけ（外すときは無し）
+        ...(!on && c.warn ? { warn: upgradeCatalystWarn(c, strings) } : {}),
         ...cursedTone(c.cursed),
       };
     });
@@ -1054,15 +1059,38 @@ export function upgradeCatalystInfo(c: TownMenuUpgradeCatalyst, strings: Strings
 }
 
 /**
+ * TW-17（M25 B-1）: core の warn の品に触媒の印を付けたときの一言 town.upgrade.catWarn「{rarity}品だ。触媒にすると消え、オプションも残らない。」。
+ * rarity は strings の item.rarity.<id>（希少な / 伝説の。core の rarity から表示のために引く）。28 字 × 2 行に収める
+ */
+export function upgradeCatalystWarn(c: TownMenuUpgradeCatalyst, strings: Strings): string {
+  return s(strings, "town.upgrade.catWarn", { rarity: s(strings, `item.rarity.${c.rarity}`) });
+}
+
+/** M25 B-1: 会話の箱の 1 文と色（tone が無ければ既定の色） */
+export type TownSayLine = { text: string; tone?: "danger" };
+
+/**
+ * TW-17（M20 B-2・M25 B-1）: 触媒の行を押したときに会話の箱で語る文。性能の 1 文 info に、印を付ける行の warn（danger）を続ける。
+ * ひと続きの文として重ねない（townFreshBlock: 先頭の info が recent〔app は全文の履歴の末尾 TOWN_INTRO_DEDUP 件〕にあれば何も語らない。
+ * 同じ品を続けて付け外ししたときは 1 回だけ、の M20 の扱いのまま、一言は info と一緒に出るか省かれる）
+ */
+export function upgradePickLines(e: { info: string; warn?: string }, recent: readonly string[]): TownSayLine[] {
+  const texts = townFreshBlock(e.warn === undefined ? [e.info] : [e.info, e.warn], recent);
+  return texts.map((text, i) => (i === 1 ? { text, tone: "danger" } : { text }));
+}
+
+/**
  * TW-17 / IT-70（M16 の G-2）: 触媒の行「●{item} +{level}　{owner}」（town.upgrade.catOn / catOff・catRow・itemLv）。
  * 倉庫の品（M17。core の ownerId が null）の持ち主の欄は town.shop.menu.storage「倉庫」。
- * 行が一覧の行の文字の幅（39 単位 = 全角 19.5 字）を超えるときは、持ち主の欄を先頭 2 字 + item.owner.short（「{name}…」）に縮める（表示のための計算）
+ * 行が一覧の行の文字の幅（39 単位 = 全角 19.5 字）を超えるときは、持ち主の欄を先頭 2 字 + item.owner.short（「{name}…」）に縮める（表示のための計算）。
+ * M25 B-1: core の warn が真の品は ●○ の直後に town.upgrade.mark.rare「★」を付ける（「○★希少な長剣 +3　アルド」。幅はこの印を含めて測る）
  */
 export function upgradeCatalystLabel(c: TownMenuUpgradeCatalyst, on: boolean, strings: Strings): string {
   const key = on ? "town.upgrade.catOn" : "town.upgrade.catOff";
   const item = upgradeItemName(c.plainName, c.level, strings);
   const owner = c.ownerId === null ? s(strings, "town.shop.menu.storage") : c.ownerName;
-  const row = (o: string): string => s(strings, key, { name: s(strings, "town.upgrade.catRow", { item, owner: o }) });
+  const mark = c.warn ? s(strings, "town.upgrade.mark.rare") : "";
+  const row = (o: string): string => s(strings, key, { name: mark + s(strings, "town.upgrade.catRow", { item, owner: o }) });
   const full = row(owner);
   if (textUnits(full) <= LIST_ROW_UNITS) return full;
   return row(s(strings, "item.owner.short", { name: Array.from(owner).slice(0, 2).join("") }));

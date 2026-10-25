@@ -42,6 +42,8 @@ import {
   shopPreviewText,
   upgradeCatalystInfo,
   upgradeCatalystLabel,
+  upgradeCatalystWarn,
+  upgradePickLines,
   upgradeItemName,
   upgradePreviewText,
   upgradeConfirmSay,
@@ -400,6 +402,78 @@ describe("UI-52 街のページ", () => {
     const row = { instanceId: "i1", name: "短剣 +3", plainName: "短剣", level: 3, ownerId: null, ownerName: "", power: { attack: "1d4+3", ac: null, magicPower: null }, cursed: false, rarity: "normal" as const, warn: false };
     expect(upgradeCatalystLabel(row, false, S)).toBe("○短剣 +3　倉庫");
     expect(upgradeCatalystLabel(row, false, { ...S, "town.shop.menu.storage": "蔵" })).toBe("○短剣 +3　蔵");
+  });
+
+  test("UI-52/TW-17 M25 B-1 core の warn の触媒の行は ●○ の直後に ★（town.upgrade.mark.rare）。印を付ける行（○）だけが一言 warn を持ち、呪いの赤は今どおり。表示層は warn を読むだけ", () => {
+    const s = town({ c3: { name: "アアアアアア" } });
+    const rare = createItemInstance(s, { itemId: "long_sword", level: 3, rarity: "rare", identified: true });
+    const fine = createItemInstance(s, { itemId: "dagger", level: 0, rarity: "fine", identified: true });
+    const legend = createItemInstance(s, { itemId: "dagger", level: 1, rarity: "legendary", identified: true, cursed: true });
+    s.party[2]!.inventory.push(rare, fine, legend);
+    const m = menuOf(s);
+    expect(m.upgrade.members[0]!.catalysts.map((c) => c.warn)).toEqual([true, false, true]);
+    const sel = { memberId: "c1", slot: "weapon" as const, picked: [] as UpgradeCatalystRef[] };
+    const rows = townEntries({ upCat: sel }, m, S).filter((e) => e.kind === "upPick");
+    expect(rows.map((e) => [e.label, e.kind === "upPick" ? e.warn : null, e.kind === "upPick" ? e.tone : null])).toEqual([
+      ["○★希少な長剣 +3　アアアアアア", "希少な品だ。触媒にすると消え、オプションも残らない。", undefined],
+      ["○上質な短剣 +0　アアアアアア", undefined, undefined],
+      ["○★伝説の短剣 +1　アアアアアア", "伝説の品だ。触媒にすると消え、オプションも残らない。", "danger"],
+    ]);
+    // 上質の行（warn 偽）は欄を持たない（M20 の行の形のまま）
+    expect("warn" in rows[1]!).toBe(false);
+    // 付けた後の行（● 外す）は ★ のまま、一言は持たない
+    const on = { ...sel, picked: [{ memberId: "c3", instanceId: rare }] };
+    const after = townEntries({ upCat: on }, m, S).find((e) => e.kind === "upPick" && e.label.includes("長剣"))!;
+    expect(after.label).toBe("●★希少な長剣 +3　アアアアアア");
+    expect("warn" in after).toBe(false);
+    // 印の字は strings から（差し替えに追従）。M25 の値は ★ 1 つ
+    expect(S["town.upgrade.mark.rare"]).toBe("★");
+    const c = m.upgrade.members[0]!.catalysts[0]!;
+    expect(upgradeCatalystLabel(c, false, { ...S, "town.upgrade.mark.rare": "*" })).toBe("○*希少な長剣 +3　アアアアアア");
+    // warn は core の値だけを見る（rarity が rare でも warn 偽なら印を付けない）
+    expect(upgradeCatalystLabel({ ...c, warn: false }, false, S)).toBe("○希少な長剣 +3　アアアアアア");
+  });
+
+  test("UI-52/TW-17 M25 B-1 ★ の触媒の最悪の行（最も長い接頭辞 + 最も長いベースの名前 + 6 字の名前）: +12 は 38 単位・21 字で縮めない、+100 は 39 単位（22 字）で縮めない、+1000 は持ち主を縮めて 39 単位以内", () => {
+    const longBase = [...data.equipmentBases].sort((x, y) => Array.from(y.name).length - Array.from(x.name).length)[0]!;
+    const longRarity = (["rare", "legendary"] as const).slice().sort((x, y) => Array.from(S[`item.rarity.${y}`]!).length - Array.from(S[`item.rarity.${x}`]!).length)[0]!;
+    const plain = `${S[`item.rarity.${longRarity}`]}${longBase.name}`;
+    expect(Array.from(plain).length).toBe(8);
+    const row = (level: number) => ({ instanceId: "i1", name: plain, plainName: plain, level, ownerId: "c3", ownerName: "アアアアアア", power: { attack: null, ac: -1, magicPower: null }, cursed: false, rarity: longRarity, warn: true });
+    const l12 = upgradeCatalystLabel(row(12), false, S);
+    expect(l12).toBe(`○★${plain} +12　アアアアアア`);
+    expect([textUnits(l12), Array.from(l12).length]).toEqual([38, 21]);
+    const l100 = upgradeCatalystLabel(row(100), true, S);
+    expect(l100).toBe(`●★${plain} +100　アアアアアア`);
+    expect(textUnits(l100)).toBe(39);
+    expect(kinsokuLines(l100, 21)).toHaveLength(1);
+    const l1000 = upgradeCatalystLabel(row(1000), false, S);
+    expect(l1000).toBe(`○★${plain} +1000　アア…`);
+    expect(textUnits(l1000)).toBeLessThanOrEqual(39);
+  });
+
+  test("TW-17 M25 B-1 一言 town.upgrade.catWarn は「{rarity}品だ。…」（rarity は item.rarity.<id>）で 28 字 × 2 行に収まる。upgradePickLines は info の後に一言を danger で続け、info が履歴の末尾にあれば何も語らない", () => {
+    const base = { instanceId: "i1", name: "x", plainName: "x", level: 0, ownerId: null, ownerName: "", power: { attack: null, ac: null, magicPower: null }, cursed: false, warn: true };
+    for (const r of ["fine", "rare", "legendary"] as const) {
+      const w = upgradeCatalystWarn({ ...base, rarity: r }, S);
+      expect(w).toBe(`${S[`item.rarity.${r}`]}品だ。触媒にすると消え、オプションも残らない。`);
+      expect(kinsokuLines(w, 28).length, w).toBeLessThanOrEqual(2);
+    }
+    expect(upgradeCatalystWarn({ ...base, rarity: "legendary" }, S)).toBe("伝説の品だ。触媒にすると消え、オプションも残らない。");
+    expect(upgradeCatalystWarn({ ...base, rarity: "rare" }, { ...S, "town.upgrade.catWarn": "<{rarity}>" })).toBe("<希少な>");
+    const info = "長剣 +3: 攻撃 1d8+3 / AC — / 魔法攻撃力 —";
+    const warn = "希少な品だ。触媒にすると消え、オプションも残らない。";
+    expect(upgradePickLines({ info, warn }, [])).toEqual([{ text: info }, { text: warn, tone: "danger" }]);
+    expect(upgradePickLines({ info }, [])).toEqual([{ text: info }]);
+    // M20 の重ねない扱いのまま（同じ品を続けて付け外ししたときは 1 回だけ）。一言は info と一緒に出るか省かれる
+    expect(upgradePickLines({ info, warn }, [info, warn])).toEqual([]);
+    expect(upgradePickLines({ info }, [info, warn])).toEqual([]);
+    // 別の希少な品なら同じ一言が履歴の末尾にあっても続ける
+    expect(upgradePickLines({ info: "短剣 +0: 攻撃 1d4 / AC — / 魔法攻撃力 —", warn }, [info, warn])).toEqual([
+      { text: "短剣 +0: 攻撃 1d4 / AC — / 魔法攻撃力 —" },
+      { text: warn, tone: "danger" },
+    ]);
+    expect(TOWN_INTRO_DEDUP).toBe(2);
   });
 
   // 2026-10-07（M10.5 追補・未定-22）: 確認の段は会話の箱で語らず、問いを見出しに出し、対象と触媒の数を答えのボタンのラベルに出す。

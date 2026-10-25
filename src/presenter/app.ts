@@ -160,6 +160,7 @@ import {
   townMenuNotes,
   townPageIntro,
   upgradeConfirmSay,
+  upgradePickLines,
   shopPreviewText,
   townParent,
   townRepair,
@@ -881,8 +882,8 @@ export function createApp(o: {
             // TW-17: 触媒の印の付け外し。M20 B-2: 付け外しのたびにその品の性能の 1 文（views/town の info）を語る（履歴の末尾 2 件と同じ文は重ねない）
             townPage = e.to;
             syncControls();
-            // UI-43（M20 D-3）: 触媒の性能の 1 文は数値の行なので即時
-            townFreshIntro([e.info], play.message.history().slice(-TOWN_INTRO_DEDUP)).forEach((x) => void narrator.say(x, true));
+            // UI-43（M20 D-3）: 触媒の性能の 1 文は数値の行なので即時。M25 B-1: warn の品に印を付けたときはその後に一言を danger で（同じく即時。音は無し）
+            upgradePickLines(e, play.message.history().slice(-TOWN_INTRO_DEDUP)).forEach((x) => void (x.tone === undefined ? narrator.say(x.text, true) : narrator.say(x.text, true, x.tone)));
             return;
           }
           case "upgrade":
