@@ -281,7 +281,9 @@ export type Config = {
     templeCostPerLevel: number;
     darkCostPerLevel: number;
     cureCost: Record<CurableStatusId, number>;
-    uncurseCost: number;
+    /** TW-07（M24）【仮】: 解呪の料金（品ごと）= max(uncurseFeeMin, floor(売値（鑑定済みは sellPrice、未鑑定は見た目の appearanceSellPrice）× uncurseFeeRatio))。M23 までの uncurseCost（1 人 1 回分）を置き換えた */
+    uncurseFeeRatio: number;
+    uncurseFeeMin: number;
     /** TW-17（M21 B-1）【仮】: 強化の料金 = 結果の Lv（成功のとき。大成功の +1 は含めない）× upgradeFeePerLevel。M7〜M20 の upgradeBase × (対象Lv + 1) を置き換えた */
     upgradeFeePerLevel: number;
     /** TW-17【仮】: 成功率の基礎（%） */

@@ -395,7 +395,8 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       templeCostPerLevel: I(NON_NEG),
       darkCostPerLevel: I(NON_NEG),
       cureCost: F(Object.fromEntries(CURABLE_STATUS_IDS.map((k) => [k, I(NON_NEG)]))),
-      uncurseCost: I(NON_NEG),
+      uncurseFeeRatio: N({ min: 0 }), // TW-07（M24）【仮】
+      uncurseFeeMin: I(NON_NEG),
       // TW-17（M7）【仮】
       upgradeFeePerLevel: I(NON_NEG),
       upgradeRateBase: I(PERCENT),

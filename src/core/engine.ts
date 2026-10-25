@@ -257,11 +257,11 @@ export function execute(state: GameState, command: Command, data: GameData): Exe
       return finish(ctx);
     }
     case "town.temple": {
-      const c = command as { memberId?: unknown; service?: unknown };
-      const r = checkTemple(state, c.memberId, c.service, data);
+      const c = command as { memberId?: unknown; service?: unknown; instanceId?: unknown };
+      const r = checkTemple(state, c.memberId, c.service, data, c.instanceId);
       if (r !== null) return reject(state, "town.temple", r);
       const ctx = makeContext(cloneState(state), data);
-      templeService(ctx, c.memberId as string, c.service as TempleService);
+      templeService(ctx, c.memberId as string, c.service as TempleService, c.instanceId as string | undefined);
       return finish(ctx);
     }
     case "town.mercy": {

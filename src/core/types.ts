@@ -542,7 +542,8 @@ export type Command =
   | { type: "game.new"; party: PartySetup }
   | { type: "town.enter" }
   | { type: "town.inn"; rank: number }
-  | { type: "town.temple"; memberId: string; service: "resurrect" | "cure" | "uncurse" }
+  /** TW-07（M24）: instanceId は解呪（uncurse）の品。uncurse のときだけ要る（rules/town の uncurseTargets のどれか） */
+  | { type: "town.temple"; memberId: string; service: "resurrect" | "cure" | "uncurse"; instanceId?: string }
   | { type: "town.dark"; memberId: string }
   | { type: "town.shop"; action: ShopAction }
   | { type: "town.bank"; amount: number } // 正で預け入れ、負で引き出し
@@ -776,6 +777,13 @@ export type TownMenuInnParty = {
   nearest: { name: string; expToNext: number } | null;
 };
 export type TownMenuTempleRow = { memberId: string; name: string; cost: number; affordable: boolean };
+/**
+ * TW-07（M24）: 解呪の品の行。name は表示名（itemDisplayName。未鑑定なら見た目の名前）、fee は uncurseFee、affordable = gold >= fee、
+ * cursed は呪いが見えている（鑑定済み）か。未鑑定の装備中の品は偽（中身を漏らさない。IT-12）
+ */
+export type TownMenuUncurseItem = { instanceId: string; name: string; fee: number; affordable: boolean; cursed: boolean };
+/** TW-07（M24）: 解呪の人の行。count は対象の品の数（items の長さ。0 なら表示層が dim）、items は uncurseTargets の順 */
+export type TownMenuUncurseRow = { memberId: string; name: string; count: number; items: TownMenuUncurseItem[] };
 export type TownMenuShopItem = { itemId: string; name: string; price: number; affordable: boolean };
 /**
  * TW-05（M16）: 汎用装備の性能の下見（rules/shop.ts shopItemPreview。鑑定済み・通常・オプションなしの Lv の実体を合成して itemPower を呼んだ値）。
@@ -888,13 +896,17 @@ export type TownMenu = {
     resurrect: TownMenuTempleRow[];
     /** life alive で毒・麻痺・石化のどれかを持つ者。cost = 該当状態の cureCost の合計 */
     cure: TownMenuTempleRow[];
-    /** 呪われた品を装備している者（life を問わない）。cost = uncurseCost */
-    uncurse: TownMenuTempleRow[];
+    /**
+     * TW-07（M24）: 解呪。誰かに対象の品（uncurseTargets）があればパーティ全員（並び順。life を問わない。対象の無い者は count 0）、
+     * 誰にも無ければ []（M23 までは呪われた品を装備している者だけで、cost = uncurseCost の 1 回分）
+     */
+    uncurse: TownMenuUncurseRow[];
     /**
      * TW-07（M18 5-4）: 最初の段（蘇生・治療・解呪）の料金の目安。perLevel = templeCostPerLevel、
-     * cureFrom = cureCost の最小値（治療 1 つ分）、uncurse = uncurseCost。対象の有無に関わらず config の値
+     * cureFrom = cureCost の最小値（治療 1 つ分）、uncurse = { ratio: uncurseFeeRatio, min: uncurseFeeMin }（M24。M23 までは uncurseCost）。
+     * 対象の有無に関わらず config の値
      */
-    pricing: { perLevel: number; cureFrom: number; uncurse: number };
+    pricing: { perLevel: number; cureFrom: number; uncurse: { ratio: number; min: number } };
   };
   /** TW-08 闇魔術: life ash の者（並び順）。cost = level × darkCostPerLevel、affordable = gold >= cost */
   dark: TownMenuTempleRow[];

@@ -210,7 +210,7 @@
   "town.temple.resurrectOk": "{name}は目を開けた。",
   "town.temple.resurrectFail": "祈りは届かなかった。{name}は灰になった。",
   "town.temple.cured": "{name}の体から不調が抜けた。",
-  "town.temple.uncursed": "{name}の{item}は呪いとともに崩れ落ちた。",
+  "town.temple.uncursed": "{name}の{item}から呪いが抜けた。",
   "town.shop.bought": "{name}は{item}を買った。（{cost} G）",
   "town.shop.identified": "{name}は{old}を鑑定してもらった。{item}だった。（{cost} G）",
   "town.shop.identifiedPower": "{item}: 攻撃 {attack} / AC {ac} / 魔法攻撃力 {magic}",
@@ -420,7 +420,7 @@
   "town.temple.row": "{name}　{cost} G",
   "town.temple.resurrectRow": "蘇生　Lv×{perLevel} G",
   "town.temple.cureRow": "治療（麻痺・石化・毒）　{cost} G〜",
-  "town.temple.uncurseRow": "解呪　{cost} G",
+  "town.temple.uncurseRow": "解呪　売値×{ratio}（最低 {min} G）",
   "town.temple.none": "その必要がある者はいない。",
 
   "dungeon.enterAgain": "{dungeon}へ潜る。迷宮は潜るたびに形を変える。前回の地図は役に立たない。",

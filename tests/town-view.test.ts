@@ -194,7 +194,7 @@ describe("UI-52 街のページ", () => {
     expect(townEntries("temple", m, S)).toEqual([
       { kind: "page", to: { temple: "resurrect" }, label: "蘇生　Lv×100 G" },
       { kind: "page", to: { temple: "cure" }, label: "治療（麻痺・石化・毒）　50 G〜" },
-      { kind: "page", to: { temple: "uncurse" }, label: "解呪　200 G" },
+      { kind: "page", to: { temple: "uncurse" }, label: "解呪　売値×2（最低 50 G）" },
       back,
     ]);
     // 蘇生 1 × 100 = 100 ≤ 200 → 押せる
@@ -215,7 +215,7 @@ describe("UI-52 街のページ", () => {
     const s = town();
     s.party[0]!.equipment.weapon = cursedDagger(s, true);
     expect(townEntries({ temple: "uncurse" }, menuOf(s), S)).toEqual([
-      { kind: "temple", service: "uncurse", memberId: "c1", label: "アルド　200 G", disabled: false },
+      { kind: "temple", service: "uncurse", memberId: "c1", label: "アルド", disabled: false },
       back,
     ]);
   });
@@ -2331,20 +2331,20 @@ describe("TW-04/UI-52（M18 5-3）宿屋の見出しの 2 行目と泊まった�
 });
 
 describe("TW-07/UI-52（M18 5-4）寺院の最初の段の料金の目安", () => {
-  test("TW-07 townMenu.temple.pricing は config の templeCostPerLevel・cureCost の最小値・uncurseCost（対象がいなくても出る）。行は town.temple.<sv>Row に値を入れるだけ", () => {
+  test("TW-07 townMenu.temple.pricing は config の templeCostPerLevel・cureCost の最小値・解呪の uncurseFeeRatio と uncurseFeeMin（M24。対象がいなくても出る）。行は town.temple.<sv>Row に値を入れるだけ", () => {
     const m = menuOf(town());
     const e = data.config.economy;
-    expect(m.temple.pricing).toEqual({ perLevel: e.templeCostPerLevel, cureFrom: Math.min(...Object.values(e.cureCost)), uncurse: e.uncurseCost });
-    expect(m.temple.pricing).toEqual({ perLevel: 100, cureFrom: 50, uncurse: 200 });
+    expect(m.temple.pricing).toEqual({ perLevel: e.templeCostPerLevel, cureFrom: Math.min(...Object.values(e.cureCost)), uncurse: { ratio: e.uncurseFeeRatio, min: e.uncurseFeeMin } });
+    expect(m.temple.pricing).toEqual({ perLevel: 100, cureFrom: 50, uncurse: { ratio: 2, min: 50 } });
     expect(m.temple.resurrect).toEqual([]);
     // 表示層は config を読まず menu の値を入れる（menu を差し替えれば行も変わる）
-    const m2: TownMenu = { ...m, temple: { ...m.temple, pricing: { perLevel: 7, cureFrom: 8, uncurse: 9 } } };
-    expect(townEntries("temple", m2, S).map((x) => x.label)).toEqual(["蘇生　Lv×7 G", "治療（麻痺・石化・毒）　8 G〜", "解呪　9 G", S["common.back"]]);
+    const m2: TownMenu = { ...m, temple: { ...m.temple, pricing: { perLevel: 7, cureFrom: 8, uncurse: { ratio: 3, min: 9 } } } };
+    expect(townEntries("temple", m2, S).map((x) => x.label)).toEqual(["蘇生　Lv×7 G", "治療（麻痺・石化・毒）　8 G〜", "解呪　売値×3（最低 9 G）", S["common.back"]]);
   });
 
   test("TW-07 料金の目安の行は最悪の値（6 桁）でも一覧の 21 字（39 単位）に収まる。説明 town.menu.note.temple は「蘇生・治療・解呪」", () => {
     for (const k of ["town.temple.resurrectRow", "town.temple.cureRow", "town.temple.uncurseRow"]) {
-      const label = formatMessage(S[k]!, { perLevel: 999999, cost: 999999 });
+      const label = formatMessage(S[k]!, { perLevel: 999999, cost: 999999, ratio: 9.5, min: 999999 });
       expect(label, k).not.toContain("{");
       expect(textUnits(label), label).toBeLessThanOrEqual(39);
     }

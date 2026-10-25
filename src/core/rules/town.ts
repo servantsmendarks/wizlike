@@ -7,16 +7,16 @@
 import type { CurableStatusId, GameData, StatBlock, StatusId } from "../data/index";
 import { CURABLE_STATUS_IDS, EQUIP_SLOTS, STAT_KEYS } from "../data/index";
 import { randInt } from "../rng";
-import { classOf, destroyItemInstance, dungeonOf, findBase, itemDisplayName, memberById, moraleOf, raisesMorale, spellOf } from "../state";
-import type { Character, GameState, RuleContext, TownMenu } from "../types";
+import { classOf, dungeonOf, findBase, itemDisplayName, memberById, moraleOf, raisesMorale, spellOf } from "../state";
+import type { Character, GameState, ItemInstance, RuleContext, TownMenu, TownMenuUncurseRow } from "../types";
 import { canAct } from "./combat-calc";
 import { clampToMax, effectiveStats, equipStats } from "./equip-stats";
 import { canLevelUp, expFor, levelUpWhilePossible, mpGainFor } from "./growth";
 import { hasGossip } from "./gossip";
-import { ceilRatio } from "./ratio";
+import { ceilRatio, floorRatio } from "./ratio";
 import { clearAllStatus } from "./field";
 import { capSan, overSan, restoreSan } from "./san";
-import { shopMenu } from "./shop";
+import { appearanceSellPrice, sellPrice, shopMenu } from "./shop";
 import { bankMenu } from "./bank";
 import { settleOverflow, storageMenu } from "./storage";
 import { upgradeMenu } from "./upgrade";
@@ -51,17 +51,43 @@ function cureOf(ch: Character, data: GameData): { statuses: CurableStatusId[]; c
   return { statuses, cost };
 }
 
-/** TW-07 解呪: EQUIP_SLOTS の順で、装備中の呪われた品（実体の cursed。IT-32）の実体 id */
-function cursedEquipped(state: GameState, ch: Character): string[] {
+/**
+ * TW-07 解呪（M24）: 対象の品の実体 id。装備中の呪われた品（実体の cursed。IT-32。鑑定の有無を問わない。CH-77 の取り憑きの品を含む）を
+ * EQUIP_SLOTS の順 → 所持品の呪われた鑑定済みの品を inventory の順（未鑑定の所持品は呪いが見えないので出さない）。
+ * M23 までは装備中の品だけ（cursedEquipped）
+ */
+function cursedTargetsOf(state: GameState, ch: Character): string[] {
   const out: string[] = [];
+  const instOf = (id: string): ItemInstance => {
+    const inst = state.items[id];
+    if (inst === undefined) throw new Error(`uncurseTargets: unknown item instance ${id}`);
+    return inst;
+  };
   for (const slot of EQUIP_SLOTS) {
     const id = ch.equipment[slot];
-    if (id === null) continue;
-    const inst = state.items[id];
-    if (inst === undefined) throw new Error(`cursedEquipped: unknown item instance ${id}`);
-    if (inst.cursed) out.push(id);
+    if (id !== null && instOf(id).cursed) out.push(id);
+  }
+  for (const id of ch.inventory) {
+    const inst = instOf(id);
+    if (inst.cursed && inst.identified) out.push(id);
   }
   return out;
+}
+
+/** TW-07（M24）: memberId の者の解呪の対象（cursedTargetsOf の順）。その者がいなければ [] */
+export function uncurseTargets(state: GameState, memberId: string): string[] {
+  const ch = memberById(state, memberId);
+  return ch === null ? [] : cursedTargetsOf(state, ch);
+}
+
+/**
+ * TW-07（M24）【仮】: 解呪の料金 = max(uncurseFeeMin, floor(売値 × uncurseFeeRatio))。売値は鑑定済みなら sellPrice（IT-61。呪いの効果は数えない。
+ * ユニークは price × sellRatio）、未鑑定なら見た目の品種の売値 appearanceSellPrice（中身を料金に出さない。IT-12 / IT-65 の鑑定料と同じ考え）。乱数を引かない
+ */
+export function uncurseFee(data: GameData, inst: ItemInstance): number {
+  const e = data.config.economy;
+  const price = inst.identified ? sellPrice(inst, data) : appearanceSellPrice(inst, data);
+  return Math.max(e.uncurseFeeMin, floorRatio(price, e.uncurseFeeRatio));
 }
 
 // ---------------------------------------------------------------------------
@@ -236,8 +262,8 @@ function templeQuote(
   data: GameData,
   ch: Character,
   service: TempleService,
+  instanceId?: unknown,
 ): { ok: true; cost: number } | { ok: false; reason: string } {
-  const e = data.config.economy;
   switch (service) {
     case "resurrect":
       if (ch.life !== "dead") return { ok: false, reason: "not dead" };
@@ -248,19 +274,26 @@ function templeQuote(
       if (c.statuses.length === 0) return { ok: false, reason: "nothing to cure" };
       return { ok: true, cost: c.cost };
     }
-    case "uncurse":
-      if (cursedEquipped(state, ch).length === 0) return { ok: false, reason: "nothing cursed" };
-      return { ok: true, cost: e.uncurseCost };
+    case "uncurse": {
+      // TW-07（M24）: 対象が無い → nothing cursed、instanceId が対象に無い → bad item
+      const targets = cursedTargetsOf(state, ch);
+      if (targets.length === 0) return { ok: false, reason: "nothing cursed" };
+      if (typeof instanceId !== "string" || !targets.includes(instanceId)) return { ok: false, reason: "bad item" };
+      return { ok: true, cost: uncurseFee(data, state.items[instanceId]!) };
+    }
   }
 }
 
-/** town.temple を受け付けない理由 */
-export function checkTemple(state: GameState, memberId: unknown, service: unknown, data: GameData): string | null {
+/**
+ * town.temple を受け付けない理由。順は wrong screen → no such member → bad service → サービスごと（解呪は nothing cursed → bad item。TW-07 M24）
+ * → not enough gold。instanceId は解呪のときだけ見る
+ */
+export function checkTemple(state: GameState, memberId: unknown, service: unknown, data: GameData, instanceId?: unknown): string | null {
   if (!inTown(state)) return "wrong screen";
   const ch = typeof memberId === "string" ? memberById(state, memberId) : null;
   if (ch === null) return "no such member";
   if (typeof service !== "string" || !(TEMPLE_SERVICES as readonly string[]).includes(service)) return "bad service";
-  const q = templeQuote(state, data, ch, service as TempleService);
+  const q = templeQuote(state, data, ch, service as TempleService, instanceId);
   if (!q.ok) return q.reason;
   if (state.gold < q.cost) return "not enough gold";
   return null;
@@ -271,13 +304,15 @@ export function checkTemple(state: GameState, memberId: unknown, service: unknow
  * - resurrect: 払う → message resurrectRoll → d100（dice イベントなし）≤ min(templeSuccessMax, base + vit × perVit) なら
  *   alive・HP 1（lifeChanged, hpChanged）と resurrectOk、でなければ ash（lifeChanged）と resurrectFail。status はすべて外す（CH-45。statusChanged off）、MP・SAN はそのまま
  * - cure: 払う → 毒・麻痺・石化を status の順に外す（statusChanged off）→ message town.temple.cured
- * - uncurse: uncurseCost を 1 回払う → 装備中の呪われた品を EQUIP_SLOTS の順に 1 個ずつ失う（message town.temple.uncursed）
+ * - uncurse（M24）: 品 instanceId の uncurseFee を払う → その品の cursed を偽、curseEffect を null にする（品は消えない。装備中なら装備のまま、外せるようになる）
+ *   → message town.temple.uncursed{name, item}（item は解呪の前の表示名）→ clampToMax（CH-14。負の効果が消えて最大値は上がる側なので現在値は変わらない）。
+ *   M23 までは uncurseCost を 1 回払い、装備中の呪われた品を全部失った
  */
-export function templeService(ctx: RuleContext, memberId: string, service: TempleService): void {
+export function templeService(ctx: RuleContext, memberId: string, service: TempleService, instanceId?: string): void {
   const { state, data } = ctx;
   const ch = memberById(state, memberId);
   if (ch === null) throw new Error(`templeService: unknown member ${memberId}`);
-  const q = templeQuote(state, data, ch, service);
+  const q = templeQuote(state, data, ch, service, instanceId);
   if (!q.ok) throw new Error(`templeService: ${q.reason}`);
   state.gold -= q.cost;
   switch (service) {
@@ -296,12 +331,13 @@ export function templeService(ctx: RuleContext, memberId: string, service: Templ
       return;
     }
     case "uncurse": {
-      for (const id of cursedEquipped(state, ch)) {
-        const item = itemDisplayName(state, data, id);
-        destroyItemInstance(state, ch, id);
-        ctx.events.push({ kind: "message", key: "town.temple.uncursed", params: { name: ch.name, item } });
-      }
-      clampToMax(ctx, ch); // CH-14: 品を失って実効の最大値が下がったら現在値を止める
+      const id = instanceId as string; // templeQuote が対象にあることを確かめた
+      const item = itemDisplayName(state, data, id);
+      const inst = state.items[id]!;
+      inst.cursed = false;
+      inst.curseEffect = null;
+      ctx.events.push({ kind: "message", key: "town.temple.uncursed", params: { name: ch.name, item } });
+      clampToMax(ctx, ch); // CH-14
       return;
     }
   }
@@ -418,6 +454,22 @@ function innPartyOf(state: GameState, data: GameData): TownMenu["innParty"] {
   return out;
 }
 
+/**
+ * TW-07（M24）: 解呪の人の行。誰かに対象があればパーティ全員（並び順。life を問わない）、誰にも無ければ []。
+ * 品は cursedTargetsOf の順で、名前は表示名（鑑定を反映）、料金は uncurseFee、cursed は呪いが見えているか（鑑定済み）
+ */
+function uncurseRows(state: GameState, data: GameData): TownMenuUncurseRow[] {
+  const rows = state.party.map((ch): TownMenuUncurseRow => {
+    const items = cursedTargetsOf(state, ch).map((id) => {
+      const inst = state.items[id]!;
+      const fee = uncurseFee(data, inst);
+      return { instanceId: id, name: itemDisplayName(state, data, id), fee, affordable: state.gold >= fee, cursed: inst.identified };
+    });
+    return { memberId: ch.id, name: ch.name, count: items.length, items };
+  });
+  return rows.some((r) => r.count > 0) ? rows : [];
+}
+
 /** UI-52 の街のメニューの値。screen が town でなければ null */
 export function townMenu(state: GameState, data: GameData): TownMenu | null {
   if (state.screen !== "town") return null;
@@ -446,12 +498,12 @@ export function townMenu(state: GameState, data: GameData): TownMenu | null {
     temple: {
       resurrect: rows("resurrect"),
       cure: rows("cure"),
-      uncurse: rows("uncurse"),
+      uncurse: uncurseRows(state, data), // TW-07（M24）
       // TW-07（M18 5-4）: 最初の段の料金の目安
       pricing: {
         perLevel: data.config.economy.templeCostPerLevel,
         cureFrom: Math.min(...Object.values(data.config.economy.cureCost)),
-        uncurse: data.config.economy.uncurseCost,
+        uncurse: { ratio: data.config.economy.uncurseFeeRatio, min: data.config.economy.uncurseFeeMin }, // M24
       },
     },
     dark: state.party.flatMap((ch) => {

@@ -239,6 +239,15 @@ describe("data: config.json", () => {
     expectIssue((r) => (r.config.economy.upgradeMaxCatalysts = 0), "config.json", "economy.upgradeMaxCatalysts: expected integer >= 1, got 0");
     expectIssue((r) => delete r.config.economy.upgradeDecay, "config.json", "economy.upgradeDecay: missing required field");
   });
+  test("data: TW-07 economy.uncurseFeeRatio（2）・uncurseFeeMin（50）【仮】の検証。M24: uncurseCost は廃止", () => {
+    const e = config.economy;
+    expect([e.uncurseFeeRatio, e.uncurseFeeMin]).toEqual([2, 50]);
+    expect("uncurseCost" in e).toBe(false);
+    expectIssue((r) => (r.config.economy.uncurseFeeRatio = -0.5), "config.json", "economy.uncurseFeeRatio: expected number >= 0, got -0.5");
+    expectIssue((r) => (r.config.economy.uncurseFeeMin = 1.5), "config.json", "economy.uncurseFeeMin: expected integer");
+    expectIssue((r) => delete r.config.economy.uncurseFeeMin, "config.json", "economy.uncurseFeeMin: missing required field");
+    expect(issuesOf((r) => (r.config.economy.uncurseFeeRatio = 2.5))).toEqual([]);
+  });
   test("data: CB-45/CH-53 san.randomDefendChance は 0..100 の整数【仮】", () => {
     expect(config.san.randomDefendChance).toBe(50);
     expectIssue((r) => (r.config.san.randomDefendChance = 101), "config.json", "san.randomDefendChance: expected integer in 0..100, got 101");

@@ -15,8 +15,9 @@ import { memberSheet } from "../src/core/rules/item-view";
 import { identifyFeeOf, sellPrice, shopItemPreview, shopPrice, shopSellPrice } from "../src/core/rules/shop";
 import { expFor } from "../src/core/rules/growth";
 import { settleOverflow } from "../src/core/rules/storage";
-import { arriveTown, classChangeOptions, mercyEligible, resurrectCostOf, returnToTown, townMenu } from "../src/core/rules/town";
-import { cloneState, createItemInstance, makeContext } from "../src/core/state";
+import { arriveTown, classChangeOptions, mercyEligible, resurrectCostOf, returnToTown, townMenu, uncurseFee, uncurseTargets } from "../src/core/rules/town";
+import { checkUnequip } from "../src/core/rules/camp";
+import { cloneState, createItemInstance, itemDisplayName, makeContext } from "../src/core/state";
 import type { Character, Command, GameEvent, GameState, ItemOptionRoll } from "../src/core/types";
 import { ctxFor, data, expectKnownStringKeys, expectStateInvariants, loadFreshData, loadRuleData, newGame, seedWithFirstD100 } from "./helpers/core";
 import { cursedDagger } from "./helpers/items";
@@ -640,18 +641,77 @@ describe("TW-07 寺院（town.temple）", () => {
     return { s, inst };
   }
 
-  test("TW-07 解呪: 装備中の呪われた品を失い、uncurseCost 200 を 1 回払う（dead の者も受けられる）", () => {
+  test("TW-07 解呪は品ごとに max(50, 売値×2) を払い、品は呪いと curseEffect が消えて残る（装備中は装備のまま、外せる。dead の者も受けられる）", () => {
     for (const patch of [{}, DEAD]) {
       const { s, inst } = withCursed(town({ c2: patch }));
-      const r = ok(s, { type: "town.temple", memberId: "c2", service: "uncurse" });
-      expect(r.events).toEqual([
-        { kind: "message", key: "town.temple.uncursed", params: { name: "ベルク", item: "短剣" } },
-      ]);
-      expect(r.state.gold).toBe(100);
-      expect(r.state.items[inst]).toBeUndefined();
-      expect(member(r.state, "c2").equipment.weapon).toBeNull();
+      expect(checkUnequip(s, data, "c2", "weapon")).toBe("cursed");
+      // 短剣（価格 15）の売値 floor(15 × 0.5) = 7 → 7 × 2 = 14 < 50 → 最低の 50
+      const r = ok(s, { type: "town.temple", memberId: "c2", service: "uncurse", instanceId: inst });
+      expect(r.events).toEqual([{ kind: "message", key: "town.temple.uncursed", params: { name: "ベルク", item: "短剣" } }]);
+      expect(r.state.gold).toBe(250);
+      expect(r.state.items[inst]).toMatchObject({ itemId: "dagger", cursed: false, curseEffect: null, options: [] });
+      expect(member(r.state, "c2").equipment.weapon).toBe(inst);
       expect(member(r.state, "c2").inventory).toEqual(["i5"]);
+      expect(checkUnequip(r.state, data, "c2", "weapon")).toBeNull();
+      expect(r.state.rng).toEqual(s.rng);
+      expectStateInvariants(r.state);
     }
+    // 売値 × 2 が 50 を超える品: 短剣 Lv5 + 段階 2 のオプション → floor(15 × 0.5 × (1 + 0.5 × 5)) + 40 = 26 + 40 = 66 → 132
+    const s = town({}, 500);
+    const opt: ItemOptionRoll = { optionId: "str", tier: 2, value: 2 };
+    const id = createItemInstance(s, { itemId: "dagger", identified: true, level: 5, rarity: "fine", options: [opt], cursed: true, curseEffect: { optionId: "agi", tier: 1, value: -1 } });
+    member(s, "c2").inventory.push(id);
+    expect(sellPrice(s.items[id]!, data)).toBe(66);
+    expect(uncurseFee(data, s.items[id]!)).toBe(132);
+    const row = townMenu(s, data)!.temple.uncurse.find((x) => x.memberId === "c2")!;
+    expect(row.items).toEqual([{ instanceId: id, name: itemDisplayName(s, data, id), fee: 132, affordable: true, cursed: true }]);
+    const r = ok(s, { type: "town.temple", memberId: "c2", service: "uncurse", instanceId: id });
+    expect(r.state.gold).toBe(500 - 132);
+    expect(r.state.items[id]).toMatchObject({ cursed: false, curseEffect: null, options: [opt], level: 5 });
+    expect(member(r.state, "c2").inventory).toContain(id);
+  });
+
+  test("TW-07 解呪の後の最大値は上がる側で、現在値は変わらない（CH-14 の clampToMax は下げるだけ）", () => {
+    const s = town({}, 300);
+    const id = createItemInstance(s, { itemId: "dagger", identified: true, cursed: true, curseEffect: { optionId: "hp", tier: 1, value: -3 } });
+    const c2 = member(s, "c2");
+    c2.inventory.push(c2.equipment.weapon!);
+    c2.equipment.weapon = id;
+    const hp = c2.hp;
+    const r = ok(s, { type: "town.temple", memberId: "c2", service: "uncurse", instanceId: id });
+    expect(r.events.filter((e) => e.kind === "hpChanged")).toEqual([]);
+    expect(member(r.state, "c2").hp).toBe(hp);
+  });
+
+  test("TW-07 未鑑定の装備中の呪われた品は見た目の売値で払える。所持品の未鑑定の呪われた品は対象に出ない", () => {
+    const s = town({}, 300);
+    // 本当の売値は 66（料金 132）だが、未鑑定なので見た目の短剣の売値 7 → 14 → 最低の 50
+    const id = createItemInstance(s, { itemId: "dagger", identified: false, level: 5, rarity: "fine", options: [{ optionId: "str", tier: 2, value: 2 }], cursed: true, curseEffect: { optionId: "agi", tier: 1, value: -1 } });
+    const c2 = member(s, "c2");
+    c2.inventory.push(c2.equipment.weapon!);
+    c2.equipment.weapon = id;
+    const hidden = cursedDagger(s, false);
+    c2.inventory.push(hidden);
+    const known = cursedDagger(s, true);
+    c2.inventory.push(known);
+    expect(uncurseTargets(s, "c2")).toEqual([id, known]);
+    expect(uncurseFee(data, s.items[id]!)).toBe(50);
+    const row = townMenu(s, data)!.temple.uncurse.find((x) => x.memberId === "c2")!;
+    expect(row).toEqual({
+      memberId: "c2",
+      name: "ベルク",
+      count: 2,
+      items: [
+        { instanceId: id, name: "短い刃？", fee: 50, affordable: true, cursed: false },
+        { instanceId: known, name: "短剣", fee: 50, affordable: true, cursed: true },
+      ],
+    });
+    expectRejected(s, { type: "town.temple", memberId: "c2", service: "uncurse", instanceId: hidden }, "bad item");
+    const r = ok(s, { type: "town.temple", memberId: "c2", service: "uncurse", instanceId: id });
+    expect(r.events).toEqual([{ kind: "message", key: "town.temple.uncursed", params: { name: "ベルク", item: "短い刃？" } }]);
+    expect(r.state.gold).toBe(250);
+    expect(r.state.items[id]).toMatchObject({ identified: false, cursed: false, curseEffect: null });
+    expect(uncurseTargets(r.state, "c2")).toEqual([known]);
   });
 
   test("TW-07/IT-32 解呪の対象は実体の cursed で決まる（M7。同じ短剣のベースでも呪われていない実体は対象外）", () => {
@@ -660,18 +720,41 @@ describe("TW-07 寺院（town.temple）", () => {
     const c2 = member(s, "c2");
     c2.inventory.push(c2.equipment.weapon!);
     c2.equipment.weapon = dagger;
-    expectRejected(s, { type: "town.temple", memberId: "c2", service: "uncurse" }, "nothing cursed");
+    expectRejected(s, { type: "town.temple", memberId: "c2", service: "uncurse", instanceId: dagger }, "nothing cursed");
     s.items[dagger]!.cursed = true;
-    const r = ok(s, { type: "town.temple", memberId: "c2", service: "uncurse" });
-    expect(r.state.items[dagger]).toBeUndefined();
+    const r = ok(s, { type: "town.temple", memberId: "c2", service: "uncurse", instanceId: dagger });
+    expect(r.state.items[dagger]!.cursed).toBe(false);
   });
 
-  test("TW-07 解呪の rejected: 呪われた品を装備していない（inventory にあるだけでも）、所持金不足", () => {
+  test("TW-07 解呪の rejected の順: nothing cursed → bad item → not enough gold", () => {
     expectRejected(town(), { type: "town.temple", memberId: "c2", service: "uncurse" }, "nothing cursed");
-    const s = town();
-    member(s, "c2").inventory.push(cursedDagger(s, true));
-    expectRejected(s, { type: "town.temple", memberId: "c2", service: "uncurse" }, "nothing cursed");
-    expectRejected(withCursed(town({}, 199)).s, { type: "town.temple", memberId: "c2", service: "uncurse" }, "not enough gold");
+    // 所持品の未鑑定の呪われた品だけ → 対象が無い
+    const s0 = town();
+    const hidden = cursedDagger(s0, false);
+    member(s0, "c2").inventory.push(hidden);
+    expectRejected(s0, { type: "town.temple", memberId: "c2", service: "uncurse", instanceId: hidden }, "nothing cursed");
+    // 対象はあるが instanceId が無い・対象に無い・他の者の品（所持金が足りなくても bad item が先）
+    const { s, inst } = withCursed(town({}, 49));
+    const other = member(s, "c3").equipment.weapon!;
+    for (const bad of [undefined, "nope", other, 7]) {
+      const cmd = { type: "town.temple", memberId: "c2", service: "uncurse", ...(bad === undefined ? {} : { instanceId: bad }) } as Command;
+      expectRejected(s, cmd, "bad item");
+    }
+    expectRejected(s, { type: "town.temple", memberId: "c3", service: "uncurse", instanceId: inst }, "nothing cursed");
+    expectRejected(s, { type: "town.temple", memberId: "c2", service: "uncurse", instanceId: inst }, "not enough gold");
+    s.gold = 50;
+    ok(s, { type: "town.temple", memberId: "c2", service: "uncurse", instanceId: inst });
+  });
+
+  test("TW-07 ユニークの料金は price × sellRatio × 2（オプション・Lv に関わらない）", () => {
+    const s = town({}, 2000);
+    const u = data.uniques.find((x) => x.id === "twin_tongue_dagger")!;
+    const id = createItemInstance(s, { itemId: u.base, identified: true, rarity: "legendary", uniqueId: u.id, cursed: true, curseEffect: { optionId: "str", tier: 1, value: -1 } });
+    member(s, "c2").inventory.push(id);
+    expect(uncurseFee(data, s.items[id]!)).toBe(Math.floor(u.price * data.config.economy.sellRatio) * 2);
+    expect(uncurseFee(data, s.items[id]!)).toBe(700);
+    const r = ok(s, { type: "town.temple", memberId: "c2", service: "uncurse", instanceId: id });
+    expect(r.state.gold).toBe(1300);
   });
 
 });
@@ -900,7 +983,15 @@ describe("UI-52/TW-11 townMenu（表示層向けの問い合わせ）", () => {
       { memberId: "c3", name: "キリ", cost: 200, affordable: true },
       { memberId: "c6", name: "フィン", cost: 300, affordable: false },
     ]);
-    expect(m.temple.uncurse).toEqual([{ memberId: "c4", name: "ドナ", cost: 200, affordable: true }]);
+    // TW-07（M24）: 誰かに対象があれば全員（対象の無い者は count 0）。品の料金は max(50, 短剣の売値 7 × 2)
+    expect(m.temple.uncurse.map((r) => [r.memberId, r.count])).toEqual([["c1", 0], ["c2", 0], ["c3", 0], ["c4", 1], ["c5", 0], ["c6", 0]]);
+    expect(m.temple.uncurse[3]).toEqual({
+      memberId: "c4",
+      name: "ドナ",
+      count: 1,
+      items: [{ instanceId: member(s, "c4").equipment.weapon!, name: "短剣", fee: 50, affordable: true, cursed: true }],
+    });
+    expect(townMenu(town(), data)!.temple.uncurse).toEqual([]);
     // TW-08: ash の c5 エル（L1）だけ。1 × 500 > 200（darkCostPerLevel 500【仮】。旧 1000）
     expect(m.dark).toEqual([{ memberId: "c5", name: "エル", cost: 500, affordable: false }]);
     expect(m.mercy).toBeNull();

@@ -387,7 +387,7 @@ export function townEntries(
     const params: Record<TempleService, Record<string, number>> = {
       resurrect: { perLevel: p.perLevel },
       cure: { cost: p.cureFrom },
-      uncurse: { cost: p.uncurse },
+      uncurse: { ratio: p.uncurse.ratio, min: p.uncurse.min }, // M24: 売値の倍率と最低額
     };
     return [
       ...TEMPLE_SERVICES.map((sv): TownEntry => ({ kind: "page", to: { temple: sv }, label: s(strings, `town.temple.${sv}Row`, params[sv]) })),
@@ -669,6 +669,12 @@ export function townEntries(
     return [...rows, back];
   }
   const sv = page.temple;
+  if (sv === "uncurse") {
+    const rows = menu.temple.uncurse
+      .filter((r) => r.count > 0)
+      .map((r): TownEntry => ({ kind: "temple", service: sv, memberId: r.memberId, label: r.name, disabled: false }));
+    return rows.length === 0 ? [{ kind: "templeNone", label: s(strings, "town.temple.none") }, back] : [...rows, back];
+  }
   const rows = menu.temple[sv].map(
     (r): TownEntry => ({
       kind: "temple",
