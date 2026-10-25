@@ -3,6 +3,7 @@
 // 宿: 馬小屋 0 G / 相部屋 20 G / 個室 60 G。寺院: 蘇生 level × 100、治療 毒 50 + 麻痺 150、解呪 200。闇魔術: level × darkCostPerLevel。
 // 店（TW-05）: 薬草 10 G / 解毒草 15 G / 帰還の糸 50 G。初期の所持枠の空き（townMenu.shop.members）は c1 5 / c2 7 / c3 4 / c4 5 / c5 6 / c6 5（M17 から c1・c2 は素の力 14・15 で上限 9）。
 import { describe, expect, test, vi } from "vitest";
+import chestTraps from "../data/chest-traps.json";
 import { campMenu } from "../src/core/rules/camp";
 import { classChangeOptions, townMenu, type ClassChangeOption } from "../src/core/rules/town";
 import { identifiedValueParams, shopPrice } from "../src/core/rules/shop";
@@ -1868,9 +1869,9 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
       else expect(l.term.length, raw).toBeGreaterThan(0);
     }
     const contNums = raws.flatMap((r, i) => (r.startsWith(SP) ? [i + 1] : []));
-    expect(contNums).toHaveLength(14);
+    expect(contNums).toHaveLength(15); // M24: SAN の契機の続きの行（F-3）を足した
     // 用語なしの行 = 続きの行 14（M23 で後衛の続きを足した）+ 長い用語の説明 7（M22 D-6 の 6 + M23 の「取り乱す」）
-    expect(terms.filter((l) => l.term === "")).toHaveLength(contNums.length + 7);
+    expect(terms.filter((l) => l.term === "")).toHaveLength(contNums.length + 10); // M24 E-1: 長い用語に ドワーフ・ホビット・敵を待つ を足した
     for (const n of contNums) expect(terms.some((l) => l.term === "" && l.desc === S[`rules.line.${n}`]!.slice(1)), String(n)).toBe(true);
   });
 
@@ -2071,7 +2072,8 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     expect(termsOf.indexOf("補正")).toBe(termsOf.indexOf("判定") + 1);
     expect(termsOf.indexOf("×4")).toBe(termsOf.indexOf("識別") + 1);
     expect(termsOf.indexOf("得意")).toBe(termsOf.indexOf("見立て") + 1);
-    expect(termsOf.indexOf("担当")).toBe(termsOf.indexOf("得意") + 1);
+    expect(termsOf.indexOf("罠の勘")).toBe(termsOf.indexOf("得意") + 1); // M24 E-1
+    expect(termsOf.indexOf("担当")).toBe(termsOf.indexOf("罠の勘") + 1);
     expect(head("補正")).toContain("士気");
     expect(head("×4")).toContain("4 体");
     expect(head("得意")).toContain("盗賊");
@@ -2098,7 +2100,7 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
       expect([...w].length, w).toBeLessThanOrEqual(RULE_TERM_MAX);
     }
     // 並び（設計 4-3 を M19 D-4 で分類した後）
-    const order = ["士気", "GM", "d", "判定", "補正", "大当り", "ターン", "先手", "前衛", "後衛", "識別", "×4", "潜行", "主", "糸", "見立て", "得意", "担当", "蘇生", "解呪", "経験", "レベル", "未鑑定", "鑑定", "+N", "触媒", "大成功", "希少度", "名品", "呪文", "加護"];
+    const order = ["士気", "GM", "d", "判定", "補正", "上下限", "大当り", "ターン", "先手", "前衛", "後衛", "並び順", "識別", "×4", "潜行", "主", "糸", "見立て", "得意", "罠の勘", "担当", "蘇生", "解呪", "経験", "レベル", "未鑑定", "鑑定", "+N", "触媒", "大成功", "希少度", "名品", "呪文", "加護"];
     expect(order.map((w) => termsOf.indexOf(w))).toEqual(order.map((w) => termsOf.indexOf("士気") + order.indexOf(w)));
     expect(termsOf.at(-1)).toBe("加護");
     // 語は画面・データの名前と同じ（前衛・後衛は並び順の画面、解呪は寺院、識別・加護・蘇生は呪文の名前）
@@ -2115,6 +2117,21 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     for (const w of ["AC", "SAN", "MP", "HP", "灰", "蘇生", "呪文", "レベル", "判定", "潜行", "鑑定"]) expect(head(w), w).toBeDefined();
   });
 
+  test("UI-77（M24 E-1）用語の追加: 能力名 6 語・並び順・敵を待つ・罠の勘・上下限・種族 5 語・性格 5 語・SAN の契機・痺・見立て・解呪。語は画面・データの名前と同じ、数は config / chest-traps と一致", () => {
+    for (const k of ["str", "iq", "pie", "vit", "agi", "luk"]) expect(head(S[`stat.${k}`]!), k).toBeDefined();
+    for (const r of data.races) expect(body.some((l) => (typeof l === "string" ? l : l.term) === r.name), r.id).toBe(true);
+    for (const pe of data.personalities) expect(head(pe.name), pe.id).toBeDefined();
+    const san = data.config.san;
+    const cursed = (chestTraps.find((t) => t.id === "curse")!.effect as { amount: number }).amount;
+    const sanLine = body.find((l) => typeof l !== "string" && l.term === "" && l.desc.includes("仲間の死"))! as WipeTermLine;
+    expect(sanLine.desc).toBe(`階${san.floorDescend}・罠${san.trap}・未知の敵${san.unidentifiedGroup}/群・仲間の死${san.allyDeath}・呪詛${cursed}`);
+    expect(head("並び順")).toContain("前");
+    expect(head("上下限")).toContain("5〜95%");
+    expect(head("痺")).toContain("寺院");
+    expect(head("見立て")).toContain("●");
+    expect(head("解呪")).toContain("普通の品");
+  });
+
   test("UI-77（M19 D-4）用語の追加と分類: 12 語（GM・経験・d・大成功・見立て・帰還の糸（用語は「糸」）・希少度・主・ターン・先手・大当り・名品）が用語の行として立つ。分類の見出しは「■ 」で始まる文字列の行（用語の列は無い）で、直後は用語の行。行は見出しを入れて 58（1 頁 21 行の 3 頁）", () => {
     const termsOf = body.flatMap((l) => (typeof l === "string" || l.term === "" ? [] : [l.term]));
     const added = ["GM", "経験", "d", "大成功", "見立て", "糸", "希少度", "主", "ターン", "先手", "大当り", "名品"];
@@ -2125,7 +2142,7 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     expect(new Set(termsOf).size).toBe(termsOf.length); // 用語は重ならない
     // 分類の見出し: 「■ 」+ 分類名の文字列の行（全角空白を含まず、splitRuleLine で用語にならない）。直後の行は用語の行か職業の略称の一覧
     const heads = body.flatMap((l, i) => (typeof l === "string" && l.startsWith("■ ") ? [i] : []));
-    expect(heads.map((i) => body[i])).toEqual(["■ 職業", "■ 能力と状態", "■ 卓と判定", "■ 戦闘", "■ 迷宮", "■ 街", "■ 品", "■ 呪文"]);
+    expect(heads.map((i) => body[i])).toEqual(["■ 職業", "■ 種族", "■ 性格", "■ 能力と状態", "■ 卓と判定", "■ 戦闘", "■ 迷宮", "■ 街", "■ 品", "■ 呪文"]);
     expect(heads[0]).toBe(0);
     for (const i of heads) {
       expect((body[i] as string).includes(SP), String(i)).toBe(false);
@@ -2139,13 +2156,16 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
       const b = heads.find((i) => i > a) ?? body.length;
       return body.slice(a + 1, b).flatMap((l) => (typeof l === "string" || l.term === "" ? [] : [l.term]));
     };
-    expect(section("■ 卓と判定")).toEqual(["GM", "d", "判定", "補正", "大当り"]);
-    expect(section("■ 戦闘")).toEqual(["ターン", "先手", "前衛", "後衛", "識別", "×4"]); // 長い用語は用語の行が文字列なので数えない
-    expect(section("■ 迷宮")).toEqual(["潜行", "主", "糸", "見立て", "得意", "担当"]);
+    expect(section("■ 卓と判定")).toEqual(["GM", "d", "判定", "補正", "上下限", "大当り"]);
+    expect(section("■ 戦闘")).toEqual(["ターン", "先手", "前衛", "後衛", "並び順", "識別", "×4"]); // 長い用語は用語の行が文字列なので数えない
+    expect(section("■ 迷宮")).toEqual(["潜行", "主", "糸", "見立て", "得意", "罠の勘", "担当"]);
     expect(section("■ 街")).toEqual(["蘇生", "解呪", "経験", "レベル"]);
     expect(section("■ 品")).toEqual(["未鑑定", "鑑定", "+N", "触媒", "大成功", "希少度", "名品"]);
-    expect(lines).toHaveLength(84); // 見出し 1 + strings 76 + 長い用語 7 語の説明（M22 D-6 の 6 + M23 C-2 の取り乱す）
-    expect(Math.ceil(lines.length / 21)).toBe(4);
+    expect(section("■ 種族")).toEqual(["人間", "エルフ", "ノーム"]); // ドワーフ・ホビットは 4 字で用語の行が文字列
+    expect(section("■ 性格")).toEqual(["性格", "慎重", "無鉄砲", "強欲", "普通"]);
+    expect(section("■ 能力と状態").slice(0, 6)).toEqual(["力", "知恵", "信仰心", "生命力", "素早さ", "運"]);
+    expect(lines).toHaveLength(110); // 見出し 1 + strings 99 + 長い用語 10 語の説明（M22 D-6 の 6 + M23 C-2 の取り乱す + M24 E-1 のドワーフ・ホビット・敵を待つ）
+    expect(Math.ceil(lines.length / 21)).toBe(6);
     // 語は画面・データの名前と同じ
     expect(S["gm.name"]).toBe("GM");
     expect(S["battle.exp"]).toContain("経験");
