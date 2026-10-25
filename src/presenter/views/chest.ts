@@ -61,7 +61,8 @@ export function chestEntries(page: ChestPage, v: ChestView, strings: Strings): C
       const found = v.finding?.trapId ?? null;
       const traps = v.trapNames.map(
         (x): ChestEntry => ({
-          label: x.id === found ? t(strings, "chest.menu.found", { name: x.name }) : x.name,
+          // M24 F-5（CB-64 / UI-52）: 行は「{名前}: {効果の短い説明}」。見立ての印は接頭の「●」。説明は strings の chest.trapDesc.<id>（{n} は core の amount）
+          label: t(strings, x.id === found ? "chest.menu.found" : "chest.menu.trapRow", { name: x.name, desc: t(strings, `chest.trapDesc.${x.id}`, { n: x.amount ?? 0 }) }),
           disabled: false,
           choice: { kind: "send", command: { type: "chest.disarm", memberId: page.memberId, trapId: x.id } },
         }),

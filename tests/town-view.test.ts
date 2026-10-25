@@ -2151,7 +2151,7 @@ describe("UI-77 用語の一覧（M16。views/rules.ts と酒場の「用語」�
     expect(S["battle.exp"]).toContain("経験");
     expect(S["custom.bonusDetailBig"]).toContain("大当り");
     expect(S["dice.upgrade.great"]).toBe("大成功");
-    expect(S["chest.menu.found"]).toBe("{name}（見立て）");
+    expect(S["chest.menu.found"]).toBe("●{name}: {desc}"); // M24 F-5: 接頭の ●
     expect(S["camp.book"]).toBe("名品の図鑑");
     expect(S["battle.turn"]).toBe("第{n}ターン");
     expect(S["dice.initiative.party"]).toBe("先手");

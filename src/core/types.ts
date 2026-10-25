@@ -391,7 +391,7 @@ export type MapView = {
  * CB-60 / UI-70（M11）: 宝箱の操作の値。rules/chest.ts の chestView(state, data)。dive.chest が非 null で、battle も pendingChoice も null のときだけ非 null。
  * 判定の成否・罠の有無と危険度は載せない（表示層に漏らさない）。
  * - members: パーティ全員（並び順）。canAct の者だけが調べる・解除の人に選べる（リーダーも可）
- * - trapNames: chest-traps.json の全種（データの順）。name は表示名（strings を引いた値）。解除で宣言する名前の一覧
+ * - trapNames: chest-traps.json の全種（データの順）。name は表示名（strings を引いた値）。解除で宣言する名前の一覧。amount は効果が san の罠だけ（M24 F-5。一覧の説明「全員の正気 −{n}」の n。表示のための参照）
  * - finding: 最後の「調べる」で告げられた結果（ChestState.finding）。trapId null は「罠は無さそう」。name は trapId の表示名（null なら null）
  * - ownerId: 職業の掛け合い（EV-73）で決まった担当の id（ChestState.rivalry の ownerId。語りで告げた公開の値）。発生していなければ null。UI-70 の人の段の印
  */
@@ -399,7 +399,7 @@ export type ChestView = {
   source: "drop" | "cell";
   /** thief: 盗賊の補正（config.chest の thiefBonus。職業の abilities に disarm）が効く者（M19 D-5。人の段の「（得意）」の印） */
   members: { id: string; name: string; canAct: boolean; thief: boolean }[];
-  trapNames: { id: string; name: string }[];
+  trapNames: { id: string; name: string; amount?: number }[];
   finding: { trapId: string | null; name: string | null } | null;
   ownerId: string | null;
 };

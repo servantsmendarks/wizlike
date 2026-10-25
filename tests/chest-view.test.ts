@@ -10,6 +10,7 @@ import { dived, exec } from "./helpers/battle";
 import { data, loadFreshData, withChar } from "./helpers/core";
 import { kinsokuLines } from "./helpers/wrap";
 import { formatMessage } from "../src/presenter/views/message";
+import { textUnits } from "../src/presenter/views/party-band";
 
 const S = data.strings;
 const t = (k: string, name: string): string => formatMessage(S[k]!, { name });
@@ -118,7 +119,7 @@ describe("UI-70 宝箱の段（views/chest）", () => {
     expect(chestHeading({ kind: "disarmWho" }, v, S)).toBe("誰が罠を外す？");
     const page: ChestPage = { kind: "disarmTrap", memberId: "c6" };
     const es = chestEntries(page, v, S);
-    expect(labels(es)).toEqual(["毒針", "石弓", "爆弾", "毒ガス", "麻痺ガス", "警報", "転移", "呪詛", "戻る"]);
+    expect(labels(es).map((x) => x.split(":")[0])).toEqual(["毒針", "石弓", "爆弾", "毒ガス", "麻痺ガス", "警報", "転移", "呪詛", "戻る"]); // M24 F-5: 行は「名前: 説明」
     expect(es.every((e) => !e.disabled)).toBe(true);
     expect(sent(es[2]!.choice)).toEqual({ type: "chest.disarm", memberId: "c6", trapId: "bomb" });
     const r = execute(s, sent(es[2]!.choice), data);
@@ -132,9 +133,36 @@ describe("UI-70 宝箱の段（views/chest）", () => {
     const s = withChest("bomb");
     s.dive!.chest!.finding = { trapId: "crossbow" };
     const es = chestEntries({ kind: "disarmTrap", memberId: "c3" }, viewOf(s), S);
-    expect(labels(es).slice(0, 3)).toEqual(["毒針", "石弓（見立て）", "爆弾"]);
+    expect(labels(es).slice(0, 3)).toEqual(["毒針: 1人に傷と毒", "●石弓: 1人に矢の傷", "爆弾: 全員に傷、中身が飛ぶことも"]); // M24 F-5: 行は「名前: 説明」、見立ては接頭の ●
     s.dive!.chest!.finding = { trapId: null };
-    expect(labels(chestEntries({ kind: "disarmTrap", memberId: "c3" }, viewOf(s), S)).slice(0, 8)).toEqual(["毒針", "石弓", "爆弾", "毒ガス", "麻痺ガス", "警報", "転移", "呪詛"]);
+    expect(labels(chestEntries({ kind: "disarmTrap", memberId: "c3" }, viewOf(s), S)).slice(0, 8)).toEqual(["毒針: 1人に傷と毒", "石弓: 1人に矢の傷", "爆弾: 全員に傷、中身が飛ぶことも", "毒ガス: 全員に毒（運で避ける）", "麻痺ガス: 全員に麻痺（運で避ける）", "警報: 敵が来る。勝てば箱は開く", "転移: 同じ階のどこかへ、箱は失う", "呪詛: 全員の正気 −8"]);
+  });
+
+  test("UI-52/CB-64（M24 F-5）罠の名前の段の行: 全 8 行と、どれが見立てでも 39 単位以内（最長は見立ての麻痺ガス）。呪詛の n は chest-traps.json の amount（文に数値を直書きしない）。解除の command は行の trapId のまま", () => {
+    const s = withChest("bomb");
+    const page: ChestPage = { kind: "disarmTrap", memberId: "c3" };
+    const base = chestEntries(page, viewOf(s), S);
+    expect(base).toHaveLength(9);
+    const amount = data.chestTraps.find((x) => x.id === "curse")!.effect;
+    expect(amount.kind === "san" ? amount.amount : -1).toBe(8);
+    expect(base[7]!.label).toBe(formatMessage(S["chest.trapDesc.curse"]!, { n: 8 }).replace(/^/, "呪詛: "));
+    expect(S["chest.trapDesc.curse"]).toContain("{n}");
+    for (const id of ["poison_needle", "crossbow", "bomb", "poison_gas", "paralysis_gas", "alarm", "teleport"]) expect(S["chest.trapDesc." + id], id).not.toMatch(/[0-9]{2}|{/);
+    base.slice(0, 8).forEach((e, i) => expect(sent(e.choice), e.label).toEqual({ type: "chest.disarm", memberId: "c3", trapId: data.chestTraps[i]!.id }));
+    let longest = 0;
+    for (const x of data.chestTraps) {
+      const sv = structuredClone(s);
+      sv.dive!.chest!.finding = { trapId: x.id };
+      for (const e of chestEntries(page, viewOf(sv), S).slice(0, 8)) {
+        const u = textUnits(e.label);
+        longest = Math.max(longest, u);
+        expect(u, e.label).toBeLessThanOrEqual(39);
+      }
+    }
+    expect(longest).toBeLessThanOrEqual(39);
+    const found = chestEntries(page, viewOf({ ...structuredClone(s), dive: { ...s.dive!, chest: { ...s.dive!.chest!, finding: { trapId: "paralysis_gas" } } } }), S);
+    expect(found[4]!.label).toBe("●麻痺ガス: 全員に麻痺（運で避ける）");
+    expect(textUnits(found[4]!.label)).toBe(2 + 8 + 2 + 24 + 0);
   });
 
   test("UI-70/CB-63（M18 設計 5-8）調べ直しが不明に終わっても見立ての印は残る。不明の文 chest.inspect.unknown は窓の 28 字 × 2 行に収まる", () => {
@@ -146,7 +174,7 @@ describe("UI-70 宝箱の段（views/chest）", () => {
     s.dive!.chest!.finding = { trapId: "crossbow" };
     const r = exec(s, { type: "chest.inspect", memberId: "c3" }, d);
     expect(r.events.some((e) => e.kind === "message" && e.key === "chest.inspect.unknown")).toBe(true);
-    expect(labels(chestEntries({ kind: "disarmTrap", memberId: "c3" }, viewOf(r.state), S)).slice(0, 3)).toEqual(["毒針", "石弓（見立て）", "爆弾"]);
+    expect(labels(chestEntries({ kind: "disarmTrap", memberId: "c3" }, viewOf(r.state), S)).slice(0, 3)).toEqual(["毒針: 1人に傷と毒", "●石弓: 1人に矢の傷", "爆弾: 全員に傷、中身が飛ぶことも"]);
     const text = S["chest.inspect.unknown"]!;
     expect(text).toBe("罠があるかどうかは分からなかった。もう一度調べるか、賭けて開けるか。");
     expect(kinsokuLines(text, 28).length).toBeLessThanOrEqual(2);

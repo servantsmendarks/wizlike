@@ -1722,6 +1722,10 @@ describe("data: chest-traps.json（CB-62。M11）", () => {
       ["curse", 4, "san"],
     ]);
     expect(ts.map((t) => t.name)).toEqual(ts.map((t) => `chest.trapName.${t.id}`));
+    // M24 F-5: 一覧の行の説明は罠の id ごとに chest.trapDesc.<id> が 8 種ある（呪詛だけ {n}）
+    const sm: Record<string, string | undefined> = strings;
+    for (const x of ts) expect(sm["chest.trapDesc." + x.id], x.id).toBeDefined();
+    expect(ts.filter((x) => sm["chest.trapDesc." + x.id]!.includes("{n}")).map((x) => x.id)).toEqual(["curse"]);
     expect(ts[0]!.effect).toEqual({ kind: "damage", target: "one", dice: "1d4", status: "poison" });
     expect(ts[3]!.effect).toEqual({ kind: "status", target: "all", status: "poison", chance: 60 });
     expect(ts[7]!.effect).toEqual({ kind: "san", target: "all", amount: 8 });

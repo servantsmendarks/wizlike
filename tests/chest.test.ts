@@ -157,7 +157,7 @@ describe("CB-60 箱の状態と受け付け", () => {
     const v = chestView(s, data)!;
     expect(v.source).toBe("drop");
     expect(v.members.map((m) => [m.id, m.canAct])).toEqual(s.party.map((c) => [c.id, c.id !== "c5"]));
-    expect(v.trapNames).toEqual(data.chestTraps.map((t) => ({ id: t.id, name: data.strings[t.name] })));
+    expect(v.trapNames).toEqual(data.chestTraps.map((t) => ({ id: t.id, name: data.strings[t.name], ...(t.effect.kind === "san" ? { amount: t.effect.amount } : {}) }))); // M24 F-5: 呪詛だけ amount
     expect(v.trapNames.map((t) => t.name)).toEqual(["毒針", "石弓", "爆弾", "毒ガス", "麻痺ガス", "警報", "転移", "呪詛"]);
     expect(v.finding).toBeNull();
     const d = chestData((x) => (x.config.chest.inspect.min = x.config.chest.inspect.max = 100));
