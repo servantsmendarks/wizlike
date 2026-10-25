@@ -372,6 +372,14 @@ describe("layout", () => {
     expect(L.listBack).toEqual(L.battleMember[4]);
     expect(L.listBack).toEqual(L.campGrid[7]);
     expect(L.listNarrow).toEqual(L.list.map((r) => ({ ...r, w: 168 })));
+    // UI-11/UI-52（M24 C-2）: 固定の「決める」は戻るの真上（x178..233・y306..345。間 8）。戦闘のメンバー [3]・キャンプの [3] と同じ 56×40
+    expect(L.listDecide).toEqual({ x: 178, y: 306, w: 56, h: 40 });
+    expect(L.listDecide).toEqual(L.battleMember[3]);
+    expect(L.listDecide).toEqual(L.campGrid[3]);
+    expect(L.listBack.y - (L.listDecide.y + L.listDecide.h)).toBe(8);
+    expect(overlaps(L.listDecide, L.listBack)).toBe(false);
+    for (const r of L.listNarrow) expect(overlaps(L.listDecide, r)).toBe(false);
+    expect(inside(L.listDecide, regions(data.config.ui.layout, W).controls)).toBe(true);
     for (const r of [...L.listNarrow, L.listBack]) expect(inside(r, regions(data.config.ui.layout, W).controls)).toBe(true);
     // UI-54 戦闘: パーティの選択は 2 列 × 2 段の 114×40（x 4/122、y 306/354）、メンバーは上段 4 つの 56×40
     // （x 4/62/120/178、y 306）と下段の右端の戻る（x 178、y 354）、オート解除
@@ -519,6 +527,8 @@ describe("layout", () => {
     expect(T.list.rows).toEqual(Array.from({ length: 9 }, (_, i) => ({ x: 8, y: 190 + 22 * i, w: 168, h: 22 })));
     expect(T.back).toEqual({ x: 178, y: 354, w: 56, h: 40 });
     expect(T.back).toEqual(L.listBack);
+    expect(T.decide).toEqual(L.listDecide); // M24 C-2
+    expect(overlaps(T.decide, T.back) || overlaps(T.decide, T.list.area)).toBe(false);
     // 2026-10-07（B-B-4）: 図鑑の範囲は townLayout の book を消し、layout.character（キャラクター画面と同じ）に寄せた
     expect(L.character).toEqual({ x: 0, y: 16, w: 240, h: 284 });
     // 押せないもの（文字・絵・見出し・一覧の欄）と押せるもの（ログ・設定・帯・戻る）の重なり

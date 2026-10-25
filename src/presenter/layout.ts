@@ -98,6 +98,12 @@ const LIST_NARROW_REL: readonly Rect[] = LIST_ROWS_REL.map((r): Rect => ({ ...r,
 /** UI-11: 一覧の外に固定する戻る / やめる。戦闘のメンバーの戻る（BATTLE_MEMBER_REL[4]）・キャンプの [7] と同じ 56×40。操作領域からの相対 */
 const LIST_BACK_REL: Rect = { x: 178, y: 54, w: 56, h: 40 };
 
+/**
+ * UI-11 / UI-52（M24 C-2）: 一覧の外に固定する「決める」（強化の触媒の段）。LIST_BACK_REL の真上（間 8）。
+ * 戦闘のメンバー [3]・キャンプの [3] と同じ 56×40。操作領域からの相対
+ */
+const LIST_DECIDE_REL: Rect = { x: 178, y: 6, w: 56, h: 40 };
+
 /** 地図の overlay を閉じるボタン（UI-24）。操作領域からの相対 */
 const MAP_CLOSE_REL: Rect = { x: 60, y: 34, w: 120, h: 32 };
 
@@ -142,7 +148,7 @@ const AUTO_STOP_REL: Rect = { ...BATTLE_PARTY_REL[0]! };
 
 /** 操作領域の中身が収まる最小の高さ（相対矩形の下端の最大）。既定の layout では 98 */
 export const CONTROLS_MIN_HEIGHT = Math.max(
-  ...[...Object.values(DPAD_REL), ...MENU_SLOTS_REL, ...LIST_ROWS_REL, ...LIST_NARROW_REL, LIST_BACK_REL, MAP_CLOSE_REL, MAP_GO_REL, MAP_LEGEND_REL, ...BATTLE_PARTY_REL, ...BATTLE_MEMBER_REL, ...CAMP_GRID_REL, AUTO_STOP_REL].map(
+  ...[...Object.values(DPAD_REL), ...MENU_SLOTS_REL, ...LIST_ROWS_REL, ...LIST_NARROW_REL, LIST_BACK_REL, LIST_DECIDE_REL, MAP_CLOSE_REL, MAP_GO_REL, MAP_LEGEND_REL, ...BATTLE_PARTY_REL, ...BATTLE_MEMBER_REL, ...CAMP_GRID_REL, AUTO_STOP_REL].map(
     (r) => r.y + r.h,
   ),
 );
@@ -192,6 +198,8 @@ export type DungeonLayout = {
   listNarrow: Rect[];
   /** UI-11 一覧の外に固定する戻る / やめる（battleMember[4] と同じ矩形） */
   listBack: Rect;
+  /** UI-11 / UI-52（M24 C-2）: 一覧の外に固定する「決める」（setList の fixedDecide。listBack の真上。間 8） */
+  listDecide: Rect;
   /**
    * UI-11 / UI-13（M16。設計 2-7）: 迷宮・戦闘の広い一覧（戦闘の呪文・道具・確認・対象、迷宮の保留中の選択・宝箱の段）。
    * パーティ欄の上端 + 2 から操作領域の下端までに 22px の行（UI-10 の例外 listWide）を入るだけ（既定 x8..231・y238..391 の 7 行）。
@@ -283,6 +291,7 @@ export function dungeonLayout(g: Regions, partySize: number): DungeonLayout {
     list: LIST_ROWS_REL.map((r) => shift(r, c)),
     listNarrow: LIST_NARROW_REL.map((r) => shift(r, c)),
     listBack: shift(LIST_BACK_REL, c),
+    listDecide: shift(LIST_DECIDE_REL, c),
     listWide: {
       area: wideArea,
       rows: Array.from({ length: wideCount }, (_, i): Rect => ({ x: wideArea.x, y: wideArea.y + LIST_WIDE_ROW_H * i, w: wideArea.w, h: LIST_WIDE_ROW_H })),
@@ -411,6 +420,8 @@ export type TownLayout = {
   notes: Rect[];
   /** UI-11 の固定の戻る（操作領域の x178・y54 の 56×40） */
   back: Rect;
+  /** UI-11 / UI-52（M24 C-2）: 強化の触媒の段の固定の「決める」（back の真上。迷宮・戦闘の listDecide と同じ絶対位置） */
+  decide: Rect;
 };
 
 /** UI-13: 街の画面の矩形（ステージ座標）。既定の regions では ヘッダー y0..15、絵 y16..165、帯 y166..175、見出し y178..187、一覧 y190..387（22×9 行）、施設メニューの 9 枠 x54/100/146・y190/236/282 の 40×40（M10。M17 で 3 列 × 3 段）とその下の説明の 7 行 x8..231・y328..397（M16。M17 で 1 行 10 の 7 行）、戻る 178,354。
@@ -441,6 +452,7 @@ export function townLayout(g: Regions, partySize: number): TownLayout {
   const count = Math.max(1, Math.floor((bottom - listY) / TOWN_ROW_H));
   const area: Rect = { x: TOWN_LIST_X, y: listY, w: TOWN_LIST_W, h: count * TOWN_ROW_H };
   const back = shift(LIST_BACK_REL, g.controls);
+  const decide = shift(LIST_DECIDE_REL, g.controls);
   const gridW = TOWN_GRID_COLS * TOWN_GRID_SIZE + (TOWN_GRID_COLS - 1) * TOWN_GRID_GAP;
   const gridX = v.x + Math.floor((v.w - gridW) / 2);
   const grid = Array.from({ length: TOWN_GRID_COLS * TOWN_GRID_ROWS }, (_, i): Rect => ({
@@ -470,6 +482,7 @@ export function townLayout(g: Regions, partySize: number): TownLayout {
     grid,
     notes,
     back,
+    decide,
   };
 }
 
@@ -501,6 +514,7 @@ export function layoutWarnings(g: Regions, l: DungeonLayout): string[] {
   l.list.forEach((r, i) => check(`list[${i}]`, r, "controls"));
   l.listNarrow.forEach((r, i) => check(`listNarrow[${i}]`, r, "controls"));
   check("listBack", l.listBack, "controls");
+  check("listDecide", l.listDecide, "controls");
   // UI-11 / UI-13（M16）: 広い一覧はパーティ欄と操作領域を合わせた範囲に収まる
   const wideRegion: Rect = { x: g.party.x, y: g.party.y, w: g.party.w, h: g.controls.y + g.controls.h - g.party.y };
   if (!inside(l.listWide.area, wideRegion)) out.push(`ui.layout: listWide does not fit in the party and controls regions`);

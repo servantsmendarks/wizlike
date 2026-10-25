@@ -75,8 +75,10 @@ export type Controls = {
    * 2 行目（同じ色・同じ幅の 1 行）を出し、一覧を 1 行（見出しの高さ）下げて、高さを townList の 1 行ぶん減らす。
    * wide（M16。UI-11 / UI-13 の迷宮・戦闘の広い一覧）なら、一覧を layout.listWide の位置に置く（行の高さ 22、幅は fixedLast なら 168・無ければ 224。
    * 固定の戻るは listBack のまま）。list モードで出ている間は onWideChange(true)
+   * fixedDecide（M24 C-2。UI-11 / UI-52。強化の触媒の段の「決める」）なら、fixedLast と合わせて末尾から 2 つ目も一覧の外の layout.listDecide に固定する
+   * （listBack の真上。dim・押下・音は一覧の行と同じ。添字は items の順のまま）
    */
-  setList(items: ControlItem[], opts?: { fixedLast?: boolean; fixedLastCancel?: boolean; town?: { heading: string; sub?: string | null }; wide?: boolean }): void;
+  setList(items: ControlItem[], opts?: { fixedLast?: boolean; fixedLastCancel?: boolean; fixedDecide?: boolean; town?: { heading: string; sub?: string | null }; wide?: boolean }): void;
   /**
    * UI-54: slots の配置（layout.battleParty の 4 枠 / battleMember の 5 枠 / campGrid の 8 枠 / townList.grid の 9 枠（M17。M10〜M16 は 6 枠））に並べる。
    * null は空き枠（何も置かない）。枠数を超える分は捨てる。
@@ -134,8 +136,8 @@ function buttonStyle(b: HTMLElement, r: Rect, origin: Rect): void {
 }
 
 /** UI-36（M7）: 一覧の行の見た目を決める値の印（文言・dim・注目の有無・固定の戻るか・行の幅と高さ・街の一覧か・広い一覧か・色の tone（M24 B-1）） */
-function listRowSig(it: ControlItem, isBack: boolean, w: number, h: number, town: boolean, wide: boolean): string {
-  return JSON.stringify([it.label, it.disabled === true, it.onFocus !== undefined, isBack, w, h, town, wide, it.tone ?? null]);
+function listRowSig(it: ControlItem, isBack: boolean, isDecide: boolean, w: number, h: number, town: boolean, wide: boolean): string {
+  return JSON.stringify([it.label, it.disabled === true, it.onFocus !== undefined, isBack, isDecide, w, h, town, wide, it.tone ?? null]);
 }
 
 function sameSigs(a: readonly string[], b: readonly string[]): boolean {
@@ -152,7 +154,7 @@ function setShown(el: HTMLElement, on: boolean): void {
  */
 export function createControls(o: {
   region: Rect;
-  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "listNarrow" | "listBack" | "listWide" | "mapClose" | "mapGo" | "mapLegend" | "battleParty" | "battleMember" | "autoStop" | "campGrid"> & {
+  layout: Pick<DungeonLayout, "dpad" | "menu" | "list" | "listNarrow" | "listBack" | "listDecide" | "listWide" | "mapClose" | "mapGo" | "mapLegend" | "battleParty" | "battleMember" | "autoStop" | "campGrid"> & {
     /** UI-13（M8.5）: 街の一覧の位置（省略時は街の一覧も layout.list の位置） */
     townList?: TownListLayout;
   };
@@ -322,6 +324,9 @@ export function createControls(o: {
   /** UI-11: 一覧の外に固定する戻る / やめる（setList の fixedLast のときだけ出す） */
   const listBackRect = o.layout.listBack;
   let listBackOn = false;
+  /** UI-11 / UI-52（M24 C-2）: 末尾から 2 つ目を一覧の外の layout.listDecide に固定しているか（setList の fixedDecide。fixedLast と両立） */
+  let listDecideOn = false;
+  const listDecideRect = o.layout.listDecide;
   /** 固定した末尾を押したら取り消しの音にするか（setList の fixedLastCancel。既定は真） */
   let listBackCancel = true;
   const listBack = document.createElement("div");
@@ -483,7 +488,7 @@ export function createControls(o: {
         menu.appendChild(b);
       });
     },
-    setList(items: ControlItem[], opts?: { fixedLast?: boolean; fixedLastCancel?: boolean; town?: { heading: string; sub?: string | null }; wide?: boolean }): void {
+    setList(items: ControlItem[], opts?: { fixedLast?: boolean; fixedLastCancel?: boolean; fixedDecide?: boolean; town?: { heading: string; sub?: string | null }; wide?: boolean }): void {
       const fixed = opts?.fixedLast === true && items.length > 0;
       listBackCancel = opts?.fixedLastCancel !== false;
       const townOn = opts?.town !== undefined;
@@ -496,7 +501,8 @@ export function createControls(o: {
       const sub = opts?.town?.sub ?? null;
       listTownSub = sub !== null;
       if (sub !== null && headingSub.textContent !== sub) headingSub.textContent = sub;
-      const sigs = items.map((it, k) => listRowSig(it, fixed && k === items.length - 1, rowW, rowH, townOn, wideOn));
+      const decideOn = fixed && opts?.fixedDecide === true && items.length >= 2;
+      const sigs = items.map((it, k) => listRowSig(it, fixed && k === items.length - 1, decideOn && k === items.length - 2, rowW, rowH, townOn, wideOn));
       listItems = items.slice();
       list.scrollTop = 0;
       listTownOn = townOn;
@@ -516,14 +522,17 @@ export function createControls(o: {
       list.replaceChildren();
       listBack.replaceChildren();
       listBackOn = fixed;
+      listDecideOn = fixed && opts?.fixedDecide === true && items.length >= 2;
       list.style.width = `${rowW}px`;
       listItems.forEach((it, k) => {
         const isBack = fixed && k === listItems.length - 1;
+        const isDecide = listDecideOn && k === listItems.length - 2;
         const b = document.createElement("button");
         b.type = "button";
-        b.className = isBack ? "controls-list-back-item" : "controls-list-item";
+        b.className = isBack ? "controls-list-back-item" : isDecide ? "controls-list-decide-item" : "controls-list-item";
         b.textContent = it.label;
         if (isBack) buttonStyle(b, listBackRect, origin);
+        else if (isDecide) buttonStyle(b, listDecideRect, origin);
         else
           Object.assign(b.style, {
             display: "block",
@@ -554,7 +563,7 @@ export function createControls(o: {
           b.addEventListener("pointerenter", () => listItems[k]?.onFocus?.());
           b.addEventListener("pointerdown", () => listItems[k]?.onFocus?.());
         }
-        (isBack ? listBack : list).appendChild(b);
+        (isBack || isDecide ? listBack : list).appendChild(b);
         listButtons.push(b);
       });
       apply();
@@ -568,6 +577,7 @@ export function createControls(o: {
       if (opts?.scroll === false) return;
       // 固定の戻る / やめるは一覧の外なので動かさない（overflow hidden の祖先をスクロールさせない）
       if (listBackOn && i === listButtons.length - 1) return;
+      if (listDecideOn && i === listButtons.length - 2) return; // M24 C-2: 固定の決めるも一覧の外
       if (b !== undefined && typeof b.scrollIntoView === "function") b.scrollIntoView({ block: "nearest" });
     },
     setBattleMenu(items: (ControlItem | null)[], slots: BattleSlots, opts?: { heading?: string; notes?: readonly string[] }): void {

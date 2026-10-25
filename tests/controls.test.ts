@@ -405,6 +405,40 @@ describe("controls", () => {
     expect(rows()[3]!.style["color"]).toBe("var(--c-text)");
   });
 
+  test("UI-11/UI-52/TW-17（M24 C-2）setList(fixedDecide) は fixedLast と合わせて末尾から 2 つ目を一覧の外の layout.listDecide に置く。添字は items の順のまま、dim は押せない", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, hold: HOLD, onClose: () => {} });
+    const picked: number[] = [];
+    const it = (i: number, extra = {}) => ({ label: `r${i}`, onSelect: () => picked.push(i), ...extra });
+    c.setList([it(0), it(1), it(2, { label: "決める" }), it(3, { label: "戻る" })], { fixedLast: true, fixedDecide: true });
+    c.setMode("list");
+    const list = created.find((e) => e.className === "controls-list")!;
+    const holder = created.find((e) => e.className === "controls-list-back")!;
+    expect(list.children.map((e) => e["textContent"])).toEqual(["r0", "r1"]);
+    expect(holder.children.map((e) => e["textContent"])).toEqual(["決める", "戻る"]);
+    const decide = holder.children[0]!;
+    const rel = L.listDecide;
+    expect([decide.style["left"], decide.style["top"], decide.style["width"], decide.style["height"]]).toEqual([
+      `${rel.x - g.controls.x}px`,
+      `${rel.y - g.controls.y}px`,
+      "56px",
+      "40px",
+    ]);
+    c.select(2);
+    c.select(0);
+    holder.children[1]!.tap();
+    expect(picked).toEqual([2, 0, 3]);
+    // dim の決めるは押しても選ばれない（dim と押下は一覧の行と同じ）
+    c.setList([it(0), it(1, { label: "決める", disabled: true }), it(2, { label: "戻る" })], { fixedLast: true, fixedDecide: true });
+    c.select(1);
+    expect(picked).toEqual([2, 0, 3]);
+    // fixedDecide なしなら今までどおり（決めるは一覧の中）
+    c.setList([it(0), it(1, { label: "決める" }), it(2, { label: "戻る" })], { fixedLast: true });
+    expect(list.children.map((e) => e["textContent"])).toEqual(["r0", "決める"]);
+  });
+
   test("UI-11 setList(fixedLast) は末尾を一覧の外の controls-list-back（layout.listBack）に置き、残りを幅 168 の一覧に置く。select(n) と setListFocus(末尾) は戻るを指す", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);

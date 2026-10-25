@@ -902,7 +902,7 @@ describe("入力と Command", () => {
     expect(app).toContain("const heading = townHeadingText(townPage, menu, strings, previewOf(townPage), classChangeOf(townPage));");
     // TW-04（M18 5-3）: 見出しの 2 行目（宿屋の一行の合計。townHeadingSub。宿屋以外は null）も渡す
     expect(app).toContain("const sub = townHeadingSub(townPage, menu, strings, previewOf(townPage));");
-    expect(app).toContain('c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading, sub } });');
+    expect(app).toContain('c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", fixedDecide: upCatPage, town: { heading, sub } });'); // M24 C-2: 触媒の段だけ決めるも固定
     expect(app).toMatch(
       /if \(townPage === "menu"\) \{\s*c\.setBattleMenu\(items, "town", \{ heading, notes: townMenuNotes\(strings\) \}\);\s*c\.setMode\("battle"\);\s*return;\s*\}/,
     );
@@ -1181,7 +1181,10 @@ describe("入力と Command", () => {
     expect(item).toContain("...notReadyReason(e),");
     const fn = /const notReadyReason = \(e: TownEntry\): Pick<ControlItem, "onDisabled"> => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
     // TW-09（M10）: 転職先の dim の行（ccClass の reason）も同じ経路で語る。TW-05（M16 追補 H-4）: 店の装備できない者の行（buy の reason）も
-    expect(fn).toContain('const reason = e.kind === "enter" ? e.notReady : e.kind === "ccClass" || e.kind === "buy" ? e.reason : null;');
+    expect(fn).toContain('e.kind === "enter"');
+    expect(fn).toContain('e.kind === "ccClass" || e.kind === "buy"');
+    expect(fn).toContain('e.kind === "page" && e.disabled === true'); // TW-17（M24 C-2）: 触媒を選ぶ前の決める
+    expect(fn).toContain('t("town.upgrade.needCatalyst")');
     expect(fn).toMatch(
       /onDisabled: \(\) =>\s*guard\(\(\) => \{\s*play\.talk\.flush\(\);\s*void narrator\.say\(reason, store\.get\(\)\.skipAnimations\);\s*if \(e\.kind === "buy"\) goTownPage\("shopBuy"\);\s*\}\),/,
     );
@@ -1195,7 +1198,7 @@ describe("入力と Command", () => {
     expect(fn.indexOf("narrator.say(reason")).toBeLessThan(fn.indexOf('goTownPage("shopBuy")'));
     // buy を送るのは onSelect の case "buy" だけで、disabled の行では onSelect は呼ばれない（controls の pick）
     const item = /const townItem = \(e: TownEntry\): ControlItem => \(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
-    expect(item).toContain('disabled: "disabled" in e ? e.disabled : false,');
+    expect(item).toContain('disabled: "disabled" in e ? e.disabled === true : false,');
     const controls = stripComments(presenterRaw["../src/presenter/views/controls.ts"]!);
     expect(controls).toMatch(/if \(it\.disabled === true\) \{\s*it\.onDisabled\?\.\(\);\s*return;\s*\}/);
   });

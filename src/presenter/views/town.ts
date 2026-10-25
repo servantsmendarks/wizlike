@@ -93,7 +93,8 @@ export function cursedTone(cursed: boolean): { tone?: "danger" } {
 }
 
 export type TownEntry =
-  | { kind: "page"; to: TownPage; label: string }
+  /** M24 C-2: disabled は触媒の段の「決める」（触媒を 1 つも選んでいない間は dim）だけが持つ */
+  | { kind: "page"; to: TownPage; label: string; disabled?: boolean }
   /** M7: 次のページへ移る行で、押せないことがあるもの（売れる品の無い者・払えない買い戻しの品など）。disabled なら dim */
   | { kind: "pick"; to: TownPage; label: string; disabled: boolean; tone?: "danger" }
   | { kind: "inn"; rank: number; label: string; disabled: boolean }
@@ -590,7 +591,8 @@ export function townEntries(
         ...cursedTone(c.cursed),
       };
     });
-    const decide: TownEntry = { kind: "page", to: { upConfirm: sel }, label: s(strings, "town.upgrade.decide") };
+    // M24 C-2（TW-17）: 触媒 0 個の鍛えは廃止。決めるは末尾から 2 つ目（app が固定の枠 listDecide に置く）で、触媒を選ぶまで dim
+    const decide: TownEntry = { kind: "page", to: { upConfirm: sel }, label: s(strings, "town.upgrade.decide"), disabled: sel.picked.length === 0 };
     return [...(rows.length === 0 ? [empty("town.upgrade.catNone")] : rows), decide, back];
   }
   if ("upConfirm" in page) {
@@ -1081,6 +1083,7 @@ export function townHeadingText(
   preview: UpgradePreview | null = null,
   cc: ClassChangeView | null = null,
 ): string {
+  if (typeof page === "object" && "upCat" in page && page.upCat.picked.length === 0) return s(strings, "town.upgrade.catalystPick"); // M24 C-2: 選ぶ前は「1〜3 個選べ」
   if (typeof page === "object" && "upCat" in page && preview !== null) {
     return s(strings, "town.upgrade.catalystRate", { n: page.upCat.picked.length, rate: preview.rate, great: preview.great });
   }

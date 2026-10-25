@@ -319,7 +319,7 @@ describe("UI-52 街のページ", () => {
       { kind: "upPick", to: { upCat: { ...sel, picked: [rb] } }, label: "○短剣 +0　アルド", disabled: false, info: "短剣 +0: 攻撃 1d4 / AC — / 魔法攻撃力 —" },
       { kind: "upPick", to: { upCat: { ...sel, picked: [rc] } }, label: "○短剣 +2　アルド", disabled: false, info: "短剣 +2: 攻撃 1d4+2 / AC — / 魔法攻撃力 —" },
       { kind: "upPick", to: { upCat: { ...sel, picked: [rd] } }, label: "○短剣 +0　アルド", disabled: false, info: "短剣 +0: 攻撃 1d4 / AC — / 魔法攻撃力 —" },
-      { kind: "page", to: { upConfirm: sel }, label: "決める" },
+      { kind: "page", to: { upConfirm: sel }, label: "決める", disabled: true }, // M24 C-2: 触媒を 1 つも選んでいない間は dim
       back,
     ]);
     // c → a → b の順に 3 個選んだ: 印が付き、外すと選んだ順のまま 1 個抜ける。未選択の d は disabled
@@ -327,7 +327,7 @@ describe("UI-52 街のページ", () => {
     const e3 = townEntries({ upCat: full }, m, S);
     expect(e3[0]).toEqual({ kind: "upPick", to: { upCat: { ...sel, picked: [rc, rb] } }, label: "●短剣 +1　アルド", disabled: false, info: "短剣 +1: 攻撃 1d4+1 / AC — / 魔法攻撃力 —" });
     expect(e3[3]).toEqual({ kind: "upPick", to: { upCat: { ...sel, picked: [rc, ra, rb, rd] } }, label: "○短剣 +0　アルド", disabled: true, info: "短剣 +0: 攻撃 1d4 / AC — / 魔法攻撃力 —" });
-    expect(e3[4]).toEqual({ kind: "page", to: { upConfirm: full }, label: "決める" });
+    expect(e3[4]).toEqual({ kind: "page", to: { upConfirm: full }, label: "決める", disabled: false });
     expect(townParent({ upCat: full })).toEqual({ upSlot: "c1" });
     expect(townPageIntro({ upCat: full }, m)).toEqual([]);
     // M16（G-2）: 他の者の段でも同じ候補（c1 の品）が出る
@@ -338,11 +338,11 @@ describe("UI-52 街のページ", () => {
       disabled: false,
       info: "短剣 +1: 攻撃 1d4+1 / AC — / 魔法攻撃力 —",
     });
-    // 候補が無ければ空の行 → 決める → 戻る（触媒なしでも鍛えられる）
+    // 候補が無ければ空の行 → dim の決める → 戻る（M24 C-2: 触媒なしの鍛えは廃止。決めるは出すが押せない）
     const none = menuOf(town());
     expect(townEntries({ upCat: { ...sel, memberId: "c2" } }, none, S)).toEqual([
       { kind: "empty", label: "触媒にできる物がない", disabled: true },
-      { kind: "page", to: { upConfirm: { ...sel, memberId: "c2" } }, label: "決める" },
+      { kind: "page", to: { upConfirm: { ...sel, memberId: "c2" } }, label: "決める", disabled: true },
       back,
     ]);
   });
@@ -445,13 +445,16 @@ describe("UI-52 街のページ", () => {
     const head = (picked: UpgradeCatalystRef[]): string =>
       townHeadingText({ upCat: { ...sel, picked } }, m, S, upgradePreview(s, data, "c1", "weapon", picked));
     // 触媒なし 10%（大成功 1%）→ Lv0 を 1 個 29%（10 + 30 × 0.66 = 29.8）→ 2 個 49%（49.6）
-    expect(head([])).toBe("触媒 0 → 成功率 10%（大成功 1%）");
+    expect(head([])).toBe("触媒を 1〜3 個選べ"); // M24 C-2: 選ぶ前は成功率でなく指示（town.upgrade.catalystPick）
     expect(head([a!])).toBe("触媒 1 → 成功率 29%（大成功 2%）");
     expect(head([a!, b!])).toBe("触媒 2 → 成功率 49%（大成功 4%）");
     // 確認の段の見出し（town.upgrade.ask）と同じ値
     expect(townHeadingText({ upConfirm: { ...sel, picked: [a!] } }, m, S, upgradePreview(s, data, "c1", "weapon", [a!]))).toContain("成功率 29%（大成功 2%）");
     // 値が無ければ固定の問い（townHeading のキー）
-    expect(townHeadingText({ upCat: sel }, m, S, null)).toBe(S["town.upgrade.catalyst"]);
+    expect(townHeadingText({ upCat: { ...sel, picked: [a!] } }, m, S, null)).toBe(S["town.upgrade.catalyst"]);
+    expect(kinsokuLines(S["town.upgrade.catalystPick"]!, 28)).toHaveLength(1);
+    expect(kinsokuLines(S["town.upgrade.catalyst"]!, 28)).toHaveLength(1);
+    expect(kinsokuLines(S["town.upgrade.needCatalyst"]!, 28)).toHaveLength(1);
     expect(townHeading({ upCat: sel })).toBe("town.upgrade.catalyst");
     // 最悪の値（触媒 3・成功率 100・大成功 10）でも見出しの 1 行
     expect(kinsokuLines(formatMessage(S["town.upgrade.catalystRate"]!, { n: 3, rate: 100, great: 10 }), 28)).toHaveLength(1);

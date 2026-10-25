@@ -750,7 +750,15 @@ export function createApp(o: {
   const notReadyReason = (e: TownEntry): Pick<ControlItem, "onDisabled"> => {
     // TW-09（M10）: 転職先の dim の行も同じく理由の 1 文（理由は core の classChangeOptions から views/town が作る）
     // TW-05（M16 追補 H-4）: 装備できない者の行も理由の 1 文（command は送らない）。語ってから「誰に持たせる？」に戻らず品の一覧（shopBuy）へ
-    const reason = e.kind === "enter" ? e.notReady : e.kind === "ccClass" || e.kind === "buy" ? e.reason : null;
+    // TW-17（M24 C-2）: 触媒を選ぶ前の dim の「決める」も理由の 1 文（town.upgrade.needCatalyst）
+    const reason =
+      e.kind === "enter"
+        ? e.notReady
+        : e.kind === "ccClass" || e.kind === "buy"
+          ? e.reason
+          : e.kind === "page" && e.disabled === true
+            ? t("town.upgrade.needCatalyst")
+            : null;
     if (reason === null) return {};
     return {
       onDisabled: () =>
@@ -765,7 +773,7 @@ export function createApp(o: {
     label: e.label,
     // UI-66（2026-10-06）: 施設メニューから施設に入る行は ok の代わりに施設に入る音
     ...(townPage === "menu" && e.kind === "page" ? { sound: "facility" as const } : {}),
-    disabled: "disabled" in e ? e.disabled : false,
+    disabled: "disabled" in e ? e.disabled === true : false,
     // UI-52（M24 B-1）: 鑑定済みの呪われた品の行は danger（views/town.ts の cursedTone）
     ...("tone" in e && e.tone !== undefined ? { tone: e.tone } : {}),
     // UI-66（2026-10-07）: 戻るは位置によらず取り消しの音
@@ -1073,7 +1081,9 @@ export function createApp(o: {
       // UI-13: 見出し（段の問い。ログに残さない）と一覧。UI-11: 末尾の戻るは一覧の外に固定する。
       // TW-04（M18 5-3）: 宿屋は見出しの 2 行目に一行の HP / MP の合計と宿で上がる人数（townHeadingSub）。TW-17（M20 D-7）: 触媒の段は料金
       const sub = townHeadingSub(townPage, menu, strings, previewOf(townPage));
-      c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", town: { heading, sub } });
+      // TW-17（M24 C-2）: 触媒の段だけ、末尾から 2 つ目の「決める」も一覧の外に固定する（listDecide）
+      const upCatPage = typeof townPage === "object" && "upCat" in townPage;
+      c.setList(items, { fixedLast: ents[ents.length - 1]?.kind === "back", fixedDecide: upCatPage, town: { heading, sub } });
       c.setMode("list");
       return;
     }
