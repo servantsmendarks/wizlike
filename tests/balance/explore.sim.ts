@@ -22,7 +22,7 @@ const D01_16: ExploreVariant = { label: "d01 の盤 16×16", dungeonIds: ["d01"]
 
 describe("バランス（M25 探索ボット）", () => {
   (skip ? test.skip : test)(
-    `M25 計測: 探索ボット（nearest / random）で各階の降り口を見つけるまでの歩数と未踏の口を ${SEEDS} シード（基準と d01 の 16×16。数字は出力するだけで、合否は不変条件）`,
+    `M25 計測: 探索ボット（nearest / random / nearest-hint / random-hint）で各階の降り口を見つけるまでの歩数と未踏の口を ${SEEDS} シード（基準と d01 の 16×16。数字は出力するだけで、合否は不変条件）`,
     () => {
       for (const v of [BASE, D01_16]) {
         const t0 = performance.now();

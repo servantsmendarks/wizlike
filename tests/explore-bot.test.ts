@@ -2,13 +2,15 @@
 // 守ること、「見つけた」と未踏の口の数がゲームの規則（DG-46 / UI-78 / DG-13）と一致すること、決定的であること、歩き切れることを確かめる。
 import { describe, expect, test } from "vitest";
 import { generateDive, idx } from "../src/core/rules/dungeon-gen";
-import { mapView } from "../src/core/rules/dungeon";
+import { mapView, octant } from "../src/core/rules/dungeon";
 import { chestGenOf, floorOf } from "../src/core/rules/floor";
 import { createRng } from "../src/core/rng";
 import type { Command, Floor, GameState } from "../src/core/types";
 import {
   enterFacing,
   exploreFloorWalk,
+  failuresOf,
+  isHintPolicy,
   measureExplore,
   POLICIES,
   type Policy,
@@ -22,13 +24,15 @@ import { dataWithRate, ENTER_D01, run } from "./helpers/dungeon";
 
 const CFG = data.config.dungeon;
 const D01 = data.dungeons.find((d) => d.id === "d01")!;
+const BASE_POLICIES: readonly Policy[] = ["nearest", "random"];
+const HINT_POLICIES: readonly Policy[] = POLICIES.filter(isHintPolicy);
 const diveOf = (seed: number): Floor[] => generateDive(D01, CFG, seed, chestGenOf(data, "d01"));
 const optsFor = (f: Floor, policy: Policy, seed: number, extra: Partial<WalkOptions> = {}): WalkOptions => ({
   goal: f.floor === D01.floors ? "boss" : "stairsDown",
   policy,
   depth: CFG.viewDepth,
   hintSteps: CFG.lostHintSteps,
-  rng: policy === "random" ? createRng(walkSeed("test", "d01", seed, f.floor)) : undefined,
+  rng: policy === "random" || policy === "random-hint" ? createRng(walkSeed("test", "d01", seed, f.floor)) : undefined,
   ...extra,
 });
 
@@ -62,7 +66,7 @@ describe("計測の道具（M25）探索ボット", () => {
   test("計測の道具（M25）DG-13: 盤の未探索のマス（見つけた時点で explored に無いマス）の中身と降り口・ボスの座標を書き換えても、歩きはまったく同じ（判断に盤の全体を使っていない。d01 の 20 シード・全階・両方針）", () => {
     for (let seed = 1; seed <= 20; seed++) {
       for (const f of diveOf(seed)) {
-        for (const policy of POLICIES) {
+        for (const policy of BASE_POLICIES) {
           let atFound: number[] | null = null;
           const trace: WalkMove[] = [];
           const w = exploreFloorWalk(
@@ -235,5 +239,157 @@ describe("計測の道具（M25）探索ボット", () => {
         }
       }
     }
+  });
+
+  test("計測の道具（M25）DG-46 / DG-46b: 一言を聞く前の手は、同じシードの nearest / random と完全に同じ（聞かなかった階は歩き全体が同じ）。d01 の 30 シード・全階", () => {
+    let withHint = 0;
+    let without = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      for (const f of diveOf(seed)) {
+        for (const [base, hp] of [
+          ["nearest", "nearest-hint"],
+          ["random", "random-hint"],
+        ] as const) {
+          const rngSeed = 1000 + seed * 10 + f.floor;
+          const walk = (p: Policy): { trace: WalkMove[]; w: ReturnType<typeof exploreFloorWalk> } => {
+            const trace: WalkMove[] = [];
+            const w = exploreFloorWalk(f, f.stairsUp, enterFacing(f), { ...optsFor(f, p, seed, { trace }), rng: createRng(rngSeed) });
+            return { trace, w };
+          };
+          const a = walk(base);
+          const b = walk(hp);
+          expect(a.w.hintOctant).toBeNull();
+          if (b.w.hintStep === null) {
+            without += 1;
+            expect(b.trace).toEqual(a.trace);
+          } else {
+            withHint += 1;
+            // hintStep 回目の前進（その手を含む）までが一言の前の手
+            let moves = 0;
+            let cut = 0;
+            while (moves < b.w.hintStep) if (b.trace[cut++]!.command === "move") moves += 1;
+            expect(b.trace.slice(0, cut)).toEqual(a.trace.slice(0, cut));
+          }
+        }
+      }
+    }
+    expect(withHint).toBeGreaterThan(5);
+    expect(without).toBeGreaterThan(5);
+  });
+
+  test("計測の道具（M25）DG-05 / DG-46b: hint 方針も決定的（同じ入力から同じ結果）で、d01 の 40 シードで失敗せず、一言が出るのは降り口の階だけ（hintOnBossFloor 既定 false）", () => {
+    const v = { label: "hint", dungeonIds: ["d01"], seeds: 40, policies: HINT_POLICIES };
+    const a = measureExplore(data, v);
+    expect(measureExplore(data, v).dungeons).toEqual(a.dungeons);
+    expect(failuresOf(a)).toBe(0);
+    let told = 0;
+    for (const fr of a.dungeons[0]!.floorRecords) {
+      for (const { list } of fr.walks) {
+        for (const w of list) {
+          expect(w.found).not.toBeNull();
+          expect(w.found!).toBeLessThanOrEqual(w.reached!);
+          if (fr.goal === "boss") expect([w.hintFired, w.hintOctant, w.hintStep]).toEqual([null, null, null]);
+          else if (w.hintOctant !== null) {
+            told += 1;
+            expect(w.hintFired).toBe(true);
+            expect(w.hintStep!).toBeGreaterThanOrEqual(CFG.lostHintSteps);
+          } else expect(w.hintFired).toBe(false);
+        }
+      }
+    }
+    expect(told).toBeGreaterThan(5);
+  });
+
+  test("計測の道具（M25）DG-46b: hintOnBossFloor が真なら最下層でもボスのマスを目標に一言が出る（偽なら出ない）", () => {
+    const base = { label: "boss", dungeonIds: ["d01"], seeds: 30, policies: HINT_POLICIES };
+    const off = measureExplore(data, base);
+    const on = measureExplore(data, { ...base, hintOnBossFloor: true });
+    const last = (r: typeof on) => r.dungeons[0]!.floorRecords.at(-1)!;
+    expect(last(off).walks.every(({ list }) => list.every((w) => w.hintOctant === null && w.hintFired === null))).toBe(true);
+    expect(last(on).walks.every(({ list }) => list.every((w) => w.hintFired !== null))).toBe(true);
+    expect(last(on).walks.some(({ list }) => list.some((w) => w.hintOctant !== null))).toBe(true);
+    expect(failuresOf(on)).toBe(0);
+  });
+
+  test("計測の道具（M25）DG-46b: 道具の語った方角は、ゲームの方角の一言のキー hint.lostExitsDir.<方角>（d01 は lostHintDirection）と一致する（罠などを片付けた 1 階・40 シード・両 hint 方針。一言が出たシードが 1 つ以上）", () => {
+    const d0 = dataWithRate(0, 0);
+    let told = 0;
+    for (const policy of HINT_POLICIES) {
+      for (let seed = 1; seed <= 40; seed++) {
+        let state: GameState = run(newGame(seed), ENTER_D01, d0).state;
+        const base = floorOf(state.dive!, d0);
+        const cleared = base.cells
+          .map((c, i) => ({ c, i }))
+          .filter(({ c }) => c.kind === "trap" || c.kind === "chest" || c.kind === "event" || c.kind === "teleporter")
+          .map(({ i }) => ({ floor: 1, x: i % base.width, y: Math.floor(i / base.width) }));
+        state = { ...state, dive: { ...state.dive!, clearedCells: [...state.dive!.clearedCells, ...cleared] } };
+        const f = floorOf(state.dive!, d0);
+        const trace: WalkMove[] = [];
+        const w = exploreFloorWalk(f, state.dive!.pos, state.dive!.facing, { ...optsFor(f, policy, seed, { trace }), depth: d0.config.dungeon.viewDepth });
+        let key: string | null = null;
+        let gameSteps: number | null = null;
+        for (const m of trace) {
+          const r = run(state, m.command === "move" ? { type: "dungeon.move" } : { type: "dungeon.turn", dir: m.command }, d0);
+          state = r.state;
+          const e = r.events.find((x) => x.kind === "message" && x.key.startsWith("hint.lostExits"));
+          if (e !== undefined && e.kind === "message") {
+            key = e.key;
+            gameSteps = state.dive!.floorSteps;
+            break;
+          }
+          if (state.pendingChoice?.promptKey === "dungeon.stairsUp") state = run(state, { type: "event.choose", optionId: "stay" }, d0).state;
+          if (state.pendingChoice !== null || state.battle !== null || state.dive!.chest !== null) break;
+        }
+        if (w.hintOctant === null) expect(key, `seed ${seed} ${policy}`).toBeNull();
+        else if (key !== null) {
+          expect(key, `seed ${seed} ${policy}`).toBe(`hint.lostExitsDir.${w.hintOctant}`);
+          expect(gameSteps).toBe(w.hintStep);
+          told += 1;
+        }
+      }
+    }
+    expect(told).toBeGreaterThan(5);
+  });
+
+  test("計測の道具（M25）DG-46b: 一言の後に目標の座標を使っていない。語られた方角が変わらない別の座標に目標を替え、歩いたことのないマスの中身を替えても、歩きは同じ（d01 の 30 シード・両 hint 方針）。口の候補の規則 hintCandidate は Known・hintPos・方角だけを受け取る", () => {
+    let swapped = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      for (const f of diveOf(seed)) {
+        if (f.stairsDown === null) continue;
+        for (const policy of HINT_POLICIES) {
+          let finalSeen: number[] = [];
+          const trace: WalkMove[] = [];
+          const w = exploreFloorWalk(f, f.stairsUp, enterFacing(f), optsFor(f, policy, seed, { trace, observe: (o) => (finalSeen = [...o.explored]) }));
+          if (w.hintOctant === null || w.hintPos === null) continue;
+          const seen = new Set<number>(finalSeen);
+          // 同じ方角になる別の座標（歩いたことのないマス）に目標を移し、歩いたことのないマスは全部 4 辺 open の降り口にする
+          let alt: { x: number; y: number } | null = null;
+          for (let y = 0; y < f.height && alt === null; y++) {
+            for (let x = 0; x < f.width; x++) {
+              if (seen.has(idx(f, x, y)) || (x === f.stairsDown.x && y === f.stairsDown.y)) continue;
+              if (octant(w.hintPos, { x, y }) === w.hintOctant) {
+                alt = { x, y };
+                break;
+              }
+            }
+          }
+          if (alt === null) continue;
+          const lie: Floor = structuredClone(f);
+          lie.cells.forEach((c, i) => {
+            if (seen.has(i)) return;
+            c.kind = "stairsDown";
+            c.n = c.e = c.s = c.w = "open";
+            c.roomId = null;
+          });
+          lie.stairsDown = alt;
+          const trace2: WalkMove[] = [];
+          const w2 = exploreFloorWalk(lie, f.stairsUp, enterFacing(f), optsFor(lie, policy, seed, { trace: trace2 }));
+          expect(trace2, `seed ${seed} floor ${f.floor} ${policy}`).toEqual(trace);
+          expect([w2.hintOctant, w2.hintStep, w2.found]).toEqual([w.hintOctant, w.hintStep, w.found]);
+          swapped += 1;
+        }
+      }
+    }
+    expect(swapped).toBeGreaterThan(5);
   });
 });

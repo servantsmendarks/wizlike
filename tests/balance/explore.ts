@@ -11,16 +11,22 @@
 // - 「見つけた」は explored のマスの kind で決める（座標の比較で近道しない。DG-46 / UI-78 の「見えただけで見つけた」）。
 // - 盤の形の統計（boardStats）と探索率の分母は全知だが、集計だけに使い、歩きの判断には渡さない。
 // 扱わないもの: 罠・遭遇・宝箱・イベント（revealFloor / revealStairs）・転移・方角の一言（盤を歩くだけ）。
-import type { Config, DungeonDef, GameData } from "../../src/core/data/index";
+import { type Config, type DungeonDef, type GameData, type Octant, OCTANTS } from "../../src/core/data/index";
+import { octant } from "../../src/core/rules/dungeon";
 import { cellAt, distancesFrom, edgeOf, FACINGS, generateDive, idx, inBounds, isDeadEnd, isPassable, opposite, step, turnLeft, turnRight } from "../../src/core/rules/dungeon-gen";
 import { chestGenOf, visibleCellsOf } from "../../src/core/rules/floor";
 import { routeOnFloor } from "../../src/core/rules/pathfind";
 import { createRng, randInt, type RngState } from "../../src/core/rng";
 import type { Cell, Facing, Floor, Pos, RouteStep } from "../../src/core/types";
 
-/** nearest: 自分のマスから explored を通る BFS で最初に見つかる口。random: 全部の口から一様に 1 つ（道具の側の乱数） */
-export type Policy = "nearest" | "random";
-export const POLICIES: readonly Policy[] = ["nearest", "random"];
+/**
+ * nearest: 自分のマスから explored を通る BFS で最初に見つかる口。random: 全部の口から一様に 1 つ（道具の側の乱数）。
+ * nearest-hint / random-hint: 方角の一言（DG-46 / DG-46b）を聞くまでは nearest / random と同じ手で、聞いた後は語られた方角（と両隣）の口だけを候補にする
+ */
+export type Policy = "nearest" | "random" | "nearest-hint" | "random-hint";
+export const POLICIES: readonly Policy[] = ["nearest", "random", "nearest-hint", "random-hint"];
+export const isHintPolicy = (p: Policy): boolean => p === "nearest-hint" || p === "random-hint";
+const usesRng = (p: Policy): boolean => p === "random" || p === "random-hint";
 /** 1 階あたりの手（前進 + 旋回）の上限。超えたら失敗として数える（例外にしない） */
 export const ACTION_CAP = 5000;
 
@@ -99,7 +105,7 @@ export function exitsOf(known: Known): Exit[] {
 }
 
 /** nearest: 自分のマスから explored のマスを通る BFS（マスの数の距離。向きは無視）で最初に見つかる口。BFS の順と FACINGS の順で決まる */
-function nearestExit(known: Known, from: Pos): Exit | null {
+function nearestExit(known: Known, from: Pos, accept?: (e: Exit) => boolean): Exit | null {
   const f = known.fog;
   const seen = new Set<number>([idx(f, from.x, from.y)]);
   const queue: Pos[] = [from];
@@ -111,7 +117,10 @@ function nearestExit(known: Known, from: Pos): Exit | null {
       const n = step(p, d);
       if (!inBounds(f, n.x, n.y)) continue;
       const ni = idx(f, n.x, n.y);
-      if (!known.explored.has(ni)) return { pos: p, d };
+      if (!known.explored.has(ni)) {
+        if (accept === undefined || accept({ pos: p, d })) return { pos: p, d };
+        continue;
+      }
       if (!seen.has(ni)) {
         seen.add(ni);
         queue.push(n);
@@ -122,9 +131,34 @@ function nearestExit(known: Known, from: Pos): Exit | null {
 }
 
 /** random: 全部の口から一様に 1 つ */
-function randomExit(known: Known, rng: RngState): Exit | null {
-  const list = exitsOf(known);
+function randomExit(known: Known, rng: RngState, accept?: (e: Exit) => boolean): Exit | null {
+  const list = exitsOf(known).filter((e) => accept === undefined || accept(e));
   return list.length === 0 ? null : list[randInt(rng, 0, list.length - 1)]!;
+}
+
+/** 八方位の輪の上の距離（0〜4） */
+function octantGap(a: Octant, b: Octant): number {
+  const k = Math.abs(OCTANTS.indexOf(a) - OCTANTS.indexOf(b));
+  return Math.min(k, OCTANTS.length - k);
+}
+
+/**
+ * 一言の後の口の選び方の候補の判定（Known・一言を聞いた位置・語られた方角だけを引数に取る。目標の座標は受け取らない）:
+ * 口の先のマス n について octant(hintPos, n) が語られた方角かその両隣（8 方位で ±1）なら候補。候補が 1 つも無ければ全部の口が候補
+ */
+export function hintCandidate(known: Known, hintPos: Pos, told: Octant): (e: Exit) => boolean {
+  const near = (e: Exit): boolean => octantGap(octant(hintPos, step(e.pos, e.d)), told) <= 1;
+  return exitsOf(known).some(near) ? near : () => true;
+}
+
+/** nearest-hint: 候補のうち nearest と同じ BFS の順で最初のもの */
+export function nearestHintExit(known: Known, from: Pos, hintPos: Pos, told: Octant): Exit | null {
+  return nearestExit(known, from, hintCandidate(known, hintPos, told));
+}
+
+/** random-hint: 候補から一様に 1 つ */
+export function randomHintExit(known: Known, rng: RngState, hintPos: Pos, told: Octant): Exit | null {
+  return randomExit(known, rng, hintCandidate(known, hintPos, told));
 }
 
 /** explored のマスだけを通る経路（DG-15 の routeOnFloor を fog の上で） */
@@ -171,7 +205,9 @@ export type WalkOptions = {
   depth: number;
   /** config.dungeon.lostHintSteps（DG-46） */
   hintSteps: number;
-  /** random の方針の乱数（ゲームの乱数とは無関係） */
+  /** 真なら最下層でもボスのマスを目標に一言を出す（既定 false。今のゲームは最下層では出さない） */
+  hintOnBossFloor?: boolean;
+  /** random / random-hint の方針の乱数（ゲームの乱数とは無関係） */
   rng?: RngState;
   cap?: number;
   trace?: WalkMove[];
@@ -195,6 +231,12 @@ export type FloorWalk = {
   exploredAtFound: number | null;
   /** DG-46: 前進の後に歩数 ≥ hintSteps かつ降り口が見えていない、が一度でも起きたか（最下層は null） */
   hintFired: boolean | null;
+  /**
+   * 方角の一言（hint 方針だけ。階ごとに 1 回。最下層は hintOnBossFloor のときだけ）: 語られた方角と、そのときの歩数・位置。出なければ null
+   */
+  hintOctant: Octant | null;
+  hintStep: number | null;
+  hintPos: Pos | null;
   endPos: Pos;
   endFacing: Facing;
   failed: boolean;
@@ -220,6 +262,10 @@ export function exploreFloorWalk(f: Floor, start: Pos, facing: Facing, opt: Walk
   let exitsAtFound: number | null = null;
   let exploredAtFound: number | null = null;
   let hint = false;
+  let hintOctant: Octant | null = null;
+  let hintStep: number | null = null;
+  let hintPos: Pos | null = null;
+  const hintApplies = opt.goal === "stairsDown" || opt.hintOnBossFloor === true;
   const samples: number[] = [];
 
   const look = (): void => {
@@ -242,7 +288,18 @@ export function exploreFloorWalk(f: Floor, start: Pos, facing: Facing, opt: Walk
     steps += 1;
     actions += 1;
     look();
-    if (opt.goal === "stairsDown" && steps >= opt.hintSteps && known.goal === null) hint = true;
+    if (hintApplies && steps >= opt.hintSteps && known.goal === null) {
+      if (!hint && isHintPolicy(opt.policy)) {
+        // 目標の座標を使ってよいのはここだけ（ゲームが語る方角 octant(今の位置, 目標) を 1 回計算する。以後の判断は hintPos と hintOctant だけ）
+        const target = f.stairsDown ?? f.boss;
+        if (target !== null) {
+          hintOctant = octant(pos, target);
+          hintStep = steps;
+          hintPos = { x: pos.x, y: pos.y };
+        }
+      }
+      hint = true;
+    }
     if (!wasFound) samples.push(known.exits);
     const m: WalkMove = { command: "move", phase, pos: { x: pos.x, y: pos.y }, facing: dir, targetKnownBefore: before };
     if (knownAtChoice !== undefined) m.targetKnownAtChoice = knownAtChoice;
@@ -282,10 +339,11 @@ export function exploreFloorWalk(f: Floor, start: Pos, facing: Facing, opt: Walk
       break;
     }
     let ex: Exit | null;
-    if (opt.policy === "nearest") ex = nearestExit(known, pos);
+    const told = hintOctant !== null && hintPos !== null ? { at: hintPos, dir: hintOctant } : null;
+    if (!usesRng(opt.policy)) ex = told === null ? nearestExit(known, pos) : nearestHintExit(known, pos, told.at, told.dir);
     else {
       if (opt.rng === undefined) throw new Error("exploreFloorWalk: random policy needs rng");
-      ex = randomExit(known, opt.rng);
+      ex = told === null ? randomExit(known, opt.rng) : randomHintExit(known, opt.rng, told.at, told.dir);
     }
     if (ex === null) {
       failReason = "no exit";
@@ -320,7 +378,10 @@ export function exploreFloorWalk(f: Floor, start: Pos, facing: Facing, opt: Walk
     exitsPeak: samples.length === 0 ? fallback : Math.max(...samples),
     exitsAtFound,
     exploredAtFound,
-    hintFired: opt.goal === "stairsDown" ? hint : null,
+    hintFired: hintApplies ? hint : null,
+    hintOctant,
+    hintStep,
+    hintPos,
     endPos: pos,
     endFacing: dir,
     failed: failReason !== null,
@@ -443,6 +504,8 @@ export type ExploreVariant = {
   defOverride?: Readonly<Record<string, Partial<DungeonDef>>>;
   /** config.dungeon の上書き（doorsPerRoom / braidRatio / straightBias / roomSize など） */
   cfgOverride?: Partial<Config["dungeon"]>;
+  /** 真なら最下層でもボスのマスを目標に方角の一言を出す（既定 false） */
+  hintOnBossFloor?: boolean;
 };
 
 export type FloorRecord = {
@@ -471,6 +534,7 @@ export type ExploreResult = {
   policies: readonly Policy[];
   dungeons: DungeonRecord[];
   ms: { gen: number; walk: number };
+  hintOnBossFloor: boolean;
 };
 
 /** random の方針の乱数のシード: (変形・ダンジョン・diveSeed・階) の FNV-1a */
@@ -524,7 +588,9 @@ export function measureExplore(data: GameData, v: ExploreVariant): ExploreResult
             policy,
             depth: cfg.viewDepth,
             hintSteps: cfg.lostHintSteps,
-            rng: policy === "random" ? createRng(walkSeed(v.label, id, seed, f.floor)) : undefined,
+            hintOnBossFloor: v.hintOnBossFloor === true,
+            // 方針ごとに別のシード（random-hint は random とは別の列）
+            rng: usesRng(policy) ? createRng(walkSeed(policy === "random" ? v.label : `${v.label}|${policy}`, id, seed, f.floor)) : undefined,
           });
           fr.walks[pi]!.list.push(w);
           facing = w.failed ? null : w.endFacing;
@@ -534,7 +600,7 @@ export function measureExplore(data: GameData, v: ExploreVariant): ExploreResult
     }
     dungeons.push(rec);
   }
-  return { label: v.label, seeds: v.seeds, policies, dungeons, ms: { gen: genMs, walk: walkMs } };
+  return { label: v.label, seeds: v.seeds, policies, dungeons, ms: { gen: genMs, walk: walkMs }, hintOnBossFloor: v.hintOnBossFloor === true };
 }
 
 // ===================== 表 =====================
@@ -584,7 +650,7 @@ export function formatExploreReport(r: ExploreResult, title: string): string {
   const gens = r.dungeons.map((d) => `${d.id} ${d.width}×${d.height} 生成 ${d.dives}/${r.seeds}（Error ${d.genErrors}${d.genErrorSamples.length > 0 ? `: ${d.genErrorSamples.join(" / ")}` : ""}）`);
   lines.push(
     `条件: diveSeed 1..${r.seeds}。${gens.join("、")}。方針 ${r.policies.join(" / ")}。所要 生成 ${(r.ms.gen / 1000).toFixed(2)} 秒・歩き ${(r.ms.walk / 1000).toFixed(2)} 秒。ボットの失敗 ${failuresOf(r)}。`,
-    "歩数は前進の回数（floorSteps と同じ）。「見つける」は explored に降り口（最下層はボス）のマスが入った時点。罠・遭遇・宝箱・イベント（revealFloor / revealStairs）・転移・方角の一言は扱わない。一言の割合は「ゲームで 1 回」を無視して毎回出ると仮定（最下層は —）。未踏の口は前進のたびに数えた値の見つけるまでの平均（の平均）・1 回の歩きの最大（の中央値）・見つけた時点（の中央値）。",
+    `歩数は前進の回数（floorSteps と同じ）。「見つける」は explored に降り口（最下層はボス）のマスが入った時点。罠・遭遇・宝箱・イベント（revealFloor / revealStairs）・転移は扱わない。方角の一言は nearest / random では「出たか」の割合だけ（ゲームの「ゲームで 1 回」は無視して毎階出ると仮定。最下層は ${r.hintOnBossFloor ? "ボスのマスを目標に出す" : "—"}）、*-hint では聞いた後に語られた方角（と両隣）の口を選ぶ。未踏の口は前進のたびに数えた値の見つけるまでの平均（の平均）・1 回の歩きの最大（の中央値）・見つけた時点（の中央値）。`,
     "",
     "| ダンジョン | 階 | 方針 | 見つけるまで 最小 / 中央値 / 平均 / p90 / 最大 | 着くまで 中央値 | 見つけた時の探索率 | 一言の割合 | 未踏の口 平均 / 最大の中央値 / 見つけた時 | 失敗 |",
     "|---|---|---|---|---|---|---|---|---|",
