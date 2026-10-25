@@ -34,6 +34,11 @@ export type ControlItem = {
    * 呼び出し側が項目の種類（戦闘の back・キャンプの cancel・街の back）から付ける。setList の fixedLast の末尾は印が無くても戻る・やめる
    */
   back?: boolean;
+  /**
+   * UI-52 / UI-59（M24 B-1）: 一覧の行（setList）の文字の色。"danger" は鑑定済みの呪われた品の名前の行。省略は今どおり（text）。
+   * disabled の dim が優先する。label は変えない（印は足さない）
+   */
+  tone?: "danger";
 };
 
 /** UI-66: 表示層の操作の音の種類（data/audio.json の ui のキー） */
@@ -128,9 +133,9 @@ function buttonStyle(b: HTMLElement, r: Rect, origin: Rect): void {
   });
 }
 
-/** UI-36（M7）: 一覧の行の見た目を決める値の印（文言・dim・注目の有無・固定の戻るか・行の幅と高さ・街の一覧か・広い一覧か） */
+/** UI-36（M7）: 一覧の行の見た目を決める値の印（文言・dim・注目の有無・固定の戻るか・行の幅と高さ・街の一覧か・広い一覧か・色の tone（M24 B-1）） */
 function listRowSig(it: ControlItem, isBack: boolean, w: number, h: number, town: boolean, wide: boolean): string {
-  return JSON.stringify([it.label, it.disabled === true, it.onFocus !== undefined, isBack, w, h, town, wide]);
+  return JSON.stringify([it.label, it.disabled === true, it.onFocus !== undefined, isBack, w, h, town, wide, it.tone ?? null]);
 }
 
 function sameSigs(a: readonly string[], b: readonly string[]): boolean {
@@ -535,6 +540,8 @@ export function createControls(o: {
             whiteSpace: "nowrap",
             overflow: "hidden",
           });
+        // UI-52 / UI-59（M24 B-1）: 呪われた品の行は danger。dim（disabled）が優先する
+        if (it.tone !== undefined && it.disabled !== true) b.style.color = `var(--c-${it.tone})`;
         dimIf(b, it);
         // 要素を使い回すので、押したときは今の listItems の k 番目を見る
         onTap(b, () => {

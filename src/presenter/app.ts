@@ -766,6 +766,8 @@ export function createApp(o: {
     // UI-66（2026-10-06）: 施設メニューから施設に入る行は ok の代わりに施設に入る音
     ...(townPage === "menu" && e.kind === "page" ? { sound: "facility" as const } : {}),
     disabled: "disabled" in e ? e.disabled : false,
+    // UI-52（M24 B-1）: 鑑定済みの呪われた品の行は danger（views/town.ts の cursedTone）
+    ...("tone" in e && e.tone !== undefined ? { tone: e.tone } : {}),
     // UI-66（2026-10-07）: 戻るは位置によらず取り消しの音
     back: e.kind === "back",
     // UI-52 / TW-11（M9）: 準備中の迷宮の dim の行を押したら、会話の箱に理由の 1 文（準備中かは core の notReady）
@@ -1197,6 +1199,8 @@ export function createApp(o: {
         label: x.label,
         disabled: x.disabled,
         back: x.choice.kind === "cancel",
+        // UI-59（M24 B-1）: 鑑定済みの呪われた品の行は danger
+        ...(x.tone === undefined ? {} : { tone: x.tone }),
         // UI-68（M10）: peek の行は dim でも選べる（唱えられない呪文の説明を見る）
         ...(x.peek === true ? { onDisabled: choose } : campReason(x)),
         onSelect: choose,
@@ -1262,7 +1266,7 @@ export function createApp(o: {
       // UI-67（M10）: 装備の段の品の詳細の下に、core の equipPreview の差分（装備できない・外せないなら null で出さない）
       const pv = p.preview === undefined ? null : equipPreview(state, data, p.preview.memberId, p.preview.slot, p.preview.instanceId, p.preview.from); // TW-16c（M21）: 倉庫の候補は from
       const lines = pv === null ? panel.lines : [...panel.lines, ...formatEquipPreview(pv, strings)];
-      return { kind: "lines", title: panel.title, lines, tall: true };
+      return { kind: "lines", title: panel.title, lines, tall: true, ...(panel.titleTone === undefined ? {} : { titleTone: panel.titleTone }) };
     }
     if (p.kind === "book") return { kind: "lines", ...formatBook(uniqueBookView(state, data), strings), tall: true }; // IT-66 / UI-11（M7）: 図鑑はビューとメッセージの領域に広げる
     if (p.kind === "bestiary") return formatBestiary(m.bestiary, p.focus, strings); // UI-79（M18）: 敵の図鑑（tallRect に広げる）

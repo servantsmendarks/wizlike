@@ -741,3 +741,37 @@ describe("UI-41 被弾のフラッシュ（M23 A-2）", () => {
     expect(calls[0]!.opt).toEqual({ duration: 120, easing: "steps(4, end)" });
   });
 });
+
+describe("UI-59（M24 B-1）キャラクター画面の呪われた品の色", () => {
+  test("UI-59/IT-32 鑑定済みの呪われた装備・所持品は danger（core の slots[].cursed / inventory[].cursed）。未鑑定は付かない。注目（focus / itemFocus）の accent が優先し、部位の名は色を変えない", () => {
+    vi.stubGlobal("document", { createElement: (): FakeEl => new FakeEl() });
+    const s = structuredClone(newGame(1));
+    const ch = s.party[0]!;
+    ch.equipment.weapon = cursedDagger(s, true);
+    ch.inventory = [cursedDagger(s, true), cursedDagger(s, false)];
+    const d = formatCharacter(ch, data, S, nameOf(s), memberSheet(s, data, ch), campMenu(s, data)!.members[0]!, { tappable: true, inventoryFold: 0 });
+    const w = SLOT_ORDER.indexOf("weapon");
+    expect(d.equipment.map((e) => e.danger === true)).toEqual(SLOT_ORDER.map((x) => x === "weapon"));
+    expect(d.inventory.map((c) => [c.text, c.danger === true])).toEqual([
+      ["短剣", true],
+      ["短い刃？", false],
+    ]);
+    // member を渡さなければ付けない
+    expect(formatCharacter(ch, data, S, nameOf(s)).equipment.some((e) => e.danger === true)).toBe(false);
+    const v = createDetailView({ x: 0, y: 16, w: 240, h: 284 });
+    const el = v.el as unknown as FakeEl;
+    const colors = (cls: string) => el.children.filter((c) => c.className === cls).map((c) => c.style["color"]);
+    const D = "var(--c-danger)";
+    const A = "var(--c-accent)";
+    v.render(d);
+    expect(colors("detail-item")[w]).toBe(D);
+    expect(colors("detail-slot")[w]).toBeUndefined();
+    expect(colors("detail-inventory")).toEqual([D, undefined]);
+    // 注目は accent が優先（装備の枠 focusSlot・所持品の itemFocus）
+    v.render(d, w);
+    expect(colors("detail-item")[w]).toBe(A);
+    const firstCell = characterHitRects(d, 240).findIndex((r) => r.tap.kind === "item" && r.tap.instanceId === ch.inventory[0]);
+    v.render(d, null, firstCell);
+    expect(colors("detail-inventory")).toEqual([A, undefined]);
+  });
+});

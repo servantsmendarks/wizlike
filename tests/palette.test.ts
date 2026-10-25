@@ -39,4 +39,11 @@ describe("palette", () => {
     const band = (["text", "dim", "danger", "status", "san"] as const).map((r) => PALETTE[ROLES[r]]);
     expect(new Set(band).size).toBe(band.length);
   });
+
+  test("UI-04/UI-59（M24 B-1）役 option はパレットの既存の sky（色は増やさない）で、text・dim・danger・accent と違う", () => {
+    expect(ROLES.option).toBe("sky");
+    expect(cssVars()["--c-option"]).toBe(PALETTE.sky);
+    const roles = (["text", "dim", "danger", "accent", "option"] as const).map((r) => PALETTE[ROLES[r]]);
+    expect(new Set(roles).size).toBe(roles.length);
+  });
 });

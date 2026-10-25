@@ -40,6 +40,8 @@ export const ROLES = {
   status: "orange",
   /** UI-13（M8.5）: 街のパーティの帯の SAN の段 */
   san: "sky",
+  /** UI-04 / UI-59（M24 B-1）: 品のオプションの行と鑑定で見つかったオプションの文（青。パレットの既存の sky を割り当てる） */
+  option: "sky",
 } as const satisfies Record<string, PaletteName>;
 
 export type Role = keyof typeof ROLES;

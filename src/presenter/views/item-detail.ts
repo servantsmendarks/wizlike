@@ -5,9 +5,13 @@ import type { Strings } from "../../core/data/index";
 import type { EquipPreview, EquipPreviewLine, ItemDetail, ItemDetailOption, UniqueBookRow } from "../../core/rules/item-view";
 import { formatMessage } from "./message";
 
-/** パネルの 1 行。tone は色（danger は負のオプションと呪い、dim は説明、accent は装備の差分の変わった行（UI-67）） */
-export type PanelLine = { text: string; tone: "normal" | "danger" | "dim" | "accent" };
-export type PanelLines = { title: string; lines: PanelLine[] };
+/**
+ * パネルの 1 行。tone は色（danger は呪いの行と装備の差分の警告・外れるオプション、dim は説明、accent は装備の差分の変わった行（UI-67）、
+ * option は品の詳細のオプションの行（M24 B-1。青））
+ */
+export type PanelLine = { text: string; tone: "normal" | "danger" | "dim" | "accent" | "option" };
+/** titleTone（M24 B-1）: 見出しの色。"danger" は鑑定済みの呪われた品（省略は accent） */
+export type PanelLines = { title: string; lines: PanelLine[]; titleTone?: "danger" };
 
 /** 説明を 1 行に入れる文字数（美咲の全角 8px。パネルの幅 240 − 左右の余白 8 = 232px → 29 字。1 字の余裕を残す） */
 export const DESCRIPTION_CHARS = 28;
@@ -36,7 +40,8 @@ export function chunkDescription(text: string): string[] {
 
 /**
  * UI-59 / IT-11 / IT-12: 品の詳細の行。見出しは表示名。
- * 部位（と Lv）→（未鑑定なら「鑑定するまで分からない」と売値（見た目の品種の売値。IT-61）だけ）→ 希少度（装備だけ）→ 性能（ダメージ・魔法攻撃力・長柄 / 飛び道具の後列から届く / AC）→ オプション → 固有スキル → 呪い → 売値 → 説明
+ * 部位（と Lv）→（未鑑定なら「鑑定するまで分からない」と売値（見た目の品種の売値。IT-61）だけ）→ 希少度（装備だけ）→ 性能（ダメージ・魔法攻撃力・長柄 / 飛び道具の後列から届く / AC）→ オプション → 固有スキル → 呪い → 売値 → 説明。
+ * M24 B-1: オプションの行は option（青）、呪いの行は danger、鑑定済みの呪われた品は見出しの titleTone も danger
  */
 export function formatItemDetail(d: ItemDetail, strings: Strings): PanelLines {
   const line = (text: string, tone: PanelLine["tone"] = "normal"): PanelLine => ({ text, tone });
@@ -58,7 +63,8 @@ export function formatItemDetail(d: ItemDetail, strings: Strings): PanelLines {
   } else if (p !== null) {
     lines.push(line(s(strings, "item.detail.ac", { ac: p.ac })));
   }
-  for (const o of d.options) lines.push(line(optionRowText(o, strings)));
+  // UI-59（M24 B-1）: オプションの行は option（青）
+  for (const o of d.options) lines.push(line(optionRowText(o, strings), "option"));
   if (d.skill !== null) lines.push(line(s(strings, `item.skill.${d.skill.type}`, { value: d.skill.value })));
   // IT-32（M24）: 呪いの行（効果があれば item.curse.row、無ければ item.curse.rowNone）
   if (d.cursed)
@@ -70,7 +76,8 @@ export function formatItemDetail(d: ItemDetail, strings: Strings): PanelLines {
     );
   if (d.sellPrice !== null) lines.push(line(s(strings, "item.detail.sell", { gold: d.sellPrice })));
   if (d.description !== null) lines.push(...chunkDescription(d.description).map((t) => line(t, "dim")));
-  return { title: d.name, lines };
+  // UI-59（M24 B-1）: 鑑定済みの呪われた品は見出し（品名）も danger
+  return { title: d.name, lines, ...(d.cursed ? { titleTone: "danger" as const } : {}) };
 }
 
 /**

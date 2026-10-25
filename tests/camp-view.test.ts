@@ -523,7 +523,7 @@ describe("CH-76/UI-59 装備（キャラクター画面の下）", () => {
     const m = input(s);
     expect(rows(campEntries("camp", { kind: "equip", stage: "item", memberId: "c3", slot: "weapon" }, m, S))).toEqual([
       { label: "外す", disabled: true, choice: { kind: "unequip" } },
-      { label: "短剣（装備中）", disabled: false, choice: { kind: "detail", instanceId: cursed } },
+      { label: "短剣（装備中）", disabled: false, choice: { kind: "detail", instanceId: cursed }, tone: "danger" }, // M24 B-1: 鑑定済みの呪われた品
       { label: "短剣（呪いで外せない）", disabled: false, choice: { kind: "detail", instanceId: "i7" } },
       cancel,
     ]);
@@ -1715,5 +1715,29 @@ describe("UI-33/UI-80（M21 A-4）キャラクター画面の品のキー操作"
     expect(v.characterTaps()).toEqual([]);
     v.render({ kind: "text", title: "キャンプ" });
     expect(v.characterTaps()).toEqual([]);
+  });
+});
+
+describe("UI-59（M24 B-1）キャンプの品の行の色（鑑定済みの呪われた品は tone danger）", () => {
+  test("UI-59/IT-32 渡すの品の行・装備の候補・銀行の状態の倉庫の候補は core の cursed が真なら tone danger（label は変えない）。未鑑定の呪いは付かない", () => {
+    const s = inTown();
+    const c3 = s.party[2]!;
+    const known = cursedDagger(s, true);
+    const hidden = cursedDagger(s, false);
+    c3.inventory.push(known, hidden);
+    const stored = cursedDagger(s, true);
+    s.warehouse.push(stored);
+    const m = input(s);
+    const give = rows(campEntries("camp", { kind: "give", stage: "item", memberId: "c3", page: 0 }, m, S)).filter((e) => e.choice.kind === "item");
+    const tone = (e: CampEntry | undefined): string | undefined => e?.tone;
+    expect(tone(give.find((e) => e.choice.kind === "item" && e.choice.instanceId === known))).toBe("danger");
+    expect(tone(give.find((e) => e.choice.kind === "item" && e.choice.instanceId === hidden))).toBeUndefined();
+    const eq = rows(campEntries("bank", { kind: "equip", stage: "item", memberId: "c3", slot: "weapon" }, m, S));
+    const byId = (id: string): CampEntry | undefined => eq.find((e) => e.choice.kind === "detail" && e.choice.instanceId === id);
+    expect(byId(known)!.label).toBe("短剣");
+    expect(tone(byId(known))).toBe("danger");
+    expect(tone(byId(hidden))).toBeUndefined();
+    expect(tone(byId(stored))).toBe("danger");
+    expect(tone(byId(c3.equipment.weapon!))).toBeUndefined(); // 普通の装備中の品
   });
 });

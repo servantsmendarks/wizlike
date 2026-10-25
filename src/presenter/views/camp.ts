@@ -49,7 +49,7 @@ import { PALETTE } from "../palette";
 import { chooseSprite } from "../sprites";
 import { enemyFill, spriteUrl } from "./battle";
 import { BAND_ELLIPSIS_KEY, fitName, textUnits } from "./party-band";
-import { LIST_ROW_UNITS } from "./town";
+import { cursedTone, LIST_ROW_UNITS } from "./town";
 
 /** bank は TW-16c（M21 A-2）の銀行の「状態」（酒場の状態と同じ。キャラクター画面に「倉庫から」の枠が付く） */
 export type CampHost = "camp" | "tavern" | "bank";
@@ -136,7 +136,8 @@ export type CampChoice =
  * reason は押せない項目を押したときに語る文（core の値から作ったものだけ。無ければ何もしない）。
  * peek は dim（disabled）でも選べる行（UI-68 の呪文の一覧。唱えられない呪文も説明を見られる。押しても送るのは説明の段の「唱える」だけ）
  */
-export type CampEntry = { label: string; disabled: boolean; choice: CampChoice; reason?: string; peek?: true };
+/** tone（M24 B-1）は鑑定済みの呪われた品の行の "danger"（core の cursed。setList が文字の色にする。dim が優先）。省略は今どおり */
+export type CampEntry = { label: string; disabled: boolean; choice: CampChoice; reason?: string; peek?: true; tone?: "danger" };
 /** grid は layout.campGrid の 8 枠（null は空き枠）、list は操作領域の一覧 */
 export type CampEntries = { layout: "grid"; slots: (CampEntry | null)[] } | { layout: "list"; rows: CampEntry[] };
 /** 段を移る・閉じる・送る（送った後は after の段へ） */
@@ -539,7 +540,7 @@ export function campEntries(host: CampHost, page: CampPage, m: CampInput, string
       const rows: CampEntry[] = [];
       if (cur !== undefined && cur.instanceId !== null) {
         rows.push(unequipRow(cur));
-        rows.push({ label: s(strings, "camp.equip.current", { name: cur.name ?? "" }), disabled: false, choice: { kind: "detail", instanceId: cur.instanceId } });
+        rows.push({ label: s(strings, "camp.equip.current", { name: cur.name ?? "" }), disabled: false, choice: { kind: "detail", instanceId: cur.instanceId }, ...cursedTone(cur.cursed) });
       }
       for (const c of cands) {
         const b = blockOf(c);
@@ -547,6 +548,7 @@ export function campEntries(host: CampHost, page: CampPage, m: CampInput, string
           label: b === null ? c.name : s(strings, "camp.equip.blocked", { name: c.name, why: s(strings, `camp.equipBlock.${b}`) }),
           disabled: false,
           choice: { kind: "detail", instanceId: c.instanceId },
+          ...cursedTone(c.cursed),
         });
       }
       for (const c of stored) {
@@ -554,6 +556,7 @@ export function campEntries(host: CampHost, page: CampPage, m: CampInput, string
           label: warehouseRowLabel(c.name, c.block === null ? null : s(strings, `camp.equipBlock.${c.block}`), strings),
           disabled: false,
           choice: { kind: "detail", instanceId: c.instanceId, from: "warehouse" },
+          ...cursedTone(c.cursed),
         });
       }
       if (cands.length === 0 && stored.length === 0) rows.push({ label: s(strings, "camp.equip.none"), disabled: true, choice: { kind: "none" } });
@@ -594,7 +597,7 @@ export function campEntries(host: CampHost, page: CampPage, m: CampInput, string
       const p = page.stage === "item" ? page.page : 0;
       const rows: CampEntry[] = inv
         .slice(p * CHARACTER_INVENTORY_CELLS, (p + 1) * CHARACTER_INVENTORY_CELLS)
-        .map((it) => ({ label: it.name, disabled: false, choice: { kind: "item", instanceId: it.instanceId } }));
+        .map((it): CampEntry => ({ label: it.name, disabled: false, choice: { kind: "item", instanceId: it.instanceId }, ...cursedTone(it.cursed) }));
       return list([...rows, ...pageRows(strings, p, pageCount(inv.length, CHARACTER_INVENTORY_CELLS))]);
     }
     case "spell": {
@@ -1144,8 +1147,8 @@ export type CampPanelView =
   /** UI-59（M10）: キャラクター画面（tallRect に広げる）。tappable は UI-80（M20）の品を押せる画面（characterTarget が行き先を返す） */
   | { kind: "character"; detail: CharacterDetail; focusSlot: number | null; tappable?: boolean; itemFocus?: number | null }
   | { kind: "order"; lines: { label: string; row: string; picked: boolean }[] }
-  /** UI-59 の品の詳細・IT-66 の図鑑（M7）。見出しは accent、行は tone の色（danger / dim）。tall ならパネルを tallRect に広げる（図鑑・キャラクター画面の下の品の詳細。UI-11） */
-  | { kind: "lines"; title: string; lines: PanelLine[]; tall?: boolean }
+  /** UI-59 の品の詳細・IT-66 の図鑑（M7）。見出しは accent（titleTone があればその色。M24 B-1）、行は tone の色（danger / dim / accent / option）。tall ならパネルを tallRect に広げる（図鑑・キャラクター画面の下の品の詳細。UI-11） */
+  | { kind: "lines"; title: string; lines: PanelLine[]; tall?: boolean; titleTone?: "danger" }
   /** UI-79（M18）: 敵の図鑑（formatBestiary。tallRect に広げる） */
   | BestiaryPanel;
 
@@ -1336,8 +1339,10 @@ export function createCampView(rect: Rect, tallRect: Rect = rect, art?: CampArt)
       }
       if (p.kind === "lines") {
         const color = (tone: PanelLine["tone"]): string | undefined =>
-          tone === "danger" ? "var(--c-danger)" : tone === "dim" ? "var(--c-dim)" : tone === "accent" ? "var(--c-accent)" : undefined;
-        el.replaceChildren(line(0, p.title, "camp-title", "var(--c-accent)"), ...p.lines.map((x, i) => line(i + 1, x.text, "camp-line", color(x.tone))));
+          tone === "normal" ? undefined : `var(--c-${tone})`;
+        // M24 B-1: 鑑定済みの呪われた品の見出しは danger（titleTone）。それ以外は accent
+        const titleColor = p.titleTone === undefined ? "var(--c-accent)" : `var(--c-${p.titleTone})`;
+        el.replaceChildren(line(0, p.title, "camp-title", titleColor), ...p.lines.map((x, i) => line(i + 1, x.text, "camp-line", color(x.tone))));
         return;
       }
       el.replaceChildren(line(0, p.title, "camp-title", "var(--c-accent)"), ...(p.lines ?? []).map((x, i) => line(i + 1, x, "camp-summary")));

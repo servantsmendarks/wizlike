@@ -379,6 +379,32 @@ describe("controls", () => {
     expect(buttons()).toHaveLength(6);
   });
 
+  test("UI-52/UI-59（M24 B-1）一覧の行の tone danger は文字を var(--c-danger) にし（label は変えない）、disabled の dim が優先する。tone が替われば作り直す（listRowSig の材料）", () => {
+    const created = fakeDocument();
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const c = createControls({ region: g.controls, layout: L, strings: data.strings, onAction: () => {}, hold: HOLD, onClose: () => {} });
+    const rows = (): FakeEl[] => created.filter((e) => e.className === "controls-list-item");
+    c.setList([
+      { label: "短剣", onSelect: () => {}, tone: "danger" },
+      { label: "長剣", onSelect: () => {}, tone: "danger", disabled: true },
+      { label: "薬草", onSelect: () => {} },
+    ]);
+    const [cursed, dim, plain] = rows();
+    expect(cursed!.textContent).toBe("短剣");
+    expect(cursed!.style["color"]).toBe("var(--c-danger)");
+    expect(dim!.style["color"]).toBe("var(--c-dim)");
+    expect(plain!.style["color"]).toBe("var(--c-text)");
+    // 同じ文言・dim で tone だけ外れたら作り直す
+    c.setList([
+      { label: "短剣", onSelect: () => {} },
+      { label: "長剣", onSelect: () => {}, tone: "danger", disabled: true },
+      { label: "薬草", onSelect: () => {} },
+    ]);
+    expect(rows()).toHaveLength(6);
+    expect(rows()[3]!.style["color"]).toBe("var(--c-text)");
+  });
+
   test("UI-11 setList(fixedLast) は末尾を一覧の外の controls-list-back（layout.listBack）に置き、残りを幅 168 の一覧に置く。select(n) と setListFocus(末尾) は戻るを指す", () => {
     const created = fakeDocument();
     const g = regions(data.config.ui.layout, data.config.stage.width);

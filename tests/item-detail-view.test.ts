@@ -31,7 +31,7 @@ const detailOf = (s: GameState, id: string) => {
 
 describe("UI-59 formatItemDetail（品の詳細の行）", () => {
   // 2026-10-05: 実機(M7-B) の【未定】で部位の次に希少度の行（item.detail.rarity「希少度 {rarity}」、語は book.rarity.*）を足し、各期待値に 1 行足した
-  test("UI-59/IT-11/IT-20/IT-31/IT-34 汎用武器: 見出しは表示名、部位と Lv、希少度、ダメージ +Lv の分、オプション（符号付き。ac は AC の増減）、売値", () => {
+  test("UI-59/IT-11/IT-20/IT-31/IT-34 汎用武器: 見出しは表示名、部位と Lv、希少度、ダメージ +Lv の分、オプション（符号付き。ac は AC の増減。M24 B-1 から tone option）、売値。呪われていなければ titleTone は無い", () => {
     const s = town();
     const id = createItemInstance(s, {
       itemId: "long_sword",
@@ -49,8 +49,8 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
         { text: "武器　Lv5", tone: "normal" },
         { text: "希少度 希少", tone: "normal" },
         { text: "攻撃 1d8+5", tone: "normal" },
-        { text: "命中 +10%", tone: "normal" },
-        { text: "AC -1", tone: "normal" },
+        { text: "命中 +10%", tone: "option" },
+        { text: "AC -1", tone: "option" },
         { text: "売値 255 G", tone: "normal" }, // floor(100 × 0.5 × 3.5) = 175 + 40 × 2
       ],
     });
@@ -121,11 +121,12 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
     for (const u of data.uniques) expect(S[`item.skill.${u.skill.type}`], u.skill.type).toBeDefined();
   });
 
-  test("UI-59/IT-32/IT-12 呪いは item.curse.row「呪い: 外せない／{name} {value}{unit}」（danger。M24。効果が無ければ item.curse.rowNone「呪い: 外せない」）を「呪われている」の位置に。オプションの行は normal。未鑑定は名前・部位・「鑑定するまで分からない」・見た目の品種の売値だけ", () => {
+  test("UI-59/IT-32/IT-12 呪いは item.curse.row「呪い: 外せない／{name} {value}{unit}」（danger。M24。効果が無ければ item.curse.rowNone「呪い: 外せない」）を「呪われている」の位置に。M24 B-1: 見出しは titleTone danger、オプションの行は option。未鑑定は名前・部位・「鑑定するまで分からない」・見た目の品種の売値だけ（titleTone も無い）", () => {
     const s = town();
     const known = cursedDagger(s, true);
     expect(formatItemDetail(detailOf(s, known), S)).toEqual({
       title: "短剣",
+      titleTone: "danger",
       lines: [
         { text: "武器　Lv0", tone: "normal" },
         { text: "希少度 通常", tone: "normal" },
@@ -136,7 +137,7 @@ describe("UI-59 formatItemDetail（品の詳細の行）", () => {
     });
     const none = createItemInstance(s, { itemId: "dagger", identified: true, cursed: true, rarity: "fine", options: [{ optionId: "str", tier: 1, value: 1 }] });
     expect(formatItemDetail(detailOf(s, none), S).lines.slice(3, 5)).toEqual([
-      { text: "力 +1", tone: "normal" },
+      { text: "力 +1", tone: "option" },
       { text: "呪い: 外せない", tone: "danger" },
     ]);
     // 最悪の値（どのオプションも最大の段の負の値）でも 1 行（28 字）に収まる
@@ -259,6 +260,12 @@ describe("UI-59 パネルの lines", () => {
       ["武器　Lv0", "14px", undefined],
       ["力 -1", "24px", "var(--c-danger)"],
       ["説明", "34px", "var(--c-dim)"],
+    ]);
+    // UI-59（M24 B-1）: titleTone danger の見出しは danger、option の行は var(--c-option)
+    v.render({ kind: "lines", title: "短剣", titleTone: "danger", lines: [{ text: "力 +1", tone: "option" }] });
+    expect(el.children.map((c) => [c.textContent, c.style["color"]])).toEqual([
+      ["短剣", "var(--c-danger)"],
+      ["力 +1", "var(--c-option)"],
     ]);
   });
 

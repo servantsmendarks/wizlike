@@ -2361,7 +2361,7 @@ describe("TW-07/UI-52（M24）解呪の品の段と確認の段", () => {
     const swordName = itemDisplayName(s, data, sword);
     expect(townEntries({ uncurseItems: "c2" }, m, S)).toEqual([
       { kind: "pick", to: { uncurseAsk: { memberId: "c2", instanceId: dagger } }, label: "短い刃？　50 G", disabled: false },
-      { kind: "pick", to: { uncurseAsk: { memberId: "c2", instanceId: sword } }, label: `${swordName}　${fee} G`, disabled: true },
+      { kind: "pick", to: { uncurseAsk: { memberId: "c2", instanceId: sword } }, label: `${swordName}　${fee} G`, disabled: true, tone: "danger" }, // M24 B-1: 鑑定済みの呪い（未鑑定の短剣は付かない）
       back,
     ]);
     expect(townHeading({ uncurseItems: "c2" })).toBe("town.temple.uncurseWhich");
@@ -2456,5 +2456,38 @@ describe("TW-07/UI-52（M18 5-4）寺院の最初の段の料金の目安", () =
       expect(textUnits(label), label).toBeLessThanOrEqual(39);
     }
     expect(S["town.menu.note.temple"]).toBe("蘇生・治療・解呪");
+  });
+});
+
+describe("UI-52（M24 B-1）街の一覧の品の行の色（鑑定済みの呪われた品は tone danger）", () => {
+  test("UI-52/IT-32 売る・買い戻し・品を預ける・品を引き出す・強化の部位・触媒の行は core の cursed が真なら tone danger（label は変えない）。未鑑定の呪いと普通の品は tone を持たない", () => {
+    const s = town();
+    const c1 = s.party[0]!;
+    const known = cursedDagger(s, true);
+    const hidden = cursedDagger(s, false);
+    c1.inventory = [known, hidden];
+    const stored = cursedDagger(s, true);
+    s.warehouse.push(stored);
+    const u = createItemInstance(s, { itemId: "long_sword", uniqueId: "shadowfolk_sword", rarity: "fine", identified: true, cursed: true });
+    s.buyback.push(u);
+    const worn = cursedDagger(s, true);
+    s.party[1]!.equipment.weapon = worn;
+    const m = menuOf(s);
+    /** 戻るの行を除いた行の tone */
+    const toneOf = (es: TownEntry[]): (string | undefined)[] => es.filter((e) => e.kind !== "back").map((e) => ("tone" in e ? e.tone : undefined));
+    const sell = townEntries({ sell: "c1" }, m, S).filter((e) => e.kind !== "back");
+    expect(sell.map((e) => e.label)).toEqual([`短剣　${m.shop.sellable[0]!.items[0]!.price} G`, `短い刃？　${m.shop.sellable[0]!.items[1]!.price} G`]);
+    expect(toneOf(sell)).toEqual(["danger", undefined]);
+    expect(toneOf(townEntries("shopBuyback", m, S))).toEqual(["danger"]);
+    expect(toneOf(townEntries({ deposit: "c1" }, m, S))).toEqual([undefined, "danger", undefined]);
+    expect(toneOf(townEntries("storageWithdraw", m, S))).toEqual(["danger"]);
+    const slots = townEntries({ upSlot: "c2" }, m, S);
+    expect(toneOf(slots)[0]).toBe("danger"); // 武器の枠（装備中の呪われた短剣）
+    expect(toneOf(slots).slice(1).every((t) => t === undefined)).toBe(true);
+    const cats = townEntries({ upCat: { memberId: "c1", slot: "weapon", picked: [] } }, m, S).filter((e) => e.kind === "upPick");
+    expect(cats.map((e) => [e.label.startsWith("○短剣"), "tone" in e ? e.tone : undefined])).toEqual([
+      [true, "danger"],
+      [true, "danger"],
+    ]);
   });
 });

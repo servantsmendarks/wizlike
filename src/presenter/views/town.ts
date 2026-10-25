@@ -84,10 +84,18 @@ export type ClassChangeSel = { memberId: string; classId: string };
  * options はページの者の classChangeOptions（申し出る者の段では []）
  */
 export type ClassChangeView = { members: { memberId: string; name: string }[]; options: ClassChangeOption[] };
+/**
+ * UI-52（M24 B-1）: 品の行（pick・sell・deposit・upPick）の tone。core の行の cursed（鑑定済みの呪い）が真なら "danger"（app が ControlItem の tone に写す）。
+ * 偽なら欄を持たない（今どおり）
+ */
+export function cursedTone(cursed: boolean): { tone?: "danger" } {
+  return cursed ? { tone: "danger" } : {};
+}
+
 export type TownEntry =
   | { kind: "page"; to: TownPage; label: string }
   /** M7: 次のページへ移る行で、押せないことがあるもの（売れる品の無い者・払えない買い戻しの品など）。disabled なら dim */
-  | { kind: "pick"; to: TownPage; label: string; disabled: boolean }
+  | { kind: "pick"; to: TownPage; label: string; disabled: boolean; tone?: "danger" }
   | { kind: "inn"; rank: number; label: string; disabled: boolean }
   | { kind: "temple"; service: TempleService; memberId: string; label: string; disabled: boolean }
   | { kind: "dark"; memberId: string; label: string; disabled: boolean }
@@ -115,7 +123,7 @@ export type TownEntry =
    */
   | { kind: "buy"; itemId: string; memberId: string; label: string; disabled: boolean; reason: string | null; compare: string[] | null }
   /** IT-61: 売る品の行（名前と売値）。押すと確認の段 { sellAsk }（M18 5-2。M17 までは town.shop の sell） */
-  | { kind: "sell"; memberId: string; instanceId: string; label: string; disabled: boolean }
+  | { kind: "sell"; memberId: string; instanceId: string; label: string; disabled: boolean; tone?: "danger" }
   /** TW-05（M18 5-2）: 買うの確認の「買う」。押すと town.shop の buy（持たせる者の段の行と同じ条件で disabled） */
   | { kind: "buyYes"; itemId: string; memberId: string; label: string; disabled: boolean }
   /** IT-61（M18 5-2）: 売るの確認の「売る」。押すと town.shop の sell */
@@ -131,7 +139,7 @@ export type TownEntry =
   /** TW-16b（M17）: すべて預ける（memberId null は全員。core の depositAllOk でなければ disabled）。押すと town.storage の depositAll */
   | { kind: "depositAll"; memberId: string | null; label: string; disabled: boolean }
   /** TW-16: 預ける品の行（倉庫が満杯なら disabled）。押すと town.storage の deposit */
-  | { kind: "deposit"; memberId: string; instanceId: string; label: string; disabled: boolean }
+  | { kind: "deposit"; memberId: string; instanceId: string; label: string; disabled: boolean; tone?: "danger" }
   /** TW-16: 引き出した品を受け取る者の行（所持枠の空きが無ければ disabled）。押すと town.storage の withdraw */
   | { kind: "withdraw"; memberId: string; instanceId: string; label: string; disabled: boolean }
   /** TW-13 / UI-52（M5.5）: 酒場の「見回す」。押すと town.lookAround（酒場の一覧にとどまる） */
@@ -142,7 +150,7 @@ export type TownEntry =
   | { kind: "rules"; label: string }
   /** TW-17: 触媒の行。押すと選択の印を付け外しした { upCat } へ（語りは出さない）。3 個選んだ後の未選択の行は disabled */
   /** TW-17: 触媒の印の付け外し。info（M20 B-2）は押したときに会話の箱で語る性能の 1 文（upgradeCatalystInfo） */
-  | { kind: "upPick"; to: TownPage; label: string; disabled: boolean; info: string }
+  | { kind: "upPick"; to: TownPage; label: string; disabled: boolean; info: string; tone?: "danger" }
   /** TW-17: 確認の「鍛える」。押すと town.upgrade（upgradePreview の block が null でなければ disabled） */
   | { kind: "upgrade"; memberId: string; slot: EquipSlot; catalysts: UpgradeCatalystRef[]; label: string; disabled: boolean }
   /**
@@ -502,7 +510,7 @@ export function townEntries(
   if (page === "shopBuyback") {
     // IT-63: 買い戻しのストック（売った順）の行（名前と値段。払えなければ disabled）
     const rows = menu.shop.buyback.map(
-      (r): TownEntry => ({ kind: "pick", to: { buyback: r.instanceId }, label: s(strings, "town.shop.row", { name: r.name, cost: r.price }), disabled: !r.affordable }),
+      (r): TownEntry => ({ kind: "pick", to: { buyback: r.instanceId }, label: s(strings, "town.shop.row", { name: r.name, cost: r.price }), disabled: !r.affordable, ...cursedTone(r.cursed) }),
     );
     return orEmpty(rows, "town.shop.buyback.none");
   }
@@ -549,7 +557,7 @@ export function townEntries(
     return [...rows, back];
   }
   if (page === "storageWithdraw") {
-    const rows = menu.storage.items.map((r): TownEntry => ({ kind: "pick", to: { withdraw: r.instanceId }, label: r.name, disabled: false }));
+    const rows = menu.storage.items.map((r): TownEntry => ({ kind: "pick", to: { withdraw: r.instanceId }, label: r.name, disabled: false, ...cursedTone(r.cursed) }));
     return orEmpty(rows, "town.storage.empty");
   }
   if ("upSlot" in page) {
@@ -561,7 +569,7 @@ export function townEntries(
       // M16（4-5）: 強化の画面では Lv を常に「+N」で出す（town.upgrade.itemLv。IT-11 の表示名は変えない）
       const label =
         x.plainName === null ? s(strings, "town.upgrade.slotEmpty", { slot }) : s(strings, "town.upgrade.slotRow", { slot, item: upgradeItemName(x.plainName, x.level, strings) });
-      return { kind: "pick", to: { upCat: { memberId, slot: x.slot, picked: [] } }, label, disabled: x.block !== null };
+      return { kind: "pick", to: { upCat: { memberId, slot: x.slot, picked: [] } }, label, disabled: x.block !== null, ...cursedTone(x.cursed) };
     });
     return [...rows, back];
   }
@@ -579,6 +587,7 @@ export function townEntries(
         label: upgradeCatalystLabel(c, on, strings),
         disabled: !on && full,
         info: upgradeCatalystInfo(c, strings),
+        ...cursedTone(c.cursed),
       };
     });
     const decide: TownEntry = { kind: "page", to: { upConfirm: sel }, label: s(strings, "town.upgrade.decide") };
@@ -630,7 +639,7 @@ export function townEntries(
     const memberId = page.sell;
     const m = menu.shop.sellable.find((x) => x.memberId === memberId);
     const rows = (m?.items ?? []).map(
-      (r): TownEntry => ({ kind: "sell", memberId, instanceId: r.instanceId, label: s(strings, "town.shop.sellRow", { name: r.name, gold: r.price }), disabled: false }),
+      (r): TownEntry => ({ kind: "sell", memberId, instanceId: r.instanceId, label: s(strings, "town.shop.sellRow", { name: r.name, gold: r.price }), disabled: false, ...cursedTone(r.cursed) }),
     );
     return orEmpty(rows, "town.shop.sell.none");
   }
@@ -679,7 +688,7 @@ export function townEntries(
       label: s(strings, "town.storage.depositAllOne", { count: m?.items.length ?? 0 }),
       disabled: !(m?.depositAllOk ?? false),
     };
-    const rows = (m?.items ?? []).map((r): TownEntry => ({ kind: "deposit", memberId, instanceId: r.instanceId, label: r.name, disabled: full }));
+    const rows = (m?.items ?? []).map((r): TownEntry => ({ kind: "deposit", memberId, instanceId: r.instanceId, label: r.name, disabled: full, ...cursedTone(r.cursed) }));
     return [all, ...orEmpty(rows, "town.storage.none")];
   }
   if ("withdraw" in page) {
@@ -706,6 +715,7 @@ export function townEntries(
         to: { uncurseAsk: { memberId, instanceId: r.instanceId } },
         label: s(strings, "town.temple.uncurseItem", { item: r.name, fee: r.fee }),
         disabled: !r.affordable,
+        ...cursedTone(r.cursed),
       }),
     );
     return orEmpty(rows, "town.temple.none");

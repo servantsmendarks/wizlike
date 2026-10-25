@@ -34,7 +34,8 @@ export const CHARACTER_SPELL_ROWS = CHARACTER_SPELL_CELLS / 2;
  * 所持品・呪文の 1 枠。dim は dim 色（戦闘外で唱えられない呪文）。
  * UI-80（M20）: instanceId は押すと品の詳細を開く所持品の枠、more は押すと畳んだ所持品の次の分を出す「ほか {n}」の枠
  */
-export type CharacterCell = { text: string; dim: boolean; instanceId?: string; more?: true };
+/** danger（M24 B-1）: 鑑定済みの呪われた品（core の campMenu の inventory[].cursed）。文字を danger で描く（dim・注目の accent が優先）。偽なら欄を持たない */
+export type CharacterCell = { text: string; dim: boolean; instanceId?: string; more?: true; danger?: true };
 /** UI-80（M20）: キャラクター画面のパネルを押したときの行き先（品の詳細・所持品の次の分） */
 export type CharacterTap = { kind: "item"; instanceId: string } | { kind: "more" };
 
@@ -64,8 +65,11 @@ export type CharacterDetail = {
   ac: string;
   /** M7 / MG-33: 魔法攻撃力（detail.magicPower。core の memberSheet の magicPower）。sheet が無ければ空 */
   magicPower: string;
-  /** 装備 6 枠（SLOT_ORDER の順）。item は表示名、空きは detail.equipNone。instanceId は装備中の品（UI-80。空きは null） */
-  equipment: { slot: string; item: string; instanceId: string | null }[];
+  /**
+   * 装備 6 枠（SLOT_ORDER の順）。item は表示名、空きは detail.equipNone。instanceId は装備中の品（UI-80。空きは null）。
+   * danger（M24 B-1）は鑑定済みの呪われた品（core の campMenu の slots[].cursed）で、品の名を danger で描く（注目の accent が優先）。偽なら欄を持たない
+   */
+  equipment: { slot: string; item: string; instanceId: string | null; danger?: true }[];
   /** UI-59（M10）: 所持品の見出し（character.inventoryHeading{used, max, equipped}。equipped は M16 の CH-71。member が無ければ空） */
   inventoryHeading: string;
   /** UI-80（M20）: 所持品の見出しの右の注記（character.tapHint「押すと詳細」。dim）。品を押せる画面（キャラクター画面そのもの）だけで、ほかは空 */
@@ -124,7 +128,7 @@ export function formatCharacter(
   strings: Strings,
   itemName: (instanceId: string) => string,
   sheet?: MemberSheet,
-  member?: Pick<CampMember, "inventory" | "slotsUsed" | "slotsMax" | "equipped" | "knownSpells">,
+  member?: Pick<CampMember, "inventory" | "slotsUsed" | "slotsMax" | "equipped" | "knownSpells"> & Partial<Pick<CampMember, "slots">>,
   view: { inventoryPage?: number; spellPage?: number; tappable?: boolean; inventoryFold?: number } = {},
 ): CharacterDetail {
   const s = (key: string, params?: Record<string, string | number>): string => formatMessage(strings[key] ?? key, params);
@@ -133,6 +137,8 @@ export function formatCharacter(
   const cond = conditionText(ch.life, ch.status, strings);
   const stats = sheet?.stats ?? ch.stats;
   const sanCap = sheet?.sanMax ?? ch.sanMax;
+  /** 所持品の枠（M24 B-1: 鑑定済みの呪われた品は danger） */
+  const invCell = (x: CampMember["inventory"][number]): CharacterCell => ({ text: x.name, dim: false, instanceId: x.instanceId, ...(x.cursed ? { danger: true as const } : {}) });
   const more = (n: number): string => s("character.more", { n });
   const next =
     sheet === undefined || sheet.levelUpView === "blocked"
@@ -164,7 +170,9 @@ export function formatCharacter(
     magicPower: sheet === undefined ? "" : s("detail.magicPower", { value: sheet.magicPower }),
     equipment: SLOT_ORDER.map((slot) => {
       const id = ch.equipment[slot];
-      return { slot: s(`detail.slot.${slot}`), item: id === null ? s("detail.equipNone") : itemName(id), instanceId: id };
+      // M24 B-1: 鑑定済みの呪われた品は danger（core の slots[].cursed。member が無ければ付けない）
+      const cursed = id !== null && member?.slots?.find((x) => x.slot === slot)?.cursed === true;
+      return { slot: s(`detail.slot.${slot}`), item: id === null ? s("detail.equipNone") : itemName(id), instanceId: id, ...(cursed ? { danger: true as const } : {}) };
     }),
     inventoryHeading: member === undefined ? "" : s("character.inventoryHeading", { used: member.slotsUsed, max: member.slotsMax, equipped: member.equipped }),
     tapHint: member !== undefined && view.tappable === true ? s("character.tapHint") : "",
@@ -172,8 +180,8 @@ export function formatCharacter(
       member === undefined
         ? []
         : view.tappable === true
-          ? foldedCells(member.inventory, view.inventoryFold ?? 0, (x) => ({ text: x.name, dim: false, instanceId: x.instanceId }), more)
-          : characterCells(member.inventory, CHARACTER_INVENTORY_CELLS, (x) => ({ text: x.name, dim: false, instanceId: x.instanceId }), more, view.inventoryPage),
+          ? foldedCells(member.inventory, view.inventoryFold ?? 0, (x) => invCell(x), more)
+          : characterCells(member.inventory, CHARACTER_INVENTORY_CELLS, (x) => invCell(x), more, view.inventoryPage),
     spellHeading: member === undefined ? "" : s("character.spellHeading"),
     spells:
       member === undefined
@@ -326,6 +334,7 @@ export function createDetailView(rect: Rect): DetailView {
   const cells = (first: number, xs: readonly CharacterCell[], cls: string, focus: number | null = null): HTMLElement[] =>
     xs.map((c, i) => {
       const t = text(first + Math.floor(i / 2), CELL_COLUMNS[i % 2]!, CELL_W, c.text, cls);
+      if (c.danger === true) t.style.color = "var(--c-danger)"; // M24 B-1: 鑑定済みの呪われた品
       if (c.dim) t.style.color = "var(--c-dim)";
       if (i === focus) t.style.color = "var(--c-accent)";
       return t;
@@ -370,6 +379,7 @@ export function createDetailView(rect: Rect): DetailView {
         text(7, 4, full, d.attack, "detail-attack"),
         ...d.equipment.flatMap((e, i) => {
           const row = [text(8 + i, SLOT_X, SLOT_W, e.slot, "detail-slot"), text(8 + i, ITEM_X, rect.w - ITEM_X - 4, e.item, "detail-item")];
+          if (e.danger === true) row[1]!.style.color = "var(--c-danger)"; // M24 B-1: 鑑定済みの呪われた品の名（注目の accent が優先）
           if (i === focusSlot || i === focusEquip) for (const r of row) r.style.color = "var(--c-accent)";
           return row;
         }),
