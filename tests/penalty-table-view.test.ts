@@ -36,10 +36,10 @@ describe("UI-56 出目の表", () => {
     const last = b[b.length - 1]!;
     const v = formatPenaltyTable(tableEv(null), S);
     const pct = (r: number) => Math.round(r * 100);
-    expect(v.lines[0]!.text).toBe(`　${first.min}〜${first.max} ${first.name} 金−${pct(first.goldLossRatio)}% 品−${first.itemLoss} 経験−${pct(first.expLossRatio)}%`);
+    expect(v.lines[0]!.text).toBe(`　${first.min}〜${first.max} ${first.name} 金-${pct(first.goldLossRatio)}% 品-${first.itemLoss} 経験-${pct(first.expLossRatio)}%`);
     // 末尾の帯は min === max（rowOne）
     expect(last.min).toBe(last.max);
-    expect(v.lines.at(-1)!.text).toBe(`　${last.min} ${last.name} 金−${pct(last.goldLossRatio)}% 品−${last.itemLoss} 経験−${pct(last.expLossRatio)}%`);
+    expect(v.lines.at(-1)!.text).toBe(`　${last.min} ${last.name} 金-${pct(last.goldLossRatio)}% 品-${last.itemLoss} 経験-${pct(last.expLossRatio)}%`);
     // どの行も箱の内側の幅（224 − 8 = 216px）に収まる
     for (const l of [v.title, ...v.lines.map((x) => x.text)]) expect(widthOf(l), l).toBeLessThanOrEqual(216);
   });

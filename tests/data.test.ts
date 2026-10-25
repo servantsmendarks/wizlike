@@ -2236,3 +2236,30 @@ describe("UI-81 金額の表記（M22 追補。2026-10-18）", () => {
     }
   });
 });
+
+// node の fs で読む（@types/node は入れていないので型は手で書く。message.test.ts と同じ）
+const FS_MODULE = "node:fs";
+const fs = (await import(/* @vite-ignore */ FS_MODULE)) as {
+  readFileSync(p: URL, enc: "utf8"): string;
+  readdirSync(p: URL): string[];
+};
+
+describe("UI-84 数値の符号は ASCII の -（M25）", () => {
+  test("UI-84 data/*.json の文字列の値（全ファイル・全階層）に U+2212 が無い。「－」(U+FF0D)・「—」・「―」は符号ではないので対象外", () => {
+    const dir = new URL("../data/", import.meta.url);
+    const found: string[] = [];
+    const walk = (v: unknown, path: string, file: string): void => {
+      if (typeof v === "string") {
+        if (v.includes("−")) found.push(`${file} ${path}`);
+      } else if (Array.isArray(v)) {
+        v.forEach((x, i) => walk(x, `${path}[${i}]`, file));
+      } else if (v !== null && typeof v === "object") {
+        for (const [k, x] of Object.entries(v)) walk(x, `${path}.${k}`, file);
+      }
+    };
+    const names = fs.readdirSync(dir).filter((n) => n.endsWith(".json"));
+    expect(names.length).toBeGreaterThan(10);
+    for (const n of names) walk(JSON.parse(fs.readFileSync(new URL(n, dir), "utf8")), "", n);
+    expect(found).toEqual([]);
+  });
+});

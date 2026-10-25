@@ -1257,7 +1257,7 @@ describe("階段（DG-14, E3）", () => {
     expect(d2.state.rng).toEqual(atDown.state.rng);
   });
 
-  test("CH-51/DG-14/DG-20/DG-45/CB-06/CB-31/CB-62/CH-77（M24）SAN の減る文は「（正気 −{n}）」で量を添え、最悪の値（n 2 桁・名前 6 字・品名 24 単位）でも 28 字 × 2 行。回転床は 1 行。descendAgain は量なし", () => {
+  test("CH-51/DG-14/DG-20/DG-45/CB-06/CB-31/CB-62/CH-77（M24）SAN の減る文は「（正気 -{n}）」で量を添え、最悪の値（n 2 桁・名前 6 字・品名 24 単位）でも 28 字 × 2 行。回転床は 1 行。descendAgain は量なし", () => {
     const S = data.strings;
     const NAME = "アアアアアア";
     const ITEM = "アアアアアアアアアアアア";
@@ -1273,13 +1273,13 @@ describe("階段（DG-14, E3）", () => {
       ["camp.possessedSan", { name: NAME, item: ITEM, n: 99 }],
     ];
     for (const [k, params] of cases) {
-      expect(S[k], k).toContain("−{n}）");
+      expect(S[k], k).toContain("-{n}）");
       const text = formatMessage(S[k]!, params);
       expect(text, k).not.toContain("{");
       expect(kinsokuLines(text, 28).length, k).toBeLessThanOrEqual(2);
     }
-    expect(S["dungeon.descend"]).toBe("階を降りた。空気が重くなる（正気\u00a0−{n}）。");
-    expect(S["dungeon.trap.spinner"]).toBe("床が回った（正気\u00a0−{n}）。どちらを向いている？");
+    expect(S["dungeon.descend"]).toBe("階を降りた。空気が重くなる（正気\u00a0-{n}）。");
+    expect(S["dungeon.trap.spinner"]).toBe("床が回った（正気\u00a0-{n}）。どちらを向いている？");
     expect(kinsokuLines(formatMessage(S["dungeon.trap.spinner"]!, { n: 99 }), 28)).toHaveLength(1);
     expect(S["dungeon.descendAgain"]).toBe("階を降りた。");
     // 街の鑑定の失敗は SAN が減らないので量の無い文のまま
@@ -2936,10 +2936,10 @@ describe("DG-45 / CB-01b 敵を待つ（dungeon.search。M18。M19 で「辺り�
   }
   const alive = (s: GameState) => s.party.filter((c) => c.life === "alive");
 
-  test("DG-45 config.san.search は 1【仮】。文言 camp.search「敵を待つ」と dungeon.searched「待ったが、何も現れなかった（正気 −{n}）。」（M19 で改名。M24 で量）がある", () => {
+  test("DG-45 config.san.search は 1【仮】。文言 camp.search「敵を待つ」と dungeon.searched「待ったが、何も現れなかった（正気 -{n}）。」（M19 で改名。M24 で量）がある", () => {
     expect(data.config.san.search).toBe(1);
     expect(data.strings["camp.search"]).toBe("敵を待つ");
-    expect(data.strings["dungeon.searched"]).toBe("待ったが、何も現れなかった（正気 −{n}）。");
+    expect(data.strings["dungeon.searched"]).toBe("待ったが、何も現れなかった（正気 -{n}）。");
     expect([...formatMessage(data.strings["dungeon.searched"]!, { n: 99 })].length).toBeLessThanOrEqual(28);
   });
 

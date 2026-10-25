@@ -33,15 +33,15 @@ describe("UI-56 全滅の内訳", () => {
       "全滅の代償　災難",
       "出目 2+3 ＝ 5",
       "持ち帰れなかった　40 G・2品",
-      "所持金　−78 G",
+      "所持金　-78 G",
       "失った品　薬草",
       "失った品　長剣",
-      "アルド　−180EXP　Lv4→3",
-      "ベルク　−0EXP",
+      "アルド　-180EXP　Lv4→3",
+      "ベルク　-0EXP",
     ]);
   });
 
-  test("UI-56 奇跡（損失 0）・台帳が空: ledgerNone と itemsNone を出し、所持金は −0 G", () => {
+  test("UI-56 奇跡（損失 0）・台帳が空: ledgerNone と itemsNone を出し、所持金は -0 G", () => {
     const last = data.penaltyTable.bands.length - 1;
     const p: PenaltyResult = {
       dice: [10, 10],
@@ -59,9 +59,9 @@ describe("UI-56 全滅の内訳", () => {
       `全滅の代償　${data.penaltyTable.bands[last]!.name}`,
       "出目 10+10 ＝ 20",
       "持ち帰るはずのものは無かった",
-      "所持金　−0 G",
+      "所持金　-0 G",
       "失った品　なし",
-      "アルド　−0EXP",
+      "アルド　-0EXP",
     ]);
   });
 

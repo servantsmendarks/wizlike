@@ -467,8 +467,8 @@ describe("全滅の出目の表（TW-22 / UI-56。M5.5）", () => {
       ],
     });
     // 文言（strings）: 行は 1 行に収まる短い形
-    expect(data.strings["wipe.table.row"]).toBe("{min}〜{max} {name} 金−{gold}% 品−{items} 経験−{exp}%");
-    expect(data.strings["wipe.table.rowOne"]).toBe("{roll} {name} 金−{gold}% 品−{items} 経験−{exp}%");
+    expect(data.strings["wipe.table.row"]).toBe("{min}〜{max} {name} 金-{gold}% 品-{items} 経験-{exp}%");
+    expect(data.strings["wipe.table.rowOne"]).toBe("{roll} {name} 金-{gold}% 品-{items} 経験-{exp}%");
     for (const k of ["wipe.table.title", "wipe.table.mark", "wipe.table.pad"]) expect(data.strings[k], k).toBeTypeOf("string");
   });
 

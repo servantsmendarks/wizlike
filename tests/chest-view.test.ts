@@ -135,7 +135,7 @@ describe("UI-70 宝箱の段（views/chest）", () => {
     const es = chestEntries({ kind: "disarmTrap", memberId: "c3" }, viewOf(s), S);
     expect(labels(es).slice(0, 3)).toEqual(["毒針: 1人に傷と毒", "●石弓: 1人に矢の傷", "爆弾: 全員に傷、中身が飛ぶことも"]); // M24 F-5: 行は「名前: 説明」、見立ては接頭の ●
     s.dive!.chest!.finding = { trapId: null };
-    expect(labels(chestEntries({ kind: "disarmTrap", memberId: "c3" }, viewOf(s), S)).slice(0, 8)).toEqual(["毒針: 1人に傷と毒", "石弓: 1人に矢の傷", "爆弾: 全員に傷、中身が飛ぶことも", "毒ガス: 全員に毒（運で避ける）", "麻痺ガス: 全員に麻痺（運で避ける）", "警報: 敵が来る。勝てば箱は開く", "転移: 同じ階のどこかへ、箱は失う", "呪詛: 全員の正気 −8"]);
+    expect(labels(chestEntries({ kind: "disarmTrap", memberId: "c3" }, viewOf(s), S)).slice(0, 8)).toEqual(["毒針: 1人に傷と毒", "石弓: 1人に矢の傷", "爆弾: 全員に傷、中身が飛ぶことも", "毒ガス: 全員に毒（運で避ける）", "麻痺ガス: 全員に麻痺（運で避ける）", "警報: 敵が来る。勝てば箱は開く", "転移: 同じ階のどこかへ、箱は失う", "呪詛: 全員の正気 -8"]);
   });
 
   test("UI-52/CB-64（M24 F-5）罠の名前の段の行: 全 8 行と、どれが見立てでも 39 単位以内（最長は見立ての麻痺ガス）。呪詛の n は chest-traps.json の amount（文に数値を直書きしない）。解除の command は行の trapId のまま", () => {
