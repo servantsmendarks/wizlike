@@ -139,7 +139,7 @@ describe("計測の道具（M25）探索ボット", () => {
     }
   });
 
-  test("計測の道具（M25）UI-78 / DG-13: 実際の state で、道具の explored と未踏の口の数が dive.explored と mapView の unexploredExits に一致する（d01 の 1 階をゲームの execute で同じ手順に歩かせ、保留・宝箱・戦闘が起きるまで比べ、位置・向きのずれは失敗にする）", () => {
+  test("計測の道具（M25）UI-78 / DG-13: 実際の state で、道具の explored と未踏の口の数が dive.explored と mapView の unexploredExits に一致する（d01 の 1 階をゲームの execute で同じ手順に歩かせ、保留・宝箱・戦闘・イベントが起きるまで比べ、位置・向きのずれは失敗にする）", () => {
     const d0 = dataWithRate(0, 0);
     let compared = 0;
     for (let seed = 1; seed <= 12; seed++) {
@@ -167,8 +167,11 @@ describe("計測の道具（M25）探索ボット", () => {
       for (let i = 0; i < trace.length; i++) {
         const m = trace[i]!;
         const cmd: Command = m.command === "move" ? { type: "dungeon.move" } : { type: "dungeon.turn", dir: m.command };
-        state = run(state, cmd, d0).state;
-        // 保留（階段・罠・宝箱）と戦闘は道具が扱わない盤の外の出来事なので、そこで止める。それ以外のずれは落とす
+        const r = run(state, cmd, d0);
+        state = r.state;
+        // 保留（階段・罠・宝箱）と戦闘は道具が扱わない盤の外の出来事なので、そこで止める。それ以外のずれは落とす。
+        // M25: イベント（EV。衝動で保留なしに解決し、光る石板の revealFloor で地図が明かされることがある。16×16 の d01 で起きた）も盤の外の出来事として止める
+        if (r.events.some((e) => e.kind === "eventStarted")) break;
         if (state.pendingChoice !== null || state.battle !== null || state.screen !== "dungeon" || state.dive!.chest !== null) break;
         check(state, obs[i + 1]!);
       }

@@ -158,8 +158,8 @@ describe("data: config.json", () => {
   test("data: 型違い", () => {
     expectIssue((r) => (r.config.save.maxGames = "5"), "config.json", "save.maxGames: expected integer >= 1, got string");
   });
-  test("data: SV-04/IT-32（M24）save.schemaVersion は 11（v9 → v10（M21）で箱の段の連続を dive から progress に、v10 → v11 で呪いの効果を curseEffect に移した）", () => {
-    expect(config.save.schemaVersion).toBe(11);
+  test("data: SV-04/IT-32/DG-03（M25）save.schemaVersion は 12（v9 → v10（M21）で箱の段の連続を dive から progress に、v10 → v11（M24）で呪いの効果を curseEffect に、v11 → v12（M25）で潜行に盤の寸法 dive.board を足した）", () => {
+    expect(config.save.schemaVersion).toBe(12);
   });
   test("data: CB-21 hitMin <= hitMax、百分率の範囲", () => {
     expectIssue((r) => (r.config.combat.hitMin = 96), "config.json", "CB-21");
@@ -1540,6 +1540,14 @@ describe("data: dungeons.json", () => {
     expectIssue((r) => (r.dungeons[0].width = 4), "dungeons.json", "[0].width: expected integer >= 5, got 4");
     expectIssue((r) => (r.dungeons[1].height = 1), "dungeons.json", "[1].height: expected integer >= 5, got 1");
     expect(issuesOf((r) => ((r.dungeons[0].width = 5), (r.dungeons[0].height = 5)))).toEqual([]);
+  });
+  test("data: DG-02（M25）盤の寸法は d01 16×16、d02・d03 20×20（ユーザーの決定 2026-10-25。d01 だけ 20×20 から縮めた）", () => {
+    const ds = loadGameData(rawData()).dungeons;
+    expect(ds.map((d) => [d.id, d.width, d.height])).toEqual([
+      ["d01", 16, 16],
+      ["d02", 20, 20],
+      ["d03", 20, 20],
+    ]);
   });
   test("data: DG-48 fillRatio は省略不可で、0 より大きく 1 以下（M21）", () => {
     expectIssue((r) => delete r.dungeons[0].fillRatio, "dungeons.json", "[0].fillRatio: missing required field");

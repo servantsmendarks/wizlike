@@ -289,10 +289,12 @@ describe("dungeon-gen: d01/d02 × 200 シード × 全階", () => {
     expect(loopsTotal).toBeGreaterThan(0);
   });
 
-  test("DG-05 統計: d01 の 200 シードで、階ごとの上り階段から下り階段（最下層はボス）までの最短路の中央値が 40〜80 歩（braidRatio [0.3,0.5]・roomSize [4,8] はユーザー決定の範囲）", () => {
+  // M25（ユーザーの決定 2026-10-25）: d01 を 16×16 にしたので、d01 の範囲を M2 の 40〜80 から 30〜80 にした（16×16 の 1 階の中央値は 40 ちょうどで下限すれすれ）
+  test("DG-05 統計: d01 の 200 シードで、階ごとの上り階段から下り階段（最下層はボス）までの最短路の中央値が 30〜80 歩（braidRatio [0.3,0.5]・roomSize [4,8] はユーザー決定の範囲。d01 の盤は 16×16）", () => {
     expect(CFG.braidRatio).toEqual([0.3, 0.5]);
     expect(CFG.roomSize).toEqual([4, 8]);
     const d01 = DEFS[0]!;
+    expect([d01.width, d01.height]).toEqual([16, 16]);
     const perFloor: number[][] = Array.from({ length: d01.floors }, () => []);
     for (const { def, f } of eachFloor()) {
       if (def !== d01) continue;
@@ -302,7 +304,7 @@ describe("dungeon-gen: d01/d02 × 200 シード × 全階", () => {
     for (const list of perFloor) {
       expect(list).toHaveLength(SEEDS.length);
       const m = median(list);
-      expect(m).toBeGreaterThanOrEqual(40);
+      expect(m).toBeGreaterThanOrEqual(30);
       expect(m).toBeLessThanOrEqual(80);
     }
   });
@@ -356,7 +358,7 @@ describe("dungeon-gen: d01/d02 × 200 シード × 全階", () => {
     }
   });
 
-  test("DG-05/DG-22 イベント: 潜行全体で各 id は高々 1 回、i 番目は (i mod floors)+1 階、20×20 では全イベントが置かれる。置き場所は非部屋の行き止まりか部屋の中", () => {
+  test("DG-05/DG-22 イベント: 潜行全体で各 id は高々 1 回、i 番目は (i mod floors)+1 階、実データの盤（d01 16×16・d02 20×20）では全イベントが置かれる。置き場所は非部屋の行き止まりか部屋の中", () => {
     for (const { def, seed, floors } of ALL) {
       const seen: string[] = [];
       for (const f of floors) {
@@ -432,8 +434,9 @@ describe("dungeon-gen: 決定性と境界", () => {
     }
   });
 
-  // M21（DG-48）: fillRatio 1（間引かない）では M20 までの値のまま（生成が同じであることの回帰）。d01 の既定（0.45）の値は取り直した
-  test("DG-03/DG-48 回帰: d01・diveSeed 12345 の 1 階の stairsUp・stairsDown・rooms.length と 2 階の boss（fillRatio 1 は M20 までの値、既定 0.45 は取り直した値と床の数）", () => {
+  // M21（DG-48）: fillRatio 1（間引かない）では M20 までの値のまま（生成が同じであることの回帰）。d01 の既定（0.45）の値は取り直した。
+  // M25（DG-02）: d01 を 16×16 にした。20×20 の値は盤を 20×20 にした def で残し（生成のコードを変えていないことの回帰）、今の 16×16 の値を足した
+  test("DG-03/DG-48 回帰: d01・diveSeed 12345 の 1 階の stairsUp・stairsDown・rooms.length と 2 階の boss（20×20 の fillRatio 1 は M20 までの値、20×20 の 0.45 は M21 で取り直した値、16×16 は M25 の値と床の数）", () => {
     const pick = (fs: Floor[]) => ({
       up: fs[0]!.stairsUp,
       down: fs[0]!.stairsDown,
@@ -442,8 +445,12 @@ describe("dungeon-gen: 決定性と境界", () => {
       floors: fs.map((f) => f.cells.filter((c) => c.kind !== "rock").length),
     });
     expect(DEFS[0]!.fillRatio).toBe(0.45);
-    expect(pick(generateDive(FULL(DEFS[0]!), CFG, 12345, GEN(DEFS[0]!)))).toEqual({ up: { x: 8, y: 14 }, down: { x: 17, y: 7 }, rooms: 3, boss: { x: 3, y: 14 }, floors: [400, 400] });
-    expect(pick(generateDive(DEFS[0]!, CFG, 12345, GEN(DEFS[0]!)))).toEqual({ up: { x: 1, y: 9 }, down: { x: 11, y: 9 }, rooms: 3, boss: { x: 1, y: 4 }, floors: [180, 225] });
+    const d20: DungeonDef = { ...DEFS[0]!, width: 20, height: 20 };
+    expect(pick(generateDive(FULL(d20), CFG, 12345, GEN(d20)))).toEqual({ up: { x: 8, y: 14 }, down: { x: 17, y: 7 }, rooms: 3, boss: { x: 3, y: 14 }, floors: [400, 400] });
+    expect(pick(generateDive(d20, CFG, 12345, GEN(d20)))).toEqual({ up: { x: 1, y: 9 }, down: { x: 11, y: 9 }, rooms: 3, boss: { x: 1, y: 4 }, floors: [180, 225] });
+    expect([DEFS[0]!.width, DEFS[0]!.height]).toEqual([16, 16]);
+    expect(pick(generateDive(FULL(DEFS[0]!), CFG, 12345, GEN(DEFS[0]!)))).toEqual({ up: { x: 0, y: 2 }, down: { x: 10, y: 3 }, rooms: 3, boss: { x: 15, y: 13 }, floors: [256, 256] });
+    expect(pick(generateDive(DEFS[0]!, CFG, 12345, GEN(DEFS[0]!)))).toEqual({ up: { x: 1, y: 8 }, down: { x: 10, y: 3 }, rooms: 3, boss: { x: 5, y: 11 }, floors: [155, 150] });
   });
 
   test("DG-02 width 5・height 5・rooms [0,0] の def でも生成でき、全セルに到達できる。roomSize が盤より大きくても Error にならない（fillRatio 1。M21）", () => {
@@ -688,7 +695,7 @@ describe("dungeon-gen: 階の充填率（DG-48。M21）", () => {
       }
     }
     expect(bad).toEqual([]);
-    for (const def of DEFS) for (const seed of SEEDS.slice(0, 50)) for (const f of generateDive(FULL(def), CFG, seed, GEN(def))) expect(floorCount(f)).toBe(400);
+    for (const def of DEFS) for (const seed of SEEDS.slice(0, 50)) for (const f of generateDive(FULL(def), CFG, seed, GEN(def))) expect(floorCount(f)).toBe(f.width * f.height);
   });
 
   test("DG-48 決定性: 同じ diveSeed で generateDive は deep-equal（全ダンジョン）。間引きは乱数を引かない: 生成した階は「fillRatio 1 の同じ階を部屋・通路に戻して cullToFill(fillRatio, 2 階以降は上り階段)」と同じ辺と岩（(1)〜(4) の乱数の消費が fillRatio によらず同じ）", () => {
@@ -749,10 +756,12 @@ describe("dungeon-gen: 階の充填率（DG-48。M21）", () => {
     expect(k).toEqual(make());
   });
 
-  test("DG-05/DG-48 統計: d01 の 1 階の床の数（200 シード）の最小・中央値・最大（docs/balance.md に記録した値）", () => {
+  // M25（DG-02）: d01 を 16×16 にして取り直した（20×20 では 180 / 203 / 288。目標は floor(0.45 × 256) = 115）
+  test("DG-05/DG-48 統計: d01 の 1 階の床の数（200 シード）の最小・中央値・最大（docs/balance.md に記録した値。M25 の 16×16）", () => {
     const d01 = ALL.filter((a) => a.def.id === "d01").map((a) => floorCount(a.floors[0]!));
     expect(d01).toHaveLength(200);
-    expect([Math.min(...d01), median(d01), Math.max(...d01)]).toEqual([180, 203, 288]);
+    expect([DEFS[0]!.width, DEFS[0]!.height]).toEqual([16, 16]);
+    expect([Math.min(...d01), median(d01), Math.max(...d01)]).toEqual([115, 138, 201]);
   });
 });
 
@@ -764,30 +773,44 @@ describe("dungeon-gen: 生成の盤の固定と floorOf のメモ（DG-03 / DG-4
    * 生成の手順（DG-03 の乱数の消費・DG-48 の間引き）を速くしても、この値が変わったら盤が変わっている
    */
   const DIVE_HASH: Record<string, string> = {
-    d01: "cc0d27caee86fe0b176dad727bdf2d1232c2481134077557fd0dce9073f5df49",
+    // M25（DG-02）: d01 を 16×16 にして取り直した値。M21 からの 20×20 の値は d01@20x20 に残す（生成のコードを変えていないことの回帰）
+    d01: "27bb732cad800ff1a6e3bc328a17e63dd96403bb85d391dca562903d26a25a4a",
+    "d01@20x20": "cc0d27caee86fe0b176dad727bdf2d1232c2481134077557fd0dce9073f5df49",
     d02: "1fab810c7eddf501182ce26ac104207820ab4db11e99d4cbf0678ac0362d566f",
     d03: "f88d3a9de563408ce4c0b6d9294becd885ff004f4bd6f35cbe7131cd89d159c3",
   };
   const sha256 = async (s: string): Promise<string> =>
     [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
-  const diveOf = (dungeonId: string, diveSeed: number, extra: Partial<Dive> = {}): Dive =>
-    ({ dungeonId, diveSeed, floor: 1, culled: true, clearedCells: [], bossDefeated: false, ...extra }) as unknown as Dive;
   const defOf = (id: string): DungeonDef => data.dungeons.find((d) => d.id === id)!;
+  /** 盤（DG-03 の dive.board）は既定でそのダンジョンのデータの寸法 */
+  const diveOf = (dungeonId: string, diveSeed: number, extra: Partial<Dive> = {}): Dive =>
+    ({
+      dungeonId,
+      diveSeed,
+      floor: 1,
+      culled: true,
+      clearedCells: [],
+      bossDefeated: false,
+      board: { width: defOf(dungeonId).width, height: defOf(dungeonId).height },
+      ...extra,
+    }) as unknown as Dive;
 
-  test("DG-03/DG-48 盤の固定: 3 ダンジョン × 200 シードの generateDive の JSON の sha256 が変更の前の値と同じ。floorOf（culled、処理済みなし）の全階を並べた JSON も同じ値", async () => {
-    for (const id of ["d01", "d02", "d03"]) {
-      const def = defOf(id);
+  test("DG-03/DG-48 盤の固定: 3 ダンジョン × 200 シードの generateDive の JSON の sha256 が変更の前の値と同じ（d01 は M25 の 16×16 の値。20×20 の d01 は M21 からの値のまま）。floorOf（culled、処理済みなし。盤は dive.board）の全階を並べた JSON も同じ値", async () => {
+    for (const key of ["d01", "d02", "d03", "d01@20x20"]) {
+      const id = key.slice(0, 3);
+      const def = key === "d01@20x20" ? { ...defOf(id), width: 20, height: 20 } : defOf(id);
       let viaGen = "";
       let viaFloorOf = "";
       for (const seed of SEEDS) {
         viaGen += JSON.stringify(generateDive(def, CFG, seed, GEN(def)));
-        const dive = diveOf(id, seed);
+        // DG-03（M25）: 20×20 は盤の寸法を dive.board で渡す（データの d01 は 16×16 のまま）
+        const dive = diveOf(id, seed, { board: { width: def.width, height: def.height } });
         const last = floorOf(dive, data, def.floors); // 下の階から呼んで、上の階はメモから出す
         const fs = Array.from({ length: def.floors - 1 }, (_, i) => floorOf(dive, data, i + 1));
         viaFloorOf += JSON.stringify([...fs, last]);
       }
-      expect(await sha256(viaGen), id).toBe(DIVE_HASH[id]);
-      expect(await sha256(viaFloorOf), id).toBe(DIVE_HASH[id]);
+      expect(await sha256(viaGen), key).toBe(DIVE_HASH[key]);
+      expect(await sha256(viaFloorOf), key).toBe(DIVE_HASH[key]);
     }
   });
 
@@ -812,6 +835,12 @@ describe("dungeon-gen: 生成の盤の固定と floorOf のメモ（DG-03 / DG-4
     expect(floorOf(diveOf("d01", 777, { culled: undefined }), data, 1)).toEqual(generateDive(FULL(def), CFG, 777, GEN(def))[0]);
     const other = { ...data, dungeons: data.dungeons.map((d) => (d.id === "d01" ? { ...d, fillRatio: 0.6 } : d)) };
     expect(floorOf(dive, other, 1)).toEqual(generateDive({ ...def, fillRatio: 0.6 }, CFG, 777, GEN(def))[0]);
+    // DG-03（M25）: 盤の寸法はデータではなく dive.board。データの寸法を変えても潜行の盤は変わらず、board が違えばその寸法の盤
+    const resized = { ...data, dungeons: data.dungeons.map((d) => (d.id === "d01" ? { ...d, width: 12, height: 12 } : d)) };
+    expect(floorOf(dive, resized, 1)).toEqual(gen[0]);
+    const big = diveOf("d01", 777, { board: { width: 20, height: 20 } });
+    expect(floorOf(big, data, 2)).toEqual(generateDive({ ...def, width: 20, height: 20 }, CFG, 777, GEN(def))[1]);
+    expect(floorOf(big, data, 1).cells).toHaveLength(400);
     // メモの数（8）より多い潜行を 2 巡しても同じ
     for (let round = 0; round < 2; round++) {
       for (let seed = 1000; seed < 1012; seed++) expect(floorOf(diveOf("d01", seed), data, 2)).toEqual(generateDive(def, CFG, seed, GEN(def))[1]);

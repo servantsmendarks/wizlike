@@ -123,6 +123,31 @@ describe("UI-24 地図", () => {
     expect(n.legendBox!.y).toBe(l.oy + 20 * l.cell + 1);
   });
 
+  test("UI-24/DG-02（M25）d01 の 16×16 の地図: mapView の寸法は 16×16、cell 11 で盤 177×177 を地図本体 240×262 の中央（ox 31・oy 42。枠線 (31,42) から 176 四方）に置き、凡例の地 x2..237・y219..242 は枠線の下で地図本体に収まり、注記の行（未踏の口の数）とも盤とも重ならない", () => {
+    const L = dungeonLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size).map;
+    const mv = mapView(execute(newGame(1), { type: "dungeon.enter", dungeonId: "d01" }, data).state, data)!;
+    expect([mv.width, mv.height]).toEqual([16, 16]);
+    const l = mapLayout(mv.width, mv.height, MAP_AREA);
+    // cell = min(11, floor(239/16)=14, floor(261/16)=16) = 11。幅 16*11+1 = 177。ox = floor(63/2) = 31、oy = floor(85/2) = 42
+    expect(l).toEqual({ cell: 11, ox: 31, oy: 42 });
+    expect(mapFramePath(16, 16, l)).toBe("M31 42h176v176h-176Z");
+    // 中央寄せ: 左右・上下の余白の差は 1px 以内。盤は地図本体の内側
+    const right = MAP_AREA.w - (l.ox + 16 * l.cell + 1);
+    const bottom = MAP_AREA.h - (l.oy + 16 * l.cell + 1);
+    expect([right - l.ox, bottom - l.oy]).toEqual([1, 1]);
+    // 凡例: 地は枠線の下端の線（画素 218）の 1 つ下から。上下の余白 2 を詰めずに取れる（h 24）。字の 2 行は y221・231
+    const n = mapNotes(16, 16, MAP_AREA);
+    expect(n.legendBox).toEqual({ x: 2, y: 219, w: 236, h: 24 });
+    expect(n.legendBox!.y).toBe(l.oy + 16 * l.cell + 1);
+    expect(n.legendBox!.y + n.legendBox!.h).toBeLessThanOrEqual(MAP_AREA.h);
+    expect(n.legend!.map((e) => e.y)).toEqual([221, 221, 221, 221, 231, 231, 231, 231]);
+    expect(n.legend!.slice(0, 4).map((e) => e.x)).toEqual([4, 62, 120, 178]);
+    // 注記の行（tapHint と未踏の口の数。地図本体の上の行）は凡例の地とも盤とも重ならない（同じ地図の重ね（overlay）の座標で比べる）
+    expect(L.note.y + L.note.h).toBeLessThanOrEqual(L.area.y);
+    expect(L.note.y + L.note.h).toBeLessThanOrEqual(L.area.y + l.oy);
+    expect(L.note.y + L.note.h).toBeLessThanOrEqual(L.area.y + n.legendBox!.y);
+  });
+
   test("UI-24（M19・C-5）mapNotes は盤の大きさから計算し、どの寸法でも地は盤の外周の枠線の下端の線より下から始まって枠線を覆わず、凡例と地は地図本体の内側。字の行（10）は地の中。入らなければ（盤の下の余白が足りない）出さない", () => {
     for (let w = 1; w <= 60; w++) {
       for (const h of [1, 2, 3, 5, 10, 19, 20, 21, 22, 23, 24, 25, 26, 30, 40, 60]) {

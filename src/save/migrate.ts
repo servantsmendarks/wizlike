@@ -199,13 +199,30 @@ export function migrateV10toV11(x: unknown): unknown {
   return out;
 }
 
+/** v11 までの盤の寸法（DG-02。M24 までのダンジョンはすべて 20×20。v11 → v12 の移行の初期値） */
+const V11_BOARD = { width: 20, height: 20 } as const;
+
+/**
+ * SV-04 v11 → v12（M25。DG-03 / DG-46）: dive がオブジェクトなら dive.board { width: 20, height: 20 } を足す（盤の寸法を潜行に記録する。DG-03）。
+ * v11 までのダンジョンの盤はすべて 20×20 だったので定数でよい（移行は純粋で data を読まない。M25 で d01 のデータを 16×16 にしても、
+ * 潜行の途中の記録は潜った時の 20×20 の盤のまま続く。M24 の warehouseSlots 40 と同じ考え方）。dive が null なら版だけが変わる。
+ * 引数は書き換えない（浅い複製。dive も複製する）。オブジェクトでなければそのまま返す（形の検査で broken）
+ */
+export function migrateV11toV12(x: unknown): unknown {
+  if (!isPlainObject(x)) return x;
+  const out: Record<string, unknown> = { ...x };
+  const dive = x["dive"];
+  if (isPlainObject(dive)) out["dive"] = { ...dive, board: { ...V11_BOARD } };
+  return out;
+}
+
 /**
  * 移行関数の列（MIGRATIONS[i] は版 i+1 → i+2）。v3 → v4 の流通レベルは dungeons の onClear.shopLevel から計算する（IT-80）。
  * アプリ（main.ts）は検証済みの data.dungeons を渡して SaveDeps.migrations にする
  */
 export function createMigrations(dungeons: readonly Pick<DungeonDef, "id" | "onClear">[]): readonly Migration[] {
   const table: ShopLevelTable = Object.fromEntries(dungeons.map((d) => [d.id, d.onClear.shopLevel]));
-  return [migrateV1toV2, migrateV2toV3, (x) => migrateV3toV4(x, table), migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10, migrateV10toV11];
+  return [migrateV1toV2, migrateV2toV3, (x) => migrateV3toV4(x, table), migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10, migrateV10toV11, migrateV11toV12];
 }
 
 /** 既定の移行関数の列（流通レベルの表が空なので v3 → v4 の shopLevel は 0）。アプリは createMigrations(data.dungeons) を使う */
@@ -285,6 +302,11 @@ function isCharacterShape(x: unknown): boolean {
   return Object.prototype.hasOwnProperty.call(m, x["classId"]);
 }
 
+/** DG-03（schemaVersion 12）: dive.board は width・height とも 5 以上の安全な整数（DG-02 の盤の下限）のプレーンなオブジェクト */
+function isBoardShape(x: unknown): boolean {
+  return isPlainObject(x) && [x["width"], x["height"]].every((v) => isTurnCount(v) && (v as number) >= 5);
+}
+
 function isCellRefShape(x: unknown): boolean {
   return isPlainObject(x) && [x["floor"], x["x"], x["y"]].every(isTurnCount);
 }
@@ -337,6 +359,7 @@ function isChestShape(x: unknown): boolean {
  * 同じ版に後から足した省略可能な欄（M21。DG-48）: dive.culled は無いか真偽値（無い潜行は間引かない盤のまま続く）。
  * schemaVersion 11（M24。IT-32 / IT-64）: items の各実体の curseEffect（isItemInstanceShape）、progress.warehouseSlots が 1 以上の安全な整数。
  * schemaVersion 10（M21。CB-51b）: progress.noChestStreak が 0 以上の安全な整数（dive.noChestStreak は v9 の欄で、v10 では見ない）。
+ * schemaVersion 12（M25。DG-03）: dive がオブジェクトなら dive.board が width・height とも 5 以上の安全な整数のプレーンなオブジェクト（isBoardShape）。
  */
 export function isGameStateShape(x: unknown): x is GameState {
   if (!isPlainObject(x)) return false;
@@ -364,6 +387,7 @@ export function isGameStateShape(x: unknown): x is GameState {
     if (pw !== undefined && !isStringArray(pw)) return false;
     if (dive["chest"] !== null && x["pendingChoice"] !== null) return false;
     if (!isTurnCount(dive["floorSteps"])) return false;
+    if (!isBoardShape(dive["board"])) return false; // DG-03（M25。schemaVersion 12）
   }
   if (!isMoraleShape(x["morale"])) return false;
   if (!Object.values(x["items"] as Record<string, unknown>).every(isItemInstanceShape)) return false;

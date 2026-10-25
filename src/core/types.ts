@@ -281,6 +281,12 @@ export type Dive = {
    * 省略可能（schemaVersion 10 のまま足した欄。無ければ空。古いセーブの poisonWarned は読まない）
    */
   hpWarned?: string[];
+  /**
+   * DG-03（M25。schemaVersion 12）: この潜行の盤の寸法。入場で、そのダンジョンの dungeons[].width / height を記録する。
+   * 盤（floorOf）はデータの寸法ではなくこの値で作る（M25 で d01 を 20×20 から 16×16 にしたとき、潜行の途中のセーブの盤が変わって
+   * explored の添字・pos が別の盤を指さないように。DG-48 の culled と同じ考え方）。移行 v11 → v12 で潜行中の記録は 20×20
+   */
+  board: { width: number; height: number };
 };
 
 /**

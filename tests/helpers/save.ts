@@ -56,11 +56,31 @@ export function createMemoryBackend(opts: { fail?: FailSpec } = {}): MemoryBacke
 }
 
 /**
- * 今の state（schemaVersion 11）を v10 の形にした複製（JSON の複製。引数は書き換えない）: 各実体の curseEffect を消し、
+ * 今の state（schemaVersion 12）を v11 の形にした複製（JSON の複製。引数は書き換えない）: dive があれば dive.board を消す（DG-03。M25）
+ */
+export function toV11(s: GameState): Record<string, unknown> {
+  const v11 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+  const dive = v11["dive"] as Record<string, unknown> | null;
+  if (dive !== null) delete dive["board"];
+  return v11;
+}
+
+/**
+ * SV-04 v11 → v12（M25。DG-03）の移行で s から作った v11 以前の保存（toV11 以前）が行き着く state（JSON の複製）:
+ * dive があれば dive.board は 20×20（v11 までの盤の寸法。移行は定数）。ほかの欄は s のまま
+ */
+export function asMigratedToV12(s: GameState): GameState {
+  const m = JSON.parse(JSON.stringify(s)) as GameState;
+  if (m.dive !== null) m.dive.board = { width: 20, height: 20 };
+  return m;
+}
+
+/**
+ * 今の state（schemaVersion 12）を v10 の形にした複製（toV11 を通した JSON の複製。引数は書き換えない）: 各実体の curseEffect を消し、
  * null でなければ options の末尾に戻す（M23 までの呪いは「最後のオプションが負」。IT-32）
  */
 export function toV10(s: GameState): Record<string, unknown> {
-  const v10 = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+  const v10 = toV11(s);
   for (const inst of Object.values(v10["items"] as Record<string, Record<string, unknown>>)) {
     const c = inst["curseEffect"];
     if (c !== null && c !== undefined) (inst["options"] as unknown[]).push(c);
@@ -75,13 +95,13 @@ export function toV10(s: GameState): Record<string, unknown> {
  * 呪いの効果は options の末尾から curseEffect に戻るので s のまま。progress.warehouseSlots（IT-64。D-1）は 40 に戻る（v10 までの固定の枠数）
  */
 export function asMigratedToV11(s: GameState): GameState {
-  const m = JSON.parse(JSON.stringify(s)) as GameState;
+  const m = asMigratedToV12(s); // その後の v11 → v12（M25）も通るので dive.board は 20×20
   m.progress.warehouseSlots = 40;
   return m;
 }
 
 /**
- * 今の state（schemaVersion 11）を v9 の形にした複製（toV10 を通した JSON の複製。引数は書き換えない）: progress.noChestStreak を消し、
+ * 今の state（schemaVersion 12）を v9 の形にした複製（toV10 を通した JSON の複製。引数は書き換えない）: progress.noChestStreak を消し、
  * dive があればその値を dive.noChestStreak に置く（v9 では潜行の欄。CB-51b の M20〜M21 群 C）。dive が null なら連続はどこにも残らない
  */
 export function toV9(s: GameState): Record<string, unknown> {

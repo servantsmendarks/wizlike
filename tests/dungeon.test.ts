@@ -177,6 +177,7 @@ describe("dungeon.enter", () => {
       chest: null, // CB-60（M11）
       disarmedChests: [],
       culled: true, // DG-48（M21）: この潜行の階は fillRatio で間引く
+      board: { width: 16, height: 16 }, // DG-03（M25）: 潜った時の盤の寸法（d01 は 16×16）
     });
     expect(Object.keys(dive.explored)).toEqual(["1"]);
     expectExploredCovers(r.state);
@@ -1005,18 +1006,20 @@ describe("オートマップ（DG-13）", () => {
     expect(mapView(newGame(1), data)).toBeNull();
     const s0 = enterD01(1);
     const mv0 = mapView(s0, data)!;
-    expect(mv0.cells.map((c) => c.y * 20 + c.x)).toEqual(s0.dive!.explored["1"]);
-    expect(mv0).toMatchObject({ dungeonId: "d01", floor: 1, width: 20, height: 20, pos: s0.dive!.pos, facing: s0.dive!.facing });
+    // M25（DG-03）: 盤の寸法は潜行の dive.board（d01 は 16×16）
+    const { width: W, height: H } = s0.dive!.board;
+    expect(mv0.cells.map((c) => c.y * W + c.x)).toEqual(s0.dive!.explored["1"]);
+    expect(mv0).toMatchObject({ dungeonId: "d01", floor: 1, width: W, height: H, pos: s0.dive!.pos, facing: s0.dive!.facing });
     expect(mv0.cells.find((c) => c.x === s0.dive!.pos.x && c.y === s0.dive!.pos.y)!.kind).toBe("stairsUp");
     for (const floorNo of [1, 2]) {
       // 全セルを探索済みにして、記号と辺を確かめる
       const s = cloneState(s0);
       s.dive!.floor = floorNo;
-      s.dive!.explored[String(floorNo)] = Array.from({ length: 400 }, (_, i) => i);
+      s.dive!.explored[String(floorNo)] = Array.from({ length: W * H }, (_, i) => i);
       const f = floorOf(s.dive!, data);
       const mv = mapView(s, data)!;
       expect(mv.floor).toBe(floorNo);
-      expect(mv.cells).toHaveLength(400);
+      expect(mv.cells).toHaveLength(W * H);
       const seenKinds = new Set<string>();
       for (const c of mv.cells) {
         const cell = cellAt(f, c.x, c.y);

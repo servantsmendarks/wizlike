@@ -2,10 +2,13 @@
 import { describe, expect, test } from "vitest";
 import { createInitialState, execute } from "../src/core/engine";
 import { cloneState } from "../src/core/state";
+import type { GameData } from "../src/core/data/index";
+import { cellAt, edgeOf, generateFloor, idx } from "../src/core/rules/dungeon-gen";
+import { chestGenOf, floorOf, visibleCellsOf } from "../src/core/rules/floor";
 import type { BattleAction, Command, GameState } from "../src/core/types";
 import { DB_NAME, DB_VERSION, openIdbBackend, STORE_GAMES, STORE_SETTINGS } from "../src/save/db";
 import { newGameId } from "../src/save/id";
-import { createMigrations, isGameStateShape, migrateState, migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10, migrateV10toV11, MIGRATIONS } from "../src/save/migrate";
+import { createMigrations, isGameStateShape, migrateState, migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10, migrateV10toV11, migrateV11toV12, MIGRATIONS } from "../src/save/migrate";
 import { buildRecord, checkStoredRecord, summarize } from "../src/save/record";
 import { createSaveService } from "../src/save/saves";
 import { buildExportFile, parseExportFile, serializeExportFile } from "../src/save/transfer";
@@ -13,7 +16,7 @@ import type { GameRecord, GameStoreBackend, ImportPlan, Migration, SaveDeps } fr
 import { dived, exec, withBattle } from "./helpers/battle";
 import { data, expectKnownStringKeys, loadFreshData, newGame, withChar } from "./helpers/core";
 import { atEvent } from "./helpers/events";
-import { asMigratedToV10, asMigratedToV11, asMigratedToV7, asMigratedToV8, asMigratedToV9, createMemoryBackend, toV10, toV3, toV4, toV5, toV6, toV7, toV8, toV9 } from "./helpers/save";
+import { asMigratedToV10, asMigratedToV11, asMigratedToV12, asMigratedToV7, asMigratedToV8, asMigratedToV9, createMemoryBackend, toV10, toV11, toV3, toV4, toV5, toV6, toV7, toV8, toV9 } from "./helpers/save";
 import mainSrc from "../src/main.ts?raw";
 
 const SCHEMA = data.config.save.schemaVersion;
@@ -233,7 +236,7 @@ describe("SV-04 v1 → v2 の移行（M5.5）", () => {
   }
 
   test("SV-04 v1 の保存（adventureTurns・tavernEventMark・knownTraps が無い）は v2 へ移行して 0 / 0 / {} が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(11); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11
+    expect(SCHEMA).toBe(12); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11、M25（DG-03）で 11 → 12
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -319,7 +322,7 @@ describe("SV-04 v2 → v3 の移行（M7 の A）", () => {
   }
 
   test("SV-04/TW-15 v2 の保存（morale が無い）は v3 へ移行して morale null が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(11); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11
+    expect(SCHEMA).toBe(12); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11、M25（DG-03）で 11 → 12
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -396,8 +399,8 @@ describe("SV-04 v3 → v4 の移行（M7 の B。IT-80）", () => {
   const MIG = createMigrations(data.dungeons);
 
   test("SV-04/IT-80 v3 の保存は v4 へ移行し、各実体に Lv0・通常・オプションなし・ユニークでない・呪いなし・foundIn null、warehouse []・buyback []・uniqueBook {} が入る。街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(11); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11
-    expect(MIGRATIONS).toHaveLength(10); // M10（CH-63）で v4 → v5、M11（CB-60）で v5 → v6、M12（TW-35）で v6 → v7、M16（UI-76）で v7 → v8、M18（DG-46）で v8 → v9、M21（CB-51b）で v9 → v10、M24（IT-32）で v10 → v11 を足した
+    expect(SCHEMA).toBe(12); // M10（CH-63）で 4 → 5、M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11、M25（DG-03）で 11 → 12
+    expect(MIGRATIONS).toHaveLength(11); // M10（CH-63）で v4 → v5、M11（CB-60）で v5 → v6、M12（TW-35）で v6 → v7、M16（UI-76）で v7 → v8、M18（DG-46）で v8 → v9、M21（CB-51b）で v9 → v10、M24（IT-32）で v10 → v11、M25（DG-03）で v11 → v12 を足した
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -534,8 +537,8 @@ describe("SV-04 v4 → v5 の移行（M10。CH-63）", () => {
     return execute(atEvent("glowing_tablet").state, { type: "dungeon.move" }, d).state;
   }
   test("SV-04/CH-63 v4 の保存（maxLevelReached が数）は v5 へ移行して今の職業の記録 { [classId]: n } になり、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(11); // M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11
-    expect(MIGRATIONS).toHaveLength(10);
+    expect(SCHEMA).toBe(12); // M11（CB-60）で 5 → 6、M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11、M25（DG-03）で 11 → 12
+    expect(MIGRATIONS).toHaveLength(11);
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -1363,8 +1366,8 @@ describe("SV-04 v5 → v6 の移行（M11。CB-60）", () => {
   }
 
   test("SV-04/CB-60 v5 の保存（dive に chest・disarmedChests が無い）は v6 へ移行して chest null・disarmedChests [] が入り、街・迷宮・戦闘・イベント待ちのどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(11); // M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11
-    expect(MIGRATIONS).toHaveLength(10);
+    expect(SCHEMA).toBe(12); // M12（TW-35）で 6 → 7、M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11、M25（DG-03）で 11 → 12
+    expect(MIGRATIONS).toHaveLength(11);
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -1561,7 +1564,7 @@ describe("SV-04 v5 → v6 の移行（M11。CB-60）", () => {
       const svc = service(mem);
       const st = chestState();
       if (mark !== undefined) st.dive!.chest!.contentsDestroyed = mark;
-      expect(SCHEMA).toBe(11);
+      expect(SCHEMA).toBe(12);
       mem.raw("g1", buildRecord("g1", 1, 999, SCHEMA, st));
       const r = await svc.load("g1");
       expect(r.ok).toBe(true);
@@ -1592,7 +1595,7 @@ describe("SV-04 v5 → v6 の移行（M11。CB-60）", () => {
       const svc = service(mem);
       const st = cloneState(s);
       if (mark === undefined) delete st.battle!.autoSpells;
-      expect(SCHEMA).toBe(11);
+      expect(SCHEMA).toBe(12);
       mem.raw("g1", buildRecord("g1", 1, 999, SCHEMA, st));
       const r = await svc.load("g1");
       expect(r.ok).toBe(true);
@@ -1625,8 +1628,8 @@ describe("SV-04 v6 → v7 の移行（M12。TW-35 / DG-36 / TW-34 / DG-37）", (
   }
 
   test("SV-04/TW-35 v6 の保存（tally・progress の 3 欄が無い）は v7 へ移行して tally 0・conquered false・endingPending false・enteredDungeons（clearedDungeons と潜行中の dungeonId）が入り、街・迷宮・戦闘・イベント待ち・箱のどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(11); // M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11
-    expect(MIGRATIONS).toHaveLength(10);
+    expect(SCHEMA).toBe(12); // M16（UI-76）で 7 → 8、M18（DG-46）で 8 → 9、M21（CB-51b）で 9 → 10、M24（IT-32）で 10 → 11、M25（DG-03）で 11 → 12
+    expect(MIGRATIONS).toHaveLength(11);
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -1738,8 +1741,8 @@ describe("SV-04 v7 → v8 の移行（M16。UI-76）", () => {
   }
 
   test("SV-04/UI-76 v7 の保存（progress.hints が無い）は v8 へ移行して hints [] が入り、街・迷宮・戦闘・イベント待ち・箱のどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(11);
-    expect(MIGRATIONS).toHaveLength(10);
+    expect(SCHEMA).toBe(12);
+    expect(MIGRATIONS).toHaveLength(11);
     const cases: Array<[string, GameState]> = [
       ["town", newGame(1)],
       ["dungeon", dived(1)],
@@ -1818,8 +1821,8 @@ describe("SV-04 v7 → v8 の移行（M16。UI-76）", () => {
 
 describe("SV-04 v8 → v9 の移行（M18。DG-46）", () => {
   test("SV-04/DG-46 v8 の保存（dive.floorSteps が無い）は v9 へ移行して floorSteps 0 が入り、街・迷宮・戦闘・箱のどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(11);
-    expect(MIGRATIONS).toHaveLength(10);
+    expect(SCHEMA).toBe(12);
+    expect(MIGRATIONS).toHaveLength(11);
     const walked = cloneState(dived(1));
     walked.dive!.floorSteps = 37;
     const cases: Array<[string, GameState]> = [
@@ -1903,8 +1906,8 @@ describe("SV-04 v8 → v9 の移行（M18。DG-46）", () => {
 
 describe("SV-04 v9 → v10 の移行（M21。CB-51b）", () => {
   test("SV-04/CB-51b v9 の保存は v10 へ移行して progress.noChestStreak = dive.noChestStreak（3 → 3）。dive の欄が無い・dive が null なら 0。dive.noChestStreak は消える。街・迷宮・戦闘・箱のどれでも形の検査を通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(11);
-    expect(MIGRATIONS).toHaveLength(10);
+    expect(SCHEMA).toBe(12);
+    expect(MIGRATIONS).toHaveLength(11);
     const streak3 = cloneState(dived(1));
     streak3.progress.noChestStreak = 3;
     const townStreak = cloneState(newGame(1));
@@ -2029,8 +2032,8 @@ describe("SV-04 v10 → v11 の移行（M24。IT-32 / TW-10）", () => {
   });
 
   test("SV-04/IT-32 v10 の保存は v11 へ移行し、呪われた品の負のオプション（M23 までの生成・debug.giveCursed の形）が curseEffect に移る。v10 のままでは形の検査を通らない。街・迷宮・戦闘のどれでも通る。引数は書き換えない", () => {
-    expect(SCHEMA).toBe(11);
-    expect(MIGRATIONS).toHaveLength(10);
+    expect(SCHEMA).toBe(12);
+    expect(MIGRATIONS).toHaveLength(11);
     const town = exec(newGame(1), { type: "debug.giveCursed", wearable: true }).state;
     const id = town.party[0]!.inventory.at(-1)!;
     expect(town.items[id]!.curseEffect).not.toBeNull();
@@ -2100,5 +2103,127 @@ describe("SV-04 v10 → v11 の移行（M24。IT-32 / TW-10）", () => {
     expect(r.state.items[id]!.options).toEqual([]);
     expect(r.state.items[id]!.curseEffect!.value).toBeLessThan(0);
     expect(r.state.items[id]!.cursed).toBe(true);
+  });
+});
+
+describe("SV-04 v11 → v12 の移行（M25。DG-03 / DG-46）", () => {
+  /** d01 を v11 までの 20×20 にした data（遭遇なし。盤を作るのに使う欄はほかに変えない） */
+  function data20(): GameData {
+    const d = loadFreshData();
+    const d01 = d.dungeons.find((x) => x.id === "d01")!;
+    d01.width = 20;
+    d01.height = 20;
+    for (const def of d.dungeons) def.encounterRate = { room: 0, corridor: 0 };
+    return d;
+  }
+  /** d の盤で、前進できなければ右へ向き直して最大 n 手進めた state（階段の確認は「やめる」。ほかの保留・宝箱・戦闘が起きたらそこで止める） */
+  function walk(s0: GameState, d: GameData, n: number): GameState {
+    let s = s0;
+    for (let i = 0; i < n && s.screen === "dungeon" && s.dive!.chest === null; i++) {
+      if (s.pendingChoice !== null) {
+        if (s.pendingChoice.kind !== "stairs") break;
+        s = execute(s, { type: "event.choose", optionId: "stay" }, d).state;
+        continue;
+      }
+      const f = floorOf(s.dive!, d);
+      const e = edgeOf(cellAt(f, s.dive!.pos.x, s.dive!.pos.y), s.dive!.facing);
+      s = execute(s, e === "wall" ? { type: "dungeon.turn", dir: "right" } : { type: "dungeon.move" }, d).state;
+    }
+    return s;
+  }
+
+  test("SV-04/DG-03 migrateV11toV12 の単体: dive がオブジェクトなら board { width: 20, height: 20 } を足す。dive が null なら版だけ。オブジェクトでなければそのまま。引数は書き換えない", () => {
+    expect(MIGRATIONS[10]).toBe(migrateV11toV12);
+    expect(migrateV11toV12("x")).toBe("x");
+    expect(migrateV11toV12(null)).toBe(null);
+    const arg = { gold: 3, dive: { floor: 2 } };
+    const before = json(arg);
+    expect(migrateV11toV12(arg)).toEqual({ gold: 3, dive: { floor: 2, board: { width: 20, height: 20 } } });
+    expect(arg).toEqual(before);
+    expect(migrateV11toV12({ gold: 3, dive: null })).toEqual({ gold: 3, dive: null });
+  });
+
+  test("SV-04/DG-03 潜行中の v11 の記録（20×20 の d01 に潜って歩いた途中）は v12 で board 20×20 になり、データの d01 が 16×16 でも floorOf は潜った時の 20×20 の盤のまま。explored・pos はその盤の上で正しく、続けて歩ける", () => {
+    expect(SCHEMA).toBe(12);
+    expect(MIGRATIONS).toHaveLength(11);
+    const d20 = data20();
+    const s20 = walk(execute(newGame(1), { type: "dungeon.enter", dungeonId: "d01" }, d20).state, d20, 20);
+    const dive20 = s20.dive!;
+    expect(dive20.board).toEqual({ width: 20, height: 20 });
+    expect(dive20.floorSteps).toBeGreaterThanOrEqual(5); // 数歩は歩いている
+    // v11 の記録: board が無い。v12 の形の検査は通らない
+    const v11 = toV11(s20);
+    const before = json(v11);
+    expect((v11["dive"] as Record<string, unknown>)["board"]).toBeUndefined();
+    expect(isGameStateShape(v11)).toBe(false);
+    const r = migrateState(v11, 11, SCHEMA);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.fromVersion).toBe(11);
+    expect(r.state).toEqual(asMigratedToV12(s20));
+    expect(r.state).toEqual(s20); // 20×20 で潜った記録なので、移行の 20×20 は潜った時の値と同じ
+    expect(v11).toEqual(before);
+    // 今のデータの d01 は 16×16。それでも盤は 20×20 の生成（generateFloor に 20×20 の def を渡したもの）とセル・階段・ボスが一致する
+    expect(data.dungeons.find((x) => x.id === "d01")).toMatchObject({ width: 16, height: 16 });
+    const dive = r.state.dive!;
+    const def20 = { ...data.dungeons.find((x) => x.id === "d01")!, width: 20, height: 20 };
+    const gen1 = generateFloor(def20, data.config.dungeon, dive.diveSeed, 1, null, chestGenOf(data, "d01"));
+    const gen2 = generateFloor(def20, data.config.dungeon, dive.diveSeed, 2, gen1.stairsDown, chestGenOf(data, "d01"));
+    const f1 = floorOf(dive, data, 1);
+    const f2 = floorOf(dive, data, 2);
+    expect([f1.width, f1.height]).toEqual([20, 20]);
+    expect(f1.cells).toEqual(gen1.cells);
+    expect([f1.stairsUp, f1.stairsDown, f2.boss]).toEqual([gen1.stairsUp, gen1.stairsDown, gen2.boss]);
+    expect(f2.cells).toEqual(gen2.cells);
+    // 潜った時のデータの盤とも同じ（board を読まずにデータの 16×16 で作ると別の盤になる）
+    expect(f1).toEqual(floorOf(dive20, d20, 1));
+    expect(floorOf({ ...dive, board: { width: 16, height: 16 } }, data, 1).cells).toHaveLength(256);
+    // explored・pos はその盤の上で正しい: 添字は盤の中の岩でないセル、今の視野はすべて explored にある
+    const list = dive.explored["1"]!;
+    expect(list.length).toBeGreaterThan(0);
+    for (const i of list) expect(i < 400 && f1.cells[i]!.kind !== "rock", `explored ${i}`).toBe(true);
+    expect(cellAt(f1, dive.pos.x, dive.pos.y).kind).not.toBe("rock");
+    for (const v of visibleCellsOf(f1, dive.pos, dive.facing, data.config.dungeon.viewDepth)) expect(list).toContain(idx(f1, v.x, v.y));
+    // 今のデータで続けて歩ける（盤は 20×20 のまま。新しく見えたセルも岩でない）
+    const s2 = walk(r.state, data, 6);
+    expect(s2.dive!.board).toEqual({ width: 20, height: 20 });
+    expect(s2.dive!.floorSteps).toBeGreaterThan(dive.floorSteps);
+    const f1b = floorOf(s2.dive!, data, 1);
+    expect(f1b.cells).toEqual(gen1.cells);
+    for (const i of s2.dive!.explored["1"]!) expect(f1b.cells[i]!.kind, `explored ${i}`).not.toBe("rock");
+    expect(isGameStateShape(json(s2))).toBe(true);
+  });
+
+  test("SV-04/DG-03 dive が null の v11 の記録は版だけが変わる（街の state のまま）。保存先（メモリ）に置いた潜行中の v11 のレコードも一覧で ok、続きからで 20×20 の盤", async () => {
+    const town = newGame(1);
+    const r = migrateState(toV11(town), 11, SCHEMA);
+    expect(r.ok && r.state).toEqual(json(town));
+    const d20 = data20();
+    const s20 = walk(execute(newGame(2), { type: "dungeon.enter", dungeonId: "d01" }, d20).state, d20, 5);
+    const mem = createMemoryBackend();
+    mem.raw("g1", { ...buildRecord("g1", 4, 999, 11, s20), state: toV11(s20) });
+    const svc = service(mem);
+    const l = await svc.list();
+    expect(l.ok && l.entries.map((e) => [e.gameId, e.status])).toEqual([["g1", "ok"]]);
+    const loaded = await svc.load("g1");
+    expect(loaded.ok && loaded.state.dive!.board).toEqual({ width: 20, height: 20 });
+  });
+
+  test("SV-04/DG-03/DG-02 新しいゲームで d01 に入ると board は 16×16、d02 は 20×20（入場でそのダンジョンの width / height を記録する）。形の検査は board の width・height が 5 以上の整数", () => {
+    const s1 = execute(newGame(1), { type: "dungeon.enter", dungeonId: "d01" }, data).state;
+    expect(s1.dive!.board).toEqual({ width: 16, height: 16 });
+    expect(floorOf(s1.dive!, data).cells).toHaveLength(256);
+    const t = cloneState(newGame(1));
+    t.progress.unlockedDungeons.push("d02");
+    const s2 = execute(t, { type: "dungeon.enter", dungeonId: "d02" }, data).state;
+    expect(s2.dive!.board).toEqual({ width: 20, height: 20 });
+    expect(floorOf(s2.dive!, data).cells).toHaveLength(400);
+    // 形の検査
+    expect(isGameStateShape(json(s1))).toBe(true);
+    for (const bad of [undefined, null, [], { width: 16 }, { width: 4, height: 16 }, { width: 16, height: 2.5 }, { width: "16", height: 16 }]) {
+      const j = json(s1) as unknown as Record<string, Record<string, unknown>>;
+      j["dive"]!["board"] = bad;
+      expect(isGameStateShape(j), JSON.stringify(bad)).toBe(false);
+    }
   });
 });
