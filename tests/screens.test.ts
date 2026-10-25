@@ -1085,7 +1085,9 @@ describe("入力と Command", () => {
     expect(body).toContain("const upText = ");
     expect(body).toContain("texts.forEach((x) => void narrator.say(x, skip || x === upText));");
     const pb = stripComments(presenterRaw["../src/presenter/playback.ts"]!);
-    expect(pb).toContain("await deps.message.say(formatMessage(tpl, ev.params), cx.skip || ev.instant === true);");
+    expect(pb).toContain("const instant = cx.skip || ev.instant === true;");
+    // M24 B-1: 色のある文（message-tones.ts）だけ 3 つ目の引数に tone を渡す
+    expect(pb).toContain("await (tone === undefined ? deps.message.say(text, instant) : deps.message.say(text, instant, tone));");
   });
 
   test("UI-63/UI-66（2026-10-06）音の拡充の配線: 出来事の音は表示層だけの SoundContext を通す、街は施設の曲、迷宮のキャンプの間はキャンプの曲で閉じたら場面の曲、続きからは潜っているダンジョンの曲、施設に入る・キャンプを開く・会話の送りの音（ソースの検査）", () => {

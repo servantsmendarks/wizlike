@@ -12,6 +12,7 @@
 // - 続きの三角 x228..235、y60..67
 import { MESSAGE_LINE_H, type DungeonLayout, type Rect } from "../layout";
 import { WRAP_STYLE } from "./wrap";
+import type { MessageTone } from "../message-tones";
 
 /** {k} を params[k] で置き換える。params に無いものは {k} のまま残す */
 export function formatMessage(tpl: string, params?: Record<string, string | number>): string {
@@ -60,8 +61,8 @@ export const MORE_BLINK_KEYFRAMES: readonly Keyframe[] = [
 
 export type MessageWindow = {
   el: HTMLElement;
-  /** 1 文を履歴の末尾に足して表示する。instant か speed() が 0 以下なら即座に全文を出す */
-  say(text: string, instant: boolean): Promise<void>;
+  /** 1 文を履歴の末尾に足して表示する。instant か speed() が 0 以下なら即座に全文を出す。tone（M24 B-1）があればその行の文字を var(--c-<tone>) にする */
+  say(text: string, instant: boolean, tone?: MessageTone): Promise<void>;
   /** 文字送り中の文を即座に完了させる（UI-43 のタップ） */
   rush(): void;
   /** 文字送りの途中か */
@@ -198,7 +199,7 @@ export function createMessageWindow(o: {
     scrollToEnd();
   };
 
-  const say = (text: string, instant: boolean): Promise<void> => {
+  const say = (text: string, instant: boolean, tone?: MessageTone): Promise<void> => {
     // 前の文が送り途中なら完了させてから次へ
     current?.finish();
     // UI-68: 説明を出していれば、元の行に戻してから足す
@@ -207,6 +208,7 @@ export function createMessageWindow(o: {
     const line = document.createElement("div");
     line.className = "message-line";
     line.style.flexShrink = "0"; // 下詰めの列の中で行を縮めない（あふれた分は上で切る）
+    if (tone !== undefined) line.style.color = `var(--c-${tone})`; // M24 B-1: 行ごとの色
     history.appendChild(line);
     trimDom();
 

@@ -513,3 +513,34 @@ describe("UI-43 ▼ の点滅（M18。設計 2-4）", () => {
     expect(svgs[0]).toBe(calls[0]!.el);
   });
 });
+
+describe("UI-43/UI-59（M24 B-1）メッセージ窓の行ごとの色（tone）", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("UI-43/UI-59 say の tone はその行の文字を var(--c-<tone>) にする。tone の無い行は色を持たない", async () => {
+    const created: FakeEl[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => {
+        const e = new FakeEl();
+        created.push(e);
+        return e;
+      },
+      createElementNS: () => new FakeEl(),
+    });
+    const g = regions(data.config.ui.layout, data.config.stage.width);
+    const L = dungeonLayout(g, data.config.party.size);
+    const w = createMessageWindow({ speed: () => 0, historyMax: 15, region: g.message, layout: L.message });
+    const box = created.find((e) => e.className === "message-history")!;
+    await w.say("鑑定した。", true);
+    await w.say("オプション: 力 +1", true, "option");
+    await w.say("短剣の呪い: 外せない", false, "danger");
+    expect(box.children.map((c) => [c.textContent, c.style["color"]])).toEqual([
+      ["鑑定した。", undefined],
+      ["オプション: 力 +1", "var(--c-option)"],
+      ["短剣の呪い: 外せない", "var(--c-danger)"],
+    ]);
+    expect(w.history()).toEqual(["鑑定した。", "オプション: 力 +1", "短剣の呪い: 外せない"]);
+  });
+});

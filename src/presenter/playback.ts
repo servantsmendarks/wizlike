@@ -66,6 +66,7 @@ import type { Settings } from "./settings";
 import { enemyGroupOfId } from "./views/battle";
 import { formatDiceInline, formatDiceSummary, type DiceEvent } from "./views/dice";
 import { formatMessage } from "./views/message";
+import { messageTone, type MessageTone } from "./message-tones";
 import { formatPenaltyTable, type PenaltyTableText } from "./views/penalty-table";
 
 /** screen は再生中の core の画面（before.screen から、screen イベントの値で進める。UI-55 のフェードの有無に使う） */
@@ -88,7 +89,8 @@ export type PlayerDeps = {
   };
   header: { showAt(state: GameState, at: ViewPoint): void };
   message: {
-    say(text: string, instant: boolean): Promise<void>;
+    /** tone（M24 B-1）は行の色（message-tones.ts の MESSAGE_TONES。色の無い文では渡さない） */
+    say(text: string, instant: boolean, tone?: MessageTone): Promise<void>;
     /** 続きの三角。blink は UI-45 のタップ待ちの点滅 */
     setMore(on: boolean, blink?: boolean): void;
     /** 文字送り中の文を即表示する（UI-43 / UI-45 のタップ） */
@@ -424,7 +426,11 @@ export function createPlayer(deps: PlayerDeps): Player {
       cx.skip = isSkip();
       const tpl = deps.strings[ev.key] ?? ev.key;
       // UI-43（M20 D-3）: instant の文（数値の行）は文字送りの速さによらず即時。cx.skip（後の待ち・フェード）は変えない
-      await deps.message.say(formatMessage(tpl, ev.params), cx.skip || ev.instant === true);
+      const text = formatMessage(tpl, ev.params);
+      const instant = cx.skip || ev.instant === true;
+      // UI-59 / IT-65（M24 B-1）: 鑑定のオプションの文は option、呪いの文は danger の行（キーで引く。色の無い文は今どおり 2 引数）
+      const tone = messageTone(ev.key);
+      await (tone === undefined ? deps.message.say(text, instant) : deps.message.say(text, instant, tone));
       if (ev.clearOn !== undefined) clearMark = { on: ev.clearOn, gen: playGen };
     },
     async moved(ev, cx, finalState) {

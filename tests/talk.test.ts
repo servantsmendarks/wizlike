@@ -618,6 +618,10 @@ class FakeEl {
     this.children.push(c);
     return c;
   }
+  replaceChildren(...c: FakeEl[]): void {
+    this.children = c;
+    this.textContent = c.map((x) => x.textContent).join("");
+  }
   addEventListener(type: string, f: (e?: unknown) => void): void {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), f]);
   }
@@ -865,5 +869,53 @@ describe("UI-47 会話の箱（DOM）", () => {
     body.scrollTop = 90;
     await box.say("ホイール", true);
     expect(body.scrollTop).toBe(90);
+  });
+});
+
+describe("UI-47/UI-59（M24 B-1）語りの行ごとの色（tone）", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("UI-47/UI-59 モデル: say の tone は溜めた文の segs に残り（文字送りの途中の段も同じ tone）、text は今どおり改行でつないだ文。tone の無い文は欄を持たない", () => {
+    const segs: unknown[] = [];
+    const sink: TalkSink = { open() {}, text: (_t, x) => segs.push(x), more() {} };
+    const m = createTalkModel({ sink, log: () => {}, speed: () => 0, blink: () => true, schedule: () => () => {} });
+    void m.say("鑑定した。", false);
+    void m.say("オプション: 力 +1", true, "option");
+    void m.say("短剣の呪い: 外せない", false, "danger");
+    expect(segs.at(-1)).toEqual([{ text: "鑑定した。" }, { text: "オプション: 力 +1", tone: "option" }, { text: "短剣の呪い: 外せない", tone: "danger" }]);
+  });
+
+  test("UI-47/UI-59 箱（DOM）: tone のある文があれば 1 文 1 つの span で行ごとの色（2 文目から先頭に改行）。無ければ今どおり textContent だけ。narrator は tone を表示先へ渡す", async () => {
+    const created: FakeEl[] = [];
+    vi.stubGlobal("document", {
+      createElement: () => {
+        const e = new FakeEl();
+        created.push(e);
+        return e;
+      },
+      createElementNS: () => new FakeEl(),
+    });
+    const box = createTalkBox({ layout: T.talk, compact: T.talkCompact, wipe: T.talkWipe, strings: data.strings, speed: () => 0, blink: () => true, log: () => {} });
+    const line = created.find((e) => e.className === "talk-line")!;
+    await box.say("鑑定した。", true);
+    expect(line.children).toEqual([]);
+    expect(line.textContent).toBe("鑑定した。");
+    await box.say("オプション: 力 +1", true, "option");
+    expect(line.children.map((c) => [c.textContent, c.style["color"]])).toEqual([
+      ["鑑定した。", undefined],
+      ["\nオプション: 力 +1", "var(--c-option)"],
+    ]);
+    // narrator: 色のある文だけ 3 つ目を渡す
+    const calls: unknown[][] = [];
+    const win: Narration = { say: (...a: unknown[]) => (calls.push(a), Promise.resolve()), setMore() {}, rush() {}, typing: () => false, log() {}, waitMs: () => Promise.resolve() } as Narration;
+    const n = createNarrator({ town: () => false, talk: box, window: win });
+    await n.say("a", true);
+    await n.say("b", false, "danger");
+    expect(calls).toEqual([
+      ["a", true],
+      ["b", false, "danger"],
+    ]);
   });
 });

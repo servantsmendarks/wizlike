@@ -33,13 +33,20 @@ import type { TalkRect } from "../layout";
 import { MORE_BLINK_KEYFRAMES, MORE_BLINK_MS, typewriterSteps } from "./message";
 import { attachScrollMarks, marksAt, SCROLL_MARK_SIZE, scrolledToEnd, type ScrollMarkPos } from "./scroll-marks";
 import { WRAP_STYLE } from "./wrap";
+import type { MessageTone } from "../message-tones";
+
+/** M24 B-1: 箱の 1 文と色（tone は message-tones.ts の役。無ければ text の色） */
+export type TalkSeg = { text: string; tone?: MessageTone };
 
 /** 表示の先（DOM の層。テストでは記録するだけの偽物） */
 export type TalkSink = {
   /** 箱の表示 */
   open(on: boolean): void;
-  /** 箱に出す文（溜めた文を改行でつないだもの。末尾の文は文字送りの途中の段も） */
-  text(s: string): void;
+  /**
+   * 箱に出す文（溜めた文を改行でつないだもの。末尾の文は文字送りの途中の段も）。
+   * segs（M24 B-1）は同じ文を 1 文ずつに分けたもの（s は segs の text を改行でつないだものと同じ）。tone のある文はその行の色で出す
+   */
+  text(s: string, segs?: readonly TalkSeg[]): void;
   /** ▼ の表示。blink なら点滅 */
   more(on: boolean, blink: boolean): void;
 };
@@ -63,8 +70,8 @@ export type TalkModelDeps = {
 };
 
 export type TalkModel = {
-  /** 1 文を語る。呼んだ時点でログに入れる。instant か speed() が 0 以下なら文字送りしない */
-  say(text: string, instant: boolean): Promise<void>;
+  /** 1 文を語る。呼んだ時点でログに入れる。instant か speed() が 0 以下なら文字送りしない。tone（M24 B-1）はその行の色 */
+  say(text: string, instant: boolean, tone?: MessageTone): Promise<void>;
   /** ログに入れずに語る（迷宮から持ち越した語り）。最後の文の文字送りが終わったら解決する */
   replay(texts: readonly string[], instant: boolean): Promise<void>;
   /** 文字送り中なら即表示（閉じない） */
@@ -104,14 +111,14 @@ export type TalkModel = {
   clear(): void;
 };
 
-type SayItem = { kind: "say"; text: string; instant: boolean; resolve: () => void };
+type SayItem = { kind: "say"; text: string; instant: boolean; tone?: MessageTone; resolve: () => void };
 type HoldItem = { kind: "hold"; resolve: () => void };
 type Item = SayItem | HoldItem;
 
 export function createTalkModel(d: TalkModelDeps): TalkModel {
   const queue: Item[] = [];
-  /** 箱に溜めた文（文字送り中の文も末尾に入っている） */
-  const page: string[] = [];
+  /** 箱に溜めた文（文字送り中の文も末尾に入っている。M24 B-1 から色も持つ） */
+  const page: TalkSeg[] = [];
   /** 箱が開いているか */
   let opened = false;
   /** 文字送り中の文（終えると解決する） */
@@ -123,7 +130,8 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
 
   /** 溜めた文を出す。last は末尾の文の文字送りの途中の段 */
   const render = (last?: string): void => {
-    d.sink.text(last === undefined ? page.join("\n") : [...page.slice(0, -1), last].join("\n"));
+    const segs = last === undefined ? page.slice() : [...page.slice(0, -1), { ...page[page.length - 1]!, text: last }];
+    d.sink.text(segs.map((x) => x.text).join("\n"), segs);
   };
 
   const refreshMore = (): void => {
@@ -151,7 +159,7 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
 
   /** 文を溜めた文の末尾に足して出す（instant なら即時に解決）。上限を超えたら古い文から外す */
   const start = (item: SayItem): void => {
-    page.push(item.text);
+    page.push(item.tone === undefined ? { text: item.text } : { text: item.text, tone: item.tone });
     const max = d.max?.() ?? Infinity;
     if (max >= 1) while (page.length > max) page.shift();
     opened = true;
@@ -200,8 +208,8 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
     queue.push(item);
     pump();
   };
-  const sayItem = (text: string, instant: boolean): Promise<void> =>
-    new Promise<void>((resolve) => enqueue({ kind: "say", text, instant, resolve }));
+  const sayItem = (text: string, instant: boolean, tone?: MessageTone): Promise<void> =>
+    new Promise<void>((resolve) => enqueue({ kind: "say", text, instant, ...(tone === undefined ? {} : { tone }), resolve }));
 
   /** 箱を閉じる。中身があったなら cleared */
   const close = (): void => {
@@ -233,9 +241,9 @@ export function createTalkModel(d: TalkModelDeps): TalkModel {
   };
 
   return {
-    say(text: string, instant: boolean): Promise<void> {
+    say(text: string, instant: boolean, tone?: MessageTone): Promise<void> {
       d.log(text);
-      return sayItem(text, instant);
+      return sayItem(text, instant, tone);
     },
     replay(texts: readonly string[], instant: boolean): Promise<void> {
       return Promise.all(texts.map((x) => sayItem(x, instant))).then(() => undefined);
@@ -521,8 +529,18 @@ export function createTalkBox(o: {
         }
         marks.refresh();
       },
-      text(s: string): void {
-        line.textContent = s;
+      text(s: string, segs?: readonly TalkSeg[]): void {
+        // M24 B-1: 色のある文があれば 1 文 1 つの span（2 文目からは先頭に改行）で行ごとの色。無ければ今どおり 1 つの textContent
+        if (segs !== undefined && segs.some((x) => x.tone !== undefined)) {
+          line.replaceChildren(
+            ...segs.map((x, i) => {
+              const sp = document.createElement("span");
+              sp.textContent = i === 0 ? x.text : `\n${x.text}`;
+              if (x.tone !== undefined) sp.style.color = `var(--c-${x.tone})`;
+              return sp;
+            }),
+          );
+        } else line.textContent = s;
         if (s === "") follow = true;
         if (follow) toEnd();
         marks.refresh();
@@ -558,7 +576,8 @@ export function createTalkBox(o: {
 
 /** UI-47: 語りの表示先。route が街なら会話の箱、それ以外はメッセージ窓。ログはどちらもメッセージ窓の 1 本の配列 */
 export type Narration = {
-  say(text: string, instant: boolean): Promise<void>;
+  /** tone（M24 B-1）はその行の色（会話の箱・メッセージ窓のどちらでも） */
+  say(text: string, instant: boolean, tone?: MessageTone): Promise<void>;
   setMore(on: boolean, blink?: boolean): void;
   rush(): void;
   typing(): boolean;
@@ -592,7 +611,7 @@ export function createNarrator(o: {
 }): Narration {
   const to = (): Pick<Narration, "say" | "setMore" | "rush" | "typing"> => (o.town() ? o.talk : o.window);
   return {
-    say: (text, instant) => to().say(text, instant),
+    say: (text, instant, tone) => (tone === undefined ? to().say(text, instant) : to().say(text, instant, tone)),
     setMore(on: boolean, blink?: boolean): void {
       if (!on) {
         // 下ろすのは両方（再生の途中で街と迷宮を行き来しても残さない）

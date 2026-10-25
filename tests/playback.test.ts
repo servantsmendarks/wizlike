@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { beatAdvanceWait, beatWait, createPlayer, createTapLatch, townCarry, type PlayerDeps } from "../src/presenter/playback";
+import { MESSAGE_TONES, messageTone } from "../src/presenter/message-tones";
 import { createNarrator, createTalkModel } from "../src/presenter/views/talk";
 import { regions, townLayout } from "../src/presenter/layout";
 import { returnToTown } from "../src/core/rules/town";
@@ -77,8 +78,9 @@ function fakeDeps(settings: Partial<Settings> = {}): { deps: PlayerDeps; log: Lo
     },
     header: { showAt: (_state, at) => rec("header.showAt")(at) },
     message: {
-      say(text, instant) {
-        log.push({ m: "message.say", a: [text, instant] });
+      say(text, instant, tone) {
+        // M24 B-1: 色のある文だけ 3 つ目の tone を記録する
+        log.push({ m: "message.say", a: tone === undefined ? [text, instant] : [text, instant, tone] });
         return Promise.resolve();
       },
       setMore: rec("message.setMore"),
@@ -228,6 +230,26 @@ describe("UI-41 playback", () => {
       [data.strings["dungeon.blocked"], false],
     ]);
     expect(log.filter((e) => e.m === "view.fade").map((e) => e.a[0])).toEqual([data.config.ui.viewFadeMs]);
+  });
+
+  test("UI-59/IT-65（M24 B-1）message の再生は MESSAGE_TONES のキーだけ tone を渡す（item.option.found は option、item.curse.found / foundNone は danger、ほかは渡さない）", async () => {
+    const { deps, log } = fakeDeps({ skipAnimations: true });
+    const before = stateWith(diveAt(3, 3, "N"));
+    await createPlayer(deps).play(
+      [
+        { kind: "message", key: "item.option.found", params: { name: "力", value: "+1", unit: "" }, instant: true },
+        { kind: "message", key: "item.curse.found", params: { item: "短剣", name: "力", value: "-1", unit: "" } },
+        { kind: "message", key: "item.curse.foundNone", params: { item: "短剣" } },
+        { kind: "message", key: "dungeon.blocked" },
+      ],
+      before,
+      before,
+    );
+    expect(log.filter((e) => e.m === "message.say").map((e) => e.a.slice(2))).toEqual([["option"], ["danger"], ["danger"], []]);
+    expect(MESSAGE_TONES).toEqual({ "item.option.found": "option", "item.curse.found": "danger", "item.curse.foundNone": "danger" });
+    for (const k of Object.keys(MESSAGE_TONES)) expect(data.strings[k], k).toBeDefined();
+    expect(messageTone("dungeon.blocked")).toBeUndefined();
+    expect(messageTone("toString")).toBeUndefined(); // 表のプロトタイプの名前を拾わない
   });
 
   test("UI-23/UI-25/UI-31（M16）view.quickStep が真の間は moved / turned の描き直しを 0ms にする（戦闘への切り替えのフェードは viewFadeMs のまま）。省略・偽なら viewFadeMs", async () => {
