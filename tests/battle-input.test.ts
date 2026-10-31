@@ -94,8 +94,8 @@ function menu(o: Partial<BattleMenu> = {}): BattleMenu {
     ],
     members,
     allies: [
-      { id: "c1", name: "Nc1", hp: 7, hpMax: 9 },
-      { id: "c2", name: "Nc2", hp: 4, hpMax: 8 },
+      { id: "c1", name: "Nc1", hp: 7, hpMax: 9, status: [] },
+      { id: "c2", name: "Nc2", hp: 4, hpMax: 8, status: [] },
     ],
     ...o,
   };

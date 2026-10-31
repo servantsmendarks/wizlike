@@ -698,7 +698,7 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
         ...identifyView(state, data, ch, unidentified),
       };
     }),
-    allies: alive.map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: hpMaxOf(state, data, c) })),
+    allies: alive.map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: hpMaxOf(state, data, c), status: [...c.status] })),
     dead: dead.map((c) => ({ id: c.id, name: c.name })),
     identifiers: state.party.filter((c) => canIdentify(c, data) && canAct(c)).map((c) => ({ id: c.id, name: c.name })),
     unidentified,

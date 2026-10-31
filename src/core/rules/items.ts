@@ -141,6 +141,6 @@ export function fieldItemMenu(state: GameState, data: GameData): FieldItemMenu |
       }
       return { id: ch.id, name: ch.name, canAct: canAct(ch), items };
     }),
-    allies: alive.map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: hpMaxOf(state, data, c) })),
+    allies: alive.map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: hpMaxOf(state, data, c), status: [...c.status] })),
   };
 }

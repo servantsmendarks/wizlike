@@ -225,7 +225,25 @@ describe("UI-53 fieldItemMenu", () => {
     expect(m.members[3]!.items).toEqual([{ instanceId: "i13", itemId: "antidote_herb", name: "解毒草", target: "ally", usable: true, isReturn: false, targets: NONE5 }]);
     expect(m.members[4]!.items).toEqual([{ instanceId: "i15", itemId: "return_thread", name: "帰還の糸", target: "none", usable: true, isReturn: true, targets: [] }]);
     expect(m.allies.map((a) => a.id)).toEqual(["c1", "c2", "c3", "c4", "c5"]);
-    expect(m.allies[0]).toEqual({ id: "c1", name: "アルド", hp: 15, hpMax: 15 });
+    // M26 B-1: allies に status（Character.status の写し）を足した
+    expect(m.allies[0]).toEqual({ id: "c1", name: "アルド", hp: 15, hpMax: 15, status: [] });
+    expect(m.allies[2]!.status).toEqual(["paralysis"]);
+  });
+
+  test("UI-53（M26 B-1）fieldItemMenu の allies は status にその者の Character.status の写しを持つ（毒・複数・無し）", () => {
+    const s = inDungeon({ c2: { status: ["poison"] }, c4: { status: ["poison", "paralysis"] } });
+    const m = fieldItemMenu(s, data)!;
+    expect(m.allies.map((a) => [a.id, a.status])).toEqual([
+      ["c1", []],
+      ["c2", ["poison"]],
+      ["c3", []],
+      ["c4", ["poison", "paralysis"]],
+      ["c5", []],
+      ["c6", []],
+    ]);
+    // 写しなので、menu の配列を書き換えても state は変わらない
+    m.allies[1]!.status.push("sleep");
+    expect(s.party.find((c) => c.id === "c2")!.status).toEqual(["poison"]);
   });
 
   // M5.5: 街（酒場）でも道具を使えるようにしたので、街では非 null に変えた（旧: 街でも null）

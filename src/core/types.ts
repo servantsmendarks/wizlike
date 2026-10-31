@@ -732,8 +732,8 @@ export type BattleMenu = {
   groups: EnemyGroupView[];
   /** パーティ全員（並び順） */
   members: BattleMenuMember[];
-  /** 味方の対象の候補 = life が alive のメンバー（並び順） */
-  allies: { id: string; name: string; hp: number; hpMax: number }[];
+  /** 味方の対象の候補 = life が alive のメンバー（並び順）。status はその者の Character.status の写し（対象の行に出す。UI-54、M26） */
+  allies: { id: string; name: string; hp: number; hpMax: number; status: StatusId[] }[];
 };
 
 // ===================== 全滅の内訳（TW-20〜26。wipe イベントの penalty） =====================
@@ -1018,8 +1018,8 @@ export type FieldItemView = {
 export type FieldItemMenu = {
   /** パーティ全員（並び順）。items は inventory の順で consumable / book だけ */
   members: { id: string; name: string; canAct: boolean; items: FieldItemView[] }[];
-  /** 対象の候補 = life alive（並び順） */
-  allies: { id: string; name: string; hp: number; hpMax: number }[];
+  /** 対象の候補 = life alive（並び順）。status はその者の Character.status の写し（対象の行に出す。UI-53、M26） */
+  allies: { id: string; name: string; hp: number; hpMax: number; status: StatusId[] }[];
 };
 
 // ===================== キャンプと酒場の問い合わせ（UI-53 / TW-03。rules/camp.ts の campMenu。state には入れない） =====================
@@ -1143,8 +1143,8 @@ export type CampMenu = {
   place: CampPlace;
   /** パーティ全員（並び順） */
   members: CampMember[];
-  /** heal / cure の対象の候補 = life alive の者（並び順） */
-  allies: { id: string; name: string; hp: number; hpMax: number }[];
+  /** heal / cure の対象の候補 = life alive の者（並び順）。status はその者の Character.status の写し（対象の行に出す。UI-53、M26） */
+  allies: { id: string; name: string; hp: number; hpMax: number; status: StatusId[] }[];
   /** 蘇生の対象の候補 = life dead の者（並び順。ash は入れない） */
   dead: { id: string; name: string }[];
   /** 鑑定できる者 = abilities に identify を持ち、canAct の者（並び順）。空なら「鑑定」の項目を出さない */

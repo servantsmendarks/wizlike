@@ -1325,6 +1325,6 @@ export function battleMenu(state: GameState, data: GameData): BattleMenu | null 
     pending: b.auto ? [] : members.filter((m) => m.canAct && m.input === null).map((m) => m.id),
     groups: groupViews(state, data),
     members,
-    allies: state.party.filter((c) => c.life === "alive").map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: hpMaxOf(state, data, c) })),
+    allies: state.party.filter((c) => c.life === "alive").map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: hpMaxOf(state, data, c), status: [...c.status] })),
   };
 }

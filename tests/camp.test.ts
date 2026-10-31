@@ -1026,6 +1026,18 @@ describe("UI-53/TW-03 campMenu", () => {
     expect(md.members.find((x) => x.id === "c4")!.spells.find((x) => x.spellId === "resurrect")!.usable).toBe(true);
   });
 
+  test("UI-53（M26 B-1）campMenu の allies は status にその者の Character.status の写しを持つ（毒・無し。死者は allies に入らない）", () => {
+    const s = inDungeon({ c3: { status: ["poison"] }, c2: { life: "dead", hp: 0 } });
+    const m = campMenu(s, data)!;
+    expect(m.allies.map((a) => [a.id, a.status])).toEqual([
+      ["c1", []],
+      ["c3", ["poison"]],
+      ["c4", []],
+      ["c5", []],
+      ["c6", []],
+    ]);
+  });
+
   test("UI-53/CH-76 slots の canUnequip と equipCandidates の block が check 関数と一致する。row は frontRow による", () => {
     let s = give(inDungeon(), "c5", "long_sword").s; // class
     s = give(s, "c5", "dagger", false).s; // unidentified
