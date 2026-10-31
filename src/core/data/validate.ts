@@ -1837,6 +1837,7 @@ function validateAudio(ctx: Ctx, v: unknown, ix: Index): void {
       life: opt(E(CUE_LIVES)),
       sfx: opt(S),
       jingle: opt(S),
+      silenceAfter: opt(B),
     });
     if (c === undefined) return;
     const ev = strOf(c.event);
@@ -1844,6 +1845,8 @@ function validateAudio(ctx: Ctx, v: unknown, ix: Index): void {
     if (c.sfx !== undefined) sfxName(at(p, "sfx"), c.sfx);
     const j = strOf(c.jingle);
     if (j !== undefined && !jingles.has(j)) report(ctx, at(p, "jingle"), `unknown jingle ${JSON.stringify(j)}`);
+    // UI-66（M26）: ジングルの後を無音にする印は jingle のある cue だけ
+    if (c.silenceAfter !== undefined && c.jingle === undefined) report(ctx, at(p, "silenceAfter"), "UI-66: only for cue with jingle");
     if (ev === "message" && c.key === undefined) report(ctx, at(p, "key"), "UI-66: required for event message");
     strKey(ctx, at(p, "key"), c.key, ix);
     if (ev === undefined || !(CUE_EVENTS as readonly string[]).includes(ev)) return;

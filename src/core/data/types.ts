@@ -1014,6 +1014,11 @@ export type SoundCue = {
   /** sfx と jingle のどちらか一方だけ */
   sfx?: string;
   jingle?: string;
+  /**
+   * UI-66 / UI-63（M26）: jingle のある cue だけ。真なら、そのジングルの後に場面の曲を戻さない（無音のまま。次の screen の曲まで）。
+   * 戦闘の終わりのジングル（勝利 victory・全滅 wipe・ボス撃破の語りの clear）に付ける
+   */
+  silenceAfter?: boolean;
 };
 
 export type AudioData = {

@@ -876,6 +876,19 @@ describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
     expectIssue((r) => (r.audio.cues[0].result = "draw"), F, "cues[0].result: expected one of win|flee|wipe");
     expectIssue((r) => (r.audio.cues[0].event = "moved"), F, "cues[0].event: expected one of");
   });
+  test("data: UI-66（M26）silenceAfter は jingle のある cue だけに付けられる（真偽値）。実データは victory・wipe・ボス撃破の語りの clear の 3 つ", () => {
+    const d = loadGameData(rawData());
+    const marked = d.audio.cues.filter((c) => c.silenceAfter === true).map((c) => `${c.event}:${c.key ?? c.result ?? ""}:${c.jingle ?? ""}`);
+    expect(marked).toEqual(["battleEnd:win:victory", "wipe::wipe", "message:battle.bossDefeated:clear"]);
+    // levelup・inn・encounter・結末の clear・rare は付けない（ジングルの後に場面の曲を戻す）
+    expect(d.audio.cues.filter((c) => c.jingle !== undefined && c.silenceAfter === undefined).map((c) => c.jingle)).toEqual(["levelup", "inn", "encounter", "clear", "rare", "rare"]);
+    // 通る例: jingle のある cue に真・偽
+    expect(issuesOf((r) => (r.audio.cues[1].silenceAfter = true))).toEqual([]);
+    expect(issuesOf((r) => (r.audio.cues[1].silenceAfter = false))).toEqual([]);
+    // 弾く例: sfx の cue、真偽値でない
+    expectIssue((r) => (r.audio.cues[4].silenceAfter = true), F, "cues[4].silenceAfter: UI-66: only for cue with jingle");
+    expectIssue((r) => (r.audio.cues[1].silenceAfter = "yes"), F, "cues[1].silenceAfter: expected");
+  });
   test("data: UI-65 ui.ok・ui.cancel・ui.facility・ui.camp・ui.talk は sfx.names のどれか（必須）、未知の欄は止める", () => {
     expectIssue((r) => (r.audio.ui.ok = "beep"), F, 'ui.ok: unknown sfx "beep"');
     for (const k of ["facility", "camp", "talk"]) {
