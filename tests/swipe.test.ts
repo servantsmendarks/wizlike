@@ -7,6 +7,7 @@ import { cloneState } from "../src/core/state";
 import type { Command, GameEvent, GameState, PendingChoice, RouteCommand, RouteStep } from "../src/core/types";
 import { planRoute, routeStepOk } from "../src/core/rules/pathfind";
 import { createRunGate } from "../src/presenter/run-gate";
+import { filterHints, type HintLevel } from "../src/presenter/settings";
 import {
   attachKeyboard,
   attachReleaseOnHide,
@@ -127,6 +128,32 @@ describe("連打の可否とキーボード", () => {
     expect(canRepeat([hp, moved], null, false)).toBe(false);
     expect(canRepeat([moved, hp], pending, false)).toBe(false);
     expect(canRepeat([moved, hp], null, true)).toBe(false);
+  });
+
+  test("UI-31/DG-46/UI-76（M26 判断 2）forwardStep は visible（app.ts は filterHints）を通した events で canRepeat を見る: [moved, 方角の一言] は「少なめ」「なし」では続け、「多め」と visible なしでは止まる。「少なめ」で出す一言（hint.dungeonFirst）は止まる", async () => {
+    const step = (events: readonly GameEvent[], level?: HintLevel) =>
+      forwardStep({
+        ready: () => true,
+        move: async () => ({ events, rejected: false }),
+        pending: () => null,
+        overlayOpen: () => false,
+        ...(level === undefined ? {} : { visible: (e: readonly GameEvent[]) => filterHints(e, level) }),
+      });
+    for (const key of ["hint.lostExitsDir.N", "hint.lostBossDir.SW"]) {
+      const ev: GameEvent[] = [moved, { kind: "message", key }];
+      expect(await step(ev, "less"), `${key} less`).toBe(true);
+      expect(await step(ev, "none"), `${key} none`).toBe(true);
+      expect(await step(ev, "more"), `${key} more`).toBe(false);
+      expect(await step(ev), `${key} 生`).toBe(false);
+      // 毒の 1 歩（hpChanged）と重なっても同じ
+      const hp: GameEvent = { kind: "hpChanged", id: "c1", delta: -1, hp: 5 };
+      expect(await step([moved, { kind: "message", key }, hp], "none"), `${key} none+hp`).toBe(true);
+    }
+    const first: GameEvent[] = [moved, { kind: "message", key: "hint.dungeonFirst" }];
+    expect(await step(first, "less")).toBe(false);
+    expect(await step(first, "none")).toBe(true);
+    // 一言でない message（扉など）は設定に関係なく止まる
+    expect(await step([moved, { kind: "message", key: "dungeon.door" }], "none")).toBe(false);
   });
 
   test("UI-33/UI-54 battleKeyChoice: 数字 n → n−1、Enter → 0、Esc → back。autoStop では Esc / Enter / 1 → stop。矢印・地図は null", () => {

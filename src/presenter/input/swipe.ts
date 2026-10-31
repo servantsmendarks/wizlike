@@ -131,17 +131,20 @@ export function battleKeyChoice(
 /**
  * UI-31: 長押しの 1 歩（createHoldRepeater の fire）。ready が偽なら送らずに止まる。move は run の門を通した dungeon.move で、
  * 門に捨てられた（null）・rejected・canRepeat が偽なら false（止まる）を返す。app.ts の結線をここに切り出して node で試す。
+ * visible は再生に渡す events（M26 判断 2: app.ts は GM の助言の設定の filterHints）。canRepeat はこれで見るので、設定で出さない一言の歩では止まらない。
+ * 省略すると生の events。
  */
 export async function forwardStep(o: {
   ready(): boolean;
   move(): Promise<{ events: readonly GameEvent[]; rejected: boolean } | null>;
   pending(): PendingChoice | null;
   overlayOpen(): boolean;
+  visible?(events: readonly GameEvent[]): readonly GameEvent[];
 }): Promise<boolean> {
   if (!o.ready()) return false;
   const r = await o.move();
   if (r === null || r.rejected) return false;
-  return canRepeat(r.events, o.pending(), o.overlayOpen());
+  return canRepeat(o.visible ? o.visible(r.events) : r.events, o.pending(), o.overlayOpen());
 }
 
 /** UI-25: 地図のタップ移動の自動歩行。steps は core の planRoute の結果、i は次に送る手の添字 */

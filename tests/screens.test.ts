@@ -255,6 +255,15 @@ describe("パーティ欄", () => {
     expect(app.match(/player\.play\(/g)).toHaveLength(1);
   });
 
+  test("UI-31/DG-46/UI-76（M26 判断 2）長押しの前進（repeater の forwardStep）は再生と同じ filterHints を visible に渡す（GM の助言で出さない一言の歩では止まらない。自動歩行の walker は渡さない。ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const repeater = /const repeater = createHoldRepeater\(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(repeater).toContain("visible: (events) => filterHints(events, store.get().hints),");
+    const walker = /const walker = createHoldRepeater\(\{([\s\S]*?)\n {2}\}\);/.exec(app)?.[1] ?? "";
+    expect(walker).toContain("walkStep(");
+    expect(walker).not.toContain("filterHints");
+  });
+
   test("ui §2 X1/X2 formatPartyRow の略称は classes[].abbr（fighter → WAR …）。知らない職業は空", () => {
     const party = newGame(1).party;
     expect(party.map((ch) => formatPartyRow(ch, data.strings, data.classes, stageOf).abbr)).toEqual(["WAR", "WAR", "THI", "PRI", "MAG", "THI"]);

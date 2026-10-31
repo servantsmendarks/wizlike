@@ -1626,7 +1626,10 @@ export function createApp(o: {
     if (r.announce) void narrator.say(t("save.failed"), true);
   };
 
-  /** UI-31: 前進の長押し。1 歩ごとに再生の終わりを待ち、[moved] の後が hpChanged だけのときに続ける（canRepeat） */
+  /**
+   * UI-31: 前進の長押し。1 歩ごとに再生の終わりを待ち、[moved] の後が hpChanged だけのときに続ける（canRepeat）。
+   * M26 判断 2: 判定は再生と同じ filterHints を通した events で見る（GM の助言で出さない一言の歩では止まらない）
+   */
   const repeater = createHoldRepeater({
     ms: () => store.get().holdRepeatMs,
     fire: async (i) => {
@@ -1643,6 +1646,7 @@ export function createApp(o: {
             }),
           pending: () => state.pendingChoice,
           overlayOpen: () => overlay !== null,
+          visible: (events) => filterHints(events, store.get().hints),
         });
       } finally {
         holdQuick = false;
