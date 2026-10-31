@@ -1,5 +1,6 @@
-// UI-06 / UI-63 / UI-65: 音の再生機（Web Audio）。
-// - AudioContext は最初のユーザー操作（pointerup・touchend・keydown。attachAudio）の中で作り、suspended なら毎回 resume する（iOS の制約）。
+// UI-06 / UI-06b / UI-63 / UI-65: 音の再生機（Web Audio）。
+// - AudioContext は最初のユーザー操作（pointerup・touchend・keydown。attachAudio）の中で作り、running でなければ（suspended のほか
+//   iOS の interrupted も）毎回 resume する（iOS の制約）。
 //   作る前の setSong は覚えて、作ったときに始める。作る前のジングル・効果音は捨てる。AudioContext のレートは指定しない（端末の既定）。
 // - 曲とジングルは区間（小節の頭とループ点で区切る。audio-synth.ts の planSong / renderSegment / nextSegment）ごとに
 //   合成して AudioBuffer（1 チャンネル、config.audio.sampleRate）にし、区間ごとの AudioBufferSourceNode を start(when) で
@@ -26,6 +27,10 @@
 //   バッファも ZzFX も無い効果音は捨てる。
 // - 音量: 曲 = config.audio.musicGain × 段 / 10、効果音 = config.audio.sfxGain × 段 / 10（段は 0〜10。0 なら source を作らない）。
 //   ZZFX.volume（0.3）は buildSamples の中で掛かる（zzfx() の playSamples の GainNode の 0.3 の代わりが sfxGain）。
+// - 隠れたら（visibilitychange）suspend し、そのとき鳴っていた場面の曲の区間（= 小節）を覚える。戻ったら running でなければ resume し、
+//   拒まれた・running にならなければ次のタップ（unlock）でもう一度。タップは画面が見えている証拠として hidden を下ろす。
+//   復帰が通ったら 1 回だけ、予約済みの区間・ジングル・ジングルの後の予約を止めて捨て、場面の曲を覚えた区間の頭から（場面の曲が
+//   鳴っていなかったら区間 0 から）currentTime + 先行の時間に予約し直す。場面の曲が null なら無音のまま（UI-06b。M26）。
 // - 演出スキップ（settings.skipAnimations）は音に関わらない（UI-41 の省く対象に音は入らない）。
 // - ファイルが無い曲・ジングル・効果音は無音（例外も console.error も出さない）。それ以外の例外も捕まえて console.warn にとどめる。
 // モジュールのトップレベルでは Web API に触れない（依存は注入する。node のテストで動かす）。
@@ -72,7 +77,7 @@ export type AudioDeps = {
 };
 
 export type AudioPlayer = {
-  /** pointerup / touchend / keydown（capture）から呼ぶ。初回で context を作り、毎回 suspended なら resume */
+  /** pointerup / touchend / keydown（capture）から呼ぶ。初回で context を作り、毎回 hidden を下ろして running でなければ resume（UI-06b） */
   unlock(): void;
   /** 場面の曲（ループ）。同じ曲が鳴っていれば何もしない。ジングル中なら終わった後に始める。ファイルが無ければ止めて無音。null で止める */
   setSong(name: string | null): void;
@@ -82,7 +87,7 @@ export type AudioPlayer = {
   playSfx(name: string): void;
   /** 設定が変わったら呼ぶ（GainNode の値を変える。曲の段が 0 になったら止め、0 から上がったら頭から） */
   refreshVolumes(): void;
-  /** visibilitychange: hidden で suspend、visible で resume */
+  /** visibilitychange: hidden で suspend（場面の曲の区間を覚える）、visible で running でなければ resume。復帰が通ったら場面の曲を鳴らし直す（UI-06b） */
   setHidden(hidden: boolean): void;
 };
 
@@ -95,17 +100,19 @@ type Track = {
   kind: Kind;
   name: string;
   cache: SongCache;
-  /** 区間 0 の開始の ctx 時刻（予約の基準。間に合わないときは置き直す） */
+  /** 最初に予約した区間（ふつうは区間 0。UI-06b の鳴らし直しでは隠れた時点の区間）の開始の ctx 時刻（予約の基準。間に合わないときは置き直す） */
   t0: number;
   /** 予約済みの区間の長さの累計（サンプル数） */
   played: number;
   /** 次に予約する区間（無ければ null） */
   nextSeg: number | null;
-  /** 予約済みで鳴り終わっていない source */
-  queued: AudioBufferSourceNode[];
+  /** 予約済みで鳴り終わっていない source（予約の順。UI-06b: 区間の番号と開始の ctx 時刻を添える） */
+  queued: Queued[];
   /** 先読みの区間を合成している最中 */
   filling: boolean;
 };
+/** 予約済みの区間の source（seg は区間の番号 = 小節。at は start(when) の when） */
+type Queued = { source: AudioBufferSourceNode; seg: number; at: number };
 /** 鳴らし始めの区間 0 を頼んでいる最中のもの */
 type Pending = { req: number; kind: Kind; name: string; cache: SongCache };
 /** ジングルの終わりの時刻に予約した場面の曲（track は区間 0 が揃うまで null） */
@@ -303,6 +310,10 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
   let musicGain: GainNode | null = null;
   let sfxGain: GainNode | null = null;
   let hidden = false;
+  /** UI-06b: 隠れた後の鳴らし直しがまだ（setHidden(true) で立て、復帰が通ったときの restartAfterResume が 1 回だけ下ろす） */
+  let restartDue = false;
+  /** UI-06b: 隠れた時点で鳴っていた場面の曲の区間（= 小節）。場面の曲が鳴っていなかった・取れなければ null（区間 0 から） */
+  let pausedSeg: number | null = null;
   /** setSong で求められた場面の曲 */
   let wanted: string | null = null;
   let playing: Track | null = null;
@@ -404,7 +415,7 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
     source.buffer = buffer;
     source.connect(g);
     source.onended = () => onEnded(t, source);
-    t.queued.push(source);
+    t.queued.push({ source, seg: i, at: when });
     t.played += (plan.bounds[i + 1] ?? 0) - (plan.bounds[i] ?? 0);
     t.nextSeg = nextSegment(plan, i);
     source.start(when);
@@ -461,7 +472,7 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
 
   const onEnded = (t: Track, source: AudioBufferSourceNode): void => {
     try {
-      const k = t.queued.indexOf(source);
+      const k = t.queued.findIndex((q) => q.source === source);
       if (k >= 0) t.queued.splice(k, 1);
       source.disconnect();
       if (playing !== t) return;
@@ -474,7 +485,7 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
 
   /** 前の曲の予約を t0 で止める（disconnect は ended の中。すぐ切ると t0 までの音が切れる） */
   const switchAt = (old: Track, t0: number): void => {
-    for (const s of old.queued) {
+    for (const { source: s } of old.queued) {
       s.onended = () => {
         try {
           s.disconnect();
@@ -502,7 +513,7 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
     const fw = follow;
     follow = null;
     if (fw === null || fw.track === null) return;
-    for (const s of fw.track.queued) {
+    for (const { source: s } of fw.track.queued) {
       try {
         s.onended = null;
         s.stop();
@@ -551,7 +562,7 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
     const p = playing;
     if (p === null) return;
     playing = null;
-    for (const s of p.queued) {
+    for (const { source: s } of p.queued) {
       try {
         s.onended = null;
         s.stop();
@@ -563,11 +574,14 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
     p.queued = [];
   };
 
-  /** 区間 0 を頼み、揃ったら（その依頼が最新なら）前を t0 で止めて鳴らし始める */
-  const begin = (kind: Kind, cache: SongCache): void => {
+  /**
+   * 区間 0（UI-06b の鳴らし直しでは区間 seg）を頼み、揃ったら（その依頼が最新なら）前を t0 で止めて鳴らし始める。
+   * seg は曲の区間の番号（0..区間の数 - 1）。そこから nextSegment の順に続ける
+   */
+  const begin = (kind: Kind, cache: SongCache, seg = 0): void => {
     const req = ++reqSeq;
     pending = { req, kind, name: cache.name, cache };
-    withSegment(cache, 0, (b) => {
+    withSegment(cache, seg, (b) => {
       if (pending?.req !== req) return;
       pending = null;
       try {
@@ -580,11 +594,11 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
         const old = playing;
         // 前のジングルの後に予約した場面の曲は取り消す（新しい曲・ジングルに置き換わる）
         cancelFollow();
-        const t: Track = { kind, name: cache.name, cache, t0: c.currentTime + lead(c), played: 0, nextSeg: 0, queued: [], filling: false };
+        const t: Track = { kind, name: cache.name, cache, t0: c.currentTime + lead(c), played: 0, nextSeg: seg, queued: [], filling: false };
         playing = t;
         // 区間 0 を先に予約して時刻を確定させ（schedule が置き直したら置き直した後の t.t0）、前の曲をその時刻で止める。
         // 先に止めると、間に currentTime が 1 レンダー量子進んで schedule が置き直したとき stop と start の間に隙間ができる
-        schedule(t, 0, b);
+        schedule(t, seg, b);
         if (old !== null) switchAt(old, t.t0);
         prepareFollow(t);
         if (!finishJingle(t) && needMore(t)) deps.yieldTask(() => fill(t));
@@ -617,6 +631,55 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
     } catch (e) {
       warn(e);
     }
+  };
+
+  /**
+   * UI-06b: 隠れる時点で鳴っている場面の曲の区間。playing が場面の曲（song で wanted と同じ名前）で、待っている依頼が無いときだけ、
+   * 予約済みのうち開始の時刻が currentTime 以前の最後の区間（無ければ最初の区間）。ジングル中・切り替え中・何も鳴っていなければ null
+   */
+  const sceneSegAt = (c: AudioContext): number | null => {
+    const p = playing;
+    if (p === null || p.kind !== "song" || p.name !== wanted || pending !== null) return null;
+    let seg: number | null = null;
+    for (const q of p.queued) if (q.at <= c.currentTime) seg = q.seg;
+    return seg ?? p.queued[0]?.seg ?? null;
+  };
+
+  /**
+   * UI-06b: 復帰が通った（隠れた後に context が running になった）ときに 1 回だけ。鳴っている曲・ジングルの予約済みの区間、
+   * ジングルの後の予約、待っている依頼をすべて止めて捨て（stopPlaying。onended を外してから止めるので、捨てた Track に予約は足されない）、
+   * 場面の曲を隠れた時点の区間（pausedSeg。無ければ区間 0）の頭から currentTime + 先行の時間に予約し直す（begin。同じ曲でも鳴らし直す）。
+   * 場面の曲が null（UI-66 の無音）・段 0・ファイルが無いなら止めたまま。まだ隠れていれば何もしない（次の復帰で）
+   */
+  const restartAfterResume = (): void => {
+    if (!restartDue || hidden) return;
+    restartDue = false;
+    const seg = pausedSeg;
+    pausedSeg = null;
+    try {
+      stopPlaying();
+      if (ctx === null || wanted === null || level("music") === 0) return;
+      const cache = songCache(wanted);
+      if (cache === null) return;
+      begin("song", cache, seg !== null && seg < segmentCount(cache.plan) ? seg : 0);
+    } catch (e) {
+      warn(e);
+    }
+  };
+
+  /**
+   * UI-06 / UI-06b: running でなければ resume する（suspended のほか iOS の interrupted も）。解決した後に running なら鳴らし直す。
+   * 拒まれた・解決しても running にならないときは何もしない（次のタップの unlock でもう一度ここを通る）。すでに running なら鳴らし直しだけ
+   */
+  const wake = (c: AudioContext): void => {
+    if (c.state === "running") {
+      restartAfterResume();
+      return;
+    }
+    if (c.state === "closed") return;
+    void c.resume().then(() => {
+      if (ctx === c && c.state === "running") restartAfterResume();
+    }, warn);
   };
 
   const applyGains = (): void => {
@@ -700,6 +763,8 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
 
   return {
     unlock(): void {
+      // UI-06b: タップがあるなら画面は見えている（visible が来ないまま hidden が残ったときの保険）
+      hidden = false;
       try {
         if (!tried) {
           tried = true;
@@ -716,7 +781,7 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
           loadSfx(c);
         }
         const c = ctx;
-        if (c !== null && c.state === "suspended" && !hidden) void c.resume().catch(warn);
+        if (c !== null) wake(c);
       } catch (e) {
         warn(e);
       }
@@ -794,8 +859,12 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
       const c = ctx;
       if (c === null) return;
       try {
-        if (h) void c.suspend().catch(warn);
-        else if (c.state === "suspended") void c.resume().catch(warn);
+        if (h) {
+          // UI-06b: 隠れた時点の場面の曲の区間を覚え、復帰が通ったら鳴らし直す
+          pausedSeg = sceneSegAt(c);
+          restartDue = true;
+          void c.suspend().catch(warn);
+        } else wake(c);
       } catch (e) {
         warn(e);
       }

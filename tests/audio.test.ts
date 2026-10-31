@@ -78,7 +78,9 @@ class FakeSource extends FakeNode {
   }
 }
 class FakeContext {
-  state: "suspended" | "running" | "closed" = "suspended";
+  state: "suspended" | "running" | "closed" | "interrupted" = "suspended";
+  /** UI-06b: resume の結果。ok = running にして解決、reject = 拒む、stuck = 解決するが state は変えない */
+  resumeMode: "ok" | "reject" | "stuck" = "ok";
   destination = { name: "destination" };
   currentTime = 0;
   baseLatency: number | undefined = undefined;
@@ -107,7 +109,8 @@ class FakeContext {
   }
   resume(): Promise<void> {
     this.resumes++;
-    this.state = "running";
+    if (this.resumeMode === "reject") return Promise.reject(new Error("not allowed"));
+    if (this.resumeMode === "ok") this.state = "running";
     return Promise.resolve();
   }
   suspend(): Promise<void> {
@@ -307,10 +310,10 @@ describe("UI-06 AudioContext の開始", () => {
   it("UI-06 setHidden(true) で suspend、false で resume", () => {
     const f = setup();
     const p = createAudioPlayer(f.deps);
-    // context が無い間は何もしない（隠れている間の unlock は resume しない）
+    // context が無い間は何もしない。unlock は hidden を下ろして resume する（UI-06b。M26 で M8 の「隠れている間の unlock は resume しない」を変えた）
     p.setHidden(true);
     p.unlock();
-    expect(f.contexts[0]?.resumes).toBe(0);
+    expect(f.contexts[0]?.resumes).toBe(1);
     p.setHidden(false);
     const c = f.contexts[0]!;
     p.setHidden(true);
@@ -362,6 +365,195 @@ describe("UI-06 AudioContext の開始", () => {
     expect(calls).toEqual(["unlock", "unlock", "unlock", "hidden:true", "hidden:false"]);
     detach();
     for (const k of ["pointerup", "touchend", "keydown", "visibilitychange"]) expect(handlers[k]).toEqual([]);
+  });
+});
+
+describe("UI-06b 隠れた後の復帰（M26）", () => {
+  /** long（前奏 1 小節 + ループ 5 小節。1 小節 2 秒）を鳴らし、区間 0・1 の ended まで進める（予約は区間 2・3・4） */
+  const playLong = (): { f: Fake; p: ReturnType<typeof createAudioPlayer>; c: FakeContext } => {
+    const f = setup();
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("long");
+    runTasks(f);
+    c.sources[0]!.end();
+    c.sources[1]!.end();
+    expect(tags(c)).toEqual(["long:0", "long:1", "long:2", "long:3", "long:4"]);
+    expect(c.sources.map((s) => s.startAt[0])).toEqual([0, 2, 4, 6, 8].map((x) => LEAD + x));
+    return { f, p, c };
+  };
+
+  it("UI-06b visible で state が suspended・interrupted なら resume する（unlock も interrupted で resume）。running なら resume しない", async () => {
+    const f = setup();
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    expect(c.resumes).toBe(1);
+    p.setHidden(true);
+    expect(c.state).toBe("suspended");
+    p.setHidden(false);
+    expect(c.resumes).toBe(2);
+    p.setHidden(true);
+    // iOS の非標準の状態
+    c.state = "interrupted";
+    p.setHidden(false);
+    expect(c.resumes).toBe(3);
+    await flush();
+    c.state = "interrupted";
+    p.unlock();
+    expect(c.resumes).toBe(4);
+    expect(c.state).toBe("running");
+    p.setHidden(false);
+    p.unlock();
+    expect(c.resumes).toBe(4);
+  });
+
+  it("UI-06b resume が拒まれた・解決しても running にならないときは鳴らし直さず、次の unlock で resume して鳴らし直す", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { p, c } = playLong();
+    c.currentTime = LEAD + 6.5;
+    p.setHidden(true);
+    c.resumeMode = "reject";
+    p.setHidden(false);
+    await flush();
+    expect(c.resumes).toBe(2);
+    expect(c.state).toBe("suspended");
+    expect(c.sources.length).toBe(5);
+    // 解決しても suspended のまま
+    c.resumeMode = "stuck";
+    p.unlock();
+    await flush();
+    expect(c.resumes).toBe(3);
+    expect(c.sources.length).toBe(5);
+    // 次のタップで通る → 鳴らし直す
+    c.resumeMode = "ok";
+    p.unlock();
+    expect(c.resumes).toBe(4);
+    await flush();
+    expect(tags(c).slice(5)).toEqual(["long:3"]);
+  });
+
+  it("UI-06b 場面の曲の区間 3 の最中に隠れて戻ると、予約済みの source を全部止め、区間 3 の頭を currentTime + 先行の時間に予約し直す（1 回だけ）", async () => {
+    const { f, p, c } = playLong();
+    // 区間 3（LEAD+6〜LEAD+8）の途中
+    c.currentTime = LEAD + 6.5;
+    p.setHidden(true);
+    expect(c.suspends).toBe(1);
+    p.setHidden(false);
+    await flush();
+    for (const k of [2, 3, 4]) expect(c.sources[k]?.stopAt).toEqual([undefined]);
+    expect(tags(c).slice(5)).toEqual(["long:3"]);
+    expect(c.sources[5]?.startAt).toEqual([LEAD + 6.5 + LEAD]);
+    // 合成済みの区間は合成し直さない
+    expect(f.renders).toEqual(["long:0", "long:1", "long:2", "long:3", "long:4"]);
+    // 止めた source の ended は捨てた Track に予約を足さない
+    for (const k of [2, 3, 4]) c.sources[k]!.end();
+    expect(c.sources.length).toBe(6);
+    // 先読みは区間 3 の続き（4・5）を隙間なく
+    runTasks(f);
+    expect(tags(c).slice(5)).toEqual(["long:3", "long:4", "long:5"]);
+    expect(c.sources.slice(5).map((s) => s.startAt[0])).toEqual([0, 2, 4].map((x) => LEAD + 6.5 + LEAD + x));
+    // もう一度 visible・unlock が来ても鳴らし直さない
+    p.setHidden(false);
+    p.unlock();
+    await flush();
+    expect(c.sources.length).toBe(8);
+  });
+
+  it("UI-06b 開始の時刻が currentTime より後の区間しか無ければ最初の区間から。区間の頭ちょうどならその区間", async () => {
+    const a = playLong();
+    a.c.currentTime = 0;
+    a.p.setHidden(true);
+    a.p.setHidden(false);
+    await flush();
+    expect(tags(a.c).slice(5)).toEqual(["long:2"]);
+    const b = playLong();
+    b.c.currentTime = LEAD + 8;
+    b.p.setHidden(true);
+    b.p.setHidden(false);
+    await flush();
+    expect(tags(b.c).slice(5)).toEqual(["long:4"]);
+  });
+
+  it("UI-06b ジングル中に隠れて戻ると、ジングルとその後の予約を止めて捨て、場面の曲を区間 0 から", async () => {
+    const f = setup();
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("town");
+    runTasks(f);
+    c.currentTime = 1;
+    p.playJingle("victory");
+    runTasks(f);
+    // victory（1 区間）と、その終わりに予約した town の区間 0
+    const n = c.sources.length;
+    expect(tags(c).slice(n - 2)).toEqual(["victory:0", "town:0"]);
+    c.currentTime = 1.5;
+    p.setHidden(true);
+    p.setHidden(false);
+    await flush();
+    expect(c.sources[n - 2]?.stopAt).toEqual([undefined]);
+    expect(c.sources[n - 1]?.stopAt).toEqual([undefined]);
+    expect(tags(c).slice(n)).toEqual(["town:0"]);
+    expect(c.sources[n]?.startAt).toEqual([1.5 + LEAD]);
+    // 止めたジングルの ended は場面の曲を二重に始めない
+    c.sources[n - 2]!.end();
+    expect(c.sources.length).toBe(n + 1);
+  });
+
+  it("UI-06b 場面の曲が null（UI-66 の無音）なら、ジングルを止めて何も予約しない", async () => {
+    const f = setup();
+    const p = createAudioPlayer(f.deps);
+    p.unlock();
+    const c = f.contexts[0]!;
+    p.setSong("town");
+    runTasks(f);
+    p.playJingle("victory");
+    p.setSong(null);
+    runTasks(f);
+    const n = c.sources.length;
+    // ジングルの終わりに予約した town の区間 0 は setSong(null) で取り消し済み
+    expect(tags(c).slice(n - 2)).toEqual(["victory:0", "town:0"]);
+    expect(c.sources[n - 1]?.stopAt).toEqual([undefined]);
+    p.setHidden(true);
+    p.setHidden(false);
+    await flush();
+    expect(c.sources[n - 2]?.stopAt).toEqual([undefined]);
+    expect(c.sources.length).toBe(n);
+    runTasks(f);
+    expect(c.sources.length).toBe(n);
+  });
+
+  it("UI-06b suspend が効かず running のまま戻ったら、resume は呼ばず鳴らし直しだけ", async () => {
+    const { p, c } = playLong();
+    c.currentTime = LEAD + 4.1;
+    p.setHidden(true);
+    c.state = "running";
+    p.setHidden(false);
+    expect(c.resumes).toBe(1);
+    expect(tags(c).slice(5)).toEqual(["long:2"]);
+    expect(c.sources[5]?.startAt).toEqual([LEAD + 4.1 + LEAD]);
+  });
+
+  it("UI-06b 隠れている間に unlock が来たら hidden を下ろして resume し、鳴らし直す。resume の解決の前にまた隠れたら鳴らし直さない", async () => {
+    const { p, c } = playLong();
+    c.currentTime = LEAD + 6.5;
+    p.setHidden(true);
+    p.unlock();
+    expect(c.resumes).toBe(2);
+    await flush();
+    expect(tags(c).slice(5)).toEqual(["long:3"]);
+    const d = playLong();
+    d.c.currentTime = LEAD + 6.5;
+    d.p.setHidden(true);
+    d.p.setHidden(false);
+    d.p.setHidden(true);
+    await flush();
+    expect(d.c.sources.length).toBe(5);
+    d.p.setHidden(false);
+    await flush();
+    expect(tags(d.c).slice(5)).toEqual(["long:3"]);
   });
 });
 

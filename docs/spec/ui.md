@@ -7,7 +7,8 @@
 - UI-03 フォントはピクセルフォント 1 種（美咲ゴシック 8×8 または PixelMplus10）【仮】。`@font-face` で同梱。文字サイズは 8px 固定、行間 10px。`image-rendering: pixelated`。
 - UI-04 色は FC 風の固定パレット（`src/presenter/palette.ts`、54 色以内）。線画は黒地に白または淡緑の 1px 線【仮】。テーマ切替は無し。 M24（B-1）: 役 `option`（品のオプションの行と鑑定で見つかったオプションの文。青）を足した。色はパレットの既存の sky を割り当て、パレットの色は増やさない（階段・SAN の段と同じ色）。
 - UI-05 body に `touch-action: none; overscroll-behavior: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;`。
-- UI-06 音は Web Audio（`src/presenter/audio.ts`。M8 で入れた。M6 では入れなかった。decisions 2026-10-04）。AudioContext は最初のユーザー操作（document の pointerup・touchend・keydown を capture で受ける）の中で作り、suspended なら操作のたびに `resume()` する（iOS の制約）。作れないブラウザでは無音のまま続ける。ページが隠れたら `suspend()`、戻ったら `resume()`。演出スキップ（UI-41）は音に影響しない。音量は UI-57。曲は §8 の UI-63、効果音は UI-65、鳴らす契機は UI-66。
+- UI-06 音は Web Audio（`src/presenter/audio.ts`。M8 で入れた。M6 では入れなかった。decisions 2026-10-04）。AudioContext は最初のユーザー操作（document の pointerup・touchend・keydown を capture で受ける）の中で作り、running でなければ操作のたびに `resume()` する（iOS の制約。M26 から suspended だけでなく iOS の interrupted も）。作れないブラウザでは無音のまま続ける。ページが隠れたら `suspend()`、戻ったら `resume()`（復帰の詳細は UI-06b）。演出スキップ（UI-41）は音に影響しない。音量は UI-57。曲は §8 の UI-63、効果音は UI-65、鳴らす契機は UI-66。
+- UI-06b 隠れた後の復帰（M26）。ページが見えるようになったら（visibilitychange）AudioContext が running でなければ `resume()` する（suspended のほか iOS の interrupted も）。拒まれた・解決しても running にならないときは、次のユーザー操作（UI-06 の unlock）でもう一度 `resume()` する。ユーザー操作は画面が見えている証拠として扱い、隠れている印を下ろす（visible が来ないまま残ったときの保険）。復帰が通ったら（隠れた後に running になったら）1 回だけ、予約済みの区間・ジングル・ジングルの後の予約をすべて止めて捨て、場面の曲を隠れた時点で鳴っていた小節（区間。UI-63）の頭から鳴らし直す（予約済みの区間のうち開始の時刻が隠れた時点以前の最後のもの。鳴らし始めの時刻は UI-63 の鳴らし始めと同じ currentTime + 先行の時間）。隠れた時点で場面の曲が鳴っていなければ（ジングル中・曲の切り替え中・何も鳴っていない）場面の曲の区間 0 から。ジングルは鳴らし直さない（捨てる）。場面の曲が無い（UI-66 の無音の区間。段 0・ファイル無しも）なら無音のまま。すでに running のまま戻ったとき（suspend が効かなかった）は resume せず鳴らし直しだけ。常駐のループ・タイマー・pageshow・onstatechange は使わない（契機は visibilitychange とユーザー操作だけ）。
 
 ## 2. レイアウト（縦持ち）
 
