@@ -666,7 +666,8 @@
   "dungeon.stairs.down": "階段を降りる",
   "dungeon.items.which": "{name}の道具",
   "dungeon.items.target": "誰に使う？",
-  "dungeon.items.allyRow": "{name}　{hp}/{hpMax}",
+  "dungeon.items.allyRow": "{name} HP {hp}/{hpMax}",
+  "dungeon.items.allyRowStatus": "{name}（{status}）HP {hp}/{hpMax}",
 
   "header.dungeon": "{dungeon} {floor}F {dir}",
   "dir.N": "北",
@@ -1033,7 +1034,6 @@
   "battle.prompt.spellConfirm": "{name}の呪文",
   "battle.groupLabel": "{name} ×{count}",
   "battle.targetGroup": "{n}. {name} {count}体",
-  "battle.targetAlly": "{name} {hp}/{hpMax}",
   "battle.spellRow": "{name}  MP{mp}",
   "dice.total": "={total}",
   "dice.plus": "+",

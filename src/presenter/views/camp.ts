@@ -44,6 +44,7 @@ import {
   type CharacterTap,
 } from "./detail";
 import type { PanelLine } from "./item-detail";
+import { allyRowLabel } from "./ally-row";
 import { formatMessage } from "./message";
 import { PALETTE } from "../palette";
 import { chooseSprite } from "../sprites";
@@ -396,11 +397,11 @@ export function campEntries(host: CampHost, page: CampPage, m: CampInput, string
   const cancel: CampEntry = { label: s(strings, "common.cancel"), disabled: false, choice: { kind: "cancel" } };
   const back: CampEntry = { label: s(strings, "common.back"), disabled: false, choice: { kind: "cancel" } };
   const list = (rows: CampEntry[]): CampEntries => ({ layout: "list", rows: [...rows, cancel] });
-  // MG-44 / UI-53（2026-10-05）: 回復の対象の行。core の targets の block があれば dim にし、理由を名前と HP の後ろに付ける（戦闘中の対象は別の部品）
-  const targetRow = (a: { id: string; name: string; hp: number; hpMax: number }, block: CampTargetBlock | null): CampEntry => {
-    const row = s(strings, "dungeon.items.allyRow", { name: a.name, hp: a.hp, hpMax: a.hpMax });
+  // MG-44 / UI-53（2026-10-05）: 回復の対象の行。core の targets の block があれば dim にし、理由を名前と HP の後ろに付ける
+  // M26 B-1: 行は戦闘の対象の段と同じ allyRowLabel（名前・状態・HP。39 単位を超えれば名前を詰める）
+  const targetRow = (a: CampMenu["allies"][number], block: CampTargetBlock | null): CampEntry => {
     return {
-      label: block === null ? row : s(strings, "camp.target.blocked", { row, why: s(strings, `camp.targetBlock.${block}`) }),
+      label: allyRowLabel(strings, a, block === null ? null : s(strings, `camp.targetBlock.${block}`)),
       disabled: block !== null,
       choice: { kind: "target", targetId: a.id },
     };

@@ -17,6 +17,7 @@
 // - 押せない（disabled）選択や、段階に合わない選択は cursor 不変・send null。
 import type { SpellTarget, Strings } from "../core/data/index";
 import type { BattleAction, BattleMenu, BattleMenuMember, BattleTarget, Command } from "../core/types";
+import { allyRowLabel } from "./views/ally-row";
 import { formatMessage } from "./views/message";
 
 export type InputStage = "party" | "member" | "spell" | "item" | "enemy" | "ally" | "spellConfirm";
@@ -229,7 +230,7 @@ export function entries(menu: BattleMenu, cursor: InputCursor, strings: Strings)
       return [
         ...menu.allies.map(
           (a): MenuEntry => ({
-            label: s("battle.targetAlly", { name: a.name, hp: a.hp, hpMax: a.hpMax }),
+            label: allyRowLabel(strings, a), // M26 B-1: キャンプの対象の行と同じ（名前・状態・HP）
             disabled: false,
             choice: { kind: "ally", id: a.id },
           }),
