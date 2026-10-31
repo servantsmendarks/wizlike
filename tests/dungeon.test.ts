@@ -1004,7 +1004,8 @@ describe("オートマップ（DG-13）", () => {
   });
 
   // M11（DG-13 改）: 宝箱のセルは記号 chest（旧: plain）。宝箱は隠れた仕掛けではないため
-  test("DG-13/UI-24 mapView: 探索済みセルだけ、辺は生成のまま（通った扉も door）、trap/event/boss/room は plain、stairsUp/stairsDown/chest は記号。dive が null なら null", () => {
+  // M26（DG-13 改）: イベント・ボスのセルも記号 event / boss（旧: plain）。察知していない罠だけが plain のまま
+  test("DG-13/UI-24 mapView: 探索済みセルだけ、辺は生成のまま（通った扉も door）、未察知の trap と room は plain、stairsUp/stairsDown/chest/event/boss（M26）は記号。dive が null なら null", () => {
     expect(mapView(newGame(1), data)).toBeNull();
     const s0 = enterD01(1);
     const mv0 = mapView(s0, data)!;
@@ -1026,13 +1027,15 @@ describe("オートマップ（DG-13）", () => {
       for (const c of mv.cells) {
         const cell = cellAt(f, c.x, c.y);
         seenKinds.add(cell.kind);
-        const expected = cell.kind === "stairsUp" || cell.kind === "stairsDown" || cell.kind === "chest" ? cell.kind : "plain";
+        const expected = ["stairsUp", "stairsDown", "chest", "event", "boss"].includes(cell.kind) ? cell.kind : "plain";
         expect(c.kind).toBe(expected);
         expect([c.n, c.e, c.s, c.w]).toEqual([cell.n, cell.e, cell.s, cell.w]);
       }
       expect(seenKinds.has("trap")).toBe(true);
       expect(seenKinds.has("chest")).toBe(true);
       expect(seenKinds.has(floorNo === 1 ? "stairsDown" : "boss")).toBe(true);
+      expect(seenKinds.has("event")).toBe(true); // d01 は各階にイベントが 1 つ（DG-22）
+      expect(mv.cells.filter((c) => c.kind === "boss")).toHaveLength(floorNo === 2 ? 1 : 0);
     }
     // 通り抜けた扉も door のまま描く（UI-24）
     const { state, a } = findSituation((c) => c.kind === "corridor" || c.kind === "room", { ok: (e) => e === "door" });
@@ -1963,6 +1966,21 @@ describe("ボス（DG-31〜33, DG-01）", () => {
     expect(t.state.dive).toBeNull();
     expect(t.state.progress).toEqual(s.progress);
     expect(t.state.rng).toEqual(again.state.rng);
+  });
+
+  // M26（DG-13 改）: ボスのセルは視野に入って explored に載った時点で地図の記号 boss。倒すとテレポーター（印なし）で plain
+  test("DG-13/DG-32（M26）視野に入ったボスのセルは mapView で kind boss のまま返り、倒すと plain（テレポーターは印なし）", () => {
+    const { state, a } = atBoss();
+    const at = (s: GameState) => mapView(s, data)!.cells.find((c) => c.x === a.target.x && c.y === a.target.y);
+    // 振り向いて戻ると、正面（奥行き 1）のボスのセルが explored に載る
+    const turned = run(run(state, { type: "dungeon.turn", dir: "around" }, D0).state, { type: "dungeon.turn", dir: "around" }, D0).state;
+    expect(at(turned)?.kind).toBe("boss");
+    expect(mapView(turned, data)!.cells.filter((c) => c.kind === "boss")).toHaveLength(1);
+    const won = defeatBoss(run(turned, MOVE, D0).state).state;
+    expect(won.dive!.bossDefeated).toBe(true);
+    expect(cellAt(floorOf(won.dive!, data), a.target.x, a.target.y).kind).toBe("teleporter");
+    expect(at(won)?.kind).toBe("plain");
+    expect(mapView(won, data)!.cells.some((c) => c.kind === "boss")).toBe(false);
   });
 
   test("DG-33 新しい潜行ではボスが再出現し、再撃破でも clearedDungeons・unlockedDungeons は重複せず、dungeonCleared・unlocked の message も出ない", () => {

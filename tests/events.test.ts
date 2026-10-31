@@ -797,6 +797,23 @@ describe("効果（EV-32）", () => {
     expect(view.cells.length).toBe(f.width * f.height - rocks.length);
   });
 
+  // M26（DG-13 改）: 全開示で載ったセルも地図の記号は同じ規則（d01 の 2 階はボスと宝袋のイベント）
+  test("DG-13/EV-32（M26）revealFloor で階の boss / event のセルが全部 mapView に記号のまま出る", () => {
+    const { ctx, f, actor } = fx((s) => {
+      s.dive!.floor = 2;
+      s.dive!.deepestFloor = 2;
+    });
+    const want = (k: string) => f.cells.flatMap((c, i) => (c.kind === k ? [i] : []));
+    expect(want("boss")).toHaveLength(1);
+    expect(want("event").length).toBeGreaterThan(0);
+    expect(mapView(ctx.state, data)!.cells.filter((c) => c.kind === "boss" || c.kind === "event")).toEqual([]);
+    applyEffects(ctx, f, [{ type: "revealFloor" }], actor(0));
+    const view = mapView(ctx.state, data)!;
+    const got = (k: string) => view.cells.filter((c) => c.kind === k).map((c) => idx(f, c.x, c.y));
+    expect(got("boss")).toEqual(want("boss"));
+    expect(got("event")).toEqual(want("event"));
+  });
+
   test("EV-32/TW-14 applyEffects は f が null（酒場）のとき revealFloor / revealStairs で Error。gold / san / message / nothing は f が null でも使え、dive が無ければ台帳には入れない", () => {
     const { ctx, actor } = fx();
     expect(() => applyEffects(ctx, null, [{ type: "revealFloor" }], actor(0))).toThrow("EV-32: no floor");
@@ -980,6 +997,22 @@ describe("イベントのセル（DG-22, EV-13, EV-33）", () => {
     expect(kinds(r4.events)).not.toContain("screen");
     expect(r4.state.dive!.clearedCells).toEqual([{ floor: 1, ...a.target }]);
     expectStateInvariants(r4.state);
+  });
+
+  // M26（DG-13 改）: イベントのセルは視野に入って explored に載った時点で地図の記号 event。済むと clearedCells で部屋・通路に戻り plain
+  test("DG-13/EV-33（M26）視野に入ったイベントのセルは mapView で kind event、選択の保留中（EV-33）も event のまま、済むと plain に戻る", () => {
+    const { state, a } = atEvent(TABLET);
+    const at = (s: GameState) => mapView(s, data)!.cells.find((c) => c.x === a.target.x && c.y === a.target.y);
+    // 振り向いて戻ると、正面（奥行き 1）のイベントのセルが explored に載る
+    const turned = run(run(state, { type: "dungeon.turn", dir: "around" }, calm()).state, { type: "dungeon.turn", dir: "around" }, calm()).state;
+    expect(at(turned)?.kind).toBe("event");
+    const r1 = run(turned, MOVE, calm());
+    expect(r1.state.pendingChoice?.kind).toBe("event");
+    expect(at(r1.state)?.kind).toBe("event"); // 保留中はまだ clearedCells に入らない
+    const r2 = run(r1.state, { type: "event.choose", optionId: "ignore" }, calm());
+    expect(r2.state.dive!.clearedCells).toEqual([{ floor: 1, ...a.target }]);
+    expect(at(r2.state)?.kind).toBe("plain");
+    expect(mapView(r2.state, data)!.cells.some((c) => c.kind === "event")).toBe(false);
   });
 
   test("DG-22/CB-01 イベントセルでは遭遇の d100 を振らない（rate 1 でも戦闘にならない。衝動で決着する歩も）", () => {

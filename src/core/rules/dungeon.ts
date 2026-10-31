@@ -95,7 +95,9 @@ export function visibleChests(state: GameState, data: GameData, at?: ViewPoint):
 
 /**
  * DG-13 / UI-24。探索済みセルだけを、実効の 4 辺で返す。記号は上り・下り階段と、察知した罠（knownTraps にあり、
- * 実効のセルの kind が trap のもの。M5.5）と、開ける前の宝箱のセル（実効のセルの kind が chest。M11 の DG-13 改）。dive が null なら null
+ * 実効のセルの kind が trap のもの。M5.5）と、開ける前の宝箱のセル（実効のセルの kind が chest。M11 の DG-13 改）と、
+ * 実効のセルの kind が boss / event のセル（M26 の DG-13 改。済んだイベントは clearedCells で部屋・通路に、倒したボスは
+ * teleporter に floorOf が変えるので plain）。dive が null なら null
  */
 export function mapView(state: GameState, data: GameData): MapView | null {
   const dive = state.dive;
@@ -117,8 +119,8 @@ export function mapView(state: GameState, data: GameData): MapView | null {
           ? "stairsDown"
           : c.kind === "trap" && known.includes(i)
             ? "trap"
-            : c.kind === "chest"
-              ? "chest"
+            : c.kind === "chest" || c.kind === "boss" || c.kind === "event"
+              ? c.kind
               : "plain";
     // UI-78（M18）: 未踏の口。辺が open か door で、その先が盤の内側の未探索のセル（見えただけのセルも探索済みに数える。DG-13）
     const exits: MapEdgeDir[] = [];

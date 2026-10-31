@@ -376,9 +376,10 @@ export type VisibleCell = {
 };
 /**
  * UI-24 の記号。察知した罠（dive.knownTraps。M5.5）は trap。開ける前の宝箱のセル（DG-23。M11）は chest。
- * 察知していない罠・イベント・ボス・部屋・通路はすべて plain（地図で明かさない）
+ * M26（DG-13）: 済んでいないイベントのセルは event、倒す前のボスのセルは boss（探索済みに載った時点で描く。
+ * 済んだイベントと、倒した後のテレポーターは plain）。察知していない罠・部屋・通路はすべて plain（地図で明かさない）
  */
-export type MapCellKind = "plain" | "stairsUp" | "stairsDown" | "trap" | "chest";
+export type MapCellKind = "plain" | "stairsUp" | "stairsDown" | "trap" | "chest" | "boss" | "event";
 /** UI-78（M18）: 未踏の口の辺の向き（MapCell の辺の名前と同じ小文字の絶対方位） */
 export type MapEdgeDir = "n" | "e" | "s" | "w";
 /**
