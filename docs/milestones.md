@@ -1615,7 +1615,7 @@ M22 で見送った小さな件: camp の holder の理由を core の CampSumma
 6. 戦闘のジングルの後は無音（UI-63 / UI-66）: audio.json の cue に `silenceAfter: true`（victory・wipe・bossDefeated の clear）。全滅は内訳の「街へ」まで無音で、そこで街の曲。
 7. 地図のボスとイベントの印（DG-13 / DG-15 / UI-24 / UI-78）: core の MapCellKind に boss / event を足し、mapView が explored のマスで返す。印は ◇（ボス）orange・○（イベント）violet【仮】、400ms の点滅（演出スキップでは静的）。凡例は 5 列 × 2 行（列幅 47）。線画には出さない。
 8. d01 の門番（CB-24 / DG-31）: 取り巻きは足さず、hp 10d8+20・攻撃 3 回（2d6・2d6・1d8）。tests/balance/boss.sim.ts を足して Lv3・4・5 × 200 シードを計測。目安は Lv3 60% 以上・Lv5 90% 以上【仮】。計測の条件は実戦より楽（実戦は重い）旨を balance.md に注記。
-9. 横断: schemaVersion は 12 のまま。乱数の順が変わるのは門番だけ。色は増やさない。消すキー `battle.noChest`、復活 `battle.cmd.flee`、新キー `dungeon.items.allyRowStatus`・`battle.targetAllyStatus`・`map.legend.boss`・`map.legend.event`。
+9. 横断: schemaVersion は 12 のまま。乱数の順が変わるのは門番だけ。色は増やさない。消すキー `battle.noChest`、復活 `battle.cmd.flee`、新キー `dungeon.items.allyRowStatus`・`battle.targetAllyStatus`・`map.legend.boss`・`map.legend.event`。実装では `battle.targetAllyStatus` は作らず、キャンプと戦闘で `dungeon.items.allyRow` / `allyRowStatus` の 1 組を共用し、`battle.targetAlly` を消した（decisions 2026-11-01 B-1）。
 
 依頼の前提と違った事実（調査で判明）:
 
