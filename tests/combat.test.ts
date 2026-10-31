@@ -1625,6 +1625,70 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     }
   });
 
+  test("CB-50c（M26）逃げるの率は試した後だけ: 新しい戦闘は fleeTried が無く menu.fleePercent は null。battle.flee で失敗すると fleeTried が true になり、fleePercent は CB-50 の値（dice の rate と同じ関数）。印は乱数を引かず出来事も変えない。ラウンドをまたいで残り、次の戦闘（別の遭遇）では無い", () => {
+    let fails = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const s = setup([{ monsterId: "giant_rat", hps: [50] }], { seed, inputs: {} });
+      expect("fleeTried" in s.battle!).toBe(false);
+      expect(battleMenu(s, data)!.fleePercent).toBeNull();
+      const pct = fleePercent(s, data);
+      const roll = randInt(cloneRng(s.rng), 1, 100);
+      const r = exec(s, FLEE);
+      // 印の有無で乱数と出来事が変わらない（同じ state に印だけ先に立てても同じ結果）
+      const pre = cloneState(s);
+      pre.battle!.fleeTried = true;
+      const r2 = exec(pre, FLEE);
+      expect(r2.events).toEqual(r.events);
+      expect(r2.state).toEqual(r.state);
+      if (roll <= pct) {
+        expect(r.state.battle).toBeNull(); // 逃げ切ったら戦闘ごと消える
+        continue;
+      }
+      fails++;
+      const b = r.state.battle!;
+      expect(b.fleeTried).toBe(true);
+      const menu = battleMenu(r.state, data)!;
+      expect(menu.fleePercent).toBe(fleePercent(r.state, data));
+      expect(eventsOf(r.events, "dice")[0]!.rule!.params!["rate"]).toBe(pct);
+      // 次のラウンド（行動できる者は全員防御）をまたいでも残る
+      const mid = cloneState(r.state);
+      mid.battle!.inputs = Object.fromEntries(mid.party.filter((c) => canAct(c)).map((c) => [c.id, DEF]));
+      const next = exec(mid, RESOLVE);
+      if (next.state.battle !== null) {
+        expect(next.state.battle.fleeTried).toBe(true);
+        expect(battleMenu(next.state, data)!.fleePercent).toBe(fleePercent(next.state, data));
+      }
+      // 必ず逃げ切る data で抜けて、次の遭遇は新しい戦闘（印なし）
+      const always = dataWith({ combat: { fleeBase: 1000 } });
+      const out = exec(r.state, FLEE, always);
+      expect(out.state.battle).toBeNull();
+      const again = runCtx(out.state, data, (c) => startBattle(c, { kind: "random", inRoom: false }, [{ monsterId: "giant_rat", count: 1 }])).state;
+      expect(again.battle).not.toBeNull();
+      expect("fleeTried" in again.battle!).toBe(false);
+      expect(battleMenu(again, data)!.fleePercent).toBeNull();
+    }
+    expect(fails).toBeGreaterThan(0); // 失敗の枝を少なくとも 1 シードで通す
+  });
+
+  test("CB-50c（M26）ボス戦（逃げられない。dim）とオート中は逃走を試みられないので fleeTried は立たず、率は出ない（menu.fleePercent は null のまま）", () => {
+    const boss = setup([{ monsterId: "gatekeeper_armor", hps: [50] }], { origin: { kind: "boss" }, inputs: {} });
+    expectRejected(boss, FLEE, "cannot flee");
+    const bm = battleMenu(boss, data)!;
+    expect(bm.canFlee).toBe(false);
+    expect(bm.fleePercent).toBeNull();
+    const bossIn = cloneState(boss);
+    bossIn.battle!.inputs = allInputs(bossIn, DEF);
+    const after = exec(bossIn, RESOLVE);
+    if (after.state.battle !== null) {
+      expect("fleeTried" in after.state.battle).toBe(false);
+      expect(battleMenu(after.state, data)!.fleePercent).toBeNull();
+    }
+    const on = exec(setup([{ monsterId: "giant_rat", hps: [50] }], { inputs: {} }), AUTO_ON).state;
+    expectRejected(on, FLEE, "auto on");
+    expect("fleeTried" in on.battle!).toBe(false);
+    expect(battleMenu(on, data)!.fleePercent).toBeNull();
+  });
+
   test("CB-12/CB-50 battle.flee の rejected: 逃走できない戦闘（ボス）は cannot flee、オート中は auto on、行動可能な味方が 0 人（麻痺と睡眠だけ）は no actor。同じ参照で乱数も消費しない", () => {
     const boss = setup([{ monsterId: "gatekeeper_armor", hps: [50] }], { origin: { kind: "boss" }, inputs: {} });
     expectRejected(boss, FLEE, "cannot flee");
@@ -2318,7 +2382,7 @@ describe("網羅（完了条件「6 種と戦える」、敵の id、battleMenu�
     expect(menu.round).toBe(0);
     expect(menu.auto).toBe(false);
     expect(menu.canFlee).toBe(true);
-    expect(menu.fleePercent).toBe(fleePercent(s, data)); // CB-50b: battle.flee の dice の rate と同じ関数
+    expect(menu.fleePercent).toBeNull(); // CB-50c（M26）: この戦闘でまだ逃走を試みていない（試した後の値は CB-50c のテスト）
     expect(menu.ready).toBe(false);
     expect(menu.pending).toEqual(["c1", "c2", "c4", "c5"]);
     expect(menu.groups.map((g) => g.count)).toEqual([1, 0]);

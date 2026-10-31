@@ -477,6 +477,7 @@ export function repeatRound(ctx: RuleContext, spells = true): void {
 export function fleeRound(ctx: RuleContext): void {
   const { state, data } = ctx;
   const b = requireBattle(state);
+  b.fleeTried = true; // CB-50c（M26）: 試した後だけ率を出す（乱数は引かない。逃げ切れば戦闘ごと消える）
   const before = snapMembers(state, data);
   b.partySurprise = false; // どの経路でも消費する
   const pct = fleePercent(state, data);
@@ -1319,7 +1320,7 @@ export function battleMenu(state: GameState, data: GameData): BattleMenu | null 
     round: b.round,
     auto: b.auto,
     canFlee: canFleeOf(b),
-    fleePercent: fleePercent(state, data),
+    fleePercent: b.fleeTried === true ? fleePercent(state, data) : null, // CB-50c（M26）: 未試行は null
     canRepeat: canRepeatOf(state),
     ready: checkResolve(state, data) === null,
     pending: b.auto ? [] : members.filter((m) => m.canAct && m.input === null).map((m) => m.id),

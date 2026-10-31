@@ -86,7 +86,7 @@ function menu(o: Partial<BattleMenu> = {}): BattleMenu {
     round: 1,
     auto: false,
     canFlee: true,
-    fleePercent: 55,
+    fleePercent: null, // CB-50c（M26）: 新しい戦闘ではまだ逃走を試みていない
     canRepeat: true,
     ready: false,
     pending: ["c1", "c2", "c4", "c5", "c6"],
@@ -173,7 +173,7 @@ describe("UI-54 入力の段階", () => {
     expect(entries(menu(), PARTY, S).map((e) => e.label)).toEqual([
       t("battle.cmd.fight"),
       t("battle.cmd.repeat"),
-      fleeLabel(55),
+      t("battle.cmd.flee"),
       t("battle.cmd.auto"),
     ]);
     expect(entries(menu(), PARTY, S).map((e) => e.disabled)).toEqual([false, false, false, false]);
@@ -181,12 +181,17 @@ describe("UI-54 入力の段階", () => {
     expect(entries(menu(), PARTY, S).map((e) => e.choice)).toEqual([pc("fight"), pc("repeat"), pc("flee"), pc("auto")]);
   });
 
-  test("CB-50b/UI-54 逃げるの行は「逃げる {率}%」。dim のときも率を出し、最悪の「逃げる 100%」でも 114px の枠に収まる", () => {
+  // M22（CB-50b）は常に「逃げる {率}%」（dim のときも率）だった。M26（CB-50c）から試した後だけ
+  test("CB-50b/CB-50c/UI-54（M26）逃げるの行: core の fleePercent が null（この戦闘で未試行）なら「逃げる」、数なら「逃げる {率}%」。逃げられない戦闘（dim）は null のまま率が出ない。最悪の「逃げる 100%」でも 114px の枠に収まる", () => {
+    expect(entries(menu({ fleePercent: null }), PARTY, S)[2]).toMatchObject({ label: "逃げる", disabled: false, choice: pc("flee") });
     expect(entries(menu({ fleePercent: 7 }), PARTY, S)[2]!.label).toBe("逃げる 7%");
-    const dim = entries(menu({ canFlee: false, fleePercent: 100 }), PARTY, S)[2]!;
-    expect(dim).toMatchObject({ label: "逃げる 100%", disabled: true });
+    expect(entries(menu({ fleePercent: 55 }), PARTY, S)[2]!.label).toBe(fleeLabel(55));
+    expect(entries(menu({ fleePercent: 0 }), PARTY, S)[2]!.label).toBe("逃げる 0%"); // 0 は数（null と取り違えない）
+    expect(entries(menu({ canFlee: false, fleePercent: null }), PARTY, S)[2]).toMatchObject({ label: "逃げる", disabled: true });
+    const full = entries(menu({ fleePercent: 100 }), PARTY, S)[2]!;
+    expect(full.label).toBe("逃げる 100%");
     // 全角 8px・半角 4px（Misaki）で見積もる。枠の幅は layout の battleParty（114）
-    const w = [...dim.label].reduce((a, ch) => a + (ch.charCodeAt(0) < 0x80 ? 4 : 8), 0);
+    const w = [...full.label].reduce((a, ch) => a + (ch.charCodeAt(0) < 0x80 ? 4 : 8), 0);
     expect(w).toBeLessThanOrEqual(114 - 8);
   });
 
@@ -194,7 +199,7 @@ describe("UI-54 入力の段階", () => {
   test("UI-54/CB-12/CB-40（M18）core の canRepeat が偽（この戦闘でまだ手入力が無い）なら前回と同じは出さない（3 件に詰める）。押しても送らない", () => {
     const m = menu({ canRepeat: false });
     expect(entries(m, PARTY, S).map((e) => e.choice)).toEqual([pc("fight"), pc("flee"), pc("auto")]);
-    expect(entries(m, PARTY, S).map((e) => e.label)).toEqual([t("battle.cmd.fight"), fleeLabel(55), t("battle.cmd.auto")]);
+    expect(entries(m, PARTY, S).map((e) => e.label)).toEqual([t("battle.cmd.fight"), t("battle.cmd.flee"), t("battle.cmd.auto")]);
     expect(entries(m, PARTY, S).map((e) => e.disabled)).toEqual([false, false, false]);
     // 逃げられない戦闘でも 3 件（逃げるは dim のまま残す）
     expect(entries(menu({ canRepeat: false, canFlee: false }), PARTY, S).map((e) => [e.choice, e.disabled])).toEqual([

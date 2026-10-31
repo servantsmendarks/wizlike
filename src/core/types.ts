@@ -459,6 +459,8 @@ export type BattleState = {
   auto: boolean;
   /** CB-47（M21。省略可能）: battle.auto on の spells が false のときだけ false。無ければ真（オートで CB-46 の呪文を選ぶ）。OFF にすると消す */
   autoSpells?: boolean;
+  /** CB-50c（M26。省略可能）: この戦闘で battle.flee の判定（dice）を一度でも振ったら true。無ければ未試行（BattleMenu.fleePercent は null）。戦闘ごとに作り直すので次の戦闘では無い。版は上げない */
+  fleeTried?: true;
   /** CB-20: 戦闘中だけの AC 補正（blessing の −2 を加算で重ねる）。memberId → 合計。無いキーは 0 */
   acBonus: Record<string, number>;
 };
@@ -721,8 +723,8 @@ export type BattleMenu = {
   auto: boolean;
   /** CB-02: origin が random か alarm のときだけ真 */
   canFlee: boolean;
-  /** CB-50b（M22）: 逃走の成功率（%。0〜100。canFlee が偽でも値は入る）。battle.flee の dice の rate と同じ値 */
-  fleePercent: number;
+  /** CB-50b（M22）/ CB-50c（M26）: 逃走の成功率（%。0〜100）。battle.flee の dice の rate と同じ値。この戦闘でまだ逃走を試みていなければ（BattleState.fleeTried が無い）null */
+  fleePercent: number | null;
   /** CB-12/40（M16）: 行動可能な者に lastBattleInput が 1 人でもあれば真。偽なら battle.repeat は rejected（no last input） */
   canRepeat: boolean;
   /** battle.resolve を受け付けるか（checkResolve(state, data) === null と同値） */

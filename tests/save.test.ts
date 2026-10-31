@@ -11,6 +11,7 @@ import { newGameId } from "../src/save/id";
 import { createMigrations, isGameStateShape, migrateState, migrateV4toV5, migrateV5toV6, migrateV6toV7, migrateV7toV8, migrateV8toV9, migrateV9toV10, migrateV10toV11, migrateV11toV12, MIGRATIONS } from "../src/save/migrate";
 import { buildRecord, checkStoredRecord, summarize } from "../src/save/record";
 import { createSaveService } from "../src/save/saves";
+import { battleMenu } from "../src/core/rules/combat";
 import { buildExportFile, parseExportFile, serializeExportFile } from "../src/save/transfer";
 import type { GameRecord, GameStoreBackend, ImportPlan, Migration, SaveDeps } from "../src/save/types";
 import { dived, exec, withBattle } from "./helpers/battle";
@@ -1603,6 +1604,38 @@ describe("SV-04 v5 → v6 の移行（M11。CB-60）", () => {
       expect(r.state.battle).toEqual(st.battle);
       expect("autoSpells" in r.state.battle!).toBe(mark !== undefined);
       expect(exec(r.state, { type: "battle.resolve" }).events[0]?.kind).not.toBe("rejected");
+    }
+  });
+
+  test("SV-04/CB-50c battle.fleeTried は省略可能（schemaVersion 12 のまま足した欄。M26）。無い（逃走を試みる前・古いセーブ）・true なら通り、false・数・文字列・null は broken。読み直しても同じ戦闘で、試した後なら率が出る", async () => {
+    const s = cloneState(withBattle(dived(1), [{ monsterId: "giant_rat", hps: [3] }]));
+    s.battle!.fleeTried = true;
+    const ok = (v: unknown): boolean => {
+      const x = json(s) as unknown as Record<string, unknown>;
+      const b = x["battle"] as Record<string, unknown>;
+      if (v === undefined) delete b["fleeTried"];
+      else b["fleeTried"] = v;
+      return isGameStateShape(x);
+    };
+    expect(ok(undefined)).toBe(true);
+    expect(ok(true)).toBe(true);
+    expect(ok(false)).toBe(false);
+    expect(ok(1)).toBe(false);
+    expect(ok("true")).toBe(false);
+    expect(ok(null)).toBe(false);
+    for (const mark of [undefined, true] as const) {
+      const mem = createMemoryBackend();
+      const svc = service(mem);
+      const st = cloneState(s);
+      if (mark === undefined) delete st.battle!.fleeTried;
+      expect(SCHEMA).toBe(12);
+      mem.raw("g1", buildRecord("g1", 1, 999, SCHEMA, st));
+      const r = await svc.load("g1");
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.state.battle).toEqual(st.battle);
+      expect("fleeTried" in r.state.battle!).toBe(mark !== undefined);
+      expect(battleMenu(r.state, data)!.fleePercent === null).toBe(mark === undefined);
     }
   });
 

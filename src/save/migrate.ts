@@ -363,6 +363,7 @@ function isChestShape(x: unknown): boolean {
  * 同じ版に後から足した省略可能な欄（M21。DG-47）: progress.deepestFloors は無いか、各値が 1 以上の安全な整数のプレーンなオブジェクト。
  * 同じ版に後から足した省略可能な欄（M21。CB-68 (a)）: dive.chest.contentsDestroyed は無いか真偽値。
  * 同じ版に後から足した省略可能な欄（M21。CB-47）: battle がオブジェクトなら battle.autoSpells は無いか真偽値。
+ * 同じ版に後から足した省略可能な欄（M26。CB-50c）: battle がオブジェクトなら battle.fleeTried は無いか true。
  * 同じ版に後から足した省略可能な欄（M21。DG-48）: dive.culled は無いか真偽値（無い潜行は間引かない盤のまま続く）。
  * schemaVersion 11（M24。IT-32 / IT-64）: items の各実体の curseEffect（isItemInstanceShape）、progress.warehouseSlots が 1 以上の安全な整数。
  * schemaVersion 10（M21。CB-51b）: progress.noChestStreak が 0 以上の安全な整数（dive.noChestStreak は v9 の欄で、v10 では見ない）。
@@ -416,6 +417,7 @@ export function isGameStateShape(x: unknown): x is GameState {
   if ((x["screen"] === "battle") !== (x["battle"] !== null)) return false;
   const battle = x["battle"];
   if (isPlainObject(battle) && battle["autoSpells"] !== undefined && typeof battle["autoSpells"] !== "boolean") return false; // CB-47（M21）: 省略可能
+  if (isPlainObject(battle) && battle["fleeTried"] !== undefined && battle["fleeTried"] !== true) return false; // CB-50c（M26）: 省略可能
   if ((x["screen"] === "town") !== (x["townVisit"] !== null)) return false;
   const pc = x["pendingChoice"];
   const eventChoice = isPlainObject(pc) && pc["kind"] === "event";
