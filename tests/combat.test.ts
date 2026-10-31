@@ -1741,11 +1741,12 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(rc.state.dive!.chest).toBeNull();
     expect(kindsOf(rc.events)).not.toContain("chestFound");
     expect(kindsOf(rc.events)).not.toContain("message:battle.chestLeft");
-    // CB-51（M19 A-5）: 箱が出なかったら、箱を置いたときと同じ位置（金・直接ドロップの後、screen dungeon の前）に battle.noChest。乱数は上の鏡のまま
+    // CB-51（M26）: 箱が出なかったら何も言わない（金・直接ドロップの後はすぐ screen dungeon）。乱数は上の鏡のまま
     const kc = kindsOf(rc.events);
-    expect(kc.slice(kc.indexOf("battleEnd"), kc.indexOf("screen") + 1)).toEqual(["battleEnd", "message:battle.win", "message:battle.exp", "message:battle.noChest", "screen"]);
-    expect(rc.events).toContainEqual({ kind: "message", key: "battle.noChest" });
-    expect([...data.strings["battle.noChest"]!].length).toBeLessThanOrEqual(28); // メッセージ窓の一言は 28 字
+    expect(kc.slice(kc.indexOf("battleEnd"), kc.indexOf("screen") + 1)).toEqual(["battleEnd", "message:battle.win", "message:battle.exp", "screen"]);
+    expect(kc).not.toContain("message:battle.noChest");
+    expect(kc).not.toContain("message:battle.chestLeft");
+    expect(data.strings["battle.noChest"]).toBeUndefined();
     // 通路: 段の表 100 なら部屋と同じ手順（上乗せ 0）。inRoom は偽
     const corr2 = mk({ kind: "random", inRoom: false });
     const m3 = cloneRng(corr2.rng);
@@ -1788,9 +1789,8 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
         const ks = kindsOf(r.events);
         expect(ks.includes("message:battle.chestLeft"), `seed ${seed} inRoom ${String(inRoom)}`).toBe(want);
         if (want) expect(ks.indexOf("message:battle.chestLeft")).toBeLessThan(ks.indexOf("screen"));
-        // CB-51（M19 A-5）: 出なかったときは同じ位置に battle.noChest（どちらか一方だけ。乱数は上の鏡のまま）
-        expect(ks.includes("message:battle.noChest"), `seed ${seed} inRoom ${String(inRoom)}`).toBe(!want);
-        if (!want) expect(ks.indexOf("message:battle.noChest")).toBeLessThan(ks.indexOf("screen"));
+        // CB-51（M26）: 出なかったときは何も言わない（乱数は下の鏡のまま）
+        expect(ks.includes("message:battle.noChest"), `seed ${seed} inRoom ${String(inRoom)}`).toBe(false);
         if (!want) expect(r.state.rng, `seed ${seed} inRoom ${String(inRoom)}`).toEqual(m); // 箱が出なければ chance の 1 回で終わる
         expect(r.state.progress.noChestStreak, `seed ${seed} inRoom ${String(inRoom)}`).toBe(want ? 0 : 1); // CB-51b（M21。progress に持つ）
         seen[inRoom ? "room" : "corridor"][want ? 1 : 0]! += 1;
@@ -1835,7 +1835,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
           expect(r.state.rng, label).toEqual(m);
           expect(r.state.dive!.chest !== null, label).toBe(want);
           expect(kindsOf(r.events).includes("message:battle.chestLeft"), label).toBe(want);
-          expect(kindsOf(r.events).includes("message:battle.noChest"), label).toBe(!want);
+          expect(kindsOf(r.events).includes("message:battle.noChest"), label).toBe(false);
           expect(r.state.progress.noChestStreak, label).toBe(want ? 0 : streak + 1);
           expect(r.state.dive, label).not.toHaveProperty("noChestStreak"); // M21 D-1: dive には持たない
           if (streak === 5 || streak === 9) expect(want, label).toBe(true); // 5 段目（表の最後）100 と、表の長さを超えた 9 は最後の値で必ず当たる（それでも chance は 1 回引く）
@@ -1867,7 +1867,7 @@ describe("逃走・勝利・全滅（CB-50〜54）", () => {
     expect(rb.state.progress.noChestStreak).toBe(4);
   });
 
-  test("CB-51/CB-55（M19 A-5）battle.noChest は origin random だけ: 警報（alarm）とボス（boss）の勝利では箱を判定しないので出さない（乱数も引かない。警報は鏡の rng）", () => {
+  test("CB-51/CB-55 箱が出なかった勝利では chestLeft も noChest も出ず、win・exp の後に screen が来る（M26）。警報（alarm）とボス（boss）の勝利でも出ない（乱数も引かない。警報は鏡の rng）", () => {
     const d = dataWith({ combat: { ...ALWAYS_HIT, chestTable: [0], chestRoomBonus: 0 } }, noChestImpulse);
     const alarm = setup([{ monsterId: "rotting_corpse", hps: [1], status: [["paralysis"]] }], {
       identified: ["rotting_corpse"],
@@ -2599,8 +2599,8 @@ describe("拍（CB-55）", () => {
       ["declare", ["message:battle.attackDeclare"]],
       ["result", ["hpChanged", "attack", "message:battle.hit"]],
       ["aftermath", ["lifeChanged", "message:battle.dead"]],
-      // CB-51（M19 A-5）: ランダム遭遇で箱が出なかった（dataWith の既定 chestTable [0]・chestRoomBonus 0）ので、金の後に battle.noChest
-      ["system", ["battleEnd", "message:battle.win", "message:battle.exp", "message:battle.gold", "message:battle.noChest", "screen"]],
+      // CB-51（M26）: ランダム遭遇で箱が出なかった（dataWith の既定 chestTable [0]・chestRoomBonus 0）ので、金の後は何も言わない
+      ["system", ["battleEnd", "message:battle.win", "message:battle.exp", "message:battle.gold", "screen"]],
     ]);
     expect(segs.every((x) => x.beat.auto === false)).toBe(true);
     const dmg = eventsOf(r.events, "attack")[0]!.damage;
