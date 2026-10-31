@@ -689,6 +689,8 @@
   "map.legend.wall": "壁",
   "map.legend.exit": "未踏",
   "map.legend.door": "扉",
+  "map.legend.boss": "主",
+  "map.legend.event": "出来事",
   "history.title": "これまでの語り",
   "scroll.up": "▲",
   "scroll.down": "▼",

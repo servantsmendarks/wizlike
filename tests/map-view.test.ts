@@ -25,6 +25,7 @@ import {
 } from "../src/presenter/views/map";
 import type { Edge, Facing, MapCell, MapView } from "../src/core/types";
 import { dungeonLayout, regions } from "../src/presenter/layout";
+import { textUnits } from "../src/presenter/views/party-band";
 import { data, newGame } from "./helpers/core";
 
 /** 既定の config.ui.layout での地図本体の寸法（M19 から 240×262。M18 までは 240×208） */
@@ -102,28 +103,31 @@ describe("UI-24 地図", () => {
     expect(segs).toContainEqual({ x1: 229, y1: 229, x2: 229, y2: 240 });
   });
 
-  test("UI-24（M19・C-5）mapNotes: 凡例は盤の外周の枠線の下。20×20 は枠線の下端の線 240 の 1 つ下から地 x2..237・y241..261（地図本体の下端 262 まで。下の余白を詰めて h 21）、2 行 × 4 列（列幅 58。x 4・62・120・178、y 242・252）。順は MAP_LEGEND_KEYS", () => {
-    // M20: 8 枠目に扉（2 行 × 4 列のまま）
-    expect(MAP_LEGEND_KEYS).toEqual(["self", "up", "down", "chest", "trap", "wall", "exit", "door"]);
-    expect(LEGEND_COL_W).toBe(58);
+  test("UI-24（M19・C-5・M26）mapNotes: 凡例は盤の外周の枠線の下。20×20 は枠線の下端の線 240 の 1 つ下から地 x0..238・y241..261（地図本体の下端 262 まで。下の余白を詰めて h 21）、2 行 × 5 列（M26。列幅 47。x 2・49・96・143・190、y 242・252）。順は MAP_LEGEND_KEYS", () => {
+    // M20: 8 枠目に扉。M26: 9・10 枠目に主と出来事（2 行 × 5 列。M25 までは 2 行 × 4 列・列幅 58）
+    expect(MAP_LEGEND_KEYS).toEqual(["self", "up", "down", "chest", "trap", "wall", "exit", "door", "boss", "event"]);
+    expect(LEGEND_COL_W).toBe(47);
     const n = mapNotes(20, 20, MAP_AREA);
     expect(n.legend).toEqual([
-      { key: "self", x: 4, y: 242 },
-      { key: "up", x: 62, y: 242 },
-      { key: "down", x: 120, y: 242 },
-      { key: "chest", x: 178, y: 242 },
-      { key: "trap", x: 4, y: 252 },
-      { key: "wall", x: 62, y: 252 },
-      { key: "exit", x: 120, y: 252 },
-      { key: "door", x: 178, y: 252 },
+      { key: "self", x: 2, y: 242 },
+      { key: "up", x: 49, y: 242 },
+      { key: "down", x: 96, y: 242 },
+      { key: "chest", x: 143, y: 242 },
+      { key: "trap", x: 190, y: 242 },
+      { key: "wall", x: 2, y: 252 },
+      { key: "exit", x: 49, y: 252 },
+      { key: "door", x: 96, y: 252 },
+      { key: "boss", x: 143, y: 252 },
+      { key: "event", x: 190, y: 252 },
     ]);
-    expect(n.legendBox).toEqual({ x: 2, y: 241, w: 236, h: 21 });
+    // 5 × 47 = 235 を中央寄せ（x0 = floor(5/2) = 2）、地は左右 2 の余白で x0..238（w 239）
+    expect(n.legendBox).toEqual({ x: 0, y: 241, w: 239, h: 21 });
     // 盤の外周の枠線（下端の線は画素 240）を覆わない
     const l = mapLayout(20, 20, MAP_AREA);
     expect(n.legendBox!.y).toBe(l.oy + 20 * l.cell + 1);
   });
 
-  test("UI-24/DG-02（M25）d01 の 16×16 の地図: mapView の寸法は 16×16、cell 11 で盤 177×177 を地図本体 240×262 の中央（ox 31・oy 42。枠線 (31,42) から 176 四方）に置き、凡例の地 x2..237・y219..242 は枠線の下で地図本体に収まり、注記の行（未踏の口の数）とも盤とも重ならない", () => {
+  test("UI-24/DG-02（M25）d01 の 16×16 の地図: mapView の寸法は 16×16、cell 11 で盤 177×177 を地図本体 240×262 の中央（ox 31・oy 42。枠線 (31,42) から 176 四方）に置き、凡例の地 x0..238・y219..242（M26 で 5 列。M25 は x2..237）は枠線の下で地図本体に収まり、注記の行（未踏の口の数）とも盤とも重ならない", () => {
     const L = dungeonLayout(regions(data.config.ui.layout, data.config.stage.width), data.config.party.size).map;
     const mv = mapView(execute(newGame(1), { type: "dungeon.enter", dungeonId: "d01" }, data).state, data)!;
     expect([mv.width, mv.height]).toEqual([16, 16]);
@@ -137,11 +141,11 @@ describe("UI-24 地図", () => {
     expect([right - l.ox, bottom - l.oy]).toEqual([1, 1]);
     // 凡例: 地は枠線の下端の線（画素 218）の 1 つ下から。上下の余白 2 を詰めずに取れる（h 24）。字の 2 行は y221・231
     const n = mapNotes(16, 16, MAP_AREA);
-    expect(n.legendBox).toEqual({ x: 2, y: 219, w: 236, h: 24 });
+    expect(n.legendBox).toEqual({ x: 0, y: 219, w: 239, h: 24 });
     expect(n.legendBox!.y).toBe(l.oy + 16 * l.cell + 1);
     expect(n.legendBox!.y + n.legendBox!.h).toBeLessThanOrEqual(MAP_AREA.h);
-    expect(n.legend!.map((e) => e.y)).toEqual([221, 221, 221, 221, 231, 231, 231, 231]);
-    expect(n.legend!.slice(0, 4).map((e) => e.x)).toEqual([4, 62, 120, 178]);
+    expect(n.legend!.map((e) => e.y)).toEqual([221, 221, 221, 221, 221, 231, 231, 231, 231, 231]);
+    expect(n.legend!.slice(0, 5).map((e) => e.x)).toEqual([2, 49, 96, 143, 190]);
     // 注記の行（tapHint と未踏の口の数。地図本体の上の行）は凡例の地とも盤とも重ならない（同じ地図の重ね（overlay）の座標で比べる）
     expect(L.note.y + L.note.h).toBeLessThanOrEqual(L.area.y);
     expect(L.note.y + L.note.h).toBeLessThanOrEqual(L.area.y + l.oy);
@@ -177,6 +181,34 @@ describe("UI-24 地図", () => {
     expect(mapNotes(20, 20, MAP_AREA).legend).not.toBeNull();
   });
 
+  test("UI-24（M26）凡例 10 個（主・出来事を足した 2 行 × 5 列）は 16×16 と 20×20 の両方の盤で出て、各項目の記号の箱と語の欄（列幅 47）・地は地図本体 240×262 に収まり、地の上の余白は 1 以上。語は全角 4 字（語の欄 37px）まで", () => {
+    for (const size of [16, 20]) {
+      const l = mapLayout(size, size, MAP_AREA);
+      const n = mapNotes(size, size, MAP_AREA);
+      expect(n.legend).not.toBeNull();
+      expect(n.legend!.map((it) => it.key)).toEqual([...MAP_LEGEND_KEYS]);
+      expect(n.legend).toHaveLength(10);
+      const b = n.legendBox!;
+      expect(b.x).toBeGreaterThanOrEqual(0);
+      expect(b.x + b.w).toBeLessThanOrEqual(MAP_AREA.w);
+      expect(b.y).toBe(l.oy + size * l.cell + 1);
+      expect(b.y + b.h).toBeLessThanOrEqual(MAP_AREA.h);
+      // padTop（地の上端から字の 1 行目まで）は 1 以上
+      expect(Math.min(...n.legend!.map((it) => it.y)) - b.y).toBeGreaterThanOrEqual(1);
+      for (const it of n.legend!) {
+        expect(it.x).toBeGreaterThanOrEqual(0);
+        expect(it.x + LEGEND_COL_W).toBeLessThanOrEqual(MAP_AREA.w);
+        expect(it.y + 10).toBeLessThanOrEqual(MAP_AREA.h);
+      }
+      // 2 行 × 5 列
+      expect(new Set(n.legend!.map((it) => it.y)).size).toBe(2);
+      expect(new Set(n.legend!.map((it) => it.x)).size).toBe(5);
+    }
+    // 語は全角 4 字（8 単位 × 4px = 32px）まで。語の欄は 47 − (記号 8 + 間 2) = 37px
+    for (const k of MAP_LEGEND_KEYS) expect(textUnits(data.strings[`map.legend.${k}`]!) * 4).toBeLessThanOrEqual(LEGEND_COL_W - 10);
+    expect([data.strings["map.legend.boss"], data.strings["map.legend.event"]]).toEqual(["主", "出来事"]);
+  });
+
   test("UI-24/UI-25/UI-78（M19）mapNoteBothFit: 注記の行（幅 240、左右 4）に tapHint と「未踏の口 {n}」が間 8 で入るか。今の文は n が 3 けたまで入る", () => {
     const hint = data.strings["map.tapHint"]!;
     const un = (n: number): string => data.strings["map.unexplored"]!.replace("{n}", String(n));
@@ -204,6 +236,13 @@ describe("UI-24 地図", () => {
     expect(p.chests).toBe(same(cellOf(0, 0, { kind: "chest" }), chest.x, chest.y + 1).chests);
     const trap = at("trap");
     expect(p.traps).toBe(same(cellOf(0, 0, { kind: "trap" }), trap.x, trap.y + 1).traps);
+    // M26: 主は ◇、出来事は ○（盤と同じ path）
+    const boss = at("boss");
+    expect(p.boss).toBe(same(cellOf(0, 0, { kind: "boss" }), boss.x, boss.y + 1).boss);
+    expect(p.boss).not.toBe("");
+    const ev = at("event");
+    expect(p.event).toBe(same(cellOf(0, 0, { kind: "event" }), ev.x, ev.y + 1).event);
+    expect(p.event).not.toBe("");
     const self = at("self");
     expect(p.player).toBe(same(cellOf(0, 0), self.x, self.y + 1).player);
     const wall = at("wall");
@@ -400,6 +439,27 @@ describe("UI-24 地図", () => {
     const p6 = mapPaths(view([cellOf(0, 0, { kind: "chest" })], { width: 30, height: 30 }), lay6);
     const o = { x: lay6.ox, y: lay6.oy };
     expect(p6.chests).toBe(`M${o.x + 2} ${o.y + 2}H${o.x + 5}V${o.y + 5}H${o.x + 2}Z`);
+  });
+
+  test("UI-24/DG-13（M26）kind boss のセルは boss に ◇（cell 8 で (4,2)(6,4)(4,6)(2,4) を結ぶ）、kind event のセルは event に ○（cell 8 で中心 (4,4)・半径 2 の半円の弧 2 本）を出し、ほかの記号の path には出さない。無ければ空", () => {
+    const lay = LAY8;
+    const v = view([cellOf(2, 3, { kind: "boss" }), cellOf(3, 3, { kind: "event" }), cellOf(4, 3, { kind: "chest" }), cellOf(5, 3)], { pos: { x: 5, y: 3 } });
+    const p = mapPaths(v, lay);
+    const px = 39 + 2 * 8;
+    const py = 23 + 3 * 8;
+    expect(p.boss).toBe(`M${px + 4} ${py + 2}L${px + 6} ${py + 4}L${px + 4} ${py + 6}L${px + 2} ${py + 4}Z`);
+    expect(p.event).toBe(`M${px + 8 + 2} ${py + 4}A2 2 0 0 1 ${px + 8 + 6} ${py + 4}A2 2 0 0 1 ${px + 8 + 2} ${py + 4}Z`);
+    // 宝箱の □ は (4,3) の 1 つだけ。ボス・イベントは階段・罠・宝箱の path に入らない
+    expect(p.chests).toBe(`M${px + 16 + 2} ${py + 2}H${px + 16 + 6}V${py + 6}H${px + 16 + 2}Z`);
+    expect([p.stairs, p.traps]).toEqual(["", ""]);
+    const none = mapPaths(view([cellOf(2, 3), cellOf(3, 3, { kind: "chest" }), cellOf(4, 3, { kind: "trap" })]), lay);
+    expect([none.boss, none.event]).toEqual(["", ""]);
+    // cell 11（20×20 の盤）: 宝箱の □ と同じ外接の箱 3..8 で、中点 5.5・半径 2.5
+    const l11 = mapLayout(20, 20, MAP_AREA);
+    const p11 = mapPaths(view([cellOf(0, 0, { kind: "boss" }), cellOf(1, 0, { kind: "event" }), cellOf(2, 0, { kind: "chest" })]), l11);
+    expect(p11.boss).toBe("M14.5 23L17 25.5L14.5 28L12 25.5Z");
+    expect(p11.event).toBe("M23 25.5A2.5 2.5 0 0 1 28 25.5A2.5 2.5 0 0 1 23 25.5Z");
+    expect(p11.chests).toBe("M34 23H39V28H34Z");
   });
 
   test("UI-24 cells に無いセルは描かない", () => {
@@ -652,7 +712,10 @@ class FakeEl {
     this.attrs[k] = v;
   }
   addEventListener(): void {}
-  animate(_k: unknown, options: Record<string, unknown>): FakeAnim {
+  /** animate に渡した keyframes（M26: 印と選んだ枠が同じ keyframes かを見る） */
+  animKeys: unknown[] = [];
+  animate(k: unknown, options: Record<string, unknown>): FakeAnim {
+    this.animKeys.push(k);
     const a: FakeAnim = {
       options,
       cancelled: false,
@@ -698,7 +761,7 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     const { svgs, paths } = fakeDocument();
     const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, data.strings, data.config.ui.mapExitHitPx);
     const v = view([cellOf(0, 0, { kind: "chest" }), cellOf(1, 0, { kind: "trap" }), cellOf(2, 0)], { pos: { x: 2, y: 0 } });
-    m.render(v, "t");
+    m.render(v, "t", false);
     const p = mapPaths(v, mapLayout(v.width, v.height, L.map.area));
     expect(p.chests).not.toBe("");
     const chests = paths.filter((e) => e.attrs["d"] === p.chests);
@@ -721,7 +784,7 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     const { svgs } = fakeDocument();
     const got: unknown[] = [];
     const m = createMapView(L.map, (p) => got.push(p), data.config.ui.mapSnapPx, data.strings, data.config.ui.mapExitHitPx);
-    m.render(view([cellOf(0, 0), cellOf(1, 0)]), "t");
+    m.render(view([cellOf(0, 0), cellOf(1, 0)]), "t", false);
     const tap = tapSpecOf(svgs[0]!)!;
     // M19: 20×20 は cell 11・ox 9・oy 20。(0,0) の中心 (14.5,25.5)、(1,0) の中心 (25.5,25.5)
     tap.onTap({ lx: 29.5, ly: 25.5 }); // (1,0) に距離 4
@@ -736,7 +799,7 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     const got: unknown[] = [];
     const m = createMapView(L.map, (p) => got.push(p), data.config.ui.mapSnapPx, data.strings, data.config.ui.mapExitHitPx);
     // (1,0) に東の口。(1,0) の e の辺の中央は (9+22, 20+5.5) = (31, 25.5)
-    m.render(view([cellOf(0, 0, { e: "open" }), cellOf(1, 0, { w: "open", e: "open", exits: ["e"] })]), "t");
+    m.render(view([cellOf(0, 0, { e: "open" }), cellOf(1, 0, { w: "open", e: "open", exits: ["e"] })]), "t", false);
     const tap = tapSpecOf(svgs[0]!)!;
     tap.onTap({ lx: 33, ly: 25.5 }); // 口の印から 2 → 口
     tap.onTap({ lx: 14.5, ly: 25.5 }); // (0,0) の中心。口からは遠い → セル
@@ -761,7 +824,7 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     expect(noteTop).toBe("12px");
     expect([hint.style["top"], hint.style["left"], hint.style["width"], hint.style["textAlign"]]).toEqual([noteTop, "4px", "232px", "left"]);
     expect([unexplored.style["top"], unexplored.style["left"], unexplored.style["width"], unexplored.style["textAlign"]]).toEqual([noteTop, "4px", "232px", "right"]);
-    m.render(view([cellOf(0, 0), cellOf(1, 0)]), "t");
+    m.render(view([cellOf(0, 0), cellOf(1, 0)]), "t", false);
     expect(hint.style["display"]).toBe("");
     // UI-78（M18）: 「未踏の口 {n}」（n は MapView.unexploredExits。0 も数字のまま）
     expect(unexplored.style["display"]).toBe("");
@@ -777,10 +840,11 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     const box = paths.find((p) => p.attrs["class"] === "map-legend-box")!;
     const legendChest = paths.filter((p) => p.attrs["stroke"] === "var(--c-accent)" && p.attrs["class"] === undefined);
     expect(m.legendOpen()).toBe(true);
-    expect(labels).toHaveLength(8);
+    expect(labels).toHaveLength(10); // M26: 主・出来事を足して 10 項目
     expect(labels.map((d) => [d.style["display"], d.style["left"], d.style["top"]])).toEqual(n.legend!.map((it) => ["", `${it.x + 10}px`, `${ay + it.y}px`]));
     expect(labels[7]!.textContent).toBe("扉");
-    expect(box.attrs["d"]).toBe("M2 241h236v21h-236Z");
+    expect(labels.slice(8).map((d) => d.textContent)).toEqual(["主", "出来事"]);
+    expect(box.attrs["d"]).toBe("M0 241h239v21h-239Z");
     expect(box.attrs["fill"]).toBe("var(--c-bg)");
     expect(Number(box.attrs["fill-opacity"])).toBeLessThan(1);
     expect(paths.filter((p) => p.attrs["d"] === mapLegendPaths(n.legend!).chests)).toHaveLength(1);
@@ -792,7 +856,7 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     // 開く
     expect(m.toggleLegend()).toBe(true);
     expect(labels.filter((d) => d.style["display"] === "")).toHaveLength(MAP_LEGEND_KEYS.length);
-    expect(box.attrs["d"]).toBe("M2 241h236v21h-236Z");
+    expect(box.attrs["d"]).toBe("M0 241h239v21h-239Z");
     // 選ぶと tapHint は隠れ、未踏の口は出たまま。解くと戻る
     m.setPick({ pos: { x: 1, y: 0 } }, false);
     expect(hint.style["display"]).toBe("none");
@@ -801,7 +865,7 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     expect(hint.style["display"]).toBe("");
     // 点線（map-exits）と数。描き直しても凡例の開閉はそのまま（表示だけの値。閉じたまま描き直しても閉じたまま）
     expect(m.toggleLegend()).toBe(false);
-    m.render(view([cellOf(0, 0, { e: "open", exits: [] }), cellOf(1, 0, { w: "open", s: "door", e: "open", exits: ["e", "s"] })]), "t");
+    m.render(view([cellOf(0, 0, { e: "open", exits: [] }), cellOf(1, 0, { w: "open", s: "door", e: "open", exits: ["e", "s"] })]), "t", false);
     expect(unexplored.textContent).toBe("未踏の口 2");
     const exitsEl = paths.find((p) => p.attrs["class"] === "map-exits")!;
     expect(exitsEl.attrs["stroke"]).toBe("var(--c-accent)");
@@ -812,7 +876,7 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     m.setLegend(true);
     expect(m.legendOpen()).toBe(true);
     expect(labels.filter((d) => d.style["display"] === "")).toHaveLength(MAP_LEGEND_KEYS.length);
-    expect(box.attrs["d"]).toBe("M2 241h236v21h-236Z");
+    expect(box.attrs["d"]).toBe("M0 241h239v21h-239Z");
     m.setLegend(false);
     expect(box.attrs["d"]).toBe("");
     expect(legendChest.length).toBeGreaterThan(0);
@@ -824,7 +888,7 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, long, data.config.ui.mapExitHitPx);
     const hint = divs.find((d) => d.className === "map-hint")!;
     const unexplored = divs.find((d) => d.className === "map-unexplored")!;
-    m.render(view([cellOf(0, 0), cellOf(1, 0)]), "t");
+    m.render(view([cellOf(0, 0), cellOf(1, 0)]), "t", false);
     expect(hint.style["display"]).toBe("");
     expect(unexplored.style["display"]).toBe("none");
     m.setPick({ pos: { x: 1, y: 0 } }, false);
@@ -846,10 +910,84 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     expect(top.indexOf(box)).toBeLessThan(top.indexOf(legend));
   });
 
+  test("UI-24（M26）render はボスの ◇ を mapBoss・イベントの ○ を mapEvent の線の path に入れる（重ね順は宝箱の後・未踏の口の前）。blink 真なら印のある path に 1 本ずつ点滅（選んだ枠と同じ keyframes・周期・Infinity）、偽（演出スキップ）では animate せず静的。render と stopBlink で cancel", () => {
+    const { svgs, paths } = fakeDocument();
+    const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, data.strings, data.config.ui.mapExitHitPx);
+    const bossEl = paths.find((e) => e.attrs["class"] === "map-boss")!;
+    const eventEl = paths.find((e) => e.attrs["class"] === "map-event")!;
+    expect([bossEl.attrs["stroke"], bossEl.attrs["fill"]]).toEqual(["var(--c-mapBoss)", "none"]);
+    expect([eventEl.attrs["stroke"], eventEl.attrs["fill"]]).toEqual(["var(--c-mapEvent)", "none"]);
+    const v = view([cellOf(0, 0, { kind: "chest" }), cellOf(1, 0, { kind: "boss" }), cellOf(2, 0, { kind: "event", e: "open", exits: ["e"] })], { pos: { x: 0, y: 0 } });
+    const p = mapPaths(v, mapLayout(v.width, v.height, L.map.area));
+    m.render(v, "t", true);
+    expect(bossEl.attrs["d"]).toBe(p.boss);
+    expect(eventEl.attrs["d"]).toBe(p.event);
+    expect(p.boss).not.toBe("");
+    expect(p.event).not.toBe("");
+    const order = svgs[0]!.children.find((c) => c.children.includes(bossEl))!.children;
+    const chests = order.findIndex((e) => e.attrs["d"] === p.chests);
+    const exits = order.findIndex((e) => e.attrs["class"] === "map-exits");
+    expect(chests).toBeLessThan(order.indexOf(bossEl));
+    expect(order.indexOf(bossEl)).toBeLessThan(order.indexOf(eventEl));
+    expect(order.indexOf(eventEl)).toBeLessThan(exits);
+    // 点滅: 2 本（ボスとイベントに 1 本ずつ）。keyframes と周期は選んだ枠と同じ
+    expect(bossEl.anims).toHaveLength(1);
+    expect(eventEl.anims).toHaveLength(1);
+    expect(bossEl.anims[0]!.options).toEqual({ duration: MAP_PICK_BLINK_MS, iterations: Infinity });
+    expect(eventEl.anims[0]!.options).toEqual({ duration: MAP_PICK_BLINK_MS, iterations: Infinity });
+    m.setPick({ pos: { x: 1, y: 0 } }, true);
+    const pick = pickOf(paths);
+    expect(pick.anims).toHaveLength(1);
+    expect(bossEl.animKeys[0]).toEqual(pick.animKeys[0]);
+    // 選ぶ・解くでは印の点滅は止めない
+    m.setPick(null, true);
+    expect(bossEl.anims[0]!.cancelled).toBe(false);
+    // render: 前の点滅を cancel して作り直す
+    m.render(v, "t", true);
+    expect(bossEl.anims[0]!.cancelled).toBe(true);
+    expect(eventEl.anims[0]!.cancelled).toBe(true);
+    expect([bossEl.anims.length, eventEl.anims.length]).toEqual([2, 2]);
+    // stopBlink（地図を閉じるとき）: 印と選んだ枠の点滅を止める
+    m.setPick({ pos: { x: 1, y: 0 } }, true);
+    m.stopBlink();
+    expect(bossEl.anims[1]!.cancelled).toBe(true);
+    expect(eventEl.anims[1]!.cancelled).toBe(true);
+    expect(pick.anims[1]!.cancelled).toBe(true);
+    // 演出スキップ（blink 偽）: 印は描くが animate しない
+    m.render(v, "t", false);
+    expect(bossEl.attrs["d"]).toBe(p.boss);
+    expect(eventEl.attrs["d"]).toBe(p.event);
+    expect([bossEl.anims.length, eventEl.anims.length]).toEqual([2, 2]);
+    // 印の無い盤では blink 真でも animate を作らない
+    m.render(view([cellOf(0, 0), cellOf(1, 0, { kind: "boss" })]), "t", true);
+    expect([bossEl.anims.length, eventEl.anims.length]).toEqual([3, 2]);
+    expect(eventEl.attrs["d"]).toBe("");
+    m.render(view([cellOf(0, 0)]), "t", true);
+    expect([bossEl.anims.length, eventEl.anims.length]).toEqual([3, 2]);
+    expect(bossEl.anims[2]!.cancelled).toBe(true);
+    expect(bossEl.attrs["d"]).toBe("");
+  });
+
+  test("UI-24（M26）凡例の主と出来事の記号は盤と同じ色（mapBoss・mapEvent）の path に描き、点滅しない", () => {
+    const { paths } = fakeDocument();
+    const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, data.strings, data.config.ui.mapExitHitPx);
+    m.render(view([cellOf(0, 0)]), "t", true);
+    const lp = mapLegendPaths(mapNotes(20, 20, L.map.area).legend!);
+    const lb = paths.filter((e) => e.attrs["d"] === lp.boss);
+    const le = paths.filter((e) => e.attrs["d"] === lp.event);
+    expect(lb).toHaveLength(1);
+    expect(le).toHaveLength(1);
+    expect(lb[0]!.attrs["stroke"]).toBe("var(--c-mapBoss)");
+    expect(le[0]!.attrs["stroke"]).toBe("var(--c-mapEvent)");
+    expect([lb[0]!.anims.length, le[0]!.anims.length]).toEqual([0, 0]);
+    m.setLegend(false);
+    expect([lb[0]!.attrs["d"], le[0]!.attrs["d"]]).toEqual(["", ""]);
+  });
+
   test("UI-25 setPick: blink なら枠を点滅（iterations Infinity・周期 MAP_PICK_BLINK_MS）。切り替え・null・render で cancel。blink 偽では animate を呼ばず枠だけ", () => {
     const { paths } = fakeDocument();
     const m = createMapView(L.map, () => {}, data.config.ui.mapSnapPx, data.strings, data.config.ui.mapExitHitPx);
-    m.render(view([cellOf(0, 0), cellOf(5, 12)]), "t");
+    m.render(view([cellOf(0, 0), cellOf(5, 12)]), "t", false);
     const pick = pickOf(paths);
     expect(pick.attrs["d"]).toBe("");
     m.setPick({ pos: { x: 5, y: 12 } }, true);
@@ -867,7 +1005,7 @@ describe("UI-25 地図のビュー（偽の DOM）", () => {
     expect(pick.attrs["d"]).toBe("");
     // render: 止めて消す
     m.setPick({ pos: { x: 0, y: 0 } }, true);
-    m.render(view([cellOf(0, 0)]), "t");
+    m.render(view([cellOf(0, 0)]), "t", false);
     expect(pick.anims[2]!.cancelled).toBe(true);
     expect(pick.attrs["d"]).toBe("");
     // 演出スキップ（blink 偽）: 枠だけで animate を呼ばない

@@ -2320,7 +2320,8 @@ export function createApp(o: {
     overlay = "map";
     mapPick = null;
     mapTitle = formatMessage(t("map.title"), { dungeon: dungeonName(state), floor: v.floor });
-    play.map.render(v, mapTitle);
+    // UI-24（M26）: ボスとイベントの印は演出スキップでなければ点滅（setPick と同じ）
+    play.map.render(v, mapTitle, !store.get().skipAnimations);
     play.showMap(true);
     syncControls();
   };
@@ -2369,6 +2370,8 @@ export function createApp(o: {
     // UI-25: 閉じると選択は消える
     mapPick = null;
     play.map.setPick(null, false);
+    // UI-24（M26）: 印の点滅も止める
+    play.map.stopBlink();
     play.showMap(false);
     syncControls();
   };

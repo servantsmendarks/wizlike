@@ -42,6 +42,10 @@ export const ROLES = {
   san: "sky",
   /** UI-04 / UI-59（M24 B-1）: 品のオプションの行と鑑定で見つかったオプションの文（青。パレットの既存の sky を割り当てる） */
   option: "sky",
+  /** UI-24（M26）: 地図の倒す前のボスの ◇（パレットの既存の orange を割り当てる【仮】。実機で見て決める） */
+  mapBoss: "orange",
+  /** UI-24（M26）: 地図の済んでいないイベントの ○（パレットの既存の violet を割り当てる【仮】） */
+  mapEvent: "violet",
 } as const satisfies Record<string, PaletteName>;
 
 export type Role = keyof typeof ROLES;

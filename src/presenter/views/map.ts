@@ -1,6 +1,8 @@
 // UI-24: オートマップ。探索済みセル（core の mapView が返す MapView）だけを描く。
-// イベント・ボスと察知していない罠は core が plain で返すので、表示層は区別しない（DG-13）。察知した罠は kind trap で × を描く（M5.5）。
+// 察知していない罠は core が plain で返すので、表示層は区別しない（DG-13）。察知した罠は kind trap で × を描く（M5.5）。
 // 開ける前の宝箱は kind chest で □ を描く（M11。UI-72。開けたり転移で失ったりしたセルは core が plain で返す）。
+// M26（DG-13 / UI-24）: 済んでいないイベントは kind event で ○、倒す前のボスは kind boss で ◇ を描き、render の blink が真なら
+// 2 本の path をそれぞれ Element.animate で点滅させる（選んだ枠と同じ矩形波。render・stopBlink のたびに cancel。演出スキップでは静的）。
 // 純粋な部分（mapLayout / mapPaths / mapSnapCell / mapPickPath）を export し、node 環境のテストから試せるようにする。
 // 地図本体のタップ（UI-25）は探索済みのセルに吸着させて（mapSnapCell。表示のための座標の計算）onCell に渡すだけで、
 // 経路は app が core の planRoute で探す。選んだセルの枠（setPick）は Element.animate の iterations Infinity で点滅させ、
@@ -170,6 +172,14 @@ export function mapTapAction(pick: MapPick | null, p: MapPick, route: readonly u
 /** UI-25: 選んだセルの枠の点滅の周期（ms。戦闘の対象の注目 FOCUS_BLINK_MS と同じ矩形波） */
 export const MAP_PICK_BLINK_MS = 400;
 
+/** UI-25 / UI-24（M26）: 選んだ枠とボス・イベントの印の点滅の keyframes（半分ずつ点いて消える矩形波） */
+const BLINK_KEYFRAMES: Keyframe[] = [
+  { opacity: 1, offset: 0 },
+  { opacity: 1, offset: 0.5 },
+  { opacity: 0, offset: 0.5 },
+  { opacity: 0, offset: 1 },
+];
+
 /** cell 8 のときの現在位置の三角形（北向き）。セル原点からの相対座標 */
 const PLAYER_N_8: ReadonlyArray<readonly [number, number]> = [
   [4, 1],
@@ -213,6 +223,21 @@ const chestD = (px: number, py: number, cell: number): string => {
   const b = sc(6, cell);
   return `M${px + a} ${py + a}H${px + b}V${py + b}H${px + a}Z`;
 };
+/** UI-24（M26）: 倒す前のボスの ◇。宝箱の □ と同じ外接の箱（cell 8 で (2,2)-(6,6)）の 4 辺の中点を結ぶ【仮】 */
+const bossD = (px: number, py: number, cell: number): string => {
+  const a = sc(2, cell);
+  const b = sc(6, cell);
+  const m = (a + b) / 2;
+  return `M${px + m} ${py + a}L${px + b} ${py + m}L${px + m} ${py + b}L${px + a} ${py + m}Z`;
+};
+/** UI-24（M26）: 済んでいないイベントの ○。同じ外接の箱に内接する円を半円の弧 2 本で描く【仮】 */
+const eventD = (px: number, py: number, cell: number): string => {
+  const a = sc(2, cell);
+  const b = sc(6, cell);
+  const m = (a + b) / 2;
+  const r = (b - a) / 2;
+  return `M${px + a} ${py + m}A${r} ${r} 0 0 1 ${px + b} ${py + m}A${r} ${r} 0 0 1 ${px + a} ${py + m}Z`;
+};
 /** 扉の辺の両端の線の長さ（mapPaths の hLine / vLine の 2px） */
 const DOOR_END = 2;
 /**
@@ -245,15 +270,21 @@ const playerD = (px: number, py: number, facing: Facing, cell: number): string =
     .map(([x, y], i) => `${i === 0 ? "M" : "L"}${px + x} ${py + y}`)
     .join("") + "Z";
 
-/** UI-24（M16）/ UI-78（M18）: 凡例の項目（strings の map.legend.<key>）。2 行 × 4 列に、左上から行の順に並べる（M20 で 8 枠目に扉） */
-export const MAP_LEGEND_KEYS = ["self", "up", "down", "chest", "trap", "wall", "exit", "door"] as const;
+/**
+ * UI-24（M16）/ UI-78（M18）: 凡例の項目（strings の map.legend.<key>）。左上から行の順に並べる（M20 で 8 枠目に扉）。
+ * M26: 9・10 枠目に主（boss）と出来事（event）を足し、2 行 × 5 列にした（3 行は 20×20 の盤の下に入らない）
+ */
+export const MAP_LEGEND_KEYS = ["self", "up", "down", "chest", "trap", "wall", "exit", "door", "boss", "event"] as const;
 export type MapLegendKey = (typeof MAP_LEGEND_KEYS)[number];
 
 /** 凡例の行の高さ（メッセージ窓の行と同じ 10。8px の字） */
 const NOTE_LINE_H = 10;
-/** 凡例の 1 列の幅（記号 8 + 間 2 + 語。語は全角 6 字まで。M18 で 72 → 58 にして 4 列） */
-export const LEGEND_COL_W = 58;
-const LEGEND_COLS = 4;
+/**
+ * 凡例の 1 列の幅（記号 8 + 間 2 + 語。語は全角 4 字まで。M18 で 72 → 58 にして 4 列、M26 で 58 → 47 にして 5 列。
+ * 47 が 5 列の上限: 5 × 47 + 地の左右の余白 2 × 2 = 239 ≤ 240）
+ */
+export const LEGEND_COL_W = 47;
+const LEGEND_COLS = 5;
 /** 凡例と地の縁の間（論理 px。地図本体の下端を越えるときは詰める） */
 const NOTE_GAP = 2;
 /** UI-24 / UI-78（M19）: 注記の行の左右の余白と、tapHint と未踏の口の数の間の最小の空き（論理 px） */
@@ -271,10 +302,10 @@ export type MapNotes = {
 
 /**
  * UI-24（M19。C-5 で盤の下へ）: 凡例の位置。半透明の地は盤（mapLayout）の外周の枠線の下端の線（画素 oy + h*cell）の 1 つ下の画素から始め、
- * 枠線を覆わない。その中に 2 行 × 4 列（行の高さ 10、列幅 58。中央寄せ）を、地の上端から NOTE_GAP 下に置く。
+ * 枠線を覆わない。その中に 2 行 × 5 列（行の高さ 10、列幅 47。中央寄せ。M26 まで 4 列・58）を、地の上端から NOTE_GAP 下に置く。
  * 地は上下左右 NOTE_GAP の余白を取るが、地図本体の下端を越えるなら字の行の高さを保ったまま地の余白だけを詰める（上の余白も 1 まで詰める）。
  * それでも 2 行が地図本体に入らない（盤の下の余白が字の行の高さ + 1 未満）か、地が左右にはみ出すなら出さない。
- * 例: 20×20 は盤 y20..240（area 240×262）で、地 x2..237・y241..261（h 21）、凡例 y242・252 の 2 行（x 4・62・120・178）
+ * 例: 20×20 は盤 y20..240（area 240×262）で、地 x0..238・y241..261（h 21）、凡例 y242・252 の 2 行（x 2・49・96・143・190）
  */
 export function mapNotes(w: number, h: number, area: { w: number; h: number }): MapNotes {
   const lay = mapLayout(w, h, area);
@@ -302,17 +333,17 @@ export function mapNoteBothFit(hint: string, unexplored: string, width: number):
   return (textUnits(hint) + textUnits(unexplored)) * UNIT_PX + NOTE_SEP <= width - 2 * NOTE_PAD_X;
 }
 
-export type MapLegendPaths = { walls: string; stairs: string; traps: string; chests: string; exits: string; player: string };
+export type MapLegendPaths = { walls: string; stairs: string; traps: string; chests: string; exits: string; player: string; boss: string; event: string };
 
 /**
  * UI-24（M16）: 凡例の記号。盤と同じ path（cell 8。M19 で盤は 11 になったが凡例は 8 のまま）を各項目の記号の箱 (x, y+1) に描く。
  * self は北向きの現在位置、up / down は階段、chest は □、trap は ×、wall は箱の中ほどの横線 1 本（盤の壁の線と同じ色）、
  * exit（UI-78。M18。M19 で点線に）は wall と同じ箱の中ほどの横の辺に沿った点線（盤の open の辺の exitD と同じ。箱の y+5 の x+1..x+7）、
  * door（M20）は同じ高さの横の辺を盤の未踏の扉の口と同じに描く（両端 2px の線の色の線（盤の door の辺の hLine と同じ。x..x+2・x+6..x+8）を walls に、
- * 中央の accent の線（exitD の door。x+2..x+6）を exits に）
+ * 中央の accent の線（exitD の door。x+2..x+6）を exits に）。boss（M26）は ◇、event（M26）は ○（盤と同じ path。凡例では点滅しない）
  */
 export function mapLegendPaths(legend: NonNullable<MapNotes["legend"]>): MapLegendPaths {
-  const out: MapLegendPaths = { walls: "", stairs: "", traps: "", chests: "", exits: "", player: "" };
+  const out: MapLegendPaths = { walls: "", stairs: "", traps: "", chests: "", exits: "", player: "", boss: "", event: "" };
   for (const it of legend) {
     const px = it.x;
     const py = it.y + 1;
@@ -321,6 +352,8 @@ export function mapLegendPaths(legend: NonNullable<MapNotes["legend"]>): MapLege
     else if (it.key === "down") out.stairs += stairsDownD(px, py, BASE_CELL);
     else if (it.key === "chest") out.chests += chestD(px, py, BASE_CELL);
     else if (it.key === "trap") out.traps += trapD(px, py, BASE_CELL);
+    else if (it.key === "boss") out.boss += bossD(px, py, BASE_CELL);
+    else if (it.key === "event") out.event += eventD(px, py, BASE_CELL);
     else if (it.key === "exit") out.exits += exitD(px, py + BASE_CELL / 2, "n", BASE_CELL);
     else if (it.key === "door") {
       const y = py + BASE_CELL / 2;
@@ -331,7 +364,7 @@ export function mapLegendPaths(legend: NonNullable<MapNotes["legend"]>): MapLege
   return out;
 }
 
-export type MapPaths = { floor: string; walls: string; stairs: string; traps: string; chests: string; exits: string; player: string };
+export type MapPaths = { floor: string; walls: string; stairs: string; traps: string; chests: string; boss: string; event: string; exits: string; player: string };
 
 /**
  * 地図の path。
@@ -340,6 +373,8 @@ export type MapPaths = { floor: string; walls: string; stairs: string; traps: st
  * - stairs: 下りは「V」、上りは「^」
  * - traps: 察知した罠（kind trap）は「×」（cell 8 で (2,2)-(6,6) と (6,2)-(2,6)。M5.5）。色は danger で、階段とは形も色も違う
  * - chests: 開ける前の宝箱（kind chest）は「□」（cell 8 で (2,2)-(6,6) の正方形の枠。M11。UI-72）。色は accent
+ * - boss: 倒す前のボス（kind boss）は「◇」（□ と同じ外接の箱の 4 辺の中点を結ぶ。M26【仮】）。色は mapBoss
+ * - event: 済んでいないイベント（kind event）は「○」（同じ箱に内接する円。半円の弧 2 本。M26【仮】）。色は mapEvent
  * - exits: 未踏の口（MapCell.exits。UI-78。M18）の辺の上の点線（exitD。M19 から。door の辺は中央に辺の半分の長さの 1 本）。色は accent
  * - player: 現在位置の三角形（塗り）
  */
@@ -350,6 +385,8 @@ export function mapPaths(v: MapView, lay: MapLayout): MapPaths {
   const stairs: string[] = [];
   const traps: string[] = [];
   const chests: string[] = [];
+  const boss: string[] = [];
+  const event: string[] = [];
   const exits: string[] = [];
   const seen = new Set<string>();
 
@@ -381,17 +418,30 @@ export function mapPaths(v: MapView, lay: MapLayout): MapPaths {
     else if (c.kind === "stairsUp") stairs.push(stairsUpD(px, py, cell));
     else if (c.kind === "trap") traps.push(trapD(px, py, cell));
     else if (c.kind === "chest") chests.push(chestD(px, py, cell));
+    else if (c.kind === "boss") boss.push(bossD(px, py, cell));
+    else if (c.kind === "event") event.push(eventD(px, py, cell));
     for (const d of c.exits) exits.push(exitD(px, py, d, cell, c[d] === "door"));
   }
 
   const player = playerD(ox + v.pos.x * cell, oy + v.pos.y * cell, v.facing, cell);
 
-  return { floor: floor.join(""), walls: walls.join(""), stairs: stairs.join(""), traps: traps.join(""), chests: chests.join(""), exits: exits.join(""), player };
+  return {
+    floor: floor.join(""),
+    walls: walls.join(""),
+    stairs: stairs.join(""),
+    traps: traps.join(""),
+    chests: chests.join(""),
+    boss: boss.join(""),
+    event: event.join(""),
+    exits: exits.join(""),
+    player,
+  };
 }
 
 export type MapViewEl = {
   el: HTMLElement;
-  render(v: MapView, title: string): void;
+  /** blink（M26）: 真ならボスとイベントの印を点滅させる（偽は演出スキップで静的）。前の点滅は cancel して作り直す */
+  render(v: MapView, title: string, blink: boolean): void;
   /** UI-25: 題の行だけを差し替える（経路が無いときの「道が分からない。」。次の render で戻る） */
   setTitle(title: string): void;
   /**
@@ -405,6 +455,8 @@ export type MapViewEl = {
   setLegend(on: boolean): void;
   /** UI-24（M19）: 凡例が開いているか */
   legendOpen(): boolean;
+  /** UI-24 / UI-25（M26）: 地図を閉じるときに、選んだ枠とボス・イベントの印の点滅を止める（常駐の animate を残さない） */
+  stopBlink(): void;
 };
 
 /**
@@ -474,13 +526,16 @@ export function createMapView(
   const trapsPath = path({ fill: "none", stroke: "var(--c-danger)", "stroke-width": "1" });
   // 開ける前の宝箱の □（M11。UI-72）。罠の後、現在位置の前（宝箱のセルに立つと三角形が上に重なる）
   const chestsPath = path({ fill: "none", stroke: "var(--c-accent)", "stroke-width": "1" });
-  // 未踏の口の点線（UI-78。M18）。宝箱の後、現在位置の前
+  // UI-24（M26）: 倒す前のボスの ◇ と済んでいないイベントの ○（色は【仮】。パレットの既存の色を役に割り当てる）。宝箱の後、未踏の口の前
+  const bossPath = path({ class: "map-boss", fill: "none", stroke: "var(--c-mapBoss)", "stroke-width": "1" });
+  const eventPath = path({ class: "map-event", fill: "none", stroke: "var(--c-mapEvent)", "stroke-width": "1" });
+  // 未踏の口の点線（UI-78。M18）。宝箱・ボス・イベントの後、現在位置の前
   const exitsPath = path({ class: "map-exits", fill: "none", stroke: "var(--c-accent)", "stroke-width": "1" });
   // 現在位置は階段・罠より後に描く
   const playerPath = path({ fill: "var(--c-player)", stroke: "none" });
   // UI-25: 選んだセルの枠（壁と現在位置の上に描く）。M19 から 2px の text 色（mapPickPath の 2 重の 1px の線。UI-72 の宝箱の □ と見分ける）
   const pickPath = path({ class: "map-pick", fill: "none", stroke: "var(--c-text)", "stroke-width": "1", d: "" });
-  g.append(framePath, wallPath, stairsPath, trapsPath, chestsPath, exitsPath, playerPath, pickPath);
+  g.append(framePath, wallPath, stairsPath, trapsPath, chestsPath, bossPath, eventPath, exitsPath, playerPath, pickPath);
 
   // UI-24（M16。M19 から開閉）: 凡例の地（半透明）と記号（盤と同じ色と path）。選択の枠より上の層に描く（C-5 から盤の下に出すので重ならないが、層の順は保つ）。
   // 語は el の上の div（タップは地図本体に通す）
@@ -491,11 +546,13 @@ export function createMapView(
   const legendTraps = path({ fill: "none", stroke: "var(--c-danger)", "stroke-width": "1" });
   const legendChests = path({ fill: "none", stroke: "var(--c-accent)", "stroke-width": "1" });
   const legendExits = path({ fill: "none", stroke: "var(--c-accent)", "stroke-width": "1" });
+  const legendBoss = path({ fill: "none", stroke: "var(--c-mapBoss)", "stroke-width": "1" });
+  const legendEvent = path({ fill: "none", stroke: "var(--c-mapEvent)", "stroke-width": "1" });
   const legendPlayer = path({ fill: "var(--c-player)", stroke: "none" });
   const legendG = document.createElementNS(SVG_NS, "g");
   legendG.setAttribute("class", "map-legend");
   legendG.setAttribute("transform", "translate(0.5 0.5)");
-  legendG.append(legendWalls, legendStairs, legendTraps, legendChests, legendExits, legendPlayer);
+  legendG.append(legendWalls, legendStairs, legendTraps, legendChests, legendBoss, legendEvent, legendExits, legendPlayer);
   svg.appendChild(legendG);
   const ax = area.x - overlay.x;
   const ay = area.y - overlay.y;
@@ -537,11 +594,13 @@ export function createMapView(
     const legend = legendOn ? notes.legend : null;
     const b = legendOn ? notes.legendBox : null;
     legendBox.setAttribute("d", b === null ? "" : `M${b.x} ${b.y}h${b.w}v${b.h}h${-b.w}Z`);
-    const p = legend === null ? { walls: "", stairs: "", traps: "", chests: "", exits: "", player: "" } : mapLegendPaths(legend);
+    const p = legend === null ? { walls: "", stairs: "", traps: "", chests: "", exits: "", player: "", boss: "", event: "" } : mapLegendPaths(legend);
     legendWalls.setAttribute("d", p.walls);
     legendStairs.setAttribute("d", p.stairs);
     legendTraps.setAttribute("d", p.traps);
     legendChests.setAttribute("d", p.chests);
+    legendBoss.setAttribute("d", p.boss);
+    legendEvent.setAttribute("d", p.event);
     legendExits.setAttribute("d", p.exits);
     legendPlayer.setAttribute("d", p.player);
     legendLabels.forEach((d, i) => {
@@ -559,6 +618,12 @@ export function createMapView(
   const stopBlink = (): void => {
     if (blinking !== null) blinking.cancel();
     blinking = null;
+  };
+  // UI-24（M26）: ボスとイベントの印の点滅（印のある path にだけ 1 本ずつ。render のたびに作り直す）
+  let markBlinks: Animation[] = [];
+  const stopMarkBlinks = (): void => {
+    for (const a of markBlinks) a.cancel();
+    markBlinks = [];
   };
 
   // UI-25: 地図本体のタップ。座標は SVG の左上からの論理 px（viewBox は area と同じ寸法）
@@ -591,15 +656,7 @@ export function createMapView(
       paintNote();
       pickPath.setAttribute("d", mapPickPath(p.pos, mapLayout(shown.width, shown.height, area), p.dir));
       if (!blink) return;
-      blinking = pickPath.animate(
-        [
-          { opacity: 1, offset: 0 },
-          { opacity: 1, offset: 0.5 },
-          { opacity: 0, offset: 0.5 },
-          { opacity: 0, offset: 1 },
-        ],
-        { duration: MAP_PICK_BLINK_MS, iterations: Infinity },
-      );
+      blinking = pickPath.animate(BLINK_KEYFRAMES, { duration: MAP_PICK_BLINK_MS, iterations: Infinity });
     },
     toggleLegend(): boolean {
       legendOn = !legendOn;
@@ -613,9 +670,14 @@ export function createMapView(
     legendOpen(): boolean {
       return legendOn;
     },
-    render(v: MapView, t: string): void {
+    stopBlink(): void {
+      stopBlink();
+      stopMarkBlinks();
+    },
+    render(v: MapView, t: string, blink: boolean): void {
       // 描き直すと選択は消える（app は地図を開くたびに選択を解く）
       stopBlink();
+      stopMarkBlinks();
       pickPath.setAttribute("d", "");
       shown = v;
       title.textContent = t;
@@ -627,7 +689,18 @@ export function createMapView(
       stairsPath.setAttribute("d", p.stairs);
       trapsPath.setAttribute("d", p.traps);
       chestsPath.setAttribute("d", p.chests);
+      bossPath.setAttribute("d", p.boss);
+      eventPath.setAttribute("d", p.event);
       exitsPath.setAttribute("d", p.exits);
+      // UI-24（M26）: 演出スキップでなければ印を点滅（選んだ枠と同じ周期の矩形波。印の無い path には animate を作らない）
+      if (blink) {
+        for (const [mark, d] of [
+          [bossPath, p.boss],
+          [eventPath, p.event],
+        ] as const) {
+          if (d !== "") markBlinks.push(mark.animate(BLINK_KEYFRAMES, { duration: MAP_PICK_BLINK_MS, iterations: Infinity }));
+        }
+      }
       playerPath.setAttribute("d", p.player);
       // M19: 注記の行と凡例（凡例の位置は盤の大きさから。開いているときだけ描く）
       unexplored.textContent = formatMessage(strings["map.unexplored"] ?? "", { n: v.unexploredExits });
