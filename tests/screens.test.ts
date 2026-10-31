@@ -1403,6 +1403,23 @@ describe("入力と Command", () => {
     expect(app).toContain("onTap(play.talk.el, () => tapTalk());");
   });
 
+  test("UI-63/UI-66（M26 判断 6）全滅の後は「街へ」まで無音: 内訳の間の sync は街の曲を求めず（wipe の枝が route の判定より先で return）、closeWipe は overlay を下ろしてから sync し、街の枝が施設の曲を setScene する（ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const sync = /const syncControls = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    const wipeBranch = sync.indexOf('if (overlay === "wipe") {');
+    const townBranch = sync.indexOf('if (route === "town") {');
+    expect(wipeBranch).toBeGreaterThanOrEqual(0);
+    expect(townBranch).toBeGreaterThan(wipeBranch);
+    expect(sync.slice(wipeBranch, sync.indexOf("return;", wipeBranch))).not.toMatch(/setScene|setSong/);
+    expect(sync.slice(townBranch)).toMatch(/const song = townSong\(townFacility\(townPage\), data\);\s*if \(song !== undefined\) setScene\(song\);/);
+    const close = /const closeWipe = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(close).toMatch(/overlay = null;\s*play\.showWipe\(false\);\s*syncControls\(\);/);
+    // 街に入ると施設のページは menu（= screenSongs.town。続きからの songAt("town") と同じ曲）
+    expect(app).toMatch(/if \(r === "town"\) townPage = "menu";/);
+    // setScene は場面の曲の名前（sceneSongName）も更新する（キャンプを閉じたときに戻す曲）
+    expect(app).toMatch(/const setScene = \(name: string \| null\): void => \{\s*sceneSongName = name;\s*audio\?\.setSong\(name\);\s*\};/);
+  });
+
   test("UI-73/UI-56/SV-50/TW-35（M12）戦績の画面: 再生の終わりの ending.show と酒場の「戦績」（core の endingRecordView）で openEnding。全滅の内訳が開いていれば預かり、「街へ」（closeWipe）の直後に開く。操作領域は「閉じる」（ending.dismiss）。再開では出さず、預かりも捨てる。結末の経路（再生の終わり・「街へ」の後）だけ開く時点で会話の箱を flush する（未定-33。ソースの検査）", () => {
     const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
     expect(app).toContain("ending: { show: (r) => openEnding(r, true) },");

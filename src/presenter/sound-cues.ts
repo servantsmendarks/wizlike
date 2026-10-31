@@ -27,7 +27,8 @@ export type SoundContext = {
   /**
    * UI-66 / TW-34（M12。2026-10-08 未定-36）: この再生で全滅（wipe の出来事。全滅のジングル）を出した。
    * 立っている間はジングルを返さない（全滅の経路で結末に入るときの ending.speech.1 の clear が全滅のジングルを置き換えないように）。
-   * 消すのは再生の開始（startSoundPlayback）だけで、拍（beat）と街の文ごと（startSoundBeat）では消さない
+   * 消すのは再生の開始（startSoundPlayback）だけで、拍（beat）と街の文ごと（startSoundBeat）では消さない。
+   * M26（判断 6）から、立っている間の screen は場面の曲を null（無音）にする。街の曲は全滅の内訳の「街へ」（app の closeWipe → sync）で始める
    */
   wiped: boolean;
 };
@@ -152,13 +153,16 @@ function matches(cue: SoundCue, ev: GameEvent, ctx: SoundContext): boolean {
  * screen は場面の曲（battle は何も求めない。直後の encounter で決める）。
  * encounter は cues（遭遇のジングル）の後に戦闘の曲（ジングルが鳴り終わってから始まる。UI-63 の再生機）。
  * 効果音は、同じ拍で既に鳴らした名前（ctx.beatSfx）と、この出来事で既に返した名前を除く（2026-10-07）。
- * ジングルは、この再生で全滅を出した後（ctx.wiped）は返さない（2026-10-08 未定-36。曲と効果音は今どおり）
+ * ジングルは、この再生で全滅を出した後（ctx.wiped）は返さない（2026-10-08 未定-36。効果音は今どおり）。
+ * M26: silenceAfter の cue はジングルの直後に場面の曲 null を返す（ジングルの後は無音。次の screen の曲まで）。
+ * 全滅の後（ctx.wiped）の screen も null（全滅の内訳の「街へ」まで無音。M26 判断 6）
  */
 export function soundsFor(ev: GameEvent, data: CueData, ctx: SoundContext = INITIAL_SOUND_CONTEXT): SoundOrder[] {
   if (ev.kind === "screen") {
     if (ev.to === "battle") return [];
     const name = sceneSong(ev.to, data, { dungeonId: ev.dungeonId ?? null });
-    return name === undefined ? [] : [{ type: "song", name }];
+    if (name === undefined) return [];
+    return [{ type: "song", name: ctx.wiped ? null : name }];
   }
   const out: SoundOrder[] = [];
   for (const cue of data.audio.cues) {
@@ -167,7 +171,10 @@ export function soundsFor(ev: GameEvent, data: CueData, ctx: SoundContext = INIT
       const name = cue.sfx;
       if (!ctx.beatSfx.includes(name) && !out.some((x) => x.type === "sfx" && x.name === name)) out.push({ type: "sfx", name });
     }
-    else if (cue.jingle !== undefined && !ctx.wiped) out.push({ type: "jingle", name: cue.jingle });
+    else if (cue.jingle !== undefined && !ctx.wiped) {
+      out.push({ type: "jingle", name: cue.jingle });
+      if (cue.silenceAfter === true) out.push({ type: "song", name: null });
+    }
   }
   if (ev.kind === "encounter") {
     const name = battleSong(

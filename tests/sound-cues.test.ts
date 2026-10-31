@@ -28,7 +28,15 @@ const BOSS_CTX: SoundContext = { boss: true, encounters: 0, beatSfx: [], wiped: 
 
 describe("UI-66 soundsFor", () => {
   const cases: [string, GameEvent, ReturnType<typeof soundsFor>][] = [
-    ["勝利（ボスでない戦闘）で victory", { kind: "battleEnd", result: "win" }, [{ type: "jingle", name: "victory" }]],
+    // M26: 戦闘の終わりのジングル（silenceAfter）は直後に場面の曲 null（ジングルの後は無音）
+    [
+      "勝利（ボスでない戦闘）で victory、その後は無音（M26）",
+      { kind: "battleEnd", result: "win" },
+      [
+        { type: "jingle", name: "victory" },
+        { type: "song", name: null },
+      ],
+    ],
     ["逃走で flee", { kind: "battleEnd", result: "flee" }, [{ type: "sfx", name: "flee" }]],
     ["全滅の battleEnd では鳴らない（wipe で鳴る）", { kind: "battleEnd", result: "wipe" }, []],
     [
@@ -36,7 +44,14 @@ describe("UI-66 soundsFor", () => {
       { kind: "levelUp", id: "m1", level: 2, hpMax: 10, mpMax: 0, hp: 10, mp: 0 } as unknown as GameEvent,
       [{ type: "jingle", name: "levelup" }],
     ],
-    ["wipe で wipe", { kind: "wipe", penalty: {} } as unknown as GameEvent, [{ type: "jingle", name: "wipe" }]],
+    [
+      "wipe で wipe、その後は無音（M26）",
+      { kind: "wipe", penalty: {} } as unknown as GameEvent,
+      [
+        { type: "jingle", name: "wipe" },
+        { type: "song", name: null },
+      ],
+    ],
     ["宿（town.inn.stay）で inn", { kind: "message", key: "town.inn.stay" }, [{ type: "jingle", name: "inn" }]],
     ["敵への命中で hit", { kind: "attack", actorId: "m1", targetId: "e0-1", hit: true, damage: 3 }, [{ type: "sfx", name: "hit" }]],
     ["敵への外れで miss", { kind: "attack", actorId: "m1", targetId: "e0-1", hit: false, damage: 0 }, [{ type: "sfx", name: "miss" }]],
@@ -62,7 +77,14 @@ describe("UI-66 soundsFor", () => {
     ["転移で trap", { kind: "message", key: "dungeon.trap.teleport" }, [{ type: "sfx", name: "trap" }]],
     ["ほかの message は無し", { kind: "message", key: "town.inn.title" }, []],
     ["blocked（壁）で wall", { kind: "blocked" }, [{ type: "sfx", name: "wall" }]],
-    ["ボス撃破の語りで clear", { kind: "message", key: "battle.bossDefeated", params: { boss: "x" } }, [{ type: "jingle", name: "clear" }]],
+    [
+      "ボス撃破の語りで clear、その後は無音（M26）",
+      { kind: "message", key: "battle.bossDefeated", params: { boss: "x" } },
+      [
+        { type: "jingle", name: "clear" },
+        { type: "song", name: null },
+      ],
+    ],
     ["UI-63/TW-34 結末の締めの語りの 1 行目で clear（M12）", { kind: "message", key: "ending.speech.1" }, [{ type: "jingle", name: "clear" }]],
     ["TW-34 締めの語りの 2 行目以降は無し", { kind: "message", key: "ending.speech.2" }, []],
     [
@@ -143,7 +165,10 @@ describe("UI-66 soundsFor", () => {
 
   it("UI-66 ボス戦の勝利は victory を鳴らさない（clear はボス撃破の語りで鳴る）。逃走はボスかを問わない", () => {
     expect(soundsFor({ kind: "battleEnd", result: "win" }, data, BOSS_CTX)).toEqual([]);
-    expect(soundsFor({ kind: "battleEnd", result: "win" }, data, INITIAL_SOUND_CONTEXT)).toEqual([{ type: "jingle", name: "victory" }]);
+    expect(soundsFor({ kind: "battleEnd", result: "win" }, data, INITIAL_SOUND_CONTEXT)).toEqual([
+      { type: "jingle", name: "victory" },
+      { type: "song", name: null },
+    ]);
     expect(soundsFor({ kind: "battleEnd", result: "flee" }, data, BOSS_CTX)).toEqual([{ type: "sfx", name: "flee" }]);
   });
 
@@ -362,13 +387,14 @@ describe("UI-66 / TW-34（M12。2026-10-08 未定-36）全滅の経路で結末�
   };
 
   it("TW-34/UI-66 wipe の後の ending.speech.1 ではジングルを返さない（全滅のジングル wipe だけ）。曲と効果音は今どおり返る", () => {
+    // M26（判断 6）: 全滅のジングルの後と、全滅の後の screen town は無音（song null。街の曲は「街へ」の後）
     const r = run([wipe, { kind: "message", key: "town.enter" }, speech1, san, townScreen]);
-    expect(r.heard).toEqual(["jingle:wipe", "san", "song:town"]);
+    expect(r.heard).toEqual(["jingle:wipe", "song:", "san", "song:"]);
     expect(r.ctx.wiped).toBe(true);
     const ctx = nextSoundContext(wipe, data, INITIAL_SOUND_CONTEXT);
     expect(soundsFor(speech1, data, ctx)).toEqual([]);
     expect(soundsFor(san, data, ctx)).toEqual([{ type: "sfx", name: "san" }]);
-    expect(soundsFor(townScreen, data, ctx)).toEqual([{ type: "song", name: "town" }]);
+    expect(soundsFor(townScreen, data, ctx)).toEqual([{ type: "song", name: null }]);
   });
 
   it("TW-34/UI-66 wipe の無い再生では ending.speech.1 で clear（今までどおり）", () => {
@@ -383,8 +409,86 @@ describe("UI-66 / TW-34（M12。2026-10-08 未定-36）全滅の経路で結末�
     expect(startSoundBeat({ ...wiped, beatSfx: ["san"] })).toEqual({ ...wiped, beatSfx: [] });
     expect(startSoundPlayback(wiped).wiped).toBe(false);
     // 拍をまたいでもジングルは返さない。次の再生では clear が鳴る
-    expect(run([wipe, beat, speech1]).heard).toEqual(["jingle:wipe"]);
+    expect(run([wipe, beat, speech1]).heard).toEqual(["jingle:wipe", "song:"]);
     const first = run([wipe]);
     expect(run([speech1], first.ctx).heard).toEqual(["jingle:clear"]);
+  });
+});
+
+describe("UI-63/UI-66（M26 判断 6）戦闘のジングルの後は無音（silenceAfter）。全滅は「街へ」まで無音", () => {
+  const beat: GameEvent = { kind: "beat", phase: "system", auto: false };
+  const wipe = { kind: "wipe", penalty: {} } as unknown as GameEvent;
+  const win: GameEvent = { kind: "battleEnd", result: "win" };
+  const toDungeon: GameEvent = { kind: "screen", to: "dungeon", dungeonId: "d01" };
+  const townScreen: GameEvent = { kind: "screen", to: "town" };
+  const enc = (id: string): GameEvent => ({ kind: "encounter", groups: [group(id)] });
+  /** app と同じ結線で 1 回の再生を通し、鳴らしたもの（jingle: / sfx / song:）を集める（song: の後が空なら null = 無音） */
+  const run = (events: readonly GameEvent[], start: SoundContext = INITIAL_SOUND_CONTEXT): { heard: string[]; ctx: SoundContext } => {
+    let ctx = startSoundPlayback(start);
+    const heard: string[] = [];
+    for (const ev of events) {
+      for (const x of soundsFor(ev, data, ctx)) heard.push(x.type === "sfx" ? x.name : `${x.type}:${x.name ?? ""}`);
+      ctx = nextSoundContext(ev, data, ctx);
+    }
+    return { heard, ctx };
+  };
+
+  it("UI-63/UI-66 通常の勝利: victory の直後に無音を頼み、leave の後の screen dungeon で迷宮の曲", () => {
+    const r = run([enc(normalId), beat, win, { kind: "message", key: "battle.win" }, beat, toDungeon]);
+    expect(r.heard).toEqual(["jingle:encounter", "song:battle1", "jingle:victory", "song:", "song:dungeon1"]);
+  });
+
+  it("UI-63/UI-66 ボス戦の勝利: battleEnd では何も鳴らさず（戦闘の曲のまま）、撃破の語りの clear の直後に無音、screen dungeon で迷宮の曲", () => {
+    const r = run([enc(bossId), beat, win, { kind: "message", key: "battle.bossDefeated", params: { boss: "x" } }, toDungeon]);
+    expect(r.heard).toEqual(["jingle:encounter", "song:battle2", "jingle:clear", "song:", "song:dungeon1"]);
+  });
+
+  it("UI-63/UI-66 全滅: wipe のジングルの直後に無音、同じ再生の screen town も無音。次の再生（wiped が下りた後）の screen は場面の曲", () => {
+    const r = run([
+      beat,
+      { kind: "battleEnd", result: "wipe" },
+      { kind: "message", key: "battle.wipe" },
+      beat,
+      { kind: "dice", label: { key: "dice.wipe" }, rows: [], rule: { key: "x" }, result: { key: "y" } },
+      wipe,
+      { kind: "message", key: "town.enter" },
+      townScreen,
+    ]);
+    expect(r.heard).toEqual(["dice", "jingle:wipe", "song:", "song:"]);
+    expect(r.ctx.wiped).toBe(true);
+    // 戦闘の外の全滅（wipe.ts）も同じ wipe の出来事 → screen town の並び
+    expect(run([wipe, townScreen]).heard).toEqual(["jingle:wipe", "song:", "song:"]);
+    // 全滅の後の場面の曲の無い画面（event）は今どおり何も求めない
+    expect(soundsFor({ kind: "screen", to: "event" }, data, r.ctx)).toEqual([]);
+    // 次の再生の開始で wiped が下り、screen は場面の曲に戻る
+    expect(run([townScreen], r.ctx).heard).toEqual(["song:town"]);
+    expect(run([toDungeon], r.ctx).heard).toEqual(["song:dungeon1"]);
+  });
+
+  it("UI-63/UI-66 silenceAfter の無いジングル（levelup・inn・encounter・rare・結末の clear）は今どおり無音を頼まない（ジングルの後に場面の曲）", () => {
+    const lv = { kind: "levelUp", id: "m1", level: 2, hpMax: 10, mpMax: 0, hp: 10, mp: 0 } as unknown as GameEvent;
+    expect(soundsFor(lv, data)).toEqual([{ type: "jingle", name: "levelup" }]);
+    expect(soundsFor({ kind: "message", key: "town.inn.stay" }, data)).toEqual([{ type: "jingle", name: "inn" }]);
+    expect(soundsFor({ kind: "message", key: "ending.speech.1" }, data)).toEqual([{ type: "jingle", name: "clear" }]);
+    expect(
+      soundsFor({ kind: "message", key: "camp.identified", params: { name: "a", old: "b", item: "c", rarity: "legendary" } }, data),
+    ).toEqual([
+      { type: "jingle", name: "rare" },
+      { type: "sfx", name: "identify" },
+    ]);
+    expect(soundsFor(enc(normalId), data)).toEqual([
+      { type: "jingle", name: "encounter" },
+      { type: "song", name: "battle1" },
+    ]);
+  });
+
+  it("UI-66 ジングルを返さないとき（全滅の後 = wiped）は無音も頼まない。silenceAfter が偽なら頼まない", () => {
+    const wiped = nextSoundContext(wipe, data, INITIAL_SOUND_CONTEXT);
+    expect(soundsFor(win, data, wiped)).toEqual([]);
+    expect(soundsFor({ kind: "message", key: "battle.bossDefeated", params: { boss: "x" } }, data, wiped)).toEqual([]);
+    const d = loadFreshData();
+    for (const c of d.audio.cues) if (c.silenceAfter === true) c.silenceAfter = false;
+    expect(soundsFor(win, d)).toEqual([{ type: "jingle", name: "victory" }]);
+    expect(soundsFor(wipe, d)).toEqual([{ type: "jingle", name: "wipe" }]);
   });
 });

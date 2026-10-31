@@ -2388,7 +2388,11 @@ export function createApp(o: {
     play.showWipe(true);
   };
 
-  /** 「街へ」: 内訳を閉じて街のメニューを出す */
+  /**
+   * 「街へ」: 内訳を閉じて街のメニューを出す。
+   * UI-63 / UI-66（M26 判断 6）: 全滅の後は内訳の間ずっと無音（sound-cues が wiped の間の screen を null にする）。
+   * 街の曲はここで始まる: overlay を下ろしてからの syncControls の街の枝が施設の曲（townSong。onScreen で townPage は menu なので screenSongs.town）を setScene する
+   */
   const closeWipe = (): void => {
     if (overlay !== "wipe") return;
     overlay = null;
