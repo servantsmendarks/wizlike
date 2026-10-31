@@ -2197,9 +2197,9 @@ describe("data: d03 灰の地下墓所（M12）", () => {
     expectIssue((r) => (r.dungeons[0].enterSpeech = "dungeon.enter"), "dungeons.json", '[0].enterSpeech: DG-37: strings "dungeon.enter" must not have placeholders (found {dungeon})');
     expect(issuesOf((r) => (r.dungeons[0].enterSpeech = "dungeon.enterSpeech.d03"))).toEqual([]);
   });
-  test("data: DG-46（M25）dungeons[].lostHintSteps は必須の正の整数で d01 50・d02 100・d03 100（ユーザーの決定 2026-10-25。【仮】は balance.md）", () => {
+  test("data: DG-46（M25）dungeons[].lostHintSteps は必須の正の整数で d01 100・d02 150・d03 150（M26 のユーザーの指示。M25 は 50・100・100。【仮】は balance.md）", () => {
     const g = loadGameData(rawData());
-    expect(g.dungeons.map((x) => [x.id, x.lostHintSteps])).toEqual([["d01", 50], ["d02", 100], ["d03", 100]]);
+    expect(g.dungeons.map((x) => [x.id, x.lostHintSteps])).toEqual([["d01", 100], ["d02", 150], ["d03", 150]]);
     expectIssue((r) => delete r.dungeons[0].lostHintSteps, "dungeons.json", "[0].lostHintSteps: missing required field");
     expectIssue((r) => (r.dungeons[1].lostHintSteps = 0), "dungeons.json", "[1].lostHintSteps: expected integer");
     expectIssue((r) => (r.dungeons[2].lostHintSteps = 1.5), "dungeons.json", "[2].lostHintSteps: expected integer");

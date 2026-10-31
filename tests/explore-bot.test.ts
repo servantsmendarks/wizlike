@@ -180,7 +180,7 @@ describe("計測の道具（M25）探索ボット", () => {
     expect(compared).toBeGreaterThan(200);
   });
 
-  test("計測の道具（M25）DG-46: 罠・宝箱・イベントを片付けた d01 の 1 階を lostHintSteps（50）歩を超えて歩かせると、道具の hintFired とゲームの方角の一言（hint.lostExitsDir）の有無が一致する（40 シード）", () => {
+  test("計測の道具（M25）DG-46: 罠・宝箱・イベントを片付けた d01 の 1 階を lostHintSteps（M26 は 100）歩を超えて歩かせると、道具の hintFired とゲームの方角の一言（hint.lostExitsDir）の有無が一致する（40 シード）", () => {
     const d0 = dataWithRate(0, 0);
     let fired = 0;
     for (let seed = 1; seed <= 40; seed++) {
@@ -322,9 +322,9 @@ describe("計測の道具（M25）探索ボット", () => {
     const base = { label: "boss", dungeonIds: ["d01"], seeds: 30, policies: HINT_POLICIES };
     const off = measureExplore(data, { ...base, hintOnBossFloor: false });
     const on = measureExplore(data, base);
-    const late = measureExplore(data, { ...base, defOverride: { d01: { lostHintSteps: 100 } } });
-    expect(late.dungeons[0]!.hintSteps).toBe(100);
-    for (const fr of late.dungeons[0]!.floorRecords) for (const { list } of fr.walks) for (const w of list) if (w.hintStep !== null) expect(w.hintStep).toBeGreaterThanOrEqual(100);
+    const late = measureExplore(data, { ...base, defOverride: { d01: { lostHintSteps: 200 } } });
+    expect(late.dungeons[0]!.hintSteps).toBe(200);
+    for (const fr of late.dungeons[0]!.floorRecords) for (const { list } of fr.walks) for (const w of list) if (w.hintStep !== null) expect(w.hintStep).toBeGreaterThanOrEqual(200);
     const last = (r: typeof on) => r.dungeons[0]!.floorRecords.at(-1)!;
     expect(last(off).walks.every(({ list }) => list.every((w) => w.hintOctant === null && w.hintFired === null))).toBe(true);
     expect(last(on).walks.every(({ list }) => list.every((w) => w.hintFired !== null))).toBe(true);
