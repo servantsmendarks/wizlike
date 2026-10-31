@@ -555,6 +555,31 @@ describe("UI-06b 隠れた後の復帰（M26）", () => {
     await flush();
     expect(tags(d.c).slice(5)).toEqual(["long:3"]);
   });
+
+  it("UI-06b 隠れている間に setSong で別の曲に替わったら、戻ると新しい曲の区間 0 から（前の曲の区間の番号は使わない）。同じ曲に戻っていれば隠れた時点の区間から", async () => {
+    const { f, p, c } = playLong();
+    // long の区間 3 の最中に隠れ、隠れている間に cut（区間 0..3。番号 3 は範囲内）へ
+    c.currentTime = LEAD + 6.5;
+    p.setHidden(true);
+    p.setSong("cut");
+    runTasks(f);
+    const n = c.sources.length;
+    p.setHidden(false);
+    await flush();
+    runTasks(f);
+    expect(tags(c)[n]).toBe("cut:0");
+    expect(c.sources[n]?.startAt).toEqual([LEAD + 6.5 + LEAD]);
+    const d = playLong();
+    d.c.currentTime = LEAD + 6.5;
+    d.p.setHidden(true);
+    d.p.setSong("cut");
+    d.p.setSong("long");
+    runTasks(d.f);
+    const m = d.c.sources.length;
+    d.p.setHidden(false);
+    await flush();
+    expect(tags(d.c)[m]).toBe("long:3");
+  });
 });
 
 describe("UI-63 曲とジングル", () => {

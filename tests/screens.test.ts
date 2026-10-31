@@ -264,6 +264,15 @@ describe("パーティ欄", () => {
     expect(walker).not.toContain("filterHints");
   });
 
+  test("UI-24（M26）地図の印の点滅: openMap は演出スキップでなければ点滅を頼み（render の第 3 引数）、closeMap は stopBlink で止める（地図は隠すだけなので止めないと animate が残る。ソースの検査）", () => {
+    const app = stripComments(presenterRaw["../src/presenter/app.ts"]!);
+    const open = /const openMap = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(open).toContain("play.map.render(v, mapTitle, !store.get().skipAnimations);");
+    const close = /const closeMap = \(\): void => \{([\s\S]*?)\n {2}\};/.exec(app)?.[1] ?? "";
+    expect(close).toMatch(/play\.map\.stopBlink\(\);\s*play\.showMap\(false\);/);
+    expect(app.match(/play\.map\.render\(/g)).toHaveLength(1);
+  });
+
   test("ui §2 X1/X2 formatPartyRow の略称は classes[].abbr（fighter → WAR …）。知らない職業は空", () => {
     const party = newGame(1).party;
     expect(party.map((ch) => formatPartyRow(ch, data.strings, data.classes, stageOf).abbr)).toEqual(["WAR", "WAR", "THI", "PRI", "MAG", "THI"]);

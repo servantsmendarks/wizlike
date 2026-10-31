@@ -386,7 +386,7 @@ describe("UI-66 / TW-34（M12。2026-10-08 未定-36）全滅の経路で結末�
     return { heard, ctx };
   };
 
-  it("TW-34/UI-66 wipe の後の ending.speech.1 ではジングルを返さない（全滅のジングル wipe だけ）。曲と効果音は今どおり返る", () => {
+  it("TW-34/UI-66 wipe の後の ending.speech.1 ではジングルを返さない（全滅のジングル wipe だけ）。効果音は今どおり返り、曲は無音（song null。M26 判断 6）", () => {
     // M26（判断 6）: 全滅のジングルの後と、全滅の後の screen town は無音（song null。街の曲は「街へ」の後）
     const r = run([wipe, { kind: "message", key: "town.enter" }, speech1, san, townScreen]);
     expect(r.heard).toEqual(["jingle:wipe", "song:", "san", "song:"]);

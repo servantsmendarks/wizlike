@@ -314,6 +314,8 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
   let restartDue = false;
   /** UI-06b: 隠れた時点で鳴っていた場面の曲の区間（= 小節）。場面の曲が鳴っていなかった・取れなければ null（区間 0 から） */
   let pausedSeg: number | null = null;
+  /** UI-06b: pausedSeg の曲の名前。復帰のときの場面の曲がこれと違えば（隠れている間に setSong で替わった）区間 0 から */
+  let pausedSong: string | null = null;
   /** setSong で求められた場面の曲 */
   let wanted: string | null = null;
   let playing: Track | null = null;
@@ -648,20 +650,22 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
   /**
    * UI-06b: 復帰が通った（隠れた後に context が running になった）ときに 1 回だけ。鳴っている曲・ジングルの予約済みの区間、
    * ジングルの後の予約、待っている依頼をすべて止めて捨て（stopPlaying。onended を外してから止めるので、捨てた Track に予約は足されない）、
-   * 場面の曲を隠れた時点の区間（pausedSeg。無ければ区間 0）の頭から currentTime + 先行の時間に予約し直す（begin。同じ曲でも鳴らし直す）。
+   * 場面の曲を隠れた時点の区間（pausedSeg。無い・隠れている間に別の曲に替わったなら区間 0）の頭から currentTime + 先行の時間に予約し直す（begin。同じ曲でも鳴らし直す）。
    * 場面の曲が null（UI-66 の無音）・段 0・ファイルが無いなら止めたまま。まだ隠れていれば何もしない（次の復帰で）
    */
   const restartAfterResume = (): void => {
     if (!restartDue || hidden) return;
     restartDue = false;
     const seg = pausedSeg;
+    const segSong = pausedSong;
     pausedSeg = null;
+    pausedSong = null;
     try {
       stopPlaying();
       if (ctx === null || wanted === null || level("music") === 0) return;
       const cache = songCache(wanted);
       if (cache === null) return;
-      begin("song", cache, seg !== null && seg < segmentCount(cache.plan) ? seg : 0);
+      begin("song", cache, seg !== null && segSong === wanted && seg < segmentCount(cache.plan) ? seg : 0);
     } catch (e) {
       warn(e);
     }
@@ -862,6 +866,7 @@ export function createAudioPlayer(deps: AudioDeps): AudioPlayer {
         if (h) {
           // UI-06b: 隠れた時点の場面の曲の区間を覚え、復帰が通ったら鳴らし直す
           pausedSeg = sceneSegAt(c);
+          pausedSong = wanted;
           restartDue = true;
           void c.suspend().catch(warn);
         } else wake(c);
