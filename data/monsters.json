@@ -48,8 +48,8 @@
   },
   {
     "id": "gatekeeper_armor", "name": "門番の甲冑", "unknownKind": "construct",
-    "sprite": "gatekeeper_armor", "level": 4, "hp": "6d8+10", "ac": 2, "agi": 7,
-    "attacks": [ { "dice": "2d6" }, { "dice": "1d8" } ],
+    "sprite": "gatekeeper_armor", "level": 4, "hp": "10d8+20", "ac": 2, "agi": 7,
+    "attacks": [ { "dice": "2d6" }, { "dice": "2d6" }, { "dice": "1d8" } ],
     "exp": 400, "gold": "5d10+14", "groupSize": "1",
     "special": { "boss": true }, "resist": { "sleep": true, "poison": true, "paralysis": true },
     "tags": ["construct", "boss"],

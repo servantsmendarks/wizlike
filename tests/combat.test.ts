@@ -945,7 +945,7 @@ describe("命中とダメージ（CB-21〜25）", () => {
     expect(r.events).toContainEqual({ kind: "message", key: "battle.hits", params: { target: "大ネズミ", n: 2, damage: d1 + d2 } });
   });
 
-  test("CB-24 門番の甲冑は攻撃要素 2 つで 2 回、要素ごとに対象を選び直す（鏡の rng）", () => {
+  test("CB-24 門番の甲冑は攻撃要素 3 つで 3 回、要素ごとに対象を選び直す（鏡の rng。M26 で 2d6・2d6・1d8）", () => {
     const d = dataWith({ combat: ALWAYS_HIT });
     const big = { hp: 100, hpMax: 100 };
     for (let seed = 1; seed <= 6; seed++) {
@@ -963,11 +963,15 @@ describe("命中とダメージ（CB-21〜25）", () => {
       const a1 = Math.ceil(Math.max(1, rollDice(m, "2d6").total) / 2);
       const t2 = ids[randInt(m, 0, 2)]!;
       chance(m, 100);
-      const a2 = Math.ceil(Math.max(1, rollDice(m, "1d8").total) / 2);
+      const a2 = Math.ceil(Math.max(1, rollDice(m, "2d6").total) / 2);
+      const t3 = ids[randInt(m, 0, 2)]!;
+      chance(m, 100);
+      const a3 = Math.ceil(Math.max(1, rollDice(m, "1d8").total) / 2);
       const r = exec(s, RESOLVE, d);
       expect(eventsOf(r.events, "attack")).toEqual([
         { kind: "attack", actorId: "e0-0", targetId: t1, hit: true, damage: a1 },
         { kind: "attack", actorId: "e0-0", targetId: t2, hit: true, damage: a2 },
+        { kind: "attack", actorId: "e0-0", targetId: t3, hit: true, damage: a3 },
       ]);
       expect(r.state.rng).toEqual(m);
     }
