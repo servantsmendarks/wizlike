@@ -9,6 +9,7 @@
 // 1 なら d01 の 1 階で必ず降りる。その数字は参考として残す比較用）。M12 から d02・d03 の level は bot.ts の DESCEND_LEVELS / BOSS_LEVELS のまま（替えるのは d01 だけ）。
 // M13: 農夫ボット（tests/balance/farm-*.sim.ts の 9 通り）は別ファイル。BALANCE_BOTS=farm で農夫だけ（このファイルの 3 ボットは回さない）。未設定なら全部。
 // M25: 探索ボット（tests/balance/explore.sim.ts）も別ファイル。BALANCE_BOTS=explore で探索ボットだけ（このファイルの 3 ボットと農夫は回さない）。
+// M26: ボス戦の計測（tests/balance/boss.sim.ts）も別ファイル。BALANCE_BOTS=boss でボス戦だけ（ほかは回さない）。
 // M12: 進行ボットは d01 → d02 → d03 の順に踏破し、d03 に D03_DIVES 回潜ったら終える（最大 PROGRESS_DIVES 潜行）。BALANCE_SEEDS でシード数を替えられる。
 import { describe, expect, test } from "vitest";
 import type { PartySetupMember } from "../../src/core/types";
@@ -29,17 +30,17 @@ const members: PartySetupMember[] | undefined = allNormal
   : undefined;
 
 const bots: unknown = import.meta.env["BALANCE_BOTS"];
-if (bots !== undefined && bots !== "" && bots !== "f1" && bots !== "progress" && bots !== "farm" && bots !== "explore") throw new Error(`BALANCE_BOTS: unknown value ${String(bots)}（f1 / progress / farm / explore）`);
-const runF1 = bots !== "progress" && bots !== "farm" && bots !== "explore";
-const runProgress = bots !== "f1" && bots !== "farm" && bots !== "explore"; // M13: BALANCE_BOTS=farm は農夫（tests/balance/farm-*.sim.ts）だけ。M25: explore は探索ボット（explore.sim.ts）だけ
+if (bots !== undefined && bots !== "" && bots !== "f1" && bots !== "progress" && bots !== "farm" && bots !== "explore" && bots !== "boss") throw new Error(`BALANCE_BOTS: unknown value ${String(bots)}（f1 / progress / farm / explore / boss）`);
+const runF1 = bots !== "progress" && bots !== "farm" && bots !== "explore" && bots !== "boss";
+const runProgress = bots !== "f1" && bots !== "farm" && bots !== "explore" && bots !== "boss"; // M13: BALANCE_BOTS=farm は農夫（tests/balance/farm-*.sim.ts）だけ。M25: explore は探索ボット（explore.sim.ts）だけ。M26: boss はボス戦（boss.sim.ts）だけ
 const descend: unknown = import.meta.env["BALANCE_DESCEND_LEVEL"];
 if (descend !== undefined && descend !== "" && !/^[1-9][0-9]*$/.test(String(descend))) throw new Error(`BALANCE_DESCEND_LEVEL: expected a positive integer, got ${String(descend)}`);
 const progressBot: BotKind =
   descend === undefined || descend === "" ? PROGRESS_BOT : { ...PROGRESS_BOT, label: `${PROGRESS_BOT.label}（d01 の降りる L${String(descend)}）`, descendLevel: { d01: Number(descend) } };
 
 describe("バランス（H9 計測）", () => {
-  // M13: BALANCE_BOTS=farm ではこのファイルの 3 ボットを回さない（空の describe は vitest が失敗にするので skip を 1 本置く）。M25: explore も同じ
-  if (!runF1 && !runProgress) test.skip("H9 バランス: BALANCE_BOTS=farm / explore では回さない（農夫は tests/balance/farm-*.sim.ts、探索ボットは explore.sim.ts）", () => {});
+  // M13: BALANCE_BOTS=farm ではこのファイルの 3 ボットを回さない（空の describe は vitest が失敗にするので skip を 1 本置く）。M25: explore も同じ。M26: boss も同じ
+  if (!runF1 && !runProgress) test.skip("H9 バランス: BALANCE_BOTS=farm / explore / boss では回さない（農夫は tests/balance/farm-*.sim.ts、探索ボットは explore.sim.ts、ボス戦は boss.sim.ts）", () => {});
   for (const kind of runF1 ? BOTS : []) {
     test(`H9 バランス: ${kind.label}ボットで 潜行 → 救済・寺院・闇魔術 → 相部屋 → 店 を ${DIVES} 回 × ${SEEDS} シード（数字は出力するだけで、合否は不変条件）`, () => {
       const { results, keys } = runCampaigns(kind, SEEDS, DIVES, members);

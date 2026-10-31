@@ -1,7 +1,7 @@
 // M25 計測の道具: 探索ボット（tests/balance/explore.ts）で、各ダンジョンの各階の「降り口を見つけるまでの歩数」と「未踏の口の数」を
 // diveSeed 1..BALANCE_SEEDS（既定 200）で測り、表を console.log に出す。基準（今のデータ）と、M25 前の d01（20×20・一言 100 歩）の比較の 2 通り。
 // 合否は不変条件だけ（基準の生成の Error が 0、ボットの失敗が 0、見つけた ≤ 着いた）。数字のしきい値では落とさない。
-// BALANCE_BOTS が未設定か explore のときだけ走る（f1 / progress / farm のときは skip）。BALANCE_BOTS=explore では campaign と農夫は走らない。
+// BALANCE_BOTS が未設定か explore のときだけ走る（f1 / progress / farm / boss のときは skip）。BALANCE_BOTS=explore では campaign と農夫は走らない。
 // 例（Git Bash）: BALANCE_SEEDS=200 BALANCE_BOTS=explore npm run balance
 import { describe, expect, test } from "vitest";
 import { data } from "../helpers/core";
@@ -12,10 +12,10 @@ if (seedsEnv !== undefined && seedsEnv !== "" && !/^[1-9][0-9]*$/.test(String(se
 const SEEDS = seedsEnv === undefined || seedsEnv === "" ? 200 : Number(seedsEnv);
 
 const bots: unknown = import.meta.env["BALANCE_BOTS"];
-if (bots !== undefined && bots !== "" && bots !== "f1" && bots !== "progress" && bots !== "farm" && bots !== "explore") {
-  throw new Error(`BALANCE_BOTS: unknown value ${String(bots)}（f1 / progress / farm / explore）`);
+if (bots !== undefined && bots !== "" && bots !== "f1" && bots !== "progress" && bots !== "farm" && bots !== "explore" && bots !== "boss") {
+  throw new Error(`BALANCE_BOTS: unknown value ${String(bots)}（f1 / progress / farm / explore / boss）`);
 }
-const skip = bots === "f1" || bots === "progress" || bots === "farm";
+const skip = bots === "f1" || bots === "progress" || bots === "farm" || bots === "boss";
 
 const BASE: ExploreVariant = { label: "基準（今のデータ）", dungeonIds: ["d01", "d02", "d03"], seeds: SEEDS };
 // M25 の群 A-1 で d01 は 16×16 になったので、比較の変形は M25 前の d01 の盤と一言の閾値（最下層の一言は基準と同じく出す）

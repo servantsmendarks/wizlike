@@ -44,7 +44,7 @@ import { data, expectKnownStringKeys, expectStateInvariants, expectTallyMatchesE
 
 export const NEAR = 6; // 上り階段からの BFS 距離
 const STEP_CAP = 3000; // 1 回の潜行の歩数の上限
-const BATTLE_ROUND_CAP = 300;
+export const BATTLE_ROUND_CAP = 300;
 const FRONT_ROW = data.config.party.frontRow; // 並び順の前衛の人数（frontDownAtStart の記録用。セオリーボットの帰還条件は CB-14 の frontLineIds を使う）
 const HERB_TARGET = 6; // 【仮】店の後のパーティ全体の手持ちの薬草の数（ユーザー決定）
 const ANTIDOTE_TARGET = 2; // M7-解毒: 店の後のパーティ全体の手持ちの解毒草の数（ユーザー指示「2 個まで」。薬草と同じくパーティ全体で数える）

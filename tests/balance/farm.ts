@@ -233,21 +233,21 @@ export function farmReport(results: CampaignResult[], kind: BotKind): string {
   ].join("\n");
 }
 
-/** BALANCE_SEEDS（既定 200） */
-function seedsFromEnv(): number {
+/** BALANCE_SEEDS（既定 200。M26: boss.sim.ts からも使う） */
+export function seedsFromEnv(): number {
   const v: unknown = import.meta.env["BALANCE_SEEDS"];
   if (v !== undefined && v !== "" && !/^[1-9][0-9]*$/.test(String(v))) throw new Error(`BALANCE_SEEDS: expected a positive integer, got ${String(v)}`);
   return v === undefined || v === "" ? 200 : Number(v);
 }
 
 /**
- * 1 通り分の計測（farm-*.sim.ts から呼ぶ）。BALANCE_BOTS が f1 / progress / explore なら skip。FARM_DIVES 回 × BALANCE_SEEDS シードで runCampaigns
+ * 1 通り分の計測（farm-*.sim.ts から呼ぶ）。BALANCE_BOTS が f1 / progress / explore / boss なら skip。FARM_DIVES 回 × BALANCE_SEEDS シードで runCampaigns
  * （不変条件はその中）→ キーの検査 → farmReport を console.log に出す
  */
 export function runFarm(level: number, dungeonId: string, floor: number): void {
   const bots: unknown = import.meta.env["BALANCE_BOTS"];
-  if (bots !== undefined && bots !== "" && bots !== "f1" && bots !== "progress" && bots !== "farm" && bots !== "explore") throw new Error(`BALANCE_BOTS: unknown value ${String(bots)}（f1 / progress / farm / explore）`);
-  const skip = bots === "f1" || bots === "progress" || bots === "explore"; // M25: explore は探索ボット（explore.sim.ts）だけ
+  if (bots !== undefined && bots !== "" && bots !== "f1" && bots !== "progress" && bots !== "farm" && bots !== "explore" && bots !== "boss") throw new Error(`BALANCE_BOTS: unknown value ${String(bots)}（f1 / progress / farm / explore / boss）`);
+  const skip = bots === "f1" || bots === "progress" || bots === "explore" || bots === "boss"; // M25: explore は探索ボット（explore.sim.ts）だけ。M26: boss はボス戦（boss.sim.ts）だけ
   const seeds = seedsFromEnv();
   const kind = farmBot(level, dungeonId, floor);
   describe("バランス（M13 農夫）", () => {
