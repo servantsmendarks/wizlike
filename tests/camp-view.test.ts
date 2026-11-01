@@ -12,6 +12,7 @@ import { fieldItemMenu } from "../src/core/rules/items";
 import { itemActions } from "../src/core/rules/item-actions";
 import { cloneState, createItemInstance, itemDisplayName } from "../src/core/state";
 import type { Character, Command, GameState } from "../src/core/types";
+import { STATUS_IDS } from "../src/core/data";
 import type { StatusId } from "../src/core/data";
 import {
   CAMP_GRID_SLOTS,
@@ -39,7 +40,8 @@ import {
 import { CHARACTER_INVENTORY_CELLS, formatCharacter } from "../src/presenter/views/detail";
 import { formatMessage } from "../src/presenter/views/message";
 import { allyRowLabel } from "../src/presenter/views/ally-row";
-import { textUnits } from "../src/presenter/views/party-band";
+import { bandCell, textUnits } from "../src/presenter/views/party-band";
+import { heaviestStatus } from "../src/core/rules/status";
 import { LIST_ROW_CHARS, LIST_ROW_UNITS } from "../src/presenter/views/town";
 import { kinsokuLines } from "./helpers/wrap";
 import { dived } from "./helpers/battle";
@@ -1808,5 +1810,31 @@ describe("UI-59（M24 B-1）キャンプの品の行の色（鑑定済みの呪�
     expect(tone(byId(hidden))).toBeUndefined();
     expect(tone(byId(stored))).toBe("danger");
     expect(tone(byId(c3.equipment.weapon!))).toBeUndefined(); // 普通の装備中の品
+  });
+});
+
+describe("UI-13/UI-53 帯と対象の行の状態の順", () => {
+  const bandMark = (status: StatusId[]): string => bandCell({ name: "アルド", life: "alive", status }, "normal", S, data.config.status.severity).mark;
+  const subsets = (): StatusId[][] => Array.from({ length: 1 << STATUS_IDS.length }, (_, m) => STATUS_IDS.filter((_, i) => (m >> i) & 1));
+
+  test("UI-13/UI-53 帯の印と対象の行の状態は同じ順（config.status.severity）。STATUS_IDS の全部分集合 16 通りで heaviestStatus と一致する", () => {
+    expect(subsets()).toHaveLength(16);
+    for (const status of subsets()) {
+      const h = heaviestStatus(status, data);
+      expect(bandMark(status), JSON.stringify(status)).toBe(h === null ? "" : S[`party.status.${h}`]);
+    }
+  });
+
+  test("UI-13/UI-53 campMenu の治癒の targets[].status を allyRowLabel に通した括弧の中が、同じ状態の帯の印と一致する（眠 毒 / 痺 毒 / 毒）", () => {
+    const cases: StatusId[][] = [["sleep", "poison"], ["poison", "paralysis"], ["poison"]];
+    const marks = ["眠", "痺", "毒"];
+    cases.forEach((status, i) => {
+      const s = inDungeon({ c1: { status }, c4: { knownSpells: ["heal"], mp: 30 } });
+      const m = campMenu(s, data)!;
+      const t = m.members.find((x) => x.id === "c4")!.spells.find((x) => x.spellId === "heal")!.targets.find((x) => x.id === "c1")!;
+      const row = allyRowLabel(S, { name: "アルド", hp: 5, hpMax: 10, status: t.status });
+      expect(row, JSON.stringify(status)).toBe(`アルド（${marks[i]}）HP 5/10`);
+      expect(bandMark(status)).toBe(marks[i]);
+    });
   });
 });

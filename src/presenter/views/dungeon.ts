@@ -246,6 +246,7 @@ export function createDungeonScreen(o: {
   // UI-13（M8.5）: 街のパーティの帯。段は core の sanStage、最大は memberSheet の実効の sanMax（パーティ欄と同じ）
   const band = createPartyBand({
     strings: o.strings,
+    severity: o.data.config.status.severity,
     row: tl.band.row,
     cells: tl.band.cells,
     hits: tl.band.hits,

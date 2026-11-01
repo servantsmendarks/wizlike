@@ -1033,7 +1033,7 @@ describe("UI-53/TW-03 campMenu", () => {
     expect(m.allies.map((a) => a.id)).toEqual(["c1", "c3", "c4", "c5", "c6"]);
   });
 
-  test("UI-53/MG-44（2026-11-01）spells[].targets[].status: 治癒は最も重い 1 つ（石化 > 麻痺 > 毒 > 睡眠【仮】）、解毒は毒の者だけ、解縛は麻痺の者だけ。治す状態が無い者は null", () => {
+  test("UI-53/MG-44（2026-11-01）spells[].targets[].status: 治癒は最も重い 1 つ（石化 > 麻痺 > 睡眠 > 毒【仮】）、解毒は毒の者だけ、解縛は麻痺の者だけ。治す状態が無い者は null", () => {
     const s = inDungeon({
       c1: { status: ["poison", "paralysis"] },
       c2: { status: ["sleep", "poison"] },
@@ -1043,7 +1043,7 @@ describe("UI-53/TW-03 campMenu", () => {
     });
     const c4 = campMenu(s, data)!.members.find((x) => x.id === "c4")!;
     const st = (id: string) => Object.fromEntries(c4.spells.find((x) => x.spellId === id)!.targets.map((t) => [t.id, t.status]));
-    expect(st("heal")).toEqual({ c1: "paralysis", c2: "poison", c3: "paralysis", c4: null, c5: "stone", c6: null });
+    expect(st("heal")).toEqual({ c1: "paralysis", c2: "sleep", c3: "paralysis", c4: null, c5: "stone", c6: null });
     expect(st("cure_poison")).toEqual({ c1: "poison", c2: "poison", c3: null, c4: null, c5: "poison", c6: null });
     expect(st("unbind")).toEqual({ c1: "paralysis", c2: null, c3: "paralysis", c4: null, c5: null, c6: null });
   });

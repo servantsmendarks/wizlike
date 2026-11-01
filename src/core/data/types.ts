@@ -335,7 +335,7 @@ export type Config = {
     impulse: { lure: LureWeights; stat: StatKey; impulseClasses?: string[] };
   };
   save: { maxGames: number; schemaVersion: number };
-  /** UI-53（2026-11-01）【仮】: 対象の行に出す状態を 1 つに絞るときの重さの順（先頭ほど重い）。STATUS_IDS の 4 つをちょうど 1 回ずつ */
+  /** UI-53（2026-11-01）【仮】: 状態を 1 つに絞るときの重さの順（先頭ほど重い。既定は 石化 > 麻痺 > 睡眠 > 毒。対象の行と帯 UI-13 が共用）。STATUS_IDS の 4 つをちょうど 1 回ずつ */
   status: { severity: StatusId[] };
   input: { swipeThresholdPx: number; holdRepeatMs: number; edgeDeadZonePx: number; screenGuardMs: number };
   ui: {

@@ -19,7 +19,7 @@ export function tryInflictStatus(ctx: RuleContext, ch: Character, status: Status
   return true;
 }
 
-/** UI-53（2026-11-01）: 状態のうち最も重い 1 つ（config.status.severity【仮】の先頭から見て最初に含まれるもの）。無ければ null */
+/** UI-53（2026-11-01）: 状態のうち最も重い 1 つ（config.status.severity【仮】= 石化 > 麻痺 > 睡眠 > 毒 の先頭から見て最初に含まれるもの。帯 UI-13 も同じ順）。無ければ null */
 export function heaviestStatus(status: readonly StatusId[], data: GameData): StatusId | null {
   return data.config.status.severity.find((s) => status.includes(s)) ?? null;
 }

@@ -16,8 +16,6 @@ export const BAND_ELLIPSIS_KEY = "town.band.ellipsis";
 /** UI-69（M10）: Lv UP 可の印の strings のキー（既定は「↑」= 2 単位。帯とパーティ欄で共用） */
 export const LEVEL_MARK_KEY = "town.band.mark.levelUp";
 
-/** 状態異常の印の優先順（重いものが先。UI-13）。対象の行（ally-row.ts）は別の順（config.status.severity。石 痺 毒 眠）で core が 1 つ決める（2026-11-01） */
-export const STATUS_ORDER: readonly StatusId[] = ["stone", "paralysis", "sleep", "poison"];
 /** SAN の段の印の優先順（重いものが先。normal は印なし） */
 const SAN_ORDER: readonly Exclude<SanStage, "normal">[] = ["broken", "confused", "uneasy"];
 
@@ -69,11 +67,11 @@ function str(strings: Strings, key: string): string {
   return strings[key] ?? key;
 }
 
-/** 状態の印の字と色の役。優先順は 灰 > 死亡 > 石 > 痺 > 眠 > 毒 > 虚脱 > 錯乱 > 不安（状態の印は 1 人に 1 つ。Lv の印は別枠） */
-function markOf(ch: Pick<Character, "life" | "status">, stage: SanStage, strings: Strings): { mark: string; role: BandRole } {
+/** 状態の印の字と色の役。優先順は 灰 > 死亡 > 状態（severity の順。既定は 石 > 痺 > 眠 > 毒）> 虚脱 > 錯乱 > 不安（状態の印は 1 人に 1 つ。Lv の印は別枠） */
+function markOf(ch: Pick<Character, "life" | "status">, stage: SanStage, strings: Strings, severity: readonly StatusId[]): { mark: string; role: BandRole } {
   if (ch.life === "ash") return { mark: str(strings, "town.band.mark.ash"), role: "dim" };
   if (ch.life === "dead") return { mark: str(strings, "town.band.mark.dead"), role: "danger" };
-  const st = STATUS_ORDER.find((x) => ch.status.includes(x));
+  const st = severity.find((x) => ch.status.includes(x));
   if (st !== undefined) return { mark: str(strings, `party.status.${st}`), role: "status" };
   const sn = SAN_ORDER.find((x) => x === stage);
   if (sn !== undefined) return { mark: str(strings, `town.band.mark.${sn}`), role: "san" };
@@ -85,8 +83,8 @@ function markOf(ch: Pick<Character, "life" | "status">, stage: SanStage, strings
  * （全角 6 字の名前は 4 字＋…、状態の印か Lv の印の一方があれば 3 字＋…＋印、両方あれば 2 字＋…＋状態の印＋Lv の印）。
  * stage は app が core の sanStage で決めた段、levelUp は core の memberSheet の canLevelUp（CH-80。省略は false）
  */
-export function bandCell(ch: Pick<Character, "name" | "life" | "status">, stage: SanStage, strings: Strings, levelUp = false): BandCell {
-  const { mark, role } = markOf(ch, stage, strings);
+export function bandCell(ch: Pick<Character, "name" | "life" | "status">, stage: SanStage, strings: Strings, severity: readonly StatusId[], levelUp = false): BandCell {
+  const { mark, role } = markOf(ch, stage, strings, severity);
   const levelMark = levelUp ? str(strings, LEVEL_MARK_KEY) : "";
   const name = fitName(ch.name, BAND_CELL_UNITS - textUnits(mark) - textUnits(levelMark), str(strings, BAND_ELLIPSIS_KEY));
   return { label: `${name}${mark}${levelMark}`, mark, levelMark, role };
@@ -114,6 +112,8 @@ type BandRow = { id: string; name: string; life: Character["life"]; status: Stat
  */
 export function createPartyBand(o: {
   strings: Strings;
+  /** 状態の印の重さの順（先頭ほど重い。core の config.status.severity【仮】。UI-53 の対象の行と同じ順。表示層は受け取った順で find するだけ） */
+  severity: readonly StatusId[];
   row: { x: number; y: number; w: number; h: number };
   cells: readonly { x: number; y: number; w: number; h: number }[];
   hits: readonly { x: number; y: number; w: number; h: number }[];
@@ -179,7 +179,7 @@ export function createPartyBand(o: {
       return;
     }
     c.b.style.display = "";
-    const cell = bandCell(row, o.stageOf(row.san, row.sanMax), o.strings, row.levelUp);
+    const cell = bandCell(row, o.stageOf(row.san, row.sanMax), o.strings, o.severity, row.levelUp);
     c.label.textContent = cell.label;
     c.label.style.color = roleColor(cell.role);
   };

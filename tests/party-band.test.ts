@@ -11,6 +11,7 @@ import { createTownPicture, TOWN_PICTURE_FALLBACK, townPictureName, townPictureU
 import { data, newGame } from "./helpers/core";
 
 const S = data.strings;
+const SEV = data.config.status.severity;
 // @types/node は入れていないので node の fs は文字列の動的 import で読み、型は手で書く（message.test.ts と同じ）
 const FS_MODULE = "node:fs";
 const fs = (await import(/* @vite-ignore */ FS_MODULE)) as { readFileSync(p: URL, enc: "utf8"): string };
@@ -24,14 +25,14 @@ const ch = (name: string, p: Partial<Pick<Character, "life" | "status">> = {}): 
 
 describe("UI-13 bandCell", () => {
   test("UI-13 bandCell: 正常は印なしの text。全角 5 字までは全文、6 字は 4 字＋…（10 単位）。半角（ASCII・半角カナ）は 1 単位", () => {
-    expect(bandCell(ch("アルド"), "normal", S)).toEqual({ label: "アルド", mark: "", levelMark: "", role: "text" });
-    expect(bandCell(ch("アルドリン"), "normal", S).label).toBe("アルドリン");
-    expect(bandCell(ch("アルドリンド"), "normal", S).label).toBe("アルドリ…");
-    expect(bandCell(ch("Aldorin"), "normal", S).label).toBe("Aldorin");
-    expect(bandCell(ch("Aldorinson"), "normal", S).label).toBe("Aldorinson");
-    expect(bandCell(ch("Aldorinsons"), "normal", S).label).toBe("Aldorins…");
-    expect(bandCell(ch("ｱﾙﾄﾞﾘﾝﾄﾞ"), "normal", S).label).toBe("ｱﾙﾄﾞﾘﾝﾄﾞ");
-    for (const n of ["アルドリンド", "Aldorinsons", "アルドABCDEF"]) expect(textUnits(bandCell(ch(n), "normal", S).label), n).toBeLessThanOrEqual(BAND_CELL_UNITS);
+    expect(bandCell(ch("アルド"), "normal", S, SEV)).toEqual({ label: "アルド", mark: "", levelMark: "", role: "text" });
+    expect(bandCell(ch("アルドリン"), "normal", S, SEV).label).toBe("アルドリン");
+    expect(bandCell(ch("アルドリンド"), "normal", S, SEV).label).toBe("アルドリ…");
+    expect(bandCell(ch("Aldorin"), "normal", S, SEV).label).toBe("Aldorin");
+    expect(bandCell(ch("Aldorinson"), "normal", S, SEV).label).toBe("Aldorinson");
+    expect(bandCell(ch("Aldorinsons"), "normal", S, SEV).label).toBe("Aldorins…");
+    expect(bandCell(ch("ｱﾙﾄﾞﾘﾝﾄﾞ"), "normal", S, SEV).label).toBe("ｱﾙﾄﾞﾘﾝﾄﾞ");
+    for (const n of ["アルドリンド", "Aldorinsons", "アルドABCDEF"]) expect(textUnits(bandCell(ch(n), "normal", S, SEV).label), n).toBeLessThanOrEqual(BAND_CELL_UNITS);
     expect(S["town.band.ellipsis"]).toBe("…");
     expect(fitName("あいうえおか", 10, S["town.band.ellipsis"]!)).toBe("あいうえ…");
     expect(fitName("あいうえお", 10, S["town.band.ellipsis"]!)).toBe("あいうえお");
@@ -46,36 +47,36 @@ describe("UI-13 bandCell", () => {
   });
 
   test("UI-13 bandCell: 印は 1 人に 1 つで、優先順は 灰 > 死亡 > 石 > 痺 > 眠 > 毒 > 虚脱 > 錯乱 > 不安。印があれば 6 字の名前は 3 字＋…＋印", () => {
-    expect(bandCell(ch("アルド", { life: "ash", status: ["poison"] }), "broken", S)).toEqual({ label: "アルド灰", mark: "灰", levelMark: "", role: "dim" });
-    expect(bandCell(ch("アルド", { life: "dead", status: ["stone"] }), "broken", S)).toEqual({ label: "アルド死", mark: "死", levelMark: "", role: "danger" });
-    expect(bandCell(ch("アルド", { status: ["poison", "sleep", "paralysis", "stone"] }), "broken", S)).toMatchObject({ mark: "石", role: "status" });
-    expect(bandCell(ch("アルド", { status: ["poison", "sleep", "paralysis"] }), "normal", S)).toMatchObject({ mark: "痺", role: "status" });
-    expect(bandCell(ch("アルド", { status: ["poison", "sleep"] }), "normal", S)).toMatchObject({ mark: "眠", role: "status" });
-    expect(bandCell(ch("アルド", { status: ["poison"] }), "uneasy", S)).toMatchObject({ mark: "毒", role: "status" });
-    expect(bandCell(ch("アルド"), "broken", S)).toEqual({ label: "アルド虚", mark: "虚", levelMark: "", role: "san" });
-    expect(bandCell(ch("アルド"), "confused", S)).toMatchObject({ mark: "錯", role: "san" });
-    expect(bandCell(ch("アルド"), "uneasy", S)).toMatchObject({ mark: "不", role: "san" });
-    expect(bandCell(ch("アルドリンド", { life: "dead" }), "normal", S).label).toBe("アルド…死");
-    expect(bandCell(ch("アルドリン", { status: ["poison"] }), "normal", S).label).toBe("アルド…毒");
-    expect(bandCell(ch("アルドリ", { status: ["poison"] }), "normal", S).label).toBe("アルドリ毒");
+    expect(bandCell(ch("アルド", { life: "ash", status: ["poison"] }), "broken", S, SEV)).toEqual({ label: "アルド灰", mark: "灰", levelMark: "", role: "dim" });
+    expect(bandCell(ch("アルド", { life: "dead", status: ["stone"] }), "broken", S, SEV)).toEqual({ label: "アルド死", mark: "死", levelMark: "", role: "danger" });
+    expect(bandCell(ch("アルド", { status: ["poison", "sleep", "paralysis", "stone"] }), "broken", S, SEV)).toMatchObject({ mark: "石", role: "status" });
+    expect(bandCell(ch("アルド", { status: ["poison", "sleep", "paralysis"] }), "normal", S, SEV)).toMatchObject({ mark: "痺", role: "status" });
+    expect(bandCell(ch("アルド", { status: ["poison", "sleep"] }), "normal", S, SEV)).toMatchObject({ mark: "眠", role: "status" });
+    expect(bandCell(ch("アルド", { status: ["poison"] }), "uneasy", S, SEV)).toMatchObject({ mark: "毒", role: "status" });
+    expect(bandCell(ch("アルド"), "broken", S, SEV)).toEqual({ label: "アルド虚", mark: "虚", levelMark: "", role: "san" });
+    expect(bandCell(ch("アルド"), "confused", S, SEV)).toMatchObject({ mark: "錯", role: "san" });
+    expect(bandCell(ch("アルド"), "uneasy", S, SEV)).toMatchObject({ mark: "不", role: "san" });
+    expect(bandCell(ch("アルドリンド", { life: "dead" }), "normal", S, SEV).label).toBe("アルド…死");
+    expect(bandCell(ch("アルドリン", { status: ["poison"] }), "normal", S, SEV).label).toBe("アルド…毒");
+    expect(bandCell(ch("アルドリ", { status: ["poison"] }), "normal", S, SEV).label).toBe("アルドリ毒");
   });
 
   test("UI-69 bandCell: Lv UP 可（levelUp）の者は名前の後ろに↑。状態の印と別枠で「名前…＋状態の印＋↑」。6 字は ↑だけなら 3 字＋…＋↑、状態の印もあれば 2 字＋…＋印＋↑", () => {
     const up = S["town.band.mark.levelUp"]!;
     expect(up).toBe("↑");
     expect(textUnits(up)).toBe(2);
-    expect(bandCell(ch("アルドリンド"), "normal", S, true)).toEqual({ label: "アルド…↑", mark: "", levelMark: "↑", role: "text" });
-    expect(bandCell(ch("アルドリンド", { status: ["poison"] }), "normal", S, true)).toEqual({ label: "アル…毒↑", mark: "毒", levelMark: "↑", role: "status" });
-    expect(bandCell(ch("アルドリンド"), "uneasy", S, true)).toEqual({ label: "アル…不↑", mark: "不", levelMark: "↑", role: "san" });
+    expect(bandCell(ch("アルドリンド"), "normal", S, SEV, true)).toEqual({ label: "アルド…↑", mark: "", levelMark: "↑", role: "text" });
+    expect(bandCell(ch("アルドリンド", { status: ["poison"] }), "normal", S, SEV, true)).toEqual({ label: "アル…毒↑", mark: "毒", levelMark: "↑", role: "status" });
+    expect(bandCell(ch("アルドリンド"), "uneasy", S, SEV, true)).toEqual({ label: "アル…不↑", mark: "不", levelMark: "↑", role: "san" });
     // 短い名前は切らない
-    expect(bandCell(ch("アルド", { status: ["poison"] }), "normal", S, true).label).toBe("アルド毒↑");
-    expect(bandCell(ch("アルドリ"), "normal", S, true).label).toBe("アルドリ↑");
+    expect(bandCell(ch("アルド", { status: ["poison"] }), "normal", S, SEV, true).label).toBe("アルド毒↑");
+    expect(bandCell(ch("アルドリ"), "normal", S, SEV, true).label).toBe("アルドリ↑");
     for (const n of ["アルドリンド", "Aldorinsons", "アルドABCDEF"])
-      for (const st of [[], ["poison"]] as const) expect(textUnits(bandCell(ch(n, { status: [...st] }), "normal", S, true).label), n).toBeLessThanOrEqual(BAND_CELL_UNITS);
+      for (const st of [[], ["poison"]] as const) expect(textUnits(bandCell(ch(n, { status: [...st] }), "normal", S, SEV, true).label), n).toBeLessThanOrEqual(BAND_CELL_UNITS);
     // levelUp の省略・false は今の出力と同じ
     for (const n of ["アルド", "アルドリンド"]) {
-      expect(bandCell(ch(n), "normal", S, false)).toEqual(bandCell(ch(n), "normal", S));
-      expect(bandCell(ch(n), "normal", S).levelMark).toBe("");
+      expect(bandCell(ch(n), "normal", S, SEV, false)).toEqual(bandCell(ch(n), "normal", S, SEV));
+      expect(bandCell(ch(n), "normal", S, SEV).levelMark).toBe("");
     }
   });
 
@@ -152,6 +153,7 @@ describe("UI-13 帯の DOM・UI-61 施設の絵・ヘッダーのログ", () => 
     const picked: string[] = [];
     const band = createPartyBand({
       strings: S,
+      severity: SEV,
       row: T.band.row,
       cells: T.band.cells,
       hits: T.band.hits,
@@ -188,6 +190,7 @@ describe("UI-13 帯の DOM・UI-61 施設の絵・ヘッダーのログ", () => 
     const up = new Set([party[0]!.id, party[1]!.id]);
     const band = createPartyBand({
       strings: S,
+      severity: SEV,
       row: T.band.row,
       cells: T.band.cells,
       hits: T.band.hits,
@@ -217,6 +220,7 @@ describe("UI-13 帯の DOM・UI-61 施設の絵・ヘッダーのログ", () => 
     fakeDocument();
     const plain = createPartyBand({
       strings: S,
+      severity: SEV,
       row: T.band.row,
       cells: T.band.cells,
       hits: T.band.hits,
@@ -259,6 +263,7 @@ describe("UI-13 帯の DOM・UI-61 施設の絵・ヘッダーのログ", () => 
     fakeDocument();
     const band = createPartyBand({
       strings: S,
+      severity: SEV,
       row: T.band.row,
       cells: T.band.cells,
       hits: T.band.hits,

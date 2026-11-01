@@ -238,7 +238,7 @@ describe("UI-53 fieldItemMenu", () => {
     const s = inDungeon({ c2: { status: ["poison"] }, c3: { status: ["sleep", "poison"] }, c4: { status: ["poison", "paralysis"] }, c5: { status: ["sleep"] } });
     const m = fieldItemMenu(s, data)!;
     const st = (mi: number, itemId: string) => Object.fromEntries(m.members[mi]!.items.find((i) => i.itemId === itemId)!.targets.map((t) => [t.id, t.status]));
-    expect(st(0, "herb")).toEqual({ c1: null, c2: "poison", c3: "poison", c4: "paralysis", c5: "sleep", c6: null });
+    expect(st(0, "herb")).toEqual({ c1: null, c2: "poison", c3: "sleep", c4: "paralysis", c5: "sleep", c6: null });
     expect(st(3, "antidote_herb")).toEqual({ c1: null, c2: "poison", c3: "poison", c4: "poison", c5: null, c6: null });
     expect(m.allies.every((a) => !("status" in a))).toBe(true);
   });

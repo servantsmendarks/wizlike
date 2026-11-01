@@ -2436,12 +2436,12 @@ describe("網羅（完了条件「6 種と戦える」、敵の id、battleMenu�
     const ids = menu.allies.map((a) => a.id);
     const sp = (id: string) => menu.members.find((m) => m.id === "c4")!.spells.find((x) => x.spellId === id)!;
     expect(sp("heal").targets.map((t) => t.id)).toEqual(ids);
-    expect(sp("heal").targets.map((t) => t.status)).toEqual([null, "poison", "poison", "paralysis", "sleep"]);
+    expect(sp("heal").targets.map((t) => t.status)).toEqual([null, "poison", "sleep", "paralysis", "sleep"]);
     expect(sp("cure_poison").targets.map((t) => t.status)).toEqual([null, "poison", "poison", "poison", null]);
     expect(sp("fire_arrow").targets).toEqual([]);
     for (const m of menu.members) for (const it of m.items) expect(it.targets.map((t) => t.id)).toEqual(it.target === "ally" ? ids : []);
     const herb = menu.members.find((m) => m.id === "c1")!.items.find((x) => x.itemId === "herb")!;
-    expect(herb.targets.map((t) => t.status)).toEqual([null, "poison", "poison", "paralysis", "sleep"]);
+    expect(herb.targets.map((t) => t.status)).toEqual([null, "poison", "sleep", "paralysis", "sleep"]);
   });
 
   test("UI-54/CB-12（M20。設計 D-2）battleMenu の spellBlock / itemBlock: 呪文を知らない none・戦闘で使える呪文が無い unusable・道具（装備でない品）が無い none・戦闘で使える道具が無い fieldOnly・一覧が空でなければ null。乱数を引かない", () => {

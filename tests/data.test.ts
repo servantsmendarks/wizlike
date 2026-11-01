@@ -509,7 +509,7 @@ describe("data: config.json", () => {
     expect(isDiceExpr(config.dungeon.trap.pitDice)).toBe(true);
   });
   test("data: UI-53 status.severity が欠ける・重複・未知の id なら検証エラー", () => {
-    expect(config.status.severity).toEqual(["stone", "paralysis", "poison", "sleep"]);
+    expect(config.status.severity).toEqual(["stone", "paralysis", "sleep", "poison"]);
     expectIssue((r) => delete r.config.status, "config.json", "status: missing required field");
     expectIssue((r) => (r.config.status.severity = ["stone", "paralysis", "poison"]), "config.json", 'status.severity: UI-53: "sleep" must appear exactly once, got 0');
     expectIssue((r) => (r.config.status.severity = ["stone", "stone", "paralysis", "poison", "sleep"]), "config.json", 'UI-53: "stone" must appear exactly once, got 2');
