@@ -1,13 +1,13 @@
-# PROGRESS.md — セッションの引き継ぎ（2026-11-01。M26「遊びやすさ v9」完了・push 済み）
+# PROGRESS.md — セッションの引き継ぎ（2026-11-01。M26「遊びやすさ v9」完了、M26 の判断点へのユーザーの返事を反映・push 済み）
 
 次のセッションがこれだけ読めば再開できるように書く。設計の正は CLAUDE.md、`docs/spec/*.md`、`docs/decisions.md`、`docs/milestones.md`、`docs/balance.md`、`docs/checklist.md`。ここには「どこまで来たか」「何が決まっているか」「次に何をするか」だけを置く。
 
 ## 0. 今の状態（1 分で）
 
-- **M26 は完了（2026-11-01）。M26 の最後の記録のコミットは 413b174（master。e6a8275..413b174 の 20 コミット）。その次がこの PROGRESS.md のコミットで、そこまで push 済み。** 配信の確認は §2 の 3。
-- 検証: 413b174 で `npm run typecheck` と `npm test`（79 ファイル・2952 件）が通る（オーケストレーターが手元で確認）。`npm run build` は b06e16f で通り、以後は docs だけのコミット。各コミット単体の typecheck は第 2 段の修正の担当が 17 本とも確認済み。
+- **M26 は完了（2026-11-01。最後の記録は 413b174、PROGRESS は 5e936e4）。同日、M26 の判断点へのユーザーの返事を反映した: fe623ef（対象の行に 21 字の決まり。presenter）・5037203（返事 1・3・4 の記録。docs）。その次がこの PROGRESS.md のコミットで、そこまで push 済み。** 配信の確認は §2 の 3。
+- 検証: 5037203 で `npm run typecheck` と `npm test`（79 ファイル・2952 件）が通る（オーケストレーターが手元で確認）。レビュー A（コードとテスト）・B（文書）の指摘は 0 件で、修正の担当は走らなかった。`npm run build` は b06e16f で通り、以後の変更は表示層の文字列の詰めと docs だけ。
 - `save.schemaVersion` は 12 のまま（M26 の `BattleState.fleeTried?: true` は省略可能の欄。移行なし）。
-- 次のマイルストーンはまだ決まっていない。ユーザーへ返す判断点は §1 の 6。次の指示を待つ。
+- 次のマイルストーンはまだ決まっていない。M26 の判断点はすべて返事済み（§1 の 7。longtask の比較だけ返事なしで要観察のまま）。次の指示を待つ。
 
 ## 1. M26 で決めたこと・分かったこと
 
@@ -36,16 +36,22 @@
    - 未: GM の助言「なし」の長押し、状態異常の行、HP 3 桁の「…」、○ と ◇ の同時の点滅、UI-06b のジングル最中の HOME・隠れている間の曲替え・resume 拒否、clear の後の語りの間の無音（どれも単体テストで固定済み）。iPhone の音の復帰は checklist の U-12（ユーザー）。
    - 記録: checklist の §4・§5・§11・§13・§14 に M26 の行、【未・ユーザー】に U-12。M19 の noChest・M22 の率の行は履歴のまま。
    - 決まりから外れた操作（報告済み）: 名前の入力に CDP の Input.insertText（作成画面の入力欄。adb の input text は日本語を送れない）、debug の Lv=・イベント・階段前・全員HP1、GM の助言を多め → 少なめ → なしと巡回、演出スキップの ON/OFF、全滅を 1 回。証拠は scratchpad の m26-dev1/。
-6. **ユーザーへ返す判断点（次の指示で決める）**:
+6. **ユーザーへ返した判断点（2026-11-01 に返事あり。反映は 7）**:
    - 探索の random-hint 176.5 歩が目安「150 歩前後」より約 27 歩長い（nearest 74.5 は M25 のまま）。閾値 100 のまま許容するか、d01 を 80〜90 に戻すか。
    - 対象の行（B-1）は 39 単位だけで測り、21 字の決まりは当てていない（名前 6 字・HP 999/999・（傷はない）で 23 字・33 単位。21 字に合わせると状態のない行でも名前が 3 字まで削れる）。当てるなら ally-row.ts の詰める量の 1 か所。
    - 地図の印の形と色（◇ orange・○ violet【仮】）。担当は拡大写真で読めると判断した。最後はユーザーの目で決める（写真は m26-dev1 の m2-blink1-z.png・m5-boss-z.png・m3-legend.png）。
    - iPhone の音の復帰（PWA のホーム画面からの復帰。UI-06b。checklist の U-12）。
    - 読み込み直後の longtask（1 本 88〜96ms）を次の実機で旧版と同じ条件で比べるか。
+7. **ユーザーの返事（2026-11-01）と反映**（Workflow: 実装 worker → 記録 default → レビュー explorer 2 本 → 反証 → 修正。指摘 0 件）:
+   - (1) d01 の lostHintSteps 100 のまま許容。176.5 歩は記録のみ（balance「探索の計測(M26)」の結び・decisions・milestones に追記。【仮】は残す）。
+   - (2) 対象の行にも 21 字の決まりを当てた（fe623ef）。`town.ts` に `LIST_ROW_CHARS = 21`（コードポイントの数。テストの `[...row].length <= 21` と同じ測り方）、`party-band.ts` に `textChars` と `fitName` の省略可能な第 4 引数 chars（既定 Infinity。他の呼び出しは不変）、`ally-row.ts` だけが単位と字数の両方の余りを渡す。詰めるのは名前だけで、名前以外だけで 21 字以上なら名前は「…」だけ（行は「…」の分だけ超える）。例: 「アアアアアア HP 999/999（傷はない）」→「アアア… HP 999/999（傷はない）」、「アアアアアア（石 痺 眠 毒）HP 999/999」→「ア…（石 痺 眠 毒）HP 999/999」、「アアアアアア HP 87/87（傷はない）」（21 字）は詰めない。既存テストの「ベルク（痺 毒）HP 16/16（傷はない）」は「ベ…（痺 毒）HP 16/16（傷はない）」になった（3 字の名前でも状態 2 つ + 理由で 1 字に詰まる。21 字の帰結で、ユーザーに報告済み）。仕様 UI-53（ui.md 221 行）・decisions・milestones の判断点の行・checklist の M26 の行（実機は未）を直した。
+   - (3) 地図の印の形と色（◇ orange・○ violet）は【仮】のまま。遊んで気になれば所感で。
+   - (4) iPhone の音の復帰は U-12 のままユーザーが確認する。
+   - (5) longtask の比較は返事なし。要観察のまま。
 
 ## 2. 次の一手
 
-1. ユーザーの返事を待つ（§1 の 6）。
+1. 次の束の指示を待つ（M26 の判断点は返事済み。§1 の 7）。対象の行の 21 字の詰めは実機で未（次の実機のついでに見る。checklist の M26 の行の注記）。
 2. 工房 make-assets の bank（銀行の絵と曲）は、シートの番号と design.md の承認を待っている（前から）。
 3. push の後の配信の確認の手順:
    1. `gh run list --limit 4 --json headSha,status,conclusion` で完了を待つ。
@@ -72,6 +78,7 @@
 - サブエージェントは push しない。push はオーケストレーターが行う（push = 配信。移行を含む版は実機の後に push する。M26 は移行なし）。
 - Workflow に途中で項目を足すとき: 完了済みの prompt はバイト単位で変えず、新しいスクリプトのファイルで `resumeFromRunId` する（memory の workflow-stop-resume.md）。prompt はテンプレートリテラルなので中にバッククォートを書かない。
 - Workflow の結果は tasks/<id>.output の JSON（{summary, agentCount, logs, result, …} の包み。`result` が担当ごとの map。文字列なら JSON として読む）を `python -X utf8 -I` で担当ごとに scratchpad の m26-s2_*.md / m26-s3_*.md に分けて読んだ。Bash の出力が 32KB を超えるとファイルに退避されるので、報告は 3〜4 本ずつ cat する。
+- M26 の判断の反映の Workflow（2026-11-01。小さい束の雛形）: 実装 worker 1 本（コード・テスト・仕様・decisions・milestones・checklist を 1 コミット）→ 記録 default 1 本（docs だけ 1 コミット）→ レビュー explorer 2 本（A コードとテスト・B 文書の整合。schema で findings）→ 指摘ごとに反証 explorer 3 本（2 本以上が退けたら落とす）→ 確かめられた指摘だけ worker が修正。script は m26-decisions-followup-wf_17783a96-5a1.js（§5）。
 - M26 の Workflow の形（雛形。M25 と同じ）: 調査（explorer 9 本）→ 設計書を見せて承認 → 第 2 段 = docs の節 → 実装の群を順に（同じ作業ツリーで 1 人ずつコミット）→ 探索の再計測 → レビュー A/B/C/D を pipeline で review → verify（反証）→ 確かめられた指摘だけ fix（各コミットの typecheck も fix の担当が確かめる）。第 3 段 = 計測 200 → 実機 → 直すべき点があれば senior-worker で修正（実機の担当の structured output の `fixes` が空なら走らない）→ 閉じる。実機が止まったら閉じる担当は「実機待ち」にする。script は m26-survey-wf_76f60f0a-c1f.js・m26-stage2-wf_c1a90282-a6b.js・m26-stage3-wf_c95a684f-35c.js。
 - senior-worker の担当メモリは `.claude/agent-memory/senior-worker/`（リポジトリの中。`.git/info/exclude` 済み。M26 で lost-hint・ally-row・flee-tried・jingle-silence・audio-resume・map-marks・boss-sim・commit-typecheck-check を追加）。
 - リポジトリの git の email は `297947290+servantsmendarks@users.noreply.github.com`。コミットは `領域(Mnn): …`、末尾に Co-Authored-By（ハーネスの指定どおり。担当ごとに名前が違ってよい）。各コミット単体で typecheck が通ること。仕様・テスト・データは同じコミット。decisions は追記のみ。
@@ -93,7 +100,8 @@
 
 ## 5. 場所
 
-- このセッションの scratchpad: `C:\Users\shin\AppData\Local\Temp\claude\D--01-Data-projects-TypeScript-wizlike\3485c273-9d66-4d64-a445-a09b9cff23bf\scratchpad`
+- 判断の反映のセッション（2026-11-01）: scratchpad は `C:\Users\shin\AppData\Local\Temp\claude\D--01-Data-projects-TypeScript-wizlike\4d039b64-322b-4985-beb3-af74f5c547f3\scratchpad`（progress-edit.py だけ）。Workflow のスクリプト: `C:\Users\shin\.claude\projects\D--01-Data-projects-TypeScript-wizlike\4d039b64-322b-4985-beb3-af74f5c547f3\workflows\scripts\m26-decisions-followup-wf_17783a96-5a1.js`。
+- M26 のセッションの scratchpad: `C:\Users\shin\AppData\Local\Temp\claude\D--01-Data-projects-TypeScript-wizlike\3485c273-9d66-4d64-a445-a09b9cff23bf\scratchpad`
   - m26-request.md（依頼の原文）、m26-design.md（設計書。§4b 返事、§6 確定した設計）、m26-reply.md（返事の原文）、m26-survey_*.md（調査 9 本）
   - m26-boss-grid.mts と m26-boss-probe*.mts（門番の格子の試算 12 案）
   - m26-s2_*.md（第 2 段の各担当・レビュー）、m26-s3_*.md（第 3 段の measure・device・close）、m26-dev1/（実機の証拠。写真と mon.log・perf-reload*.json）、m26-balance.log と m26-balance.noansi.log、m26-explore-after.log、m26-boss-*.log
