@@ -1,13 +1,13 @@
-# PROGRESS.md — セッションの引き継ぎ（2026-11-01。M26「遊びやすさ v9」完了、M26 の判断点へのユーザーの返事と「対象の行の表示の直し」を反映。直しの 3 コミットは未 push）
+# PROGRESS.md — セッションの引き継ぎ（2026-11-01。M26「遊びやすさ v9」完了、M26 の判断点へのユーザーの返事・「対象の行の表示の直し」・「帯の順の直し」を反映・push 済み）
 
 次のセッションがこれだけ読めば再開できるように書く。設計の正は CLAUDE.md、`docs/spec/*.md`、`docs/decisions.md`、`docs/milestones.md`、`docs/balance.md`、`docs/checklist.md`。ここには「どこまで来たか」「何が決まっているか」「次に何をするか」だけを置く。
 
 ## 0. 今の状態（1 分で）
 
-- **M26 は完了（2026-11-01。最後の記録は 413b174）。同日、M26 の判断点へのユーザーの返事を反映（fe623ef・5037203・d7a2784。ここまで push 済み）し、続けてユーザーの指示「対象の行の表示の直し（小コミット）」を実装した: 735195b（core(M26)。状態 1 つ・治す呪文優先・（傷はない）廃止。コード・テスト・データ・仕様・decisions・milestones・checklist を 1 コミット）・4043f8b（レビューの修正）・1fb7f8e（実機の記録。docs）。その次がこの PROGRESS.md のコミット。d7a2784 より後は未 push。** push したら配信の確認は §2 の 5。
-- 検証: HEAD（1fb7f8e）で `npm run typecheck` と `npm test`（79 ファイル・2955 件）が通る（オーケストレーターが手元で確認）。レビュー A（コードとテスト）・B（文書）の指摘 4 件（A-1 戦闘の道具から targets を引く経路のテストが無い、A-2 targetRowStatus の引数が構造型、B-1 ui.md UI-54 に `battleMenu.allies[].status` が残る、B-2 magic.md MG-44 の targets の形）はすべて反証を通り、4043f8b で修正。`npm run build` は実機の固定コピー（735195b）で通った。
+- **M26 は完了（2026-11-01。最後の記録は 413b174）。同日、M26 の判断点へのユーザーの返事を反映（fe623ef・5037203・d7a2784。ここまで push 済み）し、続けてユーザーの指示「対象の行の表示の直し（小コミット）」を実装した: 735195b（core(M26)。状態 1 つ・治す呪文優先・（傷はない）廃止。コード・テスト・データ・仕様・decisions・milestones・checklist を 1 コミット）・4043f8b（レビューの修正）・1fb7f8e（実機の記録。docs）・0d7331a（PROGRESS）。続けてユーザーの返事で帯の順を直した: 4f4c084（presenter(M26)。severity を 石 痺 眠 毒 に変え、帯も config の順）・56ff5ee（記録の表記の修正）。その次がこの PROGRESS.md のコミットで、そこまで push 済み。** 配信の確認は §2 の 2（手順は §2 の 4）。
+- 検証: HEAD（56ff5ee）で `npm run typecheck` と `npm test`（79 ファイル・2957 件）が通る（オーケストレーターが手元で確認）。対象の行の直しのレビュー A（コードとテスト）・B（文書）の指摘 4 件（A-1 戦闘の道具から targets を引く経路のテストが無い、A-2 targetRowStatus の引数が構造型、B-1 ui.md UI-54 に `battleMenu.allies[].status` が残る、B-2 magic.md MG-44 の targets の形）はすべて反証を通り、4043f8b で修正。帯の順の直しのレビューの指摘は 1 件（decisions の追記の麻痺の表記）で 56ff5ee で修正。`npm run build` は実機の固定コピー（735195b）で通った。
 - `save.schemaVersion` は 12 のまま（M26 の `BattleState.fleeTried?: true` は省略可能の欄。移行なし。対象の行の直しも state を変えない）。
-- 次のマイルストーンはまだ決まっていない。M26 の判断点はすべて返事済み（§1 の 7。longtask の比較だけ返事なしで要観察のまま）。対象の行の直しで新しい判断点が 1 つ（帯と対象の行の 眠・毒 の順。§1 の 8）。次の指示を待つ。
+- 次のマイルストーンはまだ決まっていない。M26 の判断点はすべて返事済み（§1 の 7。longtask の比較だけ返事なしで要観察のまま）。対象の行の直しで出た判断点（帯と対象の行の 眠・毒 の順。§1 の 8）は同日に返事があり反映した（§1 の 9）。次の指示を待つ。
 
 ## 1. M26 で決めたこと・分かったこと
 
@@ -54,15 +54,20 @@
    - 「（傷はない）」廃止: 満タン（block fullHp）は dim だけ。strings の `camp.target.blocked` / `camp.targetBlock.fullHp` を削除、`allyRowLabel(strings, a)` の why 引数も無し。21 字（UI-52）・39 単位（UI-47）の fitName は安全網として残す（最悪の「アアアアアア（石）HP 999/999」は 19 字・28 単位で詰まらない。テストは名前 3 字・6 字 × 状態 5 通り × HP 3 通りの全探索）。
    - 記録: 仕様 ui.md の UI-53 の段落（221 行）と UI-54 の一覧の行、magic.md MG-44 の targets の形、decisions の 2026-11-01 の 2 行（直しと実機）、milestones 1675 行・1681 行、checklist 117 行・363 行の注記と新しい行（M26 対象の行の実機）。帯 party-band.ts の STATUS_ORDER のコメントも直した。
    - 実機(M26 対象の行)（1fb7f8e。版 735195b・sw 355e335158c3db1f の固定コピー rowfix-snap1。Pixel 3a・Android 12・Chrome 155・縦持ち）: 酒場 → 状態 → ドナ → 呪文 → 治癒 → 唱える の対象の段で「アルド HP 15/15」「アアアアアア HP 16/16」「キリ HP 10/10」…が全行 dim・1 行・溢れなし（6 字の行の文字幅 122px／行の幅 167px）、「（傷はない）」なし（写真 rowfix-dev1/rows_full_hp.png。オーケストレーターも目視）。debug「全員HP1」の後は dim が外れ 1 行のまま（rows_hp1.png は DOM の計測のみ）。未: 状態異常の括弧つきの行・治す呪文の優先・HP 3 桁（単体テストで固定済み）、迷宮の戦闘の対象の段。気づき: 酒場上部の帯では 6 字の名前が「アアアア…」（従来どおり。今回の対象外）。直すべき点なし（senior-worker は走らなかった）。後片付け済み（preview 停止・adb reverse/forward 解除・原点の storage 削除・ジャンクション解除）。
-   - **判断点（未返事）**: 帯（UI-13。party-band.ts の STATUS_ORDER = 石 痺 眠 毒）と対象の行（config.status.severity = 石 痺 毒 眠）で 眠・毒 の順が違う。帯は触っていない。揃えるなら、config.status.severity を帯でも使う（party-band.ts の markOf に順を渡す。呼び出し元 town・dungeon が変わる）か、仮の順を 石 痺 眠 毒 に直すかのどちらか。パーティ欄の conditionText の並び（付いた順）の食い違いは前からのまま。
+   - 判断点（→ 同日に返事あり。反映は 9）: 帯（UI-13。STATUS_ORDER = 石 痺 眠 毒）と対象の行（config.status.severity = 石 痺 毒 眠）で 眠・毒 の順が違っていた。
+9. **帯の順の直し（2026-11-01 ユーザーの返事 = 判断点 8 への指示。Workflow: 実装 worker 1 本 → レビュー explorer 2 本 → 反証 3 本/件 → 修正 worker。担当 13 本・約 4.5 分）**: 4f4c084・56ff5ee。
+   - `config.status.severity`【仮】を 石化 > 麻痺 > 睡眠 > 毒（stone, paralysis, sleep, poison）に変えた（帯の従来の順に合わせた）。
+   - 帯も同じ config の順: `party-band.ts` の STATUS_ORDER を削除し、`createPartyBand` の `o.severity` と `bandCell(ch, stage, strings, severity, levelUp)` で必須で受け取る（既定値なし）。呼び出し元は dungeon.ts だけで、`data.config.status.severity` を渡す。表示層は受け取った順で find するだけ。
+   - テスト: tests/camp-view.test.ts「UI-13/UI-53 帯の印と対象の行の状態は同じ順（config.status.severity）」（STATUS_IDS の全部分集合 16 通りで bandCell の印 = heaviestStatus）と「campMenu の治癒の targets[].status を allyRowLabel に通した括弧の中 = 帯の印」（眠 毒 / 痺 毒 / 毒）。順を前提にした直前のテスト（camp・items・combat・data）は 眠 に直した。
+   - 記録: ui.md の UI-13（44 行）と UI-53（221 行）、decisions 1 行、milestones 1681 行、types.ts・status.ts・party-band.ts のコメント。
+   - 残り: パーティ欄の conditionText は付いた順のまま（対象外）。帯の印の順は実機で未。
 
 ## 2. 次の一手
 
-1. 未 push の 4 コミット（735195b・4043f8b・1fb7f8e・この PROGRESS.md）を push する（移行なし。実機は済。push はオーケストレーター）。push したら 5 の手順で配信を確かめる。
-2. 判断点（§1 の 8）: 帯と対象の行の 眠・毒 の順。返事があれば小コミットで揃える（config.status.severity は【仮】のまま）。
-3. 次の束の指示を待つ（M26 の判断点は返事済み。§1 の 7）。対象の行の状態異常の行（括弧 1 つ・治す呪文の優先）は実機で未（次の実機のついでに見る。checklist の M26 対象の行の実機の行の注記）。
-4. 工房 make-assets の bank（銀行の絵と曲）は、シートの番号と design.md の承認を待っている（前から）。
-5. push の後の配信の確認の手順:
+1. 次の束の指示を待つ（M26 の判断点は返事済み。§1 の 7。帯の順も反映済み。§1 の 9）。対象の行の状態異常の行（括弧 1 つ・治す呪文の優先）と帯の印の順は実機で未（次の実機のついでに見る。checklist の M26 対象の行の実機の行の注記）。
+2. 配信の確認: 735195b〜この PROGRESS.md の push の直後にオーケストレーターが 4 の手順で確かめる（結果はチャットで報告。未確認のまま終わっていたら次のセッションの冒頭で）。
+3. 工房 make-assets の bank（銀行の絵と曲）は、シートの番号と design.md の承認を待っている（前から）。
+4. push の後の配信の確認の手順:
    1. `gh run list --limit 4 --json headSha,status,conclusion` で完了を待つ。
    2. `curl -s https://servantsmendarks.github.io/wizlike/sw.js | grep -oE '[0-9a-f]{16}' | head -1` の版を取る。
    3. `GITHUB_SHA=$(git rev-parse HEAD) npm run build` で作った `dist/sw.js` の版と比べる。版はビルドの中身のハッシュで、buildId（sha の先頭 7 字）が入るので HEAD ごとに変わる。push した HEAD の sha で build すること。
@@ -70,7 +75,7 @@
 ## 3. 前から残っているもの
 
 - 別の束の候補（milestones の候補の節）: 取り巻き付きのボス（データの形 `dungeons[].boss`、戦闘の枠 96×96 はグループ 1 つのときだけ、48 の絵は工房）、線画（一人称）のボスとイベントの印、倒した後のテレポーターの印、強くした門番の報酬（exp 400・gold 据え置き）、audio.ts の pageshow / onstatechange、装飾品（護符）の基礎の効果、v4 の (a) 呪われた触媒の印、(b) 呪文を使えなかった戦闘の割合、d02 の盤 18×18。
-- パーティ欄の conditionText は状態を付いた順に並べ、帯と対象の行（重さの順）と並びが違う（前からの食い違い。B-1 の担当の報告。milestones の M26 の残したもの）。2026-11-01 の直しからは帯（石 痺 眠 毒）と対象の行（石 痺 毒 眠）でも 眠・毒 の順が違う（判断点。§1 の 8）。
+- パーティ欄の conditionText は状態を付いた順に並べ、帯と対象の行（重さの順）と並びが違う（前からの食い違い。B-1 の担当の報告。milestones の M26 の残したもの）。帯と対象の行の順は 2026-11-01 の帯の順の直しで揃えた（config.status.severity を共用。§1 の 9）。残るのは conditionText の付いた順だけ。
 - M24 の実機で未のもの: C-3 護符の詳細（店に装飾品が無い）、D-1 の広げた後（debug に金のボタンが無い）、E-2 の lastSynced、司教の鑑定、人の指での「決める」。
 - テストプレイの 2026-10-25 の D-1〜D-3・E-1 は checklist と docs/playtest に未取り込み（426ecd34 の scratchpad の m25-survey_history.md に要点）。
 - M23 の見送り: hpWarn を宝箱の手でも出す、古い `dive.poisonWarned`、前進ボタンと「戦う」の重なり。
@@ -88,7 +93,7 @@
 - Workflow に途中で項目を足すとき: 完了済みの prompt はバイト単位で変えず、新しいスクリプトのファイルで `resumeFromRunId` する（memory の workflow-stop-resume.md）。prompt はテンプレートリテラルなので中にバッククォートを書かない。
 - Workflow の結果は tasks/<id>.output の JSON（{summary, agentCount, logs, result, …} の包み。`result` が担当ごとの map。文字列なら JSON として読む）を `python -X utf8 -I` で担当ごとに scratchpad の m26-s2_*.md / m26-s3_*.md に分けて読んだ。Bash の出力が 32KB を超えるとファイルに退避されるので、報告は 3〜4 本ずつ cat する。
 - M26 の判断の反映の Workflow（2026-11-01。小さい束の雛形）: 実装 worker 1 本（コード・テスト・仕様・decisions・milestones・checklist を 1 コミット）→ 記録 default 1 本（docs だけ 1 コミット）→ レビュー explorer 2 本（A コードとテスト・B 文書の整合。schema で findings）→ 指摘ごとに反証 explorer 3 本（2 本以上が退けたら落とす）→ 確かめられた指摘だけ worker が修正。script は m26-decisions-followup-wf_17783a96-5a1.js（§5）。
-- 対象の行の直しの Workflow（2026-11-01。小さい束 + 実機の雛形）: 実装 worker 1 本（1 コミット）→ レビュー explorer 2 本（A コードとテスト・B 文書）→ 指摘ごとに反証 explorer 3 本（correctness・spec・repro の観点。2 本以上が退けたら落とす）→ 確かめられた指摘だけ worker が修正、これと実機 default 1 本（実装のコミットの固定コピー。構造化出力の fixes）を parallel で並行 → fixes が空でなければ senior-worker → 記録 default 1 本（実機の結果を decisions と checklist に。docs だけ 1 コミット）。オーケストレーターは差分・写真・typecheck・npm test を手元で確かめてから PROGRESS.md を書く。script は ally-row-fix-wf_39bebeae-5c4.js（§5）。
+- 対象の行の直しの Workflow（2026-11-01。小さい束 + 実機の雛形）: 実装 worker 1 本（1 コミット）→ レビュー explorer 2 本（A コードとテスト・B 文書）→ 指摘ごとに反証 explorer 3 本（correctness・spec・repro の観点。2 本以上が退けたら落とす）→ 確かめられた指摘だけ worker が修正、これと実機 default 1 本（実装のコミットの固定コピー。構造化出力の fixes）を parallel で並行 → fixes が空でなければ senior-worker → 記録 default 1 本（実機の結果を decisions と checklist に。docs だけ 1 コミット）。オーケストレーターは差分・写真・typecheck・npm test を手元で確かめてから PROGRESS.md を書く。script は ally-row-fix-wf_39bebeae-5c4.js（§5）。同じ形から実機を抜いたのが帯の順の直し（実装 → レビュー 2 本 → 反証 → 修正。13 本・約 4.5 分。script は band-severity-wf_7cc44953-ceb.js）。
 - M26 の Workflow の形（雛形。M25 と同じ）: 調査（explorer 9 本）→ 設計書を見せて承認 → 第 2 段 = docs の節 → 実装の群を順に（同じ作業ツリーで 1 人ずつコミット）→ 探索の再計測 → レビュー A/B/C/D を pipeline で review → verify（反証）→ 確かめられた指摘だけ fix（各コミットの typecheck も fix の担当が確かめる）。第 3 段 = 計測 200 → 実機 → 直すべき点があれば senior-worker で修正（実機の担当の structured output の `fixes` が空なら走らない）→ 閉じる。実機が止まったら閉じる担当は「実機待ち」にする。script は m26-survey-wf_76f60f0a-c1f.js・m26-stage2-wf_c1a90282-a6b.js・m26-stage3-wf_c95a684f-35c.js。
 - senior-worker の担当メモリは `.claude/agent-memory/senior-worker/`（リポジトリの中。`.git/info/exclude` 済み。M26 で lost-hint・ally-row・flee-tried・jingle-silence・audio-resume・map-marks・boss-sim・commit-typecheck-check を追加）。
 - リポジトリの git の email は `297947290+servantsmendarks@users.noreply.github.com`。コミットは `領域(Mnn): …`、末尾に Co-Authored-By（ハーネスの指定どおり。担当ごとに名前が違ってよい）。各コミット単体で typecheck が通ること。仕様・テスト・データは同じコミット。decisions は追記のみ。
@@ -110,7 +115,7 @@
 
 ## 5. 場所
 
-- 対象の行の直しのセッション（2026-11-01）: scratchpad は `C:\Users\shin\AppData\Local\Temp\claude\D--01-Data-projects-TypeScript-wizlike\dadd0988-d464-401e-8e9c-e2ddc4150eee\scratchpad`（rowfix-tools（実機の道具）・rowfix-snap1（735195b の固定コピー）・rowfix-dev1（写真 rows_full_hp.png・rows_hp1.png））。Workflow のスクリプト: `C:\Users\shin\.claude\projects\D--01-Data-projects-TypeScript-wizlike\dadd0988-d464-401e-8e9c-e2ddc4150eee\workflows\scripts\ally-row-fix-wf_39bebeae-5c4.js`。
+- 対象の行の直しのセッション（2026-11-01）: scratchpad は `C:\Users\shin\AppData\Local\Temp\claude\D--01-Data-projects-TypeScript-wizlike\dadd0988-d464-401e-8e9c-e2ddc4150eee\scratchpad`（rowfix-tools（実機の道具）・rowfix-snap1（735195b の固定コピー）・rowfix-dev1（写真 rows_full_hp.png・rows_hp1.png））。Workflow のスクリプト: `C:\Users\shin\.claude\projects\D--01-Data-projects-TypeScript-wizlike\dadd0988-d464-401e-8e9c-e2ddc4150eee\workflows\scripts\ally-row-fix-wf_39bebeae-5c4.js` と、同じフォルダの `band-severity-wf_7cc44953-ceb.js`（帯の順の直し）。
 - 判断の反映のセッション（2026-11-01）: scratchpad は `C:\Users\shin\AppData\Local\Temp\claude\D--01-Data-projects-TypeScript-wizlike\4d039b64-322b-4985-beb3-af74f5c547f3\scratchpad`（progress-edit.py だけ）。Workflow のスクリプト: `C:\Users\shin\.claude\projects\D--01-Data-projects-TypeScript-wizlike\4d039b64-322b-4985-beb3-af74f5c547f3\workflows\scripts\m26-decisions-followup-wf_17783a96-5a1.js`。
 - M26 のセッションの scratchpad: `C:\Users\shin\AppData\Local\Temp\claude\D--01-Data-projects-TypeScript-wizlike\3485c273-9d66-4d64-a445-a09b9cff23bf\scratchpad`
   - m26-request.md（依頼の原文）、m26-design.md（設計書。§4b 返事、§6 確定した設計）、m26-reply.md（返事の原文）、m26-survey_*.md（調査 9 本）
