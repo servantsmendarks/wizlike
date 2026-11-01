@@ -693,7 +693,7 @@ describe("UI-54（M26 B-1。2026-11-01 直し）戦闘の味方の対象の行",
     { id: "c3", name: "Nc3", hp: 8, hpMax: 8 },
     { id: "c4", name: "アアアアアア", hp: 999, hpMax: 999 },
   ];
-  const withSpells = (heal: (string | null)[], cure: (string | null)[]): BattleMenu => {
+  const withSpells = (heal: (string | null)[], cure: (string | null)[], herb: (string | null)[] = []): BattleMenu => {
     const tg = (st: (string | null)[]) => four.map((a, i) => ({ id: a.id, status: st[i] ?? null }));
     return menu({
       allies: four,
@@ -703,10 +703,18 @@ describe("UI-54（M26 B-1。2026-11-01 直し）戦闘の味方の対象の行",
             { spellId: "heal", name: "癒し", mp: 2, target: "ally", usable: true, targets: tg(heal) as never },
             { spellId: "cure_poison", name: "解毒", mp: 3, target: "ally", usable: true, targets: tg(cure) as never },
           ],
+          items: [{ instanceId: "i1", itemId: "herb", name: "薬草", target: "ally", targets: tg(herb) as never }],
         }),
       ],
     });
   };
+
+  test("UI-54 ally の段の行は cursor.pick の品の targets[].status を出す。存在しない instanceId は括弧なし", () => {
+    const m = withSpells(["stone", "stone", "stone", "stone"], [], ["paralysis", null, "poison", null]);
+    const rows = entries(m, tgt("ally", "c5", { kind: "item", instanceId: "i1" }), S);
+    expect(rows.map((e) => e.label).slice(0, 4)).toEqual(["Nc1（痺）HP 3/9", "Nc2 HP 4/8", "Nc3（毒）HP 8/8", "アアアアアア HP 999/999"]);
+    expect(entries(m, tgt("ally", "c5", { kind: "item", instanceId: "zz" }), S)[0]!.label).toBe("Nc1 HP 3/9");
+  });
 
   test("UI-54/UI-47 ally の段の行は cursor.pick の呪文の targets[].status を 1 つだけ出す（傷はないは付かない）。39 単位・21 字に収まり、名前 6 字は HP 999 でも詰まらない", () => {
     const m = withSpells(["poison", "paralysis", null, "stone"], ["poison", null, null, "poison"]);
