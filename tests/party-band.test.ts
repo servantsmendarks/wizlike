@@ -6,7 +6,7 @@ import { tapSpecOf } from "../src/presenter/input/tap";
 import { dungeonLayout, regions, townLayout } from "../src/presenter/layout";
 import { createHeader, navTrianglePath } from "../src/presenter/views/header";
 import { createPartyPanel } from "../src/presenter/views/party";
-import { bandCell, BAND_CELL_UNITS, createPartyBand, fitName, textUnits } from "../src/presenter/views/party-band";
+import { bandCell, BAND_CELL_UNITS, createPartyBand, fitName, textChars, textUnits } from "../src/presenter/views/party-band";
 import { createTownPicture, TOWN_PICTURE_FALLBACK, townPictureName, townPictureUrl } from "../src/presenter/views/town-picture";
 import { data, newGame } from "./helpers/core";
 
@@ -36,6 +36,13 @@ describe("UI-13 bandCell", () => {
     expect(fitName("あいうえおか", 10, S["town.band.ellipsis"]!)).toBe("あいうえ…");
     expect(fitName("あいうえお", 10, S["town.band.ellipsis"]!)).toBe("あいうえお");
     expect(fitName("あいうえおか", 10, "~")).toBe("あいうえ~");
+    // 第 4 引数 chars（字数の上限。ellipsis も 1 字）。省けば従来どおり単位だけ
+    expect(fitName("Nc1abc", 40, "…", 4)).toBe("Nc1…");
+    expect(fitName("Nc1abc", 40, "…")).toBe("Nc1abc");
+    expect(fitName("あいうえおか", 39, "…", 4)).toBe("あいう…");
+    expect(fitName("あいうえおか", 10, "…", 4)).toBe("あいう…");
+    expect(fitName("あいう", 39, "…", 3)).toBe("あいう");
+    expect(textChars("アa😀")).toBe(3);
   });
 
   test("UI-13 bandCell: 印は 1 人に 1 つで、優先順は 灰 > 死亡 > 石 > 痺 > 眠 > 毒 > 虚脱 > 錯乱 > 不安。印があれば 6 字の名前は 3 字＋…＋印", () => {

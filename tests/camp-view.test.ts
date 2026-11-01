@@ -40,7 +40,7 @@ import { CHARACTER_INVENTORY_CELLS, formatCharacter } from "../src/presenter/vie
 import { formatMessage } from "../src/presenter/views/message";
 import { allyRowLabel } from "../src/presenter/views/ally-row";
 import { textUnits } from "../src/presenter/views/party-band";
-import { LIST_ROW_UNITS } from "../src/presenter/views/town";
+import { LIST_ROW_CHARS, LIST_ROW_UNITS } from "../src/presenter/views/town";
 import { kinsokuLines } from "./helpers/wrap";
 import { dived } from "./helpers/battle";
 import { data, expectKnownStringKeys, newGame } from "./helpers/core";
@@ -372,7 +372,7 @@ describe("MG-44/UI-59 呪文（キャラクター画面の下）", () => {
     const heal = rows(campEntries("camp", { kind: "spell", stage: "target", memberId: "c4", spellId: "heal" }, m, S));
     expect(heal[0]).toEqual({ label: `アルド（毒）HP 1/${hpMax(0)}`, disabled: false, choice: { kind: "target", targetId: "c1" } });
     // 付いた順は 毒 → 痺 だが、行は重さの順（痺 毒）。選べない行は包んだ後ろに理由
-    expect(heal[1]).toEqual({ label: `ベルク（痺 毒）HP ${s.party[1]!.hp}/${hpMax(1)}（傷はない）`, disabled: true, choice: { kind: "target", targetId: "c2" } });
+    expect(heal[1]).toEqual({ label: `ベ…（痺 毒）HP ${s.party[1]!.hp}/${hpMax(1)}（傷はない）`, disabled: true, choice: { kind: "target", targetId: "c2" } });
     expect(heal[2]!.label).toBe(`キリ HP ${s.party[2]!.hp}/${hpMax(2)}（傷はない）`);
     // 解毒・薬草の対象の段も同じ行（解毒は dim にしない）
     const cure = rows(campEntries("camp", { kind: "spell", stage: "target", memberId: "c4", spellId: "cure_poison" }, m, S));
@@ -387,7 +387,7 @@ describe("MG-44/UI-59 呪文（キャラクター画面の下）", () => {
     expect(allyRowLabel(S, { name: "キリ", hp: 3, hpMax: 10, status: [] })).toBe("キリ HP 3/10");
   });
 
-  test("UI-53/UI-47（M26 B-1）対象の行は 39 単位（LIST_ROW_UNITS）に収める。超えるときだけ名前の末尾を「…」で詰める（名前 6 字・HP 999/999・状態・（傷はない））", () => {
+  test("UI-53/UI-47（M26 B-1）対象の行は 39 単位（LIST_ROW_UNITS）かつ 21 字（LIST_ROW_CHARS。2026-11-01 ユーザーの判断で 21 字も当てる）に収める。超えるときだけ名前の末尾を「…」で詰める（名前 6 字・HP 999/999・状態・（傷はない））", () => {
     const why = S["camp.targetBlock.fullHp"]!;
     const name = "アアアアアア";
     const subsets: StatusId[][] = [[], ["poison"], ["paralysis", "poison"], ["stone", "paralysis", "poison"], ["stone", "paralysis", "sleep", "poison"]];
@@ -395,20 +395,25 @@ describe("MG-44/UI-59 呪文（キャラクター画面の下）", () => {
       for (const w of [null, why]) {
         const row = allyRowLabel(S, { name, hp: 999, hpMax: 999, status: st }, w);
         expect(textUnits(row), `${row}`).toBeLessThanOrEqual(LIST_ROW_UNITS);
+        const bare = allyRowLabel(S, { name: "", hp: 999, hpMax: 999, status: st }, w);
+        if ([...bare].length < LIST_ROW_CHARS) expect([...row].length, `${row}`).toBeLessThanOrEqual(LIST_ROW_CHARS);
+        else expect(row.startsWith("…"), `${row}`).toBe(true); // 名前以外だけで 21 字以上: 名前は「…」だけ
       }
     }
     // 収まる行は名前をそのまま
     expect(allyRowLabel(S, { name, hp: 999, hpMax: 999, status: ["poison"] })).toBe("アアアアアア（毒）HP 999/999"); // 28 単位
-    expect(allyRowLabel(S, { name, hp: 999, hpMax: 999, status: ["stone", "paralysis", "sleep", "poison"] })).toBe("アアアアアア（石 痺 眠 毒）HP 999/999"); // 37 単位
-    expect(allyRowLabel(S, { name, hp: 999, hpMax: 999, status: [] }, why)).toBe("アアアアアア HP 999/999（傷はない）"); // 33 単位
-    // 状態 1 つ + （傷はない）は 40 単位になるので名前を詰める
-    expect(allyRowLabel(S, { name, hp: 999, hpMax: 999, status: ["poison"] }, why)).toBe("アアアア…（毒）HP 999/999（傷はない）");
-    expect(allyRowLabel(S, { name, hp: 999, hpMax: 999, status: ["poison", "paralysis"] }, why)).toBe("アアア…（痺 毒）HP 999/999（傷はない）");
+    expect(allyRowLabel(S, { name, hp: 999, hpMax: 999, status: ["stone", "paralysis", "sleep", "poison"] })).toBe("ア…（石 痺 眠 毒）HP 999/999"); // 25 字を 21 字に
+    expect(allyRowLabel(S, { name, hp: 999, hpMax: 999, status: [] }, why)).toBe("アアア… HP 999/999（傷はない）"); // 23 字・35 単位を 21 字・31 単位に
+    expect(allyRowLabel(S, { name, hp: 87, hpMax: 87, status: [] }, why)).toBe("アアアアアア HP 87/87（傷はない）"); // 21 字・33 単位は詰めない
+    expect(allyRowLabel(S, { name, hp: 87, hpMax: 87, status: ["stone", "paralysis", "sleep", "poison"] })).toBe("アアア…（石 痺 眠 毒）HP 87/87");
+    // 状態 1 つ + （傷はない）は名前を詰める。状態 2 つは名前以外だけで 21 字なので名前は「…」だけ（「…」の分だけ超える）
+    expect(allyRowLabel(S, { name, hp: 999, hpMax: 999, status: ["poison"] }, why)).toBe("ア…（毒）HP 999/999（傷はない）");
+    expect(allyRowLabel(S, { name, hp: 999, hpMax: 999, status: ["poison", "paralysis"] }, why)).toBe("…（痺 毒）HP 999/999（傷はない）");
     // campEntries を通しても同じ（core の menu を最悪の値に書き換える）
     const m = structuredClone(input(inDungeon({ c4: { knownSpells: ["heal"], mp: 30 } })));
     m.menu.allies[0] = { ...m.menu.allies[0]!, name, hp: 999, hpMax: 999, status: ["poison"] };
     const r = rows(campEntries("camp", { kind: "spell", stage: "target", memberId: "c4", spellId: "heal" }, m, S));
-    expect(r[0]!.label).toBe("アアアア…（毒）HP 999/999（傷はない）");
+    expect(r[0]!.label).toBe("ア…（毒）HP 999/999（傷はない）");
   });
 
   test("UI-59 呪文が 15 件以上なら 14 件ずつの頁と [次の頁][前の頁]（端は dim）。頁送りでパネルの spellPage も同じ頁", () => {

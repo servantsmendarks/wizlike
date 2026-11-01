@@ -1044,6 +1044,9 @@ export function upgradeItemName(plainName: string, level: number, strings: Strin
 /** 一覧の行の文字の幅（158 = 168 − 余白 4×2 − 枠 1×2。全角 19.5 字 = 39 単位。party-band の textUnits の単位。UI-47）。M21: 銀行の状態の倉庫の候補の行（views/camp.ts）も使う */
 export const LIST_ROW_UNITS = 39;
 
+/** 一覧の行は全角 21 字以内（UI-52 の横断の決まり。コードポイントの数。テストの [...row].length <= 21 と同じ測り方）。M26: 味方の対象の行（views/ally-row.ts）が LIST_ROW_UNITS と合わせて当てる */
+export const LIST_ROW_CHARS = 21;
+
 /**
  * TW-17（M20 B-2）: 触媒の付け外しのたびに会話の箱で語る性能の 1 文 town.upgrade.catInfo「{item}: 攻撃 {attack} / AC {ac} / 魔法攻撃力 {magic}」。
  * item は行と同じ「名前 +N」（upgradeItemName）、値は core の power（該当しない項目は town.shop.previewNone）。28 字 × 2 行に収める

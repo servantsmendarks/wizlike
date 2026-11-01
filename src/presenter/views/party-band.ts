@@ -42,17 +42,25 @@ export function textUnits(text: string): number {
   return n;
 }
 
-/** units に収まるように切る。収まらなければ末尾を ellipsis（strings の town.band.ellipsis）にする（記号を含めて units 以内） */
-export function fitName(name: string, units: number, ellipsis: string): string {
-  if (textUnits(name) <= units) return name;
+/** 文字列の字数（コードポイントの数。テストの [...text].length と同じ測り方） */
+export function textChars(text: string): number {
+  return [...text].length;
+}
+
+/** units（と省略可能な chars）に収まるように切る。収まらなければ末尾を ellipsis（strings の town.band.ellipsis）にする（記号を含めて units 以内、chars 以内。chars を省けば単位だけ） */
+export function fitName(name: string, units: number, ellipsis: string, chars: number = Infinity): string {
+  if (textUnits(name) <= units && textChars(name) <= chars) return name;
   const room = units - textUnits(ellipsis);
+  const roomChars = chars - textChars(ellipsis);
   let out = "";
   let n = 0;
+  let c = 0;
   for (const ch of name) {
     const w = charUnits(ch);
-    if (n + w > room) break;
+    if (n + w > room || c + 1 > roomChars) break;
     out += ch;
     n += w;
+    c += 1;
   }
   return out + ellipsis;
 }

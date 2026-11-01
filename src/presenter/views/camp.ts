@@ -398,7 +398,7 @@ export function campEntries(host: CampHost, page: CampPage, m: CampInput, string
   const back: CampEntry = { label: s(strings, "common.back"), disabled: false, choice: { kind: "cancel" } };
   const list = (rows: CampEntry[]): CampEntries => ({ layout: "list", rows: [...rows, cancel] });
   // MG-44 / UI-53（2026-10-05）: 回復の対象の行。core の targets の block があれば dim にし、理由を名前と HP の後ろに付ける
-  // M26 B-1: 行は戦闘の対象の段と同じ allyRowLabel（名前・状態・HP。39 単位を超えれば名前を詰める）
+  // M26 B-1: 行は戦闘の対象の段と同じ allyRowLabel（名前・状態・HP。39 単位か 21 字を超えれば名前を詰める）
   const targetRow = (a: CampMenu["allies"][number], block: CampTargetBlock | null): CampEntry => {
     return {
       label: allyRowLabel(strings, a, block === null ? null : s(strings, `camp.targetBlock.${block}`)),

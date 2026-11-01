@@ -24,7 +24,7 @@ import {
 import { formatMessage } from "../src/presenter/views/message";
 import { allyRowLabel } from "../src/presenter/views/ally-row";
 import { textUnits } from "../src/presenter/views/party-band";
-import { LIST_ROW_UNITS } from "../src/presenter/views/town";
+import { LIST_ROW_CHARS, LIST_ROW_UNITS } from "../src/presenter/views/town";
 import { kinsokuLines } from "./helpers/wrap";
 import { data } from "./helpers/core";
 
@@ -688,7 +688,7 @@ describe("UI-54 対象の一覧の敵の行（M18。設計 5-12）", () => {
 
 
 describe("UI-54（M26 B-1）戦闘の味方の対象の行", () => {
-  test("UI-54/UI-47 ally の段の行はキャンプと同じ allyRowLabel: 「{name}（{status}）HP {hp}/{hpMax}」、状態は重さの順、39 単位を超えるときは名前を詰める", () => {
+  test("UI-54/UI-47 ally の段の行はキャンプと同じ allyRowLabel: 「{name}（{status}）HP {hp}/{hpMax}」、状態は重さの順、39 単位か 21 字を超えるときは名前を詰める", () => {
     const m = menu({
       allies: [
         { id: "c1", name: "Nc1", hp: 3, hpMax: 9, status: ["poison"] },
@@ -699,11 +699,12 @@ describe("UI-54（M26 B-1）戦闘の味方の対象の行", () => {
     });
     const cur = tgt("ally", "c5", { kind: "cast", spellId: "heal" });
     const rows = entries(m, cur, S);
-    expect(rows.map((e) => e.label)).toEqual(["Nc1（毒）HP 3/9", "Nc2（痺 毒）HP 4/8", "Nc3 HP 8/8", "アアアアアア（石 痺 眠 毒）HP 999/999", t("common.back")]);
+    expect(rows.map((e) => e.label)).toEqual(["Nc1（毒）HP 3/9", "Nc2（痺 毒）HP 4/8", "Nc3 HP 8/8", "ア…（石 痺 眠 毒）HP 999/999", t("common.back")]);
     expect(rows.slice(0, 4).every((e) => !e.disabled)).toBe(true);
     for (const [i, a] of m.allies.entries()) {
       expect(rows[i]!.label).toBe(allyRowLabel(S, a));
       expect(textUnits(rows[i]!.label)).toBeLessThanOrEqual(LIST_ROW_UNITS);
+      expect([...rows[i]!.label].length).toBeLessThanOrEqual(LIST_ROW_CHARS);
     }
   });
 });
