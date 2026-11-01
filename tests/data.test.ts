@@ -508,6 +508,14 @@ describe("data: config.json", () => {
     expect(issuesOf((r) => (r.config.dungeon.trap.pitDice = "2d4+1"))).toEqual([]);
     expect(isDiceExpr(config.dungeon.trap.pitDice)).toBe(true);
   });
+  test("data: UI-53 status.severity が欠ける・重複・未知の id なら検証エラー", () => {
+    expect(config.status.severity).toEqual(["stone", "paralysis", "poison", "sleep"]);
+    expectIssue((r) => delete r.config.status, "config.json", "status: missing required field");
+    expectIssue((r) => (r.config.status.severity = ["stone", "paralysis", "poison"]), "config.json", 'status.severity: UI-53: "sleep" must appear exactly once, got 0');
+    expectIssue((r) => (r.config.status.severity = ["stone", "stone", "paralysis", "poison", "sleep"]), "config.json", 'UI-53: "stone" must appear exactly once, got 2');
+    expectIssue((r) => (r.config.status.severity = ["stone", "paralysis", "poison", "bogus"]), "config.json", "status.severity[3]");
+  });
+
   test("data: ui §2 ui.layout の合計が stage.height と違えば検証エラー", () => {
     const l = config.ui.layout;
     expect(l.header + l.view + l.message + l.party + l.controls).toBe(config.stage.height);

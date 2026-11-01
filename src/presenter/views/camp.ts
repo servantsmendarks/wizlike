@@ -29,7 +29,7 @@
 import type { SpriteInfo } from "../../build/asset-types";
 import type { EquipSlot, GameData, Strings } from "../../core/data/index";
 import type { BestiaryView } from "../../core/rules/item-view";
-import type { CampMember, CampMenu, CampSummary, CampTargetBlock, Command, EquipBlock, FieldItemMenu, ItemActionKind, ItemActions } from "../../core/types";
+import type { CampMember, CampMenu, CampSummary, CampTargetView, Command, EquipBlock, FieldItemMenu, ItemActionKind, ItemActions } from "../../core/types";
 import type { Action } from "../input/swipe";
 import type { Rect } from "../layout";
 import {
@@ -399,9 +399,11 @@ export function campEntries(host: CampHost, page: CampPage, m: CampInput, string
   const list = (rows: CampEntry[]): CampEntries => ({ layout: "list", rows: [...rows, cancel] });
   // MG-44 / UI-53（2026-10-05）: 回復の対象の行。core の targets の block があれば dim にし、理由を名前と HP の後ろに付ける
   // M26 B-1: 行は戦闘の対象の段と同じ allyRowLabel（名前・状態・HP。39 単位か 21 字を超えれば名前を詰める）
-  const targetRow = (a: CampMenu["allies"][number], block: CampTargetBlock | null): CampEntry => {
+  // 2026-11-01: 満タンは dim だけで理由は付けない。状態は core の targets[].status の 1 つ（無ければ括弧なし）
+  const targetRow = (a: CampMenu["allies"][number], t: CampTargetView | undefined): CampEntry => {
+    const block = t?.block ?? null;
     return {
-      label: allyRowLabel(strings, a, block === null ? null : s(strings, `camp.targetBlock.${block}`)),
+      label: allyRowLabel(strings, { ...a, status: t?.status ?? null }),
       disabled: block !== null,
       choice: { kind: "target", targetId: a.id },
     };
@@ -574,7 +576,7 @@ export function campEntries(host: CampHost, page: CampPage, m: CampInput, string
         return list([{ label: s(strings, "camp.returnConfirm.yes"), disabled: false, choice: { kind: "confirm" } }]);
       }
       const it = items?.members.find((y) => y.id === page.memberId)?.items.find((y) => y.instanceId === page.instanceId);
-      return list((items?.allies ?? []).map((a) => targetRow(a, it?.targets.find((t) => t.id === a.id)?.block ?? null)));
+      return list((items?.allies ?? []).map((a) => targetRow(a, it?.targets.find((t) => t.id === a.id))));
     }
     case "give":
     case "drop": {
@@ -620,7 +622,7 @@ export function campEntries(host: CampHost, page: CampPage, m: CampInput, string
       if (sp?.target === "dead") {
         return list(menu.dead.map((d) => ({ label: d.name, disabled: false, choice: { kind: "target", targetId: d.id } })));
       }
-      return list(menu.allies.map((a) => targetRow(a, sp?.targets.find((t) => t.id === a.id)?.block ?? null)));
+      return list(menu.allies.map((a) => targetRow(a, sp?.targets.find((t) => t.id === a.id))));
     }
     case "identify": {
       // CH-77（M10）: 行は「{owner}: {name}　{rate}%」（rate は core の identifyRates）。送れない間（行動不能・MP 切れ）は dim で、

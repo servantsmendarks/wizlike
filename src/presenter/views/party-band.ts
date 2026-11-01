@@ -16,7 +16,7 @@ export const BAND_ELLIPSIS_KEY = "town.band.ellipsis";
 /** UI-69（M10）: Lv UP 可の印の strings のキー（既定は「↑」= 2 単位。帯とパーティ欄で共用） */
 export const LEVEL_MARK_KEY = "town.band.mark.levelUp";
 
-/** 状態異常の印の優先順（重いものが先。UI-13）。対象の行の状態の並び（ally-row.ts。UI-53 / UI-54、M26）でも使う */
+/** 状態異常の印の優先順（重いものが先。UI-13）。対象の行（ally-row.ts）は別の順（config.status.severity。石 痺 毒 眠）で core が 1 つ決める（2026-11-01） */
 export const STATUS_ORDER: readonly StatusId[] = ["stone", "paralysis", "sleep", "poison"];
 /** SAN の段の印の優先順（重いものが先。normal は印なし） */
 const SAN_ORDER: readonly Exclude<SanStage, "normal">[] = ["broken", "confused", "uneasy"];

@@ -692,9 +692,10 @@ export type EnemyGroupView = {
 export type SpellInfo = { spellId: string; name: string; mp: number; target: SpellTarget; usableIn: UsableIn; description: string };
 
 /** 戦闘で使える既知の呪文。usable = mp >= spells[].mp */
-export type BattleMenuSpell = { spellId: string; name: string; mp: number; target: SpellTarget; usable: boolean };
+/** targets: target が ally のとき allies と同じ順の対象ごとの行の状態（UI-54、2026-11-01）。ally 以外は [] */
+export type BattleMenuSpell = { spellId: string; name: string; mp: number; target: SpellTarget; usable: boolean; targets: AllyTargetView[] };
 /** 本人の inventory のうち戦闘で使える消耗品。name は鑑定を反映した表示名 */
-export type BattleMenuItem = { instanceId: string; itemId: string; name: string; target: SpellTarget };
+export type BattleMenuItem = { instanceId: string; itemId: string; name: string; target: SpellTarget; targets: AllyTargetView[] };
 export type BattleMenuMember = {
   id: string;
   name: string;
@@ -735,8 +736,8 @@ export type BattleMenu = {
   groups: EnemyGroupView[];
   /** パーティ全員（並び順） */
   members: BattleMenuMember[];
-  /** 味方の対象の候補 = life が alive のメンバー（並び順）。status はその者の Character.status の写し（対象の行に出す。UI-54、M26） */
-  allies: { id: string; name: string; hp: number; hpMax: number; status: StatusId[] }[];
+  /** 味方の対象の候補 = life が alive のメンバー（並び順）。行に出す状態は spells[] / items[] の targets[].status（UI-54、2026-11-01） */
+  allies: { id: string; name: string; hp: number; hpMax: number }[];
 };
 
 // ===================== 全滅の内訳（TW-20〜26。wipe イベントの penalty） =====================
@@ -1021,8 +1022,8 @@ export type FieldItemView = {
 export type FieldItemMenu = {
   /** パーティ全員（並び順）。items は inventory の順で consumable / book だけ */
   members: { id: string; name: string; canAct: boolean; items: FieldItemView[] }[];
-  /** 対象の候補 = life alive（並び順）。status はその者の Character.status の写し（対象の行に出す。UI-53、M26） */
-  allies: { id: string; name: string; hp: number; hpMax: number; status: StatusId[] }[];
+  /** 対象の候補 = life alive（並び順）。行に出す状態は items[].targets[].status（UI-53、2026-11-01） */
+  allies: { id: string; name: string; hp: number; hpMax: number }[];
 };
 
 // ===================== キャンプと酒場の問い合わせ（UI-53 / TW-03。rules/camp.ts の campMenu。state には入れない） =====================
@@ -1042,9 +1043,11 @@ export type CampSpellView = {
   /** target が ally のとき、allies と同じ順の対象ごとの可否（block が null なら送れる）。ally 以外は [] */
   targets: CampTargetView[];
 };
-/** MG-44 / UI-53（2026-10-05）: 戦闘外の回復の対象を選べない理由。表示層は strings の camp.targetBlock.{block} で出す */
+/** MG-44 / UI-53（2026-10-05）: 戦闘外の回復の対象を選べない理由。表示層は dim にするだけ（理由の文は付けない。2026-11-01） */
 export type CampTargetBlock = "fullHp";
-export type CampTargetView = { id: string; block: CampTargetBlock | null };
+/** UI-53 / UI-54（2026-11-01）: 味方の対象の行に出す状態 1 つ（rules/status.ts の targetRowStatus。治す呪文・道具は治す状態だけ、無ければ null） */
+export type AllyTargetView = { id: string; status: StatusId | null };
+export type CampTargetView = AllyTargetView & { block: CampTargetBlock | null };
 /**
  * 装備できない理由。表示層は strings の camp.equipBlock.{block} で出す。full は TW-16c（M21）の倉庫の品で、旧品が無く使用枠（CH-71）に空きが無いとき。
  * warehouseFull は TW-16c（M21）の to "warehouse"（銀行の状態）で、外す品・入れ替えで外れる品があり倉庫が満杯のとき
@@ -1146,8 +1149,8 @@ export type CampMenu = {
   place: CampPlace;
   /** パーティ全員（並び順） */
   members: CampMember[];
-  /** heal / cure の対象の候補 = life alive の者（並び順）。status はその者の Character.status の写し（対象の行に出す。UI-53、M26） */
-  allies: { id: string; name: string; hp: number; hpMax: number; status: StatusId[] }[];
+  /** heal / cure の対象の候補 = life alive の者（並び順）。行に出す状態は spells[].targets[].status（UI-53、2026-11-01） */
+  allies: { id: string; name: string; hp: number; hpMax: number }[];
   /** 蘇生の対象の候補 = life dead の者（並び順。ash は入れない） */
   dead: { id: string; name: string }[];
   /** 鑑定できる者 = abilities に identify を持ち、canAct の者（並び順）。空なら「鑑定」の項目を出さない */

@@ -350,70 +350,73 @@ describe("MG-44/UI-59 呪文（キャラクター画面の下）", () => {
     accepted(s, r2.command);
   });
 
-  test("UI-53/MG-44 回復の対象の段: HP 満タンの者は dim で「（傷はない）」を付ける（core の targets の block。治癒・薬草とも）。解毒の対象は dim にしない", () => {
+  test("UI-53/MG-44 回復の対象の段: HP 満タンの者は dim（行に理由は付けない。2026-11-01 で「（傷はない）」は廃止。core の targets の block。治癒・薬草とも）。解毒の対象は dim にしない", () => {
     const s = inDungeon({ c1: { hp: 1 }, c4: { knownSpells: ["heal", "cure_poison"], mp: 30 } });
     const m = input(s);
     const heal = rows(campEntries("camp", { kind: "spell", stage: "target", memberId: "c4", spellId: "heal" }, m, S));
-    // M26 B-1: 行は「{name} HP {hp}/{hpMax}」（状態が無ければ括弧を省く。区切りは半角空白）
+    // 行は「{name} HP {hp}/{hpMax}」（状態が無ければ括弧を省く）
     expect(heal[0]).toEqual({ label: `アルド HP 1/${s.party[0]!.hpMax}`, disabled: false, choice: { kind: "target", targetId: "c1" } });
-    expect(heal[1]).toEqual({ label: `ベルク HP ${s.party[1]!.hp}/${s.party[1]!.hpMax}（傷はない）`, disabled: true, choice: { kind: "target", targetId: "c2" } });
+    expect(heal[1]).toEqual({ label: `ベルク HP ${s.party[1]!.hp}/${s.party[1]!.hpMax}`, disabled: true, choice: { kind: "target", targetId: "c2" } });
     expect(heal.slice(1, 6).every((r) => r.disabled)).toBe(true);
+    expect(heal.every((r) => !r.label.includes("傷はない"))).toBe(true);
     const cure = rows(campEntries("camp", { kind: "spell", stage: "target", memberId: "c4", spellId: "cure_poison" }, m, S));
     expect(cure.slice(0, 6).every((r) => !r.disabled)).toBe(true);
     const herb = rows(campEntries("camp", { kind: "use", stage: "target", memberId: "c1", instanceId: "i4" }, m, S));
     expect(herb.slice(0, 6).map((r) => r.disabled)).toEqual([false, true, true, true, true, true]);
-    expect(herb[2]!.label).toBe(`キリ HP ${s.party[2]!.hp}/${s.party[2]!.hpMax}（傷はない）`);
+    expect(herb[2]!.label).toBe(`キリ HP ${s.party[2]!.hp}/${s.party[2]!.hpMax}`);
   });
 
-  test("UI-53/MG-44（M26 B-1）対象の行は「{name}（{status}）HP {hp}/{hpMax}」。状態は帯と同じ重さの順（石 痺 眠 毒）で半角空白区切り。呪文・道具とも同じ行", () => {
-    const s = inDungeon({ c1: { hp: 1, status: ["poison"] }, c2: { status: ["poison", "paralysis"] }, c4: { knownSpells: ["heal", "cure_poison"], mp: 30 } });
+  test("UI-53/MG-44（2026-11-01）対象の行は「{name}（{status}）HP {hp}/{hpMax}」。状態は core の targets[].status の 1 つだけ（最も重い 1 つ）。解毒の対象は毒の者だけ括弧を付け、麻痺だけの者は括弧なし", () => {
+    const s = inDungeon({ c1: { hp: 1, status: ["poison"] }, c2: { status: ["poison", "paralysis"] }, c3: { status: ["paralysis"] }, c4: { knownSpells: ["heal", "cure_poison"], mp: 30 } });
     const m = input(s);
     const hpMax = (i: number): number => s.party[i]!.hpMax;
     const heal = rows(campEntries("camp", { kind: "spell", stage: "target", memberId: "c4", spellId: "heal" }, m, S));
     expect(heal[0]).toEqual({ label: `アルド（毒）HP 1/${hpMax(0)}`, disabled: false, choice: { kind: "target", targetId: "c1" } });
-    // 付いた順は 毒 → 痺 だが、行は重さの順（痺 毒）。選べない行は包んだ後ろに理由
-    expect(heal[1]).toEqual({ label: `ベ…（痺 毒）HP ${s.party[1]!.hp}/${hpMax(1)}（傷はない）`, disabled: true, choice: { kind: "target", targetId: "c2" } });
-    expect(heal[2]!.label).toBe(`キリ HP ${s.party[2]!.hp}/${hpMax(2)}（傷はない）`);
-    // 解毒・薬草の対象の段も同じ行（解毒は dim にしない）
+    // 毒と麻痺の両方 → 麻痺だけ（最も重い 1 つ）。満タンなので dim だが理由は付かない
+    expect(heal[1]).toEqual({ label: `ベルク（痺）HP ${s.party[1]!.hp}/${hpMax(1)}`, disabled: true, choice: { kind: "target", targetId: "c2" } });
+    expect(heal[2]!.label).toBe(`キリ（痺）HP ${s.party[2]!.hp}/${hpMax(2)}`);
     const cure = rows(campEntries("camp", { kind: "spell", stage: "target", memberId: "c4", spellId: "cure_poison" }, m, S));
-    expect(cure.slice(0, 2).map((r) => [r.label, r.disabled])).toEqual([
+    expect(cure.slice(0, 3).map((r) => [r.label, r.disabled])).toEqual([
       [`アルド（毒）HP 1/${hpMax(0)}`, false],
-      [`ベルク（痺 毒）HP ${s.party[1]!.hp}/${hpMax(1)}`, false],
+      [`ベルク（毒）HP ${s.party[1]!.hp}/${hpMax(1)}`, false],
+      [`キリ HP ${s.party[2]!.hp}/${hpMax(2)}`, false], // 麻痺だけ: 治す対象の状態が無いので括弧なし
     ]);
     const herb = rows(campEntries("camp", { kind: "use", stage: "target", memberId: "c1", instanceId: "i4" }, m, S));
-    expect(herb.slice(0, 2).map((r) => r.label)).toEqual(heal.slice(0, 2).map((r) => r.label));
+    expect(herb.slice(0, 3).map((r) => r.label)).toEqual(heal.slice(0, 3).map((r) => r.label));
     // 4 つの状態の表記はすべて party.status.<id>
-    expect(allyRowLabel(S, { name: "キリ", hp: 3, hpMax: 10, status: ["poison", "sleep", "paralysis", "stone"] })).toBe("キリ（石 痺 眠 毒）HP 3/10");
-    expect(allyRowLabel(S, { name: "キリ", hp: 3, hpMax: 10, status: [] })).toBe("キリ HP 3/10");
+    expect(allyRowLabel(S, { name: "キリ", hp: 3, hpMax: 10, status: "stone" })).toBe("キリ（石）HP 3/10");
+    expect(allyRowLabel(S, { name: "キリ", hp: 3, hpMax: 10, status: "paralysis" })).toBe("キリ（痺）HP 3/10");
+    expect(allyRowLabel(S, { name: "キリ", hp: 3, hpMax: 10, status: "poison" })).toBe("キリ（毒）HP 3/10");
+    expect(allyRowLabel(S, { name: "キリ", hp: 3, hpMax: 10, status: "sleep" })).toBe("キリ（眠）HP 3/10");
+    expect(allyRowLabel(S, { name: "キリ", hp: 3, hpMax: 10, status: null })).toBe("キリ HP 3/10");
   });
 
-  test("UI-53/UI-47（M26 B-1）対象の行は 39 単位（LIST_ROW_UNITS）かつ 21 字（LIST_ROW_CHARS。2026-11-01 ユーザーの判断で 21 字も当てる）に収める。超えるときだけ名前の末尾を「…」で詰める（名前 6 字・HP 999/999・状態・（傷はない））", () => {
-    const why = S["camp.targetBlock.fullHp"]!;
-    const name = "アアアアアア";
-    const subsets: StatusId[][] = [[], ["poison"], ["paralysis", "poison"], ["stone", "paralysis", "poison"], ["stone", "paralysis", "sleep", "poison"]];
-    for (const st of subsets) {
-      for (const w of [null, why]) {
-        const row = allyRowLabel(S, { name, hp: 999, hpMax: 999, status: st }, w);
-        expect(textUnits(row), `${row}`).toBeLessThanOrEqual(LIST_ROW_UNITS);
-        const bare = allyRowLabel(S, { name: "", hp: 999, hpMax: 999, status: st }, w);
-        if ([...bare].length < LIST_ROW_CHARS) expect([...row].length, `${row}`).toBeLessThanOrEqual(LIST_ROW_CHARS);
-        else expect(row.startsWith("…"), `${row}`).toBe(true); // 名前以外だけで 21 字以上: 名前は「…」だけ
+  test("UI-53/UI-47（2026-11-01）対象の行は 39 単位（LIST_ROW_UNITS）かつ 21 字（LIST_ROW_CHARS）に収める。名前 3 字・6 字とも、状態 1 つ・HP 999/999 でも詰まらない（安全網の fitName は超えるときだけ働く）", () => {
+    const states: (StatusId | null)[] = [null, "stone", "paralysis", "poison", "sleep"];
+    for (const name of ["アルド", "アアアアアア"]) {
+      for (const st of states) {
+        for (const [hp, hpMax] of [[999, 999], [1, 9], [87, 87]] as const) {
+          const row = allyRowLabel(S, { name, hp, hpMax, status: st });
+          expect(textUnits(row), row).toBeLessThanOrEqual(LIST_ROW_UNITS);
+          expect([...row].length, row).toBeLessThanOrEqual(LIST_ROW_CHARS);
+          expect(row.startsWith(name), `${row} は名前を詰めない`).toBe(true);
+        }
       }
     }
-    // 収まる行は名前をそのまま
-    expect(allyRowLabel(S, { name, hp: 999, hpMax: 999, status: ["poison"] })).toBe("アアアアアア（毒）HP 999/999"); // 28 単位
-    expect(allyRowLabel(S, { name, hp: 999, hpMax: 999, status: ["stone", "paralysis", "sleep", "poison"] })).toBe("ア…（石 痺 眠 毒）HP 999/999"); // 25 字を 21 字に
-    expect(allyRowLabel(S, { name, hp: 999, hpMax: 999, status: [] }, why)).toBe("アアア… HP 999/999（傷はない）"); // 23 字・35 単位を 21 字・31 単位に
-    expect(allyRowLabel(S, { name, hp: 87, hpMax: 87, status: [] }, why)).toBe("アアアアアア HP 87/87（傷はない）"); // 21 字・33 単位は詰めない
-    expect(allyRowLabel(S, { name, hp: 87, hpMax: 87, status: ["stone", "paralysis", "sleep", "poison"] })).toBe("アアア…（石 痺 眠 毒）HP 87/87");
-    // 状態 1 つ + （傷はない）は名前を詰める。状態 2 つは名前以外だけで 21 字なので名前は「…」だけ（「…」の分だけ超える）
-    expect(allyRowLabel(S, { name, hp: 999, hpMax: 999, status: ["poison"] }, why)).toBe("ア…（毒）HP 999/999（傷はない）");
-    expect(allyRowLabel(S, { name, hp: 999, hpMax: 999, status: ["poison", "paralysis"] }, why)).toBe("…（痺 毒）HP 999/999（傷はない）");
+    expect(allyRowLabel(S, { name: "アアアアアア", hp: 999, hpMax: 999, status: "stone" })).toBe("アアアアアア（石）HP 999/999"); // 19 字・28 単位
+    expect(allyRowLabel(S, { name: "アアアアアア", hp: 999, hpMax: 999, status: null })).toBe("アアアアアア HP 999/999"); // 17 字
+    expect(allyRowLabel(S, { name: "アルド", hp: 999, hpMax: 999, status: "paralysis" })).toBe("アルド（痺）HP 999/999");
+    // 安全網: 名前が長すぎれば詰める
+    const long = allyRowLabel(S, { name: "アアアアアアアアアアアア", hp: 999, hpMax: 999, status: "stone" });
+    expect([...long].length).toBeLessThanOrEqual(LIST_ROW_CHARS);
+    expect(long).toContain("…");
     // campEntries を通しても同じ（core の menu を最悪の値に書き換える）
     const m = structuredClone(input(inDungeon({ c4: { knownSpells: ["heal"], mp: 30 } })));
-    m.menu.allies[0] = { ...m.menu.allies[0]!, name, hp: 999, hpMax: 999, status: ["poison"] };
+    m.menu.allies[0] = { ...m.menu.allies[0]!, name: "アアアアアア", hp: 999, hpMax: 999 };
+    const sp = m.menu.members.find((x) => x.id === "c4")!.spells.find((x) => x.spellId === "heal")!;
+    sp.targets[0] = { id: sp.targets[0]!.id, block: null, status: "stone" };
     const r = rows(campEntries("camp", { kind: "spell", stage: "target", memberId: "c4", spellId: "heal" }, m, S));
-    expect(r[0]!.label).toBe("ア…（毒）HP 999/999（傷はない）");
+    expect(r[0]!.label).toBe("アアアアアア（石）HP 999/999");
   });
 
   test("UI-59 呪文が 15 件以上なら 14 件ずつの頁と [次の頁][前の頁]（端は dim）。頁送りでパネルの spellPage も同じ頁", () => {

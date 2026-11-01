@@ -77,7 +77,7 @@ import { offerTeleporter } from "./choices";
 import { applyAllyEffect } from "./effects";
 import { clearAllStatus, gainGold } from "./field";
 import { abandonChest, presentChest, returnToChest, rollDropChest } from "./chest";
-import { tryInflictStatus } from "./status";
+import { targetRowStatus, tryInflictStatus } from "./status";
 import { rollBossItems, rollDirectDrops } from "./loot";
 import { equipStats, hasSkill, hpMaxOf, skillTotal, spellCost } from "./equip-stats";
 import { loseSan, sanCapOf, sanStage } from "./san";
@@ -1282,13 +1282,15 @@ export function battleMenu(state: GameState, data: GameData): BattleMenu | null 
   const b = state.battle;
   if (b === null) return null;
   const frontRow = data.config.party.frontRow;
+  const alivePartyAll = state.party.filter((c) => c.life === "alive"); // UI-54: 味方の対象の候補（allies と同じ順）
   const members = state.party.map((ch, i) => {
     const spells = ch.knownSpells
       .map((id) => data.spells.find((s) => s.id === id))
       .filter((s): s is Spell => s !== undefined && battleSpellUsable(s))
       .map((s) => {
         const mp = spellCost(state, data, ch, s); // MG-30 / IT-40
-        return { spellId: s.id, name: s.name, mp, target: s.target, usable: ch.mp >= mp };
+        const targets = s.target === "ally" ? alivePartyAll.map((t) => ({ id: t.id, status: targetRowStatus(s.effect, t, data) })) : [];
+        return { spellId: s.id, name: s.name, mp, target: s.target, usable: ch.mp >= mp, targets };
       });
     let hasTool = false; // UI-54 / CB-12（M20。D-2）: 装備でない品（消耗品・魔法書）を 1 つでも持つか
     const items = ch.inventory.flatMap((instanceId) => {
@@ -1298,7 +1300,8 @@ export function battleMenu(state: GameState, data: GameData): BattleMenu | null 
       if (item !== null) hasTool = true;
       if (!battleItemUsable(item)) return [];
       const name = itemDisplayName(state, data, instanceId);
-      return [{ instanceId, itemId: item.id, name, target: item.effect.target }];
+      const targets = item.effect.target === "ally" ? alivePartyAll.map((t) => ({ id: t.id, status: targetRowStatus(item.effect, t, data) })) : [];
+      return [{ instanceId, itemId: item.id, name, target: item.effect.target, targets }];
     });
     const spellBlock = spells.length > 0 ? null : ch.knownSpells.length === 0 ? ("none" as const) : ("unusable" as const);
     const itemBlock = items.length > 0 ? null : hasTool ? ("fieldOnly" as const) : ("none" as const);
@@ -1326,6 +1329,6 @@ export function battleMenu(state: GameState, data: GameData): BattleMenu | null 
     pending: b.auto ? [] : members.filter((m) => m.canAct && m.input === null).map((m) => m.id),
     groups: groupViews(state, data),
     members,
-    allies: state.party.filter((c) => c.life === "alive").map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: hpMaxOf(state, data, c), status: [...c.status] })),
+    allies: state.party.filter((c) => c.life === "alive").map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: hpMaxOf(state, data, c) })),
   };
 }

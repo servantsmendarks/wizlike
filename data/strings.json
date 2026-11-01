@@ -638,8 +638,6 @@
   "spell.usableIn.battle": "戦闘中",
   "spell.usableIn.field": "戦闘の外",
   "spell.usableIn.both": "いつでも",
-  "camp.target.blocked": "{row}（{why}）",
-  "camp.targetBlock.fullHp": "傷はない",
   "camp.identifyRow": "{owner}: {name}　{rate}%",
   "camp.identify.none": "鑑定する物がない",
   "camp.order.row": "{n} {name}",

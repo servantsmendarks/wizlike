@@ -2399,13 +2399,13 @@ describe("網羅（完了条件「6 種と戦える」、敵の id、battleMenu�
       ["c6", false, true],
     ]);
     expect(menu.members[4]!.spells).toEqual([
-      { spellId: "fire_arrow", name: "火矢", mp: 2, target: "enemy", usable: true },
-      { spellId: "sleep_mist", name: "眠りの霧", mp: 3, target: "enemyGroup", usable: false },
+      { spellId: "fire_arrow", name: "火矢", mp: 2, target: "enemy", usable: true, targets: [] },
+      { spellId: "sleep_mist", name: "眠りの霧", mp: 3, target: "enemyGroup", usable: false, targets: [] },
     ]);
     expect(menu.members[4]!.items).toEqual([]); // 帰還の糸は戦闘で使えない
-    expect(menu.members[0]!.items).toEqual([{ instanceId: "i4", itemId: "herb", name: "薬草", target: "ally" }]);
+    expect(menu.members[0]!.items).toEqual([{ instanceId: "i4", itemId: "herb", name: "薬草", target: "ally", targets: menu.allies.map((a) => ({ id: a.id, status: a.id === "c3" ? "paralysis" : null })) }]);
     expect(menu.allies.map((a) => a.id)).toEqual(["c1", "c2", "c3", "c4", "c5"]);
-    expect(menu.allies.map((a) => a.status)).toEqual([[], [], ["paralysis"], [], []]); // M26 B-1: Character.status の写し
+    expect(menu.allies.every((a) => !("status" in a))).toBe(true); // 2026-11-01: allies に status は無い（targets[].status）
     expect(menu.members[0]!.input).toBeNull();
     for (const id of ["c1", "c2", "c4", "c5"]) s = exec(s, input(id, DEF)).state;
     menu = battleMenu(s, data)!;
@@ -2420,19 +2420,28 @@ describe("網羅（完了条件「6 種と戦える」、敵の id、battleMenu�
     expect(battleMenu(dived(1), data)).toBeNull();
   });
 
-  test("UI-54（M26 B-1）battleMenu の allies は status にその者の Character.status の写しを持つ（毒・複数・無し）", () => {
+  test("UI-54（2026-11-01）battleMenu の spells[].targets / items[].targets: ally の呪文・品だけ非空（順は allies と同じ）。status は最も重い 1 つ、解毒は毒の者だけ", () => {
     const s = setup([{ monsterId: "giant_rat", hps: [5] }], {
       inputs: {},
-      patches: { c2: { status: ["poison"] }, c4: { status: ["sleep", "poison"] }, c6: DEAD },
+      patches: {
+        c2: { status: ["poison"] },
+        c3: { status: ["sleep", "poison"] },
+        c4: { status: ["poison", "paralysis"], knownSpells: ["heal", "cure_poison", "fire_arrow"] },
+        c5: { status: ["sleep"] },
+        c6: DEAD,
+      },
     });
     const menu = battleMenu(s, data)!;
-    expect(menu.allies.map((a) => [a.id, a.status])).toEqual([
-      ["c1", []],
-      ["c2", ["poison"]],
-      ["c3", []],
-      ["c4", ["sleep", "poison"]],
-      ["c5", []],
-    ]);
+    expect(menu.allies.every((a) => !("status" in a))).toBe(true);
+    const ids = menu.allies.map((a) => a.id);
+    const sp = (id: string) => menu.members.find((m) => m.id === "c4")!.spells.find((x) => x.spellId === id)!;
+    expect(sp("heal").targets.map((t) => t.id)).toEqual(ids);
+    expect(sp("heal").targets.map((t) => t.status)).toEqual([null, "poison", "poison", "paralysis", "sleep"]);
+    expect(sp("cure_poison").targets.map((t) => t.status)).toEqual([null, "poison", "poison", "poison", null]);
+    expect(sp("fire_arrow").targets).toEqual([]);
+    for (const m of menu.members) for (const it of m.items) expect(it.targets.map((t) => t.id)).toEqual(it.target === "ally" ? ids : []);
+    const herb = menu.members.find((m) => m.id === "c1")!.items.find((x) => x.itemId === "herb")!;
+    expect(herb.targets.map((t) => t.status)).toEqual([null, "poison", "poison", "paralysis", "sleep"]);
   });
 
   test("UI-54/CB-12（M20。設計 D-2）battleMenu の spellBlock / itemBlock: 呪文を知らない none・戦闘で使える呪文が無い unusable・道具（装備でない品）が無い none・戦闘で使える道具が無い fieldOnly・一覧が空でなければ null。乱数を引かない", () => {

@@ -251,6 +251,18 @@ function strKey(ctx: Ctx, p: string, v: unknown, ix: Index): void {
 
 // ---- config.json ----
 
+/** UI-53: STATUS_IDS の 4 つをそれぞれちょうど 1 回含む配列 */
+const severityField: Field = (ctx, p, v) => {
+  const a = L(E(STATUS_IDS))(ctx, p, v);
+  if (Array.isArray(a)) {
+    for (const id of STATUS_IDS) {
+      const n = a.filter((x) => x === id).length;
+      if (n !== 1) report(ctx, p, `UI-53: ${JSON.stringify(id)} must appear exactly once, got ${n}`);
+    }
+  }
+  return a;
+};
+
 function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
   const member: Field = F({
     defaultName: S,
@@ -473,6 +485,7 @@ function validateConfig(ctx: Ctx, v: unknown, ix: Index): void {
       impulse: F({ lure, stat: E(STAT_KEYS), impulseClasses: opt(L(classRef, 1)) }), // EV-16 / EV-04
     }),
     save: F({ maxGames: I(POS_INT), schemaVersion: I(POS_INT) }),
+    status: F({ severity: severityField }), // UI-53（2026-11-01）【仮】
     input: F({ swipeThresholdPx: I(POS_INT), holdRepeatMs: I(POS_INT), edgeDeadZonePx: I(NON_NEG), screenGuardMs: I(NON_NEG) }),
     ui: F({
       textSpeedMs: I(NON_NEG),

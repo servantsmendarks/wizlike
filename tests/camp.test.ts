@@ -992,8 +992,8 @@ describe("UI-53/TW-03 campMenu", () => {
   // M5.5: 街でも spells を返すようにした（旧: 街では []）
   test("UI-53/TW-03/MG-44 spells: 迷宮では heal / cure_poison / return / resurrect だけで、usable は checkCast と一致する（full hp だけは見ない）。targets は ally の呪文の対象ごとの可否（heal は HP 満タンなら fullHp）。campMenu の place town でも spells を返し、帰還は usable false", () => {
     // 2026-10-05: targets を足した（MG-44 の full hp）。新しく始めた直後は全員 HP 満タンなので、治癒の対象は全員 fullHp でも usable は true のまま
-    const full = ["c1", "c2", "c3", "c4", "c5", "c6"].map((id) => ({ id, block: "fullHp" }));
-    const none = ["c1", "c2", "c3", "c4", "c5", "c6"].map((id) => ({ id, block: null }));
+    const full = ["c1", "c2", "c3", "c4", "c5", "c6"].map((id) => ({ id, block: "fullHp", status: null }));
+    const none = ["c1", "c2", "c3", "c4", "c5", "c6"].map((id) => ({ id, block: null, status: null }));
     const tm = campMenu(inTown({ c4: PRIEST_ALL }), data)!;
     expect(tm.place).toBe("town");
     expect(tm.members.find((x) => x.id === "c4")!.spells).toEqual([
@@ -1007,7 +1007,7 @@ describe("UI-53/TW-03 campMenu", () => {
     const m = campMenu(s, data)!;
     const c4 = m.members.find((x) => x.id === "c4")!;
     expect(c4.spells).toEqual([
-      { spellId: "heal", name: "治癒", mp: 2, target: "ally", usable: true, targets: [{ id: "c1", block: null }, ...full.slice(1)] },
+      { spellId: "heal", name: "治癒", mp: 2, target: "ally", usable: true, targets: [{ id: "c1", block: null, status: null }, ...full.slice(1)] },
       { spellId: "cure_poison", name: "解毒", mp: 3, target: "ally", usable: true, targets: none },
       { spellId: "return", name: "帰還", mp: 8, target: "none", usable: true, targets: [] },
       { spellId: "resurrect", name: "蘇生", mp: 15, target: "dead", usable: false, targets: [] }, // MP 不足・死者なし
@@ -1026,16 +1026,26 @@ describe("UI-53/TW-03 campMenu", () => {
     expect(md.members.find((x) => x.id === "c4")!.spells.find((x) => x.spellId === "resurrect")!.usable).toBe(true);
   });
 
-  test("UI-53（M26 B-1）campMenu の allies は status にその者の Character.status の写しを持つ（毒・無し。死者は allies に入らない）", () => {
+  test("UI-53（2026-11-01）campMenu の allies に status は無く、行の状態は spells[].targets[].status にある（死者は allies に入らない）", () => {
     const s = inDungeon({ c3: { status: ["poison"] }, c2: { life: "dead", hp: 0 } });
     const m = campMenu(s, data)!;
-    expect(m.allies.map((a) => [a.id, a.status])).toEqual([
-      ["c1", []],
-      ["c3", ["poison"]],
-      ["c4", []],
-      ["c5", []],
-      ["c6", []],
-    ]);
+    expect(m.allies.map((a) => Object.keys(a).sort())).toEqual(m.allies.map(() => ["hp", "hpMax", "id", "name"]));
+    expect(m.allies.map((a) => a.id)).toEqual(["c1", "c3", "c4", "c5", "c6"]);
+  });
+
+  test("UI-53/MG-44（2026-11-01）spells[].targets[].status: 治癒は最も重い 1 つ（石化 > 麻痺 > 毒 > 睡眠【仮】）、解毒は毒の者だけ、解縛は麻痺の者だけ。治す状態が無い者は null", () => {
+    const s = inDungeon({
+      c1: { status: ["poison", "paralysis"] },
+      c2: { status: ["sleep", "poison"] },
+      c3: { status: ["paralysis"] },
+      c5: { status: ["sleep", "stone", "poison"] },
+      c4: { ...PRIEST_ALL, knownSpells: ["heal", "cure_poison", "unbind"], mp: 20 },
+    });
+    const c4 = campMenu(s, data)!.members.find((x) => x.id === "c4")!;
+    const st = (id: string) => Object.fromEntries(c4.spells.find((x) => x.spellId === id)!.targets.map((t) => [t.id, t.status]));
+    expect(st("heal")).toEqual({ c1: "paralysis", c2: "poison", c3: "paralysis", c4: null, c5: "stone", c6: null });
+    expect(st("cure_poison")).toEqual({ c1: "poison", c2: "poison", c3: null, c4: null, c5: "poison", c6: null });
+    expect(st("unbind")).toEqual({ c1: "paralysis", c2: null, c3: "paralysis", c4: null, c5: null, c6: null });
   });
 
   test("UI-53/CH-76 slots の canUnequip と equipCandidates の block が check 関数と一致する。row は frontRow による", () => {

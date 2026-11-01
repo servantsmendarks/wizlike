@@ -9,6 +9,7 @@ import { applyAllyEffect } from "./effects";
 import { hpMaxOf } from "./equip-stats";
 import { campPlace, healTargetBlock } from "./camp";
 import { checkLearnFromBook, learnFromBook } from "./learning";
+import { targetRowStatus } from "./status";
 import { returnToTown } from "./town";
 
 /** 戦闘外（迷宮・街）で使える品の種類（consumable / book で、usableIn が battle でない） */
@@ -136,11 +137,11 @@ export function fieldItemMenu(state: GameState, data: GameData): FieldItemMenu |
           target,
           isReturn: item.type === "consumable" && item.effect.type === "return",
           usable: r === null || r === "full hp",
-          targets: target === "ally" ? alive.map((t) => ({ id: t.id, block: healTargetBlock(state, data, effectType, t) })) : [],
+          targets: target === "ally" ? alive.map((t) => ({ id: t.id, block: healTargetBlock(state, data, effectType, t), status: item.type === "consumable" ? targetRowStatus(item.effect, t, data) : null })) : [],
         });
       }
       return { id: ch.id, name: ch.name, canAct: canAct(ch), items };
     }),
-    allies: alive.map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: hpMaxOf(state, data, c), status: [...c.status] })),
+    allies: alive.map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: hpMaxOf(state, data, c) })),
   };
 }

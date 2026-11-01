@@ -29,6 +29,7 @@ import { canAct } from "./combat-calc";
 import { applyAllyEffect } from "./effects";
 import { clampToMax, equipStats, hpMaxOf, identifiedCurseEvents, identifiedOptionEvents, identifiedPowerParams, spellCost } from "./equip-stats";
 import { loseSan } from "./san";
+import { targetRowStatus } from "./status";
 import { identifiedValueParams } from "./shop";
 import { returnToTown, rollResurrect } from "./town";
 
@@ -620,7 +621,7 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
         const probe = target === "ally" ? (alive[0]?.id ?? null) : target === "dead" ? (dead[0]?.id ?? null) : null;
         // 対象の満タン（full hp）は呪文の行では見ず、対象の行の block で出す（全員が満タンでも対象の段で理由を見せるため）
         const r = checkCast(state, data, ch.id, sp.id, probe);
-        const targets = target === "ally" ? alive.map((t) => ({ id: t.id, block: healTargetBlock(state, data, sp.effect.type, t) })) : [];
+        const targets = target === "ally" ? alive.map((t) => ({ id: t.id, block: healTargetBlock(state, data, sp.effect.type, t), status: targetRowStatus(sp.effect, t, data) })) : [];
         spells.push({ spellId: sp.id, name: sp.name, mp: spellCost(state, data, ch, sp), target, usable: r === null || r === "full hp", targets });
       }
       const equipCandidates: CampEquipCandidate[] = [];
@@ -698,7 +699,7 @@ export function campMenu(state: GameState, data: GameData): CampMenu | null {
         ...identifyView(state, data, ch, unidentified),
       };
     }),
-    allies: alive.map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: hpMaxOf(state, data, c), status: [...c.status] })),
+    allies: alive.map((c) => ({ id: c.id, name: c.name, hp: c.hp, hpMax: hpMaxOf(state, data, c) })),
     dead: dead.map((c) => ({ id: c.id, name: c.name })),
     identifiers: state.party.filter((c) => canIdentify(c, data) && canAct(c)).map((c) => ({ id: c.id, name: c.name })),
     unidentified,

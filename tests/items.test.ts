@@ -184,10 +184,11 @@ describe("MG-25 魔法書（dungeon.useItem）", () => {
 describe("UI-53 fieldItemMenu", () => {
   // 2026-10-05: FieldItemView に targets（ally の品の対象ごとの可否。MG-44 の full hp）を足したので、各期待値に targets を足した。
   // 新しく始めた直後・入場直後は全員 HP 満タンなので、薬草の対象は全員 fullHp、解毒草は全員 null
-  const FULL5 = ["c1", "c2", "c3", "c4", "c5"].map((id) => ({ id, block: "fullHp" }));
-  const NONE5 = ["c1", "c2", "c3", "c4", "c5"].map((id) => ({ id, block: null }));
-  const FULL6 = [...FULL5, { id: "c6", block: "fullHp" }];
-  const NONE6 = [...NONE5, { id: "c6", block: null }];
+  // 2026-11-01: targets に status（行の状態 1 つ）を足した。status が無い者は null
+  const FULL5 = ["c1", "c2", "c3", "c4", "c5"].map((id) => ({ id, block: "fullHp", status: null }));
+  const NONE5 = ["c1", "c2", "c3", "c4", "c5"].map((id) => ({ id, block: null, status: null }));
+  const FULL6 = [...FULL5, { id: "c6", block: "fullHp", status: null }];
+  const NONE6 = [...NONE5, { id: "c6", block: null, status: null }];
 
   test("UI-53/MG-44 薬草（heal・ally）の対象は HP 満タンなら block fullHp で、dungeon.useItem は rejected full hp（品は消えない）。満タンでない者には使える。品の usable は満タンを見ない", () => {
     const s = cloneState(newGame(1));
@@ -195,7 +196,7 @@ describe("UI-53 fieldItemMenu", () => {
     const m = fieldItemMenu(s, data)!;
     const herb = m.members[0]!.items.find((it) => it.itemId === "herb")!;
     expect(herb.usable).toBe(true);
-    expect(herb.targets).toEqual(FULL6.map((t) => (t.id === "c2" ? { id: "c2", block: null } : t)));
+    expect(herb.targets).toEqual(FULL6.map((t) => (t.id === "c2" ? { id: "c2", block: null, status: null } : t)));
     expectRejected(s, use("c1", "i4", "c3"), "full hp");
     for (const t of herb.targets) expect(t.block === null, t.id).toBe(checkUseItem(s, data, "c1", "i4", t.id) === null);
     // 全員が満タンでも品の行は usable（対象の段で理由を見せる）
@@ -208,6 +209,8 @@ describe("UI-53 fieldItemMenu", () => {
     const book = createItemInstance(s, { itemId: "tome_lightning", identified: true });
     member(s, "c1").inventory.push(book);
     const m = fieldItemMenu(s, data)!;
+    // c3 は麻痺なので、薬草（heal）の c3 の行の状態は paralysis
+    const FULL5P = FULL5.map((t) => (t.id === "c3" ? { ...t, status: "paralysis" } : t));
     expect(m.members.map((x) => [x.id, x.canAct])).toEqual([
       ["c1", true],
       ["c2", true],
@@ -217,33 +220,27 @@ describe("UI-53 fieldItemMenu", () => {
       ["c6", false],
     ]);
     expect(m.members[0]!.items).toEqual([
-      { instanceId: "i4", itemId: "herb", name: "薬草", target: "ally", usable: true, isReturn: false, targets: FULL5 },
+      { instanceId: "i4", itemId: "herb", name: "薬草", target: "ally", usable: true, isReturn: false, targets: FULL5P },
       { instanceId: book, itemId: "tome_lightning", name: "雷光の魔法書", target: "none", usable: false, isReturn: false, targets: [] },
     ]);
     expect(m.members[1]!.items).toEqual([]);
-    expect(m.members[2]!.items).toEqual([{ instanceId: "i10", itemId: "herb", name: "薬草", target: "ally", usable: false, isReturn: false, targets: FULL5 }]);
+    expect(m.members[2]!.items).toEqual([{ instanceId: "i10", itemId: "herb", name: "薬草", target: "ally", usable: false, isReturn: false, targets: FULL5P }]);
     expect(m.members[3]!.items).toEqual([{ instanceId: "i13", itemId: "antidote_herb", name: "解毒草", target: "ally", usable: true, isReturn: false, targets: NONE5 }]);
     expect(m.members[4]!.items).toEqual([{ instanceId: "i15", itemId: "return_thread", name: "帰還の糸", target: "none", usable: true, isReturn: true, targets: [] }]);
     expect(m.allies.map((a) => a.id)).toEqual(["c1", "c2", "c3", "c4", "c5"]);
-    // M26 B-1: allies に status（Character.status の写し）を足した
-    expect(m.allies[0]).toEqual({ id: "c1", name: "アルド", hp: 15, hpMax: 15, status: [] });
-    expect(m.allies[2]!.status).toEqual(["paralysis"]);
+    expect(m.allies[0]).toEqual({ id: "c1", name: "アルド", hp: 15, hpMax: 15 }); // 2026-11-01: allies に status は無い
+    // c3 は麻痺。薬草（heal）の c3 の行の状態は最も重い 1 つ、解毒草は毒の者だけなので c3 は null
+    expect(m.members[0]!.items[0]!.targets.find((t) => t.id === "c3")!.status).toBe("paralysis");
+    expect(m.members[3]!.items[0]!.targets.find((t) => t.id === "c3")!.status).toBeNull();
   });
 
-  test("UI-53（M26 B-1）fieldItemMenu の allies は status にその者の Character.status の写しを持つ（毒・複数・無し）", () => {
-    const s = inDungeon({ c2: { status: ["poison"] }, c4: { status: ["poison", "paralysis"] } });
+  test("UI-53（2026-11-01）fieldItemMenu の targets[].status: 薬草は最も重い 1 つ、解毒草は毒の者だけ。allies に status は無い", () => {
+    const s = inDungeon({ c2: { status: ["poison"] }, c3: { status: ["sleep", "poison"] }, c4: { status: ["poison", "paralysis"] }, c5: { status: ["sleep"] } });
     const m = fieldItemMenu(s, data)!;
-    expect(m.allies.map((a) => [a.id, a.status])).toEqual([
-      ["c1", []],
-      ["c2", ["poison"]],
-      ["c3", []],
-      ["c4", ["poison", "paralysis"]],
-      ["c5", []],
-      ["c6", []],
-    ]);
-    // 写しなので、menu の配列を書き換えても state は変わらない
-    m.allies[1]!.status.push("sleep");
-    expect(s.party.find((c) => c.id === "c2")!.status).toEqual(["poison"]);
+    const st = (mi: number, itemId: string) => Object.fromEntries(m.members[mi]!.items.find((i) => i.itemId === itemId)!.targets.map((t) => [t.id, t.status]));
+    expect(st(0, "herb")).toEqual({ c1: null, c2: "poison", c3: "poison", c4: "paralysis", c5: "sleep", c6: null });
+    expect(st(3, "antidote_herb")).toEqual({ c1: null, c2: "poison", c3: "poison", c4: "poison", c5: null, c6: null });
+    expect(m.allies.every((a) => !("status" in a))).toBe(true);
   });
 
   // M5.5: 街（酒場）でも道具を使えるようにしたので、街では非 null に変えた（旧: 街でも null）

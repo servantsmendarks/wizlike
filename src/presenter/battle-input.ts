@@ -228,13 +228,21 @@ export function entries(menu: BattleMenu, cursor: InputCursor, strings: Strings)
       ];
     case "ally":
       return [
-        ...menu.allies.map(
-          (a): MenuEntry => ({
-            label: allyRowLabel(strings, a), // M26 B-1: キャンプの対象の行と同じ（名前・状態・HP）
+        ...menu.allies.map((a): MenuEntry => {
+          // 2026-11-01: 状態は選んだ呪文・品の targets[].status（core が決めた 1 つ。見つからなければ括弧なし）
+          const pick = cursor.stage === "ally" ? cursor.pick : null;
+          const targets =
+            pick?.kind === "cast"
+              ? (m.spells.find((x) => x.spellId === pick.spellId)?.targets ?? [])
+              : pick?.kind === "item"
+                ? (m.items.find((x) => x.instanceId === pick.instanceId)?.targets ?? [])
+                : [];
+          return {
+            label: allyRowLabel(strings, { ...a, status: targets.find((t) => t.id === a.id)?.status ?? null }), // M26 B-1: キャンプの対象の行と同じ（名前・状態・HP）
             disabled: false,
             choice: { kind: "ally", id: a.id },
-          }),
-        ),
+          };
+        }),
         back,
       ];
   }

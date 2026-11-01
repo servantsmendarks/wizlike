@@ -335,6 +335,8 @@ export type Config = {
     impulse: { lure: LureWeights; stat: StatKey; impulseClasses?: string[] };
   };
   save: { maxGames: number; schemaVersion: number };
+  /** UI-53（2026-11-01）【仮】: 対象の行に出す状態を 1 つに絞るときの重さの順（先頭ほど重い）。STATUS_IDS の 4 つをちょうど 1 回ずつ */
+  status: { severity: StatusId[] };
   input: { swipeThresholdPx: number; holdRepeatMs: number; edgeDeadZonePx: number; screenGuardMs: number };
   ui: {
     textSpeedMs: number;

@@ -22,7 +22,6 @@ import {
   type Pick,
 } from "../src/presenter/battle-input";
 import { formatMessage } from "../src/presenter/views/message";
-import { allyRowLabel } from "../src/presenter/views/ally-row";
 import { textUnits } from "../src/presenter/views/party-band";
 import { LIST_ROW_CHARS, LIST_ROW_UNITS } from "../src/presenter/views/town";
 import { kinsokuLines } from "./helpers/wrap";
@@ -66,19 +65,19 @@ function menu(o: Partial<BattleMenu> = {}): BattleMenu {
       canStrike: false,
       row: "back",
       spells: [
-        { spellId: "fire_arrow", name: "火矢", mp: 2, target: "enemy", usable: true },
-        { spellId: "flame_burst", name: "炎", mp: 5, target: "enemyGroup", usable: false },
-        { spellId: "heal", name: "癒し", mp: 2, target: "ally", usable: true },
-        { spellId: "blessing", name: "加護", mp: 3, target: "party", usable: true },
-        { spellId: "identify", name: "看破", mp: 4, target: "allEnemies", usable: true },
+        { spellId: "fire_arrow", name: "火矢", mp: 2, target: "enemy", usable: true, targets: [] },
+        { spellId: "flame_burst", name: "炎", mp: 5, target: "enemyGroup", usable: false, targets: [] },
+        { spellId: "heal", name: "癒し", mp: 2, target: "ally", usable: true, targets: [{ id: "c1", status: null }, { id: "c2", status: null }] },
+        { spellId: "blessing", name: "加護", mp: 3, target: "party", usable: true, targets: [] },
+        { spellId: "identify", name: "看破", mp: 4, target: "allEnemies", usable: true, targets: [] },
       ],
     }),
     member("c6", {
       canStrike: false,
       row: "back",
       items: [
-        { instanceId: "i1", itemId: "herb", name: "薬草", target: "ally" },
-        { instanceId: "i2", itemId: "x", name: "煙玉", target: "none" },
+        { instanceId: "i1", itemId: "herb", name: "薬草", target: "ally", targets: [{ id: "c1", status: null }, { id: "c2", status: null }] },
+        { instanceId: "i2", itemId: "x", name: "煙玉", target: "none", targets: [] },
       ],
     }),
   ];
@@ -97,8 +96,8 @@ function menu(o: Partial<BattleMenu> = {}): BattleMenu {
     ],
     members,
     allies: [
-      { id: "c1", name: "Nc1", hp: 7, hpMax: 9, status: [] },
-      { id: "c2", name: "Nc2", hp: 4, hpMax: 8, status: [] },
+      { id: "c1", name: "Nc1", hp: 7, hpMax: 9 },
+      { id: "c2", name: "Nc2", hp: 4, hpMax: 8 },
     ],
     ...o,
   };
@@ -687,24 +686,40 @@ describe("UI-54 対象の一覧の敵の行（M18。設計 5-12）", () => {
 });
 
 
-describe("UI-54（M26 B-1）戦闘の味方の対象の行", () => {
-  test("UI-54/UI-47 ally の段の行はキャンプと同じ allyRowLabel: 「{name}（{status}）HP {hp}/{hpMax}」、状態は重さの順、39 単位か 21 字を超えるときは名前を詰める", () => {
-    const m = menu({
-      allies: [
-        { id: "c1", name: "Nc1", hp: 3, hpMax: 9, status: ["poison"] },
-        { id: "c2", name: "Nc2", hp: 4, hpMax: 8, status: ["poison", "paralysis"] },
-        { id: "c3", name: "Nc3", hp: 8, hpMax: 8, status: [] },
-        { id: "c4", name: "アアアアアア", hp: 999, hpMax: 999, status: ["stone", "paralysis", "sleep", "poison"] },
+describe("UI-54（M26 B-1。2026-11-01 直し）戦闘の味方の対象の行", () => {
+  const four = [
+    { id: "c1", name: "Nc1", hp: 3, hpMax: 9 },
+    { id: "c2", name: "Nc2", hp: 4, hpMax: 8 },
+    { id: "c3", name: "Nc3", hp: 8, hpMax: 8 },
+    { id: "c4", name: "アアアアアア", hp: 999, hpMax: 999 },
+  ];
+  const withSpells = (heal: (string | null)[], cure: (string | null)[]): BattleMenu => {
+    const tg = (st: (string | null)[]) => four.map((a, i) => ({ id: a.id, status: st[i] ?? null }));
+    return menu({
+      allies: four,
+      members: [
+        member("c5", {
+          spells: [
+            { spellId: "heal", name: "癒し", mp: 2, target: "ally", usable: true, targets: tg(heal) as never },
+            { spellId: "cure_poison", name: "解毒", mp: 3, target: "ally", usable: true, targets: tg(cure) as never },
+          ],
+        }),
       ],
     });
-    const cur = tgt("ally", "c5", { kind: "cast", spellId: "heal" });
-    const rows = entries(m, cur, S);
-    expect(rows.map((e) => e.label)).toEqual(["Nc1（毒）HP 3/9", "Nc2（痺 毒）HP 4/8", "Nc3 HP 8/8", "ア…（石 痺 眠 毒）HP 999/999", t("common.back")]);
+  };
+
+  test("UI-54/UI-47 ally の段の行は cursor.pick の呪文の targets[].status を 1 つだけ出す（傷はないは付かない）。39 単位・21 字に収まり、名前 6 字は HP 999 でも詰まらない", () => {
+    const m = withSpells(["poison", "paralysis", null, "stone"], ["poison", null, null, "poison"]);
+    const rows = entries(m, tgt("ally", "c5", { kind: "cast", spellId: "heal" }), S);
+    expect(rows.map((e) => e.label)).toEqual(["Nc1（毒）HP 3/9", "Nc2（痺）HP 4/8", "Nc3 HP 8/8", "アアアアアア（石）HP 999/999", t("common.back")]);
     expect(rows.slice(0, 4).every((e) => !e.disabled)).toBe(true);
-    for (const [i, a] of m.allies.entries()) {
-      expect(rows[i]!.label).toBe(allyRowLabel(S, a));
-      expect(textUnits(rows[i]!.label)).toBeLessThanOrEqual(LIST_ROW_UNITS);
-      expect([...rows[i]!.label].length).toBeLessThanOrEqual(LIST_ROW_CHARS);
+    for (const e of rows.slice(0, 4)) {
+      expect(textUnits(e.label)).toBeLessThanOrEqual(LIST_ROW_UNITS);
+      expect([...e.label].length).toBeLessThanOrEqual(LIST_ROW_CHARS);
     }
+    const cure = entries(m, tgt("ally", "c5", { kind: "cast", spellId: "cure_poison" }), S);
+    expect(cure.map((e) => e.label).slice(0, 4)).toEqual(["Nc1（毒）HP 3/9", "Nc2 HP 4/8", "Nc3 HP 8/8", "アアアアアア（毒）HP 999/999"]);
+    // 見つからない pick は括弧なし
+    expect(entries(m, tgt("ally", "c5", { kind: "cast", spellId: "nothing" }), S)[0]!.label).toBe("Nc1 HP 3/9");
   });
 });
