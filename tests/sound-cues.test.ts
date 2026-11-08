@@ -281,8 +281,8 @@ describe("UI-63 sceneSong ほか", () => {
     expect(data.audio.music.songs).not.toContain("boss");
   });
 
-  it("UI-63（M21）銀行の施設 bank: 曲が工房から届くまでは facilitySongs.bank = shop で店の曲。facilitySongs に bank が無ければ街の曲", () => {
-    expect(townSong("bank", data)).toBe("shop");
+  it("UI-63（M21）銀行の施設 bank: facilitySongs.bank = bank で銀行の曲（2026-11-08 に工房から届いた。それまでは店の曲 shop の暫定）。facilitySongs に bank が無ければ街の曲", () => {
+    expect(townSong("bank", data)).toBe("bank");
     const without: typeof data = { ...data, audio: { ...data.audio, facilitySongs: { ...data.audio.facilitySongs, bank: undefined } } };
     expect(townSong("bank", without)).toBe("town");
   });

@@ -1,4 +1,4 @@
-> 出典: make-assets の projects/wizlike/docs/proposal-to-game.md（053c2d0、2026-10-09 に複製）。工房の版が正。変更は工房から提案として来る。
+> 出典: make-assets の projects/wizlike/docs/proposal-to-game.md（708cec9、2026-11-08 に複製）。工房の版が正。変更は工房から提案として来る。
 
 # ゲーム側への提案（wizlike）
 
@@ -171,3 +171,17 @@ Shin の要望（原文）: 「迷宮に入るとき、出るときは階段の�
 - `damage`（v4b）: `data/audio.json:25`（`{hpChanged, target: party, loss: true}`）。
 
 「迷宮に入るとき・出るときに `stairs` を鳴らす」お願い（上の「2026-10-09 追記（迷宮に入るとき・出るときに stairs を鳴らす）」）は変わらず未決。
+
+## 2026-11-08 追記（bank の絵と曲の受け渡し、facilitySongs と TOWN_PICTURE_FALLBACK の変更のお願い）
+
+施設 bank（銀行）の絵と曲を採用し、`tools/export.py --project wizlike` で渡した（2026-11-08。Shin の指示「絵は bank 1 で、曲も良いです」）。
+
+- 絵: `public/town/bank.png`（240×150。採用の seed は工房の manifest.yaml の bank、3208735418）。
+- 曲: `assets/music/bank.mid`（8 小節、テンポ 100、ループ 1-8。`data/audio.json` の `music.songs` には前から bank がある）。
+
+ゲーム側で変えてほしい箇所（ゲームのコードは工房では変えない）:
+
+- `data/audio.json` の `facilitySongs.bank` を暫定の `"shop"` から `"bank"` にする。
+- `src/presenter/views/town-picture.ts` の `TOWN_PICTURE_FALLBACK` から bank の行（`{ bank: "shop" }`）を外す（絵が届いたため）。
+
+工房側は `music.arrangements` の town に bank を足した（town の和音を借りた編曲の記録。道具はまだ読まない。Claude Code の判断【仮】）。

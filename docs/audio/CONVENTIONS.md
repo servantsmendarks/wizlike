@@ -1,4 +1,4 @@
-> 出典: make-assets の projects/wizlike/CONVENTIONS.md（ace70c3、2026-10-08 に複製）。工房の版が正。変更は工房から提案として来る。
+> 出典: make-assets の projects/wizlike/CONVENTIONS.md（708cec9、2026-11-08 に複製）。工房の版が正。変更は工房から提案として来る。
 
 # wizlike 音源と MIDI の取り決め（CONVENTIONS）
 
@@ -77,7 +77,8 @@
   - ジングル（`jingles`）: `loop: none`。曲末に `end` を置き、ループの目印は置かない。
 - 長さ: 全トラックの終端（End of Track）を曲末（bars × 1 小節の長さ）に置く。MIDI の長さ = 小節数。曲末を越える音は置かない。
 - 1 ファイル 1 曲。ファイル名は場面名（`project.json` の `music.songs` と `music.jingles`）。
-  - 曲（12）: `title.mid`、`town.mid`、`dungeon1.mid`、`dungeon2.mid`、`dungeon3.mid`、`camp.mid`、`battle1.mid`、`battle2.mid`（ボス）、`tavern.mid`、`shop.mid`、`temple.mid`、`dark.mid`。tavern・shop・temple・dark は town の編曲違い（town の動機を使う。`music.arrangements`）。ダンジョンの曲は `dungeon1`、`dungeon2`、… と番号で増やす。
+  - 曲（13）: `title.mid`、`town.mid`、`dungeon1.mid`、`dungeon2.mid`、`dungeon3.mid`、`camp.mid`、`battle1.mid`、`battle2.mid`（ボス）、`tavern.mid`、`shop.mid`、`temple.mid`、`dark.mid`、`bank.mid`。tavern・shop・temple・dark・bank は town の編曲違い（town の動機を使う。`music.arrangements`）。ダンジョンの曲は `dungeon1`、`dungeon2`、… と番号で増やす。
+    - `bank.mid`（2026-10-18、M21。Shin の指示「店の曲より静かで、硬貨を数えるような短いループ」）: 街の施設 bank（銀行）の曲。店（shop）より静かで、硬貨を数えるような短いループ。設計図は `music/drafts/bank/design.md`（card: town の和音を借りる案。`music.arrangements` に入れるかは採用のときに決める）。ゲーム側は曲が届くまで `facilitySongs.bank` を `shop` に落としている。2026-11-08 に drafts/bank/v1 を採用（Shin「曲も良いです」）。
   - ジングル（7）: `encounter.mid`、`victory.mid`、`wipe.mid`、`levelup.mid`、`inn.mid`、`clear.mid`（ダンジョン制覇）、`rare.mid`（伝説品の入手）。
 
 ## 3. 音符リストのテキスト形式（LLM が書く形）

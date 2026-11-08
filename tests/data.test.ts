@@ -788,7 +788,7 @@ describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
   const F = "audio.json";
   test("data: UI-63 / UI-65 / UI-66 実データが通る（工房の project.json の名前の写しと、ゲーム側が足した名前）", () => {
     const d = loadGameData(rawData());
-    // 工房の project.json（2026-10-08、dungeon3 を追加）の 12 曲 + bank（M21。工房への提案。ファイルが届くまで無音）（ボスの曲 boss の提案はユーザーの判断 4（2026-10-06）で取り下げ。ボスは battle2）
+    // 工房の project.json（2026-10-08、dungeon3 を追加）の 12 曲 + bank（M21 に工房へ提案。2026-11-08 に工房の project.json に入り、ファイルが届いた。工房 708cec9）（ボスの曲 boss の提案はユーザーの判断 4（2026-10-06）で取り下げ。ボスは battle2）
     expect(d.audio.music.songs).toEqual(["title", "town", "dungeon1", "dungeon2", "dungeon3", "camp", "battle1", "battle2", "tavern", "shop", "temple", "dark", "bank"]);
     expect(d.audio.music.jingles).toEqual(["encounter", "victory", "wipe", "levelup", "inn", "clear", "rare"]);
     expect(d.audio.music.noteRange).toEqual([36, 96]);
@@ -802,8 +802,8 @@ describe("data: audio.json（UI-63 / UI-65 / UI-66。M8）", () => {
     // ユーザーの判断 4（2026-10-06）: 通常の戦闘は battle1 だけ、ボス戦は battle2（工房の確定版の意味どおり）
     expect(d.audio.battleSongs).toEqual(["battle1"]);
     expect(d.audio.bossSong).toBe("battle2");
-    // UI-63（M21）: 銀行は曲が工房から届くまで店の曲 shop（暫定。届いたら "bank"）
-    expect(d.audio.facilitySongs).toEqual({ tavern: "tavern", shop: "shop", temple: "temple", dark: "dark", bank: "shop" });
+    // UI-63（M21）: 銀行は曲 bank（M21 は曲が工房から届くまで店の曲 shop の暫定。2026-11-08 に届いて "bank"）
+    expect(d.audio.facilitySongs).toEqual({ tavern: "tavern", shop: "shop", temple: "temple", dark: "dark", bank: "bank" });
     expect(d.audio.campSong).toBe("camp");
     expect(d.audio.ui).toEqual({ ok: "ok", cancel: "cancel", facility: "door", camp: "tent", talk: "page" });
     expect(d.dungeons.map((x) => [x.id, x.song])).toEqual([

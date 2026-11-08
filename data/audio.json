@@ -14,7 +14,7 @@
   "screenSongs": { "title": "title", "town": "town", "dungeon": "dungeon1" },
   "battleSongs": ["battle1"],
   "bossSong": "battle2",
-  "facilitySongs": { "tavern": "tavern", "shop": "shop", "temple": "temple", "dark": "dark", "bank": "shop" },
+  "facilitySongs": { "tavern": "tavern", "shop": "shop", "temple": "temple", "dark": "dark", "bank": "bank" },
   "campSong": "camp",
   "cues": [
     { "event": "battleEnd", "result": "win", "boss": false, "jingle": "victory", "silenceAfter": true },

@@ -11,10 +11,10 @@ import { townPicture } from "../sprites";
 export const TOWN_PICTURE_IDS = ["town", "tavern", "inn", "temple", "dark", "gate", "shop", "bank", "title"] as const;
 
 /**
- * UI-61（M21）: 絵が一覧（GameAssets.town）に無い施設の落とし先（暫定）。銀行の絵（public/town/bank.png）は工房から届くまで店の絵。
- * 工房の bank.png が届いたら bank の行を外す
+ * UI-61（M21）: 絵が一覧（GameAssets.town）に無い施設の落とし先。M21 では銀行の絵（public/town/bank.png）が工房から届くまで bank → shop（店の絵）に落としていた。
+ * 2026-11-08 に工房（708cec9）から届いたので bank の行を外した。今は落とし先の項目は無い（仕組みは残す）
  */
-export const TOWN_PICTURE_FALLBACK: Readonly<Record<string, string>> = { bank: "shop" };
+export const TOWN_PICTURE_FALLBACK: Readonly<Record<string, string>> = {};
 
 /** UI-61: 施設の絵の名前。一覧に無ければ落とし先（TOWN_PICTURE_FALLBACK）の絵、それも無ければ null（黒） */
 export function townPictureName(facility: string, available: Readonly<Record<string, SpriteInfo>>): string | null {

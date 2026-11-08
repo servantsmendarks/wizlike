@@ -875,7 +875,7 @@ export type TownFacility = "town" | "tavern" | "inn" | "temple" | "dark" | "gate
 /**
  * UI-61（M8.5）: ページの施設。menu は town、寺院のサービスの対象は temple、闇魔術（灰から戻す・強化の各段）は dark、
  * 店（売る・買う・買い戻す・鑑定の各段）は shop、銀行（M17。金・倉庫の各段）は bank（M21。M20 までは shop。
- * 絵と曲が工房から届くまでは TOWN_PICTURE_FALLBACK と facilitySongs.bank で店のものに落とす）
+ * 絵と曲は工房から届くまで TOWN_PICTURE_FALLBACK と facilitySongs.bank で店のものに落としていた。2026-11-08 に届いて落とし先を外した）
  */
 export function townFacility(page: TownPage): TownFacility {
   if (isBankPage(page)) return "bank";

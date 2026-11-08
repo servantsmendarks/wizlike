@@ -700,7 +700,7 @@ describe("UI-52 街のページ", () => {
     ];
     expect(want.map(([p]) => townFacility(p))).toEqual(want.map(([, f]) => f));
     expect(want.length).toBe(ALL_PAGES.length);
-    // TW-10 / TW-16（M17）: 銀行の各段（金の額・品を預ける者と品・引き出す品と受け取る者）は施設の id が bank（M21。絵と曲は届くまで店に落とす）、場所は銀行
+    // TW-10 / TW-16（M17）: 銀行の各段（金の額・品を預ける者と品・引き出す品と受け取る者）は施設の id が bank（M21。絵と曲は 2026-11-08 に工房から届くまで店に落としていた）、場所は銀行
     const bank = new Set(["bank", "bankDeposit", "bankWithdraw", "storageDeposit", "storageWithdraw", JSON.stringify({ deposit: "c1" }), JSON.stringify({ withdraw: "i1" })]);
     for (const [p, f] of want) {
       const key = typeof p === "string" ? p : JSON.stringify(p);
