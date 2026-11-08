@@ -566,7 +566,7 @@
 | 耳の確認 | 曲・ジングル・効果音が聞こえるか、継ぎ目の雑音、音量の釣り合い | 2026-10-05 実機(M8)・2026-10-06 実機(M8-音の対応)・milestones の M9.5 の 4 | 未・ユーザー（U-07〜U-10） |
 | 未定-19 の直しの音（UI-66） | 会話の箱の ▼ で待つ間に一覧・ログ・設定・帯を押すと page が鳴り、door は鳴らない | 2026-10-07 実機(M10)（not-checked）。2026-10-07 実機(M10.5)（音の記録で pass: M10.5 の最後の ▼ の間に一覧の位置・帯・ログ・設定・数字キー 1・Enter・Space を押すと page 1 回、施設・履歴・設定は開かない） | 済（M10.5 の規則で） |
 | M21 銀行の曲は店の曲（UI-63。A-0。M21 の暫定（2026-11-08 に解いた）） | 銀行の各段（一覧・品を預ける・品を引き出す・状態）で店の曲が鳴る（無音にならない）。工房の bank の曲が届くまでの落とし先 | 2026-10-18 実機(M21-群A)（固定コピーに足した目印で SONG bank bank shop → PLAYING song shop。預ける・引き出すの段も SONG …bank shop、NOSONG は 0。状態のキャラクター画面の間も曲は替わらず、街へ戻ると PLAYING town、酒場で tavern。s1.log。耳では聴いていない） | 済 |
-| 銀行の曲 bank（UI-63。M21 の残したもの） | 銀行の各段（一覧・品を預ける・品を引き出す・状態）で SONG bank（店の曲 shop ではない。無音にならない）。街へ戻ると town | 2026-11-08 工房の受け渡し（未確認。工房 708cec9） | 未 |
+| 銀行の曲 bank（UI-63。M21 の残したもの） | 銀行の各段（一覧・品を預ける・品を引き出す・状態）で SONG bank（店の曲 shop ではない。無音にならない）。街へ戻ると town | 2026-11-08 工房の受け渡し（工房 708cec9。受け入れ 2427fc0）。2026-11-08 実機（ユーザーが確認。問題なし） | 済 |
 
 ## 12. 絵（敵・未鑑定・街）
 
@@ -594,7 +594,7 @@
 | M12 d03 の敵の絵 6 体 | ash_shambler・cinder_crow・candle_mourner・urn_bearer・grave_sentinel が 48×48、ashcrown_lord（ボス）が 96×96 で、出会ったときに pixelated で出る（public/sprites にある） | 2026-10-08 実機(M12-素材)（ash_shambler・cinder_crow・candle_mourner・urn_bearer は鑑定の後に本名の <img>（naturalWidth 48、complete=true）。grave_sentinel とボス ashcrown_lord は鑑定される前に倒したので遭遇の画面では「何かの亡者」の絵のまま。同じ origin の PNG の読み込みでは grave_sentinel 48×48・ashcrown_lord 96×96） | 一部済（grave_sentinel・ashcrown_lord の本名の絵は未） |
 | M12 未鑑定「何かの亡者」の絵 | unknown_undead.png が届いたので、d03 の死者が未鑑定のときは薄い黄土の矩形ではなく絵で出る。candle_mourner（8 番）と unknown_winged（12 番）の差し替えも | 2026-10-08 実機(M12-素材)（死者 5 種（ボスを含む）の未鑑定はすべて「何かの亡者」+ unknown_undead.png（naturalWidth 48）で、薄い黄土の矩形は一度も出ない。ボスは 96 の枠に 2 倍で出る（UI-60 の整数倍。boss-enc.png）。cinder_crow の未鑑定は「羽ばたく何か」+ unknown_winged.png。candle_mourner は 8 番の PNG が読めて鑑定で切り替わる） | 済 |
 | M21 銀行の絵は店の絵（UI-61。A-0。M21 の暫定（2026-11-08 に解いた）） | 銀行の各段のビューに店の絵（黒くならない）。工房の bank.png が届くまでの落とし先 | 2026-10-18 実機(M21-群A)（銀行の一覧で img が town/shop.png（naturalWidth 240・complete）、ビューに店の絵（b1-bank-picture.png）） | 済 |
-| 銀行の絵 bank.png（UI-61。M21 の残したもの） | 銀行の各段のビューに銀行の絵（img が town/bank.png。店の絵ではない。240×150・pixelated） | 2026-11-08 工房の受け渡し（未確認。工房 708cec9） | 未 |
+| 銀行の絵 bank.png（UI-61。M21 の残したもの） | 銀行の各段のビューに銀行の絵（img が town/bank.png。店の絵ではない。240×150・pixelated） | 2026-11-08 工房の受け渡し（工房 708cec9。受け入れ 2427fc0）。2026-11-08 実機（ユーザーが確認。問題なし） | 済 |
 
 ## 13. 性能（鳴り始め・タップの遅れ・longtask）
 
