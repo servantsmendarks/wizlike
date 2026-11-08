@@ -1,4 +1,4 @@
-> 出典: make-assets の projects/wizlike/docs/proposal-to-game.md（708cec9、2026-11-08 に複製）。工房の版が正。変更は工房から提案として来る。
+> 出典: make-assets の projects/wizlike/docs/proposal-to-game.md（aa56eb4、2026-11-08 に複製）。工房の版が正。変更は工房から提案として来る。
 
 # ゲーム側への提案（wizlike）
 
@@ -141,6 +141,8 @@ Shin の要望（原文）: 「迷宮に入るとき、出るときは階段の�
 
 あわせて: 効果音 `door` は工房で作り直し中（試しの版、Shin の試聴待ち）。採用したら受け渡しで `assets/sfx/door.json` が変わり、迷宮の扉（message `dungeon.door`）と施設に入る音（`ui.facility`）の両方が変わる。
 
+- 状態（2026-11-08 に記入。本体の decisions.md 2026-10-18 M22 追補 ⑤「audio.json の dungeon.enterAgain 1 行は工房の写しに反映」を受けて、工房が本体の data/audio.json と git log を読んで確かめた）: このお願いは済み。本体は 1dc82fb（2026-10-09、UI-66「迷宮に入るとき・徒歩で出るときに stairs を鳴らす。工房の提案への回答」）で `cues` に message `dungeon.enter` → `stairs`（`data/audio.json:58`）と message `dungeon.exit` → `stairs`（`:60`）を足し、a84cdd0（2026-10-18、M22 C-2 DG-03）で 2 回目以降の入場の文 `dungeon.enterAgain` にも同じ `stairs`（`:59`）を足した。`stairs` の cue はこの 3 行と `floorChanged`（`:28`）の 4 つ。ほかの帰り方（帰還の呪文・糸・テレポーター・全滅）の cue は変わっていない（テレポーターは `teleport` のまま）。選んだ行の `ok` との重ね方は本体の判断（工房は確かめていない）。
+
 ## 2026-10-09 追記（効果音の差し替え）
 
 工房で効果音 `door` と `hit` を差し替えた（Shin の決定「doorは v4a にしましょうか。hit も v3a がいいですね。」）。受け渡しはまだ（Shin の指示待ち）。次の受け渡しで `assets/sfx/door.json` と `assets/sfx/hit.json` が変わる。ゲーム側のデータ形式・cue の変更は要らない。
@@ -170,7 +172,7 @@ Shin の要望（原文）: 「迷宮に入るとき、出るときは階段の�
 - `stairs`（v4b）: `data/audio.json:28`（event `floorChanged`）。
 - `damage`（v4b）: `data/audio.json:25`（`{hpChanged, target: party, loss: true}`）。
 
-「迷宮に入るとき・出るときに `stairs` を鳴らす」お願い（上の「2026-10-09 追記（迷宮に入るとき・出るときに stairs を鳴らす）」）は変わらず未決。
+「迷宮に入るとき・出るときに `stairs` を鳴らす」お願い（上の「2026-10-09 追記（迷宮に入るとき・出るときに stairs を鳴らす）」）は変わらず未決。（2026-11-08 追記: 「未決」はこの行を書いた当時の状態。本体は同日の 1dc82fb で受け入れ、2026-10-18 の a84cdd0 で `dungeon.enterAgain` にも広げた。上の追記の「状態」を見る。）
 
 ## 2026-11-08 追記（bank の絵と曲の受け渡し、facilitySongs と TOWN_PICTURE_FALLBACK の変更のお願い）
 

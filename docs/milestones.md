@@ -1248,7 +1248,7 @@ M22 で見送った小さな件: camp の holder の理由を core の CampSumma
   - 触媒の 1 文 = 6c52cba（TW-17。候補が無いときの 2 文目 `town.upgrade.catNoneShop`。`town.dark.intro` と `town.upgrade.intro` は今のまま）。
   - 宿屋の見出しへの移動 = 可（済。a2bac12 のまま）。
   - 戦闘中の毒の警告 = 不要（記録のみ。作らない）。
-  - audio.json の 1 行 = 銀行の素材の取り込みの同期で工房の写しに反映する（`dungeon.enterAgain`。工房の log の案への 1 行はオーケストレーターが足す）。
+  - audio.json の 1 行 = 銀行の素材の取り込みの同期で工房の写しに反映する（`dungeon.enterAgain`。工房の log の案への 1 行はオーケストレーターが足す）。→ 済（2026-11-08。工房 aa56eb4 が proposal-to-game.md に状態（1dc82fb・a84cdd0 で受け入れ済み）を記入し、工房の decisions・log に記録。ゲーム側は写しを aa56eb4 に更新）。
   - B-5 #1・#2 = 再現した。不具合ではない（振った値は保たれ、残りの 6 点が力から順に 1 点ずつ全能力に入った。7aad019 のテストで固定。直していない）。
 - 完了条件:
   1. 金額が全部「数字 G」の形で、最悪の値で長さの上限に収まる。済（根拠: c23cc33。strings の検査 UI-81、全テスト通過）。
