@@ -1,13 +1,14 @@
-# PROGRESS.md — セッションの引き継ぎ（2026-11-01。M26「遊びやすさ v9」完了、M26 の判断点へのユーザーの返事・「対象の行の表示の直し」・「帯の順の直し」を反映・push 済み）
+# PROGRESS.md — セッションの引き継ぎ（2026-11-08。M26「遊びやすさ v9」完了・push 済み。同日に工房の bank の絵と曲を受け入れ（M21 の残したもの。2427fc0。未 push））
 
 次のセッションがこれだけ読めば再開できるように書く。設計の正は CLAUDE.md、`docs/spec/*.md`、`docs/decisions.md`、`docs/milestones.md`、`docs/balance.md`、`docs/checklist.md`。ここには「どこまで来たか」「何が決まっているか」「次に何をするか」だけを置く。
 
 ## 0. 今の状態（1 分で）
 
-- **M26 は完了（2026-11-01。最後の記録は 413b174）。同日、M26 の判断点へのユーザーの返事を反映（fe623ef・5037203・d7a2784。ここまで push 済み）し、続けてユーザーの指示「対象の行の表示の直し（小コミット）」を実装した: 735195b（core(M26)。状態 1 つ・治す呪文優先・（傷はない）廃止。コード・テスト・データ・仕様・decisions・milestones・checklist を 1 コミット）・4043f8b（レビューの修正）・1fb7f8e（実機の記録。docs）・0d7331a（PROGRESS）。続けてユーザーの返事で帯の順を直した: 4f4c084（presenter(M26)。severity を 石 痺 眠 毒 に変え、帯も config の順）・56ff5ee（記録の表記の修正）。その次がこの PROGRESS.md のコミットで、そこまで push 済み。** 配信の確認は §2 の 2（手順は §2 の 4）。
+- **M26 は完了（2026-11-01。最後の記録は 413b174）。同日、M26 の判断点へのユーザーの返事を反映（fe623ef・5037203・d7a2784。ここまで push 済み）し、続けてユーザーの指示「対象の行の表示の直し（小コミット）」を実装した: 735195b（core(M26)。状態 1 つ・治す呪文優先・（傷はない）廃止。コード・テスト・データ・仕様・decisions・milestones・checklist を 1 コミット）・4043f8b（レビューの修正）・1fb7f8e（実機の記録。docs）・0d7331a（PROGRESS）。続けてユーザーの返事で帯の順を直した: 4f4c084（presenter(M26)。severity を 石 痺 眠 毒 に変え、帯も config の順）・56ff5ee（記録の表記の修正）。その次が PROGRESS.md のコミット（0723a7f）で、そこまで push 済み。** 配信の確認は §2 の 2（手順は §2 の 4）。
 - 検証: HEAD（56ff5ee）で `npm run typecheck` と `npm test`（79 ファイル・2957 件）が通る（オーケストレーターが手元で確認）。対象の行の直しのレビュー A（コードとテスト）・B（文書）の指摘 4 件（A-1 戦闘の道具から targets を引く経路のテストが無い、A-2 targetRowStatus の引数が構造型、B-1 ui.md UI-54 に `battleMenu.allies[].status` が残る、B-2 magic.md MG-44 の targets の形）はすべて反証を通り、4043f8b で修正。帯の順の直しのレビューの指摘は 1 件（decisions の追記の麻痺の表記）で 56ff5ee で修正。`npm run build` は実機の固定コピー（735195b）で通った。
 - `save.schemaVersion` は 12 のまま（M26 の `BattleState.fleeTried?: true` は省略可能の欄。移行なし。対象の行の直しも state を変えない）。
 - 次のマイルストーンはまだ決まっていない。M26 の判断点はすべて返事済み（§1 の 7。longtask の比較だけ返事なしで要観察のまま）。対象の行の直しで出た判断点（帯と対象の行の 眠・毒 の順。§1 の 8）は同日に返事があり反映した（§1 の 9）。次の指示を待つ。
+- **2026-11-08 工房の bank の絵と曲を受け入れた（2427fc0。未 push）。** 工房 708cec9 の export で public/town/bank.png（240×150）と assets/music/bank.mid（8 小節・100 BPM・ループ 1〜8）が届き、元ファイルと sha256 一致。build の素材検査はエラー・警告 0。facilitySongs.bank を "bank"、TOWN_PICTURE_FALLBACK を {}（仕組みは残す）、テスト 4 ファイル・ui.md UI-61 / UI-63・milestones の M21 の 3 か所・checklist（銀行の絵・曲の実機の観点を未で追加）・decisions 1 行・CONVENTIONS と proposal-to-game の複製を 708cec9 に更新。2427fc0 で typecheck・test（79 ファイル・2957 件）・build が通る（オーケストレーターが手元で確認）。レビュー 3 観点（コードとテスト・文書・網羅性）の指摘は 0 件。実機は未。
 
 ## 1. M26 で決めたこと・分かったこと
 
@@ -66,7 +67,7 @@
 
 1. 次の束の指示を待つ（M26 の判断点は返事済み。§1 の 7。帯の順も反映済み。§1 の 9）。対象の行の状態異常の行（括弧 1 つ・治す呪文の優先）と帯の印の順は実機で未（次の実機のついでに見る。checklist の M26 対象の行の実機の行の注記）。
 2. 配信の確認: 735195b〜この PROGRESS.md の push の直後にオーケストレーターが 4 の手順で確かめる（結果はチャットで報告。未確認のまま終わっていたら次のセッションの冒頭で）。
-3. 工房 make-assets の bank（銀行の絵と曲）は、シートの番号と design.md の承認を待っている（前から）。
+3. 工房 make-assets の bank（銀行の絵と曲）は 2026-11-08 に受け入れ済み（2427fc0。§0）。残り: (a) 2427fc0 と PROGRESS の push と配信の確認（4 の手順）、(b) 実機で銀行の絵 bank.png と曲 bank（checklist §11・§12 の「未」の行。次の実機のついで）、(c) 工房側: decisions 1674 行 ⑤「audio.json の dungeon.enterAgain 1 行を工房の写しに反映」は工房 708cec9 に入っていない。工房の proposal-to-game.md は「迷宮の出入りに stairs」の依頼を今も未決と書くが、ゲーム側は M14（1dc82fb）と M22（a84cdd0）で実装済み。【make-assets】の指示があるときに工房側で直す。
 4. push の後の配信の確認の手順:
    1. `gh run list --limit 4 --json headSha,status,conclusion` で完了を待つ。
    2. `curl -s https://servantsmendarks.github.io/wizlike/sw.js | grep -oE '[0-9a-f]{16}' | head -1` の版を取る。
@@ -114,6 +115,7 @@
 - テストプレイの repo `D:\01_Data\projects\Other\wizlike_testplay` は読むだけ。全画面のテストプレイは止めたまま。
 
 ## 5. 場所
+- bank の受け入れのセッション（2026-11-08）: scratchpad は `C:\Users\shin\AppData\Local\Temp\claude\4baf27ce2086ef33\4ac94828-b150-4028-a9a4-6b3cda2c43d8\scratchpad`（build.log・verify.log・an.py / ov.py（bank.mid の解析））。Workflow のスクリプト: `C:\Users\shin\.claude\projects\D--01-Data-projects-TypeScript-wizlike\4ac94828-b150-4028-a9a4-6b3cda2c43d8\workflows\scripts\bank-assets-arrival-check-wf_d4995641-536.js`（到着の確認 4 方向）と同じフォルダの `bank-assets-accept-wf_0ee76c0e-b8e.js`（受け入れ。実装 → レビュー 3 → 反証 → 修正）。
 
 - 対象の行の直しのセッション（2026-11-01）: scratchpad は `C:\Users\shin\AppData\Local\Temp\claude\D--01-Data-projects-TypeScript-wizlike\dadd0988-d464-401e-8e9c-e2ddc4150eee\scratchpad`（rowfix-tools（実機の道具）・rowfix-snap1（735195b の固定コピー）・rowfix-dev1（写真 rows_full_hp.png・rows_hp1.png））。Workflow のスクリプト: `C:\Users\shin\.claude\projects\D--01-Data-projects-TypeScript-wizlike\dadd0988-d464-401e-8e9c-e2ddc4150eee\workflows\scripts\ally-row-fix-wf_39bebeae-5c4.js` と、同じフォルダの `band-severity-wf_7cc44953-ceb.js`（帯の順の直し）。
 - 判断の反映のセッション（2026-11-01）: scratchpad は `C:\Users\shin\AppData\Local\Temp\claude\D--01-Data-projects-TypeScript-wizlike\4d039b64-322b-4985-beb3-af74f5c547f3\scratchpad`（progress-edit.py だけ）。Workflow のスクリプト: `C:\Users\shin\.claude\projects\D--01-Data-projects-TypeScript-wizlike\4d039b64-322b-4985-beb3-af74f5c547f3\workflows\scripts\m26-decisions-followup-wf_17783a96-5a1.js`。
